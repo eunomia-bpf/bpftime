@@ -1,0 +1,8 @@
+-- asm
+stdw [r1+2], 0x44332211
+ldxdw r0, [r1+2]
+exit
+-- mem
+aa bb ff ff ff ff ff ff ff ff cc dd
+-- result
+0x0000000044332211

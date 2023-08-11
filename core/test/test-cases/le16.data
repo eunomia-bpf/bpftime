@@ -1,0 +1,8 @@
+-- asm
+ldxh r0, [r1]
+le16 r0
+exit
+-- mem
+22 11
+-- result
+0x1122

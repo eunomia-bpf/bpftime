@@ -1,0 +1,9 @@
+-- asm
+mov32 r0, 0xf8
+lsh32 r0, 28
+# r0 == 0x80000000
+arsh32 r0, 16
+exit
+-- result
+0xffff8000
+

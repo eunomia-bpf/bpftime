@@ -1,0 +1,12 @@
+-- asm
+mov32 r0, 0
+mov r1, 0xfffffffe
+jsle r1, 0xfffffffd, +1 # Not taken
+jsle r1, 0xffffffff, +1 # Taken
+exit
+mov32 r0, 1
+jsle r1, 0xfffffffe, +1 # Taken
+mov32 r0, 2
+exit
+-- result
+0x1

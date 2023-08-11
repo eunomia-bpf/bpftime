@@ -1,0 +1,27 @@
+# Testcase compiled by Clang
+-- c
+#include <stdint.h>
+
+uint64_t entry(void *ctx)
+{
+    uint64_t n = (uintptr_t)ctx + 10;
+    uint64_t i;
+    uint64_t a = 7llu;
+    for (i = 0; i < n; i++) {
+        a *= 7llu;
+    }
+    return a;
+}
+-- asm
+mov r0, 0x7
+add r1, 0xa
+lsh r1, 0x20
+rsh r1, 0x20
+jeq r1, 0x0, +4
+mov r0, 0x7
+mul r0, 0x7
+add r1, 0xffffffff
+jne r1, 0x0, -3
+exit
+-- result
+0x75db9c97

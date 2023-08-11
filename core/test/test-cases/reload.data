@@ -1,0 +1,6 @@
+-- asm
+mov r0, 0
+exit
+-- reload
+-- error
+Failed to load code: code has already been loaded into this VM. Use ebpf_unload_code() if you need to reuse this VM

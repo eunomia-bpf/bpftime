@@ -1,0 +1,7 @@
+-- asm
+mov r0, 12
+lddw r1, 0x100000004
+div32 r0, r1
+exit
+-- result
+0x3

@@ -1,0 +1,28 @@
+# Test that stack data is preserved across function calls
+-- asm
+stb [r10-4], 0x01
+stb [r10-3], 0x02
+stb [r10-2], 0x03
+stb [r10-1], 0x04
+
+# memfrob
+mov r1, r10
+mov r2, 0x4
+sub r1, r2
+call 1
+
+mov r1, 0
+ldxb r2, [r10-4]
+ldxb r3, [r10-3]
+ldxb r4, [r10-2]
+ldxb r5, [r10-1]
+
+call 0 # gather_bytes
+
+xor r0, 0x2a2a2a2a # undo memfrob
+
+exit
+-- result
+0x01020304
+-- no register offset
+call instruction

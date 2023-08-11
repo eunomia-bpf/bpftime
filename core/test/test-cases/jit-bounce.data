@@ -1,0 +1,11 @@
+-- asm
+mov r0, 1
+mov r6, r0
+mov r7, r6
+mov r8, r7
+mov r9, r8
+# TODO r10
+mov r0, r9
+exit
+-- result
+0x1

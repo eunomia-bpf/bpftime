@@ -1,0 +1,5 @@
+-- raw
+0x5566778800001118
+0x0000000000000000
+-- error
+Failed to load code: invalid source register for LDDW at PC 0

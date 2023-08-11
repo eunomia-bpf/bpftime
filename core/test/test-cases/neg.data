@@ -1,0 +1,6 @@
+-- asm
+mov32 r0, 2
+neg32 r0
+exit
+-- result
+0xfffffffe

@@ -1,0 +1,36 @@
+-- asm
+mov r0, r1
+
+ldxb r9, [r0+0]
+stxb [r0+1], r9
+
+ldxb r8, [r0+1]
+stxb [r0+2], r8
+
+ldxb r7, [r0+2]
+stxb [r0+3], r7
+
+ldxb r6, [r0+3]
+stxb [r0+4], r6
+
+ldxb r5, [r0+4]
+stxb [r0+5], r5
+
+ldxb r4, [r0+5]
+stxb [r0+6], r4
+
+ldxb r3, [r0+6]
+stxb [r0+7], r3
+
+ldxb r2, [r0+7]
+stxb [r0+8], r2
+
+ldxb r1, [r0+8]
+stxb [r0+9], r1
+
+ldxb r0, [r0+9]
+exit
+-- mem
+2a 00 00 00 00 00 00 00 00 00
+-- result
+0x2a

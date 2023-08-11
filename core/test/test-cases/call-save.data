@@ -1,0 +1,16 @@
+-- asm
+mov r6, 0x0001
+mov r7, 0x0020
+mov r8, 0x0300
+mov r9, 0x4000
+call 2
+mov r0, 0
+or r0, r6
+or r0, r7
+or r0, r8
+or r0, r9
+exit
+-- result
+0x4321
+-- no register offset
+call instruction

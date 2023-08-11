@@ -1,0 +1,8 @@
+-- asm
+stb [r1+2], 0x11
+ldxb r0, [r1+2]
+exit
+-- mem
+aa bb ff cc dd
+-- result
+0x11

@@ -1,0 +1,17 @@
+-- asm
+mov r1, 51
+
+# Create lookup table
+stdw [r10-16], 0xab
+stdw [r10-8], 0xcd
+
+# Load lookup[r1 % 2]
+and r1, 1
+lsh r1, 3
+mov r2, r10
+add r2, r1
+ldxdw r0, [r2-16]
+
+exit
+-- result
+0xcd

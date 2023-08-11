@@ -1,0 +1,48 @@
+-- asm
+mov r0, r1
+
+ldxb r9, [r0+0]
+lsh r9, 0
+
+ldxb r8, [r0+1]
+lsh r8, 4
+
+ldxb r7, [r0+2]
+lsh r7, 8
+
+ldxb r6, [r0+3]
+lsh r6, 12
+
+ldxb r5, [r0+4]
+lsh r5, 16
+
+ldxb r4, [r0+5]
+lsh r4, 20
+
+ldxb r3, [r0+6]
+lsh r3, 24
+
+ldxb r2, [r0+7]
+lsh r2, 28
+
+ldxb r1, [r0+8]
+lsh r1, 32
+
+ldxb r0, [r0+9]
+lsh r0, 36
+
+or r0, r1
+or r0, r2
+or r0, r3
+or r0, r4
+or r0, r5
+or r0, r6
+or r0, r7
+or r0, r8
+or r0, r9
+
+exit
+-- result
+0x9876543210
+-- mem
+00 01 02 03 04 05 06 07 08 09

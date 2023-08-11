@@ -1,0 +1,7 @@
+-- asm
+mov r0, 0xc
+lsh r0, 32
+div r0, 4
+exit
+-- result
+0x300000000

@@ -1,0 +1,6 @@
+-- asm
+lddw r0, 0x100000003
+mod32 r0, 3
+exit
+-- result
+0x0

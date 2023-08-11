@@ -1,0 +1,9 @@
+-- asm
+mov32 r2, 0x11
+stxb [r1+2], r2
+ldxb r0, [r1+2]
+exit
+-- mem
+aa bb ff cc dd
+-- result
+0x11

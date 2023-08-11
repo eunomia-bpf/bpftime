@@ -1,0 +1,5 @@
+-- asm
+ja -1
+exit
+-- error
+Failed to load code: infinite loop at PC 0

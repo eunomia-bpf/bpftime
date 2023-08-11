@@ -1,0 +1,57 @@
+-- asm
+mov r0, r1
+
+ldxh r9, [r0+0]
+be16 r9
+
+ldxh r8, [r0+2]
+be16 r8
+
+ldxh r7, [r0+4]
+be16 r7
+
+ldxh r6, [r0+6]
+be16 r6
+
+ldxh r5, [r0+8]
+be16 r5
+
+ldxh r4, [r0+10]
+be16 r4
+
+ldxh r3, [r0+12]
+be16 r3
+
+ldxh r2, [r0+14]
+be16 r2
+
+ldxh r1, [r0+16]
+be16 r1
+
+ldxh r0, [r0+18]
+be16 r0
+
+or r0, r1
+or r0, r2
+or r0, r3
+or r0, r4
+or r0, r5
+or r0, r6
+or r0, r7
+or r0, r8
+or r0, r9
+
+exit
+-- result
+0x3ff
+-- mem
+00 01
+00 02
+00 04
+00 08
+00 10
+00 20
+00 40
+00 80
+01 00
+02 00

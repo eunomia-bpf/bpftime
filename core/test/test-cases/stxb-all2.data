@@ -1,0 +1,13 @@
+-- asm
+mov r0, r1
+mov r1, 0xf1
+mov r9, 0xf9
+stxb [r0], r1
+stxb [r0+1], r9
+ldxh r0, [r0]
+be16 r0
+exit
+-- mem
+ff ff
+-- result
+0xf1f9

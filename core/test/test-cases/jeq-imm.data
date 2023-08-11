@@ -1,0 +1,13 @@
+-- asm
+mov32 r0, 0
+mov32 r1, 0xa
+jeq r1, 0xb, +4 # Not taken
+
+mov32 r0, 1
+mov32 r1, 0xb
+jeq r1, 0xb, +1 # Taken
+
+mov32 r0, 2 # Skipped
+exit
+-- result
+0x1

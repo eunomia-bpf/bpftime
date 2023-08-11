@@ -1,0 +1,6 @@
+-- asm
+mov r0, 0x40000001
+mul r0, 4
+exit
+-- result
+0x100000004

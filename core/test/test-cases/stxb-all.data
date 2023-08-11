@@ -1,0 +1,24 @@
+-- asm
+mov r0, 0xf0
+mov r2, 0xf2
+mov r3, 0xf3
+mov r4, 0xf4
+mov r5, 0xf5
+mov r6, 0xf6
+mov r7, 0xf7
+mov r8, 0xf8
+stxb [r1], r0
+stxb [r1+1], r2
+stxb [r1+2], r3
+stxb [r1+3], r4
+stxb [r1+4], r5
+stxb [r1+5], r6
+stxb [r1+6], r7
+stxb [r1+7], r8
+ldxdw r0, [r1]
+be64 r0
+exit
+-- mem
+ff ff ff ff ff ff ff ff
+-- result
+0xf0f2f3f4f5f6f7f8

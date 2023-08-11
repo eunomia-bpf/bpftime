@@ -1,0 +1,20 @@
+-- asm
+mov32 r0, 0xb1858436
+lsh r0, 32
+or r0, 0x100dc5c8
+# r0 == 0xb1858436100dc5c8
+
+mov32 r1, 0xdde263e
+lsh r1, 32
+or r1, 0x3cbef7f3
+# r1 == 0xdde263e3cbef7f3
+
+mod r0, r1
+# r0 == 0xb1bb94b371a2664
+
+mod r0, 0x658f1778
+# r0 == 0x30ba5a04
+
+exit
+-- result
+0x30ba5a04

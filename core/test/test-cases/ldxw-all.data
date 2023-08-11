@@ -1,0 +1,57 @@
+-- asm
+mov r0, r1
+
+ldxw r9, [r0+0]
+be32 r9
+
+ldxw r8, [r0+4]
+be32 r8
+
+ldxw r7, [r0+8]
+be32 r7
+
+ldxw r6, [r0+12]
+be32 r6
+
+ldxw r5, [r0+16]
+be32 r5
+
+ldxw r4, [r0+20]
+be32 r4
+
+ldxw r3, [r0+24]
+be32 r3
+
+ldxw r2, [r0+28]
+be32 r2
+
+ldxw r1, [r0+32]
+be32 r1
+
+ldxw r0, [r0+36]
+be32 r0
+
+or r0, r1
+or r0, r2
+or r0, r3
+or r0, r4
+or r0, r5
+or r0, r6
+or r0, r7
+or r0, r8
+or r0, r9
+
+exit
+-- result
+0x030f0f
+-- mem
+00 00 00 01
+00 00 00 02
+00 00 00 04
+00 00 00 08
+00 00 01 00
+00 00 02 00
+00 00 04 00
+00 00 08 00
+00 01 00 00
+00 02 00 00

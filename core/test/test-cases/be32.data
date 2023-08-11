@@ -1,0 +1,8 @@
+-- asm
+ldxw r0, [r1]
+be32 r0
+exit
+-- mem
+11 22 33 44
+-- result
+0x11223344

@@ -1,0 +1,5 @@
+-- asm
+mov r0, r11
+exit
+-- error
+Failed to load code: invalid source register at PC 0

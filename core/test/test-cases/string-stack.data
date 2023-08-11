@@ -1,0 +1,51 @@
+-- c
+extern int strcmp_ext(const char *a, const char *b);
+
+int entry(int *mem)
+{
+    char a[] = "abcx";
+    char b[] = "abcy";
+
+    if (strcmp_ext(a, a) != 0) {
+        return 1;
+    }
+
+    if (strcmp_ext(a, b) == 0) {
+        return 1;
+    }
+
+    return 0;
+}
+-- asm
+mov r1, 0x78636261
+stxw [r10-8], r1
+mov r6, 0x0
+stxb [r10-4], r6
+stxb [r10-12], r6
+mov r1, 0x79636261
+stxw [r10-16], r1
+mov r1, r10
+add r1, 0xfffffff8
+mov r2, r1
+call 0x4
+mov r1, r0
+mov r0, 0x1
+lsh r1, 0x20
+rsh r1, 0x20
+jne r1, 0x0, +11
+mov r1, r10
+add r1, 0xfffffff8
+mov r2, r10
+add r2, 0xfffffff0
+call 0x4
+mov r1, r0
+lsh r1, 0x20
+rsh r1, 0x20
+mov r0, 0x1
+jeq r1, r6, +1
+mov r0, 0x0
+exit
+-- result
+0x0
+-- no register offset
+call instruction

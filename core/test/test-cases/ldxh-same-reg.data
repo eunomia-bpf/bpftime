@@ -1,0 +1,9 @@
+-- asm
+mov r0, r1
+sth [r0], 0x1234
+ldxh r0, [r0]
+exit
+-- mem
+ff ff
+-- result
+0x1234

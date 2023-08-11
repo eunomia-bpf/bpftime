@@ -1,0 +1,36 @@
+-- asm
+mov32 r0, 0
+mov32 r1, 1
+mov32 r2, 2
+mov32 r3, 3
+mov32 r4, 4
+mov32 r5, 5
+mov32 r6, 6
+mov32 r7, 7
+mov32 r8, 8
+# r0 == 0
+
+or32 r0, r5
+or32 r0, 0xa0
+# r0 == 0xa5
+
+and32 r0, 0xa3
+mov32 r9, 0x91
+and32 r0, r9
+# r0 == 0x21
+
+lsh32 r0, 22
+lsh32 r0, r8
+# r0 == 0x40000000
+
+rsh32 r0, 19
+rsh32 r0, r7
+# r0 == 0x10
+
+xor32 r0, 0x03
+xor32 r0, r2
+# r0 == 0x11
+
+exit
+-- result
+0x11

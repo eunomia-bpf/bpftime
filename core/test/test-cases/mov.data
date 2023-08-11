@@ -1,0 +1,6 @@
+-- asm
+mov32 r1, 1
+mov32 r0, r1
+exit
+-- result
+0x1

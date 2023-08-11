@@ -1,0 +1,9 @@
+{
+    "target_pid": 0,
+    "btf_path": "",
+    "bpf_object_path": "/home/yunwei/bpftime/benchmark/patch-filter/bench.filter.bpf.o",
+    "offset_file_path": "",
+    "attach_type": "BPFTIME_FILTER",
+    "function_name": "__benchmark_test_function",
+    "agent_dynlib_path": ""
+}

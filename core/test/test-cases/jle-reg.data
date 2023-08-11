@@ -1,0 +1,14 @@
+-- asm
+mov r0, 0
+mov r1, 5
+mov r2, 4
+mov r3, 6
+jle r1, r2, +2 # Not taken
+jle r1, r1, +1 # Taken
+exit
+jle r1, r3, +1 # Taken
+exit
+mov r0, 1
+exit
+-- result
+0x1

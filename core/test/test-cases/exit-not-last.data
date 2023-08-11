@@ -1,0 +1,9 @@
+-- asm
+mov r1, 0
+ja +2
+mov r2, 0
+exit
+mov r0, 0
+ja -4
+-- result
+0x0

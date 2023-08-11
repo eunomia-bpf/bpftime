@@ -1,0 +1,9 @@
+-- asm
+mov r0, r2
+exit
+-- mem
+00 00 00 01
+00 00 00 02
+-- no register offset
+-- result
+0x8

@@ -1,0 +1,7 @@
+-- asm
+mov r0, 8
+lddw r1, 0x100000001
+arsh32 r0, r1
+exit
+-- result
+0x4

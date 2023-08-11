@@ -1,0 +1,14 @@
+-- asm
+mov r6, r1
+add r1, 2
+mov r2, 4
+call 1
+ldxdw r0, [r6]
+be64 r0
+exit
+-- mem
+01 02 03 04 05 06 07 08
+-- result
+0x102292e2f2c0708
+-- no register offset
+call instruction

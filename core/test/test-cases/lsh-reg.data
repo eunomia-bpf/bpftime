@@ -1,0 +1,7 @@
+-- asm
+mov r0, 0x1
+mov r7, 4
+lsh r0, r7
+exit
+-- result
+0x10

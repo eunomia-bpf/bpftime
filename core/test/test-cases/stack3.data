@@ -1,0 +1,13 @@
+-- asm
+stdw [r10-256], 123
+stdw [r10-512], 456
+mov r2, r10
+sub r2, 256
+ldxdw r0, [r2]
+sub r2, 256
+ldxdw r1, [r2]
+add r0, r1
+
+exit
+-- result
+0x243

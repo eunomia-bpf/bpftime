@@ -1,0 +1,12 @@
+-- asm
+mov32 r0, 5748
+mod32 r0, 92
+# r0 == 44
+
+mov32 r1, 13
+mod32 r0, r1
+# r0 == 5
+
+exit
+-- result
+0x5

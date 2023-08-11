@@ -1,0 +1,84 @@
+# Compiled by Clang
+# Check that the ipv4_dst is in 192.168.1.0/24
+-- c
+#include <stdint.h>
+
+#define NETMASK 0xffffff00
+#define SUBNET 0xc0a80100
+
+struct eth_hdr {
+    uint8_t eth_src[6];
+    uint8_t eth_dst[6];
+    uint16_t eth_type;
+};
+
+struct vlan_hdr {
+    uint16_t vlan;
+    uint16_t eth_type;
+};
+
+struct ipv4_hdr {
+    uint8_t ver_ihl;
+    uint8_t tos;
+    uint16_t total_length;
+    uint16_t id;
+    uint16_t frag;
+    uint8_t ttl;
+    uint8_t proto;
+    uint16_t csum;
+    uint32_t src;
+    uint32_t dst;
+};
+
+uint64_t entry(void *mem)
+{
+    struct eth_hdr *eth_hdr = (void *)mem;
+    uint16_t eth_type;
+    void *next = eth_hdr;
+
+    if (eth_hdr->eth_type == __builtin_bswap16(0x8100)) {
+        struct vlan_hdr *vlan_hdr = (void *)(eth_hdr + 1);
+        eth_type = vlan_hdr->eth_type;
+        next = vlan_hdr + 1;
+    } else {
+        eth_type = eth_hdr->eth_type;
+        next = eth_hdr + 1;
+    }
+
+    if (eth_type == __builtin_bswap16(0x0800)) {
+        struct ipv4_hdr *ipv4_hdr = next;
+        if ((ipv4_hdr->dst & __builtin_bswap32(NETMASK)) == __builtin_bswap32(SUBNET)) {
+            return 1;
+        }
+    }
+
+    return 0;
+}
+-- asm
+mov r2, 0xe
+ldxh r3, [r1+12]
+jne r3, 0x81, +2
+mov r2, 0x12
+ldxh r3, [r1+16]
+and r3, 0xffff
+jne r3, 0x8, +5
+add r1, r2
+mov r0, 0x1
+ldxw r1, [r1+16]
+and r1, 0xffffff
+jeq r1, 0x1a8c0, +1
+mov r0, 0x0
+exit
+-- mem
+00 00 c0 9f a0 97 00 a0 
+cc 3b bf fa 08 00 45 10 
+00 3c 46 3c 40 00 40 06 
+73 1c c0 a8 01 02 c0 a8 
+01 01 06 0e 00 17 99 c5 
+a0 ec 00 00 00 00 a0 02 
+7d 78 e0 a3 00 00 02 04 
+05 b4 04 02 08 0a 00 9c 
+27 24 00 00 00 00 01 03 
+03 00 
+-- result
+0x1

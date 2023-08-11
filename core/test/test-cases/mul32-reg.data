@@ -1,0 +1,7 @@
+-- asm
+mov r0, 3
+mov r1, 4
+mul32 r0, r1
+exit
+-- result
+0xc

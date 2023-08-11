@@ -1,0 +1,5 @@
+-- asm
+mov r0, 0
+exit
+-- result
+0x0
