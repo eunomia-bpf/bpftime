@@ -183,6 +183,24 @@ int ebpf_set_unwind_function_index(struct ebpf_vm* vm, unsigned int idx);
  */
 int ebpf_set_pointer_secret(struct ebpf_vm* vm, uint64_t secret);
 
+/**
+ * @brief Register helper functions using the lddw instruction. See
+ * https://docs.kernel.org/bpf/instruction-set.html#id15 for details.
+ * All functions could be null.
+ *
+ * @param[in] vm The VM to set the helpers for.
+ * @param[in] map_by_fd A helper to convert a 32-bit file descriptor into an address of a map
+ * @param[in] map_by_idx A helper to to convert a 32-bit index into an address of a map
+ * @param[in] map_val Helper to get the address of the first value in a given map
+ * @param[in] var_addr Helper to get the address of a platform variable with a given id
+ * @param[in] code_addr Helper to get the address of the instruction at a specified relative offset in number of (64-bit) instructions
+ */
+void ebpf_set_lddw_helpers(struct ebpf_vm *vm, uint64_t (*map_by_fd)(uint32_t),
+			   uint64_t (*map_by_idx)(uint32_t),
+			   uint64_t (*map_val)(uint64_t),
+			   uint64_t (*var_addr)(uint32_t),
+			   uint64_t (*code_addr)(uint32_t));
+
 #ifdef __cplusplus
 }
 #endif

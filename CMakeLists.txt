@@ -18,7 +18,6 @@ project(
 #
 include(cmake/CompilerWarnings.cmake)
 include(cmake/StandardSettings.cmake)
-include(cmake/combine.cmake)
 
 if(NOT CMAKE_BUILD_TYPE)
   set(CMAKE_BUILD_TYPE "Debug")
@@ -41,7 +40,7 @@ if(UNIX)
 endif(UNIX)
 
 set(CMAKE_C_STANDARD 99)
-set(CMAKE_CXX_STANDARD 20)
+set(CMAKE_CXX_STANDARD 17)
 
 #
 # Setup alternative names
@@ -65,13 +64,9 @@ endif()
 include(cmake/frida.cmake)
 
 # main library
-add_subdirectory(third_party)
 add_subdirectory(core)
 add_subdirectory(runtime)
-add_subdirectory(workloads)
 add_subdirectory(tools)
-
-bundle_static_library(runtime bpftime bpftime-agent-ctx)
 
 # For Windows, it is necessary to link with the MultiThreaded library.
 # Depending on how the rest of the project's dependencies are linked, it might be necessary

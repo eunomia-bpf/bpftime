@@ -31,8 +31,9 @@ help:
 	@python3 -c "$$PRINT_HELP_PYSCRIPT" < $(MAKEFILE_LIST)
 
 test: ## test the package
-	make -C runtime/test/example
-	cp -r runtime/test/example/* build/runtime/test/
+	make -C third_party/libbpf/src
+	make -C runtime/test/bpf
+	cp -r runtime/test/bpf/* build/runtime/test/
 	cd build/runtime && ctest -VV
 
 build: ## build the package
@@ -53,10 +54,6 @@ build-core: ## build only the core library
 build-llvm: ## build with llvm as jit backend
 	cmake -Bbuild  -DBPFTIME_ENABLE_UNIT_TESTING=1 -DBPFTIME_LLVM_JIT=1
 	cmake --build build --config Debug
-
-run: build ## run demos
-	bash workloads/hotpatch-demo/make_bpf.sh
-	./build/workloads/hotpatch-demo/hotpatch-demo 1 1 
 
 clean: ## clean the project
 	rm -rf build

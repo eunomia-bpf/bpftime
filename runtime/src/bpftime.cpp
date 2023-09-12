@@ -1,0 +1,91 @@
+#include "bpftime.h"
+#include "bpftime_internal.h"
+#include "ebpf-core.h"
+#include <cstring>
+#include <cstdlib>
+#include <cstdint>
+#include <cstddef>
+
+using namespace std;
+namespace bpftime
+{
+
+bpftime_prog::bpftime_prog(const struct ebpf_inst *insn, size_t insn_cnt,
+			   const char *name)
+	: name(name)
+{
+	insns.assign(insn, insn + insn_cnt);
+	vm = ebpf_create();
+	ebpf_toggle_bounds_check(vm, false);
+	ebpf_set_lddw_helpers(vm, map_ptr_by_fd, nullptr, map_val, nullptr,
+			      nullptr);
+}
+
+bpftime_prog::~bpftime_prog()
+{
+	ebpf_unload_code(vm);
+	ebpf_destroy(vm);
+}
+
+int bpftime_prog::bpftime_prog_load(bool jit)
+{
+	int res = -1;
+
+	printf("load insn cnt: %zd\n", insns.size());
+	res = ebpf_load(vm, insns.data(),
+			insns.size() * sizeof(struct ebpf_inst), &errmsg);
+	if (res < 0) {
+		fprintf(stderr, "Failed to load insn: %s\n", errmsg);
+		return res;
+	}
+	if (jit) {
+		// run with jit mode
+		jitted = true;
+		ebpf_jit_fn jit_fn = ebpf_compile(vm, &errmsg);
+		if (jit_fn == NULL) {
+			fprintf(stderr, "Failed to compile: %s\n", errmsg);
+			return -1;
+		}
+		fn = jit_fn;
+	} else {
+		// ignore for vm
+		jitted = false;
+	}
+	return 0;
+}
+
+int bpftime_prog::bpftime_prog_unload()
+{
+	if (jitted) {
+		// ignore for jit
+		return 0;
+	}
+	ebpf_unload_code(vm);
+	return 0;
+}
+
+int bpftime_prog::bpftime_prog_exec(void *memory, size_t memory_size,
+				    uint64_t *return_val) const
+{
+	uint64_t val = 0;
+	int res = 0;
+
+	if (jitted) {
+		val = fn(memory, memory_size);
+	} else {
+		res = ebpf_exec(vm, memory, memory_size, &val);
+		if (res < 0) {
+			printf("ebpf_exec return error: %d\n", res);
+		}
+	}
+	*return_val = val;
+	return res;
+}
+
+int bpftime_prog::bpftime_prog_register_raw_helper(
+	struct bpftime_helper_info info)
+{
+	return ebpf_register(vm, info.index, info.name.c_str(), info.fn);
+}
+
+} // namespace bpftime

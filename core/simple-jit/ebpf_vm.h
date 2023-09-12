@@ -21,7 +21,7 @@
 #include "ebpf-core.h"
 #include "ebpf_inst.h"
 #include "debug.h"
-
+#include <inttypes.h>
 typedef uint64_t (*ext_func)(uint64_t arg0, uint64_t arg1, uint64_t arg2, uint64_t arg3, uint64_t arg4);
 
 struct ebpf_vm
@@ -42,6 +42,11 @@ struct ebpf_vm
 #ifdef DEBUG
     uint64_t* regs;
 #endif
+	uint64_t (*map_by_fd)(uint32_t);
+	uint64_t (*map_by_idx)(uint32_t);
+	uint64_t (*map_val)(uint64_t);
+	uint64_t (*var_addr)(uint32_t);
+	uint64_t (*code_addr)(uint32_t);
 };
 
 /* The various JIT targets.  */

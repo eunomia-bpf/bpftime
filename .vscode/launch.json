@@ -4,30 +4,39 @@
     // 欲了解更多信息，请访问: https://go.microsoft.com/fwlink/?linkid=830387
     "version": "0.2.0",
     "configurations": [
-    {
-        "name": "(gdb) runtime",
-        "type": "cppdbg",
-        "request": "launch",
-        "program": "${workspaceFolder}/build/tools/cli/bpftime-cli",
-        "args": ["${workspaceFolder}/benchmark/patch-filter/benchmark.patch.json", "--benchmark"],
-        "stopAtEntry": true,
-        "cwd": "${workspaceFolder}/build/runtime/test/",
-        "environment": [],
-        "externalConsole": false,
-        "MIMode": "gdb",
-        "setupCommands": [
-            {
-                "description": "为 gdb 启用整齐打印",
-                "text": "-enable-pretty-printing",
-                "ignoreFailures": true
-            },
-            {
-                "description": "将反汇编风格设置为 Intel",
-                "text": "-gdb-set disassembly-flavor intel",
-                "ignoreFailures": true
-            }
-        ]
-    },
+        {
+            "name": "(gdb) runtime",
+            "type": "cppdbg",
+            "request": "launch",
+            "program": "${workspaceFolder}/example/malloc/test",
+            "args": [],
+            "stopAtEntry": true,
+            "cwd": "${workspaceFolder}/build/runtime/test/",
+            "environment": [
+                {
+                    "name": "LD_PRELOAD",
+                    "value": "/home/yunwei/bpftime/build/runtime/agent/libbpftime-agent.so"
+                },
+                // {
+                //     "name": "LD_PRELOAD",
+                //     "value": "/home/yunwei/bpftime/build/runtime/syscall-server/libbpftime-syscall-server.so"
+                // }
+            ],
+            "externalConsole": false,
+            "MIMode": "gdb",
+            "setupCommands": [
+                {
+                    "description": "为 gdb 启用整齐打印",
+                    "text": "-enable-pretty-printing",
+                    "ignoreFailures": true
+                },
+                {
+                    "description": "将反汇编风格设置为 Intel",
+                    "text": "-gdb-set disassembly-flavor intel",
+                    "ignoreFailures": true
+                }
+            ]
+        },
         {
             "name": "(gdb) libebpf",
             "type": "cppdbg",
@@ -59,6 +68,5 @@
                 }
             ]
         }
-
     ]
 }

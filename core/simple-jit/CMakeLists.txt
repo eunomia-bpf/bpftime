@@ -9,25 +9,25 @@ message(STATUS "Building for architecture: ${ARCH}")
 # Detect the architecture
 if(ARCH MATCHES "arm")
   message(STATUS "arm architecture detected")
-  set(ARCH_HEADERS
-    arch/arm/
-  )
+  # set(ARCH_HEADERS
+  #   arch/arm/
+  # )
 elseif(ARCH MATCHES "aarch64")
   message(STATUS "arm64 architecture detected")
   set(ARCH_SOURCES
     ebpf_jit_arm64.c
   )
-  set(ARCH_HEADERS
-    arch/arm64/
-  )
+  # set(ARCH_HEADERS
+  #   arch/arm64/
+  # )
 elseif(ARCH MATCHES "x86_64" OR ARCH MATCHES "i686" OR ARCH MATCHES "i386")
   message(STATUS "x86 architecture detected")
   set(ARCH_SOURCES
     ebpf_jit_x86_64.c
   )
-  set(ARCH_HEADERS
-    arch/x86/
-  )
+  # set(ARCH_HEADERS
+  #   arch/x86/
+  # )
 else()
   message(FATAL_ERROR "Unsupported architecture")
 endif()
@@ -46,7 +46,7 @@ set(exe_sources
 set(headers
   include/
   core/
-  ${ARCH_HEADERS}
+  # ${ARCH_HEADERS}
   ${headerfiles}
 )
 message(STATUS ${headers})

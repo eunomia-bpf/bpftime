@@ -1,0 +1,140 @@
+cmake_minimum_required(VERSION 3.15)
+
+# C++ standard
+set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+
+# C standard
+set(CMAKE_C_STANDARD 99)
+set(CMAKE_C_STANDARD_REQUIRED ON)
+
+#
+# Project details
+#
+project(
+  "runtime"
+  VERSION 0.1.0
+  LANGUAGES C CXX
+)
+
+#
+# Set project options
+#
+include(${CMAKE_CURRENT_SOURCE_DIR}/../cmake/StandardSettings.cmake)
+
+if(NOT CMAKE_BUILD_TYPE)
+  set(CMAKE_BUILD_TYPE "Debug")
+endif()
+
+message(STATUS "Started CMake for ${PROJECT_NAME} v${PROJECT_VERSION}...\n")
+
+if(UNIX)
+  add_compile_options("$<$<CONFIG:DEBUG>:-D_DEBUG>") # this will allow to use same _DEBUG macro available in both Linux as well as Windows - MSCV environment. Easy to put Debug specific code.
+endif(UNIX)
+
+#
+# Prevent building in the source directory
+#
+if(PROJECT_SOURCE_DIR STREQUAL PROJECT_BINARY_DIR)
+  message(FATAL_ERROR "In-source builds not allowed. Please make a new directory (called a build directory) and run CMake from there.\n")
+endif()
+
+#
+# Create library, setup header and source files
+#
+
+# Find all headers and implementation files
+message(STATUS "Building for architecture: ${ARCH}")
+
+set(sources
+  src/bpftime.cpp
+
+  src/maps.cpp
+  src/ffi.cpp
+  src/bpf_helper.cpp
+  src/attach.cpp
+  src/handlers.cpp
+)
+
+# list(APPEND sources
+# src/map/map_hash.cpp
+# src/map/map_common.c
+# src/map/context_map.c
+# )
+
+# add_subdirectory(src)
+set(headers
+  include/
+)
+message(INFO "Headers: ${headers}")
+
+message(INFO "Found the following sources: ${sources}")
+
+add_library(
+  ${PROJECT_NAME}
+  ${sources}
+)
+target_include_directories(${PROJECT_NAME}
+  PUBLIC
+  ${CMAKE_CURRENT_SOURCE_DIR}/../core/include
+  ${CMAKE_CURRENT_SOURCE_DIR}/../runtime/include
+  ${CMAKE_CURRENT_SOURCE_DIR}/../runtime
+)
+
+target_link_libraries(${PROJECT_NAME}
+  PUBLIC
+  core-bpf
+)
+add_dependencies(${PROJECT_NAME} core-bpf FridaGum)
+
+message(DEBUG "Found the following sources: ${sources}")
+
+message(DEBUG "Found the following headers: ${headers}")
+
+# set the -static flag for static linking
+if(NOT BPFTIME_ENABLE_ASAN)
+  # set the -static flag for static linking
+  # set_target_properties(${test_name}_Tests PROPERTIES LINK_FLAGS "-static")
+  # need on qemu-user
+endif()
+
+message(STATUS "Added all header and implementation files.\n")
+
+#
+# Set the project standard and warnings
+#
+set_project_warnings(runtime)
+
+message(DEBUG "Applied compiler warnings. Using standard ${CMAKE_CXX_STANDARD}.")
+
+target_link_libraries(${PROJECT_NAME}
+  PUBLIC
+  ${FRIDA_GUM_INSTALL_DIR}/libfrida-gum.a
+  -lpthread
+  -lm
+  -ldl
+  -lz
+)
+
+target_include_directories(${PROJECT_NAME} PUBLIC
+  ${FRIDA_GUM_INSTALL_DIR}
+  $<INSTALL_INTERFACE:runtime>
+  $<INSTALL_INTERFACE:runtime/src>
+  $<INSTALL_INTERFACE:include>
+  $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+  $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src>
+)
+
+message(DEBUG "Successfully added all dependencies and linked against them.")
+
+add_subdirectory(object)
+add_subdirectory(agent)
+add_subdirectory(syscall-server)
+#
+# Unit testing setup
+#
+if(BPFTIME_ENABLE_UNIT_TESTING)
+  enable_testing()
+  message(STATUS "Build unit tests for the project. Tests should always be found in the test folder\n")
+  add_subdirectory(test)
+endif()

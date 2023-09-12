@@ -1,0 +1,3 @@
+.direnv
+/build
+*.o

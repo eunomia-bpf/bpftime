@@ -1,0 +1,7 @@
+libbpf*
+bcc*
+bootstrap
+dump.txt
+/build
+test.c
+test.cpp

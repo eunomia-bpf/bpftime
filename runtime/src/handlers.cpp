@@ -1,0 +1,368 @@
+#include "bpftime.h"
+#include "bpftime_handler.hpp"
+#include <memory>
+#include <filesystem>
+
+using namespace bpftime;
+
+// memory region for maps and prog info
+static bpftime_shm global_shared_memory;
+int bpf_attach_ctx::init_attach_ctx_from_handlers(agent_config &config)
+{
+	const handler_manager *manager = global_shared_memory.get_manager();
+	if (!manager) {
+		return -1;
+	}
+	return init_attach_ctx_from_handlers(manager, config);
+}
+
+static int load_prog_and_helpers(bpftime_prog *prog, agent_config &config)
+{
+	if (config.enable_kernel_helper_group) {
+		bpftime_helper_group::get_kernel_utils_helper_group()
+			.add_helper_group_to_prog(prog);
+	}
+	if (config.enable_ffi_helper_group) {
+		bpftime_helper_group::get_ffi_helper_group()
+			.add_helper_group_to_prog(prog);
+	}
+	if (config.enable_shm_maps_helper_group) {
+		bpftime_helper_group::get_shm_maps_helper_group()
+			.add_helper_group_to_prog(prog);
+	}
+	return prog->bpftime_prog_load(config.jit_enabled);
+}
+
+static std::string get_executable_path()
+{
+	char exec_path[PATH_MAX] = { 0 };
+	ssize_t len =
+		readlink("/proc/self/exe", exec_path, sizeof(exec_path) - 1);
+	if (len != -1) {
+		exec_path[len] = '\0'; // Null-terminate the string
+		std::cout << "Executable Path: " << exec_path << std::endl;
+	} else {
+		std::cerr << "Error retrieving executable path" << std::endl;
+	}
+	return exec_path;
+}
+
+static void *resolve_function_addr(bpf_attach_ctx& ctx,
+	const bpftime::bpf_perf_event_handler &event_handler)
+{
+	void *function = nullptr;
+	const char* module_name = event_handler._module_name.c_str();
+	std::string exec_path = get_executable_path();
+	void *module_base_addr;
+
+	if (std::filesystem::equivalent(exec_path, module_name)) {
+		// the current process
+		module_base_addr = ctx.module_get_base_addr("");
+	} else {
+			module_base_addr =
+		ctx.module_get_base_addr(event_handler._module_name.c_str());
+	}
+	// find function
+	if (!module_base_addr) {
+		printf("error: module %s not found\n",
+		       event_handler._module_name.c_str());
+		return nullptr;
+	}
+	function = (void *)((char *)module_base_addr + event_handler.offset);
+	return function;
+}
+
+// create a attach context and progs from handlers
+int bpf_attach_ctx::init_attach_ctx_from_handlers(
+	const handler_manager *manager, agent_config &config)
+{
+	// the first iterations: load bpf progs and create attach events
+	for (std::size_t i = 0; i < manager->size(); i++) {
+		if (!manager->is_allocated(i)) {
+			continue;
+		}
+		auto &handler = manager->get_handler(i);
+		// load the bpf prog
+		if (std::holds_alternative<bpf_prog_handler>(handler)) {
+			auto &prog_handler =
+				std::get<bpf_prog_handler>(handler);
+			const ebpf_inst *insns = prog_handler.insns.data();
+			size_t cnt = prog_handler.insns.size();
+			const char *name = prog_handler.name.c_str();
+			progs[i] = std::make_unique<bpftime_prog>(insns, cnt,
+								  name);
+			bpftime_prog *prog = progs[i].get();
+			int res = load_prog_and_helpers(prog, config);
+			if (res < 0) {
+				return res;
+			}
+			std::cout << "load prog " << i << " "
+				  << prog_handler.name << std::endl;
+		}
+
+		// create attach events
+		else if (std::holds_alternative<bpf_perf_event_handler>(
+				 handler)) {
+			int fd = -1;
+			auto &event_handler =
+				std::get<bpf_perf_event_handler>(handler);
+			void *function = resolve_function_addr(*this, event_handler);
+			if (!function) {
+				std::cout << "error: function not found "
+					  << event_handler._module_name << " "
+					  << event_handler.offset << std::endl;
+				errno = ENOENT;
+				return -1;
+			}
+			// attach base on events
+			switch (event_handler.type) {
+			case bpf_perf_event_handler::bpf_event_type::
+				BPF_TYPE_FILTER: {
+				fd = create_filter(function, i);
+				break;
+			}
+			case bpf_perf_event_handler::bpf_event_type::
+				BPF_TYPE_REPLACE: {
+				fd = create_replace(function, i);
+				break;
+			}
+			case bpf_perf_event_handler::bpf_event_type::
+				BPF_TYPE_UPROBE: {
+				fd = create_uprobe(function, i, false);
+				break;
+			}
+			case bpf_perf_event_handler::bpf_event_type::
+				BPF_TYPE_URETPROBE: {
+				fd = create_uprobe(function, i, true);
+				break;
+			}
+			default:
+				break;
+			}
+			std::cout << "create attach event " << i << " "
+				  << event_handler._module_name << " "
+				  << event_handler.offset << "for " << fd
+				  << std::endl;
+			if (fd < 0) {
+				return fd;
+			}
+		} else if (std::holds_alternative<bpf_map_handler>(handler)) {
+			std::cout << "bpf_map_handler found at " << i
+				  << std::endl;
+		} else {
+			printf("error: unsupported handler type\n");
+			return -1;
+		}
+	}
+
+	// attach the progs to the fds
+	return attach_progs_in_manager(manager);
+}
+
+int bpf_attach_ctx::attach_progs_in_manager(const handler_manager *manager)
+{
+	// attach the progs to the fds
+	for (auto &prog : progs) {
+		int id = prog.first;
+		// get the handler and find the attach information
+		auto &prog_handler =
+			std::get<bpf_prog_handler>(manager->get_handler(id));
+		for (auto fd : prog_handler.attach_fds) {
+			std::cout << "attaching prog " << id << " to fd " << fd
+				  << std::endl;
+			attach_prog(prog.second.get(), fd);
+		}
+	}
+	return 0;
+}
+
+const void *bpftime_shm::bpf_map_lookup_elem(int fd, const void *key) const
+{
+	if (!is_map_fd(fd)) {
+		errno = ENOENT;
+		return nullptr;
+	}
+	auto &handler =
+		std::get<bpftime::bpf_map_handler>(manager->get_handler(fd));
+	return handler.map_lookup_elem(key);
+}
+
+long bpftime_shm::bpf_update_elem(int fd, const void *key, const void *value,
+				  uint64_t flags) const
+{
+	if (!is_map_fd(fd)) {
+		errno = ENOENT;
+		return -1;
+	}
+	auto &handler =
+		std::get<bpftime::bpf_map_handler>(manager->get_handler(fd));
+	return handler.map_update_elem(key, value, flags);
+}
+
+long bpftime_shm::bpf_delete_elem(int fd, const void *key) const
+{
+	if (!is_map_fd(fd)) {
+		errno = ENOENT;
+		return -1;
+	}
+	auto &handler =
+		std::get<bpftime::bpf_map_handler>(manager->get_handler(fd));
+	return handler.map_delete_elem(key);
+}
+
+int bpftime_shm::bpf_map_get_next_key(int fd, const void *key,
+				      void *next_key) const
+{
+	if (!is_map_fd(fd)) {
+		errno = ENOENT;
+		return -1;
+	}
+	auto &handler =
+		std::get<bpftime::bpf_map_handler>(manager->get_handler(fd));
+	return handler.bpf_map_get_next_key(key, next_key);
+}
+
+int bpftime_shm::add_uprobe(int pid, const char *name, uint64_t offset,
+			    bool retprobe, size_t ref_ctr_off)
+{
+	int fd = open_fake_fd();
+	manager->set_handler(
+		fd,
+		bpftime::bpf_perf_event_handler{ false, offset, pid, name,
+						 ref_ctr_off, segment },
+		segment);
+	return fd;
+}
+
+int bpftime_shm::attach_perf_to_bpf(int perf_fd, int bpf_fd)
+{
+	if (!is_perf_fd(perf_fd) || !is_prog_fd(bpf_fd)) {
+		errno = ENOENT;
+		return -1;
+	}
+	auto &handler = std::get<bpftime::bpf_prog_handler>(
+		manager->get_handler(bpf_fd));
+	handler.add_attach_fd(perf_fd);
+	return 0;
+}
+
+int bpftime_shm::attach_enable(int fd) const
+{
+	if (!is_perf_fd(fd)) {
+		errno = ENOENT;
+		return -1;
+	}
+	auto &handler = std::get<bpftime::bpf_perf_event_handler>(
+		manager->get_handler(fd));
+	handler.enable();
+	return 0;
+}
+
+int bpftime_link_create(int prog_fd, int target_fd)
+{
+	return global_shared_memory.add_bpf_link(prog_fd, target_fd);
+}
+
+int bpftime_progs_create(const ebpf_inst *insn, size_t insn_cnt,
+			 const char *prog_name, int prog_type)
+{
+	return global_shared_memory.add_bpf_prog(insn, insn_cnt, prog_name,
+						 prog_type);
+}
+
+int bpftime_maps_create(const char *name, bpftime::bpf_map_attr attr)
+{
+	return global_shared_memory.add_bpf_map(name, attr);
+}
+const void *bpftime_map_lookup_elem(int fd, const void *key)
+{
+	return global_shared_memory.bpf_map_lookup_elem(fd, key);
+}
+
+long bpftime_map_update_elem(int fd, const void *key, const void *value,
+			     uint64_t flags)
+{
+	return global_shared_memory.bpf_update_elem(fd, key, value, flags);
+}
+
+long bpftime_map_delete_elem(int fd, const void *key)
+{
+	return global_shared_memory.bpf_delete_elem(fd, key);
+}
+int bpftime_map_get_next_key(int fd, const void *key, void *next_key)
+{
+	return global_shared_memory.bpf_map_get_next_key(fd, key, next_key);
+}
+
+int bpftime_uprobe_create(int pid, const char *name, uint64_t offset,
+			  bool retprobe, size_t ref_ctr_off)
+{
+	return global_shared_memory.add_uprobe(pid, name, offset, retprobe,
+					       ref_ctr_off);
+}
+
+int bpftime_attach_enable(int fd)
+{
+	return global_shared_memory.attach_enable(fd);
+}
+
+int bpftime_attach_perf_to_bpf(int perf_fd, int bpf_fd)
+{
+	return global_shared_memory.attach_perf_to_bpf(perf_fd, bpf_fd);
+}
+
+void bpftime_close(int fd)
+{
+	global_shared_memory.close_fd(fd);
+}
+int bpftime_map_get_info(int fd, bpftime::bpf_map_attr *out_attr,
+			 const char **out_name, int *type)
+{
+	if (!global_shared_memory.is_map_fd(fd)) {
+		errno = ENOENT;
+		return -1;
+	}
+	auto &handler = std::get<bpftime::bpf_map_handler>(
+		global_shared_memory.get_handler(fd));
+	if (out_attr) {
+		*out_attr = handler.attr;
+	}
+	if (out_name) {
+		*out_name = handler.name.c_str();
+	}
+	if (type) {
+		*type = handler.type;
+	}
+	return 0;
+}
+
+extern "C" uint64_t map_ptr_by_fd(uint32_t fd)
+{
+	if (!global_shared_memory.get_manager() ||
+	    !global_shared_memory.is_map_fd(fd)) {
+		errno = ENOENT;
+		return 0;
+	}
+	// Use a convenient way to represent a pointer
+	return ((uint64_t)fd << 32) | 0xffffffff;
+}
+
+extern "C" uint64_t map_val(uint64_t map_ptr)
+{
+	int fd = (int)(map_ptr >> 32);
+	if (!global_shared_memory.get_manager() ||
+	    !global_shared_memory.is_map_fd(fd)) {
+		errno = ENOENT;
+		return 0;
+	}
+	auto &handler = std::get<bpftime::bpf_map_handler>(
+		global_shared_memory.get_handler(fd));
+	auto size = handler.attr.key_size;
+	std::vector<char> key(size);
+	int res = handler.bpf_map_get_next_key(nullptr, key.data());
+	if (res < 0) {
+		errno = ENOENT;
+		return 0;
+	}
+	return (uint64_t)handler.map_lookup_elem(key.data());
+}

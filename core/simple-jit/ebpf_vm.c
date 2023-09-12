@@ -25,8 +25,11 @@
 #include "ebpf_inst.h"
 #include "ebpf_vm.h"
 #include <unistd.h>
-#include "inttypes.h"
+#include <inttypes.h>
 #include <stdint.h>
+
+typedef uint32_t u32;
+
 
 static bool
 validate(const struct ebpf_vm* vm, const struct ebpf_inst* insts, uint32_t num_insts, char** errmsg);
@@ -65,7 +68,11 @@ ebpf_create(void)
     if (vm == NULL) {
         return NULL;
     }
-
+	vm->map_by_fd = NULL;
+	vm->map_by_idx = NULL;
+	vm->map_val = NULL;
+	vm->var_addr = NULL;
+	vm->code_addr = NULL;
     vm->ext_funcs = calloc(MAX_EXT_FUNCS, sizeof(*vm->ext_funcs));
     if (vm->ext_funcs == NULL) {
         ebpf_destroy(vm);
@@ -547,9 +554,32 @@ ebpf_exec(const struct ebpf_vm* vm, void* mem, size_t mem_len, uint64_t* bpf_ret
             break;
 
         case EBPF_OP_LDDW:
-            reg[inst.dst_reg] = (uint32_t)(inst.imm) | ((uint64_t)ebpf_fetch_instruction(vm, pc++).imm << 32);
-            break;
-
+            {    
+                struct ebpf_inst next_inst =
+                    ebpf_fetch_instruction(vm, pc++);
+                if (inst.src_reg == 0) {
+                    reg[inst.dst_reg] =
+                        (u32)(inst.imm) |
+                        ((uint64_t)next_inst.imm << 32);
+                } else if (inst.src_reg == 1) {
+                    reg[inst.dst_reg] = vm->map_by_fd(inst.imm);
+                } else if (inst.src_reg == 2) {
+                    reg[inst.dst_reg] =
+                        vm->map_val(vm->map_by_fd(inst.imm)) +
+                        (uint64_t)next_inst.imm;
+                } else if (inst.src_reg == 3) {
+                    reg[inst.dst_reg] = vm->var_addr(inst.imm);
+                } else if (inst.src_reg == 4) {
+                    reg[inst.dst_reg] = vm->code_addr(inst.imm);
+                } else if (inst.src_reg == 5) {
+                    reg[inst.dst_reg] = vm->map_by_idx(inst.imm);
+                } else if (inst.src_reg == 6) {
+                    reg[inst.dst_reg] =
+                        vm->map_val(vm->map_by_idx(inst.imm)) +
+                        (uint64_t)next_inst.imm;
+                }
+                break;
+            }
         case EBPF_OP_JA:
             pc += inst.off;
             break;
@@ -880,10 +910,50 @@ validate(const struct ebpf_vm* vm, const struct ebpf_inst* insts, uint32_t num_i
             break;
 
         case EBPF_OP_LDDW:
-            if (inst.src_reg != 0) {
-                *errmsg = ebpf_error("invalid source register for LDDW at PC %d", i);
-                return false;
-            }
+        if (inst.src_reg == 1 && vm->map_by_fd == NULL) {
+				*errmsg = ebpf_error(
+					"Missing map_by_fd definition for instruction at %d",
+					i);
+				return false;
+			} else if (inst.src_reg == 2 &&
+				   (vm->map_by_fd == NULL ||
+				    vm->map_val == NULL)) {
+				*errmsg = ebpf_error(
+					"Missing map_by_fd or map_val for instruction at %d",
+					i);
+				return false;
+			} else if (inst.src_reg == 3 &&
+				   (vm->var_addr == NULL)) {
+				*errmsg = ebpf_error(
+					"Missing var_addr for instruction at %d",
+					i);
+				return false;
+			} else if (inst.src_reg == 4 &&
+				   (vm->code_addr == NULL)) {
+				*errmsg = ebpf_error(
+					"Missing code_addr for instruction at %d",
+					i);
+				return false;
+			} else if (inst.src_reg == 5 &&
+				   vm->map_by_idx == NULL) {
+				*errmsg = ebpf_error(
+					"Missing map_by_idx for instruction at %d",
+					i);
+				return false;
+			} else if (inst.src_reg == 6 &&
+				   (vm->map_val == NULL ||
+				    vm->map_by_idx == NULL)) {
+				*errmsg = ebpf_error(
+					"Missing map_val map_by_idx for instruction at %d",
+					i);
+				return false;
+			}
+			if (inst.src_reg > 6) {
+				*errmsg = ebpf_error(
+					"Illegal subtype (src_reg) %d at pc %d",
+					(int)inst.src_reg, i);
+				return false;
+			}
             if (i + 1 >= num_insts || insts[i + 1].code != 0) {
                 *errmsg = ebpf_error("incomplete lddw at PC %d", i);
                 return false;
@@ -1110,4 +1180,17 @@ ebpf_set_pointer_secret(struct ebpf_vm* vm, uint64_t secret)
     }
     vm->pointer_secret = secret;
     return 0;
+}
+
+void ebpf_set_lddw_helpers(struct ebpf_vm *vm, uint64_t (*map_by_fd)(uint32_t),
+			   uint64_t (*map_by_idx)(uint32_t),
+			   uint64_t (*map_val)(uint64_t),
+			   uint64_t (*var_addr)(uint32_t),
+			   uint64_t (*code_addr)(uint32_t))
+{
+	vm->map_by_fd = map_by_fd;
+	vm->map_by_idx = map_by_idx;
+	vm->map_val = map_val;
+	vm->var_addr = var_addr;
+	vm->code_addr = code_addr;
 }
