@@ -45,19 +45,3 @@ jobs:
         pip install -r core/test/requirements.txt
         # make build # or build-arm32 build-arm64
         make -C core test-core
-    # - name: run tests arm64
-    #   run: |
-    #     python3.8 -m venv test
-    #     source test/bin/activate
-    #     pip install --upgrade pip
-    #     pip install -r test/requirements.txt
-    #     make build-arm64
-    #     make test
-    # - name: run tests arm32
-    #   run: |
-    #     python3.8 -m venv test
-    #     source test/bin/activate
-    #     pip install --upgrade pip
-    #     pip install -r test/requirements.txt
-    #     make build-arm32
-    #     # make test
