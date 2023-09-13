@@ -93,22 +93,23 @@ uint64_t bpftime_get_current_comm(uint64_t buf, uint64_t size, uint64_t,
 }
 
 uint64_t bpftime_map_lookup_elem_helper(uint64_t map, uint64_t key, uint64_t,
-				    uint64_t, uint64_t)
+					uint64_t, uint64_t)
 {
-	return (uint64_t)bpftime_map_lookup_elem(map, (void *)key);
+	return (uint64_t)bpftime_map_lookup_elem(map >> 32, (void *)key);
 }
 
-uint64_t bpftime_map_update_elem_helper(uint64_t map, uint64_t key, uint64_t value,
-			     uint64_t flags, uint64_t)
+uint64_t bpftime_map_update_elem_helper(uint64_t map, uint64_t key,
+					uint64_t value, uint64_t flags,
+					uint64_t)
 {
-	return (uint64_t)bpftime_map_update_elem(map, (void *)key,
+	return (uint64_t)bpftime_map_update_elem(map >> 32, (void *)key,
 						 (void *)value, flags);
 }
 
-uint64_t bpftime_map_delete_elem_helper(uint64_t map, uint64_t key, uint64_t, uint64_t,
-			     uint64_t)
+uint64_t bpftime_map_delete_elem_helper(uint64_t map, uint64_t key, uint64_t,
+					uint64_t, uint64_t)
 {
-	return (uint64_t)bpftime_map_delete_elem(map, (void *)key);
+	return (uint64_t)bpftime_map_delete_elem(map >> 32, (void *)key);
 }
 
 } // extern "C"
@@ -388,7 +389,7 @@ const bpftime_helper_group shm_maps_group = { {
 		  .name = "bpf_map_update_elem",
 		  .fn = (void *)bpftime_map_update_elem_helper,
 	  } },
-	  { BPF_FUNC_map_delete_elem,
+	{ BPF_FUNC_map_delete_elem,
 	  bpftime_helper_info{
 		  .index = BPF_FUNC_map_delete_elem,
 		  .name = "bpf_map_delete_elem",
