@@ -6,10 +6,29 @@
 using namespace bpftime;
 
 // memory region for maps and prog info
-static bpftime_shm global_shared_memory;
+// Use union so that the destructor of bpftime_shm won't be called automatically
+union bpftime_shm_holder {
+	bpftime_shm global_shared_memory;
+	bpftime_shm_holder()
+	{
+		// Use placement new, which will not allocate memory, but just
+		// call the constructor
+		new (&global_shared_memory) bpftime_shm;
+	}
+	~bpftime_shm_holder()
+	{
+	}
+};
+static bpftime_shm_holder shm_holder;
+
+static __attribute__((destructor(1))) void __destroy_bpftime_shm_holder()
+{
+	shm_holder.global_shared_memory.~bpftime_shm();
+}
+
 int bpf_attach_ctx::init_attach_ctx_from_handlers(agent_config &config)
 {
-	const handler_manager *manager = global_shared_memory.get_manager();
+	const handler_manager *manager = shm_holder.global_shared_memory.get_manager();
 	if (!manager) {
 		return -1;
 	}
@@ -47,11 +66,12 @@ static std::string get_executable_path()
 	return exec_path;
 }
 
-static void *resolve_function_addr(bpf_attach_ctx& ctx,
-	const bpftime::bpf_perf_event_handler &event_handler)
+static void *
+resolve_function_addr(bpf_attach_ctx &ctx,
+		      const bpftime::bpf_perf_event_handler &event_handler)
 {
 	void *function = nullptr;
-	const char* module_name = event_handler._module_name.c_str();
+	const char *module_name = event_handler._module_name.c_str();
 	std::string exec_path = get_executable_path();
 	void *module_base_addr;
 
@@ -59,8 +79,8 @@ static void *resolve_function_addr(bpf_attach_ctx& ctx,
 		// the current process
 		module_base_addr = ctx.module_get_base_addr("");
 	} else {
-			module_base_addr =
-		ctx.module_get_base_addr(event_handler._module_name.c_str());
+		module_base_addr = ctx.module_get_base_addr(
+			event_handler._module_name.c_str());
 	}
 	// find function
 	if (!module_base_addr) {
@@ -106,7 +126,8 @@ int bpf_attach_ctx::init_attach_ctx_from_handlers(
 			int fd = -1;
 			auto &event_handler =
 				std::get<bpf_perf_event_handler>(handler);
-			void *function = resolve_function_addr(*this, event_handler);
+			void *function =
+				resolve_function_addr(*this, event_handler);
 			if (!function) {
 				std::cout << "error: function not found "
 					  << event_handler._module_name << " "
@@ -260,70 +281,70 @@ int bpftime_shm::attach_enable(int fd) const
 
 int bpftime_link_create(int prog_fd, int target_fd)
 {
-	return global_shared_memory.add_bpf_link(prog_fd, target_fd);
+	return shm_holder.global_shared_memory.add_bpf_link(prog_fd, target_fd);
 }
 
 int bpftime_progs_create(const ebpf_inst *insn, size_t insn_cnt,
 			 const char *prog_name, int prog_type)
 {
-	return global_shared_memory.add_bpf_prog(insn, insn_cnt, prog_name,
+	return shm_holder.global_shared_memory.add_bpf_prog(insn, insn_cnt, prog_name,
 						 prog_type);
 }
 
 int bpftime_maps_create(const char *name, bpftime::bpf_map_attr attr)
 {
-	return global_shared_memory.add_bpf_map(name, attr);
+	return shm_holder.global_shared_memory.add_bpf_map(name, attr);
 }
 const void *bpftime_map_lookup_elem(int fd, const void *key)
 {
-	return global_shared_memory.bpf_map_lookup_elem(fd, key);
+	return shm_holder.global_shared_memory.bpf_map_lookup_elem(fd, key);
 }
 
 long bpftime_map_update_elem(int fd, const void *key, const void *value,
 			     uint64_t flags)
 {
-	return global_shared_memory.bpf_update_elem(fd, key, value, flags);
+	return shm_holder.global_shared_memory.bpf_update_elem(fd, key, value, flags);
 }
 
 long bpftime_map_delete_elem(int fd, const void *key)
 {
-	return global_shared_memory.bpf_delete_elem(fd, key);
+	return shm_holder.global_shared_memory.bpf_delete_elem(fd, key);
 }
 int bpftime_map_get_next_key(int fd, const void *key, void *next_key)
 {
-	return global_shared_memory.bpf_map_get_next_key(fd, key, next_key);
+	return shm_holder.global_shared_memory.bpf_map_get_next_key(fd, key, next_key);
 }
 
 int bpftime_uprobe_create(int pid, const char *name, uint64_t offset,
 			  bool retprobe, size_t ref_ctr_off)
 {
-	return global_shared_memory.add_uprobe(pid, name, offset, retprobe,
+	return shm_holder.global_shared_memory.add_uprobe(pid, name, offset, retprobe,
 					       ref_ctr_off);
 }
 
 int bpftime_attach_enable(int fd)
 {
-	return global_shared_memory.attach_enable(fd);
+	return shm_holder.global_shared_memory.attach_enable(fd);
 }
 
 int bpftime_attach_perf_to_bpf(int perf_fd, int bpf_fd)
 {
-	return global_shared_memory.attach_perf_to_bpf(perf_fd, bpf_fd);
+	return shm_holder.global_shared_memory.attach_perf_to_bpf(perf_fd, bpf_fd);
 }
 
 void bpftime_close(int fd)
 {
-	global_shared_memory.close_fd(fd);
+	shm_holder.global_shared_memory.close_fd(fd);
 }
 int bpftime_map_get_info(int fd, bpftime::bpf_map_attr *out_attr,
 			 const char **out_name, int *type)
 {
-	if (!global_shared_memory.is_map_fd(fd)) {
+	if (!shm_holder.global_shared_memory.is_map_fd(fd)) {
 		errno = ENOENT;
 		return -1;
 	}
 	auto &handler = std::get<bpftime::bpf_map_handler>(
-		global_shared_memory.get_handler(fd));
+		shm_holder.global_shared_memory.get_handler(fd));
 	if (out_attr) {
 		*out_attr = handler.attr;
 	}
@@ -338,8 +359,8 @@ int bpftime_map_get_info(int fd, bpftime::bpf_map_attr *out_attr,
 
 extern "C" uint64_t map_ptr_by_fd(uint32_t fd)
 {
-	if (!global_shared_memory.get_manager() ||
-	    !global_shared_memory.is_map_fd(fd)) {
+	if (!shm_holder.global_shared_memory.get_manager() ||
+	    !shm_holder.global_shared_memory.is_map_fd(fd)) {
 		errno = ENOENT;
 		return 0;
 	}
@@ -350,13 +371,13 @@ extern "C" uint64_t map_ptr_by_fd(uint32_t fd)
 extern "C" uint64_t map_val(uint64_t map_ptr)
 {
 	int fd = (int)(map_ptr >> 32);
-	if (!global_shared_memory.get_manager() ||
-	    !global_shared_memory.is_map_fd(fd)) {
+	if (!shm_holder.global_shared_memory.get_manager() ||
+	    !shm_holder.global_shared_memory.is_map_fd(fd)) {
 		errno = ENOENT;
 		return 0;
 	}
 	auto &handler = std::get<bpftime::bpf_map_handler>(
-		global_shared_memory.get_handler(fd));
+		shm_holder.global_shared_memory.get_handler(fd));
 	auto size = handler.attr.key_size;
 	std::vector<char> key(size);
 	int res = handler.bpf_map_get_next_key(nullptr, key.data());
