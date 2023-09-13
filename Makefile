@@ -40,10 +40,6 @@ build: ## build the package
 	cmake -Bbuild  -DBPFTIME_ENABLE_UNIT_TESTING=1
 	cmake --build build --config Debug
 
-build-arm32: ## build the package on arm32
-	cmake -Bbuild -DCMAKE_TOOLCHAIN_FILE=cmake/arm-toolchain.cmake -DARCH=arm -DBPFTIME_ENABLE_UNIT_TESTING=1
-	cmake --build build --config Debug
-
 release: ## build the package
 	cmake -Bbuild  -DBPFTIME_ENABLE_UNIT_TESTING=0
 	cmake --build build --config Release

@@ -1,4 +1,6 @@
-# README
+# LLVM jit for eBPF
+
+A faster and better support on different architectures jit based on LLVM.
 
 ## build
 
@@ -14,7 +16,6 @@ cmake --build build --target all -j
 build/core-llvm
 ```
 
-
 ## Test with bpf-conformance
 
 - Follow the `build` section to build `llvm-jit`
@@ -29,10 +30,12 @@ cmake --build build --target bpf_conformance_runner
 ```
 
 - Run the tests
+
 ```bash
 cd bpf_conformance
 ./build/bin/bpf_conformance_runner  --test_file_directory tests --plugin_path PATH_TO_LLVM_JIT/build/core-llvm-bpf-test 
 ```
+
 With `PATH_TO_LLVM_JIT` replaced to the directory of this project
 
 - See the results
