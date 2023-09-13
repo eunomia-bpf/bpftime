@@ -42,6 +42,7 @@ endif()
 #
 # Create library, setup header and source files
 #
+find_package(Boost REQUIRED)
 
 # Find all headers and implementation files
 message(STATUS "Building for architecture: ${ARCH}")

@@ -5,6 +5,5 @@ package.json
 *.skel.yaml
 package.yaml
 ecli
-uprobe
 .output
 test

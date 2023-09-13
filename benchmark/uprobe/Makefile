@@ -21,7 +21,7 @@ INCLUDES := -I$(OUTPUT) -I../../third_party/libbpf/include/uapi -I$(dir $(VMLINU
 CFLAGS := -g -Wall
 ALL_LDFLAGS := $(LDFLAGS) $(EXTRA_LDFLAGS)
 
-APPS = uretprobe # minimal minimal_legacy  kprobe fentry usdt sockfilter tc ksyscall
+APPS = uprobe # minimal minimal_legacy  kprobe fentry usdt sockfilter tc ksyscall
 
 CARGO ?= $(shell which cargo)
 ifeq ($(strip $(CARGO)),)

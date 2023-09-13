@@ -10,7 +10,7 @@
 - **Compatibility**: Use existing eBPF toolchains like clang and libbpf without any modifications. Compatible with kernel eBPF implementations without requiring privileged access.
 - **Advanced Tooling**: Comes with a cross-platform eBPF interpreter and a high-speed JIT compiler powered by LLVM.
 
-> ⚠️ **Note**: This project is actively under development. The API might undergo changes in upcoming releases.
+> ⚠️ **Note**: This project is actively under development. The API or design might change in upcoming releases, and it's not production ready yet.
 
 ## Quick Start
 
@@ -57,49 +57,38 @@ $ sudo example/malloc/malloc
 
 ### **How it Works**
 
-TODO
+see [documents/how-it-works.md](documents/how-it-works.md) for details.
 
 ### **Examples & Use Cases**
 
-TODO
+We can use the bpftime userspace runtime:
+
+- attach uprobe, uretprobe or all syscall tracepoints(x86 only) eBPF programs to a process or a group of processes
+  - `malloc`: count the malloc calls in libc by pid
+  - `bash_readline`: trace readline calls in bash
+  - `sslsniff`: trace SSL/TLS raw text in openssl
+  - `opensnoop`: trace file open or close in a process
+- dynamically patch a running process
+  - `hot_patch`: demostate how to patch real world CVE in redis or vim.
+
+examples can be found in [example](example) dir.
 
 ### **Performance Benchmarks**
 
-TODO
+Userspace uprobe and tracepoint compared to kernel:
 
-## Building from Source
+Hash map or ring buffer compared to kernel:
 
-### Dependencies
+See [benchmark](benchmark) for detail performance benchmarks.
 
-Install the required packages:
+### Differences from Kernel eBPF and building eBPF programs
 
-```bash
-sudo apt install libelf1 libelf-dev zlib1g-dev make git libboost-dev cmake
-git submodule update --init --recursive
-```
+- some kernel helpers may not be avaliable in userspace
+- Cannot directly access kernel data structures or functions like `task_struct`
 
-### Compilation
+## Build and test
 
-Build the complete runtime:
-
-```bash
-make build
-```
-
-For a lightweight build without the runtime (only core library and LLVM JIT):
-
-```bash
-make build-core
-make build-llvm
-```
-
-## Testing
-
-Run the test suite to validate the implementation:
-
-```bash
-make test
-```
+see [documents/build-and-test.md](documents/build-and-test.md) for details.
 
 ## License
 
