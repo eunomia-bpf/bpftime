@@ -86,7 +86,11 @@ class hash_map_impl {
 		key_vec.assign((uint8_t *)key, (uint8_t *)key + _key_size);
 		value_vec.assign((uint8_t *)value,
 				 (uint8_t *)value + _value_size);
-		map_impl.emplace(key_vec, value_vec);
+		if (auto itr = map_impl.find(key_vec); itr != map_impl.end()) {
+			itr->second = std::move(value_vec);
+		} else {
+			map_impl.insert(bi_map_value_ty(key_vec, value_vec));
+		}
 		return 0;
 	}
 
