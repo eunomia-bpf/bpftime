@@ -10,6 +10,9 @@
 #include <boost/interprocess/smart_ptr/unique_ptr.hpp>
 #include <boost/interprocess/containers/string.hpp>
 #include "bpftime_shm.hpp"
+#include <boost/interprocess/sync/interprocess_sharable_mutex.hpp>
+#include <boost/interprocess/sync/sharable_lock.hpp>
+#include <boost/interprocess/sync/scoped_lock.hpp>
 
 namespace bpftime
 {
@@ -19,7 +22,9 @@ using char_allocator = boost::interprocess::allocator<
 using boost_shm_string =
 	boost::interprocess::basic_string<char, std::char_traits<char>,
 					  char_allocator>;
-
+using sharable_mutex_ptr = boost::interprocess::managed_unique_ptr<
+	boost::interprocess::interprocess_sharable_mutex,
+	boost::interprocess::managed_shared_memory>::type;
 // bpf progs handler
 // in share memory. This is only a simple data struct to store the
 // bpf program data.
@@ -235,6 +240,11 @@ class bpf_map_handler {
 			managed_shared_memory &mem)
 		: type((bpf_map_type)type),
 		  name(char_allocator(mem.get_segment_manager())),
+		  map_mutex(boost::interprocess::make_managed_unique_ptr(
+			  mem.construct<boost::interprocess::
+						interprocess_sharable_mutex>(
+				  boost::interprocess::anonymous_instance)(),
+			  mem)),
 		  map_impl_ptr(nullptr), max_entries(max_ents), flags(flags),
 		  key_size(key_size), value_size(value_size)
 
@@ -305,6 +315,7 @@ class bpf_map_handler {
 	{
 		return "ebpf_map_fd_" + std::string(name.c_str());
 	}
+	mutable sharable_mutex_ptr map_mutex;
 	// The underlying data structure of the map
 	general_map_impl_ptr map_impl_ptr;
 	uint32_t max_entries = 0;

@@ -15,7 +15,12 @@
 #include <iostream>
 #include <string>
 #include <utility>
-
+#include <boost/interprocess/sync/sharable_lock.hpp>
+#include <boost/interprocess/sync/scoped_lock.hpp>
+#include <boost/interprocess/sync/interprocess_sharable_mutex.hpp>
+using boost::interprocess::interprocess_sharable_mutex;
+using boost::interprocess::scoped_lock;
+using boost::interprocess::sharable_lock;
 namespace bpftime
 {
 
@@ -191,6 +196,7 @@ class array_map_impl {
 
 const void *bpf_map_handler::map_lookup_elem(const void *key) const
 {
+	sharable_lock<interprocess_sharable_mutex> guard(*map_mutex);
 	switch (type) {
 	case BPF_MAP_TYPE_HASH:
 		return static_cast<hash_map_impl *>(map_impl_ptr.get())
@@ -207,6 +213,7 @@ const void *bpf_map_handler::map_lookup_elem(const void *key) const
 long bpf_map_handler::map_update_elem(const void *key, const void *value,
 				      uint64_t flags) const
 {
+	scoped_lock<interprocess_sharable_mutex> guard(*map_mutex);
 	switch (type) {
 	case BPF_MAP_TYPE_HASH:
 		return static_cast<hash_map_impl *>(map_impl_ptr.get())
@@ -222,6 +229,7 @@ long bpf_map_handler::map_update_elem(const void *key, const void *value,
 
 int bpf_map_handler::bpf_map_get_next_key(const void *key, void *next_key) const
 {
+	sharable_lock<interprocess_sharable_mutex> guard(*map_mutex);
 	switch (type) {
 	case BPF_MAP_TYPE_HASH:
 		return static_cast<hash_map_impl *>(map_impl_ptr.get())
@@ -237,6 +245,7 @@ int bpf_map_handler::bpf_map_get_next_key(const void *key, void *next_key) const
 
 long bpf_map_handler::map_delete_elem(const void *key) const
 {
+	scoped_lock<interprocess_sharable_mutex> guard(*map_mutex);
 	switch (type) {
 	case BPF_MAP_TYPE_HASH:
 		return static_cast<hash_map_impl *>(map_impl_ptr.get())
