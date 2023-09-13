@@ -10,6 +10,7 @@
 #include <unistd.h>
 #include <stdlib.h>
 #include "malloc.skel.h"
+#include <inttypes.h>
 #define warn(...) fprintf(stderr, __VA_ARGS__)
 
 static int libbpf_print_fn(enum libbpf_print_level level, const char *format,
@@ -58,8 +59,8 @@ static int print_stat(struct malloc_bpf *obj)
 			     strerror(errno));
 			return err;
 		}
-		printf("	pid=%-5d ", key);
-		printf("	malloc calls: %lu\n", value);
+		printf("	pid=%-5" PRIu32 " ", key);
+		printf("	malloc calls: %" PRIu64 "\n", value);
 		err = bpf_map_delete_elem(fd, &key);
 		if (err) {
 			warn("bpf_map_delete_elem failed: %s\n",

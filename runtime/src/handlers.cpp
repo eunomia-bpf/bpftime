@@ -28,7 +28,8 @@ static __attribute__((destructor(1))) void __destroy_bpftime_shm_holder()
 
 int bpf_attach_ctx::init_attach_ctx_from_handlers(agent_config &config)
 {
-	const handler_manager *manager = shm_holder.global_shared_memory.get_manager();
+	const handler_manager *manager =
+		shm_holder.global_shared_memory.get_manager();
 	if (!manager) {
 		return -1;
 	}
@@ -196,7 +197,16 @@ int bpf_attach_ctx::attach_progs_in_manager(const handler_manager *manager)
 	}
 	return 0;
 }
-
+uint32_t bpftime_shm::bpf_map_value_size(int fd) const
+{
+	if (!is_map_fd(fd)) {
+		errno = ENOENT;
+		return 0;
+	}
+	auto &handler =
+		std::get<bpftime::bpf_map_handler>(manager->get_handler(fd));
+	return handler.get_value_size();
+}
 const void *bpftime_shm::bpf_map_lookup_elem(int fd, const void *key) const
 {
 	if (!is_map_fd(fd)) {
@@ -287,14 +297,19 @@ int bpftime_link_create(int prog_fd, int target_fd)
 int bpftime_progs_create(const ebpf_inst *insn, size_t insn_cnt,
 			 const char *prog_name, int prog_type)
 {
-	return shm_holder.global_shared_memory.add_bpf_prog(insn, insn_cnt, prog_name,
-						 prog_type);
+	return shm_holder.global_shared_memory.add_bpf_prog(
+		insn, insn_cnt, prog_name, prog_type);
 }
 
 int bpftime_maps_create(const char *name, bpftime::bpf_map_attr attr)
 {
 	return shm_holder.global_shared_memory.add_bpf_map(name, attr);
 }
+uint32_t bpftime_map_value_size(int fd)
+{
+	return shm_holder.global_shared_memory.bpf_map_value_size(fd);
+}
+
 const void *bpftime_map_lookup_elem(int fd, const void *key)
 {
 	return shm_holder.global_shared_memory.bpf_map_lookup_elem(fd, key);
@@ -303,7 +318,8 @@ const void *bpftime_map_lookup_elem(int fd, const void *key)
 long bpftime_map_update_elem(int fd, const void *key, const void *value,
 			     uint64_t flags)
 {
-	return shm_holder.global_shared_memory.bpf_update_elem(fd, key, value, flags);
+	return shm_holder.global_shared_memory.bpf_update_elem(fd, key, value,
+							       flags);
 }
 
 long bpftime_map_delete_elem(int fd, const void *key)
@@ -312,14 +328,15 @@ long bpftime_map_delete_elem(int fd, const void *key)
 }
 int bpftime_map_get_next_key(int fd, const void *key, void *next_key)
 {
-	return shm_holder.global_shared_memory.bpf_map_get_next_key(fd, key, next_key);
+	return shm_holder.global_shared_memory.bpf_map_get_next_key(fd, key,
+								    next_key);
 }
 
 int bpftime_uprobe_create(int pid, const char *name, uint64_t offset,
 			  bool retprobe, size_t ref_ctr_off)
 {
-	return shm_holder.global_shared_memory.add_uprobe(pid, name, offset, retprobe,
-					       ref_ctr_off);
+	return shm_holder.global_shared_memory.add_uprobe(
+		pid, name, offset, retprobe, ref_ctr_off);
 }
 
 int bpftime_attach_enable(int fd)
@@ -329,7 +346,8 @@ int bpftime_attach_enable(int fd)
 
 int bpftime_attach_perf_to_bpf(int perf_fd, int bpf_fd)
 {
-	return shm_holder.global_shared_memory.attach_perf_to_bpf(perf_fd, bpf_fd);
+	return shm_holder.global_shared_memory.attach_perf_to_bpf(perf_fd,
+								  bpf_fd);
 }
 
 void bpftime_close(int fd)

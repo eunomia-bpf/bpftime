@@ -1,4 +1,5 @@
 #include "syscall_server.hpp"
+#include <cstring>
 
 using namespace bpftime;
 
@@ -162,20 +163,29 @@ long syscall_context::handle_sysbpf(int cmd, union bpf_attr *attr, size_t size)
 	}
 	case BPF_MAP_LOOKUP_ELEM: {
 		std::cout << "Looking up map" << std::endl;
-		return (long)(uintptr_t)bpftime_map_lookup_elem(
+		// Note that bpftime_map_lookup_elem is adapted as a bpf helper,
+		// meaning that it will *return* the address of the matched
+		// value. But here the syscall has a different interface. Here
+		// we should write the bytes of the matched value to the pointer
+		// that user gave us. So here needs a memcpy to achive such
+		// thing.
+		auto value_ptr = bpftime_map_lookup_elem(
 			attr->map_fd, (const void *)(uintptr_t)attr->key);
+		memcpy((void *)(uintptr_t)attr->value, value_ptr,
+		       bpftime_map_value_size(attr->map_fd));
+		return 0;
 	}
 	case BPF_MAP_UPDATE_ELEM: {
 		std::cout << "Updating map" << std::endl;
-		return bpftime_map_update_elem(attr->map_fd,
-					   (const void *)(uintptr_t)attr->key,
-					   (const void *)(uintptr_t)attr->value,
-					   (uint64_t)attr->flags);
+		return bpftime_map_update_elem(
+			attr->map_fd, (const void *)(uintptr_t)attr->key,
+			(const void *)(uintptr_t)attr->value,
+			(uint64_t)attr->flags);
 	}
 	case BPF_MAP_DELETE_ELEM: {
 		std::cout << "Deleting map" << std::endl;
-		return bpftime_map_delete_elem(attr->map_fd,
-					   (const void *)(uintptr_t)attr->key);
+		return bpftime_map_delete_elem(
+			attr->map_fd, (const void *)(uintptr_t)attr->key);
 	}
 	case BPF_MAP_GET_NEXT_KEY: {
 		std::cout << "Getting next key" << std::endl;

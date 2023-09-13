@@ -309,6 +309,10 @@ class bpf_map_handler {
 	int bpf_map_get_next_key(const void *key, void *next_key) const;
 	void map_free(managed_shared_memory &memory);
 	int map_init(managed_shared_memory &memory);
+	uint32_t get_value_size() const
+	{
+		return value_size;
+	}
 
     private:
 	std::string get_container_name()
@@ -544,7 +548,7 @@ class bpftime_shm {
 			segment);
 		return fd;
 	}
-
+	uint32_t bpf_map_value_size(int fd) const;
 	const void *bpf_map_lookup_elem(int fd, const void *key) const;
 
 	long bpf_update_elem(int fd, const void *key, const void *value,

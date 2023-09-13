@@ -50,6 +50,7 @@ int bpftime_map_get_next_key(int fd, const void *key, void *next_key);
 int bpftime_map_get_info(int fd, bpftime::bpf_map_attr* out_attr, 
 const char** out_name, int* type);
 
+uint32_t bpftime_map_value_size(int fd);
 const void *bpftime_map_lookup_elem(int fd, const void *key);
 long bpftime_map_update_elem(int fd, const void *key, const void *value,
 			 uint64_t flags);

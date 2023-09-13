@@ -8,7 +8,7 @@ int main(int argc, char *argv[]) {
     while(1) {
         void *p = malloc(1024);
         printf("continue malloc...\n");
-        sleep(1);
+        usleep(100 * 1000);
         free(p);
     }
     return 0;
