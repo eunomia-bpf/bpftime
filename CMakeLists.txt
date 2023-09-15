@@ -63,6 +63,9 @@ endif()
 # install frida
 include(cmake/frida.cmake)
 
+# ebpf-verifier
+add_subdirectory(third_party/ebpf-verifier)
+
 # main library
 add_subdirectory(core)
 add_subdirectory(runtime)

@@ -5,7 +5,10 @@ CMakeFiles/*
 [Tt]esting/*
 ebpf_code.h
 vm-exten.btf
-
+check
+conformance_check
+run_yaml
+tests
 ### VisualStudioCode ###
 .vscode/settings.json
 .vscode/runtime.json

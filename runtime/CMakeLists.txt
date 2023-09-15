@@ -48,13 +48,13 @@ find_package(Boost REQUIRED)
 message(STATUS "Building for architecture: ${ARCH}")
 
 set(sources
-  src/bpftime.cpp
+  src/bpftime_prog.cpp
 
   src/maps.cpp
   src/ffi.cpp
   src/bpf_helper.cpp
   src/attach.cpp
-  src/handlers.cpp
+  src/bpftime_handler.cpp
 )
 
 # list(APPEND sources
