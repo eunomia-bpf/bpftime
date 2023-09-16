@@ -15,6 +15,7 @@
  * limitations under the License.
  */
 
+#include <stdint.h>
 #define _GNU_SOURCE
 #include <stdio.h>
 #include <stdlib.h>
@@ -141,7 +142,7 @@ translate(struct ebpf_vm* vm, struct jit_state* state, char** errmsg)
         
         struct ebpf_inst inst = ebpf_fetch_instruction(vm, i);
         state->pc_locs[i] = state->offset;
-	    LOG_DEBUG("%08" PRIu64 "x, [%zd] %d %d %d %d\n", *(uint64_t*)&inst, i, 
+	    LOG_DEBUG("%08" PRIu64 "x, [%zd] %d %d %d %d\n", *(uint64_t*)(uintptr_t)&inst, i, 
 	       inst.dst_reg, inst.src_reg, inst.off, inst.imm);
 
         int dst = map_register(inst.dst_reg);

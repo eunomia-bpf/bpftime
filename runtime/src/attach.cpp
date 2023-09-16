@@ -146,7 +146,10 @@ int bpf_attach_ctx::create_replace_with_handler(int id,
 // the bpf program will be called instead of the function execution.
 int bpf_attach_ctx::create_replace(void *function)
 {
-	return create_replace(function, current_id++);
+	// Split the increment of volatile current_id to make clang happy
+	int current_id = this->current_id;
+	this->current_id = this->current_id + 1;
+	return create_replace(function, current_id);
 }
 
 int bpf_attach_ctx::create_replace(void *function, int id)
@@ -158,7 +161,10 @@ int bpf_attach_ctx::create_replace(void *function, int id)
 
 int bpf_attach_ctx::create_filter(void *function)
 {
-	return create_filter(function, current_id++);
+	// Split the increment of volatile current_id to make clang happy
+	int current_id = this->current_id;
+	this->current_id = this->current_id + 1;
+	return create_filter(function, current_id);
 }
 
 int bpf_attach_ctx::create_filter(void *function, int id)
@@ -281,7 +287,7 @@ bpf_attach_ctx::~bpf_attach_ctx()
 }
 
 void *bpf_attach_ctx::module_find_export_by_name(const char *module_name,
-				 const char *symbol_name)
+						 const char *symbol_name)
 {
 	return (void *)(uintptr_t)gum_module_find_export_by_name(module_name,
 								 symbol_name);

@@ -1,5 +1,6 @@
 #include <fcntl.h>
 #include <iostream>
+#include <ostream>
 #include <unistd.h>
 #include <frida-gum.h>
 #include <cstdio>
@@ -53,7 +54,7 @@ void bpftime_agent_main(const gchar *data, gboolean *stay_resident)
 	config.enable_ffi_helper_group = true;
 	config.enable_shm_maps_helper_group = true;
 	if (ctx.check_exist_syscall_trace_program()) {
-		std::cout << "Setup userspace syscall tracer";
+		std::cout << "Setup userspace syscall tracer" << std::endl;
 		bpftime::setup_syscall_tracer();
 	}
 	res = ctx.init_attach_ctx_from_handlers(config);

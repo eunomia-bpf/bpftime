@@ -285,7 +285,7 @@ ebpf_exec(const struct ebpf_vm* vm, void* mem, size_t mem_len, uint64_t* bpf_ret
         const uint16_t cur_pc = pc;
         struct ebpf_inst inst = ebpf_fetch_instruction(vm, pc++);
 
-	    LOG_DEBUG("%08" PRIu64 "x, [%d] %d %d %d %d\n", *(uint64_t*)&inst, cur_pc,
+	    LOG_DEBUG("%08" PRIu64 "x, [%d] %d %d %d %d\n", *(uint64_t*)(uintptr_t)&inst, cur_pc,
 	       inst.dst_reg, inst.src_reg, inst.off, inst.imm);
 
         switch (inst.code) {
@@ -831,7 +831,7 @@ validate(const struct ebpf_vm* vm, const struct ebpf_inst* insts, uint32_t num_i
         struct ebpf_inst inst = insts[i];
         bool store = false;
 
-        LOG_DEBUG("validate: %08" PRIu64 "x, [%zd] %d %d %d %d\n", *(uint64_t*)&inst, i, 
+        LOG_DEBUG("validate: %08" PRIu64 "x, [%zd] %d %d %d %d\n", *(uint64_t*)(uintptr_t)&inst, i, 
 	       inst.dst_reg, inst.src_reg, inst.off, inst.imm);
         switch (inst.code) {
         case EBPF_OP_ADD_IMM:
@@ -1101,9 +1101,12 @@ ebpf_error(const char* fmt, ...)
     char* msg;
     va_list ap;
     va_start(ap, fmt);
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wformat-nonliteral"
     if (vasprintf(&msg, fmt, ap) < 0) {
         msg = NULL;
     }
+#pragma clang diagnostic pop
     va_end(ap);
     return msg;
 }

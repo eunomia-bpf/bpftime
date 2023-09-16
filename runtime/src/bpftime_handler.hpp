@@ -335,7 +335,7 @@ class bpf_map_handler {
 	// The underlying data structure of the map
 	general_map_impl_ptr map_impl_ptr;
 	uint32_t max_entries = 0;
-	uint64_t flags = 0;
+	[[maybe_unused]] uint64_t flags = 0;
 	uint32_t key_size = 0;
 	uint32_t value_size = 0;
 };
