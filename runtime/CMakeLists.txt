@@ -55,7 +55,7 @@ set(sources
   src/bpf_helper.cpp
   src/attach.cpp
   src/bpftime_handler.cpp
-  src/syscall_tracepoint_table.cpp
+  src/syscall_table.cpp
   src/text_segment_transformer.cpp
 )
 
@@ -77,11 +77,20 @@ add_library(
   ${PROJECT_NAME}
   ${sources}
 )
+
+add_custom_target(
+  syscall_id_table
+  COMMAND /bin/bash ${CMAKE_CURRENT_SOURCE_DIR}/generate_syscall_id_table.sh "${CMAKE_CURRENT_BINARY_DIR}/syscall_id_list.h"
+  BYPRODUCTS ${CMAKE_CURRENT_BINARY_DIR}/syscall_id_list.h
+  USES_TERMINAL
+)
+
 target_include_directories(${PROJECT_NAME}
   PUBLIC
   ${CMAKE_CURRENT_SOURCE_DIR}/../core/include
   ${CMAKE_CURRENT_SOURCE_DIR}/../runtime/include
   ${CMAKE_CURRENT_SOURCE_DIR}/../runtime
+  ${CMAKE_CURRENT_BINARY_DIR}
 )
 
 target_link_libraries(${PROJECT_NAME}
@@ -89,7 +98,7 @@ target_link_libraries(${PROJECT_NAME}
   core-bpf
   opcodes
 )
-add_dependencies(${PROJECT_NAME} core-bpf FridaGum)
+add_dependencies(${PROJECT_NAME} core-bpf FridaGum syscall_id_table)
 
 message(DEBUG "Found the following sources: ${sources}")
 
@@ -134,6 +143,7 @@ message(DEBUG "Successfully added all dependencies and linked against them.")
 add_subdirectory(object)
 add_subdirectory(agent)
 add_subdirectory(syscall-server)
+
 #
 # Unit testing setup
 #

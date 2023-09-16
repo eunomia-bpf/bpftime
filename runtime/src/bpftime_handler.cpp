@@ -1,6 +1,6 @@
 #include "bpftime.h"
 #include "bpftime_handler.hpp"
-#include "syscall_tracepoint_table.hpp"
+#include "syscall_table.hpp"
 #include <cstddef>
 #include <cstdint>
 #include <memory>
