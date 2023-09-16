@@ -1,5 +1,9 @@
 #include "syscall_server.hpp"
+#include "bpftime_handler.hpp"
+#include "bpftime_shm.hpp"
 #include <cstring>
+#include <iostream>
+#include <ostream>
 
 using namespace bpftime;
 
@@ -28,7 +32,10 @@ static int parse_uint_from_file(const char *file, const char *fmt)
 			  << std::endl;
 		return err;
 	}
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wformat-nonliteral"
 	err = fscanf(f, fmt, &ret);
+#pragma clang diagnostic pop
 	if (err != 1) {
 		err = err == EOF ? -EIO : -errno;
 		std::cerr << "failed to parse '" << file << "': " << err
@@ -278,7 +285,7 @@ long syscall_context::handle_sysbpf(int cmd, union bpf_attr *attr, size_t size)
 int syscall_context::handle_perfevent(perf_event_attr *attr, pid_t pid, int cpu,
 				      int group_fd, unsigned long flags)
 {
-	if (attr->type == determine_uprobe_perf_type()) {
+	if ((int)attr->type == determine_uprobe_perf_type()) {
 		// NO legacy bpf types
 		bool retprobe = attr->config & determine_uprobe_retprobe_bit();
 		size_t ref_ctr_off =
@@ -292,6 +299,15 @@ int syscall_context::handle_perfevent(perf_event_attr *attr, pid_t pid, int cpu,
 					       ref_ctr_off);
 		std::cout << "Created uprobe " << id << std::endl;
 		return id;
+	} else if ((int)attr->type ==
+		   (int)bpf_perf_event_handler::bpf_event_type::
+			   PERF_TYPE_TRACEPOINT) {
+		std::cout << "Detected tracepoint perf event creation"
+			  << std::endl;
+		int fd = bpftime_tracepoint_create(pid, (int32_t)attr->config);
+		std::cout << "Created tracepoint perf event with fd " << fd
+			  << std::endl;
+		return fd;
 	}
 	// if (attr->type == PERF_TYPE_TRACEPOINT) {
 	// 	auto id = next_fd.fetch_add(1);
@@ -307,6 +323,7 @@ int syscall_context::handle_perfevent(perf_event_attr *attr, pid_t pid, int cpu,
 void *syscall_context::handle_mmap64(void *addr, size_t length, int prot,
 				     int flags, int fd, off64_t offset)
 {
+	std::cout << "Calling mocked mmap64" << std::endl;
 	// if (!manager->is_allocated(fd)) {
 	// 	return orig_mmap64_fn(addr, length, prot, flags, fd, offset);
 	// }

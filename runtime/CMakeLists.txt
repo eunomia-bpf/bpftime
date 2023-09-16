@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.15)
 
 # C++ standard
-set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 # C standard
@@ -55,6 +55,8 @@ set(sources
   src/bpf_helper.cpp
   src/attach.cpp
   src/bpftime_handler.cpp
+  src/syscall_tracepoint_table.cpp
+  src/text_segment_transformer.cpp
 )
 
 # list(APPEND sources
@@ -85,6 +87,7 @@ target_include_directories(${PROJECT_NAME}
 target_link_libraries(${PROJECT_NAME}
   PUBLIC
   core-bpf
+  opcodes
 )
 add_dependencies(${PROJECT_NAME} core-bpf FridaGum)
 

@@ -1,5 +1,8 @@
 #include "bpftime.h"
 #include "bpftime_handler.hpp"
+#include "syscall_tracepoint_table.hpp"
+#include <cstddef>
+#include <cstdint>
 #include <memory>
 #include <filesystem>
 
@@ -91,6 +94,47 @@ resolve_function_addr(bpf_attach_ctx &ctx,
 	}
 	function = (void *)((char *)module_base_addr + event_handler.offset);
 	return function;
+}
+
+// Check whether there is a syscall trace program. Use the global
+// handler manager
+bool bpf_attach_ctx::check_exist_syscall_trace_program()
+{
+	const handler_manager *manager =
+		shm_holder.global_shared_memory.get_manager();
+	if (!manager) {
+		return false;
+	}
+	return this->check_exist_syscall_trace_program(manager);
+}
+// Check whether there is a syscall trace program
+bool bpf_attach_ctx::check_exist_syscall_trace_program(
+	const handler_manager *manager)
+{
+	for (size_t i = 0; i < manager->size(); i++) {
+		if (manager->is_allocated(i)) {
+			auto &handler = manager->get_handler(i);
+			if (std::holds_alternative<bpf_perf_event_handler>(
+				    handler)) {
+				auto &perf_event_handler =
+					std::get<bpf_perf_event_handler>(
+						handler);
+				if (perf_event_handler.type ==
+				    bpf_perf_event_handler::bpf_event_type::
+					    PERF_TYPE_TRACEPOINT) {
+					const auto &tp_table =
+						get_global_syscall_tracepoint_table();
+					if (tp_table.find(
+						    perf_event_handler
+							    .tracepoint_id) !=
+					    tp_table.end()) {
+						return true;
+					}
+				}
+			}
+		}
+	}
+	return false;
 }
 
 // create a attach context and progs from handlers
@@ -264,7 +308,15 @@ int bpftime_shm::add_uprobe(int pid, const char *name, uint64_t offset,
 		segment);
 	return fd;
 }
-
+int bpftime_shm::add_tracepoint(int pid, int32_t tracepoint_id)
+{
+	int fd = open_fake_fd();
+	manager->set_handler(fd,
+			     bpftime::bpf_perf_event_handler(pid, tracepoint_id,
+							     segment),
+			     segment);
+	return fd;
+}
 int bpftime_shm::attach_perf_to_bpf(int perf_fd, int bpf_fd)
 {
 	if (!is_perf_fd(perf_fd) || !is_prog_fd(bpf_fd)) {
@@ -337,6 +389,11 @@ int bpftime_uprobe_create(int pid, const char *name, uint64_t offset,
 {
 	return shm_holder.global_shared_memory.add_uprobe(
 		pid, name, offset, retprobe, ref_ctr_off);
+}
+
+int bpftime_tracepoint_create(int pid, int32_t tp_id)
+{
+	return shm_holder.global_shared_memory.add_tracepoint(pid, tp_id);
 }
 
 int bpftime_attach_enable(int fd)

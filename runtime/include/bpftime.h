@@ -269,6 +269,12 @@ class bpf_attach_ctx {
 	// must be called after init attach_ctx
 	void *module_get_base_addr(const char *module_name);
 
+	// Check whether there is a syscall trace program. Use the global
+	// handler manager
+	bool check_exist_syscall_trace_program();
+	// Check whether there is a syscall trace program
+	bool check_exist_syscall_trace_program(const handler_manager *manager);
+
     private:
 	// add uprobe listener
 	int add_listener(GumInvocationListener *listener, void *target_function,

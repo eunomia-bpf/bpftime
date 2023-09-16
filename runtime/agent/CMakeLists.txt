@@ -2,6 +2,7 @@ add_library(bpftime-agent SHARED
   agent.cpp
 )
 add_dependencies(bpftime-agent FridaGum)
+set_property(TARGET bpftime-agent PROPERTY CXX_STANDARD 20)
 target_include_directories(bpftime-agent 
     PRIVATE 
     ${FRIDA_GUM_INSTALL_DIR}

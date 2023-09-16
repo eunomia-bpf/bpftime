@@ -2,6 +2,7 @@
 #define _HANDLER_MANAGER_HPP
 #include <boost/interprocess/interprocess_fwd.hpp>
 #include <cstddef>
+#include <cstdint>
 #include <iostream>
 #include <variant>
 #include <boost/interprocess/containers/vector.hpp>
@@ -149,7 +150,9 @@ struct bpf_perf_event_handler {
 	int pid;
 	size_t ref_ctr_off;
 	boost_shm_string _module_name;
-
+	// Tracepoint id at /sys/kernel/tracing/events/syscalls/*/id, used to
+	// indicate which syscall to trace
+	int32_t tracepoint_id = -1;
 	// attach to replace or filter self define types
 	bpf_perf_event_handler(bpf_event_type type, uint64_t offset, int pid,
 			       const char *module_name,
@@ -172,6 +175,15 @@ struct bpf_perf_event_handler {
 			type = bpf_event_type::BPF_TYPE_UPROBE;
 		}
 		this->_module_name = module_name;
+	}
+
+	// create tracepoint
+	bpf_perf_event_handler(int pid, int32_t tracepoint_id,
+			       managed_shared_memory &mem)
+		: pid(pid),
+		  _module_name(char_allocator(mem.get_segment_manager())),
+		  tracepoint_id(tracepoint_id)
+	{
 	}
 };
 
@@ -561,7 +573,7 @@ class bpftime_shm {
 	// create an uprobe fd
 	int add_uprobe(int pid, const char *name, uint64_t offset,
 		       bool retprobe, size_t ref_ctr_off);
-
+	int add_tracepoint(int pid, int32_t tracepoint_id);
 	int attach_perf_to_bpf(int perf_fd, int bpf_fd);
 	int attach_enable(int fd) const;
 	// remove a fake fd from the manager.

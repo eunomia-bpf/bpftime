@@ -117,7 +117,12 @@ static int rewrite_inst(void *data, const char *fmt, va_list args)
 {
 	auto state = (DisassState *)data;
 	char *buf;
+	// Make compiler happy
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wformat-nonliteral"
 	vasprintf(&buf, fmt, args);
+#pragma clang diagnostic pop
+
 	std::string cmd_buf(buf);
 	free(buf);
 	if (cmd_buf.starts_with("syscall") || cmd_buf.starts_with("sysenter")) {
@@ -144,18 +149,18 @@ extern "C" int do_rewrite(void *data, const char *fmt, ...)
 	return r;
 }
 
-extern "C" int do_rewrite_styled(void *data, enum disassembler_style style,
-				 const char *fmt, ...)
-{
-	va_list ap;
-	int r;
+// extern "C" int do_rewrite_styled(void *data, enum disassembler_style style,
+// 				 const char *fmt, ...)
+// {
+// 	va_list ap;
+// 	int r;
 
-	va_start(ap, fmt);
-	r = rewrite_inst(data, fmt, ap);
-	va_end(ap);
+// 	va_start(ap, fmt);
+// 	r = rewrite_inst(data, fmt, ap);
+// 	va_end(ap);
 
-	return r;
-}
+// 	return r;
+// }
 
 static inline void rewrite_segment(uint8_t *code, size_t len, int perm)
 {
@@ -172,8 +177,10 @@ static inline void rewrite_segment(uint8_t *code, size_t len, int perm)
 	state.off = 0;
 	disassemble_info disasm_info;
 
-	init_disassemble_info(&disasm_info, &state, do_rewrite,
-			      do_rewrite_styled);
+	// init_disassemble_info(&disasm_info, &state, do_rewrite,
+	// 		      do_rewrite_styled);
+
+	init_disassemble_info(&disasm_info, &state, do_rewrite);
 
 	disasm_info.arch = bfd_arch_i386;
 	disasm_info.mach = bfd_mach_x86_64;

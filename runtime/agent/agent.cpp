@@ -1,4 +1,5 @@
 #include <fcntl.h>
+#include <iostream>
 #include <unistd.h>
 #include <frida-gum.h>
 #include <cstdio>
@@ -11,7 +12,7 @@
 #include <dlfcn.h>
 #include "bpftime.h"
 #include "bpftime_shm.hpp"
-
+#include "text_segment_transformer.hpp"
 using namespace bpftime;
 
 const shm_open_type bpftime::global_shm_open_type = shm_open_type::SHM_CLIENT;
@@ -51,6 +52,10 @@ void bpftime_agent_main(const gchar *data, gboolean *stay_resident)
 	agent_config config;
 	config.enable_ffi_helper_group = true;
 	config.enable_shm_maps_helper_group = true;
+	if (ctx.check_exist_syscall_trace_program()) {
+		std::cout << "Setup userspace syscall tracer";
+		bpftime::setup_syscall_tracer();
+	}
 	res = ctx.init_attach_ctx_from_handlers(config);
 	if (res != 0) {
 		g_print("Failed to init attach ctx\n");

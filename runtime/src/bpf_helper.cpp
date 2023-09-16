@@ -29,8 +29,12 @@ uint64_t bpftime_trace_printk(uint64_t fmt, uint64_t fmt_size, ...)
 {
 	const char *fmt_str = (const char *)fmt;
 	va_list args;
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wformat-nonliteral"
+#pragma clang diagnostic ignored "-Wvarargs"
 	va_start(args, fmt_str);
 	long ret = vprintf(fmt_str, args);
+#pragma clang diagnostic pop
 	va_end(args);
 	return 0;
 }
