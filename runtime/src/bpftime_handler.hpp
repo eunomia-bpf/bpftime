@@ -3,7 +3,9 @@
 #include <boost/interprocess/interprocess_fwd.hpp>
 #include <cstddef>
 #include <cstdint>
+#include <functional>
 #include <iostream>
+#include <sched.h>
 #include <variant>
 #include <boost/interprocess/containers/vector.hpp>
 #include <boost/interprocess/allocators/allocator.hpp>
@@ -14,6 +16,7 @@
 #include <boost/interprocess/sync/interprocess_sharable_mutex.hpp>
 #include <boost/interprocess/sync/sharable_lock.hpp>
 #include <boost/interprocess/sync/scoped_lock.hpp>
+#include <boost/interprocess/containers/set.hpp>
 
 namespace bpftime
 {
@@ -349,6 +352,7 @@ using boost::interprocess::vector;
 
 constexpr const char *DEFAULT_GLOBAL_SHM_NAME = "bpftime_maps_shm";
 constexpr const char *DEFAULT_GLOBAL_HANDLER_NAME = "bpftime_handler";
+constexpr const char *DEFAULT_SYSCALL_PID_SET_NAME = "bpftime_syscall_pid_set";
 
 inline const char *get_global_shm_name()
 {
@@ -468,6 +472,10 @@ class handler_manager {
 	handler_variant_vector handlers;
 };
 
+using syscall_pid_set_allocator = boost::interprocess::allocator<
+	int, boost::interprocess::managed_shared_memory::segment_manager>;
+using syscall_pid_set = boost::interprocess::set<int, std::less<int>,
+						 syscall_pid_set_allocator>;
 // global bpftime share memory
 class bpftime_shm {
 	// shared memory segment
@@ -476,7 +484,18 @@ class bpftime_shm {
 	// manage the bpf fds in the shared memory
 	bpftime::handler_manager *manager = nullptr;
 
+	// A set to record whether a process was setted up with syscall tracer
+
+	syscall_pid_set *syscall_installed_pids = nullptr;
+
     public:
+	// Check whether a certain pid was already equipped with syscall tracer
+	// Using a set stored in the shared memory
+	bool check_syscall_trace_setup(int pid);
+	// Set whether a certain pid was already equipped with syscall tracer
+	// Using a set stored in the shared memory
+	void set_syscall_trace_setup(int pid, bool whether);
+
 	const handler_manager::handler_variant &get_handler(int fd) const
 	{
 		return manager->get_handler(fd);
@@ -608,6 +627,10 @@ class bpftime_shm {
 				segment.find<bpftime::handler_manager>(
 					       bpftime::DEFAULT_GLOBAL_HANDLER_NAME)
 					.first;
+			syscall_installed_pids =
+				segment.find<syscall_pid_set>(
+					       DEFAULT_SYSCALL_PID_SET_NAME)
+					.first;
 		} else if (global_shm_open_type == shm_open_type::SHM_SERVER) {
 			boost::interprocess::shared_memory_object::remove(
 				bpftime::get_global_shm_name());
@@ -617,6 +640,12 @@ class bpftime_shm {
 				bpftime::get_global_shm_name(), 1 << 20);
 			manager = segment.construct<bpftime::handler_manager>(
 				bpftime::DEFAULT_GLOBAL_HANDLER_NAME)(segment);
+			syscall_installed_pids =
+				segment.construct<syscall_pid_set>(
+					bpftime::DEFAULT_SYSCALL_PID_SET_NAME)(
+					std::less<int>(),
+					syscall_pid_set_allocator(
+						segment.get_segment_manager()));
 		} else if (global_shm_open_type ==
 			   shm_open_type::SHM_NO_CREATE) {
 			// not create any shm

@@ -9,7 +9,7 @@
 #include <vector>
 #include <inttypes.h>
 #include <dlfcn.h>
-#include "bpftime.h"
+#include "bpftime.hpp"
 #include "bpftime_shm.hpp"
 #include "bpftime_handler.hpp"
 

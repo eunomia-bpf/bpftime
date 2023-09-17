@@ -1,10 +1,11 @@
-#include "bpftime.h"
+#include "bpftime.hpp"
 #include "bpftime_handler.hpp"
 #include "syscall_table.hpp"
 #include <cstddef>
 #include <cstdint>
 #include <memory>
 #include <filesystem>
+#include <sched.h>
 
 using namespace bpftime;
 
@@ -135,6 +136,19 @@ bool bpf_attach_ctx::check_exist_syscall_trace_program(
 		}
 	}
 	return false;
+}
+
+// Check whether a certain pid was already equipped with syscall tracer
+// Using a set stored in the shared memory
+bool bpf_attach_ctx::check_syscall_trace_setup(int pid)
+{
+	return shm_holder.global_shared_memory.check_syscall_trace_setup(pid);
+}
+// Set whether a certain pid was already equipped with syscall tracer
+// Using a set stored in the shared memory
+void bpf_attach_ctx::set_syscall_trace_setup(int pid, bool whether)
+{
+	shm_holder.global_shared_memory.set_syscall_trace_setup(pid, whether);
 }
 
 // create a attach context and progs from handlers
@@ -339,6 +353,23 @@ int bpftime_shm::attach_enable(int fd) const
 		manager->get_handler(fd));
 	handler.enable();
 	return 0;
+}
+
+// Check whether a certain pid was already equipped with syscall tracer
+// Using a set stored in the shared memory
+bool bpftime_shm::check_syscall_trace_setup(int pid)
+{
+	return syscall_installed_pids->contains(pid);
+}
+// Set whether a certain pid was already equipped with syscall tracer
+// Using a set stored in the shared memory
+void bpftime_shm::set_syscall_trace_setup(int pid, bool whether)
+{
+	if (whether) {
+		syscall_installed_pids->insert(pid);
+	} else {
+		syscall_installed_pids->erase(pid);
+	}
 }
 
 int bpftime_link_create(int prog_fd, int target_fd)

@@ -1,7 +1,7 @@
 // test find function address, register all functions from btf and call it from
 // ebpf
 #include "test_defs.h"
-#include "bpftime.h"
+#include "bpftime.hpp"
 #include "bpftime_object.h"
 #include "bpftime_shm.hpp"
 #include <cstdint>

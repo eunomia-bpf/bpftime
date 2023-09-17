@@ -1,4 +1,4 @@
-#include "bpftime.h"
+#include "bpftime.hpp"
 #include "test_defs.h"
 #include <stdio.h>
 #include <cstring>

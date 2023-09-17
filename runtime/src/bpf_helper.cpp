@@ -5,7 +5,7 @@
 #include <cstring>
 #include <unistd.h>
 #include <ctime>
-#include "bpftime.h"
+#include "bpftime.hpp"
 #include "bpftime_shm.hpp"
 #include "bpftime_internal.h"
 

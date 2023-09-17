@@ -9,7 +9,7 @@
 #include <fcntl.h>
 #include <cstring>
 #include <unistd.h>
-#include "bpftime.h"
+#include "bpftime.hpp"
 #include "bpftime_internal.h"
 #include <frida-gum.h>
 

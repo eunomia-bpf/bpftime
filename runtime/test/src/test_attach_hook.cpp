@@ -4,7 +4,7 @@
 #include <cstring>
 #include <inttypes.h>
 #include <assert.h>
-#include "bpftime.h"
+#include "bpftime.hpp"
 #include "bpftime_shm.hpp"
 
 using namespace bpftime;

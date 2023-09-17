@@ -1,6 +1,6 @@
 // test register raw function and call it from ffi
 #include "test_defs.h"
-#include "bpftime.h"
+#include "bpftime.hpp"
 #include "bpftime_object.h"
 #include <stdio.h>
 #include <stdarg.h>

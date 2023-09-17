@@ -7,7 +7,7 @@
 namespace bpftime
 {
 
-#include "bpftime.h"
+#include "bpftime.hpp"
 
 class bpftime_prog;
 class bpftime_object;

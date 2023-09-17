@@ -1,5 +1,5 @@
 // Test map operating helpers
-#include "bpftime.h"
+#include "bpftime.hpp"
 #include "map/map_common.h"
 #include <assert.h>
 #include <linux/bpf.h>

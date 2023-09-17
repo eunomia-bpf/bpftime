@@ -4,7 +4,7 @@
 #include <cstring>
 #include <assert.h>
 #include <inttypes.h>
-#include "bpftime.h"
+#include "bpftime.hpp"
 #include "bpftime_object.h"
 #include "test_defs.h"
 #include "bpftime_shm.hpp"

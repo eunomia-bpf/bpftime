@@ -1,3 +1,5 @@
+#include <cassert>
+#include <ctime>
 #include <fcntl.h>
 #include <iostream>
 #include <ostream>
@@ -11,7 +13,7 @@
 #include <vector>
 #include <inttypes.h>
 #include <dlfcn.h>
-#include "bpftime.h"
+#include "bpftime.hpp"
 #include "bpftime_shm.hpp"
 #include "text_segment_transformer.hpp"
 using namespace bpftime;
@@ -54,8 +56,34 @@ void bpftime_agent_main(const gchar *data, gboolean *stay_resident)
 	config.enable_ffi_helper_group = true;
 	config.enable_shm_maps_helper_group = true;
 	if (ctx.check_exist_syscall_trace_program()) {
-		std::cout << "Setup userspace syscall tracer" << std::endl;
-		bpftime::setup_syscall_tracer();
+		auto self_pid = getpid();
+		if (!ctx.check_syscall_trace_setup(self_pid)) {
+			std::cout << "Setup userspace syscall tracer"
+				  << std::endl;
+
+			bpftime::setup_syscall_tracer();
+			ctx.set_syscall_trace_setup(self_pid, true);
+
+			auto so_name = getenv("LD_PRELOAD");
+			assert(so_name &&
+			       "Currently, only client injected by LD_PRELOAD can use syscall traces");
+
+			// Here, we should load another shared object, which
+			// will be in
+			// a separate namespace
+
+			auto next_handle = dlmopen(LM_ID_NEWLM, so_name,
+						   RTLD_NOW | RTLD_LOCAL);
+			auto entry_func = (void (*)(void))dlsym(
+				next_handle, "__c_abi_bpftime_agent_main");
+			entry_func();
+			ctx.set_syscall_trace_setup(self_pid, false);
+			return;
+		} else {
+			std::cout
+				<< "Userspace syscall tracer already setup. Entering bpftime.."
+				<< std::endl;
+		}
 	}
 	res = ctx.init_attach_ctx_from_handlers(config);
 	if (res != 0) {
@@ -66,4 +94,10 @@ void bpftime_agent_main(const gchar *data, gboolean *stay_resident)
 
 	// don't free ctx here
 	return;
+}
+
+extern "C" void __c_abi_bpftime_agent_main()
+{
+	int stay_resident = 0;
+	bpftime_agent_main("", (gboolean *)&stay_resident);
 }

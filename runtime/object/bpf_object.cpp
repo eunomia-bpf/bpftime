@@ -7,7 +7,7 @@
 #include <string_view>
 #include <unordered_map>
 #include <vector>
-#include "bpftime.h"
+#include "bpftime.hpp"
 #include "bpftime_internal.h"
 
 using namespace std;

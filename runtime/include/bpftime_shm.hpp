@@ -10,7 +10,7 @@
 #include <boost/interprocess/managed_shared_memory.hpp>
 #include <boost/interprocess/smart_ptr/unique_ptr.hpp>
 #include <boost/interprocess/containers/string.hpp>
-#include "bpftime.h"
+#include "bpftime.hpp"
 
 namespace bpftime
 {

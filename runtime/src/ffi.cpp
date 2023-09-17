@@ -1,6 +1,6 @@
 #include <cinttypes>
 #include <cstring>
-#include "bpftime.h"
+#include "bpftime.hpp"
 #include "bpftime_internal.h"
 #include <type_traits>
 #include <string>
