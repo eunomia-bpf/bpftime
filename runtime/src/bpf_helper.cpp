@@ -34,6 +34,7 @@ uint64_t bpftime_trace_printk(uint64_t fmt, uint64_t fmt_size, ...)
 #pragma clang diagnostic ignored "-Wvarargs"
 	va_start(args, fmt_str);
 	long ret = vprintf(fmt_str, args);
+	fflush(stdout);
 #pragma clang diagnostic pop
 	va_end(args);
 	return 0;
@@ -64,6 +65,12 @@ uint64_t bpftime_get_current_pid_tgid(uint64_t, uint64_t, uint64_t, uint64_t,
 				      uint64_t)
 {
 	return ((uint64_t)getpid() << 32) | getpid();
+}
+
+uint64_t bpf_get_current_uid_gid(uint64_t, uint64_t, uint64_t, uint64_t,
+				 uint64_t)
+{
+	return (((uint64_t)getgid()) << 32) | getuid();
 }
 
 uint64_t bpftime_ktime_get_ns(uint64_t, uint64_t, uint64_t, uint64_t, uint64_t)
@@ -116,6 +123,18 @@ uint64_t bpftime_map_delete_elem_helper(uint64_t map, uint64_t key, uint64_t,
 	return (uint64_t)bpftime_map_delete_elem(map >> 32, (void *)key);
 }
 
+uint64_t bpf_probe_read_str(uint64_t buf, uint64_t bufsz, uint64_t ptr,
+			    uint64_t, uint64_t)
+{
+	strncpy((char *)(uintptr_t)buf, (const char *)(uintptr_t)ptr,
+		(size_t)bufsz);
+	return 0;
+}
+uint64_t bpf_get_stack(uint64_t, uint64_t buf, uint64_t sz, uint64_t, uint64_t)
+{
+	memset((void *)(uintptr_t)buf, 0, sz);
+	return sz;
+}
 } // extern "C"
 
 namespace bpftime
@@ -441,6 +460,10 @@ const bpftime_helper_group kernel_helper_group = { {
 		  .name = "bpf_get_current_pid_tgid",
 		  .fn = (void *)bpftime_get_current_pid_tgid,
 	  } },
+	{ BPF_FUNC_get_current_uid_gid,
+	  bpftime_helper_info{ .index = BPF_FUNC_get_current_uid_gid,
+			       .name = "bpf_get_current_uid_gid",
+			       .fn = (void *)bpf_get_current_uid_gid } },
 	{ BPF_FUNC_get_current_comm,
 	  bpftime_helper_info{
 		  .index = BPF_FUNC_get_current_comm,
@@ -477,6 +500,16 @@ const bpftime_helper_group kernel_helper_group = { {
 		  .name = "bpf_set_retval",
 		  .fn = (void *)bpftime_set_retval,
 	  } },
+	{ BPF_FUNC_probe_read_user_str,
+	  bpftime_helper_info{
+		  .index = BPF_FUNC_probe_read_user_str,
+		  .name = "bpf_probe_read_str",
+		  .fn = (void *)bpf_probe_read_str,
+	  } },
+	{ BPF_FUNC_get_stack,
+	  bpftime_helper_info{ .index = BPF_FUNC_get_stack,
+			       .name = "bpf_get_stack",
+			       .fn = (void *)bpf_get_stack } },
 } };
 
 // Utility function to get the FFI helper group

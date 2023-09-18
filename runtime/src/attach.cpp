@@ -1,4 +1,6 @@
+#include "bpftime_handler.hpp"
 #include <algorithm>
+#include <cassert>
 #include <cstddef>
 #include <cstdint>
 #include <iterator>
@@ -8,10 +10,15 @@
 #include <fstream>
 #include <fcntl.h>
 #include <cstring>
+#include <optional>
+#include <ostream>
 #include <unistd.h>
 #include "bpftime.hpp"
 #include "bpftime_internal.h"
 #include <frida-gum.h>
+#include <syscall_table.hpp>
+#include <variant>
+#include <vector>
 
 using namespace std;
 using namespace bpftime;
@@ -104,6 +111,83 @@ int bpf_attach_ctx::replace_func(void *new_function, void *target_function,
 	 */
 	gum_interceptor_end_transaction(interceptor);
 	return 0;
+}
+
+int bpf_attach_ctx::create_tracepoint(int tracepoint_id, int perf_fd,
+				      const handler_manager *manager)
+{
+	// Look up the corresponding tracepoint name like
+	const auto &tp_table = get_global_syscall_tracepoint_table();
+	const auto &[id_table, _] = get_global_syscall_id_table();
+	if (auto itr = tp_table.find(tracepoint_id); itr != tp_table.end()) {
+		cout << "Creating tracepoint for tp name " << itr->second
+		     << endl;
+		// I'm lazy. So I just lookup the corresponding bpf progs by
+		// brute force
+
+#warning Inefficient algorithm here. Remeber to rewrite it in the future
+		std::vector<const bpftime_prog *> progs;
+
+		for (std::size_t i = 0; i < manager->size(); i++) {
+			if (manager->is_allocated(i) &&
+			    std::holds_alternative<bpf_prog_handler>(
+				    manager->get_handler(i))) {
+				auto &prog = std::get<bpf_prog_handler>(
+					manager->get_handler(i));
+				for (auto v : prog.attach_fds) {
+					if (v == perf_fd) {
+						progs.push_back(
+							this->progs[i].get());
+						assert(progs.back());
+					}
+				}
+			}
+		}
+		if (progs.empty()) {
+			cerr << "bpf_link for perf event " << perf_fd
+			     << " not found" << endl;
+			return perf_fd;
+		}
+		const auto &name = itr->second;
+		if (name.starts_with("sys_enter_")) {
+			auto syscall_name = name.substr(10);
+			auto syscall_id = id_table.find(syscall_name);
+			if (syscall_id == id_table.end()) {
+				cerr << "Syscall id not found for name "
+				     << syscall_name << endl;
+				return -1;
+			}
+			for (auto p : progs)
+				sys_enter_progs[syscall_id->second].push_back(
+					p);
+			cerr << "Registered syscall enter hook for "
+			     << syscall_name << " with perf fd " << perf_fd
+			     << endl;
+			return perf_fd;
+		} else if (name.starts_with("sys_exit_")) {
+			auto syscall_name = name.substr(9);
+			auto syscall_id = id_table.find(syscall_name);
+			if (syscall_id == id_table.end()) {
+				cerr << "Syscall id not found for name "
+				     << syscall_name << endl;
+				return -1;
+			}
+			for (auto p : progs)
+				sys_enter_progs[syscall_id->second].push_back(
+					p);
+			cerr << "Registered syscall exit hook for "
+			     << syscall_name << " with perf fd " << perf_fd
+			     << endl;
+			return perf_fd;
+		} else {
+			cerr << "Unexpected syscall tracepoint name: " << name
+			     << endl;
+			return -1;
+		}
+	} else {
+		cerr << "Unsupported tracepoint id: " << tracepoint_id << endl;
+		return -1;
+	}
 }
 
 int bpf_attach_ctx::create_replace_with_handler(int id,

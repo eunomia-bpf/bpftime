@@ -3,9 +3,12 @@
 #include "syscall_table.hpp"
 #include <cstddef>
 #include <cstdint>
+#include <iostream>
 #include <memory>
 #include <filesystem>
+#include <ostream>
 #include <sched.h>
+#include <variant>
 
 using namespace bpftime;
 
@@ -151,11 +154,52 @@ void bpf_attach_ctx::set_syscall_trace_setup(int pid, bool whether)
 	shm_holder.global_shared_memory.set_syscall_trace_setup(pid, whether);
 }
 
+int64_t bpf_attach_ctx::run_syscall_hooker(int64_t sys_nr, int64_t arg1,
+					   int64_t arg2, int64_t arg3,
+					   int64_t arg4, int64_t arg5,
+					   int64_t arg6)
+{
+	if (!sys_enter_progs[sys_nr].empty()) {
+		trace_event_raw_sys_enter ctx;
+		memset(&ctx, 0, sizeof(ctx));
+		ctx.id = sys_nr;
+		ctx.args[0] = arg1;
+		ctx.args[1] = arg2;
+		ctx.args[2] = arg3;
+		ctx.args[3] = arg4;
+		ctx.args[4] = arg5;
+		ctx.args[5] = arg6;
+		for (const auto &item : sys_enter_progs[sys_nr]) {
+			// Avoid polluting other ebpf programs..
+			auto lctx = ctx;
+			uint64_t ret;
+			int err = item->bpftime_prog_exec(&lctx, sizeof(lctx),
+							  &ret);
+			assert(err >= 0);
+		}
+	}
+	int64_t ret = orig_syscall(sys_nr, arg1, arg2, arg3, arg4, arg5, arg6);
+	if (!sys_exit_progs[sys_nr].empty()) {
+		trace_event_raw_sys_exit ctx;
+		memset(&ctx, 0, sizeof(ctx));
+		ctx.id = sys_nr;
+		ctx.ret = ret;
+		for (const auto &item : sys_exit_progs[sys_nr]) {
+			// Avoid polluting other ebpf programs..
+			auto lctx = ctx;
+			uint64_t ret;
+			int err = item->bpftime_prog_exec(&lctx, sizeof(lctx),
+							  &ret);
+			assert(err >= 0);
+		}
+	}
+	return ret;
+}
 // create a attach context and progs from handlers
 int bpf_attach_ctx::init_attach_ctx_from_handlers(
 	const handler_manager *manager, agent_config &config)
 {
-	// the first iterations: load bpf progs and create attach events
+	// First, we create programs
 	for (std::size_t i = 0; i < manager->size(); i++) {
 		if (!manager->is_allocated(i)) {
 			continue;
@@ -177,22 +221,44 @@ int bpf_attach_ctx::init_attach_ctx_from_handlers(
 			}
 			std::cout << "load prog " << i << " "
 				  << prog_handler.name << std::endl;
-		}
+		} else if (std::holds_alternative<bpf_map_handler>(handler)) {
+			std::cout << "bpf_map_handler found at " << i
+				  << std::endl;
+		} else if (std::holds_alternative<bpf_perf_event_handler>(
+				   handler)) {
+			std::cout << "Will handle bpf_perf_events later.."
+				  << std::endl;
 
-		// create attach events
-		else if (std::holds_alternative<bpf_perf_event_handler>(
-				 handler)) {
+		} else {
+			printf("error: unsupported handler type\n");
+			return -1;
+		}
+	}
+	// Second, we create bpf perf event handlers
+	for (std::size_t i = 0; i < manager->size(); i++) {
+		if (!manager->is_allocated(i)) {
+			continue;
+		}
+		auto &handler = manager->get_handler(i);
+
+		if (std::holds_alternative<bpf_perf_event_handler>(handler)) {
 			int fd = -1;
 			auto &event_handler =
 				std::get<bpf_perf_event_handler>(handler);
-			void *function =
+			void *function = nullptr;
+			if (event_handler.type !=
+			    bpf_perf_event_handler::bpf_event_type::
+				    PERF_TYPE_TRACEPOINT) {
 				resolve_function_addr(*this, event_handler);
-			if (!function) {
-				std::cout << "error: function not found "
-					  << event_handler._module_name << " "
-					  << event_handler.offset << std::endl;
-				errno = ENOENT;
-				return -1;
+				if (!function) {
+					std::cout
+						<< "error: function not found "
+						<< event_handler._module_name
+						<< " " << event_handler.offset
+						<< std::endl;
+					errno = ENOENT;
+					return -1;
+				}
 			}
 			// attach base on events
 			switch (event_handler.type) {
@@ -216,25 +282,26 @@ int bpf_attach_ctx::init_attach_ctx_from_handlers(
 				fd = create_uprobe(function, i, true);
 				break;
 			}
+			case bpf_perf_event_handler::bpf_event_type::
+				PERF_TYPE_TRACEPOINT: {
+				fd = create_tracepoint(
+					event_handler.tracepoint_id, i,
+					manager);
+				assert(fd >= 0);
+				break;
+			}
 			default:
 				break;
 			}
 			std::cout << "create attach event " << i << " "
 				  << event_handler._module_name << " "
-				  << event_handler.offset << "for " << fd
+				  << event_handler.offset << " for " << fd
 				  << std::endl;
 			if (fd < 0) {
 				return fd;
 			}
-		} else if (std::holds_alternative<bpf_map_handler>(handler)) {
-			std::cout << "bpf_map_handler found at " << i
-				  << std::endl;
-		} else {
-			printf("error: unsupported handler type\n");
-			return -1;
 		}
 	}
-
 	// attach the progs to the fds
 	return attach_progs_in_manager(manager);
 }

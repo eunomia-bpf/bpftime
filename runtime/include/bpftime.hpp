@@ -12,6 +12,26 @@
 #include <ebpf-core.h>
 
 extern "C" {
+
+struct trace_entry {
+	short unsigned int type;
+	unsigned char flags;
+	unsigned char preempt_count;
+	int pid;
+};
+
+struct trace_event_raw_sys_enter {
+	struct trace_entry ent;
+	long int id;
+	long unsigned int args[6];
+	char __data[0];
+};
+struct trace_event_raw_sys_exit {
+	struct trace_entry ent;
+	long int id;
+	long int ret;
+	char __data[0];
+};
 struct _FridaUprobeListener;
 typedef struct _GumInterceptor GumInterceptor;
 typedef struct _GumInvocationListener GumInvocationListener;
@@ -242,7 +262,10 @@ class bpf_attach_ctx {
 	int create_replace(void *function);
 	// create a replace function with an id
 	int create_replace(void *function, int id);
-
+	// Create a syscall tracepoint, recording its corresponding program into
+	// syscall_entry_progs and syscall_exit_progs
+	int create_tracepoint(int tracepoint_id, int perf_fd,
+			      const handler_manager *manager);
 	int destory_attach(int id);
 
 	// attach prog to a given attach id
@@ -287,6 +310,14 @@ class bpf_attach_ctx {
 	// Using a set stored in the shared memory
 	void set_syscall_trace_setup(int pid, bool whether);
 
+	int64_t run_syscall_hooker(int64_t sys_nr, int64_t arg1, int64_t arg2,
+				   int64_t arg3, int64_t arg4, int64_t arg5,
+				   int64_t arg6);
+	void set_orig_syscall_func(syscall_hooker_func_t f)
+	{
+		orig_syscall = f;
+	}
+
     private:
 	// add uprobe listener
 	int add_listener(GumInvocationListener *listener, void *target_function,
@@ -302,6 +333,10 @@ class bpf_attach_ctx {
 
 	// save the progs for memory management
 	std::map<int, std::unique_ptr<bpftime_prog> > progs;
+
+	std::vector<const bpftime_prog *> sys_enter_progs[512];
+	std::vector<const bpftime_prog *> sys_exit_progs[512];
+	syscall_hooker_func_t orig_syscall = nullptr;
 };
 // hook entry is store in frida context or other context.
 // You can get the hook entry from context. for example:

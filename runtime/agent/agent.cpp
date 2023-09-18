@@ -66,18 +66,19 @@ void bpftime_agent_main(const gchar *data, gboolean *stay_resident)
 }
 syscall_hooker_func_t orig_hooker;
 
-int64_t test_hooker(int64_t sys_nr, int64_t arg1, int64_t arg2, int64_t arg3,
-		    int64_t arg4, int64_t arg5, int64_t arg6)
+int64_t syscall_callback(int64_t sys_nr, int64_t arg1, int64_t arg2,
+			 int64_t arg3, int64_t arg4, int64_t arg5, int64_t arg6)
 {
-	std::cout << "SYS " << sys_nr << std::endl;
-	return orig_hooker(sys_nr, arg1, arg2, arg3, arg4, arg5, arg6);
+	return ctx.run_syscall_hooker(sys_nr, arg1, arg2, arg3, arg4, arg5,
+				      arg6);
 }
 
 extern "C" void
 __c_abi_setup_syscall_trace_callback(syscall_hooker_func_t *hooker)
 {
 	orig_hooker = *hooker;
-	*hooker = &test_hooker;
+	*hooker = &syscall_callback;
+	ctx.set_orig_syscall_func(orig_hooker);
 	gboolean val;
 	bpftime_agent_main("", &val);
 }

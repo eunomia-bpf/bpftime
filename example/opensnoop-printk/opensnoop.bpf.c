@@ -86,7 +86,7 @@ static __always_inline int trace_exit(struct trace_event_raw_sys_exit *ctx)
 	event.callers[0] = stack[1];
 	event.callers[1] = stack[2];
 
-	bpf_printk("open pid=%d, fname=%s, comm=%s", event.pid, event.fname,
+	bpf_printk("open pid=%d, fname=%s, comm=%s\n", event.pid, event.fname,
 		   event.comm);
 
 cleanup:

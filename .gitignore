@@ -11,6 +11,7 @@ run_yaml
 tests
 gdb.py
 test.txt
+test.gdb
 ### VisualStudioCode ###
 .vscode/settings.json
 .vscode/runtime.json

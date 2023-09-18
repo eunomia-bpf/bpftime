@@ -17,6 +17,8 @@ using syscall_id_pair =
 syscall_tracepoint_table create_syscall_tracepoint_table();
 // Get the global singleton syscall tracepoint table
 const syscall_tracepoint_table &get_global_syscall_tracepoint_table();
+// Get the name mapping of syscall name <-> syscall id
+const syscall_id_pair &get_global_syscall_id_table();
 } // namespace bpftime
 
 #endif
