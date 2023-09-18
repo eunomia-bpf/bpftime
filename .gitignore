@@ -9,6 +9,8 @@ check
 conformance_check
 run_yaml
 tests
+gdb.py
+test.txt
 ### VisualStudioCode ###
 .vscode/settings.json
 .vscode/runtime.json

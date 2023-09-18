@@ -56,7 +56,6 @@ set(sources
   src/attach.cpp
   src/bpftime_handler.cpp
   src/syscall_table.cpp
-  src/text_segment_transformer.cpp
 )
 
 # list(APPEND sources
@@ -96,7 +95,6 @@ target_include_directories(${PROJECT_NAME}
 target_link_libraries(${PROJECT_NAME}
   PUBLIC
   core-bpf
-  opcodes
 )
 add_dependencies(${PROJECT_NAME} core-bpf FridaGum syscall_id_table)
 
@@ -143,6 +141,7 @@ message(DEBUG "Successfully added all dependencies and linked against them.")
 add_subdirectory(object)
 add_subdirectory(agent)
 add_subdirectory(syscall-server)
+add_subdirectory(agent-transformer)
 
 #
 # Unit testing setup

@@ -19,6 +19,11 @@ typedef struct _GumInvocationListener GumInvocationListener;
 
 namespace bpftime
 {
+using syscall_hooker_func_t = int64_t (*)(int64_t sys_nr, int64_t arg1,
+					  int64_t arg2, int64_t arg3,
+					  int64_t arg4, int64_t arg5,
+					  int64_t arg6);
+
 struct bpftime_helper_info;
 
 // executable program for bpf function

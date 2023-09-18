@@ -15,7 +15,6 @@
 #include <dlfcn.h>
 #include "bpftime.hpp"
 #include "bpftime_shm.hpp"
-#include "text_segment_transformer.hpp"
 using namespace bpftime;
 
 const shm_open_type bpftime::global_shm_open_type = shm_open_type::SHM_CLIENT;
@@ -55,36 +54,6 @@ void bpftime_agent_main(const gchar *data, gboolean *stay_resident)
 	agent_config config;
 	config.enable_ffi_helper_group = true;
 	config.enable_shm_maps_helper_group = true;
-	if (ctx.check_exist_syscall_trace_program()) {
-		auto self_pid = getpid();
-		if (!ctx.check_syscall_trace_setup(self_pid)) {
-			std::cout << "Setup userspace syscall tracer"
-				  << std::endl;
-
-			bpftime::setup_syscall_tracer();
-			ctx.set_syscall_trace_setup(self_pid, true);
-
-			auto so_name = getenv("LD_PRELOAD");
-			assert(so_name &&
-			       "Currently, only client injected by LD_PRELOAD can use syscall traces");
-
-			// Here, we should load another shared object, which
-			// will be in
-			// a separate namespace
-
-			auto next_handle = dlmopen(LM_ID_NEWLM, so_name,
-						   RTLD_NOW | RTLD_LOCAL);
-			auto entry_func = (void (*)(void))dlsym(
-				next_handle, "__c_abi_bpftime_agent_main");
-			entry_func();
-			ctx.set_syscall_trace_setup(self_pid, false);
-			return;
-		} else {
-			std::cout
-				<< "Userspace syscall tracer already setup. Entering bpftime.."
-				<< std::endl;
-		}
-	}
 	res = ctx.init_attach_ctx_from_handlers(config);
 	if (res != 0) {
 		g_print("Failed to init attach ctx\n");
@@ -95,9 +64,20 @@ void bpftime_agent_main(const gchar *data, gboolean *stay_resident)
 	// don't free ctx here
 	return;
 }
+syscall_hooker_func_t orig_hooker;
 
-extern "C" void __c_abi_bpftime_agent_main()
+int64_t test_hooker(int64_t sys_nr, int64_t arg1, int64_t arg2, int64_t arg3,
+		    int64_t arg4, int64_t arg5, int64_t arg6)
 {
-	int stay_resident = 0;
-	bpftime_agent_main("", (gboolean *)&stay_resident);
+	std::cout << "SYS " << sys_nr << std::endl;
+	return orig_hooker(sys_nr, arg1, arg2, arg3, arg4, arg5, arg6);
+}
+
+extern "C" void
+__c_abi_setup_syscall_trace_callback(syscall_hooker_func_t *hooker)
+{
+	orig_hooker = *hooker;
+	*hooker = &test_hooker;
+	gboolean val;
+	bpftime_agent_main("", &val);
 }

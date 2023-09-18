@@ -183,7 +183,7 @@ struct bpf_perf_event_handler {
 	// create tracepoint
 	bpf_perf_event_handler(int pid, int32_t tracepoint_id,
 			       managed_shared_memory &mem)
-		: pid(pid),
+		: type(bpf_event_type::PERF_TYPE_TRACEPOINT), pid(pid),
 		  _module_name(char_allocator(mem.get_segment_manager())),
 		  tracepoint_id(tracepoint_id)
 	{
@@ -474,8 +474,8 @@ class handler_manager {
 
 using syscall_pid_set_allocator = boost::interprocess::allocator<
 	int, boost::interprocess::managed_shared_memory::segment_manager>;
-using syscall_pid_set = boost::interprocess::set<int, std::less<int>,
-						 syscall_pid_set_allocator>;
+using syscall_pid_set =
+	boost::interprocess::set<int, std::less<int>, syscall_pid_set_allocator>;
 // global bpftime share memory
 class bpftime_shm {
 	// shared memory segment

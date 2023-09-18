@@ -10,6 +10,7 @@
 #include <dlfcn.h>
 #include <fcntl.h>
 #include <fstream>
+#include <ios>
 #include <iostream>
 #include <iterator>
 #include <ostream>
@@ -280,6 +281,8 @@ void setup_syscall_tracer()
 			  << errno << std::endl;
 		exit(1);
 	}
+
+	std::cout << "Page zero setted up.." << std::endl;
 	// Scan for /proc/self/maps
 
 	std::vector<MapEntry> entries;
@@ -315,6 +318,9 @@ void setup_syscall_tracer()
 				// Skip pages that we mapped
 				continue;
 			}
+			std::cout << "Rewriting segment from " << std::hex
+				  << map.begin << " to " << std::hex << map.end
+				  << std::endl;
 			rewrite_segment((uint8_t *)(uintptr_t)(map.begin),
 					map.end - map.begin, map.get_perm());
 		}

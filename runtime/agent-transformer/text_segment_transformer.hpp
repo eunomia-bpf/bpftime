@@ -2,7 +2,7 @@
 #define _TEST_SEGMENT_TRANSFORMER_H
 // C++ standard library could not be found by clangd on my machine.. Will fix in
 // a later time
-#include <inttypes.h>
+#include <cinttypes>
 using syscall_hooker_func_t = int64_t (*)(int64_t sys_nr, int64_t arg1,
 					  int64_t arg2, int64_t arg3,
 					  int64_t arg4, int64_t arg5,
