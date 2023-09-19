@@ -150,19 +150,21 @@ extern "C" int do_rewrite(void *data, const char *fmt, ...)
 	return r;
 }
 
-// extern "C" int do_rewrite_styled(void *data, enum disassembler_style style,
-// 				 const char *fmt, ...)
-// {
-// 	va_list ap;
-// 	int r;
+#ifdef USE_NEW_BINUTILS
 
-// 	va_start(ap, fmt);
-// 	r = rewrite_inst(data, fmt, ap);
-// 	va_end(ap);
+extern "C" int do_rewrite_styled(void *data, enum disassembler_style style,
+				 const char *fmt, ...)
+{
+	va_list ap;
+	int r;
 
-// 	return r;
-// }
+	va_start(ap, fmt);
+	r = rewrite_inst(data, fmt, ap);
+	va_end(ap);
 
+	return r;
+}
+#endif
 static inline void rewrite_segment(uint8_t *code, size_t len, int perm)
 {
 	// Set the pages to be writable
@@ -177,12 +179,12 @@ static inline void rewrite_segment(uint8_t *code, size_t len, int perm)
 	state.code = nullptr;
 	state.off = 0;
 	disassemble_info disasm_info;
-
-	// init_disassemble_info(&disasm_info, &state, do_rewrite,
-	// 		      do_rewrite_styled);
-
+#ifdef USE_NEW_BINUTILS
+	init_disassemble_info(&disasm_info, &state, do_rewrite,
+			      do_rewrite_styled);
+#else
 	init_disassemble_info(&disasm_info, &state, do_rewrite);
-
+#endif
 	disasm_info.arch = bfd_arch_i386;
 	disasm_info.mach = bfd_mach_x86_64;
 	disasm_info.buffer = (bfd_byte *)code;

@@ -1,3 +1,5 @@
+option(USE_NEW_BINUTILS "Use the binutils version that requires four arguments in init_disassemble_info" NO)
+
 add_library(bpftime-agent-transformer SHARED
     agent-transformer.cpp
     text_segment_transformer.cpp
@@ -12,3 +14,7 @@ target_include_directories(bpftime-agent-transformer
     PRIVATE
     ${FRIDA_GUM_INSTALL_DIR}
 )
+
+if(${USE_NEW_BINUTILS})
+    target_compile_definitions(bpftime-agent-transformer PRIVATE USE_NEW_BINUTILS)
+endif()
