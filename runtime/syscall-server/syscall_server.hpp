@@ -20,7 +20,7 @@
 #include <sys/epoll.h>
 #include <linux/bpf.h>
 #include "bpftime_shm.hpp"
-
+#include <spdlog/spdlog.h>
 class syscall_context {
 	using syscall_fn = long (*)(long, ...);
 	using close_fn = int (*)(int);
@@ -54,7 +54,7 @@ class syscall_context {
 	syscall_context()
 	{
 		init_original_functions();
-		printf("manager constructed\n");
+		spdlog::info("manager constructed");
 	}
 	syscall_fn orig_syscall_fn = nullptr;
 

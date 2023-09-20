@@ -5,15 +5,18 @@ project(
 )
 
 add_library(bpftime-syscall-server SHARED
-syscall_server.cpp)
+    syscall_server.cpp)
 target_link_libraries(bpftime-syscall-server PUBLIC
-runtime
--lpthread
--lm 
--ldl)
-target_include_directories(bpftime-syscall-server  
-    PUBLIC 
-    "../../core" 
-    "../../third_party/libbpf/include" 
+    runtime
+    -lpthread
+    -lm
+    -ldl
+    spdlog::spdlog)
+add_dependencies(bpftime-syscall-server spdlog::spdlog)
+target_include_directories(bpftime-syscall-server
+    PUBLIC
+    "../../core"
+    "../../third_party/libbpf/include"
     "../../third_party/libbpf/include/uapi"
+    ${SPDLOG_INCLUDE}
 )

@@ -91,13 +91,15 @@ target_include_directories(${PROJECT_NAME}
   ${CMAKE_CURRENT_SOURCE_DIR}/../runtime
   ${CMAKE_CURRENT_BINARY_DIR}
   ${CMAKE_CURRENT_SOURCE_DIR}/../third_party
+  ${SPDLOG_INCLUDE}
 )
 
 target_link_libraries(${PROJECT_NAME}
   PUBLIC
   core-bpf
+  spdlog::spdlog
 )
-add_dependencies(${PROJECT_NAME} core-bpf FridaGum syscall_id_table)
+add_dependencies(${PROJECT_NAME} core-bpf FridaGum syscall_id_table spdlog::spdlog)
 
 message(DEBUG "Found the following sources: ${sources}")
 

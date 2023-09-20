@@ -597,8 +597,16 @@ bpf_jit_context::generateModule(const LLJIT &jit,
 					  << " part1=" << (uint64_t)inst.imm
 					  << " part2="
 					  << ((uint64_t)nextInst.imm) << "\n");
-			builder.CreateStore(builder.getInt64(val),
-					    regs[inst.dst_reg]);
+			if (inst.src_reg == 0) {
+				builder.CreateStore(builder.getInt64(val),
+						    regs[inst.dst_reg]);
+			} else if (inst.src_reg == 1) {
+			} else if (inst.src_reg == 2) {
+			} else if (inst.src_reg == 3) {
+			} else if (inst.src_reg == 4) {
+			} else if (inst.src_reg == 5) {
+			} else if (inst.src_reg == 6) {
+			}
 			break;
 		}
 			// JMP

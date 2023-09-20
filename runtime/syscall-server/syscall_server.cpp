@@ -4,7 +4,7 @@
 #include <cstring>
 #include <iostream>
 #include <ostream>
-
+#include <spdlog/spdlog.h>
 using namespace bpftime;
 
 const shm_open_type bpftime::global_shm_open_type = shm_open_type::SHM_SERVER;
@@ -28,8 +28,7 @@ static int parse_uint_from_file(const char *file, const char *fmt)
 	f = fopen(file, "re");
 	if (!f) {
 		err = -errno;
-		std::cerr << "failed to open '" << file << "': " << err
-			  << std::endl;
+		spdlog::error("Failed to open {}: {}", file, err);
 		return err;
 	}
 #pragma clang diagnostic push
@@ -38,8 +37,7 @@ static int parse_uint_from_file(const char *file, const char *fmt)
 #pragma clang diagnostic pop
 	if (err != 1) {
 		err = err == EOF ? -EIO : -errno;
-		std::cerr << "failed to parse '" << file << "': " << err
-			  << std::endl;
+		spdlog::error("Failed to parse {}: {}", file, err);
 		fclose(f);
 		return err;
 	}
@@ -65,39 +63,38 @@ static int determine_uprobe_retprobe_bit(void)
 extern "C" int epoll_wait(int epfd, epoll_event *evt, int maxevents,
 			  int timeout)
 {
-	std::cout << "epoll_wait " << epfd << std::endl;
+	spdlog::info("epoll_wait {}", epfd);
 	return context.handle_epoll_wait(epfd, evt, maxevents, timeout);
 }
 
 extern "C" int epoll_ctl(int epfd, int op, int fd, epoll_event *evt)
 {
-	std::cout << "epoll_ctl " << epfd << " " << op << " " << fd << " "
-		  << evt << std::endl;
+	spdlog::info("epoll_ctl {} {} {} {}", epfd, op, fd, (uintptr_t)evt);
 	return context.handle_epoll_ctl(epfd, op, fd, evt);
 }
 
 extern "C" int epoll_create1(int flags)
 {
-	std::cout << "epoll_create1 " << flags << std::endl;
+	spdlog::info("epoll_create1 {}", flags);
 	return context.handle_epoll_create1(flags);
 }
 
 extern "C" int ioctl(int fd, unsigned long req, int data)
 {
-	std::cout << "ioctl " << fd << " " << req << " " << data << std::endl;
+	spdlog::info("ioctl {} {} {}", fd, req, data);
 	return context.handle_ioctl(fd, req, data);
 }
 
 extern "C" void *mmap64(void *addr, size_t length, int prot, int flags, int fd,
 			off64_t offset)
 {
-	std::cout << "Mmap64 " << addr << std::endl;
+	spdlog::info("mmap64 {:x}", (uintptr_t)addr);
 	return context.handle_mmap64(addr, length, prot, flags, fd, offset);
 }
 
 extern "C" int close(int fd)
 {
-	std::cout << "Closing " << fd << std::endl;
+	spdlog::info("Closing {}", fd);
 	return context.handle_close(fd);
 }
 
@@ -115,24 +112,21 @@ extern "C" long syscall(long sysno, ...)
 	long arg6 = va_arg(args, long);
 	va_end(args);
 	if (sysno == __NR_bpf) {
-		std::cout << "SYS_BPF"
-			  << " " << arg1 << " " << arg2 << " " << arg3 << " "
-			  << arg4 << " " << arg5 << " " << arg6 << std::endl;
+		spdlog::info("SYS_BPF {} {} {} {} {} {}", arg1, arg2, arg3,
+			      arg4, arg5, arg6);
 		int cmd = (int)arg1;
 		auto attr = (union bpf_attr *)(uintptr_t)arg2;
 		auto size = (size_t)arg3;
 		return context.handle_sysbpf(cmd, attr, size);
 	} else if (sysno == __NR_perf_event_open) {
-		std::cout << "SYS_PERF_EVENT_OPEN"
-			  << " " << arg1 << " " << arg2 << " " << arg3 << " "
-			  << arg4 << " " << arg5 << " " << arg6 << std::endl;
+		spdlog::info("SYS_PERF_EVENT_OPEN {} {} {} {} {} {}", arg1,
+			      arg2, arg3, arg4, arg5, arg6);
 		return context.handle_perfevent(
 			(perf_event_attr *)(uintptr_t)arg1, (pid_t)arg2,
 			(int)arg3, (int)arg4, (unsigned long)arg5);
 	} else if (sysno == __NR_ioctl) {
-		std::cout << "SYS_IOCTL"
-			  << " " << arg1 << " " << arg2 << " " << arg3 << " "
-			  << arg4 << " " << arg5 << " " << arg6 << std::endl;
+		spdlog::info("SYS_IOCTL {} {} {} {} {} {}", arg1, arg2, arg3,
+			      arg4, arg5, arg6);
 	}
 	return context.orig_syscall_fn(sysno, arg1, arg2, arg3, arg4, arg5,
 				       arg6);
@@ -150,7 +144,7 @@ long syscall_context::handle_sysbpf(int cmd, union bpf_attr *attr, size_t size)
 	char *errmsg;
 	switch (cmd) {
 	case BPF_MAP_CREATE: {
-		std::cout << "Creating map" << std::endl;
+		spdlog::info("Creating map");
 		int id = bpftime_maps_create(
 			attr->map_name, bpftime::bpf_map_attr{
 						(int)attr->map_type,
@@ -165,11 +159,11 @@ long syscall_context::handle_sysbpf(int cmd, union bpf_attr *attr, size_t size)
 						attr->btf_value_type_id,
 						attr->map_extra,
 					});
-		std::cout << "Created map " << id << std::endl;
+		spdlog::info("Created map {}", id);
 		return id;
 	}
 	case BPF_MAP_LOOKUP_ELEM: {
-		std::cout << "Looking up map" << std::endl;
+		spdlog::info("Looking up map {}");
 		// Note that bpftime_map_lookup_elem is adapted as a bpf helper,
 		// meaning that it will *return* the address of the matched
 		// value. But here the syscall has a different interface. Here
@@ -183,19 +177,19 @@ long syscall_context::handle_sysbpf(int cmd, union bpf_attr *attr, size_t size)
 		return 0;
 	}
 	case BPF_MAP_UPDATE_ELEM: {
-		std::cout << "Updating map" << std::endl;
+		spdlog::info("Updating map");
 		return bpftime_map_update_elem(
 			attr->map_fd, (const void *)(uintptr_t)attr->key,
 			(const void *)(uintptr_t)attr->value,
 			(uint64_t)attr->flags);
 	}
 	case BPF_MAP_DELETE_ELEM: {
-		std::cout << "Deleting map" << std::endl;
+		spdlog::info("Deleting map");
 		return bpftime_map_delete_elem(
 			attr->map_fd, (const void *)(uintptr_t)attr->key);
 	}
 	case BPF_MAP_GET_NEXT_KEY: {
-		std::cout << "Getting next key" << std::endl;
+		spdlog::info("Getting next key");
 		return (long)(uintptr_t)bpftime_map_get_next_key(
 			attr->map_fd, (const void *)(uintptr_t)attr->key,
 			(void *)(uintptr_t)attr->next_key);
@@ -203,26 +197,24 @@ long syscall_context::handle_sysbpf(int cmd, union bpf_attr *attr, size_t size)
 	case BPF_PROG_LOAD:
 		// Load a program?
 		{
-			std::cout << "Loading program `" << attr->prog_name
-				  << "` license `"
-				  << (const char *)(uintptr_t)attr->license
-				  << "`" << std::endl;
+			spdlog::info("Loadig program `{}` license `{}`",
+				      attr->prog_name,
+				      (const char *)(uintptr_t)attr->license);
 			// EbpfProgWrapper prog;
 			int id = bpftime_progs_create(
 				(ebpf_inst *)(uintptr_t)attr->insns,
 				(size_t)attr->insn_cnt, attr->prog_name,
 				attr->prog_type);
-			std::cout << "Loaded program `" << attr->prog_name
-				  << "` id =" << id << std::endl;
+			spdlog::info("Loaded program `{}` id={}",
+				      attr->prog_name, id);
 			return id;
 		}
 	case BPF_LINK_CREATE: {
 		auto prog_fd = attr->link_create.prog_fd;
 		auto target_fd = attr->link_create.target_fd;
-		std::cout << "Creating link " << prog_fd << " -> " << target_fd
-			  << std::endl;
+		spdlog::info("Creating link {} -> {}", prog_fd, target_fd);
 		int id = bpftime_link_create(prog_fd, target_fd);
-		std::cout << "Created link " << id << std::endl;
+		spdlog::info("Created link {}", id);
 		return id;
 	}
 	case BPF_MAP_FREEZE: {
@@ -246,7 +238,7 @@ long syscall_context::handle_sysbpf(int cmd, union bpf_attr *attr, size_t size)
 		return 0;
 	}
 	case BPF_OBJ_GET_INFO_BY_FD: {
-		std::cout << "Getting info by fd" << std::endl;
+		spdlog::info("Getting info by fd");
 		bpftime::bpf_map_attr map_attr;
 		const char *map_name;
 		int map_type;
@@ -292,21 +284,20 @@ int syscall_context::handle_perfevent(perf_event_attr *attr, pid_t pid, int cpu,
 			attr->config >> PERF_UPROBE_REF_CTR_OFFSET_SHIFT;
 		const char *name = (const char *)(uintptr_t)attr->config1;
 		uint64_t offset = attr->config2;
-		std::cout << "Creating uprobe " << name << " offset " << offset
-			  << " retprobe " << retprobe << " ref_ctr_off "
-			  << ref_ctr_off << std::endl;
+		spdlog::info(
+			"Creating uprobe name {} offset {} retprove {} ref_ctr_off {}",
+			name, offset, retprobe, ref_ctr_off);
 		int id = bpftime_uprobe_create(pid, name, offset, retprobe,
 					       ref_ctr_off);
-		std::cout << "Created uprobe " << id << std::endl;
+		// std::cout << "Created uprobe " << id << std::endl;
+		spdlog::info("Created uprobe {}", id);
 		return id;
 	} else if ((int)attr->type ==
 		   (int)bpf_perf_event_handler::bpf_event_type::
 			   PERF_TYPE_TRACEPOINT) {
-		std::cout << "Detected tracepoint perf event creation"
-			  << std::endl;
+		spdlog::info("Detected tracepoint perf event creation");
 		int fd = bpftime_tracepoint_create(pid, (int32_t)attr->config);
-		std::cout << "Created tracepoint perf event with fd " << fd
-			  << std::endl;
+		spdlog::info("Created tracepoint perf event with fd {}", fd);
 		return fd;
 	}
 	// if (attr->type == PERF_TYPE_TRACEPOINT) {
@@ -323,7 +314,7 @@ int syscall_context::handle_perfevent(perf_event_attr *attr, pid_t pid, int cpu,
 void *syscall_context::handle_mmap64(void *addr, size_t length, int prot,
 				     int flags, int fd, off64_t offset)
 {
-	std::cout << "Calling mocked mmap64" << std::endl;
+	spdlog::info("Calling mocked mmap64");
 	// if (!manager->is_allocated(fd)) {
 	// 	return orig_mmap64_fn(addr, length, prot, flags, fd, offset);
 	// }
@@ -368,7 +359,7 @@ int syscall_context::handle_ioctl(int fd, unsigned long req, int data)
 	int res;
 	switch (req) {
 	case PERF_EVENT_IOC_ENABLE: {
-		std::cout << "Enabling perf event " << fd << std::endl;
+		spdlog::info("Enabling perf event {}", fd);
 		res = bpftime_attach_enable(fd);
 		if (res < 0) {
 			return orig_ioctl_fn(fd, req, data);
@@ -376,8 +367,8 @@ int syscall_context::handle_ioctl(int fd, unsigned long req, int data)
 		return res;
 	}
 	case PERF_EVENT_IOC_SET_BPF: {
-		std::cout << "Setting bpf for perf event " << fd << " and bpf "
-			  << data << std::endl;
+		spdlog::info("Setting bpf for perf event {} and bpf {}", fd,
+			     data);
 		res = bpftime_attach_perf_to_bpf(fd, data);
 		if (res < 0) {
 			return orig_ioctl_fn(fd, req, data);

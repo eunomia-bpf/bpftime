@@ -1,3 +1,4 @@
+#include "spdlog/spdlog.h"
 #include <map>
 #include <iostream>
 #include <stdio.h>
@@ -8,6 +9,7 @@
 #include "bpftime.hpp"
 #include "bpftime_shm.hpp"
 #include "bpftime_internal.h"
+#include <spdlog/spdlog.h>
 
 #define PATH_MAX 4096
 
@@ -360,7 +362,8 @@ enum bpf_func_id {
 int bpftime_helper_group::register_helper(const bpftime_helper_info &info)
 {
 	if (info.index > 999) {
-		std::cerr << "helper id should be 0-999" << std::endl;
+		spdlog::error("Helper id should be 0-999, found {}",
+			      info.index);
 		return -1;
 	}
 	if (helper_map.find(info.index) == helper_map.end()) {
@@ -368,8 +371,8 @@ int bpftime_helper_group::register_helper(const bpftime_helper_info &info)
 	} else {
 		// found the same helper id
 		if (helper_map[info.index].fn != info.fn) {
-			std::cerr << "helper id already exists for "
-				  << info.name << std::endl;
+			spdlog::error("Helper id already exists for {}",
+				      info.name);
 			return -1;
 		}
 		// else, ignore the same helper
@@ -381,8 +384,8 @@ int bpftime_helper_group::append(const bpftime_helper_group &another_group)
 {
 	for (const auto &it : another_group.helper_map) {
 		if (helper_map.find(it.first) != helper_map.end()) {
-			std::cerr << "helper id already exists for "
-				  << it.second.name << std::endl;
+			spdlog::error("Helper id already exists for {}",
+				      it.second.name);
 			return -1;
 		}
 	}

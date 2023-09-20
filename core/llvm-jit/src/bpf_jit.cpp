@@ -48,8 +48,8 @@ ebpf_jit_fn bpf_jit_context::compile()
 	SymbolMap extSymbols;
 	for (uint32_t i = 0; i < std::size(vm->ext_funcs); i++) {
 		if (vm->ext_funcs[i] != nullptr) {
-			errs() << "Helper func id=" << i
-			       << " name=" << vm->ext_func_names[i] << "\n";
+			// errs() << "Helper func id=" << i
+			//        << " name=" << vm->ext_func_names[i] << "\n";
 			auto sym = JITEvaluatedSymbol::fromPointer(
 				vm->ext_funcs[i]);
 			auto symName = jit->mangleAndIntern(ext_func_sym(i));

@@ -55,14 +55,14 @@ llvm_map_components_to_libnames(LLVM_LIBS
 
 message(STATUS "LLVM_LIBS=${LLVM_LIBS}")
 
-target_link_libraries(core-bpf ${LLVM_LIBS})
-target_include_directories(core-bpf PUBLIC ${LLVM_INCLUDE_DIRS})
+target_link_libraries(core-bpf ${LLVM_LIBS} spdlog::spdlog)
+target_include_directories(core-bpf PUBLIC ${LLVM_INCLUDE_DIRS} ${SPDLOG_INCLUDE})
 
 bpftime_add_executable(core-llvm-example
     example/main.cpp
 )
 
-add_dependencies(core-llvm-example core-bpf)
+add_dependencies(core-llvm-example core-bpf spdlog::spdlog)
 target_link_libraries(core-llvm-example core-bpf)
 
 bpftime_add_executable(core-llvm-bpf-test

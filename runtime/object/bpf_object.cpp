@@ -9,7 +9,7 @@
 #include <vector>
 #include "bpftime.hpp"
 #include "bpftime_internal.h"
-
+#include <spdlog/spdlog.h>
 using namespace std;
 using namespace bpftime;
 
@@ -24,22 +24,20 @@ namespace bpftime
 
 // ebpf object file
 class bpftime_object {
-public:
+    public:
 	bpftime_object(std::string_view path);
 	~bpftime_object() = default;
 	string obj_path;
 	std::unique_ptr<struct bpf_object, decltype(&bpf_object__close)> obj;
 	std::unique_ptr<struct btf, decltype(&btf__free)> host_btf;
 
-	std::list<std::unique_ptr<bpftime_prog> >
-		progs;
+	std::list<std::unique_ptr<bpftime_prog> > progs;
 
 	void create_programs();
 	bpftime_prog *find_program_by_name(std::string_view name) const;
 	bpftime_prog *find_program_by_secname(std::string_view name) const;
 	bpftime_prog *next_program(bpftime_prog *prog) const;
 };
-
 
 bpftime_prog *bpftime_object::next_program(bpftime_prog *prog) const
 {
@@ -74,12 +72,12 @@ void bpftime_object::create_programs()
 		size_t cnt = bpf_program__insn_cnt(prog);
 		const char *name = bpf_program__name(prog);
 		if (!insns || !name) {
-			fprintf(stderr,
-				"failed to get insns or name for prog %s\n",
-				name ? name : "null");
+			spdlog::error("Failed to get insns or name for prog {}",
+				      name || "<NULL>");
 			continue;
 		}
-		progs.emplace_back(std::make_unique<bpftime_prog>(insns, cnt, name));
+		progs.emplace_back(
+			std::make_unique<bpftime_prog>(insns, cnt, name));
 	}
 }
 
@@ -124,8 +122,7 @@ bpftime_object::bpftime_object(std::string_view path)
 {
 	bpf_object *obj_ptr = bpf_object__open(obj_path.data());
 	if (!obj_ptr) {
-		std::cerr << "failed to open object file: " << obj_path
-			  << std::endl;
+		spdlog::error("Failed to open object file {}", obj_path);
 		return;
 	}
 	obj.reset(obj_ptr);
@@ -152,7 +149,10 @@ void bpftime_object_close(struct bpftime_object *obj)
 static int libbpf_print_fn(enum libbpf_print_level level, const char *format,
 			   va_list args)
 {
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wformat-nonliteral"
 	return vfprintf(stderr, format, args);
+#pragma clang diagnostic pop
 }
 
 // The execution unit or bpf function.

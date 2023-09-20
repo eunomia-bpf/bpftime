@@ -14,6 +14,7 @@
 #include <string>
 #include <cinttypes>
 #include <cstdarg>
+#include <spdlog/spdlog.h>
 using namespace llvm;
 using namespace llvm::orc;
 
@@ -44,9 +45,12 @@ char *ebpf_error(const char *fmt, ...)
 	char *msg;
 	va_list ap;
 	va_start(ap, fmt);
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wformat-nonliteral"
 	if (vasprintf(&msg, fmt, ap) < 0) {
 		msg = NULL;
 	}
+#pragma clang diagnostic pop
 	va_end(ap);
 	return msg;
 }
@@ -107,7 +111,8 @@ int ebpf_register(struct ebpf_vm *vm, unsigned int idx, const char *name,
 
 	vm->ext_funcs[idx] = (ext_func)fn;
 	vm->ext_func_names[idx] = name;
-	LOG_DEBUG("ebpf_register: %s idx: %d func: %ld\n", name, idx, (long)fn);
+	spdlog::debug("ebpf_register: {} idx: {} func: {}", name, idx,
+		      (uintptr_t)fn);
 	return 0;
 }
 
@@ -194,15 +199,15 @@ void ebpf_set_registers(struct ebpf_vm *vm, uint64_t *regs)
 {
 	(void)vm;
 	(void)regs;
-	fprintf(stderr,
-		"ebpf warning: registers are not exposed in release mode. Please recompile in debug mode\n");
+	spdlog::error(
+		"ebpf warning: registers are not exposed in release mode. Please recompile in debug mode");
 }
 
 uint64_t *ebpf_get_registers(const struct ebpf_vm *vm)
 {
 	(void)vm;
-	fprintf(stderr,
-		"ebpf warning: registers are not exposed in release mode. Please recompile in debug mode\n");
+	spdlog::error(
+		"ebpf warning: registers are not exposed in release mode. Please recompile in debug mode");
 	return NULL;
 }
 
@@ -265,13 +270,13 @@ int ebpf_exec(const struct ebpf_vm *vm, void *mem, size_t mem_len,
 		*bpf_return_value = ret;
 		return 0;
 	}
-    // compile and run
+	// compile and run
 	auto jit_vm = const_cast<struct ebpf_vm *>(vm);
-    auto func = ebpf_compile(jit_vm, nullptr);
-    if (!func) {
-        return -1;
-    }
-    // after compile, run
+	auto func = ebpf_compile(jit_vm, nullptr);
+	if (!func) {
+		return -1;
+	}
+	// after compile, run
 	return ebpf_exec(vm, mem, mem_len, bpf_return_value);
 }
 
@@ -279,6 +284,19 @@ int ebpf_exec(const struct ebpf_vm *vm, void *mem, size_t mem_len,
 void ebpf_set_register_offset(int x)
 {
 	// DO NOTHING because llvm handles the map
+}
+
+void ebpf_set_lddw_helpers(struct ebpf_vm *vm, uint64_t (*map_by_fd)(uint32_t),
+			   uint64_t (*map_by_idx)(uint32_t),
+			   uint64_t (*map_val)(uint64_t),
+			   uint64_t (*var_addr)(uint32_t),
+			   uint64_t (*code_addr)(uint32_t))
+{
+	vm->map_by_fd = map_by_fd;
+	vm->map_by_idx = map_by_idx;
+	vm->map_val = map_val;
+	vm->var_addr = var_addr;
+	vm->code_addr = code_addr;
 }
 
 #ifdef __cplusplus

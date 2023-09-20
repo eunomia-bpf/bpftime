@@ -67,6 +67,7 @@ endforeach()
 add_dependencies(copy_headers libbpf)
 add_dependencies(bpftime-object copy_headers)
 add_dependencies(bpftime-object libbpf)
+add_dependencies(bpftime-object spdlog::spdlog)
 
 target_link_libraries(bpftime-object
   PUBLIC
@@ -77,6 +78,7 @@ target_link_libraries(bpftime-object
   -ldl
   -lelf
   -lz
+  spdlog::spdlog
 )
 
 target_include_directories(bpftime-object PUBLIC
@@ -89,4 +91,5 @@ target_include_directories(bpftime-object PUBLIC
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/../include>
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/../src>
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/../../core/include>
+  ${SPDLOG_INCLUDE}
 )

@@ -38,6 +38,11 @@ struct ebpf_vm {
 	uint64_t pointer_secret;
 	ebpf_jit_fn jitted_function;
 	bpf_jit_context *jit_context;
+	uint64_t (*map_by_fd)(uint32_t);
+	uint64_t (*map_by_idx)(uint32_t);
+	uint64_t (*map_val)(uint64_t);
+	uint64_t (*var_addr)(uint32_t);
+	uint64_t (*code_addr)(uint32_t);
 };
 
 #ifdef __cplusplus

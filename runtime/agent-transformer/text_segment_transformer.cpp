@@ -1,3 +1,4 @@
+#include "spdlog/spdlog.h"
 #include <algorithm>
 #include <cerrno>
 #include <cstdarg>
@@ -170,9 +171,9 @@ static inline void rewrite_segment(uint8_t *code, size_t len, int perm)
 	// Set the pages to be writable
 	if (int err = mprotect(code, len, PROT_READ | PROT_WRITE | PROT_EXEC);
 	    err < 0) {
-		std::cerr
-			<< "Failed to change the protect status of the rewriting page "
-			<< (uintptr_t)code << std::endl;
+		spdlog::error(
+			"Failed to change the protect status of the rewriting page {:x}",
+			(uintptr_t)code);
 		exit(1);
 	}
 	DisassState state;
@@ -198,9 +199,9 @@ static inline void rewrite_segment(uint8_t *code, size_t len, int perm)
 		state.off += disasm_func(state.off, &disasm_info);
 
 	if (int err = mprotect(code, len, perm); err < 0) {
-		std::cerr
-			<< "Failed to change the protect status of the rewriting page "
-			<< (uintptr_t)code << std::endl;
+		spdlog::error(
+			"Failed to change the protect status of the rewriting page {:x}",
+			(uintptr_t)code);
 		exit(1);
 	}
 }
@@ -240,8 +241,8 @@ void setup_syscall_tracer()
 		    mmap(0x0, 0x1000, PROT_EXEC | PROT_READ | PROT_WRITE,
 			 MAP_PRIVATE | MAP_FIXED | MAP_ANONYMOUS, -1, 0);
 	    mmap_addr == MAP_FAILED) {
-		std::cerr << "Failed to perform mmap: errno=" << errno
-			  << ", message=" << strerror(errno) << std::endl;
+		spdlog::error("Failed to perform mmap: errno={}, message={}",
+			      errno, strerror(errno));
 		exit(1);
 	}
 	// Setup jumpings
@@ -279,12 +280,13 @@ void setup_syscall_tracer()
 	// Set the page to execute-only. Keep normal behavior of dereferencing
 	// null-pointers
 	if (int err = mprotect(0, 0x1000, PROT_EXEC); err < 0) {
-		std::cerr << "Failed to set execute only of 0-started page: "
-			  << errno << std::endl;
+		spdlog::error(
+			"Failed to set execute only of 0-started page: {}",
+			errno);
 		exit(1);
 	}
 
-	std::cout << "Page zero setted up.." << std::endl;
+	spdlog::info("Page zero setted up..");
 	// Scan for /proc/self/maps
 
 	std::vector<MapEntry> entries;
@@ -320,9 +322,8 @@ void setup_syscall_tracer()
 				// Skip pages that we mapped
 				continue;
 			}
-			std::cout << "Rewriting segment from " << std::hex
-				  << map.begin << " to " << std::hex << map.end
-				  << std::endl;
+			spdlog::info("Rewriting segment from {:x} to {:x}",
+				     map.begin, map.end);
 			rewrite_segment((uint8_t *)(uintptr_t)(map.begin),
 					map.end - map.begin, map.get_perm());
 		}

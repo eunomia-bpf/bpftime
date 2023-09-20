@@ -1,5 +1,6 @@
 #ifndef _HANDLER_MANAGER_HPP
 #define _HANDLER_MANAGER_HPP
+#include "spdlog/spdlog.h"
 #include <boost/interprocess/interprocess_fwd.hpp>
 #include <cstddef>
 #include <cstdint>
@@ -375,8 +376,7 @@ struct shm_remove {
 	}
 	~shm_remove()
 	{
-		std::cout << "remove shm " << get_global_shm_name()
-			  << std::endl;
+		spdlog::info("Destroy shm {}", get_global_shm_name());
 		boost::interprocess::shared_memory_object::remove(
 			get_global_shm_name());
 	}
@@ -615,9 +615,9 @@ class bpftime_shm {
 
 	bpftime_shm()
 	{
-		std::cout << "global_shm_open_type "
-			  << (int)global_shm_open_type << " for "
-			  << bpftime::get_global_shm_name() << std::endl;
+		spdlog::info("global_shm_open_type {} for {}",
+			     (int)global_shm_open_type,
+			     bpftime::get_global_shm_name());
 		if (global_shm_open_type == shm_open_type::SHM_CLIENT) {
 			// open the shm
 			segment = boost::interprocess::managed_shared_memory(

@@ -15,6 +15,7 @@
 #include <dlfcn.h>
 #include "bpftime.hpp"
 #include "bpftime_shm.hpp"
+#include <spdlog/spdlog.h>
 using namespace bpftime;
 
 const shm_open_type bpftime::global_shm_open_type = shm_open_type::SHM_CLIENT;
@@ -46,7 +47,7 @@ extern "C" int puts(const char *str)
 	if (!orig_puts_func) {
 		// if not init, run the bpftime_agent_main to start the client
 		orig_puts_func = (puts_func_t)dlsym(RTLD_NEXT, "puts");
-		printf("new main\n");
+		spdlog::info("Entering new main function");
 		int stay_resident = 0;
 		bpftime_agent_main("", (gboolean *)&stay_resident);
 	}
@@ -56,6 +57,8 @@ static bpf_attach_ctx ctx;
 
 void bpftime_agent_main(const gchar *data, gboolean *stay_resident)
 {
+	// spdlog::info("Initializing agent..");
+	std::cout<<"Initializing agent..."<<std::endl;
 	/* We don't want to our library to be unloaded after we return. */
 	*stay_resident = TRUE;
 	if (!orig_fn) {
@@ -70,10 +73,10 @@ void bpftime_agent_main(const gchar *data, gboolean *stay_resident)
 	config.enable_shm_maps_helper_group = true;
 	res = ctx.init_attach_ctx_from_handlers(config);
 	if (res != 0) {
-		g_print("Failed to init attach ctx\n");
+		spdlog::error("Failed to initialize attach context");
 		return;
 	}
-	g_print("Successfully attached\n");
+	spdlog::info("Attach successfully");
 
 	// don't free ctx here
 	return;

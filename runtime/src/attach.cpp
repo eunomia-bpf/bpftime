@@ -1,4 +1,5 @@
 #include "bpftime_handler.hpp"
+#include "spdlog/spdlog.h"
 #include <algorithm>
 #include <cassert>
 #include <cstddef>
@@ -19,6 +20,7 @@
 #include <syscall_table.hpp>
 #include <variant>
 #include <vector>
+#include <spdlog/spdlog.h>
 
 using namespace std;
 using namespace bpftime;
@@ -120,8 +122,8 @@ int bpf_attach_ctx::create_tracepoint(int tracepoint_id, int perf_fd,
 	const auto &tp_table = get_global_syscall_tracepoint_table();
 	const auto &[id_table, _] = get_global_syscall_id_table();
 	if (auto itr = tp_table.find(tracepoint_id); itr != tp_table.end()) {
-		cout << "Creating tracepoint for tp name " << itr->second
-		     << endl;
+		spdlog::info("Creating tracepoint for tp name {}",
+			      itr->second);
 		// I'm lazy. So I just lookup the corresponding bpf progs by
 		// brute force
 
@@ -144,8 +146,8 @@ int bpf_attach_ctx::create_tracepoint(int tracepoint_id, int perf_fd,
 			}
 		}
 		if (progs.empty()) {
-			cerr << "bpf_link for perf event " << perf_fd
-			     << " not found" << endl;
+			spdlog::error("bpf_link for perf event {} not found",
+				      perf_fd);
 			return perf_fd;
 		}
 		const auto &name = itr->second;
@@ -153,39 +155,41 @@ int bpf_attach_ctx::create_tracepoint(int tracepoint_id, int perf_fd,
 			auto syscall_name = name.substr(10);
 			auto syscall_id = id_table.find(syscall_name);
 			if (syscall_id == id_table.end()) {
-				cerr << "Syscall id not found for name "
-				     << syscall_name << endl;
+				spdlog::error(
+					"Syscall id not found for name {}",
+					syscall_name);
 				return -1;
 			}
 			for (auto p : progs)
 				sys_enter_progs[syscall_id->second].push_back(
 					p);
-			cerr << "Registered syscall enter hook for "
-			     << syscall_name << " with perf fd " << perf_fd
-			     << endl;
+			spdlog::info(
+				"Registered syscall enter hook for {} with perf fd {}",
+				syscall_name, perf_fd);
 			return perf_fd;
 		} else if (name.starts_with("sys_exit_")) {
 			auto syscall_name = name.substr(9);
 			auto syscall_id = id_table.find(syscall_name);
 			if (syscall_id == id_table.end()) {
-				cerr << "Syscall id not found for name "
-				     << syscall_name << endl;
+				spdlog::error(
+					"Syscall id not found for name {}",
+					syscall_name);
 				return -1;
 			}
 			for (auto p : progs)
 				sys_enter_progs[syscall_id->second].push_back(
 					p);
-			cerr << "Registered syscall exit hook for "
-			     << syscall_name << " with perf fd " << perf_fd
-			     << endl;
+			spdlog::info(
+				"Registered syscall exit hook for {} with perf fd {}",
+				syscall_name, perf_fd);
 			return perf_fd;
 		} else {
-			cerr << "Unexpected syscall tracepoint name: " << name
-			     << endl;
+			spdlog::error("Unexpected syscall tracepoint name {}",
+				      name);
 			return -1;
 		}
 	} else {
-		cerr << "Unsupported tracepoint id: " << tracepoint_id << endl;
+		spdlog::error("Unsupported tracepoint id: {}", tracepoint_id);
 		return -1;
 	}
 }
@@ -195,7 +199,7 @@ int bpf_attach_ctx::create_replace_with_handler(int id,
 						void *function,
 						void *handler_func)
 {
-	printf("create_replace_with_handler %p\n", function);
+	spdlog::info("create_replace_with_handler {:x}", (uintptr_t)function);
 	if (handler_func == NULL) {
 		handler_func = (void *)__frida_bpftime_replace_handler;
 	}
@@ -219,7 +223,7 @@ int bpf_attach_ctx::create_replace_with_handler(int id,
 	hook_entry_index[id] = function;
 	auto res = replace_func(handler_func, function, &entry->second);
 	if (res < 0) {
-		std::cout << "replace_func failed" << std::endl;
+		spdlog::error("replace_func failed");
 		hook_entry_table.erase(function);
 		hook_entry_index.erase(id);
 		return res;
@@ -398,8 +402,8 @@ void *bpf_attach_ctx::find_function_by_name(const char *name)
 		return addr;
 	}
 	if (addr == NULL) {
-		std::cerr << "Unable to find function " << name << __FUNCTION__
-			  << std::endl;
+		spdlog::error("Unable to finc function {} {}", name,
+			      __FUNCTION__);
 	}
 	return NULL;
 }

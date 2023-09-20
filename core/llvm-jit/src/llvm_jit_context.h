@@ -26,7 +26,7 @@ typedef int64_t s64;
 
 #define IS_ALIGNED(x, a) (((uintptr_t)(x) & ((a)-1)) == 0)
 
-class bpf_jit_context {
+struct bpf_jit_context {
 	const ebpf_vm *vm;
 	std::optional<std::unique_ptr<llvm::orc::LLJIT> > jit;
 

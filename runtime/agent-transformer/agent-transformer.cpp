@@ -1,3 +1,4 @@
+#include "spdlog/spdlog.h"
 #include <cassert>
 #include <cstdlib>
 #include <dlfcn.h>
@@ -33,7 +34,7 @@ extern "C" int puts(const char *str)
 	if (!orig_puts_func) {
 		// if not init, run the bpftime_agent_main to start the client
 		orig_puts_func = (puts_func_t)dlsym(RTLD_NEXT, "puts");
-		printf("new main\n");
+		spdlog::info("Entering new main..");
 		int stay_resident = 0;
 		bpftime_agent_main("", (gboolean *)&stay_resident);
 	}
@@ -51,9 +52,13 @@ void bpftime_agent_main(const gchar *data, gboolean *stay_resident)
 	assert(agent_so &&
 	       "Please set AGENT_SO to the bpftime-agent when use this tranformer");
 	bpftime::setup_syscall_tracer();
-	std::cout << "Loading dynamic library.." << std::endl;
+	spdlog::info("Loading dynamic library..");
 	auto next_handle =
 		dlmopen(LM_ID_NEWLM, agent_so, RTLD_NOW | RTLD_LOCAL);
+	if (next_handle == nullptr) {
+		spdlog::error("Failed to open agent: {}", dlerror());
+		exit(1);
+	}
 	auto entry_func = (void (*)(syscall_hooker_func_t *))dlsym(
 		next_handle, "__c_abi_setup_syscall_trace_callback");
 	assert(entry_func &&
@@ -62,5 +67,5 @@ void bpftime_agent_main(const gchar *data, gboolean *stay_resident)
 		bpftime::get_call_hook();
 	entry_func(&orig_syscall_hooker_func);
 	bpftime::set_call_hook(orig_syscall_hooker_func);
-	std::cout << "Transformer exiting.." << std::endl;
+	spdlog::info("Transformer exiting..");
 }

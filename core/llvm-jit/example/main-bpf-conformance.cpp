@@ -50,8 +50,8 @@ uint64_t ffi_print_integer(uint64_t a, uint64_t b, uint64_t _c, uint64_t _d,
 
 int main(int argc, char **argv)
 {
-	bool debug = false;
-	bool elf = false;
+	// bool debug = false;
+	// bool elf = false;
 	std::vector<std::string> args(argv, argv + argc);
 	if (args.size() > 0) {
 		args.erase(args.begin());
@@ -82,12 +82,12 @@ int main(int argc, char **argv)
 	}
 
 	if (args.size() > 0 && args[0] == "--debug") {
-		debug = true;
+		// debug = true;
 		args.erase(args.begin());
 	}
 
 	if (args.size() > 0 && args[0] == "--elf") {
-		elf = true;
+		// elf = true;
 		args.erase(args.begin());
 	}
 

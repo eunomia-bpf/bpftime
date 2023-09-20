@@ -70,6 +70,11 @@ if(${ENABLE_EBPF_VERIFIER})
   add_subdirectory(third_party/ebpf-verifier)
 endif()
 
+# spdlog
+set(CMAKE_POSITION_INDEPENDENT_CODE YES)
+add_subdirectory(third_party/spdlog)
+
+set(SPDLOG_INCLUDE third_party/spdlog/include)
 # main library
 add_subdirectory(core)
 add_subdirectory(runtime)

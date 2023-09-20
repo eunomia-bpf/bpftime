@@ -1,6 +1,7 @@
 #include "bpftime.hpp"
 #include "bpftime_handler.hpp"
 #include "syscall_table.hpp"
+#include <cerrno>
 #include <cstddef>
 #include <cstdint>
 #include <iostream>
@@ -9,6 +10,7 @@
 #include <ostream>
 #include <sched.h>
 #include <variant>
+#include <spdlog/spdlog.h>
 
 using namespace bpftime;
 
@@ -67,9 +69,9 @@ static std::string get_executable_path()
 		readlink("/proc/self/exe", exec_path, sizeof(exec_path) - 1);
 	if (len != -1) {
 		exec_path[len] = '\0'; // Null-terminate the string
-		std::cout << "Executable Path: " << exec_path << std::endl;
+		spdlog::info("Executable path: {}", exec_path);
 	} else {
-		std::cerr << "Error retrieving executable path" << std::endl;
+		spdlog::error("Error retrieving executable path: {}", errno);
 	}
 	return exec_path;
 }
@@ -92,8 +94,8 @@ resolve_function_addr(bpf_attach_ctx &ctx,
 	}
 	// find function
 	if (!module_base_addr) {
-		printf("error: module %s not found\n",
-		       event_handler._module_name.c_str());
+		spdlog::error("module {} not found",
+			      event_handler._module_name.c_str());
 		return nullptr;
 	}
 	function = (void *)((char *)module_base_addr + event_handler.offset);
@@ -219,18 +221,15 @@ int bpf_attach_ctx::init_attach_ctx_from_handlers(
 			if (res < 0) {
 				return res;
 			}
-			std::cout << "load prog " << i << " "
-				  << prog_handler.name << std::endl;
+			spdlog::info("Load prog {} {}", i, prog_handler.name);
 		} else if (std::holds_alternative<bpf_map_handler>(handler)) {
-			std::cout << "bpf_map_handler found at " << i
-				  << std::endl;
+			spdlog::info("bpf_map_handler found at {}", i);
 		} else if (std::holds_alternative<bpf_perf_event_handler>(
 				   handler)) {
-			std::cout << "Will handle bpf_perf_events later.."
-				  << std::endl;
+			spdlog::info("Will handle bpf_perf_events later...");
 
 		} else {
-			printf("error: unsupported handler type\n");
+			spdlog::error("Unsupported handler type");
 			return -1;
 		}
 	}
@@ -251,11 +250,10 @@ int bpf_attach_ctx::init_attach_ctx_from_handlers(
 				    PERF_TYPE_TRACEPOINT) {
 				resolve_function_addr(*this, event_handler);
 				if (!function) {
-					std::cout
-						<< "error: function not found "
-						<< event_handler._module_name
-						<< " " << event_handler.offset
-						<< std::endl;
+					spdlog::error(
+						"Function not found {} {}",
+						event_handler._module_name,
+						event_handler.offset);
 					errno = ENOENT;
 					return -1;
 				}
@@ -293,10 +291,9 @@ int bpf_attach_ctx::init_attach_ctx_from_handlers(
 			default:
 				break;
 			}
-			std::cout << "create attach event " << i << " "
-				  << event_handler._module_name << " "
-				  << event_handler.offset << " for " << fd
-				  << std::endl;
+			spdlog::info("Create attach event {} {} {} for {}", i,
+				     event_handler._module_name,
+				     event_handler.offset, fd);
 			if (fd < 0) {
 				return fd;
 			}
@@ -315,8 +312,7 @@ int bpf_attach_ctx::attach_progs_in_manager(const handler_manager *manager)
 		auto &prog_handler =
 			std::get<bpf_prog_handler>(manager->get_handler(id));
 		for (auto fd : prog_handler.attach_fds) {
-			std::cout << "attaching prog " << id << " to fd " << fd
-				  << std::endl;
+			spdlog::info("Attaching prog {} to fd {}", id, fd);
 			attach_prog(prog.second.get(), fd);
 		}
 	}
