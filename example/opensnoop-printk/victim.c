@@ -5,7 +5,7 @@
 #include <unistd.h>
 int main()
 {
-    putchar('\n');
+	puts("");
 	while (1) {
 		puts("Opening test.txt..");
 		int fd = open("test.txt", O_CREAT | O_RDWR);

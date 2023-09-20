@@ -19,25 +19,39 @@ using namespace bpftime;
 
 const shm_open_type bpftime::global_shm_open_type = shm_open_type::SHM_CLIENT;
 
-typedef int (*putchar_func)(int c);
+using putchar_func = int (*)(int);
+using puts_func_t = int (*)(const char *);
+
+static puts_func_t orig_puts_func = nullptr;
 
 // using putchar_func as a flag to indicate whether the agent has been init
 static putchar_func orig_fn = nullptr;
 
 void bpftime_agent_main(const gchar *data, gboolean *stay_resident);
 
-extern "C" int putchar(int c)
+// extern "C" int putchar(int c)
+// {
+
+// 	if (!orig_fn) {
+// 		// if not init, run the bpftime_agent_main to start the client
+// 		orig_fn = (putchar_func)dlsym(RTLD_NEXT, "putchar");
+// 		printf("new main\n");
+// 		int stay_resident = 0;
+// 		bpftime_agent_main("", (gboolean *)&stay_resident);
+// 	}
+// 	return orig_fn(c);
+// }
+extern "C" int puts(const char *str)
 {
-	if (!orig_fn) {
+	if (!orig_puts_func) {
 		// if not init, run the bpftime_agent_main to start the client
-		orig_fn = (putchar_func)dlsym(RTLD_NEXT, "putchar");
+		orig_puts_func = (puts_func_t)dlsym(RTLD_NEXT, "puts");
 		printf("new main\n");
 		int stay_resident = 0;
 		bpftime_agent_main("", (gboolean *)&stay_resident);
 	}
-	return orig_fn(c);
+	return orig_puts_func(str);
 }
-
 static bpf_attach_ctx ctx;
 
 void bpftime_agent_main(const gchar *data, gboolean *stay_resident)

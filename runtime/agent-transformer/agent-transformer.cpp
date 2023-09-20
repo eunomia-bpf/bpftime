@@ -7,24 +7,38 @@
 #include <iostream>
 #include <ostream>
 using putchar_func = int (*)(int c);
+using puts_func_t = int (*)(const char *);
+
+static puts_func_t orig_puts_func = nullptr;
 
 // using putchar_func as a flag to indicate whether the agent has been init
 static putchar_func orig_fn = nullptr;
 
 void bpftime_agent_main(const gchar *data, gboolean *stay_resident);
 
-extern "C" int putchar(int c)
+// extern "C" int putchar(int c)
+// {
+// 	if (!orig_fn) {
+// 		// if not init, run the bpftime_agent_main to start the client
+// 		orig_fn = (putchar_func)dlsym(RTLD_NEXT, "putchar");
+// 		printf("new main\n");
+// 		int stay_resident = 0;
+// 		bpftime_agent_main("", (gboolean *)&stay_resident);
+// 	}
+// 	return orig_fn(c);
+// }
+// }
+extern "C" int puts(const char *str)
 {
-	if (!orig_fn) {
+	if (!orig_puts_func) {
 		// if not init, run the bpftime_agent_main to start the client
-		orig_fn = (putchar_func)dlsym(RTLD_NEXT, "putchar");
+		orig_puts_func = (puts_func_t)dlsym(RTLD_NEXT, "puts");
 		printf("new main\n");
 		int stay_resident = 0;
 		bpftime_agent_main("", (gboolean *)&stay_resident);
 	}
-	return orig_fn(c);
+	return orig_puts_func(str);
 }
-
 void bpftime_agent_main(const gchar *data, gboolean *stay_resident)
 {
 	/* We don't want to our library to be unloaded after we return. */
@@ -38,8 +52,8 @@ void bpftime_agent_main(const gchar *data, gboolean *stay_resident)
 	       "Please set AGENT_SO to the bpftime-agent when use this tranformer");
 	bpftime::setup_syscall_tracer();
 	std::cout << "Loading dynamic library.." << std::endl;
-	auto next_handle = dlmopen(LM_ID_NEWLM, agent_so,
-				   RTLD_NOW | RTLD_LOCAL);
+	auto next_handle =
+		dlmopen(LM_ID_NEWLM, agent_so, RTLD_NOW | RTLD_LOCAL);
 	auto entry_func = (void (*)(syscall_hooker_func_t *))dlsym(
 		next_handle, "__c_abi_setup_syscall_trace_callback");
 	assert(entry_func &&

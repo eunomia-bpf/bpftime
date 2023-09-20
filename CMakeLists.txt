@@ -64,7 +64,11 @@ endif()
 include(cmake/frida.cmake)
 
 # ebpf-verifier
-add_subdirectory(third_party/ebpf-verifier)
+option(ENABLE_EBPF_VERIFIER "Whether to enable ebpf verifier" OFF)
+
+if(${ENABLE_EBPF_VERIFIER})
+  add_subdirectory(third_party/ebpf-verifier)
+endif()
 
 # main library
 add_subdirectory(core)
