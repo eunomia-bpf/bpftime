@@ -137,5 +137,5 @@ $(APPS): %: $(OUTPUT)/%.o $(LIBBPF_OBJ) | $(OUTPUT)
 # keep intermediate (.skel.h, .bpf.o, etc) targets
 .SECONDARY:
 
-victim: victim.c
-	$(CC) -Wall -g victim.c -o victim
+victim: victim.cpp
+	$(CXX) -Wall -g victim.cpp -o victim
