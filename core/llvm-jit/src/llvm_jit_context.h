@@ -24,6 +24,12 @@ typedef int32_t s32;
 typedef uint64_t u64;
 typedef int64_t s64;
 
+const static char *LDDW_HELPER_MAP_BY_FD = "__lddw_helper_map_by_fd";
+const static char *LDDW_HELPER_MAP_BY_IDX = "__lddw_helper_map_by_idx";
+const static char *LDDW_HELPER_MAP_VAL = "__lddw_helper_map_val";
+const static char *LDDW_HELPER_VAR_ADDR = "__lddw_helper_var_addr";
+const static char *LDDW_HELPER_CODE_ADDR = "__lddw_helper_code_addr";
+
 #define IS_ALIGNED(x, a) (((uintptr_t)(x) & ((a)-1)) == 0)
 
 struct bpf_jit_context {
@@ -32,7 +38,7 @@ struct bpf_jit_context {
 
 	llvm::Expected<llvm::orc::ThreadSafeModule>
 	generateModule(const llvm::orc::LLJIT &jit,
-		       const std::vector<std::string> &extFuncNames);
+		       const std::vector<std::string> &extFuncNames, const std::vector<std::string>& lddwHelpers);
 
     public:
 	bpf_jit_context(const ebpf_vm *m_vm) : vm(m_vm)

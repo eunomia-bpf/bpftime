@@ -1,3 +1,4 @@
+#include "spdlog/cfg/env.h"
 #include "spdlog/spdlog.h"
 #include <cassert>
 #include <cstdlib>
@@ -7,6 +8,7 @@
 #include "text_segment_transformer.hpp"
 #include <iostream>
 #include <ostream>
+#include <spdlog/cfg/env.h>
 using putchar_func = int (*)(int c);
 using puts_func_t = int (*)(const char *);
 
@@ -42,6 +44,7 @@ extern "C" int puts(const char *str)
 }
 void bpftime_agent_main(const gchar *data, gboolean *stay_resident)
 {
+	spdlog::cfg::load_env_levels();
 	/* We don't want to our library to be unloaded after we return. */
 	*stay_resident = TRUE;
 	if (!orig_fn) {

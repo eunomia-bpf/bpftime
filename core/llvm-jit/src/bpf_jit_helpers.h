@@ -15,6 +15,7 @@
 #include <map>
 #include <tuple>
 #include <utility>
+#include <spdlog/spdlog.h>
 static inline bool is_jmp(const ebpf_inst &insn)
 {
 	return (insn.code & 0x07) == EBPF_CLS_JMP ||
@@ -217,8 +218,7 @@ static llvm::Expected<llvm::BasicBlock *>
 loadJmpDstBlock(uint16_t pc, const ebpf_inst &inst,
 		const std::map<uint16_t, llvm::BasicBlock *> &instBlocks)
 {
-	LLVM_DEBUG(llvm::dbgs() << "pc " << pc << " req jump to "
-				<< pc + 1 + inst.off << "\n");
+	spdlog::trace("pc {} request jump to {}", pc, pc + 1 + inst.off);
 	uint16_t dstBlkId = pc + 1 + inst.off;
 	if (auto itr = instBlocks.find(dstBlkId); itr != instBlocks.end()) {
 		return itr->second;
@@ -279,7 +279,8 @@ localJmpDstAndNextBlk(uint16_t pc, const ebpf_inst &inst,
 }
 
 static llvm::Value *emitLDXLoadingAddr(llvm::IRBuilder<> &builder,
-				       llvm::Value **regs, const ebpf_inst &inst)
+				       llvm::Value **regs,
+				       const ebpf_inst &inst)
 {
 	// [rX + OFFSET]
 	return builder.CreateGEP(builder.getInt8Ty(),
@@ -330,6 +331,8 @@ emitExtFuncCall(llvm::IRBuilder<> &builder, const ebpf_inst &inst,
 {
 	auto funcNameToCall = ext_func_sym(inst.imm);
 	if (auto itr = extFunc.find(funcNameToCall); itr != extFunc.end()) {
+		spdlog::debug("Emitting ext func call to {} name {}", inst.imm,
+			      funcNameToCall);
 		auto callInst = builder.CreateCall(
 			helperFuncTy, itr->second,
 			{

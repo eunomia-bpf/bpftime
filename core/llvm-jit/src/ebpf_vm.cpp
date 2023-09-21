@@ -2,6 +2,10 @@
 #include "llvm_bpf_jit.h"
 #include "llvm_jit_context.h"
 #include "bpf_jit_helpers.h"
+#include <cassert>
+#include <cstddef>
+#include <cstdlib>
+#include <cstring>
 #include <iterator>
 
 #include "llvm/IR/Module.h"
@@ -17,10 +21,6 @@
 #include <spdlog/spdlog.h>
 using namespace llvm;
 using namespace llvm::orc;
-
-#ifdef __cplusplus
-extern "C" {
-#endif
 
 /*
  * Copyright 2015 Big Switch Networks, Inc
@@ -79,7 +79,11 @@ struct ebpf_vm *ebpf_create(void)
 	if (vm == NULL) {
 		return NULL;
 	}
-
+	vm->map_by_fd = nullptr;
+	vm->map_by_idx = nullptr;
+	vm->map_val = nullptr;
+	vm->code_addr = nullptr;
+	vm->var_addr = nullptr;
 	vm->ext_func_names = static_cast<const char **>(
 		calloc(MAX_EXT_FUNCS, sizeof(*vm->ext_func_names)));
 	if (vm->ext_func_names == NULL) {
@@ -97,6 +101,10 @@ struct ebpf_vm *ebpf_create(void)
 void ebpf_destroy(struct ebpf_vm *vm)
 {
 	ebpf_unload_code(vm);
+	for (size_t i = 0; i < MAX_EXT_FUNCS; i++) {
+		if (vm->ext_func_names[i])
+			free((void *)vm->ext_func_names[i]);
+	}
 	free(vm->ext_func_names);
 	delete vm->jit_context;
 	free(vm);
@@ -110,7 +118,7 @@ int ebpf_register(struct ebpf_vm *vm, unsigned int idx, const char *name,
 	}
 
 	vm->ext_funcs[idx] = (ext_func)fn;
-	vm->ext_func_names[idx] = name;
+	vm->ext_func_names[idx] = strdup(name);
 	spdlog::debug("ebpf_register: {} idx: {} func: {}", name, idx,
 		      (uintptr_t)fn);
 	return 0;
@@ -292,13 +300,13 @@ void ebpf_set_lddw_helpers(struct ebpf_vm *vm, uint64_t (*map_by_fd)(uint32_t),
 			   uint64_t (*var_addr)(uint32_t),
 			   uint64_t (*code_addr)(uint32_t))
 {
+	spdlog::debug(
+		"Setting lddw helpers for LLVM: map_by_fd {:x} map_by_idx {:x} map_val {:x} var_addr {:x} code_addr {:x}",
+		(uintptr_t)map_by_fd, (uintptr_t)map_by_idx, (uintptr_t)map_val,
+		(uintptr_t)var_addr, (uintptr_t)code_addr);
 	vm->map_by_fd = map_by_fd;
 	vm->map_by_idx = map_by_idx;
 	vm->map_val = map_val;
 	vm->var_addr = var_addr;
 	vm->code_addr = code_addr;
 }
-
-#ifdef __cplusplus
-}
-#endif

@@ -1,3 +1,4 @@
+#include "spdlog/common.h"
 #include <cassert>
 #include <ctime>
 #include <fcntl.h>
@@ -16,6 +17,7 @@
 #include "bpftime.hpp"
 #include "bpftime_shm.hpp"
 #include <spdlog/spdlog.h>
+#include <spdlog/cfg/env.h>
 using namespace bpftime;
 
 const shm_open_type bpftime::global_shm_open_type = shm_open_type::SHM_CLIENT;
@@ -57,8 +59,8 @@ static bpf_attach_ctx ctx;
 
 void bpftime_agent_main(const gchar *data, gboolean *stay_resident)
 {
-	// spdlog::info("Initializing agent..");
-	std::cout<<"Initializing agent..."<<std::endl;
+	spdlog::cfg::load_env_levels();
+	spdlog::info("Initializing agent..");
 	/* We don't want to our library to be unloaded after we return. */
 	*stay_resident = TRUE;
 	if (!orig_fn) {

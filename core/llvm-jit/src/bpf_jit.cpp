@@ -2,6 +2,7 @@
 #include "llvm_bpf_jit.h"
 #include "llvm_jit_context.h"
 #include "bpf_jit_helpers.h"
+#include "spdlog/spdlog.h"
 #include <iterator>
 
 #include "llvm/IR/Module.h"
@@ -18,6 +19,7 @@
 #include <iostream>
 #include <string>
 #include <cinttypes>
+#include <spdlog/spdlog.h>
 using namespace llvm;
 using namespace llvm::orc;
 
@@ -48,8 +50,6 @@ ebpf_jit_fn bpf_jit_context::compile()
 	SymbolMap extSymbols;
 	for (uint32_t i = 0; i < std::size(vm->ext_funcs); i++) {
 		if (vm->ext_funcs[i] != nullptr) {
-			// errs() << "Helper func id=" << i
-			//        << " name=" << vm->ext_func_names[i] << "\n";
 			auto sym = JITEvaluatedSymbol::fromPointer(
 				vm->ext_funcs[i]);
 			auto symName = jit->mangleAndIntern(ext_func_sym(i));
@@ -60,14 +60,35 @@ ebpf_jit_fn bpf_jit_context::compile()
 		}
 	}
 #if defined(__arm__) || defined(_M_ARM)
-	errs() << "Defining __aeabi_unwind_cpp_pr1 on arm32\n";
+	spdlog::info("Defining __aeabi_unwind_cpp_pr1 on arm32");
 	extSymbols.try_emplace(
 		jit->mangleAndIntern("__aeabi_unwind_cpp_pr1"),
 		JITEvaluatedSymbol::fromPointer(__aeabi_unwind_cpp_pr1));
 #endif
 	ExitOnErr(mainDylib.define(absoluteSymbols(extSymbols)));
-
-	auto bpfModule = ExitOnErr(generateModule(*jit, extFuncNames));
+	// Define lddw helpers
+	SymbolMap lddwSyms;
+	std::vector<std::string> definedLddwHelpers;
+	const auto tryDefineLddwHelper = [&](const char *name, void *func) {
+		if (func) {
+			spdlog::debug("Defining LDDW helper {} with addr {:x}",
+				      name, (uintptr_t)func);
+			auto sym =
+				JITEvaluatedSymbol::fromPointer(vm->map_by_fd);
+			sym.setFlags(JITSymbolFlags::Callable |
+				     JITSymbolFlags::Exported);
+			lddwSyms.try_emplace(jit->mangleAndIntern(name), sym);
+			definedLddwHelpers.push_back(name);
+		}
+	};
+	tryDefineLddwHelper(LDDW_HELPER_MAP_BY_FD, (void *)vm->map_by_fd);
+	tryDefineLddwHelper(LDDW_HELPER_MAP_BY_IDX, (void *)vm->map_by_idx);
+	tryDefineLddwHelper(LDDW_HELPER_MAP_VAL, (void *)vm->map_val);
+	tryDefineLddwHelper(LDDW_HELPER_CODE_ADDR, (void *)vm->code_addr);
+	tryDefineLddwHelper(LDDW_HELPER_VAR_ADDR, (void *)vm->var_addr);
+	ExitOnErr(mainDylib.define(absoluteSymbols(lddwSyms)));
+	auto bpfModule = ExitOnErr(
+		generateModule(*jit, extFuncNames, definedLddwHelpers));
 	bpfModule.withModuleDo([](auto &M) { optimizeModule(M); });
 	ExitOnErr(jit->addIRModule(std::move(bpfModule)));
 	auto func = ExitOnErr(jit->lookup("bpf_main"));

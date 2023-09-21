@@ -15,6 +15,7 @@ bpftime_prog::bpftime_prog(const struct ebpf_inst *insn, size_t insn_cnt,
 			   const char *name)
 	: name(name)
 {
+	spdlog::debug("Creating bpftime_prog with name {}", name);
 	insns.assign(insn, insn + insn_cnt);
 	vm = ebpf_create();
 	ebpf_toggle_bounds_check(vm, false);
