@@ -21,6 +21,6 @@ target_link_libraries(bpftimetool
   -lpthread
   -lm 
   -ldl
-  -lbpf
+
   Boost::program_options
 )

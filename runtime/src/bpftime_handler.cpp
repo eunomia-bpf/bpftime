@@ -248,7 +248,7 @@ int bpf_attach_ctx::init_attach_ctx_from_handlers(
 			if (event_handler.type !=
 			    bpf_perf_event_handler::bpf_event_type::
 				    PERF_TYPE_TRACEPOINT) {
-				resolve_function_addr(*this, event_handler);
+				function = resolve_function_addr(*this, event_handler);
 				if (!function) {
 					spdlog::error(
 						"Function not found {} {}",

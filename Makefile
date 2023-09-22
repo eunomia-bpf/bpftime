@@ -37,7 +37,7 @@ test: ## test the package
 	cd build/runtime && ctest -VV
 
 build: ## build the package
-	cmake -Bbuild  -DBPFTIME_ENABLE_UNIT_TESTING=1
+	cmake -Bbuild  -DBPFTIME_ENABLE_UNIT_TESTING=1 -DUSE_NEW_BINUTILS=1
 	cmake --build build --config Debug
 
 release: ## build the package

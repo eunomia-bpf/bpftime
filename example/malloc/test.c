@@ -3,8 +3,7 @@
 #include <unistd.h>
 
 int main(int argc, char *argv[]) {
-    puts("");
-    printf("\nHello malloc!\n");
+    puts("\nHello malloc!\n");
     while(1) {
         void *p = malloc(1024);
         printf("continue malloc...\n");

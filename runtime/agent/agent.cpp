@@ -32,18 +32,6 @@ static putchar_func orig_fn = nullptr;
 
 void bpftime_agent_main(const gchar *data, gboolean *stay_resident);
 
-// extern "C" int putchar(int c)
-// {
-
-// 	if (!orig_fn) {
-// 		// if not init, run the bpftime_agent_main to start the client
-// 		orig_fn = (putchar_func)dlsym(RTLD_NEXT, "putchar");
-// 		printf("new main\n");
-// 		int stay_resident = 0;
-// 		bpftime_agent_main("", (gboolean *)&stay_resident);
-// 	}
-// 	return orig_fn(c);
-// }
 extern "C" int puts(const char *str)
 {
 	if (!orig_puts_func) {

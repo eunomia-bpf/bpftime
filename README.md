@@ -33,13 +33,13 @@ To get started:
 3. Execute the libbpf tracing program:
 
    ```bash
-   LD_PRELOAD=build/runtime/syscall-server/libbpftime-syscall-server.so ./malloc
+   LD_PRELOAD=build/runtime/syscall-server/libbpftime-syscall-server.so example/malloc/malloc
    ```
 
 4. Run the target program with eBPF:
 
    ```bash
-   LD_PRELOAD=build/runtime/agent/libbpftime-agent.so ./test
+   LD_PRELOAD=build/runtime/agent/libbpftime-agent.so example/malloc/test
    ```
 
 Alternatively, you can run the program directly in the kernel:
