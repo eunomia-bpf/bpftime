@@ -38,9 +38,6 @@ documents/frida/hello
 linux-git/
 jitterbug
 *.o
-mini-ubpf
-core-ubpf/build/
-core/test/test_framework/__pycache__/
 
 __pycache__
 .cache

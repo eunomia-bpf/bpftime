@@ -1,6 +1,6 @@
 # bpftime: Userspace unprivileged eBPF runtime for fast Uprobe & Syscall Tracing
 
-`bpftime` is an unprivileged eBPF runtime designed to operate in userspace, offering rapid Uprobe and Syscall tracing capabilities.
+`bpftime` is an unprivileged full-featured eBPF runtime designed to operate in userspace, offering rapid Uprobe and Syscall tracing capabilities. **10x faster than kernel uprobe!**
 
 ## Features
 
@@ -18,31 +18,33 @@ With `bpftime`, you can build eBPF applications using familiar tools like clang 
 
 To get started:
 
-1. Navigate to the example directory:
+```console
+make build # build the runtime
+make -C example/malloc # Build the eBPF program example
+LD_PRELOAD=build/runtime/syscall-server/libbpftime-syscall-server.so example/malloc/malloc
+```
 
-   ```bash
-   cd example/malloc
-   ```
+In another shell, Run the target program with eBPF inside:
 
-2. Build the eBPF program:
+```console
+$ LD_PRELOAD=build/runtime/agent/libbpftime-agent.so example/malloc/test
+Hello malloc!
+malloc called from pid 250215
+continue malloc...
+malloc called from pid 250215
+```
 
-   ```bash
-   make
-   ```
+You can run it again with another process and you can see the output:
 
-3. Execute the libbpf tracing program:
+```console
+12:44:35 
+        pid=247299      malloc calls: 10
+        pid=247322      malloc calls: 10
+```
 
-   ```bash
-   LD_PRELOAD=build/runtime/syscall-server/libbpftime-syscall-server.so example/malloc/malloc
-   ```
+Run the target program with eBPF
 
-4. Run the target program with eBPF:
-
-   ```bash
-   LD_PRELOAD=build/runtime/agent/libbpftime-agent.so example/malloc/test
-   ```
-
-Alternatively, you can run the program directly in the kernel:
+Alternatively, you can also run the program directly in the kernel eBPF:
 
 ```console
 $ sudo example/malloc/malloc
