@@ -20,7 +20,8 @@ jobs:
     - name: install deps
       run: |
         sudo apt install -y --no-install-recommends \
-        libelf1 libelf-dev zlib1g-dev make git libboost-dev libboost-program-options-dev
+        libelf1 libelf-dev zlib1g-dev make git libboost-dev \
+        libboost-program-options-dev binutils-dev
 
     - name: build package
       run:  make build

@@ -6,7 +6,9 @@
 Install the required packages:
 
 ```bash
-sudo apt install libelf1 libelf-dev zlib1g-dev make git libboost-dev cmake  libboost-program-options-dev
+sudo apt install -y --no-install-recommends \
+        libelf1 libelf-dev zlib1g-dev make git libboost-dev \
+        libboost-program-options-dev binutils-dev
 git submodule update --init --recursive
 ```
 

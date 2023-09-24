@@ -85,13 +85,15 @@ Userspace uprobe and tracepoint compared to kernel:
 | Uretprobe              | 5899.706820 | 472.972220    |
 | Syscall Tracepoint     | 1499.47708  | 1489.04251    |
 
-LLVM jit benchmark: see [https://github.com/eunomia-bpf/bpf-benchmark] for how we evaluate.
+LLVM jit benchmark: see [github.com/eunomia-bpf/bpf-benchmark](https://github.com/eunomia-bpf/bpf-benchmark) for how we evaluate and details.
 
-![LLVM jit benchmark](https://github.com/eunomia-bpf/bpf-benchmark/raw/main/example-output/execution_usage_bar_plot.png?raw=true)
+![LLVM jit benchmark](https://github.com/eunomia-bpf/bpf-benchmark/raw/main/example-output/merged_execution_times.png?raw=true)
+
+Across all tests, the LLVM JIT for bpftime consistently showcased superior performance. Both demonstrated high efficiency in integer computations (as seen in log2_int), complex mathematical operations (as observed in prime), and memory operations (evident in memcpy and strcmp). While they lead in performance across the board, each runtime exhibits unique strengths and weaknesses. These insights can be invaluable for users when choosing the most appropriate runtime for their specific use-cases.
 
 Hash map or ring buffer compared to kernel(TODO)
 
-See [benchmark](benchmark) for detail performance benchmarks.
+See [benchmark](benchmark) dir for detail performance benchmarks.
 
 ### Differences from Kernel eBPF and building eBPF programs
 
