@@ -11,16 +11,40 @@
 #include <cinttypes>
 #include <iomanip>
 #include <signal.h>
+
+#define ITER_COUNT 100000
 uint64_t total_time = 0;
 uint64_t count = 0;
 
-void sigint_handler(int)
+void sigint_handler(int signum)
 {
-	double avg = (double)total_time / (double)count;
-	std::cout << "Average open time usage " << std::fixed
+	double avg = ((double)total_time / (double)count) / ITER_COUNT;
+	std::cout << "Average time usage " << std::fixed
 		  << std::setprecision(5) << avg << "ns, "
-		  << " count " << count << std::endl;
-	exit(0);
+		  << " count " << count * ITER_COUNT << std::endl;
+	if (signum != 0)
+		exit(0);
+}
+
+void test_syscall() {
+	int fd = open("/dev/null", O_CREAT | O_RDWR);
+	while (count < 10) {
+		printf("Iteration %lu\n", count);
+		// DO NOT CHANGE THIS call to puts
+		auto time_begin = std::chrono::high_resolution_clock::now();
+		for (int i = 0; i < ITER_COUNT; i++) {
+			write(fd, "hello", 5);
+		}
+		auto time_end = std::chrono::high_resolution_clock::now();
+		auto diff =
+			std::chrono::duration_cast<std::chrono::nanoseconds>(
+				(time_end - time_begin));
+		count += 1;
+		total_time += diff.count();
+	}
+	printf("Total time: %" PRIu64 "\n", total_time);
+	close(fd);
+	sigint_handler(0);
 }
 
 int main()
@@ -36,22 +60,7 @@ int main()
 			return 1;
 		}
 	}
-	puts("");
-	while (1) {
-		// DO NOT CHANGE THIS call to puts
-		puts("Opening test.txt..");
-		auto time_begin = std::chrono::high_resolution_clock::now();
-		int fd = open("test.txt", O_CREAT | O_RDWR);
-		auto time_end = std::chrono::high_resolution_clock::now();
-		auto diff =
-			std::chrono::duration_cast<std::chrono::nanoseconds>(
-				(time_end - time_begin));
-		count += 1;
-		total_time += diff.count();
-		std::cout << "VICTIM: get fd " << fd << std::endl;
-		usleep(500 * 1000);
-		std::cout << "VICTIM: closing fd" << std::endl;
-		close(fd);
-	}
+	test_syscall();
+	puts("Done");
 	return 0;
 }

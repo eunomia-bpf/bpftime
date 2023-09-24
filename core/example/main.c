@@ -29,8 +29,6 @@ int main()
 	// using ubpf jit for x86_64 and arm64
 	struct ebpf_vm *vm = ebpf_create();
 
-	// register_ffi_handler(vm);
-
 	ebpf_toggle_bounds_check(vm, false);
 
 	// remove 0, in the end

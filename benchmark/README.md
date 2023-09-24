@@ -6,6 +6,12 @@ With userspace eBPF runntime, we can:
 - with out any kernel patch or modify the tracing eBPF program
 - No privilege is needed for running the eBPF tracing program.
 
+| Probe/Tracepoint Types | Kernel (ns)  | Userspace (ns) |
+|------------------------|-------------:|---------------:|
+| Uprobe                 | 4751.462610 | 445.169770    |
+| Uretprobe              | 5899.706820 | 472.972220    |
+| Syscall Tracepoint     | 1499.47708  | 1489.04251    |
+
 ## build
 
 Build the agent first. In project root:
@@ -162,3 +168,22 @@ a[b] + c for 100000 times
 Elapsed time: 0.047297222 seconds
 avg function elapse time: 472.972220 ns
 ```
+
+## userspace syscall
+
+
+### run
+
+```sh
+sudo LD_PRELOAD=build/runtime/syscall-server/libbpftime-syscall-server.so  benchmark/syscall/syscall
+```
+
+in another shell, run the target program with eBPF inside:
+
+```sh
+sudo LD_PRELOAD=build/runtime/agent/libbpftime-agent.so benchmark/syscall/victim
+```
+
+- baseline: Average time usage 938.53511ns,  count 1000000
+- userspace syscall tracepoint: Average time usage 1489.04251ns,  count 1000000
+- kernel tracepoint：Average time usage 1499.47708ns,  count 1000000

@@ -79,21 +79,9 @@ int main(int argc, char *argv[])
 		fprintf(stderr, "Failed to load: %s\n", errmsg);
 		return 1;
 	}
-	// using ubpf jit for x86_64 and arm64
-	// struct ebpf_vm vm = {
-	// 	.insnsi = (struct ebpf_inst *)TEST_BPF_CODE,
-	// 	.num_insts = TEST_BPF_SIZE / sizeof(struct ebpf_inst),
-	// 	.bounds_check_enabled = true,
-	// 	.ext_funcs = { 0 },
-	// 	.unwind_stack_extension_index = -1,
-	// };
 	ebpf_register(vm, 2, "print", (void *)ffi_print_func);
 	ebpf_register(vm, 3, "add", (void *)ffi_add_func);
 	ebpf_register(vm, 4, "print_integer", (void *)ffi_print_integer);
-	// vm.ext_funcs[2] = ffi_print_func;
-	// vm.ext_funcs[3] = ffi_add_func;
-	// vm.ext_funcs[4] = ffi_print_integer;
-	// EBPF_OP_CALL
 	printf("code len: %zd\n", TEST_BPF_SIZE);
 	auto func = ebpf_compile(vm, &errmsg);
 	if (!func) {

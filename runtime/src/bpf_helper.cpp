@@ -132,8 +132,10 @@ uint64_t bpf_probe_read_str(uint64_t buf, uint64_t bufsz, uint64_t ptr,
 		(size_t)bufsz);
 	return 0;
 }
+
 uint64_t bpf_get_stack(uint64_t, uint64_t buf, uint64_t sz, uint64_t, uint64_t)
 {
+	// TODO: implement this
 	memset((void *)(uintptr_t)buf, 0, sz);
 	return sz;
 }

@@ -7,13 +7,12 @@
 #include <cinttypes>
 #include <chrono>
 #include <optional>
-#include <spdlog/spdlog.h>
 
 int read_file(const char *path, std::vector<char> &buf)
 {
 	std::ifstream prog_file(path, std::ios::binary);
 	if (!prog_file) {
-		spdlog::error("Failed to open {}", path);
+		std::cerr << "Failed to open " << path << std::endl;
 		return 1;
 	}
 	prog_file.seekg(0, std::ios::end);
@@ -21,9 +20,8 @@ int read_file(const char *path, std::vector<char> &buf)
 	prog_file.seekg(0, std::ios::beg);
 
 	buf.resize(file_size);
-	// std::vector<char> file_buffer(file_size);
 	if (!prog_file.read(buf.data(), file_size)) {
-		spdlog::error("Failed to read {}", path);
+		std::cerr << "Failed to read " << path << std::endl;
 		return 1;
 	}
 	return 0;
@@ -44,7 +42,7 @@ int main(int argc, const char **argv)
 		return err;
 	}
 	if (prog_file.size() % 8) {
-		spdlog::error("Length of ebpf program must be a multiple of 8");
+		std::cerr << "Invalid program size" << std::endl;
 		return 1;
 	}
 	std::optional<std::vector<char> > memory_file;
@@ -61,7 +59,8 @@ int main(int argc, const char **argv)
 	if (int err = ebpf_load(vm.get(), prog_file.data(),
 				(uint32_t)prog_file.size(), &errmsg);
 	    err < 0) {
-		spdlog::error("Failed to load instructions: {}", errmsg);
+		std::cerr << "Failed to load ebpf program: " << errmsg
+			  << std::endl;
 		return 1;
 	}
 	errmsg = nullptr;
@@ -70,7 +69,8 @@ int main(int argc, const char **argv)
 	auto compile_end = std::chrono::high_resolution_clock::now();
 
 	if (!bpf_main) {
-		spdlog::error("Failed to compile ebpf program: {}", errmsg);
+		std::cerr << "Failed to compile ebpf program: " << errmsg
+			  << std::endl;
 		return 1;
 	}
 	auto compile_usage =

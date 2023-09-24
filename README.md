@@ -79,7 +79,17 @@ examples can be found in [example](example) dir.
 
 Userspace uprobe and tracepoint compared to kernel:
 
-Hash map or ring buffer compared to kernel:
+| Probe/Tracepoint Types | Kernel (ns)  | Userspace (ns) |
+|------------------------|-------------:|---------------:|
+| Uprobe                 | 4751.462610 | 445.169770    |
+| Uretprobe              | 5899.706820 | 472.972220    |
+| Syscall Tracepoint     | 1499.47708  | 1489.04251    |
+
+LLVM jit benchmark: see [https://github.com/eunomia-bpf/bpf-benchmark] for how we evaluate.
+
+![LLVM jit benchmark](https://github.com/eunomia-bpf/bpf-benchmark/raw/main/example-output/execution_usage_bar_plot.png?raw=true)
+
+Hash map or ring buffer compared to kernel(TODO)
 
 See [benchmark](benchmark) for detail performance benchmarks.
 

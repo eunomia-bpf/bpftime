@@ -1,5 +1,6 @@
 #ifndef _BPF_JIT_HELPER
 #define _BPF_JIT_HELPER
+
 #include "llvm_jit_context.h"
 #include "llvm_bpf_jit.h"
 #include "ebpf_inst.h"
@@ -16,6 +17,7 @@
 #include <tuple>
 #include <utility>
 #include <spdlog/spdlog.h>
+
 static inline bool is_jmp(const ebpf_inst &insn)
 {
 	return (insn.code & 0x07) == EBPF_CLS_JMP ||
