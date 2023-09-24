@@ -24,7 +24,7 @@ jobs:
         libboost-program-options-dev binutils-dev
 
     - name: build package
-      run:  make build
+      run:  make build-old-binutils
 
     - name: test package
       run:  make test

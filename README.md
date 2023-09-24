@@ -59,6 +59,12 @@ $ sudo example/malloc/malloc
 
 ### **How it Works**
 
+Left: kernel eBPF | Right: userspace bpftime
+
+![How it works](documents/bpftime.png)
+
+The inline hook implementation is based on frida.
+
 see [documents/how-it-works.md](documents/how-it-works.md) for details.
 
 ### **Examples & Use Cases**
