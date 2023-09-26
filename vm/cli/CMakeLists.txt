@@ -1,6 +1,6 @@
-add_executable(bpftime-cli simple-cli.cpp)
-set_property(TARGET bpftime-cli PROPERTY CXX_STANDARD 20)
-add_dependencies(bpftime-cli vm-bpf)
+add_executable(bpftime-simple-cli simple-cli.cpp)
+set_property(TARGET bpftime-simple-cli PROPERTY CXX_STANDARD 20)
+add_dependencies(bpftime-simple-cli vm-bpf)
 
-target_include_directories(bpftime-cli PRIVATE ../include)
-target_link_libraries(bpftime-cli vm-bpf)
+target_include_directories(bpftime-simple-cli PRIVATE ../include)
+target_link_libraries(bpftime-simple-cli vm-bpf)

@@ -1,11 +1,11 @@
-add_executable(bpftimetool
+add_executable(bpftime
   main.cpp
 )
 
 find_package(Boost REQUIRED COMPONENTS program_options)
 
-add_dependencies(bpftimetool FridaCore bpftime-object)
-target_include_directories(bpftimetool PUBLIC 
+add_dependencies(bpftime FridaCore bpftime-object)
+target_include_directories(bpftime PUBLIC 
 
 set(LIBBPF_INCLUDE_DIRS ${CMAKE_CURRENT_BINARY_DIR}/../../runtime/object/libbpf)
 ${FRIDA_CORE_INSTALL_DIR}
@@ -16,7 +16,7 @@ ${LIBBPF_INCLUDE_DIRS}/uapi
 ${LIBBPF_INCLUDE_DIRS}
 )
 
-target_link_libraries(bpftimetool
+target_link_libraries(bpftime
   ${FRIDA_CORE_INSTALL_DIR}/libfrida-core.a
   -lpthread
   -lm 

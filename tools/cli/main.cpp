@@ -88,7 +88,6 @@ void inject_agent(cli_config &config)
 	frida_deinit();
 }
 
-namespace po = boost::program_options;
 
 // Main program
 int main(int argc, char *argv[])
