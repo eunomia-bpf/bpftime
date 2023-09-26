@@ -31,7 +31,7 @@ bpftime load ./example/malloc/malloc
 In another shell, Run the target program with eBPF inside:
 
 ```console
-$ bpftime start example/malloc/test
+$ bpftime start ./example/malloc/test
 Hello malloc!
 malloc called from pid 250215
 continue malloc...
