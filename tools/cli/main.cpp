@@ -1,4 +1,5 @@
 #include <boost/program_options/value_semantic.hpp>
+#include <cerrno>
 #include <cstdlib>
 #include <frida-core.h>
 #include <iostream>
@@ -12,6 +13,7 @@
 extern "C" {
 #include <bpf/libbpf.h>
 #include <bpf/bpf.h>
+#include <sys/stat.h>
 }
 
 const char *DEFAULT_INSTALLATION_LOCATION = "~/.bpftime";
@@ -101,10 +103,12 @@ void inject_agent(cli_config &config)
 int main(int argc, char *argv[])
 {
 	if (argc == 1) {
-		cerr << "Usage: " << argv[0] << " [load|start|attach]" << endl;
+		cerr << "Usage: " << argv[0] << " [load|start|attach] ..."
+		     << endl;
 		return 1;
 	}
 	auto cmd = std::string(argv[1]);
+	// struct stat st;
 	if (cmd == "load") {
 		if (argc != 3) {
 			cerr << "Usage: " << argv[0] << " load <EXECUTABLE>"
@@ -113,27 +117,27 @@ int main(int argc, char *argv[])
 		}
 		auto so_path = std::string(DEFAULT_INSTALLATION_LOCATION) +
 			       "/libbpftime-syscall-server.so";
-		if (!std::filesystem::exists(so_path)) {
-			cerr << "Error: necessary library " << so_path
-			     << " not found" << endl;
-			return 1;
-		}
+		// if (stat(so_path.c_str(), &st) != 0) {
+		// 	cerr << "Error: necessary library " << so_path
+		// 	     << " not found:" << errno << endl;
+		// 	return 1;
+		// }
 		auto command_to_run =
 			"LD_PRELOAD=" + so_path + " " + std::string(argv[2]);
 		return system(command_to_run.c_str());
 	} else if (cmd == "start") {
-		if (argc != 2) {
+		if (argc != 3) {
 			cerr << "Usage: " << argv[0] << " start <EXECUTABLE>"
 			     << endl;
 			return 1;
 		}
 		auto so_path = std::string(DEFAULT_INSTALLATION_LOCATION) +
 			       "/libbpftime-agent.so";
-		if (!std::filesystem::exists(so_path)) {
-			cerr << "Error: necessary library " << so_path
-			     << " not found" << endl;
-			return 1;
-		}
+		// if (stat(so_path.c_str(), &st) != 0) {
+		// 	cerr << "Error: necessary library " << so_path
+		// 	     << " not found:" << errno << endl;
+		// 	return 1;
+		// }
 		auto command_to_run =
 			"LD_PRELOAD=" + so_path + " " + std::string(argv[2]);
 		return system(command_to_run.c_str());
