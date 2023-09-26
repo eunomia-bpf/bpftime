@@ -38,8 +38,8 @@ foreach(file ${test_sources})
   # Setup code coverage if enabled
   #
   if(BPFTIME_ENABLE_CODE_COVERAGE)
-    target_compile_options(core-bpf PUBLIC -O0 -g -fprofile-arcs -ftest-coverage)
-    target_link_options(core-bpf PUBLIC -fprofile-arcs -ftest-coverage)
+    target_compile_options(vm-bpf PUBLIC -O0 -g -fprofile-arcs -ftest-coverage)
+    target_link_options(vm-bpf PUBLIC -fprofile-arcs -ftest-coverage)
     message(DEBUG "Code coverage is enabled and provided with GCC.")
   endif()
 
@@ -53,13 +53,13 @@ foreach(file ${test_sources})
       ${test_name}_Tests
       PUBLIC
       Catch2::Catch2
-      core-bpf
+      vm-bpf
     )
   else()
     target_link_libraries(
       ${test_name}_Tests
       PUBLIC
-      core-bpf
+      vm-bpf
     )
     # message("Unknown testing library ${test_name}_Tests. Please setup your desired unit testing library by using `target_link_libraries`.")
   endif()

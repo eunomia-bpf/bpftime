@@ -4,7 +4,7 @@ cmake_minimum_required(VERSION 3.15)
 # Project details
 #
 project(
-  "core-bpf"
+  "vm-bpf"
   VERSION 0.1.0
   LANGUAGES C CXX
 )
@@ -27,7 +27,7 @@ else()
   add_subdirectory(simple-jit)
 endif()
 
-set_project_warnings(core-bpf)
+set_project_warnings(vm-bpf)
 
 # set the -static flag for static linking
 if(NOT BPFTIME_ENABLE_ASAN)

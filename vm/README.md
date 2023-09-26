@@ -1,4 +1,4 @@
-# bpftime core
+# bpftime vm
 
 the bpf vm and jit for eBPF, you can choose from llvm-jit and a simple-jit/interpreter based on ubpf.
 

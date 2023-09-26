@@ -33,7 +33,7 @@ help:
 test: build-arm32
 	cd build/ && ctest -VV
 
-test-core: ## run tests quickly with pytest on x86, you need to build first
+test-vm: ## run tests quickly with pytest on x86, you need to build first
 	pytest -v -s test/test_framework
 
 coverage: ## check code coverage quickly GCC

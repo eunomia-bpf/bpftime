@@ -2,9 +2,9 @@
 
 ## How to run?
 
-- Build the target `test_Tests` in `PROJECT_ROOT/core` with `-DBPFTIME_LLVM_JIT=YES`
-- Create a venv with Python 3.8, then install packages in `core/test/requirements.txt`
-- Run `pytest -k "test_jit.py and not err-infinite"` in `core/test/test_frameworks`
+- Build the target `test_Tests` in `PROJECT_ROOT/vm` with `-DBPFTIME_LLVM_JIT=YES`
+- Create a venv with Python 3.8, then install packages in `vm/test/requirements.txt`
+- Run `pytest -k "test_jit.py and not err-infinite"` in `vm/test/test_frameworks`
 
 ## What's expected
 

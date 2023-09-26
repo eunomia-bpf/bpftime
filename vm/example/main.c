@@ -6,7 +6,7 @@
 #include <stdbool.h>
 #include <inttypes.h> 
 #include "bpf_progs.h"
-#include "ebpf-core.h"
+#include "ebpf-vm.h"
 
 struct ebpf_inst;
 

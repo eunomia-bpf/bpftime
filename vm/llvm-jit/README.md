@@ -13,7 +13,7 @@ cmake --build build --target all -j
 ## run
 
 ```
-build/core-llvm
+build/vm-llvm
 ```
 
 ## Test with bpf-conformance
@@ -33,14 +33,14 @@ cmake --build build --target bpf_conformance_runner
 
 ```bash
 cd bpf_conformance
-./build/bin/bpf_conformance_runner  --test_file_directory tests --plugin_path PATH_TO_LLVM_JIT/build/core-llvm-bpf-test 
+./build/bin/bpf_conformance_runner  --test_file_directory tests --plugin_path PATH_TO_LLVM_JIT/build/vm-llvm-bpf-test 
 ```
 
 With `PATH_TO_LLVM_JIT` replaced to the directory of this project
 
 - See the results
 
-If nothing unexpected happens, you will see that `core-llvm-bpf-test` passes at least 144 tests of the 166 tests. The unpassed tests used features that we haven't supported.
+If nothing unexpected happens, you will see that `vm-llvm-bpf-test` passes at least 144 tests of the 166 tests. The unpassed tests used features that we haven't supported.
 
 ```console
 .....

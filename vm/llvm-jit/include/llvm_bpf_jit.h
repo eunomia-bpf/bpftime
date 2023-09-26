@@ -4,9 +4,9 @@
 #include <stdbool.h>
 #include <stdint.h>
 #include <stdlib.h>
-#include "ebpf-core.h"
+#include "ebpf-vm.h"
 #include "ebpf_inst.h"
-#include <ebpf-core.h>
+#include <ebpf-vm.h>
 #ifdef __cplusplus
 extern "C" {
 #endif

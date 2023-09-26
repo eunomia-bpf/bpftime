@@ -82,14 +82,14 @@ see [documents/how-it-works.md](documents/how-it-works.md) for details.
 
 We can use the bpftime userspace runtime:
 
-attach uprobe, uretprobe or all syscall tracepoints(x86 only) eBPF programs to a process or a group of processes:
+Attach uprobe, uretprobe or all syscall tracepoints(x86 only) eBPF programs to a process or a group of processes:
 
 - `malloc`: count the malloc calls in libc by pid
 - `bash_readline`: trace readline calls in bash
 - `sslsniff`: trace SSL/TLS raw text in openssl
 - `opensnoop`: trace file open or close in a process
 
-examples can be found in [example](example) dir. More examples are coming soon.
+Examples can be found in [example](example) dir. More examples are coming soon.
 
 ### **Performance Benchmarks**
 

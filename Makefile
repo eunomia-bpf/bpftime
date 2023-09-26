@@ -49,8 +49,8 @@ release: ## build the package
 	cmake -Bbuild  -DBPFTIME_ENABLE_UNIT_TESTING=0
 	cmake --build build --config Release
 
-build-core: ## build only the core library
-	make -C core build
+build-vm: ## build only the core library
+	make -C vm build
 
 build-llvm: ## build with llvm as jit backend
 	cmake -Bbuild  -DBPFTIME_ENABLE_UNIT_TESTING=1 -DBPFTIME_LLVM_JIT=1
@@ -59,4 +59,4 @@ build-llvm: ## build with llvm as jit backend
 clean: ## clean the project
 	rm -rf build
 	make -C runtime clean
-	make -C core clean
+	make -C vm clean

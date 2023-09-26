@@ -18,7 +18,7 @@
 #ifndef ebpf_INST_H
 #define ebpf_INST_H
 
-#include "ebpf-core.h"
+#include "ebpf-vm.h"
 #include "ebpf_inst.h"
 #include "debug.h"
 #include <inttypes.h>

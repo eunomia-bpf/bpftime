@@ -1,6 +1,6 @@
 #include "bpftime.hpp"
 #include "bpftime_internal.h"
-#include "ebpf-core.h"
+#include "ebpf-vm.h"
 #include <cstring>
 #include <cstdlib>
 #include <cstdint>

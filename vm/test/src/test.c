@@ -25,7 +25,7 @@
 #include <getopt.h>
 #include <errno.h>
 #include <math.h>
-#include "ebpf-core.h"
+#include "ebpf-vm.h"
 
 void
 ebpf_set_register_offset(int x);

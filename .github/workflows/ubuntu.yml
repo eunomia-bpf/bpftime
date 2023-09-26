@@ -29,7 +29,7 @@ jobs:
         sudo apt-get install -y gcc-aarch64-linux-gnu g++-aarch64-linux-gnu gcc-arm-linux-gnueabi qemu-user
 
     - name: build
-      run: make build-core
+      run: make build-vm
 
     - name: install test deps
       run: |
@@ -39,9 +39,9 @@ jobs:
 
     - name: run tests x86
       run: |
-        python3.8 -m venv core/test
-        source core/test/bin/activate
+        python3.8 -m venv vm/test
+        source vm/test/bin/activate
         sudo apt install python3-pytest
-        pip install -r core/test/requirements.txt
+        pip install -r vm/test/requirements.txt
         # make build # or build-arm32 build-arm64
-        make -C core test-core
+        make -C vm test-vm

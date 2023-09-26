@@ -86,7 +86,7 @@ add_custom_target(
 
 target_include_directories(${PROJECT_NAME}
   PUBLIC
-  ${CMAKE_CURRENT_SOURCE_DIR}/../core/include
+  ${CMAKE_CURRENT_SOURCE_DIR}/../vm/include
   ${CMAKE_CURRENT_SOURCE_DIR}/../runtime/include
   ${CMAKE_CURRENT_SOURCE_DIR}/../runtime
   ${CMAKE_CURRENT_BINARY_DIR}
@@ -96,10 +96,10 @@ target_include_directories(${PROJECT_NAME}
 
 target_link_libraries(${PROJECT_NAME}
   PUBLIC
-  core-bpf
+  vm-bpf
   spdlog::spdlog
 )
-add_dependencies(${PROJECT_NAME} core-bpf FridaGum syscall_id_table spdlog::spdlog)
+add_dependencies(${PROJECT_NAME} vm-bpf FridaGum syscall_id_table spdlog::spdlog)
 
 message(DEBUG "Found the following sources: ${sources}")
 

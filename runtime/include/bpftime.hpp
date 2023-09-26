@@ -9,7 +9,7 @@
 #include <cstdint>
 #include <cassert>
 #include <cstdlib>
-#include <ebpf-core.h>
+#include <ebpf-vm.h>
 
 extern "C" {
 

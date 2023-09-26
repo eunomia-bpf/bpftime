@@ -35,7 +35,7 @@ set(test_include_dirs
   ${CMAKE_CURRENT_SOURCE_DIR}/../include
   ${CMAKE_CURRENT_SOURCE_DIR}/../src
   ${CMAKE_CURRENT_SOURCE_DIR}/include
-  ${CMAKE_CURRENT_SOURCE_DIR}/../../core/include
+  ${CMAKE_CURRENT_SOURCE_DIR}/../../vm/include
   ${CMAKE_CURRENT_SOURCE_DIR}/../../third_party
   ${CMAKE_CURRENT_SOURCE_DIR}/../object
 )

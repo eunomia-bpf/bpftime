@@ -2,7 +2,7 @@
 #include <string.h>
 #include "test_bpf_progs.h"
 #include "test_defs.h"
-#include "ebpf-core.h"
+#include "ebpf-vm.h"
 #include <stdlib.h>
 #include <stdint.h>
 #include <inttypes.h> 
@@ -36,7 +36,17 @@ int main()
 
 	int mem_len = 1024 * 1024;
 	char *mem = malloc(mem_len);
-	ebpf_exec(vm, mem, mem_len, &res);
+	printf("Use JIT Mode\n");
+
+	ebpf_jit_fn fn = ebpf_compile(vm, &errmsg);
+	if (fn == NULL) {
+		fprintf(stderr, "Failed to compile: %s\n", errmsg);
+		free(mem);
+		return 1;
+	}
+
+	// res = ((kernel_fn)(fn))(NULL, context->vm->insnsi);
+	res = fn(&m, sizeof(m));
 	printf("res = %" PRIu64 "\n", res);
 	return 0;
 }
