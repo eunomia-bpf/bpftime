@@ -65,19 +65,23 @@ include(cmake/frida.cmake)
 
 # ebpf-verifier
 option(ENABLE_EBPF_VERIFIER "Whether to enable ebpf verifier" OFF)
+set(CMAKE_POSITION_INDEPENDENT_CODE YES)
 
 if(${ENABLE_EBPF_VERIFIER})
   add_subdirectory(third_party/ebpf-verifier)
+  set(EBPF_VERIFIER_INCLUDE ${CMAKE_CURRENT_SOURCE_DIR}/third_party/ebpf-verifier/src)
 endif()
 
 # spdlog
-set(CMAKE_POSITION_INDEPENDENT_CODE YES)
 add_subdirectory(third_party/spdlog)
 
-set(SPDLOG_INCLUDE third_party/spdlog/include)
+set(SPDLOG_INCLUDE {CMAKE_CURRENT_SOURCE_DIR}/third_party/spdlog/include)
+
 # main library
 add_subdirectory(vm)
 add_subdirectory(runtime)
 add_subdirectory(tools)
 
 set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>DLL")
+
+install(TARGETS bpftime-agent bpftime-agent-transformer bpftime-syscall-server CONFIGURATIONS Release DESTINATION ~/.bpftime)

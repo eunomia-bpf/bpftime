@@ -56,6 +56,7 @@ set(sources
   src/attach.cpp
   src/bpftime_handler.cpp
   src/syscall_table.cpp
+  src/verifier-interface.cpp
 )
 
 # list(APPEND sources
@@ -100,6 +101,13 @@ target_link_libraries(${PROJECT_NAME}
   spdlog::spdlog
 )
 add_dependencies(${PROJECT_NAME} vm-bpf FridaGum syscall_id_table spdlog::spdlog)
+
+if(${USE_EBPF_VERIFIER})
+  add_dependencies(${PROJECT_NAME} ebpfverifier)
+  target_link_libraries(${PROJECT_NAME} ebpfverifier)
+  target_include_directories(${PROJECT_NAME} ${EBPF_VERIFIER_INCLUDE})
+  target_compile_definitions(${PROJECT_NAME} USE_EBPF_VERIFIER)
+endif()
 
 message(DEBUG "Found the following sources: ${sources}")
 
