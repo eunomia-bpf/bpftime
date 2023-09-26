@@ -19,7 +19,7 @@ static __always_inline bool valid_uid(uid_t uid)
 	return uid != INVALID_UID;
 }
 
-static __always_inline bool trace_allowed(u32 tgid, u32 pid)
+bool trace_allowed(u32 tgid, u32 pid)
 {
 	return true;
 }
@@ -60,7 +60,7 @@ int tracepoint__syscalls__sys_enter_openat(struct trace_event_raw_sys_enter *ctx
 	return 0;
 }
 
-static __always_inline int trace_exit(struct trace_event_raw_sys_exit *ctx)
+int trace_exit(struct trace_event_raw_sys_exit *ctx)
 {
 	struct event event = {};
 	struct args_t *ap;

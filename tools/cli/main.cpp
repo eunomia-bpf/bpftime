@@ -3,7 +3,7 @@
 #include <boost/program_options.hpp>
 #include <cstdio>
 #include <memory>
-
+#include <bpftime_shm.hpp>
 extern "C" {
 #include <bpf/libbpf.h>
 #include <bpf/bpf.h>
@@ -12,6 +12,8 @@ extern "C" {
 using namespace std;
 
 const std::string version = "1.0.0";
+const bpftime::shm_open_type bpftime::global_shm_open_type =
+	shm_open_type::SHM_NO_CREATE;
 
 struct cli_config {
 	bool dry_run = false;
