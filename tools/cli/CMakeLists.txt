@@ -25,3 +25,5 @@ target_link_libraries(bpftime
   bpftime-object
   Boost::program_options
 )
+
+install(TARGETS bpftime CONFIGURATIONS Release Debug DESTINATION ~/.bpftime)

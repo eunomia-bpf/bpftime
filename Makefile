@@ -46,8 +46,7 @@ build-old-binutils: ## build the package with old binutils
 
 
 release: ## build the package
-	cmake -Bbuild  -DBPFTIME_ENABLE_UNIT_TESTING=0
-	cmake --build build --config Release
+	(cmake -Bbuild  -DBPFTIME_ENABLE_UNIT_TESTING=0 && cmake --build build --config Release -j) || (cmake -Bbuild  -DBPFTIME_ENABLE_UNIT_TESTING=0 -DUSE_NEW_BINUTILS=YES && cmake --build build --config Release -j)
 
 build-vm: ## build only the core library
 	make -C vm build
@@ -60,3 +59,5 @@ clean: ## clean the project
 	rm -rf build
 	make -C runtime clean
 	make -C vm clean
+install: release ## Invoke cmake to install..
+	cmake --build build --config Release --target install

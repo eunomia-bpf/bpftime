@@ -22,15 +22,16 @@ With `bpftime`, you can build eBPF applications using familiar tools like clang 
 To get started:
 
 ```console
-make build # build the runtime
+make install # Install the runtime
 make -C example/malloc # Build the eBPF program example
-LD_PRELOAD=build/runtime/syscall-server/libbpftime-syscall-server.so example/malloc/malloc
+export PATH=$PATH:~/.bpftime
+bpftime load ./example/malloc/malloc
 ```
 
 In another shell, Run the target program with eBPF inside:
 
 ```console
-$ LD_PRELOAD=build/runtime/agent/libbpftime-agent.so example/malloc/test
+$ bpftime start example/malloc/test
 Hello malloc!
 malloc called from pid 250215
 continue malloc...
