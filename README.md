@@ -21,10 +21,22 @@ With `bpftime`, you can build eBPF applications using familiar tools like clang 
 
 To get started:
 
+### Build and install cli tool
+
+```console
+sudo apt-get install libelf-dev zlib1g-dev # Install dependencies
+cd tools/cli-rs && cargo build --release
+mkdir ~/.bpftime && cp ./target/release/bpftime ~/.bpftime
+export PATH=$PATH:~/.bpftime
+```
+### Build and install runtime
 ```console
 make install # Install the runtime
+```
+
+### Inject the server
+```console
 make -C example/malloc # Build the eBPF program example
-export PATH=$PATH:~/.bpftime
 bpftime load ./example/malloc/malloc
 ```
 
