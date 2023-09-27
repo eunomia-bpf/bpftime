@@ -37,5 +37,7 @@ jobs:
           export PATH=$PATH:~/.bpftime
           bpftime --help
           cd example/malloc
-          timeout -s 2 5s bpftime load ./malloc || if [ $? = 124 ]; then exit 0; else exit $?; fi
+          timeout -s 2 5s bpftime load ./malloc || if [ $? = 124 ]; then exit 0; else exit $?; fi &
+          ID1=$!
           timeout -s 2 5s bpftime start ./test || if [ $? = 124 ]; then exit 0; else exit $?; fi
+          fg $ID1 || true
