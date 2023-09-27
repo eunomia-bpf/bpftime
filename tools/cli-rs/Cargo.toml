@@ -9,7 +9,12 @@ anyhow = "1.0.75"
 clap = { version = "4.4.5", features = ["derive"] }
 dirs = "5.0.1"
 exec = "0.3.1"
-libbpf-rs = { version = "0.21.2" }
+libbpf-rs = { version = "0.21.2", optional = true }
 
 [build-dependencies]
 bindgen = "0.68.1"
+
+[features]
+default = []
+support-load-bpf = ["dep:libbpf-rs"]
+all = ["support-load-bpf"]
