@@ -13,7 +13,7 @@ This makes `bpftime` an ideal choice for use in embedded systems, IoT, edge comp
 - **Interprocess eBPF Maps**: Implement userspace eBPF maps in shared userspace memory for summary aggregation or control plane communication.
 - **High Compatibility**: Utilize existing eBPF toolchains like clang and libbpf to develop userspace eBPF without any modifications. Fully compatible with kernel eBPF implementations, supporting CO-RE via BTF, and offering userspace host function access.
 - **Advanced Tooling**: Benefit from a cross-platform eBPF interpreter and a high-speed JIT compiler powered by LLVM. It also includes a handcrafted x86 JIT in C for limited resources.
-- **Versatility**: Can inject eBPF runtime into any running process without the need for a restart or manual recompilation. It runs not only in Linux but also in all Unix systems, Windows, and even IoT devices.
+- **No instrumentation**: Can inject eBPF runtime into any running process without the need for a restart or manual recompilation. It can run not only in Linux but also in all Unix systems, Windows, and even IoT devices.
 
 ## Quick Start
 
@@ -83,14 +83,16 @@ see [documents/how-it-works.md](documents/how-it-works.md) for details.
 
 We can use the bpftime userspace runtime:
 
-Attach uprobe, uretprobe or all syscall tracepoints(x86 only) eBPF programs to a process or a group of processes:
+Attach uprobe, uretprobe or all syscall tracepoints(currently x86 only) eBPF programs to a process or a group of processes:
 
 - `malloc`: count the malloc calls in libc by pid
-- `bash_readline`: trace readline calls in bash
-- `sslsniff`: trace SSL/TLS raw text in openssl
-- `opensnoop`: trace file open or close in a process
+- `opensnoop`: trace file open or close syscalls in a process
+- `bash_readline`: trace readline calls in bash [TODO: fix it]
+- `sslsniff`: trace SSL/TLS raw text in openssl [TODO: fix it]
 
 Examples can be found in [example](example) dir. More examples are coming soon.
+
+> Some examples may not working now, we are fixing it. You can refer to [benchmark](benchmark) dir for more working examples.
 
 ### **Performance Benchmarks**
 
@@ -124,15 +126,16 @@ see [documents/build-and-test.md](documents/build-and-test.md) for details.
 
 `bpftime` is continuously evolving with more features in the pipeline:
 
-- An AOT compiler for eBPF can be easily added based on the LLVM IR.
-- More map types and distribution maps support.
-- User-space eBPF to speed up fuse.
-- eBPF for GPU sharing programs.
-- RDMA with distribution eBPF runtimes.
-- User-space eBPF syscall bypass.
+- [ ] An AOT compiler for eBPF can be easily added based on the LLVM IR.
+- [ ] perf event and ring buffer output support.
+- [ ] more examples and usecases.
+- [ ] More map types and distribution maps support.
+- [ ] More program types support.
 
 Stay tuned for more developments from this promising project! You can find `bpftime` on [GitHub](https://github.com/eunomia-bpf/bpftime).
 
 ## License
 
 This project is licensed under the MIT License.
+
+If you have any questions or suggestions, you can also contact yunwei356@gmail.com or wechat `yunwei2567` for more details!
