@@ -30,7 +30,7 @@ static puts_func_t orig_puts_func = nullptr;
 // using putchar_func as a flag to indicate whether the agent has been init
 static putchar_func orig_fn = nullptr;
 
-void bpftime_agent_main(const gchar *data, gboolean *stay_resident);
+extern "C" void bpftime_agent_main(const gchar *data, gboolean *stay_resident);
 
 extern "C" int puts(const char *str)
 {
@@ -45,7 +45,7 @@ extern "C" int puts(const char *str)
 }
 static bpf_attach_ctx ctx;
 
-void bpftime_agent_main(const gchar *data, gboolean *stay_resident)
+extern "C" void bpftime_agent_main(const gchar *data, gboolean *stay_resident)
 {
 	spdlog::cfg::load_env_levels();
 	spdlog::info("Initializing agent..");
