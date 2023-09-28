@@ -58,7 +58,7 @@ void do_benchmark_userspace(int iter)
 
 int main()
 {
-	putchar('\n');
+	puts("");
 	int iter = 100 * 1000;
 	do_benchmark_userspace(iter);
     return 0;
