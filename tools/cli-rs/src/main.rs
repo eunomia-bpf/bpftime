@@ -25,9 +25,15 @@ enum SubCommand {
     Start {
         #[arg(help = "Path to the executable that will be injected with agent")]
         executable_path: String,
+        #[arg(help = "Whether to enable syscall trace", short = 's', long)]
+        enable_syscall_trace: bool,
     },
     #[clap(about = "Inject bpftime-agent to a certain pid")]
-    Attach { pid: i32 },
+    Attach {
+        pid: i32,
+        #[arg(help = "Whether to enable syscall trace", short = 's', long)]
+        enable_syscall_trace: bool,
+    },
     #[cfg(feature = "support-load-bpf")]
     #[clap(about = "Load and attach an eBPF object into kernel")]
     LoadBpf {
@@ -51,11 +57,15 @@ struct Args {
     install_location: String,
 }
 
-fn inject_by_frida(pid: i32, agent: impl AsRef<Path>) -> anyhow::Result<()> {
+fn inject_by_frida(
+    pid: i32,
+    agent: impl AsRef<Path>,
+    agent_path: impl AsRef<Path>,
+) -> anyhow::Result<()> {
     let agent = CString::new(agent.as_ref().to_string_lossy().as_bytes())
         .with_context(|| anyhow!("Invalid agent path"))?;
     let entry_point = CString::new("bpftime_agent_main").unwrap();
-    let empty_string = CString::new("").unwrap();
+    let agent_path = CString::new(agent_path.as_ref().to_str().unwrap()).unwrap();
     unsafe { frida_init() };
     let injector = unsafe { frida_injector_new() };
     let mut err: *mut _GError = std::ptr::null_mut();
@@ -65,7 +75,7 @@ fn inject_by_frida(pid: i32, agent: impl AsRef<Path>) -> anyhow::Result<()> {
             pid as _,
             agent.as_ptr(),
             entry_point.as_ptr(),
-            empty_string.as_ptr(),
+            agent_path.as_ptr(),
             std::ptr::null_mut(),
             &mut err as *mut _,
         )
@@ -119,30 +129,62 @@ fn main() -> anyhow::Result<()> {
                     executable_path
                 ))
                 .exec();
-            return Err(err.into());
+            Err(err.into())
         }
-        SubCommand::Start { executable_path } => {
-            let so_path = install_path.join("libbpftime-agent.so");
-            if !so_path.exists() {
-                bail!("Library not found: {:?}", so_path);
+        SubCommand::Start {
+            executable_path,
+            enable_syscall_trace,
+        } => {
+            let agent_path = install_path.join("libbpftime-agent.so");
+            if !agent_path.exists() {
+                bail!("Library not found: {:?}", agent_path);
             }
-            let err = exec::Command::new("bash")
-                .arg("-c")
-                .arg(format!(
-                    "LD_PRELOAD={} {}",
-                    so_path.to_string_lossy(),
-                    executable_path
-                ))
-                .exec();
-            return Err(err.into());
+            if enable_syscall_trace {
+                let transformr_path = install_path.join("libbpftime-agent-transformer.so");
+
+                if !transformr_path.exists() {
+                    bail!("Library not found: {:?}", transformr_path);
+                }
+                let err = exec::Command::new("bash")
+                    .arg("-c")
+                    .arg(format!(
+                        "LD_PRELOAD={} AGENT_SO={} {}",
+                        transformr_path.to_string_lossy(),
+                        agent_path.to_string_lossy(),
+                        executable_path
+                    ))
+                    .exec();
+                Err(err.into())
+            } else {
+                let err = exec::Command::new("bash")
+                    .arg("-c")
+                    .arg(format!(
+                        "LD_PRELOAD={} {}",
+                        agent_path.to_string_lossy(),
+                        executable_path
+                    ))
+                    .exec();
+                Err(err.into())
+            }
         }
-        SubCommand::Attach { pid } => {
-            let so_path = install_path.join("libbpftime-agent.so");
-            if !so_path.exists() {
-                bail!("Library not found: {:?}", so_path);
+        SubCommand::Attach {
+            pid,
+            enable_syscall_trace,
+        } => {
+            let agent_path = install_path.join("libbpftime-agent.so");
+            if !agent_path.exists() {
+                bail!("Library not found: {:?}", agent_path);
             }
-            println!("Inject: {:?}", so_path);
-            inject_by_frida(pid, so_path)
+            if enable_syscall_trace {
+                let transformr_path = install_path.join("libbpftime-agent-transformer.so");
+
+                if !transformr_path.exists() {
+                    bail!("Library not found: {:?}", transformr_path);
+                }
+                inject_by_frida(pid, transformr_path, agent_path)
+            } else {
+                inject_by_frida(pid, agent_path, "")
+            }
         }
         #[cfg(feature = "support-load-bpf")]
         SubCommand::LoadBpf { path } => load_ebpf_object_into_kernel(PathBuf::from(path))

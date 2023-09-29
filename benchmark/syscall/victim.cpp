@@ -19,14 +19,15 @@ uint64_t count = 0;
 void sigint_handler(int signum)
 {
 	double avg = ((double)total_time / (double)count) / ITER_COUNT;
-	std::cout << "Average time usage " << std::fixed
-		  << std::setprecision(5) << avg << "ns, "
+	std::cout << "Average time usage " << std::fixed << std::setprecision(5)
+		  << avg << "ns, "
 		  << " count " << count * ITER_COUNT << std::endl;
 	if (signum != 0)
 		exit(0);
 }
 
-void test_syscall() {
+void test_syscall()
+{
 	int fd = open("/dev/null", O_CREAT | O_RDWR);
 	while (count < 10) {
 		printf("Iteration %lu\n", count);
@@ -60,7 +61,7 @@ int main()
 			return 1;
 		}
 	}
-	test_syscall();
 	puts("Done");
+	test_syscall();
 	return 0;
 }

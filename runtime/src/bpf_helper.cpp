@@ -29,7 +29,6 @@ uint64_t bpftime_set_retval(uint64_t retval);
 
 uint64_t bpftime_trace_printk(uint64_t fmt, uint64_t fmt_size, ...)
 {
-	spdlog::debug("TRACE PRINTK: {}", (const char *)(uintptr_t)fmt);
 	const char *fmt_str = (const char *)fmt;
 	va_list args;
 #pragma clang diagnostic push
