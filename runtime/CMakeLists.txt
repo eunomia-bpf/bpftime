@@ -93,16 +93,21 @@ target_include_directories(${PROJECT_NAME}
   ${CMAKE_CURRENT_BINARY_DIR}
   ${CMAKE_CURRENT_SOURCE_DIR}/../third_party
   ${SPDLOG_INCLUDE}
-  ${EBPF_VERIFIER_INCLUDE}
 )
 
 target_link_libraries(${PROJECT_NAME}
   PUBLIC
   vm-bpf
   spdlog::spdlog
-  ebpfverifier
 )
-add_dependencies(${PROJECT_NAME} vm-bpf FridaGum syscall_id_table spdlog::spdlog ebpfverifier)
+add_dependencies(${PROJECT_NAME} vm-bpf FridaGum syscall_id_table spdlog::spdlog)
+
+if(${ENABLE_EBPF_VERIFIER})
+  target_include_directories(${PROJECT_NAME} PRIVATE ${EBPF_VERIFIER_INCLUDE})
+  target_link_libraries(${PROJECT_NAME} PRIVATE ebpfverifier)
+  add_dependencies(${PROJECT_NAME} ebpfverifier)
+  target_compile_definitions(${PROJECT_NAME} PRIVATE ENABLE_EBPF_VERIFIER)
+endif()
 
 if(${USE_EBPF_VERIFIER})
   add_dependencies(${PROJECT_NAME} ebpfverifier)
