@@ -1,40 +1,31 @@
-# bpftime: Userspace eBPF runtime for fast Uprobe & Syscall Tracing
+# bpftime: Userspace eBPF runtime for fast Uprobe & Syscall hook
 
-Introducing `bpftime`, a full-featured, high-performance eBPF runtime designed to operate in userspace. It's engineered to offer fast Uprobe and Syscall tracing capabilities. Userspace uprobe can be **10x faster than kernel uprobe!**
-
-This makes `bpftime` an ideal choice for use in embedded systems, IoT, edge computing, smart contracts, and cloud-native solutions. It's also compatible with existing eBPF toolchains like clang and libbpf, without requiring any modifications.
+`bpftime`, a full-featured, high-performance eBPF runtime designed to operate in userspace. It's engineered to offer fast Uprobe and Syscall hook capabilities. Userspace uprobe can be **10x faster than kernel uprobe!**
 
 > ⚠️ **Note**: `bpftime` is actively under development. The API or design might change in upcoming releases, and it's not yet recommended for production use. See our [roadmap](#roadmap) for details.
 
 ## Key Features
 
-- **Unprivileged Userspace eBPF**: Run eBPF programs in userspace, attaching them to Uprobes and Syscall tracepoints just as you would in the kernel.
-- **Performance**: Experience up to a 10x speedup in Uprobe overhead compared to kernel uprobe and uretprobe, enhancing your tracing efficiency.
+- **Uprobe and Syscall hooks based on binary rewriting**: Run eBPF programs in userspace, attaching them to Uprobes and Syscall tracepoints: **No mannual instrumentation or restart required!**. It can `trace`, `replace` or `patch` the execution of a function, `hook`, `filter` or `redirect` all syscalls of a process safely, and efficiently with an eBPF userspace runtime.
+- **Performance**: Experience up to a 10x speedup in Uprobe overhead compared to kernel uprobe and uretprobe.
 - **Interprocess eBPF Maps**: Implement userspace eBPF maps in shared userspace memory for summary aggregation or control plane communication.
-- **High Compatibility**: Utilize existing eBPF toolchains like clang and libbpf to develop userspace eBPF without any modifications. Fully compatible with kernel eBPF implementations, supporting CO-RE via BTF, and offering userspace host function access.
-- **Advanced Tooling**: Benefit from a cross-platform eBPF interpreter and a high-speed JIT compiler powered by LLVM. It also includes a handcrafted x86 JIT in C for limited resources.
-- **No instrumentation**: Can inject eBPF runtime into any running process without the need for a restart or manual recompilation. It can run not only in Linux but also in all Unix systems, Windows, and even IoT devices.
+- **Compatibility**: use existing eBPF toolchains like clang and libbpf to develop userspace eBPF without any modifications. Supporting CO-RE via BTF, and offering userspace host function access.
+- **JIT Support**: Benefit from a cross-platform eBPF interpreter and a high-speed JIT compiler powered by LLVM. It also includes a handcrafted x86 JIT in C for limited resources.
+- **No instrumentation**: Can inject eBPF runtime into any running process without the need for a restart or manual recompilation.
+
+## Components
+
+- [`vm`](vm): The eBPF VM and JIT for eBPF, you can choose from LLVM JIT and a simple JIT/interpreter based on ubpf. It can be built as a standalone library and integrated into other projects.
+- [`runtime`](runtime): The userspace runtime for eBPF, including the syscall server and agent, attaching eBPF programs to Uprobes and Syscall tracepoints, and eBPF maps in shared memory.
 
 ## Quick Start
 
 With `bpftime`, you can build eBPF applications using familiar tools like clang and libbpf, and execute them in userspace. For instance, the `malloc` eBPF program traces malloc calls using uprobe and aggregates the counts using a hash map.
 
-To get started:
+You can refer to [documents/build-and-test.md](documents/build-and-test.md) for how to build the project.
 
-### Build and install cli tool
+To get started, you can build and run a libbpf based eBPF program starts with `bpftime` cli:
 
-```console
-sudo apt-get install libelf-dev zlib1g-dev # Install dependencies
-cd tools/cli-rs && cargo build --release
-mkdir ~/.bpftime && cp ./target/release/bpftime ~/.bpftime
-export PATH=$PATH:~/.bpftime
-```
-### Build and install runtime
-```console
-make install # Install the runtime
-```
-
-### Inject the server
 ```console
 make -C example/malloc # Build the eBPF program example
 bpftime load ./example/malloc/malloc
@@ -50,17 +41,28 @@ continue malloc...
 malloc called from pid 250215
 ```
 
-You can run it again with another process and you can see the output:
+You can also inject the userspace runtime library into a running process:
 
 ```console
+
+```
+
+You can see the output from original program:
+
+```console
+$ bpftime load ./example/malloc/malloc
+...
 12:44:35 
         pid=247299      malloc calls: 10
         pid=247322      malloc calls: 10
 ```
 
-Run the target program with eBPF
+Run the target program and dynamically attach the eBPF program into it:
 
-Alternatively, you can also run the program directly in the kernel eBPF:
+```console
+```
+
+Alternatively, you can also run our sample eBPF program directly in the kernel eBPF, to see the similar output:
 
 ```console
 $ sudo example/malloc/malloc
@@ -72,6 +74,19 @@ $ sudo example/malloc/malloc
 ```
 
 ## In-Depth
+
+### **Examples & Use Cases**
+
+We can use the bpftime userspace runtime for:
+
+- `tracing userspace functions with uprobe`: Attach uprobe, uretprobe or all syscall tracepoints(currently x86 only) eBPF programs to a process or a group of processes:
+  - `malloc`: count the malloc calls in libc by pid
+- `tracing all syscalls with tracepoints`
+  - `opensnoop`: trace file open or close syscalls in a process
+
+More examples can be found in [example](example) dir. More examples are coming soon.
+
+> Some examples may not working now, we are fixing it. You can refer to [benchmark](benchmark) dir for more working examples.
 
 ### Comparing with Kernel eBPF Runtime
 
@@ -90,21 +105,6 @@ Left: kernel eBPF | Right: userspace bpftime
 The inline hook implementation is based on frida.
 
 see [documents/how-it-works.md](documents/how-it-works.md) for details.
-
-### **Examples & Use Cases**
-
-We can use the bpftime userspace runtime:
-
-Attach uprobe, uretprobe or all syscall tracepoints(currently x86 only) eBPF programs to a process or a group of processes:
-
-- `malloc`: count the malloc calls in libc by pid
-- `opensnoop`: trace file open or close syscalls in a process
-- `bash_readline`: trace readline calls in bash [TODO: fix it]
-- `sslsniff`: trace SSL/TLS raw text in openssl [TODO: fix it]
-
-Examples can be found in [example](example) dir. More examples are coming soon.
-
-> Some examples may not working now, we are fixing it. You can refer to [benchmark](benchmark) dir for more working examples.
 
 ### **Performance Benchmarks**
 
@@ -150,4 +150,4 @@ Stay tuned for more developments from this promising project! You can find `bpft
 
 This project is licensed under the MIT License.
 
-If you have any questions or suggestions, you can also contact yunwei356@gmail.com or wechat `yunwei2567` for more details!
+Contact: <yunwei356@gmail.com>

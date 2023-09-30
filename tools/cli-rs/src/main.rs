@@ -35,6 +35,7 @@ enum SubCommand {
         path: String,
     },
 }
+
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
 struct Args {
@@ -102,6 +103,7 @@ fn load_ebpf_object_into_kernel(path: impl AsRef<Path>) -> anyhow::Result<()> {
     }
     Ok(())
 }
+
 fn main() -> anyhow::Result<()> {
     let args = Args::parse();
     let install_path = PathBuf::from(args.install_location);

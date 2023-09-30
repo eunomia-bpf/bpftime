@@ -74,15 +74,16 @@ static libbpf_object_ptr open_and_attach_libbpf_object(const char *filename)
 	return obj_ptr;
 }
 
-void inject_agent(cli_config &config)
+void inject_agent(int target_pid, const char *agent_dynlib_path)
 {
 	// check the args
 	frida_init();
 	FridaInjector *injector = frida_injector_new();
 	GError *error = NULL;
-	guint id = frida_injector_inject_library_file_sync(
-		injector, config.target_pid, config.agent_dynlib_path.c_str(),
-		"bpftime_agent_main", "", NULL, &error);
+	guint id = frida_injector_inject_library_file_sync(injector, target_pid,
+							   agent_dynlib_path,
+							   "bpftime_agent_main",
+							   "", NULL, &error);
 
 	if (error != NULL) {
 		fprintf(stderr, "%s\n", error->message);
@@ -99,6 +100,29 @@ void inject_agent(cli_config &config)
 	frida_deinit();
 }
 
+std::string get_lib_path(const char *library_name)
+{
+	struct stat st;
+	auto so_path =
+		std::string(DEFAULT_INSTALLATION_LOCATION) + library_name;
+	if (stat(so_path.c_str(), &st) != 0) {
+		cerr << "Error: necessary library " << so_path
+		     << " not found:" << errno << endl;
+		exit(1);
+	}
+	return so_path;
+}
+
+std::string get_agent_lib_path()
+{
+	return get_lib_path("/libbpftime-agent.so");
+}
+
+std::string get_server_lib_path()
+{
+	return get_lib_path("/libbpftime-syscall-server.so");
+}
+
 // Main program
 int main(int argc, char *argv[])
 {
@@ -107,21 +131,15 @@ int main(int argc, char *argv[])
 		     << endl;
 		return 1;
 	}
+
 	auto cmd = std::string(argv[1]);
-	// struct stat st;
 	if (cmd == "load") {
 		if (argc != 3) {
 			cerr << "Usage: " << argv[0] << " load <EXECUTABLE>"
 			     << endl;
 			return 1;
 		}
-		auto so_path = std::string(DEFAULT_INSTALLATION_LOCATION) +
-			       "/libbpftime-syscall-server.so";
-		// if (stat(so_path.c_str(), &st) != 0) {
-		// 	cerr << "Error: necessary library " << so_path
-		// 	     << " not found:" << errno << endl;
-		// 	return 1;
-		// }
+		auto so_path = get_server_lib_path();
 		auto command_to_run =
 			"LD_PRELOAD=" + so_path + " " + std::string(argv[2]);
 		return system(command_to_run.c_str());
@@ -131,94 +149,22 @@ int main(int argc, char *argv[])
 			     << endl;
 			return 1;
 		}
-		auto so_path = std::string(DEFAULT_INSTALLATION_LOCATION) +
-			       "/libbpftime-agent.so";
-		// if (stat(so_path.c_str(), &st) != 0) {
-		// 	cerr << "Error: necessary library " << so_path
-		// 	     << " not found:" << errno << endl;
-		// 	return 1;
-		// }
+		auto so_path = get_agent_lib_path();
 		auto command_to_run =
 			"LD_PRELOAD=" + so_path + " " + std::string(argv[2]);
 		return system(command_to_run.c_str());
 	} else if (cmd == "attach") {
+		if (argc != 3) {
+			cerr << "Usage: " << argv[0] << " attach <pid>" << endl;
+			return 1;
+		}
+		// convert pid to int
+		int pid = atoi(argv[2]);
+		auto so_path = get_agent_lib_path();
+		return inject_agent(pid, so_path.c_str());
 	} else {
 		cerr << "Invalid subcommand " << cmd << endl;
 		return 1;
 	}
-	// cli_config config;
-
-	// namespace po = boost::program_options;
-
-	// po::options_description global("Allowed options");
-
-	// global.add_options()("help,h", "Print help information")(
-	// 	"command", po::value<std::string>(), "Subcommand to run")(
-	// 	"subargs", po::value<std::vector<std::string> >(),
-	// 	"Arguments for the command")("version,v", "Print version")(
-	// 	"dry-run", po::bool_switch(&config.dry_run), "Dry run");
-	// // desc.add_options()("help,h", "Print help
-	// information")("version,v",
-	// // 						       "Print version")(
-	// // 	"dry-run", po::bool_switch(&config.dry_run),
-	// // 	"dry run")("benchmark", "run the benchmark userspace function")(
-	// // 	"kernel-uprobe", po::bool_switch(&config.kernel_uprobe),
-	// // 	"Enable kernel uprobe")(
-	// // 	"pid,p", po::value<int>(&config.pid)->default_value(0),
-	// // 	"Process ID")("input-file",
-	// // 		      po::value<std::string>(&config.input_file),
-	// // 		      "Input file name");
-
-	// // po::options_description hidden("Hidden options");
-	// // hidden.add_options()("bpf-object-path",
-	// // 		     po::value<std::string>(&config.bpf_object_path),
-	// // 		     "BPF object file path");
-
-	// // po::options_description cmdline_options;
-	// // cmdline_options.add(desc).add(hidden);
-
-	// po::options_description visible_options;
-	// visible_options.add(global);
-
-	// // po::positional_options_description positionalOptions;
-	// // positionalOptions.add("bpf-object-path", 1);
-
-	// po::positional_options_description pos;
-	// pos.add("command", 1).add("subargs", -1);
-
-	// std::cout << "start bpftime cli" << std::endl;
-
-	// po::variables_map vm;
-	// try {
-	// 	po::store(po::command_line_parser(argc, argv)
-	// 			  .options(global)
-	// 			  .positional(pos)
-	// 			  .allow_unregistered()
-	// 			  .run(),
-	// 		  vm);
-	// 	po::notify(vm);
-	// } catch (const po::required_option &e) {
-	// 	std::cerr << "Error: " << e.what() << std::endl;
-	// 	return 1;
-	// }
-	// // cout<<vm<<endl;
-	// std::string cmd = vm["command"].as<std::string>();
-
-	// if (vm.count("help")) {
-	// 	std::cout << visible_options << std::endl;
-	// 	return 0;
-	// }
-
-	// if (vm.count("version")) {
-	// 	std::cout << "Version: " << version << std::endl;
-	// 	return 0;
-	// }
-
-	// if (!vm.count("bpf-object-path")) {
-	// 	std::cerr << "Error: The <bpf-object-path> option is required."
-	// 		  << std::endl;
-	// 	return 1;
-	// }
-
 	return EXIT_SUCCESS;
 }
