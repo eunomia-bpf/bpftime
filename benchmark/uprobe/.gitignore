@@ -7,3 +7,4 @@ package.yaml
 ecli
 .output
 test
+uprobe

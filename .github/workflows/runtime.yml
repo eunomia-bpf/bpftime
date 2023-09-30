@@ -23,8 +23,8 @@ jobs:
         libelf1 libelf-dev zlib1g-dev make git libboost-dev \
         libboost-program-options-dev binutils-dev
 
-    - name: build package
+    - name: build runtime
       run:  make build-old-binutils
 
-    - name: test package
+    - name: test runtime
       run:  make test

@@ -87,9 +87,9 @@ $ sudo example/malloc/malloc
 We can use the bpftime userspace runtime for:
 
 - `tracing userspace functions with uprobe`: Attach uprobe, uretprobe or all syscall tracepoints(currently x86 only) eBPF programs to a process or a group of processes:
-  - `malloc`: count the malloc calls in libc by pid
+  - [`malloc`](example/malloc): count the malloc calls in libc by pid
 - `tracing all syscalls with tracepoints`
-  - `opensnoop`: trace file open or close syscalls in a process
+  - [`opensnoop`](benchmark/hash_maps): trace file open or close syscalls in a process
 
 More examples can be found in [example](example) dir. More examples are coming soon.
 
@@ -120,11 +120,12 @@ see [documents/how-it-works.md](documents/how-it-works.md) for details.
 
 How is the performance of `userspace uprobe` compared to `kernel uprobes`? Let's take a look at the following benchmark results:
 
-| Probe/Tracepoint Types | Kernel (ns)  | Userspace (ns) |
-|------------------------|-------------:|---------------:|
-| Uprobe                 | 4751.462610 | 445.169770    |
-| Uretprobe              | 5899.706820 | 472.972220    |
-| Syscall Tracepoint     | 1489.04251  | 1499.47708    |
+| Probe/Tracepoint Types | Kernel (ns)  | Userspace (ns) | Insn Count |
+|------------------------|-------------:|---------------:|---------------:|
+| Uprobe                 | 4751.462610 | 445.169770    | 4    |
+| Uretprobe              | 5899.706820 | 472.972220    | 2    |
+| Syscall Tracepoint     | 423.72835  | 492.04251   | 4    |
+| Embedding runtime     | Not avaliable  |  232.428710   | 4    |
 
 It can be attached to functions in running process just like the kernel uprobe does.
 

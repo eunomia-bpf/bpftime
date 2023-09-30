@@ -14,19 +14,20 @@ $ nm ./redis-server | grep xgroupCommand
 
 2. generate btf (optional)
 
-```
+```sh
 pahole --btf_encode_detached redis-server.btf ./redis-server
 ```
 
 3. generate header
 
-    ```
-    bpftool btf dump file redis-server.btf format c > redis-server.btf.h
-    ```
+```sh
+bpftool btf dump file redis-server.btf format c > redis-server.btf.h
+```
 
 4. trigger the POC(before the patch):
 
 PoC:
+
 ```console
 $ ./redis-server
 
@@ -64,7 +65,7 @@ see poc.bpf.c and poc.json.
 
 6. after patch, run the command to install:
 
-```
+```console
 $ sudo build/tools/cli/bpftime-cli workloads/ebpf-patch-dev/poc4-redis/poc.json
 Successfully injected. ID: 1
 ```

@@ -31,8 +31,8 @@ Average time usage 938.53511ns,  count 1000000
 
 ## userspace syscall
 
-Average time usage 1489.04251ns,  count 1000000
+Average time usage 492.04251ns,  count 1000000
 
 ## kernel tracepoint
 
-Average time usage 1499.47708ns,  count 1000000
+Average time usage 423.72835ns,  count 1000000

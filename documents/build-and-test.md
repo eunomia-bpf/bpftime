@@ -38,6 +38,12 @@ Build the complete runtime:
 make build
 ```
 
+On old systems, you may need to buil with old binutils version(TODO: fix it):
+
+```bash
+make build-old-binutils
+```
+
 For a lightweight build without the runtime (only vm library and LLVM JIT):
 
 ```bash
