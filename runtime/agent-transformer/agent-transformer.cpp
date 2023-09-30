@@ -9,6 +9,7 @@
 #include <iostream>
 #include <ostream>
 #include <spdlog/cfg/env.h>
+#include <string>
 using putchar_func = int (*)(int c);
 using puts_func_t = int (*)(const char *);
 
@@ -51,9 +52,16 @@ extern "C" void bpftime_agent_main(const gchar *data, gboolean *stay_resident)
 		// avoid duplicate init
 		orig_fn = (putchar_func)dlsym(RTLD_NEXT, "putchar");
 	}
-	auto agent_so = getenv("AGENT_SO");
+	const char *agent_so = getenv("AGENT_SO");
+	if (agent_so == nullptr) {
+		if (std::string(data) != "") {
+			spdlog::info("Using agent path from frida data..");
+			agent_so = data;
+		}
+	}
 	assert(agent_so &&
 	       "Please set AGENT_SO to the bpftime-agent when use this tranformer");
+	spdlog::info("Using agent {}", agent_so);
 	bpftime::setup_syscall_tracer();
 	spdlog::info("Loading dynamic library..");
 	auto next_handle =

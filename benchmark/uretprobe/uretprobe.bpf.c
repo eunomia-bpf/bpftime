@@ -5,9 +5,9 @@
 
 
 SEC("uretprobe/benchmark/test:__benchmark_test_function3")
-int BPF_URETPROBE(__benchmark_test_function, const char *a, int b, uint64_t c)
+int BPF_URETPROBE(__benchmark_test_function, int ret)
 {
-	return b + c;
+	return ret;
 }
 
 char LICENSE[] SEC("license") = "GPL";
