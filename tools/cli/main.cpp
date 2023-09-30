@@ -74,7 +74,7 @@ static libbpf_object_ptr open_and_attach_libbpf_object(const char *filename)
 	return obj_ptr;
 }
 
-void inject_agent(int target_pid, const char *agent_dynlib_path)
+int inject_agent(int target_pid, const char *agent_dynlib_path)
 {
 	// check the args
 	frida_init();
@@ -98,6 +98,7 @@ void inject_agent(int target_pid, const char *agent_dynlib_path)
 	frida_injector_close_sync(injector, NULL, NULL);
 	frida_unref(injector);
 	frida_deinit();
+	return 0;
 }
 
 std::string get_lib_path(const char *library_name)

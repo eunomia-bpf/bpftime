@@ -1,6 +1,6 @@
-# bpftime: Userspace eBPF runtime for fast Uprobe & Syscall hook
+# bpftime: Userspace eBPF runtime for fast Uprobe & Syscall Hook
 
-`bpftime`, a full-featured, high-performance eBPF runtime designed to operate in userspace. It's engineered to offer fast Uprobe and Syscall hook capabilities. Userspace uprobe can be **10x faster than kernel uprobe!**
+`bpftime`, a full-featured, high-performance eBPF runtime designed to operate in userspace. It offers fast Uprobe and Syscall hook capabilities: Userspace uprobe can be **10x faster than kernel uprobe!** and can programmatically **hook all syscalls of a process** safely and efficiently.
 
 > ⚠️ **Note**: `bpftime` is actively under development. The API or design might change in upcoming releases, and it's not yet recommended for production use. See our [roadmap](#roadmap) for details.
 
@@ -41,10 +41,22 @@ continue malloc...
 malloc called from pid 250215
 ```
 
-You can also inject the userspace runtime library into a running process:
+You can also dynamically attach the eBPF program with a running process:
 
 ```console
+$ ./example/malloc/test & echo $! # The pid is 101771
+[1] 101771
+101771
+continue malloc...
+continue malloc...
+```
 
+And attach to it:
+
+```console
+$ sudo bpftime attach 101771 # You may need to run make install in root
+Inject: "/root/.bpftime/libbpftime-agent.so"
+Successfully injected. ID: 1
 ```
 
 You can see the output from original program:
@@ -55,11 +67,6 @@ $ bpftime load ./example/malloc/malloc
 12:44:35 
         pid=247299      malloc calls: 10
         pid=247322      malloc calls: 10
-```
-
-Run the target program and dynamically attach the eBPF program into it:
-
-```console
 ```
 
 Alternatively, you can also run our sample eBPF program directly in the kernel eBPF, to see the similar output:
@@ -102,7 +109,10 @@ Left: kernel eBPF | Right: userspace bpftime
 
 ![How it works](documents/bpftime.png)
 
-The inline hook implementation is based on frida.
+The hook implementation is based on binary rewriting and the underly technique is inspired by:
+
+- Userspace function hook: [frida-gum](https://github.com/frida/frida-gum)
+- Syscall hooks: [zpoline: a system call hook mechanism based on binary rewriting](https://www.usenix.org/conference/atc23/presentation/yasukata)
 
 see [documents/how-it-works.md](documents/how-it-works.md) for details.
 

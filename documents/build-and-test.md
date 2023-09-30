@@ -12,6 +12,24 @@ sudo apt install -y --no-install-recommends \
 git submodule update --init --recursive
 ```
 
+### Build and install cli tool
+
+```bash
+sudo apt-get install libelf-dev zlib1g-dev # Install dependencies
+make build && make install # Build and install the runtime
+cd tools/cli-rs && cargo build --release
+mkdir -p ~/.bpftime && cp ./target/release/bpftime ~/.bpftime
+export PATH=$PATH:~/.bpftime
+```
+
+Then you can run cli:
+
+```console
+$ bpftime
+Usage: bpftime [OPTIONS] <COMMAND>
+...
+```
+
 ## Compilation
 
 Build the complete runtime:
@@ -25,21 +43,6 @@ For a lightweight build without the runtime (only vm library and LLVM JIT):
 ```bash
 make build-vm # build the simple vm with a simple jit
 make build-llvm # build the vm with llvm jit
-```
-
-### Build and install cli tool
-
-```bash
-sudo apt-get install libelf-dev zlib1g-dev # Install dependencies
-cd tools/cli-rs && cargo build --release
-mkdir ~/.bpftime && cp ./target/release/bpftime ~/.bpftime
-export PATH=$PATH:~/.bpftime
-```
-
-### Build and install runtime
-
-```bash
-make install # Install the runtime
 ```
 
 ## Testing
