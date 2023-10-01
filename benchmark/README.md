@@ -8,16 +8,10 @@ With userspace eBPF runntime, we can:
 
 | Probe/Tracepoint Types | Kernel (ns)  | Userspace (ns) | Insn Count |
 |------------------------|-------------:|---------------:|---------------:|
-| Uprobe                 | 4751.462610 | 445.169770    | 4    |
-| Uretprobe              | 5899.706820 | 472.972220    | 2    |
-| Syscall Tracepoint     | 423.72835  | 492.04251   | 4    |
-| Embedding runtime     | Not avaliable  |  232.428710   | 4    |
-
-You can use python script to run the benchmark:
-
-```console
-python3 benchmark/tools/driving.py
-```
+| Uprobe                 | 3224.172760  | 314.569110     | 4    |
+| Uretprobe              | 3996.799580  | 381.270270     | 2    |
+| Syscall Tracepoint     | 151.82801    | 232.57691      | 4    |
+| Embedding runtime      | Not avaliable |  110.008430   | 4    |
 
 ## build
 
@@ -85,8 +79,8 @@ in another terminal, run the benchmark:
 ```console
 $ benchmark/test
 a[b] + c for 100000 times
-Elapsed time: 0.475146261 seconds
-avg function elapse time: 4751.462610 ns
+Elapsed time: 0.322417276 seconds
+avg function elapse time: 3224.172760 ns
 ```
 
 The uprobe or uretprobe function we used is like:
@@ -117,7 +111,7 @@ in another terminal, run the benchmark:
 $ benchmark/test
 a[b] + c for 100000 times
 Elapsed time: 0.589970682 seconds
-avg function elapse time: 5899.706820 ns
+avg function elapse time: 3996.799580 ns
 ```
 
 ## userspace uprobe
@@ -144,9 +138,19 @@ attaching prog 3 to fd 4
 Successfully attached
 
 a[b] + c for 100000 times
-Elapsed time: 0.044516977 seconds
-avg function elapse time: 445.169770 ns
+Elapsed time: 0.031456911 seconds
+avg function elapse time: 314.569110 ns
 ```
+
+If errors like:
+
+```txt
+terminate called after throwing an instance of 'boost::interprocess::interprocess_exception'
+  what():  File exists
+Aborted (core dumped)
+```
+
+happpens, try to use `sudo` mode.
 
 ## userspace uretprobe
 
@@ -172,8 +176,19 @@ attaching prog 3 to fd 4
 Successfully attached
 
 a[b] + c for 100000 times
-Elapsed time: 0.047297222 seconds
-avg function elapse time: 472.972220 ns
+Elapsed time: 0.038127027 seconds
+avg function elapse time: 381.270270 ns
+```
+
+## embed runtime
+
+```console
+$ build/benchmark/simple-benchmark-with-embed-ebpf-calling
+uprobe elf: /home/yunwei/bpftime/build/benchmark/uprobe_prog.bpf.o
+uretprobe elf:/home/yunwei/bpftime/build/benchmark/uretprobe_prog.bpf.o
+a[b] + c for 100000 times
+Elapsed time: 0.011000843 seconds
+avg function elapse time: 110.008430 ns
 ```
 
 ## userspace syscall
@@ -181,15 +196,21 @@ avg function elapse time: 472.972220 ns
 ### run
 
 ```sh
-sudo LD_PRELOAD=build/runtime/syscall-server/libbpftime-syscall-server.so  benchmark/syscall/syscall
+sudo ~/.bpftime/bpftime load benchmark/syscall/syscall
 ```
 
 in another shell, run the target program with eBPF inside:
 
 ```sh
-sudo LD_PRELOAD=build/runtime/agent/libbpftime-agent.so benchmark/syscall/victim
+sudo ~/.bpftime/bpftime start -s benchmark/syscall/victim
 ```
 
 - baseline: Average time usage 938.53511ns,  count 1000000
 - userspace syscall tracepoint: Average time usage 1489.04251ns,  count 1000000
 - kernel tracepoint：Average time usage 1499.47708ns,  count 1000000
+
+You can use python script to run the benchmark:
+
+```console
+python3 benchmark/tools/driving.py
+```

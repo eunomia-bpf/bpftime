@@ -52,7 +52,7 @@ void do_benchmark_userspace(int iter)
 
 	printf("a[b] + c for %d times\n", iter);
 	base_line_time = get_function_time(iter);
-	printf("avg function elapse time: %lf ns\n\n",
+	printf("Average time usage %lf ns\n\n",
 	       (base_line_time) / iter * 1000000000.0);
 }
 

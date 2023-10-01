@@ -15,6 +15,8 @@ make -C benchmark/syscall/
 
 ## run
 
+Start the eBPF program
+
 ```sh
 sudo LD_PRELOAD=build/runtime/syscall-server/libbpftime-syscall-server.so  benchmark/syscall/syscall
 ```
@@ -22,17 +24,17 @@ sudo LD_PRELOAD=build/runtime/syscall-server/libbpftime-syscall-server.so  bench
 in another shell, run the target program with eBPF inside:
 
 ```sh
-sudo LD_PRELOAD=build/runtime/agent/libbpftime-agent.so benchmark/syscall/victim
+sudo ~/.bpftime/bpftime start -s benchmark/syscall/victim
 ```
 
 ## baseline
 
-Average time usage 938.53511ns,  count 1000000
+Average time usage 213.62178ns,  count 1000000
 
 ## userspace syscall
 
-Average time usage 492.04251ns,  count 1000000
+Average time usage 446.19869ns,  count 1000000
 
 ## kernel tracepoint
 
-Average time usage 423.72835ns,  count 1000000
+Average time usage 365.44980ns,  count 1000000

@@ -2,7 +2,8 @@
 
 `bpftime`, a full-featured, high-performance eBPF runtime designed to operate in userspace. It offers fast Uprobe and Syscall hook capabilities: Userspace uprobe can be **10x faster than kernel uprobe!** and can programmatically **hook all syscalls of a process** safely and efficiently.
 
-> ⚠️ **Note**: `bpftime` is actively under development. The API or design might change in upcoming releases, and it's not yet recommended for production use. See our [roadmap](#roadmap) for details.
+> ⚠️ **Note**: `bpftime` is actively under development. It's at a very early stage and may contain bugs.
+> The API or design might change in upcoming releases, and it's not yet recommended for production use. See our [roadmap](#roadmap) for details. We'd love to hear your feedback and suggestions! Please feel free to open an issue or [Contact us](#contact).
 
 ## Key Features
 
@@ -80,6 +81,8 @@ $ sudo example/malloc/malloc
         pid=34809       malloc calls: 8
 ```
 
+See [documents/usage.md](documents/usage.md) for more details.
+
 ## In-Depth
 
 ### **Examples & Use Cases**
@@ -94,14 +97,6 @@ We can use the bpftime userspace runtime for:
 More examples can be found in [example](example) dir. More examples are coming soon.
 
 > Some examples may not working now, we are fixing it. You can refer to [benchmark](benchmark) dir for more working examples.
-
-### Comparing with Kernel eBPF Runtime
-
-- `bpftime` allows you to use `clang` and `libbpf` to build eBPF programs, and run them directly in this runtime. We have tested it with a libbpf version in [third_party/libbpf](third_party/libbpf).
-- Some kernel helpers and kfuncs may not be available in userspace.
-- It does not support direct access to kernel data structures or functions like `task_struct`.
-
-Refer to [documents/available-features.md](documents/available-features.md) for more details.
 
 ### **How it Works**
 
@@ -118,18 +113,18 @@ see [documents/how-it-works.md](documents/how-it-works.md) for details.
 
 ### **Performance Benchmarks**
 
-How is the performance of `userspace uprobe` compared to `kernel uprobes`? Let's take a look at the following benchmark results:
+How is the performance of `userspace uprobe` compared to `kernel uprobes`?
 
 | Probe/Tracepoint Types | Kernel (ns)  | Userspace (ns) | Insn Count |
 |------------------------|-------------:|---------------:|---------------:|
-| Uprobe                 | 4751.462610 | 445.169770    | 4    |
-| Uretprobe              | 5899.706820 | 472.972220    | 2    |
-| Syscall Tracepoint     | 423.72835  | 492.04251   | 4    |
-| Embedding runtime     | Not avaliable  |  232.428710   | 4    |
+| Uprobe                 | 3224.172760  | 314.569110     | 4    |
+| Uretprobe              | 3996.799580  | 381.270270     | 2    |
+| Syscall Tracepoint     | 151.82801    | 232.57691      | 4    |
+| Embedding runtime      | Not avaliable |  110.008430   | 4    |
 
 It can be attached to functions in running process just like the kernel uprobe does.
 
-How is the performance of LLVM JIT/AOT compared to other eBPF userspace runtimes, native code or wasm runtimes? Let's take a look at the following benchmark results:
+How is the performance of LLVM JIT/AOT compared to other eBPF userspace runtimes, native code or wasm runtimes?
 
 ![LLVM jit benchmark](https://github.com/eunomia-bpf/bpf-benchmark/raw/main/example-output/merged_execution_times.png?raw=true)
 
@@ -140,6 +135,14 @@ see [github.com/eunomia-bpf/bpf-benchmark](https://github.com/eunomia-bpf/bpf-be
 Hash map or ring buffer compared to kernel(TODO)
 
 See [benchmark](benchmark) dir for detail performance benchmarks.
+
+### Comparing with Kernel eBPF Runtime
+
+- `bpftime` allows you to use `clang` and `libbpf` to build eBPF programs, and run them directly in this runtime. We have tested it with a libbpf version in [third_party/libbpf](third_party/libbpf).
+- Some kernel helpers and kfuncs may not be available in userspace.
+- It does not support direct access to kernel data structures or functions like `task_struct`.
+
+Refer to [documents/available-features.md](documents/avaliable-features.md) for more details.
 
 ## Build and test
 
@@ -161,4 +164,6 @@ Stay tuned for more developments from this promising project! You can find `bpft
 
 This project is licensed under the MIT License.
 
-Contact: <yunwei356@gmail.com>
+## Contact
+
+<yunwei356@gmail.com>

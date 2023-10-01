@@ -1,7 +1,6 @@
+# Building and run bpftime
 
-# Building and test bpftime
-
-## Dependencies
+## Install Dependencies
 
 Install the required packages:
 
@@ -30,7 +29,7 @@ Usage: bpftime [OPTIONS] <COMMAND>
 ...
 ```
 
-## Compilation
+## Compilation for vm
 
 Build the complete runtime:
 
@@ -53,7 +52,7 @@ make build-llvm # build the vm with llvm jit
 
 ## Testing
 
-Run the test suite to validate the implementation:
+Run the test suite for runtime to validate the implementation:
 
 ```bash
 make test

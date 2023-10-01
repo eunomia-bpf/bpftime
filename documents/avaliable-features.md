@@ -35,5 +35,3 @@ see [../runtime/src/maps.cpp](../runtime/src/maps.cpp) for more details.
 - `bpf_set_retval`: Helper function for setting the return value of a function.
 - `bpf_probe_read_str`: Helper function for reading a null-terminated string from a user address.
 - `bpf_get_stack`: Helper function for retrieving the current kernel stack.
-
-
