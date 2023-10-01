@@ -21,14 +21,16 @@ TEST_CASE("Test verify simple ebpf programs", "[simple]")
 	{
 		auto ret = verify_ebpf_program(
 			(uint64_t *)(uintptr_t)(&bpf_mul_optimized),
-			sizeof(bpf_mul_optimized) / 8, "uprobe/read");
+			sizeof(bpf_mul_optimized) / 8, "uprobe/read",
+			std::vector<int>{});
 		REQUIRE_FALSE(ret.has_value());
 	}
 	SECTION("varify bad programs")
 	{
-		auto ret = verify_ebpf_program(bad_ebpf_program,
-					       sizeof(bad_ebpf_program),
-					       "uprobe/read");
+		auto ret =
+			verify_ebpf_program(bad_ebpf_program,
+					    sizeof(bad_ebpf_program),
+					    "uprobe/read", std::vector<int>{});
 		INFO(ret.value());
 		REQUIRE(ret.has_value());
 	}

@@ -11,7 +11,7 @@
 #include <asm_unmarshal.hpp>
 #include <sstream>
 #include <variant>
-
+#include <platform-impl.hpp>
 static ebpf_verifier_options_t verifier_options = {
 	.check_termination = true,
 	.assume_assertions = true,
@@ -29,7 +29,7 @@ namespace bpftime
 {
 std::optional<std::string> verify_ebpf_program(const uint64_t *raw_inst,
 					       size_t num_inst,
-					       const std::string &section_name)
+					       const std::string &section_name,std::vector<int> usable_helpers)
 {
 	raw_program prog;
 	prog.filename = "BPFTIME_VERIFIER";
@@ -40,11 +40,12 @@ std::optional<std::string> verify_ebpf_program(const uint64_t *raw_inst,
 		memcpy(&inst, &raw_inst[i], sizeof(inst));
 		prog.prog.push_back(inst);
 	}
-	prog.info.platform = &g_ebpf_platform_linux;
+	prog.info.platform = &bpftime_platform_spec;
 	prog.info.type.name = section_name;
 	prog.info.type.context_descriptor = &g_tracepoint_descr;
 	prog.info.type.platform_specific_data = 1;
 	prog.info.type.is_privileged = false;
+	prog.info.map_descriptors ; // What shoule be in here?
 	std::vector<std::vector<std::string> > notes;
 	auto unmarshal_result = unmarshal(prog, notes);
 	if (std::holds_alternative<std::string>(unmarshal_result)) {
