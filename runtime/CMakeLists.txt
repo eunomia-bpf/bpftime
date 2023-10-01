@@ -103,17 +103,10 @@ target_link_libraries(${PROJECT_NAME}
 add_dependencies(${PROJECT_NAME} vm-bpf FridaGum syscall_id_table spdlog::spdlog)
 
 if(${ENABLE_EBPF_VERIFIER})
-  target_include_directories(${PROJECT_NAME} PRIVATE ${EBPF_VERIFIER_INCLUDE})
-  target_link_libraries(${PROJECT_NAME} PRIVATE ebpfverifier)
-  add_dependencies(${PROJECT_NAME} ebpfverifier)
-  target_compile_definitions(${PROJECT_NAME} PRIVATE ENABLE_EBPF_VERIFIER)
-endif()
-
-if(${USE_EBPF_VERIFIER})
-  add_dependencies(${PROJECT_NAME} ebpfverifier)
-  target_link_libraries(${PROJECT_NAME} ebpfverifier)
-  target_include_directories(${PROJECT_NAME} ${EBPF_VERIFIER_INCLUDE})
-  target_compile_definitions(${PROJECT_NAME} USE_EBPF_VERIFIER)
+  target_include_directories(${PROJECT_NAME} PRIVATE ${BPFTIME_VERIFIER_INCLUDE})
+  target_link_libraries(${PROJECT_NAME} PRIVATE bpftime-verifier)
+  add_dependencies(${PROJECT_NAME} bpftime-verifier)
+  target_compile_definitions(${PROJECT_NAME} PRIVATE ENABLE_EBPF_VERIFIER ENABLE_BPFTIME_VERIFIER)
 endif()
 
 message(DEBUG "Found the following sources: ${sources}")
