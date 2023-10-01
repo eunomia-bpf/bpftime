@@ -11,6 +11,20 @@
 #include <asm_unmarshal.hpp>
 #include <sstream>
 #include <variant>
+
+static ebpf_verifier_options_t verifier_options = {
+	.check_termination = true,
+	.assume_assertions = true,
+	.print_invariants = true,
+	.print_failures = true,
+	.no_simplify = false,
+	.mock_map_fds = true,
+	.strict = false,
+	.print_line_info = false,
+	.allow_division_by_zero = true,
+	.setup_constraints = true,
+};
+
 namespace bpftime
 {
 std::optional<std::string> verify_ebpf_program(const uint64_t *raw_inst,
@@ -38,11 +52,11 @@ std::optional<std::string> verify_ebpf_program(const uint64_t *raw_inst,
 	}
 	auto inst_seq = std::get<InstructionSeq>(unmarshal_result);
 	ebpf_verifier_stats_t stats;
-    stats.max_instruction_count = stats.total_unreachable = stats.total_warnings = 0;
+	stats.max_instruction_count = stats.total_unreachable =
+		stats.total_warnings = 0;
 	std::ostringstream message;
-	auto result =
-		ebpf_verify_program(message, inst_seq, prog.info,
-				    &ebpf_verifier_default_options, &stats);
+	auto result = ebpf_verify_program(message, inst_seq, prog.info,
+					  &verifier_options, &stats);
 	if (result) {
 		return {};
 	} else {

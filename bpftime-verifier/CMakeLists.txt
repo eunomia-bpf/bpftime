@@ -6,6 +6,8 @@ target_include_directories(bpftime-verifier
     ${CMAKE_CURRENT_SOURCE_DIR}/include
 )
 
+target_link_libraries(bpftime-verifier PUBLIC ebpfverifier)
+
 set(BPFTIME_VERIFIER_INCLUDE ${CMAKE_CURRENT_SOURCE_DIR}/include)
 
 set(TEST_SOURCES
@@ -25,6 +27,6 @@ foreach(test_file ${TEST_SOURCES})
         Catch2::Catch2WithMain
     )
     target_include_directories(${current_test_name} PRIVATE ${BPFTIME_VERIFIER_INCLUDE})
-    add_test(NAME ${current_test_name} COMMAND ${current_test_name} ${Catch2_INCLUDE} )
+    add_test(NAME ${current_test_name} COMMAND ${current_test_name} ${Catch2_INCLUDE})
     message(STATUS "Add test from bpftime-verifier: ${current_test_name}")
 endforeach()
