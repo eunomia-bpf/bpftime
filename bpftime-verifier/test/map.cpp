@@ -12,6 +12,7 @@
 #include <ostream>
 #include <catch2/matchers/catch_matchers_string.hpp>
 using namespace bpftime;
+using Catch::Matchers::ContainsSubstring;
 /*
 
 A program reads from map but without null check
@@ -52,7 +53,7 @@ TEST_CASE(
 	REQUIRE(ret.has_value());
 	REQUIRE_THAT(
 		ret.value(),
-		Catch::Matchers::ContainsSubstring(
+		ContainsSubstring(
 			"7: Possible null access (valid_access(r0.offset, width=4) for read)"));
 }
 
@@ -101,4 +102,44 @@ TEST_CASE("Test verifying ebpf programs with maps, without null check",
 		CAPTURE(ret.value());
 	}
 	REQUIRE_FALSE(ret.has_value());
+}
+
+TEST_CASE("Test verifying ebpf programs with maps, without definition",
+	  "[maps][without-maps-and-helpers]")
+{
+	// bpf_map_lookup_elem -> 1
+	set_available_helpers(std::vector<int32_t>{});
+	set_map_descriptors(std::map<int, BpftimeMapDescriptor>{});
+	std::optional<std::string> ret;
+
+	REQUIRE_NOTHROW([&]() {
+		ret = verify_ebpf_program(prog_with_map_2,
+					  std::size(prog_with_map_2),
+					  "uprobe//proc/self/exe:uprobed_sub");
+	}());
+	if (ret.has_value()) {
+		CAPTURE(ret.value());
+	}
+	REQUIRE_THAT(ret.value(),
+		     ContainsSubstring("6: invalid helper function id"));
+}
+
+TEST_CASE("Test verifying ebpf programs with maps, with helpers",
+	  "[maps][without-maps-and-helpers]")
+{
+	// bpf_map_lookup_elem -> 1
+	set_available_helpers(std::vector<int32_t>{ 1 });
+	set_map_descriptors(std::map<int, BpftimeMapDescriptor>{});
+	std::optional<std::string> ret;
+
+	REQUIRE_NOTHROW([&]() {
+		ret = verify_ebpf_program(prog_with_map_2,
+					  std::size(prog_with_map_2),
+					  "uprobe//proc/self/exe:uprobed_sub");
+	}());
+	if (ret.has_value()) {
+		CAPTURE(ret.value());
+	}
+	REQUIRE_THAT(ret.value(),
+		     ContainsSubstring("exit: Invalid map fd: 2333"));
 }
