@@ -1,7 +1,9 @@
 #include "asm_syntax.hpp"
 #include "config.hpp"
 #include <ebpf_base.h>
+#include <iostream>
 #include <linux/gpl/spec_type_descriptors.hpp>
+#include <ostream>
 #include <platform.hpp>
 #include <cstring>
 #include <ebpf_vm_isa.hpp>
@@ -17,19 +19,19 @@ static ebpf_verifier_options_t verifier_options = {
 	.assume_assertions = true,
 	.print_invariants = true,
 	.print_failures = true,
-	.no_simplify = false,
-	.mock_map_fds = true,
+	.no_simplify = true,
+	.mock_map_fds = false,
 	.strict = false,
-	.print_line_info = false,
-	.allow_division_by_zero = true,
-	.setup_constraints = true,
+	.print_line_info = true,
+	.allow_division_by_zero = false,
+	.setup_constraints = false,
 };
 
 namespace bpftime
 {
 std::optional<std::string> verify_ebpf_program(const uint64_t *raw_inst,
 					       size_t num_inst,
-					       const std::string &section_name,std::vector<int> usable_helpers)
+					       const std::string &section_name)
 {
 	raw_program prog;
 	prog.filename = "BPFTIME_VERIFIER";
@@ -40,12 +42,13 @@ std::optional<std::string> verify_ebpf_program(const uint64_t *raw_inst,
 		memcpy(&inst, &raw_inst[i], sizeof(inst));
 		prog.prog.push_back(inst);
 	}
-	prog.info.platform = &bpftime_platform_spec;
-	prog.info.type.name = section_name;
-	prog.info.type.context_descriptor = &g_tracepoint_descr;
-	prog.info.type.platform_specific_data = 1;
-	prog.info.type.is_privileged = false;
-	prog.info.map_descriptors ; // What shoule be in here?
+	prog.info = {
+		.platform = &bpftime_platform_spec,
+		.map_descriptors = get_all_map_descriptors(),
+		.type = bpftime_platform_spec.get_program_type(section_name,
+							       ""),
+	};
+	global_program_info = prog.info;
 	std::vector<std::vector<std::string> > notes;
 	auto unmarshal_result = unmarshal(prog, notes);
 	if (std::holds_alternative<std::string>(unmarshal_result)) {
@@ -62,6 +65,27 @@ std::optional<std::string> verify_ebpf_program(const uint64_t *raw_inst,
 		return {};
 	} else {
 		return message.str();
+	}
+}
+
+void set_available_helpers(const std::vector<int32_t> &helpers)
+{
+	usable_helpers.clear();
+	for (auto x : helpers)
+		usable_helpers.insert(x);
+}
+void set_map_descriptors(const std::map<int, BpftimeMapDescriptor> &maps)
+{
+	map_descriptors.clear();
+	for (const auto &[k, v] : maps) {
+		map_descriptors[k] = EbpfMapDescriptor{
+			.original_fd = v.original_fd,
+			.type = v.type,
+			.key_size = v.key_size,
+			.value_size = v.value_size,
+			.max_entries = v.max_entries,
+			.inner_map_fd = v.inner_map_fd,
+		};
 	}
 }
 } // namespace bpftime

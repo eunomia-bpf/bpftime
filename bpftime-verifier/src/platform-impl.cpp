@@ -1,17 +1,30 @@
 #include "helpers.hpp"
+#include "linux/bpf.h"
 #include "spec_type_descriptors.hpp"
 #include <cassert>
+#include <iostream>
+#include <map>
+#include <ostream>
 #include <platform-impl.hpp>
 #include <platform.hpp>
 #include <set>
 #include <stdexcept>
 #include <linux/linux_platform.hpp>
-// Thread dependent
-thread_local std::set<int32_t> usable_helpers;
-
+#include <bpf/bpf.h>
+#include <platform-impl.hpp>
+using namespace bpftime;
 static EbpfProgramType bpftime_get_program_type(const std::string &section,
 						const std::string &path)
 {
+	if (section.starts_with("uprobe") || section.starts_with("uretprobe") ||
+	    section.starts_with("tracepoint/syscalls/sys_enter_") ||
+	    section.starts_with("tracepoint/syscalls/sys_exit_")) {
+		return g_ebpf_platform_linux.get_program_type(section, path);
+	} else {
+		throw std::runtime_error(
+			std::string("Unsupported section by bpftime: ") +
+			section);
+	}
 }
 
 static EbpfHelperPrototype bpftime_get_helper_prototype(int32_t helper_id)
@@ -36,11 +49,26 @@ static void bpftime_parse_maps_section(std::vector<EbpfMapDescriptor> &,
 		std::string("parse ELF with bpftime is not supported now"));
 }
 
-static EbpfMapDescriptor &bpftime_get_map_descriptor(int)
+static EbpfMapDescriptor &bpftime_get_map_descriptor(int fd)
 {
+	if (auto itr = map_descriptors.find(fd); itr != map_descriptors.end()) {
+		return itr->second;
+	} else {
+		throw std::runtime_error(std::string("Invalid map fd: ") +
+					 std::to_string(fd));
+	}
 }
-static EbpfMapType bpftime_get_map_type(uint32_t)
+static EbpfMapType bpftime_get_map_type(uint32_t platform_specific_type)
 {
+	if (platform_specific_type == BPF_MAP_TYPE_HASH ||
+	    platform_specific_type == BPF_MAP_TYPE_ARRAY) {
+		return g_ebpf_platform_linux.get_map_type(
+			platform_specific_type);
+	} else {
+		throw std::runtime_error(
+			std::string("Unsupported map type by bpftime: ") +
+			std::to_string(platform_specific_type));
+	}
 }
 static void
 bpftime_resolve_inner_map_reference(std::vector<EbpfMapDescriptor> &)
@@ -61,10 +89,18 @@ struct ebpf_platform_t bpftime_platform_spec {
 	.resolve_inner_map_references = &bpftime_resolve_inner_map_reference
 };
 
-void set_available_helpers(const std::vector<int32_t> helpers)
+// Thread independent
+thread_local std::set<int32_t> usable_helpers;
+thread_local std::map<int, EbpfMapDescriptor> map_descriptors;
+
+std::vector<EbpfMapDescriptor> get_all_map_descriptors()
 {
-	usable_helpers.clear();
-	for (auto x : helpers)
-		usable_helpers.insert(x);
+	std::vector<EbpfMapDescriptor> result;
+
+	for (const auto &[k, v] : map_descriptors) {
+		result.push_back(v);
+	}
+	return result;
 }
+
 } // namespace bpftime
