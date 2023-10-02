@@ -18,6 +18,7 @@ set(BPFTIME_VERIFIER_INCLUDE ${CMAKE_CURRENT_SOURCE_DIR}/include)
 set(TEST_SOURCES
     test/simple.cpp
     test/map.cpp
+    test/non_kernel_helper.cpp
 )
 find_package(Catch2 REQUIRED)
 

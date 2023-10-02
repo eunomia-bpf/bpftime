@@ -1,3 +1,4 @@
+#include "bpftime-verifier.hpp"
 #include "helpers.hpp"
 #include "linux/bpf.h"
 #include "spec_type_descriptors.hpp"
@@ -30,7 +31,12 @@ static EbpfProgramType bpftime_get_program_type(const std::string &section,
 static EbpfHelperPrototype bpftime_get_helper_prototype(int32_t helper_id)
 {
 	if (usable_helpers.contains(helper_id)) {
-		return get_helper_prototype_linux(helper_id);
+		if (auto itr = non_kernel_helpers.find(helper_id);
+		    itr != non_kernel_helpers.end()) {
+			return itr->second;
+		} else {
+			return get_helper_prototype_linux(helper_id);
+		}
 	} else {
 		throw std::runtime_error(std::string("Unusable helper: ") +
 					 std::to_string(helper_id));
@@ -92,7 +98,7 @@ struct ebpf_platform_t bpftime_platform_spec {
 // Thread independent
 thread_local std::set<int32_t> usable_helpers;
 thread_local std::map<int, EbpfMapDescriptor> map_descriptors;
-
+thread_local std::map<int32_t, EbpfHelperPrototype> non_kernel_helpers;
 std::vector<EbpfMapDescriptor> get_all_map_descriptors()
 {
 	std::vector<EbpfMapDescriptor> result;

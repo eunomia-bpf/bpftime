@@ -1,5 +1,6 @@
 #include "asm_syntax.hpp"
 #include "config.hpp"
+#include "helpers.hpp"
 #include <ebpf_base.h>
 #include <iostream>
 #include <linux/gpl/spec_type_descriptors.hpp>
@@ -85,6 +86,26 @@ void set_map_descriptors(const std::map<int, BpftimeMapDescriptor> &maps)
 			.value_size = v.value_size,
 			.max_entries = v.max_entries,
 			.inner_map_fd = v.inner_map_fd,
+		};
+	}
+}
+void set_non_kernel_helpers(
+	const std::map<int32_t, BpftimeHelperProrotype> &protos)
+{
+	non_kernel_helpers.clear();
+	for (const auto &[k, v] : protos) {
+		non_kernel_helpers[k] = EbpfHelperPrototype{
+			.name = v.name,
+			.return_type = (ebpf_return_type_t)(int)v.return_type,
+			.argument_type = {
+				 (ebpf_argument_type_t)(int)v.argument_type[0],
+				 (ebpf_argument_type_t)(int)v.argument_type[1],
+				 (ebpf_argument_type_t)(int)v.argument_type[2],
+				 (ebpf_argument_type_t)(int)v.argument_type[3],
+				 (ebpf_argument_type_t)(int)v.argument_type[4],
+			},
+			.reallocate_packet = false,
+			.context_descriptor = nullptr
 		};
 	}
 }
