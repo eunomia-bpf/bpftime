@@ -76,7 +76,7 @@ add_library(
   ${PROJECT_NAME}
   ${sources}
 )
-
+set_property(TARGET ${PROJECT_NAME} PROPERTY CXX_STANDARD 20)
 add_custom_target(
   syscall_id_table
   COMMAND /bin/bash ${CMAKE_CURRENT_SOURCE_DIR}/generate_syscall_id_table.sh "${CMAKE_CURRENT_BINARY_DIR}/syscall_id_list.h"
