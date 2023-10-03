@@ -15,7 +15,7 @@ jobs:
           submodules: 'recursive'
       - name: Install dependencies
         run: | 
-          sudo apt-get install binutils-dev libboost1.74-all-dev libelf-dev zlib1g-dev
+          sudo apt-get install binutils-dev libboost1.74-all-dev libelf-dev zlib1g-dev libyaml-cpp-dev
       - name: Build and install runtime
         run: |
           make install

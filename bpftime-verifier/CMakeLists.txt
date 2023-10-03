@@ -20,7 +20,16 @@ set(TEST_SOURCES
     test/map.cpp
     test/non_kernel_helper.cpp
 )
-find_package(Catch2 REQUIRED)
+
+Include(FetchContent)
+
+FetchContent_Declare(
+    Catch2
+    GIT_REPOSITORY https://github.com/catchorg/Catch2.git
+    GIT_TAG v3.0.1
+)
+
+FetchContent_MakeAvailable(Catch2)
 
 add_executable(bpftime_verifier_tests ${TEST_SOURCES})
 add_dependencies(bpftime_verifier_tests bpftime-verifier)
