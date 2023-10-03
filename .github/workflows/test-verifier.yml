@@ -16,7 +16,7 @@ jobs:
       - name: Install dependencies
         run: | 
           sudo apt-get update -y
-          sudo apt-get install binutils-dev libboost1.74-all-dev libelf-dev zlib1g-dev ninja-build -y
+          sudo apt-get install binutils-dev libboost1.74-all-dev libelf-dev zlib1g-dev ninja-build libyaml-cpp-dev -y
       - name: Build test target
         run: |
           cmake -DBPFTIME_ENABLE_UNIT_TESTING=YES -DBPFTIME_LLVM_JIT=NO -DUSE_NEW_BINUTILS=YES -DENABLE_EBPF_VERIFIER=YES -DCMAKE_BUILD_TYPE:STRING=Release -S . -B build -G Ninja
