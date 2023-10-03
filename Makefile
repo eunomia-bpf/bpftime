@@ -60,4 +60,3 @@ clean: ## clean the project
 	make -C runtime clean
 	make -C vm clean
 install: release ## Invoke cmake to install..
-	cmake --build build --config Release --target install
