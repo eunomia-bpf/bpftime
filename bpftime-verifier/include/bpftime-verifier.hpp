@@ -9,6 +9,8 @@
 #include <vector>
 namespace bpftime
 {
+namespace verifier
+{
 std::optional<std::string> verify_ebpf_program(const uint64_t *raw_inst,
 					       size_t num_inst,
 					       const std::string &section_name);
@@ -57,13 +59,14 @@ struct BpftimeHelperProrotype {
 	bpftime_argument_type_t argument_type[5];
 };
 
-
 void set_available_helpers(const std::vector<int32_t> &helpers);
 
-void set_non_kernel_helpers(const std::map<int32_t, BpftimeHelperProrotype>& protos);
+void set_non_kernel_helpers(
+	const std::map<int32_t, BpftimeHelperProrotype> &protos);
 
 void set_map_descriptors(const std::map<int, BpftimeMapDescriptor> &maps);
-
+std::map<int, BpftimeMapDescriptor> get_map_descriptors();
+} // namespace verifier
 } // namespace bpftime
 
 #endif

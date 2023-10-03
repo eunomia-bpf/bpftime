@@ -18,8 +18,7 @@ static EbpfProgramType bpftime_get_program_type(const std::string &section,
 						const std::string &path)
 {
 	if (section.starts_with("uprobe") || section.starts_with("uretprobe") ||
-	    section.starts_with("tracepoint/syscalls/sys_enter_") ||
-	    section.starts_with("tracepoint/syscalls/sys_exit_")) {
+	    section.starts_with("tracepoint")) {
 		return g_ebpf_platform_linux.get_program_type(section, path);
 	} else {
 		throw std::runtime_error(

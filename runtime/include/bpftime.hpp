@@ -10,7 +10,10 @@
 #include <cassert>
 #include <cstdlib>
 #include <ebpf-vm.h>
-
+#include <common/bpftime_config.hpp>
+#ifdef ENABLE_BPFTIME_VERIFIER
+#include <bpftime-verifier.hpp>
+#endif
 extern "C" {
 
 struct trace_entry {
@@ -123,12 +126,17 @@ class bpftime_helper_group {
 
 	// Add the helper group to the program
 	int add_helper_group_to_prog(bpftime_prog *prog) const;
+	// Get all helper ids of this helper group
+	std::vector<int32_t> get_helper_ids() const;
 
     private:
 	// Map to store helpers indexed by their unique ID
 	std::map<unsigned int, bpftime_helper_info> helper_map;
 };
-
+#ifdef ENABLE_BPFTIME_VERIFIER
+std::map<int32_t, bpftime::verifier::BpftimeHelperProrotype>
+get_ffi_helper_protos();
+#endif
 #define MAX_FFI_FUNCS 8192 * 4
 #define MAX_ARGS_COUNT 6
 #define MAX_FUNC_NAME_LEN 64
@@ -232,15 +240,6 @@ struct hook_entry {
 	std::set<const bpftime_prog *> ret_progs;
 };
 
-struct agent_config {
-	bool debug = false;
-	bool jit_enabled = false;
-
-	// helper groups
-	bool enable_kernel_helper_group = true;
-	bool enable_ffi_helper_group = false;
-	bool enable_shm_maps_helper_group = true;
-};
 class handler_manager;
 
 class bpf_attach_ctx {

@@ -12,6 +12,7 @@
 #include <ostream>
 #include <catch2/matchers/catch_matchers_string.hpp>
 using namespace bpftime;
+using namespace verifier;
 using Catch::Matchers::ContainsSubstring;
 /*
 

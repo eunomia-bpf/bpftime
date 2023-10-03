@@ -5,6 +5,7 @@
 #include <catch2/catch_test_macros.hpp>
 #include <bpftime-verifier.hpp>
 using namespace bpftime;
+using namespace verifier;
 /*
 a * b / 2 for 32 bit
 clang -O2 -target bpf -m32 -c example/bpf/mul.bpf.c -o prog.o

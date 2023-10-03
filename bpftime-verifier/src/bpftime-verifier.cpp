@@ -30,6 +30,8 @@ static ebpf_verifier_options_t verifier_options = {
 
 namespace bpftime
 {
+namespace verifier
+{
 std::optional<std::string> verify_ebpf_program(const uint64_t *raw_inst,
 					       size_t num_inst,
 					       const std::string &section_name)
@@ -109,4 +111,18 @@ void set_non_kernel_helpers(
 		};
 	}
 }
+std::map<int, BpftimeMapDescriptor> get_map_descriptors()
+{
+	std::map<int, BpftimeMapDescriptor> result;
+	for (const auto &[k, v] : map_descriptors) {
+		result[k] = { .original_fd = v.original_fd,
+			      .type = v.type,
+			      .key_size = v.key_size,
+			      .value_size = v.value_size,
+			      .max_entries = v.max_entries,
+			      .inner_map_fd = v.inner_map_fd };
+	}
+	return result;
+}
+} // namespace verifier
 } // namespace bpftime

@@ -56,7 +56,6 @@ set(sources
   src/attach.cpp
   src/bpftime_handler.cpp
   src/syscall_table.cpp
-  src/verifier-interface.cpp
 )
 
 # list(APPEND sources

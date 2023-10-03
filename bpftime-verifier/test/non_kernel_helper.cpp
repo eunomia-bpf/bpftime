@@ -2,6 +2,7 @@
 #include <bpftime-verifier.hpp>
 #include <iterator>
 using namespace bpftime;
+using namespace verifier;
 
 /*
        0:	b7 01 00 00 01 00 00 00	r1 = 1
@@ -18,9 +19,9 @@ TEST_CASE("Test whether verifying non-kernel helpers works", "[verify]")
 		{ { 100001,
 		    BpftimeHelperProrotype{
 			    .name = "my_helper",
-			    .return_type = bpftime::EBPF_RETURN_TYPE_INTEGER,
+			    .return_type = EBPF_RETURN_TYPE_INTEGER,
 			    .argument_type = {
-				    bpftime::EBPF_ARGUMENT_TYPE_ANYTHING } } } });
+				    EBPF_ARGUMENT_TYPE_ANYTHING } } } });
 	set_map_descriptors(std::map<int, BpftimeMapDescriptor>{});
 	auto ret = verify_ebpf_program(simple_prog, std::size(simple_prog),
 				       "uprobe/read");
