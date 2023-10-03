@@ -419,6 +419,14 @@ int bpftime_shm::attach_enable(int fd) const
 	return 0;
 }
 
+namespace bpftime
+{
+bpftime::agent_config &bpftime_get_agent_config()
+{
+	return shm_holder.global_shared_memory.get_agent_config();
+}
+} // namespace bpftime
+
 // Check whether a certain pid was already equipped with syscall tracer
 // Using a set stored in the shared memory
 bool bpftime_shm::check_syscall_trace_setup(int pid)

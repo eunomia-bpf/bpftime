@@ -1,5 +1,6 @@
 #ifndef _HANDLER_MANAGER_HPP
 #define _HANDLER_MANAGER_HPP
+#include "common/bpftime_config.hpp"
 #include "spdlog/spdlog.h"
 #include <boost/interprocess/interprocess_fwd.hpp>
 #include <cstddef>
@@ -18,7 +19,9 @@
 #include <boost/interprocess/sync/sharable_lock.hpp>
 #include <boost/interprocess/sync/scoped_lock.hpp>
 #include <boost/interprocess/containers/set.hpp>
-
+#ifdef ENABLE_BPFTIME_VERIFIER
+#include <bpftime-verifier.hpp>
+#endif
 namespace bpftime
 {
 using managed_shared_memory = boost::interprocess::managed_shared_memory;
@@ -354,7 +357,7 @@ using boost::interprocess::vector;
 constexpr const char *DEFAULT_GLOBAL_SHM_NAME = "bpftime_maps_shm";
 constexpr const char *DEFAULT_GLOBAL_HANDLER_NAME = "bpftime_handler";
 constexpr const char *DEFAULT_SYSCALL_PID_SET_NAME = "bpftime_syscall_pid_set";
-
+constexpr const char *DEFAULT_AGENT_CONFIG_NAME = "bpftime_agent_config";
 inline const char *get_global_shm_name()
 {
 	const char *name = getenv("BPFTIME_GLOBAL_SHM_NAME");
@@ -487,8 +490,15 @@ class bpftime_shm {
 	// A set to record whether a process was setted up with syscall tracer
 
 	syscall_pid_set *syscall_installed_pids = nullptr;
+	// Configuration for the agent. e.g, which helpers are enabled
+	struct bpftime::agent_config *agent_config = nullptr;
 
     public:
+	// Get the configuration object
+	struct agent_config &get_agent_config()
+	{
+		return *agent_config;
+	}
 	// Check whether a certain pid was already equipped with syscall tracer
 	// Using a set stored in the shared memory
 	bool check_syscall_trace_setup(int pid);
@@ -543,6 +553,7 @@ class bpftime_shm {
 	int add_bpf_prog(const ebpf_inst *insn, size_t insn_cnt,
 			 const char *prog_name, int prog_type)
 	{
+		
 		int fd = open_fake_fd();
 		manager->set_handler(
 			fd,
@@ -574,6 +585,18 @@ class bpftime_shm {
 		if (!manager) {
 			return -1;
 		}
+#ifdef ENABLE_BPFTIME_VERIFIER
+		auto helpers = verifier::get_map_descriptors();
+		helpers[fd] = verifier::BpftimeMapDescriptor{
+			.original_fd = fd,
+			.type = static_cast<uint32_t>(attr.type),
+			.key_size = attr.key_size,
+			.value_size = attr.value_size,
+			.max_entries = attr.max_ents,
+			.inner_map_fd = static_cast<unsigned int>(-1)
+		};
+		verifier::set_map_descriptors(helpers);
+#endif
 		manager->set_handler(
 			fd, bpftime::bpf_map_handler(name, segment, attr),
 			segment);
@@ -631,6 +654,10 @@ class bpftime_shm {
 				segment.find<syscall_pid_set>(
 					       DEFAULT_SYSCALL_PID_SET_NAME)
 					.first;
+			agent_config =
+				segment.find<struct agent_config>(
+					       bpftime::DEFAULT_AGENT_CONFIG_NAME)
+					.first;
 		} else if (global_shm_open_type == shm_open_type::SHM_SERVER) {
 			boost::interprocess::shared_memory_object::remove(
 				bpftime::get_global_shm_name());
@@ -646,6 +673,8 @@ class bpftime_shm {
 					std::less<int>(),
 					syscall_pid_set_allocator(
 						segment.get_segment_manager()));
+			agent_config = segment.construct<struct agent_config>(
+				bpftime::DEFAULT_AGENT_CONFIG_NAME)();
 		} else if (global_shm_open_type ==
 			   shm_open_type::SHM_NO_CREATE) {
 			// not create any shm

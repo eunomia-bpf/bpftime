@@ -87,13 +87,13 @@ function(add_ebpf_program_target target_name source_file output_file)
   add_dependencies(${target_name} copy_headers)
 endfunction()
 
-# ebpf-verifier
-option(ENABLE_EBPF_VERIFIER "Whether to enable ebpf verifier" OFF)
 set(CMAKE_POSITION_INDEPENDENT_CODE YES)
 
+# ebpf-verifier
+option(ENABLE_EBPF_VERIFIER "Whether to enable ebpf verifier" YES)
+
 if(${ENABLE_EBPF_VERIFIER})
-  add_subdirectory(third_party/ebpf-verifier)
-  set(EBPF_VERIFIER_INCLUDE ${CMAKE_CURRENT_SOURCE_DIR}/third_party/ebpf-verifier/src)
+  add_subdirectory(bpftime-verifier)
 endif()
 
 # spdlog

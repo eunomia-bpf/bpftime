@@ -56,7 +56,6 @@ set(sources
   src/attach.cpp
   src/bpftime_handler.cpp
   src/syscall_table.cpp
-  src/verifier-interface.cpp
 )
 
 # list(APPEND sources
@@ -77,7 +76,7 @@ add_library(
   ${PROJECT_NAME}
   ${sources}
 )
-
+set_property(TARGET ${PROJECT_NAME} PROPERTY CXX_STANDARD 20)
 add_custom_target(
   syscall_id_table
   COMMAND /bin/bash ${CMAKE_CURRENT_SOURCE_DIR}/generate_syscall_id_table.sh "${CMAKE_CURRENT_BINARY_DIR}/syscall_id_list.h"
@@ -102,11 +101,11 @@ target_link_libraries(${PROJECT_NAME}
 )
 add_dependencies(${PROJECT_NAME} vm-bpf FridaGum syscall_id_table spdlog::spdlog)
 
-if(${USE_EBPF_VERIFIER})
-  add_dependencies(${PROJECT_NAME} ebpfverifier)
-  target_link_libraries(${PROJECT_NAME} ebpfverifier)
-  target_include_directories(${PROJECT_NAME} ${EBPF_VERIFIER_INCLUDE})
-  target_compile_definitions(${PROJECT_NAME} USE_EBPF_VERIFIER)
+if(${ENABLE_EBPF_VERIFIER})
+  target_include_directories(${PROJECT_NAME} PRIVATE ${BPFTIME_VERIFIER_INCLUDE})
+  target_link_libraries(${PROJECT_NAME} PRIVATE bpftime-verifier)
+  add_dependencies(${PROJECT_NAME} bpftime-verifier)
+  target_compile_definitions(${PROJECT_NAME} PRIVATE ENABLE_EBPF_VERIFIER ENABLE_BPFTIME_VERIFIER)
 endif()
 
 message(DEBUG "Found the following sources: ${sources}")

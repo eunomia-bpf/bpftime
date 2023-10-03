@@ -1,10 +1,20 @@
 #include "syscall_server.hpp"
+#include "bpftime.hpp"
 #include "bpftime_handler.hpp"
 #include "bpftime_shm.hpp"
+#include "linux/bpf.h"
+#include <asm-generic/errno-base.h>
+#include <cstdlib>
 #include <cstring>
 #include <iostream>
+#include <optional>
 #include <ostream>
+#include <ranges>
 #include <spdlog/spdlog.h>
+#include <sstream>
+#include <string_view>
+#include <bpftime-verifier.hpp>
+#include <iomanip>
 using namespace bpftime;
 
 const shm_open_type bpftime::global_shm_open_type = shm_open_type::SHM_SERVER;
@@ -14,6 +24,77 @@ static syscall_context context;
 
 #define PERF_UPROBE_REF_CTR_OFFSET_BITS 32
 #define PERF_UPROBE_REF_CTR_OFFSET_SHIFT 32
+
+static bool agent_config_loaded = false;
+
+static void load_agent_config_from_env_var()
+{
+	if (agent_config_loaded)
+		return;
+	auto &agent_config = bpftime_get_agent_config();
+	if (const char *custom_helpers = getenv("BPFTIME_HELPER_GROUPS");
+	    custom_helpers != nullptr) {
+		agent_config.enable_kernel_helper_group =
+			agent_config.enable_ffi_helper_group =
+				agent_config.enable_shm_maps_helper_group =
+					false;
+		auto helpers_sv = std::string_view(custom_helpers);
+		for (auto tok : helpers_sv | std::ranges::views::split(
+						     std::string_view(","))) {
+			auto curr_token =
+				std::string_view(tok.begin(), tok.end());
+			if (curr_token == "ffi") {
+				spdlog::info("Enabling ffi helper group");
+				agent_config.enable_ffi_helper_group = true;
+			} else if (curr_token == "kernel") {
+				spdlog::info("Enabling kernel helper group");
+				agent_config.enable_kernel_helper_group = true;
+			} else if (curr_token == "shm_map") {
+				spdlog::info("Enabling shm_map helper group");
+				agent_config.enable_shm_maps_helper_group =
+					true;
+			} else {
+				spdlog::warn("Unknown helper group: {}",
+					     curr_token);
+			}
+		}
+	} else {
+		spdlog::info(
+			"Enabling helper groups ffi, kernel, shm_map by default");
+		agent_config.enable_kernel_helper_group =
+			agent_config.enable_shm_maps_helper_group =
+				agent_config.enable_ffi_helper_group = true;
+	}
+	std::vector<int32_t> helper_ids;
+	std::map<int32_t, bpftime::verifier::BpftimeHelperProrotype>
+		non_kernel_helpers;
+	if (agent_config.enable_kernel_helper_group) {
+		for (auto x :
+		     bpftime_helper_group::get_kernel_utils_helper_group()
+			     .get_helper_ids()) {
+			helper_ids.push_back(x);
+		}
+	}
+	if (agent_config.enable_shm_maps_helper_group) {
+		for (auto x : bpftime_helper_group::get_shm_maps_helper_group()
+				      .get_helper_ids()) {
+			helper_ids.push_back(x);
+		}
+	}
+	if (agent_config.enable_ffi_helper_group) {
+		for (auto x : bpftime_helper_group::get_shm_maps_helper_group()
+				      .get_helper_ids()) {
+			helper_ids.push_back(x);
+		}
+		// non_kernel_helpers =
+		for (const auto &[k, v] : get_ffi_helper_protos()) {
+			non_kernel_helpers[k] = v;
+		}
+	}
+	verifier::set_available_helpers(helper_ids);
+	verifier::set_non_kernel_helpers(non_kernel_helpers);
+	agent_config_loaded = true;
+}
 
 /*
  * this function is expected to parse integer in the range of [0, 2^31-1] from
@@ -31,10 +112,10 @@ static int parse_uint_from_file(const char *file, const char *fmt)
 		spdlog::error("Failed to open {}: {}", file, err);
 		return err;
 	}
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Wformat-nonliteral"
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wformat-nonliteral"
 	err = fscanf(f, fmt, &ret);
-#pragma clang diagnostic pop
+#pragma GCC diagnostic pop
 	if (err != 1) {
 		err = err == EOF ? -EIO : -errno;
 		spdlog::error("Failed to parse {}: {}", file, err);
@@ -140,6 +221,7 @@ int syscall_context::handle_close(int fd)
 
 long syscall_context::handle_sysbpf(int cmd, union bpf_attr *attr, size_t size)
 {
+	load_agent_config_from_env_var();
 	errno = 0;
 	char *errmsg;
 	switch (cmd) {
@@ -197,10 +279,59 @@ long syscall_context::handle_sysbpf(int cmd, union bpf_attr *attr, size_t size)
 	case BPF_PROG_LOAD:
 		// Load a program?
 		{
-			spdlog::debug("Loadig program `{}` license `{}`",
-				      attr->prog_name,
-				      (const char *)(uintptr_t)attr->license);
-			// EbpfProgWrapper prog;
+			spdlog::info(
+				"Loadig program `{}` license `{}` prog_type `{}` attach_type {} map_type {}",
+				attr->prog_name,
+				(const char *)(uintptr_t)attr->license,
+				attr->prog_type, attr->attach_type,
+				attr->map_type);
+
+			// tracepoint -> BPF_PROG_TYPE_TRACEPOINT
+			// uprobe/uretprobe -> BPF_PROG_TYPE_SOCKET_FILTER
+			std::optional<std::string> simple_section_name;
+			if (attr->prog_type == BPF_PROG_TYPE_TRACEPOINT) {
+				simple_section_name = "tracepoint";
+			} else if (attr->prog_type ==
+				   BPF_PROG_TYPE_SOCKET_FILTER) {
+				simple_section_name = "uprobe";
+			}
+			// Only do verification for tracepoint/uprobe/uretprobe
+			if (simple_section_name.has_value()) {
+				auto result = verifier::verify_ebpf_program(
+					(uint64_t *)(uintptr_t)attr->insns,
+					(size_t)attr->insn_cnt,
+					simple_section_name.value());
+				if (result.has_value()) {
+					std::ostringstream message;
+					message << *result;
+					// Print the program by bytes
+					for (size_t i = 0; i < attr->insn_cnt;
+					     i++) {
+						uint64_t inst =
+							((uint64_t *)(uintptr_t)
+								 attr->insns)[i];
+						message << std::setw(3)
+							<< std::setfill('0')
+							<< i << ": ";
+						for (int j = 0; j < 8; j++) {
+							message << std::hex
+								<< std::uppercase
+								<< std::setw(2)
+								<< std::setfill(
+									   '0')
+								<< (inst & 0xff)
+								<< " ";
+							inst >>= 8;
+						}
+						message << std::endl;
+					}
+					spdlog::error(
+						"Failed to verify program: {}",
+						message.str());
+					errno = EINVAL;
+					return -1;
+				}
+			}
 			int id = bpftime_progs_create(
 				(ebpf_inst *)(uintptr_t)attr->insns,
 				(size_t)attr->insn_cnt, attr->prog_name,
@@ -368,7 +499,7 @@ int syscall_context::handle_ioctl(int fd, unsigned long req, int data)
 	}
 	case PERF_EVENT_IOC_SET_BPF: {
 		spdlog::debug("Setting bpf for perf event {} and bpf {}", fd,
-			     data);
+			      data);
 		res = bpftime_attach_perf_to_bpf(fd, data);
 		if (res < 0) {
 			return orig_ioctl_fn(fd, req, data);

@@ -58,10 +58,7 @@ extern "C" void bpftime_agent_main(const gchar *data, gboolean *stay_resident)
 
 	int res = 1;
 
-	agent_config config;
-	config.enable_ffi_helper_group = true;
-	config.enable_shm_maps_helper_group = true;
-	res = ctx.init_attach_ctx_from_handlers(config);
+	res = ctx.init_attach_ctx_from_handlers(bpftime_get_agent_config());
 	if (res != 0) {
 		spdlog::error("Failed to initialize attach context");
 		return;

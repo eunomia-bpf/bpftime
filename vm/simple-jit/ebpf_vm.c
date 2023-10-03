@@ -1101,12 +1101,12 @@ ebpf_error(const char* fmt, ...)
     char* msg;
     va_list ap;
     va_start(ap, fmt);
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Wformat-nonliteral"
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wformat-nonliteral"
     if (vasprintf(&msg, fmt, ap) < 0) {
         msg = NULL;
     }
-#pragma clang diagnostic pop
+#pragma GCC diagnostic pop
     va_end(ap);
     return msg;
 }

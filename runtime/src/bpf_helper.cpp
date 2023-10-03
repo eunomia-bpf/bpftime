@@ -1,15 +1,18 @@
+#include "bpftime-verifier.hpp"
 #include "spdlog/spdlog.h"
 #include <map>
 #include <iostream>
 #include <stdio.h>
 #include <stdarg.h>
 #include <cstring>
+#include <time.h>
 #include <unistd.h>
 #include <ctime>
 #include "bpftime.hpp"
 #include "bpftime_shm.hpp"
 #include "bpftime_internal.h"
 #include <spdlog/spdlog.h>
+#include <vector>
 
 #define PATH_MAX 4096
 
@@ -31,12 +34,12 @@ uint64_t bpftime_trace_printk(uint64_t fmt, uint64_t fmt_size, ...)
 {
 	const char *fmt_str = (const char *)fmt;
 	va_list args;
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Wformat-nonliteral"
-#pragma clang diagnostic ignored "-Wvarargs"
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wformat-nonliteral"
+#pragma GCC diagnostic ignored "-Wvarargs"
 	va_start(args, fmt_str);
 	long ret = vprintf(fmt_str, args);
-#pragma clang diagnostic pop
+#pragma GCC diagnostic pop
 	va_end(args);
 	return 0;
 }
@@ -138,6 +141,14 @@ uint64_t bpf_get_stack(uint64_t, uint64_t buf, uint64_t sz, uint64_t, uint64_t)
 	memset((void *)(uintptr_t)buf, 0, sz);
 	return sz;
 }
+uint64_t bpf_ktime_get_coarse_ns(uint64_t, uint64_t, uint64_t, uint64_t,
+				 uint64_t)
+{
+	struct timespec ts;
+	clock_gettime(CLOCK_MONOTONIC_COARSE, &ts);
+	return (uint64_t)ts.tv_sec * 1000000000 + ts.tv_nsec;
+}
+
 } // extern "C"
 
 namespace bpftime
@@ -402,7 +413,14 @@ int bpftime_helper_group::add_helper_group_to_prog(bpftime_prog *prog) const
 	}
 	return 0;
 }
-
+std::vector<int32_t> bpftime_helper_group::get_helper_ids() const
+{
+	std::vector<int32_t> result;
+	for (const auto &[k, _] : this->helper_map) {
+		result.push_back(k);
+	}
+	return result;
+}
 const bpftime_helper_group shm_maps_group = { {
 	{ BPF_FUNC_map_lookup_elem,
 	  bpftime_helper_info{
@@ -514,6 +532,10 @@ const bpftime_helper_group kernel_helper_group = { {
 	  bpftime_helper_info{ .index = BPF_FUNC_get_stack,
 			       .name = "bpf_get_stack",
 			       .fn = (void *)bpf_get_stack } },
+	{ BPF_FUNC_ktime_get_coarse_ns,
+	  bpftime_helper_info{ .index = BPF_FUNC_ktime_get_coarse_ns,
+			       .name = "bpf_ktime_get_coarse_ns",
+			       .fn = (void *)bpf_ktime_get_coarse_ns } },
 } };
 
 // Utility function to get the FFI helper group
@@ -533,5 +555,34 @@ const bpftime_helper_group &bpftime_helper_group::get_shm_maps_helper_group()
 {
 	return shm_maps_group;
 }
+
+#ifdef ENABLE_BPFTIME_VERIFIER
+std::map<int32_t, verifier::BpftimeHelperProrotype> get_ffi_helper_protos()
+{
+	using namespace verifier;
+	std::map<int32_t, BpftimeHelperProrotype> result;
+	result[FFI_HELPER_ID_FIND_ID] = BpftimeHelperProrotype{
+		.name = "__ebpf_call_find_ffi_id",
+		.return_type = EBPF_RETURN_TYPE_INTEGER,
+		.argument_type = { EBPF_ARGUMENT_TYPE_PTR_TO_READABLE_MEM_OR_NULL,
+				   EBPF_ARGUMENT_TYPE_DONTCARE,
+				   EBPF_ARGUMENT_TYPE_DONTCARE,
+				   EBPF_ARGUMENT_TYPE_DONTCARE,
+				   EBPF_ARGUMENT_TYPE_DONTCARE }
+	};
+
+	result[FFI_HELPER_ID_DISPATCHER] = BpftimeHelperProrotype{
+		.name = "__ebpf_call_ffi_dispatcher",
+		.return_type = EBPF_RETURN_TYPE_INTEGER,
+		.argument_type = { EBPF_ARGUMENT_TYPE_ANYTHING,
+				   EBPF_ARGUMENT_TYPE_PTR_TO_READABLE_MEM_OR_NULL,
+				   EBPF_ARGUMENT_TYPE_DONTCARE,
+				   EBPF_ARGUMENT_TYPE_DONTCARE,
+				   EBPF_ARGUMENT_TYPE_DONTCARE }
+	};
+
+	return result;
+}
+#endif
 
 } // namespace bpftime

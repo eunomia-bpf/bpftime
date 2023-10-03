@@ -34,8 +34,10 @@ enum class shm_open_type {
 	SHM_CLIENT,
 	SHM_NO_CREATE,
 };
+
 extern const shm_open_type global_shm_open_type;
 
+bpftime::agent_config &bpftime_get_agent_config();
 } // namespace bpftime
 
 extern "C" {

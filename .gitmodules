@@ -4,9 +4,9 @@
 [submodule "third_party/bpftool"]
 	path = third_party/bpftool
 	url = https://github.com/libbpf/bpftool
-[submodule "third_party/ebpf-verifier"]
-	path = third_party/ebpf-verifier
-	url = https://github.com/vbpf/ebpf-verifier
 [submodule "third_party/spdlog"]
 	path = third_party/spdlog
 	url = https://github.com/gabime/spdlog
+[submodule "verifier/ebpf-verifier"]
+	path = bpftime-verifier/ebpf-verifier
+	url = https://github.com/vbpf/ebpf-verifier
