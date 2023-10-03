@@ -2,9 +2,9 @@ name: Test whether bpftime-verifier works properly
 
 on:
   push:
-    branches: [master]
+    branches: ["*"]
   pull_request: 
-    branches: [master]
+    branches: ["*"]
 
 jobs: 
   build-verifier-test-target:
