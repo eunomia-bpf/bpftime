@@ -23,6 +23,7 @@ jobs:
         run: |
           cd tools/cli-rs
           RUSTFLAGS="-C target-feature=+crt-static" cargo build --release --target x86_64-unknown-linux-gnu
+          mkdir -p ~/.bpftime
           cp ./target/x86_64-unknown-linux-gnu/release/bpftime ~/.bpftime
       - uses: actions/upload-artifact@v3
         with:
