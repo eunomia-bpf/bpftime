@@ -50,12 +50,15 @@ message(STATUS "Building for architecture: ${ARCH}")
 set(sources
   src/bpftime_prog.cpp
 
-  src/maps.cpp
   src/ffi.cpp
   src/bpf_helper.cpp
   src/attach.cpp
   src/bpftime_handler.cpp
   src/syscall_table.cpp
+  src/bpf_map/maps.cpp
+  src/bpf_map/array_map.cpp
+  src/bpf_map/hash_map.cpp
+  src/bpf_map/ringbuf_map.cpp
 )
 
 # list(APPEND sources
