@@ -5,7 +5,7 @@
 #include <boost/interprocess/containers/map.hpp>
 #include <boost/interprocess/containers/vector.hpp>
 #include <algorithm>
-#include <bpf_map/maps.hpp>
+#include <bpf_map/map_common_def.hpp>
 namespace bpftime
 {
 

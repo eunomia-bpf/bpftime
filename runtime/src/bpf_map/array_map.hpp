@@ -1,6 +1,6 @@
 #ifndef _ARRAY_MAP_HPP
 #define _ARRAY_MAP_HPP
-#include <bpf_map/maps.hpp>
+#include <bpf_map/map_common_def.hpp>
 namespace bpftime
 {
 

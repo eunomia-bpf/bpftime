@@ -1,20 +1,21 @@
-#ifndef _MAPS_HPP
-#define _MAPS_HPP
+#ifndef _MAP_HANDLER
+#define _MAP_HANDLER
 #include "bpftime_shm.hpp"
-#include <boost/interprocess/containers/vector.hpp>
 #include <boost/interprocess/managed_shared_memory.hpp>
-#include <boost/interprocess/sync/scoped_lock.hpp>
+#include <boost/interprocess/containers/string.hpp>
+#include <boost/interprocess/smart_ptr/unique_ptr.hpp>
 #include <boost/interprocess/sync/interprocess_sharable_mutex.hpp>
+#include <boost/interprocess/sync/scoped_lock.hpp>
+#include <boost/interprocess/sync/sharable_lock.hpp>
 namespace bpftime
 {
-using bytes_vec_allocator = boost::interprocess::allocator<
-	uint8_t, boost::interprocess::managed_shared_memory::segment_manager>;
-using bytes_vec = boost::container::vector<uint8_t, bytes_vec_allocator>;
 using char_allocator = boost::interprocess::allocator<
 	char, boost::interprocess::managed_shared_memory::segment_manager>;
+
 using boost_shm_string =
 	boost::interprocess::basic_string<char, std::char_traits<char>,
 					  char_allocator>;
+
 using sharable_mutex_ptr = boost::interprocess::managed_unique_ptr<
 	boost::interprocess::interprocess_sharable_mutex,
 	boost::interprocess::managed_shared_memory>::type;

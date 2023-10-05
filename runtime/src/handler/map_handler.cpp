@@ -1,22 +1,4 @@
-#include <bpf_map/maps.hpp>
-#include <algorithm>
-#include <array>
-#include <boost/container/vector.hpp>
-#include <boost/interprocess/allocators/allocator.hpp>
-#include <boost/interprocess/interprocess_fwd.hpp>
-#include <boost/interprocess/smart_ptr/unique_ptr.hpp>
-#include <boost/interprocess/containers/map.hpp>
-#include <boost/interprocess/containers/string.hpp>
-#include <cassert>
-#include <cstddef>
-#include <cstdint>
-#include <optional>
-#include <iostream>
-#include <string>
-#include <utility>
-#include <boost/interprocess/sync/sharable_lock.hpp>
-#include <boost/interprocess/sync/scoped_lock.hpp>
-#include <boost/interprocess/sync/interprocess_sharable_mutex.hpp>
+#include <handler/map_handler.hpp>
 #include <bpf_map/array_map.hpp>
 #include <bpf_map/hash_map.hpp>
 #include <bpf_map/ringbuf_map.hpp>
@@ -24,9 +6,9 @@
 using boost::interprocess::interprocess_sharable_mutex;
 using boost::interprocess::scoped_lock;
 using boost::interprocess::sharable_lock;
+
 namespace bpftime
 {
-
 const void *bpf_map_handler::map_lookup_elem(const void *key) const
 {
 	const auto do_lookup = [&](auto *impl) -> const void * {

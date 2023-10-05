@@ -3,10 +3,12 @@
 #include <boost/interprocess/managed_shared_memory.hpp>
 #include <boost/interprocess/containers/vector.hpp>
 #include <boost/interprocess/smart_ptr/unique_ptr.hpp>
-#include <bpf_map/maps.hpp>
 #include <cstddef>
 namespace bpftime
 {
+using sharable_mutex_ptr = boost::interprocess::managed_unique_ptr<
+	boost::interprocess::interprocess_sharable_mutex,
+	boost::interprocess::managed_shared_memory>::type;
 // implementation of ringbuf map
 class ringbuf_map_impl {
 	using vec_allocator = boost::interprocess::allocator<
