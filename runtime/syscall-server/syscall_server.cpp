@@ -431,15 +431,10 @@ int syscall_context::handle_perfevent(perf_event_attr *attr, pid_t pid, int cpu,
 		spdlog::debug("Created tracepoint perf event with fd {}", fd);
 		return fd;
 	}
-	// if (attr->type == PERF_TYPE_TRACEPOINT) {
-	// 	auto id = next_fd.fetch_add(1);
-	// 	objs.emplace(id, std::make_unique<EbpfObj>(PerfEventWrapper()));
-	// 	return id;
-	// } else {
+
 	return orig_syscall_fn(__NR_perf_event_open, (uint64_t)(uintptr_t)attr,
 			       (uint64_t)pid, (uint64_t)cpu, (uint64_t)group_fd,
 			       (uint64_t)flags);
-	// }
 }
 
 void *syscall_context::handle_mmap64(void *addr, size_t length, int prot,

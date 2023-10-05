@@ -1,6 +1,7 @@
 #ifndef _HANDLER_MANAGER_HPP
 #define _HANDLER_MANAGER_HPP
 #include "common/bpftime_config.hpp"
+#include "handler/epoll_handler.hpp"
 #include "spdlog/spdlog.h"
 #include <boost/interprocess/interprocess_fwd.hpp>
 #include <cstddef>
@@ -76,7 +77,7 @@ struct shm_remove {
 
 using handler_variant =
 	std::variant<unused_handler, bpf_map_handler, bpf_link_handler,
-		     bpf_prog_handler, bpf_perf_event_handler>;
+		     bpf_prog_handler, bpf_perf_event_handler, epoll_handler>;
 
 using handler_variant_allocator =
 	allocator<handler_variant, managed_shared_memory::segment_manager>;

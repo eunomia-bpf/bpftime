@@ -7,4 +7,5 @@
 #include <handler/map_handler.hpp>
 #include <handler/perf_event_handler.hpp>
 #include <handler/prog_handler.hpp>
+#include <handler/epoll_handler.hpp>
 #endif

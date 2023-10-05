@@ -1,3 +1,5 @@
+#include <boost/interprocess/interprocess_fwd.hpp>
+#include <boost/interprocess/smart_ptr/shared_ptr.hpp>
 #include <boost/interprocess/sync/interprocess_sharable_mutex.hpp>
 #include <boost/interprocess/sync/sharable_lock.hpp>
 #include <bpf_map/ringbuf_map.hpp>
@@ -37,30 +39,6 @@
 namespace bpftime
 {
 
-ringbuf_map_impl::ringbuf_map_impl(
-	uint32_t max_ent, boost::interprocess::managed_shared_memory &memory)
-	: max_ent(max_ent),
-	  reserve_mutex(boost::interprocess::make_managed_unique_ptr(
-		  memory.construct<
-			  boost::interprocess::interprocess_sharable_mutex>(
-			  boost::interprocess::anonymous_instance)(),
-		  memory)),
-	  raw_buffer(boost::interprocess::make_managed_unique_ptr(
-		  memory.construct<buf_vec>(
-			  boost::interprocess::anonymous_instance)(
-			  getpagesize() * 2 + max_ent * 2,
-			  vec_allocator(memory.get_segment_manager())),
-		  memory))
-{
-	const auto page_size = getpagesize();
-	assert((size_t)page_size >= sizeof(unsigned long) &&
-	       "Page size is expected to be greater than sizeof(unsigned long)");
-	consumer_pos = (unsigned long *)(uintptr_t)(&((*raw_buffer)[0]));
-	producer_pos =
-		(unsigned long *)(uintptr_t)(&((*raw_buffer)[page_size]));
-	data = (uint8_t *)(uintptr_t)(&((*raw_buffer)[page_size * 2]));
-}
-
 void *ringbuf_map_impl::elem_lookup(const void *key)
 {
 	spdlog::error(
@@ -94,7 +72,44 @@ int ringbuf_map_impl::bpf_map_get_next_key(const void *key, void *next_key)
 	return -1;
 }
 
-bool ringbuf_map_impl::has_data() const
+ringbuf_map_impl::ringbuf_map_impl(
+	uint32_t max_ent, boost::interprocess::managed_shared_memory &memory)
+	: ringbuf_impl(boost::interprocess::make_managed_shared_ptr(
+		  memory.construct<ringbuf>(
+			  boost::interprocess::anonymous_instance)(max_ent,
+								   memory),
+		  memory))
+{
+}
+ringbuf_weak_ptr ringbuf_map_impl::create_impl_weak_ptr()
+{
+	return ringbuf_weak_ptr(ringbuf_impl);
+}
+ringbuf::ringbuf(uint32_t max_ent,
+		 boost::interprocess::managed_shared_memory &memory)
+	: max_ent(max_ent),
+	  reserve_mutex(boost::interprocess::make_managed_unique_ptr(
+		  memory.construct<
+			  boost::interprocess::interprocess_sharable_mutex>(
+			  boost::interprocess::anonymous_instance)(),
+		  memory)),
+	  raw_buffer(boost::interprocess::make_managed_unique_ptr(
+		  memory.construct<buf_vec>(
+			  boost::interprocess::anonymous_instance)(
+			  getpagesize() * 2 + max_ent * 2,
+			  vec_allocator(memory.get_segment_manager())),
+		  memory))
+{
+	const auto page_size = getpagesize();
+	assert((size_t)page_size >= sizeof(unsigned long) &&
+	       "Page size is expected to be greater than sizeof(unsigned long)");
+	consumer_pos = (unsigned long *)(uintptr_t)(&((*raw_buffer)[0]));
+	producer_pos =
+		(unsigned long *)(uintptr_t)(&((*raw_buffer)[page_size]));
+	data = (uint8_t *)(uintptr_t)(&((*raw_buffer)[page_size * 2]));
+}
+
+bool ringbuf::has_data() const
 {
 	auto cons_pos = smp_load_acquire_ul(consumer_pos.get());
 	auto prod_pos = smp_load_acquire_ul(producer_pos.get());
@@ -116,7 +131,7 @@ struct ringbuf_hdr {
 	int32_t fd;
 };
 
-void *ringbuf_map_impl::reserve(size_t size, int self_fd)
+void *ringbuf::reserve(size_t size, int self_fd)
 {
 	if (size & (BPF_RINGBUF_BUSY_BIT | BPF_RINGBUF_DISCARD_BIT)) {
 		errno = E2BIG;
@@ -146,7 +161,7 @@ void *ringbuf_map_impl::reserve(size_t size, int self_fd)
 	return data.get() + ((prod_pos + BPF_RINGBUF_HDR_SZ) & mask());
 }
 
-void ringbuf_map_impl::submit(const void *sample, bool discard)
+void ringbuf::submit(const void *sample, bool discard)
 {
 	uintptr_t hdr_offset = mask() + 1 + ((uint8_t *)sample - data.get()) -
 			       BPF_RINGBUF_HDR_SZ;
