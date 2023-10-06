@@ -8,11 +8,7 @@ on:
 
 jobs:
   build:
-    runs-on: ubuntu-latest
-    if: "!contains(github.event.head_commit.message, '[skip ci]') && !contains(github.event.head_commit.message, '[ci skip]')"
-    strategy:
-      matrix:
-        target: [ x86_64-unknown-linux-gnu ]
+    runs-on: ubuntu-22.04
 
     steps:
     - uses: actions/checkout@v3
@@ -22,12 +18,11 @@ jobs:
     - name: install deps
       run: |
         sudo apt install -y --no-install-recommends \
-        libelf1 libelf-dev zlib1g-dev make git libboost-dev \
-        libboost-program-options-dev libboost-filesystem-dev \
-        binutils-dev libyaml-cpp-dev 
+        libelf1 libelf-dev zlib1g-dev make git libboost1.74-all-dev \
+        binutils-dev libyaml-cpp-dev  gcc-12 g++-12
 
     - name: build runtime
-      run:  make build-old-binutils
+      run:  CC=gcc-12 CXX=g++-12 make build-old-binutils
 
     - name: test runtime
       run:  make test

@@ -1,9 +1,12 @@
-@software{bpftime,
-  author = {Yusheng zheng, Tong Yu},
-  doi = {10.5281/zenodo.8403274},
-  month = {10},
-  title = {{Userspace eBPF runtime for fast Uprobe & Syscall hook & Plugins}},
-  url = {https://github.com/eunomia-bpf/bpftime},
-  version = {0.0.2},
-  year = {2023}
-}
+cff-version: 1.2.0
+message: "If you use this software, please cite it as below."
+authors:
+- family-names: "zheng"
+  given-names: "Yusheng zheng"
+- family-names: "Yu"
+  given-names: "Tong"
+title: "bpftime: Userspace eBPF runtime for fast Uprobe & Syscall hook"
+version: 0.0.3
+doi: 10.5281/zenodo.8403274
+date-released: 2023-10-3
+url: "https://github.com/eunomia-bpf/bpftime"
