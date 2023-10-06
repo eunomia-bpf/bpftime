@@ -311,57 +311,42 @@ long syscall_context::handle_sysbpf(int cmd, union bpf_attr *attr, size_t size)
 				auto result = verifier::verify_ebpf_program(
 					(uint64_t *)(uintptr_t)attr->insns,
 					(size_t)attr->insn_cnt,
-					simple_section_name.value());
-				do {
-					if (result.has_value()) {
-						if (result->find(
-							    "LDDW uses reserved fields") !=
-						    result->npos) {
-							// Currently,
-							// ebpf-verifier does
-							// not support lddw
-							// helpers other than
-							// map_by_fd(1), so we
-							// have a tiny hack that
-							// handles this
-							// situation
-							break;
-						}
-						std::ostringstream message;
-						message << *result;
-						// Print the program by bytes
-						for (size_t i = 0;
-						     i < attr->insn_cnt; i++) {
-							uint64_t inst =
-								((uint64_t *)(uintptr_t)
-									 attr->insns)
-									[i];
-							message << std::setw(3)
+					simple_section_name.value(),
+					// Ignore src register of lddw helpers.
+					// Workround due to ebpf-verifier not
+					// supporting lddw helpers greater than
+					// 1
+					true);
+				if (result.has_value()) {
+					std::ostringstream message;
+					message << *result;
+					// Print the program by bytes
+					for (size_t i = 0; i < attr->insn_cnt;
+					     i++) {
+						uint64_t inst =
+							((uint64_t *)(uintptr_t)
+								 attr->insns)[i];
+						message << std::setw(3)
+							<< std::setfill('0')
+							<< i << ": ";
+						for (int j = 0; j < 8; j++) {
+							message << std::hex
+								<< std::uppercase
+								<< std::setw(2)
 								<< std::setfill(
 									   '0')
-								<< i << ": ";
-							for (int j = 0; j < 8;
-							     j++) {
-								message << std::hex
-									<< std::uppercase
-									<< std::setw(
-										   2)
-									<< std::setfill(
-										   '0')
-									<< (inst &
-									    0xff)
-									<< " ";
-								inst >>= 8;
-							}
-							message << std::endl;
+								<< (inst & 0xff)
+								<< " ";
+							inst >>= 8;
 						}
-						spdlog::error(
-							"Failed to verify program: {}",
-							message.str());
-						errno = EINVAL;
-						return -1;
+						message << std::endl;
 					}
-				} while (false);
+					spdlog::error(
+						"Failed to verify program: {}",
+						message.str());
+					errno = EINVAL;
+					return -1;
+				}
 			}
 			int id = bpftime_progs_create(
 				(ebpf_inst *)(uintptr_t)attr->insns,
@@ -502,42 +487,8 @@ void *syscall_context::handle_mmap64(void *addr, size_t length, int prot,
 		}
 	}
 
-	// if (!manager->is_allocated(fd)) {
-	// 	return orig_mmap64_fn(addr, length, prot, flags, fd, offset);
-	// }
-	// const auto &handler = manager->get_handler(fd);
-	// if (!std::holds_alternative<bpftime::bpf_uap_handler>(handler)) {
-	// 	return orig_mmap64_fn(addr, length, prot, flags, fd, offset);
-	// }
-	// auto &map = std::get<bpftime::bpf_map_handler>(handler);
 	auto ptr = orig_mmap64_fn(addr, length, prot | PROT_WRITE,
 				  flags | MAP_ANONYMOUS, -1, 0);
-	// if (std::holds_alternative<ArrayMapImpl>(wrapper.impl)) {
-	// 	auto &map = std::get<ArrayMapImpl>(wrapper.impl);
-	// 	for (size_t i = 0; i < map.size(); i++) {
-	// 		std::copy(map[i].begin(), map[i].end(),
-	// 			  (uint8_t *)ptr + i * wrapper.value_size);
-	// 	}
-	// } else if (std::holds_alternative<RingBufMapImpl>(wrapper.impl)) {
-	// 	auto impl = std::get<RingBufMapImpl>(wrapper.impl);
-	// 	if (prot == (PROT_WRITE | PROT_READ)) {
-	// 		impl->consumer_pos = (unsigned long *)ptr;
-	// 		std::cout << "Ringbuf " << fd << " writeable ptr "
-	// 			  << ptr << std::endl;
-	// 		memset(impl->consumer_pos, 0, length);
-	// 	} else if (prot == (PROT_READ)) {
-	// 		impl->producer_pos = (unsigned long *)ptr;
-	// 		impl->data = (uint8_t *)((uintptr_t)impl->producer_pos +
-	// 					 getpagesize());
-	// 		std::cout << "Ringbuf " << fd << " readonly ptr " << ptr
-	// 			  << std::endl;
-	// 		memset(impl->producer_pos, 0, length);
-	// 	}
-	// }
-	// else {
-	// 	std::cout << "Currently only supports mapping array backed fds "
-	// 		  << std::endl;
-	// }
 	spdlog::debug(
 		"Calling original mmap64: addr={}, length={}, prot={}, flags={}, fd={}, offset={}",
 		addr, length, prot, flags, fd, offset);

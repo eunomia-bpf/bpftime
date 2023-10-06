@@ -3,6 +3,7 @@
 #include "helpers.hpp"
 #include <ebpf_base.h>
 #include <iostream>
+#include <linux/bpf_common.h>
 #include <linux/gpl/spec_type_descriptors.hpp>
 #include <ostream>
 #include <platform.hpp>
@@ -34,7 +35,8 @@ namespace verifier
 {
 std::optional<std::string> verify_ebpf_program(const uint64_t *raw_inst,
 					       size_t num_inst,
-					       const std::string &section_name)
+					       const std::string &section_name,
+					       bool ignore_lddw_src_reg)
 {
 	raw_program prog;
 	prog.filename = "BPFTIME_VERIFIER";
@@ -44,6 +46,33 @@ std::optional<std::string> verify_ebpf_program(const uint64_t *raw_inst,
 		static_assert(sizeof(inst) == sizeof(uint64_t), "");
 		memcpy(&inst, &raw_inst[i], sizeof(inst));
 		prog.prog.push_back(inst);
+	}
+	for (size_t i = 0; i < prog.prog.size(); i++) {
+		if (i + 1 >= prog.prog.size())
+			continue;
+		auto &curr = prog.prog[i];
+		auto &next = prog.prog[i + 1];
+		// Workaround for ebpf-verifier not supporting lddw helpers
+		// greater than 1
+		// Replacing the two instructions with
+		// dst1 = r10
+		// dst1 = dst1 - 8
+		if (ignore_lddw_src_reg) {
+			if (curr.opcode == 0x18 && (curr.src == 2)) {
+				// curr.src = 1;
+				// next.imm = 0;
+				curr.src = 10;
+				curr.offset = 0;
+				curr.imm = 0;
+				curr.opcode = 0xbc;
+				// next = curr;
+				next.dst = curr.dst;
+				next.src = 0;
+				next.opcode = BPF_ALU | BPF_K | BPF_ADD;
+				next.imm = -8;
+				next.offset = 0;
+			}
+		}
 	}
 	prog.info = {
 		.platform = &bpftime_platform_spec,
