@@ -3,6 +3,7 @@
 #include "bpftime_handler.hpp"
 #include "bpftime_shm.hpp"
 #include "linux/bpf.h"
+#include "spdlog/cfg/env.h"
 #include <asm-generic/errno-base.h>
 #include <cstdlib>
 #include <cstring>
@@ -16,6 +17,7 @@
 #include <bpftime-verifier.hpp>
 #include <iomanip>
 #include <sys/epoll.h>
+#include <spdlog/cfg/env.h>
 using namespace bpftime;
 
 const shm_open_type bpftime::global_shm_open_type = shm_open_type::SHM_SERVER;
@@ -26,12 +28,14 @@ static syscall_context context;
 #define PERF_UPROBE_REF_CTR_OFFSET_BITS 32
 #define PERF_UPROBE_REF_CTR_OFFSET_SHIFT 32
 
-static bool agent_config_loaded = false;
+static bool already_setup = false;
 
-static void load_agent_config_from_env_var()
+static void start_up()
 {
-	if (agent_config_loaded)
+	if (already_setup)
 		return;
+	spdlog::cfg::load_env_levels();
+	spdlog::set_pattern("[%Y-%m-%d %H:%M:%S][%^%l%$][%t] %v");
 	auto &agent_config = bpftime_get_agent_config();
 	if (const char *custom_helpers = getenv("BPFTIME_HELPER_GROUPS");
 	    custom_helpers != nullptr) {
@@ -93,8 +97,9 @@ static void load_agent_config_from_env_var()
 		}
 	}
 	verifier::set_available_helpers(helper_ids);
+	spdlog::info("Enabling {} helpers", helper_ids.size());
 	verifier::set_non_kernel_helpers(non_kernel_helpers);
-	agent_config_loaded = true;
+	already_setup = true;
 }
 
 /*
@@ -222,12 +227,12 @@ int syscall_context::handle_close(int fd)
 
 long syscall_context::handle_sysbpf(int cmd, union bpf_attr *attr, size_t size)
 {
-	load_agent_config_from_env_var();
+	start_up();
 	errno = 0;
 	char *errmsg;
 	switch (cmd) {
 	case BPF_MAP_CREATE: {
-		spdlog::debug("Creating map");
+		spdlog::info("Creating map");
 		int id = bpftime_maps_create(
 			attr->map_name, bpftime::bpf_map_attr{
 						(int)attr->map_type,
@@ -242,7 +247,10 @@ long syscall_context::handle_sysbpf(int cmd, union bpf_attr *attr, size_t size)
 						attr->btf_value_type_id,
 						attr->map_extra,
 					});
-		spdlog::debug("Created map {}", id);
+		spdlog::info(
+			"Created map {}, type={}, name={}, key_size={}, value_size={}",
+			id, attr->map_type, attr->map_name, attr->key_size,
+			attr->value_size);
 		return id;
 	}
 	case BPF_MAP_LOOKUP_ELEM: {
@@ -296,42 +304,64 @@ long syscall_context::handle_sysbpf(int cmd, union bpf_attr *attr, size_t size)
 				   BPF_PROG_TYPE_SOCKET_FILTER) {
 				simple_section_name = "uprobe";
 			}
+			bool should_skip = false;
+
 			// Only do verification for tracepoint/uprobe/uretprobe
 			if (simple_section_name.has_value()) {
 				auto result = verifier::verify_ebpf_program(
 					(uint64_t *)(uintptr_t)attr->insns,
 					(size_t)attr->insn_cnt,
 					simple_section_name.value());
-				if (result.has_value()) {
-					std::ostringstream message;
-					message << *result;
-					// Print the program by bytes
-					for (size_t i = 0; i < attr->insn_cnt;
-					     i++) {
-						uint64_t inst =
-							((uint64_t *)(uintptr_t)
-								 attr->insns)[i];
-						message << std::setw(3)
-							<< std::setfill('0')
-							<< i << ": ";
-						for (int j = 0; j < 8; j++) {
-							message << std::hex
-								<< std::uppercase
-								<< std::setw(2)
+				do {
+					if (result.has_value()) {
+						if (result->find(
+							    "LDDW uses reserved fields") !=
+						    result->npos) {
+							// Currently,
+							// ebpf-verifier does
+							// not support lddw
+							// helpers other than
+							// map_by_fd(1), so we
+							// have a tiny hack that
+							// handles this
+							// situation
+							break;
+						}
+						std::ostringstream message;
+						message << *result;
+						// Print the program by bytes
+						for (size_t i = 0;
+						     i < attr->insn_cnt; i++) {
+							uint64_t inst =
+								((uint64_t *)(uintptr_t)
+									 attr->insns)
+									[i];
+							message << std::setw(3)
 								<< std::setfill(
 									   '0')
-								<< (inst & 0xff)
-								<< " ";
-							inst >>= 8;
+								<< i << ": ";
+							for (int j = 0; j < 8;
+							     j++) {
+								message << std::hex
+									<< std::uppercase
+									<< std::setw(
+										   2)
+									<< std::setfill(
+										   '0')
+									<< (inst &
+									    0xff)
+									<< " ";
+								inst >>= 8;
+							}
+							message << std::endl;
 						}
-						message << std::endl;
+						spdlog::error(
+							"Failed to verify program: {}",
+							message.str());
+						errno = EINVAL;
+						return -1;
 					}
-					spdlog::error(
-						"Failed to verify program: {}",
-						message.str());
-					errno = EINVAL;
-					return -1;
-				}
+				} while (false);
 			}
 			int id = bpftime_progs_create(
 				(ebpf_inst *)(uintptr_t)attr->insns,
@@ -442,11 +472,35 @@ void *syscall_context::handle_mmap64(void *addr, size_t length, int prot,
 				     int flags, int fd, off64_t offset)
 {
 	spdlog::info("Calling mocked mmap64");
+	if (fd != -1 && bpftime_is_ringbuf_map(fd)) {
+		spdlog::debug("Entering mmap64 handling for ringbuf fd: {}",
+			      fd);
+		if (prot == (PROT_WRITE | PROT_READ)) {
+			if (auto ptr = bpftime_get_ringbuf_consumer_page(fd);
+			    ptr != nullptr) {
+				spdlog::debug(
+					"Mapping consumer page {} to ringbuf fd {}",
+					ptr, fd);
+
+				return ptr;
+			}
+		} else if (prot == (PROT_READ)) {
+			if (auto ptr = bpftime_get_ringbuf_producer_page(fd);
+			    ptr != nullptr) {
+				spdlog::debug(
+					"Mapping producer page {} to ringbuf fd {}",
+					ptr, fd);
+
+				return ptr;
+			}
+		}
+	}
+
 	// if (!manager->is_allocated(fd)) {
 	// 	return orig_mmap64_fn(addr, length, prot, flags, fd, offset);
 	// }
 	// const auto &handler = manager->get_handler(fd);
-	// if (!std::holds_alternative<bpftime::bpf_map_handler>(handler)) {
+	// if (!std::holds_alternative<bpftime::bpf_uap_handler>(handler)) {
 	// 	return orig_mmap64_fn(addr, length, prot, flags, fd, offset);
 	// }
 	// auto &map = std::get<bpftime::bpf_map_handler>(handler);
@@ -478,6 +532,9 @@ void *syscall_context::handle_mmap64(void *addr, size_t length, int prot,
 	// 	std::cout << "Currently only supports mapping array backed fds "
 	// 		  << std::endl;
 	// }
+	spdlog::debug(
+		"Calling original mmap64: addr={}, length={}, prot={}, flags={}, fd={}, offset={}",
+		addr, length, prot, flags, fd, offset);
 	return orig_mmap64_fn(addr, length, prot, flags, fd, offset);
 }
 

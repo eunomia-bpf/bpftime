@@ -58,6 +58,7 @@ set(sources
   src/handler/map_handler.cpp
   src/handler/perf_event_handler.cpp
   src/handler/prog_handler.cpp
+  src/handler/epoll_handler.cpp
   src/bpftime_shm.cpp
   src/syscall_table.cpp
   src/bpf_map/array_map.cpp

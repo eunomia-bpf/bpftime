@@ -283,7 +283,36 @@ int bpftime_map_get_info(int fd, bpftime::bpf_map_attr *out_attr,
 	}
 	return 0;
 }
-
+int bpftime_is_ringbuf_map(int fd)
+{
+	return shm_holder.global_shared_memory.is_ringbuf_map_fd(fd);
+}
+void *bpftime_get_ringbuf_consumer_page(int ringbuf_fd)
+{
+	auto &shm = shm_holder.global_shared_memory;
+	if (auto ret = shm.try_get_ringbuf_map_impl(ringbuf_fd);
+	    ret.has_value()) {
+		return ret.value()->get_consumer_page();
+	} else {
+		errno = EINVAL;
+		spdlog::error("Expected fd {} to be ringbuf map fd ",
+			      ringbuf_fd);
+		return nullptr;
+	}
+}
+void *bpftime_get_ringbuf_producer_page(int ringbuf_fd)
+{
+	auto &shm = shm_holder.global_shared_memory;
+	if (auto ret = shm.try_get_ringbuf_map_impl(ringbuf_fd);
+	    ret.has_value()) {
+		return ret.value()->get_producer_page();
+	} else {
+		errno = EINVAL;
+		spdlog::error("Expected fd {} to be ringbuf map fd ",
+			      ringbuf_fd);
+		return nullptr;
+	}
+}
 extern "C" uint64_t map_ptr_by_fd(uint32_t fd)
 {
 	if (!shm_holder.global_shared_memory.get_manager() ||

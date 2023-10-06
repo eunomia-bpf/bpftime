@@ -16,8 +16,6 @@ using sharable_mutex_ptr = boost::interprocess::managed_unique_ptr<
 	boost::interprocess::interprocess_sharable_mutex,
 	boost::interprocess::managed_shared_memory>::type;
 
-
-
 class ringbuf {
 	using vec_allocator = boost::interprocess::allocator<
 		char,
@@ -44,16 +42,20 @@ class ringbuf {
 	void submit(const void *sample, bool discard);
 	ringbuf(uint32_t max_ent,
 		boost::interprocess::managed_shared_memory &memory);
+	friend class ringbuf_map_impl;
 };
 
-
-using ringbuf_shared_ptr = boost::interprocess::managed_shared_ptr<ringbuf, boost::interprocess::managed_shared_memory::segment_manager>::type;
-using ringbuf_weak_ptr = boost::interprocess::managed_weak_ptr<ringbuf, boost::interprocess::managed_shared_memory::segment_manager>::type;
+using ringbuf_shared_ptr = boost::interprocess::managed_shared_ptr<
+	ringbuf,
+	boost::interprocess::managed_shared_memory::segment_manager>::type;
+using ringbuf_weak_ptr = boost::interprocess::managed_weak_ptr<
+	ringbuf,
+	boost::interprocess::managed_shared_memory::segment_manager>::type;
 
 // implementation of ringbuf map
 class ringbuf_map_impl {
+	ringbuf_shared_ptr ringbuf_impl;
 
-    ringbuf_shared_ptr ringbuf_impl;
     public:
 	const static bool should_lock = false;
 	ringbuf_map_impl(uint32_t max_ent,
@@ -66,7 +68,9 @@ class ringbuf_map_impl {
 	long elem_delete(const void *key);
 
 	int bpf_map_get_next_key(const void *key, void *next_key);
-    ringbuf_weak_ptr create_impl_weak_ptr();
+	ringbuf_weak_ptr create_impl_weak_ptr();
+	void *get_consumer_page() const;
+	void *get_producer_page() const;
 };
 
 } // namespace bpftime

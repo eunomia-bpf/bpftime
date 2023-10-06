@@ -1,6 +1,8 @@
 #ifndef _BPFTIME_SHM_INTERNAL
 #define _BPFTIME_SHM_INTERNAL
+#include "bpf_map/ringbuf_map.hpp"
 #include "handler/epoll_handler.hpp"
+#include "handler/map_handler.hpp"
 #include "spdlog/spdlog.h"
 #include <cinttypes>
 #include <boost/interprocess/managed_shared_memory.hpp>
@@ -8,6 +10,8 @@
 #include <boost/interprocess/containers/set.hpp>
 #include <common/bpftime_config.hpp>
 #include <handler/handler_manager.hpp>
+#include <optional>
+#include <variant>
 namespace bpftime
 {
 
@@ -67,7 +71,25 @@ class bpftime_shm {
 		return std::holds_alternative<bpftime::bpf_map_handler>(
 			handler);
 	}
-
+	bool is_ringbuf_map_fd(int fd) const
+	{
+		if (!is_map_fd(fd))
+			return false;
+		auto &map_impl =
+			std::get<bpf_map_handler>(manager->get_handler(fd));
+		return map_impl.type == map_impl.BPF_MAP_TYPE_RINGBUF;
+	}
+	std::optional<ringbuf_map_impl *> try_get_ringbuf_map_impl(int fd) const
+	{
+		if (!is_ringbuf_map_fd(fd)) {
+			spdlog::error("Expected fd {} to be an ringbuf map fd",
+				      fd);
+			return {};
+		}
+		auto &map_handler =
+			std::get<bpf_map_handler>(manager->get_handler(fd));
+		return map_handler.try_get_ringbuf_map_impl();
+	}
 	bool is_prog_fd(int fd) const
 	{
 		if (manager == nullptr || fd < 0 ||

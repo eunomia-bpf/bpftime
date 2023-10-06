@@ -85,6 +85,15 @@ ringbuf_weak_ptr ringbuf_map_impl::create_impl_weak_ptr()
 {
 	return ringbuf_weak_ptr(ringbuf_impl);
 }
+void *ringbuf_map_impl::get_consumer_page() const
+{
+	return ringbuf_impl->consumer_pos.get();
+}
+void *ringbuf_map_impl::get_producer_page() const
+{
+	return ringbuf_impl->producer_pos.get();
+}
+
 ringbuf::ringbuf(uint32_t max_ent,
 		 boost::interprocess::managed_shared_memory &memory)
 	: max_ent(max_ent),
