@@ -69,6 +69,8 @@ void *bpftime_get_ringbuf_producer_page(int ringbuf_fd);
 int bpftime_is_array_map(int fd);
 void *bpftime_get_array_map_raw_data(int fd);
 void bpftime_close(int fd);
+void *bpftime_ringbuf_reserve(int fd, uint64_t size);
+void bpftime_ringbuf_submit(int fd, void *data, int discard);
 }
 
 #endif // BPFTIME_SHM_CPP_H

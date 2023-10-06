@@ -1,4 +1,5 @@
 #include "bpftime-verifier.hpp"
+#include "ebpf_base.h"
 #include "helpers.hpp"
 #include "linux/bpf.h"
 #include "spec_type_descriptors.hpp"
@@ -34,7 +35,17 @@ static EbpfHelperPrototype bpftime_get_helper_prototype(int32_t helper_id)
 		    itr != non_kernel_helpers.end()) {
 			return itr->second;
 		} else {
-			return get_helper_prototype_linux(helper_id);
+			auto prototype = get_helper_prototype_linux(helper_id);
+			if (helper_id == 131) { // ringbuf_reserve
+				prototype.return_type =
+					EBPF_RETURN_TYPE_INTEGER;
+				prototype.argument_type[1] =
+					EBPF_ARGUMENT_TYPE_ANYTHING;
+			} else if (helper_id == 132) { // ringbuf_submit
+				prototype.argument_type[0] =
+					EBPF_ARGUMENT_TYPE_ANYTHING;
+			}
+			return prototype;
 		}
 	} else {
 		throw std::runtime_error(std::string("Unusable helper: ") +
@@ -66,7 +77,8 @@ static EbpfMapDescriptor &bpftime_get_map_descriptor(int fd)
 static EbpfMapType bpftime_get_map_type(uint32_t platform_specific_type)
 {
 	if (platform_specific_type == BPF_MAP_TYPE_HASH ||
-	    platform_specific_type == BPF_MAP_TYPE_ARRAY) {
+	    platform_specific_type == BPF_MAP_TYPE_ARRAY ||
+	    platform_specific_type == BPF_MAP_TYPE_RINGBUF) {
 		return g_ebpf_platform_linux.get_map_type(
 			platform_specific_type);
 	} else {

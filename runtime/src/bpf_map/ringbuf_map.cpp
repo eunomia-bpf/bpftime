@@ -94,6 +94,15 @@ void *ringbuf_map_impl::get_producer_page() const
 	return ringbuf_impl->producer_pos.get();
 }
 
+void *ringbuf_map_impl::reserve(size_t size, int self_fd)
+{
+	return ringbuf_impl->reserve(size, self_fd);
+}
+void ringbuf_map_impl::submit(const void *sample, bool discard)
+{
+	return ringbuf_impl->submit(sample, discard);
+}
+
 ringbuf::ringbuf(uint32_t max_ent,
 		 boost::interprocess::managed_shared_memory &memory)
 	: max_ent(max_ent),

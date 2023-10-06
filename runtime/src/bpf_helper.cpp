@@ -1,4 +1,6 @@
+#ifdef ENABLE_BPFTIME_VERIFIER
 #include "bpftime-verifier.hpp"
+#endif
 #include "spdlog/spdlog.h"
 #include <map>
 #include <iostream>
@@ -147,6 +149,40 @@ uint64_t bpf_ktime_get_coarse_ns(uint64_t, uint64_t, uint64_t, uint64_t,
 	struct timespec ts;
 	clock_gettime(CLOCK_MONOTONIC_COARSE, &ts);
 	return (uint64_t)ts.tv_sec * 1000000000 + ts.tv_nsec;
+}
+uint64_t bpf_ringbuf_reserve(uint64_t rb, uint64_t size, uint64_t flags,
+			     uint64_t, uint64_t)
+{
+	int fd = (int)(rb >> 32);
+	if (flags != 0) {
+		spdlog::warn(
+			"Currently only supports ringbuf_reserve with flags=0");
+	}
+	return (uint64_t)(uintptr_t)bpftime_ringbuf_reserve(fd, size);
+}
+uint64_t bpf_ringbuf_submit(uint64_t data, uint64_t flags, uint64_t, uint64_t,
+			    uint64_t)
+{
+	int32_t *ptr = (int32_t *)(uintptr_t)data;
+	int fd = ptr[-1];
+	if (flags != 0) {
+		spdlog::warn(
+			"Currently only supports ringbuf_submit with flags=0");
+	}
+	bpftime_ringbuf_submit(fd, (void *)(uintptr_t)data, false);
+	return 0;
+}
+uint64_t bpf_ringbuf_discard(uint64_t data, uint64_t flags, uint64_t, uint64_t,
+			     uint64_t)
+{
+	int32_t *ptr = (int32_t *)(uintptr_t)data;
+	int fd = ptr[-1];
+	if (flags != 0) {
+		spdlog::warn(
+			"Currently only supports ringbuf_submit with flags=0");
+	}
+	bpftime_ringbuf_submit(fd, (void *)(uintptr_t)data, true);
+	return 0;
 }
 
 } // extern "C"
@@ -464,7 +500,7 @@ const bpftime_helper_group kernel_helper_group = { {
 		  .name = "bpf_probe_read",
 		  .fn = (void *)bpftime_probe_read,
 	  } },
-	  { BPF_FUNC_probe_read_kernel,
+	{ BPF_FUNC_probe_read_kernel,
 	  bpftime_helper_info{
 		  .index = BPF_FUNC_probe_read_kernel,
 		  .name = "bpf_probe_read_kernel",
@@ -534,6 +570,12 @@ const bpftime_helper_group kernel_helper_group = { {
 		  .name = "bpf_probe_read_str",
 		  .fn = (void *)bpf_probe_read_str,
 	  } },
+	{ BPF_FUNC_probe_read_str,
+	  bpftime_helper_info{
+		  .index = BPF_FUNC_probe_read_str,
+		  .name = "bpf_probe_str",
+		  .fn = (void *)bpf_probe_read_str,
+	  } },
 	{ BPF_FUNC_get_stack,
 	  bpftime_helper_info{ .index = BPF_FUNC_get_stack,
 			       .name = "bpf_get_stack",
@@ -542,6 +584,25 @@ const bpftime_helper_group kernel_helper_group = { {
 	  bpftime_helper_info{ .index = BPF_FUNC_ktime_get_coarse_ns,
 			       .name = "bpf_ktime_get_coarse_ns",
 			       .fn = (void *)bpf_ktime_get_coarse_ns } },
+
+	{ BPF_FUNC_ringbuf_reserve,
+	  bpftime_helper_info{
+		  .index = BPF_FUNC_ringbuf_reserve,
+		  .name = "bpf_ringbuf_reserve",
+		  .fn = (void *)bpf_ringbuf_reserve,
+	  } },
+	{ BPF_FUNC_ringbuf_submit,
+	  bpftime_helper_info{
+		  .index = BPF_FUNC_ringbuf_submit,
+		  .name = "bpf_ringbuf_submit",
+		  .fn = (void *)bpf_ringbuf_submit,
+	  } },
+	{ BPF_FUNC_ringbuf_discard,
+	  bpftime_helper_info{
+		  .index = BPF_FUNC_ringbuf_discard,
+		  .name = "bpf_ringbuf_discard",
+		  .fn = (void *)bpf_ringbuf_discard,
+	  } },
 } };
 
 // Utility function to get the FFI helper group

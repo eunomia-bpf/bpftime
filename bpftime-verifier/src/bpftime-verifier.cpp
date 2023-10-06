@@ -3,6 +3,7 @@
 #include "helpers.hpp"
 #include <ebpf_base.h>
 #include <iostream>
+#include <linux/bpf.h>
 #include <linux/bpf_common.h>
 #include <linux/gpl/spec_type_descriptors.hpp>
 #include <ostream>
@@ -18,7 +19,7 @@
 #include <platform-impl.hpp>
 static ebpf_verifier_options_t verifier_options = {
 	.check_termination = true,
-	.assume_assertions = true,
+	.assume_assertions = false,
 	.print_invariants = true,
 	.print_failures = true,
 	.no_simplify = true,
@@ -56,7 +57,7 @@ std::optional<std::string> verify_ebpf_program(const uint64_t *raw_inst,
 		// greater than 1
 		// Replacing the two instructions with
 		// dst1 = r10
-		// dst1 = dst1 - 8
+		// dst1 = dst1 - 256
 		if (ignore_lddw_src_reg) {
 			if (curr.opcode == 0x18 && (curr.src == 2)) {
 				// curr.src = 1;
@@ -64,16 +65,26 @@ std::optional<std::string> verify_ebpf_program(const uint64_t *raw_inst,
 				curr.src = 10;
 				curr.offset = 0;
 				curr.imm = 0;
-				curr.opcode = 0xbc;
+				curr.opcode = BPF_ALU | BPF_X | BPF_MOV;
 				// next = curr;
 				next.dst = curr.dst;
 				next.src = 0;
 				next.opcode = BPF_ALU | BPF_K | BPF_ADD;
-				next.imm = -8;
+				next.imm = -256;
 				next.offset = 0;
 			}
 		}
 	}
+	// And insert some instructions..
+	// *(u64*)(r10-256) = r1
+	prog.prog.insert(prog.prog.begin(),
+			 ebpf_inst{
+				 .opcode = BPF_STX | BPF_MEM | BPF_DW,
+				 .dst = 10,
+				 .src = 1,
+				 .offset = -256,
+				 .imm = 0,
+			 });
 	prog.info = {
 		.platform = &bpftime_platform_spec,
 		.map_descriptors = get_all_map_descriptors(),

@@ -25,7 +25,7 @@ const volatile unsigned long long min_duration_ns = 0;
 SEC("tp/sched/sched_process_exec")
 int handle_exec(struct trace_event_raw_sched_process_exec *ctx)
 {
-	struct task_struct *task;
+	// struct task_struct *task;
 	unsigned fname_off;
 	struct event *e;
 	pid_t pid;
@@ -46,11 +46,12 @@ int handle_exec(struct trace_event_raw_sched_process_exec *ctx)
 		return 0;
 
 	/* fill out the sample with data */
-	task = (struct task_struct *)bpf_get_current_task();
+	// task = (struct task_struct *)bpf_get_current_task();
 
 	e->exit_event = false;
 	e->pid = pid;
-	e->ppid = BPF_CORE_READ(task, real_parent, tgid);
+	// e->ppid = BPF_CORE_READ(task, real_parent, tgid);
+	e->ppid = -1;
 	bpf_get_current_comm(&e->comm, sizeof(e->comm));
 
 	fname_off = ctx->__data_loc_filename & 0xFFFF;
@@ -64,7 +65,7 @@ int handle_exec(struct trace_event_raw_sched_process_exec *ctx)
 SEC("tp/sched/sched_process_exit")
 int handle_exit(struct trace_event_raw_sched_process_template* ctx)
 {
-	struct task_struct *task;
+	// struct task_struct *task;
 	struct event *e;
 	pid_t pid, tid;
 	u64 id, ts, *start_ts, duration_ns = 0;
@@ -96,13 +97,13 @@ int handle_exit(struct trace_event_raw_sched_process_template* ctx)
 		return 0;
 
 	/* fill out the sample with data */
-	task = (struct task_struct *)bpf_get_current_task();
+	// task = (struct task_struct *)bpf_get_current_task();
 
 	e->exit_event = true;
 	e->duration_ns = duration_ns;
 	e->pid = pid;
-	e->ppid = BPF_CORE_READ(task, real_parent, tgid);
-	e->exit_code = (BPF_CORE_READ(task, exit_code) >> 8) & 0xff;
+	e->ppid = -1;
+	e->exit_code = 0 & 0xff;
 	bpf_get_current_comm(&e->comm, sizeof(e->comm));
 
 	/* send data to user-space for post-processing */

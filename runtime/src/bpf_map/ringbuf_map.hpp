@@ -71,6 +71,9 @@ class ringbuf_map_impl {
 	ringbuf_weak_ptr create_impl_weak_ptr();
 	void *get_consumer_page() const;
 	void *get_producer_page() const;
+	void *reserve(size_t size, int self_fd);
+	void submit(const void *sample, bool discard);
+
 };
 
 } // namespace bpftime

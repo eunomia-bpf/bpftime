@@ -14,7 +14,10 @@
 #include <spdlog/spdlog.h>
 #include <sstream>
 #include <string_view>
+#include <unistd.h>
+#ifdef ENABLE_BPFTIME_VERIFIER
 #include <bpftime-verifier.hpp>
+#endif
 #include <iomanip>
 #include <sys/epoll.h>
 #include <spdlog/cfg/env.h>
@@ -70,6 +73,7 @@ static void start_up()
 			agent_config.enable_shm_maps_helper_group =
 				agent_config.enable_ffi_helper_group = true;
 	}
+#ifdef ENABLE_BPFTIME_VERIFIER
 	std::vector<int32_t> helper_ids;
 	std::map<int32_t, bpftime::verifier::BpftimeHelperProrotype>
 		non_kernel_helpers;
@@ -99,6 +103,7 @@ static void start_up()
 	verifier::set_available_helpers(helper_ids);
 	spdlog::info("Enabling {} helpers", helper_ids.size());
 	verifier::set_non_kernel_helpers(non_kernel_helpers);
+#endif
 	already_setup = true;
 }
 
@@ -304,7 +309,7 @@ long syscall_context::handle_sysbpf(int cmd, union bpf_attr *attr, size_t size)
 				   BPF_PROG_TYPE_SOCKET_FILTER) {
 				simple_section_name = "uprobe";
 			}
-			bool should_skip = false;
+#ifdef ENABLE_BPFTIME_VERIFIER
 
 			// Only do verification for tracepoint/uprobe/uretprobe
 			if (simple_section_name.has_value()) {
@@ -348,6 +353,7 @@ long syscall_context::handle_sysbpf(int cmd, union bpf_attr *attr, size_t size)
 					return -1;
 				}
 			}
+#endif
 			int id = bpftime_progs_create(
 				(ebpf_inst *)(uintptr_t)attr->insns,
 				(size_t)attr->insn_cnt, attr->prog_name,
@@ -548,6 +554,8 @@ int syscall_context::handle_epoll_ctl(int epfd, int op, int fd,
 int syscall_context::handle_epoll_wait(int epfd, epoll_event *evt,
 				       int maxevents, int timeout)
 {
+	usleep(1000 * 500);
+	return 0;
 	// if (auto itr = objs.find(epfd); itr != objs.end()) {
 	// 	if (std::holds_alternative<EpollWrapper>(*itr->second)) {
 	// 		auto &ep = std::get<EpollWrapper>(*itr->second);
@@ -582,5 +590,5 @@ int syscall_context::handle_epoll_wait(int epfd, epoll_event *evt,
 	// 		return -1;
 	// 	}
 	// }
-	return orig_epoll_wait_fn(epfd, evt, maxevents, timeout);
+	// return orig_epoll_wait_fn(epfd, evt, maxevents, timeout);
 }

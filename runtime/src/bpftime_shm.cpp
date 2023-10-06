@@ -330,6 +330,29 @@ void *bpftime_get_ringbuf_producer_page(int ringbuf_fd)
 		return nullptr;
 	}
 }
+void *bpftime_ringbuf_reserve(int fd, uint64_t size)
+{
+	auto &shm = shm_holder.global_shared_memory;
+	if (auto ret = shm.try_get_ringbuf_map_impl(fd); ret.has_value()) {
+		auto impl = ret.value();
+		return impl->reserve(size, fd);
+	} else {
+		errno = EINVAL;
+		spdlog::error("Expected fd {} to be ringbuf map fd ", fd);
+		return nullptr;
+	}
+}
+void bpftime_ringbuf_submit(int fd, void *data, int discard)
+{
+	auto &shm = shm_holder.global_shared_memory;
+	if (auto ret = shm.try_get_ringbuf_map_impl(fd); ret.has_value()) {
+		auto impl = ret.value();
+		impl->submit(data, discard);
+	} else {
+		errno = EINVAL;
+		spdlog::error("Expected fd {} to be ringbuf map fd ", fd);
+	}
+}
 extern "C" uint64_t map_ptr_by_fd(uint32_t fd)
 {
 	if (!shm_holder.global_shared_memory.get_manager() ||
