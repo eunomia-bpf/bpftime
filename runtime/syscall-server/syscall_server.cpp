@@ -494,6 +494,12 @@ void *syscall_context::handle_mmap64(void *addr, size_t length, int prot,
 				return ptr;
 			}
 		}
+	} else if (fd != -1 && bpftime_is_array_map(fd)) {
+		spdlog::debug("Entering mmap64 which handled array map");
+		if (auto val = bpftime_get_array_map_raw_data(fd);
+		    val != nullptr) {
+			return val;
+		}
 	}
 
 	// if (!manager->is_allocated(fd)) {

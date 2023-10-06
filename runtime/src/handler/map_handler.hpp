@@ -1,5 +1,6 @@
 #ifndef _MAP_HANDLER
 #define _MAP_HANDLER
+#include "bpf_map/array_map.hpp"
 #include "bpf_map/ringbuf_map.hpp"
 #include "bpftime_shm.hpp"
 #include <boost/interprocess/managed_shared_memory.hpp>
@@ -165,6 +166,12 @@ class bpf_map_handler {
 		if (type != BPF_MAP_TYPE_RINGBUF)
 			return {};
 		return static_cast<ringbuf_map_impl *>(map_impl_ptr.get());
+	}
+	std::optional<array_map_impl *> try_get_array_map_impl() const
+	{
+		if (type != BPF_MAP_TYPE_ARRAY)
+			return {};
+		return static_cast<array_map_impl *>(map_impl_ptr.get());
 	}
 
     private:

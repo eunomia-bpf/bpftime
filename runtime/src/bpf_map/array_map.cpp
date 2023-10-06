@@ -1,6 +1,11 @@
 #include <bpf_map/array_map.hpp>
 namespace bpftime
 {
+
+void *array_map_impl::get_raw_data() const
+{
+	return (void *)data.data();
+}
 array_map_impl::array_map_impl(
 	boost::interprocess::managed_shared_memory &memory, uint32_t value_size,
 	uint32_t max_entries)

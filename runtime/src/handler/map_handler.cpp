@@ -1,3 +1,4 @@
+#include "spdlog/spdlog.h"
 #include <handler/map_handler.hpp>
 #include <bpf_map/array_map.hpp>
 #include <bpf_map/hash_map.hpp>
@@ -146,6 +147,22 @@ int bpf_map_handler::map_init(managed_shared_memory &memory)
 			container_name.c_str())(memory, value_size,
 						max_entries);
 		return 0;
+	case BPF_MAP_TYPE_RINGBUF: {
+		auto max_ent = max_entries;
+		int pop_cnt = 0;
+		while (max_ent) {
+			pop_cnt += (max_ent & 1);
+			max_ent >>= 1;
+		}
+		if (pop_cnt != 1) {
+			spdlog::error(
+				"Failed to create ringbuf map, max_entries must be a power of 2, current: {}",
+				max_entries);
+		}
+		map_impl_ptr = memory.construct<ringbuf_map_impl>(
+			container_name.c_str())(max_entries, memory);
+		return 0;
+	}
 	default:
 		assert(false || "Unsupported map type");
 	}
@@ -161,6 +178,9 @@ void bpf_map_handler::map_free(managed_shared_memory &memory)
 		break;
 	case BPF_MAP_TYPE_ARRAY:
 		memory.destroy<array_map_impl>(container_name.c_str());
+		break;
+	case BPF_MAP_TYPE_RINGBUF:
+		memory.destroy<ringbuf_map_impl>(container_name.c_str());
 		break;
 	default:
 		assert(false || "Unsupported map type");

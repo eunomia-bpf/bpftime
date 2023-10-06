@@ -287,6 +287,23 @@ int bpftime_is_ringbuf_map(int fd)
 {
 	return shm_holder.global_shared_memory.is_ringbuf_map_fd(fd);
 }
+
+int bpftime_is_array_map(int fd)
+{
+	return shm_holder.global_shared_memory.is_array_map_fd(fd);
+}
+void *bpftime_get_array_map_raw_data(int fd)
+{
+	if (auto array_impl =
+		    shm_holder.global_shared_memory.try_get_array_map_impl(fd);
+	    array_impl.has_value()) {
+		return array_impl.value()->get_raw_data();
+	} else {
+		errno = EINVAL;
+
+		return nullptr;
+	}
+}
 void *bpftime_get_ringbuf_consumer_page(int ringbuf_fd)
 {
 	auto &shm = shm_holder.global_shared_memory;

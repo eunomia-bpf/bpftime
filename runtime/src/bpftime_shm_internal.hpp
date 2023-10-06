@@ -1,5 +1,6 @@
 #ifndef _BPFTIME_SHM_INTERNAL
 #define _BPFTIME_SHM_INTERNAL
+#include "bpf_map/array_map.hpp"
 #include "bpf_map/ringbuf_map.hpp"
 #include "handler/epoll_handler.hpp"
 #include "handler/map_handler.hpp"
@@ -79,6 +80,14 @@ class bpftime_shm {
 			std::get<bpf_map_handler>(manager->get_handler(fd));
 		return map_impl.type == map_impl.BPF_MAP_TYPE_RINGBUF;
 	}
+	bool is_array_map_fd(int fd) const
+	{
+		if (!is_map_fd(fd))
+			return false;
+		auto &map_impl =
+			std::get<bpf_map_handler>(manager->get_handler(fd));
+		return map_impl.type == map_impl.BPF_MAP_TYPE_ARRAY;
+	}
 	std::optional<ringbuf_map_impl *> try_get_ringbuf_map_impl(int fd) const
 	{
 		if (!is_ringbuf_map_fd(fd)) {
@@ -89,6 +98,18 @@ class bpftime_shm {
 		auto &map_handler =
 			std::get<bpf_map_handler>(manager->get_handler(fd));
 		return map_handler.try_get_ringbuf_map_impl();
+	}
+
+	std::optional<array_map_impl *> try_get_array_map_impl(int fd) const
+	{
+		if (!is_array_map_fd(fd)) {
+			spdlog::error("Expected fd {} to be an array map fd",
+				      fd);
+			return {};
+		}
+		auto &map_handler =
+			std::get<bpf_map_handler>(manager->get_handler(fd));
+		return map_handler.try_get_array_map_impl();
 	}
 	bool is_prog_fd(int fd) const
 	{

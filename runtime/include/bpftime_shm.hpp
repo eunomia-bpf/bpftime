@@ -66,7 +66,8 @@ int bpftime_epoll_create();
 int bpftime_is_ringbuf_map(int fd);
 void *bpftime_get_ringbuf_consumer_page(int ringbuf_fd);
 void *bpftime_get_ringbuf_producer_page(int ringbuf_fd);
-
+int bpftime_is_array_map(int fd);
+void *bpftime_get_array_map_raw_data(int fd);
 void bpftime_close(int fd);
 }
 
