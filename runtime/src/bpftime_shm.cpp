@@ -1,4 +1,9 @@
+#include "handler/epoll_handler.hpp"
+#include "handler/map_handler.hpp"
+#include "spdlog/spdlog.h"
+#include <asm-generic/errno-base.h>
 #include <bpftime_shm_internal.hpp>
+#include <variant>
 namespace bpftime
 {
 
@@ -125,6 +130,52 @@ int bpftime_shm::attach_enable(int fd) const
 	return 0;
 }
 
+int bpftime_shm::add_ringbuf_to_epoll(int ringbuf_fd, int epoll_fd)
+{
+	if (!is_epoll_fd(epoll_fd)) {
+		spdlog::error("Fd {} is expected to be an epoll fd", epoll_fd);
+		errno = EINVAL;
+		return -1;
+	}
+	auto &epoll_inst =
+		std::get<epoll_handler>(manager->get_handler(epoll_fd));
+
+	if (!is_map_fd(ringbuf_fd)) {
+		spdlog::error("Fd {} is expected to be an map fd", ringbuf_fd);
+		errno = EINVAL;
+		return -1;
+	}
+	auto &map_inst =
+		std::get<bpf_map_handler>(manager->get_handler(ringbuf_fd));
+
+	auto ringbuf_map_impl = map_inst.try_get_ringbuf_map_impl();
+	if (ringbuf_map_impl.has_value(); auto val = ringbuf_map_impl.value()) {
+		epoll_inst.holding_ringbufs.push_back(
+			val->create_impl_weak_ptr());
+		spdlog::debug("Ringbuf {} added to epoll {}", ringbuf_fd,
+			      epoll_fd);
+		return 0;
+	} else {
+		errno = EINVAL;
+		spdlog::error("Map fd {} is expected to be an ringbuf map",
+			      ringbuf_fd);
+		return -1;
+	}
+}
+int bpftime_shm::epoll_create()
+{
+	int fd = open_fake_fd();
+	if (manager->is_allocated(fd)) {
+		spdlog::error(
+			"Creating epoll instance, but fd {} is already occupied",
+			fd);
+		return -1;
+	}
+	manager->set_handler(fd, bpftime::epoll_handler(segment), segment);
+	spdlog::debug("Epoll instance created: fd={}", fd);
+	return fd;
+}
+
 bpftime::agent_config &bpftime_get_agent_config()
 {
 	return shm_holder.global_shared_memory.get_agent_config();
@@ -199,7 +250,15 @@ int bpftime_attach_perf_to_bpf(int perf_fd, int bpf_fd)
 	return shm_holder.global_shared_memory.attach_perf_to_bpf(perf_fd,
 								  bpf_fd);
 }
-
+int bpftime_add_ringbuf_fd_to_epoll(int ringbuf_fd, int epoll_fd)
+{
+	return shm_holder.global_shared_memory.add_ringbuf_to_epoll(ringbuf_fd,
+								    epoll_fd);
+}
+int bpftime_epoll_create()
+{
+	return shm_holder.global_shared_memory.epoll_create();
+}
 void bpftime_close(int fd)
 {
 	shm_holder.global_shared_memory.close_fd(fd);

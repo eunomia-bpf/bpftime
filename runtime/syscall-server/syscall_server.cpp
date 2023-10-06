@@ -15,6 +15,7 @@
 #include <string_view>
 #include <bpftime-verifier.hpp>
 #include <iomanip>
+#include <sys/epoll.h>
 using namespace bpftime;
 
 const shm_open_type bpftime::global_shm_open_type = shm_open_type::SHM_SERVER;
@@ -509,58 +510,25 @@ int syscall_context::handle_ioctl(int fd, unsigned long req, int data)
 
 int syscall_context::handle_epoll_create1(int flags)
 {
-	// int fd = next_fd.fetch_add(1);
-	// objs.emplace(fd, std::make_unique<EbpfObj>(EpollWrapper()));
-	// return fd;
-	return -1;
+	return bpftime_epoll_create();
 }
 
 int syscall_context::handle_epoll_ctl(int epfd, int op, int fd,
 				      epoll_event *evt)
 {
-	// if (auto itr = objs.find(epfd); itr != objs.end()) {
-	// 	std::optional<std::weak_ptr<RingBuffer> > rb_ptr;
-	// 	if (auto itr_fd = objs.find(fd); itr_fd != objs.end()) {
-	// 		if (std::holds_alternative<EbpfMapWrapper>(
-	// 			    *itr_fd->second)) {
-	// 			auto &map = std::get<EbpfMapWrapper>(
-	// 				*itr_fd->second);
-	// 			if (map.type != BPF_MAP_TYPE_RINGBUF) {
-	// 				std::cout << "fd " << fd
-	// 					  << " is not a ringbuf map"
-	// 					  << std::endl;
-	// 				errno = EINVAL;
-
-	// 				return -1;
-	// 			}
-	// 			rb_ptr = std::get<RingBufMapImpl>(map.impl);
-	// 		} else {
-	// 			std::cout << "fd " << fd << " is not a map"
-	// 				  << std::endl;
-	// 			errno = EINVAL;
-	// 			return -1;
-	// 		}
-	// 	} else {
-	// 		std::cout << "Bad fd: " << fd << std::endl;
-	// 		errno = EINVAL;
-	// 		return -1;
-	// 	}
-	// 	if (std::holds_alternative<EpollWrapper>(*itr->second)) {
-	// 		auto &ep = std::get<EpollWrapper>(*itr->second);
-	// 		if (op == EPOLL_CTL_ADD) {
-	// 			ep.rbs.push_back(rb_ptr.value());
-	// 			return 0;
-	// 		} else {
-	// 			std::cout << "Bad epoll op " << op << std::endl;
-	// 			errno = EINVAL;
-	// 			return -1;
-	// 		}
-	// 	} else {
-	// 		errno = EINVAL;
-	// 		return -1;
-	// 	}
-	// }
-	return orig_epoll_ctl_fn(epfd, op, fd, evt);
+	if (op == EPOLL_CTL_ADD) {
+		int err = bpftime_add_ringbuf_fd_to_epoll(fd, epfd);
+		if (err != 0) {
+			spdlog::debug(
+				"Failed to call mocked epoll_ctl: {}, calling original one..",
+				err);
+			return orig_epoll_ctl_fn(epfd, op, fd, evt);
+		} else {
+			return err;
+		}
+	} else {
+		return orig_epoll_ctl_fn(epfd, op, fd, evt);
+	}
 }
 
 int syscall_context::handle_epoll_wait(int epfd, epoll_event *evt,

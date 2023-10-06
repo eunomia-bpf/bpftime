@@ -9,9 +9,9 @@ using vec_allocator = boost::interprocess::allocator<
 	boost::interprocess::managed_shared_memory::segment_manager>;
 using ringbuf_vec =
 	boost::interprocess::vector<ringbuf_weak_ptr, vec_allocator>;
-struct epoll_handler {
+struct epoll_handler {	
     public:
-	ringbuf_vec holding_ringbufs;
+	mutable ringbuf_vec holding_ringbufs;
 	epoll_handler(boost::interprocess::managed_shared_memory &memory);
 };
 } // namespace bpftime

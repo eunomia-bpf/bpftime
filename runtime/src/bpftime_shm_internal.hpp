@@ -1,5 +1,7 @@
 #ifndef _BPFTIME_SHM_INTERNAL
 #define _BPFTIME_SHM_INTERNAL
+#include "handler/epoll_handler.hpp"
+#include "spdlog/spdlog.h"
 #include <cinttypes>
 #include <boost/interprocess/managed_shared_memory.hpp>
 #include <functional>
@@ -43,6 +45,16 @@ class bpftime_shm {
 	const handler_variant &get_handler(int fd) const
 	{
 		return manager->get_handler(fd);
+	}
+	bool is_epoll_fd(int fd) const
+	{
+		if (manager == nullptr || fd < 0 ||
+		    (std::size_t)fd >= manager->size()) {
+			spdlog::error("Invalid fd: {}", fd);
+			return false;
+		}
+		const auto &handler = manager->get_handler(fd);
+		return std::holds_alternative<bpftime::epoll_handler>(handler);
 	}
 
 	bool is_map_fd(int fd) const
@@ -151,6 +163,8 @@ class bpftime_shm {
 	int add_tracepoint(int pid, int32_t tracepoint_id);
 	int attach_perf_to_bpf(int perf_fd, int bpf_fd);
 	int attach_enable(int fd) const;
+	int add_ringbuf_to_epoll(int ringbuf_fd, int epoll_fd);
+	int epoll_create();
 	// remove a fake fd from the manager.
 	// The fake fd should be closed by the caller.
 	void close_fd(int fd)

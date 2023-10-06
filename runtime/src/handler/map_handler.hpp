@@ -1,5 +1,6 @@
 #ifndef _MAP_HANDLER
 #define _MAP_HANDLER
+#include "bpf_map/ringbuf_map.hpp"
 #include "bpftime_shm.hpp"
 #include <boost/interprocess/managed_shared_memory.hpp>
 #include <boost/interprocess/containers/string.hpp>
@@ -7,6 +8,7 @@
 #include <boost/interprocess/sync/interprocess_sharable_mutex.hpp>
 #include <boost/interprocess/sync/scoped_lock.hpp>
 #include <boost/interprocess/sync/sharable_lock.hpp>
+#include <optional>
 namespace bpftime
 {
 using char_allocator = boost::interprocess::allocator<
@@ -157,6 +159,12 @@ class bpf_map_handler {
 	uint32_t get_value_size() const
 	{
 		return value_size;
+	}
+	std::optional<ringbuf_map_impl *> try_get_ringbuf_map_impl() const
+	{
+		if (type != BPF_MAP_TYPE_RINGBUF)
+			return {};
+		return static_cast<ringbuf_map_impl *>(map_impl_ptr.get());
 	}
 
     private:
