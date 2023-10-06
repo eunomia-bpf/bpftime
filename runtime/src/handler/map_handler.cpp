@@ -158,6 +158,7 @@ int bpf_map_handler::map_init(managed_shared_memory &memory)
 			spdlog::error(
 				"Failed to create ringbuf map, max_entries must be a power of 2, current: {}",
 				max_entries);
+			return -1;
 		}
 		map_impl_ptr = memory.construct<ringbuf_map_impl>(
 			container_name.c_str())(max_entries, memory);
