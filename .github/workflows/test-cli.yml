@@ -2,9 +2,9 @@ name: Test whether CLI works properly
 
 on:
   push:
-    branches: ["*"]
+    branches: "master"
   pull_request: 
-    branches: ["*"]
+    branches: "master"
 
 jobs: 
   build-runtime-cli-and-test-cli:
