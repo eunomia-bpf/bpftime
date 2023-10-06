@@ -3,6 +3,8 @@ name: Build runtime
 on:
   push:
     branches: "master"
+  pull_request: 
+    branches: "master"
 
 jobs:
   build:
@@ -21,7 +23,8 @@ jobs:
       run: |
         sudo apt install -y --no-install-recommends \
         libelf1 libelf-dev zlib1g-dev make git libboost-dev \
-        libboost-program-options-dev binutils-dev libyaml-cpp-dev
+        libboost-program-options-dev libboost-filesystem-dev \
+        binutils-dev libyaml-cpp-dev 
 
     - name: build runtime
       run:  make build-old-binutils

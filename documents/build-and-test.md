@@ -7,9 +7,12 @@ Install the required packages:
 ```bash
 sudo apt install -y --no-install-recommends \
         libelf1 libelf-dev zlib1g-dev make git libboost-dev \
-        libboost-program-options-dev binutils-dev
+        libboost-program-options-dev libboost-filesystem-dev \
+        binutils-dev libyaml-cpp-dev 
 git submodule update --init --recursive
 ```
+
+We've tested on Ubuntu 23.04.
 
 ### Build and install cli tool
 
