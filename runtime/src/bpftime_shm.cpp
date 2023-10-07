@@ -1,9 +1,11 @@
 #include "handler/epoll_handler.hpp"
 #include "handler/map_handler.hpp"
 #include "spdlog/spdlog.h"
-#include <asm-generic/errno-base.h>
+#include <errno.h>
 #include <bpftime_shm_internal.hpp>
+#include <thread>
 #include <variant>
+#include <chrono>
 namespace bpftime
 {
 
@@ -352,6 +354,43 @@ void bpftime_ringbuf_submit(int fd, void *data, int discard)
 		errno = EINVAL;
 		spdlog::error("Expected fd {} to be ringbuf map fd ", fd);
 	}
+}
+int bpftime_is_epoll_handler(int fd)
+{
+	return shm_holder.global_shared_memory.is_epoll_fd(fd);
+}
+int bpftime_ringbuf_poll(int fd, int *out_rb_idx, int max_evt, int timeout)
+{
+	auto &shm = shm_holder.global_shared_memory;
+	if (!shm.is_epoll_fd(fd)) {
+		errno = EINVAL;
+		spdlog::error("Expected {} to be an epoll fd", fd);
+		return -1;
+	}
+	using namespace std::chrono;
+	auto &epoll_inst =
+		std::get<epoll_handler>(shm.get_manager()->get_handler(fd));
+	auto start_time = high_resolution_clock::now();
+	int next_id = 0;
+	while (next_id < max_evt) {
+		auto now_time = high_resolution_clock::now();
+		auto elasped =
+			duration_cast<milliseconds>(now_time - start_time);
+		if (elasped.count() > timeout) {
+			break;
+		}
+		int idx = 0;
+		for (auto p : epoll_inst.holding_ringbufs) {
+			if (auto ptr = p.lock(); ptr) {
+				if (ptr->has_data() && next_id < max_evt) {
+					out_rb_idx[next_id++] = idx;
+				}
+			}
+			idx++;
+		}
+		std::this_thread::sleep_for(milliseconds(1));
+	}
+	return next_id;
 }
 extern "C" uint64_t map_ptr_by_fd(uint32_t fd)
 {

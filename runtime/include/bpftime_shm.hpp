@@ -67,10 +67,12 @@ int bpftime_is_ringbuf_map(int fd);
 void *bpftime_get_ringbuf_consumer_page(int ringbuf_fd);
 void *bpftime_get_ringbuf_producer_page(int ringbuf_fd);
 int bpftime_is_array_map(int fd);
+int bpftime_is_epoll_handler(int fd);
 void *bpftime_get_array_map_raw_data(int fd);
 void bpftime_close(int fd);
 void *bpftime_ringbuf_reserve(int fd, uint64_t size);
 void bpftime_ringbuf_submit(int fd, void *data, int discard);
+int bpftime_ringbuf_poll(int fd, int *out_rb_idx, int max_evt, int timeout);
 }
 
 #endif // BPFTIME_SHM_CPP_H

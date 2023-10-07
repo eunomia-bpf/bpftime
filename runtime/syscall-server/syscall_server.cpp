@@ -155,38 +155,38 @@ static int determine_uprobe_retprobe_bit(void)
 extern "C" int epoll_wait(int epfd, epoll_event *evt, int maxevents,
 			  int timeout)
 {
-	spdlog::info("epoll_wait {}", epfd);
+	spdlog::debug("epoll_wait {}", epfd);
 	return context.handle_epoll_wait(epfd, evt, maxevents, timeout);
 }
 
 extern "C" int epoll_ctl(int epfd, int op, int fd, epoll_event *evt)
 {
-	spdlog::info("epoll_ctl {} {} {} {}", epfd, op, fd, (uintptr_t)evt);
+	spdlog::debug("epoll_ctl {} {} {} {}", epfd, op, fd, (uintptr_t)evt);
 	return context.handle_epoll_ctl(epfd, op, fd, evt);
 }
 
 extern "C" int epoll_create1(int flags)
 {
-	spdlog::info("epoll_create1 {}", flags);
+	spdlog::debug("epoll_create1 {}", flags);
 	return context.handle_epoll_create1(flags);
 }
 
 extern "C" int ioctl(int fd, unsigned long req, int data)
 {
-	spdlog::info("ioctl {} {} {}", fd, req, data);
+	spdlog::debug("ioctl {} {} {}", fd, req, data);
 	return context.handle_ioctl(fd, req, data);
 }
 
 extern "C" void *mmap64(void *addr, size_t length, int prot, int flags, int fd,
 			off64_t offset)
 {
-	spdlog::info("mmap64 {:x}", (uintptr_t)addr);
+	spdlog::debug("mmap64 {:x}", (uintptr_t)addr);
 	return context.handle_mmap64(addr, length, prot, flags, fd, offset);
 }
 
 extern "C" int close(int fd)
 {
-	spdlog::info("Closing {}", fd);
+	spdlog::debug("Closing {}", fd);
 	return context.handle_close(fd);
 }
 
@@ -237,7 +237,7 @@ long syscall_context::handle_sysbpf(int cmd, union bpf_attr *attr, size_t size)
 	char *errmsg;
 	switch (cmd) {
 	case BPF_MAP_CREATE: {
-		spdlog::info("Creating map");
+		spdlog::debug("Creating map");
 		int id = bpftime_maps_create(
 			attr->map_name, bpftime::bpf_map_attr{
 						(int)attr->map_type,
@@ -252,7 +252,7 @@ long syscall_context::handle_sysbpf(int cmd, union bpf_attr *attr, size_t size)
 						attr->btf_value_type_id,
 						attr->map_extra,
 					});
-		spdlog::info(
+		spdlog::debug(
 			"Created map {}, type={}, name={}, key_size={}, value_size={}",
 			id, attr->map_type, attr->map_name, attr->key_size,
 			attr->value_size);
@@ -293,8 +293,8 @@ long syscall_context::handle_sysbpf(int cmd, union bpf_attr *attr, size_t size)
 	case BPF_PROG_LOAD:
 		// Load a program?
 		{
-			spdlog::info(
-				"Loadig program `{}` license `{}` prog_type `{}` attach_type {} map_type {}",
+			spdlog::debug(
+				"Loading program `{}` license `{}` prog_type `{}` attach_type {} map_type {}",
 				attr->prog_name,
 				(const char *)(uintptr_t)attr->license,
 				attr->prog_type, attr->attach_type,
@@ -458,7 +458,7 @@ int syscall_context::handle_perfevent(perf_event_attr *attr, pid_t pid, int cpu,
 void *syscall_context::handle_mmap64(void *addr, size_t length, int prot,
 				     int flags, int fd, off64_t offset)
 {
-	spdlog::info("Calling mocked mmap64");
+	spdlog::debug("Calling mocked mmap64");
 	if (fd != -1 && bpftime_is_ringbuf_map(fd)) {
 		spdlog::debug("Entering mmap64 handling for ringbuf fd: {}",
 			      fd);
@@ -550,41 +550,19 @@ int syscall_context::handle_epoll_ctl(int epfd, int op, int fd,
 int syscall_context::handle_epoll_wait(int epfd, epoll_event *evt,
 				       int maxevents, int timeout)
 {
-	usleep(1000 * 500);
-	return 0;
-	// if (auto itr = objs.find(epfd); itr != objs.end()) {
-	// 	if (std::holds_alternative<EpollWrapper>(*itr->second)) {
-	// 		auto &ep = std::get<EpollWrapper>(*itr->second);
-	// 		using namespace std::chrono;
-
-	// 		auto start = high_resolution_clock::now();
-	// 		int next_id = 0;
-	// 		while (next_id < maxevents) {
-	// 			auto now = high_resolution_clock::now();
-	// 			auto elasped = duration_cast<milliseconds>(
-	// 				now - start);
-	// 			if (elasped.count() >= 100)
-	// 				break;
-	// 			int idx = 0;
-	// 			for (auto p : ep.rbs) {
-	// 				if (auto ptr = p.lock(); ptr) {
-	// 					if (ptr->has_data()) {
-	// 						auto &next_event =
-	// 							evt[next_id++];
-	// 						next_event.events =
-	// 							EPOLLIN;
-	// 						next_event.data.fd =
-	// 							idx;
-	// 					}
-	// 				}
-	// 				idx++;
-	// 			}
-	// 		}
-	// 		return next_id;
-	// 	} else {
-	// 		errno = EINVAL;
-	// 		return -1;
-	// 	}
-	// }
-	// return orig_epoll_wait_fn(epfd, evt, maxevents, timeout);
+	if (bpftime_is_epoll_handler(epfd)) {
+		std::vector<int> fd_buf(maxevents);
+		int ret = bpftime_ringbuf_poll(epfd, &fd_buf[0], maxevents,
+					       timeout);
+		if (ret >= 0) {
+			for (size_t i = 0; i < (size_t)ret; i++) {
+				evt[i] = epoll_event{
+					.events = EPOLLIN,
+					.data = { .fd = fd_buf[i] }
+				};
+			}
+			return ret;
+		}
+	}
+	return orig_epoll_wait_fn(epfd, evt, maxevents, timeout);
 }

@@ -8,11 +8,15 @@
 
 using namespace bpftime;
 
-const shm_open_type bpftime::global_shm_open_type = shm_open_type::SHM_NO_CREATE;
+const shm_open_type bpftime::global_shm_open_type =
+	shm_open_type::SHM_NO_CREATE;
 
 static void dump_type(void *ctx, const char *fmt, va_list args)
 {
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wformat-nonliteral"
 	vprintf(fmt, args);
+#pragma GCC diagnostic pop
 }
 
 int main(int argc, char **argv)

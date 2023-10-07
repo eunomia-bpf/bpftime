@@ -314,7 +314,7 @@ void setup_syscall_tracer()
 
 		entries.push_back(curr);
 	}
-
+	spdlog::info("Rewriting executable segments..");
 	// Hack the executable mappings
 	for (const auto &map : entries) {
 		if (map.x == 'x') {
@@ -322,7 +322,7 @@ void setup_syscall_tracer()
 				// Skip pages that we mapped
 				continue;
 			}
-			spdlog::info("Rewriting segment from {:x} to {:x}",
+			spdlog::debug("Rewriting segment from {:x} to {:x}",
 				    map.begin, map.end);
 			rewrite_segment((uint8_t *)(uintptr_t)(map.begin),
 					map.end - map.begin, map.get_perm());
