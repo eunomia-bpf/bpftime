@@ -70,7 +70,7 @@ int tracepoint__syscalls__sys_enter_openat(struct trace_event_raw_sys_enter *ctx
 	/* use kernel terminology here for tgid/pid: */
 	u32 tgid = id >> 32;
 	u32 pid = id;
-
+	bpf_printk("Trace sys enter openat\n");
 	/* store arg info for later lookup */
 	if (trace_allowed(tgid, pid)) {
 		struct args_t args = {};
@@ -110,7 +110,7 @@ static __always_inline int trace_exit(struct trace_event_raw_sys_exit *ctx)
 	/* Skip the first address that is usually the syscall it-self */
 	event->callers[0] = stack[1];
 	event->callers[1] = stack[2];
-
+	bpf_printk("Commiting..\n");
 	/* emit event */
 	bpf_ringbuf_submit(event, 0);
 	return 0;

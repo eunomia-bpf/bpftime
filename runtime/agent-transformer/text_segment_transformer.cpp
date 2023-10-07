@@ -132,6 +132,7 @@ static int rewrite_inst(void *data, const char *fmt, va_list args)
 		if ((uintptr_t)curr_pos == (uintptr_t)&syscall_addr) {
 			return 0;
 		} else {
+			spdlog::trace("Rewrite syscall insn at {}", (void *)curr_pos);
 			curr_pos[0] = 0xff;
 			curr_pos[1] = 0xd0;
 		}
@@ -171,7 +172,7 @@ static inline void rewrite_segment(uint8_t *code, size_t len, int perm)
 	// Set the pages to be writable
 	if (int err = mprotect(code, len, PROT_READ | PROT_WRITE | PROT_EXEC);
 	    err < 0) {
-		SPDLOG_ERROR(
+		spdlog::error(
 			"Failed to change the protect status of the rewriting page {:x}",
 			(uintptr_t)code);
 		exit(1);
@@ -199,7 +200,7 @@ static inline void rewrite_segment(uint8_t *code, size_t len, int perm)
 		state.off += disasm_func(state.off, &disasm_info);
 
 	if (int err = mprotect(code, len, perm); err < 0) {
-		SPDLOG_ERROR(
+		spdlog::error(
 			"Failed to change the protect status of the rewriting page {:x}",
 			(uintptr_t)code);
 		exit(1);
@@ -241,8 +242,8 @@ void setup_syscall_tracer()
 		    mmap(0x0, 0x1000, PROT_EXEC | PROT_READ | PROT_WRITE,
 			 MAP_PRIVATE | MAP_FIXED | MAP_ANONYMOUS, -1, 0);
 	    mmap_addr == MAP_FAILED) {
-		SPDLOG_ERROR("Failed to perform mmap: errno={}, message={}",
-			      errno, strerror(errno));
+		spdlog::error("Failed to perform mmap: errno={}, message={}",
+			     errno, strerror(errno));
 		exit(1);
 	}
 	// Setup jumpings
@@ -280,13 +281,12 @@ void setup_syscall_tracer()
 	// Set the page to execute-only. Keep normal behavior of dereferencing
 	// null-pointers
 	if (int err = mprotect(0, 0x1000, PROT_EXEC); err < 0) {
-		SPDLOG_ERROR(
-			"Failed to set execute only of 0-started page: {}",
-			errno);
+		spdlog::error("Failed to set execute only of 0-started page: {}",
+			     errno);
 		exit(1);
 	}
 
-	SPDLOG_INFO("Page zero setted up..");
+	spdlog::info("Page zero setted up..");
 	// Scan for /proc/self/maps
 
 	std::vector<MapEntry> entries;
@@ -322,8 +322,8 @@ void setup_syscall_tracer()
 				// Skip pages that we mapped
 				continue;
 			}
-			SPDLOG_INFO("Rewriting segment from {:x} to {:x}",
-				     map.begin, map.end);
+			spdlog::info("Rewriting segment from {:x} to {:x}",
+				    map.begin, map.end);
 			rewrite_segment((uint8_t *)(uintptr_t)(map.begin),
 					map.end - map.begin, map.get_perm());
 		}

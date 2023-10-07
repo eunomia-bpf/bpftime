@@ -155,7 +155,7 @@ uint64_t bpf_ringbuf_reserve(uint64_t rb, uint64_t size, uint64_t flags,
 {
 	int fd = (int)(rb >> 32);
 	if (flags != 0) {
-		SPDLOG_WARN(
+		spdlog::warn(
 			"Currently only supports ringbuf_reserve with flags=0");
 	}
 	return (uint64_t)(uintptr_t)bpftime_ringbuf_reserve(fd, size);
@@ -166,7 +166,7 @@ uint64_t bpf_ringbuf_submit(uint64_t data, uint64_t flags, uint64_t, uint64_t,
 	int32_t *ptr = (int32_t *)(uintptr_t)data;
 	int fd = ptr[-1];
 	if (flags != 0) {
-		SPDLOG_WARN(
+		spdlog::warn(
 			"Currently only supports ringbuf_submit with flags=0");
 	}
 	bpftime_ringbuf_submit(fd, (void *)(uintptr_t)data, false);
@@ -178,7 +178,7 @@ uint64_t bpf_ringbuf_discard(uint64_t data, uint64_t flags, uint64_t, uint64_t,
 	int32_t *ptr = (int32_t *)(uintptr_t)data;
 	int fd = ptr[-1];
 	if (flags != 0) {
-		SPDLOG_WARN(
+		spdlog::warn(
 			"Currently only supports ringbuf_submit with flags=0");
 	}
 	bpftime_ringbuf_submit(fd, (void *)(uintptr_t)data, true);
@@ -410,7 +410,7 @@ enum bpf_func_id {
 int bpftime_helper_group::register_helper(const bpftime_helper_info &info)
 {
 	if (info.index > 999) {
-		SPDLOG_ERROR("Helper id should be 0-999, found {}",
+		spdlog::error("Helper id should be 0-999, found {}",
 			      info.index);
 		return -1;
 	}
@@ -419,7 +419,7 @@ int bpftime_helper_group::register_helper(const bpftime_helper_info &info)
 	} else {
 		// found the same helper id
 		if (helper_map[info.index].fn != info.fn) {
-			SPDLOG_ERROR("Helper id already exists for {}",
+			spdlog::error("Helper id already exists for {}",
 				      info.name);
 			return -1;
 		}
@@ -432,7 +432,7 @@ int bpftime_helper_group::append(const bpftime_helper_group &another_group)
 {
 	for (const auto &it : another_group.helper_map) {
 		if (helper_map.find(it.first) != helper_map.end()) {
-			SPDLOG_ERROR("Helper id already exists for {}",
+			spdlog::error("Helper id already exists for {}",
 				      it.second.name);
 			return -1;
 		}

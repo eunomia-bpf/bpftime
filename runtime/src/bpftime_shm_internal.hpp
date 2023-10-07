@@ -55,7 +55,7 @@ class bpftime_shm {
 	{
 		if (manager == nullptr || fd < 0 ||
 		    (std::size_t)fd >= manager->size()) {
-			SPDLOG_ERROR("Invalid fd: {}", fd);
+			spdlog::error("Invalid fd: {}", fd);
 			return false;
 		}
 		const auto &handler = manager->get_handler(fd);
@@ -91,7 +91,7 @@ class bpftime_shm {
 	std::optional<ringbuf_map_impl *> try_get_ringbuf_map_impl(int fd) const
 	{
 		if (!is_ringbuf_map_fd(fd)) {
-			SPDLOG_ERROR("Expected fd {} to be an ringbuf map fd",
+			spdlog::error("Expected fd {} to be an ringbuf map fd",
 				      fd);
 			return {};
 		}
@@ -103,7 +103,7 @@ class bpftime_shm {
 	std::optional<array_map_impl *> try_get_array_map_impl(int fd) const
 	{
 		if (!is_array_map_fd(fd)) {
-			SPDLOG_ERROR("Expected fd {} to be an array map fd",
+			spdlog::error("Expected fd {} to be an array map fd",
 				      fd);
 			return {};
 		}
@@ -228,7 +228,7 @@ class bpftime_shm {
 
 	bpftime_shm()
 	{
-		SPDLOG_INFO("global_shm_open_type {} for {}",
+		spdlog::info("global_shm_open_type {} for {}",
 			     (int)global_shm_open_type,
 			     bpftime::get_global_shm_name());
 		if (global_shm_open_type == shm_open_type::SHM_CLIENT) {
