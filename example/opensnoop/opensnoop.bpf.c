@@ -18,17 +18,16 @@ struct {
 } start SEC(".maps");
 
 struct {
-	__uint(type, BPF_MAP_TYPE_PERF_EVENT_ARRAY);
-	__uint(key_size, sizeof(u32));
-	__uint(value_size, sizeof(u32));
-} events SEC(".maps");
+	__uint(type, BPF_MAP_TYPE_RINGBUF);
+	__uint(max_entries, 256 * 1024);
+} rb SEC(".maps");
 
-static __always_inline bool valid_uid(uid_t uid) {
+static __always_inline bool valid_uid(uid_t uid)
+{
 	return uid != INVALID_UID;
 }
 
-static __always_inline
-bool trace_allowed(u32 tgid, u32 pid)
+static __always_inline bool trace_allowed(u32 tgid, u32 pid)
 {
 	u32 uid;
 
@@ -47,7 +46,7 @@ bool trace_allowed(u32 tgid, u32 pid)
 }
 
 SEC("tracepoint/syscalls/sys_enter_open")
-int tracepoint__syscalls__sys_enter_open(struct trace_event_raw_sys_enter* ctx)
+int tracepoint__syscalls__sys_enter_open(struct trace_event_raw_sys_enter *ctx)
 {
 	u64 id = bpf_get_current_pid_tgid();
 	/* use kernel terminology here for tgid/pid: */
@@ -65,7 +64,7 @@ int tracepoint__syscalls__sys_enter_open(struct trace_event_raw_sys_enter* ctx)
 }
 
 SEC("tracepoint/syscalls/sys_enter_openat")
-int tracepoint__syscalls__sys_enter_openat(struct trace_event_raw_sys_enter* ctx)
+int tracepoint__syscalls__sys_enter_openat(struct trace_event_raw_sys_enter *ctx)
 {
 	u64 id = bpf_get_current_pid_tgid();
 	/* use kernel terminology here for tgid/pid: */
@@ -82,10 +81,9 @@ int tracepoint__syscalls__sys_enter_openat(struct trace_event_raw_sys_enter* ctx
 	return 0;
 }
 
-static __always_inline
-int trace_exit(struct trace_event_raw_sys_exit* ctx)
+static __always_inline int trace_exit(struct trace_event_raw_sys_exit *ctx)
 {
-	struct event event = {};
+	struct event *event;
 	struct args_t *ap;
 	uintptr_t stack[3];
 	int ret;
@@ -93,42 +91,42 @@ int trace_exit(struct trace_event_raw_sys_exit* ctx)
 
 	ap = bpf_map_lookup_elem(&start, &pid);
 	if (!ap)
-		return 0;	/* missed entry */
+		return 0; /* missed entry */
 	ret = ctx->ret;
 	if (targ_failed && ret >= 0)
-		goto cleanup;	/* want failed only */
-
+		goto cleanup; /* want failed only */
+	event = bpf_ringbuf_reserve(&rb, sizeof(*event), 0);
+	if (!event)
+		return 0;
 	/* event data */
-	event.pid = bpf_get_current_pid_tgid() >> 32;
-	event.uid = bpf_get_current_uid_gid();
-	bpf_get_current_comm(&event.comm, sizeof(event.comm));
-	bpf_probe_read_user_str(&event.fname, sizeof(event.fname), ap->fname);
-	event.flags = ap->flags;
-	event.ret = ret;
+	event->pid = bpf_get_current_pid_tgid() >> 32;
+	event->uid = bpf_get_current_uid_gid();
+	bpf_get_current_comm(&event->comm, sizeof(event->comm));
+	bpf_probe_read_user_str(&event->fname, sizeof(event->fname), ap->fname);
+	event->flags = ap->flags;
+	event->ret = ret;
 
-	bpf_get_stack(ctx, &stack, sizeof(stack),
-		      BPF_F_USER_STACK);
+	bpf_get_stack(ctx, &stack, sizeof(stack), BPF_F_USER_STACK);
 	/* Skip the first address that is usually the syscall it-self */
-	event.callers[0] = stack[1];
-	event.callers[1] = stack[2];
+	event->callers[0] = stack[1];
+	event->callers[1] = stack[2];
 
 	/* emit event */
-	bpf_perf_event_output(ctx, &events, BPF_F_CURRENT_CPU,
-			      &event, sizeof(event));
-
+	bpf_ringbuf_submit(event, 0);
+	return 0;
 cleanup:
 	bpf_map_delete_elem(&start, &pid);
 	return 0;
 }
 
 SEC("tracepoint/syscalls/sys_exit_open")
-int tracepoint__syscalls__sys_exit_open(struct trace_event_raw_sys_exit* ctx)
+int tracepoint__syscalls__sys_exit_open(struct trace_event_raw_sys_exit *ctx)
 {
 	return trace_exit(ctx);
 }
 
 SEC("tracepoint/syscalls/sys_exit_openat")
-int tracepoint__syscalls__sys_exit_openat(struct trace_event_raw_sys_exit* ctx)
+int tracepoint__syscalls__sys_exit_openat(struct trace_event_raw_sys_exit *ctx)
 {
 	return trace_exit(ctx);
 }

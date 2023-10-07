@@ -20,13 +20,13 @@
 /* Tune the buffer size and wakeup rate. These settings cope with roughly
  * 50k opens/sec.
  */
-#define PERF_BUFFER_PAGES	64
-#define PERF_BUFFER_TIME_MS	10
+#define PERF_BUFFER_PAGES 64
+#define PERF_BUFFER_TIME_MS 10
 
 /* Set the poll timeout when no events occur. This can affect -d accuracy. */
-#define PERF_POLL_TIMEOUT_MS	100
+#define PERF_POLL_TIMEOUT_MS 100
 
-#define NSEC_PER_SEC		1000000000ULL
+#define NSEC_PER_SEC 1000000000ULL
 
 static volatile sig_atomic_t exiting = 0;
 
@@ -48,52 +48,50 @@ static struct env {
 #ifdef USE_BLAZESYM
 	bool callers;
 #endif
-} env = {
-	.uid = INVALID_UID
-};
+} env = { .uid = INVALID_UID };
 
 const char *argp_program_version = "opensnoop 0.1";
 const char *argp_program_bug_address =
 	"https://github.com/iovisor/bcc/tree/master/libbpf-tools";
 const char argp_program_doc[] =
-"Trace open family syscalls\n"
-"\n"
-"USAGE: opensnoop [-h] [-T] [-U] [-x] [-p PID] [-t TID] [-u UID] [-d DURATION]\n"
+	"Trace open family syscalls\n"
+	"\n"
+	"USAGE: opensnoop [-h] [-T] [-U] [-x] [-p PID] [-t TID] [-u UID] [-d DURATION]\n"
 #ifdef USE_BLAZESYM
-"                 [-n NAME] [-e] [-c]\n"
+	"                 [-n NAME] [-e] [-c]\n"
 #else
-"                 [-n NAME] [-e]\n"
+	"                 [-n NAME] [-e]\n"
 #endif
-"\n"
-"EXAMPLES:\n"
-"    ./opensnoop           # trace all open() syscalls\n"
-"    ./opensnoop -T        # include timestamps\n"
-"    ./opensnoop -U        # include UID\n"
-"    ./opensnoop -x        # only show failed opens\n"
-"    ./opensnoop -p 181    # only trace PID 181\n"
-"    ./opensnoop -t 123    # only trace TID 123\n"
-"    ./opensnoop -u 1000   # only trace UID 1000\n"
-"    ./opensnoop -d 10     # trace for 10 seconds only\n"
-"    ./opensnoop -n main   # only print process names containing \"main\"\n"
-"    ./opensnoop -e        # show extended fields\n"
+	"\n"
+	"EXAMPLES:\n"
+	"    ./opensnoop           # trace all open() syscalls\n"
+	"    ./opensnoop -T        # include timestamps\n"
+	"    ./opensnoop -U        # include UID\n"
+	"    ./opensnoop -x        # only show failed opens\n"
+	"    ./opensnoop -p 181    # only trace PID 181\n"
+	"    ./opensnoop -t 123    # only trace TID 123\n"
+	"    ./opensnoop -u 1000   # only trace UID 1000\n"
+	"    ./opensnoop -d 10     # trace for 10 seconds only\n"
+	"    ./opensnoop -n main   # only print process names containing \"main\"\n"
+	"    ./opensnoop -e        # show extended fields\n"
 #ifdef USE_BLAZESYM
-"    ./opensnoop -c        # show calling functions\n"
+	"    ./opensnoop -c        # show calling functions\n"
 #endif
-"";
+	"";
 
 static const struct argp_option opts[] = {
-	{ "extended-fields", 'e', NULL, 0, "Print extended fields"},
-	{ NULL, 'h', NULL, OPTION_HIDDEN, "Show the full help"},
-	{ "name", 'n', "NAME", 0, "Trace process names containing this"},
-	{ "pid", 'p', "PID", 0, "Process ID to trace"},
-	{ "tid", 't', "TID", 0, "Thread ID to trace"},
-	{ "timestamp", 'T', NULL, 0, "Print timestamp"},
-	{ "uid", 'u', "UID", 0, "User ID to trace"},
-	{ "print-uid", 'U', NULL, 0, "Print UID"},
+	{ "extended-fields", 'e', NULL, 0, "Print extended fields" },
+	{ NULL, 'h', NULL, OPTION_HIDDEN, "Show the full help" },
+	{ "name", 'n', "NAME", 0, "Trace process names containing this" },
+	{ "pid", 'p', "PID", 0, "Process ID to trace" },
+	{ "tid", 't', "TID", 0, "Thread ID to trace" },
+	{ "timestamp", 'T', NULL, 0, "Print timestamp" },
+	{ "uid", 'u', "UID", 0, "User ID to trace" },
+	{ "print-uid", 'U', NULL, 0, "Print UID" },
 	{ "verbose", 'v', NULL, 0, "Verbose debug output" },
-	{ "failed", 'x', NULL, 0, "Failed opens only"},
+	{ "failed", 'x', NULL, 0, "Failed opens only" },
 #ifdef USE_BLAZESYM
-	{ "callers", 'c', NULL, 0, "Show calling functions"},
+	{ "callers", 'c', NULL, 0, "Show calling functions" },
 #endif
 	{},
 };
@@ -172,7 +170,8 @@ static error_t parse_arg(int key, char *arg, struct argp_state *state)
 	return 0;
 }
 
-static int libbpf_print_fn(enum libbpf_print_level level, const char *format, va_list args)
+static int libbpf_print_fn(enum libbpf_print_level level, const char *format,
+			   va_list args)
 {
 	if (level == LIBBPF_DEBUG && !env.verbose)
 		return 0;
@@ -184,7 +183,7 @@ static void sig_int(int signo)
 	exiting = 1;
 }
 
-void handle_event(void *ctx, int cpu, void *data, __u32 data_sz)
+static int handle_event_rb(void *ctx, void *data, size_t data_sz)
 {
 	const struct event *e = data;
 	struct tm *tm;
@@ -195,7 +194,7 @@ void handle_event(void *ctx, int cpu, void *data, __u32 data_sz)
 
 	/* name filtering is currently done in user space */
 	if (env.name && strstr(e->comm, env.name) == NULL)
-		return;
+		return 0;
 
 	/* prepare fields */
 	time(&t);
@@ -206,7 +205,7 @@ void handle_event(void *ctx, int cpu, void *data, __u32 data_sz)
 		err = 0;
 	} else {
 		fd = -1;
-		err = - e->ret;
+		err = -e->ret;
 	}
 
 	/* print output */
@@ -226,6 +225,7 @@ void handle_event(void *ctx, int cpu, void *data, __u32 data_sz)
 		sps_cnt += 9;
 	}
 	printf("%s\n", e->fname);
+	return 0;
 }
 
 void handle_lost_events(void *ctx, int cpu, __u64 lost_cnt)
@@ -241,7 +241,8 @@ int main(int argc, char **argv)
 		.parser = parse_arg,
 		.doc = argp_program_doc,
 	};
-	struct perf_buffer *pb = NULL;
+	// struct perf_buffer *pb = NULL;
+	struct ring_buffer *rb = NULL;
 	struct opensnoop_bpf *obj;
 	__u64 time_end = 0;
 	int err;
@@ -286,26 +287,28 @@ int main(int argc, char **argv)
 	printf("%s", "PATH");
 	printf("\n");
 
-	/* setup event callbacks */
-	pb = perf_buffer__new(bpf_map__fd(obj->maps.events), PERF_BUFFER_PAGES,
-			      handle_event, handle_lost_events, NULL, NULL);
-	if (!pb) {
-		err = -errno;
-		fprintf(stderr, "failed to open perf buffer: %d\n", err);
+	/* Set up ring buffer polling */
+	rb = ring_buffer__new(bpf_map__fd(obj->maps.rb), handle_event_rb, NULL,
+			      NULL);
+	if (!rb) {
+		err = -1;
+		fprintf(stderr, "Failed to create ring buffer\n");
 		goto cleanup;
 	}
 
 	if (signal(SIGINT, sig_int) == SIG_ERR) {
-		fprintf(stderr, "can't set signal handler: %s\n", strerror(errno));
+		fprintf(stderr, "can't set signal handler: %s\n",
+			strerror(errno));
 		err = 1;
 		goto cleanup;
 	}
 
 	/* main: poll */
 	while (!exiting) {
-		err = perf_buffer__poll(pb, PERF_POLL_TIMEOUT_MS);
+		err = ring_buffer__poll(rb, 100 /* timeout, ms */);
 		if (err < 0 && err != -EINTR) {
-			fprintf(stderr, "error polling perf buffer: %s\n", strerror(-err));
+			fprintf(stderr, "error polling perf buffer: %s\n",
+				strerror(-err));
 			goto cleanup;
 		}
 		/* reset err to return 0 if exiting */
@@ -313,7 +316,7 @@ int main(int argc, char **argv)
 	}
 
 cleanup:
-	perf_buffer__free(pb);
+	ring_buffer__free(rb);
 	opensnoop_bpf__destroy(obj);
 
 	return err != 0;
