@@ -36,15 +36,15 @@ static EbpfHelperPrototype bpftime_get_helper_prototype(int32_t helper_id)
 			return itr->second;
 		} else {
 			auto prototype = get_helper_prototype_linux(helper_id);
-			if (helper_id == 131) { // ringbuf_reserve
-				prototype.return_type =
-					EBPF_RETURN_TYPE_INTEGER;
-				prototype.argument_type[1] =
-					EBPF_ARGUMENT_TYPE_ANYTHING;
-			} else if (helper_id == 132) { // ringbuf_submit
-				prototype.argument_type[0] =
-					EBPF_ARGUMENT_TYPE_ANYTHING;
-			}
+			// if (helper_id == 131) { // ringbuf_reserve
+			// 	prototype.return_type =
+			// 		EBPF_RETURN_TYPE_INTEGER;
+			// 	prototype.argument_type[1] =
+			// 		EBPF_ARGUMENT_TYPE_ANYTHING;
+			// } else if (helper_id == 132) { // ringbuf_submit
+			// 	prototype.argument_type[0] =
+			// 		EBPF_ARGUMENT_TYPE_ANYTHING;
+			// }
 			return prototype;
 		}
 	} else {
