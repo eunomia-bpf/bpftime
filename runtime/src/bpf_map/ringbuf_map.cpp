@@ -41,7 +41,7 @@ namespace bpftime
 
 void *ringbuf_map_impl::elem_lookup(const void *key)
 {
-	spdlog::error(
+	SPDLOG_ERROR(
 		"Trying to perform lookup on a ringbuf map, which is not supported");
 	errno = ENOTSUP;
 	return nullptr;
@@ -50,7 +50,7 @@ void *ringbuf_map_impl::elem_lookup(const void *key)
 long ringbuf_map_impl::elem_update(const void *key, const void *value,
 				   uint64_t flags)
 {
-	spdlog::error(
+	SPDLOG_ERROR(
 		"Trying to perform update on a ringbuf map, which is not supported");
 	errno = ENOTSUP;
 	return -1;
@@ -58,7 +58,7 @@ long ringbuf_map_impl::elem_update(const void *key, const void *value,
 
 long ringbuf_map_impl::elem_delete(const void *key)
 {
-	spdlog::error(
+	SPDLOG_ERROR(
 		"Trying to perform delete on a ringbuf map, which is not supported");
 	errno = ENOTSUP;
 	return -1;
@@ -66,7 +66,7 @@ long ringbuf_map_impl::elem_delete(const void *key)
 
 int ringbuf_map_impl::bpf_map_get_next_key(const void *key, void *next_key)
 {
-	spdlog::error(
+	SPDLOG_ERROR(
 		"Trying to perform bpf_map_get_next_key on a ringbuf map, which is not supported");
 	errno = ENOTSUP;
 	return -1;
@@ -153,7 +153,7 @@ void *ringbuf::reserve(size_t size, int self_fd)
 {
 	if (size & (BPF_RINGBUF_BUSY_BIT | BPF_RINGBUF_DISCARD_BIT)) {
 		errno = E2BIG;
-		spdlog::error(
+		SPDLOG_ERROR(
 			"Try to reserve an area of {} bytes, which is too big for ringbuf map {}",
 			size, self_fd);
 		return nullptr;

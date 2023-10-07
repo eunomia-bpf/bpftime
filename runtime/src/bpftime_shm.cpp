@@ -133,7 +133,7 @@ int bpftime_shm::attach_enable(int fd) const
 int bpftime_shm::add_ringbuf_to_epoll(int ringbuf_fd, int epoll_fd)
 {
 	if (!is_epoll_fd(epoll_fd)) {
-		spdlog::error("Fd {} is expected to be an epoll fd", epoll_fd);
+		SPDLOG_ERROR("Fd {} is expected to be an epoll fd", epoll_fd);
 		errno = EINVAL;
 		return -1;
 	}
@@ -141,7 +141,7 @@ int bpftime_shm::add_ringbuf_to_epoll(int ringbuf_fd, int epoll_fd)
 		std::get<epoll_handler>(manager->get_handler(epoll_fd));
 
 	if (!is_map_fd(ringbuf_fd)) {
-		spdlog::error("Fd {} is expected to be an map fd", ringbuf_fd);
+		SPDLOG_ERROR("Fd {} is expected to be an map fd", ringbuf_fd);
 		errno = EINVAL;
 		return -1;
 	}
@@ -152,12 +152,12 @@ int bpftime_shm::add_ringbuf_to_epoll(int ringbuf_fd, int epoll_fd)
 	if (ringbuf_map_impl.has_value(); auto val = ringbuf_map_impl.value()) {
 		epoll_inst.holding_ringbufs.push_back(
 			val->create_impl_weak_ptr());
-		spdlog::debug("Ringbuf {} added to epoll {}", ringbuf_fd,
+		SPDLOG_DEBUG("Ringbuf {} added to epoll {}", ringbuf_fd,
 			      epoll_fd);
 		return 0;
 	} else {
 		errno = EINVAL;
-		spdlog::error("Map fd {} is expected to be an ringbuf map",
+		SPDLOG_ERROR("Map fd {} is expected to be an ringbuf map",
 			      ringbuf_fd);
 		return -1;
 	}
@@ -166,13 +166,13 @@ int bpftime_shm::epoll_create()
 {
 	int fd = open_fake_fd();
 	if (manager->is_allocated(fd)) {
-		spdlog::error(
+		SPDLOG_ERROR(
 			"Creating epoll instance, but fd {} is already occupied",
 			fd);
 		return -1;
 	}
 	manager->set_handler(fd, bpftime::epoll_handler(segment), segment);
-	spdlog::debug("Epoll instance created: fd={}", fd);
+	SPDLOG_DEBUG("Epoll instance created: fd={}", fd);
 	return fd;
 }
 
@@ -312,7 +312,7 @@ void *bpftime_get_ringbuf_consumer_page(int ringbuf_fd)
 		return ret.value()->get_consumer_page();
 	} else {
 		errno = EINVAL;
-		spdlog::error("Expected fd {} to be ringbuf map fd ",
+		SPDLOG_ERROR("Expected fd {} to be ringbuf map fd ",
 			      ringbuf_fd);
 		return nullptr;
 	}
@@ -325,7 +325,7 @@ void *bpftime_get_ringbuf_producer_page(int ringbuf_fd)
 		return ret.value()->get_producer_page();
 	} else {
 		errno = EINVAL;
-		spdlog::error("Expected fd {} to be ringbuf map fd ",
+		SPDLOG_ERROR("Expected fd {} to be ringbuf map fd ",
 			      ringbuf_fd);
 		return nullptr;
 	}
@@ -338,7 +338,7 @@ void *bpftime_ringbuf_reserve(int fd, uint64_t size)
 		return impl->reserve(size, fd);
 	} else {
 		errno = EINVAL;
-		spdlog::error("Expected fd {} to be ringbuf map fd ", fd);
+		SPDLOG_ERROR("Expected fd {} to be ringbuf map fd ", fd);
 		return nullptr;
 	}
 }
@@ -350,7 +350,7 @@ void bpftime_ringbuf_submit(int fd, void *data, int discard)
 		impl->submit(data, discard);
 	} else {
 		errno = EINVAL;
-		spdlog::error("Expected fd {} to be ringbuf map fd ", fd);
+		SPDLOG_ERROR("Expected fd {} to be ringbuf map fd ", fd);
 	}
 }
 extern "C" uint64_t map_ptr_by_fd(uint32_t fd)

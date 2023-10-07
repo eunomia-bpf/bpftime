@@ -37,7 +37,7 @@ extern "C" int puts(const char *str)
 	if (!orig_puts_func) {
 		// if not init, run the bpftime_agent_main to start the client
 		orig_puts_func = (puts_func_t)dlsym(RTLD_NEXT, "puts");
-		spdlog::info("Entering new main..");
+		SPDLOG_INFO("Entering new main..");
 		int stay_resident = 0;
 		bpftime_agent_main("", (gboolean *)&stay_resident);
 	}
@@ -55,19 +55,19 @@ extern "C" void bpftime_agent_main(const gchar *data, gboolean *stay_resident)
 	const char *agent_so = getenv("AGENT_SO");
 	if (agent_so == nullptr) {
 		if (std::string(data) != "") {
-			spdlog::info("Using agent path from frida data..");
+			SPDLOG_INFO("Using agent path from frida data..");
 			agent_so = data;
 		}
 	}
 	assert(agent_so &&
 	       "Please set AGENT_SO to the bpftime-agent when use this tranformer");
-	spdlog::info("Using agent {}", agent_so);
+	SPDLOG_INFO("Using agent {}", agent_so);
 	bpftime::setup_syscall_tracer();
-	spdlog::info("Loading dynamic library..");
+	SPDLOG_INFO("Loading dynamic library..");
 	auto next_handle =
 		dlmopen(LM_ID_NEWLM, agent_so, RTLD_NOW | RTLD_LOCAL);
 	if (next_handle == nullptr) {
-		spdlog::error("Failed to open agent: {}", dlerror());
+		SPDLOG_ERROR("Failed to open agent: {}", dlerror());
 		exit(1);
 	}
 	auto entry_func = (void (*)(syscall_hooker_func_t *))dlsym(
@@ -78,5 +78,5 @@ extern "C" void bpftime_agent_main(const gchar *data, gboolean *stay_resident)
 		bpftime::get_call_hook();
 	entry_func(&orig_syscall_hooker_func);
 	bpftime::set_call_hook(orig_syscall_hooker_func);
-	spdlog::info("Transformer exiting..");
+	SPDLOG_INFO("Transformer exiting..");
 }

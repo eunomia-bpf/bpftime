@@ -1,4 +1,5 @@
 #include "frida-gum.h"
+#include "handler/epoll_handler.hpp"
 #include <filesystem>
 #include <syscall_table.hpp>
 #include <bpf_attach_ctx.hpp>
@@ -10,6 +11,7 @@
 #include <bpftime_helper_group.hpp>
 #include <handler/handler_manager.hpp>
 #include <attach/attach_internal.hpp>
+#include <variant>
 static std::string get_executable_path()
 {
 	char exec_path[PATH_MAX] = { 0 };
@@ -17,9 +19,9 @@ static std::string get_executable_path()
 		readlink("/proc/self/exe", exec_path, sizeof(exec_path) - 1);
 	if (len != -1) {
 		exec_path[len] = '\0'; // Null-terminate the string
-		spdlog::info("Executable path: {}", exec_path);
+		SPDLOG_INFO("Executable path: {}", exec_path);
 	} else {
-		spdlog::error("Error retrieving executable path: {}", errno);
+		SPDLOG_ERROR("Error retrieving executable path: {}", errno);
 	}
 	return exec_path;
 }
@@ -44,8 +46,8 @@ resolve_function_addr(bpf_attach_ctx &ctx,
 	}
 	// find function
 	if (!module_base_addr) {
-		spdlog::error("module {} not found",
-			      event_handler._module_name.c_str());
+		SPDLOG_ERROR("module {} not found",
+			     event_handler._module_name.c_str());
 		return nullptr;
 	}
 	function = (void *)((char *)module_base_addr + event_handler.offset);
@@ -198,15 +200,19 @@ int bpf_attach_ctx::init_attach_ctx_from_handlers(
 			if (res < 0) {
 				return res;
 			}
-			spdlog::info("Load prog {} {}", i, prog_handler.name);
+			SPDLOG_INFO("Load prog {} {}", i, prog_handler.name);
 		} else if (std::holds_alternative<bpf_map_handler>(handler)) {
-			spdlog::info("bpf_map_handler found at {}", i);
+			SPDLOG_INFO("bpf_map_handler found at {}", i);
 		} else if (std::holds_alternative<bpf_perf_event_handler>(
 				   handler)) {
-			spdlog::info("Will handle bpf_perf_events later...");
+			SPDLOG_INFO("Will handle bpf_perf_events later...");
 
+		} else if (std::holds_alternative<epoll_handler>(handler)) {
+			SPDLOG_INFO(
+				"No extra operations needed for epoll_handler..");
 		} else {
-			spdlog::error("Unsupported handler type");
+			SPDLOG_ERROR("Unsupported handler type {}",
+				     handler.index());
 			return -1;
 		}
 	}
@@ -228,10 +234,9 @@ int bpf_attach_ctx::init_attach_ctx_from_handlers(
 				function = resolve_function_addr(*this,
 								 event_handler);
 				if (!function) {
-					spdlog::error(
-						"Function not found {} {}",
-						event_handler._module_name,
-						event_handler.offset);
+					SPDLOG_ERROR("Function not found {} {}",
+						     event_handler._module_name,
+						     event_handler.offset);
 					errno = ENOENT;
 					return -1;
 				}
@@ -269,9 +274,9 @@ int bpf_attach_ctx::init_attach_ctx_from_handlers(
 			default:
 				break;
 			}
-			spdlog::info("Create attach event {} {} {} for {}", i,
-				     event_handler._module_name,
-				     event_handler.offset, fd);
+			SPDLOG_INFO("Create attach event {} {} {} for {}", i,
+				    event_handler._module_name,
+				    event_handler.offset, fd);
 			if (fd < 0) {
 				return fd;
 			}
@@ -290,7 +295,7 @@ int bpf_attach_ctx::attach_progs_in_manager(const handler_manager *manager)
 		auto &prog_handler =
 			std::get<bpf_prog_handler>(manager->get_handler(id));
 		for (auto fd : prog_handler.attach_fds) {
-			spdlog::info("Attaching prog {} to fd {}", id, fd);
+			SPDLOG_INFO("Attaching prog {} to fd {}", id, fd);
 			attach_prog(prog.second.get(), fd);
 		}
 	}
@@ -313,8 +318,8 @@ void *bpf_attach_ctx::find_function_by_name(const char *name)
 		return addr;
 	}
 	if (addr == NULL) {
-		spdlog::error("Unable to finc function {} {}", name,
-			      __FUNCTION__);
+		SPDLOG_ERROR("Unable to finc function {} {}", name,
+			     __FUNCTION__);
 	}
 	return NULL;
 }
@@ -449,7 +454,7 @@ int bpf_attach_ctx::create_tracepoint(int tracepoint_id, int perf_fd,
 	const auto &tp_table = get_global_syscall_tracepoint_table();
 	const auto &[id_table, _] = get_global_syscall_id_table();
 	if (auto itr = tp_table.find(tracepoint_id); itr != tp_table.end()) {
-		spdlog::info("Creating tracepoint for tp name {}", itr->second);
+		SPDLOG_INFO("Creating tracepoint for tp name {}", itr->second);
 		// I'm lazy. So I just lookup the corresponding bpf progs by
 		// brute force
 
@@ -472,8 +477,8 @@ int bpf_attach_ctx::create_tracepoint(int tracepoint_id, int perf_fd,
 			}
 		}
 		if (progs.empty()) {
-			spdlog::error("bpf_link for perf event {} not found",
-				      perf_fd);
+			SPDLOG_ERROR("bpf_link for perf event {} not found",
+				     perf_fd);
 			return perf_fd;
 		}
 		const auto &name = itr->second;
@@ -481,15 +486,14 @@ int bpf_attach_ctx::create_tracepoint(int tracepoint_id, int perf_fd,
 			auto syscall_name = name.substr(10);
 			auto syscall_id = id_table.find(syscall_name);
 			if (syscall_id == id_table.end()) {
-				spdlog::error(
-					"Syscall id not found for name {}",
-					syscall_name);
+				SPDLOG_ERROR("Syscall id not found for name {}",
+					     syscall_name);
 				return -1;
 			}
 			for (auto p : progs)
 				sys_enter_progs[syscall_id->second].push_back(
 					p);
-			spdlog::info(
+			SPDLOG_INFO(
 				"Registered syscall enter hook for {} with perf fd {}",
 				syscall_name, perf_fd);
 			return perf_fd;
@@ -497,25 +501,24 @@ int bpf_attach_ctx::create_tracepoint(int tracepoint_id, int perf_fd,
 			auto syscall_name = name.substr(9);
 			auto syscall_id = id_table.find(syscall_name);
 			if (syscall_id == id_table.end()) {
-				spdlog::error(
-					"Syscall id not found for name {}",
-					syscall_name);
+				SPDLOG_ERROR("Syscall id not found for name {}",
+					     syscall_name);
 				return -1;
 			}
 			for (auto p : progs)
 				sys_enter_progs[syscall_id->second].push_back(
 					p);
-			spdlog::info(
+			SPDLOG_INFO(
 				"Registered syscall exit hook for {} with perf fd {}",
 				syscall_name, perf_fd);
 			return perf_fd;
 		} else {
-			spdlog::error("Unexpected syscall tracepoint name {}",
-				      name);
+			SPDLOG_ERROR("Unexpected syscall tracepoint name {}",
+				     name);
 			return -1;
 		}
 	} else {
-		spdlog::error("Unsupported tracepoint id: {}", tracepoint_id);
+		SPDLOG_ERROR("Unsupported tracepoint id: {}", tracepoint_id);
 		return -1;
 	}
 }
@@ -525,7 +528,7 @@ int bpf_attach_ctx::create_replace_with_handler(int id,
 						void *function,
 						void *handler_func)
 {
-	spdlog::info("create_replace_with_handler {:x}", (uintptr_t)function);
+	SPDLOG_INFO("create_replace_with_handler {:x}", (uintptr_t)function);
 	if (handler_func == NULL) {
 		handler_func = (void *)__frida_bpftime_replace_handler;
 	}
@@ -549,7 +552,7 @@ int bpf_attach_ctx::create_replace_with_handler(int id,
 	hook_entry_index[id] = function;
 	auto res = replace_func(handler_func, function, &entry->second);
 	if (res < 0) {
-		spdlog::error("replace_func failed");
+		SPDLOG_ERROR("replace_func failed");
 		hook_entry_table.erase(function);
 		hook_entry_index.erase(id);
 		return res;

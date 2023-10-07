@@ -37,7 +37,7 @@ extern "C" int puts(const char *str)
 	if (!orig_puts_func) {
 		// if not init, run the bpftime_agent_main to start the client
 		orig_puts_func = (puts_func_t)dlsym(RTLD_NEXT, "puts");
-		spdlog::info("Entering new main function");
+		SPDLOG_INFO("Entering new main function");
 		int stay_resident = 0;
 		bpftime_agent_main("", (gboolean *)&stay_resident);
 	}
@@ -48,7 +48,7 @@ static bpf_attach_ctx ctx;
 extern "C" void bpftime_agent_main(const gchar *data, gboolean *stay_resident)
 {
 	spdlog::cfg::load_env_levels();
-	spdlog::info("Initializing agent..");
+	SPDLOG_INFO("Initializing agent..");
 	/* We don't want to our library to be unloaded after we return. */
 	*stay_resident = TRUE;
 	if (!orig_fn) {
@@ -60,10 +60,10 @@ extern "C" void bpftime_agent_main(const gchar *data, gboolean *stay_resident)
 
 	res = ctx.init_attach_ctx_from_handlers(bpftime_get_agent_config());
 	if (res != 0) {
-		spdlog::error("Failed to initialize attach context");
+		SPDLOG_ERROR("Failed to initialize attach context");
 		return;
 	}
-	spdlog::info("Attach successfully");
+	SPDLOG_INFO("Attach successfully");
 
 	// don't free ctx here
 	return;
