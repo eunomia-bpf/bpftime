@@ -13,7 +13,7 @@ namespace verifier
 {
 std::optional<std::string> verify_ebpf_program(const uint64_t *raw_inst,
 					       size_t num_inst,
-					       const std::string &section_name, bool ignore_lddw_src_reg = false);
+					       const std::string &section_name);
 
 struct BpftimeMapDescriptor {
 	int original_fd;
