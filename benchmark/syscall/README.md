@@ -5,7 +5,7 @@ Here is a example that demonstrates the usage of userspace syscall trace
 ## Usage
 
 - Install binutils dev: `sudo apt install binutils-dev`
-- Configure & build the project `cmake -S . -B build -G Ninja && cmake --build build --target all --config Debug`. If you encounter errors about `init_disassemble_info`, try `cmake -S . -B build -G Ninja -D USE_NEW_BINUTILS=YES && cmake --build build --target all --config Debug`
+- Configure & build the project `cmake -S . -B build -G Ninja && cmake --build build --target all --config Debug`.
 
 ## build
 

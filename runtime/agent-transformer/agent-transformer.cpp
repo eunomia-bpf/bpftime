@@ -8,6 +8,7 @@
 #include "text_segment_transformer.hpp"
 #include <spdlog/cfg/env.h>
 #include <string>
+#include <frida-gum.h>
 using putchar_func = int (*)(int c);
 using puts_func_t = int (*)(const char *);
 
@@ -60,6 +61,7 @@ extern "C" void bpftime_agent_main(const gchar *data, gboolean *stay_resident)
 	assert(agent_so &&
 	       "Please set AGENT_SO to the bpftime-agent when use this tranformer");
 	spdlog::info("Using agent {}", agent_so);
+	cs_arch_register_x86();
 	bpftime::setup_syscall_tracer();
 	spdlog::info("Loading dynamic library..");
 	auto next_handle =

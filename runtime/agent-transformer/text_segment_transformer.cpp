@@ -1,7 +1,6 @@
 #include "spdlog/spdlog.h"
 #include <algorithm>
 #include <cerrno>
-#include <cstdarg>
 #include <cstddef>
 #include <cstdio>
 #include <cinttypes>
@@ -14,10 +13,10 @@
 #include <vector>
 #include <cstdint>
 #include <unistd.h>
-#include <dis-asm.h>
 #include <string>
 #include <cinttypes>
 #include "text_segment_transformer.hpp"
+#include <frida-gum.h>
 /*
 Function arguments are passed using the following order:
 - RDI
@@ -106,62 +105,6 @@ extern "C" int64_t syscall_hooker_cxx(int64_t sys_nr, int64_t arg1,
 	return call_hook(sys_nr, arg1, arg2, arg3, arg4, arg5, arg6);
 }
 
-struct DisassState {
-	uint8_t *code;
-	size_t off;
-};
-static int rewrite_inst(void *data, const char *fmt, va_list args)
-{
-	auto state = (DisassState *)data;
-	char *buf;
-	// Make compiler happy
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Wformat-nonliteral"
-	vasprintf(&buf, fmt, args);
-#pragma clang diagnostic pop
-
-	std::string cmd_buf(buf);
-	free(buf);
-	if (cmd_buf.starts_with("syscall") || cmd_buf.starts_with("sysenter")) {
-		uint8_t *curr_pos = state->code + state->off;
-		if ((uintptr_t)curr_pos == (uintptr_t)&syscall_addr) {
-			return 0;
-		} else {
-			spdlog::trace("Rewrite syscall insn at {}", (void *)curr_pos);
-			curr_pos[0] = 0xff;
-			curr_pos[1] = 0xd0;
-		}
-	}
-	return 0;
-}
-
-extern "C" int do_rewrite(void *data, const char *fmt, ...)
-{
-	va_list ap;
-	int r;
-
-	va_start(ap, fmt);
-	r = rewrite_inst(data, fmt, ap);
-	va_end(ap);
-
-	return r;
-}
-
-#ifdef USE_NEW_BINUTILS
-
-extern "C" int do_rewrite_styled(void *data, enum disassembler_style style,
-				 const char *fmt, ...)
-{
-	va_list ap;
-	int r;
-
-	va_start(ap, fmt);
-	r = rewrite_inst(data, fmt, ap);
-	va_end(ap);
-
-	return r;
-}
-#endif
 static inline void rewrite_segment(uint8_t *code, size_t len, int perm)
 {
 	// Set the pages to be writable
@@ -172,28 +115,38 @@ static inline void rewrite_segment(uint8_t *code, size_t len, int perm)
 			(uintptr_t)code);
 		exit(1);
 	}
-	DisassState state;
-	state.code = nullptr;
-	state.off = 0;
-	disassemble_info disasm_info;
-#ifdef USE_NEW_BINUTILS
-	init_disassemble_info(&disasm_info, &state, do_rewrite,
-			      do_rewrite_styled);
-#else
-	init_disassemble_info(&disasm_info, &state, do_rewrite);
-#endif
-	disasm_info.arch = bfd_arch_i386;
-	disasm_info.mach = bfd_mach_x86_64;
-	disasm_info.buffer = (bfd_byte *)code;
-	disasm_info.buffer_length = len;
-
-	disassemble_init_for_target(&disasm_info);
-	disassembler_ftype disasm_func =
-		disassembler(bfd_arch_i386, false, bfd_mach_x86_64, NULL);
-	state.code = code;
-	while (state.off < len)
-		state.off += disasm_func(state.off, &disasm_info);
-
+	csh cs_handle;
+	cs_err ret;
+	ret = cs_open(CS_ARCH_X86, CS_MODE_64, &cs_handle);
+	if (ret != CS_ERR_OK) {
+		spdlog::error("Failed to open capstone instance: {}, {}",
+			      (int)ret, cs_strerror(ret));
+		exit(1);
+	}
+	const uint8_t *curr_code = code;
+	size_t size = len;
+	uint64_t curr_addr = (uint64_t)(uintptr_t)curr_code;
+	cs_insn curr_insn;
+	memset(&curr_insn, 0, sizeof(curr_insn));
+	while (curr_addr < (uintptr_t)code + len) {
+		auto ok = cs_disasm_iter(cs_handle, &curr_code, &size,
+					 &curr_addr, &curr_insn);
+		if (!ok) {
+			break;
+		}
+		auto insn_name =
+			std::string(cs_insn_name(cs_handle, curr_insn.id));
+		if (insn_name == "syscall" || insn_name == "sysenter") {
+			if (curr_insn.address != (uintptr_t)&syscall_addr) {
+				uint8_t *curr_pos =
+					(uint8_t *)(uintptr_t)curr_insn.address;
+				spdlog::trace("Rewrite syscall insn at {}",
+					      (void *)curr_pos);
+				curr_pos[0] = 0xff;
+				curr_pos[1] = 0xd0;
+			}
+		}
+	}
 	if (int err = mprotect(code, len, perm); err < 0) {
 		spdlog::error(
 			"Failed to change the protect status of the rewriting page {:x}",
@@ -238,7 +191,7 @@ void setup_syscall_tracer()
 			 MAP_PRIVATE | MAP_FIXED | MAP_ANONYMOUS, -1, 0);
 	    mmap_addr == MAP_FAILED) {
 		spdlog::error("Failed to perform mmap: errno={}, message={}",
-			     errno, strerror(errno));
+			      errno, strerror(errno));
 		exit(1);
 	}
 	// Setup jumpings
@@ -252,8 +205,8 @@ void setup_syscall_tracer()
 	push %rax;
 
 	48 b8 88 77 66 55 44 33 22 11
-	movabs $0x1122334455667788, %rax; // The constant is the address of
-	syscall_hooker_asm
+	movabs $0x1122334455667788, %rax; // The constant is the address
+	of syscall_hooker_asm
 
 	ff e0
 	jmp *%rax;
@@ -273,11 +226,12 @@ void setup_syscall_tracer()
 	codes.push_back(0xe0);
 	std::copy(codes.begin(), codes.end(),
 		  (uint8_t *)(uintptr_t)(0 + NR_syscalls));
-	// Set the page to execute-only. Keep normal behavior of dereferencing
-	// null-pointers
+	// Set the page to execute-only. Keep normal behavior of
+	// dereferencing null-pointers
 	if (int err = mprotect(0, 0x1000, PROT_EXEC); err < 0) {
-		spdlog::error("Failed to set execute only of 0-started page: {}",
-			     errno);
+		spdlog::error(
+			"Failed to set execute only of 0-started page: {}",
+			errno);
 		exit(1);
 	}
 
@@ -318,7 +272,7 @@ void setup_syscall_tracer()
 				continue;
 			}
 			spdlog::debug("Rewriting segment from {:x} to {:x}",
-				    map.begin, map.end);
+				      map.begin, map.end);
 			rewrite_segment((uint8_t *)(uintptr_t)(map.begin),
 					map.end - map.begin, map.get_perm());
 		}
