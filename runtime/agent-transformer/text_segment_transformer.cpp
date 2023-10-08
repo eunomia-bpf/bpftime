@@ -147,6 +147,7 @@ static inline void rewrite_segment(uint8_t *code, size_t len, int perm)
 			}
 		}
 	}
+	cs_close(&cs_handle);
 	if (int err = mprotect(code, len, perm); err < 0) {
 		spdlog::error(
 			"Failed to change the protect status of the rewriting page {:x}",
