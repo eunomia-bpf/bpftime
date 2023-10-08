@@ -90,7 +90,7 @@ endfunction()
 set(CMAKE_POSITION_INDEPENDENT_CODE YES)
 
 # ebpf-verifier
-option(ENABLE_EBPF_VERIFIER "Whether to enable ebpf verifier" YES)
+option(ENABLE_EBPF_VERIFIER "Whether to enable ebpf verifier" NO)
 
 if(${ENABLE_EBPF_VERIFIER})
   add_subdirectory(bpftime-verifier)

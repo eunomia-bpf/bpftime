@@ -132,6 +132,7 @@ static int rewrite_inst(void *data, const char *fmt, va_list args)
 		if ((uintptr_t)curr_pos == (uintptr_t)&syscall_addr) {
 			return 0;
 		} else {
+			spdlog::trace("Rewrite syscall insn at {}", (void *)curr_pos);
 			curr_pos[0] = 0xff;
 			curr_pos[1] = 0xd0;
 		}
@@ -242,7 +243,7 @@ void setup_syscall_tracer()
 			 MAP_PRIVATE | MAP_FIXED | MAP_ANONYMOUS, -1, 0);
 	    mmap_addr == MAP_FAILED) {
 		spdlog::error("Failed to perform mmap: errno={}, message={}",
-			      errno, strerror(errno));
+			     errno, strerror(errno));
 		exit(1);
 	}
 	// Setup jumpings
@@ -280,9 +281,8 @@ void setup_syscall_tracer()
 	// Set the page to execute-only. Keep normal behavior of dereferencing
 	// null-pointers
 	if (int err = mprotect(0, 0x1000, PROT_EXEC); err < 0) {
-		spdlog::error(
-			"Failed to set execute only of 0-started page: {}",
-			errno);
+		spdlog::error("Failed to set execute only of 0-started page: {}",
+			     errno);
 		exit(1);
 	}
 
@@ -314,7 +314,7 @@ void setup_syscall_tracer()
 
 		entries.push_back(curr);
 	}
-
+	spdlog::info("Rewriting executable segments..");
 	// Hack the executable mappings
 	for (const auto &map : entries) {
 		if (map.x == 'x') {
@@ -322,8 +322,8 @@ void setup_syscall_tracer()
 				// Skip pages that we mapped
 				continue;
 			}
-			spdlog::info("Rewriting segment from {:x} to {:x}",
-				     map.begin, map.end);
+			spdlog::debug("Rewriting segment from {:x} to {:x}",
+				    map.begin, map.end);
 			rewrite_segment((uint8_t *)(uintptr_t)(map.begin),
 					map.end - map.begin, map.get_perm());
 		}

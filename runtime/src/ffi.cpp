@@ -77,7 +77,7 @@ extern "C" uint64_t __ebpf_call_ffi_dispatcher(uint64_t id, uint64_t arg_list)
 		spdlog::error("func {} is already attached", func_info->name);
 		return 0;
 	}
-	assert(func_info->num_args <= MAX_ARGS_COUNT);
+	assert((size_t)func_info->num_args <= MAX_ARGS_COUNT);
 
 	// Prepare arguments
 	struct arg_list *raw_args = (struct arg_list *)arg_list;

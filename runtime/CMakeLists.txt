@@ -50,12 +50,20 @@ message(STATUS "Building for architecture: ${ARCH}")
 set(sources
   src/bpftime_prog.cpp
 
-  src/maps.cpp
   src/ffi.cpp
   src/bpf_helper.cpp
-  src/attach.cpp
-  src/bpftime_handler.cpp
+  src/attach/attach_internal.cpp
+  src/attach/bpf_attach_ctx.cpp
+  src/handler/handler_manager.cpp
+  src/handler/map_handler.cpp
+  src/handler/perf_event_handler.cpp
+  src/handler/prog_handler.cpp
+  src/handler/epoll_handler.cpp
+  src/bpftime_shm.cpp
   src/syscall_table.cpp
+  src/bpf_map/array_map.cpp
+  src/bpf_map/hash_map.cpp
+  src/bpf_map/ringbuf_map.cpp
 )
 
 # list(APPEND sources

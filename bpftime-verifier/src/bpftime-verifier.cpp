@@ -3,6 +3,8 @@
 #include "helpers.hpp"
 #include <ebpf_base.h>
 #include <iostream>
+#include <linux/bpf.h>
+#include <linux/bpf_common.h>
 #include <linux/gpl/spec_type_descriptors.hpp>
 #include <ostream>
 #include <platform.hpp>
@@ -17,7 +19,7 @@
 #include <platform-impl.hpp>
 static ebpf_verifier_options_t verifier_options = {
 	.check_termination = true,
-	.assume_assertions = true,
+	.assume_assertions = false,
 	.print_invariants = true,
 	.print_failures = true,
 	.no_simplify = true,

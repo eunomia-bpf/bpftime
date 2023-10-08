@@ -1,0 +1,15 @@
+#include <handler/prog_handler.hpp>
+namespace bpftime
+{
+bpf_prog_handler::bpf_prog_handler(managed_shared_memory &mem,
+				   const struct ebpf_inst *insn,
+				   size_t insn_cnt, const char *prog_name,
+				   int prog_type)
+	: insns(shm_ebpf_inst_vector_allocator(mem.get_segment_manager())),
+	  attach_fds(shm_int_vector_allocator(mem.get_segment_manager())),
+	  name(char_allocator(mem.get_segment_manager()))
+{
+	insns.assign(insn, insn + insn_cnt);
+	this->name = prog_name;
+}
+} // namespace bpftime
