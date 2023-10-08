@@ -1,5 +1,8 @@
+#include "bpf_attach_ctx.hpp"
+#include "bpftime_ffi.hpp"
+#include "bpftime_shm.hpp"
+#include "handler/handler_manager.hpp"
 #include <cstdlib>
-#include "bpftime_handler.hpp"
 #include "bpftime_object.h"
 #include "test_defs.h"
 #include <boost/interprocess/creation_tags.hpp>

@@ -1,3 +1,4 @@
+#include "bpftime_helper_group.hpp"
 #include <stdio.h>
 #include <cstdlib>
 #include <cstdint>

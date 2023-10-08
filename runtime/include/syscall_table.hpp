@@ -4,7 +4,7 @@
 #include <cstdint>
 #include <string>
 #include <unordered_map>
-#include <cinttypes>
+#include <utility>
 namespace bpftime
 {
 using syscall_tracepoint_table = std::unordered_map<int32_t, std::string>;

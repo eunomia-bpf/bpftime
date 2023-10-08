@@ -1,4 +1,5 @@
 // test register raw function and call it from ffi
+#include "bpftime_helper_group.hpp"
 #include "test_defs.h"
 #include "bpftime.hpp"
 #include "bpftime_object.h"

@@ -1,12 +1,8 @@
-#include <assert.h>
 #include <linux/bpf.h>
 #include <string>
 #include <list>
 #include <memory>
-#include <iostream>
 #include <string_view>
-#include <unordered_map>
-#include <vector>
 #include "bpftime.hpp"
 #include "bpftime_internal.h"
 #include <spdlog/spdlog.h>

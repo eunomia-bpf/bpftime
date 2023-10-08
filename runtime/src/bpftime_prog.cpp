@@ -1,4 +1,5 @@
 #include "bpftime.hpp"
+#include "bpftime_helper_group.hpp"
 #include "bpftime_internal.h"
 #include "ebpf-vm.h"
 #include <cstring>

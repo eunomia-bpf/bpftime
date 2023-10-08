@@ -1,9 +1,9 @@
+#include "bpftime_helper_group.hpp"
 #ifdef ENABLE_BPFTIME_VERIFIER
 #include "bpftime-verifier.hpp"
 #endif
 #include "spdlog/spdlog.h"
 #include <map>
-#include <iostream>
 #include <stdio.h>
 #include <stdarg.h>
 #include <cstring>

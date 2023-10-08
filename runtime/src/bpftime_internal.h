@@ -3,11 +3,12 @@
 
 #include <cstdint>
 #include <cstddef>
-
+#include "bpftime.hpp"
+#include <bpftime_ffi.hpp>
 namespace bpftime
 {
 
-#include "bpftime.hpp"
+
 
 class bpftime_prog;
 class bpftime_object;

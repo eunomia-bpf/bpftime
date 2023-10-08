@@ -4,7 +4,6 @@
 #include <cassert>
 #include <optional>
 #include <syscall_id_list.h>
-#include <utility>
 static const char *SYSCALL_TRACEPOINT_ROOT =
 	"/sys/kernel/tracing/events/syscalls";
 

@@ -4,7 +4,6 @@
 #include <errno.h>
 #include <bpftime_shm_internal.hpp>
 #include <thread>
-#include <variant>
 #include <chrono>
 namespace bpftime
 {

@@ -1,9 +1,6 @@
-#include <cinttypes>
+#include <cstdint>
 #include <cstring>
-#include "bpftime.hpp"
 #include "bpftime_internal.h"
-#include <type_traits>
-#include <string>
 #include <spdlog/spdlog.h>
 namespace bpftime
 {

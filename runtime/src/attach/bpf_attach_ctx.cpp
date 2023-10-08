@@ -1,8 +1,7 @@
+#include "bpftime.hpp"
 #include "frida-gum.h"
 #include "handler/epoll_handler.hpp"
 #include <filesystem>
-#include <iostream>
-#include <ostream>
 #include <syscall_table.hpp>
 #include <bpf_attach_ctx.hpp>
 #include <bpftime_shm_internal.hpp>

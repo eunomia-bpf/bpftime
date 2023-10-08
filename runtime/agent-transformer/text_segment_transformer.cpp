@@ -4,17 +4,12 @@
 #include <cstdarg>
 #include <cstddef>
 #include <cstdio>
-#include <cassert>
 #include <cinttypes>
 #include <cstdlib>
 #include <cstring>
 #include <dlfcn.h>
 #include <fcntl.h>
 #include <fstream>
-#include <ios>
-#include <iostream>
-#include <iterator>
-#include <ostream>
 #include <sys/mman.h>
 #include <vector>
 #include <cstdint>

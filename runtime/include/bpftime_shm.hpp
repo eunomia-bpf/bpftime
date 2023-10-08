@@ -1,16 +1,15 @@
 #ifndef BPFTIME_SHM_CPP_H
 #define BPFTIME_SHM_CPP_H
 
+#include "common/bpftime_config.hpp"
 #include <boost/interprocess/interprocess_fwd.hpp>
 #include <cstddef>
-#include <iostream>
-#include <variant>
 #include <boost/interprocess/containers/vector.hpp>
 #include <boost/interprocess/allocators/allocator.hpp>
 #include <boost/interprocess/managed_shared_memory.hpp>
 #include <boost/interprocess/smart_ptr/unique_ptr.hpp>
 #include <boost/interprocess/containers/string.hpp>
-#include "bpftime.hpp"
+#include <ebpf-vm.h>
 
 namespace bpftime
 {

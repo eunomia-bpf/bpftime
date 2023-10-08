@@ -6,8 +6,6 @@
 #include <cstdio>
 #include <frida-gum.h>
 #include "text_segment_transformer.hpp"
-#include <iostream>
-#include <ostream>
 #include <spdlog/cfg/env.h>
 #include <string>
 using putchar_func = int (*)(int c);

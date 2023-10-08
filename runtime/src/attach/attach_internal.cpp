@@ -1,25 +1,12 @@
-#include "bpftime_handler.hpp"
-#include "spdlog/spdlog.h"
-#include <algorithm>
-#include <cassert>
 #include <cstddef>
 #include <cstdint>
-#include <iterator>
-#include <map>
-#include <mutex>
-#include <iostream>
-#include <fstream>
 #include <fcntl.h>
 #include <cstring>
-#include <optional>
-#include <ostream>
 #include <unistd.h>
 #include "bpftime.hpp"
 #include "bpftime_internal.h"
 #include <frida-gum.h>
 #include <syscall_table.hpp>
-#include <variant>
-#include <vector>
 #include <spdlog/spdlog.h>
 #include <attach/attach_internal.hpp>
 using namespace std;
