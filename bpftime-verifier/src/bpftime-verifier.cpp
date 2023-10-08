@@ -47,44 +47,6 @@ std::optional<std::string> verify_ebpf_program(const uint64_t *raw_inst,
 		memcpy(&inst, &raw_inst[i], sizeof(inst));
 		prog.prog.push_back(inst);
 	}
-
-	// for (size_t i = 0; i < prog.prog.size(); i++) {
-	// 	if (i + 1 >= prog.prog.size())
-	// 		continue;
-	// 	auto &curr = prog.prog[i];
-	// 	auto &next = prog.prog[i + 1];
-	// 	// Workaround for ebpf-verifier not supporting lddw helpers
-	// 	// greater than 1
-	// 	// Replacing the two instructions with
-	// 	// dst1 = r10
-	// 	// dst1 = dst1 - 256
-	// 	if (ignore_lddw_src_reg) {
-	// 		if (curr.opcode == 0x18 && (curr.src == 2)) {
-	// 			// curr.src = 1;
-	// 			// next.imm = 0;
-	// 			curr.src = 10;
-	// 			curr.offset = 0;
-	// 			curr.imm = 0;
-	// 			curr.opcode = BPF_ALU | BPF_X | BPF_MOV;
-	// 			// next = curr;
-	// 			next.dst = curr.dst;
-	// 			next.src = 0;
-	// 			next.opcode = BPF_ALU | BPF_K | BPF_ADD;
-	// 			next.imm = -256;
-	// 			next.offset = 0;
-	// 		}
-	// 	}
-	// }
-	// // And insert some instructions..
-	// // *(u64*)(r10-256) = r1
-	// prog.prog.insert(prog.prog.begin(),
-	// 		 ebpf_inst{
-	// 			 .opcode = BPF_STX | BPF_MEM | BPF_DW,
-	// 			 .dst = 10,
-	// 			 .src = 1,
-	// 			 .offset = -256,
-	// 			 .imm = 0,
-	// 		 });
 	prog.info = {
 		.platform = &bpftime_platform_spec,
 		.map_descriptors = get_all_map_descriptors(),
