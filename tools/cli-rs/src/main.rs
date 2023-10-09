@@ -9,6 +9,7 @@ use frida::{
     _GError, _frida_g_error_free, frida_deinit, frida_init,
     frida_injector_inject_library_file_sync, frida_injector_new, frida_unref,
 };
+use libc::execve;
 
 use crate::frida::frida_injector_close_sync;
 
@@ -20,6 +21,8 @@ enum SubCommand {
     Load {
         #[arg(help = "Path to the executable that will be injected with syscall-server")]
         executable_path: String,
+        #[arg(help = "Other arguments to the program injected")]
+        extra_args: Vec<String>,
     },
     #[clap(about = "Start an application with bpftime-agent injected")]
     Start {
@@ -27,6 +30,8 @@ enum SubCommand {
         executable_path: String,
         #[arg(help = "Whether to enable syscall trace", short = 's', long)]
         enable_syscall_trace: bool,
+        #[arg(help = "Other arguments to the program injected")]
+        extra_args: Vec<String>,
     },
     #[clap(about = "Inject bpftime-agent to a certain pid")]
     Attach {
@@ -114,28 +119,56 @@ fn load_ebpf_object_into_kernel(path: impl AsRef<Path>) -> anyhow::Result<()> {
     Ok(())
 }
 
+fn my_execve(
+    path: impl AsRef<str>,
+    argv: &[String],
+    ld_preload: impl AsRef<str>,
+    agent_so: Option<String>,
+) -> anyhow::Error {
+    let prog = CString::new(path.as_ref()).unwrap();
+    let args_holder = argv
+        .iter()
+        .map(|v| CString::new(v.as_str()).unwrap())
+        .collect::<Vec<_>>();
+    let mut args_to_execve = args_holder.iter().map(|v| v.as_ptr()).collect::<Vec<_>>();
+    args_to_execve.push(std::ptr::null());
+    args_to_execve.insert(0, prog.as_ptr());
+    let ld_preload_cstring = CString::new(format!("LD_PRELOAD={}", ld_preload.as_ref())).unwrap();
+    let agent_so_cstring =
+        agent_so.map(|v| CString::new(format!("AGENT_SO={}", v.as_str())).unwrap());
+    let mut envp = vec![ld_preload_cstring.as_ptr()];
+    if let Some(v) = agent_so_cstring.as_ref() {
+        envp.push(v.as_ptr());
+    }
+    envp.push(std::ptr::null());
+    let err = unsafe { execve(prog.as_ptr(), args_to_execve.as_ptr(), envp.as_ptr()) };
+    return anyhow!("Failed to run: err={}", err);
+}
+
 fn main() -> anyhow::Result<()> {
     let args = Args::parse();
     let install_path = PathBuf::from(args.install_location);
     match args.command {
-        SubCommand::Load { executable_path } => {
+        SubCommand::Load {
+            executable_path,
+            extra_args,
+        } => {
             let so_path = install_path.join("libbpftime-syscall-server.so");
             if !so_path.exists() {
                 bail!("Library not found: {:?}", so_path);
             }
-            let err = exec::Command::new("bash")
-                .arg("-c")
-                .arg(format!(
-                    "LD_PRELOAD={} {}",
-                    so_path.to_string_lossy(),
-                    executable_path
-                ))
-                .exec();
+            let err = my_execve(
+                executable_path,
+                &extra_args,
+                so_path.to_string_lossy(),
+                None,
+            );
             Err(err.into())
         }
         SubCommand::Start {
             executable_path,
             enable_syscall_trace,
+            extra_args,
         } => {
             let agent_path = install_path.join("libbpftime-agent.so");
             if !agent_path.exists() {
@@ -147,25 +180,20 @@ fn main() -> anyhow::Result<()> {
                 if !transformr_path.exists() {
                     bail!("Library not found: {:?}", transformr_path);
                 }
-                let err = exec::Command::new("bash")
-                    .arg("-c")
-                    .arg(format!(
-                        "LD_PRELOAD={} AGENT_SO={} {}",
-                        transformr_path.to_string_lossy(),
-                        agent_path.to_string_lossy(),
-                        executable_path
-                    ))
-                    .exec();
+                let err = my_execve(
+                    executable_path,
+                    &extra_args,
+                    transformr_path.to_string_lossy(),
+                    Some(agent_path.to_string_lossy().to_string()),
+                );
                 Err(err.into())
             } else {
-                let err = exec::Command::new("bash")
-                    .arg("-c")
-                    .arg(format!(
-                        "LD_PRELOAD={} {}",
-                        agent_path.to_string_lossy(),
-                        executable_path
-                    ))
-                    .exec();
+                let err = my_execve(
+                    executable_path,
+                    &extra_args,
+                    agent_path.to_string_lossy(),
+                    None,
+                );
                 Err(err.into())
             }
         }
