@@ -433,8 +433,8 @@ int main(int argc, char **argv) {
 		goto cleanup;
 	}
 
-	obj->rodata->targ_uid = env.uid;
-	obj->rodata->targ_pid = env.pid == INVALID_PID ? 0 : env.pid;
+	// obj->rodata->targ_uid = env.uid;
+	// obj->rodata->targ_pid = env.pid == INVALID_PID ? 0 : env.pid;
 
 	err = sslsniff_bpf__load(obj);
 	if (err) {
