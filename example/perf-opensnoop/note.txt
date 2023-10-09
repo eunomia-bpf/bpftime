@@ -1,0 +1,8 @@
+- BPF_MAP_TYPE_PERF_EVENT_ARRAY是个数组，key size和value size都是4，元素个数是CPU核心个数
+- 每个CPU都会用perf_event_open创建一个perf实例，type是PERF_TYPE_SOFTWARE，config是PERF_COUNT_SW_BPF_OUTPUT，sample type是PERF_SAMPLE_RAW。这个实例的fd会被拿来mmap。并且会被ioctl拿来开启PERF_EVENT_IOC_ENABLE。
+- libbpf会把CPU的ID和对应的perf的fd插入到。BPF_MAP_TYPE_PERF_EVENT_ARRAY中的key是CPU索引，value是这个CPU所对应的perf_event的fd
+- 每个CPU的perf的fd都会被加入到epoll里，用EPOLL_CTL_ADD
+- 而后会用epoll来等待perf event数据。
+- 调用 epoll_ctl添加数据的时候，会连带着把libbpf做了perf fd mmap映射的内存地址的指针写到epoll event里，方便收到数据后直接访问相关的buffer。
+
+## 每个CPU自己的缓冲区长什么样？
