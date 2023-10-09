@@ -33,8 +33,8 @@ jobs:
           export PATH=$PATH:~/.bpftime
           bpftime --help
           cd example/opensnoop
-          timeout -s 2 30s sudo -E bpftime -i /home/runner/.bpftime load ./opensnoop || if [ $? = 124 ]; then exit 0; else exit $?; fi &
+          timeout -s 2 30s sudo -E /home/runner/.bpftime/bpftime -i /home/runner/.bpftime load ./opensnoop || if [ $? = 124 ]; then exit 0; else exit $?; fi &
           sleep 10s
           ID1=$!
-          timeout -s 2 15s sudo -i /home/runner/.bpftime start -s ./victim || if [ $? = 124 ]; then exit 0; else exit $?; fi
+          timeout -s 2 15s sudo -E /home/runner/.bpftime/bpftime -i /home/runner/.bpftime start -s ./victim || if [ $? = 124 ]; then exit 0; else exit $?; fi
           fg $ID1 || true
