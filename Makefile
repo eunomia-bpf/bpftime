@@ -42,8 +42,7 @@ build: ## build the package
 	cd tools/cli-rs && cargo build
 
 release: ## build the package
-	cmake -Bbuild  -DBPFTIME_ENABLE_UNIT_TESTING=0 && cmake --build build --config Release -j --target install
-	cd tools/cli-rs && cargo build --release
+	cmake -Bbuild  -DBPFTIME_ENABLE_UNIT_TESTING=0 -DCMAKE_BUILD_TYPE:STRING=Release && cmake --build build --config Release -j --target install
 
 build-vm: ## build only the core library
 	make -C vm build
