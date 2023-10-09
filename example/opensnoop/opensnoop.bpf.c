@@ -5,9 +5,6 @@
 #include <bpf/bpf_helpers.h>
 #include "opensnoop.h"
 
-const volatile pid_t targ_pid = 0;
-const volatile pid_t targ_tgid = 0;
-const volatile uid_t targ_uid = 0;
 const volatile bool targ_failed = false;
 
 struct {
@@ -22,29 +19,6 @@ struct {
 	__uint(max_entries, 256 * 1024);
 } rb SEC(".maps");
 
-static __always_inline bool valid_uid(uid_t uid)
-{
-	return uid != INVALID_UID;
-}
-
-static __always_inline bool trace_allowed(u32 tgid, u32 pid)
-{
-	u32 uid;
-
-	/* filters */
-	if (targ_tgid && targ_tgid != tgid)
-		return false;
-	if (targ_pid && targ_pid != pid)
-		return false;
-	if (valid_uid(targ_uid)) {
-		uid = (u32)bpf_get_current_uid_gid();
-		if (targ_uid != uid) {
-			return false;
-		}
-	}
-	return true;
-}
-
 SEC("tracepoint/syscalls/sys_enter_open")
 int tracepoint__syscalls__sys_enter_open(struct trace_event_raw_sys_enter *ctx)
 {
@@ -54,12 +28,11 @@ int tracepoint__syscalls__sys_enter_open(struct trace_event_raw_sys_enter *ctx)
 	u32 pid = id;
 
 	/* store arg info for later lookup */
-	if (trace_allowed(tgid, pid)) {
-		struct args_t args = {};
-		args.fname = (const char *)ctx->args[0];
-		args.flags = (int)ctx->args[1];
-		bpf_map_update_elem(&start, &pid, &args, 0);
-	}
+	struct args_t args = {};
+	args.fname = (const char *)ctx->args[0];
+	args.flags = (int)ctx->args[1];
+	bpf_map_update_elem(&start, &pid, &args, 0);
+
 	return 0;
 }
 
@@ -71,12 +44,14 @@ int tracepoint__syscalls__sys_enter_openat(struct trace_event_raw_sys_enter *ctx
 	u32 tgid = id >> 32;
 	u32 pid = id;
 	/* store arg info for later lookup */
-	if (trace_allowed(tgid, pid)) {
-		struct args_t args = {};
-		args.fname = (const char *)ctx->args[1];
-		args.flags = (int)ctx->args[2];
-		bpf_map_update_elem(&start, &pid, &args, 0);
-	}
+	// if (trace_allowed(tgid, pid)) {
+	// since we can manually specify the attach process in userspace,
+	// we don't need to check the process allowed here
+	struct args_t args = {};
+	args.fname = (const char *)ctx->args[1];
+	args.flags = (int)ctx->args[2];
+	bpf_map_update_elem(&start, &pid, &args, 0);
+	// }
 	return 0;
 }
 
@@ -92,11 +67,13 @@ static __always_inline int trace_exit(struct trace_event_raw_sys_exit *ctx)
 	if (!ap)
 		return 0; /* missed entry */
 	ret = ctx->ret;
-	if (targ_failed && ret >= 0)
-		goto cleanup; /* want failed only */
+
+	// if (targ_failed && ret >= 0)
+	// 	goto cleanup; /* want failed only */
 	event = bpf_ringbuf_reserve(&rb, sizeof(*event), 0);
 	if (!event)
 		return 0;
+
 	/* event data */
 	event->pid = bpf_get_current_pid_tgid() >> 32;
 	event->uid = bpf_get_current_uid_gid();
@@ -105,9 +82,11 @@ static __always_inline int trace_exit(struct trace_event_raw_sys_exit *ctx)
 	event->flags = ap->flags;
 	event->ret = ret;
 	bpf_get_stack(ctx, &stack, sizeof(stack), BPF_F_USER_STACK);
+
 	/* Skip the first address that is usually the syscall it-self */
 	event->callers[0] = stack[1];
 	event->callers[1] = stack[2];
+
 	/* emit event */
 	bpf_ringbuf_submit(event, 0);
 	return 0;

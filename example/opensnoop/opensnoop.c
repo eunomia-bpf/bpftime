@@ -260,9 +260,9 @@ int main(int argc, char **argv)
 	}
 
 	/* initialize global data (filtering options) */
-	obj->rodata->targ_tgid = env.pid;
-	obj->rodata->targ_pid = env.tid;
-	obj->rodata->targ_uid = env.uid;
+	// obj->rodata->targ_tgid = env.pid;
+	// obj->rodata->targ_pid = env.tid;
+	// obj->rodata->targ_uid = env.uid;
 	obj->rodata->targ_failed = env.failed;
 
 	err = opensnoop_bpf__load(obj);

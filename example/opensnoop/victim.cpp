@@ -4,9 +4,10 @@
 #include <iostream>
 #include <ostream>
 #include <unistd.h>
+
 int main()
 {
-    puts("");
+	puts("");
 	while (true) {
 		std::cout << "Opening test.txt" << std::endl;
 
