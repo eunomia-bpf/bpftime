@@ -1,13 +1,12 @@
-name: Test whether CLI works properly
+name: Test whether ringbuf and opensnoop works properly
 
 on:
   push:
     branches: "master"
   pull_request: 
     branches: "master"
-
 jobs: 
-  build-runtime-cli-and-test-cli:
+  build-and-test:
     runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v2
@@ -25,21 +24,20 @@ jobs:
           RUSTFLAGS="-C target-feature=+crt-static" cargo build --release --target x86_64-unknown-linux-gnu
           mkdir -p ~/.bpftime
           cp ./target/x86_64-unknown-linux-gnu/release/bpftime ~/.bpftime
-      - uses: actions/upload-artifact@v3
-        with:
-          name: bpftime-cli
-          path: ~/.bpftime/bpftime
       - name: Build test assets
         run: |
-          cd example/malloc
+          cd example/opensnoop
           make -j
-      - name: Test CLI - attach by running
+      - name: Test CLI - show help
         run: |
           export PATH=$PATH:~/.bpftime
           bpftime --help
-          cd example/malloc
-          timeout -s 2 15s bpftime load ./malloc || if [ $? = 124 ]; then exit 0; else exit $?; fi &
-          sleep 10s
+      - name: Test CLI - attach by running
+        shell: "sudo /bin/bash -e {0}"
+        run: |
+          cd example/opensnoop
+          timeout -s 2 30s sudo -E /home/runner/.bpftime/bpftime -i /home/runner/.bpftime load ./opensnoop || if [ $? = 124 ]; then exit 0; else exit $?; fi &
+          sleep 3s
           ID1=$!
-          timeout -s 2 5s bpftime start ./test || if [ $? = 124 ]; then exit 0; else exit $?; fi
+          timeout -s 2 15s /home/runner/.bpftime/bpftime -i /home/runner/.bpftime start -s ./victim || if [ $? = 124 ]; then exit 0; else exit $?; fi
           fg $ID1 || true
