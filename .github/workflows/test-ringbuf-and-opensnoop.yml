@@ -28,13 +28,16 @@ jobs:
         run: |
           cd example/opensnoop
           make -j
-      - name: Test CLI - attach by running
+      - name: Test CLI - show help
         run: |
           export PATH=$PATH:~/.bpftime
           bpftime --help
+      - name: Test CLI - attach by running
+        shell: "sudo /bin/bash -e {0}"
+        run: |
           cd example/opensnoop
           timeout -s 2 30s sudo -E /home/runner/.bpftime/bpftime -i /home/runner/.bpftime load ./opensnoop || if [ $? = 124 ]; then exit 0; else exit $?; fi &
-          sleep 10s
+          sleep 3s
           ID1=$!
-          timeout -s 2 15s sudo -E /home/runner/.bpftime/bpftime -i /home/runner/.bpftime start -s ./victim || if [ $? = 124 ]; then exit 0; else exit $?; fi
+          timeout -s 2 15s /home/runner/.bpftime/bpftime -i /home/runner/.bpftime start -s ./victim || if [ $? = 124 ]; then exit 0; else exit $?; fi
           fg $ID1 || true
