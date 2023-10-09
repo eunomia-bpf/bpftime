@@ -95,9 +95,9 @@ See [documents/usage.md](documents/usage.md) for more details.
 We can use the bpftime userspace runtime for:
 
 - `tracing userspace functions with uprobe`: Attach uprobe, uretprobe or all syscall tracepoints(currently x86 only) eBPF programs to a process or a group of processes:
-  - [`malloc`](example/malloc): count the malloc calls in libc by pid
+  - [`malloc`](example/malloc): count the malloc calls in libc by pid. demonstrate how to use the userspace `uprobe` with basic `hashmap`.
 - `tracing all syscalls with tracepoints`
-  - [`opensnoop`](benchmark/hash_maps): trace file open or close syscalls in a process
+  - [`opensnoop`](example/opensnoop): trace file open or close syscalls in a process. demonstrate how to use the userspace `syscall tracepoint` with `ring buffer` output.
 
 More examples can be found in [example](example) dir. More examples are coming soon.
 
@@ -157,8 +157,10 @@ see [documents/build-and-test.md](documents/build-and-test.md) for details.
 
 `bpftime` is continuously evolving with more features in the pipeline:
 
+- [X] ring buffer output support.
+- [ ] perf event output support.
+- [ ] Figure out how to run transparently with kernel probe
 - [ ] An AOT compiler for eBPF can be easily added based on the LLVM IR.
-- [ ] perf event and ring buffer output support.
 - [ ] more examples and usecases.
 - [ ] More map types and distribution maps support.
 - [ ] More program types support.

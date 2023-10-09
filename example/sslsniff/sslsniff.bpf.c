@@ -49,22 +49,6 @@ struct {
     __type(value, __u64);
 } bufs SEC(".maps");
 
-const volatile pid_t targ_pid = 0;
-const volatile uid_t targ_uid = -1;
-
-static __always_inline bool trace_allowed(u32 uid, u32 pid)
-{
-    /* filters */
-    if (targ_pid && targ_pid != pid)
-        return false;
-    if (targ_uid != -1) {
-        if (targ_uid != uid) {
-            return false;
-        }
-    }
-    return true;
-}
-
 SEC("uprobe/do_handshake")
 int BPF_UPROBE(probe_SSL_rw_enter, void *ssl, void *buf, int num) {
     u64 pid_tgid = bpf_get_current_pid_tgid();
@@ -72,10 +56,6 @@ int BPF_UPROBE(probe_SSL_rw_enter, void *ssl, void *buf, int num) {
     u32 tid = pid_tgid;
     u32 uid = bpf_get_current_uid_gid();
     u64 ts = bpf_ktime_get_ns();
-
-    if (!trace_allowed(uid, pid)) {
-        return 0;
-    }
 
     /* store arg info for later lookup */
     bpf_map_update_elem(&bufs, &tid, &buf, BPF_ANY);
@@ -91,10 +71,6 @@ static int SSL_exit(struct pt_regs *ctx, int rw) {
     u32 tid = (u32)pid_tgid;
     u32 uid = bpf_get_current_uid_gid();
     u64 ts = bpf_ktime_get_ns();
-
-    if (!trace_allowed(uid, pid)) {
-        return 0;
-    }
 
     /* store arg info for later lookup */
     u64 *bufp = bpf_map_lookup_elem(&bufs, &tid);
@@ -159,11 +135,6 @@ int BPF_UPROBE(probe_SSL_do_handshake_enter, void *ssl) {
     u32 pid = pid_tgid >> 32;
     u32 tid = (u32)pid_tgid;
     u64 ts = bpf_ktime_get_ns();
-    u32 uid = bpf_get_current_uid_gid();
-
-    if (!trace_allowed(uid, pid)) {
-        return 0;
-    }
 
     /* store arg info for later lookup */
     bpf_map_update_elem(&start_ns, &tid, &ts, BPF_ANY);
@@ -179,14 +150,6 @@ int BPF_URETPROBE(probe_SSL_do_handshake_exit) {
     u32 uid = bpf_get_current_uid_gid();
     u64 ts = bpf_ktime_get_ns();
     int ret = 0;
-
-    /* use kernel terminology here for tgid/pid: */
-    u32 tgid = pid_tgid >> 32;
-
-    /* store arg info for later lookup */
-    if (!trace_allowed(tgid, pid)) {
-        return 0;
-    }
 
     u64 *tsp = bpf_map_lookup_elem(&start_ns, &tid);
     if (tsp == 0)

@@ -37,15 +37,13 @@ test: ## test the package
 	cd build/runtime && ctest -VV
 
 build: ## build the package
-	cmake -Bbuild  -DBPFTIME_ENABLE_UNIT_TESTING=1 -DUSE_NEW_BINUTILS=1
+	cmake -Bbuild  -DBPFTIME_ENABLE_UNIT_TESTING=1
 	cmake --build build --config Debug
-
-build-old-binutils: ## build the package with old binutils
-	cmake -Bbuild  -DBPFTIME_ENABLE_UNIT_TESTING=1 -DUSE_NEW_BINUTILS=0
-	cmake --build build --config Debug
+	cd tools/cli-rs && cargo build
 
 release: ## build the package
 	cmake -Bbuild  -DBPFTIME_ENABLE_UNIT_TESTING=0 && cmake --build build --config Release -j --target install
+	cd tools/cli-rs && cargo build --release
 
 build-vm: ## build only the core library
 	make -C vm build
@@ -58,4 +56,6 @@ clean: ## clean the project
 	rm -rf build
 	make -C runtime clean
 	make -C vm clean
+
 install: release ## Invoke cmake to install..
+	cd tools/cli-rs && mkdir -p ~/.bpftime && cp ./target/release/bpftime ~/.bpftime
