@@ -22,7 +22,7 @@ jobs:
         binutils-dev libyaml-cpp-dev  gcc-12 g++-12
 
     - name: build runtime
-      run:  CC=gcc-12 CXX=g++-12 make build-old-binutils
+      run:  CC=gcc-12 CXX=g++-12 make build
 
     - name: test runtime
       run:  make test
