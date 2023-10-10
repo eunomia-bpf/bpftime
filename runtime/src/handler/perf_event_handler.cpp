@@ -34,4 +34,27 @@ bpf_perf_event_handler::bpf_perf_event_handler(
 	  tracepoint_id(tracepoint_id)
 {
 }
+
+bpf_perf_event_handler::bpf_perf_event_handler(
+	int cpu, int32_t sample_type, int64_t config,
+	boost::interprocess::managed_shared_memory &mem)
+	: sw_perf(software_perf_event_data(cpu, config, sample_type, mem))
+{
+}
+
+software_perf_event_data::software_perf_event_data(
+	int cpu, int64_t config, int32_t sample_type,
+	boost::interprocess::managed_shared_memory &memory)
+	: cpu(cpu), config(config), sample_type(sample_type),
+	  mmap_buffer(memory.get_segment_manager())
+{
+}
+void *software_perf_event_data::ensure_mmap_buffer(size_t buffer_size)
+{
+	if (buffer_size < mmap_buffer.size()) {
+		mmap_buffer.resize(buffer_size);
+	}
+	return mmap_buffer.data();
+}
+
 } // namespace bpftime

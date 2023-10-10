@@ -107,6 +107,16 @@ int bpftime_shm::add_tracepoint(int pid, int32_t tracepoint_id)
 			     segment);
 	return fd;
 }
+int bpftime_shm::add_software_perf_event(int cpu, int32_t sample_type,
+					 int64_t config)
+{
+	int fd = open_fake_fd();
+	manager->set_handler(fd,
+			     bpftime::bpf_perf_event_handler(cpu, sample_type,
+							     config, segment),
+			     segment);
+	return fd;
+}
 int bpftime_shm::attach_perf_to_bpf(int perf_fd, int bpf_fd)
 {
 	if (!is_perf_fd(perf_fd) || !is_prog_fd(bpf_fd)) {
@@ -390,6 +400,12 @@ int bpftime_ringbuf_poll(int fd, int *out_rb_idx, int max_evt, int timeout)
 		std::this_thread::sleep_for(milliseconds(1));
 	}
 	return next_id;
+}
+int bpftime_add_software_perf_event(int cpu, int32_t sample_type,
+				    int64_t config)
+{
+	auto &shm = shm_holder.global_shared_memory;
+	shm.add_software_perf_event(cpu, sample_type, config);
 }
 extern "C" uint64_t map_ptr_by_fd(uint32_t fd)
 {

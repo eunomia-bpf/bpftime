@@ -72,6 +72,8 @@ void bpftime_close(int fd);
 void *bpftime_ringbuf_reserve(int fd, uint64_t size);
 void bpftime_ringbuf_submit(int fd, void *data, int discard);
 int bpftime_ringbuf_poll(int fd, int *out_rb_idx, int max_evt, int timeout);
+int bpftime_add_software_perf_event(int cpu, int32_t sample_type,
+				    int64_t config);
 }
 
 #endif // BPFTIME_SHM_CPP_H

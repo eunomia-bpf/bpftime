@@ -5,7 +5,6 @@
 #include "handler/epoll_handler.hpp"
 #include "handler/map_handler.hpp"
 #include "spdlog/spdlog.h"
-#include <cinttypes>
 #include <boost/interprocess/managed_shared_memory.hpp>
 #include <functional>
 #include <boost/interprocess/containers/set.hpp>
@@ -204,6 +203,8 @@ class bpftime_shm {
 	int add_uprobe(int pid, const char *name, uint64_t offset,
 		       bool retprobe, size_t ref_ctr_off);
 	int add_tracepoint(int pid, int32_t tracepoint_id);
+	int add_software_perf_event(int cpu, int32_t sample_type,
+				    int64_t config);
 	int attach_perf_to_bpf(int perf_fd, int bpf_fd);
 	int attach_enable(int fd) const;
 	int add_ringbuf_to_epoll(int ringbuf_fd, int epoll_fd);

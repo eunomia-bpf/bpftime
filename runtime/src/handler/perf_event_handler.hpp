@@ -1,16 +1,35 @@
 #ifndef _PERF_EVENT_HANDLER
 #define _PERF_EVENT_HANDLER
-#include <cinttypes>
 #include <boost/interprocess/managed_shared_memory.hpp>
 #include <boost/interprocess/containers/string.hpp>
+#include <boost/interprocess/containers/vector.hpp>
+#include <cstddef>
+#include <optional>
 
 namespace bpftime
 {
 using char_allocator = boost::interprocess::allocator<
 	char, boost::interprocess::managed_shared_memory::segment_manager>;
+
+using bytes_vec_allocator = boost::interprocess::allocator<
+	uint8_t, boost::interprocess::managed_shared_memory::segment_manager>;
+using bytes_vec = boost::interprocess::vector<uint8_t, bytes_vec_allocator>;
 using boost_shm_string =
 	boost::interprocess::basic_string<char, std::char_traits<char>,
 					  char_allocator>;
+
+struct software_perf_event_data {
+	int cpu;
+	// Field `config` of perf_event_attr
+	int64_t config;
+	// Field `sample_type` of perf_event_attr
+	int32_t sample_type;
+	bytes_vec mmap_buffer;
+	software_perf_event_data(
+		int cpu, int64_t config, int32_t sample_type,
+		boost::interprocess::managed_shared_memory &memory);
+	void* ensure_mmap_buffer(size_t buffer_size);
+};
 
 // perf event handler
 struct bpf_perf_event_handler {
@@ -42,6 +61,10 @@ struct bpf_perf_event_handler {
 	// Tracepoint id at /sys/kernel/tracing/events/syscalls/*/id, used to
 	// indicate which syscall to trace
 	int32_t tracepoint_id = -1;
+
+	// Things needed by software perf event
+	std::optional<software_perf_event_data> sw_perf;
+
 	// attach to replace or filter self define types
 	bpf_perf_event_handler(bpf_event_type type, uint64_t offset, int pid,
 			       const char *module_name,
@@ -53,6 +76,9 @@ struct bpf_perf_event_handler {
 
 	// create tracepoint
 	bpf_perf_event_handler(int pid, int32_t tracepoint_id,
+			       boost::interprocess::managed_shared_memory &mem);
+	// create software perf event
+	bpf_perf_event_handler(int cpu, int32_t sample_type, int64_t config,
 			       boost::interprocess::managed_shared_memory &mem);
 };
 
