@@ -1,11 +1,11 @@
 #include "spdlog/spdlog.h"
-#include <bpf_map/perf_event_array.hpp>
+#include <bpf_map/perf_event_array_map.hpp>
 #include <cassert>
 #include <cerrno>
 #include <spdlog/spdlog.h>
 namespace bpftime
 {
-perf_event_array_impl::perf_event_array_impl(
+perf_event_array_map_impl::perf_event_array_map_impl(
 	boost::interprocess::managed_shared_memory &memory, uint32_t key_size,
 	uint32_t value_size, uint32_t max_entries)
 	: data(max_entries, memory.get_segment_manager())
@@ -17,7 +17,7 @@ perf_event_array_impl::perf_event_array_impl(
 	}
 }
 
-void *perf_event_array_impl::elem_lookup(const void *key)
+void *perf_event_array_map_impl::elem_lookup(const void *key)
 {
 	int32_t k = *(int32_t *)key;
 	if (k < 0 || (size_t)k >= data.size()) {
@@ -27,7 +27,7 @@ void *perf_event_array_impl::elem_lookup(const void *key)
 	return &data[k];
 }
 
-long perf_event_array_impl::elem_update(const void *key, const void *value,
+long perf_event_array_map_impl::elem_update(const void *key, const void *value,
 					uint64_t flags)
 {
 	int32_t k = *(int32_t *)key;
@@ -40,7 +40,7 @@ long perf_event_array_impl::elem_update(const void *key, const void *value,
 	return 0;
 }
 
-long perf_event_array_impl::elem_delete(const void *key)
+long perf_event_array_map_impl::elem_delete(const void *key)
 {
 	spdlog::error(
 		"Try to call elem_delete of perf_event_array, which is not supported");
@@ -48,7 +48,7 @@ long perf_event_array_impl::elem_delete(const void *key)
 	return -1;
 }
 
-int perf_event_array_impl::bpf_map_get_next_key(const void *key, void *next_key)
+int perf_event_array_map_impl::bpf_map_get_next_key(const void *key, void *next_key)
 {
 	int32_t *out = (int32_t *)next_key;
 	if (key == nullptr) {

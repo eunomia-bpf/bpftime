@@ -1,4 +1,4 @@
-#include "bpf_map/perf_event_array.hpp"
+#include <bpf_map/perf_event_array_map.hpp>
 #include "spdlog/spdlog.h"
 #include <handler/map_handler.hpp>
 #include <bpf_map/array_map.hpp>
@@ -39,7 +39,7 @@ const void *bpf_map_handler::map_lookup_elem(const void *key) const
 		}
 	}
 	case BPF_MAP_TYPE_PERF_EVENT_ARRAY: {
-		auto impl = static_cast<perf_event_array_impl *>(
+		auto impl = static_cast<perf_event_array_map_impl *>(
 			map_impl_ptr.get());
 		return do_lookup(impl);
 	}
@@ -75,7 +75,7 @@ long bpf_map_handler::map_update_elem(const void *key, const void *value,
 		return do_update(impl);
 	}
 	case BPF_MAP_TYPE_PERF_EVENT_ARRAY: {
-		auto impl = static_cast<perf_event_array_impl *>(
+		auto impl = static_cast<perf_event_array_map_impl *>(
 			map_impl_ptr.get());
 		return do_update(impl);
 	}
@@ -110,7 +110,7 @@ int bpf_map_handler::bpf_map_get_next_key(const void *key, void *next_key) const
 		return do_get_next_key(impl);
 	}
 	case BPF_MAP_TYPE_PERF_EVENT_ARRAY: {
-		auto impl = static_cast<perf_event_array_impl *>(
+		auto impl = static_cast<perf_event_array_map_impl *>(
 			map_impl_ptr.get());
 		return do_get_next_key(impl);
 	}
@@ -145,7 +145,7 @@ long bpf_map_handler::map_delete_elem(const void *key) const
 		return do_delete(impl);
 	}
 	case BPF_MAP_TYPE_PERF_EVENT_ARRAY: {
-		auto impl = static_cast<perf_event_array_impl *>(
+		auto impl = static_cast<perf_event_array_map_impl *>(
 			map_impl_ptr.get());
 		return do_delete(impl);
 	}
@@ -186,7 +186,7 @@ int bpf_map_handler::map_init(managed_shared_memory &memory)
 		return 0;
 	}
 	case BPF_MAP_TYPE_PERF_EVENT_ARRAY: {
-		map_impl_ptr = memory.construct<perf_event_array_impl>(
+		map_impl_ptr = memory.construct<perf_event_array_map_impl>(
 			container_name.c_str())(memory, key_size, value_size,
 						max_entries);
 		return 0;
@@ -211,7 +211,7 @@ void bpf_map_handler::map_free(managed_shared_memory &memory)
 		memory.destroy<ringbuf_map_impl>(container_name.c_str());
 		break;
 	case BPF_MAP_TYPE_PERF_EVENT_ARRAY:
-		memory.destroy<perf_event_array_impl>(container_name.c_str());
+		memory.destroy<perf_event_array_map_impl>(container_name.c_str());
 		break;
 	default:
 		assert(false || "Unsupported map type");
