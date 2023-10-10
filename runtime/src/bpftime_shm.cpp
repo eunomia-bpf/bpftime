@@ -405,7 +405,7 @@ int bpftime_add_software_perf_event(int cpu, int32_t sample_type,
 				    int64_t config)
 {
 	auto &shm = shm_holder.global_shared_memory;
-	shm.add_software_perf_event(cpu, sample_type, config);
+	return shm.add_software_perf_event(cpu, sample_type, config);
 }
 extern "C" uint64_t map_ptr_by_fd(uint32_t fd)
 {

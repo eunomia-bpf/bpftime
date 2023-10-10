@@ -1,25 +1,9 @@
-#ifndef SYSCALL_BPF_POLYFILL_H
-#define SYSCALL_BPF_POLYFILL_H
-
-#include <cstring>
-#include <memory>
-#include <optional>
-#include <ostream>
-#include <chrono>
-#include <cstdarg>
-#include <cinttypes>
-#include <sys/syscall.h>
-#include <unistd.h>
-#include <iostream>
+#ifndef _SYSCALL_CONTEXT_HPP
+#define _SYSCALL_CONTEXT_HPP
+#include "linux/perf_event.h"
+#include <cstddef>
 #include <dlfcn.h>
-#include <linux/perf_event.h>
-#include <sys/mman.h>
-#include <iterator>
-#include <variant>
-#include <asm-generic/errno-base.h>
-#include <sys/epoll.h>
-#include <linux/bpf.h>
-#include "bpftime_shm.hpp"
+#include <sys/types.h>
 #include <spdlog/spdlog.h>
 class syscall_context {
 	using syscall_fn = long (*)(long, ...);
@@ -72,4 +56,4 @@ class syscall_context {
 			      int timeout);
 };
 
-#endif /* SYSCALL_BPF_POLYFILL_H */
+#endif

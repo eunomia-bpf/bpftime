@@ -1,4 +1,6 @@
 #include <handler/perf_event_handler.hpp>
+#include <boost/interprocess/managed_shared_memory.hpp>
+#include <boost/interprocess/allocators/allocator.hpp>
 namespace bpftime
 {
 // attach to replace or filter self define types
@@ -38,7 +40,9 @@ bpf_perf_event_handler::bpf_perf_event_handler(
 bpf_perf_event_handler::bpf_perf_event_handler(
 	int cpu, int32_t sample_type, int64_t config,
 	boost::interprocess::managed_shared_memory &mem)
-	: sw_perf(software_perf_event_data(cpu, config, sample_type, mem))
+	: _module_name(char_allocator(mem.get_segment_manager())),
+	  sw_perf(software_perf_event_data(cpu, config, sample_type, mem))
+
 {
 }
 

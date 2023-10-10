@@ -5,20 +5,21 @@
 #include <boost/interprocess/containers/vector.hpp>
 #include <cstddef>
 #include <optional>
-
+#include <boost/interprocess/allocators/allocator.hpp>
 namespace bpftime
 {
 using char_allocator = boost::interprocess::allocator<
 	char, boost::interprocess::managed_shared_memory::segment_manager>;
-
-using bytes_vec_allocator = boost::interprocess::allocator<
-	uint8_t, boost::interprocess::managed_shared_memory::segment_manager>;
-using bytes_vec = boost::interprocess::vector<uint8_t, bytes_vec_allocator>;
 using boost_shm_string =
 	boost::interprocess::basic_string<char, std::char_traits<char>,
 					  char_allocator>;
 
 struct software_perf_event_data {
+	using bytes_vec_allocator = boost::interprocess::allocator<
+		uint8_t,
+		boost::interprocess::managed_shared_memory::segment_manager>;
+	using bytes_vec =
+		boost::interprocess::vector<uint8_t, bytes_vec_allocator>;
 	int cpu;
 	// Field `config` of perf_event_attr
 	int64_t config;
@@ -28,7 +29,7 @@ struct software_perf_event_data {
 	software_perf_event_data(
 		int cpu, int64_t config, int32_t sample_type,
 		boost::interprocess::managed_shared_memory &memory);
-	void* ensure_mmap_buffer(size_t buffer_size);
+	void *ensure_mmap_buffer(size_t buffer_size);
 };
 
 // perf event handler
