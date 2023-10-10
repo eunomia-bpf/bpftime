@@ -2,15 +2,22 @@
 #define _PERF_EVENT_ARRAY_HPP
 #include <cstdint>
 #include <boost/interprocess/managed_shared_memory.hpp>
+#include <boost/interprocess/containers/vector.hpp>
 namespace bpftime
 {
+
+using i32_vec_allocator = boost::interprocess::allocator<
+	int32_t, boost::interprocess::managed_shared_memory::segment_manager>;
+using i32_vec = boost::interprocess::vector<int32_t, i32_vec_allocator>;
 class perf_event_array_impl {
     private:
-    
+	i32_vec data;
+
     public:
 	const static bool should_lock = true;
 	perf_event_array_impl(boost::interprocess::managed_shared_memory &memory,
-			      uint32_t key_size, uint32_t value_size);
+			      uint32_t key_size, uint32_t value_size,
+			      uint32_t max_entries);
 
 	void *elem_lookup(const void *key);
 
