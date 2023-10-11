@@ -1,6 +1,7 @@
 #include "syscall_context.hpp"
 #include "bpftime_shm.hpp"
 #include "handler/perf_event_handler.hpp"
+#include "spdlog/spdlog.h"
 #include <linux/bpf.h>
 #include "syscall_server_utils.hpp"
 #include <optional>
@@ -150,23 +151,8 @@ long syscall_context::handle_sysbpf(int cmd, union bpf_attr *attr, size_t size)
 		return id;
 	}
 	case BPF_MAP_FREEZE: {
-		// std::cout << "Freezing map" << std::endl;
-		// if (auto itr = objs.find(attr->map_fd); itr != objs.end()) {
-		// 	if (std::holds_alternative<EbpfMapWrapper>(
-		// 		    *itr->second)) {
-		// 		auto &map =
-		// 			std::get<EbpfMapWrapper>(*itr->second);
-		// 		map.frozen = true;
-		// 		return 0;
-		// 	} else {
-		// 		errno = EINVAL;
-		// 		return -1;
-		// 	}
-		// } else {
-		// 	errno = ENOENT;
-		// 	return -1;
-		// }
-		// errno = EINVAL;
+		spdlog::debug(
+			"Calling bpf map freeze, but we didn't implement this");
 		return 0;
 	}
 	case BPF_OBJ_GET_INFO_BY_FD: {
@@ -231,8 +217,16 @@ int syscall_context::handle_perfevent(perf_event_attr *attr, pid_t pid, int cpu,
 		int fd = bpftime_tracepoint_create(pid, (int32_t)attr->config);
 		spdlog::debug("Created tracepoint perf event with fd {}", fd);
 		return fd;
+	} else if ((int)attr->type ==
+		   (int)bpf_perf_event_handler::bpf_event_type::
+			   PERF_TYPE_SOFTWARE) {
+		spdlog::debug("Detected software perf event creation");
+		int fd = bpftime_add_software_perf_event(cpu, attr->sample_type,
+							 attr->config);
+		spdlog::debug("Created software perf event with fd {}", fd);
+		return fd;
 	}
-
+	spdlog::warn("Calling original perf event open");
 	return orig_syscall_fn(__NR_perf_event_open, (uint64_t)(uintptr_t)attr,
 			       (uint64_t)pid, (uint64_t)cpu, (uint64_t)group_fd,
 			       (uint64_t)flags);
@@ -270,6 +264,11 @@ void *syscall_context::handle_mmap64(void *addr, size_t length, int prot,
 		    val != nullptr) {
 			return val;
 		}
+	} else if (fd != -1 && bpftime_is_software_perf_event(fd)) {
+		spdlog::debug(
+			"Entering mocked mmap64: software perf event handler");
+
+		return nullptr;
 	}
 
 	auto ptr = orig_mmap64_fn(addr, length, prot | PROT_WRITE,
@@ -316,18 +315,25 @@ int syscall_context::handle_epoll_ctl(int epfd, int op, int fd,
 				      epoll_event *evt)
 {
 	if (op == EPOLL_CTL_ADD) {
-		int err = bpftime_add_ringbuf_fd_to_epoll(fd, epfd);
-		if (err != 0) {
-			spdlog::debug(
-				"Failed to call mocked epoll_ctl: {}, calling original one..",
-				err);
-			return orig_epoll_ctl_fn(epfd, op, fd, evt);
+		if (bpftime_is_ringbuf_map(fd)) {
+			int err = bpftime_add_ringbuf_fd_to_epoll(fd, epfd);
+			if (err == 0) {
+				return err;
+			}
+		} else if (bpftime_is_software_perf_event(fd)) {
+			int err = bpftime_add_software_perf_event_fd_to_epoll(
+				fd, epfd);
+			if (err == 0)
+				return err;
+
 		} else {
-			return err;
+			spdlog::warn(
+				"Unsupported map fd for mocked epoll_ctl: {}, call the original one..",
+				fd);
 		}
-	} else {
-		return orig_epoll_ctl_fn(epfd, op, fd, evt);
 	}
+
+	return orig_epoll_ctl_fn(epfd, op, fd, evt);
 }
 
 int syscall_context::handle_epoll_wait(int epfd, epoll_event *evt,

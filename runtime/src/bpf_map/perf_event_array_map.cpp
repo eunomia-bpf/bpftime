@@ -8,7 +8,8 @@ namespace bpftime
 perf_event_array_map_impl::perf_event_array_map_impl(
 	boost::interprocess::managed_shared_memory &memory, uint32_t key_size,
 	uint32_t value_size, uint32_t max_entries)
-	: data(max_entries, memory.get_segment_manager())
+	// Default value of fd map is -1
+	: data(max_entries, -1, memory.get_segment_manager())
 {
 	if (key_size != 4 || value_size != 4) {
 		spdlog::error(
@@ -28,7 +29,7 @@ void *perf_event_array_map_impl::elem_lookup(const void *key)
 }
 
 long perf_event_array_map_impl::elem_update(const void *key, const void *value,
-					uint64_t flags)
+					    uint64_t flags)
 {
 	int32_t k = *(int32_t *)key;
 	if (k < 0 || (size_t)k >= data.size()) {
@@ -42,13 +43,17 @@ long perf_event_array_map_impl::elem_update(const void *key, const void *value,
 
 long perf_event_array_map_impl::elem_delete(const void *key)
 {
-	spdlog::error(
-		"Try to call elem_delete of perf_event_array, which is not supported");
-	errno = ENOTSUP;
-	return -1;
+	int32_t k = *(int32_t *)key;
+	if (k < 0 || (size_t)k >= data.size()) {
+		errno = EINVAL;
+		return -1;
+	}
+	data[k] = -1;
+	return 0;
 }
 
-int perf_event_array_map_impl::bpf_map_get_next_key(const void *key, void *next_key)
+int perf_event_array_map_impl::bpf_map_get_next_key(const void *key,
+						    void *next_key)
 {
 	int32_t *out = (int32_t *)next_key;
 	if (key == nullptr) {

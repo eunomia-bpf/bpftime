@@ -6,6 +6,8 @@
 #include <cstddef>
 #include <optional>
 #include <boost/interprocess/allocators/allocator.hpp>
+#include <boost/interprocess/smart_ptr/shared_ptr.hpp>
+#include <boost/interprocess/smart_ptr/weak_ptr.hpp>
 namespace bpftime
 {
 using char_allocator = boost::interprocess::allocator<
@@ -31,6 +33,13 @@ struct software_perf_event_data {
 		boost::interprocess::managed_shared_memory &memory);
 	void *ensure_mmap_buffer(size_t buffer_size);
 };
+
+using software_perf_event_shared_ptr = boost::interprocess::managed_shared_ptr<
+	software_perf_event_data,
+	boost::interprocess::managed_shared_memory::segment_manager>::type;
+using software_perf_event_weak_ptr = boost::interprocess::managed_weak_ptr<
+	software_perf_event_data,
+	boost::interprocess::managed_shared_memory::segment_manager>::type;
 
 // perf event handler
 struct bpf_perf_event_handler {
@@ -64,7 +73,10 @@ struct bpf_perf_event_handler {
 	int32_t tracepoint_id = -1;
 
 	// Things needed by software perf event
-	std::optional<software_perf_event_data> sw_perf;
+	std::optional<software_perf_event_shared_ptr> sw_perf;
+
+	std::optional<software_perf_event_weak_ptr>
+	try_get_software_perf_data_weak_ptr() const;
 
 	// attach to replace or filter self define types
 	bpf_perf_event_handler(bpf_event_type type, uint64_t offset, int pid,

@@ -1,3 +1,5 @@
+#include <boost/interprocess/detail/segment_manager_helper.hpp>
+#include <boost/interprocess/smart_ptr/shared_ptr.hpp>
 #include <handler/perf_event_handler.hpp>
 #include <boost/interprocess/managed_shared_memory.hpp>
 #include <boost/interprocess/allocators/allocator.hpp>
@@ -40,8 +42,13 @@ bpf_perf_event_handler::bpf_perf_event_handler(
 bpf_perf_event_handler::bpf_perf_event_handler(
 	int cpu, int32_t sample_type, int64_t config,
 	boost::interprocess::managed_shared_memory &mem)
-	: _module_name(char_allocator(mem.get_segment_manager())),
-	  sw_perf(software_perf_event_data(cpu, config, sample_type, mem))
+	: type(bpf_event_type::PERF_TYPE_SOFTWARE),
+	  _module_name(char_allocator(mem.get_segment_manager())),
+	  sw_perf(boost::interprocess::make_managed_shared_ptr(
+		  mem.construct<software_perf_event_data>(
+			  boost::interprocess::anonymous_instance)(
+			  cpu, config, sample_type, mem),
+		  mem))
 
 {
 }
@@ -59,6 +66,16 @@ void *software_perf_event_data::ensure_mmap_buffer(size_t buffer_size)
 		mmap_buffer.resize(buffer_size);
 	}
 	return mmap_buffer.data();
+}
+
+std::optional<software_perf_event_weak_ptr>
+bpf_perf_event_handler::try_get_software_perf_data_weak_ptr() const
+{
+	if (sw_perf.has_value()) {
+		return software_perf_event_weak_ptr(sw_perf.value());
+	} else {
+		return {};
+	}
 }
 
 } // namespace bpftime

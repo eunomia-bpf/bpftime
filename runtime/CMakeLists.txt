@@ -60,6 +60,7 @@ set(sources
   src/handler/prog_handler.cpp
   src/handler/epoll_handler.cpp
   src/bpftime_shm.cpp
+  src/bpftime_shm_internal.cpp
   src/syscall_table.cpp
   src/bpf_map/array_map.cpp
   src/bpf_map/hash_map.cpp
