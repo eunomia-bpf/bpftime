@@ -3,6 +3,7 @@
 #include "bpf_map/array_map.hpp"
 #include "bpf_map/ringbuf_map.hpp"
 #include <boost/interprocess/managed_shared_memory.hpp>
+#include <cstddef>
 #include <functional>
 #include <boost/interprocess/containers/set.hpp>
 #include <common/bpftime_config.hpp>
@@ -50,7 +51,7 @@ class bpftime_shm {
 	bool is_array_map_fd(int fd) const;
 	bool is_perf_event_map_fd(int fd) const;
 	bool is_software_perf_event_handler_fd(int fd) const;
-	
+
 	std::optional<ringbuf_map_impl *>
 	try_get_ringbuf_map_impl(int fd) const;
 
@@ -98,6 +99,8 @@ class bpftime_shm {
 	bool is_exist_fake_fd(int fd) const;
 	bpftime_shm();
 	const handler_manager *get_manager() const;
+	std::optional<void *>
+	get_software_perf_event_raw_buffer(int fd, size_t buffer_sz) const;
 };
 
 // memory region for maps and prog info

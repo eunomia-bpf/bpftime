@@ -1,6 +1,7 @@
 #include "handler/epoll_handler.hpp"
 #include "handler/map_handler.hpp"
 #include "spdlog/spdlog.h"
+#include <cerrno>
 #include <errno.h>
 #include <bpftime_shm_internal.hpp>
 #include <thread>
@@ -229,6 +230,13 @@ int bpftime_is_software_perf_event(int fd)
 {
 	return shm_holder.global_shared_memory.is_software_perf_event_handler_fd(
 		fd);
+}
+
+void *bpftime_get_software_perf_event_raw_buffer(int fd, size_t expected_size)
+{
+	return shm_holder.global_shared_memory
+		.get_software_perf_event_raw_buffer(fd, expected_size)
+		.value_or(nullptr);
 }
 extern "C" uint64_t map_ptr_by_fd(uint32_t fd)
 {

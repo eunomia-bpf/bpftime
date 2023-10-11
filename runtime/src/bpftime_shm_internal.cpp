@@ -148,7 +148,9 @@ int bpftime_shm::add_software_perf_event_to_epoll(int swpe_fd, int epoll_fd)
 	auto &epoll_inst =
 		std::get<epoll_handler>(manager->get_handler(epoll_fd));
 	if (!is_software_perf_event_handler_fd(swpe_fd)) {
-		spdlog::error("Fd {} is expected to be an software perf event handler", swpe_fd);
+		spdlog::error(
+			"Fd {} is expected to be an software perf event handler",
+			swpe_fd);
 		errno = EINVAL;
 		return -1;
 	}
@@ -372,7 +374,8 @@ bpftime_shm::bpftime_shm()
 		// create the shm
 		segment = boost::interprocess::managed_shared_memory(
 			boost::interprocess::create_only,
-			bpftime::get_global_shm_name(), 1 << 20);
+            // Allocate 20M bytes of memory by default
+			bpftime::get_global_shm_name(), 20 << 20);
 		manager = segment.construct<bpftime::handler_manager>(
 			bpftime::DEFAULT_GLOBAL_HANDLER_NAME)(segment);
 		syscall_installed_pids = segment.construct<syscall_pid_set>(
@@ -435,4 +438,15 @@ bpftime::agent_config &bpftime_get_agent_config()
 	return shm_holder.global_shared_memory.get_agent_config();
 }
 
+std::optional<void *>
+bpftime_shm::get_software_perf_event_raw_buffer(int fd, size_t buffer_sz) const
+{
+	if (!is_software_perf_event_handler_fd(fd)) {
+		spdlog::error("Expected {} to be an perf event fd", fd);
+		errno = EINVAL;
+		return nullptr;
+	}
+	const auto &handler = std::get<bpf_perf_event_handler>(get_handler(fd));
+	return handler.try_get_software_perf_data_raw_buffer(buffer_sz);
+}
 } // namespace bpftime

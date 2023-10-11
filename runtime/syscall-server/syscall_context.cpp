@@ -267,8 +267,7 @@ void *syscall_context::handle_mmap64(void *addr, size_t length, int prot,
 	} else if (fd != -1 && bpftime_is_software_perf_event(fd)) {
 		spdlog::debug(
 			"Entering mocked mmap64: software perf event handler");
-
-		return nullptr;
+		return bpftime_get_software_perf_event_raw_buffer(fd, length);
 	}
 
 	auto ptr = orig_mmap64_fn(addr, length, prot | PROT_WRITE,

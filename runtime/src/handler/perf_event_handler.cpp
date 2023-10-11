@@ -1,3 +1,4 @@
+#include "spdlog/spdlog.h"
 #include <boost/interprocess/detail/segment_manager_helper.hpp>
 #include <boost/interprocess/smart_ptr/shared_ptr.hpp>
 #include <handler/perf_event_handler.hpp>
@@ -62,7 +63,8 @@ software_perf_event_data::software_perf_event_data(
 }
 void *software_perf_event_data::ensure_mmap_buffer(size_t buffer_size)
 {
-	if (buffer_size < mmap_buffer.size()) {
+	if (buffer_size > mmap_buffer.size()) {
+		spdlog::debug("Expanding mmap buffer size to {}", buffer_size);
 		mmap_buffer.resize(buffer_size);
 	}
 	return mmap_buffer.data();
@@ -78,4 +80,14 @@ bpf_perf_event_handler::try_get_software_perf_data_weak_ptr() const
 	}
 }
 
+std::optional<void *>
+bpf_perf_event_handler::try_get_software_perf_data_raw_buffer(
+	size_t buffer_size) const
+{
+	if (sw_perf.has_value()) {
+		return sw_perf.value()->ensure_mmap_buffer(buffer_size);
+	} else {
+		return {};
+	}
+}
 } // namespace bpftime
