@@ -4,6 +4,9 @@
 #include <handler/perf_event_handler.hpp>
 #include <boost/interprocess/managed_shared_memory.hpp>
 #include <boost/interprocess/allocators/allocator.hpp>
+#include <unistd.h>
+
+
 namespace bpftime
 {
 // attach to replace or filter self define types
@@ -53,23 +56,40 @@ bpf_perf_event_handler::bpf_perf_event_handler(
 
 {
 }
+int software_perf_event_data::output_data(const void *buf, size_t size)
+{
+}
+perf_event_mmap_page &software_perf_event_data::get_header_ref()
+{
+	return *(perf_event_mmap_page *)(uintptr_t)(mmap_buffer.data());
+}
 
 software_perf_event_data::software_perf_event_data(
 	int cpu, int64_t config, int32_t sample_type,
 	boost::interprocess::managed_shared_memory &memory)
 	: cpu(cpu), config(config), sample_type(sample_type),
-	  mmap_buffer(memory.get_segment_manager())
+	  pagesize(getpagesize()),
+	  mmap_buffer(pagesize, memory.get_segment_manager())
 {
+	perf_event_mmap_page &perf_header = get_header_ref();
+	perf_header.data_offset = pagesize;
+	perf_header.data_head = perf_header.data_tail = 0;
+	perf_header.data_size = 0;
 }
 void *software_perf_event_data::ensure_mmap_buffer(size_t buffer_size)
 {
 	if (buffer_size > mmap_buffer.size()) {
 		spdlog::debug("Expanding mmap buffer size to {}", buffer_size);
 		mmap_buffer.resize(buffer_size);
+		// Update data size in the mmap header
+		get_header_ref().data_size = buffer_size - pagesize;
 	}
 	return mmap_buffer.data();
 }
-
+size_t software_perf_event_data::mmap_size() const
+{
+	return mmap_buffer.size() - pagesize;
+}
 std::optional<software_perf_event_weak_ptr>
 bpf_perf_event_handler::try_get_software_perf_data_weak_ptr() const
 {

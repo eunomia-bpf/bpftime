@@ -269,12 +269,11 @@ void *syscall_context::handle_mmap64(void *addr, size_t length, int prot,
 			"Entering mocked mmap64: software perf event handler");
 		return bpftime_get_software_perf_event_raw_buffer(fd, length);
 	}
-
-	auto ptr = orig_mmap64_fn(addr, length, prot | PROT_WRITE,
-				  flags | MAP_ANONYMOUS, -1, 0);
 	spdlog::debug(
 		"Calling original mmap64: addr={}, length={}, prot={}, flags={}, fd={}, offset={}",
 		addr, length, prot, flags, fd, offset);
+	auto ptr = orig_mmap64_fn(addr, length, prot | PROT_WRITE,
+				  flags | MAP_ANONYMOUS, -1, 0);
 	return orig_mmap64_fn(addr, length, prot, flags, fd, offset);
 }
 

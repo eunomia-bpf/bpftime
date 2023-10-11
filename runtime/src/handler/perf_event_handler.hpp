@@ -8,6 +8,7 @@
 #include <boost/interprocess/allocators/allocator.hpp>
 #include <boost/interprocess/smart_ptr/shared_ptr.hpp>
 #include <boost/interprocess/smart_ptr/weak_ptr.hpp>
+#include "linux/perf_event.h"
 namespace bpftime
 {
 using char_allocator = boost::interprocess::allocator<
@@ -27,11 +28,15 @@ struct software_perf_event_data {
 	int64_t config;
 	// Field `sample_type` of perf_event_attr
 	int32_t sample_type;
+	int pagesize;
 	bytes_vec mmap_buffer;
 	software_perf_event_data(
 		int cpu, int64_t config, int32_t sample_type,
 		boost::interprocess::managed_shared_memory &memory);
 	void *ensure_mmap_buffer(size_t buffer_size);
+	perf_event_mmap_page &get_header_ref();
+	int output_data(const void *buf, size_t size);
+	size_t mmap_size() const;
 };
 
 using software_perf_event_shared_ptr = boost::interprocess::managed_shared_ptr<
