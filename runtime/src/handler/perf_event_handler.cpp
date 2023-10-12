@@ -96,37 +96,49 @@ int software_perf_event_data::output_data(const void *buf, size_t size)
 	auto &header = get_header_ref();
 	perf_sample_raw head;
 	head.header.type = PERF_RECORD_SAMPLE;
-	head.header.size = sizeof(head) + size + sizeof(head.size);
+	head.header.size = sizeof(head) + size;
 	head.header.misc = 0;
 	head.size = size;
-	uint64_t data_tail = smp_load_acquire_u64(&header.data_tail);
-	auto available_size = (data_tail - header.data_size + mmap_size()) &
-			      (mmap_size() - 1);
+	int64_t data_head = smp_load_acquire_u64(&header.data_head);
+	int64_t data_tail = header.data_tail;
+	uint8_t *base_addr = (uint8_t *)mmap_buffer.data() + pagesize;
+	int64_t available_size = mmap_size() - (data_head - data_tail);
+	spdlog::debug("Data tail={}", data_tail);
+	if (available_size == 0) {
+		spdlog::debug("Upgraded available size to {}", mmap_size());
+		available_size = mmap_size();
+	}
 	// If available_size is less or equal than head.header.size, just drop
 	// the data. In this way, we'll never make data_head equals to
 	// data_tail, at situation other than an empty buffer
 	if (available_size <= head.header.size) {
-		spdlog::warn("Dropping data with size {}", size);
+		spdlog::warn(
+			"Dropping data with size {}, available_size {}, required size {}",
+			size, available_size, head.header.size);
 		return 0;
 	}
-	auto copy_size = head.header.size;
-	if (copy_buffer.size() < copy_size)
+	auto &copy_size = head.header.size;
+	if (copy_buffer.size() != copy_size)
 		copy_buffer.resize(copy_size);
+
 	memcpy(copy_buffer.data(), &head, sizeof(head));
 	memcpy((uint8_t *)(copy_buffer.data()) + sizeof(head), buf, size);
-	if (copy_size < mmap_size() - data_tail) {
-		memcpy((uint8_t *)mmap_buffer.data() + data_tail,
-		       copy_buffer.data(), copy_size);
+	uint8_t *copy_start_1 = base_addr + (data_head & (mmap_size() - 1));
+	if (copy_size + copy_start_1 <= base_addr + mmap_size()) {
+		memcpy(copy_start_1, copy_buffer.data(), copy_size);
 	} else {
-		size_t len_first = mmap_size() - header.data_tail;
+		size_t len_first = base_addr + mmap_size() - copy_start_1;
 		size_t len_second = copy_size - len_first;
-		memcpy((uint8_t *)mmap_buffer.data() + header.data_tail,
-		       copy_buffer.data(), len_first);
-		memcpy(mmap_buffer.data(), copy_buffer.data() + len_first,
-		       len_second);
+		memcpy(copy_start_1, copy_buffer.data(), len_first);
+		memcpy(base_addr, copy_buffer.data() + len_first, len_second);
 	}
-	uint64_t new_tail = (data_tail + copy_size) & (mmap_size() - 1);
-	smp_store_release_u64(&header.data_tail, new_tail);
+	uint64_t new_head = (data_head + copy_size);
+	smp_store_release_u64(&header.data_head, new_head);
+	spdlog::debug(
+		"Data of size {}, total size {} outputed at head {}; new_head={} addr={:x}; available_size={}",
+		size, copy_size, data_head, new_head,
+		(uintptr_t)(base_addr + data_head), available_size);
+
 	return 0;
 }
 perf_event_mmap_page &software_perf_event_data::get_header_ref()

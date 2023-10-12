@@ -230,8 +230,11 @@ int bpf_attach_ctx::init_attach_ctx_from_handlers(
 				std::get<bpf_perf_event_handler>(handler);
 			void *function = nullptr;
 			if (event_handler.type !=
-			    bpf_perf_event_handler::bpf_event_type::
-				    PERF_TYPE_TRACEPOINT) {
+				    bpf_perf_event_handler::bpf_event_type::
+					    PERF_TYPE_TRACEPOINT &&
+			    event_handler.type !=
+				    bpf_perf_event_handler::bpf_event_type::
+					    PERF_TYPE_SOFTWARE) {
 				function = resolve_function_addr(*this,
 								 event_handler);
 				if (!function) {
@@ -272,6 +275,12 @@ int bpf_attach_ctx::init_attach_ctx_from_handlers(
 					manager);
 				assert(fd >= 0);
 				break;
+			}
+			case bpf_perf_event_handler::bpf_event_type::
+				PERF_TYPE_SOFTWARE: {
+				spdlog::info(
+					"Attaching software perf event, nothing need to do");
+				fd = i;
 			}
 			default:
 				break;
@@ -510,8 +519,7 @@ int bpf_attach_ctx::create_tracepoint(int tracepoint_id, int perf_fd,
 				return -1;
 			}
 			for (auto p : progs)
-				sys_exit_progs[syscall_id->second].push_back(
-					p);
+				sys_exit_progs[syscall_id->second].push_back(p);
 			spdlog::info(
 				"Registered syscall exit hook for {} with perf fd {}",
 				syscall_name, perf_fd);
