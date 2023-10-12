@@ -77,6 +77,7 @@ int bpftime_add_software_perf_event(int cpu, int32_t sample_type,
 				    int64_t config);
 int bpftime_is_software_perf_event(int fd);
 void *bpftime_get_software_perf_event_raw_buffer(int fd, size_t expected_size);
+int bpftime_perf_event_output(int fd, const void *buf, size_t sz);
 }
 
 #endif // BPFTIME_SHM_CPP_H

@@ -419,14 +419,14 @@ const handler_manager *bpftime_shm::get_manager() const
 	return manager;
 }
 
-bool bpftime_shm::is_perf_event_map_fd(int fd) const
+bool bpftime_shm::is_perf_event_handler_fd(int fd) const
 {
 	auto &handler = get_handler(fd);
 	return std::holds_alternative<bpf_perf_event_handler>(handler);
 }
 bool bpftime_shm::is_software_perf_event_handler_fd(int fd) const
 {
-	if (!is_perf_event_map_fd(fd))
+	if (!is_perf_event_handler_fd(fd))
 		return false;
 	const auto &hd = std::get<bpf_perf_event_handler>(get_handler(fd));
 	return hd.type ==

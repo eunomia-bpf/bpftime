@@ -1,5 +1,6 @@
 #include "handler/epoll_handler.hpp"
 #include "handler/map_handler.hpp"
+#include "handler/perf_event_handler.hpp"
 #include "spdlog/spdlog.h"
 #include <cerrno>
 #include <errno.h>
@@ -237,6 +238,26 @@ void *bpftime_get_software_perf_event_raw_buffer(int fd, size_t expected_size)
 	return shm_holder.global_shared_memory
 		.get_software_perf_event_raw_buffer(fd, expected_size)
 		.value_or(nullptr);
+}
+int bpftime_perf_event_output(int fd, const void *buf, size_t sz)
+{
+	auto &shm = shm_holder.global_shared_memory;
+	if (!shm.is_perf_event_handler_fd(fd)) {
+		spdlog::error("Expected fd {} to be a perf event handler", fd);
+		errno = EINVAL;
+		return -1;
+	}
+	auto &handler = std::get<bpf_perf_event_handler>(shm.get_handler(fd));
+	if (handler.sw_perf.has_value()) {
+		spdlog::debug("Perf out value to fd {}, sz {}", fd, sz);
+		return handler.sw_perf.value()->output_data(buf, sz);
+	} else {
+		spdlog::error(
+			"Expected perf event handler {} to be a software perf event handler",
+			fd);
+		errno = ENOTSUP;
+		return -1;
+	}
 }
 extern "C" uint64_t map_ptr_by_fd(uint32_t fd)
 {

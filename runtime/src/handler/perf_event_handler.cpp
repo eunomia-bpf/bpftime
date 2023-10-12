@@ -6,7 +6,6 @@
 #include <boost/interprocess/allocators/allocator.hpp>
 #include <unistd.h>
 
-
 namespace bpftime
 {
 // attach to replace or filter self define types
@@ -58,6 +57,9 @@ bpf_perf_event_handler::bpf_perf_event_handler(
 }
 int software_perf_event_data::output_data(const void *buf, size_t size)
 {
+	spdlog::debug("Handling perf event output data with size {}", size);
+	auto& header = get_header_ref();
+	
 }
 perf_event_mmap_page &software_perf_event_data::get_header_ref()
 {

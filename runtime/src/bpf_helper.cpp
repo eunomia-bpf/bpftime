@@ -1,5 +1,7 @@
 #include "bpftime_helper_group.hpp"
 #include <cassert>
+#include <cerrno>
+#include <sched.h>
 #ifdef ENABLE_BPFTIME_VERIFIER
 #include "bpftime-verifier.hpp"
 #endif
@@ -188,8 +190,31 @@ uint64_t bpf_ringbuf_discard(uint64_t data, uint64_t flags, uint64_t, uint64_t,
 uint64_t bpf_perf_event_output(uint64_t ctx, uint64_t map, uint64_t flags,
 			       uint64_t data, uint64_t size)
 {
-	assert("Not implemented yet: perf event output");
-	return 0;
+	int32_t current_cpu = sched_getcpu();
+	assert(current_cpu != -1);
+	cpu_set_t mask, orig;
+	CPU_ZERO(&mask);
+	CPU_SET(current_cpu, &mask);
+	sched_getaffinity(0, sizeof(orig), &orig);
+	// Bind to the current cpu
+	if (sched_setaffinity(0, sizeof(mask), &mask) < 0) {
+		spdlog::error("Failed to set cpu affinity: {}", errno);
+		errno = EINVAL;
+		return (uint64_t)(-1);
+	}
+	int fd = map >> 32;
+	const int32_t *val_ptr =
+		(int32_t *)(uintptr_t)bpftime_map_lookup_elem(fd, &current_cpu);
+	if (val_ptr == nullptr) {
+		spdlog::error("Invalid map fd for perf event output: {}", fd);
+		errno = EINVAL;
+		return (uint64_t)(-1);
+	}
+	int32_t perf_handler_fd = *val_ptr;
+	int ret = bpftime_perf_event_output(
+		perf_handler_fd, (const void *)(uintptr_t)data, (size_t)size);
+	sched_setaffinity(0, sizeof(orig), &orig);
+	return (uint64_t)ret;
 }
 } // extern "C"
 
