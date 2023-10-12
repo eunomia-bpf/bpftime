@@ -1,6 +1,7 @@
 #include "handler/epoll_handler.hpp"
 #include "handler/perf_event_handler.hpp"
 #include <bpftime_shm_internal.hpp>
+#include <sys/epoll.h>
 #include <variant>
 namespace bpftime
 {
@@ -138,7 +139,8 @@ int bpftime_shm::attach_enable(int fd) const
 	return 0;
 }
 
-int bpftime_shm::add_software_perf_event_to_epoll(int swpe_fd, int epoll_fd)
+int bpftime_shm::add_software_perf_event_to_epoll(int swpe_fd, int epoll_fd,
+						  epoll_data_t extra_data)
 {
 	if (!is_epoll_fd(epoll_fd)) {
 		spdlog::error("Fd {} is expected to be an epoll fd", epoll_fd);
@@ -166,7 +168,7 @@ int bpftime_shm::add_software_perf_event_to_epoll(int swpe_fd, int epoll_fd)
 	}
 	if (auto ptr = perf_handler.try_get_software_perf_data_weak_ptr();
 	    ptr.has_value()) {
-		epoll_inst.holding_software_perf_events.push_back(ptr.value());
+		epoll_inst.files.emplace_back(ptr.value(), extra_data);
 		return 0;
 	} else {
 		spdlog::error(
@@ -176,7 +178,8 @@ int bpftime_shm::add_software_perf_event_to_epoll(int swpe_fd, int epoll_fd)
 		return -1;
 	}
 }
-int bpftime_shm::add_ringbuf_to_epoll(int ringbuf_fd, int epoll_fd)
+int bpftime_shm::add_ringbuf_to_epoll(int ringbuf_fd, int epoll_fd,
+				      epoll_data_t extra_data)
 {
 	if (!is_epoll_fd(epoll_fd)) {
 		spdlog::error("Fd {} is expected to be an epoll fd", epoll_fd);
@@ -196,8 +199,8 @@ int bpftime_shm::add_ringbuf_to_epoll(int ringbuf_fd, int epoll_fd)
 
 	auto ringbuf_map_impl = map_inst.try_get_ringbuf_map_impl();
 	if (ringbuf_map_impl.has_value(); auto val = ringbuf_map_impl.value()) {
-		epoll_inst.holding_ringbufs.push_back(
-			val->create_impl_weak_ptr());
+		epoll_inst.files.emplace_back(val->create_impl_weak_ptr(),
+					      extra_data);
 		spdlog::debug("Ringbuf {} added to epoll {}", ringbuf_fd,
 			      epoll_fd);
 		return 0;
@@ -374,7 +377,7 @@ bpftime_shm::bpftime_shm()
 		// create the shm
 		segment = boost::interprocess::managed_shared_memory(
 			boost::interprocess::create_only,
-            // Allocate 20M bytes of memory by default
+			// Allocate 20M bytes of memory by default
 			bpftime::get_global_shm_name(), 20 << 20);
 		manager = segment.construct<bpftime::handler_manager>(
 			bpftime::DEFAULT_GLOBAL_HANDLER_NAME)(segment);

@@ -89,8 +89,10 @@ class bpftime_shm {
 				    int64_t config);
 	int attach_perf_to_bpf(int perf_fd, int bpf_fd);
 	int attach_enable(int fd) const;
-	int add_ringbuf_to_epoll(int ringbuf_fd, int epoll_fd);
-	int add_software_perf_event_to_epoll(int swpe_fd, int epoll_fd);
+	int add_ringbuf_to_epoll(int ringbuf_fd, int epoll_fd,
+				 epoll_data_t extra_data);
+	int add_software_perf_event_to_epoll(int swpe_fd, int epoll_fd,
+					     epoll_data_t extra_data);
 
 	int epoll_create();
 	// remove a fake fd from the manager.

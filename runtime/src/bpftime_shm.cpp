@@ -5,8 +5,10 @@
 #include <cerrno>
 #include <errno.h>
 #include <bpftime_shm_internal.hpp>
+#include <sys/epoll.h>
 #include <thread>
 #include <chrono>
+#include <variant>
 
 using namespace bpftime;
 
@@ -75,10 +77,11 @@ int bpftime_attach_perf_to_bpf(int perf_fd, int bpf_fd)
 	return shm_holder.global_shared_memory.attach_perf_to_bpf(perf_fd,
 								  bpf_fd);
 }
-int bpftime_add_ringbuf_fd_to_epoll(int ringbuf_fd, int epoll_fd)
+int bpftime_add_ringbuf_fd_to_epoll(int ringbuf_fd, int epoll_fd,
+				    epoll_data_t extra_data)
 {
-	return shm_holder.global_shared_memory.add_ringbuf_to_epoll(ringbuf_fd,
-								    epoll_fd);
+	return shm_holder.global_shared_memory.add_ringbuf_to_epoll(
+		ringbuf_fd, epoll_fd, extra_data);
 }
 int bpftime_epoll_create()
 {
@@ -182,7 +185,8 @@ int bpftime_is_epoll_handler(int fd)
 {
 	return shm_holder.global_shared_memory.is_epoll_fd(fd);
 }
-int bpftime_ringbuf_poll(int fd, int *out_rb_idx, int max_evt, int timeout)
+int bpftime_epoll_wait(int fd, struct epoll_event *out_evts, int max_evt,
+		       int timeout)
 {
 	auto &shm = shm_holder.global_shared_memory;
 	if (!shm.is_epoll_fd(fd)) {
@@ -202,14 +206,41 @@ int bpftime_ringbuf_poll(int fd, int *out_rb_idx, int max_evt, int timeout)
 		if (elasped.count() > timeout) {
 			break;
 		}
-		int idx = 0;
-		for (auto p : epoll_inst.holding_ringbufs) {
-			if (auto ptr = p.lock(); ptr) {
-				if (ptr->has_data() && next_id < max_evt) {
-					out_rb_idx[next_id++] = idx;
+		for (const auto &p : epoll_inst.files) {
+			if (std::holds_alternative<software_perf_event_weak_ptr>(
+				    p.file)) {
+				if (auto ptr =
+					    std::get<software_perf_event_weak_ptr>(
+						    p.file)
+						    .lock();
+				    ptr) {
+					if (ptr->has_data() &&
+					    next_id < max_evt) {
+						out_evts[next_id++] =
+							epoll_event{
+								.events =
+									EPOLLIN,
+								.data = p.data
+							};
+					}
+				}
+			} else if (std::holds_alternative<ringbuf_weak_ptr>(
+					   p.file)) {
+				if (auto ptr =
+					    std::get<ringbuf_weak_ptr>(p.file)
+						    .lock();
+				    ptr) {
+					if (ptr->has_data() &&
+					    next_id < max_evt) {
+						out_evts[next_id++] =
+							epoll_event{
+								.events =
+									EPOLLIN,
+								.data = p.data
+							};
+					}
 				}
 			}
-			idx++;
 		}
 		std::this_thread::sleep_for(milliseconds(1));
 	}
@@ -222,10 +253,11 @@ int bpftime_add_software_perf_event(int cpu, int32_t sample_type,
 	return shm.add_software_perf_event(cpu, sample_type, config);
 }
 
-int bpftime_add_software_perf_event_fd_to_epoll(int swpe_fd, int epoll_fd)
+int bpftime_add_software_perf_event_fd_to_epoll(int swpe_fd, int epoll_fd,
+						epoll_data_t extra_data)
 {
 	return shm_holder.global_shared_memory.add_software_perf_event_to_epoll(
-		swpe_fd, epoll_fd);
+		swpe_fd, epoll_fd, extra_data);
 }
 int bpftime_is_software_perf_event(int fd)
 {

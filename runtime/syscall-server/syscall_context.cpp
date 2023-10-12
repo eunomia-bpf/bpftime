@@ -314,13 +314,14 @@ int syscall_context::handle_epoll_ctl(int epfd, int op, int fd,
 {
 	if (op == EPOLL_CTL_ADD) {
 		if (bpftime_is_ringbuf_map(fd)) {
-			int err = bpftime_add_ringbuf_fd_to_epoll(fd, epfd);
+			int err = bpftime_add_ringbuf_fd_to_epoll(fd, epfd,
+								  evt->data);
 			if (err == 0) {
 				return err;
 			}
 		} else if (bpftime_is_software_perf_event(fd)) {
 			int err = bpftime_add_software_perf_event_fd_to_epoll(
-				fd, epfd);
+				fd, epfd, evt->data);
 			if (err == 0)
 				return err;
 
@@ -338,18 +339,8 @@ int syscall_context::handle_epoll_wait(int epfd, epoll_event *evt,
 				       int maxevents, int timeout)
 {
 	if (bpftime_is_epoll_handler(epfd)) {
-		std::vector<int> fd_buf(maxevents);
-		int ret = bpftime_ringbuf_poll(epfd, &fd_buf[0], maxevents,
-					       timeout);
-		if (ret >= 0) {
-			for (size_t i = 0; i < (size_t)ret; i++) {
-				evt[i] = epoll_event{
-					.events = EPOLLIN,
-					.data = { .fd = fd_buf[i] }
-				};
-			}
-			return ret;
-		}
+		int ret = bpftime_epoll_wait(epfd, evt, maxevents, timeout);
+		return ret;
 	}
 	return orig_epoll_wait_fn(epfd, evt, maxevents, timeout);
 }
