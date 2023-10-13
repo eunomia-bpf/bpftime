@@ -265,6 +265,9 @@ int bpf_attach_ctx::init_attach_ctx_from_handlers(
 			}
 			case bpf_perf_event_handler::bpf_event_type::
 				BPF_TYPE_URETPROBE: {
+				spdlog::debug(
+					"Creating uretprobe for perf event fd {}",
+					i);
 				fd = create_uprobe(function, i, true);
 				break;
 			}
@@ -344,6 +347,7 @@ void *bpf_attach_ctx::module_find_export_by_name(const char *module_name,
 
 void *bpf_attach_ctx::module_get_base_addr(const char *module_name)
 {
+	gum_module_load(module_name, nullptr);
 	return (void *)gum_module_find_base_address(module_name);
 }
 

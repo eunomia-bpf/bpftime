@@ -30,6 +30,8 @@ void *hash_map_impl::elem_lookup(const void *key)
 long hash_map_impl::elem_update(const void *key, const void *value,
 				uint64_t flags)
 {
+	bytes_vec key_vec = this->key_vec;
+	bytes_vec value_vec = this->value_vec;
 	key_vec.assign((uint8_t *)key, (uint8_t *)key + _key_size);
 	value_vec.assign((uint8_t *)value, (uint8_t *)value + _value_size);
 	if (auto itr = map_impl.find(key_vec); itr != map_impl.end()) {
@@ -42,6 +44,7 @@ long hash_map_impl::elem_update(const void *key, const void *value,
 
 long hash_map_impl::elem_delete(const void *key)
 {
+	bytes_vec key_vec = this->key_vec;
 	key_vec.assign((uint8_t *)key, (uint8_t *)key + _key_size);
 	map_impl.erase(key_vec);
 	return 0;

@@ -51,13 +51,13 @@ long array_map_impl::elem_delete(const void *key)
 
 int array_map_impl::bpf_map_get_next_key(const void *key, void *next_key)
 {
-	if (_max_entries == 0 || *(uint32_t *)key == _max_entries - 1) {
-		errno = ENOENT;
-		return -1;
-	}
 	if (key == nullptr || *(uint32_t *)key >= _max_entries - 1) {
 		*(uint32_t *)next_key = 0;
 		return 0;
+	}
+	if (_max_entries == 0 || *(uint32_t *)key == _max_entries - 1) {
+		errno = ENOENT;
+		return -1;
 	}
 	auto key_val = *(uint32_t *)key;
 	*(uint32_t *)next_key = key_val + 1;

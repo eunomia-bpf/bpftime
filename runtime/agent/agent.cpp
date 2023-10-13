@@ -1,4 +1,5 @@
 #include "bpf_attach_ctx.hpp"
+#include "bpftime_shm_internal.hpp"
 #include "spdlog/common.h"
 #include <cassert>
 #include <ctime>
@@ -47,6 +48,7 @@ extern "C" int bpftime_hooked_main(int argc, char **argv, char **envp)
 {
 	int stay_resident = 0;
 	spdlog::cfg::load_env_levels();
+	initialize_global_shm();
 	ctx_holder.init();
 	bpftime_agent_main("", &stay_resident);
 	return orig_main_func(argc, argv, envp);
@@ -105,6 +107,7 @@ __c_abi_setup_syscall_trace_callback(syscall_hooker_func_t *hooker)
 {
 	orig_hooker = *hooker;
 	*hooker = &syscall_callback;
+	initialize_global_shm();
 	ctx_holder.init();
 	ctx_holder.ctx.set_orig_syscall_func(orig_hooker);
 	gboolean val;
