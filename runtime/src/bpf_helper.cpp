@@ -537,6 +537,12 @@ const bpftime_helper_group kernel_helper_group = {
 		    .name = "bpf_probe_read_kernel",
 		    .fn = (void *)bpftime_probe_read,
 	    } },
+	  { BPF_FUNC_probe_read_user,
+	    bpftime_helper_info{
+		    .index = BPF_FUNC_probe_read_user,
+		    .name = "bpf_probe_read_user",
+		    .fn = (void *)bpftime_probe_read,
+	    } },
 	  { BPF_FUNC_ktime_get_ns,
 	    bpftime_helper_info{
 		    .index = BPF_FUNC_ktime_get_ns,

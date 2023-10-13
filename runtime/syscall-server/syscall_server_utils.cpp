@@ -1,3 +1,4 @@
+#include "bpftime_shm_internal.hpp"
 #include <ranges>
 #include <spdlog/cfg/env.h>
 #include <spdlog/spdlog.h>
@@ -14,6 +15,7 @@ void start_up()
 {
 	if (already_setup)
 		return;
+	initialize_global_shm();
 	spdlog::cfg::load_env_levels();
 	spdlog::set_pattern("[%Y-%m-%d %H:%M:%S][%^%l%$][%t] %v");
 	auto &agent_config = bpftime_get_agent_config();

@@ -206,7 +206,7 @@ int bpf_attach_ctx::init_attach_ctx_from_handlers(
 			spdlog::info("bpf_map_handler found at {}", i);
 		} else if (std::holds_alternative<bpf_perf_event_handler>(
 				   handler)) {
-			spdlog::info("Will handle bpf_perf_events later...");
+			spdlog::debug("Will handle bpf_perf_events later...");
 
 		} else if (std::holds_alternative<epoll_handler>(handler)) {
 			spdlog::info(
@@ -265,6 +265,9 @@ int bpf_attach_ctx::init_attach_ctx_from_handlers(
 			}
 			case bpf_perf_event_handler::bpf_event_type::
 				BPF_TYPE_URETPROBE: {
+				spdlog::debug(
+					"Creating uretprobe for perf event fd {}",
+					i);
 				fd = create_uprobe(function, i, true);
 				break;
 			}
@@ -329,7 +332,7 @@ void *bpf_attach_ctx::find_function_by_name(const char *name)
 		return addr;
 	}
 	if (addr == NULL) {
-		spdlog::error("Unable to finc function {} {}", name,
+		spdlog::error("Unable to find function {} {}", name,
 			      __FUNCTION__);
 	}
 	return NULL;
@@ -344,6 +347,7 @@ void *bpf_attach_ctx::module_find_export_by_name(const char *module_name,
 
 void *bpf_attach_ctx::module_get_base_addr(const char *module_name)
 {
+	gum_module_load(module_name, nullptr);
 	return (void *)gum_module_find_base_address(module_name);
 }
 
@@ -630,6 +634,7 @@ int bpf_attach_ctx::replace_func(void *new_function, void *target_function,
 // create a probe context
 bpf_attach_ctx::bpf_attach_ctx(void)
 {
+	spdlog::debug("Initialzing frida gum");
 	gum_init_embedded();
 
 	interceptor = gum_interceptor_obtain();

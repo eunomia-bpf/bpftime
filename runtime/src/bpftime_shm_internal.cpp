@@ -6,6 +6,13 @@
 namespace bpftime
 {
 
+void initialize_global_shm()
+{
+	// Use placement new, which will not allocate memory, but just
+	// call the constructor
+	new (&shm_holder.global_shared_memory) bpftime_shm;
+}
+
 bpftime_shm_holder shm_holder;
 
 static __attribute__((destructor(101))) void __destroy_bpftime_shm_holder()

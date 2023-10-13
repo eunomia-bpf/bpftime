@@ -111,14 +111,13 @@ union bpftime_shm_holder {
 	bpftime_shm global_shared_memory;
 	bpftime_shm_holder()
 	{
-		// Use placement new, which will not allocate memory, but just
-		// call the constructor
-		new (&global_shared_memory) bpftime_shm;
+		
 	}
 	~bpftime_shm_holder()
 	{
 	}
 };
 extern bpftime_shm_holder shm_holder;
+void initialize_global_shm();
 } // namespace bpftime
 #endif
