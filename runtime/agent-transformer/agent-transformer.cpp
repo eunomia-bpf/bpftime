@@ -10,16 +10,18 @@
 #include <frida-gum.h>
 
 using main_func_t = int (*)(int, char **, char **);
+using shm_destroy_func_t = void (*)(void);
 
 static main_func_t orig_main_func = nullptr;
-
+static shm_destroy_func_t shm_destroy_func = nullptr;
 extern "C" void bpftime_agent_main(const gchar *data, gboolean *stay_resident);
 
 extern "C" int bpftime_hooked_main(int argc, char **argv, char **envp)
 {
 	int stay_resident = 0;
 	bpftime_agent_main("", &stay_resident);
-	return orig_main_func(argc, argv, envp);
+	int ret = orig_main_func(argc, argv, envp);
+	return ret;
 }
 
 extern "C" int __libc_start_main(int (*main)(int, char **, char **), int argc,
@@ -62,8 +64,11 @@ extern "C" void bpftime_agent_main(const gchar *data, gboolean *stay_resident)
 		spdlog::error("Failed to open agent: {}", dlerror());
 		exit(1);
 	}
+	shm_destroy_func = (shm_destroy_func_t)dlsym(
+		next_handle, "bpftime_destroy_global_shm");
 	auto entry_func = (void (*)(syscall_hooker_func_t *))dlsym(
 		next_handle, "__c_abi_setup_syscall_trace_callback");
+
 	assert(entry_func &&
 	       "Malformed agent so, expected symbol __c_abi_setup_syscall_trace_callback");
 	syscall_hooker_func_t orig_syscall_hooker_func =

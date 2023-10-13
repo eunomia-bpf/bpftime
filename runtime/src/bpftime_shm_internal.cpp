@@ -1,24 +1,35 @@
 #include "handler/epoll_handler.hpp"
 #include "handler/perf_event_handler.hpp"
+#include "spdlog/spdlog.h"
 #include <bpftime_shm_internal.hpp>
+#include <cstdio>
 #include <sys/epoll.h>
 #include <variant>
-namespace bpftime
-{
 
-void initialize_global_shm()
+void bpftime_initialize_global_shm()
 {
+	using namespace bpftime;
+	spdlog::info("Global shm constructed");
 	// Use placement new, which will not allocate memory, but just
 	// call the constructor
 	new (&shm_holder.global_shared_memory) bpftime_shm;
 }
+void bpftime_destroy_global_shm()
+{
+	using namespace bpftime;
+	// spdlog::info("Global shm destructed");
+	shm_holder.global_shared_memory.~bpftime_shm();
+	// Why not spdlog? because global variables that spdlog used were already destroyed..
+	puts("Global shm destructed");
+}
+static __attribute__((destructor(65535))) void __destruct_shm()
+{
+	bpftime_destroy_global_shm();
+}
+namespace bpftime
+{
 
 bpftime_shm_holder shm_holder;
-
-static __attribute__((destructor(101))) void __destroy_bpftime_shm_holder()
-{
-	shm_holder.global_shared_memory.~bpftime_shm();
-}
 
 // Check whether a certain pid was already equipped with syscall tracer
 // Using a set stored in the shared memory
@@ -363,6 +374,7 @@ bpftime_shm::bpftime_shm()
 	spdlog::info("global_shm_open_type {} for {}",
 		     (int)global_shm_open_type, bpftime::get_global_shm_name());
 	if (global_shm_open_type == shm_open_type::SHM_CLIENT) {
+		spdlog::debug("start: bpftime_shm for client setup");
 		// open the shm
 		segment = boost::interprocess::managed_shared_memory(
 			boost::interprocess::open_only,
@@ -378,23 +390,37 @@ bpftime_shm::bpftime_shm()
 			segment.find<struct agent_config>(
 				       bpftime::DEFAULT_AGENT_CONFIG_NAME)
 				.first;
+		spdlog::debug("done: bpftime_shm for client setup");
 	} else if (global_shm_open_type == shm_open_type::SHM_SERVER) {
+		spdlog::debug("start: bpftime_shm for server setup");
 		boost::interprocess::shared_memory_object::remove(
 			bpftime::get_global_shm_name());
 		// create the shm
+		spdlog::debug(
+			"done: bpftime_shm for server setup: remove installed segment");
 		segment = boost::interprocess::managed_shared_memory(
 			boost::interprocess::create_only,
 			// Allocate 20M bytes of memory by default
 			bpftime::get_global_shm_name(), 20 << 20);
+		spdlog::debug("done: bpftime_shm for server setup: segment");
+
 		manager = segment.construct<bpftime::handler_manager>(
 			bpftime::DEFAULT_GLOBAL_HANDLER_NAME)(segment);
+		spdlog::debug("done: bpftime_shm for server setup: manager");
+
 		syscall_installed_pids = segment.construct<syscall_pid_set>(
 			bpftime::DEFAULT_SYSCALL_PID_SET_NAME)(
 			std::less<int>(),
 			syscall_pid_set_allocator(
 				segment.get_segment_manager()));
+		spdlog::debug(
+			"done: bpftime_shm for server setup: syscall_pid_set");
+
 		agent_config = segment.construct<struct agent_config>(
 			bpftime::DEFAULT_AGENT_CONFIG_NAME)();
+		spdlog::debug(
+			"done: bpftime_shm for server setup: agent_config");
+		spdlog::debug("done: bpftime_shm for server setup.");
 	} else if (global_shm_open_type == shm_open_type::SHM_NO_CREATE) {
 		// not create any shm
 		return;

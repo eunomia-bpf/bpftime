@@ -1,6 +1,7 @@
 #include "bpftime.hpp"
 #include "frida-gum.h"
 #include "handler/epoll_handler.hpp"
+#include <asm/unistd_64.h>
 #include <filesystem>
 #include <syscall_table.hpp>
 #include <bpf_attach_ctx.hpp>
@@ -140,7 +141,11 @@ int64_t bpf_attach_ctx::run_syscall_hooker(int64_t sys_nr, int64_t arg1,
 					   int64_t arg4, int64_t arg5,
 					   int64_t arg6)
 {
-	if (!sys_enter_progs[sys_nr].empty()) {
+	if (sys_nr == __NR_exit_group || sys_nr == __NR_exit)
+		return orig_syscall(sys_nr, arg1, arg2, arg3, arg4, arg5, arg6);
+	// spdlog::debug("Syscall callback");
+	if (!sys_enter_progs[sys_nr].empty() ||
+	    !global_sys_enter_progs.empty()) {
 		trace_event_raw_sys_enter ctx;
 		memset(&ctx, 0, sizeof(ctx));
 		ctx.id = sys_nr;
@@ -150,29 +155,40 @@ int64_t bpf_attach_ctx::run_syscall_hooker(int64_t sys_nr, int64_t arg1,
 		ctx.args[3] = arg4;
 		ctx.args[4] = arg5;
 		ctx.args[5] = arg6;
-		for (const auto &item : sys_enter_progs[sys_nr]) {
-			// Avoid polluting other ebpf programs..
+		const auto exec = [&](const bpftime_prog *prog) {
+			// spdlog::debug("Call {}",prog->prog_name());
 			auto lctx = ctx;
+			// Avoid polluting other ebpf programs..
 			uint64_t ret;
-			int err = item->bpftime_prog_exec(&lctx, sizeof(lctx),
+			int err = prog->bpftime_prog_exec(&lctx, sizeof(lctx),
 							  &ret);
 			assert(err >= 0);
+		};
+		for (const auto &item : sys_enter_progs[sys_nr]) {
+			exec(item);
+		}
+		for (auto item : global_sys_enter_progs) {
+			exec(item);
 		}
 	}
 	int64_t ret = orig_syscall(sys_nr, arg1, arg2, arg3, arg4, arg5, arg6);
-	if (!sys_exit_progs[sys_nr].empty()) {
+	if (!sys_exit_progs[sys_nr].empty() || !global_sys_exit_progs.empty()) {
 		trace_event_raw_sys_exit ctx;
 		memset(&ctx, 0, sizeof(ctx));
 		ctx.id = sys_nr;
 		ctx.ret = ret;
-		for (const auto &item : sys_exit_progs[sys_nr]) {
+		const auto exec = [&](const bpftime_prog *prog) {
 			// Avoid polluting other ebpf programs..
 			auto lctx = ctx;
 			uint64_t ret;
-			int err = item->bpftime_prog_exec(&lctx, sizeof(lctx),
+			int err = prog->bpftime_prog_exec(&lctx, sizeof(lctx),
 							  &ret);
 			assert(err >= 0);
-		}
+		};
+		for (const auto &item : sys_exit_progs[sys_nr])
+			exec(item);
+		for (auto item : global_sys_exit_progs)
+			exec(item);
 	}
 	return ret;
 }
@@ -527,6 +543,20 @@ int bpf_attach_ctx::create_tracepoint(int tracepoint_id, int perf_fd,
 			spdlog::info(
 				"Registered syscall exit hook for {} with perf fd {}",
 				syscall_name, perf_fd);
+			return perf_fd;
+		} else if (name == GLOBAL_SYS_ENTER_NAME) {
+			for (auto p : progs)
+				global_sys_enter_progs.push_back(p);
+			spdlog::info(
+				"Registered global sys enter hook with perf fd {}",
+				perf_fd);
+			return perf_fd;
+		} else if (name == GLOBAL_SYS_EXIT_NAME) {
+			for (auto p : progs)
+				global_sys_exit_progs.push_back(p);
+			spdlog::info(
+				"Registered global sys exit hook with perf fd {}",
+				perf_fd);
 			return perf_fd;
 		} else {
 			spdlog::error("Unexpected syscall tracepoint name {}",

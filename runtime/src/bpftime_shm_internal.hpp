@@ -118,6 +118,8 @@ union bpftime_shm_holder {
 	}
 };
 extern bpftime_shm_holder shm_holder;
-void initialize_global_shm();
+
 } // namespace bpftime
+extern "C" void bpftime_initialize_global_shm();
+extern "C" void bpftime_destroy_global_shm();
 #endif

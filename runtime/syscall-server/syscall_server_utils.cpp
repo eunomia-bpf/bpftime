@@ -9,15 +9,18 @@
 #include <sstream>
 #endif
 static bool already_setup = false;
+static bool disable_mock = true;
 using namespace bpftime;
 
 void start_up()
 {
 	if (already_setup)
 		return;
-	initialize_global_shm();
+	already_setup = true;
+	spdlog::info("Initialize syscall server");
 	spdlog::cfg::load_env_levels();
 	spdlog::set_pattern("[%Y-%m-%d %H:%M:%S][%^%l%$][%t] %v");
+	bpftime_initialize_global_shm();
 	auto &agent_config = bpftime_get_agent_config();
 	if (const char *custom_helpers = getenv("BPFTIME_HELPER_GROUPS");
 	    custom_helpers != nullptr) {
@@ -83,7 +86,6 @@ void start_up()
 	spdlog::info("Enabling {} helpers", helper_ids.size());
 	verifier::set_non_kernel_helpers(non_kernel_helpers);
 #endif
-	already_setup = true;
 }
 
 /*

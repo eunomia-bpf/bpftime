@@ -19,6 +19,10 @@ syscall_tracepoint_table create_syscall_tracepoint_table();
 const syscall_tracepoint_table &get_global_syscall_tracepoint_table();
 // Get the name mapping of syscall name <-> syscall id
 const syscall_id_pair &get_global_syscall_id_table();
+
+constexpr const char *GLOBAL_SYS_ENTER_NAME = "*SYS_ENTER";
+constexpr const char *GLOBAL_SYS_EXIT_NAME = "*SYS_EXIT";
+
 } // namespace bpftime
 
 #endif

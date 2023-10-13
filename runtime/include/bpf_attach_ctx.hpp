@@ -113,6 +113,9 @@ class bpf_attach_ctx {
 
 	std::vector<const bpftime_prog *> sys_enter_progs[512];
 	std::vector<const bpftime_prog *> sys_exit_progs[512];
+	std::vector<const bpftime_prog *> global_sys_enter_progs;
+	std::vector<const bpftime_prog *> global_sys_exit_progs;
+
 	syscall_hooker_func_t orig_syscall = nullptr;
 };
 
