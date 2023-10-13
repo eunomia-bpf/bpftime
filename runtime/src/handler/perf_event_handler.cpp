@@ -8,7 +8,7 @@
 #include <boost/interprocess/managed_shared_memory.hpp>
 #include <boost/interprocess/allocators/allocator.hpp>
 #include <unistd.h>
-
+#include <spdlog/fmt/bin_to_hex.h>
 #define READ_ONCE_U64(x) (*(volatile uint64_t *)&x)
 #define WRITE_ONCE_U64(x, v) (*(volatile uint64_t *)&x) = (v)
 
