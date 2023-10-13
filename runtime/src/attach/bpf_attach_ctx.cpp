@@ -206,7 +206,7 @@ int bpf_attach_ctx::init_attach_ctx_from_handlers(
 			spdlog::info("bpf_map_handler found at {}", i);
 		} else if (std::holds_alternative<bpf_perf_event_handler>(
 				   handler)) {
-			spdlog::info("Will handle bpf_perf_events later...");
+			spdlog::debug("Will handle bpf_perf_events later...");
 
 		} else if (std::holds_alternative<epoll_handler>(handler)) {
 			spdlog::info(
@@ -329,7 +329,7 @@ void *bpf_attach_ctx::find_function_by_name(const char *name)
 		return addr;
 	}
 	if (addr == NULL) {
-		spdlog::error("Unable to finc function {} {}", name,
+		spdlog::error("Unable to find function {} {}", name,
 			      __FUNCTION__);
 	}
 	return NULL;
@@ -630,6 +630,7 @@ int bpf_attach_ctx::replace_func(void *new_function, void *target_function,
 // create a probe context
 bpf_attach_ctx::bpf_attach_ctx(void)
 {
+	spdlog::debug("Initialzing frida gum");
 	gum_init_embedded();
 
 	interceptor = gum_interceptor_obtain();
