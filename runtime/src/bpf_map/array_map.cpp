@@ -1,4 +1,5 @@
 #include <bpf_map/array_map.hpp>
+#include <cerrno>
 namespace bpftime
 {
 
@@ -51,11 +52,14 @@ long array_map_impl::elem_delete(const void *key)
 
 int array_map_impl::bpf_map_get_next_key(const void *key, void *next_key)
 {
-	if (key == nullptr || *(uint32_t *)key >= _max_entries - 1) {
+	// Not found
+	if (key == nullptr || *(uint32_t *)key >= _max_entries) {
 		*(uint32_t *)next_key = 0;
 		return 0;
 	}
-	if (_max_entries == 0 || *(uint32_t *)key == _max_entries - 1) {
+	uint32_t deref_key = *(uint32_t *)key;
+	// Last element
+	if (deref_key == _max_entries - 1) {
 		errno = ENOENT;
 		return -1;
 	}
