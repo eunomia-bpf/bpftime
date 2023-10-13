@@ -2,6 +2,7 @@
 #define _SYSCALL_CONTEXT_HPP
 #include "linux/perf_event.h"
 #include <cstddef>
+#include <cstdlib>
 #include <dlfcn.h>
 #include <sys/types.h>
 #include <spdlog/spdlog.h>
@@ -35,6 +36,7 @@ class syscall_context {
 		orig_mmap64_fn = (mmap64_fn)dlsym(RTLD_NEXT, "mmap");
 		orig_close_fn = (close_fn)dlsym(RTLD_NEXT, "close");
 		orig_munmap_fn = (munmap_fn)dlsym(RTLD_NEXT, "munmap");
+		unsetenv("LD_PRELOAD");
 	}
 
     public:
