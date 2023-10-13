@@ -10,8 +10,6 @@
 #include <cstdlib>
 #include <cstdint>
 #include <cstring>
-#include <map>
-#include <vector>
 #include <inttypes.h>
 #include <dlfcn.h>
 #include "bpftime.hpp"
@@ -22,27 +20,32 @@ using namespace bpftime;
 
 const shm_open_type bpftime::global_shm_open_type = shm_open_type::SHM_CLIENT;
 
-using putchar_func = int (*)(int);
-using puts_func_t = int (*)(const char *);
+using main_func_t = int (*)(int, char **, char **);
 
-static puts_func_t orig_puts_func = nullptr;
-
-// using putchar_func as a flag to indicate whether the agent has been init
-static putchar_func orig_fn = nullptr;
+static main_func_t orig_main_func = nullptr;
 
 extern "C" void bpftime_agent_main(const gchar *data, gboolean *stay_resident);
 
-extern "C" int puts(const char *str)
+
+extern "C" int bpftime_hooked_main(int argc, char **argv, char **envp)
 {
-	if (!orig_puts_func) {
-		// if not init, run the bpftime_agent_main to start the client
-		orig_puts_func = (puts_func_t)dlsym(RTLD_NEXT, "puts");
-		spdlog::info("Entering new main function");
-		int stay_resident = 0;
-		bpftime_agent_main("", (gboolean *)&stay_resident);
-	}
-	return orig_puts_func(str);
+	int stay_resident = 0;
+	bpftime_agent_main("", &stay_resident);
+	return orig_main_func(argc, argv, envp);
 }
+
+extern "C" int __libc_start_main(int (*main)(int, char **, char **), int argc, char **argv,
+		      int (*init)(int, char **, char **), void (*fini)(void),
+		      void (*rtld_fini)(void), void *stack_end)
+{
+	spdlog::info("Entering bpftime agent");
+	orig_main_func = main;
+	using this_func_t = decltype(&__libc_start_main);
+	this_func_t orig = (this_func_t)dlsym(RTLD_NEXT, "__libc_start_main");
+
+	return orig(bpftime_hooked_main, argc, argv, init, fini, rtld_fini, stack_end);
+}
+
 static bpf_attach_ctx ctx;
 
 extern "C" void bpftime_agent_main(const gchar *data, gboolean *stay_resident)
@@ -52,10 +55,6 @@ extern "C" void bpftime_agent_main(const gchar *data, gboolean *stay_resident)
 	spdlog::set_pattern("[%Y-%m-%d %H:%M:%S][%^%l%$][%t] %v");
 	/* We don't want to our library to be unloaded after we return. */
 	*stay_resident = TRUE;
-	if (!orig_fn) {
-		// avoid duplicate init
-		orig_fn = (putchar_func)dlsym(RTLD_NEXT, "putchar");
-	}
 
 	int res = 1;
 
