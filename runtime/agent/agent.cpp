@@ -49,6 +49,7 @@ extern "C" void bpftime_agent_main(const gchar *data, gboolean *stay_resident)
 {
 	spdlog::cfg::load_env_levels();
 	spdlog::info("Initializing agent..");
+	spdlog::set_pattern("[%Y-%m-%d %H:%M:%S][%^%l%$][%t] %v");
 	/* We don't want to our library to be unloaded after we return. */
 	*stay_resident = TRUE;
 	if (!orig_fn) {

@@ -1,27 +1,27 @@
 #ifndef _HASHMAP_HPP
 #define _HASHMAP_HPP
-#include <cinttypes>
+#include <boost/container_hash/hash_fwd.hpp>
 #include <boost/interprocess/managed_shared_memory.hpp>
 #include <boost/interprocess/containers/map.hpp>
 #include <boost/interprocess/containers/vector.hpp>
-#include <algorithm>
 #include <bpf_map/map_common_def.hpp>
+#include <boost/unordered/unordered_map.hpp>
+#include <boost/functional/hash.hpp>
+#include <cstddef>
 namespace bpftime
 {
 
 using namespace boost::interprocess;
 
-struct BytesVecCompFunctor {
-	bool operator()(const bytes_vec &a, const bytes_vec &b) const
+struct bytes_vec_hasher {
+	size_t operator()(bytes_vec const &vec) const
 	{
-		if (a.size() != b.size())
-			return a.size() < b.size();
-		for (size_t i = 0; i < a.size(); i++) {
-			if (a[i] == b[i])
-				continue;
-			return a[i] < b[i];
-		}
-		return false;
+		using boost::hash_combine;
+		size_t seed = 0;
+		hash_combine(seed, vec.size());
+		for (auto x : vec)
+			hash_combine(seed, x);
+		return seed;
 	}
 };
 
@@ -31,9 +31,10 @@ class hash_map_impl {
 	using bi_map_allocator =
 		allocator<bi_map_value_ty,
 			  managed_shared_memory::segment_manager>;
-	boost::interprocess::map<bytes_vec, bytes_vec, BytesVecCompFunctor,
-				 bi_map_allocator>
-		map_impl;
+	using shm_hash_map = boost::unordered_map<
+		bytes_vec, bytes_vec, bytes_vec_hasher,
+		std::equal_to<bytes_vec>, bi_map_allocator>;
+	shm_hash_map map_impl;
 	uint32_t _key_size;
 	uint32_t _value_size;
 
@@ -41,7 +42,7 @@ class hash_map_impl {
 	bytes_vec value_vec;
 
     public:
-    const static bool should_lock = true;
+	const static bool should_lock = true;
 	hash_map_impl(managed_shared_memory &memory, uint32_t key_size,
 		      uint32_t value_size);
 

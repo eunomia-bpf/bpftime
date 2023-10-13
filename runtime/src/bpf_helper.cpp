@@ -1,4 +1,7 @@
 #include "bpftime_helper_group.hpp"
+#include <cassert>
+#include <cerrno>
+#include <sched.h>
 #ifdef ENABLE_BPFTIME_VERIFIER
 #include "bpftime-verifier.hpp"
 #endif
@@ -184,7 +187,35 @@ uint64_t bpf_ringbuf_discard(uint64_t data, uint64_t flags, uint64_t, uint64_t,
 	bpftime_ringbuf_submit(fd, (void *)(uintptr_t)data, true);
 	return 0;
 }
-
+uint64_t bpf_perf_event_output(uint64_t ctx, uint64_t map, uint64_t flags,
+			       uint64_t data, uint64_t size)
+{
+	int32_t current_cpu = sched_getcpu();
+	assert(current_cpu != -1);
+	cpu_set_t mask, orig;
+	CPU_ZERO(&mask);
+	CPU_SET(current_cpu, &mask);
+	sched_getaffinity(0, sizeof(orig), &orig);
+	// Bind to the current cpu
+	if (sched_setaffinity(0, sizeof(mask), &mask) < 0) {
+		spdlog::error("Failed to set cpu affinity: {}", errno);
+		errno = EINVAL;
+		return (uint64_t)(-1);
+	}
+	int fd = map >> 32;
+	const int32_t *val_ptr =
+		(int32_t *)(uintptr_t)bpftime_map_lookup_elem(fd, &current_cpu);
+	if (val_ptr == nullptr) {
+		spdlog::error("Invalid map fd for perf event output: {}", fd);
+		errno = EINVAL;
+		return (uint64_t)(-1);
+	}
+	int32_t perf_handler_fd = *val_ptr;
+	int ret = bpftime_perf_event_output(
+		perf_handler_fd, (const void *)(uintptr_t)data, (size_t)size);
+	sched_setaffinity(0, sizeof(orig), &orig);
+	return (uint64_t)ret;
+}
 } // extern "C"
 
 namespace bpftime
@@ -493,117 +524,121 @@ const bpftime_helper_group ffi_group = { {
 	  } },
 } };
 
-const bpftime_helper_group kernel_helper_group = { {
-	{ BPF_FUNC_probe_read,
-	  bpftime_helper_info{
-		  .index = BPF_FUNC_probe_read,
-		  .name = "bpf_probe_read",
-		  .fn = (void *)bpftime_probe_read,
-	  } },
-	{ BPF_FUNC_probe_read_kernel,
-	  bpftime_helper_info{
-		  .index = BPF_FUNC_probe_read_kernel,
-		  .name = "bpf_probe_read_kernel",
-		  .fn = (void *)bpftime_probe_read,
-	  } },
-	{ BPF_FUNC_ktime_get_ns,
-	  bpftime_helper_info{
-		  .index = BPF_FUNC_ktime_get_ns,
-		  .name = "bpf_ktime_get_ns",
-		  .fn = (void *)bpftime_ktime_get_ns,
-	  } },
-	{ BPF_FUNC_trace_printk,
-	  bpftime_helper_info{
-		  .index = BPF_FUNC_trace_printk,
-		  .name = "bpf_trace_printk",
-		  .fn = (void *)bpftime_trace_printk,
-	  } },
-	{ BPF_FUNC_get_current_pid_tgid,
-	  bpftime_helper_info{
-		  .index = BPF_FUNC_get_current_pid_tgid,
-		  .name = "bpf_get_current_pid_tgid",
-		  .fn = (void *)bpftime_get_current_pid_tgid,
-	  } },
-	{ BPF_FUNC_get_current_uid_gid,
-	  bpftime_helper_info{ .index = BPF_FUNC_get_current_uid_gid,
-			       .name = "bpf_get_current_uid_gid",
-			       .fn = (void *)bpf_get_current_uid_gid } },
-	{ BPF_FUNC_get_current_comm,
-	  bpftime_helper_info{
-		  .index = BPF_FUNC_get_current_comm,
-		  .name = "bpf_get_current_comm",
-		  .fn = (void *)bpftime_get_current_comm,
-	  } },
-	{ BPF_FUNC_strncmp,
-	  bpftime_helper_info{
-		  .index = BPF_FUNC_strncmp,
-		  .name = "bpf_strncmp",
-		  .fn = (void *)bpftime_strncmp,
-	  } },
-	{ BPF_FUNC_get_func_arg,
-	  bpftime_helper_info{
-		  .index = BPF_FUNC_get_func_arg,
-		  .name = "bpf_get_func_arg",
-		  .fn = (void *)bpftime_get_func_arg,
-	  } },
-	{ BPF_FUNC_get_func_ret,
-	  bpftime_helper_info{
-		  .index = BPF_FUNC_get_func_ret,
-		  .name = "bpf_get_func_ret_id",
-		  .fn = (void *)bpftime_get_func_ret,
-	  } },
-	{ BPF_FUNC_get_retval,
-	  bpftime_helper_info{
-		  .index = BPF_FUNC_get_retval,
-		  .name = "bpf_get_retval",
-		  .fn = (void *)bpftime_get_retval,
-	  } },
-	{ BPF_FUNC_set_retval,
-	  bpftime_helper_info{
-		  .index = BPF_FUNC_set_retval,
-		  .name = "bpf_set_retval",
-		  .fn = (void *)bpftime_set_retval,
-	  } },
-	{ BPF_FUNC_probe_read_user_str,
-	  bpftime_helper_info{
-		  .index = BPF_FUNC_probe_read_user_str,
-		  .name = "bpf_probe_read_str",
-		  .fn = (void *)bpf_probe_read_str,
-	  } },
-	{ BPF_FUNC_probe_read_str,
-	  bpftime_helper_info{
-		  .index = BPF_FUNC_probe_read_str,
-		  .name = "bpf_probe_str",
-		  .fn = (void *)bpf_probe_read_str,
-	  } },
-	{ BPF_FUNC_get_stack,
-	  bpftime_helper_info{ .index = BPF_FUNC_get_stack,
-			       .name = "bpf_get_stack",
-			       .fn = (void *)bpf_get_stack } },
-	{ BPF_FUNC_ktime_get_coarse_ns,
-	  bpftime_helper_info{ .index = BPF_FUNC_ktime_get_coarse_ns,
-			       .name = "bpf_ktime_get_coarse_ns",
-			       .fn = (void *)bpf_ktime_get_coarse_ns } },
+const bpftime_helper_group kernel_helper_group = {
+	{ { BPF_FUNC_probe_read,
+	    bpftime_helper_info{
+		    .index = BPF_FUNC_probe_read,
+		    .name = "bpf_probe_read",
+		    .fn = (void *)bpftime_probe_read,
+	    } },
+	  { BPF_FUNC_probe_read_kernel,
+	    bpftime_helper_info{
+		    .index = BPF_FUNC_probe_read_kernel,
+		    .name = "bpf_probe_read_kernel",
+		    .fn = (void *)bpftime_probe_read,
+	    } },
+	  { BPF_FUNC_ktime_get_ns,
+	    bpftime_helper_info{
+		    .index = BPF_FUNC_ktime_get_ns,
+		    .name = "bpf_ktime_get_ns",
+		    .fn = (void *)bpftime_ktime_get_ns,
+	    } },
+	  { BPF_FUNC_trace_printk,
+	    bpftime_helper_info{
+		    .index = BPF_FUNC_trace_printk,
+		    .name = "bpf_trace_printk",
+		    .fn = (void *)bpftime_trace_printk,
+	    } },
+	  { BPF_FUNC_get_current_pid_tgid,
+	    bpftime_helper_info{
+		    .index = BPF_FUNC_get_current_pid_tgid,
+		    .name = "bpf_get_current_pid_tgid",
+		    .fn = (void *)bpftime_get_current_pid_tgid,
+	    } },
+	  { BPF_FUNC_get_current_uid_gid,
+	    bpftime_helper_info{ .index = BPF_FUNC_get_current_uid_gid,
+				 .name = "bpf_get_current_uid_gid",
+				 .fn = (void *)bpf_get_current_uid_gid } },
+	  { BPF_FUNC_get_current_comm,
+	    bpftime_helper_info{
+		    .index = BPF_FUNC_get_current_comm,
+		    .name = "bpf_get_current_comm",
+		    .fn = (void *)bpftime_get_current_comm,
+	    } },
+	  { BPF_FUNC_strncmp,
+	    bpftime_helper_info{
+		    .index = BPF_FUNC_strncmp,
+		    .name = "bpf_strncmp",
+		    .fn = (void *)bpftime_strncmp,
+	    } },
+	  { BPF_FUNC_get_func_arg,
+	    bpftime_helper_info{
+		    .index = BPF_FUNC_get_func_arg,
+		    .name = "bpf_get_func_arg",
+		    .fn = (void *)bpftime_get_func_arg,
+	    } },
+	  { BPF_FUNC_get_func_ret,
+	    bpftime_helper_info{
+		    .index = BPF_FUNC_get_func_ret,
+		    .name = "bpf_get_func_ret_id",
+		    .fn = (void *)bpftime_get_func_ret,
+	    } },
+	  { BPF_FUNC_get_retval,
+	    bpftime_helper_info{
+		    .index = BPF_FUNC_get_retval,
+		    .name = "bpf_get_retval",
+		    .fn = (void *)bpftime_get_retval,
+	    } },
+	  { BPF_FUNC_set_retval,
+	    bpftime_helper_info{
+		    .index = BPF_FUNC_set_retval,
+		    .name = "bpf_set_retval",
+		    .fn = (void *)bpftime_set_retval,
+	    } },
+	  { BPF_FUNC_probe_read_user_str,
+	    bpftime_helper_info{
+		    .index = BPF_FUNC_probe_read_user_str,
+		    .name = "bpf_probe_read_str",
+		    .fn = (void *)bpf_probe_read_str,
+	    } },
+	  { BPF_FUNC_probe_read_str,
+	    bpftime_helper_info{
+		    .index = BPF_FUNC_probe_read_str,
+		    .name = "bpf_probe_str",
+		    .fn = (void *)bpf_probe_read_str,
+	    } },
+	  { BPF_FUNC_get_stack,
+	    bpftime_helper_info{ .index = BPF_FUNC_get_stack,
+				 .name = "bpf_get_stack",
+				 .fn = (void *)bpf_get_stack } },
+	  { BPF_FUNC_ktime_get_coarse_ns,
+	    bpftime_helper_info{ .index = BPF_FUNC_ktime_get_coarse_ns,
+				 .name = "bpf_ktime_get_coarse_ns",
+				 .fn = (void *)bpf_ktime_get_coarse_ns } },
 
-	{ BPF_FUNC_ringbuf_reserve,
-	  bpftime_helper_info{
-		  .index = BPF_FUNC_ringbuf_reserve,
-		  .name = "bpf_ringbuf_reserve",
-		  .fn = (void *)bpf_ringbuf_reserve,
-	  } },
-	{ BPF_FUNC_ringbuf_submit,
-	  bpftime_helper_info{
-		  .index = BPF_FUNC_ringbuf_submit,
-		  .name = "bpf_ringbuf_submit",
-		  .fn = (void *)bpf_ringbuf_submit,
-	  } },
-	{ BPF_FUNC_ringbuf_discard,
-	  bpftime_helper_info{
-		  .index = BPF_FUNC_ringbuf_discard,
-		  .name = "bpf_ringbuf_discard",
-		  .fn = (void *)bpf_ringbuf_discard,
-	  } },
-} };
+	  { BPF_FUNC_ringbuf_reserve,
+	    bpftime_helper_info{
+		    .index = BPF_FUNC_ringbuf_reserve,
+		    .name = "bpf_ringbuf_reserve",
+		    .fn = (void *)bpf_ringbuf_reserve,
+	    } },
+	  { BPF_FUNC_ringbuf_submit,
+	    bpftime_helper_info{
+		    .index = BPF_FUNC_ringbuf_submit,
+		    .name = "bpf_ringbuf_submit",
+		    .fn = (void *)bpf_ringbuf_submit,
+	    } },
+	  { BPF_FUNC_ringbuf_discard,
+	    bpftime_helper_info{
+		    .index = BPF_FUNC_ringbuf_discard,
+		    .name = "bpf_ringbuf_discard",
+		    .fn = (void *)bpf_ringbuf_discard,
+	    } },
+	  { BPF_FUNC_perf_event_output,
+	    bpftime_helper_info{ .index = BPF_FUNC_perf_event_output,
+				 .name = "bpf_perf_event_output",
+				 .fn = (void *)bpf_perf_event_output } } }
+};
 
 // Utility function to get the FFI helper group
 const bpftime_helper_group &bpftime_helper_group::get_ffi_helper_group()

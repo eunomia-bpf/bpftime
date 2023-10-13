@@ -1,0 +1,455 @@
+#include "handler/epoll_handler.hpp"
+#include "handler/perf_event_handler.hpp"
+#include <bpftime_shm_internal.hpp>
+#include <sys/epoll.h>
+#include <variant>
+namespace bpftime
+{
+
+bpftime_shm_holder shm_holder;
+
+static __attribute__((destructor(101))) void __destroy_bpftime_shm_holder()
+{
+	shm_holder.global_shared_memory.~bpftime_shm();
+}
+
+// Check whether a certain pid was already equipped with syscall tracer
+// Using a set stored in the shared memory
+bool bpftime_shm::check_syscall_trace_setup(int pid)
+{
+	return syscall_installed_pids->contains(pid);
+}
+// Set whether a certain pid was already equipped with syscall tracer
+// Using a set stored in the shared memory
+void bpftime_shm::set_syscall_trace_setup(int pid, bool whether)
+{
+	if (whether) {
+		syscall_installed_pids->insert(pid);
+	} else {
+		syscall_installed_pids->erase(pid);
+	}
+}
+uint32_t bpftime_shm::bpf_map_value_size(int fd) const
+{
+	if (!is_map_fd(fd)) {
+		errno = ENOENT;
+		return 0;
+	}
+	auto &handler =
+		std::get<bpftime::bpf_map_handler>(manager->get_handler(fd));
+	return handler.get_value_size();
+}
+const void *bpftime_shm::bpf_map_lookup_elem(int fd, const void *key) const
+{
+	if (!is_map_fd(fd)) {
+		errno = ENOENT;
+		return nullptr;
+	}
+	auto &handler =
+		std::get<bpftime::bpf_map_handler>(manager->get_handler(fd));
+	return handler.map_lookup_elem(key);
+}
+
+long bpftime_shm::bpf_update_elem(int fd, const void *key, const void *value,
+				  uint64_t flags) const
+{
+	if (!is_map_fd(fd)) {
+		errno = ENOENT;
+		return -1;
+	}
+	auto &handler =
+		std::get<bpftime::bpf_map_handler>(manager->get_handler(fd));
+	return handler.map_update_elem(key, value, flags);
+}
+
+long bpftime_shm::bpf_delete_elem(int fd, const void *key) const
+{
+	if (!is_map_fd(fd)) {
+		errno = ENOENT;
+		return -1;
+	}
+	auto &handler =
+		std::get<bpftime::bpf_map_handler>(manager->get_handler(fd));
+	return handler.map_delete_elem(key);
+}
+
+int bpftime_shm::bpf_map_get_next_key(int fd, const void *key,
+				      void *next_key) const
+{
+	if (!is_map_fd(fd)) {
+		errno = ENOENT;
+		return -1;
+	}
+	auto &handler =
+		std::get<bpftime::bpf_map_handler>(manager->get_handler(fd));
+	return handler.bpf_map_get_next_key(key, next_key);
+}
+
+int bpftime_shm::add_uprobe(int pid, const char *name, uint64_t offset,
+			    bool retprobe, size_t ref_ctr_off)
+{
+	int fd = open_fake_fd();
+	manager->set_handler(
+		fd,
+		bpftime::bpf_perf_event_handler{ false, offset, pid, name,
+						 ref_ctr_off, segment },
+		segment);
+	return fd;
+}
+int bpftime_shm::add_tracepoint(int pid, int32_t tracepoint_id)
+{
+	int fd = open_fake_fd();
+	manager->set_handler(fd,
+			     bpftime::bpf_perf_event_handler(pid, tracepoint_id,
+							     segment),
+			     segment);
+	return fd;
+}
+int bpftime_shm::add_software_perf_event(int cpu, int32_t sample_type,
+					 int64_t config)
+{
+	int fd = open_fake_fd();
+	manager->set_handler(fd,
+			     bpftime::bpf_perf_event_handler(cpu, sample_type,
+							     config, segment),
+			     segment);
+	return fd;
+}
+int bpftime_shm::attach_perf_to_bpf(int perf_fd, int bpf_fd)
+{
+	if (!is_perf_fd(perf_fd) || !is_prog_fd(bpf_fd)) {
+		errno = ENOENT;
+		return -1;
+	}
+	auto &handler = std::get<bpftime::bpf_prog_handler>(
+		manager->get_handler(bpf_fd));
+	handler.add_attach_fd(perf_fd);
+	return 0;
+}
+
+int bpftime_shm::attach_enable(int fd) const
+{
+	if (!is_perf_fd(fd)) {
+		errno = ENOENT;
+		return -1;
+	}
+	auto &handler = std::get<bpftime::bpf_perf_event_handler>(
+		manager->get_handler(fd));
+	handler.enable();
+	return 0;
+}
+
+int bpftime_shm::add_software_perf_event_to_epoll(int swpe_fd, int epoll_fd,
+						  epoll_data_t extra_data)
+{
+	if (!is_epoll_fd(epoll_fd)) {
+		spdlog::error("Fd {} is expected to be an epoll fd", epoll_fd);
+		errno = EINVAL;
+		return -1;
+	}
+	auto &epoll_inst =
+		std::get<epoll_handler>(manager->get_handler(epoll_fd));
+	if (!is_software_perf_event_handler_fd(swpe_fd)) {
+		spdlog::error(
+			"Fd {} is expected to be an software perf event handler",
+			swpe_fd);
+		errno = EINVAL;
+		return -1;
+	}
+	auto &perf_handler =
+		std::get<bpf_perf_event_handler>(manager->get_handler(swpe_fd));
+	if (perf_handler.type !=
+	    bpf_perf_event_handler::bpf_event_type::PERF_TYPE_SOFTWARE) {
+		spdlog::error(
+			"Expected perf fd {} to be a software perf event instance",
+			swpe_fd);
+		errno = EINVAL;
+		return -1;
+	}
+	if (auto ptr = perf_handler.try_get_software_perf_data_weak_ptr();
+	    ptr.has_value()) {
+		epoll_inst.files.emplace_back(ptr.value(), extra_data);
+		return 0;
+	} else {
+		spdlog::error(
+			"Expected perf handler {} to have software perf event data",
+			swpe_fd);
+		errno = EINVAL;
+		return -1;
+	}
+}
+int bpftime_shm::add_ringbuf_to_epoll(int ringbuf_fd, int epoll_fd,
+				      epoll_data_t extra_data)
+{
+	if (!is_epoll_fd(epoll_fd)) {
+		spdlog::error("Fd {} is expected to be an epoll fd", epoll_fd);
+		errno = EINVAL;
+		return -1;
+	}
+	auto &epoll_inst =
+		std::get<epoll_handler>(manager->get_handler(epoll_fd));
+
+	if (!is_map_fd(ringbuf_fd)) {
+		spdlog::error("Fd {} is expected to be an map fd", ringbuf_fd);
+		errno = EINVAL;
+		return -1;
+	}
+	auto &map_inst =
+		std::get<bpf_map_handler>(manager->get_handler(ringbuf_fd));
+
+	auto ringbuf_map_impl = map_inst.try_get_ringbuf_map_impl();
+	if (ringbuf_map_impl.has_value(); auto val = ringbuf_map_impl.value()) {
+		epoll_inst.files.emplace_back(val->create_impl_weak_ptr(),
+					      extra_data);
+		spdlog::debug("Ringbuf {} added to epoll {}", ringbuf_fd,
+			      epoll_fd);
+		return 0;
+	} else {
+		errno = EINVAL;
+		spdlog::error("Map fd {} is expected to be an ringbuf map",
+			      ringbuf_fd);
+		return -1;
+	}
+}
+int bpftime_shm::epoll_create()
+{
+	int fd = open_fake_fd();
+	if (manager->is_allocated(fd)) {
+		spdlog::error(
+			"Creating epoll instance, but fd {} is already occupied",
+			fd);
+		return -1;
+	}
+	manager->set_handler(fd, bpftime::epoll_handler(segment), segment);
+	spdlog::debug("Epoll instance created: fd={}", fd);
+	return fd;
+}
+
+const handler_variant &bpftime_shm::get_handler(int fd) const
+{
+	return manager->get_handler(fd);
+}
+bool bpftime_shm::is_epoll_fd(int fd) const
+{
+	if (manager == nullptr || fd < 0 ||
+	    (std::size_t)fd >= manager->size()) {
+		spdlog::error("Invalid fd: {}", fd);
+		return false;
+	}
+	const auto &handler = manager->get_handler(fd);
+	return std::holds_alternative<bpftime::epoll_handler>(handler);
+}
+
+bool bpftime_shm::is_map_fd(int fd) const
+{
+	if (manager == nullptr || fd < 0 ||
+	    (std::size_t)fd >= manager->size()) {
+		return false;
+	}
+	const auto &handler = manager->get_handler(fd);
+	return std::holds_alternative<bpftime::bpf_map_handler>(handler);
+}
+bool bpftime_shm::is_ringbuf_map_fd(int fd) const
+{
+	if (!is_map_fd(fd))
+		return false;
+	auto &map_impl = std::get<bpf_map_handler>(manager->get_handler(fd));
+	return map_impl.type == map_impl.BPF_MAP_TYPE_RINGBUF;
+}
+bool bpftime_shm::is_array_map_fd(int fd) const
+{
+	if (!is_map_fd(fd))
+		return false;
+	auto &map_impl = std::get<bpf_map_handler>(manager->get_handler(fd));
+	return map_impl.type == map_impl.BPF_MAP_TYPE_ARRAY;
+}
+std::optional<ringbuf_map_impl *>
+bpftime_shm::try_get_ringbuf_map_impl(int fd) const
+{
+	if (!is_ringbuf_map_fd(fd)) {
+		spdlog::error("Expected fd {} to be an ringbuf map fd", fd);
+		return {};
+	}
+	auto &map_handler = std::get<bpf_map_handler>(manager->get_handler(fd));
+	return map_handler.try_get_ringbuf_map_impl();
+}
+
+std::optional<array_map_impl *>
+bpftime_shm::try_get_array_map_impl(int fd) const
+{
+	if (!is_array_map_fd(fd)) {
+		spdlog::error("Expected fd {} to be an array map fd", fd);
+		return {};
+	}
+	auto &map_handler = std::get<bpf_map_handler>(manager->get_handler(fd));
+	return map_handler.try_get_array_map_impl();
+}
+bool bpftime_shm::is_prog_fd(int fd) const
+{
+	if (manager == nullptr || fd < 0 ||
+	    (std::size_t)fd >= manager->size()) {
+		return false;
+	}
+	const auto &handler = manager->get_handler(fd);
+	return std::holds_alternative<bpftime::bpf_prog_handler>(handler);
+}
+
+bool bpftime_shm::is_perf_fd(int fd) const
+{
+	if (manager == nullptr || fd < 0 ||
+	    (std::size_t)fd >= manager->size()) {
+		return false;
+	}
+	const auto &handler = manager->get_handler(fd);
+	return std::holds_alternative<bpftime::bpf_perf_event_handler>(handler);
+}
+
+int bpftime_shm::open_fake_fd()
+{
+	return open("/dev/null", O_RDONLY);
+}
+
+// handle bpf commands to load a bpf program
+int bpftime_shm::add_bpf_prog(const ebpf_inst *insn, size_t insn_cnt,
+			      const char *prog_name, int prog_type)
+{
+	int fd = open_fake_fd();
+	manager->set_handler(fd,
+			     bpftime::bpf_prog_handler(segment, insn, insn_cnt,
+						       prog_name, prog_type),
+			     segment);
+	return fd;
+}
+
+// add a bpf link fd
+int bpftime_shm::add_bpf_link(int prog_fd, int target_fd)
+{
+	int fd = open_fake_fd();
+	if (!manager->is_allocated(target_fd) || !is_prog_fd(prog_fd)) {
+		return -1;
+	}
+	manager->set_handler(fd,
+			     bpftime::bpf_link_handler{ (uint32_t)prog_fd,
+							(uint32_t)target_fd },
+			     segment);
+	return fd;
+}
+
+void bpftime_shm::close_fd(int fd)
+{
+	if (manager) {
+		manager->clear_fd_at(fd, segment);
+	}
+}
+
+bool bpftime_shm::is_exist_fake_fd(int fd) const
+{
+	if (manager == nullptr || fd < 0 ||
+	    (std::size_t)fd >= manager->size()) {
+		return false;
+	}
+	return manager->is_allocated(fd);
+}
+
+bpftime_shm::bpftime_shm()
+{
+	spdlog::info("global_shm_open_type {} for {}",
+		     (int)global_shm_open_type, bpftime::get_global_shm_name());
+	if (global_shm_open_type == shm_open_type::SHM_CLIENT) {
+		// open the shm
+		segment = boost::interprocess::managed_shared_memory(
+			boost::interprocess::open_only,
+			bpftime::get_global_shm_name());
+		manager = segment.find<bpftime::handler_manager>(
+					 bpftime::DEFAULT_GLOBAL_HANDLER_NAME)
+				  .first;
+		syscall_installed_pids =
+			segment.find<syscall_pid_set>(
+				       DEFAULT_SYSCALL_PID_SET_NAME)
+				.first;
+		agent_config =
+			segment.find<struct agent_config>(
+				       bpftime::DEFAULT_AGENT_CONFIG_NAME)
+				.first;
+	} else if (global_shm_open_type == shm_open_type::SHM_SERVER) {
+		boost::interprocess::shared_memory_object::remove(
+			bpftime::get_global_shm_name());
+		// create the shm
+		segment = boost::interprocess::managed_shared_memory(
+			boost::interprocess::create_only,
+			// Allocate 20M bytes of memory by default
+			bpftime::get_global_shm_name(), 20 << 20);
+		manager = segment.construct<bpftime::handler_manager>(
+			bpftime::DEFAULT_GLOBAL_HANDLER_NAME)(segment);
+		syscall_installed_pids = segment.construct<syscall_pid_set>(
+			bpftime::DEFAULT_SYSCALL_PID_SET_NAME)(
+			std::less<int>(),
+			syscall_pid_set_allocator(
+				segment.get_segment_manager()));
+		agent_config = segment.construct<struct agent_config>(
+			bpftime::DEFAULT_AGENT_CONFIG_NAME)();
+	} else if (global_shm_open_type == shm_open_type::SHM_NO_CREATE) {
+		// not create any shm
+		return;
+	}
+}
+
+int bpftime_shm::add_bpf_map(const char *name, bpftime::bpf_map_attr attr)
+{
+	int fd = open_fake_fd();
+	if (!manager) {
+		return -1;
+	}
+#ifdef ENABLE_BPFTIME_VERIFIER
+	auto helpers = verifier::get_map_descriptors();
+	helpers[fd] = verifier::BpftimeMapDescriptor{
+		.original_fd = fd,
+		.type = static_cast<uint32_t>(attr.type),
+		.key_size = attr.key_size,
+		.value_size = attr.value_size,
+		.max_entries = attr.max_ents,
+		.inner_map_fd = static_cast<unsigned int>(-1)
+	};
+	verifier::set_map_descriptors(helpers);
+#endif
+	manager->set_handler(fd, bpftime::bpf_map_handler(name, segment, attr),
+			     segment);
+	return fd;
+}
+
+const handler_manager *bpftime_shm::get_manager() const
+{
+	return manager;
+}
+
+bool bpftime_shm::is_perf_event_handler_fd(int fd) const
+{
+	auto &handler = get_handler(fd);
+	return std::holds_alternative<bpf_perf_event_handler>(handler);
+}
+bool bpftime_shm::is_software_perf_event_handler_fd(int fd) const
+{
+	if (!is_perf_event_handler_fd(fd))
+		return false;
+	const auto &hd = std::get<bpf_perf_event_handler>(get_handler(fd));
+	return hd.type ==
+	       bpf_perf_event_handler::bpf_event_type::PERF_TYPE_SOFTWARE;
+}
+
+bpftime::agent_config &bpftime_get_agent_config()
+{
+	return shm_holder.global_shared_memory.get_agent_config();
+}
+
+std::optional<void *>
+bpftime_shm::get_software_perf_event_raw_buffer(int fd, size_t buffer_sz) const
+{
+	if (!is_software_perf_event_handler_fd(fd)) {
+		spdlog::error("Expected {} to be an perf event fd", fd);
+		errno = EINVAL;
+		return nullptr;
+	}
+	const auto &handler = std::get<bpf_perf_event_handler>(get_handler(fd));
+	return handler.try_get_software_perf_data_raw_buffer(buffer_sz);
+}
+} // namespace bpftime
