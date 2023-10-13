@@ -16,7 +16,6 @@ const shm_open_type bpftime::global_shm_open_type = shm_open_type::SHM_SERVER;
 // global context for bpf syscall server
 static syscall_context context;
 
-
 extern "C" int epoll_wait(int epfd, epoll_event *evt, int maxevents,
 			  int timeout)
 {
@@ -87,4 +86,9 @@ extern "C" long syscall(long sysno, ...)
 	}
 	return context.orig_syscall_fn(sysno, arg1, arg2, arg3, arg4, arg5,
 				       arg6);
+}
+
+extern "C" int munmap(void *addr, size_t size)
+{
+	return context.handle_munmap(addr, size);
 }

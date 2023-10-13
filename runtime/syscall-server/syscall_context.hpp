@@ -5,6 +5,7 @@
 #include <dlfcn.h>
 #include <sys/types.h>
 #include <spdlog/spdlog.h>
+#include <unordered_set>
 class syscall_context {
 	using syscall_fn = long (*)(long, ...);
 	using close_fn = int (*)(int);
@@ -13,14 +14,15 @@ class syscall_context {
 	using epoll_craete1_fn = int (*)(int);
 	using epoll_ctl_fn = int (*)(int, int, int, struct epoll_event *);
 	using epoll_wait_fn = int (*)(int, struct epoll_event *, int, int);
-
+	using munmap_fn = int (*)(void *, size_t);
 	close_fn orig_close_fn = nullptr;
 	mmap64_fn orig_mmap64_fn = nullptr;
 	ioctl_fn orig_ioctl_fn = nullptr;
 	epoll_craete1_fn orig_epoll_create1_fn = nullptr;
 	epoll_ctl_fn orig_epoll_ctl_fn = nullptr;
 	epoll_wait_fn orig_epoll_wait_fn = nullptr;
-
+	munmap_fn orig_munmap_fn = nullptr;
+	std::unordered_set<uintptr_t> mocked_mmap_values;
 	void init_original_functions()
 	{
 		orig_epoll_wait_fn =
@@ -32,8 +34,9 @@ class syscall_context {
 		orig_syscall_fn = (syscall_fn)dlsym(RTLD_NEXT, "syscall");
 		orig_mmap64_fn = (mmap64_fn)dlsym(RTLD_NEXT, "mmap");
 		orig_close_fn = (close_fn)dlsym(RTLD_NEXT, "close");
+		orig_munmap_fn = (munmap_fn)dlsym(RTLD_NEXT, "munmap");
 	}
-	
+
     public:
 	syscall_context()
 	{
@@ -54,6 +57,7 @@ class syscall_context {
 	int handle_epoll_ctl(int epfd, int op, int fd, epoll_event *evt);
 	int handle_epoll_wait(int epfd, epoll_event *evt, int maxevents,
 			      int timeout);
+	int handle_munmap(void *addr, size_t size);
 };
 
 #endif

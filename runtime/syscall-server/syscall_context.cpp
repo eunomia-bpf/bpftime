@@ -245,7 +245,7 @@ void *syscall_context::handle_mmap64(void *addr, size_t length, int prot,
 				spdlog::debug(
 					"Mapping consumer page {} to ringbuf fd {}",
 					ptr, fd);
-
+				mocked_mmap_values.insert((uintptr_t)ptr);
 				return ptr;
 			}
 		} else if (prot == (PROT_READ)) {
@@ -255,6 +255,7 @@ void *syscall_context::handle_mmap64(void *addr, size_t length, int prot,
 					"Mapping producer page {} to ringbuf fd {}",
 					ptr, fd);
 
+				mocked_mmap_values.insert((uintptr_t)ptr);
 				return ptr;
 			}
 		}
@@ -262,12 +263,18 @@ void *syscall_context::handle_mmap64(void *addr, size_t length, int prot,
 		spdlog::debug("Entering mmap64 which handled array map");
 		if (auto val = bpftime_get_array_map_raw_data(fd);
 		    val != nullptr) {
+			mocked_mmap_values.insert((uintptr_t)val);
 			return val;
 		}
 	} else if (fd != -1 && bpftime_is_software_perf_event(fd)) {
 		spdlog::debug(
 			"Entering mocked mmap64: software perf event handler");
-		return bpftime_get_software_perf_event_raw_buffer(fd, length);
+		if (auto ptr = bpftime_get_software_perf_event_raw_buffer(
+			    fd, length);
+		    ptr != nullptr) {
+			mocked_mmap_values.insert((uintptr_t)ptr);
+			return ptr;
+		}
 	}
 	spdlog::debug(
 		"Calling original mmap64: addr={}, length={}, prot={}, flags={}, fd={}, offset={}",
@@ -343,4 +350,16 @@ int syscall_context::handle_epoll_wait(int epfd, epoll_event *evt,
 		return ret;
 	}
 	return orig_epoll_wait_fn(epfd, evt, maxevents, timeout);
+}
+int syscall_context::handle_munmap(void *addr, size_t size)
+{
+	if (auto itr = mocked_mmap_values.find((uintptr_t)addr);
+	    itr != mocked_mmap_values.end()) {
+		spdlog::debug("Handling munmap of mocked addr: {:x}, size {}",
+			      (uintptr_t)addr, size);
+		mocked_mmap_values.erase(itr);
+		return 0;
+	} else {
+		return orig_munmap_fn(addr, size);
+	}
 }
