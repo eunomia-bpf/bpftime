@@ -41,5 +41,5 @@ jobs:
           timeout -s 2 15s bpftime load ./malloc || if [ $? = 124 ]; then exit 0; else exit $?; fi &
           sleep 10s
           ID1=$!
-          timeout -s 2 5s bpftime start ./test || if [ $? = 124 ]; then exit 0; else exit $?; fi
+          timeout -s 2 5s bpftime start ./victim || if [ $? = 124 ]; then exit 0; else exit $?; fi
           fg $ID1 || true

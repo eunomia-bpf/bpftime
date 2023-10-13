@@ -18,7 +18,6 @@ int main()
 		sscanf(line.c_str(), "%*s%s", path);
 		paths.push_back(path);
 	}
-	puts("");
 	struct statfs fst;
 	while (1) {
 		for (const auto &p : paths) {

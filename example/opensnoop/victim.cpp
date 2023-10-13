@@ -7,7 +7,6 @@
 
 int main()
 {
-	puts("");
 	while (true) {
 		std::cout << "Opening test.txt" << std::endl;
 
