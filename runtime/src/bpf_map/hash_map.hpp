@@ -1,16 +1,29 @@
 #ifndef _HASHMAP_HPP
 #define _HASHMAP_HPP
-#include <cinttypes>
+#include <boost/container_hash/hash_fwd.hpp>
 #include <boost/interprocess/managed_shared_memory.hpp>
 #include <boost/interprocess/containers/map.hpp>
 #include <boost/interprocess/containers/vector.hpp>
 #include <bpf_map/map_common_def.hpp>
-#include <boost/unordered_map.hpp>
-#include <boost/container_hash/hash.hpp>
+#include <boost/unordered/unordered_map.hpp>
+#include <boost/functional/hash.hpp>
+#include <cstddef>
 namespace bpftime
 {
 
 using namespace boost::interprocess;
+
+struct bytes_vec_hasher {
+	size_t operator()(bytes_vec const &vec) const
+	{
+		using boost::hash_combine;
+		size_t seed = 0;
+		hash_combine(seed, vec.size());
+		for (auto x : vec)
+			hash_combine(seed, x);
+		return seed;
+	}
+};
 
 // implementation of hash map
 class hash_map_impl {
@@ -19,7 +32,7 @@ class hash_map_impl {
 		allocator<bi_map_value_ty,
 			  managed_shared_memory::segment_manager>;
 	using shm_hash_map = boost::unordered_map<
-		bytes_vec, bytes_vec, boost::hash<bytes_vec>,
+		bytes_vec, bytes_vec, bytes_vec_hasher,
 		std::equal_to<bytes_vec>, bi_map_allocator>;
 	shm_hash_map map_impl;
 	uint32_t _key_size;

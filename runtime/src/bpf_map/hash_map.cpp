@@ -1,4 +1,3 @@
-#include <boost/container_hash/hash.hpp>
 #include <bpf_map/hash_map.hpp>
 #include <algorithm>
 #include <functional>
@@ -7,7 +6,7 @@ namespace bpftime
 {
 hash_map_impl::hash_map_impl(managed_shared_memory &memory, uint32_t key_size,
 			     uint32_t value_size)
-	: map_impl(10, boost::hash<bytes_vec>(), std::equal_to<bytes_vec>(),
+	: map_impl(10, bytes_vec_hasher(), std::equal_to<bytes_vec>(),
 		   bi_map_allocator(memory.get_segment_manager())),
 	  _key_size(key_size), _value_size(value_size),
 	  key_vec(key_size, memory.get_segment_manager()),
