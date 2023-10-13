@@ -66,10 +66,10 @@ $(call allow-override,CC,$(CROSS_COMPILE)cc)
 $(call allow-override,LD,$(CROSS_COMPILE)ld)
 
 .PHONY: all
-all: $(APPS) test
+all: $(APPS) victim
 
-test: test.c
-	gcc test.c -o test
+victim: victim.c
+	gcc victim.c -o victim -Wall -g
 
 .PHONY: clean
 clean:
