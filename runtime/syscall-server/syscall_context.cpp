@@ -3,11 +3,14 @@
 #include "handler/perf_event_handler.hpp"
 #include "linux/perf_event.h"
 #include "spdlog/spdlog.h"
+#include <iostream>
 #include <linux/bpf.h>
 #include "syscall_server_utils.hpp"
 #include <optional>
+#include <ostream>
 #include <sys/epoll.h>
 #include <sys/mman.h>
+#include <unistd.h>
 using namespace bpftime;
 
 void syscall_context::try_startup()
@@ -58,7 +61,7 @@ long syscall_context::handle_sysbpf(int cmd, union bpf_attr *attr, size_t size)
 		return id;
 	}
 	case BPF_MAP_LOOKUP_ELEM: {
-		spdlog::debug("Looking up map {}");
+		spdlog::debug("Looking up map {}", attr->map_fd);
 		// Note that bpftime_map_lookup_elem is adapted as a bpf helper,
 		// meaning that it will *return* the address of the matched
 		// value. But here the syscall has a different interface. Here
@@ -67,6 +70,10 @@ long syscall_context::handle_sysbpf(int cmd, union bpf_attr *attr, size_t size)
 		// thing.
 		auto value_ptr = bpftime_map_lookup_elem(
 			attr->map_fd, (const void *)(uintptr_t)attr->key);
+		if (value_ptr == nullptr) {
+			errno = ENOENT;
+			return -1;
+		}
 		memcpy((void *)(uintptr_t)attr->value, value_ptr,
 		       bpftime_map_value_size(attr->map_fd));
 		return 0;
@@ -324,28 +331,34 @@ int syscall_context::handle_ioctl(int fd, unsigned long req, int data)
 		return orig_ioctl_fn(fd, req, data);
 	try_startup();
 	int res;
-	switch (req) {
-	case PERF_EVENT_IOC_ENABLE: {
+	if (req == PERF_EVENT_IOC_ENABLE) {
 		spdlog::debug("Enabling perf event {}", fd);
-		res = bpftime_attach_enable(fd);
-		if (res < 0) {
-			return orig_ioctl_fn(fd, req, data);
-		}
-		return res;
-	}
-	case PERF_EVENT_IOC_SET_BPF: {
+		res = bpftime_perf_event_enable(fd);
+		if (res >= 0)
+			return res;
+		spdlog::warn(
+			"Failed to call mocked ioctl PERF_EVENT_IOC_ENABLE: {}",
+			res);
+	} else if (req == PERF_EVENT_IOC_DISABLE) {
+		spdlog::debug("Disabling perf event {}", fd);
+		res = bpftime_perf_event_disable(fd);
+		if (res >= 0)
+			return res;
+		spdlog::warn(
+			"Failed to call mocked ioctl PERF_EVENT_IOC_DISABLE: {}",
+			res);
+	} else if (req == PERF_EVENT_IOC_SET_BPF) {
 		spdlog::debug("Setting bpf for perf event {} and bpf {}", fd,
 			      data);
 		res = bpftime_attach_perf_to_bpf(fd, data);
-		if (res < 0) {
-			return orig_ioctl_fn(fd, req, data);
-		}
-		return res;
+		if (res >= 0)
+			return res;
+		spdlog::warn(
+			"Failed to call mocked ioctl PERF_EVENT_IOC_SET_BPF: {}",
+			res);
 	}
-	default:
-		return orig_ioctl_fn(fd, req, data);
-	}
-	return 0;
+	spdlog::warn("Calling original ioctl: {} {} {}", fd, req, data);
+	return orig_ioctl_fn(fd, req, data);
 }
 
 int syscall_context::handle_epoll_create1(int flags)

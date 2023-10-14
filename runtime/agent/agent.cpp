@@ -117,4 +117,5 @@ __c_abi_setup_syscall_trace_callback(syscall_hooker_func_t *hooker)
 	ctx_holder.ctx.set_orig_syscall_func(orig_hooker);
 	gboolean val;
 	bpftime_agent_main("", &val);
+	spdlog::info("Agent syscall trace setup exiting..");
 }

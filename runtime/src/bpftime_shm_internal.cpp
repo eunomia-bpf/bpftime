@@ -18,8 +18,9 @@ void bpftime_destroy_global_shm()
 	using namespace bpftime;
 	// spdlog::info("Global shm destructed");
 	shm_holder.global_shared_memory.~bpftime_shm();
-	// Why not spdlog? because global variables that spdlog used were already destroyed..
-	puts("Global shm destructed");
+	// Why not spdlog? because global variables that spdlog used were
+	// already destroyed..
+	puts("INFO: Global shm destructed");
 }
 static __attribute__((destructor(65535))) void __destruct_shm()
 {
@@ -144,7 +145,7 @@ int bpftime_shm::attach_perf_to_bpf(int perf_fd, int bpf_fd)
 	return 0;
 }
 
-int bpftime_shm::attach_enable(int fd) const
+int bpftime_shm::perf_event_enable(int fd) const
 {
 	if (!is_perf_fd(fd)) {
 		errno = ENOENT;
@@ -152,8 +153,18 @@ int bpftime_shm::attach_enable(int fd) const
 	}
 	auto &handler = std::get<bpftime::bpf_perf_event_handler>(
 		manager->get_handler(fd));
-	handler.enable();
-	return 0;
+	return handler.enable();
+}
+
+int bpftime_shm::perf_event_disable(int fd) const
+{
+	if (!is_perf_fd(fd)) {
+		errno = ENOENT;
+		return -1;
+	}
+	auto &handler = std::get<bpftime::bpf_perf_event_handler>(
+		manager->get_handler(fd));
+	return handler.disable();
 }
 
 int bpftime_shm::add_software_perf_event_to_epoll(int swpe_fd, int epoll_fd,

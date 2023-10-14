@@ -67,9 +67,13 @@ int bpftime_tracepoint_create(int pid, int32_t tp_id)
 	return shm_holder.global_shared_memory.add_tracepoint(pid, tp_id);
 }
 
-int bpftime_attach_enable(int fd)
+int bpftime_perf_event_enable(int fd)
 {
-	return shm_holder.global_shared_memory.attach_enable(fd);
+	return shm_holder.global_shared_memory.perf_event_enable(fd);
+}
+int bpftime_perf_event_disable(int fd)
+{
+	return shm_holder.global_shared_memory.perf_event_disable(fd);
 }
 
 int bpftime_attach_perf_to_bpf(int perf_fd, int bpf_fd)

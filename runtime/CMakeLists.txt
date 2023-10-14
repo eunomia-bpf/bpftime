@@ -66,6 +66,8 @@ set(sources
   src/bpf_map/hash_map.cpp
   src/bpf_map/ringbuf_map.cpp
   src/bpf_map/perf_event_array_map.cpp
+  src/bpf_map/per_cpu_array_map.cpp
+  src/bpf_map/per_cpu_hash_map.cpp
 )
 
 # list(APPEND sources

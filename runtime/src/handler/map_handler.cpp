@@ -1,3 +1,5 @@
+#include "bpf_map/per_cpu_array_map.hpp"
+#include "bpf_map/per_cpu_hash_map.hpp"
 #include <bpf_map/perf_event_array_map.hpp>
 #include "spdlog/spdlog.h"
 #include <handler/map_handler.hpp>
@@ -32,19 +34,27 @@ const void *bpf_map_handler::map_lookup_elem(const void *key) const
 		return do_lookup(impl);
 	}
 	case BPF_MAP_TYPE_RINGBUF: {
-		{
-			auto impl = static_cast<ringbuf_map_impl *>(
-				map_impl_ptr.get());
-			return do_lookup(impl);
-		}
+		auto impl = static_cast<ringbuf_map_impl *>(map_impl_ptr.get());
+		return do_lookup(impl);
 	}
 	case BPF_MAP_TYPE_PERF_EVENT_ARRAY: {
 		auto impl = static_cast<perf_event_array_map_impl *>(
 			map_impl_ptr.get());
 		return do_lookup(impl);
 	}
+	case BPF_MAP_TYPE_PERCPU_ARRAY: {
+		auto impl = static_cast<per_cpu_array_map_impl *>(
+			map_impl_ptr.get());
+		return do_lookup(impl);
+	}
+	case BPF_MAP_TYPE_PERCPU_HASH: {
+		auto impl = static_cast<per_cpu_hash_map_impl *>(
+			map_impl_ptr.get());
+		return do_lookup(impl);
+	}
+
 	default:
-		assert(false || "Unsupported map type");
+		assert(false && "Unsupported map type");
 	}
 	return 0;
 }
@@ -79,8 +89,18 @@ long bpf_map_handler::map_update_elem(const void *key, const void *value,
 			map_impl_ptr.get());
 		return do_update(impl);
 	}
+	case BPF_MAP_TYPE_PERCPU_ARRAY: {
+		auto impl = static_cast<per_cpu_array_map_impl *>(
+			map_impl_ptr.get());
+		return do_update(impl);
+	}
+	case BPF_MAP_TYPE_PERCPU_HASH: {
+		auto impl = static_cast<per_cpu_hash_map_impl *>(
+			map_impl_ptr.get());
+		return do_update(impl);
+	}
 	default:
-		assert(false || "Unsupported map type");
+		assert(false && "Unsupported map type");
 	}
 	return 0;
 }
@@ -114,8 +134,18 @@ int bpf_map_handler::bpf_map_get_next_key(const void *key, void *next_key) const
 			map_impl_ptr.get());
 		return do_get_next_key(impl);
 	}
+	case BPF_MAP_TYPE_PERCPU_ARRAY: {
+		auto impl = static_cast<per_cpu_array_map_impl *>(
+			map_impl_ptr.get());
+		return do_get_next_key(impl);
+	}
+	case BPF_MAP_TYPE_PERCPU_HASH: {
+		auto impl = static_cast<per_cpu_hash_map_impl *>(
+			map_impl_ptr.get());
+		return do_get_next_key(impl);
+	}
 	default:
-		assert(false || "Unsupported map type");
+		assert(false && "Unsupported map type");
 	}
 	return 0;
 }
@@ -149,8 +179,18 @@ long bpf_map_handler::map_delete_elem(const void *key) const
 			map_impl_ptr.get());
 		return do_delete(impl);
 	}
+	case BPF_MAP_TYPE_PERCPU_ARRAY: {
+		auto impl = static_cast<per_cpu_array_map_impl *>(
+			map_impl_ptr.get());
+		return do_delete(impl);
+	}
+	case BPF_MAP_TYPE_PERCPU_HASH: {
+		auto impl = static_cast<per_cpu_hash_map_impl *>(
+			map_impl_ptr.get());
+		return do_delete(impl);
+	}
 	default:
-		assert(false || "Unsupported map type");
+		assert(false && "Unsupported map type");
 	}
 	return 0;
 }
@@ -159,15 +199,17 @@ int bpf_map_handler::map_init(managed_shared_memory &memory)
 {
 	auto container_name = get_container_name();
 	switch (type) {
-	case BPF_MAP_TYPE_HASH:
+	case BPF_MAP_TYPE_HASH: {
 		map_impl_ptr = memory.construct<hash_map_impl>(
 			container_name.c_str())(memory, key_size, value_size);
 		return 0;
-	case BPF_MAP_TYPE_ARRAY:
+	}
+	case BPF_MAP_TYPE_ARRAY: {
 		map_impl_ptr = memory.construct<array_map_impl>(
 			container_name.c_str())(memory, value_size,
 						max_entries);
 		return 0;
+	}
 	case BPF_MAP_TYPE_RINGBUF: {
 		auto max_ent = max_entries;
 		int pop_cnt = 0;
@@ -191,8 +233,20 @@ int bpf_map_handler::map_init(managed_shared_memory &memory)
 						max_entries);
 		return 0;
 	}
+	case BPF_MAP_TYPE_PERCPU_ARRAY: {
+		map_impl_ptr = memory.construct<per_cpu_array_map_impl>(
+			container_name.c_str())(memory, value_size,
+						max_entries);
+		return 0;
+	}
+	case BPF_MAP_TYPE_PERCPU_HASH: {
+		map_impl_ptr = memory.construct<per_cpu_hash_map_impl>(
+			container_name.c_str())(memory, key_size, value_size);
+		return 0;
+	}
 	default:
-		assert(false || "Unsupported map type");
+		spdlog::error("Unsupported map type: {}", (int)type);
+		assert(false && "Unsupported map type");
 	}
 	return 0;
 }
@@ -211,10 +265,18 @@ void bpf_map_handler::map_free(managed_shared_memory &memory)
 		memory.destroy<ringbuf_map_impl>(container_name.c_str());
 		break;
 	case BPF_MAP_TYPE_PERF_EVENT_ARRAY:
-		memory.destroy<perf_event_array_map_impl>(container_name.c_str());
+		memory.destroy<perf_event_array_map_impl>(
+			container_name.c_str());
 		break;
+	case BPF_MAP_TYPE_PERCPU_ARRAY:
+		memory.destroy<per_cpu_array_map_impl>(container_name.c_str());
+		break;
+	case BPF_MAP_TYPE_PERCPU_HASH:
+		memory.destroy<per_cpu_hash_map_impl>(container_name.c_str());
+		break;
+
 	default:
-		assert(false || "Unsupported map type");
+		assert(false && "Unsupported map type");
 	}
 	map_impl_ptr = nullptr;
 	return;

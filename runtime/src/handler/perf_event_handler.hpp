@@ -1,5 +1,6 @@
 #ifndef _PERF_EVENT_HANDLER
 #define _PERF_EVENT_HANDLER
+#include "spdlog/spdlog.h"
 #include <boost/interprocess/managed_shared_memory.hpp>
 #include <boost/interprocess/containers/string.hpp>
 #include <boost/interprocess/containers/vector.hpp>
@@ -107,6 +108,11 @@ struct bpf_perf_event_handler {
 		// TODO: implement enable logic.
 		// If This is a server, should inject the agent into the target
 		// process.
+		return 0;
+	}
+	int disable() const
+	{
+		spdlog::debug("Disabling perf event, but nothing todo");
 		return 0;
 	}
 	uint64_t offset;

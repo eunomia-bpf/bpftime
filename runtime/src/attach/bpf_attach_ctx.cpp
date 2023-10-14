@@ -143,7 +143,8 @@ int64_t bpf_attach_ctx::run_syscall_hooker(int64_t sys_nr, int64_t arg1,
 {
 	if (sys_nr == __NR_exit_group || sys_nr == __NR_exit)
 		return orig_syscall(sys_nr, arg1, arg2, arg3, arg4, arg5, arg6);
-	spdlog::debug("Syscall callback");
+	spdlog::debug("Syscall callback {} {} {} {} {} {} {}", sys_nr, arg1,
+		      arg2, arg3, arg4, arg5, arg6);
 	if (!sys_enter_progs[sys_nr].empty() ||
 	    !global_sys_enter_progs.empty()) {
 		trace_event_raw_sys_enter ctx;
@@ -305,8 +306,8 @@ int bpf_attach_ctx::init_attach_ctx_from_handlers(
 				break;
 			}
 			spdlog::debug("Create attach event {} {} {} for {}", i,
-				     event_handler._module_name,
-				     event_handler.offset, fd);
+				      event_handler._module_name,
+				      event_handler.offset, fd);
 			if (fd < 0) {
 				return fd;
 			}

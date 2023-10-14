@@ -3,6 +3,7 @@
 #include "bpf_map/array_map.hpp"
 #include "bpf_map/ringbuf_map.hpp"
 #include "bpftime_shm.hpp"
+#include "spdlog/spdlog.h"
 #include <boost/interprocess/managed_shared_memory.hpp>
 #include <boost/interprocess/containers/string.hpp>
 #include <boost/interprocess/smart_ptr/unique_ptr.hpp>
@@ -97,6 +98,7 @@ class bpf_map_handler {
 		  key_size(key_size), value_size(value_size)
 
 	{
+		spdlog::info("Create map with type {}", type);
 		this->name = name;
 	}
 	bpf_map_handler(const bpf_map_handler &) = delete;
