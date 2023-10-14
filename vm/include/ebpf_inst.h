@@ -26,6 +26,21 @@ struct ebpf_inst {
 	int16_t off; /* signed offset */
 	int32_t imm; /* signed immediate constant */
 };
+#define EBPF_SIZE_DW 0x18 /* double word (64-bit) */
+#define EBPF_ATOMIC 0xc0 /* atomic memory ops - op type in immediate */
+#define BPF_SIZE_W 0x00 /* 32-bit */
+#define EBPF_FETCH 0x01 /* not an opcode on its own, used to build others */
+#define EBPF_XCHG (0xe0 | EBPF_FETCH) /* atomic exchange */
+#define EBPF_CMPXCHG (0xf0 | EBPF_FETCH) /* atomic compare-and-write */
+#define EBPF_STX 0x03
+#define EBPF_ATOMIC_ADD 0x00
+#define EBPF_ATOMIC_OR 0x40
+#define EBPF_ATOMIC_AND 0x50
+#define EBPF_ATOMIC_XOR 0xa0
+
+#define EBPF_ATOMIC_OPCODE_32 (EBPF_ATOMIC | EBPF_SIZE_W | EBPF_STX)
+#define EBPF_ATOMIC_OPCODE_64 (EBPF_ATOMIC | EBPF_SIZE_DW | EBPF_STX)
+
 
 #define EBPF_CLS_MASK 0x07
 #define EBPF_ALU_OP_MASK 0xf0
