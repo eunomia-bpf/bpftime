@@ -72,14 +72,17 @@ class bpftime_shm {
 	// create a bpf map fd
 	int add_bpf_map(const char *name, bpftime::bpf_map_attr attr);
 	uint32_t bpf_map_value_size(int fd) const;
-	const void *bpf_map_lookup_elem(int fd, const void *key) const;
+	const void *bpf_map_lookup_elem(int fd, const void *key,
+					bool from_userspace) const;
 
-	long bpf_update_elem(int fd, const void *key, const void *value,
-			     uint64_t flags) const;
+	long bpf_map_update_elem(int fd, const void *key, const void *value,
+			     uint64_t flags, bool from_userspace) const;
 
-	long bpf_delete_elem(int fd, const void *key) const;
+	long bpf_delete_elem(int fd, const void *key,
+			     bool from_userspace) const;
 
-	int bpf_map_get_next_key(int fd, const void *key, void *next_key) const;
+	int bpf_map_get_next_key(int fd, const void *key, void *next_key,
+				 bool from_userspace) const;
 
 	// create an uprobe fd
 	int add_uprobe(int pid, const char *name, uint64_t offset,
@@ -112,7 +115,6 @@ union bpftime_shm_holder {
 	bpftime_shm global_shared_memory;
 	bpftime_shm_holder()
 	{
-		
 	}
 	~bpftime_shm_holder()
 	{

@@ -57,7 +57,8 @@ uint32_t bpftime_shm::bpf_map_value_size(int fd) const
 		std::get<bpftime::bpf_map_handler>(manager->get_handler(fd));
 	return handler.get_value_size();
 }
-const void *bpftime_shm::bpf_map_lookup_elem(int fd, const void *key) const
+const void *bpftime_shm::bpf_map_lookup_elem(int fd, const void *key,
+					     bool from_userspace) const
 {
 	if (!is_map_fd(fd)) {
 		errno = ENOENT;
@@ -65,11 +66,12 @@ const void *bpftime_shm::bpf_map_lookup_elem(int fd, const void *key) const
 	}
 	auto &handler =
 		std::get<bpftime::bpf_map_handler>(manager->get_handler(fd));
-	return handler.map_lookup_elem(key);
+	return handler.map_lookup_elem(key, from_userspace);
 }
 
-long bpftime_shm::bpf_update_elem(int fd, const void *key, const void *value,
-				  uint64_t flags) const
+long bpftime_shm::bpf_map_update_elem(int fd, const void *key,
+				      const void *value, uint64_t flags,
+				      bool from_userspace) const
 {
 	if (!is_map_fd(fd)) {
 		errno = ENOENT;
@@ -77,10 +79,11 @@ long bpftime_shm::bpf_update_elem(int fd, const void *key, const void *value,
 	}
 	auto &handler =
 		std::get<bpftime::bpf_map_handler>(manager->get_handler(fd));
-	return handler.map_update_elem(key, value, flags);
+	return handler.map_update_elem(key, value, flags, from_userspace);
 }
 
-long bpftime_shm::bpf_delete_elem(int fd, const void *key) const
+long bpftime_shm::bpf_delete_elem(int fd, const void *key,
+				  bool from_userspace) const
 {
 	if (!is_map_fd(fd)) {
 		errno = ENOENT;
@@ -88,11 +91,11 @@ long bpftime_shm::bpf_delete_elem(int fd, const void *key) const
 	}
 	auto &handler =
 		std::get<bpftime::bpf_map_handler>(manager->get_handler(fd));
-	return handler.map_delete_elem(key);
+	return handler.map_delete_elem(key, from_userspace);
 }
 
-int bpftime_shm::bpf_map_get_next_key(int fd, const void *key,
-				      void *next_key) const
+int bpftime_shm::bpf_map_get_next_key(int fd, const void *key, void *next_key,
+				      bool from_userspace) const
 {
 	if (!is_map_fd(fd)) {
 		errno = ENOENT;
@@ -100,7 +103,7 @@ int bpftime_shm::bpf_map_get_next_key(int fd, const void *key,
 	}
 	auto &handler =
 		std::get<bpftime::bpf_map_handler>(manager->get_handler(fd));
-	return handler.bpf_map_get_next_key(key, next_key);
+	return handler.bpf_map_get_next_key(key, next_key, from_userspace);
 }
 
 int bpftime_shm::add_uprobe(int pid, const char *name, uint64_t offset,

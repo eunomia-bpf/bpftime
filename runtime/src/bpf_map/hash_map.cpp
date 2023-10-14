@@ -1,4 +1,3 @@
-#include "spdlog/fmt/bin_to_hex.h"
 #include "spdlog/spdlog.h"
 #include <bpf_map/hash_map.hpp>
 #include <algorithm>

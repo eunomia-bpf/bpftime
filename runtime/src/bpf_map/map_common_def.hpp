@@ -1,6 +1,7 @@
 #ifndef _MAP_COMMON_DEF_HPP
 #define _MAP_COMMON_DEF_HPP
 #include "spdlog/spdlog.h"
+#include <boost/container_hash/hash.hpp>
 #include <cinttypes>
 #include <boost/interprocess/managed_shared_memory.hpp>
 #include <boost/interprocess/containers/vector.hpp>
@@ -27,6 +28,17 @@ template <class T> T ensure_on_current_cpu(std::function<T(int cpu)> func)
 	return ret;
 }
 
+struct bytes_vec_hasher {
+	size_t operator()(bytes_vec const &vec) const
+	{
+		using boost::hash_combine;
+		size_t seed = 0;
+		hash_combine(seed, vec.size());
+		for (auto x : vec)
+			hash_combine(seed, x);
+		return seed;
+	}
+};
 } // namespace bpftime
 
 #endif

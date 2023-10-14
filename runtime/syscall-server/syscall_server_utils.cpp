@@ -86,6 +86,7 @@ void start_up()
 	spdlog::info("Enabling {} helpers", helper_ids.size());
 	verifier::set_non_kernel_helpers(non_kernel_helpers);
 #endif
+	spdlog::info("bpftime-syscall-server started");
 }
 
 /*

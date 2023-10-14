@@ -75,5 +75,5 @@ extern "C" void bpftime_agent_main(const gchar *data, gboolean *stay_resident)
 		bpftime::get_call_hook();
 	entry_func(&orig_syscall_hooker_func);
 	bpftime::set_call_hook(orig_syscall_hooker_func);
-	spdlog::info("Transformer exiting..");
+	spdlog::info("Transformer exiting, trace will be usable now");
 }

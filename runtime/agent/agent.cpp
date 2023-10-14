@@ -91,7 +91,6 @@ extern "C" void bpftime_agent_main(const gchar *data, gboolean *stay_resident)
 		return;
 	}
 	spdlog::info("Attach successfully");
-
 	// don't free ctx here
 	return;
 }

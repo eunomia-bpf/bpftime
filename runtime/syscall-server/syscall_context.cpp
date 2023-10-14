@@ -3,11 +3,9 @@
 #include "handler/perf_event_handler.hpp"
 #include "linux/perf_event.h"
 #include "spdlog/spdlog.h"
-#include <iostream>
 #include <linux/bpf.h>
 #include "syscall_server_utils.hpp"
 #include <optional>
-#include <ostream>
 #include <sys/epoll.h>
 #include <sys/mman.h>
 #include <unistd.h>
@@ -68,31 +66,31 @@ long syscall_context::handle_sysbpf(int cmd, union bpf_attr *attr, size_t size)
 		// we should write the bytes of the matched value to the pointer
 		// that user gave us. So here needs a memcpy to achive such
 		// thing.
-		auto value_ptr = bpftime_map_lookup_elem(
+		auto value_ptr = bpftime_map_lookup_elem_from_syscall(
 			attr->map_fd, (const void *)(uintptr_t)attr->key);
 		if (value_ptr == nullptr) {
 			errno = ENOENT;
 			return -1;
 		}
 		memcpy((void *)(uintptr_t)attr->value, value_ptr,
-		       bpftime_map_value_size(attr->map_fd));
+		       bpftime_map_value_size_from_syscall(attr->map_fd));
 		return 0;
 	}
 	case BPF_MAP_UPDATE_ELEM: {
 		spdlog::debug("Updating map");
-		return bpftime_map_update_elem(
+		return bpftime_map_update_elem_from_syscall(
 			attr->map_fd, (const void *)(uintptr_t)attr->key,
 			(const void *)(uintptr_t)attr->value,
 			(uint64_t)attr->flags);
 	}
 	case BPF_MAP_DELETE_ELEM: {
 		spdlog::debug("Deleting map");
-		return bpftime_map_delete_elem(
+		return bpftime_map_delete_elem_from_syscall(
 			attr->map_fd, (const void *)(uintptr_t)attr->key);
 	}
 	case BPF_MAP_GET_NEXT_KEY: {
 		spdlog::debug("Getting next key");
-		return (long)(uintptr_t)bpftime_map_get_next_key(
+		return (long)(uintptr_t)bpftime_map_get_next_key_from_syscall(
 			attr->map_fd, (const void *)(uintptr_t)attr->key,
 			(void *)(uintptr_t)attr->next_key);
 	}

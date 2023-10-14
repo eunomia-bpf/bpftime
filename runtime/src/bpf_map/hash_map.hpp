@@ -7,23 +7,11 @@
 #include <bpf_map/map_common_def.hpp>
 #include <boost/unordered/unordered_map.hpp>
 #include <boost/functional/hash.hpp>
-#include <cstddef>
 namespace bpftime
 {
 
 using namespace boost::interprocess;
 
-struct bytes_vec_hasher {
-	size_t operator()(bytes_vec const &vec) const
-	{
-		using boost::hash_combine;
-		size_t seed = 0;
-		hash_combine(seed, vec.size());
-		for (auto x : vec)
-			hash_combine(seed, x);
-		return seed;
-	}
-};
 
 // implementation of hash map
 class hash_map_impl {
