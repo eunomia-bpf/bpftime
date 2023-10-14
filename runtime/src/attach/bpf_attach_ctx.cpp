@@ -143,7 +143,7 @@ int64_t bpf_attach_ctx::run_syscall_hooker(int64_t sys_nr, int64_t arg1,
 {
 	if (sys_nr == __NR_exit_group || sys_nr == __NR_exit)
 		return orig_syscall(sys_nr, arg1, arg2, arg3, arg4, arg5, arg6);
-	// spdlog::debug("Syscall callback");
+	spdlog::debug("Syscall callback");
 	if (!sys_enter_progs[sys_nr].empty() ||
 	    !global_sys_enter_progs.empty()) {
 		trace_event_raw_sys_enter ctx;
@@ -156,7 +156,7 @@ int64_t bpf_attach_ctx::run_syscall_hooker(int64_t sys_nr, int64_t arg1,
 		ctx.args[4] = arg5;
 		ctx.args[5] = arg6;
 		const auto exec = [&](const bpftime_prog *prog) {
-			// spdlog::debug("Call {}",prog->prog_name());
+			spdlog::debug("Call {}", prog->prog_name());
 			auto lctx = ctx;
 			// Avoid polluting other ebpf programs..
 			uint64_t ret;
@@ -217,15 +217,15 @@ int bpf_attach_ctx::init_attach_ctx_from_handlers(
 			if (res < 0) {
 				return res;
 			}
-			spdlog::info("Load prog {} {}", i, prog_handler.name);
+			spdlog::debug("Load prog {} {}", i, prog_handler.name);
 		} else if (std::holds_alternative<bpf_map_handler>(handler)) {
-			spdlog::info("bpf_map_handler found at {}", i);
+			spdlog::debug("bpf_map_handler found at {}", i);
 		} else if (std::holds_alternative<bpf_perf_event_handler>(
 				   handler)) {
 			spdlog::debug("Will handle bpf_perf_events later...");
 
 		} else if (std::holds_alternative<epoll_handler>(handler)) {
-			spdlog::info(
+			spdlog::debug(
 				"No extra operations needed for epoll_handler..");
 		} else {
 			spdlog::error("Unsupported handler type {}",
@@ -297,14 +297,14 @@ int bpf_attach_ctx::init_attach_ctx_from_handlers(
 			}
 			case bpf_perf_event_handler::bpf_event_type::
 				PERF_TYPE_SOFTWARE: {
-				spdlog::info(
+				spdlog::debug(
 					"Attaching software perf event, nothing need to do");
 				fd = i;
 			}
 			default:
 				break;
 			}
-			spdlog::info("Create attach event {} {} {} for {}", i,
+			spdlog::debug("Create attach event {} {} {} for {}", i,
 				     event_handler._module_name,
 				     event_handler.offset, fd);
 			if (fd < 0) {
@@ -325,7 +325,7 @@ int bpf_attach_ctx::attach_progs_in_manager(const handler_manager *manager)
 		auto &prog_handler =
 			std::get<bpf_prog_handler>(manager->get_handler(id));
 		for (auto fd : prog_handler.attach_fds) {
-			spdlog::info("Attaching prog {} to fd {}", id, fd);
+			spdlog::debug("Attaching prog {} to fd {}", id, fd);
 			attach_prog(prog.second.get(), fd);
 		}
 	}

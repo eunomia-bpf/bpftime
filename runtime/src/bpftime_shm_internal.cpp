@@ -9,7 +9,6 @@
 void bpftime_initialize_global_shm()
 {
 	using namespace bpftime;
-	spdlog::info("Global shm constructed");
 	// Use placement new, which will not allocate memory, but just
 	// call the constructor
 	new (&shm_holder.global_shared_memory) bpftime_shm;
@@ -371,7 +370,7 @@ bool bpftime_shm::is_exist_fake_fd(int fd) const
 
 bpftime_shm::bpftime_shm()
 {
-	spdlog::info("global_shm_open_type {} for {}",
+	spdlog::info("Global shm constructed. global_shm_open_type {} for {}",
 		     (int)global_shm_open_type, bpftime::get_global_shm_name());
 	if (global_shm_open_type == shm_open_type::SHM_CLIENT) {
 		spdlog::debug("start: bpftime_shm for client setup");
