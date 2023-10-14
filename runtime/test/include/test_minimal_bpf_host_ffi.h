@@ -4,7 +4,7 @@
 #include <cstdint>
 #include <assert.h>
 #include <cstdlib>
-#include "ebpf-core.h"
+#include "ebpf-vm.h"
 
 #define MAX_FFI_FUNCS 128
 #define MAX_ARGS 5

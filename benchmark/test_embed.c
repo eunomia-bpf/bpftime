@@ -1,4 +1,4 @@
-#include "ebpf_vm.h"
+#include "ebpf-vm.h"
 #include <assert.h>
 #include <string.h>
 #include <stdlib.h>

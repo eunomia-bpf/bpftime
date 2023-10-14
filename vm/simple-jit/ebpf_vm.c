@@ -926,6 +926,14 @@ int ebpf_exec(const struct ebpf_vm *vm, void *mem, size_t mem_len,
 					__ATOMIC_RELAXED);
 				break;
 			}
+			// case EBPF_CMPXCHG: {
+			// 	__atomic_compare_exchange(
+			// 		(uint32_t *)(uintptr_t)(reg[inst.dst_reg] +
+			// 					inst.off),
+			// 		(uint32_t *)&reg[0],
+			// 		(uint32_t *)&reg[inst.src_reg], false,
+			// 		__ATOMIC_RELAXED, __ATOMIC_RELAXED);
+			// }
 			}
 			break;
 		}
@@ -974,6 +982,14 @@ int ebpf_exec(const struct ebpf_vm *vm, void *mem, size_t mem_len,
 					__ATOMIC_RELAXED);
 				break;
 			}
+			// case EBPF_CMPXCHG: {
+			// 	__atomic_compare_exchange(
+			// 		(uint64_t *)(uintptr_t)(reg[inst.dst_reg] +
+			// 					inst.off),
+			// 		(uint64_t *)&reg[0],
+			// 		(uint64_t *)&reg[inst.src_reg], false,
+			// 		__ATOMIC_RELAXED, __ATOMIC_RELAXED);
+			// }
 			}
 			break;
 			break;

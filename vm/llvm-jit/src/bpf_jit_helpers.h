@@ -6,6 +6,8 @@
 #include "ebpf_inst.h"
 #include <functional>
 #include <llvm-14/llvm/IR/Constants.h>
+#include <llvm-14/llvm/Support/Alignment.h>
+#include <llvm-14/llvm/Support/AtomicOrdering.h>
 #include <llvm-15/llvm/ADT/APInt.h>
 #include <llvm-15/llvm/IR/BasicBlock.h>
 #include <llvm-15/llvm/IR/DerivedTypes.h>
@@ -358,5 +360,27 @@ emitExtFuncCall(llvm::IRBuilder<> &builder, const ebpf_inst &inst,
 			llvm::inconvertibleErrorCode());
 	}
 }
-
+static inline void emitAtomicBinOp(llvm::IRBuilder<> &builder,
+				   llvm::Value **regs,
+				   llvm::AtomicRMWInst::BinOp op,
+				   const ebpf_inst &inst, bool is64,
+				   bool is_fetch)
+{
+	auto oldValue = builder.CreateAtomicRMW(
+		op,
+		builder.CreateGEP(builder.getInt8Ty(),
+				  builder.CreateLoad(builder.getPtrTy(),
+						     regs[inst.dst_reg]),
+				  { builder.getInt64(inst.off) }),
+		is64 ? builder.CreateLoad(builder.getInt64Ty(),
+					  regs[inst.src_reg]) :
+		       builder.CreateTrunc(
+			       builder.CreateLoad(builder.getInt64Ty(),
+						  regs[inst.src_reg]),
+			       builder.getInt32Ty()),
+		llvm::MaybeAlign(32), llvm::AtomicOrdering::Monotonic);
+	if (is_fetch) {
+		builder.CreateStore(oldValue, regs[inst.src_reg]);
+	}
+}
 #endif
