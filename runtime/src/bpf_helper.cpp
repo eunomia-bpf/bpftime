@@ -115,21 +115,23 @@ uint64_t bpftime_get_current_comm(uint64_t buf, uint64_t size, uint64_t,
 uint64_t bpftime_map_lookup_elem_helper(uint64_t map, uint64_t key, uint64_t,
 					uint64_t, uint64_t)
 {
-	return (uint64_t)bpftime_map_lookup_elem_from_helper(map >> 32, (void *)key);
+	return (uint64_t)bpftime_map_lookup_elem_from_helper(map >> 32,
+							     (void *)key);
 }
 
 uint64_t bpftime_map_update_elem_helper(uint64_t map, uint64_t key,
 					uint64_t value, uint64_t flags,
 					uint64_t)
 {
-	return (uint64_t)bpftime_map_update_elem_from_helper(map >> 32, (void *)key,
-						 (void *)value, flags);
+	return (uint64_t)bpftime_map_update_elem_from_helper(
+		map >> 32, (void *)key, (void *)value, flags);
 }
 
 uint64_t bpftime_map_delete_elem_helper(uint64_t map, uint64_t key, uint64_t,
 					uint64_t, uint64_t)
 {
-	return (uint64_t)bpftime_map_delete_elem_from_helper(map >> 32, (void *)key);
+	return (uint64_t)bpftime_map_delete_elem_from_helper(map >> 32,
+							     (void *)key);
 }
 
 uint64_t bpf_probe_read_str(uint64_t buf, uint64_t bufsz, uint64_t ptr,
@@ -153,6 +155,25 @@ uint64_t bpf_ktime_get_coarse_ns(uint64_t, uint64_t, uint64_t, uint64_t,
 	clock_gettime(CLOCK_MONOTONIC_COARSE, &ts);
 	return (uint64_t)ts.tv_sec * 1000000000 + ts.tv_nsec;
 }
+uint64_t bpf_ringbuf_output(uint64_t rb, uint64_t data, uint64_t size,
+			    uint64_t flags, uint64_t)
+{
+	int fd = (int)(rb >> 32);
+	if (flags != 0) {
+		spdlog::warn(
+			"Currently only supports ringbuf_output with flags=0");
+	}
+	auto buf = bpftime_ringbuf_reserve(fd, size);
+	if (!buf) {
+		spdlog::error(
+			"Failed to reserve when executing ringbuf output");
+		return (uint64_t)-1;
+	}
+	memcpy(buf, (const void *)(uintptr_t)data, size);
+	bpftime_ringbuf_submit(fd, buf, false);
+	return 0;
+}
+
 uint64_t bpf_ringbuf_reserve(uint64_t rb, uint64_t size, uint64_t flags,
 			     uint64_t, uint64_t)
 {
@@ -204,7 +225,8 @@ uint64_t bpf_perf_event_output(uint64_t ctx, uint64_t map, uint64_t flags,
 	}
 	int fd = map >> 32;
 	const int32_t *val_ptr =
-		(int32_t *)(uintptr_t)bpftime_map_lookup_elem_from_helper(fd, &current_cpu);
+		(int32_t *)(uintptr_t)bpftime_map_lookup_elem_from_helper(
+			fd, &current_cpu);
 	if (val_ptr == nullptr) {
 		spdlog::error("Invalid map fd for perf event output: {}", fd);
 		errno = EINVAL;
@@ -643,7 +665,11 @@ const bpftime_helper_group kernel_helper_group = {
 	  { BPF_FUNC_perf_event_output,
 	    bpftime_helper_info{ .index = BPF_FUNC_perf_event_output,
 				 .name = "bpf_perf_event_output",
-				 .fn = (void *)bpf_perf_event_output } } }
+				 .fn = (void *)bpf_perf_event_output } },
+	  { BPF_FUNC_ringbuf_output,
+	    bpftime_helper_info{ .index = BPF_FUNC_ringbuf_output,
+				 .name = "bpf_ringbuf_output",
+				 .fn = (void *)bpf_ringbuf_output } } }
 };
 
 // Utility function to get the FFI helper group
