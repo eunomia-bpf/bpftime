@@ -1,6 +1,7 @@
 # Building and run bpftime
 
 ## Install Dependencies
+>`gcc` >= 12.0.0 `clang` >=16.0.0
 
 Install the required packages:
 
@@ -10,14 +11,16 @@ sudo apt install -y --no-install-recommends \
         binutils-dev libyaml-cpp-dev
 git submodule update --init --recursive
 ```
-
+--- 
 We've tested on Ubuntu 23.04.
+
+On Ubuntu 20.04 ,you should manually switch to gcc-12.
 
 ### Build and install cli tool
 
 ```bash
 sudo apt-get install libelf-dev zlib1g-dev # Install dependencies
-make build && make install # Build and install the runtime
+make release && make install # Build and install the runtime
 cd tools/cli-rs && cargo build --release
 mkdir -p ~/.bpftime && cp ./target/release/bpftime ~/.bpftime
 export PATH=$PATH:~/.bpftime
