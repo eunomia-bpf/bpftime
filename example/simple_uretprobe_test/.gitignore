@@ -1,0 +1,14 @@
+.vscode
+package.json
+*.o
+*.skel.json
+*.skel.yaml
+package.yaml
+ecli
+bootstrap
+.output
+opensnoop
+victim
+test.txt
+syscall-trace.txt
+simple_uretprobe_test
