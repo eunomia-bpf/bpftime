@@ -28,31 +28,57 @@ int bpftime_maps_create(const char *name, bpftime::bpf_map_attr attr)
 {
 	return shm_holder.global_shared_memory.add_bpf_map(name, attr);
 }
-uint32_t bpftime_map_value_size(int fd)
+uint32_t bpftime_map_value_size_from_syscall(int fd)
 {
 	return shm_holder.global_shared_memory.bpf_map_value_size(fd);
 }
 
-const void *bpftime_map_lookup_elem(int fd, const void *key)
+const void *bpftime_map_lookup_elem_from_helper(int fd, const void *key)
 {
-	return shm_holder.global_shared_memory.bpf_map_lookup_elem(fd, key);
+	return shm_holder.global_shared_memory.bpf_map_lookup_elem(fd, key,
+								   false);
 }
 
-long bpftime_map_update_elem(int fd, const void *key, const void *value,
-			     uint64_t flags)
+long bpftime_map_update_elem_from_helper(int fd, const void *key,
+					 const void *value, uint64_t flags)
 {
-	return shm_holder.global_shared_memory.bpf_update_elem(fd, key, value,
-							       flags);
+	return shm_holder.global_shared_memory.bpf_map_update_elem(
+		fd, key, value, flags, false);
 }
 
-long bpftime_map_delete_elem(int fd, const void *key)
+long bpftime_map_delete_elem_from_helper(int fd, const void *key)
 {
-	return shm_holder.global_shared_memory.bpf_delete_elem(fd, key);
+	return shm_holder.global_shared_memory.bpf_delete_elem(fd, key, false);
 }
-int bpftime_map_get_next_key(int fd, const void *key, void *next_key)
+int bpftime_map_get_next_key_from_helper(int fd, const void *key,
+					 void *next_key)
 {
-	return shm_holder.global_shared_memory.bpf_map_get_next_key(fd, key,
-								    next_key);
+	return shm_holder.global_shared_memory.bpf_map_get_next_key(
+		fd, key, next_key, false);
+}
+
+const void *bpftime_map_lookup_elem_from_syscall(int fd, const void *key)
+{
+	return shm_holder.global_shared_memory.bpf_map_lookup_elem(fd, key,
+								   true);
+}
+
+long bpftime_map_update_elem_from_syscall(int fd, const void *key,
+					  const void *value, uint64_t flags)
+{
+	return shm_holder.global_shared_memory.bpf_map_update_elem(
+		fd, key, value, flags, true);
+}
+
+long bpftime_map_delete_elem_from_syscall(int fd, const void *key)
+{
+	return shm_holder.global_shared_memory.bpf_delete_elem(fd, key, true);
+}
+int bpftime_map_get_next_key_from_syscall(int fd, const void *key,
+					  void *next_key)
+{
+	return shm_holder.global_shared_memory.bpf_map_get_next_key(
+		fd, key, next_key, true);
 }
 
 int bpftime_uprobe_create(int pid, const char *name, uint64_t offset,
@@ -67,9 +93,13 @@ int bpftime_tracepoint_create(int pid, int32_t tp_id)
 	return shm_holder.global_shared_memory.add_tracepoint(pid, tp_id);
 }
 
-int bpftime_attach_enable(int fd)
+int bpftime_perf_event_enable(int fd)
 {
-	return shm_holder.global_shared_memory.attach_enable(fd);
+	return shm_holder.global_shared_memory.perf_event_enable(fd);
+}
+int bpftime_perf_event_disable(int fd)
+{
+	return shm_holder.global_shared_memory.perf_event_disable(fd);
 }
 
 int bpftime_attach_perf_to_bpf(int perf_fd, int bpf_fd)

@@ -3,6 +3,7 @@
 #include "bpf_map/array_map.hpp"
 #include "bpf_map/ringbuf_map.hpp"
 #include "bpftime_shm.hpp"
+#include "spdlog/spdlog.h"
 #include <boost/interprocess/managed_shared_memory.hpp>
 #include <boost/interprocess/containers/string.hpp>
 #include <boost/interprocess/smart_ptr/unique_ptr.hpp>
@@ -10,6 +11,7 @@
 #include <boost/interprocess/sync/scoped_lock.hpp>
 #include <boost/interprocess/sync/sharable_lock.hpp>
 #include <optional>
+#include <unistd.h>
 namespace bpftime
 {
 using char_allocator = boost::interprocess::allocator<
@@ -97,6 +99,7 @@ class bpf_map_handler {
 		  key_size(key_size), value_size(value_size)
 
 	{
+		spdlog::debug("Create map with type {}", type);
 		this->name = name;
 	}
 	bpf_map_handler(const bpf_map_handler &) = delete;
@@ -127,10 +130,12 @@ class bpf_map_handler {
 	// *		Returns zero on success. On error, -1 is returned and
 	// *  		*errno* is set appropriately.
 	// *
-	const void *map_lookup_elem(const void *key) const;
-	long map_update_elem(const void *key, const void *value,
-			     uint64_t flags) const;
-	long map_delete_elem(const void *key) const;
+	const void *map_lookup_elem(const void *key,
+				    bool from_userspace = false) const;
+	long map_update_elem(const void *key, const void *value, uint64_t flags,
+			     bool from_userspace = false) const;
+	long map_delete_elem(const void *key,
+			     bool from_userspace = false) const;
 	// * BPF_MAP_GET_NEXT_KEY
 	// *	Description
 	// *		Look up an element by key in a specified map and return
@@ -154,31 +159,16 @@ class bpf_map_handler {
 	// *		May set *errno* to **ENOMEM**, **EFAULT**, **EPERM**, or
 	// *		**EINVAL** on error.
 	// *
-	int bpf_map_get_next_key(const void *key, void *next_key) const;
+	int bpf_map_get_next_key(const void *key, void *next_key,
+				 bool from_userspace = false) const;
 	void map_free(boost::interprocess::managed_shared_memory &memory);
 	int map_init(boost::interprocess::managed_shared_memory &memory);
-	uint32_t get_value_size() const
-	{
-		return value_size;
-	}
-	std::optional<ringbuf_map_impl *> try_get_ringbuf_map_impl() const
-	{
-		if (type != BPF_MAP_TYPE_RINGBUF)
-			return {};
-		return static_cast<ringbuf_map_impl *>(map_impl_ptr.get());
-	}
-	std::optional<array_map_impl *> try_get_array_map_impl() const
-	{
-		if (type != BPF_MAP_TYPE_ARRAY)
-			return {};
-		return static_cast<array_map_impl *>(map_impl_ptr.get());
-	}
+	uint32_t get_value_size() const;
+	std::optional<ringbuf_map_impl *> try_get_ringbuf_map_impl() const;
+	std::optional<array_map_impl *> try_get_array_map_impl() const;
 
     private:
-	std::string get_container_name()
-	{
-		return "ebpf_map_fd_" + std::string(name.c_str());
-	}
+	std::string get_container_name();
 	mutable sharable_mutex_ptr map_mutex;
 	// The underlying data structure of the map
 	general_map_impl_ptr map_impl_ptr;

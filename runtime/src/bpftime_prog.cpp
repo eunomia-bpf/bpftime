@@ -34,7 +34,7 @@ int bpftime_prog::bpftime_prog_load(bool jit)
 {
 	int res = -1;
 
-	spdlog::info("Load insn cnt {}", insns.size());
+	spdlog::debug("Load insn cnt {}", insns.size());
 	res = ebpf_load(vm, insns.data(),
 			insns.size() * sizeof(struct ebpf_inst), &errmsg);
 	if (res < 0) {

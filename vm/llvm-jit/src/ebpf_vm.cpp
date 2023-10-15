@@ -45,12 +45,12 @@ char *ebpf_error(const char *fmt, ...)
 	char *msg;
 	va_list ap;
 	va_start(ap, fmt);
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Wformat-nonliteral"
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wformat-nonliteral"
 	if (vasprintf(&msg, fmt, ap) < 0) {
 		msg = NULL;
 	}
-#pragma clang diagnostic pop
+#pragma GCC diagnostic pop
 	va_end(ap);
 	return msg;
 }
@@ -289,7 +289,7 @@ int ebpf_exec(const struct ebpf_vm *vm, void *mem, size_t mem_len,
 }
 
 /* For testing, this changes the mapping between x86 and eBPF registers */
-void ebpf_set_register_offset(int x)
+extern "C" void ebpf_set_register_offset(int x)
 {
 	// DO NOTHING because llvm handles the map
 }

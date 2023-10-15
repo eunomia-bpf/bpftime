@@ -13,6 +13,7 @@ gdb.py
 test.txt
 test.gdb
 index.html*
+dump*
 ### VisualStudioCode ###
 .vscode/settings.json
 .vscode/runtime.json

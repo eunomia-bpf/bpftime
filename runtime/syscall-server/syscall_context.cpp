@@ -1,22 +1,38 @@
 #include "syscall_context.hpp"
 #include "bpftime_shm.hpp"
 #include "handler/perf_event_handler.hpp"
+#include "linux/perf_event.h"
 #include "spdlog/spdlog.h"
 #include <linux/bpf.h>
 #include "syscall_server_utils.hpp"
 #include <optional>
 #include <sys/epoll.h>
+#include <sys/mman.h>
+#include <unistd.h>
 using namespace bpftime;
+
+void syscall_context::try_startup()
+{
+	enable_mock = false;
+	start_up();
+	enable_mock = true;
+}
 
 int syscall_context::handle_close(int fd)
 {
+	if (!enable_mock)
+		return orig_close_fn(fd);
+	try_startup();
 	bpftime_close(fd);
 	return orig_close_fn(fd);
 }
 
 long syscall_context::handle_sysbpf(int cmd, union bpf_attr *attr, size_t size)
 {
-	start_up();
+	if (!enable_mock)
+		return orig_syscall_fn(__NR_bpf, (long)cmd,
+				       (long)(uintptr_t)attr, (long)size);
+	try_startup();
 	errno = 0;
 	char *errmsg;
 	switch (cmd) {
@@ -43,34 +59,38 @@ long syscall_context::handle_sysbpf(int cmd, union bpf_attr *attr, size_t size)
 		return id;
 	}
 	case BPF_MAP_LOOKUP_ELEM: {
-		spdlog::debug("Looking up map {}");
+		spdlog::debug("Looking up map {}", attr->map_fd);
 		// Note that bpftime_map_lookup_elem is adapted as a bpf helper,
 		// meaning that it will *return* the address of the matched
 		// value. But here the syscall has a different interface. Here
 		// we should write the bytes of the matched value to the pointer
 		// that user gave us. So here needs a memcpy to achive such
 		// thing.
-		auto value_ptr = bpftime_map_lookup_elem(
+		auto value_ptr = bpftime_map_lookup_elem_from_syscall(
 			attr->map_fd, (const void *)(uintptr_t)attr->key);
+		if (value_ptr == nullptr) {
+			errno = ENOENT;
+			return -1;
+		}
 		memcpy((void *)(uintptr_t)attr->value, value_ptr,
-		       bpftime_map_value_size(attr->map_fd));
+		       bpftime_map_value_size_from_syscall(attr->map_fd));
 		return 0;
 	}
 	case BPF_MAP_UPDATE_ELEM: {
 		spdlog::debug("Updating map");
-		return bpftime_map_update_elem(
+		return bpftime_map_update_elem_from_syscall(
 			attr->map_fd, (const void *)(uintptr_t)attr->key,
 			(const void *)(uintptr_t)attr->value,
 			(uint64_t)attr->flags);
 	}
 	case BPF_MAP_DELETE_ELEM: {
 		spdlog::debug("Deleting map");
-		return bpftime_map_delete_elem(
+		return bpftime_map_delete_elem_from_syscall(
 			attr->map_fd, (const void *)(uintptr_t)attr->key);
 	}
 	case BPF_MAP_GET_NEXT_KEY: {
 		spdlog::debug("Getting next key");
-		return (long)(uintptr_t)bpftime_map_get_next_key(
+		return (long)(uintptr_t)bpftime_map_get_next_key_from_syscall(
 			attr->map_fd, (const void *)(uintptr_t)attr->key,
 			(void *)(uintptr_t)attr->next_key);
 	}
@@ -195,6 +215,12 @@ long syscall_context::handle_sysbpf(int cmd, union bpf_attr *attr, size_t size)
 int syscall_context::handle_perfevent(perf_event_attr *attr, pid_t pid, int cpu,
 				      int group_fd, unsigned long flags)
 {
+	if (!enable_mock)
+		return orig_syscall_fn(__NR_perf_event_open,
+				       (uint64_t)(uintptr_t)attr, (uint64_t)pid,
+				       (uint64_t)cpu, (uint64_t)group_fd,
+				       (uint64_t)flags);
+	try_startup();
 	if ((int)attr->type == determine_uprobe_perf_type()) {
 		// NO legacy bpf types
 		bool retprobe = attr->config & determine_uprobe_retprobe_bit();
@@ -232,9 +258,22 @@ int syscall_context::handle_perfevent(perf_event_attr *attr, pid_t pid, int cpu,
 			       (uint64_t)flags);
 }
 
+void *syscall_context::handle_mmap(void *addr, size_t length, int prot,
+				   int flags, int fd, off64_t offset)
+{
+	if (!enable_mock)
+		return orig_mmap_fn(addr, length, prot, flags, fd, offset);
+	try_startup();
+	spdlog::debug("Called normal mmap");
+	return handle_mmap64(addr, length, prot, flags, fd, offset);
+}
+
 void *syscall_context::handle_mmap64(void *addr, size_t length, int prot,
 				     int flags, int fd, off64_t offset)
 {
+	if (!enable_mock)
+		return orig_mmap64_fn(addr, length, prot, flags, fd, offset);
+	try_startup();
 	spdlog::debug("Calling mocked mmap64");
 	if (fd != -1 && bpftime_is_ringbuf_map(fd)) {
 		spdlog::debug("Entering mmap64 handling for ringbuf fd: {}",
@@ -286,39 +325,54 @@ void *syscall_context::handle_mmap64(void *addr, size_t length, int prot,
 
 int syscall_context::handle_ioctl(int fd, unsigned long req, int data)
 {
+	if (!enable_mock)
+		return orig_ioctl_fn(fd, req, data);
+	try_startup();
 	int res;
-	switch (req) {
-	case PERF_EVENT_IOC_ENABLE: {
+	if (req == PERF_EVENT_IOC_ENABLE) {
 		spdlog::debug("Enabling perf event {}", fd);
-		res = bpftime_attach_enable(fd);
-		if (res < 0) {
-			return orig_ioctl_fn(fd, req, data);
-		}
-		return res;
-	}
-	case PERF_EVENT_IOC_SET_BPF: {
+		res = bpftime_perf_event_enable(fd);
+		if (res >= 0)
+			return res;
+		spdlog::warn(
+			"Failed to call mocked ioctl PERF_EVENT_IOC_ENABLE: {}",
+			res);
+	} else if (req == PERF_EVENT_IOC_DISABLE) {
+		spdlog::debug("Disabling perf event {}", fd);
+		res = bpftime_perf_event_disable(fd);
+		if (res >= 0)
+			return res;
+		spdlog::warn(
+			"Failed to call mocked ioctl PERF_EVENT_IOC_DISABLE: {}",
+			res);
+	} else if (req == PERF_EVENT_IOC_SET_BPF) {
 		spdlog::debug("Setting bpf for perf event {} and bpf {}", fd,
 			      data);
 		res = bpftime_attach_perf_to_bpf(fd, data);
-		if (res < 0) {
-			return orig_ioctl_fn(fd, req, data);
-		}
-		return res;
+		if (res >= 0)
+			return res;
+		spdlog::warn(
+			"Failed to call mocked ioctl PERF_EVENT_IOC_SET_BPF: {}",
+			res);
 	}
-	default:
-		return orig_ioctl_fn(fd, req, data);
-	}
-	return 0;
+	spdlog::warn("Calling original ioctl: {} {} {}", fd, req, data);
+	return orig_ioctl_fn(fd, req, data);
 }
 
 int syscall_context::handle_epoll_create1(int flags)
 {
+	if (!enable_mock)
+		return orig_epoll_create1_fn(flags);
+	try_startup();
 	return bpftime_epoll_create();
 }
 
 int syscall_context::handle_epoll_ctl(int epfd, int op, int fd,
 				      epoll_event *evt)
 {
+	if (!enable_mock)
+		return orig_epoll_ctl_fn(epfd, op, fd, evt);
+	try_startup();
 	if (op == EPOLL_CTL_ADD) {
 		if (bpftime_is_ringbuf_map(fd)) {
 			int err = bpftime_add_ringbuf_fd_to_epoll(fd, epfd,
@@ -345,6 +399,9 @@ int syscall_context::handle_epoll_ctl(int epfd, int op, int fd,
 int syscall_context::handle_epoll_wait(int epfd, epoll_event *evt,
 				       int maxevents, int timeout)
 {
+	if (!enable_mock)
+		orig_epoll_wait_fn(epfd, evt, maxevents, timeout);
+	try_startup();
 	if (bpftime_is_epoll_handler(epfd)) {
 		int ret = bpftime_epoll_wait(epfd, evt, maxevents, timeout);
 		return ret;
@@ -353,6 +410,9 @@ int syscall_context::handle_epoll_wait(int epfd, epoll_event *evt,
 }
 int syscall_context::handle_munmap(void *addr, size_t size)
 {
+	if (!enable_mock)
+		orig_munmap_fn(addr, size);
+	try_startup();
 	if (auto itr = mocked_mmap_values.find((uintptr_t)addr);
 	    itr != mocked_mmap_values.end()) {
 		spdlog::debug("Handling munmap of mocked addr: {:x}, size {}",

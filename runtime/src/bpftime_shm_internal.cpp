@@ -1,24 +1,35 @@
 #include "handler/epoll_handler.hpp"
 #include "handler/perf_event_handler.hpp"
+#include "spdlog/spdlog.h"
 #include <bpftime_shm_internal.hpp>
+#include <cstdio>
 #include <sys/epoll.h>
 #include <variant>
-namespace bpftime
-{
 
-void initialize_global_shm()
+void bpftime_initialize_global_shm()
 {
+	using namespace bpftime;
 	// Use placement new, which will not allocate memory, but just
 	// call the constructor
 	new (&shm_holder.global_shared_memory) bpftime_shm;
 }
+void bpftime_destroy_global_shm()
+{
+	using namespace bpftime;
+	// spdlog::info("Global shm destructed");
+	shm_holder.global_shared_memory.~bpftime_shm();
+	// Why not spdlog? because global variables that spdlog used were
+	// already destroyed..
+	puts("INFO: Global shm destructed");
+}
+static __attribute__((destructor(65535))) void __destruct_shm()
+{
+	bpftime_destroy_global_shm();
+}
+namespace bpftime
+{
 
 bpftime_shm_holder shm_holder;
-
-static __attribute__((destructor(101))) void __destroy_bpftime_shm_holder()
-{
-	shm_holder.global_shared_memory.~bpftime_shm();
-}
 
 // Check whether a certain pid was already equipped with syscall tracer
 // Using a set stored in the shared memory
@@ -46,7 +57,8 @@ uint32_t bpftime_shm::bpf_map_value_size(int fd) const
 		std::get<bpftime::bpf_map_handler>(manager->get_handler(fd));
 	return handler.get_value_size();
 }
-const void *bpftime_shm::bpf_map_lookup_elem(int fd, const void *key) const
+const void *bpftime_shm::bpf_map_lookup_elem(int fd, const void *key,
+					     bool from_userspace) const
 {
 	if (!is_map_fd(fd)) {
 		errno = ENOENT;
@@ -54,11 +66,12 @@ const void *bpftime_shm::bpf_map_lookup_elem(int fd, const void *key) const
 	}
 	auto &handler =
 		std::get<bpftime::bpf_map_handler>(manager->get_handler(fd));
-	return handler.map_lookup_elem(key);
+	return handler.map_lookup_elem(key, from_userspace);
 }
 
-long bpftime_shm::bpf_update_elem(int fd, const void *key, const void *value,
-				  uint64_t flags) const
+long bpftime_shm::bpf_map_update_elem(int fd, const void *key,
+				      const void *value, uint64_t flags,
+				      bool from_userspace) const
 {
 	if (!is_map_fd(fd)) {
 		errno = ENOENT;
@@ -66,10 +79,11 @@ long bpftime_shm::bpf_update_elem(int fd, const void *key, const void *value,
 	}
 	auto &handler =
 		std::get<bpftime::bpf_map_handler>(manager->get_handler(fd));
-	return handler.map_update_elem(key, value, flags);
+	return handler.map_update_elem(key, value, flags, from_userspace);
 }
 
-long bpftime_shm::bpf_delete_elem(int fd, const void *key) const
+long bpftime_shm::bpf_delete_elem(int fd, const void *key,
+				  bool from_userspace) const
 {
 	if (!is_map_fd(fd)) {
 		errno = ENOENT;
@@ -77,11 +91,11 @@ long bpftime_shm::bpf_delete_elem(int fd, const void *key) const
 	}
 	auto &handler =
 		std::get<bpftime::bpf_map_handler>(manager->get_handler(fd));
-	return handler.map_delete_elem(key);
+	return handler.map_delete_elem(key, from_userspace);
 }
 
-int bpftime_shm::bpf_map_get_next_key(int fd, const void *key,
-				      void *next_key) const
+int bpftime_shm::bpf_map_get_next_key(int fd, const void *key, void *next_key,
+				      bool from_userspace) const
 {
 	if (!is_map_fd(fd)) {
 		errno = ENOENT;
@@ -89,7 +103,7 @@ int bpftime_shm::bpf_map_get_next_key(int fd, const void *key,
 	}
 	auto &handler =
 		std::get<bpftime::bpf_map_handler>(manager->get_handler(fd));
-	return handler.bpf_map_get_next_key(key, next_key);
+	return handler.bpf_map_get_next_key(key, next_key, from_userspace);
 }
 
 int bpftime_shm::add_uprobe(int pid, const char *name, uint64_t offset,
@@ -134,7 +148,7 @@ int bpftime_shm::attach_perf_to_bpf(int perf_fd, int bpf_fd)
 	return 0;
 }
 
-int bpftime_shm::attach_enable(int fd) const
+int bpftime_shm::perf_event_enable(int fd) const
 {
 	if (!is_perf_fd(fd)) {
 		errno = ENOENT;
@@ -142,8 +156,18 @@ int bpftime_shm::attach_enable(int fd) const
 	}
 	auto &handler = std::get<bpftime::bpf_perf_event_handler>(
 		manager->get_handler(fd));
-	handler.enable();
-	return 0;
+	return handler.enable();
+}
+
+int bpftime_shm::perf_event_disable(int fd) const
+{
+	if (!is_perf_fd(fd)) {
+		errno = ENOENT;
+		return -1;
+	}
+	auto &handler = std::get<bpftime::bpf_perf_event_handler>(
+		manager->get_handler(fd));
+	return handler.disable();
 }
 
 int bpftime_shm::add_software_perf_event_to_epoll(int swpe_fd, int epoll_fd,
@@ -360,9 +384,10 @@ bool bpftime_shm::is_exist_fake_fd(int fd) const
 
 bpftime_shm::bpftime_shm()
 {
-	spdlog::info("global_shm_open_type {} for {}",
+	spdlog::info("Global shm constructed. global_shm_open_type {} for {}",
 		     (int)global_shm_open_type, bpftime::get_global_shm_name());
 	if (global_shm_open_type == shm_open_type::SHM_CLIENT) {
+		spdlog::debug("start: bpftime_shm for client setup");
 		// open the shm
 		segment = boost::interprocess::managed_shared_memory(
 			boost::interprocess::open_only,
@@ -378,23 +403,37 @@ bpftime_shm::bpftime_shm()
 			segment.find<struct agent_config>(
 				       bpftime::DEFAULT_AGENT_CONFIG_NAME)
 				.first;
+		spdlog::debug("done: bpftime_shm for client setup");
 	} else if (global_shm_open_type == shm_open_type::SHM_SERVER) {
+		spdlog::debug("start: bpftime_shm for server setup");
 		boost::interprocess::shared_memory_object::remove(
 			bpftime::get_global_shm_name());
 		// create the shm
+		spdlog::debug(
+			"done: bpftime_shm for server setup: remove installed segment");
 		segment = boost::interprocess::managed_shared_memory(
 			boost::interprocess::create_only,
 			// Allocate 20M bytes of memory by default
 			bpftime::get_global_shm_name(), 20 << 20);
+		spdlog::debug("done: bpftime_shm for server setup: segment");
+
 		manager = segment.construct<bpftime::handler_manager>(
 			bpftime::DEFAULT_GLOBAL_HANDLER_NAME)(segment);
+		spdlog::debug("done: bpftime_shm for server setup: manager");
+
 		syscall_installed_pids = segment.construct<syscall_pid_set>(
 			bpftime::DEFAULT_SYSCALL_PID_SET_NAME)(
 			std::less<int>(),
 			syscall_pid_set_allocator(
 				segment.get_segment_manager()));
+		spdlog::debug(
+			"done: bpftime_shm for server setup: syscall_pid_set");
+
 		agent_config = segment.construct<struct agent_config>(
 			bpftime::DEFAULT_AGENT_CONFIG_NAME)();
+		spdlog::debug(
+			"done: bpftime_shm for server setup: agent_config");
+		spdlog::debug("done: bpftime_shm for server setup.");
 	} else if (global_shm_open_type == shm_open_type::SHM_NO_CREATE) {
 		// not create any shm
 		return;

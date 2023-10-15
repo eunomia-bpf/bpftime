@@ -72,14 +72,17 @@ class bpftime_shm {
 	// create a bpf map fd
 	int add_bpf_map(const char *name, bpftime::bpf_map_attr attr);
 	uint32_t bpf_map_value_size(int fd) const;
-	const void *bpf_map_lookup_elem(int fd, const void *key) const;
+	const void *bpf_map_lookup_elem(int fd, const void *key,
+					bool from_userspace) const;
 
-	long bpf_update_elem(int fd, const void *key, const void *value,
-			     uint64_t flags) const;
+	long bpf_map_update_elem(int fd, const void *key, const void *value,
+			     uint64_t flags, bool from_userspace) const;
 
-	long bpf_delete_elem(int fd, const void *key) const;
+	long bpf_delete_elem(int fd, const void *key,
+			     bool from_userspace) const;
 
-	int bpf_map_get_next_key(int fd, const void *key, void *next_key) const;
+	int bpf_map_get_next_key(int fd, const void *key, void *next_key,
+				 bool from_userspace) const;
 
 	// create an uprobe fd
 	int add_uprobe(int pid, const char *name, uint64_t offset,
@@ -88,7 +91,8 @@ class bpftime_shm {
 	int add_software_perf_event(int cpu, int32_t sample_type,
 				    int64_t config);
 	int attach_perf_to_bpf(int perf_fd, int bpf_fd);
-	int attach_enable(int fd) const;
+	int perf_event_enable(int fd) const;
+	int perf_event_disable(int fd) const;
 	int add_ringbuf_to_epoll(int ringbuf_fd, int epoll_fd,
 				 epoll_data_t extra_data);
 	int add_software_perf_event_to_epoll(int swpe_fd, int epoll_fd,
@@ -111,13 +115,14 @@ union bpftime_shm_holder {
 	bpftime_shm global_shared_memory;
 	bpftime_shm_holder()
 	{
-		
 	}
 	~bpftime_shm_holder()
 	{
 	}
 };
 extern bpftime_shm_holder shm_holder;
-void initialize_global_shm();
+
 } // namespace bpftime
+extern "C" void bpftime_initialize_global_shm();
+extern "C" void bpftime_destroy_global_shm();
 #endif

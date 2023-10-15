@@ -48,6 +48,13 @@ extern "C" void *mmap64(void *addr, size_t length, int prot, int flags, int fd,
 	return context.handle_mmap64(addr, length, prot, flags, fd, offset);
 }
 
+extern "C" void *mmap(void *addr, size_t length, int prot, int flags, int fd,
+			off_t offset)
+{
+	spdlog::debug("mmap {:x}", (uintptr_t)addr);
+	return context.handle_mmap(addr, length, prot, flags, fd, offset);
+}
+
 extern "C" int close(int fd)
 {
 	spdlog::debug("Closing {}", fd);

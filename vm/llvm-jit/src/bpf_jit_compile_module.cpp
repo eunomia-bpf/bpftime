@@ -4,6 +4,8 @@
 #include "spdlog/spdlog.h"
 #include <cassert>
 #include <cstdint>
+#include <llvm-14/llvm/Support/Alignment.h>
+#include <llvm-14/llvm/Support/AtomicOrdering.h>
 #include <llvm-15/llvm/Support/Error.h>
 #include <llvm/ExecutionEngine/Orc/ThreadSafeModule.h>
 #include <llvm/IR/BasicBlock.h>
@@ -16,7 +18,6 @@
 #include <llvm/IR/Verifier.h>
 #include <llvm/Support/Debug.h>
 #include <map>
-#include <tuple>
 #include <vector>
 #include <endian.h>
 #include "bpf_jit_helpers.h"
@@ -986,6 +987,94 @@ bpf_jit_context::generateModule(const LLJIT &jit,
 				[&](auto dst, auto src) {
 					return builder.CreateICmpSLE(dst, src);
 				}));
+			break;
+		}
+		case EBPF_ATOMIC_OPCODE_32:
+		case EBPF_ATOMIC_OPCODE_64: {
+			switch (inst.imm) {
+			case EBPF_ATOMIC_ADD:
+			case EBPF_ATOMIC_ADD | EBPF_FETCH: {
+				emitAtomicBinOp(
+					builder, &regs[0],
+					llvm::AtomicRMWInst::BinOp::Add, inst,
+					inst.code == EBPF_ATOMIC_OPCODE_64,
+					(inst.imm & EBPF_FETCH) == EBPF_FETCH);
+				break;
+			}
+
+			case EBPF_ATOMIC_AND:
+			case EBPF_ATOMIC_AND | EBPF_FETCH: {
+				emitAtomicBinOp(
+					builder, &regs[0],
+					llvm::AtomicRMWInst::BinOp::And, inst,
+					inst.code == EBPF_ATOMIC_OPCODE_64,
+					(inst.imm & EBPF_FETCH) == EBPF_FETCH);
+				break;
+			}
+
+			case EBPF_ATOMIC_OR:
+			case EBPF_ATOMIC_OR | EBPF_FETCH: {
+				emitAtomicBinOp(
+					builder, &regs[0],
+					llvm::AtomicRMWInst::BinOp::Or, inst,
+					inst.code == EBPF_ATOMIC_OPCODE_64,
+					(inst.imm & EBPF_FETCH) == EBPF_FETCH);
+				break;
+			}
+			case EBPF_ATOMIC_XOR:
+			case EBPF_ATOMIC_XOR | EBPF_FETCH: {
+				emitAtomicBinOp(
+					builder, &regs[0],
+					llvm::AtomicRMWInst::BinOp::Xor, inst,
+					inst.code == EBPF_ATOMIC_OPCODE_64,
+					(inst.imm & EBPF_FETCH) == EBPF_FETCH);
+				break;
+			}
+			case EBPF_XCHG: {
+				emitAtomicBinOp(
+					builder, &regs[0],
+					llvm::AtomicRMWInst::BinOp::Xchg, inst,
+					inst.code == EBPF_ATOMIC_OPCODE_64,
+					false);
+				break;
+			}
+			case EBPF_CMPXCHG: {
+				bool is64 = inst.code == EBPF_ATOMIC_OPCODE_64;
+				auto vPtr = builder.CreateGEP(
+					builder.getInt8Ty(),
+					builder.CreateLoad(builder.getPtrTy(),
+							   regs[inst.dst_reg]),
+					{ builder.getInt64(inst.off) });
+				auto beforeVal = builder.CreateLoad(
+					is64 ? builder.getInt64Ty() :
+					       builder.getInt32Ty(),
+					vPtr);
+				builder.CreateAtomicCmpXchg(
+					vPtr,
+					builder.CreateLoad(
+						is64 ? builder.getInt64Ty() :
+						       builder.getInt32Ty(),
+						regs[0]),
+					builder.CreateLoad(
+						is64 ? builder.getInt64Ty() :
+						       builder.getInt32Ty(),
+						regs[inst.src_reg]),
+					MaybeAlign(0),
+					AtomicOrdering::Monotonic,
+					AtomicOrdering::Monotonic);
+				builder.CreateStore(
+					builder.CreateZExt(beforeVal,
+							   builder.getInt64Ty()),
+					regs[0]);
+				break;
+			}
+			default: {
+				return llvm::make_error<llvm::StringError>(
+					"Unsupported atomic operation: " +
+						std::to_string(inst.imm),
+					llvm::inconvertibleErrorCode());
+			}
+			}
 			break;
 		}
 		default:

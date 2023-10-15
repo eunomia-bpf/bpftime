@@ -46,20 +46,31 @@ int bpftime_progs_create(const ebpf_inst *insn, size_t insn_cnt,
 			 const char *prog_name, int prog_type);
 
 int bpftime_maps_create(const char *name, bpftime::bpf_map_attr attr);
-int bpftime_map_get_next_key(int fd, const void *key, void *next_key);
+
 int bpftime_map_get_info(int fd, bpftime::bpf_map_attr *out_attr,
 			 const char **out_name, int *type);
 
-uint32_t bpftime_map_value_size(int fd);
-const void *bpftime_map_lookup_elem(int fd, const void *key);
-long bpftime_map_update_elem(int fd, const void *key, const void *value,
-			     uint64_t flags);
-long bpftime_map_delete_elem(int fd, const void *key);
+uint32_t bpftime_map_value_size_from_syscall(int fd);
+int bpftime_map_get_next_key_from_helper(int fd, const void *key,
+					 void *next_key);
+const void *bpftime_map_lookup_elem_from_helper(int fd, const void *key);
+long bpftime_map_update_elem_from_helper(int fd, const void *key,
+					 const void *value, uint64_t flags);
+long bpftime_map_delete_elem_from_helper(int fd, const void *key);
+
+int bpftime_map_get_next_key_from_syscall(int fd, const void *key,
+					 void *next_key);
+const void *bpftime_map_lookup_elem_from_syscall(int fd, const void *key);
+long bpftime_map_update_elem_from_syscall(int fd, const void *key,
+					 const void *value, uint64_t flags);
+long bpftime_map_delete_elem_from_syscall(int fd, const void *key);
+
 
 int bpftime_uprobe_create(int pid, const char *name, uint64_t offset,
 			  bool retprobe, size_t ref_ctr_off);
 int bpftime_tracepoint_create(int pid, int32_t tp_id);
-int bpftime_attach_enable(int fd);
+int bpftime_perf_event_enable(int fd);
+int bpftime_perf_event_disable(int fd);
 int bpftime_attach_perf_to_bpf(int perf_fd, int bpf_fd);
 int bpftime_add_ringbuf_fd_to_epoll(int ringbuf_fd, int epoll_fd,
 				    epoll_data_t extra_data);
@@ -75,8 +86,8 @@ void *bpftime_get_array_map_raw_data(int fd);
 void bpftime_close(int fd);
 void *bpftime_ringbuf_reserve(int fd, uint64_t size);
 void bpftime_ringbuf_submit(int fd, void *data, int discard);
-int bpftime_epoll_wait(int fd, struct epoll_event* out_evts, int max_evt,
-			       int timeout);
+int bpftime_epoll_wait(int fd, struct epoll_event *out_evts, int max_evt,
+		       int timeout);
 int bpftime_add_software_perf_event(int cpu, int32_t sample_type,
 				    int64_t config);
 int bpftime_is_software_perf_event(int fd);
