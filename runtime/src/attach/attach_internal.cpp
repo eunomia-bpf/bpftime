@@ -89,8 +89,6 @@ void *__frida_bpftime_filter_handler()
 		    (void *)arg4);
 }
 
-
-
 typedef struct _UprobeListener UprobeListener;
 
 struct _UprobeListener {
@@ -115,9 +113,9 @@ static void uprobe_listener_on_enter(GumInvocationListener *listener,
 	if (hook_entry->progs.size() == 0) {
 		return;
 	}
+	spdlog::trace("Handle uprobe at uprobe_listener_on_enter");
 	GumInvocationContext *ctx;
 	pt_regs regs;
-
 	ctx = gum_interceptor_get_current_invocation();
 	convert_gum_cpu_context_to_pt_regs(*ctx->cpu_context, regs);
 	for (auto &prog : hook_entry->progs) {
@@ -138,7 +136,7 @@ static void uprobe_listener_on_leave(GumInvocationListener *listener,
 	if (hook_entry->ret_progs.size() == 0) {
 		return;
 	}
-
+	spdlog::trace("Handle uretprobe at uprobe_listener_on_leave");
 	pt_regs regs;
 	GumInvocationContext *ctx;
 	ctx = gum_interceptor_get_current_invocation();
@@ -181,6 +179,8 @@ static void frida_uprobe_listener_on_enter(_GumInvocationContext *ic,
 	GumInvocationContext *ctx;
 	pt_regs regs;
 
+	spdlog::trace("Handle uprobe at frida_uprobe_listener_on_enter");
+
 	ctx = gum_interceptor_get_current_invocation();
 	convert_gum_cpu_context_to_pt_regs(*ctx->cpu_context, regs);
 	for (auto &prog : hook_entry->progs) {
@@ -201,6 +201,7 @@ static void frida_uprobe_listener_on_leave(_GumInvocationContext *ic,
 		return;
 	}
 
+	spdlog::trace("Handle uretprobe at frida_uprobe_listener_on_leave");
 	pt_regs regs;
 	GumInvocationContext *ctx;
 	ctx = gum_interceptor_get_current_invocation();

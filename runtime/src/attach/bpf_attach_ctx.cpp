@@ -277,6 +277,9 @@ int bpf_attach_ctx::init_attach_ctx_from_handlers(
 			}
 			case bpf_perf_event_handler::bpf_event_type::
 				BPF_TYPE_UPROBE: {
+				spdlog::debug(
+					"Creating uprobe for perf event fd {}",
+					i);
 				fd = create_uprobe(function, i, false);
 				break;
 			}
@@ -466,6 +469,9 @@ int bpf_attach_ctx::attach_prog(const bpftime_prog *prog, int id)
 		break;
 	}
 	case BPFTIME_UPROBE: {
+		spdlog::trace(
+			"Insert uprobe/uretprobe program for prog id {}, entry uretprobe id {}",
+			id, entry.uretprobe_id);
 		if (entry.uretprobe_id == id) {
 			entry.ret_progs.insert(prog);
 		} else {

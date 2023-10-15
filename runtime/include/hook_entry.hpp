@@ -35,7 +35,7 @@ struct hook_entry {
 
 	// listener for uprobe
 	GumInvocationListener *listener = nullptr;
-	int uretprobe_id;
+	int uretprobe_id = -1;
 	std::set<const bpftime_prog *> ret_progs;
 };
 // get hook entry from probe context
