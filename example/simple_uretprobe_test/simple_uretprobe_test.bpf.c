@@ -4,10 +4,10 @@
 #include <vmlinux.h>
 #include <bpf/bpf_helpers.h>
 #include <bpf/bpf_tracing.h>
-SEC("uretprobe/readline")
+SEC("uretprobe/./example/simple_uretprobe_test/victim:simple_add")
 int BPF_URETPROBE(simple_probe, long ret)
 {
-	bpf_printk("Ret=%ld", ret);
+	bpf_printk("Ret=%ld\n", ret);
 
 	return 0;
 }

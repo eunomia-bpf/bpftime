@@ -223,14 +223,15 @@ int syscall_context::handle_perfevent(perf_event_attr *attr, pid_t pid, int cpu,
 	try_startup();
 	if ((int)attr->type == determine_uprobe_perf_type()) {
 		// NO legacy bpf types
-		bool retprobe = attr->config & determine_uprobe_retprobe_bit();
+		bool retprobe =
+			attr->config & (1 << determine_uprobe_retprobe_bit());
 		size_t ref_ctr_off =
 			attr->config >> PERF_UPROBE_REF_CTR_OFFSET_SHIFT;
 		const char *name = (const char *)(uintptr_t)attr->config1;
 		uint64_t offset = attr->config2;
 		spdlog::debug(
-			"Creating uprobe name {} offset {} retprove {} ref_ctr_off {}",
-			name, offset, retprobe, ref_ctr_off);
+			"Creating uprobe name {} offset {} retprobe {} ref_ctr_off {} attr->config={:x}",
+			name, offset, retprobe, ref_ctr_off, attr->config);
 		int id = bpftime_uprobe_create(pid, name, offset, retprobe,
 					       ref_ctr_off);
 		// std::cout << "Created uprobe " << id << std::endl;

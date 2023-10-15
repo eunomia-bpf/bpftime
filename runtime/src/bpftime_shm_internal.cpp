@@ -112,7 +112,7 @@ int bpftime_shm::add_uprobe(int pid, const char *name, uint64_t offset,
 	int fd = open_fake_fd();
 	manager->set_handler(
 		fd,
-		bpftime::bpf_perf_event_handler{ false, offset, pid, name,
+		bpftime::bpf_perf_event_handler{ retprobe, offset, pid, name,
 						 ref_ctr_off, segment },
 		segment);
 	return fd;
