@@ -166,7 +166,7 @@ add_subdirectory(object)
 add_subdirectory(agent)
 add_subdirectory(syscall-server)
 add_subdirectory(agent-transformer)
-add_subdirectory(unit-test)
+
 
 #
 # Unit testing setup
@@ -175,4 +175,5 @@ if(BPFTIME_ENABLE_UNIT_TESTING)
   enable_testing()
   message(STATUS "Build unit tests for the project. Tests should always be found in the test folder\n")
   add_subdirectory(test)
+  add_subdirectory(unit-test)
 endif()

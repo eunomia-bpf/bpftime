@@ -8,25 +8,15 @@
 #include <unistd.h>
 #include <vector>
 #include <bpf_map/map_common_def.hpp>
+#include "common_def.hpp"
 using namespace boost::interprocess;
 using namespace bpftime;
 
 static const char *SHM_NAME = "_PER_CPU_ARRAY_SHM";
 
-struct shm_remove {
-	shm_remove()
-	{
-		shared_memory_object::remove(SHM_NAME);
-	}
-	~shm_remove()
-	{
-		shared_memory_object::remove(SHM_NAME);
-	}
-};
-
 TEST_CASE("Test basic operations of array map")
 {
-	shm_remove remover;
+	shm_remove remover(SHM_NAME);
 	managed_shared_memory mem(create_only, SHM_NAME, 20 << 20);
 	uint32_t ncpu = sysconf(_SC_NPROCESSORS_ONLN);
 	SECTION("Test writing from helpers, and read from userspace")

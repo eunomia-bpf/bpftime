@@ -1,0 +1,28 @@
+name: Run unit tests of bpftime-runtime
+
+
+on:
+  push:
+    branches: "*"
+  pull_request: 
+    # Why wildcard? Because we want to see test results when examing prs from non-master branches..
+    branches: "*"
+
+
+jobs:
+  build-test-target-and-run:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v2
+        with:
+          submodules: 'recursive'
+      - name: Install dependencies
+        run: | 
+          sudo apt-get install binutils-dev libboost1.74-all-dev libelf-dev zlib1g-dev libyaml-cpp-dev gcc-12 g++-12
+      - name: Build the target
+        run: |
+          cmake -Bbuild  -DBPFTIME_ENABLE_UNIT_TESTING=1 -DCMAKE_BUILD_TYPE:STRING=Debug
+          cmake --build build --config Debug -j --target bpftime_runtime_tests
+      - name: Run the test
+        run: |
+          ./build/runtime/unit-test/bpftime_runtime_tests

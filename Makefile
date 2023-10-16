@@ -30,6 +30,11 @@ INSTALL_LOCATION := ~/.local
 help:
 	@python3 -c "$$PRINT_HELP_PYSCRIPT" < $(MAKEFILE_LIST)
 
+build-unit-test:
+	cmake -Bbuild  -DBPFTIME_ENABLE_UNIT_TESTING=1 -DCMAKE_BUILD_TYPE:STRING=Debug
+	cmake --build build --config Debug -j --target bpftime_runtime_tests
+unit-test:
+	./build/runtime/unit-test/bpftime_runtime_tests
 test: ## test the package
 	make -C third_party/libbpf/src
 	make -C runtime/test/bpf
@@ -38,7 +43,7 @@ test: ## test the package
 
 build: ## build the package
 	cmake -Bbuild  -DBPFTIME_ENABLE_UNIT_TESTING=1
-	cmake --build build --config Debug
+	cmake --build build --config Debug -j
 	cd tools/cli-rs && cargo build
 
 release: ## build the package

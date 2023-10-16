@@ -1,10 +1,12 @@
 #include "catch2/catch_message.hpp"
+#include "common_def.hpp"
 #include <boost/interprocess/creation_tags.hpp>
 #include <boost/interprocess/interprocess_fwd.hpp>
 #include <bpf_map/per_cpu_hash_map.hpp>
 #include <catch2/catch_test_macros.hpp>
 #include <cstdint>
 #include <sched.h>
+#include <sys/mman.h>
 #include <unistd.h>
 #include <vector>
 #include <bpf_map/map_common_def.hpp>
@@ -14,22 +16,11 @@
 using namespace boost::interprocess;
 using namespace bpftime;
 
-static const char *SHM_NAME = "_PER_CPU_HASH_SHM";
-
-struct shm_remove {
-	shm_remove()
-	{
-		shared_memory_object::remove(SHM_NAME);
-	}
-	~shm_remove()
-	{
-		shared_memory_object::remove(SHM_NAME);
-	}
-};
+static const char *SHM_NAME = "BPFTIME_PER_CPU_HASH_SHM";
 
 TEST_CASE("Test basic operations of hash map")
 {
-	shm_remove remover;
+	shm_remove remover(SHM_NAME);
 	managed_shared_memory mem(create_only, SHM_NAME, 20 << 20);
 	uint32_t ncpu = sysconf(_SC_NPROCESSORS_ONLN);
 	std::mt19937 gen;
