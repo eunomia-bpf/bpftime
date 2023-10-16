@@ -160,10 +160,13 @@ target_include_directories(${PROJECT_NAME} PUBLIC
 
 message(DEBUG "Successfully added all dependencies and linked against them.")
 
+set(BPFTIME_RUNTIME_INCLUDE ${CMAKE_CURRENT_SOURCE_DIR}/include ${CMAKE_CURRENT_SOURCE_DIR}/src)
+
 add_subdirectory(object)
 add_subdirectory(agent)
 add_subdirectory(syscall-server)
 add_subdirectory(agent-transformer)
+add_subdirectory(unit-tests)
 
 #
 # Unit testing setup
