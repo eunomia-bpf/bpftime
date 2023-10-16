@@ -166,7 +166,7 @@ add_subdirectory(object)
 add_subdirectory(agent)
 add_subdirectory(syscall-server)
 add_subdirectory(agent-transformer)
-add_subdirectory(unit-tests)
+add_subdirectory(unit-test)
 
 #
 # Unit testing setup
