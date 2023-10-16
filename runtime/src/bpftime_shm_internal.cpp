@@ -4,6 +4,7 @@
 #include <bpftime_shm_internal.hpp>
 #include <cstdio>
 #include <sys/epoll.h>
+#include <unistd.h>
 #include <variant>
 
 void bpftime_initialize_global_shm()
@@ -20,7 +21,7 @@ void bpftime_destroy_global_shm()
 	shm_holder.global_shared_memory.~bpftime_shm();
 	// Why not spdlog? because global variables that spdlog used were
 	// already destroyed..
-	puts("INFO: Global shm destructed");
+	printf("INFO [%d]: Global shm destructed\n", (int)getpid());
 }
 static __attribute__((destructor(65535))) void __destruct_shm()
 {

@@ -12,11 +12,13 @@
 #include <ostream>
 #include <string>
 #include <linux/bpf.h>
+#include <unistd.h>
 
 using namespace boost::interprocess;
 using namespace bpftime;
 
-const shm_open_type bpftime::global_shm_open_type = shm_open_type::SHM_NO_CREATE;
+const shm_open_type bpftime::global_shm_open_type =
+	shm_open_type::SHM_NO_CREATE;
 
 const char *HANDLER_NAME = "my_handler";
 const char *SHM_NAME = "my_shm_attach_test";
@@ -106,6 +108,7 @@ void attach_replace(bpftime::handler_manager &manager_ref,
 
 int main(int argc, const char **argv)
 {
+	spdlog::set_level(spdlog::level::debug);
 	if (argc == 1) {
 		std::cout << "parent process start" << std::endl;
 		shm_remove remover(SHM_NAME);
@@ -139,11 +142,15 @@ int main(int argc, const char **argv)
 
 		std::cout << "Starting sub process" << std::endl;
 		system((std::string(argv[0]) + " sub").c_str());
+		std::cout << "Subprocess exited, from server" << std::endl;
 		assert(segment.find<handler_manager>(HANDLER_NAME).first ==
 		       nullptr);
+		std::cout << "Server exiting.." << std::endl;
+		bpftime_object_close(obj);
 	} else {
 		int res = 0;
-		std::cout << "Subprocess started" << std::endl;
+		std::cout << "Subprocess started, pid=" << getpid()
+			  << std::endl;
 
 		// test for no attach
 		res = my_function(1, "hello aaa", 'c');
