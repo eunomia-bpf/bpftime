@@ -1,5 +1,4 @@
 #include "bpftime_shm_internal.hpp"
-#include <ranges>
 #include <spdlog/cfg/env.h>
 #include <spdlog/spdlog.h>
 #include <bpftime_shm.hpp>
@@ -11,6 +10,37 @@
 static bool already_setup = false;
 static bool disable_mock = true;
 using namespace bpftime;
+
+static void process_token(const std::string_view& token, agent_config& config) {
+    if (token == "ffi") {
+        spdlog::info("Enabling ffi helper group");
+        config.enable_ffi_helper_group = true;
+    } else if (token == "kernel") {
+        spdlog::info("Enabling kernel helper group");
+        config.enable_kernel_helper_group = true;
+    } else if (token == "shm_map") {
+        spdlog::info("Enabling shm_map helper group");
+        config.enable_shm_maps_helper_group = true;
+    } else {
+        spdlog::warn("Unknown helper group: {}", token);
+    }
+}
+
+static void process_helper_sv(const std::string_view& str, const char delimiter, agent_config& config) {
+    std::string::size_type start = 0;
+    std::string::size_type end = str.find(delimiter);
+
+    while (end != std::string::npos) {
+        process_token(str.substr(start, end - start), config);
+        start = end + 1;
+        end = str.find(delimiter, start);
+    }
+
+    // Handle the last token, if any
+    if (start < str.size()) {
+        process_token(str.substr(start), config);
+    }
+}
 
 void start_up()
 {
@@ -29,25 +59,7 @@ void start_up()
 				agent_config.enable_shm_maps_helper_group =
 					false;
 		auto helpers_sv = std::string_view(custom_helpers);
-		for (auto tok : helpers_sv | std::ranges::views::split(
-						     std::string_view(","))) {
-			auto curr_token =
-				std::string_view(tok.begin(), tok.end());
-			if (curr_token == "ffi") {
-				spdlog::info("Enabling ffi helper group");
-				agent_config.enable_ffi_helper_group = true;
-			} else if (curr_token == "kernel") {
-				spdlog::info("Enabling kernel helper group");
-				agent_config.enable_kernel_helper_group = true;
-			} else if (curr_token == "shm_map") {
-				spdlog::info("Enabling shm_map helper group");
-				agent_config.enable_shm_maps_helper_group =
-					true;
-			} else {
-				spdlog::warn("Unknown helper group: {}",
-					     curr_token);
-			}
-		}
+		process_helper_sv(helpers_sv, ',', agent_config);
 	} else {
 		spdlog::info(
 			"Enabling helper groups ffi, kernel, shm_map by default");
