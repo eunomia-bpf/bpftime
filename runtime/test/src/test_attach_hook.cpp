@@ -9,7 +9,8 @@
 
 using namespace bpftime;
 
-const shm_open_type bpftime::global_shm_open_type = shm_open_type::SHM_NO_CREATE;
+const shm_open_type bpftime::global_shm_open_type =
+	shm_open_type::SHM_NO_CREATE;
 
 // This is the hook function.
 int my_hook_function()
@@ -29,18 +30,19 @@ unsigned char orig_bytes[256];
 
 int main()
 {
-	int res = my_function();
+	int res [[maybe_unused]] = my_function();
 	assert(res == 67);
 
 	bpf_attach_ctx probe_ctx;
 
-	probe_ctx.replace_func((void*)my_hook_function, (void*)my_function, NULL);
+	probe_ctx.replace_func((void *)my_hook_function, (void *)my_function,
+			       NULL);
 
 	// Now calling the function will actually call the hook function.
 	res = my_function();
 	assert(res == 11);
 
-	probe_ctx.revert_func((void*)my_function);
+	probe_ctx.revert_func((void *)my_function);
 
 	// Now calling the function will call the original function.
 	res = my_function();

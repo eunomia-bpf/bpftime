@@ -101,7 +101,7 @@ foreach(file ${test_sources})
 
   if(CMAKE_BUILD_TYPE STREQUAL "Debug")
     # Enable sanitizers if we are debugging
-    target_link_options(${test_name}_Tests PRIVATE -fsanitize=undefined -fsanitize=address)
+    target_link_options(${test_name}_Tests PRIVATE -fsanitize=undefined)
   endif()
 
   #

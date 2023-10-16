@@ -396,6 +396,7 @@ bpf_attach_ctx::~bpf_attach_ctx()
 		spdlog::debug("Destroy attach of {}", i);
 		destory_attach(i);
 	}
+	gum_object_unref(interceptor);
 }
 int bpf_attach_ctx::revert_func(void *target_function)
 {
@@ -447,6 +448,7 @@ int bpf_attach_ctx::destory_attach(int id)
 			spdlog::debug("Frida detached");
 			// No need to manually free, because frida uses RefCounting GC
 			// gum_free(entry->second.listener);
+			gum_object_unref(entry->second.listener);
 			hook_entry_table.erase(function->second);
 			spdlog::debug("Listener freed");
 		}
