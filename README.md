@@ -99,9 +99,7 @@ We can use the bpftime userspace runtime for:
 - `tracing all syscalls with tracepoints`
   - [`opensnoop`](example/opensnoop): trace file open or close syscalls in a process. demonstrate how to use the userspace `syscall tracepoint` with `ring buffer` output.
 
-More examples can be found in [example](example) dir. More examples are coming soon.
-
-> Some examples may not working now, we are fixing it. You can refer to [benchmark](benchmark) dir for more working examples.
+More examples can be found in [example](example) dir.
 
 ### **How it Works**
 
@@ -158,7 +156,7 @@ see [documents/build-and-test.md](documents/build-and-test.md) for details.
 `bpftime` is continuously evolving with more features in the pipeline:
 
 - [X] ring buffer output support.
-- [ ] perf event output support.
+- [X] perf event output support.
 - [ ] Figure out how to run transparently with kernel probe
 - [ ] An AOT compiler for eBPF can be easily added based on the LLVM IR.
 - [ ] more examples and usecases.

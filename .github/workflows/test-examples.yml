@@ -1,4 +1,4 @@
-name: Test whether ringbuf and opensnoop works properly
+name: Test examples
 
 on:
   push:
