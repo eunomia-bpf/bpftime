@@ -45,14 +45,14 @@ union bpf_attach_ctx_holder {
 };
 static bpf_attach_ctx_holder ctx_holder;
 
+syscall_hooker_func_t orig_hooker;
+
 extern "C" void bpftime_agent_main(const gchar *data, gboolean *stay_resident);
 
 extern "C" int bpftime_hooked_main(int argc, char **argv, char **envp)
 {
 	int stay_resident = 0;
-	spdlog::cfg::load_env_levels();
-	bpftime_initialize_global_shm();
-	ctx_holder.init();
+
 	bpftime_agent_main("", &stay_resident);
 	int ret = orig_main_func(argc, argv, envp);
 	ctx_holder.destroy();
@@ -76,6 +76,9 @@ extern "C" int __libc_start_main(int (*main)(int, char **, char **), int argc,
 
 extern "C" void bpftime_agent_main(const gchar *data, gboolean *stay_resident)
 {
+	bpftime_initialize_global_shm();
+	ctx_holder.init();
+	ctx_holder.ctx.set_orig_syscall_func(orig_hooker);
 	spdlog::cfg::load_env_levels();
 	spdlog::info("Initializing agent..");
 	spdlog::set_pattern("[%Y-%m-%d %H:%M:%S][%^%l%$][%t] %v");
@@ -94,7 +97,7 @@ extern "C" void bpftime_agent_main(const gchar *data, gboolean *stay_resident)
 	// don't free ctx here
 	return;
 }
-syscall_hooker_func_t orig_hooker;
+
 
 int64_t syscall_callback(int64_t sys_nr, int64_t arg1, int64_t arg2,
 			 int64_t arg3, int64_t arg4, int64_t arg5, int64_t arg6)
@@ -111,9 +114,6 @@ __c_abi_setup_syscall_trace_callback(syscall_hooker_func_t *hooker)
 {
 	orig_hooker = *hooker;
 	*hooker = &syscall_callback;
-	bpftime_initialize_global_shm();
-	ctx_holder.init();
-	ctx_holder.ctx.set_orig_syscall_func(orig_hooker);
 	gboolean val;
 	bpftime_agent_main("", &val);
 	spdlog::info("Agent syscall trace setup exiting..");
