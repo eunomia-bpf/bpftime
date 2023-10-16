@@ -22,10 +22,10 @@ set(test_sources
 
   src/test_shm_hash_maps.cpp
   src/test_shm_progs_attach.cpp
+
   # src/test_shm_client.cpp
   # src/test_shm_server.cpp
   # src/test_ffi.cpp
-
   src/test_helpers.cpp
 )
 
@@ -95,7 +95,13 @@ foreach(file ${test_sources})
       runtime
       bpftime-object
     )
+
     # message("Unknown testing library ${test_name}_Tests. Please setup your desired unit testing library by using `target_link_libraries`.")
+  endif()
+
+  if(CMAKE_BUILD_TYPE STREQUAL "Debug")
+    # Enable sanitizers if we are debugging
+    target_link_options(${test_name}_Tests PRIVATE -fsanitize=undefined)
   endif()
 
   #

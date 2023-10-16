@@ -9,6 +9,10 @@
 #include <boost/interprocess/allocators/allocator.hpp>
 #include <unistd.h>
 #include <spdlog/fmt/bin_to_hex.h>
+
+#pragma GCC diagnostic ignored "-Wstrict-aliasing"
+
+
 #define READ_ONCE_U64(x) (*(volatile uint64_t *)&x)
 #define WRITE_ONCE_U64(x, v) (*(volatile uint64_t *)&x) = (v)
 

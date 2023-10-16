@@ -72,7 +72,10 @@ static inline union arg_val to_arg_val(enum ffi_types type, uint64_t val)
 		arg.uint64 = val;
 		break;
 	case FFI_TYPE_DOUBLE:
-		arg.double_val = *(double *)&val;
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wstrict-aliasing"
+		arg.double_val = *(double *)(uintptr_t)&val;
+#pragma GCC diagnostic pop
 		break;
 	case FFI_TYPE_POINTER:
 		arg.ptr = (void *)(uintptr_t)val;
@@ -91,7 +94,10 @@ static inline uint64_t from_arg_val(enum ffi_types type, union arg_val val)
 	case FFI_TYPE_UINT:
 		return val.uint64;
 	case FFI_TYPE_DOUBLE:
-		return *(uint64_t *)&val.double_val;
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wstrict-aliasing"
+		return *(uint64_t *)(uintptr_t)&val.double_val;
+#pragma GCC diagnostic pop
 	case FFI_TYPE_POINTER:
 		return (uint64_t)(uintptr_t)val.ptr;
 	default:
@@ -106,15 +112,16 @@ static uint64_t __ebpf_call_ffi_dispatcher(uint64_t id, uint64_t arg_list)
 	assert(id < MAX_FFI_FUNCS);
 	struct ebpf_ffi_func_info *func_info = ebpf_resovle_ffi_func(id);
 	assert(func_info->func != NULL);
-
 	// Prepare arguments
 	struct arg_list *raw_args = (struct arg_list *)(uintptr_t)arg_list;
 	union arg_val args[5];
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wnull-dereference"
 	for (int i = 0; i < func_info->num_args; i++) {
 		args[i] =
 			to_arg_val(func_info->arg_types[i], raw_args->args[i]);
 	}
-
+#pragma GCC diagnostic pop
 	// Call the function
 	union arg_val ret = { .uint64 = 0 };
 	switch (func_info->num_args) {

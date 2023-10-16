@@ -12,7 +12,8 @@
 #include "bpftime_shm.hpp"
 
 using namespace bpftime;
-const shm_open_type bpftime::global_shm_open_type = shm_open_type::SHM_NO_CREATE;
+const shm_open_type bpftime::global_shm_open_type =
+	shm_open_type::SHM_NO_CREATE;
 
 // This is the original function to hook.
 int my_function(int parm1, const char *str, char c)
@@ -28,8 +29,9 @@ bpftime_prog *get_prog(const char *name, bpftime_object *obj)
 	bpftime_prog *prog = bpftime_object_find_program_by_name(obj, name);
 	assert(prog);
 	// add ffi support
-	int res = bpftime_helper_group::get_kernel_utils_helper_group()
-			  .add_helper_group_to_prog(prog);
+	int res [[maybe_unused]] =
+		bpftime_helper_group::get_kernel_utils_helper_group()
+			.add_helper_group_to_prog(prog);
 	assert(res == 0);
 	res = prog->bpftime_prog_load(false);
 	assert(res == 0);

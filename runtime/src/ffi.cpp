@@ -94,7 +94,9 @@ extern "C" uint64_t __ebpf_call_ffi_dispatcher(uint64_t id, uint64_t arg_list)
 
 union arg_val to_arg_val(enum ffi_types type, uint64_t val)
 {
-	union arg_val arg;
+	union arg_val arg {
+		.uint64 = 0
+	};
 	switch (type) {
 	case FFI_TYPE_INT8:
 	case FFI_TYPE_INT16:
@@ -109,7 +111,10 @@ union arg_val to_arg_val(enum ffi_types type, uint64_t val)
 		arg.uint64 = val;
 		break;
 	case FFI_TYPE_DOUBLE:
-		arg.double_val = *(double *)&val;
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wstrict-aliasing"
+		arg.double_val = *(double *)(uintptr_t)&val;
+#pragma GCC diagnostic pop
 		break;
 	case FFI_TYPE_POINTER:
 		arg.ptr = (void *)val;
@@ -139,7 +144,10 @@ uint64_t from_arg_val(enum ffi_types type, union arg_val val)
 	case FFI_TYPE_UINT64:
 		return val.uint64;
 	case FFI_TYPE_DOUBLE:
-		return *(uint64_t *)&val.double_val;
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wstrict-aliasing"
+		return *(uint64_t *)(uintptr_t)&val.double_val;
+#pragma GCC diagnostic pop
 	case FFI_TYPE_POINTER:
 		return (uint64_t)val.ptr;
 	case FFI_TYPE_VOID:

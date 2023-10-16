@@ -387,13 +387,16 @@ int bpf_attach_ctx::detach(const bpftime_prog *prog)
 
 bpf_attach_ctx::~bpf_attach_ctx()
 {
+	spdlog::debug("Destructor: bpf_attach_ctx");
 	std::vector<int> id_to_remove = {};
 	for (auto &m : hook_entry_table) {
 		id_to_remove.push_back(m.second.id);
 	}
 	for (auto i : id_to_remove) {
+		spdlog::debug("Destroy attach of {}", i);
 		destory_attach(i);
 	}
+	gum_object_unref(interceptor);
 }
 int bpf_attach_ctx::revert_func(void *target_function)
 {
@@ -411,6 +414,8 @@ int bpf_attach_ctx::destory_attach(int id)
 	if (entry == hook_entry_table.end()) {
 		return -1;
 	}
+	spdlog::debug("Revert attach of id {}, type {}", id,
+		      (int)entry->second.type);
 	switch (entry->second.type) {
 	case BPFTIME_REPLACE: {
 		if (entry->second.hook_func != nullptr) {
@@ -423,22 +428,29 @@ int bpf_attach_ctx::destory_attach(int id)
 	}
 	case BPFTIME_UPROBE: {
 		if (entry->second.uretprobe_id == id) {
+			spdlog::debug("Revert uretprobe");
 			hook_entry_index.erase(entry->second.uretprobe_id);
 			entry->second.uretprobe_id = -1;
 			entry->second.ret_progs.clear();
 		}
 		if (entry->second.id == id) {
+			spdlog::debug("Revert uprobe");
 			hook_entry_index.erase(entry->second.id);
 			entry->second.id = -1;
 			entry->second.progs.clear();
 		}
 		if (entry->second.listener != nullptr && entry->second.id < 0 &&
 		    entry->second.uretprobe_id < 0) {
+			spdlog::debug("Freeing listener");
 			// detach the listener when no one is using it
 			gum_interceptor_detach(interceptor,
 					       entry->second.listener);
-			gum_free(entry->second.listener);
+			spdlog::debug("Frida detached");
+			// No need to manually free, because frida uses RefCounting GC
+			// gum_free(entry->second.listener);
+			gum_object_unref(entry->second.listener);
 			hook_entry_table.erase(function->second);
+			spdlog::debug("Listener freed");
 		}
 		return 0;
 	}
@@ -724,6 +736,8 @@ int bpf_attach_ctx::create_uprobe(void *function, int id, bool retprobe)
 	auto entry_ptr = &entry->second;
 	entry->second.listener = (GumInvocationListener *)g_object_new(
 		uprobe_listener_get_type(), NULL);
+	spdlog::debug("Created listener instance {:x} for hook_entry id {}",
+		      (uintptr_t)entry->second.listener, id);
 
 	// gum_make_call_listener(frida_uprobe_listener_on_enter,
 	// 		       frida_uprobe_listener_on_leave,
