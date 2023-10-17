@@ -75,7 +75,15 @@ ExternalProject_Add(bpftool
   INSTALL_BYPRODUCTS ${BPFTOOL_INSTALL_DIR}/bpftool
 )
 
-function(add_bpf_skel_)
+function(add_bpf_skel_generating_target target_name bpf_program output_skel)
+  add_custom_target(${target_name} ALL
+    COMMAND "${BPFTOOL_INSTALL_DIR}/bpftool" "gen" "skeleton" "${bpf_program}" > "${output_skel}"
+    BYPRODUCTS ${output_skel}
+    SOURCES ${bpf_program}
+    DEPENDS bpftool
+
+    )
+endfunction()
 
 # Define a helper function
 function(add_ebpf_program_target target_name source_file output_file)
