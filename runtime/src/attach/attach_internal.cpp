@@ -169,52 +169,52 @@ namespace bpftime
 // {
 // }
 
-static void frida_uprobe_listener_on_enter(_GumInvocationContext *ic,
-					   void *data)
-{
-	hook_entry *hook_entry = (struct hook_entry *)data;
-	if (hook_entry->progs.size() == 0) {
-		return;
-	}
-	GumInvocationContext *ctx;
-	pt_regs regs;
+// static void frida_uprobe_listener_on_enter(_GumInvocationContext *ic,
+// 					   void *data)
+// {
+// 	hook_entry *hook_entry = (struct hook_entry *)data;
+// 	if (hook_entry->progs.size() == 0) {
+// 		return;
+// 	}
+// 	GumInvocationContext *ctx;
+// 	pt_regs regs;
 
-	spdlog::trace("Handle uprobe at frida_uprobe_listener_on_enter");
+// 	spdlog::trace("Handle uprobe at frida_uprobe_listener_on_enter");
 
-	ctx = gum_interceptor_get_current_invocation();
-	convert_gum_cpu_context_to_pt_regs(*ctx->cpu_context, regs);
-	for (auto &prog : hook_entry->progs) {
-		uint64_t ret_val;
-		int res =
-			prog->bpftime_prog_exec(&regs, sizeof(regs), &ret_val);
-		if (res < 0) {
-			return;
-		}
-	}
-}
+// 	ctx = gum_interceptor_get_current_invocation();
+// 	convert_gum_cpu_context_to_pt_regs(*ctx->cpu_context, regs);
+// 	for (auto &prog : hook_entry->progs) {
+// 		uint64_t ret_val;
+// 		int res =
+// 			prog->bpftime_prog_exec(&regs, sizeof(regs), &ret_val);
+// 		if (res < 0) {
+// 			return;
+// 		}
+// 	}
+// }
 
-static void frida_uprobe_listener_on_leave(_GumInvocationContext *ic,
-					   void *data)
-{
-	hook_entry *hook_entry = (struct hook_entry *)data;
-	if (hook_entry->ret_progs.size() == 0) {
-		return;
-	}
+// static void frida_uprobe_listener_on_leave(_GumInvocationContext *ic,
+// 					   void *data)
+// {
+// 	hook_entry *hook_entry = (struct hook_entry *)data;
+// 	if (hook_entry->ret_progs.size() == 0) {
+// 		return;
+// 	}
 
-	spdlog::trace("Handle uretprobe at frida_uprobe_listener_on_leave");
-	pt_regs regs;
-	GumInvocationContext *ctx;
-	ctx = gum_interceptor_get_current_invocation();
-	convert_gum_cpu_context_to_pt_regs(*ctx->cpu_context, regs);
-	for (auto &prog : hook_entry->ret_progs) {
-		uint64_t ret_val;
-		int res =
-			prog->bpftime_prog_exec(&regs, sizeof(regs), &ret_val);
-		if (res < 0) {
-			return;
-		}
-	}
-}
+// 	spdlog::trace("Handle uretprobe at frida_uprobe_listener_on_leave");
+// 	pt_regs regs;
+// 	GumInvocationContext *ctx;
+// 	ctx = gum_interceptor_get_current_invocation();
+// 	convert_gum_cpu_context_to_pt_regs(*ctx->cpu_context, regs);
+// 	for (auto &prog : hook_entry->ret_progs) {
+// 		uint64_t ret_val;
+// 		int res =
+// 			prog->bpftime_prog_exec(&regs, sizeof(regs), &ret_val);
+// 		if (res < 0) {
+// 			return;
+// 		}
+// 	}
+// }
 
 } // namespace bpftime
 

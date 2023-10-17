@@ -1,6 +1,7 @@
 #include "attach/attach_manager/base_attach_manager.hpp"
 #include "frida-gum.h"
 #include "spdlog/spdlog.h"
+#include <algorithm>
 #include <attach/attach_manager/frida_attach_manager.hpp>
 #include <cerrno>
 #include <filesystem>
@@ -34,6 +35,10 @@ extern "C" uint64_t __bpftime_frida_attach_manager__replace_handler();
 extern "C" void *__bpftime_frida_attach_manager__filter_handler();
 namespace bpftime
 {
+frida_attach_manager::~frida_attach_manager()
+{
+	gum_object_unref(interceptor);
+}
 frida_attach_manager::frida_attach_manager()
 {
 	spdlog::debug("Initializing frida uprobe attach manager");
@@ -69,7 +74,8 @@ int frida_attach_manager::attach_at(void *func_addr, callback_variant &&cb)
 		// Create a frida attach entry
 		itr = internal_attaches
 			      .emplace(func_addr,
-				       frida_internal_attach_entry(
+				       std::make_shared<
+					       frida_internal_attach_entry>(
 					       func_addr,
 					       (attach_type)cb.index(),
 					       interceptor))
@@ -85,7 +91,11 @@ int frida_attach_manager::attach_at(void *func_addr, callback_variant &&cb)
 	frida_attach_entry ent(next_id, std::move(cb), func_addr);
 	next_id++;
 	auto inserted_attach_entry =
-		this->attches.emplace(ent.self_id, std::move(ent)).first;
+		this->attaches
+			.emplace(ent.self_id,
+				 std::make_shared<frida_attach_entry>(
+					 std::move(ent)))
+			.first;
 	inner_attach->user_attaches.push_back(inserted_attach_entry->second);
 	inserted_attach_entry->second->internal_attaches = inner_attach;
 	return 0;
@@ -110,17 +120,40 @@ int frida_attach_manager::attach_uretprobe_at(void *func_addr,
 int frida_attach_manager::attach_replace_at(void *func_addr,
 					    replace_callback &&cb)
 {
+	return attach_at(func_addr, cb);
 }
 int frida_attach_manager::attach_filter_at(void *func_addr,
 					   filter_callback &&cb)
 {
+	return attach_at(func_addr, cb);
 }
 int frida_attach_manager::destroy_attach(int id)
 {
+	void *drop_func_addr = nullptr;
+	if (auto itr = attaches.find(id); itr != attaches.end()) {
+		if (auto p = itr->second->internal_attaches.lock(); p) {
+			auto &user_attaches = p->user_attaches;
+			auto tail =
+				std::remove_if(user_attaches.begin(),
+					       user_attaches.end(),
+					       [&](const auto &v) -> bool {
+						       return v.lock().get() ==
+							      itr->second.get();
+					       });
+			user_attaches.resize(tail - user_attaches.begin());
+			attaches.erase(itr);
+			if (p->user_attaches.empty()) {
+				drop_func_addr = p->function;
+			}
+		}
+	}
+	if (drop_func_addr)
+		internal_attaches.erase(drop_func_addr);
+	return 0;
 }
 void frida_attach_manager::iterate_attaches(attach_iterate_callback cb)
 {
-	for (const auto &[k, v] : attches) {
+	for (const auto &[k, v] : attaches) {
 		cb(k, v->function, v->get_type());
 	}
 }
@@ -134,25 +167,69 @@ frida_internal_attach_entry::frida_internal_attach_entry(
 	GumInterceptor *interceptor)
 	: function(function)
 {
+	struct interceptor_transaction {
+		GumInterceptor *interceptor;
+		interceptor_transaction(GumInterceptor *interceptor)
+			: interceptor(interceptor)
+		{
+			gum_interceptor_begin_transaction(interceptor);
+		}
+		~interceptor_transaction()
+		{
+			gum_interceptor_end_transaction(interceptor);
+		}
+	} _transaction(interceptor);
 	if (basic_attach_type == attach_type::UPROBE ||
 	    basic_attach_type == attach_type::URETPROBE) {
-		frida_fum_invocation_listener =
+		frida_gum_invocation_listener =
 			(GumInvocationListener *)g_object_new(
 				uprobe_listener_get_type(), NULL);
-		gum_interceptor_begin_transaction(interceptor);
+
 		if (int err = gum_interceptor_attach(
 			    interceptor, function,
-			    frida_fum_invocation_listener, this);
+			    frida_gum_invocation_listener, this);
 		    err < 0) {
 			spdlog::error(
 				"Failed to execute frida gum_interceptor_attach for function {:x}",
 				(uintptr_t)function);
-			throw std::runtime_error("Failed to attach");
-			gum_interceptor_end_transaction(interceptor);
+			throw std::runtime_error(
+				"Failed to attach uprobe/uretprpbe");
 		}
+
 	} else if (basic_attach_type == attach_type::FILTER) {
+		if (int err = gum_interceptor_replace(
+			    interceptor, function,
+			    (void *)__bpftime_frida_attach_manager__filter_handler,
+			    this, nullptr);
+		    err < 0) {
+			spdlog::error(
+				"Failed to execute frida replace for function {:x}, when attaching filter",
+				(uintptr_t)function);
+			throw std::runtime_error("Failed to attach filter");
+		}
 	} else if (basic_attach_type == attach_type::REPLACE) {
+		if (int err = gum_interceptor_replace(
+			    interceptor, function,
+			    (void *)__bpftime_frida_attach_manager__replace_handler,
+			    this, nullptr);
+		    err < 0) {
+			spdlog::error(
+				"Failed to execute frida replace for function {:x}, when attaching replace",
+				(uintptr_t)function);
+			throw std::runtime_error("Failed to attach replace");
+		}
 	}
+	this->interceptor = gum_object_ref(interceptor);
+}
+frida_internal_attach_entry::~frida_internal_attach_entry()
+{
+	if (frida_gum_invocation_listener) {
+		gum_interceptor_detach(interceptor,
+				       frida_gum_invocation_listener);
+	} else {
+		gum_interceptor_revert(interceptor, function);
+	}
+	gum_object_unref(interceptor);
 }
 bool frida_internal_attach_entry::has_replace_or_filter() const
 {

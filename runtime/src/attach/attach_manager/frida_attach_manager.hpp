@@ -20,16 +20,17 @@ class frida_attach_entry {
 	std::weak_ptr<class frida_internal_attach_entry> internal_attaches;
 	friend class frida_attach_manager;
 	friend class frida_internal_attach_entry;
-	frida_attach_entry(int id, base_attach_manager::callback_variant &&cb,
-			   void *function)
-		: self_id(id), cb(cb), function(function)
-	{
-	}
 
     public:
 	attach_type get_type() const;
 	frida_attach_entry(const frida_attach_entry &) = delete;
 	frida_attach_entry &operator=(const frida_attach_entry &) = delete;
+	frida_attach_entry(int id, base_attach_manager::callback_variant &&cb,
+			   void *function)
+		: self_id(id), cb(cb), function(function)
+	{
+	}
+	frida_attach_entry(frida_attach_entry &&) = default;
 };
 // Used to represent an attach entry faced to frida. On a certain function, we
 // can have either one replace attach, or one filter attach, or many uprobe
@@ -37,11 +38,10 @@ class frida_attach_entry {
 // address
 class frida_internal_attach_entry {
 	void *function;
+	GumInterceptor *interceptor;
 	std::vector<std::weak_ptr<frida_attach_entry> > user_attaches;
-	GumInvocationListener *frida_fum_invocation_listener = nullptr;
-	frida_internal_attach_entry(void *function,
-				    attach_type basic_attach_type,
-				    GumInterceptor *interceptor);
+	GumInvocationListener *frida_gum_invocation_listener = nullptr;
+
 	friend class frida_attach_manager;
 
     public:
@@ -55,6 +55,11 @@ class frida_internal_attach_entry {
 		delete;
 	frida_internal_attach_entry &
 	operator=(const frida_internal_attach_entry &) = delete;
+	~frida_internal_attach_entry();
+	frida_internal_attach_entry(void *function,
+				    attach_type basic_attach_type,
+				    GumInterceptor *interceptor);
+	frida_internal_attach_entry(frida_internal_attach_entry &&) = default;
 };
 
 class frida_attach_manager final : public base_attach_manager {
@@ -74,7 +79,7 @@ class frida_attach_manager final : public base_attach_manager {
     private:
 	GumInterceptor *interceptor;
 	int next_id = 1;
-	std::unordered_map<int, std::shared_ptr<frida_attach_entry> > attches;
+	std::unordered_map<int, std::shared_ptr<frida_attach_entry> > attaches;
 	std::unordered_map<void *, std::shared_ptr<frida_internal_attach_entry> >
 		internal_attaches;
 
