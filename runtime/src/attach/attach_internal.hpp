@@ -168,6 +168,6 @@ convert_pt_regs_to_gum_cpu_context(const pt_regs &regs,
 #else
 #error "Unsupported architecture"
 #endif
-GType uprobe_listener_get_type();
+// GType uprobe_listener_get_type();
 } // namespace bpftime
 #endif

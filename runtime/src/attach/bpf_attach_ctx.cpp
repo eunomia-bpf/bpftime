@@ -268,11 +268,19 @@ int bpf_attach_ctx::init_attach_ctx_from_handlers(
 			case bpf_perf_event_handler::bpf_event_type::
 				BPF_TYPE_FILTER: {
 				fd = create_filter(function, i);
+				if (fd < 0)
+					spdlog::error(
+						"Failed to create filter for perf fd {}, err={}",
+						i, fd);
 				break;
 			}
 			case bpf_perf_event_handler::bpf_event_type::
 				BPF_TYPE_REPLACE: {
 				fd = create_replace(function, i);
+				if (fd < 0)
+					spdlog::error(
+						"Failed to create replace for perf fd {}, err={}",
+						i, fd);
 				break;
 			}
 			case bpf_perf_event_handler::bpf_event_type::
@@ -281,6 +289,10 @@ int bpf_attach_ctx::init_attach_ctx_from_handlers(
 					"Creating uprobe for perf event fd {}",
 					i);
 				fd = create_uprobe(function, i, false);
+				if (fd < 0)
+					spdlog::error(
+						"Failed to create uprobe for perf fd {}, err={}",
+						i, fd);
 				break;
 			}
 			case bpf_perf_event_handler::bpf_event_type::
@@ -289,6 +301,10 @@ int bpf_attach_ctx::init_attach_ctx_from_handlers(
 					"Creating uretprobe for perf event fd {}",
 					i);
 				fd = create_uprobe(function, i, true);
+				if (fd < 0)
+					spdlog::error(
+						"Failed to create uretprobe for perf fd {}, err={}",
+						i, fd);
 				break;
 			}
 			case bpf_perf_event_handler::bpf_event_type::
@@ -296,6 +312,11 @@ int bpf_attach_ctx::init_attach_ctx_from_handlers(
 				fd = create_tracepoint(
 					event_handler.tracepoint_id, i,
 					manager);
+
+				if (fd < 0)
+					spdlog::error(
+						"Failed to create tracepoint for perf fd {}, err={}",
+						i, fd);
 				assert(fd >= 0);
 				break;
 			}
@@ -446,8 +467,8 @@ int bpf_attach_ctx::destory_attach(int id)
 			gum_interceptor_detach(interceptor,
 					       entry->second.listener);
 			spdlog::debug("Frida detached");
-			// No need to manually free, because frida uses RefCounting GC
-			// gum_free(entry->second.listener);
+			// No need to manually free, because frida uses
+			// RefCounting GC gum_free(entry->second.listener);
 			gum_object_unref(entry->second.listener);
 			hook_entry_table.erase(function->second);
 			spdlog::debug("Listener freed");
@@ -695,6 +716,8 @@ bpf_attach_ctx::bpf_attach_ctx(void)
 int bpf_attach_ctx::create_uprobe(void *function, int id, bool retprobe)
 {
 	if (hook_entry_index.find(id) != hook_entry_index.end()) {
+		spdlog::error("The corresponding id {} was already registered",
+			      id);
 		// already has a id
 		return -1;
 	}
@@ -703,17 +726,24 @@ int bpf_attach_ctx::create_uprobe(void *function, int id, bool retprobe)
 		auto &entry = hook_entry_table[function];
 		if (entry.type != BPFTIME_UPROBE) {
 			// other type of hook
+			spdlog::error("entry type is not BPFTIME_UPROBE");
 			return -1;
 		}
 		if (retprobe) {
 			if (entry.uretprobe_id > 0) {
 				// already has a uretprobe
+				spdlog::error(
+					"Uretprobe has already been registered, id {}",
+					entry.uretprobe_id);
 				return -1;
 			}
 			entry.uretprobe_id = id;
 		} else {
 			if (entry.id < 0) {
 				// already has a uprobe
+				spdlog::error(
+					"Uprobe has already been registered, id {}",
+					entry.uretprobe_id);
 				return -1;
 			}
 			entry.id = id;
@@ -723,6 +753,9 @@ int bpf_attach_ctx::create_uprobe(void *function, int id, bool retprobe)
 	}
 	auto iter = hook_entry_table.emplace(function, hook_entry{});
 	if (!iter.second) {
+		spdlog::error(
+			"Failed to create probe entry for function {:x}, probes on the function already exists",
+			(uintptr_t)function);
 		return -1;
 	}
 	auto entry = iter.first;
@@ -744,6 +777,7 @@ int bpf_attach_ctx::create_uprobe(void *function, int id, bool retprobe)
 	// 		       entry_ptr, NULL);
 	int res = add_listener(entry->second.listener, function, entry_ptr);
 	if (res < 0) {
+		spdlog::error("Failed to add frida listener: {}", res);
 		hook_entry_table.erase(function);
 		return res;
 	}
@@ -760,6 +794,8 @@ int bpf_attach_ctx::add_listener(GumInvocationListener *listener,
 	auto res = gum_interceptor_attach(interceptor, target_function,
 					  listener, data);
 	if (res < 0) {
+		spdlog::error("Failed to run intrceptor attach, ret={}",
+			      (int)res);
 		return res;
 	}
 	/*

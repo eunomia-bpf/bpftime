@@ -54,6 +54,8 @@ set(sources
   src/bpf_helper.cpp
   src/attach/attach_internal.cpp
   src/attach/bpf_attach_ctx.cpp
+  src/attach/attach_manager/base_attach_manager.cpp
+  src/attach/attach_manager/frida_attach_manager.cpp
   src/handler/handler_manager.cpp
   src/handler/map_handler.cpp
   src/handler/perf_event_handler.cpp
