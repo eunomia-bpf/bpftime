@@ -18,7 +18,7 @@ jobs:
           submodules: 'recursive'
       - name: Install dependencies
         run: | 
-          sudo apt-get install binutils-dev libboost1.74-all-dev libelf-dev zlib1g-dev libyaml-cpp-dev gcc-12 g++-12
+          sudo apt-get install binutils-dev libboost1.74-all-dev libelf-dev zlib1g-dev libyaml-cpp-dev gcc-12 g++-12 llvm
       - name: Build the target
         run: |
           CC=gcc-12 CXX=g++-12 make build-unit-test
