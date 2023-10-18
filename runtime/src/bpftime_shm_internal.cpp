@@ -8,21 +8,26 @@
 #include <unistd.h>
 #include <variant>
 
+static bool global_shm_initialized = false;
+
 void bpftime_initialize_global_shm()
 {
 	using namespace bpftime;
 	// Use placement new, which will not allocate memory, but just
 	// call the constructor
 	new (&shm_holder.global_shared_memory) bpftime_shm;
+	global_shm_initialized = true;
 }
 void bpftime_destroy_global_shm()
 {
 	using namespace bpftime;
-	// spdlog::info("Global shm destructed");
-	shm_holder.global_shared_memory.~bpftime_shm();
-	// Why not spdlog? because global variables that spdlog used were
-	// already destroyed..
-	printf("INFO [%d]: Global shm destructed\n", (int)getpid());
+	if (global_shm_initialized) {
+		// spdlog::info("Global shm destructed");
+		shm_holder.global_shared_memory.~bpftime_shm();
+		// Why not spdlog? because global variables that spdlog used
+		// were already destroyed..
+		printf("INFO [%d]: Global shm destructed\n", (int)getpid());
+	}
 }
 static __attribute__((destructor(65535))) void __destruct_shm()
 {
@@ -443,7 +448,7 @@ bpftime_shm::bpftime_shm()
 	} else if (global_shm_open_type == shm_open_type::SHM_NO_CREATE) {
 		// not create any shm
 		spdlog::warn(
-			"NOT creating global shm. Please check if you dealared bpftime::global_shm_open_type");
+			"NOT creating global shm. Please check if you declared bpftime::global_shm_open_type");
 		return;
 	}
 }
