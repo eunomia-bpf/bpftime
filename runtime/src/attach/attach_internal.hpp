@@ -1,12 +1,8 @@
 #ifndef _ATTACH_INTERNAL_HPP
 #define _ATTACH_INTERNAL_HPP
-#include <cinttypes>
 #include <frida-gum.h>
 namespace bpftime
 {
-#ifndef __u64
-#define __u64 uint64_t
-#endif
 
 #if defined(__x86_64__) || defined(_M_X64)
 
@@ -36,10 +32,10 @@ struct pt_regs {
 
 #elif defined(__aarch64__) || defined(_M_ARM64)
 struct pt_regs {
-	__u64 regs[31];
-	__u64 sp;
-	__u64 pc;
-	__u64 pstate;
+	uint64_t regs[31];
+	uint64_t sp;
+	uint64_t pc;
+	uint64_t pstate;
 };
 #elif defined(__arm__) || defined(_M_ARM)
 struct pt_regs {

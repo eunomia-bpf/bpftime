@@ -4,7 +4,6 @@
 #include <ebpf-vm.h>
 #include <common/bpftime_config.hpp>
 #include "bpf_attach_ctx.hpp"
-#include "hook_entry.hpp"
 #include "bpftime_ffi.hpp"
 #include "bpftime_helper_group.hpp"
 #include "bpftime_prog.hpp"

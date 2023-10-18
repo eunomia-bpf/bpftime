@@ -41,14 +41,13 @@ frida_attach_manager::~frida_attach_manager()
 }
 frida_attach_manager::frida_attach_manager()
 {
-	spdlog::debug("Initializing frida uprobe attach manager");
+	spdlog::debug("Initializing frida attach manager");
 	gum_init_embedded();
 	interceptor = gum_interceptor_obtain();
 }
 
-const void *
-frida_attach_manager::resolve_function_addr(const std::string_view &module_name,
-					    uintptr_t func_offset)
+void *frida_attach_manager::resolve_function_addr_by_module_offset(
+	const std::string_view &module_name, uintptr_t func_offset)
 {
 	auto exec_path = get_executable_path();
 	void *module_base_addr = nullptr;
@@ -89,6 +88,7 @@ int frida_attach_manager::attach_at(void *func_addr, callback_variant &&cb)
 		return -EEXIST;
 	}
 	frida_attach_entry ent(next_id, std::move(cb), func_addr);
+	int result = ent.self_id;
 	next_id++;
 	auto inserted_attach_entry =
 		this->attaches
@@ -98,7 +98,7 @@ int frida_attach_manager::attach_at(void *func_addr, callback_variant &&cb)
 			.first;
 	inner_attach->user_attaches.push_back(inserted_attach_entry->second);
 	inserted_attach_entry->second->internal_attaches = inner_attach;
-	return 0;
+	return result;
 }
 int frida_attach_manager::attach_uprobe_at(void *func_addr,
 					   uprobe_callback &&cb)
@@ -146,6 +146,9 @@ int frida_attach_manager::destroy_attach(int id)
 				drop_func_addr = p->function;
 			}
 		}
+	} else {
+		spdlog::error("Unable to find attach id {}", id);
+		errno = -ENOENT;
 	}
 	if (drop_func_addr)
 		internal_attaches.erase(drop_func_addr);
@@ -158,6 +161,30 @@ void frida_attach_manager::iterate_attaches(attach_iterate_callback cb)
 	}
 }
 
+void *frida_attach_manager::find_function_addr_by_name(const char *name)
+{
+	if (auto ptr = gum_find_function(name); ptr)
+		return ptr;
+	if (auto ptr = (void *)gum_module_find_export_by_name(nullptr, name);
+	    ptr)
+		return ptr;
+	return nullptr;
+}
+int frida_attach_manager::destroy_attach_by_func_addr(const void *func)
+{
+	if (auto itr = internal_attaches.find((void *)func);
+	    itr != internal_attaches.end()) {
+		auto uattaches = itr->second->user_attaches;
+		for (auto p : uattaches) {
+			if (auto attach_entry = p.lock(); attach_entry) {
+				attaches.erase(attach_entry->self_id);
+			}
+		}
+		return 0;
+	} else {
+		return -ENOENT;
+	}
+}
 attach_type frida_attach_entry::get_type() const
 {
 	return (attach_type)cb.index();
@@ -223,11 +250,15 @@ frida_internal_attach_entry::frida_internal_attach_entry(
 }
 frida_internal_attach_entry::~frida_internal_attach_entry()
 {
+	spdlog::debug("Destroy internal attach at {:x}", (uintptr_t)function);
 	if (frida_gum_invocation_listener) {
 		gum_interceptor_detach(interceptor,
 				       frida_gum_invocation_listener);
+		g_object_unref(frida_gum_invocation_listener);
+		spdlog::debug("Detached listener");
 	} else {
 		gum_interceptor_revert(interceptor, function);
+		spdlog::debug("Reverted function replace");
 	}
 	gum_object_unref(interceptor);
 }

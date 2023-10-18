@@ -12,6 +12,8 @@ find_package(Boost REQUIRED)
 set(TEST_SOURCES
     test_per_cpu_array.cpp
     test_per_cpu_hash.cpp
+    attach_manager/test_uprobe_uretprobe.cpp
+    attach_manager/test_function_address_resolve.cpp
 )
 
 add_executable(bpftime_runtime_tests ${TEST_SOURCES})

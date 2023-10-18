@@ -67,14 +67,18 @@ class frida_attach_manager final : public base_attach_manager {
 	frida_attach_manager();
 	~frida_attach_manager();
 
-	const void *resolve_function_addr(const std::string_view &module_name,
-					  uintptr_t func_offset);
+	void *resolve_function_addr_by_module_offset(const std::string_view &module_name,
+				    uintptr_t func_offset);
 	int attach_uprobe_at(void *func_addr, uprobe_callback &&cb);
 	int attach_uretprobe_at(void *func_addr, uretprobe_callback &&cb);
 	int attach_replace_at(void *func_addr, replace_callback &&cb);
 	int attach_filter_at(void *func_addr, filter_callback &&cb);
 	int destroy_attach(int id);
 	void iterate_attaches(attach_iterate_callback cb);
+
+	void * find_function_addr_by_name(const char *name);
+
+	int destroy_attach_by_func_addr(const void *func);
 
     private:
 	GumInterceptor *interceptor;
