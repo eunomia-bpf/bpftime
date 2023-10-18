@@ -15,9 +15,11 @@ extern "C" uint64_t bpftime_get_retval(void)
 	}
 	return (uintptr_t)gum_invocation_context_get_return_value(gum_ctx);
 }
+} // namespace bpftime
 
 extern "C" uint64_t bpftime_set_retval(uint64_t value)
 {
+	using namespace bpftime;
 	if (curr_thread_set_ret_val.has_value()) {
 		curr_thread_set_ret_val.value()(value);
 	} else {
@@ -25,6 +27,18 @@ extern "C" uint64_t bpftime_set_retval(uint64_t value)
 			"Called bpftime_set_retval, but no retval callback was set");
 		assert(false);
 	}
+	return 0;
+}
+
+extern "C" uint64_t bpftime_get_func_ret(uint64_t ctx, uint64_t *value)
+{
+	GumInvocationContext *gum_ctx =
+		gum_interceptor_get_current_invocation();
+	if (gum_ctx == NULL) {
+		return -EOPNOTSUPP;
+	}
+	// ignore ctx;
+	*value = (uint64_t)gum_invocation_context_get_return_value(gum_ctx);
 	return 0;
 }
 
@@ -41,5 +55,3 @@ extern "C" uint64_t bpftime_get_func_arg(uint64_t ctx, uint32_t n,
 		gum_ctx->cpu_context, n);
 	return 0;
 }
-
-} // namespace bpftime
