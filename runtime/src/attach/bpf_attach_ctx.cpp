@@ -262,7 +262,7 @@ int bpf_attach_ctx::init_attach_ctx_from_handlers(
 								(void *)&regs,
 								sizeof(regs),
 								&ret);
-						return ret;
+						return !ret;
 					});
 				if (err < 0)
 					spdlog::error(

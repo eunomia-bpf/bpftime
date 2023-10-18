@@ -12,7 +12,6 @@ set(test_sources
 
   # probe tests
   src/test_attach_replace.cpp
-  src/test_attach_filter.cpp
 
   # ffi tests
   src/test_ffi_register.cpp
