@@ -2,7 +2,7 @@
 #include "bpftime_helper_group.hpp"
 #include "test_defs.h"
 #include "bpftime.hpp"
-#include "bpftime_object.h"
+#include "bpftime_object.hpp"
 #include <stdio.h>
 #include <stdarg.h>
 #include "bpftime_shm.hpp"
