@@ -79,14 +79,13 @@ int frida_attach_manager::attach_at(void *func_addr, callback_variant &&cb)
 					       (attach_type)cb.index(),
 					       interceptor))
 			      .first;
+	} else if (itr->second->has_replace_or_filter()) {
+		spdlog::error(
+			"Function {} was already attached with replace or filter, cannot attach anything else");
+		return -EEXIST;
 	}
 
 	auto &inner_attach = itr->second;
-	if (inner_attach->has_replace_or_filter()) {
-		spdlog::error(
-			"Function {} was already attached with replace or filter, cannot attach uprobe or uretprobe");
-		return -EEXIST;
-	}
 	frida_attach_entry ent(next_id, std::move(cb), func_addr);
 	int result = ent.self_id;
 	next_id++;
@@ -180,6 +179,7 @@ int frida_attach_manager::destroy_attach_by_func_addr(const void *func)
 				attaches.erase(attach_entry->self_id);
 			}
 		}
+		internal_attaches.erase(itr);
 		return 0;
 	} else {
 		return -ENOENT;

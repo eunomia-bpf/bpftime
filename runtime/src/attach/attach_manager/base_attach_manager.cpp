@@ -18,20 +18,13 @@ extern "C" uint64_t bpftime_get_retval(void)
 
 extern "C" uint64_t bpftime_set_retval(uint64_t value)
 {
-	GumInvocationContext *gum_ctx =
-		gum_interceptor_get_current_invocation();
-	if (gum_ctx == NULL) {
-		return -EOPNOTSUPP;
-	}
-
 	if (curr_thread_set_ret_val.has_value()) {
 		curr_thread_set_ret_val.value()(value);
 	} else {
 		spdlog::error(
 			"Called bpftime_set_retval, but no retval callback was set");
+		assert(false);
 	}
-	gum_invocation_context_replace_return_value(gum_ctx,
-						    (gpointer)((size_t)value));
 	return 0;
 }
 

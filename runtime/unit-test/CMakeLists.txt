@@ -14,6 +14,9 @@ set(TEST_SOURCES
     test_per_cpu_hash.cpp
     attach_manager/test_uprobe_uretprobe.cpp
     attach_manager/test_function_address_resolve.cpp
+    attach_manager/test_filter_attach.cpp
+    attach_manager/test_replace_attach.cpp
+    
 )
 
 add_executable(bpftime_runtime_tests ${TEST_SOURCES})

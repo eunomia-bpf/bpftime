@@ -6,9 +6,7 @@
 #include <cstdint>
 #include <catch2/generators/catch_generators.hpp>
 #include <catch2/generators/catch_generators_adapters.hpp>
-#if defined(__x86_64__) || defined(_M_X64)
-
-#else
+#if !defined(__x86_64__) && defined(_M_X64)
 #error Only supports x86_64
 #endif
 
@@ -19,7 +17,7 @@ extern "C" uint64_t __test_simple_add(uint64_t a, uint64_t b)
 	return a * 2 + b;
 }
 
-TEST_CASE("Test uprobing and reverting")
+TEST_CASE("Test attaching uprobing programs and reverting")
 {
 	int invoke_times = 0;
 	uint64_t a, b;
@@ -59,8 +57,15 @@ TEST_CASE("Test uprobing and reverting")
 	REQUIRE(b2 == 6666);
 	REQUIRE(ret == 2333 * 2 + 6666);
 	// Revert them
-	REQUIRE(man.destroy_attach(id1) == 0);
-	REQUIRE(man.destroy_attach(id2) == 0);
+	SECTION("Revert by id")
+	{
+		REQUIRE(man.destroy_attach(id1) == 0);
+		REQUIRE(man.destroy_attach(id2) == 0);
+	}
+	SECTION("Revert by function address")
+	{
+		REQUIRE(man.destroy_attach_by_func_addr(func_addr) >= 0);
+	}
 	invoke_times = 0;
 	a = b = a2 = b2 = 0;
 	ret = __test_simple_add(2333, 6666);
@@ -106,8 +111,15 @@ TEST_CASE("Test uretprobe and reverting")
 	REQUIRE(ret1 == 2333 * 2 + 6666);
 	REQUIRE(ret2 == 2333 * 2 + 6666);
 	// Revert them
-	REQUIRE(man.destroy_attach(id1) == 0);
-	REQUIRE(man.destroy_attach(id2) == 0);
+	SECTION("Revert by id")
+	{
+		REQUIRE(man.destroy_attach(id1) == 0);
+		REQUIRE(man.destroy_attach(id2) == 0);
+	}
+	SECTION("Revert by function address")
+	{
+		REQUIRE(man.destroy_attach_by_func_addr(func_addr) >= 0);
+	}
 	invoke_times = 0;
 	ret1 = ret2 = 0;
 	dummy = __test_simple_add(2333, 6666);
