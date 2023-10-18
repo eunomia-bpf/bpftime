@@ -4,11 +4,7 @@
 [![Build and Test runtime](https://github.com/eunomia-bpf/bpftime/actions/workflows/runtime.yml/badge.svg)](https://github.com/eunomia-bpf/bpftime/actions/workflows/runtime.yml)
 [![DOI](https://zenodo.org/badge/676866666.svg)](https://zenodo.org/badge/latestdoi/676866666)
 
-
 `bpftime`, a full-featured, high-performance eBPF runtime designed to operate in userspace. It offers fast Uprobe and Syscall hook capabilities: Userspace uprobe can be **10x faster than kernel uprobe!** and can programmatically **hook all syscalls of a process** safely and efficiently.
-
-> ⚠️ **Note**: `bpftime` is actively under development. It's at a very early stage and may contain bugs.
-> The API or design might change in upcoming releases, and it's not yet recommended for production use. See our [roadmap](#roadmap) for details. We'd love to hear your feedback and suggestions! Please feel free to open an issue or [Contact us](#contact).
 
 ## Key Features
 
@@ -92,14 +88,21 @@ See [documents/usage.md](documents/usage.md) for more details.
 
 ### **Examples & Use Cases**
 
-We can use the bpftime userspace runtime for:
+Example using libbpf:
 
 - `tracing userspace functions with uprobe`: Attach uprobe, uretprobe or all syscall tracepoints(currently x86 only) eBPF programs to a process or a group of processes:
   - [`malloc`](example/malloc): count the malloc calls in libc by pid. demonstrate how to use the userspace `uprobe` with basic `hashmap`.
+  - [`bashreadline`](example/libbpf-tools/bashreadline): Print entered bash commands from running shells, 
 - `tracing all syscalls with tracepoints`
   - [`opensnoop`](example/opensnoop): trace file open or close syscalls in a process. demonstrate how to use the userspace `syscall tracepoint` with `ring buffer` output.
 
+More examples can be found in [example/libbpf-tools](example/libbpf-tools).
+
+You can also run bpftime with `bpftrace`, we've test it on [this commit](https://github.com/iovisor/bpftrace/commit/75aca47dd8e1d642ff31c9d3ce330e0c616e5b96).
+
 More examples can be found in [example](example) dir.
+
+> ⚠️ **Note**: `bpftime` is actively under development, and it's not yet recommended for production use. See our [roadmap](#roadmap) for details. We'd love to hear your feedback and suggestions! Please feel free to open an issue or [Contact us](#contact).
 
 ### **How it Works**
 
@@ -107,10 +110,12 @@ Left: kernel eBPF | Right: userspace bpftime
 
 ![How it works](documents/bpftime.png)
 
-The hook implementation is based on binary rewriting and the underly technique is inspired by:
+Current hook implementation is based on binary rewriting and the underly technique is inspired by:
 
 - Userspace function hook: [frida-gum](https://github.com/frida/frida-gum)
-- Syscall hooks: [zpoline: a system call hook mechanism based on binary rewriting](https://www.usenix.org/conference/atc23/presentation/yasukata)
+- Syscall hooks: [zpoline](https://www.usenix.org/conference/atc23/presentation/yasukata) and [pmem/syscall_intercept](https://github.com/pmem/syscall_intercept).
+
+The hook can be easily replaced with other DBI methods or frameworks, or add more hook mechanisms in the future.
 
 see [documents/how-it-works.md](documents/how-it-works.md) for details.
 
