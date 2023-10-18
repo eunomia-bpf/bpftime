@@ -17,4 +17,7 @@ struct shm_remove {
 	}
 };
 
+#define STRINGIFY(x) #x
+#define TOSTRING(x) STRINGIFY(x)
+
 #endif

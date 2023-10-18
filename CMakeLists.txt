@@ -78,7 +78,7 @@ endif()
 # spdlog
 add_subdirectory(third_party/spdlog)
 
-set(SPDLOG_INCLUDE {CMAKE_CURRENT_SOURCE_DIR}/third_party/spdlog/include)
+set(SPDLOG_INCLUDE ${CMAKE_CURRENT_SOURCE_DIR}/third_party/spdlog/include)
 
 # main library
 add_subdirectory(vm)

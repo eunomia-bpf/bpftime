@@ -45,12 +45,6 @@ struct pt_regs {
 #error "Unsupported architecture"
 #endif
 
-uint64_t __bpftime_trace_handler(struct pt_regs *regs);
-
-// the bpf program will be called instead of the function execution.
-// for attach replace
-uint64_t __frida_bpftime_replace_handler(void);
-void *__frida_bpftime_filter_handler();
 
 #if defined(__x86_64__) || defined(_M_X64)
 

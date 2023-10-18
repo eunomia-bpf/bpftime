@@ -1,3 +1,4 @@
+#include "bpftime_shm.hpp"
 #include "handler/epoll_handler.hpp"
 #include "handler/perf_event_handler.hpp"
 #include "spdlog/spdlog.h"
@@ -383,6 +384,10 @@ bool bpftime_shm::is_exist_fake_fd(int fd) const
 	return manager->is_allocated(fd);
 }
 
+// Declare it as weak symbol, which could be overrided by other symbols
+const __attribute__((weak)) shm_open_type global_shm_open_type =
+	shm_open_type::SHM_NO_CREATE;
+
 bpftime_shm::bpftime_shm()
 {
 	spdlog::info("Global shm constructed. global_shm_open_type {} for {}",
@@ -437,6 +442,8 @@ bpftime_shm::bpftime_shm()
 		spdlog::debug("done: bpftime_shm for server setup.");
 	} else if (global_shm_open_type == shm_open_type::SHM_NO_CREATE) {
 		// not create any shm
+		spdlog::warn(
+			"NOT creating global shm. Please check if you dealared bpftime::global_shm_open_type");
 		return;
 	}
 }
