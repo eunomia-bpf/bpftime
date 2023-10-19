@@ -18,7 +18,6 @@
 #include <utility>
 #include <variant>
 #include <sys/resource.h>
-RLIMIT_STACK;
 namespace bpftime
 {
 
