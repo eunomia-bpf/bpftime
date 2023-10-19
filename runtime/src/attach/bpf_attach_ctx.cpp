@@ -188,7 +188,8 @@ int bpf_attach_ctx::init_attach_ctx_from_handlers(
 			for (auto v : prog_handler.attach_fds) {
 				handler_prog_fds[v].emplace_back(i, prog);
 			}
-			spdlog::debug("Load prog {} {}", i, prog_handler.name);
+			spdlog::debug("Load prog fd={} name={}", i,
+				      prog_handler.name);
 		} else if (std::holds_alternative<bpf_map_handler>(handler)) {
 			spdlog::debug("bpf_map_handler found at {}", i);
 		} else if (std::holds_alternative<bpf_perf_event_handler>(
@@ -208,7 +209,7 @@ int bpf_attach_ctx::init_attach_ctx_from_handlers(
 		for (auto y : v) {
 			spdlog::debug(
 				"Program fd {} attached to perf event handler {}",
-				k, y.first);
+				y.first, k);
 		}
 	}
 	// Second, we create bpf perf event handlers
@@ -234,10 +235,12 @@ int bpf_attach_ctx::init_attach_ctx_from_handlers(
 			case bpf_perf_event_handler::bpf_event_type::
 				BPF_TYPE_URETPROBE:
 				func_addr =
-					attach_manager->resolve_function_addr_by_module_offset(
-						event_handler._module_name
-							.c_str(),
-						event_handler.offset);
+					attach_manager
+						->resolve_function_addr_by_module_offset(
+							event_handler
+								._module_name
+								.c_str(),
+							event_handler.offset);
 				break;
 			default:
 				break;
@@ -302,6 +305,9 @@ int bpf_attach_ctx::init_attach_ctx_from_handlers(
 					"Creating uprobe for perf event fd {}",
 					i);
 				auto progs = handler_prog_fds[i];
+				spdlog::info(
+					"Attached {} uprobe programs to function {:x}",
+					progs.size(), (uintptr_t)func_addr);
 				err = attach_manager->attach_uprobe_at(
 					func_addr, [=](const pt_regs &regs) {
 						uint64_t ret;
@@ -323,7 +329,10 @@ int bpf_attach_ctx::init_attach_ctx_from_handlers(
 				spdlog::debug(
 					"Creating uretprobe for perf event fd {}",
 					i);
-					auto progs = handler_prog_fds[i];
+				auto progs = handler_prog_fds[i];
+				spdlog::info(
+					"Attached {} uretprobe programs to function {:x}",
+					progs.size(), (uintptr_t)func_addr);
 				err = attach_manager->attach_uretprobe_at(
 					func_addr, [=](const pt_regs &regs) {
 						uint64_t ret;

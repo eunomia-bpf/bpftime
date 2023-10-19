@@ -14,6 +14,7 @@
  * limitations under the License.
  */
 
+#include "debug.h"
 #define _GNU_SOURCE
 #include <stdio.h>
 #include <string.h>
@@ -871,6 +872,12 @@ int ebpf_exec(const struct ebpf_vm *vm, void *mem, size_t mem_len,
 			return 0;
 		case EBPF_OP_CALL:
 			LOG_DEBUG("call: %p", vm->ext_funcs[inst.imm]);
+			if (inst.src_reg != 0) {
+				LOG_DEBUG(
+					"ubpf only supports call helpers at pc %d",
+					(int)pc);
+				return -1;
+			}
 			reg[0] = vm->ext_funcs[inst.imm](reg[1], reg[2], reg[3],
 							 reg[4], reg[5]);
 			// Unwind the stack if unwind extension returns success.
@@ -1208,6 +1215,12 @@ static bool validate(const struct ebpf_vm *vm, const struct ebpf_inst *insts,
 			break;
 
 		case EBPF_OP_CALL:
+			if (inst.src_reg != 0) {
+				*errmsg = ebpf_error(
+					"ubpf only supports calling helpers (pc %d)",
+					i);
+				return false;
+			}
 			if (inst.imm < 0 || inst.imm >= MAX_EXT_FUNCS) {
 				*errmsg = ebpf_error(
 					"invalid call immediate at PC %d", i);
