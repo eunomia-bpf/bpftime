@@ -17,7 +17,8 @@ set(TEST_SOURCES
     attach/test_filter_attach.cpp
     attach/test_replace_attach.cpp
     attach_with_ebpf/test_attach_filter_with_ebpf.cpp
-    # attach_with_ebpf/test_attach_replace_with_ebpf.cpp
+
+    # attach_with_ebpf/test_attach_replace_with_ebpf.cpp # Unfinished yet
     attach_with_ebpf/test_attach_uprobe_with_ebpf.cpp
 )
 
@@ -31,7 +32,8 @@ add_test(NAME bpftime_runtime_tests COMMAND bpftime_runtime_tests)
 # These are necessary ebpf program required by the test
 set(used_ebpf_programs
     uprobe
-    replace
+
+    # replace # Not used now
     filter)
 
 foreach(current ${used_ebpf_programs})
