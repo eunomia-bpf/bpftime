@@ -17,6 +17,8 @@
 #include <attach/attach_internal.hpp>
 #include <utility>
 #include <variant>
+#include <sys/resource.h>
+RLIMIT_STACK;
 namespace bpftime
 {
 
