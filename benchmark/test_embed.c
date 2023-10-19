@@ -46,9 +46,7 @@ struct pt_regs {
 
 struct ebpf_vm *begin_vm = NULL;
 struct ebpf_vm *end_vm = NULL;
-// ebpf_jit_fn begin_fn = NULL, end_fn = NULL;
-const char *uprobe_prog = TOSTRING(UPROBE_PROG);
-const char *uretprobe_prog = TOSTRING(URETPROBE_PROG);
+
 bool enable_ebpf = false;
 
 // The timespec struct holds seconds and nanoseconds
@@ -172,8 +170,14 @@ out:
 	return vm;
 }
 
-int main()
+int main(int argc,  char **argv)
 {
+	if (argc < 3) {
+		printf("Usage: %s <uprobe elf> <uretprobe elf>\n", argv[0]);
+		return 0;
+	}
+	const char *uprobe_prog = argv[1];
+	const char *uretprobe_prog = argv[2];
 	printf("uprobe elf: %s\nuretprobe elf:%s\n", uprobe_prog,
 	       uretprobe_prog);
 	enable_ebpf = true;

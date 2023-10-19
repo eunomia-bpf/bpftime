@@ -9,6 +9,8 @@
 #include <memory>
 #include <stdexcept>
 #include <utility>
+#include <unistd.h>
+
 GType uprobe_listener_get_type();
 
 static std::string get_executable_path()
