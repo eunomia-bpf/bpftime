@@ -389,10 +389,6 @@ bool bpftime_shm::is_exist_fake_fd(int fd) const
 	return manager->is_allocated(fd);
 }
 
-// Declare it as weak symbol, which could be overrided by other symbols
-const __attribute__((weak)) shm_open_type global_shm_open_type =
-	shm_open_type::SHM_NO_CREATE;
-
 bpftime_shm::bpftime_shm()
 {
 	spdlog::info("Global shm constructed. global_shm_open_type {} for {}",
@@ -511,4 +507,9 @@ bpftime_shm::get_software_perf_event_raw_buffer(int fd, size_t buffer_sz) const
 	const auto &handler = std::get<bpf_perf_event_handler>(get_handler(fd));
 	return handler.try_get_software_perf_data_raw_buffer(buffer_sz);
 }
+
+// Declare it as weak symbol, which could be overrided by other symbols
+extern const __attribute__((weak)) bpftime::shm_open_type global_shm_open_type =
+	bpftime::shm_open_type::SHM_NO_CREATE;
+
 } // namespace bpftime
