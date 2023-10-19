@@ -396,10 +396,8 @@ int bpf_attach_ctx::create_tracepoint(int tracepoint_id, int perf_fd,
 	const auto &[id_table, _] = get_global_syscall_id_table();
 	if (auto itr = tp_table.find(tracepoint_id); itr != tp_table.end()) {
 		spdlog::info("Creating tracepoint for tp name {}", itr->second);
-		// I'm lazy. So I just lookup the corresponding bpf progs by
+		// Lookup the corresponding bpf progs by
 		// brute force
-
-#warning Inefficient algorithm here. Remeber to rewrite it in the future
 		std::vector<const bpftime_prog *> progs;
 
 		for (std::size_t i = 0; i < manager->size(); i++) {

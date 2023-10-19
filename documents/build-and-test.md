@@ -7,7 +7,7 @@ Install the required packages:
 ```bash
 sudo apt install -y --no-install-recommends \
         libelf1 libelf-dev zlib1g-dev make git libboost1.74-all-dev \
-        binutils-dev libyaml-cpp-dev
+        binutils-dev libyaml-cpp-dev llvm
 git submodule update --init --recursive
 ```
 ---

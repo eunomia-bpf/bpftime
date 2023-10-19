@@ -3,8 +3,14 @@
 #include <boost/interprocess/sync/interprocess_sharable_mutex.hpp>
 #include <boost/interprocess/sync/sharable_lock.hpp>
 #include <bpf_map/ringbuf_map.hpp>
-#include <linux/bpf.h>
 #include <spdlog/spdlog.h>
+
+enum {
+	BPF_RINGBUF_BUSY_BIT = 2147483648,
+	BPF_RINGBUF_DISCARD_BIT = 1073741824,
+	BPF_RINGBUF_HDR_SZ = 8,
+};
+
 #define READ_ONCE_UL(x) (*(volatile unsigned long *)&x)
 #define WRITE_ONCE_UL(x, v) (*(volatile unsigned long *)&x) = (v)
 #define READ_ONCE_I(x) (*(volatile int *)&x)

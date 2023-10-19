@@ -101,7 +101,6 @@ function(add_ebpf_program_target target_name source_file output_file)
 | sed 's/riscv64/riscv/' \
 | sed 's/loongarch64/loongarch/'"
     OUTPUT_VARIABLE UNAME_ARCH
-    COMMAND_ERROR_IS_FATAL ANY
   )
   string(STRIP ${UNAME_ARCH} UNAME_ARCH_STRIPPED)
   add_custom_command(
