@@ -1,5 +1,6 @@
 #ifndef _BPFTIME_FFI_HPP
 #define _BPFTIME_FFI_HPP
+#include "attach/attach_manager/base_attach_manager.hpp"
 #include <cinttypes>
 #include <cstddef>
 #include "bpf_attach_ctx.hpp"
@@ -60,7 +61,7 @@ void bpftime_ffi_register_ffi(uint64_t id, ebpf_ffi_func_info func_info);
 
 // register a ffi for a program base on info.
 // probe ctx will find the function address and fill in the func_info
-int bpftime_ffi_resolve_from_info(bpf_attach_ctx *probe_ctx,
+int bpftime_ffi_resolve_from_info(base_attach_manager *probe_ctx,
 				  ebpf_ffi_func_info func_info);
 
 } // namespace bpftime

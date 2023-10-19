@@ -19,10 +19,7 @@ ExternalProject_Add(libbpf
 set(LIBBPF_INCLUDE_DIRS ${CMAKE_CURRENT_BINARY_DIR}/libbpf)
 set(LIBBPF_LIBRARIES ${CMAKE_CURRENT_BINARY_DIR}/libbpf/libbpf.a)
 
-#
-add_custom_target(copy_headers ALL
-  COMMENT "Copying headers"
-)
+set(header_output_list)
 
 function(copy_header TARGET SRC_DIR TARGET_DIR)
   file(GLOB_RECURSE FILES RELATIVE "${SRC_DIR}" "${SRC_DIR}/*")
@@ -31,7 +28,6 @@ function(copy_header TARGET SRC_DIR TARGET_DIR)
   foreach(file ${FILES})
     get_filename_component(PARENT_DIR "${TARGET_DIR}/${file}" DIRECTORY)
     add_custom_command(
-      TARGET ${TARGET}
       PRE_BUILD
       COMMAND ${CMAKE_COMMAND} -E make_directory ${PARENT_DIR}
       COMMAND ${CMAKE_COMMAND} -E copy
@@ -39,12 +35,20 @@ function(copy_header TARGET SRC_DIR TARGET_DIR)
       ${TARGET_DIR}/${file}
       COMMENT "Copying file ${HEADER_DIRS}/${file} to ${TARGET_DIR}/${file}"
       BYPRODUCTS ${TARGET_DIR}/${file}
+      OUTPUT ${TARGET_DIR}/${file}
+      DEPENDS ${SRC_DIR}/${file}
     )
+    list(APPEND header_output_list ${TARGET_DIR}/${file})
   endforeach()
 endfunction()
 
 copy_header(copy_headers "${LIBBPF_DIR}/include/linux" "${LIBBPF_INCLUDE_DIRS}/linux")
 copy_header(copy_headers "${LIBBPF_DIR}/include/uapi/linux" "${LIBBPF_INCLUDE_DIRS}/linux")
+
+add_custom_target(copy_headers ALL
+  COMMENT "Copying headers"
+  DEPENDS ${header_output_list}
+)
 
 set(HEADER_FILES relo_core.h hashmap.h nlattr.h libbpf_internal.h)
 
@@ -76,13 +80,14 @@ ExternalProject_Add(bpftool
 )
 
 function(add_bpf_skel_generating_target target_name bpf_program output_skel)
-  add_custom_target(${target_name} ALL
+  add_custom_command(
+    OUTPUT ${output_skel}
     COMMAND "${BPFTOOL_INSTALL_DIR}/bpftool" "gen" "skeleton" "${bpf_program}" > "${output_skel}"
-    BYPRODUCTS ${output_skel}
-    SOURCES ${bpf_program}
-    DEPENDS bpftool
-
-    )
+    DEPENDS bpftool ${bpf_program}
+  )
+  add_custom_target(${target_name}
+    DEPENDS ${output_skel}
+  )
 endfunction()
 
 # Define a helper function
@@ -99,10 +104,13 @@ function(add_ebpf_program_target target_name source_file output_file)
     COMMAND_ERROR_IS_FATAL ANY
   )
   string(STRIP ${UNAME_ARCH} UNAME_ARCH_STRIPPED)
-  add_custom_target(${target_name} ALL
+  add_custom_command(
+    OUTPUT ${output_file}
     COMMAND clang -O2 -target bpf -c -g -D__TARGET_ARCH_${UNAME_ARCH_STRIPPED} -I${CMAKE_SOURCE_DIR}/third_party/vmlinux/${UNAME_ARCH_STRIPPED} -I${LIBBPF_INCLUDE_DIRS}/uapi -I${LIBBPF_INCLUDE_DIRS} ${source_file} -o ${output_file}
-    BYPRODUCTS ${output_file}
-    SOURCES ${source_file}
+    DEPENDS ${source_file}
+  )
+  add_custom_target(${target_name}
+    DEPENDS ${output_file}
   )
   add_dependencies(${target_name} copy_headers)
 endfunction()

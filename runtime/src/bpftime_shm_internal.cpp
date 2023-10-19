@@ -1,3 +1,4 @@
+#include "bpftime_shm.hpp"
 #include "handler/epoll_handler.hpp"
 #include "handler/perf_event_handler.hpp"
 #include "spdlog/spdlog.h"
@@ -7,21 +8,26 @@
 #include <unistd.h>
 #include <variant>
 
+static bool global_shm_initialized = false;
+
 void bpftime_initialize_global_shm()
 {
 	using namespace bpftime;
 	// Use placement new, which will not allocate memory, but just
 	// call the constructor
 	new (&shm_holder.global_shared_memory) bpftime_shm;
+	global_shm_initialized = true;
 }
 void bpftime_destroy_global_shm()
 {
 	using namespace bpftime;
-	// spdlog::info("Global shm destructed");
-	shm_holder.global_shared_memory.~bpftime_shm();
-	// Why not spdlog? because global variables that spdlog used were
-	// already destroyed..
-	printf("INFO [%d]: Global shm destructed\n", (int)getpid());
+	if (global_shm_initialized) {
+		// spdlog::info("Global shm destructed");
+		shm_holder.global_shared_memory.~bpftime_shm();
+		// Why not spdlog? because global variables that spdlog used
+		// were already destroyed..
+		printf("INFO [%d]: Global shm destructed\n", (int)getpid());
+	}
 }
 static __attribute__((destructor(65535))) void __destruct_shm()
 {
@@ -437,6 +443,8 @@ bpftime_shm::bpftime_shm()
 		spdlog::debug("done: bpftime_shm for server setup.");
 	} else if (global_shm_open_type == shm_open_type::SHM_NO_CREATE) {
 		// not create any shm
+		spdlog::warn(
+			"NOT creating global shm. Please check if you declared bpftime::global_shm_open_type");
 		return;
 	}
 }
@@ -499,4 +507,9 @@ bpftime_shm::get_software_perf_event_raw_buffer(int fd, size_t buffer_sz) const
 	const auto &handler = std::get<bpf_perf_event_handler>(get_handler(fd));
 	return handler.try_get_software_perf_data_raw_buffer(buffer_sz);
 }
+
+// Declare it as weak symbol, which could be overrided by other symbols
+extern const __attribute__((weak)) bpftime::shm_open_type global_shm_open_type =
+	bpftime::shm_open_type::SHM_NO_CREATE;
+
 } // namespace bpftime

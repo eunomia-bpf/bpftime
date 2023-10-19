@@ -9,8 +9,7 @@ class bpftime_object;
 // open the object elf file and load it into the context
 bpftime_object *bpftime_object_open(const char *obj_path);
 // load btf associate with the host environment
-int bpftime_object_load_relocate_btf(bpftime_object *obj,
-				     const char *btf_path);
+int bpftime_object_load_relocate_btf(bpftime_object *obj, const char *btf_path);
 // close and free the object
 void bpftime_object_close(bpftime_object *obj);
 

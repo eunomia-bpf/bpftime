@@ -39,10 +39,10 @@ void bpftime_ffi_register_ffi(uint64_t id, ebpf_ffi_func_info func_info)
 	global_ffi_ctx.ffi_funcs[id] = func_info;
 }
 
-int bpftime_ffi_resolve_from_info(bpf_attach_ctx *probe_ctx,
+int bpftime_ffi_resolve_from_info(base_attach_manager *probe_ctx,
 				  ebpf_ffi_func_info func_info)
 {
-	void *func_addr = probe_ctx->find_function_by_name(func_info.name);
+	void *func_addr = probe_ctx->find_function_addr_by_name(func_info.name);
 	if (!func_addr) {
 		spdlog::error("Failed to get function address for {}",
 			      func_info.name);

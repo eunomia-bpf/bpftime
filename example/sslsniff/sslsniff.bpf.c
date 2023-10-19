@@ -63,7 +63,7 @@ int BPF_UPROBE(probe_SSL_rw_enter, void *ssl, void *buf, int num) {
     return 0;
 }
 
-static int SSL_exit(struct pt_regs *ctx, int rw) {
+static __always_inline int SSL_exit(struct pt_regs *ctx, int rw) {
     int ret = 0;
     u32 zero = 0;
     u64 pid_tgid = bpf_get_current_pid_tgid();

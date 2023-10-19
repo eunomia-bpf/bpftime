@@ -1,6 +1,7 @@
 use std::{
     ffi::{CStr, CString},
     path::{Path, PathBuf},
+    sync::atomic::{AtomicU32, Ordering},
 };
 
 use anyhow::{anyhow, bail, Context};
@@ -9,7 +10,11 @@ use frida::{
     _GError, _frida_g_error_free, frida_deinit, frida_init,
     frida_injector_inject_library_file_sync, frida_injector_new, frida_unref,
 };
-use libc::execve;
+use libc::{execve, kill, pid_t};
+use signal_hook::{
+    consts::{SIGINT, SIGTSTP},
+    iterator::Signals,
+};
 
 use crate::frida::frida_injector_close_sync;
 
@@ -118,7 +123,34 @@ fn load_ebpf_object_into_kernel(path: impl AsRef<Path>) -> anyhow::Result<()> {
     }
     Ok(())
 }
+#[allow(non_upper_case_globals)]
+static subprocess_pid: AtomicU32 = AtomicU32::new(0);
 
+#[allow(unused)]
+fn run_command(
+    path: impl AsRef<str>,
+    argv: &[String],
+    ld_preload: impl AsRef<str>,
+    agent_so: Option<String>,
+) -> anyhow::Result<()> {
+    let mut cmd = std::process::Command::new(path.as_ref());
+
+    cmd.args(argv).env("LD_PRELOAD", ld_preload.as_ref());
+    if let Some(v) = agent_so {
+        cmd.env("AGENT_SO", v);
+    }
+    let mut handle = cmd.spawn()?;
+    subprocess_pid.store(handle.id(), Ordering::Relaxed);
+    let status = handle
+        .wait()
+        .with_context(|| anyhow!("Failed to run the specific program"))?;
+
+    if !status.success() {
+        bail!("Exited with code: {:?}", status.code());
+    }
+    Ok(())
+}
+#[allow(unused)]
 fn my_execve(
     path: impl AsRef<str>,
     argv: &[String],
@@ -142,10 +174,20 @@ fn my_execve(
     }
     envp.push(std::ptr::null());
     let err = unsafe { execve(prog.as_ptr(), args_to_execve.as_ptr(), envp.as_ptr()) };
-    return anyhow!("Failed to run: err={}", err);
+    anyhow!("Failed to run: err={}", err)
 }
 
 fn main() -> anyhow::Result<()> {
+    // Handle signals
+    let mut signals = Signals::new([SIGINT, SIGTSTP])?;
+    std::thread::spawn(move || {
+        for sig in signals.forever() {
+            let pid = subprocess_pid.load(Ordering::Relaxed);
+            if pid != 0 {
+                unsafe { kill(pid as pid_t, sig) };
+            }
+        }
+    });
     let args = Args::parse();
     let install_path = PathBuf::from(args.install_location);
     match args.command {
@@ -157,13 +199,12 @@ fn main() -> anyhow::Result<()> {
             if !so_path.exists() {
                 bail!("Library not found: {:?}", so_path);
             }
-            let err = my_execve(
+            run_command(
                 executable_path,
                 &extra_args,
                 so_path.to_string_lossy(),
                 None,
-            );
-            Err(err.into())
+            )
         }
         SubCommand::Start {
             executable_path,
@@ -180,21 +221,20 @@ fn main() -> anyhow::Result<()> {
                 if !transformr_path.exists() {
                     bail!("Library not found: {:?}", transformr_path);
                 }
-                let err = my_execve(
+
+                run_command(
                     executable_path,
                     &extra_args,
                     transformr_path.to_string_lossy(),
                     Some(agent_path.to_string_lossy().to_string()),
-                );
-                Err(err.into())
+                )
             } else {
-                let err = my_execve(
+                run_command(
                     executable_path,
                     &extra_args,
                     agent_path.to_string_lossy(),
                     None,
-                );
-                Err(err.into())
+                )
             }
         }
         SubCommand::Attach {

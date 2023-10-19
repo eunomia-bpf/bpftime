@@ -3,8 +3,7 @@
 #include <list>
 #include <memory>
 #include <string_view>
-#include "bpftime.hpp"
-#include "bpftime_internal.h"
+#include "bpftime_prog.hpp"
 #include <spdlog/spdlog.h>
 using namespace std;
 using namespace bpftime;

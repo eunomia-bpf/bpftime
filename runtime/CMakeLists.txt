@@ -52,8 +52,9 @@ set(sources
 
   src/ffi.cpp
   src/bpf_helper.cpp
-  src/attach/attach_internal.cpp
   src/attach/bpf_attach_ctx.cpp
+  src/attach/attach_manager/base_attach_manager.cpp
+  src/attach/attach_manager/frida_attach_manager.cpp
   src/handler/handler_manager.cpp
   src/handler/map_handler.cpp
   src/handler/perf_event_handler.cpp
@@ -89,11 +90,14 @@ add_library(
   ${sources}
 )
 set_property(TARGET ${PROJECT_NAME} PROPERTY CXX_STANDARD 20)
+add_custom_command(
+  OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/syscall_id_list.h
+  COMMAND /bin/bash ${CMAKE_CURRENT_SOURCE_DIR}/generate_syscall_id_table.sh "${CMAKE_CURRENT_BINARY_DIR}/syscall_id_list.h"
+  USES_TERMINAL
+)
 add_custom_target(
   syscall_id_table
-  COMMAND /bin/bash ${CMAKE_CURRENT_SOURCE_DIR}/generate_syscall_id_table.sh "${CMAKE_CURRENT_BINARY_DIR}/syscall_id_list.h"
-  BYPRODUCTS ${CMAKE_CURRENT_BINARY_DIR}/syscall_id_list.h
-  USES_TERMINAL
+  DEPENDS ${CMAKE_CURRENT_BINARY_DIR}/syscall_id_list.h
 )
 
 target_include_directories(${PROJECT_NAME}

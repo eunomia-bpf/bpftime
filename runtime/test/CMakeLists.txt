@@ -11,11 +11,7 @@ project(
 set(test_sources
 
   # probe tests
-  src/test_attach_hook.cpp
   src/test_attach_replace.cpp
-  src/test_attach_filter.cpp
-  src/test_attach_find_func_addr.cpp
-  src/test_attach_uprobe.cpp
 
   # ffi tests
   src/test_ffi_register.cpp

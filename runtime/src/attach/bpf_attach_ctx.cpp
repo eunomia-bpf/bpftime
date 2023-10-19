@@ -1,8 +1,10 @@
+#include "attach/attach_manager/frida_attach_manager.hpp"
 #include "bpftime.hpp"
-#include "frida-gum.h"
 #include "handler/epoll_handler.hpp"
 #include <asm/unistd_64.h>
-#include <filesystem>
+#include <cerrno>
+#include <map>
+#include <memory>
 #include <syscall_table.hpp>
 #include <bpf_attach_ctx.hpp>
 #include <bpftime_shm_internal.hpp>
@@ -13,48 +15,11 @@
 #include <bpftime_helper_group.hpp>
 #include <handler/handler_manager.hpp>
 #include <attach/attach_internal.hpp>
+#include <utility>
 #include <variant>
-static std::string get_executable_path()
-{
-	char exec_path[PATH_MAX] = { 0 };
-	ssize_t len =
-		readlink("/proc/self/exe", exec_path, sizeof(exec_path) - 1);
-	if (len != -1) {
-		exec_path[len] = '\0'; // Null-terminate the string
-		spdlog::info("Executable path: {}", exec_path);
-	} else {
-		spdlog::error("Error retrieving executable path: {}", errno);
-	}
-	return exec_path;
-}
-
+#include <sys/resource.h>
 namespace bpftime
 {
-static void *
-resolve_function_addr(bpf_attach_ctx &ctx,
-		      const bpftime::bpf_perf_event_handler &event_handler)
-{
-	void *function = nullptr;
-	const char *module_name = event_handler._module_name.c_str();
-	std::string exec_path = get_executable_path();
-	void *module_base_addr;
-
-	if (std::filesystem::equivalent(exec_path, module_name)) {
-		// the current process
-		module_base_addr = ctx.module_get_base_addr("");
-	} else {
-		module_base_addr = ctx.module_get_base_addr(
-			event_handler._module_name.c_str());
-	}
-	// find function
-	if (!module_base_addr) {
-		spdlog::error("module {} not found",
-			      event_handler._module_name.c_str());
-		return nullptr;
-	}
-	function = (void *)((char *)module_base_addr + event_handler.offset);
-	return function;
-}
 
 static int load_prog_and_helpers(bpftime_prog *prog, agent_config &config)
 {
@@ -198,6 +163,9 @@ int64_t bpf_attach_ctx::run_syscall_hooker(int64_t sys_nr, int64_t arg1,
 int bpf_attach_ctx::init_attach_ctx_from_handlers(
 	const handler_manager *manager, agent_config &config)
 {
+	// Maintain perf_event fd -> [(prog fd,bpftime_prog*)]
+	std::map<int, std::vector<std::pair<int, bpftime_prog *> > >
+		handler_prog_fds;
 	// First, we create programs
 	for (std::size_t i = 0; i < manager->size(); i++) {
 		if (!manager->is_allocated(i)) {
@@ -218,7 +186,11 @@ int bpf_attach_ctx::init_attach_ctx_from_handlers(
 			if (res < 0) {
 				return res;
 			}
-			spdlog::debug("Load prog {} {}", i, prog_handler.name);
+			for (auto v : prog_handler.attach_fds) {
+				handler_prog_fds[v].emplace_back(i, prog);
+			}
+			spdlog::debug("Load prog fd={} name={}", i,
+				      prog_handler.name);
 		} else if (std::holds_alternative<bpf_map_handler>(handler)) {
 			spdlog::debug("bpf_map_handler found at {}", i);
 		} else if (std::holds_alternative<bpf_perf_event_handler>(
@@ -234,6 +206,13 @@ int bpf_attach_ctx::init_attach_ctx_from_handlers(
 			return -1;
 		}
 	}
+	for (const auto &[k, v] : handler_prog_fds) {
+		for (auto y : v) {
+			spdlog::debug(
+				"Program fd {} attached to perf event handler {}",
+				y.first, k);
+		}
+	}
 	// Second, we create bpf perf event handlers
 	for (std::size_t i = 0; i < manager->size(); i++) {
 		if (!manager->is_allocated(i)) {
@@ -242,37 +221,83 @@ int bpf_attach_ctx::init_attach_ctx_from_handlers(
 		auto &handler = manager->get_handler(i);
 
 		if (std::holds_alternative<bpf_perf_event_handler>(handler)) {
-			int fd = -1;
+			int err = -1;
+
 			auto &event_handler =
 				std::get<bpf_perf_event_handler>(handler);
-			void *function = nullptr;
-			if (event_handler.type !=
-				    bpf_perf_event_handler::bpf_event_type::
-					    PERF_TYPE_TRACEPOINT &&
-			    event_handler.type !=
-				    bpf_perf_event_handler::bpf_event_type::
-					    PERF_TYPE_SOFTWARE) {
-				function = resolve_function_addr(*this,
-								 event_handler);
-				if (!function) {
-					spdlog::error(
-						"Function not found {} {}",
-						event_handler._module_name,
-						event_handler.offset);
-					errno = ENOENT;
-					return -1;
-				}
+			void *func_addr = nullptr;
+			switch (event_handler.type) {
+			case bpf_perf_event_handler::bpf_event_type::
+				BPF_TYPE_FILTER:
+			case bpf_perf_event_handler::bpf_event_type::
+				BPF_TYPE_REPLACE:
+			case bpf_perf_event_handler::bpf_event_type::
+				BPF_TYPE_UPROBE:
+			case bpf_perf_event_handler::bpf_event_type::
+				BPF_TYPE_URETPROBE:
+				func_addr =
+					attach_manager
+						->resolve_function_addr_by_module_offset(
+							event_handler
+								._module_name
+								.c_str(),
+							event_handler.offset);
+				break;
+			default:
+				break;
 			}
 			// attach base on events
 			switch (event_handler.type) {
 			case bpf_perf_event_handler::bpf_event_type::
 				BPF_TYPE_FILTER: {
-				fd = create_filter(function, i);
+				auto progs = handler_prog_fds[i];
+				if (progs.size() > 1) {
+					spdlog::error(
+						"Expected that a certain function could only be attached one filter, at perf event {}",
+						i);
+					return -E2BIG;
+				}
+				err = attach_manager->attach_filter_at(
+					func_addr,
+					[=](const pt_regs &regs) -> bool {
+						uint64_t ret;
+						progs[0].second
+							->bpftime_prog_exec(
+								(void *)&regs,
+								sizeof(regs),
+								&ret);
+						return !ret;
+					});
+				if (err < 0)
+					spdlog::error(
+						"Failed to create filter for perf fd {}, err={}",
+						i, err);
 				break;
 			}
 			case bpf_perf_event_handler::bpf_event_type::
 				BPF_TYPE_REPLACE: {
-				fd = create_replace(function, i);
+				auto progs = handler_prog_fds[i];
+				if (progs.size() > 1) {
+					spdlog::error(
+						"Expected that a certain function could only be attached one replace, at perf event {}",
+						i);
+					return -E2BIG;
+				}
+				err = attach_manager->attach_replace_at(
+					func_addr,
+					[=](const pt_regs &regs) -> uint64_t {
+						uint64_t ret;
+						progs[0].second
+							->bpftime_prog_exec(
+								(void *)&regs,
+								sizeof(regs),
+								&ret);
+						return ret;
+					});
+				if (err < 0)
+					spdlog::error(
+						"Failed to create replace for perf fd {}, err={}",
+						i, err);
 				break;
 			}
 			case bpf_perf_event_handler::bpf_event_type::
@@ -280,7 +305,24 @@ int bpf_attach_ctx::init_attach_ctx_from_handlers(
 				spdlog::debug(
 					"Creating uprobe for perf event fd {}",
 					i);
-				fd = create_uprobe(function, i, false);
+				auto progs = handler_prog_fds[i];
+				spdlog::info(
+					"Attached {} uprobe programs to function {:x}",
+					progs.size(), (uintptr_t)func_addr);
+				err = attach_manager->attach_uprobe_at(
+					func_addr, [=](const pt_regs &regs) {
+						uint64_t ret;
+						for (auto &[k, prog] : progs) {
+							prog->bpftime_prog_exec(
+								(void *)&regs,
+								sizeof(regs),
+								&ret);
+						}
+					});
+				if (err < 0)
+					spdlog::error(
+						"Failed to create uprobe for perf fd {}, err={}",
+						i, err);
 				break;
 			}
 			case bpf_perf_event_handler::bpf_event_type::
@@ -288,99 +330,55 @@ int bpf_attach_ctx::init_attach_ctx_from_handlers(
 				spdlog::debug(
 					"Creating uretprobe for perf event fd {}",
 					i);
-				fd = create_uprobe(function, i, true);
+				auto progs = handler_prog_fds[i];
+				spdlog::info(
+					"Attached {} uretprobe programs to function {:x}",
+					progs.size(), (uintptr_t)func_addr);
+				err = attach_manager->attach_uretprobe_at(
+					func_addr, [=](const pt_regs &regs) {
+						uint64_t ret;
+						for (auto &[k, prog] : progs) {
+							prog->bpftime_prog_exec(
+								(void *)&regs,
+								sizeof(regs),
+								&ret);
+						}
+					});
+				if (err < 0)
+					spdlog::error(
+						"Failed to create uretprobe for perf fd {}, err={}",
+						i, err);
 				break;
 			}
 			case bpf_perf_event_handler::bpf_event_type::
 				PERF_TYPE_TRACEPOINT: {
-				fd = create_tracepoint(
+				err = create_tracepoint(
 					event_handler.tracepoint_id, i,
 					manager);
-				assert(fd >= 0);
+
+				if (err < 0)
+					spdlog::error(
+						"Failed to create tracepoint for perf fd {}, err={}",
+						i, err);
+				assert(err >= 0);
 				break;
 			}
 			case bpf_perf_event_handler::bpf_event_type::
 				PERF_TYPE_SOFTWARE: {
 				spdlog::debug(
 					"Attaching software perf event, nothing need to do");
-				fd = i;
+				err = i;
 			}
 			default:
 				break;
 			}
 			spdlog::debug("Create attach event {} {} {} for {}", i,
 				      event_handler._module_name,
-				      event_handler.offset, fd);
-			if (fd < 0) {
-				return fd;
+				      event_handler.offset, err);
+			if (err < 0) {
+				return err;
 			}
 		}
-	}
-	// attach the progs to the fds
-	return attach_progs_in_manager(manager);
-}
-
-int bpf_attach_ctx::attach_progs_in_manager(const handler_manager *manager)
-{
-	// attach the progs to the fds
-	for (auto &prog : progs) {
-		int id = prog.first;
-		// get the handler and find the attach information
-		auto &prog_handler =
-			std::get<bpf_prog_handler>(manager->get_handler(id));
-		for (auto fd : prog_handler.attach_fds) {
-			spdlog::debug("Attaching prog {} to fd {}", id, fd);
-			attach_prog(prog.second.get(), fd);
-		}
-	}
-	return 0;
-}
-
-// find the function by name in current process
-void *bpf_attach_ctx::find_function_by_name(const char *name)
-{
-	char *error_msg;
-	void *addr;
-	// try to find addr from frida
-	addr = (void *)gum_find_function(name);
-	if (addr) {
-		return addr;
-	}
-	// try to find addr from module
-	addr = module_find_export_by_name(NULL, name);
-	if (addr) {
-		return addr;
-	}
-	if (addr == NULL) {
-		spdlog::error("Unable to find function {} {}", name,
-			      __FUNCTION__);
-	}
-	return NULL;
-}
-
-void *bpf_attach_ctx::module_find_export_by_name(const char *module_name,
-						 const char *symbol_name)
-{
-	return (void *)(uintptr_t)gum_module_find_export_by_name(module_name,
-								 symbol_name);
-}
-
-void *bpf_attach_ctx::module_get_base_addr(const char *module_name)
-{
-	gum_module_load(module_name, nullptr);
-	return (void *)gum_module_find_base_address(module_name);
-}
-
-int bpf_attach_ctx::detach(const bpftime_prog *prog)
-{
-	for (auto m : hook_entry_table) {
-		if (m.second.progs.find(prog) != m.second.progs.end()) {
-			m.second.progs.erase(prog);
-		}
-		if (m.second.ret_progs.find(prog) != m.second.ret_progs.end()) {
-			m.second.ret_progs.erase(prog);
-		}
-		break;
 	}
 	return 0;
 }
@@ -388,113 +386,6 @@ int bpf_attach_ctx::detach(const bpftime_prog *prog)
 bpf_attach_ctx::~bpf_attach_ctx()
 {
 	spdlog::debug("Destructor: bpf_attach_ctx");
-	std::vector<int> id_to_remove = {};
-	for (auto &m : hook_entry_table) {
-		id_to_remove.push_back(m.second.id);
-	}
-	for (auto i : id_to_remove) {
-		spdlog::debug("Destroy attach of {}", i);
-		destory_attach(i);
-	}
-	gum_object_unref(interceptor);
-}
-int bpf_attach_ctx::revert_func(void *target_function)
-{
-	gum_interceptor_revert(interceptor, target_function);
-	return 0;
-}
-
-int bpf_attach_ctx::destory_attach(int id)
-{
-	auto function = hook_entry_index.find(id);
-	if (function == hook_entry_index.end()) {
-		return -1;
-	}
-	auto entry = hook_entry_table.find(function->second);
-	if (entry == hook_entry_table.end()) {
-		return -1;
-	}
-	spdlog::debug("Revert attach of id {}, type {}", id,
-		      (int)entry->second.type);
-	switch (entry->second.type) {
-	case BPFTIME_REPLACE: {
-		if (entry->second.hook_func != nullptr) {
-			revert_func(entry->second.hook_func);
-		}
-		entry->second.progs.clear();
-		hook_entry_index.erase(id);
-		hook_entry_table.erase(function->second);
-		return 0;
-	}
-	case BPFTIME_UPROBE: {
-		if (entry->second.uretprobe_id == id) {
-			spdlog::debug("Revert uretprobe");
-			hook_entry_index.erase(entry->second.uretprobe_id);
-			entry->second.uretprobe_id = -1;
-			entry->second.ret_progs.clear();
-		}
-		if (entry->second.id == id) {
-			spdlog::debug("Revert uprobe");
-			hook_entry_index.erase(entry->second.id);
-			entry->second.id = -1;
-			entry->second.progs.clear();
-		}
-		if (entry->second.listener != nullptr && entry->second.id < 0 &&
-		    entry->second.uretprobe_id < 0) {
-			spdlog::debug("Freeing listener");
-			// detach the listener when no one is using it
-			gum_interceptor_detach(interceptor,
-					       entry->second.listener);
-			spdlog::debug("Frida detached");
-			// No need to manually free, because frida uses RefCounting GC
-			// gum_free(entry->second.listener);
-			gum_object_unref(entry->second.listener);
-			hook_entry_table.erase(function->second);
-			spdlog::debug("Listener freed");
-		}
-		return 0;
-	}
-	default:
-		break;
-	}
-	return 0;
-}
-
-int bpf_attach_ctx::attach_prog(const bpftime_prog *prog, int id)
-{
-	// cannot find the attach target
-	if (hook_entry_index.find(id) == hook_entry_index.end()) {
-		return -1;
-	}
-	auto function = hook_entry_index[id];
-	if (hook_entry_table.find(function) == hook_entry_table.end()) {
-		return -1;
-	}
-	auto &entry = hook_entry_table[function];
-	switch (entry.type) {
-	case BPFTIME_REPLACE: {
-		// replace handler can only have one prog
-		if (entry.progs.size() > 0) {
-			return -1;
-		}
-		entry.progs.insert(prog);
-		break;
-	}
-	case BPFTIME_UPROBE: {
-		spdlog::trace(
-			"Insert uprobe/uretprobe program for prog id {}, entry uretprobe id {}",
-			id, entry.uretprobe_id);
-		if (entry.uretprobe_id == id) {
-			entry.ret_progs.insert(prog);
-		} else {
-			entry.progs.insert(prog);
-		}
-		break;
-	}
-	default:
-		return -1;
-	}
-	return 0;
 }
 
 int bpf_attach_ctx::create_tracepoint(int tracepoint_id, int perf_fd,
@@ -588,189 +479,11 @@ int bpf_attach_ctx::create_tracepoint(int tracepoint_id, int perf_fd,
 	}
 }
 
-int bpf_attach_ctx::create_replace_with_handler(int id,
-						bpftime_hook_entry_type type,
-						void *function,
-						void *handler_func)
-{
-	spdlog::info("create_replace_with_handler {:x}", (uintptr_t)function);
-	if (handler_func == NULL) {
-		handler_func = (void *)__frida_bpftime_replace_handler;
-	}
-	if (hook_entry_index.find(id) != hook_entry_index.end()) {
-		// already has a id
-		return -1;
-	}
-	if (hook_entry_table.find(function) != hook_entry_table.end()) {
-		// already has a hook
-		return -1;
-	}
-	auto iter = hook_entry_table.emplace(function, hook_entry{});
-	if (!iter.second) {
-		return -1;
-	}
-	auto entry = iter.first;
-	entry->second.id = id;
-	entry->second.type = type;
-	entry->second.hook_func = function;
-	entry->second.handler_function = handler_func;
-	hook_entry_index[id] = function;
-	auto res = replace_func(handler_func, function, &entry->second);
-	if (res < 0) {
-		spdlog::error("replace_func failed");
-		hook_entry_table.erase(function);
-		hook_entry_index.erase(id);
-		return res;
-	}
-	return id;
-}
-
-// the bpf program will be called instead of the function execution.
-int bpf_attach_ctx::create_replace(void *function)
-{
-	// Split the increment of volatile current_id to make clang happy
-	int current_id = this->current_id;
-	this->current_id = this->current_id + 1;
-	return create_replace(function, current_id);
-}
-
-int bpf_attach_ctx::create_replace(void *function, int id)
-{
-	return create_replace_with_handler(
-		id, BPFTIME_REPLACE, function,
-		(void *)__frida_bpftime_replace_handler);
-}
-
-int bpf_attach_ctx::create_filter(void *function)
-{
-	// Split the increment of volatile current_id to make clang happy
-	int current_id = this->current_id;
-	this->current_id = this->current_id + 1;
-	return create_filter(function, current_id);
-}
-
-int bpf_attach_ctx::create_filter(void *function, int id)
-{
-	return create_replace_with_handler(
-		id, BPFTIME_REPLACE, function,
-		(void *)__frida_bpftime_filter_handler);
-}
-
-// replace the function for the old program
-int bpf_attach_ctx::replace_func(void *new_function, void *target_function,
-				 void *data)
-{
-	/* Transactions are optional but improve performance with multiple
-	 * hooks. */
-	gum_interceptor_begin_transaction(interceptor);
-
-	auto res = gum_interceptor_replace(interceptor, target_function,
-					   new_function, data, NULL);
-	if (res < 0) {
-		return res;
-	}
-	/*
-	 * ^
-	 * |
-	 * This is using replace(), but there's also attach() which can be used
-	 * to hook functions without any knowledge of argument types, calling
-	 * convention, etc. It can even be used to put a probe in the middle of
-	 * a function.
-	 */
-	gum_interceptor_end_transaction(interceptor);
-	return 0;
-}
 // create a probe context
 bpf_attach_ctx::bpf_attach_ctx(void)
+	: attach_manager(std::make_unique<frida_attach_manager>())
 {
 	spdlog::debug("Initialzing frida gum");
-	gum_init_embedded();
-
-	interceptor = gum_interceptor_obtain();
-
 	current_id = CURRENT_ID_OFFSET;
-}
-
-// attach to a function in the object.
-int bpf_attach_ctx::create_uprobe(void *function, int id, bool retprobe)
-{
-	if (hook_entry_index.find(id) != hook_entry_index.end()) {
-		// already has a id
-		return -1;
-	}
-	if (hook_entry_table.find(function) != hook_entry_table.end()) {
-		// already has a hook
-		auto &entry = hook_entry_table[function];
-		if (entry.type != BPFTIME_UPROBE) {
-			// other type of hook
-			return -1;
-		}
-		if (retprobe) {
-			if (entry.uretprobe_id > 0) {
-				// already has a uretprobe
-				return -1;
-			}
-			entry.uretprobe_id = id;
-		} else {
-			if (entry.id < 0) {
-				// already has a uprobe
-				return -1;
-			}
-			entry.id = id;
-		}
-		hook_entry_index[id] = function;
-		return id;
-	}
-	auto iter = hook_entry_table.emplace(function, hook_entry{});
-	if (!iter.second) {
-		return -1;
-	}
-	auto entry = iter.first;
-	if (retprobe) {
-		entry->second.uretprobe_id = id;
-	} else {
-		entry->second.id = id;
-	}
-	entry->second.type = BPFTIME_UPROBE;
-	entry->second.hook_func = function;
-	auto entry_ptr = &entry->second;
-	entry->second.listener = (GumInvocationListener *)g_object_new(
-		uprobe_listener_get_type(), NULL);
-	spdlog::debug("Created listener instance {:x} for hook_entry id {}",
-		      (uintptr_t)entry->second.listener, id);
-
-	// gum_make_call_listener(frida_uprobe_listener_on_enter,
-	// 		       frida_uprobe_listener_on_leave,
-	// 		       entry_ptr, NULL);
-	int res = add_listener(entry->second.listener, function, entry_ptr);
-	if (res < 0) {
-		hook_entry_table.erase(function);
-		return res;
-	}
-	hook_entry_index[id] = function;
-	return id;
-}
-// replace the function for the old program
-int bpf_attach_ctx::add_listener(GumInvocationListener *listener,
-				 void *target_function, void *data)
-{
-	/* Transactions are optional but improve performance with multiple
-	 * hooks. */
-	gum_interceptor_begin_transaction(interceptor);
-	auto res = gum_interceptor_attach(interceptor, target_function,
-					  listener, data);
-	if (res < 0) {
-		return res;
-	}
-	/*
-	 * ^
-	 * |
-	 * This is using replace(), but there's also attach() which can be used
-	 * to hook functions without any knowledge of argument types, calling
-	 * convention, etc. It can even be used to put a probe in the middle of
-	 * a function.
-	 */
-	gum_interceptor_end_transaction(interceptor);
-	return 0;
 }
 } // namespace bpftime

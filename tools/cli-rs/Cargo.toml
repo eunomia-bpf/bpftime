@@ -10,6 +10,7 @@ clap = { version = "4.4.5", features = ["derive"] }
 dirs = "5.0.1"
 libbpf-rs = { version = "0.21.2", optional = true }
 libc = "0.2.149"
+signal-hook = "0.3.17"
 
 [build-dependencies]
 bindgen = "0.68.1"

@@ -78,12 +78,11 @@ endif()
 # spdlog
 add_subdirectory(third_party/spdlog)
 
-set(SPDLOG_INCLUDE {CMAKE_CURRENT_SOURCE_DIR}/third_party/spdlog/include)
+set(SPDLOG_INCLUDE ${CMAKE_CURRENT_SOURCE_DIR}/third_party/spdlog/include)
 
 # main library
 add_subdirectory(vm)
 add_subdirectory(runtime)
-add_subdirectory(tools)
 
 # benchmark that requires bpftime libraries
 add_subdirectory(benchmark)

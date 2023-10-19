@@ -31,3 +31,4 @@ target_include_directories(bpftime-object PUBLIC
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/../../vm/include>
   ${SPDLOG_INCLUDE}
 )
+set(BPFTIME_OBJECT_INCLUDE_DIRS ${CMAKE_CURRENT_SOURCE_DIR} PARENT_SCOPE)
