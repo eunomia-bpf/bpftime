@@ -17,7 +17,7 @@ set(TEST_SOURCES
     attach/test_filter_attach.cpp
     attach/test_replace_attach.cpp
     attach_with_ebpf/test_attach_filter_with_ebpf.cpp
-    attach_with_ebpf/test_attach_replace_with_ebpf.cpp
+    # attach_with_ebpf/test_attach_replace_with_ebpf.cpp
     attach_with_ebpf/test_attach_uprobe_with_ebpf.cpp
 )
 

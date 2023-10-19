@@ -5,14 +5,15 @@
 #include <assert.h>
 #include <inttypes.h>
 #include "bpftime.hpp"
-#include "bpftime_object.h"
+#include "bpftime_object.hpp"
 #include "test_defs.h"
 #include "bpftime_shm.hpp"
+#include "bpftime_ffi.hpp"
 
 using namespace bpftime;
 
-const shm_open_type bpftime::global_shm_open_type = shm_open_type::SHM_NO_CREATE;
-
+const shm_open_type bpftime::global_shm_open_type =
+	shm_open_type::SHM_NO_CREATE;
 
 // This is the original function to hook.
 int my_function(int parm1, const char *str, char c)
@@ -32,7 +33,7 @@ static void register_ffi_for_print_and_add(bpf_attach_ctx *probe_ctx)
 				     2,
 				     0,
 				     false };
-	bpftime_ffi_resolve_from_info(probe_ctx, func2);
+	bpftime_ffi_resolve_from_info(&probe_ctx->get_attach_manager(), func2);
 
 	ebpf_ffi_func_info func1 = { "print_func",
 				     FFI_FN(print_func),
@@ -41,7 +42,7 @@ static void register_ffi_for_print_and_add(bpf_attach_ctx *probe_ctx)
 				     1,
 				     0,
 				     false };
-	bpftime_ffi_resolve_from_info(probe_ctx, func1);
+	bpftime_ffi_resolve_from_info(&probe_ctx->get_attach_manager(), func1);
 }
 
 int main()
@@ -67,10 +68,14 @@ int main()
 	res = prog->bpftime_prog_load(false);
 	assert(res == 0);
 	// attach
-	int fd = probe_ctx.create_replace((void *)my_function);
+	int fd = probe_ctx.get_attach_manager().attach_replace_at(
+		(void *)my_function, [=](const pt_regs &regs) -> uint64_t {
+			uint64_t ret;
+			prog->bpftime_prog_exec((void *)&regs, sizeof(regs),
+						&ret);
+			return ret;
+		});
 	assert(fd >= 0);
-	res = probe_ctx.attach_prog(prog, fd);
-	assert(res == 0);
 
 	// test for attach
 	res = my_function(1, "hello aaa", 'c');
@@ -78,9 +83,7 @@ int main()
 	assert(res == 100);
 
 	// detach
-	res = probe_ctx.detach(prog);
-	assert(res == 0);
-	res = probe_ctx.destory_attach(fd);
+	res = probe_ctx.get_attach_manager().destroy_attach(fd);
 	assert(res == 0);
 
 	// test for no attach

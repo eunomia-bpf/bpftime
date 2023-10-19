@@ -51,9 +51,9 @@ class bpf_attach_ctx {
 	// int detach(const bpftime_prog *prog);
 
 	// replace the function for the old program. prog can be nullptr
-	// int replace_func(void *new_function, void *target_function, void *data);
-	// revert or recover the function for the old program
-	// int revert_func(void *target_function);
+	// int replace_func(void *new_function, void *target_function, void
+	// *data); revert or recover the function for the old program int
+	// revert_func(void *target_function);
 
 	// create bpf_attach_ctx from handler_manager in shared memory
 	int init_attach_ctx_from_handlers(const handler_manager *manager,
@@ -63,16 +63,16 @@ class bpf_attach_ctx {
 	// attach progs with fds to the fds in manager
 	int attach_progs_in_manager(const handler_manager *manager);
 
-	// find the function by name in current process
-	// must be called after init attach_ctx
-	void *find_function_by_name(const char *name);
-	// find module export function by name
-	// must be called after init attach_ctx
-	void *module_find_export_by_name(const char *module_name,
-					 const char *symbol_name);
-	// get the base addr of a module
-	// must be called after init attach_ctx
-	void *module_get_base_addr(const char *module_name);
+	// // find the function by name in current process
+	// // must be called after init attach_ctx
+	// void *find_function_by_name(const char *name);
+	// // find module export function by name
+	// // must be called after init attach_ctx
+	// void *module_find_export_by_name(const char *module_name,
+	// 				 const char *symbol_name);
+	// // get the base addr of a module
+	// // must be called after init attach_ctx
+	// void *module_get_base_addr(const char *module_name);
 
 	// Check whether there is a syscall trace program. Use the global
 	// handler manager
@@ -94,11 +94,15 @@ class bpf_attach_ctx {
 	{
 		orig_syscall = f;
 	}
+	base_attach_manager &get_attach_manager()
+	{
+		return *attach_manager;
+	}
 
     private:
 	// add uprobe listener
-	// int add_listener(GumInvocationListener *listener, void *target_function,
-	// 		 void *data);
+	// int add_listener(GumInvocationListener *listener, void
+	// *target_function, 		 void *data);
 	constexpr static int CURRENT_ID_OFFSET = 65536;
 	volatile int current_id = CURRENT_ID_OFFSET;
 	// frida gum interceptor

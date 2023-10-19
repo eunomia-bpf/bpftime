@@ -15,6 +15,10 @@ extern "C" uint64_t bpftime_get_retval(void)
 	}
 	return (uintptr_t)gum_invocation_context_get_return_value(gum_ctx);
 }
+
+base_attach_manager::~base_attach_manager()
+{
+}
 } // namespace bpftime
 
 extern "C" uint64_t bpftime_set_retval(uint64_t value)

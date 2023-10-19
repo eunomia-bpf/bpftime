@@ -25,11 +25,6 @@ static std::string get_executable_path()
 	return exec_path;
 }
 
-static void *get_module_base_addr(const char *module_name)
-{
-	gum_module_load(module_name, nullptr);
-	return (void *)gum_module_find_base_address(module_name);
-}
 
 extern "C" uint64_t __bpftime_frida_attach_manager__replace_handler();
 extern "C" void *__bpftime_frida_attach_manager__filter_handler();
@@ -184,6 +179,18 @@ int frida_attach_manager::destroy_attach_by_func_addr(const void *func)
 	} else {
 		return -ENOENT;
 	}
+}
+
+void *frida_attach_manager::get_module_base_addr(const char *module_name)
+{
+	gum_module_load(module_name, nullptr);
+	return (void *)gum_module_find_base_address(module_name);
+}
+void *frida_attach_manager::find_module_export_by_name(const char *module_name,
+						       const char *symbol_name)
+{
+	return (void *)(uintptr_t)gum_module_find_export_by_name(module_name,
+								 symbol_name);
 }
 attach_type frida_attach_entry::get_type() const
 {

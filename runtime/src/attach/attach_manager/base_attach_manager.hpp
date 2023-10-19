@@ -42,10 +42,10 @@ class base_attach_manager {
 	using attach_iterate_callback =
 		std::function<void(int id, const void *addr, attach_type ty)>;
 
-	virtual ~base_attach_manager()
-	{
-	}
-
+	virtual ~base_attach_manager();
+	virtual void *get_module_base_addr(const char *module_name) = 0;
+	virtual void *find_module_export_by_name(const char *module_name,
+						 const char *symbol_name) = 0;
 	virtual void *resolve_function_addr_by_module_offset(
 		const std::string_view &module_name, uintptr_t func_offset) = 0;
 	virtual int attach_uprobe_at(void *func_addr, uprobe_callback &&cb) = 0;
