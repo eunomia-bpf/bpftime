@@ -43,7 +43,7 @@ test: ## test the package
 
 build: ## build the package
 	cmake -Bbuild  -DBPFTIME_ENABLE_UNIT_TESTING=1
-	cmake --build build --config Debug -j
+	cmake --build build --config Debug
 	cd tools/cli-rs && cargo build
 
 release: ## build the package
