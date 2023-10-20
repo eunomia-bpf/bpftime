@@ -8,5 +8,4 @@ COPY . .
 RUN git submodule update --init --recursive
 ENV CXX=g++
 ENV CC=gcc
-RUN make release
-
+RUN make release && make install
