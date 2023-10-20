@@ -1,9 +1,4 @@
-// SPDX-License-Identifier: (LGPL-2.1 OR BSD-2-Clause)
-// Copyright (c) 2019 Facebook
-// Copyright (c) 2020 Netflix
-//
-// Based on bpf_mocker(8) from BCC by Brendan Gregg and others.
-// 14-Feb-2020   Brendan Gregg   Created this.
+// Description: bpf-mocker daemon
 #include <argp.h>
 #include <signal.h>
 #include <stdio.h>
@@ -19,89 +14,20 @@
 #include "bpf-mocker.skel.h"
 #include "daemon_config.hpp"
 #include "handle_bpf_event.hpp"
-
-/* Tune the buffer size and wakeup rate. These settings cope with roughly
- * 50k opens/sec.
- */
-#define PERF_BUFFER_PAGES 64
-#define PERF_BUFFER_TIME_MS 10
-
-/* Set the poll timeout when no events occur. This can affect -d accuracy. */
-#define PERF_POLL_TIMEOUT_MS 100
+#include "daemon.hpp"
 
 #define NSEC_PER_SEC 1000000000ULL
 
 using namespace bpftime;
 
 static volatile sig_atomic_t exiting = 0;
-
-static struct env env = { .uid = INVALID_UID };
+static bool verbose = false;
 static bpf_event_handler handler({});
-
-const char *argp_program_version = "bpftime-daemon 0.1";
-const char *argp_program_bug_address = "https://github.com/eunomia-bpf/bpftime";
-const char argp_program_doc[] = "Trace and modify bpf syscalls\n";
-
-static const struct argp_option opts[] = {
-	{ "pid", 'p', "PID", 0, "Process ID to trace" },
-	{ "uid", 'u', "UID", 0, "User ID to trace" },
-	{ "open", 'o', "OPEN", 0, "Show open events" },
-	{ "verbose", 'v', NULL, 0, "Verbose debug output" },
-	{ "failed", 'x', NULL, 0, "Failed opens only" },
-	{},
-};
-
-static error_t parse_arg(int key, char *arg, struct argp_state *state)
-{
-	static int pos_args;
-	long int pid, uid;
-
-	switch (key) {
-	case 'v':
-		env.verbose = true;
-		break;
-	case 'x':
-		env.failed = true;
-		break;
-	case 'o':
-		env.show_open = true;
-		break;
-	case 'p':
-		errno = 0;
-		pid = strtol(arg, NULL, 10);
-		if (errno || pid <= 0) {
-			fprintf(stderr, "Invalid PID: %s\n", arg);
-			argp_usage(state);
-		}
-		env.pid = pid;
-		break;
-	case 'u':
-		errno = 0;
-		uid = strtol(arg, NULL, 10);
-		if (errno || uid < 0 || uid >= INVALID_UID) {
-			fprintf(stderr, "Invalid UID %s\n", arg);
-			argp_usage(state);
-		}
-		env.uid = uid;
-		break;
-	case ARGP_KEY_ARG:
-		if (pos_args++) {
-			fprintf(stderr,
-				"Unrecognized positional argument: %s\n", arg);
-			argp_usage(state);
-		}
-		errno = 0;
-		break;
-	default:
-		return ARGP_ERR_UNKNOWN;
-	}
-	return 0;
-}
 
 static int libbpf_print_fn(enum libbpf_print_level level, const char *format,
 			   va_list args)
 {
-	if (level == LIBBPF_DEBUG && !env.verbose)
+	if (level == LIBBPF_DEBUG && !verbose)
 		return 0;
 	return vfprintf(stderr, format, args);
 }
@@ -124,25 +50,25 @@ void handle_lost_events(void *ctx, int cpu, __u64 lost_cnt)
 	fprintf(stderr, "Lost %llu events on CPU #%d!\n", lost_cnt, cpu);
 }
 
-int main(int argc, char **argv)
+int bpftime::start_daemon(struct env env)
 {
 	LIBBPF_OPTS(bpf_object_open_opts, open_opts);
-	static const struct argp argp = {
-		.options = opts,
-		.parser = parse_arg,
-		.doc = argp_program_doc,
-	};
 	struct ring_buffer *rb = NULL;
 	struct bpf_mocker_bpf *obj = NULL;
 	int err;
 
 	libbpf_set_print(libbpf_print_fn);
-	err = argp_parse(&argp, argc, argv, 0, NULL, NULL);
-	if (err)
-		return err;
 	
 	// update handler config
 	handler = bpf_event_handler(env);
+	verbose = env.verbose;
+
+	if (signal(SIGINT, sig_int) == SIG_ERR) {
+		fprintf(stderr, "can't set signal handler: %s\n",
+			strerror(errno));
+		err = 1;
+		goto cleanup;
+	}
 
 	obj = bpf_mocker_bpf__open();
 	if (!obj) {
@@ -153,6 +79,8 @@ int main(int argc, char **argv)
 	/* initialize global data (filtering options) */
 	obj->rodata->target_pid = env.pid;
 	obj->rodata->disable_modify = true;
+	obj->rodata->uprobe_perf_type = determine_uprobe_perf_type();
+	obj->rodata->kprobe_perf_type = determine_kprobe_perf_type();
 
 	err = bpf_mocker_bpf__load(obj);
 	if (err) {
@@ -172,13 +100,6 @@ int main(int argc, char **argv)
 	if (!rb) {
 		err = -1;
 		fprintf(stderr, "Failed to create ring buffer\n");
-		goto cleanup;
-	}
-
-	if (signal(SIGINT, sig_int) == SIG_ERR) {
-		fprintf(stderr, "can't set signal handler: %s\n",
-			strerror(errno));
-		err = 1;
 		goto cleanup;
 	}
 

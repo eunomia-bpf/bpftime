@@ -9,6 +9,7 @@ namespace bpftime {
 class bpf_event_handler {
     struct env config;
     
+    int handle_close_event(const struct event *e);
     int handle_bpf_event(const struct event *e);
     int handle_open_events(const struct event *e);
     int handle_perf_event(const struct event *e);

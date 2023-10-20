@@ -13,6 +13,7 @@ struct open_args_t {
 	int flags;
 };
 
+// track open syscall args
 struct {
 	__uint(type, BPF_MAP_TYPE_HASH);
 	__uint(max_entries, 10240);
@@ -218,6 +219,30 @@ int tracepoint__syscalls__sys_enter_bpf(struct trace_event_raw_sys_enter *ctx)
 	return 0;
 }
 
+static int process_bpf_syscall_exit(enum bpf_cmd cmd, union bpf_attr *attr,
+				    unsigned int size, int ret,
+				    struct trace_event_raw_sys_exit *ctx)
+{
+	if (!attr || size < sizeof(*attr)) {
+		return 0;
+	}
+
+	switch (cmd) {
+	case BPF_PROG_LOAD:
+		set_bpf_fd_if_positive(ret);
+		break;
+	case BPF_MAP_CREATE:
+		set_bpf_fd_if_positive(ret);
+		break;
+	case BPF_LINK_CREATE:
+		set_bpf_fd_if_positive(ret);
+		break;
+	default:
+		break;
+	}
+	return 0;
+}
+
 SEC("tracepoint/syscalls/sys_exit_bpf")
 int tracepoint__syscalls__sys_exit_bpf(struct trace_event_raw_sys_exit *ctx)
 {
@@ -243,6 +268,10 @@ int tracepoint__syscalls__sys_exit_bpf(struct trace_event_raw_sys_exit *ctx)
 	event->bpf_data.attr_size = ap->attr_size;
 	event->bpf_data.bpf_cmd = ap->cmd;
 	event->bpf_data.ret = ctx->ret;
+
+	process_bpf_syscall_exit(event->bpf_data.bpf_cmd, &event->bpf_data.attr,
+				 event->bpf_data.attr_size, event->bpf_data.ret,
+				 ctx);
 
 	/* emit event */
 	bpf_ringbuf_submit(event, 0);
@@ -299,6 +328,32 @@ int tracepoint__syscalls__sys_enter_perf_event_open(
 	return 0;
 }
 
+SEC("tracepoint/syscalls/sys_enter_close")
+int tracepoint__syscalls__sys_enter_close(struct trace_event_raw_sys_enter *ctx)
+{
+	struct event *event = NULL;
+
+	if (!filter_target()) {
+		return 0;
+	}
+	int fd = (int)ctx->args[0];
+	if (!is_bpf_fd(fd)) {
+		return 0;
+	}
+	/* event data */
+	event = fill_basic_event_info();
+	if (!event) {
+		return 0;
+	}
+	event->type = SYS_CLOSE;
+
+	event->close_data.fd = fd;
+	/* emit event */
+	bpf_ringbuf_submit(event, 0);
+	
+	return 0;
+}
+
 SEC("tracepoint/syscalls/sys_exit_perf_event_open")
 int tracepoint__syscalls__sys_exit_perf_event_open(
 	struct trace_event_raw_sys_exit *ctx)
@@ -314,6 +369,8 @@ int tracepoint__syscalls__sys_exit_perf_event_open(
 	ap = bpf_map_lookup_elem(&perf_event_open_param_start, &pid);
 	if (!ap)
 		return 0; /* missed entry */
+	
+	set_bpf_fd_if_positive(ctx->ret);
 
 	/* event data */
 	event = fill_basic_event_info();
