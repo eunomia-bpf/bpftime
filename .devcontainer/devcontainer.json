@@ -10,7 +10,6 @@
 	},
 	"features": {
 		"ghcr.io/devcontainers/features/docker-in-docker:2": {},
-		"ghcr.io/eliises/devcontainer-features/bash-profile": {}
 	}
 
 	// Features to add to the dev container. More info: https://containers.dev/features.
