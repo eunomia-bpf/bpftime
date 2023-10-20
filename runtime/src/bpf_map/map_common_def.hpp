@@ -55,6 +55,7 @@ inline void ensure_on_certain_cpu(int cpu, std::function<void()> func)
 	func();
 	sched_setaffinity(0, sizeof(orig), &orig);
 }
+
 struct bytes_vec_hasher {
 	size_t operator()(bytes_vec const &vec) const
 	{
