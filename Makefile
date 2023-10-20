@@ -38,7 +38,7 @@ unit-test:
 	./build/runtime/unit-test/bpftime_runtime_tests
 
 build: ## build the package
-	cmake -Bbuild
+	cmake -Bbuild   -DBPFTIME_ENABLE_UNIT_TESTING=1
 	cmake --build build --config Debug
 	cd tools/cli-rs && cargo build
 

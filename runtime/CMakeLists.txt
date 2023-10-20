@@ -170,7 +170,7 @@ add_subdirectory(object)
 add_subdirectory(agent)
 add_subdirectory(syscall-server)
 add_subdirectory(agent-transformer)
-add_subdirectory(bpftime-daemon)
+add_subdirectory(daemon)
 
 #
 # Unit testing setup

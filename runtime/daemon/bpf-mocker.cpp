@@ -36,6 +36,7 @@ using namespace bpftime;
 static volatile sig_atomic_t exiting = 0;
 
 static struct env env = { .uid = INVALID_UID };
+static bpf_event_handler handler({});
 
 const char *argp_program_version = "bpftime-daemon 0.1";
 const char *argp_program_bug_address = "https://github.com/eunomia-bpf/bpftime";
@@ -114,8 +115,7 @@ static void sig_int(int signo)
 static int handle_event_rb(void *ctx, void *data, size_t data_sz)
 {
 	const struct event *e = (const struct event *)data;
-	bpf_event_handler handler(env);
-
+	handler.handle_event(e);
 	return 0;
 }
 
@@ -132,7 +132,6 @@ int main(int argc, char **argv)
 		.parser = parse_arg,
 		.doc = argp_program_doc,
 	};
-	// struct perf_buffer *pb = NULL;
 	struct ring_buffer *rb = NULL;
 	struct bpf_mocker_bpf *obj = NULL;
 	int err;
@@ -141,6 +140,9 @@ int main(int argc, char **argv)
 	err = argp_parse(&argp, argc, argv, 0, NULL, NULL);
 	if (err)
 		return err;
+	
+	// update handler config
+	handler = bpf_event_handler(env);
 
 	obj = bpf_mocker_bpf__open();
 	if (!obj) {
@@ -163,10 +165,6 @@ int main(int argc, char **argv)
 		fprintf(stderr, "failed to attach BPF programs\n");
 		goto cleanup;
 	}
-	/* print headers */
-	printf("%-6s %-16s %3s %3s ", "PID", "COMM", "FD", "ERR");
-	printf("%s", "PATH");
-	printf("\n");
 
 	/* Set up ring buffer polling */
 	rb = ring_buffer__new(bpf_map__fd(obj->maps.rb), handle_event_rb, NULL,
