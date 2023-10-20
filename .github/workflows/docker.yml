@@ -30,9 +30,13 @@ jobs:
           registry: ghcr.io
           username: ${{ github.repository_owner }}
           password: ${{ secrets.GITHUB_TOKEN }}
+      - name: build docker
+        run: |
+          docker build .
 
       - name: Build image and push to GitHub Container Registry
         uses: docker/build-push-action@v2
+        if:   github.repository_owner == 'eunomia-bpf'
         with:
           # relative path to the place where source code with Dockerfile is located
           context: ./
@@ -41,7 +45,7 @@ jobs:
           # Note: tags has to be all lower-case
           tags: |
             ghcr.io/${{ github.repository_owner }}/bpftime:latest
-          push: github.repository_owner == 'eunomia-bpf'
+          push:
 
       - name: Image digest
         run: echo ${{ steps.docker_build.outputs.digest }}
