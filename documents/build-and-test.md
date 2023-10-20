@@ -59,5 +59,5 @@ make build-llvm # build the vm with llvm jit
 Run the test suite for runtime to validate the implementation:
 
 ```bash
-make test
+make unit-test
 ```

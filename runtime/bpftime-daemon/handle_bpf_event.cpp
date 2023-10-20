@@ -1,9 +1,12 @@
-#include "handle_bpf_event.hpp"
+#include <bpf/libbpf.h>
+#include <bpf/bpf.h>
 #include <cstdio>
 #include <errno.h>
 #include <sys/time.h>
 #include <time.h>
 #include <linux/perf_event.h>
+#include "handle_bpf_event.hpp"
+#include "bpf-mocker-event.h"
 
 using namespace bpftime;
 
@@ -132,12 +135,6 @@ static const char *bpf_prog_type_strings[] = {
 	"BPF_PROG_TYPE_SYSCALL",
 };
 
-bpf_event_handler::bpf_event_handler(struct env config) : config(config)
-{
-	perf_type_id_strings[determine_uprobe_perf_type()] = "PERF_TYPE_UPROBE";
-	perf_type_id_strings[determine_kprobe_perf_type()] = "PERF_TYPE_KPROBE";
-}
-
 int bpf_event_handler::handle_bpf_event(const struct event *e)
 {
 	struct tm *tm;
@@ -236,4 +233,10 @@ int bpf_event_handler::handle_event(const struct event *e)
 		break;
 	}
 	return 0;
+}
+
+bpf_event_handler::bpf_event_handler(struct env config) : config(config)
+{
+	perf_type_id_strings[determine_uprobe_perf_type()] = "PERF_TYPE_UPROBE";
+	perf_type_id_strings[determine_kprobe_perf_type()] = "PERF_TYPE_KPROBE";
 }
