@@ -44,6 +44,10 @@ struct event {
 			struct perf_event_attr attr;
 			int pid;
 			int cpu;
+
+			// uprobe data
+			uint64_t offset;
+			char name_or_path[NAME_MAX];
 		} perf_event_data;
 
 		struct {

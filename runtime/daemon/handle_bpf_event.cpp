@@ -252,10 +252,12 @@ int bpf_event_handler::handle_load_bpf_prog_event(const struct event *e)
 			"UNKNOWN PROG TYPE" :
 			bpf_prog_type_strings[e->bpf_loaded_prog.type];
 
+	const char* prog_name = strlen(e->bpf_loaded_prog.prog_name) > 0 ? e->bpf_loaded_prog.prog_name : "(none)";
+
 	/* print output */
 	spdlog::info(
 		"BPF_LOAD {:<6} {:<16} name:{:<16} type:{:<16} insn_cnt:{:<6}",
-		e->pid, e->comm, e->bpf_loaded_prog.prog_name, prog_type_str,
+		e->pid, e->comm, prog_name, prog_type_str,
 		e->bpf_loaded_prog.insn_cnt);
 	return 0;
 }
