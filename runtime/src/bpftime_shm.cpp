@@ -12,21 +12,21 @@
 
 using namespace bpftime;
 
-int bpftime_link_create(int prog_fd, int target_fd)
+int bpftime_link_create(int fd, int prog_fd, int target_fd)
 {
-	return shm_holder.global_shared_memory.add_bpf_link(prog_fd, target_fd);
+	return shm_holder.global_shared_memory.add_bpf_link(fd, prog_fd, target_fd);
 }
 
-int bpftime_progs_create(const ebpf_inst *insn, size_t insn_cnt,
+int bpftime_progs_create(int fd, const ebpf_inst *insn, size_t insn_cnt,
 			 const char *prog_name, int prog_type)
 {
-	return shm_holder.global_shared_memory.add_bpf_prog(
+	return shm_holder.global_shared_memory.add_bpf_prog(fd, 
 		insn, insn_cnt, prog_name, prog_type);
 }
 
-int bpftime_maps_create(const char *name, bpftime::bpf_map_attr attr)
+int bpftime_maps_create(int fd, const char *name, bpftime::bpf_map_attr attr)
 {
-	return shm_holder.global_shared_memory.add_bpf_map(name, attr);
+	return shm_holder.global_shared_memory.add_bpf_map(fd, name, attr);
 }
 uint32_t bpftime_map_value_size_from_syscall(int fd)
 {
@@ -81,16 +81,16 @@ int bpftime_map_get_next_key(int fd, const void *key,
 		fd, key, next_key, true);
 }
 
-int bpftime_uprobe_create(int pid, const char *name, uint64_t offset,
+int bpftime_uprobe_create(int fd, int pid, const char *name, uint64_t offset,
 			  bool retprobe, size_t ref_ctr_off)
 {
-	return shm_holder.global_shared_memory.add_uprobe(
+	return shm_holder.global_shared_memory.add_uprobe(fd, 
 		pid, name, offset, retprobe, ref_ctr_off);
 }
 
-int bpftime_tracepoint_create(int pid, int32_t tp_id)
+int bpftime_tracepoint_create(int fd, int pid, int32_t tp_id)
 {
-	return shm_holder.global_shared_memory.add_tracepoint(pid, tp_id);
+	return shm_holder.global_shared_memory.add_tracepoint(fd, pid, tp_id);
 }
 
 int bpftime_perf_event_enable(int fd)

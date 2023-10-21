@@ -38,7 +38,7 @@ long syscall_context::handle_sysbpf(int cmd, union bpf_attr *attr, size_t size)
 	switch (cmd) {
 	case BPF_MAP_CREATE: {
 		spdlog::debug("Creating map");
-		int id = bpftime_maps_create(
+		int id = bpftime_maps_create(-1/* let the shm alloc fd for us */,
 			attr->map_name, bpftime::bpf_map_attr{
 						(int)attr->map_type,
 						attr->key_size,
@@ -154,7 +154,7 @@ long syscall_context::handle_sysbpf(int cmd, union bpf_attr *attr, size_t size)
 				}
 			}
 #endif
-			int id = bpftime_progs_create(
+			int id = bpftime_progs_create(-1/* let the shm alloc fd for us */,
 				(ebpf_inst *)(uintptr_t)attr->insns,
 				(size_t)attr->insn_cnt, attr->prog_name,
 				attr->prog_type);
@@ -166,7 +166,7 @@ long syscall_context::handle_sysbpf(int cmd, union bpf_attr *attr, size_t size)
 		auto prog_fd = attr->link_create.prog_fd;
 		auto target_fd = attr->link_create.target_fd;
 		spdlog::debug("Creating link {} -> {}", prog_fd, target_fd);
-		int id = bpftime_link_create(prog_fd, target_fd);
+		int id = bpftime_link_create(-1/* let the shm alloc fd for us */, prog_fd, target_fd);
 		spdlog::debug("Created link {}", id);
 		return id;
 	}
@@ -232,7 +232,7 @@ int syscall_context::handle_perfevent(perf_event_attr *attr, pid_t pid, int cpu,
 		spdlog::debug(
 			"Creating uprobe name {} offset {} retprobe {} ref_ctr_off {} attr->config={:x}",
 			name, offset, retprobe, ref_ctr_off, attr->config);
-		int id = bpftime_uprobe_create(pid, name, offset, retprobe,
+		int id = bpftime_uprobe_create(-1/* let the shm alloc fd for us */, pid, name, offset, retprobe,
 					       ref_ctr_off);
 		// std::cout << "Created uprobe " << id << std::endl;
 		spdlog::debug("Created uprobe {}", id);
@@ -241,7 +241,7 @@ int syscall_context::handle_perfevent(perf_event_attr *attr, pid_t pid, int cpu,
 		   (int)bpf_perf_event_handler::bpf_event_type::
 			   PERF_TYPE_TRACEPOINT) {
 		spdlog::debug("Detected tracepoint perf event creation");
-		int fd = bpftime_tracepoint_create(pid, (int32_t)attr->config);
+		int fd = bpftime_tracepoint_create(-1/* let the shm alloc fd for us */, pid, (int32_t)attr->config);
 		spdlog::debug("Created tracepoint perf event with fd {}", fd);
 		return fd;
 	} else if ((int)attr->type ==
@@ -409,6 +409,7 @@ int syscall_context::handle_epoll_wait(int epfd, epoll_event *evt,
 	}
 	return orig_epoll_wait_fn(epfd, evt, maxevents, timeout);
 }
+
 int syscall_context::handle_munmap(void *addr, size_t size)
 {
 	if (!enable_mock)
