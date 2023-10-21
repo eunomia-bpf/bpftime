@@ -63,6 +63,7 @@ TEST_CASE("Test probing internal functions")
 		REQUIRE(man.destroy_attach(id2) >= 0);
 		REQUIRE(man.destroy_attach(id3) >= 0);
 	}
+	
 	SECTION("Test probing libc functions")
 	{
 		auto strdup_addr = man.find_function_addr_by_name("strdup");
