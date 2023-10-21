@@ -8,7 +8,8 @@
 #include <unistd.h>
 #include <vector>
 #include <bpf_map/map_common_def.hpp>
-#include "common_def.hpp"
+#include "../common_def.hpp"
+
 using namespace boost::interprocess;
 using namespace bpftime;
 
@@ -19,6 +20,7 @@ TEST_CASE("Test basic operations of array map")
 	shm_remove remover(SHM_NAME);
 	managed_shared_memory mem(create_only, SHM_NAME, 20 << 20);
 	uint32_t ncpu = sysconf(_SC_NPROCESSORS_ONLN);
+
 	SECTION("Test writing from helpers, and read from userspace")
 	{
 		per_cpu_array_map_impl map(mem, 8, 10);
@@ -41,6 +43,7 @@ TEST_CASE("Test basic operations of array map")
 			}
 		}
 	}
+
 	SECTION("Test writing from userspace, and reading & updating from helpers")
 	{
 		per_cpu_array_map_impl map(mem, 8, 1);

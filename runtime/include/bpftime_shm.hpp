@@ -47,6 +47,11 @@ void bpftime_initialize_global_shm();
 // destroy the global shared memory
 void bpftime_destroy_global_shm();
 
+// import the global shared memory from json file
+int bpftime_import_global_shm_from_json(const char *filename);
+// export the global shared memory to json file
+int bpftime_export_global_shm_to_json(const char *filename);
+
 // create a bpf link in the global shared memory
 //
 // @param[fd]: fd is the fd allocated by the kernel. if fd is -1, then the

@@ -1,5 +1,5 @@
 #include "catch2/catch_message.hpp"
-#include "common_def.hpp"
+#include "../common_def.hpp"
 #include <boost/interprocess/creation_tags.hpp>
 #include <boost/interprocess/interprocess_fwd.hpp>
 #include <bpf_map/per_cpu_hash_map.hpp>
@@ -13,6 +13,7 @@
 #include "catch2/internal/catch_run_context.hpp"
 #include <algorithm>
 #include <random>
+
 using namespace boost::interprocess;
 using namespace bpftime;
 
@@ -59,6 +60,7 @@ TEST_CASE("Test basic operations of hash map")
 			}
 		}
 	}
+
 	SECTION("Test writing from userspace, and reading & updating from helpers")
 	{
 		per_cpu_hash_map_impl map(mem, 4, 8);

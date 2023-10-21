@@ -5,10 +5,11 @@
 #include <sstream>
 #include <stdio.h>
 #include <iomanip>
+#include "bpftime_shm_internal.hpp"
 
 namespace bpftime
 {
-static inline std::string bufferToHexString(const unsigned char *buffer,
+static inline std::string buffer_to_hex_string(const unsigned char *buffer,
 					    size_t bufferSize)
 {
 	std::stringstream ss;
@@ -19,7 +20,7 @@ static inline std::string bufferToHexString(const unsigned char *buffer,
 	return ss.str();
 }
 
-static inline int hexStringToBuffer(const std::string &hexString,
+static inline int hex_string_to_buffer(const std::string &hexString,
 				     unsigned char *buffer, size_t bufferSize)
 {
 	if (hexString.length() != bufferSize * 2) {
@@ -34,8 +35,8 @@ static inline int hexStringToBuffer(const std::string &hexString,
     return 0;
 }
 
-void bpftime_import_global_shm_from_json(const char *filename);
-void bpftime_export_global_shm_to_json(const char *filename);
+int bpftime_export_shm_to_json(const bpftime_shm& shm, const char *filename);
+int bpftime_import_shm_from_json(const bpftime_shm& shm, const char *filename);
 
 } // namespace bpftime
 #endif // BPFTIME_JSON_EXPORTER_HPP

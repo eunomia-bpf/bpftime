@@ -105,7 +105,10 @@ class bpftime_shm {
 	void close_fd(int fd);
 	bool is_exist_fake_fd(int fd) const;
 	
+	// initialize the shared memory globally
 	bpftime_shm();
+	// initialize the shared memory with a given name
+	bpftime_shm(const char* shm_name, shm_open_type type);
 
 	const handler_manager *get_manager() const;
 
