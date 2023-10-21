@@ -13,6 +13,7 @@ struct open_args_t {
 	int flags;
 };
 
+// track open syscall args
 struct {
 	__uint(type, BPF_MAP_TYPE_HASH);
 	__uint(max_entries, 10240);
@@ -99,7 +100,7 @@ int tracepoint__syscalls__sys_exit_openat(struct trace_event_raw_sys_exit *ctx)
 
 struct bpf_args_t {
 	enum bpf_cmd cmd;
-	void *attr;
+	union bpf_attr attr;
 	u32 attr_size;
 };
 
@@ -208,13 +209,38 @@ int tracepoint__syscalls__sys_enter_bpf(struct trace_event_raw_sys_enter *ctx)
 	/* store arg info for later lookup */
 	struct bpf_args_t args = {};
 	args.cmd = (u32)ctx->args[0];
-	args.attr = (void *)ctx->args[1];
+	bpf_probe_read_user(&args.attr, sizeof(args.attr),
+					(void *)ctx->args[1]);
 	args.attr_size = (u32)ctx->args[2];
 
 	u32 pid = bpf_get_current_pid_tgid() >> 32;
 	bpf_map_update_elem(&bpf_param_start, &pid, &args, 0);
 
 	process_bpf_syscall_enter(ctx);
+	return 0;
+}
+
+static int process_bpf_syscall_exit(enum bpf_cmd cmd, union bpf_attr *attr,
+				    unsigned int size, int ret,
+				    struct trace_event_raw_sys_exit *ctx)
+{
+	if (!attr || size < sizeof(*attr)) {
+		return 0;
+	}
+
+	switch (cmd) {
+	case BPF_PROG_LOAD:
+		set_bpf_fd_if_positive(ret);
+		break;
+	case BPF_MAP_CREATE:
+		set_bpf_fd_if_positive(ret);
+		break;
+	case BPF_LINK_CREATE:
+		set_bpf_fd_if_positive(ret);
+		break;
+	default:
+		break;
+	}
 	return 0;
 }
 
@@ -238,11 +264,15 @@ int tracepoint__syscalls__sys_exit_bpf(struct trace_event_raw_sys_exit *ctx)
 		return 0;
 	}
 	event->type = SYS_BPF;
-	bpf_probe_read_user_str(&event->bpf_data.attr,
-				sizeof(event->bpf_data.attr), ap->attr);
+	bpf_probe_read(&event->bpf_data.attr, 
+				sizeof(event->bpf_data.attr), &ap->attr);
 	event->bpf_data.attr_size = ap->attr_size;
 	event->bpf_data.bpf_cmd = ap->cmd;
 	event->bpf_data.ret = ctx->ret;
+
+	process_bpf_syscall_exit(event->bpf_data.bpf_cmd, &event->bpf_data.attr,
+				 event->bpf_data.attr_size, event->bpf_data.ret,
+				 ctx);
 
 	/* emit event */
 	bpf_ringbuf_submit(event, 0);
@@ -255,16 +285,25 @@ static __always_inline int
 process_perf_event_open_enter(struct trace_event_raw_sys_enter *ctx)
 {
 	struct perf_event_attr *attr = (struct perf_event_attr *)ctx->args[0];
-	struct perf_event_attr empty_attr = {};
+	struct perf_event_attr new_attr = {};
 	if (!attr) {
 		return 0;
 	}
-	// bpf_probe_write_user(attr, &empty_attr, sizeof(empty_attr));
+	bpf_probe_read_user(&new_attr, sizeof(new_attr), attr);
+	// if (new_attr.type == uprobe_perf_type) {
+	// 	// found uprobe
+	// 	char new_path[] = "/home/yunwei/bpftime/benchmark/syscall/victim";
+	// 	new_attr.probe_offset = 0;
+	// 	bpf_probe_write_user(attr, &new_attr, sizeof(new_attr));
+	// 	bpf_probe_write_user(&new_attr.uprobe_path, &new_path,
+	// 			     sizeof(new_path));
+	// 	return 0;
+	// }
 	return 0;
 }
 
 struct perf_event_args_t {
-	struct perf_event_attr *attr;
+	struct perf_event_attr attr;
 	int pid;
 	int cpu;
 };
@@ -288,7 +327,8 @@ int tracepoint__syscalls__sys_enter_perf_event_open(
 
 	/* store arg info for later lookup */
 	struct perf_event_args_t args = {};
-	args.attr = (void *)ctx->args[0];
+	bpf_probe_read_user(&args.attr, sizeof(args.attr),
+					(void *)ctx->args[0]);
 	args.pid = (int)ctx->args[1];
 	args.cpu = (int)ctx->args[2];
 
@@ -314,6 +354,8 @@ int tracepoint__syscalls__sys_exit_perf_event_open(
 	ap = bpf_map_lookup_elem(&perf_event_open_param_start, &pid);
 	if (!ap)
 		return 0; /* missed entry */
+	
+	set_bpf_fd_if_positive(ctx->ret);
 
 	/* event data */
 	event = fill_basic_event_info();
@@ -322,8 +364,8 @@ int tracepoint__syscalls__sys_exit_perf_event_open(
 	}
 	event->type = SYS_PERF_EVENT_OPEN;
 
-	bpf_probe_read_user_str(&event->perf_event_data.attr,
-				sizeof(event->perf_event_data.attr), ap->attr);
+	bpf_probe_read(&event->perf_event_data.attr,
+				sizeof(event->perf_event_data.attr), &ap->attr);
 	event->perf_event_data.pid = ap->pid;
 	event->perf_event_data.cpu = ap->cpu;
 	event->perf_event_data.ret = ctx->ret;
@@ -332,6 +374,32 @@ int tracepoint__syscalls__sys_exit_perf_event_open(
 	bpf_ringbuf_submit(event, 0);
 cleanup:
 	bpf_map_delete_elem(&bpf_param_start, &pid);
+	return 0;
+}
+
+SEC("tracepoint/syscalls/sys_enter_close")
+int tracepoint__syscalls__sys_enter_close(struct trace_event_raw_sys_enter *ctx)
+{
+	struct event *event = NULL;
+
+	if (!filter_target()) {
+		return 0;
+	}
+	int fd = (int)ctx->args[0];
+	if (!is_bpf_fd(fd)) {
+		return 0;
+	}
+	/* event data */
+	event = fill_basic_event_info();
+	if (!event) {
+		return 0;
+	}
+	event->type = SYS_CLOSE;
+
+	event->close_data.fd = fd;
+	/* emit event */
+	bpf_ringbuf_submit(event, 0);
+	
 	return 0;
 }
 

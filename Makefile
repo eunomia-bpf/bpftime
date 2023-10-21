@@ -32,24 +32,20 @@ help:
 
 build-unit-test:
 	cmake -Bbuild  -DBPFTIME_ENABLE_UNIT_TESTING=1 -DCMAKE_BUILD_TYPE:STRING=Debug
-	cmake --build build --config Debug -j --target bpftime_runtime_tests
+	cmake --build build --config Debug --target bpftime_runtime_tests
+
 unit-test:
 	./build/runtime/unit-test/bpftime_runtime_tests
-test: ## test the package
-	make -C third_party/libbpf/src
-	make -C runtime/test/bpf
-	cp -r runtime/test/bpf/* build/runtime/test/
-	cd build/runtime && ctest -VV
 
 build: ## build the package
-	cmake -Bbuild  -DBPFTIME_ENABLE_UNIT_TESTING=1
-	cmake --build build --config Debug -j
+	cmake -Bbuild   -DBPFTIME_ENABLE_UNIT_TESTING=1
+	cmake --build build --config Debug
 	cd tools/cli-rs && cargo build
 
 release: ## build the package
 	cmake -Bbuild  -DBPFTIME_ENABLE_UNIT_TESTING=0 -DCMAKE_BUILD_TYPE:STRING=Release
 	cmake --build build --config Release --target install
-	cd tools/cli-rs && cargo build
+	cd tools/cli-rs && cargo build --release
 
 build-vm: ## build only the core library
 	make -C vm build

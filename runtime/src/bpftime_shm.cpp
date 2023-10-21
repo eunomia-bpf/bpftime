@@ -33,48 +33,48 @@ uint32_t bpftime_map_value_size_from_syscall(int fd)
 	return shm_holder.global_shared_memory.bpf_map_value_size(fd);
 }
 
-const void *bpftime_map_lookup_elem_from_helper(int fd, const void *key)
+const void *bpftime_helper_map_lookup_elem(int fd, const void *key)
 {
 	return shm_holder.global_shared_memory.bpf_map_lookup_elem(fd, key,
 								   false);
 }
 
-long bpftime_map_update_elem_from_helper(int fd, const void *key,
+long bpftime_helper_map_update_elem(int fd, const void *key,
 					 const void *value, uint64_t flags)
 {
 	return shm_holder.global_shared_memory.bpf_map_update_elem(
 		fd, key, value, flags, false);
 }
 
-long bpftime_map_delete_elem_from_helper(int fd, const void *key)
+long bpftime_helper_map_delete_elem(int fd, const void *key)
 {
 	return shm_holder.global_shared_memory.bpf_delete_elem(fd, key, false);
 }
-int bpftime_map_get_next_key_from_helper(int fd, const void *key,
+int bpftime_helper_map_get_next_key(int fd, const void *key,
 					 void *next_key)
 {
 	return shm_holder.global_shared_memory.bpf_map_get_next_key(
 		fd, key, next_key, false);
 }
 
-const void *bpftime_map_lookup_elem_from_syscall(int fd, const void *key)
+const void *bpftime_map_lookup_elem(int fd, const void *key)
 {
 	return shm_holder.global_shared_memory.bpf_map_lookup_elem(fd, key,
 								   true);
 }
 
-long bpftime_map_update_elem_from_syscall(int fd, const void *key,
+long bpftime_map_update_elem(int fd, const void *key,
 					  const void *value, uint64_t flags)
 {
 	return shm_holder.global_shared_memory.bpf_map_update_elem(
 		fd, key, value, flags, true);
 }
 
-long bpftime_map_delete_elem_from_syscall(int fd, const void *key)
+long bpftime_map_delete_elem(int fd, const void *key)
 {
 	return shm_holder.global_shared_memory.bpf_delete_elem(fd, key, true);
 }
-int bpftime_map_get_next_key_from_syscall(int fd, const void *key,
+int bpftime_map_get_next_key(int fd, const void *key,
 					  void *next_key)
 {
 	return shm_holder.global_shared_memory.bpf_map_get_next_key(

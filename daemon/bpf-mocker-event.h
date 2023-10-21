@@ -12,6 +12,7 @@
 
 enum event_type {
 	SYS_OPEN,
+	SYS_CLOSE,
 	SYS_BPF,
 	SYS_PERF_EVENT_OPEN,
 	BPF_PROG_LOAD_EVENT,
@@ -43,6 +44,10 @@ struct event {
 			struct perf_event_attr attr;
 			int pid;
 			int cpu;
+
+			// uprobe data
+			uint64_t offset;
+			char name_or_path[NAME_MAX];
 		} perf_event_data;
 
 		struct {
@@ -51,6 +56,10 @@ struct event {
 			char prog_name[BPF_OBJ_NAME_LEN];
 			unsigned int insns[MAX_INSN_SIZE];
 		} bpf_loaded_prog;
+
+		struct {
+			int fd;
+		} close_data;
 	};
 };
 
