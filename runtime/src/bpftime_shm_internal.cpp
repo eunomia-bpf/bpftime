@@ -18,6 +18,7 @@ void bpftime_initialize_global_shm()
 	new (&shm_holder.global_shared_memory) bpftime_shm;
 	global_shm_initialized = true;
 }
+
 void bpftime_destroy_global_shm()
 {
 	using namespace bpftime;
@@ -124,6 +125,7 @@ int bpftime_shm::add_uprobe(int pid, const char *name, uint64_t offset,
 		segment);
 	return fd;
 }
+
 int bpftime_shm::add_tracepoint(int pid, int32_t tracepoint_id)
 {
 	int fd = open_fake_fd();
@@ -133,6 +135,7 @@ int bpftime_shm::add_tracepoint(int pid, int32_t tracepoint_id)
 			     segment);
 	return fd;
 }
+
 int bpftime_shm::add_software_perf_event(int cpu, int32_t sample_type,
 					 int64_t config)
 {

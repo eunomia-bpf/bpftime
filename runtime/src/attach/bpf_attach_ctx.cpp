@@ -168,6 +168,7 @@ int bpf_attach_ctx::init_attach_ctx_from_handlers(
 		handler_prog_fds;
 	// First, we create programs
 	for (std::size_t i = 0; i < manager->size(); i++) {
+		// skip uninitialized handlers
 		if (!manager->is_allocated(i)) {
 			continue;
 		}

@@ -115,7 +115,7 @@ uint64_t bpftime_get_current_comm(uint64_t buf, uint64_t size, uint64_t,
 uint64_t bpftime_map_lookup_elem_helper(uint64_t map, uint64_t key, uint64_t,
 					uint64_t, uint64_t)
 {
-	return (uint64_t)bpftime_map_lookup_elem_from_helper(map >> 32,
+	return (uint64_t)bpftime_helper_map_lookup_elem(map >> 32,
 							     (void *)key);
 }
 
@@ -123,14 +123,14 @@ uint64_t bpftime_map_update_elem_helper(uint64_t map, uint64_t key,
 					uint64_t value, uint64_t flags,
 					uint64_t)
 {
-	return (uint64_t)bpftime_map_update_elem_from_helper(
+	return (uint64_t)bpftime_helper_map_update_elem(
 		map >> 32, (void *)key, (void *)value, flags);
 }
 
 uint64_t bpftime_map_delete_elem_helper(uint64_t map, uint64_t key, uint64_t,
 					uint64_t, uint64_t)
 {
-	return (uint64_t)bpftime_map_delete_elem_from_helper(map >> 32,
+	return (uint64_t)bpftime_helper_map_delete_elem(map >> 32,
 							     (void *)key);
 }
 
@@ -225,7 +225,7 @@ uint64_t bpf_perf_event_output(uint64_t ctx, uint64_t map, uint64_t flags,
 	}
 	int fd = map >> 32;
 	const int32_t *val_ptr =
-		(int32_t *)(uintptr_t)bpftime_map_lookup_elem_from_helper(
+		(int32_t *)(uintptr_t)bpftime_helper_map_lookup_elem(
 			fd, &current_cpu);
 	if (val_ptr == nullptr) {
 		spdlog::error("Invalid map fd for perf event output: {}", fd);
