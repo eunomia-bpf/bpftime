@@ -34,8 +34,10 @@ build-unit-test:
 	cmake -Bbuild  -DBPFTIME_ENABLE_UNIT_TESTING=1 -DCMAKE_BUILD_TYPE:STRING=Debug
 	cmake --build build --config Debug --target bpftime_runtime_tests
 
-unit-test:
+unit-test: ## run catch2 unit tests
+	make -C runtime/test/bpf
 	./build/runtime/unit-test/bpftime_runtime_tests
+	cd build/runtime && ctest -VV
 
 build: ## build the package
 	cmake -Bbuild   -DBPFTIME_ENABLE_UNIT_TESTING=1

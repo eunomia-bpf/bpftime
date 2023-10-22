@@ -36,7 +36,8 @@ static inline int hex_string_to_buffer(const std::string &hexString,
 }
 
 int bpftime_export_shm_to_json(const bpftime_shm& shm, const char *filename);
-int bpftime_import_shm_from_json(const bpftime_shm& shm, const char *filename);
-
+int bpftime_import_shm_from_json(bpftime_shm& shm, const char *filename);
+int bpftime_import_shm_handler_from_json(bpftime_shm &shm, int fd,
+					  const char *json_string);
 } // namespace bpftime
 #endif // BPFTIME_JSON_EXPORTER_HPP

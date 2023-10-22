@@ -64,19 +64,96 @@ bpf_perf_event_handler_to_json(const bpf_perf_event_handler &handler)
 
 extern "C" int bpftime_import_global_shm_from_json(const char *filename)
 {
-	assert(false && "Not implemented");
-	return -1;
+	return bpftime_import_shm_from_json(shm_holder.global_shared_memory,
+					    filename);
 }
 
-int bpftime::bpftime_import_shm_from_json(const bpftime_shm &shm,
+static int import_shm_handler_from_json(bpftime_shm &shm, json value, int fd)
+{
+	std::string handler_type = value["type"];
+	if (handler_type == "bpf_prog_handler") {
+		std::string insns_str = value["attr"]["insns"];
+		std::string name = value["attr"]["name"];
+		int type = value["attr"]["type"];
+		int cnt = value["attr"]["cnt"];
+		std::vector<ebpf_inst> insns;
+		insns.resize(cnt);
+		int res = hex_string_to_buffer(insns_str,
+					       (unsigned char *)insns.data(),
+					       insns_str.size());
+		if (res < 0) {
+			spdlog::error("Failed to parse insns in json");
+			return -1;
+		}
+		
+		shm.add_bpf_prog(fd, insns.data(), cnt, name.c_str(), type);
+	} else if (handler_type == "bpf_map_handler") {
+		std::string name = value["name"];
+		bpf_map_attr attr = json_to_bpf_map_attr(value["attr"]);
+		shm.add_bpf_map(fd, name.c_str(), attr);
+	} else if (handler_type == "bpf_perf_event_handler") {
+		int type = value["attr"]["type"];
+		int offset = value["attr"]["offset"];
+		int pid = value["attr"]["pid"];
+		int ref_ctr_off = value["attr"]["ref_ctr_off"];
+		std::string _module_name = value["attr"]["_module_name"];
+		int tracepoint_id = value["attr"]["tracepoint_id"];
+		switch ((bpf_perf_event_handler::bpf_event_type)type) {
+		case bpf_perf_event_handler::bpf_event_type::BPF_TYPE_UPROBE:
+			shm.add_uprobe(fd, pid, _module_name.c_str(), offset,
+				       false, ref_ctr_off);
+			break;
+		case bpf_perf_event_handler::bpf_event_type::BPF_TYPE_URETPROBE:
+			shm.add_uprobe(fd, pid, _module_name.c_str(), offset,
+				       true, ref_ctr_off);
+			break;
+		case bpf_perf_event_handler::bpf_event_type::PERF_TYPE_TRACEPOINT:
+			shm.add_tracepoint(fd, pid, tracepoint_id);
+			break;
+		default:
+			spdlog::error("Unsupported perf event type {}", type);
+			return -1;
+		}
+	} else if (handler_type == "bpf_link_handler") {
+		int prog_fd = value["attr"]["prog_fd"];
+		int target_fd = value["attr"]["target_fd"];
+		shm.add_bpf_link(fd, prog_fd, target_fd);
+	} else {
+		spdlog::error("Unsupported handler type {}", handler_type);
+		return -1;
+	}
+	return 0;
+}
+
+int bpftime::bpftime_import_shm_handler_from_json(bpftime_shm &shm, int fd,
+						  const char *json_string)
+{
+	json j = json::parse(json_string);
+	return import_shm_handler_from_json(shm, fd, j);
+}
+
+int bpftime::bpftime_import_shm_from_json(bpftime_shm &shm,
 					  const char *filename)
 {
-	return -1;
+	ifstream file(filename);
+	json j;
+	file >> j;
+	file.close();
+	for (auto &[key, value] : j.items()) {
+		int fd = std::stoi(key);
+		int res = import_shm_handler_from_json(shm, value, fd);
+		if (res < 0) {
+			spdlog::error("Failed to import handler from json");
+			return -1;
+		}
+	}
+	return 0;
 }
 
 extern "C" int bpftime_export_global_shm_to_json(const char *filename)
 {
-	return bpftime_export_shm_to_json(shm_holder.global_shared_memory, filename);
+	return bpftime_export_shm_to_json(shm_holder.global_shared_memory,
+					  filename);
 }
 
 int bpftime::bpftime_export_shm_to_json(const bpftime_shm &shm,
@@ -107,12 +184,20 @@ int bpftime::bpftime_export_shm_to_json(const bpftime_shm &shm,
 			// prog
 			j[std::to_string(i)] = {
 				{ "type", "bpf_prog_handler" },
-				{ "insns", buffer_to_hex_string(
-						   (const unsigned char *)insns,
-						   sizeof(ebpf_inst) * cnt) },
-				{ "cnt", cnt },
-				{ "name", name }
+				{ "attr",
+				  { "type", prog_handler.type },
+				  { "insns",
+				    buffer_to_hex_string(
+					    (const unsigned char *)insns,
+					    sizeof(ebpf_inst) * cnt) },
+				  { "cnt", cnt },
+				  { "name", name } }
 			};
+			// append attach fds to the json
+			for (auto &fd : prog_handler.attach_fds) {
+				j[std::to_string(i)]["attr"]["attach_fds"]
+					.push_back(fd);
+			}
 			spdlog::info("find prog fd={} name={}", i,
 				     prog_handler.name);
 		} else if (std::holds_alternative<bpf_map_handler>(handler)) {
@@ -131,7 +216,7 @@ int bpftime::bpftime_export_shm_to_json(const bpftime_shm &shm,
 				std::get<bpf_perf_event_handler>(handler);
 			j[std::to_string(i)] = {
 				{ "type", "bpf_perf_event_handler" },
-				{ "data",
+				{ "attr",
 				  bpf_perf_event_handler_to_json(perf_handler) }
 			};
 			spdlog::info("bpf_perf_event_handler found at {}", i);
@@ -142,8 +227,10 @@ int bpftime::bpftime_export_shm_to_json(const bpftime_shm &shm,
 		} else if (std::holds_alternative<bpf_link_handler>(handler)) {
 			auto &h = std::get<bpf_link_handler>(handler);
 			j[std::to_string(i)] = { { "type", "bpf_link_handler" },
-						 { "prog_fd", h.prog_fd },
-						 { "target_fd", h.target_fd } };
+						 { "attr",
+						   { "prog_fd", h.prog_fd },
+						   { "target_fd",
+						     h.target_fd } } };
 			spdlog::info(
 				"bpf_link_handler found at {}，link {} -> {}",
 				i, h.prog_fd, h.target_fd);

@@ -51,6 +51,8 @@ void bpftime_destroy_global_shm();
 int bpftime_import_global_shm_from_json(const char *filename);
 // export the global shared memory to json file
 int bpftime_export_global_shm_to_json(const char *filename);
+// import a hander to global shared memory from json string
+int bpftime_import_shm_handler_from_json(int fd, const char *json_string);
 
 // create a bpf link in the global shared memory
 //
