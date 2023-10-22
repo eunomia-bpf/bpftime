@@ -84,6 +84,7 @@ set(SPDLOG_INCLUDE ${CMAKE_CURRENT_SOURCE_DIR}/third_party/spdlog/include)
 add_subdirectory(vm)
 add_subdirectory(runtime)
 add_subdirectory(daemon)
+add_subdirectory(tools)
 
 # benchmark that requires bpftime libraries
 add_subdirectory(benchmark)

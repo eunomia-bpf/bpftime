@@ -40,7 +40,7 @@ unit-test: ## run catch2 unit tests
 	cd build/runtime/test && ctest -VV
 
 build: ## build the package
-	cmake -Bbuild   -DBPFTIME_ENABLE_UNIT_TESTING=1
+	cmake -Bbuild -DBPFTIME_ENABLE_UNIT_TESTING=1
 	cmake --build build --config Debug
 	cd tools/cli-rs && cargo build
 
