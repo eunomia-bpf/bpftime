@@ -7,7 +7,7 @@
 namespace bpftime {
 
 class bpf_event_handler {
-    struct env config;
+    struct daemon_config config;
     
     int handle_close_event(const struct event *e);
     int handle_bpf_event(const struct event *e);
@@ -17,7 +17,7 @@ class bpf_event_handler {
 public:
     int handle_event(const struct event *e);
 
-    bpf_event_handler(struct env config);
+    bpf_event_handler(struct daemon_config config);
 };
 
 int determine_kprobe_perf_type(void);

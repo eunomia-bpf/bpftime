@@ -284,7 +284,7 @@ int bpf_event_handler::handle_event(const struct event *e)
 	return 0;
 }
 
-bpf_event_handler::bpf_event_handler(struct env config) : config(config)
+bpf_event_handler::bpf_event_handler(struct daemon_config config) : config(config)
 {
 	int uprobe_type = determine_uprobe_perf_type();
 	if (uprobe_type < 0 || uprobe_type >= PERF_TYPE_MAX_ID) {

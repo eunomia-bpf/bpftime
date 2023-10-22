@@ -113,7 +113,7 @@ struct {
 
 static bool should_modify_program(union bpf_attr *new_attr)
 {
-	if (new_attr->insn_cnt < 2 || disable_modify) {
+	if (new_attr->insn_cnt < 2 || !enable_replace_prog) {
 		return false;
 	}
 	// Only target BPF_PROG_TYPE_KPROBE and BPF_PROG_TYPE_TRACEPOINT
@@ -281,6 +281,8 @@ cleanup:
 	return 0;
 }
 
+char old_uprobe_path[PATH_LENTH] = "\0";
+
 static __always_inline int
 process_perf_event_open_enter(struct trace_event_raw_sys_enter *ctx)
 {
@@ -290,15 +292,21 @@ process_perf_event_open_enter(struct trace_event_raw_sys_enter *ctx)
 		return 0;
 	}
 	bpf_probe_read_user(&new_attr, sizeof(new_attr), attr);
-	// if (new_attr.type == uprobe_perf_type) {
-	// 	// found uprobe
-	// 	char new_path[] = "/home/yunwei/bpftime/benchmark/syscall/victim";
-	// 	new_attr.probe_offset = 0;
-	// 	bpf_probe_write_user(attr, &new_attr, sizeof(new_attr));
-	// 	bpf_probe_write_user(&new_attr.uprobe_path, &new_path,
-	// 			     sizeof(new_path));
-	// 	return 0;
-	// }
+	if (new_attr.type == uprobe_perf_type) {
+		// found uprobe
+		if (enable_replace_uprobe) {
+			new_attr.probe_offset = 0;
+			int size = bpf_probe_read_user_str(old_uprobe_path,
+							   sizeof(old_uprobe_path),
+							   (void*)new_attr.uprobe_path);
+			bpf_probe_write_user(attr, &new_attr, sizeof(new_attr));
+			bpf_probe_write_user((void*)new_attr.uprobe_path, &new_uprobe_path,
+						sizeof(new_uprobe_path) > size ?
+							size :
+							sizeof(new_uprobe_path));
+		}
+		return 0;
+	}
 	return 0;
 }
 
@@ -323,7 +331,6 @@ int tracepoint__syscalls__sys_enter_perf_event_open(
 	if (!filter_target()) {
 		return 0;
 	}
-	/* store arg info for later lookup */
 
 	/* store arg info for later lookup */
 	struct perf_event_args_t args = {};

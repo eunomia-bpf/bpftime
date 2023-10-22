@@ -45,12 +45,7 @@ static int handle_event_rb(void *ctx, void *data, size_t data_sz)
 	return 0;
 }
 
-void handle_lost_events(void *ctx, int cpu, __u64 lost_cnt)
-{
-	fprintf(stderr, "Lost %llu events on CPU #%d!\n", lost_cnt, cpu);
-}
-
-int bpftime::start_daemon(struct env env)
+int bpftime::start_daemon(struct daemon_config env)
 {
 	LIBBPF_OPTS(bpf_object_open_opts, open_opts);
 	struct ring_buffer *rb = NULL;
@@ -78,7 +73,8 @@ int bpftime::start_daemon(struct env env)
 
 	/* initialize global data (filtering options) */
 	obj->rodata->target_pid = env.pid;
-	obj->rodata->disable_modify = true;
+	obj->rodata->enable_replace_prog = env.enable_replace_prog;
+	obj->rodata->enable_replace_uprobe = env.enable_replace_uprobe;
 	obj->rodata->uprobe_perf_type = determine_uprobe_perf_type();
 	obj->rodata->kprobe_perf_type = determine_kprobe_perf_type();
 

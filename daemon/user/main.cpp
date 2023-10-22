@@ -8,7 +8,7 @@
 
 using namespace bpftime;
 
-static struct env env = { .uid = static_cast<uid_t>(-1) };
+static struct daemon_config env = { .uid = static_cast<uid_t>(-1) };
 
 const char *argp_program_version = "bpftime-daemon 0.1";
 const char *argp_program_bug_address = "https://github.com/eunomia-bpf/bpftime";
