@@ -1,27 +1,28 @@
-name: Run unit tests of bpftime-runtime
-
+name: Build and test runtime
 
 on:
   push:
-    branches: "*"
+    branches: "master"
   pull_request: 
-    # Why wildcard? Because we want to see test results when examing prs from non-master branches..
-    branches: "*"
-
+    branches: "master"
 
 jobs:
-  build-test-target-and-run:
+  build:
     runs-on: ubuntu-22.04
+
     steps:
-      - uses: actions/checkout@v2
-        with:
-          submodules: 'recursive'
-      - name: Install dependencies
-        run: | 
-          sudo apt-get install binutils-dev libboost1.74-all-dev libelf-dev zlib1g-dev libyaml-cpp-dev gcc-12 g++-12 llvm
-      - name: Build the target
-        run: |
-          CC=gcc-12 CXX=g++-12 make build-unit-test
-      - name: Run the unit test
-        run: |
-          make unit-test
+    - uses: actions/checkout@v3
+      with:
+        submodules: 'recursive'
+
+    - name: install deps
+      run: |
+        sudo apt install -y --no-install-recommends \
+        libelf1 libelf-dev zlib1g-dev make git libboost1.74-all-dev \
+        binutils-dev libyaml-cpp-dev  gcc-12 g++-12 llvm
+
+    - name: build runtime
+      run:  CC=gcc-12 CXX=g++-12 make build
+
+    - name: test runtime
+      run:  make unit-test
