@@ -7,7 +7,7 @@
 #include <linux/perf_event.h>
 #include <spdlog/spdlog.h>
 #include "handle_bpf_event.hpp"
-#include "bpf_tracer_event.h"
+#include "../bpf_tracer_event.h"
 
 using namespace bpftime;
 

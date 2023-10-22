@@ -109,5 +109,4 @@
 		.off   = 0,					\
 		.imm   = 0 })
 
-
 #endif //BPFTIME_BPF_DEFS_H

@@ -4,10 +4,13 @@
 #include <unistd.h>
 
 struct env {
+	// the target pid of eBPF application to trace
 	pid_t pid;
+	// the target uid of eBPF application to trace
 	uid_t uid;
+	// print verbose debug output
 	bool verbose;
-	bool failed;
+	// print open syscalls (default: false)
 	bool show_open;
 };
 

@@ -19,7 +19,6 @@ static const struct argp_option opts[] = {
 	{ "uid", 'u', "UID", 0, "User ID to trace" },
 	{ "open", 'o', "OPEN", 0, "Show open events" },
 	{ "verbose", 'v', NULL, 0, "Verbose debug output" },
-	{ "failed", 'x', NULL, 0, "Failed opens only" },
 	{},
 };
 
@@ -31,9 +30,6 @@ static error_t parse_arg(int key, char *arg, struct argp_state *state)
 	switch (key) {
 	case 'v':
 		env.verbose = true;
-		break;
-	case 'x':
-		env.failed = true;
 		break;
 	case 'o':
 		env.show_open = true;
