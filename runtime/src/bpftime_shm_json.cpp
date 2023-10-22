@@ -133,6 +133,11 @@ int bpftime::bpftime_import_shm_handler_from_json(bpftime_shm &shm, int fd,
 	return import_shm_handler_from_json(shm, fd, j);
 }
 
+extern "C" int bpftime_import_shm_handler_from_json(int fd, const char *json_string) {
+	return bpftime::bpftime_import_shm_handler_from_json(
+		shm_holder.global_shared_memory, fd, json_string);
+}
+
 int bpftime::bpftime_import_shm_from_json(bpftime_shm &shm,
 					  const char *filename)
 {
