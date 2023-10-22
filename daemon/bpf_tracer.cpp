@@ -1,4 +1,4 @@
-// Description: bpf-mocker daemon
+// Description: bpf_tracer daemon
 #include <argp.h>
 #include <signal.h>
 #include <stdio.h>
@@ -10,8 +10,8 @@
 #include <bpf/libbpf.h>
 #include <bpf/bpf.h>
 #include <linux/perf_event.h>
-#include "bpf-mocker-event.h"
-#include "bpf-mocker.skel.h"
+#include "bpf_tracer_event.h"
+#include "bpf_tracer.skel.h"
 #include "daemon_config.hpp"
 #include "handle_bpf_event.hpp"
 #include "daemon.hpp"
@@ -54,7 +54,7 @@ int bpftime::start_daemon(struct env env)
 {
 	LIBBPF_OPTS(bpf_object_open_opts, open_opts);
 	struct ring_buffer *rb = NULL;
-	struct bpf_mocker_bpf *obj = NULL;
+	struct bpf_tracer_bpf *obj = NULL;
 	int err;
 
 	libbpf_set_print(libbpf_print_fn);
@@ -70,7 +70,7 @@ int bpftime::start_daemon(struct env env)
 		goto cleanup;
 	}
 
-	obj = bpf_mocker_bpf__open();
+	obj = bpf_tracer_bpf__open();
 	if (!obj) {
 		fprintf(stderr, "failed to open BPF object\n");
 		goto cleanup;
@@ -82,13 +82,13 @@ int bpftime::start_daemon(struct env env)
 	obj->rodata->uprobe_perf_type = determine_uprobe_perf_type();
 	obj->rodata->kprobe_perf_type = determine_kprobe_perf_type();
 
-	err = bpf_mocker_bpf__load(obj);
+	err = bpf_tracer_bpf__load(obj);
 	if (err) {
 		fprintf(stderr, "failed to load BPF object: %d\n", err);
 		goto cleanup;
 	}
 
-	err = bpf_mocker_bpf__attach(obj);
+	err = bpf_tracer_bpf__attach(obj);
 	if (err) {
 		fprintf(stderr, "failed to attach BPF programs\n");
 		goto cleanup;
@@ -117,7 +117,7 @@ int bpftime::start_daemon(struct env env)
 
 cleanup:
 	ring_buffer__free(rb);
-	bpf_mocker_bpf__destroy(obj);
+	bpf_tracer_bpf__destroy(obj);
 
 	return err != 0;
 }

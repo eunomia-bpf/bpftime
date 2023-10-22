@@ -1,7 +1,7 @@
 #ifndef BPFTIME_HANDLE_EVENT_HPP
 #define BPFTIME_HANDLE_EVENT_HPP
 
-#include "bpf-mocker-event.h"
+#include "bpf_tracer_event.h"
 #include "daemon_config.hpp"
 
 namespace bpftime {

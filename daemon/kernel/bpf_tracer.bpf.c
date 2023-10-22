@@ -5,8 +5,8 @@
 #include <bpf/bpf_helpers.h>
 #include <bpf/bpf_tracing.h>
 #include <bpf/bpf_core_read.h>
-#include "bpf-mocker-event.h"
-#include "bpf-utils.h"
+#include "../bpf_tracer_event.h"
+#include "bpf_utils.h"
 
 struct open_args_t {
 	const char *fname;

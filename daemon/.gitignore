@@ -7,7 +7,7 @@ package.yaml
 ecli
 bootstrap
 .output
-bpf-mocker
+bpf_tracer
 victim
 victim2
 test.txt
