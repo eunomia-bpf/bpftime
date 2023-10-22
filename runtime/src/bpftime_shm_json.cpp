@@ -71,21 +71,22 @@ extern "C" int bpftime_import_global_shm_from_json(const char *filename)
 static int import_shm_handler_from_json(bpftime_shm &shm, json value, int fd)
 {
 	std::string handler_type = value["type"];
+	spdlog::info("import handler type {} fd {}", handler_type, fd);
 	if (handler_type == "bpf_prog_handler") {
 		std::string insns_str = value["attr"]["insns"];
-		std::string name = value["attr"]["name"];
+		std::string name = value["name"];
 		int type = value["attr"]["type"];
 		int cnt = value["attr"]["cnt"];
 		std::vector<ebpf_inst> insns;
 		insns.resize(cnt);
 		int res = hex_string_to_buffer(insns_str,
 					       (unsigned char *)insns.data(),
-					       insns_str.size());
+					       insns.size() * sizeof(ebpf_inst));
 		if (res < 0) {
 			spdlog::error("Failed to parse insns in json");
 			return -1;
 		}
-		
+
 		shm.add_bpf_prog(fd, insns.data(), cnt, name.c_str(), type);
 	} else if (handler_type == "bpf_map_handler") {
 		std::string name = value["name"];
@@ -141,6 +142,7 @@ int bpftime::bpftime_import_shm_from_json(bpftime_shm &shm,
 	file.close();
 	for (auto &[key, value] : j.items()) {
 		int fd = std::stoi(key);
+		spdlog::info("import handler fd {} {}", fd, value.dump());
 		int res = import_shm_handler_from_json(shm, value, fd);
 		if (res < 0) {
 			spdlog::error("Failed to import handler from json");
@@ -182,17 +184,16 @@ int bpftime::bpftime_export_shm_to_json(const bpftime_shm &shm,
 			const char *name = prog_handler.name.c_str();
 			// record the prog into json, key is the index of the
 			// prog
-			j[std::to_string(i)] = {
-				{ "type", "bpf_prog_handler" },
-				{ "attr",
-				  { "type", prog_handler.type },
-				  { "insns",
-				    buffer_to_hex_string(
-					    (const unsigned char *)insns,
-					    sizeof(ebpf_inst) * cnt) },
-				  { "cnt", cnt },
-				  { "name", name } }
-			};
+			json attr = { { "type", prog_handler.type },
+				      { "insns",
+					buffer_to_hex_string(
+						(const unsigned char *)insns,
+						sizeof(ebpf_inst) * cnt) },
+				      { "cnt", cnt } };
+			j[std::to_string(i)] =
+				json{ { "type", "bpf_prog_handler" },
+				      { "attr", attr },
+				      { "name", name } };
 			// append attach fds to the json
 			for (auto &fd : prog_handler.attach_fds) {
 				j[std::to_string(i)]["attr"]["attach_fds"]
@@ -226,11 +227,12 @@ int bpftime::bpftime_export_shm_to_json(const bpftime_shm &shm,
 			spdlog::info("epoll_handler found at {}", i);
 		} else if (std::holds_alternative<bpf_link_handler>(handler)) {
 			auto &h = std::get<bpf_link_handler>(handler);
-			j[std::to_string(i)] = { { "type", "bpf_link_handler" },
-						 { "attr",
-						   { "prog_fd", h.prog_fd },
-						   { "target_fd",
-						     h.target_fd } } };
+			j[std::to_string(i)] = {
+				{ "type", "bpf_link_handler" },
+				{ "attr",
+				  { { "prog_fd", h.prog_fd },
+				    { "target_fd", h.target_fd } } }
+			};
 			spdlog::info(
 				"bpf_link_handler found at {}，link {} -> {}",
 				i, h.prog_fd, h.target_fd);
