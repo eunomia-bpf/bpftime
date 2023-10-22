@@ -16,6 +16,7 @@ using syscall_pid_set_allocator = boost::interprocess::allocator<
 	int, boost::interprocess::managed_shared_memory::segment_manager>;
 using syscall_pid_set =
 	boost::interprocess::set<int, std::less<int>, syscall_pid_set_allocator>;
+
 // global bpftime share memory
 class bpftime_shm {
 	// shared memory segment
@@ -25,8 +26,8 @@ class bpftime_shm {
 	bpftime::handler_manager *manager = nullptr;
 
 	// A set to record whether a process was setted up with syscall tracer
-
 	syscall_pid_set *syscall_installed_pids = nullptr;
+
 	// Configuration for the agent. e.g, which helpers are enabled
 	struct bpftime::agent_config *agent_config = nullptr;
 
@@ -63,14 +64,14 @@ class bpftime_shm {
 	int open_fake_fd();
 
 	// handle bpf commands to load a bpf program
-	int add_bpf_prog(const ebpf_inst *insn, size_t insn_cnt,
+	int add_bpf_prog(int fd, const ebpf_inst *insn, size_t insn_cnt,
 			 const char *prog_name, int prog_type);
 
 	// add a bpf link fd
-	int add_bpf_link(int prog_fd, int target_fd);
+	int add_bpf_link(int fd, int prog_fd, int target_fd);
 
 	// create a bpf map fd
-	int add_bpf_map(const char *name, bpftime::bpf_map_attr attr);
+	int add_bpf_map(int fd, const char *name, bpftime::bpf_map_attr attr);
 	uint32_t bpf_map_value_size(int fd) const;
 	const void *bpf_map_lookup_elem(int fd, const void *key,
 					bool from_userspace) const;
@@ -85,9 +86,9 @@ class bpftime_shm {
 				 bool from_userspace) const;
 
 	// create an uprobe fd
-	int add_uprobe(int pid, const char *name, uint64_t offset,
+	int add_uprobe(int fd, int pid, const char *name, uint64_t offset,
 		       bool retprobe, size_t ref_ctr_off);
-	int add_tracepoint(int pid, int32_t tracepoint_id);
+	int add_tracepoint(int fd, int pid, int32_t tracepoint_id);
 	int add_software_perf_event(int cpu, int32_t sample_type,
 				    int64_t config);
 	int attach_perf_to_bpf(int perf_fd, int bpf_fd);
@@ -103,8 +104,14 @@ class bpftime_shm {
 	// The fake fd should be closed by the caller.
 	void close_fd(int fd);
 	bool is_exist_fake_fd(int fd) const;
+	
+	// initialize the shared memory globally
 	bpftime_shm();
+	// initialize the shared memory with a given name
+	bpftime_shm(const char* shm_name, shm_open_type type);
+
 	const handler_manager *get_manager() const;
+
 	std::optional<void *>
 	get_software_perf_event_raw_buffer(int fd, size_t buffer_sz) const;
 };
@@ -120,6 +127,7 @@ union bpftime_shm_holder {
 	{
 	}
 };
+
 extern bpftime_shm_holder shm_holder;
 
 } // namespace bpftime

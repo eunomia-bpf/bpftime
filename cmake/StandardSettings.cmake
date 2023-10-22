@@ -60,6 +60,6 @@ endif()
 
 option(BPFTIME_ENABLE_ASAN "Enable Address Sanitize to detect memory error." OFF)
 if(BPFTIME_ENABLE_ASAN)
-    add_compile_options(-fsanitize=address)
-    add_link_options(-fsanitize=address)
+    add_compile_options(-fsanitize=address,undefined)
+    add_link_options(-fsanitize=address,undefined)
 endif()

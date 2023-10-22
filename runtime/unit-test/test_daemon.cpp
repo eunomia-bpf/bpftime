@@ -7,7 +7,7 @@
 using namespace bpftime;
 
 
-TEST_CASE("Test attaching filter programs and revert")
+TEST_CASE("Test daemon")
 {
 	
 }

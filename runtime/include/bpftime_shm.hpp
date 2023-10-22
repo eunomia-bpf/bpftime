@@ -47,15 +47,31 @@ void bpftime_initialize_global_shm();
 // destroy the global shared memory
 void bpftime_destroy_global_shm();
 
+// import the global shared memory from json file
+int bpftime_import_global_shm_from_json(const char *filename);
+// export the global shared memory to json file
+int bpftime_export_global_shm_to_json(const char *filename);
+// import a hander to global shared memory from json string
+int bpftime_import_shm_handler_from_json(int fd, const char *json_string);
+
 // create a bpf link in the global shared memory
-int bpftime_link_create(int prog_fd, int target_fd);
+//
+// @param[fd]: fd is the fd allocated by the kernel. if fd is -1, then the
+// function will allocate a new perf event fd.
+int bpftime_link_create(int fd, int prog_fd, int target_fd);
 
 // create a bpf prog in the global shared memory
-int bpftime_progs_create(const ebpf_inst *insn, size_t insn_cnt,
+//
+// @param[fd]: fd is the fd allocated by the kernel. if fd is -1, then the
+// function will allocate a new perf event fd.
+int bpftime_progs_create(int fd, const ebpf_inst *insn, size_t insn_cnt,
 			 const char *prog_name, int prog_type);
 
-// create a bpf map in the global shared memory	
-int bpftime_maps_create(const char *name, bpftime::bpf_map_attr attr);
+// create a bpf map in the global shared memory
+//
+// @param[fd]: fd is the fd allocated by the kernel. if fd is -1, then the
+// function will allocate a new perf event fd.
+int bpftime_maps_create(int fd, const char *name, bpftime::bpf_map_attr attr);
 
 // get the bpf map info from the global shared memory
 int bpftime_map_get_info(int fd, bpftime::bpf_map_attr *out_attr,
@@ -65,32 +81,36 @@ int bpftime_map_get_info(int fd, bpftime::bpf_map_attr *out_attr,
 uint32_t bpftime_map_value_size_from_syscall(int fd);
 
 // used by bpf_helper to get the next key
-int bpftime_helper_map_get_next_key(int fd, const void *key,
-					 void *next_key);
+int bpftime_helper_map_get_next_key(int fd, const void *key, void *next_key);
 // used by bpf_helper to lookup the elem
 const void *bpftime_helper_map_lookup_elem(int fd, const void *key);
 // used by bpf_helper to update the elem
-long bpftime_helper_map_update_elem(int fd, const void *key,
-					 const void *value, uint64_t flags);
+long bpftime_helper_map_update_elem(int fd, const void *key, const void *value,
+				    uint64_t flags);
 // used by bpf_helper to delete the elem
 long bpftime_helper_map_delete_elem(int fd, const void *key);
 
 // use from bpf syscall to get the next key
-int bpftime_map_get_next_key(int fd, const void *key,
-					  void *next_key);
+int bpftime_map_get_next_key(int fd, const void *key, void *next_key);
 // use from bpf syscall to lookup the elem
 const void *bpftime_map_lookup_elem(int fd, const void *key);
 // use from bpf syscall to update the elem
-long bpftime_map_update_elem(int fd, const void *key,
-					  const void *value, uint64_t flags);
+long bpftime_map_update_elem(int fd, const void *key, const void *value,
+			     uint64_t flags);
 // use from bpf syscall to delete the elem
 long bpftime_map_delete_elem(int fd, const void *key);
 
 // create uprobe in the global shared memory
-int bpftime_uprobe_create(int pid, const char *name, uint64_t offset,
+//
+// @param[fd]: fd is the fd allocated by the kernel. if fd is -1, then the
+// function will allocate a new perf event fd.
+int bpftime_uprobe_create(int fd, int pid, const char *name, uint64_t offset,
 			  bool retprobe, size_t ref_ctr_off);
 // create tracepoint in the global shared memory
-int bpftime_tracepoint_create(int pid, int32_t tp_id);
+//
+// @param[fd]: fd is the fd allocated by the kernel. if fd is -1, then the
+// function will allocate a new perf event fd.
+int bpftime_tracepoint_create(int fd, int pid, int32_t tp_id);
 
 int bpftime_perf_event_enable(int fd);
 int bpftime_perf_event_disable(int fd);
@@ -121,7 +141,6 @@ int bpftime_add_software_perf_event(int cpu, int32_t sample_type,
 int bpftime_is_software_perf_event(int fd);
 void *bpftime_get_software_perf_event_raw_buffer(int fd, size_t expected_size);
 int bpftime_perf_event_output(int fd, const void *buf, size_t sz);
-
 }
 
 #endif // BPFTIME_SHM_CPP_H

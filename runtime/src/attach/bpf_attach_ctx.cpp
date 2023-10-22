@@ -37,6 +37,7 @@ static int load_prog_and_helpers(bpftime_prog *prog, agent_config &config)
 	}
 	return prog->bpftime_prog_load(config.jit_enabled);
 }
+
 int bpf_attach_ctx::init_attach_ctx_from_handlers(agent_config &config)
 {
 	const handler_manager *manager =
@@ -46,6 +47,7 @@ int bpf_attach_ctx::init_attach_ctx_from_handlers(agent_config &config)
 	}
 	return init_attach_ctx_from_handlers(manager, config);
 }
+
 // Check whether there is a syscall trace program. Use the global
 // handler manager
 bool bpf_attach_ctx::check_exist_syscall_trace_program()

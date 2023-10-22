@@ -45,6 +45,7 @@ bool bpftime_shm::check_syscall_trace_setup(int pid)
 {
 	return syscall_installed_pids->contains(pid);
 }
+
 // Set whether a certain pid was already equipped with syscall tracer
 // Using a set stored in the shared memory
 void bpftime_shm::set_syscall_trace_setup(int pid, bool whether)
@@ -55,6 +56,7 @@ void bpftime_shm::set_syscall_trace_setup(int pid, bool whether)
 		syscall_installed_pids->erase(pid);
 	}
 }
+
 uint32_t bpftime_shm::bpf_map_value_size(int fd) const
 {
 	if (!is_map_fd(fd)) {
@@ -65,6 +67,7 @@ uint32_t bpftime_shm::bpf_map_value_size(int fd) const
 		std::get<bpftime::bpf_map_handler>(manager->get_handler(fd));
 	return handler.get_value_size();
 }
+
 const void *bpftime_shm::bpf_map_lookup_elem(int fd, const void *key,
 					     bool from_userspace) const
 {
@@ -114,10 +117,13 @@ int bpftime_shm::bpf_map_get_next_key(int fd, const void *key, void *next_key,
 	return handler.bpf_map_get_next_key(key, next_key, from_userspace);
 }
 
-int bpftime_shm::add_uprobe(int pid, const char *name, uint64_t offset,
+int bpftime_shm::add_uprobe(int fd, int pid, const char *name, uint64_t offset,
 			    bool retprobe, size_t ref_ctr_off)
 {
-	int fd = open_fake_fd();
+	if (fd < 0) {
+		// if fd is negative, we need to create a new fd for allocating
+		fd = open_fake_fd();
+	}
 	manager->set_handler(
 		fd,
 		bpftime::bpf_perf_event_handler{ retprobe, offset, pid, name,
@@ -126,9 +132,12 @@ int bpftime_shm::add_uprobe(int pid, const char *name, uint64_t offset,
 	return fd;
 }
 
-int bpftime_shm::add_tracepoint(int pid, int32_t tracepoint_id)
+int bpftime_shm::add_tracepoint(int fd, int pid, int32_t tracepoint_id)
 {
-	int fd = open_fake_fd();
+	if (fd < 0) {
+		// if fd is negative, we need to create a new fd for allocating
+		fd = open_fake_fd();
+	}
 	manager->set_handler(fd,
 			     bpftime::bpf_perf_event_handler(pid, tracepoint_id,
 							     segment),
@@ -351,10 +360,13 @@ int bpftime_shm::open_fake_fd()
 }
 
 // handle bpf commands to load a bpf program
-int bpftime_shm::add_bpf_prog(const ebpf_inst *insn, size_t insn_cnt,
+int bpftime_shm::add_bpf_prog(int fd, const ebpf_inst *insn, size_t insn_cnt,
 			      const char *prog_name, int prog_type)
 {
-	int fd = open_fake_fd();
+	if (fd < 0) {
+		// if fd is negative, we need to create a new fd for allocating
+		fd = open_fake_fd();
+	}
 	manager->set_handler(fd,
 			     bpftime::bpf_prog_handler(segment, insn, insn_cnt,
 						       prog_name, prog_type),
@@ -363,9 +375,12 @@ int bpftime_shm::add_bpf_prog(const ebpf_inst *insn, size_t insn_cnt,
 }
 
 // add a bpf link fd
-int bpftime_shm::add_bpf_link(int prog_fd, int target_fd)
+int bpftime_shm::add_bpf_link(int fd, int prog_fd, int target_fd)
 {
-	int fd = open_fake_fd();
+	if (fd < 0) {
+		// if fd is negative, we need to create a new fd for allocating
+		fd = open_fake_fd();
+	}
 	if (!manager->is_allocated(target_fd) || !is_prog_fd(prog_fd)) {
 		return -1;
 	}
@@ -392,16 +407,14 @@ bool bpftime_shm::is_exist_fake_fd(int fd) const
 	return manager->is_allocated(fd);
 }
 
-bpftime_shm::bpftime_shm()
+bpftime_shm::bpftime_shm(const char* shm_name, shm_open_type type)
 {
-	spdlog::info("Global shm constructed. global_shm_open_type {} for {}",
-		     (int)global_shm_open_type, bpftime::get_global_shm_name());
-	if (global_shm_open_type == shm_open_type::SHM_CLIENT) {
+	if (type == shm_open_type::SHM_CLIENT) {
 		spdlog::debug("start: bpftime_shm for client setup");
 		// open the shm
 		segment = boost::interprocess::managed_shared_memory(
 			boost::interprocess::open_only,
-			bpftime::get_global_shm_name());
+			shm_name);
 		manager = segment.find<bpftime::handler_manager>(
 					 bpftime::DEFAULT_GLOBAL_HANDLER_NAME)
 				  .first;
@@ -414,17 +427,17 @@ bpftime_shm::bpftime_shm()
 				       bpftime::DEFAULT_AGENT_CONFIG_NAME)
 				.first;
 		spdlog::debug("done: bpftime_shm for client setup");
-	} else if (global_shm_open_type == shm_open_type::SHM_SERVER) {
+	} else if (type == shm_open_type::SHM_SERVER) {
 		spdlog::debug("start: bpftime_shm for server setup");
 		boost::interprocess::shared_memory_object::remove(
-			bpftime::get_global_shm_name());
+			shm_name);
 		// create the shm
 		spdlog::debug(
 			"done: bpftime_shm for server setup: remove installed segment");
 		segment = boost::interprocess::managed_shared_memory(
 			boost::interprocess::create_only,
 			// Allocate 20M bytes of memory by default
-			bpftime::get_global_shm_name(), 20 << 20);
+			shm_name, 20 << 20);
 		spdlog::debug("done: bpftime_shm for server setup: segment");
 
 		manager = segment.construct<bpftime::handler_manager>(
@@ -444,7 +457,7 @@ bpftime_shm::bpftime_shm()
 		spdlog::debug(
 			"done: bpftime_shm for server setup: agent_config");
 		spdlog::debug("done: bpftime_shm for server setup.");
-	} else if (global_shm_open_type == shm_open_type::SHM_NO_CREATE) {
+	} else if (type == shm_open_type::SHM_NO_CREATE) {
 		// not create any shm
 		spdlog::warn(
 			"NOT creating global shm. Please check if you declared bpftime::global_shm_open_type");
@@ -452,9 +465,20 @@ bpftime_shm::bpftime_shm()
 	}
 }
 
-int bpftime_shm::add_bpf_map(const char *name, bpftime::bpf_map_attr attr)
+bpftime_shm::bpftime_shm()
+	: bpftime_shm(bpftime::get_global_shm_name(), global_shm_open_type)
 {
-	int fd = open_fake_fd();
+	spdlog::info("Global shm constructed. global_shm_open_type {} for {}",
+		     (int)global_shm_open_type, bpftime::get_global_shm_name());
+}
+
+int bpftime_shm::add_bpf_map(int fd, const char *name,
+			     bpftime::bpf_map_attr attr)
+{
+	if (fd < 0) {
+		// if fd is negative, we need to create a new fd for allocating
+		fd = open_fake_fd();
+	}
 	if (!manager) {
 		return -1;
 	}

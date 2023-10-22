@@ -1,4 +1,4 @@
-name: Test whether bpftime-verifier works properly
+name: Build and test verifier
 
 on:
   push:
