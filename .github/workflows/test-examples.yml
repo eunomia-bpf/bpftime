@@ -10,6 +10,7 @@ jobs:
   build-and-test:
     runs-on: ubuntu-22.04
     strategy:
+      fail-fast: false
       matrix:
         examples: 
           - path: libbpf-tools/opensnoop

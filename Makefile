@@ -32,7 +32,7 @@ help:
 
 build-unit-test:
 	cmake -Bbuild  -DBPFTIME_ENABLE_UNIT_TESTING=1 -DCMAKE_BUILD_TYPE:STRING=Debug
-	cmake --build build --config Debug --target bpftime_runtime_tests
+	cmake --build build --config Debug --target bpftime_runtime_tests -j $(nproc)
 
 unit-test: ## run catch2 unit tests
 	make -C runtime/test/bpf && cp runtime/test/bpf/*.bpf.o build/runtime/test/
@@ -46,7 +46,7 @@ build: ## build the package
 
 release: ## build the package
 	cmake -Bbuild  -DBPFTIME_ENABLE_UNIT_TESTING=0 -DCMAKE_BUILD_TYPE:STRING=Release
-	cmake --build build --config Release --target install
+	cmake --build build --config Release --target install -j $(nproc)
 	cd tools/cli-rs && cargo build --release
 
 build-vm: ## build only the core library
