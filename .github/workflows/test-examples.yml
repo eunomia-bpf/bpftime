@@ -9,6 +9,35 @@ on:
 jobs: 
   build-and-test:
     runs-on: ubuntu-22.04
+    strategy:
+      matrix:
+        examples: 
+          # - libbpf-tools/bashreadline
+          - path: libbpf-tools/opensnoop
+            executable: opensnoop
+            victim: victim
+            syscall_trace: true
+          - path: libbpf-tools/statsnoop
+            executable: statsnoop
+            victim: victim
+            syscall_trace: true 
+          - path: malloc
+            executable: malloc
+            victim: victim
+            syscall_trace: false
+          - path: opensnoop
+            executable: opensnoop
+            victim: victim
+            syscall_trace: false
+          - path: sslsniff
+            executable: sslsniff
+            victim: /bin/wget https://www.google.com
+            syscall_trace: false
+          - path: libbpf-tools/bashreadline
+            executable: readline
+            victim: /bin/bash
+            syscall_trace: false
+
     steps:
       - uses: actions/checkout@v2
         with:
@@ -27,18 +56,28 @@ jobs:
           cp ./target/x86_64-unknown-linux-gnu/release/bpftime ~/.bpftime
       - name: Build test assets
         run: |
-          cd example/opensnoop
-          make -j
+          make -C example/${{matrix.examples.path}} -j
       - name: Test CLI - show help
         run: |
           export PATH=$PATH:~/.bpftime
           bpftime --help
-      - name: Test CLI - attach by running
+      - name: Test CLI - attach by running (syscall_trace)
+        if: matrix.examples.syscall_trace
         shell: "sudo /bin/bash -e {0}"
         run: |
-          cd example/opensnoop
-          timeout -s 2 30s sudo -E /home/runner/.bpftime/bpftime -i /home/runner/.bpftime load ./opensnoop || if [ $? = 124 ]; then exit 0; else exit $?; fi &
+          cd example/${{matrix.examples.path}}
+          timeout -s 2 30s sudo -E /home/runner/.bpftime/bpftime -i /home/runner/.bpftime load ./${{matrix.examples.executable}} || if [ $? = 124 ]; then exit 0; else exit $?; fi &
           sleep 3s
           ID1=$!
-          timeout -s 2 15s /home/runner/.bpftime/bpftime -i /home/runner/.bpftime start -s ./victim || if [ $? = 124 ]; then exit 0; else exit $?; fi
+          timeout -s 2 15s /home/runner/.bpftime/bpftime -i /home/runner/.bpftime start -s ${{matrix.examples.victim}} || if [ $? = 124 ]; then exit 0; else exit $?; fi
+          fg $ID1 || true
+      - name: Test CLI - attach by running (uprobe)
+        if: !matrix.examples.syscall_trace
+        shell: "sudo /bin/bash -e {0}"
+        run: |
+          cd example/${{matrix.examples.path}}
+          timeout -s 2 30s sudo -E /home/runner/.bpftime/bpftime -i /home/runner/.bpftime load ./${{matrix.examples.executable}} || if [ $? = 124 ]; then exit 0; else exit $?; fi &
+          sleep 3s
+          ID1=$!
+          timeout -s 2 15s /home/runner/.bpftime/bpftime -i /home/runner/.bpftime start ${{matrix.examples.victim}} || if [ $? = 124 ]; then exit 0; else exit $?; fi
           fg $ID1 || true
