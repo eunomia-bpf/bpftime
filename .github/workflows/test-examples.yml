@@ -71,7 +71,7 @@ jobs:
           timeout -s 2 15s /home/runner/.bpftime/bpftime -i /home/runner/.bpftime start -s ${{matrix.examples.victim}} || if [ $? = 124 ]; then exit 0; else exit $?; fi
           fg $ID1 || true
       - name: Test CLI - attach by running (uprobe)
-        if: !matrix.examples.syscall_trace
+        if: '!matrix.examples.syscall_trace'
         shell: "sudo /bin/bash -e {0}"
         run: |
           cd example/${{matrix.examples.path}}
