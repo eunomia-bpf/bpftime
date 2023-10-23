@@ -20,8 +20,6 @@
 #include <spdlog/cfg/env.h>
 using namespace bpftime;
 
-const shm_open_type bpftime::global_shm_open_type = shm_open_type::SHM_OPEN_ONLY;
-
 using main_func_t = int (*)(int, char **, char **);
 
 static main_func_t orig_main_func = nullptr;
@@ -76,7 +74,7 @@ extern "C" int __libc_start_main(int (*main)(int, char **, char **), int argc,
 
 extern "C" void bpftime_agent_main(const gchar *data, gboolean *stay_resident)
 {
-	bpftime_initialize_global_shm();
+	bpftime_initialize_global_shm(shm_open_type::SHM_OPEN_ONLY);
 	ctx_holder.init();
 	ctx_holder.ctx.set_orig_syscall_func(orig_hooker);
 	spdlog::cfg::load_env_levels();

@@ -43,7 +43,7 @@ bpftime::agent_config &bpftime_get_agent_config();
 extern "C" {
 
 // initialize the global shared memory for store bpf progs and maps
-void bpftime_initialize_global_shm();
+void bpftime_initialize_global_shm(bpftime::shm_open_type type);
 // destroy the global shared memory
 void bpftime_destroy_global_shm();
 

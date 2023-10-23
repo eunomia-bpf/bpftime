@@ -14,7 +14,6 @@ const char *HANDLER_NAME = "my_handler";
 using namespace boost::interprocess;
 using namespace bpftime;
 
-const shm_open_type bpftime::global_shm_open_type = shm_open_type::SHM_NO_CREATE;
 
 void test_insert_map(int fd, bpftime::handler_manager &manager_ref,
 		     managed_shared_memory &segment)

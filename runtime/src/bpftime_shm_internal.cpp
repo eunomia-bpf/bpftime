@@ -10,12 +10,12 @@
 
 static bool global_shm_initialized = false;
 
-void bpftime_initialize_global_shm()
+void bpftime_initialize_global_shm(bpftime::shm_open_type type)
 {
 	using namespace bpftime;
 	// Use placement new, which will not allocate memory, but just
 	// call the constructor
-	new (&shm_holder.global_shared_memory) bpftime_shm;
+	new (&shm_holder.global_shared_memory) bpftime_shm(type);
 	global_shm_initialized = true;
 }
 
@@ -460,16 +460,16 @@ bpftime_shm::bpftime_shm(const char* shm_name, shm_open_type type)
 	} else if (type == shm_open_type::SHM_NO_CREATE) {
 		// not create any shm
 		spdlog::warn(
-			"NOT creating global shm. Please check if you declared bpftime::global_shm_open_type");
+			"NOT creating global shm. This is only for testing purpose.");
 		return;
 	}
 }
 
-bpftime_shm::bpftime_shm()
-	: bpftime_shm(bpftime::get_global_shm_name(), global_shm_open_type)
+bpftime_shm::bpftime_shm(bpftime::shm_open_type type)
+	: bpftime_shm(bpftime::get_global_shm_name(), type)
 {
-	spdlog::info("Global shm constructed. global_shm_open_type {} for {}",
-		     (int)global_shm_open_type, bpftime::get_global_shm_name());
+	spdlog::info("Global shm constructed. shm_open_type {} for {}",
+		     (int)type, bpftime::get_global_shm_name());
 }
 
 int bpftime_shm::add_bpf_map(int fd, const char *name,
@@ -534,9 +534,5 @@ bpftime_shm::get_software_perf_event_raw_buffer(int fd, size_t buffer_sz) const
 	const auto &handler = std::get<bpf_perf_event_handler>(get_handler(fd));
 	return handler.try_get_software_perf_data_raw_buffer(buffer_sz);
 }
-
-// Declare it as weak symbol, which could be overrided by other symbols
-extern const __attribute__((weak)) bpftime::shm_open_type global_shm_open_type =
-	bpftime::shm_open_type::SHM_NO_CREATE;
 
 } // namespace bpftime

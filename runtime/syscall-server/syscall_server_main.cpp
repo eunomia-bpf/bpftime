@@ -11,8 +11,6 @@
 #include <cstdarg>
 using namespace bpftime;
 
-const shm_open_type bpftime::global_shm_open_type = shm_open_type::SHM_REMOVE_AND_CREATE;
-
 // global context for bpf syscall server
 static syscall_context context;
 

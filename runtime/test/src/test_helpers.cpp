@@ -9,8 +9,7 @@
 
 using namespace bpftime;
 
-const shm_open_type bpftime::global_shm_open_type =
-	shm_open_type::SHM_NO_CREATE;
+
 
 static void dump_type(void *ctx, const char *fmt, va_list args)
 {

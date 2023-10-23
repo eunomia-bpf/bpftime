@@ -12,9 +12,6 @@
 
 using namespace bpftime;
 
-const shm_open_type bpftime::global_shm_open_type =
-	shm_open_type::SHM_NO_CREATE;
-
 // This is the original function to hook.
 int my_function(int parm1, const char *str, char c)
 {

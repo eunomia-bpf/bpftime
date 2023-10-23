@@ -11,9 +11,6 @@
 using namespace std;
 using namespace bpftime;
 
-const shm_open_type bpftime::global_shm_open_type =
-	shm_open_type::SHM_OPEN_ONLY;
-
 // Main program
 int main(int argc, char *argv[])
 {
@@ -24,8 +21,6 @@ int main(int argc, char *argv[])
 		     << endl;
 		return 1;
 	}
-
-	bpftime_initialize_global_shm();
 
 	auto cmd = std::string(argv[1]);
 	if (cmd == "load") {
@@ -41,6 +36,7 @@ int main(int argc, char *argv[])
 		return bpftime_import_shm_handler_from_json(fd,
 							    json_str.c_str());
 	} else if (cmd == "export") {
+		bpftime_initialize_global_shm(shm_open_type::SHM_OPEN_ONLY);
 		if (argc != 3) {
 			cerr << "Usage: " << argv[0] << " export <filename>"
 			     << endl

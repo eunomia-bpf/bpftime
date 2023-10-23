@@ -50,7 +50,7 @@ static bpf_map_attr json_to_bpf_map_attr(const json &j)
 }
 
 static json
-bpf_perf_event_handler_to_json(const bpf_perf_event_handler &handler)
+bpf_perf_event_handler_attr_to_json(const bpf_perf_event_handler &handler)
 {
 	json j;
 	j["type"] = handler.type;
@@ -223,7 +223,7 @@ int bpftime::bpftime_export_shm_to_json(const bpftime_shm &shm,
 			j[std::to_string(i)] = {
 				{ "type", "bpf_perf_event_handler" },
 				{ "attr",
-				  bpf_perf_event_handler_to_json(perf_handler) }
+				  bpf_perf_event_handler_attr_to_json(perf_handler) }
 			};
 			spdlog::info("bpf_perf_event_handler found at {}", i);
 		} else if (std::holds_alternative<epoll_handler>(handler)) {

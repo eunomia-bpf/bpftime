@@ -50,7 +50,7 @@ void start_up()
 	spdlog::info("Initialize syscall server");
 	spdlog::cfg::load_env_levels();
 	spdlog::set_pattern("[%Y-%m-%d %H:%M:%S][%^%l%$][%t] %v");
-	bpftime_initialize_global_shm();
+	bpftime_initialize_global_shm(shm_open_type::SHM_REMOVE_AND_CREATE);
 	auto &agent_config = bpftime_get_agent_config();
 	if (const char *custom_helpers = getenv("BPFTIME_HELPER_GROUPS");
 	    custom_helpers != nullptr) {

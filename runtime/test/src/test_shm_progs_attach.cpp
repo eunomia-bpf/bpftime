@@ -17,8 +17,7 @@
 using namespace boost::interprocess;
 using namespace bpftime;
 
-const shm_open_type bpftime::global_shm_open_type =
-	shm_open_type::SHM_NO_CREATE;
+
 
 const char *HANDLER_NAME = "my_handler";
 const char *SHM_NAME = "my_shm_attach_test";
