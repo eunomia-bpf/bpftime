@@ -14,14 +14,18 @@ class bpf_event_handler {
     int handle_open_events(const struct event *e);
     int handle_perf_event(const struct event *e);
     int handle_load_bpf_prog_event(const struct event *e);
+
 public:
+    // callback function for bpf events in ring buffer
     int handle_event(const struct event *e);
 
     bpf_event_handler(struct daemon_config config);
 };
 
+// determine the perf type for kprobe, exit if failed
 int determine_kprobe_perf_type(void);
 
+// determine the perf type for uprobe, exit if failed
 int determine_uprobe_perf_type(void);
 
 } // namespace bpftime

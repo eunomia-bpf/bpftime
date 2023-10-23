@@ -6,9 +6,17 @@ add_bpf_skel_generating_target(bpftime_daemon_ebpf_skel ${CMAKE_CURRENT_BINARY_D
 
 add_dependencies(bpftime_daemon_ebpf_skel bpftime_daemon_ebpf_target)
 
-add_executable(bpftime_daemon user/main.cpp user/bpf_tracer.cpp user/handle_bpf_event.cpp)
+add_executable(bpftime_daemon 
+    user/main.cpp 
+    user/bpf_tracer.cpp 
+    user/handle_bpf_event.cpp)
 add_dependencies(bpftime_daemon bpftime_daemon_ebpf_skel libbpf spdlog::spdlog)
 
-target_include_directories(bpftime_daemon PRIVATE ${CMAKE_CURRENT_BINARY_DIR} ${LIBBPF_INCLUDE_DIRS} ${CMAKE_CURRENT_SOURCE_DIR})
+target_include_directories(bpftime_daemon PRIVATE 
+    ${CMAKE_CURRENT_BINARY_DIR} 
+    ${LIBBPF_INCLUDE_DIRS}
+    ${CMAKE_CURRENT_SOURCE_DIR}
+    ${CMAKE_CURRENT_SOURCE_DIR}/../vm/include
+)
 target_link_libraries(bpftime_daemon PRIVATE ${LIBBPF_LIBRARIES} elf z spdlog::spdlog)
 set_property(TARGET bpftime_daemon PROPERTY CXX_STANDARD 20)
