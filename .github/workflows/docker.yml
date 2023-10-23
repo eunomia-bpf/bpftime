@@ -4,7 +4,6 @@ on:
   push:
     branches: "master"
   pull_request: 
-    # Why wildcard? Because we want to see test results when examing prs from non-master branches..
     branches: "master"
 
 jobs:
@@ -36,7 +35,7 @@ jobs:
 
       - name: Build image and push to GitHub Container Registry
         uses: docker/build-push-action@v2
-        if:   github.repository_owner == 'eunomia-bpf'
+        if:   "github.repository_owner == 'eunomia-bpf' && !startsWith(github.ref, 'refs/pull/')"
         with:
           # relative path to the place where source code with Dockerfile is located
           context: ./

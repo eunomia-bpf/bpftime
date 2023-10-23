@@ -1,14 +1,43 @@
-name: Test examples
+name: Build and run all integrated tests (examples)
 
 on:
   push:
-    branches: "master"
+    branches: "*"
   pull_request: 
-    branches: "master"
+    branches: "*"
 
 jobs: 
   build-and-test:
     runs-on: ubuntu-22.04
+    strategy:
+      fail-fast: false
+      matrix:
+        examples: 
+          - path: libbpf-tools/opensnoop
+            executable: opensnoop
+            victim: ./victim
+            syscall_trace: true
+          - path: libbpf-tools/statsnoop
+            executable: statsnoop
+            victim: ./victim
+            syscall_trace: true 
+          - path: malloc
+            executable: malloc
+            victim: ./victim
+            syscall_trace: false
+          - path: opensnoop
+            executable: opensnoop
+            victim: ./victim
+            syscall_trace: false
+          - path: sslsniff
+            executable: sslsniff
+            victim: /bin/wget https://www.google.com
+            syscall_trace: false
+          - path: libbpf-tools/bashreadline
+            executable: readline
+            victim: /bin/bash
+            syscall_trace: false
+
     steps:
       - uses: actions/checkout@v2
         with:
@@ -18,7 +47,7 @@ jobs:
           sudo apt-get install binutils-dev libboost1.74-all-dev libelf-dev zlib1g-dev libyaml-cpp-dev gcc-12 g++-12 llvm
       - name: Build and install runtime
         run: |
-          CC=gcc-12 CXX=g++-12 make release
+          CC=gcc-12 CXX=g++-12 make release -j
       - name: Build and install CLI
         run: |
           cd tools/cli-rs
@@ -27,18 +56,28 @@ jobs:
           cp ./target/x86_64-unknown-linux-gnu/release/bpftime ~/.bpftime
       - name: Build test assets
         run: |
-          cd example/opensnoop
-          make -j
+          make -C example/${{matrix.examples.path}} -j
       - name: Test CLI - show help
         run: |
           export PATH=$PATH:~/.bpftime
           bpftime --help
-      - name: Test CLI - attach by running
+      - name: Test CLI - attach by running (syscall_trace)
+        if: matrix.examples.syscall_trace
         shell: "sudo /bin/bash -e {0}"
         run: |
-          cd example/opensnoop
-          timeout -s 2 30s sudo -E /home/runner/.bpftime/bpftime -i /home/runner/.bpftime load ./opensnoop || if [ $? = 124 ]; then exit 0; else exit $?; fi &
+          cd example/${{matrix.examples.path}}
+          timeout -s 2 30s sudo -E /home/runner/.bpftime/bpftime -i /home/runner/.bpftime load ./${{matrix.examples.executable}} || if [ $? = 124 ]; then exit 0; else exit $?; fi &
           sleep 3s
           ID1=$!
-          timeout -s 2 15s /home/runner/.bpftime/bpftime -i /home/runner/.bpftime start -s ./victim || if [ $? = 124 ]; then exit 0; else exit $?; fi
+          timeout -s 2 15s /home/runner/.bpftime/bpftime -i /home/runner/.bpftime start -s ${{matrix.examples.victim}} || if [ $? = 124 ]; then exit 0; else exit $?; fi
+          fg $ID1 || true
+      - name: Test CLI - attach by running (uprobe)
+        if: '!matrix.examples.syscall_trace'
+        shell: "sudo /bin/bash -e {0}"
+        run: |
+          cd example/${{matrix.examples.path}}
+          timeout -s 2 30s sudo -E /home/runner/.bpftime/bpftime -i /home/runner/.bpftime load ./${{matrix.examples.executable}} || if [ $? = 124 ]; then exit 0; else exit $?; fi &
+          sleep 3s
+          ID1=$!
+          timeout -s 2 15s /home/runner/.bpftime/bpftime -i /home/runner/.bpftime start ${{matrix.examples.victim}} || if [ $? = 124 ]; then exit 0; else exit $?; fi
           fg $ID1 || true

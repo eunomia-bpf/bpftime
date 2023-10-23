@@ -44,4 +44,4 @@ jobs:
         sudo apt install python3-pytest
         pip install -r vm/test/requirements.txt
         # make build # or build-arm32 build-arm64
-        make -C vm test-vm
+        make -C vm test-vm -j
