@@ -47,7 +47,7 @@ jobs:
           sudo apt-get install binutils-dev libboost1.74-all-dev libelf-dev zlib1g-dev libyaml-cpp-dev gcc-12 g++-12 llvm
       - name: Build and install runtime
         run: |
-          CC=gcc-12 CXX=g++-12 make release
+          CC=gcc-12 CXX=g++-12 make release -j
       - name: Build and install CLI
         run: |
           cd tools/cli-rs

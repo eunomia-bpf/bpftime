@@ -10,4 +10,4 @@ RUN git submodule update --init --recursive
 ENV CXX=g++
 ENV CC=gcc
 ENV PATH="${PATH}:/root/.cargo/bin"
-RUN make release && make install
+RUN make release -j && make install -j
