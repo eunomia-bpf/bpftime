@@ -20,7 +20,7 @@
 #include <spdlog/cfg/env.h>
 using namespace bpftime;
 
-const shm_open_type bpftime::global_shm_open_type = shm_open_type::SHM_CLIENT;
+const shm_open_type bpftime::global_shm_open_type = shm_open_type::SHM_OPEN_ONLY;
 
 using main_func_t = int (*)(int, char **, char **);
 

@@ -30,8 +30,8 @@ struct bpf_map_attr {
 };
 
 enum class shm_open_type {
-	SHM_SERVER,
-	SHM_CLIENT,
+	SHM_REMOVE_AND_CREATE,
+	SHM_OPEN_ONLY,
 	SHM_NO_CREATE,
 };
 

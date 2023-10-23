@@ -16,7 +16,7 @@
 using namespace bpftime;
 using namespace boost::interprocess;
 
-const shm_open_type bpftime::global_shm_open_type = shm_open_type::SHM_CLIENT;
+const shm_open_type bpftime::global_shm_open_type = shm_open_type::SHM_OPEN_ONLY;
 
 int main(int argc, const char **argv)
 {

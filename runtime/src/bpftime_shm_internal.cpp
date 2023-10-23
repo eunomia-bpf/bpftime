@@ -409,7 +409,7 @@ bool bpftime_shm::is_exist_fake_fd(int fd) const
 
 bpftime_shm::bpftime_shm(const char* shm_name, shm_open_type type)
 {
-	if (type == shm_open_type::SHM_CLIENT) {
+	if (type == shm_open_type::SHM_OPEN_ONLY) {
 		spdlog::debug("start: bpftime_shm for client setup");
 		// open the shm
 		segment = boost::interprocess::managed_shared_memory(
@@ -427,7 +427,7 @@ bpftime_shm::bpftime_shm(const char* shm_name, shm_open_type type)
 				       bpftime::DEFAULT_AGENT_CONFIG_NAME)
 				.first;
 		spdlog::debug("done: bpftime_shm for client setup");
-	} else if (type == shm_open_type::SHM_SERVER) {
+	} else if (type == shm_open_type::SHM_REMOVE_AND_CREATE) {
 		spdlog::debug("start: bpftime_shm for server setup");
 		boost::interprocess::shared_memory_object::remove(
 			shm_name);

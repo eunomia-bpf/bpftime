@@ -16,7 +16,7 @@
 using namespace bpftime;
 using namespace boost::interprocess;
 
-const shm_open_type bpftime::global_shm_open_type = shm_open_type::SHM_SERVER;
+const shm_open_type bpftime::global_shm_open_type = shm_open_type::SHM_REMOVE_AND_CREATE;
 
 int main(int argc, const char **argv)
 {
