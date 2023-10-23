@@ -17,5 +17,5 @@ export PATH=$PATH:~/.bpftime
 
 ## bpftime tool
 
-Inspect the shared memory status of the target process.
+Inspect or operate the shared memory status of the target process.
 

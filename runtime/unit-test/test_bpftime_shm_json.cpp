@@ -79,6 +79,7 @@ TEST_CASE("Test bpftime shm json import/export")
 					      .key_size = 4,
 					      .value_size = 4,
 					      .max_ents = 10 });
+		shm.attach_perf_to_bpf(5, 4);
 		int res = bpftime_export_shm_to_json(shm,
 					   "/tmp/bpftime_test_shm_json.json");
         REQUIRE(res == 0);

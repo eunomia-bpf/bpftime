@@ -10,7 +10,7 @@
 
 static bool global_shm_initialized = false;
 
-void bpftime_initialize_global_shm(bpftime::shm_open_type type)
+extern "C" void bpftime_initialize_global_shm(bpftime::shm_open_type type)
 {
 	using namespace bpftime;
 	// Use placement new, which will not allocate memory, but just
@@ -19,7 +19,7 @@ void bpftime_initialize_global_shm(bpftime::shm_open_type type)
 	global_shm_initialized = true;
 }
 
-void bpftime_destroy_global_shm()
+extern "C" void bpftime_destroy_global_shm()
 {
 	using namespace bpftime;
 	if (global_shm_initialized) {
@@ -30,10 +30,20 @@ void bpftime_destroy_global_shm()
 		printf("INFO [%d]: Global shm destructed\n", (int)getpid());
 	}
 }
+
+extern "C" void bpftime_remove_global_shm()
+{
+	using namespace bpftime;
+	boost::interprocess::shared_memory_object::remove(
+		get_global_shm_name());
+	spdlog::info("Global shm removed");
+}
+
 static __attribute__((destructor(65535))) void __destruct_shm()
 {
 	bpftime_destroy_global_shm();
 }
+
 namespace bpftime
 {
 
@@ -124,12 +134,11 @@ int bpftime_shm::add_uprobe(int fd, int pid, const char *name, uint64_t offset,
 		// if fd is negative, we need to create a new fd for allocating
 		fd = open_fake_fd();
 	}
-	manager->set_handler(
+	return manager->set_handler(
 		fd,
 		bpftime::bpf_perf_event_handler{ retprobe, offset, pid, name,
 						 ref_ctr_off, segment },
 		segment);
-	return fd;
 }
 
 int bpftime_shm::add_tracepoint(int fd, int pid, int32_t tracepoint_id)
@@ -138,26 +147,37 @@ int bpftime_shm::add_tracepoint(int fd, int pid, int32_t tracepoint_id)
 		// if fd is negative, we need to create a new fd for allocating
 		fd = open_fake_fd();
 	}
-	manager->set_handler(fd,
-			     bpftime::bpf_perf_event_handler(pid, tracepoint_id,
-							     segment),
-			     segment);
-	return fd;
+	return manager->set_handler(
+		fd,
+		bpftime::bpf_perf_event_handler(pid, tracepoint_id, segment),
+		segment);
 }
 
 int bpftime_shm::add_software_perf_event(int cpu, int32_t sample_type,
 					 int64_t config)
 {
 	int fd = open_fake_fd();
-	manager->set_handler(fd,
-			     bpftime::bpf_perf_event_handler(cpu, sample_type,
-							     config, segment),
-			     segment);
+	return manager->set_handler(fd,
+				    bpftime::bpf_perf_event_handler(
+					    cpu, sample_type, config, segment),
+				    segment);
 	return fd;
 }
+
 int bpftime_shm::attach_perf_to_bpf(int perf_fd, int bpf_fd)
 {
-	if (!is_perf_fd(perf_fd) || !is_prog_fd(bpf_fd)) {
+	if (!is_perf_fd(perf_fd)) {
+		spdlog::error("Fd {} not a perf fd", perf_fd);
+		errno = ENOENT;
+		return -1;
+	}
+	return add_bpf_prog_attach_target(perf_fd, bpf_fd);
+}
+
+int bpftime_shm::add_bpf_prog_attach_target(int perf_fd, int bpf_fd)
+{
+	if (!is_prog_fd(bpf_fd)) {
+		spdlog::error("Fd {} not prog fd", bpf_fd);
 		errno = ENOENT;
 		return -1;
 	}
@@ -270,7 +290,7 @@ int bpftime_shm::epoll_create()
 			fd);
 		return -1;
 	}
-	manager->set_handler(fd, bpftime::epoll_handler(segment), segment);
+	fd = manager->set_handler(fd, bpftime::epoll_handler(segment), segment);
 	spdlog::debug("Epoll instance created: fd={}", fd);
 	return fd;
 }
@@ -367,11 +387,11 @@ int bpftime_shm::add_bpf_prog(int fd, const ebpf_inst *insn, size_t insn_cnt,
 		// if fd is negative, we need to create a new fd for allocating
 		fd = open_fake_fd();
 	}
-	manager->set_handler(fd,
-			     bpftime::bpf_prog_handler(segment, insn, insn_cnt,
-						       prog_name, prog_type),
-			     segment);
-	return fd;
+	return manager->set_handler(
+		fd,
+		bpftime::bpf_prog_handler(segment, insn, insn_cnt, prog_name,
+					  prog_type),
+		segment);
 }
 
 // add a bpf link fd
@@ -384,11 +404,11 @@ int bpftime_shm::add_bpf_link(int fd, int prog_fd, int target_fd)
 	if (!manager->is_allocated(target_fd) || !is_prog_fd(prog_fd)) {
 		return -1;
 	}
-	manager->set_handler(fd,
-			     bpftime::bpf_link_handler{ (uint32_t)prog_fd,
-							(uint32_t)target_fd },
-			     segment);
-	return fd;
+	return manager->set_handler(
+		fd,
+		bpftime::bpf_link_handler{ (uint32_t)prog_fd,
+					   (uint32_t)target_fd },
+		segment);
 }
 
 void bpftime_shm::close_fd(int fd)
@@ -407,14 +427,13 @@ bool bpftime_shm::is_exist_fake_fd(int fd) const
 	return manager->is_allocated(fd);
 }
 
-bpftime_shm::bpftime_shm(const char* shm_name, shm_open_type type)
+bpftime_shm::bpftime_shm(const char *shm_name, shm_open_type type)
 {
 	if (type == shm_open_type::SHM_OPEN_ONLY) {
 		spdlog::debug("start: bpftime_shm for client setup");
 		// open the shm
 		segment = boost::interprocess::managed_shared_memory(
-			boost::interprocess::open_only,
-			shm_name);
+			boost::interprocess::open_only, shm_name);
 		manager = segment.find<bpftime::handler_manager>(
 					 bpftime::DEFAULT_GLOBAL_HANDLER_NAME)
 				  .first;
@@ -427,10 +446,32 @@ bpftime_shm::bpftime_shm(const char* shm_name, shm_open_type type)
 				       bpftime::DEFAULT_AGENT_CONFIG_NAME)
 				.first;
 		spdlog::debug("done: bpftime_shm for client setup");
+	} else if (type == shm_open_type::SHM_CREATE_OR_OPEN) {
+		spdlog::debug("start: bpftime_shm for create or open setup");
+		segment = boost::interprocess::managed_shared_memory(
+			boost::interprocess::open_or_create,
+			// Allocate 20M bytes of memory by default
+			shm_name, 20 << 20);
+
+		manager = segment.find_or_construct<bpftime::handler_manager>(
+			bpftime::DEFAULT_GLOBAL_HANDLER_NAME)(segment);
+		spdlog::debug("done: bpftime_shm for server setup: manager");
+
+		syscall_installed_pids =
+			segment.find_or_construct<syscall_pid_set>(
+				bpftime::DEFAULT_SYSCALL_PID_SET_NAME)(
+				std::less<int>(),
+				syscall_pid_set_allocator(
+					segment.get_segment_manager()));
+		spdlog::debug(
+			"done: bpftime_shm for server setup: syscall_pid_set");
+
+		agent_config = segment.find_or_construct<struct agent_config>(
+			bpftime::DEFAULT_AGENT_CONFIG_NAME)();
+		spdlog::debug("done: bpftime_shm for open_or_create setup");
 	} else if (type == shm_open_type::SHM_REMOVE_AND_CREATE) {
 		spdlog::debug("start: bpftime_shm for server setup");
-		boost::interprocess::shared_memory_object::remove(
-			shm_name);
+		boost::interprocess::shared_memory_object::remove(shm_name);
 		// create the shm
 		spdlog::debug(
 			"done: bpftime_shm for server setup: remove installed segment");
@@ -494,9 +535,8 @@ int bpftime_shm::add_bpf_map(int fd, const char *name,
 	};
 	verifier::set_map_descriptors(helpers);
 #endif
-	manager->set_handler(fd, bpftime::bpf_map_handler(name, segment, attr),
-			     segment);
-	return fd;
+	return manager->set_handler(
+		fd, bpftime::bpf_map_handler(name, segment, attr), segment);
 }
 
 const handler_manager *bpftime_shm::get_manager() const

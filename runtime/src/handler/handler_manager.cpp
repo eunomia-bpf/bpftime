@@ -29,13 +29,17 @@ std::size_t handler_manager::size() const
 	return handlers.size();
 }
 
-void handler_manager::set_handler(int fd, handler_variant &&handler,
+int handler_manager::set_handler(int fd, handler_variant &&handler,
 				  managed_shared_memory &memory)
 {
+	if (is_allocated(fd)) {
+		return -ENOENT;
+	}
 	handlers[fd] = std::move(handler);
 	if (std::holds_alternative<bpf_map_handler>(handlers[fd])) {
 		std::get<bpf_map_handler>(handlers[fd]).map_init(memory);
 	}
+	return fd;
 }
 
 bool handler_manager::is_allocated(int fd) const
