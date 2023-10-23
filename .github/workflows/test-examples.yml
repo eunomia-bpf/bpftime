@@ -15,19 +15,19 @@ jobs:
         examples: 
           - path: libbpf-tools/opensnoop
             executable: opensnoop
-            victim: victim
+            victim: ./victim
             syscall_trace: true
           - path: libbpf-tools/statsnoop
             executable: statsnoop
-            victim: victim
+            victim: ./victim
             syscall_trace: true 
           - path: malloc
             executable: malloc
-            victim: victim
+            victim: ./victim
             syscall_trace: false
           - path: opensnoop
             executable: opensnoop
-            victim: victim
+            victim: ./victim
             syscall_trace: false
           - path: sslsniff
             executable: sslsniff
