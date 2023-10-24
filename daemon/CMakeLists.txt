@@ -6,7 +6,7 @@ add_bpf_skel_generating_target(bpftime_daemon_ebpf_skel ${CMAKE_CURRENT_BINARY_D
 
 add_dependencies(bpftime_daemon_ebpf_skel bpftime_daemon_ebpf_target)
 
-add_executable(bpftime_daemon 
+add_executable(bpftime_daemon
     user/main.cpp 
     user/bpf_tracer.cpp 
     user/handle_bpf_event.cpp)
@@ -33,3 +33,5 @@ target_link_libraries(bpftime_daemon PRIVATE
         runtime
     )
 set_property(TARGET bpftime_daemon PROPERTY CXX_STANDARD 20)
+
+add_subdirectory(test)
