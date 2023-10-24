@@ -23,6 +23,8 @@ struct daemon_config {
 	std::string bpftime_cli_path = "~/.bpftime/bpftime";
 	// bpftime tool path for bpftime daemon to run bpftime
 	std::string bpftime_tool_path = "~/.bpftime/bpftimetool";
+	// should bpftime be involve
+	bool is_driving_bpftime;
 };
 
 #endif // BPFTIME_DAEMON_CONFIG_HPP

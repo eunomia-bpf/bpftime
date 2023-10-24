@@ -2,27 +2,13 @@
 #define BPFTIME_DRIVER_HPP
 
 #include "daemon_config.hpp"
+#include "bpftime_shm.hpp"
 #include <string>
 #include <ebpf-vm.h>
 #include <map>
 
 namespace bpftime
 {
-
-// bpf map attribute
-struct bpf_map_attr {
-	int type = 0;
-	uint32_t key_size = 0;
-	uint32_t value_size = 0;
-	uint32_t max_ents = 0;
-	uint64_t flags = 0;
-	uint32_t ifindex = 0;
-	uint32_t btf_vmlinux_value_type_id = 0;
-	uint32_t btf_id = 0;
-	uint32_t btf_key_type_id = 0;
-	uint32_t btf_value_type_id = 0;
-	uint64_t map_extra = 0;
-};
 
 // Use commands to interact with the bpftime agent and shm maps
 class bpftime_driver {
@@ -88,7 +74,7 @@ class bpftime_driver {
 	void bpftime_close_server(int server_pid, int fd);
 
 	bpftime_driver(struct daemon_config cfg);
-	~bpftime_driver() = default;
+	~bpftime_driver();
 };
 
 } // namespace bpftime

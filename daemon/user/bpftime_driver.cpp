@@ -130,3 +130,7 @@ bpftime_driver::bpftime_driver(daemon_config cfg)
 	config = cfg;
 	bpftime_initialize_global_shm(shm_open_type::SHM_REMOVE_AND_CREATE);
 }
+
+bpftime_driver::~bpftime_driver() {
+    bpftime_destroy_global_shm();
+}

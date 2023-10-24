@@ -170,8 +170,10 @@ static const char *get_bpf_map_type_string(enum bpf_map_type type)
 	return "Unknown";
 }
 
-int bpf_event_handler::handle_close_event(const struct event *e) {
-	spdlog::info("CLOSE    {:<6} {:<16} fd:{}", e->pid, e->comm, e->close_data.fd);
+int bpf_event_handler::handle_close_event(const struct event *e)
+{
+	spdlog::info("CLOSE    {:<6} {:<16} fd:{}", e->pid, e->comm,
+		     e->close_data.fd);
 	return 0;
 }
 
@@ -211,12 +213,8 @@ int bpf_event_handler::handle_bpf_event(const struct event *e)
 
 #define PERF_TYPE_MAX_ID 16
 static const char *perf_type_id_strings[PERF_TYPE_MAX_ID] = {
-	"PERF_TYPE_HARDWARE",
-	"PERF_TYPE_SOFTWARE",
-	"PERF_TYPE_TRACEPOINT",
-	"PERF_TYPE_HW_CACHE",
-	"PERF_TYPE_RAW",
-	"PERF_TYPE_BREAKPOINT",
+	"PERF_TYPE_HARDWARE", "PERF_TYPE_SOFTWARE", "PERF_TYPE_TRACEPOINT",
+	"PERF_TYPE_HW_CACHE", "PERF_TYPE_RAW",	    "PERF_TYPE_BREAKPOINT",
 };
 
 int bpf_event_handler::handle_perf_event(const struct event *e)
@@ -229,8 +227,8 @@ int bpf_event_handler::handle_perf_event(const struct event *e)
 			perf_type_id_strings[e->perf_event_data.attr.type];
 
 	/* print output */
-	spdlog::info("PERF     {:<6} {:<16} type:{:<16} ret:{}\n", e->pid, e->comm,
-		     type_id_str, e->perf_event_data.ret);
+	spdlog::info("PERF     {:<6} {:<16} type:{:<16} ret:{}\n", e->pid,
+		     e->comm, type_id_str, e->perf_event_data.ret);
 	return 0;
 }
 
@@ -242,7 +240,9 @@ int bpf_event_handler::handle_load_bpf_prog_event(const struct event *e)
 			"UNKNOWN PROG TYPE" :
 			bpf_prog_type_strings[e->bpf_loaded_prog.type];
 
-	const char* prog_name = strlen(e->bpf_loaded_prog.prog_name) > 0 ? e->bpf_loaded_prog.prog_name : "(none)";
+	const char *prog_name = strlen(e->bpf_loaded_prog.prog_name) > 0 ?
+					e->bpf_loaded_prog.prog_name :
+					"(none)";
 
 	/* print output */
 	spdlog::info(
@@ -252,15 +252,14 @@ int bpf_event_handler::handle_load_bpf_prog_event(const struct event *e)
 	return 0;
 }
 
-
 int bpf_event_handler::handle_ioctl(const struct event *e)
 {
 	int res;
 	int fd = e->ioctl_data.fd;
 	int req = e->ioctl_data.req;
 	int data = e->ioctl_data.data;
-	spdlog::info("IOCTL    {:<6} {:<16} fd:{} req:{} data:{}", e->pid, e->comm,
-		     fd, req, data);
+	spdlog::info("IOCTL    {:<6} {:<16} fd:{} req:{} data:{}", e->pid,
+		     e->comm, fd, req, data);
 	if (req == PERF_EVENT_IOC_ENABLE) {
 		spdlog::info("Enabling perf event {}", fd);
 		// res = bpftime_perf_event_enable(fd);
@@ -275,21 +274,20 @@ int bpf_event_handler::handle_ioctl(const struct event *e)
 		// if (res >= 0)
 		// 	return res;
 		// spdlog::warn(
-		// 	"Failed to call mocked ioctl PERF_EVENT_IOC_DISABLE: {}",
-		// 	res);
+		// 	"Failed to call mocked ioctl PERF_EVENT_IOC_DISABLE:
+		// {}", 	res);
 	} else if (req == PERF_EVENT_IOC_SET_BPF) {
 		spdlog::info("Setting bpf for perf event {} and bpf {}", fd,
-			      data);
+			     data);
 		// res = bpftime_attach_perf_to_bpf(fd, data);
 		// if (res >= 0)
 		// 	return res;
 		// spdlog::warn(
-		// 	"Failed to call mocked ioctl PERF_EVENT_IOC_SET_BPF: {}",
-		// 	res);
+		// 	"Failed to call mocked ioctl PERF_EVENT_IOC_SET_BPF:
+		// {}", 	res);
 	}
 	return 0;
 }
-
 
 int bpf_event_handler::handle_event(const struct event *e)
 {
@@ -316,7 +314,8 @@ int bpf_event_handler::handle_event(const struct event *e)
 	return 0;
 }
 
-bpf_event_handler::bpf_event_handler(struct daemon_config config) : config(config)
+bpf_event_handler::bpf_event_handler(struct daemon_config config)
+	: config(config)
 {
 	int uprobe_type = determine_uprobe_perf_type();
 	if (uprobe_type < 0 || uprobe_type >= PERF_TYPE_MAX_ID) {

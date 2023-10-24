@@ -11,13 +11,26 @@ find_package(Boost REQUIRED)
 
 set(TEST_SOURCES
     test_daemon.cpp
+    test_daemon_driver.cpp
 )
 
 add_executable(bpftime_daemon_tests ${TEST_SOURCES})
 set_property(TARGET bpftime_daemon_tests PROPERTY CXX_STANDARD 20)
 add_dependencies(bpftime_daemon_tests runtime bpftime-object)
-target_link_libraries(bpftime_daemon_tests PRIVATE runtime bpftime-object Catch2::Catch2WithMain)
-target_include_directories(bpftime_daemon_tests PRIVATE ${BPFTIME_RUNTIME_INCLUDE} ${BPFTIME_OBJECT_INCLUDE_DIRS} ${Catch2_INCLUDE} ${Boost_INCLUDE})
+target_link_libraries(bpftime_daemon_tests PRIVATE 
+runtime 
+bpftime-object 
+Catch2::Catch2WithMain 
+libbpftime_daemon
+)
+target_include_directories(bpftime_daemon_tests 
+    PRIVATE
+    ${BPFTIME_RUNTIME_INCLUDE} 
+    ${BPFTIME_OBJECT_INCLUDE_DIRS} 
+    ${Catch2_INCLUDE} 
+    ${Boost_INCLUDE}
+    ../
+)
 add_test(NAME bpftime_daemon_tests COMMAND bpftime_daemon_tests)
 
 # These are necessary ebpf program required by the test

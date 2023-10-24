@@ -1,4 +1,4 @@
-.PHONY: install coverage test docs help build clean build-arm run-arm run-arm64 build-arm64 build-arm32
+.PHONY: install coverage test docs help build clean unit-test-daemon unit-test unit-test-runtime
 .DEFAULT_GOAL := help
 
 define BROWSER_PYSCRIPT
@@ -34,10 +34,15 @@ build-unit-test:
 	cmake -Bbuild  -DBPFTIME_ENABLE_UNIT_TESTING=1 -DCMAKE_BUILD_TYPE:STRING=Debug
 	cmake --build build --config Debug --target bpftime_runtime_tests
 
-unit-test: ## run catch2 unit tests
+unit-test-daemon: 
+	build/daemon/test/bpftime_daemon_tests
+
+unit-test-runtime:  ## run catch2 unit tests
 	make -C runtime/test/bpf && cp runtime/test/bpf/*.bpf.o build/runtime/test/
 	./build/runtime/unit-test/bpftime_runtime_tests
 	cd build/runtime/test && ctest -VV
+
+unit-test: unit-test-daemon unit-test-runtime ## run catch2 unit tests
 
 build: ## build the package
 	cmake -Bbuild -DBPFTIME_ENABLE_UNIT_TESTING=1
