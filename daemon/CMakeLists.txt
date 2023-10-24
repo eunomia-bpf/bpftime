@@ -43,4 +43,6 @@ set_property(TARGET libbpftime_daemon PROPERTY CXX_STANDARD 20)
 add_dependencies(bpftime_daemon libbpftime_daemon)
 target_link_libraries(bpftime_daemon PRIVATE libbpftime_daemon)
 
+install(TARGETS bpftime_daemon CONFIGURATIONS Release Debug DESTINATION ~/.bpftime)
+
 add_subdirectory(test)

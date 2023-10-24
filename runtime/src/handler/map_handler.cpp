@@ -20,8 +20,8 @@ std::string bpf_map_handler::get_container_name()
 uint32_t bpf_map_handler::get_value_size() const
 {
 	auto result = value_size;
-	if ((type == BPF_MAP_TYPE_PERCPU_ARRAY) ||
-	    (type == BPF_MAP_TYPE_PERCPU_HASH)) {
+	if ((type == bpf_map_type::BPF_MAP_TYPE_PERCPU_ARRAY) ||
+	    (type == bpf_map_type::BPF_MAP_TYPE_PERCPU_HASH)) {
 		result *= sysconf(_SC_NPROCESSORS_ONLN);
 	}
 	return result;
@@ -29,13 +29,13 @@ uint32_t bpf_map_handler::get_value_size() const
 std::optional<ringbuf_map_impl *>
 bpf_map_handler::try_get_ringbuf_map_impl() const
 {
-	if (type != BPF_MAP_TYPE_RINGBUF)
+	if (type != bpf_map_type::BPF_MAP_TYPE_RINGBUF)
 		return {};
 	return static_cast<ringbuf_map_impl *>(map_impl_ptr.get());
 }
 std::optional<array_map_impl *> bpf_map_handler::try_get_array_map_impl() const
 {
-	if (type != BPF_MAP_TYPE_ARRAY)
+	if (type != bpf_map_type::BPF_MAP_TYPE_ARRAY)
 		return {};
 	return static_cast<array_map_impl *>(map_impl_ptr.get());
 }
@@ -63,30 +63,30 @@ const void *bpf_map_handler::map_lookup_elem(const void *key,
 	};
 
 	switch (type) {
-	case BPF_MAP_TYPE_HASH: {
+	case bpf_map_type::BPF_MAP_TYPE_HASH: {
 		auto impl = static_cast<hash_map_impl *>(map_impl_ptr.get());
 		return do_lookup(impl);
 	}
-	case BPF_MAP_TYPE_ARRAY: {
+	case bpf_map_type::BPF_MAP_TYPE_ARRAY: {
 		auto impl = static_cast<array_map_impl *>(map_impl_ptr.get());
 		return do_lookup(impl);
 	}
-	case BPF_MAP_TYPE_RINGBUF: {
+	case bpf_map_type::BPF_MAP_TYPE_RINGBUF: {
 		auto impl = static_cast<ringbuf_map_impl *>(map_impl_ptr.get());
 		return do_lookup(impl);
 	}
-	case BPF_MAP_TYPE_PERF_EVENT_ARRAY: {
+	case bpf_map_type::BPF_MAP_TYPE_PERF_EVENT_ARRAY: {
 		auto impl = static_cast<perf_event_array_map_impl *>(
 			map_impl_ptr.get());
 		return do_lookup(impl);
 	}
-	case BPF_MAP_TYPE_PERCPU_ARRAY: {
+	case bpf_map_type::BPF_MAP_TYPE_PERCPU_ARRAY: {
 		auto impl = static_cast<per_cpu_array_map_impl *>(
 			map_impl_ptr.get());
 		return from_userspace ? do_lookup_userspace(impl) :
 					do_lookup(impl);
 	}
-	case BPF_MAP_TYPE_PERCPU_HASH: {
+	case bpf_map_type::BPF_MAP_TYPE_PERCPU_HASH: {
 		auto impl = static_cast<per_cpu_hash_map_impl *>(
 			map_impl_ptr.get());
 		return from_userspace ? do_lookup_userspace(impl) :
@@ -122,30 +122,30 @@ long bpf_map_handler::map_update_elem(const void *key, const void *value,
 		}
 	};
 	switch (type) {
-	case BPF_MAP_TYPE_HASH: {
+	case bpf_map_type::BPF_MAP_TYPE_HASH: {
 		auto impl = static_cast<hash_map_impl *>(map_impl_ptr.get());
 		return do_update(impl);
 	}
-	case BPF_MAP_TYPE_ARRAY: {
+	case bpf_map_type::BPF_MAP_TYPE_ARRAY: {
 		auto impl = static_cast<array_map_impl *>(map_impl_ptr.get());
 		return do_update(impl);
 	}
-	case BPF_MAP_TYPE_RINGBUF: {
+	case bpf_map_type::BPF_MAP_TYPE_RINGBUF: {
 		auto impl = static_cast<ringbuf_map_impl *>(map_impl_ptr.get());
 		return do_update(impl);
 	}
-	case BPF_MAP_TYPE_PERF_EVENT_ARRAY: {
+	case bpf_map_type::BPF_MAP_TYPE_PERF_EVENT_ARRAY: {
 		auto impl = static_cast<perf_event_array_map_impl *>(
 			map_impl_ptr.get());
 		return do_update(impl);
 	}
-	case BPF_MAP_TYPE_PERCPU_ARRAY: {
+	case bpf_map_type::BPF_MAP_TYPE_PERCPU_ARRAY: {
 		auto impl = static_cast<per_cpu_array_map_impl *>(
 			map_impl_ptr.get());
 		return from_userspace ? do_update_userspace(impl) :
 					do_update(impl);
 	}
-	case BPF_MAP_TYPE_PERCPU_HASH: {
+	case bpf_map_type::BPF_MAP_TYPE_PERCPU_HASH: {
 		auto impl = static_cast<per_cpu_hash_map_impl *>(
 			map_impl_ptr.get());
 		return from_userspace ? do_update_userspace(impl) :
@@ -170,29 +170,29 @@ int bpf_map_handler::bpf_map_get_next_key(const void *key, void *next_key,
 		}
 	};
 	switch (type) {
-	case BPF_MAP_TYPE_HASH: {
+	case bpf_map_type::BPF_MAP_TYPE_HASH: {
 		auto impl = static_cast<hash_map_impl *>(map_impl_ptr.get());
 		return do_get_next_key(impl);
 	}
-	case BPF_MAP_TYPE_ARRAY: {
+	case bpf_map_type::BPF_MAP_TYPE_ARRAY: {
 		auto impl = static_cast<array_map_impl *>(map_impl_ptr.get());
 		return do_get_next_key(impl);
 	}
-	case BPF_MAP_TYPE_RINGBUF: {
+	case bpf_map_type::BPF_MAP_TYPE_RINGBUF: {
 		auto impl = static_cast<ringbuf_map_impl *>(map_impl_ptr.get());
 		return do_get_next_key(impl);
 	}
-	case BPF_MAP_TYPE_PERF_EVENT_ARRAY: {
+	case bpf_map_type::BPF_MAP_TYPE_PERF_EVENT_ARRAY: {
 		auto impl = static_cast<perf_event_array_map_impl *>(
 			map_impl_ptr.get());
 		return do_get_next_key(impl);
 	}
-	case BPF_MAP_TYPE_PERCPU_ARRAY: {
+	case bpf_map_type::BPF_MAP_TYPE_PERCPU_ARRAY: {
 		auto impl = static_cast<per_cpu_array_map_impl *>(
 			map_impl_ptr.get());
 		return do_get_next_key(impl);
 	}
-	case BPF_MAP_TYPE_PERCPU_HASH: {
+	case bpf_map_type::BPF_MAP_TYPE_PERCPU_HASH: {
 		auto impl = static_cast<per_cpu_hash_map_impl *>(
 			map_impl_ptr.get());
 		return do_get_next_key(impl);
@@ -226,30 +226,30 @@ long bpf_map_handler::map_delete_elem(const void *key,
 	};
 
 	switch (type) {
-	case BPF_MAP_TYPE_HASH: {
+	case bpf_map_type::BPF_MAP_TYPE_HASH: {
 		auto impl = static_cast<hash_map_impl *>(map_impl_ptr.get());
 		return do_delete(impl);
 	}
-	case BPF_MAP_TYPE_ARRAY: {
+	case bpf_map_type::BPF_MAP_TYPE_ARRAY: {
 		auto impl = static_cast<array_map_impl *>(map_impl_ptr.get());
 		return do_delete(impl);
 	}
-	case BPF_MAP_TYPE_RINGBUF: {
+	case bpf_map_type::BPF_MAP_TYPE_RINGBUF: {
 		auto impl = static_cast<ringbuf_map_impl *>(map_impl_ptr.get());
 		return do_delete(impl);
 	}
-	case BPF_MAP_TYPE_PERF_EVENT_ARRAY: {
+	case bpf_map_type::BPF_MAP_TYPE_PERF_EVENT_ARRAY: {
 		auto impl = static_cast<perf_event_array_map_impl *>(
 			map_impl_ptr.get());
 		return do_delete(impl);
 	}
-	case BPF_MAP_TYPE_PERCPU_ARRAY: {
+	case bpf_map_type::BPF_MAP_TYPE_PERCPU_ARRAY: {
 		auto impl = static_cast<per_cpu_array_map_impl *>(
 			map_impl_ptr.get());
 		return from_userspace ? do_delete_userspace(impl) :
 					do_delete(impl);
 	}
-	case BPF_MAP_TYPE_PERCPU_HASH: {
+	case bpf_map_type::BPF_MAP_TYPE_PERCPU_HASH: {
 		auto impl = static_cast<per_cpu_hash_map_impl *>(
 			map_impl_ptr.get());
 		return from_userspace ? do_delete_userspace(impl) :
@@ -265,18 +265,18 @@ int bpf_map_handler::map_init(managed_shared_memory &memory)
 {
 	auto container_name = get_container_name();
 	switch (type) {
-	case BPF_MAP_TYPE_HASH: {
+	case bpf_map_type::BPF_MAP_TYPE_HASH: {
 		map_impl_ptr = memory.construct<hash_map_impl>(
 			container_name.c_str())(memory, key_size, value_size);
 		return 0;
 	}
-	case BPF_MAP_TYPE_ARRAY: {
+	case bpf_map_type::BPF_MAP_TYPE_ARRAY: {
 		map_impl_ptr = memory.construct<array_map_impl>(
 			container_name.c_str())(memory, value_size,
 						max_entries);
 		return 0;
 	}
-	case BPF_MAP_TYPE_RINGBUF: {
+	case bpf_map_type::BPF_MAP_TYPE_RINGBUF: {
 		auto max_ent = max_entries;
 		int pop_cnt = 0;
 		while (max_ent) {
@@ -293,19 +293,19 @@ int bpf_map_handler::map_init(managed_shared_memory &memory)
 			container_name.c_str())(max_entries, memory);
 		return 0;
 	}
-	case BPF_MAP_TYPE_PERF_EVENT_ARRAY: {
+	case bpf_map_type::BPF_MAP_TYPE_PERF_EVENT_ARRAY: {
 		map_impl_ptr = memory.construct<perf_event_array_map_impl>(
 			container_name.c_str())(memory, key_size, value_size,
 						max_entries);
 		return 0;
 	}
-	case BPF_MAP_TYPE_PERCPU_ARRAY: {
+	case bpf_map_type::BPF_MAP_TYPE_PERCPU_ARRAY: {
 		map_impl_ptr = memory.construct<per_cpu_array_map_impl>(
 			container_name.c_str())(memory, value_size,
 						max_entries);
 		return 0;
 	}
-	case BPF_MAP_TYPE_PERCPU_HASH: {
+	case bpf_map_type::BPF_MAP_TYPE_PERCPU_HASH: {
 		map_impl_ptr = memory.construct<per_cpu_hash_map_impl>(
 			container_name.c_str())(memory, key_size, value_size);
 		return 0;
@@ -321,23 +321,23 @@ void bpf_map_handler::map_free(managed_shared_memory &memory)
 {
 	auto container_name = get_container_name();
 	switch (type) {
-	case BPF_MAP_TYPE_HASH:
+	case bpf_map_type::BPF_MAP_TYPE_HASH:
 		memory.destroy<hash_map_impl>(container_name.c_str());
 		break;
-	case BPF_MAP_TYPE_ARRAY:
+	case bpf_map_type::BPF_MAP_TYPE_ARRAY:
 		memory.destroy<array_map_impl>(container_name.c_str());
 		break;
-	case BPF_MAP_TYPE_RINGBUF:
+	case bpf_map_type::BPF_MAP_TYPE_RINGBUF:
 		memory.destroy<ringbuf_map_impl>(container_name.c_str());
 		break;
-	case BPF_MAP_TYPE_PERF_EVENT_ARRAY:
+	case bpf_map_type::BPF_MAP_TYPE_PERF_EVENT_ARRAY:
 		memory.destroy<perf_event_array_map_impl>(
 			container_name.c_str());
 		break;
-	case BPF_MAP_TYPE_PERCPU_ARRAY:
+	case bpf_map_type::BPF_MAP_TYPE_PERCPU_ARRAY:
 		memory.destroy<per_cpu_array_map_impl>(container_name.c_str());
 		break;
-	case BPF_MAP_TYPE_PERCPU_HASH:
+	case bpf_map_type::BPF_MAP_TYPE_PERCPU_HASH:
 		memory.destroy<per_cpu_hash_map_impl>(container_name.c_str());
 		break;
 

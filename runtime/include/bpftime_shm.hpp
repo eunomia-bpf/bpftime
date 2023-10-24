@@ -27,6 +27,68 @@ struct bpf_map_attr {
 	uint32_t btf_key_type_id = 0;
 	uint32_t btf_value_type_id = 0;
 	uint64_t map_extra = 0;
+
+	// additional fields for bpftime only
+	uint32_t kernel_bpf_map_id = 0;
+};
+
+enum class bpf_event_type {
+	PERF_TYPE_HARDWARE = 0,
+	PERF_TYPE_SOFTWARE = 1,
+	PERF_TYPE_TRACEPOINT = 2,
+	PERF_TYPE_HW_CACHE = 3,
+	PERF_TYPE_RAW = 4,
+	PERF_TYPE_BREAKPOINT = 5,
+
+	// custom types
+	BPF_TYPE_UPROBE = 6,
+	BPF_TYPE_URETPROBE = 7,
+	BPF_TYPE_FILTER = 8,
+	BPF_TYPE_REPLACE = 9,
+};
+
+enum class bpf_map_type {
+	BPF_MAP_TYPE_UNSPEC,
+	BPF_MAP_TYPE_HASH,
+	BPF_MAP_TYPE_ARRAY,
+	BPF_MAP_TYPE_PROG_ARRAY,
+	BPF_MAP_TYPE_PERF_EVENT_ARRAY,
+	BPF_MAP_TYPE_PERCPU_HASH,
+	BPF_MAP_TYPE_PERCPU_ARRAY,
+	BPF_MAP_TYPE_STACK_TRACE,
+	BPF_MAP_TYPE_CGROUP_ARRAY,
+	BPF_MAP_TYPE_LRU_HASH,
+	BPF_MAP_TYPE_LRU_PERCPU_HASH,
+	BPF_MAP_TYPE_LPM_TRIE,
+	BPF_MAP_TYPE_ARRAY_OF_MAPS,
+	BPF_MAP_TYPE_HASH_OF_MAPS,
+	BPF_MAP_TYPE_DEVMAP,
+	BPF_MAP_TYPE_SOCKMAP,
+	BPF_MAP_TYPE_CPUMAP,
+	BPF_MAP_TYPE_XSKMAP,
+	BPF_MAP_TYPE_SOCKHASH,
+	BPF_MAP_TYPE_CGROUP_STORAGE_DEPRECATED,
+	/* BPF_MAP_TYPE_CGROUP_STORAGE is available to bpf programs
+	 * attaching to a cgroup. The newer BPF_MAP_TYPE_CGRP_STORAGE is
+	 * available to both cgroup-attached and other progs and
+	 * supports all functionality provided by
+	 * BPF_MAP_TYPE_CGROUP_STORAGE. So mark
+	 * BPF_MAP_TYPE_CGROUP_STORAGE deprecated.
+	 */
+	BPF_MAP_TYPE_CGROUP_STORAGE = BPF_MAP_TYPE_CGROUP_STORAGE_DEPRECATED,
+	BPF_MAP_TYPE_REUSEPORT_SOCKARRAY,
+	BPF_MAP_TYPE_PERCPU_CGROUP_STORAGE,
+	BPF_MAP_TYPE_QUEUE,
+	BPF_MAP_TYPE_STACK,
+	BPF_MAP_TYPE_SK_STORAGE,
+	BPF_MAP_TYPE_DEVMAP_HASH,
+	BPF_MAP_TYPE_STRUCT_OPS,
+	BPF_MAP_TYPE_RINGBUF,
+	BPF_MAP_TYPE_INODE_STORAGE,
+	BPF_MAP_TYPE_TASK_STORAGE,
+	BPF_MAP_TYPE_BLOOM_FILTER,
+	BPF_MAP_TYPE_USER_RINGBUF,
+	BPF_MAP_TYPE_CGRP_STORAGE,
 };
 
 enum class shm_open_type {
@@ -34,6 +96,42 @@ enum class shm_open_type {
 	SHM_OPEN_ONLY,
 	SHM_NO_CREATE,
 	SHM_CREATE_OR_OPEN,
+};
+
+enum class bpf_prog_type {
+	BPF_PROG_TYPE_UNSPEC,
+	BPF_PROG_TYPE_SOCKET_FILTER,
+	BPF_PROG_TYPE_KPROBE,
+	BPF_PROG_TYPE_SCHED_CLS,
+	BPF_PROG_TYPE_SCHED_ACT,
+	BPF_PROG_TYPE_TRACEPOINT,
+	BPF_PROG_TYPE_XDP,
+	BPF_PROG_TYPE_PERF_EVENT,
+	BPF_PROG_TYPE_CGROUP_SKB,
+	BPF_PROG_TYPE_CGROUP_SOCK,
+	BPF_PROG_TYPE_LWT_IN,
+	BPF_PROG_TYPE_LWT_OUT,
+	BPF_PROG_TYPE_LWT_XMIT,
+	BPF_PROG_TYPE_SOCK_OPS,
+	BPF_PROG_TYPE_SK_SKB,
+	BPF_PROG_TYPE_CGROUP_DEVICE,
+	BPF_PROG_TYPE_SK_MSG,
+	BPF_PROG_TYPE_RAW_TRACEPOINT,
+	BPF_PROG_TYPE_CGROUP_SOCK_ADDR,
+	BPF_PROG_TYPE_LWT_SEG6LOCAL,
+	BPF_PROG_TYPE_LIRC_MODE2,
+	BPF_PROG_TYPE_SK_REUSEPORT,
+	BPF_PROG_TYPE_FLOW_DISSECTOR,
+	BPF_PROG_TYPE_CGROUP_SYSCTL,
+	BPF_PROG_TYPE_RAW_TRACEPOINT_WRITABLE,
+	BPF_PROG_TYPE_CGROUP_SOCKOPT,
+	BPF_PROG_TYPE_TRACING,
+	BPF_PROG_TYPE_STRUCT_OPS,
+	BPF_PROG_TYPE_EXT,
+	BPF_PROG_TYPE_LSM,
+	BPF_PROG_TYPE_SK_LOOKUP,
+	BPF_PROG_TYPE_SYSCALL, /* a program that can execute syscalls */
+	BPF_PROG_TYPE_NETFILTER,
 };
 
 extern const shm_open_type global_shm_open_type;
@@ -81,7 +179,7 @@ int bpftime_maps_create(int fd, const char *name, bpftime::bpf_map_attr attr);
 
 // get the bpf map info from the global shared memory
 int bpftime_map_get_info(int fd, bpftime::bpf_map_attr *out_attr,
-			 const char **out_name, int *type);
+			 const char **out_name, bpftime::bpf_map_type *type);
 
 // get the map value size from the global shared memory by fd
 uint32_t bpftime_map_value_size_from_syscall(int fd);

@@ -174,10 +174,10 @@ static const char *const bpf_map_type_strings[] = {
 #define BPF_MAP_TYPE_MAX                                                       \
 	(sizeof(bpf_map_type_strings) / sizeof(bpf_map_type_strings[0]))
 
-static const char *get_bpf_map_type_string(enum bpf_map_type type)
+static const char *get_bpf_map_type_string(bpftime::bpf_map_type type)
 {
-	if (type >= 0 && type < BPF_MAP_TYPE_MAX) {
-		return bpf_map_type_strings[type];
+	if ((int)type >= 0 && (int)type < BPF_MAP_TYPE_MAX) {
+		return bpf_map_type_strings[(int)type];
 	}
 	return "Unknown";
 }

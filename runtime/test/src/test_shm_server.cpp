@@ -20,7 +20,7 @@ int main(int argc, const char **argv)
 {
 	bpftime_initialize_global_shm(shm_open_type::SHM_REMOVE_AND_CREATE);
 	bpftime::bpf_map_attr attr;
-	attr.type = bpf_map_handler::BPF_MAP_TYPE_HASH;
+	attr.type = bpf_map_type::BPF_MAP_TYPE_HASH;
 	bpftime_maps_create(-1, "test", attr);
 	return system(
 		(std::string("./test_shm_client_Tests") + " sub").c_str());

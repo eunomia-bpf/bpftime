@@ -31,51 +31,7 @@ class bpf_map_handler {
     public:
 	bpf_map_attr attr;
 	using general_map_impl_ptr = boost::interprocess::offset_ptr<void>;
-	enum bpf_map_type {
-		BPF_MAP_TYPE_UNSPEC,
-		BPF_MAP_TYPE_HASH,
-		BPF_MAP_TYPE_ARRAY,
-		BPF_MAP_TYPE_PROG_ARRAY,
-		BPF_MAP_TYPE_PERF_EVENT_ARRAY,
-		BPF_MAP_TYPE_PERCPU_HASH,
-		BPF_MAP_TYPE_PERCPU_ARRAY,
-		BPF_MAP_TYPE_STACK_TRACE,
-		BPF_MAP_TYPE_CGROUP_ARRAY,
-		BPF_MAP_TYPE_LRU_HASH,
-		BPF_MAP_TYPE_LRU_PERCPU_HASH,
-		BPF_MAP_TYPE_LPM_TRIE,
-		BPF_MAP_TYPE_ARRAY_OF_MAPS,
-		BPF_MAP_TYPE_HASH_OF_MAPS,
-		BPF_MAP_TYPE_DEVMAP,
-		BPF_MAP_TYPE_SOCKMAP,
-		BPF_MAP_TYPE_CPUMAP,
-		BPF_MAP_TYPE_XSKMAP,
-		BPF_MAP_TYPE_SOCKHASH,
-		BPF_MAP_TYPE_CGROUP_STORAGE_DEPRECATED,
-		/* BPF_MAP_TYPE_CGROUP_STORAGE is available to bpf programs
-		 * attaching to a cgroup. The newer BPF_MAP_TYPE_CGRP_STORAGE is
-		 * available to both cgroup-attached and other progs and
-		 * supports all functionality provided by
-		 * BPF_MAP_TYPE_CGROUP_STORAGE. So mark
-		 * BPF_MAP_TYPE_CGROUP_STORAGE deprecated.
-		 */
-		BPF_MAP_TYPE_CGROUP_STORAGE =
-			BPF_MAP_TYPE_CGROUP_STORAGE_DEPRECATED,
-		BPF_MAP_TYPE_REUSEPORT_SOCKARRAY,
-		BPF_MAP_TYPE_PERCPU_CGROUP_STORAGE,
-		BPF_MAP_TYPE_QUEUE,
-		BPF_MAP_TYPE_STACK,
-		BPF_MAP_TYPE_SK_STORAGE,
-		BPF_MAP_TYPE_DEVMAP_HASH,
-		BPF_MAP_TYPE_STRUCT_OPS,
-		BPF_MAP_TYPE_RINGBUF,
-		BPF_MAP_TYPE_INODE_STORAGE,
-		BPF_MAP_TYPE_TASK_STORAGE,
-		BPF_MAP_TYPE_BLOOM_FILTER,
-		BPF_MAP_TYPE_USER_RINGBUF,
-		BPF_MAP_TYPE_CGRP_STORAGE,
-	};
-	enum bpf_map_type type;
+	bpf_map_type type;
 	boost_shm_string name;
 	bpf_map_handler(const char *name,
 			boost::interprocess::managed_shared_memory &mem,

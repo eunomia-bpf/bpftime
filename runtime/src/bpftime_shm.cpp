@@ -122,7 +122,7 @@ void bpftime_close(int fd)
 	shm_holder.global_shared_memory.close_fd(fd);
 }
 int bpftime_map_get_info(int fd, bpftime::bpf_map_attr *out_attr,
-			 const char **out_name, int *type)
+			 const char **out_name, bpf_map_type *type)
 {
 	if (!shm_holder.global_shared_memory.is_map_fd(fd)) {
 		errno = ENOENT;
@@ -141,6 +141,7 @@ int bpftime_map_get_info(int fd, bpftime::bpf_map_attr *out_attr,
 	}
 	return 0;
 }
+
 int bpftime_is_ringbuf_map(int fd)
 {
 	return shm_holder.global_shared_memory.is_ringbuf_map_fd(fd);
@@ -150,6 +151,7 @@ int bpftime_is_array_map(int fd)
 {
 	return shm_holder.global_shared_memory.is_array_map_fd(fd);
 }
+
 void *bpftime_get_array_map_raw_data(int fd)
 {
 	if (auto array_impl =
@@ -162,6 +164,7 @@ void *bpftime_get_array_map_raw_data(int fd)
 		return nullptr;
 	}
 }
+
 void *bpftime_get_ringbuf_consumer_page(int ringbuf_fd)
 {
 	auto &shm = shm_holder.global_shared_memory;
@@ -175,6 +178,7 @@ void *bpftime_get_ringbuf_consumer_page(int ringbuf_fd)
 		return nullptr;
 	}
 }
+
 void *bpftime_get_ringbuf_producer_page(int ringbuf_fd)
 {
 	auto &shm = shm_holder.global_shared_memory;
@@ -188,6 +192,7 @@ void *bpftime_get_ringbuf_producer_page(int ringbuf_fd)
 		return nullptr;
 	}
 }
+
 void *bpftime_ringbuf_reserve(int fd, uint64_t size)
 {
 	auto &shm = shm_holder.global_shared_memory;
@@ -200,6 +205,7 @@ void *bpftime_ringbuf_reserve(int fd, uint64_t size)
 		return nullptr;
 	}
 }
+
 void bpftime_ringbuf_submit(int fd, void *data, int discard)
 {
 	auto &shm = shm_holder.global_shared_memory;
@@ -211,10 +217,12 @@ void bpftime_ringbuf_submit(int fd, void *data, int discard)
 		spdlog::error("Expected fd {} to be ringbuf map fd ", fd);
 	}
 }
+
 int bpftime_is_epoll_handler(int fd)
 {
 	return shm_holder.global_shared_memory.is_epoll_fd(fd);
 }
+
 int bpftime_epoll_wait(int fd, struct epoll_event *out_evts, int max_evt,
 		       int timeout)
 {
@@ -276,6 +284,7 @@ int bpftime_epoll_wait(int fd, struct epoll_event *out_evts, int max_evt,
 	}
 	return next_id;
 }
+
 int bpftime_add_software_perf_event(int cpu, int32_t sample_type,
 				    int64_t config)
 {
@@ -289,6 +298,7 @@ int bpftime_add_software_perf_event_fd_to_epoll(int swpe_fd, int epoll_fd,
 	return shm_holder.global_shared_memory.add_software_perf_event_to_epoll(
 		swpe_fd, epoll_fd, extra_data);
 }
+
 int bpftime_is_software_perf_event(int fd)
 {
 	return shm_holder.global_shared_memory.is_software_perf_event_handler_fd(
@@ -301,6 +311,7 @@ void *bpftime_get_software_perf_event_raw_buffer(int fd, size_t expected_size)
 		.get_software_perf_event_raw_buffer(fd, expected_size)
 		.value_or(nullptr);
 }
+
 int bpftime_perf_event_output(int fd, const void *buf, size_t sz)
 {
 	auto &shm = shm_holder.global_shared_memory;
@@ -321,11 +332,14 @@ int bpftime_perf_event_output(int fd, const void *buf, size_t sz)
 		return -1;
 	}
 }
+
 extern "C" uint64_t map_ptr_by_fd(uint32_t fd)
 {
 	if (!shm_holder.global_shared_memory.get_manager() ||
 	    !shm_holder.global_shared_memory.is_map_fd(fd)) {
 		errno = ENOENT;
+		spdlog::error("Expected fd {} to be a map fd", fd);
+		// Here we just ignore the wrong maps
 		return 0;
 	}
 	// Use a convenient way to represent a pointer
@@ -337,6 +351,8 @@ extern "C" uint64_t map_val(uint64_t map_ptr)
 	int fd = (int)(map_ptr >> 32);
 	if (!shm_holder.global_shared_memory.get_manager() ||
 	    !shm_holder.global_shared_memory.is_map_fd(fd)) {
+		spdlog::error("Expected fd {} to be a map fd", fd);
+		// here we just ignore the wrong maps
 		errno = ENOENT;
 		return 0;
 	}
