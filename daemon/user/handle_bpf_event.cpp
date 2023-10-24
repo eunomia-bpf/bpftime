@@ -292,15 +292,15 @@ int bpf_event_handler::handle_perf_event(const struct event *e)
 			// NO legacy bpf types
 			bool retprobe = attr->config &
 					(1 << determine_uprobe_retprobe_bit());
+			spdlog::debug("retprobe {}", retprobe);
 			size_t ref_ctr_off = attr->config >>
 					     PERF_UPROBE_REF_CTR_OFFSET_SHIFT;
-			const char *name =
-				(const char *)(uintptr_t)attr->config1;
-			uint64_t offset = attr->config2;
+			const char *name = e->perf_event_data.name_or_path;
+			uint64_t offset = e->perf_event_data.offset;
 			spdlog::debug(
-				"Creating uprobe name {} offset {} retprobe "
-				"{} ref_ctr_off {} attr->config={:x}",
-				name, offset, retprobe, ref_ctr_off,
+				"Creating uprobe name {} offset {} "
+				"ref_ctr_off {} attr->config={:x}",
+				name, offset, ref_ctr_off,
 				attr->config);
 			driver.bpftime_uprobe_create_server(
 				e->pid, e->perf_event_data.ret,
