@@ -225,7 +225,7 @@ int bpf_event_handler::handle_bpf_event(const struct event *e)
 				e->bpf_data.attr.btf_value_type_id;
 			attr.btf_vmlinux_value_type_id =
 				e->bpf_data.attr.btf_vmlinux_value_type_id;
-			attr.map_extra = e->bpf_data.attr.map_extra;
+			// attr.map_extra = e->bpf_data.attr.map_extra;
 			attr.ifindex = e->bpf_data.attr.map_ifindex;
 			driver.bpftime_maps_create_server(
 				e->pid, e->bpf_data.ret,
