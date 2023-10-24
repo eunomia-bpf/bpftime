@@ -67,6 +67,7 @@ int bpftime::start_daemon(struct daemon_config env)
 
 	obj = bpf_tracer_bpf__open();
 	if (!obj) {
+		err = -1;
 		fprintf(stderr, "failed to open BPF object\n");
 		goto cleanup;
 	}

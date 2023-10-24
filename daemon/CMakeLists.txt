@@ -10,13 +10,26 @@ add_executable(bpftime_daemon
     user/main.cpp 
     user/bpf_tracer.cpp 
     user/handle_bpf_event.cpp)
-add_dependencies(bpftime_daemon bpftime_daemon_ebpf_skel libbpf spdlog::spdlog)
+
+add_dependencies(bpftime_daemon 
+        bpftime_daemon_ebpf_skel 
+        libbpf 
+        spdlog::spdlog
+        runtime
+    )
 
 target_include_directories(bpftime_daemon PRIVATE 
     ${CMAKE_CURRENT_BINARY_DIR} 
     ${LIBBPF_INCLUDE_DIRS}
     ${CMAKE_CURRENT_SOURCE_DIR}
     ${CMAKE_CURRENT_SOURCE_DIR}/../vm/include
+    ${CMAKE_CURRENT_SOURCE_DIR}/../runtime/include
 )
-target_link_libraries(bpftime_daemon PRIVATE ${LIBBPF_LIBRARIES} elf z spdlog::spdlog)
+target_link_libraries(bpftime_daemon PRIVATE 
+        ${LIBBPF_LIBRARIES}
+        elf
+        z
+        spdlog::spdlog
+        runtime
+    )
 set_property(TARGET bpftime_daemon PROPERTY CXX_STANDARD 20)

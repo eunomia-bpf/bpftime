@@ -57,18 +57,8 @@ int bpf_event_handler::handle_open_events(const struct event *e)
 	struct tm *tm;
 	char ts[32];
 	time_t t;
-	int fd, err;
 	if (!config.show_open) {
 		return 0;
-	}
-
-	/* prepare fields */
-	if (e->open_data.ret >= 0) {
-		fd = e->open_data.ret;
-		err = 0;
-	} else {
-		fd = -1;
-		err = -e->open_data.ret;
 	}
 
 	/* print output */
