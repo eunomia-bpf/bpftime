@@ -6,7 +6,6 @@
 #include "bpftime_shm.hpp"
 #include <cstdint>
 
-const shm_open_type bpftime::global_shm_open_type = shm_open_type::SHM_NO_CREATE;
 
 const char *offset_record_path = "./test_ffi.off.txt";
 const char *btf_path = "./base.btf";

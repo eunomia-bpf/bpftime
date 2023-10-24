@@ -8,7 +8,6 @@
 
 using namespace bpftime;
 
-const shm_open_type bpftime::global_shm_open_type = shm_open_type::SHM_NO_CREATE;
 
 int test_register_ffi()
 {

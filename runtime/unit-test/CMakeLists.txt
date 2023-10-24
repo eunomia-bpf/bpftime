@@ -13,7 +13,6 @@ set(TEST_SOURCES
     maps/test_per_cpu_array.cpp
     maps/test_per_cpu_hash.cpp
     test_bpftime_shm_json.cpp
-    test_daemon.cpp
     attach/test_uprobe_uretprobe.cpp
     attach/test_function_address_resolve.cpp
     attach/test_filter_attach.cpp

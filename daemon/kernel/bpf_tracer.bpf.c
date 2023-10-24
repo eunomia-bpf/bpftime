@@ -5,8 +5,8 @@
 #include <bpf/bpf_helpers.h>
 #include <bpf/bpf_tracing.h>
 #include <bpf/bpf_core_read.h>
-#include "bpf-mocker-event.h"
-#include "bpf-utils.h"
+#include "../bpf_tracer_event.h"
+#include "bpf_utils.h"
 
 struct open_args_t {
 	const char *fname;
@@ -17,7 +17,7 @@ struct open_args_t {
 struct {
 	__uint(type, BPF_MAP_TYPE_HASH);
 	__uint(max_entries, 10240);
-	__type(key, u32);
+	__type(key, u64);
 	__type(value, struct open_args_t);
 } open_param_start SEC(".maps");
 
@@ -32,8 +32,8 @@ int tracepoint__syscalls__sys_enter_open(struct trace_event_raw_sys_enter *ctx)
 	args.fname = (const char *)ctx->args[0];
 	args.flags = (int)ctx->args[1];
 
-	u32 pid = bpf_get_current_pid_tgid() >> 32;
-	bpf_map_update_elem(&open_param_start, &pid, &args, 0);
+	u64 pid_tgid = bpf_get_current_pid_tgid();
+	bpf_map_update_elem(&open_param_start, &pid_tgid, &args, 0);
 	return 0;
 }
 
@@ -48,8 +48,8 @@ int tracepoint__syscalls__sys_enter_openat(struct trace_event_raw_sys_enter *ctx
 	args.fname = (const char *)ctx->args[1];
 	args.flags = (int)ctx->args[2];
 
-	u32 pid = bpf_get_current_pid_tgid() >> 32;
-	bpf_map_update_elem(&open_param_start, &pid, &args, 0);
+	u64 pid_tgid = bpf_get_current_pid_tgid();
+	bpf_map_update_elem(&open_param_start, &pid_tgid, &args, 0);
 	return 0;
 }
 
@@ -57,13 +57,13 @@ static __always_inline int trace_exit_open(struct trace_event_raw_sys_exit *ctx)
 {
 	struct event *event = NULL;
 	struct open_args_t *ap = NULL;
-	u32 pid = 0;
+	u64 pid_tgid = 0;
 
 	if (!filter_target()) {
 		return 0;
 	}
-	pid = bpf_get_current_pid_tgid() >> 32;
-	ap = bpf_map_lookup_elem(&open_param_start, &pid);
+	pid_tgid = bpf_get_current_pid_tgid();
+	ap = bpf_map_lookup_elem(&open_param_start, &pid_tgid);
 	if (!ap)
 		return 0; /* missed entry */
 
@@ -82,7 +82,7 @@ static __always_inline int trace_exit_open(struct trace_event_raw_sys_exit *ctx)
 	/* emit event */
 	bpf_ringbuf_submit(event, 0);
 cleanup:
-	bpf_map_delete_elem(&open_param_start, &pid);
+	bpf_map_delete_elem(&open_param_start, &pid_tgid);
 	return 0;
 }
 
@@ -107,13 +107,13 @@ struct bpf_args_t {
 struct {
 	__uint(type, BPF_MAP_TYPE_HASH);
 	__uint(max_entries, 10240);
-	__type(key, u32);
+	__type(key, u64);
 	__type(value, struct bpf_args_t);
 } bpf_param_start SEC(".maps");
 
 static bool should_modify_program(union bpf_attr *new_attr)
 {
-	if (new_attr->insn_cnt < 2 || disable_modify) {
+	if (new_attr->insn_cnt < 2 || !enable_replace_prog) {
 		return false;
 	}
 	// Only target BPF_PROG_TYPE_KPROBE and BPF_PROG_TYPE_TRACEPOINT
@@ -144,6 +144,7 @@ static int process_bpf_prog_load_events(union bpf_attr *attr)
 		   event->bpf_loaded_prog.insn_cnt);
 	event->bpf_loaded_prog.insn_cnt = insn_cnt;
 	event->bpf_loaded_prog.type = new_attr.prog_type;
+	event->bpf_loaded_prog.insns_ptr = (u64)insns;
 	// copy name of the program
 	*((__uint128_t *)&event->bpf_loaded_prog.prog_name) =
 		*((__uint128_t *)&new_attr.prog_name);
@@ -189,7 +190,7 @@ static int process_bpf_syscall_enter(struct trace_event_raw_sys_enter *ctx)
 	union bpf_attr *attr = (union bpf_attr *)ctx->args[1];
 
 	unsigned int size = (unsigned int)ctx->args[2];
-	if (!attr || size < sizeof(*attr)) {
+	if (!attr) {
 		return 0;
 	}
 
@@ -210,11 +211,11 @@ int tracepoint__syscalls__sys_enter_bpf(struct trace_event_raw_sys_enter *ctx)
 	struct bpf_args_t args = {};
 	args.cmd = (u32)ctx->args[0];
 	bpf_probe_read_user(&args.attr, sizeof(args.attr),
-					(void *)ctx->args[1]);
+			    (void *)ctx->args[1]);
 	args.attr_size = (u32)ctx->args[2];
 
-	u32 pid = bpf_get_current_pid_tgid() >> 32;
-	bpf_map_update_elem(&bpf_param_start, &pid, &args, 0);
+	u64 pid_tgid = bpf_get_current_pid_tgid();
+	bpf_map_update_elem(&bpf_param_start, &pid_tgid, &args, 0);
 
 	process_bpf_syscall_enter(ctx);
 	return 0;
@@ -224,7 +225,7 @@ static int process_bpf_syscall_exit(enum bpf_cmd cmd, union bpf_attr *attr,
 				    unsigned int size, int ret,
 				    struct trace_event_raw_sys_exit *ctx)
 {
-	if (!attr || size < sizeof(*attr)) {
+	if (!attr) {
 		return 0;
 	}
 
@@ -238,6 +239,9 @@ static int process_bpf_syscall_exit(enum bpf_cmd cmd, union bpf_attr *attr,
 	case BPF_LINK_CREATE:
 		set_bpf_fd_if_positive(ret);
 		break;
+	case BPF_BTF_LOAD:
+		set_bpf_fd_if_positive(ret);
+		break;
 	default:
 		break;
 	}
@@ -249,13 +253,12 @@ int tracepoint__syscalls__sys_exit_bpf(struct trace_event_raw_sys_exit *ctx)
 {
 	struct event *event = NULL;
 	struct bpf_args_t *ap = NULL;
-	u32 pid = 0;
 
 	if (!filter_target()) {
 		return 0;
 	}
-	pid = bpf_get_current_pid_tgid() >> 32;
-	ap = bpf_map_lookup_elem(&bpf_param_start, &pid);
+	u64 pid_tgid = bpf_get_current_pid_tgid();
+	ap = bpf_map_lookup_elem(&bpf_param_start, &pid_tgid);
 	if (!ap)
 		return 0; /* missed entry */
 
@@ -264,8 +267,8 @@ int tracepoint__syscalls__sys_exit_bpf(struct trace_event_raw_sys_exit *ctx)
 		return 0;
 	}
 	event->type = SYS_BPF;
-	bpf_probe_read(&event->bpf_data.attr, 
-				sizeof(event->bpf_data.attr), &ap->attr);
+	bpf_probe_read(&event->bpf_data.attr, sizeof(event->bpf_data.attr),
+		       &ap->attr);
 	event->bpf_data.attr_size = ap->attr_size;
 	event->bpf_data.bpf_cmd = ap->cmd;
 	event->bpf_data.ret = ctx->ret;
@@ -277,28 +280,41 @@ int tracepoint__syscalls__sys_exit_bpf(struct trace_event_raw_sys_exit *ctx)
 	/* emit event */
 	bpf_ringbuf_submit(event, 0);
 cleanup:
-	bpf_map_delete_elem(&bpf_param_start, &pid);
+	bpf_map_delete_elem(&bpf_param_start, &pid_tgid);
 	return 0;
 }
+
+char old_uprobe_path[PATH_LENTH] = "\0";
+struct perf_event_attr new_attr = {};
 
 static __always_inline int
 process_perf_event_open_enter(struct trace_event_raw_sys_enter *ctx)
 {
 	struct perf_event_attr *attr = (struct perf_event_attr *)ctx->args[0];
-	struct perf_event_attr new_attr = {};
 	if (!attr) {
 		return 0;
 	}
 	bpf_probe_read_user(&new_attr, sizeof(new_attr), attr);
-	// if (new_attr.type == uprobe_perf_type) {
-	// 	// found uprobe
-	// 	char new_path[] = "/home/yunwei/bpftime/benchmark/syscall/victim";
-	// 	new_attr.probe_offset = 0;
-	// 	bpf_probe_write_user(attr, &new_attr, sizeof(new_attr));
-	// 	bpf_probe_write_user(&new_attr.uprobe_path, &new_path,
-	// 			     sizeof(new_path));
-	// 	return 0;
-	// }
+	if (new_attr.type == uprobe_perf_type) {
+		// found uprobe
+		if (enable_replace_uprobe) {
+			new_attr.probe_offset = 0;
+			int size = bpf_probe_read_user_str(
+				old_uprobe_path, sizeof(old_uprobe_path),
+				(void *)new_attr.uprobe_path);
+			if (size <= 0) {
+				// no uprobe path
+				return 0;
+			}
+			if (size > PATH_LENTH) {
+				size = PATH_LENTH;
+			}
+			bpf_probe_write_user((void *)new_attr.uprobe_path,
+					     new_uprobe_path, size);
+			bpf_probe_write_user(attr, &new_attr, sizeof(new_attr));
+		}
+		return 0;
+	}
 	return 0;
 }
 
@@ -306,12 +322,15 @@ struct perf_event_args_t {
 	struct perf_event_attr attr;
 	int pid;
 	int cpu;
+
+	// we may modify the offset and name, so we keep it here
+	char name_or_path[NAME_MAX];
 };
 
 struct {
 	__uint(type, BPF_MAP_TYPE_HASH);
 	__uint(max_entries, 10240);
-	__type(key, u32);
+	__type(key, u64);
 	__type(value, struct perf_event_args_t);
 } perf_event_open_param_start SEC(".maps");
 
@@ -323,17 +342,18 @@ int tracepoint__syscalls__sys_enter_perf_event_open(
 	if (!filter_target()) {
 		return 0;
 	}
-	/* store arg info for later lookup */
 
 	/* store arg info for later lookup */
 	struct perf_event_args_t args = {};
 	bpf_probe_read_user(&args.attr, sizeof(args.attr),
-					(void *)ctx->args[0]);
+			    (void *)ctx->args[0]);
 	args.pid = (int)ctx->args[1];
 	args.cpu = (int)ctx->args[2];
+	bpf_probe_read_user_str(args.name_or_path, PATH_LENTH,
+				(const void *)args.attr.uprobe_path);
 
-	u32 pid = bpf_get_current_pid_tgid() >> 32;
-	bpf_map_update_elem(&perf_event_open_param_start, &pid, &args, 0);
+	u64 pid_tgid = bpf_get_current_pid_tgid();
+	bpf_map_update_elem(&perf_event_open_param_start, &pid_tgid, &args, 0);
 
 	process_perf_event_open_enter(ctx);
 	return 0;
@@ -345,16 +365,15 @@ int tracepoint__syscalls__sys_exit_perf_event_open(
 {
 	struct event *event = NULL;
 	struct perf_event_args_t *ap = NULL;
-	u32 pid = 0;
 
 	if (!filter_target()) {
 		return 0;
 	}
-	pid = bpf_get_current_pid_tgid() >> 32;
-	ap = bpf_map_lookup_elem(&perf_event_open_param_start, &pid);
+	u64 pid_tgid = bpf_get_current_pid_tgid();
+	ap = bpf_map_lookup_elem(&perf_event_open_param_start, &pid_tgid);
 	if (!ap)
 		return 0; /* missed entry */
-	
+
 	set_bpf_fd_if_positive(ctx->ret);
 
 	/* event data */
@@ -365,15 +384,17 @@ int tracepoint__syscalls__sys_exit_perf_event_open(
 	event->type = SYS_PERF_EVENT_OPEN;
 
 	bpf_probe_read(&event->perf_event_data.attr,
-				sizeof(event->perf_event_data.attr), &ap->attr);
+		       sizeof(event->perf_event_data.attr), &ap->attr);
 	event->perf_event_data.pid = ap->pid;
 	event->perf_event_data.cpu = ap->cpu;
 	event->perf_event_data.ret = ctx->ret;
+	bpf_probe_read(event->perf_event_data.name_or_path, PATH_LENTH,
+		       ap->name_or_path);
 
 	/* emit event */
 	bpf_ringbuf_submit(event, 0);
 cleanup:
-	bpf_map_delete_elem(&bpf_param_start, &pid);
+	bpf_map_delete_elem(&perf_event_open_param_start, &pid_tgid);
 	return 0;
 }
 
@@ -399,7 +420,75 @@ int tracepoint__syscalls__sys_enter_close(struct trace_event_raw_sys_enter *ctx)
 	event->close_data.fd = fd;
 	/* emit event */
 	bpf_ringbuf_submit(event, 0);
-	
+	clear_bpf_fd(fd);
+	return 0;
+}
+
+struct ioctl_args_t {
+	int fd;
+	unsigned long req;
+	int data;
+};
+
+struct {
+	__uint(type, BPF_MAP_TYPE_HASH);
+	__uint(max_entries, 10240);
+	__type(key, u64);
+	__type(value, struct ioctl_args_t);
+} ioctl_param_start SEC(".maps");
+
+SEC("tracepoint/syscalls/sys_enter_ioctl")
+int tracepoint__syscalls__sys_enter_ioctl(struct trace_event_raw_sys_enter *ctx)
+{
+	struct event *event;
+	if (!filter_target()) {
+		return 0;
+	}
+	int fd = (int)ctx->args[0];
+	if (!is_bpf_fd(fd)) {
+		return 0;
+	}
+	/* store arg info for later lookup */
+	struct ioctl_args_t args = {};
+	args.fd = fd;
+	args.req = (int)ctx->args[1];
+	args.data = (int)ctx->args[2];
+
+	u64 pid_tgid = bpf_get_current_pid_tgid();
+	bpf_map_update_elem(&ioctl_param_start, &pid_tgid, &args, 0);
+	return 0;
+}
+
+SEC("tracepoint/syscalls/sys_exit_ioctl")
+int tracepoint__syscalls__sys_exit_ioctl(struct trace_event_raw_sys_exit *ctx)
+{
+	struct event *event = NULL;
+	struct ioctl_args_t *ap = NULL;
+
+	if (!filter_target()) {
+		return 0;
+	}
+	u64 pid_tgid = bpf_get_current_pid_tgid();
+	ap = bpf_map_lookup_elem(&ioctl_param_start, &pid_tgid);
+	if (!ap)
+		return 0; /* missed entry */
+
+	/* event data */
+	event = fill_basic_event_info();
+	if (!event) {
+		return 0;
+	}
+	event->type = SYS_IOCTL;
+
+	event->ioctl_data.data = ap->data;
+	event->ioctl_data.fd = ap->fd;
+	event->ioctl_data.req = ap->req;
+	event->ioctl_data.ret = ctx->ret;
+
+	/* emit event */
+	bpf_ringbuf_submit(event, 0);
+cleanup:
+	bpf_map_delete_elem(&ioctl_param_start, &pid_tgid);
 	return 0;
 }
 

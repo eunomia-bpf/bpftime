@@ -30,9 +30,10 @@ struct bpf_map_attr {
 };
 
 enum class shm_open_type {
-	SHM_SERVER,
-	SHM_CLIENT,
+	SHM_REMOVE_AND_CREATE,
+	SHM_OPEN_ONLY,
 	SHM_NO_CREATE,
+	SHM_CREATE_OR_OPEN,
 };
 
 extern const shm_open_type global_shm_open_type;
@@ -43,9 +44,14 @@ bpftime::agent_config &bpftime_get_agent_config();
 extern "C" {
 
 // initialize the global shared memory for store bpf progs and maps
-void bpftime_initialize_global_shm();
-// destroy the global shared memory
+void bpftime_initialize_global_shm(bpftime::shm_open_type type);
+// destroy the global shared memory data structure
+//
+// Note: this will NO remove the global shared memory from system
+// 	 use bpftime_remove_global_shm() to remove the global shared memory
 void bpftime_destroy_global_shm();
+// remove the global shared memory from system
+void bpftime_remove_global_shm();
 
 // import the global shared memory from json file
 int bpftime_import_global_shm_from_json(const char *filename);

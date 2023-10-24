@@ -5,11 +5,7 @@ package.json
 *.skel.yaml
 package.yaml
 ecli
-bootstrap
+minimal
 .output
-bpf_tracer
+test
 victim
-victim2
-test.txt
-hijacked
-my_test.txt

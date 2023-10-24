@@ -8,7 +8,7 @@
 
 using namespace bpftime;
 
-static struct env env = { .uid = static_cast<uid_t>(-1) };
+static struct daemon_config env = { .uid = static_cast<uid_t>(-1) };
 
 const char *argp_program_version = "bpftime-daemon 0.1";
 const char *argp_program_bug_address = "https://github.com/eunomia-bpf/bpftime";
@@ -19,7 +19,6 @@ static const struct argp_option opts[] = {
 	{ "uid", 'u', "UID", 0, "User ID to trace" },
 	{ "open", 'o', "OPEN", 0, "Show open events" },
 	{ "verbose", 'v', NULL, 0, "Verbose debug output" },
-	{ "failed", 'x', NULL, 0, "Failed opens only" },
 	{},
 };
 
@@ -31,9 +30,6 @@ static error_t parse_arg(int key, char *arg, struct argp_state *state)
 	switch (key) {
 	case 'v':
 		env.verbose = true;
-		break;
-	case 'x':
-		env.failed = true;
 		break;
 	case 'o':
 		env.show_open = true;
@@ -78,7 +74,8 @@ int main(int argc, char **argv)
 		.doc = argp_program_doc,
 	};
 	int err;
-
+	// use current path as default path
+	strncpy(env.new_uprobe_path, argv[0], PATH_LENTH);
 	err = argp_parse(&argp, argc, argv, 0, NULL, NULL);
 	if (err)
 		return err;

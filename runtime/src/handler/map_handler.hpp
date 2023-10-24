@@ -132,8 +132,48 @@ class bpf_map_handler {
 	// *
 	const void *map_lookup_elem(const void *key,
 				    bool from_userspace = false) const;
+	// * BPF_MAP_UPDATE_ELEM
+	// *	Description
+	// *		Create or update an element (key/value pair) in a specified map.
+	// *
+	// *		The *flags* argument should be specified as one of the
+	// *		following:
+	// *
+	// *		**BPF_ANY**
+	// *			Create a new element or update an existing element.
+	// *		**BPF_NOEXIST**
+	// *			Create a new element only if it did not exist.
+	// *		**BPF_EXIST**
+	// *			Update an existing element.
+	// *		**BPF_F_LOCK**
+	// *			Update a spin_lock-ed map element.
+	// *
+	// *	Return
+	// *		Returns zero on success. On error, -1 is returned and *errno*
+	// *		is set appropriately.
+	// *
+	// *		May set *errno* to **EINVAL**, **EPERM**, **ENOMEM**,
+	// *		**E2BIG**, **EEXIST**, or **ENOENT**.
+	// *
+	// *		**E2BIG**
+	// *			The number of elements in the map reached the
+	// *			*max_entries* limit specified at map creation time.
+	// *		**EEXIST**
+	// *			If *flags* specifies **BPF_NOEXIST** and the element
+	// *			with *key* already exists in the map.
+	// *		**ENOENT**
+	// *			If *flags* specifies **BPF_EXIST** and the element with
+	// *			*key* does not exist in the map.
+	// *
 	long map_update_elem(const void *key, const void *value, uint64_t flags,
 			     bool from_userspace = false) const;
+	// * BPF_MAP_DELETE_ELEM
+	// *	Description
+	// *		Look up and delete an element by key in a specified map.
+	// *
+	// *	Return
+	// *		Returns zero on success. On error, -1 is returned and *errno*
+	// *		is set appropriately.
 	long map_delete_elem(const void *key,
 			     bool from_userspace = false) const;
 	// * BPF_MAP_GET_NEXT_KEY

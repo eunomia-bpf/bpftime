@@ -1,4 +1,4 @@
-// Description: bpf-mocker daemon
+// Description: bpf_tracer daemon
 #include <argp.h>
 #include <signal.h>
 #include <stdio.h>
@@ -10,11 +10,14 @@
 #include <bpf/libbpf.h>
 #include <bpf/bpf.h>
 #include <linux/perf_event.h>
-#include "bpf-mocker-event.h"
-#include "bpf-mocker.skel.h"
+#include "bpf_tracer_event.h"
+#include "bpf_tracer.skel.h"
 #include "daemon_config.hpp"
 #include "handle_bpf_event.hpp"
 #include "daemon.hpp"
+#include <cassert>
+#include <spdlog/spdlog.h>
+#include <spdlog/cfg/env.h>
 
 #define NSEC_PER_SEC 1000000000ULL
 
@@ -22,7 +25,6 @@ using namespace bpftime;
 
 static volatile sig_atomic_t exiting = 0;
 static bool verbose = false;
-static bpf_event_handler handler({});
 
 static int libbpf_print_fn(enum libbpf_print_level level, const char *format,
 			   va_list args)
@@ -41,26 +43,26 @@ static void sig_int(int signo)
 static int handle_event_rb(void *ctx, void *data, size_t data_sz)
 {
 	const struct event *e = (const struct event *)data;
-	handler.handle_event(e);
+	bpf_event_handler* handler = (bpf_event_handler*)ctx;
+	assert(handler != NULL);
+	handler->handle_event(e);
 	return 0;
 }
 
-void handle_lost_events(void *ctx, int cpu, __u64 lost_cnt)
-{
-	fprintf(stderr, "Lost %llu events on CPU #%d!\n", lost_cnt, cpu);
-}
-
-int bpftime::start_daemon(struct env env)
+int bpftime::start_daemon(struct daemon_config env)
 {
 	LIBBPF_OPTS(bpf_object_open_opts, open_opts);
 	struct ring_buffer *rb = NULL;
-	struct bpf_mocker_bpf *obj = NULL;
+	struct bpf_tracer_bpf *obj = NULL;
 	int err;
+
+	spdlog::cfg::load_env_levels();
 
 	libbpf_set_print(libbpf_print_fn);
 	
+	bpftime_driver driver(env);
 	// update handler config
-	handler = bpf_event_handler(env);
+	bpf_event_handler handler = bpf_event_handler(env, driver);
 	verbose = env.verbose;
 
 	if (signal(SIGINT, sig_int) == SIG_ERR) {
@@ -70,32 +72,35 @@ int bpftime::start_daemon(struct env env)
 		goto cleanup;
 	}
 
-	obj = bpf_mocker_bpf__open();
+	obj = bpf_tracer_bpf__open();
 	if (!obj) {
+		err = -1;
 		fprintf(stderr, "failed to open BPF object\n");
 		goto cleanup;
 	}
 
 	/* initialize global data (filtering options) */
 	obj->rodata->target_pid = env.pid;
-	obj->rodata->disable_modify = true;
+	obj->rodata->enable_replace_prog = env.enable_replace_prog;
+	strncpy(obj->rodata->new_uprobe_path, env.new_uprobe_path, PATH_LENTH);
+	obj->rodata->enable_replace_uprobe = env.enable_replace_uprobe;
 	obj->rodata->uprobe_perf_type = determine_uprobe_perf_type();
 	obj->rodata->kprobe_perf_type = determine_kprobe_perf_type();
 
-	err = bpf_mocker_bpf__load(obj);
+	err = bpf_tracer_bpf__load(obj);
 	if (err) {
 		fprintf(stderr, "failed to load BPF object: %d\n", err);
 		goto cleanup;
 	}
 
-	err = bpf_mocker_bpf__attach(obj);
+	err = bpf_tracer_bpf__attach(obj);
 	if (err) {
 		fprintf(stderr, "failed to attach BPF programs\n");
 		goto cleanup;
 	}
 
 	/* Set up ring buffer polling */
-	rb = ring_buffer__new(bpf_map__fd(obj->maps.rb), handle_event_rb, NULL,
+	rb = ring_buffer__new(bpf_map__fd(obj->maps.rb), handle_event_rb, &handler,
 			      NULL);
 	if (!rb) {
 		err = -1;
@@ -117,7 +122,7 @@ int bpftime::start_daemon(struct env env)
 
 cleanup:
 	ring_buffer__free(rb);
-	bpf_mocker_bpf__destroy(obj);
+	bpf_tracer_bpf__destroy(obj);
 
 	return err != 0;
 }

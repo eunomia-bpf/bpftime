@@ -77,7 +77,7 @@ class bpftime_shm {
 					bool from_userspace) const;
 
 	long bpf_map_update_elem(int fd, const void *key, const void *value,
-			     uint64_t flags, bool from_userspace) const;
+				 uint64_t flags, bool from_userspace) const;
 
 	long bpf_delete_elem(int fd, const void *key,
 			     bool from_userspace) const;
@@ -88,11 +88,21 @@ class bpftime_shm {
 	// create an uprobe fd
 	int add_uprobe(int fd, int pid, const char *name, uint64_t offset,
 		       bool retprobe, size_t ref_ctr_off);
+	// create a tracepoint fd
 	int add_tracepoint(int fd, int pid, int32_t tracepoint_id);
 	int add_software_perf_event(int cpu, int32_t sample_type,
 				    int64_t config);
+
+	// check and attach a perf event to a bpf program
 	int attach_perf_to_bpf(int perf_fd, int bpf_fd);
+
+	// add a attach target to a bpf program without checking the perf event
+	int add_bpf_prog_attach_target(int perf_fd, int bpf_fd);
+
+	// enable a perf event
 	int perf_event_enable(int fd) const;
+
+	// disable a perf event
 	int perf_event_disable(int fd) const;
 	int add_ringbuf_to_epoll(int ringbuf_fd, int epoll_fd,
 				 epoll_data_t extra_data);
@@ -104,11 +114,11 @@ class bpftime_shm {
 	// The fake fd should be closed by the caller.
 	void close_fd(int fd);
 	bool is_exist_fake_fd(int fd) const;
-	
+
 	// initialize the shared memory globally
-	bpftime_shm();
+	bpftime_shm(bpftime::shm_open_type type);
 	// initialize the shared memory with a given name
-	bpftime_shm(const char* shm_name, shm_open_type type);
+	bpftime_shm(const char *shm_name, shm_open_type type);
 
 	const handler_manager *get_manager() const;
 

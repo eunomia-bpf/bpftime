@@ -57,7 +57,7 @@ const unsigned char bpf_add_mem_64_bit_minimal[] =
 
 TEST_CASE("Test bpftime shm json import/export")
 {
-	bpftime_shm shm(SHM_NAME, shm_open_type::SHM_SERVER);
+	bpftime_shm shm(SHM_NAME, shm_open_type::SHM_REMOVE_AND_CREATE);
 
 	SECTION("Test shm json export")
 	{
@@ -79,6 +79,7 @@ TEST_CASE("Test bpftime shm json import/export")
 					      .key_size = 4,
 					      .value_size = 4,
 					      .max_ents = 10 });
+		shm.attach_perf_to_bpf(5, 4);
 		int res = bpftime_export_shm_to_json(shm,
 					   "/tmp/bpftime_test_shm_json.json");
         REQUIRE(res == 0);
@@ -86,7 +87,7 @@ TEST_CASE("Test bpftime shm json import/export")
 
 	SECTION("Test shm json import")
 	{
-		bpftime_shm shm2(SHM_NAME, shm_open_type::SHM_CLIENT);
+		bpftime_shm shm2(SHM_NAME, shm_open_type::SHM_OPEN_ONLY);
 		bpftime_import_shm_from_json(shm2,
 		                 "/tmp/bpftime_test_shm_json.json");
 		REQUIRE(shm2.is_prog_fd(4));
