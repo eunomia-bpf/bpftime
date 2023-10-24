@@ -297,7 +297,7 @@ int bpf_event_handler::handle_perf_event(const struct event *e)
 			size_t ref_ctr_off = attr->config >>
 					     PERF_UPROBE_REF_CTR_OFFSET_SHIFT;
 			const char *name = e->perf_event_data.name_or_path;
-			uint64_t offset = e->perf_event_data.offset;
+			uint64_t offset = e->perf_event_data.attr.probe_offset;
 			spdlog::debug("Creating uprobe name {} offset {} "
 				      "ref_ctr_off {} attr->config={:x}",
 				      name, offset, ref_ctr_off, attr->config);

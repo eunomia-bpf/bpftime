@@ -211,7 +211,7 @@ int tracepoint__syscalls__sys_enter_bpf(struct trace_event_raw_sys_enter *ctx)
 	struct bpf_args_t args = {};
 	args.cmd = (u32)ctx->args[0];
 	bpf_probe_read_user(&args.attr, sizeof(args.attr),
-					(void *)ctx->args[1]);
+			    (void *)ctx->args[1]);
 	args.attr_size = (u32)ctx->args[2];
 
 	u64 pid_tgid = bpf_get_current_pid_tgid();
@@ -267,8 +267,8 @@ int tracepoint__syscalls__sys_exit_bpf(struct trace_event_raw_sys_exit *ctx)
 		return 0;
 	}
 	event->type = SYS_BPF;
-	bpf_probe_read(&event->bpf_data.attr, 
-				sizeof(event->bpf_data.attr), &ap->attr);
+	bpf_probe_read(&event->bpf_data.attr, sizeof(event->bpf_data.attr),
+		       &ap->attr);
 	event->bpf_data.attr_size = ap->attr_size;
 	event->bpf_data.bpf_cmd = ap->cmd;
 	event->bpf_data.ret = ctx->ret;
@@ -285,12 +285,12 @@ cleanup:
 }
 
 char old_uprobe_path[PATH_LENTH] = "\0";
+struct perf_event_attr new_attr = {};
 
 static __always_inline int
 process_perf_event_open_enter(struct trace_event_raw_sys_enter *ctx)
 {
 	struct perf_event_attr *attr = (struct perf_event_attr *)ctx->args[0];
-	struct perf_event_attr new_attr = {};
 	if (!attr) {
 		return 0;
 	}
@@ -299,9 +299,9 @@ process_perf_event_open_enter(struct trace_event_raw_sys_enter *ctx)
 		// found uprobe
 		if (enable_replace_uprobe) {
 			new_attr.probe_offset = 0;
-			int size = bpf_probe_read_user_str(old_uprobe_path,
-							   sizeof(old_uprobe_path),
-							   (void*)new_attr.uprobe_path);
+			int size = bpf_probe_read_user_str(
+				old_uprobe_path, sizeof(old_uprobe_path),
+				(void *)new_attr.uprobe_path);
 			if (size <= 0) {
 				// no uprobe path
 				return 0;
@@ -309,8 +309,8 @@ process_perf_event_open_enter(struct trace_event_raw_sys_enter *ctx)
 			if (size > PATH_LENTH) {
 				size = PATH_LENTH;
 			}
-			bpf_probe_write_user((void*)new_attr.uprobe_path, new_uprobe_path,
-						size);
+			bpf_probe_write_user((void *)new_attr.uprobe_path,
+					     new_uprobe_path, size);
 			bpf_probe_write_user(attr, &new_attr, sizeof(new_attr));
 		}
 		return 0;
@@ -322,6 +322,9 @@ struct perf_event_args_t {
 	struct perf_event_attr attr;
 	int pid;
 	int cpu;
+
+	// we may modify the offset and name, so we keep it here
+	char name_or_path[NAME_MAX];
 };
 
 struct {
@@ -343,9 +346,11 @@ int tracepoint__syscalls__sys_enter_perf_event_open(
 	/* store arg info for later lookup */
 	struct perf_event_args_t args = {};
 	bpf_probe_read_user(&args.attr, sizeof(args.attr),
-					(void *)ctx->args[0]);
+			    (void *)ctx->args[0]);
 	args.pid = (int)ctx->args[1];
 	args.cpu = (int)ctx->args[2];
+	bpf_probe_read_user_str(args.name_or_path, PATH_LENTH,
+				(const void *)args.attr.uprobe_path);
 
 	u64 pid_tgid = bpf_get_current_pid_tgid();
 	bpf_map_update_elem(&perf_event_open_param_start, &pid_tgid, &args, 0);
@@ -368,7 +373,7 @@ int tracepoint__syscalls__sys_exit_perf_event_open(
 	ap = bpf_map_lookup_elem(&perf_event_open_param_start, &pid_tgid);
 	if (!ap)
 		return 0; /* missed entry */
-	
+
 	set_bpf_fd_if_positive(ctx->ret);
 
 	/* event data */
@@ -379,10 +384,12 @@ int tracepoint__syscalls__sys_exit_perf_event_open(
 	event->type = SYS_PERF_EVENT_OPEN;
 
 	bpf_probe_read(&event->perf_event_data.attr,
-				sizeof(event->perf_event_data.attr), &ap->attr);
+		       sizeof(event->perf_event_data.attr), &ap->attr);
 	event->perf_event_data.pid = ap->pid;
 	event->perf_event_data.cpu = ap->cpu;
 	event->perf_event_data.ret = ctx->ret;
+	bpf_probe_read(event->perf_event_data.name_or_path, PATH_LENTH,
+		       ap->name_or_path);
 
 	/* emit event */
 	bpf_ringbuf_submit(event, 0);
@@ -431,8 +438,7 @@ struct {
 } ioctl_param_start SEC(".maps");
 
 SEC("tracepoint/syscalls/sys_enter_ioctl")
-int tracepoint__syscalls__sys_enter_ioctl(
-	struct trace_event_raw_sys_enter *ctx)
+int tracepoint__syscalls__sys_enter_ioctl(struct trace_event_raw_sys_enter *ctx)
 {
 	struct event *event;
 	if (!filter_target()) {
@@ -454,8 +460,7 @@ int tracepoint__syscalls__sys_enter_ioctl(
 }
 
 SEC("tracepoint/syscalls/sys_exit_ioctl")
-int tracepoint__syscalls__sys_exit_ioctl(
-	struct trace_event_raw_sys_exit *ctx)
+int tracepoint__syscalls__sys_exit_ioctl(struct trace_event_raw_sys_exit *ctx)
 {
 	struct event *event = NULL;
 	struct ioctl_args_t *ap = NULL;
