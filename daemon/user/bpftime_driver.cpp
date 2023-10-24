@@ -47,6 +47,7 @@ int bpftime_driver::bpftime_link_create_server(int server_pid, int fd,
 		return -1;
 	}
 	pid_fd_to_id_map[get_pid_fd_key(server_pid, fd)] = id;
+	spdlog::info("create link {} for pid {} fd {}", id, server_pid, fd);
 	return id;
 }
 
@@ -64,6 +65,7 @@ int bpftime_driver::bpftime_progs_create_server(int server_pid, int fd,
 		return -1;
 	}
 	pid_fd_to_id_map[get_pid_fd_key(server_pid, fd)] = id;
+	spdlog::info("create prog {} for pid {} fd {}", id, server_pid, fd);
 	return id;
 }
 
@@ -78,6 +80,7 @@ int bpftime_driver::bpftime_maps_create_server(int server_pid, int fd,
 		return -1;
 	}
 	pid_fd_to_id_map[get_pid_fd_key(server_pid, fd)] = id;
+	spdlog::info("create map {} for pid {} fd {}", id, server_pid, fd);
 	return id;
 }
 
@@ -101,6 +104,7 @@ int bpftime_driver::bpftime_attach_perf_to_bpf_server(int server_pid,
 		spdlog::error("Failed to attach perf to bpf");
 		return -1;
 	}
+	spdlog::info("attach perf {} to bpf {}, for pid {}", perf_id, bpf_id, server_pid);
 	return 0;
 }
 
@@ -111,11 +115,6 @@ int bpftime_driver::bpftime_uprobe_create_server(int server_pid, int fd,
 						 size_t ref_ctr_off)
 {
 	int id = find_minimal_unused_id();
-	int fd_id = check_and_get_pid_fd(server_pid, fd);
-	if (fd_id < 0) {
-		spdlog::error("fd {} for pid {} not exists", fd, server_pid);
-		return -1;
-	}
 	int res = bpftime_uprobe_create(id, target_pid, name, offset, retprobe,
 					ref_ctr_off);
 	if (res < 0) {
@@ -123,6 +122,7 @@ int bpftime_driver::bpftime_uprobe_create_server(int server_pid, int fd,
 		return -1;
 	}
 	pid_fd_to_id_map[get_pid_fd_key(server_pid, fd)] = id;
+	spdlog::info("create uprobe {} for pid {} fd {}", id, server_pid, fd);
 	return id;
 }
 
@@ -139,6 +139,7 @@ int bpftime_driver::bpftime_perf_event_enable_server(int server_pid, int fd)
 		spdlog::error("Failed to enable perf event");
 		return -1;
 	}
+	spdlog::info("enable perf event {} for pid {} fd {}", fd_id, server_pid, fd);
 	return 0;
 }
 // disable the perf event
@@ -154,6 +155,7 @@ int bpftime_driver::bpftime_perf_event_disable_server(int server_pid, int fd)
         spdlog::error("Failed to disable perf event");
         return -1;
     }
+	spdlog::info("disable perf event {} for pid {} fd {}", fd_id, server_pid, fd);
     return 0;
 }
 
@@ -166,6 +168,7 @@ void bpftime_driver::bpftime_close_server(int server_pid, int fd)
 	}
 	pid_fd_to_id_map.erase(get_pid_fd_key(server_pid, fd));
 	bpftime_close(fd_id);
+	spdlog::info("close id {} for pid {} fd {}", fd_id, server_pid, fd);
 }
 
 bpftime_driver::bpftime_driver(daemon_config cfg)

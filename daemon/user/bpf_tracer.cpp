@@ -16,6 +16,8 @@
 #include "handle_bpf_event.hpp"
 #include "daemon.hpp"
 #include <cassert>
+#include <spdlog/spdlog.h>
+#include <spdlog/cfg/env.h>
 
 #define NSEC_PER_SEC 1000000000ULL
 
@@ -53,6 +55,8 @@ int bpftime::start_daemon(struct daemon_config env)
 	struct ring_buffer *rb = NULL;
 	struct bpf_tracer_bpf *obj = NULL;
 	int err;
+
+	spdlog::cfg::load_env_levels();
 
 	libbpf_set_print(libbpf_print_fn);
 	

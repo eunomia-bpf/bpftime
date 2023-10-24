@@ -9,6 +9,9 @@
 #include "handle_bpf_event.hpp"
 #include "../bpf_tracer_event.h"
 
+#define PERF_UPROBE_REF_CTR_OFFSET_BITS 32
+#define PERF_UPROBE_REF_CTR_OFFSET_SHIFT 32
+
 using namespace bpftime;
 
 /*
@@ -50,6 +53,14 @@ int bpftime::determine_uprobe_perf_type(void)
 	const char *file = "/sys/bus/event_source/devices/uprobe/type";
 
 	return parse_uint_from_file(file, "%d\n");
+}
+
+int bpftime::determine_uprobe_retprobe_bit()
+{
+	const char *file =
+		"/sys/bus/event_source/devices/uprobe/format/retprobe";
+
+	return parse_uint_from_file(file, "config:%d\n");
 }
 
 int bpf_event_handler::handle_open_events(const struct event *e)
@@ -265,16 +276,38 @@ static const char *perf_type_id_strings[PERF_TYPE_MAX_ID] = {
 
 int bpf_event_handler::handle_perf_event(const struct event *e)
 {
-	const char *type_id_str =
-		e->perf_event_data.attr.type >=
-				(sizeof(perf_type_id_strings) /
-				 sizeof(perf_type_id_strings[0])) ?
-			"UNKNOWN TYPE" :
-			perf_type_id_strings[e->perf_event_data.attr.type];
+	const char *type_id_str = "UNKNOWN TYPE";
+	unsigned int perf_type = e->perf_event_data.attr.type;
+	if (perf_type >= 0 && perf_type < (sizeof(perf_type_id_strings) /
+					   sizeof(perf_type_id_strings[0]))) {
+		type_id_str = perf_type_id_strings[perf_type];
+	}
 
 	/* print output */
 	spdlog::info("PERF     {:<6} {:<16} type:{:<16} ret:{}\n", e->pid,
 		     e->comm, type_id_str, e->perf_event_data.ret);
+	if (config.is_driving_bpftime && e->perf_event_data.ret > 0) {
+		if (perf_type == (unsigned int)uprobe_type) {
+			auto attr = &e->perf_event_data.attr;
+			// NO legacy bpf types
+			bool retprobe = attr->config &
+					(1 << determine_uprobe_retprobe_bit());
+			size_t ref_ctr_off = attr->config >>
+					     PERF_UPROBE_REF_CTR_OFFSET_SHIFT;
+			const char *name =
+				(const char *)(uintptr_t)attr->config1;
+			uint64_t offset = attr->config2;
+			spdlog::debug(
+				"Creating uprobe name {} offset {} retprobe "
+				"{} ref_ctr_off {} attr->config={:x}",
+				name, offset, retprobe, ref_ctr_off,
+				attr->config);
+			driver.bpftime_uprobe_create_server(
+				e->pid, e->perf_event_data.ret,
+				e->perf_event_data.pid, name, offset, retprobe,
+				ref_ctr_off);
+		}
+	}
 	return 0;
 }
 
@@ -365,16 +398,17 @@ bpf_event_handler::bpf_event_handler(struct daemon_config config,
 	: config(config), driver(driver)
 {
 	current_pid = getpid();
-	int uprobe_type = determine_uprobe_perf_type();
+	uprobe_type = determine_uprobe_perf_type();
 	if (uprobe_type < 0 || uprobe_type >= PERF_TYPE_MAX_ID) {
 		spdlog::error("Failed to determine uprobe perf type");
 		exit(1);
 	}
 	perf_type_id_strings[uprobe_type] = "PERF_TYPE_UPROBE";
-	int kprobe_type = determine_kprobe_perf_type();
+	kprobe_type = determine_kprobe_perf_type();
 	if (kprobe_type < 0 || kprobe_type >= PERF_TYPE_MAX_ID) {
 		spdlog::error("Failed to determine kprobe perf type");
 		exit(1);
 	}
+
 	perf_type_id_strings[kprobe_type] = "PERF_TYPE_KPROBE";
 }
