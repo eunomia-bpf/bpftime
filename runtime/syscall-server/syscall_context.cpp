@@ -179,7 +179,7 @@ long syscall_context::handle_sysbpf(int cmd, union bpf_attr *attr, size_t size)
 		spdlog::debug("Getting info by fd");
 		bpftime::bpf_map_attr map_attr;
 		const char *map_name;
-		int map_type;
+		bpftime::bpf_map_type map_type;
 		int res = bpftime_map_get_info(attr->info.bpf_fd, &map_attr,
 					       &map_name, &map_type);
 		if (res < 0) {
@@ -190,7 +190,7 @@ long syscall_context::handle_sysbpf(int cmd, union bpf_attr *attr, size_t size)
 		ptr->btf_id = map_attr.btf_id;
 		ptr->btf_key_type_id = map_attr.btf_key_type_id;
 		ptr->btf_value_type_id = map_attr.btf_value_type_id;
-		ptr->type = map_type;
+		ptr->type = (int)map_type;
 		ptr->value_size = map_attr.value_size;
 		ptr->btf_vmlinux_value_type_id =
 			map_attr.btf_vmlinux_value_type_id;
@@ -238,14 +238,14 @@ int syscall_context::handle_perfevent(perf_event_attr *attr, pid_t pid, int cpu,
 		spdlog::debug("Created uprobe {}", id);
 		return id;
 	} else if ((int)attr->type ==
-		   (int)bpf_perf_event_handler::bpf_event_type::
+		   (int)bpf_event_type::
 			   PERF_TYPE_TRACEPOINT) {
 		spdlog::debug("Detected tracepoint perf event creation");
 		int fd = bpftime_tracepoint_create(-1/* let the shm alloc fd for us */, pid, (int32_t)attr->config);
 		spdlog::debug("Created tracepoint perf event with fd {}", fd);
 		return fd;
 	} else if ((int)attr->type ==
-		   (int)bpf_perf_event_handler::bpf_event_type::
+		   (int)bpf_event_type::
 			   PERF_TYPE_SOFTWARE) {
 		spdlog::debug("Detected software perf event creation");
 		int fd = bpftime_add_software_perf_event(cpu, attr->sample_type,

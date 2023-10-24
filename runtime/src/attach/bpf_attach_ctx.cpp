@@ -73,7 +73,7 @@ bool bpf_attach_ctx::check_exist_syscall_trace_program(
 					std::get<bpf_perf_event_handler>(
 						handler);
 				if (perf_event_handler.type ==
-				    bpf_perf_event_handler::bpf_event_type::
+				    bpf_event_type::
 					    PERF_TYPE_TRACEPOINT) {
 					const auto &tp_table =
 						get_global_syscall_tracepoint_table();
@@ -230,13 +230,13 @@ int bpf_attach_ctx::init_attach_ctx_from_handlers(
 				std::get<bpf_perf_event_handler>(handler);
 			void *func_addr = nullptr;
 			switch (event_handler.type) {
-			case bpf_perf_event_handler::bpf_event_type::
+			case bpf_event_type::
 				BPF_TYPE_FILTER:
-			case bpf_perf_event_handler::bpf_event_type::
+			case bpf_event_type::
 				BPF_TYPE_REPLACE:
-			case bpf_perf_event_handler::bpf_event_type::
+			case bpf_event_type::
 				BPF_TYPE_UPROBE:
-			case bpf_perf_event_handler::bpf_event_type::
+			case bpf_event_type::
 				BPF_TYPE_URETPROBE:
 				func_addr =
 					attach_manager
@@ -251,7 +251,7 @@ int bpf_attach_ctx::init_attach_ctx_from_handlers(
 			}
 			// attach base on events
 			switch (event_handler.type) {
-			case bpf_perf_event_handler::bpf_event_type::
+			case bpf_event_type::
 				BPF_TYPE_FILTER: {
 				auto progs = handler_prog_fds[i];
 				if (progs.size() > 1) {
@@ -277,7 +277,7 @@ int bpf_attach_ctx::init_attach_ctx_from_handlers(
 						i, err);
 				break;
 			}
-			case bpf_perf_event_handler::bpf_event_type::
+			case bpf_event_type::
 				BPF_TYPE_REPLACE: {
 				auto progs = handler_prog_fds[i];
 				if (progs.size() > 1) {
@@ -303,7 +303,7 @@ int bpf_attach_ctx::init_attach_ctx_from_handlers(
 						i, err);
 				break;
 			}
-			case bpf_perf_event_handler::bpf_event_type::
+			case bpf_event_type::
 				BPF_TYPE_UPROBE: {
 				spdlog::debug(
 					"Creating uprobe for perf event fd {}",
@@ -328,7 +328,7 @@ int bpf_attach_ctx::init_attach_ctx_from_handlers(
 						i, err);
 				break;
 			}
-			case bpf_perf_event_handler::bpf_event_type::
+			case bpf_event_type::
 				BPF_TYPE_URETPROBE: {
 				spdlog::debug(
 					"Creating uretprobe for perf event fd {}",
@@ -353,7 +353,7 @@ int bpf_attach_ctx::init_attach_ctx_from_handlers(
 						i, err);
 				break;
 			}
-			case bpf_perf_event_handler::bpf_event_type::
+			case bpf_event_type::
 				PERF_TYPE_TRACEPOINT: {
 				err = create_tracepoint(
 					event_handler.tracepoint_id, i,
@@ -366,7 +366,7 @@ int bpf_attach_ctx::init_attach_ctx_from_handlers(
 				assert(err >= 0);
 				break;
 			}
-			case bpf_perf_event_handler::bpf_event_type::
+			case bpf_event_type::
 				PERF_TYPE_SOFTWARE: {
 				spdlog::debug(
 					"Attaching software perf event, nothing need to do");

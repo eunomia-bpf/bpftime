@@ -10,6 +10,8 @@
 #include <boost/interprocess/smart_ptr/shared_ptr.hpp>
 #include <boost/interprocess/smart_ptr/weak_ptr.hpp>
 #include "linux/perf_event.h"
+#include "bpftime_shm.hpp"
+
 namespace bpftime
 {
 
@@ -89,20 +91,7 @@ using software_perf_event_weak_ptr = boost::interprocess::managed_weak_ptr<
 
 // perf event handler
 struct bpf_perf_event_handler {
-	enum class bpf_event_type {
-		PERF_TYPE_HARDWARE = 0,
-		PERF_TYPE_SOFTWARE = 1,
-		PERF_TYPE_TRACEPOINT = 2,
-		PERF_TYPE_HW_CACHE = 3,
-		PERF_TYPE_RAW = 4,
-		PERF_TYPE_BREAKPOINT = 5,
-
-		// custom types
-		BPF_TYPE_UPROBE = 6,
-		BPF_TYPE_URETPROBE = 7,
-		BPF_TYPE_FILTER = 8,
-		BPF_TYPE_REPLACE = 9,
-	} type;
+	bpf_event_type type;
 	int enable() const
 	{
 		// TODO: implement enable logic.

@@ -91,7 +91,7 @@ void attach_replace(bpftime::handler_manager &manager_ref,
 		0,
 		bpf_prog_handler(segment, prog->get_insns().data(),
 				 prog->get_insns().size(), prog->prog_name(),
-				 bpftime::bpf_map_handler::BPF_MAP_TYPE_UNSPEC),
+				 (int)bpftime::bpf_prog_type::BPF_PROG_TYPE_UNSPEC),
 		segment);
 	auto &prog_handler = std::get<bpf_prog_handler>(manager_ref[0]);
 	// the attach fd is 3
@@ -100,7 +100,7 @@ void attach_replace(bpftime::handler_manager &manager_ref,
 	manager_ref.set_handler(
 		3,
 		bpf_perf_event_handler(
-			bpf_perf_event_handler::bpf_event_type::BPF_TYPE_REPLACE,
+			bpf_event_type::BPF_TYPE_REPLACE,
 			offset, -1, "", segment),
 		segment);
 }

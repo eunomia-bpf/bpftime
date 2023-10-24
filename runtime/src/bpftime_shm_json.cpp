@@ -102,16 +102,16 @@ static int import_shm_handler_from_json(bpftime_shm &shm, json value, int fd)
 		int ref_ctr_off = value["attr"]["ref_ctr_off"];
 		std::string _module_name = value["attr"]["_module_name"];
 		int tracepoint_id = value["attr"]["tracepoint_id"];
-		switch ((bpf_perf_event_handler::bpf_event_type)type) {
-		case bpf_perf_event_handler::bpf_event_type::BPF_TYPE_UPROBE:
+		switch ((bpf_event_type)type) {
+		case bpf_event_type::BPF_TYPE_UPROBE:
 			shm.add_uprobe(fd, pid, _module_name.c_str(), offset,
 				       false, ref_ctr_off);
 			break;
-		case bpf_perf_event_handler::bpf_event_type::BPF_TYPE_URETPROBE:
+		case bpf_event_type::BPF_TYPE_URETPROBE:
 			shm.add_uprobe(fd, pid, _module_name.c_str(), offset,
 				       true, ref_ctr_off);
 			break;
-		case bpf_perf_event_handler::bpf_event_type::PERF_TYPE_TRACEPOINT:
+		case bpf_event_type::PERF_TYPE_TRACEPOINT:
 			shm.add_tracepoint(fd, pid, tracepoint_id);
 			break;
 		default:

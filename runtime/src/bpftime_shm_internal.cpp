@@ -229,7 +229,7 @@ int bpftime_shm::add_software_perf_event_to_epoll(int swpe_fd, int epoll_fd,
 	auto &perf_handler =
 		std::get<bpf_perf_event_handler>(manager->get_handler(swpe_fd));
 	if (perf_handler.type !=
-	    bpf_perf_event_handler::bpf_event_type::PERF_TYPE_SOFTWARE) {
+	    bpf_event_type::PERF_TYPE_SOFTWARE) {
 		spdlog::error(
 			"Expected perf fd {} to be a software perf event instance",
 			swpe_fd);
@@ -324,14 +324,14 @@ bool bpftime_shm::is_ringbuf_map_fd(int fd) const
 	if (!is_map_fd(fd))
 		return false;
 	auto &map_impl = std::get<bpf_map_handler>(manager->get_handler(fd));
-	return map_impl.type == map_impl.BPF_MAP_TYPE_RINGBUF;
+	return map_impl.type == bpf_map_type::BPF_MAP_TYPE_RINGBUF;
 }
 bool bpftime_shm::is_array_map_fd(int fd) const
 {
 	if (!is_map_fd(fd))
 		return false;
 	auto &map_impl = std::get<bpf_map_handler>(manager->get_handler(fd));
-	return map_impl.type == map_impl.BPF_MAP_TYPE_ARRAY;
+	return map_impl.type == bpf_map_type::BPF_MAP_TYPE_ARRAY;
 }
 std::optional<ringbuf_map_impl *>
 bpftime_shm::try_get_ringbuf_map_impl(int fd) const
@@ -555,7 +555,7 @@ bool bpftime_shm::is_software_perf_event_handler_fd(int fd) const
 		return false;
 	const auto &hd = std::get<bpf_perf_event_handler>(get_handler(fd));
 	return hd.type ==
-	       bpf_perf_event_handler::bpf_event_type::PERF_TYPE_SOFTWARE;
+	       bpf_event_type::PERF_TYPE_SOFTWARE;
 }
 
 bpftime::agent_config &bpftime_get_agent_config()
