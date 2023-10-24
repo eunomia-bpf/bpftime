@@ -301,11 +301,16 @@ process_perf_event_open_enter(struct trace_event_raw_sys_enter *ctx)
 			int size = bpf_probe_read_user_str(old_uprobe_path,
 							   sizeof(old_uprobe_path),
 							   (void*)new_attr.uprobe_path);
+			if (size <= 0) {
+				// no uprobe path
+				return 0;
+			}
+			if (size > PATH_LENTH) {
+				size = PATH_LENTH;
+			}
+			bpf_probe_write_user((void*)new_attr.uprobe_path, new_uprobe_path,
+						size);
 			bpf_probe_write_user(attr, &new_attr, sizeof(new_attr));
-			bpf_probe_write_user((void*)new_attr.uprobe_path, &new_uprobe_path,
-						sizeof(new_uprobe_path) > size ?
-							size :
-							sizeof(new_uprobe_path));
 		}
 		return 0;
 	}

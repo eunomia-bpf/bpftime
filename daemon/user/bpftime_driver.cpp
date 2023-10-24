@@ -42,10 +42,10 @@ int bpftime_driver::bpftime_link_create_server(int server_pid, int fd,
 	}
 
 	int res = bpftime_link_create(id, prog_id, fd_id);
-    if (res < 0) {
-        spdlog::error("Failed to create link");
-        return -1;
-    }
+	if (res < 0) {
+		spdlog::error("Failed to create link");
+		return -1;
+	}
 	pid_fd_to_id_map[get_pid_fd_key(server_pid, fd)] = id;
 	return id;
 }
@@ -57,11 +57,12 @@ int bpftime_driver::bpftime_progs_create_server(int server_pid, int fd,
 						int prog_type)
 {
 	int id = find_minimal_unused_id();
-    int res = bpftime_progs_create(id, insn, insn_cnt, prog_name, prog_type);
-    if (res < 0) {
-        spdlog::error("Failed to create prog");
-        return -1;
-    }
+	int res =
+		bpftime_progs_create(id, insn, insn_cnt, prog_name, prog_type);
+	if (res < 0) {
+		spdlog::error("Failed to create prog");
+		return -1;
+	}
 	pid_fd_to_id_map[get_pid_fd_key(server_pid, fd)] = id;
 	return id;
 }
@@ -70,37 +71,37 @@ int bpftime_driver::bpftime_maps_create_server(int server_pid, int fd,
 					       const char *name,
 					       bpftime::bpf_map_attr attr)
 {
-    int id = find_minimal_unused_id();
-    int res = bpftime_maps_create(id, name, attr);
-    if (res < 0) {
-        spdlog::error("Failed to create map");
-        return -1;
-    }
-    pid_fd_to_id_map[get_pid_fd_key(server_pid, fd)] = id;
-    return id;
+	int id = find_minimal_unused_id();
+	int res = bpftime_maps_create(id, name, attr);
+	if (res < 0) {
+		spdlog::error("Failed to create map");
+		return -1;
+	}
+	pid_fd_to_id_map[get_pid_fd_key(server_pid, fd)] = id;
+	return id;
 }
 
 int bpftime_driver::bpftime_attach_perf_to_bpf_server(int server_pid,
 						      int perf_fd, int bpf_fd)
 {
-    int perf_id = check_and_get_pid_fd(server_pid, perf_fd);
-    if (perf_id < 0) {
-        spdlog::error("perf fd {} for pid {} not exists", perf_fd,
-                  server_pid);
-        return -1;
-    }
-    int bpf_id = check_and_get_pid_fd(server_pid, bpf_fd);
-    if (bpf_id < 0) {
-        spdlog::error("bpf fd {} for pid {} not exists", bpf_fd,
-                  server_pid);
-        return -1;
-    }
-    int res = bpftime_attach_perf_to_bpf(perf_id, bpf_id);
-    if (res < 0) {
-        spdlog::error("Failed to attach perf to bpf");
-        return -1;
-    }
-    return 0;
+	int perf_id = check_and_get_pid_fd(server_pid, perf_fd);
+	if (perf_id < 0) {
+		spdlog::error("perf fd {} for pid {} not exists", perf_fd,
+			      server_pid);
+		return -1;
+	}
+	int bpf_id = check_and_get_pid_fd(server_pid, bpf_fd);
+	if (bpf_id < 0) {
+		spdlog::error("bpf fd {} for pid {} not exists", bpf_fd,
+			      server_pid);
+		return -1;
+	}
+	int res = bpftime_attach_perf_to_bpf(perf_id, bpf_id);
+	if (res < 0) {
+		spdlog::error("Failed to attach perf to bpf");
+		return -1;
+	}
+	return 0;
 }
 
 int bpftime_driver::bpftime_uprobe_create_server(int server_pid, int fd,
@@ -109,20 +110,62 @@ int bpftime_driver::bpftime_uprobe_create_server(int server_pid, int fd,
 						 uint64_t offset, bool retprobe,
 						 size_t ref_ctr_off)
 {
-    int id = find_minimal_unused_id();
+	int id = find_minimal_unused_id();
+	int fd_id = check_and_get_pid_fd(server_pid, fd);
+	if (fd_id < 0) {
+		spdlog::error("fd {} for pid {} not exists", fd, server_pid);
+		return -1;
+	}
+	int res = bpftime_uprobe_create(id, target_pid, name, offset, retprobe,
+					ref_ctr_off);
+	if (res < 0) {
+		spdlog::error("Failed to create uprobe");
+		return -1;
+	}
+	pid_fd_to_id_map[get_pid_fd_key(server_pid, fd)] = id;
+	return id;
+}
+
+// enable the perf event
+int bpftime_driver::bpftime_perf_event_enable_server(int server_pid, int fd)
+{
+	int fd_id = check_and_get_pid_fd(server_pid, fd);
+	if (fd_id < 0) {
+		spdlog::error("fd {} for pid {} not exists", fd, server_pid);
+		return -1;
+	}
+	int res = bpftime_perf_event_enable(fd_id);
+	if (res < 0) {
+		spdlog::error("Failed to enable perf event");
+		return -1;
+	}
+	return 0;
+}
+// disable the perf event
+int bpftime_driver::bpftime_perf_event_disable_server(int server_pid, int fd)
+{
     int fd_id = check_and_get_pid_fd(server_pid, fd);
     if (fd_id < 0) {
         spdlog::error("fd {} for pid {} not exists", fd, server_pid);
         return -1;
     }
-    int res = bpftime_uprobe_create(id, target_pid, name, offset, retprobe,
-                    ref_ctr_off);
+    int res = bpftime_perf_event_disable(fd_id);
     if (res < 0) {
-        spdlog::error("Failed to create uprobe");
+        spdlog::error("Failed to disable perf event");
         return -1;
     }
-    pid_fd_to_id_map[get_pid_fd_key(server_pid, fd)] = id;
-    return id;
+    return 0;
+}
+
+void bpftime_driver::bpftime_close_server(int server_pid, int fd)
+{
+	int fd_id = check_and_get_pid_fd(server_pid, fd);
+	if (fd_id < 0) {
+		spdlog::error("fd {} for pid {} not exists", fd, server_pid);
+		return;
+	}
+	pid_fd_to_id_map.erase(get_pid_fd_key(server_pid, fd));
+	bpftime_close(fd_id);
 }
 
 bpftime_driver::bpftime_driver(daemon_config cfg)
@@ -131,6 +174,7 @@ bpftime_driver::bpftime_driver(daemon_config cfg)
 	bpftime_initialize_global_shm(shm_open_type::SHM_REMOVE_AND_CREATE);
 }
 
-bpftime_driver::~bpftime_driver() {
-    bpftime_destroy_global_shm();
+bpftime_driver::~bpftime_driver()
+{
+	bpftime_destroy_global_shm();
 }

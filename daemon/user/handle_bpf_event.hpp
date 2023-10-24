@@ -3,11 +3,13 @@
 
 #include "../bpf_tracer_event.h"
 #include "daemon_config.hpp"
+#include "bpftime_driver.hpp"
 
 namespace bpftime {
 
 class bpf_event_handler {
     struct daemon_config config;
+    bpftime_driver &driver;
     
     int handle_close_event(const struct event *e);
     int handle_bpf_event(const struct event *e);
@@ -19,7 +21,7 @@ public:
     // callback function for bpf events in ring buffer
     int handle_event(const struct event *e);
 
-    bpf_event_handler(struct daemon_config config);
+    bpf_event_handler(struct daemon_config config, bpftime_driver &driver);
 };
 
 // determine the perf type for kprobe, exit if failed

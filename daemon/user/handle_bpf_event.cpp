@@ -174,6 +174,9 @@ int bpf_event_handler::handle_close_event(const struct event *e)
 {
 	spdlog::info("CLOSE    {:<6} {:<16} fd:{}", e->pid, e->comm,
 		     e->close_data.fd);
+	if (config.is_driving_bpftime) {
+		driver.bpftime_close_server(e->pid, e->close_data.fd);
+	}
 	return 0;
 }
 
@@ -262,12 +265,13 @@ int bpf_event_handler::handle_ioctl(const struct event *e)
 		     e->comm, fd, req, data);
 	if (req == PERF_EVENT_IOC_ENABLE) {
 		spdlog::info("Enabling perf event {}", fd);
-		// res = bpftime_perf_event_enable(fd);
-		// if (res >= 0)
-		// 	return res;
-		// spdlog::warn(
-		// 	"Failed to call mocked ioctl PERF_EVENT_IOC_ENABLE: {}",
-		// 	res);
+		res = driver.bpftime_perf_event_enable_server( e->pid, fd);
+		if (res < 0) {
+		spdlog::warn(
+			"Failed to call mocked ioctl PERF_EVENT_IOC_ENABLE: {}",
+			res);
+		}
+		return res;
 	} else if (req == PERF_EVENT_IOC_DISABLE) {
 		spdlog::info("Disabling perf event {}", fd);
 		// res = bpftime_perf_event_disable(fd);
@@ -314,8 +318,8 @@ int bpf_event_handler::handle_event(const struct event *e)
 	return 0;
 }
 
-bpf_event_handler::bpf_event_handler(struct daemon_config config)
-	: config(config)
+bpf_event_handler::bpf_event_handler(struct daemon_config config, bpftime_driver &driver)
+	: config(config), driver(driver)
 {
 	int uprobe_type = determine_uprobe_perf_type();
 	if (uprobe_type < 0 || uprobe_type >= PERF_TYPE_MAX_ID) {

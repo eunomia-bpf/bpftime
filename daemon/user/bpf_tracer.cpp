@@ -15,6 +15,7 @@
 #include "daemon_config.hpp"
 #include "handle_bpf_event.hpp"
 #include "daemon.hpp"
+#include <cassert>
 
 #define NSEC_PER_SEC 1000000000ULL
 
@@ -22,7 +23,6 @@ using namespace bpftime;
 
 static volatile sig_atomic_t exiting = 0;
 static bool verbose = false;
-static bpf_event_handler handler({});
 
 static int libbpf_print_fn(enum libbpf_print_level level, const char *format,
 			   va_list args)
@@ -41,7 +41,9 @@ static void sig_int(int signo)
 static int handle_event_rb(void *ctx, void *data, size_t data_sz)
 {
 	const struct event *e = (const struct event *)data;
-	handler.handle_event(e);
+	bpf_event_handler* handler = (bpf_event_handler*)ctx;
+	assert(handler != NULL);
+	handler->handle_event(e);
 	return 0;
 }
 
@@ -54,8 +56,9 @@ int bpftime::start_daemon(struct daemon_config env)
 
 	libbpf_set_print(libbpf_print_fn);
 	
+	bpftime_driver driver(env);
 	// update handler config
-	handler = bpf_event_handler(env);
+	bpf_event_handler handler = bpf_event_handler(env, driver);
 	verbose = env.verbose;
 
 	if (signal(SIGINT, sig_int) == SIG_ERR) {
@@ -75,6 +78,7 @@ int bpftime::start_daemon(struct daemon_config env)
 	/* initialize global data (filtering options) */
 	obj->rodata->target_pid = env.pid;
 	obj->rodata->enable_replace_prog = env.enable_replace_prog;
+	strncpy(obj->rodata->new_uprobe_path, env.new_uprobe_path, PATH_LENTH);
 	obj->rodata->enable_replace_uprobe = env.enable_replace_uprobe;
 	obj->rodata->uprobe_perf_type = determine_uprobe_perf_type();
 	obj->rodata->kprobe_perf_type = determine_kprobe_perf_type();
@@ -92,7 +96,7 @@ int bpftime::start_daemon(struct daemon_config env)
 	}
 
 	/* Set up ring buffer polling */
-	rb = ring_buffer__new(bpf_map__fd(obj->maps.rb), handle_event_rb, NULL,
+	rb = ring_buffer__new(bpf_map__fd(obj->maps.rb), handle_event_rb, &handler,
 			      NULL);
 	if (!rb) {
 		err = -1;

@@ -74,7 +74,8 @@ int main(int argc, char **argv)
 		.doc = argp_program_doc,
 	};
 	int err;
-
+	// use current path as default path
+	strncpy(env.new_uprobe_path, argv[0], PATH_LENTH);
 	err = argp_parse(&argp, argc, argv, 0, NULL, NULL);
 	if (err)
 		return err;
