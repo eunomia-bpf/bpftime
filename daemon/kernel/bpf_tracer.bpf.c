@@ -17,7 +17,7 @@ struct open_args_t {
 struct {
 	__uint(type, BPF_MAP_TYPE_HASH);
 	__uint(max_entries, 10240);
-	__type(key, u32);
+	__type(key, u64);
 	__type(value, struct open_args_t);
 } open_param_start SEC(".maps");
 
@@ -32,8 +32,8 @@ int tracepoint__syscalls__sys_enter_open(struct trace_event_raw_sys_enter *ctx)
 	args.fname = (const char *)ctx->args[0];
 	args.flags = (int)ctx->args[1];
 
-	u32 pid = bpf_get_current_pid_tgid() >> 32;
-	bpf_map_update_elem(&open_param_start, &pid, &args, 0);
+	u64 pid_tgid = bpf_get_current_pid_tgid();
+	bpf_map_update_elem(&open_param_start, &pid_tgid, &args, 0);
 	return 0;
 }
 
@@ -48,8 +48,8 @@ int tracepoint__syscalls__sys_enter_openat(struct trace_event_raw_sys_enter *ctx
 	args.fname = (const char *)ctx->args[1];
 	args.flags = (int)ctx->args[2];
 
-	u32 pid = bpf_get_current_pid_tgid() >> 32;
-	bpf_map_update_elem(&open_param_start, &pid, &args, 0);
+	u64 pid_tgid = bpf_get_current_pid_tgid();
+	bpf_map_update_elem(&open_param_start, &pid_tgid, &args, 0);
 	return 0;
 }
 
@@ -57,13 +57,13 @@ static __always_inline int trace_exit_open(struct trace_event_raw_sys_exit *ctx)
 {
 	struct event *event = NULL;
 	struct open_args_t *ap = NULL;
-	u32 pid = 0;
+	u64 pid_tgid = 0;
 
 	if (!filter_target()) {
 		return 0;
 	}
-	pid = bpf_get_current_pid_tgid() >> 32;
-	ap = bpf_map_lookup_elem(&open_param_start, &pid);
+	pid_tgid = bpf_get_current_pid_tgid();
+	ap = bpf_map_lookup_elem(&open_param_start, &pid_tgid);
 	if (!ap)
 		return 0; /* missed entry */
 
@@ -82,7 +82,7 @@ static __always_inline int trace_exit_open(struct trace_event_raw_sys_exit *ctx)
 	/* emit event */
 	bpf_ringbuf_submit(event, 0);
 cleanup:
-	bpf_map_delete_elem(&open_param_start, &pid);
+	bpf_map_delete_elem(&open_param_start, &pid_tgid);
 	return 0;
 }
 
@@ -107,7 +107,7 @@ struct bpf_args_t {
 struct {
 	__uint(type, BPF_MAP_TYPE_HASH);
 	__uint(max_entries, 10240);
-	__type(key, u32);
+	__type(key, u64);
 	__type(value, struct bpf_args_t);
 } bpf_param_start SEC(".maps");
 
@@ -189,7 +189,7 @@ static int process_bpf_syscall_enter(struct trace_event_raw_sys_enter *ctx)
 	union bpf_attr *attr = (union bpf_attr *)ctx->args[1];
 
 	unsigned int size = (unsigned int)ctx->args[2];
-	if (!attr || size < sizeof(*attr)) {
+	if (!attr) {
 		return 0;
 	}
 
@@ -213,8 +213,8 @@ int tracepoint__syscalls__sys_enter_bpf(struct trace_event_raw_sys_enter *ctx)
 					(void *)ctx->args[1]);
 	args.attr_size = (u32)ctx->args[2];
 
-	u32 pid = bpf_get_current_pid_tgid() >> 32;
-	bpf_map_update_elem(&bpf_param_start, &pid, &args, 0);
+	u64 pid_tgid = bpf_get_current_pid_tgid();
+	bpf_map_update_elem(&bpf_param_start, &pid_tgid, &args, 0);
 
 	process_bpf_syscall_enter(ctx);
 	return 0;
@@ -224,7 +224,7 @@ static int process_bpf_syscall_exit(enum bpf_cmd cmd, union bpf_attr *attr,
 				    unsigned int size, int ret,
 				    struct trace_event_raw_sys_exit *ctx)
 {
-	if (!attr || size < sizeof(*attr)) {
+	if (!attr) {
 		return 0;
 	}
 
@@ -238,6 +238,9 @@ static int process_bpf_syscall_exit(enum bpf_cmd cmd, union bpf_attr *attr,
 	case BPF_LINK_CREATE:
 		set_bpf_fd_if_positive(ret);
 		break;
+	case BPF_BTF_LOAD:
+		set_bpf_fd_if_positive(ret);
+		break;
 	default:
 		break;
 	}
@@ -249,13 +252,12 @@ int tracepoint__syscalls__sys_exit_bpf(struct trace_event_raw_sys_exit *ctx)
 {
 	struct event *event = NULL;
 	struct bpf_args_t *ap = NULL;
-	u32 pid = 0;
 
 	if (!filter_target()) {
 		return 0;
 	}
-	pid = bpf_get_current_pid_tgid() >> 32;
-	ap = bpf_map_lookup_elem(&bpf_param_start, &pid);
+	u64 pid_tgid = bpf_get_current_pid_tgid();
+	ap = bpf_map_lookup_elem(&bpf_param_start, &pid_tgid);
 	if (!ap)
 		return 0; /* missed entry */
 
@@ -277,7 +279,7 @@ int tracepoint__syscalls__sys_exit_bpf(struct trace_event_raw_sys_exit *ctx)
 	/* emit event */
 	bpf_ringbuf_submit(event, 0);
 cleanup:
-	bpf_map_delete_elem(&bpf_param_start, &pid);
+	bpf_map_delete_elem(&bpf_param_start, &pid_tgid);
 	return 0;
 }
 
@@ -319,7 +321,7 @@ struct perf_event_args_t {
 struct {
 	__uint(type, BPF_MAP_TYPE_HASH);
 	__uint(max_entries, 10240);
-	__type(key, u32);
+	__type(key, u64);
 	__type(value, struct perf_event_args_t);
 } perf_event_open_param_start SEC(".maps");
 
@@ -339,8 +341,8 @@ int tracepoint__syscalls__sys_enter_perf_event_open(
 	args.pid = (int)ctx->args[1];
 	args.cpu = (int)ctx->args[2];
 
-	u32 pid = bpf_get_current_pid_tgid() >> 32;
-	bpf_map_update_elem(&perf_event_open_param_start, &pid, &args, 0);
+	u64 pid_tgid = bpf_get_current_pid_tgid();
+	bpf_map_update_elem(&perf_event_open_param_start, &pid_tgid, &args, 0);
 
 	process_perf_event_open_enter(ctx);
 	return 0;
@@ -352,13 +354,12 @@ int tracepoint__syscalls__sys_exit_perf_event_open(
 {
 	struct event *event = NULL;
 	struct perf_event_args_t *ap = NULL;
-	u32 pid = 0;
 
 	if (!filter_target()) {
 		return 0;
 	}
-	pid = bpf_get_current_pid_tgid() >> 32;
-	ap = bpf_map_lookup_elem(&perf_event_open_param_start, &pid);
+	u64 pid_tgid = bpf_get_current_pid_tgid();
+	ap = bpf_map_lookup_elem(&perf_event_open_param_start, &pid_tgid);
 	if (!ap)
 		return 0; /* missed entry */
 	
@@ -380,7 +381,7 @@ int tracepoint__syscalls__sys_exit_perf_event_open(
 	/* emit event */
 	bpf_ringbuf_submit(event, 0);
 cleanup:
-	bpf_map_delete_elem(&bpf_param_start, &pid);
+	bpf_map_delete_elem(&perf_event_open_param_start, &pid_tgid);
 	return 0;
 }
 
@@ -406,7 +407,77 @@ int tracepoint__syscalls__sys_enter_close(struct trace_event_raw_sys_enter *ctx)
 	event->close_data.fd = fd;
 	/* emit event */
 	bpf_ringbuf_submit(event, 0);
-	
+	clear_bpf_fd(fd);
+	return 0;
+}
+
+struct ioctl_args_t {
+	int fd;
+	unsigned long req;
+	int data;
+};
+
+struct {
+	__uint(type, BPF_MAP_TYPE_HASH);
+	__uint(max_entries, 10240);
+	__type(key, u64);
+	__type(value, struct ioctl_args_t);
+} ioctl_param_start SEC(".maps");
+
+SEC("tracepoint/syscalls/sys_enter_ioctl")
+int tracepoint__syscalls__sys_enter_ioctl(
+	struct trace_event_raw_sys_enter *ctx)
+{
+	struct event *event;
+	if (!filter_target()) {
+		return 0;
+	}
+	int fd = (int)ctx->args[0];
+	if (!is_bpf_fd(fd)) {
+		return 0;
+	}
+	/* store arg info for later lookup */
+	struct ioctl_args_t args = {};
+	args.fd = fd;
+	args.req = (int)ctx->args[1];
+	args.data = (int)ctx->args[2];
+
+	u64 pid_tgid = bpf_get_current_pid_tgid();
+	bpf_map_update_elem(&ioctl_param_start, &pid_tgid, &args, 0);
+	return 0;
+}
+
+SEC("tracepoint/syscalls/sys_exit_ioctl")
+int tracepoint__syscalls__sys_exit_ioctl(
+	struct trace_event_raw_sys_exit *ctx)
+{
+	struct event *event = NULL;
+	struct ioctl_args_t *ap = NULL;
+
+	if (!filter_target()) {
+		return 0;
+	}
+	u64 pid_tgid = bpf_get_current_pid_tgid();
+	ap = bpf_map_lookup_elem(&ioctl_param_start, &pid_tgid);
+	if (!ap)
+		return 0; /* missed entry */
+
+	/* event data */
+	event = fill_basic_event_info();
+	if (!event) {
+		return 0;
+	}
+	event->type = SYS_IOCTL;
+
+	event->ioctl_data.data = ap->data;
+	event->ioctl_data.fd = ap->fd;
+	event->ioctl_data.req = ap->req;
+	event->ioctl_data.ret = ctx->ret;
+
+	/* emit event */
+	bpf_ringbuf_submit(event, 0);
+cleanup:
+	bpf_map_delete_elem(&ioctl_param_start, &pid_tgid);
 	return 0;
 }
 

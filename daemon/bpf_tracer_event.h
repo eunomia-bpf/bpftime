@@ -14,6 +14,7 @@ enum event_type {
 	SYS_OPEN,
 	SYS_CLOSE,
 	SYS_BPF,
+	SYS_IOCTL,
 	SYS_PERF_EVENT_OPEN,
 	BPF_PROG_LOAD_EVENT,
 };
@@ -60,6 +61,13 @@ struct event {
 		struct {
 			int fd;
 		} close_data;
+
+		struct {
+			int fd;
+			unsigned long req;
+			int data;
+			int ret;
+		} ioctl_data;
 	};
 };
 

@@ -262,6 +262,45 @@ int bpf_event_handler::handle_load_bpf_prog_event(const struct event *e)
 	return 0;
 }
 
+
+int bpf_event_handler::handle_ioctl(const struct event *e)
+{
+	int res;
+	int fd = e->ioctl_data.fd;
+	int req = e->ioctl_data.req;
+	int data = e->ioctl_data.data;
+	spdlog::info("IOCTL    {:<6} {:<16} fd:{} req:{} data:{}", e->pid, e->comm,
+		     fd, req, data);
+	if (req == PERF_EVENT_IOC_ENABLE) {
+		spdlog::info("Enabling perf event {}", fd);
+		// res = bpftime_perf_event_enable(fd);
+		// if (res >= 0)
+		// 	return res;
+		// spdlog::warn(
+		// 	"Failed to call mocked ioctl PERF_EVENT_IOC_ENABLE: {}",
+		// 	res);
+	} else if (req == PERF_EVENT_IOC_DISABLE) {
+		spdlog::info("Disabling perf event {}", fd);
+		// res = bpftime_perf_event_disable(fd);
+		// if (res >= 0)
+		// 	return res;
+		// spdlog::warn(
+		// 	"Failed to call mocked ioctl PERF_EVENT_IOC_DISABLE: {}",
+		// 	res);
+	} else if (req == PERF_EVENT_IOC_SET_BPF) {
+		spdlog::info("Setting bpf for perf event {} and bpf {}", fd,
+			      data);
+		// res = bpftime_attach_perf_to_bpf(fd, data);
+		// if (res >= 0)
+		// 	return res;
+		// spdlog::warn(
+		// 	"Failed to call mocked ioctl PERF_EVENT_IOC_SET_BPF: {}",
+		// 	res);
+	}
+	return 0;
+}
+
+
 int bpf_event_handler::handle_event(const struct event *e)
 {
 	switch (e->type) {
@@ -279,6 +318,9 @@ int bpf_event_handler::handle_event(const struct event *e)
 		break;
 	case SYS_CLOSE:
 		return handle_close_event(e);
+		break;
+	case SYS_IOCTL:
+		return handle_ioctl(e);
 		break;
 	}
 	return 0;

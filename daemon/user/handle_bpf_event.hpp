@@ -14,7 +14,7 @@ class bpf_event_handler {
     int handle_open_events(const struct event *e);
     int handle_perf_event(const struct event *e);
     int handle_load_bpf_prog_event(const struct event *e);
-
+    int handle_ioctl(const struct event *e);
 public:
     // callback function for bpf events in ring buffer
     int handle_event(const struct event *e);
