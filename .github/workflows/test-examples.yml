@@ -7,8 +7,33 @@ on:
     branches: "*"
 
 jobs: 
+  build-runtime:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v2
+        with:
+          submodules: 'recursive'
+      - name: Install dependencies
+        run: | 
+          sudo apt-get install binutils-dev libboost1.74-all-dev libelf-dev zlib1g-dev libyaml-cpp-dev gcc-12 g++-12 llvm
+      - name: Build and install runtime
+        run: |
+          CC=gcc-12 CXX=g++-12 make release -j
+      - name: Build and install CLI
+        run: |
+          cd tools/cli-rs
+          RUSTFLAGS="-C target-feature=+crt-static" cargo build --release --target x86_64-unknown-linux-gnu
+          mkdir -p ~/.bpftime
+          cp ./target/x86_64-unknown-linux-gnu/release/bpftime ~/.bpftime
+      - name: Upload build results
+        uses: actions/upload-artifact@v3
+        with:
+          name: runtime-package
+          path: |
+            /home/runner/.bpftime
   build-and-test:
     runs-on: ubuntu-22.04
+    needs: [build-runtime]
     strategy:
       fail-fast: false
       matrix:
@@ -42,18 +67,18 @@ jobs:
       - uses: actions/checkout@v2
         with:
           submodules: 'recursive'
+      - name: Download prebuilt runtime
+        uses: actions/download-artifact@v3
+        with:
+          name: runtime-package
+          path: /home/runner/.bpftime
+      - name: Show downloaded artifacts
+        run: |
+          ls ~/.bpftime
       - name: Install dependencies
-        run: | 
-          sudo apt-get install binutils-dev libboost1.74-all-dev libelf-dev zlib1g-dev libyaml-cpp-dev gcc-12 g++-12 llvm
-      - name: Build and install runtime
         run: |
-          CC=gcc-12 CXX=g++-12 make release -j
-      - name: Build and install CLI
-        run: |
-          cd tools/cli-rs
-          RUSTFLAGS="-C target-feature=+crt-static" cargo build --release --target x86_64-unknown-linux-gnu
-          mkdir -p ~/.bpftime
-          cp ./target/x86_64-unknown-linux-gnu/release/bpftime ~/.bpftime
+          sudo apt-get update -y
+          sudo apt-get install -y zlib1g-dev libelf-dev
       - name: Build test assets
         run: |
           make -C example/${{matrix.examples.path}} -j
