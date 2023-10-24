@@ -200,12 +200,55 @@ int bpf_event_handler::handle_bpf_event(const struct event *e)
 			get_bpf_map_type_string(
 				(enum bpf_map_type)e->bpf_data.attr.map_type),
 			e->bpf_data.attr.map_name);
+		if (config.is_driving_bpftime && e->bpf_data.ret > 0) {
+			bpftime::bpf_map_attr attr;
+			attr.type = e->bpf_data.attr.map_type;
+			attr.key_size = e->bpf_data.attr.key_size;
+			attr.value_size = e->bpf_data.attr.value_size;
+			attr.max_ents = e->bpf_data.attr.max_entries;
+			attr.flags = e->bpf_data.attr.map_flags;
+			attr.btf_id = e->bpf_data.attr.btf_fd;
+			attr.btf_key_type_id = e->bpf_data.attr.btf_key_type_id;
+			attr.btf_value_type_id =
+				e->bpf_data.attr.btf_value_type_id;
+			attr.btf_vmlinux_value_type_id =
+				e->bpf_data.attr.btf_vmlinux_value_type_id;
+			attr.map_extra = e->bpf_data.attr.map_extra;
+			attr.ifindex = e->bpf_data.attr.map_ifindex;
+			driver.bpftime_maps_create_server(
+				e->pid, e->bpf_data.ret,
+				e->bpf_data.attr.map_name, attr);
+		}
 		break;
 	case BPF_LINK_CREATE:
 		/* code */
 		spdlog::info("   BPF_LINK_CREATE prog_fd:{} target_fd:{}",
 			     e->bpf_data.attr.link_create.prog_fd,
 			     e->bpf_data.attr.link_create.target_fd);
+		if (config.is_driving_bpftime && e->bpf_data.ret > 0) {
+			return driver.bpftime_link_create_server(
+				e->pid, e->bpf_data.ret,
+				e->bpf_data.attr.link_create.prog_fd,
+				e->bpf_data.attr.link_create.target_fd);
+		}
+		break;
+	case BPF_PROG_LOAD:
+		/* code */
+		spdlog::info(
+			"   BPF_PROG_LOAD prog_type:{:<16} prog_name:{:<16}",
+			bpf_prog_type_strings[e->bpf_data.attr.prog_type],
+			e->bpf_data.attr.prog_name);
+		if (config.is_driving_bpftime && e->bpf_data.ret > 0) {
+			event load_prog_event =
+				bpf_prog_map[e->bpf_data.attr.insns];
+			return driver.bpftime_progs_create_server(
+				e->pid, e->bpf_data.ret,
+				(ebpf_inst *)
+					load_prog_event.bpf_loaded_prog.insns,
+				load_prog_event.bpf_loaded_prog.insn_cnt,
+				e->bpf_data.attr.prog_name,
+				e->bpf_data.attr.prog_type);
+		}
 		break;
 	default:
 		break;
@@ -252,6 +295,8 @@ int bpf_event_handler::handle_load_bpf_prog_event(const struct event *e)
 		"BPF_LOAD {:<6} {:<16} name:{:<16} type:{:<16} insn_cnt:{:<6}",
 		e->pid, e->comm, prog_name, prog_type_str,
 		e->bpf_loaded_prog.insn_cnt);
+	// save the program in the map for later lookup in prog load event
+	bpf_prog_map[e->bpf_loaded_prog.insns_ptr] = *e;
 	return 0;
 }
 
@@ -265,36 +310,33 @@ int bpf_event_handler::handle_ioctl(const struct event *e)
 		     e->comm, fd, req, data);
 	if (req == PERF_EVENT_IOC_ENABLE) {
 		spdlog::info("Enabling perf event {}", fd);
-		res = driver.bpftime_perf_event_enable_server( e->pid, fd);
-		if (res < 0) {
-		spdlog::warn(
-			"Failed to call mocked ioctl PERF_EVENT_IOC_ENABLE: {}",
-			res);
+		if (config.is_driving_bpftime) {
+			return driver.bpftime_perf_event_enable_server(e->pid,
+								       fd);
 		}
-		return res;
 	} else if (req == PERF_EVENT_IOC_DISABLE) {
 		spdlog::info("Disabling perf event {}", fd);
-		// res = bpftime_perf_event_disable(fd);
-		// if (res >= 0)
-		// 	return res;
-		// spdlog::warn(
-		// 	"Failed to call mocked ioctl PERF_EVENT_IOC_DISABLE:
-		// {}", 	res);
+		if (config.is_driving_bpftime) {
+			return driver.bpftime_perf_event_disable_server(e->pid,
+									fd);
+		}
 	} else if (req == PERF_EVENT_IOC_SET_BPF) {
 		spdlog::info("Setting bpf for perf event {} and bpf {}", fd,
 			     data);
-		// res = bpftime_attach_perf_to_bpf(fd, data);
-		// if (res >= 0)
-		// 	return res;
-		// spdlog::warn(
-		// 	"Failed to call mocked ioctl PERF_EVENT_IOC_SET_BPF:
-		// {}", 	res);
+		if (config.is_driving_bpftime) {
+			return driver.bpftime_attach_perf_to_bpf_server(
+				e->pid, fd, data);
+		}
 	}
 	return 0;
 }
 
 int bpf_event_handler::handle_event(const struct event *e)
 {
+	// ignore events from self
+	if (e->pid == current_pid) {
+		return 0;
+	}
 	switch (e->type) {
 	case SYS_OPEN:
 		return handle_open_events(e);
@@ -318,9 +360,11 @@ int bpf_event_handler::handle_event(const struct event *e)
 	return 0;
 }
 
-bpf_event_handler::bpf_event_handler(struct daemon_config config, bpftime_driver &driver)
+bpf_event_handler::bpf_event_handler(struct daemon_config config,
+				     bpftime_driver &driver)
 	: config(config), driver(driver)
 {
+	current_pid = getpid();
 	int uprobe_type = determine_uprobe_perf_type();
 	if (uprobe_type < 0 || uprobe_type >= PERF_TYPE_MAX_ID) {
 		spdlog::error("Failed to determine uprobe perf type");

@@ -4,10 +4,15 @@
 #include "../bpf_tracer_event.h"
 #include "daemon_config.hpp"
 #include "bpftime_driver.hpp"
+#include <map>
+#include <cstdint>
 
 namespace bpftime {
 
 class bpf_event_handler {
+    std::map<uint64_t, event> bpf_prog_map;
+    int current_pid = 0;
+
     struct daemon_config config;
     bpftime_driver &driver;
     

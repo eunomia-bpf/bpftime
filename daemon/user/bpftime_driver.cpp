@@ -43,7 +43,7 @@ int bpftime_driver::bpftime_link_create_server(int server_pid, int fd,
 
 	int res = bpftime_link_create(id, prog_id, fd_id);
 	if (res < 0) {
-		spdlog::error("Failed to create link");
+		spdlog::error("Failed to create link for id {}", id);
 		return -1;
 	}
 	pid_fd_to_id_map[get_pid_fd_key(server_pid, fd)] = id;
@@ -60,7 +60,7 @@ int bpftime_driver::bpftime_progs_create_server(int server_pid, int fd,
 	int res =
 		bpftime_progs_create(id, insn, insn_cnt, prog_name, prog_type);
 	if (res < 0) {
-		spdlog::error("Failed to create prog");
+		spdlog::error("Failed to create prog for id {}", id);
 		return -1;
 	}
 	pid_fd_to_id_map[get_pid_fd_key(server_pid, fd)] = id;
@@ -74,7 +74,7 @@ int bpftime_driver::bpftime_maps_create_server(int server_pid, int fd,
 	int id = find_minimal_unused_id();
 	int res = bpftime_maps_create(id, name, attr);
 	if (res < 0) {
-		spdlog::error("Failed to create map");
+		spdlog::error("Failed to create map for id {}", id);
 		return -1;
 	}
 	pid_fd_to_id_map[get_pid_fd_key(server_pid, fd)] = id;

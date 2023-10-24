@@ -144,6 +144,7 @@ static int process_bpf_prog_load_events(union bpf_attr *attr)
 		   event->bpf_loaded_prog.insn_cnt);
 	event->bpf_loaded_prog.insn_cnt = insn_cnt;
 	event->bpf_loaded_prog.type = new_attr.prog_type;
+	event->bpf_loaded_prog.insns_ptr = (u64)insns;
 	// copy name of the program
 	*((__uint128_t *)&event->bpf_loaded_prog.prog_name) =
 		*((__uint128_t *)&new_attr.prog_name);
