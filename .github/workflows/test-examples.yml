@@ -35,7 +35,7 @@ jobs:
     runs-on: ubuntu-22.04
     needs: [build-runtime]
     strategy:
-      fail-fast: false
+      fail-fast: true
       matrix:
         examples: 
           - path: libbpf-tools/opensnoop
@@ -72,6 +72,9 @@ jobs:
         with:
           name: runtime-package
           path: /home/runner/.bpftime
+      - name: Set permissions
+        run: |
+          chmod +x ~/.bpftime/*
       - name: Show downloaded artifacts
         run: |
           ls ~/.bpftime
