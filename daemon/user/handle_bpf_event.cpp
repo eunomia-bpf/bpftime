@@ -1,5 +1,6 @@
 #include <bpf/libbpf.h>
 #include <bpf/bpf.h>
+#include <linux/bpf.h>
 #include <cstdio>
 #include <errno.h>
 #include <sys/time.h>
@@ -297,11 +298,9 @@ int bpf_event_handler::handle_perf_event(const struct event *e)
 					     PERF_UPROBE_REF_CTR_OFFSET_SHIFT;
 			const char *name = e->perf_event_data.name_or_path;
 			uint64_t offset = e->perf_event_data.offset;
-			spdlog::debug(
-				"Creating uprobe name {} offset {} "
-				"ref_ctr_off {} attr->config={:x}",
-				name, offset, ref_ctr_off,
-				attr->config);
+			spdlog::debug("Creating uprobe name {} offset {} "
+				      "ref_ctr_off {} attr->config={:x}",
+				      name, offset, ref_ctr_off, attr->config);
 			driver.bpftime_uprobe_create_server(
 				e->pid, e->perf_event_data.ret,
 				e->perf_event_data.pid, name, offset, retprobe,
