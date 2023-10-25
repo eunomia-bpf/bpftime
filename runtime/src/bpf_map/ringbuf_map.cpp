@@ -70,10 +70,10 @@ long ringbuf_map_impl::elem_delete(const void *key)
 	return -1;
 }
 
-int ringbuf_map_impl::bpf_map_get_next_key(const void *key, void *next_key)
+int ringbuf_map_impl::map_get_next_key(const void *key, void *next_key)
 {
 	spdlog::error(
-		"Trying to perform bpf_map_get_next_key on a ringbuf map, which is not supported");
+		"Trying to perform map_get_next_key on a ringbuf map, which is not supported");
 	errno = ENOTSUP;
 	return -1;
 }

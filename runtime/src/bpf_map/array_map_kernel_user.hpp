@@ -21,7 +21,7 @@ class array_map_kernel_user_impl {
 
 	long elem_delete(const void *key);
 
-	int bpf_map_get_next_key(const void *key, void *next_key);
+	int map_get_next_key(const void *key, void *next_key);
 
 	void *get_raw_data() const;
 };

@@ -54,7 +54,7 @@ long hash_map_impl::elem_delete(const void *key)
 	return 0;
 }
 
-int hash_map_impl::bpf_map_get_next_key(const void *key, void *next_key)
+int hash_map_impl::map_get_next_key(const void *key, void *next_key)
 {
 	if (key == nullptr) {
 		// nullptr means the first key
@@ -75,7 +75,7 @@ int hash_map_impl::bpf_map_get_next_key(const void *key, void *next_key)
 	auto itr = map_impl.find(key_vec);
 	if (itr == map_impl.end()) {
 		// not found, should be refer to the first key
-		return bpf_map_get_next_key(nullptr, next_key);
+		return map_get_next_key(nullptr, next_key);
 	}
 	itr++;
 	if (itr == map_impl.end()) {

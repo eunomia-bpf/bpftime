@@ -50,7 +50,7 @@ long array_map_impl::elem_delete(const void *key)
 	return 0;
 }
 
-int array_map_impl::bpf_map_get_next_key(const void *key, void *next_key)
+int array_map_impl::map_get_next_key(const void *key, void *next_key)
 {
 	// Not found
 	if (key == nullptr || *(uint32_t *)key >= _max_entries) {

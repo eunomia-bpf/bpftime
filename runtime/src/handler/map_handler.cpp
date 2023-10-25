@@ -170,9 +170,9 @@ int bpf_map_handler::bpf_map_get_next_key(const void *key, void *next_key,
 		if (impl->should_lock) {
 			sharable_lock<interprocess_sharable_mutex> guard(
 				*map_mutex);
-			return impl->bpf_map_get_next_key(key, next_key);
+			return impl->map_get_next_key(key, next_key);
 		} else {
-			return impl->bpf_map_get_next_key(key, next_key);
+			return impl->map_get_next_key(key, next_key);
 		}
 	};
 	switch (type) {

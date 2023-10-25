@@ -12,17 +12,11 @@ namespace bpftime
 
 using namespace boost::interprocess;
 
-
 // implementation of hash map
 class hash_map_kernel_user_impl {
-	using bi_map_value_ty = std::pair<const bytes_vec, bytes_vec>;
-	using bi_map_allocator =
-		allocator<bi_map_value_ty,
-			  managed_shared_memory::segment_manager>;
-	using shm_hash_map = boost::unordered_map<
-		bytes_vec, bytes_vec, bytes_vec_hasher,
-		std::equal_to<bytes_vec>, bi_map_allocator>;
-	shm_hash_map map_impl;
+	int kernel_map_id;
+	int map_fd;
+
 	uint32_t _key_size;
 	uint32_t _value_size;
 
@@ -31,8 +25,7 @@ class hash_map_kernel_user_impl {
 
     public:
 	const static bool should_lock = true;
-	hash_map_kernel_user_impl(managed_shared_memory &memory, uint32_t key_size,
-		      uint32_t value_size);
+	hash_map_kernel_user_impl(managed_shared_memory &memory, int km_id);
 
 	void *elem_lookup(const void *key);
 
@@ -40,8 +33,7 @@ class hash_map_kernel_user_impl {
 
 	long elem_delete(const void *key);
 
-	int bpf_map_get_next_key(const void *key, void *next_key);
+	int map_get_next_key(const void *key, void *next_key);
 };
-
 } // namespace bpftime
 #endif

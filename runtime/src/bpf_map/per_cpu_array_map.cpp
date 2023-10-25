@@ -70,7 +70,7 @@ long per_cpu_array_map_impl::elem_delete(const void *key)
 	// });
 }
 
-int per_cpu_array_map_impl::bpf_map_get_next_key(const void *key,
+int per_cpu_array_map_impl::map_get_next_key(const void *key,
 						 void *next_key)
 {
 	// Not found
