@@ -1,5 +1,7 @@
 #include <bpf_map/array_map_kernel_user.hpp>
 #include <cerrno>
+#include <bpf/libbpf.h>
+#include <bpf/bpf.h>
 
 namespace bpftime
 {
@@ -8,14 +10,32 @@ void *array_map_kernel_user_impl::get_raw_data() const
 {
 	return (void *)data.data();
 }
-array_map_kernel_user_impl::array_map_kernel_user_impl(
-	boost::interprocess::managed_shared_memory &memory, uint32_t value_size,
-	uint32_t max_entries)
-	: data(value_size * max_entries, memory.get_segment_manager())
+
+array_map_kernel_user_impl::array_map_kernel_user_impl(boost::interprocess::managed_shared_memory &memory,
+		       int km_id)
+	: data(1, memory.get_segment_manager())
 {
-	this->_value_size = value_size;
-	this->_max_entries = max_entries;
+	map_fd = bpf_map_get_fd_by_id(kernel_map_id);
+	if (map_fd < 0) {
+		spdlog::error("Failed to get fd for kernel map id {}",
+			      kernel_map_id);
+		return;
+	}
+	kernel_map_id = km_id;
+	bpf_map_info info = {};
+	unsigned int info_len = sizeof(info);
+	int res = bpf_map_get_info_by_fd(map_fd, &info, &info_len);
+	if (res < 0) {
+		spdlog::error("Failed to get info for kernel map id {}",
+			      kernel_map_id);
+	}
+	this->_value_size = info.value_size;
+	this->_max_entries = info.max_entries;
+	spdlog::debug("create kernel user array map value size {}, max entries {}",
+		      _value_size, _max_entries);
+	data.resize(_value_size * _max_entries);
 }
+
 void *array_map_kernel_user_impl::elem_lookup(const void *key)
 {
 	auto key_val = *(uint32_t *)key;
