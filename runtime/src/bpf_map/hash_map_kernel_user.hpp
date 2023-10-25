@@ -1,5 +1,5 @@
-#ifndef _HASHMAP_HPP
-#define _HASHMAP_HPP
+#ifndef _BPFTIME_KERNEL_HASH_MAP_HPP
+#define _BPFTIME_KERNEL_HASH_MAP_HPP
 #include <boost/container_hash/hash_fwd.hpp>
 #include <boost/interprocess/managed_shared_memory.hpp>
 #include <boost/interprocess/containers/map.hpp>
@@ -36,4 +36,5 @@ class hash_map_kernel_user_impl {
 	int map_get_next_key(const void *key, void *next_key);
 };
 } // namespace bpftime
-#endif
+
+#endif // _BPFTIME_KERNEL_HASH_MAP_HPP

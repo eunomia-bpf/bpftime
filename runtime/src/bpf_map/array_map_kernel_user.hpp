@@ -1,5 +1,5 @@
-#ifndef _BPFTIME_ARRAY_MAP_HPP
-#define _BPFTIME_ARRAY_MAP_HPP
+#ifndef _BPFTIME_KERNEL_ARRAY_MAP_HPP
+#define _BPFTIME_KERNEL_ARRAY_MAP_HPP
 #include <bpf_map/map_common_def.hpp>
 namespace bpftime
 {
@@ -9,11 +9,13 @@ class array_map_kernel_user_impl {
 	bytes_vec data;
 	uint32_t _value_size;
 	uint32_t _max_entries;
+	int map_fd;
+	int kernel_map_id;
 
     public:
 	const static bool should_lock = true;
 	array_map_kernel_user_impl(boost::interprocess::managed_shared_memory &memory,
-		       uint32_t value_size, uint32_t max_entries);
+		       int km_id);
 
 	void *elem_lookup(const void *key);
 
