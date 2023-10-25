@@ -45,4 +45,7 @@ target_link_libraries(bpftime_daemon PRIVATE libbpftime_daemon)
 
 install(TARGETS bpftime_daemon CONFIGURATIONS Release Debug DESTINATION ~/.bpftime)
 
-add_subdirectory(test)
+if(BPFTIME_ENABLE_UNIT_TESTING)
+  add_subdirectory(test)
+endif()
+

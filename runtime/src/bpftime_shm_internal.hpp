@@ -6,7 +6,7 @@
 #include <cstddef>
 #include <functional>
 #include <boost/interprocess/containers/set.hpp>
-#include <common/bpftime_config.hpp>
+#include "bpftime_config.hpp"
 #include <handler/handler_manager.hpp>
 #include <optional>
 namespace bpftime

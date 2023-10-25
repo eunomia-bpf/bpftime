@@ -15,6 +15,7 @@
 #include <algorithm>
 #include <random>
 #include <linux/bpf.h>
+#include "bpf_attach_ctx.hpp"
 
 using namespace boost::interprocess;
 using namespace bpftime;
@@ -95,5 +96,8 @@ TEST_CASE("Test bpftime shm json import/export")
 		REQUIRE(shm2.is_exist_fake_fd(7));
 		REQUIRE(shm2.is_map_fd(8));
 		REQUIRE(shm2.is_map_fd(9));
+
+		bpftime::bpf_attach_ctx ctx;
+		ctx.init_attach_ctx_from_handlers(bpftime_get_agent_config());
 	}
 }

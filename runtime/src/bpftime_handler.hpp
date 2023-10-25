@@ -8,4 +8,6 @@
 #include <handler/perf_event_handler.hpp>
 #include <handler/prog_handler.hpp>
 #include <handler/epoll_handler.hpp>
+#include <handler/btf_handler.hpp>
+
 #endif

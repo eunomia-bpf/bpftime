@@ -9,6 +9,7 @@
 #include "test_defs.h"
 #include "bpftime_shm.hpp"
 #include "bpftime_ffi.hpp"
+#include "attach/attach_manager/base_attach_manager.hpp"
 
 using namespace bpftime;
 

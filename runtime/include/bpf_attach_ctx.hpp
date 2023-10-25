@@ -1,16 +1,18 @@
 #ifndef _BPF_ATTACH_CTX
 #define _BPF_ATTACH_CTX
-#include "attach/attach_manager/base_attach_manager.hpp"
+
 #include <cinttypes>
-#include <common/bpftime_config.hpp>
+#include "bpftime_config.hpp"
 #include <map>
 #include <vector>
 #include <memory>
+
 typedef struct _GumInterceptor GumInterceptor;
 typedef struct _GumInvocationListener GumInvocationListener;
 
 namespace bpftime
 {
+class base_attach_manager;
 
 class handler_manager;
 class bpftime_prog;

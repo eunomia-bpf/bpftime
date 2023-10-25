@@ -71,6 +71,9 @@ class bpftime_driver {
 	// disable the perf event
 	int bpftime_perf_event_disable_server(int server_pid, int fd);
 
+	// load the btf into kernel
+	int bpftime_btf_load_server(int server_pid, int fd);
+
 	void bpftime_close_server(int server_pid, int fd);
 
 	bpftime_driver(struct daemon_config cfg);

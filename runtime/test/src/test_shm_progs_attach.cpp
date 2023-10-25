@@ -13,6 +13,7 @@
 #include <string>
 #include <unistd.h>
 #include <bpftime_prog.hpp>
+#include "attach/attach_manager/base_attach_manager.hpp"
 
 using namespace boost::interprocess;
 using namespace bpftime;
