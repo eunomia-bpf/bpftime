@@ -2,6 +2,8 @@
 #include <cstring>
 #include "bpftime_internal.h"
 #include <spdlog/spdlog.h>
+#include "attach/attach_manager/base_attach_manager.hpp"
+
 namespace bpftime
 {
 

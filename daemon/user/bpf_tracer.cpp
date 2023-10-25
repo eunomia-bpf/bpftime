@@ -87,6 +87,13 @@ int bpftime::start_daemon(struct daemon_config env)
 	obj->rodata->uprobe_perf_type = determine_uprobe_perf_type();
 	obj->rodata->kprobe_perf_type = determine_kprobe_perf_type();
 
+	if (!env.show_open) {
+		bpf_program__set_autoload(obj->progs.tracepoint__syscalls__sys_exit_open, false);
+		bpf_program__set_autoload(obj->progs.tracepoint__syscalls__sys_enter_open, false);
+		bpf_program__set_autoload(obj->progs.tracepoint__syscalls__sys_exit_openat, false);
+		bpf_program__set_autoload(obj->progs.tracepoint__syscalls__sys_enter_openat, false);
+	}
+
 	err = bpf_tracer_bpf__load(obj);
 	if (err) {
 		fprintf(stderr, "failed to load BPF object: %d\n", err);

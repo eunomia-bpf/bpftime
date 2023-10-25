@@ -9,7 +9,7 @@
 #include <bpf_attach_ctx.hpp>
 #include <bpftime_shm_internal.hpp>
 #include <bpftime_prog.hpp>
-#include <common/bpftime_config.hpp>
+#include "bpftime_config.hpp"
 #include <spdlog/spdlog.h>
 #include <handler/perf_event_handler.hpp>
 #include <bpftime_helper_group.hpp>
@@ -73,8 +73,7 @@ bool bpf_attach_ctx::check_exist_syscall_trace_program(
 					std::get<bpf_perf_event_handler>(
 						handler);
 				if (perf_event_handler.type ==
-				    bpf_event_type::
-					    PERF_TYPE_TRACEPOINT) {
+				    bpf_event_type::PERF_TYPE_TRACEPOINT) {
 					const auto &tp_table =
 						get_global_syscall_tracepoint_table();
 					if (tp_table.find(
@@ -200,11 +199,12 @@ int bpf_attach_ctx::init_attach_ctx_from_handlers(
 				   handler)) {
 			spdlog::debug("Will handle bpf_perf_events later...");
 
-		} else if (std::holds_alternative<epoll_handler>(handler)) {
+		} else if (std::holds_alternative<epoll_handler>(handler) ||
+			   std::holds_alternative<bpf_link_handler>(handler)) {
 			spdlog::debug(
-				"No extra operations needed for epoll_handler..");
+				"No extra operations needed for epoll_handler/bpf link/btf..");
 		} else {
-			spdlog::error("Unsupported handler type {}",
+			spdlog::error("Unsupported handler type for handler {}",
 				      handler.index());
 			return -1;
 		}
@@ -230,14 +230,10 @@ int bpf_attach_ctx::init_attach_ctx_from_handlers(
 				std::get<bpf_perf_event_handler>(handler);
 			void *func_addr = nullptr;
 			switch (event_handler.type) {
-			case bpf_event_type::
-				BPF_TYPE_FILTER:
-			case bpf_event_type::
-				BPF_TYPE_REPLACE:
-			case bpf_event_type::
-				BPF_TYPE_UPROBE:
-			case bpf_event_type::
-				BPF_TYPE_URETPROBE:
+			case bpf_event_type::BPF_TYPE_FILTER:
+			case bpf_event_type::BPF_TYPE_REPLACE:
+			case bpf_event_type::BPF_TYPE_UPROBE:
+			case bpf_event_type::BPF_TYPE_URETPROBE:
 				func_addr =
 					attach_manager
 						->resolve_function_addr_by_module_offset(
@@ -251,8 +247,7 @@ int bpf_attach_ctx::init_attach_ctx_from_handlers(
 			}
 			// attach base on events
 			switch (event_handler.type) {
-			case bpf_event_type::
-				BPF_TYPE_FILTER: {
+			case bpf_event_type::BPF_TYPE_FILTER: {
 				auto progs = handler_prog_fds[i];
 				if (progs.size() > 1) {
 					spdlog::error(
@@ -277,8 +272,7 @@ int bpf_attach_ctx::init_attach_ctx_from_handlers(
 						i, err);
 				break;
 			}
-			case bpf_event_type::
-				BPF_TYPE_REPLACE: {
+			case bpf_event_type::BPF_TYPE_REPLACE: {
 				auto progs = handler_prog_fds[i];
 				if (progs.size() > 1) {
 					spdlog::error(
@@ -303,8 +297,7 @@ int bpf_attach_ctx::init_attach_ctx_from_handlers(
 						i, err);
 				break;
 			}
-			case bpf_event_type::
-				BPF_TYPE_UPROBE: {
+			case bpf_event_type::BPF_TYPE_UPROBE: {
 				spdlog::debug(
 					"Creating uprobe for perf event fd {}",
 					i);
@@ -328,8 +321,7 @@ int bpf_attach_ctx::init_attach_ctx_from_handlers(
 						i, err);
 				break;
 			}
-			case bpf_event_type::
-				BPF_TYPE_URETPROBE: {
+			case bpf_event_type::BPF_TYPE_URETPROBE: {
 				spdlog::debug(
 					"Creating uretprobe for perf event fd {}",
 					i);
@@ -353,8 +345,7 @@ int bpf_attach_ctx::init_attach_ctx_from_handlers(
 						i, err);
 				break;
 			}
-			case bpf_event_type::
-				PERF_TYPE_TRACEPOINT: {
+			case bpf_event_type::PERF_TYPE_TRACEPOINT: {
 				err = create_tracepoint(
 					event_handler.tracepoint_id, i,
 					manager);
@@ -366,8 +357,7 @@ int bpf_attach_ctx::init_attach_ctx_from_handlers(
 				assert(err >= 0);
 				break;
 			}
-			case bpf_event_type::
-				PERF_TYPE_SOFTWARE: {
+			case bpf_event_type::PERF_TYPE_SOFTWARE: {
 				spdlog::debug(
 					"Attaching software perf event, nothing need to do");
 				err = i;

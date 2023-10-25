@@ -6,7 +6,8 @@
 #include <bpf/bpf_tracing.h>
 #include <bpf/bpf_core_read.h>
 #include "../bpf_tracer_event.h"
-#include "bpf_utils.h"
+#include "bpf_event_ringbuf.h"
+#include "bpf_maps_id_fd_map.h"
 
 struct open_args_t {
 	const char *fname;
@@ -130,6 +131,7 @@ static int process_bpf_prog_load_events(union bpf_attr *attr)
 	void *insns;
 	struct event *event = NULL;
 	union bpf_attr new_attr = { 0 };
+	bpf_probe_read(&new_attr, sizeof(new_attr), attr);
 
 	/* event data */
 	event = fill_basic_event_info();
@@ -137,24 +139,23 @@ static int process_bpf_prog_load_events(union bpf_attr *attr)
 		return 0;
 	}
 	event->type = BPF_PROG_LOAD_EVENT;
-	bpf_probe_read_user(&new_attr, sizeof(new_attr), attr);
-	insn_cnt = new_attr.insn_cnt;
-	insns = (void *)new_attr.insns;
+	insn_cnt = BPF_CORE_READ_USER(attr, insn_cnt);
+	insns = (void *)BPF_CORE_READ_USER(attr, insns);
 	bpf_printk("insns: %p cnt %d\n", insns,
 		   event->bpf_loaded_prog.insn_cnt);
 	event->bpf_loaded_prog.insn_cnt = insn_cnt;
-	event->bpf_loaded_prog.type = new_attr.prog_type;
+	event->bpf_loaded_prog.type = BPF_CORE_READ_USER(attr, prog_type);
 	event->bpf_loaded_prog.insns_ptr = (u64)insns;
 	// copy name of the program
 	*((__uint128_t *)&event->bpf_loaded_prog.prog_name) =
-		*((__uint128_t *)&new_attr.prog_name);
+		*((__uint128_t *)new_attr.prog_name);
 	int insn_buffer_size =
 		sizeof(event->bpf_loaded_prog.insns) >
 				insn_cnt * sizeof(struct bpf_insn) ?
 			insn_cnt * sizeof(struct bpf_insn) :
 			sizeof(event->bpf_loaded_prog.insns);
-	bpf_probe_read_user(event->bpf_loaded_prog.insns, insn_buffer_size,
-			    insns);
+	bpf_probe_read(event->bpf_loaded_prog.insns, insn_buffer_size, insns);
+
 	if (should_modify_program(&new_attr)) {
 		struct bpf_insn trival_prog_insns[] = {
 			BPF_MOV64_IMM(BPF_REG_0, 0),
@@ -221,29 +222,45 @@ int tracepoint__syscalls__sys_enter_bpf(struct trace_event_raw_sys_enter *ctx)
 	return 0;
 }
 
-static int process_bpf_syscall_exit(enum bpf_cmd cmd, union bpf_attr *attr,
-				    unsigned int size, int ret,
+static int process_bpf_syscall_exit(struct event *event,
 				    struct trace_event_raw_sys_exit *ctx)
 {
-	if (!attr) {
+	if (!event || !ctx) {
 		return 0;
 	}
-
-	switch (cmd) {
-	case BPF_PROG_LOAD:
-		set_bpf_fd_if_positive(ret);
-		break;
-	case BPF_MAP_CREATE:
-		set_bpf_fd_if_positive(ret);
-		break;
-	case BPF_LINK_CREATE:
-		set_bpf_fd_if_positive(ret);
-		break;
-	case BPF_BTF_LOAD:
-		set_bpf_fd_if_positive(ret);
-		break;
-	default:
-		break;
+	unsigned int cmd = event->bpf_data.bpf_cmd;
+	int ret = ctx->ret;
+	if (ret >= 0) {
+		switch (cmd) {
+		case BPF_PROG_LOAD:
+			set_bpf_fd_if_positive(ret);
+			break;
+		case BPF_MAP_CREATE: {
+			set_bpf_fd_if_positive(ret);
+			u64 pid_tgid = bpf_get_current_pid_tgid();
+			struct bpf_map **map_ptr =
+				(struct bpf_map **)bpf_map_lookup_elem(
+					&bpf_map_new_fd_args_map, &pid_tgid);
+			if (!map_ptr)
+				return 0; /* missed entry */
+			struct bpf_map *map = *map_ptr;
+			if (ret < 0) {
+				return 0;
+			}
+			unsigned int id = BPF_CORE_READ(map, id);
+			event->bpf_data.map_id = id;
+			bpf_map_delete_elem(&bpf_map_new_fd_args_map,
+					    &pid_tgid);
+		} break;
+		case BPF_LINK_CREATE:
+			set_bpf_fd_if_positive(ret);
+			break;
+		case BPF_BTF_LOAD:
+			set_bpf_fd_if_positive(ret);
+			break;
+		default:
+			break;
+		}
 	}
 	return 0;
 }
@@ -273,9 +290,7 @@ int tracepoint__syscalls__sys_exit_bpf(struct trace_event_raw_sys_exit *ctx)
 	event->bpf_data.bpf_cmd = ap->cmd;
 	event->bpf_data.ret = ctx->ret;
 
-	process_bpf_syscall_exit(event->bpf_data.bpf_cmd, &event->bpf_data.attr,
-				 event->bpf_data.attr_size, event->bpf_data.ret,
-				 ctx);
+	process_bpf_syscall_exit(event, ctx);
 
 	/* emit event */
 	bpf_ringbuf_submit(event, 0);

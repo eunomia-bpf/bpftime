@@ -48,28 +48,32 @@ find_package(Boost REQUIRED)
 message(STATUS "Building for architecture: ${ARCH}")
 
 set(sources
-  src/bpftime_prog.cpp
-
-  src/ffi.cpp
-  src/bpf_helper.cpp
   src/attach/bpf_attach_ctx.cpp
   src/attach/attach_manager/base_attach_manager.cpp
   src/attach/attach_manager/frida_attach_manager.cpp
+
   src/handler/handler_manager.cpp
   src/handler/map_handler.cpp
   src/handler/perf_event_handler.cpp
   src/handler/prog_handler.cpp
   src/handler/epoll_handler.cpp
+
   src/bpftime_shm.cpp
   src/bpftime_shm_internal.cpp
   src/bpftime_shm_json.cpp
   src/syscall_table.cpp
+  src/bpftime_prog.cpp
+  src/ffi.cpp
+  src/bpf_helper.cpp
+
   src/bpf_map/array_map.cpp
   src/bpf_map/hash_map.cpp
   src/bpf_map/ringbuf_map.cpp
   src/bpf_map/perf_event_array_map.cpp
   src/bpf_map/per_cpu_array_map.cpp
   src/bpf_map/per_cpu_hash_map.cpp
+  src/bpf_map/array_map_kernel_user.cpp
+  src/bpf_map/hash_map_kernel_user.cpp
 )
 
 # list(APPEND sources

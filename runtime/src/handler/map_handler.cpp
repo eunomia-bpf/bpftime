@@ -151,6 +151,12 @@ long bpf_map_handler::map_update_elem(const void *key, const void *value,
 		return from_userspace ? do_update_userspace(impl) :
 					do_update(impl);
 	}
+	case bpf_map_type::BPF_MAP_TYPE_KERNEL_USER_ARRAY: {
+
+	}
+	case bpf_map_type::BPF_MAP_TYPE_KERNEL_USER_HASH: {
+		
+	}
 	default:
 		assert(false && "Unsupported map type");
 	}

@@ -29,6 +29,8 @@ static json bpf_map_attr_to_json(const bpf_map_attr &attr)
 	j["btf_key_type_id"] = attr.btf_key_type_id;
 	j["btf_value_type_id"] = attr.btf_value_type_id;
 	j["map_extra"] = attr.map_extra;
+
+	j["kernel_bpf_map_id"] = attr.kernel_bpf_map_id;
 	return j;
 }
 
@@ -46,6 +48,8 @@ static bpf_map_attr json_to_bpf_map_attr(const json &j)
 	attr.btf_key_type_id = j["btf_key_type_id"];
 	attr.btf_value_type_id = j["btf_value_type_id"];
 	attr.map_extra = j["map_extra"];
+
+	attr.kernel_bpf_map_id = j["kernel_bpf_map_id"];
 	return attr;
 }
 

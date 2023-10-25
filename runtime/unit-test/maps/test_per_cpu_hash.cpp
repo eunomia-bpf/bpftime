@@ -35,6 +35,7 @@ TEST_CASE("Test basic operations of hash map")
 			x = rand(gen);
 		keys.push_back(x);
 	}
+
 	SECTION("Test writing from helpers, and read from userspace")
 	{
 		per_cpu_hash_map_impl map(mem, 4, 8);

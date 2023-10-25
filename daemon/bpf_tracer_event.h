@@ -32,6 +32,8 @@ struct event {
 			unsigned int bpf_cmd;
 			union bpf_attr attr;
 			unsigned int attr_size;
+			// additional field for getting map id
+			int map_id;
 		} bpf_data;
 
 		struct {

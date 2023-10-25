@@ -2,7 +2,7 @@
 #define _BPFTIME_RUNTIME_HEADERS_H_
 
 #include <ebpf-vm.h>
-#include <common/bpftime_config.hpp>
+#include "bpftime_config.hpp"
 #include "bpf_attach_ctx.hpp"
 #include "bpftime_ffi.hpp"
 #include "bpftime_helper_group.hpp"

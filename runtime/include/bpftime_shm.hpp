@@ -1,7 +1,7 @@
 #ifndef BPFTIME_SHM_CPP_H
 #define BPFTIME_SHM_CPP_H
 
-#include "common/bpftime_config.hpp"
+#include "bpftime_config.hpp"
 #include <boost/interprocess/interprocess_fwd.hpp>
 #include <cstddef>
 #include <boost/interprocess/containers/vector.hpp>
@@ -89,6 +89,9 @@ enum class bpf_map_type {
 	BPF_MAP_TYPE_BLOOM_FILTER,
 	BPF_MAP_TYPE_USER_RINGBUF,
 	BPF_MAP_TYPE_CGRP_STORAGE,
+
+	BPF_MAP_TYPE_KERNEL_USER_HASH = 1000,
+	BPF_MAP_TYPE_KERNEL_USER_ARRAY = 1001,
 };
 
 enum class shm_open_type {
