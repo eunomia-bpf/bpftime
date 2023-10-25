@@ -10,8 +10,9 @@ int bpftime_driver::find_minimal_unused_id()
 {
 	int id = 0;
 	while (1) {
+		// try to find the smallest id in the map
 		bool find = false;
-		for (auto [pid_fd, idx] : pid_fd_to_id_map) {
+		for (auto [_, idx] : pid_fd_to_id_map) {
 			if (id == idx) {
 				find = true;
 			}
@@ -104,7 +105,8 @@ int bpftime_driver::bpftime_attach_perf_to_bpf_server(int server_pid,
 		spdlog::error("Failed to attach perf to bpf");
 		return -1;
 	}
-	spdlog::info("attach perf {} to bpf {}, for pid {}", perf_id, bpf_id, server_pid);
+	spdlog::info("attach perf {} to bpf {}, for pid {}", perf_id, bpf_id,
+		     server_pid);
 	return 0;
 }
 
@@ -139,24 +141,26 @@ int bpftime_driver::bpftime_perf_event_enable_server(int server_pid, int fd)
 		spdlog::error("Failed to enable perf event");
 		return -1;
 	}
-	spdlog::info("enable perf event {} for pid {} fd {}", fd_id, server_pid, fd);
+	spdlog::info("enable perf event {} for pid {} fd {}", fd_id, server_pid,
+		     fd);
 	return 0;
 }
 // disable the perf event
 int bpftime_driver::bpftime_perf_event_disable_server(int server_pid, int fd)
 {
-    int fd_id = check_and_get_pid_fd(server_pid, fd);
-    if (fd_id < 0) {
-        spdlog::error("fd {} for pid {} not exists", fd, server_pid);
-        return -1;
-    }
-    int res = bpftime_perf_event_disable(fd_id);
-    if (res < 0) {
-        spdlog::error("Failed to disable perf event");
-        return -1;
-    }
-	spdlog::info("disable perf event {} for pid {} fd {}", fd_id, server_pid, fd);
-    return 0;
+	int fd_id = check_and_get_pid_fd(server_pid, fd);
+	if (fd_id < 0) {
+		spdlog::error("fd {} for pid {} not exists", fd, server_pid);
+		return -1;
+	}
+	int res = bpftime_perf_event_disable(fd_id);
+	if (res < 0) {
+		spdlog::error("Failed to disable perf event");
+		return -1;
+	}
+	spdlog::info("disable perf event {} for pid {} fd {}", fd_id,
+		     server_pid, fd);
+	return 0;
 }
 
 void bpftime_driver::bpftime_close_server(int server_pid, int fd)
@@ -169,6 +173,15 @@ void bpftime_driver::bpftime_close_server(int server_pid, int fd)
 	pid_fd_to_id_map.erase(get_pid_fd_key(server_pid, fd));
 	bpftime_close(fd_id);
 	spdlog::info("close id {} for pid {} fd {}", fd_id, server_pid, fd);
+}
+
+int bpftime_driver::bpftime_btf_load_server(int server_pid, int fd)
+{
+	int id = find_minimal_unused_id();
+	pid_fd_to_id_map[get_pid_fd_key(server_pid, fd)] = id;
+	// TODO: handle kernel BTF in our system
+	spdlog::info("create btf {} for pid {} fd {}", id, server_pid, fd);
+	return 0;
 }
 
 bpftime_driver::bpftime_driver(daemon_config cfg)
