@@ -51,7 +51,7 @@ long array_map_kernel_user_impl::elem_delete(const void *key)
 	return 0;
 }
 
-int array_map_kernel_user_impl::bpf_map_get_next_key(const void *key,
+int array_map_kernel_user_impl::map_get_next_key(const void *key,
 						     void *next_key)
 {
 	// Not found

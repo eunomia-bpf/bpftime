@@ -52,7 +52,7 @@ long perf_event_array_map_impl::elem_delete(const void *key)
 	return 0;
 }
 
-int perf_event_array_map_impl::bpf_map_get_next_key(const void *key,
+int perf_event_array_map_impl::map_get_next_key(const void *key,
 						    void *next_key)
 {
 	int32_t *out = (int32_t *)next_key;
