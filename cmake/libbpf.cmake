@@ -16,39 +16,40 @@ ExternalProject_Add(libbpf
 
 # Set BpfObject input parameters -- note this is usually not necessary unless
 # you're in a highly vendored environment (like libbpf-bootstrap)
-set(LIBBPF_INCLUDE_DIRS ${CMAKE_CURRENT_BINARY_DIR}/libbpf)
+set(LIBBPF_INCLUDE_DIRS ${CMAKE_CURRENT_BINARY_DIR}/libbpf/)
 set(LIBBPF_LIBRARIES ${CMAKE_CURRENT_BINARY_DIR}/libbpf/libbpf.a)
 
 set(header_output_list)
 
-function(copy_header TARGET SRC_DIR TARGET_DIR)
+function(copy_header SRC_DIR TARGET_DIR)
   file(GLOB_RECURSE FILES RELATIVE "${SRC_DIR}" "${SRC_DIR}/*")
   message(STATUS "copying ${FILES} from ${SRC_DIR} to ${TARGET_DIR}")
 
   foreach(file ${FILES})
     get_filename_component(PARENT_DIR "${TARGET_DIR}/${file}" DIRECTORY)
     add_custom_command(
-      PRE_BUILD
       COMMAND ${CMAKE_COMMAND} -E make_directory ${PARENT_DIR}
       COMMAND ${CMAKE_COMMAND} -E copy
       ${SRC_DIR}/${file}
       ${TARGET_DIR}/${file}
-      COMMENT "Copying file ${HEADER_DIRS}/${file} to ${TARGET_DIR}/${file}"
-      BYPRODUCTS ${TARGET_DIR}/${file}
+      COMMENT "Copying file ${SRC_DIR}/${file} to ${TARGET_DIR}/${file}"
       OUTPUT ${TARGET_DIR}/${file}
       DEPENDS ${SRC_DIR}/${file}
     )
     list(APPEND header_output_list ${TARGET_DIR}/${file})
+    set(header_output_list ${header_output_list} PARENT_SCOPE)
   endforeach()
 endfunction()
 
-copy_header(copy_headers "${LIBBPF_DIR}/include/linux" "${LIBBPF_INCLUDE_DIRS}/linux")
-copy_header(copy_headers "${LIBBPF_DIR}/include/uapi/linux" "${LIBBPF_INCLUDE_DIRS}/linux")
-
+copy_header("${LIBBPF_DIR}/include/linux" "${LIBBPF_INCLUDE_DIRS}/linux")
+copy_header("${LIBBPF_DIR}/include/uapi/" "${LIBBPF_INCLUDE_DIRS}/uapi")
+copy_header("${LIBBPF_DIR}/include/uapi/linux" "${LIBBPF_INCLUDE_DIRS}/linux")
 add_custom_target(copy_headers ALL
   COMMENT "Copying headers"
   DEPENDS ${header_output_list}
 )
+
+message(STATUS "All headers to copy: ${header_output_list}")
 
 set(HEADER_FILES relo_core.h hashmap.h nlattr.h libbpf_internal.h)
 

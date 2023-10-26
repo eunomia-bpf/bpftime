@@ -10,6 +10,14 @@
 #include <bpf/bpf_tracing.h>
 #include "sslsniff.h"
 
+#ifndef BPF_UPROBE
+#define BPF_UPROBE BPF_KPROBE
+#endif
+#ifndef BPF_URETPROBE
+#define BPF_URETPROBE BPF_KRETPROBE
+#endif
+
+
 struct {
     __uint(type, BPF_MAP_TYPE_PERF_EVENT_ARRAY);
     __uint(key_size, sizeof(__u32));

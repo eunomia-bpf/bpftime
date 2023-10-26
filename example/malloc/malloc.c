@@ -98,7 +98,7 @@ int main(int argc, char **argv)
 		goto cleanup;
 	}
 	LIBBPF_OPTS(bpf_uprobe_opts, attach_opts, .func_name = "malloc",
-		    .retprobe = false, .attach_mode = PROBE_ATTACH_MODE_PERF);
+		    .retprobe = false);
 	struct bpf_link *attach = bpf_program__attach_uprobe_opts(
 		skel->progs.do_count, -1, "/lib/x86_64-linux-gnu/libc.so.6", 0,
 		&attach_opts);
