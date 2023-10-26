@@ -7,7 +7,7 @@
 #include <bpf/bpf_core_read.h>
 #include "../bpf_tracer_event.h"
 #include "bpf_event_ringbuf.h"
-#include "bpf_maps_id_fd_map.h"
+#include "bpf_obj_id_fd_map.h"
 
 struct open_args_t {
 	const char *fname;
@@ -238,17 +238,12 @@ static int process_bpf_syscall_exit(struct event *event,
 		case BPF_MAP_CREATE: {
 			set_bpf_fd_if_positive(ret);
 			u64 pid_tgid = bpf_get_current_pid_tgid();
-			struct bpf_map **map_ptr =
-				(struct bpf_map **)bpf_map_lookup_elem(
+			u32* id_ptr =
+				(u32 *)bpf_map_lookup_elem(
 					&bpf_map_new_fd_args_map, &pid_tgid);
-			if (!map_ptr)
+			if (!id_ptr)
 				return 0; /* missed entry */
-			struct bpf_map *map = *map_ptr;
-			if (ret < 0) {
-				return 0;
-			}
-			unsigned int id = BPF_CORE_READ(map, id);
-			event->bpf_data.map_id = id;
+			event->bpf_data.map_id = *id_ptr;
 			bpf_map_delete_elem(&bpf_map_new_fd_args_map,
 					    &pid_tgid);
 		} break;
