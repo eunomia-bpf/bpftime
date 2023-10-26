@@ -9,6 +9,7 @@
 
 extern "C" {
 struct bpf_prog_info;
+struct bpf_tracer_bpf;
 }
 
 namespace bpftime
@@ -31,6 +32,7 @@ class bpftime_driver {
 	}
 	std::map<uint64_t, int> pid_fd_to_id_map;
 	daemon_config config;
+	struct bpf_tracer_bpf *object = NULL;
 
 	int check_and_create_prog_related_maps(int fd, const bpf_prog_info* info);
 
@@ -39,7 +41,7 @@ class bpftime_driver {
 	//
 	// @param[fd]: fd is the fd allocated by the kernel. if fd is -1, then
 	// the function will allocate a new perf event fd.
-	int bpftime_progs_create_server(int kernel_id);
+	int bpftime_progs_create_server(int kernel_id, int server_pid);
 
 	// create a bpf map in the global shared memory
 	//
@@ -73,7 +75,7 @@ class bpftime_driver {
 
 	void bpftime_close_server(int server_pid, int fd);
 
-	bpftime_driver(struct daemon_config cfg);
+	bpftime_driver(struct daemon_config cfg, struct bpf_tracer_bpf *obj);
 	~bpftime_driver();
 };
 

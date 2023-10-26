@@ -16,10 +16,7 @@ struct {
 	__type(value, struct bpf_fd_data);
 } bpf_fd_map SEC(".maps");
 
-#define PID_MASK_FOR_PFD 0xffffffff00000000
-#define FD_MASK_FOR_PFD 0x00000000ffffffff
-#define MAKE_PFD(pid, fd) (((u64)pid << 32) | (u64)fd)
-
+// is bpf fd in bpf_fd_map
 static __always_inline bool is_bpf_fd(u32 fd) {
 	u32 pid = bpf_get_current_pid_tgid() >> 32;
 	u64 key = MAKE_PFD(pid, fd);

@@ -1,10 +1,15 @@
 #include "bpftime_driver.hpp"
+#include <linux/bpf.h>
+#include <bpf/bpf.h>
 #include "ebpf-vm.h"
+#include "ebpf_inst.h"
 #include <spdlog/spdlog.h>
 #include "bpftime_shm.hpp"
-#include <bpf/bpf.h>
 #include <vector>
 #include <cassert>
+#include <linux/perf_event.h>
+#include "../bpf_tracer_event.h"
+#include "bpf_tracer.skel.h"
 
 using namespace bpftime;
 using namespace std;
@@ -31,6 +36,80 @@ static int get_kernel_bpf_prog_insns(int fd, const bpf_prog_info *info,
 	if (res < 0) {
 		spdlog::error("Failed to get prog info for fd {}", fd);
 		return -1;
+	}
+	return 0;
+}
+
+struct bpf_insn_data insn_data;
+
+static int get_bpf_map_id_from_pid_fd(bpf_tracer_bpf *obj, int pid, int fd)
+{
+	unsigned long long key = MAKE_PFD(pid, fd);
+	int map_id = -1;
+	struct bpf_fd_data data = {};
+
+	int res = bpf_map__lookup_elem(obj->maps.bpf_fd_map, &key, sizeof(key),
+				       &data, sizeof(data), 0);
+	if (res < 0) {
+		spdlog::error("Failed to lookup bpf fd map for pid {} fd {}",
+			      pid, fd);
+		return -1;
+	}
+	if (data.type != BPF_FD_TYPE_MAP) {
+		spdlog::error("Invalid bpf fd type {} for pid {} fd {}",
+			      data.type, pid, fd);
+	}
+	map_id = data.kernel_id;
+	return map_id;
+}
+
+static int relocate_bpf_prog_insns(std::vector<ebpf_inst> &insns,
+				   bpf_tracer_bpf *obj, int id, int pid)
+{
+	// relocate the bpf program
+	unsigned long long key_id = id;
+	assert(obj);
+	assert(obj->maps.bpf_prog_insns_map);
+	int res = bpf_map__lookup_elem(obj->maps.bpf_prog_insns_map, &key_id,
+				       sizeof(key_id), &insn_data,
+				       sizeof(insn_data), 0);
+	if (res < 0) {
+		spdlog::error("Failed to lookup bpf prog insns for id {}", id);
+		return -1;
+	}
+	spdlog::debug("relocate bpf prog insns for id {}, cnt {}", id,
+		      insn_data.code_len);
+	// resize the insns
+	insns.resize(insn_data.code_len);
+	const ebpf_inst *orignal_insns = (const ebpf_inst *)insn_data.code;
+	insns.assign(orignal_insns, orignal_insns + insn_data.code_len);
+	for (size_t i = 0; i < insn_data.code_len; i++) {
+		const struct ebpf_inst inst = orignal_insns[i];
+		bool store = false;
+
+		switch (inst.code) {
+		case EBPF_OP_LDDW:
+			if (inst.src_reg == 1 || inst.src_reg == 2) {
+				int map_id = get_bpf_map_id_from_pid_fd(
+					obj, pid, inst.imm);
+				if (map_id < 0) {
+					return -1;
+				}
+				spdlog::debug(
+					"relocate bpf prog insns for id {} in {}, "
+					"lddw imm {} to map id {}",
+					id, i, inst.imm, map_id);
+				insns[i].imm = map_id;
+			}
+			break;
+		case EBPF_OP_CALL:
+			spdlog::debug(
+				"relocate bpf prog insns for id {} in {}, call imm {}",
+				id, i, inst.imm);
+			break;
+		default:
+			break;
+		}
 	}
 	return 0;
 }
@@ -71,7 +150,7 @@ int bpftime_driver::check_and_create_prog_related_maps(
 	return 0;
 }
 
-int bpftime_driver::bpftime_progs_create_server(int kernel_id)
+int bpftime_driver::bpftime_progs_create_server(int kernel_id, int server_pid)
 {
 	int fd = bpf_prog_get_fd_by_id(kernel_id);
 	if (fd < 0) {
@@ -92,9 +171,10 @@ int bpftime_driver::bpftime_progs_create_server(int kernel_id)
 		return 0;
 	}
 	std::vector<ebpf_inst> buffer;
-	res = get_kernel_bpf_prog_insns(fd, &info, buffer);
+	res = relocate_bpf_prog_insns(buffer, object, kernel_id, server_pid);
 	if (res < 0) {
-		spdlog::error("Failed to get prog insns for id {}", kernel_id);
+		spdlog::error("Failed to relocate prog insns for id {}",
+			      kernel_id);
 		return -1;
 	}
 	res = bpftime_progs_create(kernel_id, buffer.data(), buffer.size(),
@@ -171,7 +251,8 @@ int bpftime_driver::bpftime_attach_perf_to_bpf_server(int server_pid,
 	if (bpftime_is_prog_fd(kernel_bpf_id)) {
 		spdlog::info("bpf {} already exists in shm", kernel_bpf_id);
 	} else {
-		int res = bpftime_progs_create_server(kernel_bpf_id);
+		int res =
+			bpftime_progs_create_server(kernel_bpf_id, server_pid);
 		if (res < 0) {
 			spdlog::error("Failed to create bpf for id {}",
 				      kernel_bpf_id);
@@ -272,9 +353,10 @@ int bpftime_driver::bpftime_btf_load_server(int server_pid, int fd)
 	return 0;
 }
 
-bpftime_driver::bpftime_driver(daemon_config cfg)
+bpftime_driver::bpftime_driver(daemon_config cfg, struct bpf_tracer_bpf *obj)
 {
 	config = cfg;
+	object = obj;
 	bpftime_initialize_global_shm(shm_open_type::SHM_REMOVE_AND_CREATE);
 }
 

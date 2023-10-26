@@ -194,8 +194,7 @@ int bpf_event_handler::handle_bpf_event(const struct event *e)
 	/* prepare fields */
 	const char *cmd_str;
 	if (e->bpf_data.bpf_cmd >=
-		    (sizeof(bpf_cmd_strings) / sizeof(bpf_cmd_strings[0])) ||
-	    e->bpf_data.bpf_cmd < 0) {
+		    (sizeof(bpf_cmd_strings) / sizeof(bpf_cmd_strings[0]))) {
 		cmd_str = "UNKNOWN COMMAND";
 	} else {
 		cmd_str = bpf_cmd_strings[e->bpf_data.bpf_cmd];

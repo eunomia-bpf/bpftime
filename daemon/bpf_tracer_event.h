@@ -90,4 +90,15 @@ struct event {
 	};
 };
 
+#define BPF_COMPLEXITY_LIMIT_INSNS 4096
+
+struct bpf_insn_data {
+	unsigned char code[BPF_COMPLEXITY_LIMIT_INSNS * sizeof(struct bpf_insn)];
+	unsigned int code_len;
+};
+
+#define PID_MASK_FOR_PFD 0xffffffff00000000
+#define FD_MASK_FOR_PFD 0x00000000ffffffff
+#define MAKE_PFD(pid, fd) (((unsigned long long)pid << 32) | (unsigned long long)fd)
+
 #endif /* __SYSCALL_TRACER_H */
