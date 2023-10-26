@@ -10,7 +10,6 @@
 namespace bpftime {
 
 class bpf_event_handler {
-    std::map<uint64_t, event> bpf_prog_map;
     int current_pid = 0;
     int uprobe_type = -1;
     int kprobe_type = -1;

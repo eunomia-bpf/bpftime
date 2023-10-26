@@ -85,6 +85,8 @@ int bpftime::start_daemon(struct daemon_config env)
 	obj->rodata->enable_replace_uprobe = env.enable_replace_uprobe;
 	obj->rodata->uprobe_perf_type = determine_uprobe_perf_type();
 	obj->rodata->kprobe_perf_type = determine_kprobe_perf_type();
+	obj->rodata->submit_bpf_events
+		= env.submit_bpf_events;
 
 	if (!env.show_open) {
 		bpf_program__set_autoload(obj->progs.tracepoint__syscalls__sys_exit_open, false);
@@ -118,9 +120,8 @@ int bpftime::start_daemon(struct daemon_config env)
 	while (!exiting) {
 		err = ring_buffer__poll(rb, 100 /* timeout, ms */);
 		if (err < 0 && err != -EINTR) {
-			fprintf(stderr, "error polling perf buffer: %s\n",
-				strerror(-err));
-			goto cleanup;
+			spdlog::error("error polling perf buffer: {}", strerror(-err));
+			// goto cleanup;
 		}
 		/* reset err to return 0 if exiting */
 		err = 0;

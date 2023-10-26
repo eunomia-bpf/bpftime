@@ -19,6 +19,19 @@ enum event_type {
 	BPF_PROG_LOAD_EVENT,
 };
 
+enum bpf_fd_type {
+	BPF_FD_TYPE_OTHERS,
+	BPF_FD_TYPE_PROG,
+	BPF_FD_TYPE_MAP,
+	BPF_FD_TYPE_MAX,
+};
+
+struct bpf_fd_data {
+	enum bpf_fd_type type;
+	// porg id or map id;
+	int kernel_id;
+};
+
 struct event {
 	enum event_type type;
 
@@ -63,6 +76,7 @@ struct event {
 
 		struct {
 			int fd;
+			struct bpf_fd_data fd_data;
 		} close_data;
 
 		struct {
