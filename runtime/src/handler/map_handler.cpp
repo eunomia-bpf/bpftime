@@ -353,12 +353,12 @@ int bpf_map_handler::map_init(managed_shared_memory &memory)
 	}
 	case bpf_map_type::BPF_MAP_TYPE_KERNEL_USER_ARRAY: {
 		map_impl_ptr = memory.construct<array_map_kernel_user_impl>(
-			container_name.c_str())(memory, kernel_map_id);
+			container_name.c_str())(memory, attr.kernel_bpf_map_id);
 		return 0;
 	}
 	case bpf_map_type::BPF_MAP_TYPE_KERNEL_USER_HASH: {
 		map_impl_ptr = memory.construct<hash_map_kernel_user_impl>(
-			container_name.c_str())(memory, kernel_map_id);
+			container_name.c_str())(memory,  attr.kernel_bpf_map_id);
 		return 0;
 	}
 	default:
