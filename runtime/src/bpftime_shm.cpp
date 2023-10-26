@@ -12,6 +12,10 @@
 
 using namespace bpftime;
 
+int bpftime_find_minimal_unused_fd() {
+	  return shm_holder.global_shared_memory.find_minimal_unused_fd();
+}
+
 int bpftime_link_create(int fd, int prog_fd, int target_fd)
 {
 	return shm_holder.global_shared_memory.add_bpf_link(fd, prog_fd,

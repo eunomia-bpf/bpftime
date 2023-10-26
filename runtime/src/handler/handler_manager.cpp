@@ -62,6 +62,15 @@ void handler_manager::clear_fd_at(int fd, managed_shared_memory &memory)
 	handlers[fd] = unused_handler();
 }
 
+int handler_manager::find_minimal_unused_idx() const {
+	for (std::size_t i = 0; i < handlers.size(); i++) {
+		if (!is_allocated(i)) {
+			return i;
+		}
+	}
+	return -1;
+}
+
 void handler_manager::clear_all(managed_shared_memory &memory)
 {
 	for (std::size_t i = 0; i < handlers.size(); i++) {
