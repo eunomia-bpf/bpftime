@@ -32,7 +32,7 @@ class bpftime_driver {
 	std::map<uint64_t, int> pid_fd_to_id_map;
 	daemon_config config;
 
-	int check_and_create_prog_related_maps(int fd, bpf_prog_info* info);
+	int check_and_create_prog_related_maps(int fd, const bpf_prog_info* info);
 
     public:
 	// create a bpf prog in the global shared memory
@@ -48,7 +48,7 @@ class bpftime_driver {
 	int bpftime_maps_create_server(int kernel_id);
 
 	int bpftime_attach_perf_to_bpf_server(int server_pid, int perf_fd,
-					      int bpf_fd, int kernel_bpf_id);
+					      int kernel_bpf_id);
 
 	// create uprobe in the global shared memory
 	//

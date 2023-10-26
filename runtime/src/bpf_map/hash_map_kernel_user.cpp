@@ -8,9 +8,8 @@
 
 namespace bpftime
 {
-hash_map_kernel_user_impl::hash_map_kernel_user_impl(
-	managed_shared_memory &memory, int km_id) : key_vec(1, memory.get_segment_manager()),
-	  value_vec(1, memory.get_segment_manager())
+
+void hash_map_kernel_user_impl::init_map_fd()
 {
 	map_fd = bpf_map_get_fd_by_id(kernel_map_id);
 	if (map_fd < 0) {
@@ -18,7 +17,6 @@ hash_map_kernel_user_impl::hash_map_kernel_user_impl(
 			      kernel_map_id);
 		return;
 	}
-	kernel_map_id = km_id;
 	bpf_map_info info = {};
 	unsigned int info_len = sizeof(info);
 	int res = bpf_map_get_info_by_fd(map_fd, &info, &info_len);
@@ -34,9 +32,19 @@ hash_map_kernel_user_impl::hash_map_kernel_user_impl(
 	value_vec.resize(_value_size);
 }
 
+hash_map_kernel_user_impl::hash_map_kernel_user_impl(
+	managed_shared_memory &memory, int km_id)
+	: key_vec(1, memory.get_segment_manager()),
+	  value_vec(1, memory.get_segment_manager()), kernel_map_id(km_id)
+{
+}
+
 void *hash_map_kernel_user_impl::elem_lookup(const void *key)
 {
 	spdlog::trace("Peform elem lookup of hash map");
+	if (map_fd < 0) {
+		init_map_fd();
+	}
 	// Allocate as a local variable to make
 	//  it thread safe, since we use sharable lock
 	int res = bpf_map_lookup_elem(map_fd, key, value_vec.data());
@@ -50,6 +58,9 @@ long hash_map_kernel_user_impl::elem_update(const void *key, const void *value,
 					    uint64_t flags)
 {
 	spdlog::trace("Peform elem update of hash map");
+	if (map_fd < 0) {
+		init_map_fd();
+	}
 	// Allocate as a local variable to make
 	//  it thread safe, since we use sharable lock
 	return bpf_map_update_elem(map_fd, key, value, flags);
@@ -58,15 +69,20 @@ long hash_map_kernel_user_impl::elem_update(const void *key, const void *value,
 long hash_map_kernel_user_impl::elem_delete(const void *key)
 {
 	spdlog::trace("Peform elem delete of hash map");
+	if (map_fd < 0) {
+		init_map_fd();
+	}
 	// Allocate as a local variable to make
 	//  it thread safe, since we use sharable lock
 	return bpf_map_delete_elem(map_fd, key);
 }
 
-int hash_map_kernel_user_impl::map_get_next_key(const void *key,
-						    void *next_key)
+int hash_map_kernel_user_impl::map_get_next_key(const void *key, void *next_key)
 {
 	spdlog::trace("Peform get next key of hash map");
+	if (map_fd < 0) {
+		init_map_fd();
+	}
 	// Allocate as a local variable to make
 	//  it thread safe, since we use sharable lock
 	return bpf_map_get_next_key(map_fd, key, next_key);

@@ -14,14 +14,16 @@ using namespace boost::interprocess;
 
 // implementation of hash map
 class hash_map_kernel_user_impl {
-	int kernel_map_id;
-	int map_fd;
+	int kernel_map_id = -1;
+	int map_fd = -1;
 
 	uint32_t _key_size;
 	uint32_t _value_size;
 
 	bytes_vec key_vec;
 	bytes_vec value_vec;
+
+	void init_map_fd();
 
     public:
 	const static bool should_lock = true;

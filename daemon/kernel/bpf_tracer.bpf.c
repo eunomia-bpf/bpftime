@@ -151,13 +151,6 @@ static int process_bpf_prog_load_events(union bpf_attr *attr)
 		// copy name of the program
 		*((__uint128_t *)&event->bpf_loaded_prog.prog_name) =
 			*((__uint128_t *)new_attr.prog_name);
-		int insn_buffer_size =
-			sizeof(event->bpf_loaded_prog.insns) >
-					insn_cnt * sizeof(struct bpf_insn) ?
-				insn_cnt * sizeof(struct bpf_insn) :
-				sizeof(event->bpf_loaded_prog.insns);
-		// bpf_probe_read(event->bpf_loaded_prog.insns, insn_buffer_size,
-		// 	       insns);
 		/* emit event */
 		bpf_ringbuf_submit(event, 0);
 	}
@@ -260,7 +253,9 @@ static int process_bpf_syscall_exit(struct bpf_args_t *ap, int ret)
 					    &pid_tgid);
 			struct bpf_fd_data data = { .type = BPF_FD_TYPE_PROG,
 						    .kernel_id = *id_ptr };
+
 			set_bpf_fd_data(ret, &data);
+			bpf_printk("bpf_prog_load exit id: %d fd: %d\n", *id_ptr, ret);
 			break;
 		}
 		case BPF_MAP_CREATE: {
@@ -275,7 +270,6 @@ static int process_bpf_syscall_exit(struct bpf_args_t *ap, int ret)
 						    .kernel_id = *id_ptr };
 
 			set_bpf_fd_data(ret, &data);
-
 			if (submit_bpf_events) {
 				struct event *event =
 					get_ringbuf_sys_exit_bpf_event(ap, ret);
@@ -414,8 +408,7 @@ int tracepoint__syscalls__sys_exit_perf_event_open(
 {
 	struct event *event = NULL;
 	struct perf_event_args_t *ap = NULL;
-	struct bpf_fd_data data = { .type = BPF_FD_TYPE_OTHERS,
-				    .kernel_id = 0 };
+	struct bpf_fd_data data = { .type = BPF_FD_TYPE_PERF, .kernel_id = 0 };
 
 	if (!filter_target()) {
 		return 0;
@@ -460,8 +453,12 @@ int tracepoint__syscalls__sys_enter_close(struct trace_event_raw_sys_enter *ctx)
 	int fd = (int)ctx->args[0];
 	u32 pid = bpf_get_current_pid_tgid() >> 32;
 	u64 key = MAKE_PFD(pid, fd);
-	void *pfd = bpf_map_lookup_elem(&bpf_fd_map, &key);
+	struct bpf_fd_data *pfd = bpf_map_lookup_elem(&bpf_fd_map, &key);
 	if (!pfd) {
+		return 0;
+	}
+	if (!submit_bpf_events && pfd->type != BPF_FD_TYPE_PERF) {
+		// ignore not perf close event
 		return 0;
 	}
 	/* event data */
@@ -544,9 +541,8 @@ int tracepoint__syscalls__sys_exit_ioctl(struct trace_event_raw_sys_exit *ctx)
 	if (PERF_EVENT_IOC_SET_BPF == ap->req) {
 		u32 pid = bpf_get_current_pid_tgid() >> 32;
 		u64 key = MAKE_PFD(pid, ap->data);
-		void *pfd = bpf_map_lookup_elem(&bpf_fd_map, &key);
-		if (pfd) {
-			struct bpf_fd_data *data = (struct bpf_fd_data *)pfd;
+		struct bpf_fd_data *data = bpf_map_lookup_elem(&bpf_fd_map, &key);
+		if (data) {
 			event->ioctl_data.bpf_prog_id = data->kernel_id;
 		} else {
 			event->ioctl_data.bpf_prog_id = 0;

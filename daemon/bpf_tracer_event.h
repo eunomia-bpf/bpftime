@@ -21,6 +21,7 @@ enum event_type {
 
 enum bpf_fd_type {
 	BPF_FD_TYPE_OTHERS,
+	BPF_FD_TYPE_PERF,
 	BPF_FD_TYPE_PROG,
 	BPF_FD_TYPE_MAP,
 	BPF_FD_TYPE_MAX,
@@ -84,7 +85,7 @@ struct event {
 			int data;
 			int ret;
 
-			unsigned int bpf_prog_id;
+			int bpf_prog_id;
 		} ioctl_data;
 	};
 };

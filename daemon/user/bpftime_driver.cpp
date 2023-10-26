@@ -16,13 +16,16 @@ int bpftime_driver::find_minimal_unused_id()
 	return id;
 }
 
-static int get_kernel_bpf_prog_insns(int fd, bpf_prog_info *info,
+static int get_kernel_bpf_prog_insns(int fd, const bpf_prog_info *info,
 				     std::vector<ebpf_inst> &insns)
 {
-	insns.resize(info->xlated_prog_len);
+	insns.resize(info->xlated_prog_len / sizeof(ebpf_inst));
+	bpf_prog_info new_info;
 	uint32_t info_len = sizeof(bpf_prog_info);
-	info->xlated_prog_insns = (unsigned long long)(uintptr_t)insns.data();
-	int res = bpf_obj_get_info_by_fd(fd, info, &info_len);
+
+	new_info.xlated_prog_len = info->xlated_prog_len;
+	new_info.xlated_prog_insns = (unsigned long long)(uintptr_t)insns.data();
+	int res = bpf_obj_get_info_by_fd(fd, &new_info, &info_len);
 	if (res < 0) {
 		spdlog::error("Failed to get prog info for fd {}", fd);
 		return -1;
@@ -30,17 +33,26 @@ static int get_kernel_bpf_prog_insns(int fd, bpf_prog_info *info,
 	return 0;
 }
 
-int bpftime_driver::check_and_create_prog_related_maps(int fd, bpf_prog_info* info) {
-	std::vector<int> map_ids;
-	map_ids.resize(info->nr_map_ids);
+int bpftime_driver::check_and_create_prog_related_maps(int fd,
+						       const bpf_prog_info *info)
+{
+	std::vector<unsigned int> map_ids;
 	uint32_t info_len = sizeof(bpf_prog_info);
-	info->map_ids = (unsigned long long)(uintptr_t)map_ids.data();
-	int res = bpf_obj_get_info_by_fd(fd, info, &info_len);
+	bpf_prog_info new_info;
+
+	spdlog::info("find {} related maps for prog fd {}", info->nr_map_ids, fd);
+	map_ids.resize(info->nr_map_ids);
+	new_info.nr_map_ids = info->nr_map_ids;
+	new_info.map_ids = (unsigned long long)(uintptr_t)map_ids.data();
+	int res = bpf_obj_get_info_by_fd(fd, &new_info, &info_len);
 	if (res < 0) {
-		spdlog::error("Failed to get prog info for fd {} to find related maps", fd);
+		spdlog::error(
+			"Failed to get prog info for fd {} to find related maps",
+			fd);
 		return -1;
 	}
-	for (int i = 0; i < info->nr_map_ids; i++) {
+	assert(info->nr_map_ids == new_info.nr_map_ids);
+	for (unsigned int i = 0; i < info->nr_map_ids; i++) {
 		int map_id = map_ids[i];
 		if (bpftime_is_map_fd(map_id)) {
 			// check whether the map is exist
@@ -91,9 +103,11 @@ int bpftime_driver::bpftime_progs_create_server(int kernel_id)
 	// check and created related maps
 	res = check_and_create_prog_related_maps(fd, &info);
 	if (res < 0) {
-		spdlog::error("Failed to create related maps for prog {}", kernel_id);
+		spdlog::error("Failed to create related maps for prog {}",
+			      kernel_id);
 		return -1;
 	}
+	close(fd);
 	return kernel_id;
 }
 
@@ -141,7 +155,7 @@ int bpftime_driver::bpftime_maps_create_server(int kernel_id)
 }
 
 int bpftime_driver::bpftime_attach_perf_to_bpf_server(int server_pid,
-						      int perf_fd, int bpf_fd,
+						      int perf_fd,
 						      int kernel_bpf_id)
 {
 	int perf_id = check_and_get_pid_fd(server_pid, perf_fd);
@@ -150,20 +164,24 @@ int bpftime_driver::bpftime_attach_perf_to_bpf_server(int server_pid,
 			      server_pid);
 		return -1;
 	}
-	int bpf_id = check_and_get_pid_fd(server_pid, bpf_fd);
-	if (bpf_id < 0) {
-		spdlog::error("bpf fd {} for pid {} not exists", bpf_fd,
-			      server_pid);
-		return -1;
+	if (bpftime_is_prog_fd(kernel_bpf_id)) {
+		spdlog::info("bpf {} already exists in shm", kernel_bpf_id);
+	} else {
+		int res = bpftime_progs_create_server(kernel_bpf_id);
+		if (res < 0) {
+			spdlog::error("Failed to create bpf for id {}",
+				      kernel_bpf_id);
+			return -1;
+		}
 	}
 
-	int res = bpftime_attach_perf_to_bpf(perf_id, bpf_id);
+	int res = bpftime_attach_perf_to_bpf(perf_id, kernel_bpf_id);
 	if (res < 0) {
 		spdlog::error("Failed to attach perf to bpf");
 		return -1;
 	}
-	spdlog::info("attach perf {} to bpf {}, for pid {}", perf_id, bpf_id,
-		     server_pid);
+	spdlog::info("attach perf {} to bpf {}, for pid {}", perf_id,
+		     kernel_bpf_id, server_pid);
 	return 0;
 }
 
@@ -229,7 +247,7 @@ void bpftime_driver::bpftime_close_server(int server_pid, int fd)
 {
 	int fd_id = check_and_get_pid_fd(server_pid, fd);
 	if (fd_id < 0) {
-		spdlog::warn("fd {} for pid {} not exists", fd, server_pid);
+		spdlog::info("fd {} for pid {} not exists", fd, server_pid);
 		return;
 	}
 	pid_fd_to_id_map.erase(get_pid_fd_key(server_pid, fd));

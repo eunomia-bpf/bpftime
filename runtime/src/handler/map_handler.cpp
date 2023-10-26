@@ -391,7 +391,14 @@ void bpf_map_handler::map_free(managed_shared_memory &memory)
 	case bpf_map_type::BPF_MAP_TYPE_PERCPU_HASH:
 		memory.destroy<per_cpu_hash_map_impl>(container_name.c_str());
 		break;
-
+	case bpf_map_type::BPF_MAP_TYPE_KERNEL_USER_ARRAY:
+		memory.destroy<array_map_kernel_user_impl>(
+			container_name.c_str());
+		break;
+	case bpf_map_type::BPF_MAP_TYPE_KERNEL_USER_HASH:
+		memory.destroy<hash_map_kernel_user_impl>(
+			container_name.c_str());
+		break;
 	default:
 		assert(false && "Unsupported map type");
 	}

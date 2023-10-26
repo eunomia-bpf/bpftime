@@ -327,7 +327,7 @@ int bpf_event_handler::handle_ioctl(const struct event *e)
 			     data, e->ioctl_data.bpf_prog_id);
 		if (config.is_driving_bpftime) {
 			return driver.bpftime_attach_perf_to_bpf_server(
-				e->pid, fd, data);
+				e->pid, fd, e->ioctl_data.bpf_prog_id);
 		}
 	}
 	return 0;

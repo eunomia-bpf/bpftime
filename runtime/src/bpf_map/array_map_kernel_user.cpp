@@ -11,9 +11,7 @@ void *array_map_kernel_user_impl::get_raw_data() const
 	return (void *)data.data();
 }
 
-array_map_kernel_user_impl::array_map_kernel_user_impl(boost::interprocess::managed_shared_memory &memory,
-		       int km_id)
-	: data(1, memory.get_segment_manager())
+void array_map_kernel_user_impl::init_map_fd()
 {
 	map_fd = bpf_map_get_fd_by_id(kernel_map_id);
 	if (map_fd < 0) {
@@ -21,7 +19,6 @@ array_map_kernel_user_impl::array_map_kernel_user_impl(boost::interprocess::mana
 			      kernel_map_id);
 		return;
 	}
-	kernel_map_id = km_id;
 	bpf_map_info info = {};
 	unsigned int info_len = sizeof(info);
 	int res = bpf_map_get_info_by_fd(map_fd, &info, &info_len);
@@ -29,15 +26,25 @@ array_map_kernel_user_impl::array_map_kernel_user_impl(boost::interprocess::mana
 		spdlog::error("Failed to get info for kernel map id {}",
 			      kernel_map_id);
 	}
-	this->_value_size = info.value_size;
-	this->_max_entries = info.max_entries;
-	spdlog::debug("create kernel user array map value size {}, max entries {}",
-		      _value_size, _max_entries);
+	_value_size = info.value_size;
+	_max_entries = info.max_entries;
+	spdlog::debug(
+		"create kernel user array map value size {}, max entries {}",
+		_value_size, _max_entries);
 	data.resize(_value_size * _max_entries);
+}
+
+array_map_kernel_user_impl::array_map_kernel_user_impl(
+	boost::interprocess::managed_shared_memory &memory, int km_id)
+	: data(1, memory.get_segment_manager()), kernel_map_id(km_id)
+{
 }
 
 void *array_map_kernel_user_impl::elem_lookup(const void *key)
 {
+	if (map_fd < 0) {
+		init_map_fd();
+	}
 	auto key_val = *(uint32_t *)key;
 	if (key_val >= _max_entries) {
 		errno = ENOENT;
@@ -49,6 +56,9 @@ void *array_map_kernel_user_impl::elem_lookup(const void *key)
 long array_map_kernel_user_impl::elem_update(const void *key, const void *value,
 					     uint64_t flags)
 {
+	if (map_fd < 0) {
+		init_map_fd();
+	}
 	auto key_val = *(uint32_t *)key;
 	if (key_val >= _max_entries) {
 		errno = ENOENT;
@@ -61,6 +71,9 @@ long array_map_kernel_user_impl::elem_update(const void *key, const void *value,
 
 long array_map_kernel_user_impl::elem_delete(const void *key)
 {
+	if (map_fd < 0) {
+		init_map_fd();
+	}
 	auto key_val = *(uint32_t *)key;
 	if (key_val >= _max_entries) {
 		errno = ENOENT;
@@ -72,7 +85,7 @@ long array_map_kernel_user_impl::elem_delete(const void *key)
 }
 
 int array_map_kernel_user_impl::map_get_next_key(const void *key,
-						     void *next_key)
+						 void *next_key)
 {
 	// Not found
 	if (key == nullptr || *(uint32_t *)key >= _max_entries) {

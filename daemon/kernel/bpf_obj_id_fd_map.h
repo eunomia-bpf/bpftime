@@ -34,10 +34,10 @@ struct {
 SEC("kprobe/bpf_prog_kallsyms_add")
 int BPF_KPROBE(bpf_prog_kallsyms_add_enter, struct bpf_prog *prog)
 {	
-	bpf_printk("bpf_prog_kallsyms_add enter");
 	u64 pid_tgid = bpf_get_current_pid_tgid();
 	u32 id = BPF_CORE_READ(prog, aux, id);
-	bpf_map_update_elem(&bpf_progs_new_fd_args_map, &pid_tgid, &prog, 0);
+	bpf_printk("bpf_prog_kallsyms_add enter find id: %d", id);
+	bpf_map_update_elem(&bpf_progs_new_fd_args_map, &pid_tgid, &id, 0);
 	return 0;
 }
 
