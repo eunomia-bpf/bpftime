@@ -69,9 +69,6 @@ int bpf_event_handler::handle_open_events(const struct event *e)
 	struct tm *tm;
 	char ts[32];
 	time_t t;
-	if (!config.show_open) {
-		return 0;
-	}
 
 	/* print output */
 	spdlog::info("OPEN {:<6} {:<16}", e->pid, e->comm);
@@ -176,8 +173,8 @@ static const char *const bpf_map_type_strings[] = {
 
 static const char *get_bpf_map_type_string(bpftime::bpf_map_type type)
 {
-	if ((int)type >= 0 && (int)type < BPF_MAP_TYPE_MAX) {
-		return bpf_map_type_strings[(int)type];
+	if ((int)type >= 0 && (unsigned long)type < BPF_MAP_TYPE_MAX) {
+		return bpf_map_type_strings[(unsigned int)type];
 	}
 	return "Unknown";
 }
@@ -195,11 +192,13 @@ int bpf_event_handler::handle_close_event(const struct event *e)
 int bpf_event_handler::handle_bpf_event(const struct event *e)
 {
 	/* prepare fields */
-	const char *cmd_str =
-		e->bpf_data.bpf_cmd >= (sizeof(bpf_cmd_strings) /
-					sizeof(bpf_cmd_strings[0])) ?
-			"UNKNOWN COMMAND" :
-			bpf_cmd_strings[e->bpf_data.bpf_cmd];
+	const char *cmd_str;
+	if (e->bpf_data.bpf_cmd >=
+		    (sizeof(bpf_cmd_strings) / sizeof(bpf_cmd_strings[0]))) {
+		cmd_str = "UNKNOWN COMMAND";
+	} else {
+		cmd_str = bpf_cmd_strings[e->bpf_data.bpf_cmd];
+	}
 
 	spdlog::info("BPF      {:<6} {:<16} cmd:{:<16} ret:{}", e->pid, e->comm,
 		     cmd_str, e->bpf_data.ret);
@@ -208,41 +207,16 @@ int bpf_event_handler::handle_bpf_event(const struct event *e)
 	case BPF_MAP_CREATE:
 		/* code */
 		spdlog::info(
-			"   BPF_MAP_CREATE map_type:{:<16} map_name:{:<16}",
+			"   BPF_MAP_CREATE map_type:{:<16} map_name:{:<16} id {}",
 			get_bpf_map_type_string(
 				(enum bpf_map_type)e->bpf_data.attr.map_type),
-			e->bpf_data.attr.map_name);
-		if (config.is_driving_bpftime && e->bpf_data.ret > 0) {
-			bpftime::bpf_map_attr attr;
-			attr.type = e->bpf_data.attr.map_type;
-			attr.key_size = e->bpf_data.attr.key_size;
-			attr.value_size = e->bpf_data.attr.value_size;
-			attr.max_ents = e->bpf_data.attr.max_entries;
-			attr.flags = e->bpf_data.attr.map_flags;
-			attr.btf_id = e->bpf_data.attr.btf_fd;
-			attr.btf_key_type_id = e->bpf_data.attr.btf_key_type_id;
-			attr.btf_value_type_id =
-				e->bpf_data.attr.btf_value_type_id;
-			attr.btf_vmlinux_value_type_id =
-				e->bpf_data.attr.btf_vmlinux_value_type_id;
-			// attr.map_extra = e->bpf_data.attr.map_extra;
-			attr.ifindex = e->bpf_data.attr.map_ifindex;
-			driver.bpftime_maps_create_server(
-				e->pid, e->bpf_data.ret,
-				e->bpf_data.attr.map_name, attr);
-		}
+			e->bpf_data.attr.map_name, e->bpf_data.map_id);
 		break;
 	case BPF_LINK_CREATE:
 		/* code */
 		spdlog::info("   BPF_LINK_CREATE prog_fd:{} target_fd:{}",
 			     e->bpf_data.attr.link_create.prog_fd,
 			     e->bpf_data.attr.link_create.target_fd);
-		if (config.is_driving_bpftime && e->bpf_data.ret > 0) {
-			return driver.bpftime_link_create_server(
-				e->pid, e->bpf_data.ret,
-				e->bpf_data.attr.link_create.prog_fd,
-				e->bpf_data.attr.link_create.target_fd);
-		}
 		break;
 	case BPF_PROG_LOAD:
 		/* code */
@@ -250,17 +224,12 @@ int bpf_event_handler::handle_bpf_event(const struct event *e)
 			"   BPF_PROG_LOAD prog_type:{:<16} prog_name:{:<16}",
 			bpf_prog_type_strings[e->bpf_data.attr.prog_type],
 			e->bpf_data.attr.prog_name);
-		if (config.is_driving_bpftime && e->bpf_data.ret > 0) {
-			event load_prog_event =
-				bpf_prog_map[e->bpf_data.attr.insns];
-			return driver.bpftime_progs_create_server(
-				e->pid, e->bpf_data.ret,
-				(ebpf_inst *)
-					load_prog_event.bpf_loaded_prog.insns,
-				load_prog_event.bpf_loaded_prog.insn_cnt,
-				e->bpf_data.attr.prog_name,
-				e->bpf_data.attr.prog_type);
-		}
+		break;
+	case BPF_BTF_LOAD:
+		/* code */
+		spdlog::info("   BPF_BTF_LOAD btf_id:{} btf_log_level:{}",
+			     e->bpf_data.attr.btf_id,
+			     e->bpf_data.attr.btf_log_level);
 		break;
 	default:
 		break;
@@ -277,6 +246,7 @@ static const char *perf_type_id_strings[PERF_TYPE_MAX_ID] = {
 
 int bpf_event_handler::handle_perf_event(const struct event *e)
 {
+	spdlog::debug("handle_perf_event");
 	const char *type_id_str = "UNKNOWN TYPE";
 	unsigned int perf_type = e->perf_event_data.attr.type;
 	if (perf_type >= 0 && perf_type < (sizeof(perf_type_id_strings) /
@@ -312,6 +282,7 @@ int bpf_event_handler::handle_perf_event(const struct event *e)
 
 int bpf_event_handler::handle_load_bpf_prog_event(const struct event *e)
 {
+	spdlog::debug("handle_load_bpf_prog_event");
 	const char *prog_type_str =
 		e->bpf_loaded_prog.type >= (sizeof(bpf_prog_type_strings) /
 					    sizeof(bpf_prog_type_strings[0])) ?
@@ -327,8 +298,6 @@ int bpf_event_handler::handle_load_bpf_prog_event(const struct event *e)
 		"BPF_LOAD {:<6} {:<16} name:{:<16} type:{:<16} insn_cnt:{:<6}",
 		e->pid, e->comm, prog_name, prog_type_str,
 		e->bpf_loaded_prog.insn_cnt);
-	// save the program in the map for later lookup in prog load event
-	bpf_prog_map[e->bpf_loaded_prog.insns_ptr] = *e;
 	return 0;
 }
 
@@ -353,11 +322,11 @@ int bpf_event_handler::handle_ioctl(const struct event *e)
 									fd);
 		}
 	} else if (req == PERF_EVENT_IOC_SET_BPF) {
-		spdlog::info("Setting bpf for perf event {} and bpf {}", fd,
-			     data);
+		spdlog::info("Setting bpf for perf event {} and bpf {} (id: {})", fd,
+			     data, e->ioctl_data.bpf_prog_id);
 		if (config.is_driving_bpftime) {
 			return driver.bpftime_attach_perf_to_bpf_server(
-				e->pid, fd, data);
+				e->pid, fd, e->ioctl_data.bpf_prog_id);
 		}
 	}
 	return 0;
@@ -365,6 +334,7 @@ int bpf_event_handler::handle_ioctl(const struct event *e)
 
 int bpf_event_handler::handle_event(const struct event *e)
 {
+	spdlog::debug("handle_event");
 	// ignore events from self
 	if (e->pid == current_pid) {
 		return 0;

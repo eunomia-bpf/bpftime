@@ -6,6 +6,8 @@
 #include <bpf_map/array_map.hpp>
 #include <bpf_map/hash_map.hpp>
 #include <bpf_map/ringbuf_map.hpp>
+#include <bpf_map/array_map_kernel_user.hpp>
+#include <bpf_map/hash_map_kernel_user.hpp>
 
 using boost::interprocess::interprocess_sharable_mutex;
 using boost::interprocess::scoped_lock;
@@ -92,7 +94,16 @@ const void *bpf_map_handler::map_lookup_elem(const void *key,
 		return from_userspace ? do_lookup_userspace(impl) :
 					do_lookup(impl);
 	}
-
+	case bpf_map_type::BPF_MAP_TYPE_KERNEL_USER_ARRAY: {
+		auto impl = static_cast<array_map_kernel_user_impl *>(
+			map_impl_ptr.get());
+		return do_lookup(impl);
+	}
+	case bpf_map_type::BPF_MAP_TYPE_KERNEL_USER_HASH: {
+		auto impl = static_cast<hash_map_kernel_user_impl *>(
+			map_impl_ptr.get());
+		return do_lookup(impl);
+	}
 	default:
 		assert(false && "Unsupported map type");
 	}
@@ -151,6 +162,16 @@ long bpf_map_handler::map_update_elem(const void *key, const void *value,
 		return from_userspace ? do_update_userspace(impl) :
 					do_update(impl);
 	}
+	case bpf_map_type::BPF_MAP_TYPE_KERNEL_USER_ARRAY: {
+		auto impl = static_cast<array_map_kernel_user_impl *>(
+			map_impl_ptr.get());
+		return do_update(impl);
+	}
+	case bpf_map_type::BPF_MAP_TYPE_KERNEL_USER_HASH: {
+		auto impl = static_cast<hash_map_kernel_user_impl *>(
+			map_impl_ptr.get());
+		return do_update(impl);
+	}
 	default:
 		assert(false && "Unsupported map type");
 	}
@@ -164,9 +185,9 @@ int bpf_map_handler::bpf_map_get_next_key(const void *key, void *next_key,
 		if (impl->should_lock) {
 			sharable_lock<interprocess_sharable_mutex> guard(
 				*map_mutex);
-			return impl->bpf_map_get_next_key(key, next_key);
+			return impl->map_get_next_key(key, next_key);
 		} else {
-			return impl->bpf_map_get_next_key(key, next_key);
+			return impl->map_get_next_key(key, next_key);
 		}
 	};
 	switch (type) {
@@ -194,6 +215,16 @@ int bpf_map_handler::bpf_map_get_next_key(const void *key, void *next_key,
 	}
 	case bpf_map_type::BPF_MAP_TYPE_PERCPU_HASH: {
 		auto impl = static_cast<per_cpu_hash_map_impl *>(
+			map_impl_ptr.get());
+		return do_get_next_key(impl);
+	}
+	case bpf_map_type::BPF_MAP_TYPE_KERNEL_USER_ARRAY: {
+		auto impl = static_cast<array_map_kernel_user_impl *>(
+			map_impl_ptr.get());
+		return do_get_next_key(impl);
+	}
+	case bpf_map_type::BPF_MAP_TYPE_KERNEL_USER_HASH: {
+		auto impl = static_cast<hash_map_kernel_user_impl *>(
 			map_impl_ptr.get());
 		return do_get_next_key(impl);
 	}
@@ -255,6 +286,16 @@ long bpf_map_handler::map_delete_elem(const void *key,
 		return from_userspace ? do_delete_userspace(impl) :
 					do_delete(impl);
 	}
+	case bpf_map_type::BPF_MAP_TYPE_KERNEL_USER_ARRAY: {
+		auto impl = static_cast<array_map_kernel_user_impl *>(
+			map_impl_ptr.get());
+		return do_delete(impl);
+	}
+	case bpf_map_type::BPF_MAP_TYPE_KERNEL_USER_HASH: {
+		auto impl = static_cast<hash_map_kernel_user_impl *>(
+			map_impl_ptr.get());
+		return do_delete(impl);
+	}
 	default:
 		assert(false && "Unsupported map type");
 	}
@@ -310,6 +351,16 @@ int bpf_map_handler::map_init(managed_shared_memory &memory)
 			container_name.c_str())(memory, key_size, value_size);
 		return 0;
 	}
+	case bpf_map_type::BPF_MAP_TYPE_KERNEL_USER_ARRAY: {
+		map_impl_ptr = memory.construct<array_map_kernel_user_impl>(
+			container_name.c_str())(memory, attr.kernel_bpf_map_id);
+		return 0;
+	}
+	case bpf_map_type::BPF_MAP_TYPE_KERNEL_USER_HASH: {
+		map_impl_ptr = memory.construct<hash_map_kernel_user_impl>(
+			container_name.c_str())(memory,  attr.kernel_bpf_map_id);
+		return 0;
+	}
 	default:
 		spdlog::error("Unsupported map type: {}", (int)type);
 		assert(false && "Unsupported map type");
@@ -340,7 +391,14 @@ void bpf_map_handler::map_free(managed_shared_memory &memory)
 	case bpf_map_type::BPF_MAP_TYPE_PERCPU_HASH:
 		memory.destroy<per_cpu_hash_map_impl>(container_name.c_str());
 		break;
-
+	case bpf_map_type::BPF_MAP_TYPE_KERNEL_USER_ARRAY:
+		memory.destroy<array_map_kernel_user_impl>(
+			container_name.c_str());
+		break;
+	case bpf_map_type::BPF_MAP_TYPE_KERNEL_USER_HASH:
+		memory.destroy<hash_map_kernel_user_impl>(
+			container_name.c_str());
+		break;
 	default:
 		assert(false && "Unsupported map type");
 	}

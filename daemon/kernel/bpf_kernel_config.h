@@ -18,6 +18,7 @@ const char new_uprobe_path[PATH_LENTH] = "\0";
 const volatile int uprobe_perf_type = 0;
 const volatile int kprobe_perf_type = 0;
 
+const volatile bool submit_bpf_events = 0;
 
 static __always_inline bool filter_target(void)
 {

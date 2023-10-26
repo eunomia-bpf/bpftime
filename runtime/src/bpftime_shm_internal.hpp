@@ -6,7 +6,7 @@
 #include <cstddef>
 #include <functional>
 #include <boost/interprocess/containers/set.hpp>
-#include <common/bpftime_config.hpp>
+#include "bpftime_config.hpp"
 #include <handler/handler_manager.hpp>
 #include <optional>
 namespace bpftime
@@ -52,6 +52,14 @@ class bpftime_shm {
 	bool is_array_map_fd(int fd) const;
 	bool is_perf_event_handler_fd(int fd) const;
 	bool is_software_perf_event_handler_fd(int fd) const;
+
+	int find_minimal_unused_fd() const
+	{
+		if (!manager) {
+			return -1;
+		}
+		return manager->find_minimal_unused_idx();
+	}
 
 	std::optional<ringbuf_map_impl *>
 	try_get_ringbuf_map_impl(int fd) const;

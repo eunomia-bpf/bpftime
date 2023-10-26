@@ -7,6 +7,11 @@
 #include <ebpf-vm.h>
 #include <map>
 
+extern "C" {
+struct bpf_prog_info;
+struct bpf_tracer_bpf;
+}
+
 namespace bpftime
 {
 
@@ -27,53 +32,50 @@ class bpftime_driver {
 	}
 	std::map<uint64_t, int> pid_fd_to_id_map;
 	daemon_config config;
+	struct bpf_tracer_bpf *object = NULL;
+
+	int check_and_create_prog_related_maps(int fd, const bpf_prog_info* info);
 
     public:
-	// create a bpf link in the global shared memory
-	//
-	// @param[fd]: fd is the fd allocated by the kernel. if fd is -1, then
-	// the function will allocate a new perf event fd.
-	int bpftime_link_create_server(int server_pid, int fd, int prog_fd,
-				int target_fd);
-
 	// create a bpf prog in the global shared memory
 	//
 	// @param[fd]: fd is the fd allocated by the kernel. if fd is -1, then
 	// the function will allocate a new perf event fd.
-	int bpftime_progs_create_server(int server_pid, int fd, const ebpf_inst *insn,
-				 size_t insn_cnt, const char *prog_name,
-				 int prog_type);
+	int bpftime_progs_create_server(int kernel_id, int server_pid);
 
 	// create a bpf map in the global shared memory
 	//
 	// @param[fd]: fd is the fd allocated by the kernel. if fd is -1, then
 	// the function will allocate a new perf event fd.
-	int bpftime_maps_create_server(int server_pid, int fd, const char *name,
-				bpftime::bpf_map_attr attr);
+	int bpftime_maps_create_server(int kernel_id);
 
-	int bpftime_attach_perf_to_bpf_server(int server_pid, int perf_fd, int bpf_fd);
+	int bpftime_attach_perf_to_bpf_server(int server_pid, int perf_fd,
+					      int kernel_bpf_id);
 
 	// create uprobe in the global shared memory
 	//
 	// @param[fd]: fd is the fd allocated by the kernel. if fd is -1, then
 	// the function will allocate a new perf event fd.
 	int bpftime_uprobe_create_server(int server_pid, int fd, int target_pid,
-				  const char *name, uint64_t offset,
-				  bool retprobe, size_t ref_ctr_off);
+					 const char *name, uint64_t offset,
+					 bool retprobe, size_t ref_ctr_off);
 	// create tracepoint in the global shared memory
 	//
 	// @param[fd]: fd is the fd allocated by the kernel. if fd is -1, then
 	// the function will allocate a new perf event fd.
 	int bpftime_tracepoint_create_server(int server_pid, int fd, int pid,
-				      int32_t tp_id);
+					     int32_t tp_id);
 	// enable the perf event
 	int bpftime_perf_event_enable_server(int server_pid, int fd);
 	// disable the perf event
 	int bpftime_perf_event_disable_server(int server_pid, int fd);
 
+	// load the btf into kernel
+	int bpftime_btf_load_server(int server_pid, int fd);
+
 	void bpftime_close_server(int server_pid, int fd);
 
-	bpftime_driver(struct daemon_config cfg);
+	bpftime_driver(struct daemon_config cfg, struct bpf_tracer_bpf *obj);
 	~bpftime_driver();
 };
 

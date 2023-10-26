@@ -17,7 +17,7 @@
 using namespace boost::interprocess;
 using namespace bpftime;
 
-static const char *SHM_NAME = "BPFTIME_PER_CPU_HASH_SHM";
+static const char *SHM_NAME = "BPFTIME_KERNEL_USER_HASH_SHM";
 
 TEST_CASE("Test basic operations of hash map")
 {

@@ -33,6 +33,7 @@ int handler_manager::set_handler(int fd, handler_variant &&handler,
 				  managed_shared_memory &memory)
 {
 	if (is_allocated(fd)) {
+		spdlog::error("set_handler failed for fd {} aleady exists", fd);
 		return -ENOENT;
 	}
 	handlers[fd] = std::move(handler);
@@ -59,6 +60,15 @@ void handler_manager::clear_fd_at(int fd, managed_shared_memory &memory)
 		std::get<bpf_map_handler>(handlers[fd]).map_free(memory);
 	}
 	handlers[fd] = unused_handler();
+}
+
+int handler_manager::find_minimal_unused_idx() const {
+	for (std::size_t i = 0; i < handlers.size(); i++) {
+		if (!is_allocated(i)) {
+			return i;
+		}
+	}
+	return -1;
 }
 
 void handler_manager::clear_all(managed_shared_memory &memory)

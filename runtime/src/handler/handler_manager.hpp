@@ -1,6 +1,6 @@
 #ifndef _HANDLER_MANAGER_HPP
 #define _HANDLER_MANAGER_HPP
-#include "common/bpftime_config.hpp"
+#include "bpftime_config.hpp"
 #include "handler/epoll_handler.hpp"
 #include "spdlog/spdlog.h"
 #include <boost/interprocess/interprocess_fwd.hpp>
@@ -37,7 +37,7 @@ using boost_shm_string =
 	boost::interprocess::basic_string<char, std::char_traits<char>,
 					  char_allocator>;
 
-const size_t DEFAULT_MAX_FD = 1024;
+const size_t DEFAULT_MAX_FD = 1024 * 16;
 
 struct unused_handler {};
 
@@ -103,6 +103,8 @@ class handler_manager {
 			 managed_shared_memory &memory);
 
 	bool is_allocated(int fd) const;
+
+	int find_minimal_unused_idx() const;
 
 	void clear_fd_at(int fd, managed_shared_memory &memory);
 

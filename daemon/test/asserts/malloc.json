@@ -1,0 +1,61 @@
+{
+    "0": {
+        "attr": {
+            "_module_name": "/lib/x86_64-linux-gnu/libc.so.6",
+            "offset": 653600,
+            "pid": -1,
+            "ref_ctr_off": 0,
+            "tracepoint_id": -1,
+            "type": 6
+        },
+        "type": "bpf_perf_event_handler"
+    },
+    "599": {
+        "attr": {
+            "btf_id": 715,
+            "btf_key_type_id": 8,
+            "btf_value_type_id": 12,
+            "btf_vmlinux_value_type_id": 0,
+            "flags": 0,
+            "ifindex": 0,
+            "kernel_bpf_map_id": 599,
+            "key_size": 4,
+            "map_extra": 0,
+            "map_type": 1001,
+            "max_entries": 1024,
+            "value_size": 8
+        },
+        "name": "libc_malloc_cal",
+        "type": "bpf_map_handler"
+    },
+    "601": {
+        "attr": {
+            "btf_id": 0,
+            "btf_key_type_id": 0,
+            "btf_value_type_id": 0,
+            "btf_vmlinux_value_type_id": 0,
+            "flags": 128,
+            "ifindex": 0,
+            "kernel_bpf_map_id": 601,
+            "key_size": 4,
+            "map_extra": 0,
+            "map_type": 1002,
+            "max_entries": 1,
+            "value_size": 27
+        },
+        "name": ".rodata.str1.1",
+        "type": "bpf_map_handler"
+    },
+    "724": {
+        "attr": {
+            "attach_fds": [
+                0
+            ],
+            "cnt": 55,
+            "insns": "850000000e0000007700000020000000630af4ff00000000b7010000640a00006b1af0ff00000000180100006f6d207000000000696420257b1ae8ff0000000018010000616c6c6500000000642066727b1ae0ff00000000180100006d616c6c000000006f6320637b1ad8ff00000000b706000000000000736af2ff00000000bfa100000000000007010000d8ffffffb70200001b000000bf0300000000000085000000060000007b6ad8ff00000000bfa200000000000007020000f4ffffff18110000570200000000000000000000850000000100000055000e0000000000bfa600000000000007060000f4ffffffbfa300000000000007030000d8ffffff18110000570200000000000000000000bf62000000000000b704000001000000850000000200000018110000570200000000000000000000bf62000000000000850000000100000015000b0000000000790100000000000007010000010000007b1af8ff00000000bfa200000000000007020000f4ffffffbfa300000000000007030000f8ffffff18110000570200000000000000000000b7040000020000008500000002000000b7000000000000009500000000000000",
+            "type": 1516411092
+        },
+        "name": "do_count",
+        "type": "bpf_prog_handler"
+    }
+}

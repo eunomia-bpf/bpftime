@@ -1,7 +1,7 @@
 #ifndef BPFTIME_SHM_CPP_H
 #define BPFTIME_SHM_CPP_H
 
-#include "common/bpftime_config.hpp"
+#include "bpftime_config.hpp"
 #include <boost/interprocess/interprocess_fwd.hpp>
 #include <cstddef>
 #include <boost/interprocess/containers/vector.hpp>
@@ -47,6 +47,8 @@ enum class bpf_event_type {
 	BPF_TYPE_REPLACE = 9,
 };
 
+#define KERNEL_USER_MAP_OFFSET 1000
+
 enum class bpf_map_type {
 	BPF_MAP_TYPE_UNSPEC,
 	BPF_MAP_TYPE_HASH,
@@ -89,6 +91,9 @@ enum class bpf_map_type {
 	BPF_MAP_TYPE_BLOOM_FILTER,
 	BPF_MAP_TYPE_USER_RINGBUF,
 	BPF_MAP_TYPE_CGRP_STORAGE,
+
+	BPF_MAP_TYPE_KERNEL_USER_HASH = KERNEL_USER_MAP_OFFSET + BPF_MAP_TYPE_HASH,
+	BPF_MAP_TYPE_KERNEL_USER_ARRAY = KERNEL_USER_MAP_OFFSET + BPF_MAP_TYPE_ARRAY,
 };
 
 enum class shm_open_type {
@@ -216,8 +221,13 @@ int bpftime_uprobe_create(int fd, int pid, const char *name, uint64_t offset,
 // function will allocate a new perf event fd.
 int bpftime_tracepoint_create(int fd, int pid, int32_t tp_id);
 
+// enable the perf event
 int bpftime_perf_event_enable(int fd);
+
+// disable the perf event
 int bpftime_perf_event_disable(int fd);
+
+int bpftime_find_minimal_unused_fd();
 
 int bpftime_attach_perf_to_bpf(int perf_fd, int bpf_fd);
 int bpftime_add_ringbuf_fd_to_epoll(int ringbuf_fd, int epoll_fd,
@@ -226,11 +236,16 @@ int bpftime_add_software_perf_event_fd_to_epoll(int swpe_fd, int epoll_fd,
 						epoll_data_t extra_data);
 
 int bpftime_epoll_create();
-int bpftime_is_ringbuf_map(int fd);
 void *bpftime_get_ringbuf_consumer_page(int ringbuf_fd);
 void *bpftime_get_ringbuf_producer_page(int ringbuf_fd);
+
+int bpftime_is_ringbuf_map(int fd);
 int bpftime_is_array_map(int fd);
 int bpftime_is_epoll_handler(int fd);
+
+int bpftime_is_prog_fd(int fd);
+int bpftime_is_map_fd(int fd);
+
 void *bpftime_get_array_map_raw_data(int fd);
 
 void bpftime_close(int fd);

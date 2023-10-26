@@ -1,11 +1,12 @@
 #ifndef _BPFTIME_FFI_HPP
 #define _BPFTIME_FFI_HPP
-#include "attach/attach_manager/base_attach_manager.hpp"
+
 #include <cinttypes>
 #include <cstddef>
 #include "bpf_attach_ctx.hpp"
 namespace bpftime
 {
+	class base_attach_manager;
 constexpr const size_t MAX_FUNC_NAME_LEN = 64;
 constexpr const size_t MAX_ARGS_COUNT = 6;
 constexpr const size_t MAX_FFI_FUNCS = 8192 * 4;

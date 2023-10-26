@@ -39,14 +39,12 @@ static void sig_int(int signo)
 	exiting = 1;
 }
 
-
 static int handle_event_rb(void *ctx, void *data, size_t data_sz)
 {
 	const struct event *e = (const struct event *)data;
-	bpf_event_handler* handler = (bpf_event_handler*)ctx;
+	bpf_event_handler *handler = (bpf_event_handler *)ctx;
 	assert(handler != NULL);
-	handler->handle_event(e);
-	return 0;
+	return handler->handle_event(e);
 }
 
 int bpftime::start_daemon(struct daemon_config env)
@@ -59,24 +57,19 @@ int bpftime::start_daemon(struct daemon_config env)
 	spdlog::cfg::load_env_levels();
 
 	libbpf_set_print(libbpf_print_fn);
-	
-	bpftime_driver driver(env);
-	// update handler config
-	bpf_event_handler handler = bpf_event_handler(env, driver);
-	verbose = env.verbose;
 
 	if (signal(SIGINT, sig_int) == SIG_ERR) {
 		fprintf(stderr, "can't set signal handler: %s\n",
 			strerror(errno));
 		err = 1;
-		goto cleanup;
+		return err;
 	}
 
 	obj = bpf_tracer_bpf__open();
 	if (!obj) {
 		err = -1;
 		fprintf(stderr, "failed to open BPF object\n");
-		goto cleanup;
+		return err;
 	}
 
 	/* initialize global data (filtering options) */
@@ -86,6 +79,25 @@ int bpftime::start_daemon(struct daemon_config env)
 	obj->rodata->enable_replace_uprobe = env.enable_replace_uprobe;
 	obj->rodata->uprobe_perf_type = determine_uprobe_perf_type();
 	obj->rodata->kprobe_perf_type = determine_kprobe_perf_type();
+	obj->rodata->submit_bpf_events = env.submit_bpf_events;
+
+	if (!env.show_open) {
+		bpf_program__set_autoload(
+			obj->progs.tracepoint__syscalls__sys_exit_open, false);
+		bpf_program__set_autoload(
+			obj->progs.tracepoint__syscalls__sys_enter_open, false);
+		bpf_program__set_autoload(
+			obj->progs.tracepoint__syscalls__sys_exit_openat,
+			false);
+		bpf_program__set_autoload(
+			obj->progs.tracepoint__syscalls__sys_enter_openat,
+			false);
+	}
+
+	bpftime_driver driver(env, obj);
+	// update handler config
+	bpf_event_handler handler = bpf_event_handler(env, driver);
+	verbose = env.verbose;
 
 	err = bpf_tracer_bpf__load(obj);
 	if (err) {
@@ -100,8 +112,8 @@ int bpftime::start_daemon(struct daemon_config env)
 	}
 
 	/* Set up ring buffer polling */
-	rb = ring_buffer__new(bpf_map__fd(obj->maps.rb), handle_event_rb, &handler,
-			      NULL);
+	rb = ring_buffer__new(bpf_map__fd(obj->maps.rb), handle_event_rb,
+			      &handler, NULL);
 	if (!rb) {
 		err = -1;
 		fprintf(stderr, "Failed to create ring buffer\n");
@@ -112,9 +124,9 @@ int bpftime::start_daemon(struct daemon_config env)
 	while (!exiting) {
 		err = ring_buffer__poll(rb, 100 /* timeout, ms */);
 		if (err < 0 && err != -EINTR) {
-			fprintf(stderr, "error polling perf buffer: %s\n",
-				strerror(-err));
-			goto cleanup;
+			spdlog::error("error polling perf buffer: {}",
+				      strerror(-err));
+			// goto cleanup;
 		}
 		/* reset err to return 0 if exiting */
 		err = 0;

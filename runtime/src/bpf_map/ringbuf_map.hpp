@@ -67,7 +67,7 @@ class ringbuf_map_impl {
 
 	long elem_delete(const void *key);
 
-	int bpf_map_get_next_key(const void *key, void *next_key);
+	int map_get_next_key(const void *key, void *next_key);
 	ringbuf_weak_ptr create_impl_weak_ptr();
 	void *get_consumer_page() const;
 	void *get_producer_page() const;

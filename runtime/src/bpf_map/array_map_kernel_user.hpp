@@ -1,19 +1,26 @@
-#ifndef _ARRAY_MAP_HPP
-#define _ARRAY_MAP_HPP
+#ifndef _BPFTIME_KERNEL_ARRAY_MAP_HPP
+#define _BPFTIME_KERNEL_ARRAY_MAP_HPP
 #include <bpf_map/map_common_def.hpp>
 namespace bpftime
 {
 
 // implementation of array map
-class array_map_impl {
-	bytes_vec data;
+class array_map_kernel_user_impl {
+	bytes_vec value_data;
 	uint32_t _value_size;
 	uint32_t _max_entries;
+	int map_fd = -1;
+	int kernel_map_id = -1;
+
+	void* mmap_ptr;
+
+	void init_map_fd();
 
     public:
 	const static bool should_lock = true;
-	array_map_impl(boost::interprocess::managed_shared_memory &memory,
-		       uint32_t value_size, uint32_t max_entries);
+	array_map_kernel_user_impl(boost::interprocess::managed_shared_memory &memory,
+		       int km_id);
+	~array_map_kernel_user_impl();
 
 	void *elem_lookup(const void *key);
 
@@ -27,4 +34,5 @@ class array_map_impl {
 };
 
 } // namespace bpftime
-#endif
+
+#endif // _BPFTIME_ARRAY_MAP_HPP

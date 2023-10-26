@@ -41,7 +41,7 @@ class per_cpu_hash_map_impl {
 
 	long elem_delete(const void *key);
 
-	int bpf_map_get_next_key(const void *key, void *next_key);
+	int map_get_next_key(const void *key, void *next_key);
 
 	void *elem_lookup_userspace(const void *key);
 

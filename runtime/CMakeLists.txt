@@ -48,28 +48,32 @@ find_package(Boost REQUIRED)
 message(STATUS "Building for architecture: ${ARCH}")
 
 set(sources
-  src/bpftime_prog.cpp
-
-  src/ffi.cpp
-  src/bpf_helper.cpp
   src/attach/bpf_attach_ctx.cpp
   src/attach/attach_manager/base_attach_manager.cpp
   src/attach/attach_manager/frida_attach_manager.cpp
+
   src/handler/handler_manager.cpp
   src/handler/map_handler.cpp
   src/handler/perf_event_handler.cpp
   src/handler/prog_handler.cpp
   src/handler/epoll_handler.cpp
+
   src/bpftime_shm.cpp
   src/bpftime_shm_internal.cpp
   src/bpftime_shm_json.cpp
   src/syscall_table.cpp
+  src/bpftime_prog.cpp
+  src/ffi.cpp
+  src/bpf_helper.cpp
+
   src/bpf_map/array_map.cpp
   src/bpf_map/hash_map.cpp
   src/bpf_map/ringbuf_map.cpp
   src/bpf_map/perf_event_array_map.cpp
   src/bpf_map/per_cpu_array_map.cpp
   src/bpf_map/per_cpu_hash_map.cpp
+  src/bpf_map/array_map_kernel_user.cpp
+  src/bpf_map/hash_map_kernel_user.cpp
 )
 
 # list(APPEND sources
@@ -116,7 +120,8 @@ target_link_libraries(${PROJECT_NAME}
   vm-bpf
   spdlog::spdlog
 )
-add_dependencies(${PROJECT_NAME} vm-bpf FridaGum syscall_id_table spdlog::spdlog)
+add_dependencies(${PROJECT_NAME} vm-bpf FridaGum syscall_id_table spdlog::spdlog libbpf)
+
 
 if(${ENABLE_EBPF_VERIFIER})
   target_include_directories(${PROJECT_NAME} PRIVATE ${BPFTIME_VERIFIER_INCLUDE})
@@ -147,14 +152,18 @@ message(DEBUG "Applied compiler warnings. Using standard ${CMAKE_CXX_STANDARD}."
 
 target_link_libraries(${PROJECT_NAME}
   PUBLIC
+  ${LIBBPF_LIBRARIES}
   ${FRIDA_GUM_INSTALL_DIR}/libfrida-gum.a
   -lpthread
   -lm
   -ldl
   -lz
+  -lelf
 )
 
 target_include_directories(${PROJECT_NAME} PUBLIC
+  ${LIBBPF_INCLUDE_DIRS}/uapi
+  ${LIBBPF_INCLUDE_DIRS}
   ${FRIDA_GUM_INSTALL_DIR}
   $<INSTALL_INTERFACE:runtime>
   $<INSTALL_INTERFACE:runtime/src>

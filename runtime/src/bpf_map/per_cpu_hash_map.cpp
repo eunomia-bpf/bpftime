@@ -89,7 +89,7 @@ long per_cpu_hash_map_impl::elem_delete(const void *key)
 	});
 }
 
-int per_cpu_hash_map_impl::bpf_map_get_next_key(const void *key, void *next_key)
+int per_cpu_hash_map_impl::map_get_next_key(const void *key, void *next_key)
 {
 	if (key == nullptr) {
 		// nullptr means the first key
@@ -110,7 +110,7 @@ int per_cpu_hash_map_impl::bpf_map_get_next_key(const void *key, void *next_key)
 	auto itr = impl.find(key_vec);
 	if (itr == impl.end()) {
 		// not found, should be refer to the first key
-		return bpf_map_get_next_key(nullptr, next_key);
+		return map_get_next_key(nullptr, next_key);
 	}
 	itr++;
 	if (itr == impl.end()) {
