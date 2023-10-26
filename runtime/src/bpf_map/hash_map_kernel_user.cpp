@@ -88,4 +88,11 @@ int hash_map_kernel_user_impl::map_get_next_key(const void *key, void *next_key)
 	return bpf_map_get_next_key(map_fd, key, next_key);
 }
 
+hash_map_kernel_user_impl::~hash_map_kernel_user_impl()
+{
+	if (map_fd >= 0) {
+		close(map_fd);
+	}
+}
+
 } // namespace bpftime

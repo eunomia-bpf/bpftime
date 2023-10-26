@@ -18,6 +18,7 @@ class array_map_kernel_user_impl {
 	const static bool should_lock = true;
 	array_map_kernel_user_impl(boost::interprocess::managed_shared_memory &memory,
 		       int km_id);
+	~array_map_kernel_user_impl();
 
 	void *elem_lookup(const void *key);
 

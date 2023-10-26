@@ -14,8 +14,6 @@ using namespace boost::interprocess;
 
 // implementation of hash map
 class hash_map_kernel_user_impl {
-	int kernel_map_id = -1;
-	int map_fd = -1;
 
 	uint32_t _key_size;
 	uint32_t _value_size;
@@ -23,11 +21,15 @@ class hash_map_kernel_user_impl {
 	bytes_vec key_vec;
 	bytes_vec value_vec;
 
+	int kernel_map_id = -1;
+	int map_fd = -1;
+
 	void init_map_fd();
 
     public:
 	const static bool should_lock = true;
 	hash_map_kernel_user_impl(managed_shared_memory &memory, int km_id);
+	~hash_map_kernel_user_impl();
 
 	void *elem_lookup(const void *key);
 

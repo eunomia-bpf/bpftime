@@ -102,4 +102,11 @@ int array_map_kernel_user_impl::map_get_next_key(const void *key,
 	*(uint32_t *)next_key = key_val + 1;
 	return 0;
 }
+
+array_map_kernel_user_impl::~array_map_kernel_user_impl() {
+	if (map_fd >= 0) {
+		close(map_fd);
+	}
+}
+
 } // namespace bpftime

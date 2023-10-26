@@ -20,11 +20,13 @@ static int get_kernel_bpf_prog_insns(int fd, const bpf_prog_info *info,
 				     std::vector<ebpf_inst> &insns)
 {
 	insns.resize(info->xlated_prog_len / sizeof(ebpf_inst));
-	bpf_prog_info new_info;
+	bpf_prog_info new_info = {};
 	uint32_t info_len = sizeof(bpf_prog_info);
 
 	new_info.xlated_prog_len = info->xlated_prog_len;
-	new_info.xlated_prog_insns = (unsigned long long)(uintptr_t)insns.data();
+	new_info.xlated_prog_insns =
+		(unsigned long long)(uintptr_t)insns.data();
+
 	int res = bpf_obj_get_info_by_fd(fd, &new_info, &info_len);
 	if (res < 0) {
 		spdlog::error("Failed to get prog info for fd {}", fd);
@@ -33,18 +35,19 @@ static int get_kernel_bpf_prog_insns(int fd, const bpf_prog_info *info,
 	return 0;
 }
 
-int bpftime_driver::check_and_create_prog_related_maps(int fd,
-						       const bpf_prog_info *info)
+int bpftime_driver::check_and_create_prog_related_maps(
+	int fd, const bpf_prog_info *info)
 {
 	std::vector<unsigned int> map_ids;
 	uint32_t info_len = sizeof(bpf_prog_info);
-	bpf_prog_info new_info;
+	bpf_prog_info new_info = {};
 
-	spdlog::info("find {} related maps for prog fd {}", info->nr_map_ids, fd);
+	spdlog::info("find {} related maps for prog fd {}", info->nr_map_ids,
+		     fd);
 	map_ids.resize(info->nr_map_ids);
 	new_info.nr_map_ids = info->nr_map_ids;
 	new_info.map_ids = (unsigned long long)(uintptr_t)map_ids.data();
-	int res = bpf_obj_get_info_by_fd(fd, &new_info, &info_len);
+	int res = bpf_prog_get_info_by_fd(fd, &new_info, &info_len);
 	if (res < 0) {
 		spdlog::error(
 			"Failed to get prog info for fd {} to find related maps",
@@ -75,6 +78,7 @@ int bpftime_driver::bpftime_progs_create_server(int kernel_id)
 		spdlog::error("Failed to get prog fd for id {}", kernel_id);
 		return -1;
 	}
+	spdlog::debug("get prog fd {} for id {}", fd, kernel_id);
 	bpf_prog_info info = {};
 	uint32_t info_len = sizeof(info);
 	int res = bpf_obj_get_info_by_fd(fd, &info, &info_len);
