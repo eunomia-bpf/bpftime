@@ -37,9 +37,21 @@ continue malloc...
 malloc called from pid 12314
 ```
 
+The other console will print the malloc calls in the target process.
+
+```console
+20:43:22 
+        pid=113413      malloc calls: 9
+20:43:23 
+        pid=113413      malloc calls: 10
+20:43:24 
+        pid=113413      malloc calls: 10
+20:43:25 
+        pid=113413      malloc calls: 10
+```
+
 ## Debug: use bpftimetool for dump states
 
 The dump result example is in [daemon/test/asserts/malloc.json](test/asserts/malloc.json).
 
 See [tools/bpftimetool/README.md](../tools/bpftimetool/README.md) for how to load and replay it in the kernel.
-
