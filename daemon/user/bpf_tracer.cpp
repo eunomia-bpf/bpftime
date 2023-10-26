@@ -45,8 +45,7 @@ static int handle_event_rb(void *ctx, void *data, size_t data_sz)
 	const struct event *e = (const struct event *)data;
 	bpf_event_handler* handler = (bpf_event_handler*)ctx;
 	assert(handler != NULL);
-	handler->handle_event(e);
-	return 0;
+	return handler->handle_event(e);
 }
 
 int bpftime::start_daemon(struct daemon_config env)

@@ -104,6 +104,8 @@ class handler_manager {
 
 	bool is_allocated(int fd) const;
 
+	int find_minimal_unused_idx() const;
+
 	void clear_fd_at(int fd, managed_shared_memory &memory);
 
 	void clear_all(managed_shared_memory &memory);

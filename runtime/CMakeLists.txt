@@ -120,7 +120,8 @@ target_link_libraries(${PROJECT_NAME}
   vm-bpf
   spdlog::spdlog
 )
-add_dependencies(${PROJECT_NAME} vm-bpf FridaGum syscall_id_table spdlog::spdlog)
+add_dependencies(${PROJECT_NAME} vm-bpf FridaGum syscall_id_table spdlog::spdlog libbpf)
+
 
 if(${ENABLE_EBPF_VERIFIER})
   target_include_directories(${PROJECT_NAME} PRIVATE ${BPFTIME_VERIFIER_INCLUDE})

@@ -8,21 +8,8 @@ using namespace std;
 
 int bpftime_driver::find_minimal_unused_id()
 {
-	int id = 0;
-	while (1) {
-		// try to find the smallest id in the map
-		bool find = false;
-		for (auto [_, idx] : pid_fd_to_id_map) {
-			if (id == idx) {
-				find = true;
-			}
-		}
-		if (find) {
-			id++;
-		} else {
-			break;
-		}
-	}
+	int id = bpftime_find_minimal_unused_fd();
+	spdlog::debug("find minimal unused id {}", id);
 	return id;
 }
 
@@ -30,6 +17,10 @@ int bpftime_driver::bpftime_link_create_server(int server_pid, int fd,
 					       int prog_fd, int target_fd)
 {
 	int id = find_minimal_unused_id();
+	if (id < 0) {
+		spdlog::error("Failed to find minimal unused id");
+		return -1;
+	}
 	int fd_id = check_and_get_pid_fd(server_pid, fd);
 	if (fd_id < 0) {
 		spdlog::error("fd {} for pid {} not exists", fd, server_pid);
@@ -59,6 +50,10 @@ int bpftime_driver::bpftime_progs_create_server(int server_pid, int fd,
 						int prog_type)
 {
 	int id = find_minimal_unused_id();
+	if (id < 0) {
+		spdlog::error("Failed to find minimal unused id");
+		return -1;
+	}
 	int res =
 		bpftime_progs_create(id, insn, insn_cnt, prog_name, prog_type);
 	if (res < 0) {
@@ -75,6 +70,10 @@ int bpftime_driver::bpftime_maps_create_server(int server_pid, int fd,
 					       bpftime::bpf_map_attr attr)
 {
 	int id = find_minimal_unused_id();
+	if (id < 0) {
+		spdlog::error("Failed to find minimal unused id");
+		return -1;
+	}
 	int res = bpftime_maps_create(id, name, attr);
 	if (res < 0) {
 		spdlog::error("Failed to create map for id {}", id);
@@ -117,6 +116,10 @@ int bpftime_driver::bpftime_uprobe_create_server(int server_pid, int fd,
 						 size_t ref_ctr_off)
 {
 	int id = find_minimal_unused_id();
+	if (id < 0) {
+		spdlog::error("Failed to find minimal unused id");
+		return -1;
+	}
 	int res = bpftime_uprobe_create(id, target_pid, name, offset, retprobe,
 					ref_ctr_off);
 	if (res < 0) {
@@ -178,6 +181,10 @@ void bpftime_driver::bpftime_close_server(int server_pid, int fd)
 int bpftime_driver::bpftime_btf_load_server(int server_pid, int fd)
 {
 	int id = find_minimal_unused_id();
+	if (id < 0) {
+		spdlog::error("Failed to find minimal unused id");
+		return -1;
+	}
 	pid_fd_to_id_map[get_pid_fd_key(server_pid, fd)] = id;
 	// TODO: handle kernel BTF in our system
 	spdlog::info("create btf {} for pid {} fd {}", id, server_pid, fd);

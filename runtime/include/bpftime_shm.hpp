@@ -219,8 +219,13 @@ int bpftime_uprobe_create(int fd, int pid, const char *name, uint64_t offset,
 // function will allocate a new perf event fd.
 int bpftime_tracepoint_create(int fd, int pid, int32_t tp_id);
 
+// enable the perf event
 int bpftime_perf_event_enable(int fd);
+
+// disable the perf event
 int bpftime_perf_event_disable(int fd);
+
+int bpftime_find_minimal_unused_fd();
 
 int bpftime_attach_perf_to_bpf(int perf_fd, int bpf_fd);
 int bpftime_add_ringbuf_fd_to_epoll(int ringbuf_fd, int epoll_fd,

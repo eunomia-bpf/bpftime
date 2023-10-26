@@ -6,7 +6,7 @@
 #define NAME_MAX 255
 #define INVALID_UID ((uid_t)-1)
 
-#define MAX_INSN_SIZE 16384
+#define MAX_INSN_SIZE 128
 
 #define BPF_OBJ_NAME_LEN 16U
 
