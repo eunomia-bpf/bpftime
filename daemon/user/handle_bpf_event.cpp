@@ -323,8 +323,8 @@ int bpf_event_handler::handle_ioctl(const struct event *e)
 									fd);
 		}
 	} else if (req == PERF_EVENT_IOC_SET_BPF) {
-		spdlog::info("Setting bpf for perf event {} and bpf {}", fd,
-			     data);
+		spdlog::info("Setting bpf for perf event {} and bpf {} (id: {})", fd,
+			     data, e->ioctl_data.bpf_prog_id);
 		if (config.is_driving_bpftime) {
 			return driver.bpftime_attach_perf_to_bpf_server(
 				e->pid, fd, data);

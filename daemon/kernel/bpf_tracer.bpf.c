@@ -156,8 +156,8 @@ static int process_bpf_prog_load_events(union bpf_attr *attr)
 					insn_cnt * sizeof(struct bpf_insn) ?
 				insn_cnt * sizeof(struct bpf_insn) :
 				sizeof(event->bpf_loaded_prog.insns);
-		bpf_probe_read(event->bpf_loaded_prog.insns, insn_buffer_size,
-			       insns);
+		// bpf_probe_read(event->bpf_loaded_prog.insns, insn_buffer_size,
+		// 	       insns);
 		/* emit event */
 		bpf_ringbuf_submit(event, 0);
 	}
@@ -251,8 +251,15 @@ static int process_bpf_syscall_exit(struct bpf_args_t *ap, int ret)
 	if (ret >= 0) {
 		switch (cmd) {
 		case BPF_PROG_LOAD: {
+			u64 pid_tgid = bpf_get_current_pid_tgid();
+			u32 *id_ptr = (u32 *)bpf_map_lookup_elem(
+				&bpf_progs_new_fd_args_map, &pid_tgid);
+			if (!id_ptr)
+				return 0; /* missed entry */
+			bpf_map_delete_elem(&bpf_progs_new_fd_args_map,
+					    &pid_tgid);
 			struct bpf_fd_data data = { .type = BPF_FD_TYPE_PROG,
-						    .kernel_id = 0 };
+						    .kernel_id = *id_ptr };
 			set_bpf_fd_data(ret, &data);
 			break;
 		}
@@ -533,6 +540,20 @@ int tracepoint__syscalls__sys_exit_ioctl(struct trace_event_raw_sys_exit *ctx)
 	event->ioctl_data.fd = ap->fd;
 	event->ioctl_data.req = ap->req;
 	event->ioctl_data.ret = ctx->ret;
+
+	if (PERF_EVENT_IOC_SET_BPF == ap->req) {
+		u32 pid = bpf_get_current_pid_tgid() >> 32;
+		u64 key = MAKE_PFD(pid, ap->data);
+		void *pfd = bpf_map_lookup_elem(&bpf_fd_map, &key);
+		if (pfd) {
+			struct bpf_fd_data *data = (struct bpf_fd_data *)pfd;
+			event->ioctl_data.bpf_prog_id = data->kernel_id;
+		} else {
+			event->ioctl_data.bpf_prog_id = 0;
+		}
+	} else {
+		event->ioctl_data.bpf_prog_id = 0;
+	}
 
 	/* emit event */
 	bpf_ringbuf_submit(event, 0);

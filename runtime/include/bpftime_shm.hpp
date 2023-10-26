@@ -47,6 +47,8 @@ enum class bpf_event_type {
 	BPF_TYPE_REPLACE = 9,
 };
 
+#define KERNEL_USER_MAP_OFFSET 1000
+
 enum class bpf_map_type {
 	BPF_MAP_TYPE_UNSPEC,
 	BPF_MAP_TYPE_HASH,
@@ -90,8 +92,8 @@ enum class bpf_map_type {
 	BPF_MAP_TYPE_USER_RINGBUF,
 	BPF_MAP_TYPE_CGRP_STORAGE,
 
-	BPF_MAP_TYPE_KERNEL_USER_HASH = 1000,
-	BPF_MAP_TYPE_KERNEL_USER_ARRAY = 1001,
+	BPF_MAP_TYPE_KERNEL_USER_HASH = KERNEL_USER_MAP_OFFSET + BPF_MAP_TYPE_HASH,
+	BPF_MAP_TYPE_KERNEL_USER_ARRAY = KERNEL_USER_MAP_OFFSET + BPF_MAP_TYPE_ARRAY,
 };
 
 enum class shm_open_type {
@@ -234,11 +236,16 @@ int bpftime_add_software_perf_event_fd_to_epoll(int swpe_fd, int epoll_fd,
 						epoll_data_t extra_data);
 
 int bpftime_epoll_create();
-int bpftime_is_ringbuf_map(int fd);
 void *bpftime_get_ringbuf_consumer_page(int ringbuf_fd);
 void *bpftime_get_ringbuf_producer_page(int ringbuf_fd);
+
+int bpftime_is_ringbuf_map(int fd);
 int bpftime_is_array_map(int fd);
 int bpftime_is_epoll_handler(int fd);
+
+int bpftime_is_prog_fd(int fd);
+int bpftime_is_map_fd(int fd);
+
 void *bpftime_get_array_map_raw_data(int fd);
 
 void bpftime_close(int fd);

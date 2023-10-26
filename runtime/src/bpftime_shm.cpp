@@ -12,8 +12,9 @@
 
 using namespace bpftime;
 
-int bpftime_find_minimal_unused_fd() {
-	  return shm_holder.global_shared_memory.find_minimal_unused_fd();
+int bpftime_find_minimal_unused_fd()
+{
+	return shm_holder.global_shared_memory.find_minimal_unused_fd();
 }
 
 int bpftime_link_create(int fd, int prog_fd, int target_fd)
@@ -152,6 +153,16 @@ int bpftime_map_get_info(int fd, bpftime::bpf_map_attr *out_attr,
 int bpftime_is_ringbuf_map(int fd)
 {
 	return shm_holder.global_shared_memory.is_ringbuf_map_fd(fd);
+}
+
+int bpftime_is_map_fd(int fd)
+{
+	return shm_holder.global_shared_memory.is_map_fd(fd);
+}
+
+int bpftime_is_prog_fd(int fd)
+{
+	return shm_holder.global_shared_memory.is_prog_fd(fd);
 }
 
 int bpftime_is_array_map(int fd)

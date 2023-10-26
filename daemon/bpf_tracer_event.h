@@ -69,7 +69,6 @@ struct event {
 			unsigned int type;
 			unsigned int insn_cnt;
 			char prog_name[BPF_OBJ_NAME_LEN];
-			unsigned int insns[MAX_INSN_SIZE];
 			// used as key for later lookup in userspace
 			unsigned long long insns_ptr;
 		} bpf_loaded_prog;
@@ -84,6 +83,8 @@ struct event {
 			unsigned long req;
 			int data;
 			int ret;
+
+			unsigned int bpf_prog_id;
 		} ioctl_data;
 	};
 };
