@@ -151,6 +151,7 @@ message(DEBUG "Applied compiler warnings. Using standard ${CMAKE_CXX_STANDARD}."
 
 target_link_libraries(${PROJECT_NAME}
   PUBLIC
+  ${LIBBPF_LIBRARIES}
   ${FRIDA_GUM_INSTALL_DIR}/libfrida-gum.a
   -lpthread
   -lm
@@ -159,6 +160,8 @@ target_link_libraries(${PROJECT_NAME}
 )
 
 target_include_directories(${PROJECT_NAME} PUBLIC
+  ${LIBBPF_INCLUDE_DIRS}/uapi
+  ${LIBBPF_INCLUDE_DIRS}
   ${FRIDA_GUM_INSTALL_DIR}
   $<INSTALL_INTERFACE:runtime>
   $<INSTALL_INTERFACE:runtime/src>
