@@ -6,11 +6,13 @@ namespace bpftime
 
 // implementation of array map
 class array_map_kernel_user_impl {
-	bytes_vec data;
+	bytes_vec value_data;
 	uint32_t _value_size;
 	uint32_t _max_entries;
 	int map_fd = -1;
 	int kernel_map_id = -1;
+
+	void* mmap_ptr;
 
 	void init_map_fd();
 

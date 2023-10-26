@@ -3,12 +3,25 @@
 #include <bpf/libbpf.h>
 #include <bpf/bpf.h>
 
+#ifndef roundup
+#define roundup(x, y)                                                          \
+	({                                                                     \
+		const typeof(y) __y = y;                                       \
+		(((x) + (__y - 1)) / __y) * __y;                               \
+	})
+#endif // roundup
+
 namespace bpftime
 {
 
-void *array_map_kernel_user_impl::get_raw_data() const
+size_t bpf_map_mmap_sz(unsigned int value_sz, unsigned int max_entries)
 {
-	return (void *)data.data();
+	const long page_sz = sysconf(_SC_PAGE_SIZE);
+	size_t map_sz;
+
+	map_sz = (size_t)roundup(value_sz, 8) * max_entries;
+	map_sz = roundup(map_sz, page_sz);
+	return map_sz;
 }
 
 void array_map_kernel_user_impl::init_map_fd()
@@ -28,15 +41,41 @@ void array_map_kernel_user_impl::init_map_fd()
 	}
 	_value_size = info.value_size;
 	_max_entries = info.max_entries;
+	value_data.resize(_value_size);
 	spdlog::debug(
 		"create kernel user array map value size {}, max entries {}",
 		_value_size, _max_entries);
-	data.resize(_value_size * _max_entries);
+	// TODO: is the check here necessary?
+	// if (!(info.map_flags & BPF_F_MMAPABLE)) {
+	// 	spdlog::warn("Map is not mmapable");
+	// 	return;
+	// }
+	size_t mmap_sz = bpf_map_mmap_sz(_value_size, _max_entries);
+	mmap_ptr = mmap(NULL, mmap_sz, PROT_READ | PROT_WRITE,
+			MAP_SHARED | MAP_ANONYMOUS, -1, 0);
+	if (mmap_ptr == MAP_FAILED) {
+		spdlog::error("Failed to mmap for kernel map id {}",
+			      kernel_map_id);
+		return;
+	}
+	int prot;
+	if (info.map_flags & BPF_F_RDONLY_PROG)
+		prot = PROT_READ;
+	else
+		prot = PROT_READ | PROT_WRITE;
+	void *mmaped = mmap(mmap_ptr, mmap_sz, prot, MAP_SHARED | MAP_FIXED,
+			    map_fd, 0);
+	if (mmaped == MAP_FAILED) {
+		spdlog::error("Failed to mmap for kernel map id {}",
+			      kernel_map_id);
+		return;
+	}
+	mmap_ptr = mmaped;
 }
 
 array_map_kernel_user_impl::array_map_kernel_user_impl(
 	boost::interprocess::managed_shared_memory &memory, int km_id)
-	: data(1, memory.get_segment_manager()), kernel_map_id(km_id)
+	: value_data(1, memory.get_segment_manager()), kernel_map_id(km_id)
 {
 }
 
@@ -45,12 +84,20 @@ void *array_map_kernel_user_impl::elem_lookup(const void *key)
 	if (map_fd < 0) {
 		init_map_fd();
 	}
-	auto key_val = *(uint32_t *)key;
-	if (key_val >= _max_entries) {
-		errno = ENOENT;
+	if (mmap_ptr != nullptr) {
+		auto key_val = *(uint32_t *)key;
+		if (key_val >= _max_entries) {
+			errno = ENOENT;
+			return nullptr;
+		}
+		return &((uint8_t *)mmap_ptr)[key_val * _value_size];
+	}
+	// fallback to read kernel maps
+	int res = bpf_map_lookup_elem(map_fd, key, value_data.data());
+	if (res < 0) {
 		return nullptr;
 	}
-	return &data[key_val * _value_size];
+	return (void*)value_data.data();
 }
 
 long array_map_kernel_user_impl::elem_update(const void *key, const void *value,
@@ -59,14 +106,18 @@ long array_map_kernel_user_impl::elem_update(const void *key, const void *value,
 	if (map_fd < 0) {
 		init_map_fd();
 	}
-	auto key_val = *(uint32_t *)key;
-	if (key_val >= _max_entries) {
-		errno = ENOENT;
-		return -1;
+	if (mmap_ptr != nullptr) {
+		auto key_val = *(uint32_t *)key;
+		if (key_val >= _max_entries) {
+			errno = ENOENT;
+			return -1;
+		}
+		std::copy((uint8_t *)value, (uint8_t *)value + _value_size,
+			  &((uint8_t *)mmap_ptr)[key_val * _value_size]);
+		return 0;
 	}
-	std::copy((uint8_t *)value, (uint8_t *)value + _value_size,
-		  &data[key_val * _value_size]);
-	return 0;
+	// fallback to read kernel maps
+	return bpf_map_update_elem(map_fd, key, value, flags);
 }
 
 long array_map_kernel_user_impl::elem_delete(const void *key)
@@ -74,14 +125,18 @@ long array_map_kernel_user_impl::elem_delete(const void *key)
 	if (map_fd < 0) {
 		init_map_fd();
 	}
-	auto key_val = *(uint32_t *)key;
-	if (key_val >= _max_entries) {
-		errno = ENOENT;
-		return -1;
+	if (mmap_ptr != nullptr) {
+		auto key_val = *(uint32_t *)key;
+		if (key_val >= _max_entries) {
+			errno = ENOENT;
+			return -1;
+		}
+		memset(&((uint8_t *)mmap_ptr)[key_val * _value_size], 0,
+		       _value_size);
+		return 0;
 	}
-	std::fill(&data[key_val * _value_size],
-		  &data[key_val * _value_size] + _value_size, 0);
-	return 0;
+	// fallback to read kernel maps
+	return bpf_map_delete_elem(map_fd, key);
 }
 
 int array_map_kernel_user_impl::map_get_next_key(const void *key,
@@ -103,7 +158,8 @@ int array_map_kernel_user_impl::map_get_next_key(const void *key,
 	return 0;
 }
 
-array_map_kernel_user_impl::~array_map_kernel_user_impl() {
+array_map_kernel_user_impl::~array_map_kernel_user_impl()
+{
 	if (map_fd >= 0) {
 		close(map_fd);
 	}
