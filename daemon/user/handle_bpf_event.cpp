@@ -173,8 +173,8 @@ static const char *const bpf_map_type_strings[] = {
 
 static const char *get_bpf_map_type_string(bpftime::bpf_map_type type)
 {
-	if ((int)type >= 0 && (unsigned long)type < BPF_MAP_TYPE_MAX) {
-		return bpf_map_type_strings[(unsigned int)type];
+	if ((int)type >= 0 && (int)type < BPF_MAP_TYPE_MAX) {
+		return bpf_map_type_strings[(int)type];
 	}
 	return "Unknown";
 }
