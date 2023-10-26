@@ -158,6 +158,7 @@ target_link_libraries(${PROJECT_NAME}
   -lm
   -ldl
   -lz
+  -lelf
 )
 
 target_include_directories(${PROJECT_NAME} PUBLIC
