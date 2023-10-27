@@ -1,4 +1,4 @@
-# bpftime daemon: trace and replay eBPF related events
+# bpftime daemon: runtime userspace eBPF together with kernel eBPF
 
 The bpftime daemon is a tool to trace and run eBPF programs in userspace with kernel eBPF. It can:
 
