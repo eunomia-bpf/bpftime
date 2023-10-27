@@ -37,7 +37,7 @@ using boost_shm_string =
 	boost::interprocess::basic_string<char, std::char_traits<char>,
 					  char_allocator>;
 
-const size_t DEFAULT_MAX_FD = 1024 * 16;
+const size_t DEFAULT_MAX_FD = 1024 * 4;
 
 struct unused_handler {};
 
