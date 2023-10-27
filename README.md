@@ -14,6 +14,7 @@
 - **Compatibility**: use existing eBPF toolchains like clang and libbpf to develop userspace eBPF without any modifications. Supporting CO-RE via BTF, and offering userspace host function access.
 - **JIT Support**: Benefit from a cross-platform eBPF interpreter and a high-speed JIT compiler powered by LLVM. It also includes a handcrafted x86 JIT in C for limited resources.
 - **No instrumentation**: Can inject eBPF runtime into any running process without the need for a restart or manual recompilation.
+- **Run with kernel eBPF**: Can load userspace eBPF from kernel, and using kernel eBPF maps to cooperate with kernel eBPF programs like kprobes and network filters.
 
 ## Components
 
@@ -96,11 +97,9 @@ Example using libbpf:
 - `tracing all syscalls with tracepoints`
   - [`opensnoop`](example/opensnoop): trace file open or close syscalls in a process. demonstrate how to use the userspace `syscall tracepoint` with `ring buffer` output.
 
-More examples can be found in [example/libbpf-tools](example/libbpf-tools).
+More bcc/libbpf-tools examples can be found in [example/libbpf-tools](example/libbpf-tools).
 
-You can also run bpftime with `bpftrace`, we've test it on [this commit](https://github.com/iovisor/bpftrace/commit/75aca47dd8e1d642ff31c9d3ce330e0c616e5b96).
-
-More examples can be found in [example](example) dir.
+You can also run bpftime with `bpftrace`, we've test it on [this commit](https://github.com/iovisor/bpftrace/commit/75aca47dd8e1d642ff31c9d3ce330e0c616e5b96). More details about how to run bpftrace in usespace, can be found in [example/bpftrace](example/bpftrace).
 
 > ⚠️ **Note**: `bpftime` is actively under development, and it's not yet recommended for production use. See our [roadmap](#roadmap) for details. We'd love to hear your feedback and suggestions! Please feel free to open an issue or [Contact us](#contact).
 
