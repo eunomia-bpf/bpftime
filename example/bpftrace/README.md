@@ -75,4 +75,4 @@ bpftrace -e 'tracepoint:syscalls:sys_exit_read { @[comm] = hist(args->ret); }'
 bpftrace -e 'tracepoint:raw_syscalls:sys_enter { @ = count(); } interval:s:1 { print(@); clear(@); }'
 ```
 
-More powerful scripts can easily be constructed. See the other tools for examples.
+More powerful scripts can easily be constructed. See the other tools for examples. Note: some scripts may not work as expected due to the lack of helpers, we are working on it.
