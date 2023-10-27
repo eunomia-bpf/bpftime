@@ -1,7 +1,9 @@
 # bpftime daemon: trace and replay eBPF related events
 
-The bpftime daemon is a tool to trace and replay eBPF related events.
-It's similar to our syscall server but run together with kernel eBPF.
+The bpftime daemon is a tool to trace and run eBPF programs in userspace with kernel eBPF. It can:
+
+- make original kernel uprobe and uretprobe eBPF programs actually running in userspace with userspace advantages. Without any modification, no syscall-server is needed.
+- make Userspace eBPF programs share the same maps with kernel eBPF programs.
 
 ## Run daemon
 
