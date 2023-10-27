@@ -1,7 +1,7 @@
 # bpftime: Userspace eBPF runtime for fast Uprobe & Syscall Hook
 
 [![Build and Test VM](https://github.com/eunomia-bpf/bpftime/actions/workflows/test-vm.yml/badge.svg)](https://github.com/eunomia-bpf/bpftime/actions/workflows/test-vm.yml)
-[![Build and Test runtime](https://github.com/eunomia-bpf/bpftime/actions/workflows/runtime.yml/badge.svg)](https://github.com/eunomia-bpf/bpftime/actions/workflows/runtime.yml)
+[![Build and test runtime](https://github.com/eunomia-bpf/bpftime/actions/workflows/test-runtime.yml/badge.svg)](https://github.com/eunomia-bpf/bpftime/actions/workflows/test-runtime.yml)
 [![DOI](https://zenodo.org/badge/676866666.svg)](https://zenodo.org/badge/latestdoi/676866666)
 
 `bpftime`, a full-featured, high-performance eBPF runtime designed to operate in userspace. It offers fast Uprobe and Syscall hook capabilities: Userspace uprobe can be **10x faster than kernel uprobe!** and can programmatically **hook all syscalls of a process** safely and efficiently.
