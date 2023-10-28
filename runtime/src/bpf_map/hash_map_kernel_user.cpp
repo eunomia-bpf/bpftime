@@ -19,7 +19,7 @@ void hash_map_kernel_user_impl::init_map_fd()
 	}
 	bpf_map_info info = {};
 	unsigned int info_len = sizeof(info);
-	int res = bpf_map_get_info_by_fd(map_fd, &info, &info_len);
+	int res = bpf_obj_get_info_by_fd(map_fd, &info, &info_len);
 	if (res < 0) {
 		spdlog::error("Failed to get info for kernel map id {}",
 			      kernel_map_id);

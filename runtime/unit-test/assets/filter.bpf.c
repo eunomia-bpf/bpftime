@@ -3,6 +3,13 @@
 #include "bpf/bpf_helpers.h"
 #include "ffi.bpf.h"
 
+#ifndef BPF_UPROBE
+#define BPF_UPROBE BPF_KPROBE
+#endif
+#ifndef BPF_URETPROBE
+#define BPF_URETPROBE BPF_KRETPROBE
+#endif
+
 enum PatchOp {
 	OP_SKIP,
 	OP_RESUME,

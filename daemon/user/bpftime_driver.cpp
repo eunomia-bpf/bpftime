@@ -126,7 +126,7 @@ int bpftime_driver::check_and_create_prog_related_maps(
 	map_ids.resize(info->nr_map_ids);
 	new_info.nr_map_ids = info->nr_map_ids;
 	new_info.map_ids = (unsigned long long)(uintptr_t)map_ids.data();
-	int res = bpf_prog_get_info_by_fd(fd, &new_info, &info_len);
+	int res = bpf_obj_get_info_by_fd(fd, &new_info, &info_len);
 	if (res < 0) {
 		spdlog::error(
 			"Failed to get prog info for fd {} to find related maps",
@@ -204,7 +204,7 @@ int bpftime_driver::bpftime_maps_create_server(int kernel_id)
 	}
 	bpf_map_info info = {};
 	uint32_t info_len = sizeof(info);
-	int res = bpf_map_get_info_by_fd(map_fd, &info, &info_len);
+	int res = bpf_obj_get_info_by_fd(map_fd, &info, &info_len);
 	if (res < 0) {
 		spdlog::error("Failed to get map info for id {}", kernel_id);
 		return -1;

@@ -25,7 +25,6 @@ add_dependencies(libbpftime_daemon
 
 target_include_directories(libbpftime_daemon PRIVATE 
     ${CMAKE_CURRENT_BINARY_DIR} 
-    ${LIBBPF_INCLUDE_DIRS}/uapi
     ${LIBBPF_INCLUDE_DIRS}
     ${CMAKE_CURRENT_SOURCE_DIR}
     ${CMAKE_CURRENT_SOURCE_DIR}/../vm/include
