@@ -194,7 +194,7 @@ int bpf_event_handler::handle_bpf_event(const struct event *e)
 	/* prepare fields */
 	const char *cmd_str;
 	if (e->bpf_data.bpf_cmd >=
-		    (sizeof(bpf_cmd_strings) / sizeof(bpf_cmd_strings[0]))) {
+	    (sizeof(bpf_cmd_strings) / sizeof(bpf_cmd_strings[0]))) {
 		cmd_str = "UNKNOWN COMMAND";
 	} else {
 		cmd_str = bpf_cmd_strings[e->bpf_data.bpf_cmd];
@@ -322,8 +322,9 @@ int bpf_event_handler::handle_ioctl(const struct event *e)
 									fd);
 		}
 	} else if (req == PERF_EVENT_IOC_SET_BPF) {
-		spdlog::info("Setting bpf for perf event {} and bpf {} (id: {})", fd,
-			     data, e->ioctl_data.bpf_prog_id);
+		spdlog::info(
+			"Setting bpf for perf event {} and bpf {} (id: {})", fd,
+			data, e->ioctl_data.bpf_prog_id);
 		if (config.is_driving_bpftime) {
 			return driver.bpftime_attach_perf_to_bpf_server(
 				e->pid, fd, e->ioctl_data.bpf_prog_id);
@@ -339,6 +340,7 @@ int bpf_event_handler::handle_event(const struct event *e)
 	if (e->pid == current_pid) {
 		return 0;
 	}
+	spdlog::debug("Received event with type {}", (int)e->type);
 	switch (e->type) {
 	case SYS_OPEN:
 		return handle_open_events(e);

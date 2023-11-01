@@ -57,7 +57,7 @@ static int get_bpf_map_id_from_pid_fd(bpf_tracer_bpf *obj, int pid, int fd)
 	}
 	if (data.type != BPF_FD_TYPE_MAP) {
 		spdlog::error("Invalid bpf fd type {} for pid {} fd {}",
-			      data.type, pid, fd);
+			      (int)data.type, pid, fd);
 	}
 	map_id = data.kernel_id;
 	return map_id;

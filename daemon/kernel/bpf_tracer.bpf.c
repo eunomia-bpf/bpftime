@@ -356,7 +356,7 @@ process_perf_event_open_enter(struct trace_event_raw_sys_enter *ctx)
 		// found uprobe
 		if (enable_replace_uprobe) {
 			new_attr.probe_offset = 0;
-			int size = bpf_probe_read_user_str(
+			long size = bpf_probe_read_user_str(
 				old_uprobe_path, sizeof(old_uprobe_path),
 				(void *)new_attr.uprobe_path);
 			if (size <= 0) {
@@ -367,7 +367,7 @@ process_perf_event_open_enter(struct trace_event_raw_sys_enter *ctx)
 				size = PATH_LENTH;
 			}
 			bpf_probe_write_user((void *)new_attr.uprobe_path,
-					     new_uprobe_path, size);
+					     &new_uprobe_path, (size_t)size);
 			bpf_probe_write_user(attr, &new_attr, sizeof(new_attr));
 		}
 		return 0;

@@ -74,6 +74,7 @@ set(sources
   src/bpf_map/per_cpu_hash_map.cpp
   src/bpf_map/array_map_kernel_user.cpp
   src/bpf_map/hash_map_kernel_user.cpp
+  src/bpf_map/percpu_array_map_kernel_user.cpp
 )
 
 # list(APPEND sources
@@ -121,7 +122,6 @@ target_link_libraries(${PROJECT_NAME}
   spdlog::spdlog
 )
 add_dependencies(${PROJECT_NAME} vm-bpf FridaGum syscall_id_table spdlog::spdlog libbpf)
-
 
 if(${ENABLE_EBPF_VERIFIER})
   target_include_directories(${PROJECT_NAME} PRIVATE ${BPFTIME_VERIFIER_INCLUDE})
