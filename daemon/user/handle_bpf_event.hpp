@@ -20,7 +20,7 @@ class bpf_event_handler {
     int handle_close_event(const struct event *e);
     int handle_bpf_event(const struct event *e);
     int handle_open_events(const struct event *e);
-    int handle_perf_event(const struct event *e);
+    int handle_perf_event_open(const struct event *e);
     int handle_load_bpf_prog_event(const struct event *e);
     int handle_ioctl(const struct event *e);
 public:

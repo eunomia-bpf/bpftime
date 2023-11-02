@@ -244,7 +244,7 @@ static const char *perf_type_id_strings[PERF_TYPE_MAX_ID] = {
 	"PERF_TYPE_HW_CACHE", "PERF_TYPE_RAW",	    "PERF_TYPE_BREAKPOINT",
 };
 
-int bpf_event_handler::handle_perf_event(const struct event *e)
+int bpf_event_handler::handle_perf_event_open(const struct event *e)
 {
 	spdlog::debug("handle_perf_event");
 	const char *type_id_str = "UNKNOWN TYPE";
@@ -257,24 +257,43 @@ int bpf_event_handler::handle_perf_event(const struct event *e)
 	/* print output */
 	spdlog::info("PERF     {:<6} {:<16} type:{:<16} ret:{}\n", e->pid,
 		     e->comm, type_id_str, e->perf_event_data.ret);
-	if (config.is_driving_bpftime && e->perf_event_data.ret > 0) {
-		if (perf_type == (unsigned int)uprobe_type) {
-			auto attr = &e->perf_event_data.attr;
-			// NO legacy bpf types
-			bool retprobe = attr->config &
+
+	if (config.is_driving_bpftime) {
+		if (e->perf_event_data.ret >= 0) {
+			spdlog::debug(
+				"Handling perf event creating with perf type {}",
+				perf_type);
+			if (perf_type == (unsigned int)uprobe_type) {
+				auto attr = &e->perf_event_data.attr;
+				// NO legacy bpf types
+				bool retprobe =
+					attr->config &
 					(1 << determine_uprobe_retprobe_bit());
-			spdlog::debug("retprobe {}", retprobe);
-			size_t ref_ctr_off = attr->config >>
-					     PERF_UPROBE_REF_CTR_OFFSET_SHIFT;
-			const char *name = e->perf_event_data.name_or_path;
-			uint64_t offset = e->perf_event_data.attr.probe_offset;
-			spdlog::debug("Creating uprobe name {} offset {} "
-				      "ref_ctr_off {} attr->config={:x}",
-				      name, offset, ref_ctr_off, attr->config);
-			driver.bpftime_uprobe_create_server(
-				e->pid, e->perf_event_data.ret,
-				e->perf_event_data.pid, name, offset, retprobe,
-				ref_ctr_off);
+				spdlog::debug("retprobe {}", retprobe);
+				size_t ref_ctr_off =
+					attr->config >>
+					PERF_UPROBE_REF_CTR_OFFSET_SHIFT;
+				const char *name =
+					e->perf_event_data.name_or_path;
+				uint64_t offset =
+					e->perf_event_data.attr.probe_offset;
+				spdlog::debug(
+					"Creating uprobe name {} offset {} "
+					"ref_ctr_off {} attr->config={:x}",
+					name, offset, ref_ctr_off,
+					attr->config);
+				driver.bpftime_uprobe_create_server(
+					e->pid, e->perf_event_data.ret,
+					e->perf_event_data.pid, name, offset,
+					retprobe, ref_ctr_off);
+			} else {
+				spdlog::warn("Unsupported perf event type: {}",
+					     perf_type);
+			}
+		} else {
+			spdlog::debug(
+				"Ignore failed perf event creation, err={}",
+				e->perf_event_data.ret);
 		}
 	}
 	return 0;
@@ -346,7 +365,7 @@ int bpf_event_handler::handle_event(const struct event *e)
 		return handle_open_events(e);
 		break;
 	case SYS_PERF_EVENT_OPEN:
-		return handle_perf_event(e);
+		return handle_perf_event_open(e);
 		break;
 	case SYS_BPF:
 		return handle_bpf_event(e);

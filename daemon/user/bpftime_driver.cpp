@@ -297,8 +297,9 @@ int bpftime_driver::bpftime_perf_event_enable_server(int server_pid, int fd)
 {
 	int fd_id = check_and_get_pid_fd(server_pid, fd);
 	if (fd_id < 0) {
-		spdlog::error("fd {} for pid {} not exists", fd, server_pid);
-		return -1;
+		spdlog::warn("Unrecorded uprobe fd: {} for pid {}", fd,
+			     server_pid);
+		return 0;
 	}
 	int res = bpftime_perf_event_enable(fd_id);
 	if (res < 0) {
