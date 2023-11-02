@@ -1,7 +1,7 @@
 #ifndef _MAP_HANDLER
 #define _MAP_HANDLER
-#include "bpf_map/array_map.hpp"
-#include "bpf_map/ringbuf_map.hpp"
+#include "bpf_map/userspace/array_map.hpp"
+#include "bpf_map/userspace/ringbuf_map.hpp"
 #include "bpftime_shm.hpp"
 #include "spdlog/spdlog.h"
 #include <boost/interprocess/managed_shared_memory.hpp>

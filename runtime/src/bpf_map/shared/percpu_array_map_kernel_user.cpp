@@ -1,6 +1,6 @@
 #include "bpf/bpf.h"
 #include "spdlog/spdlog.h"
-#include <bpf_map/percpu_array_map_kernel_user.hpp>
+#include <bpf_map/shared/percpu_array_map_kernel_user.hpp>
 #include <linux/bpf.h>
 namespace bpftime
 {

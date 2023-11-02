@@ -1,4 +1,4 @@
-#include <bpf_map/array_map_kernel_user.hpp>
+#include <bpf_map/shared/array_map_kernel_user.hpp>
 #include <cerrno>
 #include <bpf/libbpf.h>
 #include <bpf/bpf.h>

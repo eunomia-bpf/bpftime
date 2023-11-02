@@ -1,7 +1,7 @@
 #ifndef _BPFTIME_SHM_INTERNAL
 #define _BPFTIME_SHM_INTERNAL
-#include "bpf_map/array_map.hpp"
-#include "bpf_map/ringbuf_map.hpp"
+#include "bpf_map/userspace/array_map.hpp"
+#include "bpf_map/userspace/ringbuf_map.hpp"
 #include <boost/interprocess/managed_shared_memory.hpp>
 #include <cstddef>
 #include <functional>

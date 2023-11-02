@@ -1,7 +1,7 @@
 #include "catch2/catch_message.hpp"
 #include <boost/interprocess/creation_tags.hpp>
 #include <boost/interprocess/interprocess_fwd.hpp>
-#include <bpf_map/per_cpu_array_map.hpp>
+#include <bpf_map/userspace/per_cpu_array_map.hpp>
 #include <bpftime_shm_json.hpp>
 #include <bpftime_shm_internal.hpp>
 #include <catch2/catch_test_macros.hpp>

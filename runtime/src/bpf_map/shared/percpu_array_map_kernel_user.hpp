@@ -4,6 +4,10 @@
 #include <bpf_map/map_common_def.hpp>
 namespace bpftime
 {
+
+// This is a simple percpu array map implementation, which could be accessed from both userspace ebpf programs and kernel ebpf programs
+// It just uses syscalls to operate the corresponding kernel map :(
+
 class percpu_array_map_kernel_user_impl {
 	uint32_t _value_size;
 	uint32_t _max_entries;

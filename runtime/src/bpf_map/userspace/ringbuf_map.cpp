@@ -2,7 +2,7 @@
 #include <boost/interprocess/smart_ptr/shared_ptr.hpp>
 #include <boost/interprocess/sync/interprocess_sharable_mutex.hpp>
 #include <boost/interprocess/sync/sharable_lock.hpp>
-#include <bpf_map/ringbuf_map.hpp>
+#include <bpf_map/userspace/ringbuf_map.hpp>
 #include <spdlog/spdlog.h>
 
 enum {

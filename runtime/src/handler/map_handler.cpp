@@ -1,14 +1,14 @@
-#include "bpf_map/per_cpu_array_map.hpp"
-#include "bpf_map/per_cpu_hash_map.hpp"
-#include <bpf_map/perf_event_array_map.hpp>
+#include "bpf_map/userspace/per_cpu_array_map.hpp"
+#include "bpf_map/userspace/per_cpu_hash_map.hpp"
+#include <bpf_map/userspace/perf_event_array_map.hpp>
 #include "spdlog/spdlog.h"
 #include <handler/map_handler.hpp>
-#include <bpf_map/array_map.hpp>
-#include <bpf_map/hash_map.hpp>
-#include <bpf_map/ringbuf_map.hpp>
-#include <bpf_map/array_map_kernel_user.hpp>
-#include <bpf_map/hash_map_kernel_user.hpp>
-#include <bpf_map/percpu_array_map_kernel_user.hpp>
+#include <bpf_map/userspace/array_map.hpp>
+#include <bpf_map/userspace/hash_map.hpp>
+#include <bpf_map/userspace/ringbuf_map.hpp>
+#include <bpf_map/shared/array_map_kernel_user.hpp>
+#include <bpf_map/shared/hash_map_kernel_user.hpp>
+#include <bpf_map/shared/percpu_array_map_kernel_user.hpp>
 
 using boost::interprocess::interprocess_sharable_mutex;
 using boost::interprocess::scoped_lock;

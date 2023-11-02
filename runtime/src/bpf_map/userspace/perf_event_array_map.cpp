@@ -1,5 +1,5 @@
 #include "spdlog/spdlog.h"
-#include <bpf_map/perf_event_array_map.hpp>
+#include <bpf_map/userspace/perf_event_array_map.hpp>
 #include <cassert>
 #include <cerrno>
 #include <spdlog/spdlog.h>
