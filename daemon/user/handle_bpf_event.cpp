@@ -31,7 +31,10 @@ static int parse_uint_from_file(const char *file, const char *fmt)
 		fprintf(stderr, "failed to open '%s\n", file);
 		exit(1);
 	}
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wformat-nonliteral"
 	err = fscanf(f, fmt, &ret);
+#pragma GCC diagnostic pop
 	if (err != 1) {
 		err = err == EOF ? -EIO : -errno;
 		fprintf(stderr, "failed to parse '%s'\n", file);

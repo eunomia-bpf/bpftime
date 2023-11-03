@@ -31,7 +31,10 @@ static int libbpf_print_fn(enum libbpf_print_level level, const char *format,
 {
 	if (level == LIBBPF_DEBUG && !verbose)
 		return 0;
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wformat-nonliteral"
 	return vfprintf(stderr, format, args);
+#pragma GCC diagnostic pop
 }
 
 static void sig_int(int signo)

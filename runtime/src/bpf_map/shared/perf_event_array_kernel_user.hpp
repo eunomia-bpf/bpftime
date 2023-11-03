@@ -1,14 +1,23 @@
 #include "bpftool/libbpf/src/libbpf.h"
 #include <bpf/libbpf.h>
 #include <boost/interprocess/managed_shared_memory.hpp>
-#include <boost/interprocess/smart_ptr/unique_ptr.hpp>
-#include <boost/interprocess/sync/interprocess_mutex.hpp>
+#include <linux/perf_event.h>
+#include <pthread.h>
+#include <vector>
 namespace bpftime
 {
 
-using mutex_ptr = boost::interprocess::managed_unique_ptr<
-	boost::interprocess::interprocess_mutex,
-	boost::interprocess::managed_shared_memory>::type;
+// Wraps a user_ringbuffer and it's spinlock that locks the reservation
+struct user_ringbuffer_wrapper {
+	pthread_spinlock_t reserve_lock;
+	user_ring_buffer *rb;
+	int user_rb_id;
+	int user_rb_fd;
+	user_ringbuffer_wrapper(int kernel_perf_id);
+	~user_ringbuffer_wrapper();
+	void *reserve(uint32_t size);
+	void submit(void *mem);
+};
 
 // Here is an implementation of a perf event array that can output data from
 // both userspace and kernel space It's corresponded with a normal perf event
@@ -18,21 +27,20 @@ using mutex_ptr = boost::interprocess::managed_unique_ptr<
 // attached to an intervally triggered event (e.g a timer perf event). This
 // program will examine if data was available in the user ringbuf, and writes
 // the data into the corresponding kernel perf event array.
-class perf_event_array_kernel_user_impl {
-	user_ring_buffer *user_rb = nullptr;
-	uint32_t dummy = 0xffffffff;
-	void init_user_ringbuf();
-	uint32_t max_ent;
-	int user_rb_id;
-	int user_rb_fd;
-	mutex_ptr reserve_mutex;
 
+// Data definition of things from userspace to kernel through user rb
+// [8 bytes of data length][data]
+class perf_event_array_kernel_user_impl {
+	uint32_t dummy = 0xffffffff;
+	uint32_t max_ent;
+	int kernel_perf_id;
+	int kernel_perf_fd = -1;
     public:
 	const static bool should_lock = false;
 	perf_event_array_kernel_user_impl(
 		boost::interprocess::managed_shared_memory &memory,
 		uint32_t key_size, uint32_t value_size, uint32_t max_entries,
-		int user_rb_id);
+		int kernel_perf_id);
 	virtual ~perf_event_array_kernel_user_impl();
 
 	void *elem_lookup(const void *key);
@@ -43,11 +51,25 @@ class perf_event_array_kernel_user_impl {
 
 	int map_get_next_key(const void *key, void *next_key);
 
-	void ensure_init_user_ringbuf()
+	user_ringbuffer_wrapper *ensure_current_map_user_ringbuf();
+	int output_data_into_kernel(const void *buf, size_t size);
+	int get_kernel_perf_fd()
 	{
-		if (!user_rb)
-			init_user_ringbuf();
+		return kernel_perf_fd;
 	}
-	int output_data(const void *buf, size_t size);
+	int get_user_ringbuf_fd()
+	{
+		return ensure_current_map_user_ringbuf()->user_rb_fd;
+	}
 };
+
+// Create a bpf program that will check if the user_ringbuf has data and copy
+// the data into the perf event
+std::vector<uint64_t>
+create_transporting_kernel_ebpf_program(int user_ringbuf_id,
+					int perf_event_array_id);
+
+// Create an intervally triggered perf event
+int create_intervally_triggered_perf_event(int freq);
+
 } // namespace bpftime
