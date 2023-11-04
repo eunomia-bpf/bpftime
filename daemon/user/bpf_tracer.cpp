@@ -50,6 +50,27 @@ static int handle_event_rb(void *ctx, void *data, size_t data_sz)
 	return handler->handle_event(e);
 }
 
+static int process_exec_maps(bpf_event_handler *handler, bpf_tracer_bpf *obj)
+{
+	if (!obj || obj->maps.exec_start == NULL) {
+		return 0;
+	}
+	struct event e;
+	int pid = 0, next_pid = 0;
+	if (bpf_map__get_next_key(obj->maps.exec_start, NULL, &pid,
+				  sizeof(pid)) != 0) {
+		return 0;
+	}
+	while (bpf_map__get_next_key(obj->maps.exec_start, &pid, &next_pid,
+				     sizeof(pid)) == 0) {
+		pid = next_pid;
+		bpf_map__lookup_elem(obj->maps.exec_start, &pid, sizeof(pid),
+				     &e, sizeof(e), 0);
+		handle_event_rb(handler, &e, sizeof(e));
+	}
+	return 0;
+}
+
 int bpftime::start_daemon(struct daemon_config env)
 {
 	LIBBPF_OPTS(bpf_object_open_opts, open_opts);
@@ -129,12 +150,13 @@ int bpftime::start_daemon(struct daemon_config env)
 
 	/* main: poll */
 	while (!exiting) {
-		err = ring_buffer__poll(rb, 100 /* timeout, ms */);
+		err = ring_buffer__poll(rb, 300 /* timeout, ms */);
 		if (err < 0 && err != -EINTR) {
 			spdlog::error("error polling perf buffer: {}",
 				      strerror(-err));
 			// goto cleanup;
 		}
+		process_exec_maps(&handler, obj);
 		/* reset err to return 0 if exiting */
 		err = 0;
 	}
