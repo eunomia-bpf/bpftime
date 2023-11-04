@@ -42,7 +42,7 @@ static int get_kernel_bpf_prog_insns(int fd, const bpf_prog_info *info,
 
 struct bpf_insn_data insn_data;
 
-static int get_bpf_map_id_from_pid_fd(bpf_tracer_bpf *obj, int pid, int fd)
+static int get_bpf_obj_id_from_pid_fd(bpf_tracer_bpf *obj, int pid, int fd)
 {
 	unsigned long long key = MAKE_PFD(pid, fd);
 	int map_id = -1;
@@ -55,10 +55,10 @@ static int get_bpf_map_id_from_pid_fd(bpf_tracer_bpf *obj, int pid, int fd)
 			      pid, fd);
 		return -1;
 	}
-	if (data.type != BPF_FD_TYPE_MAP) {
-		spdlog::error("Invalid bpf fd type {} for pid {} fd {}",
-			      (int)data.type, pid, fd);
-	}
+	// if (data.type != BPF_FD_TYPE_MAP) {
+	// 	spdlog::error("Invalid bpf fd type {} for pid {} fd {}",
+	// 		      (int)data.type, pid, fd);
+	// }
 	map_id = data.kernel_id;
 	return map_id;
 }
@@ -90,7 +90,7 @@ static int relocate_bpf_prog_insns(std::vector<ebpf_inst> &insns,
 		switch (inst.code) {
 		case EBPF_OP_LDDW:
 			if (inst.src_reg == 1 || inst.src_reg == 2) {
-				int map_id = get_bpf_map_id_from_pid_fd(
+				int map_id = get_bpf_obj_id_from_pid_fd(
 					obj, pid, inst.imm);
 				if (map_id < 0) {
 					return -1;
@@ -178,13 +178,14 @@ int bpftime_driver::bpftime_progs_create_server(int kernel_id, int server_pid)
 			      kernel_id);
 		return -1;
 	}
-	res = bpftime_progs_create(kernel_id, buffer.data(), buffer.size(),
-				   info.name, info.type);
+	res = bpftime_progs_create(fd,
+				   buffer.data(), buffer.size(), info.name,
+				   info.type);
 	if (res < 0) {
 		spdlog::error("Failed to create prog for id {}", kernel_id);
 		return -1;
 	}
-	spdlog::info("create prog {} in shm success", kernel_id);
+	spdlog::info("create prog {}, fd {} in shm success", kernel_id, fd);
 	// check and created related maps
 	res = check_and_create_prog_related_maps(fd, &info);
 	if (res < 0) {
@@ -243,7 +244,7 @@ int bpftime_driver::bpftime_attach_perf_to_bpf_fd_server(int server_pid,
 							 int bpf_prog_fd)
 {
 	int prog_id =
-		get_bpf_map_id_from_pid_fd(object, server_pid, bpf_prog_fd);
+		get_bpf_obj_id_from_pid_fd(object, server_pid, bpf_prog_fd);
 	if (prog_id < 0) {
 		spdlog::error(
 			"Failed to lookup bpf prog id from bpf prog fd {}",
@@ -275,7 +276,8 @@ int bpftime_driver::bpftime_attach_perf_to_bpf_server(int server_pid,
 		}
 	}
 
-	int res = bpftime_attach_perf_to_bpf(perf_id, kernel_bpf_id);
+	int res = bpftime_attach_perf_to_bpf(
+		perf_id, bpf_prog_get_fd_by_id(kernel_bpf_id));
 	if (res < 0) {
 		spdlog::error("Failed to attach perf to bpf");
 		return -1;

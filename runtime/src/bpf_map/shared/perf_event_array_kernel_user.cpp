@@ -1,7 +1,9 @@
 #include "bpf/bpf.h"
 #include "bpf/libbpf_common.h"
+#include "bpftool/libbpf/src/btf.h"
 #include "bpftool/libbpf/src/libbpf.h"
 #include "linux/bpf_common.h"
+#include "linux/btf.h"
 #include <boost/interprocess/sync/interprocess_mutex.hpp>
 #include <bpf_map/shared/perf_event_array_kernel_user.hpp>
 #include <cassert>
@@ -18,6 +20,8 @@
 #include <linux/filter.h>
 #include <sys/ioctl.h>
 #include <bpf/libbpf.h>
+
+static int create_transporter_prog(int user_ringbuf_fd, int kernel_perf_fd);
 
 // kernel perf event array map id -> user_ring_buffer* for the current process
 using user_ringbuf_map =
@@ -102,28 +106,10 @@ perf_event_array_kernel_user_impl::perf_event_array_kernel_user_impl(
 		"Initialized perf_event_array_kernel_user_impl, kernel perf id {}, user ringbuffer id {}, user ringbuffer map type {}",
 		kernel_perf_id, user_rb_id, (int)map_info.type);
 	int pfd = create_intervally_triggered_perf_event(10);
-    int kernel_perf_fd = bpf_map_get_fd_by_id(kernel_perf_id);
-	auto prog = create_transporting_kernel_ebpf_program(user_rb_fd,
-							    kernel_perf_fd);
-	std::vector<int> fds;
-	fds.push_back(user_rb_fd);
-	fds.push_back(kernel_perf_fd);
+	int kernel_perf_fd = bpf_map_get_fd_by_id(kernel_perf_id);
 
-	LIBBPF_OPTS(bpf_prog_load_opts, opts);
-	char log_buffer[2048];
-	opts.log_buf = log_buffer;
-	opts.log_size = sizeof(log_buffer);
-	opts.log_level = 5;
-	opts.fd_array = fds.data();
+	int bpf_fd = create_transporter_prog(user_rb_fd, kernel_perf_fd);
 
-	spdlog::debug("Loading transporter program with {} insns", prog.size());
-	int bpf_fd =
-		bpf_prog_load(BPF_PROG_TYPE_PERF_EVENT, "transporter", "GPL",
-			      (bpf_insn *)prog.data(), prog.size(), &opts);
-	if (bpf_fd < 0) {
-		spdlog::error("Failed to load bpf prog: err={}, message={}",
-			      errno, log_buffer);
-	}
 	assert(bpf_fd >= 0);
 	int err;
 	err = ioctl(pfd, PERF_EVENT_IOC_SET_BPF, bpf_fd);
@@ -268,23 +254,31 @@ int offset, long flags) = (void *) 201; static long
 size) = (void *) 25; static long (*bpf_user_ringbuf_drain)(void *map, void
 *callback_fn, void *ctx, long flags) = (void *) 209;
 
-static int cb(void *dynptr, void *ctx);
 
+struct context {
+    unsigned long size;
+    char buf[32];
+};
+static int cb(void *dynptr, struct context *ctx);
 int func(void* ctx)
 {
-	bpf_user_ringbuf_drain((void*)0x234, &cb, ctx, 0);
+    struct context ctx_buf;
+    ctx_buf.size = 0;
+    for(int i=0;i<sizeof(ctx_buf.buf);i++) ctx_buf.buf[i]=0;
+	if(bpf_user_ringbuf_drain((void*)0x1234567812345678, &cb, &ctx_buf,
+0)==1){ bpf_perf_event_output(ctx, (void*)0x1234567812345678, 0, ctx_buf.buf,
+ctx_buf.size);
+    }
     return 0;
 }
-static int cb(void *dynptr, void *ctx)
+static int cb(void *dynptr, struct context *ctx)
 {
-	long val;
-    char buf[496];
-	bpf_dynptr_read(&val, 8, dynptr, 0, 0);
-	if(val>400) return 1;
-	bpf_dynptr_read(&buf, val, dynptr, 8, 0);
-	bpf_perf_event_output(ctx, (void*)0x123, 0, buf, val);
+	if(bpf_dynptr_read(&ctx->size, 8, dynptr, 0, 0)<0) return 1;
+	if(ctx->size>sizeof(ctx->buf)) return 1;
+	if(bpf_dynptr_read(ctx->buf, ctx->size, dynptr, 8, 0)<0) return 1;
 	return 1;
 }
+
 */
 
 // Compiled using gcc.godbolt.org
@@ -297,73 +291,37 @@ create_transporting_kernel_ebpf_program(int user_ringbuf_fd,
 		sizeof(bpf_insn) == sizeof(uint64_t),
 		"bpf_insn is expected to be in the same size of uint64_t");
 	bpf_insn insns[] = {
-		// r3 = r1
-		BPF_MOV64_REG(3, 1),
+		BPF_MOV64_REG(6, 1), BPF_MOV64_IMM(1, 0),
+		BPF_STX_MEM(BPF_DW, 10, 1, -8),
+		BPF_STX_MEM(BPF_DW, 10, 1, -0x10),
+		BPF_STX_MEM(BPF_DW, 10, 1, -0x18),
+		BPF_STX_MEM(BPF_DW, 10, 1, -0x20),
+		BPF_STX_MEM(BPF_DW, 10, 1, -0x28), BPF_MOV64_REG(3, 10),
+		BPF_ALU64_IMM(BPF_ADD, 3, -0x28),
 		// r1 = map_by_fd(user_ringbuf_fd)
 		BPF_LD_IMM64_RAW_FULL(1, 1, 0, 0, user_ringbuf_fd, 0),
-		// r2 = callback fn
-		BPF_MOV64_IMM(2, 64),
-		// r4 = 0
-		BPF_MOV64_IMM(4, 0),
-		// call bpf_user_ringbuf_drain(void *map, void *callback_fn,
-		// void *ctx, long flags) = 0x209
-		BPF_EMIT_CALL(0x209),
-		// r0 = 0
-		BPF_MOV64_IMM(0, 0), BPF_EXIT_INSN(),
-		// static int cb(void *dynptr, void *ctx)
-		// r6 = r2
-		BPF_MOV64_REG(6, 2),
-		// r7 = r1
-		BPF_MOV64_REG(7, 1),
-		// r1 = r10
-		BPF_MOV64_REG(1, 10),
-		// r1 += -0x8
-		BPF_ALU64_IMM(BPF_ADD, 1, -8),
-		// r2=8,
-		BPF_MOV64_IMM(2, 8),
-		// r3 = r7
-		BPF_MOV64_IMM(3, 7),
-		// r4=0
-		BPF_MOV64_IMM(4, 0),
-		// r5 = 0
-		BPF_MOV64_IMM(5, 0),
-		// call 0xc9 bpf_dynptr_read(void *dst, int len, const struct
-		// bpf_dynptr *src, int offset, long flags) = (void *) 201
-		BPF_EMIT_CALL(0xc9),
-		// r2 = *(u64 *)(r10 - 0x8)
-		BPF_LDX_MEM(BPF_DW, 2, 10, -8),
-		// if r2 s> 0x1f0 goto +0xd <LBB1_2>
-		BPF_RAW_INSN(0x65, 0x2, 0x0, 0x0d, 0x1f0),
-		// r8 = r10
-		BPF_MOV64_REG(8, 10),
-		// r8 += -0x1f8
-		BPF_ALU64_IMM(BPF_ADD, 8, -0x1f8),
-		// r1 = r8
-		BPF_MOV64_REG(1, 8),
-		// r3 = r7
-		BPF_MOV64_REG(3, 7),
-		// r4 = 8
-		BPF_MOV64_IMM(4, 8),
-		// r5 = 0
-		BPF_MOV64_IMM(5, 0),
-		// call 0xc9 bpf_dynptr_read(void *dst, int len, const struct
-		// bpf_dynptr *src, int offset, long flags) = (void *) 201
-		BPF_EMIT_CALL(0xc9),
-		// r5 = *(u64 *)(r10 - 0x8)
-		BPF_LDX_MEM(BPF_DW, 5, 10, -8),
-		// r1 = r6
+		// r2 = callback fn (+7)
+		BPF_LD_IMM64_RAW_FULL(2, 4, 0, 0, 16, 0), BPF_MOV64_IMM(4, 0),
+		BPF_EMIT_CALL(0xd1), BPF_RAW_INSN(0x55, 0, 0, 0xa, 1),
+		BPF_LDX_MEM(BPF_DW, 5, 10, -0x28),
+		BPF_ALU64_IMM(BPF_AND, 5, 0x1f),
+		BPF_STX_MEM(BPF_DW, 10, 5, -0x28),
+
+		BPF_MOV64_REG(4, 10), BPF_ALU64_IMM(BPF_ADD, 4, -0x20),
 		BPF_MOV64_REG(1, 6),
-		// r2 = map_by_fd(perf_event_array_fd)
 		BPF_LD_IMM64_RAW_FULL(2, 1, 0, 0, perf_event_array_fd, 0),
-		// r3 = 0
-		BPF_MOV64_IMM(3, 0),
-		// r4 = r8
-		BPF_MOV64_REG(4, 8),
-		// call 0x19 bpf_perf_event_output(void *ctx, void *map, long
-		// flags, void *data, long size) = 25
-		BPF_EMIT_CALL(25),
-		// r0 = 1
-		BPF_MOV64_IMM(0, 1), BPF_EXIT_INSN()
+		BPF_MOV64_IMM(3, 0), BPF_EMIT_CALL(0x19), BPF_MOV64_IMM(0, 0),
+		BPF_EXIT_INSN(),
+		// callback func
+		BPF_MOV64_REG(7, 2), BPF_MOV64_REG(6, 1), BPF_MOV64_IMM(8, 0),
+		BPF_MOV64_REG(1, 7), BPF_MOV64_IMM(2, 0x8), BPF_MOV64_REG(3, 6),
+		BPF_MOV64_IMM(4, 0), BPF_MOV64_IMM(5, 0), BPF_EMIT_CALL(0xc9),
+		BPF_RAW_INSN(0x6d, 0x8, 0, 8, 0), BPF_LDX_MEM(BPF_DW, 2, 7, 0),
+		BPF_RAW_INSN(0x25, 0x2, 0x0, 0x6, 0x20),
+		BPF_ALU64_IMM(BPF_ADD, 7, 8), BPF_MOV64_REG(1, 7),
+		BPF_MOV64_REG(3, 6), BPF_MOV64_IMM(4, 8), BPF_MOV64_IMM(5, 0),
+		BPF_EMIT_CALL(0xc9), BPF_MOV64_IMM(0, 1), BPF_EXIT_INSN()
+
 	};
 	return std::vector<uint64_t>((uint64_t *)&insns,
 				     (uint64_t *)&insns + std::size(insns));
@@ -381,3 +339,66 @@ int create_intervally_triggered_perf_event(int freq)
 	return syscall(__NR_perf_event_open, &pe_attr, 0, -1, -1, 0);
 }
 } // namespace bpftime
+
+static int create_transporter_prog(int user_ringbuf_fd, int kernel_perf_fd)
+{
+	// Maniuplate a corresponding btf
+	btf *btf = btf__new_empty();
+	int bpf_dynptr_st = btf__add_struct(btf, "bpf_dynptr", 0);
+	int bpf_dynptr_ptr = btf__add_ptr(btf, bpf_dynptr_st);
+	int void_ptr = btf__add_ptr(btf, 0);
+	int long_ty = btf__add_int(btf, "long", 8, 1);
+	int int_ty = btf__add_int(btf, "int", 4, 1);
+
+	int cb_func_proto = btf__add_func_proto(btf, long_ty);
+	btf__add_func_param(btf, "dynptr", bpf_dynptr_ptr);
+	btf__add_func_param(btf, "context", void_ptr);
+	int cb_func = btf__add_func(btf, "transporter_cb", BTF_FUNC_STATIC,
+				    cb_func_proto);
+	// int main_func_proto = btf__add_func(btf,
+	// "transporter",BTF_FUNC_GLOBAL , int proto_type_id)
+	int main_func_proto = btf__add_func_proto(btf, int_ty);
+	btf__add_func_param(btf, "ctx", void_ptr);
+	int main_func = btf__add_func(btf, "transporter", BTF_FUNC_GLOBAL,
+				      main_func_proto);
+	uint32_t size;
+
+	auto btf_raw_data = btf__raw_data(btf, &size);
+	LIBBPF_OPTS(bpf_btf_load_opts, btf_load_opts);
+	int btf_fd = bpf_btf_load(btf_raw_data, size, &btf_load_opts);
+	if (btf_fd < 0) {
+		spdlog::error("Failed to load btf into kernel: {}", errno);
+		return -1;
+	}
+	auto prog = bpftime::create_transporting_kernel_ebpf_program(
+		user_ringbuf_fd, kernel_perf_fd);
+	std::vector<int> fds;
+	fds.push_back(user_ringbuf_fd);
+	fds.push_back(kernel_perf_fd);
+	std::vector<bpf_func_info> func_info;
+	func_info.push_back(
+		bpf_func_info{ .insn_off = 0, .type_id = (uint32_t)main_func });
+	func_info.push_back(
+		bpf_func_info{ .insn_off = 28, .type_id = (uint32_t)cb_func });
+
+	LIBBPF_OPTS(bpf_prog_load_opts, prog_load_opts);
+	char log_buffer[4096];
+	prog_load_opts.log_buf = log_buffer;
+	prog_load_opts.log_size = sizeof(log_buffer);
+	prog_load_opts.log_level = 5;
+	prog_load_opts.fd_array = fds.data();
+	prog_load_opts.prog_btf_fd = btf_fd;
+	prog_load_opts.func_info = func_info.data();
+	prog_load_opts.func_info_cnt = func_info.size();
+	prog_load_opts.func_info_rec_size = sizeof(bpf_func_info);
+	spdlog::debug("Loading transporter program with {} insns", prog.size());
+	int bpf_fd = bpf_prog_load(BPF_PROG_TYPE_PERF_EVENT, "transporter",
+				   "GPL", (bpf_insn *)prog.data(), prog.size(),
+				   &prog_load_opts);
+
+	if (bpf_fd < 0) {
+		spdlog::error("Failed to load bpf prog: err={}, message=\n{}",
+			      errno, log_buffer);
+	}
+	return bpf_fd;
+}

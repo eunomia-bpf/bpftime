@@ -50,7 +50,6 @@ class perf_event_array_kernel_user_impl {
 std::vector<uint64_t>
 create_transporting_kernel_ebpf_program(int user_ringbuf_fd,
 					int perf_event_array_fd);
-
 // Create an intervally triggered perf event
 int create_intervally_triggered_perf_event(int freq);
 

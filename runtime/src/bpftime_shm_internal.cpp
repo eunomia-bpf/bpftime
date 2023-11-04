@@ -134,6 +134,8 @@ int bpftime_shm::add_uprobe(int fd, int pid, const char *name, uint64_t offset,
 		// if fd is negative, we need to create a new fd for allocating
 		fd = open_fake_fd();
 	}
+	spdlog::debug("Set fd {} to uprobe, pid={}, name={}, offset={}", fd,
+		      pid, name, offset);
 	return manager->set_handler(
 		fd,
 		bpftime::bpf_perf_event_handler{ retprobe, offset, pid, name,
@@ -167,7 +169,7 @@ int bpftime_shm::add_software_perf_event(int cpu, int32_t sample_type,
 int bpftime_shm::attach_perf_to_bpf(int perf_fd, int bpf_fd)
 {
 	if (!is_perf_fd(perf_fd)) {
-		spdlog::error("Fd {} not a perf fd", perf_fd);
+		spdlog::error("Fd {} is not a perf fd", perf_fd);
 		errno = ENOENT;
 		return -1;
 	}
@@ -179,7 +181,7 @@ int bpftime_shm::add_bpf_prog_attach_target(int perf_fd, int bpf_fd)
 	spdlog::debug("Try attaching prog fd {} to perf fd {}", bpf_fd,
 		      perf_fd);
 	if (!is_prog_fd(bpf_fd)) {
-		spdlog::error("Fd {} not prog fd", bpf_fd);
+		spdlog::error("Fd {} is not a prog fd", bpf_fd);
 		errno = ENOENT;
 		return -1;
 	}
@@ -396,6 +398,9 @@ int bpftime_shm::add_bpf_prog(int fd, const ebpf_inst *insn, size_t insn_cnt,
 		// if fd is negative, we need to create a new fd for allocating
 		fd = open_fake_fd();
 	}
+	spdlog::debug(
+		"Set handler fd {} to bpf_prog_handler, name {}, prog_type {}, insn_cnt {}",
+		fd, prog_name, prog_type, insn_cnt);
 	return manager->set_handler(
 		fd,
 		bpftime::bpf_prog_handler(segment, insn, insn_cnt, prog_name,
