@@ -166,6 +166,15 @@ int bpftime::start_daemon(struct daemon_config env)
 			false);
 	}
 
+	if (!env.enable_auto_attach) {
+				bpf_program__set_autoload(
+			obj->progs.handle_exit,
+			false);
+		bpf_program__set_autoload(
+			obj->progs.handle_exec,
+			false);
+	}
+
 	bpftime_driver driver(env, obj);
 	// update handler config
 	bpf_event_handler handler = bpf_event_handler(env, driver);
