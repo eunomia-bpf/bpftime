@@ -51,7 +51,8 @@ static int handle_event_rb(void *ctx, void *data, size_t data_sz)
 	return handler->handle_event(e);
 }
 
-static int process_exec_maps(bpf_event_handler *handler, bpf_tracer_bpf *obj)
+static int process_exec_maps(bpf_event_handler *handler, bpf_tracer_bpf *obj,
+			     daemon_config &env)
 {
 	if (!obj || obj->maps.exec_start == NULL) {
 		return 0;
@@ -90,7 +91,7 @@ static int process_exec_maps(bpf_event_handler *handler, bpf_tracer_bpf *obj)
 		}
 		start_time_ms =
 			(current_nanoseconds - e.exec_data.time_ns) / 1000000;
-		if (start_time_ms < 100) {
+		if (start_time_ms < env.duration_ms) {
 			// ignore short-lived processes
 			return 0;
 		}
@@ -199,7 +200,7 @@ int bpftime::start_daemon(struct daemon_config env)
 				      strerror(-err));
 			// goto cleanup;
 		}
-		process_exec_maps(&handler, obj);
+		process_exec_maps(&handler, obj, env);
 		/* reset err to return 0 if exiting */
 		err = 0;
 	}
