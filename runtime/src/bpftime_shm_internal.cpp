@@ -327,6 +327,14 @@ bool bpftime_shm::is_ringbuf_map_fd(int fd) const
 	auto &map_impl = std::get<bpf_map_handler>(manager->get_handler(fd));
 	return map_impl.type == bpf_map_type::BPF_MAP_TYPE_RINGBUF;
 }
+bool bpftime_shm::is_shared_perf_event_array_map_fd(int fd) const
+{
+	if (!is_map_fd(fd))
+		return false;
+	auto &map_impl = std::get<bpf_map_handler>(manager->get_handler(fd));
+	return map_impl.type ==
+	       bpf_map_type::BPF_MAP_TYPE_KERNEL_USER_PERF_EVENT_ARRAY;
+}
 bool bpftime_shm::is_array_map_fd(int fd) const
 {
 	if (!is_map_fd(fd))

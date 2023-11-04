@@ -87,7 +87,7 @@ int bpftime::start_daemon(struct daemon_config env)
 	obj->rodata->uprobe_perf_type = determine_uprobe_perf_type();
 	obj->rodata->kprobe_perf_type = determine_kprobe_perf_type();
 	obj->rodata->submit_bpf_events = env.submit_bpf_events;
-
+	obj->rodata->current_pid = getpid();
 	if (!env.show_open) {
 		bpf_program__set_autoload(
 			obj->progs.tracepoint__syscalls__sys_exit_open, false);

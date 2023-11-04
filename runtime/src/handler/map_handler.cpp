@@ -473,5 +473,12 @@ void bpf_map_handler::map_free(managed_shared_memory &memory)
 	map_impl_ptr = nullptr;
 	return;
 }
-
+std::optional<perf_event_array_kernel_user_impl *>
+bpf_map_handler::try_get_shared_perf_event_array_map_impl() const
+{
+	if (type != bpf_map_type::BPF_MAP_TYPE_KERNEL_USER_PERF_EVENT_ARRAY)
+		return {};
+	return static_cast<perf_event_array_kernel_user_impl *>(
+		map_impl_ptr.get());
+}
 } // namespace bpftime

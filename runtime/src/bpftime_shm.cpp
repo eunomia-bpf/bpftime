@@ -130,7 +130,7 @@ void bpftime_close(int fd)
 }
 
 int bpftime_map_get_info(int fd, bpftime::bpf_map_attr *out_attr,
-			 const char **out_name, bpf_map_type *type)
+			 const char **out_name, bpftime::bpf_map_type *type)
 {
 	if (!shm_holder.global_shared_memory.is_map_fd(fd)) {
 		errno = ENOENT;
@@ -351,7 +351,35 @@ int bpftime_perf_event_output(int fd, const void *buf, size_t sz)
 	}
 }
 
-#define INVALID_MAP_PTR ((uint64_t)0 - 1)
+int bpftime_shared_perf_event_output(int map_fd, const void *buf, size_t sz)
+{
+	spdlog::debug("Output data into shared perf event array fd {}", map_fd);
+	auto &shm = shm_holder.global_shared_memory;
+	if (!shm.is_shared_perf_event_array_map_fd(map_fd)) {
+		spdlog::error("Expected fd {} to be a shared perf event array",
+			      map_fd);
+		errno = EINVAL;
+		return -1;
+	}
+	auto &map_handler = std::get<bpf_map_handler>(shm.get_handler(map_fd));
+	if (auto p = map_handler.try_get_shared_perf_event_array_map_impl();
+	    p.has_value()) {
+		int err = p.value()->output_data_into_kernel(buf, sz);
+		if (err < 0) {
+			errno = -err;
+			return -1;
+		}
+		return 0;
+	} else {
+		spdlog::error(
+			"Expected map {} to be a shared perf event array map",
+			map_fd);
+		errno = EINVAL;
+		return -1;
+	}
+}
+
+const uint64_t INVALID_MAP_PTR = ((uint64_t)0 - 1);
 
 extern "C" uint64_t map_ptr_by_fd(uint32_t fd)
 {

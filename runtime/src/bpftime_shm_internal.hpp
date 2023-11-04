@@ -50,6 +50,7 @@ class bpftime_shm {
 	bool is_map_fd(int fd) const;
 	bool is_ringbuf_map_fd(int fd) const;
 	bool is_array_map_fd(int fd) const;
+	bool is_shared_perf_event_array_map_fd(int fd) const;
 	bool is_perf_event_handler_fd(int fd) const;
 	bool is_software_perf_event_handler_fd(int fd) const;
 

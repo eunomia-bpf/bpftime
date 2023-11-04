@@ -12,6 +12,7 @@
 #include <boost/interprocess/sync/sharable_lock.hpp>
 #include <optional>
 #include <unistd.h>
+#include <bpf_map/shared/perf_event_array_kernel_user.hpp>
 namespace bpftime
 {
 using char_allocator = boost::interprocess::allocator<
@@ -90,36 +91,34 @@ class bpf_map_handler {
 				    bool from_userspace = false) const;
 	// * BPF_MAP_UPDATE_ELEM
 	// *	Description
-	// *		Create or update an element (key/value pair) in a specified map.
+	// *		Create or update an element (key/value pair) in a
+	// specified map.
 	// *
 	// *		The *flags* argument should be specified as one of the
 	// *		following:
 	// *
 	// *		**BPF_ANY**
-	// *			Create a new element or update an existing element.
-	// *		**BPF_NOEXIST**
-	// *			Create a new element only if it did not exist.
-	// *		**BPF_EXIST**
-	// *			Update an existing element.
-	// *		**BPF_F_LOCK**
-	// *			Update a spin_lock-ed map element.
+	// *			Create a new element or update an existing
+	// element. *		**BPF_NOEXIST** *			Create a
+	// new element only if it did not exist. *		**BPF_EXIST** *
+	// Update an existing element. *		**BPF_F_LOCK** *
+	// Update a spin_lock-ed map element.
 	// *
 	// *	Return
-	// *		Returns zero on success. On error, -1 is returned and *errno*
-	// *		is set appropriately.
+	// *		Returns zero on success. On error, -1 is returned and
+	// *errno* *		is set appropriately.
 	// *
 	// *		May set *errno* to **EINVAL**, **EPERM**, **ENOMEM**,
 	// *		**E2BIG**, **EEXIST**, or **ENOENT**.
 	// *
 	// *		**E2BIG**
 	// *			The number of elements in the map reached the
-	// *			*max_entries* limit specified at map creation time.
-	// *		**EEXIST**
-	// *			If *flags* specifies **BPF_NOEXIST** and the element
-	// *			with *key* already exists in the map.
-	// *		**ENOENT**
-	// *			If *flags* specifies **BPF_EXIST** and the element with
-	// *			*key* does not exist in the map.
+	// *			*max_entries* limit specified at map creation
+	// time. *		**EEXIST** *			If *flags*
+	// specifies **BPF_NOEXIST** and the element *			with
+	// *key* already exists in the map. *		**ENOENT** *
+	// If *flags* specifies **BPF_EXIST** and the element with *
+	// *key* does not exist in the map.
 	// *
 	long map_update_elem(const void *key, const void *value, uint64_t flags,
 			     bool from_userspace = false) const;
@@ -128,8 +127,8 @@ class bpf_map_handler {
 	// *		Look up and delete an element by key in a specified map.
 	// *
 	// *	Return
-	// *		Returns zero on success. On error, -1 is returned and *errno*
-	// *		is set appropriately.
+	// *		Returns zero on success. On error, -1 is returned and
+	// *errno* *		is set appropriately.
 	long map_delete_elem(const void *key,
 			     bool from_userspace = false) const;
 	// * BPF_MAP_GET_NEXT_KEY
@@ -162,6 +161,8 @@ class bpf_map_handler {
 	uint32_t get_value_size() const;
 	std::optional<ringbuf_map_impl *> try_get_ringbuf_map_impl() const;
 	std::optional<array_map_impl *> try_get_array_map_impl() const;
+	std::optional<perf_event_array_kernel_user_impl *>
+	try_get_shared_perf_event_array_map_impl() const;
 
     private:
 	std::string get_container_name();

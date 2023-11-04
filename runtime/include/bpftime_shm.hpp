@@ -152,7 +152,6 @@ bpftime::agent_config &bpftime_get_agent_config();
 } // namespace bpftime
 
 extern "C" {
-
 // initialize the global shared memory for store bpf progs and maps
 void bpftime_initialize_global_shm(bpftime::shm_open_type type);
 // destroy the global shared memory data structure
@@ -267,6 +266,7 @@ int bpftime_add_software_perf_event(int cpu, int32_t sample_type,
 int bpftime_is_software_perf_event(int fd);
 void *bpftime_get_software_perf_event_raw_buffer(int fd, size_t expected_size);
 int bpftime_perf_event_output(int fd, const void *buf, size_t sz);
+int bpftime_shared_perf_event_output(int map_fd, const void *buf, size_t sz);
 }
 
 #endif // BPFTIME_SHM_CPP_H
