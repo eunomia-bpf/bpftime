@@ -215,12 +215,24 @@ int bpf_event_handler::handle_bpf_event(const struct event *e)
 				(enum bpf_map_type)e->bpf_data.attr.map_type),
 			e->bpf_data.attr.map_name, e->bpf_data.map_id);
 		break;
-	case BPF_LINK_CREATE:
+	case BPF_LINK_CREATE: {
+		int prog_fd = e->bpf_data.attr.link_create.prog_fd;
+		int perf = e->bpf_data.attr.link_create.target_fd;
 		/* code */
 		spdlog::info("   BPF_LINK_CREATE prog_fd:{} target_fd:{}",
-			     e->bpf_data.attr.link_create.prog_fd,
-			     e->bpf_data.attr.link_create.target_fd);
+			     prog_fd, perf);
+		if (config.is_driving_bpftime) {
+			if (int err =
+				    driver.bpftime_attach_perf_to_bpf_fd_server(
+					    e->pid, perf, prog_fd);
+			    err < 0) {
+				spdlog::warn(
+					"Unable to attach perf {} to bpf prog {}, err={}",
+					perf, prog_fd, err);
+			}
+		}
 		break;
+	}
 	case BPF_PROG_LOAD:
 		/* code */
 		spdlog::info(

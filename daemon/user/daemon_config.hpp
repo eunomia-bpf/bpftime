@@ -29,7 +29,7 @@ struct daemon_config {
 	// should bpftime be involve
 	bool is_driving_bpftime = true;
 
-	bool submit_bpf_events = false;
+	bool submit_bpf_events = true;
 };
 
 #endif // BPFTIME_DAEMON_CONFIG_HPP

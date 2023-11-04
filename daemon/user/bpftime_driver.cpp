@@ -154,7 +154,8 @@ int bpftime_driver::bpftime_progs_create_server(int kernel_id, int server_pid)
 {
 	int fd = bpf_prog_get_fd_by_id(kernel_id);
 	if (fd < 0) {
-		spdlog::error("Failed to get prog fd for id {}", kernel_id);
+		spdlog::error("Failed to get prog fd by prog id {}, err={}",
+			      kernel_id, errno);
 		return -1;
 	}
 	spdlog::debug("get prog fd {} for id {}", fd, kernel_id);
@@ -237,7 +238,20 @@ int bpftime_driver::bpftime_maps_create_server(int kernel_id)
 	spdlog::info("create map in kernel id {}", kernel_id);
 	return kernel_id;
 }
-
+int bpftime_driver::bpftime_attach_perf_to_bpf_fd_server(int server_pid,
+							 int perf_fd,
+							 int bpf_prog_fd)
+{
+	int prog_id =
+		get_bpf_map_id_from_pid_fd(object, server_pid, bpf_prog_fd);
+	if (prog_id < 0) {
+		spdlog::error(
+			"Failed to lookup bpf prog id from bpf prog fd {}",
+			bpf_prog_fd);
+		return -1;
+	}
+	return bpftime_attach_perf_to_bpf_server(server_pid, perf_fd, prog_id);
+}
 int bpftime_driver::bpftime_attach_perf_to_bpf_server(int server_pid,
 						      int perf_fd,
 						      int kernel_bpf_id)
@@ -254,8 +268,9 @@ int bpftime_driver::bpftime_attach_perf_to_bpf_server(int server_pid,
 		int res =
 			bpftime_progs_create_server(kernel_bpf_id, server_pid);
 		if (res < 0) {
-			spdlog::error("Failed to create bpf for id {}",
-				      kernel_bpf_id);
+			spdlog::error(
+				"Failed to create bpf program (userspace side) for kernel program id {}",
+				kernel_bpf_id);
 			return -1;
 		}
 	}

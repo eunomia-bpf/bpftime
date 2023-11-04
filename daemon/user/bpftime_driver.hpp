@@ -34,7 +34,8 @@ class bpftime_driver {
 	daemon_config config;
 	struct bpf_tracer_bpf *object = NULL;
 
-	int check_and_create_prog_related_maps(int fd, const bpf_prog_info* info);
+	int check_and_create_prog_related_maps(int fd,
+					       const bpf_prog_info *info);
 
     public:
 	// create a bpf prog in the global shared memory
@@ -51,6 +52,8 @@ class bpftime_driver {
 
 	int bpftime_attach_perf_to_bpf_server(int server_pid, int perf_fd,
 					      int kernel_bpf_id);
+	int bpftime_attach_perf_to_bpf_fd_server(int server_pid, int perf_fd,
+						 int bpf_prog_fd);
 
 	// create uprobe in the global shared memory
 	//

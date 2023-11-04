@@ -59,6 +59,7 @@ long hash_map_kernel_user_impl::elem_update(const void *key, const void *value,
 	if (map_fd < 0) {
 		init_map_fd();
 	}
+	spdlog::debug("Update shared hash map");
 	// Allocate as a local variable to make
 	//  it thread safe, since we use sharable lock
 	return bpf_map_update_elem(map_fd, key, value, flags);

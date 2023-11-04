@@ -176,6 +176,8 @@ int bpftime_shm::attach_perf_to_bpf(int perf_fd, int bpf_fd)
 
 int bpftime_shm::add_bpf_prog_attach_target(int perf_fd, int bpf_fd)
 {
+	spdlog::debug("Try attaching prog fd {} to perf fd {}", bpf_fd,
+		      perf_fd);
 	if (!is_prog_fd(bpf_fd)) {
 		spdlog::error("Fd {} not prog fd", bpf_fd);
 		errno = ENOENT;
@@ -228,8 +230,7 @@ int bpftime_shm::add_software_perf_event_to_epoll(int swpe_fd, int epoll_fd,
 	}
 	auto &perf_handler =
 		std::get<bpf_perf_event_handler>(manager->get_handler(swpe_fd));
-	if (perf_handler.type !=
-	    bpf_event_type::PERF_TYPE_SOFTWARE) {
+	if (perf_handler.type != bpf_event_type::PERF_TYPE_SOFTWARE) {
 		spdlog::error(
 			"Expected perf fd {} to be a software perf event instance",
 			swpe_fd);
@@ -554,8 +555,7 @@ bool bpftime_shm::is_software_perf_event_handler_fd(int fd) const
 	if (!is_perf_event_handler_fd(fd))
 		return false;
 	const auto &hd = std::get<bpf_perf_event_handler>(get_handler(fd));
-	return hd.type ==
-	       bpf_event_type::PERF_TYPE_SOFTWARE;
+	return hd.type == bpf_event_type::PERF_TYPE_SOFTWARE;
 }
 
 bpftime::agent_config &bpftime_get_agent_config()

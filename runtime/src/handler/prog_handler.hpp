@@ -1,5 +1,6 @@
 #ifndef _PROG_HANDLER_HPP
 #define _PROG_HANDLER_HPP
+#include "spdlog/spdlog.h"
 #include <boost/interprocess/managed_shared_memory.hpp>
 #include <boost/interprocess/containers/vector.hpp>
 #include <boost/interprocess/containers/string.hpp>
@@ -56,6 +57,8 @@ class bpf_prog_handler {
 
 	void add_attach_fd(int fd) const
 	{
+		spdlog::debug("Add attach fd {} for bpf_prog {}", fd,
+			      name.c_str());
 		attach_fds.push_back(fd);
 	}
 
