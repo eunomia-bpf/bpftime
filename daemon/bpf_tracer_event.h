@@ -93,7 +93,7 @@ struct event {
 			int exit_event;
 			int ppid;
 			unsigned exit_code;
-			unsigned long long duration_ns;
+			unsigned long long time_ns;
 			char filename[MAX_FILENAME_LEN];
 		} exec_data;
 	};

@@ -619,7 +619,7 @@ int handle_exec(struct trace_event_raw_sched_process_exec *ctx)
 
 	/* remember time exec() was executed for this PID */
 	pid = bpf_get_current_pid_tgid() >> 32;
-	ts = bpf_ktime_get_ns();
+	e.exec_data.time_ns = bpf_ktime_get_ns();
 
 	/* fill out the sample with data */
 	task = (struct task_struct *)bpf_get_current_task();

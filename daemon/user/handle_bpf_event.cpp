@@ -81,6 +81,7 @@ int bpf_event_handler::handle_open_events(const struct event *e)
 
 int bpf_event_handler::handle_exec_and_exit(const struct event *e)
 {
+
 	if (e->exec_data.exit_event == false) {
 		spdlog::info("EXEC {:<6} {:<16} {}", e->pid, e->comm,
 			     e->exec_data.filename);

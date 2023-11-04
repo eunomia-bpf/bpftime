@@ -17,6 +17,7 @@
 #include "daemon.hpp"
 #include <cassert>
 #include <spdlog/spdlog.h>
+#include <map>
 #include <spdlog/cfg/env.h>
 
 #define NSEC_PER_SEC 1000000000ULL
@@ -55,19 +56,61 @@ static int process_exec_maps(bpf_event_handler *handler, bpf_tracer_bpf *obj)
 	if (!obj || obj->maps.exec_start == NULL) {
 		return 0;
 	}
-	struct event e;
+	event e;
 	int pid = 0, next_pid = 0;
-	if (bpf_map__get_next_key(obj->maps.exec_start, NULL, &pid,
+
+	static std::map<int, event> pid_map;
+
+	std::map<int, event> new_pid_map = {};
+	std::map<int, event> remain_pid_map = pid_map;
+
+	if (bpf_map__get_next_key(obj->maps.exec_start, NULL, &next_pid,
 				  sizeof(pid)) != 0) {
 		return 0;
 	}
-	while (bpf_map__get_next_key(obj->maps.exec_start, &pid, &next_pid,
-				     sizeof(pid)) == 0) {
+	do {
 		pid = next_pid;
-		bpf_map__lookup_elem(obj->maps.exec_start, &pid, sizeof(pid),
-				     &e, sizeof(e), 0);
+		int res = bpf_map__lookup_elem(obj->maps.exec_start, &pid,
+					       sizeof(pid), &e, sizeof(e), 0);
+		if (res != 0) {
+			continue;
+		}
+		struct timespec ts;
+		long long current_nanoseconds;
+		long start_time_ms;
+		// CLOCK_MONOTONIC ensures the time won't go back due to NTP
+		// adjustments CLOCK_REALTIME could be used if you want the real
+		// current time
+		if (clock_gettime(CLOCK_MONOTONIC, &ts) == 0) {
+			// calculates total nanoseconds
+			current_nanoseconds =
+				ts.tv_sec * 1000000000LL + ts.tv_nsec;
+		} else {
+			return 0;
+		}
+		start_time_ms =
+			(current_nanoseconds - e.exec_data.time_ns) / 1000000;
+		if (start_time_ms < 100) {
+			// ignore short-lived processes
+			return 0;
+		}
+		// find exec new process and exit process
+		new_pid_map[pid] = e;
+		if (remain_pid_map.find(pid) == remain_pid_map.end()) {
+			// new pid
+			handle_event_rb(handler, &e, sizeof(e));
+		} else {
+			remain_pid_map.erase(pid);
+		}
+	} while (bpf_map__get_next_key(obj->maps.exec_start, &pid, &next_pid,
+				       sizeof(pid)) == 0);
+	// remain pid is exit process, not occur in the map
+	for (auto pid : remain_pid_map) {
+		e = pid.second;
+		e.exec_data.exit_event = 1;
 		handle_event_rb(handler, &e, sizeof(e));
 	}
+	pid_map = new_pid_map;
 	return 0;
 }
 
