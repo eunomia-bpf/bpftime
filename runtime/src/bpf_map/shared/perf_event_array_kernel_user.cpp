@@ -200,8 +200,8 @@ perf_event_array_kernel_user_impl::ensure_current_map_user_ringbuf()
 	    itr != user_rb_map->end()) {
 		result = itr->second.get();
 	} else {
-		auto ptr = std::make_unique<user_ringbuffer_wrapper>(
-			kernel_perf_id);
+		auto ptr =
+			std::make_unique<user_ringbuffer_wrapper>(user_rb_id);
 		auto raw_ptr = ptr.get();
 		user_rb_map->emplace(kernel_perf_id, std::move(ptr));
 		result = raw_ptr;
@@ -224,6 +224,7 @@ user_ringbuffer_wrapper::user_ringbuffer_wrapper(int user_rb_id)
 		throw std::runtime_error(
 			"Failed to get user_rb_fd from user_rb_id");
 	}
+
 	rb = user_ring_buffer__new(user_rb_fd, &opts);
 	assert(rb &&
 	       "Failed to initialize user ringbuffer! This SHOULD NOT Happen.");
@@ -291,18 +292,18 @@ create_transporting_kernel_ebpf_program(int user_ringbuf_fd,
 		sizeof(bpf_insn) == sizeof(uint64_t),
 		"bpf_insn is expected to be in the same size of uint64_t");
 	bpf_insn insns[] = {
-		BPF_MOV64_REG(6, 1), BPF_MOV64_IMM(1, 0),
-		BPF_STX_MEM(BPF_DW, 10, 1, -8),
-		BPF_STX_MEM(BPF_DW, 10, 1, -0x10),
-		BPF_STX_MEM(BPF_DW, 10, 1, -0x18),
-		BPF_STX_MEM(BPF_DW, 10, 1, -0x20),
-		BPF_STX_MEM(BPF_DW, 10, 1, -0x28), BPF_MOV64_REG(3, 10),
+		BPF_MOV64_REG(6, 1), BPF_MOV64_IMM(7, 0),
+		BPF_STX_MEM(BPF_DW, 10, 7, -8),
+		BPF_STX_MEM(BPF_DW, 10, 7, -0x10),
+		BPF_STX_MEM(BPF_DW, 10, 7, -0x18),
+		BPF_STX_MEM(BPF_DW, 10, 7, -0x20),
+		BPF_STX_MEM(BPF_DW, 10, 7, -0x28), BPF_MOV64_REG(3, 10),
 		BPF_ALU64_IMM(BPF_ADD, 3, -0x28),
 		// r1 = map_by_fd(user_ringbuf_fd)
 		BPF_LD_IMM64_RAW_FULL(1, 1, 0, 0, user_ringbuf_fd, 0),
 		// r2 = callback fn (+7)
 		BPF_LD_IMM64_RAW_FULL(2, 4, 0, 0, 16, 0), BPF_MOV64_IMM(4, 0),
-		BPF_EMIT_CALL(0xd1), BPF_RAW_INSN(0x55, 0, 0, 0xa, 1),
+		BPF_EMIT_CALL(0xd1), BPF_RAW_INSN(0x6d, 7, 0, 0xa, 0),
 		BPF_LDX_MEM(BPF_DW, 5, 10, -0x28),
 		BPF_ALU64_IMM(BPF_AND, 5, 0x1f),
 		BPF_STX_MEM(BPF_DW, 10, 5, -0x28),
