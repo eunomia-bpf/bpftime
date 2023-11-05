@@ -109,7 +109,7 @@ You can also run bpftime with `bpftrace`, we've test it on [this commit](https:/
 
 Left: kernel eBPF | Right: userspace bpftime
 
-![How it works](https://github.com/eunomia-bpf/bpftime/tree/master/documents/bpftime.png?raw=true)
+![How it works](https://github.com/eunomia-bpf/bpftime/raw/master/documents/bpftime.png?raw=true)
 
 Current hook implementation is based on binary rewriting and the underly technique is inspired by:
 
