@@ -62,19 +62,19 @@ void array_map_kernel_user_impl::init_map_fd()
 		return;
 	}
 	// What does this piece of code do?
-	// int prot;
-	// if (info.map_flags & BPF_F_RDONLY_PROG)
-	// 	prot = PROT_READ;
-	// else
-	// 	prot = PROT_READ | PROT_WRITE;
-	// void *mmaped = mmap(mmap_ptr, mmap_sz, prot, MAP_SHARED | MAP_FIXED,
-	// 		    map_fd, 0);
-	// if (mmaped == MAP_FAILED) {
-	// 	spdlog::error("Failed to mmap for kernel map id {}, err={}",
-	// 		      kernel_map_id, errno);
-	// 	return;
-	// }
-	// mmap_ptr = mmaped;
+	int prot;
+	if (info.map_flags & BPF_F_RDONLY_PROG)
+		prot = PROT_READ;
+	else
+		prot = PROT_READ | PROT_WRITE;
+	void *mmaped = mmap(mmap_ptr, mmap_sz, prot, MAP_SHARED | MAP_FIXED,
+			    map_fd, 0);
+	if (mmaped == MAP_FAILED) {
+		spdlog::error("Failed to mmap for kernel map id {}, err={}",
+			      kernel_map_id, errno);
+		return;
+	}
+	mmap_ptr = mmaped;
 }
 
 array_map_kernel_user_impl::array_map_kernel_user_impl(
