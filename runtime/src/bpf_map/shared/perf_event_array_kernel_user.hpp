@@ -23,7 +23,8 @@ class perf_event_array_kernel_user_impl {
 	uint32_t max_ent;
 	int kernel_perf_id;
 	int user_rb_id;
-
+	int pfd = -1;
+	int transporter_prog_fd = -1;
     public:
 	const static bool should_lock = false;
 	perf_event_array_kernel_user_impl(
@@ -51,7 +52,7 @@ std::vector<uint64_t>
 create_transporting_kernel_ebpf_program(int user_ringbuf_fd,
 					int perf_event_array_fd);
 // Create an intervally triggered perf event
-int create_intervally_triggered_perf_event(int freq);
+int create_intervally_triggered_perf_event(int duration_ms);
 
 } // namespace bpftime
 #endif

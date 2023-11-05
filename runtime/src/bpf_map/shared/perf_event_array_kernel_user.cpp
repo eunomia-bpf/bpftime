@@ -4,6 +4,8 @@
 #include "bpftool/libbpf/src/libbpf.h"
 #include "linux/bpf_common.h"
 #include "linux/btf.h"
+#include "linux/perf_event.h"
+#include "spdlog/fmt/bin_to_hex.h"
 #include <boost/interprocess/sync/interprocess_mutex.hpp>
 #include <bpf_map/shared/perf_event_array_kernel_user.hpp>
 #include <cassert>
@@ -20,6 +22,7 @@
 #include <linux/filter.h>
 #include <sys/ioctl.h>
 #include <bpf/libbpf.h>
+#include <unistd.h>
 
 static int create_transporter_prog(int user_ringbuf_fd, int kernel_perf_fd);
 
@@ -65,7 +68,8 @@ int perf_event_array_kernel_user_impl::output_data_into_kernel(const void *buf,
 	*(uint64_t *)(mem) = (uint64_t)size;
 	memcpy((char *)mem + 8, buf, size);
 	user_rb->submit(mem);
-	spdlog::trace("Commited {} bytes of data into kernel", size);
+	spdlog::trace("Commited {} bytes of data into kernel: {:n}", size,
+		      spdlog::to_hex((uint8_t *)buf, (uint8_t *)buf + size));
 	return 0;
 }
 // Put the creation of user ringbuffer & transporter ebpf program in the
@@ -105,10 +109,12 @@ perf_event_array_kernel_user_impl::perf_event_array_kernel_user_impl(
 	spdlog::debug(
 		"Initialized perf_event_array_kernel_user_impl, kernel perf id {}, user ringbuffer id {}, user ringbuffer map type {}",
 		kernel_perf_id, user_rb_id, (int)map_info.type);
-	int pfd = create_intervally_triggered_perf_event(10);
+	int &pfd = this->pfd;
+	pfd = create_intervally_triggered_perf_event(10);
 	int kernel_perf_fd = bpf_map_get_fd_by_id(kernel_perf_id);
 
-	int bpf_fd = create_transporter_prog(user_rb_fd, kernel_perf_fd);
+	int &bpf_fd = this->transporter_prog_fd;
+	bpf_fd = create_transporter_prog(user_rb_fd, kernel_perf_fd);
 
 	assert(bpf_fd >= 0);
 	int err;
@@ -122,10 +128,13 @@ perf_event_array_kernel_user_impl::perf_event_array_kernel_user_impl(
 		spdlog::error("Failed to run PERF_EVENT_IOC_ENABLE: {}", err);
 		assert(false);
 	}
+
 	spdlog::debug("Attached transporter ebpf program");
 }
 perf_event_array_kernel_user_impl::~perf_event_array_kernel_user_impl()
 {
+	close(pfd);
+	close(transporter_prog_fd);
 }
 
 void *perf_event_array_kernel_user_impl::elem_lookup(const void *key)
@@ -292,51 +301,98 @@ create_transporting_kernel_ebpf_program(int user_ringbuf_fd,
 		sizeof(bpf_insn) == sizeof(uint64_t),
 		"bpf_insn is expected to be in the same size of uint64_t");
 	bpf_insn insns[] = {
-		BPF_MOV64_REG(6, 1), BPF_MOV64_IMM(7, 0),
-		BPF_STX_MEM(BPF_DW, 10, 7, -8),
-		BPF_STX_MEM(BPF_DW, 10, 7, -0x10),
-		BPF_STX_MEM(BPF_DW, 10, 7, -0x18),
-		BPF_STX_MEM(BPF_DW, 10, 7, -0x20),
-		BPF_STX_MEM(BPF_DW, 10, 7, -0x28), BPF_MOV64_REG(3, 10),
-		BPF_ALU64_IMM(BPF_ADD, 3, -0x28),
+		BPF_MOV64_REG(6, 1),
+		// bpf_printk("triggered")
+		BPF_MOV64_IMM(1, 0x64), BPF_STX_MEM(BPF_H, 10, 1, -8),
+		BPF_LD_IMM64_RAW_FULL(1, 0, 0, 0, 0x67697274, 0x65726567),
+		BPF_STX_MEM(BPF_DW, 10, 1, -0x10), BPF_MOV64_REG(1, 10),
+		BPF_ALU64_IMM(BPF_ADD, 1, -0x10), BPF_MOV64_IMM(2, 0xa),
+		BPF_EMIT_CALL(0x6),
+		// Other
+		BPF_MOV64_IMM(8, 0), BPF_STX_MEM(BPF_DW, 10, 8, -0x18),
+		BPF_STX_MEM(BPF_DW, 10, 8, -0x20),
+		BPF_STX_MEM(BPF_DW, 10, 8, -0x28),
+		BPF_STX_MEM(BPF_DW, 10, 8, -0x30),
+		BPF_STX_MEM(BPF_DW, 10, 8, -0x38), BPF_MOV64_REG(3, 10),
+		BPF_ALU64_IMM(BPF_ADD, 3, -0x38),
 		// r1 = map_by_fd(user_ringbuf_fd)
 		BPF_LD_IMM64_RAW_FULL(1, 1, 0, 0, user_ringbuf_fd, 0),
 		// r2 = callback fn (+7)
-		BPF_LD_IMM64_RAW_FULL(2, 4, 0, 0, 16, 0), BPF_MOV64_IMM(4, 0),
-		BPF_EMIT_CALL(0xd1), BPF_RAW_INSN(0x6d, 7, 0, 0xa, 0),
-		BPF_LDX_MEM(BPF_DW, 5, 10, -0x28),
+		BPF_LD_IMM64_RAW_FULL(2, 4, 0, 0, 39, 0), BPF_MOV64_IMM(4, 0),
+		BPF_EMIT_CALL(0xd1), BPF_MOV64_REG(7, 0),
+		BPF_MOV64_IMM(1, 0x6425), BPF_STX_MEM(BPF_H, 10, 1, -0x3c),
+		BPF_MOV64_IMM(1, 0x3d727265), BPF_STX_MEM(BPF_W, 10, 1, -0x40),
+		BPF_STX_MEM(BPF_B, 10, 8, -0x3a), BPF_MOV64_REG(1, 10),
+		BPF_ALU64_IMM(BPF_ADD, 1, -0x40), BPF_MOV64_IMM(2, 7),
+		BPF_MOV64_REG(3, 7), BPF_EMIT_CALL(6),
+		BPF_ALU64_IMM(BPF_LSH, 7, 0x20),
+		BPF_ALU64_IMM(BPF_ARSH, 7, 0x20), BPF_MOV64_IMM(1, 1),
+		BPF_RAW_INSN(0x6d, 0x1, 0x7, 0x13, 0),
+		BPF_LDX_MEM(BPF_DW, 5, 10, -0x38),
 		BPF_ALU64_IMM(BPF_AND, 5, 0x1f),
-		BPF_STX_MEM(BPF_DW, 10, 5, -0x28),
+		BPF_STX_MEM(BPF_DW, 10, 5, -0x38),
 
-		BPF_MOV64_REG(4, 10), BPF_ALU64_IMM(BPF_ADD, 4, -0x20),
+		BPF_MOV64_REG(4, 10), BPF_ALU64_IMM(BPF_ADD, 4, -0x30),
 		BPF_MOV64_REG(1, 6),
 		BPF_LD_IMM64_RAW_FULL(2, 1, 0, 0, perf_event_array_fd, 0),
-		BPF_MOV64_IMM(3, 0), BPF_EMIT_CALL(0x19), BPF_MOV64_IMM(0, 0),
+		BPF_LD_IMM64_RAW_FULL(3, 0, 0, 0, (__s32)0xffffffff, 0),
+		BPF_EMIT_CALL(0x19),
+
+		BPF_LD_IMM64_RAW_FULL(1, 0, 0, 0, 0x32727265, 0x64253d),
+		BPF_STX_MEM(BPF_DW, 10, 1, -0x48), BPF_MOV64_REG(1, 10),
+		BPF_ALU64_IMM(BPF_ADD, 1, -0x48), BPF_MOV64_IMM(2, 8),
+		BPF_MOV64_REG(3, 0), BPF_EMIT_CALL(6), BPF_MOV64_IMM(0, 0),
 		BPF_EXIT_INSN(),
 		// callback func
-		BPF_MOV64_REG(7, 2), BPF_MOV64_REG(6, 1), BPF_MOV64_IMM(8, 0),
-		BPF_MOV64_REG(1, 7), BPF_MOV64_IMM(2, 0x8), BPF_MOV64_REG(3, 6),
-		BPF_MOV64_IMM(4, 0), BPF_MOV64_IMM(5, 0), BPF_EMIT_CALL(0xc9),
-		BPF_RAW_INSN(0x6d, 0x8, 0, 8, 0), BPF_LDX_MEM(BPF_DW, 2, 7, 0),
+		BPF_MOV64_REG(7, 2), BPF_MOV64_REG(6, 1),
+
+		BPF_MOV64_IMM(1, 0x62632064), BPF_STX_MEM(BPF_W, 10, 1, -8),
+		BPF_LD_IMM64_RAW_FULL(1, 0, 0, 0, 0x67697274, 0x65726567),
+		BPF_STX_MEM(BPF_DW, 10, 1, -0x10), BPF_MOV64_IMM(8, 0),
+		BPF_STX_MEM(BPF_B, 10, 8, -4), BPF_MOV64_REG(1, 10),
+		BPF_ALU64_IMM(BPF_ADD, 1, -0x10), BPF_MOV64_IMM(2, 0xd),
+		BPF_EMIT_CALL(0x6), BPF_MOV64_REG(1, 7), BPF_MOV64_IMM(2, 0x8),
+		BPF_MOV64_REG(3, 6), BPF_MOV64_IMM(4, 0), BPF_MOV64_IMM(5, 0),
+		BPF_EMIT_CALL(0xc9), BPF_RAW_INSN(0x6d, 0x8, 0, 0x16, 0),
+
+		BPF_STX_MEM(BPF_B, 10, 8, -0x16), BPF_MOV64_IMM(1, 0x646c),
+		BPF_STX_MEM(BPF_H, 10, 1, -0x18),
+		BPF_LD_IMM64_RAW_FULL(1, 0, 0, 0, 0x7a697320, 0x25203a65),
+		BPF_STX_MEM(BPF_DW, 10, 1, -0x20),
+
+		BPF_LD_IMM64_RAW_FULL(1, 0, 0, 0, 0x65636552, 0x64657669),
+		BPF_STX_MEM(BPF_DW, 10, 1, -0x28), BPF_LDX_MEM(BPF_DW, 3, 7, 0),
+		BPF_MOV64_REG(1, 10), BPF_ALU64_IMM(BPF_ADD, 1, -0x28),
+		BPF_MOV64_IMM(2, 0x13), BPF_EMIT_CALL(0x6),
+
+		BPF_LDX_MEM(BPF_DW, 2, 7, 0),
 		BPF_RAW_INSN(0x25, 0x2, 0x0, 0x6, 0x20),
 		BPF_ALU64_IMM(BPF_ADD, 7, 8), BPF_MOV64_REG(1, 7),
 		BPF_MOV64_REG(3, 6), BPF_MOV64_IMM(4, 8), BPF_MOV64_IMM(5, 0),
-		BPF_EMIT_CALL(0xc9), BPF_MOV64_IMM(0, 1), BPF_EXIT_INSN()
+		BPF_EMIT_CALL(0xc9), BPF_RAW_INSN(0x6d, 8, 0, 7, 0),
+		BPF_LD_IMM64_RAW_FULL(1, 0, 0, 0, 0x64206263, 0x656e6f),
+		BPF_STX_MEM(BPF_DW, 10, 1, -0x30), BPF_MOV64_REG(1, 10),
+		BPF_ALU64_IMM(BPF_ADD, 1, -0x30), BPF_MOV64_IMM(2, 8),
+		BPF_EMIT_CALL(0x6),
+
+		BPF_MOV64_IMM(0, 1), BPF_EXIT_INSN()
 
 	};
 	return std::vector<uint64_t>((uint64_t *)&insns,
 				     (uint64_t *)&insns + std::size(insns));
 }
 
-int create_intervally_triggered_perf_event(int freq)
+int create_intervally_triggered_perf_event(int duration_ms)
 {
-	perf_event_attr pe_attr = {
-		.type = PERF_TYPE_SOFTWARE,
-		.size = sizeof(struct perf_event_attr),
-		.config = PERF_COUNT_SW_CPU_CLOCK,
-		.sample_freq = (__u64)freq,
-		.freq = 1,
-	};
+	perf_event_attr pe_attr;
+	memset(&pe_attr, 0, sizeof(pe_attr));
+	pe_attr.type = PERF_TYPE_SOFTWARE;
+	pe_attr.size = sizeof(struct perf_event_attr);
+	pe_attr.config = PERF_COUNT_SW_CPU_CLOCK;
+	pe_attr.sample_period = (__u64)duration_ms * 1000;
+	pe_attr.sample_type = PERF_SAMPLE_RAW;
+	pe_attr.freq = 0;
+
 	return syscall(__NR_perf_event_open, &pe_attr, 0, -1, -1, 0);
 }
 } // namespace bpftime
@@ -380,10 +436,10 @@ static int create_transporter_prog(int user_ringbuf_fd, int kernel_perf_fd)
 	func_info.push_back(
 		bpf_func_info{ .insn_off = 0, .type_id = (uint32_t)main_func });
 	func_info.push_back(
-		bpf_func_info{ .insn_off = 28, .type_id = (uint32_t)cb_func });
+		bpf_func_info{ .insn_off = 60, .type_id = (uint32_t)cb_func });
 
 	LIBBPF_OPTS(bpf_prog_load_opts, prog_load_opts);
-	char log_buffer[4096];
+	char log_buffer[8192];
 	prog_load_opts.log_buf = log_buffer;
 	prog_load_opts.log_size = sizeof(log_buffer);
 	prog_load_opts.log_level = 5;
