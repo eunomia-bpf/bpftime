@@ -14,6 +14,7 @@
 #include <cstring>
 #include <iterator>
 #include <linux/bpf.h>
+#include <linux/perf_event.h>
 #include <map>
 #include <memory>
 #include <pthread.h>
@@ -141,6 +142,7 @@ perf_event_array_kernel_user_impl::perf_event_array_kernel_user_impl(
 }
 perf_event_array_kernel_user_impl::~perf_event_array_kernel_user_impl()
 {
+    ioctl(pfd, PERF_EVENT_IOC_DISABLE, 0);
 	close(pfd);
 	close(transporter_prog_fd);
 }
