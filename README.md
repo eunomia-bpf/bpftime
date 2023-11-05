@@ -18,14 +18,14 @@
 
 ## Components
 
-- [`vm`](vm): The eBPF VM and JIT for eBPF, you can choose from LLVM JIT and a simple JIT/interpreter based on ubpf. It can be built as a standalone library and integrated into other projects.
-- [`runtime`](runtime): The userspace runtime for eBPF, including the syscall server and agent, attaching eBPF programs to Uprobes and Syscall tracepoints, and eBPF maps in shared memory.
+- [`vm`](https://github.com/eunomia-bpf/bpftime/tree/master/vm): The eBPF VM and JIT for eBPF, you can choose from bpftime LLVM JIT and a simple JIT/interpreter based on ubpf. It can be built as a standalone library and integrated into other projects. The API is similar to ubpf.
+- [`runtime`](https://github.com/eunomia-bpf/bpftime/tree/master/runtime): The userspace runtime for eBPF, including the syscall server and agent, attaching eBPF programs to Uprobes and Syscall tracepoints, and eBPF maps in shared memory.
 
 ## Quick Start
 
 With `bpftime`, you can build eBPF applications using familiar tools like clang and libbpf, and execute them in userspace. For instance, the `malloc` eBPF program traces malloc calls using uprobe and aggregates the counts using a hash map.
 
-You can refer to [documents/build-and-test.md](documents/build-and-test.md) for how to build the project, or using the container images from [GitHub packages](https://github.com/eunomia-bpf/bpftime/pkgs/container/bpftime).
+You can refer to [documents/build-and-test.md](https://github.com/eunomia-bpf/bpftime/tree/master/documents/build-and-test.md) for how to build the project, or using the container images from [GitHub packages](https://github.com/eunomia-bpf/bpftime/pkgs/container/bpftime).
 
 To get started, you can build and run a libbpf based eBPF program starts with `bpftime` cli:
 
@@ -83,7 +83,7 @@ $ sudo example/malloc/malloc
         pid=34809       malloc calls: 8
 ```
 
-See [documents/usage.md](documents/usage.md) for more details.
+See [documents/usage.md](https://github.com/eunomia-bpf/bpftime/tree/master/documents/usage.md) for more details.
 
 ## In-Depth
 
@@ -92,14 +92,15 @@ See [documents/usage.md](documents/usage.md) for more details.
 Example using libbpf:
 
 - `tracing userspace functions with uprobe`: Attach uprobe, uretprobe or all syscall tracepoints(currently x86 only) eBPF programs to a process or a group of processes:
-  - [`malloc`](example/malloc): count the malloc calls in libc by pid. demonstrate how to use the userspace `uprobe` with basic `hashmap`.
-  - [`bashreadline`](example/libbpf-tools/bashreadline): Print entered bash commands from running shells, 
+  - [`malloc`](https://github.com/eunomia-bpf/bpftime/tree/master/example/malloc): count the malloc calls in libc by pid. demonstrate how to use the userspace `uprobe` with basic `hashmap`.
+  - [`bashreadline`](https://github.com/eunomia-bpf/bpftime/tree/master/example/libbpf-tools/bashreadline): Print entered bash commands from running shells,
+  - [`sslsniff`](https://github.com/eunomia-bpf/bpftime/tree/master/example/sslsniff): Trace and print all SSL/TLS connections and raw traffic data.
 - `tracing all syscalls with tracepoints`
-  - [`opensnoop`](example/opensnoop): trace file open or close syscalls in a process. demonstrate how to use the userspace `syscall tracepoint` with `ring buffer` output.
+  - [`opensnoop`](https://github.com/eunomia-bpf/bpftime/tree/master/example/opensnoop): trace file open or close syscalls in a process. demonstrate how to use the userspace `syscall tracepoint` with `ring buffer` output.
 
-More bcc/libbpf-tools examples can be found in [example/libbpf-tools](example/libbpf-tools).
+More bcc/libbpf-tools examples can be found in [example/libbpf-tools](https://github.com/eunomia-bpf/bpftime/tree/master/example/libbpf-tools).
 
-You can also run bpftime with `bpftrace`, we've test it on [this commit](https://github.com/iovisor/bpftrace/commit/75aca47dd8e1d642ff31c9d3ce330e0c616e5b96). More details about how to run bpftrace in usespace, can be found in [example/bpftrace](example/bpftrace).
+You can also run bpftime with `bpftrace`, we've test it on [this commit](https://github.com/iovisor/bpftrace/commit/75aca47dd8e1d642ff31c9d3ce330e0c616e5b96). More details about how to run bpftrace in usespace, can be found in [https://github.com/eunomia-bpf/bpftime/tree/master/example/bpftrace](example/bpftrace).
 
 > ⚠️ **Note**: `bpftime` is actively under development, and it's not yet recommended for production use. See our [roadmap](#roadmap) for details. We'd love to hear your feedback and suggestions! Please feel free to open an issue or [Contact us](#contact).
 
@@ -107,7 +108,7 @@ You can also run bpftime with `bpftrace`, we've test it on [this commit](https:/
 
 Left: kernel eBPF | Right: userspace bpftime
 
-![How it works](documents/bpftime.png)
+![How it works](https://github.com/eunomia-bpf/bpftime/tree/master/documents/bpftime.png)
 
 Current hook implementation is based on binary rewriting and the underly technique is inspired by:
 
@@ -116,7 +117,7 @@ Current hook implementation is based on binary rewriting and the underly techniq
 
 The hook can be easily replaced with other DBI methods or frameworks, or add more hook mechanisms in the future.
 
-see [documents/how-it-works.md](documents/how-it-works.md) for details.
+see [documents/how-it-works.md](https://github.com/eunomia-bpf/bpftime/tree/master/documents/how-it-works.md) for details.
 
 ### **Performance Benchmarks**
 
@@ -141,19 +142,19 @@ see [github.com/eunomia-bpf/bpf-benchmark](https://github.com/eunomia-bpf/bpf-be
 
 Hash map or ring buffer compared to kernel(TODO)
 
-See [benchmark](benchmark) dir for detail performance benchmarks.
+See [benchmark](https://github.com/eunomia-bpf/bpftime/tree/master/benchmark) dir for detail performance benchmarks.
 
 ### Comparing with Kernel eBPF Runtime
 
-- `bpftime` allows you to use `clang` and `libbpf` to build eBPF programs, and run them directly in this runtime. We have tested it with a libbpf version in [third_party/libbpf](third_party/libbpf).
+- `bpftime` allows you to use `clang` and `libbpf` to build eBPF programs, and run them directly in this runtime. We have tested it with a libbpf version in [third_party/libbpf](https://github.com/eunomia-bpf/bpftime/tree/master/third_party/libbpf). No specify libbpf or clang version needed.
 - Some kernel helpers and kfuncs may not be available in userspace.
 - It does not support direct access to kernel data structures or functions like `task_struct`.
 
-Refer to [documents/available-features.md](documents/avaliable-features.md) for more details.
+Refer to [documents/available-features.md](https://github.com/eunomia-bpf/bpftime/tree/master/documents/avaliable-features.md) for more details.
 
 ## Build and test
 
-see [documents/build-and-test.md](documents/build-and-test.md) for details.
+see [documents/build-and-test.md](https://github.com/eunomia-bpf/bpftime/tree/master/documents/build-and-test.md) for details.
 
 ## Roadmap
 
@@ -163,7 +164,10 @@ see [documents/build-and-test.md](documents/build-and-test.md) for details.
 - [X] perf event output support.
 - [ ] Figure out how to run transparently with kernel probe
 - [ ] An AOT compiler for eBPF can be easily added based on the LLVM IR.
-- [ ] more examples and usecases.
+- [ ] More examples and usecases:
+  - [ ] Network on userspace eBPF
+  - [ ] Hotpatch userspace application
+  - [ ] etc...
 - [ ] More map types and distribution maps support.
 - [ ] More program types support.
 
