@@ -9,6 +9,7 @@
 #include <spdlog/spdlog.h>
 #include "handle_bpf_event.hpp"
 #include "../bpf_tracer_event.h"
+#include <bpftime_shm.hpp>
 
 #define PERF_UPROBE_REF_CTR_OFFSET_BITS 32
 #define PERF_UPROBE_REF_CTR_OFFSET_SHIFT 32

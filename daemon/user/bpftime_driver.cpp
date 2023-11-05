@@ -1,7 +1,6 @@
 #include "bpftime_driver.hpp"
 #include <linux/bpf.h>
 #include <bpf/bpf.h>
-#include "ebpf-vm.h"
 #include "ebpf_inst.h"
 #include <spdlog/spdlog.h>
 #include "bpftime_shm.hpp"

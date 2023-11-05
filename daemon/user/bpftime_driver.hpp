@@ -2,8 +2,6 @@
 #define BPFTIME_DRIVER_HPP
 
 #include "daemon_config.hpp"
-#include "bpftime_shm.hpp"
-#include <string>
 #include <ebpf-vm.h>
 #include <map>
 

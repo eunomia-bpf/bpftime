@@ -1,5 +1,6 @@
 #include "bpf/bpf.h"
 #include "bpf/libbpf_common.h"
+#include "bpftool/libbpf/include/uapi/linux/bpf.h"
 #include "bpftool/libbpf/src/btf.h"
 #include "bpftool/libbpf/src/libbpf.h"
 #include "linux/bpf_common.h"
@@ -56,6 +57,13 @@ int perf_event_array_kernel_user_impl::get_user_ringbuf_fd()
 int perf_event_array_kernel_user_impl::output_data_into_kernel(const void *buf,
 							       size_t size)
 {
+	if (size > 480 - 32) {
+		spdlog::error(
+			"Max data size for shared perf event array is {} bytes",
+			480 - 32);
+		errno = E2BIG;
+		return -1;
+	}
 	spdlog::debug("Received data output for kernel perf event array {}",
 		      kernel_perf_id);
 	auto user_rb = ensure_current_map_user_ringbuf();
@@ -300,84 +308,117 @@ create_transporting_kernel_ebpf_program(int user_ringbuf_fd,
 	static_assert(
 		sizeof(bpf_insn) == sizeof(uint64_t),
 		"bpf_insn is expected to be in the same size of uint64_t");
+// r1 = map_by_fd(user_ringbuf_fd)
+// BPF_LD_IMM64_RAW_FULL(1, 1, 0, 0, user_ringbuf_fd, 0),
+#define ZERO(off) BPF_STX_MEM(BPF_DW, 10, 1, -off)
 	bpf_insn insns[] = {
+		// r6 = r1
 		BPF_MOV64_REG(6, 1),
-		// bpf_printk("triggered")
-		BPF_MOV64_IMM(1, 0x64), BPF_STX_MEM(BPF_H, 10, 1, -8),
-		BPF_LD_IMM64_RAW_FULL(1, 0, 0, 0, 0x67697274, 0x65726567),
-		BPF_STX_MEM(BPF_DW, 10, 1, -0x10), BPF_MOV64_REG(1, 10),
-		BPF_ALU64_IMM(BPF_ADD, 1, -0x10), BPF_MOV64_IMM(2, 0xa),
-		BPF_EMIT_CALL(0x6),
-		// Other
-		BPF_MOV64_IMM(8, 0), BPF_STX_MEM(BPF_DW, 10, 8, -0x18),
-		BPF_STX_MEM(BPF_DW, 10, 8, -0x20),
-		BPF_STX_MEM(BPF_DW, 10, 8, -0x28),
-		BPF_STX_MEM(BPF_DW, 10, 8, -0x30),
-		BPF_STX_MEM(BPF_DW, 10, 8, -0x38), BPF_MOV64_REG(3, 10),
-		BPF_ALU64_IMM(BPF_ADD, 3, -0x38),
+		// r1 = 0
+		BPF_MOV64_IMM(1, 0),
+		// r10-0x8...=r10-0x1c8 := 0
+		ZERO(0x8), ZERO(0x10), ZERO(0x18), ZERO(0x20), ZERO(0x28),
+		ZERO(0x30), ZERO(0x38), ZERO(0x40), ZERO(0x48), ZERO(0x50),
+		ZERO(0x58), ZERO(0x60), ZERO(0x68), ZERO(0x70), ZERO(0x78),
+		ZERO(0x80), ZERO(0x88), ZERO(0x90), ZERO(0x98), ZERO(0xa0),
+		ZERO(0xa8), ZERO(0xb0), ZERO(0xb8), ZERO(0xc0), ZERO(0xc8),
+		ZERO(0xd0), ZERO(0xd8), ZERO(0xe0), ZERO(0xe8), ZERO(0xf0),
+		ZERO(0xf8), ZERO(0x100), ZERO(0x108), ZERO(0x110), ZERO(0x118),
+		ZERO(0x120), ZERO(0x128), ZERO(0x130), ZERO(0x138), ZERO(0x140),
+		ZERO(0x148), ZERO(0x150), ZERO(0x158), ZERO(0x160), ZERO(0x168),
+		ZERO(0x170), ZERO(0x178), ZERO(0x180), ZERO(0x188), ZERO(0x190),
+		ZERO(0x198), ZERO(0x1a0), ZERO(0x1a8), ZERO(0x1b0), ZERO(0x1b8),
+		ZERO(0x1c0), ZERO(0x1c8),
+		// r3 = r10
+		BPF_MOV64_REG(3, 10),
+		// r3 += -0x1e8
+		BPF_ALU64_IMM(BPF_ADD, 3, -0x1c8),
 		// r1 = map_by_fd(user_ringbuf_fd)
 		BPF_LD_IMM64_RAW_FULL(1, 1, 0, 0, user_ringbuf_fd, 0),
-		// r2 = callback fn (+7)
-		BPF_LD_IMM64_RAW_FULL(2, 4, 0, 0, 39, 0), BPF_MOV64_IMM(4, 0),
-		BPF_EMIT_CALL(0xd1), BPF_MOV64_REG(7, 0),
-		BPF_MOV64_IMM(1, 0x6425), BPF_STX_MEM(BPF_H, 10, 1, -0x3c),
-		BPF_MOV64_IMM(1, 0x3d727265), BPF_STX_MEM(BPF_W, 10, 1, -0x40),
-		BPF_STX_MEM(BPF_B, 10, 8, -0x3a), BPF_MOV64_REG(1, 10),
-		BPF_ALU64_IMM(BPF_ADD, 1, -0x40), BPF_MOV64_IMM(2, 7),
-		BPF_MOV64_REG(3, 7), BPF_EMIT_CALL(6),
-		BPF_ALU64_IMM(BPF_LSH, 7, 0x20),
-		BPF_ALU64_IMM(BPF_ARSH, 7, 0x20), BPF_MOV64_IMM(1, 1),
-		BPF_RAW_INSN(0x6d, 0x1, 0x7, 0x13, 0),
-		BPF_LDX_MEM(BPF_DW, 5, 10, -0x38),
-		BPF_ALU64_IMM(BPF_AND, 5, 0x1f),
-		BPF_STX_MEM(BPF_DW, 10, 5, -0x38),
-
-		BPF_MOV64_REG(4, 10), BPF_ALU64_IMM(BPF_ADD, 4, -0x30),
+		// r2 = code(callback)
+		BPF_LD_IMM64_RAW_FULL(2, 4, 0, 0, 22, 0),
+		// r4 = 0
+		BPF_MOV64_IMM(4, 0),
+		// call 0xd1 (bpf_user_ringbuf_drain)
+		BPF_EMIT_CALL(0xd1),
+		// r0 <<= 0x20
+		BPF_ALU64_IMM(BPF_LSH, 0, 0x20),
+		// r0 s>>= 0x20
+		BPF_ALU64_IMM(BPF_ARSH, 0, 0x20),
+		// r1 = 1
+		BPF_MOV64_IMM(1, 1),
+		// if r1 s> r0 goto +0xd
+		BPF_RAW_INSN(0x6d, 1, 0, 0xd, 0),
+		// r4 = r10
+		BPF_MOV64_REG(4, 10),
+		// r4 += -0x1e0
+		BPF_ALU64_IMM(BPF_ADD, 4, -0x1c0),
+		// r5 = *(u64 *)(r10 - 0x1e8)
+		BPF_LDX_MEM(BPF_DW, 5, 10, -0x1c8),
+		// r1 = 0x1e1
+		BPF_MOV64_IMM(1, 0x1c1),
+		// if r1 > r5 goto +0x2
+		BPF_RAW_INSN(0x2d, 1, 5, 2, 0),
+		// r5 = 0x1e0
+		BPF_MOV64_IMM(5, 0x1c0),
+		// *(u64 *)(r10 - 0x1e8) = r5
+		BPF_STX_MEM(BPF_DW, 10, 5, -0x1c8),
+		// r1 = r6
 		BPF_MOV64_REG(1, 6),
+		// r2 = map_by_fd(perf_event_array_fd)
 		BPF_LD_IMM64_RAW_FULL(2, 1, 0, 0, perf_event_array_fd, 0),
+		// r3 = 0xffffffff
 		BPF_LD_IMM64_RAW_FULL(3, 0, 0, 0, (__s32)0xffffffff, 0),
+		// call 0x19 bpf_perf_event_output
 		BPF_EMIT_CALL(0x19),
-
-		BPF_LD_IMM64_RAW_FULL(1, 0, 0, 0, 0x32727265, 0x64253d),
-		BPF_STX_MEM(BPF_DW, 10, 1, -0x48), BPF_MOV64_REG(1, 10),
-		BPF_ALU64_IMM(BPF_ADD, 1, -0x48), BPF_MOV64_IMM(2, 8),
-		BPF_MOV64_REG(3, 0), BPF_EMIT_CALL(6), BPF_MOV64_IMM(0, 0),
+		// r0 = 0
+		BPF_MOV64_IMM(0, 0),
+		// exit
 		BPF_EXIT_INSN(),
-		// callback func
-		BPF_MOV64_REG(7, 2), BPF_MOV64_REG(6, 1),
-
-		BPF_MOV64_IMM(1, 0x62632064), BPF_STX_MEM(BPF_W, 10, 1, -8),
-		BPF_LD_IMM64_RAW_FULL(1, 0, 0, 0, 0x67697274, 0x65726567),
-		BPF_STX_MEM(BPF_DW, 10, 1, -0x10), BPF_MOV64_IMM(8, 0),
-		BPF_STX_MEM(BPF_B, 10, 8, -4), BPF_MOV64_REG(1, 10),
-		BPF_ALU64_IMM(BPF_ADD, 1, -0x10), BPF_MOV64_IMM(2, 0xd),
-		BPF_EMIT_CALL(0x6), BPF_MOV64_REG(1, 7), BPF_MOV64_IMM(2, 0x8),
-		BPF_MOV64_REG(3, 6), BPF_MOV64_IMM(4, 0), BPF_MOV64_IMM(5, 0),
-		BPF_EMIT_CALL(0xc9), BPF_RAW_INSN(0x6d, 0x8, 0, 0x16, 0),
-
-		BPF_STX_MEM(BPF_B, 10, 8, -0x16), BPF_MOV64_IMM(1, 0x646c),
-		BPF_STX_MEM(BPF_H, 10, 1, -0x18),
-		BPF_LD_IMM64_RAW_FULL(1, 0, 0, 0, 0x7a697320, 0x25203a65),
-		BPF_STX_MEM(BPF_DW, 10, 1, -0x20),
-
-		BPF_LD_IMM64_RAW_FULL(1, 0, 0, 0, 0x65636552, 0x64657669),
-		BPF_STX_MEM(BPF_DW, 10, 1, -0x28), BPF_LDX_MEM(BPF_DW, 3, 7, 0),
-		BPF_MOV64_REG(1, 10), BPF_ALU64_IMM(BPF_ADD, 1, -0x28),
-		BPF_MOV64_IMM(2, 0x13), BPF_EMIT_CALL(0x6),
-
+		// callback function
+		// r7 = r2
+		BPF_MOV64_REG(7, 2),
+		// r6 = r1
+		BPF_MOV64_REG(6, 1),
+		// r8 = 0
+		BPF_MOV64_IMM(8, 0),
+		// r1 = r7
+		BPF_MOV64_REG(1, 7),
+		// r2 = 8
+		BPF_MOV64_IMM(2, 8),
+		// r3 = r6
+		BPF_MOV64_REG(3, 6),
+		// r4 = 0
+		BPF_MOV64_IMM(4, 0),
+		// r5 = 0
+		BPF_MOV64_IMM(5, 0),
+		// call 0xc9 bpf_dynptr_read
+		BPF_EMIT_CALL(0xc9),
+		// if r8 s> r0 goto +0x8
+		BPF_RAW_INSN(0x6d, 8, 0, 8, 0),
+		// r2 = *(u64 *)(r7 + 0x0)
 		BPF_LDX_MEM(BPF_DW, 2, 7, 0),
-		BPF_RAW_INSN(0x25, 0x2, 0x0, 0x6, 0x20),
-		BPF_ALU64_IMM(BPF_ADD, 7, 8), BPF_MOV64_REG(1, 7),
-		BPF_MOV64_REG(3, 6), BPF_MOV64_IMM(4, 8), BPF_MOV64_IMM(5, 0),
-		BPF_EMIT_CALL(0xc9), BPF_RAW_INSN(0x6d, 8, 0, 7, 0),
-		BPF_LD_IMM64_RAW_FULL(1, 0, 0, 0, 0x64206263, 0x656e6f),
-		BPF_STX_MEM(BPF_DW, 10, 1, -0x30), BPF_MOV64_REG(1, 10),
-		BPF_ALU64_IMM(BPF_ADD, 1, -0x30), BPF_MOV64_IMM(2, 8),
-		BPF_EMIT_CALL(0x6),
-
-		BPF_MOV64_IMM(0, 1), BPF_EXIT_INSN()
+		// if r2 > 0x1e0 goto +0x6
+		BPF_RAW_INSN(0x25, 2, 0, 6, 0x01c0),
+		// r7 += 0x8
+		BPF_ALU64_IMM(BPF_ADD, 7, 8),
+		// r1 = r7
+		BPF_MOV64_REG(1, 7),
+		// r3 = r6
+		BPF_MOV64_REG(3, 6),
+		// r4 = 8
+		BPF_MOV64_IMM(4, 8),
+		// r5 = 0
+		BPF_MOV64_IMM(5, 0),
+		// call 0xc9
+		BPF_EMIT_CALL(0xc9),
+		// r0 = 1
+		BPF_MOV64_IMM(0, 1),
+		// exit
+		BPF_EXIT_INSN()
 
 	};
+#undef ZERO
 	return std::vector<uint64_t>((uint64_t *)&insns,
 				     (uint64_t *)&insns + std::size(insns));
 }
@@ -436,12 +477,14 @@ static int create_transporter_prog(int user_ringbuf_fd, int kernel_perf_fd)
 	func_info.push_back(
 		bpf_func_info{ .insn_off = 0, .type_id = (uint32_t)main_func });
 	func_info.push_back(
-		bpf_func_info{ .insn_off = 60, .type_id = (uint32_t)cb_func });
+		bpf_func_info{ .insn_off = 86, .type_id = (uint32_t)cb_func });
 
 	LIBBPF_OPTS(bpf_prog_load_opts, prog_load_opts);
-	char log_buffer[8192];
+	// char log_buffer[8192];
+	const size_t log_buffer_size = 1 << 20;
+	char *log_buffer = new char[log_buffer_size];
 	prog_load_opts.log_buf = log_buffer;
-	prog_load_opts.log_size = sizeof(log_buffer);
+	prog_load_opts.log_size = log_buffer_size;
 	prog_load_opts.log_level = 5;
 	prog_load_opts.fd_array = fds.data();
 	prog_load_opts.prog_btf_fd = btf_fd;
@@ -452,10 +495,11 @@ static int create_transporter_prog(int user_ringbuf_fd, int kernel_perf_fd)
 	int bpf_fd = bpf_prog_load(BPF_PROG_TYPE_PERF_EVENT, "transporter",
 				   "GPL", (bpf_insn *)prog.data(), prog.size(),
 				   &prog_load_opts);
-
+	std::string log_message(log_buffer);
+	delete[] log_buffer;
 	if (bpf_fd < 0) {
 		spdlog::error("Failed to load bpf prog: err={}, message=\n{}",
-			      errno, log_buffer);
+			      errno, log_message);
 	}
 	return bpf_fd;
 }
