@@ -15,7 +15,7 @@
 namespace bpftime
 {
 
-size_t bpf_map_mmap_sz(unsigned int value_sz, unsigned int max_entries)
+static size_t bpf_map_mmap_sz(unsigned int value_sz, unsigned int max_entries)
 {
 	const long page_sz = sysconf(_SC_PAGE_SIZE);
 	size_t map_sz;
