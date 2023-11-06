@@ -28,7 +28,7 @@ def main():
         bufsize=0,
         shell=True,
     )
-    set_non_blocking(server.stdout)
+    #set_non_blocking(server.stdout)
     server_ok = False
     server_start_time = datetime.datetime.now()
     while (
