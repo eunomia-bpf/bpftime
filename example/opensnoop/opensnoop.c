@@ -16,6 +16,7 @@
 #include <bpf/bpf.h>
 #include "opensnoop.h"
 #include "opensnoop.skel.h"
+#include <stdio.h>
 
 /* Tune the buffer size and wakeup rate. These settings cope with roughly
  * 50k opens/sec.
@@ -225,6 +226,7 @@ static int handle_event_rb(void *ctx, void *data, size_t data_sz)
 		sps_cnt += 9;
 	}
 	printf("%s\n", e->fname);
+	fflush(stdout);
 	return 0;
 }
 
