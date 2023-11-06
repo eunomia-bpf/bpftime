@@ -1,13 +1,16 @@
-#include "bpf_map/per_cpu_array_map.hpp"
-#include "bpf_map/per_cpu_hash_map.hpp"
-#include <bpf_map/perf_event_array_map.hpp>
+#include "bpf_map/userspace/per_cpu_array_map.hpp"
+#include "bpf_map/userspace/per_cpu_hash_map.hpp"
+#include <bpf_map/userspace/perf_event_array_map.hpp>
 #include "spdlog/spdlog.h"
 #include <handler/map_handler.hpp>
-#include <bpf_map/array_map.hpp>
-#include <bpf_map/hash_map.hpp>
-#include <bpf_map/ringbuf_map.hpp>
-#include <bpf_map/array_map_kernel_user.hpp>
-#include <bpf_map/hash_map_kernel_user.hpp>
+#include <bpf_map/userspace/array_map.hpp>
+#include <bpf_map/userspace/hash_map.hpp>
+#include <bpf_map/userspace/ringbuf_map.hpp>
+#include <bpf_map/shared/array_map_kernel_user.hpp>
+#include <bpf_map/shared/hash_map_kernel_user.hpp>
+#include <bpf_map/shared/percpu_array_map_kernel_user.hpp>
+#include <bpf_map/shared/perf_event_array_kernel_user.hpp>
+#include <unistd.h>
 
 using boost::interprocess::interprocess_sharable_mutex;
 using boost::interprocess::scoped_lock;
@@ -104,6 +107,16 @@ const void *bpf_map_handler::map_lookup_elem(const void *key,
 			map_impl_ptr.get());
 		return do_lookup(impl);
 	}
+	case bpf_map_type::BPF_MAP_TYPE_KERNEL_USER_PERCPU_ARRAY: {
+		auto impl = static_cast<percpu_array_map_kernel_user_impl *>(
+			map_impl_ptr.get());
+		return do_lookup(impl);
+	}
+	case bpf_map_type::BPF_MAP_TYPE_KERNEL_USER_PERF_EVENT_ARRAY: {
+		auto impl = static_cast<perf_event_array_kernel_user_impl *>(
+			map_impl_ptr.get());
+		return do_lookup(impl);
+	}
 	default:
 		assert(false && "Unsupported map type");
 	}
@@ -172,6 +185,16 @@ long bpf_map_handler::map_update_elem(const void *key, const void *value,
 			map_impl_ptr.get());
 		return do_update(impl);
 	}
+	case bpf_map_type::BPF_MAP_TYPE_KERNEL_USER_PERCPU_ARRAY: {
+		auto impl = static_cast<percpu_array_map_kernel_user_impl *>(
+			map_impl_ptr.get());
+		return do_update(impl);
+	}
+	case bpf_map_type::BPF_MAP_TYPE_KERNEL_USER_PERF_EVENT_ARRAY: {
+		auto impl = static_cast<perf_event_array_kernel_user_impl *>(
+			map_impl_ptr.get());
+		return do_update(impl);
+	}
 	default:
 		assert(false && "Unsupported map type");
 	}
@@ -225,6 +248,16 @@ int bpf_map_handler::bpf_map_get_next_key(const void *key, void *next_key,
 	}
 	case bpf_map_type::BPF_MAP_TYPE_KERNEL_USER_HASH: {
 		auto impl = static_cast<hash_map_kernel_user_impl *>(
+			map_impl_ptr.get());
+		return do_get_next_key(impl);
+	}
+	case bpf_map_type::BPF_MAP_TYPE_KERNEL_USER_PERCPU_ARRAY: {
+		auto impl = static_cast<percpu_array_map_kernel_user_impl *>(
+			map_impl_ptr.get());
+		return do_get_next_key(impl);
+	}
+	case bpf_map_type::BPF_MAP_TYPE_KERNEL_USER_PERF_EVENT_ARRAY: {
+		auto impl = static_cast<perf_event_array_kernel_user_impl *>(
 			map_impl_ptr.get());
 		return do_get_next_key(impl);
 	}
@@ -296,6 +329,16 @@ long bpf_map_handler::map_delete_elem(const void *key,
 			map_impl_ptr.get());
 		return do_delete(impl);
 	}
+	case bpf_map_type::BPF_MAP_TYPE_KERNEL_USER_PERCPU_ARRAY: {
+		auto impl = static_cast<percpu_array_map_kernel_user_impl *>(
+			map_impl_ptr.get());
+		return do_delete(impl);
+	}
+	case bpf_map_type::BPF_MAP_TYPE_KERNEL_USER_PERF_EVENT_ARRAY: {
+		auto impl = static_cast<perf_event_array_kernel_user_impl *>(
+			map_impl_ptr.get());
+		return do_delete(impl);
+	}
 	default:
 		assert(false && "Unsupported map type");
 	}
@@ -358,12 +401,29 @@ int bpf_map_handler::map_init(managed_shared_memory &memory)
 	}
 	case bpf_map_type::BPF_MAP_TYPE_KERNEL_USER_HASH: {
 		map_impl_ptr = memory.construct<hash_map_kernel_user_impl>(
-			container_name.c_str())(memory,  attr.kernel_bpf_map_id);
+			container_name.c_str())(memory, attr.kernel_bpf_map_id);
 		return 0;
 	}
+	case bpf_map_type::BPF_MAP_TYPE_KERNEL_USER_PERCPU_ARRAY: {
+		map_impl_ptr =
+			memory.construct<percpu_array_map_kernel_user_impl>(
+				container_name.c_str())(memory,
+							attr.kernel_bpf_map_id);
+		return 0;
+	}
+	case bpf_map_type::BPF_MAP_TYPE_KERNEL_USER_PERF_EVENT_ARRAY: {
+		map_impl_ptr =
+			memory.construct<perf_event_array_kernel_user_impl>(
+				container_name.c_str())(
+				memory, 4, 4, sysconf(_SC_NPROCESSORS_ONLN),
+				attr.kernel_bpf_map_id);
+		return 0;
+	}
+
 	default:
 		spdlog::error("Unsupported map type: {}", (int)type);
-		assert(false && "Unsupported map type");
+		// assert(false && "Unsupported map type");
+		return -1;
 	}
 	return 0;
 }
@@ -399,11 +459,26 @@ void bpf_map_handler::map_free(managed_shared_memory &memory)
 		memory.destroy<hash_map_kernel_user_impl>(
 			container_name.c_str());
 		break;
+	case bpf_map_type::BPF_MAP_TYPE_KERNEL_USER_PERCPU_ARRAY:
+		memory.destroy<percpu_array_map_kernel_user_impl>(
+			container_name.c_str());
+		break;
+	case bpf_map_type::BPF_MAP_TYPE_KERNEL_USER_PERF_EVENT_ARRAY:
+		memory.destroy<perf_event_array_kernel_user_impl>(
+			container_name.c_str());
+		break;
 	default:
 		assert(false && "Unsupported map type");
 	}
 	map_impl_ptr = nullptr;
 	return;
 }
-
+std::optional<perf_event_array_kernel_user_impl *>
+bpf_map_handler::try_get_shared_perf_event_array_map_impl() const
+{
+	if (type != bpf_map_type::BPF_MAP_TYPE_KERNEL_USER_PERF_EVENT_ARRAY)
+		return {};
+	return static_cast<perf_event_array_kernel_user_impl *>(
+		map_impl_ptr.get());
+}
 } // namespace bpftime

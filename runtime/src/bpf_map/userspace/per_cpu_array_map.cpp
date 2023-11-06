@@ -1,7 +1,7 @@
 #include "bpf_map/map_common_def.hpp"
 #include "spdlog/spdlog.h"
 #include <algorithm>
-#include <bpf_map/per_cpu_array_map.hpp>
+#include <bpf_map/userspace/per_cpu_array_map.hpp>
 #include <cerrno>
 #include <unistd.h>
 namespace bpftime

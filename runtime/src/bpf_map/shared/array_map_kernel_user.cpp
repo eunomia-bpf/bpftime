@@ -1,4 +1,5 @@
-#include <bpf_map/array_map_kernel_user.hpp>
+#include "spdlog/spdlog.h"
+#include <bpf_map/shared/array_map_kernel_user.hpp>
 #include <cerrno>
 #include <bpf/libbpf.h>
 #include <bpf/bpf.h>
@@ -6,7 +7,7 @@
 #ifndef roundup
 #define roundup(x, y)                                                          \
 	({                                                                     \
-		const typeof(y) __y = y;                                       \
+		const decltype(y) __y = y;                                     \
 		(((x) + (__y - 1)) / __y) * __y;                               \
 	})
 #endif // roundup
@@ -14,7 +15,7 @@
 namespace bpftime
 {
 
-size_t bpf_map_mmap_sz(unsigned int value_sz, unsigned int max_entries)
+static size_t bpf_map_mmap_sz(unsigned int value_sz, unsigned int max_entries)
 {
 	const long page_sz = sysconf(_SC_PAGE_SIZE);
 	size_t map_sz;
@@ -51,13 +52,16 @@ void array_map_kernel_user_impl::init_map_fd()
 	// 	return;
 	// }
 	size_t mmap_sz = bpf_map_mmap_sz(_value_size, _max_entries);
+	spdlog::debug("mmap shared array map, fd={}, mmap_sz={}", map_fd,
+		      mmap_sz);
 	mmap_ptr = mmap(NULL, mmap_sz, PROT_READ | PROT_WRITE,
 			MAP_SHARED | MAP_ANONYMOUS, -1, 0);
 	if (mmap_ptr == MAP_FAILED) {
-		spdlog::error("Failed to mmap for kernel map id {}",
-			      kernel_map_id);
+		spdlog::error("Failed to mmap for kernel map id {}, err={}",
+			      kernel_map_id, errno);
 		return;
 	}
+	// What does this piece of code do?
 	int prot;
 	if (info.map_flags & BPF_F_RDONLY_PROG)
 		prot = PROT_READ;
@@ -66,8 +70,8 @@ void array_map_kernel_user_impl::init_map_fd()
 	void *mmaped = mmap(mmap_ptr, mmap_sz, prot, MAP_SHARED | MAP_FIXED,
 			    map_fd, 0);
 	if (mmaped == MAP_FAILED) {
-		spdlog::error("Failed to mmap for kernel map id {}",
-			      kernel_map_id);
+		spdlog::error("Failed to mmap for kernel map id {}, err={}",
+			      kernel_map_id, errno);
 		return;
 	}
 	mmap_ptr = mmaped;
@@ -97,7 +101,7 @@ void *array_map_kernel_user_impl::elem_lookup(const void *key)
 	if (res < 0) {
 		return nullptr;
 	}
-	return (void*)value_data.data();
+	return (void *)value_data.data();
 }
 
 long array_map_kernel_user_impl::elem_update(const void *key, const void *value,

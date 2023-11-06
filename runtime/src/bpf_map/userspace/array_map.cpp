@@ -1,4 +1,4 @@
-#include <bpf_map/array_map.hpp>
+#include <bpf_map/userspace/array_map.hpp>
 #include <cerrno>
 namespace bpftime
 {

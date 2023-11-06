@@ -248,6 +248,9 @@ int bpf_attach_ctx::init_attach_ctx_from_handlers(
 			// attach base on events
 			switch (event_handler.type) {
 			case bpf_event_type::BPF_TYPE_FILTER: {
+				spdlog::debug(
+					"Creating filter for perf event fd {}",
+					i);
 				auto progs = handler_prog_fds[i];
 				if (progs.size() > 1) {
 					spdlog::error(
@@ -273,6 +276,9 @@ int bpf_attach_ctx::init_attach_ctx_from_handlers(
 				break;
 			}
 			case bpf_event_type::BPF_TYPE_REPLACE: {
+				spdlog::debug(
+					"Creating replace for perf event fd {}",
+					i);
 				auto progs = handler_prog_fds[i];
 				if (progs.size() > 1) {
 					spdlog::error(
@@ -307,8 +313,12 @@ int bpf_attach_ctx::init_attach_ctx_from_handlers(
 					progs.size(), (uintptr_t)func_addr);
 				err = attach_manager->attach_uprobe_at(
 					func_addr, [=](const pt_regs &regs) {
+						spdlog::trace(
+							"Uprobe triggered");
 						uint64_t ret;
 						for (auto &[k, prog] : progs) {
+							spdlog::trace(
+								"Calling ebpf programs in uprobe callback");
 							prog->bpftime_prog_exec(
 								(void *)&regs,
 								sizeof(regs),
@@ -346,6 +356,9 @@ int bpf_attach_ctx::init_attach_ctx_from_handlers(
 				break;
 			}
 			case bpf_event_type::PERF_TYPE_TRACEPOINT: {
+				spdlog::debug(
+					"Creating tracepoint for perf event fd {}",
+					i);
 				err = create_tracepoint(
 					event_handler.tracepoint_id, i,
 					manager);
@@ -361,8 +374,11 @@ int bpf_attach_ctx::init_attach_ctx_from_handlers(
 				spdlog::debug(
 					"Attaching software perf event, nothing need to do");
 				err = i;
+				break;
 			}
 			default:
+				spdlog::warn("Unexpected bpf_event_type: {}",
+					     (int)event_handler.type);
 				break;
 			}
 			spdlog::debug("Create attach event {} {} {} for {}", i,

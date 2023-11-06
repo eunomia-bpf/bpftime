@@ -2,7 +2,7 @@
 #include "../common_def.hpp"
 #include <boost/interprocess/creation_tags.hpp>
 #include <boost/interprocess/interprocess_fwd.hpp>
-#include <bpf_map/per_cpu_hash_map.hpp>
+#include <bpf_map/userspace/per_cpu_hash_map.hpp>
 #include <catch2/catch_test_macros.hpp>
 #include <cstdint>
 #include <sched.h>

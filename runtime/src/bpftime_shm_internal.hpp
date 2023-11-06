@@ -1,7 +1,7 @@
 #ifndef _BPFTIME_SHM_INTERNAL
 #define _BPFTIME_SHM_INTERNAL
-#include "bpf_map/array_map.hpp"
-#include "bpf_map/ringbuf_map.hpp"
+#include "bpf_map/userspace/array_map.hpp"
+#include "bpf_map/userspace/ringbuf_map.hpp"
 #include <boost/interprocess/managed_shared_memory.hpp>
 #include <cstddef>
 #include <functional>
@@ -50,6 +50,7 @@ class bpftime_shm {
 	bool is_map_fd(int fd) const;
 	bool is_ringbuf_map_fd(int fd) const;
 	bool is_array_map_fd(int fd) const;
+	bool is_shared_perf_event_array_map_fd(int fd) const;
 	bool is_perf_event_handler_fd(int fd) const;
 	bool is_software_perf_event_handler_fd(int fd) const;
 

@@ -2,7 +2,7 @@
 #include "spdlog/fmt/bin_to_hex.h"
 #include "spdlog/spdlog.h"
 #include <algorithm>
-#include <bpf_map/per_cpu_hash_map.hpp>
+#include <bpf_map/userspace/per_cpu_hash_map.hpp>
 #include <unistd.h>
 namespace bpftime
 {

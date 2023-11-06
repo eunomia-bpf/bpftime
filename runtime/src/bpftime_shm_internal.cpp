@@ -134,6 +134,8 @@ int bpftime_shm::add_uprobe(int fd, int pid, const char *name, uint64_t offset,
 		// if fd is negative, we need to create a new fd for allocating
 		fd = open_fake_fd();
 	}
+	spdlog::debug("Set fd {} to uprobe, pid={}, name={}, offset={}", fd,
+		      pid, name, offset);
 	return manager->set_handler(
 		fd,
 		bpftime::bpf_perf_event_handler{ retprobe, offset, pid, name,
@@ -167,7 +169,7 @@ int bpftime_shm::add_software_perf_event(int cpu, int32_t sample_type,
 int bpftime_shm::attach_perf_to_bpf(int perf_fd, int bpf_fd)
 {
 	if (!is_perf_fd(perf_fd)) {
-		spdlog::error("Fd {} not a perf fd", perf_fd);
+		spdlog::error("Fd {} is not a perf fd", perf_fd);
 		errno = ENOENT;
 		return -1;
 	}
@@ -176,8 +178,10 @@ int bpftime_shm::attach_perf_to_bpf(int perf_fd, int bpf_fd)
 
 int bpftime_shm::add_bpf_prog_attach_target(int perf_fd, int bpf_fd)
 {
+	spdlog::debug("Try attaching prog fd {} to perf fd {}", bpf_fd,
+		      perf_fd);
 	if (!is_prog_fd(bpf_fd)) {
-		spdlog::error("Fd {} not prog fd", bpf_fd);
+		spdlog::error("Fd {} is not a prog fd", bpf_fd);
 		errno = ENOENT;
 		return -1;
 	}
@@ -228,8 +232,7 @@ int bpftime_shm::add_software_perf_event_to_epoll(int swpe_fd, int epoll_fd,
 	}
 	auto &perf_handler =
 		std::get<bpf_perf_event_handler>(manager->get_handler(swpe_fd));
-	if (perf_handler.type !=
-	    bpf_event_type::PERF_TYPE_SOFTWARE) {
+	if (perf_handler.type != bpf_event_type::PERF_TYPE_SOFTWARE) {
 		spdlog::error(
 			"Expected perf fd {} to be a software perf event instance",
 			swpe_fd);
@@ -326,6 +329,14 @@ bool bpftime_shm::is_ringbuf_map_fd(int fd) const
 	auto &map_impl = std::get<bpf_map_handler>(manager->get_handler(fd));
 	return map_impl.type == bpf_map_type::BPF_MAP_TYPE_RINGBUF;
 }
+bool bpftime_shm::is_shared_perf_event_array_map_fd(int fd) const
+{
+	if (!is_map_fd(fd))
+		return false;
+	auto &map_impl = std::get<bpf_map_handler>(manager->get_handler(fd));
+	return map_impl.type ==
+	       bpf_map_type::BPF_MAP_TYPE_KERNEL_USER_PERF_EVENT_ARRAY;
+}
 bool bpftime_shm::is_array_map_fd(int fd) const
 {
 	if (!is_map_fd(fd))
@@ -387,6 +398,9 @@ int bpftime_shm::add_bpf_prog(int fd, const ebpf_inst *insn, size_t insn_cnt,
 		// if fd is negative, we need to create a new fd for allocating
 		fd = open_fake_fd();
 	}
+	spdlog::debug(
+		"Set handler fd {} to bpf_prog_handler, name {}, prog_type {}, insn_cnt {}",
+		fd, prog_name, prog_type, insn_cnt);
 	return manager->set_handler(
 		fd,
 		bpftime::bpf_prog_handler(segment, insn, insn_cnt, prog_name,
@@ -554,8 +568,7 @@ bool bpftime_shm::is_software_perf_event_handler_fd(int fd) const
 	if (!is_perf_event_handler_fd(fd))
 		return false;
 	const auto &hd = std::get<bpf_perf_event_handler>(get_handler(fd));
-	return hd.type ==
-	       bpf_event_type::PERF_TYPE_SOFTWARE;
+	return hd.type == bpf_event_type::PERF_TYPE_SOFTWARE;
 }
 
 bpftime::agent_config &bpftime_get_agent_config()

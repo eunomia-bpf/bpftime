@@ -66,14 +66,17 @@ set(sources
   src/ffi.cpp
   src/bpf_helper.cpp
 
-  src/bpf_map/array_map.cpp
-  src/bpf_map/hash_map.cpp
-  src/bpf_map/ringbuf_map.cpp
-  src/bpf_map/perf_event_array_map.cpp
-  src/bpf_map/per_cpu_array_map.cpp
-  src/bpf_map/per_cpu_hash_map.cpp
-  src/bpf_map/array_map_kernel_user.cpp
-  src/bpf_map/hash_map_kernel_user.cpp
+  src/bpf_map/userspace/array_map.cpp
+  src/bpf_map/userspace/hash_map.cpp
+  src/bpf_map/userspace/ringbuf_map.cpp
+  src/bpf_map/userspace/perf_event_array_map.cpp
+  src/bpf_map/userspace/per_cpu_array_map.cpp
+  src/bpf_map/userspace/per_cpu_hash_map.cpp
+
+  src/bpf_map/shared/array_map_kernel_user.cpp
+  src/bpf_map/shared/hash_map_kernel_user.cpp
+  src/bpf_map/shared/percpu_array_map_kernel_user.cpp
+  src/bpf_map/shared/perf_event_array_kernel_user.cpp
 )
 
 # list(APPEND sources
@@ -121,7 +124,6 @@ target_link_libraries(${PROJECT_NAME}
   spdlog::spdlog
 )
 add_dependencies(${PROJECT_NAME} vm-bpf FridaGum syscall_id_table spdlog::spdlog libbpf)
-
 
 if(${ENABLE_EBPF_VERIFIER})
   target_include_directories(${PROJECT_NAME} PRIVATE ${BPFTIME_VERIFIER_INCLUDE})

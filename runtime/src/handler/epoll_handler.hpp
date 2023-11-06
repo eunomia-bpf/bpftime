@@ -3,7 +3,7 @@
 #include "handler/perf_event_handler.hpp"
 #include <boost/interprocess/allocators/allocator.hpp>
 #include <boost/interprocess/containers/vector.hpp>
-#include <bpf_map/ringbuf_map.hpp>
+#include <bpf_map/userspace/ringbuf_map.hpp>
 #include <sys/epoll.h>
 #include <variant>
 namespace bpftime

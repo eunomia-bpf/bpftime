@@ -9,6 +9,7 @@
 #include <spdlog/spdlog.h>
 #include "handle_bpf_event.hpp"
 #include "../bpf_tracer_event.h"
+#include <bpftime_shm.hpp>
 
 #define PERF_UPROBE_REF_CTR_OFFSET_BITS 32
 #define PERF_UPROBE_REF_CTR_OFFSET_SHIFT 32
@@ -31,7 +32,10 @@ static int parse_uint_from_file(const char *file, const char *fmt)
 		fprintf(stderr, "failed to open '%s\n", file);
 		exit(1);
 	}
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wformat-nonliteral"
 	err = fscanf(f, fmt, &ret);
+#pragma GCC diagnostic pop
 	if (err != 1) {
 		err = err == EOF ? -EIO : -errno;
 		fprintf(stderr, "failed to parse '%s'\n", file);
@@ -194,7 +198,7 @@ int bpf_event_handler::handle_bpf_event(const struct event *e)
 	/* prepare fields */
 	const char *cmd_str;
 	if (e->bpf_data.bpf_cmd >=
-		    (sizeof(bpf_cmd_strings) / sizeof(bpf_cmd_strings[0]))) {
+	    (sizeof(bpf_cmd_strings) / sizeof(bpf_cmd_strings[0]))) {
 		cmd_str = "UNKNOWN COMMAND";
 	} else {
 		cmd_str = bpf_cmd_strings[e->bpf_data.bpf_cmd];
@@ -212,12 +216,24 @@ int bpf_event_handler::handle_bpf_event(const struct event *e)
 				(enum bpf_map_type)e->bpf_data.attr.map_type),
 			e->bpf_data.attr.map_name, e->bpf_data.map_id);
 		break;
-	case BPF_LINK_CREATE:
+	case BPF_LINK_CREATE: {
+		int prog_fd = e->bpf_data.attr.link_create.prog_fd;
+		int perf = e->bpf_data.attr.link_create.target_fd;
 		/* code */
 		spdlog::info("   BPF_LINK_CREATE prog_fd:{} target_fd:{}",
-			     e->bpf_data.attr.link_create.prog_fd,
-			     e->bpf_data.attr.link_create.target_fd);
+			     prog_fd, perf);
+		if (config.is_driving_bpftime) {
+			if (int err =
+				    driver.bpftime_attach_perf_to_bpf_fd_server(
+					    e->pid, perf, prog_fd);
+			    err < 0) {
+				spdlog::warn(
+					"Unable to attach perf {} to bpf prog {}, err={}",
+					perf, prog_fd, err);
+			}
+		}
 		break;
+	}
 	case BPF_PROG_LOAD:
 		/* code */
 		spdlog::info(
@@ -244,7 +260,7 @@ static const char *perf_type_id_strings[PERF_TYPE_MAX_ID] = {
 	"PERF_TYPE_HW_CACHE", "PERF_TYPE_RAW",	    "PERF_TYPE_BREAKPOINT",
 };
 
-int bpf_event_handler::handle_perf_event(const struct event *e)
+int bpf_event_handler::handle_perf_event_open(const struct event *e)
 {
 	spdlog::debug("handle_perf_event");
 	const char *type_id_str = "UNKNOWN TYPE";
@@ -257,24 +273,43 @@ int bpf_event_handler::handle_perf_event(const struct event *e)
 	/* print output */
 	spdlog::info("PERF     {:<6} {:<16} type:{:<16} ret:{}\n", e->pid,
 		     e->comm, type_id_str, e->perf_event_data.ret);
-	if (config.is_driving_bpftime && e->perf_event_data.ret > 0) {
-		if (perf_type == (unsigned int)uprobe_type) {
-			auto attr = &e->perf_event_data.attr;
-			// NO legacy bpf types
-			bool retprobe = attr->config &
+
+	if (config.is_driving_bpftime) {
+		if (e->perf_event_data.ret >= 0) {
+			spdlog::debug(
+				"Handling perf event creating with perf type {}",
+				perf_type);
+			if (perf_type == (unsigned int)uprobe_type) {
+				auto attr = &e->perf_event_data.attr;
+				// NO legacy bpf types
+				bool retprobe =
+					attr->config &
 					(1 << determine_uprobe_retprobe_bit());
-			spdlog::debug("retprobe {}", retprobe);
-			size_t ref_ctr_off = attr->config >>
-					     PERF_UPROBE_REF_CTR_OFFSET_SHIFT;
-			const char *name = e->perf_event_data.name_or_path;
-			uint64_t offset = e->perf_event_data.attr.probe_offset;
-			spdlog::debug("Creating uprobe name {} offset {} "
-				      "ref_ctr_off {} attr->config={:x}",
-				      name, offset, ref_ctr_off, attr->config);
-			driver.bpftime_uprobe_create_server(
-				e->pid, e->perf_event_data.ret,
-				e->perf_event_data.pid, name, offset, retprobe,
-				ref_ctr_off);
+				spdlog::debug("retprobe {}", retprobe);
+				size_t ref_ctr_off =
+					attr->config >>
+					PERF_UPROBE_REF_CTR_OFFSET_SHIFT;
+				const char *name =
+					e->perf_event_data.name_or_path;
+				uint64_t offset =
+					e->perf_event_data.attr.probe_offset;
+				spdlog::debug(
+					"Creating uprobe name {} offset {} "
+					"ref_ctr_off {} attr->config={:x}",
+					name, offset, ref_ctr_off,
+					attr->config);
+				driver.bpftime_uprobe_create_server(
+					e->pid, e->perf_event_data.ret,
+					e->perf_event_data.pid, name, offset,
+					retprobe, ref_ctr_off);
+			} else {
+				spdlog::warn("Unsupported perf event type: {}",
+					     perf_type);
+			}
+		} else {
+			spdlog::debug(
+				"Ignore failed perf event creation, err={}",
+				e->perf_event_data.ret);
 		}
 	}
 	return 0;
@@ -322,8 +357,9 @@ int bpf_event_handler::handle_ioctl(const struct event *e)
 									fd);
 		}
 	} else if (req == PERF_EVENT_IOC_SET_BPF) {
-		spdlog::info("Setting bpf for perf event {} and bpf {} (id: {})", fd,
-			     data, e->ioctl_data.bpf_prog_id);
+		spdlog::info(
+			"Setting bpf for perf event {} and bpf {} (id: {})", fd,
+			data, e->ioctl_data.bpf_prog_id);
 		if (config.is_driving_bpftime) {
 			return driver.bpftime_attach_perf_to_bpf_server(
 				e->pid, fd, e->ioctl_data.bpf_prog_id);
@@ -339,12 +375,13 @@ int bpf_event_handler::handle_event(const struct event *e)
 	if (e->pid == current_pid) {
 		return 0;
 	}
+	spdlog::debug("Received event with type {}", (int)e->type);
 	switch (e->type) {
 	case SYS_OPEN:
 		return handle_open_events(e);
 		break;
 	case SYS_PERF_EVENT_OPEN:
-		return handle_perf_event(e);
+		return handle_perf_event_open(e);
 		break;
 	case SYS_BPF:
 		return handle_bpf_event(e);

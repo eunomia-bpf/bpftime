@@ -185,7 +185,7 @@ static int process_bpf_prog_load_events(union bpf_attr *attr)
 		// check whether write is success
 		bpf_probe_read_user(&new_attr, sizeof(new_attr), attr);
 		if (new_attr.insn_cnt != 2) {
-			bpf_printk("write failed\n");
+			bpf_printk("bpftime: write failed\n");
 		}
 	}
 	return 0;
@@ -210,6 +210,7 @@ SEC("tracepoint/syscalls/sys_enter_bpf")
 int tracepoint__syscalls__sys_enter_bpf(struct trace_event_raw_sys_enter *ctx)
 {
 	if (!filter_target()) {
+		bpf_printk("bpftime: Skipping sys enter bpf");
 		return 0;
 	}
 
@@ -226,9 +227,8 @@ int tracepoint__syscalls__sys_enter_bpf(struct trace_event_raw_sys_enter *ctx)
 	process_bpf_syscall_enter(ctx);
 	return 0;
 }
-
-inline struct event *get_ringbuf_sys_exit_bpf_event(struct bpf_args_t *ap,
-						    int ret)
+static __always_inline struct event *
+get_ringbuf_sys_exit_bpf_event(struct bpf_args_t *ap, int ret)
 {
 	struct event *event = fill_basic_event_info();
 	if (!event) {
@@ -257,47 +257,68 @@ static int process_bpf_syscall_exit(struct bpf_args_t *ap, int ret)
 				&bpf_progs_new_fd_args_map, &pid_tgid);
 			if (!id_ptr)
 				return 0; /* missed entry */
-			bpf_map_delete_elem(&bpf_progs_new_fd_args_map,
-					    &pid_tgid);
+			// bpf_map_delete_elem(&bpf_progs_new_fd_args_map,
+			// 		    &pid_tgid);
 			struct bpf_fd_data data = { .type = BPF_FD_TYPE_PROG,
 						    .kernel_id = *id_ptr };
 
 			set_bpf_fd_data(ret, &data);
-			bpf_printk("bpf_prog_load exit id: %d fd: %d\n",
-				   *id_ptr, ret);
+			bpf_printk(
+				"bpftime: bpf_prog_load exit id: %d fd: %d\n",
+				*id_ptr, ret);
 			break;
 		}
-		
+
 		case BPF_MAP_CREATE: {
 			u64 pid_tgid = bpf_get_current_pid_tgid();
 			u32 *id_ptr = (u32 *)bpf_map_lookup_elem(
 				&bpf_map_new_fd_args_map, &pid_tgid);
 			if (!id_ptr)
 				return 0; /* missed entry */
-			bpf_map_delete_elem(&bpf_map_new_fd_args_map,
-					    &pid_tgid);
+			u32 id = *id_ptr;
+			// bpf_map_delete_elem(&bpf_map_new_fd_args_map,
+			// 		    &pid_tgid);
 			struct bpf_fd_data data = { .type = BPF_FD_TYPE_MAP,
-						    .kernel_id = *id_ptr };
+						    .kernel_id = id };
 			// record map fd and id
 			set_bpf_fd_data(ret, &data);
-			bpf_printk("bpf_map_create exit id: %d fd: %d\n",
-				   *id_ptr, ret);
+			bpf_printk(
+				"bpftime: bpf_map_create exit id: %d fd: %d\n",
+				id, ret);
 			if (submit_bpf_events) {
 				// submit event to user for record
 				struct event *event =
 					get_ringbuf_sys_exit_bpf_event(ap, ret);
-				event->bpf_data.map_id = *id_ptr;
+				// Make verifier happy
+				if (!event)
+					return 0;
+				event->bpf_data.map_id = (int)id;
 				bpf_ringbuf_submit(event, 0);
 			}
 			break;
 		}
 		case BPF_LINK_CREATE: {
+			u64 pid_tgid = bpf_get_current_pid_tgid();
+			u32 *id_ptr = (u32 *)bpf_map_lookup_elem(
+				&bpf_progs_new_fd_args_map, &pid_tgid);
+			if (!id_ptr) {
+				bpf_printk(
+					"bpftime: Unable to get prog id when creating link");
+				return 0; /* missed entry */
+			}
+			u32 id = *id_ptr;
+			// bpf_map_delete_elem(&bpf_map_new_fd_args_map,
+			// 		    &pid_tgid);
 			struct bpf_fd_data data = { .type = BPF_FD_TYPE_OTHERS,
-						    .kernel_id = 0 };
+						    .kernel_id = id };
 			set_bpf_fd_data(ret, &data);
+			bpf_printk("bpftime: bpf_link_create");
 			if (submit_bpf_events) {
+				bpf_printk("bpftime: Submitting link creation");
 				struct event *event =
 					get_ringbuf_sys_exit_bpf_event(ap, ret);
+				if (!event)
+					return 0;
 				bpf_ringbuf_submit(event, 0);
 			}
 			break;
@@ -309,6 +330,8 @@ static int process_bpf_syscall_exit(struct bpf_args_t *ap, int ret)
 			if (submit_bpf_events) {
 				struct event *event =
 					get_ringbuf_sys_exit_bpf_event(ap, ret);
+				if (!event)
+					return 0;
 				bpf_ringbuf_submit(event, 0);
 			}
 			break;
@@ -356,7 +379,7 @@ process_perf_event_open_enter(struct trace_event_raw_sys_enter *ctx)
 		// found uprobe
 		if (enable_replace_uprobe) {
 			new_attr.probe_offset = 0;
-			int size = bpf_probe_read_user_str(
+			long size = bpf_probe_read_user_str(
 				old_uprobe_path, sizeof(old_uprobe_path),
 				(void *)new_attr.uprobe_path);
 			if (size <= 0) {
@@ -367,8 +390,13 @@ process_perf_event_open_enter(struct trace_event_raw_sys_enter *ctx)
 				size = PATH_LENTH;
 			}
 			bpf_probe_write_user((void *)new_attr.uprobe_path,
-					     new_uprobe_path, size);
+					     &new_uprobe_path, (size_t)size);
 			bpf_probe_write_user(attr, &new_attr, sizeof(new_attr));
+
+			char buf[64];
+			bpf_probe_read_user_str(buf, sizeof(buf),
+						(void *)new_attr.uprobe_path);
+			bpf_printk("Writting new uprobe path: %s", buf);
 		}
 		return 0;
 	}
@@ -408,7 +436,7 @@ int tracepoint__syscalls__sys_enter_perf_event_open(
 	args.cpu = (int)ctx->args[2];
 	bpf_probe_read_user_str(args.name_or_path, PATH_LENTH,
 				(const void *)args.attr.uprobe_path);
-
+	bpf_printk("Received path: %s", args.name_or_path);
 	u64 pid_tgid = bpf_get_current_pid_tgid();
 	bpf_map_update_elem(&perf_event_open_param_start, &pid_tgid, &args, 0);
 

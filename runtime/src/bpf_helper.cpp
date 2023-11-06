@@ -115,23 +115,21 @@ uint64_t bpftime_get_current_comm(uint64_t buf, uint64_t size, uint64_t,
 uint64_t bpftime_map_lookup_elem_helper(uint64_t map, uint64_t key, uint64_t,
 					uint64_t, uint64_t)
 {
-	return (uint64_t)bpftime_helper_map_lookup_elem(map >> 32,
-							     (void *)key);
+	return (uint64_t)bpftime_helper_map_lookup_elem(map >> 32, (void *)key);
 }
 
 uint64_t bpftime_map_update_elem_helper(uint64_t map, uint64_t key,
 					uint64_t value, uint64_t flags,
 					uint64_t)
 {
-	return (uint64_t)bpftime_helper_map_update_elem(
-		map >> 32, (void *)key, (void *)value, flags);
+	return (uint64_t)bpftime_helper_map_update_elem(map >> 32, (void *)key,
+							(void *)value, flags);
 }
 
 uint64_t bpftime_map_delete_elem_helper(uint64_t map, uint64_t key, uint64_t,
 					uint64_t, uint64_t)
 {
-	return (uint64_t)bpftime_helper_map_delete_elem(map >> 32,
-							     (void *)key);
+	return (uint64_t)bpftime_helper_map_delete_elem(map >> 32, (void *)key);
 }
 
 uint64_t bpf_probe_read_str(uint64_t buf, uint64_t bufsz, uint64_t ptr,
@@ -228,17 +226,40 @@ uint64_t bpf_perf_event_output(uint64_t ctx, uint64_t map, uint64_t flags,
 		return (uint64_t)(-1);
 	}
 	int fd = map >> 32;
-	const int32_t *val_ptr =
-		(int32_t *)(uintptr_t)bpftime_helper_map_lookup_elem(
-			fd, &current_cpu);
-	if (val_ptr == nullptr) {
-		spdlog::error("Invalid map fd for perf event output: {}", fd);
-		errno = EINVAL;
-		return (uint64_t)(-1);
+	// Check map type. userspace perf event array, or shared perf event
+	// array?
+	bpftime::bpf_map_type map_ty;
+	if (int err = bpftime_map_get_info(fd, nullptr, nullptr, &map_ty);
+	    err < 0) {
+		spdlog::error("Unable to query map type of fd {}", fd);
+		return -1;
 	}
-	int32_t perf_handler_fd = *val_ptr;
-	int ret = bpftime_perf_event_output(
-		perf_handler_fd, (const void *)(uintptr_t)data, (size_t)size);
+	int ret;
+	if (map_ty == bpftime::bpf_map_type::BPF_MAP_TYPE_PERF_EVENT_ARRAY) {
+		const int32_t *val_ptr =
+			(int32_t *)(uintptr_t)bpftime_helper_map_lookup_elem(
+				fd, &current_cpu);
+		if (val_ptr == nullptr) {
+			spdlog::error(
+				"Invalid map fd for perf event output: {}", fd);
+			errno = EINVAL;
+			return (uint64_t)(-1);
+		}
+		int32_t perf_handler_fd = *val_ptr;
+		ret = bpftime_perf_event_output(perf_handler_fd,
+						(const void *)(uintptr_t)data,
+						(size_t)size);
+	} else if (map_ty ==
+		   bpftime::bpf_map_type::
+			   BPF_MAP_TYPE_KERNEL_USER_PERF_EVENT_ARRAY) {
+		ret = bpftime_shared_perf_event_output(
+			fd, (const void *)(uintptr_t)data, (size_t)size);
+	} else {
+		spdlog::error(
+			"Attempting to run perf_output on a non-perf array map");
+		ret = -1;
+	}
+
 	sched_setaffinity(0, sizeof(orig), &orig);
 	return (uint64_t)ret;
 }

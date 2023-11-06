@@ -31,7 +31,10 @@ static int libbpf_print_fn(enum libbpf_print_level level, const char *format,
 {
 	if (level == LIBBPF_DEBUG && !verbose)
 		return 0;
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wformat-nonliteral"
 	return vfprintf(stderr, format, args);
+#pragma GCC diagnostic pop
 }
 
 static void sig_int(int signo)
@@ -75,12 +78,16 @@ int bpftime::start_daemon(struct daemon_config env)
 	/* initialize global data (filtering options) */
 	obj->rodata->target_pid = env.pid;
 	obj->rodata->enable_replace_prog = env.enable_replace_prog;
-	strncpy(obj->rodata->new_uprobe_path, env.new_uprobe_path, PATH_LENTH);
+// strncpy(obj->rodata->new_uprobe_path, env.new_uprobe_path,
+// PATH_LENTH);
+#warning  FIXME: currently using `/a` as the replacing executable path to uprobe perf event in the kernel, since long strings (such as bpftime_daemon it self) may break userspace memory. Find a better way to solve this in the future
+	strncpy(obj->rodata->new_uprobe_path, "/a", PATH_LENTH);
+
 	obj->rodata->enable_replace_uprobe = env.enable_replace_uprobe;
 	obj->rodata->uprobe_perf_type = determine_uprobe_perf_type();
 	obj->rodata->kprobe_perf_type = determine_kprobe_perf_type();
 	obj->rodata->submit_bpf_events = env.submit_bpf_events;
-
+	obj->rodata->current_pid = getpid();
 	if (!env.show_open) {
 		bpf_program__set_autoload(
 			obj->progs.tracepoint__syscalls__sys_exit_open, false);
