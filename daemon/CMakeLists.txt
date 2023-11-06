@@ -6,8 +6,8 @@ add_bpf_skel_generating_target(bpftime_daemon_ebpf_skel ${CMAKE_CURRENT_BINARY_D
 
 add_dependencies(bpftime_daemon_ebpf_skel bpftime_daemon_ebpf_target)
 
-add_library(libbpftime_daemon STATIC     
-    user/bpf_tracer.cpp 
+add_library(libbpftime_daemon STATIC
+    user/bpf_tracer.cpp
     user/handle_bpf_event.cpp
     user/bpftime_driver.cpp
 )
@@ -16,27 +16,29 @@ add_executable(bpftime_daemon
     user/main.cpp
 )
 
-add_dependencies(libbpftime_daemon 
-        bpftime_daemon_ebpf_skel 
-        libbpf 
-        spdlog::spdlog
-        runtime
-    )
+add_dependencies(libbpftime_daemon
+    bpftime_daemon_ebpf_skel
+    libbpf
+    spdlog::spdlog
+    runtime
+)
 
-target_include_directories(libbpftime_daemon PRIVATE 
-    ${CMAKE_CURRENT_BINARY_DIR} 
+target_include_directories(libbpftime_daemon PRIVATE
+    ${CMAKE_CURRENT_BINARY_DIR}
     ${LIBBPF_INCLUDE_DIRS}
     ${CMAKE_CURRENT_SOURCE_DIR}
     ${CMAKE_CURRENT_SOURCE_DIR}/../vm/include
     ${CMAKE_CURRENT_SOURCE_DIR}/../runtime/include
 )
-target_link_libraries(libbpftime_daemon PRIVATE 
-        ${LIBBPF_LIBRARIES}
-        elf
-        z
-        spdlog::spdlog
-        runtime
-    )
+target_link_libraries(libbpftime_daemon PRIVATE
+    ${LIBBPF_LIBRARIES}
+    elf
+    z
+    spdlog::spdlog
+    runtime
+    PUBLIC
+    rt
+)
 set_property(TARGET libbpftime_daemon PROPERTY CXX_STANDARD 20)
 
 add_dependencies(bpftime_daemon libbpftime_daemon)
@@ -45,6 +47,5 @@ target_link_libraries(bpftime_daemon PRIVATE libbpftime_daemon)
 install(TARGETS bpftime_daemon CONFIGURATIONS Release Debug DESTINATION ~/.bpftime)
 
 if(BPFTIME_ENABLE_UNIT_TESTING)
-  add_subdirectory(test)
+    add_subdirectory(test)
 endif()
-
