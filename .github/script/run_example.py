@@ -49,7 +49,7 @@ def main():
         server.kill()
         server.wait()
         exit(1)
-    time.sleep(3)
+    time.sleep(15)
     # Start the agent
     agent = subprocess.Popen(
         " ".join(
