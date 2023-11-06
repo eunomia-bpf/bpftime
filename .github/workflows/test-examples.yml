@@ -67,7 +67,7 @@ jobs:
             executable: ./readline
             victim: /bin/bash
             syscall_trace: false
-            expected_str: ""
+            expected_str: "info"
 
     steps:
       - uses: actions/checkout@v2
