@@ -56,7 +56,7 @@ jobs:
           - path: opensnoop
             executable: ./opensnoop
             victim: ./victim
-            syscall_trace: false
+            syscall_trace: true
             expected_str: "   0 test.txt"
           - path: sslsniff
             executable: ./sslsniff
