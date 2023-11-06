@@ -39,32 +39,32 @@ jobs:
       matrix:
         examples: 
           - path: libbpf-tools/opensnoop
-            executable: opensnoop
+            executable: ./opensnoop
             victim: ./victim
             syscall_trace: true
             expected_str: "   0 test.txt"
           - path: libbpf-tools/statsnoop
-            executable: statsnoop
+            executable: ./statsnoop
             victim: ./victim
             syscall_trace: true
             expected_str: "victim               0    0    /sys" 
           - path: malloc
-            executable: malloc
+            executable: ./malloc
             victim: ./victim
             syscall_trace: false
             expected_str: "malloc calls: "
           - path: opensnoop
-            executable: opensnoop
+            executable: ./opensnoop
             victim: ./victim
             syscall_trace: false
             expected_str: "   0 test.txt"
           - path: sslsniff
-            executable: sslsniff
+            executable: ./sslsniff
             victim: /bin/wget https://www.google.com
             syscall_trace: false
             expected_str: "----- DATA -----"
           - path: libbpf-tools/bashreadline
-            executable: readline
+            executable: ./readline
             victim: /bin/bash
             syscall_trace: false
             expected_str: ""
