@@ -7,8 +7,8 @@ import signal
 import fcntl
 import os
 import time
-SERVER_TIMEOUT = 15
-AGENT_TIMEOUT = 15
+SERVER_TIMEOUT = 30
+AGENT_TIMEOUT = 50
 SERVER_START_SIGNAL = "bpftime-syscall-server started"
 
 
