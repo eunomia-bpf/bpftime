@@ -119,7 +119,7 @@ int software_perf_event_data::output_data(const void *buf, size_t size)
 	// the data. In this way, we'll never make data_head equals to
 	// data_tail, at situation other than an empty buffer
 	if (available_size <= head.header.size) {
-		spdlog::warn(
+		spdlog::debug(
 			"Dropping data with size {}, available_size {}, required size {}",
 			size, available_size, head.header.size);
 		return 0;
