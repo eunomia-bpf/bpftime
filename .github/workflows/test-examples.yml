@@ -99,11 +99,9 @@ jobs:
         if: matrix.examples.syscall_trace
         shell: "sudo /bin/bash -e {0}"
         run: |
-          cd example/${{matrix.examples.path}}
-          sudo -E python3 ../../.github/script/run_example.py ${{matrix.examples.executable}} ${{matrix.examples.victim}} "${{matrix.examples.expected_str}}" "/home/runner/.bpftime/bpftime -i /home/runner/.bpftime" 1
+          sudo -E python3 .github/script/run_example.py ${{matrix.examples.path}}/${{matrix.examples.executable}} ${{matrix.examples.path}}/${{matrix.examples.victim}} "${{matrix.examples.expected_str}}" "/home/runner/.bpftime/bpftime -i /home/runner/.bpftime" 1
       - name: Test CLI - attach by running (uprobe)
         if: '!matrix.examples.syscall_trace'
         shell: "sudo /bin/bash -e {0}"
         run: |
-          cd example/${{matrix.examples.path}}
-          sudo -E python3 ../../.github/script/run_example.py ${{matrix.examples.executable}} ${{matrix.examples.victim}} "${{matrix.examples.expected_str}}" "/home/runner/.bpftime/bpftime -i /home/runner/.bpftime" 0
+          sudo -E python3 .github/script/run_example.py ${{matrix.examples.path}}/${{matrix.examples.executable}} ${{matrix.examples.path}}/${{matrix.examples.victim}} "${{matrix.examples.expected_str}}" "/home/runner/.bpftime/bpftime -i /home/runner/.bpftime" 0
