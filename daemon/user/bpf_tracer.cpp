@@ -17,6 +17,7 @@
 #include "daemon.hpp"
 #include <cassert>
 #include <spdlog/spdlog.h>
+#include <map>
 #include <spdlog/cfg/env.h>
 
 #define NSEC_PER_SEC 1000000000ULL
@@ -48,6 +49,70 @@ static int handle_event_rb(void *ctx, void *data, size_t data_sz)
 	bpf_event_handler *handler = (bpf_event_handler *)ctx;
 	assert(handler != NULL);
 	return handler->handle_event(e);
+}
+
+static int process_exec_maps(bpf_event_handler *handler, bpf_tracer_bpf *obj,
+			     daemon_config &env)
+{
+	if (!obj || obj->maps.exec_start == NULL) {
+		return 0;
+	}
+	event e;
+	int pid = 0, next_pid = 0;
+
+	static std::map<int, event> pid_map;
+
+	std::map<int, event> new_pid_map = {};
+	std::map<int, event> remain_pid_map = pid_map;
+
+	if (bpf_map__get_next_key(obj->maps.exec_start, NULL, &next_pid,
+				  sizeof(pid)) != 0) {
+		return 0;
+	}
+	do {
+		pid = next_pid;
+		int res = bpf_map__lookup_elem(obj->maps.exec_start, &pid,
+					       sizeof(pid), &e, sizeof(e), 0);
+		if (res != 0) {
+			continue;
+		}
+		struct timespec ts;
+		long long current_nanoseconds;
+		long start_time_ms;
+		// CLOCK_MONOTONIC ensures the time won't go back due to NTP
+		// adjustments CLOCK_REALTIME could be used if you want the real
+		// current time
+		if (clock_gettime(CLOCK_MONOTONIC, &ts) == 0) {
+			// calculates total nanoseconds
+			current_nanoseconds =
+				ts.tv_sec * 1000000000LL + ts.tv_nsec;
+		} else {
+			return 0;
+		}
+		start_time_ms =
+			(current_nanoseconds - e.exec_data.time_ns) / 1000000;
+		if (start_time_ms < env.duration_ms) {
+			// ignore short-lived processes
+			return 0;
+		}
+		// find exec new process and exit process
+		new_pid_map[pid] = e;
+		if (remain_pid_map.find(pid) == remain_pid_map.end()) {
+			// new pid
+			handle_event_rb(handler, &e, sizeof(e));
+		} else {
+			remain_pid_map.erase(pid);
+		}
+	} while (bpf_map__get_next_key(obj->maps.exec_start, &pid, &next_pid,
+				       sizeof(pid)) == 0);
+	// remain pid is exit process, not occur in the map
+	for (auto pid : remain_pid_map) {
+		e = pid.second;
+		e.exec_data.exit_event = 1;
+		handle_event_rb(handler, &e, sizeof(e));
+	}
+	pid_map = new_pid_map;
+	return 0;
 }
 
 int bpftime::start_daemon(struct daemon_config env)
@@ -101,6 +166,15 @@ int bpftime::start_daemon(struct daemon_config env)
 			false);
 	}
 
+	if (!env.enable_auto_attach) {
+				bpf_program__set_autoload(
+			obj->progs.handle_exit,
+			false);
+		bpf_program__set_autoload(
+			obj->progs.handle_exec,
+			false);
+	}
+
 	bpftime_driver driver(env, obj);
 	// update handler config
 	bpf_event_handler handler = bpf_event_handler(env, driver);
@@ -129,12 +203,13 @@ int bpftime::start_daemon(struct daemon_config env)
 
 	/* main: poll */
 	while (!exiting) {
-		err = ring_buffer__poll(rb, 100 /* timeout, ms */);
+		err = ring_buffer__poll(rb, 300 /* timeout, ms */);
 		if (err < 0 && err != -EINTR) {
 			spdlog::error("error polling perf buffer: {}",
 				      strerror(-err));
 			// goto cleanup;
 		}
+		process_exec_maps(&handler, obj, env);
 		/* reset err to return 0 if exiting */
 		err = 0;
 	}

@@ -5,10 +5,10 @@
 #define TASK_COMM_LEN 16
 #define NAME_MAX 255
 #define INVALID_UID ((uid_t)-1)
-
 #define MAX_INSN_SIZE 128
-
 #define BPF_OBJ_NAME_LEN 16U
+#define MAX_FILENAME_LEN 127
+
 
 enum event_type {
 	SYS_OPEN,
@@ -17,6 +17,7 @@ enum event_type {
 	SYS_IOCTL,
 	SYS_PERF_EVENT_OPEN,
 	BPF_PROG_LOAD_EVENT,
+	EXEC_EXIT,
 };
 
 enum bpf_fd_type {
@@ -87,6 +88,14 @@ struct event {
 
 			int bpf_prog_id;
 		} ioctl_data;
+
+		struct {
+			int exit_event;
+			int ppid;
+			unsigned exit_code;
+			unsigned long long time_ns;
+			char filename[MAX_FILENAME_LEN];
+		} exec_data;
 	};
 };
 

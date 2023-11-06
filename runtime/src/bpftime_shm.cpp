@@ -112,6 +112,7 @@ int bpftime_attach_perf_to_bpf(int perf_fd, int bpf_fd)
 	return shm_holder.global_shared_memory.attach_perf_to_bpf(perf_fd,
 								  bpf_fd);
 }
+
 int bpftime_add_ringbuf_fd_to_epoll(int ringbuf_fd, int epoll_fd,
 				    epoll_data_t extra_data)
 {

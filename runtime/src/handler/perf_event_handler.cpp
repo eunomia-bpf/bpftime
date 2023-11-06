@@ -12,7 +12,6 @@
 
 #pragma GCC diagnostic ignored "-Wstrict-aliasing"
 
-
 #define READ_ONCE_U64(x) (*(volatile uint64_t *)&x)
 #define WRITE_ONCE_U64(x, v) (*(volatile uint64_t *)&x) = (v)
 
@@ -85,16 +84,19 @@ bpf_perf_event_handler::bpf_perf_event_handler(
 
 {
 }
+
 bool software_perf_event_data::has_data() const
 {
 	auto &ref = get_header_ref_const();
 	return ref.data_tail != ref.data_head;
 }
+
 const perf_event_mmap_page &
 software_perf_event_data::get_header_ref_const() const
 {
 	return *(perf_event_mmap_page *)(uintptr_t)(mmap_buffer.data());
 }
+
 int software_perf_event_data::output_data(const void *buf, size_t size)
 {
 	spdlog::debug("Handling perf event output data with size {}", size);
@@ -117,7 +119,7 @@ int software_perf_event_data::output_data(const void *buf, size_t size)
 	// the data. In this way, we'll never make data_head equals to
 	// data_tail, at situation other than an empty buffer
 	if (available_size <= head.header.size) {
-		spdlog::warn(
+		spdlog::debug(
 			"Dropping data with size {}, available_size {}, required size {}",
 			size, available_size, head.header.size);
 		return 0;
@@ -146,6 +148,7 @@ int software_perf_event_data::output_data(const void *buf, size_t size)
 
 	return 0;
 }
+
 perf_event_mmap_page &software_perf_event_data::get_header_ref()
 {
 	return *(perf_event_mmap_page *)(uintptr_t)(mmap_buffer.data());
@@ -187,10 +190,12 @@ void *software_perf_event_data::ensure_mmap_buffer(size_t buffer_size)
 	}
 	return mmap_buffer.data();
 }
+
 size_t software_perf_event_data::mmap_size() const
 {
 	return mmap_buffer.size() - pagesize;
 }
+
 std::optional<software_perf_event_weak_ptr>
 bpf_perf_event_handler::try_get_software_perf_data_weak_ptr() const
 {
@@ -211,4 +216,5 @@ bpf_perf_event_handler::try_get_software_perf_data_raw_buffer(
 		return {};
 	}
 }
+
 } // namespace bpftime
