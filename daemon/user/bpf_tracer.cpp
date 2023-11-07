@@ -1,4 +1,5 @@
 // Description: bpf_tracer daemon
+#include "spdlog/common.h"
 #include <argp.h>
 #include <signal.h>
 #include <stdio.h>
@@ -153,6 +154,7 @@ int bpftime::start_daemon(struct daemon_config env)
 	obj->rodata->kprobe_perf_type = determine_kprobe_perf_type();
 	obj->rodata->submit_bpf_events = env.submit_bpf_events;
 	obj->rodata->current_pid = getpid();
+	obj->rodata->enable_whitelist = env.whitelist_enabled();
 	if (!env.show_open) {
 		bpf_program__set_autoload(
 			obj->progs.tracepoint__syscalls__sys_exit_open, false);
@@ -167,12 +169,8 @@ int bpftime::start_daemon(struct daemon_config env)
 	}
 
 	if (!env.enable_auto_attach) {
-				bpf_program__set_autoload(
-			obj->progs.handle_exit,
-			false);
-		bpf_program__set_autoload(
-			obj->progs.handle_exec,
-			false);
+		bpf_program__set_autoload(obj->progs.handle_exit, false);
+		bpf_program__set_autoload(obj->progs.handle_exec, false);
 	}
 
 	bpftime_driver driver(env, obj);
@@ -185,7 +183,22 @@ int bpftime::start_daemon(struct daemon_config env)
 		fprintf(stderr, "failed to load BPF object: %d\n", err);
 		goto cleanup;
 	}
-
+	if (env.whitelist_enabled()) {
+		spdlog::info("userspace uprobe whitelist enabled");
+		int whitelist_map_fd =
+			bpf_map__fd(obj->maps.whitelist_hook_addr);
+		for (uint64_t addr : env.whitelist_uprobes) {
+			spdlog::info("Whitelist: {:x}", addr);
+			uint32_t dummy = 0;
+			int err = bpf_map_update_elem(whitelist_map_fd, &addr,
+						      &dummy, 0);
+			if (err < 0) {
+				spdlog::error(
+					"Unable to update whitelist map, err={}",
+					err);
+			}
+		}
+	}
 	err = bpf_tracer_bpf__attach(obj);
 	if (err) {
 		fprintf(stderr, "failed to attach BPF programs\n");

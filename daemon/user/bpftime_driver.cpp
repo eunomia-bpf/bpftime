@@ -177,9 +177,8 @@ int bpftime_driver::bpftime_progs_create_server(int kernel_id, int server_pid)
 			      kernel_id);
 		return -1;
 	}
-	res = bpftime_progs_create(kernel_id,
-				   buffer.data(), buffer.size(), info.name,
-				   info.type);
+	res = bpftime_progs_create(kernel_id, buffer.data(), buffer.size(),
+				   info.name, info.type);
 	if (res < 0) {
 		spdlog::error("Failed to create prog for id {}", kernel_id);
 		return -1;
@@ -275,8 +274,7 @@ int bpftime_driver::bpftime_attach_perf_to_bpf_server(int server_pid,
 		}
 	}
 
-	int res = bpftime_attach_perf_to_bpf(
-		perf_id, kernel_bpf_id);
+	int res = bpftime_attach_perf_to_bpf(perf_id, kernel_bpf_id);
 	if (res < 0) {
 		spdlog::error("Failed to attach perf to bpf");
 		return -1;

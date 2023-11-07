@@ -1,2 +1,3 @@
 simple_uretprobe_test*
 malloc-perf*
+go-trace-test*
