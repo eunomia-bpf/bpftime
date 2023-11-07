@@ -57,15 +57,19 @@ def main():
         server.kill()
         server.wait()
         exit(1)
-    time.sleep(5)
+    time.sleep(10)
     # Start the agent
     agent = subprocess.Popen(
-        [bpftime_cli, "start"] + (["-s", victim] if syscall_trace == "1" else [victim]),
+        " ".join(
+            [bpftime_cli, "start"]
+            + (["-s", victim] if syscall_trace == "1" else [victim])
+        ),
         stdout=sys.stdout,
         text=False,
         stderr=sys.stderr,
         stdin=subprocess.PIPE,
         env={"SPDLOG_LEVEL": "info"},
+        shell=True,
     )
     agent_start_time = datetime.datetime.now()
     agent_ok = False
