@@ -601,4 +601,67 @@ cleanup:
 	return 0;
 }
 
+struct {
+	__uint(type, BPF_MAP_TYPE_HASH);
+	__uint(max_entries, 8192);
+	__type(key, pid_t);
+	__type(value, struct event);
+} exec_start SEC(".maps");
+
+SEC("tp/sched/sched_process_exec")
+int handle_exec(struct trace_event_raw_sched_process_exec *ctx)
+{
+	struct task_struct *task;
+	unsigned fname_off;
+	struct event e = {0};
+	pid_t pid;
+	u64 ts;
+
+	/* remember time exec() was executed for this PID */
+	pid = bpf_get_current_pid_tgid() >> 32;
+	e.exec_data.time_ns = bpf_ktime_get_ns();
+
+	/* fill out the sample with data */
+	task = (struct task_struct *)bpf_get_current_task();
+
+	e.type = EXEC_EXIT;
+	e.exec_data.exit_event = false;
+	e.pid = pid;
+	e.exec_data.ppid = BPF_CORE_READ(task, real_parent, tgid);
+	bpf_get_current_comm(&e.comm, sizeof(e.comm));
+
+	fname_off = ctx->__data_loc_filename & 0xFFFF;
+	bpf_probe_read_str(&e.exec_data.filename, sizeof(e.exec_data.filename),
+			   (void *)ctx + fname_off);
+
+	/* successfully submit it to user-space for post-processing */
+	bpf_map_update_elem(&exec_start, &pid, &e, BPF_ANY);
+	return 0;
+}
+
+SEC("tp/sched/sched_process_exit")
+int handle_exit(struct trace_event_raw_sched_process_template *ctx)
+{
+	struct task_struct *task;
+	struct event *e;
+	pid_t pid, tid;
+	u64 id, ts, *start_ts, duration_ns = 0;
+
+	/* get PID and TID of exiting thread/process */
+	id = bpf_get_current_pid_tgid();
+	pid = id >> 32;
+	tid = (u32)id;
+
+	/* ignore thread exits */
+	if (pid != tid)
+		return 0;
+
+	/* if we recorded start of the process, calculate lifetime duration */
+	e = bpf_map_lookup_elem(&exec_start, &pid);
+	if (!e)
+		return 0;
+	bpf_map_delete_elem(&exec_start, &pid);
+	return 0;
+}
+
 char LICENSE[] SEC("license") = "GPL";

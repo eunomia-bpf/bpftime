@@ -19,8 +19,10 @@ struct daemon_config {
 	bool show_open = false;
 	// enable replace prog to support bypass kernel verifier
 	bool enable_replace_prog = false;
-	// enable replace uprobe to make kernel uprobe not break user space uprobe
+	// enable replace uprobe to make kernel uprobe not break user space
+	// uprobe
 	bool enable_replace_uprobe = true;
+	// use the new uprobe path to replace the old one in original syscall
 	char new_uprobe_path[PATH_LENTH] = "\0";
 	// bpftime cli path for bpftime daemon to create prog and link, maps
 	std::string bpftime_cli_path = "~/.bpftime/bpftime";
@@ -28,8 +30,14 @@ struct daemon_config {
 	std::string bpftime_tool_path = "~/.bpftime/bpftimetool";
 	// should bpftime be involve
 	bool is_driving_bpftime = true;
-
+	// should trace and submit bpf related detail events
 	bool submit_bpf_events = true;
+	// specify whether uprobe should work similar to kernel uprobe and auto
+	// attach to the target process
+	bool enable_auto_attach = false;
+	// minimal duration of a process to be traced by uprobe
+	// skip short lived process to reduce overhead
+	int duration_ms = 1000;
 };
 
 #endif // BPFTIME_DAEMON_CONFIG_HPP

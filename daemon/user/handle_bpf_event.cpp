@@ -79,6 +79,19 @@ int bpf_event_handler::handle_open_events(const struct event *e)
 	return 0;
 }
 
+int bpf_event_handler::handle_exec_and_exit(const struct event *e)
+{
+
+	if (e->exec_data.exit_event == false) {
+		spdlog::info("EXEC {:<6} {:<16} {}", e->pid, e->comm,
+			     e->exec_data.filename);
+	} else {
+		spdlog::info("EXIT {:<6} {:<16} {}", e->pid, e->comm,
+			     e->exec_data.exit_code);
+	}
+	return 0;
+}
+
 static const char *bpf_cmd_strings[] = {
 	"BPF_MAP_CREATE",	 "BPF_MAP_LOOKUP_ELEM",
 	"BPF_MAP_UPDATE_ELEM",	 "BPF_MAP_DELETE_ELEM",
@@ -394,6 +407,9 @@ int bpf_event_handler::handle_event(const struct event *e)
 		break;
 	case SYS_IOCTL:
 		return handle_ioctl(e);
+		break;
+	case EXEC_EXIT:
+		return handle_exec_and_exit(e);
 		break;
 	}
 	return 0;

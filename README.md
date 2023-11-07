@@ -163,7 +163,7 @@ see [documents/build-and-test.md](https://github.com/eunomia-bpf/bpftime/tree/ma
 
 - [X] ring buffer output support.
 - [X] perf event output support.
-- [ ] Figure out how to run transparently with kernel probe
+- [X] Figure out how to run transparently with kernel probe
 - [ ] An AOT compiler for eBPF can be easily added based on the LLVM IR.
 - [ ] More examples and usecases:
   - [ ] Network on userspace eBPF
