@@ -1,6 +1,7 @@
 use std::{
     ffi::{CStr, CString},
     path::{Path, PathBuf},
+    process::exit,
     sync::atomic::{AtomicU32, Ordering},
 };
 
@@ -147,6 +148,7 @@ fn run_command(
 
     if !status.success() {
         bail!("Exited with code: {:?}", status.code());
+        exit(status.code().unwrap_or(0));
     }
     Ok(())
 }

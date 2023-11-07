@@ -69,6 +69,7 @@ static int print_stat(struct malloc_bpf *obj)
 		}
 		prev_key = &key;
 	}
+	fflush(stdout);
 	return err;
 }
 

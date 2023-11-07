@@ -4,6 +4,7 @@
 // Based on statsnoop(8) from BCC by Brendan Gregg.
 // 09-May-2021   Hengqi Chen   Created this.
 #include <argp.h>
+#include <stdio.h>
 #include <errno.h>
 #include <linux/limits.h>
 #include <signal.h>
@@ -118,6 +119,7 @@ static void handle_event(void *ctx, int cpu, void *data, __u32 data_sz)
 	}
 	printf("%-7d %-20s %-4d %-4d %-s\n", e->pid, e->comm, fd, err,
 	       e->pathname);
+	fflush(stdout);
 }
 
 static void handle_lost_events(void *ctx, int cpu, __u64 lost_cnt)
@@ -151,7 +153,6 @@ int main(int argc, char **argv)
 
 	obj->rodata->target_pid = target_pid;
 	obj->rodata->trace_failed_only = trace_failed_only;
-
 
 	err = statsnoop_bpf__load(obj);
 	if (err) {

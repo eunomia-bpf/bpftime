@@ -404,6 +404,7 @@ void print_event(struct probe_SSL_data_t *event, const char *evt) {
 			printf("\n%s\n%s\n%s\n\n", s_mark, buf, e_mark);
 		}
 	}
+	fflush(stdout);
 }
 
 static void handle_event(void *ctx, int cpu, void *data, __u32 data_size) {
@@ -413,6 +414,7 @@ static void handle_event(void *ctx, int cpu, void *data, __u32 data_size) {
 	} else {
 		print_event(e, "perf_SSL_rw");
 	}
+	fflush(stdout);
 }
 
 int main(int argc, char **argv) {
@@ -502,7 +504,7 @@ int main(int argc, char **argv) {
 		printf(" %-7s", "LAT(ms)");
 	}
 	printf("\n");
-
+	fflush(stdout);
 	while (!exiting) {
 		err = perf_buffer__poll(pb, PERF_POLL_TIMEOUT_MS);
 		if (err < 0 && err != -EINTR) {

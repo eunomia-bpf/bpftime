@@ -37,6 +37,7 @@ static void handle_event(void *ctx, int cpu, void *data, __u32 data_size)
 	strftime(ts, sizeof(ts), "%H:%m:%S", tm);
 
 	printf("%-9s %-7d %s\n", ts, e->pid, e->str);
+	fflush(stdout);
 }
 
 static void handle_lost_events(void *ctx, int cpu, __u64 lost_cnt)
