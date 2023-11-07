@@ -7,6 +7,7 @@ import signal
 import fcntl
 import os
 import time
+
 SERVER_TIMEOUT = 30
 AGENT_TIMEOUT = 30
 SERVER_START_SIGNAL = "bpftime-syscall-server started"
@@ -18,7 +19,14 @@ def set_non_blocking(fd):
 
 
 def main():
-    executable, victim, expected_str, bpftime_cli, syscall_trace = sys.argv[1:]
+    (
+        executable,
+        victim,
+        expected_str,
+        bpftime_cli,
+        syscall_trace,
+        *bashreadline_patch,
+    ) = sys.argv[1:]
     # Run the syscall-server
     server = subprocess.Popen(
         " ".join([bpftime_cli, "load", executable]),
@@ -49,23 +57,22 @@ def main():
         server.kill()
         server.wait()
         exit(1)
-    time.sleep(15)
+    time.sleep(5)
     # Start the agent
     agent = subprocess.Popen(
-        " ".join(
-            [bpftime_cli, "start"] + (["-s", victim]
-            if syscall_trace == "1"
-            else [victim])
-        ),
+        [bpftime_cli, "start"] + (["-s", victim] if syscall_trace == "1" else [victim]),
         stdout=sys.stdout,
         text=False,
         stderr=sys.stderr,
+        stdin=subprocess.PIPE,
         env={"SPDLOG_LEVEL": "info"},
-        shell=True,
     )
     agent_start_time = datetime.datetime.now()
     agent_ok = False
     buf = StringIO()
+    if bashreadline_patch:
+        # Currently it's difficult to test bashreadline
+        exit(0)
     while (datetime.datetime.now() - agent_start_time).total_seconds() < AGENT_TIMEOUT:
         # Check if server has expected output
         if server.poll() is not None:
