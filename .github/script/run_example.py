@@ -25,8 +25,8 @@ def main():
         expected_str,
         bpftime_cli,
         syscall_trace,
-        *bashreadline_patch,
     ) = sys.argv[1:]
+    bashreadline_patch = "readline" in executable
     # Run the syscall-server
     server = subprocess.Popen(
         " ".join([bpftime_cli, "load", executable]),
