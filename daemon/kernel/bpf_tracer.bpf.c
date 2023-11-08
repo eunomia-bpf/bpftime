@@ -445,6 +445,8 @@ struct perf_event_args_t {
 	u64 orig_offset;
 	// Whether to send thie creation to bpftime_daemon?
 	int send_to_daemon;
+	void *path_buf_user;
+	struct perf_event_attr *attr_user;
 };
 
 struct {
@@ -469,6 +471,8 @@ int tracepoint__syscalls__sys_enter_perf_event_open(
 			    (void *)ctx->args[0]);
 	args.pid = (int)ctx->args[1];
 	args.cpu = (int)ctx->args[2];
+	args.attr_user = (struct perf_event_attr *)ctx->args[0];
+	args.path_buf_user = (void *)args.attr.uprobe_path;
 	bpf_probe_read_user_str(args.name_or_path, PATH_LENTH,
 				(const void *)args.attr.uprobe_path);
 	args.orig_offset = args.attr.probe_offset;
@@ -522,6 +526,11 @@ int tracepoint__syscalls__sys_exit_perf_event_open(
 		bpf_ringbuf_submit(event, 0);
 		bpf_printk("Accept perf event creation at program %s to daemon",
 			   ap->name_or_path);
+		// Revert changes
+		bpf_probe_write_user(ap->path_buf_user, ap->name_or_path,
+				     sizeof(ap->name_or_path));
+		bpf_probe_write_user(&ap->attr_user->probe_offset,
+				     &ap->orig_offset, sizeof(ap->orig_offset));
 	} else {
 		bpf_printk("Reject perf event creation at program %s to daemon",
 			   ap->name_or_path);
