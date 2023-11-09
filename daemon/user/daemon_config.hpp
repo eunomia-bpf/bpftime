@@ -34,7 +34,7 @@ struct daemon_config {
 	// should bpftime be involve
 	bool is_driving_bpftime = true;
 	// should trace and submit bpf related detail events
-	bool submit_bpf_events = true;
+	bool submit_bpf_events = false;
 	// specify whether uprobe should work similar to kernel uprobe and auto
 	// attach to the target process
 	bool enable_auto_attach = false;

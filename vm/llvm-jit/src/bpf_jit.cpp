@@ -42,6 +42,7 @@ extern "C" void __aeabi_unwind_cpp_pr1();
 
 ebpf_jit_fn bpf_jit_context::compile()
 {
+	spdlog::info("Compiling using LLJIT");
 	// Create a JIT builder
 	auto jit = ExitOnErr(LLJITBuilder().create());
 	auto &mainDylib = jit->getMainJITDylib();

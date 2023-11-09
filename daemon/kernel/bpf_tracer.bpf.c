@@ -334,14 +334,12 @@ static int process_bpf_syscall_exit(struct bpf_args_t *ap, int ret)
 						    .kernel_id = id };
 			set_bpf_fd_data(ret, &data);
 			bpf_printk("bpftime: bpf_link_create");
-			if (submit_bpf_events) {
-				bpf_printk("bpftime: Submitting link creation");
-				struct event *event =
-					get_ringbuf_sys_exit_bpf_event(ap, ret);
-				if (!event)
-					return 0;
-				bpf_ringbuf_submit(event, 0);
-			}
+			bpf_printk("bpftime: Submitting link creation");
+			struct event *event =
+				get_ringbuf_sys_exit_bpf_event(ap, ret);
+			if (!event)
+				return 0;
+			bpf_ringbuf_submit(event, 0);
 			break;
 		}
 		case BPF_BTF_LOAD: {
