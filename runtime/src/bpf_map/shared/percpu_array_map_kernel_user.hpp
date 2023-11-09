@@ -18,7 +18,7 @@ class percpu_array_map_kernel_user_impl {
 	bytes_vec value_data;
 
     public:
-	const static bool should_lock = true;
+	const static bool should_lock = false;
 	void *elem_lookup(const void *key);
 
 	long elem_update(const void *key, const void *value, uint64_t flags);

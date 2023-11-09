@@ -39,8 +39,8 @@ namespace bpftime
 // attach to replace or filter self define types
 bpf_perf_event_handler::bpf_perf_event_handler(
 	bpf_event_type type, uint64_t offset, int pid, const char *module_name,
-	boost::interprocess::managed_shared_memory &mem)
-	: type(type), offset(offset), pid(pid),
+	boost::interprocess::managed_shared_memory &mem, bool default_enabled)
+	: type(type), enabled(default_enabled), offset(offset), pid(pid),
 	  _module_name(char_allocator(mem.get_segment_manager()))
 {
 	this->_module_name = module_name;
@@ -59,6 +59,9 @@ bpf_perf_event_handler::bpf_perf_event_handler(
 		type = bpf_event_type::BPF_TYPE_UPROBE;
 	}
 	this->_module_name = module_name;
+	spdlog::info(
+		"Created uprobe/uretprobe perf event handler, module name {}, offset {:x}",
+		module_name, offset);
 }
 
 // create tracepoint

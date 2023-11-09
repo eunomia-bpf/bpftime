@@ -27,7 +27,7 @@ class hash_map_kernel_user_impl {
 	void init_map_fd();
 
     public:
-	const static bool should_lock = true;
+	const static bool should_lock = false;
 	hash_map_kernel_user_impl(managed_shared_memory &memory, int km_id);
 	~hash_map_kernel_user_impl();
 

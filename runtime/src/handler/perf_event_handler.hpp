@@ -92,16 +92,25 @@ using software_perf_event_weak_ptr = boost::interprocess::managed_weak_ptr<
 // perf event handler
 struct bpf_perf_event_handler {
 	bpf_event_type type;
+	mutable bool enabled = false;
 	int enable() const
 	{
+		enabled = true;
 		// TODO: implement enable logic.
 		// If This is a server, should inject the agent into the target
 		// process.
+
+		spdlog::info(
+			"Enabling perf event for module name: {}, offset {:x}",
+			_module_name.c_str(), offset);
 		return 0;
 	}
 	int disable() const
 	{
-		spdlog::debug("Disabling perf event, but nothing todo");
+		spdlog::info(
+			"Disabling perf event for module name: {}, offset {:x}",
+			_module_name.c_str(), offset);
+		enabled = false;
 		return 0;
 	}
 	uint64_t offset;
@@ -122,7 +131,8 @@ struct bpf_perf_event_handler {
 	// attach to replace or filter self define types
 	bpf_perf_event_handler(bpf_event_type type, uint64_t offset, int pid,
 			       const char *module_name,
-			       boost::interprocess::managed_shared_memory &mem);
+			       boost::interprocess::managed_shared_memory &mem,
+			       bool default_enabled = false);
 	// create uprobe/uretprobe with new perf event attr
 	bpf_perf_event_handler(bool is_retprobe, uint64_t offset, int pid,
 			       const char *module_name, size_t ref_ctr_off,

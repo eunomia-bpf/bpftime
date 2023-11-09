@@ -14,6 +14,27 @@ struct open_args_t {
 	int flags;
 };
 
+struct {
+	__uint(type, BPF_MAP_TYPE_HASH);
+	__uint(max_entries, 10240);
+	__type(key, u64);
+	__type(value, u32);
+} whitelist_hook_addr SEC(".maps");
+
+const volatile int enable_whitelist = 0;
+
+__always_inline int can_hook_uprobe_at(u64 addr)
+{
+	int ok = 0;
+	if (!enable_whitelist)
+		ok = 1;
+	else {
+		ok = bpf_map_lookup_elem(&whitelist_hook_addr, &addr) != NULL;
+	}
+	bpf_printk("Testing: addr=%llx, ok=%d", (unsigned long long)addr, ok);
+	return ok;
+}
+
 // track open syscall args
 struct {
 	__uint(type, BPF_MAP_TYPE_HASH);
@@ -313,14 +334,12 @@ static int process_bpf_syscall_exit(struct bpf_args_t *ap, int ret)
 						    .kernel_id = id };
 			set_bpf_fd_data(ret, &data);
 			bpf_printk("bpftime: bpf_link_create");
-			if (submit_bpf_events) {
-				bpf_printk("bpftime: Submitting link creation");
-				struct event *event =
-					get_ringbuf_sys_exit_bpf_event(ap, ret);
-				if (!event)
-					return 0;
-				bpf_ringbuf_submit(event, 0);
-			}
+			bpf_printk("bpftime: Submitting link creation");
+			struct event *event =
+				get_ringbuf_sys_exit_bpf_event(ap, ret);
+			if (!event)
+				return 0;
+			bpf_ringbuf_submit(event, 0);
 			break;
 		}
 		case BPF_BTF_LOAD: {
@@ -375,28 +394,38 @@ process_perf_event_open_enter(struct trace_event_raw_sys_enter *ctx)
 		return 0;
 	}
 	bpf_probe_read_user(&new_attr, sizeof(new_attr), attr);
+
 	if (new_attr.type == uprobe_perf_type) {
 		// found uprobe
 		if (enable_replace_uprobe) {
-			new_attr.probe_offset = 0;
-			long size = bpf_probe_read_user_str(
-				old_uprobe_path, sizeof(old_uprobe_path),
-				(void *)new_attr.uprobe_path);
-			if (size <= 0) {
-				// no uprobe path
+			if (can_hook_uprobe_at(new_attr.probe_offset)) {
+				u64 old_offset = new_attr.probe_offset;
+				new_attr.probe_offset = 0;
+				long size = bpf_probe_read_user_str(
+					old_uprobe_path,
+					sizeof(old_uprobe_path),
+					(void *)new_attr.uprobe_path);
+				if (size <= 0) {
+					// no uprobe path
+					return 0;
+				}
+				if (size > PATH_LENTH) {
+					size = PATH_LENTH;
+				}
+				bpf_probe_write_user(
+					(void *)new_attr.uprobe_path,
+					&new_uprobe_path, (size_t)size);
+				bpf_probe_write_user(attr, &new_attr,
+						     sizeof(new_attr));
+				// This probe creation request should be
+				// executed in userspace
+				bpf_printk(
+					"Send perf event at offset %lx to userspace",
+					old_offset);
+				return 1;
+			} else {
 				return 0;
 			}
-			if (size > PATH_LENTH) {
-				size = PATH_LENTH;
-			}
-			bpf_probe_write_user((void *)new_attr.uprobe_path,
-					     &new_uprobe_path, (size_t)size);
-			bpf_probe_write_user(attr, &new_attr, sizeof(new_attr));
-
-			char buf[64];
-			bpf_probe_read_user_str(buf, sizeof(buf),
-						(void *)new_attr.uprobe_path);
-			bpf_printk("Writting new uprobe path: %s", buf);
 		}
 		return 0;
 	}
@@ -410,6 +439,12 @@ struct perf_event_args_t {
 
 	// we may modify the offset and name, so we keep it here
 	char name_or_path[NAME_MAX];
+	// original offset, if we modified
+	u64 orig_offset;
+	// Whether to send thie creation to bpftime_daemon?
+	int send_to_daemon;
+	void *path_buf_user;
+	struct perf_event_attr *attr_user;
 };
 
 struct {
@@ -434,13 +469,20 @@ int tracepoint__syscalls__sys_enter_perf_event_open(
 			    (void *)ctx->args[0]);
 	args.pid = (int)ctx->args[1];
 	args.cpu = (int)ctx->args[2];
+	args.attr_user = (struct perf_event_attr *)ctx->args[0];
+	args.path_buf_user = (void *)args.attr.uprobe_path;
 	bpf_probe_read_user_str(args.name_or_path, PATH_LENTH,
 				(const void *)args.attr.uprobe_path);
+	args.orig_offset = args.attr.probe_offset;
 	bpf_printk("Received path: %s", args.name_or_path);
 	u64 pid_tgid = bpf_get_current_pid_tgid();
+	if (process_perf_event_open_enter(ctx) == 1) {
+		args.send_to_daemon = 1;
+	} else {
+		args.send_to_daemon = 0;
+	}
 	bpf_map_update_elem(&perf_event_open_param_start, &pid_tgid, &args, 0);
 
-	process_perf_event_open_enter(ctx);
 	return 0;
 }
 
@@ -460,25 +502,37 @@ int tracepoint__syscalls__sys_exit_perf_event_open(
 	if (!ap)
 		return 0; /* missed entry */
 
-	set_bpf_fd_data(ctx->ret, &data);
+	if (ap->send_to_daemon) {
+		set_bpf_fd_data(ctx->ret, &data);
 
-	/* event data */
-	event = fill_basic_event_info();
-	if (!event) {
-		return 0;
+		/* event data */
+		event = fill_basic_event_info();
+		if (!event) {
+			return 0;
+		}
+		event->type = SYS_PERF_EVENT_OPEN;
+
+		bpf_probe_read(&event->perf_event_data.attr,
+			       sizeof(event->perf_event_data.attr), &ap->attr);
+		event->perf_event_data.pid = ap->pid;
+		event->perf_event_data.cpu = ap->cpu;
+		event->perf_event_data.ret = ctx->ret;
+		bpf_probe_read(event->perf_event_data.name_or_path, PATH_LENTH,
+			       ap->name_or_path);
+
+		/* emit event */
+		bpf_ringbuf_submit(event, 0);
+		bpf_printk("Accept perf event creation at program %s to daemon",
+			   ap->name_or_path);
+		// Revert changes
+		bpf_probe_write_user(ap->path_buf_user, ap->name_or_path,
+				     sizeof(ap->name_or_path));
+		bpf_probe_write_user(&ap->attr_user->probe_offset,
+				     &ap->orig_offset, sizeof(ap->orig_offset));
+	} else {
+		bpf_printk("Reject perf event creation at program %s to daemon",
+			   ap->name_or_path);
 	}
-	event->type = SYS_PERF_EVENT_OPEN;
-
-	bpf_probe_read(&event->perf_event_data.attr,
-		       sizeof(event->perf_event_data.attr), &ap->attr);
-	event->perf_event_data.pid = ap->pid;
-	event->perf_event_data.cpu = ap->cpu;
-	event->perf_event_data.ret = ctx->ret;
-	bpf_probe_read(event->perf_event_data.name_or_path, PATH_LENTH,
-		       ap->name_or_path);
-
-	/* emit event */
-	bpf_ringbuf_submit(event, 0);
 cleanup:
 	bpf_map_delete_elem(&perf_event_open_param_start, &pid_tgid);
 	return 0;
@@ -613,7 +667,7 @@ int handle_exec(struct trace_event_raw_sched_process_exec *ctx)
 {
 	struct task_struct *task;
 	unsigned fname_off;
-	struct event e = {0};
+	struct event e = { 0 };
 	pid_t pid;
 	u64 ts;
 

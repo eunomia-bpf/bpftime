@@ -1,4 +1,9 @@
+#include "handler/perf_event_handler.hpp"
+#include "handler/prog_handler.hpp"
+#include "spdlog/spdlog.h"
 #include <handler/handler_manager.hpp>
+#include <variant>
+#include <algorithm>
 namespace bpftime
 {
 handler_manager::handler_manager(managed_shared_memory &mem,
@@ -30,7 +35,7 @@ std::size_t handler_manager::size() const
 }
 
 int handler_manager::set_handler(int fd, handler_variant &&handler,
-				  managed_shared_memory &memory)
+				 managed_shared_memory &memory)
 {
 	if (is_allocated(fd)) {
 		spdlog::error("set_handler failed for fd {} aleady exists", fd);
@@ -58,11 +63,34 @@ void handler_manager::clear_fd_at(int fd, managed_shared_memory &memory)
 	}
 	if (std::holds_alternative<bpf_map_handler>(handlers[fd])) {
 		std::get<bpf_map_handler>(handlers[fd]).map_free(memory);
+	} else if (std::holds_alternative<bpf_perf_event_handler>(
+			   handlers[fd])) {
+		// Clean attached programs..
+		spdlog::debug("Destroying perf event handler {}", fd);
+		for (size_t i = 0; i < handlers.size(); i++) {
+			auto &handler = handlers[i];
+			if (std::holds_alternative<bpf_prog_handler>(handler)) {
+				auto &prog_handler =
+					std::get<bpf_prog_handler>(handler);
+				auto &attach_fds = prog_handler.attach_fds;
+				auto new_tail =
+					std::remove(attach_fds.begin(),
+						    attach_fds.end(), fd);
+				if (new_tail != attach_fds.end()) {
+					spdlog::debug(
+						"Destroy attach of perf event {} to prog {}",
+						fd, i);
+					attach_fds.resize(new_tail -
+							  attach_fds.begin());
+				}
+			}
+		}
 	}
 	handlers[fd] = unused_handler();
 }
 
-int handler_manager::find_minimal_unused_idx() const {
+int handler_manager::find_minimal_unused_idx() const
+{
 	for (std::size_t i = 0; i < handlers.size(); i++) {
 		if (!is_allocated(i)) {
 			return i;

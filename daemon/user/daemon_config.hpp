@@ -1,8 +1,11 @@
 #ifndef BPFTIME_DAEMON_CONFIG_HPP
 #define BPFTIME_DAEMON_CONFIG_HPP
 
+#include <cstdint>
+#include <set>
 #include <unistd.h>
 #include <string>
+#include <vector>
 
 #define PATH_LENTH 255
 
@@ -31,13 +34,19 @@ struct daemon_config {
 	// should bpftime be involve
 	bool is_driving_bpftime = true;
 	// should trace and submit bpf related detail events
-	bool submit_bpf_events = true;
+	bool submit_bpf_events = false;
 	// specify whether uprobe should work similar to kernel uprobe and auto
 	// attach to the target process
 	bool enable_auto_attach = false;
 	// minimal duration of a process to be traced by uprobe
 	// skip short lived process to reduce overhead
 	int duration_ms = 1000;
+	// Only uprobes in the list will be run in userspace
+	std::set<uint64_t> whitelist_uprobes;
+	bool whitelist_enabled() const
+	{
+		return !whitelist_uprobes.empty();
+	}
 };
 
 #endif // BPFTIME_DAEMON_CONFIG_HPP

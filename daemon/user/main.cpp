@@ -1,11 +1,13 @@
 // SPDX-License-Identifier: (LGPL-2.1 OR BSD-2-Clause)
 #include <argp.h>
-#include <signal.h>
+#include <cstdint>
+#include <cstdlib>
+#include <iostream>
+#include <ostream>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include "daemon.hpp"
-
 using namespace bpftime;
 
 static struct daemon_config env = { .uid = static_cast<uid_t>(-1) };
@@ -19,6 +21,8 @@ static const struct argp_option opts[] = {
 	{ "uid", 'u', "UID", 0, "User ID to trace" },
 	{ "open", 'o', "OPEN", 0, "Show open events" },
 	{ "verbose", 'v', NULL, 0, "Verbose debug output" },
+	{ "whitelist-uprobe", 'w', "UPROBE_ADDR", 0,
+	  "Whitelist uprobe function addresses" },
 	{},
 };
 
@@ -26,7 +30,7 @@ static error_t parse_arg(int key, char *arg, struct argp_state *state)
 {
 	static int pos_args;
 	long int pid, uid;
-
+	uint64_t addr;
 	switch (key) {
 	case 'v':
 		env.verbose = true;
@@ -51,6 +55,16 @@ static error_t parse_arg(int key, char *arg, struct argp_state *state)
 			argp_usage(state);
 		}
 		env.uid = uid;
+		break;
+	case 'w':
+		errno = 0;
+		addr = strtoul(arg, nullptr, 0);
+		if (errno) {
+			std::cerr << "Invalid function address: " << arg
+				  << std::endl;
+			argp_usage(state);
+		}
+		env.whitelist_uprobes.insert(addr);
 		break;
 	case ARGP_KEY_ARG:
 		if (pos_args++) {
@@ -79,6 +93,5 @@ int main(int argc, char **argv)
 	err = argp_parse(&argp, argc, argv, 0, NULL, NULL);
 	if (err)
 		return err;
-
 	return start_daemon(env);
 }

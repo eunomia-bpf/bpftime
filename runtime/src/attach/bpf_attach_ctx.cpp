@@ -189,7 +189,30 @@ int bpf_attach_ctx::init_attach_ctx_from_handlers(
 				return res;
 			}
 			for (auto v : prog_handler.attach_fds) {
-				handler_prog_fds[v].emplace_back(i, prog);
+				if (std::holds_alternative<
+					    bpf_perf_event_handler>(
+					    manager->get_handler(v))) {
+					const auto &perf_handler =
+						std::get<bpf_perf_event_handler>(
+							manager->get_handler(
+								v));
+					if (perf_handler.enabled) {
+						handler_prog_fds[v].emplace_back(
+							i, prog);
+						spdlog::debug(
+							"Program fd {} attached to perf event handler {}",
+							i, v);
+					} else {
+						spdlog::info(
+							"Ignore perf {} attached by prog fd {}. It's not enabled",
+							v, i);
+					}
+
+				} else {
+					spdlog::warn(
+						"Program fd {} attached to a non-perf event handler {}",
+						i, v);
+				}
 			}
 			spdlog::debug("Load prog fd={} name={}", i,
 				      prog_handler.name);
@@ -207,13 +230,6 @@ int bpf_attach_ctx::init_attach_ctx_from_handlers(
 			spdlog::error("Unsupported handler type for handler {}",
 				      handler.index());
 			return -1;
-		}
-	}
-	for (const auto &[k, v] : handler_prog_fds) {
-		for (auto y : v) {
-			spdlog::debug(
-				"Program fd {} attached to perf event handler {}",
-				y.first, k);
 		}
 	}
 	// Second, we create bpf perf event handlers
@@ -257,6 +273,11 @@ int bpf_attach_ctx::init_attach_ctx_from_handlers(
 						"Expected that a certain function could only be attached one filter, at perf event {}",
 						i);
 					return -E2BIG;
+				} else if (progs.empty()) {
+					spdlog::error(
+						"Perf event {} doesn't have any attached & enabled programs",
+						i);
+					return -ENOENT;
 				}
 				err = attach_manager->attach_filter_at(
 					func_addr,
@@ -285,6 +306,11 @@ int bpf_attach_ctx::init_attach_ctx_from_handlers(
 						"Expected that a certain function could only be attached one replace, at perf event {}",
 						i);
 					return -E2BIG;
+				} else if (progs.empty()) {
+					spdlog::error(
+						"Perf event {} doesn't have any attached & enabled programs",
+						i);
+					return -ENOENT;
 				}
 				err = attach_manager->attach_replace_at(
 					func_addr,
