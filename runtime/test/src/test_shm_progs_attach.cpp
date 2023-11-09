@@ -18,8 +18,6 @@
 using namespace boost::interprocess;
 using namespace bpftime;
 
-
-
 const char *HANDLER_NAME = "my_handler";
 const char *SHM_NAME = "my_shm_attach_test";
 
@@ -64,9 +62,11 @@ void attach_uprobe(bpftime::handler_manager &manager_ref,
 		   bpf_attach_ctx &ctx)
 {
 	std::uint64_t offset = 0;
-	void *module_base_self = ctx.get_attach_manager().get_module_base_addr("");
+	void *module_base_self =
+		ctx.get_attach_manager().get_module_base_addr("");
 	void *my_uprobe_function_addr =
-		ctx.get_attach_manager().find_function_addr_by_name("my_uprobe_function");
+		ctx.get_attach_manager().find_function_addr_by_name(
+			"my_uprobe_function");
 	offset = (uintptr_t)my_uprobe_function_addr -
 		 (uintptr_t)module_base_self;
 	printf("my_uprobe_function_addr: %p, offset: %lu\n",
@@ -84,15 +84,17 @@ void attach_replace(bpftime::handler_manager &manager_ref,
 		    managed_shared_memory &segment, bpftime_prog *prog,
 		    bpf_attach_ctx &ctx)
 {
-	void *module_base_self = ctx.get_attach_manager().get_module_base_addr("");
+	void *module_base_self =
+		ctx.get_attach_manager().get_module_base_addr("");
 	void *my_function_addr = (void *)my_function;
 	std::uint64_t offset =
 		(uintptr_t)my_function_addr - (uintptr_t)module_base_self;
 	manager_ref.set_handler(
 		0,
-		bpf_prog_handler(segment, prog->get_insns().data(),
-				 prog->get_insns().size(), prog->prog_name(),
-				 (int)bpftime::bpf_prog_type::BPF_PROG_TYPE_UNSPEC),
+		bpf_prog_handler(
+			segment, prog->get_insns().data(),
+			prog->get_insns().size(), prog->prog_name(),
+			(int)bpftime::bpf_prog_type::BPF_PROG_TYPE_UNSPEC),
 		segment);
 	auto &prog_handler = std::get<bpf_prog_handler>(manager_ref[0]);
 	// the attach fd is 3
@@ -100,9 +102,8 @@ void attach_replace(bpftime::handler_manager &manager_ref,
 	// attach replace
 	manager_ref.set_handler(
 		3,
-		bpf_perf_event_handler(
-			bpf_event_type::BPF_TYPE_REPLACE,
-			offset, -1, "", segment),
+		bpf_perf_event_handler(bpf_event_type::BPF_TYPE_REPLACE, offset,
+				       -1, "", segment, true),
 		segment);
 }
 

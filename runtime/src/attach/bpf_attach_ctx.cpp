@@ -301,6 +301,11 @@ int bpf_attach_ctx::init_attach_ctx_from_handlers(
 						"Expected that a certain function could only be attached one replace, at perf event {}",
 						i);
 					return -E2BIG;
+				} else if (progs.empty()) {
+					spdlog::error(
+						"Perf event {} doesn't have any attached & enabled programs",
+						i);
+					return -ENOENT;
 				}
 				err = attach_manager->attach_replace_at(
 					func_addr,
