@@ -5,8 +5,11 @@
 #endif
 
 using namespace bpftime;
-extern "C" uint64_t __bpftime_func_to_replace(uint64_t a, uint64_t b)
+__attribute__((__noinline__)) extern "C" uint64_t
+__bpftime_func_to_replace(uint64_t a, uint64_t b)
 {
+	// Forbid inline
+	asm("");
 	return (a << 32) | b;
 }
 TEST_CASE("Test attaching replace programs and revert")

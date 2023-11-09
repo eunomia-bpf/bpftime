@@ -12,8 +12,11 @@
 
 using namespace bpftime;
 
-extern "C" uint64_t __test_simple_add(uint64_t a, uint64_t b)
+__attribute__((__noinline__)) extern "C" uint64_t __test_simple_add(uint64_t a,
+								    uint64_t b)
 {
+	// Forbid inline
+	asm("");
 	return a * 2 + b;
 }
 

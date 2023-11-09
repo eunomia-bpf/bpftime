@@ -76,6 +76,8 @@ int frida_attach_manager::attach_at(void *func_addr, callback_variant &&cb)
 					       (attach_type)cb.index(),
 					       interceptor))
 			      .first;
+		spdlog::debug("Created frida attach entry for func addr {:x}",
+			      (uintptr_t)func_addr);
 	} else if (itr->second->has_replace_or_filter()) {
 		spdlog::error(
 			"Function {} was already attached with replace or filter, cannot attach anything else");

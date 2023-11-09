@@ -7,8 +7,10 @@
 using namespace bpftime;
 
 extern "C" uint64_t bpftime_set_retval(uint64_t retval);
-extern "C" uint64_t __bpftime_func_to_filter(uint64_t a, uint64_t b)
-{
+__attribute__((__noinline__)) extern "C" uint64_t
+__bpftime_func_to_filter(uint64_t a, uint64_t b)
+{ // Forbid inline
+	asm("");
 	return (a << 32) | b;
 }
 
