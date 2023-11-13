@@ -72,10 +72,16 @@ int bpftime_prog::bpftime_prog_exec(void *memory, size_t memory_size,
 {
 	uint64_t val = 0;
 	int res = 0;
-
+	spdlog::debug(
+		"Calling bpftime_prog::bpftime_prog_exec, memory={:x}, memory_size={}, return_val={:x}, prog_name={}",
+		(uintptr_t)memory, memory_size, (uintptr_t)return_val,
+		this->name);
 	if (jitted) {
+		spdlog::debug("Directly call jitted function at {:x}",
+			      (uintptr_t)fn);
 		val = fn(memory, memory_size);
 	} else {
+		spdlog::debug("Running using ebpf_exec");
 		res = ebpf_exec(vm, memory, memory_size, &val);
 		if (res < 0) {
 			spdlog::error("ebpf_exec returned error: {}", res);

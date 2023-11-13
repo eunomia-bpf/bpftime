@@ -17,7 +17,7 @@ class array_map_kernel_user_impl {
 	void init_map_fd();
 
     public:
-	const static bool should_lock = true;
+	const static bool should_lock = false;
 	array_map_kernel_user_impl(boost::interprocess::managed_shared_memory &memory,
 		       int km_id);
 	~array_map_kernel_user_impl();

@@ -52,8 +52,9 @@ void array_map_kernel_user_impl::init_map_fd()
 	// 	return;
 	// }
 	size_t mmap_sz = bpf_map_mmap_sz(_value_size, _max_entries);
-	spdlog::debug("mmap shared array map, fd={}, mmap_sz={}", map_fd,
-		      mmap_sz);
+	spdlog::debug(
+		"mmap shared array map, fd={}, mmap_sz={}, name={}, value_size={}, flags={}",
+		map_fd, mmap_sz, info.name, info.value_size, info.map_flags);
 	mmap_ptr = mmap(NULL, mmap_sz, PROT_READ | PROT_WRITE,
 			MAP_SHARED | MAP_ANONYMOUS, -1, 0);
 	if (mmap_ptr == MAP_FAILED) {
@@ -70,8 +71,9 @@ void array_map_kernel_user_impl::init_map_fd()
 	void *mmaped = mmap(mmap_ptr, mmap_sz, prot, MAP_SHARED | MAP_FIXED,
 			    map_fd, 0);
 	if (mmaped == MAP_FAILED) {
-		spdlog::error("Failed to mmap for kernel map id {}, err={}",
-			      kernel_map_id, errno);
+		spdlog::error(
+			"Failed to re-mmap for kernel map id {}, err={}, prot={}",
+			kernel_map_id, errno, prot);
 		return;
 	}
 	mmap_ptr = mmaped;
@@ -88,13 +90,20 @@ void *array_map_kernel_user_impl::elem_lookup(const void *key)
 	if (map_fd < 0) {
 		init_map_fd();
 	}
+	spdlog::debug("Run lookup of shared array map, key={:x}",
+		      (uintptr_t)key);
 	if (mmap_ptr != nullptr) {
 		auto key_val = *(uint32_t *)key;
+
+		spdlog::debug("mmap handled, key={}", key_val);
 		if (key_val >= _max_entries) {
 			errno = ENOENT;
+			spdlog::debug("Returned ENOENT");
 			return nullptr;
 		}
-		return &((uint8_t *)mmap_ptr)[key_val * _value_size];
+		auto result = &((uint8_t *)mmap_ptr)[key_val * _value_size];
+		spdlog::debug("Returned value addr: {:x}", (uintptr_t)result);
+		return result;
 	}
 	// fallback to read kernel maps
 	int res = bpf_map_lookup_elem(map_fd, key, value_data.data());

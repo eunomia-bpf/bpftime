@@ -331,12 +331,13 @@ static llvm::Expected<int> emitCondJmpWithDstAndSrc(
 static inline llvm::Expected<int>
 emitExtFuncCall(llvm::IRBuilder<> &builder, const ebpf_inst &inst,
 		const std::map<std::string, llvm::Function *> &extFunc,
-		llvm::Value **regs, llvm::FunctionType *helperFuncTy)
+		llvm::Value **regs, llvm::FunctionType *helperFuncTy,
+		uint16_t pc)
 {
 	auto funcNameToCall = ext_func_sym(inst.imm);
 	if (auto itr = extFunc.find(funcNameToCall); itr != extFunc.end()) {
-		spdlog::debug("Emitting ext func call to {} name {}", inst.imm,
-			      funcNameToCall);
+		spdlog::debug("Emitting ext func call to {} name {} at pc {}",
+			      inst.imm, funcNameToCall, pc);
 		auto callInst = builder.CreateCall(
 			helperFuncTy, itr->second,
 			{
