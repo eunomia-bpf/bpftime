@@ -3,10 +3,10 @@
 #include <bpf/bpf_helpers.h>
 #include <bpf/bpf_tracing.h>
 
-SEC("uprobe/benchmark/test:__benchmark_test_function3")
-int BPF_UPROBE(__benchmark_test_function, const char *a, int b, uint64_t c)
+SEC("uprobe/benchmark/test:__benchmark_test_function2")
+int BPF_PROG(bpf_benchmark_test_function)
 {
-	return b + c;
+	return 0;
 }
 
 char LICENSE[] SEC("license") = "GPL";
