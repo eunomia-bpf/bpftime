@@ -75,7 +75,7 @@ ebpf_jit_fn bpf_jit_context::compile()
 			spdlog::debug("Defining LDDW helper {} with addr {:x}",
 				      name, (uintptr_t)func);
 			auto sym =
-				JITEvaluatedSymbol::fromPointer(vm->map_by_fd);
+				JITEvaluatedSymbol::fromPointer(func);
 			sym.setFlags(JITSymbolFlags::Callable |
 				     JITSymbolFlags::Exported);
 			lddwSyms.try_emplace(jit->mangleAndIntern(name), sym);

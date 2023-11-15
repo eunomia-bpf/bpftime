@@ -624,6 +624,8 @@ bpf_jit_context::generateModule(const LLJIT &jit,
 				      val, (uint64_t)inst.imm,
 				      (uint64_t)nextInst.imm);
 			if (inst.src_reg == 0) {
+				spdlog::debug("Emit lddw helper 0 at pc {}",
+					      pc);
 				builder.CreateStore(builder.getInt64(val),
 						    regs[inst.dst_reg]);
 			} else if (inst.src_reg == 1) {
@@ -632,6 +634,9 @@ bpf_jit_context::generateModule(const LLJIT &jit,
 				    itr != lddwHelper.end())
 
 				{
+					spdlog::debug(
+						"Emit lddw helper 1 (map_by_fd) at pc {}, imm={}",
+						pc, inst.imm);
 					builder.CreateStore(
 						builder.CreateCall(
 							lddwHelperWithUint32,
@@ -668,6 +673,10 @@ bpf_jit_context::generateModule(const LLJIT &jit,
 						builder.CreateStore(
 							finalRet,
 							regs[inst.dst_reg]);
+						spdlog::debug(
+							"Emit lddw helper 2 (map_by_fd + map_val) at pc {}, imm1={}, imm2={}",
+							pc, inst.imm,
+							nextInst.imm);
 					} else {
 						return llvm::make_error<
 							llvm::StringError>(
@@ -692,6 +701,9 @@ bpf_jit_context::generateModule(const LLJIT &jit,
 							{ builder.getInt32(
 								inst.imm) }),
 						regs[inst.dst_reg]);
+					spdlog::debug(
+						"Emit lddw helper 3 (var_addr) at pc {}, imm1={}",
+						pc, inst.imm);
 				} else {
 					return llvm::make_error<
 						llvm::StringError>(
@@ -709,6 +721,9 @@ bpf_jit_context::generateModule(const LLJIT &jit,
 							{ builder.getInt32(
 								inst.imm) }),
 						regs[inst.dst_reg]);
+					spdlog::debug(
+						"Emit lddw helper 4 (code_addr) at pc {}, imm1={}",
+						pc, inst.imm);
 				} else {
 					return llvm::make_error<
 						llvm::StringError>(
@@ -726,6 +741,9 @@ bpf_jit_context::generateModule(const LLJIT &jit,
 							{ builder.getInt32(
 								inst.imm) }),
 						regs[inst.dst_reg]);
+					spdlog::debug(
+						"Emit lddw helper 4 (map_by_idx) at pc {}, imm1={}",
+						pc, inst.imm);
 				} else {
 					return llvm::make_error<
 						llvm::StringError>(
@@ -755,6 +773,10 @@ bpf_jit_context::generateModule(const LLJIT &jit,
 						builder.CreateStore(
 							finalRet,
 							regs[inst.dst_reg]);
+						spdlog::debug(
+							"Emit lddw helper 6 (map_by_idx + map_val) at pc {}, imm1={}, imm2={}",
+							pc, inst.imm,
+							nextInst.imm);
 					} else {
 						return llvm::make_error<
 							llvm::StringError>(
@@ -832,7 +854,7 @@ bpf_jit_context::generateModule(const LLJIT &jit,
 			} else {
 				if (auto exp = emitExtFuncCall(
 					    builder, inst, extFunc, &regs[0],
-					    helperFuncTy);
+					    helperFuncTy, pc);
 				    !exp) {
 					return exp.takeError();
 				}

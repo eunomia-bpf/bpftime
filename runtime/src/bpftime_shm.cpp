@@ -384,10 +384,12 @@ const uint64_t INVALID_MAP_PTR = ((uint64_t)0 - 1);
 
 extern "C" uint64_t map_ptr_by_fd(uint32_t fd)
 {
+	spdlog::debug("Call map_ptr_by_fd with fd={}", fd);
 	if (!shm_holder.global_shared_memory.get_manager() ||
 	    !shm_holder.global_shared_memory.is_map_fd(fd)) {
 		errno = ENOENT;
-		spdlog::error("Expected fd {} to be a map fd", fd);
+		spdlog::error("Expected fd {} to be a map fd (map_ptr_by_fd)",
+			      fd);
 		// Here we just ignore the wrong maps
 		return INVALID_MAP_PTR;
 	}
@@ -397,10 +399,12 @@ extern "C" uint64_t map_ptr_by_fd(uint32_t fd)
 
 extern "C" uint64_t map_val(uint64_t map_ptr)
 {
+	spdlog::debug("Call map_val with map_ptr={:x}", map_ptr);
 	int fd = (int)(map_ptr >> 32);
 	if (!shm_holder.global_shared_memory.get_manager() ||
 	    !shm_holder.global_shared_memory.is_map_fd(fd)) {
-		spdlog::error("Expected fd {} to be a map fd", fd);
+		spdlog::error("Expected fd {} to be a map fd (map_val call)",
+			      fd);
 		// here we just ignore the wrong maps
 		errno = ENOENT;
 		return 0;

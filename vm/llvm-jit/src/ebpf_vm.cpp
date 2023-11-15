@@ -272,6 +272,8 @@ int ebpf_exec(const struct ebpf_vm *vm, void *mem, size_t mem_len,
 {
 	bpf_jit_context *jit_context;
 	if (vm->jitted_function) {
+		spdlog::debug("LLJIT: called jitted function {:x}",
+			      (uintptr_t)vm->jitted_function);
 		// has jit yet
 		auto ret = vm->jitted_function(mem,
 					       static_cast<uint64_t>(mem_len));
@@ -284,6 +286,7 @@ int ebpf_exec(const struct ebpf_vm *vm, void *mem, size_t mem_len,
 	if (!func) {
 		return -1;
 	}
+	spdlog::debug("LLJIT: compiled function: {:x}", (uintptr_t)func);
 	// after compile, run
 	return ebpf_exec(vm, mem, mem_len, bpf_return_value);
 }
