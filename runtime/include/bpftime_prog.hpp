@@ -39,6 +39,7 @@ class bpftime_prog {
 	struct ebpf_vm *vm;
 
 	bool jitted;
+
 	// used in jit
 	ebpf_jit_fn fn;
 	std::vector<struct ebpf_inst> insns;
@@ -47,6 +48,9 @@ class bpftime_prog {
 
 	// ffi ctx
 	struct bpftime_ffi_ctx *ffi_ctx;
+
+	// kernel runtime
+
 };
 
 } // namespace bpftime

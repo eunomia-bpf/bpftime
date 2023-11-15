@@ -148,7 +148,8 @@ enum class bpf_prog_type {
 
 extern const shm_open_type global_shm_open_type;
 
-bpftime::agent_config &bpftime_get_agent_config();
+const bpftime::agent_config &bpftime_get_agent_config();
+void bpftime_set_agent_config(bpftime::agent_config &cfg);
 } // namespace bpftime
 
 extern "C" {

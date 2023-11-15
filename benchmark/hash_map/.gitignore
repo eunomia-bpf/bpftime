@@ -5,8 +5,6 @@ package.json
 *.skel.yaml
 package.yaml
 ecli
-bootstrap
 .output
-opensnoop
-victim
-dump*
+test
+uprobe

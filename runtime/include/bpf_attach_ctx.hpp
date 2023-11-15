@@ -59,11 +59,9 @@ class bpf_attach_ctx {
 
 	// create bpf_attach_ctx from handler_manager in shared memory
 	int init_attach_ctx_from_handlers(const handler_manager *manager,
-					  agent_config &config);
+					  const agent_config &config);
 	// create bpf_attach_ctx from handler_manager in global_shared_memory
-	int init_attach_ctx_from_handlers(agent_config &config);
-	// attach progs with fds to the fds in manager
-	int attach_progs_in_manager(const handler_manager *manager);
+	int init_attach_ctx_from_handlers(const agent_config &config);
 
 	// // find the function by name in current process
 	// // must be called after init attach_ctx

@@ -29,6 +29,8 @@ target_include_directories(libbpftime_daemon PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}
     ${CMAKE_CURRENT_SOURCE_DIR}/../vm/include
     ${CMAKE_CURRENT_SOURCE_DIR}/../runtime/include
+    ${CMAKE_CURRENT_SOURCE_DIR}/../third_party/libbpf/include
+    ${CMAKE_CURRENT_SOURCE_DIR}/../third_party/libbpf/include/uapi
 )
 target_link_libraries(libbpftime_daemon PRIVATE
     ${LIBBPF_LIBRARIES}

@@ -33,10 +33,12 @@ class bpftime_shm {
 
     public:
 	// Get the configuration object
-	struct agent_config &get_agent_config()
+	const struct agent_config &get_agent_config()
 	{
 		return *agent_config;
 	}
+	// Set the configuration object
+	void set_agent_config(const struct agent_config &config);
 	// Check whether a certain pid was already equipped with syscall tracer
 	// Using a set stored in the shared memory
 	bool check_syscall_trace_setup(int pid);

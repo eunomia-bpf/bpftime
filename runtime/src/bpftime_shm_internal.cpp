@@ -563,6 +563,7 @@ bool bpftime_shm::is_perf_event_handler_fd(int fd) const
 	auto &handler = get_handler(fd);
 	return std::holds_alternative<bpf_perf_event_handler>(handler);
 }
+
 bool bpftime_shm::is_software_perf_event_handler_fd(int fd) const
 {
 	if (!is_perf_event_handler_fd(fd))
@@ -571,9 +572,23 @@ bool bpftime_shm::is_software_perf_event_handler_fd(int fd) const
 	return hd.type == bpf_event_type::PERF_TYPE_SOFTWARE;
 }
 
-bpftime::agent_config &bpftime_get_agent_config()
+void bpftime_shm::set_agent_config(const struct agent_config &config)
+{
+	if (agent_config == nullptr) {
+		spdlog::error("agent_config is nullptr, set error");
+		return;
+	}
+	*agent_config = config;
+}
+
+const bpftime::agent_config &bpftime_get_agent_config()
 {
 	return shm_holder.global_shared_memory.get_agent_config();
+}
+
+void bpftime_set_agent_config(bpftime::agent_config &cfg)
+{
+	shm_holder.global_shared_memory.set_agent_config(cfg);
 }
 
 std::optional<void *>

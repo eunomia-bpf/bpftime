@@ -1,7 +1,7 @@
 # Building and run bpftime
 
 ## Install Dependencies
-> `gcc` >= 12.0.0  `clang` >= 16.0.0
+
 Install the required packages:
 
 ```bash
@@ -10,10 +10,10 @@ sudo apt install -y --no-install-recommends \
         binutils-dev libyaml-cpp-dev llvm
 git submodule update --init --recursive
 ```
----
-We've tested on Ubuntu 23.04.
 
-On Ubuntu 20.04 ,you should manually switch to gcc-12.
+We've tested on Ubuntu 23.04. The recommended `gcc` >= 12.0.0  `clang` >= 16.0.0
+
+On Ubuntu 20.04, you may need to manually switch to gcc-12.
 
 ### Build and install cli tool
 
