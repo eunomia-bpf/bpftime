@@ -2,9 +2,15 @@
 
 [![Build and Test VM](https://github.com/eunomia-bpf/bpftime/actions/workflows/test-vm.yml/badge.svg)](https://github.com/eunomia-bpf/bpftime/actions/workflows/test-vm.yml)
 [![Build and test runtime](https://github.com/eunomia-bpf/bpftime/actions/workflows/test-runtime.yml/badge.svg)](https://github.com/eunomia-bpf/bpftime/actions/workflows/test-runtime.yml)
-[![DOI](https://zenodo.org/badge/676866666.svg)](https://zenodo.org/badge/latestdoi/676866666)
+[![DOI](https://zenodo.org/badge/676866666.svg)](https://doi.org/10.48550/arXiv.2311.07923)
 
 `bpftime`, a full-featured, high-performance eBPF runtime designed to operate in userspace. It offers fast Uprobe and Syscall hook capabilities: Userspace uprobe can be **10x faster than kernel uprobe!** and can programmatically **hook all syscalls of a process** safely and efficiently.
+
+📦 [Features](#key-features) \
+🔨 [Quick Start](#quick-start) \
+⌨️ [Linux Plumbers 23 talk](https://lpc.events/event/17/contributions/1639/) \
+📖 [Slides](https://github.com/eunomia-bpf/bpftime/tree/master/documents/userspace-ebpf-bpftime-lpc.pdf) \
+📚 [Arxiv preprint](https://arxiv.org/abs/2311.07923)
 
 ## Key Features
 
@@ -101,15 +107,29 @@ Example using libbpf:
 
 More bcc/libbpf-tools examples can be found in [example/libbpf-tools](https://github.com/eunomia-bpf/bpftime/tree/master/example/libbpf-tools).
 
-You can also run bpftime with `bpftrace`, we've test it on [this commit](https://github.com/iovisor/bpftrace/commit/75aca47dd8e1d642ff31c9d3ce330e0c616e5b96). More details about how to run bpftrace in usespace, can be found in [https://github.com/eunomia-bpf/bpftime/tree/master/example/bpftrace](example/bpftrace).
+You can also run bpftime with `bpftrace`, we've test it on [this commit](https://github.com/iovisor/bpftrace/commit/75aca47dd8e1d642ff31c9d3ce330e0c616e5b96). More details about how to run bpftrace in usespace, can be found in [example/bpftrace](https://github.com/eunomia-bpf/bpftime/tree/master/example/bpftrace).
 
 > ⚠️ **Note**: `bpftime` is actively under development, and it's not yet recommended for production use. See our [roadmap](#roadmap) for details. We'd love to hear your feedback and suggestions! Please feel free to open an issue or [Contact us](#contact).
 
 ### **How it Works**
 
-Left: kernel eBPF | Right: userspace bpftime
+bpftime supports two modes:
+
+#### Running in userspace only
+
+Left: original kernel eBPF | Right: bpftime
 
 ![How it works](https://github.com/eunomia-bpf/bpftime/raw/master/documents/bpftime.png?raw=true)
+
+In this mode, bpftime can run eBPF programs in userspace without kernel. It relies on a userspace verifier to ensure the safety of eBPF programs.
+
+#### Run with kernel eBPF
+
+![documents/bpftime-kernel.png](https://github.com/eunomia-bpf/bpftime/raw/master/documents/bpftime-kernel.png?raw=true)
+
+In this mode, bpftime can run together with kernel eBPF. It can load eBPF programs from kernel, and using kernel eBPF maps to cooperate with kernel eBPF programs like kprobes and network filters.
+
+#### Instrumentation implementation
 
 Current hook implementation is based on binary rewriting and the underly technique is inspired by:
 
@@ -118,7 +138,7 @@ Current hook implementation is based on binary rewriting and the underly techniq
 
 The hook can be easily replaced with other DBI methods or frameworks, or add more hook mechanisms in the future.
 
-see [documents/how-it-works.md](https://github.com/eunomia-bpf/bpftime/tree/master/documents/how-it-works.md) for details.
+see [arxiv preprint: https://arxiv.org/abs/2311.07923](https://arxiv.org/abs/2311.07923) for details.
 
 ### **Performance Benchmarks**
 
@@ -135,7 +155,7 @@ It can be attached to functions in running process just like the kernel uprobe d
 
 How is the performance of LLVM JIT/AOT compared to other eBPF userspace runtimes, native code or wasm runtimes?
 
-![LLVM jit benchmark](https://github.com/eunomia-bpf/bpf-benchmark/raw/main/example-output/merged_execution_times.png?raw=true)
+![LLVM jit benchmark](https://github.com/eunomia-bpf/bpf-benchmark/raw/main/example-output/benchmark-11-16.png?raw=true)
 
 Across all tests, the LLVM JIT for bpftime consistently showcased superior performance. Both demonstrated high efficiency in integer computations (as seen in log2_int), complex mathematical operations (as observed in prime), and memory operations (evident in memcpy and strcmp). While they lead in performance across the board, each runtime exhibits unique strengths and weaknesses. These insights can be invaluable for users when choosing the most appropriate runtime for their specific use-cases.
 

@@ -2,15 +2,29 @@
 
 ## avalibale map types
 
-- `BPF_MAP_TYPE_HASH`
-- `BPF_MAP_TYPE_ARRAY`
+Userspace eBPF shared memory map types:
 
-see [../runtime/src/maps.cpp](../runtime/src/maps.cpp) for more details.
+- BPF_MAP_TYPE_HASH
+- BPF_MAP_TYPE_ARRAY
+- BPF_MAP_TYPE_RINGBUF
+- BPF_MAP_TYPE_PERF_EVENT_ARRAY
+- BPF_MAP_TYPE_PERCPU_ARRAY
+- BPF_MAP_TYPE_PERCPU_HASH
+
+User-kernel shared maps:
+
+- BPF_MAP_TYPE_HASH
+- BPF_MAP_TYPE_ARRAY
+- BPF_MAP_TYPE_PERCPU_ARRAY
+- BPF_MAP_TYPE_PERF_EVENT_ARRAY
 
 ## avaliable program types
 
-- UPROBE
-- SYSCALL TRACEPOINT
+- tracepoint:raw_syscalls:sys_enter
+- tracepoint:syscalls:sys_exit_*
+- tracepoint:syscalls:sys_enter_*
+- uretprobe:*
+- uprobe:*
 
 ## available helpers
 
@@ -35,3 +49,8 @@ see [../runtime/src/maps.cpp](../runtime/src/maps.cpp) for more details.
 - `bpf_set_retval`: Helper function for setting the return value of a function.
 - `bpf_probe_read_str`: Helper function for reading a null-terminated string from a user address.
 - `bpf_get_stack`: Helper function for retrieving the current kernel stack.
+
+## Others
+
+- Support kernel or userspace verifier
+- Test JIT with bpf_conformance
