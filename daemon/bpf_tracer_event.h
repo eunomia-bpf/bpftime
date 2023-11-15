@@ -59,12 +59,12 @@ struct event {
 
 		struct {
 			int ret;
-			struct perf_event_attr attr;
 			int pid;
 			int cpu;
 
 			// uprobe data
 			char name_or_path[NAME_MAX];
+			struct perf_event_attr attr;
 		} perf_event_data;
 
 		struct {

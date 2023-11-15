@@ -384,7 +384,9 @@ cleanup:
 
 // uprobe path buffer for bpf_probe_read_user_str
 char old_uprobe_path[PATH_LENTH] = "\0";
-struct perf_event_attr new_attr = {};
+// avoid type mismatch in userspace program
+// struct perf_event_attr new_attr = {}; will result in compile error
+char new_attr_buffer[sizeof(struct perf_event_attr)] = "\0";
 
 static __always_inline int
 process_perf_event_open_enter(struct trace_event_raw_sys_enter *ctx)
@@ -393,18 +395,18 @@ process_perf_event_open_enter(struct trace_event_raw_sys_enter *ctx)
 	if (!attr) {
 		return 0;
 	}
-	bpf_probe_read_user(&new_attr, sizeof(new_attr), attr);
-
-	if (new_attr.type == uprobe_perf_type) {
+	bpf_probe_read_user(&new_attr_buffer, sizeof(new_attr_buffer), attr);
+	struct perf_event_attr* new_attr_pointer = &new_attr_buffer;
+	if (new_attr_pointer->type == uprobe_perf_type) {
 		// found uprobe
 		if (enable_replace_uprobe) {
-			if (can_hook_uprobe_at(new_attr.probe_offset)) {
-				u64 old_offset = new_attr.probe_offset;
-				new_attr.probe_offset = 0;
+			if (can_hook_uprobe_at(new_attr_pointer->probe_offset)) {
+				u64 old_offset = new_attr_pointer->probe_offset;
+				new_attr_pointer->probe_offset = 0;
 				long size = bpf_probe_read_user_str(
 					old_uprobe_path,
 					sizeof(old_uprobe_path),
-					(void *)new_attr.uprobe_path);
+					(void *)new_attr_pointer->uprobe_path);
 				if (size <= 0) {
 					// no uprobe path
 					return 0;
@@ -413,10 +415,10 @@ process_perf_event_open_enter(struct trace_event_raw_sys_enter *ctx)
 					size = PATH_LENTH;
 				}
 				bpf_probe_write_user(
-					(void *)new_attr.uprobe_path,
+					(void *)new_attr_pointer->uprobe_path,
 					&new_uprobe_path, (size_t)size);
-				bpf_probe_write_user(attr, &new_attr,
-						     sizeof(new_attr));
+				bpf_probe_write_user(attr, new_attr_pointer,
+						     sizeof(*new_attr_pointer));
 				// This probe creation request should be
 				// executed in userspace
 				bpf_printk(

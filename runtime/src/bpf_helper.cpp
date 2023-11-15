@@ -73,13 +73,15 @@ uint64_t bpftime_ktime_get_coarse_ns(uint64_t, uint64_t, uint64_t, uint64_t,
 uint64_t bpftime_get_current_pid_tgid(uint64_t, uint64_t, uint64_t, uint64_t,
 				      uint64_t)
 {
-	return ((uint64_t)getpid() << 32) | getpid();
+	static int pid = getpid();
+	return ((uint64_t)pid << 32) | pid;
 }
 
 uint64_t bpf_get_current_uid_gid(uint64_t, uint64_t, uint64_t, uint64_t,
 				 uint64_t)
 {
-	return (((uint64_t)getgid()) << 32) | getuid();
+	static int gid = getgid();
+	return (((uint64_t)gid) << 32) | gid;
 }
 
 uint64_t bpftime_ktime_get_ns(uint64_t, uint64_t, uint64_t, uint64_t, uint64_t)

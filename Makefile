@@ -50,7 +50,9 @@ build: ## build the package
 	cd tools/cli-rs && cargo build
 
 release: ## build the package
-	cmake -Bbuild  -DBPFTIME_ENABLE_UNIT_TESTING=0 -DCMAKE_BUILD_TYPE:STRING=Release
+	cmake -Bbuild  -DBPFTIME_ENABLE_UNIT_TESTING=0 \
+				   -DCMAKE_BUILD_TYPE:STRING=Release \
+				   -DBPFTIME_ENABLE_LTO=1
 	cmake --build build --config Release --target install
 	cd tools/cli-rs && cargo build --release
 

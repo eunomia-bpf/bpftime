@@ -64,6 +64,7 @@ function(set_project_warnings project_name)
         -Wno-unused-function
         -Wno-unused-parameter
         -Wno-unused-variable
+        -Wno-missing-field-initializers
   )
 
   if (BPFTIME_WARNINGS_AS_ERRORS)

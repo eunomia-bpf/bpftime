@@ -51,7 +51,7 @@ if(BPFTIME_ENABLE_LTO)
   endif()
 endif()
 
-option(BPFTIME_ENABLE_CCACHE "Enable the usage of Ccache, in order to speed up rebuild times." ON)
+option(BPFTIME_ENABLE_CCACHE "Enable the usage of Ccache, in order to speed up rebuild times." OFF)
 find_program(CCACHE_FOUND ccache)
 if(CCACHE_FOUND)
   set_property(GLOBAL PROPERTY RULE_LAUNCH_COMPILE ccache)

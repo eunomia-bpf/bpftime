@@ -21,7 +21,7 @@
 namespace bpftime
 {
 
-static int load_prog_and_helpers(bpftime_prog *prog, agent_config &config)
+static int load_prog_and_helpers(bpftime_prog *prog, const agent_config &config)
 {
 	if (config.enable_kernel_helper_group) {
 		bpftime_helper_group::get_kernel_utils_helper_group()
@@ -38,7 +38,7 @@ static int load_prog_and_helpers(bpftime_prog *prog, agent_config &config)
 	return prog->bpftime_prog_load(config.jit_enabled);
 }
 
-int bpf_attach_ctx::init_attach_ctx_from_handlers(agent_config &config)
+int bpf_attach_ctx::init_attach_ctx_from_handlers(const agent_config &config)
 {
 	const handler_manager *manager =
 		shm_holder.global_shared_memory.get_manager();
@@ -162,7 +162,7 @@ int64_t bpf_attach_ctx::run_syscall_hooker(int64_t sys_nr, int64_t arg1,
 
 // create a attach context and progs from handlers
 int bpf_attach_ctx::init_attach_ctx_from_handlers(
-	const handler_manager *manager, agent_config &config)
+	const handler_manager *manager, const agent_config &config)
 {
 	// Maintain perf_event fd -> [(prog fd,bpftime_prog*)]
 	std::map<int, std::vector<std::pair<int, bpftime_prog *> > >

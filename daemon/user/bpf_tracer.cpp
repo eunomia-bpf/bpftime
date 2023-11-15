@@ -144,9 +144,12 @@ int bpftime::start_daemon(struct daemon_config env)
 	/* initialize global data (filtering options) */
 	obj->rodata->target_pid = env.pid;
 	obj->rodata->enable_replace_prog = env.enable_replace_prog;
-// strncpy(obj->rodata->new_uprobe_path, env.new_uprobe_path,
-// PATH_LENTH);
-#warning  FIXME: currently using `/a` as the replacing executable path to uprobe perf event in the kernel, since long strings (such as bpftime_daemon it self) may break userspace memory. Find a better way to solve this in the future
+
+	// strncpy(obj->rodata->new_uprobe_path, env.new_uprobe_path, PATH_LENTH);
+	// TODO: currently using `/a` as the replacing executable path to uprobe
+	// perf event in the kernel, since long strings (such as bpftime_daemon it self)
+	// may break userspace memory.
+	// Find a better way to solve this in the future
 	strncpy(obj->rodata->new_uprobe_path, "/a", PATH_LENTH);
 
 	obj->rodata->enable_replace_uprobe = env.enable_replace_uprobe;
