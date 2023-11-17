@@ -139,7 +139,7 @@ Current hook implementation is based on binary rewriting and the underly techniq
 
 The hook can be easily replaced with other DBI methods or frameworks, or add more hook mechanisms in the future.
 
-see [arxiv preprint: https://arxiv.org/abs/2311.07923](https://arxiv.org/abs/2311.07923) for details.
+see our draft arxiv paper [bpftime: userspace eBPF Runtime for Uprobe, Syscall and Kernel-User Interactions](https://arxiv.org/abs/2311.07923) for details.
 
 ### **Performance Benchmarks**
 
