@@ -73,8 +73,11 @@ uint64_t bpftime_ktime_get_coarse_ns(uint64_t, uint64_t, uint64_t, uint64_t,
 uint64_t bpftime_get_current_pid_tgid(uint64_t, uint64_t, uint64_t, uint64_t,
 				      uint64_t)
 {
-	static int pid = getpid();
-	return ((uint64_t)pid << 32) | pid;
+	static int tgid = getpid();
+	static thread_local int tid = -1;
+	if (tid == -1)
+		tid = gettid();
+	return ((uint64_t)tgid << 32) | tid;
 }
 
 uint64_t bpf_get_current_uid_gid(uint64_t, uint64_t, uint64_t, uint64_t,
