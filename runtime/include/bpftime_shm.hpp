@@ -163,6 +163,11 @@ void bpftime_destroy_global_shm();
 // remove the global shared memory from system
 void bpftime_remove_global_shm();
 
+// enable memory protect, e.g. mpk
+void bpftime_protect_enable();
+// disable memory protect
+void bpftime_protect_disable();
+
 // import the global shared memory from json file
 int bpftime_import_global_shm_from_json(const char *filename);
 // export the global shared memory to json file

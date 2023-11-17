@@ -8,14 +8,14 @@
             "name": "(gdb) runtime",
             "type": "cppdbg",
             "request": "launch",
-            "program": "${workspaceFolder}/example/malloc/test",
+            "program": "${workspaceFolder}/example/malloc/victim",
             "args": [],
             "stopAtEntry": true,
-            "cwd": "${workspaceFolder}/build/runtime/test/",
+            "cwd": "${workspaceFolder}/",
             "environment": [
                 {
                     "name": "LD_PRELOAD",
-                    "value": "/home/yunwei/bpftime/build/runtime/agent/libbpftime-agent.so"
+                    "value": "${workspaceFolder}/build/runtime/agent/libbpftime-agent.so"
                 },
                 // {
                 //     "name": "LD_PRELOAD",

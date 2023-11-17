@@ -6,7 +6,7 @@
 
 `bpftime`, a full-featured, high-performance eBPF runtime designed to operate in userspace. It offers fast Uprobe and Syscall hook capabilities: Userspace uprobe can be **10x faster than kernel uprobe!** and can programmatically **hook all syscalls of a process** safely and efficiently.
 
-📦 [Features](#key-features) \
+📦 [Key Features](#key-features) \
 🔨 [Quick Start](#quick-start) \
 ⌨️ [Linux Plumbers 23 talk](https://lpc.events/event/17/contributions/1639/) \
 📖 [Slides](https://github.com/eunomia-bpf/bpftime/tree/master/documents/userspace-ebpf-bpftime-lpc.pdf) \
@@ -144,12 +144,12 @@ see [arxiv preprint: https://arxiv.org/abs/2311.07923](https://arxiv.org/abs/231
 
 How is the performance of `userspace uprobe` compared to `kernel uprobes`?
 
-| Probe/Tracepoint Types | Kernel (ns)  | Userspace (ns) | Insn Count |
-|------------------------|-------------:|---------------:|---------------:|
-| Uprobe                 | 3224.172760  | 314.569110     | 4    |
-| Uretprobe              | 3996.799580  | 381.270270     | 2    |
-| Syscall Tracepoint     | 151.82801    | 232.57691      | 4    |
-| Embedding runtime      | Not avaliable |  110.008430   | 4    |
+| Probe/Tracepoint Types | Kernel (ns)  | Userspace (ns) |
+|------------------------|-------------:|---------------:|
+| Uprobe                 | 3224.172760  | 314.569110     |
+| Uretprobe              | 3996.799580  | 381.270270     |
+| Syscall Tracepoint     | 151.82801    | 232.57691      |
+| Embedding runtime      | Not avaliable |  110.008430   |
 
 It can be attached to functions in running process just like the kernel uprobe does.
 
