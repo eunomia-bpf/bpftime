@@ -1,4 +1,4 @@
-# bpftime: Userspace eBPF runtime for fast Uprobe & Syscall Hook
+# bpftime: Userspace eBPF runtime for fast Uprobe & Syscall Hook & Extensions
 
 [![Build and Test VM](https://github.com/eunomia-bpf/bpftime/actions/workflows/test-vm.yml/badge.svg)](https://github.com/eunomia-bpf/bpftime/actions/workflows/test-vm.yml)
 [![Build and test runtime](https://github.com/eunomia-bpf/bpftime/actions/workflows/test-runtime.yml/badge.svg)](https://github.com/eunomia-bpf/bpftime/actions/workflows/test-runtime.yml)
