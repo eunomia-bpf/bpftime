@@ -7,6 +7,7 @@
 #include <sys/epoll.h>
 #include <unistd.h>
 #include <variant>
+#include <sys/mman.h>
 
 static bool global_shm_initialized = false;
 
@@ -432,6 +433,28 @@ void bpftime_shm::close_fd(int fd)
 	}
 }
 
+#if BPFTIME_ENABLE_MPK
+void bpftime_shm::enable_mpk()
+{
+	if (manager == nullptr|| !is_mpk_init) {
+		return;
+	}
+	if (pkey_set(pkey, PKEY_DISABLE_WRITE) == -1) {
+		spdlog::error("pkey_set read only failed");
+	}
+}
+
+void bpftime_shm::disable_mpk()
+{
+	if (manager == nullptr || !is_mpk_init) {
+		return;
+	}
+	if (pkey_set(pkey, 0) == -1) {
+		spdlog::error("pkey_set disable failed");
+	}
+}
+#endif
+
 bool bpftime_shm::is_exist_fake_fd(int fd) const
 {
 	if (manager == nullptr || fd < 0 ||
@@ -518,6 +541,23 @@ bpftime_shm::bpftime_shm(const char *shm_name, shm_open_type type)
 			"NOT creating global shm. This is only for testing purpose.");
 		return;
 	}
+
+#if BPFTIME_ENABLE_MPK
+	// init mpk key
+	pkey = pkey_alloc(0, PKEY_DISABLE_WRITE);
+	if (pkey == -1) {
+		spdlog::error("pkey_alloc failed");
+		return;
+	}
+
+	// protect shm segment
+	if (pkey_mprotect(segment.get_address(), segment.get_size(),
+			  PROT_READ | PROT_WRITE, pkey) == -1) {
+		spdlog::error("pkey_mprotect failed");
+		return;
+	}
+	is_mpk_init = true;
+#endif
 }
 
 bpftime_shm::bpftime_shm(bpftime::shm_open_type type)

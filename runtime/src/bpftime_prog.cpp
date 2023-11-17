@@ -72,6 +72,8 @@ int bpftime_prog::bpftime_prog_exec(void *memory, size_t memory_size,
 {
 	uint64_t val = 0;
 	int res = 0;
+	// set share memory read and write able
+	bpftime_protect_disable();
 	spdlog::debug(
 		"Calling bpftime_prog::bpftime_prog_exec, memory={:x}, memory_size={}, return_val={:x}, prog_name={}",
 		(uintptr_t)memory, memory_size, (uintptr_t)return_val,
@@ -88,6 +90,8 @@ int bpftime_prog::bpftime_prog_exec(void *memory, size_t memory_size,
 		}
 	}
 	*return_val = val;
+	// set share memory read only
+	bpftime_protect_enable();
 	return res;
 }
 

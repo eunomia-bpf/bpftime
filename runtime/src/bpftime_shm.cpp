@@ -79,6 +79,7 @@ long bpftime_map_delete_elem(int fd, const void *key)
 {
 	return shm_holder.global_shared_memory.bpf_delete_elem(fd, key, true);
 }
+
 int bpftime_map_get_next_key(int fd, const void *key, void *next_key)
 {
 	return shm_holder.global_shared_memory.bpf_map_get_next_key(
@@ -154,6 +155,18 @@ int bpftime_map_get_info(int fd, bpftime::bpf_map_attr *out_attr,
 int bpftime_is_ringbuf_map(int fd)
 {
 	return shm_holder.global_shared_memory.is_ringbuf_map_fd(fd);
+}
+
+void bpftime_protect_enable() {
+#if BPFTIME_ENABLE_MPK
+	return shm_holder.global_shared_memory.enable_mpk();
+#endif
+}
+
+void bpftime_protect_disable() {
+#if BPFTIME_ENABLE_MPK
+	return shm_holder.global_shared_memory.disable_mpk();
+#endif
 }
 
 int bpftime_is_map_fd(int fd)

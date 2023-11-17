@@ -95,6 +95,7 @@ bool bpf_attach_ctx::check_syscall_trace_setup(int pid)
 {
 	return shm_holder.global_shared_memory.check_syscall_trace_setup(pid);
 }
+
 // Set whether a certain pid was already equipped with syscall tracer
 // Using a set stored in the shared memory
 void bpf_attach_ctx::set_syscall_trace_setup(int pid, bool whether)
@@ -519,4 +520,5 @@ bpf_attach_ctx::bpf_attach_ctx(void)
 	spdlog::debug("Initialzing frida gum");
 	current_id = CURRENT_ID_OFFSET;
 }
+
 } // namespace bpftime

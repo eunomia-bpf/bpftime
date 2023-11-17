@@ -31,6 +31,12 @@ class bpftime_shm {
 	// Configuration for the agent. e.g, which helpers are enabled
 	struct bpftime::agent_config *agent_config = nullptr;
 
+#if BPFTIME_ENABLE_MPK
+	// mpk key for protect shm
+	bool is_mpk_init = false;
+	int pkey = 0;
+#endif
+
     public:
 	// Get the configuration object
 	const struct agent_config &get_agent_config()
@@ -125,6 +131,11 @@ class bpftime_shm {
 	// The fake fd should be closed by the caller.
 	void close_fd(int fd);
 	bool is_exist_fake_fd(int fd) const;
+
+#if BPFTIME_ENABLE_MPK
+	void enable_mpk();
+	void disable_mpk();
+#endif
 
 	// initialize the shared memory globally
 	bpftime_shm(bpftime::shm_open_type type);
