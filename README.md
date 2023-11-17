@@ -8,6 +8,7 @@
 
 📦 [Features](#key-features) \
 🔨 [Quick Start](#quick-start) \
+🔌 [Examples & Use Cases](#examples-use-cases) \
 ⌨️ [Linux Plumbers 23 talk](https://lpc.events/event/17/contributions/1639/) \
 📖 [Slides](https://github.com/eunomia-bpf/bpftime/tree/master/documents/userspace-ebpf-bpftime-lpc.pdf) \
 📚 [Arxiv preprint](https://arxiv.org/abs/2311.07923)
@@ -92,11 +93,9 @@ $ sudo example/malloc/malloc
 
 See [documents/usage.md](https://github.com/eunomia-bpf/bpftime/tree/master/documents/usage.md) for more details.
 
-## In-Depth
+## Examples & Use Cases
 
-### **Examples & Use Cases**
-
-Example using libbpf:
+### Tracing the system:
 
 - `tracing userspace functions with uprobe`: Attach uprobe, uretprobe or all syscall tracepoints(currently x86 only) eBPF programs to a process or a group of processes:
   - [`malloc`](https://github.com/eunomia-bpf/bpftime/tree/master/example/malloc): count the malloc calls in libc by pid. demonstrate how to use the userspace `uprobe` with basic `hashmap`.
@@ -110,6 +109,8 @@ More bcc/libbpf-tools examples can be found in [example/libbpf-tools](https://gi
 You can also run bpftime with `bpftrace`, we've test it on [this commit](https://github.com/iovisor/bpftrace/commit/75aca47dd8e1d642ff31c9d3ce330e0c616e5b96). More details about how to run bpftrace in usespace, can be found in [example/bpftrace](https://github.com/eunomia-bpf/bpftime/tree/master/example/bpftrace).
 
 > ⚠️ **Note**: `bpftime` is actively under development, and it's not yet recommended for production use. See our [roadmap](#roadmap) for details. We'd love to hear your feedback and suggestions! Please feel free to open an issue or [Contact us](#contact).
+
+## In-Depth
 
 ### **How it Works**
 
@@ -198,9 +199,12 @@ Stay tuned for more developments from this promising project! You can find `bpft
 
 This project is licensed under the MIT License.
 
-## Sponsor
-This project is jointly supported by the [CAS PLCT Lab](https://plctlab.github.io/) and [Prof. Qi Li](https://sites.google.com/site/qili2012/) from Tsinghua University [NISL Lab](https://netsec.ccert.edu.cn/en/).
-
 ## Contact
 
 <yunwei356@gmail.com>
+
+## Sponsors
+
+- [PLCT Lab](https://plctlab.github.io/) from [ISCAS](http://english.is.cas.cn/au/)
+- [Prof. Qi Li](https://sites.google.com/site/qili2012/) from Tsinghua University [NISL Lab](https://netsec.ccert.edu.cn/en/)
+- [Prof. Wenbo Shen](https://wenboshen.org/) from ZJU
