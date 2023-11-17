@@ -8,7 +8,7 @@
 
 📦 [Features](#key-features) \
 🔨 [Quick Start](#quick-start) \
-🔌 [Examples & Use Cases](#examples-use-cases) \
+🔌 [Examples & Use Cases](#examples--use-cases) \
 ⌨️ [Linux Plumbers 23 talk](https://lpc.events/event/17/contributions/1639/) \
 📖 [Slides](https://github.com/eunomia-bpf/bpftime/tree/master/documents/userspace-ebpf-bpftime-lpc.pdf) \
 📚 [Arxiv preprint](https://arxiv.org/abs/2311.07923)
