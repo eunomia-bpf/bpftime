@@ -34,5 +34,6 @@ jobs:
         -DCMAKE_BUILD_TYPE:STRING=Release \
         -DBPFTIME_ENABLE_LTO=0 -DBPFTIME_ENABLE_MPK=1
         cmake --build build --config Release
+
     - name: test runtime with mpk
       run:  make unit-test
