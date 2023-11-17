@@ -1,3 +1,8 @@
+/* SPDX-License-Identifier: GPL-2.0 OR BSD-3-Clause
+ *
+ * Copyright (c) 2022, eunomia-bpf org
+ * All rights reserved.
+ */
 #ifndef BPFTIME_JSON_EXPORTER_HPP
 #define BPFTIME_JSON_EXPORTER_HPP
 

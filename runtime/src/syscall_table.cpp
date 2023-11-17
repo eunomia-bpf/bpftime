@@ -1,3 +1,8 @@
+/* SPDX-License-Identifier: GPL-2.0 OR BSD-3-Clause
+ *
+ * Copyright (c) 2022, eunomia-bpf org
+ * All rights reserved.
+ */
 #include "syscall_table.hpp"
 #include "spdlog/spdlog.h"
 #include <filesystem>

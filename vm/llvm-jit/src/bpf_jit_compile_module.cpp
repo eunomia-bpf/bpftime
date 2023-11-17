@@ -1,3 +1,8 @@
+/* SPDX-License-Identifier: GPL-2.0 OR BSD-3-Clause
+ *
+ * Copyright (c) 2022, eunomia-bpf org
+ * All rights reserved.
+ */
 #include "llvm_bpf_jit.h"
 #include "llvm_jit_context.h"
 #include "ebpf_inst.h"
