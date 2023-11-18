@@ -15,7 +15,7 @@
 
 ## Key Features
 
-- **Uprobe and Syscall hooks based on binary rewriting**: Run eBPF programs in userspace, attaching them to Uprobes and Syscall tracepoints: **No mannual instrumentation or restart required!**. It can `trace`, `replace` or `patch` the execution of a function, `hook`, `filter` or `redirect` all syscalls of a process safely, and efficiently with an eBPF userspace runtime.
+- **Uprobe and Syscall hooks based on binary rewriting**: Run eBPF programs in userspace, attaching them to Uprobes and Syscall tracepoints: **No manual instrumentation or restart required!**. It can `trace`, `replace` or `patch` the execution of a function, `hook`, `filter` or `redirect` all syscalls of a process safely, and efficiently with an eBPF userspace runtime.
 - **Performance**: Experience up to a 10x speedup in Uprobe overhead compared to kernel uprobe and uretprobe.
 - **Interprocess eBPF Maps**: Implement userspace eBPF maps in shared userspace memory for summary aggregation or control plane communication.
 - **Compatibility**: use existing eBPF toolchains like clang and libbpf to develop userspace eBPF without any modifications. Supporting CO-RE via BTF, and offering userspace host function access.
@@ -139,7 +139,7 @@ Current hook implementation is based on binary rewriting and the underly techniq
 
 The hook can be easily replaced with other DBI methods or frameworks, or add more hook mechanisms in the future.
 
-see our draft arxiv paper [bpftime: userspace eBPF Runtime for Uprobe, Syscall and Kernel-User Interactions](https://arxiv.org/abs/2311.07923) for details.
+See our draft arxiv paper [bpftime: userspace eBPF Runtime for Uprobe, Syscall and Kernel-User Interactions](https://arxiv.org/abs/2311.07923) for details.
 
 ### **Performance Benchmarks**
 
@@ -176,7 +176,7 @@ Refer to [documents/available-features.md](https://github.com/eunomia-bpf/bpftim
 
 ## Build and test
 
-see [documents/build-and-test.md](https://github.com/eunomia-bpf/bpftime/tree/master/documents/build-and-test.md) for details.
+See [documents/build-and-test.md](https://github.com/eunomia-bpf/bpftime/tree/master/documents/build-and-test.md) for details.
 
 ## Roadmap
 
