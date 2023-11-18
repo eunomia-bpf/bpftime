@@ -31,7 +31,7 @@ jobs:
       run: |
         make clean
         cmake -Bbuild -DBPFTIME_ENABLE_UNIT_TESTING=1 -DBPFTIME_ENABLE_MPK=1
-	      cmake --build build --config Debug -DBPFTIME_ENABLE_MPK=1
+        cmake --build build --config Debug -DBPFTIME_ENABLE_MPK=1
         cmake --build build
 
     - name: test runtime with mpk
