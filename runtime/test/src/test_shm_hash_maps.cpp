@@ -1,3 +1,8 @@
+/* SPDX-License-Identifier: MIT
+ *
+ * Copyright (c) 2022, eunomia-bpf org
+ * All rights reserved.
+ */
 #include <cstdlib>
 #include "bpftime_handler.hpp"
 #include <boost/interprocess/creation_tags.hpp>

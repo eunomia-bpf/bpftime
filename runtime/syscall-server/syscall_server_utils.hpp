@@ -1,3 +1,8 @@
+/* SPDX-License-Identifier: MIT
+ *
+ * Copyright (c) 2022, eunomia-bpf org
+ * All rights reserved.
+ */
 #ifndef _SYSCALL_SERVER_UTILS_HPP
 #define _SYSCALL_SERVER_UTILS_HPP
 

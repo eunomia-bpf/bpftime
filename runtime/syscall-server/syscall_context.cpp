@@ -1,3 +1,8 @@
+/* SPDX-License-Identifier: MIT
+ *
+ * Copyright (c) 2022, eunomia-bpf org
+ * All rights reserved.
+ */
 #include "syscall_context.hpp"
 #include "bpftime_shm.hpp"
 #include "handler/perf_event_handler.hpp"

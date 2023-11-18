@@ -1,3 +1,8 @@
+/* SPDX-License-Identifier: MIT
+ *
+ * Copyright (c) 2022, eunomia-bpf org
+ * All rights reserved.
+ */
 #ifndef _HASHMAP_HPP
 #define _HASHMAP_HPP
 #include <boost/container_hash/hash_fwd.hpp>
@@ -7,6 +12,7 @@
 #include <bpf_map/map_common_def.hpp>
 #include <boost/unordered/unordered_map.hpp>
 #include <boost/functional/hash.hpp>
+
 namespace bpftime
 {
 

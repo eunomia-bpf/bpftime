@@ -1,8 +1,14 @@
+/* SPDX-License-Identifier: MIT
+ *
+ * Copyright (c) 2022, eunomia-bpf org
+ * All rights reserved.
+ */
 #ifndef _PERF_EVENT_ARRAY_HPP
 #define _PERF_EVENT_ARRAY_HPP
 #include <cstdint>
 #include <boost/interprocess/managed_shared_memory.hpp>
 #include <boost/interprocess/containers/vector.hpp>
+
 namespace bpftime
 {
 

@@ -1,9 +1,14 @@
-
+/* SPDX-License-Identifier: MIT
+ *
+ * Copyright (c) 2022, eunomia-bpf org
+ * All rights reserved.
+ */
 static void *(*bpf_map_lookup_elem)(void *map, const void *key) = (void *)1;
 static long (*bpf_map_update_elem)(void *map, const void *key,
 				   const void *value,
 				   unsigned long flags) = (void *)2;
 static long (*bpf_map_delete_elem)(void *map, const void *key) = (void *)3;
+
 int bpf_main()
 {
 	void *MAP_ID = (void *)0;

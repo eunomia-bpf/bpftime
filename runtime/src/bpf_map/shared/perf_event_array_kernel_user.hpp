@@ -1,9 +1,15 @@
+/* SPDX-License-Identifier: MIT
+ *
+ * Copyright (c) 2022, eunomia-bpf org
+ * All rights reserved.
+ */
 #ifndef _BPFTIME_PERF_EVENT_ARRAY_KERNEL_USER
 #define _BPFTIME_PERF_EVENT_ARRAY_KERNEL_USER
 #include <boost/interprocess/managed_shared_memory.hpp>
 #include <linux/perf_event.h>
 #include <pthread.h>
 #include <vector>
+
 namespace bpftime
 {
 

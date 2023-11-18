@@ -1,3 +1,8 @@
+/* SPDX-License-Identifier: MIT
+ *
+ * Copyright (c) 2022, eunomia-bpf org
+ * All rights reserved.
+ */
 #ifndef _MAP_COMMON_DEF_HPP
 #define _MAP_COMMON_DEF_HPP
 #include "spdlog/spdlog.h"

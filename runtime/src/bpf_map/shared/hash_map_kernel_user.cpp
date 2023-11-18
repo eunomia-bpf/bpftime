@@ -1,3 +1,8 @@
+/* SPDX-License-Identifier: MIT
+ *
+ * Copyright (c) 2022, eunomia-bpf org
+ * All rights reserved.
+ */
 #include "spdlog/spdlog.h"
 #include <bpf_map/shared/hash_map_kernel_user.hpp>
 #include <unistd.h>

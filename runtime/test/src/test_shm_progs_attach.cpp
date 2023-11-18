@@ -1,3 +1,8 @@
+/* SPDX-License-Identifier: MIT
+ *
+ * Copyright (c) 2022, eunomia-bpf org
+ * All rights reserved.
+ */
 #include "bpf_attach_ctx.hpp"
 #include "bpftime_ffi.hpp"
 #include "bpftime_shm.hpp"

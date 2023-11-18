@@ -1,3 +1,8 @@
+/* SPDX-License-Identifier: MIT
+ *
+ * Copyright (c) 2022, eunomia-bpf org
+ * All rights reserved.
+ */
 #include "bpf/bpf.h"
 #include "bpf/libbpf_common.h"
 #include "bpftool/libbpf/include/uapi/linux/bpf.h"
