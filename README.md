@@ -200,12 +200,25 @@ Stay tuned for more developments from this promising project! You can find `bpft
 
 This project is licensed under the MIT License.
 
-## Contact
+## Contact and citations
 
-<yunwei356@gmail.com>
+Have any questions or suggestions on future development? Free free to open an issue or contact 
+<yunwei356@gmail.com> !
 
-## Sponsors
+```txt
+@misc{zheng2023bpftime,
+      title={bpftime: userspace eBPF Runtime for Uprobe, Syscall and Kernel-User Interactions}, 
+      author={Yusheng Zheng and Tong Yu and Yiwei Yang and Yanpeng Hu and XiaoZheng Lai and Andrew Quinn},
+      year={2023},
+      eprint={2311.07923},
+      archivePrefix={arXiv},
+      primaryClass={cs.OS}
+}
+```
 
-- [PLCT Lab](https://plctlab.github.io/) from [ISCAS](http://english.is.cas.cn/au/)
-- [Prof. Qi Li](https://sites.google.com/site/qili2012/) from Tsinghua University [NISL Lab](https://netsec.ccert.edu.cn/en/)
-- [Prof. Wenbo Shen](https://wenboshen.org/) from ZJU
+## Acknowledgement
+
+eunomia-bpf community is sponsored by [PLCT Lab](https://plctlab.github.io/) from [ISCAS](http://english.is.cas.cn/au/).
+
+Thanks for other sponsors and discussions help building this project: [Prof. Xiaozheng lai](https://www2.scut.edu.cn/cs/2017/0129/c22285a327654/page.htm) from SCUT, [Prof lijun chen](http://www.xiyou.edu.cn/info/2394/67845.htm) from XUPT, 
+[Prof. Qi Li](https://sites.google.com/site/qili2012/) from THU [NISL Lab](https://netsec.ccert.edu.cn/en/), [Prof. Wenbo Shen](https://wenboshen.org/) from ZJU, and Linux eBPF maintainers.
