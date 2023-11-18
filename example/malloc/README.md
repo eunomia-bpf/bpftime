@@ -66,5 +66,5 @@ LD_PRELOAD=build/runtime/syscall-server/libbpftime-syscall-server.so example/mal
 client
 
 ```sh
-LD_PRELOAD=build/runtime/agent/libbpftime-agent.so example/malloc/test
+LD_PRELOAD=build/runtime/agent/libbpftime-agent.so example/malloc/victim
 ```
