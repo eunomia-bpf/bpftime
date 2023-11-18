@@ -93,13 +93,13 @@ Note: you need to config bpftime to:
 in one console, start userspace sslsniff
 
 ```sh
-sudo LD_PRELOAD=build/runtime/syscall-server/libbpftime-syscall-server.so example/sslsniff/sslsniff
+sudo BPFTIME_USE_JIT=true LD_PRELOAD=build/runtime/syscall-server/libbpftime-syscall-server.so example/sslsniff/sslsniff
 ```
 
 in another console, restart nginx
 
 ```sh
-sudo LD_PRELOAD=build/runtime/agent/libbpftime-agent.so nginx -c nginx.conf -p benchmark/ssl-nginx
+sudo BPFTIME_USE_JIT=true LD_PRELOAD=build/runtime/agent/libbpftime-agent.so nginx -c nginx.conf -p benchmark/ssl-nginx
 # or sudo LD_PRELOAD=build/runtime/agent/libbpftime-agent.so nginx -c nginx.conf -p benchmark/ssl-nginx
 ```
 

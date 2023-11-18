@@ -17,7 +17,7 @@ class array_map_impl {
 	uint32_t _max_entries;
 
     public:
-	const static bool should_lock = true;
+	const static bool should_lock = false;
 	array_map_impl(boost::interprocess::managed_shared_memory &memory,
 		       uint32_t value_size, uint32_t max_entries);
 

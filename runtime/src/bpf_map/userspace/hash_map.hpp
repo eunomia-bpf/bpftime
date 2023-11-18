@@ -36,7 +36,7 @@ class hash_map_impl {
 	bytes_vec value_vec;
 
     public:
-	const static bool should_lock = true;
+	const static bool should_lock = false;
 	hash_map_impl(managed_shared_memory &memory, uint32_t key_size,
 		      uint32_t value_size);
 

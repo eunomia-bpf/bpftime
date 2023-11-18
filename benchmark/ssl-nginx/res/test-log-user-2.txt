@@ -1,0 +1,56 @@
+Running 10s test @ https://127.0.0.1:4043/index.html
+  4 threads and 512 connections
+  Thread Stats   Avg      Stdev     Max   +/- Stdev
+    Latency    24.56ms   12.15ms 119.77ms   75.50%
+    Req/Sec     3.72k     1.34k    8.37k    75.73%
+  141241 requests in 10.10s, 37.04MB read
+Requests/sec:  13985.15
+Transfer/sec:      3.67MB
+Running 10s test @ https://127.0.0.1:4043/data/example1k.txt
+  4 threads and 512 connections
+  Thread Stats   Avg      Stdev     Max   +/- Stdev
+    Latency    41.76ms   49.08ms 682.16ms   96.71%
+    Req/Sec     3.55k     0.95k    5.28k    70.24%
+  132419 requests in 10.03s, 162.02MB read
+Requests/sec:  13199.36
+Transfer/sec:     16.15MB
+Running 10s test @ https://127.0.0.1:4043/data/example2k.txt
+  4 threads and 512 connections
+  Thread Stats   Avg      Stdev     Max   +/- Stdev
+    Latency    49.02ms   56.41ms 661.04ms   92.58%
+    Req/Sec     3.09k     1.36k    6.47k    73.89%
+  113174 requests in 10.03s, 248.67MB read
+Requests/sec:  11282.86
+Transfer/sec:     24.79MB
+Running 10s test @ https://127.0.0.1:4043/data/example4k.txt
+  4 threads and 512 connections
+  Thread Stats   Avg      Stdev     Max   +/- Stdev
+    Latency    40.05ms   39.38ms 568.86ms   95.06%
+    Req/Sec     3.42k     1.07k    7.32k    80.27%
+  128689 requests in 10.04s, 533.50MB read
+Requests/sec:  12819.00
+Transfer/sec:     53.14MB
+Running 10s test @ https://127.0.0.1:4043/data/example16k.txt
+  4 threads and 512 connections
+  Thread Stats   Avg      Stdev     Max   +/- Stdev
+    Latency    30.30ms   10.95ms  74.96ms   67.49%
+    Req/Sec     2.69k     1.98k   10.71k    66.76%
+  96979 requests in 10.09s, 1.50GB read
+Requests/sec:   9609.14
+Transfer/sec:    152.13MB
+Running 10s test @ https://127.0.0.1:4043/data/example128k.txt
+  4 threads and 512 connections
+  Thread Stats   Avg      Stdev     Max   +/- Stdev
+    Latency    48.29ms   15.92ms  82.13ms   61.11%
+    Req/Sec     1.02k   810.97     3.53k    60.58%
+  38588 requests in 10.06s, 4.71GB read
+Requests/sec:   3834.36
+Transfer/sec:    478.89MB
+Running 10s test @ https://127.0.0.1:4043/data/example256k.txt
+  4 threads and 512 connections
+  Thread Stats   Avg      Stdev     Max   +/- Stdev
+    Latency    64.46ms   20.26ms  99.25ms   65.15%
+    Req/Sec   554.77    348.21     1.43k    61.70%
+  20827 requests in 10.10s, 5.08GB read
+Requests/sec:   2061.96
+Transfer/sec:    514.54MB
