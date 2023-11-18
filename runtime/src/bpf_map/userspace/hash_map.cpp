@@ -1,8 +1,14 @@
+/* SPDX-License-Identifier: MIT
+ *
+ * Copyright (c) 2022, eunomia-bpf org
+ * All rights reserved.
+ */
 #include "spdlog/spdlog.h"
 #include <bpf_map/userspace/hash_map.hpp>
 #include <algorithm>
 #include <functional>
 #include <unistd.h>
+
 namespace bpftime
 {
 hash_map_impl::hash_map_impl(managed_shared_memory &memory, uint32_t key_size,

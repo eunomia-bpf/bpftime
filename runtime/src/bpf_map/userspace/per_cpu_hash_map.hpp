@@ -1,3 +1,8 @@
+/* SPDX-License-Identifier: MIT
+ *
+ * Copyright (c) 2022, eunomia-bpf org
+ * All rights reserved.
+ */
 #ifndef _BPFTIME_PER_CPU_HASH_MAP_HPP
 #define _BPFTIME_PER_CPU_HASH_MAP_HPP
 #include <boost/interprocess/allocators/allocator.hpp>

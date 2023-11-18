@@ -17,8 +17,8 @@ using namespace bpftime;
 int main(int argc, char *argv[])
 {
 	if (argc == 1) {
-		cerr << "Usage: " << argv[0] << " [load|import|export|remove] ..."
-		     << endl
+		cerr << "Usage: " << argv[0]
+		     << " [load|import|export|remove] ..." << endl
 		     << "Command-line tool to inspect and manage userspace eBPF objects"
 		     << endl;
 		return 1;
@@ -35,7 +35,8 @@ int main(int argc, char *argv[])
 			     << endl;
 			return 1;
 		}
-		bpftime_initialize_global_shm(shm_open_type::SHM_CREATE_OR_OPEN);
+		bpftime_initialize_global_shm(
+			shm_open_type::SHM_CREATE_OR_OPEN);
 		int fd = atoi(argv[2]);
 		auto json_str = std::string(argv[3]);
 		return bpftime_import_shm_handler_from_json(fd,
@@ -59,21 +60,20 @@ int main(int argc, char *argv[])
 			     << endl;
 			return 1;
 		}
-		bpftime_initialize_global_shm(shm_open_type::SHM_CREATE_OR_OPEN);
+		bpftime_initialize_global_shm(
+			shm_open_type::SHM_CREATE_OR_OPEN);
 		auto filename = std::string(argv[2]);
 		return bpftime_import_global_shm_from_json(filename.c_str());
 	} else if (cmd == "remove") {
 		if (argc != 2) {
-			cerr << "Usage: " << argv[0] << " remove"
-			     << endl
+			cerr << "Usage: " << argv[0] << " remove" << endl
 			     << "Remove the global shared memory system wide"
 			     << endl;
 			return 1;
 		}
 		bpftime_remove_global_shm();
 		return 0;
-	} 
-	else {
+	} else {
 		cerr << "Invalid subcommand " << cmd << endl;
 		return 1;
 	}

@@ -1,3 +1,8 @@
+/* SPDX-License-Identifier: MIT
+ *
+ * Copyright (c) 2022, eunomia-bpf org
+ * All rights reserved.
+ */
 #ifndef _COMMON_DEF_HPP
 #define _COMMON_DEF_HPP
 #include <string>

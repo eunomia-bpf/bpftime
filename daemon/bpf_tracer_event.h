@@ -1,4 +1,8 @@
-/* SPDX-License-Identifier: (LGPL-2.1 OR BSD-2-Clause) */
+/* SPDX-License-Identifier: MIT
+ *
+ * Copyright (c) 2022, eunomia-bpf org
+ * All rights reserved.
+ */
 #ifndef __SYSCALL_TRACER_H
 #define __SYSCALL_TRACER_H
 

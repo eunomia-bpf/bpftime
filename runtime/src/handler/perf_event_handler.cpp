@@ -1,3 +1,8 @@
+/* SPDX-License-Identifier: MIT
+ *
+ * Copyright (c) 2022, eunomia-bpf org
+ * All rights reserved.
+ */
 #include "linux/perf_event.h"
 #include "spdlog/spdlog.h"
 #include <boost/interprocess/detail/segment_manager_helper.hpp>

@@ -124,6 +124,7 @@ fn load_ebpf_object_into_kernel(path: impl AsRef<Path>) -> anyhow::Result<()> {
     }
     Ok(())
 }
+
 #[allow(non_upper_case_globals)]
 static subprocess_pid: AtomicU32 = AtomicU32::new(0);
 

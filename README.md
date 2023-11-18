@@ -189,6 +189,7 @@ see [documents/build-and-test.md](https://github.com/eunomia-bpf/bpftime/tree/ma
 - [ ] More examples and usecases:
   - [ ] Network on userspace eBPF
   - [ ] Hotpatch userspace application
+  - [ ] Error injection and filter syscall
   - [ ] etc...
 - [ ] More map types and distribution maps support.
 - [ ] More program types support.

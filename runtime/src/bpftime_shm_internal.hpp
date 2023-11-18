@@ -1,3 +1,8 @@
+/* SPDX-License-Identifier: MIT
+ *
+ * Copyright (c) 2022, eunomia-bpf org
+ * All rights reserved.
+ */
 #ifndef _BPFTIME_SHM_INTERNAL
 #define _BPFTIME_SHM_INTERNAL
 #include "bpf_map/userspace/array_map.hpp"

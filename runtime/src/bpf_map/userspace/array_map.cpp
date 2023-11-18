@@ -1,5 +1,11 @@
+/* SPDX-License-Identifier: MIT
+ *
+ * Copyright (c) 2022, eunomia-bpf org
+ * All rights reserved.
+ */
 #include <bpf_map/userspace/array_map.hpp>
 #include <cerrno>
+
 namespace bpftime
 {
 

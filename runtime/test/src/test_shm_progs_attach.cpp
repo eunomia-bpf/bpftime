@@ -1,3 +1,8 @@
+/* SPDX-License-Identifier: MIT
+ *
+ * Copyright (c) 2022, eunomia-bpf org
+ * All rights reserved.
+ */
 #include "bpf_attach_ctx.hpp"
 #include "bpftime_ffi.hpp"
 #include "bpftime_shm.hpp"
@@ -102,7 +107,7 @@ void attach_replace(bpftime::handler_manager &manager_ref,
 	// attach replace
 	manager_ref.set_handler(
 		3,
-		bpf_perf_event_handler(bpf_event_type::BPF_TYPE_REPLACE, offset,
+		bpf_perf_event_handler(bpf_event_type::BPF_TYPE_UREPLACE, offset,
 				       -1, "", segment, true),
 		segment);
 }

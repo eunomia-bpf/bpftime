@@ -1,3 +1,8 @@
+/* SPDX-License-Identifier: MIT
+ *
+ * Copyright (c) 2022, eunomia-bpf org
+ * All rights reserved.
+ */
 #ifndef BPF_MINIMAL_TEST_FFI_DEFS_H
 #define BPF_MINIMAL_TEST_FFI_DEFS_H
 

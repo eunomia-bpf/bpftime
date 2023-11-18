@@ -1,3 +1,8 @@
+/* SPDX-License-Identifier: MIT
+ *
+ * Copyright (c) 2022, eunomia-bpf org
+ * All rights reserved.
+ */
 #ifndef _BPFTIME_HANDLER_HPP
 #define _BPFTIME_HANDLER_HPP
 

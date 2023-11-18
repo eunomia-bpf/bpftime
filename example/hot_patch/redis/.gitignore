@@ -5,7 +5,7 @@ package.json
 *.skel.yaml
 package.yaml
 ecli
+redis-patch
 .output
 test
-uretprobe
-bpf-syscall-bench
+victim

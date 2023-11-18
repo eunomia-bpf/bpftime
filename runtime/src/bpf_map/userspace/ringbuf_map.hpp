@@ -1,3 +1,8 @@
+/* SPDX-License-Identifier: MIT
+ *
+ * Copyright (c) 2022, eunomia-bpf org
+ * All rights reserved.
+ */
 #ifndef _RINGBUF_MAP_HPP
 #define _RINGBUF_MAP_HPP
 #include <boost/interprocess/allocators/allocator.hpp>
@@ -10,6 +15,7 @@
 #include <boost/interprocess/smart_ptr/shared_ptr.hpp>
 #include <boost/interprocess/smart_ptr/weak_ptr.hpp>
 #include <cstddef>
+
 namespace bpftime
 {
 using sharable_mutex_ptr = boost::interprocess::managed_unique_ptr<

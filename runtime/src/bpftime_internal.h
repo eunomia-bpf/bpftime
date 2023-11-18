@@ -1,3 +1,8 @@
+/* SPDX-License-Identifier: MIT
+ *
+ * Copyright (c) 2022, eunomia-bpf org
+ * All rights reserved.
+ */
 #ifndef EBPF_RUNTIME_INTERNEL_H_
 #define EBPF_RUNTIME_INTERNEL_H_
 

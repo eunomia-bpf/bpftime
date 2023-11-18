@@ -1,8 +1,14 @@
+/* SPDX-License-Identifier: MIT
+ *
+ * Copyright (c) 2022, eunomia-bpf org
+ * All rights reserved.
+ */
 #include "spdlog/spdlog.h"
 #include <bpf_map/userspace/perf_event_array_map.hpp>
 #include <cassert>
 #include <cerrno>
 #include <spdlog/spdlog.h>
+
 namespace bpftime
 {
 perf_event_array_map_impl::perf_event_array_map_impl(

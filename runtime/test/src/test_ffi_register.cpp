@@ -1,3 +1,8 @@
+/* SPDX-License-Identifier: MIT
+ *
+ * Copyright (c) 2022, eunomia-bpf org
+ * All rights reserved.
+ */
 // test register raw function and call it from ffi
 #include "test_defs.h"
 #include "bpftime.hpp"

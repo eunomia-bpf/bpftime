@@ -1,3 +1,8 @@
+/* SPDX-License-Identifier: MIT
+ *
+ * Copyright (c) 2022, eunomia-bpf org
+ * All rights reserved.
+ */
 #ifndef _HANDLER_MANAGER_HPP
 #define _HANDLER_MANAGER_HPP
 #include "bpftime_config.hpp"

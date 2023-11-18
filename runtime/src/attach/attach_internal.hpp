@@ -1,3 +1,8 @@
+/* SPDX-License-Identifier: MIT
+ *
+ * Copyright (c) 2022, eunomia-bpf org
+ * All rights reserved.
+ */
 #ifndef _ATTACH_INTERNAL_HPP
 #define _ATTACH_INTERNAL_HPP
 #include <frida-gum.h>
