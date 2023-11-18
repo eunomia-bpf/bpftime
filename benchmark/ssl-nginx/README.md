@@ -47,6 +47,15 @@ wrk/wrk https://127.0.0.1:4043/data/example2k.txt -c 512 -t 4 -d 10 >> test-log.
 ...
 ```
 
+| Data Size | Requests/sec | Transfer/sec |
+|-----------|--------------|--------------|
+| 30 B      |              |              |
+| 1 KB      |              |              |
+| 4 KB      |              |              |
+| 16 KB     |              |              |
+| 64 KB     |              |              |
+| 256 KB    |              |              |
+
 ## Test for kernel sslsniff
 
 In one console, it will hook nginx:
@@ -64,6 +73,15 @@ lost 61 events on CPU #3
 
 This sslsniff is from bpftime/example/sslsniff/sslsniff. The userspace part modified to not print the packet content out.
 
+| Data Size | Requests/sec | Transfer/sec |
+|-----------|--------------|--------------|
+| 30 B      |              |              |
+| 1 KB      |              |              |
+| 4 KB      |              |              |
+| 16 KB     |              |              |
+| 64 KB     |              |              |
+| 256 KB    |              |              |
+
 ## test for userspace sslsniff
 
 Note: you need to config bpftime to:
@@ -75,12 +93,21 @@ Note: you need to config bpftime to:
 in one console, start userspace sslsniff
 
 ```sh
-sudo ~/.bpftime/bpftime load example/sslsniff/sslsniff
+sudo LD_PRELOAD=build/runtime/syscall-server/libbpftime-syscall-server.so example/sslsniff/sslsniff
 ```
 
 in another console, restart nginx
 
 ```sh
-sudo ~/.bpftime/bpftime start nginx -- -c nginx.conf -p benchmark/ssl-nginx
+sudo LD_PRELOAD=build/runtime/agent/libbpftime-agent.so nginx -c nginx.conf -p benchmark/ssl-nginx
 # or sudo LD_PRELOAD=build/runtime/agent/libbpftime-agent.so nginx -c nginx.conf -p benchmark/ssl-nginx
 ```
+
+| Data Size | Requests/sec | Transfer/sec |
+|-----------|--------------|--------------|
+| 30 B      |              |              |
+| 1 KB      |              |              |
+| 4 KB      |              |              |
+| 16 KB     |              |              |
+| 64 KB     |              |              |
+| 256 KB    |              |              |
