@@ -205,6 +205,8 @@ This project is licensed under the MIT License.
 Have any questions or suggestions on future development? Free free to open an issue or contact 
 <yunwei356@gmail.com> !
 
+Our arxiv preprint: https://arxiv.org/abs/2311.07923
+
 ```txt
 @misc{zheng2023bpftime,
       title={bpftime: userspace eBPF Runtime for Uprobe, Syscall and Kernel-User Interactions}, 
