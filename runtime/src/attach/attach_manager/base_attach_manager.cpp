@@ -1,3 +1,8 @@
+/* SPDX-License-Identifier: MIT
+ *
+ * Copyright (c) 2022, eunomia-bpf org
+ * All rights reserved.
+ */
 #include "spdlog/spdlog.h"
 #include <attach/attach_manager/base_attach_manager.hpp>
 #include <optional>

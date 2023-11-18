@@ -102,7 +102,7 @@ void attach_replace(bpftime::handler_manager &manager_ref,
 	// attach replace
 	manager_ref.set_handler(
 		3,
-		bpf_perf_event_handler(bpf_event_type::BPF_TYPE_REPLACE, offset,
+		bpf_perf_event_handler(bpf_event_type::BPF_TYPE_UREPLACE, offset,
 				       -1, "", segment, true),
 		segment);
 }

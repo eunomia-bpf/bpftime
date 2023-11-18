@@ -1,3 +1,8 @@
+/* SPDX-License-Identifier: MIT
+ *
+ * Copyright (c) 2022, eunomia-bpf org
+ * All rights reserved.
+ */
 #include "attach/attach_manager/frida_attach_manager.hpp"
 #include "bpftime.hpp"
 #include "handler/epoll_handler.hpp"
@@ -247,8 +252,8 @@ int bpf_attach_ctx::init_attach_ctx_from_handlers(
 				std::get<bpf_perf_event_handler>(handler);
 			void *func_addr = nullptr;
 			switch (event_handler.type) {
-			case bpf_event_type::BPF_TYPE_FILTER:
-			case bpf_event_type::BPF_TYPE_REPLACE:
+			case bpf_event_type::BPF_TYPE_UFILTER:
+			case bpf_event_type::BPF_TYPE_UREPLACE:
 			case bpf_event_type::BPF_TYPE_UPROBE:
 			case bpf_event_type::BPF_TYPE_URETPROBE:
 				func_addr =
@@ -264,7 +269,7 @@ int bpf_attach_ctx::init_attach_ctx_from_handlers(
 			}
 			// attach base on events
 			switch (event_handler.type) {
-			case bpf_event_type::BPF_TYPE_FILTER: {
+			case bpf_event_type::BPF_TYPE_UFILTER: {
 				spdlog::debug(
 					"Creating filter for perf event fd {}",
 					i);
@@ -297,7 +302,7 @@ int bpf_attach_ctx::init_attach_ctx_from_handlers(
 						i, err);
 				break;
 			}
-			case bpf_event_type::BPF_TYPE_REPLACE: {
+			case bpf_event_type::BPF_TYPE_UREPLACE: {
 				spdlog::debug(
 					"Creating replace for perf event fd {}",
 					i);

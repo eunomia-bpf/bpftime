@@ -43,8 +43,10 @@ enum class bpf_event_type {
 	// custom types
 	BPF_TYPE_UPROBE = 6,
 	BPF_TYPE_URETPROBE = 7,
-	BPF_TYPE_FILTER = 8,
-	BPF_TYPE_REPLACE = 9,
+	BPF_TYPE_UFILTER = 8,
+	BPF_TYPE_UREPLACE = 9,
+
+	BPF_TYPE_SYSCALL_FILTER = 10,
 };
 
 #define KERNEL_USER_MAP_OFFSET 1000
