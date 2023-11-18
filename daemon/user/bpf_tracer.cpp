@@ -1,4 +1,8 @@
-// Description: bpf_tracer daemon
+/* SPDX-License-Identifier: MIT
+ *
+ * Copyright (c) 2022, eunomia-bpf org
+ * All rights reserved.
+ */
 #include "spdlog/common.h"
 #include <argp.h>
 #include <signal.h>

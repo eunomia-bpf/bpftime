@@ -1,3 +1,8 @@
+/* SPDX-License-Identifier: MIT
+ *
+ * Copyright (c) 2022, eunomia-bpf org
+ * All rights reserved.
+ */
 #ifndef BPFTIME_DAEMON_CONFIG_HPP
 #define BPFTIME_DAEMON_CONFIG_HPP
 

@@ -1,3 +1,8 @@
+/* SPDX-License-Identifier: MIT
+ *
+ * Copyright (c) 2022, eunomia-bpf org
+ * All rights reserved.
+ */
 #include "bpftime_driver.hpp"
 #include <linux/bpf.h>
 #include <bpf/bpf.h>
