@@ -258,7 +258,7 @@ int syscall_context::handle_perfevent(perf_event_attr *attr, pid_t pid, int cpu,
 		spdlog::debug("Created software perf event with fd {}", fd);
 		return fd;
 	}
-	spdlog::warn("Calling original perf event open");
+	spdlog::info("Calling original perf event open");
 	return orig_syscall_fn(__NR_perf_event_open, (uint64_t)(uintptr_t)attr,
 			       (uint64_t)pid, (uint64_t)cpu, (uint64_t)group_fd,
 			       (uint64_t)flags);
