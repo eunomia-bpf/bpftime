@@ -1,3 +1,8 @@
+/* SPDX-License-Identifier: MIT
+ *
+ * Copyright (c) 2022, eunomia-bpf org
+ * All rights reserved.
+ */
 #include "handler/perf_event_handler.hpp"
 #include "handler/prog_handler.hpp"
 #include "spdlog/spdlog.h"

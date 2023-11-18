@@ -1,3 +1,8 @@
+/* SPDX-License-Identifier: MIT
+ *
+ * Copyright (c) 2022, eunomia-bpf org
+ * All rights reserved.
+ */
 // Test map operating helpers
 #include "bpftime.hpp"
 #include "map/map_common.h"

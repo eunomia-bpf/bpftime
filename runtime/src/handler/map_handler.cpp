@@ -1,3 +1,8 @@
+/* SPDX-License-Identifier: MIT
+ *
+ * Copyright (c) 2022, eunomia-bpf org
+ * All rights reserved.
+ */
 #include "bpf_map/userspace/per_cpu_array_map.hpp"
 #include "bpf_map/userspace/per_cpu_hash_map.hpp"
 #include <bpf_map/userspace/perf_event_array_map.hpp>

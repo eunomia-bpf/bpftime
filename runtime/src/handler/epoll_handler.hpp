@@ -1,3 +1,8 @@
+/* SPDX-License-Identifier: MIT
+ *
+ * Copyright (c) 2022, eunomia-bpf org
+ * All rights reserved.
+ */
 #ifndef _EPOLL_HANDLER_HPP
 #define _EPOLL_HANDLER_HPP
 #include "handler/perf_event_handler.hpp"

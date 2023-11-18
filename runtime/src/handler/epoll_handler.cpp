@@ -1,3 +1,8 @@
+/* SPDX-License-Identifier: MIT
+ *
+ * Copyright (c) 2022, eunomia-bpf org
+ * All rights reserved.
+ */
 #include <handler/epoll_handler.hpp>
 #include <sys/epoll.h>
 namespace bpftime

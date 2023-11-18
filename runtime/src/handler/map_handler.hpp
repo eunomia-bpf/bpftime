@@ -1,3 +1,8 @@
+/* SPDX-License-Identifier: MIT
+ *
+ * Copyright (c) 2022, eunomia-bpf org
+ * All rights reserved.
+ */
 #ifndef _MAP_HANDLER
 #define _MAP_HANDLER
 #include "bpf_map/userspace/array_map.hpp"

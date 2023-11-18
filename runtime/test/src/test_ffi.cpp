@@ -1,3 +1,8 @@
+/* SPDX-License-Identifier: MIT
+ *
+ * Copyright (c) 2022, eunomia-bpf org
+ * All rights reserved.
+ */
 // test find function address, register all functions from btf and call it from
 // ebpf
 #include "test_defs.h"

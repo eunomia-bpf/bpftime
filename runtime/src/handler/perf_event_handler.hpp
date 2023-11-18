@@ -1,3 +1,8 @@
+/* SPDX-License-Identifier: MIT
+ *
+ * Copyright (c) 2022, eunomia-bpf org
+ * All rights reserved.
+ */
 #ifndef _PERF_EVENT_HANDLER
 #define _PERF_EVENT_HANDLER
 #include "spdlog/spdlog.h"
