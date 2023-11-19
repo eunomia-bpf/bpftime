@@ -388,8 +388,6 @@ int main(int argc, char **argv)
 	int seconds = 0;
 	__u32 count;
 	int err;
-	int idx, cg_map_fd;
-	int cgfd = -1;
 
 	init_syscall_names();
 
@@ -428,21 +426,6 @@ int main(int argc, char **argv)
 	if (err) {
 		warn("failed to load BPF object: %s\n", strerror(-err));
 		goto cleanup_obj;
-	}
-
-	/* update cgroup path fd to map */
-	if (env.cg) {
-		idx = 0;
-		cg_map_fd = bpf_map__fd(obj->maps.cgroup_map);
-		cgfd = open(env.cgroupspath, O_RDONLY);
-		if (cgfd < 0) {
-			fprintf(stderr, "Failed opening Cgroup path: %s", env.cgroupspath);
-			goto cleanup_obj;
-		}
-		if (bpf_map_update_elem(cg_map_fd, &idx, &cgfd, BPF_ANY)) {
-			fprintf(stderr, "Failed adding target cgroup to map");
-			goto cleanup_obj;
-		}
 	}
 
 	obj->links.sys_exit = bpf_program__attach(obj->progs.sys_exit);
