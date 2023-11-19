@@ -223,4 +223,4 @@ Our arxiv preprint: https://arxiv.org/abs/2311.07923
 eunomia-bpf community is sponsored by [PLCT Lab](https://plctlab.github.io/) from [ISCAS](http://english.is.cas.cn/au/).
 
 Thanks for other sponsors and discussions help building this project: [Prof. Xiaozheng lai](https://www2.scut.edu.cn/cs/2017/0129/c22285a327654/page.htm) from SCUT, [Prof lijun chen](http://www.xiyou.edu.cn/info/2394/67845.htm) from XUPT, 
-[Prof. Qi Li](https://sites.google.com/site/qili2012/) from THU [NISL Lab](https://netsec.ccert.edu.cn/en/), [Prof. Wenbo Shen](https://wenboshen.org/) from ZJU, and Linux eBPF maintainers.
+[Prof. Qi Li](https://sites.google.com/site/qili2012/) from THU [NISL Lab](https://netsec.ccert.edu.cn/en/), and Linux eBPF maintainers.
