@@ -66,7 +66,7 @@ $(call allow-override,CC,$(CROSS_COMPILE)cc)
 $(call allow-override,LD,$(CROSS_COMPILE)ld)
 
 .PHONY: all
-all: $(APPS)
+all: $(APPS) victim
 
 .PHONY: clean
 clean:
@@ -137,3 +137,5 @@ $(APPS): %: $(OUTPUT)/%.o $(LIBBPF_OBJ) errno_helpers.c syscall_helpers.c | $(OU
 # keep intermediate (.skel.h, .bpf.o, etc) targets
 .SECONDARY:
 
+victim: victim.cpp
+	$(CXX) victim.cpp -Wall -g -o victim
