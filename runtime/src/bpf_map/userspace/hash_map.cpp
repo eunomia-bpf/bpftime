@@ -11,6 +11,7 @@
 
 namespace bpftime
 {
+
 hash_map_impl::hash_map_impl(managed_shared_memory &memory, uint32_t key_size,
 			     uint32_t value_size)
 	: map_impl(10, bytes_vec_hasher(), std::equal_to<bytes_vec>(),
@@ -20,6 +21,7 @@ hash_map_impl::hash_map_impl(managed_shared_memory &memory, uint32_t key_size,
 	  value_vec(value_size, memory.get_segment_manager())
 {
 }
+
 void *hash_map_impl::elem_lookup(const void *key)
 {
 	spdlog::trace("Peform elem lookup of hash map");
