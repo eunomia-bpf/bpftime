@@ -83,11 +83,11 @@ LD_PRELOAD=~/.bpftime/libbpftime-agent.so example/minimal/victim
 server
 
 ```sh
-LD_PRELOAD=~/.bpftime/libbpftime-syscall-server.so example/minimal/uprobe
+LD_PRELOAD=~/.bpftime/libbpftime-syscall-server.so ./uprobe
 ```
 
 client
 
 ```sh
-LD_PRELOAD=~/.bpftime/libbpftime-agent.so example/minimal/victim
+LD_PRELOAD=~/.bpftime/libbpftime-agent.so ./victim
 ```
