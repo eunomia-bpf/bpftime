@@ -11,7 +11,7 @@ int target_func() {
 
 int main(int argc, char *argv[]) {
     while(1) {
-        sleep(2);
+        sleep(1);
         target_func();
     }
     return 0;

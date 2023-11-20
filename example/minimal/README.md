@@ -91,3 +91,17 @@ client
 ```sh
 LD_PRELOAD=~/.bpftime/libbpftime-agent.so ./victim
 ```
+
+## ureplace
+
+Run server:
+
+```sh
+SPDLOG_LEVEL=Debug LD_PRELOAD=~/.bpftime/libbpftime-syscall-server.so ./ureplace
+```
+
+Run victim:
+
+```sh
+SPDLOG_LEVEL=Debug LD_PRELOAD=~/.bpftime/libbpftime-syscall-server.so ./ureplace
+```
