@@ -1,4 +1,10 @@
-# uprobe trace
+# minimal examples
+
+- uprobe/uretprobe: trace userspace functions at start or and. No affect the control flow.
+- ureplace: replace the userspace function with a eBPF function
+- ufilter: filter the userspace function
+
+## uprobe trace
 
 This code is a BPF (Berkeley Packet Filter) program written in C, often used for tracing and monitoring activities in the Linux kernel. BPF allows you to run custom programs within the kernel without modifying its source code. The code you provided creates a BPF program that uses a BPF map to count the number of times the `uprobe` function is called within a specified cgroup.
 
@@ -55,7 +61,7 @@ Here's a breakdown of the code:
 
 The purpose of this BPF program is to track and count the number of `uprobe` calls that occur within specific cgroups in the Linux kernel. It uses a BPF hash map to store and update the counts. This can be useful for monitoring memory allocation patterns and resource usage within different cgroups.
 
-## how to run
+### how to run uprobe
 
 server
 

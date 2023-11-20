@@ -3,10 +3,10 @@
 #include <bpf/bpf_helpers.h>
 #include <bpf/bpf_tracing.h>
 
-SEC("uprobe/example/minimal/victim:target_func")
-int do_uprobe_trace(struct pt_regs *ctx)
+SEC("ureplace/example/minimal/victim:target_func")
+int do_ureplace_patch(struct pt_regs *ctx)
 {
-	bpf_printk("target_func called.\n");
+	bpf_printk("target_func called for replaced.\n");
 	return 0;
 }
 
