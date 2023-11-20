@@ -52,12 +52,8 @@ int main(int argc, char **argv)
 		fprintf(stderr, "Failed to load and verify BPF skeleton\n");
 		goto cleanup;
 	}
-	LIBBPF_OPTS(bpf_uprobe_opts, attach_opts, .func_name = "target_func",
-		    .retprobe = false, .attach_mode = PROBE_ATTACH_MODE_PERF);
-	struct bpf_link *attach = bpf_program__attach_uprobe_opts(
-		skel->progs.do_uprobe_trace, -1, "example/minimal/victim", 0,
-		&attach_opts);
-	if (!attach) {
+	int attach = uprobe_bpf__attach(skel);
+	if (attach) {
 		fprintf(stderr, "Failed to attach BPF skeleton\n");
 		err = -1;
 		goto cleanup;
