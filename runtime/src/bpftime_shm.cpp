@@ -329,6 +329,12 @@ int bpftime_add_software_perf_event(int cpu, int32_t sample_type,
 	return shm.add_software_perf_event(cpu, sample_type, config);
 }
 
+int bpftime_add_ureplace(int fd, int pid, const char *name, uint64_t offset)
+{
+	auto &shm = shm_holder.global_shared_memory;
+	return shm.add_ureplace(fd, pid, name, offset);
+}
+
 int bpftime_add_software_perf_event_fd_to_epoll(int swpe_fd, int epoll_fd,
 						epoll_data_t extra_data)
 {

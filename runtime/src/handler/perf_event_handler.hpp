@@ -131,13 +131,16 @@ struct bpf_perf_event_handler {
 
 	std::optional<software_perf_event_weak_ptr>
 	try_get_software_perf_data_weak_ptr() const;
+
 	std::optional<void *>
 	try_get_software_perf_data_raw_buffer(size_t buffer_size) const;
+
 	// attach to replace or filter self define types
 	bpf_perf_event_handler(bpf_event_type type, uint64_t offset, int pid,
 			       const char *module_name,
 			       boost::interprocess::managed_shared_memory &mem,
 			       bool default_enabled = false);
+
 	// create uprobe/uretprobe with new perf event attr
 	bpf_perf_event_handler(bool is_retprobe, uint64_t offset, int pid,
 			       const char *module_name, size_t ref_ctr_off,

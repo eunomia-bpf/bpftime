@@ -149,6 +149,21 @@ int bpftime_shm::add_uprobe(int fd, int pid, const char *name, uint64_t offset,
 		segment);
 }
 
+int bpftime_shm::add_ureplace(int fd, int pid, const char *name, uint64_t offset)
+{
+	if (fd < 0) {
+		// if fd is negative, we need to create a new fd for allocating
+		fd = open_fake_fd();
+	}
+	spdlog::debug("Set fd {} to ureplace, pid={}, name={}, offset={}", fd,
+		      pid, name, offset);
+	return manager->set_handler(
+		fd,
+		bpf_perf_event_handler(bpf_event_type::BPF_TYPE_UREPLACE, offset,
+				       pid, name, segment, true),
+		segment);
+}
+
 int bpftime_shm::add_tracepoint(int fd, int pid, int32_t tracepoint_id)
 {
 	if (fd < 0) {

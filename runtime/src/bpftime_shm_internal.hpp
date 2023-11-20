@@ -95,6 +95,7 @@ class bpftime_shm {
 	// create a bpf map fd
 	int add_bpf_map(int fd, const char *name, bpftime::bpf_map_attr attr);
 	uint32_t bpf_map_value_size(int fd) const;
+	
 	const void *bpf_map_lookup_elem(int fd, const void *key,
 					bool from_userspace) const;
 
@@ -112,8 +113,12 @@ class bpftime_shm {
 		       bool retprobe, size_t ref_ctr_off);
 	// create a tracepoint fd
 	int add_tracepoint(int fd, int pid, int32_t tracepoint_id);
+	// create a software perf event fd, typically for a perf event
 	int add_software_perf_event(int cpu, int32_t sample_type,
 				    int64_t config);
+
+	// add replace function fd
+	int add_ureplace(int fd, int pid, const char *name, uint64_t offset);
 
 	// check and attach a perf event to a bpf program
 	int attach_perf_to_bpf(int perf_fd, int bpf_fd);

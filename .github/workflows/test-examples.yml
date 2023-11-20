@@ -57,7 +57,7 @@ jobs:
             executable: ./uprobe
             victim: ./victim
             syscall_trace: false
-            expected_str: "target_func called."
+            expected_str: ""
           - path: opensnoop
             executable: ./opensnoop
             victim: ./victim

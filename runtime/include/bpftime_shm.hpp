@@ -275,6 +275,7 @@ int bpftime_is_software_perf_event(int fd);
 void *bpftime_get_software_perf_event_raw_buffer(int fd, size_t expected_size);
 int bpftime_perf_event_output(int fd, const void *buf, size_t sz);
 int bpftime_shared_perf_event_output(int map_fd, const void *buf, size_t sz);
+int bpftime_add_ureplace(int fd, int pid, const char *name, uint64_t offset);
 }
 
 #endif // BPFTIME_SHM_CPP_H
