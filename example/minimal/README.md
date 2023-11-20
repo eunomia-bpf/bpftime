@@ -103,5 +103,5 @@ SPDLOG_LEVEL=Debug LD_PRELOAD=~/.bpftime/libbpftime-syscall-server.so ./ureplace
 Run victim:
 
 ```sh
-SPDLOG_LEVEL=Debug LD_PRELOAD=~/.bpftime/libbpftime-syscall-server.so ./ureplace
+LD_PRELOAD=~/.bpftime/libbpftime-agent.so ./victim
 ```

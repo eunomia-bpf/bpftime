@@ -11,7 +11,7 @@
 #include <stdlib.h>
 #include "ureplace.skel.h"
 #include <inttypes.h>
-#include "ureplace_attach.h"
+#include "filter_replace_attach.h"
 
 #define warn(...) fprintf(stderr, __VA_ARGS__)
 
@@ -66,6 +66,5 @@ int main(int argc, char **argv)
 cleanup:
 	/* Clean up */
 	ureplace_bpf__destroy(skel);
-
 	return err < 0 ? -err : 0;
 }

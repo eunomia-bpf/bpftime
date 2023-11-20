@@ -16,26 +16,26 @@ long elf_find_func_offset_from_file(const char *binary_path, const char *name);
 
 #define PERF_UPROBE_REF_CTR_OFFSET_BITS 32
 #define PERF_UPROBE_REF_CTR_OFFSET_SHIFT 32
-#define BPF_TYPE_UFILTER 8
+#define BPF_TYPE_UREPLACE 9
+#define BPF_TYPE_UFILTER 9
 
 static inline __u64 ptr_to_u64(const void *ptr)
 {
 	return (__u64)(unsigned long)ptr;
 }
 
-static int perf_event_open_ureplace(const char *name, uint64_t offset, int pid,
-				    size_t ref_ctr_off)
+static int perf_event_open_filter_replace(const char *name, uint64_t offset,
+					  int pid, size_t ref_ctr_off, int type)
 {
 	const size_t attr_sz = sizeof(struct perf_event_attr);
 	struct perf_event_attr attr;
-	int type, pfd;
+	int pfd;
 
 	if ((__u64)ref_ctr_off >= (1ULL << PERF_UPROBE_REF_CTR_OFFSET_BITS))
 		return -EINVAL;
 
 	memset(&attr, 0, attr_sz);
 
-	type = BPF_TYPE_UFILTER;
 	attr.size = attr_sz;
 	attr.type = type;
 	attr.config |= (__u64)ref_ctr_off << PERF_UPROBE_REF_CTR_OFFSET_SHIFT;
@@ -49,15 +49,16 @@ static int perf_event_open_ureplace(const char *name, uint64_t offset, int pid,
 	return pfd >= 0 ? pfd : -errno;
 }
 
-static int bpf_prog_attach_ureplace(int prog_fd, const char *binary_path,
-				    const char *name)
+static int bpf_prog_attach_filter_replace(int prog_fd, const char *binary_path,
+					  const char *name, int type)
 {
 	int offset = elf_find_func_offset_from_file("./victim", "target_func");
 	if (offset < 0) {
 		return offset;
 	}
 	printf("offset: %d", offset);
-	int res = perf_event_open_ureplace("./victim", offset, -1, 0);
+	int res =
+		perf_event_open_filter_replace("./victim", offset, -1, 0, type);
 	if (res < 0) {
 		printf("perf_event_open_ureplace failed: %d\n", res);
 		return res;
@@ -68,6 +69,20 @@ static int bpf_prog_attach_ureplace(int prog_fd, const char *binary_path,
 		return res;
 	}
 	return 0;
+}
+
+static int bpf_prog_attach_ufilter(int prog_fd, const char *binary_path,
+				  const char *name)
+{
+	return bpf_prog_attach_filter_replace(prog_fd, binary_path, name,
+					      BPF_TYPE_UFILTER);
+}
+
+static int bpf_prog_attach_ureplace(int prog_fd, const char *binary_path,
+				   const char *name)
+{
+	return bpf_prog_attach_filter_replace(prog_fd, binary_path, name,
+					      BPF_TYPE_UREPLACE);
 }
 
 #endif // BPFTIME_UREPLACE_ATTACH_H

@@ -214,6 +214,14 @@ long syscall_context::handle_sysbpf(int cmd, union bpf_attr *attr, size_t size)
 		strncpy(ptr->name, map_name, sizeof(ptr->name) - 1);
 		return 0;
 	}
+	case BPF_PROG_ATTACH: {
+		auto prog_fd = attr->attach_bpf_fd;
+		auto target_fd = attr->target_fd;
+		spdlog::debug("BPF_PROG_ATTACH {} -> {}", prog_fd, target_fd);
+		int id = bpftime_attach_perf_to_bpf(target_fd, prog_fd);
+		spdlog::debug("Created attach {}", id);
+		return id;
+	}
 	default:
 		return orig_syscall_fn(__NR_bpf, (long)cmd,
 				       (long)(uintptr_t)attr, (long)size);
@@ -268,7 +276,7 @@ int syscall_context::handle_perfevent(perf_event_attr *attr, pid_t pid, int cpu,
 		int fd = bpftime_add_ureplace(
 			-1 /* let the shm alloc fd for us */, pid, name,
 			offset);
-		spdlog::debug("Created software perf event with fd {}", fd);
+		spdlog::debug("Created ureplace with fd {}", fd);
 		return fd;
 	}
 	spdlog::info("Calling original perf event open");
