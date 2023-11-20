@@ -273,10 +273,19 @@ int syscall_context::handle_perfevent(perf_event_attr *attr, pid_t pid, int cpu,
 		spdlog::debug("Detected ureplace hook");
 		const char *name = (const char *)(uintptr_t)attr->config1;
 		uint64_t offset = attr->config2;
-		int fd = bpftime_add_ureplace(
-			-1 /* let the shm alloc fd for us */, pid, name,
-			offset);
+		int fd = bpftime_add_ureplace_filter(
+			-1 /* let the shm alloc fd for us */, pid, name, offset,
+			true);
 		spdlog::debug("Created ureplace with fd {}", fd);
+		return fd;
+	} else if ((int)attr->type == (int)bpf_event_type::BPF_TYPE_UFILTER) {
+		spdlog::debug("Detected ufiltered hook");
+		const char *name = (const char *)(uintptr_t)attr->config1;
+		uint64_t offset = attr->config2;
+		int fd = bpftime_add_ureplace_filter(
+			-1 /* let the shm alloc fd for us */, pid, name, offset,
+			false);
+		spdlog::debug("Created ufilter with fd {}", fd);
 		return fd;
 	}
 	spdlog::info("Calling original perf event open");

@@ -17,7 +17,7 @@ long elf_find_func_offset_from_file(const char *binary_path, const char *name);
 #define PERF_UPROBE_REF_CTR_OFFSET_BITS 32
 #define PERF_UPROBE_REF_CTR_OFFSET_SHIFT 32
 #define BPF_TYPE_UREPLACE 9
-#define BPF_TYPE_UFILTER 9
+#define BPF_TYPE_UFILTER 8
 
 static inline __u64 ptr_to_u64(const void *ptr)
 {
@@ -52,13 +52,13 @@ static int perf_event_open_filter_replace(const char *name, uint64_t offset,
 static int bpf_prog_attach_filter_replace(int prog_fd, const char *binary_path,
 					  const char *name, int type)
 {
-	int offset = elf_find_func_offset_from_file("./victim", "target_func");
+	int offset = elf_find_func_offset_from_file(binary_path, name);
 	if (offset < 0) {
 		return offset;
 	}
 	printf("offset: %d", offset);
 	int res =
-		perf_event_open_filter_replace("./victim", offset, -1, 0, type);
+		perf_event_open_filter_replace(binary_path, offset, -1, 0, type);
 	if (res < 0) {
 		printf("perf_event_open_ureplace failed: %d\n", res);
 		return res;

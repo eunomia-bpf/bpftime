@@ -95,7 +95,7 @@ class bpftime_shm {
 	// create a bpf map fd
 	int add_bpf_map(int fd, const char *name, bpftime::bpf_map_attr attr);
 	uint32_t bpf_map_value_size(int fd) const;
-	
+
 	const void *bpf_map_lookup_elem(int fd, const void *key,
 					bool from_userspace) const;
 
@@ -118,7 +118,8 @@ class bpftime_shm {
 				    int64_t config);
 
 	// add replace function fd
-	int add_ureplace(int fd, int pid, const char *name, uint64_t offset);
+	int add_ureplace_filter(int fd, int pid, const char *name,
+				uint64_t offset, bool is_replace);
 
 	// check and attach a perf event to a bpf program
 	int attach_perf_to_bpf(int perf_fd, int bpf_fd);
