@@ -3,7 +3,7 @@
 #include <bpf/bpf_helpers.h>
 #include <bpf/bpf_tracing.h>
 
-SEC("uprobe/example/minimal/victim:target_func")
+SEC("uprobe/./victim:target_func")
 int do_uprobe_trace(struct pt_regs *ctx)
 {
 	bpf_printk("target_func called.\n");

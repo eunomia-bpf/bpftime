@@ -67,11 +67,27 @@ The purpose of this BPF program is to track and count the number of `uprobe` cal
 server
 
 ```sh
-LD_PRELOAD=build/runtime/syscall-server/libbpftime-syscall-server.so example/minimal/uprobe
+LD_PRELOAD=~/.bpftime/libbpftime-syscall-server.so example/minimal/uprobe
 ```
 
 client
 
 ```sh
-LD_PRELOAD=build/runtime/agent/libbpftime-agent.so example/minimal/victim
+LD_PRELOAD=~/.bpftime/libbpftime-agent.so example/minimal/victim
+```
+
+## Syscall
+
+### how to run syscall
+
+server
+
+```sh
+LD_PRELOAD=~/.bpftime/libbpftime-syscall-server.so example/minimal/uprobe
+```
+
+client
+
+```sh
+LD_PRELOAD=~/.bpftime/libbpftime-agent.so example/minimal/victim
 ```
