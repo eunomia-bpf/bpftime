@@ -41,4 +41,5 @@ see [github.com/eunomia-bpf/bpf-benchmark](https://github.com/eunomia-bpf/bpf-be
 
 ## Roadmap
 
+- [ ] Replace simple JIT with ubpf
 - [ ] AOT support for LLVM JIT
