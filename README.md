@@ -95,7 +95,18 @@ See [documents/usage.md](https://github.com/eunomia-bpf/bpftime/tree/master/docu
 
 ## Examples & Use Cases
 
-### Tracing the system:
+### minimal examples
+
+See [example/minimal](https://github.com/eunomia-bpf/bpftime/tree/master/example/minimal).
+
+The bpftime supports the following types of eBPF programs:
+
+- `uprobe/uretprobe`: trace userspace functions at start or and. No affect the control flow.
+- `ureplace`: replace the userspace function with a eBPF function
+- `ufilter`: filter the userspace function
+- `syscall tracepoints`: trace the specific syscall types. No affect the control flow of syscalls.
+
+### Tracing the system
 
 - `tracing userspace functions with uprobe`: Attach uprobe, uretprobe or all syscall tracepoints(currently x86 only) eBPF programs to a process or a group of processes:
   - [`malloc`](https://github.com/eunomia-bpf/bpftime/tree/master/example/malloc): count the malloc calls in libc by pid. demonstrate how to use the userspace `uprobe` with basic `hashmap`.
