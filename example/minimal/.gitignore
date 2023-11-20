@@ -5,7 +5,7 @@ package.json
 *.skel.yaml
 package.yaml
 ecli
-minimal
+uprobe
 .output
 test
 victim

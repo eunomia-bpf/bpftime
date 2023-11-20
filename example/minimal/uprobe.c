@@ -9,7 +9,7 @@
 #include <bpf/bpf.h>
 #include <unistd.h>
 #include <stdlib.h>
-#include "minimal.skel.h"
+#include "uprobe.skel.h"
 #include <inttypes.h>
 
 #define warn(...) fprintf(stderr, __VA_ARGS__)
@@ -29,7 +29,7 @@ static void sig_handler(int sig)
 
 int main(int argc, char **argv)
 {
-	struct minimal_bpf *skel;
+	struct uprobe_bpf *skel;
 	int err;
 
 	/* Set up libbpf errors and debug info callback */
@@ -40,14 +40,14 @@ int main(int argc, char **argv)
 	signal(SIGTERM, sig_handler);
 
 	/* Load and verify BPF application */
-	skel = minimal_bpf__open();
+	skel = uprobe_bpf__open();
 	if (!skel) {
 		fprintf(stderr, "Failed to open and load BPF skeleton\n");
 		return 1;
 	}
 
 	/* Load & verify BPF programs */
-	err = minimal_bpf__load(skel);
+	err = uprobe_bpf__load(skel);
 	if (err) {
 		fprintf(stderr, "Failed to load and verify BPF skeleton\n");
 		goto cleanup;
@@ -55,7 +55,7 @@ int main(int argc, char **argv)
 	LIBBPF_OPTS(bpf_uprobe_opts, attach_opts, .func_name = "target_func",
 		    .retprobe = false, .attach_mode = PROBE_ATTACH_MODE_PERF);
 	struct bpf_link *attach = bpf_program__attach_uprobe_opts(
-		skel->progs.do_uprobe_trace, -1, "example/minimal/victim", 0,
+		skel->progs.do_uprobe_trace, -1, "example/uprobe/victim", 0,
 		&attach_opts);
 	if (!attach) {
 		fprintf(stderr, "Failed to attach BPF skeleton\n");
@@ -67,7 +67,7 @@ int main(int argc, char **argv)
 	}
 cleanup:
 	/* Clean up */
-	minimal_bpf__destroy(skel);
+	uprobe_bpf__destroy(skel);
 
 	return err < 0 ? -err : 0;
 }
