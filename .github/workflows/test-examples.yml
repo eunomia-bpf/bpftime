@@ -68,7 +68,11 @@ jobs:
             victim: /bin/bash
             syscall_trace: false
             expected_str: "info"
-
+          - path: libbpf-tools/syscount
+            executable: ./syscount
+            victim: /bin/bash
+            syscall_trace: false
+            expected_str: "info"
     steps:
       - uses: actions/checkout@v2
         with:
