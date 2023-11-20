@@ -53,6 +53,11 @@ jobs:
             victim: ./victim
             syscall_trace: false
             expected_str: "malloc calls: "
+          - path: minimal
+            executable: ./uprobe
+            victim: ./victim
+            syscall_trace: false
+            expected_str: ""
           - path: opensnoop
             executable: ./opensnoop
             victim: ./victim

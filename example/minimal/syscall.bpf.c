@@ -3,10 +3,10 @@
 #include <bpf/bpf_helpers.h>
 #include <bpf/bpf_tracing.h>
 
-SEC("uprobe/example/minimal/victim:target_func")
-int do_uprobe_trace(struct pt_regs *ctx)
+SEC("tracepoint/syscalls/sys_exit_write")
+int do_syscall_trace(void *ctx)
 {
-	bpf_printk("target_func called.\n");
+	bpf_printk("syscall write called.\n");
 	return 0;
 }
 

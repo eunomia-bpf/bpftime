@@ -10,7 +10,7 @@
 #define BPF_URETPROBE BPF_KRETPROBE
 #endif
 
-enum PatchOp {
+enum filter_op {
 	OP_SKIP,
 	OP_RESUME,
 };

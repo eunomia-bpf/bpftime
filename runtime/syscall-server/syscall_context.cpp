@@ -43,20 +43,21 @@ long syscall_context::handle_sysbpf(int cmd, union bpf_attr *attr, size_t size)
 	switch (cmd) {
 	case BPF_MAP_CREATE: {
 		spdlog::debug("Creating map");
-		int id = bpftime_maps_create(-1/* let the shm alloc fd for us */,
-			attr->map_name, bpftime::bpf_map_attr{
-						(int)attr->map_type,
-						attr->key_size,
-						attr->value_size,
-						attr->max_entries,
-						attr->map_flags,
-						attr->map_ifindex,
-						attr->btf_vmlinux_value_type_id,
-						attr->btf_id,
-						attr->btf_key_type_id,
-						attr->btf_value_type_id,
-						attr->map_extra,
-					});
+		int id = bpftime_maps_create(
+			-1 /* let the shm alloc fd for us */, attr->map_name,
+			bpftime::bpf_map_attr{
+				(int)attr->map_type,
+				attr->key_size,
+				attr->value_size,
+				attr->max_entries,
+				attr->map_flags,
+				attr->map_ifindex,
+				attr->btf_vmlinux_value_type_id,
+				attr->btf_id,
+				attr->btf_key_type_id,
+				attr->btf_value_type_id,
+				attr->map_extra,
+			});
 		spdlog::debug(
 			"Created map {}, type={}, name={}, key_size={}, value_size={}",
 			id, attr->map_type, attr->map_name, attr->key_size,
@@ -159,7 +160,8 @@ long syscall_context::handle_sysbpf(int cmd, union bpf_attr *attr, size_t size)
 				}
 			}
 #endif
-			int id = bpftime_progs_create(-1/* let the shm alloc fd for us */,
+			int id = bpftime_progs_create(
+				-1 /* let the shm alloc fd for us */,
 				(ebpf_inst *)(uintptr_t)attr->insns,
 				(size_t)attr->insn_cnt, attr->prog_name,
 				attr->prog_type);
@@ -171,7 +173,9 @@ long syscall_context::handle_sysbpf(int cmd, union bpf_attr *attr, size_t size)
 		auto prog_fd = attr->link_create.prog_fd;
 		auto target_fd = attr->link_create.target_fd;
 		spdlog::debug("Creating link {} -> {}", prog_fd, target_fd);
-		int id = bpftime_link_create(-1/* let the shm alloc fd for us */, prog_fd, target_fd);
+		int id = bpftime_link_create(
+			-1 /* let the shm alloc fd for us */, prog_fd,
+			target_fd);
 		spdlog::debug("Created link {}", id);
 		return id;
 	}
@@ -210,6 +214,14 @@ long syscall_context::handle_sysbpf(int cmd, union bpf_attr *attr, size_t size)
 		strncpy(ptr->name, map_name, sizeof(ptr->name) - 1);
 		return 0;
 	}
+	case BPF_PROG_ATTACH: {
+		auto prog_fd = attr->attach_bpf_fd;
+		auto target_fd = attr->target_fd;
+		spdlog::debug("BPF_PROG_ATTACH {} -> {}", prog_fd, target_fd);
+		int id = bpftime_attach_perf_to_bpf(target_fd, prog_fd);
+		spdlog::debug("Created attach {}", id);
+		return id;
+	}
 	default:
 		return orig_syscall_fn(__NR_bpf, (long)cmd,
 				       (long)(uintptr_t)attr, (long)size);
@@ -237,25 +249,43 @@ int syscall_context::handle_perfevent(perf_event_attr *attr, pid_t pid, int cpu,
 		spdlog::debug(
 			"Creating uprobe name {} offset {} retprobe {} ref_ctr_off {} attr->config={:x}",
 			name, offset, retprobe, ref_ctr_off, attr->config);
-		int id = bpftime_uprobe_create(-1/* let the shm alloc fd for us */, pid, name, offset, retprobe,
-					       ref_ctr_off);
+		int id = bpftime_uprobe_create(
+			-1 /* let the shm alloc fd for us */, pid, name, offset,
+			retprobe, ref_ctr_off);
 		// std::cout << "Created uprobe " << id << std::endl;
 		spdlog::debug("Created uprobe {}", id);
 		return id;
 	} else if ((int)attr->type ==
-		   (int)bpf_event_type::
-			   PERF_TYPE_TRACEPOINT) {
+		   (int)bpf_event_type::PERF_TYPE_TRACEPOINT) {
 		spdlog::debug("Detected tracepoint perf event creation");
-		int fd = bpftime_tracepoint_create(-1/* let the shm alloc fd for us */, pid, (int32_t)attr->config);
+		int fd = bpftime_tracepoint_create(
+			-1 /* let the shm alloc fd for us */, pid,
+			(int32_t)attr->config);
 		spdlog::debug("Created tracepoint perf event with fd {}", fd);
 		return fd;
-	} else if ((int)attr->type ==
-		   (int)bpf_event_type::
-			   PERF_TYPE_SOFTWARE) {
+	} else if ((int)attr->type == (int)bpf_event_type::PERF_TYPE_SOFTWARE) {
 		spdlog::debug("Detected software perf event creation");
 		int fd = bpftime_add_software_perf_event(cpu, attr->sample_type,
 							 attr->config);
 		spdlog::debug("Created software perf event with fd {}", fd);
+		return fd;
+	} else if ((int)attr->type == (int)bpf_event_type::BPF_TYPE_UREPLACE) {
+		spdlog::debug("Detected ureplace hook");
+		const char *name = (const char *)(uintptr_t)attr->config1;
+		uint64_t offset = attr->config2;
+		int fd = bpftime_add_ureplace_filter(
+			-1 /* let the shm alloc fd for us */, pid, name, offset,
+			true);
+		spdlog::debug("Created ureplace with fd {}", fd);
+		return fd;
+	} else if ((int)attr->type == (int)bpf_event_type::BPF_TYPE_UFILTER) {
+		spdlog::debug("Detected ufiltered hook");
+		const char *name = (const char *)(uintptr_t)attr->config1;
+		uint64_t offset = attr->config2;
+		int fd = bpftime_add_ureplace_filter(
+			-1 /* let the shm alloc fd for us */, pid, name, offset,
+			false);
+		spdlog::debug("Created ufilter with fd {}", fd);
 		return fd;
 	}
 	spdlog::info("Calling original perf event open");

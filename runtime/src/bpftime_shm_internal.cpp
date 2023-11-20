@@ -149,6 +149,32 @@ int bpftime_shm::add_uprobe(int fd, int pid, const char *name, uint64_t offset,
 		segment);
 }
 
+int bpftime_shm::add_ureplace_filter(int fd, int pid, const char *name,
+				     uint64_t offset, bool is_replace)
+{
+	if (fd < 0) {
+		// if fd is negative, we need to create a new fd for allocating
+		fd = open_fake_fd();
+	}
+	spdlog::debug("Set fd {} to ureplace, pid={}, name={}, offset={}", fd,
+		      pid, name, offset);
+	if (is_replace) {
+		return manager->set_handler(
+			fd,
+			bpf_perf_event_handler(
+				bpf_event_type::BPF_TYPE_UREPLACE, offset, pid,
+				name, segment, true),
+			segment);
+	} else {
+		return manager->set_handler(
+			fd,
+			bpf_perf_event_handler(bpf_event_type::BPF_TYPE_UFILTER,
+					       offset, pid, name, segment,
+					       true),
+			segment);
+	}
+}
+
 int bpftime_shm::add_tracepoint(int fd, int pid, int32_t tracepoint_id)
 {
 	if (fd < 0) {
@@ -441,7 +467,7 @@ void bpftime_shm::close_fd(int fd)
 #if BPFTIME_ENABLE_MPK
 void bpftime_shm::enable_mpk()
 {
-	if (manager == nullptr|| !is_mpk_init) {
+	if (manager == nullptr || !is_mpk_init) {
 		return;
 	}
 	if (pkey_set(pkey, PKEY_DISABLE_WRITE) == -1) {

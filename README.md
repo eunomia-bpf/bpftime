@@ -95,7 +95,18 @@ See [documents/usage.md](https://github.com/eunomia-bpf/bpftime/tree/master/docu
 
 ## Examples & Use Cases
 
-### Tracing the system:
+### minimal examples
+
+See [example/minimal](https://github.com/eunomia-bpf/bpftime/tree/master/example/minimal).
+
+The bpftime supports the following types of eBPF programs:
+
+- `uprobe/uretprobe`: trace userspace functions at start or and. No affect the control flow.
+- `ureplace`: replace the userspace function with a eBPF function
+- `ufilter`: filter the userspace function
+- `syscall tracepoints`: trace the specific syscall types. No affect the control flow of syscalls.
+
+### Tracing the system
 
 - `tracing userspace functions with uprobe`: Attach uprobe, uretprobe or all syscall tracepoints(currently x86 only) eBPF programs to a process or a group of processes:
   - [`malloc`](https://github.com/eunomia-bpf/bpftime/tree/master/example/malloc): count the malloc calls in libc by pid. demonstrate how to use the userspace `uprobe` with basic `hashmap`.
@@ -108,7 +119,7 @@ More bcc/libbpf-tools examples can be found in [example/libbpf-tools](https://gi
 
 You can also run bpftime with `bpftrace`, we've test it on [this commit](https://github.com/iovisor/bpftrace/commit/75aca47dd8e1d642ff31c9d3ce330e0c616e5b96). More details about how to run bpftrace in usespace, can be found in [example/bpftrace](https://github.com/eunomia-bpf/bpftime/tree/master/example/bpftrace).
 
-> ⚠️ **Note**: `bpftime` is actively under development, and it's not yet recommended for production use. See our [roadmap](#roadmap) for details. We'd love to hear your feedback and suggestions! Please feel free to open an issue or [Contact us](#contact).
+> ⚠️ **Note**: `bpftime` is actively under development, and it's not yet recommended for production use. See our [roadmap](#roadmap) for details. We'd love to hear your feedback and suggestions! Please feel free to open an issue or [Contact us](#contact-and-citations).
 
 ## In-Depth
 
@@ -202,10 +213,10 @@ This project is licensed under the MIT License.
 
 ## Contact and citations
 
-Have any questions or suggestions on future development? Free free to open an issue or contact 
+Have any questions or suggestions on future development? Free free to open an issue or contact
 <yunwei356@gmail.com> !
 
-Our arxiv preprint: https://arxiv.org/abs/2311.07923
+Our arxiv preprint: <https://arxiv.org/abs/2311.07923>
 
 ```txt
 @misc{zheng2023bpftime,
@@ -222,5 +233,5 @@ Our arxiv preprint: https://arxiv.org/abs/2311.07923
 
 eunomia-bpf community is sponsored by [PLCT Lab](https://plctlab.github.io/) from [ISCAS](http://english.is.cas.cn/au/).
 
-Thanks for other sponsors and discussions help building this project: [Prof. Xiaozheng lai](https://www2.scut.edu.cn/cs/2017/0129/c22285a327654/page.htm) from SCUT, [Prof lijun chen](http://www.xiyou.edu.cn/info/2394/67845.htm) from XUPT, 
+Thanks for other sponsors and discussions help building this project: [Prof. Xiaozheng lai](https://www2.scut.edu.cn/cs/2017/0129/c22285a327654/page.htm) from SCUT, [Prof lijun chen](http://www.xiyou.edu.cn/info/2394/67845.htm) from XUPT,
 [Prof. Qi Li](https://sites.google.com/site/qili2012/) from THU [NISL Lab](https://netsec.ccert.edu.cn/en/), and Linux eBPF maintainers.
