@@ -3,7 +3,9 @@
 #include <unistd.h>
 
 int target_func() {
+    int res = open("/dev/null");
     printf("target_func\n");
+    close(res);
     return 0;
 }
 

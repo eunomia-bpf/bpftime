@@ -1,8 +1,9 @@
 # minimal examples
 
-- uprobe/uretprobe: trace userspace functions at start or and. No affect the control flow.
-- ureplace: replace the userspace function with a eBPF function
-- ufilter: filter the userspace function
+- `uprobe/uretprobe`: trace userspace functions at start or and. No affect the control flow.
+- `ureplace`: replace the userspace function with a eBPF function
+- `ufilter`: filter the userspace function
+- `syscall tracepoints`: trace the specific syscall types. No affect the control flow of syscalls.
 
 ## uprobe trace
 

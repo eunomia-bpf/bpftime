@@ -52,6 +52,7 @@ int main(int argc, char **argv)
 		fprintf(stderr, "Failed to load and verify BPF skeleton\n");
 		goto cleanup;
 	}
+
 	// LIBBPF_OPTS(bpf_ureplace_opts, attach_opts, .func_name = "target_func",
 	// 	    .retprobe = false, .attach_mode = PROBE_ATTACH_MODE_PERF);
 	// struct bpf_link *attach = bpf_program__attach_ureplace_opts(
