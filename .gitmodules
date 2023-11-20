@@ -7,3 +7,6 @@
 [submodule "verifier/ebpf-verifier"]
 	path = bpftime-verifier/ebpf-verifier
 	url = https://github.com/vbpf/ebpf-verifier
+[submodule "third_party/Catch2"]
+	path = third_party/Catch2
+	url = https://github.com/catchorg/Catch2.git
