@@ -21,16 +21,6 @@ set(TEST_SOURCES
     test/non_kernel_helper.cpp
 )
 
-Include(FetchContent)
-
-FetchContent_Declare(
-    Catch2
-    GIT_REPOSITORY https://github.com/catchorg/Catch2.git
-    GIT_TAG v3.0.1
-)
-
-FetchContent_MakeAvailable(Catch2)
-
 add_executable(bpftime_verifier_tests ${TEST_SOURCES})
 add_dependencies(bpftime_verifier_tests bpftime-verifier)
 target_link_libraries(bpftime_verifier_tests PRIVATE bpftime-verifier Catch2::Catch2WithMain)

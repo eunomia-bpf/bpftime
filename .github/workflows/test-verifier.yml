@@ -19,8 +19,7 @@ jobs:
           sudo apt-get install binutils-dev libboost1.74-all-dev libelf-dev zlib1g-dev ninja-build libyaml-cpp-dev -y
       - name: Build test target
         run: |
-          cmake -DBPFTIME_ENABLE_UNIT_TESTING=YES -DBPFTIME_LLVM_JIT=NO -DENABLE_EBPF_VERIFIER=YES -DCMAKE_BUILD_TYPE:STRING=Release -S . -B build -G Ninja
-          cmake --build build --config Release --target bpftime_verifier_tests
+          make build-with-user-verifier
       - name: Run tests
         run: |
           ./build/bpftime-verifier/bpftime_verifier_tests
