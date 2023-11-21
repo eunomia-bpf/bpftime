@@ -31,38 +31,20 @@ using sharable_mutex_ptr = boost::interprocess::managed_unique_ptr<
 	boost::interprocess::interprocess_sharable_mutex,
 	boost::interprocess::managed_shared_memory>::type;
 
-// a basic spin lock
-struct bpftime_spinlock {
-	volatile int locked;
-	bpftime_spinlock() : locked(0)
-	{
-	}
-
-	void lock()
-	{
-		while (__sync_lock_test_and_set(&locked, 1)) {
-			// Spin-wait (busy wait)
-		}
-	}
-	void unlock()
-	{
-		__sync_lock_release(&locked);
-	}
-};
-
 // lock guad for RAII
 class bpftime_lock_guard {
     private:
-	bpftime_spinlock &lock;
+	volatile pthread_spinlock_t &spinlock;
 
     public:
-	explicit bpftime_lock_guard(volatile bpftime_spinlock &lock) : lock(lock)
+	explicit bpftime_lock_guard(volatile pthread_spinlock_t &spinlock)
+		: spinlock(spinlock)
 	{
-		lock.lock();
+		pthread_spin_lock(&spinlock);
 	}
 	~bpftime_lock_guard()
 	{
-		lock.unlock();
+		pthread_spin_unlock(&spinlock);
 	}
 
 	// Delete copy constructor and assignment operator
@@ -97,6 +79,7 @@ class bpf_map_handler {
 
 	{
 		spdlog::debug("Create map with type {}", type);
+		pthread_spin_init(&map_lock, 0);
 		this->name = name;
 	}
 	bpf_map_handler(const bpf_map_handler &) = delete;
@@ -206,7 +189,7 @@ class bpf_map_handler {
 
     private:
 	std::string get_container_name();
-	volatile mutable bpftime_spinlock map_lock;
+	mutable pthread_spinlock_t map_lock;
 	// The underlying data structure of the map
 	general_map_impl_ptr map_impl_ptr;
 	uint32_t max_entries = 0;
