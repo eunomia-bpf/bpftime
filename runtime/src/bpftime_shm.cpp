@@ -7,6 +7,8 @@
 #include "handler/map_handler.hpp"
 #include "handler/perf_event_handler.hpp"
 #include "spdlog/spdlog.h"
+#include <csignal>
+#include <signal.h>
 #include <cerrno>
 #include <errno.h>
 #include <bpftime_shm_internal.hpp>
@@ -162,13 +164,15 @@ int bpftime_is_ringbuf_map(int fd)
 	return shm_holder.global_shared_memory.is_ringbuf_map_fd(fd);
 }
 
-void bpftime_protect_enable() {
+void bpftime_protect_enable()
+{
 #if BPFTIME_ENABLE_MPK
 	return shm_holder.global_shared_memory.enable_mpk();
 #endif
 }
 
-void bpftime_protect_disable() {
+void bpftime_protect_disable()
+{
 #if BPFTIME_ENABLE_MPK
 	return shm_holder.global_shared_memory.disable_mpk();
 #endif
@@ -274,6 +278,24 @@ int bpftime_epoll_wait(int fd, struct epoll_event *out_evts, int max_evt,
 		std::get<epoll_handler>(shm.get_manager()->get_handler(fd));
 	auto start_time = high_resolution_clock::now();
 	int next_id = 0;
+	sigset_t orig_sigset;
+	sigset_t to_block;
+	sigemptyset(&to_block);
+	sigaddset(&to_block, SIGINT);
+	sigaddset(&to_block, SIGTERM);
+
+	// Block the develivery of some signals, so we would be able to catch them when sleeping
+	if (int err = sigprocmask(SIG_BLOCK, &to_block, &orig_sigset);
+	    err == -1) {
+		spdlog::error(
+			"sigprocmask failed to block sigint & sigterm, errno={}. this SHOULD NOT HAPPEN",
+			errno);
+		errno = EINVAL;
+		return -1;
+	}
+	// timeout for waiting..
+	timespec ts{ .tv_sec = 0, .tv_nsec = 1000 * 1000 };
+	bool failed_with_intr = false;
 	while (next_id < max_evt) {
 		auto now_time = high_resolution_clock::now();
 		auto elasped =
@@ -317,7 +339,44 @@ int bpftime_epoll_wait(int fd, struct epoll_event *out_evts, int max_evt,
 				}
 			}
 		}
-		std::this_thread::sleep_for(milliseconds(1));
+		if (next_id > 0) {
+			// According to man epoll_wait(2), epoll_wait can't be
+			// interrupted once at least one event was received
+			std::this_thread::sleep_for(milliseconds(1));
+		} else {
+			// Nothing has been received, so allow the interruption
+			// of epoll_wait
+			// First, unblock the signals
+			sigprocmask(SIG_UNBLOCK, &to_block, nullptr);
+			siginfo_t sig_info;
+			// Second, wait for interruptable signals
+			if (int sig = sigtimedwait(&to_block, &sig_info, &ts);
+			    sig > 0) {
+				spdlog::debug(
+					"epoll_wait interrupted by signal {}",
+					sig);
+				// Invoke the original signal handler
+				struct sigaction act;
+				sigaction(sig, nullptr, &act);
+				if ((act.sa_flags & SA_SIGINFO) &&
+				    act.sa_sigaction) {
+					act.sa_sigaction(sig, &sig_info,
+							 nullptr);
+				} else if (auto f = act.sa_handler) {
+					f(sig);
+				}
+				failed_with_intr = true;
+				break;
+			}
+			// If not catched, just block them again
+			sigprocmask(SIG_BLOCK, &to_block, nullptr);
+		}
+	}
+	// Restore the original sigmask
+	sigprocmask(SIG_SETMASK, &orig_sigset, nullptr);
+	if (failed_with_intr) {
+		errno = EINTR;
+		return -1;
 	}
 	return next_id;
 }
@@ -329,7 +388,8 @@ int bpftime_add_software_perf_event(int cpu, int32_t sample_type,
 	return shm.add_software_perf_event(cpu, sample_type, config);
 }
 
-int bpftime_add_ureplace_filter(int fd, int pid, const char *name, uint64_t offset, bool is_replace)
+int bpftime_add_ureplace_filter(int fd, int pid, const char *name,
+				uint64_t offset, bool is_replace)
 {
 	auto &shm = shm_holder.global_shared_memory;
 	return shm.add_ureplace_filter(fd, pid, name, offset, is_replace);

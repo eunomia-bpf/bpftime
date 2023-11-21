@@ -1,24 +1,43 @@
 import sys
-import subprocess
-import datetime
-import select
-from io import StringIO
+import asyncio
+import typing
 import signal
-import fcntl
-import os
-import time
 
 SERVER_TIMEOUT = 30
 AGENT_TIMEOUT = 30
 SERVER_START_SIGNAL = "bpftime-syscall-server started"
 
 
-def set_non_blocking(fd):
-    flags = fcntl.fcntl(fd, fcntl.F_GETFL)
-    fcntl.fcntl(fd, fcntl.F_SETFL, flags | os.O_NONBLOCK)
+async def handle_stdout(
+    stdout: asyncio.StreamReader,
+    notify: asyncio.Event,
+    title: str,
+    callback_all: typing.List[typing.Tuple[asyncio.Event, str]] = [],
+):
+    while True:
+        t1 = asyncio.create_task(notify.wait())
+        t2 = asyncio.create_task(stdout.readline())
+        done, pending = await asyncio.wait(
+            [t1, t2],
+            return_when=asyncio.FIRST_COMPLETED,
+        )
+        for item in pending:
+            item.cancel()
+        if t2 in done:
+            s = t2.result().decode()
+            print(f"{title}:", s, end="")
+            for callback in callback_all:
+                evt, sig = callback
+                if sig in s:
+                    evt.set()
+                    print("Callback triggered")
+        if t1 in done:
+            break
+        if stdout.at_eof():
+            break
 
 
-def main():
+async def main():
     (
         executable,
         victim,
@@ -26,85 +45,60 @@ def main():
         bpftime_cli,
         syscall_trace,
     ) = sys.argv[1:]
-    bashreadline_patch = "readline" in executable
-    # Run the syscall-server
-    server = subprocess.Popen(
-        " ".join([bpftime_cli, "load", executable]),
-        stdout=subprocess.PIPE,
-        text=False,
-        stderr=sys.stderr,
-        bufsize=0,
-        shell=True,
-    )
-    set_non_blocking(server.stdout)
-    server_ok = False
-    server_start_time = datetime.datetime.now()
-    while (
-        datetime.datetime.now() - server_start_time
-    ).total_seconds() < SERVER_TIMEOUT:
-        if server.poll() is not None:
-            break
-        ready, _, _ = select.select([server.stdout], [], [], 0.01)
-        if ready:
-            line = server.stdout.readline().decode()
-            print("SERVER:", line, end="")
-            if SERVER_START_SIGNAL in line:
-                print("MONITOR: Server started!")
-                server_ok = True
-                break
-    if not server_ok:
-        print("Failed to start server!")
-        server.kill()
-        server.wait()
-        exit(1)
-    time.sleep(10)
-    # Start the agent
-    agent = subprocess.Popen(
-        " ".join(
-            [bpftime_cli, "start"]
-            + (["-s", victim] if syscall_trace == "1" else [victim])
-        ),
-        stdout=sys.stdout,
-        text=False,
-        stderr=sys.stderr,
-        stdin=subprocess.PIPE,
-        env={"SPDLOG_LEVEL": "info"},
-        shell=True,
-    )
-    agent_start_time = datetime.datetime.now()
-    agent_ok = False
-    buf = StringIO()
-    if bashreadline_patch:
-        # Currently it's difficult to test bashreadline
-        exit(0)
-    while (datetime.datetime.now() - agent_start_time).total_seconds() < AGENT_TIMEOUT:
-        # Check if server has expected output
-        if server.poll() is not None:
-            break
-        ready, _, _ = select.select([server.stdout], [], [], 0.01)
-        c = server.stdout.read()
-        if c:
-            c = c.decode()
-            buf.write(c)
-            print(c, end="")
-            if c == "\n":
-                buf.seek(0)
-            if expected_str in buf.getvalue():
-                # print("SERVER:", line, end="")
-                # if expected_str in line:
-                print(f"MONITOR: string `{expected_str}` found!")
-                agent_ok = True
-                break
-    agent.kill()
-    agent.wait()
-    server.kill()
-    server.wait()
-    if not agent_ok:
-        print("Failed to test, expected string not found!")
-        exit(1)
-    else:
-        exit(0)
+    try:
+        bashreadline_patch = "readline" in executable
+        should_exit = asyncio.Event()
+        # Run the syscall-server
+        server = await asyncio.subprocess.create_subprocess_exec(
+            *(" ".join([bpftime_cli, "load", executable]).split()),
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.STDOUT,
+        )
+        server_started_signal = asyncio.Event()
+        expected_str_signal = asyncio.Event()
+
+        server_out = asyncio.create_task(
+            handle_stdout(
+                server.stdout,
+                should_exit,
+                "SERVER",
+                [
+                    (server_started_signal, SERVER_START_SIGNAL),
+                    (expected_str_signal, expected_str),
+                ],
+            )
+        )
+
+        await asyncio.wait_for(server_started_signal.wait(), SERVER_TIMEOUT)
+        await asyncio.sleep(2)
+        print("Server started!")
+
+        # Start the agent
+        agent = await asyncio.subprocess.create_subprocess_exec(
+            *(
+                " ".join(
+                    [bpftime_cli, "start"]
+                    + (["-s", victim] if syscall_trace == "1" else [victim])
+                ).split()
+            ),
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.STDOUT,
+            env={"SPDLOG_LEVEL": "info"},
+        )
+        agent_out = asyncio.create_task(
+            handle_stdout(agent.stdout, should_exit, "AGENT", [])
+        )
+        if bashreadline_patch:
+            return
+        await asyncio.wait_for(expected_str_signal.wait(), AGENT_TIMEOUT)
+        print("Test successfully")
+    finally:
+        should_exit.set()
+        server.send_signal(signal.SIGINT)
+        agent.send_signal(signal.SIGINT)
+        await asyncio.gather(server_out, agent_out)
+        await asyncio.gather(server.communicate(), agent.communicate())
 
 
 if __name__ == "__main__":
-    main()
+    asyncio.run(main())
