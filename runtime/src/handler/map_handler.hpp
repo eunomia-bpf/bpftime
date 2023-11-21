@@ -30,6 +30,26 @@ using boost_shm_string =
 using sharable_mutex_ptr = boost::interprocess::managed_unique_ptr<
 	boost::interprocess::interprocess_sharable_mutex,
 	boost::interprocess::managed_shared_memory>::type;
+
+
+typedef struct {
+    volatile int locked;
+} spinlock_t;
+
+void spinlock_init(spinlock_t *lock) {
+    lock->locked = 0;
+}
+
+void spinlock_lock(spinlock_t *lock) {
+    while (__sync_lock_test_and_set(&lock->locked, 1)) {
+        // Spin-wait (busy wait)
+    }
+}
+
+void spinlock_unlock(spinlock_t *lock) {
+    __sync_lock_release(&lock->locked);
+}
+
 // bpf map handler
 // all map data will be put on shared memory, so it can be accessed by
 // different processes
@@ -52,16 +72,12 @@ class bpf_map_handler {
 			boost::interprocess::managed_shared_memory &mem)
 		: type((bpf_map_type)type),
 		  name(char_allocator(mem.get_segment_manager())),
-		  map_mutex(boost::interprocess::make_managed_unique_ptr(
-			  mem.construct<boost::interprocess::
-						interprocess_sharable_mutex>(
-				  boost::interprocess::anonymous_instance)(),
-			  mem)),
 		  map_impl_ptr(nullptr), max_entries(max_ents), flags(flags),
 		  key_size(key_size), value_size(value_size)
 
 	{
 		spdlog::debug("Create map with type {}", type);
+		spinlock_init(&lock);
 		this->name = name;
 	}
 	bpf_map_handler(const bpf_map_handler &) = delete;
@@ -171,7 +187,7 @@ class bpf_map_handler {
 
     private:
 	std::string get_container_name();
-	mutable sharable_mutex_ptr map_mutex;
+	mutable spinlock_t lock;
 	// The underlying data structure of the map
 	general_map_impl_ptr map_impl_ptr;
 	uint32_t max_entries = 0;

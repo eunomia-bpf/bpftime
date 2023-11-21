@@ -55,18 +55,19 @@ const void *bpf_map_handler::map_lookup_elem(const void *key,
 {
 	const auto do_lookup = [&](auto *impl) -> const void * {
 		if (impl->should_lock) {
-			sharable_lock<interprocess_sharable_mutex> guard(
-				*map_mutex);
-			return impl->elem_lookup(key);
+			spinlock_lock(&lock);
+			const void *res = impl->elem_lookup(key);
+			spinlock_unlock(&lock);
+			return res;
 		} else {
 			return impl->elem_lookup(key);
 		}
 	};
 	const auto do_lookup_userspace = [&](auto *impl) -> const void * {
 		if (impl->should_lock) {
-			sharable_lock<interprocess_sharable_mutex> guard(
-				*map_mutex);
-			return impl->elem_lookup_userspace(key);
+			spinlock_lock(&lock);
+			const void *res = impl->elem_lookup_userspace(key);
+			spinlock_unlock(&lock);
 		} else {
 			return impl->elem_lookup_userspace(key);
 		}
@@ -133,9 +134,9 @@ long bpf_map_handler::map_update_elem(const void *key, const void *value,
 {
 	const auto do_update = [&](auto *impl) -> long {
 		if (impl->should_lock) {
-			scoped_lock<interprocess_sharable_mutex> guard(
-				*map_mutex);
-			return impl->elem_update(key, value, flags);
+			spinlock_lock(&lock);
+			long res = impl->elem_update(key, value, flags);
+			spinlock_unlock(&lock);
 		} else {
 			return impl->elem_update(key, value, flags);
 		}
@@ -143,9 +144,10 @@ long bpf_map_handler::map_update_elem(const void *key, const void *value,
 
 	const auto do_update_userspace = [&](auto *impl) -> long {
 		if (impl->should_lock) {
-			scoped_lock<interprocess_sharable_mutex> guard(
-				*map_mutex);
-			return impl->elem_update_userspace(key, value, flags);
+			spinlock_lock(&lock);
+			long res =
+				impl->elem_update_userspace(key, value, flags);
+			spinlock_unlock(&lock);
 		} else {
 			return impl->elem_update_userspace(key, value, flags);
 		}
@@ -211,9 +213,9 @@ int bpf_map_handler::bpf_map_get_next_key(const void *key, void *next_key,
 {
 	const auto do_get_next_key = [&](auto *impl) -> int {
 		if (impl->should_lock) {
-			sharable_lock<interprocess_sharable_mutex> guard(
-				*map_mutex);
-			return impl->map_get_next_key(key, next_key);
+			spinlock_lock(&lock);
+			int res = impl->map_get_next_key(key, next_key);
+			spinlock_unlock(&lock);
 		} else {
 			return impl->map_get_next_key(key, next_key);
 		}
@@ -277,18 +279,18 @@ long bpf_map_handler::map_delete_elem(const void *key,
 {
 	const auto do_delete = [&](auto *impl) -> long {
 		if (impl->should_lock) {
-			scoped_lock<interprocess_sharable_mutex> guard(
-				*map_mutex);
-			return impl->elem_delete(key);
+			spinlock_lock(&lock);
+			long res = impl->elem_delete(key);
+			spinlock_unlock(&lock);
 		} else {
 			return impl->elem_delete(key);
 		}
 	};
 	const auto do_delete_userspace = [&](auto *impl) -> long {
 		if (impl->should_lock) {
-			scoped_lock<interprocess_sharable_mutex> guard(
-				*map_mutex);
-			return impl->elem_delete_userspace(key);
+			spinlock_lock(&lock);
+			long res = impl->elem_delete_userspace(key);
+			spinlock_unlock(&lock);
 		} else {
 			return impl->elem_delete_userspace(key);
 		}
