@@ -284,7 +284,7 @@ int bpftime_epoll_wait(int fd, struct epoll_event *out_evts, int max_evt,
 	sigaddset(&to_block, SIGINT);
 	sigaddset(&to_block, SIGTERM);
 
-	// Block the develivery og some signals..
+	// Block the develivery of some signals, so we would be able to catch them when sleeping
 	if (int err = sigprocmask(SIG_BLOCK, &to_block, &orig_sigset);
 	    err == -1) {
 		spdlog::error(
