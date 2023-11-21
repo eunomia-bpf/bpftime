@@ -2,6 +2,7 @@ import sys
 import asyncio
 import typing
 import signal
+
 SERVER_TIMEOUT = 30
 AGENT_TIMEOUT = 30
 SERVER_START_SIGNAL = "bpftime-syscall-server started"
@@ -49,9 +50,7 @@ async def main():
         should_exit = asyncio.Event()
         # Run the syscall-server
         server = await asyncio.subprocess.create_subprocess_exec(
-            bpftime_cli,
-            "load",
-            executable,
+            *(" ".join([bpftime_cli, "load", executable]).split()),
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.STDOUT,
         )
@@ -77,8 +76,10 @@ async def main():
         # Start the agent
         agent = await asyncio.subprocess.create_subprocess_exec(
             *(
-                [bpftime_cli, "start"]
-                + (["-s", victim] if syscall_trace == "1" else [victim])
+                " ".join(
+                    [bpftime_cli, "start"]
+                    + (["-s", victim] if syscall_trace == "1" else [victim])
+                ).split()
             ),
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.STDOUT,
