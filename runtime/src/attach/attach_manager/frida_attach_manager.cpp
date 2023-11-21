@@ -36,10 +36,12 @@ extern "C" uint64_t __bpftime_frida_attach_manager__replace_handler();
 extern "C" void *__bpftime_frida_attach_manager__filter_handler();
 namespace bpftime
 {
+
 frida_attach_manager::~frida_attach_manager()
 {
 	gum_object_unref(interceptor);
 }
+
 frida_attach_manager::frida_attach_manager()
 {
 	spdlog::debug("Initializing frida attach manager");
@@ -102,6 +104,7 @@ int frida_attach_manager::attach_at(void *func_addr, callback_variant &&cb)
 	inserted_attach_entry->second->internal_attaches = inner_attach;
 	return result;
 }
+
 int frida_attach_manager::attach_uprobe_at(void *func_addr,
 					   uprobe_callback &&cb)
 {
@@ -110,6 +113,7 @@ int frida_attach_manager::attach_uprobe_at(void *func_addr,
 		callback_variant(
 			std::in_place_index_t<(int)attach_type::UPROBE>(), cb));
 }
+
 int frida_attach_manager::attach_uretprobe_at(void *func_addr,
 					      uretprobe_callback &&cb)
 {
@@ -119,16 +123,19 @@ int frida_attach_manager::attach_uretprobe_at(void *func_addr,
 			std::in_place_index_t<(int)attach_type::URETPROBE>(),
 			cb));
 }
+
 int frida_attach_manager::attach_replace_at(void *func_addr,
 					    replace_callback &&cb)
 {
 	return attach_at(func_addr, cb);
 }
+
 int frida_attach_manager::attach_filter_at(void *func_addr,
 					   filter_callback &&cb)
 {
 	return attach_at(func_addr, cb);
 }
+
 int frida_attach_manager::destroy_attach(int id)
 {
 	void *drop_func_addr = nullptr;

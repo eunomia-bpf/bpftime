@@ -58,6 +58,7 @@ class base_attach_manager {
 					uretprobe_callback &&cb) = 0;
 	virtual int attach_replace_at(void *func_addr,
 				      replace_callback &&cb) = 0;
+
 	virtual int attach_filter_at(void *func_addr, filter_callback &&cb) = 0;
 	virtual int destroy_attach(int id) = 0;
 	virtual int destroy_attach_by_func_addr(const void *func) = 0;
