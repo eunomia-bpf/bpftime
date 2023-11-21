@@ -2,6 +2,14 @@
 
 It's at a very early stage and may contain bugs on more platforms and eBPF programs.
 
+## Run with JIT enabled
+
+Set `BPFTIME_USE_JIT=true` in the server to enable JIT, for example, when running the server:
+
+```sh
+LD_PRELOAD=~/.bpftime/libbpftime-syscall-server.so BPFTIME_USE_JIT=true example/malloc/malloc
+```
+
 ## Uprobe and uretprobe
 
 With `bpftime`, you can build eBPF applications using familiar tools like clang and libbpf, and execute them in userspace. For instance, the `malloc` eBPF program traces malloc calls using uprobe and aggregates the counts using a hash map.
