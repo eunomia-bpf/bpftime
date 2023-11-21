@@ -36,17 +36,17 @@ typedef struct {
     volatile int locked;
 } spinlock_t;
 
-void spinlock_init(spinlock_t *lock) {
+inline void spinlock_init(spinlock_t *lock) {
     lock->locked = 0;
 }
 
-void spinlock_lock(spinlock_t *lock) {
+inline void spinlock_lock(spinlock_t *lock) {
     while (__sync_lock_test_and_set(&lock->locked, 1)) {
         // Spin-wait (busy wait)
     }
 }
 
-void spinlock_unlock(spinlock_t *lock) {
+inline void spinlock_unlock(spinlock_t *lock) {
     __sync_lock_release(&lock->locked);
 }
 

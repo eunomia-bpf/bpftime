@@ -137,6 +137,7 @@ long bpf_map_handler::map_update_elem(const void *key, const void *value,
 			spinlock_lock(&lock);
 			long res = impl->elem_update(key, value, flags);
 			spinlock_unlock(&lock);
+			return res;
 		} else {
 			return impl->elem_update(key, value, flags);
 		}
@@ -148,6 +149,7 @@ long bpf_map_handler::map_update_elem(const void *key, const void *value,
 			long res =
 				impl->elem_update_userspace(key, value, flags);
 			spinlock_unlock(&lock);
+			return res;
 		} else {
 			return impl->elem_update_userspace(key, value, flags);
 		}
@@ -216,6 +218,7 @@ int bpf_map_handler::bpf_map_get_next_key(const void *key, void *next_key,
 			spinlock_lock(&lock);
 			int res = impl->map_get_next_key(key, next_key);
 			spinlock_unlock(&lock);
+			return res;
 		} else {
 			return impl->map_get_next_key(key, next_key);
 		}
@@ -282,6 +285,7 @@ long bpf_map_handler::map_delete_elem(const void *key,
 			spinlock_lock(&lock);
 			long res = impl->elem_delete(key);
 			spinlock_unlock(&lock);
+			return res;
 		} else {
 			return impl->elem_delete(key);
 		}
@@ -291,6 +295,7 @@ long bpf_map_handler::map_delete_elem(const void *key,
 			spinlock_lock(&lock);
 			long res = impl->elem_delete_userspace(key);
 			spinlock_unlock(&lock);
+			return res;
 		} else {
 			return impl->elem_delete_userspace(key);
 		}
