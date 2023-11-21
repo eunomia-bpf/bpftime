@@ -18,16 +18,15 @@ namespace bpftime
 
 using namespace boost::interprocess;
 
-
 // implementation of hash map
 class hash_map_impl {
 	using bi_map_value_ty = std::pair<const bytes_vec, bytes_vec>;
 	using bi_map_allocator =
 		allocator<bi_map_value_ty,
 			  managed_shared_memory::segment_manager>;
-	using shm_hash_map = boost::unordered_map<
-		bytes_vec, bytes_vec, bytes_vec_hasher,
-		std::equal_to<bytes_vec>, bi_map_allocator>;
+	using shm_hash_map =
+		boost::unordered_map<bytes_vec, bytes_vec, bytes_vec_hasher,
+				     std::equal_to<bytes_vec>, bi_map_allocator>;
 	shm_hash_map map_impl;
 	uint32_t _key_size;
 	uint32_t _value_size;

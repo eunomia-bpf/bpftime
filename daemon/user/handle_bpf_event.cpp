@@ -283,7 +283,7 @@ int bpf_event_handler::handle_perf_event_open(const struct event *e)
 	spdlog::debug("handle_perf_event");
 	const char *type_id_str = "UNKNOWN TYPE";
 	unsigned int perf_type = e->perf_event_data.attr.type;
-	if (perf_type >= 0 && perf_type < (sizeof(perf_type_id_strings) /
+	if (perf_type < (sizeof(perf_type_id_strings) /
 					   sizeof(perf_type_id_strings[0]))) {
 		type_id_str = perf_type_id_strings[perf_type];
 	}
