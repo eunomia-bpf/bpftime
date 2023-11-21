@@ -30,7 +30,7 @@ extern "C" int __libc_start_main(int (*main)(int, char **, char **), int argc,
 				 void (*fini)(void), void (*rtld_fini)(void),
 				 void *stack_end)
 {
-	spdlog::info("Entering bpftime agent");
+	spdlog::info("Entering bpftime syscal transformer agent");
 	orig_main_func = main;
 	using this_func_t = decltype(&__libc_start_main);
 	this_func_t orig = (this_func_t)dlsym(RTLD_NEXT, "__libc_start_main");
@@ -50,6 +50,10 @@ extern "C" void bpftime_agent_main(const gchar *data, gboolean *stay_resident)
 		if (std::string(data) != "") {
 			spdlog::info("Using agent path from frida data..");
 			agent_so = data;
+		} else {
+			spdlog::error(
+				"Please set AGENT_SO to the bpftime-agent when use this tranformer");
+			return;
 		}
 	}
 	assert(agent_so &&
