@@ -77,6 +77,8 @@ endif()
 
 # spdlog
 add_subdirectory(third_party/spdlog)
+# catch2
+add_subdirectory(third_party/Catch2)
 
 set(SPDLOG_INCLUDE ${CMAKE_CURRENT_SOURCE_DIR}/third_party/spdlog/include)
 

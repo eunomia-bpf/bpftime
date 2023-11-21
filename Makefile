@@ -63,6 +63,10 @@ build-llvm: ## build with llvm as jit backend
 	cmake -Bbuild  -DBPFTIME_ENABLE_UNIT_TESTING=1 -DBPFTIME_LLVM_JIT=1
 	cmake --build build --config Debug
 
+build-with-user-verifier: ## build with userspace ebpf verifier
+	cmake -DBPFTIME_ENABLE_UNIT_TESTING=YES -DBPFTIME_LLVM_JIT=NO -DENABLE_EBPF_VERIFIER=YES -DCMAKE_BUILD_TYPE:STRING=Release -B build
+	cmake --build build --config Release --target bpftime_verifier_tests
+
 clean: ## clean the project
 	rm -rf build
 	make -C runtime clean
