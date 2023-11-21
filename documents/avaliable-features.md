@@ -20,11 +20,18 @@ User-kernel shared maps:
 
 ## avaliable program types
 
+Compatible with kernel eBPF program types:
+
 - tracepoint:raw_syscalls:sys_enter
 - tracepoint:syscalls:sys_exit_*
 - tracepoint:syscalls:sys_enter_*
 - uretprobe:*
 - uprobe:*
+
+Some new userspace eBPF program types:
+
+- ufilter:*
+- ureplace:*
 
 ## available helpers
 
