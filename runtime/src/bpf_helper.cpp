@@ -68,6 +68,11 @@ uint64_t bpftime_probe_read(uint64_t dst, uint64_t size, uint64_t ptr, uint64_t,
 	return 0;
 }
 
+uint64_t bpftime_get_prandom_u32()
+{
+	return (uint32_t)rand();
+}
+
 uint64_t bpftime_ktime_get_coarse_ns(uint64_t, uint64_t, uint64_t, uint64_t,
 				     uint64_t)
 {
@@ -613,6 +618,12 @@ const bpftime_helper_group kernel_helper_group = {
 		    .name = "bpf_trace_printk",
 		    .fn = (void *)bpftime_trace_printk,
 	    } },
+	  { BPF_FUNC_get_prandom_u32,
+	    bpftime_helper_info{
+		    .index = BPF_FUNC_get_prandom_u32,
+		    .name = "bpf_get_prandom_u32",
+		    .fn = (void *)bpftime_get_prandom_u32,
+	    } },
 	  { BPF_FUNC_get_current_pid_tgid,
 	    bpftime_helper_info{
 		    .index = BPF_FUNC_get_current_pid_tgid,
@@ -629,7 +640,7 @@ const bpftime_helper_group kernel_helper_group = {
 		    .name = "bpf_get_current_comm",
 		    .fn = (void *)bpftime_get_current_comm,
 	    } },
-	{ BPF_FUNC_override_return,
+	  { BPF_FUNC_override_return,
 	    bpftime_helper_info{
 		    .index = BPF_FUNC_override_return,
 		    .name = "bpf_override_return",

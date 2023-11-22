@@ -6,8 +6,13 @@
 SEC("uprobe")
 int do_error_inject_patch(struct pt_regs *ctx)
 {
-	bpf_printk("target_func called is overrided.\n");
-	bpf_override_return(ctx, 0);
+	int rand = bpf_get_prandom_u32();
+	if (rand % 2 == 0) {
+		bpf_printk("bpf: Inject error. Target func will not exec.\n");
+		bpf_override_return(ctx, -1);
+		return 0;
+	}
+	bpf_printk("bpf: Continue.\n");
 	return 0;
 }
 
