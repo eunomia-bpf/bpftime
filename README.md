@@ -101,13 +101,10 @@ See [example/minimal](https://github.com/eunomia-bpf/bpftime/tree/master/example
 
 The bpftime supports the following types of eBPF programs:
 
-- `uprobe/uretprobe`: trace userspace functions at start or and. No affect the control flow.
-- `syscall tracepoints`: trace the specific syscall types. No affect the control flow of syscalls.
+- `uprobe/uretprobe`: trace userspace functions at start or and.
+- `syscall tracepoints`: trace the specific syscall types.
 
-And some userspace extensions:
-
-- `ureplace`: replace the userspace function with a eBPF function
-- `ufilter`: filter the userspace function
+You may use `bpf_override_return` to change the control flow of the program.
 
 See [documents/available-features.md](https://github.com/eunomia-bpf/bpftime/tree/master/documents/avaliable-features.md) for more details.
 

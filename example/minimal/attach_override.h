@@ -24,7 +24,7 @@ static inline __u64 ptr_to_u64(const void *ptr)
 	return (__u64)(unsigned long)ptr;
 }
 
-static int perf_event_open_filter_replace(const char *name, uint64_t offset,
+static int perf_event_open_with_override(const char *name, uint64_t offset,
 					  int pid, size_t ref_ctr_off, int type)
 {
 	const size_t attr_sz = sizeof(struct perf_event_attr);
@@ -49,7 +49,7 @@ static int perf_event_open_filter_replace(const char *name, uint64_t offset,
 	return pfd >= 0 ? pfd : -errno;
 }
 
-static int bpf_prog_attach_filter_replace(int prog_fd, const char *binary_path,
+static int bpf_prog_attach_with_override(int prog_fd, const char *binary_path,
 					  const char *name, int type)
 {
 	int offset = elf_find_func_offset_from_file(binary_path, name);
@@ -58,7 +58,7 @@ static int bpf_prog_attach_filter_replace(int prog_fd, const char *binary_path,
 	}
 	printf("offset: %d", offset);
 	int res =
-		perf_event_open_filter_replace(binary_path, offset, -1, 0, type);
+		perf_event_open_with_override(binary_path, offset, -1, 0, type);
 	if (res < 0) {
 		printf("perf_event_open_ureplace failed: %d\n", res);
 		return res;
@@ -71,18 +71,11 @@ static int bpf_prog_attach_filter_replace(int prog_fd, const char *binary_path,
 	return 0;
 }
 
-static int bpf_prog_attach_ufilter(int prog_fd, const char *binary_path,
+static int bpf_prog_attach_uprobe_with_override(int prog_fd, const char *binary_path,
 				  const char *name)
 {
-	return bpf_prog_attach_filter_replace(prog_fd, binary_path, name,
+	return bpf_prog_attach_with_override(prog_fd, binary_path, name,
 					      BPF_TYPE_UFILTER);
-}
-
-static int bpf_prog_attach_ureplace(int prog_fd, const char *binary_path,
-				   const char *name)
-{
-	return bpf_prog_attach_filter_replace(prog_fd, binary_path, name,
-					      BPF_TYPE_UREPLACE);
 }
 
 #endif // BPFTIME_UREPLACE_ATTACH_H

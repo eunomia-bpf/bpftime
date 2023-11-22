@@ -14,9 +14,9 @@
 namespace bpftime
 {
 
-using retval_set_callback = std::function<void(uint64_t)>;
+using override_return_set_callback = std::function<void(uint64_t, uint64_t)>;
 // Used by filter to record the return value
-extern thread_local std::optional<retval_set_callback> curr_thread_set_ret_val;
+extern thread_local std::optional<override_return_set_callback> curr_thread_override_return_callback;
 
 enum class attach_type {
 	// Invoked when the attached function return, receiving the return value

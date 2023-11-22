@@ -6,7 +6,8 @@
 SEC("uprobe")
 int do_ureplace_patch(struct pt_regs *ctx)
 {
-	bpf_printk("target_func called for replaced.\n");
+	bpf_printk("target_func called is overrided.\n");
+	bpf_override_return(ctx, 0);
 	return 0;
 }
 

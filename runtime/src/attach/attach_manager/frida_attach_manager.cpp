@@ -207,10 +207,12 @@ void *frida_attach_manager::find_module_export_by_name(const char *module_name,
 	return (void *)(uintptr_t)gum_module_find_export_by_name(module_name,
 								 symbol_name);
 }
+
 attach_type frida_attach_entry::get_type() const
 {
 	return (attach_type)cb.index();
 }
+
 frida_internal_attach_entry::frida_internal_attach_entry(
 	void *function, attach_type basic_attach_type,
 	GumInterceptor *interceptor)
@@ -228,6 +230,7 @@ frida_internal_attach_entry::frida_internal_attach_entry(
 			gum_interceptor_end_transaction(interceptor);
 		}
 	} _transaction(interceptor);
+	override_return_callback = nullptr;
 	if (basic_attach_type == attach_type::UPROBE ||
 	    basic_attach_type == attach_type::URETPROBE) {
 		frida_gum_invocation_listener =
@@ -256,6 +259,12 @@ frida_internal_attach_entry::frida_internal_attach_entry(
 				(uintptr_t)function);
 			throw std::runtime_error("Failed to attach filter");
 		}
+		override_return_callback = override_return_set_callback(
+			[&](uint64_t ctx, uint64_t v) {
+				is_overrided = true;
+				user_ret = v;
+				user_ret_ctx = ctx;
+			});
 	} else if (basic_attach_type == attach_type::REPLACE) {
 		if (int err = gum_interceptor_replace(
 			    interceptor, function,
@@ -270,6 +279,7 @@ frida_internal_attach_entry::frida_internal_attach_entry(
 	}
 	this->interceptor = gum_object_ref(interceptor);
 }
+
 frida_internal_attach_entry::~frida_internal_attach_entry()
 {
 	spdlog::debug("Destroy internal attach at {:x}", (uintptr_t)function);
@@ -401,9 +411,7 @@ extern "C" void *__bpftime_frida_attach_manager__filter_handler()
 	convert_gum_cpu_context_to_pt_regs(*ctx->cpu_context, regs);
 	auto hook_entry = (frida_internal_attach_entry *)
 		gum_invocation_context_get_replacement_data(ctx);
-	uint64_t user_ret = 0;
-	curr_thread_set_ret_val =
-		retval_set_callback([&](uint64_t v) { user_ret = v; });
+	curr_thread_override_return_callback = hook_entry->override_return_callback;
 
 	auto arg0 = gum_invocation_context_get_nth_argument(ctx, 0);
 	auto arg1 = gum_invocation_context_get_nth_argument(ctx, 1);
@@ -412,9 +420,10 @@ extern "C" void *__bpftime_frida_attach_manager__filter_handler()
 	auto arg4 = gum_invocation_context_get_nth_argument(ctx, 4);
 	ffi_func func = (ffi_func)ctx->function;
 
-	auto skip = hook_entry->get_filter_callback()(regs);
-	if (skip) {
-		return (void *)(uintptr_t)user_ret;
+	hook_entry->get_filter_callback()(regs);
+	
+	if (hook_entry->is_overrided) {
+		return (void *)(uintptr_t)hook_entry->user_ret;
 	} else {
 		return func((void *)arg0, (void *)arg1, (void *)arg2,
 			    (void *)arg3, (void *)arg4);

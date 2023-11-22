@@ -11,7 +11,7 @@
 #include <stdlib.h>
 #include "ureplace.skel.h"
 #include <inttypes.h>
-#include "filter_replace_attach.h"
+#include "attach_override.h"
 
 #define warn(...) fprintf(stderr, __VA_ARGS__)
 
@@ -53,7 +53,7 @@ int main(int argc, char **argv)
 		fprintf(stderr, "Failed to load and verify BPF skeleton\n");
 		goto cleanup;
 	}
-	err = bpf_prog_attach_ureplace(
+	err = bpf_prog_attach_uprobe_with_override(
 		bpf_program__fd(skel->progs.do_ureplace_patch), "./victim",
 		"target_func");
 	if (err) {

@@ -628,6 +628,12 @@ const bpftime_helper_group kernel_helper_group = {
 		    .name = "bpf_get_current_comm",
 		    .fn = (void *)bpftime_get_current_comm,
 	    } },
+	{ BPF_FUNC_override_return,
+	    bpftime_helper_info{
+		    .index = BPF_FUNC_override_return,
+		    .name = "bpf_override_return",
+		    .fn = (void *)bpftime_get_current_comm,
+	    } },
 	  { BPF_FUNC_strncmp,
 	    bpftime_helper_info{
 		    .index = BPF_FUNC_strncmp,

@@ -28,11 +28,6 @@ Compatible with kernel eBPF program types:
 - uretprobe:*
 - uprobe:*
 
-Some new userspace eBPF program types:
-
-- ufilter:*
-- ureplace:*
-
 ## available helpers
 
 ### maps
