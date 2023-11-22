@@ -1,6 +1,7 @@
 #include <catch2/catch_test_macros.hpp>
 #include <cstdint>
 #include <attach/attach_manager/frida_attach_manager.hpp>
+#include <spdlog/spdlog.h>
 #if !defined(__x86_64__) && defined(_M_X64)
 #error Only supports x86_64
 #endif
@@ -12,6 +13,12 @@ __bpftime_func_to_filter(uint64_t a, uint64_t b)
 { // Forbid inline
 	asm("");
 	return (a << 32) | b;
+}
+
+__attribute__((__noinline__, optnone, noinline)) static uint64_t
+call_filter_func(uint64_t a, uint64_t b)
+{
+	return __bpftime_func_to_filter(a, b);
 }
 
 TEST_CASE("Test attaching filter programs and revert")
@@ -37,7 +44,7 @@ TEST_CASE("Test attaching filter programs and revert")
 		});
 	REQUIRE(id >= 0);
 	REQUIRE(__bpftime_func_to_filter(1, 2) == (((uint64_t)1 << 32) | 2));
-	REQUIRE(__bpftime_func_to_filter(a, b) == a + b);
+	REQUIRE(call_filter_func(a, b) == a + b);
 
 	// Revert it
 	SECTION("Revert by id")

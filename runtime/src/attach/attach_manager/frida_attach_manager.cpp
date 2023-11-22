@@ -76,7 +76,7 @@ int frida_attach_manager::attach_at(void *func_addr, callback_variant &&cb)
 		// Create a frida attach entry
 		itr = internal_attaches
 			      .emplace(func_addr,
-				       std::make_shared<
+				       std::make_unique<
 					       frida_internal_attach_entry>(
 					       func_addr,
 					       (attach_type)cb.index(),
@@ -97,11 +97,12 @@ int frida_attach_manager::attach_at(void *func_addr, callback_variant &&cb)
 	auto inserted_attach_entry =
 		this->attaches
 			.emplace(ent.self_id,
-				 std::make_shared<frida_attach_entry>(
+				 std::make_unique<frida_attach_entry>(
 					 std::move(ent)))
 			.first;
-	inner_attach->user_attaches.push_back(inserted_attach_entry->second);
-	inserted_attach_entry->second->internal_attaches = inner_attach;
+	inner_attach->user_attaches.push_back(
+		inserted_attach_entry->second.get());
+	inserted_attach_entry->second->internal_attache = inner_attach.get();
 	return result;
 }
 
@@ -140,20 +141,19 @@ int frida_attach_manager::destroy_attach(int id)
 {
 	void *drop_func_addr = nullptr;
 	if (auto itr = attaches.find(id); itr != attaches.end()) {
-		if (auto p = itr->second->internal_attaches.lock(); p) {
-			auto &user_attaches = p->user_attaches;
-			auto tail =
-				std::remove_if(user_attaches.begin(),
-					       user_attaches.end(),
-					       [&](const auto &v) -> bool {
-						       return v.lock().get() ==
-							      itr->second.get();
-					       });
-			user_attaches.resize(tail - user_attaches.begin());
-			attaches.erase(itr);
-			if (p->user_attaches.empty()) {
-				drop_func_addr = p->function;
-			}
+		auto p = itr->second->internal_attache;
+
+		auto &user_attaches = p->user_attaches;
+		auto tail =
+			std::remove_if(user_attaches.begin(),
+				       user_attaches.end(),
+				       [&](const auto &v) -> bool {
+					       return v == itr->second.get();
+				       });
+		user_attaches.resize(tail - user_attaches.begin());
+		attaches.erase(itr);
+		if (p->user_attaches.empty()) {
+			drop_func_addr = p->function;
 		}
 	} else {
 		spdlog::error("Unable to find attach id {}", id);
@@ -184,10 +184,8 @@ int frida_attach_manager::destroy_attach_by_func_addr(const void *func)
 	if (auto itr = internal_attaches.find((void *)func);
 	    itr != internal_attaches.end()) {
 		auto uattaches = itr->second->user_attaches;
-		for (auto p : uattaches) {
-			if (auto attach_entry = p.lock(); attach_entry) {
-				attaches.erase(attach_entry->self_id);
-			}
+		for (auto attach_entry : uattaches) {
+			attaches.erase(attach_entry->self_id);
 		}
 		internal_attaches.erase(itr);
 		return 0;
@@ -255,8 +253,8 @@ frida_internal_attach_entry::frida_internal_attach_entry(
 			    this, nullptr);
 		    err < 0) {
 			spdlog::error(
-				"Failed to execute frida replace for function {:x}, when attaching filter",
-				(uintptr_t)function);
+				"Failed to execute frida replace for function {:x}, when attaching filter, err={}",
+				(uintptr_t)function, err);
 			throw std::runtime_error("Failed to attach filter");
 		}
 		override_return_callback = override_return_set_callback(
@@ -272,8 +270,8 @@ frida_internal_attach_entry::frida_internal_attach_entry(
 			    this, nullptr);
 		    err < 0) {
 			spdlog::error(
-				"Failed to execute frida replace for function {:x}, when attaching replace",
-				(uintptr_t)function);
+				"Failed to execute frida replace for function {:x}, when attaching replace, err={}",
+				(uintptr_t)function, err);
 			throw std::runtime_error("Failed to attach replace");
 		}
 	}
@@ -297,12 +295,10 @@ frida_internal_attach_entry::~frida_internal_attach_entry()
 
 bool frida_internal_attach_entry::has_replace_or_override() const
 {
-	for (auto p : user_attaches) {
-		if (auto v = p.lock(); v) {
-			if (v->get_type() == attach_type::REPLACE ||
-			    v->get_type() == attach_type::UPROBE_OVERRIDE) {
-				return true;
-			}
+	for (auto v : user_attaches) {
+		if (v->get_type() == attach_type::REPLACE ||
+		    v->get_type() == attach_type::UPROBE_OVERRIDE) {
+			return true;
 		}
 	}
 	return false;
@@ -310,12 +306,10 @@ bool frida_internal_attach_entry::has_replace_or_override() const
 
 bool frida_internal_attach_entry::has_uprobe_or_uretprobe() const
 {
-	for (auto p : user_attaches) {
-		if (auto v = p.lock(); v) {
-			if (v->get_type() == attach_type::UPROBE ||
-			    v->get_type() == attach_type::URETPROBE) {
-				return true;
-			}
+	for (auto v : user_attaches) {
+		if (v->get_type() == attach_type::UPROBE ||
+		    v->get_type() == attach_type::URETPROBE) {
+			return true;
 		}
 	}
 	return false;
@@ -324,13 +318,10 @@ bool frida_internal_attach_entry::has_uprobe_or_uretprobe() const
 base_attach_manager::replace_callback &
 frida_internal_attach_entry::get_replace_callback() const
 {
-	for (auto p : user_attaches) {
-		if (auto v = p.lock(); v) {
-			if (v->get_type() == attach_type::REPLACE) {
-				return std::get<
-					base_attach_manager::replace_callback>(
-					v->cb);
-			}
+	for (auto v : user_attaches) {
+		if (v->get_type() == attach_type::REPLACE) {
+			return std::get<base_attach_manager::replace_callback>(
+				v->cb);
 		}
 	}
 	spdlog::error(
@@ -342,13 +333,10 @@ frida_internal_attach_entry::get_replace_callback() const
 base_attach_manager::filter_callback &
 frida_internal_attach_entry::get_filter_callback() const
 {
-	for (auto p : user_attaches) {
-		if (auto v = p.lock(); v) {
-			if (v->get_type() == attach_type::UPROBE_OVERRIDE) {
-				return std::get<
-					base_attach_manager::filter_callback>(
-					v->cb);
-			}
+	for (auto v : user_attaches) {
+		if (v->get_type() == attach_type::UPROBE_OVERRIDE) {
+			return std::get<base_attach_manager::filter_callback>(
+				v->cb);
 		}
 	}
 	spdlog::error(
@@ -360,11 +348,9 @@ frida_internal_attach_entry::get_filter_callback() const
 void frida_internal_attach_entry::iterate_uprobe_callbacks(
 	const pt_regs &regs) const
 {
-	for (auto p : user_attaches) {
-		if (auto v = p.lock(); v) {
-			if (v->get_type() == attach_type::UPROBE) {
-				std::get<(int)attach_type::UPROBE>(v->cb)(regs);
-			}
+	for (auto v : user_attaches) {
+		if (v->get_type() == attach_type::UPROBE) {
+			std::get<(int)attach_type::UPROBE>(v->cb)(regs);
 		}
 	}
 }
@@ -372,12 +358,9 @@ void frida_internal_attach_entry::iterate_uprobe_callbacks(
 void frida_internal_attach_entry::iterate_uretprobe_callbacks(
 	const pt_regs &regs) const
 {
-	for (auto p : user_attaches) {
-		if (auto v = p.lock(); v) {
-			if (v->get_type() == attach_type::URETPROBE) {
-				std::get<(int)attach_type::URETPROBE>(v->cb)(
-					regs);
-			}
+	for (auto v : user_attaches) {
+		if (v->get_type() == attach_type::URETPROBE) {
+			std::get<(int)attach_type::URETPROBE>(v->cb)(regs);
 		}
 	}
 }

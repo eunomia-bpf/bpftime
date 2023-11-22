@@ -1,16 +1,22 @@
 #include <catch2/catch_test_macros.hpp>
 #include <attach/attach_manager/frida_attach_manager.hpp>
+#include <spdlog/spdlog.h>
 #if !defined(__x86_64__) && defined(_M_X64)
 #error Only supports x86_64
 #endif
 
 using namespace bpftime;
-__attribute__((__noinline__)) extern "C" uint64_t
+__attribute__((__noinline__, optnone, noinline)) extern "C" uint64_t
 __bpftime_func_to_replace(uint64_t a, uint64_t b)
 {
 	// Forbid inline
 	asm("");
 	return (a << 32) | b;
+}
+__attribute__((__noinline__, optnone, noinline)) static uint64_t
+call_replace_func(uint64_t a, uint64_t b)
+{
+	return __bpftime_func_to_replace(a, b);
 }
 TEST_CASE("Test attaching replace programs and revert")
 {
@@ -30,7 +36,7 @@ TEST_CASE("Test attaching replace programs and revert")
 					       return regs.si + regs.di;
 				       });
 	REQUIRE(id >= 0);
-	REQUIRE(__bpftime_func_to_replace(a, b) == a + b);
+	REQUIRE(call_replace_func(a, b) == a + b);
 	REQUIRE(invoke_times == 1);
 	// Revert it
 	invoke_times = 0;
