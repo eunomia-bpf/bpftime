@@ -6,14 +6,14 @@
 using namespace bpftime;
 
 // This is the original function to hook.
-__attribute__((__noinline__)) extern "C" int
+__attribute__((__noinline__, optnone)) extern "C" int
 __bpftime_attach_filter_with_ebpf__my_function(const char *str, char c,
 					       long long parm1)
 {
 	asm("");
 	// buggy code: not check str is NULL
 	int i = str[0];
-	spdlog::info("origin func: Args: %s, %c, %d", str, c, i);
+	spdlog::info("origin func: Args: {}, {}, {}", str, c, i);
 	return (int)parm1;
 }
 

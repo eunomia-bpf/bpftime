@@ -22,7 +22,7 @@ class frida_attach_entry {
 	base_attach_manager::callback_variant cb;
 	void *function;
 
-	std::weak_ptr<class frida_internal_attach_entry> internal_attaches;
+	class frida_internal_attach_entry *internal_attach;
 	friend class frida_attach_manager;
 	friend class frida_internal_attach_entry;
 
@@ -44,7 +44,7 @@ class frida_attach_entry {
 class frida_internal_attach_entry {
 	void *function;
 	GumInterceptor *interceptor;
-	std::vector<std::weak_ptr<frida_attach_entry> > user_attaches;
+	std::vector<frida_attach_entry *> user_attaches;
 	GumInvocationListener *frida_gum_invocation_listener = nullptr;
 
 	friend class frida_attach_manager;
@@ -96,8 +96,8 @@ class frida_attach_manager final : public base_attach_manager {
     private:
 	GumInterceptor *interceptor;
 	int next_id = 1;
-	std::unordered_map<int, std::shared_ptr<frida_attach_entry> > attaches;
-	std::unordered_map<void *, std::shared_ptr<frida_internal_attach_entry> >
+	std::unordered_map<int, std::unique_ptr<frida_attach_entry> > attaches;
+	std::unordered_map<void *, std::unique_ptr<frida_internal_attach_entry> >
 		internal_attaches;
 
 	friend class frida_internal_attach_entry;
