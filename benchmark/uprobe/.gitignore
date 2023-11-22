@@ -8,3 +8,4 @@ ecli
 .output
 test
 uprobe
+uprobe-override
