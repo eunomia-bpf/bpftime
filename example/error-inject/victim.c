@@ -4,11 +4,7 @@
 
 int target_func()
 {
-	int res = open("/dev/null");
-	printf("target_func is running, open res = %d\n", res);
-	if (res > 0) {
-		close(res);
-	}
+	printf("target_func is running and write something.\n");
 	return 0;
 }
 

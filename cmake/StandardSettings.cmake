@@ -63,3 +63,8 @@ if(BPFTIME_ENABLE_ASAN)
     add_compile_options(-fsanitize=address,undefined)
     add_link_options(-fsanitize=address,undefined)
 endif()
+
+option(BPFTIME_ENABLE_MPK "Enable Memory Protection Keys to detect memory error." OFF)
+if(BPFTIME_ENABLE_MPK)
+    add_definitions(-DBPFTIME_ENABLE_MPK)
+endif()

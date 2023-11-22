@@ -221,6 +221,7 @@ int64_t bpf_attach_ctx::run_syscall_hooker(int64_t sys_nr, int64_t arg1,
 		curr_thread_override_return_callback.reset();
 		return user_ret;
 	}
+	SPDLOG_DEBUG("exec original syscall");
 	int64_t ret = orig_syscall(sys_nr, arg1, arg2, arg3, arg4, arg5, arg6);
 	if (!sys_exit_progs[sys_nr].empty() || !global_sys_exit_progs.empty()) {
 		trace_event_raw_sys_exit ctx;
