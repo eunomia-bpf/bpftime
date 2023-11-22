@@ -82,7 +82,7 @@ int perf_event_array_kernel_user_impl::output_data_into_kernel(const void *buf,
 	*(uint64_t *)(mem) = (uint64_t)size;
 	memcpy((char *)mem + 8, buf, size);
 	user_rb->submit(mem);
-	spdlog::trace("Commited {} bytes of data into kernel: {:n}", size,
+	SPDLOG_TRACE("Commited {} bytes of data into kernel: {:n}", size,
 		      spdlog::to_hex((uint8_t *)buf, (uint8_t *)buf + size));
 	return 0;
 }

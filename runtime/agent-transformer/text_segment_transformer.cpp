@@ -140,7 +140,7 @@ static inline void rewrite_segment(uint8_t *code, size_t len, int perm)
 			if (curr_insn.address != (uintptr_t)&syscall_addr) {
 				uint8_t *curr_pos =
 					(uint8_t *)(uintptr_t)curr_insn.address;
-				spdlog::trace("Rewrite syscall insn at {}",
+				SPDLOG_TRACE("Rewrite syscall insn at {}",
 					      (void *)curr_pos);
 				curr_pos[0] = 0xff;
 				curr_pos[1] = 0xd0;

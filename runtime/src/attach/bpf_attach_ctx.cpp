@@ -233,11 +233,11 @@ int bpf_attach_ctx::init_attach_ctx_from_handlers(
 					progs.size(), (uintptr_t)func_addr);
 				err = attach_manager->attach_uprobe_at(
 					func_addr, [=](const pt_regs &regs) {
-						spdlog::trace(
+						SPDLOG_TRACE(
 							"Uprobe triggered");
 						uint64_t ret;
 						for (auto &[k, prog] : progs) {
-							spdlog::trace(
+							SPDLOG_TRACE(
 								"Calling ebpf programs in uprobe callback");
 							prog->bpftime_prog_exec(
 								(void *)&regs,

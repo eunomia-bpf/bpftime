@@ -434,7 +434,7 @@ static void uprobe_listener_on_enter(GumInvocationListener *listener,
 	UprobeListener *self = EXAMPLE_LISTENER(listener);
 	auto *hook_entry = (frida_internal_attach_entry *)
 		gum_invocation_context_get_listener_function_data(ic);
-	spdlog::trace("Handle uprobe at uprobe_listener_on_enter");
+	SPDLOG_TRACE("Handle uprobe at uprobe_listener_on_enter");
 	GumInvocationContext *ctx;
 	pt_regs regs;
 	ctx = gum_interceptor_get_current_invocation();
@@ -447,7 +447,7 @@ static void uprobe_listener_on_leave(GumInvocationListener *listener,
 {
 	auto *hook_entry = (frida_internal_attach_entry *)
 		gum_invocation_context_get_listener_function_data(ic);
-	spdlog::trace("Handle uretprobe at uprobe_listener_on_leave");
+	SPDLOG_TRACE("Handle uretprobe at uprobe_listener_on_leave");
 	pt_regs regs;
 	GumInvocationContext *ctx;
 	ctx = gum_interceptor_get_current_invocation();

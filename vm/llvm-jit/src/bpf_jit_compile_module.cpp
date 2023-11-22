@@ -146,13 +146,13 @@ bpf_jit_context::generateModule(const LLJIT &jit,
 	blockBegin[0] = true;
 	for (uint16_t i = 0; i < vm->num_insts; i++) {
 		auto curr = insts[i];
-		spdlog::trace("check pc {} opcode={} ", i, (uint16_t)curr.code);
+		SPDLOG_TRACE("check pc {} opcode={} ", i, (uint16_t)curr.code);
 		if (i > 0 && is_jmp(insts[i - 1])) {
 			blockBegin[i] = true;
-			spdlog::trace("mark {} block begin", i);
+			SPDLOG_TRACE("mark {} block begin", i);
 		}
 		if (is_jmp(curr)) {
-			spdlog::trace("mark {} block begin", i + curr.off + 1);
+			SPDLOG_TRACE("mark {} block begin", i + curr.off + 1);
 			blockBegin[i + curr.off + 1] = true;
 		}
 	}
@@ -625,7 +625,7 @@ bpf_jit_context::generateModule(const LLJIT &jit,
 				(((uint64_t)((uint32_t)nextInst.imm)) << 32);
 			pc++;
 
-			spdlog::trace("Load LDDW val= {} part1={:x} part2={:x}",
+			SPDLOG_TRACE("Load LDDW val= {} part1={:x} part2={:x}",
 				      val, (uint64_t)inst.imm,
 				      (uint64_t)nextInst.imm);
 			if (inst.src_reg == 0) {

@@ -227,7 +227,7 @@ static llvm::Expected<llvm::BasicBlock *>
 loadJmpDstBlock(uint16_t pc, const ebpf_inst &inst,
 		const std::map<uint16_t, llvm::BasicBlock *> &instBlocks)
 {
-	spdlog::trace("pc {} request jump to {}", pc, pc + 1 + inst.off);
+	SPDLOG_TRACE("pc {} request jump to {}", pc, pc + 1 + inst.off);
 	uint16_t dstBlkId = pc + 1 + inst.off;
 	if (auto itr = instBlocks.find(dstBlkId); itr != instBlocks.end()) {
 		return itr->second;

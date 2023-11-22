@@ -188,7 +188,7 @@ void *ringbuf::reserve(size_t size, int self_fd)
 	header->fd = self_fd;
 	smp_store_release_ul(producer_pos.get(), prod_pos + total_size);
 	auto ptr = data.get() + ((prod_pos + BPF_RINGBUF_HDR_SZ) & mask());
-	spdlog::trace("ringbuf: reserved {} bytes at {}, fd {}", size,
+	SPDLOG_TRACE("ringbuf: reserved {} bytes at {}, fd {}", size,
 		      (void *)ptr, self_fd);
 	return ptr;
 }

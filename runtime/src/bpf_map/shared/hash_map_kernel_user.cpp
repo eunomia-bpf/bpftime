@@ -44,7 +44,7 @@ hash_map_kernel_user_impl::hash_map_kernel_user_impl(
 
 void *hash_map_kernel_user_impl::elem_lookup(const void *key)
 {
-	spdlog::trace("Peform elem lookup of hash map");
+	SPDLOG_TRACE("Peform elem lookup of hash map");
 	if (map_fd < 0) {
 		init_map_fd();
 	}
@@ -60,7 +60,7 @@ void *hash_map_kernel_user_impl::elem_lookup(const void *key)
 long hash_map_kernel_user_impl::elem_update(const void *key, const void *value,
 					    uint64_t flags)
 {
-	spdlog::trace("Peform elem update of hash map");
+	SPDLOG_TRACE("Peform elem update of hash map");
 	if (map_fd < 0) {
 		init_map_fd();
 	}
@@ -72,7 +72,7 @@ long hash_map_kernel_user_impl::elem_update(const void *key, const void *value,
 
 long hash_map_kernel_user_impl::elem_delete(const void *key)
 {
-	spdlog::trace("Peform elem delete of hash map");
+	SPDLOG_TRACE("Peform elem delete of hash map");
 	if (map_fd < 0) {
 		init_map_fd();
 	}
@@ -83,7 +83,7 @@ long hash_map_kernel_user_impl::elem_delete(const void *key)
 
 int hash_map_kernel_user_impl::map_get_next_key(const void *key, void *next_key)
 {
-	spdlog::trace("Peform get next key of hash map");
+	SPDLOG_TRACE("Peform get next key of hash map");
 	if (map_fd < 0) {
 		init_map_fd();
 	}

@@ -24,16 +24,16 @@ hash_map_impl::hash_map_impl(managed_shared_memory &memory, uint32_t key_size,
 
 void *hash_map_impl::elem_lookup(const void *key)
 {
-	spdlog::trace("Peform elem lookup of hash map");
+	SPDLOG_TRACE("Peform elem lookup of hash map");
 	// Allocate as a local variable to make
 	//  it thread safe, since we use sharable lock
 	bytes_vec key_vec = this->key_vec;
 	key_vec.assign((uint8_t *)key, (uint8_t *)key + _key_size);
 	if (auto itr = map_impl.find(key_vec); itr != map_impl.end()) {
-		spdlog::trace("Exit elem lookup of hash map");
+		SPDLOG_TRACE("Exit elem lookup of hash map");
 		return &itr->second[0];
 	} else {
-		spdlog::trace("Exit elem lookup of hash map");
+		SPDLOG_TRACE("Exit elem lookup of hash map");
 		errno = ENOENT;
 		return nullptr;
 	}
