@@ -284,6 +284,7 @@ frida_internal_attach_entry::~frida_internal_attach_entry()
 	}
 	gum_object_unref(interceptor);
 }
+
 bool frida_internal_attach_entry::has_replace_or_filter() const
 {
 	for (auto p : user_attaches) {
@@ -296,6 +297,7 @@ bool frida_internal_attach_entry::has_replace_or_filter() const
 	}
 	return false;
 }
+
 bool frida_internal_attach_entry::has_uprobe_or_uretprobe() const
 {
 	for (auto p : user_attaches) {
@@ -308,6 +310,7 @@ bool frida_internal_attach_entry::has_uprobe_or_uretprobe() const
 	}
 	return false;
 }
+
 base_attach_manager::replace_callback &
 frida_internal_attach_entry::get_replace_callback() const
 {
@@ -325,6 +328,7 @@ frida_internal_attach_entry::get_replace_callback() const
 		(uintptr_t)function);
 	throw std::runtime_error("Unable to find replace callback");
 }
+
 base_attach_manager::filter_callback &
 frida_internal_attach_entry::get_filter_callback() const
 {
@@ -342,6 +346,7 @@ frida_internal_attach_entry::get_filter_callback() const
 		(uintptr_t)function);
 	throw std::runtime_error("Unable to find filter callback");
 }
+
 void frida_internal_attach_entry::iterate_uprobe_callbacks(
 	const pt_regs &regs) const
 {
