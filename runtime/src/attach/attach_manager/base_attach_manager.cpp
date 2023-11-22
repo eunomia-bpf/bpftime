@@ -46,7 +46,7 @@ extern "C" uint64_t bpftime_override_return(uint64_t ctx, uint64_t value)
 		curr_thread_override_return_callback.value()(ctx, value);
 	} else {
 		SPDLOG_ERROR(
-			"Called bpftime_set_retval, but no retval callback was set");
+			"Called bpftime_override_return, but no retval callback was set");
 		assert(false);
 	}
 	return 0;

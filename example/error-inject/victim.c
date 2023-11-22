@@ -5,8 +5,10 @@
 int target_func()
 {
 	int res = open("/dev/null");
-	printf("target_func is running\n");
-	close(res);
+	printf("target_func is running, open res = %d\n", res);
+	if (res > 0) {
+		close(res);
+	}
 	return 0;
 }
 

@@ -9,7 +9,7 @@ int do_override_inject_syscall_sys_enter_openat(
 {
 	int rand = bpf_get_prandom_u32();
 	if (rand % 2 == 0) {
-		bpf_printk("bpf: Inject error. Target func will not exec.\n");
+		bpf_printk("bpf: Inject error. Open will failed.\n");
 		bpf_override_return(ctx, -1);
 		return 0;
 	}
@@ -23,7 +23,7 @@ int do_override_inject_syscall_sys_enter_open(
 {
 	int rand = bpf_get_prandom_u32();
 	if (rand % 2 == 0) {
-		bpf_printk("bpf: Inject error. Target func will not exec.\n");
+		bpf_printk("bpf: Inject error. Open will failed.\n");
 		bpf_override_return(ctx, -1);
 		return 0;
 	}

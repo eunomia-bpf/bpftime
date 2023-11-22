@@ -56,7 +56,7 @@ int bpf_attach_ctx::create_tracepoint(int tracepoint_id, int perf_fd,
 		}
 		if (progs.empty()) {
 			SPDLOG_ERROR("bpf_link for perf event {} not found",
-				      perf_fd);
+				     perf_fd);
 			return perf_fd;
 		}
 		const auto &name = itr->second;
@@ -64,9 +64,8 @@ int bpf_attach_ctx::create_tracepoint(int tracepoint_id, int perf_fd,
 			auto syscall_name = name.substr(10);
 			auto syscall_id = id_table.find(syscall_name);
 			if (syscall_id == id_table.end()) {
-				SPDLOG_ERROR(
-					"Syscall id not found for name {}",
-					syscall_name);
+				SPDLOG_ERROR("Syscall id not found for name {}",
+					     syscall_name);
 				return -1;
 			}
 			for (auto p : progs)
@@ -80,9 +79,8 @@ int bpf_attach_ctx::create_tracepoint(int tracepoint_id, int perf_fd,
 			auto syscall_name = name.substr(9);
 			auto syscall_id = id_table.find(syscall_name);
 			if (syscall_id == id_table.end()) {
-				SPDLOG_ERROR(
-					"Syscall id not found for name {}",
-					syscall_name);
+				SPDLOG_ERROR("Syscall id not found for name {}",
+					     syscall_name);
 				return -1;
 			}
 			for (auto p : progs)
@@ -107,7 +105,7 @@ int bpf_attach_ctx::create_tracepoint(int tracepoint_id, int perf_fd,
 			return perf_fd;
 		} else {
 			SPDLOG_ERROR("Unexpected syscall tracepoint name {}",
-				      name);
+				     name);
 			return -1;
 		}
 	} else {
@@ -179,8 +177,16 @@ int64_t bpf_attach_ctx::run_syscall_hooker(int64_t sys_nr, int64_t arg1,
 	if (sys_nr == __NR_exit_group || sys_nr == __NR_exit)
 		return orig_syscall(sys_nr, arg1, arg2, arg3, arg4, arg5, arg6);
 	SPDLOG_DEBUG("Syscall callback {} {} {} {} {} {} {}", sys_nr, arg1,
-		      arg2, arg3, arg4, arg5, arg6);
-	curr_thread_override_return_callback = 
+		     arg2, arg3, arg4, arg5, arg6);
+	bool is_overrided = false;
+	uint64_t user_ret = 0;
+	uint64_t user_ret_ctx = 0;
+	curr_thread_override_return_callback =
+		override_return_set_callback([&](uint64_t ctx, uint64_t v) {
+			is_overrided = true;
+			user_ret = v;
+			user_ret_ctx = ctx;
+		});
 	if (!sys_enter_progs[sys_nr].empty() ||
 	    !global_sys_enter_progs.empty()) {
 		trace_event_raw_sys_enter ctx;
@@ -192,21 +198,28 @@ int64_t bpf_attach_ctx::run_syscall_hooker(int64_t sys_nr, int64_t arg1,
 		ctx.args[3] = arg4;
 		ctx.args[4] = arg5;
 		ctx.args[5] = arg6;
-		const auto exec = [&](const bpftime_prog *prog) {
+		for (const auto prog : sys_enter_progs[sys_nr]) {
 			SPDLOG_DEBUG("Call {}", prog->prog_name());
 			auto lctx = ctx;
 			// Avoid polluting other ebpf programs..
 			uint64_t ret;
 			int err = prog->bpftime_prog_exec(&lctx, sizeof(lctx),
 							  &ret);
-			assert(err >= 0);
-		};
-		for (const auto &item : sys_enter_progs[sys_nr]) {
-			exec(item);
+			SPDLOG_DEBUG("ret {}", ret);
 		}
-		for (auto item : global_sys_enter_progs) {
-			exec(item);
+		for (const auto prog : global_sys_enter_progs) {
+			SPDLOG_DEBUG("Call {}", prog->prog_name());
+			auto lctx = ctx;
+			// Avoid polluting other ebpf programs..
+			uint64_t ret;
+			int err = prog->bpftime_prog_exec(&lctx, sizeof(lctx),
+							  &ret);
+			SPDLOG_DEBUG("ret {}", ret);
 		}
+	}
+	if (is_overrided) {
+		curr_thread_override_return_callback.reset();
+		return user_ret;
 	}
 	int64_t ret = orig_syscall(sys_nr, arg1, arg2, arg3, arg4, arg5, arg6);
 	if (!sys_exit_progs[sys_nr].empty() || !global_sys_exit_progs.empty()) {
@@ -214,18 +227,28 @@ int64_t bpf_attach_ctx::run_syscall_hooker(int64_t sys_nr, int64_t arg1,
 		memset(&ctx, 0, sizeof(ctx));
 		ctx.id = sys_nr;
 		ctx.ret = ret;
-		const auto exec = [&](const bpftime_prog *prog) {
-			// Avoid polluting other ebpf programs..
+		for (const auto prog : sys_exit_progs[sys_nr]) {
+			SPDLOG_DEBUG("Call {}", prog->prog_name());
 			auto lctx = ctx;
+			// Avoid polluting other ebpf programs..
 			uint64_t ret;
 			int err = prog->bpftime_prog_exec(&lctx, sizeof(lctx),
 							  &ret);
-			assert(err >= 0);
-		};
-		for (const auto &item : sys_exit_progs[sys_nr])
-			exec(item);
-		for (auto item : global_sys_exit_progs)
-			exec(item);
+			SPDLOG_DEBUG("ret {}", ret);
+		}
+		for (const auto prog : global_sys_exit_progs) {
+			SPDLOG_DEBUG("Call {}", prog->prog_name());
+			auto lctx = ctx;
+			// Avoid polluting other ebpf programs..
+			uint64_t ret;
+			int err = prog->bpftime_prog_exec(&lctx, sizeof(lctx),
+							  &ret);
+			SPDLOG_DEBUG("ret {}", ret);
+		}
+	}
+	if (is_overrided) {
+		curr_thread_override_return_callback.reset();
+		return user_ret;
 	}
 	return ret;
 }
