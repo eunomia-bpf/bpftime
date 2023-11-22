@@ -32,7 +32,6 @@ static std::string get_executable_path()
 	return exec_path;
 }
 
-
 extern "C" uint64_t __bpftime_frida_attach_manager__replace_handler();
 extern "C" void *__bpftime_frida_attach_manager__filter_handler();
 namespace bpftime
@@ -347,6 +346,7 @@ void frida_internal_attach_entry::iterate_uprobe_callbacks(
 		}
 	}
 }
+
 void frida_internal_attach_entry::iterate_uretprobe_callbacks(
 	const pt_regs &regs) const
 {
@@ -379,6 +379,7 @@ extern "C" uint64_t __bpftime_frida_attach_manager__replace_handler()
 	gum_invocation_context_replace_return_value(ctx, (gpointer)ret);
 	return ret;
 }
+
 extern "C" void *__bpftime_frida_attach_manager__filter_handler()
 {
 	GumInvocationContext *ctx;
