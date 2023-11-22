@@ -9,9 +9,9 @@
 #include <bpf/bpf.h>
 #include <unistd.h>
 #include <stdlib.h>
-#include "ufilter.skel.h"
+#include "error_inject.skel.h"
 #include <inttypes.h>
-#include "filter_replace_attach.h"
+#include "attach_override.h"
 
 #define warn(...) fprintf(stderr, __VA_ARGS__)
 
@@ -30,7 +30,7 @@ static void sig_handler(int sig)
 
 int main(int argc, char **argv)
 {
-	struct ufilter_bpf *skel;
+	struct error_inject_bpf *skel;
 	int err;
 
 	/* Set up libbpf errors and debug info callback */
@@ -41,32 +41,30 @@ int main(int argc, char **argv)
 	signal(SIGTERM, sig_handler);
 
 	/* Load and verify BPF application */
-	skel = ufilter_bpf__open();
+	skel = error_inject_bpf__open();
 	if (!skel) {
 		fprintf(stderr, "Failed to open and load BPF skeleton\n");
 		return 1;
 	}
 
 	/* Load & verify BPF programs */
-	err = ufilter_bpf__load(skel);
+	err = error_inject_bpf__load(skel);
 	if (err) {
 		fprintf(stderr, "Failed to load and verify BPF skeleton\n");
 		goto cleanup;
 	}
-
-	err = bpf_prog_attach_ufilter(
-		bpf_program__fd(skel->progs.do_ufilter_patch), "./victim",
+	err = bpf_prog_attach_uprobe_with_override(
+		bpf_program__fd(skel->progs.do_error_inject_patch), "./victim",
 		"target_func");
 	if (err) {
 		fprintf(stderr, "Failed to attach BPF program\n");
 		goto cleanup;
 	}
-
 	while (!exiting) {
 		sleep(1);
 	}
 cleanup:
 	/* Clean up */
-	ufilter_bpf__destroy(skel);
+	error_inject_bpf__destroy(skel);
 	return err < 0 ? -err : 0;
 }

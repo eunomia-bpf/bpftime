@@ -101,13 +101,10 @@ See [example/minimal](https://github.com/eunomia-bpf/bpftime/tree/master/example
 
 The bpftime supports the following types of eBPF programs:
 
-- `uprobe/uretprobe`: trace userspace functions at start or and. No affect the control flow.
-- `syscall tracepoints`: trace the specific syscall types. No affect the control flow of syscalls.
+- `uprobe/uretprobe`: trace userspace functions at start or and.
+- `syscall tracepoints`: trace the specific syscall types.
 
-And some userspace extensions:
-
-- `ureplace`: replace the userspace function with a eBPF function
-- `ufilter`: filter the userspace function
+You may use `bpf_override_return` to change the control flow of the program.
 
 See [documents/available-features.md](https://github.com/eunomia-bpf/bpftime/tree/master/documents/avaliable-features.md) for more details.
 
@@ -123,6 +120,10 @@ See [documents/available-features.md](https://github.com/eunomia-bpf/bpftime/tre
 More bcc/libbpf-tools examples can be found in [example/libbpf-tools](https://github.com/eunomia-bpf/bpftime/tree/master/example/libbpf-tools).
 
 You can also run bpftime with `bpftrace`, we've test it on [this commit](https://github.com/iovisor/bpftrace/commit/75aca47dd8e1d642ff31c9d3ce330e0c616e5b96). More details about how to run bpftrace in usespace, can be found in [example/bpftrace](https://github.com/eunomia-bpf/bpftime/tree/master/example/bpftrace).
+
+### Error injections
+
+- [`error-injection`](https://github.com/eunomia-bpf/bpftime/tree/master/example/error-inject) Inject errors into a userspace function to test its error handling capabilities.
 
 > ⚠️ **Note**: `bpftime` is actively under development, and it's not yet recommended for production use. See our [roadmap](#roadmap) for details. We'd love to hear your feedback and suggestions! Please feel free to open an issue or [Contact us](#contact-and-citations).
 

@@ -31,12 +31,9 @@ class bpf_attach_ctx {
 	// before the function execution or after the function execution.
 	// FIXME: reimplemnt this function
 	int create_uprobe(void *function, int id, bool retprobe = false);
-	// filter the function execution.
+	// allow helpers to override the function execution.
 	// FIXME: reimplemnt this function
-	int create_filter(void *function, int id);
-	// create a replace function with an id
-	// FIXME: reimplemnt this function
-	int create_replace(void *function, int id);
+	int create_uprobe_with_override(void *function, int id);
 	// Create a syscall tracepoint, recording its corresponding program into
 	// syscall_entry_progs and syscall_exit_progs
 	// FIXME: reimplemnt this function

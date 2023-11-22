@@ -43,10 +43,8 @@ enum class bpf_event_type {
 	// custom types
 	BPF_TYPE_UPROBE = 6,
 	BPF_TYPE_URETPROBE = 7,
-	BPF_TYPE_UFILTER = 8,
+	BPF_TYPE_UPROBE_OVERRIDE = 8,
 	BPF_TYPE_UREPLACE = 9,
-
-	BPF_TYPE_SYSCALL_FILTER = 10,
 };
 
 #define KERNEL_USER_MAP_OFFSET 1000
@@ -275,7 +273,7 @@ int bpftime_is_software_perf_event(int fd);
 void *bpftime_get_software_perf_event_raw_buffer(int fd, size_t expected_size);
 int bpftime_perf_event_output(int fd, const void *buf, size_t sz);
 int bpftime_shared_perf_event_output(int map_fd, const void *buf, size_t sz);
-int bpftime_add_ureplace_filter(int fd, int pid, const char *name,
+int bpftime_add_ureplace_or_override(int fd, int pid, const char *name,
 				uint64_t offset, bool is_replace);
 }
 

@@ -21,7 +21,7 @@ INCLUDES := -I$(OUTPUT) -I../../third_party/libbpf/include/uapi -I$(dir $(VMLINU
 CFLAGS := -g -Wall
 ALL_LDFLAGS := $(LDFLAGS) $(EXTRA_LDFLAGS)
 
-APPS = uprobe syscall uprobe-override # uprobe_legacy uprobe kprobe fentry usdt sockfilter tc ksyscall
+APPS = fs-filter-cache # minimal minimal_legacy uprobe kprobe fentry usdt sockfilter tc ksyscall
 
 CARGO ?= $(shell which cargo)
 ifeq ($(strip $(CARGO)),)
@@ -67,9 +67,6 @@ $(call allow-override,LD,$(CROSS_COMPILE)ld)
 
 .PHONY: all
 all: $(APPS) victim
-
-victim: victim.c
-	gcc victim.c -o victim -Wall -g
 
 .PHONY: clean
 clean:
@@ -139,3 +136,6 @@ $(APPS): %: $(OUTPUT)/%.o $(LIBBPF_OBJ) | $(OUTPUT)
 
 # keep intermediate (.skel.h, .bpf.o, etc) targets
 .SECONDARY:
+
+victim: victim.cpp
+	$(CXX) victim.cpp -Wall -g -o victim

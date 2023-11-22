@@ -1,9 +1,40 @@
 # minimal examples
 
 - `uprobe/uretprobe`: trace userspace functions at start or and. No affect the control flow.
-- `ureplace`: replace the userspace function with a eBPF function
-- `ufilter`: filter the userspace function
-- `syscall tracepoints`: trace the specific syscall types. No affect the control flow of syscalls.
+- `uprobe-override`: replace the userspace function with a eBPF function
+
+You can use `bpf_override_return` to change the control flow and return value of the function.
+
+```c
+/*
+ * bpf_override_return
+ *
+ *  Used for error injection, this helper uses kprobes to override
+ *  the return value of the probed function, and to set it to *rc*.
+ *  The first argument is the context *regs* on which the kprobe
+ *  works.
+ *
+ *  This helper works by setting the PC (program counter)
+ *  to an override function which is run in place of the original
+ *  probed function. This means the probed function is not run at
+ *  all. The replacement function just returns with the required
+ *  value.
+ *
+ *  This helper has security implications, and thus is subject to
+ *  restrictions. It is only available if the kernel was compiled
+ *  with the **CONFIG_BPF_KPROBE_OVERRIDE** configuration
+ *  option, and in this case it only works on functions tagged with
+ *  **ALLOW_ERROR_INJECTION** in the kernel code.
+ *
+ *  Also, the helper is only available for the architectures having
+ *  the CONFIG_FUNCTION_ERROR_INJECTION option. As of this writing,
+ *  x86 architecture is the only one to support this feature.
+ *
+ * Returns
+ *  0
+ */
+static long (*bpf_override_return)(struct pt_regs *regs, __u64 rc) = (void *) 58;
+```
 
 ## uprobe trace
 
@@ -83,24 +114,10 @@ LD_PRELOAD=~/.bpftime/libbpftime-agent.so example/minimal/victim
 server
 
 ```sh
-LD_PRELOAD=~/.bpftime/libbpftime-syscall-server.so ./uprobe
+LD_PRELOAD=~/.bpftime/libbpftime-syscall-server.so ./syscall
 ```
 
 client
-
-```sh
-LD_PRELOAD=~/.bpftime/libbpftime-agent.so ./victim
-```
-
-## ureplace
-
-Run server:
-
-```sh
-SPDLOG_LEVEL=Debug LD_PRELOAD=~/.bpftime/libbpftime-syscall-server.so ./ureplace
-```
-
-Run victim:
 
 ```sh
 LD_PRELOAD=~/.bpftime/libbpftime-agent.so ./victim

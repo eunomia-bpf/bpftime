@@ -9,7 +9,7 @@
 
 namespace bpftime
 {
-thread_local std::optional<retval_set_callback> curr_thread_set_ret_val;
+thread_local std::optional<override_return_set_callback> curr_thread_override_return_callback;
 
 extern "C" uint64_t bpftime_get_retval(void)
 {
@@ -29,8 +29,8 @@ base_attach_manager::~base_attach_manager()
 extern "C" uint64_t bpftime_set_retval(uint64_t value)
 {
 	using namespace bpftime;
-	if (curr_thread_set_ret_val.has_value()) {
-		curr_thread_set_ret_val.value()(value);
+	if (curr_thread_override_return_callback.has_value()) {
+		curr_thread_override_return_callback.value()(0, value);
 	} else {
 		spdlog::error(
 			"Called bpftime_set_retval, but no retval callback was set");
@@ -38,6 +38,20 @@ extern "C" uint64_t bpftime_set_retval(uint64_t value)
 	}
 	return 0;
 }
+
+extern "C" uint64_t bpftime_override_return(uint64_t ctx, uint64_t value)
+{
+	using namespace bpftime;
+	if (curr_thread_override_return_callback.has_value()) {
+		curr_thread_override_return_callback.value()(ctx, value);
+	} else {
+		spdlog::error(
+			"Called bpftime_set_retval, but no retval callback was set");
+		assert(false);
+	}
+	return 0;
+}
+
 
 extern "C" uint64_t bpftime_get_func_ret(uint64_t ctx, uint64_t *value)
 {

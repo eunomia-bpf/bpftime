@@ -14,9 +14,10 @@
 namespace bpftime
 {
 
-using retval_set_callback = std::function<void(uint64_t)>;
+using override_return_set_callback = std::function<void(uint64_t, uint64_t)>;
 // Used by filter to record the return value
-extern thread_local std::optional<retval_set_callback> curr_thread_set_ret_val;
+extern thread_local std::optional<override_return_set_callback>
+	curr_thread_override_return_callback;
 
 enum class attach_type {
 	// Invoked when the attached function return, receiving the return value
@@ -28,11 +29,10 @@ enum class attach_type {
 	// Use the provided callback to replace the function. Call the callback
 	// instead of the original function
 	REPLACE = 2,
-	// Run before the original function was invoked. It returns a bool
-	// indicating whether to use the custom value as the return value of the
-	// original function. If it returns true, the original function will not
-	// be called. If it returns false, will call the original function
-	FILTER = 3
+	// Run before the original function was invoked. Use bpf_override_return
+	// to set the return value of the function. If the return value is set,
+	// the original function will not be invoked.
+	UPROBE_OVERRIDE = 3
 };
 
 class base_attach_manager {

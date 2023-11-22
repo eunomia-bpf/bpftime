@@ -5,10 +5,8 @@ package.json
 *.skel.yaml
 package.yaml
 ecli
-uprobe
+bootstrap
 .output
-test
+fs-filter-cache
 victim
-uprobe-override
-syscall
-ufilter
+test.txt

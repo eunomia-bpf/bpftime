@@ -168,7 +168,7 @@ int bpftime_shm::add_ureplace_filter(int fd, int pid, const char *name,
 	} else {
 		return manager->set_handler(
 			fd,
-			bpf_perf_event_handler(bpf_event_type::BPF_TYPE_UFILTER,
+			bpf_perf_event_handler(bpf_event_type::BPF_TYPE_UPROBE_OVERRIDE,
 					       offset, pid, name, segment,
 					       true),
 			segment);

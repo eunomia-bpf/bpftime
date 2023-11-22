@@ -50,7 +50,12 @@ class frida_internal_attach_entry {
 	friend class frida_attach_manager;
 
     public:
-	bool has_replace_or_filter() const;
+	bool is_overrided = false;
+	uint64_t user_ret = 0;
+	uint64_t user_ret_ctx = 0;
+	override_return_set_callback override_return_callback;
+
+	bool has_replace_or_override() const;
 	bool has_uprobe_or_uretprobe() const;
 	base_attach_manager::replace_callback &get_replace_callback() const;
 	base_attach_manager::filter_callback &get_filter_callback() const;
