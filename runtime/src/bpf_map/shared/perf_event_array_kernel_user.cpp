@@ -70,10 +70,10 @@ int perf_event_array_kernel_user_impl::output_data_into_kernel(const void *buf,
 		errno = E2BIG;
 		return -1;
 	}
-	spdlog::debug("Received data output for kernel perf event array {}",
+	SPDLOG_DEBUG("Received data output for kernel perf event array {}",
 		      kernel_perf_id);
 	auto user_rb = ensure_current_map_user_ringbuf();
-	spdlog::debug("User ringbuf ensured: {:x}", (uintptr_t)user_rb);
+	SPDLOG_DEBUG("User ringbuf ensured: {:x}", (uintptr_t)user_rb);
 	void *mem = user_rb->reserve(size + 8);
 	if (!mem) {
 		spdlog::error("Failed to reserve for user ringbuf: {}", errno);
@@ -120,7 +120,7 @@ perf_event_array_kernel_user_impl::perf_event_array_kernel_user_impl(
 		return;
 	}
 	user_rb_id = map_info.id;
-	spdlog::debug(
+	SPDLOG_DEBUG(
 		"Initialized perf_event_array_kernel_user_impl, kernel perf id {}, user ringbuffer id {}, user ringbuffer map type {}",
 		kernel_perf_id, user_rb_id, (int)map_info.type);
 	int &pfd = this->pfd;
@@ -143,7 +143,7 @@ perf_event_array_kernel_user_impl::perf_event_array_kernel_user_impl(
 		assert(false);
 	}
 
-	spdlog::debug("Attached transporter ebpf program");
+	SPDLOG_DEBUG("Attached transporter ebpf program");
 }
 perf_event_array_kernel_user_impl::~perf_event_array_kernel_user_impl()
 {
@@ -239,7 +239,7 @@ user_ringbuffer_wrapper::user_ringbuffer_wrapper(int user_rb_id)
 
 	LIBBPF_OPTS(user_ring_buffer_opts, opts);
 	user_rb_fd = bpf_map_get_fd_by_id(user_rb_id);
-	spdlog::debug("map id {} -> fd {}, user ring buffer", user_rb_id,
+	SPDLOG_DEBUG("map id {} -> fd {}, user ring buffer", user_rb_id,
 		      user_rb_fd);
 	if (user_rb_fd < 0) {
 		spdlog::error(
@@ -252,7 +252,7 @@ user_ringbuffer_wrapper::user_ringbuffer_wrapper(int user_rb_id)
 	rb = user_ring_buffer__new(user_rb_fd, &opts);
 	assert(rb &&
 	       "Failed to initialize user ringbuffer! This SHOULD NOT Happen.");
-	spdlog::debug("User ringbuffer wrapper created, fd={}, id={}",
+	SPDLOG_DEBUG("User ringbuffer wrapper created, fd={}, id={}",
 		      user_rb_fd, user_rb_id);
 }
 
@@ -498,7 +498,7 @@ static int create_transporter_prog(int user_ringbuf_fd, int kernel_perf_fd)
 	prog_load_opts.func_info = func_info.data();
 	prog_load_opts.func_info_cnt = func_info.size();
 	prog_load_opts.func_info_rec_size = sizeof(bpf_func_info);
-	spdlog::debug("Loading transporter program with {} insns", prog.size());
+	SPDLOG_DEBUG("Loading transporter program with {} insns", prog.size());
 	int bpf_fd = bpf_prog_load(BPF_PROG_TYPE_PERF_EVENT, "transporter",
 				   "GPL", (bpf_insn *)prog.data(), prog.size(),
 				   &prog_load_opts);

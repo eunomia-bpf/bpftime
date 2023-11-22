@@ -140,7 +140,7 @@ int bpftime_shm::add_uprobe(int fd, int pid, const char *name, uint64_t offset,
 		// if fd is negative, we need to create a new fd for allocating
 		fd = open_fake_fd();
 	}
-	spdlog::debug("Set fd {} to uprobe, pid={}, name={}, offset={}", fd,
+	SPDLOG_DEBUG("Set fd {} to uprobe, pid={}, name={}, offset={}", fd,
 		      pid, name, offset);
 	return manager->set_handler(
 		fd,
@@ -156,7 +156,7 @@ int bpftime_shm::add_ureplace_filter(int fd, int pid, const char *name,
 		// if fd is negative, we need to create a new fd for allocating
 		fd = open_fake_fd();
 	}
-	spdlog::debug("Set fd {} to ureplace, pid={}, name={}, offset={}", fd,
+	SPDLOG_DEBUG("Set fd {} to ureplace, pid={}, name={}, offset={}", fd,
 		      pid, name, offset);
 	if (is_replace) {
 		return manager->set_handler(
@@ -210,7 +210,7 @@ int bpftime_shm::attach_perf_to_bpf(int perf_fd, int bpf_fd)
 
 int bpftime_shm::add_bpf_prog_attach_target(int perf_fd, int bpf_fd)
 {
-	spdlog::debug("Try attaching prog fd {} to perf fd {}", bpf_fd,
+	SPDLOG_DEBUG("Try attaching prog fd {} to perf fd {}", bpf_fd,
 		      perf_fd);
 	if (!is_prog_fd(bpf_fd)) {
 		spdlog::error("Fd {} is not a prog fd", bpf_fd);
@@ -306,7 +306,7 @@ int bpftime_shm::add_ringbuf_to_epoll(int ringbuf_fd, int epoll_fd,
 	if (ringbuf_map_impl.has_value(); auto val = ringbuf_map_impl.value()) {
 		epoll_inst.files.emplace_back(val->create_impl_weak_ptr(),
 					      extra_data);
-		spdlog::debug("Ringbuf {} added to epoll {}", ringbuf_fd,
+		SPDLOG_DEBUG("Ringbuf {} added to epoll {}", ringbuf_fd,
 			      epoll_fd);
 		return 0;
 	} else {
@@ -326,7 +326,7 @@ int bpftime_shm::epoll_create()
 		return -1;
 	}
 	fd = manager->set_handler(fd, bpftime::epoll_handler(segment), segment);
-	spdlog::debug("Epoll instance created: fd={}", fd);
+	SPDLOG_DEBUG("Epoll instance created: fd={}", fd);
 	return fd;
 }
 
@@ -430,7 +430,7 @@ int bpftime_shm::add_bpf_prog(int fd, const ebpf_inst *insn, size_t insn_cnt,
 		// if fd is negative, we need to create a new fd for allocating
 		fd = open_fake_fd();
 	}
-	spdlog::debug(
+	SPDLOG_DEBUG(
 		"Set handler fd {} to bpf_prog_handler, name {}, prog_type {}, insn_cnt {}",
 		fd, prog_name, prog_type, insn_cnt);
 	return manager->set_handler(
@@ -498,7 +498,7 @@ bool bpftime_shm::is_exist_fake_fd(int fd) const
 bpftime_shm::bpftime_shm(const char *shm_name, shm_open_type type)
 {
 	if (type == shm_open_type::SHM_OPEN_ONLY) {
-		spdlog::debug("start: bpftime_shm for client setup");
+		SPDLOG_DEBUG("start: bpftime_shm for client setup");
 		// open the shm
 		segment = boost::interprocess::managed_shared_memory(
 			boost::interprocess::open_only, shm_name);
@@ -513,9 +513,9 @@ bpftime_shm::bpftime_shm(const char *shm_name, shm_open_type type)
 			segment.find<struct agent_config>(
 				       bpftime::DEFAULT_AGENT_CONFIG_NAME)
 				.first;
-		spdlog::debug("done: bpftime_shm for client setup");
+		SPDLOG_DEBUG("done: bpftime_shm for client setup");
 	} else if (type == shm_open_type::SHM_CREATE_OR_OPEN) {
-		spdlog::debug("start: bpftime_shm for create or open setup");
+		SPDLOG_DEBUG("start: bpftime_shm for create or open setup");
 		segment = boost::interprocess::managed_shared_memory(
 			boost::interprocess::open_or_create,
 			// Allocate 20M bytes of memory by default
@@ -523,7 +523,7 @@ bpftime_shm::bpftime_shm(const char *shm_name, shm_open_type type)
 
 		manager = segment.find_or_construct<bpftime::handler_manager>(
 			bpftime::DEFAULT_GLOBAL_HANDLER_NAME)(segment);
-		spdlog::debug("done: bpftime_shm for server setup: manager");
+		SPDLOG_DEBUG("done: bpftime_shm for server setup: manager");
 
 		syscall_installed_pids =
 			segment.find_or_construct<syscall_pid_set>(
@@ -531,41 +531,41 @@ bpftime_shm::bpftime_shm(const char *shm_name, shm_open_type type)
 				std::less<int>(),
 				syscall_pid_set_allocator(
 					segment.get_segment_manager()));
-		spdlog::debug(
+		SPDLOG_DEBUG(
 			"done: bpftime_shm for server setup: syscall_pid_set");
 
 		agent_config = segment.find_or_construct<struct agent_config>(
 			bpftime::DEFAULT_AGENT_CONFIG_NAME)();
-		spdlog::debug("done: bpftime_shm for open_or_create setup");
+		SPDLOG_DEBUG("done: bpftime_shm for open_or_create setup");
 	} else if (type == shm_open_type::SHM_REMOVE_AND_CREATE) {
-		spdlog::debug("start: bpftime_shm for server setup");
+		SPDLOG_DEBUG("start: bpftime_shm for server setup");
 		boost::interprocess::shared_memory_object::remove(shm_name);
 		// create the shm
-		spdlog::debug(
+		SPDLOG_DEBUG(
 			"done: bpftime_shm for server setup: remove installed segment");
 		segment = boost::interprocess::managed_shared_memory(
 			boost::interprocess::create_only,
 			// Allocate 20M bytes of memory by default
 			shm_name, 20 << 20);
-		spdlog::debug("done: bpftime_shm for server setup: segment");
+		SPDLOG_DEBUG("done: bpftime_shm for server setup: segment");
 
 		manager = segment.construct<bpftime::handler_manager>(
 			bpftime::DEFAULT_GLOBAL_HANDLER_NAME)(segment);
-		spdlog::debug("done: bpftime_shm for server setup: manager");
+		SPDLOG_DEBUG("done: bpftime_shm for server setup: manager");
 
 		syscall_installed_pids = segment.construct<syscall_pid_set>(
 			bpftime::DEFAULT_SYSCALL_PID_SET_NAME)(
 			std::less<int>(),
 			syscall_pid_set_allocator(
 				segment.get_segment_manager()));
-		spdlog::debug(
+		SPDLOG_DEBUG(
 			"done: bpftime_shm for server setup: syscall_pid_set");
 
 		agent_config = segment.construct<struct agent_config>(
 			bpftime::DEFAULT_AGENT_CONFIG_NAME)();
-		spdlog::debug(
+		SPDLOG_DEBUG(
 			"done: bpftime_shm for server setup: agent_config");
-		spdlog::debug("done: bpftime_shm for server setup.");
+		SPDLOG_DEBUG("done: bpftime_shm for server setup.");
 	} else if (type == shm_open_type::SHM_NO_CREATE) {
 		// not create any shm
 		spdlog::warn(

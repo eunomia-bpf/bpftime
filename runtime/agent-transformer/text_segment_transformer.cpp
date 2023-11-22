@@ -272,7 +272,7 @@ void setup_syscall_tracer()
 				// Skip pages that we mapped
 				continue;
 			}
-			spdlog::debug("Rewriting segment from {:x} to {:x}",
+			SPDLOG_DEBUG("Rewriting segment from {:x} to {:x}",
 				      map.begin, map.end);
 			rewrite_segment((uint8_t *)(uintptr_t)(map.begin),
 					map.end - map.begin, map.get_perm());

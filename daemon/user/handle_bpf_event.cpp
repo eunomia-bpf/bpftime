@@ -280,7 +280,7 @@ static const char *perf_type_id_strings[PERF_TYPE_MAX_ID] = {
 
 int bpf_event_handler::handle_perf_event_open(const struct event *e)
 {
-	spdlog::debug("handle_perf_event");
+	SPDLOG_DEBUG("handle_perf_event");
 	const char *type_id_str = "UNKNOWN TYPE";
 	unsigned int perf_type = e->perf_event_data.attr.type;
 	if (perf_type < (sizeof(perf_type_id_strings) /
@@ -294,7 +294,7 @@ int bpf_event_handler::handle_perf_event_open(const struct event *e)
 
 	if (config.is_driving_bpftime) {
 		if (e->perf_event_data.ret >= 0) {
-			spdlog::debug(
+			SPDLOG_DEBUG(
 				"Handling perf event creating with perf type {}",
 				perf_type);
 			if (perf_type == (unsigned int)uprobe_type) {
@@ -303,7 +303,7 @@ int bpf_event_handler::handle_perf_event_open(const struct event *e)
 				bool retprobe =
 					attr->config &
 					(1 << determine_uprobe_retprobe_bit());
-				spdlog::debug("retprobe {}", retprobe);
+				SPDLOG_DEBUG("retprobe {}", retprobe);
 				size_t ref_ctr_off =
 					attr->config >>
 					PERF_UPROBE_REF_CTR_OFFSET_SHIFT;
@@ -311,7 +311,7 @@ int bpf_event_handler::handle_perf_event_open(const struct event *e)
 					e->perf_event_data.name_or_path;
 				uint64_t offset =
 					e->perf_event_data.attr.probe_offset;
-				spdlog::debug(
+				SPDLOG_DEBUG(
 					"Creating uprobe name {} offset {} "
 					"ref_ctr_off {} attr->config={:x}",
 					name, offset, ref_ctr_off,
@@ -325,7 +325,7 @@ int bpf_event_handler::handle_perf_event_open(const struct event *e)
 					     perf_type);
 			}
 		} else {
-			spdlog::debug(
+			SPDLOG_DEBUG(
 				"Ignore failed perf event creation, err={}",
 				e->perf_event_data.ret);
 		}
@@ -335,7 +335,7 @@ int bpf_event_handler::handle_perf_event_open(const struct event *e)
 
 int bpf_event_handler::handle_load_bpf_prog_event(const struct event *e)
 {
-	spdlog::debug("handle_load_bpf_prog_event");
+	SPDLOG_DEBUG("handle_load_bpf_prog_event");
 	const char *prog_type_str =
 		e->bpf_loaded_prog.type >= (sizeof(bpf_prog_type_strings) /
 					    sizeof(bpf_prog_type_strings[0])) ?
@@ -388,12 +388,12 @@ int bpf_event_handler::handle_ioctl(const struct event *e)
 
 int bpf_event_handler::handle_event(const struct event *e)
 {
-	spdlog::debug("handle_event");
+	SPDLOG_DEBUG("handle_event");
 	// ignore events from self
 	if (e->pid == current_pid) {
 		return 0;
 	}
-	spdlog::debug("Received event with type {}", (int)e->type);
+	SPDLOG_DEBUG("Received event with type {}", (int)e->type);
 	switch (e->type) {
 	case SYS_OPEN:
 		return handle_open_events(e);

@@ -352,7 +352,7 @@ int bpftime_epoll_wait(int fd, struct epoll_event *out_evts, int max_evt,
 			// Second, wait for interruptable signals
 			if (int sig = sigtimedwait(&to_block, &sig_info, &ts);
 			    sig > 0) {
-				spdlog::debug(
+				SPDLOG_DEBUG(
 					"epoll_wait interrupted by signal {}",
 					sig);
 				// Invoke the original signal handler
@@ -425,7 +425,7 @@ int bpftime_perf_event_output(int fd, const void *buf, size_t sz)
 	}
 	auto &handler = std::get<bpf_perf_event_handler>(shm.get_handler(fd));
 	if (handler.sw_perf.has_value()) {
-		spdlog::debug("Perf out value to fd {}, sz {}", fd, sz);
+		SPDLOG_DEBUG("Perf out value to fd {}, sz {}", fd, sz);
 		return handler.sw_perf.value()->output_data(buf, sz);
 	} else {
 		spdlog::error(
@@ -438,7 +438,7 @@ int bpftime_perf_event_output(int fd, const void *buf, size_t sz)
 
 int bpftime_shared_perf_event_output(int map_fd, const void *buf, size_t sz)
 {
-	spdlog::debug("Output data into shared perf event array fd {}", map_fd);
+	SPDLOG_DEBUG("Output data into shared perf event array fd {}", map_fd);
 	auto &shm = shm_holder.global_shared_memory;
 	if (!shm.is_shared_perf_event_array_map_fd(map_fd)) {
 		spdlog::error("Expected fd {} to be a shared perf event array",
@@ -468,7 +468,7 @@ const uint64_t INVALID_MAP_PTR = ((uint64_t)0 - 1);
 
 extern "C" uint64_t map_ptr_by_fd(uint32_t fd)
 {
-	spdlog::debug("Call map_ptr_by_fd with fd={}", fd);
+	SPDLOG_DEBUG("Call map_ptr_by_fd with fd={}", fd);
 	if (!shm_holder.global_shared_memory.get_manager() ||
 	    !shm_holder.global_shared_memory.is_map_fd(fd)) {
 		errno = ENOENT;
@@ -483,7 +483,7 @@ extern "C" uint64_t map_ptr_by_fd(uint32_t fd)
 
 extern "C" uint64_t map_val(uint64_t map_ptr)
 {
-	spdlog::debug("Call map_val with map_ptr={:x}", map_ptr);
+	SPDLOG_DEBUG("Call map_val with map_ptr={:x}", map_ptr);
 	int fd = (int)(map_ptr >> 32);
 	if (!shm_holder.global_shared_memory.get_manager() ||
 	    !shm_holder.global_shared_memory.is_map_fd(fd)) {

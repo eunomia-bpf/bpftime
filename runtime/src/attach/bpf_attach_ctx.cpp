@@ -92,7 +92,7 @@ int bpf_attach_ctx::init_attach_ctx_from_handlers(
 					if (perf_handler.enabled) {
 						handler_prog_fds[v].emplace_back(
 							i, prog);
-						spdlog::debug(
+						SPDLOG_DEBUG(
 							"Program fd {} attached to perf event handler {}",
 							i, v);
 					} else {
@@ -107,17 +107,17 @@ int bpf_attach_ctx::init_attach_ctx_from_handlers(
 						i, v);
 				}
 			}
-			spdlog::debug("Load prog fd={} name={}", i,
+			SPDLOG_DEBUG("Load prog fd={} name={}", i,
 				      prog_handler.name);
 		} else if (std::holds_alternative<bpf_map_handler>(handler)) {
-			spdlog::debug("bpf_map_handler found at {}", i);
+			SPDLOG_DEBUG("bpf_map_handler found at {}", i);
 		} else if (std::holds_alternative<bpf_perf_event_handler>(
 				   handler)) {
-			spdlog::debug("Will handle bpf_perf_events later...");
+			SPDLOG_DEBUG("Will handle bpf_perf_events later...");
 
 		} else if (std::holds_alternative<epoll_handler>(handler) ||
 			   std::holds_alternative<bpf_link_handler>(handler)) {
-			spdlog::debug(
+			SPDLOG_DEBUG(
 				"No extra operations needed for epoll_handler/bpf link/btf..");
 		} else {
 			spdlog::error("Unsupported handler type for handler {}",
@@ -158,7 +158,7 @@ int bpf_attach_ctx::init_attach_ctx_from_handlers(
 			// attach base on events
 			switch (event_handler.type) {
 			case bpf_event_type::BPF_TYPE_UPROBE_OVERRIDE: {
-				spdlog::debug(
+				SPDLOG_DEBUG(
 					"Creating filter for perf event fd {}",
 					i);
 				auto progs = handler_prog_fds[i];
@@ -191,7 +191,7 @@ int bpf_attach_ctx::init_attach_ctx_from_handlers(
 				break;
 			}
 			case bpf_event_type::BPF_TYPE_UREPLACE: {
-				spdlog::debug(
+				SPDLOG_DEBUG(
 					"Creating replace for perf event fd {}",
 					i);
 				auto progs = handler_prog_fds[i];
@@ -224,7 +224,7 @@ int bpf_attach_ctx::init_attach_ctx_from_handlers(
 				break;
 			}
 			case bpf_event_type::BPF_TYPE_UPROBE: {
-				spdlog::debug(
+				SPDLOG_DEBUG(
 					"Creating uprobe for perf event fd {}",
 					i);
 				auto progs = handler_prog_fds[i];
@@ -252,7 +252,7 @@ int bpf_attach_ctx::init_attach_ctx_from_handlers(
 				break;
 			}
 			case bpf_event_type::BPF_TYPE_URETPROBE: {
-				spdlog::debug(
+				SPDLOG_DEBUG(
 					"Creating uretprobe for perf event fd {}",
 					i);
 				auto progs = handler_prog_fds[i];
@@ -276,7 +276,7 @@ int bpf_attach_ctx::init_attach_ctx_from_handlers(
 				break;
 			}
 			case bpf_event_type::PERF_TYPE_TRACEPOINT: {
-				spdlog::debug(
+				SPDLOG_DEBUG(
 					"Creating tracepoint for perf event fd {}",
 					i);
 				err = create_tracepoint(
@@ -291,7 +291,7 @@ int bpf_attach_ctx::init_attach_ctx_from_handlers(
 				break;
 			}
 			case bpf_event_type::PERF_TYPE_SOFTWARE: {
-				spdlog::debug(
+				SPDLOG_DEBUG(
 					"Attaching software perf event, nothing need to do");
 				err = i;
 				break;
@@ -301,7 +301,7 @@ int bpf_attach_ctx::init_attach_ctx_from_handlers(
 					     (int)event_handler.type);
 				break;
 			}
-			spdlog::debug("Create attach event {} {} {} for {}", i,
+			SPDLOG_DEBUG("Create attach event {} {} {} for {}", i,
 				      event_handler._module_name,
 				      event_handler.offset, err);
 			if (err < 0) {
@@ -314,14 +314,14 @@ int bpf_attach_ctx::init_attach_ctx_from_handlers(
 
 bpf_attach_ctx::~bpf_attach_ctx()
 {
-	spdlog::debug("Destructor: bpf_attach_ctx");
+	SPDLOG_DEBUG("Destructor: bpf_attach_ctx");
 }
 
 // create a probe context
 bpf_attach_ctx::bpf_attach_ctx(void)
 	: attach_manager(std::make_unique<frida_attach_manager>())
 {
-	spdlog::debug("Initialzing frida gum");
+	SPDLOG_DEBUG("Initialzing frida gum");
 	current_id = CURRENT_ID_OFFSET;
 }
 

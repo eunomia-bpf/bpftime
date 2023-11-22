@@ -21,7 +21,7 @@ using namespace std;
 int bpftime_driver::find_minimal_unused_id()
 {
 	int id = bpftime_find_minimal_unused_fd();
-	spdlog::debug("find minimal unused id {}", id);
+	SPDLOG_DEBUG("find minimal unused id {}", id);
 	return id;
 }
 
@@ -81,7 +81,7 @@ static int relocate_bpf_prog_insns(std::vector<ebpf_inst> &insns,
 		spdlog::error("Failed to lookup bpf prog insns for id {}", id);
 		return -1;
 	}
-	spdlog::debug("relocate bpf prog insns for id {}, cnt {}", id,
+	SPDLOG_DEBUG("relocate bpf prog insns for id {}, cnt {}", id,
 		      insn_data.code_len);
 	// resize the insns
 	insns.resize(insn_data.code_len);
@@ -99,7 +99,7 @@ static int relocate_bpf_prog_insns(std::vector<ebpf_inst> &insns,
 				if (map_id < 0) {
 					return -1;
 				}
-				spdlog::debug(
+				SPDLOG_DEBUG(
 					"relocate bpf prog insns for id {} in {}, "
 					"lddw imm {} to map id {}",
 					id, i, inst.imm, map_id);
@@ -107,7 +107,7 @@ static int relocate_bpf_prog_insns(std::vector<ebpf_inst> &insns,
 			}
 			break;
 		case EBPF_OP_CALL:
-			spdlog::debug(
+			SPDLOG_DEBUG(
 				"relocate bpf prog insns for id {} in {}, call imm {}",
 				id, i, inst.imm);
 			break;
@@ -162,7 +162,7 @@ int bpftime_driver::bpftime_progs_create_server(int kernel_id, int server_pid)
 			      kernel_id, errno);
 		return -1;
 	}
-	spdlog::debug("get prog fd {} for id {}", fd, kernel_id);
+	SPDLOG_DEBUG("get prog fd {} for id {}", fd, kernel_id);
 	bpf_prog_info info = {};
 	uint32_t info_len = sizeof(info);
 	int res = bpf_obj_get_info_by_fd(fd, &info, &info_len);

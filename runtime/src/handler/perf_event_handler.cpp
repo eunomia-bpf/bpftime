@@ -107,7 +107,7 @@ software_perf_event_data::get_header_ref_const() const
 
 int software_perf_event_data::output_data(const void *buf, size_t size)
 {
-	spdlog::debug("Handling perf event output data with size {}", size);
+	SPDLOG_DEBUG("Handling perf event output data with size {}", size);
 	auto &header = get_header_ref();
 	perf_sample_raw head;
 	head.header.type = PERF_RECORD_SAMPLE;
@@ -118,16 +118,16 @@ int software_perf_event_data::output_data(const void *buf, size_t size)
 	int64_t data_tail = header.data_tail;
 	uint8_t *base_addr = (uint8_t *)mmap_buffer.data() + pagesize;
 	int64_t available_size = mmap_size() - (data_head - data_tail);
-	spdlog::debug("Data tail={}", data_tail);
+	SPDLOG_DEBUG("Data tail={}", data_tail);
 	if (available_size == 0) {
-		spdlog::debug("Upgraded available size to {}", mmap_size());
+		SPDLOG_DEBUG("Upgraded available size to {}", mmap_size());
 		available_size = mmap_size();
 	}
 	// If available_size is less or equal than head.header.size, just drop
 	// the data. In this way, we'll never make data_head equals to
 	// data_tail, at situation other than an empty buffer
 	if (available_size <= head.header.size) {
-		spdlog::debug(
+		SPDLOG_DEBUG(
 			"Dropping data with size {}, available_size {}, required size {}",
 			size, available_size, head.header.size);
 		return 0;
@@ -149,7 +149,7 @@ int software_perf_event_data::output_data(const void *buf, size_t size)
 	}
 	uint64_t new_head = (data_head + copy_size);
 	smp_store_release_u64(&header.data_head, new_head);
-	spdlog::debug(
+	SPDLOG_DEBUG(
 		"Data of size {}, total size {} outputed at head {}; new_head={} addr={:x}; available_size={}",
 		size, copy_size, data_head, new_head,
 		(uintptr_t)(base_addr + data_head), available_size);
@@ -189,7 +189,7 @@ software_perf_event_data::software_perf_event_data(
 void *software_perf_event_data::ensure_mmap_buffer(size_t buffer_size)
 {
 	if (buffer_size > mmap_buffer.size()) {
-		spdlog::debug("Expanding mmap buffer size to {}", buffer_size);
+		SPDLOG_DEBUG("Expanding mmap buffer size to {}", buffer_size);
 		mmap_buffer.resize(buffer_size);
 		// Update data size in the mmap header
 		get_header_ref().data_size = buffer_size - pagesize;

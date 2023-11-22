@@ -48,7 +48,7 @@ void array_map_kernel_user_impl::init_map_fd()
 	_value_size = info.value_size;
 	_max_entries = info.max_entries;
 	value_data.resize(_value_size);
-	spdlog::debug(
+	SPDLOG_DEBUG(
 		"create kernel user array map value size {}, max entries {}",
 		_value_size, _max_entries);
 	// TODO: is the check here necessary?
@@ -57,7 +57,7 @@ void array_map_kernel_user_impl::init_map_fd()
 	// 	return;
 	// }
 	size_t mmap_sz = bpf_map_mmap_sz(_value_size, _max_entries);
-	spdlog::debug(
+	SPDLOG_DEBUG(
 		"mmap shared array map, fd={}, mmap_sz={}, name={}, value_size={}, flags={}",
 		map_fd, mmap_sz, info.name, info.value_size, info.map_flags);
 	mmap_ptr = mmap(NULL, mmap_sz, PROT_READ | PROT_WRITE,
@@ -95,19 +95,19 @@ void *array_map_kernel_user_impl::elem_lookup(const void *key)
 	if (map_fd < 0) {
 		init_map_fd();
 	}
-	spdlog::debug("Run lookup of shared array map, key={:x}",
+	SPDLOG_DEBUG("Run lookup of shared array map, key={:x}",
 		      (uintptr_t)key);
 	if (mmap_ptr != nullptr) {
 		auto key_val = *(uint32_t *)key;
 
-		spdlog::debug("mmap handled, key={}", key_val);
+		SPDLOG_DEBUG("mmap handled, key={}", key_val);
 		if (key_val >= _max_entries) {
 			errno = ENOENT;
-			spdlog::debug("Returned ENOENT");
+			SPDLOG_DEBUG("Returned ENOENT");
 			return nullptr;
 		}
 		auto result = &((uint8_t *)mmap_ptr)[key_val * _value_size];
-		spdlog::debug("Returned value addr: {:x}", (uintptr_t)result);
+		SPDLOG_DEBUG("Returned value addr: {:x}", (uintptr_t)result);
 		return result;
 	}
 	// fallback to read kernel maps

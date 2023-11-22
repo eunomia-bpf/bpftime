@@ -178,7 +178,7 @@ int64_t bpf_attach_ctx::run_syscall_hooker(int64_t sys_nr, int64_t arg1,
 {
 	if (sys_nr == __NR_exit_group || sys_nr == __NR_exit)
 		return orig_syscall(sys_nr, arg1, arg2, arg3, arg4, arg5, arg6);
-	spdlog::debug("Syscall callback {} {} {} {} {} {} {}", sys_nr, arg1,
+	SPDLOG_DEBUG("Syscall callback {} {} {} {} {} {} {}", sys_nr, arg1,
 		      arg2, arg3, arg4, arg5, arg6);
 	if (!sys_enter_progs[sys_nr].empty() ||
 	    !global_sys_enter_progs.empty()) {
@@ -192,7 +192,7 @@ int64_t bpf_attach_ctx::run_syscall_hooker(int64_t sys_nr, int64_t arg1,
 		ctx.args[4] = arg5;
 		ctx.args[5] = arg6;
 		const auto exec = [&](const bpftime_prog *prog) {
-			spdlog::debug("Call {}", prog->prog_name());
+			SPDLOG_DEBUG("Call {}", prog->prog_name());
 			auto lctx = ctx;
 			// Avoid polluting other ebpf programs..
 			uint64_t ret;

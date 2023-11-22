@@ -42,7 +42,7 @@ long syscall_context::handle_sysbpf(int cmd, union bpf_attr *attr, size_t size)
 	char *errmsg;
 	switch (cmd) {
 	case BPF_MAP_CREATE: {
-		spdlog::debug("Creating map");
+		SPDLOG_DEBUG("Creating map");
 		int id = bpftime_maps_create(
 			-1 /* let the shm alloc fd for us */, attr->map_name,
 			bpftime::bpf_map_attr{
@@ -58,14 +58,14 @@ long syscall_context::handle_sysbpf(int cmd, union bpf_attr *attr, size_t size)
 				attr->btf_value_type_id,
 				attr->map_extra,
 			});
-		spdlog::debug(
+		SPDLOG_DEBUG(
 			"Created map {}, type={}, name={}, key_size={}, value_size={}",
 			id, attr->map_type, attr->map_name, attr->key_size,
 			attr->value_size);
 		return id;
 	}
 	case BPF_MAP_LOOKUP_ELEM: {
-		spdlog::debug("Looking up map {}", attr->map_fd);
+		SPDLOG_DEBUG("Looking up map {}", attr->map_fd);
 		// Note that bpftime_map_lookup_elem is adapted as a bpf helper,
 		// meaning that it will *return* the address of the matched
 		// value. But here the syscall has a different interface. Here
@@ -83,19 +83,19 @@ long syscall_context::handle_sysbpf(int cmd, union bpf_attr *attr, size_t size)
 		return 0;
 	}
 	case BPF_MAP_UPDATE_ELEM: {
-		spdlog::debug("Updating map");
+		SPDLOG_DEBUG("Updating map");
 		return bpftime_map_update_elem(
 			attr->map_fd, (const void *)(uintptr_t)attr->key,
 			(const void *)(uintptr_t)attr->value,
 			(uint64_t)attr->flags);
 	}
 	case BPF_MAP_DELETE_ELEM: {
-		spdlog::debug("Deleting map");
+		SPDLOG_DEBUG("Deleting map");
 		return bpftime_map_delete_elem(
 			attr->map_fd, (const void *)(uintptr_t)attr->key);
 	}
 	case BPF_MAP_GET_NEXT_KEY: {
-		spdlog::debug("Getting next key");
+		SPDLOG_DEBUG("Getting next key");
 		return (long)(uintptr_t)bpftime_map_get_next_key(
 			attr->map_fd, (const void *)(uintptr_t)attr->key,
 			(void *)(uintptr_t)attr->next_key);
@@ -103,7 +103,7 @@ long syscall_context::handle_sysbpf(int cmd, union bpf_attr *attr, size_t size)
 	case BPF_PROG_LOAD:
 		// Load a program?
 		{
-			spdlog::debug(
+			SPDLOG_DEBUG(
 				"Loading program `{}` license `{}` prog_type `{}` attach_type {} map_type {}",
 				attr->prog_name,
 				(const char *)(uintptr_t)attr->license,
@@ -122,7 +122,7 @@ long syscall_context::handle_sysbpf(int cmd, union bpf_attr *attr, size_t size)
 #ifdef ENABLE_BPFTIME_VERIFIER
 			// Only do verification for tracepoint/uprobe/uretprobe
 			if (simple_section_name.has_value()) {
-				spdlog::debug("Verying program {}",
+				SPDLOG_DEBUG("Verying program {}",
 					      attr->prog_name);
 				auto result = verifier::verify_ebpf_program(
 					(uint64_t *)(uintptr_t)attr->insns,
@@ -165,27 +165,27 @@ long syscall_context::handle_sysbpf(int cmd, union bpf_attr *attr, size_t size)
 				(ebpf_inst *)(uintptr_t)attr->insns,
 				(size_t)attr->insn_cnt, attr->prog_name,
 				attr->prog_type);
-			spdlog::debug("Loaded program `{}` id={}",
+			SPDLOG_DEBUG("Loaded program `{}` id={}",
 				      attr->prog_name, id);
 			return id;
 		}
 	case BPF_LINK_CREATE: {
 		auto prog_fd = attr->link_create.prog_fd;
 		auto target_fd = attr->link_create.target_fd;
-		spdlog::debug("Creating link {} -> {}", prog_fd, target_fd);
+		SPDLOG_DEBUG("Creating link {} -> {}", prog_fd, target_fd);
 		int id = bpftime_link_create(
 			-1 /* let the shm alloc fd for us */, prog_fd,
 			target_fd);
-		spdlog::debug("Created link {}", id);
+		SPDLOG_DEBUG("Created link {}", id);
 		return id;
 	}
 	case BPF_MAP_FREEZE: {
-		spdlog::debug(
+		SPDLOG_DEBUG(
 			"Calling bpf map freeze, but we didn't implement this");
 		return 0;
 	}
 	case BPF_OBJ_GET_INFO_BY_FD: {
-		spdlog::debug("Getting info by fd");
+		SPDLOG_DEBUG("Getting info by fd");
 		bpftime::bpf_map_attr map_attr;
 		const char *map_name;
 		bpftime::bpf_map_type map_type;
@@ -217,9 +217,9 @@ long syscall_context::handle_sysbpf(int cmd, union bpf_attr *attr, size_t size)
 	case BPF_PROG_ATTACH: {
 		auto prog_fd = attr->attach_bpf_fd;
 		auto target_fd = attr->target_fd;
-		spdlog::debug("BPF_PROG_ATTACH {} -> {}", prog_fd, target_fd);
+		SPDLOG_DEBUG("BPF_PROG_ATTACH {} -> {}", prog_fd, target_fd);
 		int id = bpftime_attach_perf_to_bpf(target_fd, prog_fd);
-		spdlog::debug("Created attach {}", id);
+		SPDLOG_DEBUG("Created attach {}", id);
 		return id;
 	}
 	default:
@@ -246,46 +246,46 @@ int syscall_context::handle_perfevent(perf_event_attr *attr, pid_t pid, int cpu,
 			attr->config >> PERF_UPROBE_REF_CTR_OFFSET_SHIFT;
 		const char *name = (const char *)(uintptr_t)attr->config1;
 		uint64_t offset = attr->config2;
-		spdlog::debug(
+		SPDLOG_DEBUG(
 			"Creating uprobe name {} offset {} retprobe {} ref_ctr_off {} attr->config={:x}",
 			name, offset, retprobe, ref_ctr_off, attr->config);
 		int id = bpftime_uprobe_create(
 			-1 /* let the shm alloc fd for us */, pid, name, offset,
 			retprobe, ref_ctr_off);
 		// std::cout << "Created uprobe " << id << std::endl;
-		spdlog::debug("Created uprobe {}", id);
+		SPDLOG_DEBUG("Created uprobe {}", id);
 		return id;
 	} else if ((int)attr->type ==
 		   (int)bpf_event_type::PERF_TYPE_TRACEPOINT) {
-		spdlog::debug("Detected tracepoint perf event creation");
+		SPDLOG_DEBUG("Detected tracepoint perf event creation");
 		int fd = bpftime_tracepoint_create(
 			-1 /* let the shm alloc fd for us */, pid,
 			(int32_t)attr->config);
-		spdlog::debug("Created tracepoint perf event with fd {}", fd);
+		SPDLOG_DEBUG("Created tracepoint perf event with fd {}", fd);
 		return fd;
 	} else if ((int)attr->type == (int)bpf_event_type::PERF_TYPE_SOFTWARE) {
-		spdlog::debug("Detected software perf event creation");
+		SPDLOG_DEBUG("Detected software perf event creation");
 		int fd = bpftime_add_software_perf_event(cpu, attr->sample_type,
 							 attr->config);
-		spdlog::debug("Created software perf event with fd {}", fd);
+		SPDLOG_DEBUG("Created software perf event with fd {}", fd);
 		return fd;
 	} else if ((int)attr->type == (int)bpf_event_type::BPF_TYPE_UREPLACE) {
-		spdlog::debug("Detected ureplace hook");
+		SPDLOG_DEBUG("Detected ureplace hook");
 		const char *name = (const char *)(uintptr_t)attr->config1;
 		uint64_t offset = attr->config2;
 		int fd = bpftime_add_ureplace_or_override(
 			-1 /* let the shm alloc fd for us */, pid, name, offset,
 			true);
-		spdlog::debug("Created ureplace with fd {}", fd);
+		SPDLOG_DEBUG("Created ureplace with fd {}", fd);
 		return fd;
 	} else if ((int)attr->type == (int)bpf_event_type::BPF_TYPE_UPROBE_OVERRIDE) {
-		spdlog::debug("Detected ufiltered hook");
+		SPDLOG_DEBUG("Detected ufiltered hook");
 		const char *name = (const char *)(uintptr_t)attr->config1;
 		uint64_t offset = attr->config2;
 		int fd = bpftime_add_ureplace_or_override(
 			-1 /* let the shm alloc fd for us */, pid, name, offset,
 			false);
-		spdlog::debug("Created ufilter with fd {}", fd);
+		SPDLOG_DEBUG("Created ufilter with fd {}", fd);
 		return fd;
 	}
 	spdlog::info("Calling original perf event open");
@@ -300,7 +300,7 @@ void *syscall_context::handle_mmap(void *addr, size_t length, int prot,
 	if (!enable_mock)
 		return orig_mmap_fn(addr, length, prot, flags, fd, offset);
 	try_startup();
-	spdlog::debug("Called normal mmap");
+	SPDLOG_DEBUG("Called normal mmap");
 	return handle_mmap64(addr, length, prot, flags, fd, offset);
 }
 
@@ -310,14 +310,14 @@ void *syscall_context::handle_mmap64(void *addr, size_t length, int prot,
 	if (!enable_mock)
 		return orig_mmap64_fn(addr, length, prot, flags, fd, offset);
 	try_startup();
-	spdlog::debug("Calling mocked mmap64");
+	SPDLOG_DEBUG("Calling mocked mmap64");
 	if (fd != -1 && bpftime_is_ringbuf_map(fd)) {
-		spdlog::debug("Entering mmap64 handling for ringbuf fd: {}",
+		SPDLOG_DEBUG("Entering mmap64 handling for ringbuf fd: {}",
 			      fd);
 		if (prot == (PROT_WRITE | PROT_READ)) {
 			if (auto ptr = bpftime_get_ringbuf_consumer_page(fd);
 			    ptr != nullptr) {
-				spdlog::debug(
+				SPDLOG_DEBUG(
 					"Mapping consumer page {} to ringbuf fd {}",
 					ptr, fd);
 				mocked_mmap_values.insert((uintptr_t)ptr);
@@ -326,7 +326,7 @@ void *syscall_context::handle_mmap64(void *addr, size_t length, int prot,
 		} else if (prot == (PROT_READ)) {
 			if (auto ptr = bpftime_get_ringbuf_producer_page(fd);
 			    ptr != nullptr) {
-				spdlog::debug(
+				SPDLOG_DEBUG(
 					"Mapping producer page {} to ringbuf fd {}",
 					ptr, fd);
 
@@ -335,14 +335,14 @@ void *syscall_context::handle_mmap64(void *addr, size_t length, int prot,
 			}
 		}
 	} else if (fd != -1 && bpftime_is_array_map(fd)) {
-		spdlog::debug("Entering mmap64 which handled array map");
+		SPDLOG_DEBUG("Entering mmap64 which handled array map");
 		if (auto val = bpftime_get_array_map_raw_data(fd);
 		    val != nullptr) {
 			mocked_mmap_values.insert((uintptr_t)val);
 			return val;
 		}
 	} else if (fd != -1 && bpftime_is_software_perf_event(fd)) {
-		spdlog::debug(
+		SPDLOG_DEBUG(
 			"Entering mocked mmap64: software perf event handler");
 		if (auto ptr = bpftime_get_software_perf_event_raw_buffer(
 			    fd, length);
@@ -351,7 +351,7 @@ void *syscall_context::handle_mmap64(void *addr, size_t length, int prot,
 			return ptr;
 		}
 	}
-	spdlog::debug(
+	SPDLOG_DEBUG(
 		"Calling original mmap64: addr={}, length={}, prot={}, flags={}, fd={}, offset={}",
 		addr, length, prot, flags, fd, offset);
 	auto ptr = orig_mmap64_fn(addr, length, prot | PROT_WRITE,
@@ -366,7 +366,7 @@ int syscall_context::handle_ioctl(int fd, unsigned long req, int data)
 	try_startup();
 	int res;
 	if (req == PERF_EVENT_IOC_ENABLE) {
-		spdlog::debug("Enabling perf event {}", fd);
+		SPDLOG_DEBUG("Enabling perf event {}", fd);
 		res = bpftime_perf_event_enable(fd);
 		if (res >= 0)
 			return res;
@@ -374,7 +374,7 @@ int syscall_context::handle_ioctl(int fd, unsigned long req, int data)
 			"Failed to call mocked ioctl PERF_EVENT_IOC_ENABLE: {}",
 			res);
 	} else if (req == PERF_EVENT_IOC_DISABLE) {
-		spdlog::debug("Disabling perf event {}", fd);
+		SPDLOG_DEBUG("Disabling perf event {}", fd);
 		res = bpftime_perf_event_disable(fd);
 		if (res >= 0)
 			return res;
@@ -382,7 +382,7 @@ int syscall_context::handle_ioctl(int fd, unsigned long req, int data)
 			"Failed to call mocked ioctl PERF_EVENT_IOC_DISABLE: {}",
 			res);
 	} else if (req == PERF_EVENT_IOC_SET_BPF) {
-		spdlog::debug("Setting bpf for perf event {} and bpf {}", fd,
+		SPDLOG_DEBUG("Setting bpf for perf event {} and bpf {}", fd,
 			      data);
 		res = bpftime_attach_perf_to_bpf(fd, data);
 		if (res >= 0)
@@ -452,7 +452,7 @@ int syscall_context::handle_munmap(void *addr, size_t size)
 	try_startup();
 	if (auto itr = mocked_mmap_values.find((uintptr_t)addr);
 	    itr != mocked_mmap_values.end()) {
-		spdlog::debug("Handling munmap of mocked addr: {:x}, size {}",
+		SPDLOG_DEBUG("Handling munmap of mocked addr: {:x}, size {}",
 			      (uintptr_t)addr, size);
 		mocked_mmap_values.erase(itr);
 		return 0;

@@ -29,7 +29,7 @@ void hash_map_kernel_user_impl::init_map_fd()
 	}
 	_key_size = info.key_size;
 	_value_size = info.value_size;
-	spdlog::debug("create kernel user hash map key size {}, value size {}",
+	SPDLOG_DEBUG("create kernel user hash map key size {}, value size {}",
 		      _key_size, _value_size);
 	key_vec.resize(_key_size);
 	value_vec.resize(_value_size);
@@ -64,7 +64,7 @@ long hash_map_kernel_user_impl::elem_update(const void *key, const void *value,
 	if (map_fd < 0) {
 		init_map_fd();
 	}
-	spdlog::debug("Update shared hash map");
+	SPDLOG_DEBUG("Update shared hash map");
 	// Allocate as a local variable to make
 	//  it thread safe, since we use sharable lock
 	return bpf_map_update_elem(map_fd, key, value, flags);

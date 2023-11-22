@@ -105,14 +105,14 @@ struct bpf_perf_event_handler {
 		// If This is a server, should inject the agent into the target
 		// process.
 
-		spdlog::debug(
+		SPDLOG_DEBUG(
 			"Enabling perf event for module name: {}, offset {:x}",
 			_module_name.c_str(), offset);
 		return 0;
 	}
 	int disable() const
 	{
-		spdlog::debug(
+		SPDLOG_DEBUG(
 			"Disabling perf event for module name: {}, offset {:x}",
 			_module_name.c_str(), offset);
 		enabled = false;

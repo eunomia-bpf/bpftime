@@ -341,7 +341,7 @@ emitExtFuncCall(llvm::IRBuilder<> &builder, const ebpf_inst &inst,
 {
 	auto funcNameToCall = ext_func_sym(inst.imm);
 	if (auto itr = extFunc.find(funcNameToCall); itr != extFunc.end()) {
-		spdlog::debug("Emitting ext func call to {} name {} at pc {}",
+		SPDLOG_DEBUG("Emitting ext func call to {} name {} at pc {}",
 			      inst.imm, funcNameToCall, pc);
 		auto callInst = builder.CreateCall(
 			helperFuncTy, itr->second,

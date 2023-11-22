@@ -44,7 +44,7 @@ frida_attach_manager::~frida_attach_manager()
 
 frida_attach_manager::frida_attach_manager()
 {
-	spdlog::debug("Initializing frida attach manager");
+	SPDLOG_DEBUG("Initializing frida attach manager");
 	gum_init_embedded();
 	interceptor = gum_interceptor_obtain();
 }
@@ -82,7 +82,7 @@ int frida_attach_manager::attach_at(void *func_addr, callback_variant &&cb)
 					       (attach_type)cb.index(),
 					       interceptor))
 			      .first;
-		spdlog::debug("Created frida attach entry for func addr {:x}",
+		SPDLOG_DEBUG("Created frida attach entry for func addr {:x}",
 			      (uintptr_t)func_addr);
 	} else if (itr->second->has_replace_or_override()) {
 		spdlog::error(
@@ -280,15 +280,15 @@ frida_internal_attach_entry::frida_internal_attach_entry(
 
 frida_internal_attach_entry::~frida_internal_attach_entry()
 {
-	spdlog::debug("Destroy internal attach at {:x}", (uintptr_t)function);
+	SPDLOG_DEBUG("Destroy internal attach at {:x}", (uintptr_t)function);
 	if (frida_gum_invocation_listener) {
 		gum_interceptor_detach(interceptor,
 				       frida_gum_invocation_listener);
 		g_object_unref(frida_gum_invocation_listener);
-		spdlog::debug("Detached listener");
+		SPDLOG_DEBUG("Detached listener");
 	} else {
 		gum_interceptor_revert(interceptor, function);
-		spdlog::debug("Reverted function replace");
+		SPDLOG_DEBUG("Reverted function replace");
 	}
 	gum_object_unref(interceptor);
 }

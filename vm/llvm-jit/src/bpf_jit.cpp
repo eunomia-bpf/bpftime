@@ -77,7 +77,7 @@ ebpf_jit_fn bpf_jit_context::compile()
 	std::vector<std::string> definedLddwHelpers;
 	const auto tryDefineLddwHelper = [&](const char *name, void *func) {
 		if (func) {
-			spdlog::debug("Defining LDDW helper {} with addr {:x}",
+			SPDLOG_DEBUG("Defining LDDW helper {} with addr {:x}",
 				      name, (uintptr_t)func);
 			auto sym =
 				JITEvaluatedSymbol::fromPointer(func);
