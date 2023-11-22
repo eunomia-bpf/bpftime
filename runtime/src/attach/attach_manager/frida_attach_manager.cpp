@@ -33,7 +33,7 @@ static std::string get_executable_path()
 }
 
 extern "C" uint64_t __bpftime_frida_attach_manager__replace_handler();
-extern "C" void *__bpftime_frida_attach_manager__filter_handler();
+extern "C" void *__bpftime_frida_attach_manager__override_handler();
 namespace bpftime
 {
 
@@ -84,7 +84,7 @@ int frida_attach_manager::attach_at(void *func_addr, callback_variant &&cb)
 			      .first;
 		spdlog::debug("Created frida attach entry for func addr {:x}",
 			      (uintptr_t)func_addr);
-	} else if (itr->second->has_replace_or_filter()) {
+	} else if (itr->second->has_replace_or_override()) {
 		spdlog::error(
 			"Function {} was already attached with replace or filter, cannot attach anything else");
 		return -EEXIST;
@@ -248,10 +248,10 @@ frida_internal_attach_entry::frida_internal_attach_entry(
 				"Failed to attach uprobe/uretprpbe");
 		}
 
-	} else if (basic_attach_type == attach_type::FILTER) {
+	} else if (basic_attach_type == attach_type::UPROBE_OVERRIDE) {
 		if (int err = gum_interceptor_replace(
 			    interceptor, function,
-			    (void *)__bpftime_frida_attach_manager__filter_handler,
+			    (void *)__bpftime_frida_attach_manager__override_handler,
 			    this, nullptr);
 		    err < 0) {
 			spdlog::error(
@@ -295,12 +295,12 @@ frida_internal_attach_entry::~frida_internal_attach_entry()
 	gum_object_unref(interceptor);
 }
 
-bool frida_internal_attach_entry::has_replace_or_filter() const
+bool frida_internal_attach_entry::has_replace_or_override() const
 {
 	for (auto p : user_attaches) {
 		if (auto v = p.lock(); v) {
 			if (v->get_type() == attach_type::REPLACE ||
-			    v->get_type() == attach_type::FILTER) {
+			    v->get_type() == attach_type::UPROBE_OVERRIDE) {
 				return true;
 			}
 		}
@@ -344,7 +344,7 @@ frida_internal_attach_entry::get_filter_callback() const
 {
 	for (auto p : user_attaches) {
 		if (auto v = p.lock(); v) {
-			if (v->get_type() == attach_type::FILTER) {
+			if (v->get_type() == attach_type::UPROBE_OVERRIDE) {
 				return std::get<
 					base_attach_manager::filter_callback>(
 					v->cb);
@@ -402,7 +402,7 @@ extern "C" uint64_t __bpftime_frida_attach_manager__replace_handler()
 	return ret;
 }
 
-extern "C" void *__bpftime_frida_attach_manager__filter_handler()
+extern "C" void *__bpftime_frida_attach_manager__override_handler()
 {
 	GumInvocationContext *ctx;
 	pt_regs regs;
@@ -411,6 +411,7 @@ extern "C" void *__bpftime_frida_attach_manager__filter_handler()
 	convert_gum_cpu_context_to_pt_regs(*ctx->cpu_context, regs);
 	auto hook_entry = (frida_internal_attach_entry *)
 		gum_invocation_context_get_replacement_data(ctx);
+	hook_entry->is_overrided = false;
 	curr_thread_override_return_callback = hook_entry->override_return_callback;
 
 	auto arg0 = gum_invocation_context_get_nth_argument(ctx, 0);
@@ -421,7 +422,6 @@ extern "C" void *__bpftime_frida_attach_manager__filter_handler()
 	ffi_func func = (ffi_func)ctx->function;
 
 	hook_entry->get_filter_callback()(regs);
-	
 	if (hook_entry->is_overrided) {
 		return (void *)(uintptr_t)hook_entry->user_ret;
 	} else {

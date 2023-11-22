@@ -38,6 +38,7 @@ uint64_t bpftime_get_func_ret(uint64_t ctx, uint64_t *value);
 
 uint64_t bpftime_get_retval(void);
 
+uint64_t bpftime_override_return(uint64_t ctx, uint64_t value);
 uint64_t bpftime_set_retval(uint64_t retval);
 
 uint64_t bpftime_trace_printk(uint64_t fmt, uint64_t fmt_size, ...)
@@ -632,7 +633,7 @@ const bpftime_helper_group kernel_helper_group = {
 	    bpftime_helper_info{
 		    .index = BPF_FUNC_override_return,
 		    .name = "bpf_override_return",
-		    .fn = (void *)bpftime_get_current_comm,
+		    .fn = (void *)bpftime_override_return,
 	    } },
 	  { BPF_FUNC_strncmp,
 	    bpftime_helper_info{

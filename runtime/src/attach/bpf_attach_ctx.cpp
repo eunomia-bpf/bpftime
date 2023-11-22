@@ -140,7 +140,7 @@ int bpf_attach_ctx::init_attach_ctx_from_handlers(
 				std::get<bpf_perf_event_handler>(handler);
 			void *func_addr = nullptr;
 			switch (event_handler.type) {
-			case bpf_event_type::BPF_TYPE_UFILTER:
+			case bpf_event_type::BPF_TYPE_UPROBE_OVERRIDE:
 			case bpf_event_type::BPF_TYPE_UREPLACE:
 			case bpf_event_type::BPF_TYPE_UPROBE:
 			case bpf_event_type::BPF_TYPE_URETPROBE:
@@ -157,7 +157,7 @@ int bpf_attach_ctx::init_attach_ctx_from_handlers(
 			}
 			// attach base on events
 			switch (event_handler.type) {
-			case bpf_event_type::BPF_TYPE_UFILTER: {
+			case bpf_event_type::BPF_TYPE_UPROBE_OVERRIDE: {
 				spdlog::debug(
 					"Creating filter for perf event fd {}",
 					i);

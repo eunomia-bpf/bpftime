@@ -9,7 +9,7 @@
 #include <bpf/bpf.h>
 #include <unistd.h>
 #include <stdlib.h>
-#include "ureplace.skel.h"
+#include "uprobe-override.skel.h"
 #include <inttypes.h>
 #include "attach_override.h"
 
@@ -30,7 +30,7 @@ static void sig_handler(int sig)
 
 int main(int argc, char **argv)
 {
-	struct ureplace_bpf *skel;
+	struct uprobe_override_bpf *skel;
 	int err;
 
 	/* Set up libbpf errors and debug info callback */
@@ -41,20 +41,20 @@ int main(int argc, char **argv)
 	signal(SIGTERM, sig_handler);
 
 	/* Load and verify BPF application */
-	skel = ureplace_bpf__open();
+	skel = uprobe_override_bpf__open();
 	if (!skel) {
 		fprintf(stderr, "Failed to open and load BPF skeleton\n");
 		return 1;
 	}
 
 	/* Load & verify BPF programs */
-	err = ureplace_bpf__load(skel);
+	err = uprobe_override_bpf__load(skel);
 	if (err) {
 		fprintf(stderr, "Failed to load and verify BPF skeleton\n");
 		goto cleanup;
 	}
 	err = bpf_prog_attach_uprobe_with_override(
-		bpf_program__fd(skel->progs.do_ureplace_patch), "./victim",
+		bpf_program__fd(skel->progs.do_uprobe_override_patch), "./victim",
 		"target_func");
 	if (err) {
 		fprintf(stderr, "Failed to attach BPF program\n");
@@ -65,6 +65,6 @@ int main(int argc, char **argv)
 	}
 cleanup:
 	/* Clean up */
-	ureplace_bpf__destroy(skel);
+	uprobe_override_bpf__destroy(skel);
 	return err < 0 ? -err : 0;
 }

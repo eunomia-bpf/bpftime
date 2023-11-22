@@ -9,7 +9,7 @@
 
 namespace bpftime
 {
-thread_local std::optional<override_return_set_callback> curr_thread_set_ret_val;
+thread_local std::optional<override_return_set_callback> curr_thread_override_return_callback;
 
 extern "C" uint64_t bpftime_get_retval(void)
 {
@@ -29,7 +29,7 @@ base_attach_manager::~base_attach_manager()
 extern "C" uint64_t bpftime_set_retval(uint64_t value)
 {
 	using namespace bpftime;
-	if (curr_thread_set_ret_val.has_value()) {
+	if (curr_thread_override_return_callback.has_value()) {
 		curr_thread_override_return_callback.value()(0, value);
 	} else {
 		spdlog::error(
@@ -42,7 +42,7 @@ extern "C" uint64_t bpftime_set_retval(uint64_t value)
 extern "C" uint64_t bpftime_override_return(uint64_t ctx, uint64_t value)
 {
 	using namespace bpftime;
-	if (curr_thread_set_ret_val.has_value()) {
+	if (curr_thread_override_return_callback.has_value()) {
 		curr_thread_override_return_callback.value()(ctx, value);
 	} else {
 		spdlog::error(

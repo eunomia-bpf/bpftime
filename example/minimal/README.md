@@ -1,7 +1,7 @@
 # minimal examples
 
 - `uprobe/uretprobe`: trace userspace functions at start or and. No affect the control flow.
-- `ureplace`: replace the userspace function with a eBPF function
+- `uprobe-override`: replace the userspace function with a eBPF function
 
 You can use `bpf_override_return` to change the control flow and return value of the function.
 
@@ -114,7 +114,7 @@ LD_PRELOAD=~/.bpftime/libbpftime-agent.so example/minimal/victim
 server
 
 ```sh
-LD_PRELOAD=~/.bpftime/libbpftime-syscall-server.so ./uprobe
+LD_PRELOAD=~/.bpftime/libbpftime-syscall-server.so ./syscall
 ```
 
 client
