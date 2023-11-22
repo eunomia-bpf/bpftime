@@ -49,6 +49,7 @@ message(STATUS "Building for architecture: ${ARCH}")
 
 set(sources
   src/attach/bpf_attach_ctx.cpp
+  src/attach/bpf_attach_syscall.cpp
   src/attach/attach_manager/base_attach_manager.cpp
   src/attach/attach_manager/frida_attach_manager.cpp
 

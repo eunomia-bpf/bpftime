@@ -32,15 +32,16 @@ static std::string get_executable_path()
 	return exec_path;
 }
 
-
 extern "C" uint64_t __bpftime_frida_attach_manager__replace_handler();
 extern "C" void *__bpftime_frida_attach_manager__filter_handler();
 namespace bpftime
 {
+
 frida_attach_manager::~frida_attach_manager()
 {
 	gum_object_unref(interceptor);
 }
+
 frida_attach_manager::frida_attach_manager()
 {
 	spdlog::debug("Initializing frida attach manager");
@@ -103,6 +104,7 @@ int frida_attach_manager::attach_at(void *func_addr, callback_variant &&cb)
 	inserted_attach_entry->second->internal_attaches = inner_attach;
 	return result;
 }
+
 int frida_attach_manager::attach_uprobe_at(void *func_addr,
 					   uprobe_callback &&cb)
 {
@@ -111,6 +113,7 @@ int frida_attach_manager::attach_uprobe_at(void *func_addr,
 		callback_variant(
 			std::in_place_index_t<(int)attach_type::UPROBE>(), cb));
 }
+
 int frida_attach_manager::attach_uretprobe_at(void *func_addr,
 					      uretprobe_callback &&cb)
 {
@@ -120,16 +123,19 @@ int frida_attach_manager::attach_uretprobe_at(void *func_addr,
 			std::in_place_index_t<(int)attach_type::URETPROBE>(),
 			cb));
 }
+
 int frida_attach_manager::attach_replace_at(void *func_addr,
 					    replace_callback &&cb)
 {
 	return attach_at(func_addr, cb);
 }
+
 int frida_attach_manager::attach_filter_at(void *func_addr,
 					   filter_callback &&cb)
 {
 	return attach_at(func_addr, cb);
 }
+
 int frida_attach_manager::destroy_attach(int id)
 {
 	void *drop_func_addr = nullptr;
@@ -278,6 +284,7 @@ frida_internal_attach_entry::~frida_internal_attach_entry()
 	}
 	gum_object_unref(interceptor);
 }
+
 bool frida_internal_attach_entry::has_replace_or_filter() const
 {
 	for (auto p : user_attaches) {
@@ -290,6 +297,7 @@ bool frida_internal_attach_entry::has_replace_or_filter() const
 	}
 	return false;
 }
+
 bool frida_internal_attach_entry::has_uprobe_or_uretprobe() const
 {
 	for (auto p : user_attaches) {
@@ -302,6 +310,7 @@ bool frida_internal_attach_entry::has_uprobe_or_uretprobe() const
 	}
 	return false;
 }
+
 base_attach_manager::replace_callback &
 frida_internal_attach_entry::get_replace_callback() const
 {
@@ -319,6 +328,7 @@ frida_internal_attach_entry::get_replace_callback() const
 		(uintptr_t)function);
 	throw std::runtime_error("Unable to find replace callback");
 }
+
 base_attach_manager::filter_callback &
 frida_internal_attach_entry::get_filter_callback() const
 {
@@ -336,6 +346,7 @@ frida_internal_attach_entry::get_filter_callback() const
 		(uintptr_t)function);
 	throw std::runtime_error("Unable to find filter callback");
 }
+
 void frida_internal_attach_entry::iterate_uprobe_callbacks(
 	const pt_regs &regs) const
 {
@@ -347,6 +358,7 @@ void frida_internal_attach_entry::iterate_uprobe_callbacks(
 		}
 	}
 }
+
 void frida_internal_attach_entry::iterate_uretprobe_callbacks(
 	const pt_regs &regs) const
 {
@@ -379,6 +391,7 @@ extern "C" uint64_t __bpftime_frida_attach_manager__replace_handler()
 	gum_invocation_context_replace_return_value(ctx, (gpointer)ret);
 	return ret;
 }
+
 extern "C" void *__bpftime_frida_attach_manager__filter_handler()
 {
 	GumInvocationContext *ctx;

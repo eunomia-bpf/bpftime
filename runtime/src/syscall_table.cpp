@@ -34,6 +34,7 @@ static syscall_id_pair generate_syscall_id_table()
 	return { ret1, ret2 };
 }
 } // namespace internal
+
 const syscall_id_pair &get_global_syscall_id_table()
 {
 	static std::optional<syscall_id_pair> value;
@@ -41,6 +42,7 @@ const syscall_id_pair &get_global_syscall_id_table()
 		value = internal::generate_syscall_id_table();
 	return value.value();
 }
+
 const syscall_tracepoint_table &get_global_syscall_tracepoint_table()
 {
 	static std::optional<syscall_tracepoint_table> value;
@@ -48,6 +50,7 @@ const syscall_tracepoint_table &get_global_syscall_tracepoint_table()
 		value = create_syscall_tracepoint_table();
 	return value.value();
 }
+
 syscall_tracepoint_table create_syscall_tracepoint_table()
 {
 	syscall_tracepoint_table result;
