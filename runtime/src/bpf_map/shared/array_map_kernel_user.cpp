@@ -34,7 +34,7 @@ void array_map_kernel_user_impl::init_map_fd()
 {
 	map_fd = bpf_map_get_fd_by_id(kernel_map_id);
 	if (map_fd < 0) {
-		spdlog::error("Failed to get fd for kernel map id {}",
+		SPDLOG_ERROR("Failed to get fd for kernel map id {}",
 			      kernel_map_id);
 		return;
 	}
@@ -42,7 +42,7 @@ void array_map_kernel_user_impl::init_map_fd()
 	unsigned int info_len = sizeof(info);
 	int res = bpf_obj_get_info_by_fd(map_fd, &info, &info_len);
 	if (res < 0) {
-		spdlog::error("Failed to get info for kernel map id {}",
+		SPDLOG_ERROR("Failed to get info for kernel map id {}",
 			      kernel_map_id);
 	}
 	_value_size = info.value_size;
@@ -63,7 +63,7 @@ void array_map_kernel_user_impl::init_map_fd()
 	mmap_ptr = mmap(NULL, mmap_sz, PROT_READ | PROT_WRITE,
 			MAP_SHARED | MAP_ANONYMOUS, -1, 0);
 	if (mmap_ptr == MAP_FAILED) {
-		spdlog::error("Failed to mmap for kernel map id {}, err={}",
+		SPDLOG_ERROR("Failed to mmap for kernel map id {}, err={}",
 			      kernel_map_id, errno);
 		return;
 	}
@@ -76,7 +76,7 @@ void array_map_kernel_user_impl::init_map_fd()
 	void *mmaped = mmap(mmap_ptr, mmap_sz, prot, MAP_SHARED | MAP_FIXED,
 			    map_fd, 0);
 	if (mmaped == MAP_FAILED) {
-		spdlog::error(
+		SPDLOG_ERROR(
 			"Failed to re-mmap for kernel map id {}, err={}, prot={}",
 			kernel_map_id, errno, prot);
 		return;

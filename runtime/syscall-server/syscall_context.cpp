@@ -152,7 +152,7 @@ long syscall_context::handle_sysbpf(int cmd, union bpf_attr *attr, size_t size)
 						}
 						message << std::endl;
 					}
-					spdlog::error(
+					SPDLOG_ERROR(
 						"Failed to verify program: {}",
 						message.str());
 					errno = EINVAL;
@@ -288,7 +288,7 @@ int syscall_context::handle_perfevent(perf_event_attr *attr, pid_t pid, int cpu,
 		SPDLOG_DEBUG("Created ufilter with fd {}", fd);
 		return fd;
 	}
-	spdlog::info("Calling original perf event open");
+	SPDLOG_INFO("Calling original perf event open");
 	return orig_syscall_fn(__NR_perf_event_open, (uint64_t)(uintptr_t)attr,
 			       (uint64_t)pid, (uint64_t)cpu, (uint64_t)group_fd,
 			       (uint64_t)flags);

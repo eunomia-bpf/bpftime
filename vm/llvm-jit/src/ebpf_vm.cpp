@@ -207,14 +207,14 @@ void ebpf_set_registers(struct ebpf_vm *vm, uint64_t *regs)
 {
 	(void)vm;
 	(void)regs;
-	spdlog::error(
+	SPDLOG_ERROR(
 		"ebpf warning: registers are not exposed in release mode. Please recompile in debug mode");
 }
 
 uint64_t *ebpf_get_registers(const struct ebpf_vm *vm)
 {
 	(void)vm;
-	spdlog::error(
+	SPDLOG_ERROR(
 		"ebpf warning: registers are not exposed in release mode. Please recompile in debug mode");
 	return NULL;
 }

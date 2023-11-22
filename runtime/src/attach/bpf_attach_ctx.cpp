@@ -96,7 +96,7 @@ int bpf_attach_ctx::init_attach_ctx_from_handlers(
 							"Program fd {} attached to perf event handler {}",
 							i, v);
 					} else {
-						spdlog::info(
+						SPDLOG_INFO(
 							"Ignore perf {} attached by prog fd {}. It's not enabled",
 							v, i);
 					}
@@ -120,7 +120,7 @@ int bpf_attach_ctx::init_attach_ctx_from_handlers(
 			SPDLOG_DEBUG(
 				"No extra operations needed for epoll_handler/bpf link/btf..");
 		} else {
-			spdlog::error("Unsupported handler type for handler {}",
+			SPDLOG_ERROR("Unsupported handler type for handler {}",
 				      handler.index());
 			return -1;
 		}
@@ -163,12 +163,12 @@ int bpf_attach_ctx::init_attach_ctx_from_handlers(
 					i);
 				auto progs = handler_prog_fds[i];
 				if (progs.size() > 1) {
-					spdlog::error(
+					SPDLOG_ERROR(
 						"Expected that a certain function could only be attached one filter, at perf event {}",
 						i);
 					return -E2BIG;
 				} else if (progs.empty()) {
-					spdlog::error(
+					SPDLOG_ERROR(
 						"Perf event {} doesn't have any attached & enabled programs",
 						i);
 					return -ENOENT;
@@ -185,7 +185,7 @@ int bpf_attach_ctx::init_attach_ctx_from_handlers(
 						return !ret;
 					});
 				if (err < 0)
-					spdlog::error(
+					SPDLOG_ERROR(
 						"Failed to create filter for perf fd {}, err={}",
 						i, err);
 				break;
@@ -196,12 +196,12 @@ int bpf_attach_ctx::init_attach_ctx_from_handlers(
 					i);
 				auto progs = handler_prog_fds[i];
 				if (progs.size() > 1) {
-					spdlog::error(
+					SPDLOG_ERROR(
 						"Expected that a certain function could only be attached one replace, at perf event {}",
 						i);
 					return -E2BIG;
 				} else if (progs.empty()) {
-					spdlog::error(
+					SPDLOG_ERROR(
 						"Perf event {} doesn't have any attached & enabled programs",
 						i);
 					return -ENOENT;
@@ -218,7 +218,7 @@ int bpf_attach_ctx::init_attach_ctx_from_handlers(
 						return ret;
 					});
 				if (err < 0)
-					spdlog::error(
+					SPDLOG_ERROR(
 						"Failed to create replace for perf fd {}, err={}",
 						i, err);
 				break;
@@ -228,7 +228,7 @@ int bpf_attach_ctx::init_attach_ctx_from_handlers(
 					"Creating uprobe for perf event fd {}",
 					i);
 				auto progs = handler_prog_fds[i];
-				spdlog::info(
+				SPDLOG_INFO(
 					"Attached {} uprobe programs to function {:x}",
 					progs.size(), (uintptr_t)func_addr);
 				err = attach_manager->attach_uprobe_at(
@@ -246,7 +246,7 @@ int bpf_attach_ctx::init_attach_ctx_from_handlers(
 						}
 					});
 				if (err < 0)
-					spdlog::error(
+					SPDLOG_ERROR(
 						"Failed to create uprobe for perf fd {}, err={}",
 						i, err);
 				break;
@@ -256,7 +256,7 @@ int bpf_attach_ctx::init_attach_ctx_from_handlers(
 					"Creating uretprobe for perf event fd {}",
 					i);
 				auto progs = handler_prog_fds[i];
-				spdlog::info(
+				SPDLOG_INFO(
 					"Attached {} uretprobe programs to function {:x}",
 					progs.size(), (uintptr_t)func_addr);
 				err = attach_manager->attach_uretprobe_at(
@@ -270,7 +270,7 @@ int bpf_attach_ctx::init_attach_ctx_from_handlers(
 						}
 					});
 				if (err < 0)
-					spdlog::error(
+					SPDLOG_ERROR(
 						"Failed to create uretprobe for perf fd {}, err={}",
 						i, err);
 				break;
@@ -284,7 +284,7 @@ int bpf_attach_ctx::init_attach_ctx_from_handlers(
 					manager);
 
 				if (err < 0)
-					spdlog::error(
+					SPDLOG_ERROR(
 						"Failed to create tracepoint for perf fd {}, err={}",
 						i, err);
 				assert(err >= 0);

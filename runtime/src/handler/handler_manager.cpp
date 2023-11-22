@@ -43,7 +43,7 @@ int handler_manager::set_handler(int fd, handler_variant &&handler,
 				 managed_shared_memory &memory)
 {
 	if (is_allocated(fd)) {
-		spdlog::error("set_handler failed for fd {} aleady exists", fd);
+		SPDLOG_ERROR("set_handler failed for fd {} aleady exists", fd);
 		return -ENOENT;
 	}
 	handlers[fd] = std::move(handler);

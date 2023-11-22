@@ -25,9 +25,9 @@ static std::string get_executable_path()
 		readlink("/proc/self/exe", exec_path, sizeof(exec_path) - 1);
 	if (len != -1) {
 		exec_path[len] = '\0'; // Null-terminate the string
-		spdlog::info("Executable path: {}", exec_path);
+		SPDLOG_INFO("Executable path: {}", exec_path);
 	} else {
-		spdlog::error("Error retrieving executable path: {}", errno);
+		SPDLOG_ERROR("Error retrieving executable path: {}", errno);
 	}
 	return exec_path;
 }
@@ -61,7 +61,7 @@ void *frida_attach_manager::resolve_function_addr_by_module_offset(
 			get_module_base_addr(std::string(module_name).c_str());
 	}
 	if (!module_base_addr) {
-		spdlog::error("Failed to find module base address for {}",
+		SPDLOG_ERROR("Failed to find module base address for {}",
 			      module_name);
 		return nullptr;
 	}
@@ -83,9 +83,9 @@ int frida_attach_manager::attach_at(void *func_addr, callback_variant &&cb)
 					       interceptor))
 			      .first;
 		SPDLOG_DEBUG("Created frida attach entry for func addr {:x}",
-			      (uintptr_t)func_addr);
+			     (uintptr_t)func_addr);
 	} else if (itr->second->has_replace_or_override()) {
-		spdlog::error(
+		SPDLOG_ERROR(
 			"Function {} was already attached with replace or filter, cannot attach anything else");
 		return -EEXIST;
 	}
@@ -156,7 +156,7 @@ int frida_attach_manager::destroy_attach(int id)
 			drop_func_addr = p->function;
 		}
 	} else {
-		spdlog::error("Unable to find attach id {}", id);
+		SPDLOG_ERROR("Unable to find attach id {}", id);
 		errno = -ENOENT;
 	}
 	if (drop_func_addr)
@@ -239,20 +239,19 @@ frida_internal_attach_entry::frida_internal_attach_entry(
 			    interceptor, function,
 			    frida_gum_invocation_listener, this);
 		    err < 0) {
-			spdlog::error(
+			SPDLOG_ERROR(
 				"Failed to execute frida gum_interceptor_attach for function {:x}",
 				(uintptr_t)function);
 			throw std::runtime_error(
 				"Failed to attach uprobe/uretprpbe");
 		}
-
 	} else if (basic_attach_type == attach_type::UPROBE_OVERRIDE) {
 		if (int err = gum_interceptor_replace(
 			    interceptor, function,
 			    (void *)__bpftime_frida_attach_manager__override_handler,
 			    this, nullptr);
 		    err < 0) {
-			spdlog::error(
+			SPDLOG_ERROR(
 				"Failed to execute frida replace for function {:x}, when attaching filter, err={}",
 				(uintptr_t)function, err);
 			throw std::runtime_error("Failed to attach filter");
@@ -269,7 +268,7 @@ frida_internal_attach_entry::frida_internal_attach_entry(
 			    (void *)__bpftime_frida_attach_manager__replace_handler,
 			    this, nullptr);
 		    err < 0) {
-			spdlog::error(
+			SPDLOG_ERROR(
 				"Failed to execute frida replace for function {:x}, when attaching replace, err={}",
 				(uintptr_t)function, err);
 			throw std::runtime_error("Failed to attach replace");
@@ -324,7 +323,7 @@ frida_internal_attach_entry::get_replace_callback() const
 				v->cb);
 		}
 	}
-	spdlog::error(
+	SPDLOG_ERROR(
 		"Replace attach not found at function {:x}, but try to get replace callback",
 		(uintptr_t)function);
 	throw std::runtime_error("Unable to find replace callback");
@@ -339,7 +338,7 @@ frida_internal_attach_entry::get_filter_callback() const
 				v->cb);
 		}
 	}
-	spdlog::error(
+	SPDLOG_ERROR(
 		"Filter attach not found at function {:x}, but try to get filter callback",
 		(uintptr_t)function);
 	throw std::runtime_error("Unable to find filter callback");
@@ -395,7 +394,8 @@ extern "C" void *__bpftime_frida_attach_manager__override_handler()
 	auto hook_entry = (frida_internal_attach_entry *)
 		gum_invocation_context_get_replacement_data(ctx);
 	hook_entry->is_overrided = false;
-	curr_thread_override_return_callback = hook_entry->override_return_callback;
+	curr_thread_override_return_callback =
+		hook_entry->override_return_callback;
 
 	auto arg0 = gum_invocation_context_get_nth_argument(ctx, 0);
 	auto arg1 = gum_invocation_context_get_nth_argument(ctx, 1);

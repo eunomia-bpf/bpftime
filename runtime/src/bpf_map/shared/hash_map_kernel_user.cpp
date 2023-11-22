@@ -16,7 +16,7 @@ void hash_map_kernel_user_impl::init_map_fd()
 {
 	map_fd = bpf_map_get_fd_by_id(kernel_map_id);
 	if (map_fd < 0) {
-		spdlog::error("Failed to get fd for kernel map id {}",
+		SPDLOG_ERROR("Failed to get fd for kernel map id {}",
 			      kernel_map_id);
 		return;
 	}
@@ -24,7 +24,7 @@ void hash_map_kernel_user_impl::init_map_fd()
 	unsigned int info_len = sizeof(info);
 	int res = bpf_obj_get_info_by_fd(map_fd, &info, &info_len);
 	if (res < 0) {
-		spdlog::error("Failed to get info for kernel map id {}",
+		SPDLOG_ERROR("Failed to get info for kernel map id {}",
 			      kernel_map_id);
 	}
 	_key_size = info.key_size;

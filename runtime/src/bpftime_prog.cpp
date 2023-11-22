@@ -43,7 +43,7 @@ int bpftime_prog::bpftime_prog_load(bool jit)
 	res = ebpf_load(vm, insns.data(),
 			insns.size() * sizeof(struct ebpf_inst), &errmsg);
 	if (res < 0) {
-		spdlog::error("Failed to load insn: {}", errmsg);
+		SPDLOG_ERROR("Failed to load insn: {}", errmsg);
 		return res;
 	}
 	if (jit) {
@@ -51,7 +51,7 @@ int bpftime_prog::bpftime_prog_load(bool jit)
 		jitted = true;
 		ebpf_jit_fn jit_fn = ebpf_compile(vm, &errmsg);
 		if (jit_fn == NULL) {
-			spdlog::error("Failed to compile: {}", errmsg);
+			SPDLOG_ERROR("Failed to compile: {}", errmsg);
 			return -1;
 		}
 		fn = jit_fn;
@@ -91,7 +91,7 @@ int bpftime_prog::bpftime_prog_exec(void *memory, size_t memory_size,
 		SPDLOG_DEBUG("Running using ebpf_exec");
 		res = ebpf_exec(vm, memory, memory_size, &val);
 		if (res < 0) {
-			spdlog::error("ebpf_exec returned error: {}", res);
+			SPDLOG_ERROR("ebpf_exec returned error: {}", res);
 		}
 	}
 	*return_val = val;

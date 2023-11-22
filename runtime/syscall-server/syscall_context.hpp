@@ -64,7 +64,7 @@ class syscall_context {
 	syscall_context()
 	{
 		init_original_functions();
-		spdlog::info("manager constructed");
+		SPDLOG_INFO("manager constructed");
 	}
 	syscall_fn orig_syscall_fn = nullptr;
 

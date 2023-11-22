@@ -214,7 +214,7 @@ void *bpftime_get_ringbuf_consumer_page(int ringbuf_fd)
 		return ret.value()->get_consumer_page();
 	} else {
 		errno = EINVAL;
-		spdlog::error("Expected fd {} to be ringbuf map fd ",
+		SPDLOG_ERROR("Expected fd {} to be ringbuf map fd ",
 			      ringbuf_fd);
 		return nullptr;
 	}
@@ -228,7 +228,7 @@ void *bpftime_get_ringbuf_producer_page(int ringbuf_fd)
 		return ret.value()->get_producer_page();
 	} else {
 		errno = EINVAL;
-		spdlog::error("Expected fd {} to be ringbuf map fd ",
+		SPDLOG_ERROR("Expected fd {} to be ringbuf map fd ",
 			      ringbuf_fd);
 		return nullptr;
 	}
@@ -242,7 +242,7 @@ void *bpftime_ringbuf_reserve(int fd, uint64_t size)
 		return impl->reserve(size, fd);
 	} else {
 		errno = EINVAL;
-		spdlog::error("Expected fd {} to be ringbuf map fd ", fd);
+		SPDLOG_ERROR("Expected fd {} to be ringbuf map fd ", fd);
 		return nullptr;
 	}
 }
@@ -255,7 +255,7 @@ void bpftime_ringbuf_submit(int fd, void *data, int discard)
 		impl->submit(data, discard);
 	} else {
 		errno = EINVAL;
-		spdlog::error("Expected fd {} to be ringbuf map fd ", fd);
+		SPDLOG_ERROR("Expected fd {} to be ringbuf map fd ", fd);
 	}
 }
 
@@ -270,7 +270,7 @@ int bpftime_epoll_wait(int fd, struct epoll_event *out_evts, int max_evt,
 	auto &shm = shm_holder.global_shared_memory;
 	if (!shm.is_epoll_fd(fd)) {
 		errno = EINVAL;
-		spdlog::error("Expected {} to be an epoll fd", fd);
+		SPDLOG_ERROR("Expected {} to be an epoll fd", fd);
 		return -1;
 	}
 	using namespace std::chrono;
@@ -287,7 +287,7 @@ int bpftime_epoll_wait(int fd, struct epoll_event *out_evts, int max_evt,
 	// Block the develivery of some signals, so we would be able to catch them when sleeping
 	if (int err = sigprocmask(SIG_BLOCK, &to_block, &orig_sigset);
 	    err == -1) {
-		spdlog::error(
+		SPDLOG_ERROR(
 			"sigprocmask failed to block sigint & sigterm, errno={}. this SHOULD NOT HAPPEN",
 			errno);
 		errno = EINVAL;
@@ -419,7 +419,7 @@ int bpftime_perf_event_output(int fd, const void *buf, size_t sz)
 {
 	auto &shm = shm_holder.global_shared_memory;
 	if (!shm.is_perf_event_handler_fd(fd)) {
-		spdlog::error("Expected fd {} to be a perf event handler", fd);
+		SPDLOG_ERROR("Expected fd {} to be a perf event handler", fd);
 		errno = EINVAL;
 		return -1;
 	}
@@ -428,7 +428,7 @@ int bpftime_perf_event_output(int fd, const void *buf, size_t sz)
 		SPDLOG_DEBUG("Perf out value to fd {}, sz {}", fd, sz);
 		return handler.sw_perf.value()->output_data(buf, sz);
 	} else {
-		spdlog::error(
+		SPDLOG_ERROR(
 			"Expected perf event handler {} to be a software perf event handler",
 			fd);
 		errno = ENOTSUP;
@@ -441,7 +441,7 @@ int bpftime_shared_perf_event_output(int map_fd, const void *buf, size_t sz)
 	SPDLOG_DEBUG("Output data into shared perf event array fd {}", map_fd);
 	auto &shm = shm_holder.global_shared_memory;
 	if (!shm.is_shared_perf_event_array_map_fd(map_fd)) {
-		spdlog::error("Expected fd {} to be a shared perf event array",
+		SPDLOG_ERROR("Expected fd {} to be a shared perf event array",
 			      map_fd);
 		errno = EINVAL;
 		return -1;
@@ -456,7 +456,7 @@ int bpftime_shared_perf_event_output(int map_fd, const void *buf, size_t sz)
 		}
 		return 0;
 	} else {
-		spdlog::error(
+		SPDLOG_ERROR(
 			"Expected map {} to be a shared perf event array map",
 			map_fd);
 		errno = EINVAL;
@@ -472,7 +472,7 @@ extern "C" uint64_t map_ptr_by_fd(uint32_t fd)
 	if (!shm_holder.global_shared_memory.get_manager() ||
 	    !shm_holder.global_shared_memory.is_map_fd(fd)) {
 		errno = ENOENT;
-		spdlog::error("Expected fd {} to be a map fd (map_ptr_by_fd)",
+		SPDLOG_ERROR("Expected fd {} to be a map fd (map_ptr_by_fd)",
 			      fd);
 		// Here we just ignore the wrong maps
 		return INVALID_MAP_PTR;
@@ -487,7 +487,7 @@ extern "C" uint64_t map_val(uint64_t map_ptr)
 	int fd = (int)(map_ptr >> 32);
 	if (!shm_holder.global_shared_memory.get_manager() ||
 	    !shm_holder.global_shared_memory.is_map_fd(fd)) {
-		spdlog::error("Expected fd {} to be a map fd (map_val call)",
+		SPDLOG_ERROR("Expected fd {} to be a map fd (map_val call)",
 			      fd);
 		// here we just ignore the wrong maps
 		errno = ENOENT;

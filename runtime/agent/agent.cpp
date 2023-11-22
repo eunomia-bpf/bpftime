@@ -63,7 +63,7 @@ extern "C" int __libc_start_main(int (*main)(int, char **, char **), int argc,
 				 void (*fini)(void), void (*rtld_fini)(void),
 				 void *stack_end)
 {
-	spdlog::info("Entering bpftime agent");
+	SPDLOG_INFO("Entering bpftime agent");
 	orig_main_func = main;
 	using this_func_t = decltype(&__libc_start_main);
 	this_func_t orig = (this_func_t)dlsym(RTLD_NEXT, "__libc_start_main");
@@ -78,7 +78,7 @@ extern "C" void bpftime_agent_main(const gchar *data, gboolean *stay_resident)
 	ctx_holder.init();
 	ctx_holder.ctx.set_orig_syscall_func(orig_hooker);
 	spdlog::cfg::load_env_levels();
-	spdlog::info("Initializing agent..");
+	SPDLOG_INFO("Initializing agent..");
 	spdlog::set_pattern("[%Y-%m-%d %H:%M:%S][%^%l%$][%t] %v");
 	/* We don't want to our library to be unloaded after we return. */
 	*stay_resident = TRUE;
@@ -88,10 +88,10 @@ extern "C" void bpftime_agent_main(const gchar *data, gboolean *stay_resident)
 	res = ctx_holder.ctx.init_attach_ctx_from_handlers(
 		bpftime_get_agent_config());
 	if (res != 0) {
-		spdlog::error("Failed to initialize attach context");
+		SPDLOG_ERROR("Failed to initialize attach context");
 		return;
 	}
-	spdlog::info("Attach successfully");
+	SPDLOG_INFO("Attach successfully");
 	// don't free ctx here
 	return;
 }
@@ -100,7 +100,7 @@ extern "C" void bpftime_agent_main(const gchar *data, gboolean *stay_resident)
 int64_t syscall_callback(int64_t sys_nr, int64_t arg1, int64_t arg2,
 			 int64_t arg3, int64_t arg4, int64_t arg5, int64_t arg6)
 {
-	// spdlog::info(
+	// SPDLOG_INFO(
 	// "Calling syscall callback: sys_nr {}, args {} {} {} {} {} {}",
 	// sys_nr, arg1, arg2, arg3, arg4, arg5, arg6);
 	return ctx_holder.ctx.run_syscall_hooker(sys_nr, arg1, arg2, arg3, arg4,
@@ -114,5 +114,5 @@ __c_abi_setup_syscall_trace_callback(syscall_hooker_func_t *hooker)
 	*hooker = &syscall_callback;
 	gboolean val;
 	bpftime_agent_main("", &val);
-	spdlog::info("Agent syscall trace setup exiting..");
+	SPDLOG_INFO("Agent syscall trace setup exiting..");
 }

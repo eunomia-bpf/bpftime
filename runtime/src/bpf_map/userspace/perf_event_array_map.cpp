@@ -18,7 +18,7 @@ perf_event_array_map_impl::perf_event_array_map_impl(
 	: data(max_entries, -1, memory.get_segment_manager())
 {
 	if (key_size != 4 || value_size != 4) {
-		spdlog::error(
+		SPDLOG_ERROR(
 			"Key size and value size of perf_event_array must be 4");
 		assert(false);
 	}

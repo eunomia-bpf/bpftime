@@ -64,7 +64,7 @@ int perf_event_array_kernel_user_impl::output_data_into_kernel(const void *buf,
 							       size_t size)
 {
 	if (size > 480 - 32) {
-		spdlog::error(
+		SPDLOG_ERROR(
 			"Max data size for shared perf event array is {} bytes",
 			480 - 32);
 		errno = E2BIG;
@@ -76,7 +76,7 @@ int perf_event_array_kernel_user_impl::output_data_into_kernel(const void *buf,
 	SPDLOG_DEBUG("User ringbuf ensured: {:x}", (uintptr_t)user_rb);
 	void *mem = user_rb->reserve(size + 8);
 	if (!mem) {
-		spdlog::error("Failed to reserve for user ringbuf: {}", errno);
+		SPDLOG_ERROR("Failed to reserve for user ringbuf: {}", errno);
 		return errno;
 	}
 	*(uint64_t *)(mem) = (uint64_t)size;
@@ -95,7 +95,7 @@ perf_event_array_kernel_user_impl::perf_event_array_kernel_user_impl(
 	: max_ent(max_entries), kernel_perf_id(kernel_perf_id)
 {
 	if (key_size != 4 || value_size != 4) {
-		spdlog::error(
+		SPDLOG_ERROR(
 			"Key size and value size of perf_event_array must be 4");
 		assert(false);
 	}
@@ -105,7 +105,7 @@ perf_event_array_kernel_user_impl::perf_event_array_kernel_user_impl(
 	int user_rb_fd = bpf_map_create(BPF_MAP_TYPE_USER_RINGBUF, name.c_str(),
 					0, 0, 1024 * 1024, &user_rb_opts);
 	if (user_rb_fd < 0) {
-		spdlog::error(
+		SPDLOG_ERROR(
 			"Failed to create user ringbuffer for shared perf event array id {}, err={}",
 			kernel_perf_id, errno);
 		return;
@@ -115,7 +115,7 @@ perf_event_array_kernel_user_impl::perf_event_array_kernel_user_impl(
 	if (int err = bpf_obj_get_info_by_fd(user_rb_fd, &map_info,
 					     &map_info_size);
 	    err < 0) {
-		spdlog::error("Failed to get map info for user rb fd {}",
+		SPDLOG_ERROR("Failed to get map info for user rb fd {}",
 			      user_rb_fd);
 		return;
 	}
@@ -134,12 +134,12 @@ perf_event_array_kernel_user_impl::perf_event_array_kernel_user_impl(
 	int err;
 	err = ioctl(pfd, PERF_EVENT_IOC_SET_BPF, bpf_fd);
 	if (err < 0) {
-		spdlog::error("Failed to run PERF_EVENT_IOC_SET_BPF: {}", err);
+		SPDLOG_ERROR("Failed to run PERF_EVENT_IOC_SET_BPF: {}", err);
 		assert(false);
 	}
 	err = ioctl(pfd, PERF_EVENT_IOC_ENABLE, 0);
 	if (err < 0) {
-		spdlog::error("Failed to run PERF_EVENT_IOC_ENABLE: {}", err);
+		SPDLOG_ERROR("Failed to run PERF_EVENT_IOC_ENABLE: {}", err);
 		assert(false);
 	}
 
@@ -159,7 +159,7 @@ void *perf_event_array_kernel_user_impl::elem_lookup(const void *key)
 		errno = EINVAL;
 		return nullptr;
 	}
-	spdlog::info(
+	SPDLOG_INFO(
 		"Looking up key {} from perf event array kernel user, which is useless",
 		k);
 	return &dummy;
@@ -175,7 +175,7 @@ long perf_event_array_kernel_user_impl::elem_update(const void *key,
 		return -1;
 	}
 	int32_t v = *(int32_t *)value;
-	spdlog::info(
+	SPDLOG_INFO(
 		"Updating key {}, value {} from perf event array kernel user, which is useless",
 		k, v);
 	return 0;
@@ -188,7 +188,7 @@ long perf_event_array_kernel_user_impl::elem_delete(const void *key)
 		errno = EINVAL;
 		return -1;
 	}
-	spdlog::info(
+	SPDLOG_INFO(
 		"Deleting key {} from perf event array kernel user, which is useless",
 		k);
 	return 0;
@@ -242,7 +242,7 @@ user_ringbuffer_wrapper::user_ringbuffer_wrapper(int user_rb_id)
 	SPDLOG_DEBUG("map id {} -> fd {}, user ring buffer", user_rb_id,
 		      user_rb_fd);
 	if (user_rb_fd < 0) {
-		spdlog::error(
+		SPDLOG_ERROR(
 			"Failed to get user_rb_fd from user_rb_id {}, err={}",
 			user_rb_id, errno);
 		throw std::runtime_error(
@@ -472,7 +472,7 @@ static int create_transporter_prog(int user_ringbuf_fd, int kernel_perf_fd)
 	LIBBPF_OPTS(bpf_btf_load_opts, btf_load_opts);
 	int btf_fd = bpf_btf_load(btf_raw_data, size, &btf_load_opts);
 	if (btf_fd < 0) {
-		spdlog::error("Failed to load btf into kernel: {}", errno);
+		SPDLOG_ERROR("Failed to load btf into kernel: {}", errno);
 		return -1;
 	}
 	auto prog = bpftime::create_transporting_kernel_ebpf_program(
@@ -505,7 +505,7 @@ static int create_transporter_prog(int user_ringbuf_fd, int kernel_perf_fd)
 	std::string log_message(log_buffer);
 	delete[] log_buffer;
 	if (bpf_fd < 0) {
-		spdlog::error("Failed to load bpf prog: err={}, message=\n{}",
+		SPDLOG_ERROR("Failed to load bpf prog: err={}, message=\n{}",
 			      errno, log_message);
 	}
 	return bpf_fd;

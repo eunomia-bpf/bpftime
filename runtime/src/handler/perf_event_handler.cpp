@@ -64,7 +64,7 @@ bpf_perf_event_handler::bpf_perf_event_handler(
 		type = bpf_event_type::BPF_TYPE_UPROBE;
 	}
 	this->_module_name = module_name;
-	spdlog::info(
+	SPDLOG_INFO(
 		"Created uprobe/uretprobe perf event handler, module name {}, offset {:x}",
 		module_name, offset);
 }

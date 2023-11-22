@@ -366,7 +366,7 @@ int bpf_map_handler::map_init(managed_shared_memory &memory)
 			max_ent >>= 1;
 		}
 		if (pop_cnt != 1) {
-			spdlog::error(
+			SPDLOG_ERROR(
 				"Failed to create ringbuf map, max_entries must be a power of 2, current: {}",
 				max_entries);
 			return -1;
@@ -419,7 +419,7 @@ int bpf_map_handler::map_init(managed_shared_memory &memory)
 	}
 
 	default:
-		spdlog::error("Unsupported map type: {}", (int)type);
+		SPDLOG_ERROR("Unsupported map type: {}", (int)type);
 		// assert(false && "Unsupported map type");
 		return -1;
 	}

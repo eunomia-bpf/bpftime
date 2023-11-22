@@ -34,7 +34,7 @@ int bpf_attach_ctx::create_tracepoint(int tracepoint_id, int perf_fd,
 	const auto &tp_table = get_global_syscall_tracepoint_table();
 	const auto &[id_table, _] = get_global_syscall_id_table();
 	if (auto itr = tp_table.find(tracepoint_id); itr != tp_table.end()) {
-		spdlog::info("Creating tracepoint for tp name {}", itr->second);
+		SPDLOG_INFO("Creating tracepoint for tp name {}", itr->second);
 		// Lookup the corresponding bpf progs by
 		// brute force
 		std::vector<const bpftime_prog *> progs;
@@ -55,7 +55,7 @@ int bpf_attach_ctx::create_tracepoint(int tracepoint_id, int perf_fd,
 			}
 		}
 		if (progs.empty()) {
-			spdlog::error("bpf_link for perf event {} not found",
+			SPDLOG_ERROR("bpf_link for perf event {} not found",
 				      perf_fd);
 			return perf_fd;
 		}
@@ -64,7 +64,7 @@ int bpf_attach_ctx::create_tracepoint(int tracepoint_id, int perf_fd,
 			auto syscall_name = name.substr(10);
 			auto syscall_id = id_table.find(syscall_name);
 			if (syscall_id == id_table.end()) {
-				spdlog::error(
+				SPDLOG_ERROR(
 					"Syscall id not found for name {}",
 					syscall_name);
 				return -1;
@@ -72,7 +72,7 @@ int bpf_attach_ctx::create_tracepoint(int tracepoint_id, int perf_fd,
 			for (auto p : progs)
 				sys_enter_progs[syscall_id->second].push_back(
 					p);
-			spdlog::info(
+			SPDLOG_INFO(
 				"Registered syscall enter hook for {} with perf fd {}",
 				syscall_name, perf_fd);
 			return perf_fd;
@@ -80,38 +80,38 @@ int bpf_attach_ctx::create_tracepoint(int tracepoint_id, int perf_fd,
 			auto syscall_name = name.substr(9);
 			auto syscall_id = id_table.find(syscall_name);
 			if (syscall_id == id_table.end()) {
-				spdlog::error(
+				SPDLOG_ERROR(
 					"Syscall id not found for name {}",
 					syscall_name);
 				return -1;
 			}
 			for (auto p : progs)
 				sys_exit_progs[syscall_id->second].push_back(p);
-			spdlog::info(
+			SPDLOG_INFO(
 				"Registered syscall exit hook for {} with perf fd {}",
 				syscall_name, perf_fd);
 			return perf_fd;
 		} else if (name == GLOBAL_SYS_ENTER_NAME) {
 			for (auto p : progs)
 				global_sys_enter_progs.push_back(p);
-			spdlog::info(
+			SPDLOG_INFO(
 				"Registered global sys enter hook with perf fd {}",
 				perf_fd);
 			return perf_fd;
 		} else if (name == GLOBAL_SYS_EXIT_NAME) {
 			for (auto p : progs)
 				global_sys_exit_progs.push_back(p);
-			spdlog::info(
+			SPDLOG_INFO(
 				"Registered global sys exit hook with perf fd {}",
 				perf_fd);
 			return perf_fd;
 		} else {
-			spdlog::error("Unexpected syscall tracepoint name {}",
+			SPDLOG_ERROR("Unexpected syscall tracepoint name {}",
 				      name);
 			return -1;
 		}
 	} else {
-		spdlog::error("Unsupported tracepoint id: {}", tracepoint_id);
+		SPDLOG_ERROR("Unsupported tracepoint id: {}", tracepoint_id);
 		return -1;
 	}
 }
@@ -180,6 +180,7 @@ int64_t bpf_attach_ctx::run_syscall_hooker(int64_t sys_nr, int64_t arg1,
 		return orig_syscall(sys_nr, arg1, arg2, arg3, arg4, arg5, arg6);
 	SPDLOG_DEBUG("Syscall callback {} {} {} {} {} {} {}", sys_nr, arg1,
 		      arg2, arg3, arg4, arg5, arg6);
+	curr_thread_override_return_callback = 
 	if (!sys_enter_progs[sys_nr].empty() ||
 	    !global_sys_enter_progs.empty()) {
 		trace_event_raw_sys_enter ctx;

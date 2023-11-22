@@ -80,7 +80,7 @@ extern "C" int bpftime_import_global_shm_from_json(const char *filename)
 static int import_shm_handler_from_json(bpftime_shm &shm, json value, int fd)
 {
 	std::string handler_type = value["type"];
-	spdlog::info("import handler type {} fd {}", handler_type, fd);
+	SPDLOG_INFO("import handler type {} fd {}", handler_type, fd);
 	if (handler_type == "bpf_prog_handler") {
 		std::string insns_str = value["attr"]["insns"];
 		std::string name = value["name"];
@@ -93,7 +93,7 @@ static int import_shm_handler_from_json(bpftime_shm &shm, json value, int fd)
 					     (unsigned char *)insns.data(),
 					     insns.size() * sizeof(ebpf_inst));
 		if (res < 0) {
-			spdlog::error("Failed to parse insns in json");
+			SPDLOG_ERROR("Failed to parse insns in json");
 			return -1;
 		}
 		shm.add_bpf_prog(fd, insns.data(), cnt, name.c_str(), type);
@@ -124,7 +124,7 @@ static int import_shm_handler_from_json(bpftime_shm &shm, json value, int fd)
 			shm.add_tracepoint(fd, pid, tracepoint_id);
 			break;
 		default:
-			spdlog::error("Unsupported perf event type {}", type);
+			SPDLOG_ERROR("Unsupported perf event type {}", type);
 			return -1;
 		}
 	} else if (handler_type == "bpf_link_handler") {
@@ -132,7 +132,7 @@ static int import_shm_handler_from_json(bpftime_shm &shm, json value, int fd)
 		int target_fd = value["attr"]["target_fd"];
 		shm.add_bpf_link(fd, prog_fd, target_fd);
 	} else {
-		spdlog::error("Unsupported handler type {}", handler_type);
+		SPDLOG_ERROR("Unsupported handler type {}", handler_type);
 		return -1;
 	}
 	return 0;
@@ -161,10 +161,10 @@ int bpftime::bpftime_import_shm_from_json(bpftime_shm &shm,
 	file.close();
 	for (auto &[key, value] : j.items()) {
 		int fd = std::stoi(key);
-		spdlog::info("import handler fd {} {}", fd, value.dump());
+		SPDLOG_INFO("import handler fd {} {}", fd, value.dump());
 		int res = import_shm_handler_from_json(shm, value, fd);
 		if (res < 0) {
-			spdlog::error("Failed to import handler from json");
+			SPDLOG_ERROR("Failed to import handler from json");
 			return -1;
 		}
 	}
@@ -185,7 +185,7 @@ int bpftime::bpftime_export_shm_to_json(const bpftime_shm &shm,
 
 	const handler_manager *manager = shm.get_manager();
 	if (!manager) {
-		spdlog::error("No manager found in the shared memory");
+		SPDLOG_ERROR("No manager found in the shared memory");
 		return -1;
 	}
 	for (std::size_t i = 0; i < manager->size(); i++) {
@@ -218,12 +218,12 @@ int bpftime::bpftime_export_shm_to_json(const bpftime_shm &shm,
 				j[std::to_string(i)]["attr"]["attach_fds"]
 					.push_back(fd);
 			}
-			spdlog::info("find prog fd={} name={}", i,
+			SPDLOG_INFO("find prog fd={} name={}", i,
 				     prog_handler.name);
 		} else if (std::holds_alternative<bpf_map_handler>(handler)) {
 			auto &map_handler = std::get<bpf_map_handler>(handler);
 			const char *name = map_handler.name.c_str();
-			spdlog::info("bpf_map_handler name={} found at {}",
+			SPDLOG_INFO("bpf_map_handler name={} found at {}",
 				     name, i);
 			bpf_map_attr attr = map_handler.attr;
 			j[std::to_string(i)] = { { "type", "bpf_map_handler" },
@@ -239,11 +239,11 @@ int bpftime::bpftime_export_shm_to_json(const bpftime_shm &shm,
 				{ "attr", bpf_perf_event_handler_attr_to_json(
 						  perf_handler) }
 			};
-			spdlog::info("bpf_perf_event_handler found at {}", i);
+			SPDLOG_INFO("bpf_perf_event_handler found at {}", i);
 		} else if (std::holds_alternative<epoll_handler>(handler)) {
 			auto &h = std::get<epoll_handler>(handler);
 			j[std::to_string(i)] = { { "type", "epoll_handler" } };
-			spdlog::info("epoll_handler found at {}", i);
+			SPDLOG_INFO("epoll_handler found at {}", i);
 		} else if (std::holds_alternative<bpf_link_handler>(handler)) {
 			auto &h = std::get<bpf_link_handler>(handler);
 			j[std::to_string(i)] = {
@@ -252,11 +252,11 @@ int bpftime::bpftime_export_shm_to_json(const bpftime_shm &shm,
 				  { { "prog_fd", h.prog_fd },
 				    { "target_fd", h.target_fd } } }
 			};
-			spdlog::info(
+			SPDLOG_INFO(
 				"bpf_link_handler found at {}，link {} -> {}",
 				i, h.prog_fd, h.target_fd);
 		} else {
-			spdlog::error("Unsupported handler type {}",
+			SPDLOG_ERROR("Unsupported handler type {}",
 				      handler.index());
 			return -1;
 		}

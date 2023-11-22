@@ -11,7 +11,7 @@ using namespace bpftime;
 extern "C" int
 __bpftime_test_uprobe_with_ebpf__my_function(int parm1, const char *str, char c)
 {
-	spdlog::info("Origin func: Args {}, {}, {}", parm1, str, c);
+	SPDLOG_INFO("Origin func: Args {}, {}, {}", parm1, str, c);
 	return 35;
 }
 
