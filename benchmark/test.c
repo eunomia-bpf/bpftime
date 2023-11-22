@@ -99,10 +99,12 @@ int main(int argc, char **argv)
 		return 0;
 	}
 	pthread_t threads[NUM_THREADS];
+	int thread_id[NUM_THREADS];
 
 	for (int i = 0; i < NUM_THREADS; i++) {
+		thread_id[i] = i;
 		pthread_create(&threads[i], NULL, run_bench_functions,
-			       (void *)&i);
+			       (void *)&thread_id[i]);
 	}
 
 	for (int i = 0; i < NUM_THREADS; i++) {

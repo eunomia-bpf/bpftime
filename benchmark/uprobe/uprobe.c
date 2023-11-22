@@ -56,9 +56,12 @@ int main(int argc, char **argv)
 		goto cleanup;
 	}
 
+	printf("Successfully started! Press Ctrl+C to stop.\n");
+	printf("__benchmark_test_function1 is for both uprobe and uretprobe\n");
+	printf("__benchmark_test_function2 is for uretprobe only\n");
+	printf("__benchmark_test_function3 is for uprobe only\n");
 	while (!exiting) {
 		sleep(1);
-		printf("loaded ebpf program...\n");
 	}
 cleanup:
 	/* Clean up */
