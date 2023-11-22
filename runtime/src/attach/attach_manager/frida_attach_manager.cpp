@@ -102,7 +102,7 @@ int frida_attach_manager::attach_at(void *func_addr, callback_variant &&cb)
 			.first;
 	inner_attach->user_attaches.push_back(
 		inserted_attach_entry->second.get());
-	inserted_attach_entry->second->internal_attache = inner_attach.get();
+	inserted_attach_entry->second->internal_attach = inner_attach.get();
 	return result;
 }
 
@@ -141,7 +141,7 @@ int frida_attach_manager::destroy_attach(int id)
 {
 	void *drop_func_addr = nullptr;
 	if (auto itr = attaches.find(id); itr != attaches.end()) {
-		auto p = itr->second->internal_attache;
+		auto p = itr->second->internal_attach;
 
 		auto &user_attaches = p->user_attaches;
 		auto tail =

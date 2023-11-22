@@ -22,7 +22,7 @@ class frida_attach_entry {
 	base_attach_manager::callback_variant cb;
 	void *function;
 
-	class frida_internal_attach_entry *internal_attache;
+	class frida_internal_attach_entry *internal_attach;
 	friend class frida_attach_manager;
 	friend class frida_internal_attach_entry;
 
