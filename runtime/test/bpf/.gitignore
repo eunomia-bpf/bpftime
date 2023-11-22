@@ -1,4 +1,4 @@
 *.o
 *.btf
 *.a
-/.output
+.output

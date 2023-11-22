@@ -47,6 +47,27 @@ int tracepoint__syscalls__sys_enter_openat(struct trace_event_raw_sys_enter *ctx
 	return 0;
 }
 
+SEC("tracepoint/syscalls/sys_enter_newfstatat")
+int tracepoint__syscalls__sys_enter_newfstatat(struct trace_event_raw_sys_enter *ctx)
+{
+	bpf_printk("trace_enter sys_enter_newfstatat\n");
+	return 0;
+}
+
+SEC("tracepoint/syscalls/sys_enter_statfs")
+int tracepoint__syscalls__sys_enter_statfs(struct trace_event_raw_sys_enter *ctx)
+{
+	bpf_printk("trace_enter sys_enter_statfs\n");
+	return 0;
+}
+
+SEC("tracepoint/syscalls/sys_enter_getdents64")
+int tracepoint__syscalls__sys_enter_getdents64(struct trace_event_raw_sys_enter *ctx)
+{
+	bpf_printk("trace_enter sys_enter_getdents64\n");
+	return 0;
+}
+
 static __always_inline int trace_exit(struct trace_event_raw_sys_exit *ctx)
 {
 	bpf_printk("trace_exit\n");
