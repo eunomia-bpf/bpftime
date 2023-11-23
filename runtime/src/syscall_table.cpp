@@ -8,6 +8,7 @@
 #include <filesystem>
 #include <fstream>
 #include <cassert>
+#include <map>
 #include <optional>
 #include <syscall_id_list.h>
 static const char *SYSCALL_TRACEPOINT_ROOT =
@@ -21,6 +22,14 @@ namespace internal
 {
 static syscall_id_pair generate_syscall_id_table()
 {
+	// Some syscalls have different name between tracepoint name and syscall
+	// name Here maintains a mapping from syscall name to tracepoint name
+	// Syscall name comes from  /usr/include/asm/unistd_64.h, while
+	// tracepoint name comes from /sys/kernel/tracing/events/syscalls/ Don't
+	// use static variable. Avoid global variable initializing issues.
+	const std::map<std::string, std::string> syscall_name_patch{
+		{ "umount2", "umount" }
+	};
 	syscall_name_to_id_table ret1;
 	syscall_id_to_name_table ret2;
 	std::istringstream ss(table);
@@ -28,6 +37,12 @@ static syscall_id_pair generate_syscall_id_table()
 		std::string name;
 		int id;
 		ss >> name >> id;
+		if (auto itr = syscall_name_patch.find(name);
+		    itr != syscall_name_patch.end()) {
+			SPDLOG_DEBUG("Patched syscall name {} to {}", name,
+				     itr->second);
+			name = itr->second;
+		}
 		ret1[name] = id;
 		ret2[id] = name;
 	}
@@ -56,8 +71,7 @@ syscall_tracepoint_table create_syscall_tracepoint_table()
 	syscall_tracepoint_table result;
 	const auto read_id = [&](std::filesystem::path tp_dir) -> int32_t {
 		const auto &id_file = tp_dir.append("id");
-		SPDLOG_TRACE("Reading tracepoint id from {}",
-			      id_file.string());
+		SPDLOG_TRACE("Reading tracepoint id from {}", id_file.string());
 		std::ifstream id_ifs(id_file);
 		assert(id_ifs.is_open());
 		int32_t id;
