@@ -24,11 +24,11 @@ jobs:
       - name: Build and install runtime (with llvm-jit)
         if: ${{matrix.enable_jit}}
         run: |
-          CC=gcc-12 CXX=g++-12 make release-with-llvm-jit -j
+          CC=gcc-12 CXX=g++-12 make release-with-llvm-jit-without-cli -j
       - name: Build and install runtime (without llvm-jit)
         if: ${{!matrix.enable_jit}}
         run: |
-          CC=gcc-12 CXX=g++-12 make release -j
+          CC=gcc-12 CXX=g++-12 make release-without-cli -j
       - name: Build and install CLI
         run: |
           cd tools/cli-rs
