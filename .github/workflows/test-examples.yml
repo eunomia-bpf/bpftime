@@ -78,6 +78,12 @@ jobs:
             victim: /bin/bash
             syscall_trace: false
             expected_str: "info"
+          - path: libbpf-tools/funclatency
+            executable: ./funclatency -i 1 ./victim:plus
+            victim: ./victim
+            syscall_trace: false
+            expected_str: ": 1"
+          
     steps:
       - uses: actions/checkout@v2
         with:
@@ -109,10 +115,10 @@ jobs:
         shell: "sudo /bin/bash -e {0}"
         run: |
           cd example/${{matrix.examples.path}}
-          sudo -E python3 /home/runner/work/bpftime/bpftime/.github/script/run_example.py ${{matrix.examples.executable}} "${{matrix.examples.victim}}" "${{matrix.examples.expected_str}}" "/home/runner/.bpftime/bpftime -i /home/runner/.bpftime" 1
+          sudo -E python3 /home/runner/work/bpftime/bpftime/.github/script/run_example.py "${{matrix.examples.executable}}" "${{matrix.examples.victim}}" "${{matrix.examples.expected_str}}" "/home/runner/.bpftime/bpftime -i /home/runner/.bpftime" 1
       - name: Test CLI - attach by running (uprobe)
         if: '!matrix.examples.syscall_trace'
         shell: "sudo /bin/bash -e {0}"
         run: |
           cd example/${{matrix.examples.path}}
-          sudo -E python3 /home/runner/work/bpftime/bpftime/.github/script/run_example.py ${{matrix.examples.executable}} "${{matrix.examples.victim}}" "${{matrix.examples.expected_str}}" "/home/runner/.bpftime/bpftime -i /home/runner/.bpftime" 0
+          sudo -E python3 /home/runner/work/bpftime/bpftime/.github/script/run_example.py "${{matrix.examples.executable}}" "${{matrix.examples.victim}}" "${{matrix.examples.expected_str}}" "/home/runner/.bpftime/bpftime -i /home/runner/.bpftime" 0
