@@ -104,6 +104,12 @@ jobs:
             victim: ./victim
             syscall_trace: false
             expected_str: ": 1"
+          - path: libbpf-tools/mountsnoop
+            executable: ./mountsnoop
+            victim: mount -- -t tmpfs -o size=1G tmpfs /mnt/ramdisk/
+            syscall_trace: true
+            expected_str:  mount("tmpfs", "/mnt/ramdisk", "tmpfs", 0x0, "size=1G")
+
           
     steps:
       - uses: actions/checkout@v2
@@ -132,6 +138,7 @@ jobs:
         run: |
           sudo apt-get update -y
           sudo apt-get install -y zlib1g-dev libelf-dev llvm
+          mkdir /mnt/ramdisk
       - name: Build test assets
         run: |
           make -C example/${{matrix.examples.path}} -j
@@ -144,10 +151,10 @@ jobs:
         shell: "sudo /bin/bash -e {0}"
         run: |
           cd example/${{matrix.examples.path}}
-          sudo -E python3 /home/runner/work/bpftime/bpftime/.github/script/run_example.py "${{matrix.examples.executable}}" "${{matrix.examples.victim}}" "${{matrix.examples.expected_str}}" "/home/runner/.bpftime/bpftime -i /home/runner/.bpftime" 1
+          sudo -E python3 /home/runner/work/bpftime/bpftime/.github/script/run_example.py "${{matrix.examples.executable}}" "${{matrix.examples.victim}}" '${{matrix.examples.expected_str}}' "/home/runner/.bpftime/bpftime -i /home/runner/.bpftime" 1
       - name: Test CLI - attach by running (uprobe)
         if: '!matrix.examples.syscall_trace'
         shell: "sudo /bin/bash -e {0}"
         run: |
           cd example/${{matrix.examples.path}}
-          sudo -E python3 /home/runner/work/bpftime/bpftime/.github/script/run_example.py "${{matrix.examples.executable}}" "${{matrix.examples.victim}}" "${{matrix.examples.expected_str}}" "/home/runner/.bpftime/bpftime -i /home/runner/.bpftime" 0
+          sudo -E python3 /home/runner/work/bpftime/bpftime/.github/script/run_example.py "${{matrix.examples.executable}}" "${{matrix.examples.victim}}" '${{matrix.examples.expected_str}}' "/home/runner/.bpftime/bpftime -i /home/runner/.bpftime" 0
