@@ -16,4 +16,11 @@ struct event {
 	char fname[NAME_MAX];
 };
 
+
+#define DENTS_BUF_SIZE 1024
+
+struct getdents64_buffer {
+	char buf[DENTS_BUF_SIZE];
+};
+
 #endif /* __OPENSNOOP_H */

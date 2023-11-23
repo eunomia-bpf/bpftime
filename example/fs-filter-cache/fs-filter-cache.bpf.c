@@ -133,6 +133,15 @@ int tracepoint__syscalls__sys_enter_close(struct trace_event_raw_sys_enter *ctx)
 	return 0;
 }
 
+struct getdents64_buffer empty_buf = {};
+
+struct {
+	__uint(type, BPF_MAP_TYPE_HASH);
+	__uint(max_entries, 10240);
+	__type(key, struct dir_fd_data);
+	__type(value, struct getdents64_buffer);
+} getdents64_cache_map SEC(".maps");
+
 SEC("tracepoint/syscalls/sys_enter_getdents64")
 int tracepoint__syscalls__sys_enter_getdents64(
 	struct trace_event_raw_sys_enter *ctx)
@@ -151,7 +160,15 @@ SEC("tracepoint/syscalls/sys_enter_newfstatat")
 int tracepoint__syscalls__sys_enter_newfstatat(
 	struct trace_event_raw_sys_enter *ctx)
 {
-	// bpf_printk("trace_enter sys_enter_newfstatat\n");
+	int fd = (int)ctx->args[0];
+	struct dir_fd_data *dir_data = get_dir_fd_data(fd);
+	if (dir_data == NULL) {
+		return 0;
+	}
+	const char *path = (const char *)ctx->args[1];
+	bpf_printk(
+		"trace_enter sys_enter_newfstatat fd: %d, path %s, dir path %s\n",
+		fd, path, dir_data->dir_path);
 	return 0;
 }
 
