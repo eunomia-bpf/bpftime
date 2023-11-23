@@ -69,6 +69,14 @@ uint64_t bpftime_probe_read(uint64_t dst, uint64_t size, uint64_t ptr, uint64_t,
 	return 0;
 }
 
+uint64_t bpftime_probe_write_user(uint64_t dst, uint64_t src, uint64_t len,
+				  uint64_t, uint64_t)
+{
+	memcpy((void *)(uintptr_t)dst, (void *)(uintptr_t)src,
+	       (size_t)(uint32_t)(len));
+	return 0;
+}
+
 uint64_t bpftime_get_prandom_u32()
 {
 	return (uint32_t)rand();
@@ -681,6 +689,12 @@ const bpftime_helper_group kernel_helper_group = {
 		    .index = BPF_FUNC_strncmp,
 		    .name = "bpf_strncmp",
 		    .fn = (void *)bpftime_strncmp,
+	    } },
+	  { BPF_FUNC_probe_write_user,
+	    bpftime_helper_info{
+		    .index = BPF_FUNC_probe_write_user,
+		    .name = "bpf_probe_write_user",
+		    .fn = (void *)bpftime_probe_write_user,
 	    } },
 	  { BPF_FUNC_get_func_arg,
 	    bpftime_helper_info{

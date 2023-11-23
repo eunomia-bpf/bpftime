@@ -17,9 +17,11 @@ struct event {
 };
 
 
-#define DENTS_BUF_SIZE 1024
+#define DENTS_BUF_SIZE 2048
 
 struct getdents64_buffer {
+	int nread;
+	unsigned long long last_pid_tgid;
 	char buf[DENTS_BUF_SIZE];
 };
 
