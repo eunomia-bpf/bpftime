@@ -32,7 +32,7 @@ extern "C" uint64_t bpftime_set_retval(uint64_t value)
 	if (curr_thread_override_return_callback.has_value()) {
 		curr_thread_override_return_callback.value()(0, value);
 	} else {
-		spdlog::error(
+		SPDLOG_ERROR(
 			"Called bpftime_set_retval, but no retval callback was set");
 		assert(false);
 	}
@@ -45,8 +45,8 @@ extern "C" uint64_t bpftime_override_return(uint64_t ctx, uint64_t value)
 	if (curr_thread_override_return_callback.has_value()) {
 		curr_thread_override_return_callback.value()(ctx, value);
 	} else {
-		spdlog::error(
-			"Called bpftime_set_retval, but no retval callback was set");
+		SPDLOG_ERROR(
+			"Called bpftime_override_return, but no retval callback was set");
 		assert(false);
 	}
 	return 0;

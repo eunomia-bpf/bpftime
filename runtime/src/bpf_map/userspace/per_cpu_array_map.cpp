@@ -69,7 +69,7 @@ long per_cpu_array_map_impl::elem_update(const void *key, const void *value,
 long per_cpu_array_map_impl::elem_delete(const void *key)
 {
 	errno = ENOTSUP;
-	spdlog::error("Deleting of per cpu array is not supported");
+	SPDLOG_ERROR("Deleting of per cpu array is not supported");
 	return -1;
 	// return ensure_on_current_cpu<long>([&](int cpu) {
 
@@ -130,7 +130,7 @@ long per_cpu_array_map_impl::elem_update_userspace(const void *key,
 long per_cpu_array_map_impl::elem_delete_userspace(const void *key)
 {
 	errno = ENOTSUP;
-	spdlog::error("Element delete is not supported by per cpu array");
+	SPDLOG_ERROR("Element delete is not supported by per cpu array");
 	return -1;
 }
 

@@ -57,7 +57,7 @@ class bpf_prog_handler {
 
 	void add_attach_fd(int fd) const
 	{
-		spdlog::debug("Add attach fd {} for bpf_prog {}", fd,
+		SPDLOG_DEBUG("Add attach fd {} for bpf_prog {}", fd,
 			      name.c_str());
 		attach_fds.push_back(fd);
 	}

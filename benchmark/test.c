@@ -77,11 +77,12 @@ void do_benchmark_userspace(benchmark_test_function_t func, const char *name,
 		do_benchmark_userspace(func, #func, iter, id);                        \
 	} while (0)
 
+int iter = 100 * 1000;
+
 void *run_bench_functions(void *id_ptr)
 {
 	int id = *(int *)id_ptr;
 	printf("id: %d\n", id);
-	int iter = 100 * 1000;
 	do_benchmark_func(__benchmark_test_function1, iter, id);
 	do_benchmark_func(__benchmark_test_function2, iter, id);
 	do_benchmark_func(__benchmark_test_function3, iter, id);
@@ -94,15 +95,20 @@ int main(int argc, char **argv)
 	if (argc > 1) {
 		NUM_THREADS = atoi(argv[1]);
 	}
+	if (argc > 2) {
+		iter = atoi(argv[2]);
+	}
 	if (NUM_THREADS == 1) {
 		run_bench_functions(&NUM_THREADS);
 		return 0;
 	}
 	pthread_t threads[NUM_THREADS];
+	int thread_id[NUM_THREADS];
 
 	for (int i = 0; i < NUM_THREADS; i++) {
+		thread_id[i] = i;
 		pthread_create(&threads[i], NULL, run_bench_functions,
-			       (void *)&i);
+			       (void *)&thread_id[i]);
 	}
 
 	for (int i = 0; i < NUM_THREADS; i++) {

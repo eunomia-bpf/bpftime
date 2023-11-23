@@ -34,7 +34,7 @@ extern "C" int64_t __ebpf_call_find_ffi_id(const char *func_name)
 	struct ebpf_ffi_func_info *func_list = ffi_ctx->ffi_funcs;
 	for (size_t i = 0; i < ffi_ctx->ffi_func_cnt; i++) {
 		if (strcmp(func_list[i].name, func_name) == 0) {
-			spdlog::info("Find func {} at {}", func_name, i);
+			SPDLOG_INFO("Find func {} at {}", func_name, i);
 			return i;
 		}
 	}
@@ -51,12 +51,12 @@ int bpftime_ffi_resolve_from_info(base_attach_manager *probe_ctx,
 {
 	void *func_addr = probe_ctx->find_function_addr_by_name(func_info.name);
 	if (!func_addr) {
-		spdlog::error("Failed to get function address for {}",
+		SPDLOG_ERROR("Failed to get function address for {}",
 			      func_info.name);
 		return -1;
 	}
 	if (global_ffi_ctx.ffi_func_cnt == MAX_FFI_FUNCS - 1) {
-		spdlog::error("too many ffi funcs, {} > {}",
+		SPDLOG_ERROR("too many ffi funcs, {} > {}",
 			      global_ffi_ctx.ffi_func_cnt, MAX_FFI_FUNCS);
 		return -1;
 	}
@@ -73,12 +73,12 @@ extern "C" uint64_t __ebpf_call_ffi_dispatcher(uint64_t id, uint64_t arg_list)
 	struct ebpf_ffi_func_info *func_info =
 		ebpf_resovle_ffi_func(&global_ffi_ctx, id);
 	if (!func_info || !func_info->func) {
-		spdlog::error("func_info: {:x} for id {} not found",
+		SPDLOG_ERROR("func_info: {:x} for id {} not found",
 			      (uintptr_t)func_info, id);
 		return 0;
 	}
 	if (func_info->is_attached) {
-		spdlog::error("func {} is already attached", func_info->name);
+		SPDLOG_ERROR("func {} is already attached", func_info->name);
 		return 0;
 	}
 	assert((size_t)func_info->num_args <= MAX_ARGS_COUNT);
@@ -130,7 +130,7 @@ union arg_val to_arg_val(enum ffi_types type, uint64_t val)
 		// No need to handle
 		break;
 	default:
-		spdlog::error("Unknown type: {}", (int)type);
+		SPDLOG_ERROR("Unknown type: {}", (int)type);
 		// Handle other types
 		break;
 	}
@@ -161,7 +161,7 @@ uint64_t from_arg_val(enum ffi_types type, union arg_val val)
 		// No need to handle
 		break;
 	default:
-		spdlog::error("Unknown type: {}", (int)type);
+		SPDLOG_ERROR("Unknown type: {}", (int)type);
 		// Handle other types
 		break;
 	}

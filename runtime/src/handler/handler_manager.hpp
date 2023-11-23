@@ -74,7 +74,7 @@ struct shm_remove {
 	}
 	~shm_remove()
 	{
-		spdlog::info("Destroy shm {}", get_global_shm_name());
+		SPDLOG_INFO("Destroy shm {}", get_global_shm_name());
 		boost::interprocess::shared_memory_object::remove(
 			get_global_shm_name());
 	}

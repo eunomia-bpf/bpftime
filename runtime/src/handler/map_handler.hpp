@@ -78,7 +78,7 @@ class bpf_map_handler {
 		  key_size(key_size), value_size(value_size)
 
 	{
-		spdlog::debug("Create map with type {}", type);
+		SPDLOG_DEBUG("Create map with type {}", type);
 		pthread_spin_init(&map_lock, 0);
 		this->name = name;
 	}

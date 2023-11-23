@@ -47,7 +47,7 @@ extern "C" void __aeabi_unwind_cpp_pr1();
 
 ebpf_jit_fn bpf_jit_context::compile()
 {
-	spdlog::info("Compiling using LLJIT");
+	SPDLOG_INFO("Compiling using LLJIT");
 	// Create a JIT builder
 	auto jit = ExitOnErr(LLJITBuilder().create());
 	auto &mainDylib = jit->getMainJITDylib();
@@ -66,7 +66,7 @@ ebpf_jit_fn bpf_jit_context::compile()
 		}
 	}
 #if defined(__arm__) || defined(_M_ARM)
-	spdlog::info("Defining __aeabi_unwind_cpp_pr1 on arm32");
+	SPDLOG_INFO("Defining __aeabi_unwind_cpp_pr1 on arm32");
 	extSymbols.try_emplace(
 		jit->mangleAndIntern("__aeabi_unwind_cpp_pr1"),
 		JITEvaluatedSymbol::fromPointer(__aeabi_unwind_cpp_pr1));
@@ -77,7 +77,7 @@ ebpf_jit_fn bpf_jit_context::compile()
 	std::vector<std::string> definedLddwHelpers;
 	const auto tryDefineLddwHelper = [&](const char *name, void *func) {
 		if (func) {
-			spdlog::debug("Defining LDDW helper {} with addr {:x}",
+			SPDLOG_DEBUG("Defining LDDW helper {} with addr {:x}",
 				      name, (uintptr_t)func);
 			auto sym =
 				JITEvaluatedSymbol::fromPointer(func);

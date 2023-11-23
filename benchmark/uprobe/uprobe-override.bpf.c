@@ -3,10 +3,10 @@
 #include <bpf/bpf_helpers.h>
 #include <bpf/bpf_tracing.h>
 
-SEC("uretprobe/benchmark/test:__benchmark_test_function3")
-int BPF_URETPROBE(__benchmark_test_function, int ret)
+SEC("uprobe")
+int do_uprobe_override_patch(struct pt_regs *ctx)
 {
-	return ret;
+	return 0;
 }
 
 char LICENSE[] SEC("license") = "GPL";

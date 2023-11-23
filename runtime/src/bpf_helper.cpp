@@ -181,7 +181,7 @@ uint64_t bpf_ringbuf_output(uint64_t rb, uint64_t data, uint64_t size,
 	}
 	auto buf = bpftime_ringbuf_reserve(fd, size);
 	if (!buf) {
-		spdlog::error(
+		SPDLOG_ERROR(
 			"Failed to reserve when executing ringbuf output");
 		return (uint64_t)-1;
 	}
@@ -237,7 +237,7 @@ uint64_t bpf_perf_event_output(uint64_t ctx, uint64_t map, uint64_t flags,
 	sched_getaffinity(0, sizeof(orig), &orig);
 	// Bind to the current cpu
 	if (sched_setaffinity(0, sizeof(mask), &mask) < 0) {
-		spdlog::error("Failed to set cpu affinity: {}", errno);
+		SPDLOG_ERROR("Failed to set cpu affinity: {}", errno);
 		errno = EINVAL;
 		return (uint64_t)(-1);
 	}
@@ -247,7 +247,7 @@ uint64_t bpf_perf_event_output(uint64_t ctx, uint64_t map, uint64_t flags,
 	bpftime::bpf_map_type map_ty;
 	if (int err = bpftime_map_get_info(fd, nullptr, nullptr, &map_ty);
 	    err < 0) {
-		spdlog::error("Unable to query map type of fd {}", fd);
+		SPDLOG_ERROR("Unable to query map type of fd {}", fd);
 		return -1;
 	}
 	int ret;
@@ -256,7 +256,7 @@ uint64_t bpf_perf_event_output(uint64_t ctx, uint64_t map, uint64_t flags,
 			(int32_t *)(uintptr_t)bpftime_helper_map_lookup_elem(
 				fd, &current_cpu);
 		if (val_ptr == nullptr) {
-			spdlog::error(
+			SPDLOG_ERROR(
 				"Invalid map fd for perf event output: {}", fd);
 			errno = EINVAL;
 			return (uint64_t)(-1);
@@ -271,7 +271,7 @@ uint64_t bpf_perf_event_output(uint64_t ctx, uint64_t map, uint64_t flags,
 		ret = bpftime_shared_perf_event_output(
 			fd, (const void *)(uintptr_t)data, (size_t)size);
 	} else {
-		spdlog::error(
+		SPDLOG_ERROR(
 			"Attempting to run perf_output on a non-perf array map");
 		ret = -1;
 	}
@@ -504,7 +504,7 @@ enum bpf_func_id {
 int bpftime_helper_group::register_helper(const bpftime_helper_info &info)
 {
 	if (info.index > 999) {
-		spdlog::error("Helper id should be 0-999, found {}",
+		SPDLOG_ERROR("Helper id should be 0-999, found {}",
 			      info.index);
 		return -1;
 	}
@@ -513,7 +513,7 @@ int bpftime_helper_group::register_helper(const bpftime_helper_info &info)
 	} else {
 		// found the same helper id
 		if (helper_map[info.index].fn != info.fn) {
-			spdlog::error("Helper id already exists for {}",
+			SPDLOG_ERROR("Helper id already exists for {}",
 				      info.name);
 			return -1;
 		}
@@ -526,7 +526,7 @@ int bpftime_helper_group::append(const bpftime_helper_group &another_group)
 {
 	for (const auto &it : another_group.helper_map) {
 		if (helper_map.find(it.first) != helper_map.end()) {
-			spdlog::error("Helper id already exists for {}",
+			SPDLOG_ERROR("Helper id already exists for {}",
 				      it.second.name);
 			return -1;
 		}

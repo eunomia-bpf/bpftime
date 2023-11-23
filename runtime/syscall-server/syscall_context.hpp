@@ -47,7 +47,7 @@ class syscall_context {
 		orig_mmap64_fn = orig_mmap_fn =
 			(mmap_fn)dlsym(RTLD_NEXT, "mmap");
 		unsetenv("LD_PRELOAD");
-		spdlog::debug(
+		SPDLOG_DEBUG(
 			"Function addrs: {:x} {:x} {:x} {:x} {:x} {:x} {:x} {:x} {:x}",
 			(uintptr_t)orig_epoll_wait_fn,
 			(uintptr_t)orig_epoll_ctl_fn,
@@ -64,7 +64,7 @@ class syscall_context {
 	syscall_context()
 	{
 		init_original_functions();
-		spdlog::info("manager constructed");
+		SPDLOG_INFO("manager constructed");
 	}
 	syscall_fn orig_syscall_fn = nullptr;
 

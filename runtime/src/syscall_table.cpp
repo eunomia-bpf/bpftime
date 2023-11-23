@@ -56,7 +56,7 @@ syscall_tracepoint_table create_syscall_tracepoint_table()
 	syscall_tracepoint_table result;
 	const auto read_id = [&](std::filesystem::path tp_dir) -> int32_t {
 		const auto &id_file = tp_dir.append("id");
-		spdlog::trace("Reading tracepoint id from {}",
+		SPDLOG_TRACE("Reading tracepoint id from {}",
 			      id_file.string());
 		std::ifstream id_ifs(id_file);
 		assert(id_ifs.is_open());

@@ -77,6 +77,12 @@ endif()
 
 # spdlog
 add_subdirectory(third_party/spdlog)
+# set spdlog level
+if (CMAKE_BUILD_TYPE STREQUAL "Debug")
+  add_definitions(-DSPDLOG_ACTIVE_LEVEL=SPDLOG_LEVEL_DEBUG)
+else()
+  add_definitions(-DSPDLOG_ACTIVE_LEVEL=SPDLOG_LEVEL_INFO)
+endif()
 
 set(SPDLOG_INCLUDE ${CMAKE_CURRENT_SOURCE_DIR}/third_party/spdlog/include)
 

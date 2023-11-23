@@ -80,7 +80,7 @@ int bpf_event_handler::handle_open_events(const struct event *e)
 	time_t t;
 
 	/* print output */
-	spdlog::info("OPEN {:<6} {:<16}", e->pid, e->comm);
+	SPDLOG_INFO("OPEN {:<6} {:<16}", e->pid, e->comm);
 	return 0;
 }
 
@@ -88,10 +88,10 @@ int bpf_event_handler::handle_exec_and_exit(const struct event *e)
 {
 
 	if (e->exec_data.exit_event == false) {
-		spdlog::info("EXEC {:<6} {:<16} {}", e->pid, e->comm,
+		SPDLOG_INFO("EXEC {:<6} {:<16} {}", e->pid, e->comm,
 			     e->exec_data.filename);
 	} else {
-		spdlog::info("EXIT {:<6} {:<16} {}", e->pid, e->comm,
+		SPDLOG_INFO("EXIT {:<6} {:<16} {}", e->pid, e->comm,
 			     e->exec_data.exit_code);
 	}
 	return 0;
@@ -203,7 +203,7 @@ static const char *get_bpf_map_type_string(bpftime::bpf_map_type type)
 
 int bpf_event_handler::handle_close_event(const struct event *e)
 {
-	spdlog::info("CLOSE    {:<6} {:<16} fd:{}", e->pid, e->comm,
+	SPDLOG_INFO("CLOSE    {:<6} {:<16} fd:{}", e->pid, e->comm,
 		     e->close_data.fd);
 	if (config.is_driving_bpftime) {
 		driver.bpftime_close_server(e->pid, e->close_data.fd);
@@ -222,13 +222,13 @@ int bpf_event_handler::handle_bpf_event(const struct event *e)
 		cmd_str = bpf_cmd_strings[e->bpf_data.bpf_cmd];
 	}
 
-	spdlog::info("BPF      {:<6} {:<16} cmd:{:<16} ret:{}", e->pid, e->comm,
+	SPDLOG_INFO("BPF      {:<6} {:<16} cmd:{:<16} ret:{}", e->pid, e->comm,
 		     cmd_str, e->bpf_data.ret);
 
 	switch (e->bpf_data.bpf_cmd) {
 	case BPF_MAP_CREATE:
 		/* code */
-		spdlog::info(
+		SPDLOG_INFO(
 			"   BPF_MAP_CREATE map_type:{:<16} map_name:{:<16} id {}",
 			get_bpf_map_type_string(
 				(enum bpf_map_type)e->bpf_data.attr.map_type),
@@ -238,7 +238,7 @@ int bpf_event_handler::handle_bpf_event(const struct event *e)
 		int prog_fd = e->bpf_data.attr.link_create.prog_fd;
 		int perf = e->bpf_data.attr.link_create.target_fd;
 		/* code */
-		spdlog::info("   BPF_LINK_CREATE prog_fd:{} target_fd:{}",
+		SPDLOG_INFO("   BPF_LINK_CREATE prog_fd:{} target_fd:{}",
 			     prog_fd, perf);
 		if (config.is_driving_bpftime) {
 			if (int err =
@@ -254,14 +254,14 @@ int bpf_event_handler::handle_bpf_event(const struct event *e)
 	}
 	case BPF_PROG_LOAD:
 		/* code */
-		spdlog::info(
+		SPDLOG_INFO(
 			"   BPF_PROG_LOAD prog_type:{:<16} prog_name:{:<16}",
 			bpf_prog_type_strings[e->bpf_data.attr.prog_type],
 			e->bpf_data.attr.prog_name);
 		break;
 	case BPF_BTF_LOAD:
 		/* code */
-		spdlog::info("   BPF_BTF_LOAD btf_id:{} btf_log_level:{}",
+		SPDLOG_INFO("   BPF_BTF_LOAD btf_id:{} btf_log_level:{}",
 			     e->bpf_data.attr.btf_id,
 			     e->bpf_data.attr.btf_log_level);
 		break;
@@ -280,7 +280,7 @@ static const char *perf_type_id_strings[PERF_TYPE_MAX_ID] = {
 
 int bpf_event_handler::handle_perf_event_open(const struct event *e)
 {
-	spdlog::debug("handle_perf_event");
+	SPDLOG_DEBUG("handle_perf_event");
 	const char *type_id_str = "UNKNOWN TYPE";
 	unsigned int perf_type = e->perf_event_data.attr.type;
 	if (perf_type < (sizeof(perf_type_id_strings) /
@@ -289,12 +289,12 @@ int bpf_event_handler::handle_perf_event_open(const struct event *e)
 	}
 
 	/* print output */
-	spdlog::info("PERF     {:<6} {:<16} type:{:<16} ret:{}\n", e->pid,
+	SPDLOG_INFO("PERF     {:<6} {:<16} type:{:<16} ret:{}\n", e->pid,
 		     e->comm, type_id_str, e->perf_event_data.ret);
 
 	if (config.is_driving_bpftime) {
 		if (e->perf_event_data.ret >= 0) {
-			spdlog::debug(
+			SPDLOG_DEBUG(
 				"Handling perf event creating with perf type {}",
 				perf_type);
 			if (perf_type == (unsigned int)uprobe_type) {
@@ -303,7 +303,7 @@ int bpf_event_handler::handle_perf_event_open(const struct event *e)
 				bool retprobe =
 					attr->config &
 					(1 << determine_uprobe_retprobe_bit());
-				spdlog::debug("retprobe {}", retprobe);
+				SPDLOG_DEBUG("retprobe {}", retprobe);
 				size_t ref_ctr_off =
 					attr->config >>
 					PERF_UPROBE_REF_CTR_OFFSET_SHIFT;
@@ -311,7 +311,7 @@ int bpf_event_handler::handle_perf_event_open(const struct event *e)
 					e->perf_event_data.name_or_path;
 				uint64_t offset =
 					e->perf_event_data.attr.probe_offset;
-				spdlog::debug(
+				SPDLOG_DEBUG(
 					"Creating uprobe name {} offset {} "
 					"ref_ctr_off {} attr->config={:x}",
 					name, offset, ref_ctr_off,
@@ -325,7 +325,7 @@ int bpf_event_handler::handle_perf_event_open(const struct event *e)
 					     perf_type);
 			}
 		} else {
-			spdlog::debug(
+			SPDLOG_DEBUG(
 				"Ignore failed perf event creation, err={}",
 				e->perf_event_data.ret);
 		}
@@ -335,7 +335,7 @@ int bpf_event_handler::handle_perf_event_open(const struct event *e)
 
 int bpf_event_handler::handle_load_bpf_prog_event(const struct event *e)
 {
-	spdlog::debug("handle_load_bpf_prog_event");
+	SPDLOG_DEBUG("handle_load_bpf_prog_event");
 	const char *prog_type_str =
 		e->bpf_loaded_prog.type >= (sizeof(bpf_prog_type_strings) /
 					    sizeof(bpf_prog_type_strings[0])) ?
@@ -347,7 +347,7 @@ int bpf_event_handler::handle_load_bpf_prog_event(const struct event *e)
 					"(none)";
 
 	/* print output */
-	spdlog::info(
+	SPDLOG_INFO(
 		"BPF_LOAD {:<6} {:<16} name:{:<16} type:{:<16} insn_cnt:{:<6}",
 		e->pid, e->comm, prog_name, prog_type_str,
 		e->bpf_loaded_prog.insn_cnt);
@@ -360,22 +360,22 @@ int bpf_event_handler::handle_ioctl(const struct event *e)
 	int fd = e->ioctl_data.fd;
 	int req = e->ioctl_data.req;
 	int data = e->ioctl_data.data;
-	spdlog::info("IOCTL    {:<6} {:<16} fd:{} req:{} data:{}", e->pid,
+	SPDLOG_INFO("IOCTL    {:<6} {:<16} fd:{} req:{} data:{}", e->pid,
 		     e->comm, fd, req, data);
 	if (req == PERF_EVENT_IOC_ENABLE) {
-		spdlog::info("Enabling perf event {}", fd);
+		SPDLOG_INFO("Enabling perf event {}", fd);
 		if (config.is_driving_bpftime) {
 			return driver.bpftime_perf_event_enable_server(e->pid,
 								       fd);
 		}
 	} else if (req == PERF_EVENT_IOC_DISABLE) {
-		spdlog::info("Disabling perf event {}", fd);
+		SPDLOG_INFO("Disabling perf event {}", fd);
 		if (config.is_driving_bpftime) {
 			return driver.bpftime_perf_event_disable_server(e->pid,
 									fd);
 		}
 	} else if (req == PERF_EVENT_IOC_SET_BPF) {
-		spdlog::info(
+		SPDLOG_INFO(
 			"Setting bpf for perf event {} and bpf {} (id: {})", fd,
 			data, e->ioctl_data.bpf_prog_id);
 		if (config.is_driving_bpftime) {
@@ -388,12 +388,12 @@ int bpf_event_handler::handle_ioctl(const struct event *e)
 
 int bpf_event_handler::handle_event(const struct event *e)
 {
-	spdlog::debug("handle_event");
+	SPDLOG_DEBUG("handle_event");
 	// ignore events from self
 	if (e->pid == current_pid) {
 		return 0;
 	}
-	spdlog::debug("Received event with type {}", (int)e->type);
+	SPDLOG_DEBUG("Received event with type {}", (int)e->type);
 	switch (e->type) {
 	case SYS_OPEN:
 		return handle_open_events(e);
@@ -427,13 +427,13 @@ bpf_event_handler::bpf_event_handler(struct daemon_config config,
 	current_pid = getpid();
 	uprobe_type = determine_uprobe_perf_type();
 	if (uprobe_type < 0 || uprobe_type >= PERF_TYPE_MAX_ID) {
-		spdlog::error("Failed to determine uprobe perf type");
+		SPDLOG_ERROR("Failed to determine uprobe perf type");
 		exit(1);
 	}
 	perf_type_id_strings[uprobe_type] = "PERF_TYPE_UPROBE";
 	kprobe_type = determine_kprobe_perf_type();
 	if (kprobe_type < 0 || kprobe_type >= PERF_TYPE_MAX_ID) {
-		spdlog::error("Failed to determine kprobe perf type");
+		SPDLOG_ERROR("Failed to determine kprobe perf type");
 		exit(1);
 	}
 

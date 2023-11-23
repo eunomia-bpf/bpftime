@@ -9,7 +9,9 @@
 #include <bpf/bpf.h>
 #include <unistd.h>
 #include <stdlib.h>
-#include "uretprobe.skel.h"
+#include "error_inject_syscall.skel.h"
+#include <inttypes.h>
+
 #define warn(...) fprintf(stderr, __VA_ARGS__)
 
 static int libbpf_print_fn(enum libbpf_print_level level, const char *format,
@@ -27,7 +29,7 @@ static void sig_handler(int sig)
 
 int main(int argc, char **argv)
 {
-	struct uretprobe_bpf *skel;
+	struct error_inject_syscall_bpf *skel;
 	int err;
 
 	/* Set up libbpf errors and debug info callback */
@@ -38,31 +40,28 @@ int main(int argc, char **argv)
 	signal(SIGTERM, sig_handler);
 
 	/* Load and verify BPF application */
-	skel = uretprobe_bpf__open();
+	skel = error_inject_syscall_bpf__open();
 	if (!skel) {
 		fprintf(stderr, "Failed to open and load BPF skeleton\n");
 		return 1;
 	}
 
 	/* Load & verify BPF programs */
-	err = uretprobe_bpf__load(skel);
+	err = error_inject_syscall_bpf__load(skel);
 	if (err) {
 		fprintf(stderr, "Failed to load and verify BPF skeleton\n");
 		goto cleanup;
 	}
-	err = uretprobe_bpf__attach(skel);
+		err = error_inject_syscall_bpf__attach(skel);
 	if (err) {
 		fprintf(stderr, "Failed to attach BPF skeleton\n");
 		goto cleanup;
 	}
-
 	while (!exiting) {
 		sleep(1);
-		printf("loaded ebpf program...\n");
 	}
 cleanup:
 	/* Clean up */
-	uretprobe_bpf__destroy(skel);
-
+	error_inject_syscall_bpf__destroy(skel);
 	return err < 0 ? -err : 0;
 }

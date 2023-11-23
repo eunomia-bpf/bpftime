@@ -227,7 +227,7 @@ static llvm::Expected<llvm::BasicBlock *>
 loadJmpDstBlock(uint16_t pc, const ebpf_inst &inst,
 		const std::map<uint16_t, llvm::BasicBlock *> &instBlocks)
 {
-	spdlog::trace("pc {} request jump to {}", pc, pc + 1 + inst.off);
+	SPDLOG_TRACE("pc {} request jump to {}", pc, pc + 1 + inst.off);
 	uint16_t dstBlkId = pc + 1 + inst.off;
 	if (auto itr = instBlocks.find(dstBlkId); itr != instBlocks.end()) {
 		return itr->second;
@@ -341,7 +341,7 @@ emitExtFuncCall(llvm::IRBuilder<> &builder, const ebpf_inst &inst,
 {
 	auto funcNameToCall = ext_func_sym(inst.imm);
 	if (auto itr = extFunc.find(funcNameToCall); itr != extFunc.end()) {
-		spdlog::debug("Emitting ext func call to {} name {} at pc {}",
+		SPDLOG_DEBUG("Emitting ext func call to {} name {} at pc {}",
 			      inst.imm, funcNameToCall, pc);
 		auto callInst = builder.CreateCall(
 			helperFuncTy, itr->second,

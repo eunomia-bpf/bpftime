@@ -61,6 +61,13 @@ int tracepoint__syscalls__sys_enter_statfs(struct trace_event_raw_sys_enter *ctx
 	return 0;
 }
 
+SEC("tracepoint/syscalls/sys_enter_close")
+int tracepoint__syscalls__sys_enter_statfs(struct trace_event_raw_sys_enter *ctx)
+{
+	bpf_printk("trace_enter sys_enter_close\n");
+	return 0;
+}
+
 SEC("tracepoint/syscalls/sys_enter_getdents64")
 int tracepoint__syscalls__sys_enter_getdents64(struct trace_event_raw_sys_enter *ctx)
 {

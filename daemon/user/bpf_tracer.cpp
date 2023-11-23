@@ -191,16 +191,16 @@ int bpftime::start_daemon(struct daemon_config env)
 		goto cleanup;
 	}
 	if (env.whitelist_enabled()) {
-		spdlog::info("userspace uprobe whitelist enabled");
+		SPDLOG_INFO("userspace uprobe whitelist enabled");
 		int whitelist_map_fd =
 			bpf_map__fd(obj->maps.whitelist_hook_addr);
 		for (uint64_t addr : env.whitelist_uprobes) {
-			spdlog::info("Whitelist: {:x}", addr);
+			SPDLOG_INFO("Whitelist: {:x}", addr);
 			uint32_t dummy = 0;
 			int err = bpf_map_update_elem(whitelist_map_fd, &addr,
 						      &dummy, 0);
 			if (err < 0) {
-				spdlog::error(
+				SPDLOG_ERROR(
 					"Unable to update whitelist map, err={}",
 					err);
 			}
@@ -225,7 +225,7 @@ int bpftime::start_daemon(struct daemon_config env)
 	while (!exiting) {
 		err = ring_buffer__poll(rb, 300 /* timeout, ms */);
 		if (err < 0 && err != -EINTR) {
-			spdlog::error("error polling perf buffer: {}",
+			SPDLOG_ERROR("error polling perf buffer: {}",
 				      strerror(-err));
 			// goto cleanup;
 		}

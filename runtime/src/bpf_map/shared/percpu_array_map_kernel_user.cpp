@@ -13,7 +13,7 @@ void percpu_array_map_kernel_user_impl::init_map_fd()
 {
 	kernel_map_fd = bpf_map_get_fd_by_id(kernel_map_id);
 	if (kernel_map_fd < 0) {
-		spdlog::error(
+		SPDLOG_ERROR(
 			"Failed to retrive kernel map fd by kernel map id: {}",
 			kernel_map_fd);
 		return;
@@ -22,7 +22,7 @@ void percpu_array_map_kernel_user_impl::init_map_fd()
 	uint32_t sz = sizeof(map_info);
 	if (int err = bpf_obj_get_info_by_fd(kernel_map_fd, &map_info, &sz);
 	    err < 0) {
-		spdlog::error(
+		SPDLOG_ERROR(
 			"Failed to get map detail of kernel map fd {}, err={}",
 			kernel_map_fd, err);
 		return;
@@ -36,7 +36,7 @@ void *percpu_array_map_kernel_user_impl::elem_lookup(const void *key)
 	int err = bpf_map_lookup_elem(kernel_map_fd, key,
 				      (void *)value_data.data());
 	if (err < 0) {
-		spdlog::error(
+		SPDLOG_ERROR(
 			"Failed to perform elem lookup of percpu array {}",
 			kernel_map_fd);
 		return nullptr;

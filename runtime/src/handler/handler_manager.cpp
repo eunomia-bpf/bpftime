@@ -43,7 +43,7 @@ int handler_manager::set_handler(int fd, handler_variant &&handler,
 				 managed_shared_memory &memory)
 {
 	if (is_allocated(fd)) {
-		spdlog::error("set_handler failed for fd {} aleady exists", fd);
+		SPDLOG_ERROR("set_handler failed for fd {} aleady exists", fd);
 		return -ENOENT;
 	}
 	handlers[fd] = std::move(handler);
@@ -71,7 +71,7 @@ void handler_manager::clear_fd_at(int fd, managed_shared_memory &memory)
 	} else if (std::holds_alternative<bpf_perf_event_handler>(
 			   handlers[fd])) {
 		// Clean attached programs..
-		spdlog::debug("Destroying perf event handler {}", fd);
+		SPDLOG_DEBUG("Destroying perf event handler {}", fd);
 		for (size_t i = 0; i < handlers.size(); i++) {
 			auto &handler = handlers[i];
 			if (std::holds_alternative<bpf_prog_handler>(handler)) {
@@ -82,7 +82,7 @@ void handler_manager::clear_fd_at(int fd, managed_shared_memory &memory)
 					std::remove(attach_fds.begin(),
 						    attach_fds.end(), fd);
 				if (new_tail != attach_fds.end()) {
-					spdlog::debug(
+					SPDLOG_DEBUG(
 						"Destroy attach of perf event {} to prog {}",
 						fd, i);
 					attach_fds.resize(new_tail -

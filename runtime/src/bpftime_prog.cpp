@@ -21,7 +21,7 @@ bpftime_prog::bpftime_prog(const struct ebpf_inst *insn, size_t insn_cnt,
 			   const char *name)
 	: name(name)
 {
-	spdlog::debug("Creating bpftime_prog with name {}", name);
+	SPDLOG_DEBUG("Creating bpftime_prog with name {}", name);
 	insns.assign(insn, insn + insn_cnt);
 	vm = ebpf_create();
 	ebpf_toggle_bounds_check(vm, false);
@@ -39,11 +39,11 @@ int bpftime_prog::bpftime_prog_load(bool jit)
 {
 	int res = -1;
 
-	spdlog::debug("Load insn cnt {}", insns.size());
+	SPDLOG_DEBUG("Load insn cnt {}", insns.size());
 	res = ebpf_load(vm, insns.data(),
 			insns.size() * sizeof(struct ebpf_inst), &errmsg);
 	if (res < 0) {
-		spdlog::error("Failed to load insn: {}", errmsg);
+		SPDLOG_ERROR("Failed to load insn: {}", errmsg);
 		return res;
 	}
 	if (jit) {
@@ -51,7 +51,7 @@ int bpftime_prog::bpftime_prog_load(bool jit)
 		jitted = true;
 		ebpf_jit_fn jit_fn = ebpf_compile(vm, &errmsg);
 		if (jit_fn == NULL) {
-			spdlog::error("Failed to compile: {}", errmsg);
+			SPDLOG_ERROR("Failed to compile: {}", errmsg);
 			return -1;
 		}
 		fn = jit_fn;
@@ -79,19 +79,19 @@ int bpftime_prog::bpftime_prog_exec(void *memory, size_t memory_size,
 	int res = 0;
 	// set share memory read and write able
 	bpftime_protect_disable();
-	spdlog::debug(
+	SPDLOG_DEBUG(
 		"Calling bpftime_prog::bpftime_prog_exec, memory={:x}, memory_size={}, return_val={:x}, prog_name={}",
 		(uintptr_t)memory, memory_size, (uintptr_t)return_val,
 		this->name);
 	if (jitted) {
-		spdlog::debug("Directly call jitted function at {:x}",
+		SPDLOG_DEBUG("Directly call jitted function at {:x}",
 			      (uintptr_t)fn);
 		val = fn(memory, memory_size);
 	} else {
-		spdlog::debug("Running using ebpf_exec");
+		SPDLOG_DEBUG("Running using ebpf_exec");
 		res = ebpf_exec(vm, memory, memory_size, &val);
 		if (res < 0) {
-			spdlog::error("ebpf_exec returned error: {}", res);
+			SPDLOG_ERROR("ebpf_exec returned error: {}", res);
 		}
 	}
 	*return_val = val;

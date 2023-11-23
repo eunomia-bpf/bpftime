@@ -30,7 +30,7 @@ extern "C" int __libc_start_main(int (*main)(int, char **, char **), int argc,
 				 void (*fini)(void), void (*rtld_fini)(void),
 				 void *stack_end)
 {
-	spdlog::info("Entering bpftime syscal transformer agent");
+	SPDLOG_INFO("Entering bpftime syscal transformer agent");
 	orig_main_func = main;
 	using this_func_t = decltype(&__libc_start_main);
 	this_func_t orig = (this_func_t)dlsym(RTLD_NEXT, "__libc_start_main");
@@ -48,24 +48,24 @@ extern "C" void bpftime_agent_main(const gchar *data, gboolean *stay_resident)
 	const char *agent_so = getenv("AGENT_SO");
 	if (agent_so == nullptr) {
 		if (std::string(data) != "") {
-			spdlog::info("Using agent path from frida data..");
+			SPDLOG_INFO("Using agent path from frida data..");
 			agent_so = data;
 		} else {
-			spdlog::error(
+			SPDLOG_ERROR(
 				"Please set AGENT_SO to the bpftime-agent when use this tranformer");
 			return;
 		}
 	}
 	assert(agent_so &&
 	       "Please set AGENT_SO to the bpftime-agent when use this tranformer");
-	spdlog::info("Using agent {}", agent_so);
+	SPDLOG_INFO("Using agent {}", agent_so);
 	cs_arch_register_x86();
 	bpftime::setup_syscall_tracer();
-	spdlog::debug("Loading dynamic library..");
+	SPDLOG_DEBUG("Loading dynamic library..");
 	auto next_handle =
 		dlmopen(LM_ID_NEWLM, agent_so, RTLD_NOW | RTLD_LOCAL);
 	if (next_handle == nullptr) {
-		spdlog::error("Failed to open agent: {}", dlerror());
+		SPDLOG_ERROR("Failed to open agent: {}", dlerror());
 		exit(1);
 	}
 	shm_destroy_func = (shm_destroy_func_t)dlsym(
@@ -79,5 +79,5 @@ extern "C" void bpftime_agent_main(const gchar *data, gboolean *stay_resident)
 		bpftime::get_call_hook();
 	entry_func(&orig_syscall_hooker_func);
 	bpftime::set_call_hook(orig_syscall_hooker_func);
-	spdlog::info("Transformer exiting, trace will be usable now");
+	SPDLOG_INFO("Transformer exiting, trace will be usable now");
 }

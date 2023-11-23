@@ -119,7 +119,7 @@ int ebpf_register(struct ebpf_vm *vm, unsigned int idx, const char *name,
 
 	vm->ext_funcs[idx] = (ext_func)fn;
 	vm->ext_func_names[idx] = strdup(name);
-	spdlog::debug("ebpf_register: {} idx: {} func: {}", name, idx,
+	SPDLOG_DEBUG("ebpf_register: {} idx: {} func: {}", name, idx,
 		      (uintptr_t)fn);
 	return 0;
 }
@@ -207,14 +207,14 @@ void ebpf_set_registers(struct ebpf_vm *vm, uint64_t *regs)
 {
 	(void)vm;
 	(void)regs;
-	spdlog::error(
+	SPDLOG_ERROR(
 		"ebpf warning: registers are not exposed in release mode. Please recompile in debug mode");
 }
 
 uint64_t *ebpf_get_registers(const struct ebpf_vm *vm)
 {
 	(void)vm;
-	spdlog::error(
+	SPDLOG_ERROR(
 		"ebpf warning: registers are not exposed in release mode. Please recompile in debug mode");
 	return NULL;
 }
@@ -272,7 +272,7 @@ int ebpf_exec(const struct ebpf_vm *vm, void *mem, size_t mem_len,
 {
 	bpf_jit_context *jit_context;
 	if (vm->jitted_function) {
-		spdlog::debug("LLJIT: called jitted function {:x}",
+		SPDLOG_DEBUG("LLJIT: called jitted function {:x}",
 			      (uintptr_t)vm->jitted_function);
 		// has jit yet
 		auto ret = vm->jitted_function(mem,
@@ -286,7 +286,7 @@ int ebpf_exec(const struct ebpf_vm *vm, void *mem, size_t mem_len,
 	if (!func) {
 		return -1;
 	}
-	spdlog::debug("LLJIT: compiled function: {:x}", (uintptr_t)func);
+	SPDLOG_DEBUG("LLJIT: compiled function: {:x}", (uintptr_t)func);
 	// after compile, run
 	return ebpf_exec(vm, mem, mem_len, bpf_return_value);
 }
@@ -303,7 +303,7 @@ void ebpf_set_lddw_helpers(struct ebpf_vm *vm, uint64_t (*map_by_fd)(uint32_t),
 			   uint64_t (*var_addr)(uint32_t),
 			   uint64_t (*code_addr)(uint32_t))
 {
-	spdlog::debug(
+	SPDLOG_DEBUG(
 		"Setting lddw helpers for LLVM: map_by_fd {:x} map_by_idx {:x} map_val {:x} var_addr {:x} code_addr {:x}",
 		(uintptr_t)map_by_fd, (uintptr_t)map_by_idx, (uintptr_t)map_val,
 		(uintptr_t)var_addr, (uintptr_t)code_addr);

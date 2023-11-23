@@ -110,7 +110,7 @@ static inline void rewrite_segment(uint8_t *code, size_t len, int perm)
 	// Set the pages to be writable
 	if (int err = mprotect(code, len, PROT_READ | PROT_WRITE | PROT_EXEC);
 	    err < 0) {
-		spdlog::error(
+		SPDLOG_ERROR(
 			"Failed to change the protect status of the rewriting page {:x}",
 			(uintptr_t)code);
 		exit(1);
@@ -119,7 +119,7 @@ static inline void rewrite_segment(uint8_t *code, size_t len, int perm)
 	cs_err ret;
 	ret = cs_open(CS_ARCH_X86, CS_MODE_64, &cs_handle);
 	if (ret != CS_ERR_OK) {
-		spdlog::error("Failed to open capstone instance: {}, {}",
+		SPDLOG_ERROR("Failed to open capstone instance: {}, {}",
 			      (int)ret, cs_strerror(ret));
 		exit(1);
 	}
@@ -140,7 +140,7 @@ static inline void rewrite_segment(uint8_t *code, size_t len, int perm)
 			if (curr_insn.address != (uintptr_t)&syscall_addr) {
 				uint8_t *curr_pos =
 					(uint8_t *)(uintptr_t)curr_insn.address;
-				spdlog::trace("Rewrite syscall insn at {}",
+				SPDLOG_TRACE("Rewrite syscall insn at {}",
 					      (void *)curr_pos);
 				curr_pos[0] = 0xff;
 				curr_pos[1] = 0xd0;
@@ -149,7 +149,7 @@ static inline void rewrite_segment(uint8_t *code, size_t len, int perm)
 	}
 	cs_close(&cs_handle);
 	if (int err = mprotect(code, len, perm); err < 0) {
-		spdlog::error(
+		SPDLOG_ERROR(
 			"Failed to change the protect status of the rewriting page {:x}",
 			(uintptr_t)code);
 		exit(1);
@@ -191,7 +191,7 @@ void setup_syscall_tracer()
 		    mmap(0x0, 0x1000, PROT_EXEC | PROT_READ | PROT_WRITE,
 			 MAP_PRIVATE | MAP_FIXED | MAP_ANONYMOUS, -1, 0);
 	    mmap_addr == MAP_FAILED) {
-		spdlog::error("Failed to perform mmap: errno={}, message={}",
+		SPDLOG_ERROR("Failed to perform mmap: errno={}, message={}",
 			      errno, strerror(errno));
 		exit(1);
 	}
@@ -230,13 +230,13 @@ void setup_syscall_tracer()
 	// Set the page to execute-only. Keep normal behavior of
 	// dereferencing null-pointers
 	if (int err = mprotect(0, 0x1000, PROT_EXEC); err < 0) {
-		spdlog::error(
+		SPDLOG_ERROR(
 			"Failed to set execute only of 0-started page: {}",
 			errno);
 		exit(1);
 	}
 
-	spdlog::info("Page zero setted up..");
+	SPDLOG_INFO("Page zero setted up..");
 	// Scan for /proc/self/maps
 
 	std::vector<MapEntry> entries;
@@ -264,7 +264,7 @@ void setup_syscall_tracer()
 
 		entries.push_back(curr);
 	}
-	spdlog::info("Rewriting executable segments..");
+	SPDLOG_INFO("Rewriting executable segments..");
 	// Hack the executable mappings
 	for (const auto &map : entries) {
 		if (map.x == 'x') {
@@ -272,7 +272,7 @@ void setup_syscall_tracer()
 				// Skip pages that we mapped
 				continue;
 			}
-			spdlog::debug("Rewriting segment from {:x} to {:x}",
+			SPDLOG_DEBUG("Rewriting segment from {:x} to {:x}",
 				      map.begin, map.end);
 			rewrite_segment((uint8_t *)(uintptr_t)(map.begin),
 					map.end - map.begin, map.get_perm());

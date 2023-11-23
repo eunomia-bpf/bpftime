@@ -29,7 +29,7 @@ per_cpu_hash_map_impl::per_cpu_hash_map_impl(
 	  value_template(value_size * ncpu, memory.get_segment_manager()),
 	  single_value_template(value_size, memory.get_segment_manager())
 {
-	spdlog::debug(
+	SPDLOG_DEBUG(
 		"Initializing per cpu hash, key size {}, value size {}, ncpu {}",
 		key_size, value_size, ncpu);
 }
@@ -37,7 +37,7 @@ per_cpu_hash_map_impl::per_cpu_hash_map_impl(
 void *per_cpu_hash_map_impl::elem_lookup(const void *key)
 {
 	return ensure_on_current_cpu<void *>([&](int cpu) -> void * {
-		spdlog::debug("Run per cpu hash lookup at cpu {}", cpu);
+		SPDLOG_DEBUG("Run per cpu hash lookup at cpu {}", cpu);
 		if (key == nullptr) {
 			errno = ENOENT;
 			return nullptr;
@@ -45,10 +45,10 @@ void *per_cpu_hash_map_impl::elem_lookup(const void *key)
 		bytes_vec key_vec = this->key_template;
 		key_vec.assign((uint8_t *)key, (uint8_t *)key + key_size);
 		if (auto itr = impl.find(key_vec); itr != impl.end()) {
-			spdlog::trace("Exit elem lookup of hash map");
+			SPDLOG_TRACE("Exit elem lookup of hash map");
 			return &itr->second[value_size * cpu];
 		} else {
-			spdlog::trace("Exit elem lookup of hash map");
+			SPDLOG_TRACE("Exit elem lookup of hash map");
 			errno = ENOENT;
 			return nullptr;
 		}
@@ -58,9 +58,9 @@ void *per_cpu_hash_map_impl::elem_lookup(const void *key)
 long per_cpu_hash_map_impl::elem_update(const void *key, const void *value,
 					uint64_t flags)
 {
-	spdlog::debug("Per cpu update, key {}, value {}",(const char*)key,*(long*)value);
+	SPDLOG_DEBUG("Per cpu update, key {}, value {}",(const char*)key,*(long*)value);
 	return ensure_on_current_cpu<long>([&](int cpu) -> long {
-		spdlog::debug("Run per cpu hash update at cpu {}", cpu);
+		SPDLOG_DEBUG("Run per cpu hash update at cpu {}", cpu);
 		bytes_vec key_vec = this->key_template;
 		bytes_vec value_vec = this->single_value_template;
 		key_vec.assign((uint8_t *)key, (uint8_t *)key + key_size);
@@ -84,7 +84,7 @@ long per_cpu_hash_map_impl::elem_update(const void *key, const void *value,
 long per_cpu_hash_map_impl::elem_delete(const void *key)
 {
 	return ensure_on_current_cpu<long>([&](int cpu) -> long {
-		spdlog::debug("Run per cpu hash delete at cpu {}", cpu);
+		SPDLOG_DEBUG("Run per cpu hash delete at cpu {}", cpu);
 		bytes_vec key_vec = this->key_template;
 		key_vec.assign((uint8_t *)key, (uint8_t *)key + key_size);
 		if (auto itr = impl.find(key_vec); itr != impl.end()) {
@@ -137,10 +137,10 @@ void *per_cpu_hash_map_impl::elem_lookup_userspace(const void *key)
 	bytes_vec key_vec = this->key_template;
 	key_vec.assign((uint8_t *)key, (uint8_t *)key + key_size);
 	if (auto itr = impl.find(key_vec); itr != impl.end()) {
-		spdlog::trace("Exit elem lookup of hash map: {}",spdlog::to_hex(itr->second.begin(),itr->second.end()));
+		SPDLOG_TRACE("Exit elem lookup of hash map: {}",spdlog::to_hex(itr->second.begin(),itr->second.end()));
 		return &itr->second[0];
 	} else {
-		spdlog::trace("Exit elem lookup of hash map");
+		SPDLOG_TRACE("Exit elem lookup of hash map");
 		errno = ENOENT;
 		return nullptr;
 	}

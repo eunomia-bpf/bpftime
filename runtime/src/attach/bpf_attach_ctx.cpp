@@ -92,11 +92,11 @@ int bpf_attach_ctx::init_attach_ctx_from_handlers(
 					if (perf_handler.enabled) {
 						handler_prog_fds[v].emplace_back(
 							i, prog);
-						spdlog::debug(
+						SPDLOG_DEBUG(
 							"Program fd {} attached to perf event handler {}",
 							i, v);
 					} else {
-						spdlog::info(
+						SPDLOG_INFO(
 							"Ignore perf {} attached by prog fd {}. It's not enabled",
 							v, i);
 					}
@@ -107,20 +107,20 @@ int bpf_attach_ctx::init_attach_ctx_from_handlers(
 						i, v);
 				}
 			}
-			spdlog::debug("Load prog fd={} name={}", i,
+			SPDLOG_DEBUG("Load prog fd={} name={}", i,
 				      prog_handler.name);
 		} else if (std::holds_alternative<bpf_map_handler>(handler)) {
-			spdlog::debug("bpf_map_handler found at {}", i);
+			SPDLOG_DEBUG("bpf_map_handler found at {}", i);
 		} else if (std::holds_alternative<bpf_perf_event_handler>(
 				   handler)) {
-			spdlog::debug("Will handle bpf_perf_events later...");
+			SPDLOG_DEBUG("Will handle bpf_perf_events later...");
 
 		} else if (std::holds_alternative<epoll_handler>(handler) ||
 			   std::holds_alternative<bpf_link_handler>(handler)) {
-			spdlog::debug(
+			SPDLOG_DEBUG(
 				"No extra operations needed for epoll_handler/bpf link/btf..");
 		} else {
-			spdlog::error("Unsupported handler type for handler {}",
+			SPDLOG_ERROR("Unsupported handler type for handler {}",
 				      handler.index());
 			return -1;
 		}
@@ -158,17 +158,17 @@ int bpf_attach_ctx::init_attach_ctx_from_handlers(
 			// attach base on events
 			switch (event_handler.type) {
 			case bpf_event_type::BPF_TYPE_UPROBE_OVERRIDE: {
-				spdlog::debug(
+				SPDLOG_DEBUG(
 					"Creating filter for perf event fd {}",
 					i);
 				auto progs = handler_prog_fds[i];
 				if (progs.size() > 1) {
-					spdlog::error(
+					SPDLOG_ERROR(
 						"Expected that a certain function could only be attached one filter, at perf event {}",
 						i);
 					return -E2BIG;
 				} else if (progs.empty()) {
-					spdlog::error(
+					SPDLOG_ERROR(
 						"Perf event {} doesn't have any attached & enabled programs",
 						i);
 					return -ENOENT;
@@ -185,23 +185,23 @@ int bpf_attach_ctx::init_attach_ctx_from_handlers(
 						return !ret;
 					});
 				if (err < 0)
-					spdlog::error(
+					SPDLOG_ERROR(
 						"Failed to create filter for perf fd {}, err={}",
 						i, err);
 				break;
 			}
 			case bpf_event_type::BPF_TYPE_UREPLACE: {
-				spdlog::debug(
+				SPDLOG_DEBUG(
 					"Creating replace for perf event fd {}",
 					i);
 				auto progs = handler_prog_fds[i];
 				if (progs.size() > 1) {
-					spdlog::error(
+					SPDLOG_ERROR(
 						"Expected that a certain function could only be attached one replace, at perf event {}",
 						i);
 					return -E2BIG;
 				} else if (progs.empty()) {
-					spdlog::error(
+					SPDLOG_ERROR(
 						"Perf event {} doesn't have any attached & enabled programs",
 						i);
 					return -ENOENT;
@@ -218,26 +218,26 @@ int bpf_attach_ctx::init_attach_ctx_from_handlers(
 						return ret;
 					});
 				if (err < 0)
-					spdlog::error(
+					SPDLOG_ERROR(
 						"Failed to create replace for perf fd {}, err={}",
 						i, err);
 				break;
 			}
 			case bpf_event_type::BPF_TYPE_UPROBE: {
-				spdlog::debug(
+				SPDLOG_DEBUG(
 					"Creating uprobe for perf event fd {}",
 					i);
 				auto progs = handler_prog_fds[i];
-				spdlog::info(
+				SPDLOG_INFO(
 					"Attached {} uprobe programs to function {:x}",
 					progs.size(), (uintptr_t)func_addr);
 				err = attach_manager->attach_uprobe_at(
 					func_addr, [=](const pt_regs &regs) {
-						spdlog::trace(
+						SPDLOG_TRACE(
 							"Uprobe triggered");
 						uint64_t ret;
 						for (auto &[k, prog] : progs) {
-							spdlog::trace(
+							SPDLOG_TRACE(
 								"Calling ebpf programs in uprobe callback");
 							prog->bpftime_prog_exec(
 								(void *)&regs,
@@ -246,17 +246,17 @@ int bpf_attach_ctx::init_attach_ctx_from_handlers(
 						}
 					});
 				if (err < 0)
-					spdlog::error(
+					SPDLOG_ERROR(
 						"Failed to create uprobe for perf fd {}, err={}",
 						i, err);
 				break;
 			}
 			case bpf_event_type::BPF_TYPE_URETPROBE: {
-				spdlog::debug(
+				SPDLOG_DEBUG(
 					"Creating uretprobe for perf event fd {}",
 					i);
 				auto progs = handler_prog_fds[i];
-				spdlog::info(
+				SPDLOG_INFO(
 					"Attached {} uretprobe programs to function {:x}",
 					progs.size(), (uintptr_t)func_addr);
 				err = attach_manager->attach_uretprobe_at(
@@ -270,13 +270,13 @@ int bpf_attach_ctx::init_attach_ctx_from_handlers(
 						}
 					});
 				if (err < 0)
-					spdlog::error(
+					SPDLOG_ERROR(
 						"Failed to create uretprobe for perf fd {}, err={}",
 						i, err);
 				break;
 			}
 			case bpf_event_type::PERF_TYPE_TRACEPOINT: {
-				spdlog::debug(
+				SPDLOG_DEBUG(
 					"Creating tracepoint for perf event fd {}",
 					i);
 				err = create_tracepoint(
@@ -284,14 +284,14 @@ int bpf_attach_ctx::init_attach_ctx_from_handlers(
 					manager);
 
 				if (err < 0)
-					spdlog::error(
+					SPDLOG_ERROR(
 						"Failed to create tracepoint for perf fd {}, err={}",
 						i, err);
 				assert(err >= 0);
 				break;
 			}
 			case bpf_event_type::PERF_TYPE_SOFTWARE: {
-				spdlog::debug(
+				SPDLOG_DEBUG(
 					"Attaching software perf event, nothing need to do");
 				err = i;
 				break;
@@ -301,7 +301,7 @@ int bpf_attach_ctx::init_attach_ctx_from_handlers(
 					     (int)event_handler.type);
 				break;
 			}
-			spdlog::debug("Create attach event {} {} {} for {}", i,
+			SPDLOG_DEBUG("Create attach event {} {} {} for {}", i,
 				      event_handler._module_name,
 				      event_handler.offset, err);
 			if (err < 0) {
@@ -314,14 +314,14 @@ int bpf_attach_ctx::init_attach_ctx_from_handlers(
 
 bpf_attach_ctx::~bpf_attach_ctx()
 {
-	spdlog::debug("Destructor: bpf_attach_ctx");
+	SPDLOG_DEBUG("Destructor: bpf_attach_ctx");
 }
 
 // create a probe context
 bpf_attach_ctx::bpf_attach_ctx(void)
 	: attach_manager(std::make_unique<frida_attach_manager>())
 {
-	spdlog::debug("Initialzing frida gum");
+	SPDLOG_DEBUG("Initialzing frida gum");
 	current_id = CURRENT_ID_OFFSET;
 }
 

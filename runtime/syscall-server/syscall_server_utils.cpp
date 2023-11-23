@@ -19,13 +19,13 @@ using namespace bpftime;
 static void process_token(const std::string_view &token, agent_config &config)
 {
 	if (token == "ffi") {
-		spdlog::info("Enabling ffi helper group");
+		SPDLOG_INFO("Enabling ffi helper group");
 		config.enable_ffi_helper_group = true;
 	} else if (token == "kernel") {
-		spdlog::info("Enabling kernel helper group");
+		SPDLOG_INFO("Enabling kernel helper group");
 		config.enable_kernel_helper_group = true;
 	} else if (token == "shm_map") {
-		spdlog::info("Enabling shm_map helper group");
+		SPDLOG_INFO("Enabling shm_map helper group");
 		config.enable_shm_maps_helper_group = true;
 	} else {
 		spdlog::warn("Unknown helper group: {}", token);
@@ -62,7 +62,7 @@ const bpftime::agent_config& set_agent_config_from_env()
 		auto helpers_sv = std::string_view(custom_helpers);
 		process_helper_sv(helpers_sv, ',', agent_config);
 	} else {
-		spdlog::info(
+		SPDLOG_INFO(
 			"Enabling helper groups ffi, kernel, shm_map by default");
 		agent_config.enable_kernel_helper_group =
 			agent_config.enable_shm_maps_helper_group =
@@ -79,7 +79,7 @@ void start_up()
 	if (already_setup)
 		return;
 	already_setup = true;
-	spdlog::info("Initialize syscall server");
+	SPDLOG_INFO("Initialize syscall server");
 	spdlog::cfg::load_env_levels();
 	spdlog::set_pattern("[%Y-%m-%d %H:%M:%S][%^%l%$][%t] %v");
 	bpftime_initialize_global_shm(shm_open_type::SHM_REMOVE_AND_CREATE);
@@ -112,10 +112,10 @@ void start_up()
 		}
 	}
 	verifier::set_available_helpers(helper_ids);
-	spdlog::info("Enabling {} helpers", helper_ids.size());
+	SPDLOG_INFO("Enabling {} helpers", helper_ids.size());
 	verifier::set_non_kernel_helpers(non_kernel_helpers);
 #endif
-	spdlog::info("bpftime-syscall-server started");
+	SPDLOG_INFO("bpftime-syscall-server started");
 }
 
 /*
@@ -131,7 +131,7 @@ static int parse_uint_from_file(const char *file, const char *fmt)
 	f = fopen(file, "re");
 	if (!f) {
 		err = -errno;
-		spdlog::error("Failed to open {}: {}", file, err);
+		SPDLOG_ERROR("Failed to open {}: {}", file, err);
 		return err;
 	}
 #pragma GCC diagnostic push
@@ -140,7 +140,7 @@ static int parse_uint_from_file(const char *file, const char *fmt)
 #pragma GCC diagnostic pop
 	if (err != 1) {
 		err = err == EOF ? -EIO : -errno;
-		spdlog::error("Failed to parse {}: {}", file, err);
+		SPDLOG_ERROR("Failed to parse {}: {}", file, err);
 		fclose(f);
 		return err;
 	}

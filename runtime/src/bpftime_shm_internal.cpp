@@ -29,7 +29,7 @@ extern "C" void bpftime_destroy_global_shm()
 {
 	using namespace bpftime;
 	if (global_shm_initialized) {
-		// spdlog::info("Global shm destructed");
+		// SPDLOG_INFO("Global shm destructed");
 		shm_holder.global_shared_memory.~bpftime_shm();
 		// Why not spdlog? because global variables that spdlog used
 		// were already destroyed..
@@ -42,7 +42,7 @@ extern "C" void bpftime_remove_global_shm()
 	using namespace bpftime;
 	boost::interprocess::shared_memory_object::remove(
 		get_global_shm_name());
-	spdlog::info("Global shm removed");
+	SPDLOG_INFO("Global shm removed");
 }
 
 static __attribute__((destructor(65535))) void __destruct_shm()
@@ -140,7 +140,7 @@ int bpftime_shm::add_uprobe(int fd, int pid, const char *name, uint64_t offset,
 		// if fd is negative, we need to create a new fd for allocating
 		fd = open_fake_fd();
 	}
-	spdlog::debug("Set fd {} to uprobe, pid={}, name={}, offset={}", fd,
+	SPDLOG_DEBUG("Set fd {} to uprobe, pid={}, name={}, offset={}", fd,
 		      pid, name, offset);
 	return manager->set_handler(
 		fd,
@@ -156,7 +156,7 @@ int bpftime_shm::add_ureplace_filter(int fd, int pid, const char *name,
 		// if fd is negative, we need to create a new fd for allocating
 		fd = open_fake_fd();
 	}
-	spdlog::debug("Set fd {} to ureplace, pid={}, name={}, offset={}", fd,
+	SPDLOG_DEBUG("Set fd {} to ureplace, pid={}, name={}, offset={}", fd,
 		      pid, name, offset);
 	if (is_replace) {
 		return manager->set_handler(
@@ -201,7 +201,7 @@ int bpftime_shm::add_software_perf_event(int cpu, int32_t sample_type,
 int bpftime_shm::attach_perf_to_bpf(int perf_fd, int bpf_fd)
 {
 	if (!is_perf_fd(perf_fd)) {
-		spdlog::error("Fd {} is not a perf fd", perf_fd);
+		SPDLOG_ERROR("Fd {} is not a perf fd", perf_fd);
 		errno = ENOENT;
 		return -1;
 	}
@@ -210,10 +210,10 @@ int bpftime_shm::attach_perf_to_bpf(int perf_fd, int bpf_fd)
 
 int bpftime_shm::add_bpf_prog_attach_target(int perf_fd, int bpf_fd)
 {
-	spdlog::debug("Try attaching prog fd {} to perf fd {}", bpf_fd,
+	SPDLOG_DEBUG("Try attaching prog fd {} to perf fd {}", bpf_fd,
 		      perf_fd);
 	if (!is_prog_fd(bpf_fd)) {
-		spdlog::error("Fd {} is not a prog fd", bpf_fd);
+		SPDLOG_ERROR("Fd {} is not a prog fd", bpf_fd);
 		errno = ENOENT;
 		return -1;
 	}
@@ -249,14 +249,14 @@ int bpftime_shm::add_software_perf_event_to_epoll(int swpe_fd, int epoll_fd,
 						  epoll_data_t extra_data)
 {
 	if (!is_epoll_fd(epoll_fd)) {
-		spdlog::error("Fd {} is expected to be an epoll fd", epoll_fd);
+		SPDLOG_ERROR("Fd {} is expected to be an epoll fd", epoll_fd);
 		errno = EINVAL;
 		return -1;
 	}
 	auto &epoll_inst =
 		std::get<epoll_handler>(manager->get_handler(epoll_fd));
 	if (!is_software_perf_event_handler_fd(swpe_fd)) {
-		spdlog::error(
+		SPDLOG_ERROR(
 			"Fd {} is expected to be an software perf event handler",
 			swpe_fd);
 		errno = EINVAL;
@@ -265,7 +265,7 @@ int bpftime_shm::add_software_perf_event_to_epoll(int swpe_fd, int epoll_fd,
 	auto &perf_handler =
 		std::get<bpf_perf_event_handler>(manager->get_handler(swpe_fd));
 	if (perf_handler.type != bpf_event_type::PERF_TYPE_SOFTWARE) {
-		spdlog::error(
+		SPDLOG_ERROR(
 			"Expected perf fd {} to be a software perf event instance",
 			swpe_fd);
 		errno = EINVAL;
@@ -276,7 +276,7 @@ int bpftime_shm::add_software_perf_event_to_epoll(int swpe_fd, int epoll_fd,
 		epoll_inst.files.emplace_back(ptr.value(), extra_data);
 		return 0;
 	} else {
-		spdlog::error(
+		SPDLOG_ERROR(
 			"Expected perf handler {} to have software perf event data",
 			swpe_fd);
 		errno = EINVAL;
@@ -287,7 +287,7 @@ int bpftime_shm::add_ringbuf_to_epoll(int ringbuf_fd, int epoll_fd,
 				      epoll_data_t extra_data)
 {
 	if (!is_epoll_fd(epoll_fd)) {
-		spdlog::error("Fd {} is expected to be an epoll fd", epoll_fd);
+		SPDLOG_ERROR("Fd {} is expected to be an epoll fd", epoll_fd);
 		errno = EINVAL;
 		return -1;
 	}
@@ -295,7 +295,7 @@ int bpftime_shm::add_ringbuf_to_epoll(int ringbuf_fd, int epoll_fd,
 		std::get<epoll_handler>(manager->get_handler(epoll_fd));
 
 	if (!is_map_fd(ringbuf_fd)) {
-		spdlog::error("Fd {} is expected to be an map fd", ringbuf_fd);
+		SPDLOG_ERROR("Fd {} is expected to be an map fd", ringbuf_fd);
 		errno = EINVAL;
 		return -1;
 	}
@@ -306,12 +306,12 @@ int bpftime_shm::add_ringbuf_to_epoll(int ringbuf_fd, int epoll_fd,
 	if (ringbuf_map_impl.has_value(); auto val = ringbuf_map_impl.value()) {
 		epoll_inst.files.emplace_back(val->create_impl_weak_ptr(),
 					      extra_data);
-		spdlog::debug("Ringbuf {} added to epoll {}", ringbuf_fd,
+		SPDLOG_DEBUG("Ringbuf {} added to epoll {}", ringbuf_fd,
 			      epoll_fd);
 		return 0;
 	} else {
 		errno = EINVAL;
-		spdlog::error("Map fd {} is expected to be an ringbuf map",
+		SPDLOG_ERROR("Map fd {} is expected to be an ringbuf map",
 			      ringbuf_fd);
 		return -1;
 	}
@@ -320,13 +320,13 @@ int bpftime_shm::epoll_create()
 {
 	int fd = open_fake_fd();
 	if (manager->is_allocated(fd)) {
-		spdlog::error(
+		SPDLOG_ERROR(
 			"Creating epoll instance, but fd {} is already occupied",
 			fd);
 		return -1;
 	}
 	fd = manager->set_handler(fd, bpftime::epoll_handler(segment), segment);
-	spdlog::debug("Epoll instance created: fd={}", fd);
+	SPDLOG_DEBUG("Epoll instance created: fd={}", fd);
 	return fd;
 }
 
@@ -338,7 +338,7 @@ bool bpftime_shm::is_epoll_fd(int fd) const
 {
 	if (manager == nullptr || fd < 0 ||
 	    (std::size_t)fd >= manager->size()) {
-		spdlog::error("Invalid fd: {}", fd);
+		SPDLOG_ERROR("Invalid fd: {}", fd);
 		return false;
 	}
 	const auto &handler = manager->get_handler(fd);
@@ -380,7 +380,7 @@ std::optional<ringbuf_map_impl *>
 bpftime_shm::try_get_ringbuf_map_impl(int fd) const
 {
 	if (!is_ringbuf_map_fd(fd)) {
-		spdlog::error("Expected fd {} to be an ringbuf map fd", fd);
+		SPDLOG_ERROR("Expected fd {} to be an ringbuf map fd", fd);
 		return {};
 	}
 	auto &map_handler = std::get<bpf_map_handler>(manager->get_handler(fd));
@@ -391,7 +391,7 @@ std::optional<array_map_impl *>
 bpftime_shm::try_get_array_map_impl(int fd) const
 {
 	if (!is_array_map_fd(fd)) {
-		spdlog::error("Expected fd {} to be an array map fd", fd);
+		SPDLOG_ERROR("Expected fd {} to be an array map fd", fd);
 		return {};
 	}
 	auto &map_handler = std::get<bpf_map_handler>(manager->get_handler(fd));
@@ -430,7 +430,7 @@ int bpftime_shm::add_bpf_prog(int fd, const ebpf_inst *insn, size_t insn_cnt,
 		// if fd is negative, we need to create a new fd for allocating
 		fd = open_fake_fd();
 	}
-	spdlog::debug(
+	SPDLOG_DEBUG(
 		"Set handler fd {} to bpf_prog_handler, name {}, prog_type {}, insn_cnt {}",
 		fd, prog_name, prog_type, insn_cnt);
 	return manager->set_handler(
@@ -471,7 +471,7 @@ void bpftime_shm::enable_mpk()
 		return;
 	}
 	if (pkey_set(pkey, PKEY_DISABLE_WRITE) == -1) {
-		spdlog::error("pkey_set read only failed");
+		SPDLOG_ERROR("pkey_set read only failed");
 	}
 }
 
@@ -481,7 +481,7 @@ void bpftime_shm::disable_mpk()
 		return;
 	}
 	if (pkey_set(pkey, 0) == -1) {
-		spdlog::error("pkey_set disable failed");
+		SPDLOG_ERROR("pkey_set disable failed");
 	}
 }
 #endif
@@ -498,7 +498,7 @@ bool bpftime_shm::is_exist_fake_fd(int fd) const
 bpftime_shm::bpftime_shm(const char *shm_name, shm_open_type type)
 {
 	if (type == shm_open_type::SHM_OPEN_ONLY) {
-		spdlog::debug("start: bpftime_shm for client setup");
+		SPDLOG_DEBUG("start: bpftime_shm for client setup");
 		// open the shm
 		segment = boost::interprocess::managed_shared_memory(
 			boost::interprocess::open_only, shm_name);
@@ -513,9 +513,9 @@ bpftime_shm::bpftime_shm(const char *shm_name, shm_open_type type)
 			segment.find<struct agent_config>(
 				       bpftime::DEFAULT_AGENT_CONFIG_NAME)
 				.first;
-		spdlog::debug("done: bpftime_shm for client setup");
+		SPDLOG_DEBUG("done: bpftime_shm for client setup");
 	} else if (type == shm_open_type::SHM_CREATE_OR_OPEN) {
-		spdlog::debug("start: bpftime_shm for create or open setup");
+		SPDLOG_DEBUG("start: bpftime_shm for create or open setup");
 		segment = boost::interprocess::managed_shared_memory(
 			boost::interprocess::open_or_create,
 			// Allocate 20M bytes of memory by default
@@ -523,7 +523,7 @@ bpftime_shm::bpftime_shm(const char *shm_name, shm_open_type type)
 
 		manager = segment.find_or_construct<bpftime::handler_manager>(
 			bpftime::DEFAULT_GLOBAL_HANDLER_NAME)(segment);
-		spdlog::debug("done: bpftime_shm for server setup: manager");
+		SPDLOG_DEBUG("done: bpftime_shm for server setup: manager");
 
 		syscall_installed_pids =
 			segment.find_or_construct<syscall_pid_set>(
@@ -531,41 +531,41 @@ bpftime_shm::bpftime_shm(const char *shm_name, shm_open_type type)
 				std::less<int>(),
 				syscall_pid_set_allocator(
 					segment.get_segment_manager()));
-		spdlog::debug(
+		SPDLOG_DEBUG(
 			"done: bpftime_shm for server setup: syscall_pid_set");
 
 		agent_config = segment.find_or_construct<struct agent_config>(
 			bpftime::DEFAULT_AGENT_CONFIG_NAME)();
-		spdlog::debug("done: bpftime_shm for open_or_create setup");
+		SPDLOG_DEBUG("done: bpftime_shm for open_or_create setup");
 	} else if (type == shm_open_type::SHM_REMOVE_AND_CREATE) {
-		spdlog::debug("start: bpftime_shm for server setup");
+		SPDLOG_DEBUG("start: bpftime_shm for server setup");
 		boost::interprocess::shared_memory_object::remove(shm_name);
 		// create the shm
-		spdlog::debug(
+		SPDLOG_DEBUG(
 			"done: bpftime_shm for server setup: remove installed segment");
 		segment = boost::interprocess::managed_shared_memory(
 			boost::interprocess::create_only,
 			// Allocate 20M bytes of memory by default
 			shm_name, 20 << 20);
-		spdlog::debug("done: bpftime_shm for server setup: segment");
+		SPDLOG_DEBUG("done: bpftime_shm for server setup: segment");
 
 		manager = segment.construct<bpftime::handler_manager>(
 			bpftime::DEFAULT_GLOBAL_HANDLER_NAME)(segment);
-		spdlog::debug("done: bpftime_shm for server setup: manager");
+		SPDLOG_DEBUG("done: bpftime_shm for server setup: manager");
 
 		syscall_installed_pids = segment.construct<syscall_pid_set>(
 			bpftime::DEFAULT_SYSCALL_PID_SET_NAME)(
 			std::less<int>(),
 			syscall_pid_set_allocator(
 				segment.get_segment_manager()));
-		spdlog::debug(
+		SPDLOG_DEBUG(
 			"done: bpftime_shm for server setup: syscall_pid_set");
 
 		agent_config = segment.construct<struct agent_config>(
 			bpftime::DEFAULT_AGENT_CONFIG_NAME)();
-		spdlog::debug(
+		SPDLOG_DEBUG(
 			"done: bpftime_shm for server setup: agent_config");
-		spdlog::debug("done: bpftime_shm for server setup.");
+		SPDLOG_DEBUG("done: bpftime_shm for server setup.");
 	} else if (type == shm_open_type::SHM_NO_CREATE) {
 		// not create any shm
 		spdlog::warn(
@@ -577,14 +577,14 @@ bpftime_shm::bpftime_shm(const char *shm_name, shm_open_type type)
 	// init mpk key
 	pkey = pkey_alloc(0, PKEY_DISABLE_WRITE);
 	if (pkey == -1) {
-		spdlog::error("pkey_alloc failed");
+		SPDLOG_ERROR("pkey_alloc failed");
 		return;
 	}
 
 	// protect shm segment
 	if (pkey_mprotect(segment.get_address(), segment.get_size(),
 			  PROT_READ | PROT_WRITE, pkey) == -1) {
-		spdlog::error("pkey_mprotect failed");
+		SPDLOG_ERROR("pkey_mprotect failed");
 		return;
 	}
 	is_mpk_init = true;
@@ -594,7 +594,7 @@ bpftime_shm::bpftime_shm(const char *shm_name, shm_open_type type)
 bpftime_shm::bpftime_shm(bpftime::shm_open_type type)
 	: bpftime_shm(bpftime::get_global_shm_name(), type)
 {
-	spdlog::info("Global shm constructed. shm_open_type {} for {}",
+	SPDLOG_INFO("Global shm constructed. shm_open_type {} for {}",
 		     (int)type, bpftime::get_global_shm_name());
 }
 
@@ -646,7 +646,7 @@ bool bpftime_shm::is_software_perf_event_handler_fd(int fd) const
 void bpftime_shm::set_agent_config(const struct agent_config &config)
 {
 	if (agent_config == nullptr) {
-		spdlog::error("agent_config is nullptr, set error");
+		SPDLOG_ERROR("agent_config is nullptr, set error");
 		return;
 	}
 	*agent_config = config;
@@ -666,7 +666,7 @@ std::optional<void *>
 bpftime_shm::get_software_perf_event_raw_buffer(int fd, size_t buffer_sz) const
 {
 	if (!is_software_perf_event_handler_fd(fd)) {
-		spdlog::error("Expected {} to be an perf event fd", fd);
+		SPDLOG_ERROR("Expected {} to be an perf event fd", fd);
 		errno = EINVAL;
 		return nullptr;
 	}

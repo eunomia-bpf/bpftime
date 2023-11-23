@@ -67,7 +67,7 @@ void bpftime_object::create_programs()
 		size_t cnt = bpf_program__insn_cnt(prog);
 		const char *name = bpf_program__name(prog);
 		if (!insns || !name) {
-			spdlog::error("Failed to get insns or name for prog {}",
+			SPDLOG_ERROR("Failed to get insns or name for prog {}",
 				      name || "<NULL>");
 			continue;
 		}
@@ -117,7 +117,7 @@ bpftime_object::bpftime_object(std::string_view path)
 {
 	bpf_object *obj_ptr = bpf_object__open(obj_path.data());
 	if (!obj_ptr) {
-		spdlog::error("Failed to open object file {}", obj_path);
+		SPDLOG_ERROR("Failed to open object file {}", obj_path);
 		return;
 	}
 	obj.reset(obj_ptr);
