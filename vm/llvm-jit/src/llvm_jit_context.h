@@ -13,8 +13,7 @@
 #include <llvm/ExecutionEngine/Orc/LLJIT.h>
 #include <optional>
 #include <string>
-#include <cstdio>
-
+#include <pthread.h>
 typedef uint8_t u8;
 typedef int8_t s8;
 typedef uint16_t u16;
@@ -35,20 +34,15 @@ const static char *LDDW_HELPER_CODE_ADDR = "__lddw_helper_code_addr";
 struct bpf_jit_context {
 	const ebpf_vm *vm;
 	std::optional<std::unique_ptr<llvm::orc::LLJIT> > jit;
-
+	std::unique_ptr<pthread_spinlock_t> compiling;
 	llvm::Expected<llvm::orc::ThreadSafeModule>
 	generateModule(const llvm::orc::LLJIT &jit,
-		       const std::vector<std::string> &extFuncNames, const std::vector<std::string>& lddwHelpers);
+		       const std::vector<std::string> &extFuncNames,
+		       const std::vector<std::string> &lddwHelpers);
 
     public:
-	bpf_jit_context(const ebpf_vm *m_vm) : vm(m_vm)
-	{
-		using namespace llvm;
-		// It's legal to call them multiple times
-		InitializeNativeTarget();
-		InitializeNativeTargetAsmPrinter();
-	}
-	~bpf_jit_context() = default;
+	bpf_jit_context(const ebpf_vm *m_vm);
+	virtual ~bpf_jit_context();
 	ebpf_jit_fn compile();
 };
 

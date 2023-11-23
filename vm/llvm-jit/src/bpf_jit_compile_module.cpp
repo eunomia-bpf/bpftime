@@ -9,9 +9,9 @@
 #include "spdlog/spdlog.h"
 #include <cassert>
 #include <cstdint>
-#include <llvm-14/llvm/Support/Alignment.h>
-#include <llvm-14/llvm/Support/AtomicOrdering.h>
-#include <llvm-15/llvm/Support/Error.h>
+#include <llvm/Support/Alignment.h>
+#include <llvm/Support/AtomicOrdering.h>
+#include <llvm/Support/Error.h>
 #include <llvm/ExecutionEngine/Orc/ThreadSafeModule.h>
 #include <llvm/IR/BasicBlock.h>
 #include <llvm/IR/Instruction.h>
