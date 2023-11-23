@@ -66,7 +66,7 @@ $(call allow-override,CC,$(CROSS_COMPILE)cc)
 $(call allow-override,LD,$(CROSS_COMPILE)ld)
 
 .PHONY: all
-all: $(APPS) victim
+all: $(APPS) bench
 
 .PHONY: clean
 clean:
@@ -137,5 +137,5 @@ $(APPS): %: $(OUTPUT)/%.o $(LIBBPF_OBJ) | $(OUTPUT)
 # keep intermediate (.skel.h, .bpf.o, etc) targets
 .SECONDARY:
 
-victim: victim.cpp
-	$(CXX) victim.cpp -Wall -g -o victim
+bench: bench.cpp
+	$(CXX) bench.cpp -Wall -g -o bench
