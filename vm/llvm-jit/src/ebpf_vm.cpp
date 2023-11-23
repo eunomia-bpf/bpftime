@@ -120,7 +120,7 @@ int ebpf_register(struct ebpf_vm *vm, unsigned int idx, const char *name,
 	vm->ext_funcs[idx] = (ext_func)fn;
 	vm->ext_func_names[idx] = strdup(name);
 	SPDLOG_DEBUG("ebpf_register: {} idx: {} func: {}", name, idx,
-		      (uintptr_t)fn);
+		     (uintptr_t)fn);
 	return 0;
 }
 
@@ -270,13 +270,15 @@ ebpf_jit_fn ebpf_compile(struct ebpf_vm *vm, char **errmsg)
 int ebpf_exec(const struct ebpf_vm *vm, void *mem, size_t mem_len,
 	      uint64_t *bpf_return_value)
 {
-	bpf_jit_context *jit_context;
 	if (vm->jitted_function) {
 		SPDLOG_DEBUG("LLJIT: called jitted function {:x}",
-			      (uintptr_t)vm->jitted_function);
+			     (uintptr_t)vm->jitted_function);
 		// has jit yet
 		auto ret = vm->jitted_function(mem,
 					       static_cast<uint64_t>(mem_len));
+		SPDLOG_DEBUG(
+			"LLJIT: called from jitted function {:x} returned {}",
+			(uintptr_t)vm->jitted_function, ret);
 		*bpf_return_value = ret;
 		return 0;
 	}

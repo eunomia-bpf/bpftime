@@ -83,7 +83,7 @@ async def main():
             ),
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.STDOUT,
-            env={"SPDLOG_LEVEL": "info"},
+            env={"SPDLOG_LEVEL": "debug"},
         )
         agent_out = asyncio.create_task(
             handle_stdout(agent.stdout, should_exit, "AGENT", [])
