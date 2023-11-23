@@ -5,7 +5,7 @@
  */
 #include <vmlinux.h>
 #include <bpf/bpf_helpers.h>
-#include "fs-filter-cache.h"
+#include "fs-cache.h"
 
 #define PID_MASK_FOR_PFD 0xffffffff00000000
 #define FD_MASK_FOR_PFD 0x00000000ffffffff
@@ -74,9 +74,11 @@ int tracepoint__syscalls__sys_enter_open(struct trace_event_raw_sys_enter *ctx)
 	args.fname = (const char *)ctx->args[0];
 	args.flags = (int)ctx->args[1];
 	bpf_map_update_elem(&open_args_start, &id, &args, 0);
-	// bpf_printk("trace_enter sys_enter_open\n");
+	bpf_printk("sys_enter_open %s\n", args.fname);
 	return 0;
 }
+
+#define AT_FDCWD -100
 
 SEC("tracepoint/syscalls/sys_enter_openat")
 int tracepoint__syscalls__sys_enter_openat(struct trace_event_raw_sys_enter *ctx)
@@ -85,10 +87,18 @@ int tracepoint__syscalls__sys_enter_openat(struct trace_event_raw_sys_enter *ctx
 
 	/* store arg info for later lookup */
 	struct open_args_t args = {};
+	int fd = (int)ctx->args[0];
 	args.fname = (const char *)ctx->args[1];
 	args.flags = (int)ctx->args[2];
+	if (fd != AT_FDCWD) {
+		struct dir_fd_data *dir_data = get_dir_fd_data(fd);
+		if (dir_data == NULL) {
+			return 0;
+		}
+		bpf_printk("sys_enter_openat %d %s\n", fd, dir_data->dir_path);
+	}
 	bpf_map_update_elem(&open_args_start, &id, &args, 0);
-	// bpf_printk("trace_enter sys_enter_openat\n");
+	bpf_printk("sys_enter_openat %d %s\n", fd, args.fname);
 	return 0;
 }
 
@@ -142,17 +152,79 @@ struct {
 	__type(value, struct getdents64_buffer);
 } getdents64_cache_map SEC(".maps");
 
+struct getdents_args_t {
+	int fd;
+	void *dirp;
+	unsigned int count;
+};
+
+struct {
+	__uint(type, BPF_MAP_TYPE_HASH);
+	__uint(max_entries, 10240);
+	__type(key, u64);
+	__type(value, struct getdents_args_t);
+} getdents64_args_start SEC(".maps");
+
 SEC("tracepoint/syscalls/sys_enter_getdents64")
 int tracepoint__syscalls__sys_enter_getdents64(
 	struct trace_event_raw_sys_enter *ctx)
 {
 	int fd = (int)ctx->args[0];
+	// check the fd is a dir fd
 	struct dir_fd_data *dir_data = get_dir_fd_data(fd);
 	if (dir_data == NULL) {
 		return 0;
 	}
-	bpf_printk("trace_enter sys_enter_getdents64 fd: %d, path %s\n", fd,
+	// bpf_printk("trace_enter sys_enter_getdents64 fd: %d, path %s\n", fd,
+	// 	   dir_data->dir_path);
+	struct getdents_args_t args = {};
+	args.fd = fd;
+	args.dirp = (void *)ctx->args[1];
+	args.count = (unsigned int)ctx->args[2];
+	u64 id = bpf_get_current_pid_tgid();
+	bpf_map_update_elem(&getdents64_args_start, &id, &args, 0);
+	return 0;
+}
+
+SEC("tracepoint/syscalls/sys_exit_getdents64")
+int tracepoint__syscalls__sys_exit_getdents64(
+	struct trace_event_raw_sys_exit *ctx)
+{
+	int ret = ctx->ret;
+	if (ret < 0) {
+		return 0;
+	}
+	u64 id = bpf_get_current_pid_tgid();
+	struct getdents_args_t *args =
+		bpf_map_lookup_elem(&getdents64_args_start, &id);
+	if (!args) {
+		return 0;
+	}
+	// check the fd is a dir fd
+	struct dir_fd_data *dir_data = get_dir_fd_data(args->fd);
+	if (dir_data == NULL) {
+		return 0;
+	}
+	bpf_printk("sys_exit_getdents64 fd: %d, path %s\n", args->fd,
 		   dir_data->dir_path);
+	struct getdents64_buffer *buf =
+		bpf_map_lookup_elem(&getdents64_cache_map, dir_data);
+	if (buf) {
+		// cache exists
+		return 0;
+	}
+	if (DENTS_BUF_SIZE <= args->count) {
+		// too big, don't cache
+		return 0;
+	}
+	bpf_map_update_elem(&getdents64_cache_map, dir_data, &empty_buf, 0);
+	buf = bpf_map_lookup_elem(&getdents64_cache_map, dir_data);
+	if (!buf) {
+		return 0;
+	}
+	bpf_probe_read(buf->buf, DENTS_BUF_SIZE, args->dirp);
+	bpf_printk("sys_exit_getdents64 successful update fd: %d, path %s\n",
+		   args->fd, dir_data->dir_path);
 	return 0;
 }
 
@@ -166,9 +238,10 @@ int tracepoint__syscalls__sys_enter_newfstatat(
 		return 0;
 	}
 	const char *path = (const char *)ctx->args[1];
-	bpf_printk(
-		"trace_enter sys_enter_newfstatat fd: %d, path %s, dir path %s\n",
-		fd, path, dir_data->dir_path);
+	char buffer[NAME_MAX] = {};
+	bpf_probe_read_str(buffer, sizeof(buffer), path);
+	bpf_printk("sys_enter_newfstatat fd: %d, path %s, dir path %s\n", fd,
+		   buffer, dir_data->dir_path);
 	return 0;
 }
 

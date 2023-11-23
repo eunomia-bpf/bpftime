@@ -1,4 +1,4 @@
-# fs-filter-cache
+# fs-cache
 
 Trace file open or close syscalls in a process.
 

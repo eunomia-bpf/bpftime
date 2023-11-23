@@ -2,7 +2,7 @@
 // Copyright (c) 2019 Facebook
 // Copyright (c) 2020 Netflix
 //
-// Based on fs-filter-cache(8) from BCC by Brendan Gregg and others.
+// Based on fs-cache(8) from BCC by Brendan Gregg and others.
 // 14-Feb-2020   Brendan Gregg   Created this.
 #include <argp.h>
 #include <signal.h>
@@ -14,8 +14,8 @@
 #include <unistd.h>
 #include <bpf/libbpf.h>
 #include <bpf/bpf.h>
-#include "fs-filter-cache.h"
-#include "fs-filter-cache.skel.h"
+#include "fs-cache.h"
+#include "fs-cache.skel.h"
 #include <stdio.h>
 
 static volatile sig_atomic_t exiting = 0;
@@ -35,12 +35,12 @@ int main(int argc, char **argv)
 {
 	LIBBPF_OPTS(bpf_object_open_opts, open_opts);
 	// struct perf_buffer *pb = NULL;
-	struct fs_filter_cache_bpf *obj;
+	struct fs_cache_bpf *obj;
 	int err;
 
 	libbpf_set_print(libbpf_print_fn);
 
-	obj = fs_filter_cache_bpf__open_opts(&open_opts);
+	obj = fs_cache_bpf__open_opts(&open_opts);
 	if (!obj) {
 		fprintf(stderr, "failed to open BPF object\n");
 		return 1;
@@ -48,13 +48,13 @@ int main(int argc, char **argv)
 
 	/* initialize global data (filtering options) */
 
-	err = fs_filter_cache_bpf__load(obj);
+	err = fs_cache_bpf__load(obj);
 	if (err) {
 		fprintf(stderr, "failed to load BPF object: %d\n", err);
 		goto cleanup;
 	}
 
-	err = fs_filter_cache_bpf__attach(obj);
+	err = fs_cache_bpf__attach(obj);
 	if (err) {
 		fprintf(stderr, "failed to attach BPF programs\n");
 		goto cleanup;
@@ -73,7 +73,7 @@ int main(int argc, char **argv)
 	}
 
 cleanup:
-	fs_filter_cache_bpf__destroy(obj);
+	fs_cache_bpf__destroy(obj);
 
 	return err != 0;
 }

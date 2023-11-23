@@ -7,6 +7,6 @@ package.yaml
 ecli
 bootstrap
 .output
-fs-filter-cache
+fs-cache
 victim
 test.txt
