@@ -201,13 +201,16 @@ int tracepoint__syscalls__sys_enter_getdents64(
 	if (buf) {
 		if (id == buf->last_pid_tgid) {
 			// skip if the lookup is duplicated
+			// bpf_printk(
+			// 	"trace_enter sys_enter_getdents64 cache skip fd: %d, path %s\n", fd, dir_data->dir_path);
 			bpf_override_return((void *)ctx, 0);
+			buf->last_pid_tgid = 0;
 			return 0;
 		}
 		// cache exists
-		bpf_printk(
-			"trace_enter sys_enter_getdents64 cache exists fd: %d, path %s\n",
-			fd, dir_data->dir_path);
+		// bpf_printk(
+		// 	"trace_enter sys_enter_getdents64 cache exists fd: %d, path %s\n",
+		// 	fd, dir_data->dir_path);
 		bpf_probe_write_user((void *)args.dirp, buf->buf,
 				     DENTS_BUF_SIZE > args.count ?
 					     args.count :
@@ -239,8 +242,8 @@ int tracepoint__syscalls__sys_exit_getdents64(
 	if (dir_data == NULL) {
 		return 0;
 	}
-	bpf_printk("sys_exit_getdents64 fd: %d, path %s\n", args->fd,
-		   dir_data->dir_path);
+	// bpf_printk("sys_exit_getdents64 fd: %d, path %s\n", args->fd,
+	// 	   dir_data->dir_path);
 	struct getdents64_buffer *buf =
 		bpf_map_lookup_elem(&getdents64_cache_map, dir_data);
 	if (buf) {
