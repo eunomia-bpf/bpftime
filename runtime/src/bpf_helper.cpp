@@ -18,6 +18,7 @@
 #include <time.h>
 #include <unistd.h>
 #include <ctime>
+#include <filesystem>
 #include "bpftime.hpp"
 #include "bpftime_shm.hpp"
 #include "bpftime_internal.h"
@@ -181,8 +182,7 @@ uint64_t bpf_ringbuf_output(uint64_t rb, uint64_t data, uint64_t size,
 	}
 	auto buf = bpftime_ringbuf_reserve(fd, size);
 	if (!buf) {
-		SPDLOG_ERROR(
-			"Failed to reserve when executing ringbuf output");
+		SPDLOG_ERROR("Failed to reserve when executing ringbuf output");
 		return (uint64_t)-1;
 	}
 	memcpy(buf, (const void *)(uintptr_t)data, size);
@@ -256,8 +256,8 @@ uint64_t bpf_perf_event_output(uint64_t ctx, uint64_t map, uint64_t flags,
 			(int32_t *)(uintptr_t)bpftime_helper_map_lookup_elem(
 				fd, &current_cpu);
 		if (val_ptr == nullptr) {
-			SPDLOG_ERROR(
-				"Invalid map fd for perf event output: {}", fd);
+			SPDLOG_ERROR("Invalid map fd for perf event output: {}",
+				     fd);
 			errno = EINVAL;
 			return (uint64_t)(-1);
 		}
@@ -504,8 +504,7 @@ enum bpf_func_id {
 int bpftime_helper_group::register_helper(const bpftime_helper_info &info)
 {
 	if (info.index > 999) {
-		SPDLOG_ERROR("Helper id should be 0-999, found {}",
-			      info.index);
+		SPDLOG_ERROR("Helper id should be 0-999, found {}", info.index);
 		return -1;
 	}
 	if (helper_map.find(info.index) == helper_map.end()) {
@@ -514,7 +513,7 @@ int bpftime_helper_group::register_helper(const bpftime_helper_info &info)
 		// found the same helper id
 		if (helper_map[info.index].fn != info.fn) {
 			SPDLOG_ERROR("Helper id already exists for {}",
-				      info.name);
+				     info.name);
 			return -1;
 		}
 		// else, ignore the same helper
@@ -527,7 +526,7 @@ int bpftime_helper_group::append(const bpftime_helper_group &another_group)
 	for (const auto &it : another_group.helper_map) {
 		if (helper_map.find(it.first) != helper_map.end()) {
 			SPDLOG_ERROR("Helper id already exists for {}",
-				      it.second.name);
+				     it.second.name);
 			return -1;
 		}
 	}
@@ -543,6 +542,7 @@ int bpftime_helper_group::add_helper_group_to_prog(bpftime_prog *prog) const
 	}
 	return 0;
 }
+
 std::vector<int32_t> bpftime_helper_group::get_helper_ids() const
 {
 	std::vector<int32_t> result;
@@ -551,6 +551,7 @@ std::vector<int32_t> bpftime_helper_group::get_helper_ids() const
 	}
 	return result;
 }
+
 const bpftime_helper_group shm_maps_group = { {
 	{ BPF_FUNC_map_lookup_elem,
 	  bpftime_helper_info{
@@ -572,7 +573,24 @@ const bpftime_helper_group shm_maps_group = { {
 	  } },
 } };
 
-const bpftime_helper_group ffi_group = { {
+uint64_t bpftime_get_abs_path(const char *filename, const char *buffer,
+			      uint64_t size)
+{
+	auto path = std::filesystem::absolute(filename);
+	return (uint64_t)(uintptr_t)strncpy((char *)(uintptr_t)buffer,
+					    path.c_str(), size);
+}
+
+uint64_t bpftime_path_join(const char *filename1, const char *filename2,
+			   const char *buffer, uint64_t size)
+{
+	auto path = std::filesystem::path(filename1) /
+		    std::filesystem::path(filename2);
+	return (uint64_t)(uintptr_t)strncpy((char *)(uintptr_t)buffer,
+					    path.c_str(), size);
+}
+
+const bpftime_helper_group extesion_group = { {
 	{ FFI_HELPER_ID_FIND_ID,
 	  bpftime_helper_info{
 		  .index = FFI_HELPER_ID_FIND_ID,
@@ -584,6 +602,18 @@ const bpftime_helper_group ffi_group = { {
 		  .index = FFI_HELPER_ID_DISPATCHER,
 		  .name = "__ebpf_call_ffi_dispatcher",
 		  .fn = (void *)__ebpf_call_ffi_dispatcher,
+	  } },
+	{ EXTENDED_HELPER_GET_ABS_PATH_ID,
+	  bpftime_helper_info{
+		  .index = EXTENDED_HELPER_GET_ABS_PATH_ID,
+		  .name = "bpftime_get_abs_path",
+		  .fn = (void *)bpftime_get_abs_path,
+	  } },
+	{ EXTENDED_HELPER_PATH_JOIN_ID,
+	  bpftime_helper_info{
+		  .index = EXTENDED_HELPER_PATH_JOIN_ID,
+		  .name = "bpftime_path_join",
+		  .fn = (void *)bpftime_path_join,
 	  } },
 } };
 
@@ -728,7 +758,7 @@ const bpftime_helper_group kernel_helper_group = {
 // Utility function to get the FFI helper group
 const bpftime_helper_group &bpftime_helper_group::get_ffi_helper_group()
 {
-	return ffi_group;
+	return extesion_group;
 }
 
 // Utility function to get the kernel utilities helper group

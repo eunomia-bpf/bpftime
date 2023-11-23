@@ -19,13 +19,13 @@ struct {
 	__uint(max_entries, 10240);
 	__type(key, u64);
 	__type(value, struct bpf_fd_data);
-} dir_fd_map SEC(".maps");
+} bpf_fd_map SEC(".maps");
 
 // is bpf fd in bpf_fd_map
 static __always_inline bool is_bpf_fd(u32 fd) {
 	u32 pid = bpf_get_current_pid_tgid() >> 32;
 	u64 key = MAKE_PFD(pid, fd);
-	void *pfd = bpf_map_lookup_elem(&dir_fd_map, &key);
+	void *pfd = bpf_map_lookup_elem(&bpf_fd_map, &key);
 	return pfd != NULL; 
 }
 
@@ -35,13 +35,13 @@ static __always_inline void set_bpf_fd_data(u32 fd, struct bpf_fd_data *data) {
 	}
 	u32 pid = bpf_get_current_pid_tgid() >> 32;
 	u64 key = MAKE_PFD(pid, fd);
-	bpf_map_update_elem(&dir_fd_map, &key, data, 0);
+	bpf_map_update_elem(&bpf_fd_map, &key, data, 0);
 }
 
 static __always_inline void clear_dir_data_fd(int fd) {
 	u32 pid = bpf_get_current_pid_tgid() >> 32;
 	u64 key = MAKE_PFD(pid, fd);
-	bpf_map_delete_elem(&dir_fd_map, &key);
+	bpf_map_delete_elem(&bpf_fd_map, &key);
 }
 
 

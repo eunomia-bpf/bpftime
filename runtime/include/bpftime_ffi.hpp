@@ -4,9 +4,13 @@
 #include <cinttypes>
 #include <cstddef>
 #include "bpf_attach_ctx.hpp"
+
+#define EXTENDED_HELPER_GET_ABS_PATH_ID  1003
+#define EXTENDED_HELPER_PATH_JOIN_ID 1004
+
 namespace bpftime
 {
-	class base_attach_manager;
+class base_attach_manager;
 constexpr const size_t MAX_FUNC_NAME_LEN = 64;
 constexpr const size_t MAX_ARGS_COUNT = 6;
 constexpr const size_t MAX_FFI_FUNCS = 8192 * 4;

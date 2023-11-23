@@ -7,6 +7,15 @@
 #include <bpf/bpf_helpers.h>
 #include "fs-cache.h"
 
+#define EXTENDED_HELPER_GET_ABS_PATH_ID  1003
+#define EXTENDED_HELPER_PATH_JOIN_ID 1004
+
+static void *(*bpftime_get_abs_path)(const char *filename, const char *buffer,
+			      u64 size) = (void *) EXTENDED_HELPER_GET_ABS_PATH_ID;
+
+static void *(*bpftime_path_join)(const char *filename1, const char *filename2,
+			   const char *buffer, u64 size) = (void *) EXTENDED_HELPER_PATH_JOIN_ID;
+
 #define PID_MASK_FOR_PFD 0xffffffff00000000
 #define FD_MASK_FOR_PFD 0x00000000ffffffff
 #define MAKE_PFD(pid, fd)                                                      \
@@ -53,7 +62,7 @@ static __always_inline void clear_dir_data_fd(int fd)
 }
 
 struct open_args_t {
-	const char *fname;
+	const char fname[NAME_MAX];
 	int flags;
 };
 
@@ -71,7 +80,8 @@ int tracepoint__syscalls__sys_enter_open(struct trace_event_raw_sys_enter *ctx)
 
 	/* store arg info for later lookup */
 	struct open_args_t args = {};
-	args.fname = (const char *)ctx->args[0];
+	bpf_probe_read_str(&args.fname, sizeof(args.fname),
+			   (const void *)ctx->args[0]);
 	args.flags = (int)ctx->args[1];
 	bpf_map_update_elem(&open_args_start, &id, &args, 0);
 	bpf_printk("sys_enter_open %s\n", args.fname);
@@ -88,14 +98,16 @@ int tracepoint__syscalls__sys_enter_openat(struct trace_event_raw_sys_enter *ctx
 	/* store arg info for later lookup */
 	struct open_args_t args = {};
 	int fd = (int)ctx->args[0];
-	args.fname = (const char *)ctx->args[1];
+	bpf_probe_read_str(&args.fname, sizeof(args.fname),
+			   (const void *)ctx->args[1]);
 	args.flags = (int)ctx->args[2];
 	if (fd != AT_FDCWD) {
 		struct dir_fd_data *dir_data = get_dir_fd_data(fd);
 		if (dir_data == NULL) {
 			return 0;
 		}
-		bpf_printk("sys_enter_openat %d %s\n", fd, dir_data->dir_path);
+		bpftime_path_join(dir_data->dir_path, args.fname, args.fname,
+				  sizeof(args.fname));
 	}
 	bpf_map_update_elem(&open_args_start, &id, &args, 0);
 	bpf_printk("sys_enter_openat %d %s\n", fd, args.fname);
@@ -117,7 +129,7 @@ static __always_inline int trace_exit(struct trace_event_raw_sys_exit *ctx)
 		return 0;
 	}
 	struct dir_fd_data data = {};
-	bpf_probe_read_str(&data.dir_path, sizeof(data.dir_path), ap->fname);
+	bpftime_get_abs_path(ap->fname, data.dir_path, sizeof(data.dir_path));
 	set_dir_fd_data(ret, &data);
 	return 0;
 }
