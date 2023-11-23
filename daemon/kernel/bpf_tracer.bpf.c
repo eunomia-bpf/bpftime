@@ -555,7 +555,7 @@ int tracepoint__syscalls__sys_enter_close(struct trace_event_raw_sys_enter *ctx)
 	int fd = (int)ctx->args[0];
 	u32 pid = bpf_get_current_pid_tgid() >> 32;
 	u64 key = MAKE_PFD(pid, fd);
-	struct bpf_fd_data *pfd = bpf_map_lookup_elem(&bpf_fd_map, &key);
+	struct bpf_fd_data *pfd = bpf_map_lookup_elem(&dir_fd_map, &key);
 	if (!pfd) {
 		return 0;
 	}
@@ -575,7 +575,7 @@ int tracepoint__syscalls__sys_enter_close(struct trace_event_raw_sys_enter *ctx)
 		       sizeof(struct bpf_fd_data), (void *)pfd);
 	/* emit event */
 	bpf_ringbuf_submit(event, 0);
-	clear_bpf_fd(fd);
+	clear_dir_data_fd(fd);
 	return 0;
 }
 
@@ -644,7 +644,7 @@ int tracepoint__syscalls__sys_exit_ioctl(struct trace_event_raw_sys_exit *ctx)
 		u32 pid = bpf_get_current_pid_tgid() >> 32;
 		u64 key = MAKE_PFD(pid, ap->data);
 		struct bpf_fd_data *data =
-			bpf_map_lookup_elem(&bpf_fd_map, &key);
+			bpf_map_lookup_elem(&dir_fd_map, &key);
 		if (data) {
 			event->ioctl_data.bpf_prog_id = data->kernel_id;
 		} else {
