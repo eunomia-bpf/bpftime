@@ -79,7 +79,7 @@ jobs:
             syscall_trace: false
             expected_str: "info"
           - path: libbpf-tools/funclatency
-            executable: ./funclatency -i 1 ./victim:plus
+            executable: ./funclatency -- -i 1 ./victim:plus
             victim: ./victim
             syscall_trace: false
             expected_str: ": 1"
