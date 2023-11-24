@@ -48,12 +48,23 @@ build: ## build the package
 	cmake -Bbuild -DBPFTIME_ENABLE_UNIT_TESTING=1
 	cmake --build build --config Debug
 	cd tools/cli-rs && cargo build
-
-release: ## build the package
+release-without-cli:
 	cmake -Bbuild  -DBPFTIME_ENABLE_UNIT_TESTING=0 \
 				   -DCMAKE_BUILD_TYPE:STRING=Release \
 				   -DBPFTIME_ENABLE_LTO=0
 	cmake --build build --config Release --target install
+
+release: release-without-cli ## build the package
+	cd tools/cli-rs && cargo build --release
+
+release-with-llvm-jit-without-cli: ## build the package, with llvm-jit
+	cmake -Bbuild  -DBPFTIME_ENABLE_UNIT_TESTING=0 \
+				   -DCMAKE_BUILD_TYPE:STRING=Release \
+				   -DBPFTIME_ENABLE_LTO=0 \
+				   -DBPFTIME_LLVM_JIT=1
+	cmake --build build --config Release --target install
+
+release-with-llvm-jit: release-with-llvm-jit-without-cli## build the package, with llvm-jit
 	cd tools/cli-rs && cargo build --release
 
 build-vm: ## build only the core library

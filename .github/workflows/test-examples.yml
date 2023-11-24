@@ -8,6 +8,11 @@ on:
 
 jobs: 
   build-runtime:
+    strategy:
+      matrix:
+        enable_jit:
+          - true
+          - false
     runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v2
@@ -16,19 +21,32 @@ jobs:
       - name: Install dependencies
         run: | 
           sudo apt-get install binutils-dev libboost1.74-all-dev libelf-dev zlib1g-dev libyaml-cpp-dev gcc-12 g++-12 llvm
-      - name: Build and install runtime
+      - name: Build and install runtime (with llvm-jit)
+        if: ${{matrix.enable_jit}}
         run: |
-          CC=gcc-12 CXX=g++-12 make release -j
+          CC=gcc-12 CXX=g++-12 make release-with-llvm-jit-without-cli -j
+      - name: Build and install runtime (without llvm-jit)
+        if: ${{!matrix.enable_jit}}
+        run: |
+          CC=gcc-12 CXX=g++-12 make release-without-cli -j
       - name: Build and install CLI
         run: |
           cd tools/cli-rs
           RUSTFLAGS="-C target-feature=+crt-static" cargo build --release --target x86_64-unknown-linux-gnu
           mkdir -p ~/.bpftime
           cp ./target/x86_64-unknown-linux-gnu/release/bpftime ~/.bpftime
-      - name: Upload build results
+      - name: Upload build results (without jit)
         uses: actions/upload-artifact@v3
+        if: ${{!matrix.enable_jit}}
         with:
-          name: runtime-package
+          name: runtime-package-no-jit
+          path: |
+            /home/runner/.bpftime
+      - name: Upload build results (with jit)
+        uses: actions/upload-artifact@v3
+        if: ${{matrix.enable_jit}}
+        with:
+          name: runtime-package-jit
           path: |
             /home/runner/.bpftime
   build-and-test:
@@ -37,6 +55,9 @@ jobs:
     strategy:
       fail-fast: true
       matrix:
+        enable_jit:
+          - true
+          - false
         examples: 
           - path: libbpf-tools/opensnoop
             executable: ./opensnoop
@@ -78,15 +99,29 @@ jobs:
             victim: /bin/bash
             syscall_trace: false
             expected_str: "info"
+          - path: libbpf-tools/funclatency
+            executable: ./funclatency -- -i 1 ./victim:plus
+            victim: ./victim
+            syscall_trace: false
+            expected_str: ": 1"
+          
     steps:
       - uses: actions/checkout@v2
         with:
           submodules: 'recursive'
-      - name: Download prebuilt runtime
+      - name: Download prebuilt runtime (with jit)
+        if: ${{matrix.enable_jit}}
         uses: actions/download-artifact@v3
         with:
-          name: runtime-package
+          name: runtime-package-jit
           path: /home/runner/.bpftime
+      - name: Download prebuilt runtime (without jit)
+        if: ${{!matrix.enable_jit}}
+        uses: actions/download-artifact@v3
+        with:
+          name: runtime-package-no-jit
+          path: /home/runner/.bpftime
+  
       - name: Set permissions
         run: |
           chmod +x ~/.bpftime/*
@@ -96,7 +131,7 @@ jobs:
       - name: Install dependencies
         run: |
           sudo apt-get update -y
-          sudo apt-get install -y zlib1g-dev libelf-dev
+          sudo apt-get install -y zlib1g-dev libelf-dev llvm
       - name: Build test assets
         run: |
           make -C example/${{matrix.examples.path}} -j
@@ -109,10 +144,10 @@ jobs:
         shell: "sudo /bin/bash -e {0}"
         run: |
           cd example/${{matrix.examples.path}}
-          sudo -E python3 /home/runner/work/bpftime/bpftime/.github/script/run_example.py ${{matrix.examples.executable}} "${{matrix.examples.victim}}" "${{matrix.examples.expected_str}}" "/home/runner/.bpftime/bpftime -i /home/runner/.bpftime" 1
+          sudo -E python3 /home/runner/work/bpftime/bpftime/.github/script/run_example.py "${{matrix.examples.executable}}" "${{matrix.examples.victim}}" "${{matrix.examples.expected_str}}" "/home/runner/.bpftime/bpftime -i /home/runner/.bpftime" 1
       - name: Test CLI - attach by running (uprobe)
         if: '!matrix.examples.syscall_trace'
         shell: "sudo /bin/bash -e {0}"
         run: |
           cd example/${{matrix.examples.path}}
-          sudo -E python3 /home/runner/work/bpftime/bpftime/.github/script/run_example.py ${{matrix.examples.executable}} "${{matrix.examples.victim}}" "${{matrix.examples.expected_str}}" "/home/runner/.bpftime/bpftime -i /home/runner/.bpftime" 0
+          sudo -E python3 /home/runner/work/bpftime/bpftime/.github/script/run_example.py "${{matrix.examples.executable}}" "${{matrix.examples.victim}}" "${{matrix.examples.expected_str}}" "/home/runner/.bpftime/bpftime -i /home/runner/.bpftime" 0
