@@ -26,7 +26,7 @@ struct {
 	__type(value, struct arg);
 } args SEC(".maps");
 
-static int probe_entry(const char *src, const char *dest, const char *fs,
+static __always_inline int probe_entry(const char *src, const char *dest, const char *fs,
 		       __u64 flags, const char *data, enum op op)
 {
 	__u64 pid_tgid = bpf_get_current_pid_tgid();
@@ -48,7 +48,7 @@ static int probe_entry(const char *src, const char *dest, const char *fs,
 	return 0;
 };
 
-static int probe_exit(void *ctx, int ret)
+static __always_inline int probe_exit(void *ctx, int ret)
 {
 	__u64 pid_tgid = bpf_get_current_pid_tgid();
 	__u32 pid = pid_tgid >> 32;
