@@ -70,7 +70,7 @@ async def main():
         )
 
         await asyncio.wait_for(server_started_signal.wait(), SERVER_TIMEOUT)
-        await asyncio.sleep(2)
+        await asyncio.sleep(5)
         print("Server started!")
 
         # Start the agent
@@ -94,11 +94,15 @@ async def main():
         print("Test successfully")
     finally:
         should_exit.set()
-        server.send_signal(signal.SIGINT)
-        agent.send_signal(signal.SIGINT)
-        await asyncio.gather(server_out, agent_out)
-        await asyncio.gather(server.communicate(), agent.communicate())
-
+        try:
+            server.send_signal(signal.SIGINT)
+            agent.send_signal(signal.SIGINT)
+            await asyncio.gather(server_out, agent_out)
+            for task in asyncio.all_tasks():
+                task.cancel()
+            await asyncio.gather(server.communicate(), agent.communicate())
+        except:
+            pass
 
 if __name__ == "__main__":
     asyncio.run(main())

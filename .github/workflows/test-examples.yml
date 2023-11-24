@@ -104,6 +104,12 @@ jobs:
             victim: ./victim
             syscall_trace: false
             expected_str: ": 1"
+          - path: libbpf-tools/mountsnoop
+            executable: ./mountsnoop
+            victim: ./victim
+            syscall_trace: true
+            expected_str:  mount(
+
           
     steps:
       - uses: actions/checkout@v2
@@ -132,6 +138,7 @@ jobs:
         run: |
           sudo apt-get update -y
           sudo apt-get install -y zlib1g-dev libelf-dev llvm
+          sudo mkdir /mnt/ramdisk
       - name: Build test assets
         run: |
           make -C example/${{matrix.examples.path}} -j
@@ -150,4 +157,4 @@ jobs:
         shell: "sudo /bin/bash -e {0}"
         run: |
           cd example/${{matrix.examples.path}}
-          sudo -E python3 /home/runner/work/bpftime/bpftime/.github/script/run_example.py "${{matrix.examples.executable}}" "${{matrix.examples.victim}}" "${{matrix.examples.expected_str}}" "/home/runner/.bpftime/bpftime -i /home/runner/.bpftime" 0
+          sudo -E python3 /home/runner/work/bpftime/bpftime/.github/script/run_example.py "${{matrix.examples.executable}}" "${{matrix.examples.victim}}" '${{matrix.examples.expected_str}}' "/home/runner/.bpftime/bpftime -i /home/runner/.bpftime" 0
