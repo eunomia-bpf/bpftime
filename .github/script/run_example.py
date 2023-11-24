@@ -102,9 +102,11 @@ async def main():
         should_exit.set()
         server.send_signal(signal.SIGINT)
         agent.send_signal(signal.SIGINT)
-        await asyncio.gather(server_out, agent_out)
-        await asyncio.gather(server.communicate(), agent.communicate())
-        
+        try:
+            await asyncio.gather(server_out, agent_out)
+            await asyncio.gather(server.communicate(), agent.communicate())
+        except:
+            pass
 
 if __name__ == "__main__":
     asyncio.run(main())
