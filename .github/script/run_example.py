@@ -92,15 +92,19 @@ async def main():
             return
         await asyncio.wait_for(expected_str_signal.wait(), AGENT_TIMEOUT)
         print("Test successfully")
+        try:
+            for task in asyncio.all_tasks():
+                task.cancel()
+            asyncio.get_event_loop().close()
+        except:
+            pass
     finally:
         should_exit.set()
         server.send_signal(signal.SIGINT)
         agent.send_signal(signal.SIGINT)
-        server.send_signal(signal.SIGKILL)
-        agent.send_signal(signal.SIGKILL)
         await asyncio.gather(server_out, agent_out)
         await asyncio.gather(server.communicate(), agent.communicate())
-
+        
 
 if __name__ == "__main__":
     asyncio.run(main())
