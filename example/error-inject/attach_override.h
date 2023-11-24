@@ -1,3 +1,8 @@
+/* SPDX-License-Identifier: MIT
+ *
+ * Copyright (c) 2022, eunomia-bpf org
+ * All rights reserved.
+ */
 #ifndef BPFTIME_UREPLACE_ATTACH_H
 #define BPFTIME_UREPLACE_ATTACH_H
 
