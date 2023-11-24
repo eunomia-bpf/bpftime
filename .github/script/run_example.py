@@ -96,6 +96,8 @@ async def main():
         should_exit.set()
         server.send_signal(signal.SIGINT)
         agent.send_signal(signal.SIGINT)
+        server.send_signal(signal.SIGKILL)
+        agent.send_signal(signal.SIGKILL)
         await asyncio.gather(server_out, agent_out)
         await asyncio.gather(server.communicate(), agent.communicate())
 
