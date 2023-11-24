@@ -38,7 +38,7 @@ static __always_inline void set_bpf_fd_data(u32 fd, struct bpf_fd_data *data) {
 	bpf_map_update_elem(&bpf_fd_map, &key, data, 0);
 }
 
-static __always_inline void clear_dir_data_fd(int fd) {
+static __always_inline void clear_bpf_fd(int fd) {
 	u32 pid = bpf_get_current_pid_tgid() >> 32;
 	u64 key = MAKE_PFD(pid, fd);
 	bpf_map_delete_elem(&bpf_fd_map, &key);
