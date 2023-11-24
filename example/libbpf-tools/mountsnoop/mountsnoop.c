@@ -116,8 +116,8 @@ static error_t parse_arg(int key, char *arg, struct argp_state *state)
 static int libbpf_print_fn(enum libbpf_print_level level, const char *format,
 			   va_list args)
 {
-	// if (level == LIBBPF_DEBUG && !verbose)
-	// 	return 0;
+	if (level == LIBBPF_DEBUG && !verbose)
+		return 0;
 	return vfprintf(stderr, format, args);
 }
 
@@ -284,7 +284,7 @@ int main(int argc, char **argv)
 		printf("%-16s %-7s %-7s %-11s %s\n", "COMM", "PID", "TID",
 		       "MNT_NS", "CALL");
 	}
-
+	fflush(stdout);
 	while (!exiting) {
 		err = ring_buffer__poll(buf, POLL_TIMEOUT_MS);
 		if (err < 0 && err != -EINTR) {
@@ -294,6 +294,7 @@ int main(int argc, char **argv)
 		}
 		/* reset err to return 0 if exiting */
 		err = 0;
+		fflush(stdout);
 	}
 
 cleanup:

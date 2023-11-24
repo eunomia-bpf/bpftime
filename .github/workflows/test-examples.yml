@@ -106,7 +106,7 @@ jobs:
             expected_str: ": 1"
           - path: libbpf-tools/mountsnoop
             executable: ./mountsnoop
-            victim: mount -- -t tmpfs -o size=1G tmpfs /mnt/ramdisk
+            victim: ./victim
             syscall_trace: true
             expected_str:  mount(
 
