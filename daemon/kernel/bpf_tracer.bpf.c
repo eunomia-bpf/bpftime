@@ -575,7 +575,7 @@ int tracepoint__syscalls__sys_enter_close(struct trace_event_raw_sys_enter *ctx)
 		       sizeof(struct bpf_fd_data), (void *)pfd);
 	/* emit event */
 	bpf_ringbuf_submit(event, 0);
-	clear_dir_data_fd(fd);
+	clear_bpf_fd(fd);
 	return 0;
 }
 
