@@ -109,7 +109,11 @@ jobs:
             victim: ./victim
             syscall_trace: true
             expected_str:  mount(
-
+          - path: libbpf-tools/sigsnoop
+            executable: ./sigsnoop
+            victim: ./victim
+            syscall_trace: true
+            expected_str: "victim           0         -1      0"
           
     steps:
       - uses: actions/checkout@v2
