@@ -8,6 +8,7 @@
  * 08-Aug-2021   Hengqi Chen   Created this.
  */
 #include <argp.h>
+#include <stdio.h>
 #include <libgen.h>
 #include <signal.h>
 #include <time.h>
@@ -159,6 +160,7 @@ static void handle_event(void *ctx, int cpu, void *data, __u32 data_sz)
 	else
 		printf("%-8s %-7d %-16s %-9d %-7d %-6d\n",
 		       ts, e->pid, e->comm, e->sig, e->tpid, e->ret);
+	fflush(stdout);
 }
 
 static void handle_lost_events(void *ctx, int cpu, __u64 lost_cnt)
