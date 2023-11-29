@@ -62,6 +62,7 @@ int main(int argc, char *argv[])
 		}
 		bpftime_initialize_global_shm(
 			shm_open_type::SHM_CREATE_OR_OPEN);
+		set_agent_config_from_env();
 		auto filename = std::string(argv[2]);
 		return bpftime_import_global_shm_from_json(filename.c_str());
 	} else if (cmd == "remove") {
