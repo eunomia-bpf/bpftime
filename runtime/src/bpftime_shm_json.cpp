@@ -127,6 +127,9 @@ static int import_shm_handler_from_json(bpftime_shm &shm, json value, int fd)
 			SPDLOG_ERROR("Unsupported perf event type {}", type);
 			return -1;
 		}
+		if (value["enabled"]) {
+			shm.perf_event_enable(fd);
+		}
 	} else if (handler_type == "bpf_link_handler") {
 		int prog_fd = value["attr"]["prog_fd"];
 		int target_fd = value["attr"]["target_fd"];
@@ -237,7 +240,8 @@ int bpftime::bpftime_export_shm_to_json(const bpftime_shm &shm,
 			j[std::to_string(i)] = {
 				{ "type", "bpf_perf_event_handler" },
 				{ "attr", bpf_perf_event_handler_attr_to_json(
-						  perf_handler) }
+						  perf_handler) },
+				{"enabled", perf_handler.enabled}
 			};
 			SPDLOG_INFO("bpf_perf_event_handler found at {}", i);
 		} else if (std::holds_alternative<epoll_handler>(handler)) {
