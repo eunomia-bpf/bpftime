@@ -147,7 +147,7 @@ enum class bpf_prog_type {
 };
 
 extern const shm_open_type global_shm_open_type;
-
+const bpftime::agent_config &set_agent_config_from_env();
 const bpftime::agent_config &bpftime_get_agent_config();
 void bpftime_set_agent_config(bpftime::agent_config &cfg);
 } // namespace bpftime
@@ -274,7 +274,7 @@ void *bpftime_get_software_perf_event_raw_buffer(int fd, size_t expected_size);
 int bpftime_perf_event_output(int fd, const void *buf, size_t sz);
 int bpftime_shared_perf_event_output(int map_fd, const void *buf, size_t sz);
 int bpftime_add_ureplace_or_override(int fd, int pid, const char *name,
-				uint64_t offset, bool is_replace);
+				     uint64_t offset, bool is_replace);
 }
 
 #endif // BPFTIME_SHM_CPP_H

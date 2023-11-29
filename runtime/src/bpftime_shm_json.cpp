@@ -123,9 +123,16 @@ static int import_shm_handler_from_json(bpftime_shm &shm, json value, int fd)
 		case bpf_event_type::PERF_TYPE_TRACEPOINT:
 			shm.add_tracepoint(fd, pid, tracepoint_id);
 			break;
+		case bpf_event_type::BPF_TYPE_UPROBE_OVERRIDE:
+			shm.add_uprobe_override(fd, pid, _module_name.c_str(),
+						offset, false);
+			break;
 		default:
 			SPDLOG_ERROR("Unsupported perf event type {}", type);
 			return -1;
+		}
+		if (value["enabled"]) {
+			shm.perf_event_enable(fd);
 		}
 	} else if (handler_type == "bpf_link_handler") {
 		int prog_fd = value["attr"]["prog_fd"];
@@ -219,12 +226,12 @@ int bpftime::bpftime_export_shm_to_json(const bpftime_shm &shm,
 					.push_back(fd);
 			}
 			SPDLOG_INFO("find prog fd={} name={}", i,
-				     prog_handler.name);
+				    prog_handler.name);
 		} else if (std::holds_alternative<bpf_map_handler>(handler)) {
 			auto &map_handler = std::get<bpf_map_handler>(handler);
 			const char *name = map_handler.name.c_str();
-			SPDLOG_INFO("bpf_map_handler name={} found at {}",
-				     name, i);
+			SPDLOG_INFO("bpf_map_handler name={} found at {}", name,
+				    i);
 			bpf_map_attr attr = map_handler.attr;
 			j[std::to_string(i)] = { { "type", "bpf_map_handler" },
 						 { "name", name },
@@ -237,7 +244,8 @@ int bpftime::bpftime_export_shm_to_json(const bpftime_shm &shm,
 			j[std::to_string(i)] = {
 				{ "type", "bpf_perf_event_handler" },
 				{ "attr", bpf_perf_event_handler_attr_to_json(
-						  perf_handler) }
+						  perf_handler) },
+				{ "enabled", perf_handler.enabled }
 			};
 			SPDLOG_INFO("bpf_perf_event_handler found at {}", i);
 		} else if (std::holds_alternative<epoll_handler>(handler)) {
@@ -257,7 +265,7 @@ int bpftime::bpftime_export_shm_to_json(const bpftime_shm &shm,
 				i, h.prog_fd, h.target_fd);
 		} else {
 			SPDLOG_ERROR("Unsupported handler type {}",
-				      handler.index());
+				     handler.index());
 			return -1;
 		}
 	}

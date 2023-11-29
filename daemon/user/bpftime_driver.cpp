@@ -378,6 +378,7 @@ bpftime_driver::bpftime_driver(daemon_config cfg, struct bpf_tracer_bpf *obj)
 	config = cfg;
 	object = obj;
 	bpftime_initialize_global_shm(shm_open_type::SHM_REMOVE_AND_CREATE);
+	set_agent_config_from_env();
 }
 
 bpftime_driver::~bpftime_driver()

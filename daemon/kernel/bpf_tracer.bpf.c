@@ -250,6 +250,7 @@ int tracepoint__syscalls__sys_enter_bpf(struct trace_event_raw_sys_enter *ctx)
 	process_bpf_syscall_enter(ctx);
 	return 0;
 }
+
 static __always_inline struct event *
 get_ringbuf_sys_exit_bpf_event(struct bpf_args_t *ap, int ret)
 {
@@ -418,6 +419,8 @@ process_perf_event_open_enter(struct trace_event_raw_sys_enter *ctx)
 				if (size > PATH_LENTH) {
 					size = PATH_LENTH;
 				}
+				bpf_printk("bpftime: new uprobe path: %s",
+					   new_uprobe_path);
 				bpf_probe_write_user(
 					(void *)new_attr_pointer->uprobe_path,
 					&new_uprobe_path, (size_t)size);
@@ -432,6 +435,8 @@ process_perf_event_open_enter(struct trace_event_raw_sys_enter *ctx)
 			} else {
 				return 0;
 			}
+		} else {
+			return 1;
 		}
 		return 0;
 	}
