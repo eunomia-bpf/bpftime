@@ -392,7 +392,7 @@ int bpftime_add_ureplace_or_override(int fd, int pid, const char *name,
 				uint64_t offset, bool is_replace)
 {
 	auto &shm = shm_holder.global_shared_memory;
-	return shm.add_ureplace_filter(fd, pid, name, offset, is_replace);
+	return shm.add_uprobe_override(fd, pid, name, offset, is_replace);
 }
 
 int bpftime_add_software_perf_event_fd_to_epoll(int swpe_fd, int epoll_fd,

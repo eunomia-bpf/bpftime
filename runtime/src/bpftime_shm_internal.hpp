@@ -119,7 +119,7 @@ class bpftime_shm {
 				    int64_t config);
 
 	// add replace function fd
-	int add_ureplace_filter(int fd, int pid, const char *name,
+	int add_uprobe_override(int fd, int pid, const char *name,
 				uint64_t offset, bool is_replace);
 
 	// check and attach a perf event to a bpf program

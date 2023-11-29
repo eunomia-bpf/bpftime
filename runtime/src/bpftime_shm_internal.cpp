@@ -149,7 +149,7 @@ int bpftime_shm::add_uprobe(int fd, int pid, const char *name, uint64_t offset,
 		segment);
 }
 
-int bpftime_shm::add_ureplace_filter(int fd, int pid, const char *name,
+int bpftime_shm::add_uprobe_override(int fd, int pid, const char *name,
 				     uint64_t offset, bool is_replace)
 {
 	if (fd < 0) {
