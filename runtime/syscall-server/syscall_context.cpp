@@ -353,6 +353,11 @@ long syscall_context::handle_sysbpf(int cmd, union bpf_attr *attr, size_t size)
 			-1 /* let the shm alloc fd for us */, prog_fd,
 			target_fd);
 		SPDLOG_DEBUG("Created link {}", id);
+		if (bpftime_is_prog_fd(prog_fd) && bpftime_is_perf_event_fd(target_fd)) {
+			SPDLOG_DEBUG("Attaching map {} to prog {}", target_fd,
+				     prog_fd);
+			bpftime_attach_perf_to_bpf(target_fd, prog_fd);
+		}
 		return id;
 	}
 	case BPF_MAP_FREEZE: {

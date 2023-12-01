@@ -62,13 +62,20 @@ class syscall_context {
 	int create_kernel_bpf_prog_in_userspace(int cmd,
 							 union bpf_attr *attr,
 							 size_t size);
-
+	// try loading the bpf syscall helpers.
+	// if the syscall original function is not prepared, if will cause a
+	// segfault.
 	void try_startup();
+	// enable userspace eBPF runing with kernel eBPF.
 	bool run_with_kernel = false;
+	// allow programs to by pass the verifier
+	// some extensions are not supported by the verifier, so we need to
+	// by pass the verifier to make it work.
 	std::string by_pass_kernel_verifier_pattern;
 	void load_config_from_env();
     public:
 
+	// enable mock the syscall behavior in userspace
 	bool enable_mock = true;
 	syscall_context()
 	{
