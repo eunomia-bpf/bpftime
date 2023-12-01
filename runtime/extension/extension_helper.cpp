@@ -50,11 +50,9 @@ static int submit_io_uring_write(struct io_uring *ring, int fd, char *buf,
 
 	sqe = io_uring_get_sqe(ring);
 	if (!sqe) {
-		fprintf(stderr, "get sqe failed\n");
 		return 1;
 	}
-
-	io_uring_prep_write(sqe, fd, buf, size, 0);
+	io_uring_prep_write(sqe, fd, buf, size, -1);
 	sqe->user_data = 1;
 
 	return 0;
@@ -66,11 +64,10 @@ static int submit_io_uring_fsync(struct io_uring *ring, int fd)
 
 	sqe = io_uring_get_sqe(ring);
 	if (!sqe) {
-		fprintf(stderr, "get sqe failed\n");
 		return 1;
 	}
 
-	io_uring_prep_fsync(sqe, fd, 0);
+	io_uring_prep_fsync(sqe, fd, IORING_FSYNC_DATASYNC);
 	sqe->user_data = 2;
 
 	return 0;
@@ -80,7 +77,6 @@ static int io_uring_init(struct io_uring *ring)
 {
 	int ret = io_uring_queue_init(1024, ring, IORING_SETUP_SINGLE_ISSUER);
 	if (ret) {
-		fprintf(stderr, "ring setup failed: %d\n", ret);
 		return 1;
 	}
 	return 0;
@@ -91,7 +87,6 @@ static int io_uring_wait_and_seen(struct io_uring *ring,
 {
 	int ret = io_uring_wait_cqe(ring, &cqe);
 	if (ret < 0) {
-		fprintf(stderr, "wait completion %d\n", ret);
 		return ret;
 	}
 	io_uring_cqe_seen(ring, cqe);
@@ -101,7 +96,7 @@ static int io_uring_wait_and_seen(struct io_uring *ring,
 namespace bpftime
 {
 
-struct io_uring ring;
+static struct io_uring ring;
 
 uint64_t io_uring_init_global(void)
 {
@@ -122,6 +117,11 @@ uint64_t io_uring_wait_and_seen(void)
 {
 	struct io_uring_cqe *cqe = nullptr;
 	return io_uring_wait_and_seen(&ring, cqe);
+}
+
+uint64_t bpftime_io_uring_submit(void)
+{
+    return io_uring_submit(&ring);
 }
 
 extern const bpftime_helper_group extesion_group = { {
@@ -174,6 +174,12 @@ extern const bpftime_helper_group extesion_group = { {
 		  .index = EXTENDED_HELPER_IOURING_WAIT_AND_SEEN,
 		  .name = "io_uring_wait_and_seen",
 		  .fn = (void *)io_uring_wait_and_seen,
+	  } },
+	{ EXTENDED_HELPER_IOURING_SUBMIT,
+	  bpftime_helper_info{
+		  .index = EXTENDED_HELPER_IOURING_SUBMIT,
+		  .name = "io_uring_submit",
+		  .fn = (void *)bpftime_io_uring_submit,
 	  } },
 } };
 

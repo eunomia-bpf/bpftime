@@ -128,6 +128,13 @@ target_link_libraries(${PROJECT_NAME}
 )
 add_dependencies(${PROJECT_NAME} vm-bpf FridaGum syscall_id_table spdlog::spdlog libbpf)
 
+if (BPFTIME_ENABLE_IOURING_EXT)
+target_link_libraries(${PROJECT_NAME}
+  PUBLIC
+  uring
+)
+endif()
+
 if(${ENABLE_EBPF_VERIFIER})
   target_include_directories(${PROJECT_NAME} PRIVATE ${BPFTIME_VERIFIER_INCLUDE})
   target_link_libraries(${PROJECT_NAME} PRIVATE bpftime-verifier)
