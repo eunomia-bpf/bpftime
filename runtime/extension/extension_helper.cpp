@@ -20,7 +20,9 @@
 #include <spdlog/spdlog.h>
 #include <vector>
 
+#ifdef BPFTIME_ENABLE_IOURING_EXT
 #include "liburing.h"
+#endif
 
 using namespace std;
 
@@ -42,6 +44,10 @@ uint64_t bpftime_path_join(const char *filename1, const char *filename2,
 					    path.c_str(), size);
 }
 #endif
+
+namespace bpftime
+{
+#ifdef BPFTIME_ENABLE_IOURING_EXT
 
 static int submit_io_uring_write(struct io_uring *ring, int fd, char *buf,
 				 size_t size)
@@ -93,9 +99,6 @@ static int io_uring_wait_and_seen(struct io_uring *ring,
 	return 0;
 }
 
-namespace bpftime
-{
-
 static struct io_uring ring;
 
 uint64_t io_uring_init_global(void)
@@ -103,17 +106,17 @@ uint64_t io_uring_init_global(void)
 	return io_uring_init(&ring);
 }
 
-uint64_t io_uring_submit_write(int fd, char *buf, size_t size)
+uint64_t bpftime_io_uring_submit_write(int fd, char *buf, size_t size)
 {
 	return submit_io_uring_write(&ring, fd, buf, size);
 }
 
-uint64_t io_uring_submit_fsync(int fd)
+uint64_t bpftime_io_uring_submit_fsync(int fd)
 {
 	return submit_io_uring_fsync(&ring, fd);
 }
 
-uint64_t io_uring_wait_and_seen(void)
+uint64_t bpftime_io_uring_wait_and_seen(void)
 {
 	struct io_uring_cqe *cqe = nullptr;
 	return io_uring_wait_and_seen(&ring, cqe);
@@ -123,6 +126,7 @@ uint64_t bpftime_io_uring_submit(void)
 {
     return io_uring_submit(&ring);
 }
+#endif
 
 extern const bpftime_helper_group extesion_group = { {
 	{ FFI_HELPER_ID_FIND_ID,
@@ -151,6 +155,7 @@ extern const bpftime_helper_group extesion_group = { {
 		  .fn = (void *)bpftime_path_join,
 	  } },
 #endif
+#ifdef BPFTIME_ENABLE_IOURING_EXT
 	{ EXTENDED_HELPER_IOURING_INIT,
 	  bpftime_helper_info{
 		  .index = EXTENDED_HELPER_IOURING_INIT,
@@ -161,19 +166,19 @@ extern const bpftime_helper_group extesion_group = { {
 	  bpftime_helper_info{
 		  .index = EXTENDED_HELPER_IOURING_SUBMIT_WRITE,
 		  .name = "io_uring_submit_write",
-		  .fn = (void *)io_uring_submit_write,
+		  .fn = (void *)bpftime_io_uring_submit_write,
 	  } },
 	{ EXTENDED_HELPER_IOURING_SUBMIT_FSYNC,
 	  bpftime_helper_info{
 		  .index = EXTENDED_HELPER_IOURING_SUBMIT_FSYNC,
 		  .name = "io_uring_submit_fsync",
-		  .fn = (void *)io_uring_submit_fsync,
+		  .fn = (void *)bpftime_io_uring_submit_fsync,
 	  } },
 	{ EXTENDED_HELPER_IOURING_WAIT_AND_SEEN,
 	  bpftime_helper_info{
 		  .index = EXTENDED_HELPER_IOURING_WAIT_AND_SEEN,
 		  .name = "io_uring_wait_and_seen",
-		  .fn = (void *)io_uring_wait_and_seen,
+		  .fn = (void *)bpftime_io_uring_wait_and_seen,
 	  } },
 	{ EXTENDED_HELPER_IOURING_SUBMIT,
 	  bpftime_helper_info{
@@ -181,6 +186,7 @@ extern const bpftime_helper_group extesion_group = { {
 		  .name = "io_uring_submit",
 		  .fn = (void *)bpftime_io_uring_submit,
 	  } },
+#endif
 } };
 
 } // namespace bpftime
