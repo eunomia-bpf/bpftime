@@ -15,6 +15,10 @@
 #include <sys/mman.h>
 #include <unistd.h>
 #include <bpf/bpf.h>
+#include <regex>
+#include <linux/bpf.h>
+#include <linux/perf_event.h>
+#include <linux/filter.h>
 
 using namespace bpftime;
 
@@ -27,6 +31,14 @@ void syscall_context::load_config_from_env()
 	} else {
 		run_with_kernel = false;
 	}
+	const char *not_load_pattern = getenv("BPFTIME_NOT_LOAD_PATTERN");
+	if (not_load_pattern != nullptr) {
+		SPDLOG_INFO("By pass kernel verifier pattern: {}",
+			    not_load_pattern);
+		by_pass_kernel_verifier_pattern = std::string(not_load_pattern);
+	} else {
+		by_pass_kernel_verifier_pattern.clear();
+	}
 }
 
 void syscall_context::try_startup()
@@ -38,7 +50,7 @@ void syscall_context::try_startup()
 
 int syscall_context::handle_close(int fd)
 {
-	if (!enable_mock || run_with_kernel)
+	if (!enable_mock)
 		return orig_close_fn(fd);
 	try_startup();
 	bpftime_close(fd);
@@ -81,6 +93,83 @@ int syscall_context::create_kernel_bpf_map(int map_fd)
 	}
 	SPDLOG_INFO("create map in kernel id {}", info.id);
 	return map_fd;
+}
+
+int syscall_context::create_kernel_bpf_prog_in_userspace(int cmd,
+							 union bpf_attr *attr,
+							 size_t size)
+{
+	std::regex pattern(by_pass_kernel_verifier_pattern);
+	int res = 0;
+	if (!by_pass_kernel_verifier_pattern.empty() && std::regex_match(attr->prog_name, pattern)) {
+		SPDLOG_INFO("By pass kernel verifier for program {}",
+			    attr->prog_name);
+		struct bpf_insn trival_prog_insns[] = {
+			BPF_MOV64_IMM(BPF_REG_0, 0),
+			BPF_EXIT_INSN(),
+		};
+		attr->insns = (uint64_t)(uintptr_t)trival_prog_insns;
+		attr->insn_cnt = 2;
+		attr->func_info_rec_size = 0;
+		attr->func_info_cnt = 0;
+		attr->func_info = 0;
+		attr->line_info_rec_size = 0;
+		attr->line_info_cnt = 0;
+		attr->line_info = 0;
+		res = orig_syscall_fn(__NR_bpf, (long)cmd,
+				      (long)(uintptr_t)attr, (long)size);
+	} else {
+		res = orig_syscall_fn(__NR_bpf, (long)cmd,
+				      (long)(uintptr_t)attr, (long)size);
+	}
+	if (res < 0) {
+		SPDLOG_ERROR("Failed to load program `{}`", attr->prog_name);
+		return res;
+	}
+	int id = res;
+	std::vector<ebpf_inst> insns;
+	insns.resize(attr->insn_cnt);
+	insns.assign((ebpf_inst *)(uintptr_t)attr->insns,
+		     (ebpf_inst *)(uintptr_t)attr->insns + attr->insn_cnt);
+	for (size_t i = 0; i < attr->insn_cnt; i++) {
+		const struct ebpf_inst inst = insns[i];
+		bool store = false;
+
+		switch (inst.code) {
+		case EBPF_OP_LDDW:
+			if (inst.src_reg == 1 || inst.src_reg == 2) {
+				bpf_map_info info = {};
+				uint32_t info_len = sizeof(info);
+				int res = bpf_obj_get_info_by_fd(
+					inst.imm, &info, &info_len);
+				if (res < 0) {
+					SPDLOG_ERROR(
+						"Failed to get map info for id {}",
+						info.id);
+					return -1;
+				}
+				SPDLOG_DEBUG(
+					"relocate bpf prog insns for id {} in {}, "
+					"lddw imm {} to map id {}",
+					id, i, inst.imm, info.id);
+				insns[i].imm = info.id;
+			}
+			break;
+		case EBPF_OP_CALL:
+			SPDLOG_DEBUG(
+				"relocate bpf prog insns for id {} in {}, call imm {}",
+				id, i, inst.imm);
+			break;
+		default:
+			break;
+		}
+	}
+	id = bpftime_progs_create(id /* let the shm alloc fd for us */,
+				  insns.data(),
+				  (size_t)attr->insn_cnt, attr->prog_name,
+				  attr->prog_type);
+	SPDLOG_DEBUG("Loaded program `{}` id={}", attr->prog_name, id);
+	return id;
 }
 
 long syscall_context::handle_sysbpf(int cmd, union bpf_attr *attr, size_t size)
@@ -189,9 +278,8 @@ long syscall_context::handle_sysbpf(int cmd, union bpf_attr *attr, size_t size)
 				attr->prog_type, attr->attach_type,
 				attr->map_type);
 			if (run_with_kernel) {
-				return orig_syscall_fn(__NR_bpf, (long)cmd,
-						       (long)(uintptr_t)attr,
-						       (long)size);
+				return create_kernel_bpf_prog_in_userspace(
+					cmd, attr, size);
 			}
 			// tracepoint -> BPF_PROG_TYPE_TRACEPOINT
 			// uprobe/uretprobe -> BPF_PROG_TYPE_SOCKET_FILTER

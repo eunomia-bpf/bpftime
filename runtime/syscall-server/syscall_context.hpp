@@ -59,9 +59,13 @@ class syscall_context {
 	}
 
 	int create_kernel_bpf_map(int fd);
+	int create_kernel_bpf_prog_in_userspace(int cmd,
+							 union bpf_attr *attr,
+							 size_t size);
 
 	void try_startup();
 	bool run_with_kernel = false;
+	std::string by_pass_kernel_verifier_pattern;
 	void load_config_from_env();
     public:
 
