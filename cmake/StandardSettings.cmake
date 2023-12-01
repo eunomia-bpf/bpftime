@@ -68,3 +68,8 @@ option(BPFTIME_ENABLE_MPK "Enable Memory Protection Keys to detect memory error.
 if(BPFTIME_ENABLE_MPK)
     add_definitions(-DBPFTIME_ENABLE_MPK)
 endif()
+
+option(BPFTIME_ENABLE_IOURING_EXT "Enable iouring helpers." OFF)
+if(BPFTIME_ENABLE_IOURING_EXT)
+    add_definitions(-DBPFTIME_ENABLE_IOURING_EXT)
+endif()

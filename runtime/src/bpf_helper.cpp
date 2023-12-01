@@ -581,49 +581,7 @@ const bpftime_helper_group shm_maps_group = { {
 	  } },
 } };
 
-uint64_t bpftime_get_abs_path(const char *filename, const char *buffer,
-			      uint64_t size)
-{
-	auto path = std::filesystem::absolute(filename);
-	return (uint64_t)(uintptr_t)strncpy((char *)(uintptr_t)buffer,
-					    path.c_str(), size);
-}
-
-uint64_t bpftime_path_join(const char *filename1, const char *filename2,
-			   const char *buffer, uint64_t size)
-{
-	auto path = std::filesystem::path(filename1) /
-		    std::filesystem::path(filename2);
-	return (uint64_t)(uintptr_t)strncpy((char *)(uintptr_t)buffer,
-					    path.c_str(), size);
-}
-
-const bpftime_helper_group extesion_group = { {
-	{ FFI_HELPER_ID_FIND_ID,
-	  bpftime_helper_info{
-		  .index = FFI_HELPER_ID_FIND_ID,
-		  .name = "__ebpf_call_find_ffi_id",
-		  .fn = (void *)__ebpf_call_find_ffi_id,
-	  } },
-	{ FFI_HELPER_ID_DISPATCHER,
-	  bpftime_helper_info{
-		  .index = FFI_HELPER_ID_DISPATCHER,
-		  .name = "__ebpf_call_ffi_dispatcher",
-		  .fn = (void *)__ebpf_call_ffi_dispatcher,
-	  } },
-	{ EXTENDED_HELPER_GET_ABS_PATH_ID,
-	  bpftime_helper_info{
-		  .index = EXTENDED_HELPER_GET_ABS_PATH_ID,
-		  .name = "bpftime_get_abs_path",
-		  .fn = (void *)bpftime_get_abs_path,
-	  } },
-	{ EXTENDED_HELPER_PATH_JOIN_ID,
-	  bpftime_helper_info{
-		  .index = EXTENDED_HELPER_PATH_JOIN_ID,
-		  .name = "bpftime_path_join",
-		  .fn = (void *)bpftime_path_join,
-	  } },
-} };
+extern const bpftime_helper_group extesion_group;
 
 const bpftime_helper_group kernel_helper_group = {
 	{ { BPF_FUNC_probe_read,

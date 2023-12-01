@@ -78,6 +78,8 @@ set(sources
   src/bpf_map/shared/hash_map_kernel_user.cpp
   src/bpf_map/shared/percpu_array_map_kernel_user.cpp
   src/bpf_map/shared/perf_event_array_kernel_user.cpp
+
+  extension/extension_helper.cpp
 )
 
 # list(APPEND sources
@@ -125,6 +127,13 @@ target_link_libraries(${PROJECT_NAME}
   spdlog::spdlog
 )
 add_dependencies(${PROJECT_NAME} vm-bpf FridaGum syscall_id_table spdlog::spdlog libbpf)
+
+if (BPFTIME_ENABLE_IOURING_EXT)
+target_link_libraries(${PROJECT_NAME}
+  PUBLIC
+  uring
+)
+endif()
 
 if(${ENABLE_EBPF_VERIFIER})
   target_include_directories(${PROJECT_NAME} PRIVATE ${BPFTIME_VERIFIER_INCLUDE})
