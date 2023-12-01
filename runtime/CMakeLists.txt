@@ -78,6 +78,8 @@ set(sources
   src/bpf_map/shared/hash_map_kernel_user.cpp
   src/bpf_map/shared/percpu_array_map_kernel_user.cpp
   src/bpf_map/shared/perf_event_array_kernel_user.cpp
+
+  extension/extension_helper.cpp
 )
 
 # list(APPEND sources
