@@ -15,6 +15,12 @@ authors:
     family-names: Yu
   - given-names: Yiwei
     family-names: Yang
+  - given-names: Yanpeng
+    family-names: Hu
+  - given-names: XiaoZheng
+    family-names: Lai
+  - given-names: Andrew
+    family-names: Quinn
 identifiers:
   - type: url
     value: 'https://arxiv.org/abs/2311.07923'
