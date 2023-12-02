@@ -21,7 +21,7 @@ long elf_find_func_offset_from_file(const char *binary_path, const char *name);
 
 #define PERF_UPROBE_REF_CTR_OFFSET_BITS 32
 #define PERF_UPROBE_REF_CTR_OFFSET_SHIFT 32
-#define BPF_TYPE_UPROBE_OVERRIDE 8
+#define BPF_TYPE_UPROBE_OVERRIDE 1008
 
 static inline __u64 ptr_to_u64(const void *ptr)
 {

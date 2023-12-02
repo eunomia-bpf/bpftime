@@ -108,7 +108,7 @@ int bpf_attach_ctx::init_attach_ctx_from_handlers(
 				}
 			}
 			SPDLOG_DEBUG("Load prog fd={} name={}", i,
-				      prog_handler.name);
+				     prog_handler.name);
 		} else if (std::holds_alternative<bpf_map_handler>(handler)) {
 			SPDLOG_DEBUG("bpf_map_handler found at {}", i);
 		} else if (std::holds_alternative<bpf_perf_event_handler>(
@@ -121,7 +121,7 @@ int bpf_attach_ctx::init_attach_ctx_from_handlers(
 				"No extra operations needed for epoll_handler/bpf link/btf..");
 		} else {
 			SPDLOG_ERROR("Unsupported handler type for handler {}",
-				      handler.index());
+				     handler.index());
 			return -1;
 		}
 	}
@@ -161,6 +161,9 @@ int bpf_attach_ctx::init_attach_ctx_from_handlers(
 				SPDLOG_DEBUG(
 					"Creating filter for perf event fd {}",
 					i);
+				if (func_addr == nullptr) {
+					return -ENOENT;
+				}
 				auto progs = handler_prog_fds[i];
 				if (progs.size() > 1) {
 					SPDLOG_ERROR(
@@ -194,6 +197,9 @@ int bpf_attach_ctx::init_attach_ctx_from_handlers(
 				SPDLOG_DEBUG(
 					"Creating replace for perf event fd {}",
 					i);
+				if (func_addr == nullptr) {
+					return -ENOENT;
+				}
 				auto progs = handler_prog_fds[i];
 				if (progs.size() > 1) {
 					SPDLOG_ERROR(
@@ -227,6 +233,9 @@ int bpf_attach_ctx::init_attach_ctx_from_handlers(
 				SPDLOG_DEBUG(
 					"Creating uprobe for perf event fd {}",
 					i);
+				if (func_addr == nullptr) {
+					return -ENOENT;
+				}
 				auto progs = handler_prog_fds[i];
 				SPDLOG_INFO(
 					"Attached {} uprobe programs to function {:x}",
@@ -255,6 +264,9 @@ int bpf_attach_ctx::init_attach_ctx_from_handlers(
 				SPDLOG_DEBUG(
 					"Creating uretprobe for perf event fd {}",
 					i);
+				if (func_addr == nullptr) {
+					return -ENOENT;
+				}
 				auto progs = handler_prog_fds[i];
 				SPDLOG_INFO(
 					"Attached {} uretprobe programs to function {:x}",
@@ -302,8 +314,8 @@ int bpf_attach_ctx::init_attach_ctx_from_handlers(
 				break;
 			}
 			SPDLOG_DEBUG("Create attach event {} {} {} for {}", i,
-				      event_handler._module_name,
-				      event_handler.offset, err);
+				     event_handler._module_name,
+				     event_handler.offset, err);
 			if (err < 0) {
 				return err;
 			}
