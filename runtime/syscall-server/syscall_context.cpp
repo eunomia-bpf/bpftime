@@ -108,16 +108,17 @@ int syscall_context::create_kernel_bpf_prog_in_userspace(int cmd,
 			BPF_MOV64_IMM(BPF_REG_0, 0),
 			BPF_EXIT_INSN(),
 		};
-		attr->insns = (uint64_t)(uintptr_t)trival_prog_insns;
-		attr->insn_cnt = 2;
-		attr->func_info_rec_size = 0;
-		attr->func_info_cnt = 0;
-		attr->func_info = 0;
-		attr->line_info_rec_size = 0;
-		attr->line_info_cnt = 0;
-		attr->line_info = 0;
+		union bpf_attr new_attr = *attr;
+		new_attr.insns = (uint64_t)(uintptr_t)trival_prog_insns;
+		new_attr.insn_cnt = 2;
+		new_attr.func_info_rec_size = 0;
+		new_attr.func_info_cnt = 0;
+		new_attr.func_info = 0;
+		new_attr.line_info_rec_size = 0;
+		new_attr.line_info_cnt = 0;
+		new_attr.line_info = 0;
 		res = orig_syscall_fn(__NR_bpf, (long)cmd,
-				      (long)(uintptr_t)attr, (long)size);
+				      (long)(uintptr_t)&new_attr, (long)size);
 	} else {
 		res = orig_syscall_fn(__NR_bpf, (long)cmd,
 				      (long)(uintptr_t)attr, (long)size);
@@ -466,7 +467,7 @@ int syscall_context::handle_perfevent(perf_event_attr *attr, pid_t pid, int cpu,
 		SPDLOG_DEBUG("Created software perf event with fd {}", fd);
 		return fd;
 	} else if ((int)attr->type == (int)bpf_event_type::BPF_TYPE_UREPLACE) {
-		SPDLOG_DEBUG("Detected ureplace hook");
+		SPDLOG_DEBUG("Detected BPF_TYPE_UREPLACE");
 		const char *name = (const char *)(uintptr_t)attr->config1;
 		uint64_t offset = attr->config2;
 		int fd = bpftime_add_ureplace_or_override(
@@ -476,7 +477,7 @@ int syscall_context::handle_perfevent(perf_event_attr *attr, pid_t pid, int cpu,
 		return fd;
 	} else if ((int)attr->type ==
 		   (int)bpf_event_type::BPF_TYPE_UPROBE_OVERRIDE) {
-		SPDLOG_DEBUG("Detected ufiltered hook");
+		SPDLOG_DEBUG("Detected BPF_TYPE_UPROBE_OVERRIDE");
 		const char *name = (const char *)(uintptr_t)attr->config1;
 		uint64_t offset = attr->config2;
 		int fd = bpftime_add_ureplace_or_override(

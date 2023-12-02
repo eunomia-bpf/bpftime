@@ -37,3 +37,9 @@ example run target program:
 ```sh
 SPDLOG_LEVEL=Debug LD_PRELOAD=build/runtime/agent/libbpftime-agent.so example/malloc/victim
 ```
+
+## skip verification for some programs
+
+```sh
+BPFTIME_NOT_LOAD_PATTERN=.*
+```
