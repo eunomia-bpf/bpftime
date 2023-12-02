@@ -12,6 +12,7 @@
 #include <sys/types.h>
 #include <spdlog/spdlog.h>
 #include <unordered_set>
+
 class syscall_context {
 	using syscall_fn = long (*)(long, ...);
 	using close_fn = int (*)(int);
@@ -30,7 +31,7 @@ class syscall_context {
 	epoll_wait_fn orig_epoll_wait_fn = nullptr;
 	munmap_fn orig_munmap_fn = nullptr;
 	mmap_fn orig_mmap_fn = nullptr;
-	
+
 	std::unordered_set<uintptr_t> mocked_mmap_values;
 	void init_original_functions()
 	{
@@ -57,13 +58,29 @@ class syscall_context {
 			(uintptr_t)orig_munmap_fn, (uintptr_t)orig_mmap_fn);
 	}
 
+	int create_kernel_bpf_map(int fd);
+	int create_kernel_bpf_prog_in_userspace(int cmd,
+							 union bpf_attr *attr,
+							 size_t size);
+	// try loading the bpf syscall helpers.
+	// if the syscall original function is not prepared, if will cause a
+	// segfault.
 	void try_startup();
-
+	// enable userspace eBPF runing with kernel eBPF.
+	bool run_with_kernel = false;
+	// allow programs to by pass the verifier
+	// some extensions are not supported by the verifier, so we need to
+	// by pass the verifier to make it work.
+	std::string by_pass_kernel_verifier_pattern;
+	void load_config_from_env();
     public:
+
+	// enable mock the syscall behavior in userspace
 	bool enable_mock = true;
 	syscall_context()
 	{
 		init_original_functions();
+		load_config_from_env();
 		SPDLOG_INFO("manager constructed");
 	}
 	syscall_fn orig_syscall_fn = nullptr;

@@ -14,7 +14,32 @@
 #include <sys/epoll.h>
 #include <sys/mman.h>
 #include <unistd.h>
+#include <bpf/bpf.h>
+#include <regex>
+#include <linux/bpf.h>
+#include <linux/perf_event.h>
+#include <linux/filter.h>
+
 using namespace bpftime;
+
+void syscall_context::load_config_from_env()
+{
+	const char *run_with_kernel_env = getenv("BPFTIME_RUN_WITH_KERNEL");
+	if (run_with_kernel_env != nullptr) {
+		run_with_kernel = true;
+		SPDLOG_INFO("Using kernel eBPF runtime and maps");
+	} else {
+		run_with_kernel = false;
+	}
+	const char *not_load_pattern = getenv("BPFTIME_NOT_LOAD_PATTERN");
+	if (not_load_pattern != nullptr) {
+		SPDLOG_INFO("By pass kernel verifier pattern: {}",
+			    not_load_pattern);
+		by_pass_kernel_verifier_pattern = std::string(not_load_pattern);
+	} else {
+		by_pass_kernel_verifier_pattern.clear();
+	}
+}
 
 void syscall_context::try_startup()
 {
@@ -32,6 +57,121 @@ int syscall_context::handle_close(int fd)
 	return orig_close_fn(fd);
 }
 
+int syscall_context::create_kernel_bpf_map(int map_fd)
+{
+	bpf_map_info info = {};
+	uint32_t info_len = sizeof(info);
+	int res = bpf_obj_get_info_by_fd(map_fd, &info, &info_len);
+	if (res < 0) {
+		SPDLOG_ERROR("Failed to get map info for id {}", info.id);
+		return -1;
+	}
+	bpftime::bpf_map_attr attr;
+	// convert type to kernel-user type
+	attr.type = info.type + KERNEL_USER_MAP_OFFSET;
+	attr.key_size = info.key_size;
+	attr.value_size = info.value_size;
+	attr.max_ents = info.max_entries;
+	attr.flags = info.map_flags;
+	attr.kernel_bpf_map_id = info.id;
+	attr.btf_id = info.btf_id;
+	attr.btf_key_type_id = info.btf_key_type_id;
+	attr.btf_value_type_id = info.btf_value_type_id;
+	attr.btf_vmlinux_value_type_id = info.btf_vmlinux_value_type_id;
+	attr.ifindex = info.ifindex;
+
+	if (bpftime_is_map_fd(info.id)) {
+		// check whether the map is exist
+		SPDLOG_INFO("map {} already exists", info.id);
+		return 0;
+	}
+
+	res = bpftime_maps_create(info.id, info.name, attr);
+	if (res < 0) {
+		SPDLOG_ERROR("Failed to create map for id {}", info.id);
+		return -1;
+	}
+	SPDLOG_INFO("create map in kernel id {}", info.id);
+	return map_fd;
+}
+
+int syscall_context::create_kernel_bpf_prog_in_userspace(int cmd,
+							 union bpf_attr *attr,
+							 size_t size)
+{
+	std::regex pattern(by_pass_kernel_verifier_pattern);
+	int res = 0;
+	if (!by_pass_kernel_verifier_pattern.empty() && std::regex_match(attr->prog_name, pattern)) {
+		SPDLOG_INFO("By pass kernel verifier for program {}",
+			    attr->prog_name);
+		struct bpf_insn trival_prog_insns[] = {
+			BPF_MOV64_IMM(BPF_REG_0, 0),
+			BPF_EXIT_INSN(),
+		};
+		attr->insns = (uint64_t)(uintptr_t)trival_prog_insns;
+		attr->insn_cnt = 2;
+		attr->func_info_rec_size = 0;
+		attr->func_info_cnt = 0;
+		attr->func_info = 0;
+		attr->line_info_rec_size = 0;
+		attr->line_info_cnt = 0;
+		attr->line_info = 0;
+		res = orig_syscall_fn(__NR_bpf, (long)cmd,
+				      (long)(uintptr_t)attr, (long)size);
+	} else {
+		res = orig_syscall_fn(__NR_bpf, (long)cmd,
+				      (long)(uintptr_t)attr, (long)size);
+	}
+	if (res < 0) {
+		SPDLOG_ERROR("Failed to load program `{}`", attr->prog_name);
+		return res;
+	}
+	int id = res;
+	std::vector<ebpf_inst> insns;
+	insns.resize(attr->insn_cnt);
+	insns.assign((ebpf_inst *)(uintptr_t)attr->insns,
+		     (ebpf_inst *)(uintptr_t)attr->insns + attr->insn_cnt);
+	for (size_t i = 0; i < attr->insn_cnt; i++) {
+		const struct ebpf_inst inst = insns[i];
+		bool store = false;
+
+		switch (inst.code) {
+		case EBPF_OP_LDDW:
+			if (inst.src_reg == 1 || inst.src_reg == 2) {
+				bpf_map_info info = {};
+				uint32_t info_len = sizeof(info);
+				int res = bpf_obj_get_info_by_fd(
+					inst.imm, &info, &info_len);
+				if (res < 0) {
+					SPDLOG_ERROR(
+						"Failed to get map info for id {}",
+						info.id);
+					return -1;
+				}
+				SPDLOG_DEBUG(
+					"relocate bpf prog insns for id {} in {}, "
+					"lddw imm {} to map id {}",
+					id, i, inst.imm, info.id);
+				insns[i].imm = info.id;
+			}
+			break;
+		case EBPF_OP_CALL:
+			SPDLOG_DEBUG(
+				"relocate bpf prog insns for id {} in {}, call imm {}",
+				id, i, inst.imm);
+			break;
+		default:
+			break;
+		}
+	}
+	id = bpftime_progs_create(id /* let the shm alloc fd for us */,
+				  insns.data(),
+				  (size_t)attr->insn_cnt, attr->prog_name,
+				  attr->prog_type);
+	SPDLOG_DEBUG("Loaded program `{}` id={}", attr->prog_name, id);
+	return id;
+}
+
 long syscall_context::handle_sysbpf(int cmd, union bpf_attr *attr, size_t size)
 {
 	if (!enable_mock)
@@ -42,6 +182,14 @@ long syscall_context::handle_sysbpf(int cmd, union bpf_attr *attr, size_t size)
 	char *errmsg;
 	switch (cmd) {
 	case BPF_MAP_CREATE: {
+		if (run_with_kernel) {
+			SPDLOG_DEBUG("Creating kernel map");
+			int fd = orig_syscall_fn(__NR_bpf, (long)cmd,
+						 (long)(uintptr_t)attr,
+						 (long)size);
+			SPDLOG_DEBUG("Created kernel map {}", fd);
+			return create_kernel_bpf_map(fd);
+		}
 		SPDLOG_DEBUG("Creating map");
 		int id = bpftime_maps_create(
 			-1 /* let the shm alloc fd for us */, attr->map_name,
@@ -66,6 +214,11 @@ long syscall_context::handle_sysbpf(int cmd, union bpf_attr *attr, size_t size)
 	}
 	case BPF_MAP_LOOKUP_ELEM: {
 		SPDLOG_DEBUG("Looking up map {}", attr->map_fd);
+		if (run_with_kernel) {
+			return orig_syscall_fn(__NR_bpf, (long)cmd,
+					       (long)(uintptr_t)attr,
+					       (long)size);
+		}
 		// Note that bpftime_map_lookup_elem is adapted as a bpf helper,
 		// meaning that it will *return* the address of the matched
 		// value. But here the syscall has a different interface. Here
@@ -84,6 +237,11 @@ long syscall_context::handle_sysbpf(int cmd, union bpf_attr *attr, size_t size)
 	}
 	case BPF_MAP_UPDATE_ELEM: {
 		SPDLOG_DEBUG("Updating map");
+		if (run_with_kernel) {
+			return orig_syscall_fn(__NR_bpf, (long)cmd,
+					       (long)(uintptr_t)attr,
+					       (long)size);
+		}
 		return bpftime_map_update_elem(
 			attr->map_fd, (const void *)(uintptr_t)attr->key,
 			(const void *)(uintptr_t)attr->value,
@@ -91,11 +249,21 @@ long syscall_context::handle_sysbpf(int cmd, union bpf_attr *attr, size_t size)
 	}
 	case BPF_MAP_DELETE_ELEM: {
 		SPDLOG_DEBUG("Deleting map");
+		if (run_with_kernel) {
+			return orig_syscall_fn(__NR_bpf, (long)cmd,
+					       (long)(uintptr_t)attr,
+					       (long)size);
+		}
 		return bpftime_map_delete_elem(
 			attr->map_fd, (const void *)(uintptr_t)attr->key);
 	}
 	case BPF_MAP_GET_NEXT_KEY: {
 		SPDLOG_DEBUG("Getting next key");
+		if (run_with_kernel) {
+			return orig_syscall_fn(__NR_bpf, (long)cmd,
+					       (long)(uintptr_t)attr,
+					       (long)size);
+		}
 		return (long)(uintptr_t)bpftime_map_get_next_key(
 			attr->map_fd, (const void *)(uintptr_t)attr->key,
 			(void *)(uintptr_t)attr->next_key);
@@ -109,7 +277,10 @@ long syscall_context::handle_sysbpf(int cmd, union bpf_attr *attr, size_t size)
 				(const char *)(uintptr_t)attr->license,
 				attr->prog_type, attr->attach_type,
 				attr->map_type);
-
+			if (run_with_kernel) {
+				return create_kernel_bpf_prog_in_userspace(
+					cmd, attr, size);
+			}
 			// tracepoint -> BPF_PROG_TYPE_TRACEPOINT
 			// uprobe/uretprobe -> BPF_PROG_TYPE_SOCKET_FILTER
 			std::optional<std::string> simple_section_name;
@@ -123,7 +294,7 @@ long syscall_context::handle_sysbpf(int cmd, union bpf_attr *attr, size_t size)
 			// Only do verification for tracepoint/uprobe/uretprobe
 			if (simple_section_name.has_value()) {
 				SPDLOG_DEBUG("Verying program {}",
-					      attr->prog_name);
+					     attr->prog_name);
 				auto result = verifier::verify_ebpf_program(
 					(uint64_t *)(uintptr_t)attr->insns,
 					(size_t)attr->insn_cnt,
@@ -166,25 +337,45 @@ long syscall_context::handle_sysbpf(int cmd, union bpf_attr *attr, size_t size)
 				(size_t)attr->insn_cnt, attr->prog_name,
 				attr->prog_type);
 			SPDLOG_DEBUG("Loaded program `{}` id={}",
-				      attr->prog_name, id);
+				     attr->prog_name, id);
 			return id;
 		}
 	case BPF_LINK_CREATE: {
 		auto prog_fd = attr->link_create.prog_fd;
 		auto target_fd = attr->link_create.target_fd;
 		SPDLOG_DEBUG("Creating link {} -> {}", prog_fd, target_fd);
+		if (run_with_kernel && !bpftime_is_perf_event_fd(target_fd)) {
+			return orig_syscall_fn(__NR_bpf, (long)cmd,
+					       (long)(uintptr_t)attr,
+					       (long)size);
+		}
 		int id = bpftime_link_create(
 			-1 /* let the shm alloc fd for us */, prog_fd,
 			target_fd);
 		SPDLOG_DEBUG("Created link {}", id);
+		if (bpftime_is_prog_fd(prog_fd) && bpftime_is_perf_event_fd(target_fd)) {
+			SPDLOG_DEBUG("Attaching map {} to prog {}", target_fd,
+				     prog_fd);
+			bpftime_attach_perf_to_bpf(target_fd, prog_fd);
+		}
 		return id;
 	}
 	case BPF_MAP_FREEZE: {
+		if (run_with_kernel) {
+			return orig_syscall_fn(__NR_bpf, (long)cmd,
+					       (long)(uintptr_t)attr,
+					       (long)size);
+		}
 		SPDLOG_DEBUG(
 			"Calling bpf map freeze, but we didn't implement this");
 		return 0;
 	}
 	case BPF_OBJ_GET_INFO_BY_FD: {
+		if (run_with_kernel) {
+			return orig_syscall_fn(__NR_bpf, (long)cmd,
+					       (long)(uintptr_t)attr,
+					       (long)size);
+		}
 		SPDLOG_DEBUG("Getting info by fd");
 		bpftime::bpf_map_attr map_attr;
 		const char *map_name;
@@ -218,6 +409,11 @@ long syscall_context::handle_sysbpf(int cmd, union bpf_attr *attr, size_t size)
 		auto prog_fd = attr->attach_bpf_fd;
 		auto target_fd = attr->target_fd;
 		SPDLOG_DEBUG("BPF_PROG_ATTACH {} -> {}", prog_fd, target_fd);
+		if (run_with_kernel && !bpftime_is_perf_event_fd(target_fd)) {
+			return orig_syscall_fn(__NR_bpf, (long)cmd,
+					       (long)(uintptr_t)attr,
+					       (long)size);
+		}
 		int id = bpftime_attach_perf_to_bpf(target_fd, prog_fd);
 		SPDLOG_DEBUG("Created attach {}", id);
 		return id;
@@ -278,7 +474,8 @@ int syscall_context::handle_perfevent(perf_event_attr *attr, pid_t pid, int cpu,
 			true);
 		SPDLOG_DEBUG("Created ureplace with fd {}", fd);
 		return fd;
-	} else if ((int)attr->type == (int)bpf_event_type::BPF_TYPE_UPROBE_OVERRIDE) {
+	} else if ((int)attr->type ==
+		   (int)bpf_event_type::BPF_TYPE_UPROBE_OVERRIDE) {
 		SPDLOG_DEBUG("Detected ufiltered hook");
 		const char *name = (const char *)(uintptr_t)attr->config1;
 		uint64_t offset = attr->config2;
@@ -297,7 +494,7 @@ int syscall_context::handle_perfevent(perf_event_attr *attr, pid_t pid, int cpu,
 void *syscall_context::handle_mmap(void *addr, size_t length, int prot,
 				   int flags, int fd, off64_t offset)
 {
-	if (!enable_mock)
+	if (!enable_mock || run_with_kernel)
 		return orig_mmap_fn(addr, length, prot, flags, fd, offset);
 	try_startup();
 	SPDLOG_DEBUG("Called normal mmap");
@@ -307,13 +504,12 @@ void *syscall_context::handle_mmap(void *addr, size_t length, int prot,
 void *syscall_context::handle_mmap64(void *addr, size_t length, int prot,
 				     int flags, int fd, off64_t offset)
 {
-	if (!enable_mock)
+	if (!enable_mock || run_with_kernel)
 		return orig_mmap64_fn(addr, length, prot, flags, fd, offset);
 	try_startup();
 	SPDLOG_DEBUG("Calling mocked mmap64");
 	if (fd != -1 && bpftime_is_ringbuf_map(fd)) {
-		SPDLOG_DEBUG("Entering mmap64 handling for ringbuf fd: {}",
-			      fd);
+		SPDLOG_DEBUG("Entering mmap64 handling for ringbuf fd: {}", fd);
 		if (prot == (PROT_WRITE | PROT_READ)) {
 			if (auto ptr = bpftime_get_ringbuf_consumer_page(fd);
 			    ptr != nullptr) {
@@ -367,6 +563,9 @@ int syscall_context::handle_ioctl(int fd, unsigned long req, int data)
 	int res;
 	if (req == PERF_EVENT_IOC_ENABLE) {
 		SPDLOG_DEBUG("Enabling perf event {}", fd);
+		if (run_with_kernel && !bpftime_is_perf_event_fd(fd)) {
+			return orig_ioctl_fn(fd, req, data);
+		}
 		res = bpftime_perf_event_enable(fd);
 		if (res >= 0)
 			return res;
@@ -375,6 +574,9 @@ int syscall_context::handle_ioctl(int fd, unsigned long req, int data)
 			res);
 	} else if (req == PERF_EVENT_IOC_DISABLE) {
 		SPDLOG_DEBUG("Disabling perf event {}", fd);
+		if (run_with_kernel && !bpftime_is_perf_event_fd(fd)) {
+			return orig_ioctl_fn(fd, req, data);
+		}
 		res = bpftime_perf_event_disable(fd);
 		if (res >= 0)
 			return res;
@@ -383,7 +585,10 @@ int syscall_context::handle_ioctl(int fd, unsigned long req, int data)
 			res);
 	} else if (req == PERF_EVENT_IOC_SET_BPF) {
 		SPDLOG_DEBUG("Setting bpf for perf event {} and bpf {}", fd,
-			      data);
+			     data);
+		if (run_with_kernel && !bpftime_is_perf_event_fd(fd)) {
+			return orig_ioctl_fn(fd, req, data);
+		}
 		res = bpftime_attach_perf_to_bpf(fd, data);
 		if (res >= 0)
 			return res;
@@ -397,7 +602,7 @@ int syscall_context::handle_ioctl(int fd, unsigned long req, int data)
 
 int syscall_context::handle_epoll_create1(int flags)
 {
-	if (!enable_mock)
+	if (!enable_mock || run_with_kernel)
 		return orig_epoll_create1_fn(flags);
 	try_startup();
 	return bpftime_epoll_create();
@@ -406,7 +611,7 @@ int syscall_context::handle_epoll_create1(int flags)
 int syscall_context::handle_epoll_ctl(int epfd, int op, int fd,
 				      epoll_event *evt)
 {
-	if (!enable_mock)
+	if (!enable_mock || run_with_kernel)
 		return orig_epoll_ctl_fn(epfd, op, fd, evt);
 	try_startup();
 	if (op == EPOLL_CTL_ADD) {
@@ -435,7 +640,7 @@ int syscall_context::handle_epoll_ctl(int epfd, int op, int fd,
 int syscall_context::handle_epoll_wait(int epfd, epoll_event *evt,
 				       int maxevents, int timeout)
 {
-	if (!enable_mock)
+	if (!enable_mock || run_with_kernel)
 		orig_epoll_wait_fn(epfd, evt, maxevents, timeout);
 	try_startup();
 	if (bpftime_is_epoll_handler(epfd)) {
@@ -447,13 +652,13 @@ int syscall_context::handle_epoll_wait(int epfd, epoll_event *evt,
 
 int syscall_context::handle_munmap(void *addr, size_t size)
 {
-	if (!enable_mock)
+	if (!enable_mock || run_with_kernel)
 		orig_munmap_fn(addr, size);
 	try_startup();
 	if (auto itr = mocked_mmap_values.find((uintptr_t)addr);
 	    itr != mocked_mmap_values.end()) {
 		SPDLOG_DEBUG("Handling munmap of mocked addr: {:x}, size {}",
-			      (uintptr_t)addr, size);
+			     (uintptr_t)addr, size);
 		mocked_mmap_values.erase(itr);
 		return 0;
 	} else {

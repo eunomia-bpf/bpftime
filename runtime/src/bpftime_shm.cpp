@@ -183,6 +183,10 @@ int bpftime_is_map_fd(int fd)
 	return shm_holder.global_shared_memory.is_map_fd(fd);
 }
 
+int bpftime_is_perf_event_fd(int fd) {
+	return shm_holder.global_shared_memory.is_perf_event_handler_fd(fd);
+}
+
 int bpftime_is_prog_fd(int fd)
 {
 	return shm_holder.global_shared_memory.is_prog_fd(fd);

@@ -140,8 +140,8 @@ int bpftime_shm::add_uprobe(int fd, int pid, const char *name, uint64_t offset,
 		// if fd is negative, we need to create a new fd for allocating
 		fd = open_fake_fd();
 	}
-	SPDLOG_DEBUG("Set fd {} to uprobe, pid={}, name={}, offset={}", fd,
-		      pid, name, offset);
+	SPDLOG_DEBUG("Set fd {} to uprobe, pid={}, name={}, offset={}", fd, pid,
+		     name, offset);
 	return manager->set_handler(
 		fd,
 		bpftime::bpf_perf_event_handler{ retprobe, offset, pid, name,
@@ -157,7 +157,7 @@ int bpftime_shm::add_uprobe_override(int fd, int pid, const char *name,
 		fd = open_fake_fd();
 	}
 	SPDLOG_DEBUG("Set fd {} to ureplace, pid={}, name={}, offset={}", fd,
-		      pid, name, offset);
+		     pid, name, offset);
 	if (is_replace) {
 		return manager->set_handler(
 			fd,
@@ -168,9 +168,9 @@ int bpftime_shm::add_uprobe_override(int fd, int pid, const char *name,
 	} else {
 		return manager->set_handler(
 			fd,
-			bpf_perf_event_handler(bpf_event_type::BPF_TYPE_UPROBE_OVERRIDE,
-					       offset, pid, name, segment,
-					       true),
+			bpf_perf_event_handler(
+				bpf_event_type::BPF_TYPE_UPROBE_OVERRIDE,
+				offset, pid, name, segment, true),
 			segment);
 	}
 }
@@ -210,8 +210,7 @@ int bpftime_shm::attach_perf_to_bpf(int perf_fd, int bpf_fd)
 
 int bpftime_shm::add_bpf_prog_attach_target(int perf_fd, int bpf_fd)
 {
-	SPDLOG_DEBUG("Try attaching prog fd {} to perf fd {}", bpf_fd,
-		      perf_fd);
+	SPDLOG_DEBUG("Try attaching prog fd {} to perf fd {}", bpf_fd, perf_fd);
 	if (!is_prog_fd(bpf_fd)) {
 		SPDLOG_ERROR("Fd {} is not a prog fd", bpf_fd);
 		errno = ENOENT;
@@ -307,12 +306,12 @@ int bpftime_shm::add_ringbuf_to_epoll(int ringbuf_fd, int epoll_fd,
 		epoll_inst.files.emplace_back(val->create_impl_weak_ptr(),
 					      extra_data);
 		SPDLOG_DEBUG("Ringbuf {} added to epoll {}", ringbuf_fd,
-			      epoll_fd);
+			     epoll_fd);
 		return 0;
 	} else {
 		errno = EINVAL;
 		SPDLOG_ERROR("Map fd {} is expected to be an ringbuf map",
-			      ringbuf_fd);
+			     ringbuf_fd);
 		return -1;
 	}
 }
@@ -595,7 +594,7 @@ bpftime_shm::bpftime_shm(bpftime::shm_open_type type)
 	: bpftime_shm(bpftime::get_global_shm_name(), type)
 {
 	SPDLOG_INFO("Global shm constructed. shm_open_type {} for {}",
-		     (int)type, bpftime::get_global_shm_name());
+		    (int)type, bpftime::get_global_shm_name());
 }
 
 int bpftime_shm::add_bpf_map(int fd, const char *name,
@@ -631,6 +630,10 @@ const handler_manager *bpftime_shm::get_manager() const
 
 bool bpftime_shm::is_perf_event_handler_fd(int fd) const
 {
+	if (manager == nullptr || fd < 0 ||
+	    (std::size_t)fd >= manager->size()) {
+		return false;
+	}
 	auto &handler = get_handler(fd);
 	return std::holds_alternative<bpf_perf_event_handler>(handler);
 }

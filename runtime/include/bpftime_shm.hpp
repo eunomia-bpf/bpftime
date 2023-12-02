@@ -254,7 +254,7 @@ void *bpftime_get_ringbuf_producer_page(int ringbuf_fd);
 int bpftime_is_ringbuf_map(int fd);
 int bpftime_is_array_map(int fd);
 int bpftime_is_epoll_handler(int fd);
-
+int bpftime_is_perf_event_fd(int fd);
 int bpftime_is_prog_fd(int fd);
 int bpftime_is_map_fd(int fd);
 
