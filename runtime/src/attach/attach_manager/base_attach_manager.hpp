@@ -40,10 +40,10 @@ class base_attach_manager {
 	using uprobe_callback = std::function<void(const pt_regs &regs)>;
 	using uretprobe_callback = std::function<void(const pt_regs &regs)>;
 	using replace_callback = std::function<uint64_t(const pt_regs &regs)>;
-	using filter_callback = std::function<bool(const pt_regs &regs)>;
+	using uprobe_override_callback = std::function<void(const pt_regs &regs)>;
 	using callback_variant =
 		std::variant<uprobe_callback, uretprobe_callback,
-			     replace_callback, filter_callback>;
+			     replace_callback, uprobe_override_callback>;
 	using attach_iterate_callback =
 		std::function<void(int id, const void *addr, attach_type ty)>;
 
@@ -59,7 +59,7 @@ class base_attach_manager {
 	virtual int attach_replace_at(void *func_addr,
 				      replace_callback &&cb) = 0;
 
-	virtual int attach_filter_at(void *func_addr, filter_callback &&cb) = 0;
+	virtual int attach_uprobe_override_at(void *func_addr, uprobe_override_callback &&cb) = 0;
 	virtual int destroy_attach(int id) = 0;
 	virtual int destroy_attach_by_func_addr(const void *func) = 0;
 	virtual void iterate_attaches(attach_iterate_callback cb) = 0;

@@ -62,7 +62,7 @@ void *frida_attach_manager::resolve_function_addr_by_module_offset(
 	}
 	if (!module_base_addr) {
 		SPDLOG_ERROR("Failed to find module base address for {}",
-			      module_name);
+			     module_name);
 		return nullptr;
 	}
 
@@ -131,10 +131,14 @@ int frida_attach_manager::attach_replace_at(void *func_addr,
 	return attach_at(func_addr, cb);
 }
 
-int frida_attach_manager::attach_filter_at(void *func_addr,
-					   filter_callback &&cb)
+int frida_attach_manager::attach_uprobe_override_at(
+	void *func_addr, uprobe_override_callback &&cb)
 {
-	return attach_at(func_addr, cb);
+	return attach_at(
+		func_addr,
+		callback_variant(std::in_place_index_t<(
+					 int)attach_type::UPROBE_OVERRIDE>(),
+				 cb));
 }
 
 int frida_attach_manager::destroy_attach(int id)
@@ -329,12 +333,12 @@ frida_internal_attach_entry::get_replace_callback() const
 	throw std::runtime_error("Unable to find replace callback");
 }
 
-base_attach_manager::filter_callback &
+base_attach_manager::uprobe_override_callback &
 frida_internal_attach_entry::get_filter_callback() const
 {
 	for (auto v : user_attaches) {
 		if (v->get_type() == attach_type::UPROBE_OVERRIDE) {
-			return std::get<base_attach_manager::filter_callback>(
+			return std::get<(int)attach_type::UPROBE_OVERRIDE>(
 				v->cb);
 		}
 	}
