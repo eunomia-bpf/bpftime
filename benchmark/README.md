@@ -214,3 +214,9 @@ You can use python script to run the benchmark:
 ```console
 python3 benchmark/tools/driving.py
 ```
+
+## Benchmark runner
+
+### Usage
+- `make -C ./benchmark`
+- `python3 ./benchmark/run_benchmark.py`
