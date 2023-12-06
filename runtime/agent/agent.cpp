@@ -18,6 +18,7 @@
 #include "bpftime_shm.hpp"
 #include <spdlog/spdlog.h>
 #include <spdlog/cfg/env.h>
+#include <time.h>
 using namespace bpftime;
 
 using main_func_t = int (*)(int, char **, char **);
@@ -68,8 +69,9 @@ extern "C" int __libc_start_main(int (*main)(int, char **, char **), int argc,
 	using this_func_t = decltype(&__libc_start_main);
 	this_func_t orig = (this_func_t)dlsym(RTLD_NEXT, "__libc_start_main");
 
-	return orig(bpftime_hooked_main, argc, argv, init, fini, rtld_fini,
-		    stack_end);
+	int ret = orig(bpftime_hooked_main, argc, argv, init, fini, rtld_fini,
+		       stack_end);
+	return ret;
 }
 
 extern "C" void bpftime_agent_main(const gchar *data, gboolean *stay_resident)
@@ -93,9 +95,13 @@ extern "C" void bpftime_agent_main(const gchar *data, gboolean *stay_resident)
 	}
 	SPDLOG_INFO("Attach successfully");
 	// don't free ctx here
+	struct timespec ts;
+	clock_gettime(CLOCK_MONOTONIC, &ts);
+	uint64_t nsec = ts.tv_sec * (uint64_t)1000000000 + ts.tv_nsec;
+	fprintf(stderr, "STARTED: %" PRIu64 "\n", nsec);
+	fflush(stderr);
 	return;
 }
-
 
 int64_t syscall_callback(int64_t sys_nr, int64_t arg1, int64_t arg2,
 			 int64_t arg3, int64_t arg4, int64_t arg5, int64_t arg6)
