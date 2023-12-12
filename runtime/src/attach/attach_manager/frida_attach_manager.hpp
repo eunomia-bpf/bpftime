@@ -57,7 +57,6 @@ class frida_internal_attach_entry {
 
 	bool has_override() const;
 	bool has_uprobe_or_uretprobe() const;
-	// base_attach_manager::replace_callback &get_replace_callback() const;
 	base_attach_manager::uprobe_override_callback &get_filter_callback() const;
 	void iterate_uprobe_callbacks(const pt_regs &regs) const;
 	void iterate_uretprobe_callbacks(const pt_regs &regs) const;
@@ -81,7 +80,6 @@ class frida_attach_manager final : public base_attach_manager {
 		const std::string_view &module_name, uintptr_t func_offset);
 	int attach_uprobe_at(void *func_addr, uprobe_callback &&cb);
 	int attach_uretprobe_at(void *func_addr, uretprobe_callback &&cb);
-	// int attach_replace_at(void *func_addr, replace_callback &&cb);
 	int attach_uprobe_override_at(void *func_addr, uprobe_override_callback &&cb);
 	int destroy_attach(int id);
 	void iterate_attaches(attach_iterate_callback cb);
