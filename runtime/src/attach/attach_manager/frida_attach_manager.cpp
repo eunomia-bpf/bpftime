@@ -84,7 +84,7 @@ int frida_attach_manager::attach_at(void *func_addr, callback_variant &&cb)
 			      .first;
 		SPDLOG_DEBUG("Created frida attach entry for func addr {:x}",
 			     (uintptr_t)func_addr);
-	} else if (itr->second->has_replace_or_override()) {
+	} else if (itr->second->has_override()) {
 		SPDLOG_ERROR(
 			"Function {} was already attached with replace or filter, cannot attach anything else");
 		return -EEXIST;
@@ -125,11 +125,11 @@ int frida_attach_manager::attach_uretprobe_at(void *func_addr,
 			cb));
 }
 
-int frida_attach_manager::attach_replace_at(void *func_addr,
-					    replace_callback &&cb)
-{
-	return attach_at(func_addr, cb);
-}
+// int frida_attach_manager::attach_replace_at(void *func_addr,
+// 					    replace_callback &&cb)
+// {
+// 	return attach_at(func_addr, cb);
+// }
 
 int frida_attach_manager::attach_uprobe_override_at(
 	void *func_addr, uprobe_override_callback &&cb)
@@ -266,18 +266,19 @@ frida_internal_attach_entry::frida_internal_attach_entry(
 				user_ret = v;
 				user_ret_ctx = ctx;
 			});
-	} else if (basic_attach_type == attach_type::REPLACE) {
-		if (int err = gum_interceptor_replace(
-			    interceptor, function,
-			    (void *)__bpftime_frida_attach_manager__replace_handler,
-			    this, nullptr);
-		    err < 0) {
-			SPDLOG_ERROR(
-				"Failed to execute frida replace for function {:x}, when attaching replace, err={}",
-				(uintptr_t)function, err);
-			throw std::runtime_error("Failed to attach replace");
-		}
 	}
+	// else if (basic_attach_type == attach_type::REPLACE) {
+	// 	if (int err = gum_interceptor_replace(
+	// 		    interceptor, function,
+	// 		    (void
+	// *)__bpftime_frida_attach_manager__replace_handler, 		    this, nullptr);
+	// 	    err < 0) {
+	// 		SPDLOG_ERROR(
+	// 			"Failed to execute frida replace for function
+	// {:x}, when attaching replace, err={}", 			(uintptr_t)function, err);
+	// 		throw std::runtime_error("Failed to attach replace");
+	// 	}
+	// }
 	this->interceptor = gum_object_ref(interceptor);
 }
 
@@ -296,11 +297,11 @@ frida_internal_attach_entry::~frida_internal_attach_entry()
 	gum_object_unref(interceptor);
 }
 
-bool frida_internal_attach_entry::has_replace_or_override() const
+bool frida_internal_attach_entry::has_override() const
 {
 	for (auto v : user_attaches) {
-		if (v->get_type() == attach_type::REPLACE ||
-		    v->get_type() == attach_type::UPROBE_OVERRIDE) {
+		if ( // v->get_type() == attach_type::REPLACE ||
+			v->get_type() == attach_type::UPROBE_OVERRIDE) {
 			return true;
 		}
 	}
@@ -318,20 +319,20 @@ bool frida_internal_attach_entry::has_uprobe_or_uretprobe() const
 	return false;
 }
 
-base_attach_manager::replace_callback &
-frida_internal_attach_entry::get_replace_callback() const
-{
-	for (auto v : user_attaches) {
-		if (v->get_type() == attach_type::REPLACE) {
-			return std::get<base_attach_manager::replace_callback>(
-				v->cb);
-		}
-	}
-	SPDLOG_ERROR(
-		"Replace attach not found at function {:x}, but try to get replace callback",
-		(uintptr_t)function);
-	throw std::runtime_error("Unable to find replace callback");
-}
+// base_attach_manager::replace_callback &
+// frida_internal_attach_entry::get_replace_callback() const
+// {
+// 	for (auto v : user_attaches) {
+// 		if (v->get_type() == attach_type::REPLACE) {
+// 			return std::get<base_attach_manager::replace_callback>(
+// 				v->cb);
+// 		}
+// 	}
+// 	SPDLOG_ERROR(
+// 		"Replace attach not found at function {:x}, but try to get replace callback",
+// 		(uintptr_t)function);
+// 	throw std::runtime_error("Unable to find replace callback");
+// }
 
 base_attach_manager::uprobe_override_callback &
 frida_internal_attach_entry::get_filter_callback() const
@@ -372,21 +373,21 @@ void frida_internal_attach_entry::iterate_uretprobe_callbacks(
 
 using namespace bpftime;
 
-extern "C" uint64_t __bpftime_frida_attach_manager__replace_handler()
-{
-	GumInvocationContext *ctx;
-	pt_regs regs;
+// extern "C" uint64_t __bpftime_frida_attach_manager__replace_handler()
+// {
+// 	GumInvocationContext *ctx;
+// 	pt_regs regs;
 
-	ctx = gum_interceptor_get_current_invocation();
-	convert_gum_cpu_context_to_pt_regs(*ctx->cpu_context, regs);
-	frida_internal_attach_entry *hook_entry =
-		(frida_internal_attach_entry *)
-			gum_invocation_context_get_replacement_data(ctx);
-	auto &cb = hook_entry->get_replace_callback();
-	uint64_t ret = cb(regs);
-	gum_invocation_context_replace_return_value(ctx, (gpointer)ret);
-	return ret;
-}
+// 	ctx = gum_interceptor_get_current_invocation();
+// 	convert_gum_cpu_context_to_pt_regs(*ctx->cpu_context, regs);
+// 	frida_internal_attach_entry *hook_entry =
+// 		(frida_internal_attach_entry *)
+// 			gum_invocation_context_get_replacement_data(ctx);
+// 	auto &cb = hook_entry->get_replace_callback();
+// 	uint64_t ret = cb(regs);
+// 	gum_invocation_context_replace_return_value(ctx, (gpointer)ret);
+// 	return ret;
+// }
 
 extern "C" void *__bpftime_frida_attach_manager__override_handler()
 {

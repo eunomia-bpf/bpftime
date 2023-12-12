@@ -16,6 +16,8 @@
 #include "bpftime_ffi.hpp"
 #include "attach/attach_manager/base_attach_manager.hpp"
 
+extern "C" uint64_t bpftime_set_retval(uint64_t value);
+
 using namespace bpftime;
 
 // This is the original function to hook.
@@ -71,12 +73,12 @@ int main()
 	res = prog->bpftime_prog_load(false);
 	assert(res == 0);
 	// attach
-	int fd = probe_ctx.get_attach_manager().attach_replace_at(
-		(void *)my_function, [=](const pt_regs &regs) -> uint64_t {
+	int fd = probe_ctx.get_attach_manager().attach_uprobe_override_at(
+		(void *)my_function, [=](const pt_regs &regs) {
 			uint64_t ret;
 			prog->bpftime_prog_exec((void *)&regs, sizeof(regs),
 						&ret);
-			return ret;
+			bpftime_set_retval(ret);
 		});
 	assert(fd >= 0);
 
