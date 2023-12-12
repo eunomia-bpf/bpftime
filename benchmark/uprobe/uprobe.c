@@ -60,6 +60,7 @@ int main(int argc, char **argv)
 	printf("__benchmark_test_function1 is for both uprobe and uretprobe\n");
 	printf("__benchmark_test_function2 is for uretprobe only\n");
 	printf("__benchmark_test_function3 is for uprobe only\n");
+	fflush(stdout);
 	while (!exiting) {
 		sleep(1);
 	}
