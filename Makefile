@@ -54,24 +54,18 @@ build-iouring: ## build the package
 	cmake --build build --config Release
 	cd tools/cli-rs && cargo build
 
-release-without-cli:
+release:
 	cmake -Bbuild  -DBPFTIME_ENABLE_UNIT_TESTING=0 \
 				   -DCMAKE_BUILD_TYPE:STRING=Release \
 				   -DBPFTIME_ENABLE_LTO=0
 	cmake --build build --config Release --target install
 
-release: release-without-cli ## build the package
-	cd tools/cli-rs && cargo build --release
-
-release-with-llvm-jit-without-cli: ## build the package, with llvm-jit
+release-with-llvm-jit: ## build the package, with llvm-jit
 	cmake -Bbuild  -DBPFTIME_ENABLE_UNIT_TESTING=0 \
 				   -DCMAKE_BUILD_TYPE:STRING=Release \
 				   -DBPFTIME_ENABLE_LTO=0 \
 				   -DBPFTIME_LLVM_JIT=1
 	cmake --build build --config Release --target install
-
-release-with-llvm-jit: release-with-llvm-jit-without-cli## build the package, with llvm-jit
-	cd tools/cli-rs && cargo build --release
 
 build-vm: ## build only the core library
 	make -C vm build
@@ -86,4 +80,4 @@ clean: ## clean the project
 	make -C vm clean
 
 install: release ## Invoke cmake to install..
-	cd tools/cli-rs && mkdir -p ~/.bpftime && cp ./target/release/bpftime ~/.bpftime
+
