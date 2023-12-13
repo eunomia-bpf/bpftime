@@ -14,7 +14,6 @@ __bpftime_func_to_filter(uint64_t a, uint64_t b)
 	asm("");
 	return (a << 32) | b;
 }
-
 __attribute__((__noinline__, optnone, noinline)) static uint64_t
 call_filter_func(uint64_t a, uint64_t b)
 {
@@ -32,15 +31,13 @@ TEST_CASE("Test attaching filter programs and revert")
 	const uint64_t b = 0x1234;
 	const uint64_t expected_result = (a << 32) | b;
 	REQUIRE(__bpftime_func_to_filter(a, b) == expected_result);
-	int id = man.attach_filter_at(
-		func_addr, [&](const pt_regs &regs) -> bool {
+	int id = man.attach_uprobe_override_at(
+		func_addr, [&](const pt_regs &regs) {
 			uint64_t first_arg = regs.di;
 			uint64_t second_arg = regs.si;
 			if (first_arg == a) {
 				bpftime_set_retval(first_arg + second_arg);
-				return true;
 			}
-			return false;
 		});
 	REQUIRE(id >= 0);
 	REQUIRE(__bpftime_func_to_filter(1, 2) == (((uint64_t)1 << 32) | 2));

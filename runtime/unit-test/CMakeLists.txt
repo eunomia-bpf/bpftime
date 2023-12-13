@@ -15,8 +15,8 @@ set(TEST_SOURCES
     test_bpftime_shm_json.cpp
     attach/test_uprobe_uretprobe.cpp
     attach/test_function_address_resolve.cpp
-    attach/test_filter_attach.cpp
-    attach/test_replace_attach.cpp
+    attach/test_filter_attach_with_override.cpp
+    attach/test_replace_attach_with_override.cpp
     attach_with_ebpf/test_attach_filter_with_ebpf.cpp
 
     # attach_with_ebpf/test_attach_replace_with_ebpf.cpp # Unfinished yet

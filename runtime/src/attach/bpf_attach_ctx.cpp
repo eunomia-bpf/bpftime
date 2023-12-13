@@ -23,6 +23,7 @@
 #include <utility>
 #include <variant>
 #include <sys/resource.h>
+extern "C" uint64_t bpftime_set_retval(uint64_t value);
 namespace bpftime
 {
 
@@ -176,16 +177,14 @@ int bpf_attach_ctx::init_attach_ctx_from_handlers(
 						i);
 					return -ENOENT;
 				}
-				err = attach_manager->attach_filter_at(
-					func_addr,
-					[=](const pt_regs &regs) -> bool {
+				err = attach_manager->attach_uprobe_override_at(
+					func_addr, [=](const pt_regs &regs) {
 						uint64_t ret;
 						progs[0].second
 							->bpftime_prog_exec(
 								(void *)&regs,
 								sizeof(regs),
 								&ret);
-						return !ret;
 					});
 				if (err < 0)
 					SPDLOG_ERROR(
@@ -212,16 +211,17 @@ int bpf_attach_ctx::init_attach_ctx_from_handlers(
 						i);
 					return -ENOENT;
 				}
-				err = attach_manager->attach_replace_at(
-					func_addr,
-					[=](const pt_regs &regs) -> uint64_t {
+				err = attach_manager->attach_uprobe_override_at(
+					func_addr, [=](const pt_regs &regs) {
 						uint64_t ret;
 						progs[0].second
 							->bpftime_prog_exec(
 								(void *)&regs,
 								sizeof(regs),
 								&ret);
-						return ret;
+						// return ret;
+
+						bpftime_set_retval(ret);
 					});
 				if (err < 0)
 					SPDLOG_ERROR(

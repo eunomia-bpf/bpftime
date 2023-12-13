@@ -53,14 +53,13 @@ TEST_CASE("Test attaching filter program with ebpf, and reverting")
 	};
 	REQUIRE(prog->bpftime_prog_register_raw_helper(info) >= 0);
 	REQUIRE(prog->bpftime_prog_load(false) >= 0);
-	int id = man.attach_filter_at(
+	int id = man.attach_uprobe_override_at(
 		(void *)__bpftime_attach_filter_with_ebpf__my_function,
-		[=](const pt_regs &regs) -> bool {
+		[=](const pt_regs &regs) {
 			uint64_t ret;
 			REQUIRE(prog->bpftime_prog_exec((void *)&regs,
 							sizeof(regs),
 							&ret) >= 0);
-			return !ret;
 		});
 	REQUIRE(id >= 0);
 	REQUIRE(__bpftime_attach_filter_with_ebpf__my_function("hello aaa", 'c',

@@ -18,6 +18,7 @@ call_replace_func(uint64_t a, uint64_t b)
 {
 	return __bpftime_func_to_replace(a, b);
 }
+extern "C" uint64_t bpftime_set_retval(uint64_t value);
 TEST_CASE("Test attaching replace programs and revert")
 {
 	frida_attach_manager man;
@@ -30,11 +31,11 @@ TEST_CASE("Test attaching replace programs and revert")
 	const uint64_t expected_result = (a << 32) | b;
 	REQUIRE(__bpftime_func_to_replace(a, b) == expected_result);
 	int invoke_times = 0;
-	int id = man.attach_replace_at(func_addr,
-				       [&](const pt_regs &regs) -> uint64_t {
-					       invoke_times++;
-					       return regs.si + regs.di;
-				       });
+	int id = man.attach_uprobe_override_at(
+		func_addr, [&](const pt_regs &regs) {
+			invoke_times++;
+			bpftime_set_retval(regs.si + regs.di);
+		});
 	REQUIRE(id >= 0);
 	REQUIRE(call_replace_func(a, b) == a + b);
 	REQUIRE(invoke_times == 1);
