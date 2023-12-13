@@ -47,12 +47,10 @@ unit-test: unit-test-daemon unit-test-runtime ## run catch2 unit tests
 build: ## build the package
 	cmake -Bbuild -DBPFTIME_ENABLE_UNIT_TESTING=1
 	cmake --build build --config Debug
-	cd tools/cli-rs && cargo build
 
 build-iouring: ## build the package
 	cmake -Bbuild -DBPFTIME_ENABLE_UNIT_TESTING=0 -DBPFTIME_ENABLE_IOURING_EXT=1 -DCMAKE_BUILD_TYPE:STRING=Release
 	cmake --build build --config Release
-	cd tools/cli-rs && cargo build
 
 release:
 	cmake -Bbuild  -DBPFTIME_ENABLE_UNIT_TESTING=0 \
