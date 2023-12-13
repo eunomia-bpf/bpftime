@@ -3,13 +3,47 @@
 #include <frida-core.h>
 #include <argparse/argparse.hpp>
 #include <filesystem>
+#include <stdexcept>
+#include <unistd.h>
 #include <vector>
 #include <string>
 #include <utility>
 #include <tuple>
+#include <sys/wait.h>
 static int run_command(const char *path, const std::vector<std::string> &argv,
 		       const char *ld_preload, const char *agent_so)
 {
+	int pid = fork();
+	if (pid == 0) {
+		std::string ld_preload_str("LD_PRELOAD=");
+		std::string agent_so_str("AGENT_SO=");
+		ld_preload_str += ld_preload;
+		const char *env[] = { ld_preload_str.c_str(), nullptr,
+				      nullptr };
+		if (agent_so) {
+			agent_so_str += agent_so;
+			env[1] = agent_so_str.c_str();
+		}
+		std::vector<const char *> argv_arr;
+		for (const auto &str : argv)
+			argv_arr.push_back(str.c_str());
+		argv_arr.push_back(nullptr);
+		execvpe(path, (char *const *)argv_arr.data(),
+			(char *const *)env);
+	} else {
+		int status;
+		if (int cid = waitpid(pid, &status, 0); cid > 0) {
+			if (WIFEXITED(status)) {
+				int exit_code = WEXITSTATUS(status);
+				if (exit_code != 0) {
+					spdlog::error(
+						"Program exited abnormally: {}",
+						exit_code);
+					return 1;
+				}
+			}
+		}
+	}
 	return 1;
 }
 static int inject_by_frida(int pid, const char *inject_path, const char *arg)
@@ -38,9 +72,14 @@ static int inject_by_frida(int pid, const char *inject_path, const char *arg)
 static std::pair<std::string, std::vector<std::string> >
 extract_path_and_args(const argparse::ArgumentParser &parser)
 {
-	return std::make_pair(
-		parser.get("EXECUTABLE_PATH").c_str(),
-		parser.get<std::vector<std::string> >("EXTRA_ARGS"));
+	std::vector<std::string> args;
+	try {
+		args = parser.get<std::vector<std::string> >("EXTRA_ARGS");
+	} catch (std::logic_error &e) {
+	}
+	for (auto s : args)
+		spdlog::info("{}", s);
+	return std::make_pair(parser.get("EXECUTABLE_PATH").c_str(), args);
 }
 int main(int argc, const char **argv)
 {
@@ -67,7 +106,17 @@ int main(int argc, const char **argv)
 		.help("Run without commiting any modifications")
 		.flag();
 
-	argparse::ArgumentParser load_command("load");
+	argparse::ArgumentParser load_command(
+		"load", "1.0", argparse::default_arguments::none);
+	load_command.add_argument("-h", "--help")
+		.action([&](const std::string &s) {
+			std::cout << load_command.help().str();
+			exit(0);
+		})
+		.default_value(false)
+		.help("shows help message")
+		.implicit_value(true)
+		.nargs(0);
 	load_command.add_description(
 		"Start an application with bpftime-server injected");
 	load_command.add_argument("EXECUTABLE_PATH")
@@ -76,7 +125,16 @@ int main(int argc, const char **argv)
 		.help("Other arguments to the program injected")
 		.remaining();
 
-	argparse::ArgumentParser start_command("start");
+	argparse::ArgumentParser start_command(
+		"start", "1.0", argparse::default_arguments::none);
+	start_command.add_argument("-h", "--help")
+		.action([&](const std::string &s) {
+			std::cout << start_command.help().str();
+		})
+		.default_value(false)
+		.help("shows help message")
+		.implicit_value(true)
+		.nargs(0);
 
 	start_command.add_description(
 		"Start an application with bpftime-agent injected");
@@ -87,10 +145,20 @@ int main(int argc, const char **argv)
 		.help("Path to the executable that will be injected with agent");
 	start_command.add_argument("EXTRA_ARGS")
 		.help("Other arguments to the program injected")
+		
+		// .scan<char Shape, typename T>()
 		.remaining();
 
-	argparse::ArgumentParser attach_command("attach");
-
+	argparse::ArgumentParser attach_command(
+		"attach", "1.0", argparse::default_arguments::none);
+	// attach_command.add_argument("-h", "--help")
+	// 	.action([&](const std::string &s) {
+	// 		std::cout << attach_command.help().str();
+	// 	})
+	// 	.default_value(false)
+	// 	.help("shows help message")
+	// 	.implicit_value(true)
+	// 	.nargs(0);
 	attach_command.add_description("Inject bpftime-agent to a certain pid");
 	attach_command.add_argument("-s", "--enable-syscall-trace")
 		.help("Whether to enable syscall trace")
@@ -100,7 +168,7 @@ int main(int argc, const char **argv)
 	program.add_subparser(load_command);
 	program.add_subparser(start_command);
 	program.add_subparser(attach_command);
-	program.set_suppress(false);
+	// program.set_suppress(false);
 	try {
 		program.parse_args(argc, argv);
 	} catch (const std::exception &err) {

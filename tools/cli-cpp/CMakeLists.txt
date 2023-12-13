@@ -18,3 +18,5 @@ target_compile_definitions(bpftime-cli-cpp PRIVATE _GNU_SOURCE)
 
 
 add_dependencies(bpftime-cli-cpp spdlog::spdlog FridaCore argparse)
+
+install(TARGETS bpftime-cli-cpp CONFIGURATIONS Release Debug DESTINATION ~/.bpftime)
