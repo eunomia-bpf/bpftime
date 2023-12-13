@@ -26,24 +26,21 @@ enum class attach_type {
 	// Invoked when the attached function was invoked, receiving the input
 	// args of that function
 	URETPROBE = 1,
-	// Use the provided callback to replace the function. Call the callback
-	// instead of the original function
-	REPLACE = 2,
 	// Run before the original function was invoked. Use bpf_override_return
 	// to set the return value of the function. If the return value is set,
 	// the original function will not be invoked.
-	UPROBE_OVERRIDE = 3
+	UPROBE_OVERRIDE = 2
 };
 
 class base_attach_manager {
     public:
 	using uprobe_callback = std::function<void(const pt_regs &regs)>;
 	using uretprobe_callback = std::function<void(const pt_regs &regs)>;
-	using replace_callback = std::function<uint64_t(const pt_regs &regs)>;
-	using filter_callback = std::function<bool(const pt_regs &regs)>;
+	using uprobe_override_callback =
+		std::function<void(const pt_regs &regs)>;
 	using callback_variant =
 		std::variant<uprobe_callback, uretprobe_callback,
-			     replace_callback, filter_callback>;
+			     uprobe_override_callback>;
 	using attach_iterate_callback =
 		std::function<void(int id, const void *addr, attach_type ty)>;
 
@@ -56,10 +53,10 @@ class base_attach_manager {
 	virtual int attach_uprobe_at(void *func_addr, uprobe_callback &&cb) = 0;
 	virtual int attach_uretprobe_at(void *func_addr,
 					uretprobe_callback &&cb) = 0;
-	virtual int attach_replace_at(void *func_addr,
-				      replace_callback &&cb) = 0;
 
-	virtual int attach_filter_at(void *func_addr, filter_callback &&cb) = 0;
+	virtual int
+	attach_uprobe_override_at(void *func_addr,
+				  uprobe_override_callback &&cb) = 0;
 	virtual int destroy_attach(int id) = 0;
 	virtual int destroy_attach_by_func_addr(const void *func) = 0;
 	virtual void iterate_attaches(attach_iterate_callback cb) = 0;

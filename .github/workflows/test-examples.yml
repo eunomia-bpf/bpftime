@@ -20,6 +20,7 @@ jobs:
           submodules: 'recursive'
       - name: Install dependencies
         run: | 
+          sudo apt-get update
           sudo apt-get install binutils-dev libboost1.74-all-dev libelf-dev zlib1g-dev libyaml-cpp-dev gcc-12 g++-12 llvm
       - name: Build and install runtime (with llvm-jit)
         if: ${{matrix.enable_jit}}
