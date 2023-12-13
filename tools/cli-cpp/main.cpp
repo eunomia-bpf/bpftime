@@ -1,15 +1,25 @@
 #include "spdlog/spdlog.h"
 #include <cstdlib>
+#include <cstring>
 #include <frida-core.h>
 #include <argparse/argparse.hpp>
 #include <filesystem>
 #include <stdexcept>
+#include <string_view>
 #include <unistd.h>
 #include <vector>
 #include <string>
 #include <utility>
 #include <tuple>
 #include <sys/wait.h>
+
+static bool str_starts_with(const char *main, const char *pat)
+{
+	if (strstr(main, pat) == main)
+		return true;
+	return false;
+}
+
 static int run_command(const char *path, const std::vector<std::string> &argv,
 		       const char *ld_preload, const char *agent_so)
 {
@@ -18,18 +28,39 @@ static int run_command(const char *path, const std::vector<std::string> &argv,
 		std::string ld_preload_str("LD_PRELOAD=");
 		std::string agent_so_str("AGENT_SO=");
 		ld_preload_str += ld_preload;
-		const char *env[] = { ld_preload_str.c_str(), nullptr,
-				      nullptr };
+
 		if (agent_so) {
 			agent_so_str += agent_so;
-			env[1] = agent_so_str.c_str();
 		}
+		std::vector<const char *> env_arr;
+		char **p = environ;
+		while (*p) {
+			env_arr.push_back(*p);
+			p++;
+		}
+		bool ld_preload_set = false, agent_so_set = false;
+		for (auto &s : env_arr) {
+			if (str_starts_with(s, "LD_PRELOAD=")) {
+				s = ld_preload_str.c_str();
+				ld_preload_set = true;
+			} else if (str_starts_with(s, "AGENT_SO=")) {
+				s = agent_so_str.c_str();
+				agent_so_set = true;
+			}
+		}
+		if (!ld_preload_set)
+			env_arr.push_back(ld_preload_str.c_str());
+		if (!agent_so_set)
+			env_arr.push_back(agent_so_str.c_str());
+
+		env_arr.push_back(nullptr);
 		std::vector<const char *> argv_arr;
+		argv_arr.push_back(path);
 		for (const auto &str : argv)
 			argv_arr.push_back(str.c_str());
 		argv_arr.push_back(nullptr);
 		execvpe(path, (char *const *)argv_arr.data(),
-			(char *const *)env);
+			(char *const *)env_arr.data());
 	} else {
 		int status;
 		if (int cid = waitpid(pid, &status, 0); cid > 0) {
@@ -48,6 +79,7 @@ static int run_command(const char *path, const std::vector<std::string> &argv,
 }
 static int inject_by_frida(int pid, const char *inject_path, const char *arg)
 {
+	spdlog::info("Injecting to {}", pid);
 	frida_init();
 	auto injector = frida_injector_new();
 	GError *err = nullptr;
@@ -72,14 +104,16 @@ static int inject_by_frida(int pid, const char *inject_path, const char *arg)
 static std::pair<std::string, std::vector<std::string> >
 extract_path_and_args(const argparse::ArgumentParser &parser)
 {
-	std::vector<std::string> args;
+	std::vector<std::string> items;
 	try {
-		args = parser.get<std::vector<std::string> >("EXTRA_ARGS");
-	} catch (std::logic_error &e) {
+		items = parser.get<std::vector<std::string> >("COMMAND");
+	} catch (std::logic_error &err) {
+		std::cerr << parser;
+		exit(1);
 	}
-	for (auto s : args)
-		spdlog::info("{}", s);
-	return std::make_pair(parser.get("EXECUTABLE_PATH").c_str(), args);
+	std::string executable = items[0];
+	items.erase(items.begin());
+	return { executable, items };
 }
 int main(int argc, const char **argv)
 {
@@ -106,59 +140,28 @@ int main(int argc, const char **argv)
 		.help("Run without commiting any modifications")
 		.flag();
 
-	argparse::ArgumentParser load_command(
-		"load", "1.0", argparse::default_arguments::none);
-	load_command.add_argument("-h", "--help")
-		.action([&](const std::string &s) {
-			std::cout << load_command.help().str();
-			exit(0);
-		})
-		.default_value(false)
-		.help("shows help message")
-		.implicit_value(true)
-		.nargs(0);
+	argparse::ArgumentParser load_command("load");
+
 	load_command.add_description(
 		"Start an application with bpftime-server injected");
-	load_command.add_argument("EXECUTABLE_PATH")
-		.help("Path to the executable that will be injected with syscall-server");
-	load_command.add_argument("EXTRA_ARGS")
-		.help("Other arguments to the program injected")
+	load_command.add_argument("COMMAND")
+		.help("Command to run")
+		.nargs(argparse::nargs_pattern::at_least_one)
 		.remaining();
 
-	argparse::ArgumentParser start_command(
-		"start", "1.0", argparse::default_arguments::none);
-	start_command.add_argument("-h", "--help")
-		.action([&](const std::string &s) {
-			std::cout << start_command.help().str();
-		})
-		.default_value(false)
-		.help("shows help message")
-		.implicit_value(true)
-		.nargs(0);
+	argparse::ArgumentParser start_command("start");
 
 	start_command.add_description(
 		"Start an application with bpftime-agent injected");
 	start_command.add_argument("-s", "--enable-syscall-trace")
 		.help("Whether to enable syscall trace")
 		.flag();
-	start_command.add_argument("EXECUTABLE_PATH")
-		.help("Path to the executable that will be injected with agent");
-	start_command.add_argument("EXTRA_ARGS")
-		.help("Other arguments to the program injected")
-		
-		// .scan<char Shape, typename T>()
-		.remaining();
+	start_command.add_argument("COMMAND")
+		.nargs(argparse::nargs_pattern::at_least_one)
+		.help("Command to run");
 
-	argparse::ArgumentParser attach_command(
-		"attach", "1.0", argparse::default_arguments::none);
-	// attach_command.add_argument("-h", "--help")
-	// 	.action([&](const std::string &s) {
-	// 		std::cout << attach_command.help().str();
-	// 	})
-	// 	.default_value(false)
-	// 	.help("shows help message")
-	// 	.implicit_value(true)
-	// 	.nargs(0);
+	argparse::ArgumentParser attach_command("attach");
+
 	attach_command.add_description("Inject bpftime-agent to a certain pid");
 	attach_command.add_argument("-s", "--enable-syscall-trace")
 		.help("Whether to enable syscall trace")
@@ -168,7 +171,6 @@ int main(int argc, const char **argv)
 	program.add_subparser(load_command);
 	program.add_subparser(start_command);
 	program.add_subparser(attach_command);
-	// program.set_suppress(false);
 	try {
 		program.parse_args(argc, argv);
 	} catch (const std::exception &err) {
@@ -192,7 +194,7 @@ int main(int argc, const char **argv)
 		return run_command(executable_path.c_str(), extra_args,
 				   so_path.c_str(), nullptr);
 	} else if (program.is_subcommand_used("start")) {
-		auto agent_path = install_path / "libbpftime-syscall-server.so";
+		auto agent_path = install_path / "libbpftime-agent.so";
 		if (!std::filesystem::exists(agent_path)) {
 			spdlog::error("Library not found: {}",
 				      agent_path.c_str());
@@ -218,7 +220,7 @@ int main(int argc, const char **argv)
 					   agent_path.c_str(), nullptr);
 		}
 	} else if (program.is_subcommand_used("attach")) {
-		auto agent_path = install_path / "libbpftime-syscall-server.so";
+		auto agent_path = install_path / "libbpftime-agent.so";
 		if (!std::filesystem::exists(agent_path)) {
 			spdlog::error("Library not found: {}",
 				      agent_path.c_str());

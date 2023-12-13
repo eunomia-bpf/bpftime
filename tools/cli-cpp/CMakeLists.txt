@@ -3,6 +3,8 @@ add_executable(
     main.cpp
 )
 
+set_target_properties(bpftime-cli-cpp PROPERTIES OUTPUT_NAME "bpftime")
+
 include(FetchContent)
 FetchContent_Declare(
     argparse
@@ -15,7 +17,6 @@ target_link_libraries(bpftime-cli-cpp PRIVATE spdlog::spdlog ${FRIDA_CORE_INSTAL
 set_property(TARGET bpftime-agent-transformer PROPERTY CXX_STANDARD 20)
 
 target_compile_definitions(bpftime-cli-cpp PRIVATE _GNU_SOURCE)
-
 
 add_dependencies(bpftime-cli-cpp spdlog::spdlog FridaCore argparse)
 
