@@ -9,9 +9,7 @@ Use for inject dynamic lib of runtime into target process, a wrapper and `LD_PRE
 ## Install the cli tools an libraries
 
 ```bash
-sudo apt-get install libelf-dev zlib1g-dev # Install dependencies
-cd tools/cli-rs && cargo build --release
-mkdir ~/.bpftime && cp ./target/release/bpftime ~/.bpftime
+make install
 export PATH=$PATH:~/.bpftime
 ```
 

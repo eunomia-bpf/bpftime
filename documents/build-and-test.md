@@ -20,8 +20,6 @@ On Ubuntu 20.04, you may need to manually switch to gcc-12.
 ```bash
 sudo apt-get install libelf-dev zlib1g-dev # Install dependencies
 make release && make install # Build and install the runtime
-cd tools/cli-rs && cargo build --release
-mkdir -p ~/.bpftime && cp ./target/release/bpftime ~/.bpftime
 export PATH=$PATH:~/.bpftime
 ```
 

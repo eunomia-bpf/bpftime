@@ -25,17 +25,11 @@ jobs:
       - name: Build and install runtime (with llvm-jit)
         if: ${{matrix.enable_jit}}
         run: |
-          CC=gcc-12 CXX=g++-12 make release-with-llvm-jit-without-cli -j
+          CC=gcc-12 CXX=g++-12 make release-with-llvm-jit -j
       - name: Build and install runtime (without llvm-jit)
         if: ${{!matrix.enable_jit}}
         run: |
-          CC=gcc-12 CXX=g++-12 make release-without-cli -j
-      - name: Build and install CLI
-        run: |
-          cd tools/cli-rs
-          RUSTFLAGS="-C target-feature=+crt-static" cargo build --release --target x86_64-unknown-linux-gnu
-          mkdir -p ~/.bpftime
-          cp ./target/x86_64-unknown-linux-gnu/release/bpftime ~/.bpftime
+          CC=gcc-12 CXX=g++-12 make release -j
       - name: Upload build results (without jit)
         uses: actions/upload-artifact@v3
         if: ${{!matrix.enable_jit}}
@@ -101,7 +95,7 @@ jobs:
             syscall_trace: false
             expected_str: "info"
           - path: libbpf-tools/funclatency
-            executable: ./funclatency -- -i 1 ./victim:plus
+            executable: ./funclatency -i 1 ./victim:plus
             victim: ./victim
             syscall_trace: false
             expected_str: ": 1"
