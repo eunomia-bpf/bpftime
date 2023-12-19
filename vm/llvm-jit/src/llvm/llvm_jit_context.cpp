@@ -3,15 +3,13 @@
  * Copyright (c) 2022, eunomia-bpf org
  * All rights reserved.
  */
-#include "ebpf_inst.h"
 #include "llvm_bpf_jit.h"
-#include "llvm_jit_context.h"
-#include "bpf_jit_helpers.h"
+#include "llvm_jit_context.hpp"
+#include "compiler_utils.hpp"
 #include "spdlog/spdlog.h"
 #include <iterator>
 
 #include "llvm/IR/Module.h"
-#include "llvm/Support/raw_ostream.h"
 #include <llvm/ExecutionEngine/JITSymbol.h>
 #include <llvm/ExecutionEngine/Orc/LLJIT.h>
 #include <llvm/Support/raw_ostream.h>
@@ -26,12 +24,12 @@
 #include <utility>
 #include <iostream>
 #include <string>
-#include <cinttypes>
 #include <spdlog/spdlog.h>
 using namespace llvm;
 using namespace llvm::orc;
+using namespace bpftime;
 
-ExitOnError ExitOnErr;
+static ExitOnError ExitOnErr;
 
 static void optimizeModule(llvm::Module &M)
 {
@@ -91,7 +89,7 @@ ebpf_jit_fn bpf_jit_context::compile()
 				auto sym = JITEvaluatedSymbol::fromPointer(
 					vm->ext_funcs[i]);
 				auto symName =
-					jit->mangleAndIntern(ext_func_sym(i));
+					jit->getExecutionSession().intern(ext_func_sym(i));
 				sym.setFlags(JITSymbolFlags::Callable |
 					     JITSymbolFlags::Exported);
 				extSymbols.try_emplace(symName, sym);
@@ -101,7 +99,7 @@ ebpf_jit_fn bpf_jit_context::compile()
 #if defined(__arm__) || defined(_M_ARM)
 		SPDLOG_INFO("Defining __aeabi_unwind_cpp_pr1 on arm32");
 		extSymbols.try_emplace(
-			jit->mangleAndIntern("__aeabi_unwind_cpp_pr1"),
+			jit->getExecutionSession().intern("__aeabi_unwind_cpp_pr1"),
 			JITEvaluatedSymbol::fromPointer(
 				__aeabi_unwind_cpp_pr1));
 #endif
@@ -119,7 +117,7 @@ ebpf_jit_fn bpf_jit_context::compile()
 					JITEvaluatedSymbol::fromPointer(func);
 				sym.setFlags(JITSymbolFlags::Callable |
 					     JITSymbolFlags::Exported);
-				lddwSyms.try_emplace(jit->mangleAndIntern(name),
+				lddwSyms.try_emplace(jit->getExecutionSession().intern(name),
 						     sym);
 				definedLddwHelpers.push_back(name);
 			}
@@ -134,7 +132,7 @@ ebpf_jit_fn bpf_jit_context::compile()
 		tryDefineLddwHelper(LDDW_HELPER_VAR_ADDR, (void *)vm->var_addr);
 		ExitOnErr(mainDylib.define(absoluteSymbols(lddwSyms)));
 		auto bpfModule = ExitOnErr(
-			generateModule(*jit, extFuncNames, definedLddwHelpers));
+			generateModule( extFuncNames, definedLddwHelpers));
 		bpfModule.withModuleDo([](auto &M) { optimizeModule(M); });
 		ExitOnErr(jit->addIRModule(std::move(bpfModule)));
 		this->jit = std::move(jit);

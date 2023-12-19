@@ -36,8 +36,7 @@ struct bpf_jit_context {
 	std::optional<std::unique_ptr<llvm::orc::LLJIT> > jit;
 	std::unique_ptr<pthread_spinlock_t> compiling;
 	llvm::Expected<llvm::orc::ThreadSafeModule>
-	generateModule(const llvm::orc::LLJIT &jit,
-		       const std::vector<std::string> &extFuncNames,
+	generateModule(const std::vector<std::string> &extFuncNames,
 		       const std::vector<std::string> &lddwHelpers);
 
     public:

@@ -1,38 +1,10 @@
-/* SPDX-License-Identifier: MIT
- *
- * Copyright (c) 2022, eunomia-bpf org
- * All rights reserved.
- */
-#ifndef _BPF_JIT_HELPER
-#define _BPF_JIT_HELPER
+#include "compiler_utils.hpp"
 
-#include "llvm_jit_context.h"
-#include "llvm_bpf_jit.h"
-#include "ebpf_inst.h"
-#include <functional>
-#include <llvm/IR/Constants.h>
-#include <llvm/Support/Alignment.h>
-#include <llvm/Support/AtomicOrdering.h>
-#include <llvm/ADT/APInt.h>
-#include <llvm/IR/BasicBlock.h>
-#include <llvm/IR/DerivedTypes.h>
-#include <llvm/Support/Debug.h>
-#include <llvm/Support/Error.h>
-#include <llvm/IR/Value.h>
-#include <llvm/IR/IRBuilder.h>
-#include <map>
-#include <tuple>
-#include <utility>
-#include <spdlog/spdlog.h>
-
-static inline bool is_jmp(const ebpf_inst &insn)
+namespace bpftime
 {
-	return (insn.code & 0x07) == EBPF_CLS_JMP ||
-	       (insn.code & 0x07) == EBPF_CLS_JMP32;
-}
 /// Get the source representation of certain ALU operands
-static llvm::Value *emitLoadALUSource(const ebpf_inst &inst, llvm::Value **regs,
-				      llvm::IRBuilder<> &builder)
+llvm::Value *emitLoadALUSource(const ebpf_inst &inst, llvm::Value **regs,
+			       llvm::IRBuilder<> &builder)
 {
 	int srcTy = inst.code & 0x08;
 	int code = inst.code & 0xf0;
@@ -59,9 +31,9 @@ static llvm::Value *emitLoadALUSource(const ebpf_inst &inst, llvm::Value **regs,
 	}
 	return src_val;
 }
-static llvm::Value *emitLoadALUDest(const ebpf_inst &inst, llvm::Value **regs,
-				    llvm::IRBuilder<> &builder,
-				    bool dstAlways64)
+
+llvm::Value *emitLoadALUDest(const ebpf_inst &inst, llvm::Value **regs,
+			     llvm::IRBuilder<> &builder, bool dstAlways64)
 {
 	if (((inst.code & 0x07) == EBPF_CLS_ALU64) || dstAlways64) {
 		return builder.CreateLoad(builder.getInt64Ty(),
@@ -72,8 +44,8 @@ static llvm::Value *emitLoadALUDest(const ebpf_inst &inst, llvm::Value **regs,
 	}
 }
 
-static void emitStoreALUResult(const ebpf_inst &inst, llvm::Value **regs,
-			       llvm::IRBuilder<> &builder, llvm::Value *result)
+void emitStoreALUResult(const ebpf_inst &inst, llvm::Value **regs,
+			llvm::IRBuilder<> &builder, llvm::Value *result)
 {
 	if ((inst.code & 0x07) == EBPF_CLS_ALU64) {
 		builder.CreateStore(result, regs[inst.dst_reg]);
@@ -85,7 +57,7 @@ static void emitStoreALUResult(const ebpf_inst &inst, llvm::Value **regs,
 				    regs[inst.dst_reg]);
 	}
 }
-static inline llvm::Expected<llvm::Value *>
+llvm::Expected<llvm::Value *>
 emitALUEndianConversion(const ebpf_inst &inst, llvm::IRBuilder<> &builder,
 			llvm::Value *dst_val)
 {
@@ -133,7 +105,7 @@ emitALUEndianConversion(const ebpf_inst &inst, llvm::IRBuilder<> &builder,
 	}
 }
 
-static void emitALUWithDstAndSrc(
+void emitALUWithDstAndSrc(
 	const ebpf_inst &inst, llvm::IRBuilder<> &builder, llvm::Value **regs,
 	std::function<llvm::Value *(llvm::Value *, llvm::Value *)> func)
 {
@@ -144,9 +116,8 @@ static void emitALUWithDstAndSrc(
 	emitStoreALUResult(inst, regs, builder, result);
 }
 
-static llvm::Value *emitStoreLoadingSrc(const ebpf_inst &inst,
-					llvm::IRBuilder<> &builder,
-					llvm::Value **regs)
+llvm::Value *emitStoreLoadingSrc(const ebpf_inst &inst,
+				 llvm::IRBuilder<> &builder, llvm::Value **regs)
 {
 	if ((inst.code & 0x07) == EBPF_CLS_STX) {
 		return builder.CreateLoad(builder.getInt64Ty(),
@@ -156,9 +127,8 @@ static llvm::Value *emitStoreLoadingSrc(const ebpf_inst &inst,
 	}
 }
 
-static void emitStoreWritingResult(const ebpf_inst &inst,
-				   llvm::IRBuilder<> &builder,
-				   llvm::Value **regs, llvm::Value *result)
+void emitStoreWritingResult(const ebpf_inst &inst, llvm::IRBuilder<> &builder,
+			    llvm::Value **regs, llvm::Value *result)
 {
 	builder.CreateStore(
 		result,
@@ -168,8 +138,8 @@ static void emitStoreWritingResult(const ebpf_inst &inst,
 				  { builder.getInt64(inst.off) }));
 }
 
-static void emitStore(const ebpf_inst &inst, llvm::IRBuilder<> &builder,
-		      llvm::Value **regs, llvm::IntegerType *destTy)
+void emitStore(const ebpf_inst &inst, llvm::IRBuilder<> &builder,
+	       llvm::Value **regs, llvm::IntegerType *destTy)
 {
 	using namespace llvm;
 	Value *src = emitStoreLoadingSrc(inst, builder, &regs[0]);
@@ -178,7 +148,7 @@ static void emitStore(const ebpf_inst &inst, llvm::IRBuilder<> &builder,
 	emitStoreWritingResult(inst, builder, &regs[0], result);
 }
 
-static std::tuple<llvm::Value *, llvm::Value *, llvm::Value *>
+std::tuple<llvm::Value *, llvm::Value *, llvm::Value *>
 emitJmpLoadSrcAndDstAndZero(const ebpf_inst &inst, llvm::Value **regs,
 			    llvm::IRBuilder<> &builder)
 {
@@ -211,19 +181,7 @@ emitJmpLoadSrcAndDstAndZero(const ebpf_inst &inst, llvm::Value **regs,
 	return { src, dst, zero };
 }
 
-static inline std::string ext_func_sym(uint32_t idx)
-{
-	char buf[16];
-	sprintf(buf, "ext_%04" PRIu32, idx);
-	return buf;
-}
-
-static inline bool is_alu64(const ebpf_inst &insn)
-{
-	return (insn.code & 0x07) == EBPF_CLS_ALU64;
-}
-
-static llvm::Expected<llvm::BasicBlock *>
+llvm::Expected<llvm::BasicBlock *>
 loadJmpDstBlock(uint16_t pc, const ebpf_inst &inst,
 		const std::map<uint16_t, llvm::BasicBlock *> &instBlocks)
 {
@@ -240,7 +198,7 @@ loadJmpDstBlock(uint16_t pc, const ebpf_inst &inst,
 	}
 }
 
-static llvm::Expected<llvm::BasicBlock *>
+llvm::Expected<llvm::BasicBlock *>
 loadCallDstBlock(uint16_t pc, const ebpf_inst &inst,
 		 const std::map<uint16_t, llvm::BasicBlock *> &instBlocks)
 {
@@ -256,7 +214,7 @@ loadCallDstBlock(uint16_t pc, const ebpf_inst &inst,
 	}
 }
 
-static llvm::Expected<llvm::BasicBlock *>
+llvm::Expected<llvm::BasicBlock *>
 loadJmpNextBlock(uint16_t pc, const ebpf_inst &inst,
 		 const std::map<uint16_t, llvm::BasicBlock *> &instBlocks)
 {
@@ -272,7 +230,7 @@ loadJmpNextBlock(uint16_t pc, const ebpf_inst &inst,
 	}
 }
 
-static llvm::Expected<std::pair<llvm::BasicBlock *, llvm::BasicBlock *> >
+llvm::Expected<std::pair<llvm::BasicBlock *, llvm::BasicBlock *> >
 localJmpDstAndNextBlk(uint16_t pc, const ebpf_inst &inst,
 		      const std::map<uint16_t, llvm::BasicBlock *> &instBlocks)
 {
@@ -287,9 +245,8 @@ localJmpDstAndNextBlk(uint16_t pc, const ebpf_inst &inst,
 	}
 }
 
-static llvm::Value *emitLDXLoadingAddr(llvm::IRBuilder<> &builder,
-				       llvm::Value **regs,
-				       const ebpf_inst &inst)
+llvm::Value *emitLDXLoadingAddr(llvm::IRBuilder<> &builder, llvm::Value **regs,
+				const ebpf_inst &inst)
 {
 	// [rX + OFFSET]
 	return builder.CreateGEP(builder.getInt8Ty(),
@@ -298,8 +255,8 @@ static llvm::Value *emitLDXLoadingAddr(llvm::IRBuilder<> &builder,
 				 { builder.getInt64(inst.off) });
 }
 
-static void emitLDXStoringResult(llvm::IRBuilder<> &builder, llvm::Value **regs,
-				 const ebpf_inst &inst, llvm::Value *result)
+void emitLDXStoringResult(llvm::IRBuilder<> &builder, llvm::Value **regs,
+			  const ebpf_inst &inst, llvm::Value *result)
 {
 	// Extend the loaded value to 64bits, then store it into
 	// the register
@@ -307,8 +264,8 @@ static void emitLDXStoringResult(llvm::IRBuilder<> &builder, llvm::Value **regs,
 			    regs[inst.dst_reg]);
 }
 
-static void emitLoadX(llvm::IRBuilder<> &builder, llvm::Value **regs,
-		      const ebpf_inst &inst, llvm::IntegerType *srcTy)
+void emitLoadX(llvm::IRBuilder<> &builder, llvm::Value **regs,
+	       const ebpf_inst &inst, llvm::IntegerType *srcTy)
 {
 	using namespace llvm;
 	Value *addr = emitLDXLoadingAddr(builder, &regs[0], inst);
@@ -316,7 +273,7 @@ static void emitLoadX(llvm::IRBuilder<> &builder, llvm::Value **regs,
 	emitLDXStoringResult(builder, &regs[0], inst, result);
 }
 
-static llvm::Expected<int> emitCondJmpWithDstAndSrc(
+llvm::Expected<int> emitCondJmpWithDstAndSrc(
 	llvm::IRBuilder<> &builder, uint16_t pc, const ebpf_inst &inst,
 	const std::map<uint16_t, llvm::BasicBlock *> &instBlocks,
 	llvm::Value **regs,
@@ -333,7 +290,7 @@ static llvm::Expected<int> emitCondJmpWithDstAndSrc(
 	}
 }
 
-static inline llvm::Expected<int>
+llvm::Expected<int>
 emitExtFuncCall(llvm::IRBuilder<> &builder, const ebpf_inst &inst,
 		const std::map<std::string, llvm::Function *> &extFunc,
 		llvm::Value **regs, llvm::FunctionType *helperFuncTy,
@@ -342,7 +299,7 @@ emitExtFuncCall(llvm::IRBuilder<> &builder, const ebpf_inst &inst,
 	auto funcNameToCall = ext_func_sym(inst.imm);
 	if (auto itr = extFunc.find(funcNameToCall); itr != extFunc.end()) {
 		SPDLOG_DEBUG("Emitting ext func call to {} name {} at pc {}",
-			      inst.imm, funcNameToCall, pc);
+			     inst.imm, funcNameToCall, pc);
 		auto callInst = builder.CreateCall(
 			helperFuncTy, itr->second,
 			{
@@ -366,11 +323,9 @@ emitExtFuncCall(llvm::IRBuilder<> &builder, const ebpf_inst &inst,
 			llvm::inconvertibleErrorCode());
 	}
 }
-static inline void emitAtomicBinOp(llvm::IRBuilder<> &builder,
-				   llvm::Value **regs,
-				   llvm::AtomicRMWInst::BinOp op,
-				   const ebpf_inst &inst, bool is64,
-				   bool is_fetch)
+void emitAtomicBinOp(llvm::IRBuilder<> &builder, llvm::Value **regs,
+		     llvm::AtomicRMWInst::BinOp op, const ebpf_inst &inst,
+		     bool is64, bool is_fetch)
 {
 	auto oldValue = builder.CreateAtomicRMW(
 		op,
@@ -389,4 +344,5 @@ static inline void emitAtomicBinOp(llvm::IRBuilder<> &builder,
 		builder.CreateStore(oldValue, regs[inst.src_reg]);
 	}
 }
-#endif
+
+} // namespace bpftime

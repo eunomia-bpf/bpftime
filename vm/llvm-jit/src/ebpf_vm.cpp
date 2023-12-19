@@ -1,7 +1,5 @@
 #include "ebpf_inst.h"
-#include "llvm_bpf_jit.h"
-#include "llvm_jit_context.h"
-#include "bpf_jit_helpers.h"
+#include "llvm/llvm_jit_context.hpp"
 #include <cassert>
 #include <cstddef>
 #include <cstdlib>
