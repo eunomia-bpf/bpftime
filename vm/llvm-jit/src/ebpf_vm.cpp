@@ -89,7 +89,7 @@ struct ebpf_vm *ebpf_create(void)
 		return NULL;
 	}
 
-	vm->jit_context = new bpf_jit_context(vm);
+	vm->jit_context = new llvm_bpf_jit_context(vm);
 
 	vm->bounds_check_enabled = true;
 	vm->unwind_stack_extension_index = -1;

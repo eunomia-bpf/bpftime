@@ -82,7 +82,7 @@ const int CALL_STACK_SIZE = 64;
 	EBPF_OP_EXIT, EBPF_OP_CALL
 */
 Expected<ThreadSafeModule>
-bpf_jit_context::generateModule(const std::vector<std::string> &extFuncNames,
+llvm_bpf_jit_context::generateModule(const std::vector<std::string> &extFuncNames,
 				const std::vector<std::string> &lddwHelpers)
 {
 	auto context = std::make_unique<LLVMContext>();
