@@ -1,0 +1,30 @@
+name: Run unit tests of llvm-jit
+
+on:
+  push:
+    branches: "master"
+  pull_request: 
+    branches: "master"
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+
+    steps:
+    - uses: actions/checkout@v3
+      with:
+        submodules: 'recursive'
+
+    - name: install deps
+      run: |
+        sudo apt update
+        sudo apt install -y --no-install-recommends \
+        libelf1 libelf-dev zlib1g-dev make git libboost1.74-all-dev \
+        binutils-dev libyaml-cpp-dev  gcc-12 g++-12 llvm
+
+    - name: build runtime
+      run:  CC=gcc-12 CXX=g++-12 make build-llvm -j
+    - name: Run tests
+      run: |
+        ./build/vm/llvm-jit/unit-test/llvm_jit_tests
+
