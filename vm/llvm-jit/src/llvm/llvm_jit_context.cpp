@@ -205,6 +205,7 @@ void llvm_bpf_jit_context::load_aot_object(const std::vector<uint8_t> &buf)
 		SPDLOG_CRITICAL("Unable to add object file: {}", buf);
 		throw std::runtime_error("Failed to load AOT object");
 	}
+	this->jit = std::move(jit);
 	// Test getting entry function
 	this->get_entry_address();
 }
