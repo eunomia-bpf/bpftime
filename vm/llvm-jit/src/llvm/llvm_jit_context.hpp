@@ -14,6 +14,7 @@
 #include <optional>
 #include <string>
 #include <pthread.h>
+#include <tuple>
 typedef uint8_t u8;
 typedef int8_t s8;
 typedef uint16_t u16;
@@ -42,12 +43,18 @@ struct llvm_bpf_jit_context {
 	std::vector<uint8_t>
 	do_aot_compile(const std::vector<std::string> &extFuncNames,
 		       const std::vector<std::string> &lddwHelpers);
+	// (JIT, extFuncs, lddwHelpers)
+	std::tuple<std::unique_ptr<llvm::orc::LLJIT>, std::vector<std::string>,
+		   std::vector<std::string> >
+	create_and_initialize_lljit_instance();
 
     public:
 	llvm_bpf_jit_context(const ebpf_vm *m_vm);
 	virtual ~llvm_bpf_jit_context();
 	ebpf_jit_fn compile();
+	ebpf_jit_fn get_entry_address();
 	std::vector<uint8_t> do_aot_compile();
+	void load_aot_object(const std::vector<uint8_t> &buf);
 };
 
 #endif

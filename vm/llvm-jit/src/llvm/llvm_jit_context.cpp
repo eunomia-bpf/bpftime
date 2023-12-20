@@ -28,9 +28,22 @@
 #include <iostream>
 #include <string>
 #include <spdlog/spdlog.h>
+#include <tuple>
 using namespace llvm;
 using namespace llvm::orc;
 using namespace bpftime;
+
+struct spin_lock_guard {
+	pthread_spinlock_t *spin;
+	spin_lock_guard(pthread_spinlock_t *spin) : spin(spin)
+	{
+		pthread_spin_lock(spin);
+	}
+	~spin_lock_guard()
+	{
+		pthread_spin_unlock(spin);
+	}
+};
 
 static ExitOnError ExitOnErr;
 
@@ -66,54 +79,8 @@ llvm_bpf_jit_context::llvm_bpf_jit_context(const ebpf_vm *m_vm) : vm(m_vm)
 }
 void llvm_bpf_jit_context::do_jit_compile()
 {
-	// Create a JIT builder
-	SPDLOG_DEBUG("LLVM-JIT: Compiling using LLJIT");
-	auto jit = ExitOnErr(LLJITBuilder().create());
-
-	auto &mainDylib = jit->getMainJITDylib();
-	std::vector<std::string> extFuncNames;
-	// insert the helper functions
-	SymbolMap extSymbols;
-	for (uint32_t i = 0; i < std::size(vm->ext_funcs); i++) {
-		if (vm->ext_funcs[i] != nullptr) {
-			auto sym = JITEvaluatedSymbol::fromPointer(
-				vm->ext_funcs[i]);
-			auto symName = jit->getExecutionSession().intern(
-				ext_func_sym(i));
-			sym.setFlags(JITSymbolFlags::Callable |
-				     JITSymbolFlags::Exported);
-			extSymbols.try_emplace(symName, sym);
-			extFuncNames.push_back(ext_func_sym(i));
-		}
-	}
-#if defined(__arm__) || defined(_M_ARM)
-	SPDLOG_INFO("Defining __aeabi_unwind_cpp_pr1 on arm32");
-	extSymbols.try_emplace(
-		jit->getExecutionSession().intern("__aeabi_unwind_cpp_pr1"),
-		JITEvaluatedSymbol::fromPointer(__aeabi_unwind_cpp_pr1));
-#endif
-	ExitOnErr(mainDylib.define(absoluteSymbols(extSymbols)));
-	// Define lddw helpers
-	SymbolMap lddwSyms;
-	std::vector<std::string> definedLddwHelpers;
-	const auto tryDefineLddwHelper = [&](const char *name, void *func) {
-		if (func) {
-			SPDLOG_DEBUG("Defining LDDW helper {} with addr {:x}",
-				     name, (uintptr_t)func);
-			auto sym = JITEvaluatedSymbol::fromPointer(func);
-			sym.setFlags(JITSymbolFlags::Callable |
-				     JITSymbolFlags::Exported);
-			lddwSyms.try_emplace(
-				jit->getExecutionSession().intern(name), sym);
-			definedLddwHelpers.push_back(name);
-		}
-	};
-	tryDefineLddwHelper(LDDW_HELPER_MAP_BY_FD, (void *)vm->map_by_fd);
-	tryDefineLddwHelper(LDDW_HELPER_MAP_BY_IDX, (void *)vm->map_by_idx);
-	tryDefineLddwHelper(LDDW_HELPER_MAP_VAL, (void *)vm->map_val);
-	tryDefineLddwHelper(LDDW_HELPER_CODE_ADDR, (void *)vm->code_addr);
-	tryDefineLddwHelper(LDDW_HELPER_VAR_ADDR, (void *)vm->var_addr);
-	ExitOnErr(mainDylib.define(absoluteSymbols(lddwSyms)));
+	auto [jit, extFuncNames, definedLddwHelpers] =
+		create_and_initialize_lljit_instance();
 	auto bpfModule =
 		ExitOnErr(generateModule(extFuncNames, definedLddwHelpers));
 	bpfModule.withModuleDo([](auto &M) { optimizeModule(M); });
@@ -122,25 +89,14 @@ void llvm_bpf_jit_context::do_jit_compile()
 }
 ebpf_jit_fn llvm_bpf_jit_context::compile()
 {
-	struct _spin_lock_guard {
-		pthread_spinlock_t *spin;
-		_spin_lock_guard(pthread_spinlock_t *spin) : spin(spin)
-		{
-			pthread_spin_lock(spin);
-		}
-		~_spin_lock_guard()
-		{
-			pthread_spin_unlock(spin);
-		}
-	} guard(compiling.get());
+	spin_lock_guard guard(compiling.get());
 	if (!this->jit.has_value()) {
 		do_jit_compile();
 	} else {
 		SPDLOG_DEBUG("LLVM-JIT: already compiled");
 	}
 
-	auto func = ExitOnErr(this->jit.value()->lookup("bpf_main"));
-	return func.toPtr<ebpf_jit_fn>();
+	return this->get_entry_address();
 }
 
 llvm_bpf_jit_context::~llvm_bpf_jit_context()
@@ -228,4 +184,99 @@ std::vector<uint8_t> llvm_bpf_jit_context::do_aot_compile()
 	tryDefineLddwHelper(LDDW_HELPER_CODE_ADDR, (void *)vm->code_addr);
 	tryDefineLddwHelper(LDDW_HELPER_VAR_ADDR, (void *)vm->var_addr);
 	return this->do_aot_compile(extNames, lddwNames);
+}
+
+void llvm_bpf_jit_context::load_aot_object(const std::vector<uint8_t> &buf)
+{
+	spin_lock_guard guard(compiling.get());
+	if (jit.has_value()) {
+		SPDLOG_ERROR("Unable to load aot object: already compiled");
+		throw std::runtime_error(
+			"Unable to load aot object: already compiled");
+	}
+	auto buffer = MemoryBuffer::getMemBuffer(
+		StringRef((const char *)buf.data(), buf.size()));
+	auto [jit, extFuncNames, definedLddwHelpers] =
+		create_and_initialize_lljit_instance();
+	if (auto err = jit->addObjectFile(std::move(buffer)); err) {
+		std::string buf;
+		raw_string_ostream os(buf);
+		os << err;
+		SPDLOG_CRITICAL("Unable to add object file: {}", buf);
+		throw std::runtime_error("Failed to load AOT object");
+	}
+	// Test getting entry function
+	this->get_entry_address();
+}
+
+std::tuple<std::unique_ptr<llvm::orc::LLJIT>, std::vector<std::string>,
+	   std::vector<std::string> >
+llvm_bpf_jit_context::create_and_initialize_lljit_instance()
+{
+	// Create a JIT builder
+	SPDLOG_DEBUG("LLVM-JIT: Creating LLJIT instance");
+	auto jit = ExitOnErr(LLJITBuilder().create());
+
+	auto &mainDylib = jit->getMainJITDylib();
+	std::vector<std::string> extFuncNames;
+	// insert the helper functions
+	SymbolMap extSymbols;
+	for (uint32_t i = 0; i < std::size(vm->ext_funcs); i++) {
+		if (vm->ext_funcs[i] != nullptr) {
+			auto sym = JITEvaluatedSymbol::fromPointer(
+				vm->ext_funcs[i]);
+			auto symName = jit->getExecutionSession().intern(
+				ext_func_sym(i));
+			sym.setFlags(JITSymbolFlags::Callable |
+				     JITSymbolFlags::Exported);
+			extSymbols.try_emplace(symName, sym);
+			extFuncNames.push_back(ext_func_sym(i));
+		}
+	}
+#if defined(__arm__) || defined(_M_ARM)
+	SPDLOG_INFO("Defining __aeabi_unwind_cpp_pr1 on arm32");
+	extSymbols.try_emplace(
+		jit->getExecutionSession().intern("__aeabi_unwind_cpp_pr1"),
+		JITEvaluatedSymbol::fromPointer(__aeabi_unwind_cpp_pr1));
+#endif
+	ExitOnErr(mainDylib.define(absoluteSymbols(extSymbols)));
+	// Define lddw helpers
+	SymbolMap lddwSyms;
+	std::vector<std::string> definedLddwHelpers;
+	const auto tryDefineLddwHelper = [&](const char *name, void *func) {
+		if (func) {
+			SPDLOG_DEBUG("Defining LDDW helper {} with addr {:x}",
+				     name, (uintptr_t)func);
+			auto sym = JITEvaluatedSymbol::fromPointer(func);
+			sym.setFlags(JITSymbolFlags::Callable |
+				     JITSymbolFlags::Exported);
+			lddwSyms.try_emplace(
+				jit->getExecutionSession().intern(name), sym);
+			definedLddwHelpers.push_back(name);
+		}
+	};
+	tryDefineLddwHelper(LDDW_HELPER_MAP_BY_FD, (void *)vm->map_by_fd);
+	tryDefineLddwHelper(LDDW_HELPER_MAP_BY_IDX, (void *)vm->map_by_idx);
+	tryDefineLddwHelper(LDDW_HELPER_MAP_VAL, (void *)vm->map_val);
+	tryDefineLddwHelper(LDDW_HELPER_CODE_ADDR, (void *)vm->code_addr);
+	tryDefineLddwHelper(LDDW_HELPER_VAR_ADDR, (void *)vm->var_addr);
+	ExitOnErr(mainDylib.define(absoluteSymbols(lddwSyms)));
+	return { std::move(jit), extFuncNames, definedLddwHelpers };
+}
+ebpf_jit_fn llvm_bpf_jit_context::get_entry_address()
+{
+	if (!this->jit.has_value()) {
+		SPDLOG_CRITICAL(
+			"Not compiled yet. Unable to get entry func address");
+		throw std::runtime_error("Not compiled yet");
+	}
+	if (auto err = (*jit)->lookup("bpf_main"); !err) {
+		std::string buf;
+		raw_string_ostream os(buf);
+		os << err.takeError();
+		SPDLOG_CRITICAL("Unable to find symbol `bpf_main`: {}", buf);
+		throw std::runtime_error("Unable to link symbol `bpf_main`");
+	} else {
+		return err->toPtr<ebpf_jit_fn>();
+	}
 }

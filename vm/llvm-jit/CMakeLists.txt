@@ -74,3 +74,5 @@ add_dependencies(vm-llvm-bpf-test vm-bpf)
 target_link_libraries(vm-llvm-bpf-test vm-bpf)
 
 target_include_directories(vm-bpf PUBLIC ../include include)
+
+add_subdirectory(unit-test)
