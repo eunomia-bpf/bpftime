@@ -76,3 +76,23 @@ target_link_libraries(vm-llvm-bpf-test vm-bpf)
 target_include_directories(vm-bpf PUBLIC ../include include)
 
 add_subdirectory(unit-test)
+
+include(FetchContent)
+FetchContent_Declare(
+    picosha2
+    GIT_REPOSITORY https://github.com/okdshin/PicoSHA2
+    GIT_TAG 27fcf69
+)
+FetchContent_MakeAvailable(picosha2)
+FetchContent_GetProperties(picosha2)
+
+# get_target_property(picosha2_INCLUDE picosha2 INTERFACE_INCLUDE_DIRECTORIES)
+set(picosha2_INCLUDE ${picosha2_SOURCE_DIR})
+target_include_directories(vm-bpf PRIVATE ${picosha2_INCLUDE})
+add_dependencies(vm-bpf picosha2)
+
+message("INCLUDES: ${picosha2_INCLUDE}")
+
+find_package(Boost REQUIRED)
+
+target_include_directories(vm-bpf PRIVATE ${Boost_INCLUDE})
