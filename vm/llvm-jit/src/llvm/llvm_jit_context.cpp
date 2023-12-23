@@ -109,7 +109,14 @@ static std::string hash_ebpf_program(const char *bytes, size_t size)
 static std::pair<std::filesystem::path, std::filesystem::path>
 ensure_aot_cache_dir_and_cache_file()
 {
-	auto dir = std::filesystem::path(getenv("HOME")) / ".bpftime-aot-cache";
+	const char *home_dir = getenv("HOME");
+	if (home_dir) {
+		SPDLOG_INFO("Use `{}` as home directory", home_dir);
+	} else {
+		home_dir = ".";
+		SPDLOG_INFO("Home dir not found, using working directory");
+	}
+	auto dir = std::filesystem::path(home_dir) / ".bpftime-aot-cache";
 	if (!std::filesystem::exists(dir)) {
 		int err = mkdir(dir.c_str(), 0777);
 		if (err != 0) {
