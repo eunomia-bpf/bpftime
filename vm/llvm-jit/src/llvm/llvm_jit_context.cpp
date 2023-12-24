@@ -28,6 +28,7 @@
 #include <sstream>
 #include <stdexcept>
 #include <sys/stat.h>
+#include <system_error>
 #include <utility>
 #include <iostream>
 #include <string>
@@ -116,13 +117,13 @@ ensure_aot_cache_dir_and_cache_file()
 		home_dir = ".";
 		SPDLOG_INFO("Home dir not found, using working directory");
 	}
-	auto dir = std::filesystem::path(home_dir) / ".bpftime-aot-cache";
+	auto dir = std::filesystem::path(home_dir) / ".bpftime" / "aot-cache";
 	if (!std::filesystem::exists(dir)) {
-		int err = mkdir(dir.c_str(), 0777);
-		if (err != 0) {
+		std::error_code ec;
+		if (!std::filesystem::create_directories(dir, ec)) {
 			SPDLOG_CRITICAL(
 				"Unable to create AOT cache directory: {}",
-				err);
+				ec.value());
 			throw std::runtime_error("Unable to create aot cache");
 		}
 	}
@@ -149,7 +150,7 @@ load_aot_cache(const std::filesystem::path &path)
 	std::ifstream ifs(path, std::ios::binary | std::ios::ate);
 	if (!ifs.is_open()) {
 		SPDLOG_WARN(
-			"LLVM-JIT: Unable to open aot cache file , fallback to jit");
+			"LLVM-JIT: Unable to open aot cache file, fallback to jit");
 		return {};
 	} else {
 		std::streamsize size = ifs.tellg();
