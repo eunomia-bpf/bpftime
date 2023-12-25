@@ -171,7 +171,7 @@ ebpf_jit_fn llvm_bpf_jit_context::compile()
 {
 	spin_lock_guard guard(compiling.get());
 	if (!this->jit.has_value()) {
-		if (!getenv("BPFTIME_DISABLE_AOT")) {
+		if (getenv("BPFTIME_ENABLE_AOT")) {
 			SPDLOG_INFO("LLVM-JIT: Entering AOT compilation");
 			auto ebpf_prog_hash = hash_ebpf_program(
 				(const char *)vm->insnsi, vm->num_insts * 8);
