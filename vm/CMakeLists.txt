@@ -61,4 +61,5 @@ if(BPFTIME_ENABLE_UNIT_TESTING)
   add_subdirectory(test)
 endif()
 
+add_subdirectory(test-runner)
 add_subdirectory(cli)
