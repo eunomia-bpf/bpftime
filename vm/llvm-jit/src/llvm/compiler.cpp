@@ -4,7 +4,7 @@
  * All rights reserved.
  */
 #include "llvm_bpf_jit.h"
-#include "llvm_jit_context.h"
+#include "llvm_jit_context.hpp"
 #include "ebpf_inst.h"
 #include "spdlog/spdlog.h"
 #include <cassert>
@@ -25,10 +25,12 @@
 #include <map>
 #include <vector>
 #include <endian.h>
-#include "bpf_jit_helpers.h"
+#include "compiler_utils.hpp"
 #include <spdlog/spdlog.h>
 using namespace llvm;
 using namespace llvm::orc;
+using namespace bpftime;
+
 const int STACK_SIZE = (EBPF_STACK_SIZE + 7) / 8;
 const int CALL_STACK_SIZE = 64;
 
@@ -80,8 +82,7 @@ const int CALL_STACK_SIZE = 64;
 	EBPF_OP_EXIT, EBPF_OP_CALL
 */
 Expected<ThreadSafeModule>
-bpf_jit_context::generateModule(const LLJIT &jit,
-				const std::vector<std::string> &extFuncNames,
+llvm_bpf_jit_context::generateModule(const std::vector<std::string> &extFuncNames,
 				const std::vector<std::string> &lddwHelpers)
 {
 	auto context = std::make_unique<LLVMContext>();
@@ -112,17 +113,15 @@ bpf_jit_context::generateModule(const LLJIT &jit,
 		if (helperName == LDDW_HELPER_MAP_VAL) {
 			func = Function::Create(lddwHelperWithUint64,
 						Function::ExternalLinkage,
-						jit.mangle(helperName),
-						jitModule.get());
+						helperName, jitModule.get());
 
 		} else {
 			func = Function::Create(lddwHelperWithUint32,
 						Function::ExternalLinkage,
-						jit.mangle(helperName),
-						jitModule.get());
+						helperName, jitModule.get());
 		}
 		SPDLOG_DEBUG("Initializing lddw function with name {}",
-			      helperName);
+			     helperName);
 		lddwHelper[helperName] = func;
 	}
 	// Define ext functions
@@ -135,10 +134,9 @@ bpf_jit_context::generateModule(const LLJIT &jit,
 		false);
 
 	for (const auto &name : extFuncNames) {
-		auto currFunc =
-			Function::Create(helperFuncTy,
-					 Function::ExternalLinkage,
-					 jit.mangle(name), jitModule.get());
+		auto currFunc = Function::Create(helperFuncTy,
+						 Function::ExternalLinkage,
+						 name, jitModule.get());
 		extFunc[name] = currFunc;
 	}
 	std::vector<bool> blockBegin(vm->num_insts, false);
@@ -626,11 +624,10 @@ bpf_jit_context::generateModule(const LLJIT &jit,
 			pc++;
 
 			SPDLOG_TRACE("Load LDDW val= {} part1={:x} part2={:x}",
-				      val, (uint64_t)inst.imm,
-				      (uint64_t)nextInst.imm);
+				     val, (uint64_t)inst.imm,
+				     (uint64_t)nextInst.imm);
 			if (inst.src_reg == 0) {
-				SPDLOG_DEBUG("Emit lddw helper 0 at pc {}",
-					      pc);
+				SPDLOG_DEBUG("Emit lddw helper 0 at pc {}", pc);
 				builder.CreateStore(builder.getInt64(val),
 						    regs[inst.dst_reg]);
 			} else if (inst.src_reg == 1) {

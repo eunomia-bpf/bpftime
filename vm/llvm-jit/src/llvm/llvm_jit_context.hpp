@@ -14,6 +14,7 @@
 #include <optional>
 #include <string>
 #include <pthread.h>
+#include <tuple>
 typedef uint8_t u8;
 typedef int8_t s8;
 typedef uint16_t u16;
@@ -31,19 +32,29 @@ const static char *LDDW_HELPER_CODE_ADDR = "__lddw_helper_code_addr";
 
 #define IS_ALIGNED(x, a) (((uintptr_t)(x) & ((a)-1)) == 0)
 
-struct bpf_jit_context {
+struct llvm_bpf_jit_context {
 	const ebpf_vm *vm;
 	std::optional<std::unique_ptr<llvm::orc::LLJIT> > jit;
 	std::unique_ptr<pthread_spinlock_t> compiling;
 	llvm::Expected<llvm::orc::ThreadSafeModule>
-	generateModule(const llvm::orc::LLJIT &jit,
-		       const std::vector<std::string> &extFuncNames,
+	generateModule(const std::vector<std::string> &extFuncNames,
 		       const std::vector<std::string> &lddwHelpers);
+	void do_jit_compile();
+	std::vector<uint8_t>
+	do_aot_compile(const std::vector<std::string> &extFuncNames,
+		       const std::vector<std::string> &lddwHelpers);
+	// (JIT, extFuncs, lddwHelpers)
+	std::tuple<std::unique_ptr<llvm::orc::LLJIT>, std::vector<std::string>,
+		   std::vector<std::string> >
+	create_and_initialize_lljit_instance();
 
     public:
-	bpf_jit_context(const ebpf_vm *m_vm);
-	virtual ~bpf_jit_context();
+	llvm_bpf_jit_context(const ebpf_vm *m_vm);
+	virtual ~llvm_bpf_jit_context();
 	ebpf_jit_fn compile();
+	ebpf_jit_fn get_entry_address();
+	std::vector<uint8_t> do_aot_compile();
+	void load_aot_object(const std::vector<uint8_t> &buf);
 };
 
 #endif

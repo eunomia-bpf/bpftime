@@ -23,7 +23,7 @@ extern "C" {
 typedef uint64_t (*ext_func)(uint64_t arg0, uint64_t arg1, uint64_t arg2,
 			     uint64_t arg3, uint64_t arg4);
 
-struct bpf_jit_context;
+struct llvm_bpf_jit_context;
 
 struct ebpf_vm {
 	/* ubpf_defs*/
@@ -37,7 +37,7 @@ struct ebpf_vm {
 	int (*error_printf)(FILE *stream, const char *format, ...) = NULL;
 	uint64_t pointer_secret;
 	ebpf_jit_fn jitted_function;
-	bpf_jit_context *jit_context;
+	llvm_bpf_jit_context *jit_context;
 	uint64_t (*map_by_fd)(uint32_t);
 	uint64_t (*map_by_idx)(uint32_t);
 	uint64_t (*map_val)(uint64_t);

@@ -15,7 +15,7 @@
 #include "llvm/Support/TargetSelect.h"
 #include "llvm/Support/raw_ostream.h"
 #include "llvm/Support/Error.h"
-#include "llvm_jit_context.h"
+#include "llvm/llvm_jit_context.hpp"
 #include "ebpf-vm.h"
 
 using namespace llvm;
