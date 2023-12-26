@@ -38,6 +38,7 @@ message(STATUS "Started CMake for ${PROJECT_NAME} v${PROJECT_VERSION}...\n")
 
 if(BPFTIME_LLVM_JIT)
   add_subdirectory(llvm-jit)
+  add_subdirectory(cli)
 else()
   add_subdirectory(simple-jit)
 endif()
@@ -77,4 +78,4 @@ if(BPFTIME_ENABLE_UNIT_TESTING)
 endif()
 
 add_subdirectory(test-runner)
-add_subdirectory(cli)
+

@@ -91,8 +91,6 @@ set(picosha2_INCLUDE ${picosha2_SOURCE_DIR})
 target_include_directories(vm-bpf PRIVATE ${picosha2_INCLUDE})
 add_dependencies(vm-bpf picosha2)
 
-message("INCLUDES: ${picosha2_INCLUDE}")
-
 find_package(Boost REQUIRED)
 
 target_include_directories(vm-bpf PRIVATE ${Boost_INCLUDE})

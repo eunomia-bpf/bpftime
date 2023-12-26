@@ -5,7 +5,6 @@ add_executable(
 
 set_target_properties(bpftime-vm-cli PROPERTIES OUTPUT_NAME "bpftime-vm")
 
-
 include(FetchContent)
 FetchContent_Declare(
     argparse
@@ -13,12 +12,12 @@ FetchContent_Declare(
 )
 FetchContent_MakeAvailable(argparse)
 
-target_include_directories(bpftime-vm-cli PRIVATE  ${SPDLOG_INCLUDE} ${argparse_INCLUDE})
-target_link_libraries(bpftime-vm-cli PRIVATE spdlog::spdlog  argparse)
+target_include_directories(bpftime-vm-cli PRIVATE ${SPDLOG_INCLUDE} ${argparse_INCLUDE} ${CMAKE_CURRENT_SOURCE_DIR}/../llvm-jit/src ${CMAKE_CURRENT_SOURCE_DIR}/../llvm-jit/include ${CMAKE_CURRENT_SOURCE_DIR}/../include)
+target_link_libraries(bpftime-vm-cli PRIVATE spdlog::spdlog argparse vm-bpf)
 set_property(TARGET bpftime-vm-cli PROPERTY CXX_STANDARD 20)
 
 target_compile_definitions(bpftime-vm-cli PRIVATE _GNU_SOURCE)
 
-add_dependencies(bpftime-vm-cli spdlog::spdlog argparse)
+add_dependencies(bpftime-vm-cli spdlog::spdlog argparse vm-bpf)
 
 install(TARGETS bpftime-vm-cli CONFIGURATIONS Release Debug DESTINATION ~/.bpftime)
