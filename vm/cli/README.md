@@ -15,6 +15,6 @@ Subcommands:
 
 A CLI program for AOT of llvm-jit.
 
-It can build ebpf ELF into native elf, or execute compiled native ELF.
+It can build ebpf ELF into native elf, or execute compiled native ELF. **Helpers and relocations are not supported**
 
 This program might be installed by running `make release-with-llvm-jit` in the project root.
