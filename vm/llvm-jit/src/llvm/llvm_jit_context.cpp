@@ -188,7 +188,7 @@ ebpf_jit_fn llvm_bpf_jit_context::compile()
 			SPDLOG_DEBUG("LLVM_JIT: cache lock acquired");
 			auto cache_file = cache_dir / ebpf_prog_hash;
 			SPDLOG_DEBUG("LLVM-JIT: cache file is {}",
-				    cache_file.c_str());
+				     cache_file.c_str());
 			if (std::filesystem::exists(cache_file)) {
 				SPDLOG_INFO(
 					"LLVM-JIT: Try loading aot cache..");
@@ -229,12 +229,13 @@ std::vector<uint8_t> llvm_bpf_jit_context::do_aot_compile(
 	const std::vector<std::string> &extFuncNames,
 	const std::vector<std::string> &lddwHelpers)
 {
-	SPDLOG_INFO("AOT: start");
+	SPDLOG_DEBUG("AOT: start");
 	if (auto module = generateModule(extFuncNames, lddwHelpers); module) {
 		auto defaultTargetTriple = llvm::sys::getDefaultTargetTriple();
 		SPDLOG_DEBUG("AOT: target triple: {}", defaultTargetTriple);
 		return module->withModuleDo([&](auto &module)
 						    -> std::vector<uint8_t> {
+			optimizeModule(module);
 			module.setTargetTriple(defaultTargetTriple);
 			std::string error;
 			auto target = TargetRegistry::lookupTarget(
