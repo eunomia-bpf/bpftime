@@ -55,13 +55,13 @@ build-iouring: ## build the package
 release:
 	cmake -Bbuild  -DBPFTIME_ENABLE_UNIT_TESTING=0 \
 				   -DCMAKE_BUILD_TYPE:STRING=Release \
-				   -DBPFTIME_ENABLE_LTO=0
+				   -DBPFTIME_ENABLE_LTO=1
 	cmake --build build --config Release --target install
 
 release-with-llvm-jit: ## build the package, with llvm-jit
 	cmake -Bbuild  -DBPFTIME_ENABLE_UNIT_TESTING=0 \
 				   -DCMAKE_BUILD_TYPE:STRING=Release \
-				   -DBPFTIME_ENABLE_LTO=0 \
+				   -DBPFTIME_ENABLE_LTO=1 \
 				   -DBPFTIME_LLVM_JIT=1
 	cmake --build build --config Release --target install
 

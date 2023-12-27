@@ -39,7 +39,7 @@ ecli
 documents/frida/hello
 linux-git/
 jitterbug
-*.o
+/*.o
 
 __pycache__
 .cache
