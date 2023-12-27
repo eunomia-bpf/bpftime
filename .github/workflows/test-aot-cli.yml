@@ -26,7 +26,7 @@ jobs:
         cd .github/assets
         bpftime-vm build sum.bpf.o
         echo "AwAAAAEAAAACAAAAAwAAAA==" | base64 -d > test.bin
-        if program_output=$(bpftime-vm load test.o test.bin) | grep "Output: 6"; then
+        if program_output=$(bpftime-vm run test.o test.bin) | grep "Output: 6"; then
           echo "Successful!"
           exit 0
         else
