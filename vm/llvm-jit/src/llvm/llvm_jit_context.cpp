@@ -112,10 +112,10 @@ ensure_aot_cache_dir_and_cache_file()
 {
 	const char *home_dir = getenv("HOME");
 	if (home_dir) {
-		SPDLOG_INFO("Use `{}` as home directory", home_dir);
+		SPDLOG_DEBUG("Use `{}` as home directory", home_dir);
 	} else {
 		home_dir = ".";
-		SPDLOG_INFO("Home dir not found, using working directory");
+		SPDLOG_DEBUG("Home dir not found, using working directory");
 	}
 	auto dir = std::filesystem::path(home_dir) / ".bpftime" / "aot-cache";
 	if (!std::filesystem::exists(dir)) {
@@ -172,7 +172,7 @@ ebpf_jit_fn llvm_bpf_jit_context::compile()
 	spin_lock_guard guard(compiling.get());
 	if (!this->jit.has_value()) {
 		if (getenv("BPFTIME_ENABLE_AOT")) {
-			SPDLOG_INFO("LLVM-JIT: Entering AOT compilation");
+			SPDLOG_DEBUG("LLVM-JIT: Entering AOT compilation");
 			auto ebpf_prog_hash = hash_ebpf_program(
 				(const char *)vm->insnsi, vm->num_insts * 8);
 			SPDLOG_INFO("LLVM-JIT: SHA256 of ebpf program: {}",
@@ -185,10 +185,10 @@ ebpf_jit_fn llvm_bpf_jit_context::compile()
 			boost::interprocess::scoped_lock<
 				boost::interprocess::file_lock>
 				_guard(flock);
-			SPDLOG_INFO("LLVM_JIT: cache lock acquired");
+			SPDLOG_DEBUG("LLVM_JIT: cache lock acquired");
 			auto cache_file = cache_dir / ebpf_prog_hash;
-			SPDLOG_INFO("LLVM-JIT: cache file is {}",
-				    cache_file.c_str());
+			SPDLOG_DEBUG("LLVM-JIT: cache file is {}",
+				     cache_file.c_str());
 			if (std::filesystem::exists(cache_file)) {
 				SPDLOG_INFO(
 					"LLVM-JIT: Try loading aot cache..");
@@ -210,7 +210,7 @@ ebpf_jit_fn llvm_bpf_jit_context::compile()
 			}
 
 		} else {
-			SPDLOG_INFO("LLVM-JIT: AOT disabled");
+			SPDLOG_DEBUG("LLVM-JIT: AOT disabled, using JIT");
 			do_jit_compile();
 		}
 	} else {
@@ -229,12 +229,13 @@ std::vector<uint8_t> llvm_bpf_jit_context::do_aot_compile(
 	const std::vector<std::string> &extFuncNames,
 	const std::vector<std::string> &lddwHelpers)
 {
-	SPDLOG_INFO("AOT: start");
+	SPDLOG_DEBUG("AOT: start");
 	if (auto module = generateModule(extFuncNames, lddwHelpers); module) {
 		auto defaultTargetTriple = llvm::sys::getDefaultTargetTriple();
 		SPDLOG_DEBUG("AOT: target triple: {}", defaultTargetTriple);
 		return module->withModuleDo([&](auto &module)
 						    -> std::vector<uint8_t> {
+			optimizeModule(module);
 			module.setTargetTriple(defaultTargetTriple);
 			std::string error;
 			auto target = TargetRegistry::lookupTarget(
@@ -400,7 +401,7 @@ ebpf_jit_fn llvm_bpf_jit_context::get_entry_address()
 		throw std::runtime_error("Unable to link symbol `bpf_main`");
 	} else {
 		auto addr = err->toPtr<ebpf_jit_fn>();
-		SPDLOG_INFO("LLVM-JIT: Entry func is {:x}", (uintptr_t)addr);
+		SPDLOG_DEBUG("LLVM-JIT: Entry func is {:x}", (uintptr_t)addr);
 		return addr;
 	}
 }

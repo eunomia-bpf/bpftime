@@ -1,0 +1,39 @@
+name: Build and test AOT cli
+
+on:
+  push:
+    branches: [ master ]
+  pull_request:
+    branches: [ master ]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v2
+      with:
+        submodules: 'recursive'
+    - name: Install dependencies
+      run: | 
+        sudo apt-get update
+        sudo apt-get install binutils-dev libboost1.74-all-dev libelf-dev zlib1g-dev libyaml-cpp-dev gcc-12 g++-12 llvm
+    - name: Build and install everything
+      run: |
+        CC=gcc-12 CXX=g++-12 make release-with-llvm-jit -j
+    - name: Do compilation & run
+      run: |
+        export PATH=$PATH:~/.bpftime
+        cd .github/assets
+        bpftime-vm build sum.bpf.o
+        echo "AwAAAAEAAAACAAAAAwAAAA==" | base64 -d > test.bin
+        program_output=$(bpftime-vm run test.o test.bin)
+        echo $program_output
+        if echo $program_output | grep "Output: 6"; then
+          echo "Successful!"
+          exit 0
+        else
+          echo "Not found!"
+          exit 1
+        fi
+        
+      
