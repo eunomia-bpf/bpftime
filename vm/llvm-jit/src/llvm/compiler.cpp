@@ -81,9 +81,9 @@ const int CALL_STACK_SIZE = 64;
 	Other:
 	EBPF_OP_EXIT, EBPF_OP_CALL
 */
-Expected<ThreadSafeModule>
-llvm_bpf_jit_context::generateModule(const std::vector<std::string> &extFuncNames,
-				const std::vector<std::string> &lddwHelpers)
+Expected<ThreadSafeModule> llvm_bpf_jit_context::generateModule(
+	const std::vector<std::string> &extFuncNames,
+	const std::vector<std::string> &lddwHelpers)
 {
 	auto context = std::make_unique<LLVMContext>();
 	auto jitModule = std::make_unique<Module>("bpf-jit", *context);
@@ -856,7 +856,7 @@ llvm_bpf_jit_context::generateModule(const std::vector<std::string> &extFuncName
 			} else {
 				if (auto exp = emitExtFuncCall(
 					    builder, inst, extFunc, &regs[0],
-					    helperFuncTy, pc);
+					    helperFuncTy, pc, exitBlk);
 				    !exp) {
 					return exp.takeError();
 				}

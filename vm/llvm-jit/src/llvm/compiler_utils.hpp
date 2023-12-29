@@ -101,7 +101,7 @@ llvm::Expected<int>
 emitExtFuncCall(llvm::IRBuilder<> &builder, const ebpf_inst &inst,
 		const std::map<std::string, llvm::Function *> &extFunc,
 		llvm::Value **regs, llvm::FunctionType *helperFuncTy,
-		uint16_t pc);
+		uint16_t pc, llvm::BasicBlock *exitBlk);
 void emitAtomicBinOp(llvm::IRBuilder<> &builder, llvm::Value **regs,
 		     llvm::AtomicRMWInst::BinOp op, const ebpf_inst &inst,
 		     bool is64, bool is_fetch);

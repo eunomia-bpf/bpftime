@@ -294,7 +294,7 @@ llvm::Expected<int>
 emitExtFuncCall(llvm::IRBuilder<> &builder, const ebpf_inst &inst,
 		const std::map<std::string, llvm::Function *> &extFunc,
 		llvm::Value **regs, llvm::FunctionType *helperFuncTy,
-		uint16_t pc)
+		uint16_t pc, llvm::BasicBlock *exitBlk)
 {
 	auto funcNameToCall = ext_func_sym(inst.imm);
 	if (auto itr = extFunc.find(funcNameToCall); itr != extFunc.end()) {
@@ -316,6 +316,11 @@ emitExtFuncCall(llvm::IRBuilder<> &builder, const ebpf_inst &inst,
 
 			});
 		builder.CreateStore(callInst, regs[0]);
+		// for bpf_tail_call, just exit after calling the helper, which
+		// simulates the behavior of kernel
+		if (inst.imm == 12) {
+			builder.CreateBr(exitBlk);
+		}
 		return 0;
 	} else {
 		return llvm::make_error<llvm::StringError>(
