@@ -257,6 +257,7 @@ int bpftime_is_epoll_handler(int fd);
 int bpftime_is_perf_event_fd(int fd);
 int bpftime_is_prog_fd(int fd);
 int bpftime_is_map_fd(int fd);
+int bpftime_is_prog_array(int fd);
 
 void *bpftime_get_array_map_raw_data(int fd);
 

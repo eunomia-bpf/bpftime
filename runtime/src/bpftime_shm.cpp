@@ -183,7 +183,8 @@ int bpftime_is_map_fd(int fd)
 	return shm_holder.global_shared_memory.is_map_fd(fd);
 }
 
-int bpftime_is_perf_event_fd(int fd) {
+int bpftime_is_perf_event_fd(int fd)
+{
 	return shm_holder.global_shared_memory.is_perf_event_handler_fd(fd);
 }
 
@@ -219,7 +220,7 @@ void *bpftime_get_ringbuf_consumer_page(int ringbuf_fd)
 	} else {
 		errno = EINVAL;
 		SPDLOG_ERROR("Expected fd {} to be ringbuf map fd ",
-			      ringbuf_fd);
+			     ringbuf_fd);
 		return nullptr;
 	}
 }
@@ -233,7 +234,7 @@ void *bpftime_get_ringbuf_producer_page(int ringbuf_fd)
 	} else {
 		errno = EINVAL;
 		SPDLOG_ERROR("Expected fd {} to be ringbuf map fd ",
-			      ringbuf_fd);
+			     ringbuf_fd);
 		return nullptr;
 	}
 }
@@ -288,7 +289,8 @@ int bpftime_epoll_wait(int fd, struct epoll_event *out_evts, int max_evt,
 	sigaddset(&to_block, SIGINT);
 	sigaddset(&to_block, SIGTERM);
 
-	// Block the develivery of some signals, so we would be able to catch them when sleeping
+	// Block the develivery of some signals, so we would be able to catch
+	// them when sleeping
 	if (int err = sigprocmask(SIG_BLOCK, &to_block, &orig_sigset);
 	    err == -1) {
 		SPDLOG_ERROR(
@@ -393,7 +395,7 @@ int bpftime_add_software_perf_event(int cpu, int32_t sample_type,
 }
 
 int bpftime_add_ureplace_or_override(int fd, int pid, const char *name,
-				uint64_t offset, bool is_replace)
+				     uint64_t offset, bool is_replace)
 {
 	auto &shm = shm_holder.global_shared_memory;
 	return shm.add_uprobe_override(fd, pid, name, offset, is_replace);
@@ -446,7 +448,7 @@ int bpftime_shared_perf_event_output(int map_fd, const void *buf, size_t sz)
 	auto &shm = shm_holder.global_shared_memory;
 	if (!shm.is_shared_perf_event_array_map_fd(map_fd)) {
 		SPDLOG_ERROR("Expected fd {} to be a shared perf event array",
-			      map_fd);
+			     map_fd);
 		errno = EINVAL;
 		return -1;
 	}
@@ -468,6 +470,11 @@ int bpftime_shared_perf_event_output(int map_fd, const void *buf, size_t sz)
 	}
 }
 
+int bpftime_is_prog_array(int fd)
+{
+	return shm_holder.global_shared_memory.is_prog_array_map_fd(fd);
+}
+
 const uint64_t INVALID_MAP_PTR = ((uint64_t)0 - 1);
 
 extern "C" uint64_t map_ptr_by_fd(uint32_t fd)
@@ -477,7 +484,7 @@ extern "C" uint64_t map_ptr_by_fd(uint32_t fd)
 	    !shm_holder.global_shared_memory.is_map_fd(fd)) {
 		errno = ENOENT;
 		SPDLOG_ERROR("Expected fd {} to be a map fd (map_ptr_by_fd)",
-			      fd);
+			     fd);
 		// Here we just ignore the wrong maps
 		return INVALID_MAP_PTR;
 	}
@@ -492,7 +499,7 @@ extern "C" uint64_t map_val(uint64_t map_ptr)
 	if (!shm_holder.global_shared_memory.get_manager() ||
 	    !shm_holder.global_shared_memory.is_map_fd(fd)) {
 		SPDLOG_ERROR("Expected fd {} to be a map fd (map_val call)",
-			      fd);
+			     fd);
 		// here we just ignore the wrong maps
 		errno = ENOENT;
 		return 0;
@@ -508,7 +515,6 @@ extern "C" uint64_t map_val(uint64_t map_ptr)
 	}
 	return (uint64_t)handler.map_lookup_elem(key.data());
 }
-
 
 static void process_token(const std::string_view &token, agent_config &config)
 {
@@ -544,7 +550,7 @@ static void process_helper_sv(const std::string_view &str, const char delimiter,
 	}
 }
 
-const bpftime::agent_config& bpftime::set_agent_config_from_env()
+const bpftime::agent_config &bpftime::set_agent_config_from_env()
 {
 	bpftime::agent_config agent_config;
 	if (const char *custom_helpers = getenv("BPFTIME_HELPER_GROUPS");

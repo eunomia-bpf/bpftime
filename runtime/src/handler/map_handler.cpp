@@ -15,6 +15,7 @@
 #include <bpf_map/shared/hash_map_kernel_user.hpp>
 #include <bpf_map/shared/percpu_array_map_kernel_user.hpp>
 #include <bpf_map/shared/perf_event_array_kernel_user.hpp>
+#include <bpf_map/userspace/prog_array.hpp>
 #include <unistd.h>
 
 using boost::interprocess::interprocess_sharable_mutex;
@@ -120,6 +121,11 @@ const void *bpf_map_handler::map_lookup_elem(const void *key,
 			map_impl_ptr.get());
 		return do_lookup(impl);
 	}
+	case bpf_map_type::BPF_MAP_TYPE_PROG_ARRAY: {
+		auto impl =
+			static_cast<prog_array_map_impl *>(map_impl_ptr.get());
+		return do_lookup(impl);
+	}
 	default:
 		assert(false && "Unsupported map type");
 	}
@@ -196,6 +202,11 @@ long bpf_map_handler::map_update_elem(const void *key, const void *value,
 			map_impl_ptr.get());
 		return do_update(impl);
 	}
+	case bpf_map_type::BPF_MAP_TYPE_PROG_ARRAY: {
+		auto impl =
+			static_cast<prog_array_map_impl *>(map_impl_ptr.get());
+		return do_update(impl);
+	}
 	default:
 		assert(false && "Unsupported map type");
 	}
@@ -259,6 +270,11 @@ int bpf_map_handler::bpf_map_get_next_key(const void *key, void *next_key,
 	case bpf_map_type::BPF_MAP_TYPE_KERNEL_USER_PERF_EVENT_ARRAY: {
 		auto impl = static_cast<perf_event_array_kernel_user_impl *>(
 			map_impl_ptr.get());
+		return do_get_next_key(impl);
+	}
+	case bpf_map_type::BPF_MAP_TYPE_PROG_ARRAY: {
+		auto impl =
+			static_cast<prog_array_map_impl *>(map_impl_ptr.get());
 		return do_get_next_key(impl);
 	}
 	default:
@@ -335,6 +351,11 @@ long bpf_map_handler::map_delete_elem(const void *key,
 	case bpf_map_type::BPF_MAP_TYPE_KERNEL_USER_PERF_EVENT_ARRAY: {
 		auto impl = static_cast<perf_event_array_kernel_user_impl *>(
 			map_impl_ptr.get());
+		return do_delete(impl);
+	}
+	case bpf_map_type::BPF_MAP_TYPE_PROG_ARRAY: {
+		auto impl =
+			static_cast<prog_array_map_impl *>(map_impl_ptr.get());
 		return do_delete(impl);
 	}
 	default:
@@ -417,6 +438,12 @@ int bpf_map_handler::map_init(managed_shared_memory &memory)
 				attr.kernel_bpf_map_id);
 		return 0;
 	}
+	case bpf_map_type::BPF_MAP_TYPE_PROG_ARRAY: {
+		map_impl_ptr = memory.construct<prog_array_map_impl>(
+			container_name.c_str())(memory, key_size, value_size,
+						max_entries);
+		return 0;
+	}
 
 	default:
 		SPDLOG_ERROR("Unsupported map type: {}", (int)type);
@@ -465,6 +492,10 @@ void bpf_map_handler::map_free(managed_shared_memory &memory)
 		memory.destroy<perf_event_array_kernel_user_impl>(
 			container_name.c_str());
 		break;
+	case bpf_map_type::BPF_MAP_TYPE_PROG_ARRAY:
+		memory.destroy<prog_array_map_impl>(container_name.c_str());
+		break;
+
 	default:
 		assert(false && "Unsupported map type");
 	}

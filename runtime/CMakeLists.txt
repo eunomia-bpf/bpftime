@@ -73,6 +73,7 @@ set(sources
   src/bpf_map/userspace/perf_event_array_map.cpp
   src/bpf_map/userspace/per_cpu_array_map.cpp
   src/bpf_map/userspace/per_cpu_hash_map.cpp
+  src/bpf_map/userspace/prog_array.cpp
 
   src/bpf_map/shared/array_map_kernel_user.cpp
   src/bpf_map/shared/hash_map_kernel_user.cpp
