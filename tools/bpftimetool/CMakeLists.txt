@@ -18,4 +18,4 @@ target_link_libraries(bpftimetool
   bpftime-object
 )
 
-install(TARGETS bpftimetool CONFIGURATIONS Release Debug DESTINATION ~/.bpftime)
+install(TARGETS bpftimetool CONFIGURATIONS Release Debug RelWithDebInfo DESTINATION ~/.bpftime)

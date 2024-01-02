@@ -84,7 +84,8 @@ extern "C" void bpftime_agent_main(const gchar *data, gboolean *stay_resident)
 	*stay_resident = TRUE;
 
 	int res = 1;
-
+	setenv("BPFTIME_USED", "1", 0);
+	SPDLOG_DEBUG("Set environment variable BPFTIME_USED");
 	res = ctx_holder.ctx.init_attach_ctx_from_handlers(
 		bpftime_get_agent_config());
 	if (res != 0) {
@@ -95,7 +96,6 @@ extern "C" void bpftime_agent_main(const gchar *data, gboolean *stay_resident)
 	// don't free ctx here
 	return;
 }
-
 
 int64_t syscall_callback(int64_t sys_nr, int64_t arg1, int64_t arg2,
 			 int64_t arg3, int64_t arg4, int64_t arg5, int64_t arg6)

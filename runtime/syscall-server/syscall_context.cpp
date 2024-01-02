@@ -8,6 +8,7 @@
 #include "handler/perf_event_handler.hpp"
 #include "linux/perf_event.h"
 #include "spdlog/spdlog.h"
+#include <cstdlib>
 #include <linux/bpf.h>
 #include "syscall_server_utils.hpp"
 #include <optional>
@@ -101,7 +102,8 @@ int syscall_context::create_kernel_bpf_prog_in_userspace(int cmd,
 {
 	std::regex pattern(by_pass_kernel_verifier_pattern);
 	int res = 0;
-	if (!by_pass_kernel_verifier_pattern.empty() && std::regex_match(attr->prog_name, pattern)) {
+	if (!by_pass_kernel_verifier_pattern.empty() &&
+	    std::regex_match(attr->prog_name, pattern)) {
 		SPDLOG_INFO("By pass kernel verifier for program {}",
 			    attr->prog_name);
 		struct bpf_insn trival_prog_insns[] = {
@@ -166,9 +168,8 @@ int syscall_context::create_kernel_bpf_prog_in_userspace(int cmd,
 		}
 	}
 	id = bpftime_progs_create(id /* let the shm alloc fd for us */,
-				  insns.data(),
-				  (size_t)attr->insn_cnt, attr->prog_name,
-				  attr->prog_type);
+				  insns.data(), (size_t)attr->insn_cnt,
+				  attr->prog_name, attr->prog_type);
 	SPDLOG_DEBUG("Loaded program `{}` id={}", attr->prog_name, id);
 	return id;
 }
@@ -354,7 +355,8 @@ long syscall_context::handle_sysbpf(int cmd, union bpf_attr *attr, size_t size)
 			-1 /* let the shm alloc fd for us */, prog_fd,
 			target_fd);
 		SPDLOG_DEBUG("Created link {}", id);
-		if (bpftime_is_prog_fd(prog_fd) && bpftime_is_perf_event_fd(target_fd)) {
+		if (bpftime_is_prog_fd(prog_fd) &&
+		    bpftime_is_perf_event_fd(target_fd)) {
 			SPDLOG_DEBUG("Attaching map {} to prog {}", target_fd,
 				     prog_fd);
 			bpftime_attach_perf_to_bpf(target_fd, prog_fd);

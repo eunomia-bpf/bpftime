@@ -57,6 +57,10 @@ void start_up()
 	SPDLOG_INFO("Enabling {} helpers", helper_ids.size());
 	verifier::set_non_kernel_helpers(non_kernel_helpers);
 #endif
+	// Set a variable to indicate the program that it's controlled by
+	// bpftime
+	setenv("BPFTIME_USED", "1", 0);
+	SPDLOG_DEBUG("Set environment variable BPFTIME_USED");
 	SPDLOG_INFO("bpftime-syscall-server started");
 }
 
