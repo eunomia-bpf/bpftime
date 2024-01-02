@@ -308,8 +308,11 @@ uint64_t bpftime_tail_call(uint64_t ctx, uint64_t prog_array, uint64_t index)
 	int to_call_fd = *to_call_id_ptr;
 	SPDLOG_DEBUG("tail call helper: calling prog fd {}", to_call_fd);
 	char context[64];
-	memcpy(context, (const void *)(uintptr_t)ctx, 64);
-	char context_out[64];
+	if (ctx) {
+		memcpy(context, (const void *)(uintptr_t)ctx, 64);
+	} else {
+		memset(context, 0, sizeof(context));
+	}
 	LIBBPF_OPTS(bpf_test_run_opts, run_opts, .ctx_in = context,
 		    // .ctx_out = context_out,
 		    .ctx_size_in = sizeof(context),
