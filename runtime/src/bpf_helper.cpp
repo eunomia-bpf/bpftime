@@ -309,9 +309,12 @@ uint64_t bpftime_tail_call(uint64_t ctx, uint64_t prog_array, uint64_t index)
 	SPDLOG_DEBUG("tail call helper: calling prog fd {}", to_call_fd);
 	char context[64];
 	memcpy(context, (const void *)(uintptr_t)ctx, 64);
+	char context_out[64];
 	LIBBPF_OPTS(bpf_test_run_opts, run_opts, .ctx_in = context,
-		    .ctx_out = context, .ctx_size_in = sizeof(context),
-		    .ctx_size_out = sizeof(context));
+		    // .ctx_out = context_out,
+		    .ctx_size_in = sizeof(context),
+		    // .ctx_size_out = sizeof(context_out)
+	);
 	int err = bpf_prog_test_run_opts(to_call_fd, &run_opts);
 	if (err < 0) {
 		SPDLOG_ERROR("Failed to run kernel program: {}", errno);

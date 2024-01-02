@@ -12,6 +12,7 @@ find_package(Boost REQUIRED)
 set(TEST_SOURCES
     maps/test_per_cpu_array.cpp
     maps/test_per_cpu_hash.cpp
+    maps/test_per_cpu_hash.cpp
     test_bpftime_shm_json.cpp
     attach/test_uprobe_uretprobe.cpp
     attach/test_function_address_resolve.cpp
@@ -21,6 +22,7 @@ set(TEST_SOURCES
 
     # attach_with_ebpf/test_attach_replace_with_ebpf.cpp # Unfinished yet
     attach_with_ebpf/test_attach_uprobe_with_ebpf.cpp
+    tailcall/test_user_to_kernel_tailcall.cpp
 )
 
 add_executable(bpftime_runtime_tests ${TEST_SOURCES})

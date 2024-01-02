@@ -51,9 +51,8 @@ long prog_array_map_impl::elem_update(const void *key, const void *value,
 		return -1;
 	}
 	int32_t v = *(int32_t *)value;
-	// data[k] = v;
-	struct bpf_prog_info info;
-	uint32_t len = 0;
+	struct bpf_prog_info info = {};
+	uint32_t len = sizeof(info);
 	int err = bpf_prog_get_info_by_fd(v, &info, &len);
 	if (err < 0) {
 		SPDLOG_ERROR(
