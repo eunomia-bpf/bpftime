@@ -106,6 +106,9 @@ static long my_bpf_syscall(long cmd, union bpf_attr *attr, unsigned long size)
 
 static int load_program_into_kernel()
 {
+	puts("Loading program into kernel..");
+	fflush(stdout);
+
 	char log_buf[1 << 10];
 	struct bpf_insn insns[] = {
 		// r1 = 0x2164656b6f766e49 ll
@@ -183,6 +186,8 @@ int main(int argc, char **argv)
 		fprintf(stderr, "Failed to open and load BPF skeleton\n");
 		return 1;
 	}
+	puts("Loading skeleton..");
+	fflush(stdout);
 
 	/* Load & verify BPF programs */
 	err = tailcall_minimal_bpf__load(skel);
@@ -190,6 +195,8 @@ int main(int argc, char **argv)
 		fprintf(stderr, "Failed to load and verify BPF skeleton\n");
 		goto cleanup;
 	}
+	puts("Loaded skeleton..");
+	fflush(stdout);
 	int prog_fd = load_program_into_kernel();
 	if (prog_fd < 0) {
 		goto cleanup;

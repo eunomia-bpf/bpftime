@@ -73,7 +73,7 @@ async def main():
         )
 
         await asyncio.wait_for(server_started_signal.wait(), SERVER_TIMEOUT)
-        await asyncio.sleep(5)
+        await asyncio.sleep(10)
         print("Server started!")
 
         # Start the agent
