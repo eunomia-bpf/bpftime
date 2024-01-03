@@ -101,12 +101,11 @@ async def main():
             server.send_signal(signal.SIGINT)
             agent.send_signal(signal.SIGINT)
             await asyncio.gather(server_out, agent_out)
-            for task in asyncio.all_tasks():
-                task.cancel()
+            # for task in asyncio.all_tasks():
+            #     task.cancel()
             await asyncio.gather(server.communicate(), agent.communicate())
         except Exception as ex:
-            print(ex)
-            pass
+            print(ex) 
 
 
 if __name__ == "__main__":
