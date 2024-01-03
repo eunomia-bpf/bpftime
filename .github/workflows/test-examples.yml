@@ -109,7 +109,12 @@ jobs:
             victim: ./victim
             syscall_trace: true
             expected_str: "victim           0         -1      0"
-          
+          - path: tailcall_minimal
+            executable: ./tailcall_minimal
+            victim: ./victim
+            syscall_trace: false
+            expected_str: "See /sys/kernel/debug/tracing/trace_pipe for output (5)"
+
     steps:
       - uses: actions/checkout@v2
         with:

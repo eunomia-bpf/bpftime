@@ -63,7 +63,7 @@ class syscall_context {
 							 union bpf_attr *attr,
 							 size_t size);
 	// try loading the bpf syscall helpers.
-	// if the syscall original function is not prepared, if will cause a
+	// if the syscall original function is not prepared, it will cause a
 	// segfault.
 	void try_startup();
 	// enable userspace eBPF runing with kernel eBPF.
