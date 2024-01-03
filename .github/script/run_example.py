@@ -104,9 +104,10 @@ async def main():
             for task in asyncio.all_tasks():
                 task.cancel()
             await asyncio.gather(server.communicate(), agent.communicate())
-        except:
+        except Exception as ex:
+            print(ex)
             pass
 
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    asyncio.get_event_loop().run_until_complete(main())

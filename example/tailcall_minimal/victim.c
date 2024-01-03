@@ -18,6 +18,7 @@ int main(int argc, char *argv[])
 		int c = add_func(a, b);
 		printf("%d + %d = %d\n", a, b, c);
         usleep(1000 * 1000);
+        fflush(stdout);
 	}
 	return 0;
 }

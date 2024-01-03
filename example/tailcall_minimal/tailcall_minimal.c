@@ -217,6 +217,5 @@ int main(int argc, char **argv)
 cleanup:
 	/* Clean up */
 	tailcall_minimal_bpf__destroy(skel);
-
 	return err < 0 ? -err : 0;
 }

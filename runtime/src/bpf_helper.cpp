@@ -320,9 +320,11 @@ uint64_t bpftime_tail_call(uint64_t ctx, uint64_t prog_array, uint64_t index)
 	);
 	int err = bpf_prog_test_run_opts(to_call_fd, &run_opts);
 	if (err < 0) {
+		close(to_call_fd);
 		SPDLOG_ERROR("Failed to run kernel program: {}", errno);
 		return -1;
 	}
+	close(to_call_fd);
 	return run_opts.retval;
 }
 
