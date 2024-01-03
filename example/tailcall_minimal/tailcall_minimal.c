@@ -212,6 +212,7 @@ int main(int argc, char **argv)
 		i++;
 		printf("See /sys/kernel/debug/tracing/trace_pipe for output (%u)\n",
 		       i);
+		fflush(stdout);
 	}
 cleanup:
 	/* Clean up */

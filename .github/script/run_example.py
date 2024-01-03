@@ -89,7 +89,7 @@ async def main():
             env={"SPDLOG_LEVEL": "debug"},
         )
         agent_out = asyncio.create_task(
-            handle_stdout(agent.stdout, should_exit, "AGENT", [],True)
+            handle_stdout(agent.stdout, should_exit, "AGENT", [], True)
         )
         if bashreadline_patch:
             return

@@ -11,7 +11,7 @@ struct {
 } prog_array SEC(".maps");
 
 SEC("uprobe/./victim:add_func")
-int do_count(struct pt_regs *ctx)
+int test_func(struct pt_regs *ctx)
 {
 	bpf_tail_call(ctx, &prog_array, 0);
 
