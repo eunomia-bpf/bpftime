@@ -13,6 +13,7 @@ async def handle_stdout(
     notify: asyncio.Event,
     title: str,
     callback_all: typing.List[typing.Tuple[asyncio.Event, str]] = [],
+    check_error: bool = False,
 ):
     while True:
         t1 = asyncio.create_task(notify.wait())
@@ -31,6 +32,8 @@ async def handle_stdout(
                 if sig in s:
                     evt.set()
                     print("Callback triggered")
+            if check_error and "[error]" in s:
+                assert False, "Error occurred in agent!"
         if t1 in done:
             break
         if stdout.at_eof():
@@ -70,7 +73,7 @@ async def main():
         )
 
         await asyncio.wait_for(server_started_signal.wait(), SERVER_TIMEOUT)
-        await asyncio.sleep(5)
+        await asyncio.sleep(10)
         print("Server started!")
 
         # Start the agent
@@ -86,7 +89,7 @@ async def main():
             env={"SPDLOG_LEVEL": "debug"},
         )
         agent_out = asyncio.create_task(
-            handle_stdout(agent.stdout, should_exit, "AGENT", [])
+            handle_stdout(agent.stdout, should_exit, "AGENT", [], True)
         )
         if bashreadline_patch:
             return
@@ -98,11 +101,12 @@ async def main():
             server.send_signal(signal.SIGINT)
             agent.send_signal(signal.SIGINT)
             await asyncio.gather(server_out, agent_out)
-            for task in asyncio.all_tasks():
-                task.cancel()
+            # for task in asyncio.all_tasks():
+            #     task.cancel()
             await asyncio.gather(server.communicate(), agent.communicate())
-        except:
-            pass
+        except Exception as ex:
+            print(ex) 
+
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    asyncio.get_event_loop().run_until_complete(main())

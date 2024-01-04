@@ -65,6 +65,20 @@ release-with-llvm-jit: ## build the package, with llvm-jit
 				   -DBPFTIME_LLVM_JIT=1
 	cmake --build build --config Release --target install
 
+debug:
+	cmake -Bbuild  -DBPFTIME_ENABLE_UNIT_TESTING=0 \
+				   -DCMAKE_BUILD_TYPE:STRING=Debug \
+				   -DBPFTIME_ENABLE_LTO=0
+	cmake --build build --config Debug --target install
+
+
+debug-with-llvm-jit: ## build the package, with llvm-jit
+	cmake -Bbuild  -DBPFTIME_ENABLE_UNIT_TESTING=0 \
+				   -DCMAKE_BUILD_TYPE:STRING=Debug \
+				   -DBPFTIME_ENABLE_LTO=0 \
+				   -DBPFTIME_LLVM_JIT=1
+	cmake --build build --config Debug --target install
+
 build-vm: ## build only the core library
 	make -C vm build
 

@@ -375,6 +375,14 @@ bool bpftime_shm::is_array_map_fd(int fd) const
 	auto &map_impl = std::get<bpf_map_handler>(manager->get_handler(fd));
 	return map_impl.type == bpf_map_type::BPF_MAP_TYPE_ARRAY;
 }
+
+bool bpftime_shm::is_prog_array_map_fd(int fd) const
+{
+	if (!is_map_fd(fd))
+		return false;
+	auto &map_impl = std::get<bpf_map_handler>(manager->get_handler(fd));
+	return map_impl.type == bpf_map_type::BPF_MAP_TYPE_PROG_ARRAY;
+}
 std::optional<ringbuf_map_impl *>
 bpftime_shm::try_get_ringbuf_map_impl(int fd) const
 {

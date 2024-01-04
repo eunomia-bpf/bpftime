@@ -3,6 +3,8 @@
  * Copyright (c) 2022, eunomia-bpf org
  * All rights reserved.
  */
+#include "bpf/bpf.h"
+#include "bpf/libbpf_common.h"
 #include "bpftime_helper_group.hpp"
 #include <cassert>
 #include <cerrno>
@@ -287,6 +289,45 @@ uint64_t bpf_perf_event_output(uint64_t ctx, uint64_t map, uint64_t flags,
 	sched_setaffinity(0, sizeof(orig), &orig);
 	return (uint64_t)ret;
 }
+
+uint64_t bpftime_tail_call(uint64_t ctx, uint64_t prog_array, uint64_t index)
+{
+	int fd = prog_array >> 32;
+	if (!bpftime_is_prog_array(fd)) {
+		SPDLOG_ERROR("Expected fd {} to be a prog array fd", fd);
+		return -1;
+	}
+	int idx = index;
+
+	int *to_call_id_ptr = (int *)bpftime_map_lookup_elem(fd, &idx);
+	if (!to_call_id_ptr) {
+		SPDLOG_ERROR("Unable to lookup index {} of prog array {}", idx,
+			     fd);
+		return -1;
+	}
+	int to_call_fd = *to_call_id_ptr;
+	SPDLOG_DEBUG("tail call helper: calling prog fd {}", to_call_fd);
+	char context[64];
+	if (ctx) {
+		memcpy(context, (const void *)(uintptr_t)ctx, 64);
+	} else {
+		memset(context, 0, sizeof(context));
+	}
+	LIBBPF_OPTS(bpf_test_run_opts, run_opts, .ctx_in = context,
+		    // .ctx_out = context_out,
+		    .ctx_size_in = sizeof(context),
+		    // .ctx_size_out = sizeof(context_out)
+	);
+	int err = bpf_prog_test_run_opts(to_call_fd, &run_opts);
+	if (err < 0) {
+		close(to_call_fd);
+		SPDLOG_ERROR("Failed to run kernel program: {}", errno);
+		return -1;
+	}
+	close(to_call_fd);
+	return run_opts.retval;
+}
+
 } // extern "C"
 
 namespace bpftime
@@ -724,7 +765,12 @@ const bpftime_helper_group kernel_helper_group = {
 	  { BPF_FUNC_ringbuf_output,
 	    bpftime_helper_info{ .index = BPF_FUNC_ringbuf_output,
 				 .name = "bpf_ringbuf_output",
-				 .fn = (void *)bpf_ringbuf_output } } }
+				 .fn = (void *)bpf_ringbuf_output } },
+	  { BPF_FUNC_tail_call,
+	    bpftime_helper_info{ .index = BPF_FUNC_tail_call,
+				 .name = "bpf_tail_call",
+				 .fn = (void *)bpftime_tail_call } } }
+
 };
 
 // Utility function to get the FFI helper group

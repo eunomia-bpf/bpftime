@@ -21,6 +21,7 @@ set(TEST_SOURCES
 
     # attach_with_ebpf/test_attach_replace_with_ebpf.cpp # Unfinished yet
     attach_with_ebpf/test_attach_uprobe_with_ebpf.cpp
+    tailcall/test_user_to_kernel_tailcall.cpp
 )
 
 add_executable(bpftime_runtime_tests ${TEST_SOURCES})

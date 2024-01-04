@@ -83,6 +83,8 @@ class bpftime_shm {
 	bool is_prog_fd(int fd) const;
 
 	bool is_perf_fd(int fd) const;
+	
+	bool is_prog_array_map_fd(int fd) const;
 
 	int open_fake_fd();
 

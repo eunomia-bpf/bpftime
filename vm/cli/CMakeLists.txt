@@ -20,4 +20,4 @@ target_compile_definitions(bpftime-vm-cli PRIVATE _GNU_SOURCE)
 
 add_dependencies(bpftime-vm-cli spdlog::spdlog argparse vm-bpf libbpf)
 
-install(TARGETS bpftime-vm-cli CONFIGURATIONS Release Debug DESTINATION ~/.bpftime)
+install(TARGETS bpftime-vm-cli CONFIGURATIONS Release Debug RelWithDebInfo DESTINATION ~/.bpftime)

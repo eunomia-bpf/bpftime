@@ -1,4 +1,5 @@
 #include "spdlog/spdlog.h"
+#include <csignal>
 #include <cstdlib>
 #include <cstring>
 #include <frida-core.h>
@@ -12,6 +13,8 @@
 #include <utility>
 #include <tuple>
 #include <sys/wait.h>
+
+static int subprocess_pid = 0;
 
 static bool str_starts_with(const char *main, const char *pat)
 {
@@ -62,6 +65,7 @@ static int run_command(const char *path, const std::vector<std::string> &argv,
 		execvpe(path, (char *const *)argv_arr.data(),
 			(char *const *)env_arr.data());
 	} else {
+		subprocess_pid = pid;
 		int status;
 		if (int cid = waitpid(pid, &status, 0); cid > 0) {
 			if (WIFEXITED(status)) {
@@ -115,8 +119,18 @@ extract_path_and_args(const argparse::ArgumentParser &parser)
 	items.erase(items.begin());
 	return { executable, items };
 }
+
+static void signal_handler(int sig)
+{
+	if (subprocess_pid) {
+		kill(subprocess_pid, sig);
+	}
+}
+
 int main(int argc, const char **argv)
 {
+	signal(SIGINT, signal_handler);
+	signal(SIGTSTP, signal_handler);
 	argparse::ArgumentParser program(argv[0]);
 
 	if (auto home_env = getenv("HOME"); home_env) {
