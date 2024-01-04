@@ -106,9 +106,6 @@ static long my_bpf_syscall(long cmd, union bpf_attr *attr, unsigned long size)
 
 static int load_program_into_kernel()
 {
-	puts("Loading program into kernel..");
-	fflush(stdout);
-
 	char log_buf[1 << 10];
 	struct bpf_insn insns[] = {
 		// r1 = 0x2164656b6f766e49 ll
@@ -165,8 +162,6 @@ static int load_program_into_kernel()
 			ret);
 		fprintf(stderr, "%s", log_buf);
 	}
-	puts("Loaded program into kernel..");
-	fflush(stdout);
 	return ret;
 }
 
@@ -188,8 +183,6 @@ int main(int argc, char **argv)
 		fprintf(stderr, "Failed to open and load BPF skeleton\n");
 		return 1;
 	}
-	puts("Loading skeleton..");
-	fflush(stdout);
 
 	/* Load & verify BPF programs */
 	err = tailcall_minimal_bpf__load(skel);
@@ -197,14 +190,10 @@ int main(int argc, char **argv)
 		fprintf(stderr, "Failed to load and verify BPF skeleton\n");
 		goto cleanup;
 	}
-	puts("Loaded skeleton..");
-	fflush(stdout);
 	int prog_fd = load_program_into_kernel();
 	if (prog_fd < 0) {
 		goto cleanup;
 	}
-	printf("Kernel program fd: %d\n", prog_fd);
-	fflush(stdout);
 	int idx = 0;
 	int map_fd = bpf_map__fd(skel->maps.prog_array);
 	err = bpf_map_update_elem(map_fd, &idx, &prog_fd, 0);
@@ -212,15 +201,11 @@ int main(int argc, char **argv)
 		fprintf(stderr, "Unable to update prog array map: %d\n", errno);
 		goto cleanup;
 	}
-	puts("Map updated");
-	fflush(stdout);
 	err = tailcall_minimal_bpf__attach(skel);
 	if (err) {
 		fprintf(stderr, "Failed to attach BPF skeleton\n");
 		goto cleanup;
 	}
-	puts("Attached");
-	fflush(stdout);
 	unsigned i = 0;
 	while (!exiting) {
 		sleep(1);

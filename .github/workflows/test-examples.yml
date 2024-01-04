@@ -25,11 +25,11 @@ jobs:
       - name: Build and install runtime (with llvm-jit)
         if: ${{matrix.enable_jit}}
         run: |
-          CC=gcc-12 CXX=g++-12 make debug-with-llvm-jit -j
+          CC=gcc-12 CXX=g++-12 make release-with-llvm-jit -j
       - name: Build and install runtime (without llvm-jit)
         if: ${{!matrix.enable_jit}}
         run: |
-          CC=gcc-12 CXX=g++-12 make debug -j
+          CC=gcc-12 CXX=g++-12 make release -j
       - name: Upload build results (without jit)
         uses: actions/upload-artifact@v3
         if: ${{!matrix.enable_jit}}
@@ -150,9 +150,6 @@ jobs:
         run: |
           export PATH=$PATH:~/.bpftime
           bpftime --help
-      - name: Setup upterm session
-        if: matrix.examples.path == 'tailcall_minimal'
-        uses: lhotari/action-upterm@v1
       - name: Test CLI - attach by running (syscall_trace)
         if: matrix.examples.syscall_trace
         shell: "sudo /bin/bash -e {0}"
