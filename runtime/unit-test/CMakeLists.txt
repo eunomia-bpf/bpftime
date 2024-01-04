@@ -12,7 +12,6 @@ find_package(Boost REQUIRED)
 set(TEST_SOURCES
     maps/test_per_cpu_array.cpp
     maps/test_per_cpu_hash.cpp
-    maps/test_per_cpu_hash.cpp
     test_bpftime_shm_json.cpp
     attach/test_uprobe_uretprobe.cpp
     attach/test_function_address_resolve.cpp
