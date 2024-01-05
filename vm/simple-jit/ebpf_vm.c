@@ -936,16 +936,19 @@ int ebpf_exec(const struct ebpf_vm *vm, void *mem, size_t mem_len,
 					__ATOMIC_RELAXED);
 				break;
 			}
-				// case EBPF_CMPXCHG: {
-				// 	__atomic_compare_exchange(
-				// 		(uint32_t
-				// *)(uintptr_t)(reg[inst.dst_reg] + 					inst.off),
-				// 		(uint32_t *)&reg[0],
-				// 		(uint32_t *)&reg[inst.src_reg],
-				// false,
-				// 		__ATOMIC_RELAXED,
-				// __ATOMIC_RELAXED);
-				// }
+			case EBPF_CMPXCHG: {
+				uint32_t prev_val = *(
+					uint32_t *)(uintptr_t)(reg[inst.dst_reg] +
+							       inst.off);
+				__atomic_compare_exchange(
+					(uint32_t *)(uintptr_t)(reg[inst.dst_reg] +
+								inst.off),
+					(uint32_t *)&reg[0],
+					(uint32_t *)&reg[inst.src_reg], false,
+					__ATOMIC_RELAXED, __ATOMIC_RELAXED);
+				reg[0] = prev_val;
+				break;
+			}
 			}
 			break;
 		}
@@ -994,18 +997,20 @@ int ebpf_exec(const struct ebpf_vm *vm, void *mem, size_t mem_len,
 					__ATOMIC_RELAXED);
 				break;
 			}
-				// case EBPF_CMPXCHG: {
-				// 	__atomic_compare_exchange(
-				// 		(uint64_t
-				// *)(uintptr_t)(reg[inst.dst_reg] + 					inst.off),
-				// 		(uint64_t *)&reg[0],
-				// 		(uint64_t *)&reg[inst.src_reg],
-				// false,
-				// 		__ATOMIC_RELAXED,
-				// __ATOMIC_RELAXED);
-				// }
+			case EBPF_CMPXCHG: {
+				uint64_t prev_val = *(
+					uint64_t *)(uintptr_t)(reg[inst.dst_reg] +
+							       inst.off);
+				__atomic_compare_exchange(
+					(uint64_t *)(uintptr_t)(reg[inst.dst_reg] +
+								inst.off),
+					(uint64_t *)&reg[0],
+					(uint64_t *)&reg[inst.src_reg], false,
+					__ATOMIC_RELAXED, __ATOMIC_RELAXED);
+				reg[0] = prev_val;
+				break;
 			}
-			break;
+			}
 			break;
 		}
 		}
