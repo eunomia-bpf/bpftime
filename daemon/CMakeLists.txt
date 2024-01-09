@@ -6,10 +6,21 @@ add_bpf_skel_generating_target(bpftime_daemon_ebpf_skel ${CMAKE_CURRENT_BINARY_D
 
 add_dependencies(bpftime_daemon_ebpf_skel bpftime_daemon_ebpf_target)
 
+add_executable(embedfile ${CMAKE_CURRENT_SOURCE_DIR}/assets/embedfile.c)
+
+set(PLACEHOLDER_INPUT ${CMAKE_CURRENT_SOURCE_DIR}/assets/placeholder)
+set(PLACEHOLDER_OUTPUT placeholder.c)
+
+add_custom_command(
+  OUTPUT placeholder.c
+  COMMAND embedfile placeholder ${PLACEHOLDER_INPUT} ${PLACEHOLDER_OUTPUT}
+  DEPENDS ${PLACEHOLDER_INPUT})
+
 add_library(libbpftime_daemon STATIC
     user/bpf_tracer.cpp
     user/handle_bpf_event.cpp
     user/bpftime_driver.cpp
+    ${PLACEHOLDER_OUTPUT}
 )
 
 add_executable(bpftime_daemon
