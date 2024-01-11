@@ -5,6 +5,9 @@
  */
 #include "spdlog/common.h"
 #include <argp.h>
+#include <cstddef>
+#include <filesystem>
+#include <fstream>
 #include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -119,7 +122,8 @@ static int process_exec_maps(bpf_event_handler *handler, bpf_tracer_bpf *obj,
 	pid_map = new_pid_map;
 	return 0;
 }
-
+extern "C" const char placeholder[];
+extern "C" size_t placeholder_len;
 int bpftime::start_daemon(struct daemon_config env)
 {
 	LIBBPF_OPTS(bpf_object_open_opts, open_opts);
@@ -149,13 +153,27 @@ int bpftime::start_daemon(struct daemon_config env)
 	obj->rodata->target_pid = env.pid;
 	obj->rodata->enable_replace_prog = env.enable_replace_prog;
 
-	// strncpy(obj->rodata->new_uprobe_path, env.new_uprobe_path, PATH_LENTH);
+	// strncpy(obj->rodata->new_uprobe_path, env.new_uprobe_path,
+	// PATH_LENTH);
 	// TODO: currently using `/a` as the replacing executable path to uprobe
-	// perf event in the kernel, since long strings (such as bpftime_daemon it self)
-	// may break userspace memory.
-	// Find a better way to solve this in the future
+	// perf event in the kernel, since long strings (such as bpftime_daemon
+	// it self) may break userspace memory. Find a better way to solve this
+	// in the future
 	strncpy(obj->rodata->new_uprobe_path, "/a", PATH_LENTH);
+	std::filesystem::path elf_path("/a");
+	if (!std::filesystem::exists(elf_path)) {
+		SPDLOG_INFO("Releasing: {}", elf_path.c_str());
+		std::ofstream ofs(elf_path, std::ios::binary);
+		if (!ofs.is_open()) {
+			SPDLOG_ERROR("Unable to open {} for writting",
+				     elf_path.c_str());
+			return 1;
+		}
+		ofs.write(placeholder, placeholder_len);
 
+	} else {
+		SPDLOG_INFO("{} exists", elf_path.c_str());
+	}
 	obj->rodata->enable_replace_uprobe = env.enable_replace_uprobe;
 	obj->rodata->uprobe_perf_type = determine_uprobe_perf_type();
 	obj->rodata->kprobe_perf_type = determine_kprobe_perf_type();
@@ -226,7 +244,7 @@ int bpftime::start_daemon(struct daemon_config env)
 		err = ring_buffer__poll(rb, 300 /* timeout, ms */);
 		if (err < 0 && err != -EINTR) {
 			SPDLOG_ERROR("error polling perf buffer: {}",
-				      strerror(-err));
+				     strerror(-err));
 			// goto cleanup;
 		}
 		process_exec_maps(&handler, obj, env);
