@@ -10,7 +10,7 @@
 🔨 [Quick Start](#quick-start) \
 🔌 [Examples & Use Cases](#examples--use-cases) \
 ⌨️ [Linux Plumbers 23 talk](https://lpc.events/event/17/contributions/1639/) \
-📖 [Slides](https://github.com/eunomia-bpf/bpftime/tree/master/documents/userspace-ebpf-bpftime-lpc.pdf) \
+📖 [Slides](https://eunomia.dev/bpftime/documents/userspace-ebpf-bpftime-lpc.pdf) \
 📚 [Arxiv preprint](https://arxiv.org/abs/2311.07923)
 
 ## Key Features
@@ -33,7 +33,7 @@
 
 With `bpftime`, you can build eBPF applications using familiar tools like clang and libbpf, and execute them in userspace. For instance, the `malloc` eBPF program traces malloc calls using uprobe and aggregates the counts using a hash map.
 
-You can refer to [documents/build-and-test.md](https://github.com/eunomia-bpf/bpftime/tree/master/documents/build-and-test.md) for how to build the project, or using the container images from [GitHub packages](https://github.com/eunomia-bpf/bpftime/pkgs/container/bpftime).
+You can refer to [documents/build-and-test.md](https://eunomia.dev/bpftime/documents/build-and-test) for how to build the project, or using the container images from [GitHub packages](https://github.com/eunomia-bpf/bpftime/pkgs/container/bpftime).
 
 To get started, you can build and run a libbpf based eBPF program starts with `bpftime` cli:
 
@@ -91,7 +91,7 @@ $ sudo example/malloc/malloc
         pid=34809       malloc calls: 8
 ```
 
-See [documents/usage.md](https://github.com/eunomia-bpf/bpftime/tree/master/documents/usage.md) for more details.
+See [documents/usage.md](https://eunomia.dev/bpftime/documents/usage) for more details.
 
 ## Examples & Use Cases
 
@@ -106,7 +106,7 @@ The bpftime supports the following types of eBPF programs:
 
 You may use `bpf_override_return` to change the control flow of the program.
 
-See [documents/available-features.md](https://github.com/eunomia-bpf/bpftime/tree/master/documents/avaliable-features.md) for more details.
+See [documents/available-features.md](https://eunomia.dev/bpftime/documents/available-features) for more details.
 
 ### Tracing the system
 
@@ -137,13 +137,13 @@ bpftime supports two modes:
 
 Left: original kernel eBPF | Right: bpftime
 
-![How it works](https://github.com/eunomia-bpf/bpftime/raw/master/documents/bpftime.png?raw=true)
+![How it works](https://eunomia.dev/bpftime/documents/bpftime.png)
 
 In this mode, bpftime can run eBPF programs in userspace without kernel. It relies on a userspace verifier to ensure the safety of eBPF programs.
 
 #### Run with kernel eBPF
 
-![documents/bpftime-kernel.png](https://github.com/eunomia-bpf/bpftime/raw/master/documents/bpftime-kernel.png?raw=true)
+![documents/bpftime-kernel.png](https://eunomia.dev/bpftime/documents/bpftime-kernel.png)
 
 In this mode, bpftime can run together with kernel eBPF. It can load eBPF programs from kernel, and using kernel eBPF maps to cooperate with kernel eBPF programs like kprobes and network filters.
 
@@ -189,11 +189,11 @@ See [benchmark](https://github.com/eunomia-bpf/bpftime/tree/master/benchmark) di
 - Some kernel helpers and kfuncs may not be available in userspace.
 - It does not support direct access to kernel data structures or functions like `task_struct`.
 
-Refer to [documents/available-features.md](https://github.com/eunomia-bpf/bpftime/tree/master/documents/avaliable-features.md) for more details.
+Refer to [documents/available-features.md](https://eunomia.dev/bpftime/documents/available-features) for more details.
 
 ## Build and test
 
-See [documents/build-and-test.md](https://github.com/eunomia-bpf/bpftime/tree/master/documents/build-and-test.md) for details.
+See [documents/build-and-test.md](https://eunomia.dev/bpftime/documents/build-and-test.md) for details.
 
 ## Roadmap
 
@@ -202,7 +202,7 @@ See [documents/build-and-test.md](https://github.com/eunomia-bpf/bpftime/tree/ma
 - [X] ring buffer output support.
 - [X] perf event output support.
 - [X] Figure out how to run transparently with kernel probe
-- [ ] An AOT compiler for eBPF can be easily added based on the LLVM IR.
+- [X] An AOT compiler for eBPF can be easily added based on the LLVM IR.
 - [ ] More examples and usecases:
   - [ ] Network on userspace eBPF
   - [X] Hotpatch userspace application
