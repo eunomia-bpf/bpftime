@@ -34,6 +34,8 @@ using namespace bpftime;
 const int STACK_SIZE = (EBPF_STACK_SIZE + 7) / 8;
 const int CALL_STACK_SIZE = 64;
 
+const size_t MAX_LOCAL_FUNC_DEPTH = 32;
+
 /*
     How should we compile bpf instructions into a LLVM module?
     - Split basic blocks
@@ -184,14 +186,15 @@ Expected<ThreadSafeModule> llvm_bpf_jit_context::generateModule(
 				"r" + std::to_string(i)));
 		}
 		// Create stack
-		auto stackBegin =
-			builder.CreateAlloca(builder.getInt64Ty(),
-					     builder.getInt32(STACK_SIZE),
-					     "stackBegin");
-		auto stackEnd =
-			builder.CreateGEP(builder.getInt64Ty(), stackBegin,
-					  { builder.getInt32(STACK_SIZE - 1) },
-					  "stackEnd");
+		auto stackBegin = builder.CreateAlloca(
+			builder.getInt64Ty(),
+			builder.getInt32(STACK_SIZE * MAX_LOCAL_FUNC_DEPTH +
+					 10),
+			"stackBegin");
+		auto stackEnd = builder.CreateGEP(
+			builder.getInt64Ty(), stackBegin,
+			{ builder.getInt32(STACK_SIZE * MAX_LOCAL_FUNC_DEPTH) },
+			"stackEnd");
 		// Write stack pointer into r10
 		builder.CreateStore(stackEnd, regs[10]);
 		// Write memory address into r1
@@ -282,7 +285,14 @@ Expected<ThreadSafeModule> llvm_bpf_jit_context::generateModule(
 		builder.CreateStore(builder.CreateSub(count,
 						      builder.getInt64(5)),
 				    callItemCnt);
-		// builder.CreatePointerCast(targetAddr, Type *DestTy)
+		// Restore data stack
+		// r10 += stack_size
+		builder.CreateStore(
+			builder.CreateAdd(
+				builder.CreateLoad(builder.getInt64Ty(),
+						   regs[10]),
+				builder.getInt64(STACK_SIZE)),
+			regs[10]);
 		auto indrBr = builder.CreateIndirectBr(targetAddr);
 		for (const auto &item : localFuncRetBlks) {
 			indrBr->addDestination(instBlocks[item.first]);
@@ -845,6 +855,15 @@ Expected<ThreadSafeModule> llvm_bpf_jit_context::generateModule(
 									i -
 									4)) }));
 				}
+				// Move data stack
+				// r10 -= stackSize
+				builder.CreateStore(
+					builder.CreateSub(
+						builder.CreateLoad(
+							builder.getInt64Ty(),
+							regs[10]),
+						builder.getInt64(STACK_SIZE)),
+					regs[10]);
 				if (auto dstBlk = loadCallDstBlock(pc, inst,
 								   instBlocks);
 				    dstBlk) {
