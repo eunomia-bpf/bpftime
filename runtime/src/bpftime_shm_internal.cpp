@@ -426,7 +426,12 @@ bool bpftime_shm::is_perf_fd(int fd) const
 
 int bpftime_shm::open_fake_fd()
 {
-	return open("/dev/null", O_RDONLY);
+	int fd = open("/dev/null", O_RDONLY);
+	int cnt = 5;
+	while (fd <= 2 && fd >= 0 && --cnt > 0) {
+		fd = dup(fd);
+	}
+	return fd;
 }
 
 // handle bpf commands to load a bpf program
