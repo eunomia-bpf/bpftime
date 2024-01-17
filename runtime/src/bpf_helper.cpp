@@ -327,7 +327,18 @@ uint64_t bpftime_tail_call(uint64_t ctx, uint64_t prog_array, uint64_t index)
 	close(to_call_fd);
 	return run_opts.retval;
 }
-
+uint64_t bpftime_get_attach_cookie(uint64_t ctx, uint64_t, uint64_t, uint64_t,
+				   uint64_t)
+{
+	uint64_t cookie;
+	if (bpftime_get_current_thread_cookie(&cookie)) {
+		SPDLOG_DEBUG("Get cookie: {}", cookie);
+		return cookie;
+	} else {
+		SPDLOG_DEBUG("Cookie doesn't exist");
+		return 0;
+	}
+}
 } // extern "C"
 
 namespace bpftime
@@ -769,7 +780,11 @@ const bpftime_helper_group kernel_helper_group = {
 	  { BPF_FUNC_tail_call,
 	    bpftime_helper_info{ .index = BPF_FUNC_tail_call,
 				 .name = "bpf_tail_call",
-				 .fn = (void *)bpftime_tail_call } } }
+				 .fn = (void *)bpftime_tail_call } },
+	  { BPF_FUNC_get_attach_cookie,
+	    bpftime_helper_info{ .index = BPF_FUNC_get_attach_cookie,
+				 .name = "bpf_get_attach_cookie",
+				 .fn = (void *)bpftime_get_attach_cookie } } }
 
 };
 

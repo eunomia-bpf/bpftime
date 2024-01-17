@@ -98,7 +98,7 @@ static int import_shm_handler_from_json(bpftime_shm &shm, json value, int fd)
 		}
 		shm.add_bpf_prog(fd, insns.data(), cnt, name.c_str(), type);
 		for (int perf_fd : value["attr"]["attach_fds"]) {
-			shm.add_bpf_prog_attach_target(perf_fd, fd);
+			shm.add_bpf_prog_attach_target(perf_fd, fd, {});
 		}
 	} else if (handler_type == "bpf_map_handler") {
 		std::string name = value["name"];
@@ -223,7 +223,7 @@ int bpftime::bpftime_export_shm_to_json(const bpftime_shm &shm,
 			// append attach fds to the json
 			for (auto &fd : prog_handler.attach_fds) {
 				j[std::to_string(i)]["attr"]["attach_fds"]
-					.push_back(fd);
+					.push_back(fd.first);
 			}
 			SPDLOG_INFO("find prog fd={} name={}", i,
 				    prog_handler.name);

@@ -4,7 +4,7 @@
 #include <unistd.h>
 #include <setjmp.h>
 #include <linux/limits.h>
-#include "usdt_minimal.skel.h"
+#include ".output/usdt_minimal.skel.h"
 
 static volatile sig_atomic_t exiting;
 

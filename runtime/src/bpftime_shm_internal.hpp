@@ -83,7 +83,7 @@ class bpftime_shm {
 	bool is_prog_fd(int fd) const;
 
 	bool is_perf_fd(int fd) const;
-	
+
 	bool is_prog_array_map_fd(int fd) const;
 
 	int open_fake_fd();
@@ -125,10 +125,12 @@ class bpftime_shm {
 				uint64_t offset, bool is_replace);
 
 	// check and attach a perf event to a bpf program
-	int attach_perf_to_bpf(int perf_fd, int bpf_fd);
+	int attach_perf_to_bpf(int perf_fd, int bpf_fd,
+			       std::optional<uint64_t> cookie);
 
 	// add a attach target to a bpf program without checking the perf event
-	int add_bpf_prog_attach_target(int perf_fd, int bpf_fd);
+	int add_bpf_prog_attach_target(int perf_fd, int bpf_fd,
+				       std::optional<uint64_t> cookie);
 
 	// enable a perf event
 	int perf_event_enable(int fd) const;

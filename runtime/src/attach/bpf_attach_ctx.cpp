@@ -8,6 +8,7 @@
 #include "handler/epoll_handler.hpp"
 #include <asm/unistd_64.h>
 #include <cerrno>
+#include <cstdint>
 #include <map>
 #include <memory>
 #include <syscall_table.hpp>
@@ -20,6 +21,7 @@
 #include <bpftime_helper_group.hpp>
 #include <handler/handler_manager.hpp>
 #include <attach/attach_internal.hpp>
+#include <tuple>
 #include <utility>
 #include <variant>
 #include <sys/resource.h>
@@ -58,8 +60,9 @@ int bpf_attach_ctx::init_attach_ctx_from_handlers(const agent_config &config)
 int bpf_attach_ctx::init_attach_ctx_from_handlers(
 	const handler_manager *manager, const agent_config &config)
 {
-	// Maintain perf_event fd -> [(prog fd,bpftime_prog*)]
-	std::map<int, std::vector<std::pair<int, bpftime_prog *> > >
+	// Maintain perf_event fd -> [(prog fd, bpftime_prog*, attach cookie)]
+	std::map<int, std::vector<std::tuple<int, bpftime_prog *,
+					     std::optional<uint64_t> > > >
 		handler_prog_fds;
 	// First, we create programs
 	for (std::size_t i = 0; i < manager->size(); i++) {
@@ -85,27 +88,30 @@ int bpf_attach_ctx::init_attach_ctx_from_handlers(
 			for (auto v : prog_handler.attach_fds) {
 				if (std::holds_alternative<
 					    bpf_perf_event_handler>(
-					    manager->get_handler(v))) {
+					    manager->get_handler(v.first))) {
 					const auto &perf_handler =
 						std::get<bpf_perf_event_handler>(
 							manager->get_handler(
-								v));
+								v.first));
 					if (perf_handler.enabled) {
-						handler_prog_fds[v].emplace_back(
-							i, prog);
+						handler_prog_fds[v.first]
+							.emplace_back(i, prog,
+								      v.second);
 						SPDLOG_DEBUG(
-							"Program fd {} attached to perf event handler {}",
-							i, v);
+							"Program fd {} attached to perf event handler {}, enable cookie = {}, cookie value = {}",
+							i, v.first,
+							v.second.has_value(),
+							v.second.value_or(0));
 					} else {
 						SPDLOG_INFO(
 							"Ignore perf {} attached by prog fd {}. It's not enabled",
-							v, i);
+							v.first, i);
 					}
 
 				} else {
 					spdlog::warn(
 						"Program fd {} attached to a non-perf event handler {}",
-						i, v);
+						i, v.first);
 				}
 			}
 			SPDLOG_DEBUG("Load prog fd={} name={}", i,
@@ -180,11 +186,13 @@ int bpf_attach_ctx::init_attach_ctx_from_handlers(
 				err = attach_manager->attach_uprobe_override_at(
 					func_addr, [=](const pt_regs &regs) {
 						uint64_t ret;
-						progs[0].second
-							->bpftime_prog_exec(
-								(void *)&regs,
-								sizeof(regs),
-								&ret);
+						auto [_, prog_ptr, cookie] =
+							progs[0];
+						current_thread_bpf_cookie =
+							cookie;
+						prog_ptr->bpftime_prog_exec(
+							(void *)&regs,
+							sizeof(regs), &ret);
 					});
 				if (err < 0)
 					SPDLOG_ERROR(
@@ -214,13 +222,13 @@ int bpf_attach_ctx::init_attach_ctx_from_handlers(
 				err = attach_manager->attach_uprobe_override_at(
 					func_addr, [=](const pt_regs &regs) {
 						uint64_t ret;
-						progs[0].second
-							->bpftime_prog_exec(
-								(void *)&regs,
-								sizeof(regs),
-								&ret);
-						// return ret;
-
+						auto [_, prog_ptr, cookie] =
+							progs[0];
+						current_thread_bpf_cookie =
+							cookie;
+						prog_ptr->bpftime_prog_exec(
+							(void *)&regs,
+							sizeof(regs), &ret);
 						bpftime_set_retval(ret);
 					});
 				if (err < 0)
@@ -245,9 +253,12 @@ int bpf_attach_ctx::init_attach_ctx_from_handlers(
 						SPDLOG_TRACE(
 							"Uprobe triggered");
 						uint64_t ret;
-						for (auto &[k, prog] : progs) {
+						for (auto &[k, prog, cookie] :
+						     progs) {
 							SPDLOG_TRACE(
 								"Calling ebpf programs in uprobe callback");
+							current_thread_bpf_cookie =
+								cookie;
 							prog->bpftime_prog_exec(
 								(void *)&regs,
 								sizeof(regs),
@@ -274,7 +285,10 @@ int bpf_attach_ctx::init_attach_ctx_from_handlers(
 				err = attach_manager->attach_uretprobe_at(
 					func_addr, [=](const pt_regs &regs) {
 						uint64_t ret;
-						for (auto &[k, prog] : progs) {
+						for (auto &[k, prog, cookie] :
+						     progs) {
+							current_thread_bpf_cookie =
+								cookie;
 							prog->bpftime_prog_exec(
 								(void *)&regs,
 								sizeof(regs),

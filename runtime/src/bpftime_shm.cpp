@@ -3,6 +3,7 @@
  * Copyright (c) 2022, eunomia-bpf org
  * All rights reserved.
  */
+#include "bpftime_prog.hpp"
 #include "handler/epoll_handler.hpp"
 #include "handler/map_handler.hpp"
 #include "handler/perf_event_handler.hpp"
@@ -118,9 +119,24 @@ int bpftime_perf_event_disable(int fd)
 int bpftime_attach_perf_to_bpf(int perf_fd, int bpf_fd)
 {
 	return shm_holder.global_shared_memory.attach_perf_to_bpf(perf_fd,
-								  bpf_fd);
+								  bpf_fd, {});
 }
 
+int bpftime_attach_perf_to_bpf_with_cookie(int perf_fd, int bpf_fd,
+					   uint64_t cookie)
+{
+	return shm_holder.global_shared_memory.attach_perf_to_bpf(
+		perf_fd, bpf_fd, cookie);
+}
+
+int bpftime_get_current_thread_cookie(uint64_t *out)
+{
+	if (current_thread_bpf_cookie.has_value()) {
+		*out = *current_thread_bpf_cookie;
+		return 1;
+	}
+	return 0;
+}
 int bpftime_add_ringbuf_fd_to_epoll(int ringbuf_fd, int epoll_fd,
 				    epoll_data_t extra_data)
 {

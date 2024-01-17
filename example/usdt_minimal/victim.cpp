@@ -15,6 +15,9 @@ int main()
 		int z = x + y;
 		DTRACE_PROBE3(victim, probe1, x, y, z);
 		std::cout << x << " + " << y << " = " << z << std::endl;
+		int x1 = y;
+		int y1 = x;
+		DTRACE_PROBE3(victim, probe1, x1, y1, z);
 		std::this_thread::sleep_for(1s);
 	}
 	return 0;

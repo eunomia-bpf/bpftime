@@ -7,7 +7,7 @@
 SEC("usdt")
 int BPF_USDT(simple_probe, int x, int y, int z)
 {
-	bpf_printk("bpf: %d + %d = %d", x, y, z);
+	bpf_printk("bpf: %d + %d = %d\n", x, y, z);
 	return 0;
 }
 
