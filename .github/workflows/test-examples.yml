@@ -21,7 +21,7 @@ jobs:
       - name: Install dependencies
         run: | 
           sudo apt-get update
-          sudo apt-get install binutils-dev libboost1.74-all-dev libelf-dev zlib1g-dev libyaml-cpp-dev gcc-12 g++-12 llvm systemtap-sdt-dev
+          sudo apt-get install binutils-dev libboost1.74-all-dev libelf-dev zlib1g-dev libyaml-cpp-dev gcc-12 g++-12 llvm
       - name: Build and install runtime (with llvm-jit)
         if: ${{matrix.enable_jit}}
         run: |
@@ -146,7 +146,7 @@ jobs:
       - name: Install dependencies
         run: |
           sudo apt-get update -y
-          sudo apt-get install -y zlib1g-dev libelf-dev llvm
+          sudo apt-get install -y zlib1g-dev libelf-dev llvm systemtap-sdt-dev
           sudo mkdir /mnt/ramdisk
       - name: Build test assets
         run: |
