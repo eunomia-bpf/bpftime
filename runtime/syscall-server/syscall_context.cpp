@@ -8,6 +8,7 @@
 #include "handler/perf_event_handler.hpp"
 #include "linux/perf_event.h"
 #include "spdlog/spdlog.h"
+#include <cerrno>
 #include <cstdlib>
 #include <linux/bpf.h>
 #include "syscall_server_utils.hpp"
@@ -345,7 +346,15 @@ long syscall_context::handle_sysbpf(int cmd, union bpf_attr *attr, size_t size)
 	case BPF_LINK_CREATE: {
 		auto prog_fd = attr->link_create.prog_fd;
 		auto target_fd = attr->link_create.target_fd;
-		SPDLOG_DEBUG("Creating link {} -> {}", prog_fd, target_fd);
+		auto attach_type = attr->link_create.attach_type;
+		SPDLOG_DEBUG("Creating link {} -> {}, attach type {}", prog_fd,
+			     target_fd, attach_type);
+		if (attach_type != BPF_PERF_EVENT) {
+			SPDLOG_ERROR(
+				"bpftime only supports attach type BPF_PERF_EVENT");
+			errno = ENOTSUP;
+			return -1;
+		}
 		if (run_with_kernel && !bpftime_is_perf_event_fd(target_fd)) {
 			return orig_syscall_fn(__NR_bpf, (long)cmd,
 					       (long)(uintptr_t)attr,
@@ -357,9 +366,12 @@ long syscall_context::handle_sysbpf(int cmd, union bpf_attr *attr, size_t size)
 		SPDLOG_DEBUG("Created link {}", id);
 		if (bpftime_is_prog_fd(prog_fd) &&
 		    bpftime_is_perf_event_fd(target_fd)) {
-			SPDLOG_DEBUG("Attaching map {} to prog {}", target_fd,
-				     prog_fd);
-			bpftime_attach_perf_to_bpf(target_fd, prog_fd);
+			auto cookie = attr->link_create.perf_event.bpf_cookie;
+			SPDLOG_DEBUG(
+				"Attaching perf event {} to prog {}, with bpf cookie {:x}",
+				target_fd, prog_fd, cookie);
+			bpftime_attach_perf_to_bpf_with_cookie(target_fd,
+							       prog_fd, cookie);
 		}
 		return id;
 	}

@@ -8,6 +8,7 @@
 #include "handler/perf_event_handler.hpp"
 #include "spdlog/spdlog.h"
 #include <bpftime_shm_internal.hpp>
+#include <cerrno>
 #include <cstdio>
 #include <sys/epoll.h>
 #include <unistd.h>
@@ -198,19 +199,26 @@ int bpftime_shm::add_software_perf_event(int cpu, int32_t sample_type,
 	return fd;
 }
 
-int bpftime_shm::attach_perf_to_bpf(int perf_fd, int bpf_fd)
+int bpftime_shm::attach_perf_to_bpf(int perf_fd, int bpf_fd,
+				    std::optional<uint64_t> cookie)
 {
 	if (!is_perf_fd(perf_fd)) {
 		SPDLOG_ERROR("Fd {} is not a perf fd", perf_fd);
 		errno = ENOENT;
 		return -1;
 	}
-	return add_bpf_prog_attach_target(perf_fd, bpf_fd);
+	return add_bpf_prog_attach_target(perf_fd, bpf_fd, cookie);
 }
 
-int bpftime_shm::add_bpf_prog_attach_target(int perf_fd, int bpf_fd)
+int bpftime_shm::add_bpf_prog_attach_target(int perf_fd, int bpf_fd,
+					    std::optional<uint64_t> cookie)
 {
-	SPDLOG_DEBUG("Try attaching prog fd {} to perf fd {}", bpf_fd, perf_fd);
+	SPDLOG_DEBUG("Try attaching prog fd {} to perf fd {}, with cookie = {}",
+		     bpf_fd, perf_fd, cookie.has_value());
+	if (cookie) {
+		SPDLOG_DEBUG("With cookie: {}", *cookie);
+	}
+
 	if (!is_prog_fd(bpf_fd)) {
 		SPDLOG_ERROR("Fd {} is not a prog fd", bpf_fd);
 		errno = ENOENT;
@@ -218,7 +226,7 @@ int bpftime_shm::add_bpf_prog_attach_target(int perf_fd, int bpf_fd)
 	}
 	auto &handler = std::get<bpftime::bpf_prog_handler>(
 		manager->get_handler(bpf_fd));
-	handler.add_attach_fd(perf_fd);
+	handler.add_attach_fd(perf_fd, cookie);
 	return 0;
 }
 
@@ -426,7 +434,12 @@ bool bpftime_shm::is_perf_fd(int fd) const
 
 int bpftime_shm::open_fake_fd()
 {
-	return open("/dev/null", O_RDONLY);
+	int fd = open("/dev/null", O_RDONLY);
+	int cnt = 5;
+	while (fd <= 2 && fd >= 0 && --cnt > 0) {
+		fd = dup(fd);
+	}
+	return fd;
 }
 
 // handle bpf commands to load a bpf program
@@ -455,6 +468,7 @@ int bpftime_shm::add_bpf_link(int fd, int prog_fd, int target_fd)
 		fd = open_fake_fd();
 	}
 	if (!manager->is_allocated(target_fd) || !is_prog_fd(prog_fd)) {
+		errno = EBADF;
 		return -1;
 	}
 	return manager->set_handler(

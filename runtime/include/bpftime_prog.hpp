@@ -7,11 +7,13 @@
 #define _BPFTIME_PROG_HPP
 
 #include <ebpf-vm.h>
-#include <cinttypes>
+#include <optional>
 #include <vector>
 #include <string>
 namespace bpftime
 {
+
+extern thread_local std::optional<uint64_t> current_thread_bpf_cookie;
 
 // executable program for bpf function
 class bpftime_prog {
@@ -31,6 +33,7 @@ class bpftime_prog {
 	// exec in user space
 	int bpftime_prog_exec(void *memory, size_t memory_size,
 			      uint64_t *return_val) const;
+
 	int bpftime_prog_register_raw_helper(struct bpftime_helper_info info);
 	const std::vector<ebpf_inst> &get_insns() const
 	{
@@ -55,7 +58,6 @@ class bpftime_prog {
 	struct bpftime_ffi_ctx *ffi_ctx;
 
 	// kernel runtime
-
 };
 
 } // namespace bpftime

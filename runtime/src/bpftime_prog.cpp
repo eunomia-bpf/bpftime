@@ -11,11 +11,14 @@
 #include <cstdlib>
 #include <cstdint>
 #include <cstddef>
+#include <optional>
 #include <spdlog/spdlog.h>
 
 using namespace std;
 namespace bpftime
 {
+
+thread_local std::optional<uint64_t> current_thread_bpf_cookie;
 
 bpftime_prog::bpftime_prog(const struct ebpf_inst *insn, size_t insn_cnt,
 			   const char *name)
@@ -85,7 +88,7 @@ int bpftime_prog::bpftime_prog_exec(void *memory, size_t memory_size,
 		this->name);
 	if (jitted) {
 		SPDLOG_DEBUG("Directly call jitted function at {:x}",
-			      (uintptr_t)fn);
+			     (uintptr_t)fn);
 		val = fn(memory, memory_size);
 	} else {
 		SPDLOG_DEBUG("Running using ebpf_exec");

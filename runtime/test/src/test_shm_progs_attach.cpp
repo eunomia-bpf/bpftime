@@ -82,7 +82,7 @@ void attach_uprobe(bpftime::handler_manager &manager_ref,
 		segment);
 	auto &prog_handler = std::get<bpf_prog_handler>(manager_ref[0]);
 	// the attach fd is 3
-	prog_handler.add_attach_fd(4);
+	prog_handler.add_attach_fd(4, {});
 }
 
 void attach_replace(bpftime::handler_manager &manager_ref,
@@ -103,12 +103,12 @@ void attach_replace(bpftime::handler_manager &manager_ref,
 		segment);
 	auto &prog_handler = std::get<bpf_prog_handler>(manager_ref[0]);
 	// the attach fd is 3
-	prog_handler.add_attach_fd(3);
+	prog_handler.add_attach_fd(3, {});
 	// attach replace
 	manager_ref.set_handler(
 		3,
-		bpf_perf_event_handler(bpf_event_type::BPF_TYPE_UREPLACE, offset,
-				       -1, "", segment, true),
+		bpf_perf_event_handler(bpf_event_type::BPF_TYPE_UREPLACE,
+				       offset, -1, "", segment, true),
 		segment);
 }
 

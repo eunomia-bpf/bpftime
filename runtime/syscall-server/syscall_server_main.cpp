@@ -60,7 +60,7 @@ extern "C" void *mmap(void *addr, size_t length, int prot, int flags, int fd,
 
 extern "C" int close(int fd)
 {
-	SPDLOG_DEBUG("Closing {}", fd);
+	SPDLOG_DEBUG("Closing fd {}", fd);
 	return context.handle_close(fd);
 }
 

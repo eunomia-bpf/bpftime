@@ -46,7 +46,7 @@ int bpf_attach_ctx::create_tracepoint(int tracepoint_id, int perf_fd,
 				auto &prog = std::get<bpf_prog_handler>(
 					manager->get_handler(i));
 				for (auto v : prog.attach_fds) {
-					if (v == perf_fd) {
+					if (v.first == perf_fd) {
 						progs.push_back(
 							this->progs[i].get());
 						assert(progs.back());

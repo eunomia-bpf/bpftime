@@ -78,9 +78,9 @@ void handler_manager::clear_fd_at(int fd, managed_shared_memory &memory)
 				auto &prog_handler =
 					std::get<bpf_prog_handler>(handler);
 				auto &attach_fds = prog_handler.attach_fds;
-				auto new_tail =
-					std::remove(attach_fds.begin(),
-						    attach_fds.end(), fd);
+				auto new_tail = std::remove_if(
+					attach_fds.begin(), attach_fds.end(),
+					[=](auto t) { return t.first == fd; });
 				if (new_tail != attach_fds.end()) {
 					SPDLOG_DEBUG(
 						"Destroy attach of perf event {} to prog {}",

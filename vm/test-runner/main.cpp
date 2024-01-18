@@ -1,3 +1,4 @@
+#include "spdlog/cfg/env.h"
 #include <ebpf-vm.h>
 #include <memory>
 #include <iostream>
@@ -29,6 +30,7 @@ int read_file(const char *path, std::vector<char> &buf)
 
 int main(int argc, const char **argv)
 {
+	spdlog::cfg::load_env_levels();
 	if (argc < 2 || argc > 3) {
 		std::cerr
 			<< "Usage: " << argv[0]
