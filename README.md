@@ -193,7 +193,7 @@ Refer to [documents/available-features.md](https://eunomia.dev/bpftime/documents
 
 ## Build and test
 
-See [documents/build-and-test.md](https://eunomia.dev/bpftime/documents/build-and-test.md) for details.
+See [documents/build-and-test.md](https://eunomia.dev/bpftime/documents/build-and-test) for details.
 
 ## Roadmap
 
