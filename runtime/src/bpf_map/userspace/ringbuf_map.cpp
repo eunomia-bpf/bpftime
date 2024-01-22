@@ -21,8 +21,8 @@ enum {
 #define READ_ONCE_I(x) (*(volatile int *)&x)
 #define WRITE_ONCE_I(x, v) (*(volatile int *)&x) = (v)
 
+#if defined(__x86_64__)
 #define barrier() asm volatile("" ::: "memory")
-#ifdef __x86_64__
 #define smp_store_release_ul(p, v)                                             \
 	do {                                                                   \
 		barrier();                                                     \
@@ -43,8 +43,25 @@ enum {
 		___p;                                                          \
 	})
 
+#elif defined(__aarch64__)
+#define smp_store_release_ul(p, v)                              \
+  do {                                                          \
+    asm volatile("stlr %1, %0" : "=Q"(*p) : "r"(v) : "memory"); \
+  } while (0)
+#define smp_load_acquire_ul(p)                                     \
+  ({                                                               \
+    unsigned long ___p;                                            \
+    asm volatile("ldar %0, %1" : "=r"(___p) : "Q"(*p) : "memory"); \
+    ___p;                                                          \
+  })
+#define smp_load_acquire_i(p)                                       \
+  ({                                                                \
+    int ___p;                                                       \
+    asm volatile("ldar %w0, %1" : "=r"(___p) : "Q"(*p) : "memory"); \
+    ___p;                                                           \
+  })
 #else
-#error Only supports x86_64
+#error Only supports x86_64 and aarch64
 #endif
 
 namespace bpftime

@@ -34,7 +34,7 @@ TEST_CASE("Test attaching replace programs and revert")
 	int id = man.attach_uprobe_override_at(
 		func_addr, [&](const pt_regs &regs) {
 			invoke_times++;
-			bpftime_set_retval(regs.si + regs.di);
+			bpftime_set_retval(PT_REGS_PARM1(&regs) + PT_REGS_PARM2(&regs));
 		});
 	REQUIRE(id >= 0);
 	REQUIRE(call_replace_func(a, b) == a + b);

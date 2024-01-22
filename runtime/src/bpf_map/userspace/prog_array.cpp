@@ -20,6 +20,8 @@
 #define offsetofend(TYPE, FIELD)                                               \
 	(offsetof(TYPE, FIELD) + sizeof(((TYPE *)0)->FIELD))
 #endif
+
+#ifdef __x86_64__
 __attribute__((__noinline__, optnone, noinline)) static long
 my_bpf_syscall(long cmd, union bpf_attr *attr, unsigned long size)
 {
@@ -39,6 +41,28 @@ my_bpf_syscall(long cmd, union bpf_attr *attr, unsigned long size)
 			   "rax");
 	return ret;
 }
+#elif defined(__aarch64__)
+__attribute__((__noinline__, optnone, noinline)) static long
+my_bpf_syscall(long cmd, union bpf_attr *attr, unsigned long size)
+{
+	long ret;
+	__asm__ volatile("mov x8, %1\n"
+			 "mov x0, %2\n"
+			 "mov x1, %3\n"
+			 "mov x2, %4\n"
+			 "mov x3, #0\n"
+			 "mov x4, #0\n"
+			 "mov x5, #0\n"
+			 "svc #0\n"
+			 "mov %0, x0"
+			 : "=r"(ret)
+			 : "i"((long)__NR_bpf), "r"(cmd), "r"(attr), "r"(size)
+			 : "memory", "x0", "x1", "x2", "x3", "x4", "x5", "x8");
+	return ret;
+}
+#else
+#error Only supports x86_64 and aarch64
+#endif
 
 static int my_bpf_obj_get_info_by_fd(int bpf_fd, void *info, __u32 *info_len)
 {
@@ -57,6 +81,7 @@ static int my_bpf_obj_get_info_by_fd(int bpf_fd, void *info, __u32 *info_len)
 	return err;
 }
 
+#if defined(__x86_64__)
 __attribute__((__noinline__, optnone, noinline)) static long
 my_bpf_syscall_fd(long cmd, union bpf_attr *attr, unsigned long size)
 {
@@ -80,6 +105,33 @@ my_bpf_syscall_fd(long cmd, union bpf_attr *attr, unsigned long size)
 	} while (fd < 0 && fd == -EAGAIN && --attempts > 0);
 	return fd;
 }
+#elif defined(__aarch64__)
+__attribute__((__noinline__, optnone, noinline)) static long
+my_bpf_syscall_fd(long cmd, union bpf_attr *attr, unsigned long size)
+{
+	int attempts = 5;
+	long fd;
+	do {
+		__asm__ volatile("mov x8, %1\n"
+				 "mov x0, %2\n"
+				 "mov x1, %3\n"
+				 "mov x2, %4\n"
+				 "mov x3, #0\n"
+				 "mov x4, #0\n"
+				 "mov x5, #0\n"
+				 "svc #0\n"
+				 "mov %0, x0"
+				 : "=r"(fd)
+				 : "i"((long)__NR_bpf), "r"(cmd), "r"(attr),
+				   "r"(size)
+				 : "memory", "x0", "x1", "x2", "x3", "x4", "x5",
+				   "x8");
+	} while (fd < 0 && fd == -EAGAIN && --attempts > 0);
+	return fd;
+}
+#else
+#error Only supports x86_64 and aarch64
+#endif
 int my_bpf_prog_get_fd_by_id(__u32 id)
 {
 	const size_t attr_sz = offsetofend(union bpf_attr, open_flags);

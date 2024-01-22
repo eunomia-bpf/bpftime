@@ -51,6 +51,7 @@ extern "C" void syscall_addr();
 static const int NR_syscalls = 512;
 static syscall_hooker_func_t call_hook = &call_orig_syscall;
 
+#ifdef __x86_64__
 [[maybe_unused]] void __asm_holder()
 {
 	__asm__(".globl syscall_hooker_asm\n\t"
@@ -98,6 +99,8 @@ static syscall_hooker_func_t call_hook = &call_orig_syscall;
 		"syscall\n\t"
 		"ret\n\t");
 }
+#endif
+
 extern "C" int64_t syscall_hooker_cxx(int64_t sys_nr, int64_t arg1,
 				      int64_t arg2, int64_t arg3, int64_t arg4,
 				      int64_t arg5, int64_t arg6)

@@ -6,7 +6,7 @@
 #include "attach/attach_manager/frida_attach_manager.hpp"
 #include "bpftime.hpp"
 #include "handler/epoll_handler.hpp"
-#include <asm/unistd_64.h>
+#include <unistd.h>
 #include <cerrno>
 #include <map>
 #include <memory>

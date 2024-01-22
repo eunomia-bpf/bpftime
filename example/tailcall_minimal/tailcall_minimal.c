@@ -3,7 +3,7 @@
 #include "linux/bpf.h"
 #include "linux/filter.h"
 #include "bpf/bpf.h"
-#include <asm/unistd_64.h>
+#include <unistd.h>
 #include <errno.h>
 #include <string.h>
 #include <signal.h>
