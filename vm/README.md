@@ -47,6 +47,14 @@ $ bpftime-cli
 Usage: build/vm/cli/bpftime-cli <path to ebpf instructions> [path to memory for the ebpf program]
 ```
 
+See [cli](cli/README.md) for more details. Since cli is dependent on libbpf for loading eBPF programs, you need to compile it from the project root:
+
+```sh
+make release-with-llvm-jit
+```
+
+See [.github/workflows/test-aot-cli.yml](../.github/workflows/test-aot-cli.yml) for more details.
+
 ## benchmark
 
 see [github.com/eunomia-bpf/bpf-benchmark](https://github.com/eunomia-bpf/bpf-benchmark) for how we evaluate and details.
