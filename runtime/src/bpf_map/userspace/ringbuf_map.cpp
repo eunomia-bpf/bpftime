@@ -44,6 +44,7 @@ enum {
 	})
 
 #elif defined(__aarch64__)
+// https://github.com/torvalds/linux/blob/master/tools/arch/arm64/include/asm/barrier.h
 #define smp_store_release_ul(p, v)                              \
   do {                                                          \
     asm volatile("stlr %1, %0" : "=Q"(*p) : "r"(v) : "memory"); \
