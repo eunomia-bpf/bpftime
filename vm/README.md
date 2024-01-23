@@ -1,25 +1,33 @@
 # bpftime vm: userspace eBPF vm with JIT support
 
-The bpf vm and jit for eBPF usersapce runtime.
+The bpf vm and JIT/AOT for eBPF usersapce runtime.
 
 you can choose from llvm-jit and a simple-jit/interpreter based on ubpf.
+The JIT can be built as a standalone library and integrated into other projects.
+You can also try the cli tool to compile and run AOT eBPF programs.
 
 ## LLVM jit for eBPF
 
-see [llvm-jit/README.md](llvm-jit/README.md)
+see [llvm-jit/README.md](llvm-jit/README.md).
+
+You can build the llvm JIT/AOT for eBPF as a standalone library:
+
+```sh
+sudo apt install llvm-15-dev
+cd llvm-jit
+cmake -B build -DCMAKE_BUILD_TYPE=Release
+cmake --build build --target all -j
+```
 
 ## a simple jit modified from ubpf
 
 see [simple-jit/README.md](simple-jit/README.md)
 
-## build
-
-The JIT can be built as a standalone library and integrated into other projects.
-
 In `vm` directory, run:
 
 ```sh
-make build
+cmake -Bbuild
+cmake --build build --config Release
 ```
 
 ## Example Usage
@@ -38,7 +46,3 @@ Usage: build/vm/cli/bpftime-cli <path to ebpf instructions> [path to memory for 
 ## benchmark
 
 see [github.com/eunomia-bpf/bpf-benchmark](https://github.com/eunomia-bpf/bpf-benchmark) for how we evaluate and details.
-
-## Roadmap
-
-- [ ] AOT support for LLVM JIT

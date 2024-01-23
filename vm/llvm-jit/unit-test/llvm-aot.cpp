@@ -10,6 +10,7 @@ extern "C" uint64_t add_func(uint64_t a, uint64_t b, uint64_t, uint64_t,
 {
 	return a + b;
 }
+
 TEST_CASE("Test aot compilation")
 {
 	ebpf_vm *vm = ebpf_create();

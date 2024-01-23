@@ -37,6 +37,7 @@
 #include <picosha2.h>
 #include <boost/interprocess/sync/file_lock.hpp>
 #include <boost/interprocess/sync/scoped_lock.hpp>
+
 using namespace llvm;
 using namespace llvm::orc;
 using namespace bpftime;
@@ -144,6 +145,7 @@ ensure_aot_cache_dir_and_cache_file()
 
 	return { dir, cache_lock };
 }
+
 static std::optional<std::vector<uint8_t> >
 load_aot_cache(const std::filesystem::path &path)
 {
@@ -167,6 +169,7 @@ load_aot_cache(const std::filesystem::path &path)
 		return buffer;
 	}
 }
+
 ebpf_jit_fn llvm_bpf_jit_context::compile()
 {
 	spin_lock_guard guard(compiling.get());
@@ -386,6 +389,7 @@ llvm_bpf_jit_context::create_and_initialize_lljit_instance()
 	ExitOnErr(mainDylib.define(absoluteSymbols(lddwSyms)));
 	return { std::move(jit), extFuncNames, definedLddwHelpers };
 }
+
 ebpf_jit_fn llvm_bpf_jit_context::get_entry_address()
 {
 	if (!this->jit.has_value()) {
