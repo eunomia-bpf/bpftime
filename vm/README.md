@@ -6,7 +6,7 @@ you can choose from llvm-jit and a simple-jit/interpreter based on ubpf.
 The JIT can be built as a standalone library and integrated into other projects.
 You can also try the cli tool to compile and run AOT eBPF programs.
 
-## LLVM jit for eBPF
+## LLVM JIT/AOT for eBPF
 
 see [llvm-jit/README.md](llvm-jit/README.md).
 
@@ -29,6 +29,8 @@ In `vm` directory, run:
 cmake -Bbuild
 cmake --build build --config Release
 ```
+
+> Note: we will use ubpf to replace the simple-jit in the future.
 
 ## Example Usage
 

@@ -24,7 +24,11 @@ jobs:
 
     - name: build runtime
       run:  CC=gcc-12 CXX=g++-12 make build-llvm -j
+    
     - name: Run tests
       run: |
         ./build/vm/llvm-jit/unit-test/llvm_jit_tests
 
+    - name: build llvm JIT/AOT as a standalone library
+      run: |
+        cd vm/llvm-jit && cmake -B build -DCMAKE_BUILD_TYPE=Release && cmake --build build --target all -j
