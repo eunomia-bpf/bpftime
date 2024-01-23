@@ -16,6 +16,7 @@
 #include <unistd.h>
 #include <bpf/libbpf.h>
 #include <fstream>
+
 using namespace llvm;
 using namespace llvm::orc;
 
@@ -77,8 +78,10 @@ static int build_ebpf_program(const std::string &ebpf_elf,
 	}
 	return 0;
 }
+
 static ExitOnError exit_on_error;
 using bpf_func = uint64_t (*)(const void *, uint64_t);
+
 static int run_ebpf_program(const std::filesystem::path &elf,
 			    std::optional<std::string> memory)
 {
@@ -148,6 +151,7 @@ int main(int argc, const char **argv)
 		.nargs(0, 1);
 	program.add_subparser(build_command);
 	program.add_subparser(run_command);
+
 	try {
 		program.parse_args(argc, argv);
 	} catch (const std::exception &err) {

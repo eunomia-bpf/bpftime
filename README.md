@@ -15,11 +15,11 @@
 
 ## Key Features
 
-- **Uprobe and Syscall hooks based on binary rewriting**: Run eBPF programs in userspace, attaching them to Uprobes and Syscall tracepoints: **No manual instrumentation or restart required!**. It can `trace`, `replace` or `patch` the execution of a function, `hook`, `filter` or `redirect` all syscalls of a process safely, and efficiently with an eBPF userspace runtime.
+- **Uprobe and Syscall hooks based on binary rewriting**: Run eBPF programs in userspace, attaching them to Uprobes and Syscall tracepoints: **No manual instrumentation or restart required!**. It can `trace` or `change` the execution of a function, `hook` or `filter` all syscalls of a process safely, and efficiently with an eBPF userspace runtime.
 - **Performance**: Experience up to a 10x speedup in Uprobe overhead compared to kernel uprobe and uretprobe.
 - **Interprocess eBPF Maps**: Implement userspace eBPF maps in shared userspace memory for summary aggregation or control plane communication.
 - **Compatibility**: use existing eBPF toolchains like clang and libbpf to develop userspace eBPF without any modifications. Supporting CO-RE via BTF, and offering userspace host function access.
-- **JIT Support**: Benefit from a cross-platform eBPF interpreter and a high-speed JIT compiler powered by LLVM. It also includes a handcrafted x86 JIT in C for limited resources.
+- **JIT Support**: Benefit from a cross-platform eBPF interpreter and a high-speed `JIT/AOT` compiler powered by LLVM. It also includes a handcrafted x86 JIT in C for limited resources. The vm can be built as `a standalone library` like ubpf.
 - **No instrumentation**: Can inject eBPF runtime into any running process without the need for a restart or manual recompilation.
 - **Run with kernel eBPF**: Can load userspace eBPF from kernel, and using kernel eBPF maps to cooperate with kernel eBPF programs like kprobes and network filters.
 
@@ -199,10 +199,7 @@ See [documents/build-and-test.md](https://eunomia.dev/bpftime/documents/build-an
 
 `bpftime` is continuously evolving with more features in the pipeline:
 
-- [X] ring buffer output support.
-- [X] perf event output support.
-- [X] Figure out how to run transparently with kernel probe
-- [X] An AOT compiler for eBPF can be easily added based on the LLVM IR.
+- [X] An AOT compiler for eBPF based on the LLVM.
 - [ ] More examples and usecases:
   - [ ] Network on userspace eBPF
   - [X] Hotpatch userspace application

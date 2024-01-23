@@ -1,3 +1,5 @@
+cmake_minimum_required(VERSION 3.21)
+
 project(
     "llvm-bpf-jit"
     LANGUAGES C CXX
@@ -7,8 +9,6 @@ project(
 if(NOT CMAKE_BUILD_TYPE)
     set(CMAKE_BUILD_TYPE "Debug")
 endif()
-
-cmake_minimum_required(VERSION 3.15)
 
 function(bpftime_setup_target target)
     set_property(TARGET ${target} PROPERTY CXX_STANDARD 20)
@@ -54,6 +54,13 @@ llvm_map_components_to_libnames(LLVM_LIBS
     nativecodegen
 )
 
+if(NOT DEFINED SPDLOG_INCLUDE)
+  message(INFO "Adding spdlo seperately..")
+  # spdlog
+  add_subdirectory(../../third_party/spdlog ${CMAKE_CURRENT_BINARY_DIR}/spdlog)
+  set(SPDLOG_INCLUDE ../../third_party/spdlog/include)
+endif()
+
 message(STATUS "LLVM_LIBS=${LLVM_LIBS}")
 
 target_link_libraries(vm-bpf ${LLVM_LIBS} spdlog::spdlog)
@@ -75,7 +82,10 @@ target_link_libraries(vm-llvm-bpf-test vm-bpf)
 
 target_include_directories(vm-bpf PUBLIC ../include include)
 
-add_subdirectory(unit-test)
+if(BPFTIME_ENABLE_UNIT_TESTING)
+  message(STATUS "Build unit tests for the project. Tests should always be found in the test folder\n")
+  add_subdirectory(unit-test)
+endif()
 
 include(FetchContent)
 FetchContent_Declare(

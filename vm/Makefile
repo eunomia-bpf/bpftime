@@ -58,6 +58,15 @@ build: ## build the package
 	cmake -Bbuild  -DBPFTIME_ENABLE_UNIT_TESTING=1
 	cmake --build build --config Debug
 
+build-ubpf: ## build the package with ubpf backend
+	rm -rf build/
+	cmake -Bbuild
+	cmake --build build --config Release
+
+build-llvm: ## build with llvm as jit backend
+	cmake -Bbuild -DBPFTIME_LLVM_JIT=1
+	cmake --build build --config Release
+
 build-arm64: ## build the package on arm64
 	rm -rf build/
 	cmake -Bbuild -DCMAKE_TOOLCHAIN_FILE=../cmake/aarch64-toolchain.cmake -DARCH=aarch64 -DBPFTIME_ENABLE_UNIT_TESTING=1
