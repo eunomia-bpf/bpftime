@@ -88,6 +88,9 @@ set(SPDLOG_INCLUDE ${CMAKE_CURRENT_SOURCE_DIR}/third_party/spdlog/include)
 
 # main library
 add_subdirectory(vm)
+if (BPFTIME_LLVM_JIT)
+  add_subdirectory(vm/cli)
+endif()
 add_subdirectory(runtime)
 add_subdirectory(daemon)
 add_subdirectory(tools)

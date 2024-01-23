@@ -4,16 +4,16 @@ A faster and better support on different architectures jit based on LLVM.
 
 ## build
 
-```
-sudo apt install llvm-dev
+```sh
+sudo apt install llvm-15-dev
 cmake -B build -DCMAKE_BUILD_TYPE=Release
 cmake --build build --target all -j
 ```
 
 ## run
 
-```
-build/vm-llvm
+```sh
+build/vm-llvm-example
 ```
 
 ## Test with bpf-conformance
@@ -51,5 +51,5 @@ PASS: "tests/stxdw.data"
 PASS: "tests/stxh.data"
 PASS: "tests/stxw.data"
 PASS: "tests/subnet.data"
-Passed 147 out of 166 tests.
+Passed 165 out of 166 tests.
 ```
