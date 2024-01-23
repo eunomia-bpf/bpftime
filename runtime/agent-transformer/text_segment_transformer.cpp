@@ -51,7 +51,7 @@ extern "C" void syscall_addr();
 static const int NR_syscalls = 512;
 static syscall_hooker_func_t call_hook = &call_orig_syscall;
 
-#ifdef __x86_64__
+#if defined(__x86_64__)
 [[maybe_unused]] void __asm_holder()
 {
 	__asm__(".globl syscall_hooker_asm\n\t"
@@ -99,6 +99,10 @@ static syscall_hooker_func_t call_hook = &call_orig_syscall;
 		"syscall\n\t"
 		"ret\n\t");
 }
+#elif defined(__aarch64__)
+// TODO: implement syscall trace trampoline
+#else
+#error "Unsupported architecture"
 #endif
 
 extern "C" int64_t syscall_hooker_cxx(int64_t sys_nr, int64_t arg1,
