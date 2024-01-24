@@ -32,15 +32,15 @@ help:
 
 build-unit-test:
 	cmake -Bbuild  -DBPFTIME_ENABLE_UNIT_TESTING=1 -DCMAKE_BUILD_TYPE:STRING=Debug
-	cmake --build build --config Debug --target bpftime_runtime_tests
+	cmake --build build --config Debug --target bpftime_runtime_tests bpftime_daemon_tests
 
 unit-test-daemon: 
-	build/daemon/test/bpftime_daemon_tests
+	./build/daemon/test/bpftime_daemon_tests
 
 unit-test-runtime:  ## run catch2 unit tests
 	make -C runtime/test/bpf && cp runtime/test/bpf/*.bpf.o build/runtime/test/
 	./build/runtime/unit-test/bpftime_runtime_tests
-	cd build/runtime/test && ctest -VV
+	cd build/runtime/test && make && ctest -VV
 
 unit-test: unit-test-daemon unit-test-runtime ## run catch2 unit tests
 

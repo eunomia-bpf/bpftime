@@ -1,6 +1,6 @@
 #include <iostream>
 #include <ostream>
-#include <sys/sdt.h>
+#include <sys/sdt.h>  // provided by systemtap-sdt-devel package
 #include <random>
 #include <thread>
 using namespace std::chrono_literals;

@@ -40,8 +40,22 @@ struct pt_regs {
 	uint64_t sp;
 	uint64_t ss;
 };
+#define PT_REGS_PARM1(x) ((x)->di)
+#define PT_REGS_PARM2(x) ((x)->si)
+#define PT_REGS_PARM3(x) ((x)->dx)
+
+#elif defined(__aarch64__) || defined(_M_ARM64)
+struct pt_regs {
+	uint64_t regs[31];
+	uint64_t sp;
+	uint64_t pc;
+	uint64_t pstate;
+};
+#define PT_REGS_PARM1(x) ((x)->regs[0])
+#define PT_REGS_PARM2(x) ((x)->regs[1])
+#define PT_REGS_PARM3(x) ((x)->regs[2])
 #else
-#error Only x86_64 is supported
+#error "Unsupported architecture"
 #endif
 
 struct ebpf_vm *begin_vm = NULL;
@@ -74,15 +88,15 @@ uint64_t test_func_wrapper(const char *a, int b, uint64_t c)
 	uint64_t ret;
 	if (enable_ebpf) {
 		memset(&regs, 0, sizeof(regs));
-		regs.di = (uintptr_t)a;
-		regs.si = b;
-		regs.dx = c;
+		PT_REGS_PARM1(&regs) = (uintptr_t)a;
+		PT_REGS_PARM2(&regs) = b;
+		PT_REGS_PARM3(&regs) = c;
 		ebpf_exec(begin_vm, &regs, sizeof(regs), &ret);
 	}
 	uint64_t hook_func_ret = __benchmark_test_function3(a, b, c);
 	if (enable_ebpf) {
 		memset(&regs, 0, sizeof(regs));
-		regs.di = hook_func_ret;
+		PT_REGS_PARM1(&regs) = hook_func_ret;
 		ebpf_exec(end_vm, &regs, sizeof(regs), &ret);
 	}
 	return hook_func_ret;

@@ -3,7 +3,7 @@
 #include "linux/bpf.h"
 #include "linux/filter.h"
 #include "bpf/bpf.h"
-#include <asm/unistd_64.h>
+#include <unistd.h>
 #include <errno.h>
 #include <string.h>
 #include <signal.h>
@@ -17,6 +17,9 @@
 #include <stdlib.h>
 #include "./.output/tailcall_minimal.skel.h"
 #include <inttypes.h>
+#include <dlfcn.h>
+#include <gnu/lib-names.h>
+
 #define warn(...) fprintf(stderr, __VA_ARGS__)
 
 #define BPF_LD_IMM64_RAW_FULL(DST, SRC, OFF1, OFF2, IMM1, IMM2)                \
@@ -70,6 +73,30 @@
 			    .src_reg = 0,                                      \
 			    .off = 0,                                          \
 			    .imm = IMM })
+
+// https://github.com/torvalds/linux/blob/7ed2632ec7d72e926b9e8bcc9ad1bb0cd37274bf/tools/build/feature/test-bpf.c#L6-L26
+#ifndef __NR_bpf
+# if defined(__i386__)
+#  define __NR_bpf 357
+# elif defined(__x86_64__)
+#  define __NR_bpf 321
+# elif defined(__aarch64__)
+#  define __NR_bpf 280
+# elif defined(__sparc__)
+#  define __NR_bpf 349
+# elif defined(__s390__)
+#  define __NR_bpf 351
+# elif defined(__mips__) && defined(_ABIO32)
+#  define __NR_bpf 4355
+# elif defined(__mips__) && defined(_ABIN32)
+#  define __NR_bpf 6319
+# elif defined(__mips__) && defined(_ABI64)
+#  define __NR_bpf 5315
+# else
+#  error __NR_bpf not defined
+# endif
+#endif
+
 static int libbpf_print_fn(enum libbpf_print_level level, const char *format,
 			   va_list args)
 {
@@ -85,21 +112,13 @@ static void sig_handler(int sig)
 
 static long my_bpf_syscall(long cmd, union bpf_attr *attr, unsigned long size)
 {
+	void* libc_handle = dlopen(LIBC_SO, RTLD_LAZY);
+	long (*libc_syscall)(long, ...) = dlsym(libc_handle, "syscall");
+
 	int attempts = 5;
 	long fd;
 	do {
-		__asm__ volatile("movq %1, %%rax\n"
-				 "movq %2, %%rdi\n"
-				 "movq %3, %%rsi\n"
-				 "movq %4, %%rdx\n"
-				 "movq $0, %%r10\n"
-				 "movq $0, %%r8\n"
-				 "movq $0, %%r9\n"
-				 "syscall\n"
-				 : "=a"(fd)
-				 : "i"((long)__NR_bpf), "m"(cmd), "m"(attr),
-				   "m"(size)
-				 : "memory");
+		fd = libc_syscall(__NR_bpf, cmd, attr, size);
 	} while (fd < 0 && fd == -EAGAIN && --attempts > 0);
 	return fd;
 }
