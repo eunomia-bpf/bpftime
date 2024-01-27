@@ -6,7 +6,7 @@
 using namespace bpftime;
 
 // This is the original function to hook.
-__attribute__((__noinline__, optnone)) extern "C" int
+__attribute__((__noinline__)) extern "C" int
 __bpftime_attach_filter_with_ebpf__my_function(const char *str, char c,
 					       long long parm1)
 {

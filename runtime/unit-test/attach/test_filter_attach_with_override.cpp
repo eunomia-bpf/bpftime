@@ -14,7 +14,7 @@ __bpftime_func_to_filter(uint64_t a, uint64_t b)
 	asm("");
 	return (a << 32) | b;
 }
-__attribute__((__noinline__, optnone, noinline)) static uint64_t
+__attribute__((__noinline__, noinline)) static uint64_t
 call_filter_func(uint64_t a, uint64_t b)
 {
 	return __bpftime_func_to_filter(a, b);

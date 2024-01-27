@@ -19,12 +19,12 @@
 	(offsetof(TYPE, FIELD) + sizeof(((TYPE *)0)->FIELD))
 #endif
 
-// syscall() function was hooked by syscall server, direct call to it will lead to 
-// a result provided by bpftime. So if we want to get things from kernel, we must 
-// manually execute `syscall` from libc
-static void* libc_handle = dlopen(LIBC_SO, RTLD_LAZY);
-static auto libc_syscall = reinterpret_cast<decltype(&::syscall)>(
-	dlsym(libc_handle, "syscall"));
+// syscall() function was hooked by syscall server, direct call to it will lead
+// to a result provided by bpftime. So if we want to get things from kernel, we
+// must manually execute `syscall` from libc
+static void *libc_handle = dlopen(LIBC_SO, RTLD_LAZY);
+static auto libc_syscall =
+	reinterpret_cast<decltype(&::syscall)>(dlsym(libc_handle, "syscall"));
 
 static int my_bpf_obj_get_info_by_fd(int bpf_fd, void *info, __u32 *info_len)
 {
@@ -43,7 +43,7 @@ static int my_bpf_obj_get_info_by_fd(int bpf_fd, void *info, __u32 *info_len)
 	return err;
 }
 
-__attribute__((__noinline__, optnone, noinline)) static long
+__attribute__((__noinline__, noinline)) static long
 my_bpf_syscall_fd(long cmd, union bpf_attr *attr, unsigned long size)
 {
 	int attempts = 5;
