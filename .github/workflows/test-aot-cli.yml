@@ -22,7 +22,7 @@ jobs:
       if: startsWith(matrix.runs-on-container,'ubuntu')
       run: | 
         apt-get update
-        apt-get install -y binutils-dev libboost1.74-all-dev libelf-dev zlib1g-dev libyaml-cpp-dev gcc-12 g++-12 llvm git
+        apt-get install -y binutils-dev libboost1.74-all-dev libelf-dev zlib1g-dev libyaml-cpp-dev gcc-12 g++-12 llvm git make
     - name: Install dependencies (Fedora)
       if: startsWith(matrix.runs-on-container,'fedora')
       run: | 
