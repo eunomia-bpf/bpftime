@@ -6,7 +6,7 @@
 #endif
 
 using namespace bpftime;
-__attribute__((__noinline__, noinline)) extern "C" uint64_t
+extern "C" __attribute__((__noinline__, noinline)) uint64_t
 __bpftime_func_to_replace(uint64_t a, uint64_t b)
 {
 	// Forbid inline
