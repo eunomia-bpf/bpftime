@@ -18,9 +18,6 @@ jobs:
       image: ${{matrix.runs-on-container}}
       options: --privileged
     steps:
-    - uses: actions/checkout@v2
-      with:
-        submodules: 'recursive'
     - name: Install dependencies (Ubuntu)
       if: startsWith(matrix.runs-on-container,'ubuntu')
       run: | 
@@ -29,7 +26,10 @@ jobs:
     - name: Install dependencies (Fedora)
       if: startsWith(matrix.runs-on-container,'fedora')
       run: | 
-        sudo dnf install make gcc g++ cmake llvm15-devel boost-devel zlib-devel elfutils-libelf-devel pkgconf clang
+        sudo dnf install make gcc g++ cmake llvm15-devel boost-devel zlib-devel elfutils-libelf-devel pkgconf clang git
+    - uses: actions/checkout@v2
+      with:
+        submodules: 'recursive'
     - name: Build and install everything (Ubuntu)
       if: startsWith(matrix.runs-on-container,'ubuntu')
       run: |
