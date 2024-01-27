@@ -22,6 +22,7 @@ TEST_CASE("Test tail calling from userspace to kernel")
 	LIBBPF_OPTS(bpf_map_create_opts, map_create_opts);
 	int map_fd = bpf_map_create(BPF_MAP_TYPE_HASH, "simple_map", 4, 4, 1024,
 				    &map_create_opts);
+	SPDLOG_INFO("Map create err = {}", errno);
 	REQUIRE(map_fd >= 0);
 	SPDLOG_INFO("Created kernel map fd {}", map_fd);
 	char log_buf[1 << 16];
