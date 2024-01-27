@@ -21,12 +21,12 @@ jobs:
     - name: Install dependencies (Ubuntu)
       if: startsWith(matrix.runs-on-container,'ubuntu')
       run: | 
-        sudo apt-get update
-        sudo apt-get install binutils-dev libboost1.74-all-dev libelf-dev zlib1g-dev libyaml-cpp-dev gcc-12 g++-12 llvm
+        apt-get update
+        apt-get install binutils-dev libboost1.74-all-dev libelf-dev zlib1g-dev libyaml-cpp-dev gcc-12 g++-12 llvm
     - name: Install dependencies (Fedora)
       if: startsWith(matrix.runs-on-container,'fedora')
       run: | 
-        sudo dnf install make gcc g++ cmake llvm15-devel boost-devel zlib-devel elfutils-libelf-devel pkgconf clang git
+        dnf install make gcc g++ cmake llvm15-devel boost-devel zlib-devel elfutils-libelf-devel pkgconf clang git
     - uses: actions/checkout@v2
       with:
         submodules: 'recursive'
