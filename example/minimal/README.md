@@ -120,5 +120,6 @@ LD_PRELOAD=~/.bpftime/libbpftime-syscall-server.so ./syscall
 client
 
 ```sh
-LD_PRELOAD=~/.bpftime/libbpftime-agent.so ./victim
+sudo ~/.bpftime/bpftime start -s ./victim
+# or AGENT_SO=build/runtime/agent/libbpftime-agent.so LD_PRELOAD=build/runtime/agent-transformer/libbpftime-agent-transformer.so ./victim
 ```
