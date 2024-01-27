@@ -20,8 +20,8 @@
 #define READ_ONCE_U64(x) (*(volatile uint64_t *)&x)
 #define WRITE_ONCE_U64(x, v) (*(volatile uint64_t *)&x) = (v)
 
+#if defined(__x86_64__)
 #define barrier() asm volatile("" ::: "memory")
-#ifdef __x86_64__
 #define smp_store_release_u64(p, v)                                            \
 	do {                                                                   \
 		barrier();                                                     \
@@ -34,9 +34,20 @@
 		barrier();                                                     \
 		___p;                                                          \
 	})
-
+#elif defined(__aarch64__)
+// https://github.com/torvalds/linux/blob/master/tools/arch/arm64/include/asm/barrier.h
+#define smp_store_release_u64(p, v)                             \
+  do {                                                          \
+    asm volatile("stlr %1, %0" : "=Q"(*p) : "r"(v) : "memory"); \
+  } while (0)
+#define smp_load_acquire_u64(p)                                    \
+  ({                                                               \
+    uint64_t ___p;                                                 \
+    asm volatile("ldar %0, %1" : "=r"(___p) : "Q"(*p) : "memory"); \
+    ___p;                                                          \
+  })
 #else
-#error Only supports x86_64
+#error Only supports x86_64 and aarch64
 #endif
 
 namespace bpftime

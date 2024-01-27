@@ -33,8 +33,8 @@ TEST_CASE("Test attaching filter programs and revert")
 	REQUIRE(__bpftime_func_to_filter(a, b) == expected_result);
 	int id = man.attach_uprobe_override_at(
 		func_addr, [&](const pt_regs &regs) {
-			uint64_t first_arg = regs.di;
-			uint64_t second_arg = regs.si;
+			uint64_t first_arg = PT_REGS_PARM1(&regs);
+			uint64_t second_arg = PT_REGS_PARM2(&regs);
 			if (first_arg == a) {
 				bpftime_set_retval(first_arg + second_arg);
 			}

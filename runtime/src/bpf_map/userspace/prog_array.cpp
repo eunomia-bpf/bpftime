@@ -11,34 +11,20 @@
 #include <cerrno>
 #include <spdlog/spdlog.h>
 #include <bpf/libbpf.h>
-
-// Why hand written syscalls? syscall() function was hooked by syscall server,
-// direct call to it will lead to a result provided by bpftime. So if we want to
-// get things from kernel, we must manually execute `syscall`
+#include <dlfcn.h>
+#include <gnu/lib-names.h>
 
 #ifndef offsetofend
 #define offsetofend(TYPE, FIELD)                                               \
 	(offsetof(TYPE, FIELD) + sizeof(((TYPE *)0)->FIELD))
 #endif
-__attribute__((__noinline__, optnone, noinline)) static long
-my_bpf_syscall(long cmd, union bpf_attr *attr, unsigned long size)
-{
-	long ret;
-	__asm__ volatile("movq %1, %%rax\n"
-			 "movq %2, %%rdi\n"
-			 "movq %3, %%rsi\n"
-			 "movq %4, %%rdx\n"
-			 "movq $0, %%r10\n"
-			 "movq $0, %%r8\n"
-			 "movq $0, %%r9\n"
-			 "syscall\n"
-			 "movq %%rax, %0"
-			 : "=g"(ret)
-			 : "i"((long)__NR_bpf), "g"(cmd), "g"(attr), "g"(size)
-			 : "memory", "rdi", "rsi", "rdx", "r10", "r8", "r9",
-			   "rax");
-	return ret;
-}
+
+// syscall() function was hooked by syscall server, direct call to it will lead to 
+// a result provided by bpftime. So if we want to get things from kernel, we must 
+// manually execute `syscall` from libc
+static void* libc_handle = dlopen(LIBC_SO, RTLD_LAZY);
+static auto libc_syscall = reinterpret_cast<decltype(&::syscall)>(
+	dlsym(libc_handle, "syscall"));
 
 static int my_bpf_obj_get_info_by_fd(int bpf_fd, void *info, __u32 *info_len)
 {
@@ -51,7 +37,7 @@ static int my_bpf_obj_get_info_by_fd(int bpf_fd, void *info, __u32 *info_len)
 	attr.info.info_len = *info_len;
 	attr.info.info = (uintptr_t)info;
 
-	err = my_bpf_syscall(BPF_OBJ_GET_INFO_BY_FD, &attr, attr_sz);
+	err = libc_syscall(__NR_bpf, BPF_OBJ_GET_INFO_BY_FD, &attr, attr_sz);
 	if (!err)
 		*info_len = attr.info.info_len;
 	return err;
@@ -63,23 +49,11 @@ my_bpf_syscall_fd(long cmd, union bpf_attr *attr, unsigned long size)
 	int attempts = 5;
 	long fd;
 	do {
-		__asm__ volatile("movq %1, %%rax\n"
-				 "movq %2, %%rdi\n"
-				 "movq %3, %%rsi\n"
-				 "movq %4, %%rdx\n"
-				 "movq $0, %%r10\n"
-				 "movq $0, %%r8\n"
-				 "movq $0, %%r9\n"
-				 "syscall\n"
-				 "movq %%rax, %0"
-				 : "=g"(fd)
-				 : "i"((long)__NR_bpf), "g"(cmd), "g"(attr),
-				   "g"(size)
-				 : "memory", "rdi", "rsi", "rdx", "r10", "r8",
-				   "r9", "rax");
+		fd = libc_syscall(__NR_bpf, cmd, attr, size);
 	} while (fd < 0 && fd == -EAGAIN && --attempts > 0);
 	return fd;
 }
+
 int my_bpf_prog_get_fd_by_id(__u32 id)
 {
 	const size_t attr_sz = offsetofend(union bpf_attr, open_flags);

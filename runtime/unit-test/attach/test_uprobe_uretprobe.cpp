@@ -32,8 +32,8 @@ TEST_CASE("Test attaching uprobing programs and reverting")
 	REQUIRE(func_addr != 0);
 	int id1 = man.attach_uprobe_at(func_addr, [&](const pt_regs &regs) {
 		invoke_times++;
-		a = regs.di;
-		b = regs.si;
+		a = PT_REGS_PARM1(&regs);
+		b = PT_REGS_PARM2(&regs);
 	});
 	INFO("id1=" << id1);
 	REQUIRE(id1 >= 0);
@@ -47,8 +47,8 @@ TEST_CASE("Test attaching uprobing programs and reverting")
 	a = b = 0;
 	int id2 = man.attach_uprobe_at(func_addr, [&](const pt_regs &regs) {
 		invoke_times++;
-		a2 = regs.di;
-		b2 = regs.si;
+		a2 = PT_REGS_PARM1(&regs);
+		b2 = PT_REGS_PARM2(&regs);
 	});
 	INFO("id2=" << id2);
 	REQUIRE(id2 >= 0);
@@ -91,7 +91,7 @@ TEST_CASE("Test uretprobe and reverting")
 	REQUIRE(func_addr != 0);
 	int id1 = man.attach_uretprobe_at(func_addr, [&](const pt_regs &regs) {
 		invoke_times++;
-		ret1 = regs.ax;
+		ret1 = PT_REGS_RC(&regs);
 	});
 	INFO("id1=" << id1);
 	REQUIRE(id1 >= 0);
@@ -104,7 +104,7 @@ TEST_CASE("Test uretprobe and reverting")
 	dummy = 0;
 	int id2 = man.attach_uretprobe_at(func_addr, [&](const pt_regs &regs) {
 		invoke_times++;
-		ret2 = regs.ax;
+		ret2 = PT_REGS_RC(&regs);
 	});
 	INFO("id2=" << id2);
 	REQUIRE(id2 >= 0);
@@ -144,14 +144,14 @@ TEST_CASE("Test the mix usage of uprobe and uretprobe")
 	REQUIRE(func_addr != 0);
 	int id1 = man.attach_uprobe_at(func_addr, [&](const pt_regs &regs) {
 		uprobe_invoke_times++;
-		a = regs.di;
-		b = regs.si;
+		a = PT_REGS_PARM1(&regs);
+		b = PT_REGS_PARM2(&regs);
 	});
 	REQUIRE(id1 >= 0);
 
 	int id2 = man.attach_uretprobe_at(func_addr, [&](const pt_regs &regs) {
 		uretprobe_invoke_times++;
-		ret = regs.ax;
+		ret = PT_REGS_RC(&regs);
 	});
 	REQUIRE(id2 >= 0);
 	uint64_t i = GENERATE(take(10, random(0, 1000)));
