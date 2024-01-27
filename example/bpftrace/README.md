@@ -11,7 +11,7 @@ However, running bpftrace requires root privileges and eBPF availability in the 
 This is an example, you can first run a bpftrace command in userspace with uprobe:
 
 ```console
-$ sudo ~/.bpftime/bpftime load bpftrace -- -e 'uretprobe:/bin/bash:readline { printf("%-6d %s\n", pid, str(retval)); }'
+$ sudo ~/.bpftime/bpftime load bpftrace -e 'uretprobe:/bin/bash:readline { printf("%-6d %s\n", pid, str(retval)); }'
 [2023-10-27 19:00:32][info][13368] bpftime-syscall-server started
 Attaching 1 probe...
 13615  
@@ -31,7 +31,7 @@ We've test the bpftrace with [this commit](https://github.com/iovisor/bpftrace/c
 ## Syscall tracing example
 
 ```console
-$ sudo SPDLOG_LEVEL=error ~/.bpftime/bpftime load bpftrace -- -e 'tracepoint:syscalls:sys_enter_openat { printf("%s %s\n", comm, str(args->filename)); }'
+$ sudo SPDLOG_LEVEL=error ~/.bpftime/bpftime load bpftrace -e 'tracepoint:syscalls:sys_enter_openat { printf("%s %s\n", comm, str(args->filename)); }'
 [2023-10-27 19:17:34.099] [info] manager constructed
 [2023-10-27 19:17:34.289] [info] Initialize syscall server
 Attaching 1 probe...
