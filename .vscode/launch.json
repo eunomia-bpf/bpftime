@@ -36,37 +36,6 @@
                     "ignoreFailures": true
                 }
             ]
-        },
-        {
-            "name": "(gdb) libebpf",
-            "type": "cppdbg",
-            "request": "launch",
-            "program": "${workspaceRoot}/build/bin/Debug/libebpf",
-            "args": [],
-            "stopAtEntry": true,
-            "cwd": "${fileDirname}",
-            "environment": [],
-            "externalConsole": true,
-            "MIMode": "gdb",
-            "miDebuggerPath": "/usr/bin/gdb-multiarch",
-            "miDebuggerArgs": "--interpreter=mi --tty=/dev/null -ex \"target remote :1234\"",
-            "setupCommands": [
-                {
-                    "description": "为 gdb 启用整齐打印",
-                    "text": "-enable-pretty-printing",
-                    "ignoreFailures": true
-                },
-                {
-                    "description": "将反汇编风格设置为 Intel",
-                    "text": "-gdb-set disassembly-flavor intel",
-                    "ignoreFailures": true
-                },
-                {
-                    "description": "Set remote target",
-                    "text": "target remote :1234",
-                    "ignoreFailures": true
-                }
-            ]
         }
     ]
 }
