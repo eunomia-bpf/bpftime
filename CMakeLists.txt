@@ -73,6 +73,10 @@ option(ENABLE_EBPF_VERIFIER "Whether to enable ebpf verifier" NO)
 
 if(${ENABLE_EBPF_VERIFIER})
   add_subdirectory(bpftime-verifier)
+else()
+  message(STATUS "Skipping ebpf verifier")
+  # Catch2
+  add_subdirectory(third_party/Catch2)
 endif()
 
 # spdlog
