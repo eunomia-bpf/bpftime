@@ -26,7 +26,7 @@ jobs:
     - name: Install dependencies (Fedora)
       if: startsWith(matrix.runs-on-container,'fedora')
       run: | 
-        dnf install -y make gcc g++ cmake llvm15-devel boost-devel zlib-devel elfutils-libelf-devel pkgconf clang git llvm
+        dnf install -y make gcc g++ cmake llvm15-devel boost-devel zlib-devel elfutils-libelf-devel pkgconf clang git llvm libubsan
     - uses: actions/checkout@v2
       with:
         submodules: 'recursive'
