@@ -18,9 +18,6 @@ jobs:
       image: ${{matrix.runs-on-container}}
       options: --privileged
     steps:
-    - uses: actions/checkout@v3
-      with:
-        submodules: 'recursive'
     - name: Install dependencies (Ubuntu)
       if: startsWith(matrix.runs-on-container,'ubuntu')
       run: | 
