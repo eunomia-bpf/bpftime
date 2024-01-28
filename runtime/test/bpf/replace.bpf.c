@@ -6,7 +6,7 @@
 #include "vmlinux.h"
 #include "bpf/bpf_tracing.h"
 #include "bpf/bpf_helpers.h"
-#include "ffi.bpf.h"
+#include "ufunc.bpf.h"
 
 #ifndef BPF_UPROBE
 #define BPF_UPROBE BPF_KPROBE
