@@ -3,7 +3,7 @@
  * Copyright (c) 2022, eunomia-bpf org
  * All rights reserved.
  */
-// test register raw function and call it from ffi
+// test register raw function and call it from ufunc
 #include "bpftime_helper_group.hpp"
 #include "test_defs.h"
 #include "bpftime.hpp"
@@ -13,8 +13,6 @@
 #include "bpftime_shm.hpp"
 
 using namespace bpftime;
-
-
 
 static void dump_type(void *ctx, const char *fmt, va_list args)
 {

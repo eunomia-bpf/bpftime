@@ -34,7 +34,7 @@ class bpftime_helper_group {
 	// Append another group to the current one
 	int append(const bpftime_helper_group &another_group);
 
-	// Utility function to get the FFI helper group
+	// Utility function to get the UFUNC helper group
 	static const bpftime_helper_group &get_ffi_helper_group();
 
 	// Utility function to get the kernel utilities helper group

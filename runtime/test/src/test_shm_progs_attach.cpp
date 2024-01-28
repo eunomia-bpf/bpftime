@@ -4,7 +4,7 @@
  * All rights reserved.
  */
 #include "bpf_attach_ctx.hpp"
-#include "bpftime_ffi.hpp"
+#include "bpftime_ufunc.hpp"
 #include "bpftime_shm.hpp"
 #include "handler/handler_manager.hpp"
 #include <cstdlib>
@@ -41,25 +41,27 @@ extern "C" int my_uprobe_function(int parm1, const char *str, char c)
 
 const char *obj_path = "./replace.bpf.o";
 
-static void register_ffi_for_print_and_add(bpf_attach_ctx *probe_ctx)
+static void register_ufunc_for_print_and_add(bpf_attach_ctx *probe_ctx)
 {
-	ebpf_ffi_func_info func2 = { "add_func",
-				     FFI_FN(add_func),
-				     FFI_TYPE_INT32,
-				     { FFI_TYPE_INT32, FFI_TYPE_INT32 },
-				     2,
-				     0,
-				     false };
-	bpftime_ffi_resolve_from_info(&probe_ctx->get_attach_manager(), func2);
+	ebpf_ufunc_func_info func2 = { "add_func",
+				       UFUNC_FN(add_func),
+				       UFUNC_TYPE_INT32,
+				       { UFUNC_TYPE_INT32, UFUNC_TYPE_INT32 },
+				       2,
+				       0,
+				       false };
+	bpftime_ufunc_resolve_from_info(&probe_ctx->get_attach_manager(),
+					func2);
 
-	ebpf_ffi_func_info func1 = { "print_func",
-				     FFI_FN(print_func),
-				     FFI_TYPE_INT64,
-				     { FFI_TYPE_POINTER },
-				     1,
-				     0,
-				     false };
-	bpftime_ffi_resolve_from_info(&probe_ctx->get_attach_manager(), func1);
+	ebpf_ufunc_func_info func1 = { "print_func",
+				       UFUNC_FN(print_func),
+				       UFUNC_TYPE_INT64,
+				       { UFUNC_TYPE_POINTER },
+				       1,
+				       0,
+				       false };
+	bpftime_ufunc_resolve_from_info(&probe_ctx->get_attach_manager(),
+					func1);
 }
 
 void attach_uprobe(bpftime::handler_manager &manager_ref,
@@ -135,9 +137,9 @@ int main(int argc, const char **argv)
 		attach_replace(manager_ref, segment, prog, ctx);
 		attach_uprobe(manager_ref, segment, prog, ctx);
 
-		register_ffi_for_print_and_add(&ctx);
+		register_ufunc_for_print_and_add(&ctx);
 		agent_config config;
-		config.enable_ffi_helper_group = true;
+		config.enable_ufunc_helper_group = true;
 		ctx.init_attach_ctx_from_handlers(manager, config);
 
 		// test for attach replace
@@ -169,9 +171,9 @@ int main(int argc, const char **argv)
 
 		// init the attach ctx
 		bpf_attach_ctx ctx;
-		register_ffi_for_print_and_add(&ctx);
+		register_ufunc_for_print_and_add(&ctx);
 		agent_config config;
-		config.enable_ffi_helper_group = true;
+		config.enable_ufunc_helper_group = true;
 		ctx.init_attach_ctx_from_handlers(manager, config);
 
 		// test for attach

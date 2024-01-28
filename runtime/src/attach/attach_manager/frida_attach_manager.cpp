@@ -10,7 +10,7 @@
 #include <attach/attach_manager/frida_attach_manager.hpp>
 #include <cerrno>
 #include <filesystem>
-#include <bpftime_ffi.hpp>
+#include <bpftime_ufunc.hpp>
 #include <memory>
 #include <stdexcept>
 #include <utility>
@@ -357,7 +357,7 @@ extern "C" void *__bpftime_frida_attach_manager__override_handler()
 	auto arg2 = gum_invocation_context_get_nth_argument(ctx, 2);
 	auto arg3 = gum_invocation_context_get_nth_argument(ctx, 3);
 	auto arg4 = gum_invocation_context_get_nth_argument(ctx, 4);
-	ffi_func func = (ffi_func)ctx->function;
+	ufunc_func func = (ufunc_func)ctx->function;
 
 	hook_entry->get_filter_callback()(regs);
 	if (hook_entry->is_overrided) {

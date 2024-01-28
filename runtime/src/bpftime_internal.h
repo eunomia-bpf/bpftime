@@ -13,8 +13,6 @@
 namespace bpftime
 {
 
-
-
 class bpftime_prog;
 class bpftime_object;
 
@@ -25,13 +23,13 @@ typedef bpftime_prog *bpftime_prog_ptr;
 #endif
 
 struct bpftime_ffi_ctx {
-	struct ebpf_ffi_func_info ffi_funcs[MAX_FFI_FUNCS];
+	struct ebpf_ffi_func_info ffi_funcs[MAX_UFUNC_FUNCS];
 	size_t ffi_func_cnt;
 };
 
 // not used directly
-#define FFI_HELPER_ID_DISPATCHER 1000
-#define FFI_HELPER_ID_FIND_ID 1001
+#define UFUNC_HELPER_ID_DISPATCHER 1000
+#define UFUNC_HELPER_ID_FIND_ID 1001
 
 // find the ffi id from the function name
 // not used directly

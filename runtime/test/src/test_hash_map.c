@@ -57,9 +57,9 @@ int main(int argc, char **argv)
 	assert(map_id == 0);
 	ctx = bpftime_create_context();
 
-	bpftime_register_helper(ctx, 1, "map_lookup", FFI_FN(map_lookup));
-	bpftime_register_helper(ctx, 2, "map_update", FFI_FN(map_update));
-	bpftime_register_helper(ctx, 3, "map_delete", FFI_FN(map_delete));
+	bpftime_register_helper(ctx, 1, "map_lookup", UFUNC_FN(map_lookup));
+	bpftime_register_helper(ctx, 2, "map_update", UFUNC_FN(map_update));
+	bpftime_register_helper(ctx, 3, "map_delete", UFUNC_FN(map_delete));
 
 	res = bpftime_open_object(ctx, obj_path);
 	if (res < 0) {

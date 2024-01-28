@@ -13,12 +13,14 @@ struct data {
 #define FUNC_ADD 1
 #define FUNC_PRINT 2
 
-static inline int add_func(int a, int b) {
-	return FFI_CALL_2(FUNC_ADD, a, b);
+static inline int add_func(int a, int b)
+{
+	return UFUNC_CALL_2(FUNC_ADD, a, b);
 }
 
-static inline uint64_t print_func(char *str) {
-	return FFI_CALL_1(FUNC_PRINT, str);
+static inline uint64_t print_func(char *str)
+{
+	return UFUNC_CALL_1(FUNC_PRINT, str);
 }
 
 int bpf_main(struct data *d)
