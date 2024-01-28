@@ -8,34 +8,63 @@ on:
 
 jobs:
   build:
+    strategy:
+      matrix:
+        runs-on-container:
+          - ubuntu:22.04
+          - fedora:39
     runs-on: ubuntu-22.04
-
+    container: 
+      image: ${{matrix.runs-on-container}}
+      options: --privileged
     steps:
     - uses: actions/checkout@v3
       with:
         submodules: 'recursive'
-
-    - name: install deps
+    - name: Install dependencies (Ubuntu)
+      if: startsWith(matrix.runs-on-container,'ubuntu')
+      run: | 
+        apt-get update
+        apt-get install -y binutils-dev libboost1.74-all-dev libelf-dev zlib1g-dev libyaml-cpp-dev gcc-12 g++-12 llvm git make cmake pkg-config clang llvm-15-dev
+    - name: Install dependencies (Fedora)
+      if: startsWith(matrix.runs-on-container,'fedora')
+      run: | 
+        dnf install -y make gcc g++ cmake llvm15-devel boost-devel zlib-devel elfutils-libelf-devel pkgconf clang git llvm
+    - uses: actions/checkout@v2
+      with:
+        submodules: 'recursive'
+    - name: Build and install everything (Ubuntu)
+      if: startsWith(matrix.runs-on-container,'ubuntu')
       run: |
-        sudo apt update
-        sudo apt install -y --no-install-recommends \
-        libelf1 libelf-dev zlib1g-dev make git libboost1.74-all-dev \
-        binutils-dev libyaml-cpp-dev  gcc-12 g++-12 llvm
-
-    - name: build runtime
-      run:  CC=gcc-12 CXX=g++-12 make build-llvm -j
-    
+        CC=gcc-12 CXX=g++-12 make build-llvm -j
+    - name: Build and install everything (Fedora)
+      if: startsWith(matrix.runs-on-container,'fedora')
+      run: |
+        make build-llvm -j
     - name: Run tests
       run: |
         ./build/vm/llvm-jit/unit-test/llvm_jit_tests
 
-    - name: build llvm JIT/AOT as a standalone library
+    - name: build llvm JIT/AOT as a standalone library (Ubuntu)
+      if: startsWith(matrix.runs-on-container,'ubuntu')
       run: |
         cd vm/llvm-jit &&\
         CC=gcc-12 CXX=g++-12 cmake -B build -DCMAKE_BUILD_TYPE=Release &&\
         CC=gcc-12 CXX=g++-12 cmake --build build --target all -j
 
-    - name: build vm as a standalone library
+    - name: build vm as a standalone library (Ubuntu)
+      if: startsWith(matrix.runs-on-container,'ubuntu')
       run: |
         cd vm && CC=gcc-12 CXX=g++-12 make build-llvm -j
+    - name: build llvm JIT/AOT as a standalone library (Fedora)
+      if: startsWith(matrix.runs-on-container,'fedora')
+      run: |
+        cd vm/llvm-jit &&\
+        cmake -B build -DCMAKE_BUILD_TYPE=Release &&\
+        cmake --build build --target all -j
+
+    - name: build vm as a standalone library (Fedora)
+      if: startsWith(matrix.runs-on-container,'fedora')
+      run: |
+        cd vm && make build-llvm -j
     
