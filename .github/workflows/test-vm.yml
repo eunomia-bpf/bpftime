@@ -9,13 +9,16 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        runs-on-container:
+          - ubuntu:22.04
+          - fedora:39
+    container: 
+      image: ${{matrix.runs-on-container}}
+      options: --privileged
     steps:
-    - uses: actions/checkout@v2
-      with:
-        submodules: 'recursive'
-    - uses: actions/setup-python@v4
-      with:
-        python-version: '3.8' 
+
     - name: cache dependencies
       uses: actions/cache@v2
       id: cache
@@ -23,25 +26,26 @@ jobs:
         path: ${{ github.workspace }}/${{ env.INSTALL_LOCATION }}
         key: ${{ runner.os }}-dependencies
 
-    - name: install deps
+    - name: install deps (Ubuntu)
+      if: startsWith(matrix.runs-on-container,'ubuntu')
       run: |
-        sudo apt-get update
-        sudo apt-get install -y gcc-aarch64-linux-gnu g++-aarch64-linux-gnu gcc-arm-linux-gnueabi qemu-user
-
+        apt-get update
+        apt-get install -y gcc-aarch64-linux-gnu g++-aarch64-linux-gnu gcc-arm-linux-gnueabi qemu-user python3 python3-pytest make cmake git pkg-config clang 
+    - name: install deps (Fedora)
+      if: startsWith(matrix.runs-on-container,'fedora')
+      run: |
+        dnf install -y gcc-aarch64-linux-gnu gcc-c++-aarch64-linux-gnu gcc-arm-linux-gnu qemu-user python3 python3-pytest make cmake git pkgconf clang python3-pip
+  
+    - uses: actions/checkout@v2
+      with:
+        submodules: 'recursive'
     - name: build
       run: make build-vm
 
-    - name: install test deps
-      run: |
-        sudo apt update
-        sudo apt install python3
-        sudo apt install python3-pytest
-
     - name: run tests x86
       run: |
-        python3.8 -m venv vm/test
+        python3 -m venv vm/test
         source vm/test/bin/activate
-        sudo apt install python3-pytest
         pip install -r vm/test/requirements.txt
         # make build # or build-arm32 build-arm64
         make -C vm test-vm -j
