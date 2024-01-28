@@ -9,30 +9,43 @@ on:
 jobs:
   build:
     runs-on: ubuntu-22.04
-
+    strategy:
+      matrix:
+        runs-on-container:
+          - ubuntu:22.04
+          - fedora:39
+    container: 
+      image: ${{matrix.runs-on-container}}
+      options: --privileged
     steps:
-    - uses: actions/checkout@v3
+    - name: Install dependencies (Ubuntu)
+      if: startsWith(matrix.runs-on-container,'ubuntu')
+      run: | 
+        apt-get update
+        apt-get install -y binutils-dev libboost1.74-all-dev libelf-dev zlib1g-dev libyaml-cpp-dev gcc-12 g++-12 llvm git make cmake pkg-config clang llvm-15-dev
+    - name: Install dependencies (Fedora)
+      if: startsWith(matrix.runs-on-container,'fedora')
+      run: | 
+        dnf install -y make gcc g++ cmake llvm15-devel boost-devel zlib-devel elfutils-libelf-devel pkgconf clang git llvm libubsan
+    - uses: actions/checkout@v2
       with:
         submodules: 'recursive'
-
-    - name: install deps
+    - name: Build (Ubuntu)
+      if: startsWith(matrix.runs-on-container,'ubuntu')
       run: |
-        sudo apt update
-        sudo apt install -y --no-install-recommends \
-        libelf1 libelf-dev zlib1g-dev make git libboost1.74-all-dev \
-        binutils-dev libyaml-cpp-dev  gcc-12 g++-12 llvm
-
-    - name: build runtime
-      run:  CC=gcc-12 CXX=g++-12 make build -j
-
+        CC=gcc-12 CXX=g++-12 make build -j
+    - name: Build (Fedora)
+      if: startsWith(matrix.runs-on-container,'fedora')
+      run: |
+        make build -j
     - name: test runtime
-      run:  sudo make unit-test
+      run:  make unit-test
 
     - name: build runtime with mpk enable
       run: |
-        sudo make clean
-        sudo cmake -Bbuild -DBPFTIME_ENABLE_UNIT_TESTING=1 -DPFTIME_ENABLE_MPK=1
-        sudo cmake --build build --config Debug
+        make clean
+        cmake -Bbuild -DBPFTIME_ENABLE_UNIT_TESTING=1 -DPFTIME_ENABLE_MPK=1
+        cmake --build build --config Debug
 
     - name: test runtime with mpk
-      run:  sudo make unit-test
+      run:  make unit-test

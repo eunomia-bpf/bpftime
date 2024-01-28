@@ -41,6 +41,7 @@ set(LLVM_SEARCH_PATHS
     /usr/lib/llvm-15/lib/cmake/llvm
     /usr/lib/llvm-14/lib/cmake/llvm
     /usr/lib/llvm-13/lib/cmake/llvm
+    /usr/lib64/llvm15/lib/cmake/llvm
 )
 
 find_package(LLVM REQUIRED CONFIG
