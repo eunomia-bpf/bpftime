@@ -172,6 +172,7 @@ int main(int argc, const char **argv)
 		.flag();
 	start_command.add_argument("COMMAND")
 		.nargs(argparse::nargs_pattern::at_least_one)
+		.remaining()
 		.help("Command to run");
 
 	argparse::ArgumentParser attach_command("attach");
