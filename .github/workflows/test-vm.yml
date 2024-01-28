@@ -30,11 +30,11 @@ jobs:
       if: startsWith(matrix.runs-on-container,'ubuntu')
       run: |
         apt-get update
-        apt-get install -y gcc-aarch64-linux-gnu g++-aarch64-linux-gnu gcc-arm-linux-gnueabi qemu-user python3 python3-pytest make cmake git pkg-config clang 
+        apt-get install -y gcc-aarch64-linux-gnu g++-aarch64-linux-gnu gcc-arm-linux-gnueabi qemu-user python3.8 python3-pytest make cmake git pkg-config clang python3-venv
     - name: install deps (Fedora)
       if: startsWith(matrix.runs-on-container,'fedora')
       run: |
-        dnf install -y gcc-aarch64-linux-gnu gcc-c++-aarch64-linux-gnu gcc-arm-linux-gnu qemu-user python3 python3-pytest make cmake git pkgconf clang python3-pip
+        dnf install -y gcc-aarch64-linux-gnu gcc-c++-aarch64-linux-gnu gcc-arm-linux-gnu qemu-user python3.8 python3-pytest make cmake git pkgconf clang python3-pip
   
     - uses: actions/checkout@v2
       with:
@@ -44,7 +44,7 @@ jobs:
 
     - name: run tests x86
       run: |
-        python3 -m venv vm/test
+        python3.8 -m venv vm/test
         source vm/test/bin/activate
         pip install -r vm/test/requirements.txt
         # make build # or build-arm32 build-arm64
