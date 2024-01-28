@@ -10,7 +10,7 @@ struct agent_config {
 
 	// helper groups
 	bool enable_kernel_helper_group = true;
-	bool enable_ffi_helper_group = false;
+	bool enable_ufunc_helper_group = false;
 	bool enable_shm_maps_helper_group = true;
 };
 } // namespace bpftime

@@ -22,16 +22,16 @@ struct arg_list {
 #define UFUNC_HELPER_ID_DISPATCHER 1000
 #define UFUNC_HELPER_ID_FIND_ID 1001
 
-static const uint64_t (*ffi_call)(uint64_t id, uint64_t arg_list) = (void *)
+static const uint64_t (*ufunc_call)(uint64_t id, uint64_t arg_list) = (void *)
 	UFUNC_HELPER_ID_DISPATCHER;
-static const uint64_t (*ffi_find_func_id)(const char *func_name) = (void *)
+static const uint64_t (*ufunc_find_func_id)(const char *func_name) = (void *)
 	UFUNC_HELPER_ID_FIND_ID;
 
 // func: function id
 #define UFUNC_CALL_0(func)                                                     \
 	({                                                                     \
 		struct arg_list argn = { 0 };                                  \
-		ffi_call(func, (uint64_t) & argn);                             \
+		ufunc_call(func, (uint64_t) & argn);                           \
 	})
 
 // func: function id
@@ -39,7 +39,7 @@ static const uint64_t (*ffi_find_func_id)(const char *func_name) = (void *)
 	({                                                                     \
 		struct arg_list argn = { 0 };                                  \
 		argn.args[0] = (uint64_t)arg1;                                 \
-		ffi_call(func, (uint64_t) & argn);                             \
+		ufunc_call(func, (uint64_t) & argn);                           \
 	})
 
 // func: function id
@@ -48,7 +48,7 @@ static const uint64_t (*ffi_find_func_id)(const char *func_name) = (void *)
 		struct arg_list argn = { 0 };                                  \
 		argn.args[0] = (uint64_t)arg1;                                 \
 		argn.args[1] = (uint64_t)arg2;                                 \
-		ffi_call(func, (uint64_t) & argn);                             \
+		ufunc_call(func, (uint64_t) & argn);                           \
 	})
 
 // func: function id
@@ -58,35 +58,35 @@ static const uint64_t (*ffi_find_func_id)(const char *func_name) = (void *)
 		argn.args[0] = (uint64_t)arg1;                                 \
 		argn.args[1] = (uint64_t)arg2;                                 \
 		argn.args[2] = (uint64_t)arg3;                                 \
-		ffi_call(func, (uint64_t) & argn);                             \
+		ufunc_call(func, (uint64_t) & argn);                           \
 	})
 
 // func: function name
 #define UFUNC_CALL_NAME_0(func_name)                                           \
 	({                                                                     \
 		char funcname[] = func_name;                                   \
-		uint64_t func_id = ffi_find_func_id(funcname);                 \
+		uint64_t func_id = ufunc_find_func_id(funcname);               \
 		UFUNC_CALL_0(func_id);                                         \
 	})
 
 #define UFUNC_CALL_NAME_1(func_name, arg1)                                     \
 	({                                                                     \
 		char funcname[] = func_name;                                   \
-		uint64_t func_id = ffi_find_func_id(funcname);                 \
+		uint64_t func_id = ufunc_find_func_id(funcname);               \
 		UFUNC_CALL_1(func_id, arg1);                                   \
 	})
 
 #define UFUNC_CALL_NAME_2(func_name, arg1, arg2)                               \
 	({                                                                     \
 		char funcname[] = func_name;                                   \
-		uint64_t func_id = ffi_find_func_id(funcname);                 \
+		uint64_t func_id = ufunc_find_func_id(funcname);               \
 		UFUNC_CALL_2(func_id, arg1, arg2);                             \
 	})
 
 #define UFUNC_CALL_NAME_3(func_name, arg1, arg2, arg3)                         \
 	({                                                                     \
 		char funcname[] = func_name;                                   \
-		uint64_t func_id = ffi_find_func_id(funcname);                 \
+		uint64_t func_id = ufunc_find_func_id(funcname);               \
 		UFUNC_CALL_3(func_id, arg1, arg2, arg3);                       \
 	})
 

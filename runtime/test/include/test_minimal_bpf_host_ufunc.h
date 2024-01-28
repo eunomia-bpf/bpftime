@@ -17,7 +17,7 @@
 /* Useful for eliminating compiler warnings.  */
 #define UFUNC_FN(f) ((void *)((void (*)(void))f))
 
-enum ffi_types {
+enum ufunc_types {
 	UFUNC_TYPE_VOID,
 	UFUNC_TYPE_INT,
 	UFUNC_TYPE_UINT,
@@ -45,14 +45,14 @@ enum ffi_types {
 	UFUNC_TYPE_FUNCTION,
 };
 
-static struct ebpf_ffi_func_info *ebpf_resovle_ffi_func(uint64_t func_id);
+static struct ebpf_ufunc_func_info *ebpf_resovle_ufunc_func(uint64_t func_id);
 
-typedef void *(*ffi_func)(void *r1, void *r2, void *r3, void *r4, void *r5);
+typedef void *(*ufunc_func)(void *r1, void *r2, void *r3, void *r4, void *r5);
 
-struct ebpf_ffi_func_info {
-	ffi_func func;
-	enum ffi_types ret_type;
-	enum ffi_types arg_types[MAX_ARGS];
+struct ebpf_ufunc_func_info {
+	ufunc_func func;
+	enum ufunc_types ret_type;
+	enum ufunc_types arg_types[MAX_ARGS];
 	int num_args;
 };
 
@@ -67,7 +67,7 @@ union arg_val {
 	void *ptr;
 };
 
-static inline union arg_val to_arg_val(enum ffi_types type, uint64_t val)
+static inline union arg_val to_arg_val(enum ufunc_types type, uint64_t val)
 {
 	union arg_val arg;
 	switch (type) {
@@ -88,7 +88,7 @@ static inline union arg_val to_arg_val(enum ffi_types type, uint64_t val)
 	return arg;
 }
 
-static inline uint64_t from_arg_val(enum ffi_types type, union arg_val val)
+static inline uint64_t from_arg_val(enum ufunc_types type, union arg_val val)
 {
 	switch (type) {
 	case UFUNC_TYPE_INT:
@@ -105,10 +105,10 @@ static inline uint64_t from_arg_val(enum ffi_types type, union arg_val val)
 	return 0;
 }
 
-static uint64_t __ebpf_call_ffi_dispatcher(uint64_t id, uint64_t arg_list)
+static uint64_t __ebpf_call_ufunc_dispatcher(uint64_t id, uint64_t arg_list)
 {
 	assert(id < MAX_UFUNC_FUNCS);
-	struct ebpf_ffi_func_info *func_info = ebpf_resovle_ffi_func(id);
+	struct ebpf_ufunc_func_info *func_info = ebpf_resovle_ufunc_func(id);
 	assert(func_info->func != NULL);
 
 	// Prepare arguments
@@ -169,7 +169,7 @@ static int add_func(int a, int b)
 Should be implemented via resolvering the function via function name from BTF
 symbols
 */
-struct ebpf_ffi_func_info func_list[] = {
+struct ebpf_ufunc_func_info func_list[] = {
 	{ NULL, UFUNC_TYPE_INT, { UFUNC_TYPE_POINTER }, 1 },
 	{ UFUNC_FN(add_func),
 	  UFUNC_TYPE_INT,
@@ -178,10 +178,10 @@ struct ebpf_ffi_func_info func_list[] = {
 	{ UFUNC_FN(print_func), UFUNC_TYPE_ULONG, { UFUNC_TYPE_POINTER }, 1 },
 };
 
-static struct ebpf_ffi_func_info *ebpf_resovle_ffi_func(uint64_t func_id)
+static struct ebpf_ufunc_func_info *ebpf_resovle_ufunc_func(uint64_t func_id)
 {
 	const int N_FUNC =
-		sizeof(func_list) / sizeof(struct ebpf_ffi_func_info);
+		sizeof(func_list) / sizeof(struct ebpf_ufunc_func_info);
 	if (func_id < N_FUNC) {
 		return &func_list[func_id];
 	}
@@ -189,10 +189,10 @@ static struct ebpf_ffi_func_info *ebpf_resovle_ffi_func(uint64_t func_id)
 	return NULL;
 }
 
-static void register_ffi_handler(struct ebpf_vm *vm)
+static void register_ufunc_handler(struct ebpf_vm *vm)
 {
-	ebpf_register(vm, 1, "__ebpf_call_ffi_dispatcher",
-		      __ebpf_call_ffi_dispatcher);
+	ebpf_register(vm, 1, "__ebpf_call_ufunc_dispatcher",
+		      __ebpf_call_ufunc_dispatcher);
 }
 
 // static struct bpftime_prog *bpftime_create_context(void)
@@ -201,8 +201,8 @@ static void register_ffi_handler(struct ebpf_vm *vm)
 // 		(struct bpftime_prog *)malloc(sizeof(struct bpftime_prog));
 // 	struct ebpf_vm *vm = ebpf_create();
 // 	context->vm = vm;
-// 	ebpf_register(context->vm, 1, "__ebpf_call_ffi_dispatcher",
-// 		      __ebpf_call_ffi_dispatcher);
+// 	ebpf_register(context->vm, 1, "__ebpf_call_ufunc_dispatcher",
+// 		      __ebpf_call_ufunc_dispatcher);
 // 	return context;
 // }
 

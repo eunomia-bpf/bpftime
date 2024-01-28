@@ -54,8 +54,8 @@ class bpftime_prog {
 
 	char *errmsg;
 
-	// ffi ctx
-	struct bpftime_ffi_ctx *ffi_ctx;
+	// ufunc ctx
+	struct bpftime_ufunc_ctx *ufunc_ctx;
 
 	// kernel runtime
 };

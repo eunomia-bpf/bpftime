@@ -20,7 +20,7 @@ class base_attach_manager;
 constexpr const size_t MAX_FUNC_NAME_LEN = 64;
 constexpr const size_t MAX_ARGS_COUNT = 6;
 constexpr const size_t MAX_UFUNC_FUNCS = 8192 * 4;
-enum ffi_types {
+enum ufunc_types {
 	UFUNC_TYPE_UNKNOWN,
 	UFUNC_TYPE_VOID,
 	UFUNC_TYPE_INT8,
@@ -37,16 +37,16 @@ enum ffi_types {
 	UFUNC_TYPE_STRUCT,
 };
 
-typedef void *(*ffi_func)(void *r1, void *r2, void *r3, void *r4, void *r5);
+typedef void *(*ufunc_func)(void *r1, void *r2, void *r3, void *r4, void *r5);
 
 /* Useful for eliminating compiler warnings.  */
-#define UFUNC_FN(f) ((ffi_func)(void *)((void (*)(void))f))
+#define UFUNC_FN(f) ((ufunc_func)(void *)((void (*)(void))f))
 
-struct ebpf_ffi_func_info {
+struct ebpf_ufunc_func_info {
 	char name[MAX_FUNC_NAME_LEN];
-	ffi_func func;
-	enum ffi_types ret_type;
-	enum ffi_types arg_types[MAX_ARGS_COUNT];
+	ufunc_func func;
+	enum ufunc_types ret_type;
+	enum ufunc_types arg_types[MAX_ARGS_COUNT];
 	int num_args;
 	int id;
 	bool is_attached;
@@ -63,17 +63,17 @@ union arg_val {
 	void *ptr;
 };
 
-union arg_val to_arg_val(enum ffi_types type, uint64_t val);
+union arg_val to_arg_val(enum ufunc_types type, uint64_t val);
 
-uint64_t from_arg_val(enum ffi_types type, union arg_val val);
+uint64_t from_arg_val(enum ufunc_types type, union arg_val val);
 
-// register a ffi for a program
-void bpftime_ffi_register_ffi(uint64_t id, ebpf_ffi_func_info func_info);
+// register a ufunc for a program
+void bpftime_ufunc_register_ufunc(uint64_t id, ebpf_ufunc_func_info func_info);
 
-// register a ffi for a program base on info.
+// register a ufunc for a program base on info.
 // probe ctx will find the function address and fill in the func_info
-int bpftime_ffi_resolve_from_info(base_attach_manager *probe_ctx,
-				  ebpf_ffi_func_info func_info);
+int bpftime_ufunc_resolve_from_info(base_attach_manager *probe_ctx,
+				    ebpf_ufunc_func_info func_info);
 
 } // namespace bpftime
 #endif
