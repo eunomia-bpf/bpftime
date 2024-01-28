@@ -25,9 +25,6 @@ jobs:
       with:
         path: ${{ github.workspace }}/${{ env.INSTALL_LOCATION }}
         key: ${{ runner.os }}-dependencies
-    - uses: actions/checkout@v2
-      with:
-        submodules: 'recursive'
     - uses: actions/setup-python@v4
       if: startsWith(matrix.runs-on-container,'ubuntu')
       with:
