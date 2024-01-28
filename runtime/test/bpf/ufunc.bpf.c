@@ -3,7 +3,7 @@
  * Copyright (c) 2022, eunomia-bpf org
  * All rights reserved.
  */
-#include "ffi.bpf.h"
+#include "ufunc.bpf.h"
 
 struct data {
 	int a;
