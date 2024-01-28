@@ -25,12 +25,19 @@ jobs:
       with:
         path: ${{ github.workspace }}/${{ env.INSTALL_LOCATION }}
         key: ${{ runner.os }}-dependencies
-
+    - uses: actions/checkout@v2
+      with:
+        submodules: 'recursive'
+    - uses: actions/setup-python@v4
+      if: startsWith(matrix.runs-on-container,'ubuntu')
+      with:
+        python-version: '3.8' 
     - name: install deps (Ubuntu)
       if: startsWith(matrix.runs-on-container,'ubuntu')
       run: |
         apt-get update
-        apt-get install -y gcc-aarch64-linux-gnu g++-aarch64-linux-gnu gcc-arm-linux-gnueabi qemu-user python3.8 python3-pytest make cmake git pkg-config clang python3-venv
+        apt-get install -y gcc-aarch64-linux-gnu g++-aarch64-linux-gnu gcc-arm-linux-gnueabi qemu-user make cmake git pkg-config clang
+        python3.8 -m pip install pytest
     - name: install deps (Fedora)
       if: startsWith(matrix.runs-on-container,'fedora')
       run: |
