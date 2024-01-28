@@ -7,3 +7,6 @@
 [submodule "verifier/ebpf-verifier"]
 	path = bpftime-verifier/ebpf-verifier
 	url = https://github.com/vbpf/ebpf-verifier
+[submodule "third_party/argparse"]
+	path = third_party/argparse
+	url = https://github.com/p-ranav/argparse.git

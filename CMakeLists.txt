@@ -86,6 +86,9 @@ endif()
 
 set(SPDLOG_INCLUDE ${CMAKE_CURRENT_SOURCE_DIR}/third_party/spdlog/include)
 
+# argparse
+add_subdirectory(third_party/argparse)
+
 # main library
 add_subdirectory(vm)
 if (BPFTIME_LLVM_JIT)
