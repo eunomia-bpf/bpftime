@@ -3,12 +3,7 @@
 #include "redis-server.h"
 #include "bpf/bpf_tracing.h"
 #include "bpf/bpf_helpers.h"
-#include "ffi.bpf.h"
-
-enum hotpatch_op {
-	OP_SKIP,
-	OP_RESUME,
-};
+#include "ufunc.bpf.h"
 
 #define OBJ_STREAM 6 /* Stream object. */
 
@@ -69,20 +64,21 @@ int BPF_UPROBE(xgroupCommand, client *c)
 		void *argv2 = read_argv(c, 2);
 		robj *o = lookupKeyWriteOrReply(c, argv2, NULL);
 		if (o == NULL || checkType(c, o, OBJ_STREAM)) {
-			bpf_printk("OP_SKIP\n");
-			return OP_SKIP;
+			bpf_printk("SKIP\n");
+			bpf_override_return(NULL, 0);
+			return 0;
 		}
 	}
-	bpf_printk("OP_RESUME\n");
-	return OP_RESUME;
+	bpf_printk("RESUME\n");
+	return 0;
 }
 
 robj *lookupKeyWriteOrReply(client *c, robj *key, robj *reply)
 {
 	bpf_printk("lookupKeyWriteOrReply: %p %p %p\n", c, key, reply);
 	void *db = read_db(c);
-	robj *o = (robj *)FFI_CALL_NAME_2("lookupKeyWrite", db, key);
-	bpf_printk("lookupKeyWriteOrReply ffi return: %p\n", o);
+	robj *o = (robj *)UFUNC_CALL_NAME_2("lookupKeyWrite", db, key);
+	bpf_printk("lookupKeyWriteOrReply ufunc return: %p\n", o);
 	return o;
 }
 
