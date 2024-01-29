@@ -13,43 +13,66 @@ jobs:
         enable_jit:
           - true
           - false
+        runs-on-container:
+          - image: ubuntu:22.04
+            compiler: CC=gcc-12 CXX=g++-12
+            name: ubuntu
+          - image: fedora:39
+            compiler:  
+            name: fedora
     runs-on: ubuntu-22.04
+    container: 
+      image: ${{matrix.runs-on-container.image}}
+      options: --privileged
     steps:
+      - name: Install dependencies (Ubuntu)
+        if: startsWith(matrix.runs-on-container.name,'ubuntu')
+        run: | 
+          apt-get update
+          apt-get install -y binutils-dev libboost1.74-all-dev libelf-dev zlib1g-dev libyaml-cpp-dev gcc-12 g++-12 llvm git make cmake pkg-config clang llvm-15-dev
+      - name: Install dependencies (Fedora)
+        if: startsWith(matrix.runs-on-container.name,'fedora')
+        run: | 
+          dnf install -y make gcc g++ cmake llvm15-devel boost-devel zlib-devel elfutils-libelf-devel pkgconf clang git llvm libubsan llvm15-devel
       - uses: actions/checkout@v2
         with:
           submodules: 'recursive'
-      - name: Install dependencies
-        run: | 
-          sudo apt-get update
-          sudo apt-get install binutils-dev libboost1.74-all-dev libelf-dev zlib1g-dev libyaml-cpp-dev gcc-12 g++-12 llvm
       - name: Build and install runtime (with llvm-jit)
         if: ${{matrix.enable_jit}}
         run: |
-          CC=gcc-12 CXX=g++-12 make release-with-llvm-jit -j
+          ${{matrix.runs-on-container.compiler}} make release-with-llvm-jit -j
       - name: Build and install runtime (without llvm-jit)
         if: ${{!matrix.enable_jit}}
         run: |
-          CC=gcc-12 CXX=g++-12 make release -j
+          ${{matrix.runs-on-container.compiler}} make release -j
       - name: Upload build results (without jit)
         uses: actions/upload-artifact@v3
         if: ${{!matrix.enable_jit}}
         with:
-          name: runtime-package-no-jit
+          name: runtime-package-no-jit-${{matrix.runs-on-container.name}}
           path: |
-            /home/runner/.bpftime
+            ~/.bpftime
       - name: Upload build results (with jit)
         uses: actions/upload-artifact@v3
         if: ${{matrix.enable_jit}}
         with:
-          name: runtime-package-jit
+          name: runtime-package-jit-${{matrix.runs-on-container.name}}
           path: |
-            /home/runner/.bpftime
+            ~/.bpftime
   build-and-test:
     runs-on: ubuntu-22.04
     needs: [build-runtime]
+    container: 
+      image: ${{matrix.runs-on-container.image}}
+      options: --privileged -v /sys/kernel/debug/:/sys/kernel/debug:rw -v /sys/kernel/tracing:/sys/kernel/tracing:rw
     strategy:
       fail-fast: true
       matrix:
+        runs-on-container:
+          - image: ubuntu:22.04
+            name: ubuntu
+          - image: fedora:39
+            name: fedora
         enable_jit:
           - true
           - false
@@ -121,21 +144,18 @@ jobs:
             expected_str: "bpf:"
 
     steps:
-      - uses: actions/checkout@v2
-        with:
-          submodules: 'recursive'
       - name: Download prebuilt runtime (with jit)
         if: ${{matrix.enable_jit}}
         uses: actions/download-artifact@v3
         with:
-          name: runtime-package-jit
-          path: /home/runner/.bpftime
+          name: runtime-package-jit-${{matrix.runs-on-container.name}}
+          path: ~/.bpftime
       - name: Download prebuilt runtime (without jit)
         if: ${{!matrix.enable_jit}}
         uses: actions/download-artifact@v3
         with:
-          name: runtime-package-no-jit
-          path: /home/runner/.bpftime
+          name: runtime-package-no-jit-${{matrix.runs-on-container.name}}
+          path: ~/.bpftime
   
       - name: Set permissions
         run: |
@@ -143,11 +163,23 @@ jobs:
       - name: Show downloaded artifacts
         run: |
           ls ~/.bpftime
-      - name: Install dependencies
+      - name: Install dependencies (Ubuntu)
+        if: startsWith(matrix.runs-on-container.name,'ubuntu')
         run: |
-          sudo apt-get update -y
-          sudo apt-get install -y zlib1g-dev libelf-dev llvm systemtap-sdt-dev
-          sudo mkdir /mnt/ramdisk
+          apt-get update -y
+          apt-get install -y zlib1g-dev libelf-dev llvm systemtap-sdt-dev python3 git make cmake g++ gcc clang wget
+          mkdir /mnt/ramdisk
+      - name: Install dependencies (Fedora)
+        if: startsWith(matrix.runs-on-container.name,'fedora')
+        run: |
+          dnf install -y zlib-devel elfutils-libelf-devel llvm systemtap-sdt-devel python3 git make cmake gcc gcc-c++ clang wget
+          mkdir /mnt/ramdisk
+      - uses: actions/checkout@v2
+        with:
+          submodules: 'recursive'
+      # - name: Mount debugfs
+      #   run: 
+      #     mount debugfs -t debugfs /sys/kernel/debug
       - name: Build test assets
         run: |
           make -C example/${{matrix.examples.path}} -j
@@ -157,13 +189,15 @@ jobs:
           bpftime --help
       - name: Test CLI - attach by running (syscall_trace)
         if: matrix.examples.syscall_trace
-        shell: "sudo /bin/bash -e {0}"
+        shell: bash
         run: |
+          ROOT=$(pwd)
           cd example/${{matrix.examples.path}}
-          sudo -E python3 /home/runner/work/bpftime/bpftime/.github/script/run_example.py "${{matrix.examples.executable}}" "${{matrix.examples.victim}}" "${{matrix.examples.expected_str}}" "/home/runner/.bpftime/bpftime -i /home/runner/.bpftime" 1
+          python3 $ROOT/.github/script/run_example.py "${{matrix.examples.executable}}" "${{matrix.examples.victim}}" "${{matrix.examples.expected_str}}" "/github/home/.bpftime/bpftime -i /github/home/.bpftime" 1
       - name: Test CLI - attach by running (uprobe)
         if: '!matrix.examples.syscall_trace'
-        shell: "sudo /bin/bash -e {0}"
+        shell: bash
         run: |
+          ROOT=$(pwd)
           cd example/${{matrix.examples.path}}
-          sudo -E python3 /home/runner/work/bpftime/bpftime/.github/script/run_example.py "${{matrix.examples.executable}}" "${{matrix.examples.victim}}" '${{matrix.examples.expected_str}}' "/home/runner/.bpftime/bpftime -i /home/runner/.bpftime" 0
+          python3 $ROOT/.github/script/run_example.py "${{matrix.examples.executable}}" "${{matrix.examples.victim}}" "${{matrix.examples.expected_str}}" "/github/home/.bpftime/bpftime -i /github/home/.bpftime" 0
