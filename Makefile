@@ -48,11 +48,11 @@ build: ## build the package
 	cmake -Bbuild -DBPFTIME_ENABLE_UNIT_TESTING=1
 	cmake --build build --config Debug
 
-build-iouring: ## build the package
+build-iouring: ## build the package with iouring extension
 	cmake -Bbuild -DBPFTIME_ENABLE_UNIT_TESTING=0 -DBPFTIME_ENABLE_IOURING_EXT=1 -DCMAKE_BUILD_TYPE:STRING=Release
 	cmake --build build --config Release
 
-release:
+release: ## build the release version
 	cmake -Bbuild  -DBPFTIME_ENABLE_UNIT_TESTING=0 \
 				   -DCMAKE_BUILD_TYPE:STRING=Release \
 				   -DBPFTIME_ENABLE_LTO=0
@@ -65,7 +65,7 @@ release-with-llvm-jit: ## build the package, with llvm-jit
 				   -DBPFTIME_LLVM_JIT=1
 	cmake --build build --config Release --target install
 
-debug:
+debug: ## build the debug version
 	cmake -Bbuild  -DBPFTIME_ENABLE_UNIT_TESTING=0 \
 				   -DCMAKE_BUILD_TYPE:STRING=Debug \
 				   -DBPFTIME_ENABLE_LTO=0

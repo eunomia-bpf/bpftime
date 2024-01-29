@@ -1,12 +1,14 @@
 
-Include(FetchContent)
-FetchContent_Declare(
-    Catch2
-    GIT_REPOSITORY https://github.com/catchorg/Catch2.git
-    GIT_TAG v3.4.0
-)
-
-FetchContent_MakeAvailable(Catch2)
+if(${ENABLE_EBPF_VERIFIER})
+    Include(FetchContent)
+    FetchContent_Declare(
+        Catch2
+        GIT_REPOSITORY https://github.com/catchorg/Catch2.git
+        GIT_TAG v3.4.0
+    )
+    FetchContent_MakeAvailable(Catch2)
+    # if not enable verifier, we will use the catch2 from submodule
+endif()
 
 set(TEST_SOURCES
     llvm-aot.cpp
