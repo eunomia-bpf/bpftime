@@ -23,19 +23,19 @@ using namespace boost::interprocess;
 
 int main(int argc, const char **argv)
 {
-    if (argc == 1) {
-        return 0;
-    }
+	if (argc == 1) {
+		return 0;
+	}
 	int res = 1;
 	bpftime_initialize_global_shm(shm_open_type::SHM_OPEN_ONLY);
 
 	bpf_attach_ctx ctx;
 	agent_config config;
-	config.enable_ffi_helper_group = true;
+	config.enable_ufunc_helper_group = true;
 	res = ctx.init_attach_ctx_from_handlers(config);
-    if (res != 0) {
-        return res;
-    }
+	if (res != 0) {
+		return res;
+	}
 	// don't free ctx here
 	return 0;
 }

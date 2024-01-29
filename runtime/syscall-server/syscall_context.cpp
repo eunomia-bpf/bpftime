@@ -392,32 +392,39 @@ long syscall_context::handle_sysbpf(int cmd, union bpf_attr *attr, size_t size)
 					       (long)size);
 		}
 		SPDLOG_DEBUG("Getting info by fd");
-		bpftime::bpf_map_attr map_attr;
-		const char *map_name;
-		bpftime::bpf_map_type map_type;
-		int res = bpftime_map_get_info(attr->info.bpf_fd, &map_attr,
-					       &map_name, &map_type);
-		if (res < 0) {
-			errno = res;
-			return -1;
+		if (bpftime_is_map_fd(attr->info.bpf_fd)) {
+			bpftime::bpf_map_attr map_attr;
+			const char *map_name;
+			bpftime::bpf_map_type map_type;
+			int res = bpftime_map_get_info(attr->info.bpf_fd,
+						       &map_attr, &map_name,
+						       &map_type);
+			if (res < 0) {
+				errno = res;
+				return -1;
+			}
+			auto ptr = (bpf_map_info *)((uintptr_t)attr->info.info);
+			ptr->btf_id = map_attr.btf_id;
+			ptr->btf_key_type_id = map_attr.btf_key_type_id;
+			ptr->btf_value_type_id = map_attr.btf_value_type_id;
+			ptr->type = (int)map_type;
+			ptr->value_size = map_attr.value_size;
+			ptr->btf_vmlinux_value_type_id =
+				map_attr.btf_vmlinux_value_type_id;
+			ptr->key_size = map_attr.key_size;
+			ptr->id = attr->info.bpf_fd;
+			ptr->ifindex = map_attr.ifindex;
+			ptr->map_extra = map_attr.map_extra;
+			// TODO: handle the rest info
+			ptr->max_entries = map_attr.max_ents;
+			ptr->map_flags = map_attr.flags;
+			strncpy(ptr->name, map_name, sizeof(ptr->name) - 1);
+		} else if (bpftime_is_prog_fd(attr->info.bpf_fd)) {
+			auto ptr = (bpf_prog_info *)((uintptr_t)attr->info.info);
+			ptr->id = attr->info.bpf_fd;
+			// TODO: handle the rest info
+			return 0;
 		}
-		auto ptr = (bpf_map_info *)((uintptr_t)attr->info.info);
-		ptr->btf_id = map_attr.btf_id;
-		ptr->btf_key_type_id = map_attr.btf_key_type_id;
-		ptr->btf_value_type_id = map_attr.btf_value_type_id;
-		ptr->type = (int)map_type;
-		ptr->value_size = map_attr.value_size;
-		ptr->btf_vmlinux_value_type_id =
-			map_attr.btf_vmlinux_value_type_id;
-		ptr->key_size = map_attr.key_size;
-		ptr->id = attr->info.bpf_fd;
-		ptr->ifindex = map_attr.ifindex;
-		ptr->map_extra = map_attr.map_extra;
-		// 		ptr->netns_dev = map.netns_dev;
-		// 		ptr->netns_ino = map.netns_ino;
-		ptr->max_entries = map_attr.max_ents;
-		ptr->map_flags = map_attr.flags;
-		strncpy(ptr->name, map_name, sizeof(ptr->name) - 1);
 		return 0;
 	}
 	case BPF_PROG_ATTACH: {

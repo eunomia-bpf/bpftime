@@ -1,4 +1,5 @@
 #include "spdlog/spdlog.h"
+#include "spdlog/cfg/env.h"
 #include <csignal>
 #include <cstdlib>
 #include <cstring>
@@ -129,6 +130,7 @@ static void signal_handler(int sig)
 
 int main(int argc, const char **argv)
 {
+	spdlog::cfg::load_env_levels();
 	signal(SIGINT, signal_handler);
 	signal(SIGTSTP, signal_handler);
 	argparse::ArgumentParser program(argv[0]);

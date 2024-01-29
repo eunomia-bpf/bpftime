@@ -1,6 +1,7 @@
 #include "ebpf-vm.h"
 #include "llvm_bpf_jit.h"
 #include "spdlog/spdlog.h"
+#include "spdlog/cfg/env.h"
 #include <argparse/argparse.hpp>
 #include <cstdarg>
 #include <cstdint>
@@ -129,6 +130,7 @@ static int run_ebpf_program(const std::filesystem::path &elf,
 
 int main(int argc, const char **argv)
 {
+	spdlog::cfg::load_env_levels();
 	libbpf_set_print(_libbpf_print);
 	InitializeNativeTarget();
 	InitializeNativeTargetAsmPrinter();

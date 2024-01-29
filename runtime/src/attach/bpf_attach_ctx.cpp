@@ -35,8 +35,8 @@ static int load_prog_and_helpers(bpftime_prog *prog, const agent_config &config)
 		bpftime_helper_group::get_kernel_utils_helper_group()
 			.add_helper_group_to_prog(prog);
 	}
-	if (config.enable_ffi_helper_group) {
-		bpftime_helper_group::get_ffi_helper_group()
+	if (config.enable_ufunc_helper_group) {
+		bpftime_helper_group::get_ufunc_helper_group()
 			.add_helper_group_to_prog(prog);
 	}
 	if (config.enable_shm_maps_helper_group) {

@@ -34,8 +34,8 @@ class bpftime_helper_group {
 	// Append another group to the current one
 	int append(const bpftime_helper_group &another_group);
 
-	// Utility function to get the FFI helper group
-	static const bpftime_helper_group &get_ffi_helper_group();
+	// Utility function to get the UFUNC helper group
+	static const bpftime_helper_group &get_ufunc_helper_group();
 
 	// Utility function to get the kernel utilities helper group
 	static const bpftime_helper_group &get_kernel_utils_helper_group();
@@ -54,7 +54,7 @@ class bpftime_helper_group {
 };
 #ifdef ENABLE_BPFTIME_VERIFIER
 std::map<int32_t, bpftime::verifier::BpftimeHelperProrotype>
-get_ffi_helper_protos();
+get_ufunc_helper_protos();
 #endif
 } // namespace bpftime
 #endif
