@@ -66,7 +66,7 @@ jobs:
       image: ${{matrix.runs-on-container.image}}
       options: --privileged
     strategy:
-      fail-fast: false
+      fail-fast: true
       matrix:
         runs-on-container:
           - image: ubuntu:22.04
@@ -189,10 +189,10 @@ jobs:
         shell: bash
         run: |
           cd example/${{matrix.examples.path}}
-          python3 ./.github/script/run_example.py "${{matrix.examples.executable}}" "${{matrix.examples.victim}}" "${{matrix.examples.expected_str}}" "/github/home/.bpftime/bpftime -i /github/home/.bpftime" 1
+          python3 ../../.github/script/run_example.py "${{matrix.examples.executable}}" "${{matrix.examples.victim}}" "${{matrix.examples.expected_str}}" "/github/home/.bpftime/bpftime -i /github/home/.bpftime" 1
       - name: Test CLI - attach by running (uprobe)
         if: '!matrix.examples.syscall_trace'
         shell: bash
         run: |
           cd example/${{matrix.examples.path}}
-          python3 ./.github/script/run_example.py "${{matrix.examples.executable}}" "${{matrix.examples.victim}}" "${{matrix.examples.expected_str}}" "/github/home/.bpftime/bpftime -i /github/home/.bpftime" 0
+          python3 ../../.github/script/run_example.py "${{matrix.examples.executable}}" "${{matrix.examples.victim}}" "${{matrix.examples.expected_str}}" "/github/home/.bpftime/bpftime -i /github/home/.bpftime" 0
