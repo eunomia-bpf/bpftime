@@ -73,6 +73,10 @@ option(ENABLE_EBPF_VERIFIER "Whether to enable ebpf verifier" NO)
 
 if(${ENABLE_EBPF_VERIFIER})
   add_subdirectory(bpftime-verifier)
+else()
+  message(STATUS "Skipping ebpf verifier")
+  # Catch2
+  add_subdirectory(third_party/Catch2)
 endif()
 
 # spdlog
@@ -85,6 +89,9 @@ else()
 endif()
 
 set(SPDLOG_INCLUDE ${CMAKE_CURRENT_SOURCE_DIR}/third_party/spdlog/include)
+
+# argparse
+add_subdirectory(third_party/argparse)
 
 # main library
 add_subdirectory(vm)
