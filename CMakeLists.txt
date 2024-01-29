@@ -99,7 +99,10 @@ if (BPFTIME_LLVM_JIT)
   add_subdirectory(vm/cli)
 endif()
 add_subdirectory(runtime)
-add_subdirectory(daemon)
+option(BUILD_BPFTIME_DAEMON "Whether to build the bpftime daemon" NO)
+if (${BUILD_BPFTIME_DAEMON})
+  add_subdirectory(daemon)
+endif()
 add_subdirectory(tools)
 
 # benchmark that requires bpftime libraries

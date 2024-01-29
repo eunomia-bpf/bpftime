@@ -176,11 +176,61 @@ int bpftime_export_global_shm_to_json(const char *filename);
 // import a hander to global shared memory from json string
 int bpftime_import_shm_handler_from_json(int fd, const char *json_string);
 
+/* struct used by BPF_LINK_CREATE command */
+struct bpf_link_create_args {
+	union {
+		__u32 prog_fd; /* eBPF program to attach */
+		__u32 map_fd; /* struct_ops to attach */
+	};
+	union {
+		__u32 target_fd; /* object to attach to */
+		__u32 target_ifindex; /* target ifindex */
+	};
+	__u32 attach_type; /* attach type */
+	__u32 flags; /* extra flags */
+	union {
+		__u32 target_btf_id; /* btf_id of target to attach to */
+		struct {
+			__aligned_u64 iter_info; /* extra bpf_iter_link_info */
+			__u32 iter_info_len; /* iter_info length */
+		};
+		struct {
+			/* black box user-provided value passed through
+			 * to BPF program at the execution time and
+			 * accessible through bpf_get_attach_cookie() BPF helper
+			 */
+			__u64 bpf_cookie;
+		} perf_event;
+		struct {
+			__u32 flags;
+			__u32 cnt;
+			__aligned_u64 syms;
+			__aligned_u64 addrs;
+			__aligned_u64 cookies;
+		} kprobe_multi;
+		struct {
+			/* this is overlaid with the target_btf_id above. */
+			__u32 target_btf_id;
+			/* black box user-provided value passed through
+			 * to BPF program at the execution time and
+			 * accessible through bpf_get_attach_cookie() BPF helper
+			 */
+			__u64 cookie;
+		} tracing;
+		struct {
+			__u32 pf;
+			__u32 hooknum;
+			__s32 priority;
+			__u32 flags;
+		} netfilter;
+	};
+};
+
 // create a bpf link in the global shared memory
 //
 // @param[fd]: fd is the fd allocated by the kernel. if fd is -1, then the
 // function will allocate a new perf event fd.
-int bpftime_link_create(int fd, int prog_fd, int target_fd);
+int bpftime_link_create(int fd, struct bpf_link_create_args* args);
 
 // create a bpf prog in the global shared memory
 //

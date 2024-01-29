@@ -69,7 +69,11 @@ TEST_CASE("Test bpftime shm json import/export")
 				 (const ebpf_inst *)bpf_add_mem_64_bit_minimal,
 				 4, "test_prog", BPF_PROG_TYPE_SOCKET_FILTER);
 		shm.add_tracepoint(5, 123245, 6);
-		shm.add_bpf_link(7, 4, 5);
+		bpf_link_create_args args = {
+			.prog_fd = 4,
+			.target_fd = 5,
+		};
+		shm.add_bpf_link(7, &args);
 		shm.add_bpf_map(8, "test_map1",
 				bpf_map_attr{ .type = BPF_MAP_TYPE_ARRAY,
 					      .key_size = 4,

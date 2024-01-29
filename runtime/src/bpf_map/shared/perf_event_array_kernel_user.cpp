@@ -3,14 +3,24 @@
  * Copyright (c) 2022, eunomia-bpf org
  * All rights reserved.
  */
-#include "bpf/bpf.h"
-#include "bpf/libbpf_common.h"
-#include "bpftool/libbpf/include/uapi/linux/bpf.h"
-#include "bpftool/libbpf/src/btf.h"
-#include "bpftool/libbpf/src/libbpf.h"
-#include "linux/bpf_common.h"
-#include "linux/btf.h"
-#include "linux/perf_event.h"
+#include <linux/bpf.h>
+#include <linux/perf_event.h>
+#include <linux/btf.h>
+#include "libbpf/include/linux/filter.h"
+#include <linux/bpf_common.h>
+#include <linux/perf_event.h>
+#include <sys/ioctl.h>
+#include <bpf/libbpf.h>
+#include <bpf/bpf.h>
+#include <bpf/btf.h>
+#include <bpf/libbpf_common.h>
+#include <map>
+#include <unistd.h>
+#include <memory>
+#include <pthread.h>
+#include <spdlog/spdlog.h>
+#include <stdexcept>
+#include <string>
 #include "spdlog/fmt/bin_to_hex.h"
 #include <boost/interprocess/sync/interprocess_mutex.hpp>
 #include <bpf_map/shared/perf_event_array_kernel_user.hpp>
@@ -18,18 +28,6 @@
 #include <cerrno>
 #include <cstring>
 #include <iterator>
-#include <linux/bpf.h>
-#include <linux/perf_event.h>
-#include <map>
-#include <memory>
-#include <pthread.h>
-#include <spdlog/spdlog.h>
-#include <stdexcept>
-#include <string>
-#include <linux/filter.h>
-#include <sys/ioctl.h>
-#include <bpf/libbpf.h>
-#include <unistd.h>
 
 static int create_transporter_prog(int user_ringbuf_fd, int kernel_perf_fd);
 
@@ -71,7 +69,7 @@ int perf_event_array_kernel_user_impl::output_data_into_kernel(const void *buf,
 		return -1;
 	}
 	SPDLOG_DEBUG("Received data output for kernel perf event array {}",
-		      kernel_perf_id);
+		     kernel_perf_id);
 	auto user_rb = ensure_current_map_user_ringbuf();
 	SPDLOG_DEBUG("User ringbuf ensured: {:x}", (uintptr_t)user_rb);
 	void *mem = user_rb->reserve(size + 8);
@@ -83,7 +81,7 @@ int perf_event_array_kernel_user_impl::output_data_into_kernel(const void *buf,
 	memcpy((char *)mem + 8, buf, size);
 	user_rb->submit(mem);
 	SPDLOG_TRACE("Commited {} bytes of data into kernel: {:n}", size,
-		      spdlog::to_hex((uint8_t *)buf, (uint8_t *)buf + size));
+		     spdlog::to_hex((uint8_t *)buf, (uint8_t *)buf + size));
 	return 0;
 }
 // Put the creation of user ringbuffer & transporter ebpf program in the
@@ -116,7 +114,7 @@ perf_event_array_kernel_user_impl::perf_event_array_kernel_user_impl(
 					     &map_info_size);
 	    err < 0) {
 		SPDLOG_ERROR("Failed to get map info for user rb fd {}",
-			      user_rb_fd);
+			     user_rb_fd);
 		return;
 	}
 	user_rb_id = map_info.id;
@@ -147,7 +145,7 @@ perf_event_array_kernel_user_impl::perf_event_array_kernel_user_impl(
 }
 perf_event_array_kernel_user_impl::~perf_event_array_kernel_user_impl()
 {
-    ioctl(pfd, PERF_EVENT_IOC_DISABLE, 0);
+	ioctl(pfd, PERF_EVENT_IOC_DISABLE, 0);
 	close(pfd);
 	close(transporter_prog_fd);
 }
@@ -240,7 +238,7 @@ user_ringbuffer_wrapper::user_ringbuffer_wrapper(int user_rb_id)
 	LIBBPF_OPTS(user_ring_buffer_opts, opts);
 	user_rb_fd = bpf_map_get_fd_by_id(user_rb_id);
 	SPDLOG_DEBUG("map id {} -> fd {}, user ring buffer", user_rb_id,
-		      user_rb_fd);
+		     user_rb_fd);
 	if (user_rb_fd < 0) {
 		SPDLOG_ERROR(
 			"Failed to get user_rb_fd from user_rb_id {}, err={}",
@@ -253,7 +251,7 @@ user_ringbuffer_wrapper::user_ringbuffer_wrapper(int user_rb_id)
 	assert(rb &&
 	       "Failed to initialize user ringbuffer! This SHOULD NOT Happen.");
 	SPDLOG_DEBUG("User ringbuffer wrapper created, fd={}, id={}",
-		      user_rb_fd, user_rb_id);
+		     user_rb_fd, user_rb_id);
 }
 
 user_ringbuffer_wrapper::~user_ringbuffer_wrapper()
@@ -506,7 +504,7 @@ static int create_transporter_prog(int user_ringbuf_fd, int kernel_perf_fd)
 	delete[] log_buffer;
 	if (bpf_fd < 0) {
 		SPDLOG_ERROR("Failed to load bpf prog: err={}, message=\n{}",
-			      errno, log_message);
+			     errno, log_message);
 	}
 	return bpf_fd;
 }
