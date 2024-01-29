@@ -35,21 +35,4 @@ typedef struct _GumInterceptor GumInterceptor;
 typedef struct _GumInvocationListener GumInvocationListener;
 }
 
-namespace bpftime
-{
-
-#ifndef MAX_BPF_PROG
-#define MAX_BPF_PROG 4096
-#endif
-
-enum PatchOp {
-	OP_SKIP,
-	OP_RESUME,
-};
-
-struct hook_entry;
-class bpftime_prog;
-
-} // namespace bpftime
-
 #endif

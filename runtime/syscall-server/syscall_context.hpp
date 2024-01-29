@@ -47,6 +47,8 @@ class syscall_context {
 		orig_munmap_fn = (munmap_fn)dlsym(RTLD_NEXT, "munmap");
 		orig_mmap64_fn = orig_mmap_fn =
 			(mmap_fn)dlsym(RTLD_NEXT, "mmap");
+		// To avoid polluting other child processes,
+		// unset the LD_PRELOAD env var after syscall context being initialized
 		unsetenv("LD_PRELOAD");
 		SPDLOG_DEBUG(
 			"Function addrs: {:x} {:x} {:x} {:x} {:x} {:x} {:x} {:x} {:x}",

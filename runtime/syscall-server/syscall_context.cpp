@@ -349,7 +349,7 @@ long syscall_context::handle_sysbpf(int cmd, union bpf_attr *attr, size_t size)
 		auto attach_type = attr->link_create.attach_type;
 		SPDLOG_DEBUG("Creating link {} -> {}, attach type {}", prog_fd,
 			     target_fd, attach_type);
-		if (attach_type != BPF_PERF_EVENT) {
+		if (attach_type != BPF_PERF_EVENT && attach_type != BPF_XDP) {
 			SPDLOG_ERROR(
 				"bpftime only supports attach type BPF_PERF_EVENT");
 			errno = ENOTSUP;

@@ -467,7 +467,7 @@ int bpftime_shm::add_bpf_link(int fd, int prog_fd, int target_fd)
 		// if fd is negative, we need to create a new fd for allocating
 		fd = open_fake_fd();
 	}
-	if (!manager->is_allocated(target_fd) || !is_prog_fd(prog_fd)) {
+	if (!is_prog_fd(prog_fd)) {
 		errno = EBADF;
 		return -1;
 	}
