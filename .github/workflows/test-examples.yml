@@ -62,6 +62,9 @@ jobs:
   build-and-test:
     runs-on: ubuntu-22.04
     needs: [build-runtime]
+    container: 
+      image: ${{matrix.runs-on-container}}
+      options: --privileged
     strategy:
       fail-fast: false
       matrix:
