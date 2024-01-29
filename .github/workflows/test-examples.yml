@@ -170,12 +170,12 @@ jobs:
         if: startsWith(matrix.runs-on-container.name,'ubuntu')
         run: |
           apt-get update -y
-          apt-get install -y zlib1g-dev libelf-dev llvm systemtap-sdt-dev python3
+          apt-get install -y zlib1g-dev libelf-dev llvm systemtap-sdt-dev python3 git make cmake
           mkdir /mnt/ramdisk
       - name: Install dependencies (Fedora)
         if: startsWith(matrix.runs-on-container.name,'fedora')
         run: |
-          dnf install -y zlib-devel elfutils-libelf-devel llvm systemtap-sdt-devel python3
+          dnf install -y zlib-devel elfutils-libelf-devel llvm systemtap-sdt-devel python3 git make cmake
           mkdir /mnt/ramdisk
       - name: Build test assets
         run: |
