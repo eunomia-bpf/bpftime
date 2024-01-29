@@ -322,7 +322,7 @@ int bpftime_epoll_wait(int fd, struct epoll_event *out_evts, int max_evt,
 		auto now_time = high_resolution_clock::now();
 		auto elasped =
 			duration_cast<milliseconds>(now_time - start_time);
-		if (elasped.count() > timeout) {
+		if (timeout && elasped.count() > timeout) {
 			break;
 		}
 		for (const auto &p : epoll_inst.files) {
