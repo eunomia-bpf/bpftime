@@ -12,27 +12,28 @@
 namespace bpftime
 {
 
-struct bpftime_ffi_ctx global_ffi_ctx;
+struct bpftime_ufunc_ctx global_ufunc_ctx;
 
-static struct ebpf_ffi_func_info *
-ebpf_resovle_ffi_func(struct bpftime_ffi_ctx *ffi_ctx, uint64_t func_id)
+static struct ebpf_ufunc_func_info *
+ebpf_resovle_ufunc_func(struct bpftime_ufunc_ctx *ufunc_ctx, uint64_t func_id)
 {
-	struct ebpf_ffi_func_info *func_list = ffi_ctx->ffi_funcs;
-	const size_t N_FUNC =
-		sizeof(ffi_ctx->ffi_funcs) / sizeof(struct ebpf_ffi_func_info);
+	struct ebpf_ufunc_func_info *func_list = ufunc_ctx->ufunc_funcs;
+	const size_t N_FUNC = sizeof(ufunc_ctx->ufunc_funcs) /
+			      sizeof(struct ebpf_ufunc_func_info);
 	if (func_id < N_FUNC) {
 		return &func_list[func_id];
 	}
 	return NULL;
 }
 
-// find the ffi id from the function name
-extern "C" int64_t __ebpf_call_find_ffi_id(const char *func_name)
+// find the ufunc id from the function name
+extern "C" int64_t __ebpf_call_find_ufunc_id(const char *func_name)
 {
-	struct bpftime_ffi_ctx *ffi_ctx = &global_ffi_ctx;
-	assert(func_name && ffi_ctx && "Did you forget to load ebpf program?");
-	struct ebpf_ffi_func_info *func_list = ffi_ctx->ffi_funcs;
-	for (size_t i = 0; i < ffi_ctx->ffi_func_cnt; i++) {
+	struct bpftime_ufunc_ctx *ufunc_ctx = &global_ufunc_ctx;
+	assert(func_name && ufunc_ctx &&
+	       "Did you forget to load ebpf program?");
+	struct ebpf_ufunc_func_info *func_list = ufunc_ctx->ufunc_funcs;
+	for (size_t i = 0; i < ufunc_ctx->ufunc_func_cnt; i++) {
 		if (strcmp(func_list[i].name, func_name) == 0) {
 			SPDLOG_INFO("Find func {} at {}", func_name, i);
 			return i;
@@ -41,40 +42,41 @@ extern "C" int64_t __ebpf_call_find_ffi_id(const char *func_name)
 	return -1;
 }
 
-void bpftime_ffi_register_ffi(uint64_t id, ebpf_ffi_func_info func_info)
+void bpftime_ufunc_register_ufunc(uint64_t id, ebpf_ufunc_func_info func_info)
 {
-	global_ffi_ctx.ffi_funcs[id] = func_info;
+	global_ufunc_ctx.ufunc_funcs[id] = func_info;
 }
 
-int bpftime_ffi_resolve_from_info(base_attach_manager *probe_ctx,
-				  ebpf_ffi_func_info func_info)
+int bpftime_ufunc_resolve_from_info(base_attach_manager *probe_ctx,
+				    ebpf_ufunc_func_info func_info)
 {
 	void *func_addr = probe_ctx->find_function_addr_by_name(func_info.name);
 	if (!func_addr) {
 		SPDLOG_ERROR("Failed to get function address for {}",
-			      func_info.name);
+			     func_info.name);
 		return -1;
 	}
-	if (global_ffi_ctx.ffi_func_cnt == MAX_FFI_FUNCS - 1) {
-		SPDLOG_ERROR("too many ffi funcs, {} > {}",
-			      global_ffi_ctx.ffi_func_cnt, MAX_FFI_FUNCS);
+	if (global_ufunc_ctx.ufunc_func_cnt == MAX_UFUNC_FUNCS - 1) {
+		SPDLOG_ERROR("too many ufunc funcs, {} > {}",
+			     global_ufunc_ctx.ufunc_func_cnt, MAX_UFUNC_FUNCS);
 		return -1;
 	}
-	global_ffi_ctx.ffi_funcs[global_ffi_ctx.ffi_func_cnt] = func_info;
-	global_ffi_ctx.ffi_funcs[global_ffi_ctx.ffi_func_cnt].func =
-		(ffi_func)func_addr;
-	global_ffi_ctx.ffi_func_cnt++;
+	global_ufunc_ctx.ufunc_funcs[global_ufunc_ctx.ufunc_func_cnt] =
+		func_info;
+	global_ufunc_ctx.ufunc_funcs[global_ufunc_ctx.ufunc_func_cnt].func =
+		(ufunc_func)func_addr;
+	global_ufunc_ctx.ufunc_func_cnt++;
 	return 0;
 }
 
-extern "C" uint64_t __ebpf_call_ffi_dispatcher(uint64_t id, uint64_t arg_list)
+extern "C" uint64_t __ebpf_call_ufunc_dispatcher(uint64_t id, uint64_t arg_list)
 {
-	assert(id < MAX_FFI_FUNCS);
-	struct ebpf_ffi_func_info *func_info =
-		ebpf_resovle_ffi_func(&global_ffi_ctx, id);
+	assert(id < MAX_UFUNC_FUNCS);
+	struct ebpf_ufunc_func_info *func_info =
+		ebpf_resovle_ufunc_func(&global_ufunc_ctx, id);
 	if (!func_info || !func_info->func) {
 		SPDLOG_ERROR("func_info: {:x} for id {} not found",
-			      (uintptr_t)func_info, id);
+			     (uintptr_t)func_info, id);
 		return 0;
 	}
 	if (func_info->is_attached) {
@@ -99,34 +101,34 @@ extern "C" uint64_t __ebpf_call_ffi_dispatcher(uint64_t id, uint64_t arg_list)
 	return from_arg_val(func_info->ret_type, ret);
 }
 
-union arg_val to_arg_val(enum ffi_types type, uint64_t val)
+union arg_val to_arg_val(enum ufunc_types type, uint64_t val)
 {
 	union arg_val arg {
 		.uint64 = 0
 	};
 	switch (type) {
-	case FFI_TYPE_INT8:
-	case FFI_TYPE_INT16:
-	case FFI_TYPE_INT32:
-	case FFI_TYPE_INT64:
+	case UFUNC_TYPE_INT8:
+	case UFUNC_TYPE_INT16:
+	case UFUNC_TYPE_INT32:
+	case UFUNC_TYPE_INT64:
 		arg.int64 = val;
 		break;
-	case FFI_TYPE_UINT64:
-	case FFI_TYPE_UINT8:
-	case FFI_TYPE_UINT16:
-	case FFI_TYPE_UINT32:
+	case UFUNC_TYPE_UINT64:
+	case UFUNC_TYPE_UINT8:
+	case UFUNC_TYPE_UINT16:
+	case UFUNC_TYPE_UINT32:
 		arg.uint64 = val;
 		break;
-	case FFI_TYPE_DOUBLE:
+	case UFUNC_TYPE_DOUBLE:
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wstrict-aliasing"
 		arg.double_val = *(double *)(uintptr_t)&val;
 #pragma GCC diagnostic pop
 		break;
-	case FFI_TYPE_POINTER:
+	case UFUNC_TYPE_POINTER:
 		arg.ptr = (void *)val;
 		break;
-	case FFI_TYPE_VOID:
+	case UFUNC_TYPE_VOID:
 		// No need to handle
 		break;
 	default:
@@ -137,27 +139,27 @@ union arg_val to_arg_val(enum ffi_types type, uint64_t val)
 	return arg;
 }
 
-uint64_t from_arg_val(enum ffi_types type, union arg_val val)
+uint64_t from_arg_val(enum ufunc_types type, union arg_val val)
 {
 	switch (type) {
-	case FFI_TYPE_INT8:
-	case FFI_TYPE_INT16:
-	case FFI_TYPE_INT32:
-	case FFI_TYPE_INT64:
+	case UFUNC_TYPE_INT8:
+	case UFUNC_TYPE_INT16:
+	case UFUNC_TYPE_INT32:
+	case UFUNC_TYPE_INT64:
 		return val.int64;
-	case FFI_TYPE_UINT8:
-	case FFI_TYPE_UINT16:
-	case FFI_TYPE_UINT32:
-	case FFI_TYPE_UINT64:
+	case UFUNC_TYPE_UINT8:
+	case UFUNC_TYPE_UINT16:
+	case UFUNC_TYPE_UINT32:
+	case UFUNC_TYPE_UINT64:
 		return val.uint64;
-	case FFI_TYPE_DOUBLE:
+	case UFUNC_TYPE_DOUBLE:
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wstrict-aliasing"
 		return *(uint64_t *)(uintptr_t)&val.double_val;
 #pragma GCC diagnostic pop
-	case FFI_TYPE_POINTER:
+	case UFUNC_TYPE_POINTER:
 		return (uint64_t)val.ptr;
-	case FFI_TYPE_VOID:
+	case UFUNC_TYPE_VOID:
 		// No need to handle
 		break;
 	default:

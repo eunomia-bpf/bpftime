@@ -788,8 +788,8 @@ const bpftime_helper_group kernel_helper_group = {
 
 };
 
-// Utility function to get the FFI helper group
-const bpftime_helper_group &bpftime_helper_group::get_ffi_helper_group()
+// Utility function to get the UFUNC helper group
+const bpftime_helper_group &bpftime_helper_group::get_ufunc_helper_group()
 {
 	return extesion_group;
 }
@@ -807,12 +807,12 @@ const bpftime_helper_group &bpftime_helper_group::get_shm_maps_helper_group()
 }
 
 #ifdef ENABLE_BPFTIME_VERIFIER
-std::map<int32_t, verifier::BpftimeHelperProrotype> get_ffi_helper_protos()
+std::map<int32_t, verifier::BpftimeHelperProrotype> get_ufunc_helper_protos()
 {
 	using namespace verifier;
 	std::map<int32_t, BpftimeHelperProrotype> result;
-	result[FFI_HELPER_ID_FIND_ID] = BpftimeHelperProrotype{
-		.name = "__ebpf_call_find_ffi_id",
+	result[UFUNC_HELPER_ID_FIND_ID] = BpftimeHelperProrotype{
+		.name = "__ebpf_call_find_ufunc_id",
 		.return_type = EBPF_RETURN_TYPE_INTEGER,
 		.argument_type = { EBPF_ARGUMENT_TYPE_PTR_TO_READABLE_MEM_OR_NULL,
 				   EBPF_ARGUMENT_TYPE_DONTCARE,
@@ -821,8 +821,8 @@ std::map<int32_t, verifier::BpftimeHelperProrotype> get_ffi_helper_protos()
 				   EBPF_ARGUMENT_TYPE_DONTCARE }
 	};
 
-	result[FFI_HELPER_ID_DISPATCHER] = BpftimeHelperProrotype{
-		.name = "__ebpf_call_ffi_dispatcher",
+	result[UFUNC_HELPER_ID_DISPATCHER] = BpftimeHelperProrotype{
+		.name = "__ebpf_call_ufunc_dispatcher",
 		.return_type = EBPF_RETURN_TYPE_INTEGER,
 		.argument_type = { EBPF_ARGUMENT_TYPE_ANYTHING,
 				   EBPF_ARGUMENT_TYPE_PTR_TO_READABLE_MEM_OR_NULL,
