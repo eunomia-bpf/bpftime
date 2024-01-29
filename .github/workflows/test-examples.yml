@@ -29,11 +29,11 @@ jobs:
         if: startsWith(matrix.runs-on-container.name,'ubuntu')
         run: | 
           apt-get update
-          apt-get install -y binutils-dev libboost1.74-all-dev libelf-dev zlib1g-dev libyaml-cpp-dev gcc-12 g++-12 llvm git make cmake pkg-config clang
+          apt-get install -y binutils-dev libboost1.74-all-dev libelf-dev zlib1g-dev libyaml-cpp-dev gcc-12 g++-12 llvm git make cmake pkg-config clang llvm-15-dev
       - name: Install dependencies (Fedora)
         if: startsWith(matrix.runs-on-container.name,'fedora')
         run: | 
-          dnf install -y make gcc g++ cmake llvm15-devel boost-devel zlib-devel elfutils-libelf-devel pkgconf clang git llvm libubsan
+          dnf install -y make gcc g++ cmake llvm15-devel boost-devel zlib-devel elfutils-libelf-devel pkgconf clang git llvm libubsan llvm15-devel
       - uses: actions/checkout@v2
         with:
           submodules: 'recursive'
