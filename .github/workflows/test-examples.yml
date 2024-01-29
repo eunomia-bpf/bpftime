@@ -144,9 +144,6 @@ jobs:
             expected_str: "bpf:"
 
     steps:
-      - uses: actions/checkout@v2
-        with:
-          submodules: 'recursive'
       - name: Download prebuilt runtime (with jit)
         if: ${{matrix.enable_jit}}
         uses: actions/download-artifact@v3
@@ -177,6 +174,9 @@ jobs:
         run: |
           dnf install -y zlib-devel elfutils-libelf-devel llvm systemtap-sdt-devel python3 git make cmake
           mkdir /mnt/ramdisk
+      - uses: actions/checkout@v2
+        with:
+          submodules: 'recursive'
       - name: Build test assets
         run: |
           make -C example/${{matrix.examples.path}} -j
