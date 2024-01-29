@@ -63,7 +63,7 @@ jobs:
     runs-on: ubuntu-22.04
     needs: [build-runtime]
     container: 
-      image: ${{matrix.runs-on-container}}
+      image: ${{matrix.runs-on-container.image}}
       options: --privileged
     strategy:
       fail-fast: false
