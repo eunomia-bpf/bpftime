@@ -64,7 +64,7 @@ jobs:
     needs: [build-runtime]
     container: 
       image: ${{matrix.runs-on-container.image}}
-      options: --privileged -v /sys/kernel/debug/:/sys/kernel/debug:rw
+      options: --privileged -v /sys/kernel/debug/:/sys/kernel/debug:rw -v /sys/kernel/tracing:/sys/kernel/tracing:rw
     strategy:
       fail-fast: false
       matrix:
