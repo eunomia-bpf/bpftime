@@ -51,14 +51,14 @@ jobs:
         with:
           name: runtime-package-no-jit-${{matrix.runs-on-container.name}}
           path: |
-            /root/.bpftime
+            ~/.bpftime
       - name: Upload build results (with jit)
         uses: actions/upload-artifact@v3
         if: ${{matrix.enable_jit}}
         with:
           name: runtime-package-jit-${{matrix.runs-on-container.name}}
           path: |
-            /root/.bpftime
+            ~/.bpftime
   build-and-test:
     runs-on: ubuntu-22.04
     needs: [build-runtime]
@@ -149,13 +149,13 @@ jobs:
         uses: actions/download-artifact@v3
         with:
           name: runtime-package-jit-${{matrix.runs-on-container.name}}
-          path: /root/.bpftime
+          path: ~/.bpftime
       - name: Download prebuilt runtime (without jit)
         if: ${{!matrix.enable_jit}}
         uses: actions/download-artifact@v3
         with:
           name: runtime-package-no-jit-${{matrix.runs-on-container.name}}
-          path: /root/.bpftime
+          path: ~/.bpftime
   
       - name: Set permissions
         run: |
@@ -186,10 +186,10 @@ jobs:
         shell: bash
         run: |
           cd example/${{matrix.examples.path}}
-          python3 ./.github/script/run_example.py "${{matrix.examples.executable}}" "${{matrix.examples.victim}}" "${{matrix.examples.expected_str}}" "/root/.bpftime/bpftime -i /root/.bpftime" 1
+          python3 ./.github/script/run_example.py "${{matrix.examples.executable}}" "${{matrix.examples.victim}}" "${{matrix.examples.expected_str}}" "/github/home/.bpftime/bpftime -i /github/home/.bpftime" 1
       - name: Test CLI - attach by running (uprobe)
         if: '!matrix.examples.syscall_trace'
         shell: bash
         run: |
           cd example/${{matrix.examples.path}}
-          python3 ./.github/script/run_example.py "${{matrix.examples.executable}}" "${{matrix.examples.victim}}" "${{matrix.examples.expected_str}}" "/root/.bpftime/bpftime -i /root/.bpftime" 0
+          python3 ./.github/script/run_example.py "${{matrix.examples.executable}}" "${{matrix.examples.victim}}" "${{matrix.examples.expected_str}}" "/github/home/.bpftime/bpftime -i /github/home/.bpftime" 0
