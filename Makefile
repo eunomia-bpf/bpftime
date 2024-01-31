@@ -56,7 +56,8 @@ release: ## build the release version
 	cmake -Bbuild  -DBPFTIME_ENABLE_UNIT_TESTING=0 \
 				   -DCMAKE_BUILD_TYPE:STRING=Release \
 				   -DBUILD_BPFTIME_DAEMON=1 \
-				   -DBPFTIME_ENABLE_LTO=0
+				   -DBPFTIME_ENABLE_LTO=0 \
+				   -DSPDLOG_ACTIVE_LEVEL=SPDLOG_LEVEL_INFO
 	cmake --build build --config Release --target install
 
 release-with-llvm-jit: ## build the package, with llvm-jit
