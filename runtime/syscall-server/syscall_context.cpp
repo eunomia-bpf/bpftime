@@ -349,23 +349,18 @@ long syscall_context::handle_sysbpf(int cmd, union bpf_attr *attr, size_t size)
 		auto attach_type = attr->link_create.attach_type;
 		SPDLOG_DEBUG("Creating link {} -> {}, attach type {}", prog_fd,
 			     target_fd, attach_type);
-		if (attach_type != BPF_PERF_EVENT) {
-			SPDLOG_ERROR(
-				"bpftime only supports attach type BPF_PERF_EVENT");
-			errno = ENOTSUP;
-			return -1;
-		}
 		if (run_with_kernel && !bpftime_is_perf_event_fd(target_fd)) {
 			return orig_syscall_fn(__NR_bpf, (long)cmd,
 					       (long)(uintptr_t)attr,
 					       (long)size);
 		}
 		int id = bpftime_link_create(
-			-1 /* let the shm alloc fd for us */, prog_fd,
-			target_fd);
+			-1 /* let the shm alloc fd for us */,
+			(bpf_link_create_args *)&attr->link_create);
 		SPDLOG_DEBUG("Created link {}", id);
 		if (bpftime_is_prog_fd(prog_fd) &&
-		    bpftime_is_perf_event_fd(target_fd)) {
+		    bpftime_is_perf_event_fd(target_fd) &&
+		    attach_type == BPF_PERF_EVENT) {
 			auto cookie = attr->link_create.perf_event.bpf_cookie;
 			SPDLOG_DEBUG(
 				"Attaching perf event {} to prog {}, with bpf cookie {:x}",
@@ -420,7 +415,8 @@ long syscall_context::handle_sysbpf(int cmd, union bpf_attr *attr, size_t size)
 			ptr->map_flags = map_attr.flags;
 			strncpy(ptr->name, map_name, sizeof(ptr->name) - 1);
 		} else if (bpftime_is_prog_fd(attr->info.bpf_fd)) {
-			auto ptr = (bpf_prog_info *)((uintptr_t)attr->info.info);
+			auto ptr =
+				(bpf_prog_info *)((uintptr_t)attr->info.info);
 			ptr->id = attr->info.bpf_fd;
 			// TODO: handle the rest info
 			return 0;

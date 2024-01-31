@@ -68,9 +68,6 @@ include(cmake/frida.cmake)
 
 set(CMAKE_POSITION_INDEPENDENT_CODE YES)
 
-# ebpf-verifier
-option(ENABLE_EBPF_VERIFIER "Whether to enable ebpf verifier" NO)
-
 if(${ENABLE_EBPF_VERIFIER})
   add_subdirectory(bpftime-verifier)
 else()
@@ -81,12 +78,6 @@ endif()
 
 # spdlog
 add_subdirectory(third_party/spdlog)
-# set spdlog level
-if (CMAKE_BUILD_TYPE STREQUAL "Debug")
-  add_definitions(-DSPDLOG_ACTIVE_LEVEL=SPDLOG_LEVEL_DEBUG)
-else()
-  add_definitions(-DSPDLOG_ACTIVE_LEVEL=SPDLOG_LEVEL_INFO)
-endif()
 
 set(SPDLOG_INCLUDE ${CMAKE_CURRENT_SOURCE_DIR}/third_party/spdlog/include)
 
@@ -99,7 +90,9 @@ if (BPFTIME_LLVM_JIT)
   add_subdirectory(vm/cli)
 endif()
 add_subdirectory(runtime)
-add_subdirectory(daemon)
+if (${BUILD_BPFTIME_DAEMON})
+  add_subdirectory(daemon)
+endif()
 add_subdirectory(tools)
 
 # benchmark that requires bpftime libraries

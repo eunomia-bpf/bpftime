@@ -25,10 +25,9 @@ int bpftime_find_minimal_unused_fd()
 	return shm_holder.global_shared_memory.find_minimal_unused_fd();
 }
 
-int bpftime_link_create(int fd, int prog_fd, int target_fd)
+int bpftime_link_create(int fd, struct bpf_link_create_args* args)
 {
-	return shm_holder.global_shared_memory.add_bpf_link(fd, prog_fd,
-							    target_fd);
+	return shm_holder.global_shared_memory.add_bpf_link(fd, args);
 }
 
 int bpftime_progs_create(int fd, const ebpf_inst *insn, size_t insn_cnt,

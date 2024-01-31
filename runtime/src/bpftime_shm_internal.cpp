@@ -461,20 +461,19 @@ int bpftime_shm::add_bpf_prog(int fd, const ebpf_inst *insn, size_t insn_cnt,
 }
 
 // add a bpf link fd
-int bpftime_shm::add_bpf_link(int fd, int prog_fd, int target_fd)
+int bpftime_shm::add_bpf_link(int fd, struct bpf_link_create_args* args)
 {
 	if (fd < 0) {
 		// if fd is negative, we need to create a new fd for allocating
 		fd = open_fake_fd();
 	}
-	if (!manager->is_allocated(target_fd) || !is_prog_fd(prog_fd)) {
+	if (!is_prog_fd(args->prog_fd) || !args) {
 		errno = EBADF;
 		return -1;
 	}
 	return manager->set_handler(
 		fd,
-		bpftime::bpf_link_handler{ (uint32_t)prog_fd,
-					   (uint32_t)target_fd },
+		bpftime::bpf_link_handler{ *args },
 		segment);
 }
 

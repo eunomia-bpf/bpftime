@@ -64,12 +64,18 @@ if(BPFTIME_ENABLE_ASAN)
     add_link_options(-fsanitize=address,undefined)
 endif()
 
-option(BPFTIME_ENABLE_MPK "Enable Memory Protection Keys to detect memory error." OFF)
+option(BPFTIME_ENABLE_MPK "Enable Memory Protection Keys for the share memory." OFF)
 if(BPFTIME_ENABLE_MPK)
     add_definitions(-DBPFTIME_ENABLE_MPK)
 endif()
 
-option(BPFTIME_ENABLE_IOURING_EXT "Enable iouring helpers." OFF)
+option(BPFTIME_ENABLE_IOURING_EXT "Enable iouring helpers extensions." OFF)
 if(BPFTIME_ENABLE_IOURING_EXT)
     add_definitions(-DBPFTIME_ENABLE_IOURING_EXT)
 endif()
+
+# whether to enable eBPF verifier in userspace
+option(ENABLE_EBPF_VERIFIER "Whether to enable ebpf verifier" OFF)
+
+# whether to build with bpftime daemon
+option(BUILD_BPFTIME_DAEMON "Whether to build the bpftime daemon" ON)

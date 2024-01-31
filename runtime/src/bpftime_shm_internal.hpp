@@ -11,7 +11,7 @@
 #include <cstddef>
 #include <functional>
 #include <boost/interprocess/containers/set.hpp>
-#include "bpftime_config.hpp"
+#include "bpftime_shm.hpp"
 #include <handler/handler_manager.hpp>
 #include <optional>
 
@@ -93,7 +93,7 @@ class bpftime_shm {
 			 const char *prog_name, int prog_type);
 
 	// add a bpf link fd
-	int add_bpf_link(int fd, int prog_fd, int target_fd);
+	int add_bpf_link(int fd, struct bpf_link_create_args* args);
 
 	// create a bpf map fd
 	int add_bpf_map(int fd, const char *name, bpftime::bpf_map_attr attr);
