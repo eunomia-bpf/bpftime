@@ -42,7 +42,7 @@ TEST_CASE("Test attaching filter program with ebpf, and reverting")
 	frida_attach_manager man;
 	auto prog = bpftime_object__next_program(obj.get(), nullptr);
 	REQUIRE(prog != nullptr);
-	REQUIRE(bpftime_helper_group::get_ffi_helper_group()
+	REQUIRE(bpftime_helper_group::get_ufunc_helper_group()
 			.add_helper_group_to_prog(prog) >= 0);
 	REQUIRE(bpftime_helper_group::get_kernel_utils_helper_group()
 			.add_helper_group_to_prog(prog) >= 0);

@@ -11,10 +11,9 @@
 #include "bpftime_shm.hpp"
 #include <cstdint>
 
-
-const char *offset_record_path = "./test_ffi.off.txt";
+const char *offset_record_path = "./test_ufunc.off.txt";
 const char *btf_path = "./base.btf";
-const char *obj_path = "./ffi-btf.bpf.o";
+const char *obj_path = "./ufunc-btf.bpf.o";
 
 int main(int argc, char **argv)
 {
@@ -25,7 +24,7 @@ int main(int argc, char **argv)
 	struct data memory = { 5, 2 };
 
 	struct bpf_attach_ctx *probe_ctx = bpftime_probe_create_ctx();
-	res = bpftime_ffi_ctx_from_btf(probe_ctx, btf_path);
+	res = bpftime_ufunc_ctx_from_btf(probe_ctx, btf_path);
 	assert(res == 0);
 	struct bpftime_object *obj = bpftime_object_open(obj_path);
 	assert(obj);
@@ -34,7 +33,7 @@ int main(int argc, char **argv)
 	// use the first program and relocate based on btf if btf has been
 	// loaded
 	res = bpftime_prog_add_helper_group(prog,
-						bpftime_get_ffi_helper_group());
+					    bpftime_get_ufunc_helper_group());
 	assert(res == 0);
 	res = prog->bpftime_prog_load(false);
 	assert(res == 0);

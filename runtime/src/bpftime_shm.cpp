@@ -321,7 +321,7 @@ int bpftime_epoll_wait(int fd, struct epoll_event *out_evts, int max_evt,
 		auto now_time = high_resolution_clock::now();
 		auto elasped =
 			duration_cast<milliseconds>(now_time - start_time);
-		if (elasped.count() > timeout) {
+		if (timeout && elasped.count() > timeout) {
 			break;
 		}
 		for (const auto &p : epoll_inst.files) {
@@ -533,9 +533,9 @@ extern "C" uint64_t map_val(uint64_t map_ptr)
 
 static void process_token(const std::string_view &token, agent_config &config)
 {
-	if (token == "ffi") {
-		SPDLOG_INFO("Enabling ffi helper group");
-		config.enable_ffi_helper_group = true;
+	if (token == "ufunc") {
+		SPDLOG_INFO("Enabling ufunc helper group");
+		config.enable_ufunc_helper_group = true;
 	} else if (token == "kernel") {
 		SPDLOG_INFO("Enabling kernel helper group");
 		config.enable_kernel_helper_group = true;
@@ -571,17 +571,17 @@ const bpftime::agent_config &bpftime::set_agent_config_from_env()
 	if (const char *custom_helpers = getenv("BPFTIME_HELPER_GROUPS");
 	    custom_helpers != nullptr) {
 		agent_config.enable_kernel_helper_group =
-			agent_config.enable_ffi_helper_group =
+			agent_config.enable_ufunc_helper_group =
 				agent_config.enable_shm_maps_helper_group =
 					false;
 		auto helpers_sv = std::string_view(custom_helpers);
 		process_helper_sv(helpers_sv, ',', agent_config);
 	} else {
 		SPDLOG_INFO(
-			"Enabling helper groups ffi, kernel, shm_map by default");
+			"Enabling helper groups ufunc, kernel, shm_map by default");
 		agent_config.enable_kernel_helper_group =
 			agent_config.enable_shm_maps_helper_group =
-				agent_config.enable_ffi_helper_group = true;
+				agent_config.enable_ufunc_helper_group = true;
 	}
 	const char *use_jit = getenv("BPFTIME_USE_JIT");
 	agent_config.jit_enabled = use_jit != nullptr;

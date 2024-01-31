@@ -64,7 +64,7 @@ set(sources
   src/bpftime_shm_json.cpp
   src/syscall_table.cpp
   src/bpftime_prog.cpp
-  src/ffi.cpp
+  src/ufunc.cpp
   src/bpf_helper.cpp
 
   src/bpf_map/userspace/array_map.cpp

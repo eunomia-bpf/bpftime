@@ -124,22 +124,22 @@ uint64_t bpftime_io_uring_wait_and_seen(void)
 
 uint64_t bpftime_io_uring_submit(void)
 {
-    return io_uring_submit(&ring);
+	return io_uring_submit(&ring);
 }
 #endif
 
 extern const bpftime_helper_group extesion_group = { {
-	{ FFI_HELPER_ID_FIND_ID,
+	{ UFUNC_HELPER_ID_FIND_ID,
 	  bpftime_helper_info{
-		  .index = FFI_HELPER_ID_FIND_ID,
-		  .name = "__ebpf_call_find_ffi_id",
-		  .fn = (void *)__ebpf_call_find_ffi_id,
+		  .index = UFUNC_HELPER_ID_FIND_ID,
+		  .name = "__ebpf_call_find_ufunc_id",
+		  .fn = (void *)__ebpf_call_find_ufunc_id,
 	  } },
-	{ FFI_HELPER_ID_DISPATCHER,
+	{ UFUNC_HELPER_ID_DISPATCHER,
 	  bpftime_helper_info{
-		  .index = FFI_HELPER_ID_DISPATCHER,
-		  .name = "__ebpf_call_ffi_dispatcher",
-		  .fn = (void *)__ebpf_call_ffi_dispatcher,
+		  .index = UFUNC_HELPER_ID_DISPATCHER,
+		  .name = "__ebpf_call_ufunc_dispatcher",
+		  .fn = (void *)__ebpf_call_ufunc_dispatcher,
 	  } },
 #if BPFTIME_ENABLE_FS_HELPER
 	{ EXTENDED_HELPER_GET_ABS_PATH_ID,

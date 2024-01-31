@@ -3,7 +3,7 @@
  * Copyright (c) 2022, eunomia-bpf org
  * All rights reserved.
  */
-// test register raw function and call it from ffi
+// test register raw function and call it from ufunc
 #include "test_defs.h"
 #include "bpftime.hpp"
 #include "bpftime_object.hpp"
@@ -13,26 +13,26 @@
 
 using namespace bpftime;
 
-
-int test_register_ffi()
+int test_register_ufunc()
 {
-	struct ebpf_ffi_func_info func2 = { "add_func",
-					    FFI_FN(add_func),
-					    FFI_TYPE_INT32,
-					    { FFI_TYPE_INT32, FFI_TYPE_INT32 },
-					    2,
-					    2,
-					    false };
-	bpftime_ffi_register_ffi(1, func2);
+	struct ebpf_ufunc_func_info func2 = { "add_func",
+					      UFUNC_FN(add_func),
+					      UFUNC_TYPE_INT32,
+					      { UFUNC_TYPE_INT32,
+						UFUNC_TYPE_INT32 },
+					      2,
+					      2,
+					      false };
+	bpftime_ufunc_register_ufunc(1, func2);
 
-	struct ebpf_ffi_func_info func1 = { "print_func",
-					    FFI_FN(print_func),
-					    FFI_TYPE_INT64,
-					    { FFI_TYPE_POINTER },
-					    1,
-					    2,
-					    false };
-	bpftime_ffi_register_ffi(2, func1);
+	struct ebpf_ufunc_func_info func1 = { "print_func",
+					      UFUNC_FN(print_func),
+					      UFUNC_TYPE_INT64,
+					      { UFUNC_TYPE_POINTER },
+					      1,
+					      2,
+					      false };
+	bpftime_ufunc_register_ufunc(2, func1);
 	return 0;
 }
 
@@ -44,9 +44,9 @@ int main(int argc, char **argv)
 	// use a struct as memory
 	struct data memory = { 5, 2 };
 
-	obj_path = "./ffi.bpf.o";
+	obj_path = "./ufunc.bpf.o";
 
-	test_register_ffi();
+	test_register_ufunc();
 
 	// open the object file
 	bpftime_object *obj = bpftime_object_open(obj_path);
@@ -55,7 +55,7 @@ int main(int argc, char **argv)
 	assert(prog);
 	// use the first program and relocate based on btf if btf has been
 	// loaded
-	int res = bpftime_helper_group::get_ffi_helper_group()
+	int res = bpftime_helper_group::get_ufunc_helper_group()
 			  .add_helper_group_to_prog(prog);
 
 	assert(res == 0);

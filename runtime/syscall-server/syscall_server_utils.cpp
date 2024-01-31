@@ -43,13 +43,13 @@ void start_up()
 			helper_ids.push_back(x);
 		}
 	}
-	if (agent_config.enable_ffi_helper_group) {
+	if (agent_config.enable_ufunc_helper_group) {
 		for (auto x : bpftime_helper_group::get_shm_maps_helper_group()
 				      .get_helper_ids()) {
 			helper_ids.push_back(x);
 		}
 		// non_kernel_helpers =
-		for (const auto &[k, v] : get_ffi_helper_protos()) {
+		for (const auto &[k, v] : get_ufunc_helper_protos()) {
 			non_kernel_helpers[k] = v;
 		}
 	}
