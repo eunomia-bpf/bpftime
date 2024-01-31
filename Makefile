@@ -37,55 +37,38 @@ build-unit-test:
 unit-test-daemon: 
 	./build/daemon/test/bpftime_daemon_tests
 
-unit-test-runtime:  ## run catch2 unit tests
+unit-test-runtime:
 	make -C runtime/test/bpf && cp runtime/test/bpf/*.bpf.o build/runtime/test/
 	./build/runtime/unit-test/bpftime_runtime_tests
 	cd build/runtime/test && make && ctest -VV
 
 unit-test: unit-test-daemon unit-test-runtime ## run catch2 unit tests
 
-build: ## build the package
+build: ## build the package with test and all components
 	cmake -Bbuild -DBPFTIME_ENABLE_UNIT_TESTING=1 -DBUILD_BPFTIME_DAEMON=1 -DCMAKE_BUILD_TYPE:STRING=Debug
 	cmake --build build --config Debug
 
 build-iouring: ## build the package with iouring extension
-	cmake -Bbuild -DBPFTIME_ENABLE_UNIT_TESTING=0 -DBPFTIME_ENABLE_IOURING_EXT=1 -DCMAKE_BUILD_TYPE:STRING=Release
+	cmake -Bbuild -DBPFTIME_ENABLE_IOURING_EXT=1 -DCMAKE_BUILD_TYPE:STRING=Release
 	cmake --build build --config Release
 
 release: ## build the release version
-	cmake -Bbuild  -DBPFTIME_ENABLE_UNIT_TESTING=0 \
-				   -DCMAKE_BUILD_TYPE:STRING=Release \
-				   -DBUILD_BPFTIME_DAEMON=1 \
-				   -DBPFTIME_ENABLE_LTO=0 \
+	cmake -Bbuild  -DCMAKE_BUILD_TYPE:STRING=Release \
 				   -DSPDLOG_ACTIVE_LEVEL=SPDLOG_LEVEL_INFO
 	cmake --build build --config Release --target install
 
 release-with-llvm-jit: ## build the package, with llvm-jit
-	cmake -Bbuild  -DBPFTIME_ENABLE_UNIT_TESTING=0 \
-				   -DCMAKE_BUILD_TYPE:STRING=Release \
-				   -DBPFTIME_ENABLE_LTO=0 \
+	cmake -Bbuild  -DCMAKE_BUILD_TYPE:STRING=Release \
 				   -DBPFTIME_LLVM_JIT=1
 	cmake --build build --config Release --target install
-
-debug: ## build the debug version
-	cmake -Bbuild  -DBPFTIME_ENABLE_UNIT_TESTING=0 \
-				   -DCMAKE_BUILD_TYPE:STRING=Debug \
-				   -DBPFTIME_ENABLE_LTO=0
-	cmake --build build --config Debug --target install
-
-
-debug-with-llvm-jit: ## build the package, with llvm-jit
-	cmake -Bbuild  -DBPFTIME_ENABLE_UNIT_TESTING=0 \
-				   -DCMAKE_BUILD_TYPE:STRING=Debug \
-				   -DBPFTIME_ENABLE_LTO=0 \
-				   -DBPFTIME_LLVM_JIT=1
-	cmake --build build --config Debug --target install
 
 build-vm: ## build only the core library
 	make -C vm build
 
 build-llvm: ## build with llvm as jit backend
-	cmake -Bbuild  -DBPFTIME_ENABLE_UNIT_TESTING=1 -DBPFTIME_LLVM_JIT=1
+	cmake -Bbuild   -DBPFTIME_ENABLE_UNIT_TESTING=1 \
+					-DBPFTIME_LLVM_JIT=1 \
+					-DCMAKE_BUILD_TYPE:STRING=Debug
 	cmake --build build --config Debug
 
 clean: ## clean the project
