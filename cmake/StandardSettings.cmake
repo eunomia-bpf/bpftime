@@ -73,3 +73,9 @@ option(BPFTIME_ENABLE_IOURING_EXT "Enable iouring helpers." OFF)
 if(BPFTIME_ENABLE_IOURING_EXT)
     add_definitions(-DBPFTIME_ENABLE_IOURING_EXT)
 endif()
+
+# whether to enable eBPF verifier in userspace
+option(ENABLE_EBPF_VERIFIER "Whether to enable ebpf verifier" OFF)
+
+# whether to build with bpftime daemon
+option(BUILD_BPFTIME_DAEMON "Whether to build the bpftime daemon" ON)
