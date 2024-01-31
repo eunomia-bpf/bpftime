@@ -27,6 +27,8 @@ export PRINT_HELP_PYSCRIPT
 BROWSER := python3 -c "$$BROWSER_PYSCRIPT"
 INSTALL_LOCATION := ~/.local
 
+JOBS := 1
+
 help:
 	@python3 -c "$$PRINT_HELP_PYSCRIPT" < $(MAKEFILE_LIST)
 
@@ -39,38 +41,30 @@ test-vm: ## run tests quickly with pytest on x86, you need to build first
 coverage: ## check code coverage quickly GCC
 	rm -rf build/
 	cmake -Bbuild -DCMAKE_INSTALL_PREFIX=$(INSTALL_LOCATION) -DBPFTIME_ENABLE_CODE_COVERAGE=1
-	cmake --build build --config Release
+	cmake --build build --config Release -j$(JOBS)
 	cd build/ && ctest -C Release -VV
 	cd .. && (bash -c "find . -type f -name '*.gcno' -exec gcov -pb {} +" || true)
-
-docs: ## generate Doxygen HTML documentation, including API docs
-	rm -rf docs/
-	rm -rf build/
-	cmake -Bbuild -DCMAKE_INSTALL_PREFIX=$(INSTALL_LOCATION) -DProject_ENABLE_DOXYGEN=1
-	cmake --build build --config Release
-	cmake --build build --target doxygen-docs
-	$(BROWSER) docs/html/index.html
 
 build-all: build-all build-arm32 build-arm64
 
 build: ## build the package
 	rm -rf build/
 	cmake -Bbuild  -DBPFTIME_ENABLE_UNIT_TESTING=1
-	cmake --build build --config Debug
+	cmake --build build --config Debug  -j$(JOBS)
 
 build-ubpf: ## build the package with ubpf backend
 	rm -rf build/
 	cmake -Bbuild
-	cmake --build build --config Release
+	cmake --build build --config Release -j$(JOBS)
 
 build-llvm: ## build with llvm as jit backend
 	cmake -Bbuild -DBPFTIME_LLVM_JIT=1
-	cmake --build build --config Release
+	cmake --build build --config Release -j$(JOBS)
 
 build-arm64: ## build the package on arm64
 	rm -rf build/
 	cmake -Bbuild -DCMAKE_TOOLCHAIN_FILE=../cmake/aarch64-toolchain.cmake -DARCH=aarch64 -DBPFTIME_ENABLE_UNIT_TESTING=1
-	cmake --build build --config Debug
+	cmake --build build --config Debug -j$(JOBS)
 
 run-arm64: build-arm64 ## run the binary on arm32 qemu
 	qemu-aarch64 -L /usr/aarch64-linux-gnu/ build/bin/Debug/libebpf
@@ -79,12 +73,12 @@ install: ## install the package to the `INSTALL_LOCATION`
 	rm -rf build/
 	cmake -Bbuild -DCMAKE_INSTALL_PREFIX=$(INSTALL_LOCATION)
 	cmake --build build --config Release
-	cmake --build build --target install --config Release
+	cmake --build build --target install --config Release -j$(JOBS)
 
 format: ## format the project sources
 	rm -rf build/
 	cmake -Bbuild -DCMAKE_INSTALL_PREFIX=$(INSTALL_LOCATION)
-	cmake --build build --target clang-format
+	cmake --build build --target clang-format  -j$(JOBS)
 
 clean: ## clean the project
 	rm -rf build/
