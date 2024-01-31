@@ -99,6 +99,8 @@ See [eunomia.dev/bpftime/documents/usage](https://eunomia.dev/bpftime/documents/
 
 > ⚠️ **Note**: `bpftime` is actively under development, and it's not yet recommended for production use. See our [roadmap](#roadmap) for details. We'd love to hear your feedback and suggestions! Please feel free to open an issue or [Contact us](#contact-and-citations).
 
+For more examples and details, please refer to [eunomia.dev/bpftime/documents/examples/](https://eunomia.dev/bpftime/documents/examples/) webpage.
+
 Examples including:
 
 - [Minimal examples](https://github.com/eunomia-bpf/bpftime/tree/master/example/minimal) of eBPF programs.
@@ -110,8 +112,6 @@ Examples including:
 - [error injection](https://github.com/eunomia-bpf/bpftime/tree/master/example/error-injection): change function behavior with `bpf_override_return`.
 - Use the eBPF LLVM JIT/AOT vm as [a standalone library](https://github.com/eunomia-bpf/bpftime/tree/master/vm/llvm-jit/example).
 - Userspace [XDP eBPF with DPDK](https://github.com/eunomia-bpf/XDP-eBPF-in-DPDK)
-
-For more examples and details, please refer to [eunomia.dev/bpftime/documents/examples/](https://eunomia.dev/bpftime/documents/examples/) webpage.
 
 ## In-Depth
 
