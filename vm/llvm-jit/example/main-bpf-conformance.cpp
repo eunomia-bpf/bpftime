@@ -5,6 +5,7 @@
 #include <cstdint>
 #include <cstring>
 #include <iostream>
+#include <sstream>
 #include <vector>
 #include "ebpf-vm.h"
 

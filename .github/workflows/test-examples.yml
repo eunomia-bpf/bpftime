@@ -37,8 +37,16 @@ jobs:
       - uses: actions/checkout@v2
         with:
           submodules: 'recursive'
-      - name: Build and install runtime (with llvm-jit)
-        if: ${{matrix.enable_jit}}
+      - name: Build and install runtime (with llvm-jit and ubuntu)
+        if: ${{matrix.enable_jit && startsWith(matrix.runs-on-container.name,'ubuntu')}}
+        env:
+          LLVM_ROOT: /usr/lib/llvm-15
+        run: |
+          ${{matrix.runs-on-container.compiler}} make release-with-llvm-jit -j
+      - name: Build and install runtime (with llvm-jit and fedora)
+        if: ${{matrix.enable_jit && startsWith(matrix.runs-on-container.name,'fedora')}}
+        env:
+          LLVM_ROOT: /usr/lib64/llvm15
         run: |
           ${{matrix.runs-on-container.compiler}} make release-with-llvm-jit -j
       - name: Build and install runtime (without llvm-jit)

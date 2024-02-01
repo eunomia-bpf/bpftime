@@ -37,23 +37,22 @@ bpftime_add_library(vm-bpf
 
 set_target_properties(vm-bpf PROPERTIES ARCHIVE_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/../")
 
-set(LLVM_SEARCH_PATHS
-    /usr/lib/llvm-15/lib/cmake/llvm
-    /usr/lib/llvm-14/lib/cmake/llvm
-    /usr/lib/llvm-13/lib/cmake/llvm
-    /usr/lib64/llvm15/lib/cmake/llvm
-)
+find_package(LLVM REQUIRED CONFIG)
 
-find_package(LLVM REQUIRED CONFIG
-    PATHS ${LLVM_SEARCH_PATHS}
-    NO_DEFAULT_PATH)
+if (${LLVM_PACKAGE_VERSION} VERSION_LESS 15)
+    message(FATAL_ERROR "LLVM version must be >=15")
+endif()
 
-llvm_map_components_to_libnames(LLVM_LIBS
-    Core
-    OrcJIT
-    Support
-    nativecodegen
-)
+if(ENABLE_LLVM_SHARED)
+    set(LLVM_LIBS LLVM)
+else()
+    llvm_map_components_to_libnames(LLVM_LIBS
+        Core
+        OrcJIT
+        Support
+        nativecodegen
+    )
+endif()
 
 if(NOT DEFINED SPDLOG_INCLUDE)
   message(INFO "Adding spdlo seperately..")
