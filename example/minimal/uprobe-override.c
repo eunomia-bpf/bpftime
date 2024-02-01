@@ -1,5 +1,3 @@
-// SPDX-License-Identifier: (LGPL-2.1 OR BSD-2-Clause)
-/* Copyright (c) 2020 Facebook */
 #include <signal.h>
 #include <stdio.h>
 #include <time.h>
@@ -54,8 +52,8 @@ int main(int argc, char **argv)
 		goto cleanup;
 	}
 	err = bpf_prog_attach_uprobe_with_override(
-		bpf_program__fd(skel->progs.do_uprobe_override_patch), "./victim",
-		"target_func");
+		bpf_program__fd(skel->progs._PyTime_GetSystemClock_bpf), "/usr/bin/python3.11",
+		"_PyTime_GetSystemClock");
 	if (err) {
 		fprintf(stderr, "Failed to attach BPF program\n");
 		goto cleanup;
