@@ -27,12 +27,14 @@ export PRINT_HELP_PYSCRIPT
 BROWSER := python3 -c "$$BROWSER_PYSCRIPT"
 INSTALL_LOCATION := ~/.local
 
+JOBS := 1
+
 help:
 	@python3 -c "$$PRINT_HELP_PYSCRIPT" < $(MAKEFILE_LIST)
 
 build-unit-test:
 	cmake -Bbuild  -DBPFTIME_ENABLE_UNIT_TESTING=1 -DCMAKE_BUILD_TYPE:STRING=Debug
-	cmake --build build --config Debug --target bpftime_runtime_tests bpftime_daemon_tests
+	cmake --build build --config Debug --target bpftime_runtime_tests bpftime_daemon_tests  -j$(JOBS)
 
 unit-test-daemon: 
 	./build/daemon/test/bpftime_daemon_tests
@@ -46,21 +48,21 @@ unit-test: unit-test-daemon unit-test-runtime ## run catch2 unit tests
 
 build: ## build the package with test and all components
 	cmake -Bbuild -DBPFTIME_ENABLE_UNIT_TESTING=1 -DBUILD_BPFTIME_DAEMON=1 -DCMAKE_BUILD_TYPE:STRING=Debug
-	cmake --build build --config Debug
+	cmake --build build --config Debug  -j$(JOBS)
 
 build-iouring: ## build the package with iouring extension
 	cmake -Bbuild -DBPFTIME_ENABLE_IOURING_EXT=1 -DCMAKE_BUILD_TYPE:STRING=Release
-	cmake --build build --config Release
+	cmake --build build --config Release  -j$(JOBS)
 
 release: ## build the release version
 	cmake -Bbuild  -DCMAKE_BUILD_TYPE:STRING=Release \
 				   -DSPDLOG_ACTIVE_LEVEL=SPDLOG_LEVEL_INFO
-	cmake --build build --config Release --target install
+	cmake --build build --config Release --target install  -j$(JOBS)
 
 release-with-llvm-jit: ## build the package, with llvm-jit
 	cmake -Bbuild  -DCMAKE_BUILD_TYPE:STRING=Release \
 				   -DBPFTIME_LLVM_JIT=1
-	cmake --build build --config Release --target install
+	cmake --build build --config Release --target install -j$(JOBS)
 
 build-vm: ## build only the core library
 	make -C vm build
@@ -69,7 +71,7 @@ build-llvm: ## build with llvm as jit backend
 	cmake -Bbuild   -DBPFTIME_ENABLE_UNIT_TESTING=1 \
 					-DBPFTIME_LLVM_JIT=1 \
 					-DCMAKE_BUILD_TYPE:STRING=Debug
-	cmake --build build --config Debug
+	cmake --build build --config Debug -j$(JOBS)
 
 clean: ## clean the project
 	rm -rf build
