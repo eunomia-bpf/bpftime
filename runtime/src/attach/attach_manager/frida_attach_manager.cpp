@@ -256,6 +256,9 @@ frida_internal_attach_entry::frida_internal_attach_entry(
 		}
 		override_return_callback = override_return_set_callback(
 			[&](uint64_t ctx, uint64_t v) {
+				SPDLOG_DEBUG(
+					"Frida attach manager: received override return, value {}, context {:x}",
+					v, ctx);
 				is_overrided = true;
 				user_ret = v;
 				user_ret_ctx = ctx;
@@ -361,7 +364,9 @@ extern "C" void *__bpftime_frida_attach_manager__override_handler()
 
 	hook_entry->get_filter_callback()(regs);
 	if (hook_entry->is_overrided) {
-		return (void *)(uintptr_t)hook_entry->user_ret;
+		auto value = (uintptr_t)hook_entry->user_ret;
+		SPDLOG_DEBUG("Using override return value: {}", value);
+		return (void *)value;
 	} else {
 		return func((void *)arg0, (void *)arg1, (void *)arg2,
 			    (void *)arg3, (void *)arg4);

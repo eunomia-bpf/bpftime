@@ -12,8 +12,8 @@
 #include <sys/wait.h>
 #include <unistd.h>
 
-const char *SHM_NAME = "my_shm_maps_test";
-const char *HANDLER_NAME = "my_handler";
+static const char *SHM_NAME = "my_shm_maps_test";
+static const char *HANDLER_NAME = "my_handler";
 
 using namespace boost::interprocess;
 using namespace bpftime;
