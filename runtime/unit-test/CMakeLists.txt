@@ -24,6 +24,7 @@ set(TEST_SOURCES
     attach_with_ebpf/test_attach_filter_with_ebpf.cpp
     attach_with_ebpf/test_attach_uprobe_with_ebpf.cpp
     attach_with_ebpf/test_helpers.cpp
+    attach_with_ebpf/test_shm_progs_attach.cpp
 
     # attach_with_ebpf/test_attach_replace_with_ebpf.cpp # Unfinished yet
     tailcall/test_user_to_kernel_tailcall.cpp
@@ -39,8 +40,7 @@ add_test(NAME bpftime_runtime_tests COMMAND bpftime_runtime_tests)
 # These are necessary ebpf program required by the test
 set(used_ebpf_programs
     uprobe
-
-    # replace # Not used now
+    replace
     filter
     helpers
 )
