@@ -168,6 +168,7 @@ static void handle_sub_process()
 	manager->clear_all(segment);
 	segment.destroy_ptr(manager);
 	spdlog::info("Subprocess exited");
+	_exit(0);
 }
 
 TEST_CASE("Test shm progs attach")

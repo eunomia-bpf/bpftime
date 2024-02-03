@@ -81,6 +81,7 @@ static void handle_sub_process()
 	spdlog::info("Print maps value finished");
 	segment.destroy_ptr(manager);
 	spdlog::info("Subprocess exited");
+	_exit(0);
 }
 
 TEST_CASE("Test shm hash maps with sub process")
