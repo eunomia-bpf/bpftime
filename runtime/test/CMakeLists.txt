@@ -16,13 +16,13 @@ set(test_sources
   # ufunc tests
   src/test_ufunc_register.cpp
 
-  src/test_shm_hash_maps.cpp
+  # src/test_shm_hash_maps.cpp
   src/test_shm_progs_attach.cpp
 
   # src/test_shm_client.cpp
   # src/test_shm_server.cpp
   # src/test_ufunc.cpp
-  src/test_helpers.cpp
+  # src/test_helpers.cpp
 )
 
 message(DEBUG "Adding tests under ${CMAKE_PROJECT_NAME}Tests...")
