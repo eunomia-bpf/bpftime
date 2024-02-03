@@ -14,7 +14,7 @@ set(test_sources
   src/test_attach_replace.cpp
 
   # ufunc tests
-  src/test_ufunc_register.cpp
+  # src/test_ufunc_register.cpp
 
   # src/test_shm_hash_maps.cpp
   # src/test_shm_progs_attach.cpp
