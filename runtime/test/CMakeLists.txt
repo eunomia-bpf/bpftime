@@ -11,7 +11,7 @@ project(
 set(test_sources
 
   # probe tests
-  src/test_attach_replace.cpp
+  # src/test_attach_replace.cpp
 
   # ufunc tests
   # src/test_ufunc_register.cpp

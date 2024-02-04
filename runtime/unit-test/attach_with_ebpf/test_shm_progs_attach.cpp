@@ -60,7 +60,7 @@ extern "C" uint64_t print_func(char *str)
 	return 0;
 }
 
-const char *obj_path = TOSTRING(EBPF_PROGRAM_PATH_REPLACE);
+static const char *obj_path = TOSTRING(EBPF_PROGRAM_PATH_REPLACE);
 
 static void register_ufunc_for_print_and_add(bpf_attach_ctx *probe_ctx)
 {

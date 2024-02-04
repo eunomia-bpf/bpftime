@@ -26,8 +26,8 @@ set(TEST_SOURCES
     attach_with_ebpf/test_helpers.cpp
     attach_with_ebpf/test_shm_progs_attach.cpp
     attach_with_ebpf/test_ufunc_register.cpp
+    attach_with_ebpf/test_attach_replace.cpp
 
-    # attach_with_ebpf/test_attach_replace_with_ebpf.cpp # Unfinished yet
     tailcall/test_user_to_kernel_tailcall.cpp
 )
 
