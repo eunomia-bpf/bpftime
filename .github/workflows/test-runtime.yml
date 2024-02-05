@@ -35,15 +35,15 @@ jobs:
       env:
         LLVM_ROOT: /usr/lib/llvm-15
       run: |
-        CC=gcc-12 CXX=g++-12 cmake -DBPFTIME_LLVM_JIT=YES -DBPFTIME_ENABLE_UNIT_TESTING=YES -DCMAKE_BUILD_TYPE=Release -B build
-        cmake --build build --config Release --target bpftime_runtime_tests -j$(nproc)
+        CC=gcc-12 CXX=g++-12 cmake -DBPFTIME_LLVM_JIT=YES -DBPFTIME_ENABLE_UNIT_TESTING=YES -DCMAKE_BUILD_TYPE=Debug -B build
+        cmake --build build --config Debug --target bpftime_runtime_tests -j$(nproc)
     - name: Build (Fedora)
       if: startsWith(matrix.runs-on-container,'fedora')
       env:
         LLVM_ROOT: /usr/lib64/llvm15
       run: |
-        cmake -DBPFTIME_LLVM_JIT=YES -DBPFTIME_ENABLE_UNIT_TESTING=YES -DCMAKE_BUILD_TYPE=Release -B build
-        cmake --build build --config Release --target bpftime_runtime_tests -j$(nproc)
+        cmake -DBPFTIME_LLVM_JIT=YES -DBPFTIME_ENABLE_UNIT_TESTING=YES -DCMAKE_BUILD_TYPE=Debug -B build
+        cmake --build build --config Debug --target bpftime_runtime_tests -j$(nproc)
     - name: test runtime
       run:  ./build/runtime/unit-test/bpftime_runtime_tests
 
@@ -53,8 +53,8 @@ jobs:
         LLVM_ROOT: /usr/lib/llvm-15
       run: |
         rm -rf build
-        cmake -Bbuild -DBPFTIME_LLVM_JIT=YES  -DBPFTIME_ENABLE_UNIT_TESTING=YES -DBPFTIME_ENABLE_MPK=YES -DCMAKE_BUILD_TYPE=Release
-        cmake --build build --config Release --target bpftime_runtime_tests -j$(nproc)
+        cmake -Bbuild -DBPFTIME_LLVM_JIT=YES  -DBPFTIME_ENABLE_UNIT_TESTING=YES -DBPFTIME_ENABLE_MPK=YES -DCMAKE_BUILD_TYPE=Debug
+        cmake --build build --config Debug --target bpftime_runtime_tests -j$(nproc)
 
     - name: build runtime with mpk enable (Fedora)
       if: startsWith(matrix.runs-on-container,'fedora')
@@ -62,8 +62,8 @@ jobs:
         LLVM_ROOT: /usr/lib64/llvm15
       run: |
         rm -rf build
-        cmake -Bbuild -DBPFTIME_LLVM_JIT=YES  -DBPFTIME_ENABLE_UNIT_TESTING=YES -DBPFTIME_ENABLE_MPK=YES -DCMAKE_BUILD_TYPE=Release
-        cmake --build build --config Release --target bpftime_runtime_tests -j$(nproc)
+        cmake -Bbuild -DBPFTIME_LLVM_JIT=YES  -DBPFTIME_ENABLE_UNIT_TESTING=YES -DBPFTIME_ENABLE_MPK=YES -DCMAKE_BUILD_TYPE=Debug
+        cmake --build build --config Debug --target bpftime_runtime_tests -j$(nproc)
   
     - name: test runtime with mpk
       run:  ./build/runtime/unit-test/bpftime_runtime_tests
