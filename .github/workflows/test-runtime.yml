@@ -45,7 +45,7 @@ jobs:
         cmake -DBPFTIME_LLVM_JIT=YES -DBPFTIME_ENABLE_UNIT_TESTING=YES -DCMAKE_BUILD_TYPE=Release -B build
         cmake --build build --config Release --target bpftime_runtime_tests -j$(nproc)
     - name: test runtime
-      run:  sudo ./build/runtime/unit-test/bpftime_runtime_tests
+      run:  ./build/runtime/unit-test/bpftime_runtime_tests
 
     - name: build runtime with mpk enable
       run: |
@@ -54,4 +54,4 @@ jobs:
         cmake --build build --config Release --target bpftime_runtime_tests -j$(nproc)
 
     - name: test runtime with mpk
-      run:  sudo ./build/runtime/unit-test/bpftime_runtime_tests
+      run:  ./build/runtime/unit-test/bpftime_runtime_tests
