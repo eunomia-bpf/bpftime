@@ -3,7 +3,7 @@ name: Build and test runtime
 on:
   workflow_dispatch: 
   push:
-    branches: "master"
+    branches: "*"
   pull_request: 
     branches: "master"
 
