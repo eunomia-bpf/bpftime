@@ -47,11 +47,23 @@ jobs:
     - name: test runtime
       run:  ./build/runtime/unit-test/bpftime_runtime_tests
 
-    - name: build runtime with mpk enable
+    - name: build runtime with mpk enable (Ubuntu)
+      if: startsWith(matrix.runs-on-container,'ubuntu')
+      env:
+        LLVM_ROOT: /usr/lib/llvm-15
       run: |
         rm -rf build
-        cmake -Bbuild -DBPFTIME_ENABLE_UNIT_TESTING=1 -DBPFTIME_ENABLE_MPK=1 -DCMAKE_BUILD_TYPE=Release
+        cmake -Bbuild -DBPFTIME_LLVM_JIT=YES  -DBPFTIME_ENABLE_UNIT_TESTING=YES -DBPFTIME_ENABLE_MPK=YES -DCMAKE_BUILD_TYPE=Release
         cmake --build build --config Release --target bpftime_runtime_tests -j$(nproc)
 
+    - name: build runtime with mpk enable (Fedora)
+      if: startsWith(matrix.runs-on-container,'fedora')
+      env:
+        LLVM_ROOT: /usr/lib64/llvm15
+      run: |
+        rm -rf build
+        cmake -Bbuild -DBPFTIME_LLVM_JIT=YES  -DBPFTIME_ENABLE_UNIT_TESTING=YES -DBPFTIME_ENABLE_MPK=YES -DCMAKE_BUILD_TYPE=Release
+        cmake --build build --config Release --target bpftime_runtime_tests -j$(nproc)
+  
     - name: test runtime with mpk
       run:  ./build/runtime/unit-test/bpftime_runtime_tests
