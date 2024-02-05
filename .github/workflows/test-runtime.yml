@@ -50,7 +50,7 @@ jobs:
     - name: build runtime with mpk enable
       run: |
         rm -rf build
-        cmake -Bbuild -DBPFTIME_ENABLE_UNIT_TESTING=1 -DPFTIME_ENABLE_MPK=1 -DCMAKE_BUILD_TYPE=Release
+        cmake -Bbuild -DBPFTIME_ENABLE_UNIT_TESTING=1 -DBPFTIME_ENABLE_MPK=1 -DCMAKE_BUILD_TYPE=Release
         cmake --build build --config Release --target bpftime_runtime_tests -j$(nproc)
 
     - name: test runtime with mpk
