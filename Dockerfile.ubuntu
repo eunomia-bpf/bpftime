@@ -1,0 +1,7 @@
+FROM ubuntu:22.04
+
+RUN apt-get update && apt-get install -y g++-aarch64-linux-gnu make libyaml-cpp-dev wget pkg-config zlib1g-dev gcc-arm-linux-gnueabi clang llvm-15-dev gcc-12 libelf-dev python3-pytest g++ systemtap-sdt-dev llvm git qemu-user cmake binutils-dev g++-12 gcc-aarch64-linux-gnu libboost1.74-all-dev python3 gcc
+
+ENV LLVM_ROOT=/usr/lib/llvm-15
+ENV CC=gcc-12
+ENV CXX=g++-12

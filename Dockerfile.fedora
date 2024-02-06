@@ -1,0 +1,5 @@
+FROM fedora:39
+
+RUN dnf install -y make gcc-c++-aarch64-linux-gnu gcc-arm-linux-gnu wget pkgconf clang boost-devel zlib-devel libubsan python3-pytest g++ python3-pip llvm elfutils-libelf-devel git qemu-user cmake gcc-c++ gcc-aarch64-linux-gnu python3 llvm15-devel systemtap-sdt-devel python3.8 gcc
+
+ENV LLVM_ROOT=/usr/lib64/llvm15

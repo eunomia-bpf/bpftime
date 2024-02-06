@@ -5,17 +5,19 @@ on:
     branches: [ master ]
   pull_request:
     branches: [ master ]
-
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}-${{ github.event_name }}
+  cancel-in-progress: true
 jobs:
   build:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        runs-on-container:
-          - ubuntu:22.04
-          - fedora:39
+        container:
+          - ubuntu-2204
+          - fedora-39
     container: 
-      image: ${{matrix.runs-on-container}}
+      image: "manjusakalza/bpftime-base-image:${{matrix.container}}"
       options: --privileged
     steps:
 
@@ -25,55 +27,20 @@ jobs:
       with:
         path: ${{ github.workspace }}/${{ env.INSTALL_LOCATION }}
         key: ${{ runner.os }}-dependencies
-    - uses: actions/setup-python@v4
-      if: startsWith(matrix.runs-on-container,'ubuntu')
-      with:
-        python-version: '3.8' 
-    - name: install deps (Ubuntu)
-      if: startsWith(matrix.runs-on-container,'ubuntu')
-      run: |
-        apt-get update
-        apt-get install -y gcc-aarch64-linux-gnu g++-aarch64-linux-gnu gcc-arm-linux-gnueabi qemu-user make cmake git pkg-config clang
-        python3.8 -m pip install pytest
-    - name: install deps (Fedora)
-      if: startsWith(matrix.runs-on-container,'fedora')
-      run: |
-        dnf install -y gcc-aarch64-linux-gnu gcc-c++-aarch64-linux-gnu gcc-arm-linux-gnu qemu-user python3.8 python3-pytest make cmake git pkgconf clang python3-pip
-  
     - uses: actions/checkout@v2
       with:
         submodules: 'recursive'
-    - name: build (Ubuntu)
-      if: startsWith(matrix.runs-on-container,'ubuntu')
-      env:
-        LLVM_ROOT: /usr/lib/llvm-15
+    - uses: actions/setup-python@v4
+      if: startsWith(matrix.container,'ubuntu')
+      with:
+        python-version: '3.8'
+    - name: build
       run: make build-vm
-    - name: build (Fedora)
-      if: startsWith(matrix.runs-on-container,'fedora')
-      env:
-        LLVM_ROOT: /usr/lib64/llvm15
-      run: make build-vm
-
-    - name: run tests x86 (Ubuntu)
+    - name: run tests x86
       shell: bash
-      if: startsWith(matrix.runs-on-container,'ubuntu')
-      env:
-        LLVM_ROOT: /usr/lib/llvm-15
       run: |
         python3.8 -m venv vm/test
         source vm/test/bin/activate
         pip install -r vm/test/requirements.txt
         # make build # or build-arm32 build-arm64
         make -C vm test-vm -j
-    - name: run tests x86 (Fedora)
-      shell: bash
-      if: startsWith(matrix.runs-on-container,'fedora')
-      env:
-        LLVM_ROOT: /usr/lib64/llvm15
-      run: |
-        python3.8 -m venv vm/test
-        source vm/test/bin/activate
-        pip install -r vm/test/requirements.txt
-        # make build # or build-arm32 build-arm64
-        make -C vm test-vm -j
-

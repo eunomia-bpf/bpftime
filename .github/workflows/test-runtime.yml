@@ -1,70 +1,42 @@
 name: Build and test runtime
 
 on:
-  workflow_dispatch: 
+  workflow_dispatch:
   push:
     branches: "*"
   pull_request: 
     branches: "master"
-
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}-${{ github.event_name }}
+  cancel-in-progress: true
 jobs:
   build:
-    runs-on: ubuntu-22.04
+    runs-on: "ubuntu-latest"
     strategy:
       matrix:
-        runs-on-container:
-          - ubuntu:22.04
-          - fedora:39
-    container: 
-      image: ${{matrix.runs-on-container}}
+        container:
+          - ubuntu-2204
+          - fedora-39
+    container:
+      image: "manjusakalza/bpftime-base-image:${{matrix.container}}"
       options: --privileged
     steps:
-    - name: Install dependencies (Ubuntu)
-      if: startsWith(matrix.runs-on-container,'ubuntu')
-      run: | 
-        apt-get update
-        apt-get install -y binutils-dev libboost1.74-all-dev libelf-dev zlib1g-dev libyaml-cpp-dev gcc-12 g++-12 llvm git make cmake pkg-config clang llvm-15-dev
-    - name: Install dependencies (Fedora)
-      if: startsWith(matrix.runs-on-container,'fedora')
-      run: | 
-        dnf install -y make gcc g++ cmake llvm15-devel boost-devel zlib-devel elfutils-libelf-devel pkgconf clang git llvm libubsan
     - uses: actions/checkout@v2
       with:
         submodules: 'recursive'
-    - name: Build (Ubuntu)
-      if: startsWith(matrix.runs-on-container,'ubuntu')
-      env:
-        LLVM_ROOT: /usr/lib/llvm-15
-      run: |
-        CC=gcc-12 CXX=g++-12 cmake -DBPFTIME_LLVM_JIT=YES -DBPFTIME_ENABLE_UNIT_TESTING=YES -DCMAKE_BUILD_TYPE=Debug -B build
-        cmake --build build --config Debug --target bpftime_runtime_tests -j$(nproc)
-    - name: Build (Fedora)
-      if: startsWith(matrix.runs-on-container,'fedora')
-      env:
-        LLVM_ROOT: /usr/lib64/llvm15
+    - name: Build
       run: |
         cmake -DBPFTIME_LLVM_JIT=YES -DBPFTIME_ENABLE_UNIT_TESTING=YES -DCMAKE_BUILD_TYPE=Debug -B build
         cmake --build build --config Debug --target bpftime_runtime_tests -j$(nproc)
-    - name: test runtime
+    - name: Test Runtime
       run:  ./build/runtime/unit-test/bpftime_runtime_tests
 
-    - name: build runtime with mpk enable (Ubuntu)
-      if: startsWith(matrix.runs-on-container,'ubuntu')
-      env:
-        LLVM_ROOT: /usr/lib/llvm-15
+    - name: build runtime with mpk enable
       run: |
         rm -rf build
         cmake -Bbuild -DBPFTIME_LLVM_JIT=YES  -DBPFTIME_ENABLE_UNIT_TESTING=YES -DBPFTIME_ENABLE_MPK=YES -DCMAKE_BUILD_TYPE=Debug
         cmake --build build --config Debug --target bpftime_runtime_tests -j$(nproc)
 
-    - name: build runtime with mpk enable (Fedora)
-      if: startsWith(matrix.runs-on-container,'fedora')
-      env:
-        LLVM_ROOT: /usr/lib64/llvm15
-      run: |
-        rm -rf build
-        cmake -Bbuild -DBPFTIME_LLVM_JIT=YES  -DBPFTIME_ENABLE_UNIT_TESTING=YES -DBPFTIME_ENABLE_MPK=YES -DCMAKE_BUILD_TYPE=Debug
-        cmake --build build --config Debug --target bpftime_runtime_tests -j$(nproc)
-  
+
     - name: test runtime with mpk
       run:  ./build/runtime/unit-test/bpftime_runtime_tests
