@@ -6,6 +6,7 @@ if(${ENABLE_EBPF_VERIFIER})
         GIT_TAG v3.4.0
     )
     FetchContent_MakeAvailable(Catch2)
+
     # if not enable verifier, we will use the catch2 from submodule
 endif()
 
@@ -14,15 +15,19 @@ find_package(Boost REQUIRED)
 set(TEST_SOURCES
     maps/test_per_cpu_array.cpp
     maps/test_per_cpu_hash.cpp
+    maps/test_shm_hash_maps.cpp
     test_bpftime_shm_json.cpp
     attach/test_uprobe_uretprobe.cpp
     attach/test_function_address_resolve.cpp
     attach/test_filter_attach_with_override.cpp
     attach/test_replace_attach_with_override.cpp
     attach_with_ebpf/test_attach_filter_with_ebpf.cpp
-
-    # attach_with_ebpf/test_attach_replace_with_ebpf.cpp # Unfinished yet
     attach_with_ebpf/test_attach_uprobe_with_ebpf.cpp
+    attach_with_ebpf/test_helpers.cpp
+    attach_with_ebpf/test_shm_progs_attach.cpp
+    attach_with_ebpf/test_ufunc_register.cpp
+    attach_with_ebpf/test_attach_replace.cpp
+
     tailcall/test_user_to_kernel_tailcall.cpp
 )
 
@@ -36,8 +41,11 @@ add_test(NAME bpftime_runtime_tests COMMAND bpftime_runtime_tests)
 # These are necessary ebpf program required by the test
 set(used_ebpf_programs
     uprobe
-    # replace # Not used now
-    filter)
+    replace
+    filter
+    helpers
+    ufunc
+)
 
 foreach(current ${used_ebpf_programs})
     set(curr_target_name bpftime_test_ebpf_prog_${current})

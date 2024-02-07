@@ -1,3 +1,8 @@
+/* SPDX-License-Identifier: MIT
+ *
+ * Copyright (c) 2022, eunomia-bpf org
+ * All rights reserved.
+ */
 #include "vmlinux.h"
 #include "bpf/bpf_tracing.h"
 #include "bpf/bpf_helpers.h"

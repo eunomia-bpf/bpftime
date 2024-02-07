@@ -9,7 +9,8 @@
 
 namespace bpftime
 {
-thread_local std::optional<override_return_set_callback> curr_thread_override_return_callback;
+thread_local std::optional<override_return_set_callback>
+	curr_thread_override_return_callback;
 
 extern "C" uint64_t bpftime_get_retval(void)
 {
@@ -43,6 +44,8 @@ extern "C" uint64_t bpftime_override_return(uint64_t ctx, uint64_t value)
 {
 	using namespace bpftime;
 	if (curr_thread_override_return_callback.has_value()) {
+		SPDLOG_DEBUG("Overriding return value for ctx {:x} with {}",
+			     ctx, value);
 		curr_thread_override_return_callback.value()(ctx, value);
 	} else {
 		SPDLOG_ERROR(
@@ -51,7 +54,6 @@ extern "C" uint64_t bpftime_override_return(uint64_t ctx, uint64_t value)
 	}
 	return 0;
 }
-
 
 extern "C" uint64_t bpftime_get_func_ret(uint64_t ctx, uint64_t *value)
 {

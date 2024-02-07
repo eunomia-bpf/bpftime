@@ -1,8 +1,9 @@
 name: Build and test runtime
 
 on:
+  workflow_dispatch: 
   push:
-    branches: "master"
+    branches: "*"
   pull_request: 
     branches: "master"
 
@@ -32,20 +33,38 @@ jobs:
         submodules: 'recursive'
     - name: Build (Ubuntu)
       if: startsWith(matrix.runs-on-container,'ubuntu')
+      env:
+        LLVM_ROOT: /usr/lib/llvm-15
       run: |
-        CC=gcc-12 CXX=g++-12 make build -j
+        CC=gcc-12 CXX=g++-12 cmake -DBPFTIME_LLVM_JIT=YES -DBPFTIME_ENABLE_UNIT_TESTING=YES -DCMAKE_BUILD_TYPE=Debug -B build
+        cmake --build build --config Debug --target bpftime_runtime_tests -j$(nproc)
     - name: Build (Fedora)
       if: startsWith(matrix.runs-on-container,'fedora')
+      env:
+        LLVM_ROOT: /usr/lib64/llvm15
       run: |
-        make build -j
+        cmake -DBPFTIME_LLVM_JIT=YES -DBPFTIME_ENABLE_UNIT_TESTING=YES -DCMAKE_BUILD_TYPE=Debug -B build
+        cmake --build build --config Debug --target bpftime_runtime_tests -j$(nproc)
     - name: test runtime
-      run:  make unit-test
+      run:  ./build/runtime/unit-test/bpftime_runtime_tests
 
-    - name: build runtime with mpk enable
+    - name: build runtime with mpk enable (Ubuntu)
+      if: startsWith(matrix.runs-on-container,'ubuntu')
+      env:
+        LLVM_ROOT: /usr/lib/llvm-15
       run: |
-        make clean
-        cmake -Bbuild -DBPFTIME_ENABLE_UNIT_TESTING=1 -DPFTIME_ENABLE_MPK=1
-        cmake --build build --config Debug
+        rm -rf build
+        cmake -Bbuild -DBPFTIME_LLVM_JIT=YES  -DBPFTIME_ENABLE_UNIT_TESTING=YES -DBPFTIME_ENABLE_MPK=YES -DCMAKE_BUILD_TYPE=Debug
+        cmake --build build --config Debug --target bpftime_runtime_tests -j$(nproc)
 
+    - name: build runtime with mpk enable (Fedora)
+      if: startsWith(matrix.runs-on-container,'fedora')
+      env:
+        LLVM_ROOT: /usr/lib64/llvm15
+      run: |
+        rm -rf build
+        cmake -Bbuild -DBPFTIME_LLVM_JIT=YES  -DBPFTIME_ENABLE_UNIT_TESTING=YES -DBPFTIME_ENABLE_MPK=YES -DCMAKE_BUILD_TYPE=Debug
+        cmake --build build --config Debug --target bpftime_runtime_tests -j$(nproc)
+  
     - name: test runtime with mpk
-      run:  make unit-test
+      run:  ./build/runtime/unit-test/bpftime_runtime_tests
