@@ -5,7 +5,9 @@ on:
     branches: "master"
   pull_request: 
     branches: "master"
-
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}-${{ github.event_name }}
+  cancel-in-progress: true
 jobs: 
   build-and-run-verifier-test-target:
     runs-on: ubuntu-22.04
