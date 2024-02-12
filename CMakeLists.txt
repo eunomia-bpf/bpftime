@@ -98,6 +98,8 @@ add_subdirectory(tools)
 # benchmark that requires bpftime libraries
 add_subdirectory(benchmark)
 
+add_subdirectory(attach)
+
 set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>DLL")
 
 install(TARGETS bpftime-agent bpftime-agent-transformer bpftime-syscall-server CONFIGURATIONS Release Debug RelWithDebInfo DESTINATION ~/.bpftime)
