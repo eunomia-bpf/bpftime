@@ -239,7 +239,7 @@ long syscall_context::handle_sysbpf(int cmd, union bpf_attr *attr, size_t size)
 		return 0;
 	}
 	case BPF_MAP_UPDATE_ELEM: {
-		SPDLOG_DEBUG("Updating map");
+		SPDLOG_DEBUG("Updating map {}", attr->map_fd);
 		if (run_with_kernel) {
 			return orig_syscall_fn(__NR_bpf, (long)cmd,
 					       (long)(uintptr_t)attr,

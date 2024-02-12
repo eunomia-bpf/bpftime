@@ -223,6 +223,7 @@ uint64_t bpf_ringbuf_submit(uint64_t data, uint64_t flags, uint64_t, uint64_t,
 	bpftime_ringbuf_submit(fd, (void *)(uintptr_t)data, false);
 	return 0;
 }
+
 uint64_t bpf_ringbuf_discard(uint64_t data, uint64_t flags, uint64_t, uint64_t,
 			     uint64_t)
 {
@@ -327,6 +328,7 @@ uint64_t bpftime_tail_call(uint64_t ctx, uint64_t prog_array, uint64_t index)
 	close(to_call_fd);
 	return run_opts.retval;
 }
+
 uint64_t bpftime_get_attach_cookie(uint64_t ctx, uint64_t, uint64_t, uint64_t,
 				   uint64_t)
 {
@@ -339,6 +341,42 @@ uint64_t bpftime_get_attach_cookie(uint64_t ctx, uint64_t, uint64_t, uint64_t,
 		return 0;
 	}
 }
+
+typedef uint32_t __wsum;
+
+// Simple checksum function for demonstration purposes.
+__wsum simple_checksum(const void *buff, size_t len) {
+    const uint16_t *data = (const uint16_t *)buff;
+    uint32_t sum = 0;
+    for (; len > 1; len -= 2) {
+        sum += *data++;
+        if (sum & 0x80000000)
+            sum = (sum & 0xFFFF) + (sum >> 16);
+    }
+    if (len == 1) {
+        uint16_t temp = 0;
+        memcpy(&temp, data, 1);
+        sum += temp;
+    }
+    while (sum >> 16) {
+        sum = (sum & 0xFFFF) + (sum >> 16);
+    }
+    return ~sum;
+}
+
+// User-space implementation of a function similar to bpf_csum_diff.
+uint64_t bpftime_csum_diff(uint64_t from, uint64_t from_size, uint64_t to, uint64_t to_size, uint64_t seed) {
+    // Calculate checksums for both blocks.
+    __wsum from_sum = from ? simple_checksum((const void *)from, from_size) : 0;
+    __wsum to_sum = to ? simple_checksum((const void *)to, to_size) : 0;
+
+    // Calculate the difference with the seed.
+    // Note: This is a simplified approach; actual implementation may need to handle overflow/carry.
+    __wsum diff = to_sum - from_sum + seed;
+
+    return diff;
+}
+
 } // extern "C"
 
 namespace bpftime
@@ -687,6 +725,12 @@ const bpftime_helper_group kernel_helper_group = {
 		    .index = BPF_FUNC_get_current_comm,
 		    .name = "bpf_get_current_comm",
 		    .fn = (void *)bpftime_get_current_comm,
+	    } },
+	{ BPF_FUNC_csum_diff,
+	    bpftime_helper_info{
+		    .index = BPF_FUNC_csum_diff,
+		    .name = "bpf_csum_diff",
+		    .fn = (void *)bpftime_csum_diff,
 	    } },
 	  { BPF_FUNC_override_return,
 	    bpftime_helper_info{

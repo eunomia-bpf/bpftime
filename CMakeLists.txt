@@ -76,6 +76,14 @@ else()
   add_subdirectory(third_party/Catch2)
 endif()
 
+if (NOT DEFINED SPDLOG_ACTIVE_LEVEL)
+  if(CMAKE_BUILD_TYPE STREQUAL "Debug")
+    add_definitions(-DSPDLOG_ACTIVE_LEVEL=SPDLOG_LEVEL_TRACE)
+  else()
+    add_definitions(-DSPDLOG_ACTIVE_LEVEL=SPDLOG_LEVEL_DEBUG)
+  endif()
+endif()
+
 # spdlog
 add_subdirectory(third_party/spdlog)
 
