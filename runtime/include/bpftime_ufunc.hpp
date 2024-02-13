@@ -72,8 +72,7 @@ void bpftime_ufunc_register_ufunc(uint64_t id, ebpf_ufunc_func_info func_info);
 
 // register a ufunc for a program base on info.
 // probe ctx will find the function address and fill in the func_info
-int bpftime_ufunc_resolve_from_info(base_attach_manager *probe_ctx,
-				    ebpf_ufunc_func_info func_info);
+int bpftime_ufunc_resolve_from_info(ebpf_ufunc_func_info func_info);
 
 } // namespace bpftime
 #endif

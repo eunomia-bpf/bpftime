@@ -5,14 +5,12 @@
  */
 #include <catch2/catch_test_macros.hpp>
 #include <cstdint>
-#include <attach/attach_manager/frida_attach_manager.hpp>
 #include "bpftime_shm.hpp"
 #include "bpftime_shm_internal.hpp"
 #include "user/bpftime_driver.hpp"
 #if !defined(__x86_64__) && defined(_M_X64)
 #error Only supports x86_64
 #endif
-using namespace bpftime;
 
 #define TEST_INSN_SIZE 12
 

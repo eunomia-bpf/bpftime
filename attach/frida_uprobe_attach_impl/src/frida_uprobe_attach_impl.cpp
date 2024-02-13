@@ -6,6 +6,7 @@
 #include "frida_uprobe_attach_impl.hpp"
 #include "frida-gum.h"
 #include "frida_attach_private_data.hpp"
+#include "frida_attach_utils.hpp"
 #include "spdlog/spdlog.h"
 #include <algorithm>
 #include <cerrno>
@@ -20,7 +21,7 @@ using namespace bpftime::attach;
 
 frida_attach_impl::~frida_attach_impl()
 {
-	gum_object_unref(interceptor);
+	gum_object_unref((GumInterceptor *)interceptor);
 }
 
 frida_attach_impl::frida_attach_impl()
@@ -39,8 +40,10 @@ int frida_attach_impl::attach_at(void *func_addr, callback_variant &&cb)
 			      .emplace(func_addr,
 				       std::make_unique<
 					       frida_internal_attach_entry>(
-					       func_addr, (int)cb.index(),
-					       interceptor))
+					       func_addr,
+					       from_cb_idx_to_attach_type(
+						       cb.index()),
+					       (GumInterceptor *)interceptor))
 			      .first;
 		SPDLOG_DEBUG("Created frida attach entry for func addr {:x}",
 			     (uintptr_t)func_addr);
@@ -70,7 +73,8 @@ int frida_attach_impl::create_uprobe_at(void *func_addr, uprobe_callback &&cb)
 {
 	return attach_at(
 		func_addr,
-		callback_variant(std::in_place_index_t<ATTACH_UPROBE>(), cb));
+		callback_variant(std::in_place_index_t<ATTACH_UPROBE_INDEX>(),
+				 cb));
 }
 
 int frida_attach_impl::create_uretprobe_at(void *func_addr,
@@ -78,8 +82,8 @@ int frida_attach_impl::create_uretprobe_at(void *func_addr,
 {
 	return attach_at(
 		func_addr,
-		callback_variant(std::in_place_index_t<ATTACH_URETPROBE>(),
-				 cb));
+		callback_variant(
+			std::in_place_index_t<ATTACH_URETPROBE_INDEX>(), cb));
 }
 
 int frida_attach_impl::create_uprobe_override_at(void *func_addr,
@@ -88,7 +92,8 @@ int frida_attach_impl::create_uprobe_override_at(void *func_addr,
 	return attach_at(
 		func_addr,
 		callback_variant(
-			std::in_place_index_t<ATTACH_UPROBE_OVERRIDE>(), cb));
+			std::in_place_index_t<ATTACH_UPROBE_OVERRIDE_INDEX>(),
+			cb));
 }
 
 int frida_attach_impl::detach_by_id(int id)
@@ -149,7 +154,8 @@ int frida_attach_impl::create_attach_with_ebpf_callback(
 
 		auto attach_callback = [=](const pt_regs &regs) {
 			uint64_t ret;
-			if (int err = cb(&regs, sizeof(regs), &ret); err < 0) {
+			if (int err = cb((void *)&regs, sizeof(regs), &ret);
+			    err < 0) {
 				SPDLOG_ERROR(
 					"Failed to run ebpf callback at frida attach manager for attach type {}, err={}",
 					attach_type, err);

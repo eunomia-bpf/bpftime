@@ -12,21 +12,24 @@
 #include <memory>
 #include <unordered_map>
 #include <base_attach_impl.hpp>
-#include <frida-gum.h>
 namespace bpftime
 {
 namespace attach
 {
 // An attach type that was invoked when the attached function return, receiving
 // the return value of that function
-constexpr int ATTACH_UPROBE = 0;
+constexpr int ATTACH_UPROBE = 6;
 // An attach type that was invoked when the attached function was invoked,
 // receiving the input args of that function
-constexpr int ATTACH_URETPROBE = 1;
+constexpr int ATTACH_URETPROBE = 7;
 // An attach type that was 	run before the original function was invoked.
 // Use bpf_override_return to set the return value of the function. If the
 // return value is set, the original function will not be invoked.
-constexpr int ATTACH_UPROBE_OVERRIDE = 2;
+constexpr int ATTACH_UPROBE_OVERRIDE = 1008;
+
+constexpr int ATTACH_UPROBE_INDEX = 0;
+constexpr int ATTACH_URETPROBE_INDEX = 1;
+constexpr int ATTACH_UPROBE_OVERRIDE_INDEX = 2;
 
 // Direct callback type for the uprobe attach entries. The argument `regs` will
 // be the register state when the function entries
@@ -70,7 +73,7 @@ class frida_attach_impl final : public base_attach_impl {
 	frida_attach_impl &operator=(const frida_attach_impl &) = delete;
 
     private:
-	GumInterceptor *interceptor;
+	void *interceptor;
 	std::unordered_map<int, std::unique_ptr<class frida_attach_entry> >
 		attaches;
 	std::unordered_map<void *,

@@ -106,7 +106,7 @@ frida_internal_attach_entry::get_filter_callback() const
 {
 	for (auto v : user_attaches) {
 		if (v->get_type() == ATTACH_UPROBE_OVERRIDE) {
-			return std::get<ATTACH_UPROBE_OVERRIDE>(v->cb);
+			return std::get<ATTACH_UPROBE_OVERRIDE_INDEX>(v->cb);
 		}
 	}
 	SPDLOG_ERROR(
@@ -120,7 +120,7 @@ void frida_internal_attach_entry::iterate_uprobe_callbacks(
 {
 	for (auto v : user_attaches) {
 		if (v->get_type() == ATTACH_UPROBE) {
-			std::get<ATTACH_UPROBE>(v->cb)(regs);
+			std::get<ATTACH_UPROBE_INDEX>(v->cb)(regs);
 		}
 	}
 }
@@ -130,7 +130,7 @@ void frida_internal_attach_entry::iterate_uretprobe_callbacks(
 {
 	for (auto v : user_attaches) {
 		if (v->get_type() == ATTACH_URETPROBE) {
-			std::get<(int)ATTACH_URETPROBE>(v->cb)(regs);
+			std::get<(int)ATTACH_URETPROBE_INDEX>(v->cb)(regs);
 		}
 	}
 }

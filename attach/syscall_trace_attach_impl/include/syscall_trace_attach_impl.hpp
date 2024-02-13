@@ -36,7 +36,7 @@ struct trace_event_raw_sys_exit {
 };
 
 // Attach type id of syscall trace
-constexpr size_t ATTACH_SYSCALL_TRACE = 1001;
+constexpr size_t ATTACH_SYSCALL_TRACE = 2;
 
 // An attach entry of syscall trace
 struct syscall_trace_attach_entry {

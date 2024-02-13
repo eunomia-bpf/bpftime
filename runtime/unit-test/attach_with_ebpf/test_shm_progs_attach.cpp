@@ -6,6 +6,8 @@
 #include "bpf_attach_ctx.hpp"
 #include "bpftime_ufunc.hpp"
 #include "bpftime_shm.hpp"
+#include "frida_attach_utils.hpp"
+#include "frida_uprobe_attach_impl.hpp"
 #include "handler/handler_manager.hpp"
 #include <cstdlib>
 #include "bpftime_object.hpp"
@@ -18,7 +20,6 @@
 #include <sys/wait.h>
 #include <unistd.h>
 #include <bpftime_prog.hpp>
-#include "attach/attach_manager/base_attach_manager.hpp"
 #include <catch2/catch_test_macros.hpp>
 #include <unit-test/common_def.hpp>
 using namespace boost::interprocess;
@@ -71,8 +72,7 @@ static void register_ufunc_for_print_and_add(bpf_attach_ctx *probe_ctx)
 				       2,
 				       0,
 				       false };
-	bpftime_ufunc_resolve_from_info(&probe_ctx->get_attach_manager(),
-					func2);
+	bpftime_ufunc_resolve_from_info(func2);
 
 	ebpf_ufunc_func_info func1 = { "print_func",
 				       UFUNC_FN(print_func),
@@ -81,8 +81,7 @@ static void register_ufunc_for_print_and_add(bpf_attach_ctx *probe_ctx)
 				       1,
 				       0,
 				       false };
-	bpftime_ufunc_resolve_from_info(&probe_ctx->get_attach_manager(),
-					func1);
+	bpftime_ufunc_resolve_from_info(func1);
 }
 
 static void attach_uprobe(bpftime::handler_manager &manager_ref,
@@ -90,11 +89,9 @@ static void attach_uprobe(bpftime::handler_manager &manager_ref,
 			  bpf_attach_ctx &ctx)
 {
 	std::uint64_t offset = 0;
-	void *module_base_self =
-		ctx.get_attach_manager().get_module_base_addr("");
-	void *my_uprobe_function_addr =
-		ctx.get_attach_manager().find_function_addr_by_name(
-			"_bpftime_test_shm_progs_attach_my_uprobe_function");
+	void *module_base_self = attach::get_module_base_addr("");
+	void *my_uprobe_function_addr = attach::find_function_addr_by_name(
+		"_bpftime_test_shm_progs_attach_my_uprobe_function");
 	offset = (uintptr_t)my_uprobe_function_addr -
 		 (uintptr_t)module_base_self;
 	spdlog::info("my_uprobe_function_addr: {:x}, offset: {}",
@@ -112,8 +109,7 @@ static void attach_replace(bpftime::handler_manager &manager_ref,
 			   managed_shared_memory &segment, bpftime_prog *prog,
 			   bpf_attach_ctx &ctx)
 {
-	void *module_base_self =
-		ctx.get_attach_manager().get_module_base_addr("");
+	void *module_base_self = attach::get_module_base_addr("");
 	void *my_function_addr =
 		(void *)_bpftime_test_shm_progs_attach_my_function;
 	std::uint64_t offset =
@@ -206,12 +202,13 @@ TEST_CASE("Test shm progs attach")
 	REQUIRE(res == 100);
 	_bpftime_test_shm_progs_attach_my_uprobe_function(2, "hello uprobe",
 							  'd');
-	auto &attach_man = ctx.get_attach_manager();
-	REQUIRE(attach_man.destroy_attach_by_func_addr((
+	auto &attach_man = dynamic_cast<attach::frida_attach_impl &>(
+		ctx.get_uprobe_attach_impl());
+	REQUIRE(attach_man.detach_by_func_addr((
 			const void
 				*)&_bpftime_test_shm_progs_attach_my_function) ==
 		0);
-	REQUIRE(attach_man.destroy_attach_by_func_addr((
+	REQUIRE(attach_man.detach_by_func_addr((
 			const void
 				*)&_bpftime_test_shm_progs_attach_my_uprobe_function) ==
 		0);

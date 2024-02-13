@@ -3,8 +3,7 @@
  * Copyright (c) 2022, eunomia-bpf org
  * All rights reserved.
  */
-#include "attach/attach_internal.hpp"
-#include "attach/attach_manager/base_attach_manager.hpp"
+#include "frida_uprobe_attach_impl.hpp"
 #include "spdlog/spdlog.h"
 #include <stdio.h>
 #include <cstdlib>
@@ -15,6 +14,7 @@
 #include <catch2/catch_test_macros.hpp>
 #include <bpftime_object.hpp>
 #include <bpftime_helper_group.hpp>
+#include <frida_uprobe.hpp>
 extern "C" uint64_t bpftime_set_retval(uint64_t value);
 
 using namespace bpftime;
@@ -54,8 +54,7 @@ static void register_ufunc_for_print_and_add(bpf_attach_ctx *probe_ctx)
 		0,
 		false
 	};
-	bpftime_ufunc_resolve_from_info(&probe_ctx->get_attach_manager(),
-					func2);
+	bpftime_ufunc_resolve_from_info(func2);
 
 	ebpf_ufunc_func_info func1 = {
 		"print_func",
@@ -66,8 +65,7 @@ static void register_ufunc_for_print_and_add(bpf_attach_ctx *probe_ctx)
 		0,
 		false
 	};
-	bpftime_ufunc_resolve_from_info(&probe_ctx->get_attach_manager(),
-					func1);
+	bpftime_ufunc_resolve_from_info(func1);
 }
 TEST_CASE("Test attach replace with ebpf")
 {
@@ -92,14 +90,18 @@ TEST_CASE("Test attach replace with ebpf")
 	res = prog->bpftime_prog_load(false);
 	REQUIRE(res == 0);
 	// attach
-	int fd = probe_ctx.get_attach_manager().attach_uprobe_override_at(
-		(void *)_bpftime_test_attach_replace__my_function,
-		[=](const pt_regs &regs) {
-			uint64_t ret;
-			prog->bpftime_prog_exec((void *)&regs, sizeof(regs),
-						&ret);
-			bpftime_set_retval(ret);
-		});
+	int fd =
+		dynamic_cast<attach::frida_attach_impl &>(
+			probe_ctx.get_uprobe_attach_impl())
+			.create_uprobe_override_at(
+				(void *)_bpftime_test_attach_replace__my_function,
+				[=](const pt_regs &regs) {
+					uint64_t ret;
+					prog->bpftime_prog_exec((void *)&regs,
+								sizeof(regs),
+								&ret);
+					bpftime_set_retval(ret);
+				});
 	REQUIRE(fd >= 0);
 
 	// test for attach
@@ -108,7 +110,7 @@ TEST_CASE("Test attach replace with ebpf")
 	REQUIRE(res == 100);
 
 	// detach
-	res = probe_ctx.get_attach_manager().destroy_attach(fd);
+	res = probe_ctx.get_uprobe_attach_impl().detach_by_id(fd);
 	REQUIRE(res == 0);
 
 	// test for no attach

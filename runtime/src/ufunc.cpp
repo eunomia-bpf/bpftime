@@ -3,11 +3,11 @@
  * Copyright (c) 2022, eunomia-bpf org
  * All rights reserved.
  */
+#include "frida_attach_utils.hpp"
 #include <cstdint>
 #include <cstring>
 #include "bpftime_internal.h"
 #include <spdlog/spdlog.h>
-#include "attach/attach_manager/base_attach_manager.hpp"
 
 namespace bpftime
 {
@@ -47,10 +47,9 @@ void bpftime_ufunc_register_ufunc(uint64_t id, ebpf_ufunc_func_info func_info)
 	global_ufunc_ctx.ufunc_funcs[id] = func_info;
 }
 
-int bpftime_ufunc_resolve_from_info(base_attach_manager *probe_ctx,
-				    ebpf_ufunc_func_info func_info)
+int bpftime_ufunc_resolve_from_info(ebpf_ufunc_func_info func_info)
 {
-	void *func_addr = probe_ctx->find_function_addr_by_name(func_info.name);
+	void *func_addr = attach::find_function_addr_by_name(func_info.name);
 	if (!func_addr) {
 		SPDLOG_ERROR("Failed to get function address for {}",
 			     func_info.name);

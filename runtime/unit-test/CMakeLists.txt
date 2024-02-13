@@ -17,10 +17,6 @@ set(TEST_SOURCES
     maps/test_per_cpu_hash.cpp
     maps/test_shm_hash_maps.cpp
     test_bpftime_shm_json.cpp
-    attach/test_uprobe_uretprobe.cpp
-    attach/test_function_address_resolve.cpp
-    attach/test_filter_attach_with_override.cpp
-    attach/test_replace_attach_with_override.cpp
     attach_with_ebpf/test_attach_filter_with_ebpf.cpp
     attach_with_ebpf/test_attach_uprobe_with_ebpf.cpp
     attach_with_ebpf/test_helpers.cpp
@@ -33,9 +29,9 @@ set(TEST_SOURCES
 
 add_executable(bpftime_runtime_tests ${TEST_SOURCES})
 set_property(TARGET bpftime_runtime_tests PROPERTY CXX_STANDARD 20)
-add_dependencies(bpftime_runtime_tests runtime bpftime-object)
-target_link_libraries(bpftime_runtime_tests PRIVATE runtime bpftime-object Catch2::Catch2WithMain)
-target_include_directories(bpftime_runtime_tests PRIVATE ${BPFTIME_RUNTIME_INCLUDE} ${BPFTIME_OBJECT_INCLUDE_DIRS} ${Catch2_INCLUDE} ${Boost_INCLUDE})
+add_dependencies(bpftime_runtime_tests runtime bpftime-object bpftime_frida_uprobe_attach_impl)
+target_link_libraries(bpftime_runtime_tests PRIVATE runtime bpftime-object Catch2::Catch2WithMain bpftime_frida_uprobe_attach_impl)
+target_include_directories(bpftime_runtime_tests PRIVATE ${BPFTIME_RUNTIME_INCLUDE} ${BPFTIME_OBJECT_INCLUDE_DIRS} ${Catch2_INCLUDE} ${Boost_INCLUDE} ${FRIDA_UPROBE_ATTACH_IMPL_INCLUDE})
 add_test(NAME bpftime_runtime_tests COMMAND bpftime_runtime_tests)
 
 # These are necessary ebpf program required by the test

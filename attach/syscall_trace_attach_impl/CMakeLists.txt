@@ -16,9 +16,9 @@ add_library(
 )
 
 add_dependencies(bpftime_syscall_trace_attach_impl bpftime_base_attach_impl spdlog::spdlog bpftime_syscall_trace_syscall_id_table)
-set(FRIDA_SYSCALL_TRACE_ATTACH_IMPL_INCLUDE ${CMAKE_CURRENT_SOURCE_DIR}/include CACHE STRING "Include path of syscall trace impl")
+set(SYSCALL_TRACE_ATTACH_IMPL_INCLUDE ${CMAKE_CURRENT_SOURCE_DIR}/include CACHE STRING "Include path of syscall trace impl")
 
-target_include_directories(bpftime_syscall_trace_attach_impl PRIVATE ${SPDLOG_INCLUDE} ${CMAKE_CURRENT_BINARY_DIR} PUBLIC ${BASE_ATTACH_IMPL_INCLUDE} ${FRIDA_SYSCALL_TRACE_ATTACH_IMPL_INCLUDE})
+target_include_directories(bpftime_syscall_trace_attach_impl PRIVATE ${SPDLOG_INCLUDE} ${CMAKE_CURRENT_BINARY_DIR} PUBLIC ${BASE_ATTACH_IMPL_INCLUDE} ${SYSCALL_TRACE_ATTACH_IMPL_INCLUDE})
 
 target_link_libraries(bpftime_syscall_trace_attach_impl PUBLIC bpftime_base_attach_impl spdlog::spdlog)
 
@@ -44,7 +44,7 @@ endif()
 
 add_dependencies(bpftime_syscall_trace_attach_tests Catch2 bpftime_syscall_trace_attach_impl spdlog::spdlog)
 target_link_libraries(bpftime_syscall_trace_attach_tests PRIVATE Catch2::Catch2WithMain bpftime_syscall_trace_attach_impl spdlog::spdlog)
-target_include_directories(bpftime_syscall_trace_attach_tests PRIVATE ${FRIDA_SYSCALL_TRACE_ATTACH_IMPL_INCLUDE} ${Catch2_INCLUDE} ${SPDLOG_INCLUDE})
+target_include_directories(bpftime_syscall_trace_attach_tests PRIVATE ${SYSCALL_TRACE_ATTACH_IMPL_INCLUDE} ${Catch2_INCLUDE} ${SPDLOG_INCLUDE})
 
 add_test(NAME bpftime_syscall_trace_attach_tests COMMAND bpftime_syscall_trace_attach_tests)
 

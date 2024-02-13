@@ -1,6 +1,7 @@
 #include "bpf_attach_ctx.hpp"
 #include "bpftime_shm_internal.hpp"
 #include "spdlog/common.h"
+#include "syscall_trace_attach_impl.hpp"
 #include <cassert>
 #include <ctime>
 #include <fcntl.h>
@@ -74,10 +75,16 @@ extern "C" int __libc_start_main(int (*main)(int, char **, char **), int argc,
 
 extern "C" void bpftime_agent_main(const gchar *data, gboolean *stay_resident)
 {
+	spdlog::cfg::load_env_levels();
 	bpftime_initialize_global_shm(shm_open_type::SHM_OPEN_ONLY);
 	ctx_holder.init();
-	ctx_holder.ctx.set_orig_syscall_func(orig_hooker);
-	spdlog::cfg::load_env_levels();
+	auto &impl = dynamic_cast<attach::syscall_trace_attach_impl &>(
+		ctx_holder.ctx.get_syscall_attach_impl());
+
+	impl.set_original_syscall_function(orig_hooker);
+	impl.set_to_global();
+	// ctx_holder.ctx.set_orig_syscall_func(orig_hooker);
+
 	SPDLOG_INFO("Initializing agent..");
 	spdlog::set_pattern("[%Y-%m-%d %H:%M:%S][%^%l%$][%t] %v");
 	/* We don't want to our library to be unloaded after we return. */
@@ -97,18 +104,16 @@ extern "C" void bpftime_agent_main(const gchar *data, gboolean *stay_resident)
 	return;
 }
 
-int64_t syscall_callback(int64_t sys_nr, int64_t arg1, int64_t arg2,
-			 int64_t arg3, int64_t arg4, int64_t arg5, int64_t arg6)
+extern "C" int64_t syscall_callback(int64_t sys_nr, int64_t arg1, int64_t arg2,
+				    int64_t arg3, int64_t arg4, int64_t arg5,
+				    int64_t arg6)
 {
-	// SPDLOG_INFO(
-	// "Calling syscall callback: sys_nr {}, args {} {} {} {} {} {}",
-	// sys_nr, arg1, arg2, arg3, arg4, arg5, arg6);
-	return ctx_holder.ctx.run_syscall_hooker(sys_nr, arg1, arg2, arg3, arg4,
-						 arg5, arg6);
+	return bpftime::attach::global_syscall_trace_attach_impl.value()
+		->dispatch_syscall(sys_nr, arg1, arg2, arg3, arg4, arg5, arg6);
 }
 
 extern "C" void
-__c_abi_setup_syscall_trace_callback(syscall_hooker_func_t *hooker)
+_bpftime__setup_syscall_trace_callback(syscall_hooker_func_t *hooker)
 {
 	orig_hooker = *hooker;
 	*hooker = &syscall_callback;

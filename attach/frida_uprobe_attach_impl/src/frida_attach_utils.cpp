@@ -1,4 +1,5 @@
 #include "frida_attach_utils.hpp"
+#include "frida_uprobe_attach_impl.hpp"
 #include <filesystem>
 #include <spdlog/spdlog.h>
 #include <frida-gum.h>
@@ -61,6 +62,54 @@ void *find_module_export_by_name(const char *module_name,
 	return (void *)(uintptr_t)gum_module_find_export_by_name(module_name,
 								 symbol_name);
 }
-
+int from_cb_idx_to_attach_type(int idx)
+{
+	switch (idx) {
+	case ATTACH_UPROBE_INDEX:
+		return ATTACH_UPROBE;
+	case ATTACH_UPROBE_OVERRIDE_INDEX:
+		return ATTACH_UPROBE_OVERRIDE;
+	case ATTACH_URETPROBE_INDEX:
+		return ATTACH_URETPROBE;
+	default:
+		assert(false && "Unreachable!");
+	}
+}
 } // namespace attach
 } // namespace bpftime
+
+extern "C" uint64_t bpftime_get_func_ret(uint64_t ctx, uint64_t *value)
+{
+	GumInvocationContext *gum_ctx =
+		gum_interceptor_get_current_invocation();
+	if (gum_ctx == NULL) {
+		return -EOPNOTSUPP;
+	}
+	// ignore ctx;
+	*value = (uint64_t)gum_invocation_context_get_return_value(gum_ctx);
+	return 0;
+}
+
+extern "C" uint64_t bpftime_get_func_arg(uint64_t ctx, uint32_t n,
+					 uint64_t *value)
+{
+	GumInvocationContext *gum_ctx =
+		gum_interceptor_get_current_invocation();
+	if (gum_ctx == NULL) {
+		return -EINVAL;
+	}
+	// ignore ctx;
+	*value = (uint64_t)gum_cpu_context_get_nth_argument(
+		gum_ctx->cpu_context, n);
+	return 0;
+}
+
+extern "C" uint64_t bpftime_get_retval(void)
+{
+	GumInvocationContext *gum_ctx =
+		gum_interceptor_get_current_invocation();
+	if (gum_ctx == NULL) {
+		return -EOPNOTSUPP;
+	}
+	return (uintptr_t)gum_invocation_context_get_return_value(gum_ctx);
+}
