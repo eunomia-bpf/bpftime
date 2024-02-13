@@ -66,6 +66,8 @@ class frida_attach_impl final : public base_attach_impl {
 	int create_attach_with_ebpf_callback(
 		ebpf_run_callback &&cb, const attach_private_data &private_data,
 		int attach_type);
+	frida_attach_impl(const frida_attach_impl &) = delete;
+	frida_attach_impl &operator=(const frida_attach_impl &) = delete;
 
     private:
 	GumInterceptor *interceptor;
