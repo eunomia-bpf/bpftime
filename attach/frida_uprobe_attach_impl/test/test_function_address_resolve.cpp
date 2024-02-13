@@ -12,7 +12,7 @@ extern "C" int __func_reolve_test(int a, int b)
 
 TEST_CASE("Test internal function resolve")
 {
-	frida_attach_manager man;
+	frida_attach_impl man;
 	void *addr = find_function_addr_by_name("__func_reolve_test");
 	REQUIRE(addr != nullptr);
 	REQUIRE(addr == (void *)&__func_reolve_test);
@@ -20,7 +20,7 @@ TEST_CASE("Test internal function resolve")
 
 TEST_CASE("Test external function resolve")
 {
-	frida_attach_manager man;
+	frida_attach_impl man;
 	void *addr = find_function_addr_by_name("malloc");
 	REQUIRE(addr != nullptr);
 	INFO("malloc addr resolved: " << (uintptr_t)addr);

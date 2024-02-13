@@ -17,7 +17,7 @@ class frida_internal_attach_entry {
 	std::vector<frida_attach_entry *> user_attaches;
 	GumInvocationListener *frida_gum_invocation_listener = nullptr;
 
-	friend class frida_attach_manager;
+	friend class frida_attach_impl;
 
     public:
 	bool is_overrided = false;

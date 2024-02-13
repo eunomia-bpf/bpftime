@@ -24,7 +24,7 @@ call_filter_func(uint64_t a, uint64_t b)
 
 TEST_CASE("Test attaching filter programs and revert")
 {
-	frida_attach_manager man;
+	frida_attach_impl man;
 	auto func_addr =
 		find_function_addr_by_name("__bpftime_func_to_filter");
 

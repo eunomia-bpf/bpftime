@@ -30,10 +30,10 @@ using callback_variant = std::variant<uprobe_callback, uretprobe_callback,
 using attach_iterate_callback =
 	std::function<void(int id, const void *addr, int ty)>;
 
-class frida_attach_manager final : public base_attach_impl {
+class frida_attach_impl final : public base_attach_impl {
     public:
-	frida_attach_manager();
-	~frida_attach_manager();
+	frida_attach_impl();
+	~frida_attach_impl();
 
 	int attach_uprobe_at(void *func_addr, uprobe_callback &&cb);
 	int attach_uretprobe_at(void *func_addr, uretprobe_callback &&cb);

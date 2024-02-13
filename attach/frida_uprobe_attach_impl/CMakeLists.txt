@@ -21,6 +21,7 @@ set(TEST_SOURCES
     test/test_function_address_resolve.cpp
     test/test_filter_attach_with_override.cpp
     test/test_replace_attach_with_override.cpp
+    test/test_attach_with_unified_interface.cpp
 )
 add_executable(bpftime_frida_uprobe_attach_tests ${TEST_SOURCES})
 

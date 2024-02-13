@@ -29,7 +29,7 @@ TEST_CASE("Test attaching uprobing programs and reverting")
 	uint64_t a, b;
 	uint64_t a2, b2;
 	uint64_t ret;
-	frida_attach_manager man;
+	frida_attach_impl man;
 	auto func_addr = find_function_addr_by_name("__test_simple_add");
 
 	REQUIRE(func_addr != 0);
@@ -88,7 +88,7 @@ TEST_CASE("Test uretprobe and reverting")
 	int invoke_times = 0;
 	uint64_t dummy;
 	uint64_t ret1, ret2;
-	frida_attach_manager man;
+	frida_attach_impl man;
 	auto func_addr = find_function_addr_by_name("__test_simple_add");
 
 	REQUIRE(func_addr != 0);
@@ -141,7 +141,7 @@ TEST_CASE("Test the mix usage of uprobe and uretprobe")
 	int uprobe_invoke_times = 0;
 	int uretprobe_invoke_times = 0;
 	uint64_t a = 0, b = 0, ret = 0;
-	frida_attach_manager man;
+	frida_attach_impl man;
 	auto func_addr = find_function_addr_by_name("__test_simple_add");
 
 	REQUIRE(func_addr != 0);

@@ -14,7 +14,7 @@ class frida_attach_entry {
 	void *function;
 
 	class frida_internal_attach_entry *internal_attach;
-	friend class frida_attach_manager;
+	friend class frida_attach_impl;
 	friend class frida_internal_attach_entry;
 
     public:

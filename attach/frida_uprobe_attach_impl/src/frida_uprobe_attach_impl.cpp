@@ -18,19 +18,19 @@
 
 using namespace bpftime::attach;
 
-frida_attach_manager::~frida_attach_manager()
+frida_attach_impl::~frida_attach_impl()
 {
 	gum_object_unref(interceptor);
 }
 
-frida_attach_manager::frida_attach_manager()
+frida_attach_impl::frida_attach_impl()
 {
 	SPDLOG_DEBUG("Initializing frida attach manager");
 	gum_init_embedded();
 	interceptor = gum_interceptor_obtain();
 }
 
-int frida_attach_manager::attach_at(void *func_addr, callback_variant &&cb)
+int frida_attach_impl::attach_at(void *func_addr, callback_variant &&cb)
 {
 	auto itr = internal_attaches.find(func_addr);
 	if (itr == internal_attaches.end()) {
@@ -66,7 +66,7 @@ int frida_attach_manager::attach_at(void *func_addr, callback_variant &&cb)
 	return result;
 }
 
-int frida_attach_manager::attach_uprobe_at(void *func_addr,
+int frida_attach_impl::attach_uprobe_at(void *func_addr,
 					   uprobe_callback &&cb)
 {
 	return attach_at(
@@ -74,7 +74,7 @@ int frida_attach_manager::attach_uprobe_at(void *func_addr,
 		callback_variant(std::in_place_index_t<ATTACH_UPROBE>(), cb));
 }
 
-int frida_attach_manager::attach_uretprobe_at(void *func_addr,
+int frida_attach_impl::attach_uretprobe_at(void *func_addr,
 					      uretprobe_callback &&cb)
 {
 	return attach_at(
@@ -83,7 +83,7 @@ int frida_attach_manager::attach_uretprobe_at(void *func_addr,
 				 cb));
 }
 
-int frida_attach_manager::attach_uprobe_override_at(
+int frida_attach_impl::attach_uprobe_override_at(
 	void *func_addr, uprobe_override_callback &&cb)
 {
 	return attach_at(
@@ -92,7 +92,7 @@ int frida_attach_manager::attach_uprobe_override_at(
 			std::in_place_index_t<ATTACH_UPROBE_OVERRIDE>(), cb));
 }
 
-int frida_attach_manager::detach_by_id(int id)
+int frida_attach_impl::detach_by_id(int id)
 {
 	void *drop_func_addr = nullptr;
 	if (auto itr = attaches.find(id); itr != attaches.end()) {
@@ -118,14 +118,14 @@ int frida_attach_manager::detach_by_id(int id)
 		internal_attaches.erase(drop_func_addr);
 	return 0;
 }
-void frida_attach_manager::iterate_attaches(attach_iterate_callback cb)
+void frida_attach_impl::iterate_attaches(attach_iterate_callback cb)
 {
 	for (const auto &[k, v] : attaches) {
 		cb(k, v->function, v->get_type());
 	}
 }
 
-int frida_attach_manager::destroy_attach_by_func_addr(const void *func)
+int frida_attach_impl::destroy_attach_by_func_addr(const void *func)
 {
 	if (auto itr = internal_attaches.find((void *)func);
 	    itr != internal_attaches.end()) {
@@ -140,7 +140,7 @@ int frida_attach_manager::destroy_attach_by_func_addr(const void *func)
 	}
 }
 
-int frida_attach_manager::handle_attach_with_ebpf_call_back(
+int frida_attach_impl::handle_attach_with_ebpf_call_back(
 	ebpf_run_callback &&cb, const attach_private_data &private_data,
 	int attach_type)
 {

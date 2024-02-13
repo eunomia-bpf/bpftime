@@ -22,7 +22,7 @@ call_replace_func(uint64_t a, uint64_t b)
 extern "C" uint64_t bpftime_set_retval(uint64_t value);
 TEST_CASE("Test attaching replace programs and revert")
 {
-	frida_attach_manager man;
+	frida_attach_impl man;
 	auto func_addr =
 		find_function_addr_by_name("__bpftime_func_to_replace");
 
