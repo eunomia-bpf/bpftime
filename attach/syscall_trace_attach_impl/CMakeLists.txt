@@ -26,6 +26,7 @@ set_property(TARGET bpftime_syscall_trace_attach_impl PROPERTY CXX_STANDARD 20)
 
 set(TEST_SOURCES
     test/test_private_data_parsing.cpp
+    test/test_syscall_dispatch.cpp
 )
 add_executable(bpftime_syscall_trace_attach_tests ${TEST_SOURCES})
 

@@ -54,6 +54,7 @@ class syscall_trace_attach_impl final : public base_attach_impl {
 	int64_t dispatch_syscall(int64_t sys_nr, int64_t arg1, int64_t arg2,
 				 int64_t arg3, int64_t arg4, int64_t arg5,
 				 int64_t arg6);
+	// Set the function of calling original syscall
 	void set_original_syscall_function(syscall_hooker_func_t func)
 	{
 		orig_syscall = func;
@@ -65,6 +66,9 @@ class syscall_trace_attach_impl final : public base_attach_impl {
 	syscall_trace_attach_impl(const syscall_trace_attach_impl &) = delete;
 	syscall_trace_attach_impl &
 	operator=(const syscall_trace_attach_impl &) = delete;
+	syscall_trace_attach_impl()
+	{
+	}
 
     private:
 	// The original syscall function

@@ -3,7 +3,6 @@
 #include <catch2/catch_test_macros.hpp>
 #include <syscall_trace_attach_impl.hpp>
 #include <string>
-#include <tuple>
 using namespace bpftime::attach;
 
 TEST_CASE("Test resolving private data")

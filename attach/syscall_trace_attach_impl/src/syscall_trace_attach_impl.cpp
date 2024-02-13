@@ -125,7 +125,7 @@ int syscall_trace_attach_impl::create_attach_with_ebpf_callback(
 		auto &priv_data =
 			dynamic_cast<const syscall_trace_attach_private_data &>(
 				private_data);
-		if (priv_data.sys_nr >= std::size(sys_enter_callbacks) ||
+		if (priv_data.sys_nr >= (int)std::size(sys_enter_callbacks) ||
 		    priv_data.sys_nr < -1) {
 			SPDLOG_ERROR("Invalid sys nr {}", priv_data.sys_nr);
 			return -EINVAL;
