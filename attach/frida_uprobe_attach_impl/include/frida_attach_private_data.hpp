@@ -1,6 +1,7 @@
 #ifndef _BPFTIME_FRIDA_ATTACH_PRIVATE_DATA_HPP
 #define _BPFTIME_FRIDA_ATTACH_PRIVATE_DATA_HPP
 #include "attach_private_data.hpp"
+#include <cstdint>
 namespace bpftime
 {
 namespace attach
