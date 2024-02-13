@@ -20,8 +20,11 @@ class frida_internal_attach_entry {
 	friend class frida_attach_impl;
 
     public:
+	// Whether the function `bpftime_set_retval` is invoked. If this is set
+	// to true, the return value should be overrided by `user_ret`
 	bool is_overrided = false;
 	uint64_t user_ret = 0;
+	// Extra context when overriding the return value
 	uint64_t user_ret_ctx = 0;
 	override_return_set_callback override_return_callback;
 

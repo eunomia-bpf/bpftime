@@ -17,39 +17,57 @@ namespace bpftime
 {
 namespace attach
 {
-
+// An attach type that was invoked when the attached function return, receiving
+// the return value of that function
 constexpr int ATTACH_UPROBE = 0;
+// An attach type that was invoked when the attached function was invoked,
+// receiving the input args of that function
 constexpr int ATTACH_URETPROBE = 1;
+// An attach type that was 	run before the original function was invoked.
+// Use bpf_override_return to set the return value of the function. If the
+// return value is set, the original function will not be invoked.
 constexpr int ATTACH_UPROBE_OVERRIDE = 2;
 
+// Direct callback type for the uprobe attach entries. The argument `regs` will
+// be the register state when the function entries
 using uprobe_callback = std::function<void(const pt_regs &regs)>;
+// Direct callback type for the uretprobe attach entries. The argument `regs`
+// will be the register state when the function exits
 using uretprobe_callback = std::function<void(const pt_regs &regs)>;
+// Direct callback type for the uprobe override attach entries. The argument
+// `regs` will be the register state when the function entries. When this was
 using uprobe_override_callback = std::function<void(const pt_regs &regs)>;
 using callback_variant = std::variant<uprobe_callback, uretprobe_callback,
 				      uprobe_override_callback>;
+// Callback type used for iterating over all attaches
 using attach_iterate_callback =
 	std::function<void(int id, const void *addr, int ty)>;
 
+// The frida uprobe attach implementation
 class frida_attach_impl final : public base_attach_impl {
     public:
 	frida_attach_impl();
 	~frida_attach_impl();
-
+	// Create a uprobe attach entry at the specified address
 	int attach_uprobe_at(void *func_addr, uprobe_callback &&cb);
+	// Create a uretprobe attach entry at the specified address
 	int attach_uretprobe_at(void *func_addr, uretprobe_callback &&cb);
+	// Create a uprobe override attach entry at the specified address
 	int attach_uprobe_override_at(void *func_addr,
 				      uprobe_override_callback &&cb);
+	// Iterate over all attaches managed by this attach impl instance
 	void iterate_attaches(attach_iterate_callback cb);
+	// Detach all attach entry at a specified function address
 	int destroy_attach_by_func_addr(const void *func);
 
 	// Virtual functions
 	int detach_by_id(int id);
+	// Create an attach entry with ebpf callback
 	int handle_attach_with_ebpf_call_back(
 		ebpf_run_callback &&cb, const attach_private_data &private_data,
 		int attach_type);
 
     private:
-	// Use void pointer to avoid leaking frida-gum.h to other parts
 	GumInterceptor *interceptor;
 	std::unordered_map<int, std::unique_ptr<class frida_attach_entry> >
 		attaches;

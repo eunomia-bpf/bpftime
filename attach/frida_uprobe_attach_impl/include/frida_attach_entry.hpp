@@ -18,9 +18,12 @@ class frida_attach_entry {
 	friend class frida_internal_attach_entry;
 
     public:
+	// Get the specific attach type of this attach entry
+	// Could be ATTACH_UPROBE, ATTACH_URETPROBE, ATTACH_UPROBE_OVERRIDE
 	int get_type() const;
 	frida_attach_entry(const frida_attach_entry &) = delete;
 	frida_attach_entry &operator=(const frida_attach_entry &) = delete;
+	// Create this attach entry with its id, callback function, and function address to hook
 	frida_attach_entry(int id, callback_variant &&cb, void *function)
 		: self_id(id), cb(cb), function(function)
 	{
