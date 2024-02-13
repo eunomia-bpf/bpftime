@@ -33,7 +33,7 @@ TEST_CASE("Test attaching filter programs and revert")
 	const uint64_t b = 0x1234;
 	const uint64_t expected_result = (a << 32) | b;
 	REQUIRE(__bpftime_func_to_filter(a, b) == expected_result);
-	int id = man.attach_uprobe_override_at(
+	int id = man.create_uprobe_override_at(
 		func_addr, [&](const pt_regs &regs) {
 			uint64_t first_arg = PT_REGS_PARM1(&regs);
 			uint64_t second_arg = PT_REGS_PARM2(&regs);
@@ -52,7 +52,7 @@ TEST_CASE("Test attaching filter programs and revert")
 	}
 	SECTION("Revert by function address")
 	{
-		REQUIRE(man.destroy_attach_by_func_addr(func_addr) >= 0);
+		REQUIRE(man.detach_by_func_addr(func_addr) >= 0);
 	}
 
 	REQUIRE(__bpftime_func_to_filter(1, 2) == (((uint64_t)1 << 32) | 2));

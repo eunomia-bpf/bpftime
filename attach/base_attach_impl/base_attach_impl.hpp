@@ -25,7 +25,7 @@ class base_attach_impl {
 	virtual int detach_by_id(int id) = 0;
 	// Create an attach entry with an ebpf callback. To avoid messing up the code base, we don't use bpftime_prog here, instead, we require a callback accept the same argument as bpftime_prog::run
 	// The callback would be called if the attach entry is triggered. The specific attach impl will be responsible for preparing arguments to the ebpf program.
-	virtual int handle_attach_with_ebpf_call_back(
+	virtual int create_attach_with_ebpf_callback(
 		ebpf_run_callback &&cb, const attach_private_data &private_data,
 		int attach_type) = 0;
 	// Allocate a new attach entry id

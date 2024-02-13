@@ -66,16 +66,15 @@ int frida_attach_impl::attach_at(void *func_addr, callback_variant &&cb)
 	return result;
 }
 
-int frida_attach_impl::attach_uprobe_at(void *func_addr,
-					   uprobe_callback &&cb)
+int frida_attach_impl::create_uprobe_at(void *func_addr, uprobe_callback &&cb)
 {
 	return attach_at(
 		func_addr,
 		callback_variant(std::in_place_index_t<ATTACH_UPROBE>(), cb));
 }
 
-int frida_attach_impl::attach_uretprobe_at(void *func_addr,
-					      uretprobe_callback &&cb)
+int frida_attach_impl::create_uretprobe_at(void *func_addr,
+					   uretprobe_callback &&cb)
 {
 	return attach_at(
 		func_addr,
@@ -83,8 +82,8 @@ int frida_attach_impl::attach_uretprobe_at(void *func_addr,
 				 cb));
 }
 
-int frida_attach_impl::attach_uprobe_override_at(
-	void *func_addr, uprobe_override_callback &&cb)
+int frida_attach_impl::create_uprobe_override_at(void *func_addr,
+						 uprobe_override_callback &&cb)
 {
 	return attach_at(
 		func_addr,
@@ -125,7 +124,7 @@ void frida_attach_impl::iterate_attaches(attach_iterate_callback cb)
 	}
 }
 
-int frida_attach_impl::destroy_attach_by_func_addr(const void *func)
+int frida_attach_impl::detach_by_func_addr(const void *func)
 {
 	if (auto itr = internal_attaches.find((void *)func);
 	    itr != internal_attaches.end()) {
@@ -140,7 +139,7 @@ int frida_attach_impl::destroy_attach_by_func_addr(const void *func)
 	}
 }
 
-int frida_attach_impl::handle_attach_with_ebpf_call_back(
+int frida_attach_impl::create_attach_with_ebpf_callback(
 	ebpf_run_callback &&cb, const attach_private_data &private_data,
 	int attach_type)
 {
@@ -157,13 +156,13 @@ int frida_attach_impl::handle_attach_with_ebpf_call_back(
 			}
 		};
 		if (attach_type == ATTACH_UPROBE) {
-			return attach_uprobe_at((void *)(uintptr_t)sub.addr,
+			return create_uprobe_at((void *)(uintptr_t)sub.addr,
 						std::move(attach_callback));
 		} else if (attach_type == ATTACH_URETPROBE) {
-			return attach_uretprobe_at((void *)(uintptr_t)sub.addr,
+			return create_uretprobe_at((void *)(uintptr_t)sub.addr,
 						   std::move(attach_callback));
 		} else if (attach_type == ATTACH_UPROBE_OVERRIDE) {
-			return attach_uprobe_override_at(
+			return create_uprobe_override_at(
 				(void *)(uintptr_t)sub.addr,
 				std::move(attach_callback));
 		} else {

@@ -49,21 +49,21 @@ class frida_attach_impl final : public base_attach_impl {
 	frida_attach_impl();
 	~frida_attach_impl();
 	// Create a uprobe attach entry at the specified address
-	int attach_uprobe_at(void *func_addr, uprobe_callback &&cb);
+	int create_uprobe_at(void *func_addr, uprobe_callback &&cb);
 	// Create a uretprobe attach entry at the specified address
-	int attach_uretprobe_at(void *func_addr, uretprobe_callback &&cb);
+	int create_uretprobe_at(void *func_addr, uretprobe_callback &&cb);
 	// Create a uprobe override attach entry at the specified address
-	int attach_uprobe_override_at(void *func_addr,
+	int create_uprobe_override_at(void *func_addr,
 				      uprobe_override_callback &&cb);
 	// Iterate over all attaches managed by this attach impl instance
 	void iterate_attaches(attach_iterate_callback cb);
 	// Detach all attach entry at a specified function address
-	int destroy_attach_by_func_addr(const void *func);
+	int detach_by_func_addr(const void *func);
 
 	// Virtual functions
 	int detach_by_id(int id);
 	// Create an attach entry with ebpf callback
-	int handle_attach_with_ebpf_call_back(
+	int create_attach_with_ebpf_callback(
 		ebpf_run_callback &&cb, const attach_private_data &private_data,
 		int attach_type);
 

@@ -30,7 +30,7 @@ TEST_CASE("Test with unified interface")
 	bool invoked = false;
 	SECTION("uprobe")
 	{
-		id = man->handle_attach_with_ebpf_call_back(
+		id = man->create_attach_with_ebpf_callback(
 			[&](const void *v, size_t, uint64_t *) {
 				bpftime::pt_regs *mem = (bpftime::pt_regs *)v;
 				REQUIRE(mem->di == 1);
@@ -42,7 +42,7 @@ TEST_CASE("Test with unified interface")
 	}
 	SECTION("uretprobe")
 	{
-		id = man->handle_attach_with_ebpf_call_back(
+		id = man->create_attach_with_ebpf_callback(
 			[&](const void *v, size_t, uint64_t *) {
 				bpftime::pt_regs *mem = (bpftime::pt_regs *)v;
 				REQUIRE(mem->ax == 3);

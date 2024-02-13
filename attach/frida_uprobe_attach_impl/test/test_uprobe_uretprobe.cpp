@@ -33,7 +33,7 @@ TEST_CASE("Test attaching uprobing programs and reverting")
 	auto func_addr = find_function_addr_by_name("__test_simple_add");
 
 	REQUIRE(func_addr != 0);
-	int id1 = man.attach_uprobe_at(func_addr, [&](const pt_regs &regs) {
+	int id1 = man.create_uprobe_at(func_addr, [&](const pt_regs &regs) {
 		invoke_times++;
 		a = PT_REGS_PARM1(&regs);
 		b = PT_REGS_PARM2(&regs);
@@ -48,7 +48,7 @@ TEST_CASE("Test attaching uprobing programs and reverting")
 	invoke_times = 0;
 
 	a = b = 0;
-	int id2 = man.attach_uprobe_at(func_addr, [&](const pt_regs &regs) {
+	int id2 = man.create_uprobe_at(func_addr, [&](const pt_regs &regs) {
 		invoke_times++;
 		a2 = PT_REGS_PARM1(&regs);
 		b2 = PT_REGS_PARM2(&regs);
@@ -70,7 +70,7 @@ TEST_CASE("Test attaching uprobing programs and reverting")
 	}
 	SECTION("Revert by function address")
 	{
-		REQUIRE(man.destroy_attach_by_func_addr(func_addr) >= 0);
+		REQUIRE(man.detach_by_func_addr(func_addr) >= 0);
 	}
 	invoke_times = 0;
 	a = b = a2 = b2 = 0;
@@ -92,7 +92,7 @@ TEST_CASE("Test uretprobe and reverting")
 	auto func_addr = find_function_addr_by_name("__test_simple_add");
 
 	REQUIRE(func_addr != 0);
-	int id1 = man.attach_uretprobe_at(func_addr, [&](const pt_regs &regs) {
+	int id1 = man.create_uretprobe_at(func_addr, [&](const pt_regs &regs) {
 		invoke_times++;
 		ret1 = PT_REGS_RC(&regs);
 	});
@@ -105,7 +105,7 @@ TEST_CASE("Test uretprobe and reverting")
 	invoke_times = 0;
 	ret1 = 0;
 	dummy = 0;
-	int id2 = man.attach_uretprobe_at(func_addr, [&](const pt_regs &regs) {
+	int id2 = man.create_uretprobe_at(func_addr, [&](const pt_regs &regs) {
 		invoke_times++;
 		ret2 = PT_REGS_RC(&regs);
 	});
@@ -124,7 +124,7 @@ TEST_CASE("Test uretprobe and reverting")
 	}
 	SECTION("Revert by function address")
 	{
-		REQUIRE(man.destroy_attach_by_func_addr(func_addr) >= 0);
+		REQUIRE(man.detach_by_func_addr(func_addr) >= 0);
 	}
 	invoke_times = 0;
 	ret1 = ret2 = 0;
@@ -145,14 +145,14 @@ TEST_CASE("Test the mix usage of uprobe and uretprobe")
 	auto func_addr = find_function_addr_by_name("__test_simple_add");
 
 	REQUIRE(func_addr != 0);
-	int id1 = man.attach_uprobe_at(func_addr, [&](const pt_regs &regs) {
+	int id1 = man.create_uprobe_at(func_addr, [&](const pt_regs &regs) {
 		uprobe_invoke_times++;
 		a = PT_REGS_PARM1(&regs);
 		b = PT_REGS_PARM2(&regs);
 	});
 	REQUIRE(id1 >= 0);
 
-	int id2 = man.attach_uretprobe_at(func_addr, [&](const pt_regs &regs) {
+	int id2 = man.create_uretprobe_at(func_addr, [&](const pt_regs &regs) {
 		uretprobe_invoke_times++;
 		ret = PT_REGS_RC(&regs);
 	});

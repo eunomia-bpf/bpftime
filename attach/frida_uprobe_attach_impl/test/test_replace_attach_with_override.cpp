@@ -32,7 +32,7 @@ TEST_CASE("Test attaching replace programs and revert")
 	const uint64_t expected_result = (a << 32) | b;
 	REQUIRE(__bpftime_func_to_replace(a, b) == expected_result);
 	int invoke_times = 0;
-	int id = man.attach_uprobe_override_at(
+	int id = man.create_uprobe_override_at(
 		func_addr, [&](const bpftime::pt_regs &regs) {
 			invoke_times++;
 			bpftime_set_retval(PT_REGS_PARM1(&regs) +
@@ -49,7 +49,7 @@ TEST_CASE("Test attaching replace programs and revert")
 	}
 	SECTION("Revert by function address")
 	{
-		REQUIRE(man.destroy_attach_by_func_addr(func_addr) >= 0);
+		REQUIRE(man.detach_by_func_addr(func_addr) >= 0);
 	}
 	REQUIRE(__bpftime_func_to_replace(a, b) == expected_result);
 	REQUIRE(invoke_times == 0);
