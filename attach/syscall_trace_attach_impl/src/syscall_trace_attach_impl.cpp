@@ -3,8 +3,14 @@
 #include <cassert>
 #include <cerrno>
 #include <iterator>
+#include <optional>
 #include <syscall_trace_attach_impl.hpp>
-using namespace bpftime::attach;
+
+namespace bpftime
+{
+namespace attach
+{
+std::optional<syscall_trace_attach_impl *> global_syscall_trace_attach_impl;
 
 int64_t syscall_trace_attach_impl::dispatch_syscall(int64_t sys_nr,
 						    int64_t arg1, int64_t arg2,
@@ -159,3 +165,30 @@ int syscall_trace_attach_impl::create_attach_with_ebpf_callback(
 		return -EINVAL;
 	}
 }
+
+extern "C" int64_t _bpftime__syscall_dispatcher(int64_t sys_nr, int64_t arg1,
+						int64_t arg2, int64_t arg3,
+						int64_t arg4, int64_t arg5,
+						int64_t arg6)
+{
+	SPDLOG_DEBUG("Call syscall dispatcher: {} {}, {}, {}, {}, {}, {}",
+		     sys_nr, arg1, arg2, arg3, arg4, arg5, arg6);
+	return global_syscall_trace_attach_impl.value()->dispatch_syscall(
+		sys_nr, arg1, arg2, arg3, arg4, arg5, arg6);
+}
+
+extern "C" void
+_bpftime__setup_syscall_hooker_callback(syscall_hooker_func_t *hooker)
+{
+	assert(global_syscall_trace_attach_impl.has_value());
+	auto impl = global_syscall_trace_attach_impl.value();
+	impl->set_original_syscall_function(*hooker);
+	SPDLOG_DEBUG(
+		"Saved original syscall hooker (original syscall function): {:x}",
+		(uintptr_t)*hooker);
+	*hooker = _bpftime__syscall_dispatcher;
+	SPDLOG_DEBUG("Set syscall hooker to {:x}", (uintptr_t)*hooker);
+}
+
+} // namespace attach
+} // namespace bpftime

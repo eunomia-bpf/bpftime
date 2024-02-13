@@ -44,6 +44,17 @@ struct syscall_trace_attach_entry {
 	int sys_nr;
 	bool is_enter;
 };
+// The global syscall trace instance. This one could be accessed by text segment
+// transformer
+extern std::optional<class syscall_trace_attach_impl *>
+	global_syscall_trace_attach_impl;
+
+// Used by text segment transformer to setup syscall callback
+// Text segment transformer should provide a pointer to its syscall executor
+// function. syscall trace attach impl will save the original syscall function,
+// and replace it with one that was handled by syscall trace attach impl
+extern "C" void
+_bpftime__setup_syscall_hooker_callback(syscall_hooker_func_t *hooker);
 
 // Attach implementation of syscall trace
 // It provides a callback to receive original syscall calls, and dispatch the
@@ -58,6 +69,12 @@ class syscall_trace_attach_impl final : public base_attach_impl {
 	void set_original_syscall_function(syscall_hooker_func_t func)
 	{
 		orig_syscall = func;
+	}
+	// Set this syscall trace attach impl instance to the global ones, which
+	// could be accessed by text segment transformer
+	void set_to_global()
+	{
+		global_syscall_trace_attach_impl = this;
 	}
 	int detach_by_id(int id);
 	int create_attach_with_ebpf_callback(
@@ -80,6 +97,7 @@ class syscall_trace_attach_impl final : public base_attach_impl {
 	std::unordered_map<int, std::unique_ptr<syscall_trace_attach_entry> >
 		attach_entries;
 };
+
 } // namespace attach
 } // namespace bpftime
 #endif
