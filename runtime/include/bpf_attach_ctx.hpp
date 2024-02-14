@@ -32,13 +32,6 @@ class bpf_attach_ctx {
 	// create bpf_attach_ctx from handler_manager in global_shared_memory
 	int init_attach_ctx_from_handlers(const agent_config &config);
 
-	// Check whether a certain pid was already equipped with syscall tracer
-	// Using a set stored in the shared memory
-	bool check_syscall_trace_setup(int pid);
-	// Set whether a certain pid was already equipped with syscall tracer
-	// Using a set stored in the shared memory
-	void set_syscall_trace_setup(int pid, bool whether);
-
 	attach::base_attach_impl &get_uprobe_attach_impl()
 	{
 		return *frida_uprobe_attach_impl;

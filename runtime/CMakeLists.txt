@@ -49,7 +49,6 @@ message(STATUS "Building for architecture: ${ARCH}")
 
 set(sources
   src/attach/bpf_attach_ctx.cpp
-  src/attach/bpf_attach_syscall.cpp
 
   src/handler/handler_manager.cpp
   src/handler/map_handler.cpp
@@ -194,7 +193,6 @@ set(BPFTIME_RUNTIME_INCLUDE ${CMAKE_CURRENT_SOURCE_DIR}/include ${CMAKE_CURRENT_
 add_subdirectory(object)
 add_subdirectory(agent)
 add_subdirectory(syscall-server)
-add_subdirectory(agent-transformer)
 
 #
 # Unit testing setup
