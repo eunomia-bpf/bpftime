@@ -372,7 +372,6 @@ struct bpf_scratchpad {
 	};
 };
 
-#ifndef do_csum
 static inline unsigned short from32to16(unsigned int x)
 {
 	/* add up 16-bit and 16-bit for 16+c bit */
@@ -435,9 +434,8 @@ static unsigned int do_csum(const unsigned char *buff, int len)
 out:
 	return result;
 }
-#endif
 
-__wsum csum_partial(const void *buff, int len, __wsum wsum)
+static __wsum csum_partial(const void *buff, int len, __wsum wsum)
 {
 	unsigned int sum = (unsigned int)wsum;
 	unsigned int result = do_csum((const unsigned char *)buff, len);
