@@ -144,6 +144,7 @@ int frida_attach_impl::detach_by_func_addr(const void *func)
 	}
 }
 
+extern "C" uint64_t bpftime_set_retval(uint64_t value);
 int frida_attach_impl::create_attach_with_ebpf_callback(
 	ebpf_run_callback &&cb, const attach_private_data &private_data,
 	int attach_type)
@@ -171,6 +172,24 @@ int frida_attach_impl::create_attach_with_ebpf_callback(
 			return create_uprobe_override_at(
 				(void *)(uintptr_t)sub.addr,
 				std::move(attach_callback));
+		} else if (attach_type == ATTACH_UREPLACE) {
+			return create_uprobe_override_at(
+				(void *)(uintptr_t)sub.addr,
+				[=](const pt_regs &regs) {
+					uint64_t ret;
+					if (int err = cb((void *)&regs,
+							 sizeof(regs), &ret);
+					    err < 0) {
+						SPDLOG_ERROR(
+							"Failed to run ebpf callback at frida attach manager for attach type {}, err={}",
+							attach_type, err);
+					} else {
+						SPDLOG_ERROR(
+							"Override return value in ureplace: {}",
+							ret);
+						bpftime_set_retval(ret);
+					}
+				});
 		} else {
 			SPDLOG_ERROR(
 				"Unsupported attach type by frida attach manager: {}",

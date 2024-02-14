@@ -201,8 +201,6 @@ int bpf_attach_ctx::init_attach_ctx_from_handlers(
 				spdlog::warn("Unexpected bpf_event_type: {}",
 					     (int)event_handler.type);
 			}
-			bool is_ureplace = event_handler.type ==
-					   bpf_event_type::BPF_TYPE_UREPLACE;
 			auto progs = handler_prog_fds[i];
 			for (auto tup : progs) {
 				auto prog = std::get<1>(tup);
@@ -216,16 +214,9 @@ int bpf_attach_ctx::init_attach_ctx_from_handlers(
 							prog->bpftime_prog_exec(
 								(void *)mem,
 								mem_size, ret);
-						if (is_ureplace && err >= 0)
-							bpftime_set_retval(
-								*ret);
 						return err;
 					},
-					*priv_data,
-					is_ureplace ?
-						(int)bpf_event_type::
-							BPF_TYPE_UPROBE_OVERRIDE :
-						(int)event_handler.type);
+					*priv_data, (int)event_handler.type);
 				if (id < 0) {
 					SPDLOG_ERROR(
 						"Unable to attach type {}: {}",

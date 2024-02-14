@@ -26,6 +26,9 @@ constexpr int ATTACH_URETPROBE = 7;
 // Use bpf_override_return to set the return value of the function. If the
 // return value is set, the original function will not be invoked.
 constexpr int ATTACH_UPROBE_OVERRIDE = 1008;
+// Replace the hooked function with the provided callback
+constexpr int ATTACH_UREPLACE = 1009;
+
 
 constexpr int ATTACH_UPROBE_INDEX = 0;
 constexpr int ATTACH_URETPROBE_INDEX = 1;
