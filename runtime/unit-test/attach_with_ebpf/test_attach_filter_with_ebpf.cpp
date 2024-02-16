@@ -1,8 +1,9 @@
+#include "frida_uprobe_attach_impl.hpp"
 #include <catch2/catch_test_macros.hpp>
 #include "helper.hpp"
 #include <spdlog/spdlog.h>
 #include <unit-test/common_def.hpp>
-#include <attach/attach_manager/frida_attach_manager.hpp>
+#include <frida_uprobe.hpp>
 using namespace bpftime;
 
 // This is the original function to hook.
@@ -39,7 +40,7 @@ TEST_CASE("Test attaching filter program with ebpf, and reverting")
 	std::unique_ptr<bpftime_object, decltype(&bpftime_object_close)> obj(
 		bpftime_object_open(ebpf_prog_path), bpftime_object_close);
 	REQUIRE(obj.get() != nullptr);
-	frida_attach_manager man;
+	attach::frida_attach_impl man;
 	auto prog = bpftime_object__next_program(obj.get(), nullptr);
 	REQUIRE(prog != nullptr);
 	REQUIRE(bpftime_helper_group::get_ufunc_helper_group()
@@ -53,7 +54,7 @@ TEST_CASE("Test attaching filter program with ebpf, and reverting")
 	};
 	REQUIRE(prog->bpftime_prog_register_raw_helper(info) >= 0);
 	REQUIRE(prog->bpftime_prog_load(false) >= 0);
-	int id = man.attach_uprobe_override_at(
+	int id = man.create_uprobe_override_at(
 		(void *)__bpftime_attach_filter_with_ebpf__my_function,
 		[=](const pt_regs &regs) {
 			uint64_t ret;
@@ -68,11 +69,11 @@ TEST_CASE("Test attaching filter program with ebpf, and reverting")
 							       1) == -22);
 	SECTION("Destroy with id")
 	{
-		REQUIRE(man.destroy_attach(id) >= 0);
+		REQUIRE(man.detach_by_id(id) >= 0);
 	}
 	SECTION("Destroy with address")
 	{
-		REQUIRE(man.destroy_attach_by_func_addr((
+		REQUIRE(man.detach_by_func_addr((
 				void *)__bpftime_attach_filter_with_ebpf__my_function) >=
 			0);
 	}

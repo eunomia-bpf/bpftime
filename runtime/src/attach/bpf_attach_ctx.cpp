@@ -3,9 +3,13 @@
  * Copyright (c) 2022, eunomia-bpf org
  * All rights reserved.
  */
-#include "attach/attach_manager/frida_attach_manager.hpp"
+#include "attach_private_data.hpp"
+#include "base_attach_impl.hpp"
 #include "bpftime.hpp"
+#include "bpftime_shm.hpp"
+#include "frida_attach_utils.hpp"
 #include "handler/epoll_handler.hpp"
+#include "syscall_trace_attach_private_data.hpp"
 #include <unistd.h>
 #include <cerrno>
 #include <cstdint>
@@ -20,11 +24,13 @@
 #include <handler/perf_event_handler.hpp>
 #include <bpftime_helper_group.hpp>
 #include <handler/handler_manager.hpp>
-#include <attach/attach_internal.hpp>
 #include <tuple>
 #include <utility>
 #include <variant>
 #include <sys/resource.h>
+#include <frida_uprobe_attach_internal.hpp>
+#include <frida_uprobe_attach_impl.hpp>
+#include <frida_attach_private_data.hpp>
 extern "C" uint64_t bpftime_set_retval(uint64_t value);
 namespace bpftime
 {
@@ -141,198 +147,86 @@ int bpf_attach_ctx::init_attach_ctx_from_handlers(
 		auto &handler = manager->get_handler(i);
 
 		if (std::holds_alternative<bpf_perf_event_handler>(handler)) {
-			int err = -1;
-
 			auto &event_handler =
 				std::get<bpf_perf_event_handler>(handler);
-			void *func_addr = nullptr;
-			switch (event_handler.type) {
-			case bpf_event_type::BPF_TYPE_UPROBE_OVERRIDE:
-			case bpf_event_type::BPF_TYPE_UREPLACE:
-			case bpf_event_type::BPF_TYPE_UPROBE:
-			case bpf_event_type::BPF_TYPE_URETPROBE:
-				func_addr =
-					attach_manager
-						->resolve_function_addr_by_module_offset(
-							event_handler
-								._module_name
-								.c_str(),
-							event_handler.offset);
-				break;
-			default:
-				break;
-			}
-			// attach base on events
-			switch (event_handler.type) {
-			case bpf_event_type::BPF_TYPE_UPROBE_OVERRIDE: {
-				SPDLOG_DEBUG(
-					"Creating filter for perf event fd {}",
-					i);
-				if (func_addr == nullptr) {
-					return -ENOENT;
+			std::unique_ptr<attach::attach_private_data> priv_data;
+			attach::base_attach_impl *attach_impl;
+			if (event_handler.type ==
+				    bpf_event_type::BPF_TYPE_UPROBE_OVERRIDE ||
+			    event_handler.type ==
+				    bpf_event_type::BPF_TYPE_UPROBE ||
+			    event_handler.type ==
+				    bpf_event_type::BPF_TYPE_URETPROBE ||
+			    event_handler.type ==
+				    bpf_event_type::BPF_TYPE_UREPLACE) {
+				SPDLOG_DEBUG("Attaching uprobe series type {}",
+					     event_handler.type);
+				void *func_addr = attach::
+					resolve_function_addr_by_module_offset(
+						event_handler._module_name
+							.c_str(),
+						event_handler.offset);
+				priv_data = std::make_unique<
+					attach::frida_attach_private_data>();
+				if (int err = priv_data->initialize_from_string(
+					    std::to_string(
+						    (uintptr_t)func_addr));
+				    err < 0) {
+					SPDLOG_ERROR(
+						"Unable to initialize private data: {}",
+						err);
+					return err;
 				}
-				auto progs = handler_prog_fds[i];
-				if (progs.size() > 1) {
+				attach_impl = &get_uprobe_attach_impl();
+			} else if (event_handler.type ==
+				   bpf_event_type::PERF_TYPE_TRACEPOINT) {
+				priv_data = std::make_unique<
+					attach::syscall_trace_attach_private_data>();
+				if (int err = priv_data->initialize_from_string(
+					    std::to_string(
+						    event_handler
+							    .tracepoint_id));
+				    err < 0) {
 					SPDLOG_ERROR(
-						"Expected that a certain function could only be attached one filter, at perf event {}",
-						i);
-					return -E2BIG;
-				} else if (progs.empty()) {
-					SPDLOG_ERROR(
-						"Perf event {} doesn't have any attached & enabled programs",
-						i);
-					return -ENOENT;
+						"Unable to initialize private data: {}",
+						err);
+					return err;
 				}
-				err = attach_manager->attach_uprobe_override_at(
-					func_addr, [=](const pt_regs &regs) {
-						uint64_t ret;
-						auto [_, prog_ptr, cookie] =
-							progs[0];
-						current_thread_bpf_cookie =
-							cookie;
-						prog_ptr->bpftime_prog_exec(
-							(void *)&regs,
-							sizeof(regs), &ret);
-					});
-				if (err < 0)
-					SPDLOG_ERROR(
-						"Failed to create filter for perf fd {}, err={}",
-						i, err);
-				break;
-			}
-			case bpf_event_type::BPF_TYPE_UREPLACE: {
-				SPDLOG_DEBUG(
-					"Creating replace for perf event fd {}",
-					i);
-				if (func_addr == nullptr) {
-					return -ENOENT;
-				}
-				auto progs = handler_prog_fds[i];
-				if (progs.size() > 1) {
-					SPDLOG_ERROR(
-						"Expected that a certain function could only be attached one replace, at perf event {}",
-						i);
-					return -E2BIG;
-				} else if (progs.empty()) {
-					SPDLOG_ERROR(
-						"Perf event {} doesn't have any attached & enabled programs",
-						i);
-					return -ENOENT;
-				}
-				err = attach_manager->attach_uprobe_override_at(
-					func_addr, [=](const pt_regs &regs) {
-						uint64_t ret;
-						auto [_, prog_ptr, cookie] =
-							progs[0];
-						current_thread_bpf_cookie =
-							cookie;
-						prog_ptr->bpftime_prog_exec(
-							(void *)&regs,
-							sizeof(regs), &ret);
-						bpftime_set_retval(ret);
-					});
-				if (err < 0)
-					SPDLOG_ERROR(
-						"Failed to create replace for perf fd {}, err={}",
-						i, err);
-				break;
-			}
-			case bpf_event_type::BPF_TYPE_UPROBE: {
-				SPDLOG_DEBUG(
-					"Creating uprobe for perf event fd {}",
-					i);
-				if (func_addr == nullptr) {
-					return -ENOENT;
-				}
-				auto progs = handler_prog_fds[i];
-				SPDLOG_INFO(
-					"Attached {} uprobe programs to function {:x}",
-					progs.size(), (uintptr_t)func_addr);
-				err = attach_manager->attach_uprobe_at(
-					func_addr, [=](const pt_regs &regs) {
-						SPDLOG_TRACE(
-							"Uprobe triggered");
-						uint64_t ret;
-						for (auto &[k, prog, cookie] :
-						     progs) {
-							SPDLOG_TRACE(
-								"Calling ebpf programs in uprobe callback");
-							current_thread_bpf_cookie =
-								cookie;
-							prog->bpftime_prog_exec(
-								(void *)&regs,
-								sizeof(regs),
-								&ret);
-						}
-					});
-				if (err < 0)
-					SPDLOG_ERROR(
-						"Failed to create uprobe for perf fd {}, err={}",
-						i, err);
-				break;
-			}
-			case bpf_event_type::BPF_TYPE_URETPROBE: {
-				SPDLOG_DEBUG(
-					"Creating uretprobe for perf event fd {}",
-					i);
-				if (func_addr == nullptr) {
-					return -ENOENT;
-				}
-				auto progs = handler_prog_fds[i];
-				SPDLOG_INFO(
-					"Attached {} uretprobe programs to function {:x}",
-					progs.size(), (uintptr_t)func_addr);
-				err = attach_manager->attach_uretprobe_at(
-					func_addr, [=](const pt_regs &regs) {
-						uint64_t ret;
-						for (auto &[k, prog, cookie] :
-						     progs) {
-							current_thread_bpf_cookie =
-								cookie;
-							prog->bpftime_prog_exec(
-								(void *)&regs,
-								sizeof(regs),
-								&ret);
-						}
-					});
-				if (err < 0)
-					SPDLOG_ERROR(
-						"Failed to create uretprobe for perf fd {}, err={}",
-						i, err);
-				break;
-			}
-			case bpf_event_type::PERF_TYPE_TRACEPOINT: {
-				SPDLOG_DEBUG(
-					"Creating tracepoint for perf event fd {}",
-					i);
-				err = create_tracepoint(
-					event_handler.tracepoint_id, i,
-					manager);
-
-				if (err < 0)
-					SPDLOG_ERROR(
-						"Failed to create tracepoint for perf fd {}, err={}",
-						i, err);
-				assert(err >= 0);
-				break;
-			}
-			case bpf_event_type::PERF_TYPE_SOFTWARE: {
+				attach_impl = &get_syscall_attach_impl();
+			} else if (event_handler.type ==
+				   bpf_event_type::PERF_TYPE_SOFTWARE) {
 				SPDLOG_DEBUG(
 					"Attaching software perf event, nothing need to do");
-				err = i;
-				break;
-			}
-			default:
+			} else {
 				spdlog::warn("Unexpected bpf_event_type: {}",
 					     (int)event_handler.type);
-				break;
+			}
+			auto progs = handler_prog_fds[i];
+			for (auto tup : progs) {
+				auto prog = std::get<1>(tup);
+				auto cookie = std::get<2>(tup);
+				int id = attach_impl->create_attach_with_ebpf_callback(
+					[=](void *mem, size_t mem_size,
+					    uint64_t *ret) -> int {
+						current_thread_bpf_cookie =
+							cookie;
+						int err =
+							prog->bpftime_prog_exec(
+								(void *)mem,
+								mem_size, ret);
+						return err;
+					},
+					*priv_data, (int)event_handler.type);
+				if (id < 0) {
+					SPDLOG_ERROR(
+						"Unable to attach type {}: {}",
+						(int)event_handler.type, id);
+					return id;
+				}
 			}
 			SPDLOG_DEBUG("Create attach event {} {} {} for {}", i,
 				     event_handler._module_name,
 				     event_handler.offset, err);
-			if (err < 0) {
-				return err;
-			}
 		}
 	}
 	return 0;
@@ -345,9 +239,11 @@ bpf_attach_ctx::~bpf_attach_ctx()
 
 // create a probe context
 bpf_attach_ctx::bpf_attach_ctx(void)
-	: attach_manager(std::make_unique<frida_attach_manager>())
+	: frida_uprobe_attach_impl(
+		  std::make_unique<attach::frida_attach_impl>()),
+	  syscall_trace_attach_impl(
+		  std::make_unique<attach::syscall_trace_attach_impl>())
 {
-	SPDLOG_DEBUG("Initialzing frida gum");
 	current_id = CURRENT_ID_OFFSET;
 }
 

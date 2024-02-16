@@ -68,13 +68,11 @@ extern "C" void bpftime_agent_main(const gchar *data, gboolean *stay_resident)
 		SPDLOG_ERROR("Failed to open agent: {}", dlerror());
 		exit(1);
 	}
-	shm_destroy_func = (shm_destroy_func_t)dlsym(
-		next_handle, "bpftime_destroy_global_shm");
 	auto entry_func = (void (*)(syscall_hooker_func_t *))dlsym(
-		next_handle, "__c_abi_setup_syscall_trace_callback");
+		next_handle, "_bpftime__setup_syscall_trace_callback");
 
 	assert(entry_func &&
-	       "Malformed agent so, expected symbol __c_abi_setup_syscall_trace_callback");
+	       "Malformed agent so, expected symbol _bpftime__setup_syscall_hooker_callback");
 	syscall_hooker_func_t orig_syscall_hooker_func =
 		bpftime::get_call_hook();
 	entry_func(&orig_syscall_hooker_func);

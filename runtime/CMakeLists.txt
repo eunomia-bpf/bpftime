@@ -49,9 +49,6 @@ message(STATUS "Building for architecture: ${ARCH}")
 
 set(sources
   src/attach/bpf_attach_ctx.cpp
-  src/attach/bpf_attach_syscall.cpp
-  src/attach/attach_manager/base_attach_manager.cpp
-  src/attach/attach_manager/frida_attach_manager.cpp
 
   src/handler/handler_manager.cpp
   src/handler/map_handler.cpp
@@ -120,14 +117,18 @@ target_include_directories(${PROJECT_NAME}
   ${CMAKE_CURRENT_BINARY_DIR}
   ${CMAKE_CURRENT_SOURCE_DIR}/../third_party
   ${SPDLOG_INCLUDE}
+  ${FRIDA_UPROBE_ATTACH_IMPL_INCLUDE}
+  ${SYSCALL_TRACE_ATTACH_IMPL_INCLUDE}
 )
 
 target_link_libraries(${PROJECT_NAME}
   PUBLIC
   vm-bpf
   spdlog::spdlog
+  bpftime_frida_uprobe_attach_impl
+  bpftime_syscall_trace_attach_impl
 )
-add_dependencies(${PROJECT_NAME} vm-bpf FridaGum syscall_id_table spdlog::spdlog libbpf)
+add_dependencies(${PROJECT_NAME} vm-bpf FridaGum syscall_id_table spdlog::spdlog libbpf bpftime_frida_uprobe_attach_impl bpftime_syscall_trace_attach_impl)
 
 if (BPFTIME_ENABLE_IOURING_EXT)
 target_link_libraries(${PROJECT_NAME}
@@ -192,7 +193,6 @@ set(BPFTIME_RUNTIME_INCLUDE ${CMAKE_CURRENT_SOURCE_DIR}/include ${CMAKE_CURRENT_
 add_subdirectory(object)
 add_subdirectory(agent)
 add_subdirectory(syscall-server)
-add_subdirectory(agent-transformer)
 
 #
 # Unit testing setup

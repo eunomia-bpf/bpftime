@@ -89,6 +89,9 @@ add_subdirectory(vm)
 if (BPFTIME_LLVM_JIT)
   add_subdirectory(vm/cli)
 endif()
+
+add_subdirectory(attach)
+
 add_subdirectory(runtime)
 if (${BUILD_BPFTIME_DAEMON})
   add_subdirectory(daemon)
@@ -98,6 +101,7 @@ add_subdirectory(tools)
 # benchmark that requires bpftime libraries
 add_subdirectory(benchmark)
 
+
 set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>DLL")
 
-install(TARGETS bpftime-agent bpftime-agent-transformer bpftime-syscall-server CONFIGURATIONS Release Debug RelWithDebInfo DESTINATION ~/.bpftime)
+install(TARGETS bpftime-agent bpftime_text_segment_transformer bpftime-syscall-server CONFIGURATIONS Release Debug RelWithDebInfo DESTINATION ~/.bpftime)
