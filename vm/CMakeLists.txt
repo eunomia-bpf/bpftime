@@ -24,13 +24,6 @@ if(NOT DEFINED SPDLOG_INCLUDE)
   # spdlog
   add_subdirectory(../third_party/spdlog ${CMAKE_CURRENT_BINARY_DIR}/spdlog)
 
-  # set spdlog level
-  if(CMAKE_BUILD_TYPE STREQUAL "Debug")
-    add_definitions(-DSPDLOG_ACTIVE_LEVEL=SPDLOG_LEVEL_DEBUG)
-  else()
-    add_definitions(-DSPDLOG_ACTIVE_LEVEL=SPDLOG_LEVEL_INFO)
-  endif()
-
   set(SPDLOG_INCLUDE ${CMAKE_CURRENT_SOURCE_DIR}/third_party/spdlog/include)
 endif()
 
