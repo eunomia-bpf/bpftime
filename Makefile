@@ -51,18 +51,18 @@ build: ## build the package with test and all components
 	cmake --build build --config Debug  -j$(JOBS)
 
 build-iouring: ## build the package with iouring extension
-	cmake -Bbuild -DBPFTIME_ENABLE_IOURING_EXT=1 -DCMAKE_BUILD_TYPE:STRING=Release
-	cmake --build build --config Release  -j$(JOBS)
+	cmake -Bbuild -DBPFTIME_ENABLE_IOURING_EXT=1 -DCMAKE_BUILD_TYPE:STRING=RelWithDebInfo
+	cmake --build build --config RelWithDebInfo  -j$(JOBS)
 
 release: ## build the release version
-	cmake -Bbuild  -DCMAKE_BUILD_TYPE:STRING=Release \
+	cmake -Bbuild  -DCMAKE_BUILD_TYPE:STRING=RelWithDebInfo \
 				   -DSPDLOG_ACTIVE_LEVEL=SPDLOG_LEVEL_INFO
-	cmake --build build --config Release --target install  -j$(JOBS)
+	cmake --build build --config RelWithDebInfo --target install  -j$(JOBS)
 
 release-with-llvm-jit: ## build the package, with llvm-jit
-	cmake -Bbuild  -DCMAKE_BUILD_TYPE:STRING=Release \
+	cmake -Bbuild  -DCMAKE_BUILD_TYPE:STRING=RelWithDebInfo \
 				   -DBPFTIME_LLVM_JIT=1
-	cmake --build build --config Release --target install -j$(JOBS)
+	cmake --build build --config RelWithDebInfo --target install -j$(JOBS)
 
 build-vm: ## build only the core library
 	make -C vm build
