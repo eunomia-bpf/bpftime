@@ -91,7 +91,7 @@ if (BPFTIME_LLVM_JIT)
 endif()
 
 add_subdirectory(attach)
-
+add_subdirectory(runtime_new)
 add_subdirectory(runtime)
 if (${BUILD_BPFTIME_DAEMON})
   add_subdirectory(daemon)
