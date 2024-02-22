@@ -6,13 +6,12 @@
 #ifndef _LINK_HANDLER_HPP
 #define _LINK_HANDLER_HPP
 
-#include <cstdint>
 
 namespace bpftime
 {
 namespace shm_common
 {
-// handle the bpf link fd
+// Represent a link between program and attach target
 struct bpf_link_handler {
 	int prog_id;
 	int attach_target_id;

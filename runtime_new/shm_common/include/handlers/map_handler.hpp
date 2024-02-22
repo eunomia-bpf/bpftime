@@ -32,14 +32,14 @@ using boost_shm_string =
 using sharable_mutex_ptr = boost::interprocess::managed_unique_ptr<
 	boost::interprocess::interprocess_sharable_mutex,
 	boost::interprocess::managed_shared_memory>::type;
-
+using general_map_impl_ptr = boost::interprocess::offset_ptr<void>;
 // bpf map handler
-// all map data will be put on shared memory, so it can be accessed by
-// different processes
+// Represent an generic map interface in the shared memory
 class bpf_map_handler {
     public:
+	// Detailed attribute of the map
 	bpf_map_attr attr;
-	using general_map_impl_ptr = boost::interprocess::offset_ptr<void>;
+	// Type of the map
 	bpf_map_type type;
 	boost_shm_string name;
 	bpf_map_handler(const char *name,
@@ -160,16 +160,25 @@ class bpf_map_handler {
 	// *
 	int bpf_map_get_next_key(const void *key, void *next_key,
 				 bool from_userspace = false) const;
+	// Destroy the internal holding map
 	void map_free(boost::interprocess::managed_shared_memory &memory);
+	// Initialize the internal holding map
 	int map_init(boost::interprocess::managed_shared_memory &memory);
-	uint32_t get_value_size() const;
+	// Get the calculated value size of this map. For percpu maps, this is
+	// not identical to the real map value size (which was multiplied by
+	// NCPU)
+	uint32_t get_userspace_value_size() const;
+	// Try getting the internal map impl if the internal map is a ringbuf
+	// map
 	std::optional<ringbuf_map_impl *> try_get_ringbuf_map_impl() const;
+	// Try getting the internal map impl if the internal map is a array map
 	std::optional<array_map_impl *> try_get_array_map_impl() const;
+	// Try getting the internal map impl if the internal map is a perf event
+	// array map
 	std::optional<perf_event_array_kernel_user_impl *>
 	try_get_shared_perf_event_array_map_impl() const;
 
     private:
-	std::string get_container_name();
 	mutable pthread_spinlock_t map_lock;
 	// The underlying data structure of the map
 	general_map_impl_ptr map_impl_ptr;

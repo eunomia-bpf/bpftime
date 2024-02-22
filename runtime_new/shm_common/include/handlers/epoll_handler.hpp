@@ -15,8 +15,10 @@ namespace bpftime
 {
 namespace shm_common
 {
+// `File` types that epoll could hold
 using file_ptr_variant =
 	std::variant<software_perf_event_weak_ptr, ringbuf_weak_ptr>;
+// `Fd` ptr and the related user-defined data
 struct epoll_file {
 	file_ptr_variant file;
 	epoll_data_t data;
@@ -26,6 +28,7 @@ struct epoll_file {
 using file_allocator = boost::interprocess::allocator<
 	epoll_file, boost::interprocess::managed_shared_memory::segment_manager>;
 using file_vector = boost::interprocess::vector<epoll_file, file_allocator>;
+// Represent an epoll instance in the shared memory
 struct epoll_handler {
     public:
 	mutable file_vector files;

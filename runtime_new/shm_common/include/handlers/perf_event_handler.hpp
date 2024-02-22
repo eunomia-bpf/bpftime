@@ -26,7 +26,9 @@ using char_allocator = boost::interprocess::allocator<
 using boost_shm_string =
 	boost::interprocess::basic_string<char, std::char_traits<char>,
 					  char_allocator>;
-
+using bytes_vec_allocator = boost::interprocess::allocator<
+	uint8_t, boost::interprocess::managed_shared_memory::segment_manager>;
+using bytes_vec = boost::interprocess::vector<uint8_t, bytes_vec_allocator>;
 struct perf_sample_raw {
 	struct perf_event_header header;
 	uint32_t size;
@@ -64,11 +66,6 @@ at the head, if the remaining buffer space at the tail is not enough
 */
 
 struct software_perf_event_data {
-	using bytes_vec_allocator = boost::interprocess::allocator<
-		uint8_t,
-		boost::interprocess::managed_shared_memory::segment_manager>;
-	using bytes_vec =
-		boost::interprocess::vector<uint8_t, bytes_vec_allocator>;
 	int cpu;
 	// Field `config` of perf_event_attr
 	int64_t config;

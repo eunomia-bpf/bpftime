@@ -4,6 +4,7 @@ namespace bpftime
 {
 namespace shm_common
 {
+// Bpf rpogram types
 enum class bpf_prog_type {
 	BPF_PROG_TYPE_UNSPEC,
 	BPF_PROG_TYPE_SOCKET_FILTER,
@@ -39,7 +40,7 @@ enum class bpf_prog_type {
 	BPF_PROG_TYPE_SYSCALL, /* a program that can execute syscalls */
 	BPF_PROG_TYPE_NETFILTER,
 };
-
+// Bpf event types. Only for compatiblity
 enum class bpf_event_type {
 	PERF_TYPE_HARDWARE = 0,
 	PERF_TYPE_SOFTWARE = 1,
