@@ -1,7 +1,6 @@
 add_library(
     bpftime_shm_common_library STATIC
-    src/handler_manager.cpp
-
+    
     src/handlers/epoll_handler.cpp
     src/handlers/map_handler.cpp
     src/handlers/perf_event_handler.cpp
