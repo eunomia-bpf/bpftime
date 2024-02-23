@@ -82,7 +82,7 @@ class handler_manager {
 	// Destroy the handler at the certain id
 	void destroy_handler_at(int id, managed_shared_memory &memory);
 
-	// Destroy all handlers holding
+	// Destroy all handlers held by this handler_manager
 	void clear_all(managed_shared_memory &memory);
 
 	handler_manager(const handler_manager &) = delete;
