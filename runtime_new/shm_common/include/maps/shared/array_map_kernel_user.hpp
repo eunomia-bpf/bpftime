@@ -11,7 +11,8 @@ namespace bpftime
 namespace shm_common
 {
 
-// implementation of array map
+// implementation of a userspace-kernel shared array map
+// For userspace access, just access the mmaped pages of the kernel map
 class array_map_kernel_user_impl {
 	bytes_vec value_data;
 	uint32_t _value_size;

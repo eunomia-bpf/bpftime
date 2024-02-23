@@ -18,6 +18,7 @@ namespace shm_common
 
 constexpr int KERNEL_USER_MAP_OFFSET = 1000;
 
+// All type of maps
 enum class bpf_map_type {
 	BPF_MAP_TYPE_UNSPEC,
 	BPF_MAP_TYPE_HASH,
@@ -71,6 +72,7 @@ enum class bpf_map_type {
 		KERNEL_USER_MAP_OFFSET + BPF_MAP_TYPE_PERF_EVENT_ARRAY,
 
 };
+// Attribute of maps
 struct bpf_map_attr {
 	int type = 0;
 	uint32_t key_size = 0;
@@ -92,6 +94,7 @@ using bytes_vec_allocator = boost::interprocess::allocator<
 	uint8_t, boost::interprocess::managed_shared_memory::segment_manager>;
 using bytes_vec = boost::interprocess::vector<uint8_t, bytes_vec_allocator>;
 
+// Use cpu affinity to ensure a certain function will be executed on its current CPU. Used for per-cpu maps
 template <class T>
 static inline T ensure_on_current_cpu(std::function<T(int cpu)> func)
 {
@@ -107,6 +110,8 @@ static inline T ensure_on_current_cpu(std::function<T(int cpu)> func)
 	return ret;
 }
 
+
+// Use cpu affinity to ensure a certain function will be executed on a certain CPU. Used for per-cpu maps
 template <class T>
 static inline T ensure_on_certain_cpu(int cpu, std::function<T()> func)
 {
@@ -121,6 +126,9 @@ static inline T ensure_on_certain_cpu(int cpu, std::function<T()> func)
 	return ret;
 }
 
+
+
+// Use cpu affinity to ensure a certain function will be executed on a certain CPU. Used for per-cpu maps
 template <>
 inline void ensure_on_certain_cpu(int cpu, std::function<void()> func)
 {

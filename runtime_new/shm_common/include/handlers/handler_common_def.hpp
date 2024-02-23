@@ -1,5 +1,9 @@
 #ifndef _BPFTIME_HANDLER_COMMON_DEF_HPP
 #define _BPFTIME_HANDLER_COMMON_DEF_HPP
+#include <cstdint>
+#include <boost/interprocess/containers/vector.hpp>
+#include <boost/interprocess/allocators/allocator.hpp>
+#include <boost/interprocess/managed_shared_memory.hpp>
 namespace bpftime
 {
 namespace shm_common
@@ -55,6 +59,10 @@ enum class bpf_event_type {
 	BPF_TYPE_UPROBE_OVERRIDE = 1008,
 	BPF_TYPE_UREPLACE = 1009,
 };
+
+using bytes_vec_allocator = boost::interprocess::allocator<
+	uint8_t, boost::interprocess::managed_shared_memory::segment_manager>;
+using bytes_vec = boost::interprocess::vector<uint8_t, bytes_vec_allocator>;
 
 } // namespace shm_common
 } // namespace bpftime

@@ -14,7 +14,7 @@ namespace bpftime
 namespace shm_common
 {
 // Here is an implementation of a perf event array that can output data from
-// both userspace and kernel space It's corresponded with a normal perf event
+// both userspace and kernel space. It's corresponded with a normal perf event
 // array in kernel, and it will be used by kernel ebpf programs But from the
 // userspace, it will hold a user ringbuf (provided by libbpf). Once data was
 // written, it will commit the data to the ringbuf. A kernel program will be

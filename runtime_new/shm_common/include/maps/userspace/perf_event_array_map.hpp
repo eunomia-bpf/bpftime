@@ -17,6 +17,8 @@ namespace shm_common
 using i32_vec_allocator = boost::interprocess::allocator<
 	int32_t, boost::interprocess::managed_shared_memory::segment_manager>;
 using i32_vec = boost::interprocess::vector<int32_t, i32_vec_allocator>;
+// This is a userspace perf event map implementation
+// It's simply an array containing perf event buffer ids, with the index being the cpu index.
 class perf_event_array_map_impl {
     private:
 	i32_vec data;

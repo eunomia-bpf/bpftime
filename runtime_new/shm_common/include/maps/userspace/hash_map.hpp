@@ -19,7 +19,8 @@ namespace bpftime
 namespace shm_common
 {
 
-// implementation of hash map
+// implementation of the userspace hash map
+// It's based on a boost::interprocess::unordered_map
 class hash_map_impl {
 	using bi_map_value_ty = std::pair<const bytes_vec, bytes_vec>;
 	using bi_map_allocator = boost::interprocess::allocator<

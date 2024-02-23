@@ -17,7 +17,8 @@ namespace bpftime
 namespace shm_common
 {
 
-// implementation of hash map
+// implementation of the userspace-kernel shared hash map
+// Currently, the userspace access is only achived through syscall to the kernel map
 class hash_map_kernel_user_impl {
 	uint32_t _key_size;
 	uint32_t _value_size;

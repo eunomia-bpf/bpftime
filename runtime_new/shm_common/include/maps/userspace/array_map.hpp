@@ -13,7 +13,8 @@ namespace bpftime
 namespace shm_common
 {
 
-// implementation of array map
+// implementation of the userspace array map
+// It's based on a boost::interprocess::vector
 class array_map_impl {
 	bytes_vec data;
 	uint32_t _value_size;

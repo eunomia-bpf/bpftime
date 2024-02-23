@@ -60,7 +60,7 @@ using ringbuf_weak_ptr = boost::interprocess::managed_weak_ptr<
 	ringbuf,
 	boost::interprocess::managed_shared_memory::segment_manager>::type;
 
-// implementation of ringbuf map
+// implementation of userspace ringbuf map
 class ringbuf_map_impl {
 	ringbuf_shared_ptr ringbuf_impl;
 

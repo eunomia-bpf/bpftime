@@ -20,7 +20,7 @@ using boost_shm_string =
 	boost::interprocess::basic_string<char, std::char_traits<char>,
 					  char_allocator>;
 
-using cookie_fd_pair = std::pair<int, std::optional<uint64_t> >;
+// using cookie_fd_pair = std::pair<int, std::optional<uint64_t> >;
 
 // bpf progs handler
 // in share memory. This is only a simple data struct to store the
@@ -53,20 +53,20 @@ class bpf_prog_handler {
 					    shm_ebpf_inst_vector_allocator>;
 	inst_vector insns;
 
-	using shm_pair_vector_allocator = boost::interprocess::allocator<
-		cookie_fd_pair, managed_shared_memory::segment_manager>;
+	// using shm_pair_vector_allocator = boost::interprocess::allocator<
+	// 	cookie_fd_pair, managed_shared_memory::segment_manager>;
 
-	using attach_fds_vector =
-		boost::interprocess::vector<cookie_fd_pair,
-					    shm_pair_vector_allocator>;
-	mutable attach_fds_vector attach_fds;
+	// using attach_fds_vector =
+	// 	boost::interprocess::vector<cookie_fd_pair,
+	// 				    shm_pair_vector_allocator>;
+	// mutable attach_fds_vector attach_fds;
 
-	void add_attach_fd(int fd, std::optional<uint64_t> cookie) const
-	{
-		SPDLOG_DEBUG("Add attach fd {} for bpf_prog {}", fd,
-			     name.c_str());
-		attach_fds.emplace_back(fd, cookie);
-	}
+	// void add_attach_fd(int fd, std::optional<uint64_t> cookie) const
+	// {
+	// 	SPDLOG_DEBUG("Add attach fd {} for bpf_prog {}", fd,
+	// 		     name.c_str());
+	// 	attach_fds.emplace_back(fd, cookie);
+	// }
 	boost_shm_string name;
 };
 } // namespace shm_common

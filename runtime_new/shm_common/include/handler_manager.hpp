@@ -42,7 +42,7 @@ using boost_shm_string =
 	boost::interprocess::basic_string<char, std::char_traits<char>,
 					  char_allocator>;
 
-const size_t DEFAULT_MAX_FD = 1024 * 6;
+const size_t DEFAULT_MAX_ID = 1024 * 6;
 
 struct unused_handler {};
 
@@ -61,24 +61,28 @@ using handler_variant_vector =
 class handler_manager {
     public:
 	handler_manager(managed_shared_memory &mem,
-			size_t max_fd_count = DEFAULT_MAX_FD);
+			size_t max_id_count = DEFAULT_MAX_ID);
 
 	~handler_manager();
-
-	const handler_variant &get_handler(int fd) const;
+	// Get a reference to the handler of the certain id
+	const handler_variant &get_handler(int id) const;
 
 	const handler_variant &operator[](int idx) const;
+	// Get the max handler size
 	std::size_t size() const;
-
-	int set_handler(int fd, handler_variant &&handler,
+	// Set the handler at the certain id. Destroying the previous one
+	int set_handler(int id, handler_variant &&handler,
 			managed_shared_memory &memory);
+	// Check if handler with the specified id is allocated
+	bool is_allocated(int id) const;
 
-	bool is_allocated(int fd) const;
-
+	// Try to find a minimal unused index for handler
 	int find_minimal_unused_idx() const;
 
-	void clear_id_at(int fd, managed_shared_memory &memory);
+	// Destroy the handler at the certain id
+	void destroy_handler_at(int id, managed_shared_memory &memory);
 
+	// Destroy all handlers holding
 	void clear_all(managed_shared_memory &memory);
 
 	handler_manager(const handler_manager &) = delete;

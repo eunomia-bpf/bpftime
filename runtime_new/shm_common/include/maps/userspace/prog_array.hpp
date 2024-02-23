@@ -17,6 +17,8 @@ namespace shm_common
 using i32_vec_allocator = boost::interprocess::allocator<
 	int32_t, boost::interprocess::managed_shared_memory::segment_manager>;
 using i32_vec = boost::interprocess::vector<int32_t, i32_vec_allocator>;
+// Userspace prog array map implementation. Currently, it's only able to perform tail call from userspace to kernel
+// It's simply an array containing kernel ebbf program ids.
 class prog_array_map_impl {
     private:
 	// accept fd, but store id

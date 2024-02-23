@@ -17,7 +17,10 @@ namespace bpftime
 {
 namespace shm_common
 {
-
+// Implementation of the userspace per cpu array
+// It's based on boost::interprocess::vector.
+// Each element was corresponded to a block with ncpu*value_size, and access from a certain cpu could only access its slot.
+// But access from userspace can read all slots
 class per_cpu_array_map_impl {
 	bytes_vec data;
 

@@ -6,6 +6,7 @@ add_library(
     src/handlers/map_handler.cpp
     src/handlers/perf_event_handler.cpp
     src/handlers/prog_handler.cpp
+    src/handlers/software_perf_event_data/software_perf_event_data.cpp
 
     src/maps/shared/array_map_kernel_user.cpp
     src/maps/shared/hash_map_kernel_user.cpp
@@ -18,9 +19,7 @@ add_library(
     src/maps/userspace/per_cpu_hash_map.cpp
     src/maps/userspace/perf_event_array_map.cpp
     src/maps/userspace/prog_array.cpp
-    src/maps/userspace/ringbuf_map.cpp
-    
-    
+    src/maps/userspace/ringbuf_map.cpp   
 )
 
 find_package(Boost REQUIRED)

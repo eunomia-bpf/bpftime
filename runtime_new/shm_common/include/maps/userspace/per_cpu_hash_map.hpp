@@ -18,7 +18,10 @@ namespace bpftime
 {
 namespace shm_common
 {
-
+// Implementation of the userspace per cpu hash map
+// It's based on boost::interprocess::unordered_map.
+// Each element was corresponded to a value with ncpu*value_size, and access from a certain cpu could only access its slot.
+// But access from userspace can read all slots
 class per_cpu_hash_map_impl {
 	using bi_map_value_ty = std::pair<const bytes_vec, bytes_vec>;
 	using bi_map_allocator = boost::interprocess::allocator<
