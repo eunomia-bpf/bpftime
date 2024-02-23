@@ -61,7 +61,7 @@ bool handler_manager::is_allocated(int fd) const
 	return !std::holds_alternative<unused_handler>(handlers.at(fd));
 }
 
-void handler_manager::clear_fd_at(int fd, managed_shared_memory &memory)
+void handler_manager::clear_id_at(int fd, managed_shared_memory &memory)
 {
 	if (fd < 0 || (std::size_t)fd >= handlers.size()) {
 		return;
@@ -108,7 +108,7 @@ void handler_manager::clear_all(managed_shared_memory &memory)
 {
 	for (std::size_t i = 0; i < handlers.size(); i++) {
 		if (is_allocated(i)) {
-			clear_fd_at(i, memory);
+			clear_id_at(i, memory);
 		}
 	}
 }

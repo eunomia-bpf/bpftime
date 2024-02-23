@@ -77,7 +77,7 @@ class handler_manager {
 
 	int find_minimal_unused_idx() const;
 
-	void clear_fd_at(int fd, managed_shared_memory &memory);
+	void clear_id_at(int fd, managed_shared_memory &memory);
 
 	void clear_all(managed_shared_memory &memory);
 
