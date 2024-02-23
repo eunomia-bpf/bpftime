@@ -6,12 +6,8 @@
 #ifndef _HANDLER_MANAGER_HPP
 #define _HANDLER_MANAGER_HPP
 #include "handlers/epoll_handler.hpp"
-#include "spdlog/spdlog.h"
 #include <boost/interprocess/interprocess_fwd.hpp>
 #include <cstddef>
-#include <cstdint>
-#include <functional>
-#include <iostream>
 #include <sched.h>
 #include <variant>
 #include <boost/interprocess/containers/vector.hpp>
@@ -35,12 +31,6 @@ namespace bpftime
 {
 namespace shm_common
 {
-using managed_shared_memory = boost::interprocess::managed_shared_memory;
-using char_allocator = boost::interprocess::allocator<
-	char, boost::interprocess::managed_shared_memory::segment_manager>;
-using boost_shm_string =
-	boost::interprocess::basic_string<char, std::char_traits<char>,
-					  char_allocator>;
 
 const size_t DEFAULT_MAX_ID = 1024 * 6;
 

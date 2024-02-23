@@ -10,7 +10,6 @@
 #include <cstddef>
 #include <handler_manager.hpp>
 #include <variant>
-#include <algorithm>
 
 using namespace bpftime::shm_common;
 handler_manager::handler_manager(managed_shared_memory &mem,
