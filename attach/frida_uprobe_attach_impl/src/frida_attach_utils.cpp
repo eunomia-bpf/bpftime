@@ -71,9 +71,9 @@ int from_cb_idx_to_attach_type(int idx)
 		return ATTACH_UPROBE_OVERRIDE;
 	case ATTACH_URETPROBE_INDEX:
 		return ATTACH_URETPROBE;
-	default:
-		assert(false && "Unreachable!");
 	}
+	assert(false && "Unreachable!");
+	return 0;
 }
 } // namespace attach
 } // namespace bpftime
