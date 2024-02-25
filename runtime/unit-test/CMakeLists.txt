@@ -16,6 +16,8 @@ set(TEST_SOURCES
     maps/test_per_cpu_array.cpp
     maps/test_per_cpu_hash.cpp
     maps/test_shm_hash_maps.cpp
+    maps/test_external_map_ops.cpp
+
     test_bpftime_shm_json.cpp
     attach_with_ebpf/test_attach_filter_with_ebpf.cpp
     attach_with_ebpf/test_attach_uprobe_with_ebpf.cpp

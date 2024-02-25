@@ -26,7 +26,7 @@ namespace bpftime
 {
 
 bpftime_map_ops
-	global_map_ops_table[(const int)bpf_map_type::BPF_MAP_TYPE_MAX] = { 0 };
+	global_map_ops_table[(int)bpf_map_type::BPF_MAP_TYPE_MAX] = { 0 };
 
 std::string bpf_map_handler::get_container_name()
 {
@@ -554,6 +554,15 @@ bpf_map_handler::try_get_shared_perf_event_array_map_impl() const
 		return {};
 	return static_cast<perf_event_array_kernel_user_impl *>(
 		map_impl_ptr.get());
+}
+
+int bpftime_register_map_ops(int map_type, bpftime_map_ops *ops) {
+	if (map_type < 0 || map_type >= (int)bpf_map_type::BPF_MAP_TYPE_MAX) {
+		SPDLOG_ERROR("Invalid map type: {}", map_type);
+		return -1;
+	}
+	global_map_ops_table[map_type] = *ops;
+	return 0;
 }
 
 } // namespace bpftime
