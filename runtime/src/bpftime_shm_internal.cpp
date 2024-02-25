@@ -86,7 +86,7 @@ uint32_t bpftime_shm::bpf_map_value_size(int fd) const
 }
 
 const void *bpftime_shm::bpf_map_lookup_elem(int fd, const void *key,
-					     bool from_userspace) const
+					     bool from_syscall) const
 {
 	if (!is_map_fd(fd)) {
 		errno = ENOENT;
@@ -94,12 +94,12 @@ const void *bpftime_shm::bpf_map_lookup_elem(int fd, const void *key,
 	}
 	auto &handler =
 		std::get<bpftime::bpf_map_handler>(manager->get_handler(fd));
-	return handler.map_lookup_elem(key, from_userspace);
+	return handler.map_lookup_elem(key, from_syscall);
 }
 
 long bpftime_shm::bpf_map_update_elem(int fd, const void *key,
 				      const void *value, uint64_t flags,
-				      bool from_userspace) const
+				      bool from_syscall) const
 {
 	if (!is_map_fd(fd)) {
 		errno = ENOENT;
@@ -107,11 +107,11 @@ long bpftime_shm::bpf_map_update_elem(int fd, const void *key,
 	}
 	auto &handler =
 		std::get<bpftime::bpf_map_handler>(manager->get_handler(fd));
-	return handler.map_update_elem(key, value, flags, from_userspace);
+	return handler.map_update_elem(key, value, flags, from_syscall);
 }
 
 long bpftime_shm::bpf_delete_elem(int fd, const void *key,
-				  bool from_userspace) const
+				  bool from_syscall) const
 {
 	if (!is_map_fd(fd)) {
 		errno = ENOENT;
@@ -119,11 +119,11 @@ long bpftime_shm::bpf_delete_elem(int fd, const void *key,
 	}
 	auto &handler =
 		std::get<bpftime::bpf_map_handler>(manager->get_handler(fd));
-	return handler.map_delete_elem(key, from_userspace);
+	return handler.map_delete_elem(key, from_syscall);
 }
 
 int bpftime_shm::bpf_map_get_next_key(int fd, const void *key, void *next_key,
-				      bool from_userspace) const
+				      bool from_syscall) const
 {
 	if (!is_map_fd(fd)) {
 		errno = ENOENT;
@@ -131,7 +131,7 @@ int bpftime_shm::bpf_map_get_next_key(int fd, const void *key, void *next_key,
 	}
 	auto &handler =
 		std::get<bpftime::bpf_map_handler>(manager->get_handler(fd));
-	return handler.bpf_map_get_next_key(key, next_key, from_userspace);
+	return handler.bpf_map_get_next_key(key, next_key, from_syscall);
 }
 
 int bpftime_shm::add_uprobe(int fd, int pid, const char *name, uint64_t offset,
@@ -461,7 +461,7 @@ int bpftime_shm::add_bpf_prog(int fd, const ebpf_inst *insn, size_t insn_cnt,
 }
 
 // add a bpf link fd
-int bpftime_shm::add_bpf_link(int fd, struct bpf_link_create_args* args)
+int bpftime_shm::add_bpf_link(int fd, struct bpf_link_create_args *args)
 {
 	if (fd < 0) {
 		// if fd is negative, we need to create a new fd for allocating
@@ -471,10 +471,8 @@ int bpftime_shm::add_bpf_link(int fd, struct bpf_link_create_args* args)
 		errno = EBADF;
 		return -1;
 	}
-	return manager->set_handler(
-		fd,
-		bpftime::bpf_link_handler{ *args },
-		segment);
+	return manager->set_handler(fd, bpftime::bpf_link_handler{ *args },
+				    segment);
 }
 
 void bpftime_shm::close_fd(int fd)

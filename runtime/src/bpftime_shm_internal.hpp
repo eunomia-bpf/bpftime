@@ -93,23 +93,22 @@ class bpftime_shm {
 			 const char *prog_name, int prog_type);
 
 	// add a bpf link fd
-	int add_bpf_link(int fd, struct bpf_link_create_args* args);
+	int add_bpf_link(int fd, struct bpf_link_create_args *args);
 
 	// create a bpf map fd
 	int add_bpf_map(int fd, const char *name, bpftime::bpf_map_attr attr);
 	uint32_t bpf_map_value_size(int fd) const;
 
 	const void *bpf_map_lookup_elem(int fd, const void *key,
-					bool from_userspace) const;
+					bool from_syscall) const;
 
 	long bpf_map_update_elem(int fd, const void *key, const void *value,
-				 uint64_t flags, bool from_userspace) const;
+				 uint64_t flags, bool from_syscall) const;
 
-	long bpf_delete_elem(int fd, const void *key,
-			     bool from_userspace) const;
+	long bpf_delete_elem(int fd, const void *key, bool from_syscall) const;
 
 	int bpf_map_get_next_key(int fd, const void *key, void *next_key,
-				 bool from_userspace) const;
+				 bool from_syscall) const;
 
 	// create an uprobe fd
 	int add_uprobe(int fd, int pid, const char *name, uint64_t offset,

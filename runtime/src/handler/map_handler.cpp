@@ -52,7 +52,7 @@ std::optional<array_map_impl *> bpf_map_handler::try_get_array_map_impl() const
 }
 
 const void *bpf_map_handler::map_lookup_elem(const void *key,
-					     bool from_userspace) const
+					     bool from_syscall) const
 {
 	const auto do_lookup = [&](auto *impl) -> const void * {
 		if (impl->should_lock) {
@@ -92,14 +92,14 @@ const void *bpf_map_handler::map_lookup_elem(const void *key,
 	case bpf_map_type::BPF_MAP_TYPE_PERCPU_ARRAY: {
 		auto impl = static_cast<per_cpu_array_map_impl *>(
 			map_impl_ptr.get());
-		return from_userspace ? do_lookup_userspace(impl) :
-					do_lookup(impl);
+		return from_syscall ? do_lookup_userspace(impl) :
+				      do_lookup(impl);
 	}
 	case bpf_map_type::BPF_MAP_TYPE_PERCPU_HASH: {
 		auto impl = static_cast<per_cpu_hash_map_impl *>(
 			map_impl_ptr.get());
-		return from_userspace ? do_lookup_userspace(impl) :
-					do_lookup(impl);
+		return from_syscall ? do_lookup_userspace(impl) :
+				      do_lookup(impl);
 	}
 	case bpf_map_type::BPF_MAP_TYPE_KERNEL_USER_ARRAY: {
 		auto impl = static_cast<array_map_kernel_user_impl *>(
@@ -133,7 +133,7 @@ const void *bpf_map_handler::map_lookup_elem(const void *key,
 }
 
 long bpf_map_handler::map_update_elem(const void *key, const void *value,
-				      uint64_t flags, bool from_userspace) const
+				      uint64_t flags, bool from_syscall) const
 {
 	const auto do_update = [&](auto *impl) -> long {
 		if (impl->should_lock) {
@@ -173,14 +173,14 @@ long bpf_map_handler::map_update_elem(const void *key, const void *value,
 	case bpf_map_type::BPF_MAP_TYPE_PERCPU_ARRAY: {
 		auto impl = static_cast<per_cpu_array_map_impl *>(
 			map_impl_ptr.get());
-		return from_userspace ? do_update_userspace(impl) :
-					do_update(impl);
+		return from_syscall ? do_update_userspace(impl) :
+				      do_update(impl);
 	}
 	case bpf_map_type::BPF_MAP_TYPE_PERCPU_HASH: {
 		auto impl = static_cast<per_cpu_hash_map_impl *>(
 			map_impl_ptr.get());
-		return from_userspace ? do_update_userspace(impl) :
-					do_update(impl);
+		return from_syscall ? do_update_userspace(impl) :
+				      do_update(impl);
 	}
 	case bpf_map_type::BPF_MAP_TYPE_KERNEL_USER_ARRAY: {
 		auto impl = static_cast<array_map_kernel_user_impl *>(
@@ -214,7 +214,7 @@ long bpf_map_handler::map_update_elem(const void *key, const void *value,
 }
 
 int bpf_map_handler::bpf_map_get_next_key(const void *key, void *next_key,
-					  bool from_userspace) const
+					  bool from_syscall) const
 {
 	const auto do_get_next_key = [&](auto *impl) -> int {
 		if (impl->should_lock) {
@@ -283,8 +283,7 @@ int bpf_map_handler::bpf_map_get_next_key(const void *key, void *next_key,
 	return 0;
 }
 
-long bpf_map_handler::map_delete_elem(const void *key,
-				      bool from_userspace) const
+long bpf_map_handler::map_delete_elem(const void *key, bool from_syscall) const
 {
 	const auto do_delete = [&](auto *impl) -> long {
 		if (impl->should_lock) {
@@ -324,14 +323,14 @@ long bpf_map_handler::map_delete_elem(const void *key,
 	case bpf_map_type::BPF_MAP_TYPE_PERCPU_ARRAY: {
 		auto impl = static_cast<per_cpu_array_map_impl *>(
 			map_impl_ptr.get());
-		return from_userspace ? do_delete_userspace(impl) :
-					do_delete(impl);
+		return from_syscall ? do_delete_userspace(impl) :
+				      do_delete(impl);
 	}
 	case bpf_map_type::BPF_MAP_TYPE_PERCPU_HASH: {
 		auto impl = static_cast<per_cpu_hash_map_impl *>(
 			map_impl_ptr.get());
-		return from_userspace ? do_delete_userspace(impl) :
-					do_delete(impl);
+		return from_syscall ? do_delete_userspace(impl) :
+				      do_delete(impl);
 	}
 	case bpf_map_type::BPF_MAP_TYPE_KERNEL_USER_ARRAY: {
 		auto impl = static_cast<array_map_kernel_user_impl *>(

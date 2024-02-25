@@ -111,7 +111,7 @@ class bpf_map_handler {
 	// *  		*errno* is set appropriately.
 	// *
 	const void *map_lookup_elem(const void *key,
-				    bool from_userspace = false) const;
+				    bool from_syscall = false) const;
 	// * BPF_MAP_UPDATE_ELEM
 	// *	Description
 	// *		Create or update an element (key/value pair) in a
@@ -144,7 +144,7 @@ class bpf_map_handler {
 	// *key* does not exist in the map.
 	// *
 	long map_update_elem(const void *key, const void *value, uint64_t flags,
-			     bool from_userspace = false) const;
+			     bool from_syscall = false) const;
 	// * BPF_MAP_DELETE_ELEM
 	// *	Description
 	// *		Look up and delete an element by key in a specified map.
@@ -152,8 +152,7 @@ class bpf_map_handler {
 	// *	Return
 	// *		Returns zero on success. On error, -1 is returned and
 	// *errno* *		is set appropriately.
-	long map_delete_elem(const void *key,
-			     bool from_userspace = false) const;
+	long map_delete_elem(const void *key, bool from_syscall = false) const;
 	// * BPF_MAP_GET_NEXT_KEY
 	// *	Description
 	// *		Look up an element by key in a specified map and return
@@ -178,7 +177,7 @@ class bpf_map_handler {
 	// *		**EINVAL** on error.
 	// *
 	int bpf_map_get_next_key(const void *key, void *next_key,
-				 bool from_userspace = false) const;
+				 bool from_syscall = false) const;
 	void map_free(boost::interprocess::managed_shared_memory &memory);
 	int map_init(boost::interprocess::managed_shared_memory &memory);
 	uint32_t get_value_size() const;
