@@ -17,7 +17,7 @@ and checkout the [examples of good first issues](https://github.com/eunomia-bpf/
 If you find that the project is not working properly, please file a report using
 the [Bug Report template](https://github.com/eunomia-bpf/bpftime/issues/new?assignees=&labels=bug&template=bug_report.md&title=[BUG]).
 Should the template provided not suit your needs, feel free to make a
-[custom Bug Report](https://github.com/eunomia-bpf/bpftime/issues/new/choose),
+[custom Bug Report](https://github.com/eunomia-bpf/bpftime/issues/new?assignees=&labels=&projects=&template=custom.md&title=),
 but please label it accordingly.
 
 We are happy to hear your ideas for how to further improve eunomia-bpd,
