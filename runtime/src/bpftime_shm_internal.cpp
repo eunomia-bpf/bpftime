@@ -665,13 +665,27 @@ bool bpftime_shm::is_software_perf_event_handler_fd(int fd) const
 	return hd.type == bpf_event_type::PERF_TYPE_SOFTWARE;
 }
 
+// local agent config can be used for test or local process
+static agent_config local_agent_config = {};
+
 void bpftime_shm::set_agent_config(const struct agent_config &config)
 {
 	if (agent_config == nullptr) {
-		SPDLOG_ERROR("agent_config is nullptr, set error");
+		SPDLOG_INFO(
+			"global agent_config is nullptr, set current process config");
+		local_agent_config = config;
 		return;
 	}
 	*agent_config = config;
+}
+
+const struct agent_config &bpftime_shm::get_agent_config()
+{
+	if (agent_config == nullptr) {
+		SPDLOG_INFO("use current process config");
+		return local_agent_config;
+	}
+	return *agent_config;
 }
 
 const bpftime::agent_config &bpftime_get_agent_config()

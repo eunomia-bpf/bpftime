@@ -45,10 +45,7 @@ class bpftime_shm {
 
     public:
 	// Get the configuration object
-	const struct agent_config &get_agent_config()
-	{
-		return *agent_config;
-	}
+	const struct agent_config &get_agent_config();
 	// Set the configuration object
 	void set_agent_config(const struct agent_config &config);
 	// Check whether a certain pid was already equipped with syscall tracer

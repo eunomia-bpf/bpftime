@@ -24,7 +24,7 @@ static const char *SHM_NAME = "BPFTIME_TEST_ENTERNAL_MAP_SHM";
 static const char *HANDLER_NAME = "my_handler";
 static const int test_map_type = 2000;
 
-static std::map<uint32_t, uint32_t> cpp_map;
+static std::map<uint32_t, uint64_t> cpp_map;
 
 static void *elem_lookup_static(int id, const void *key, bool from_syscall)
 {
@@ -65,18 +65,18 @@ TEST_CASE("Test basic operations of external hash map ops")
 		.elem_update = elem_update_static,
 	};
 
-	REQUIRE(bpftime_register_map_ops(test_map_type, &map_ops) == 0);
-
-	manager_ref.set_handler(1,
+	int res = manager_ref.set_handler(1,
 				bpf_map_handler(1, test_map_type, 4, 8, 1024, 0,
 						"hash1", segment),
 				segment);
+	REQUIRE(res == 1);
 
+	REQUIRE(bpftime_register_map_ops(test_map_type, &map_ops) == 0);
 	// test insert
 	auto &map_handler = std::get<bpf_map_handler>(manager_ref[1]);
 	for (int i = 0; i < 100; i++) {
 		uint32_t key = i;
-		uint64_t value = (((uint64_t)key) << 32) | 0xffffffff;
+		uint64_t value = i;
 		map_handler.map_update_elem(&key, &value, 0);
 	}
 
@@ -84,7 +84,7 @@ TEST_CASE("Test basic operations of external hash map ops")
 	for (int i = 0; i < 100; i++) {
 		uint32_t key = i;
 		auto val = *(uint64_t *)(map_handler.map_lookup_elem(&key));
-		REQUIRE(val == ((((uint64_t)key) << 32) | 0xffffffff));
+		REQUIRE(val == i);
 		spdlog::info("val for {} = {:x}", i, val);
 	}
 }
