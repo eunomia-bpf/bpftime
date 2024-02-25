@@ -151,6 +151,13 @@ extern const shm_open_type global_shm_open_type;
 const bpftime::agent_config &set_agent_config_from_env();
 const bpftime::agent_config &bpftime_get_agent_config();
 void bpftime_set_agent_config(bpftime::agent_config &cfg);
+
+struct bpftime_map_ops {
+	void *(*elem_lookup)(const void *key);
+	long (*elem_update)(const void *key, const void *value, uint64_t flags);
+	long (*elem_delete)(const void *key);
+	int (*map_get_next_key)(const void *key, void *next_key);
+};
 } // namespace bpftime
 
 extern "C" {
@@ -251,16 +258,6 @@ int bpftime_map_get_info(int fd, bpftime::bpf_map_attr *out_attr,
 
 // get the map value size from the global shared memory by fd
 uint32_t bpftime_map_value_size_from_syscall(int fd);
-
-// used by bpf_helper to get the next key
-int bpftime_helper_map_get_next_key(int fd, const void *key, void *next_key);
-// used by bpf_helper to lookup the elem
-const void *bpftime_helper_map_lookup_elem(int fd, const void *key);
-// used by bpf_helper to update the elem
-long bpftime_helper_map_update_elem(int fd, const void *key, const void *value,
-				    uint64_t flags);
-// used by bpf_helper to delete the elem
-long bpftime_helper_map_delete_elem(int fd, const void *key);
 
 // use from bpf syscall to get the next key
 int bpftime_map_get_next_key(int fd, const void *key, void *next_key);
