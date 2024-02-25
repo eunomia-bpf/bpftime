@@ -12,6 +12,12 @@ struct agent_config {
 	bool enable_kernel_helper_group = true;
 	bool enable_ufunc_helper_group = false;
 	bool enable_shm_maps_helper_group = true;
+
+	// allow non buildin map types
+	// if enabled, when a eBPF application tries to create a map with a
+	// self-defined or non-buildin supported map type, if will not be
+	// rejected
+	bool allow_non_buildin_map_types = false;
 };
 } // namespace bpftime
 

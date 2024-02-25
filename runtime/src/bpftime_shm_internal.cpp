@@ -639,7 +639,7 @@ int bpftime_shm::add_bpf_map(int fd, const char *name,
 	verifier::set_map_descriptors(helpers);
 #endif
 	return manager->set_handler(
-		fd, bpftime::bpf_map_handler(name, segment, attr), segment);
+		fd, bpftime::bpf_map_handler(fd, name, segment, attr), segment);
 }
 
 const handler_manager *bpftime_shm::get_manager() const

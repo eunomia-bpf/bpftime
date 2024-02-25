@@ -25,7 +25,7 @@ int bpftime_find_minimal_unused_fd()
 	return shm_holder.global_shared_memory.find_minimal_unused_fd();
 }
 
-int bpftime_link_create(int fd, struct bpf_link_create_args* args)
+int bpftime_link_create(int fd, struct bpf_link_create_args *args)
 {
 	return shm_holder.global_shared_memory.add_bpf_link(fd, args);
 }
@@ -569,6 +569,8 @@ const bpftime::agent_config &bpftime::set_agent_config_from_env()
 	}
 	const char *use_jit = getenv("BPFTIME_USE_JIT");
 	agent_config.jit_enabled = use_jit != nullptr;
+	agent_config.allow_non_buildin_map_types =
+		getenv("BPFTIME_ALLOW_EXTERNAL_MAPS") != nullptr;
 	bpftime_set_agent_config(agent_config);
 	return bpftime_get_agent_config();
 }

@@ -102,6 +102,7 @@ enum class bpf_map_type {
 	BPF_MAP_TYPE_KERNEL_USER_PERF_EVENT_ARRAY =
 		KERNEL_USER_MAP_OFFSET + BPF_MAP_TYPE_PERF_EVENT_ARRAY,
 
+	BPF_MAP_TYPE_MAX = 2048,
 };
 
 enum class shm_open_type {
@@ -152,12 +153,31 @@ const bpftime::agent_config &set_agent_config_from_env();
 const bpftime::agent_config &bpftime_get_agent_config();
 void bpftime_set_agent_config(bpftime::agent_config &cfg);
 
+// Map ops for register external map types and operations
+//
+// The map ops will be store in each process, it's not in global shared memory
+// Once the map operates on non-builtin map type, it will find the map ops
+// in the map ops table and call the corresponding functions.
 struct bpftime_map_ops {
-	void *(*elem_lookup)(const void *key);
-	long (*elem_update)(const void *key, const void *value, uint64_t flags);
-	long (*elem_delete)(const void *key);
-	int (*map_get_next_key)(const void *key, void *next_key);
+	// initialize the map
+	int (*alloc_map)(int id, const char *name, bpf_map_attr attr);
+	// free the map
+	void (*map_free)(int id);
+	// lookup the elem
+	void *(*elem_lookup)(int id, const void *key, bool from_syscall);
+	// update the elem
+	long (*elem_update)(int id, const void *key, const void *value, uint64_t flags, bool from_syscall);
+	// delete the elem
+	long (*elem_delete)(int id, const void *key, bool from_syscall);
+	// get the next key
+	int (*map_get_next_key)(int id, const void *key, void *next_key, bool from_syscall);
 };
+
+// register new map ops
+//
+// External map ops needs the syscall-server is running with the map ops enabled.
+int bpftime_register_map_ops(int map_type, bpftime_map_ops *ops);
+
 } // namespace bpftime
 
 extern "C" {
