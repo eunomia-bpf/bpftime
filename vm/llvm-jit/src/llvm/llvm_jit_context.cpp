@@ -34,7 +34,6 @@
 #include <string>
 #include <spdlog/spdlog.h>
 #include <tuple>
-#include <picosha2.h>
 #include <boost/interprocess/sync/file_lock.hpp>
 #include <boost/interprocess/sync/scoped_lock.hpp>
 
@@ -97,125 +96,11 @@ void llvm_bpf_jit_context::do_jit_compile()
 	this->jit = std::move(jit);
 }
 
-static std::string hash_ebpf_program(const char *bytes, size_t size)
-{
-	picosha2::hash256_one_by_one hasher;
-	hasher.process(bytes, bytes + size);
-	hasher.finish();
-	std::vector<unsigned char> hash(picosha2::k_digest_size);
-	hasher.get_hash_bytes(hash.begin(), hash.end());
-
-	return picosha2::get_hash_hex_string(hasher);
-}
-
-static std::pair<std::filesystem::path, std::filesystem::path>
-ensure_aot_cache_dir_and_cache_file()
-{
-	const char *home_dir = getenv("HOME");
-	if (home_dir) {
-		SPDLOG_DEBUG("Use `{}` as home directory", home_dir);
-	} else {
-		home_dir = ".";
-		SPDLOG_DEBUG("Home dir not found, using working directory");
-	}
-	auto dir = std::filesystem::path(home_dir) / ".bpftime" / "aot-cache";
-	if (!std::filesystem::exists(dir)) {
-		std::error_code ec;
-		if (!std::filesystem::create_directories(dir, ec)) {
-			SPDLOG_CRITICAL(
-				"Unable to create AOT cache directory: {}",
-				ec.value());
-			throw std::runtime_error("Unable to create aot cache");
-		}
-	}
-	auto cache_lock = dir / "lock";
-	struct stat st;
-	int err;
-	if (stat(cache_lock.c_str(), &st) == -1) {
-		int err = errno;
-		if (errno != ENOENT) {
-			SPDLOG_CRITICAL(
-				"Unable to detect the existence of {}, err={}",
-				cache_lock.c_str(), errno);
-			throw std::runtime_error("Failed to check");
-		} else {
-			std::ofstream ofs(cache_lock);
-		}
-	}
-
-	return { dir, cache_lock };
-}
-
-static std::optional<std::vector<uint8_t> >
-load_aot_cache(const std::filesystem::path &path)
-{
-	std::ifstream ifs(path, std::ios::binary | std::ios::ate);
-	if (!ifs.is_open()) {
-		SPDLOG_WARN(
-			"LLVM-JIT: Unable to open aot cache file, fallback to jit");
-		return {};
-	} else {
-		std::streamsize size = ifs.tellg();
-		ifs.seekg(0, std::ios::beg);
-		std::vector<uint8_t> buffer(size);
-
-		if (!ifs.read((char *)buffer.data(), size)) {
-			SPDLOG_WARN(
-				"LLVM-JIT: Unable to read aot cache, fallback to jit");
-			return {};
-		}
-		SPDLOG_INFO("LLVM-JIT: {} bytes of aot cache loaded",
-			    buffer.size());
-		return buffer;
-	}
-}
-
 ebpf_jit_fn llvm_bpf_jit_context::compile()
 {
 	spin_lock_guard guard(compiling.get());
 	if (!this->jit.has_value()) {
-		if (getenv("BPFTIME_ENABLE_AOT")) {
-			SPDLOG_DEBUG("LLVM-JIT: Entering AOT compilation");
-			auto ebpf_prog_hash = hash_ebpf_program(
-				(const char *)vm->insnsi, vm->num_insts * 8);
-			SPDLOG_INFO("LLVM-JIT: SHA256 of ebpf program: {}",
-				    ebpf_prog_hash);
-			auto [cache_dir, cache_lock] =
-				ensure_aot_cache_dir_and_cache_file();
-
-			boost::interprocess::file_lock flock(
-				cache_lock.c_str());
-			boost::interprocess::scoped_lock<
-				boost::interprocess::file_lock>
-				_guard(flock);
-			SPDLOG_DEBUG("LLVM_JIT: cache lock acquired");
-			auto cache_file = cache_dir / ebpf_prog_hash;
-			SPDLOG_DEBUG("LLVM-JIT: cache file is {}",
-				     cache_file.c_str());
-			if (std::filesystem::exists(cache_file)) {
-				SPDLOG_INFO(
-					"LLVM-JIT: Try loading aot cache..");
-				if (auto opt = load_aot_cache(cache_file);
-				    opt.has_value()) {
-					this->load_aot_object(*opt);
-				} else {
-					SPDLOG_WARN(
-						"Unable to load aot file, fallback to jit");
-					do_jit_compile();
-				}
-			} else {
-				SPDLOG_INFO("LLVM-JIT: Creating AOT cache..");
-				auto cache = do_aot_compile();
-				std::ofstream ofs(cache_file, std::ios::binary);
-				ofs.write((const char *)cache.data(),
-					  cache.size());
-				do_jit_compile();
-			}
-
-		} else {
-			SPDLOG_DEBUG("LLVM-JIT: AOT disabled, using JIT");
-			do_jit_compile();
-		}
+		do_jit_compile();
 	} else {
 		SPDLOG_DEBUG("LLVM-JIT: already compiled");
 	}
