@@ -76,14 +76,14 @@ TEST_CASE("Test basic operations of external hash map ops")
 	REQUIRE(bpftime_register_map_ops(test_map_type, &map_ops) == 0);
 	// test insert
 	auto &map_handler = std::get<bpf_map_handler>(manager_ref[1]);
-	for (int i = 0; i < 100; i++) {
+	for (uint64_t i = 0; i < 100; i++) {
 		uint32_t key = i;
 		uint64_t value = i;
 		map_handler.map_update_elem(&key, &value, 0);
 	}
 
 	// test lookup
-	for (int i = 0; i < 100; i++) {
+	for (uint64_t i = 0; i < 100; i++) {
 		uint32_t key = i;
 		auto val = *(uint64_t *)(map_handler.map_lookup_elem(&key));
 		REQUIRE(val == i);
