@@ -16,6 +16,7 @@
 #include "catch2/internal/catch_run_context.hpp"
 #include <algorithm>
 #include <random>
+#include <map>
 
 using namespace boost::interprocess;
 using namespace bpftime;
@@ -66,9 +67,10 @@ TEST_CASE("Test basic operations of external hash map ops")
 	};
 
 	int res = manager_ref.set_handler(1,
-				bpf_map_handler(1, test_map_type, 4, 8, 1024, 0,
-						"hash1", segment),
-				segment);
+					  bpf_map_handler(1, test_map_type, 4,
+							  8, 1024, 0, "hash1",
+							  segment),
+					  segment);
 	REQUIRE(res == 1);
 
 	REQUIRE(bpftime_register_map_ops(test_map_type, &map_ops) == 0);
