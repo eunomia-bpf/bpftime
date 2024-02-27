@@ -1,3 +1,8 @@
+if(CMAKE_BUILD_TYPE STREQUAL "Debug")
+    add_definitions(-DSPDLOG_ACTIVE_LEVEL=SPDLOG_LEVEL_DEBUG)
+  else()
+    add_definitions(-DSPDLOG_ACTIVE_LEVEL=SPDLOG_LEVEL_INFO)
+  endif()
 add_subdirectory(base_attach_impl)
 add_subdirectory(frida_uprobe_attach_impl)
 add_subdirectory(syscall_trace_attach_impl)

@@ -2,7 +2,7 @@
 #include "catch2/catch_test_macros.hpp"
 #include "frida_attach_private_data.hpp"
 #include "frida_uprobe_attach_impl.hpp"
-#include "frida_uprobe_attach_internal.hpp"
+#include "frida_register_def.hpp"
 #include <cstdint>
 #include <frida_uprobe.hpp>
 #include <memory>

@@ -2,6 +2,7 @@
 #include "frida_uprobe_attach_impl.hpp"
 #include "frida_attach_entry.hpp"
 #include <spdlog/spdlog.h>
+#include <frida_register_conversion.hpp>
 using namespace bpftime::attach;
 GType uprobe_listener_get_type();
 
@@ -101,12 +102,13 @@ bool frida_internal_attach_entry::has_uprobe_or_uretprobe() const
 	return false;
 }
 
-uprobe_override_callback &
-frida_internal_attach_entry::get_filter_callback() const
+void frida_internal_attach_entry::run_filter_callback(const pt_regs &regs) const
 {
 	for (auto v : user_attaches) {
 		if (v->get_type() == ATTACH_UPROBE_OVERRIDE) {
-			return std::get<ATTACH_UPROBE_OVERRIDE_INDEX>(v->cb);
+			v->run_callback<ATTACH_UPROBE_OVERRIDE_INDEX>(regs);
+			// There should be at most one filter attach..
+			return;
 		}
 	}
 	SPDLOG_ERROR(
@@ -120,7 +122,7 @@ void frida_internal_attach_entry::iterate_uprobe_callbacks(
 {
 	for (auto v : user_attaches) {
 		if (v->get_type() == ATTACH_UPROBE) {
-			std::get<ATTACH_UPROBE_INDEX>(v->cb)(regs);
+			v->run_callback<ATTACH_UPROBE_INDEX>(regs);
 		}
 	}
 }
@@ -130,7 +132,7 @@ void frida_internal_attach_entry::iterate_uretprobe_callbacks(
 {
 	for (auto v : user_attaches) {
 		if (v->get_type() == ATTACH_URETPROBE) {
-			std::get<(int)ATTACH_URETPROBE_INDEX>(v->cb)(regs);
+			v->run_callback<ATTACH_URETPROBE_INDEX>(regs);
 		}
 	}
 }
@@ -157,7 +159,7 @@ extern "C" void *__bpftime_frida_attach_manager__override_handler()
 	auto arg4 = gum_invocation_context_get_nth_argument(ctx, 4);
 	ufunc_func func = (ufunc_func)ctx->function;
 
-	hook_entry->get_filter_callback()(regs);
+	hook_entry->run_filter_callback(regs);
 	if (hook_entry->is_overrided) {
 		auto value = (uintptr_t)hook_entry->user_ret;
 		SPDLOG_DEBUG("Using override return value: {}", value);

@@ -6,7 +6,7 @@ add_library(
     src/frida_attach_entry.cpp
     src/frida_attach_utils.cpp
     src/frida_attach_private_data.cpp
-    src/frida_uprobe_attach_internal.cpp
+    src/frida_register_conversion.cpp
 )
 add_dependencies(bpftime_frida_uprobe_attach_impl bpftime_base_attach_impl FridaGum spdlog::spdlog)
 

@@ -1,4 +1,4 @@
-#include <frida_uprobe_attach_internal.hpp>
+#include <frida_register_conversion.hpp>
 #include <frida-gum.h>
 namespace bpftime
 {
