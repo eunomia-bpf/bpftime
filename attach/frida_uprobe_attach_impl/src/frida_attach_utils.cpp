@@ -74,6 +74,7 @@ int from_cb_idx_to_attach_type(int idx)
 	default:
 		assert(false && "Unreachable!");
 	}
+	return 0;
 }
 } // namespace attach
 } // namespace bpftime

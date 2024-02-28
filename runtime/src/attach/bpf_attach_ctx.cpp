@@ -28,7 +28,7 @@
 #include <utility>
 #include <variant>
 #include <sys/resource.h>
-#include <frida_uprobe_attach_internal.hpp>
+#include <frida_register_def.hpp>
 #include <frida_uprobe_attach_impl.hpp>
 #include <frida_attach_private_data.hpp>
 extern "C" uint64_t bpftime_set_retval(uint64_t value);

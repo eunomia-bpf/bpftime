@@ -16,6 +16,7 @@
 #include <unistd.h>
 #include "frida_internal_attach_entry.hpp"
 #include "frida_attach_entry.hpp"
+#include <variant>
 
 using namespace bpftime::attach;
 
@@ -30,19 +31,31 @@ frida_attach_impl::frida_attach_impl()
 	gum_init_embedded();
 	interceptor = gum_interceptor_obtain();
 }
-
-int frida_attach_impl::attach_at(void *func_addr, callback_variant &&cb)
+int frida_attach_impl::attach_at_with_ebpf_callback(void *func_addr,
+						    ebpf_callback_args &&cb)
+{
+	return attach_at(func_addr, cb);
+}
+int frida_attach_impl::attach_at(void *func_addr,
+				 frida_attach_entry_callback &&cb)
 {
 	auto itr = internal_attaches.find(func_addr);
+	int current_attach_type;
+	if (std::holds_alternative<callback_variant>(cb)) {
+		current_attach_type = from_cb_idx_to_attach_type(
+			std::get<callback_variant>(cb).index());
+
+	} else {
+		current_attach_type =
+			std::get<ebpf_callback_args>(cb).attach_type;
+	}
 	if (itr == internal_attaches.end()) {
 		// Create a frida attach entry
 		itr = internal_attaches
 			      .emplace(func_addr,
 				       std::make_unique<
 					       frida_internal_attach_entry>(
-					       func_addr,
-					       from_cb_idx_to_attach_type(
-						       cb.index()),
+					       func_addr, current_attach_type,
 					       (GumInterceptor *)interceptor))
 			      .first;
 		SPDLOG_DEBUG("Created frida attach entry for func addr {:x}",
@@ -153,43 +166,42 @@ int frida_attach_impl::create_attach_with_ebpf_callback(
 		auto &sub = dynamic_cast<const frida_attach_private_data &>(
 			private_data);
 
-		auto attach_callback = [=](const pt_regs &regs) {
-			uint64_t ret;
-			if (int err = cb((void *)&regs, sizeof(regs), &ret);
-			    err < 0) {
-				SPDLOG_ERROR(
-					"Failed to run ebpf callback at frida attach manager for attach type {}, err={}",
-					attach_type, err);
-			}
-		};
-		if (attach_type == ATTACH_UPROBE) {
-			return create_uprobe_at((void *)(uintptr_t)sub.addr,
-						std::move(attach_callback));
-		} else if (attach_type == ATTACH_URETPROBE) {
-			return create_uretprobe_at((void *)(uintptr_t)sub.addr,
-						   std::move(attach_callback));
-		} else if (attach_type == ATTACH_UPROBE_OVERRIDE) {
-			return create_uprobe_override_at(
-				(void *)(uintptr_t)sub.addr,
-				std::move(attach_callback));
+		ebpf_callback_args args{ .ebpf_cb = cb,
+					 .attach_type = attach_type };
+		if (attach_type == ATTACH_UPROBE ||
+		    attach_type == ATTACH_URETPROBE ||
+		    attach_type == ATTACH_UPROBE_OVERRIDE) {
+			return attach_at_with_ebpf_callback(
+				(void *)(uintptr_t)sub.addr, std::move(args));
 		} else if (attach_type == ATTACH_UREPLACE) {
-			return create_uprobe_override_at(
+			return attach_at_with_ebpf_callback(
 				(void *)(uintptr_t)sub.addr,
-				[=](const pt_regs &regs) {
-					uint64_t ret;
-					if (int err = cb((void *)&regs,
-							 sizeof(regs), &ret);
-					    err < 0) {
-						SPDLOG_ERROR(
-							"Failed to run ebpf callback at frida attach manager for attach type {}, err={}",
-							attach_type, err);
-					} else {
-						SPDLOG_ERROR(
-							"Override return value in ureplace: {}",
-							ret);
-						bpftime_set_retval(ret);
-					}
-				});
+				ebpf_callback_args{
+					.ebpf_cb = [=](void *memory,
+						       size_t memory_size,
+						       uint64_t *return_value)
+						-> int {
+						if (int err = cb(memory,
+								 memory_size,
+								 return_value);
+						    err < 0) {
+							SPDLOG_ERROR(
+								"Failed to run ebpf callback at frida attach manager for attach type {}, err={}",
+								attach_type,
+								err);
+							return err;
+						} else {
+							SPDLOG_DEBUG(
+								"Override return value in ureplace: {}",
+								*return_value);
+							bpftime_set_retval(
+								*return_value);
+							return err;
+						}
+					},
+					.attach_type =
+						ATTACH_UPROBE_OVERRIDE });
+
 		} else {
 			SPDLOG_ERROR(
 				"Unsupported attach type by frida attach manager: {}",
