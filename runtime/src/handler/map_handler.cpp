@@ -24,10 +24,15 @@ using boost::interprocess::sharable_lock;
 
 namespace bpftime
 {
+
+bpftime_map_ops
+	global_map_ops_table[(int)bpf_map_type::BPF_MAP_TYPE_MAX] = { 0 };
+
 std::string bpf_map_handler::get_container_name()
 {
 	return "ebpf_map_fd_" + std::string(name.c_str());
 }
+
 uint32_t bpf_map_handler::get_value_size() const
 {
 	auto result = value_size;
@@ -37,6 +42,7 @@ uint32_t bpf_map_handler::get_value_size() const
 	}
 	return result;
 }
+
 std::optional<ringbuf_map_impl *>
 bpf_map_handler::try_get_ringbuf_map_impl() const
 {
@@ -44,6 +50,7 @@ bpf_map_handler::try_get_ringbuf_map_impl() const
 		return {};
 	return static_cast<ringbuf_map_impl *>(map_impl_ptr.get());
 }
+
 std::optional<array_map_impl *> bpf_map_handler::try_get_array_map_impl() const
 {
 	if (type != bpf_map_type::BPF_MAP_TYPE_ARRAY)
@@ -52,7 +59,7 @@ std::optional<array_map_impl *> bpf_map_handler::try_get_array_map_impl() const
 }
 
 const void *bpf_map_handler::map_lookup_elem(const void *key,
-					     bool from_userspace) const
+					     bool from_syscall) const
 {
 	const auto do_lookup = [&](auto *impl) -> const void * {
 		if (impl->should_lock) {
@@ -92,14 +99,14 @@ const void *bpf_map_handler::map_lookup_elem(const void *key,
 	case bpf_map_type::BPF_MAP_TYPE_PERCPU_ARRAY: {
 		auto impl = static_cast<per_cpu_array_map_impl *>(
 			map_impl_ptr.get());
-		return from_userspace ? do_lookup_userspace(impl) :
-					do_lookup(impl);
+		return from_syscall ? do_lookup_userspace(impl) :
+				      do_lookup(impl);
 	}
 	case bpf_map_type::BPF_MAP_TYPE_PERCPU_HASH: {
 		auto impl = static_cast<per_cpu_hash_map_impl *>(
 			map_impl_ptr.get());
-		return from_userspace ? do_lookup_userspace(impl) :
-					do_lookup(impl);
+		return from_syscall ? do_lookup_userspace(impl) :
+				      do_lookup(impl);
 	}
 	case bpf_map_type::BPF_MAP_TYPE_KERNEL_USER_ARRAY: {
 		auto impl = static_cast<array_map_kernel_user_impl *>(
@@ -127,13 +134,19 @@ const void *bpf_map_handler::map_lookup_elem(const void *key,
 		return do_lookup(impl);
 	}
 	default:
-		assert(false && "Unsupported map type");
+		auto func_ptr = global_map_ops_table[(int)type].elem_lookup;
+		if (func_ptr) {
+			return func_ptr(id, key, from_syscall);
+		} else {
+			SPDLOG_ERROR("Unsupported map type: {}", (int)type);
+			return nullptr;
+		}
 	}
 	return 0;
 }
 
 long bpf_map_handler::map_update_elem(const void *key, const void *value,
-				      uint64_t flags, bool from_userspace) const
+				      uint64_t flags, bool from_syscall) const
 {
 	const auto do_update = [&](auto *impl) -> long {
 		if (impl->should_lock) {
@@ -173,14 +186,14 @@ long bpf_map_handler::map_update_elem(const void *key, const void *value,
 	case bpf_map_type::BPF_MAP_TYPE_PERCPU_ARRAY: {
 		auto impl = static_cast<per_cpu_array_map_impl *>(
 			map_impl_ptr.get());
-		return from_userspace ? do_update_userspace(impl) :
-					do_update(impl);
+		return from_syscall ? do_update_userspace(impl) :
+				      do_update(impl);
 	}
 	case bpf_map_type::BPF_MAP_TYPE_PERCPU_HASH: {
 		auto impl = static_cast<per_cpu_hash_map_impl *>(
 			map_impl_ptr.get());
-		return from_userspace ? do_update_userspace(impl) :
-					do_update(impl);
+		return from_syscall ? do_update_userspace(impl) :
+				      do_update(impl);
 	}
 	case bpf_map_type::BPF_MAP_TYPE_KERNEL_USER_ARRAY: {
 		auto impl = static_cast<array_map_kernel_user_impl *>(
@@ -208,13 +221,19 @@ long bpf_map_handler::map_update_elem(const void *key, const void *value,
 		return do_update(impl);
 	}
 	default:
-		assert(false && "Unsupported map type");
+		auto func_ptr = global_map_ops_table[(int)type].elem_update;
+		if (func_ptr) {
+			return func_ptr(id, key, value, flags, from_syscall);
+		} else {
+			SPDLOG_ERROR("Unsupported map type: {}", (int)type);
+			return -1;
+		}
 	}
 	return 0;
 }
 
 int bpf_map_handler::bpf_map_get_next_key(const void *key, void *next_key,
-					  bool from_userspace) const
+					  bool from_syscall) const
 {
 	const auto do_get_next_key = [&](auto *impl) -> int {
 		if (impl->should_lock) {
@@ -278,13 +297,19 @@ int bpf_map_handler::bpf_map_get_next_key(const void *key, void *next_key,
 		return do_get_next_key(impl);
 	}
 	default:
-		assert(false && "Unsupported map type");
+		auto func_ptr =
+			global_map_ops_table[(int)type].map_get_next_key;
+		if (func_ptr) {
+			return func_ptr(id, key, next_key, from_syscall);
+		} else {
+			SPDLOG_ERROR("Unsupported map type: {}", (int)type);
+			return -1;
+		}
 	}
 	return 0;
 }
 
-long bpf_map_handler::map_delete_elem(const void *key,
-				      bool from_userspace) const
+long bpf_map_handler::map_delete_elem(const void *key, bool from_syscall) const
 {
 	const auto do_delete = [&](auto *impl) -> long {
 		if (impl->should_lock) {
@@ -324,14 +349,14 @@ long bpf_map_handler::map_delete_elem(const void *key,
 	case bpf_map_type::BPF_MAP_TYPE_PERCPU_ARRAY: {
 		auto impl = static_cast<per_cpu_array_map_impl *>(
 			map_impl_ptr.get());
-		return from_userspace ? do_delete_userspace(impl) :
-					do_delete(impl);
+		return from_syscall ? do_delete_userspace(impl) :
+				      do_delete(impl);
 	}
 	case bpf_map_type::BPF_MAP_TYPE_PERCPU_HASH: {
 		auto impl = static_cast<per_cpu_hash_map_impl *>(
 			map_impl_ptr.get());
-		return from_userspace ? do_delete_userspace(impl) :
-					do_delete(impl);
+		return from_syscall ? do_delete_userspace(impl) :
+				      do_delete(impl);
 	}
 	case bpf_map_type::BPF_MAP_TYPE_KERNEL_USER_ARRAY: {
 		auto impl = static_cast<array_map_kernel_user_impl *>(
@@ -359,7 +384,13 @@ long bpf_map_handler::map_delete_elem(const void *key,
 		return do_delete(impl);
 	}
 	default:
-		assert(false && "Unsupported map type");
+		auto func_ptr = global_map_ops_table[(int)type].elem_delete;
+		if (func_ptr) {
+			return func_ptr(id, key, from_syscall);
+		} else {
+			SPDLOG_ERROR("Unsupported map type: {}", (int)type);
+			return -1;
+		}
 	}
 	return 0;
 }
@@ -446,9 +477,18 @@ int bpf_map_handler::map_init(managed_shared_memory &memory)
 	}
 
 	default:
-		SPDLOG_ERROR("Unsupported map type: {}", (int)type);
-		// assert(false && "Unsupported map type");
-		return -1;
+		if (bpftime_get_agent_config().allow_non_buildin_map_types) {
+			SPDLOG_INFO("non-builtin map type: {}", (int)type);
+			map_impl_ptr = nullptr;
+			auto func_ptr = global_map_ops_table[(int)type].alloc_map;
+			if (func_ptr) {
+				return func_ptr(id, name.c_str(), attr);
+			}
+			return 0;
+		} else {
+			SPDLOG_ERROR("Unsupported map type: {}", (int)type);
+			return -1;
+		}
 	}
 	return 0;
 }
@@ -495,13 +535,18 @@ void bpf_map_handler::map_free(managed_shared_memory &memory)
 	case bpf_map_type::BPF_MAP_TYPE_PROG_ARRAY:
 		memory.destroy<prog_array_map_impl>(container_name.c_str());
 		break;
-
 	default:
-		assert(false && "Unsupported map type");
+		auto func_ptr = global_map_ops_table[(int)type].map_free;
+		if (func_ptr) {
+			func_ptr(id);
+		} else {
+			SPDLOG_ERROR("Unsupported map type: {}", (int)type);
+		}
 	}
 	map_impl_ptr = nullptr;
 	return;
 }
+
 std::optional<perf_event_array_kernel_user_impl *>
 bpf_map_handler::try_get_shared_perf_event_array_map_impl() const
 {
@@ -510,4 +555,14 @@ bpf_map_handler::try_get_shared_perf_event_array_map_impl() const
 	return static_cast<perf_event_array_kernel_user_impl *>(
 		map_impl_ptr.get());
 }
+
+int bpftime_register_map_ops(int map_type, bpftime_map_ops *ops) {
+	if (map_type < 0 || map_type >= (int)bpf_map_type::BPF_MAP_TYPE_MAX) {
+		SPDLOG_ERROR("Invalid map type: {}", map_type);
+		return -1;
+	}
+	global_map_ops_table[map_type] = *ops;
+	return 0;
+}
+
 } // namespace bpftime
