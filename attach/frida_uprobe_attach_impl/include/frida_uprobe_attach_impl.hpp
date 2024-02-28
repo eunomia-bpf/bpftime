@@ -8,7 +8,7 @@
 
 #include <functional>
 #include <variant>
-#include "frida_uprobe_attach_internal.hpp"
+#include <frida_register_def.hpp>
 #include <memory>
 #include <unordered_map>
 #include <base_attach_impl.hpp>
@@ -29,7 +29,6 @@ constexpr int ATTACH_UPROBE_OVERRIDE = 1008;
 // Replace the hooked function with the provided callback
 constexpr int ATTACH_UREPLACE = 1009;
 
-
 constexpr int ATTACH_UPROBE_INDEX = 0;
 constexpr int ATTACH_URETPROBE_INDEX = 1;
 constexpr int ATTACH_UPROBE_OVERRIDE_INDEX = 2;
@@ -49,6 +48,17 @@ using callback_variant = std::variant<uprobe_callback, uretprobe_callback,
 using attach_iterate_callback =
 	std::function<void(int id, const void *addr, int ty)>;
 
+struct ebpf_callback_args {
+	ebpf_run_callback ebpf_cb;
+	// Used to record the attach type
+	int attach_type;
+};
+
+// Callback of a attach entry can be either a function that accept pt_regs, or a
+// function that accept arguments to the ebpf program
+using frida_attach_entry_callback =
+	std::variant<callback_variant, ebpf_callback_args>;
+
 // The frida uprobe attach implementation
 class frida_attach_impl final : public base_attach_impl {
     public:
@@ -61,6 +71,8 @@ class frida_attach_impl final : public base_attach_impl {
 	// Create a uprobe override attach entry at the specified address
 	int create_uprobe_override_at(void *func_addr,
 				      uprobe_override_callback &&cb);
+	// Attach at a certain function, with a ebpf function as callback
+	int attach_at_with_ebpf_callback(void *func_addr, ebpf_callback_args &&cb);
 	// Iterate over all attaches managed by this attach impl instance
 	void iterate_attaches(attach_iterate_callback cb);
 	// Detach all attach entry at a specified function address
@@ -84,7 +96,7 @@ class frida_attach_impl final : public base_attach_impl {
 		internal_attaches;
 
 	friend class frida_internal_attach_entry;
-	int attach_at(void *func_addr, callback_variant &&cb);
+	int attach_at(void *func_addr, frida_attach_entry_callback &&cb);
 };
 } // namespace attach
 } // namespace bpftime

@@ -95,15 +95,15 @@ TEST_CASE("Test shm hash maps with sub process")
 	auto &manager_ref = *manager;
 
 	manager_ref.set_handler(1,
-				bpf_map_handler(BPF_MAP_TYPE_HASH, 4, 8, 1024,
+				bpf_map_handler(1, BPF_MAP_TYPE_HASH, 4, 8, 1024,
 						0, "hash1", segment),
 				segment);
 	manager_ref.set_handler(2,
-				bpf_map_handler(BPF_MAP_TYPE_HASH, 4, 8, 1024,
+				bpf_map_handler(2, BPF_MAP_TYPE_HASH, 4, 8, 1024,
 						0, "hash2", segment),
 				segment);
 	manager_ref.set_handler(3,
-				bpf_map_handler(BPF_MAP_TYPE_ARRAY, 4, 8, 1024,
+				bpf_map_handler(3, BPF_MAP_TYPE_ARRAY, 4, 8, 1024,
 						0, "array1", segment),
 				segment);
 

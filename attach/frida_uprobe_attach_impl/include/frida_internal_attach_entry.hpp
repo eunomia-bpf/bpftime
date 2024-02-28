@@ -1,5 +1,6 @@
 #ifndef _BPFTIME_FRIDA_INTERNAL_ATTACH_ENTRY_HPP
 #define _BPFTIME_FRIDA_INTERNAL_ATTACH_ENTRY_HPP
+#include "frida_attach_entry.hpp"
 #include <frida-gum.h>
 #include <vector>
 #include "frida_uprobe_attach_impl.hpp"
@@ -30,7 +31,7 @@ class frida_internal_attach_entry {
 
 	bool has_override() const;
 	bool has_uprobe_or_uretprobe() const;
-	uprobe_override_callback &get_filter_callback() const;
+	void run_filter_callback(const pt_regs &regs) const;
 	void iterate_uprobe_callbacks(const pt_regs &regs) const;
 	void iterate_uretprobe_callbacks(const pt_regs &regs) const;
 	frida_internal_attach_entry(const frida_internal_attach_entry &) =
