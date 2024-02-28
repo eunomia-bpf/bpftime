@@ -39,4 +39,15 @@ jobs:
     - name: build vm as a standalone library
       run: |
         cd vm && make build-llvm -j
-    
+        
+  test_attach:
+    runs-on: ubuntu-22.04
+    needs: build
+    steps:
+      - uses: actions/checkout@v2
+        with:
+          submodules: 'recursive'
+      - name: Run attach tests
+        run: |
+          ./build/vm/llvm-jit/unit-test/bpftime_frida_uprobe_attach_tests
+          ./build/vm/llvm-jit/unit-test/bpftime_syscall_trace_attach_tests
