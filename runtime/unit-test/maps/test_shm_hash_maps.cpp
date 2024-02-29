@@ -70,7 +70,7 @@ static void handle_sub_process()
 	managed_shared_memory segment(open_only, SHM_NAME);
 	auto manager = segment.find<handler_manager>(HANDLER_NAME).first;
 	auto &manager_ref = *manager;
-	manager_ref.clear_fd_at(2, segment);
+	manager_ref.clear_id_at(2, segment);
 	test_lookup_map(1, manager_ref, segment);
 	test_lookup_map(3, manager_ref, segment);
 	test_get_next_element(1, manager_ref, segment);

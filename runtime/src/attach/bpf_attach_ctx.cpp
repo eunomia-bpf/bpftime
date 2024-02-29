@@ -9,6 +9,8 @@
 #include "bpftime_shm.hpp"
 #include "frida_attach_utils.hpp"
 #include "handler/epoll_handler.hpp"
+#include "handler/link_handler.hpp"
+#include "handler/prog_handler.hpp"
 #include "syscall_trace_attach_private_data.hpp"
 #include <unistd.h>
 #include <cerrno>
@@ -245,6 +247,65 @@ bpf_attach_ctx::bpf_attach_ctx(void)
 		  std::make_unique<attach::syscall_trace_attach_impl>())
 {
 	current_id = CURRENT_ID_OFFSET;
+}
+
+int bpf_attach_ctx::instantiate_handler_at(const handler_manager *manager,
+					   int id, std::set<int> &stk,
+					   const agent_config &config)
+{
+	SPDLOG_DEBUG("Instantiating handler at {}", id);
+	if (instantiated_handlers.contains(id)) {
+		SPDLOG_DEBUG("Handler {} id already instantiated");
+		return 0;
+	}
+	if (stk.contains(id)) {
+		SPDLOG_CRITICAL("Loop detected when instantiating handler {}",
+				id);
+		return -1;
+	}
+	stk.insert(id);
+	auto &handler = manager->get_handler(id);
+	if (std::holds_alternative<bpf_prog_handler>(handler)) {
+		auto &prog_handler = std::get<bpf_prog_handler>(handler);
+		const ebpf_inst *insns = prog_handler.insns.data();
+		size_t cnt = prog_handler.insns.size();
+		const char *name = prog_handler.name.c_str();
+		progs[id] = std::make_unique<bpftime_prog>(insns, cnt, name);
+		bpftime_prog *prog = progs[id].get();
+		if (int err = load_prog_and_helpers(prog, config); err < 0) {
+			SPDLOG_ERROR(
+				"Failed to load program helpers for prog handler {}: {}",
+				id, err);
+			return err;
+		}
+	
+	} else if (std::holds_alternative<bpf_perf_event_handler>(handler)) {
+	} else if (std::holds_alternative<bpf_link_handler>(handler)) {
+		auto &link_handler = std::get<bpf_link_handler>(handler);
+		if (int err = instantiate_handler_at(
+			    manager, link_handler.prog_id, stk, config);
+		    err < 0) {
+			SPDLOG_ERROR(
+				"Unable to instantiate prog handler {} when instantiating link handler {}: {}",
+				link_handler.prog_id, id, err);
+			return err;
+		}
+		if (int err = instantiate_handler_at(
+			    manager, link_handler.attach_target_id, stk,
+			    config);
+		    err < 0) {
+			SPDLOG_ERROR(
+				"Unable to instantiate perf event handler {} when instantiating link handler {}: {}",
+				link_handler.attach_target_id, id, err);
+			return err;
+		}
+	} else {
+		SPDLOG_DEBUG("Instantiating type {}", handler.index());
+	}
+	stk.erase(id);
+	instantiated_handlers.insert(id);
+	SPDLOG_DEBUG("Instantiating done: {}", id);
+	return 0;
 }
 
 } // namespace bpftime

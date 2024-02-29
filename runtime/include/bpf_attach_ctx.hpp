@@ -5,6 +5,7 @@
 #include <map>
 #include <memory>
 #include <frida_uprobe_attach_impl.hpp>
+#include <set>
 #include <syscall_trace_attach_impl.hpp>
 typedef struct _GumInterceptor GumInterceptor;
 typedef struct _GumInvocationListener GumInvocationListener;
@@ -48,9 +49,15 @@ class bpf_attach_ctx {
 
 	// save the progs for memory management
 	std::map<int, std::unique_ptr<bpftime_prog> > progs;
+	std::map<int, int> attach_ids;
+	// std::unique_ptr<attach::base_attach_impl> frida_uprobe_attach_impl;
+	// std::unique_ptr<attach::base_attach_impl> syscall_trace_attach_impl;
 
-	std::unique_ptr<attach::base_attach_impl> frida_uprobe_attach_impl;
-	std::unique_ptr<attach::base_attach_impl> syscall_trace_attach_impl;
+	std::set<int> instantiated_handlers;
+
+	int instantiate_handler_at(const handler_manager *manager, int id,
+				   std::set<int> &stk,
+				   const agent_config &config);
 };
 
 } // namespace bpftime

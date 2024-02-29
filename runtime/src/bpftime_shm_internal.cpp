@@ -478,7 +478,7 @@ int bpftime_shm::add_bpf_link(int fd, struct bpf_link_create_args *args)
 void bpftime_shm::close_fd(int fd)
 {
 	if (manager) {
-		manager->clear_fd_at(fd, segment);
+		manager->clear_id_at(fd, segment);
 	}
 }
 
