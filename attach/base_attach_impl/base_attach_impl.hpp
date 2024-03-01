@@ -23,7 +23,6 @@ using ebpf_run_callback = std::function<int(void *memory, size_t memory_size,
 // The base of all attach implementations
 class base_attach_impl {
     public:
-
 	// Detach a certain attach entry by a local attach id
 	virtual int detach_by_id(int id) = 0;
 
@@ -37,8 +36,9 @@ class base_attach_impl {
 		int attach_type) = 0;
 
 	// Allocate a new attach entry id
-	int allocate_id(){
-	return next_id++;
+	int allocate_id()
+	{
+		return next_id++;
 	}
 
 	virtual ~base_attach_impl(){};
@@ -53,28 +53,33 @@ class base_attach_impl {
 extern "C" {
 
 // Set the return value of the current context
-inline uint64_t bpftime_set_retval(uint64_t value) {
+inline uint64_t bpftime_set_retval(uint64_t value)
+{
 	using namespace bpftime::attach;
-    if (curr_thread_override_return_callback.has_value()) {
-        curr_thread_override_return_callback.value()(0, value);
-    } else {
-        spdlog::error("Called bpftime_set_retval, but no retval callback was set");
-        assert(false);
-    }
-    return 0;
+	if (curr_thread_override_return_callback.has_value()) {
+		curr_thread_override_return_callback.value()(0, value);
+	} else {
+		spdlog::error(
+			"Called bpftime_set_retval, but no retval callback was set");
+		assert(false);
+	}
+	return 0;
 }
 
 // Override the return value of the current context
-inline uint64_t bpftime_override_return(uint64_t ctx, uint64_t value) {
+inline uint64_t bpftime_override_return(uint64_t ctx, uint64_t value)
+{
 	using namespace bpftime::attach;
-    if (curr_thread_override_return_callback.has_value()) {
-        spdlog::debug("Overriding return value for ctx {:x} with {}", ctx, value);
-        curr_thread_override_return_callback.value()(ctx, value);
-    } else {
-        spdlog::error("Called bpftime_override_return, but no retval callback was set");
-        assert(false);
-    }
-    return 0;
+	if (curr_thread_override_return_callback.has_value()) {
+		spdlog::debug("Overriding return value for ctx {:x} with {}",
+			      ctx, value);
+		curr_thread_override_return_callback.value()(ctx, value);
+	} else {
+		spdlog::error(
+			"Called bpftime_override_return, but no retval callback was set");
+		assert(false);
+	}
+	return 0;
 }
 
 } // extern "C"
