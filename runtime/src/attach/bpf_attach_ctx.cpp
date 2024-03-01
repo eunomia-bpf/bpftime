@@ -244,6 +244,12 @@ int bpf_attach_ctx::instantiate_perf_event_handler_at(
 {
 	SPDLOG_DEBUG("Instantiating perf event handler at {}, type {}", id,
 		     (int)perf_handler.type);
+	if (perf_handler.type == bpf_event_type::PERF_TYPE_SOFTWARE) {
+		SPDLOG_DEBUG(
+			"Detected software perf event at {}, nothing need to do",
+			id);
+		return 0;
+	}
 	std::unique_ptr<attach::attach_private_data> priv_data;
 
 	auto itr = attach_impls.find((int)perf_handler.type);

@@ -7,6 +7,7 @@
 #include "handler/perf_event_handler.hpp"
 #include "handler/prog_handler.hpp"
 #include "spdlog/spdlog.h"
+#include <cerrno>
 #include <handler/handler_manager.hpp>
 #include <variant>
 #include <algorithm>
@@ -55,8 +56,14 @@ int handler_manager::set_handler(int fd, handler_variant &&handler,
 {
 	if (is_allocated(fd)) {
 		SPDLOG_ERROR("set_handler failed for fd {} aleady exists", fd);
-		return -ENOENT;
+		return -EEXIST;
 	}
+	if (std::holds_alternative<unused_handler>(handler)) {
+		SPDLOG_ERROR(
+			"Unable to set a handler to unused_handler with set_handler, please use clear_id_at");
+		return -ENOTSUP;
+	}
+	SPDLOG_DEBUG("Handler at fd {} set to type {}", fd, handler.index());
 	handlers[fd] = std::move(handler);
 	if (std::holds_alternative<bpf_map_handler>(handlers[fd])) {
 		std::get<bpf_map_handler>(handlers[fd]).map_init(memory);

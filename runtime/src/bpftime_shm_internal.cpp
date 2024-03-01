@@ -232,7 +232,7 @@ int bpftime_shm::add_bpf_prog_attach_target(int perf_fd, int bpf_fd,
 		errno = ENOENT;
 		return -1;
 	}
-	int next_id = manager->find_minimal_unused_idx();
+	int next_id = open_fake_fd();
 	if (next_id < 0) {
 		SPDLOG_ERROR("Unable to find an available id: {}", next_id);
 		return -ENOSPC;
