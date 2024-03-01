@@ -41,9 +41,10 @@ extern "C" void bpftime_destroy_global_shm()
 extern "C" void bpftime_remove_global_shm()
 {
 	using namespace bpftime;
-	boost::interprocess::shared_memory_object::remove(
-		get_global_shm_name());
-	SPDLOG_INFO("Global shm removed");
+	if (boost::interprocess::shared_memory_object::remove(
+	            get_global_shm_name()) != false) {
+	    SPDLOG_INFO("Global shm removed");
+	}
 }
 
 static __attribute__((destructor(65535))) void __destruct_shm()
