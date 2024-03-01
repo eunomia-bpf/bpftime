@@ -6,7 +6,7 @@ namespace bpftime
 struct agent_config {
 	bool debug = false;
 	// Enable JIT?
-	bool jit_enabled = false;
+	bool jit_enabled = true;
 
 	// helper groups
 	bool enable_kernel_helper_group = true;
