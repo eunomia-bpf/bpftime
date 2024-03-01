@@ -54,7 +54,8 @@ static void register_ufunc_for_print_and_add(bpf_attach_ctx *probe_ctx)
 		0,
 		false
 	};
-	bpftime_ufunc_resolve_from_info(func2);
+	bpftime_ufunc_resolve_from_info(func2,
+					&attach::find_function_addr_by_name);
 
 	ebpf_ufunc_func_info func1 = {
 		"print_func",
@@ -65,7 +66,8 @@ static void register_ufunc_for_print_and_add(bpf_attach_ctx *probe_ctx)
 		0,
 		false
 	};
-	bpftime_ufunc_resolve_from_info(func1);
+	bpftime_ufunc_resolve_from_info(func1,
+					&attach::find_function_addr_by_name);
 }
 TEST_CASE("Test attach replace with ebpf")
 {
@@ -89,19 +91,16 @@ TEST_CASE("Test attach replace with ebpf")
 	REQUIRE(res == 0);
 	res = prog->bpftime_prog_load(false);
 	REQUIRE(res == 0);
+	attach::frida_attach_impl man;
 	// attach
-	int fd =
-		dynamic_cast<attach::frida_attach_impl &>(
-			probe_ctx.get_uprobe_attach_impl())
-			.create_uprobe_override_at(
-				(void *)_bpftime_test_attach_replace__my_function,
-				[=](const pt_regs &regs) {
-					uint64_t ret;
-					prog->bpftime_prog_exec((void *)&regs,
-								sizeof(regs),
-								&ret);
-					bpftime_set_retval(ret);
-				});
+	int fd = man.create_uprobe_override_at(
+		(void *)_bpftime_test_attach_replace__my_function,
+		[=](const pt_regs &regs) {
+			uint64_t ret;
+			prog->bpftime_prog_exec((void *)&regs, sizeof(regs),
+						&ret);
+			bpftime_set_retval(ret);
+		});
 	REQUIRE(fd >= 0);
 
 	// test for attach
@@ -110,7 +109,7 @@ TEST_CASE("Test attach replace with ebpf")
 	REQUIRE(res == 100);
 
 	// detach
-	res = probe_ctx.get_uprobe_attach_impl().detach_by_id(fd);
+	res = man.detach_by_id(fd);
 	REQUIRE(res == 0);
 
 	// test for no attach

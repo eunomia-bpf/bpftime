@@ -1,9 +1,8 @@
-#include "frida_uprobe_attach_impl.hpp"
 #include <catch2/catch_test_macros.hpp>
 #include "helper.hpp"
 #include <spdlog/spdlog.h>
 #include <unit-test/common_def.hpp>
-#include <frida_uprobe.hpp>
+#include <frida_uprobe_attach_impl.hpp>
 using namespace bpftime;
 
 // This is the original function to hook.

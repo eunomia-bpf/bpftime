@@ -104,8 +104,11 @@ class handler_manager {
 	const handler_variant &operator[](int idx) const;
 	std::size_t size() const;
 
+	int set_handler_at_empty_slot(handler_variant &&handler,
+				      managed_shared_memory &memory);
+
 	int set_handler(int fd, handler_variant &&handler,
-			 managed_shared_memory &memory);
+			managed_shared_memory &memory);
 
 	bool is_allocated(int fd) const;
 

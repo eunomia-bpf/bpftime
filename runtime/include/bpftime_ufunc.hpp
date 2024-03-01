@@ -16,7 +16,6 @@
 
 namespace bpftime
 {
-class base_attach_manager;
 constexpr const size_t MAX_FUNC_NAME_LEN = 64;
 constexpr const size_t MAX_ARGS_COUNT = 6;
 constexpr const size_t MAX_UFUNC_FUNCS = 8192 * 4;
@@ -72,7 +71,8 @@ void bpftime_ufunc_register_ufunc(uint64_t id, ebpf_ufunc_func_info func_info);
 
 // register a ufunc for a program base on info.
 // probe ctx will find the function address and fill in the func_info
-int bpftime_ufunc_resolve_from_info(ebpf_ufunc_func_info func_info);
+int bpftime_ufunc_resolve_from_info(ebpf_ufunc_func_info func_info,
+				    void *(*function_resolver)(const char *));
 
 } // namespace bpftime
 #endif

@@ -429,9 +429,11 @@ int bpftime_perf_event_output(int fd, const void *buf, size_t sz)
 		return -1;
 	}
 	auto &handler = std::get<bpf_perf_event_handler>(shm.get_handler(fd));
-	if (handler.sw_perf.has_value()) {
+	if (std::holds_alternative<software_perf_event_shared_ptr>(
+		    handler.data)) {
 		SPDLOG_DEBUG("Perf out value to fd {}, sz {}", fd, sz);
-		return handler.sw_perf.value()->output_data(buf, sz);
+		return std::get<software_perf_event_shared_ptr>(handler.data)
+			->output_data(buf, sz);
 	} else {
 		SPDLOG_ERROR(
 			"Expected perf event handler {} to be a software perf event handler",

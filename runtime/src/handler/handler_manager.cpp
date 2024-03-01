@@ -40,6 +40,16 @@ std::size_t handler_manager::size() const
 	return handlers.size();
 }
 
+int handler_manager::set_handler_at_empty_slot(handler_variant &&handler,
+					       managed_shared_memory &memory)
+{
+	int id = find_minimal_unused_idx();
+	if (id < 0) {
+		SPDLOG_ERROR("Unable to find empty slot");
+		return id;
+	}
+	return set_handler(id, std::move(handler), memory);
+}
 int handler_manager::set_handler(int fd, handler_variant &&handler,
 				 managed_shared_memory &memory)
 {

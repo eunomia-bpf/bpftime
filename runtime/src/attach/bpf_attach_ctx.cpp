@@ -27,9 +27,6 @@
 #include <utility>
 #include <variant>
 #include <sys/resource.h>
-#include <frida_register_def.hpp>
-#include <frida_uprobe_attach_impl.hpp>
-#include <frida_attach_private_data.hpp>
 extern "C" uint64_t bpftime_set_retval(uint64_t value);
 namespace bpftime
 {
@@ -220,7 +217,7 @@ int bpf_attach_ctx::instantiate_bpf_link_handler_at(
 			     id, attach_id);
 		return attach_id;
 	}
-	instantiated_attach_ids[id] = attach_id;
+	instantiated_attach_ids[id] = std::make_pair(attach_id, attach_impl);
 	return 0;
 }
 int bpf_attach_ctx::instantiate_perf_event_handler_at(
@@ -271,5 +268,24 @@ int bpf_attach_ctx::instantiate_perf_event_handler_at(
 		std::make_pair(std::move(priv_data), (int)perf_handler.type);
 
 	return 0;
+}
+int bpf_attach_ctx::destroy_instantiated_attach_link(int link_id)
+{
+	if (auto itr = instantiated_attach_ids.find(link_id);
+	    itr != instantiated_attach_ids.end()) {
+		auto [attach_id, impl] = itr->second;
+		if (int err = impl->detach_by_id(attach_id); err < 0) {
+			SPDLOG_ERROR(
+				"Failed to detach attach link id {}, attach-specified id {}: {}",
+				link_id, attach_id, err);
+			return err;
+		}
+		instantiated_attach_ids.erase(itr);
+		return 0;
+	} else {
+		SPDLOG_ERROR("Unable to find instantiated attach link id {}",
+			     link_id);
+		return -ENOENT;
+	}
 }
 } // namespace bpftime

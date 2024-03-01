@@ -117,24 +117,21 @@ target_include_directories(${PROJECT_NAME}
   ${CMAKE_CURRENT_BINARY_DIR}
   ${CMAKE_CURRENT_SOURCE_DIR}/../third_party
   ${SPDLOG_INCLUDE}
-  ${FRIDA_UPROBE_ATTACH_IMPL_INCLUDE}
-  ${SYSCALL_TRACE_ATTACH_IMPL_INCLUDE}
 )
 
 target_link_libraries(${PROJECT_NAME}
   PUBLIC
   vm-bpf
   spdlog::spdlog
-  bpftime_frida_uprobe_attach_impl
-  bpftime_syscall_trace_attach_impl
+  bpftime_base_attach_impl
 )
-add_dependencies(${PROJECT_NAME} vm-bpf FridaGum syscall_id_table spdlog::spdlog libbpf bpftime_frida_uprobe_attach_impl bpftime_syscall_trace_attach_impl)
+add_dependencies(${PROJECT_NAME} vm-bpf FridaGum spdlog::spdlog libbpf bpftime_base_attach_impl)
 
-if (BPFTIME_ENABLE_IOURING_EXT)
-target_link_libraries(${PROJECT_NAME}
-  PUBLIC
-  uring
-)
+if(BPFTIME_ENABLE_IOURING_EXT)
+  target_link_libraries(${PROJECT_NAME}
+    PUBLIC
+    uring
+  )
 endif()
 
 if(${ENABLE_EBPF_VERIFIER})
@@ -173,6 +170,7 @@ target_link_libraries(${PROJECT_NAME}
   -ldl
   -lz
   -lelf
+  bpftime_base_attach_impl
 )
 
 target_include_directories(${PROJECT_NAME} PUBLIC

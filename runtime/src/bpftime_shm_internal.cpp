@@ -5,6 +5,7 @@
  */
 #include "bpftime_shm.hpp"
 #include "handler/epoll_handler.hpp"
+#include "handler/link_handler.hpp"
 #include "handler/perf_event_handler.hpp"
 #include "spdlog/spdlog.h"
 #include <bpftime_shm_internal.hpp>
@@ -192,7 +193,13 @@ int bpftime_shm::add_tracepoint(int fd, int pid, int32_t tracepoint_id)
 int bpftime_shm::add_software_perf_event(int cpu, int32_t sample_type,
 					 int64_t config)
 {
-	int fd = open_fake_fd();
+	return add_software_perf_event(open_fake_fd(), cpu, sample_type,
+				       config);
+}
+
+int bpftime_shm::add_software_perf_event(int fd, int cpu, int32_t sample_type,
+					 int64_t config)
+{
 	return manager->set_handler(fd,
 				    bpftime::bpf_perf_event_handler(
 					    cpu, sample_type, config, segment),
@@ -225,10 +232,14 @@ int bpftime_shm::add_bpf_prog_attach_target(int perf_fd, int bpf_fd,
 		errno = ENOENT;
 		return -1;
 	}
-	auto &handler = std::get<bpftime::bpf_prog_handler>(
-		manager->get_handler(bpf_fd));
-	handler.add_attach_fd(perf_fd, cookie);
-	return 0;
+	int next_id = manager->find_minimal_unused_idx();
+	if (next_id < 0) {
+		SPDLOG_ERROR("Unable to find an available id: {}", next_id);
+		return -ENOSPC;
+	}
+	manager->set_handler(next_id, bpf_link_handler(bpf_fd, perf_fd, cookie),
+			     segment);
+	return next_id;
 }
 
 int bpftime_shm::perf_event_enable(int fd) const
@@ -472,7 +483,7 @@ int bpftime_shm::add_bpf_link(int fd, struct bpf_link_create_args *args)
 		errno = EBADF;
 		return -1;
 	}
-	return manager->set_handler(fd, bpftime::bpf_link_handler{ *args },
+	return manager->set_handler(fd, bpftime::bpf_link_handler(*args),
 				    segment);
 }
 

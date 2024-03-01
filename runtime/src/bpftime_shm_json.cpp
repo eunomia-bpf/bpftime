@@ -63,11 +63,29 @@ bpf_perf_event_handler_attr_to_json(const bpf_perf_event_handler &handler)
 {
 	json j;
 	j["type"] = handler.type;
-	j["offset"] = handler.offset;
-	j["pid"] = handler.pid;
-	j["ref_ctr_off"] = handler.ref_ctr_off;
-	j["_module_name"] = handler._module_name;
-	j["tracepoint_id"] = handler.tracepoint_id;
+	if (std::holds_alternative<uprobe_perf_event_data>(handler.data)) {
+		auto &data = std::get<uprobe_perf_event_data>(handler.data);
+		j["data_type"] = "uprobe_perf_event_data";
+		j["offset"] = data.offset;
+		j["pid"] = data.pid;
+		j["ref_ctr_off"] = data.ref_ctr_off;
+		j["_module_name"] = data._module_name;
+	} else if (std::holds_alternative<tracepoint_perf_event_data>(
+			   handler.data)) {
+		auto &data = std::get<tracepoint_perf_event_data>(handler.data);
+		j["data_type"] = "tracepoint_perf_event_data";
+		j["pid"] = data.pid;
+		j["tracepoint_id"] = data.tracepoint_id;
+	} else if (std::holds_alternative<software_perf_event_shared_ptr>(
+			   handler.data)) {
+		j["data_type"] = "software_perf_event_shared_ptr";
+		auto &data =
+			std::get<software_perf_event_shared_ptr>(handler.data);
+		j["cpu"] = data->cpu;
+		j["config"] = data->config;
+		j["sample_type"] = data->sample_type;
+	}
+
 	return j;
 }
 
@@ -106,27 +124,43 @@ static int import_shm_handler_from_json(bpftime_shm &shm, json value, int fd)
 		shm.add_bpf_map(fd, name.c_str(), attr);
 	} else if (handler_type == "bpf_perf_event_handler") {
 		int type = value["attr"]["type"];
-		int offset = value["attr"]["offset"];
+
 		int pid = value["attr"]["pid"];
-		int ref_ctr_off = value["attr"]["ref_ctr_off"];
+
 		std::string _module_name = value["attr"]["_module_name"];
 		int tracepoint_id = value["attr"]["tracepoint_id"];
 		switch ((bpf_event_type)type) {
-		case bpf_event_type::BPF_TYPE_UPROBE:
+		case bpf_event_type::BPF_TYPE_UPROBE: {
+			int ref_ctr_off = value["attr"]["ref_ctr_off"];
+			int offset = value["attr"]["offset"];
 			shm.add_uprobe(fd, pid, _module_name.c_str(), offset,
 				       false, ref_ctr_off);
 			break;
-		case bpf_event_type::BPF_TYPE_URETPROBE:
+		}
+		case bpf_event_type::BPF_TYPE_URETPROBE: {
+			int ref_ctr_off = value["attr"]["ref_ctr_off"];
+			int offset = value["attr"]["offset"];
 			shm.add_uprobe(fd, pid, _module_name.c_str(), offset,
 				       true, ref_ctr_off);
 			break;
+		}
 		case bpf_event_type::PERF_TYPE_TRACEPOINT:
 			shm.add_tracepoint(fd, pid, tracepoint_id);
 			break;
-		case bpf_event_type::BPF_TYPE_UPROBE_OVERRIDE:
+		case bpf_event_type::BPF_TYPE_UPROBE_OVERRIDE: {
+			int offset = value["attr"]["offset"];
 			shm.add_uprobe_override(fd, pid, _module_name.c_str(),
 						offset, false);
 			break;
+		}
+		case bpf_event_type::PERF_TYPE_SOFTWARE: {
+			int cpu = value["attr"]["cpu"];
+			int32_t sample_type = value["attr"]["sample_type"];
+			int64_t config = value["attr"]["config"];
+			shm.add_software_perf_event(fd, cpu, sample_type,
+						    config);
+			break;
+		}
 		default:
 			SPDLOG_ERROR("Unsupported perf event type {}", type);
 			return -1;
@@ -225,10 +259,6 @@ int bpftime::bpftime_export_shm_to_json(const bpftime_shm &shm,
 				      { "attr", attr },
 				      { "name", name } };
 			// append attach fds to the json
-			for (auto &fd : prog_handler.attach_fds) {
-				j[std::to_string(i)]["attr"]["attach_fds"]
-					.push_back(fd.first);
-			}
 			SPDLOG_INFO("find prog fd={} name={}", i,
 				    prog_handler.name);
 		} else if (std::holds_alternative<bpf_map_handler>(handler)) {
@@ -261,8 +291,8 @@ int bpftime::bpftime_export_shm_to_json(const bpftime_shm &shm,
 			j[std::to_string(i)] = {
 				{ "type", "bpf_link_handler" },
 				{ "attr",
-				  { { "prog_fd", h.args.prog_fd },
-				    { "target_fd", h.args.target_fd } } }
+				  { { "prog_fd", h.prog_id },
+				    { "target_fd", h.attach_target_id } } }
 			};
 			SPDLOG_INFO(
 				"bpf_link_handler found at {}，link {} -> {}",

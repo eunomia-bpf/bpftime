@@ -9,6 +9,7 @@
 #include "frida_attach_utils.hpp"
 #include "frida_uprobe_attach_impl.hpp"
 #include "handler/handler_manager.hpp"
+#include "handler/link_handler.hpp"
 #include <cstdlib>
 #include "bpftime_object.hpp"
 #include <boost/interprocess/creation_tags.hpp>
@@ -72,7 +73,8 @@ static void register_ufunc_for_print_and_add(bpf_attach_ctx *probe_ctx)
 				       2,
 				       0,
 				       false };
-	bpftime_ufunc_resolve_from_info(func2);
+	bpftime_ufunc_resolve_from_info(func2,
+					&attach::find_function_addr_by_name);
 
 	ebpf_ufunc_func_info func1 = { "print_func",
 				       UFUNC_FN(print_func),
@@ -81,12 +83,13 @@ static void register_ufunc_for_print_and_add(bpf_attach_ctx *probe_ctx)
 				       1,
 				       0,
 				       false };
-	bpftime_ufunc_resolve_from_info(func1);
+	bpftime_ufunc_resolve_from_info(func1,
+					&attach::find_function_addr_by_name);
 }
 
-static void attach_uprobe(bpftime::handler_manager &manager_ref,
-			  managed_shared_memory &segment, bpftime_prog *prog,
-			  bpf_attach_ctx &ctx)
+static int attach_uprobe(bpftime::handler_manager &manager_ref,
+			 managed_shared_memory &segment, bpftime_prog *prog,
+			 bpf_attach_ctx &ctx)
 {
 	std::uint64_t offset = 0;
 	void *module_base_self = attach::get_module_base_addr("");
@@ -102,12 +105,13 @@ static void attach_uprobe(bpftime::handler_manager &manager_ref,
 	manager_ref.set_handler(4, hd, segment);
 	auto &prog_handler = std::get<bpf_prog_handler>(manager_ref[0]);
 	// the attach fd is 3
-	prog_handler.add_attach_fd(4, {});
+	return manager_ref.set_handler_at_empty_slot(bpf_link_handler(0, 4),
+						     segment);
 }
 
-static void attach_replace(bpftime::handler_manager &manager_ref,
-			   managed_shared_memory &segment, bpftime_prog *prog,
-			   bpf_attach_ctx &ctx)
+static int attach_replace(bpftime::handler_manager &manager_ref,
+			  managed_shared_memory &segment, bpftime_prog *prog,
+			  bpf_attach_ctx &ctx)
 {
 	void *module_base_self = attach::get_module_base_addr("");
 	void *my_function_addr =
@@ -122,14 +126,17 @@ static void attach_replace(bpftime::handler_manager &manager_ref,
 			(int)bpftime::bpf_prog_type::BPF_PROG_TYPE_UNSPEC),
 		segment);
 	auto &prog_handler = std::get<bpf_prog_handler>(manager_ref[0]);
-	// the attach fd is 3
-	prog_handler.add_attach_fd(3, {});
+
 	// attach replace
 	manager_ref.set_handler(
 		3,
 		bpf_perf_event_handler(bpf_event_type::BPF_TYPE_UREPLACE,
 				       offset, -1, "", segment, true),
 		segment);
+
+	// the attach fd is 3
+	return manager_ref.set_handler_at_empty_slot(bpf_link_handler(0, 3),
+						     segment);
 }
 
 static void handle_sub_process()
@@ -187,8 +194,8 @@ TEST_CASE("Test shm progs attach")
 	// init the attach ctx
 	bpf_attach_ctx ctx;
 	register_ufunc_for_print_and_add(&ctx);
-	attach_replace(manager_ref, segment, prog, ctx);
-	attach_uprobe(manager_ref, segment, prog, ctx);
+	int replace_link_id = attach_replace(manager_ref, segment, prog, ctx);
+	int uprobe_link_id = attach_uprobe(manager_ref, segment, prog, ctx);
 
 	agent_config config;
 	config.enable_ufunc_helper_group = true;
@@ -202,16 +209,17 @@ TEST_CASE("Test shm progs attach")
 	REQUIRE(res == 100);
 	_bpftime_test_shm_progs_attach_my_uprobe_function(2, "hello uprobe",
 							  'd');
-	auto &attach_man = dynamic_cast<attach::frida_attach_impl &>(
-		ctx.get_uprobe_attach_impl());
-	REQUIRE(attach_man.detach_by_func_addr((
-			const void
-				*)&_bpftime_test_shm_progs_attach_my_function) ==
-		0);
-	REQUIRE(attach_man.detach_by_func_addr((
-			const void
-				*)&_bpftime_test_shm_progs_attach_my_uprobe_function) ==
-		0);
+	// auto &attach_man = dynamic_cast<attach::frida_attach_impl &>(
+	// 	ctx.get_uprobe_attach_impl());
+	// REQUIRE(attach_man.detach_by_func_addr((
+	// 		const void
+	// 			*)&_bpftime_test_shm_progs_attach_my_function)
+	// == 	0); REQUIRE(attach_man.detach_by_func_addr(( 		const
+	// void
+	// 			*)&_bpftime_test_shm_progs_attach_my_uprobe_function)
+	// == 	0);
+	REQUIRE(ctx.destroy_instantiated_attach_link(replace_link_id) == 0);
+	REQUIRE(ctx.destroy_instantiated_attach_link(uprobe_link_id) == 0);
 
 	int pid = fork();
 	if (pid == 0) {

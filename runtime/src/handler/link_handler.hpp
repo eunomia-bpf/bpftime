@@ -18,6 +18,21 @@ struct bpf_link_handler {
 	int prog_id;
 	int attach_target_id;
 	std::optional<uint64_t> attach_cookie;
+	bpf_link_handler(struct bpf_link_create_args args)
+		: args(args), prog_id(args.prog_fd),
+		  attach_target_id(args.target_fd)
+	{
+	}
+	bpf_link_handler(int prog_id, int attach_target_id)
+		: prog_id(prog_id), attach_target_id(attach_target_id)
+	{
+	}
+	bpf_link_handler(int prog_id, int attach_target_id,
+			 std::optional<uint64_t> cookie)
+		: prog_id(prog_id), attach_target_id(attach_target_id),
+		  attach_cookie(cookie)
+	{
+	}
 };
 } // namespace bpftime
 
