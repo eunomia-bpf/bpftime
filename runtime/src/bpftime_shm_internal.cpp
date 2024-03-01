@@ -14,7 +14,6 @@
 #include <unistd.h>
 #include <variant>
 #include <sys/mman.h>
-#include <string.h>
 
 static bool global_shm_initialized = false;
 
@@ -42,9 +41,8 @@ extern "C" void bpftime_destroy_global_shm()
 extern "C" void bpftime_remove_global_shm()
 {
 	using namespace bpftime;
-	const char *shm_name = get_global_shm_name();
-	boost::interprocess::shared_memory_object::remove(shm_name);
-	if (strcmp(shm_name, DEFAULT_GLOBAL_SHM_NAME) != 0) {
+	if (boost::interprocess::shared_memory_object::remove(
+	            get_global_shm_name()) != false) {
 	    SPDLOG_INFO("Global shm removed");
 	}
 }
