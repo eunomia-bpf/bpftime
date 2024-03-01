@@ -1,6 +1,5 @@
 #ifndef _PROG_HANDLER_HPP
 #define _PROG_HANDLER_HPP
-#include "spdlog/spdlog.h"
 #include <boost/interprocess/managed_shared_memory.hpp>
 #include <boost/interprocess/containers/vector.hpp>
 #include <boost/interprocess/containers/string.hpp>

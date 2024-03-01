@@ -31,9 +31,9 @@ set(TEST_SOURCES
 
 add_executable(bpftime_runtime_tests ${TEST_SOURCES})
 set_property(TARGET bpftime_runtime_tests PROPERTY CXX_STANDARD 20)
-add_dependencies(bpftime_runtime_tests runtime bpftime-object bpftime_frida_uprobe_attach_impl)
-target_link_libraries(bpftime_runtime_tests PRIVATE runtime bpftime-object Catch2::Catch2WithMain bpftime_frida_uprobe_attach_impl)
-target_include_directories(bpftime_runtime_tests PRIVATE ${BPFTIME_RUNTIME_INCLUDE} ${BPFTIME_OBJECT_INCLUDE_DIRS} ${Catch2_INCLUDE} ${Boost_INCLUDE} ${FRIDA_UPROBE_ATTACH_IMPL_INCLUDE})
+add_dependencies(bpftime_runtime_tests runtime bpftime-object bpftime_base_attach_impl)
+target_link_libraries(bpftime_runtime_tests PRIVATE runtime bpftime-object Catch2::Catch2WithMain bpftime_base_attach_impl)
+target_include_directories(bpftime_runtime_tests PRIVATE ${BPFTIME_RUNTIME_INCLUDE} ${BPFTIME_OBJECT_INCLUDE_DIRS} ${Catch2_INCLUDE} ${Boost_INCLUDE} ${BASE_ATTACH_IMPL_INCLUDE})
 add_test(NAME bpftime_runtime_tests COMMAND bpftime_runtime_tests)
 
 # These are necessary ebpf program required by the test
