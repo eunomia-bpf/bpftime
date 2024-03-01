@@ -42,8 +42,7 @@ _bpftime_test_shm_progs_attach_my_function(int parm1, const char *str, char c)
 }
 
 extern "C" __attribute__((__noinline__, noinline, optnone)) int
-_bpftime_test_shm_progs_attach_my_uprobe_function(int parm1,
-						  volatile const char *str,
+_bpftime_test_shm_progs_attach_my_uprobe_function(int parm1, const char *str,
 						  char c)
 {
 	asm("");
@@ -192,7 +191,7 @@ static void handle_sub_process()
 	_exit(0);
 }
 
-TEST_CASE("Test shm progs attach")
+__attribute__((optnone)) TEST_CASE("Test shm progs attach")
 {
 	spdlog::set_level(spdlog::level::debug);
 	SPDLOG_INFO("parent process start");
@@ -240,7 +239,7 @@ TEST_CASE("Test shm progs attach")
 	// We have to use volatile. If not, LTO will optimize the process to
 	// pass arguments..
 	volatile int arg1 = 2;
-	volatile const char *arg2 = "hello uprobe";
+	const char *arg2 = "hello uprobe";
 	volatile char arg3 = 'd';
 	res = _bpftime_test_shm_progs_attach_my_uprobe_function(arg1, arg2,
 								arg3);

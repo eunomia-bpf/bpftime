@@ -33,7 +33,7 @@ extern "C" uint64_t _bpftime_test_attach_replace__print_func(char *str)
 }
 
 // This is the original function to hook.
-extern "C" int
+extern "C" __attribute__((optnone)) int
 _bpftime_test_attach_replace__my_function(int parm1, const char *str, char c)
 {
 	spdlog::info("origin func: Args: {}, {}, {}", parm1, str, c);
@@ -69,7 +69,7 @@ static void register_ufunc_for_print_and_add(bpf_attach_ctx *probe_ctx)
 	bpftime_ufunc_resolve_from_info(func1,
 					&attach::find_function_addr_by_name);
 }
-TEST_CASE("Test attach replace with ebpf")
+__attribute__((optnone)) TEST_CASE("Test attach replace with ebpf")
 {
 	int res = 1;
 
