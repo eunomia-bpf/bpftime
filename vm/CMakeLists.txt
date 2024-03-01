@@ -37,8 +37,10 @@ endif()
 message(STATUS "Started CMake for ${PROJECT_NAME} v${PROJECT_VERSION}...\n")
 
 if(BPFTIME_LLVM_JIT)
+  message(STATUS "Using llvm-jit")
   add_subdirectory(llvm-jit)
 else()
+  message(STATUS "Not using llvm-jit")
   add_subdirectory(simple-jit)
 endif()
 

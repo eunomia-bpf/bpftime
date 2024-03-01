@@ -95,7 +95,7 @@ int bpf_attach_ctx::instantiate_handler_at(const handler_manager *manager,
 {
 	SPDLOG_DEBUG("Instantiating handler at {}", id);
 	if (instantiated_handlers.contains(id)) {
-		SPDLOG_DEBUG("Handler {} id already instantiated");
+		SPDLOG_DEBUG("Handler {} already instantiated", id);
 		return 0;
 	}
 	if (stk.contains(id)) {
@@ -165,10 +165,19 @@ void bpf_attach_ctx::register_attach_impl(
 		const std::string_view &, int &)>
 		private_data_creator)
 {
+	impl->register_custom_helpers([&](unsigned int idx, const char *name,
+					  void *func) -> int {
+		SPDLOG_INFO("Register attach-impl defined helper {}, index {}",
+			    name, idx);
+		this->helpers[idx] = bpftime_helper_info{ .index = idx,
+							  .name = name,
+							  .fn = func };
+		return 0;
+	});
 	auto *impl_ptr = impl.get();
 	attach_impl_holders.emplace_back(std::move(impl));
 	for (auto ty : attach_types) {
-		SPDLOG_DEBUG("Register attach type {} with attach impl {}",
+		SPDLOG_DEBUG("Register attach type {} with attach impl {}", ty,
 			     typeid(impl_ptr).name());
 		attach_impls[ty] =
 			std::make_pair(impl_ptr, private_data_creator);
@@ -190,6 +199,9 @@ int bpf_attach_ctx::instantiate_prog_handler_at(int id,
 			id, err);
 		return err;
 	}
+	for (const auto &item : helpers) {
+		prog->bpftime_prog_register_raw_helper(item.second);
+	}
 	return 0;
 }
 int bpf_attach_ctx::instantiate_bpf_link_handler_at(
@@ -201,7 +213,14 @@ int bpf_attach_ctx::instantiate_bpf_link_handler_at(
 		handler.attach_cookie.value_or(0));
 	auto &[priv_data, attach_type] =
 		instantiated_perf_events[handler.attach_target_id];
-	auto attach_impl = attach_impls.at(attach_type).first;
+	attach::base_attach_impl *attach_impl;
+	if (auto itr = attach_impls.find(attach_type);
+	    itr != attach_impls.end()) {
+		attach_impl = itr->second.first;
+	} else {
+		SPDLOG_ERROR("Attach type {} is not registered", attach_type);
+		return -ENOTSUP;
+	}
 	auto prog = instantiated_progs.at(handler.prog_id).get();
 	auto cookie = handler.attach_cookie;
 	int attach_id = attach_impl->create_attach_with_ebpf_callback(
@@ -226,8 +245,15 @@ int bpf_attach_ctx::instantiate_perf_event_handler_at(
 	SPDLOG_DEBUG("Instantiating perf event handler at {}, type {}", id,
 		     (int)perf_handler.type);
 	std::unique_ptr<attach::attach_private_data> priv_data;
-	auto &[attach_impl, private_data_gen] =
-		attach_impls.at((int)perf_handler.type);
+
+	auto itr = attach_impls.find((int)perf_handler.type);
+	if (itr == attach_impls.end()) {
+		SPDLOG_ERROR(
+			"Unable to lookup attach implementation of attach type {}",
+			(int)perf_handler.type);
+		return -ENOENT;
+	}
+	auto &[attach_impl, private_data_gen] = itr->second;
 	if (perf_handler.type == bpf_event_type::BPF_TYPE_UPROBE_OVERRIDE ||
 	    perf_handler.type == bpf_event_type::BPF_TYPE_UPROBE ||
 	    perf_handler.type == bpf_event_type::BPF_TYPE_URETPROBE ||
@@ -238,23 +264,23 @@ int bpf_attach_ctx::instantiate_perf_event_handler_at(
 		arg_str += uprobe_data._module_name;
 		arg_str += ':';
 		arg_str += std::to_string(uprobe_data.offset);
-		int err;
+		int err = 0;
 		priv_data = private_data_gen(arg_str, err);
 		if (err < 0) {
 			SPDLOG_ERROR(
-				"Unable to parse private data of uprobe perf handler {}, arg_str {}: {}",
+				"Unable to parse private data of uprobe perf handler {}, arg_str `{}`: {}",
 				id, arg_str, err);
 			return err;
 		}
 	} else if (perf_handler.type == bpf_event_type::PERF_TYPE_TRACEPOINT) {
 		auto &tracepoint_data =
 			std::get<tracepoint_perf_event_data>(perf_handler.data);
-		int err;
+		int err = 0;
 		priv_data = private_data_gen(
 			std::to_string(tracepoint_data.tracepoint_id), err);
 		if (err < 0) {
 			SPDLOG_ERROR(
-				"Unable to parse private data of tracepoint perf handler {}, tp_id {}: {}",
+				"Unable to parse private data of tracepoint perf handler {}, tp_id `{}`: {}",
 				id, tracepoint_data.tracepoint_id, err);
 			return err;
 		}
@@ -271,6 +297,7 @@ int bpf_attach_ctx::instantiate_perf_event_handler_at(
 }
 int bpf_attach_ctx::destroy_instantiated_attach_link(int link_id)
 {
+	SPDLOG_DEBUG("Destroy attach link {}", link_id);
 	if (auto itr = instantiated_attach_ids.find(link_id);
 	    itr != instantiated_attach_ids.end()) {
 		auto [attach_id, impl] = itr->second;

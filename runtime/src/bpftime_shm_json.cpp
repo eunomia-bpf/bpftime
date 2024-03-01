@@ -124,15 +124,14 @@ static int import_shm_handler_from_json(bpftime_shm &shm, json value, int fd)
 		shm.add_bpf_map(fd, name.c_str(), attr);
 	} else if (handler_type == "bpf_perf_event_handler") {
 		int type = value["attr"]["type"];
-
 		int pid = value["attr"]["pid"];
-
-		std::string _module_name = value["attr"]["_module_name"];
 		int tracepoint_id = value["attr"]["tracepoint_id"];
 		switch ((bpf_event_type)type) {
 		case bpf_event_type::BPF_TYPE_UPROBE: {
 			int ref_ctr_off = value["attr"]["ref_ctr_off"];
 			int offset = value["attr"]["offset"];
+			std::string _module_name =
+				value["attr"]["_module_name"];
 			shm.add_uprobe(fd, pid, _module_name.c_str(), offset,
 				       false, ref_ctr_off);
 			break;
@@ -140,6 +139,8 @@ static int import_shm_handler_from_json(bpftime_shm &shm, json value, int fd)
 		case bpf_event_type::BPF_TYPE_URETPROBE: {
 			int ref_ctr_off = value["attr"]["ref_ctr_off"];
 			int offset = value["attr"]["offset"];
+			std::string _module_name =
+				value["attr"]["_module_name"];
 			shm.add_uprobe(fd, pid, _module_name.c_str(), offset,
 				       true, ref_ctr_off);
 			break;
@@ -149,6 +150,8 @@ static int import_shm_handler_from_json(bpftime_shm &shm, json value, int fd)
 			break;
 		case bpf_event_type::BPF_TYPE_UPROBE_OVERRIDE: {
 			int offset = value["attr"]["offset"];
+			std::string _module_name =
+				value["attr"]["_module_name"];
 			shm.add_uprobe_override(fd, pid, _module_name.c_str(),
 						offset, false);
 			break;

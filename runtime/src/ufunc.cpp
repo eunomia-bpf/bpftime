@@ -92,7 +92,9 @@ extern "C" uint64_t __ebpf_call_ufunc_dispatcher(uint64_t id, uint64_t arg_list)
 		args[i] =
 			to_arg_val(func_info->arg_types[i], raw_args->args[i]);
 	}
-
+	SPDLOG_DEBUG("Call ufunc {}, args: {:x}, {:x}, {:x}, {:x}, {:x}", id,
+		     args[0].uint64, args[1].uint64, args[2].uint64,
+		     args[3].uint64, args[4].uint64);
 	ret.ptr = func_info->func(args[0].ptr, args[1].ptr, args[2].ptr,
 				  args[3].ptr, args[4].ptr);
 

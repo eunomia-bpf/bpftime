@@ -1,27 +1,17 @@
 #include "attach_private_data.hpp"
 #include "bpf_attach_ctx.hpp"
-#include "bpftime_shm_internal.hpp"
 #include "frida_attach_private_data.hpp"
 #include "frida_uprobe_attach_impl.hpp"
 #include "spdlog/common.h"
 #include "syscall_trace_attach_impl.hpp"
 #include "syscall_trace_attach_private_data.hpp"
-#include <cassert>
-#include <ctime>
 #include <fcntl.h>
-#include <iostream>
 #include <memory>
-#include <ostream>
 #include <string_view>
 #include <unistd.h>
 #include <frida-gum.h>
-#include <cstdio>
-#include <cstdlib>
 #include <cstdint>
-#include <cstring>
-#include <inttypes.h>
 #include <dlfcn.h>
-#include "bpftime.hpp"
 #include "bpftime_shm.hpp"
 #include <spdlog/spdlog.h>
 #include <spdlog/cfg/env.h>
@@ -91,8 +81,9 @@ extern "C" void bpftime_agent_main(const gchar *data, gboolean *stay_resident)
 	ctx_holder.ctx.register_attach_impl(
 		{ ATTACH_SYSCALL_TRACE }, std::move(syscall_trace_impl),
 		[](const std::string_view &sv, int &err) {
-			auto priv_data = std::make_unique<attach_private_data>(
-				syscall_trace_attach_private_data());
+			std::unique_ptr<attach_private_data> priv_data =
+				std::make_unique<
+					syscall_trace_attach_private_data>();
 			if (int e = priv_data->initialize_from_string(sv);
 			    e < 0) {
 				err = e;
@@ -106,8 +97,8 @@ extern "C" void bpftime_agent_main(const gchar *data, gboolean *stay_resident)
 		  ATTACH_UREPLACE },
 		std::make_unique<attach::frida_attach_impl>(),
 		[](const std::string_view &sv, int &err) {
-			auto priv_data = std::make_unique<attach_private_data>(
-				frida_attach_private_data());
+			std::unique_ptr<attach_private_data> priv_data =
+				std::make_unique<frida_attach_private_data>();
 			if (int e = priv_data->initialize_from_string(sv);
 			    e < 0) {
 				err = e;

@@ -4,6 +4,7 @@
 #include "attach_private_data.hpp"
 #include "base_attach_impl.hpp"
 #include "bpftime_config.hpp"
+#include "bpftime_helper_group.hpp"
 #include "handler/link_handler.hpp"
 #include "handler/perf_event_handler.hpp"
 #include "handler/prog_handler.hpp"
@@ -55,6 +56,9 @@ class bpf_attach_ctx {
     private:
 	constexpr static int CURRENT_ID_OFFSET = 65536;
 	volatile int current_id = CURRENT_ID_OFFSET;
+
+	// Helpers provided by attach impls
+	std::map<int, bpftime_helper_info> helpers;
 
 	// handler_id -> instantiated programs
 	std::map<int, std::unique_ptr<bpftime_prog> > instantiated_progs;

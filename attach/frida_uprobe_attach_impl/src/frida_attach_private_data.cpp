@@ -8,7 +8,8 @@ using namespace bpftime::attach;
 
 int frida_attach_private_data::initialize_from_string(const std::string_view &sv)
 {
-	if (sv.find(':') != std::string_view::npos) {
+	SPDLOG_DEBUG("Resolving frida attach private data from string {}", sv);
+	if (sv.find(':') == std::string_view::npos) {
 		// Resolve function address from the string
 		addr = std::stoul(std::string(sv));
 		SPDLOG_DEBUG("Resolved address {} from string {}", addr, sv);
@@ -22,6 +23,8 @@ int frida_attach_private_data::initialize_from_string(const std::string_view &sv
 		}
 		auto module_part = sv.substr(0, pos);
 		auto offset_part = std::string(sv.substr(pos + 1));
+		SPDLOG_DEBUG("Module part is `{}`, offset part is `{}`",
+			     module_part, offset_part);
 		addr = (uintptr_t)resolve_function_addr_by_module_offset(
 			module_part, std::stoul(offset_part));
 		SPDLOG_DEBUG("Resolved address: {:x} from string {}", addr, sv);

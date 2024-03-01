@@ -80,19 +80,18 @@ set(sources
   extension/extension_helper.cpp
 )
 
-# list(APPEND sources
-# src/map/map_hash.cpp
-# src/map/map_common.c
-# src/map/context_map.c
-# )
-
-# add_subdirectory(src)
 set(headers
   include/
 )
 message(INFO "Headers: ${headers}")
 
 message(INFO "Found the following sources: ${sources}")
+
+if(CMAKE_BUILD_TYPE STREQUAL "Debug")
+  add_definitions(-DSPDLOG_ACTIVE_LEVEL=SPDLOG_LEVEL_DEBUG)
+else()
+  add_definitions(-DSPDLOG_ACTIVE_LEVEL=SPDLOG_LEVEL_INFO)
+endif()
 
 add_library(
   ${PROJECT_NAME}
