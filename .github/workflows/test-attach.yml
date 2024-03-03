@@ -1,0 +1,49 @@
+name: Build and Attach Tests Workflow
+
+on:
+  workflow_dispatch:
+  push:
+    branches: "*"
+  pull_request: 
+    branches: "master"
+    
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}-${{ github.event_name }}
+  cancel-in-progress: true
+
+jobs:
+  build_and_test_attach:
+    runs-on: "ubuntu-latest"
+    strategy:
+      matrix:
+        container:
+          - ubuntu-2204
+          - fedora-39
+    container:
+      image: "manjusakalza/bpftime-base-image:${{matrix.container}}"
+      options: --privileged
+    steps:
+      - uses: actions/checkout@v2
+        with:
+          submodules: 'recursive'
+          
+      - name: Build for frida uprobe attach tests
+        run: |
+          cmake -B build
+          cmake --build build --config Debug --target bpftime_frida_uprobe_attach_tests -j$(nproc)
+          
+      - name: Run frida uprobe attach tests
+        run: |
+          ./build/attach/frida_uprobe_attach_impl/bpftime_frida_uprobe_attach_tests
+
+      - name: Remove the build
+        run: rm -rf build
+
+      - name: Build syscall trace uprobe attach tests
+        run: |
+          cmake -B build
+          cmake --build build --config Debug --target syscall_trace_uprobe_attach_tests -j$(nproc)
+          
+      - name: Run syscall trace uprobe attach tests
+        run: |
+          ./build/attach/syscall_trace_attach_impl/syscall_trace_uprobe_attach_tests
