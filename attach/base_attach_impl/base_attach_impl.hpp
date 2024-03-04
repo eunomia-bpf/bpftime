@@ -20,6 +20,9 @@ inline thread_local std::optional<override_return_set_callback>
 using ebpf_run_callback = std::function<int(void *memory, size_t memory_size,
 					    uint64_t *return_value)>;
 
+// A callback to register bpf helpers
+using ebpf_helper_register_callback =
+	std::function<int(unsigned index, const char *name, void *func)>;
 // The base of all attach implementations
 class base_attach_impl {
     public:
@@ -39,6 +42,13 @@ class base_attach_impl {
 	int allocate_id()
 	{
 		return next_id++;
+	}
+
+	// Attach manager will call this function, so that attach impls could
+	// register their custom helpers
+	virtual void
+	register_custom_helpers(ebpf_helper_register_callback register_callback)
+	{
 	}
 
 	virtual ~base_attach_impl(){};

@@ -104,14 +104,17 @@ class handler_manager {
 	const handler_variant &operator[](int idx) const;
 	std::size_t size() const;
 
+	int set_handler_at_empty_slot(handler_variant &&handler,
+				      managed_shared_memory &memory);
+
 	int set_handler(int fd, handler_variant &&handler,
-			 managed_shared_memory &memory);
+			managed_shared_memory &memory);
 
 	bool is_allocated(int fd) const;
 
 	int find_minimal_unused_idx() const;
 
-	void clear_fd_at(int fd, managed_shared_memory &memory);
+	void clear_id_at(int fd, managed_shared_memory &memory);
 
 	void clear_all(managed_shared_memory &memory);
 

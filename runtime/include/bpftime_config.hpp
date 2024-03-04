@@ -13,7 +13,7 @@ struct agent_config {
 	bool enable_ufunc_helper_group = false;
 	bool enable_shm_maps_helper_group = true;
 
-	// allow non buildin map types
+	// allow non builtin map types
 	// if enabled, when a eBPF application tries to create a map with a
 	// self-defined or non-buildin supported map type, if will not be
 	// rejected

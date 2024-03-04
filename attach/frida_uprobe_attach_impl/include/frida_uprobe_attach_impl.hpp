@@ -72,7 +72,8 @@ class frida_attach_impl final : public base_attach_impl {
 	int create_uprobe_override_at(void *func_addr,
 				      uprobe_override_callback &&cb);
 	// Attach at a certain function, with a ebpf function as callback
-	int attach_at_with_ebpf_callback(void *func_addr, ebpf_callback_args &&cb);
+	int attach_at_with_ebpf_callback(void *func_addr,
+					 ebpf_callback_args &&cb);
 	// Iterate over all attaches managed by this attach impl instance
 	void iterate_attaches(attach_iterate_callback cb);
 	// Detach all attach entry at a specified function address
@@ -86,6 +87,8 @@ class frida_attach_impl final : public base_attach_impl {
 		int attach_type);
 	frida_attach_impl(const frida_attach_impl &) = delete;
 	frida_attach_impl &operator=(const frida_attach_impl &) = delete;
+	void register_custom_helpers(
+		ebpf_helper_register_callback register_callback);
 
     private:
 	void *interceptor;

@@ -1,6 +1,5 @@
 #ifndef _PROG_HANDLER_HPP
 #define _PROG_HANDLER_HPP
-#include "spdlog/spdlog.h"
 #include <boost/interprocess/managed_shared_memory.hpp>
 #include <boost/interprocess/containers/vector.hpp>
 #include <boost/interprocess/containers/string.hpp>
@@ -52,20 +51,6 @@ class bpf_prog_handler {
 					    shm_ebpf_inst_vector_allocator>;
 	inst_vector insns;
 
-	using shm_pair_vector_allocator = boost::interprocess::allocator<
-		cookie_fd_pair, managed_shared_memory::segment_manager>;
-
-	using attach_fds_vector =
-		boost::interprocess::vector<cookie_fd_pair,
-					    shm_pair_vector_allocator>;
-	mutable attach_fds_vector attach_fds;
-
-	void add_attach_fd(int fd, std::optional<uint64_t> cookie) const
-	{
-		SPDLOG_DEBUG("Add attach fd {} for bpf_prog {}", fd,
-			     name.c_str());
-		attach_fds.emplace_back(fd, cookie);
-	}
 	boost_shm_string name;
 };
 

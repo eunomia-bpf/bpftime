@@ -5,11 +5,10 @@
  */
 #include "attach_private_data.hpp"
 #include "base_attach_impl.hpp"
-#include "bpftime.hpp"
 #include "bpftime_shm.hpp"
-#include "frida_attach_utils.hpp"
-#include "handler/epoll_handler.hpp"
-#include "syscall_trace_attach_private_data.hpp"
+#include "handler/link_handler.hpp"
+#include "handler/prog_handler.hpp"
+#include <string>
 #include <unistd.h>
 #include <cerrno>
 #include <cstdint>
@@ -28,9 +27,6 @@
 #include <utility>
 #include <variant>
 #include <sys/resource.h>
-#include <frida_register_def.hpp>
-#include <frida_uprobe_attach_impl.hpp>
-#include <frida_attach_private_data.hpp>
 extern "C" uint64_t bpftime_set_retval(uint64_t value);
 namespace bpftime
 {
@@ -66,167 +62,16 @@ int bpf_attach_ctx::init_attach_ctx_from_handlers(const agent_config &config)
 int bpf_attach_ctx::init_attach_ctx_from_handlers(
 	const handler_manager *manager, const agent_config &config)
 {
-	// Maintain perf_event fd -> [(prog fd, bpftime_prog*, attach cookie)]
-	std::map<int, std::vector<std::tuple<int, bpftime_prog *,
-					     std::optional<uint64_t> > > >
-		handler_prog_fds;
-	// First, we create programs
-	for (std::size_t i = 0; i < manager->size(); i++) {
-		// skip uninitialized handlers
-		if (!manager->is_allocated(i)) {
-			continue;
-		}
-		auto &handler = manager->get_handler(i);
-		// load the bpf prog
-		if (std::holds_alternative<bpf_prog_handler>(handler)) {
-			auto &prog_handler =
-				std::get<bpf_prog_handler>(handler);
-			const ebpf_inst *insns = prog_handler.insns.data();
-			size_t cnt = prog_handler.insns.size();
-			const char *name = prog_handler.name.c_str();
-			progs[i] = std::make_unique<bpftime_prog>(insns, cnt,
-								  name);
-			bpftime_prog *prog = progs[i].get();
-			int res = load_prog_and_helpers(prog, config);
-			if (res < 0) {
-				return res;
+	for (int i = 0; i < (int)manager->size(); i++) {
+		if (manager->is_allocated(i)) {
+			std::set<int> stk;
+			if (int err = instantiate_handler_at(manager, i, stk,
+							     config);
+			    err < 0) {
+				SPDLOG_ERROR("Failed to instantiate handler {}",
+					     i);
+				return err;
 			}
-			for (auto v : prog_handler.attach_fds) {
-				if (std::holds_alternative<
-					    bpf_perf_event_handler>(
-					    manager->get_handler(v.first))) {
-					const auto &perf_handler =
-						std::get<bpf_perf_event_handler>(
-							manager->get_handler(
-								v.first));
-					if (perf_handler.enabled) {
-						handler_prog_fds[v.first]
-							.emplace_back(i, prog,
-								      v.second);
-						SPDLOG_DEBUG(
-							"Program fd {} attached to perf event handler {}, enable cookie = {}, cookie value = {}",
-							i, v.first,
-							v.second.has_value(),
-							v.second.value_or(0));
-					} else {
-						SPDLOG_INFO(
-							"Ignore perf {} attached by prog fd {}. It's not enabled",
-							v.first, i);
-					}
-
-				} else {
-					spdlog::warn(
-						"Program fd {} attached to a non-perf event handler {}",
-						i, v.first);
-				}
-			}
-			SPDLOG_DEBUG("Load prog fd={} name={}", i,
-				     prog_handler.name);
-		} else if (std::holds_alternative<bpf_map_handler>(handler)) {
-			SPDLOG_DEBUG("bpf_map_handler found at {}", i);
-		} else if (std::holds_alternative<bpf_perf_event_handler>(
-				   handler)) {
-			SPDLOG_DEBUG("Will handle bpf_perf_events later...");
-
-		} else if (std::holds_alternative<epoll_handler>(handler) ||
-			   std::holds_alternative<bpf_link_handler>(handler)) {
-			SPDLOG_DEBUG(
-				"No extra operations needed for epoll_handler/bpf link/btf..");
-		} else {
-			SPDLOG_ERROR("Unsupported handler type for handler {}",
-				     handler.index());
-			return -1;
-		}
-	}
-
-	// Second, we create bpf perf event handlers
-	for (std::size_t i = 0; i < manager->size(); i++) {
-		if (!manager->is_allocated(i)) {
-			continue;
-		}
-		auto &handler = manager->get_handler(i);
-
-		if (std::holds_alternative<bpf_perf_event_handler>(handler)) {
-			auto &event_handler =
-				std::get<bpf_perf_event_handler>(handler);
-			std::unique_ptr<attach::attach_private_data> priv_data;
-			attach::base_attach_impl *attach_impl;
-			if (event_handler.type ==
-				    bpf_event_type::BPF_TYPE_UPROBE_OVERRIDE ||
-			    event_handler.type ==
-				    bpf_event_type::BPF_TYPE_UPROBE ||
-			    event_handler.type ==
-				    bpf_event_type::BPF_TYPE_URETPROBE ||
-			    event_handler.type ==
-				    bpf_event_type::BPF_TYPE_UREPLACE) {
-				SPDLOG_DEBUG("Attaching uprobe series type {}",
-					     event_handler.type);
-				void *func_addr = attach::
-					resolve_function_addr_by_module_offset(
-						event_handler._module_name
-							.c_str(),
-						event_handler.offset);
-				priv_data = std::make_unique<
-					attach::frida_attach_private_data>();
-				if (int err = priv_data->initialize_from_string(
-					    std::to_string(
-						    (uintptr_t)func_addr));
-				    err < 0) {
-					SPDLOG_ERROR(
-						"Unable to initialize private data: {}",
-						err);
-					return err;
-				}
-				attach_impl = &get_uprobe_attach_impl();
-			} else if (event_handler.type ==
-				   bpf_event_type::PERF_TYPE_TRACEPOINT) {
-				priv_data = std::make_unique<
-					attach::syscall_trace_attach_private_data>();
-				if (int err = priv_data->initialize_from_string(
-					    std::to_string(
-						    event_handler
-							    .tracepoint_id));
-				    err < 0) {
-					SPDLOG_ERROR(
-						"Unable to initialize private data: {}",
-						err);
-					return err;
-				}
-				attach_impl = &get_syscall_attach_impl();
-			} else if (event_handler.type ==
-				   bpf_event_type::PERF_TYPE_SOFTWARE) {
-				SPDLOG_DEBUG(
-					"Attaching software perf event, nothing need to do");
-			} else {
-				spdlog::warn("Unexpected bpf_event_type: {}",
-					     (int)event_handler.type);
-			}
-			auto progs = handler_prog_fds[i];
-			for (auto tup : progs) {
-				auto prog = std::get<1>(tup);
-				auto cookie = std::get<2>(tup);
-				int id = attach_impl->create_attach_with_ebpf_callback(
-					[=](void *mem, size_t mem_size,
-					    uint64_t *ret) -> int {
-						current_thread_bpf_cookie =
-							cookie;
-						int err =
-							prog->bpftime_prog_exec(
-								(void *)mem,
-								mem_size, ret);
-						return err;
-					},
-					*priv_data, (int)event_handler.type);
-				if (id < 0) {
-					SPDLOG_ERROR(
-						"Unable to attach type {}: {}",
-						(int)event_handler.type, id);
-					return id;
-				}
-			}
-			SPDLOG_DEBUG("Create attach event {} {} {} for {}", i,
-				     event_handler._module_name,
-				     event_handler.offset, err);
 		}
 	}
 	return 0;
@@ -239,12 +84,241 @@ bpf_attach_ctx::~bpf_attach_ctx()
 
 // create a probe context
 bpf_attach_ctx::bpf_attach_ctx(void)
-	: frida_uprobe_attach_impl(
-		  std::make_unique<attach::frida_attach_impl>()),
-	  syscall_trace_attach_impl(
-		  std::make_unique<attach::syscall_trace_attach_impl>())
+
 {
 	current_id = CURRENT_ID_OFFSET;
 }
 
+int bpf_attach_ctx::instantiate_handler_at(const handler_manager *manager,
+					   int id, std::set<int> &stk,
+					   const agent_config &config)
+{
+	SPDLOG_DEBUG("Instantiating handler at {}", id);
+	if (instantiated_handlers.contains(id)) {
+		SPDLOG_DEBUG("Handler {} already instantiated", id);
+		return 0;
+	}
+	if (stk.contains(id)) {
+		SPDLOG_CRITICAL("Loop detected when instantiating handler {}",
+				id);
+		return -1;
+	}
+	stk.insert(id);
+	auto &handler = manager->get_handler(id);
+	if (std::holds_alternative<bpf_prog_handler>(handler)) {
+		if (int err = instantiate_prog_handler_at(
+			    id, std::get<bpf_prog_handler>(handler), config);
+		    err < 0) {
+			SPDLOG_ERROR(
+				"Unable to instantiate bpf prog handler {}: {}",
+				id, err);
+			return err;
+		}
+	} else if (std::holds_alternative<bpf_perf_event_handler>(handler)) {
+		if (int err = instantiate_perf_event_handler_at(
+			    id, std::get<bpf_perf_event_handler>(handler));
+		    err < 0) {
+			SPDLOG_ERROR(
+				"Unable to instantiate bpf perf event handler {}: {}",
+				id, err);
+			return err;
+		}
+	} else if (std::holds_alternative<bpf_link_handler>(handler)) {
+		auto &link_handler = std::get<bpf_link_handler>(handler);
+		if (int err = instantiate_handler_at(
+			    manager, link_handler.prog_id, stk, config);
+		    err < 0) {
+			SPDLOG_ERROR(
+				"Unable to instantiate prog handler {} when instantiating link handler {}: {}",
+				link_handler.prog_id, id, err);
+			return err;
+		}
+		if (int err = instantiate_handler_at(
+			    manager, link_handler.attach_target_id, stk,
+			    config);
+		    err < 0) {
+			SPDLOG_ERROR(
+				"Unable to instantiate perf event handler {} when instantiating link handler {}: {}",
+				link_handler.attach_target_id, id, err);
+			return err;
+		}
+		if (int err = instantiate_bpf_link_handler_at(id, link_handler);
+		    err < 0) {
+			SPDLOG_ERROR(
+				"Unable to instantiate bpf link handler {}: {}",
+				id, err);
+			return err;
+		}
+	} else {
+		SPDLOG_DEBUG("Instantiating type {}", handler.index());
+	}
+	stk.erase(id);
+	instantiated_handlers.insert(id);
+	SPDLOG_DEBUG("Instantiating done: {}", id);
+	return 0;
+}
+
+void bpf_attach_ctx::register_attach_impl(
+	std::initializer_list<int> &&attach_types,
+	std::unique_ptr<attach::base_attach_impl> &&impl,
+	std::function<std::unique_ptr<attach::attach_private_data>(
+		const std::string_view &, int &)>
+		private_data_creator)
+{
+	impl->register_custom_helpers([&](unsigned int idx, const char *name,
+					  void *func) -> int {
+		SPDLOG_INFO("Register attach-impl defined helper {}, index {}",
+			    name, idx);
+		this->helpers[idx] = bpftime_helper_info{ .index = idx,
+							  .name = name,
+							  .fn = func };
+		return 0;
+	});
+	auto *impl_ptr = impl.get();
+	attach_impl_holders.emplace_back(std::move(impl));
+	for (auto ty : attach_types) {
+		SPDLOG_DEBUG("Register attach type {} with attach impl {}", ty,
+			     typeid(impl_ptr).name());
+		attach_impls[ty] =
+			std::make_pair(impl_ptr, private_data_creator);
+	}
+}
+int bpf_attach_ctx::instantiate_prog_handler_at(int id,
+						const bpf_prog_handler &handler,
+						const agent_config &config)
+{
+	const ebpf_inst *insns = handler.insns.data();
+	size_t cnt = handler.insns.size();
+	const char *name = handler.name.c_str();
+	instantiated_progs[id] =
+		std::make_unique<bpftime_prog>(insns, cnt, name);
+	bpftime_prog *prog = instantiated_progs[id].get();
+	if (int err = load_prog_and_helpers(prog, config); err < 0) {
+		SPDLOG_ERROR(
+			"Failed to load program helpers for prog handler {}: {}",
+			id, err);
+		return err;
+	}
+	for (const auto &item : helpers) {
+		prog->bpftime_prog_register_raw_helper(item.second);
+	}
+	return 0;
+}
+int bpf_attach_ctx::instantiate_bpf_link_handler_at(
+	int id, const bpf_link_handler &handler)
+{
+	SPDLOG_DEBUG(
+		"Instantiating link handler: prog {} -> perf event {}, cookie {}",
+		handler.prog_id, handler.attach_target_id,
+		handler.attach_cookie.value_or(0));
+	auto &[priv_data, attach_type] =
+		instantiated_perf_events[handler.attach_target_id];
+	attach::base_attach_impl *attach_impl;
+	if (auto itr = attach_impls.find(attach_type);
+	    itr != attach_impls.end()) {
+		attach_impl = itr->second.first;
+	} else {
+		SPDLOG_ERROR("Attach type {} is not registered", attach_type);
+		return -ENOTSUP;
+	}
+	auto prog = instantiated_progs.at(handler.prog_id).get();
+	auto cookie = handler.attach_cookie;
+	int attach_id = attach_impl->create_attach_with_ebpf_callback(
+		[=](void *mem, size_t mem_size, uint64_t *ret) -> int {
+			current_thread_bpf_cookie = cookie;
+			int err = prog->bpftime_prog_exec((void *)mem, mem_size,
+							  ret);
+			return err;
+		},
+		*priv_data, attach_type);
+	if (attach_id < 0) {
+		SPDLOG_ERROR("Unable to instantiate bpf link handler {}: {}",
+			     id, attach_id);
+		return attach_id;
+	}
+	instantiated_attach_ids[id] = std::make_pair(attach_id, attach_impl);
+	return 0;
+}
+int bpf_attach_ctx::instantiate_perf_event_handler_at(
+	int id, const bpf_perf_event_handler &perf_handler)
+{
+	SPDLOG_DEBUG("Instantiating perf event handler at {}, type {}", id,
+		     (int)perf_handler.type);
+	if (perf_handler.type == bpf_event_type::PERF_TYPE_SOFTWARE) {
+		SPDLOG_DEBUG(
+			"Detected software perf event at {}, nothing need to do",
+			id);
+		return 0;
+	}
+	std::unique_ptr<attach::attach_private_data> priv_data;
+
+	auto itr = attach_impls.find((int)perf_handler.type);
+	if (itr == attach_impls.end()) {
+		SPDLOG_ERROR(
+			"Unable to lookup attach implementation of attach type {}",
+			(int)perf_handler.type);
+		return -ENOENT;
+	}
+	auto &[attach_impl, private_data_gen] = itr->second;
+	if (perf_handler.type == bpf_event_type::BPF_TYPE_UPROBE_OVERRIDE ||
+	    perf_handler.type == bpf_event_type::BPF_TYPE_UPROBE ||
+	    perf_handler.type == bpf_event_type::BPF_TYPE_URETPROBE ||
+	    perf_handler.type == bpf_event_type::BPF_TYPE_UREPLACE) {
+		auto &uprobe_data =
+			std::get<uprobe_perf_event_data>(perf_handler.data);
+		std::string arg_str;
+		arg_str += uprobe_data._module_name;
+		arg_str += ':';
+		arg_str += std::to_string(uprobe_data.offset);
+		int err = 0;
+		priv_data = private_data_gen(arg_str, err);
+		if (err < 0) {
+			SPDLOG_ERROR(
+				"Unable to parse private data of uprobe perf handler {}, arg_str `{}`: {}",
+				id, arg_str, err);
+			return err;
+		}
+	} else if (perf_handler.type == bpf_event_type::PERF_TYPE_TRACEPOINT) {
+		auto &tracepoint_data =
+			std::get<tracepoint_perf_event_data>(perf_handler.data);
+		int err = 0;
+		priv_data = private_data_gen(
+			std::to_string(tracepoint_data.tracepoint_id), err);
+		if (err < 0) {
+			SPDLOG_ERROR(
+				"Unable to parse private data of tracepoint perf handler {}, tp_id `{}`: {}",
+				id, tracepoint_data.tracepoint_id, err);
+			return err;
+		}
+	} else {
+		SPDLOG_ERROR("Unsupported perf event type: {}",
+			     (int)perf_handler.type);
+		return -ENOTSUP;
+	}
+	SPDLOG_DEBUG("Instantiated perf event handler {}", id);
+	instantiated_perf_events[id] =
+		std::make_pair(std::move(priv_data), (int)perf_handler.type);
+
+	return 0;
+}
+int bpf_attach_ctx::destroy_instantiated_attach_link(int link_id)
+{
+	SPDLOG_DEBUG("Destroy attach link {}", link_id);
+	if (auto itr = instantiated_attach_ids.find(link_id);
+	    itr != instantiated_attach_ids.end()) {
+		auto [attach_id, impl] = itr->second;
+		if (int err = impl->detach_by_id(attach_id); err < 0) {
+			SPDLOG_ERROR(
+				"Failed to detach attach link id {}, attach-specified id {}: {}",
+				link_id, attach_id, err);
+			return err;
+		}
+		instantiated_attach_ids.erase(itr);
+		return 0;
+	} else {
+		SPDLOG_ERROR("Unable to find instantiated attach link id {}",
+			     link_id);
+		return -ENOENT;
+	}
+}
 } // namespace bpftime

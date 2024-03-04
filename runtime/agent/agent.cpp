@@ -1,26 +1,22 @@
+#include "attach_private_data.hpp"
 #include "bpf_attach_ctx.hpp"
-#include "bpftime_shm_internal.hpp"
+#include "frida_attach_private_data.hpp"
+#include "frida_uprobe_attach_impl.hpp"
 #include "spdlog/common.h"
 #include "syscall_trace_attach_impl.hpp"
-#include <cassert>
-#include <ctime>
+#include "syscall_trace_attach_private_data.hpp"
 #include <fcntl.h>
-#include <iostream>
-#include <ostream>
+#include <memory>
+#include <string_view>
 #include <unistd.h>
 #include <frida-gum.h>
-#include <cstdio>
-#include <cstdlib>
 #include <cstdint>
-#include <cstring>
-#include <inttypes.h>
 #include <dlfcn.h>
-#include "bpftime.hpp"
 #include "bpftime_shm.hpp"
 #include <spdlog/spdlog.h>
 #include <spdlog/cfg/env.h>
 using namespace bpftime;
-
+using namespace bpftime::attach;
 using main_func_t = int (*)(int, char **, char **);
 
 static main_func_t orig_main_func = nullptr;
@@ -78,13 +74,38 @@ extern "C" void bpftime_agent_main(const gchar *data, gboolean *stay_resident)
 	spdlog::cfg::load_env_levels();
 	bpftime_initialize_global_shm(shm_open_type::SHM_OPEN_ONLY);
 	ctx_holder.init();
-	auto &impl = dynamic_cast<attach::syscall_trace_attach_impl &>(
-		ctx_holder.ctx.get_syscall_attach_impl());
-
-	impl.set_original_syscall_function(orig_hooker);
-	impl.set_to_global();
-	// ctx_holder.ctx.set_orig_syscall_func(orig_hooker);
-
+	// Register syscall trace impl
+	auto syscall_trace_impl = std::make_unique<syscall_trace_attach_impl>();
+	syscall_trace_impl->set_original_syscall_function(orig_hooker);
+	syscall_trace_impl->set_to_global();
+	ctx_holder.ctx.register_attach_impl(
+		{ ATTACH_SYSCALL_TRACE }, std::move(syscall_trace_impl),
+		[](const std::string_view &sv, int &err) {
+			std::unique_ptr<attach_private_data> priv_data =
+				std::make_unique<
+					syscall_trace_attach_private_data>();
+			if (int e = priv_data->initialize_from_string(sv);
+			    e < 0) {
+				err = e;
+				return std::unique_ptr<attach_private_data>();
+			}
+			return priv_data;
+		});
+	// Register uprobe attach impl
+	ctx_holder.ctx.register_attach_impl(
+		{ ATTACH_UPROBE, ATTACH_URETPROBE, ATTACH_UPROBE_OVERRIDE,
+		  ATTACH_UREPLACE },
+		std::make_unique<attach::frida_attach_impl>(),
+		[](const std::string_view &sv, int &err) {
+			std::unique_ptr<attach_private_data> priv_data =
+				std::make_unique<frida_attach_private_data>();
+			if (int e = priv_data->initialize_from_string(sv);
+			    e < 0) {
+				err = e;
+				return std::unique_ptr<attach_private_data>();
+			}
+			return priv_data;
+		});
 	SPDLOG_INFO("Initializing agent..");
 	spdlog::set_pattern("[%Y-%m-%d %H:%M:%S][%^%l%$][%t] %v");
 	/* We don't want to our library to be unloaded after we return. */

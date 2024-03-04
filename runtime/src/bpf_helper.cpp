@@ -34,13 +34,8 @@ using namespace std;
 
 extern "C" {
 
-uint64_t bpftime_get_func_arg(uint64_t ctx, uint32_t n, uint64_t *value);
 
-uint64_t bpftime_get_func_ret(uint64_t ctx, uint64_t *value);
 
-// long bpftime_get_func_arg_cnt(void *ctx);
-
-uint64_t bpftime_get_retval(void);
 
 uint64_t bpftime_override_return(uint64_t ctx, uint64_t value);
 uint64_t bpftime_set_retval(uint64_t retval);
@@ -710,24 +705,6 @@ const bpftime_helper_group kernel_helper_group = {
 		    .index = BPF_FUNC_probe_write_user,
 		    .name = "bpf_probe_write_user",
 		    .fn = (void *)bpftime_probe_write_user,
-	    } },
-	  { BPF_FUNC_get_func_arg,
-	    bpftime_helper_info{
-		    .index = BPF_FUNC_get_func_arg,
-		    .name = "bpf_get_func_arg",
-		    .fn = (void *)bpftime_get_func_arg,
-	    } },
-	  { BPF_FUNC_get_func_ret,
-	    bpftime_helper_info{
-		    .index = BPF_FUNC_get_func_ret,
-		    .name = "bpf_get_func_ret_id",
-		    .fn = (void *)bpftime_get_func_ret,
-	    } },
-	  { BPF_FUNC_get_retval,
-	    bpftime_helper_info{
-		    .index = BPF_FUNC_get_retval,
-		    .name = "bpf_get_retval",
-		    .fn = (void *)bpftime_get_retval,
 	    } },
 	  { BPF_FUNC_set_retval,
 	    bpftime_helper_info{

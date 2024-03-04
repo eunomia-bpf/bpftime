@@ -16,6 +16,7 @@
 #include <boost/interprocess/smart_ptr/weak_ptr.hpp>
 #include "linux/perf_event.h"
 #include "bpftime_shm.hpp"
+#include <variant>
 
 namespace bpftime
 {
@@ -94,6 +95,23 @@ using software_perf_event_weak_ptr = boost::interprocess::managed_weak_ptr<
 	software_perf_event_data,
 	boost::interprocess::managed_shared_memory::segment_manager>::type;
 
+struct uprobe_perf_event_data {
+	uint64_t offset;
+	int pid;
+	size_t ref_ctr_off;
+	boost_shm_string _module_name;
+};
+struct tracepoint_perf_event_data {
+	int pid;
+	// Tracepoint id at /sys/kernel/tracing/events/syscalls/*/id, used to
+	// indicate which syscall to trace
+	int32_t tracepoint_id = -1;
+};
+
+using perf_event_data_variant =
+	std::variant<uprobe_perf_event_data, tracepoint_perf_event_data,
+		     software_perf_event_shared_ptr>;
+
 // perf event handler
 struct bpf_perf_event_handler {
 	bpf_event_type type;
@@ -105,30 +123,16 @@ struct bpf_perf_event_handler {
 		// If This is a server, should inject the agent into the target
 		// process.
 
-		SPDLOG_DEBUG(
-			"Enabling perf event for module name: {}, offset {:x}",
-			_module_name.c_str(), offset);
+
 		return 0;
 	}
 	int disable() const
 	{
-		SPDLOG_DEBUG(
-			"Disabling perf event for module name: {}, offset {:x}",
-			_module_name.c_str(), offset);
 		enabled = false;
 		return 0;
 	}
-	uint64_t offset;
-	int pid;
-	size_t ref_ctr_off;
-	boost_shm_string _module_name;
-	// Tracepoint id at /sys/kernel/tracing/events/syscalls/*/id, used to
-	// indicate which syscall to trace
-	int32_t tracepoint_id = -1;
 
-	// Things needed by software perf event
-	std::optional<software_perf_event_shared_ptr> sw_perf;
-
+	perf_event_data_variant data;
 	std::optional<software_perf_event_weak_ptr>
 	try_get_software_perf_data_weak_ptr() const;
 

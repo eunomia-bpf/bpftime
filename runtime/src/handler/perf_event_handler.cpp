@@ -14,6 +14,7 @@
 #include <boost/interprocess/allocators/allocator.hpp>
 #include <unistd.h>
 #include <spdlog/fmt/bin_to_hex.h>
+#include <variant>
 
 #pragma GCC diagnostic ignored "-Wstrict-aliasing"
 
@@ -36,16 +37,16 @@
 	})
 #elif defined(__aarch64__)
 // https://github.com/torvalds/linux/blob/master/tools/arch/arm64/include/asm/barrier.h
-#define smp_store_release_u64(p, v)                             \
-  do {                                                          \
-    asm volatile("stlr %1, %0" : "=Q"(*p) : "r"(v) : "memory"); \
-  } while (0)
-#define smp_load_acquire_u64(p)                                    \
-  ({                                                               \
-    uint64_t ___p;                                                 \
-    asm volatile("ldar %0, %1" : "=r"(___p) : "Q"(*p) : "memory"); \
-    ___p;                                                          \
-  })
+#define smp_store_release_u64(p, v)                                            \
+	do {                                                                   \
+		asm volatile("stlr %1, %0" : "=Q"(*p) : "r"(v) : "memory");    \
+	} while (0)
+#define smp_load_acquire_u64(p)                                                \
+	({                                                                     \
+		uint64_t ___p;                                                 \
+		asm volatile("ldar %0, %1" : "=r"(___p) : "Q"(*p) : "memory"); \
+		___p;                                                          \
+	})
 #else
 #error Only supports x86_64 and aarch64
 #endif
@@ -56,25 +57,33 @@ namespace bpftime
 bpf_perf_event_handler::bpf_perf_event_handler(
 	bpf_event_type type, uint64_t offset, int pid, const char *module_name,
 	boost::interprocess::managed_shared_memory &mem, bool default_enabled)
-	: type(type), enabled(default_enabled), offset(offset), pid(pid),
-	  _module_name(char_allocator(mem.get_segment_manager()))
+	: type(type), enabled(default_enabled),
+	  data(uprobe_perf_event_data{
+		  .offset = offset,
+		  .pid = pid,
+		  ._module_name = boost_shm_string(
+			  char_allocator(mem.get_segment_manager())) })
 {
-	this->_module_name = module_name;
+	std::get<uprobe_perf_event_data>(data)._module_name = module_name;
 }
 
 // create uprobe/uretprobe with new perf event attr
 bpf_perf_event_handler::bpf_perf_event_handler(
 	bool is_retprobe, uint64_t offset, int pid, const char *module_name,
 	size_t ref_ctr_off, boost::interprocess::managed_shared_memory &mem)
-	: offset(offset), pid(pid), ref_ctr_off(ref_ctr_off),
-	  _module_name(char_allocator(mem.get_segment_manager()))
+	: data(uprobe_perf_event_data{
+		  .offset = offset,
+		  .pid = pid,
+		  .ref_ctr_off = ref_ctr_off,
+		  ._module_name = boost_shm_string(
+			  char_allocator(mem.get_segment_manager())) })
 {
 	if (is_retprobe) {
 		type = bpf_event_type::BPF_TYPE_URETPROBE;
 	} else {
 		type = bpf_event_type::BPF_TYPE_UPROBE;
 	}
-	this->_module_name = module_name;
+	std::get<uprobe_perf_event_data>(data)._module_name = module_name;
 	SPDLOG_INFO(
 		"Created uprobe/uretprobe perf event handler, module name {}, offset {:x}",
 		module_name, offset);
@@ -84,9 +93,9 @@ bpf_perf_event_handler::bpf_perf_event_handler(
 bpf_perf_event_handler::bpf_perf_event_handler(
 	int pid, int32_t tracepoint_id,
 	boost::interprocess::managed_shared_memory &mem)
-	: type(bpf_event_type::PERF_TYPE_TRACEPOINT), pid(pid),
-	  _module_name(char_allocator(mem.get_segment_manager())),
-	  tracepoint_id(tracepoint_id)
+	: type(bpf_event_type::PERF_TYPE_TRACEPOINT),
+	  data(tracepoint_perf_event_data{ .pid = pid,
+					   .tracepoint_id = tracepoint_id })
 {
 }
 
@@ -94,8 +103,7 @@ bpf_perf_event_handler::bpf_perf_event_handler(
 	int cpu, int32_t sample_type, int64_t config,
 	boost::interprocess::managed_shared_memory &mem)
 	: type(bpf_event_type::PERF_TYPE_SOFTWARE),
-	  _module_name(char_allocator(mem.get_segment_manager())),
-	  sw_perf(boost::interprocess::make_managed_shared_ptr(
+	  data(boost::interprocess::make_managed_shared_ptr(
 		  mem.construct<software_perf_event_data>(
 			  boost::interprocess::anonymous_instance)(
 			  cpu, config, sample_type, mem),
@@ -218,8 +226,9 @@ size_t software_perf_event_data::mmap_size() const
 std::optional<software_perf_event_weak_ptr>
 bpf_perf_event_handler::try_get_software_perf_data_weak_ptr() const
 {
-	if (sw_perf.has_value()) {
-		return software_perf_event_weak_ptr(sw_perf.value());
+	if (std::holds_alternative<software_perf_event_shared_ptr>(data)) {
+		return software_perf_event_weak_ptr(
+			std::get<software_perf_event_shared_ptr>(data));
 	} else {
 		return {};
 	}
@@ -229,8 +238,9 @@ std::optional<void *>
 bpf_perf_event_handler::try_get_software_perf_data_raw_buffer(
 	size_t buffer_size) const
 {
-	if (sw_perf.has_value()) {
-		return sw_perf.value()->ensure_mmap_buffer(buffer_size);
+	if (std::holds_alternative<software_perf_event_shared_ptr>(data)) {
+		return std::get<software_perf_event_shared_ptr>(data)
+			->ensure_mmap_buffer(buffer_size);
 	} else {
 		return {};
 	}

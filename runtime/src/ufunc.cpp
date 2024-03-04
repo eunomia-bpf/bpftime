@@ -3,7 +3,6 @@
  * Copyright (c) 2022, eunomia-bpf org
  * All rights reserved.
  */
-#include "frida_attach_utils.hpp"
 #include <cstdint>
 #include <cstring>
 #include "bpftime_internal.h"
@@ -47,9 +46,10 @@ void bpftime_ufunc_register_ufunc(uint64_t id, ebpf_ufunc_func_info func_info)
 	global_ufunc_ctx.ufunc_funcs[id] = func_info;
 }
 
-int bpftime_ufunc_resolve_from_info(ebpf_ufunc_func_info func_info)
+int bpftime_ufunc_resolve_from_info(ebpf_ufunc_func_info func_info,
+				    void *(*function_resolver)(const char *))
 {
-	void *func_addr = attach::find_function_addr_by_name(func_info.name);
+	void *func_addr = function_resolver(func_info.name);
 	if (!func_addr) {
 		SPDLOG_ERROR("Failed to get function address for {}",
 			     func_info.name);
@@ -92,7 +92,9 @@ extern "C" uint64_t __ebpf_call_ufunc_dispatcher(uint64_t id, uint64_t arg_list)
 		args[i] =
 			to_arg_val(func_info->arg_types[i], raw_args->args[i]);
 	}
-
+	SPDLOG_DEBUG("Call ufunc {}, args: {:x}, {:x}, {:x}, {:x}, {:x}", id,
+		     args[0].uint64, args[1].uint64, args[2].uint64,
+		     args[3].uint64, args[4].uint64);
 	ret.ptr = func_info->func(args[0].ptr, args[1].ptr, args[2].ptr,
 				  args[3].ptr, args[4].ptr);
 

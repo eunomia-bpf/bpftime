@@ -115,6 +115,9 @@ class bpftime_shm {
 	// create a software perf event fd, typically for a perf event
 	int add_software_perf_event(int cpu, int32_t sample_type,
 				    int64_t config);
+	// Create a software perf event instance, with the specified fd
+	int add_software_perf_event(int fd, int cpu, int32_t sample_type,
+				    int64_t config);
 
 	// add replace function fd
 	int add_uprobe_override(int fd, int pid, const char *name,

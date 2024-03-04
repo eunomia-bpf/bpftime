@@ -25,8 +25,9 @@ using boost::interprocess::sharable_lock;
 namespace bpftime
 {
 
-bpftime_map_ops
-	global_map_ops_table[(int)bpf_map_type::BPF_MAP_TYPE_MAX] = { 0 };
+bpftime_map_ops global_map_ops_table[(int)bpf_map_type::BPF_MAP_TYPE_MAX] = {
+	{ 0 }
+};
 
 std::string bpf_map_handler::get_container_name()
 {
@@ -480,7 +481,8 @@ int bpf_map_handler::map_init(managed_shared_memory &memory)
 		if (bpftime_get_agent_config().allow_non_buildin_map_types) {
 			SPDLOG_INFO("non-builtin map type: {}", (int)type);
 			map_impl_ptr = nullptr;
-			auto func_ptr = global_map_ops_table[(int)type].alloc_map;
+			auto func_ptr =
+				global_map_ops_table[(int)type].alloc_map;
 			if (func_ptr) {
 				return func_ptr(id, name.c_str(), attr);
 			}
@@ -556,7 +558,8 @@ bpf_map_handler::try_get_shared_perf_event_array_map_impl() const
 		map_impl_ptr.get());
 }
 
-int bpftime_register_map_ops(int map_type, bpftime_map_ops *ops) {
+int bpftime_register_map_ops(int map_type, bpftime_map_ops *ops)
+{
 	if (map_type < 0 || map_type >= (int)bpf_map_type::BPF_MAP_TYPE_MAX) {
 		SPDLOG_ERROR("Invalid map type: {}", map_type);
 		return -1;
