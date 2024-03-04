@@ -38,5 +38,4 @@ jobs:
 
     - name: build vm as a standalone library
       run: |
-        cd vm && make build-llvm -j
-    
+        cd vm && make build-llvm -j     
