@@ -42,8 +42,8 @@ jobs:
       - name: Build syscall trace uprobe attach tests
         run: |
           cmake -B build
-          cmake --build build --config Debug --target syscall_trace_uprobe_attach_tests -j$(nproc)
+          cmake --build build --config Debug --target bpftime_syscall_trace_attach_tests -j$(nproc)
           
       - name: Run syscall trace uprobe attach tests
         run: |
-          ./build/attach/syscall_trace_attach_impl/syscall_trace_uprobe_attach_tests
+          ./build/attach/syscall_trace_attach_impl/bpftime_syscall_trace_attach_tests
