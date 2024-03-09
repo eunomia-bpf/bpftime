@@ -456,7 +456,7 @@ int syscall_context::handle_perfevent(perf_event_attr *attr, pid_t pid, int cpu,
 				       (uint64_t)cpu, (uint64_t)group_fd,
 				       (uint64_t)flags);
 	try_startup();
-	if ((int)attr->type == determine_uprobe_perf_type()) {
+	if ((int)attr->type == determine_uprobe_perf_type() || determine_uprobe_perf_type()) {
 		// NO legacy bpf types
 		bool retprobe =
 			attr->config & (1 << determine_uprobe_retprobe_bit());
