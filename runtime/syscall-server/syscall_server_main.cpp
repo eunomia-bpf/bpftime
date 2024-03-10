@@ -99,6 +99,11 @@ extern "C" int close(int fd)
 	SPDLOG_DEBUG("Closing fd {}", fd);
 	return handle_exceptions([&]() { return context.handle_close(fd); });
 }
+extern "C" FILE* fopen(const char * filename, const char * modes)
+{
+	SPDLOG_DEBUG("fopen {:x} {:x}", (uintptr_t)filename, (uintptr_t)modes);
+	return context.handle_fopen(filename, modes);
+}
 
 #if __linux__
 extern "C" long syscall(long sysno, ...)
