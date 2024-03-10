@@ -210,6 +210,44 @@ void bpftime_close(int fd)
 	shm_holder.global_shared_memory.close_fd(fd);
 }
 
+const char * expand_filename(const char *filename)
+{
+	const char *home_dir = getenv("HOME");
+	if (home_dir == NULL) {
+		SPDLOG_INFO("Error: HOME environment variable is not set");
+		return NULL;
+	}
+
+	size_t size = strlen(home_dir) + strlen(filename) + 1;
+	char *absolute_path = (char *)malloc(size);
+	if (absolute_path == NULL) {
+		SPDLOG_INFO("Error: Memory allocation failed");
+		return NULL;
+	}
+
+	sprintf(absolute_path, "%s/%s", home_dir, filename);
+	const char *result = strdup(absolute_path);
+	free(absolute_path);
+	free((void *)filename);
+
+	return result;
+}
+
+const char * bpftime_fopen(const char * filename)
+{
+	if (strcmp(filename, "/sys/bus/event_source/devices/uprobe") == 0){
+		const char *homestart_filename = ".bpftime/event_source/devices/uprobe/type";
+		free((void *)filename);
+		return expand_filename(homestart_filename);
+	}else if(strcmp(filename, "/sys/bus/event_source/devices/uprobe/format/retprobe") == 0){
+		const char *homestart_filename = ".bpftime/event_source/devices/uprobe/format/retprobe";
+		free((void *)filename);
+		return expand_filename(homestart_filename);
+	}
+
+	return filename;
+}
+
 int bpftime_map_get_info(int fd, bpftime::bpf_map_attr *out_attr,
 			 const char **out_name, bpftime::bpf_map_type *type)
 {

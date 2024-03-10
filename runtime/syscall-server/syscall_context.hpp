@@ -30,6 +30,7 @@ class syscall_context {
 	using epoll_ctl_fn = int (*)(int, int, int, struct epoll_event *);
 	using epoll_wait_fn = int (*)(int, struct epoll_event *, int, int);
 	using munmap_fn = int (*)(void *, size_t);
+	using fopen_fn = FILE *(*)(const char *,const char *);
 	close_fn orig_close_fn = nullptr;
 	mmap64_fn orig_mmap64_fn = nullptr;
 	ioctl_fn orig_ioctl_fn = nullptr;
@@ -37,6 +38,7 @@ class syscall_context {
 	epoll_ctl_fn orig_epoll_ctl_fn = nullptr;
 	epoll_wait_fn orig_epoll_wait_fn = nullptr;
 	munmap_fn orig_munmap_fn = nullptr;
+	fopen_fn orig_fopen_fn = nullptr;
 	mmap_fn orig_mmap_fn = nullptr;
 
 	std::unordered_set<uintptr_t> mocked_mmap_values;
@@ -54,6 +56,7 @@ class syscall_context {
 		orig_munmap_fn = (munmap_fn)dlsym(RTLD_NEXT, "munmap");
 		orig_mmap64_fn = orig_mmap_fn =
 			(mmap_fn)dlsym(RTLD_NEXT, "mmap");
+		orig_fopen_fn = (fopen_fn)dlsym(RTLD_NEXT, "fopen");
 		// To avoid polluting other child processes,
 		// unset the LD_PRELOAD env var after syscall context being initialized
 		unsetenv("LD_PRELOAD");
@@ -64,7 +67,8 @@ class syscall_context {
 			(uintptr_t)orig_epoll_create1_fn,
 			(uintptr_t)orig_ioctl_fn, (uintptr_t)orig_syscall_fn,
 			(uintptr_t)orig_mmap64_fn, (uintptr_t)orig_close_fn,
-			(uintptr_t)orig_munmap_fn, (uintptr_t)orig_mmap_fn);
+			(uintptr_t)orig_munmap_fn, (uintptr_t)orig_mmap_fn,
+			(uintptr_t)orig_fopen_fn);
 	}
 
 	int create_kernel_bpf_map(int fd);
@@ -110,6 +114,7 @@ class syscall_context {
 	int handle_epoll_wait(int epfd, epoll_event *evt, int maxevents,
 			      int timeout);
 	int handle_munmap(void *addr, size_t size);
+	FILE* handle_fopen(const char * filename, const char * modes);
 };
 
 #endif
