@@ -64,6 +64,12 @@ extern "C" int close(int fd)
 	return context.handle_close(fd);
 }
 
+extern "C" FILE* fopen(const char * filename, const char * modes)
+{
+	SPDLOG_DEBUG("fopen {:x} {:x}", (uintptr_t)filename, (uintptr_t)modes);
+	return context.handle_fopen(filename, modes);
+}
+
 extern "C" long syscall(long sysno, ...)
 {
 	// glibc directly reads the arguments without considering
