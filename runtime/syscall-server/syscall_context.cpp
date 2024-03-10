@@ -59,6 +59,15 @@ int syscall_context::handle_close(int fd)
 	return orig_close_fn(fd);
 }
 
+FILE* syscall_context::handle_fopen(const char * filename, const char * modes)
+{
+	if (!enable_mock)
+		return orig_fopen_fn(filename, modes);
+	try_startup();
+	const char * new_filename = bpftime_fopen(filename);
+	return orig_fopen_fn(new_filename, modes);
+}
+
 int syscall_context::create_kernel_bpf_map(int map_fd)
 {
 	bpf_map_info info = {};
@@ -452,7 +461,7 @@ int syscall_context::handle_perfevent(perf_event_attr *attr, pid_t pid, int cpu,
 				       (uint64_t)cpu, (uint64_t)group_fd,
 				       (uint64_t)flags);
 	try_startup();
-	if ((int)attr->type == determine_uprobe_perf_type() || determine_uprobe_perf_type()) {
+	if ((int)attr->type == determine_uprobe_perf_type()) {
 		// NO legacy bpf types
 		bool retprobe =
 			attr->config & (1 << determine_uprobe_retprobe_bit());
