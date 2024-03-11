@@ -53,6 +53,17 @@
 
 namespace bpftime
 {
+bpf_perf_event_handler::bpf_perf_event_handler(
+	bpf_event_type type, const char *attach_arg,
+	boost::interprocess::managed_shared_memory &mem)
+	: type(type),
+	  data(custom_perf_event_data{
+		  .attach_argument = boost_shm_string(
+			  char_allocator(mem.get_segment_manager())) })
+{
+	std::get<custom_perf_event_data>(data).attach_argument = attach_arg;
+}
+
 // attach to replace or filter self define types
 bpf_perf_event_handler::bpf_perf_event_handler(
 	bpf_event_type type, uint64_t offset, int pid, const char *module_name,

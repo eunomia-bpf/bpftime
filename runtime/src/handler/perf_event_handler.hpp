@@ -108,9 +108,13 @@ struct tracepoint_perf_event_data {
 	int32_t tracepoint_id = -1;
 };
 
+struct custom_perf_event_data {
+	boost_shm_string attach_argument;
+};
+
 using perf_event_data_variant =
 	std::variant<uprobe_perf_event_data, tracepoint_perf_event_data,
-		     software_perf_event_shared_ptr>;
+		     software_perf_event_shared_ptr, custom_perf_event_data>;
 
 // perf event handler
 struct bpf_perf_event_handler {
@@ -122,7 +126,6 @@ struct bpf_perf_event_handler {
 		// TODO: implement enable logic.
 		// If This is a server, should inject the agent into the target
 		// process.
-
 
 		return 0;
 	}
@@ -155,6 +158,9 @@ struct bpf_perf_event_handler {
 			       boost::interprocess::managed_shared_memory &mem);
 	// create software perf event
 	bpf_perf_event_handler(int cpu, int32_t sample_type, int64_t config,
+			       boost::interprocess::managed_shared_memory &mem);
+	// Create custom type perf event
+	bpf_perf_event_handler(bpf_event_type type, const char *attach_arg,
 			       boost::interprocess::managed_shared_memory &mem);
 };
 
