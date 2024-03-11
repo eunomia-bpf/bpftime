@@ -67,11 +67,21 @@ int syscall_context::handle_close(int fd)
 
 FILE* syscall_context::handle_fopen(const char * filename, const char * modes)
 {
-	if (!enable_mock)
+	if (!enable_mock){
 		return orig_fopen_fn(filename, modes);
+	}
 	try_startup();
-	const char * new_filename = bpftime_fopen(filename);
+	const char * new_filename = bpftime_checkfile(filename);
 	return orig_fopen_fn(new_filename, modes);
+}
+
+int syscall_context::handle_open(const char *file, int oflag, unsigned short mode)
+{
+	if (!enable_mock)
+		return orig_open_fn(file, oflag, mode);
+	try_startup();
+	const char * new_file = bpftime_checkfile(file);
+	return orig_open_fn(new_file, oflag, mode);
 }
 
 int syscall_context::create_kernel_bpf_map(int map_fd)

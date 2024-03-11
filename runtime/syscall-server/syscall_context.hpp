@@ -31,6 +31,7 @@ class syscall_context {
 	using epoll_wait_fn = int (*)(int, struct epoll_event *, int, int);
 	using munmap_fn = int (*)(void *, size_t);
 	using fopen_fn = FILE *(*)(const char *,const char *);
+	using open_fn = int (*)(const char *, int, ...);
 	close_fn orig_close_fn = nullptr;
 	mmap64_fn orig_mmap64_fn = nullptr;
 	ioctl_fn orig_ioctl_fn = nullptr;
@@ -39,6 +40,7 @@ class syscall_context {
 	epoll_wait_fn orig_epoll_wait_fn = nullptr;
 	munmap_fn orig_munmap_fn = nullptr;
 	fopen_fn orig_fopen_fn = nullptr;
+	open_fn orig_open_fn = nullptr;
 	mmap_fn orig_mmap_fn = nullptr;
 
 	std::unordered_set<uintptr_t> mocked_mmap_values;
@@ -57,18 +59,19 @@ class syscall_context {
 		orig_mmap64_fn = orig_mmap_fn =
 			(mmap_fn)dlsym(RTLD_NEXT, "mmap");
 		orig_fopen_fn = (fopen_fn)dlsym(RTLD_NEXT, "fopen");
+		orig_open_fn = (open_fn)dlsym(RTLD_NEXT, "open");
 		// To avoid polluting other child processes,
 		// unset the LD_PRELOAD env var after syscall context being initialized
 		unsetenv("LD_PRELOAD");
 		SPDLOG_DEBUG(
-			"Function addrs: {:x} {:x} {:x} {:x} {:x} {:x} {:x} {:x} {:x}",
+			"Function addrs: {:x} {:x} {:x} {:x} {:x} {:x} {:x} {:x} {:x} {:x} {:x}",
 			(uintptr_t)orig_epoll_wait_fn,
 			(uintptr_t)orig_epoll_ctl_fn,
 			(uintptr_t)orig_epoll_create1_fn,
 			(uintptr_t)orig_ioctl_fn, (uintptr_t)orig_syscall_fn,
 			(uintptr_t)orig_mmap64_fn, (uintptr_t)orig_close_fn,
 			(uintptr_t)orig_munmap_fn, (uintptr_t)orig_mmap_fn,
-			(uintptr_t)orig_fopen_fn);
+			(uintptr_t)orig_fopen_fn, (uintptr_t)orig_open_fn);
 	}
 
 	int create_kernel_bpf_map(int fd);
@@ -115,6 +118,7 @@ class syscall_context {
 			      int timeout);
 	int handle_munmap(void *addr, size_t size);
 	FILE* handle_fopen(const char * filename, const char * modes);
+	int handle_open(const char *file, int oflag, unsigned short mode);
 };
 
 #endif
