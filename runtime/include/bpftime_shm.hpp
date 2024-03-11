@@ -333,7 +333,7 @@ void *bpftime_get_array_map_raw_data(int fd);
 
 void bpftime_close(int fd);
 
-const char * bpftime_fopen(const char * filename);
+const char * bpftime_checkfile(const char * filename);
 
 void *bpftime_ringbuf_reserve(int fd, uint64_t size);
 void bpftime_ringbuf_submit(int fd, void *data, int discard);

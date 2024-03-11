@@ -70,6 +70,17 @@ extern "C" FILE* fopen(const char * filename, const char * modes)
 	return context.handle_fopen(filename, modes);
 }
 
+extern "C" int open(const char *file, int oflag, ...)
+{
+	va_list args;
+	va_start(args, oflag);
+	long arg3 = va_arg(args, long);
+	va_end(args);
+	SPDLOG_DEBUG("open {:x} {} {}", (uintptr_t)file, oflag, arg3);
+	unsigned short mode = (unsigned short)arg3;
+	return context.handle_open(file, oflag, mode);
+}
+
 extern "C" long syscall(long sysno, ...)
 {
 	// glibc directly reads the arguments without considering

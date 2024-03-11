@@ -155,20 +155,17 @@ const char * expand_filename(const char *filename)
 	sprintf(absolute_path, "%s/%s", home_dir, filename);
 	const char *result = strdup(absolute_path);
 	free(absolute_path);
-	free((void *)filename);
 
 	return result;
 }
 
-const char * bpftime_fopen(const char * filename)
+const char * bpftime_checkfile(const char * filename)
 {
-	if (strcmp(filename, "/sys/bus/event_source/devices/uprobe") == 0){
+	if (strcmp(filename, "/sys/bus/event_source/devices/uprobe/type") == 0){
 		const char *homestart_filename = ".bpftime/event_source/devices/uprobe/type";
-		free((void *)filename);
 		return expand_filename(homestart_filename);
 	}else if(strcmp(filename, "/sys/bus/event_source/devices/uprobe/format/retprobe") == 0){
 		const char *homestart_filename = ".bpftime/event_source/devices/uprobe/format/retprobe";
-		free((void *)filename);
 		return expand_filename(homestart_filename);
 	}
 
