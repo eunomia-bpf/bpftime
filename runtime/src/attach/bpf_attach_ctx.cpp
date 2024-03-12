@@ -244,7 +244,7 @@ int bpf_attach_ctx::instantiate_perf_event_handler_at(
 {
 	SPDLOG_DEBUG("Instantiating perf event handler at {}, type {}", id,
 		     (int)perf_handler.type);
-	if (perf_handler.type == bpf_event_type::PERF_TYPE_SOFTWARE) {
+	if (perf_handler.type == (int)bpf_event_type::PERF_TYPE_SOFTWARE) {
 		SPDLOG_DEBUG(
 			"Detected software perf event at {}, nothing need to do",
 			id);
@@ -260,10 +260,11 @@ int bpf_attach_ctx::instantiate_perf_event_handler_at(
 		return -ENOENT;
 	}
 	auto &[attach_impl, private_data_gen] = itr->second;
-	if (perf_handler.type == bpf_event_type::BPF_TYPE_UPROBE_OVERRIDE ||
-	    perf_handler.type == bpf_event_type::BPF_TYPE_UPROBE ||
-	    perf_handler.type == bpf_event_type::BPF_TYPE_URETPROBE ||
-	    perf_handler.type == bpf_event_type::BPF_TYPE_UREPLACE) {
+	if (perf_handler.type ==
+		    (int)bpf_event_type::BPF_TYPE_UPROBE_OVERRIDE ||
+	    perf_handler.type == (int)bpf_event_type::BPF_TYPE_UPROBE ||
+	    perf_handler.type == (int)bpf_event_type::BPF_TYPE_URETPROBE ||
+	    perf_handler.type == (int)bpf_event_type::BPF_TYPE_UREPLACE) {
 		auto &uprobe_data =
 			std::get<uprobe_perf_event_data>(perf_handler.data);
 		std::string arg_str;
@@ -278,7 +279,8 @@ int bpf_attach_ctx::instantiate_perf_event_handler_at(
 				id, arg_str, err);
 			return err;
 		}
-	} else if (perf_handler.type == bpf_event_type::PERF_TYPE_TRACEPOINT) {
+	} else if (perf_handler.type ==
+		   (int)bpf_event_type::PERF_TYPE_TRACEPOINT) {
 		auto &tracepoint_data =
 			std::get<tracepoint_perf_event_data>(perf_handler.data);
 		int err = 0;

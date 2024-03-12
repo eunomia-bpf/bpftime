@@ -576,3 +576,9 @@ const bpftime::agent_config &bpftime::set_agent_config_from_env()
 	bpftime_set_agent_config(agent_config);
 	return bpftime_get_agent_config();
 }
+
+int bpftime_add_custom_perf_event(int type, const char *attach_argument)
+{
+	return shm_holder.global_shared_memory.add_custom_perf_event(
+		type, attach_argument);
+}

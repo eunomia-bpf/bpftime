@@ -118,7 +118,8 @@ using perf_event_data_variant =
 
 // perf event handler
 struct bpf_perf_event_handler {
-	bpf_event_type type;
+	// It's an integer, since we can have custom perf event types
+	int type;
 	mutable bool enabled = false;
 	int enable() const
 	{
@@ -160,7 +161,7 @@ struct bpf_perf_event_handler {
 	bpf_perf_event_handler(int cpu, int32_t sample_type, int64_t config,
 			       boost::interprocess::managed_shared_memory &mem);
 	// Create custom type perf event
-	bpf_perf_event_handler(bpf_event_type type, const char *attach_arg,
+	bpf_perf_event_handler(int type, const char *attach_arg,
 			       boost::interprocess::managed_shared_memory &mem);
 };
 

@@ -54,7 +54,7 @@
 namespace bpftime
 {
 bpf_perf_event_handler::bpf_perf_event_handler(
-	bpf_event_type type, const char *attach_arg,
+	int type, const char *attach_arg,
 	boost::interprocess::managed_shared_memory &mem)
 	: type(type),
 	  data(custom_perf_event_data{
@@ -68,7 +68,7 @@ bpf_perf_event_handler::bpf_perf_event_handler(
 bpf_perf_event_handler::bpf_perf_event_handler(
 	bpf_event_type type, uint64_t offset, int pid, const char *module_name,
 	boost::interprocess::managed_shared_memory &mem, bool default_enabled)
-	: type(type), enabled(default_enabled),
+	: type((int)type), enabled(default_enabled),
 	  data(uprobe_perf_event_data{
 		  .offset = offset,
 		  .pid = pid,
@@ -90,9 +90,9 @@ bpf_perf_event_handler::bpf_perf_event_handler(
 			  char_allocator(mem.get_segment_manager())) })
 {
 	if (is_retprobe) {
-		type = bpf_event_type::BPF_TYPE_URETPROBE;
+		type = (int)bpf_event_type::BPF_TYPE_URETPROBE;
 	} else {
-		type = bpf_event_type::BPF_TYPE_UPROBE;
+		type = (int)bpf_event_type::BPF_TYPE_UPROBE;
 	}
 	std::get<uprobe_perf_event_data>(data)._module_name = module_name;
 	SPDLOG_INFO(
@@ -104,7 +104,7 @@ bpf_perf_event_handler::bpf_perf_event_handler(
 bpf_perf_event_handler::bpf_perf_event_handler(
 	int pid, int32_t tracepoint_id,
 	boost::interprocess::managed_shared_memory &mem)
-	: type(bpf_event_type::PERF_TYPE_TRACEPOINT),
+	: type((int)bpf_event_type::PERF_TYPE_TRACEPOINT),
 	  data(tracepoint_perf_event_data{ .pid = pid,
 					   .tracepoint_id = tracepoint_id })
 {
@@ -113,7 +113,7 @@ bpf_perf_event_handler::bpf_perf_event_handler(
 bpf_perf_event_handler::bpf_perf_event_handler(
 	int cpu, int32_t sample_type, int64_t config,
 	boost::interprocess::managed_shared_memory &mem)
-	: type(bpf_event_type::PERF_TYPE_SOFTWARE),
+	: type((int)bpf_event_type::PERF_TYPE_SOFTWARE),
 	  data(boost::interprocess::make_managed_shared_ptr(
 		  mem.construct<software_perf_event_data>(
 			  boost::interprocess::anonymous_instance)(

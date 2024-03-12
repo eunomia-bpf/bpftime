@@ -166,16 +166,19 @@ struct bpftime_map_ops {
 	// lookup the elem
 	void *(*elem_lookup)(int id, const void *key, bool from_syscall);
 	// update the elem
-	long (*elem_update)(int id, const void *key, const void *value, uint64_t flags, bool from_syscall);
+	long (*elem_update)(int id, const void *key, const void *value,
+			    uint64_t flags, bool from_syscall);
 	// delete the elem
 	long (*elem_delete)(int id, const void *key, bool from_syscall);
 	// get the next key
-	int (*map_get_next_key)(int id, const void *key, void *next_key, bool from_syscall);
+	int (*map_get_next_key)(int id, const void *key, void *next_key,
+				bool from_syscall);
 };
 
 // register new map ops
 //
-// External map ops needs the syscall-server is running with the map ops enabled.
+// External map ops needs the syscall-server is running with the map ops
+// enabled.
 int bpftime_register_map_ops(int map_type, bpftime_map_ops *ops);
 
 } // namespace bpftime
@@ -257,7 +260,7 @@ struct bpf_link_create_args {
 //
 // @param[fd]: fd is the fd allocated by the kernel. if fd is -1, then the
 // function will allocate a new perf event fd.
-int bpftime_link_create(int fd, struct bpf_link_create_args* args);
+int bpftime_link_create(int fd, struct bpf_link_create_args *args);
 
 // create a bpf prog in the global shared memory
 //
@@ -348,6 +351,8 @@ int bpftime_add_ureplace_or_override(int fd, int pid, const char *name,
 				     uint64_t offset, bool is_replace);
 
 int bpftime_get_current_thread_cookie(uint64_t *out);
+
+int bpftime_add_custom_perf_event(int type, const char *attach_argument);
 }
 
 #endif // BPFTIME_SHM_CPP_H
