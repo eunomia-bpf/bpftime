@@ -102,6 +102,8 @@ if (${BUILD_BPFTIME_DAEMON})
 endif()
 add_subdirectory(tools)
 
+add_subdirectory(example/attach_implementation)
+
 # benchmark that requires bpftime libraries
 add_subdirectory(benchmark)
 
