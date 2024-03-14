@@ -6,7 +6,7 @@ This example demonstrates the usage of bpftime in nginx plugin. It uses eBPF pro
 
 There are three major parts of this example:
 - An executable named `controller`. It calls APIs of bpftime_shm to load programs, maps, and links into shared memory, and polls ringbuf output from the eBPF program, and printf them to stdout
-- An library named `nginx_plugin_adaptor`. Since nginx uses its own build system, so we can't integrate nginx into CMake, so we have this dynamic library to handle things related to bpftime, such as the attach implementation, registering, call attach context to instantiate handlers, etc
+- An library named `nginx_plugin_adaptor`. Since nginx uses its own build system, we can't integrate nginx into CMake, so we have this dynamic library to handle things related to bpftime, such as the attach implementation, dynamically registering, call attach context to instantiate handlers, etc
 - A nginx module named `ngx_http_bpftime_module`, at folder `nginx_plugin`. This module links `nginx_plugin_adaptor`, and will call several functions implemented in it to achive request filter. This module will be built using nginx's build system
 
 ## How to use this example
