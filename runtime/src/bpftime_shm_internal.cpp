@@ -25,6 +25,7 @@ extern "C" void bpftime_initialize_global_shm(bpftime::shm_open_type type)
 	// call the constructor
 	new (&shm_holder.global_shared_memory) bpftime_shm(type);
 	global_shm_initialized = true;
+	SPDLOG_INFO("Global shm initialized");
 }
 
 extern "C" void bpftime_destroy_global_shm()

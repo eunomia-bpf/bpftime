@@ -353,6 +353,9 @@ int bpftime_add_ureplace_or_override(int fd, int pid, const char *name,
 int bpftime_get_current_thread_cookie(uint64_t *out);
 
 int bpftime_add_custom_perf_event(int type, const char *attach_argument);
+
+int bpftime_poll_from_ringbuf(int rb_fd, void *ctx,
+			      int (*cb)(void *, void *, size_t));
 }
 
 #endif // BPFTIME_SHM_CPP_H
