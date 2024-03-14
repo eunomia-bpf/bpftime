@@ -27,13 +27,23 @@ class nginx_request_filter_private_data : public attach_private_data {
 		return 0;
 	}
 };
+
+struct request_filter_argument {
+	char url_to_check[128];
+	char accept_prefix[128];
+};
+
 class nginx_request_filter_attach_impl : public base_attach_impl {
     public:
 	nginx_request_filter_attach_impl()
 	{
 		global_url_filter = [this](const char *url) -> int {
+			SPDLOG_INFO("Running callback with {}", url);
 			uint64_t ret;
-			int err = this->cb.value()((void *)url, strlen(url),
+			request_filter_argument arg;
+			strcpy(arg.accept_prefix, this->url.c_str());
+			strcpy(arg.url_to_check, url);
+			int err = this->cb.value()((void *)&arg, sizeof(arg),
 						   &ret);
 			if (err < 0) {
 				SPDLOG_ERROR("Failed to run ebpf program: {}",
@@ -129,5 +139,6 @@ extern "C" int nginx_plugin_example_initialize()
 		SPDLOG_ERROR("Failed to initialize attach context: {}", res);
 		return res;
 	}
+	SPDLOG_INFO("Handlers initialized");
 	return 0;
 }

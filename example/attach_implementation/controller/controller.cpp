@@ -25,7 +25,12 @@ static void sig_handler(int sig)
 static int handle_data(void *, void *buf, size_t sz)
 {
 	request_filter_event *evt = (request_filter_event *)buf;
-	SPDLOG_INFO("{} {}", evt->url, evt->accepted);
+	// SPDLOG_INFO("{} {}", evt->url, evt->accepted);
+	if (evt->accepted) {
+		SPDLOG_INFO("Accepted: {}", evt->url);
+	} else {
+		SPDLOG_INFO("Rejected: {}", evt->url);
+	}
 	return 0;
 }
 
@@ -50,16 +55,12 @@ int main(int argc, const char **argv)
 			      .max_ents = 1024 * 256 });
 	SPDLOG_INFO("Ringbuf map fd is {}", rb_map_fd);
 	auto insns = prog->get_insns();
-	bool patched = false;
 	for (auto &insn : insns) {
 		if (insn.code == 0x18 && insn.src_reg == 0) {
-			if (patched) {
-				SPDLOG_ERROR("Too many patches!");
-				return 1;
-			}
 			insn.src_reg = 1;
 			insn.imm = rb_map_fd;
-			patched = true;
+			SPDLOG_INFO("Patched first instruction");
+			break;
 		}
 	}
 	int pfd =
@@ -82,9 +83,10 @@ int main(int argc, const char **argv)
 	}
 	while (!stop) {
 		epoll_event out;
-        SPDLOG_DEBUG("Polling");
+		SPDLOG_DEBUG("Polling");
 		int ret = bpftime_epoll_wait(epoll_fd, &out, 1, 1000);
 		if (ret == 1) {
+			SPDLOG_INFO("Received data");
 			if (int err = bpftime_poll_from_ringbuf(
 				    out.data.fd, nullptr, handle_data);
 			    err < 0) {

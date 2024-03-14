@@ -293,9 +293,18 @@ int bpf_attach_ctx::instantiate_perf_event_handler_at(
 			return err;
 		}
 	} else {
-		SPDLOG_ERROR("Unsupported perf event type: {}",
-			     (int)perf_handler.type);
-		return -ENOTSUP;
+		auto &custom_data =
+			std::get<custom_perf_event_data>(perf_handler.data);
+		int err = 0;
+		priv_data = private_data_gen(
+			std::string(custom_data.attach_argument), err);
+		if (err < 0) {
+			SPDLOG_ERROR(
+				"Unable to parse private data of attach type {}, err={}, raw string={}",
+				perf_handler.type, err,
+				custom_data.attach_argument);
+			return err;
+		}
 	}
 	SPDLOG_DEBUG("Instantiated perf event handler {}", id);
 	instantiated_perf_events[id] =

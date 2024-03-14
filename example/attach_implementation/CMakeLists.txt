@@ -32,7 +32,7 @@ target_include_directories(attach_impl_example_controller PRIVATE ${BPFTIME_RUNT
 ExternalProject_Add(
     attach_impl_example_nginx
     DOWNLOAD_COMMAND URL https://nginx.org/download/nginx-1.22.1.tar.gz
-    CONFIGURE_COMMAND cd ${CMAKE_CURRENT_BINARY_DIR}/attach_impl_example_nginx-prefix/src/attach_impl_example_nginx && LINK_LIB=${CMAKE_CURRENT_BINARY_DIR}/libattach_impl_example_nginx_plugin_adaptor.so ./configure --add-dynamic-module=${CMAKE_CURRENT_SOURCE_DIR}/nginx_plugin --with-compat
+    CONFIGURE_COMMAND cd ${CMAKE_CURRENT_BINARY_DIR}/attach_impl_example_nginx-prefix/src/attach_impl_example_nginx && LINK_LIB=${CMAKE_CURRENT_BINARY_DIR}/libattach_impl_example_nginx_plugin_adaptor.so ./configure --add-dynamic-module=${CMAKE_CURRENT_SOURCE_DIR}/nginx_plugin --with-compat --with-ld-opt=-Wl,-rpath=${CMAKE_CURRENT_BINARY_DIR}
     BUILD_COMMAND make -C ${CMAKE_CURRENT_BINARY_DIR}/attach_impl_example_nginx-prefix/src/attach_impl_example_nginx modules -j32
     INSTALL_COMMAND ""
     BUILD_ALWAYS TRUE
