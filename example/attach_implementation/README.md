@@ -19,7 +19,7 @@ We assume you are using a nginx version that is compatible with `1.22.1`, if you
 
 Run the following command at the root directory of the repository:
 ```console
-cmake -DBPFTIME_LLVM_JIT=YES -DCMAKE_BUILD_TYPE:STRING=Release -B build -S .
+cmake -DBPFTIME_LLVM_JIT=YES -DCMAKE_BUILD_TYPE:STRING=Release -DBUILD_ATTACH_IMPL_EXAMPLE=YES -B build -S .
 cmake --build build --config Release --target attach_impl_example_nginx -j$(nproc)
 ```
 
