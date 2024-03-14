@@ -86,7 +86,7 @@ int main(int argc, const char **argv)
 		SPDLOG_DEBUG("Polling");
 		int ret = bpftime_epoll_wait(epoll_fd, &out, 1, 1000);
 		if (ret == 1) {
-			SPDLOG_INFO("Received data");
+			SPDLOG_DEBUG("Received data");
 			if (int err = bpftime_poll_from_ringbuf(
 				    out.data.fd, nullptr, handle_data);
 			    err < 0) {

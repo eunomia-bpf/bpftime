@@ -17,10 +17,10 @@ add_executable(attach_impl_example_controller
 add_ebpf_program_target(
     attach_impl_example_ebpf_program
     ${CMAKE_CURRENT_SOURCE_DIR}/controller/request_filter.bpf.c
-    ${CMAKE_CURRENT_BINARY_DIR}/controller/request_filter.bpf.o
+    ${CMAKE_CURRENT_BINARY_DIR}/request_filter.bpf.o
 )
 
-target_compile_definitions(attach_impl_example_controller PRIVATE EBPF_PROGRAM_PATH=${CMAKE_CURRENT_BINARY_DIR}/controller/request_filter.bpf.o)
+target_compile_definitions(attach_impl_example_controller PRIVATE EBPF_PROGRAM_PATH=${CMAKE_CURRENT_BINARY_DIR}/request_filter.bpf.o)
 
 add_dependencies(attach_impl_example_controller runtime spdlog::spdlog bpftime-object attach_impl_example_ebpf_program)
 
@@ -46,4 +46,4 @@ add_custom_command(
     COMMENT "Copy nginx module to ${CMAKE_CURRENT_SOURCE_DIR}/nginx_plugin_output/"
 )
 
-add_dependencies(attach_impl_example_nginx attach_impl_example_nginx_plugin_adaptor)
+add_dependencies(attach_impl_example_nginx attach_impl_example_nginx_plugin_adaptor attach_impl_example_controller)
