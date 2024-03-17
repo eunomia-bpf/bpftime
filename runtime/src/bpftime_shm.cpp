@@ -9,6 +9,7 @@
 #include "handler/perf_event_handler.hpp"
 #include "spdlog/spdlog.h"
 #include <csignal>
+#include <cstddef>
 #include <signal.h>
 #include <cerrno>
 #include <errno.h>
@@ -575,4 +576,25 @@ const bpftime::agent_config &bpftime::set_agent_config_from_env()
 		getenv("BPFTIME_ALLOW_EXTERNAL_MAPS") != nullptr;
 	bpftime_set_agent_config(agent_config);
 	return bpftime_get_agent_config();
+}
+
+int bpftime_add_custom_perf_event(int type, const char *attach_argument)
+{
+	return shm_holder.global_shared_memory.add_custom_perf_event(
+		type, attach_argument);
+}
+
+int bpftime_poll_from_ringbuf(int rb_fd, void *ctx,
+			      int (*cb)(void *, void *, size_t))
+{
+	auto &shm = shm_holder.global_shared_memory;
+	if (auto ret = shm.try_get_ringbuf_map_impl(rb_fd); ret.has_value()) {
+		auto impl = ret.value();
+		return impl->create_impl_shared_ptr()->fetch_data(
+			[=](void *buf, int sz) { return cb(ctx, buf, sz); });
+	} else {
+		errno = EINVAL;
+		SPDLOG_ERROR("Expected fd {} to be ringbuf map fd ", rb_fd);
+		return -EINVAL;
+	}
 }

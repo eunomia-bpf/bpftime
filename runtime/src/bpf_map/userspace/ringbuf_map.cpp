@@ -16,6 +16,14 @@ enum {
 	BPF_RINGBUF_HDR_SZ = 8,
 };
 
+static inline int roundup_len(__u32 len)
+{
+	len <<= 2;
+	len >>= 2;
+	len += BPF_RINGBUF_HDR_SZ;
+	return (len + 7) / 8 * 8;
+}
+
 #define READ_ONCE_UL(x) (*(volatile unsigned long *)&x)
 #define WRITE_ONCE_UL(x, v) (*(volatile unsigned long *)&x) = (v)
 #define READ_ONCE_I(x) (*(volatile int *)&x)
@@ -45,22 +53,25 @@ enum {
 
 #elif defined(__aarch64__)
 // https://github.com/torvalds/linux/blob/master/tools/arch/arm64/include/asm/barrier.h
-#define smp_store_release_ul(p, v)                              \
-  do {                                                          \
-    asm volatile("stlr %1, %0" : "=Q"(*p) : "r"(v) : "memory"); \
-  } while (0)
-#define smp_load_acquire_ul(p)                                     \
-  ({                                                               \
-    unsigned long ___p;                                            \
-    asm volatile("ldar %0, %1" : "=r"(___p) : "Q"(*p) : "memory"); \
-    ___p;                                                          \
-  })
-#define smp_load_acquire_i(p)                                       \
-  ({                                                                \
-    int ___p;                                                       \
-    asm volatile("ldar %w0, %1" : "=r"(___p) : "Q"(*p) : "memory"); \
-    ___p;                                                           \
-  })
+#define smp_store_release_ul(p, v)                                             \
+	do {                                                                   \
+		asm volatile("stlr %1, %0" : "=Q"(*p) : "r"(v) : "memory");    \
+	} while (0)
+#define smp_load_acquire_ul(p)                                                 \
+	({                                                                     \
+		unsigned long ___p;                                            \
+		asm volatile("ldar %0, %1" : "=r"(___p) : "Q"(*p) : "memory"); \
+		___p;                                                          \
+	})
+#define smp_load_acquire_i(p)                                                  \
+	({                                                                     \
+		int ___p;                                                      \
+		asm volatile("ldar %w0, %1"                                    \
+			     : "=r"(___p)                                      \
+			     : "Q"(*p)                                         \
+			     : "memory");                                      \
+		___p;                                                          \
+	})
 #else
 #error Only supports x86_64 and aarch64
 #endif
@@ -114,6 +125,10 @@ ringbuf_weak_ptr ringbuf_map_impl::create_impl_weak_ptr()
 {
 	return ringbuf_weak_ptr(ringbuf_impl);
 }
+ringbuf_shared_ptr ringbuf_map_impl::create_impl_shared_ptr()
+{
+	return ringbuf_impl;
+}
 void *ringbuf_map_impl::get_consumer_page() const
 {
 	return ringbuf_impl->consumer_pos.get();
@@ -156,6 +171,51 @@ ringbuf::ringbuf(uint32_t max_ent,
 	data = (uint8_t *)(uintptr_t)(&((*raw_buffer)[page_size * 2]));
 }
 
+int ringbuf::fetch_data(std::function<int(void *, int)> cb)
+{
+	int *len_ptr, len, err;
+	/* 64-bit to avoid overflow in case of extreme application behavior */
+	int64_t cnt = 0;
+	unsigned long cons_pos, prod_pos;
+	bool got_new_data;
+	void *sample;
+
+	cons_pos = smp_load_acquire_ul(consumer_pos.get());
+	do {
+		got_new_data = false;
+		prod_pos = smp_load_acquire_ul(producer_pos.get());
+		while (cons_pos < prod_pos) {
+			auto len_ptr =
+				(int32_t *)(uintptr_t)(data.get() +
+						       (cons_pos & mask()));
+			len = smp_load_acquire_i(len_ptr);
+
+			/* sample not committed yet, bail out for now */
+			if (len & BPF_RINGBUF_BUSY_BIT)
+				goto done;
+
+			got_new_data = true;
+			cons_pos += roundup_len(len);
+
+			if ((len & BPF_RINGBUF_DISCARD_BIT) == 0) {
+				sample = (void *)(((uintptr_t)len_ptr) +
+						  BPF_RINGBUF_HDR_SZ);
+				err = cb(sample, len);
+				if (err < 0) {
+					/* update consumer pos and bail out */
+					smp_store_release_ul(consumer_pos.get(),
+							     cons_pos);
+					return err;
+				}
+				cnt++;
+			}
+
+			smp_store_release_ul(consumer_pos.get(), cons_pos);
+		}
+	} while (got_new_data);
+done:
+	return cnt;
+}
 bool ringbuf::has_data() const
 {
 	auto cons_pos = smp_load_acquire_ul(consumer_pos.get());
@@ -207,7 +267,7 @@ void *ringbuf::reserve(size_t size, int self_fd)
 	smp_store_release_ul(producer_pos.get(), prod_pos + total_size);
 	auto ptr = data.get() + ((prod_pos + BPF_RINGBUF_HDR_SZ) & mask());
 	SPDLOG_TRACE("ringbuf: reserved {} bytes at {}, fd {}", size,
-		      (void *)ptr, self_fd);
+		     (void *)ptr, self_fd);
 	return ptr;
 }
 
