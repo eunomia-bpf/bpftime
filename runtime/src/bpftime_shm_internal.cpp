@@ -484,8 +484,12 @@ int bpftime_shm::add_bpf_link(int fd, struct bpf_link_create_args *args)
 		errno = EBADF;
 		return -1;
 	}
-	return manager->set_handler(fd, bpftime::bpf_link_handler(*args),
-				    segment);
+	int result = manager->set_handler(
+		fd, bpftime::bpf_link_handler(*args, segment), segment);
+	// TODO: We should create corresponding perf_event handles for the link,
+	// if the attach type is uprobe_multi
+
+	return result;
 }
 
 void bpftime_shm::close_fd(int fd)

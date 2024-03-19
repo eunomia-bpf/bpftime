@@ -208,9 +208,9 @@ int bpf_attach_ctx::instantiate_bpf_link_handler_at(
 	int id, const bpf_link_handler &handler)
 {
 	SPDLOG_DEBUG(
-		"Instantiating link handler: prog {} -> perf event {}, cookie {}",
+		"Instantiating link handler: prog {} -> perf event {}, link_attach_type {}",
 		handler.prog_id, handler.attach_target_id,
-		handler.attach_cookie.value_or(0));
+		handler.link_attach_type);
 	auto &[priv_data, attach_type] =
 		instantiated_perf_events[handler.attach_target_id];
 	attach::base_attach_impl *attach_impl;
@@ -222,21 +222,30 @@ int bpf_attach_ctx::instantiate_bpf_link_handler_at(
 		return -ENOTSUP;
 	}
 	auto prog = instantiated_progs.at(handler.prog_id).get();
-	auto cookie = handler.attach_cookie;
-	int attach_id = attach_impl->create_attach_with_ebpf_callback(
-		[=](void *mem, size_t mem_size, uint64_t *ret) -> int {
-			current_thread_bpf_cookie = cookie;
-			int err = prog->bpftime_prog_exec((void *)mem, mem_size,
-							  ret);
-			return err;
-		},
-		*priv_data, attach_type);
-	if (attach_id < 0) {
-		SPDLOG_ERROR("Unable to instantiate bpf link handler {}: {}",
-			     id, attach_id);
-		return attach_id;
+	if (handler.link_attach_type == BPF_PERF_EVENT) {
+		auto cookie = std::get<perf_event_link_data>(handler.data)
+				      .attach_cookie;
+		int attach_id = attach_impl->create_attach_with_ebpf_callback(
+			[=](void *mem, size_t mem_size, uint64_t *ret) -> int {
+				current_thread_bpf_cookie = cookie;
+				int err = prog->bpftime_prog_exec(
+					(void *)mem, mem_size, ret);
+				return err;
+			},
+			*priv_data, attach_type);
+		if (attach_id < 0) {
+			SPDLOG_ERROR(
+				"Unable to instantiate bpf link handler {}: {}",
+				id, attach_id);
+			return attach_id;
+		}
+		instantiated_attach_ids[id] =
+			std::make_pair(attach_id, attach_impl);
+	} else {
+		SPDLOG_ERROR("We does not support link with attach type {} yet",
+			     handler.link_attach_type);
+		return -ENOTSUP;
 	}
-	instantiated_attach_ids[id] = std::make_pair(attach_id, attach_impl);
 	return 0;
 }
 int bpf_attach_ctx::instantiate_perf_event_handler_at(

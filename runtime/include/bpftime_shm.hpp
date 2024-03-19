@@ -239,6 +239,15 @@ struct bpf_link_create_args {
 			__aligned_u64 cookies;
 		} kprobe_multi;
 		struct {
+			__u32 flags;
+			__u32 cnt;
+			const char *path;
+			const unsigned long *offsets;
+			const unsigned long *ref_ctr_offsets;
+			const __u64 *cookies;
+			__u32 pid;
+		} uprobe_multi;
+		struct {
 			/* this is overlaid with the target_btf_id above. */
 			__u32 target_btf_id;
 			/* black box user-provided value passed through

@@ -9,3 +9,4 @@ uprobe_multi
 .output
 test
 victim
+dump*

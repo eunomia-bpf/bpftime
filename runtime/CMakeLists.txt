@@ -55,7 +55,8 @@ set(sources
   src/handler/perf_event_handler.cpp
   src/handler/prog_handler.cpp
   src/handler/epoll_handler.cpp
-
+  src/handler/link_handler.cpp
+  
   src/bpftime_shm.cpp
   src/bpftime_shm_internal.cpp
   src/bpftime_shm_json.cpp

@@ -357,17 +357,7 @@ long syscall_context::handle_sysbpf(int cmd, union bpf_attr *attr, size_t size)
 		int id = bpftime_link_create(
 			-1 /* let the shm alloc fd for us */,
 			(bpf_link_create_args *)&attr->link_create);
-		SPDLOG_DEBUG("Created link {}", id);
-		if (bpftime_is_prog_fd(prog_fd) &&
-		    bpftime_is_perf_event_fd(target_fd) &&
-		    attach_type == BPF_PERF_EVENT) {
-			auto cookie = attr->link_create.perf_event.bpf_cookie;
-			SPDLOG_DEBUG(
-				"Attaching perf event {} to prog {}, with bpf cookie {:x}",
-				target_fd, prog_fd, cookie);
-			bpftime_attach_perf_to_bpf_with_cookie(target_fd,
-							       prog_fd, cookie);
-		}
+		SPDLOG_DEBUG("syscall-server: Created link {}", id);
 		return id;
 	}
 	case BPF_MAP_FREEZE: {
