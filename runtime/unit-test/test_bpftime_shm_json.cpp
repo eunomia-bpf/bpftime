@@ -1,4 +1,5 @@
 #include "catch2/catch_message.hpp"
+#include "handler/link_handler.hpp"
 #include <boost/interprocess/creation_tags.hpp>
 #include <boost/interprocess/interprocess_fwd.hpp>
 #include <bpf_map/userspace/per_cpu_array_map.hpp>
@@ -72,6 +73,7 @@ TEST_CASE("Test bpftime shm json import/export")
 		bpf_link_create_args args = {
 			.prog_fd = 4,
 			.target_fd = 5,
+			.attach_type = bpftime::BPF_PERF_EVENT
 		};
 		shm.add_bpf_link(7, &args);
 		shm.add_bpf_map(8, "test_map1",

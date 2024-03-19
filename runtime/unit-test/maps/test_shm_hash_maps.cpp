@@ -89,7 +89,7 @@ TEST_CASE("Test shm hash maps with sub process")
 	struct shm_remove remover(SHM_NAME);
 
 	// The side that creates the mapping
-	managed_shared_memory segment(create_only, SHM_NAME, 1 << 20);
+	managed_shared_memory segment(create_only, SHM_NAME, 1 << 21);
 	auto manager =
 		segment.construct<handler_manager>(HANDLER_NAME)(segment);
 	auto &manager_ref = *manager;

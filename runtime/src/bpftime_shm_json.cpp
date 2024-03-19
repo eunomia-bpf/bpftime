@@ -5,6 +5,7 @@
  */
 #include "bpftime_shm.hpp"
 #include "handler/epoll_handler.hpp"
+#include "handler/link_handler.hpp"
 #include "handler/perf_event_handler.hpp"
 #include "spdlog/spdlog.h"
 #include <bpftime_shm_internal.hpp>
@@ -174,10 +175,11 @@ static int import_shm_handler_from_json(bpftime_shm &shm, json value, int fd)
 	} else if (handler_type == "bpf_link_handler") {
 		unsigned int prog_fd = value["attr"]["prog_fd"];
 		unsigned int target_fd = value["attr"]["target_fd"];
-		bpf_link_create_args args = {
-			.prog_fd = prog_fd,
-			.target_fd = target_fd,
-		};
+		unsigned int link_attach_type =
+			value["attr"]["link_attach_type"];
+		bpf_link_create_args args = { .prog_fd = prog_fd,
+					      .target_fd = target_fd,
+					      .attach_type = link_attach_type };
 		shm.add_bpf_link(fd, &args);
 	} else {
 		SPDLOG_ERROR("Unsupported handler type {}", handler_type);
@@ -291,11 +293,18 @@ int bpftime::bpftime_export_shm_to_json(const bpftime_shm &shm,
 			SPDLOG_INFO("epoll_handler found at {}", i);
 		} else if (std::holds_alternative<bpf_link_handler>(handler)) {
 			auto &h = std::get<bpf_link_handler>(handler);
+			if (h.link_attach_type != bpftime::BPF_PERF_EVENT) {
+				SPDLOG_ERROR(
+					"We only support exporting links with attach type BPF_PERF_EVENT now");
+				return -ENOTSUP;
+			}
 			j[std::to_string(i)] = {
 				{ "type", "bpf_link_handler" },
 				{ "attr",
 				  { { "prog_fd", h.prog_id },
-				    { "target_fd", h.attach_target_id } } }
+				    { "target_fd", h.attach_target_id },
+				    { "link_attach_type",
+				      h.link_attach_type } } }
 			};
 			SPDLOG_INFO(
 				"bpf_link_handler found at {}，link {} -> {}",
