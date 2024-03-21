@@ -14,6 +14,11 @@
 #include <utility>
 #include <tuple>
 #include <sys/wait.h>
+#include <sys/types.h>
+#include <sys/stat.h>
+#include <fcntl.h>
+
+#define STR_MAX 1024
 
 static int subprocess_pid = 0;
 
@@ -82,6 +87,7 @@ static int run_command(const char *path, const std::vector<std::string> &argv,
 	}
 	return 1;
 }
+
 static int inject_by_frida(int pid, const char *inject_path, const char *arg)
 {
 	spdlog::info("Injecting to {}", pid);
@@ -121,18 +127,47 @@ extract_path_and_args(const argparse::ArgumentParser &parser)
 	return { executable, items };
 }
 
-static void signal_handler(int sig)
+static int read_tracepipe(const char *tracepipe_path)
 {
-	if (subprocess_pid) {
-		kill(subprocess_pid, sig);
-	}
+    mode_t permission = 0666;
+    if (mkfifo(tracepipe_path, permission) == -1) {
+        if (errno != EEXIST) {
+            spdlog::error("Failed to create tracepipe: {}", strerror(errno));
+            return 1;
+        }
+    } else {
+        spdlog::info("Trace pipe created");
+    }
+
+    int fd = open(tracepipe_path, O_RDONLY);
+    if (fd == -1) {
+        spdlog::error(
+       "Failed to open tracepipe: {}",
+            strerror(errno));
+        return 2;
+    }
+
+    while (1) {
+        char data[STR_MAX];
+        ssize_t ret = read(fd, data, strnlen(data, STR_MAX));
+        if (ret == -1) {
+            spdlog::error(
+                "Failed to read from tracepipe: {}",
+                strerror(errno));
+            return 3;
+        } else {
+            if (ret > 0) {
+                std::cout << data;
+            }
+        }
+    }
+    return 0;
 }
+
 
 int main(int argc, const char **argv)
 {
 	spdlog::cfg::load_env_levels();
-	signal(SIGINT, signal_handler);
-	signal(SIGTSTP, signal_handler);
 	argparse::ArgumentParser program(argv[0]);
 
 	if (auto home_env = getenv("HOME"); home_env) {
@@ -185,9 +220,13 @@ int main(int argc, const char **argv)
 		.flag();
 	attach_command.add_argument("PID").scan<'i', int>();
 
+    argparse::ArgumentParser trace_command("trace");
+	trace_command.add_description("Read contents of tracepipe");
+
 	program.add_subparser(load_command);
 	program.add_subparser(start_command);
 	program.add_subparser(attach_command);
+	program.add_subparser(trace_command);
 	try {
 		program.parse_args(argc, argv);
 	} catch (const std::exception &err) {
@@ -258,6 +297,13 @@ int main(int argc, const char **argv)
 		} else {
 			return inject_by_frida(pid, agent_path.c_str(), "");
 		}
-	}
+	} else if (program.is_subcommand_used("trace")) {
+		auto tracepipe_path = install_path / "tracepipe";
+		if (!std::filesystem::exists(tracepipe_path)) {
+            spdlog::error("Tracepipe not found: {}",
+                    tracepipe_path.c_str());
+        }
+        return read_tracepipe(tracepipe_path.c_str());
+    }
 	return 0;
 }

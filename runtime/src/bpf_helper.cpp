@@ -19,6 +19,9 @@
 #include <cstring>
 #include <time.h>
 #include <unistd.h>
+#include <sys/types.h>
+#include <sys/stat.h>
+#include <fcntl.h>
 #include <ctime>
 #include <filesystem>
 #include "bpftime.hpp"
@@ -47,8 +50,26 @@ uint64_t bpftime_trace_printk(uint64_t fmt, uint64_t fmt_size, ...)
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wformat-nonliteral"
 #pragma GCC diagnostic ignored "-Wvarargs"
-	va_start(args, fmt_str);
-	long ret = vprintf(fmt_str, args);
+    std::string tracepipe_path(getenv("HOME"));
+    tracepipe_path += "/.bpftime/tracepipe";
+
+    const char *pipepath = tracepipe_path.c_str();
+    mode_t permission = 0666;
+    if (mkfifo(pipepath, permission) == -1) {
+        if (errno != EEXIST) {
+			SPDLOG_ERROR("mkfifo error: {}", strerror(errno));
+            return 1;
+        }
+    }
+
+    int fd = open(pipepath, O_WRONLY);
+    if (fd == -1) {
+		SPDLOG_ERROR("open error: {}", strerror(errno));
+        return 1;
+    }
+    va_start(args, fmt_str);
+    long ret = vdprintf(fd, fmt_str, args);
+    close(fd);
 #pragma GCC diagnostic pop
 	va_end(args);
 	return 0;
