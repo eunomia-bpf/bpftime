@@ -42,6 +42,10 @@ static inline T ensure_on_current_cpu(std::function<T(int cpu)> func)
 template <class T>
 static inline T ensure_on_certain_cpu(int cpu, std::function<T()> func)
 {
+	static thread_local int currcpu = -1;
+	if (currcpu == sched_getcpu()) {
+		return func(currcpu);
+	}
 	cpu_set_t orig, set;
 	CPU_ZERO(&orig);
 	CPU_ZERO(&set);
