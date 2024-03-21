@@ -23,11 +23,15 @@ using bytes_vec = boost::interprocess::vector<uint8_t, bytes_vec_allocator>;
 template <class T>
 static inline T ensure_on_current_cpu(std::function<T(int cpu)> func)
 {
+	static thread_local int currcpu = -1;
+	if (currcpu == sched_getcpu()) {
+		return func(currcpu);
+	}
 	cpu_set_t orig, set;
 	CPU_ZERO(&orig);
 	CPU_ZERO(&set);
 	sched_getaffinity(0, sizeof(orig), &orig);
-	int currcpu = sched_getcpu();
+	currcpu = sched_getcpu();
 	CPU_SET(currcpu, &set);
 	sched_setaffinity(0, sizeof(set), &set);
 	T ret = func(currcpu);
