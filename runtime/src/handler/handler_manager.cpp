@@ -95,7 +95,7 @@ void handler_manager::clear_id_at(int fd, managed_shared_memory &memory)
 			if (std::holds_alternative<bpf_link_handler>(handler)) {
 				auto &link_handler =
 					std::get<bpf_link_handler>(handler);
-				if (link_handler.attach_target_id == fd) {
+				if (link_handler.attach_target_ids == fd) {
 					SPDLOG_DEBUG(
 						"Remove link handler with id {}, prog id {}, due to the removal of perf event {}",
 						i, link_handler.prog_id, fd);

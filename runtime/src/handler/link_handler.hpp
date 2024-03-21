@@ -20,7 +20,7 @@ namespace bpftime
 {
 constexpr static int BPF_PERF_EVENT = 41;
 constexpr static int BPF_TRACE_UPROBE_MULTI = 48;
-
+constexpr static int BPF_F_UPROBE_MULTI_RETURN = 1;
 struct perf_event_link_data {
 	std::optional<uint64_t> attach_cookie;
 };
@@ -32,7 +32,7 @@ struct uprobe_multi_entry {
 	// Out attach implementation requires that each attach has a
 	// perf event handler, so we also need it if we attach a uprobe
 	// multi link
-	std::optional<int> attach_target;
+	mutable std::optional<int> attach_target;
 };
 using uprobe_multi_entry_allocator =
 	boost::interprocess::allocator<uprobe_multi_entry,
@@ -44,16 +44,21 @@ struct uprobe_multi_link_data {
 	boost_shm_string path;
 	uprobe_multi_entry_vector entries;
 	uint64_t flags;
+	int pid;
 };
 
 using bpf_link_data =
 	std::variant<perf_event_link_data, uprobe_multi_link_data>;
 
+using i32_vec_allocator = boost::interprocess::allocator<
+	int32_t, boost::interprocess::managed_shared_memory::segment_manager>;
+using i32_vec = boost::interprocess::vector<int32_t, i32_vec_allocator>;
+
 // handle the bpf link fd
 struct bpf_link_handler {
 	struct bpf_link_create_args args;
 	int prog_id;
-	int attach_target_id;
+	i32_vec attach_target_ids;
 	int link_attach_type;
 	bpf_link_data data;
 	// Create a customized bpf_link
@@ -61,11 +66,13 @@ struct bpf_link_handler {
 			 managed_shared_memory &mem);
 	// Create a bpf_link of type BPF_PERF_EVENT, with provided prog_id and
 	// attach_target_id
-	bpf_link_handler(int prog_id, int attach_target_id);
+	bpf_link_handler(int prog_id, int attach_target_id,
+			 managed_shared_memory &mem);
 	// Create a bpf_link of type BPF_PERF_EVENT, with provided prog_id and
 	// attach_target_id, and cookie
 	bpf_link_handler(int prog_id, int attach_target_id,
-			 std::optional<uint64_t> cookie);
+			 std::optional<uint64_t> cookie,
+			 managed_shared_memory &mem);
 };
 } // namespace bpftime
 

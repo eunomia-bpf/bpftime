@@ -238,7 +238,9 @@ int bpftime_shm::add_bpf_prog_attach_target(int perf_fd, int bpf_fd,
 		SPDLOG_ERROR("Unable to find an available id: {}", next_id);
 		return -ENOSPC;
 	}
-	manager->set_handler(next_id, bpf_link_handler(bpf_fd, perf_fd, cookie),
+	manager->set_handler(next_id,
+			     bpf_link_handler(bpf_fd, perf_fd, cookie,
+					      segment),
 			     segment);
 	return next_id;
 }
@@ -486,8 +488,29 @@ int bpftime_shm::add_bpf_link(int fd, struct bpf_link_create_args *args)
 	}
 	int result = manager->set_handler(
 		fd, bpftime::bpf_link_handler(*args, segment), segment);
-	// TODO: We should create corresponding perf_event handles for the link,
-	// if the attach type is uprobe_multi
+	auto &link =
+		std::get<bpftime::bpf_link_handler>(manager->get_handler(fd));
+	if (link.link_attach_type == BPF_TRACE_UPROBE_MULTI) {
+		auto &link_data = std::get<uprobe_multi_link_data>(link.data);
+		int i = 0;
+		for (auto &entry : link_data.entries) {
+			std::string uprobe_name("sub_uprobe_");
+			uprobe_name += std::to_string(fd);
+			uprobe_name += "_";
+			uprobe_name += std::to_string(i);
+			entry.attach_target =
+				add_uprobe(-1, link_data.pid,
+					   uprobe_name.c_str(), entry.offset,
+					   (link_data.flags &
+					    BPF_F_UPROBE_MULTI_RETURN) != 0,
+					   entry.ref_ctr_offset);
+			i++;
+			SPDLOG_DEBUG(
+				"Created sub uprobe perf event for uprobe_multi {}: sub id {}, sub name {}, sub offset {:x}",
+				fd, entry.attach_target.value(), uprobe_name,
+				entry.offset);
+		}
+	}
 
 	return result;
 }

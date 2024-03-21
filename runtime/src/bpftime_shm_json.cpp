@@ -298,11 +298,14 @@ int bpftime::bpftime_export_shm_to_json(const bpftime_shm &shm,
 					"We only support exporting links with attach type BPF_PERF_EVENT now");
 				return -ENOTSUP;
 			}
+			json attach_target_ids;
+			for (auto x : h.attach_target_ids)
+				attach_target_ids.push_back(x);
 			j[std::to_string(i)] = {
 				{ "type", "bpf_link_handler" },
 				{ "attr",
 				  { { "prog_fd", h.prog_id },
-				    { "target_fd", h.attach_target_id },
+				    { "target_fd", attach_target_ids },
 				    { "link_attach_type",
 				      h.link_attach_type } } }
 			};

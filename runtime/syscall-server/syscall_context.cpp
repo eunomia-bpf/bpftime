@@ -354,6 +354,14 @@ long syscall_context::handle_sysbpf(int cmd, union bpf_attr *attr, size_t size)
 					       (long)(uintptr_t)attr,
 					       (long)size);
 		}
+		// auto &kargs = attr->link_create;
+		// bpf_link_create_args args{ .prog_fd = kargs.prog_fd,
+		// 			   .target_fd = kargs.target_fd,
+		// 			   .attach_type = kargs.attach_type,
+		// 			   .flags = kargs.flags,
+		// 			   .uprobe_multi = {
+
+		// 			   } };
 		int id = bpftime_link_create(
 			-1 /* let the shm alloc fd for us */,
 			(bpf_link_create_args *)&attr->link_create);

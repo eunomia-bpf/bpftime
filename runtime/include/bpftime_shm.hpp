@@ -206,14 +206,14 @@ int bpftime_export_global_shm_to_json(const char *filename);
 // import a hander to global shared memory from json string
 int bpftime_import_shm_handler_from_json(int fd, const char *json_string);
 
-/* struct used by BPF_LINK_CREATE command */
+/* struct type of kernel bpf_attr::link_create */
 struct bpf_link_create_args {
 	union {
 		__u32 prog_fd; /* eBPF program to attach */
 		__u32 map_fd; /* struct_ops to attach */
 	};
 	union {
-		__u32 target_fd; /* object to attach to */
+		__u32 target_fd; /* target object to attach to or ... */
 		__u32 target_ifindex; /* target ifindex */
 	};
 	__u32 attach_type; /* attach type */
@@ -239,15 +239,6 @@ struct bpf_link_create_args {
 			__aligned_u64 cookies;
 		} kprobe_multi;
 		struct {
-			__u32 flags;
-			__u32 cnt;
-			const char *path;
-			const unsigned long *offsets;
-			const unsigned long *ref_ctr_offsets;
-			const __u64 *cookies;
-			__u32 pid;
-		} uprobe_multi;
-		struct {
 			/* this is overlaid with the target_btf_id above. */
 			__u32 target_btf_id;
 			/* black box user-provided value passed through
@@ -262,9 +253,31 @@ struct bpf_link_create_args {
 			__s32 priority;
 			__u32 flags;
 		} netfilter;
+		struct {
+			union {
+				__u32 relative_fd;
+				__u32 relative_id;
+			};
+			__u64 expected_revision;
+		} tcx;
+		struct {
+			__aligned_u64 path;
+			__aligned_u64 offsets;
+			__aligned_u64 ref_ctr_offsets;
+			__aligned_u64 cookies;
+			__u32 cnt;
+			__u32 flags;
+			__u32 pid;
+		} uprobe_multi;
+		struct {
+			union {
+				__u32 relative_fd;
+				__u32 relative_id;
+			};
+			__u64 expected_revision;
+		} netkit;
 	};
 };
-
 // create a bpf link in the global shared memory
 //
 // @param[fd]: fd is the fd allocated by the kernel. if fd is -1, then the
