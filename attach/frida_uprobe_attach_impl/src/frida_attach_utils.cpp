@@ -26,15 +26,24 @@ resolve_function_addr_by_module_offset(const std::string_view &module_name,
 {
 	auto exec_path = get_executable_path();
 	void *module_base_addr = nullptr;
+	SPDLOG_DEBUG("Resolving module base addr, module name {}, exec_path {}",
+		     module_name, exec_path);
 	if (std::filesystem::equivalent(module_name, exec_path)) {
+		SPDLOG_DEBUG(
+			"module name {} is equivalent to exec path {}, using empty string to resolve module base addr",
+			module_name, exec_path);
 		module_base_addr = get_module_base_addr("");
 	} else {
+			SPDLOG_DEBUG(
+			"module name {} is *not* equivalent to exec path {}, using module name to resolve module base addr",
+			module_name, exec_path);
 		module_base_addr =
 			get_module_base_addr(std::string(module_name).c_str());
 	}
 	if (!module_base_addr) {
-		SPDLOG_ERROR("Failed to find module base address for {}",
-			     module_name);
+		SPDLOG_ERROR(
+			"Failed to find module base address for {}, cwd = {}",
+			module_name, std::filesystem::current_path().c_str());
 		return nullptr;
 	}
 

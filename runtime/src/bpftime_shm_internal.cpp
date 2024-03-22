@@ -137,20 +137,20 @@ int bpftime_shm::bpf_map_get_next_key(int fd, const void *key, void *next_key,
 	return handler.bpf_map_get_next_key(key, next_key, from_syscall);
 }
 
-int bpftime_shm::add_uprobe(int fd, int pid, const char *name, uint64_t offset,
-			    bool retprobe, size_t ref_ctr_off)
+int bpftime_shm::add_uprobe(int fd, int pid, const char *module_name,
+			    uint64_t offset, bool retprobe, size_t ref_ctr_off)
 {
 	if (fd < 0) {
 		// if fd is negative, we need to create a new fd for allocating
 		fd = open_fake_fd();
 	}
 	SPDLOG_DEBUG("Set fd {} to uprobe, pid={}, name={}, offset={}", fd, pid,
-		     name, offset);
-	return manager->set_handler(
-		fd,
-		bpftime::bpf_perf_event_handler{ retprobe, offset, pid, name,
-						 ref_ctr_off, segment },
-		segment);
+		     module_name, offset);
+	return manager->set_handler(fd,
+				    bpftime::bpf_perf_event_handler{
+					    retprobe, offset, pid, module_name,
+					    ref_ctr_off, segment },
+				    segment);
 }
 
 int bpftime_shm::add_uprobe_override(int fd, int pid, const char *name,
@@ -239,8 +239,7 @@ int bpftime_shm::add_bpf_prog_attach_target(int perf_fd, int bpf_fd,
 		return -ENOSPC;
 	}
 	manager->set_handler(next_id,
-			     bpf_link_handler(bpf_fd, perf_fd, cookie,
-					      segment),
+			     bpf_link_handler(bpf_fd, perf_fd, cookie, segment),
 			     segment);
 	return next_id;
 }
@@ -492,23 +491,17 @@ int bpftime_shm::add_bpf_link(int fd, struct bpf_link_create_args *args)
 		std::get<bpftime::bpf_link_handler>(manager->get_handler(fd));
 	if (link.link_attach_type == BPF_TRACE_UPROBE_MULTI) {
 		auto &link_data = std::get<uprobe_multi_link_data>(link.data);
-		int i = 0;
 		for (auto &entry : link_data.entries) {
-			std::string uprobe_name("sub_uprobe_");
-			uprobe_name += std::to_string(fd);
-			uprobe_name += "_";
-			uprobe_name += std::to_string(i);
-			entry.attach_target =
+			int id =
 				add_uprobe(-1, link_data.pid,
-					   uprobe_name.c_str(), entry.offset,
+					   link_data.path.c_str(), entry.offset,
 					   (link_data.flags &
 					    BPF_F_UPROBE_MULTI_RETURN) != 0,
 					   entry.ref_ctr_offset);
-			i++;
+			link.attach_target_ids.push_back(id);
 			SPDLOG_DEBUG(
-				"Created sub uprobe perf event for uprobe_multi {}: sub id {}, sub name {}, sub offset {:x}",
-				fd, entry.attach_target.value(), uprobe_name,
-				entry.offset);
+				"Created sub uprobe perf event for uprobe_multi {}: sub id {}, sub offset {:x}",
+				fd, id, entry.offset);
 		}
 	}
 

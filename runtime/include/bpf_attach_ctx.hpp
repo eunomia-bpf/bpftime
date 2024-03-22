@@ -62,8 +62,8 @@ class bpf_attach_ctx {
 
 	// handler_id -> instantiated programs
 	std::map<int, std::unique_ptr<bpftime_prog> > instantiated_progs;
-	// handler_id -> (instantiated attaches id, attach_impl*)
-	std::map<int, std::pair<int, attach::base_attach_impl *> >
+	// handler_id -> (instantiated attaches id, attach_impl*)[]
+	std::map<int, std::vector<std::pair<int, attach::base_attach_impl *> > >
 		instantiated_attach_ids;
 	// handler_id -> instantiated attach private data & attach type
 	std::map<int,

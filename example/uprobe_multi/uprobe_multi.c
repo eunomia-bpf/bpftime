@@ -3,6 +3,7 @@
 #include <signal.h>
 #include <stdio.h>
 #include <unistd.h>
+#include "uprobe_multi.h"
 static int libbpf_print_fn(enum libbpf_print_level level, const char *format,
 			   va_list args)
 {
@@ -16,9 +17,22 @@ static void sig_handler(int sig)
 	exiting = true;
 }
 
+static int handle_event_rb(void *ctx, void *data, size_t data_sz)
+{
+	const struct uprobe_multi_event *e = data;
+	if (!e->is_ret) {
+		printf("Uprobe triggered: %ld , %ld\n", e->uprobe.arg1,
+		       e->uprobe.arg2);
+	} else {
+		printf("Uretprobe triggered: %ld \n", e->uretprobe.ret_val);
+	}
+	fflush(stdout);
+	return 0;
+}
+
 int main()
 {
-    // libbpf_set_print(libbpf_print_fn);
+	libbpf_set_print(libbpf_print_fn);
 	int err;
 	signal(SIGINT, sig_handler);
 	signal(SIGTERM, sig_handler);
@@ -37,13 +51,23 @@ int main()
 		fprintf(stderr, "Unable to attach %d", err);
 		goto cleanup;
 	}
-	while (!exiting) {
-		sleep(1);
-		puts("See /sys/kernel/tracing/trace_pipe");
+	struct ring_buffer *rb = ring_buffer__new(bpf_map__fd(skel->maps.rb),
+						  handle_event_rb, NULL, NULL);
+	if (!rb) {
+		err = -1;
+		fprintf(stderr, "Failed to create ring buffer\n");
+		goto cleanup;
 	}
-	// bpf_program__attach_uprobe_multi(const struct bpf_program *prog,
-	// pid_t pid, const char *binary_path, const char *func_pattern, const
-	// struct bpf_uprobe_multi_opts *opts)
+
+	while (!exiting) {
+		err = ring_buffer__poll(rb, 100);
+		if (err < 0 && err != -EINTR) {
+			fprintf(stderr, "error polling perf buffer: %s\n",
+				strerror(-err));
+			goto cleanup;
+		}
+		err = 0;
+	}
 cleanup:
 	uprobe_multi_bpf__destroy(skel);
 

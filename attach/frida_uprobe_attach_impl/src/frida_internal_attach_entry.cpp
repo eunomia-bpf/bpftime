@@ -64,6 +64,8 @@ frida_internal_attach_entry::frida_internal_attach_entry(
 			});
 	}
 	this->interceptor = gum_object_ref(interceptor);
+	SPDLOG_DEBUG("Initialized frida internal attach entry at {:x}",
+		     (uintptr_t)function);
 }
 
 frida_internal_attach_entry::~frida_internal_attach_entry()

@@ -133,7 +133,11 @@ jobs:
             victim: ./victim
             syscall_trace: false
             expected_str: "bpf:"
-
+          - path: uprobe_multi
+            executable: ./uprobe_multi
+            victim: ./victim
+            syscall_trace: false
+            expected_str: "Uretprobe triggered:"
     steps:
       - name: Download prebuilt runtime (with jit)
         if: ${{matrix.enable_jit}}

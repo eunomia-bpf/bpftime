@@ -108,8 +108,8 @@ class bpftime_shm {
 				 bool from_syscall) const;
 
 	// create an uprobe fd
-	int add_uprobe(int fd, int pid, const char *name, uint64_t offset,
-		       bool retprobe, size_t ref_ctr_off);
+	int add_uprobe(int fd, int pid, const char *module_name,
+		       uint64_t offset, bool retprobe, size_t ref_ctr_off);
 	// create a tracepoint fd
 	int add_tracepoint(int fd, int pid, int32_t tracepoint_id);
 	// create a software perf event fd, typically for a perf event

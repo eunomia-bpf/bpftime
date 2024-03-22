@@ -1,6 +1,7 @@
 #ifndef _BPFTIME_ATTACH_PRIVATE_DATA_HPP
 #define _BPFTIME_ATTACH_PRIVATE_DATA_HPP
 
+#include <string>
 #include <string_view>
 #include "spdlog/spdlog.h"
 #include <stdexcept>
@@ -22,6 +23,10 @@ struct attach_private_data {
 			"Not implemented: attach_private_data::initialize_from_string");
 		throw std::runtime_error(
 			"attach_private_data::initialize_from_string");
+	}
+	virtual std::string to_string()
+	{
+		return "<Not implemented yet>";
 	}
 };
 } // namespace attach

@@ -54,9 +54,12 @@ class frida_attach_entry {
 	frida_attach_entry &operator=(const frida_attach_entry &) = delete;
 	// Create this attach entry with its id, callback function, and function
 	// address to hook
-	frida_attach_entry(int id, frida_attach_entry_callback &&cb, void *function)
+	frida_attach_entry(int id, frida_attach_entry_callback &&cb,
+			   void *function)
 		: self_id(id), callback(cb), function(function)
 	{
+		SPDLOG_DEBUG("Creating frida attach entry at addr 0x{:x}",
+			     (uintptr_t)function);
 	}
 	frida_attach_entry(frida_attach_entry &&) = default;
 };

@@ -29,10 +29,6 @@ struct uprobe_multi_entry {
 	uint64_t offset;
 	uint64_t ref_ctr_offset;
 	std::optional<uint64_t> cookie;
-	// Out attach implementation requires that each attach has a
-	// perf event handler, so we also need it if we attach a uprobe
-	// multi link
-	mutable std::optional<int> attach_target;
 };
 using uprobe_multi_entry_allocator =
 	boost::interprocess::allocator<uprobe_multi_entry,
@@ -58,7 +54,8 @@ using i32_vec = boost::interprocess::vector<int32_t, i32_vec_allocator>;
 struct bpf_link_handler {
 	struct bpf_link_create_args args;
 	int prog_id;
-	i32_vec attach_target_ids;
+	// Now we support multiple attach targets
+	mutable i32_vec attach_target_ids;
 	int link_attach_type;
 	bpf_link_data data;
 	// Create a customized bpf_link

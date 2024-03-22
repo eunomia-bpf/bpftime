@@ -42,8 +42,7 @@ bpf_link_handler::bpf_link_handler(struct bpf_link_create_args args,
 						    opts.cookies)[i] == 0) ?
 						  0 :
 						  ((uint64_t *)(uintptr_t)
-							   opts.cookies)[i],
-				.attach_target = {} });
+							   opts.cookies)[i] });
 		}
 		data = uprobe_multi_link_data{
 			.path = boost_shm_string(
