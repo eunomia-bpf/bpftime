@@ -161,6 +161,8 @@ class bpftime_shm {
 
 	std::optional<void *>
 	get_software_perf_event_raw_buffer(int fd, size_t buffer_sz) const;
+
+	int add_custom_perf_event(int type, const char *attach_argument);
 };
 
 // memory region for maps and prog info
