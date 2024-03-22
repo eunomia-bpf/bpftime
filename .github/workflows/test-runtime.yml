@@ -34,8 +34,8 @@ jobs:
     - name: build runtime with mpk enable
       run: |
         rm -rf build
-        cmake -Bbuild -DBPFTIME_LLVM_JIT=YES  -DBPFTIME_ENABLE_UNIT_TESTING=YES -DBPFTIME_ENABLE_MPK=YES -DCMAKE_BUILD_TYPE=Debug
-        cmake --build build --config Debug --target bpftime_runtime_tests -j$(nproc)
+        cmake -Bbuild -DBPFTIME_LLVM_JIT=YES  -DBPFTIME_ENABLE_UNIT_TESTING=YES -DBPFTIME_ENABLE_MPK=YES -DCMAKE_BUILD_TYPE=MinSizeRel
+        cmake --build build --config MinSizeRel --target bpftime_runtime_tests -j$(nproc)
 
 
     - name: test runtime with mpk
