@@ -9,6 +9,7 @@
 #include "handler/perf_event_handler.hpp"
 #include "spdlog/spdlog.h"
 #include <bpftime_shm_internal.hpp>
+#include <cerrno>
 #include <cstdio>
 #include <sys/epoll.h>
 #include <unistd.h>
@@ -174,11 +175,16 @@ static int import_shm_handler_from_json(bpftime_shm &shm, json value, int fd)
 		}
 	} else if (handler_type == "bpf_link_handler") {
 		unsigned int prog_fd = value["attr"]["prog_fd"];
-		unsigned int target_fd = value["attr"]["target_fd"];
+		json target_ids = value["attr"]["attach_target_ids"];
 		unsigned int link_attach_type =
 			value["attr"]["link_attach_type"];
+		if (link_attach_type != BPF_PERF_EVENT) {
+			SPDLOG_ERROR(
+				"We only support loading links of type BPF_PERF_EVENT");
+			return -ENOTSUP;
+		}
 		bpf_link_create_args args = { .prog_fd = prog_fd,
-					      .target_fd = target_fd,
+					      .target_fd = target_ids[0],
 					      .attach_type = link_attach_type };
 		shm.add_bpf_link(fd, &args);
 	} else {
@@ -305,7 +311,7 @@ int bpftime::bpftime_export_shm_to_json(const bpftime_shm &shm,
 				{ "type", "bpf_link_handler" },
 				{ "attr",
 				  { { "prog_fd", h.prog_id },
-				    { "target_fd", attach_target_ids },
+				    { "attach_target_ids", attach_target_ids },
 				    { "link_attach_type",
 				      h.link_attach_type } } }
 			};

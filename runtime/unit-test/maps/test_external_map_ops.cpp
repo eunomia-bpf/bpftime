@@ -49,7 +49,7 @@ TEST_CASE("Test basic operations of external hash map ops")
 {
 	struct bpftime::shm_remove remover(SHM_NAME);
 	// The side that creates the mapping
-	managed_shared_memory segment(create_only, SHM_NAME, 1 << 20);
+	managed_shared_memory segment(create_only, SHM_NAME, 1 << 22);
 	auto manager =
 		segment.construct<handler_manager>(HANDLER_NAME)(segment);
 	auto &manager_ref = *manager;
