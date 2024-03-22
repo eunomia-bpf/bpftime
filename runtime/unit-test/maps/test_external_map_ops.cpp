@@ -87,6 +87,6 @@ TEST_CASE("Test basic operations of external hash map ops")
 		uint32_t key = i;
 		auto val = *(uint64_t *)(map_handler.map_lookup_elem(&key));
 		REQUIRE(val == i);
-		spdlog::info("val for {} = {:x}", i, val);
+		spdlog::debug("val for {} = {:x}", i, val);
 	}
 }

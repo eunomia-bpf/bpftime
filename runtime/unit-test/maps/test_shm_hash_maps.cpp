@@ -37,7 +37,7 @@ static void test_lookup_map(int fd, bpftime::handler_manager &manager_ref,
 		uint32_t key = i;
 		auto val = *(uint64_t *)(map_handler.map_lookup_elem(&key));
 		REQUIRE(val == ((((uint64_t)key) << 32) | 0xffffffff));
-		spdlog::info("val for {} = {:x}", i, val);
+		spdlog::debug("val for {} = {:x}", i, val);
 	}
 }
 
