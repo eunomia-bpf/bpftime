@@ -39,4 +39,6 @@ jobs:
 
 
     - name: test runtime with mpk
+      # We don't have enough disk space to run this
+      if: ${{matrix.container != 'fedora-39'}}
       run:  ./build/runtime/unit-test/bpftime_runtime_tests
