@@ -30,24 +30,30 @@ static bool str_starts_with(const char *main, const char *pat)
 }
 
 static int run_command(const char *path, const std::vector<std::string> &argv,
-		       const char *ld_preload, const char *agent_so)
+		       const char *ld_preload, const char *agent_so,
+		       const char *tracepipe_path)
 {
 	int pid = fork();
 	if (pid == 0) {
 		std::string ld_preload_str("LD_PRELOAD=");
 		std::string agent_so_str("AGENT_SO=");
+        std::string tracepipe_path_str("TRACEPIPE_PATH=");
 		ld_preload_str += ld_preload;
 
 		if (agent_so) {
 			agent_so_str += agent_so;
 		}
+		if (tracepipe_path) {
+            tracepipe_path_str += tracepipe_path;
+        }
 		std::vector<const char *> env_arr;
 		char **p = environ;
 		while (*p) {
 			env_arr.push_back(*p);
 			p++;
 		}
-		bool ld_preload_set = false, agent_so_set = false;
+		bool ld_preload_set = false, agent_so_set = false,
+		     tracepipe_path_set = false;
 		for (auto &s : env_arr) {
 			if (str_starts_with(s, "LD_PRELOAD=")) {
 				s = ld_preload_str.c_str();
@@ -55,12 +61,17 @@ static int run_command(const char *path, const std::vector<std::string> &argv,
 			} else if (str_starts_with(s, "AGENT_SO=")) {
 				s = agent_so_str.c_str();
 				agent_so_set = true;
-			}
+			} else if (str_starts_with(s, "TRACEPIPE_PATH=")) {
+			    s = tracepipe_path_str.c_str();
+			    tracepipe_path_set = true;
+            }
 		}
 		if (!ld_preload_set)
 			env_arr.push_back(ld_preload_str.c_str());
 		if (!agent_so_set)
 			env_arr.push_back(agent_so_str.c_str());
+		if (!tracepipe_path_set)
+		    env_arr.push_back(tracepipe_path_str.c_str());
 
 		env_arr.push_back(nullptr);
 		std::vector<const char *> argv_arr;
@@ -211,6 +222,9 @@ int main(int argc, const char **argv)
 		.nargs(argparse::nargs_pattern::at_least_one)
 		.remaining()
 		.help("Command to run");
+    start_command.add_argument("-p", "--print-to-trace-pipe")
+        .help("Whether to send output of bpf_printk to the tracepipe")
+        .flag();
 
 	argparse::ArgumentParser attach_command("attach");
 
@@ -247,8 +261,11 @@ int main(int argc, const char **argv)
 		}
 		auto [executable_path, extra_args] =
 			extract_path_and_args(load_command);
-		return run_command(executable_path.c_str(), extra_args,
-				   so_path.c_str(), nullptr);
+		return run_command(executable_path.c_str(),
+		                   extra_args,
+				           so_path.c_str(),
+				           nullptr,
+				           nullptr);
 	} else if (program.is_subcommand_used("start")) {
 		auto agent_path = install_path / "libbpftime-agent.so";
 		if (!std::filesystem::exists(agent_path)) {
@@ -258,6 +275,14 @@ int main(int argc, const char **argv)
 		}
 		auto [executable_path, extra_args] =
 			extract_path_and_args(start_command);
+        std::string tracepipe_path;
+        if (start_command.get<bool>("print-to-trace-pipe")) {
+            tracepipe_path = install_path / "tracepipe";
+            if (!std::filesystem::exists(tracepipe_path)) {
+                spdlog::error("Tracepipe not found: {}",
+                        tracepipe_path.c_str());
+            }
+        }
 		if (start_command.get<bool>("enable-syscall-trace")) {
 			auto transformer_path =
 				install_path /
@@ -270,10 +295,11 @@ int main(int argc, const char **argv)
 
 			return run_command(executable_path.c_str(), extra_args,
 					   transformer_path.c_str(),
-					   agent_path.c_str());
+					   agent_path.c_str(),
+					   tracepipe_path.c_str());
 		} else {
 			return run_command(executable_path.c_str(), extra_args,
-					   agent_path.c_str(), nullptr);
+					   agent_path.c_str(), nullptr, tracepipe_path.c_str());
 		}
 	} else if (program.is_subcommand_used("attach")) {
 		auto agent_path = install_path / "libbpftime-agent.so";
