@@ -81,4 +81,4 @@ option(ENABLE_EBPF_VERIFIER "Whether to enable ebpf verifier" OFF)
 option(BUILD_BPFTIME_DAEMON "Whether to build the bpftime daemon" ON)
 
 # whether to build with shared bpf_map
-option(BPFTIME_BUILD_KERNEL_BPF "Whether to build with bpf share maps" OFF)
+option(BPFTIME_BUILD_KERNEL_BPF "Whether to build with bpf share maps" ON)
