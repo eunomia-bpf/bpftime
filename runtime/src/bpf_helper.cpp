@@ -50,28 +50,33 @@ uint64_t bpftime_trace_printk(uint64_t fmt, uint64_t fmt_size, ...)
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wformat-nonliteral"
 #pragma GCC diagnostic ignored "-Wvarargs"
-    std::string tracepipe_path(getenv("TRACEPIPE_PATH"));
-    if (tracepipe_path.empty()) {
-        va_start(args, fmt_str);
-        long ret = vprintf(fmt_str, args);
-    } else {
-        const char *pipepath = tracepipe_path.c_str();
-        mode_t permission = 0666;
-        if (mkfifo(pipepath, permission) == -1) {
-            if (errno != EEXIST) {
-                SPDLOG_ERROR("mkfifo error: {}", strerror(errno));
+    const char *tracepipe = getenv("TRACEPIPE_PATH");
+    if (tracepipe != NULL) {
+        std::string tracepipe_path(getenv("TRACEPIPE_PATH"));
+        if (tracepipe_path.empty()) {
+            va_start(args, fmt_str);
+            long ret = vprintf(fmt_str, args);
+        } else {
+            const char *pipepath = tracepipe_path.c_str();
+            mode_t permission = 0666;
+            if (mkfifo(pipepath, permission) == -1) {
+                if (errno != EEXIST) {
+                    SPDLOG_ERROR("mkfifo error: {}", strerror(errno));
+                    return 1;
+                }
+            }
+            int fd = open(pipepath, O_WRONLY);
+            if (fd == -1) {
+                SPDLOG_ERROR("open error: {}", strerror(errno));
                 return 1;
             }
+            va_start(args, fmt_str);
+            long ret = vdprintf(fd, fmt_str, args);
+            close(fd);
         }
-
-        int fd = open(pipepath, O_WRONLY);
-        if (fd == -1) {
-            SPDLOG_ERROR("open error: {}", strerror(errno));
-            return 1;
-        }
+    } else {
         va_start(args, fmt_str);
-        long ret = vdprintf(fd, fmt_str, args);
-        close(fd);
+        long ret = vprintf(fmt_str, args);
     }
 #pragma GCC diagnostic pop
 	va_end(args);

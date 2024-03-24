@@ -70,8 +70,9 @@ static int run_command(const char *path, const std::vector<std::string> &argv,
 			env_arr.push_back(ld_preload_str.c_str());
 		if (!agent_so_set)
 			env_arr.push_back(agent_so_str.c_str());
-		if (!tracepipe_path_set)
+		if (!tracepipe_path_set) {
 		    env_arr.push_back(tracepipe_path_str.c_str());
+        }
 
 		env_arr.push_back(nullptr);
 		std::vector<const char *> argv_arr;
@@ -261,12 +262,11 @@ int main(int argc, const char **argv)
 		}
 		auto [executable_path, extra_args] =
 			extract_path_and_args(load_command);
-        std::string tracepipe_path;
 		return run_command(executable_path.c_str(),
 		                   extra_args,
 				           so_path.c_str(),
 				           nullptr,
-				           tracepipe_path.c_str());
+				           nullptr);
 	} else if (program.is_subcommand_used("start")) {
 		auto agent_path = install_path / "libbpftime-agent.so";
 		if (!std::filesystem::exists(agent_path)) {
@@ -300,7 +300,8 @@ int main(int argc, const char **argv)
 					   tracepipe_path.c_str());
 		} else {
 			return run_command(executable_path.c_str(), extra_args,
-					   agent_path.c_str(), nullptr, tracepipe_path.c_str());
+					   agent_path.c_str(), nullptr,
+					   tracepipe_path.c_str());
 		}
 	} else if (program.is_subcommand_used("attach")) {
 		auto agent_path = install_path / "libbpftime-agent.so";
