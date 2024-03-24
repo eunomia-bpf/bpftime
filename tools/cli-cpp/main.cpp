@@ -261,11 +261,12 @@ int main(int argc, const char **argv)
 		}
 		auto [executable_path, extra_args] =
 			extract_path_and_args(load_command);
+        std::string tracepipe_path;
 		return run_command(executable_path.c_str(),
 		                   extra_args,
 				           so_path.c_str(),
 				           nullptr,
-				           nullptr);
+				           tracepipe_path.c_str());
 	} else if (program.is_subcommand_used("start")) {
 		auto agent_path = install_path / "libbpftime-agent.so";
 		if (!std::filesystem::exists(agent_path)) {
