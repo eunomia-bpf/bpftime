@@ -37,7 +37,8 @@ bpftime_add_library(vm-bpf
 
 set_target_properties(vm-bpf PROPERTIES ARCHIVE_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/../")
 
-find_package(LLVM REQUIRED CONFIG)
+find_package(LLVM REQUIRED CONFIG
+PATHS "/usr/lib/llvm-15/lib/cmake/" NO_DEFAULT_PATH)
 
 if (${LLVM_PACKAGE_VERSION} VERSION_LESS 15)
     message(FATAL_ERROR "LLVM version must be >=15")
