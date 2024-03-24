@@ -176,6 +176,40 @@ bpftime-aot build bpftime/example/minimal/.output/uprobe.bpf.o -e
 
 In this way, the relocation of maps, global variables, and helpers will not be done. The helpers is still works.
 
+## run native ELF
+
+Given a eBPF code:
+
+```c
+#define BPF_NO_GLOBAL_DATA
+#include <vmlinux.h>
+#include <bpf/bpf_helpers.h>
+#include <bpf/bpf_tracing.h>
+
+SEC("uprobe/./victim:target_func")
+int do_uprobe_trace(struct pt_regs *ctx)
+{
+    bpf_printk("target_func called.\n");
+    return 0;
+}
+
+char LICENSE[] SEC("license") = "GPL";
+```
+
+The native C code after relocation is like:
+
+```c
+int _bpf_helper_ext_0006(char* arg0);
+
+int bpf_main(void *ctx)
+{
+    _bpf_helper_ext_0006("target_func called.\n");
+    return 0;
+}
+```
+
+Compile it with `clang -O3 -c -o do_uprobe_trace.o do_uprobe_trace.c`, and you can load it with AOT runtime.
+
 You can simply run the native ELF:
 
 ```console
