@@ -487,24 +487,6 @@ int bpftime_shm::add_bpf_link(int fd, struct bpf_link_create_args *args)
 	}
 	int result = manager->set_handler(
 		fd, bpftime::bpf_link_handler(*args, segment), segment);
-	auto &link =
-		std::get<bpftime::bpf_link_handler>(manager->get_handler(fd));
-	if (link.link_attach_type == BPF_TRACE_UPROBE_MULTI) {
-		auto &link_data = std::get<uprobe_multi_link_data>(link.data);
-		for (auto &entry : link_data.entries) {
-			int id =
-				add_uprobe(-1, link_data.pid,
-					   link_data.path.c_str(), entry.offset,
-					   (link_data.flags &
-					    BPF_F_UPROBE_MULTI_RETURN) != 0,
-					   entry.ref_ctr_offset);
-			link.attach_target_ids.push_back(id);
-			SPDLOG_DEBUG(
-				"Created sub uprobe perf event for uprobe_multi {}: sub id {}, sub offset {:x}",
-				fd, id, entry.offset);
-		}
-	}
-
 	return result;
 }
 
@@ -522,7 +504,7 @@ void bpftime_shm::enable_mpk()
 		return;
 	}
 	if (pkey_set(pkey, PKEY_DISABLE_WRITE) == -1) {
-		SPDLOG_ERROR("pkey_set read only failed");
+		SPDLOG_WARN("pkey_set read only failed");
 	}
 }
 

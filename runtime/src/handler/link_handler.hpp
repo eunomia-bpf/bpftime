@@ -46,16 +46,17 @@ struct uprobe_multi_link_data {
 using bpf_link_data =
 	std::variant<perf_event_link_data, uprobe_multi_link_data>;
 
-using i32_vec_allocator = boost::interprocess::allocator<
-	int32_t, boost::interprocess::managed_shared_memory::segment_manager>;
-using i32_vec = boost::interprocess::vector<int32_t, i32_vec_allocator>;
+// using i32_vec_allocator = boost::interprocess::allocator<
+// 	int32_t, boost::interprocess::managed_shared_memory::segment_manager>;
+// using i32_vec = boost::interprocess::vector<int32_t, i32_vec_allocator>;
 
 // handle the bpf link fd
 struct bpf_link_handler {
 	struct bpf_link_create_args args;
 	int prog_id;
 	// Now we support multiple attach targets
-	mutable i32_vec attach_target_ids;
+	// mutable i32_vec attach_target_ids;
+	int target_id;
 	int link_attach_type;
 	bpf_link_data data;
 	// Create a customized bpf_link

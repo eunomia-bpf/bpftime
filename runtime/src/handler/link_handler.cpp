@@ -5,8 +5,8 @@ using namespace bpftime;
 
 bpf_link_handler::bpf_link_handler(struct bpf_link_create_args args,
 				   managed_shared_memory &mem)
-	: args(args), prog_id(args.prog_fd),
-	  attach_target_ids(mem.get_segment_manager()),
+	: args(args), prog_id(args.prog_fd), target_id(args.target_fd),
+	  //   attach_target_ids(mem.get_segment_manager()),
 	  link_attach_type(args.attach_type)
 {
 	if (args.attach_type == BPF_PERF_EVENT) {
@@ -21,7 +21,7 @@ bpf_link_handler::bpf_link_handler(struct bpf_link_create_args args,
 		} else {
 			data = perf_event_link_data{};
 		}
-		attach_target_ids.push_back(args.target_fd);
+		// attach_target_ids.push_back(args.target_fd);
 	} else if (args.attach_type == BPF_TRACE_UPROBE_MULTI) {
 		SPDLOG_DEBUG(
 			"Initializing bpf link of type uprobe_multi, using link create args");
@@ -60,18 +60,18 @@ bpf_link_handler::bpf_link_handler(struct bpf_link_create_args args,
 }
 bpf_link_handler::bpf_link_handler(int prog_id, int attach_target_id,
 				   managed_shared_memory &mem)
-	: prog_id(prog_id), attach_target_ids(mem.get_segment_manager()),
+	: prog_id(prog_id), target_id(attach_target_id),
 	  link_attach_type(BPF_PERF_EVENT),
 	  data(perf_event_link_data{ .attach_cookie = {} })
 {
-	attach_target_ids.push_back(attach_target_id);
+	// attach_target_ids.push_back(attach_target_id);
 }
 bpf_link_handler::bpf_link_handler(int prog_id, int attach_target_id,
 				   std::optional<uint64_t> cookie,
 				   managed_shared_memory &mem)
-	: prog_id(prog_id), attach_target_ids(mem.get_segment_manager()),
+	: prog_id(prog_id), target_id(attach_target_id),
 	  link_attach_type(BPF_PERF_EVENT),
 	  data(perf_event_link_data{ .attach_cookie = cookie })
 {
-	attach_target_ids.push_back(attach_target_id);
+	// attach_target_ids.push_back(attach_target_id);
 }

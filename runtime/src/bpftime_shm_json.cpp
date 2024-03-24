@@ -175,7 +175,7 @@ static int import_shm_handler_from_json(bpftime_shm &shm, json value, int fd)
 		}
 	} else if (handler_type == "bpf_link_handler") {
 		unsigned int prog_fd = value["attr"]["prog_fd"];
-		json target_ids = value["attr"]["attach_target_ids"];
+		unsigned int target_id = value["attr"]["target_id"];
 		unsigned int link_attach_type =
 			value["attr"]["link_attach_type"];
 		if (link_attach_type != BPF_PERF_EVENT) {
@@ -184,7 +184,7 @@ static int import_shm_handler_from_json(bpftime_shm &shm, json value, int fd)
 			return -ENOTSUP;
 		}
 		bpf_link_create_args args = { .prog_fd = prog_fd,
-					      .target_fd = target_ids[0],
+					      .target_fd = target_id,
 					      .attach_type = link_attach_type };
 		shm.add_bpf_link(fd, &args);
 	} else {
@@ -304,14 +304,14 @@ int bpftime::bpftime_export_shm_to_json(const bpftime_shm &shm,
 					"We only support exporting links with attach type BPF_PERF_EVENT now");
 				return -ENOTSUP;
 			}
-			json attach_target_ids;
-			for (auto x : h.attach_target_ids)
-				attach_target_ids.push_back(x);
+			// json attach_target_ids;
+			// for (auto x : h.attach_target_ids)
+			// 	attach_target_ids.push_back(x);
 			j[std::to_string(i)] = {
 				{ "type", "bpf_link_handler" },
 				{ "attr",
 				  { { "prog_fd", h.prog_id },
-				    { "attach_target_ids", attach_target_ids },
+				    { "target_id", h.target_id },
 				    { "link_attach_type",
 				      h.link_attach_type } } }
 			};

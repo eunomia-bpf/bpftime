@@ -8,6 +8,7 @@
 #include "bpftime_shm.hpp"
 #include "handler/link_handler.hpp"
 #include "handler/prog_handler.hpp"
+#include <optional>
 #include <ostream>
 #include <string>
 #include <unistd.h>
@@ -29,12 +30,7 @@
 #include <variant>
 #include <sys/resource.h>
 #include "spdlog/fmt/ostr.h"
-std::ostream &operator<<(std::ostream &os, const bpftime::i32_vec &vec)
-{
-	for (auto x : vec)
-		os << x << ",";
-	return os;
-}
+
 extern "C" uint64_t bpftime_set_retval(uint64_t value);
 namespace bpftime
 {
@@ -95,6 +91,33 @@ bpf_attach_ctx::bpf_attach_ctx(void)
 
 {
 	current_id = CURRENT_ID_OFFSET;
+	// Register handlers for different link attach type
+	link_attach_handlers[BPF_PERF_EVENT] =
+		[this](const bpf_link_handler &link, int id,
+		       const handler_manager *manager)
+		-> std::optional<instantiated_link_record> {
+		// Need to instantiate the corresponding perf event first
+		if (int err = instantiate_perf_event_handler_at(
+			    link.target_id,
+			    (std::get<bpf_perf_event_handler>(
+				    manager->get_handler(link.target_id))));
+		    err < 0) {
+			SPDLOG_ERROR(
+				"Unable to instantiate perf event handler {} when instantiating link handler {}: {}",
+				link.target_id, id, err);
+			return {};
+		}
+		// For normal perf events, we instantiate by calling
+		// instantiate_perf_event_bpf_link_handler_at
+		return instantiate_perf_event_bpf_link_handler_at(id, link,
+								  manager);
+	};
+	link_attach_handlers[BPF_TRACE_UPROBE_MULTI] =
+		[this](const bpf_link_handler &link, int id,
+		       const handler_manager *manager)
+		-> std::optional<instantiated_link_record> {
+		return this->instantiate_uprobe_multi_handler_at(id, link);
+	};
 }
 
 int bpf_attach_ctx::instantiate_handler_at(const handler_manager *manager,
@@ -133,6 +156,7 @@ int bpf_attach_ctx::instantiate_handler_at(const handler_manager *manager,
 		}
 	} else if (std::holds_alternative<bpf_link_handler>(handler)) {
 		auto &link_handler = std::get<bpf_link_handler>(handler);
+		// Instantiate program of the current bpf link
 		if (int err = instantiate_handler_at(
 			    manager, link_handler.prog_id, stk, config);
 		    err < 0) {
@@ -141,25 +165,24 @@ int bpf_attach_ctx::instantiate_handler_at(const handler_manager *manager,
 				link_handler.prog_id, id, err);
 			return err;
 		}
-		for (auto attach_target_id : link_handler.attach_target_ids) {
-			SPDLOG_DEBUG(
-				"Instantiating attach target id {} for link handler {}",
-				attach_target_id, id);
-			if (int err = instantiate_handler_at(
-				    manager, attach_target_id, stk, config);
-			    err < 0) {
+		// Call the related handler to handler the instantiation of the
+		// link. Handler might instantiate other handlers.
+		if (auto itr = link_attach_handlers.find(
+			    link_handler.link_attach_type);
+		    itr != link_attach_handlers.end()) {
+			if (auto ret = itr->second(link_handler, id, manager);
+			    ret.has_value()) {
+				instantiated_attach_ids[id] = ret.value();
+			} else {
 				SPDLOG_ERROR(
-					"Unable to instantiate perf event handler {} when instantiating link handler {}: {}",
-					attach_target_id, id, err);
-				return err;
+					"Unable to instantiate link handler {}",
+					id);
+				return -EINVAL;
 			}
-		}
-		if (int err = instantiate_bpf_link_handler_at(id, link_handler);
-		    err < 0) {
-			SPDLOG_ERROR(
-				"Unable to instantiate bpf link handler {}: {}",
-				id, err);
-			return err;
+		} else {
+			SPDLOG_ERROR("Unsupported link attach type: {}",
+				     link_handler.link_attach_type);
+			return -ENOTSUP;
 		}
 	} else if (std::holds_alternative<unused_handler>(handler)) {
 		SPDLOG_ERROR("Instantiating a unused handler at {}", id);
@@ -219,89 +242,203 @@ int bpf_attach_ctx::instantiate_prog_handler_at(int id,
 	}
 	return 0;
 }
-int bpf_attach_ctx::instantiate_bpf_link_handler_at(
+std::optional<instantiated_link_record>
+bpf_attach_ctx::instantiate_uprobe_multi_handler_at(
 	int id, const bpf_link_handler &handler)
 {
 	SPDLOG_DEBUG(
-		"Instantiating link handler ({}): prog {} -> perf event count ({}), link_attach_type {}",
-		id, handler.prog_id, handler.attach_target_ids.size(),
-		handler.link_attach_type);
-
+		"Instantiating bpf link handler of type uprobe multi at {}",
+		id);
 	auto prog = instantiated_progs.at(handler.prog_id).get();
-	if (handler.link_attach_type == BPF_PERF_EVENT ||
-	    handler.link_attach_type == BPF_TRACE_UPROBE_MULTI) {
-		std::vector<std::pair<int, attach::base_attach_impl *> >
-			internal_attach_records;
-		int i = 0;
-		for (auto target_id : handler.attach_target_ids) {
-			SPDLOG_DEBUG(
-				"Handling sub attach target with target id {}, index {}",
-				target_id, i);
-			auto &[priv_data, attach_type] =
-				instantiated_perf_events[target_id];
-			SPDLOG_DEBUG(
-				"Attach private data is {}, attach type is ",
-				priv_data->to_string(), attach_type);
-			attach::base_attach_impl *attach_impl;
-			if (auto itr = attach_impls.find(attach_type);
-			    itr != attach_impls.end()) {
-				attach_impl = itr->second.first;
-			} else {
-				SPDLOG_ERROR("Attach type {} is not registered",
-					     attach_type);
-				return -ENOTSUP;
-			}
+	// Instantiate uprobe multi link handler
+	// Such type doesn't have an attach target, so we direct create uprobes
+	const auto &link_data = std::get<uprobe_multi_link_data>(handler.data);
 
-			std::optional<uint64_t> cookie;
-			if (std::holds_alternative<perf_event_link_data>(
-				    handler.data)) {
-				cookie = std::get<perf_event_link_data>(
-						 handler.data)
-						 .attach_cookie;
+	attach::base_attach_impl *attach_impl = nullptr;
+	private_data_creator priv_creator;
+	int attach_type;
+	if (link_data.flags & BPF_F_UPROBE_MULTI_RETURN) {
+		// Here we should ensure that attach impl of type uretprobe has
+		// been registered
+		if (auto itr = attach_impls.find(
+			    (int)bpf_event_type::BPF_TYPE_URETPROBE);
+		    itr != attach_impls.end()) {
+			std::tie(attach_impl, priv_creator) = itr->second;
+			attach_type = (int)bpf_event_type::BPF_TYPE_URETPROBE;
 
-			} else if (std::holds_alternative<uprobe_multi_link_data>(
-					   handler.data)) {
-				cookie = std::get<uprobe_multi_link_data>(
-						 handler.data)
-						 .entries[i]
-						 .cookie;
-			}
-			if (cookie.has_value()) {
-				SPDLOG_DEBUG("Attach cookie is {}",
-					     cookie.value());
-			}
-			int attach_id =
-				attach_impl->create_attach_with_ebpf_callback(
-					[=](void *mem, size_t mem_size,
-					    uint64_t *ret) -> int {
-						current_thread_bpf_cookie =
-							cookie;
-						int err =
-							prog->bpftime_prog_exec(
-								(void *)mem,
-								mem_size, ret);
-						return err;
-					},
-					*priv_data, attach_type);
-			if (attach_id < 0) {
-				SPDLOG_ERROR(
-					"Unable to instantiate bpf link handler {} (sub perf id {}): {}",
-					id, target_id, attach_id);
-				return attach_id;
-			}
-			internal_attach_records.emplace_back(attach_id,
-							     attach_impl);
-			i++;
+		} else {
+			SPDLOG_ERROR(
+				"Trying to instantiate uprobe multi (exit hook), but uretprobe is not registered");
+			return {};
 		}
-		instantiated_attach_ids[id] = internal_attach_records;
-
 	} else {
-		SPDLOG_ERROR("We does not support link with attach type {} yet",
-			     handler.link_attach_type);
-		return -ENOTSUP;
+		// been registered
+		if (auto itr = attach_impls.find(
+			    (int)bpf_event_type::BPF_TYPE_UPROBE);
+		    itr != attach_impls.end()) {
+			std::tie(attach_impl, priv_creator) = itr->second;
+			attach_type = (int)bpf_event_type::BPF_TYPE_UPROBE;
+
+		} else {
+			SPDLOG_ERROR(
+				"Trying to instantiate uprobe multi (entry hook), but uretprobe is not registered");
+			return {};
+		}
 	}
-	return 0;
+	instantiated_link_record native_ids;
+	for (const auto &entry : link_data.entries) {
+		std::string arg_str = link_data.path.c_str();
+		arg_str += ":";
+		arg_str += std::to_string(entry.offset);
+		int err = 0;
+		auto priv_data = priv_creator(arg_str, err);
+		if (err < 0) {
+			SPDLOG_ERROR(
+				"Failed to create uprobe/uretprobe private data for arg string {}, err={}, uprobe multi link {}",
+				arg_str, err, id);
+			return {};
+		}
+		auto cookie = entry.cookie;
+
+		int attach_id = attach_impl->create_attach_with_ebpf_callback(
+			[=](void *mem, size_t mem_size, uint64_t *ret) -> int {
+				current_thread_bpf_cookie = cookie;
+				int err = prog->bpftime_prog_exec(
+					(void *)mem, mem_size, ret);
+				return err;
+			},
+			*priv_data, attach_type);
+		native_ids.emplace_back(attach_id, attach_impl);
+	}
+	return native_ids;
 }
+std::optional<instantiated_link_record>
+bpf_attach_ctx::instantiate_perf_event_bpf_link_handler_at(
+	int id, const bpf_link_handler &handler, const handler_manager *manager)
+{
+	SPDLOG_DEBUG(
+		"Instantiating bpf link handler of type perf event at id {}, prog {}, target {}",
+		id, handler.prog_id, handler.target_id);
+	auto prog = instantiated_progs.at(handler.prog_id).get();
+	// For perf event link, there should be an instantiated target
+	auto &[priv_data, attach_type] =
+		instantiated_perf_events[handler.target_id];
+	SPDLOG_DEBUG("Attach private data is {}, attach type is ",
+		     priv_data->to_string(), attach_type);
+	attach::base_attach_impl *attach_impl;
+	if (auto itr = attach_impls.find(attach_type);
+	    itr != attach_impls.end()) {
+		attach_impl = itr->second.first;
+	} else {
+		SPDLOG_ERROR("Attach type {} is not registered", attach_type);
+		return {};
+	}
+	auto cookie =
+		std::get<perf_event_link_data>(handler.data).attach_cookie;
+	if (cookie.has_value()) {
+		SPDLOG_DEBUG("Attach cookie is {}", cookie.value());
+	}
+	int attach_id = attach_impl->create_attach_with_ebpf_callback(
+		[=](void *mem, size_t mem_size, uint64_t *ret) -> int {
+			current_thread_bpf_cookie = cookie;
+			int err = prog->bpftime_prog_exec((void *)mem, mem_size,
+							  ret);
+			return err;
+		},
+		*priv_data, attach_type);
+	if (attach_id < 0) {
+		SPDLOG_ERROR(
+			"Unable to instantiate bpf link handler {} (sub perf id {}): {}",
+			id, handler.target_id, attach_id);
+		return {};
+	}
+	return std::optional<instantiated_link_record>(
+		{ std::make_pair(attach_id, attach_impl) });
+}
+
+// int bpf_attach_ctx::instantiate_bpf_link_handler_at(
+// 	int id, const bpf_link_handler &handler)
+// {
+// 	SPDLOG_DEBUG(
+// 		"Instantiating link handler ({}): prog {} -> perf event count ({}), link_attach_type {}",
+// 		id, handler.prog_id, handler.attach_target_ids.size(),
+// 		handler.link_attach_type);
+
+// 	auto prog = instantiated_progs.at(handler.prog_id).get();
+// 	if (handler.link_attach_type == BPF_PERF_EVENT ||
+// 	    handler.link_attach_type == BPF_TRACE_UPROBE_MULTI) {
+// 		std::vector<std::pair<int, attach::base_attach_impl *> >
+// 			internal_attach_records;
+// 		int i = 0;
+// 		for (auto target_id : handler.attach_target_ids) {
+// 			SPDLOG_DEBUG(
+// 				"Handling sub attach target with target id {}, index {}",
+// 				target_id, i);
+// 			auto &[priv_data, attach_type] =
+// 				instantiated_perf_events[target_id];
+// 			SPDLOG_DEBUG(
+// 				"Attach private data is {}, attach type is ",
+// 				priv_data->to_string(), attach_type);
+// 			attach::base_attach_impl *attach_impl;
+// 			if (auto itr = attach_impls.find(attach_type);
+// 			    itr != attach_impls.end()) {
+// 				attach_impl = itr->second.first;
+// 			} else {
+// 				SPDLOG_ERROR("Attach type {} is not registered",
+// 					     attach_type);
+// 				return -ENOTSUP;
+// 			}
+
+// 			std::optional<uint64_t> cookie;
+// 			if (std::holds_alternative<perf_event_link_data>(
+// 				    handler.data)) {
+// 				cookie = std::get<perf_event_link_data>(
+// 						 handler.data)
+// 						 .attach_cookie;
+
+// 			} else if (std::holds_alternative<uprobe_multi_link_data>(
+// 					   handler.data)) {
+// 				cookie = std::get<uprobe_multi_link_data>(
+// 						 handler.data)
+// 						 .entries[i]
+// 						 .cookie;
+// 			}
+// 			if (cookie.has_value()) {
+// 				SPDLOG_DEBUG("Attach cookie is {}",
+// 					     cookie.value());
+// 			}
+// 			int attach_id =
+// 				attach_impl->create_attach_with_ebpf_callback(
+// 					[=](void *mem, size_t mem_size,
+// 					    uint64_t *ret) -> int {
+// 						current_thread_bpf_cookie =
+// 							cookie;
+// 						int err =
+// 							prog->bpftime_prog_exec(
+// 								(void *)mem,
+// 								mem_size, ret);
+// 						return err;
+// 					},
+// 					*priv_data, attach_type);
+// 			if (attach_id < 0) {
+// 				SPDLOG_ERROR(
+// 					"Unable to instantiate bpf link handler {} (sub perf id {}): {}",
+// 					id, target_id, attach_id);
+// 				return attach_id;
+// 			}
+// 			internal_attach_records.emplace_back(attach_id,
+// 							     attach_impl);
+// 			i++;
+// 		}
+// 		instantiated_attach_ids[id] = internal_attach_records;
+
+// 	} else {
+// 		SPDLOG_ERROR("We does not support link with attach type {} yet",
+// 			     handler.link_attach_type);
+// 		return -ENOTSUP;
+// 	}
+// 	return 0;
+// }
 int bpf_attach_ctx::instantiate_perf_event_handler_at(
 	int id, const bpf_perf_event_handler &perf_handler)
 {
