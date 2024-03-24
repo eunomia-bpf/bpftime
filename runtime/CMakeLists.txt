@@ -70,21 +70,25 @@ set(sources
   src/bpf_map/userspace/per_cpu_array_map.cpp
   src/bpf_map/userspace/per_cpu_hash_map.cpp
   src/bpf_map/userspace/prog_array.cpp
-
-  src/bpf_map/shared/array_map_kernel_user.cpp
-  src/bpf_map/shared/hash_map_kernel_user.cpp
-  src/bpf_map/shared/percpu_array_map_kernel_user.cpp
-  src/bpf_map/shared/perf_event_array_kernel_user.cpp
-
   extension/extension_helper.cpp
 )
+
+if(BPFTIME_BUILD_KERNEL_BPF)
+  list(APPEND sources
+    src/bpf_map/shared/array_map_kernel_user.cpp
+    src/bpf_map/shared/hash_map_kernel_user.cpp
+    src/bpf_map/shared/percpu_array_map_kernel_user.cpp
+    src/bpf_map/shared/perf_event_array_kernel_user.cpp
+  )
+endif()
+
 
 set(headers
   include/
 )
-message(INFO "Headers: ${headers}")
+message(INFO " Headers: ${headers}")
 
-message(INFO "Found the following sources: ${sources}")
+message(INFO " Found the following sources: ${sources}")
 
 if(CMAKE_BUILD_TYPE STREQUAL "Debug")
   add_definitions(-DSPDLOG_ACTIVE_LEVEL=SPDLOG_LEVEL_DEBUG)
