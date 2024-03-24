@@ -2,6 +2,8 @@
 #include "llvm_bpf_jit.h"
 #include "bpftime_helper_group.hpp"
 #include "bpftime_prog.hpp"
+#include "bpftime_shm.hpp"
+#include "bpf_attach_ctx.hpp"
 #include "spdlog/spdlog.h"
 #include "spdlog/cfg/env.h"
 #include <argparse/argparse.hpp>
@@ -19,6 +21,11 @@
 #include <unistd.h>
 #include <bpf/libbpf.h>
 #include <fstream>
+#include <bpftime_shm_internal.hpp>
+#include <cassert>
+#include <cstddef>
+#include <variant>
+#include <vector>
 
 using namespace llvm;
 using namespace llvm::orc;
@@ -44,6 +51,28 @@ extern "C" int _libbpf_print(libbpf_print_level level, const char *fmt,
 	return ret;
 }
 
+union bpf_attach_ctx_holder {
+	bpftime::bpf_attach_ctx ctx;
+	bpf_attach_ctx_holder()
+	{
+	}
+	~bpf_attach_ctx_holder()
+	{
+	}
+	void destroy()
+	{
+		ctx.~bpf_attach_ctx();
+	}
+	void init()
+	{
+		new (&ctx) bpftime::bpf_attach_ctx;
+	}
+};
+
+static bpf_attach_ctx_holder ctx_holder;
+
+bool emit_llvm_ir = false;
+
 static int build_ebpf_program(const std::string &ebpf_elf,
 			      const std::filesystem::path &output)
 {
@@ -68,11 +97,47 @@ static int build_ebpf_program(const std::string &ebpf_elf,
 			.add_helper_group_to_prog(&bpftime_prog);
 		bpftime_prog.bpftime_prog_load(true);
 		llvm_bpf_jit_context ctx(bpftime_prog.get_vm());
-		auto result = ctx.do_aot_compile();
+		auto result = ctx.do_aot_compile(emit_llvm_ir);
 		auto out_path = output / (std::string(name) + ".o");
 		std::ofstream ofs(out_path, std::ios::binary);
 		ofs.write((const char *)result.data(), result.size());
 		SPDLOG_INFO("Program {} written to {}", name, out_path.c_str());
+	}
+	return 0;
+}
+
+static int compile_ebpf_program(const std::filesystem::path &output)
+{
+	using namespace bpftime;
+	bpftime_initialize_global_shm(shm_open_type::SHM_OPEN_ONLY);
+	ctx_holder.init();
+	const handler_manager *manager =
+		shm_holder.global_shared_memory.get_manager();
+	size_t handler_size = manager->size();
+	// TODO: fix load programs
+	for (size_t i = 0; i < manager->size(); i++) {
+		if (std::holds_alternative<bpf_prog_handler>(
+			    manager->get_handler(i))) {
+			const auto &prog = std::get<bpf_prog_handler>(
+				manager->get_handler(i));
+			// temp work around: we need to create new attach points
+			// in the runtime
+			// TODO: fix this hard code name
+			auto new_prog = bpftime_prog(prog.insns.data(),
+							 prog.insns.size(),
+							 prog.name.c_str());
+					bpftime::bpftime_helper_group::get_kernel_utils_helper_group()
+			.add_helper_group_to_prog(&new_prog);
+			bpftime::bpftime_helper_group::get_shm_maps_helper_group()
+				.add_helper_group_to_prog(&new_prog);
+			new_prog.bpftime_prog_load(true);
+			llvm_bpf_jit_context ctx(new_prog.get_vm());
+			auto result = ctx.do_aot_compile(emit_llvm_ir);
+			auto out_path = output / (std::string(prog.name.c_str()) + ".o");
+			std::ofstream ofs(out_path, std::ios::binary);
+			ofs.write((const char *)result.data(), result.size());
+			return 0;
+		}
 	}
 	return 0;
 }
@@ -142,6 +207,10 @@ int main(int argc, const char **argv)
 		.help("Output directory (There might be multiple output files for a single input)");
 	build_command.add_argument("EBPF_ELF")
 		.help("Path to an eBPF ELF executable");
+	build_command.add_argument("-e", "--emit_llvm")
+		.default_value(false)
+		.implicit_value(true)
+		.help("Emit LLVM IR for the eBPF program");
 
 	argparse::ArgumentParser run_command("run");
 	run_command.add_description("Run an native eBPF program");
@@ -149,8 +218,20 @@ int main(int argc, const char **argv)
 	run_command.add_argument("MEMORY")
 		.help("Path to the memory file")
 		.nargs(0, 1);
+	
+	argparse::ArgumentParser compile_command("compile");
+	compile_command.add_description("Compile the eBPF program loaded in shared memory");
+	compile_command.add_argument("-o", "--output")
+		.default_value(".")
+		.help("Output directory (There might be multiple output files for a single input)");
+	compile_command.add_argument("-e", "--emit_llvm")
+		.default_value(false)
+		.implicit_value(true)
+		.help("Emit LLVM IR for the eBPF program");
+
 	program.add_subparser(build_command);
 	program.add_subparser(run_command);
+	program.add_subparser(compile_command);
 
 	try {
 		program.parse_args(argc, argv);
@@ -164,6 +245,7 @@ int main(int argc, const char **argv)
 		std::exit(1);
 	}
 	if (program.is_subcommand_used(build_command)) {
+		emit_llvm_ir = build_command.get<bool>("emit_llvm");
 		return build_ebpf_program(
 			build_command.get<std::string>("EBPF_ELF"),
 			build_command.get<std::string>("output"));
@@ -176,6 +258,9 @@ int main(int argc, const char **argv)
 			return run_ebpf_program(
 				run_command.get<std::string>("PATH"), {});
 		}
+	} else if (program.is_subcommand_used(compile_command)) {
+		emit_llvm_ir = compile_command.get<bool>("emit_llvm");
+		return compile_ebpf_program(compile_command.get<std::string>("output"));
 	}
 	return 0;
 }

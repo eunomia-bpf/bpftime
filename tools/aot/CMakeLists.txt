@@ -11,6 +11,7 @@ target_include_directories(bpftime-aot-cli PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/../../vm/llvm-jit/src 
     ${CMAKE_CURRENT_SOURCE_DIR}/../vm/llvm-jit/include
     ../../runtime/include/
+    ../../runtime/src/
     ${LIBBPF_INCLUDE_DIRS})
 target_link_libraries(bpftime-aot-cli PRIVATE spdlog::spdlog argparse vm-bpf runtime ${LIBBPF_LIBRARIES} elf z)
 set_property(TARGET bpftime-aot-cli PROPERTY CXX_STANDARD 20)
