@@ -3,6 +3,7 @@
 CMakeCache.*
 CMakeFiles/*
 [Tt]esting/*
+cmake-build-debug
 ebpf_code.h
 vm-exten.btf
 check
@@ -18,6 +19,7 @@ index.html*
 ### VisualStudioCode ###
 .vscode/settings.json
 .vscode/runtime.json
+.idea
 
 example/libffi/test
 test/man
