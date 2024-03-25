@@ -184,10 +184,10 @@ static int run_ebpf_program(const std::filesystem::path &elf,
 			.add_helper_group_to_prog(&bpftime_prog);
 		bpftime::bpftime_helper_group::get_shm_maps_helper_group()
 			.add_helper_group_to_prog(&bpftime_prog);
-	auto vm = bpftime_prog.get_vm();
-	vm->jit_context->load_aot_object(file_buf);
-	int ret = vm->jit_context->get_entry_address()(&mem, sizeof(mem));
-	SPDLOG_INFO("Output: {}", ret);
+	bpftime_prog.load_aot_object(file_buf);
+	uint64_t bpf_retval;
+	int ret = bpftime_prog.bpftime_prog_exec(mem.data(), mem.size(), &bpf_retval);
+	SPDLOG_INFO("Output: {}", bpf_retval);
 	return 0;
 }
 
