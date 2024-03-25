@@ -214,6 +214,8 @@ void ebpf_set_lddw_helpers(struct ebpf_vm *vm, uint64_t (*map_by_fd)(uint32_t),
 			   uint64_t (*var_addr)(uint32_t),
 			   uint64_t (*code_addr)(uint32_t));
 
+ebpf_jit_fn ebpf_load_aot_object(struct ebpf_vm *vm, const void *buf, size_t buf_len);
+
 #ifdef __cplusplus
 }
 #endif
