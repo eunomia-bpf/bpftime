@@ -45,6 +45,8 @@ struct ebpf_vm {
 	uint64_t (*code_addr)(uint32_t);
 };
 
+int ebpf_aot_compile(struct ebpf_vm* vm, uint64_t secret);
+
 #ifdef __cplusplus
 }
 #endif
