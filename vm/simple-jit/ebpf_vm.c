@@ -141,6 +141,11 @@ unsigned int ebpf_lookup_registered_function(struct ebpf_vm *vm,
 	return -1;
 }
 
+ebpf_jit_fn ebpf_load_aot_object(struct ebpf_vm *vm, const void *buf, size_t buf_len) {
+	// not implemented
+	return NULL;
+}
+
 int ebpf_load(struct ebpf_vm *vm, const void *code, uint32_t code_len,
 	      char **errmsg)
 {

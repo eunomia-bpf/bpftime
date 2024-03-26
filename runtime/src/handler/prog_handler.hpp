@@ -49,7 +49,15 @@ class bpf_prog_handler {
 	using inst_vector =
 		boost::interprocess::vector<ebpf_inst,
 					    shm_ebpf_inst_vector_allocator>;
+
+	using shm_aot_inst_vector_allocator = boost::interprocess::allocator<
+		uint8_t, managed_shared_memory::segment_manager>;
+
+	using aot_inst_vector =
+		boost::interprocess::vector<uint8_t,
+					    shm_aot_inst_vector_allocator>;
 	inst_vector insns;
+	aot_inst_vector aot_insns;
 
 	boost_shm_string name;
 };

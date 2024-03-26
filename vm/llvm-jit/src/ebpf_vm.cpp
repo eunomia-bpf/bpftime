@@ -265,6 +265,26 @@ ebpf_jit_fn ebpf_compile(struct ebpf_vm *vm, char **errmsg)
 	return func;
 }
 
+ebpf_jit_fn ebpf_load_aot_object(struct ebpf_vm *vm, const void *buf, size_t buf_len) {
+	if (!vm->jit_context) {
+		SPDLOG_ERROR("No jit context");
+		return nullptr;
+	}
+	if (vm->jitted_function) {
+		SPDLOG_ERROR("Has jitted function {:x} already",
+			     (uintptr_t)vm->jitted_function);
+		// has jit yet
+		return nullptr;
+	}
+	std::vector<uint8_t> buf_vec;
+	buf_vec.reserve(buf_len);
+	std::copy(static_cast<const uint8_t *>(buf),
+		  static_cast<const uint8_t *>(buf) + buf_len,
+		  std::back_inserter(buf_vec));
+	vm->jit_context->load_aot_object(buf_vec);
+	return vm->jit_context->get_entry_address();
+}
+
 int ebpf_exec(const struct ebpf_vm *vm, void *mem, size_t mem_len,
 	      uint64_t *bpf_return_value)
 {

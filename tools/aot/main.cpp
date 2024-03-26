@@ -51,26 +51,6 @@ extern "C" int _libbpf_print(libbpf_print_level level, const char *fmt,
 	return ret;
 }
 
-union bpf_attach_ctx_holder {
-	bpftime::bpf_attach_ctx ctx;
-	bpf_attach_ctx_holder()
-	{
-	}
-	~bpf_attach_ctx_holder()
-	{
-	}
-	void destroy()
-	{
-		ctx.~bpf_attach_ctx();
-	}
-	void init()
-	{
-		new (&ctx) bpftime::bpf_attach_ctx;
-	}
-};
-
-static bpf_attach_ctx_holder ctx_holder;
-
 bool emit_llvm_ir = false;
 
 static int build_ebpf_program(const std::string &ebpf_elf,
@@ -88,9 +68,9 @@ static int build_ebpf_program(const std::string &ebpf_elf,
 	{
 		auto name = bpf_program__name(prog);
 		SPDLOG_INFO("Processing program {}", name);
-		bpftime::bpftime_prog bpftime_prog((const ebpf_inst *)	bpf_program__insns(prog),
-					   bpf_program__insn_cnt(prog),
-					   name);
+		bpftime::bpftime_prog bpftime_prog(
+			(const ebpf_inst *)bpf_program__insns(prog),
+			bpf_program__insn_cnt(prog), name);
 		bpftime::bpftime_helper_group::get_kernel_utils_helper_group()
 			.add_helper_group_to_prog(&bpftime_prog);
 		bpftime::bpftime_helper_group::get_shm_maps_helper_group()
@@ -110,34 +90,78 @@ static int compile_ebpf_program(const std::filesystem::path &output)
 {
 	using namespace bpftime;
 	bpftime_initialize_global_shm(shm_open_type::SHM_OPEN_ONLY);
-	ctx_holder.init();
 	const handler_manager *manager =
 		shm_holder.global_shared_memory.get_manager();
 	size_t handler_size = manager->size();
-	// TODO: fix load programs
 	for (size_t i = 0; i < manager->size(); i++) {
 		if (std::holds_alternative<bpf_prog_handler>(
 			    manager->get_handler(i))) {
-			const auto &prog = std::get<bpf_prog_handler>(
-				manager->get_handler(i));
-			// temp work around: we need to create new attach points
-			// in the runtime
-			// TODO: fix this hard code name
+			bpf_prog_handler &prog =
+				(bpf_prog_handler &)std::get<bpf_prog_handler>(
+					manager->get_handler(i));
 			auto new_prog = bpftime_prog(prog.insns.data(),
-							 prog.insns.size(),
-							 prog.name.c_str());
-					bpftime::bpftime_helper_group::get_kernel_utils_helper_group()
-			.add_helper_group_to_prog(&new_prog);
+						     prog.insns.size(),
+						     prog.name.c_str());
+			bpftime::bpftime_helper_group::
+				get_kernel_utils_helper_group()
+					.add_helper_group_to_prog(&new_prog);
 			bpftime::bpftime_helper_group::get_shm_maps_helper_group()
 				.add_helper_group_to_prog(&new_prog);
 			new_prog.bpftime_prog_load(true);
 			llvm_bpf_jit_context ctx(new_prog.get_vm());
-			auto result = ctx.do_aot_compile(emit_llvm_ir);
-			auto out_path = output / (std::string(prog.name.c_str()) + ".o");
+			std::vector<uint8_t> result =
+				ctx.do_aot_compile(emit_llvm_ir);
+			auto out_path = output /
+					(std::string(prog.name.c_str()) + ".o");
 			std::ofstream ofs(out_path, std::ios::binary);
 			ofs.write((const char *)result.data(), result.size());
+			// update the aot_insns in share memory
+			prog.aot_insns.resize(result.size());
+			std::copy(result.begin(), result.end(),
+				  prog.aot_insns.begin());
 			return 0;
 		}
+	}
+	return 0;
+}
+
+static int load_ebpf_program(const std::filesystem::path &elf, int id)
+{
+	using namespace bpftime;
+	// read the file
+	std::ifstream ifs(elf, std::ios::binary | std::ios::ate);
+	if (!ifs.is_open()) {
+		SPDLOG_ERROR("Unable to open ELF file");
+		return 1;
+	}
+	std::streamsize size = ifs.tellg();
+	ifs.seekg(0, std::ios::beg);
+	std::vector<uint8_t> file_buf(size);
+	if (!ifs.read((char *)file_buf.data(), size)) {
+		SPDLOG_ERROR("Unable to read ELF");
+		return 1;
+	}
+	bpftime_initialize_global_shm(shm_open_type::SHM_OPEN_ONLY);
+	const handler_manager *manager =
+		shm_holder.global_shared_memory.get_manager();
+	size_t handler_size = manager->size();
+	if (id >= (int)handler_size || id < 0) {
+		SPDLOG_ERROR("Invalid id {} not exist", id);
+		return 1;
+	}
+	if (std::holds_alternative<bpf_prog_handler>(
+		    manager->get_handler(id))) {
+		bpf_prog_handler &prog =
+			(bpf_prog_handler &)std::get<bpf_prog_handler>(
+				manager->get_handler(id));
+		// update the aot_insns in share memory
+		prog.aot_insns.resize(file_buf.size());
+		std::copy(file_buf.begin(), file_buf.end(),
+			  prog.aot_insns.begin());
+		return 0;
+	} else {
+		SPDLOG_ERROR("Invalid id {} not a bpf program", id);
+		return 1;
 	}
 	return 0;
 }
@@ -180,14 +204,15 @@ static int run_ebpf_program(const std::filesystem::path &elf,
 
 	const ebpf_inst insn[1] = {};
 	bpftime::bpftime_prog bpftime_prog(insn, 0, "bpf_main");
-		bpftime::bpftime_helper_group::get_kernel_utils_helper_group()
-			.add_helper_group_to_prog(&bpftime_prog);
-		bpftime::bpftime_helper_group::get_shm_maps_helper_group()
-			.add_helper_group_to_prog(&bpftime_prog);
-	auto vm = bpftime_prog.get_vm();
-	vm->jit_context->load_aot_object(file_buf);
-	int ret = vm->jit_context->get_entry_address()(&mem, sizeof(mem));
-	SPDLOG_INFO("Output: {}", ret);
+	bpftime::bpftime_helper_group::get_kernel_utils_helper_group()
+		.add_helper_group_to_prog(&bpftime_prog);
+	bpftime::bpftime_helper_group::get_shm_maps_helper_group()
+		.add_helper_group_to_prog(&bpftime_prog);
+	bpftime_prog.load_aot_object(file_buf);
+	uint64_t bpf_retval;
+	int ret = bpftime_prog.bpftime_prog_exec(mem.data(), mem.size(),
+						 &bpf_retval);
+	SPDLOG_INFO("Output: {}", bpf_retval);
 	return 0;
 }
 
@@ -201,7 +226,8 @@ int main(int argc, const char **argv)
 
 	argparse::ArgumentParser build_command("build");
 	build_command.add_description(
-		"Build native ELF(s) from eBPF ELF. Each program in the eBPF ELF will be built into a single native ELF");
+		"Build native ELF(s) from eBPF ELF Object."
+		"Each program in the eBPF ELF object will be built into a single native ELF");
 	build_command.add_argument("-o", "--output")
 		.default_value(".")
 		.help("Output directory (There might be multiple output files for a single input)");
@@ -218,9 +244,10 @@ int main(int argc, const char **argv)
 	run_command.add_argument("MEMORY")
 		.help("Path to the memory file")
 		.nargs(0, 1);
-	
+
 	argparse::ArgumentParser compile_command("compile");
-	compile_command.add_description("Compile the eBPF program loaded in shared memory");
+	compile_command.add_description(
+		"Compile the eBPF program loaded in shared memory");
 	compile_command.add_argument("-o", "--output")
 		.default_value(".")
 		.help("Output directory (There might be multiple output files for a single input)");
@@ -229,6 +256,12 @@ int main(int argc, const char **argv)
 		.implicit_value(true)
 		.help("Emit LLVM IR for the eBPF program");
 
+	argparse::ArgumentParser load_command("load");
+	load_command.add_description("Load an eBPF AOTed ELF file into shared memory");
+	load_command.add_argument("PATH").help("Path to the ELF file");
+	load_command.add_argument("ID").help("ID of the program to load");
+
+	program.add_subparser(load_command);
 	program.add_subparser(build_command);
 	program.add_subparser(run_command);
 	program.add_subparser(compile_command);
@@ -260,7 +293,12 @@ int main(int argc, const char **argv)
 		}
 	} else if (program.is_subcommand_used(compile_command)) {
 		emit_llvm_ir = compile_command.get<bool>("emit_llvm");
-		return compile_ebpf_program(compile_command.get<std::string>("output"));
+		return compile_ebpf_program(
+			compile_command.get<std::string>("output"));
+	} else if (program.is_subcommand_used(load_command)) {
+		auto id_str = load_command.get<std::string>("ID");
+		return load_ebpf_program(load_command.get<std::string>("PATH"),
+					atoi(id_str.c_str()));
 	}
 	return 0;
 }
