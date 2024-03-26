@@ -47,6 +47,8 @@ static int run_ebpf_and_measure(bpftime_prog& prog, std::vector<uint8_t>& data_i
 int bpftime_run_ebpf_program(int id,
 			     const std::string &data_in_file, int repeat_N, const std::string &run_type)
 {
+	cout << "Running eBPF program with id " << id << " and data in file " << data_in_file << endl;
+	cout << "Repeat N: " << repeat_N << " with run type " << run_type << endl;
 	std::vector<uint8_t> data_in;
 	std::ifstream ifs(data_in_file, std::ios::binary | std::ios::ate);
 	if (!ifs.is_open()) {
@@ -96,6 +98,14 @@ int bpftime_run_ebpf_program(int id,
 		return 1;
 	}
 	return 0;
+}
+
+inline void check_run_type(const std::string &run_type) {
+	if (run_type != "JIT" && run_type != "AOT" && run_type != "INTERPRET") {
+		cerr << "Invalid run type " << run_type << endl;
+		cerr << "Valid run types are JIT, AOT, INTERPRET" << endl;
+		exit(1);
+	}
 }
 
 // Main program
@@ -178,11 +188,6 @@ int main(int argc, char *argv[])
 				repeat_N = atoi(argv[5]);
 			} else if (strcmp(argv[4], "type") == 0) {
 				run_type = std::string(argv[5]);
-				if (run_type != "AOT" && run_type != "JIT" && run_type != "INTERPRET") {
-					cerr << "Invalid run type " << run_type << endl;
-					cerr << "RUN_TYPE := AOT | JIT | INTERPRET" << endl;
-					return 1;
-				}
 			} else {
 				cerr << "Invalid subcommand " << argv[4] << endl;
 				return 1;
@@ -196,6 +201,7 @@ int main(int argc, char *argv[])
 				}
 			}
 		}
+		check_run_type(run_type);
 		return bpftime_run_ebpf_program(id, data_in_file, repeat_N, run_type);
 	}
 	else {
