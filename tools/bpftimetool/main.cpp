@@ -180,6 +180,7 @@ int main(int argc, char *argv[])
 				run_type = std::string(argv[5]);
 				if (run_type != "AOT" && run_type != "JIT" && run_type != "INTERPRET") {
 					cerr << "Invalid run type " << run_type << endl;
+					cerr << "RUN_TYPE := AOT | JIT | INTERPRET" << endl;
 					return 1;
 				}
 			} else {
