@@ -7,7 +7,6 @@
 #include "spdlog/spdlog.h"
 #include <boost/interprocess/detail/segment_manager_helper.hpp>
 #include <boost/interprocess/smart_ptr/shared_ptr.hpp>
-#include <cassert>
 #include <cstring>
 #include <handler/perf_event_handler.hpp>
 #include <boost/interprocess/managed_shared_memory.hpp>
@@ -223,8 +222,11 @@ void *software_perf_event_data::ensure_mmap_buffer(size_t buffer_size)
 		mmap_buffer.resize(buffer_size);
 		// Update data size in the mmap header
 		get_header_ref().data_size = buffer_size - pagesize;
-		assert(popcnt(buffer_size - pagesize) == 1 &&
-		       "Data size of a perf event buffer must be power of 2");
+		if (popcnt(buffer_size - pagesize) != 1) {
+			SPDLOG_ERROR(
+				"Data size of a perf event buffer must be power of 2");
+			return nullptr;
+		}
 	}
 	return mmap_buffer.data();
 }
