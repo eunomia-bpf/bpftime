@@ -14,6 +14,11 @@
 #include <utility>
 #include <tuple>
 #include <sys/wait.h>
+#include <sys/types.h>
+#include <sys/stat.h>
+#include <fcntl.h>
+
+#define STR_MAX 1024
 
 static int subprocess_pid = 0;
 
@@ -25,24 +30,30 @@ static bool str_starts_with(const char *main, const char *pat)
 }
 
 static int run_command(const char *path, const std::vector<std::string> &argv,
-		       const char *ld_preload, const char *agent_so)
+		       const char *ld_preload, const char *agent_so,
+		       const char *tracepipe_path)
 {
 	int pid = fork();
 	if (pid == 0) {
 		std::string ld_preload_str("LD_PRELOAD=");
 		std::string agent_so_str("AGENT_SO=");
+        std::string tracepipe_path_str("TRACEPIPE_PATH=");
 		ld_preload_str += ld_preload;
 
 		if (agent_so) {
 			agent_so_str += agent_so;
 		}
+		if (tracepipe_path) {
+            tracepipe_path_str += tracepipe_path;
+        }
 		std::vector<const char *> env_arr;
 		char **p = environ;
 		while (*p) {
 			env_arr.push_back(*p);
 			p++;
 		}
-		bool ld_preload_set = false, agent_so_set = false;
+		bool ld_preload_set = false, agent_so_set = false,
+		     tracepipe_path_set = false;
 		for (auto &s : env_arr) {
 			if (str_starts_with(s, "LD_PRELOAD=")) {
 				s = ld_preload_str.c_str();
@@ -50,12 +61,18 @@ static int run_command(const char *path, const std::vector<std::string> &argv,
 			} else if (str_starts_with(s, "AGENT_SO=")) {
 				s = agent_so_str.c_str();
 				agent_so_set = true;
-			}
+			} else if (str_starts_with(s, "TRACEPIPE_PATH=")) {
+			    s = tracepipe_path_str.c_str();
+			    tracepipe_path_set = true;
+            }
 		}
 		if (!ld_preload_set)
 			env_arr.push_back(ld_preload_str.c_str());
 		if (!agent_so_set)
 			env_arr.push_back(agent_so_str.c_str());
+		if (!tracepipe_path_set) {
+		    env_arr.push_back(tracepipe_path_str.c_str());
+        }
 
 		env_arr.push_back(nullptr);
 		std::vector<const char *> argv_arr;
@@ -82,6 +99,7 @@ static int run_command(const char *path, const std::vector<std::string> &argv,
 	}
 	return 1;
 }
+
 static int inject_by_frida(int pid, const char *inject_path, const char *arg)
 {
 	spdlog::info("Injecting to {}", pid);
@@ -121,18 +139,47 @@ extract_path_and_args(const argparse::ArgumentParser &parser)
 	return { executable, items };
 }
 
-static void signal_handler(int sig)
+static int read_tracepipe(const char *tracepipe_path)
 {
-	if (subprocess_pid) {
-		kill(subprocess_pid, sig);
-	}
+    mode_t permission = 0666;
+    if (mkfifo(tracepipe_path, permission) == -1) {
+        if (errno != EEXIST) {
+            spdlog::error("Failed to create tracepipe: {}", strerror(errno));
+            return 1;
+        }
+    } else {
+        spdlog::info("Trace pipe created");
+    }
+
+    int fd = open(tracepipe_path, O_RDONLY);
+    if (fd == -1) {
+        spdlog::error(
+       "Failed to open tracepipe: {}",
+            strerror(errno));
+        return 2;
+    }
+
+    while (1) {
+        char data[STR_MAX];
+        ssize_t ret = read(fd, data, strnlen(data, STR_MAX));
+        if (ret == -1) {
+            spdlog::error(
+                "Failed to read from tracepipe: {}",
+                strerror(errno));
+            return 3;
+        } else {
+            if (ret > 0) {
+                std::cout << data;
+            }
+        }
+    }
+    return 0;
 }
+
 
 int main(int argc, const char **argv)
 {
 	spdlog::cfg::load_env_levels();
-	signal(SIGINT, signal_handler);
-	signal(SIGTSTP, signal_handler);
 	argparse::ArgumentParser program(argv[0]);
 
 	if (auto home_env = getenv("HOME"); home_env) {
@@ -176,6 +223,9 @@ int main(int argc, const char **argv)
 		.nargs(argparse::nargs_pattern::at_least_one)
 		.remaining()
 		.help("Command to run");
+    start_command.add_argument("-p", "--print-to-trace-pipe")
+        .help("Whether to send output of bpf_printk to the tracepipe")
+        .flag();
 
 	argparse::ArgumentParser attach_command("attach");
 
@@ -185,9 +235,13 @@ int main(int argc, const char **argv)
 		.flag();
 	attach_command.add_argument("PID").scan<'i', int>();
 
+    argparse::ArgumentParser trace_command("trace");
+	trace_command.add_description("Read contents of tracepipe");
+
 	program.add_subparser(load_command);
 	program.add_subparser(start_command);
 	program.add_subparser(attach_command);
+	program.add_subparser(trace_command);
 	try {
 		program.parse_args(argc, argv);
 	} catch (const std::exception &err) {
@@ -208,8 +262,11 @@ int main(int argc, const char **argv)
 		}
 		auto [executable_path, extra_args] =
 			extract_path_and_args(load_command);
-		return run_command(executable_path.c_str(), extra_args,
-				   so_path.c_str(), nullptr);
+		return run_command(executable_path.c_str(),
+		                   extra_args,
+				           so_path.c_str(),
+				           nullptr,
+				           nullptr);
 	} else if (program.is_subcommand_used("start")) {
 		auto agent_path = install_path / "libbpftime-agent.so";
 		if (!std::filesystem::exists(agent_path)) {
@@ -219,6 +276,14 @@ int main(int argc, const char **argv)
 		}
 		auto [executable_path, extra_args] =
 			extract_path_and_args(start_command);
+        std::string tracepipe_path;
+        if (start_command.get<bool>("print-to-trace-pipe")) {
+            tracepipe_path = install_path / "tracepipe";
+            if (!std::filesystem::exists(tracepipe_path)) {
+                spdlog::error("Tracepipe not found: {}",
+                        tracepipe_path.c_str());
+            }
+        }
 		if (start_command.get<bool>("enable-syscall-trace")) {
 			auto transformer_path =
 				install_path /
@@ -231,10 +296,12 @@ int main(int argc, const char **argv)
 
 			return run_command(executable_path.c_str(), extra_args,
 					   transformer_path.c_str(),
-					   agent_path.c_str());
+					   agent_path.c_str(),
+					   tracepipe_path.c_str());
 		} else {
 			return run_command(executable_path.c_str(), extra_args,
-					   agent_path.c_str(), nullptr);
+					   agent_path.c_str(), nullptr,
+					   tracepipe_path.c_str());
 		}
 	} else if (program.is_subcommand_used("attach")) {
 		auto agent_path = install_path / "libbpftime-agent.so";
@@ -258,6 +325,13 @@ int main(int argc, const char **argv)
 		} else {
 			return inject_by_frida(pid, agent_path.c_str(), "");
 		}
-	}
+	} else if (program.is_subcommand_used("trace")) {
+		auto tracepipe_path = install_path / "tracepipe";
+		if (!std::filesystem::exists(tracepipe_path)) {
+            spdlog::error("Tracepipe not found: {}",
+                    tracepipe_path.c_str());
+        }
+        return read_tracepipe(tracepipe_path.c_str());
+    }
 	return 0;
 }
