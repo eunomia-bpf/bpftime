@@ -5,6 +5,7 @@
 #include "spdlog/common.h"
 #include "syscall_trace_attach_impl.hpp"
 #include "syscall_trace_attach_private_data.hpp"
+#include <exception>
 #include <fcntl.h>
 #include <memory>
 #include <string_view>
@@ -72,7 +73,14 @@ extern "C" int __libc_start_main(int (*main)(int, char **, char **), int argc,
 extern "C" void bpftime_agent_main(const gchar *data, gboolean *stay_resident)
 {
 	spdlog::cfg::load_env_levels();
-	bpftime_initialize_global_shm(shm_open_type::SHM_OPEN_ONLY);
+	try {
+		// If we are unable to initialize shared memory..
+		bpftime_initialize_global_shm(shm_open_type::SHM_OPEN_ONLY);
+	} catch (std::exception &ex) {
+		SPDLOG_ERROR("Unable to initialize shared memory: {}",
+			     ex.what());
+		return;
+	}
 	ctx_holder.init();
 	// Register syscall trace impl
 	auto syscall_trace_impl = std::make_unique<syscall_trace_attach_impl>();
@@ -114,15 +122,18 @@ extern "C" void bpftime_agent_main(const gchar *data, gboolean *stay_resident)
 	int res = 1;
 	setenv("BPFTIME_USED", "1", 0);
 	SPDLOG_DEBUG("Set environment variable BPFTIME_USED");
-	res = ctx_holder.ctx.init_attach_ctx_from_handlers(
-		bpftime_get_agent_config());
-	if (res != 0) {
-		SPDLOG_ERROR("Failed to initialize attach context");
+	try {
+		res = ctx_holder.ctx.init_attach_ctx_from_handlers(
+			bpftime_get_agent_config());
+		if (res != 0) {
+			SPDLOG_ERROR("Failed to initialize attach context");
+			return;
+		}
+	} catch (std::exception &ex) {
+		SPDLOG_ERROR("Unable to instantiate handlers: {}", ex.what());
 		return;
 	}
 	SPDLOG_INFO("Attach successfully");
-	// don't free ctx here
-	return;
 }
 
 extern "C" int64_t syscall_callback(int64_t sys_nr, int64_t arg1, int64_t arg2,

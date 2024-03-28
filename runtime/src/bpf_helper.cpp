@@ -6,7 +6,6 @@
 #include "bpf/bpf.h"
 #include "bpf/libbpf_common.h"
 #include "bpftime_helper_group.hpp"
-#include <cassert>
 #include <cerrno>
 #include <sched.h>
 #ifdef ENABLE_BPFTIME_VERIFIER
@@ -33,9 +32,6 @@
 using namespace std;
 
 extern "C" {
-
-
-
 
 uint64_t bpftime_override_return(uint64_t ctx, uint64_t value);
 uint64_t bpftime_set_retval(uint64_t retval);
@@ -239,7 +235,11 @@ uint64_t bpf_perf_event_output(uint64_t ctx, uint64_t map, uint64_t flags,
 			       uint64_t data, uint64_t size)
 {
 	int32_t current_cpu = sched_getcpu();
-	assert(current_cpu != -1);
+	if (current_cpu == -1) {
+		SPDLOG_ERROR(
+			"Unable to get current cpu when running perf event output");
+		return (uint64_t)-1;
+	}
 	cpu_set_t mask, orig;
 	CPU_ZERO(&mask);
 	CPU_SET(current_cpu, &mask);

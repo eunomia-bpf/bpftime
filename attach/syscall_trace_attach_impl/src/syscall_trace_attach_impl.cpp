@@ -1,6 +1,5 @@
 #include "spdlog/spdlog.h"
 #include "syscall_trace_attach_private_data.hpp"
-#include <cassert>
 #include <cerrno>
 #include <iterator>
 #include <optional>
@@ -108,7 +107,8 @@ int syscall_trace_attach_impl::detach_by_id(int id)
 		} else if (!ent->is_enter) {
 			sys_exit_callbacks[ent->sys_nr].erase(ent.get());
 		} else {
-			assert(false && "Unreachable!");
+			SPDLOG_ERROR("Unreachable branch reached!");
+			return -EINVAL;
 		}
 		attach_entries.erase(itr);
 		return 0;

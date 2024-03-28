@@ -1,5 +1,4 @@
 #include "bpftime_helper_group.hpp"
-#include <cassert>
 #include <cerrno>
 #include <sched.h>
 #ifdef ENABLE_BPFTIME_VERIFIER

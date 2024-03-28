@@ -7,9 +7,9 @@
 #include "spdlog/spdlog.h"
 #include <filesystem>
 #include <fstream>
-#include <cassert>
 #include <map>
 #include <optional>
+#include <stdexcept>
 #include <syscall_id_list.h>
 static const char *SYSCALL_TRACEPOINT_ROOT =
 	"/sys/kernel/tracing/events/syscalls";
@@ -70,7 +70,11 @@ syscall_tracepoint_table create_syscall_tracepoint_id_table()
 		const auto &id_file = tp_dir.append("id");
 		SPDLOG_TRACE("Reading tracepoint id from {}", id_file.string());
 		std::ifstream id_ifs(id_file);
-		assert(id_ifs.is_open());
+		if (!id_ifs.is_open()) {
+			SPDLOG_ERROR("Unable to open & read {}",
+				     id_file.c_str());
+			throw std::runtime_error("Unable to open id file");
+		}
 		int32_t id;
 		id_ifs >> id;
 		return id;

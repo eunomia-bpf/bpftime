@@ -10,6 +10,7 @@
 #include "spdlog/spdlog.h"
 #include <csignal>
 #include <cstddef>
+#include <exception>
 #include <signal.h>
 #include <cerrno>
 #include <errno.h>
@@ -50,32 +51,68 @@ uint32_t bpftime_map_value_size_from_syscall(int fd)
 
 int bpftime_helper_map_get_next_key(int fd, const void *key, void *next_key)
 {
-	return shm_holder.global_shared_memory.bpf_map_get_next_key(
-		fd, key, next_key, false);
+	try {
+		return shm_holder.global_shared_memory.bpf_map_get_next_key(
+			fd, key, next_key, false);
+	} catch (std::exception &ex) {
+		SPDLOG_ERROR(
+			"Exception happened when performing map get next key (from helper): {}",
+			ex.what());
+		return -1;
+	}
 }
 
 const void *bpftime_map_lookup_elem(int fd, const void *key)
 {
-	return shm_holder.global_shared_memory.bpf_map_lookup_elem(fd, key,
-								   true);
+	try {
+		return shm_holder.global_shared_memory.bpf_map_lookup_elem(
+			fd, key, true);
+	} catch (std::exception &ex) {
+		SPDLOG_ERROR(
+			"Exception happened when performing map lookup elem: {}",
+			ex.what());
+		return nullptr;
+	}
 }
 
 long bpftime_map_update_elem(int fd, const void *key, const void *value,
 			     uint64_t flags)
 {
-	return shm_holder.global_shared_memory.bpf_map_update_elem(
-		fd, key, value, flags, true);
+	try {
+		return shm_holder.global_shared_memory.bpf_map_update_elem(
+			fd, key, value, flags, true);
+	} catch (std::exception &ex) {
+		SPDLOG_ERROR(
+			"Exception happened when performing map update: {}",
+			ex.what());
+		return -1;
+	}
 }
 
 long bpftime_map_delete_elem(int fd, const void *key)
 {
-	return shm_holder.global_shared_memory.bpf_delete_elem(fd, key, true);
+	try {
+		return shm_holder.global_shared_memory.bpf_delete_elem(fd, key,
+								       true);
+	} catch (std::exception &ex) {
+		SPDLOG_ERROR(
+			"Exception happened when performing map delete elem: {}",
+			ex.what());
+		return -1;
+	}
 }
 
 int bpftime_map_get_next_key(int fd, const void *key, void *next_key)
 {
-	return shm_holder.global_shared_memory.bpf_map_get_next_key(
-		fd, key, next_key, true);
+	try {
+		return shm_holder.global_shared_memory.bpf_map_get_next_key(
+			fd, key, next_key, true);
+	} catch (std::exception &ex) {
+		SPDLOG_ERROR(
+			"Exception happened when performing map get next key: {}",
+			ex.what());
+		return -1;
+	}
 }
 
 int bpftime_uprobe_create(int fd, int pid, const char *name, uint64_t offset,

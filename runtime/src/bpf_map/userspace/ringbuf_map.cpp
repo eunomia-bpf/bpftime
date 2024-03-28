@@ -9,6 +9,7 @@
 #include <boost/interprocess/sync/sharable_lock.hpp>
 #include <bpf_map/userspace/ringbuf_map.hpp>
 #include <spdlog/spdlog.h>
+#include <stdexcept>
 
 enum {
 	BPF_RINGBUF_BUSY_BIT = 2147483648,
@@ -163,8 +164,11 @@ ringbuf::ringbuf(uint32_t max_ent,
 		  memory))
 {
 	const auto page_size = getpagesize();
-	assert((size_t)page_size >= sizeof(unsigned long) &&
-	       "Page size is expected to be greater than sizeof(unsigned long)");
+
+	if ((size_t)page_size < sizeof(unsigned long)) {
+		throw std::runtime_error(
+			"Page size is expected to be greater than sizeof(unsigned long)");
+	}
 	consumer_pos = (unsigned long *)(uintptr_t)(&((*raw_buffer)[0]));
 	producer_pos =
 		(unsigned long *)(uintptr_t)(&((*raw_buffer)[page_size]));
