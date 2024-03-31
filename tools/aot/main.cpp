@@ -54,6 +54,33 @@ extern "C" int _libbpf_print(libbpf_print_level level, const char *fmt,
 
 bool emit_llvm_ir = false;
 
+int empty_helper()
+{
+	std::cerr << "Empty helper called" << std::endl;
+	return 0;
+}
+
+bpftime::bpftime_helper_group create_all_helpers()
+{
+	bpftime::bpftime_helper_group helper_group;
+	helper_group.append(
+		bpftime::bpftime_helper_group::get_ufunc_helper_group());
+	helper_group.append(
+		bpftime::bpftime_helper_group::get_kernel_utils_helper_group());
+	helper_group.append(
+		bpftime::bpftime_helper_group::get_shm_maps_helper_group());
+	for (int i = 0; i < 1000; i++) {
+		// add empty helpers so that we can be compatible with other use
+		// cases
+		bpftime::bpftime_helper_info info;
+		info.index = i;
+		info.name = "empty_helper";
+		info.fn = (void *)empty_helper;
+		helper_group.register_helper(info);
+	}
+	return helper_group;
+}
+
 static int build_ebpf_program(const std::string &ebpf_elf,
 			      const std::filesystem::path &output)
 {
@@ -72,10 +99,8 @@ static int build_ebpf_program(const std::string &ebpf_elf,
 		bpftime::bpftime_prog bpftime_prog(
 			(const ebpf_inst *)bpf_program__insns(prog),
 			bpf_program__insn_cnt(prog), name);
-		bpftime::bpftime_helper_group::get_kernel_utils_helper_group()
-			.add_helper_group_to_prog(&bpftime_prog);
-		bpftime::bpftime_helper_group::get_shm_maps_helper_group()
-			.add_helper_group_to_prog(&bpftime_prog);
+		auto helper_group = create_all_helpers();
+		helper_group.add_helper_group_to_prog(&bpftime_prog);
 		bpftime_prog.bpftime_prog_load(true);
 		llvm_bpf_jit_context ctx(
 			dynamic_cast<bpftime::vm::llvm::bpftime_llvm_jit_vm *>(
@@ -105,11 +130,8 @@ static int compile_ebpf_program(const std::filesystem::path &output)
 			auto new_prog = bpftime_prog(prog.insns.data(),
 						     prog.insns.size(),
 						     prog.name.c_str());
-			bpftime::bpftime_helper_group::
-				get_kernel_utils_helper_group()
-					.add_helper_group_to_prog(&new_prog);
-			bpftime::bpftime_helper_group::get_shm_maps_helper_group()
-				.add_helper_group_to_prog(&new_prog);
+			auto helper_group = create_all_helpers();
+			helper_group.add_helper_group_to_prog(&new_prog);
 			new_prog.bpftime_prog_load(true);
 			llvm_bpf_jit_context ctx(
 				dynamic_cast<
@@ -264,7 +286,8 @@ int main(int argc, const char **argv)
 		.help("Emit LLVM IR for the eBPF program");
 
 	argparse::ArgumentParser load_command("load");
-	load_command.add_description("Load an eBPF AOTed ELF file into shared memory");
+	load_command.add_description(
+		"Load an eBPF AOTed ELF file into shared memory");
 	load_command.add_argument("PATH").help("Path to the ELF file");
 	load_command.add_argument("ID").help("ID of the program to load");
 
@@ -305,7 +328,7 @@ int main(int argc, const char **argv)
 	} else if (program.is_subcommand_used(load_command)) {
 		auto id_str = load_command.get<std::string>("ID");
 		return load_ebpf_program(load_command.get<std::string>("PATH"),
-					atoi(id_str.c_str()));
+					 atoi(id_str.c_str()));
 	}
 	return 0;
 }
