@@ -22,6 +22,16 @@ project(
 #
 include(cmake/CompilerWarnings.cmake)
 include(cmake/StandardSettings.cmake)
+find_package(LLVM REQUIRED CONFIG)
+include_directories(${LLVM_INCLUDE_DIRS})
+add_definitions(${LLVM_DEFINITIONS})
+
+find_program(LLVM_CONFIG "llvm-config")
+execute_process(COMMAND ${LLVM_CONFIG} --includedir OUTPUT_VARIABLE LLVM_INCLUDE_DIR OUTPUT_STRIP_TRAILING_WHITESPACE)
+include_directories(${LLVM_INCLUDE_DIR})
+
+
+
 
 if(NOT CMAKE_BUILD_TYPE)
   set(CMAKE_BUILD_TYPE "Debug")
@@ -69,6 +79,8 @@ include(cmake/libbpf.cmake)
 # install frida
 include(cmake/frida.cmake)
 
+# Set default value for BPFTIME_LLVM_JIT to ON
+option(BPFTIME_LLVM_JIT "Use LLVM as jit backend." ON)
 
 set(CMAKE_POSITION_INDEPENDENT_CODE YES)
 
@@ -90,9 +102,7 @@ add_subdirectory(third_party/argparse)
 
 # main library
 add_subdirectory(vm)
-if (BPFTIME_LLVM_JIT)
-  add_subdirectory(vm/cli)
-endif()
+add_subdirectory(vm/cli)
 
 add_subdirectory(attach)
 
@@ -113,3 +123,4 @@ add_subdirectory(benchmark)
 set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>DLL")
 
 install(TARGETS bpftime-agent bpftime_text_segment_transformer bpftime-syscall-server CONFIGURATIONS Release Debug RelWithDebInfo DESTINATION ~/.bpftime)
+
