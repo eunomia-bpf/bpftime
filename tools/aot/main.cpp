@@ -63,12 +63,6 @@ int empty_helper()
 bpftime::bpftime_helper_group create_all_helpers()
 {
 	bpftime::bpftime_helper_group helper_group;
-	helper_group.append(
-		bpftime::bpftime_helper_group::get_ufunc_helper_group());
-	helper_group.append(
-		bpftime::bpftime_helper_group::get_kernel_utils_helper_group());
-	helper_group.append(
-		bpftime::bpftime_helper_group::get_shm_maps_helper_group());
 	for (int i = 0; i < 1000; i++) {
 		// add empty helpers so that we can be compatible with other use
 		// cases
