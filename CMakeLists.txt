@@ -121,7 +121,7 @@ endif()
 execute_process(COMMAND mkdir -p $ENV{HOME}/.bpftime/event_source/devices/uprobe/format)
 execute_process(COMMAND touch $ENV{HOME}/.bpftime/event_source/devices/uprobe/type)
 execute_process(COMMAND touch $ENV{HOME}/.bpftime/event_source/devices/uprobe/format/retprobe)
-execute_process(COMMAND bash -c "echo '1' > $ENV{HOME}/.bpftime/event_source/devices/uprobe/type")
+execute_process(COMMAND bash -c "echo '9' > $ENV{HOME}/.bpftime/event_source/devices/uprobe/type")
 execute_process(COMMAND bash -c "echo 'config:0' > $ENV{HOME}/.bpftime/event_source/devices/uprobe/format/retprobe")
 
 # install frida

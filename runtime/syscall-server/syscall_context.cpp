@@ -71,8 +71,10 @@ FILE* syscall_context::handle_fopen(const char * filename, const char * modes)
 		return orig_fopen_fn(filename, modes);
 	}
 	try_startup();
-	const char * new_filename = bpftime_checkfile(filename);
-	return orig_fopen_fn(new_filename, modes);
+	printf("2:%s\n",file);
+	const char * new_file = bpftime_checkfile(file);
+	printf("3:%s\n",new_file);
+	return orig_openat_fn(fd, new_file, oflag, mode);
 }
 
 int syscall_context::handle_open(const char *file, int oflag, unsigned short mode)
