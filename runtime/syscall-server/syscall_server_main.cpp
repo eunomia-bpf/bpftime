@@ -64,10 +64,15 @@ extern "C" int close(int fd)
 	return context.handle_close(fd);
 }
 
-extern "C" FILE* fopen(const char * filename, const char * modes)
+extern "C" int openat(int fd, const char *file, int oflag, ...)
 {
-	SPDLOG_DEBUG("fopen {:x} {:x}", (uintptr_t)filename, (uintptr_t)modes);
-	return context.handle_fopen(filename, modes);
+	va_list args;
+	va_start(args, oflag);
+	long arg4 = va_arg(args, long);
+	va_end(args);
+	SPDLOG_DEBUG("openat {} {:x} {} {}", fd, (uintptr_t)file, oflag, arg4);
+	unsigned short mode = (unsigned short)arg4;
+	return context.handle_openat(fd, file, oflag, mode);
 }
 
 extern "C" int open(const char *file, int oflag, ...)
