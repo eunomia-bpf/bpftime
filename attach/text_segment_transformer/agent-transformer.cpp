@@ -1,6 +1,5 @@
 #include "spdlog/cfg/env.h"
 #include "spdlog/spdlog.h"
-#include <cassert>
 #include <cstdlib>
 #include <dlfcn.h>
 #include <frida-gum.h>
@@ -56,8 +55,11 @@ extern "C" void bpftime_agent_main(const gchar *data, gboolean *stay_resident)
 			return;
 		}
 	}
-	assert(agent_so &&
-	       "Please set AGENT_SO to the bpftime-agent when use this tranformer");
+	if (!agent_so) {
+		SPDLOG_CRITICAL(
+			"Please set AGENT_SO to the bpftime-agent when use this tranformer");
+		return;
+	}
 	SPDLOG_INFO("Using agent {}", agent_so);
 	cs_arch_register_x86();
 	bpftime::setup_syscall_tracer();
@@ -71,8 +73,11 @@ extern "C" void bpftime_agent_main(const gchar *data, gboolean *stay_resident)
 	auto entry_func = (void (*)(syscall_hooker_func_t *))dlsym(
 		next_handle, "_bpftime__setup_syscall_trace_callback");
 
-	assert(entry_func &&
-	       "Malformed agent so, expected symbol _bpftime__setup_syscall_hooker_callback");
+	if (!entry_func) {
+		SPDLOG_CRITICAL(
+			"Malformed agent so, expected symbol _bpftime__setup_syscall_hooker_callback");
+		return;
+	}
 	syscall_hooker_func_t orig_syscall_hooker_func =
 		bpftime::get_call_hook();
 	entry_func(&orig_syscall_hooker_func);

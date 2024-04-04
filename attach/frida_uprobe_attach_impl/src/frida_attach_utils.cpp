@@ -72,7 +72,8 @@ int from_cb_idx_to_attach_type(int idx)
 	case ATTACH_URETPROBE_INDEX:
 		return ATTACH_URETPROBE;
 	default:
-		assert(false && "Unreachable!");
+		SPDLOG_ERROR("Unreachable branch reached!");
+		return -1;
 	}
 	return 0;
 }

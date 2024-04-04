@@ -9,6 +9,8 @@
 #include "handler/perf_event_handler.hpp"
 #include "spdlog/spdlog.h"
 #include <csignal>
+#include <cstddef>
+#include <exception>
 #include <signal.h>
 #include <cerrno>
 #include <errno.h>
@@ -49,32 +51,68 @@ uint32_t bpftime_map_value_size_from_syscall(int fd)
 
 int bpftime_helper_map_get_next_key(int fd, const void *key, void *next_key)
 {
-	return shm_holder.global_shared_memory.bpf_map_get_next_key(
-		fd, key, next_key, false);
+	try {
+		return shm_holder.global_shared_memory.bpf_map_get_next_key(
+			fd, key, next_key, false);
+	} catch (std::exception &ex) {
+		SPDLOG_ERROR(
+			"Exception happened when performing map get next key (from helper): {}",
+			ex.what());
+		return -1;
+	}
 }
 
 const void *bpftime_map_lookup_elem(int fd, const void *key)
 {
-	return shm_holder.global_shared_memory.bpf_map_lookup_elem(fd, key,
-								   true);
+	try {
+		return shm_holder.global_shared_memory.bpf_map_lookup_elem(
+			fd, key, true);
+	} catch (std::exception &ex) {
+		SPDLOG_ERROR(
+			"Exception happened when performing map lookup elem: {}",
+			ex.what());
+		return nullptr;
+	}
 }
 
 long bpftime_map_update_elem(int fd, const void *key, const void *value,
 			     uint64_t flags)
 {
-	return shm_holder.global_shared_memory.bpf_map_update_elem(
-		fd, key, value, flags, true);
+	try {
+		return shm_holder.global_shared_memory.bpf_map_update_elem(
+			fd, key, value, flags, true);
+	} catch (std::exception &ex) {
+		SPDLOG_ERROR(
+			"Exception happened when performing map update: {}",
+			ex.what());
+		return -1;
+	}
 }
 
 long bpftime_map_delete_elem(int fd, const void *key)
 {
-	return shm_holder.global_shared_memory.bpf_delete_elem(fd, key, true);
+	try {
+		return shm_holder.global_shared_memory.bpf_delete_elem(fd, key,
+								       true);
+	} catch (std::exception &ex) {
+		SPDLOG_ERROR(
+			"Exception happened when performing map delete elem: {}",
+			ex.what());
+		return -1;
+	}
 }
 
 int bpftime_map_get_next_key(int fd, const void *key, void *next_key)
 {
-	return shm_holder.global_shared_memory.bpf_map_get_next_key(
-		fd, key, next_key, true);
+	try {
+		return shm_holder.global_shared_memory.bpf_map_get_next_key(
+			fd, key, next_key, true);
+	} catch (std::exception &ex) {
+		SPDLOG_ERROR(
+			"Exception happened when performing map get next key: {}",
+			ex.what());
+		return -1;
+	}
 }
 
 int bpftime_uprobe_create(int fd, int pid, const char *name, uint64_t offset,
@@ -610,4 +648,25 @@ const bpftime::agent_config &bpftime::set_agent_config_from_env()
 		getenv("BPFTIME_ALLOW_EXTERNAL_MAPS") != nullptr;
 	bpftime_set_agent_config(agent_config);
 	return bpftime_get_agent_config();
+}
+
+int bpftime_add_custom_perf_event(int type, const char *attach_argument)
+{
+	return shm_holder.global_shared_memory.add_custom_perf_event(
+		type, attach_argument);
+}
+
+int bpftime_poll_from_ringbuf(int rb_fd, void *ctx,
+			      int (*cb)(void *, void *, size_t))
+{
+	auto &shm = shm_holder.global_shared_memory;
+	if (auto ret = shm.try_get_ringbuf_map_impl(rb_fd); ret.has_value()) {
+		auto impl = ret.value();
+		return impl->create_impl_shared_ptr()->fetch_data(
+			[=](void *buf, int sz) { return cb(ctx, buf, sz); });
+	} else {
+		errno = EINVAL;
+		SPDLOG_ERROR("Expected fd {} to be ringbuf map fd ", rb_fd);
+		return -EINVAL;
+	}
 }

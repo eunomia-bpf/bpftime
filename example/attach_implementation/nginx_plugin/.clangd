@@ -1,0 +1,9 @@
+CompileFlags: # Tweak the parse settings
+  Add: 
+    - "-I./example/attach_implementation/attach_impl_example_nginx-prefix/src/attach_impl_example_nginx/src/core"
+    - "-I./example/attach_implementation/attach_impl_example_nginx-prefix/src/attach_impl_example_nginx/src/http"
+    - "-I./example/attach_implementation/attach_impl_example_nginx-prefix/src/attach_impl_example_nginx/src/http/modules"
+    - "-I./example/attach_implementation/attach_impl_example_nginx-prefix/src/attach_impl_example_nginx/src/event"
+    - "-I./example/attach_implementation/attach_impl_example_nginx-prefix/src/attach_impl_example_nginx/objs"
+    - "-I./example/attach_implementation/attach_impl_example_nginx-prefix/src/attach_impl_example_nginx/src/os/unix"
+

@@ -1,0 +1,7 @@
+ngx_addon_name=ngx_http_bpftime_module
+ngx_module_type=HTTP
+ngx_module_name=ngx_http_bpftime_module
+ngx_module_srcs="$ngx_addon_dir/ngx_http_bpftime_module.c"
+echo Linking library: $LINK_LIB
+ngx_module_libs="$LINK_LIB -lstdc++"
+. auto/module

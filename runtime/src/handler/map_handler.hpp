@@ -69,8 +69,9 @@ class bpf_map_handler {
 	{
 		this->attr = attr;
 	}
-	bpf_map_handler(int id, int type, uint32_t key_size, uint32_t value_size,
-			uint32_t max_ents, uint64_t flags, const char *name,
+	bpf_map_handler(int id, int type, uint32_t key_size,
+			uint32_t value_size, uint32_t max_ents, uint64_t flags,
+			const char *name,
 			boost::interprocess::managed_shared_memory &mem)
 		: type((bpf_map_type)type),
 		  name(char_allocator(mem.get_segment_manager())),
@@ -91,7 +92,11 @@ class bpf_map_handler {
 		// since we cannot free here because memory allocator pointer
 		// cannot be held between process, we will free the internal map
 		// in the handler_manager.
-		assert(map_impl_ptr.get() == nullptr);
+		if (map_impl_ptr.get() != nullptr) {
+			SPDLOG_CRITICAL(
+				"Map impl of id {} is not freed when the map was being destroyed. This should not happen",
+				id);
+		}
 	}
 	//  * BPF_MAP_LOOKUP_ELEM
 	// *	Description

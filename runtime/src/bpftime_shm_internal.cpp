@@ -25,6 +25,7 @@ extern "C" void bpftime_initialize_global_shm(bpftime::shm_open_type type)
 	// call the constructor
 	new (&shm_holder.global_shared_memory) bpftime_shm(type);
 	global_shm_initialized = true;
+	SPDLOG_INFO("Global shm initialized");
 }
 
 extern "C" void bpftime_destroy_global_shm()
@@ -43,8 +44,8 @@ extern "C" void bpftime_remove_global_shm()
 {
 	using namespace bpftime;
 	if (boost::interprocess::shared_memory_object::remove(
-	            get_global_shm_name()) != false) {
-	    SPDLOG_INFO("Global shm removed");
+		    get_global_shm_name()) != false) {
+		SPDLOG_INFO("Global shm removed");
 	}
 }
 
@@ -283,7 +284,7 @@ int bpftime_shm::add_software_perf_event_to_epoll(int swpe_fd, int epoll_fd,
 	}
 	auto &perf_handler =
 		std::get<bpf_perf_event_handler>(manager->get_handler(swpe_fd));
-	if (perf_handler.type != bpf_event_type::PERF_TYPE_SOFTWARE) {
+	if (perf_handler.type != (int)bpf_event_type::PERF_TYPE_SOFTWARE) {
 		SPDLOG_ERROR(
 			"Expected perf fd {} to be a software perf event instance",
 			swpe_fd);
@@ -674,7 +675,7 @@ bool bpftime_shm::is_software_perf_event_handler_fd(int fd) const
 	if (!is_perf_event_handler_fd(fd))
 		return false;
 	const auto &hd = std::get<bpf_perf_event_handler>(get_handler(fd));
-	return hd.type == bpf_event_type::PERF_TYPE_SOFTWARE;
+	return hd.type == (int)bpf_event_type::PERF_TYPE_SOFTWARE;
 }
 
 // local agent config can be used for test or local process
@@ -721,5 +722,17 @@ bpftime_shm::get_software_perf_event_raw_buffer(int fd, size_t buffer_sz) const
 	const auto &handler = std::get<bpf_perf_event_handler>(get_handler(fd));
 	return handler.try_get_software_perf_data_raw_buffer(buffer_sz);
 }
-
+int bpftime_shm::add_custom_perf_event(int type, const char *attach_argument)
+{
+	int fd = open_fake_fd();
+	if (fd < 0) {
+		SPDLOG_ERROR("Unable to allocate id for custom perf event: {}",
+			     errno);
+		return fd;
+	}
+	manager->set_handler(
+		fd, bpf_perf_event_handler(type, attach_argument, segment),
+		segment);
+	return fd;
+}
 } // namespace bpftime

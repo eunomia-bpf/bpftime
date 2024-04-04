@@ -115,7 +115,7 @@ llvm_bpf_jit_context::~llvm_bpf_jit_context()
 
 std::vector<uint8_t> llvm_bpf_jit_context::do_aot_compile(
 	const std::vector<std::string> &extFuncNames,
-	const std::vector<std::string> &lddwHelpers)
+	const std::vector<std::string> &lddwHelpers, bool print_ir)
 {
 	SPDLOG_DEBUG("AOT: start");
 	if (auto module = generateModule(extFuncNames, lddwHelpers); module) {
@@ -123,6 +123,9 @@ std::vector<uint8_t> llvm_bpf_jit_context::do_aot_compile(
 		SPDLOG_DEBUG("AOT: target triple: {}", defaultTargetTriple);
 		return module->withModuleDo([&](auto &module)
 						    -> std::vector<uint8_t> {
+			if (print_ir) {
+				module.print(errs(), nullptr);
+			}
 			optimizeModule(module);
 			module.setTargetTriple(defaultTargetTriple);
 			std::string error;
@@ -174,7 +177,7 @@ std::vector<uint8_t> llvm_bpf_jit_context::do_aot_compile(
 	}
 }
 
-std::vector<uint8_t> llvm_bpf_jit_context::do_aot_compile()
+std::vector<uint8_t> llvm_bpf_jit_context::do_aot_compile(bool print_ir)
 {
 	std::vector<std::string> extNames, lddwNames;
 	for (uint32_t i = 0; i < std::size(vm->ext_funcs); i++) {
@@ -193,7 +196,7 @@ std::vector<uint8_t> llvm_bpf_jit_context::do_aot_compile()
 	tryDefineLddwHelper(LDDW_HELPER_MAP_VAL, (void *)vm->map_val);
 	tryDefineLddwHelper(LDDW_HELPER_CODE_ADDR, (void *)vm->code_addr);
 	tryDefineLddwHelper(LDDW_HELPER_VAR_ADDR, (void *)vm->var_addr);
-	return this->do_aot_compile(extNames, lddwNames);
+	return this->do_aot_compile(extNames, lddwNames, print_ir);
 }
 
 void llvm_bpf_jit_context::load_aot_object(const std::vector<uint8_t> &buf)

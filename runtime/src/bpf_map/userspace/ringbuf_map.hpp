@@ -15,6 +15,9 @@
 #include <boost/interprocess/smart_ptr/shared_ptr.hpp>
 #include <boost/interprocess/smart_ptr/weak_ptr.hpp>
 #include <cstddef>
+#include <functional>
+#include <optional>
+#include <vector>
 
 namespace bpftime
 {
@@ -46,6 +49,7 @@ class ringbuf {
 	bool has_data() const;
 	void *reserve(size_t size, int self_fd);
 	void submit(const void *sample, bool discard);
+	int fetch_data(std::function<int(void *, int)>);
 	ringbuf(uint32_t max_ent,
 		boost::interprocess::managed_shared_memory &memory);
 	friend class ringbuf_map_impl;
@@ -75,11 +79,12 @@ class ringbuf_map_impl {
 
 	int map_get_next_key(const void *key, void *next_key);
 	ringbuf_weak_ptr create_impl_weak_ptr();
+	ringbuf_shared_ptr create_impl_shared_ptr();
+	
 	void *get_consumer_page() const;
 	void *get_producer_page() const;
 	void *reserve(size_t size, int self_fd);
 	void submit(const void *sample, bool discard);
-
 };
 
 } // namespace bpftime

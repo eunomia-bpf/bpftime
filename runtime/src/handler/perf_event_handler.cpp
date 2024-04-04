@@ -7,7 +7,6 @@
 #include "spdlog/spdlog.h"
 #include <boost/interprocess/detail/segment_manager_helper.hpp>
 #include <boost/interprocess/smart_ptr/shared_ptr.hpp>
-#include <cassert>
 #include <cstring>
 #include <handler/perf_event_handler.hpp>
 #include <boost/interprocess/managed_shared_memory.hpp>
@@ -53,11 +52,22 @@
 
 namespace bpftime
 {
+bpf_perf_event_handler::bpf_perf_event_handler(
+	int type, const char *attach_arg,
+	boost::interprocess::managed_shared_memory &mem)
+	: type(type),
+	  data(custom_perf_event_data{
+		  .attach_argument = boost_shm_string(
+			  char_allocator(mem.get_segment_manager())) })
+{
+	std::get<custom_perf_event_data>(data).attach_argument = attach_arg;
+}
+
 // attach to replace or filter self define types
 bpf_perf_event_handler::bpf_perf_event_handler(
 	bpf_event_type type, uint64_t offset, int pid, const char *module_name,
 	boost::interprocess::managed_shared_memory &mem, bool default_enabled)
-	: type(type), enabled(default_enabled),
+	: type((int)type), enabled(default_enabled),
 	  data(uprobe_perf_event_data{
 		  .offset = offset,
 		  .pid = pid,
@@ -79,9 +89,9 @@ bpf_perf_event_handler::bpf_perf_event_handler(
 			  char_allocator(mem.get_segment_manager())) })
 {
 	if (is_retprobe) {
-		type = bpf_event_type::BPF_TYPE_URETPROBE;
+		type = (int)bpf_event_type::BPF_TYPE_URETPROBE;
 	} else {
-		type = bpf_event_type::BPF_TYPE_UPROBE;
+		type = (int)bpf_event_type::BPF_TYPE_UPROBE;
 	}
 	std::get<uprobe_perf_event_data>(data)._module_name = module_name;
 	SPDLOG_INFO(
@@ -93,7 +103,7 @@ bpf_perf_event_handler::bpf_perf_event_handler(
 bpf_perf_event_handler::bpf_perf_event_handler(
 	int pid, int32_t tracepoint_id,
 	boost::interprocess::managed_shared_memory &mem)
-	: type(bpf_event_type::PERF_TYPE_TRACEPOINT),
+	: type((int)bpf_event_type::PERF_TYPE_TRACEPOINT),
 	  data(tracepoint_perf_event_data{ .pid = pid,
 					   .tracepoint_id = tracepoint_id })
 {
@@ -102,7 +112,7 @@ bpf_perf_event_handler::bpf_perf_event_handler(
 bpf_perf_event_handler::bpf_perf_event_handler(
 	int cpu, int32_t sample_type, int64_t config,
 	boost::interprocess::managed_shared_memory &mem)
-	: type(bpf_event_type::PERF_TYPE_SOFTWARE),
+	: type((int)bpf_event_type::PERF_TYPE_SOFTWARE),
 	  data(boost::interprocess::make_managed_shared_ptr(
 		  mem.construct<software_perf_event_data>(
 			  boost::interprocess::anonymous_instance)(
@@ -212,8 +222,11 @@ void *software_perf_event_data::ensure_mmap_buffer(size_t buffer_size)
 		mmap_buffer.resize(buffer_size);
 		// Update data size in the mmap header
 		get_header_ref().data_size = buffer_size - pagesize;
-		assert(popcnt(buffer_size - pagesize) == 1 &&
-		       "Data size of a perf event buffer must be power of 2");
+		if (popcnt(buffer_size - pagesize) != 1) {
+			SPDLOG_ERROR(
+				"Data size of a perf event buffer must be power of 2");
+			return nullptr;
+		}
 	}
 	return mmap_buffer.data();
 }
