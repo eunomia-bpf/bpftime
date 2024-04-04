@@ -5,6 +5,7 @@
 #include "spdlog/common.h"
 #include "syscall_trace_attach_impl.hpp"
 #include "syscall_trace_attach_private_data.hpp"
+#include <csignal>
 #include <exception>
 #include <fcntl.h>
 #include <memory>
@@ -70,8 +71,16 @@ extern "C" int __libc_start_main(int (*main)(int, char **, char **), int argc,
 		    stack_end);
 }
 
+static void sig_handler_usr1(int sig)
+{
+	SPDLOG_DEBUG("Detaching..");
+	// ctx_holder.ctx.destroy_instantiated_attach_link;
+}
+
 extern "C" void bpftime_agent_main(const gchar *data, gboolean *stay_resident)
 {
+	// We use SIGUSR1 to indicate the detaching
+	signal(SIGUSR1, sig_handler_usr1);
 	spdlog::cfg::load_env_levels();
 	try {
 		// If we are unable to initialize shared memory..
