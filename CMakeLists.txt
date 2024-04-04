@@ -22,7 +22,6 @@ project(
 #
 include(cmake/CompilerWarnings.cmake)
 include(cmake/StandardSettings.cmake)
-find_package(LLVM REQUIRED CONFIG)
 include_directories(${LLVM_INCLUDE_DIRS})
 add_definitions(${LLVM_DEFINITIONS})
 
