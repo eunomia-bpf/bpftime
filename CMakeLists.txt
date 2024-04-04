@@ -22,13 +22,6 @@ project(
 #
 include(cmake/CompilerWarnings.cmake)
 include(cmake/StandardSettings.cmake)
-find_package(LLVM REQUIRED CONFIG)
-include_directories(${LLVM_INCLUDE_DIRS})
-add_definitions(${LLVM_DEFINITIONS})
-
-find_program(LLVM_CONFIG "llvm-config")
-execute_process(COMMAND ${LLVM_CONFIG} --includedir OUTPUT_VARIABLE LLVM_INCLUDE_DIR OUTPUT_STRIP_TRAILING_WHITESPACE)
-include_directories(${LLVM_INCLUDE_DIR})
 
 if(NOT CMAKE_BUILD_TYPE)
   set(CMAKE_BUILD_TYPE "Debug")
@@ -99,7 +92,9 @@ add_subdirectory(third_party/argparse)
 
 # main library
 add_subdirectory(vm)
-add_subdirectory(vm/cli)
+if (BPFTIME_LLVM_JIT)
+  add_subdirectory(vm/cli)
+endif()
 
 add_subdirectory(attach)
 
