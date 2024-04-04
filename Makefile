@@ -5,9 +5,9 @@ define BROWSER_PYSCRIPT
 import os, webbrowser, sys
 
 try:
-    from urllib import pathname2url
+	from urllib import pathname2url
 except:
-    from urllib.request import pathname2url
+	from urllib.request import pathname2url
 
 webbrowser.open("file://" + pathname2url(os.path.abspath(sys.argv[1])))
 endef
@@ -17,10 +17,10 @@ define PRINT_HELP_PYSCRIPT
 import re, sys
 
 for line in sys.stdin:
-    match = re.match(r'^([a-zA-Z\d_-]+):.*?## (.*)$$', line)
-    if match:
-        target, help = match.groups()
-        print("%-20s %s" % (target, help))
+	match = re.match(r'^([a-zA-Z\d_-]+):.*?## (.*)$$', line)
+	if match:
+		target, help = match.groups()
+		print("%-20s %s" % (target, help))
 endef
 export PRINT_HELP_PYSCRIPT
 
@@ -28,12 +28,10 @@ BROWSER := python3 -c "$$BROWSER_PYSCRIPT"
 INSTALL_LOCATION := ~/.local
 CXXFLAGS = -I$(shell llvm-config --includedir)
 
-
-
 JOBS := 1
 
 help:
-	 @python3 -c "$$PRINT_HELP_PYSCRIPT" < $(MAKEFILE_LIST)
+	@python3 -c "$$PRINT_HELP_PYSCRIPT" < $(MAKEFILE_LIST)
 
 build-unit-test:
 	cmake -Bbuild  -DBPFTIME_ENABLE_UNIT_TESTING=1 -DCMAKE_BUILD_TYPE:STRING=Debug
@@ -59,7 +57,7 @@ build-iouring: ## build the package with iouring extension
 
 release: ## build the release version
 	cmake -Bbuild  -DCMAKE_BUILD_TYPE:STRING=RelWithDebInfo \
-                   -DSPDLOG_ACTIVE_LEVEL=SPDLOG_LEVEL_INFO -DBPFTIME_LLVM_JIT=1
+				   -DSPDLOG_ACTIVE_LEVEL=SPDLOG_LEVEL_INFO -DBPFTIME_LLVM_JIT=1
 	cmake --build build --config RelWithDebInfo --target install  -j$(JOBS)
 
 release-with-llvm-jit: ## build the package, with llvm-jit
@@ -72,8 +70,8 @@ build-vm: ## build only the core library
 
 build-llvm: ## build with llvm as jit backend
 	cmake -Bbuild   -DBPFTIME_ENABLE_UNIT_TESTING=1 \
-                    -DBPFTIME_LLVM_JIT=1 \
-                    -DCMAKE_BUILD_TYPE:STRING=Debug
+					-DBPFTIME_LLVM_JIT=1 \
+					-DCMAKE_BUILD_TYPE:STRING=Debug
 	cmake --build build --config Debug -j$(JOBS)
 
 clean: ## clean the project
