@@ -5,6 +5,7 @@
  */
 #include "bpftime_shm.hpp"
 #include "handler/epoll_handler.hpp"
+#include "handler/handler_manager.hpp"
 #include "handler/link_handler.hpp"
 #include "handler/perf_event_handler.hpp"
 #include "spdlog/spdlog.h"
@@ -51,6 +52,17 @@ extern "C" void bpftime_remove_global_shm()
 
 static __attribute__((destructor(65535))) void __destruct_shm()
 {
+	// This usually indicates that the living shared memory object is used
+	// by an agent instance
+	if (bpftime::shm_holder.global_shared_memory.get_open_type() ==
+	    bpftime::shm_open_type::SHM_OPEN_ONLY) {
+		// Try our best to remove the current pid from alive agent's set
+		int self_pid = getpid();
+		// It doesn't matter if the current pid is not in the set
+		bpftime::shm_holder.global_shared_memory
+			.remove_pid_from_alive_agent_set(self_pid);
+	}
+
 	bpftime_destroy_global_shm();
 }
 
@@ -527,6 +539,7 @@ bool bpftime_shm::is_exist_fake_fd(int fd) const
 }
 
 bpftime_shm::bpftime_shm(const char *shm_name, shm_open_type type)
+	: open_type(type)
 {
 	if (type == shm_open_type::SHM_OPEN_ONLY) {
 		SPDLOG_DEBUG("start: bpftime_shm for client setup");
@@ -543,6 +556,11 @@ bpftime_shm::bpftime_shm(const char *shm_name, shm_open_type type)
 		agent_config =
 			segment.find<struct agent_config>(
 				       bpftime::DEFAULT_AGENT_CONFIG_NAME)
+				.first;
+
+		injected_pids =
+			segment.find<alive_agent_pids>(
+				       bpftime::DEFAULT_ALIVE_AGENT_PIDS_NAME)
 				.first;
 		SPDLOG_DEBUG("done: bpftime_shm for client setup");
 	} else if (type == shm_open_type::SHM_CREATE_OR_OPEN) {
@@ -567,6 +585,12 @@ bpftime_shm::bpftime_shm(const char *shm_name, shm_open_type type)
 
 		agent_config = segment.find_or_construct<struct agent_config>(
 			bpftime::DEFAULT_AGENT_CONFIG_NAME)();
+
+		injected_pids = segment.find_or_construct<alive_agent_pids>(
+			bpftime::DEFAULT_ALIVE_AGENT_PIDS_NAME)(
+			std::less<int>(),
+			alive_agent_pid_set_allocator(
+				segment.get_segment_manager()));
 		SPDLOG_DEBUG("done: bpftime_shm for open_or_create setup");
 	} else if (type == shm_open_type::SHM_REMOVE_AND_CREATE) {
 		SPDLOG_DEBUG("start: bpftime_shm for server setup");
@@ -596,6 +620,12 @@ bpftime_shm::bpftime_shm(const char *shm_name, shm_open_type type)
 			bpftime::DEFAULT_AGENT_CONFIG_NAME)();
 		SPDLOG_DEBUG(
 			"done: bpftime_shm for server setup: agent_config");
+
+		injected_pids = segment.construct<alive_agent_pids>(
+			bpftime::DEFAULT_ALIVE_AGENT_PIDS_NAME)(
+			std::less<int>(),
+			alive_agent_pid_set_allocator(
+				segment.get_segment_manager()));
 		SPDLOG_DEBUG("done: bpftime_shm for server setup.");
 	} else if (type == shm_open_type::SHM_NO_CREATE) {
 		// not create any shm
@@ -734,5 +764,21 @@ int bpftime_shm::add_custom_perf_event(int type, const char *attach_argument)
 		fd, bpf_perf_event_handler(type, attach_argument, segment),
 		segment);
 	return fd;
+}
+
+void bpftime_shm::add_pid_into_alive_agent_set(int pid)
+{
+	injected_pids->insert(pid);
+}
+void bpftime_shm::remove_pid_from_alive_agent_set(int pid)
+{
+	injected_pids->erase(pid);
+}
+void bpftime_shm::iterate_all_pids_in_alive_agent_set(
+	std::function<void(int)> &&cb)
+{
+	for (auto x : *injected_pids) {
+		cb(x);
+	}
 }
 } // namespace bpftime

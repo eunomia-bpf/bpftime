@@ -1,5 +1,6 @@
 #include "attach_private_data.hpp"
 #include "bpf_attach_ctx.hpp"
+#include "bpftime_shm_internal.hpp"
 #include "frida_attach_private_data.hpp"
 #include "frida_uprobe_attach_impl.hpp"
 #include "spdlog/common.h"
@@ -71,16 +72,21 @@ extern "C" int __libc_start_main(int (*main)(int, char **, char **), int argc,
 		    stack_end);
 }
 
-static void sig_handler_usr1(int sig)
+static void sig_handler_sigusr1(int sig)
 {
 	SPDLOG_DEBUG("Detaching..");
-	// ctx_holder.ctx.destroy_instantiated_attach_link;
+	if (int err = ctx_holder.ctx.destroy_all_attach_links(); err < 0) {
+		SPDLOG_ERROR("Unable to detach: {}", err);
+
+	} else {
+		SPDLOG_DEBUG("Detaching done");
+	}
 }
 
 extern "C" void bpftime_agent_main(const gchar *data, gboolean *stay_resident)
 {
 	// We use SIGUSR1 to indicate the detaching
-	signal(SIGUSR1, sig_handler_usr1);
+	signal(SIGUSR1, sig_handler_sigusr1);
 	spdlog::cfg::load_env_levels();
 	try {
 		// If we are unable to initialize shared memory..
@@ -90,6 +96,8 @@ extern "C" void bpftime_agent_main(const gchar *data, gboolean *stay_resident)
 			     ex.what());
 		return;
 	}
+	// Record the pid
+	shm_holder.global_shared_memory.add_pid_into_alive_agent_set(getpid());
 	ctx_holder.init();
 	// Register syscall trace impl
 	auto syscall_trace_impl = std::make_unique<syscall_trace_attach_impl>();
