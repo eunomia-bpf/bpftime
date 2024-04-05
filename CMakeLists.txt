@@ -69,6 +69,8 @@ include(cmake/libbpf.cmake)
 # install frida
 include(cmake/frida.cmake)
 
+# Set default value for BPFTIME_LLVM_JIT to ON
+option(BPFTIME_LLVM_JIT "Use LLVM as jit backend." ON)
 
 set(CMAKE_POSITION_INDEPENDENT_CODE YES)
 

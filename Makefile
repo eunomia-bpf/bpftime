@@ -26,6 +26,7 @@ export PRINT_HELP_PYSCRIPT
 
 BROWSER := python3 -c "$$BROWSER_PYSCRIPT"
 INSTALL_LOCATION := ~/.local
+CXXFLAGS = -I$(shell llvm-config --includedir)
 
 JOBS := 1
 
@@ -47,7 +48,7 @@ unit-test-runtime:
 unit-test: unit-test-daemon unit-test-runtime ## run catch2 unit tests
 
 build: ## build the package with test and all components
-	cmake -Bbuild -DBPFTIME_ENABLE_UNIT_TESTING=1 -DBUILD_BPFTIME_DAEMON=1 -DCMAKE_BUILD_TYPE:STRING=Debug
+	cmake -Bbuild -DBPFTIME_ENABLE_UNIT_TESTING=1 -DBUILD_BPFTIME_DAEMON=1 -DCMAKE_BUILD_TYPE:STRING=Debug -DBPFTIME_LLVM_JIT=1
 	cmake --build build --config Debug  -j$(JOBS)
 
 build-iouring: ## build the package with iouring extension
@@ -56,7 +57,7 @@ build-iouring: ## build the package with iouring extension
 
 release: ## build the release version
 	cmake -Bbuild  -DCMAKE_BUILD_TYPE:STRING=RelWithDebInfo \
-				   -DSPDLOG_ACTIVE_LEVEL=SPDLOG_LEVEL_INFO
+				   -DSPDLOG_ACTIVE_LEVEL=SPDLOG_LEVEL_INFO -DBPFTIME_LLVM_JIT=1
 	cmake --build build --config RelWithDebInfo --target install  -j$(JOBS)
 
 release-with-llvm-jit: ## build the package, with llvm-jit
