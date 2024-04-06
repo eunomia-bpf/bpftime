@@ -334,7 +334,11 @@ int bpf_attach_ctx::destroy_instantiated_attach_link(int link_id)
 }
 int bpf_attach_ctx::destroy_all_attach_links()
 {
-	for (const auto &[k, _] : instantiated_attach_links) {
+	// Avoid modifying along with iterating..
+	std::vector<int> to_detach;
+	for (const auto &[k, _] : instantiated_attach_links)
+		to_detach.push_back(k);
+	for (auto k : to_detach) {
 		SPDLOG_DEBUG("Destrying attach link {}", k);
 		if (int err = destroy_instantiated_attach_link(k); err < 0) {
 			SPDLOG_ERROR("Unable to destroy attach link {}: {}", k,

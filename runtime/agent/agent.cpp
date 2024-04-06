@@ -6,11 +6,14 @@
 #include "spdlog/common.h"
 #include "syscall_trace_attach_impl.hpp"
 #include "syscall_trace_attach_private_data.hpp"
+#include <chrono>
 #include <csignal>
 #include <exception>
 #include <fcntl.h>
 #include <memory>
+#include <pthread.h>
 #include <string_view>
+#include <thread>
 #include <unistd.h>
 #include <frida-gum.h>
 #include <cstdint>
@@ -74,17 +77,18 @@ extern "C" int __libc_start_main(int (*main)(int, char **, char **), int argc,
 
 static void sig_handler_sigusr1(int sig)
 {
-	SPDLOG_DEBUG("Detaching..");
+	SPDLOG_INFO("Detaching..");
 	if (int err = ctx_holder.ctx.destroy_all_attach_links(); err < 0) {
 		SPDLOG_ERROR("Unable to detach: {}", err);
-
-	} else {
-		SPDLOG_DEBUG("Detaching done");
+		return;
 	}
+	
+	SPDLOG_DEBUG("Detaching done");
 }
 
 extern "C" void bpftime_agent_main(const gchar *data, gboolean *stay_resident)
 {
+	SPDLOG_DEBUG("Registering signal handler");
 	// We use SIGUSR1 to indicate the detaching
 	signal(SIGUSR1, sig_handler_sigusr1);
 	spdlog::cfg::load_env_levels();
