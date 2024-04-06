@@ -276,17 +276,21 @@ int main(int argc, const char **argv)
 				"Shared memory not created, seems syscall server is not running");
 			return 0;
 		}
+		bool sended = false;
 		bpftime::shm_holder.global_shared_memory
 			.iterate_all_pids_in_alive_agent_set([&](int pid) {
-				SPDLOG_INFO("Sending SIGUSR1 to {}", pid);
+				SPDLOG_INFO("Delivering SIGUSR1 to {}", pid);
 				int err = kill(pid, SIGUSR1);
 				if (err < 0) {
 					SPDLOG_WARN(
 						"Unable to signal process {}: {}",
 						pid, strerror(errno));
 				}
+				sended = true;
 			});
-		SPDLOG_INFO("Done");
+		if (!sended) {
+			SPDLOG_INFO("No process was signaled.");
+		}
 	}
 	return 0;
 }
