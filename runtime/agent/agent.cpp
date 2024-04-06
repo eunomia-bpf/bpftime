@@ -27,6 +27,12 @@ using main_func_t = int (*)(int, char **, char **);
 
 static main_func_t orig_main_func = nullptr;
 
+// Whether this injected process was operated through frida?
+// Defaults to true. If __libc_start_main was called, it should be set to false;
+// Besides, if agent was loaded by text-transformer, this variable will be set
+// by text-transformer
+bool injected_with_frida = true;
+
 union bpf_attach_ctx_holder {
 	bpf_attach_ctx ctx;
 	bpf_attach_ctx_holder()
@@ -53,7 +59,7 @@ extern "C" void bpftime_agent_main(const gchar *data, gboolean *stay_resident);
 extern "C" int bpftime_hooked_main(int argc, char **argv, char **envp)
 {
 	int stay_resident = 0;
-
+	injected_with_frida = false;
 	bpftime_agent_main("", &stay_resident);
 	int ret = orig_main_func(argc, argv, envp);
 	ctx_holder.destroy();
@@ -82,7 +88,7 @@ static void sig_handler_sigusr1(int sig)
 		SPDLOG_ERROR("Unable to detach: {}", err);
 		return;
 	}
-	
+	shm_holder.global_shared_memory.remove_pid_from_alive_agent_set(getpid());
 	SPDLOG_DEBUG("Detaching done");
 }
 
@@ -100,8 +106,12 @@ extern "C" void bpftime_agent_main(const gchar *data, gboolean *stay_resident)
 			     ex.what());
 		return;
 	}
-	// Record the pid
-	shm_holder.global_shared_memory.add_pid_into_alive_agent_set(getpid());
+	// Only agents injected through frida could be detached
+	if (injected_with_frida) {
+		// Record the pid
+		shm_holder.global_shared_memory.add_pid_into_alive_agent_set(
+			getpid());
+	}
 	ctx_holder.init();
 	// Register syscall trace impl
 	auto syscall_trace_impl = std::make_unique<syscall_trace_attach_impl>();
