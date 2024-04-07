@@ -23,8 +23,16 @@ using syscall_pid_set_allocator = boost::interprocess::allocator<
 using syscall_pid_set =
 	boost::interprocess::set<int, std::less<int>, syscall_pid_set_allocator>;
 
+using alive_agent_pid_set_allocator = boost::interprocess::allocator<
+	int, boost::interprocess::managed_shared_memory::segment_manager>;
+
+using alive_agent_pids =
+	boost::interprocess::set<int, std::less<int>,
+				 alive_agent_pid_set_allocator>;
+
 // global bpftime share memory
 class bpftime_shm {
+	bpftime::shm_open_type open_type;
 	// shared memory segment
 	boost::interprocess::managed_shared_memory segment;
 
@@ -36,6 +44,9 @@ class bpftime_shm {
 
 	// Configuration for the agent. e.g, which helpers are enabled
 	struct bpftime::agent_config *agent_config = nullptr;
+
+	// Record which pids are injected by agent
+	alive_agent_pids *injected_pids;
 
 #if BPFTIME_ENABLE_MPK
 	// mpk key for protect shm
@@ -54,6 +65,13 @@ class bpftime_shm {
 	// Set whether a certain pid was already equipped with syscall tracer
 	// Using a set stored in the shared memory
 	void set_syscall_trace_setup(int pid, bool whether);
+
+	// Add a pid into alive agent set
+	void add_pid_into_alive_agent_set(int pid);
+	// Remove a pid from alive agent set
+	void remove_pid_from_alive_agent_set(int pid);
+	// Iterate over all pids from the alive agent set
+	void iterate_all_pids_in_alive_agent_set(std::function<void(int)> &&cb);
 
 	const handler_variant &get_handler(int fd) const;
 	bool is_epoll_fd(int fd) const;
@@ -163,6 +181,10 @@ class bpftime_shm {
 	get_software_perf_event_raw_buffer(int fd, size_t buffer_sz) const;
 
 	int add_custom_perf_event(int type, const char *attach_argument);
+	bpftime::shm_open_type get_open_type() const
+	{
+		return open_type;
+	}
 };
 
 // memory region for maps and prog info

@@ -236,7 +236,7 @@ int bpf_attach_ctx::instantiate_bpf_link_handler_at(
 			     id, attach_id);
 		return attach_id;
 	}
-	instantiated_attach_ids[id] = std::make_pair(attach_id, attach_impl);
+	instantiated_attach_links[id] = std::make_pair(attach_id, attach_impl);
 	return 0;
 }
 int bpf_attach_ctx::instantiate_perf_event_handler_at(
@@ -315,8 +315,8 @@ int bpf_attach_ctx::instantiate_perf_event_handler_at(
 int bpf_attach_ctx::destroy_instantiated_attach_link(int link_id)
 {
 	SPDLOG_DEBUG("Destroy attach link {}", link_id);
-	if (auto itr = instantiated_attach_ids.find(link_id);
-	    itr != instantiated_attach_ids.end()) {
+	if (auto itr = instantiated_attach_links.find(link_id);
+	    itr != instantiated_attach_links.end()) {
 		auto [attach_id, impl] = itr->second;
 		if (int err = impl->detach_by_id(attach_id); err < 0) {
 			SPDLOG_ERROR(
@@ -324,12 +324,28 @@ int bpf_attach_ctx::destroy_instantiated_attach_link(int link_id)
 				link_id, attach_id, err);
 			return err;
 		}
-		instantiated_attach_ids.erase(itr);
+		instantiated_attach_links.erase(itr);
 		return 0;
 	} else {
 		SPDLOG_ERROR("Unable to find instantiated attach link id {}",
 			     link_id);
 		return -ENOENT;
 	}
+}
+int bpf_attach_ctx::destroy_all_attach_links()
+{
+	// Avoid modifying along with iterating..
+	std::vector<int> to_detach;
+	for (const auto &[k, _] : instantiated_attach_links)
+		to_detach.push_back(k);
+	for (auto k : to_detach) {
+		SPDLOG_DEBUG("Destrying attach link {}", k);
+		if (int err = destroy_instantiated_attach_link(k); err < 0) {
+			SPDLOG_ERROR("Unable to destroy attach link {}: {}", k,
+				     err);
+			return err;
+		}
+	}
+	return 0;
 }
 } // namespace bpftime
