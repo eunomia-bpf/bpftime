@@ -18,6 +18,14 @@ project(
 )
 
 #
+# Prevent building in the source directory
+#
+if(PROJECT_SOURCE_DIR STREQUAL PROJECT_BINARY_DIR)
+  message(FATAL_ERROR "In-source builds not allowed. Please make a new directory (called a build directory) and run CMake from there.\n \"mkdir build ; cd build ; cmake ..\" \
+  \nSome junk files were created in this folder (CMakeCache.txt, CMakeFiles); you should delete those.")
+endif()
+
+#
 # Set project options
 #
 include(cmake/CompilerWarnings.cmake)
@@ -26,6 +34,7 @@ include(cmake/StandardSettings.cmake)
 if(NOT CMAKE_BUILD_TYPE)
   set(CMAKE_BUILD_TYPE "Debug")
 endif()
+
 
 if(${CMAKE_BUILD_TYPE} STREQUAL "Debug")
   message(STATUS "Enabling ubsan for Debug builds; Processor=${CMAKE_SYSTEM_PROCESSOR}")
@@ -57,12 +66,7 @@ else()
   set(PROJECT_NAME_UPPERCASE ${PROJECT_NAME})
 endif()
 
-#
-# Prevent building in the source directory
-#
-if(PROJECT_SOURCE_DIR STREQUAL PROJECT_BINARY_DIR)
-  message(FATAL_ERROR "In-source builds not allowed. Please make a new directory (called a build directory) and run CMake from there.\n")
-endif()
+
 
 include(cmake/libbpf.cmake)
 
