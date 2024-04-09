@@ -72,9 +72,13 @@ include(cmake/libbpf.cmake)
 
 # install frida
 include(cmake/frida.cmake)
-
+include(cmake/ArchiveHelper.cmake)
 
 set(CMAKE_POSITION_INDEPENDENT_CODE YES)
+
+if(${BPFTIME_BUILD_STATIC_LIB}) 
+
+endif()
 
 if(${ENABLE_EBPF_VERIFIER})
   add_subdirectory(bpftime-verifier)

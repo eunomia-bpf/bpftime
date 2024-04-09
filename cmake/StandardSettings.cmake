@@ -84,4 +84,4 @@ option(BUILD_BPFTIME_DAEMON "Whether to build the bpftime daemon" ON)
 option(BPFTIME_BUILD_KERNEL_BPF "Whether to build with bpf share maps" ON)
 
 # whether to generate a library for all dependencies as one static library
-option(BPFTIME_BUILD_STATIC_LIB "Whether to generate static " OFF)
+option(BPFTIME_BUILD_STATIC_LIB "Whether to generate a single archive for static libraries" OFF)
