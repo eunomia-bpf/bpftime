@@ -79,6 +79,7 @@ frida_internal_attach_entry::~frida_internal_attach_entry()
 		SPDLOG_DEBUG("Reverted function replace");
 	}
 	gum_object_unref(interceptor);
+	SPDLOG_DEBUG("Destructor of frida_internal_attach_entry exiting..");
 }
 
 bool frida_internal_attach_entry::has_override() const
