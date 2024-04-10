@@ -11,6 +11,6 @@ set_property(TARGET bpftime-vm-cli PROPERTY CXX_STANDARD 20)
 
 target_compile_definitions(bpftime-vm-cli PRIVATE _GNU_SOURCE)
 
-add_dependencies(bpftime-vm-cli spdlog::spdlog argparse bpftime_llvm_jit libbpf)
+add_dependencies(bpftime-vm-cli spdlog::spdlog argparse bpftime_llvm_jit_vm libbpf)
 
 install(TARGETS bpftime-vm-cli CONFIGURATIONS Release Debug RelWithDebInfo DESTINATION ~/.bpftime)

@@ -28,15 +28,15 @@ function(bpftime_add_library target)
     bpftime_setup_target(${target})
 endfunction()
 
-bpftime_add_library(bpftime_llvm_jit
-    src/ebpf_vm.cpp
+bpftime_add_library(bpftime_llvm_jit_vm
+    # src/ebpf_vm.cpp
     src/llvm/llvm_jit_context.cpp
     src/llvm/compiler.cpp
     src/llvm/compiler_utils.cpp
-    src/compat_llvm.c
+    src/compat/compat_llvm.cpp
 )
 
-set_target_properties(bpftime_llvm_jit PROPERTIES ARCHIVE_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/../")
+set_target_properties(bpftime_llvm_jit_vm PROPERTIES ARCHIVE_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/../")
 
 find_package(LLVM REQUIRED CONFIG)
 
@@ -65,8 +65,8 @@ endif()
 message(STATUS "LLVM_LIBS=${LLVM_LIBS}")
 find_package(Boost REQUIRED)
 
-target_link_libraries(bpftime_llvm_jit ${LLVM_LIBS} spdlog::spdlog)
-target_include_directories(bpftime_llvm_jit 
+target_link_libraries(bpftime_llvm_jit_vm ${LLVM_LIBS} spdlog::spdlog)
+target_include_directories(bpftime_llvm_jit_vm 
 PUBLIC ${LLVM_INCLUDE_DIRS} ${SPDLOG_INCLUDE} ${Boost_INCLUDE}
 PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/../compat/include #LLVM jit also used these headers
 )
@@ -75,17 +75,17 @@ bpftime_add_executable(vm-llvm-example
     example/main.cpp
 )
 
-add_dependencies(vm-llvm-example bpftime_llvm_jit spdlog::spdlog)
-target_link_libraries(vm-llvm-example bpftime_llvm_jit)
+add_dependencies(vm-llvm-example bpftime_llvm_jit_vm spdlog::spdlog)
+target_link_libraries(vm-llvm-example bpftime_llvm_jit_vm)
 
 bpftime_add_executable(vm-llvm-bpf-test
     example/main-bpf-conformance.cpp
 )
 
-add_dependencies(vm-llvm-bpf-test bpftime_llvm_jit)
-target_link_libraries(vm-llvm-bpf-test bpftime_llvm_jit)
+add_dependencies(vm-llvm-bpf-test bpftime_llvm_jit_vm)
+target_link_libraries(vm-llvm-bpf-test bpftime_llvm_jit_vm)
 
-target_include_directories(bpftime_llvm_jit PUBLIC ../include include)
+target_include_directories(bpftime_llvm_jit_vm PUBLIC ../include include)
 
 if(BPFTIME_ENABLE_UNIT_TESTING)
   message(STATUS "Build unit tests for the project. Tests should always be found in the test folder\n")

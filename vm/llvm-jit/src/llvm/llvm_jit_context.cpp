@@ -72,7 +72,9 @@ extern "C" void __aeabi_unwind_cpp_pr1();
 
 static int llvm_initialized = 0;
 
-llvm_bpf_jit_context::llvm_bpf_jit_context(const ebpf_vm *m_vm) : vm(m_vm)
+llvm_bpf_jit_context::llvm_bpf_jit_context(
+	class bpftime::vm::llvm::bpftime_llvm_jit_vm *vm)
+	: vm(vm)
 {
 	using namespace llvm;
 	int zero = 0;
@@ -181,7 +183,7 @@ std::vector<uint8_t> llvm_bpf_jit_context::do_aot_compile(bool print_ir)
 {
 	std::vector<std::string> extNames, lddwNames;
 	for (uint32_t i = 0; i < std::size(vm->ext_funcs); i++) {
-		if (vm->ext_funcs[i] != nullptr) {
+		if (vm->ext_funcs[i].has_value()) {
 			extNames.push_back(ext_func_sym(i));
 		}
 	}
@@ -236,9 +238,9 @@ llvm_bpf_jit_context::create_and_initialize_lljit_instance()
 	// insert the helper functions
 	SymbolMap extSymbols;
 	for (uint32_t i = 0; i < std::size(vm->ext_funcs); i++) {
-		if (vm->ext_funcs[i] != nullptr) {
+		if (vm->ext_funcs[i].has_value()) {
 			auto sym = JITEvaluatedSymbol::fromPointer(
-				vm->ext_funcs[i]);
+				vm->ext_funcs[i]->fn);
 			auto symName = jit->getExecutionSession().intern(
 				ext_func_sym(i));
 			sym.setFlags(JITSymbolFlags::Callable |
