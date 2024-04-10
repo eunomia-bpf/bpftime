@@ -123,11 +123,11 @@ target_include_directories(${PROJECT_NAME}
 
 target_link_libraries(${PROJECT_NAME}
   PUBLIC
-  vm-bpf
+  bpftime_vm_compat
   spdlog::spdlog
   bpftime_base_attach_impl
 )
-add_dependencies(${PROJECT_NAME} vm-bpf FridaGum spdlog::spdlog libbpf bpftime_base_attach_impl)
+add_dependencies(${PROJECT_NAME} bpftime_vm_compat FridaGum spdlog::spdlog libbpf bpftime_base_attach_impl)
 
 if(BPFTIME_ENABLE_IOURING_EXT)
   target_link_libraries(${PROJECT_NAME}

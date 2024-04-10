@@ -23,7 +23,7 @@ handler_manager::handler_manager(managed_shared_memory &mem,
 handler_manager::~handler_manager()
 {
 	for (std::size_t i = 0; i < handlers.size(); i++) {
-		SPDLOG_ERROR(
+		SPDLOG_WARN(
 			"Handler at {} is not destroyed, but handler_manager is being destroyed",
 			i);
 	}

@@ -28,14 +28,14 @@ function(bpftime_add_library target)
     bpftime_setup_target(${target})
 endfunction()
 
-bpftime_add_library(vm-bpf
+bpftime_add_library(bpftime_llvm_jit
     src/ebpf_vm.cpp
     src/llvm/llvm_jit_context.cpp
     src/llvm/compiler.cpp
     src/llvm/compiler_utils.cpp
 )
 
-set_target_properties(vm-bpf PROPERTIES ARCHIVE_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/../")
+set_target_properties(bpftime_llvm_jit PROPERTIES ARCHIVE_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/../")
 
 find_package(LLVM REQUIRED CONFIG)
 
@@ -62,31 +62,33 @@ if(NOT DEFINED SPDLOG_INCLUDE)
 endif()
 
 message(STATUS "LLVM_LIBS=${LLVM_LIBS}")
+find_package(Boost REQUIRED)
 
-target_link_libraries(vm-bpf ${LLVM_LIBS} spdlog::spdlog)
-target_include_directories(vm-bpf PUBLIC ${LLVM_INCLUDE_DIRS} ${SPDLOG_INCLUDE})
+target_link_libraries(bpftime_llvm_jit ${LLVM_LIBS} spdlog::spdlog)
+target_include_directories(bpftime_llvm_jit 
+PUBLIC ${LLVM_INCLUDE_DIRS} ${SPDLOG_INCLUDE} ${Boost_INCLUDE}
+PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/../compat/include #LLVM jit also used these headers
+)
 
 bpftime_add_executable(vm-llvm-example
     example/main.cpp
 )
 
-add_dependencies(vm-llvm-example vm-bpf spdlog::spdlog)
-target_link_libraries(vm-llvm-example vm-bpf)
+add_dependencies(vm-llvm-example bpftime_llvm_jit spdlog::spdlog)
+target_link_libraries(vm-llvm-example bpftime_llvm_jit)
 
 bpftime_add_executable(vm-llvm-bpf-test
     example/main-bpf-conformance.cpp
 )
 
-add_dependencies(vm-llvm-bpf-test vm-bpf)
-target_link_libraries(vm-llvm-bpf-test vm-bpf)
+add_dependencies(vm-llvm-bpf-test bpftime_llvm_jit)
+target_link_libraries(vm-llvm-bpf-test bpftime_llvm_jit)
 
-target_include_directories(vm-bpf PUBLIC ../include include)
+target_include_directories(bpftime_llvm_jit PUBLIC ../include include)
 
 if(BPFTIME_ENABLE_UNIT_TESTING)
   message(STATUS "Build unit tests for the project. Tests should always be found in the test folder\n")
   add_subdirectory(unit-test)
 endif()
 
-find_package(Boost REQUIRED)
-
-target_include_directories(vm-bpf PRIVATE ${Boost_INCLUDE})
+add_subdirectory(cli)

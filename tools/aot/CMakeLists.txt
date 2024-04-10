@@ -13,11 +13,11 @@ target_include_directories(bpftime-aot-cli PRIVATE
     ../../runtime/include/
     ../../runtime/src/
     ${LIBBPF_INCLUDE_DIRS})
-target_link_libraries(bpftime-aot-cli PRIVATE spdlog::spdlog argparse vm-bpf runtime ${LIBBPF_LIBRARIES} elf z)
+target_link_libraries(bpftime-aot-cli PRIVATE spdlog::spdlog argparse bpftime_llvm_jit runtime ${LIBBPF_LIBRARIES} elf z)
 set_property(TARGET bpftime-aot-cli PROPERTY CXX_STANDARD 20)
 
 target_compile_definitions(bpftime-aot-cli PRIVATE _GNU_SOURCE)
 
-add_dependencies(bpftime-aot-cli spdlog::spdlog argparse vm-bpf libbpf)
+add_dependencies(bpftime-aot-cli spdlog::spdlog argparse bpftime_llvm_jit libbpf)
 
 install(TARGETS bpftime-aot-cli CONFIGURATIONS Release Debug RelWithDebInfo DESTINATION ~/.bpftime)
