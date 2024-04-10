@@ -196,7 +196,8 @@ static ExitOnError ExitOnErr;
 
 static void optimizeModule(llvm::Module &M)
 {
-    if (LLVM_VERSION_MAJOR > 16) {
+	// std::cout << "LLVM_VERSION_MAJOR: " << LLVM_VERSION_MAJOR << std::endl;
+    if (LLVM_VERSION_MAJOR >= 17) {
         // =====================
         // Create the analysis managers.
         // These must be declared in this order so that they are destroyed in the
