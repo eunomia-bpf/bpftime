@@ -74,6 +74,7 @@ target_include_directories(
   PUBLIC
   ${headers}
   ./
+  ${CMAKE_CURRENT_SOURCE_DIR}/../compat/include
 )
 
 target_include_directories(bpftime_simple_jit PUBLIC ../include)
