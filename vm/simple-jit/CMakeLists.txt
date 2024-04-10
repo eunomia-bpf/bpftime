@@ -55,13 +55,13 @@ message(STATUS ${headers})
 # Create library, setup header and source files
 #
 add_library(
-  vm-bpf
+  bpftime_simple_jit
   ${headers}
   ${sources}
 )
-set_target_properties(vm-bpf PROPERTIES LIBRARY_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/.." ARCHIVE_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/../")
-add_executable(vm-bpf-cli ${exe_sources})
-target_link_libraries(vm-bpf-cli PUBLIC vm-bpf)
+set_target_properties(bpftime_simple_jit PROPERTIES LIBRARY_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/.." ARCHIVE_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/../")
+add_executable(bpftime_simple_jit-cli ${exe_sources})
+target_link_libraries(bpftime_simple_jit-cli PUBLIC bpftime_simple_jit)
 
 message(DEBUG "Found the following sources:")
 
@@ -70,10 +70,10 @@ foreach(source IN LISTS exe_sources)
 endforeach()
 
 target_include_directories(
-  vm-bpf
+  bpftime_simple_jit
   PUBLIC
   ${headers}
   ./
 )
 
-target_include_directories(vm-bpf PUBLIC ../include)
+target_include_directories(bpftime_simple_jit PUBLIC ../include)

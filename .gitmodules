@@ -13,3 +13,6 @@
 [submodule "third_party/Catch2"]
 	path = third_party/Catch2
 	url = https://github.com/catchorg/Catch2.git
+[submodule "vm/ubpf"]
+	path = vm/ubpf
+	url = https://github.com/iovisor/ubpf

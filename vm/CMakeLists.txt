@@ -37,6 +37,7 @@ if(${BPFTIME_LLVM_JIT})
 else()
   message(STATUS "Not using llvm-jit")
   add_subdirectory(simple-jit)
+  set(BPFTIME_BPF_RUNTIME_NAME "bpftime_simple_jit")
 endif()
 
 add_subdirectory(compat)
