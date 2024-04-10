@@ -33,6 +33,7 @@ bpftime_add_library(bpftime_llvm_jit
     src/llvm/llvm_jit_context.cpp
     src/llvm/compiler.cpp
     src/llvm/compiler_utils.cpp
+    src/compat_llvm.c
 )
 
 set_target_properties(bpftime_llvm_jit PROPERTIES ARCHIVE_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/../")
