@@ -25,6 +25,7 @@
 #include <llvm/Linker/Linker.h>
 #include <llvm/Support/FileSystem.h>
 #include <llvm/Support/FormattedStream.h>
+#include <llvm/Config/llvm-config.h>
 #if LLVM_VERSION_MAJOR >= 16
 #include <llvm/TargetParser/Host.h>
 #else
@@ -197,7 +198,7 @@ static ExitOnError ExitOnErr;
 static void optimizeModule(llvm::Module &M)
 {
 	// std::cout << "LLVM_VERSION_MAJOR: " << LLVM_VERSION_MAJOR << std::endl;
-    if (LLVM_VERSION_MAJOR >= 17) {
+    #if LLVM_VERSION_MAJOR >= 17
         // =====================
         // Create the analysis managers.
         // These must be declared in this order so that they are destroyed in the
@@ -227,7 +228,7 @@ static void optimizeModule(llvm::Module &M)
         // Optimize the IR!
         MPM.run(M, MAM);
         // =====================================
-    } else {
+    #else 
         llvm::legacy::PassManager PM;
 
         llvm::PassManagerBuilder PMB;
@@ -235,7 +236,7 @@ static void optimizeModule(llvm::Module &M)
         PMB.populateModulePassManager(PM);
 
         PM.run(M);
-    }
+    #endif
 }
 
 #if defined(__arm__) || defined(_M_ARM)
@@ -422,12 +423,12 @@ llvm_bpf_jit_context::create_and_initialize_lljit_instance()
 				ext_func_sym(i));
 			sym.setFlags(JITSymbolFlags::Callable |
 				     JITSymbolFlags::Exported);
-			auto symbol = ::llvm::orc::ExecutorSymbolDef (::llvm::orc::ExecutorAddr (sym.getAddress()), sym.getFlags());
 			
 
 		#if LLVM_VERSION_MAJOR < 17
 			extSymbols.try_emplace(symName, sym);
 		#else
+			auto symbol = ::llvm::orc::ExecutorSymbolDef (::llvm::orc::ExecutorAddr (sym.getAddress()), sym.getFlags());
 			extSymbols.try_emplace(symName, symbol);
 		#endif
 			extFuncNames.push_back(ext_func_sym(i));
@@ -452,12 +453,12 @@ llvm_bpf_jit_context::create_and_initialize_lljit_instance()
 			sym.setFlags(JITSymbolFlags::Callable |
 				     JITSymbolFlags::Exported);
 			
-			auto symbol = ::llvm::orc::ExecutorSymbolDef (::llvm::orc::ExecutorAddr (sym.getAddress()), sym.getFlags());
 			
 
 		#if LLVM_VERSION_MAJOR < 17
 			extSymbols.try_emplace(jit->getExecutionSession().intern(name), sym);
 		#else
+			auto symbol = ::llvm::orc::ExecutorSymbolDef (::llvm::orc::ExecutorAddr (sym.getAddress()), sym.getFlags());
 			extSymbols.try_emplace(jit->getExecutionSession().intern(name), symbol);
 		#endif
 			
