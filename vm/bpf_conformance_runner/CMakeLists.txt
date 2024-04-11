@@ -1,4 +1,4 @@
-bpftime_add_executable(bpftime_vm_bpf_conformance_runner
+add_executable(bpftime_vm_bpf_conformance_runner
     main-bpf-conformance.cpp
 )
 
