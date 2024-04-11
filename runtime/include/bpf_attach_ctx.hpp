@@ -52,6 +52,8 @@ class bpf_attach_ctx {
 			private_data_creator);
 	// Destroy a specific attach link
 	int destroy_instantiated_attach_link(int link_id);
+	// Destroy all instantiated attach links
+	int destroy_all_attach_links();
 
     private:
 	constexpr static int CURRENT_ID_OFFSET = 65536;
@@ -64,7 +66,7 @@ class bpf_attach_ctx {
 	std::map<int, std::unique_ptr<bpftime_prog> > instantiated_progs;
 	// handler_id -> (instantiated attaches id, attach_impl*)
 	std::map<int, std::pair<int, attach::base_attach_impl *> >
-		instantiated_attach_ids;
+		instantiated_attach_links;
 	// handler_id -> instantiated attach private data & attach type
 	std::map<int,
 		 std::pair<std::unique_ptr<attach::attach_private_data>, int> >

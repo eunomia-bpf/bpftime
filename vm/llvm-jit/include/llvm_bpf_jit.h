@@ -23,7 +23,7 @@ extern "C" {
 typedef uint64_t (*ext_func)(uint64_t arg0, uint64_t arg1, uint64_t arg2,
 			     uint64_t arg3, uint64_t arg4);
 
-struct llvm_bpf_jit_context;
+class llvm_bpf_jit_context;
 
 struct ebpf_vm {
 	/* ubpf_defs*/

@@ -1,8 +1,12 @@
+#include "bpftime_shm.hpp"
+#include "bpftime_shm_internal.hpp"
 #include "spdlog/spdlog.h"
 #include "spdlog/cfg/env.h"
+#include <cerrno>
 #include <csignal>
 #include <cstdlib>
 #include <cstring>
+#include <exception>
 #include <frida-core.h>
 #include <argparse/argparse.hpp>
 #include <filesystem>
@@ -185,9 +189,13 @@ int main(int argc, const char **argv)
 		.flag();
 	attach_command.add_argument("PID").scan<'i', int>();
 
+	argparse::ArgumentParser detach_command("detach");
+	detach_command.add_description("Detach all attached agents");
+
 	program.add_subparser(load_command);
 	program.add_subparser(start_command);
 	program.add_subparser(attach_command);
+	program.add_subparser(detach_command);
 	try {
 		program.parse_args(argc, argv);
 	} catch (const std::exception &err) {
@@ -257,6 +265,31 @@ int main(int argc, const char **argv)
 					       agent_path.c_str());
 		} else {
 			return inject_by_frida(pid, agent_path.c_str(), "");
+		}
+	} else if (program.is_subcommand_used("detach")) {
+		SPDLOG_DEBUG("Detaching..");
+		try {
+			bpftime_initialize_global_shm(
+				bpftime::shm_open_type::SHM_OPEN_ONLY);
+		} catch (std::exception &ex) {
+			SPDLOG_WARN(
+				"Shared memory not created, seems syscall server is not running");
+			return 0;
+		}
+		bool sended = false;
+		bpftime::shm_holder.global_shared_memory
+			.iterate_all_pids_in_alive_agent_set([&](int pid) {
+				SPDLOG_INFO("Delivering SIGUSR1 to {}", pid);
+				int err = kill(pid, SIGUSR1);
+				if (err < 0) {
+					SPDLOG_WARN(
+						"Unable to signal process {}: {}",
+						pid, strerror(errno));
+				}
+				sended = true;
+			});
+		if (!sended) {
+			SPDLOG_INFO("No process was signaled.");
 		}
 	}
 	return 0;

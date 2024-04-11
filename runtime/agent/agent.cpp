@@ -1,14 +1,19 @@
 #include "attach_private_data.hpp"
 #include "bpf_attach_ctx.hpp"
+#include "bpftime_shm_internal.hpp"
 #include "frida_attach_private_data.hpp"
 #include "frida_uprobe_attach_impl.hpp"
 #include "spdlog/common.h"
 #include "syscall_trace_attach_impl.hpp"
 #include "syscall_trace_attach_private_data.hpp"
+#include <chrono>
+#include <csignal>
 #include <exception>
 #include <fcntl.h>
 #include <memory>
+#include <pthread.h>
 #include <string_view>
+#include <thread>
 #include <unistd.h>
 #include <frida-gum.h>
 #include <cstdint>
@@ -21,6 +26,12 @@ using namespace bpftime::attach;
 using main_func_t = int (*)(int, char **, char **);
 
 static main_func_t orig_main_func = nullptr;
+
+// Whether this injected process was operated through frida?
+// Defaults to true. If __libc_start_main was called, it should be set to false;
+// Besides, if agent was loaded by text-transformer, this variable will be set
+// by text-transformer
+bool injected_with_frida = true;
 
 union bpf_attach_ctx_holder {
 	bpf_attach_ctx ctx;
@@ -48,7 +59,7 @@ extern "C" void bpftime_agent_main(const gchar *data, gboolean *stay_resident);
 extern "C" int bpftime_hooked_main(int argc, char **argv, char **envp)
 {
 	int stay_resident = 0;
-
+	injected_with_frida = false;
 	bpftime_agent_main("", &stay_resident);
 	int ret = orig_main_func(argc, argv, envp);
 	ctx_holder.destroy();
@@ -70,8 +81,22 @@ extern "C" int __libc_start_main(int (*main)(int, char **, char **), int argc,
 		    stack_end);
 }
 
+static void sig_handler_sigusr1(int sig)
+{
+	SPDLOG_INFO("Detaching..");
+	if (int err = ctx_holder.ctx.destroy_all_attach_links(); err < 0) {
+		SPDLOG_ERROR("Unable to detach: {}", err);
+		return;
+	}
+	shm_holder.global_shared_memory.remove_pid_from_alive_agent_set(getpid());
+	SPDLOG_DEBUG("Detaching done");
+}
+
 extern "C" void bpftime_agent_main(const gchar *data, gboolean *stay_resident)
 {
+	SPDLOG_DEBUG("Registering signal handler");
+	// We use SIGUSR1 to indicate the detaching
+	signal(SIGUSR1, sig_handler_sigusr1);
 	spdlog::cfg::load_env_levels();
 	try {
 		// If we are unable to initialize shared memory..
@@ -80,6 +105,12 @@ extern "C" void bpftime_agent_main(const gchar *data, gboolean *stay_resident)
 		SPDLOG_ERROR("Unable to initialize shared memory: {}",
 			     ex.what());
 		return;
+	}
+	// Only agents injected through frida could be detached
+	if (injected_with_frida) {
+		// Record the pid
+		shm_holder.global_shared_memory.add_pid_into_alive_agent_set(
+			getpid());
 	}
 	ctx_holder.init();
 	// Register syscall trace impl
