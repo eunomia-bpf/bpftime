@@ -330,11 +330,11 @@ legacy::PassManager pass;
 #if LLVM_VERSION_MAJOR >= 18
 if (targetMachine->addPassesToEmitFile(pass, *BOS, nullptr, CodeGenFileType::ObjectFile)) {
 #elif LLVM_VERSION_MAJOR >= 10
-if (TheTargetMachine->addPassesToEmitFile(pass, *BOS, nullptr, CGFT_ObjectFile)) {
+if (targetMachine->addPassesToEmitFile(pass, *BOS, nullptr, CGFT_ObjectFile)) {
 #elif LLVM_VERSION_MAJOR >= 8
-if (TheTargetMachine->addPassesToEmitFile(pass, *BOS, nullptr, TargetMachine::CGFT_ObjectFile)) {
+if (targetMachine->addPassesToEmitFile(pass, *BOS, nullptr, targetMachine::CGFT_ObjectFile)) {
 #else
-if (TheTargetMachine->addPassesToEmitFile(pass, *BOS, TargetMachine::CGFT_ObjectFile, true)) {
+if (targetMachine->addPassesToEmitFile(pass, *BOS, targetMachine::CGFT_ObjectFile, true)) {
 #endif
     SPDLOG_ERROR("Unable to emit module for target machine");
     throw std::runtime_error("Unable to emit module for target machine");
