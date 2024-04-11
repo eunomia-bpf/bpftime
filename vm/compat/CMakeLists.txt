@@ -7,7 +7,7 @@ include(${CMAKE_CURRENT_SOURCE_DIR}/../../cmake/StandardSettings.cmake)
 include(${CMAKE_CURRENT_SOURCE_DIR}/../../cmake/CompilerWarnings.cmake)
 
 
-add_library(bpftime_vm_compat STATIC ./src/bpftime_vm_compat.cpp)
+add_library(bpftime_vm_compat STATIC ./src/bpftime_vm_compat.cpp ./src/ebpf-vm.cpp)
 
 target_include_directories(bpftime_vm_compat INTERFACE ${CMAKE_CURRENT_SOURCE_DIR}/include PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
 

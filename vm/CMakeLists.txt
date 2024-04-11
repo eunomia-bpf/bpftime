@@ -59,3 +59,4 @@ if(BPFTIME_ENABLE_UNIT_TESTING)
 endif()
 
 add_subdirectory(test-runner)
+add_subdirectory(bpf_conformance_runner)

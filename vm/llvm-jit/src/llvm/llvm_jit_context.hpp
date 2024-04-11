@@ -1,9 +1,6 @@
 #ifndef _LLVM_BPF_JIT_CONTEXT_H
 #define _LLVM_BPF_JIT_CONTEXT_H
 
-#define DEBUG_TYPE "debug"
-
-#include "llvm_bpf_jit.h"
 #include <llvm/Support/TargetSelect.h>
 #include <memory>
 #include <llvm/ExecutionEngine/Orc/Core.h>
@@ -15,8 +12,11 @@
 #include <string>
 #include <pthread.h>
 #include <tuple>
-#include "../compat/compat_llvm.hpp"
-
+#include <bpftime_vm_compat.hpp>
+namespace bpftime::vm::llvm
+{
+class bpftime_llvm_jit_vm;
+}
 
 const static char *LDDW_HELPER_MAP_BY_FD = "__lddw_helper_map_by_fd";
 const static char *LDDW_HELPER_MAP_BY_IDX = "__lddw_helper_map_by_idx";
@@ -46,8 +46,8 @@ class llvm_bpf_jit_context {
 	void do_jit_compile();
 	llvm_bpf_jit_context(class bpftime::vm::llvm::bpftime_llvm_jit_vm *vm);
 	virtual ~llvm_bpf_jit_context();
-	ebpf_jit_fn compile();
-	ebpf_jit_fn get_entry_address();
+	bpftime::vm::compat::precompiled_ebpf_function compile();
+	bpftime::vm::compat::precompiled_ebpf_function get_entry_address();
 	std::vector<uint8_t> do_aot_compile(bool print_ir = false);
 	void load_aot_object(const std::vector<uint8_t> &buf);
 };

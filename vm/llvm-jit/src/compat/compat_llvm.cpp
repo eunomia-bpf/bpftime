@@ -1,3 +1,4 @@
+#include "spdlog/spdlog.h"
 #include <bpftime_vm_compat.hpp>
 #include <cerrno>
 #include <memory>
@@ -15,7 +16,7 @@ std::unique_ptr<bpftime_vm_impl> create_vm_instance()
 } // namespace bpftime::vm::compat
 
 using namespace bpftime::vm::llvm;
-bpftime_llvm_jit_vm::bpftime_llvm_jit_vm() : instructions(MAX_EXT_FUNCS)
+bpftime_llvm_jit_vm::bpftime_llvm_jit_vm() : ext_funcs(MAX_EXT_FUNCS)
 
 {
 	this->jit_ctx = std::make_unique<llvm_bpf_jit_context>(this);
@@ -29,13 +30,13 @@ int bpftime_llvm_jit_vm::register_external_function(size_t index,
 						    const std::string &name,
 						    void *fn)
 {
-	if (ext_funcs[index].has_value()) {
-		error_msg = "Already defined";
-		return -EEXIST;
-	}
 	if (index >= ext_funcs.size()) {
 		error_msg = "Index too large";
 		return -E2BIG;
+	}
+	if (ext_funcs[index].has_value()) {
+		error_msg = "Already defined";
+		return -EEXIST;
 	}
 	ext_funcs[index] = external_function{ .name = name, .fn = fn };
 	return 0;
@@ -57,10 +58,32 @@ void bpftime_llvm_jit_vm::unload_code()
 int bpftime_llvm_jit_vm::exec(void *mem, size_t mem_len,
 			      uint64_t &bpf_return_value)
 {
+	if (jitted_function) {
+		SPDLOG_DEBUG("llvm-jit: Called jitted function {:x}",
+			     (uintptr_t)jitted_function.value());
+		auto ret =
+			(*jitted_function)(mem, static_cast<uint64_t>(mem_len));
+		SPDLOG_DEBUG(
+			"LLJIT: called from jitted function {:x} returned {}",
+			(uintptr_t)vm->jitted_function, ret);
+		bpf_return_value = ret;
+		return 0;
+	}
+	auto func = compile();
+	if (!func) {
+		SPDLOG_ERROR("Unable to compile eBPF program");
+		return -1;
+	}
+	SPDLOG_DEBUG("LLJIT: compiled function: {:x}", (uintptr_t)func);
+	// after compile, run
+	return exec(mem, mem_len, bpf_return_value);
 }
 std::optional<bpftime::vm::compat::precompiled_ebpf_function>
 bpftime_llvm_jit_vm::compile()
 {
+	auto func = jit_ctx->compile();
+	jitted_function = func;
+	return func;
 }
 void bpftime_llvm_jit_vm::set_lddw_helpers(uint64_t (*map_by_fd)(uint32_t),
 					   uint64_t (*map_by_idx)(uint32_t),
@@ -68,4 +91,9 @@ void bpftime_llvm_jit_vm::set_lddw_helpers(uint64_t (*map_by_fd)(uint32_t),
 					   uint64_t (*var_addr)(uint32_t),
 					   uint64_t (*code_addr)(uint32_t))
 {
+	this->map_by_fd = map_by_fd;
+	this->map_by_idx = map_by_idx;
+	this->map_val = map_val;
+	this->var_addr = var_addr;
+	this->code_addr = code_addr;
 }

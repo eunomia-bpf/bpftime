@@ -1,5 +1,4 @@
-#include "llvm_bpf_jit.h"
-#include "llvm/llvm_jit_context.hpp"
+#include "bpftime_vm_compat.hpp"
 #include "ebpf_inst.h"
 #include <cassert>
 #include <cstdint>
@@ -7,7 +6,6 @@
 #include <iostream>
 #include <sstream>
 #include <vector>
-#include "ebpf-vm.h"
 
 /**
  * @brief Read in a string of hex bytes and return a vector of bytes.
@@ -104,18 +102,17 @@ int main(int argc, char **argv)
 	std::string log;
 
 	int err;
-	char *errmsg;
-	auto vm = ebpf_create();
+	auto vm = bpftime::vm::compat::create_vm_instance();
 	assert(vm);
-	err = ebpf_load(vm, &program[0], program.size() * 8, &errmsg);
+	err = vm->load_code(&program[0], program.size() * 8);
 	if (err < 0) {
-		std::cerr << "Error: " << errmsg << std::endl;
+		std::cerr << "Error: " << vm->get_error_message() << std::endl;
 		return -1;
 	}
-	auto func = ebpf_compile(vm, &errmsg);
+	auto func = vm->compile();
 	assert(func);
 	uint64_t res;
-	ebpf_exec(vm, &memory[0], memory.size(), &res);
+	vm->exec(&memory[0], memory.size(), res);
 	std::cout << std::hex << res << std::endl;
 	return 0;
 }

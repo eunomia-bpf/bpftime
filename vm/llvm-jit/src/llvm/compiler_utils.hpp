@@ -7,7 +7,6 @@
 #define _LLVM_BPF_JIT_HELPER
 
 #include "llvm_jit_context.hpp"
-#include "llvm_bpf_jit.h"
 #include "ebpf_inst.h"
 #include <functional>
 #include <llvm/IR/Constants.h>

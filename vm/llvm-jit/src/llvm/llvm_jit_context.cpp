@@ -3,8 +3,8 @@
  * Copyright (c) 2022, eunomia-bpf org
  * All rights reserved.
  */
-#include "llvm_bpf_jit.h"
 #include "llvm_jit_context.hpp"
+#include "bpftime_vm_compat.hpp"
 #include "compiler_utils.hpp"
 #include "spdlog/spdlog.h"
 #include <cstdlib>
@@ -36,7 +36,7 @@
 #include <tuple>
 #include <boost/interprocess/sync/file_lock.hpp>
 #include <boost/interprocess/sync/scoped_lock.hpp>
-
+#include <compat_llvm.hpp>
 using namespace llvm;
 using namespace llvm::orc;
 using namespace bpftime;
@@ -98,7 +98,7 @@ void llvm_bpf_jit_context::do_jit_compile()
 	this->jit = std::move(jit);
 }
 
-ebpf_jit_fn llvm_bpf_jit_context::compile()
+bpftime::vm::compat::precompiled_ebpf_function llvm_bpf_jit_context::compile()
 {
 	spin_lock_guard guard(compiling.get());
 	if (!this->jit.has_value()) {
@@ -280,7 +280,7 @@ llvm_bpf_jit_context::create_and_initialize_lljit_instance()
 	return { std::move(jit), extFuncNames, definedLddwHelpers };
 }
 
-ebpf_jit_fn llvm_bpf_jit_context::get_entry_address()
+bpftime::vm::compat::precompiled_ebpf_function llvm_bpf_jit_context::get_entry_address()
 {
 	if (!this->jit.has_value()) {
 		SPDLOG_CRITICAL(
@@ -294,7 +294,7 @@ ebpf_jit_fn llvm_bpf_jit_context::get_entry_address()
 		SPDLOG_CRITICAL("Unable to find symbol `bpf_main`: {}", buf);
 		throw std::runtime_error("Unable to link symbol `bpf_main`");
 	} else {
-		auto addr = err->toPtr<ebpf_jit_fn>();
+		auto addr = err->toPtr<vm::compat::precompiled_ebpf_function>();
 		SPDLOG_DEBUG("LLVM-JIT: Entry func is {:x}", (uintptr_t)addr);
 		return addr;
 	}

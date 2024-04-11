@@ -6,7 +6,6 @@
 #include <memory>
 #include <optional>
 #include <string>
-#include <variant>
 
 namespace bpftime::vm::compat
 {
@@ -25,7 +24,7 @@ class bpftime_vm_impl {
 	 *
 	 * @param enable Whether to enable
 	 */
-	virtual void toggle_bounds_check(bool enable);
+	virtual bool toggle_bounds_check(bool enable);
 	/**
 	 * @brief Register a C-style print function for printing error strings
 	 *
@@ -52,7 +51,7 @@ class bpftime_vm_impl {
 	 * @param code_len Length of the code, in bytes
 	 * @return int
 	 */
-	virtual int load_code(const void *code, size_t code_len);
+	virtual int load_code(const void *code, size_t code_len) = 0;
 	/**
 	 * @brief Unload the code
 	 *
@@ -68,7 +67,7 @@ class bpftime_vm_impl {
 	 * @return int 0 for success, otherwise failed.
 	 */
 	virtual int exec(void *mem, size_t mem_len,
-			      uint64_t &bpf_return_value);
+			 uint64_t &bpf_return_value) = 0;
 	/**
 	 * @brief Compile the eBPF program, return the compiled program
 	 *
@@ -96,9 +95,32 @@ class bpftime_vm_impl {
 				      uint64_t (*map_val)(uint64_t),
 				      uint64_t (*var_addr)(uint32_t),
 				      uint64_t (*code_addr)(uint32_t));
+	/**
+	 * @brief Optional secret to improve ROP protection.
+	 *
+	 * @param[in] secret Optional secret to improve ROP protection.
+	 * Returns 0 on success, -1 on error (e.g. if the secret is set after
+	 * the instructions are loaded).
+	 */
+	virtual int set_pointer_secret(uint64_t secret);
+	/**
+	 * @brief Instruct the ebpf runtime to apply unwind-on-success semantics
+	 * to a helper function. If the function returns 0, the ebpf runtime
+	 * will end execution of the eBPF program and immediately return control
+	 * to the caller. This is used for implementing function like the
+	 * "bpf_tail_call" helper.
+	 *
+	 * @param[in] idx Index of the helper function to unwind on success.
+	 * @retval 0 Success.
+	 * @retval -1 Failure.
+	 */
+	virtual int set_unwind_function_index(size_t idx);
 };
 
 std::unique_ptr<bpftime_vm_impl> create_vm_instance();
 } // namespace bpftime::vm::compat
+struct ebpf_vm {
+	std::unique_ptr<bpftime::vm::compat::bpftime_vm_impl> vm_instance;
+};
 
 #endif

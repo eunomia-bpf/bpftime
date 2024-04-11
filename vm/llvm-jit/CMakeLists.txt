@@ -29,7 +29,6 @@ function(bpftime_add_library target)
 endfunction()
 
 bpftime_add_library(bpftime_llvm_jit_vm
-    # src/ebpf_vm.cpp
     src/llvm/llvm_jit_context.cpp
     src/llvm/compiler.cpp
     src/llvm/compiler_utils.cpp
@@ -56,7 +55,7 @@ else()
 endif()
 
 if(NOT DEFINED SPDLOG_INCLUDE)
-  message(INFO "Adding spdlo seperately..")
+  message(INFO "Adding spdlog seperately..")
   # spdlog
   add_subdirectory(../../third_party/spdlog ${CMAKE_CURRENT_BINARY_DIR}/spdlog)
   set(SPDLOG_INCLUDE ../../third_party/spdlog/include)
@@ -65,27 +64,10 @@ endif()
 message(STATUS "LLVM_LIBS=${LLVM_LIBS}")
 find_package(Boost REQUIRED)
 
-target_link_libraries(bpftime_llvm_jit_vm ${LLVM_LIBS} spdlog::spdlog)
+target_link_libraries(bpftime_llvm_jit_vm PUBLIC ${LLVM_LIBS} bpftime_vm_compat PRIVATE spdlog::spdlog)
 target_include_directories(bpftime_llvm_jit_vm 
-PUBLIC ${LLVM_INCLUDE_DIRS} ${SPDLOG_INCLUDE} ${Boost_INCLUDE}
-PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/../compat/include #LLVM jit also used these headers
+PUBLIC ${LLVM_INCLUDE_DIRS} ${SPDLOG_INCLUDE} ${Boost_INCLUDE} ../include include #LLVM jit also used these headers
 )
-
-bpftime_add_executable(vm-llvm-example
-    example/main.cpp
-)
-
-add_dependencies(vm-llvm-example bpftime_llvm_jit_vm spdlog::spdlog)
-target_link_libraries(vm-llvm-example bpftime_llvm_jit_vm)
-
-bpftime_add_executable(vm-llvm-bpf-test
-    example/main-bpf-conformance.cpp
-)
-
-add_dependencies(vm-llvm-bpf-test bpftime_llvm_jit_vm)
-target_link_libraries(vm-llvm-bpf-test bpftime_llvm_jit_vm)
-
-target_include_directories(bpftime_llvm_jit_vm PUBLIC ../include include)
 
 if(BPFTIME_ENABLE_UNIT_TESTING)
   message(STATUS "Build unit tests for the project. Tests should always be found in the test folder\n")
@@ -93,3 +75,4 @@ if(BPFTIME_ENABLE_UNIT_TESTING)
 endif()
 
 add_subdirectory(cli)
+add_subdirectory(example)

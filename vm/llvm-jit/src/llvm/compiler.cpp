@@ -3,7 +3,6 @@
  * Copyright (c) 2022, eunomia-bpf org
  * All rights reserved.
  */
-#include "llvm_bpf_jit.h"
 #include "llvm_jit_context.hpp"
 #include "ebpf_inst.h"
 #include "spdlog/spdlog.h"
@@ -27,6 +26,8 @@
 #include <endian.h>
 #include "compiler_utils.hpp"
 #include <spdlog/spdlog.h>
+#include <ebpf-vm.h>
+#include <compat_llvm.hpp>
 using namespace llvm;
 using namespace llvm::orc;
 using namespace bpftime;
