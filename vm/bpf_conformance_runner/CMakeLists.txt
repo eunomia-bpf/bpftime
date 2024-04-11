@@ -5,3 +5,4 @@ add_executable(bpftime_vm_bpf_conformance_runner
 add_dependencies(bpftime_vm_bpf_conformance_runner bpftime_vm_compat)
 target_link_libraries(bpftime_vm_bpf_conformance_runner bpftime_vm_compat)
 
+set_target_properties(bpftime_vm_bpf_conformance_runner PROPERTIES CXX_STANDARD 20)

@@ -9,9 +9,9 @@ include(${CMAKE_CURRENT_SOURCE_DIR}/../../cmake/CompilerWarnings.cmake)
 
 add_library(bpftime_vm_compat STATIC ./src/bpftime_vm_compat.cpp ./src/ebpf-vm.cpp)
 
-target_include_directories(bpftime_vm_compat INTERFACE ${CMAKE_CURRENT_SOURCE_DIR}/include PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
+target_include_directories(bpftime_vm_compat INTERFACE ${CMAKE_CURRENT_SOURCE_DIR}/include PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include ${SPDLOG_INCLUDE})
 
 
-target_link_libraries(bpftime_vm_compat PUBLIC ${BPFTIME_BPF_RUNTIME_NAME})
+target_link_libraries(bpftime_vm_compat PUBLIC ${BPFTIME_BPF_RUNTIME_NAME} spdlog::spdlog)
 
-add_dependencies(bpftime_vm_compat ${BPFTIME_BPF_RUNTIME_NAME})
+add_dependencies(bpftime_vm_compat ${BPFTIME_BPF_RUNTIME_NAME} spdlog)

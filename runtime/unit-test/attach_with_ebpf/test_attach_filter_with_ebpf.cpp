@@ -47,7 +47,7 @@ TEST_CASE("Test attaching filter program with ebpf, and reverting")
 	REQUIRE(bpftime_helper_group::get_kernel_utils_helper_group()
 			.add_helper_group_to_prog(prog) >= 0);
 	bpftime_helper_info info = {
-		.index = 4097,
+		.index = 40,
 		.name = "test_pass_param",
 		.fn = (void *)__bpftime_attach_filter_with_ebpf__test_pass_param,
 	};
