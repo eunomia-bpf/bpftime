@@ -362,13 +362,21 @@ std::vector<uint8_t> llvm_bpf_jit_context::do_aot_compile(bool print_ir)
 	std::vector<std::string> extNames, lddwNames;
 	for (uint32_t i = 0; i < std::size(vm->ext_funcs); i++) {
 		if (vm->ext_funcs[i] != nullptr) {
-			extNames.push_back(ext_func_sym(i));
+			#if LLVM_VERSION_MAJOR >= 16
+				extNames.emplace_back(ext_func_sym(i));
+			#else
+				extNames.push_back(ext_func_sym(i));
+			#endif
 		}
 	}
 
 	const auto tryDefineLddwHelper = [&](const char *name, void *func) {
 		if (func) {
-			lddwNames.push_back(name);
+			#if LLVM_VERSION_MAJOR >= 16
+				lddwNames.emplace_back(name);
+			#else
+				lddwNames.push_back(name);
+			#endif
 		}
 	};
 	tryDefineLddwHelper(LDDW_HELPER_MAP_BY_FD, (void *)vm->map_by_fd);
@@ -427,11 +435,13 @@ llvm_bpf_jit_context::create_and_initialize_lljit_instance()
 
 		#if LLVM_VERSION_MAJOR < 17
 			extSymbols.try_emplace(symName, sym);
+			extFuncNames.push_back(ext_func_sym(i));
 		#else
 			auto symbol = ::llvm::orc::ExecutorSymbolDef (::llvm::orc::ExecutorAddr (sym.getAddress()), sym.getFlags());
 			extSymbols.try_emplace(symName, symbol);
+			extFuncNames.emplace_back(ext_func_sym(i));
 		#endif
-			extFuncNames.push_back(ext_func_sym(i));
+			
 		}
 	}
 #if defined(__arm__) || defined(_M_ARM)
@@ -457,12 +467,14 @@ llvm_bpf_jit_context::create_and_initialize_lljit_instance()
 
 		#if LLVM_VERSION_MAJOR < 17
 			extSymbols.try_emplace(jit->getExecutionSession().intern(name), sym);
+			definedLddwHelpers.push_back(name);
 		#else
 			auto symbol = ::llvm::orc::ExecutorSymbolDef (::llvm::orc::ExecutorAddr (sym.getAddress()), sym.getFlags());
 			extSymbols.try_emplace(jit->getExecutionSession().intern(name), symbol);
+			definedLddwHelpers.emplace_back(name);
 		#endif
 			
-			definedLddwHelpers.push_back(name);
+			
 		}
 	};
 	tryDefineLddwHelper(LDDW_HELPER_MAP_BY_FD, (void *)vm->map_by_fd);
