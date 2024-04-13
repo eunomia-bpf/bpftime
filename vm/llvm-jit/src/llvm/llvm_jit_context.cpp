@@ -466,11 +466,11 @@ llvm_bpf_jit_context::create_and_initialize_lljit_instance()
 			
 
 		#if LLVM_VERSION_MAJOR < 17
-			extSymbols.try_emplace(jit->getExecutionSession().intern(name), sym);
+			lddwSyms.try_emplace(jit->getExecutionSession().intern(name), sym);
 			definedLddwHelpers.push_back(name);
 		#else
 			auto symbol = ::llvm::orc::ExecutorSymbolDef (::llvm::orc::ExecutorAddr (sym.getAddress()), sym.getFlags());
-			extSymbols.try_emplace(jit->getExecutionSession().intern(name), symbol);
+			lddwSyms.try_emplace(jit->getExecutionSession().intern(name), symbol);
 			definedLddwHelpers.emplace_back(name);
 		#endif
 			
