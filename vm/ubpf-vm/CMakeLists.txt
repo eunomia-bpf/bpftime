@@ -13,7 +13,7 @@ ExternalProject_Add(
     INSTALL_COMMAND ""
 )
 
-add_dependencies(bpftime_ubpf_vm ubpf spdlog::spdlog)
+add_dependencies(bpftime_ubpf_vm ubpf spdlog::spdlog bpftime_vm_compat)
 
 
 target_link_libraries(bpftime_ubpf_vm PUBLIC ${UBPF_BUILD_DIR}/lib/libubpf.a bpftime_vm_compat spdlog::spdlog)

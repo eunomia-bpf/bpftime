@@ -54,12 +54,12 @@ build: ## build the package
 
 build-ubpf: ## build the package with ubpf backend
 	rm -rf build/
-	cmake -Bbuild
-	cmake --build build --config Release -j$(JOBS)
+	cmake -Bbuild  -DBPFTIME_BUILD_STANDALONE_VM=YES
+	cmake --build build --config Release -j$(JOBS) --target bpftime_vm_compat
 
 build-llvm: ## build with llvm as jit backend
-	cmake -Bbuild -DBPFTIME_LLVM_JIT=1
-	cmake --build build --config Release -j$(JOBS)
+	cmake -Bbuild -DBPFTIME_LLVM_JIT=1 -DBPFTIME_BUILD_STANDALONE_VM=YES
+	cmake --build build --config Release -j$(JOBS) --target bpftime_vm_compat
 
 build-arm64: ## build the package on arm64
 	rm -rf build/

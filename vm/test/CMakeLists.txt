@@ -23,7 +23,7 @@ foreach(file ${test_sources})
     # need on qemu-user
   endif()
 
-  add_dependencies(${test_name}_Tests bpftime_vm_compat)
+  add_dependencies(${test_name}_Tests bpftime_vm)
   #
   # Set the compiler standard
   #
@@ -54,13 +54,13 @@ foreach(file ${test_sources})
       ${test_name}_Tests
       PUBLIC
       Catch2::Catch2
-      bpftime_vm_compat
+      bpftime_vm
     )
   else()
     target_link_libraries(
       ${test_name}_Tests
       PUBLIC
-      bpftime_vm_compat
+      bpftime_vm
     )
     # message("Unknown testing library ${test_name}_Tests. Please setup your desired unit testing library by using `target_link_libraries`.")
   endif()

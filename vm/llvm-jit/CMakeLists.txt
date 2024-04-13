@@ -61,6 +61,10 @@ if(NOT DEFINED SPDLOG_INCLUDE)
   set(SPDLOG_INCLUDE ../../third_party/spdlog/include)
 endif()
 
+if(${BPFTIME_BUILD_STANDALONE_LLVM_VM})
+    add_subdirectory(../compat ${CMAKE_CURRENT_BINARY_DIR}/bpftime_compat)
+endif()
+
 message(STATUS "LLVM_LIBS=${LLVM_LIBS}")
 find_package(Boost REQUIRED)
 
@@ -68,11 +72,10 @@ target_link_libraries(bpftime_llvm_jit_vm PUBLIC ${LLVM_LIBS} bpftime_vm_compat 
 target_include_directories(bpftime_llvm_jit_vm 
 PUBLIC ${LLVM_INCLUDE_DIRS} ${SPDLOG_INCLUDE} ${Boost_INCLUDE} ../include include #LLVM jit also used these headers
 )
-
+add_dependencies(bpftime_llvm_jit_vm bpftime_vm_compat)
 if(BPFTIME_ENABLE_UNIT_TESTING)
   message(STATUS "Build unit tests for the project. Tests should always be found in the test folder\n")
   add_subdirectory(unit-test)
 endif()
 
-add_subdirectory(cli)
 add_subdirectory(example)

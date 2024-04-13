@@ -1,7 +1,7 @@
 #
 # Setup libbpf
 #
-set(LIBBPF_DIR ${CMAKE_CURRENT_SOURCE_DIR}/third_party/libbpf/)
+set(LIBBPF_DIR ${CMAKE_CURRENT_LIST_DIR}/../third_party/libbpf/)
 include(ExternalProject)
 ExternalProject_Add(libbpf
   PREFIX libbpf
@@ -70,7 +70,7 @@ add_custom_target(libbpf_with_headers)
 add_dependencies(libbpf_with_headers libbpf copy_headers)
 
 # # Setup bpftool
-set(BPFTOOL_DIR ${CMAKE_CURRENT_SOURCE_DIR}/third_party/bpftool)
+set(BPFTOOL_DIR ${CMAKE_CURRENT_LIST_DIR}/../third_party/bpftool)
 set(BPFTOOL_INSTALL_DIR ${CMAKE_CURRENT_BINARY_DIR}/bpftool)
 ExternalProject_Add(bpftool
   PREFIX bpftool

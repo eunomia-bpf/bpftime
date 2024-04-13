@@ -1,5 +1,6 @@
 #ifndef _BPFTIME_VM_COMPAT_HPP
 #define _BPFTIME_VM_COMPAT_HPP
+#include "spdlog/spdlog.h"
 #include <cstddef>
 #include <cstdint>
 #include <cstdio>
@@ -12,26 +13,40 @@ namespace bpftime::vm::compat
 using precompiled_ebpf_function = uint64_t (*)(void *mem, size_t mem_len);
 class bpftime_vm_impl {
     public:
-	virtual ~bpftime_vm_impl();
+	virtual ~bpftime_vm_impl()
+	{
+	}
 	/**
 	 * @brief Get the error message object
 	 *
 	 * @return std::string
 	 */
-	virtual std::string get_error_message();
+	virtual std::string get_error_message()
+	{
+		SPDLOG_CRITICAL("Not implemented yet: get_error_message");
+		return "";
+	}
 	/**
 	 * @brief Toggle whether to enable bounds_check
 	 *
 	 * @param enable Whether to enable
 	 */
-	virtual bool toggle_bounds_check(bool enable);
+	virtual bool toggle_bounds_check(bool enable)
+	{
+		SPDLOG_CRITICAL("Not implemented yet: toggle_bounds_check");
+		return false;
+	}
 	/**
 	 * @brief Register a C-style print function for printing error strings
 	 *
 	 * @param fn The function
 	 */
-	virtual void
-	register_error_print_callback(int (*fn)(FILE *, const char *, ...));
+	virtual void register_error_print_callback(int (*fn)(FILE *,
+							     const char *, ...))
+	{
+		SPDLOG_CRITICAL(
+			"Not implemented yet: register_error_print_callback");
+	}
 	/**
 	 * @brief Register a helper function
 	 *
@@ -43,7 +58,12 @@ class bpftime_vm_impl {
 	 */
 	virtual int register_external_function(size_t index,
 					       const std::string &name,
-					       void *fn);
+					       void *fn)
+	{
+		SPDLOG_CRITICAL(
+			"Not implemented yet: register_external_function");
+		return -1;
+	}
 	/**
 	 * @brief Load code into the vm
 	 *
@@ -56,7 +76,10 @@ class bpftime_vm_impl {
 	 * @brief Unload the code
 	 *
 	 */
-	virtual void unload_code();
+	virtual void unload_code()
+	{
+		SPDLOG_CRITICAL("Not implemented yet: unload_code");
+	}
 	/**
 	 * @brief Try to execute eBPF program in intepreter mode. If not
 	 * supported, use JIT
@@ -73,7 +96,11 @@ class bpftime_vm_impl {
 	 *
 	 * @return Empty optional marks a failure
 	 */
-	virtual std::optional<precompiled_ebpf_function> compile();
+	virtual std::optional<precompiled_ebpf_function> compile()
+	{
+		SPDLOG_CRITICAL("Not implemented yet: compile");
+		return {};
+	}
 	/**
 	 * @brief Register helper functions using the lddw instruction. See
 	 * https://docs.kernel.org/bpf/instruction-set.html#id15 for details.
@@ -94,7 +121,10 @@ class bpftime_vm_impl {
 				      uint64_t (*map_by_idx)(uint32_t),
 				      uint64_t (*map_val)(uint64_t),
 				      uint64_t (*var_addr)(uint32_t),
-				      uint64_t (*code_addr)(uint32_t));
+				      uint64_t (*code_addr)(uint32_t))
+	{
+		SPDLOG_CRITICAL("Not implemented yet: set_lddw_helpers");
+	}
 	/**
 	 * @brief Optional secret to improve ROP protection.
 	 *
@@ -102,7 +132,11 @@ class bpftime_vm_impl {
 	 * Returns 0 on success, -1 on error (e.g. if the secret is set after
 	 * the instructions are loaded).
 	 */
-	virtual int set_pointer_secret(uint64_t secret);
+	virtual int set_pointer_secret(uint64_t secret)
+	{
+		SPDLOG_CRITICAL("Not implemented yet: set_pointer_secret");
+		return -1;
+	}
 	/**
 	 * @brief Instruct the ebpf runtime to apply unwind-on-success semantics
 	 * to a helper function. If the function returns 0, the ebpf runtime
@@ -114,7 +148,12 @@ class bpftime_vm_impl {
 	 * @retval 0 Success.
 	 * @retval -1 Failure.
 	 */
-	virtual int set_unwind_function_index(size_t idx);
+	virtual int set_unwind_function_index(size_t idx)
+	{
+		SPDLOG_CRITICAL(
+			"Not implemented yet: set_unwind_function_index");
+		return -1;
+	}
 };
 
 std::unique_ptr<bpftime_vm_impl> create_vm_instance();

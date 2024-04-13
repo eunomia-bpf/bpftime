@@ -29,18 +29,23 @@ if(NOT DEFINED SPDLOG_INCLUDE)
 endif()
 
 
+if(${BPFTIME_BUILD_STANDALONE_VM})
+  include(../cmake/libbpf.cmake)
+  add_subdirectory(../third_party/argparse ${CMAKE_CURRENT_BINARY_DIR}/argparse)
+endif()
 
 if(${BPFTIME_LLVM_JIT})
   message(STATUS "Using llvm-jit")
   add_subdirectory(llvm-jit)
+  add_subdirectory(llvm-jit-cli)
   set(BPFTIME_BPF_RUNTIME_NAME "bpftime_llvm_jit_vm")
 else()
   message(STATUS "Not using llvm-jit")
   add_subdirectory(ubpf-vm)
   set(BPFTIME_BPF_RUNTIME_NAME "bpftime_ubpf_vm")
 endif()
-
 add_subdirectory(compat)
+add_subdirectory(vm-core)
 
 #
 # Unit testing setup
@@ -60,3 +65,4 @@ endif()
 
 add_subdirectory(test-runner)
 add_subdirectory(bpf_conformance_runner)
+
