@@ -98,8 +98,10 @@ int bpftime_ubpf_vm::load_code(const void *code, size_t code_len)
 				uint64_t imm;
 				// Patch lddw instructions..
 				if (curr_insn.src_reg == 0) {
-					imm = ((uint64_t)(uint32_t)curr_insn.imm) |
-					      ((uint64_t)(uint32_t)next_insn.imm << 32);
+					imm = ((uint64_t)(uint32_t)
+						       curr_insn.imm) |
+					      ((uint64_t)(uint32_t)next_insn.imm
+					       << 32);
 				} else if (curr_insn.src_reg == 1) {
 					if (!map_by_fd) {
 						error_string =
