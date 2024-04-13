@@ -2,6 +2,7 @@ add_library(bpftime_ubpf_vm STATIC ./compat_ubpf.cpp)
 
 # add_subdirectory(ubpf)
 set(UBPF_BUILD_DIR ${CMAKE_CURRENT_BINARY_DIR}/ubpf)
+include(ExternalProject)
 ExternalProject_Add(
     ubpf
     GIT_REPOSITORY https://github.com/iovisor/ubpf
