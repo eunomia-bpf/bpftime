@@ -53,6 +53,8 @@ int bpftime_ubpf_vm::register_external_function(size_t index,
 
 int bpftime_ubpf_vm::load_code(const void *code, size_t code_len)
 {
+	SPDLOG_DEBUG("Loading instructions of ubpf vm with length {}",
+		     code_len);
 	if (code_len % 8 != 0) {
 		error_string = "Length of code must be a multiple of 8";
 		return -1;
@@ -94,6 +96,7 @@ int bpftime_ubpf_vm::load_code(const void *code, size_t code_len)
 						", it's the last instruction";
 					return -EINVAL;
 				}
+				SPDLOG_DEBUG("Checking lddw at pc {}", i);
 				auto &next_insn = insns[i + 1];
 				uint64_t imm;
 				// Patch lddw instructions..
@@ -171,10 +174,11 @@ int bpftime_ubpf_vm::load_code(const void *code, size_t code_len)
 					return -EINVAL;
 				}
 				SPDLOG_DEBUG(
-					"Patched instruction at pc {}, imm={:x}",
+					"Patched lddw instruction at pc {}, imm={:x}",
 					i, imm);
 				curr_insn.imm = imm & 0xffffffff;
 				next_insn.imm = imm >> 32;
+				curr_insn.src_reg = 0;
 				i++;
 			}
 	}
