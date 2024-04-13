@@ -88,7 +88,10 @@ int bpftime_ubpf_vm::load_code(const void *code, size_t code_len)
 				auto &next_insn = insns[i + 1];
 				uint64_t imm;
 				// Patch lddw instructions..
-				if (curr_insn.src_reg == 1) {
+				if (curr_insn.src_reg == 0) {
+					imm = curr_insn.imm |
+					      ((uint64_t)next_insn.imm << 32);
+				} else if (curr_insn.src_reg == 1) {
 					if (!map_by_fd) {
 						error_string =
 							"Unable to patch lddw instruction at " +
@@ -146,13 +149,14 @@ int bpftime_ubpf_vm::load_code(const void *code, size_t code_len)
 					imm = map_val(map_by_idx(
 						      curr_insn.imm)) +
 					      next_insn.imm;
-				} else if (curr_insn.src_reg != 0) {
+				} else {
 					error_string =
 						"Unable to patch lddw instruction at " +
 						std::to_string(i) +
 						", unsupported src_reg " +
 						std::to_string(
 							curr_insn.src_reg);
+
 					return -EINVAL;
 				}
 				SPDLOG_DEBUG(
