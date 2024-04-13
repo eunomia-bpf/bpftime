@@ -1,4 +1,5 @@
 #include <bpftime_vm_compat.hpp>
+#include <map>
 #include <string>
 namespace bpftime::vm::ubpf
 {
@@ -30,5 +31,9 @@ class bpftime_ubpf_vm : public compat::bpftime_vm_impl {
 	uint64_t (*map_val)(uint64_t) = nullptr;
 	uint64_t (*var_addr)(uint32_t) = nullptr;
 	uint64_t (*code_addr)(uint32_t) = nullptr;
+	// bpftime helper id -> ubpf helper id
+	std::map<size_t, size_t> helper_id_map;
+	// Next helper id used by ubpf
+	size_t next_helper_id = 1;
 };
 } // namespace bpftime::vm::ubpf

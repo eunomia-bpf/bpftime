@@ -44,7 +44,10 @@ int bpftime_ubpf_vm::register_external_function(size_t index,
 						const std::string &name,
 						void *fn)
 {
-	return ubpf_register(ubpf_vm, index, name.c_str(),
+	// Allocate one more id
+	size_t next_id = next_helper_id++;
+	helper_id_map[index] = next_id;
+	return ubpf_register(ubpf_vm, next_id, name.c_str(),
 			     (external_function_t)fn);
 }
 
@@ -54,90 +57,111 @@ int bpftime_ubpf_vm::load_code(const void *code, size_t code_len)
 		error_string = "Length of code must be a multiple of 8";
 		return -1;
 	}
+	auto insn_count = code_len / 8;
 	std::vector<ebpf_inst> insns((ebpf_inst *)code,
-				     (ebpf_inst *)code + (code_len / 8));
-	// ebpf_inst *insns = (ebpf_inst *)code;
-	for (size_t i = 0; i < code_len; i++) {
+				     (ebpf_inst *)code + insn_count);
+	for (size_t i = 0; i < insn_count; i++) {
 		auto &curr_insn = insns[i];
-		if (curr_insn.code == EBPF_OP_LDDW) {
-			if (i + 1 == code_len) {
-				error_string =
-					"Unable to patch lddw instructions at " +
-					std::to_string(i) +
-					", it's the last instruction";
+		// Patch helper call
+		if (curr_insn.code == EBPF_OP_CALL) {
+			if (auto itr = helper_id_map.find(curr_insn.imm);
+			    itr != helper_id_map.end()) {
+				curr_insn.imm = itr->second;
+				SPDLOG_DEBUG(
+					"Patched call at pc {}, helper {} to {}",
+					i, curr_insn.imm, itr->second);
+			} else {
+				error_string = "Illegal helper id " +
+					       std::to_string(curr_insn.imm);
 				return -EINVAL;
 			}
-			auto &next_insn = insns[i + 1];
-			uint64_t imm;
-			// Patch lddw instructions..
-			if (curr_insn.src_reg == 1) {
-				if (!map_by_fd) {
+		} else
+			// Patch LDDW
+			if (curr_insn.code == EBPF_OP_LDDW) {
+				if (i + 1 == insn_count) {
+					error_string =
+						"Unable to patch lddw instructions at " +
+						std::to_string(i) +
+						", it's the last instruction";
+					return -EINVAL;
+				}
+				auto &next_insn = insns[i + 1];
+				uint64_t imm;
+				// Patch lddw instructions..
+				if (curr_insn.src_reg == 1) {
+					if (!map_by_fd) {
+						error_string =
+							"Unable to patch lddw instruction at " +
+							std::to_string(i) +
+							", map_by_fd not defined";
+						return -EINVAL;
+					}
+					imm = map_by_fd(curr_insn.imm);
+				} else if (curr_insn.src_reg == 2) {
+					if (!map_by_fd || !map_val) {
+						error_string =
+							"Unable to patch lddw instruction at " +
+							std::to_string(i) +
+							", map_by_fd or map_val not defined";
+						return -EINVAL;
+					}
+					imm = map_val(map_by_fd(
+						      curr_insn.imm)) +
+					      next_insn.imm;
+				} else if (curr_insn.src_reg == 3) {
+					if (!var_addr) {
+						error_string =
+							"Unable to patch lddw instruction at " +
+							std::to_string(i) +
+							", var_addr not defined";
+						return -EINVAL;
+					}
+					imm = var_addr(curr_insn.imm);
+				} else if (curr_insn.src_reg == 4) {
+					if (!code_addr) {
+						error_string =
+							"Unable to patch lddw instruction at " +
+							std::to_string(i) +
+							", code_addr not defined";
+						return -EINVAL;
+					}
+					imm = code_addr(curr_insn.imm);
+				} else if (curr_insn.src_reg == 5) {
+					if (!map_by_idx) {
+						error_string =
+							"Unable to patch lddw instruction at " +
+							std::to_string(i) +
+							", map_by_idx not defined";
+						return -EINVAL;
+					}
+					imm = map_by_idx(curr_insn.imm);
+				} else if (curr_insn.src_reg == 6) {
+					if (!map_by_idx || !map_val) {
+						error_string =
+							"Unable to patch lddw instruction at " +
+							std::to_string(i) +
+							", map_by_idx or map_val not defined";
+						return -EINVAL;
+					}
+					imm = map_val(map_by_idx(
+						      curr_insn.imm)) +
+					      next_insn.imm;
+				} else if (curr_insn.src_reg != 0) {
 					error_string =
 						"Unable to patch lddw instruction at " +
 						std::to_string(i) +
-						", map_by_fd not defined";
+						", unsupported src_reg " +
+						std::to_string(
+							curr_insn.src_reg);
 					return -EINVAL;
 				}
-				imm = map_by_fd(curr_insn.imm);
-			} else if (curr_insn.src_reg == 2) {
-				if (!map_by_fd || !map_val) {
-					error_string =
-						"Unable to patch lddw instruction at " +
-						std::to_string(i) +
-						", map_by_fd or map_val not defined";
-					return -EINVAL;
-				}
-				imm = map_val(map_by_fd(curr_insn.imm)) +
-				      next_insn.imm;
-			} else if (curr_insn.src_reg == 3) {
-				if (!var_addr) {
-					error_string =
-						"Unable to patch lddw instruction at " +
-						std::to_string(i) +
-						", var_addr not defined";
-					return -EINVAL;
-				}
-				imm = var_addr(curr_insn.imm);
-			} else if (curr_insn.src_reg == 4) {
-				if (!code_addr) {
-					error_string =
-						"Unable to patch lddw instruction at " +
-						std::to_string(i) +
-						", code_addr not defined";
-					return -EINVAL;
-				}
-				imm = code_addr(curr_insn.imm);
-			} else if (curr_insn.src_reg == 5) {
-				if (!map_by_idx) {
-					error_string =
-						"Unable to patch lddw instruction at " +
-						std::to_string(i) +
-						", map_by_idx not defined";
-					return -EINVAL;
-				}
-				imm = map_by_idx(curr_insn.imm);
-			} else if (curr_insn.src_reg == 6) {
-				if (!map_by_idx || !map_val) {
-					error_string =
-						"Unable to patch lddw instruction at " +
-						std::to_string(i) +
-						", map_by_idx or map_val not defined";
-					return -EINVAL;
-				}
-				imm = map_val(map_by_idx(curr_insn.imm)) +
-				      next_insn.imm;
-			} else if (curr_insn.src_reg != 0) {
-				error_string =
-					"Unable to patch lddw instruction at " +
-					std::to_string(i) +
-					", unsupported src_reg "+std::to_string(curr_insn.src_reg);
-				return -EINVAL;
+				SPDLOG_DEBUG(
+					"Patched instruction at pc {}, imm={:x}",
+					i, imm);
+				curr_insn.imm = imm & 0xffffffff;
+				next_insn.imm = imm >> 32;
+				i++;
 			}
-			SPDLOG_DEBUG("Patched instruction at pc {}, imm={:x}",
-				     i, imm);
-			curr_insn.imm = imm & 0xffffffff;
-			next_insn.imm = imm >> 32;
-		}
 	}
 	char *errmsg = nullptr;
 	int err;

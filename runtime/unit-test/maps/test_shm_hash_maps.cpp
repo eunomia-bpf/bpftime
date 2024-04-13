@@ -37,7 +37,7 @@ static void test_lookup_map(int fd, bpftime::handler_manager &manager_ref,
 		uint32_t key = i;
 		auto val = *(uint64_t *)(map_handler.map_lookup_elem(&key));
 		REQUIRE(val == ((((uint64_t)key) << 32) | 0xffffffff));
-		spdlog::info("val for {} = {:x}", i, val);
+		spdlog::debug("val for {} = {:x}", i, val);
 	}
 }
 
@@ -58,10 +58,10 @@ static void test_get_next_element(int fd, bpftime::handler_manager &manager_ref,
 	uint32_t key = 0;
 	uint32_t next_key = 0;
 	while (map_handler.bpf_map_get_next_key(&key, &next_key) == 0) {
-		spdlog::info("key = {}, next_key = {}", key, next_key);
+		spdlog::debug("key = {}, next_key = {}", key, next_key);
 		key = next_key;
 	}
-	spdlog::info("key = {}, next_key = {}", key, next_key);
+	spdlog::debug("key = {}, next_key = {}", key, next_key);
 }
 
 static void handle_sub_process()

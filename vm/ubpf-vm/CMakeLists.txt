@@ -8,6 +8,7 @@ ExternalProject_Add(
     GIT_TAG 39872ad
     BINARY_DIR ${UBPF_BUILD_DIR}
     BUILD_BYPRODUCTS ${UBPF_BUILD_DIR}/lib/libubpf.a ${UBPF_BUILD_DIR}/vm/ubpf_config.h
+    CMAKE_ARGS -DCMAKE_BUILD_TYPE=Debug
 )
 
 add_dependencies(bpftime_ubpf_vm ubpf spdlog::spdlog)
@@ -16,3 +17,8 @@ add_dependencies(bpftime_ubpf_vm ubpf spdlog::spdlog)
 target_link_libraries(bpftime_ubpf_vm PUBLIC ${UBPF_BUILD_DIR}/lib/libubpf.a bpftime_vm_compat spdlog::spdlog)
 ExternalProject_Get_Property(ubpf SOURCE_DIR)
 target_include_directories(bpftime_ubpf_vm PRIVATE ${SOURCE_DIR}/vm/inc ${UBPF_BUILD_DIR}/vm/ ${CMAKE_CURRENT_SOURCE_DIR} ${SPDLOG_INCLUDE})
+
+
+
+# target_compile_options(bpftime_ubpf_vm PUBLIC -fsanitize=address)
+# target_link_libraries(bpftime_ubpf_vm PUBLIC asan)
