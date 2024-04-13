@@ -9,7 +9,8 @@ ExternalProject_Add(
     GIT_TAG 39872ad
     BINARY_DIR ${UBPF_BUILD_DIR}
     BUILD_BYPRODUCTS ${UBPF_BUILD_DIR}/lib/libubpf.a ${UBPF_BUILD_DIR}/vm/ubpf_config.h
-    CMAKE_ARGS -DCMAKE_BUILD_TYPE=Debug
+    # CMAKE_ARGS -DCMAKE_BUILD_TYPE=Debug
+    INSTALL_COMMAND ""
 )
 
 add_dependencies(bpftime_ubpf_vm ubpf spdlog::spdlog)
