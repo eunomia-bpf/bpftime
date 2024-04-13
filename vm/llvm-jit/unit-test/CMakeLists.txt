@@ -13,7 +13,6 @@ endif()
 set(TEST_SOURCES
     llvm-aot.cpp
 )
-
 add_executable(llvm_jit_tests ${TEST_SOURCES})
 set_property(TARGET llvm_jit_tests PROPERTY CXX_STANDARD 20)
 add_dependencies(llvm_jit_tests bpftime_llvm_jit_vm libbpf_with_headers)

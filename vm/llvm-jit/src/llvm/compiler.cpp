@@ -26,7 +26,6 @@
 #include <endian.h>
 #include "compiler_utils.hpp"
 #include <spdlog/spdlog.h>
-#include <ebpf-vm.h>
 #include <compat_llvm.hpp>
 using namespace llvm;
 using namespace llvm::orc;
@@ -90,7 +89,7 @@ Expected<ThreadSafeModule> llvm_bpf_jit_context::generateModule(
 {
 	auto context = std::make_unique<LLVMContext>();
 	auto jitModule = std::make_unique<Module>("bpf-jit", *context);
-	const auto& insts = vm->instructions;
+	const auto &insts = vm->instructions;
 	if (insts.empty()) {
 		return llvm::make_error<llvm::StringError>(
 			"No instructions provided",

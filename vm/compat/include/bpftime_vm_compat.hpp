@@ -8,6 +8,14 @@
 #include <optional>
 #include <string>
 
+#ifndef EBPF_STACK_SIZE
+// Compatible to C headers
+#define EBPF_STACK_SIZE 512
+#endif
+
+#ifndef MAX_EXT_FUNCS
+#define MAX_EXT_FUNCS 8192
+#endif
 namespace bpftime::vm::compat
 {
 using precompiled_ebpf_function = uint64_t (*)(void *mem, size_t mem_len);

@@ -14,7 +14,7 @@ if(NOT CMAKE_BUILD_TYPE)
 endif()
 
 if(NOT DEFINED SPDLOG_INCLUDE)
-  message(INFO "Adding spdlo seperately..")
+  message(STATUS "Adding spdlog seperately..")
   # spdlog
   add_subdirectory(../third_party/spdlog ${CMAKE_CURRENT_BINARY_DIR}/spdlog)
 
@@ -25,7 +25,7 @@ if(NOT DEFINED SPDLOG_INCLUDE)
     add_definitions(-DSPDLOG_ACTIVE_LEVEL=SPDLOG_LEVEL_INFO)
   endif()
 
-  set(SPDLOG_INCLUDE ${CMAKE_CURRENT_SOURCE_DIR}/third_party/spdlog/include)
+  set(SPDLOG_INCLUDE ${CMAKE_CURRENT_SOURCE_DIR}/../third_party/spdlog/include)
 endif()
 
 

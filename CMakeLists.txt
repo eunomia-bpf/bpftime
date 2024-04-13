@@ -91,10 +91,6 @@ add_subdirectory(third_party/argparse)
 # main library
 add_subdirectory(vm)
 
-if (${BPFTIME_LLVM_JIT})
-  add_subdirectory(vm/llvm-jit/cli)
-endif()
-
 add_subdirectory(attach)
 
 add_subdirectory(runtime)

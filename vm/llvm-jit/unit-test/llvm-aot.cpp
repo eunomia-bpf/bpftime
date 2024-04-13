@@ -2,7 +2,6 @@
 #include <catch2/catch_test_macros.hpp>
 #include <cstdint>
 #include <llvm/llvm_jit_context.hpp>
-#include <ebpf-vm.h>
 #include <linux/filter.h>
 #include <compat_llvm.hpp>
 #include "linux/filter.h"

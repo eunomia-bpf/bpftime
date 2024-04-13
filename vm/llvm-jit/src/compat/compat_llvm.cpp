@@ -3,7 +3,6 @@
 #include <cerrno>
 #include <memory>
 #include <ebpf_inst.h>
-#include <ebpf-vm.h>
 #include "compat_llvm.hpp"
 #include "../llvm/llvm_jit_context.hpp"
 namespace bpftime::vm::compat
@@ -65,7 +64,7 @@ int bpftime_llvm_jit_vm::exec(void *mem, size_t mem_len,
 			(*jitted_function)(mem, static_cast<uint64_t>(mem_len));
 		SPDLOG_DEBUG(
 			"LLJIT: called from jitted function {:x} returned {}",
-			(uintptr_t)vm->jitted_function, ret);
+			(uintptr_t)jitted_function.value(), ret);
 		bpf_return_value = ret;
 		return 0;
 	}
@@ -74,7 +73,7 @@ int bpftime_llvm_jit_vm::exec(void *mem, size_t mem_len,
 		SPDLOG_ERROR("Unable to compile eBPF program");
 		return -1;
 	}
-	SPDLOG_DEBUG("LLJIT: compiled function: {:x}", (uintptr_t)func);
+	SPDLOG_DEBUG("LLJIT: compiled function: {:x}", (uintptr_t)func.value());
 	// after compile, run
 	return exec(mem, mem_len, bpf_return_value);
 }
