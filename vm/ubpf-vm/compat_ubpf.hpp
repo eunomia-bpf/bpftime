@@ -22,6 +22,7 @@ class bpftime_ubpf_vm : public compat::bpftime_vm_impl {
 			      uint64_t (*var_addr)(uint32_t),
 			      uint64_t (*code_addr)(uint32_t));
 	int set_unwind_function_index(size_t idx);
+	int set_pointer_secret(uint64_t secret);
 
     private:
 	struct ubpf_vm *ubpf_vm;

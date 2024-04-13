@@ -71,9 +71,18 @@ int bpftime_ubpf_vm::load_code(const void *code, size_t code_len)
 					"Patched call at pc {}, helper {} to {}",
 					i, curr_insn.imm, itr->second);
 			} else {
-				error_string = "Illegal helper id " +
-					       std::to_string(curr_insn.imm);
-				return -EINVAL;
+				if (curr_insn.imm >= 64) {
+					error_string =
+						"invalid call immediate at PC " +
+						std::to_string(i);
+					return -EINVAL;
+				} else {
+					error_string =
+						"call to nonexistent function " +
+						std::to_string(curr_insn.imm) +
+						" at PC " + std::to_string(i);
+					return -EINVAL;
+				}
 			}
 		} else
 			// Patch LDDW
@@ -89,8 +98,8 @@ int bpftime_ubpf_vm::load_code(const void *code, size_t code_len)
 				uint64_t imm;
 				// Patch lddw instructions..
 				if (curr_insn.src_reg == 0) {
-					imm = curr_insn.imm |
-					      ((uint64_t)next_insn.imm << 32);
+					imm = ((uint64_t)(uint32_t)curr_insn.imm) |
+					      ((uint64_t)(uint32_t)next_insn.imm << 32);
 				} else if (curr_insn.src_reg == 1) {
 					if (!map_by_fd) {
 						error_string =
@@ -212,4 +221,8 @@ void bpftime_ubpf_vm::set_lddw_helpers(uint64_t (*map_by_fd)(uint32_t),
 int bpftime_ubpf_vm::set_unwind_function_index(size_t idx)
 {
 	return ubpf_set_unwind_function_index(ubpf_vm, idx);
+}
+int bpftime_ubpf_vm::set_pointer_secret(uint64_t secret)
+{
+	return ubpf_set_pointer_secret(ubpf_vm, secret);
 }
