@@ -112,7 +112,7 @@ jobs:
             executable: ./funclatency -i 1 ./victim:plus
             victim: ./victim
             syscall_trace: false
-            expected_str: ": 1"
+            expected_str: "|*"
           - path: libbpf-tools/mountsnoop
             executable: ./mountsnoop
             victim: ./victim
