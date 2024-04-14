@@ -147,7 +147,10 @@ jobs:
         with:
           name: runtime-package-no-jit-${{matrix.container.name}}
           path: ~/.bpftime
-  
+      - name: Install which(required by funclatency on fedora)
+        if: ${{matrix.container.name=='fedora' && matrix.examples.path=='libbpf-tools/funclatency'}}
+        run: |
+          yum install -y which
       - name: Set permissions
         run: |
           chmod +x ~/.bpftime/*

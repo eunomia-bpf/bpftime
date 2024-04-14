@@ -238,7 +238,7 @@ static int which_program(const char *prog, char *path, size_t path_sz)
 	FILE *which;
 	char cmd[100];
 
-	if (snprintf(cmd, sizeof(cmd), "/bin/bash -c 'which %s'", prog) >= sizeof(cmd)) {
+	if (snprintf(cmd, sizeof(cmd), "which %s", prog) >= sizeof(cmd)) {
 		warn("snprintf which prog failed");
 		return -1;
 	}
