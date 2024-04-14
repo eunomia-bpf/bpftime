@@ -8,6 +8,7 @@
 #include <llvm/IR/Module.h>
 #include <llvm/ExecutionEngine/Orc/ThreadSafeModule.h>
 #include <llvm/ExecutionEngine/Orc/LLJIT.h>
+#include <llvm/ExecutionEngine/MCJIT.h>
 #include <optional>
 #include <string>
 #include <pthread.h>

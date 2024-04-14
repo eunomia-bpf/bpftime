@@ -3,6 +3,141 @@
  * Copyright (c) 2022, eunomia-bpf org
  * All rights reserved.
  */
+
+#ifdef WIN32
+#pragma warning(disable : 4141 4244 4291 4146 4267 4275 4624 4800)
+#endif
+
+#include <string.h>
+#include <fstream>
+#include <iostream>
+#include <sstream>
+
+
+#include <llvm/ExecutionEngine/MCJIT.h>
+#include <llvm/ExecutionEngine/ObjectCache.h>
+#include <llvm/IR/IRPrintingPasses.h>
+#include <llvm/IR/LegacyPassManager.h>
+#include <llvm/IR/LegacyPassNameParser.h>
+#include <llvm/IR/Verifier.h>
+#include <llvm/IR/PassManager.h>
+#include <llvm/IRReader/IRReader.h>
+#include <llvm/Linker/Linker.h>
+#include <llvm/Support/FileSystem.h>
+#include <llvm/Support/FormattedStream.h>
+#include <llvm/Config/llvm-config.h>
+#if LLVM_VERSION_MAJOR >= 16
+#include <llvm/TargetParser/Host.h>
+#else
+#include <llvm/Support/Host.h>
+#endif
+#include <llvm/Support/ManagedStatic.h>
+#include <llvm/Support/MemoryBuffer.h>
+#include <llvm/Support/SourceMgr.h>
+#include <llvm/Support/TargetSelect.h>
+#include <llvm/Transforms/IPO.h>
+#if LLVM_VERSION_MAJOR < 17
+#include <llvm/Transforms/IPO/PassManagerBuilder.h>
+#endif
+#include <llvm/Transforms/IPO/AlwaysInliner.h>
+#include <llvm/Transforms/Scalar.h>
+#include <llvm/Analysis/TargetLibraryInfo.h>
+#include <llvm/Analysis/TargetTransformInfo.h>
+#include <llvm/Target/TargetMachine.h>
+#include <llvm/Bitcode/BitcodeReader.h>
+#include <llvm/Bitcode/BitcodeWriter.h>
+
+#if LLVM_VERSION_MAJOR >= 17
+#include <llvm/ExecutionEngine/MCJIT.h>
+#include <typeinfo>
+#include <llvm-c/ExecutionEngine.h>
+#include "llvm/LTO/LTOBackend.h"
+#include "llvm/Analysis/AliasAnalysis.h"
+#include "llvm/Analysis/CGSCCPassManager.h"
+#include "llvm/Analysis/ModuleSummaryAnalysis.h"
+#include "llvm/Analysis/TargetLibraryInfo.h"
+#include "llvm/Bitcode/BitcodeReader.h"
+#include "llvm/Bitcode/BitcodeWriter.h"
+#include "llvm/IR/LLVMRemarkStreamer.h"
+#include "llvm/IR/LegacyPassManager.h"
+#include "llvm/IR/PassManager.h"
+#include "llvm/IR/Verifier.h"
+#include "llvm/LTO/LTO.h"
+#include "llvm/MC/TargetRegistry.h"
+#include "llvm/Object/ModuleSymbolTable.h"
+#include "llvm/Passes/PassBuilder.h"
+#include "llvm/Passes/PassPlugin.h"
+#include "llvm/Passes/StandardInstrumentations.h"
+#include "llvm/Support/Error.h"
+#include "llvm/Support/FileSystem.h"
+#include "llvm/Support/MemoryBuffer.h"
+#include "llvm/Support/Path.h"
+#include "llvm/Support/Program.h"
+#include "llvm/Support/ThreadPool.h"
+#include "llvm/Support/ToolOutputFile.h"
+#include "llvm/Support/VirtualFileSystem.h"
+#include "llvm/Support/raw_ostream.h"
+#include "llvm/Target/TargetMachine.h"
+#include "llvm/TargetParser/SubtargetFeature.h"
+#include "llvm/Transforms/IPO/WholeProgramDevirt.h"
+#include "llvm/Transforms/Scalar/LoopPassManager.h"
+#include "llvm/Transforms/Utils/FunctionImportUtils.h"
+#include "llvm/Transforms/Utils/SplitModule.h"
+#include "llvm/ADT/STLExtras.h"
+#include "llvm/ExecutionEngine/GenericValue.h"
+#include "llvm/ExecutionEngine/JITEventListener.h"
+#include "llvm/ExecutionEngine/MCJIT.h"
+#include "llvm/ExecutionEngine/ObjectCache.h"
+#include "llvm/ExecutionEngine/SectionMemoryManager.h"
+#include "llvm/IR/DataLayout.h"
+#include "llvm/IR/DerivedTypes.h"
+#include "llvm/IR/Function.h"
+#include "llvm/IR/LegacyPassManager.h"
+#include "llvm/IR/Mangler.h"
+#include "llvm/IR/Module.h"
+#include "llvm/MC/MCContext.h"
+#include "llvm/Object/Archive.h"
+#include "llvm/Object/ObjectFile.h"
+#include "llvm/Support/DynamicLibrary.h"
+#include "llvm/Support/ErrorHandling.h"
+#include "llvm/Support/MemoryBuffer.h"
+#include "llvm/Support/SmallVectorMemoryBuffer.h"
+#include "llvm/AsmParser/Parser.h"
+#include "llvm/Support/raw_ostream.h"
+#include "llvm/Support/raw_os_ostream.h"
+#include "llvm/IR/PassManager.h"
+#include "llvm/Transforms/Scalar/IndVarSimplify.h"
+#include "llvm/Transforms/Scalar/LICM.h"
+#include "llvm/Transforms/Scalar/LoopAccessAnalysisPrinter.h"
+#include "llvm/Transforms/Scalar/LoopDataPrefetch.h"
+#include "llvm/Transforms/Scalar/LoopDeletion.h"
+#include "llvm/Transforms/Scalar/LoopDistribute.h"
+#include "llvm/Transforms/Scalar/LoopFuse.h"
+#include "llvm/Transforms/Scalar/LoopIdiomRecognize.h"
+#include "llvm/Transforms/Scalar/LoopInstSimplify.h"
+#include "llvm/Transforms/Scalar/LoopLoadElimination.h"
+#include "llvm/Transforms/Scalar/LoopPassManager.h"
+#include "llvm/Transforms/Scalar/LoopPredication.h"
+#include "llvm/Transforms/Scalar/LoopRotation.h"
+#include "llvm/Transforms/Scalar/LoopSimplifyCFG.h"
+#include "llvm/Transforms/Scalar/LoopSink.h"
+#include "llvm/Transforms/Scalar/LoopStrengthReduce.h"
+#include "llvm/Transforms/Scalar/LoopUnrollAndJamPass.h"
+#include "llvm/Transforms/Scalar/LoopUnrollPass.h"
+#endif
+
+// Disappears in LLVM 15
+#if LLVM_VERSION_MAJOR >= 14
+#include <llvm/MC/TargetRegistry.h>
+#else
+#include <llvm/Support/TargetRegistry.h>
+#endif
+
+#if LLVM_VERSION_MAJOR >= 10
+#include <llvm/InitializePasses.h>
+#include <llvm/Support/CodeGen.h>
+#endif
+
 #include "llvm_jit_context.hpp"
 #include "bpftime_vm_compat.hpp"
 #include "compiler_utils.hpp"
@@ -40,6 +175,11 @@
 using namespace llvm;
 using namespace llvm::orc;
 using namespace bpftime;
+using namespace std;
+
+
+
+
 
 struct spin_lock_guard {
 	pthread_spinlock_t *spin;
@@ -57,13 +197,46 @@ static ExitOnError ExitOnErr;
 
 static void optimizeModule(llvm::Module &M)
 {
-	llvm::legacy::PassManager PM;
+	// std::cout << "LLVM_VERSION_MAJOR: " << LLVM_VERSION_MAJOR << std::endl;
+    #if LLVM_VERSION_MAJOR >= 17
+        // =====================
+        // Create the analysis managers.
+        // These must be declared in this order so that they are destroyed in the
+        // correct order due to inter-analysis-manager references.
+        LoopAnalysisManager LAM;
+        FunctionAnalysisManager FAM;
+        CGSCCAnalysisManager CGAM;
+        ModuleAnalysisManager MAM;
 
-	llvm::PassManagerBuilder PMB;
-	PMB.OptLevel = 3;
-	PMB.populateModulePassManager(PM);
+        // Create the new pass manager builder.
+        // Take a look at the PassBuilder constructor parameters for more
+        // customization, e.g. specifying a TargetMachine or various debugging
+        // options.
+        PassBuilder PB;
 
-	PM.run(M);
+        // Register all the basic analyses with the managers.
+        PB.registerModuleAnalyses(MAM);
+        PB.registerCGSCCAnalyses(CGAM);
+        PB.registerFunctionAnalyses(FAM);
+        PB.registerLoopAnalyses(LAM);
+        PB.crossRegisterProxies(LAM, FAM, CGAM, MAM);
+
+        // Create the pass manager.
+        // This one corresponds to a typical -O2 optimization pipeline.
+        ModulePassManager MPM = PB.buildPerModuleDefaultPipeline(OptimizationLevel::O3);
+
+        // Optimize the IR!
+        MPM.run(M, MAM);
+        // =====================================
+    #else 
+        llvm::legacy::PassManager PM;
+
+        llvm::PassManagerBuilder PMB;
+        PMB.OptLevel = 3;
+        PMB.populateModulePassManager(PM);
+
+        PM.run(M);
+    #endif
 }
 
 #if defined(__arm__) || defined(_M_ARM)
@@ -153,14 +326,21 @@ std::vector<uint8_t> llvm_bpf_jit_context::do_aot_compile(
 			std::unique_ptr<raw_svector_ostream> BOS =
 				std::make_unique<raw_svector_ostream>(
 					objStream);
-			legacy::PassManager pass;
-			if (targetMachine->addPassesToEmitFile(
-				    pass, *BOS, nullptr, CGFT_ObjectFile)) {
-				SPDLOG_ERROR(
-					"Unable to emit module for target machine");
-				throw std::runtime_error(
-					"Unable to emit module for target machine");
-			}
+
+legacy::PassManager pass;
+// auto FileType = CGFT_ObjectFile;
+#if LLVM_VERSION_MAJOR >= 18
+if (targetMachine->addPassesToEmitFile(pass, *BOS, nullptr, CodeGenFileType::ObjectFile)) {
+#elif LLVM_VERSION_MAJOR >= 10
+if (targetMachine->addPassesToEmitFile(pass, *BOS, nullptr, CGFT_ObjectFile)) {
+#elif LLVM_VERSION_MAJOR >= 8
+if (targetMachine->addPassesToEmitFile(pass, *BOS, nullptr, TargetMachine::CGFT_ObjectFile)) {
+#else
+if (targetMachine->addPassesToEmitFile(pass, *BOS, TargetMachine::CGFT_ObjectFile, true)) {
+#endif
+    SPDLOG_ERROR("Unable to emit module for target machine");
+    throw std::runtime_error("Unable to emit module for target machine");
+}
 
 			pass.run(module);
 			SPDLOG_INFO("AOT: done, received {} bytes",
@@ -184,13 +364,21 @@ std::vector<uint8_t> llvm_bpf_jit_context::do_aot_compile(bool print_ir)
 	std::vector<std::string> extNames, lddwNames;
 	for (uint32_t i = 0; i < std::size(vm->ext_funcs); i++) {
 		if (vm->ext_funcs[i].has_value()) {
-			extNames.push_back(ext_func_sym(i));
+			#if LLVM_VERSION_MAJOR >= 16
+				extNames.emplace_back(ext_func_sym(i));
+			#else
+				extNames.push_back(ext_func_sym(i));
+			#endif
 		}
 	}
 
 	const auto tryDefineLddwHelper = [&](const char *name, void *func) {
 		if (func) {
-			lddwNames.push_back(name);
+			#if LLVM_VERSION_MAJOR >= 16
+				lddwNames.emplace_back(name);
+			#else
+				lddwNames.push_back(name);
+			#endif
 		}
 	};
 	tryDefineLddwHelper(LDDW_HELPER_MAP_BY_FD, (void *)vm->map_by_fd);
@@ -245,8 +433,17 @@ llvm_bpf_jit_context::create_and_initialize_lljit_instance()
 				ext_func_sym(i));
 			sym.setFlags(JITSymbolFlags::Callable |
 				     JITSymbolFlags::Exported);
+			
+
+		#if LLVM_VERSION_MAJOR < 17
 			extSymbols.try_emplace(symName, sym);
 			extFuncNames.push_back(ext_func_sym(i));
+		#else
+			auto symbol = ::llvm::orc::ExecutorSymbolDef (::llvm::orc::ExecutorAddr (sym.getAddress()), sym.getFlags());
+			extSymbols.try_emplace(symName, symbol);
+			extFuncNames.emplace_back(ext_func_sym(i));
+		#endif
+			
 		}
 	}
 #if defined(__arm__) || defined(_M_ARM)
@@ -264,11 +461,22 @@ llvm_bpf_jit_context::create_and_initialize_lljit_instance()
 			SPDLOG_DEBUG("Defining LDDW helper {} with addr {:x}",
 				     name, (uintptr_t)func);
 			auto sym = JITEvaluatedSymbol::fromPointer(func);
+			// printf("The type of sym %s\n", typeid(sym).name());
 			sym.setFlags(JITSymbolFlags::Callable |
 				     JITSymbolFlags::Exported);
-			lddwSyms.try_emplace(
-				jit->getExecutionSession().intern(name), sym);
+			
+			
+
+		#if LLVM_VERSION_MAJOR < 17
+			lddwSyms.try_emplace(jit->getExecutionSession().intern(name), sym);
 			definedLddwHelpers.push_back(name);
+		#else
+			auto symbol = ::llvm::orc::ExecutorSymbolDef (::llvm::orc::ExecutorAddr (sym.getAddress()), sym.getFlags());
+			lddwSyms.try_emplace(jit->getExecutionSession().intern(name), symbol);
+			definedLddwHelpers.emplace_back(name);
+		#endif
+			
+			
 		}
 	};
 	tryDefineLddwHelper(LDDW_HELPER_MAP_BY_FD, (void *)vm->map_by_fd);
