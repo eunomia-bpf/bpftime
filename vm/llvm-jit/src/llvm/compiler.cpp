@@ -3,6 +3,7 @@
  * Copyright (c) 2022, eunomia-bpf org
  * All rights reserved.
  */
+#include "llvm/IR/Argument.h"
 #include "llvm_bpf_jit.h"
 #include "llvm_jit_context.hpp"
 #include "ebpf_inst.h"
@@ -160,14 +161,17 @@ Expected<ThreadSafeModule> llvm_bpf_jit_context::generateModule(
 	// The main function
 	Function *bpf_func = Function::Create(
 		FunctionType::get(Type::getInt64Ty(*context),
-				  { Type::getInt8PtrTy(*context),
+				  { llvm::PointerType::getUnqual(llvm::Type::getInt8Ty(*context)),
 				    Type::getInt64Ty(*context) },
 				  false),
 		Function::ExternalLinkage, "bpf_main", jitModule.get());
-
+	
 	// Get args of uint64_t bpf_main(uint64_t, uint64_t)
-	Argument *mem = bpf_func->getArg(0);
-	Argument *mem_len = bpf_func->getArg(1);
+	llvm::Argument* mem = bpf_func->getArg(0);
+	llvm::Argument* mem_len = bpf_func->getArg(1);
+
+
+
 
 	std::vector<Value *> regs;
 	std::vector<BasicBlock *> allBlocks;

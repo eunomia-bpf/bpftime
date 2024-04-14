@@ -106,7 +106,7 @@ function(add_ebpf_program_target target_name source_file output_file)
   string(STRIP ${UNAME_ARCH} UNAME_ARCH_STRIPPED)
   add_custom_command(
     OUTPUT ${output_file}
-    COMMAND clang -O2 -target bpf -c -g -D__TARGET_ARCH_${UNAME_ARCH_STRIPPED} -I${CMAKE_SOURCE_DIR}/third_party/vmlinux/${UNAME_ARCH_STRIPPED} -I${LIBBPF_INCLUDE_DIRS}/uapi -I${LIBBPF_INCLUDE_DIRS} ${source_file} -o ${output_file}
+    COMMAND clang -Xlinker --export-dynamic -O2 -target bpf -c -g -D__TARGET_ARCH_${UNAME_ARCH_STRIPPED} -I${CMAKE_SOURCE_DIR}/third_party/vmlinux/${UNAME_ARCH_STRIPPED} -I${LIBBPF_INCLUDE_DIRS}/uapi -I${LIBBPF_INCLUDE_DIRS} ${source_file} -o ${output_file}
     DEPENDS ${source_file}
   )
   add_custom_target(${target_name}
