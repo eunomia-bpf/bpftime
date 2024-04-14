@@ -83,3 +83,4 @@ if(BPFTIME_ENABLE_UNIT_TESTING)
 endif()
 
 add_subdirectory(example)
+add_subdirectory(cli)
