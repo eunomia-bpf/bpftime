@@ -162,6 +162,19 @@ class bpftime_vm_impl {
 			"Not implemented yet: set_unwind_function_index");
 		return -1;
 	}
+
+	virtual std::vector<uint8_t> do_aot_compile()
+	{
+		SPDLOG_CRITICAL("Not implemented yet: do_aot_compile");
+		return {};
+	}
+
+	virtual std::optional<precompiled_ebpf_function> load_aot_object(
+		const std::vector<uint8_t> &buf)
+	{
+		SPDLOG_CRITICAL("Not implemented yet: load_aot_object");
+		return {};
+	}
 };
 
 std::unique_ptr<bpftime_vm_impl> create_vm_instance();

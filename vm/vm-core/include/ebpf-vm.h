@@ -214,6 +214,16 @@ void ebpf_set_lddw_helpers(struct ebpf_vm *vm, uint64_t (*map_by_fd)(uint32_t),
 			   uint64_t (*var_addr)(uint32_t),
 			   uint64_t (*code_addr)(uint32_t));
 
+
+/**
+ * @brief Load an eBPF AOT object file into a VM.
+ * The AOT object file should contain native code for the target architecture.
+ * 
+ * @param[in] vm The VM to load the AOT object into.
+ * @param[in] buf The buffer containing the AOT object file.
+ * @param[in] buf_len The length of the buffer.
+ * @return ebpf_jit_fn A pointer to the compiled program, or NULL on failure.
+ */
 ebpf_jit_fn ebpf_load_aot_object(struct ebpf_vm *vm, const void *buf, size_t buf_len);
 
 #ifdef __cplusplus
