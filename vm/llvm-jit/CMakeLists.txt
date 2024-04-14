@@ -49,6 +49,7 @@ else()
     llvm_map_components_to_libnames(LLVM_LIBS
         Core
         OrcJIT
+        mcjit
         Support
         nativecodegen
     )
