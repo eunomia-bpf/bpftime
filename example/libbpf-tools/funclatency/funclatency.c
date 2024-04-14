@@ -8,6 +8,7 @@
  * - support uprobes on libraries without -p PID. (parse ld.so.cache)
  * - support regexp pattern matching and per-function histograms
  */
+#define _GNU_SOURCE
 #include <argp.h>
 #include <errno.h>
 #include <signal.h>

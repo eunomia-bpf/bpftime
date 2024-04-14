@@ -77,7 +77,7 @@ static int run_command(const char *path, const std::vector<std::string> &argv,
 				int exit_code = WEXITSTATUS(status);
 				if (exit_code != 0) {
 					spdlog::error(
-						"Program exited abnormally: {}",
+						"Program exited abnormally, code={}",
 						exit_code);
 					return 1;
 				}

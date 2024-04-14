@@ -34,7 +34,6 @@ extern "C" {
 #define EBPF_MAX_INSTS 65536
 #endif
 
-
 /**
  * @brief Default maximum number of helper function that a program can call.
  */
@@ -57,30 +56,31 @@ struct ebpf_vm;
 /**
  * @brief Opaque type for a ebpf JIT compiled function.
  */
-typedef uint64_t (*ebpf_jit_fn)(void* mem, size_t mem_len);
+typedef uint64_t (*ebpf_jit_fn)(void *mem, size_t mem_len);
 
 /**
  * @brief Create a new ebpf VM.
  *
  * @return A pointer to the new VM, or NULL on failure.
  */
-struct ebpf_vm* ebpf_create(void);
+struct ebpf_vm *ebpf_create(void);
 
 /**
  * @brief Free a ebpf VM.
  *
  * @param[in] vm The VM to free.
  */
-void ebpf_destroy(struct ebpf_vm* vm);
+void ebpf_destroy(struct ebpf_vm *vm);
 
 /**
- * @brief Enable / disable bounds_check. Bounds check is enabled by default, but it may be too restrictive.
+ * @brief Enable / disable bounds_check. Bounds check is enabled by default, but
+ * it may be too restrictive.
  *
  * @param[in] vm The VM to enable / disable bounds check on.
  * @param[in] enable Enable bounds check if true, disable if false.
  * @retval true Bounds check was previously enabled.
  */
-bool ebpf_toggle_bounds_check(struct ebpf_vm* vm, bool enable);
+bool ebpf_toggle_bounds_check(struct ebpf_vm *vm, bool enable);
 
 /**
  * @brief Set the function to be invoked if the program hits a fatal error.
@@ -88,7 +88,9 @@ bool ebpf_toggle_bounds_check(struct ebpf_vm* vm, bool enable);
  * @param[in] vm The VM to set the error function on.
  * @param[in] error_printf The function to be invoked on fatal error.
  */
-void ebpf_set_error_print(struct ebpf_vm* vm, int (*error_printf)(FILE* stream, const char* format, ...));
+void ebpf_set_error_print(struct ebpf_vm *vm,
+			  int (*error_printf)(FILE *stream, const char *format,
+					      ...));
 
 /**
  * @brief Register an external function.
@@ -103,7 +105,8 @@ void ebpf_set_error_print(struct ebpf_vm* vm, int (*error_printf)(FILE* stream, 
  * @retval 0 Success.
  * @retval -1 Failure.
  */
-int ebpf_register(struct ebpf_vm* vm, unsigned int index, const char* name, void* fn);
+int ebpf_register(struct ebpf_vm *vm, unsigned int index, const char *name,
+		  void *fn);
 
 /**
  * @brief Load code into a VM.
@@ -116,11 +119,13 @@ int ebpf_register(struct ebpf_vm* vm, unsigned int index, const char* name, void
  * @param[in] vm The VM to load the code into.
  * @param[in] code The eBPF bytecodes to load.
  * @param[in] code_len The length of the eBPF bytecodes.
- * @param[out] errmsg The error message, if any. This should be freed by the caller.
+ * @param[out] errmsg The error message, if any. This should be freed by the
+ * caller.
  * @retval 0 Success.
  * @retval -1 Failure.
  */
-int ebpf_load(struct ebpf_vm* vm, const void* code, uint32_t code_len, char** errmsg);
+int ebpf_load(struct ebpf_vm *vm, const void *code, uint32_t code_len,
+	      char **errmsg);
 
 /**
  * @brief Unload code from a VM.
@@ -131,7 +136,7 @@ int ebpf_load(struct ebpf_vm* vm, const void* code, uint32_t code_len, char** er
  *
  * @param[in] vm The VM to unload the code from.
  */
-void ebpf_unload_code(struct ebpf_vm* vm);
+void ebpf_unload_code(struct ebpf_vm *vm);
 
 /**
  * @brief Execute a BPF program in the VM using the interpreter.
@@ -142,11 +147,13 @@ void ebpf_unload_code(struct ebpf_vm* vm);
  * @param[in] vm The VM to execute the program in.
  * @param[in] mem The memory to pass to the program.
  * @param[in] mem_len The length of the memory.
- * @param[in] bpf_return_value The value of the r0 register when the program exits.
+ * @param[in] bpf_return_value The value of the r0 register when the program
+ * exits.
  * @retval 0 Success.
  * @retval -1 Failure.
  */
-int ebpf_exec(const struct ebpf_vm* vm, void* mem, size_t mem_len, uint64_t* bpf_return_value);
+int ebpf_exec(const struct ebpf_vm *vm, void *mem, size_t mem_len,
+	      uint64_t *bpf_return_value);
 
 /**
  * @brief Compile a BPF program in the VM to native code, for jit execution.
@@ -155,23 +162,24 @@ int ebpf_exec(const struct ebpf_vm* vm, void* mem, size_t mem_len, uint64_t* bpf
  * registered before calling this function.
  *
  * @param[in] vm The VM to compile the program in.
- * @param[out] errmsg The error message, if any. This should be freed by the caller.
+ * @param[out] errmsg The error message, if any. This should be freed by the
+ * caller.
  * @return ebpf_jit_fn A pointer to the compiled program, or NULL on failure.
  */
-ebpf_jit_fn ebpf_compile(struct ebpf_vm* vm, char** errmsg);
+ebpf_jit_fn ebpf_compile(struct ebpf_vm *vm, char **errmsg);
 
 /**
- * @brief Instruct the ebpf runtime to apply unwind-on-success semantics to a helper function.
- * If the function returns 0, the ebpf runtime will end execution of
- * the eBPF program and immediately return control to the caller. This is used
- * for implementing function like the "bpf_tail_call" helper.
+ * @brief Instruct the ebpf runtime to apply unwind-on-success semantics to a
+ * helper function. If the function returns 0, the ebpf runtime will end
+ * execution of the eBPF program and immediately return control to the caller.
+ * This is used for implementing function like the "bpf_tail_call" helper.
  *
  * @param[in] vm The VM to set the unwind helper in.
  * @param[in] idx Index of the helper function to unwind on success.
  * @retval 0 Success.
  * @retval -1 Failure.
  */
-int ebpf_set_unwind_function_index(struct ebpf_vm* vm, unsigned int idx);
+int ebpf_set_unwind_function_index(struct ebpf_vm *vm, unsigned int idx);
 
 /**
  * @brief Optional secret to improve ROP protection.
@@ -181,7 +189,7 @@ int ebpf_set_unwind_function_index(struct ebpf_vm* vm, unsigned int idx);
  * Returns 0 on success, -1 on error (e.g. if the secret is set after
  * the instructions are loaded).
  */
-int ebpf_set_pointer_secret(struct ebpf_vm* vm, uint64_t secret);
+int ebpf_set_pointer_secret(struct ebpf_vm *vm, uint64_t secret);
 
 /**
  * @brief Register helper functions using the lddw instruction. See
@@ -189,11 +197,16 @@ int ebpf_set_pointer_secret(struct ebpf_vm* vm, uint64_t secret);
  * All functions could be null.
  *
  * @param[in] vm The VM to set the helpers for.
- * @param[in] map_by_fd A helper to convert a 32-bit file descriptor into an address of a map
- * @param[in] map_by_idx A helper to to convert a 32-bit index into an address of a map
- * @param[in] map_val Helper to get the address of the first value in a given map
- * @param[in] var_addr Helper to get the address of a platform variable with a given id
- * @param[in] code_addr Helper to get the address of the instruction at a specified relative offset in number of (64-bit) instructions
+ * @param[in] map_by_fd A helper to convert a 32-bit file descriptor into an
+ * address of a map
+ * @param[in] map_by_idx A helper to to convert a 32-bit index into an address
+ * of a map
+ * @param[in] map_val Helper to get the address of the first value in a given
+ * map
+ * @param[in] var_addr Helper to get the address of a platform variable with a
+ * given id
+ * @param[in] code_addr Helper to get the address of the instruction at a
+ * specified relative offset in number of (64-bit) instructions
  */
 void ebpf_set_lddw_helpers(struct ebpf_vm *vm, uint64_t (*map_by_fd)(uint32_t),
 			   uint64_t (*map_by_idx)(uint32_t),

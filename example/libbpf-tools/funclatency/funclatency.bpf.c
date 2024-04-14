@@ -69,7 +69,9 @@ static void exit(void)
 	slot = log2l(delta);
 	if (slot >= MAX_SLOTS)
 		slot = MAX_SLOTS - 1;
-	__sync_fetch_and_add(&hist[slot], 1);
+	// ubpf does not support atomic instructions yet
+	// __sync_fetch_and_add(&hist[slot], 1);
+	hist[slot] += 1;
 }
 
 

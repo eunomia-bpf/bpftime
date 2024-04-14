@@ -27,8 +27,8 @@
 #include <math.h>
 #include "ebpf-vm.h"
 
-void
-ebpf_set_register_offset(int x);
+// void
+// ebpf_set_register_offset(int x);
 static void*
 readfile(const char* path, size_t maxlen, size_t* len);
 static void
@@ -82,7 +82,7 @@ main(int argc, char** argv)
             break;
         case 'r':
 #if defined(__x86_64__) || defined(_M_X64)
-            ebpf_set_register_offset(atoi(optarg));
+            // ebpf_set_register_offset(atoi(optarg));
 #endif
             break;
         case 'h':

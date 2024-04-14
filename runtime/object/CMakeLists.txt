@@ -3,9 +3,7 @@ add_library(bpftime-object OBJECT
   bpf_object.cpp
 )
 
-add_dependencies(bpftime-object copy_headers)
-add_dependencies(bpftime-object libbpf)
-add_dependencies(bpftime-object spdlog::spdlog)
+add_dependencies(bpftime-object copy_headers libbpf spdlog::spdlog bpftime_vm)
 
 target_link_libraries(bpftime-object
   PUBLIC
@@ -17,6 +15,7 @@ target_link_libraries(bpftime-object
   -lelf
   -lz
   spdlog::spdlog
+  bpftime_vm
 )
 
 target_include_directories(bpftime-object PUBLIC
