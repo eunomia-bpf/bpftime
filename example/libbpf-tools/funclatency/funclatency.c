@@ -8,6 +8,7 @@
  * - support uprobes on libraries without -p PID. (parse ld.so.cache)
  * - support regexp pattern matching and per-function histograms
  */
+#define _GNU_SOURCE
 #include <argp.h>
 #include <errno.h>
 #include <signal.h>
@@ -237,7 +238,7 @@ static int which_program(const char *prog, char *path, size_t path_sz)
 	FILE *which;
 	char cmd[100];
 
-	if (snprintf(cmd, sizeof(cmd), "which %s", prog) >= sizeof(cmd)) {
+	if (snprintf(cmd, sizeof(cmd), "sh -c 'which %s'", prog) >= sizeof(cmd)) {
 		warn("snprintf which prog failed");
 		return -1;
 	}
