@@ -1,0 +1,8 @@
+add_executable(bpftime_vm_bpf_conformance_runner
+    main-bpf-conformance.cpp
+)
+
+add_dependencies(bpftime_vm_bpf_conformance_runner bpftime_vm)
+target_link_libraries(bpftime_vm_bpf_conformance_runner bpftime_vm)
+
+set_target_properties(bpftime_vm_bpf_conformance_runner PROPERTIES CXX_STANDARD 20)

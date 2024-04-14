@@ -1,5 +1,5 @@
+#include "compat_llvm.hpp"
 #include "ebpf-vm.h"
-#include "llvm_bpf_jit.h"
 #include "bpftime_helper_group.hpp"
 #include "bpftime_prog.hpp"
 #include "bpftime_shm.hpp"
@@ -26,6 +26,7 @@
 #include <cstddef>
 #include <variant>
 #include <vector>
+#include <bpftime_vm_compat.hpp>
 
 using namespace llvm;
 using namespace llvm::orc;
@@ -88,15 +89,17 @@ static int build_ebpf_program(const std::string &ebpf_elf,
 	{
 		auto name = bpf_program__name(prog);
 		SPDLOG_INFO("Processing program {}", name);
-		bpftime::bpftime_prog bpftime_prog((const ebpf_inst *)	bpf_program__insns(prog),
-					   bpf_program__insn_cnt(prog),
-					   name);
+		bpftime::bpftime_prog bpftime_prog(
+			(const ebpf_inst *)bpf_program__insns(prog),
+			bpf_program__insn_cnt(prog), name);
 		bpftime::bpftime_helper_group::get_kernel_utils_helper_group()
 			.add_helper_group_to_prog(&bpftime_prog);
 		bpftime::bpftime_helper_group::get_shm_maps_helper_group()
 			.add_helper_group_to_prog(&bpftime_prog);
 		bpftime_prog.bpftime_prog_load(true);
-		llvm_bpf_jit_context ctx(bpftime_prog.get_vm());
+		llvm_bpf_jit_context ctx(
+			dynamic_cast<bpftime::vm::llvm::bpftime_llvm_jit_vm *>(
+				bpftime_prog.get_vm()->vm_instance.get()));
 		auto result = ctx.do_aot_compile(emit_llvm_ir);
 		auto out_path = output / (std::string(name) + ".o");
 		std::ofstream ofs(out_path, std::ios::binary);
@@ -124,16 +127,21 @@ static int compile_ebpf_program(const std::filesystem::path &output)
 			// in the runtime
 			// TODO: fix this hard code name
 			auto new_prog = bpftime_prog(prog.insns.data(),
-							 prog.insns.size(),
-							 prog.name.c_str());
-					bpftime::bpftime_helper_group::get_kernel_utils_helper_group()
-			.add_helper_group_to_prog(&new_prog);
+						     prog.insns.size(),
+						     prog.name.c_str());
+			bpftime::bpftime_helper_group::
+				get_kernel_utils_helper_group()
+					.add_helper_group_to_prog(&new_prog);
 			bpftime::bpftime_helper_group::get_shm_maps_helper_group()
 				.add_helper_group_to_prog(&new_prog);
 			new_prog.bpftime_prog_load(true);
-			llvm_bpf_jit_context ctx(new_prog.get_vm());
+			llvm_bpf_jit_context ctx(
+				dynamic_cast<
+					bpftime::vm::llvm::bpftime_llvm_jit_vm *>(
+					new_prog.get_vm()->vm_instance.get()));
 			auto result = ctx.do_aot_compile(emit_llvm_ir);
-			auto out_path = output / (std::string(prog.name.c_str()) + ".o");
+			auto out_path = output /
+					(std::string(prog.name.c_str()) + ".o");
 			std::ofstream ofs(out_path, std::ios::binary);
 			ofs.write((const char *)result.data(), result.size());
 			return 0;
@@ -180,13 +188,16 @@ static int run_ebpf_program(const std::filesystem::path &elf,
 
 	const ebpf_inst insn[1] = {};
 	bpftime::bpftime_prog bpftime_prog(insn, 0, "bpf_main");
-		bpftime::bpftime_helper_group::get_kernel_utils_helper_group()
-			.add_helper_group_to_prog(&bpftime_prog);
-		bpftime::bpftime_helper_group::get_shm_maps_helper_group()
-			.add_helper_group_to_prog(&bpftime_prog);
+	bpftime::bpftime_helper_group::get_kernel_utils_helper_group()
+		.add_helper_group_to_prog(&bpftime_prog);
+	bpftime::bpftime_helper_group::get_shm_maps_helper_group()
+		.add_helper_group_to_prog(&bpftime_prog);
 	auto vm = bpftime_prog.get_vm();
-	vm->jit_context->load_aot_object(file_buf);
-	int ret = vm->jit_context->get_entry_address()(&mem, sizeof(mem));
+	auto &jit_ctx = *dynamic_cast<bpftime::vm::llvm::bpftime_llvm_jit_vm &>(
+				 *vm->vm_instance)
+				 .get_jit_context();
+	jit_ctx.load_aot_object(file_buf);
+	int ret = jit_ctx.get_entry_address()(&mem, sizeof(mem));
 	SPDLOG_INFO("Output: {}", ret);
 	return 0;
 }
@@ -218,9 +229,10 @@ int main(int argc, const char **argv)
 	run_command.add_argument("MEMORY")
 		.help("Path to the memory file")
 		.nargs(0, 1);
-	
+
 	argparse::ArgumentParser compile_command("compile");
-	compile_command.add_description("Compile the eBPF program loaded in shared memory");
+	compile_command.add_description(
+		"Compile the eBPF program loaded in shared memory");
 	compile_command.add_argument("-o", "--output")
 		.default_value(".")
 		.help("Output directory (There might be multiple output files for a single input)");
@@ -260,7 +272,8 @@ int main(int argc, const char **argv)
 		}
 	} else if (program.is_subcommand_used(compile_command)) {
 		emit_llvm_ir = compile_command.get<bool>("emit_llvm");
-		return compile_ebpf_program(compile_command.get<std::string>("output"));
+		return compile_ebpf_program(
+			compile_command.get<std::string>("output"));
 	}
 	return 0;
 }

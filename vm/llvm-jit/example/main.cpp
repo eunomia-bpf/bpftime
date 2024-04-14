@@ -1,4 +1,4 @@
-#include <algorithm>
+#include "compat_llvm.hpp"
 #include <cstdint>
 #include <iostream>
 #include <ostream>
@@ -13,10 +13,6 @@
 #include "llvm/Support/CommandLine.h"
 #include "llvm/Support/InitLLVM.h"
 #include "llvm/Support/TargetSelect.h"
-#include "llvm/Support/raw_ostream.h"
-#include "llvm/Support/Error.h"
-#include "llvm/llvm_jit_context.hpp"
-#include "ebpf-vm.h"
 
 using namespace llvm;
 
@@ -27,7 +23,8 @@ struct ebpf_inst;
 #define TEST_BPF_CODE test_1
 #define TEST_BPF_SIZE (sizeof(TEST_BPF_CODE) - 1)
 
-typedef unsigned int (*kernel_fn)(const void *ctx, const struct ebpf_inst *insn);
+typedef unsigned int (*kernel_fn)(const void *ctx,
+				  const struct ebpf_inst *insn);
 
 char *errmsg;
 struct mem {
@@ -59,9 +56,7 @@ int main(int argc, char *argv[])
 {
 	// Initialize LLVM.
 	uint64_t res = 0;
-	struct ebpf_vm *vm = NULL;
-	char *errmsg;
-	
+
 	InitLLVM X(argc, argv);
 
 	InitializeNativeTarget();
@@ -69,26 +64,26 @@ int main(int argc, char *argv[])
 
 	cl::ParseCommandLineOptions(argc, argv, "HowToUseLLJIT");
 
-	vm = ebpf_create();
-	if (!vm) {
-		fprintf(stderr, "Failed to create VM\n");
-		return 1;
-	}
-	res = ebpf_load(vm, TEST_BPF_CODE, TEST_BPF_SIZE, &errmsg);
+	bpftime::vm::llvm::bpftime_llvm_jit_vm vm;
+
+	res = vm.load_code(TEST_BPF_CODE, TEST_BPF_SIZE);
 	if (res) {
-		fprintf(stderr, "Failed to load: %s\n", errmsg);
+		fprintf(stderr, "Failed to load: %s\n",
+			vm.get_error_message().c_str());
 		return 1;
 	}
-	ebpf_register(vm, 2, "print", (void *)ffi_print_func);
-	ebpf_register(vm, 3, "add", (void *)ffi_add_func);
-	ebpf_register(vm, 4, "print_integer", (void *)ffi_print_integer);
+	vm.register_external_function(2, "print", (void *)ffi_print_func);
+	vm.register_external_function(3, "add", (void *)ffi_add_func);
+	vm.register_external_function(4, "print_integer",
+				      (void *)ffi_print_integer);
 	printf("code len: %zd\n", TEST_BPF_SIZE);
-	auto func = ebpf_compile(vm, &errmsg);
+	auto func = vm.compile();
 	if (!func) {
-		fprintf(stderr, "Failed to compile: %s\n", errmsg);
+		fprintf(stderr, "Failed to compile: %s\n",
+			vm.get_error_message().c_str());
 		return 1;
 	}
-	int err = ebpf_exec(vm, &bpf_mem, sizeof(bpf_mem), &res);
+	int err = vm.exec(&bpf_mem, sizeof(bpf_mem), res);
 	if (err != 0) {
 		fprintf(stderr, "Failed to exec: %s\n", errmsg);
 		return 1;

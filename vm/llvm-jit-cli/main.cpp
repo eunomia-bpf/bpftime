@@ -1,5 +1,4 @@
-#include "ebpf-vm.h"
-#include "llvm_bpf_jit.h"
+#include <compat_llvm.hpp>
 #include "spdlog/spdlog.h"
 #include "spdlog/cfg/env.h"
 #include <argparse/argparse.hpp>
@@ -57,20 +56,17 @@ static int build_ebpf_program(const std::string &ebpf_elf,
 	{
 		auto name = bpf_program__name(prog);
 		SPDLOG_INFO("Processing program {}", name);
-		std::unique_ptr<ebpf_vm, decltype(&ebpf_destroy)> vm(
-			ebpf_create(), ebpf_destroy);
-		char *errmsg = nullptr;
-		int err = ebpf_load(vm.get(),
-				    (const void *)bpf_program__insns(prog),
-				    (uint32_t)bpf_program__insn_cnt(prog) * 8,
-				    &errmsg);
-		if (err < 0) {
+		bpftime::vm::llvm::bpftime_llvm_jit_vm vm;
+
+		if (vm.load_code((const void *)bpf_program__insns(prog),
+				 (uint32_t)bpf_program__insn_cnt(prog) * 8) <
+		    0) {
 			SPDLOG_ERROR(
 				"Unable to load instruction of program {}: ",
-				name, errmsg);
+				name, vm.get_error_message());
 			return 1;
 		}
-		llvm_bpf_jit_context ctx(vm.get());
+		llvm_bpf_jit_context ctx(&vm);
 		auto result = ctx.do_aot_compile();
 		auto out_path = output / (std::string(name) + ".o");
 		std::ofstream ofs(out_path, std::ios::binary);

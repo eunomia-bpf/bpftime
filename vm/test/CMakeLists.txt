@@ -23,6 +23,7 @@ foreach(file ${test_sources})
     # need on qemu-user
   endif()
 
+  add_dependencies(${test_name}_Tests bpftime_vm)
   #
   # Set the compiler standard
   #
@@ -38,8 +39,8 @@ foreach(file ${test_sources})
   # Setup code coverage if enabled
   #
   if(BPFTIME_ENABLE_CODE_COVERAGE)
-    target_compile_options(vm-bpf PUBLIC -O0 -g -fprofile-arcs -ftest-coverage)
-    target_link_options(vm-bpf PUBLIC -fprofile-arcs -ftest-coverage)
+    target_compile_options(bpftime_vm_compat PUBLIC -O0 -g -fprofile-arcs -ftest-coverage)
+    target_link_options(bpftime_vm_compat PUBLIC -fprofile-arcs -ftest-coverage)
     message(DEBUG "Code coverage is enabled and provided with GCC.")
   endif()
 
@@ -53,13 +54,13 @@ foreach(file ${test_sources})
       ${test_name}_Tests
       PUBLIC
       Catch2::Catch2
-      vm-bpf
+      bpftime_vm
     )
   else()
     target_link_libraries(
       ${test_name}_Tests
       PUBLIC
-      vm-bpf
+      bpftime_vm
     )
     # message("Unknown testing library ${test_name}_Tests. Please setup your desired unit testing library by using `target_link_libraries`.")
   endif()

@@ -138,8 +138,8 @@
 #include <llvm/Support/CodeGen.h>
 #endif
 
-#include "llvm_bpf_jit.h"
 #include "llvm_jit_context.hpp"
+#include "bpftime_vm_compat.hpp"
 #include "compiler_utils.hpp"
 #include "spdlog/spdlog.h"
 #include <cstdlib>
@@ -171,7 +171,7 @@
 #include <tuple>
 #include <boost/interprocess/sync/file_lock.hpp>
 #include <boost/interprocess/sync/scoped_lock.hpp>
-
+#include <compat_llvm.hpp>
 using namespace llvm;
 using namespace llvm::orc;
 using namespace bpftime;
@@ -245,7 +245,9 @@ extern "C" void __aeabi_unwind_cpp_pr1();
 
 static int llvm_initialized = 0;
 
-llvm_bpf_jit_context::llvm_bpf_jit_context(const ebpf_vm *m_vm) : vm(m_vm)
+llvm_bpf_jit_context::llvm_bpf_jit_context(
+	class bpftime::vm::llvm::bpftime_llvm_jit_vm *vm)
+	: vm(vm)
 {
 	using namespace llvm;
 	int zero = 0;
@@ -269,7 +271,7 @@ void llvm_bpf_jit_context::do_jit_compile()
 	this->jit = std::move(jit);
 }
 
-ebpf_jit_fn llvm_bpf_jit_context::compile()
+bpftime::vm::compat::precompiled_ebpf_function llvm_bpf_jit_context::compile()
 {
 	spin_lock_guard guard(compiling.get());
 	if (!this->jit.has_value()) {
@@ -361,7 +363,7 @@ std::vector<uint8_t> llvm_bpf_jit_context::do_aot_compile(bool print_ir)
 {
 	std::vector<std::string> extNames, lddwNames;
 	for (uint32_t i = 0; i < std::size(vm->ext_funcs); i++) {
-		if (vm->ext_funcs[i] != nullptr) {
+		if (vm->ext_funcs[i].has_value()) {
 			#if LLVM_VERSION_MAJOR >= 16
 				extNames.emplace_back(ext_func_sym(i));
 			#else
@@ -424,9 +426,9 @@ llvm_bpf_jit_context::create_and_initialize_lljit_instance()
 	// insert the helper functions
 	SymbolMap extSymbols;
 	for (uint32_t i = 0; i < std::size(vm->ext_funcs); i++) {
-		if (vm->ext_funcs[i] != nullptr) {
+		if (vm->ext_funcs[i].has_value()) {
 			auto sym = JITEvaluatedSymbol::fromPointer(
-				vm->ext_funcs[i]);
+				vm->ext_funcs[i]->fn);
 			auto symName = jit->getExecutionSession().intern(
 				ext_func_sym(i));
 			sym.setFlags(JITSymbolFlags::Callable |
@@ -486,7 +488,7 @@ llvm_bpf_jit_context::create_and_initialize_lljit_instance()
 	return { std::move(jit), extFuncNames, definedLddwHelpers };
 }
 
-ebpf_jit_fn llvm_bpf_jit_context::get_entry_address()
+bpftime::vm::compat::precompiled_ebpf_function llvm_bpf_jit_context::get_entry_address()
 {
 	if (!this->jit.has_value()) {
 		SPDLOG_CRITICAL(
@@ -500,7 +502,7 @@ ebpf_jit_fn llvm_bpf_jit_context::get_entry_address()
 		SPDLOG_CRITICAL("Unable to find symbol `bpf_main`: {}", buf);
 		throw std::runtime_error("Unable to link symbol `bpf_main`");
 	} else {
-		auto addr = err->toPtr<ebpf_jit_fn>();
+		auto addr = err->toPtr<vm::compat::precompiled_ebpf_function>();
 		SPDLOG_DEBUG("LLVM-JIT: Entry func is {:x}", (uintptr_t)addr);
 		return addr;
 	}

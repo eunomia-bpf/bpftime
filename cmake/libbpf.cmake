@@ -1,7 +1,7 @@
 #
 # Setup libbpf
 #
-set(LIBBPF_DIR ${CMAKE_CURRENT_SOURCE_DIR}/third_party/libbpf/)
+set(LIBBPF_DIR ${CMAKE_CURRENT_LIST_DIR}/../third_party/libbpf/)
 include(ExternalProject)
 ExternalProject_Add(libbpf
   PREFIX libbpf
@@ -20,7 +20,6 @@ ExternalProject_Add(libbpf
 set(LIBBPF_INCLUDE_DIRS ${CMAKE_CURRENT_BINARY_DIR}/libbpf/)
 set(LIBBPF_LIBRARIES ${CMAKE_CURRENT_BINARY_DIR}/libbpf/libbpf.a)
 
-set(header_output_list)
 
 function(copy_header SRC_DIR TARGET_DIR)
   file(GLOB_RECURSE FILES RELATIVE "${SRC_DIR}" "${SRC_DIR}/*")
@@ -67,8 +66,12 @@ endforeach()
 
 add_dependencies(copy_headers libbpf)
 
+add_custom_target(libbpf_with_headers)
+
+add_dependencies(libbpf_with_headers libbpf copy_headers)
+
 # # Setup bpftool
-set(BPFTOOL_DIR ${CMAKE_CURRENT_SOURCE_DIR}/third_party/bpftool)
+set(BPFTOOL_DIR ${CMAKE_CURRENT_LIST_DIR}/../third_party/bpftool)
 set(BPFTOOL_INSTALL_DIR ${CMAKE_CURRENT_BINARY_DIR}/bpftool)
 ExternalProject_Add(bpftool
   PREFIX bpftool
