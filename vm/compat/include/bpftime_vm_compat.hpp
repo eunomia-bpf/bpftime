@@ -163,14 +163,14 @@ class bpftime_vm_impl {
 		return -1;
 	}
 
-	virtual std::vector<uint8_t> do_aot_compile()
+	virtual std::vector<uint8_t> do_aot_compile(bool print_ir = false)
 	{
 		SPDLOG_CRITICAL("Not implemented yet: do_aot_compile");
 		return {};
 	}
 
-	virtual std::optional<precompiled_ebpf_function> load_aot_object(
-		const std::vector<uint8_t> &buf)
+	virtual std::optional<precompiled_ebpf_function>
+	load_aot_object(const std::vector<uint8_t> &buf)
 	{
 		SPDLOG_CRITICAL("Not implemented yet: load_aot_object");
 		return {};

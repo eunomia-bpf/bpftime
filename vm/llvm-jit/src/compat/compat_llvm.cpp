@@ -7,6 +7,7 @@
 #include "../llvm/llvm_jit_context.hpp"
 namespace bpftime::vm::compat
 {
+
 std::unique_ptr<bpftime_vm_impl> create_vm_instance()
 {
 	return std::make_unique<llvm::bpftime_llvm_jit_vm>();
@@ -15,6 +16,7 @@ std::unique_ptr<bpftime_vm_impl> create_vm_instance()
 } // namespace bpftime::vm::compat
 
 using namespace bpftime::vm::llvm;
+
 bpftime_llvm_jit_vm::bpftime_llvm_jit_vm() : ext_funcs(MAX_EXT_FUNCS)
 
 {
@@ -25,6 +27,7 @@ std::string bpftime_llvm_jit_vm::get_error_message()
 {
 	return error_msg;
 }
+
 int bpftime_llvm_jit_vm::register_external_function(size_t index,
 						    const std::string &name,
 						    void *fn)
@@ -40,6 +43,7 @@ int bpftime_llvm_jit_vm::register_external_function(size_t index,
 	ext_funcs[index] = external_function{ .name = name, .fn = fn };
 	return 0;
 }
+
 int bpftime_llvm_jit_vm::load_code(const void *code, size_t code_len)
 {
 	if (code_len % 8 != 0) {
@@ -50,10 +54,12 @@ int bpftime_llvm_jit_vm::load_code(const void *code, size_t code_len)
 			    (ebpf_inst *)code + code_len / 8);
 	return 0;
 }
+
 void bpftime_llvm_jit_vm::unload_code()
 {
 	instructions.clear();
 }
+
 int bpftime_llvm_jit_vm::exec(void *mem, size_t mem_len,
 			      uint64_t &bpf_return_value)
 {
@@ -77,6 +83,7 @@ int bpftime_llvm_jit_vm::exec(void *mem, size_t mem_len,
 	// after compile, run
 	return exec(mem, mem_len, bpf_return_value);
 }
+
 std::optional<bpftime::vm::compat::precompiled_ebpf_function>
 bpftime_llvm_jit_vm::compile()
 {
@@ -84,6 +91,7 @@ bpftime_llvm_jit_vm::compile()
 	jitted_function = func;
 	return func;
 }
+
 void bpftime_llvm_jit_vm::set_lddw_helpers(uint64_t (*map_by_fd)(uint32_t),
 					   uint64_t (*map_by_idx)(uint32_t),
 					   uint64_t (*map_val)(uint64_t),
@@ -95,4 +103,21 @@ void bpftime_llvm_jit_vm::set_lddw_helpers(uint64_t (*map_by_fd)(uint32_t),
 	this->map_val = map_val;
 	this->var_addr = var_addr;
 	this->code_addr = code_addr;
+}
+
+std::vector<uint8_t> bpftime_llvm_jit_vm::do_aot_compile(bool print_ir)
+{
+	return this->jit_ctx->do_aot_compile(print_ir);
+}
+
+std::optional<bpftime::vm::compat::precompiled_ebpf_function>
+bpftime_llvm_jit_vm::load_aot_object(const std::vector<uint8_t> &object)
+{
+	if (jitted_function) {
+		error_msg = "Already compiled";
+		return {};
+	}
+	this->jit_ctx->load_aot_object(object);
+	jitted_function = this->jit_ctx->get_entry_address();
+	return jitted_function;
 }
