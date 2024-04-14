@@ -71,7 +71,7 @@ static void exit(void)
 		slot = MAX_SLOTS - 1;
 	// ubpf does not support atomic instructions yet
 	// __sync_fetch_and_add(&hist[slot], 1);
-	hists[slot] += 1;
+	hist[slot] += 1;
 }
 
 
