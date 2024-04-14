@@ -64,7 +64,9 @@ endif()
 
 if(${BPFTIME_BUILD_STANDALONE_LLVM_VM})
     add_subdirectory(../compat ${CMAKE_CURRENT_BINARY_DIR}/bpftime_compat)
-    add_subdirectory(../../third_party/Catch2 ${CMAKE_CURRENT_BINARY_DIR}/Catch2)
+    if(${BPFTIME_ENABLE_UNIT_TESTING})
+        add_subdirectory(../../third_party/Catch2 ${CMAKE_CURRENT_BINARY_DIR}/Catch2)
+    endif()
 endif()
 
 message(STATUS "LLVM_LIBS=${LLVM_LIBS}")

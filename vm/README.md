@@ -28,15 +28,13 @@ cmake --build build --target all -j
 
 You can see the cli for how to use [AOT compile](cli/README.md).
 
-## a simple jit modified from ubpf
+## ubpf
 
-see [simple-jit/README.md](simple-jit/README.md)
-
-> Note: we will use ubpf to replace the simple-jit in the future.
+see [ubpf-vm/README.md](ubpf-vm/README.md)
 
 ## Example Usage
 
-See [example/main.c](example/main.c) for how to use it.
+See [example/main.c](example/main.cpp) for how to use it.
 
 ## cli
 

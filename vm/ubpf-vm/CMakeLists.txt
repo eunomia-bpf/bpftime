@@ -19,8 +19,3 @@ add_dependencies(bpftime_ubpf_vm ubpf spdlog::spdlog bpftime_vm_compat)
 target_link_libraries(bpftime_ubpf_vm PUBLIC ${UBPF_BUILD_DIR}/lib/libubpf.a bpftime_vm_compat spdlog::spdlog)
 ExternalProject_Get_Property(ubpf SOURCE_DIR)
 target_include_directories(bpftime_ubpf_vm PRIVATE ${SOURCE_DIR}/vm/inc ${UBPF_BUILD_DIR}/vm/ ${CMAKE_CURRENT_SOURCE_DIR} ${SPDLOG_INCLUDE})
-
-
-
-# target_compile_options(bpftime_ubpf_vm PUBLIC -fsanitize=address)
-# target_link_libraries(bpftime_ubpf_vm PUBLIC asan)
