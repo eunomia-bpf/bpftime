@@ -52,26 +52,6 @@ extern "C" int _libbpf_print(libbpf_print_level level, const char *fmt,
 	return ret;
 }
 
-union bpf_attach_ctx_holder {
-	bpftime::bpf_attach_ctx ctx;
-	bpf_attach_ctx_holder()
-	{
-	}
-	~bpf_attach_ctx_holder()
-	{
-	}
-	void destroy()
-	{
-		ctx.~bpf_attach_ctx();
-	}
-	void init()
-	{
-		new (&ctx) bpftime::bpf_attach_ctx;
-	}
-};
-
-static bpf_attach_ctx_holder ctx_holder;
-
 bool emit_llvm_ir = false;
 
 static int build_ebpf_program(const std::string &ebpf_elf,
@@ -113,19 +93,14 @@ static int compile_ebpf_program(const std::filesystem::path &output)
 {
 	using namespace bpftime;
 	bpftime_initialize_global_shm(shm_open_type::SHM_OPEN_ONLY);
-	ctx_holder.init();
 	const handler_manager *manager =
 		shm_holder.global_shared_memory.get_manager();
 	size_t handler_size = manager->size();
-	// TODO: fix load programs
 	for (size_t i = 0; i < manager->size(); i++) {
 		if (std::holds_alternative<bpf_prog_handler>(
 			    manager->get_handler(i))) {
-			const auto &prog = std::get<bpf_prog_handler>(
+			bpf_prog_handler &prog = (bpf_prog_handler &)std::get<bpf_prog_handler>(
 				manager->get_handler(i));
-			// temp work around: we need to create new attach points
-			// in the runtime
-			// TODO: fix this hard code name
 			auto new_prog = bpftime_prog(prog.insns.data(),
 						     prog.insns.size(),
 						     prog.name.c_str());
@@ -144,6 +119,9 @@ static int compile_ebpf_program(const std::filesystem::path &output)
 					(std::string(prog.name.c_str()) + ".o");
 			std::ofstream ofs(out_path, std::ios::binary);
 			ofs.write((const char *)result.data(), result.size());
+			// update the aot_insns in share memory
+			prog.aot_insns.resize(result.size());
+			std::copy(result.begin(), result.end(), prog.aot_insns.begin());
 			return 0;
 		}
 	}
@@ -212,7 +190,8 @@ int main(int argc, const char **argv)
 
 	argparse::ArgumentParser build_command("build");
 	build_command.add_description(
-		"Build native ELF(s) from eBPF ELF. Each program in the eBPF ELF will be built into a single native ELF");
+		"Build native ELF(s) from eBPF ELF Object."
+		"Each program in the eBPF ELF object will be built into a single native ELF");
 	build_command.add_argument("-o", "--output")
 		.default_value(".")
 		.help("Output directory (There might be multiple output files for a single input)");
