@@ -109,4 +109,15 @@ int bpftime_prog::bpftime_prog_register_raw_helper(
 	return ebpf_register(vm, info.index, info.name.c_str(), info.fn);
 }
 
+int bpftime_prog::load_aot_object(const std::vector<uint8_t> &buf) {
+	ebpf_jit_fn res = ebpf_load_aot_object(vm, buf.data(), buf.size());
+	if (res == nullptr) {
+		SPDLOG_ERROR("Failed to load aot object");
+		return -1;
+	}
+	fn = res;
+	jitted = true;
+	return 0;
+}
+
 } // namespace bpftime

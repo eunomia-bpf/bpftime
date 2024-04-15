@@ -8,6 +8,8 @@ project(
   LANGUAGES C
 )
 
+add_subdirectory(bpf_conformance_runner)
+
 message(DEBUG "Adding tests under ${CMAKE_PROJECT_NAME}Tests...")
 
 foreach(file ${test_sources})

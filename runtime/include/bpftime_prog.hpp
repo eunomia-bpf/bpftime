@@ -40,6 +40,7 @@ class bpftime_prog {
 		return insns;
 	}
 	const struct ebpf_vm *get_vm() const { return vm; }
+	int load_aot_object(const std::vector<uint8_t> &buf);
     private:
 	int bpftime_prog_set_insn(struct ebpf_inst *insn, size_t insn_cnt);
 	std::string name;

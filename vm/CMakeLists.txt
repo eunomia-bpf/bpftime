@@ -33,7 +33,6 @@ endif()
 if(${BPFTIME_LLVM_JIT})
   message(STATUS "Using llvm-jit")
   add_subdirectory(llvm-jit)
-  add_subdirectory(llvm-jit-cli)
   set(BPFTIME_BPF_RUNTIME_NAME "bpftime_llvm_jit_vm")
 else()
   message(STATUS "Not using llvm-jit")
@@ -60,5 +59,4 @@ if(BPFTIME_ENABLE_UNIT_TESTING)
 endif()
 
 add_subdirectory(test-runner)
-add_subdirectory(bpf_conformance_runner)
 
