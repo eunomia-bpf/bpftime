@@ -33,7 +33,7 @@ jobs:
     - name: build llvm JIT/AOT as a standalone library
       run: |
         cd vm/llvm-jit &&\
-        cmake -B build -DCMAKE_BUILD_TYPE=Release -DBPFTIME_BUILD_STANDALONE_LLVM_VM=YES &&\
+        cmake -B build -DCMAKE_BUILD_TYPE=Release &&\
         cmake --build build --target all -j
 
     - name: build vm as a standalone library

@@ -41,7 +41,7 @@ class bpftime_vm_impl {
 	 */
 	virtual bool toggle_bounds_check(bool enable)
 	{
-		SPDLOG_CRITICAL("Not implemented yet: toggle_bounds_check");
+		SPDLOG_WARN("Not implemented yet: toggle_bounds_check");
 		return false;
 	}
 	/**
@@ -52,7 +52,7 @@ class bpftime_vm_impl {
 	virtual void register_error_print_callback(int (*fn)(FILE *,
 							     const char *, ...))
 	{
-		SPDLOG_CRITICAL(
+		SPDLOG_WARN(
 			"Not implemented yet: register_error_print_callback");
 	}
 	/**
@@ -142,7 +142,7 @@ class bpftime_vm_impl {
 	 */
 	virtual int set_pointer_secret(uint64_t secret)
 	{
-		SPDLOG_CRITICAL("Not implemented yet: set_pointer_secret");
+		SPDLOG_WARN("Not implemented yet: set_pointer_secret");
 		return -1;
 	}
 	/**
