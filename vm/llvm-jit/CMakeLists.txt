@@ -63,7 +63,6 @@ if(NOT DEFINED SPDLOG_INCLUDE)
 endif()
 
 if(${BPFTIME_BUILD_STANDALONE_LLVM_VM})
-    add_subdirectory(../compat ${CMAKE_CURRENT_BINARY_DIR}/bpftime_compat)
     if(${BPFTIME_ENABLE_UNIT_TESTING})
         add_subdirectory(../../third_party/Catch2 ${CMAKE_CURRENT_BINARY_DIR}/Catch2)
     endif()
