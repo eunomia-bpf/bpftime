@@ -62,9 +62,9 @@ if(NOT DEFINED SPDLOG_INCLUDE)
   set(SPDLOG_INCLUDE ../../third_party/spdlog/include)
 endif()
 
-# if BPFTIME_BUILD_WITH_LLVM_VM is set, then it's built in the bpftime project.
+# if BPFTIME_LLVM_JIT is set, then it's built in the bpftime project.
 # If not, it's built as a standalone library.
-if(${BPFTIME_BUILD_WITH_LLVM_VM})
+if(${BPFTIME_LLVM_JIT})
     # only build cli in the main project because it relies on libbpf
     add_subdirectory(cli)
 else()
