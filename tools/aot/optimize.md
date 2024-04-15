@@ -27,7 +27,7 @@ This is a port of ubpf JIT in bpftime.
 - No additional optimization is applied.
 - The compile process is faster.
 
-See https://github.com/eunomia-bpf/bpftime/tree/master/vm/simple-jit
+See https://github.com/eunomia-bpf/bpftime/tree/master/vm/ubpf-vm
 
 ## LLVM AOT
 
