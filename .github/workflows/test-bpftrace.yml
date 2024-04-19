@@ -97,16 +97,18 @@ jobs:
         name: "Clone the latest version"
         with:
           submodules: 'recursive'
+      - name: "Create bpftrace dirs"
+        run: mkdir /bpftrace /bpftrace_git
       - uses: actions/checkout@v2
         name: "Pull bpftrace"
         with:
           repository: "bpftrace/bpftrace"
           submodules: 'recursive'
-          path: '$GITHUB_WORKSPACE/bpftrace'
+          path: '/bpftrace_git'
       - name: Build and install bpftrace
         if: ${{!matrix.enable_jit}}
         run: |
-          cd $GITHUB_WORKSPACE/bpftrace
+          cd /bpftrace_git
           cmake -B /bpftrace -DBUILD_TESTING=OFF
           make -C /bpftrace -j$(nproc)
           cd -
