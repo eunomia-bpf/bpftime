@@ -37,7 +37,7 @@ jobs:
         with:
           repository: "bpftrace/bpftrace"
           submodules: 'recursive'
-          path: '/opt/bpftrace'
+          path: '${pwd}/bpftrace'
       - name: Build and install runtime (with llvm-jit)
         if: ${{matrix.enable_jit}}
         run: |
@@ -49,7 +49,7 @@ jobs:
       - name: Build and install bpftrace
         if: ${{!matrix.enable_jit}}
         run: |
-          cd /opt/bpftrace
+          cd ${pwd}/bpftrace
           cmake -B /bpftrace -DBUILD_TESTING=OFF
           make -C /bpftrace -j$(nproc)
           cd -
