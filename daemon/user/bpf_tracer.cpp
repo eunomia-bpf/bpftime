@@ -61,7 +61,7 @@ static int handle_event_rb(void *ctx, void *data, size_t data_sz)
 }
 
 // Function to get current time in nanoseconds using std::chrono
-long long getCurrentTimeInNanoseconds() {
+long long get_current_time_ns() {
     auto now = std::chrono::steady_clock::now();
     auto ns = std::chrono::time_point_cast<std::chrono::nanoseconds>(now);
     return ns.time_since_epoch().count();
@@ -93,11 +93,11 @@ static int process_exec_maps(bpf_event_handler *handler, bpf_tracer_bpf *obj,
 		if (res != 0) {
 			continue;
 		}
-		// struct timespec ts;
+		
 		long long current_nanoseconds;
 		long start_time_ms;
 		// Get current time in nanoseconds
-    	current_nanoseconds = getCurrentTimeInNanoseconds();
+    	current_nanoseconds = get_current_time_ns();
 
 		start_time_ms =
 			(current_nanoseconds - e.exec_data.time_ns) / 1000000;
