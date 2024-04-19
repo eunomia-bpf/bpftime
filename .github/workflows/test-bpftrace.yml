@@ -28,9 +28,42 @@ jobs:
       image: "manjusakalza/bpftime-base-image:${{matrix.container.image}}"
       options: --privileged
     steps:
-      - name: Install bpftrace dependencies
+      - name: Install bpftrace dependencies in fedora
+        if: ${{ matrix.container.name=='fedora' }}
         run: |
-          if [ "${{ matrix.container.name }}" = "ubuntu" ]; then
+          dnf -y update && dnf install -y \
+                make \
+                gcc-c++-aarch64-linux-gnu \
+                gcc-arm-linux-gnu \
+                clang \
+                boost-devel \
+                zlib-devel \
+                libubsan \
+                g++ \
+                llvm \
+                elfutils-libelf-devel \
+                qemu-user \
+                cmake \
+                gcc-c++ \
+                gcc-aarch64-linux-gnu \
+                llvm15-devel \
+                systemtap-sdt-devel \
+                gcc \
+                asciidoctor \
+                bison \
+                binutils-devel \
+                bcc-devel \
+                cereal-devel \
+                clang-devel \
+                elfutils-devel \
+                elfutils-libs \
+                flex \
+                libpcap-devel \
+                libbpf-devel \
+                llvm-devel
+      - name: Install bpftrace dependencies in ubuntu
+        if: ${{ matrix.container.name=='ubuntu' }}
+        run: |
             apt-get update && apt-get install -y \
               --no-install-recommends \
               libelf1 \
@@ -60,40 +93,6 @@ jobs:
               bison \
               asciidoctor \
               libbpf-dev
-  
-          elif [ "${{ matrix.container.name }}" = "fedora" ]; then
-            dnf -y update && dnf install -y \
-              elfutils-libelf \
-              elfutils-libelf-devel \
-              zlib-devel \
-              make \
-              cmake \
-              git \
-              boost-devel \
-              binutils-devel \
-              yaml-cpp-devel \
-              gcc \
-              gcc-c++ \
-              ca-certificates \
-              clang \
-              llvm \
-              systemtap-sdt-devel \
-              clang-devel \
-              lldb-devel \
-              llvm-devel \
-              libpcap-devel \
-              libiberty-devel \
-              cereal-devel \
-              libbpf-devel \
-              flex \
-              bison \
-              asciidoctor \
-              bpftrace \
-              kernel-devel
-          else
-            echo "Unsupported container type"
-            exit 1
-          fi
       - uses: actions/checkout@v2
         name: "Clone the latest version"
         with:
