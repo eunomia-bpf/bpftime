@@ -23,11 +23,22 @@ jobs:
             name: ubuntu
           - image: fedora-39
             name: fedora
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-latest
     container: 
       image: "manjusakalza/bpftime-base-image:${{matrix.container.image}}"
       options: --privileged
     steps:
+      - uses: actions/checkout@v2
+        name: "Clone the latest version"
+        with:
+          submodules: 'recursive'
+          path: ./bpftime
+      - uses: actions/checkout@v2
+        name: "Pull bpftrace"
+        with:
+          repository: "bpftrace/bpftrace"
+          submodules: 'recursive'
+          path: './bpftrace_git'
       - name: Install bpftrace dependencies in fedora
         if: ${{ matrix.container.name=='fedora' }}
         run: |
@@ -93,32 +104,21 @@ jobs:
               bison \
               asciidoctor \
               libbpf-dev
-      - uses: actions/checkout@v2
-        name: "Clone the latest version"
-        with:
-          submodules: 'recursive'
-      - name: "Create bpftrace dirs"
-        run: mkdir /bpftrace /bpftrace_git
-      - uses: actions/checkout@v2
-        name: "Pull bpftrace"
-        with:
-          repository: "bpftrace/bpftrace"
-          submodules: 'recursive'
-          path: '/bpftrace_git'
       - name: Build and install bpftrace
-        if: ${{!matrix.enable_jit}}
         run: |
-          cd /bpftrace_git
-          cmake -B /bpftrace -DBUILD_TESTING=OFF
-          make -C /bpftrace -j$(nproc)
+          cd ./bpftrace_git
+          cmake -B ./bpftrace -DBUILD_TESTING=OFF
+          make -C ./bpftrace -j$(nproc)
           cd -
       - name: Build and install runtime (with llvm-jit)
         if: ${{matrix.enable_jit}}
         run: |
+          cd ./bpftime
           make release-with-llvm-jit -j
       - name: Build and install runtime (without llvm-jit)
         if: ${{!matrix.enable_jit}}
         run: |
+          cd ./bpftime
           make release -j
       - name: Upload build results (without jit)
         uses: actions/upload-artifact@v3
