@@ -26,6 +26,7 @@
 #include <spdlog/spdlog.h>
 #include <vector>
 #include <bpftime_shm_internal.hpp>
+#include <chrono>
 
 #define PATH_MAX 4096
 
@@ -103,9 +104,9 @@ uint64_t bpf_get_current_uid_gid(uint64_t, uint64_t, uint64_t, uint64_t,
 
 uint64_t bpftime_ktime_get_ns(uint64_t, uint64_t, uint64_t, uint64_t, uint64_t)
 {
-	timespec spec;
-	clock_gettime(CLOCK_MONOTONIC, &spec);
-	return spec.tv_sec * (uint64_t)1000000000 + spec.tv_nsec;
+    auto now = std::chrono::steady_clock::now();
+    auto ns = std::chrono::time_point_cast<std::chrono::nanoseconds>(now);
+    return ns.time_since_epoch().count();
 }
 
 uint64_t bpftime_get_current_comm(uint64_t buf, uint64_t size, uint64_t,
