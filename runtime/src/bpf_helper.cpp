@@ -78,11 +78,11 @@ uint64_t bpftime_get_prandom_u32()
 }
 
 uint64_t bpftime_ktime_get_coarse_ns(uint64_t, uint64_t, uint64_t, uint64_t,
-                                     uint64_t)
+				     uint64_t)
 {
-    auto now = std::chrono::steady_clock::now();
-    auto ns = std::chrono::time_point_cast<std::chrono::nanoseconds>(now);
-    return ns.time_since_epoch().count();
+	timespec spec;
+	clock_gettime(CLOCK_MONOTONIC_COARSE, &spec);
+	return spec.tv_sec * (uint64_t)1000000000 + spec.tv_nsec;
 }
 
 uint64_t bpftime_get_current_pid_tgid(uint64_t, uint64_t, uint64_t, uint64_t,
@@ -171,11 +171,11 @@ uint64_t bpf_get_stack(uint64_t, uint64_t buf, uint64_t sz, uint64_t, uint64_t)
 }
 
 uint64_t bpf_ktime_get_coarse_ns(uint64_t, uint64_t, uint64_t, uint64_t,
-                                 uint64_t)
+				 uint64_t)
 {
-    auto now = std::chrono::steady_clock::now();
-    auto ns = std::chrono::time_point_cast<std::chrono::nanoseconds>(now);
-    return ns.time_since_epoch().count();
+	struct timespec ts;
+	clock_gettime(CLOCK_MONOTONIC_COARSE, &ts);
+	return (uint64_t)ts.tv_sec * 1000000000 + ts.tv_nsec;
 }
 
 uint64_t bpf_ringbuf_output(uint64_t rb, uint64_t data, uint64_t size,

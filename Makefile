@@ -26,7 +26,7 @@ export PRINT_HELP_PYSCRIPT
 
 BROWSER := python3 -c "$$BROWSER_PYSCRIPT"
 INSTALL_LOCATION := ~/.local
-CXXFLAGS += -std=c++17
+CXXFLAGS += -std=c++20
 JOBS := 1
 
 help:
