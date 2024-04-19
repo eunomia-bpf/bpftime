@@ -18,30 +18,36 @@
 #include <bpftime_shm_internal.hpp>
 #include <fstream>
 #include <time.h>
+#include <iostream>
+#include <chrono>
 
 using namespace std;
 using namespace bpftime;
 
 static int run_ebpf_and_measure(bpftime_prog& prog, std::vector<uint8_t>& data_in, int repeat_N) {
-	// Tes the program
-	uint64_t return_val;
-	void* memory = data_in.data();
-	size_t memory_size = data_in.size();
-	// start timer
-	struct timespec start, end;
-	clock_gettime(CLOCK_MONOTONIC, &start);
-	// run the program
-	for (int i = 0; i < repeat_N; i++) {
-		prog.bpftime_prog_exec(memory, memory_size, &return_val);
-	}
-	// end timer
-	clock_gettime(CLOCK_MONOTONIC, &end);
-	// get avg time in ns
-	uint64_t time_ns = (end.tv_sec - start.tv_sec) * 1000000000 + (end.tv_nsec - start.tv_nsec);
-	time_ns /= repeat_N;
-	cout << "Time taken: " << time_ns << " ns" << endl;
-	cout << "Return value: " << return_val << endl;
-	return 0;
+    // Test the program
+    uint64_t return_val;
+    void* memory = data_in.data();
+    size_t memory_size = data_in.size();
+
+    // Start timer
+    auto start = std::chrono::steady_clock::now();
+
+    // Run the program
+    for (int i = 0; i < repeat_N; i++) {
+        prog.bpftime_prog_exec(memory, memory_size, &return_val);
+    }
+
+    // End timer
+    auto end = std::chrono::steady_clock::now();
+
+    // Calculate average time in ns
+    auto time_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(end - start).count() / repeat_N;
+
+    std::cout << "Time taken: " << time_ns << " ns" << std::endl;
+    std::cout << "Return value: " << return_val << std::endl;
+
+    return 0;
 }
 
 int bpftime_run_ebpf_program(int id,

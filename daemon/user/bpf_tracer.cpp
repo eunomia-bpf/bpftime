@@ -27,6 +27,7 @@
 #include <spdlog/spdlog.h>
 #include <map>
 #include <spdlog/cfg/env.h>
+#include <chrono>
 
 #define NSEC_PER_SEC 1000000000ULL
 
@@ -59,6 +60,14 @@ static int handle_event_rb(void *ctx, void *data, size_t data_sz)
 	return handler->handle_event(e);
 }
 
+// Function to get current time in nanoseconds using std::chrono
+long long getCurrentTimeInNanoseconds() {
+    auto now = std::chrono::steady_clock::now();
+    auto ns = std::chrono::time_point_cast<std::chrono::nanoseconds>(now);
+    return ns.time_since_epoch().count();
+}
+
+
 static int process_exec_maps(bpf_event_handler *handler, bpf_tracer_bpf *obj,
 			     daemon_config &env)
 {
@@ -84,19 +93,12 @@ static int process_exec_maps(bpf_event_handler *handler, bpf_tracer_bpf *obj,
 		if (res != 0) {
 			continue;
 		}
-		struct timespec ts;
+		// struct timespec ts;
 		long long current_nanoseconds;
 		long start_time_ms;
-		// CLOCK_MONOTONIC ensures the time won't go back due to NTP
-		// adjustments CLOCK_REALTIME could be used if you want the real
-		// current time
-		if (clock_gettime(CLOCK_MONOTONIC, &ts) == 0) {
-			// calculates total nanoseconds
-			current_nanoseconds =
-				ts.tv_sec * 1000000000LL + ts.tv_nsec;
-		} else {
-			return 0;
-		}
+		// Get current time in nanoseconds
+    	current_nanoseconds = getCurrentTimeInNanoseconds();
+
 		start_time_ms =
 			(current_nanoseconds - e.exec_data.time_ns) / 1000000;
 		if (start_time_ms < env.duration_ms) {
