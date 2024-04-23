@@ -157,7 +157,7 @@ jobs:
             is_a_syscall_tracing: true
     container:
       image: "manjusakalza/bpftime-base-image:${{matrix.container.image}}"
-      options: --privileged -v /sys/kernel/debug/:/sys/kernel/debug:rw -v /sys/kernel/tracing:/sys/kernel/tracing:rw
+      options: --privileged -v /sys/kernel/debug/:/sys/kernel/debug:rw -v /sys/kernel/tracing:/sys/kernel/tracing:rw -v /usr/src:/usr/src:ro -v /lib/modules/:/lib/modules:ro
     steps:
       - name: Download prebuilt runtime (with jit)
         if: ${{matrix.enable_jit}}
@@ -195,6 +195,9 @@ jobs:
         if: ${{ matrix.container.name=='ubuntu' }}
         shell: bash
         run: apt update && apt install -y bpftrace
+      - name: Test bpftrace
+        shell: bash
+        run: bpftrace -e 'BEGIN { printf("hello world\n"); }'
       - name: Test CLI - attach by running (is_a_syscall_tracing)
         if: matrix.bpftrace_tests.is_a_syscall_tracing
         shell: bash
@@ -205,4 +208,3 @@ jobs:
         shell: bash
         run: |
           python3 $(pwd)/.github/script/run_example.py "bpftrace ${{ matrix.bpftrace_tests.command }}" "${{matrix.bpftrace_tests.victim}}" "${{matrix.bpftrace_tests.expected_output}}" "/app/.bpftime/bpftime -i /app/.bpftime" 0
-          
