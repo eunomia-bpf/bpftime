@@ -152,7 +152,7 @@ jobs:
           - false
         bpftrace_tests:
           - command: /__w/bpftime/bpftime/.github/script/bpftrace/trace_open_syscalls.bt
-            expected_output: '^\d+\s+\w+(\s+#\d+)?\s+-?\d+\s+-?\d+\s+\S+$'
+            expected_output: ^\d+\s+\w+(\s+#\d+)?\s+-?\d+\s+-?\d+\s+\S+$
             victim: 'bash'
             is_a_syscall_tracing: true
     container:
