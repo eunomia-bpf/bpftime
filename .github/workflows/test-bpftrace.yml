@@ -200,8 +200,9 @@ jobs:
         shell: bash
         run: |
           python3 $(pwd)/.github/script/run_example.py "/bpftrace/bpftrace ${{ matrix.bpftrace_tests.command }}" "${{matrix.bpftrace_tests.victim}}" "${{matrix.bpftrace_tests.expected_output}}" "/app/.bpftime/bpftime -i /app/.bpftime" 1
-          - name: Test CLI - attach by running (uprobe)
-          if: '!matrix.bpftrace_tests.is_a_syscall_tracing'
-          shell: bash
-          run: |
+      - name: Test CLI - attach by running (uprobe)
+        if: '!matrix.bpftrace_tests.is_a_syscall_tracing'
+        shell: bash
+        run: |
           python3 $(pwd)/.github/script/run_example.py "/bpftrace/bpftrace ${{ matrix.bpftrace_tests.command }}" "${{matrix.bpftrace_tests.victim}}" "${{matrix.bpftrace_tests.expected_output}}" "/app/.bpftime/bpftime -i /app/.bpftime" 0
+          
