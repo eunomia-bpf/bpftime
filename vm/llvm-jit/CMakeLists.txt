@@ -43,6 +43,8 @@ if (${LLVM_PACKAGE_VERSION} VERSION_LESS 15)
     message(FATAL_ERROR "LLVM version must be >=15")
 endif()
 
+option(ENABLE_LLVM_SHARED "Link shared library of LLVM" YES)
+
 if(ENABLE_LLVM_SHARED)
     set(LLVM_LIBS LLVM)
 else()
