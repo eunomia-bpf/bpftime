@@ -177,7 +177,9 @@ int frida_attach_impl::create_attach_with_ebpf_callback(
 			"Attaching with ebpf callback, private data offset={:x}, module name={}",
 			sub.addr, sub.module_name);
 		// Check if module path exists in the current process's map
-		{
+		// Only check if the module_name is not empty. If it's empty, it
+		// means we won't rely on module_name
+		if (!sub.module_name.empty()) {
 			bool ok = false;
 			std::ifstream ifs("/proc/self/maps");
 			std::string line;
@@ -189,16 +191,25 @@ int frida_attach_impl::create_attach_with_ebpf_callback(
 					   &module_path) == 1) {
 					std::string curr_module(module_path);
 					free(module_path);
-
-					bool matched =
-						std::filesystem::equivalent(
-							sub.module_name,
+					SPDLOG_DEBUG("Checking {}",
+						     curr_module);
+					if (std::filesystem::exists(
+						    curr_module)) {
+						bool matched = std::filesystem::
+							equivalent(
+								sub.module_name,
+								curr_module);
+						SPDLOG_DEBUG(
+							"Checked {}, matched={}",
+							curr_module, matched);
+						if (matched) {
+							ok = true;
+							break;
+						}
+					} else {
+						SPDLOG_DEBUG(
+							"{} doesn't exist, skipped",
 							curr_module);
-					SPDLOG_DEBUG("Checking {}, matched={}",
-						     curr_module, matched);
-					if (matched) {
-						ok = true;
-						break;
 					}
 				}
 			}
