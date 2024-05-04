@@ -10,7 +10,11 @@
 #include "spdlog/spdlog.h"
 #include <algorithm>
 #include <cerrno>
+#include <cstdio>
+#include <filesystem>
+#include <fstream>
 #include <memory>
+#include <string>
 #include <typeinfo>
 #include <utility>
 #include <unistd.h>
@@ -165,7 +169,42 @@ int frida_attach_impl::create_attach_with_ebpf_callback(
 	try {
 		auto &sub = dynamic_cast<const frida_attach_private_data &>(
 			private_data);
+		SPDLOG_DEBUG(
+			"Attaching with ebpf callback, private data offset={:x}, module name={}",
+			sub.addr, sub.module_name);
+		// Check if module path exists in the current process's map
+		{
+			bool ok = false;
+			std::ifstream ifs("/proc/self/maps");
+			std::string line;
+			while (ifs) {
+				std::getline(ifs, line);
+				SPDLOG_DEBUG("Checking map line {}", line);
+				char *module_path;
+				if (sscanf(line.c_str(), "%*s%*s%*s%*s%*s%ms",
+					   &module_path) == 1) {
+					std::string curr_module(module_path);
+					free(module_path);
 
+					bool matched =
+						std::filesystem::equivalent(
+							sub.module_name,
+							curr_module);
+					SPDLOG_DEBUG("Checking {}, matched={}",
+						     curr_module, matched);
+					if (matched) {
+						ok = true;
+						break;
+					}
+				}
+			}
+			if (!ok) {
+				SPDLOG_ERROR(
+					"Unable to attach: module name {} doesn't exist in current process's memory maps",
+					sub.module_name);
+				return -EINVAL;
+			}
+		}
 		ebpf_callback_args args{ .ebpf_cb = cb,
 					 .attach_type = attach_type };
 		if (attach_type == ATTACH_UPROBE ||
