@@ -43,6 +43,10 @@ int frida_attach_impl::attach_at_with_ebpf_callback(void *func_addr,
 int frida_attach_impl::attach_at(void *func_addr,
 				 frida_attach_entry_callback &&cb)
 {
+	if (func_addr == nullptr) {
+		SPDLOG_ERROR("Unable to attach uprobes to address 0");
+		return -EINVAL;
+	}
 	auto itr = internal_attaches.find(func_addr);
 	int current_attach_type;
 	if (std::holds_alternative<callback_variant>(cb)) {
