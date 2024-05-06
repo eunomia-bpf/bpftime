@@ -28,6 +28,7 @@ int frida_attach_private_data::initialize_from_string(const std::string_view &sv
 		addr = (uintptr_t)resolve_function_addr_by_module_offset(
 			module_part, std::stoul(offset_part));
 		SPDLOG_DEBUG("Resolved address: {:x} from string {}", addr, sv);
+		this->module_name = module_part;
 	}
 
 	return 0;
