@@ -72,7 +72,7 @@ int bpftime_run_ebpf_program(int id,
 	const handler_manager *manager =
 		shm_holder.global_shared_memory.get_manager();
 	size_t handler_size = manager->size();
-	if (id >= handler_size || id < 0) {
+	if ((size_t) id >= handler_size || id < 0) {
 		cerr << "Invalid id " << id << " not exist" << endl;
 		return 1;
 	}
