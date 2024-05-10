@@ -6,6 +6,9 @@ Repo: <https://github.com/iovisor/bpftrace>
 
 However, running bpftrace requires root privileges and eBPF availability in the kernel. With bpftime, you can run bpftrace in userspace, without kernel eBPF support.
 
+Note: The operating system we used to test the .bt file for the instances in the warehouse is Ubuntu 22.04, and the version of bpftrace after apt install bpftrace is 
+ 0.9.4 .
+
 ## uprobe example
 
 This is an example, you can first run a bpftrace command in userspace with uprobe:
