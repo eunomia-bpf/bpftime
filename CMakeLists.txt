@@ -114,6 +114,44 @@ endif()
 # benchmark that requires bpftime libraries
 add_subdirectory(benchmark)
 
+if (${BPFTIME_BUILD_STATIC_LIB}) 
+message(STATUS " Adding libraries to static archive")
+bpftime_add_libs_component_command(runtime)
+bpftime_add_libs_component_command(attach)
+bpftime_add_libs_component_command(vm)
+if (${ENABLE_EBPF_VERIFIER}) 
+bpftime_add_libs_component_command(bpftime-verifier)
+endif()
+if(CMAKE_AR_NAME STREQUAL "libtool")
+add_custom_command(OUTPUT "libbpftime.a"
+  COMMAND ${CMAKE_AR} -static -o libbpftime.a ${BPFTIME_STATIC_LIB_LIBTOOL_FILES}
+  WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
+  DEPENDS ${BPFTIME_STATIC_LIB_DEPS}
+)
+else()
+add_custom_command(OUTPUT "libbpftime.a"
+  ${WASMEDGE_STATIC_LIB_AR_CMDS}
+  ${WASMEDGE_STATIC_LLVM_LIB_AR_CMDS}
+  COMMAND ${CMAKE_AR} -qcs libbpftime.a objs/*/*.o
+  COMMAND ${CMAKE_COMMAND} -E remove_directory objs
+  WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
+  DEPENDS ${BPFTIME_STATIC_LIB_DEPS}
+)
+endif()
+
+add_custom_target(bpftime_static_target ALL DEPENDS "libbpftime.a")
+add_library(bpftime_static STATIC IMPORTED GLOBAL)
+add_dependencies(bpftime_static bpftime_static_target)
+
+set_target_properties(bpftime_static
+PROPERTIES
+IMPORTED_LOCATION "${CMAKE_CURRENT_BINARY_DIR}/libbpftime.a"
+)
+
+install(FILES ${CMAKE_CURRENT_BINARY_DIR}/libbpftime.a
+DESTINATION ${CMAKE_INSTALL_LIBDIR}
+)
+endif()
 
 set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>DLL")
 
