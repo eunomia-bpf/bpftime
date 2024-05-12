@@ -117,6 +117,48 @@ add_subdirectory(vm)
 add_subdirectory(attach)
 
 add_subdirectory(runtime)
+
+
+# add to single archive if option is enabled
+if (${BPFTIME_BUILD_STATIC_LIB})
+message(STATUS " Adding libraries to single static archive file")
+bpftime_add_static_lib_component_command(runtime)
+bpftime_add_static_lib_component_command(spdlog)
+bpftime_add_static_lib_component_command(bpftime_vm)
+bpftime_add_static_lib_component_command(bpftime_ubpf_vm)
+bpftime_add_static_lib_component_command(bpftime_frida_uprobe_attach_impl)
+bpftime_add_static_lib_component_command(bpftime_syscall_trace_attach_impl)
+  if(CMAKE_AR_NAME STREQUAL "libtool")
+  add_custom_command(OUTPUT "libbpftime.a"
+    COMMAND ${CMAKE_AR} -static -o libbpftime.a ${BPFTIME_STATIC_LIB_LIBTOOL_FILES}
+    WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
+    DEPENDS ${BPFTIME_STATIC_LIB_DEPS}
+  )
+  else()
+  add_custom_command(OUTPUT "libbpftime.a"
+    ${BPFTIME_STATIC_LIB_AR_CMDS}
+    ${BPFTIME_STATIC_LLVM_LIB_AR_CMDS}
+    COMMAND ${CMAKE_AR} -qcs libbpftime.a objs/*/*.o
+    COMMAND ${CMAKE_COMMAND} -E remove_directory objs
+    WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
+    DEPENDS ${BPFTIME_STATIC_LIB_DEPS}
+  )
+  endif()
+add_custom_target(bpftime_static_target ALL DEPENDS "libbpftime.a")
+add_library(bpftime_static STATIC IMPORTED GLOBAL)
+add_dependencies(bpftime_static bpftime_static_target)
+
+set_target_properties(bpftime_static
+PROPERTIES
+IMPORTED_LOCATION "${CMAKE_CURRENT_BINARY_DIR}/libbpftime.a"
+)
+
+install(FILES ${CMAKE_CURRENT_BINARY_DIR}/libbpftime.a
+DESTINATION ${CMAKE_INSTALL_LIBDIR}
+)
+
+endif()
+
 if (${BUILD_BPFTIME_DAEMON})
   add_subdirectory(daemon)
 endif()
