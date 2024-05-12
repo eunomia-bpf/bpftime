@@ -27,6 +27,29 @@ if(NOT CMAKE_BUILD_TYPE)
   set(CMAKE_BUILD_TYPE "Debug")
 endif()
 
+get_filename_component(CMAKE_AR_NAME "${CMAKE_AR}" NAME)
+function(bpftime_add_static_lib_component_command target)
+  if(APPLE)
+    if(CMAKE_AR_NAME STREQUAL "ar")
+      list(APPEND CMDS
+        COMMAND ${CMAKE_COMMAND} -E make_directory objs/${target}
+        COMMAND ${CMAKE_AR} -x $<TARGET_FILE:${target}>
+        COMMAND ${CMAKE_AR} -t $<TARGET_FILE:${target}> | xargs -I '{}' mv '{}' objs/${target}
+      )
+      set(BPFTIME_STATIC_LIB_AR_CMDS ${BPFTIME_STATIC_LIB_AR_CMDS} ${CMDS} PARENT_SCOPE)
+    elseif(CMAKE_AR_NAME STREQUAL "libtool")
+      set(BPFTIME_STATIC_LIB_LIBTOOL_FILES ${BPFTIME_STATIC_LIB_LIBTOOL_FILES} $<TARGET_FILE:${target}> PARENT_SCOPE)
+    endif()
+  else()
+    list(APPEND CMDS
+      COMMAND ${CMAKE_COMMAND} -E make_directory objs/${target}
+      COMMAND ${CMAKE_COMMAND} -E chdir objs/${target} ${CMAKE_AR} -x $<TARGET_FILE:${target}>
+    )
+    set(BPFTIME_STATIC_LIB_AR_CMDS ${BPFTIME_STATIC_LIB_AR_CMDS} ${CMDS} PARENT_SCOPE)
+  endif()
+  set(BPFTIME_STATIC_LIB_DEPS ${BPFTIME_STATIC_LIB_DEPS} ${target} PARENT_SCOPE)
+endfunction()
+
 if(${CMAKE_BUILD_TYPE} STREQUAL "Debug")
   message(STATUS "Enabling ubsan for Debug builds; Processor=${CMAKE_SYSTEM_PROCESSOR}")
   set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS}")
