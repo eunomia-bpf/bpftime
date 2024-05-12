@@ -3,6 +3,7 @@
 #
 #
 # Helper function to construct commands and dependencies.
+get_filename_component(CMAKE_AR_NAME "${CMAKE_AR}" NAME)
 function(bpftime_add_static_lib_component_command target)
   if(APPLE)
     if(CMAKE_AR_NAME STREQUAL "ar")
