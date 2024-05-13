@@ -104,9 +104,9 @@ uint64_t bpf_get_current_uid_gid(uint64_t, uint64_t, uint64_t, uint64_t,
 
 uint64_t bpftime_ktime_get_ns(uint64_t, uint64_t, uint64_t, uint64_t, uint64_t)
 {
-    auto now = std::chrono::steady_clock::now();
-    auto ns = std::chrono::time_point_cast<std::chrono::nanoseconds>(now);
-    return ns.time_since_epoch().count();
+	auto now = std::chrono::steady_clock::now();
+	auto ns = std::chrono::time_point_cast<std::chrono::nanoseconds>(now);
+	return ns.time_since_epoch().count();
 }
 
 uint64_t bpftime_get_current_comm(uint64_t buf, uint64_t size, uint64_t,
@@ -340,6 +340,17 @@ uint64_t bpftime_get_attach_cookie(uint64_t ctx, uint64_t, uint64_t, uint64_t,
 		return 0;
 	}
 }
+
+uint64_t bpftime_get_smp_processor_id()
+{
+	int cpu = sched_getcpu();
+	if (cpu == -1) {
+		SPDLOG_ERROR("sched_getcpu error");
+		return 0; // unlikely
+	}
+	return (uint64_t)cpu;
+}
+
 } // extern "C"
 
 namespace bpftime
@@ -642,6 +653,12 @@ const bpftime_helper_group kernel_helper_group = {
 		    .index = BPF_FUNC_probe_read,
 		    .name = "bpf_probe_read",
 		    .fn = (void *)bpftime_probe_read,
+	    } },
+	  { BPF_FUNC_get_smp_processor_id,
+	    bpftime_helper_info{
+		    .index = BPF_FUNC_get_smp_processor_id,
+		    .name = "bpf_get_smp_processor_id",
+		    .fn = (void *)bpftime_get_smp_processor_id,
 	    } },
 	  { BPF_FUNC_probe_read_kernel,
 	    bpftime_helper_info{
