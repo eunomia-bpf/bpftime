@@ -23,6 +23,7 @@
 #include "bpftime.hpp"
 #include "bpftime_shm.hpp"
 #include "bpftime_internal.h"
+#include "extension/userspace_xdp.h"
 #include <spdlog/spdlog.h>
 #include <vector>
 #include <bpftime_shm_internal.hpp>
@@ -328,6 +329,7 @@ uint64_t bpftime_tail_call(uint64_t ctx, uint64_t prog_array, uint64_t index)
 	close(to_call_fd);
 	return run_opts.retval;
 }
+
 uint64_t bpftime_get_attach_cookie(uint64_t ctx, uint64_t, uint64_t, uint64_t,
 				   uint64_t)
 {
@@ -349,6 +351,76 @@ uint64_t bpftime_get_smp_processor_id()
 		return 0; // unlikely
 	}
 	return (uint64_t)cpu;
+}
+
+// From https://github.com/microsoft/ebpf-for-windows
+int64_t bpftime_csum_diff(const void *from, int from_size, const void *to,
+			  int to_size, int seed)
+{
+	int csum_diff = -EINVAL;
+
+	if ((from_size % 4 != 0) || (to_size % 4 != 0)) {
+		// size of buffers should be a multiple of 4.
+		goto Exit;
+	}
+
+	csum_diff = seed;
+	if (to != NULL) {
+		for (int i = 0; i < to_size / 2; i++) {
+			csum_diff += (uint16_t)(*((uint16_t *)to + i));
+		}
+	}
+	if (from != NULL) {
+		for (int i = 0; i < from_size / 2; i++) {
+			csum_diff += (uint16_t)(~*((uint16_t *)from + i));
+		}
+	}
+
+	// Adding 16-bit unsigned integers or their one's complement will
+	// produce a positive 32-bit integer, unless the length of the buffers
+	// is so long, that the signed 32 bit output overflows and produces a
+	// negative result.
+	if (csum_diff < 0) {
+		csum_diff = -EINVAL;
+	}
+Exit:
+	return csum_diff;
+}
+
+long bpftime_xdp_adjust_head(struct xdp_md_userspace *xdp, int offset)
+{
+	// We don't use xdp meta data
+	uint64_t data = xdp->data + offset;
+	if (data > xdp->data_end || data < xdp->buffer_start ||
+	    data > xdp->buffer_end) {
+		return -EINVAL;
+	}
+	xdp->data = data;
+	return 0;
+}
+
+long bpftime_xdp_adjust_tail(struct xdp_md_userspace *xdp_md, int delta)
+{
+	// We don't use xdp meta data
+	uint64_t data = xdp_md->data_end + delta;
+	if (data < xdp_md->data || data < xdp_md->buffer_start ||
+	    data > xdp_md->buffer_end) {
+		return -EINVAL;
+	}
+	xdp_md->data_end = data;
+	return 0;
+}
+
+long bpftime_xdp_load_bytes(struct xdp_md_userspace *xdp_md, __u32 offset,
+			    void *buf, __u32 len)
+{
+	// We don't support fragmented packets
+	uint64_t data = xdp_md->data + offset;
+	if (data + len > xdp_md->data_end) {
+		return -EINVAL;
+	}
+	memcpy(buf, reinterpret_cast<void*>(data), len);
+	return 0;
 }
 
 } // extern "C"
@@ -659,6 +731,24 @@ const bpftime_helper_group kernel_helper_group = {
 		    .index = BPF_FUNC_get_smp_processor_id,
 		    .name = "bpf_get_smp_processor_id",
 		    .fn = (void *)bpftime_get_smp_processor_id,
+	    } },
+	  { BPF_FUNC_csum_diff,
+	    bpftime_helper_info{
+		    .index = BPF_FUNC_csum_diff,
+		    .name = "bpf_csum_diff",
+		    .fn = (void *)bpftime_csum_diff,
+	    } },
+	  { BPF_FUNC_xdp_adjust_head,
+	    bpftime_helper_info{
+		    .index = BPF_FUNC_xdp_adjust_head,
+		    .name = "bpf_xdp_adjust_head",
+		    .fn = (void *)bpftime_xdp_adjust_head,
+	    } },
+	  { BPF_FUNC_xdp_adjust_tail,
+	    bpftime_helper_info{
+		    .index = BPF_FUNC_xdp_adjust_tail,
+		    .name = "bpf_xdp_adjust_tail",
+		    .fn = (void *)bpftime_xdp_adjust_tail,
 	    } },
 	  { BPF_FUNC_probe_read_kernel,
 	    bpftime_helper_info{
