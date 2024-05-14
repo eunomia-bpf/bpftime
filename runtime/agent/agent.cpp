@@ -4,6 +4,8 @@
 #include "frida_attach_private_data.hpp"
 #include "frida_uprobe_attach_impl.hpp"
 #include "spdlog/common.h"
+#include "spdlog/sinks/stdout_color_sinks.h"
+#include "spdlog/sinks/stdout_sinks.h"
 #include "syscall_trace_attach_impl.hpp"
 #include "syscall_trace_attach_private_data.hpp"
 #include <chrono>
@@ -72,7 +74,6 @@ extern "C" int __libc_start_main(int (*main)(int, char **, char **), int argc,
 				 void (*fini)(void), void (*rtld_fini)(void),
 				 void *stack_end)
 {
-	SPDLOG_INFO("Entering bpftime agent");
 	orig_main_func = main;
 	using this_func_t = decltype(&__libc_start_main);
 	this_func_t orig = (this_func_t)dlsym(RTLD_NEXT, "__libc_start_main");
@@ -88,12 +89,17 @@ static void sig_handler_sigusr1(int sig)
 		SPDLOG_ERROR("Unable to detach: {}", err);
 		return;
 	}
-	shm_holder.global_shared_memory.remove_pid_from_alive_agent_set(getpid());
+	shm_holder.global_shared_memory.remove_pid_from_alive_agent_set(
+		getpid());
 	SPDLOG_DEBUG("Detaching done");
 }
 
 extern "C" void bpftime_agent_main(const gchar *data, gboolean *stay_resident)
 {
+	auto logger = spdlog::stderr_color_mt("stderr");
+	logger->set_pattern("[%Y-%m-%d %H:%M:%S][%^%l%$][%t] %v");
+	spdlog::set_default_logger(logger);
+	SPDLOG_DEBUG("Entered bpftime_agent_main");
 	SPDLOG_DEBUG("Registering signal handler");
 	// We use SIGUSR1 to indicate the detaching
 	signal(SIGUSR1, sig_handler_sigusr1);
@@ -146,7 +152,6 @@ extern "C" void bpftime_agent_main(const gchar *data, gboolean *stay_resident)
 			return priv_data;
 		});
 	SPDLOG_INFO("Initializing agent..");
-	spdlog::set_pattern("[%Y-%m-%d %H:%M:%S][%^%l%$][%t] %v");
 	/* We don't want to our library to be unloaded after we return. */
 	*stay_resident = TRUE;
 
