@@ -37,7 +37,8 @@ extern "C" void bpftime_destroy_global_shm()
 		shm_holder.global_shared_memory.~bpftime_shm();
 		// Why not spdlog? because global variables that spdlog used
 		// were already destroyed..
-		printf("INFO [%d]: Global shm destructed\n", (int)getpid());
+		fprintf(stderr, "INFO [%d]: Global shm destructed\n",
+			(int)getpid());
 	}
 }
 
