@@ -146,7 +146,7 @@ add_subdirectory(runtime)
 
 # add to single archive if option is enabled
 if (${BPFTIME_BUILD_STATIC_LIB})
-set(UBPF_BUILD_DIR ${CMAKE_CURRENT_BINARY_DIR}/ubpf)
+set(UBPF_BUILD_DIR ${CMAKE_CURRENT_BINARY_DIR}/vm/ubpf-vm/ubpf)
 message(STATUS " Adding libraries to single static archive file")
 bpftime_add_static_lib_component_command(runtime)
 bpftime_add_static_lib_component_command(spdlog)
