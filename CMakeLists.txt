@@ -50,6 +50,31 @@ function(bpftime_add_static_lib_component_command target)
   set(BPFTIME_STATIC_LIB_DEPS ${BPFTIME_STATIC_LIB_DEPS} ${target} PARENT_SCOPE)
 endfunction()
 
+function(bpftime_add_libs_component_command target_path)
+  get_filename_component(target_name ${target_path} NAME)
+  string(REGEX REPLACE "^lib" "" target_name ${target_name})
+  string(REGEX REPLACE "\.a$" "" target_name ${target_name})
+  if(APPLE)
+    get_filename_component(CMAKE_AR_NAME "${CMAKE_AR}" NAME)
+    if(CMAKE_AR_NAME STREQUAL "ar")
+      list(APPEND CMDS
+        COMMAND ${CMAKE_COMMAND} -E make_directory objs/${target_name}
+        COMMAND ${CMAKE_AR} -x ${target_path}
+        COMMAND ${CMAKE_AR} -t ${target_path} | xargs -I '{}' mv '{}' objs/${target_name}
+      )
+      set(BPFTIME_STATIC_LLVM_LIB_AR_CMDS ${WASMEDGE_STATIC_LLVM_LIB_AR_CMDS} ${CMDS} PARENT_SCOPE)
+    elseif(CMAKE_AR_NAME STREQUAL "libtool")
+      set(BPFTIME_STATIC_LIB_LIBTOOL_FILES ${WASMEDGE_STATIC_LIB_LIBTOOL_FILES} ${target_path} PARENT_SCOPE)
+    endif()
+  else()
+    list(APPEND CMDS
+      COMMAND ${CMAKE_COMMAND} -E make_directory objs/${target_name}
+      COMMAND ${CMAKE_COMMAND} -E chdir objs/${target_name} ${CMAKE_AR} -x ${target_path}
+    )
+    set(BPFTIME_STATIC_LLVM_LIB_AR_CMDS ${WASMEDGE_STATIC_LLVM_LIB_AR_CMDS} ${CMDS} PARENT_SCOPE)
+  endif()
+endfunction()
+
 if(${CMAKE_BUILD_TYPE} STREQUAL "Debug")
   message(STATUS "Enabling ubsan for Debug builds; Processor=${CMAKE_SYSTEM_PROCESSOR}")
   set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS}")
@@ -121,6 +146,7 @@ add_subdirectory(runtime)
 
 # add to single archive if option is enabled
 if (${BPFTIME_BUILD_STATIC_LIB})
+set(UBPF_BUILD_DIR ${CMAKE_CURRENT_BINARY_DIR}/ubpf)
 message(STATUS " Adding libraries to single static archive file")
 bpftime_add_static_lib_component_command(runtime)
 bpftime_add_static_lib_component_command(spdlog)
@@ -128,6 +154,8 @@ bpftime_add_static_lib_component_command(bpftime_vm)
 bpftime_add_static_lib_component_command(bpftime_ubpf_vm)
 bpftime_add_static_lib_component_command(bpftime_frida_uprobe_attach_impl)
 bpftime_add_static_lib_component_command(bpftime_syscall_trace_attach_impl)
+bpftime_add_libs_component_command(${FRIDA_GUM_INSTALL_DIR}/libfrida-gum.a)
+bpftime_add_libs_component_command(${UBPF_BUILD_DIR}/lib/libubpf.a)
   if(CMAKE_AR_NAME STREQUAL "libtool")
   add_custom_command(OUTPUT "libbpftime.a"
     COMMAND ${CMAKE_AR} -static -o libbpftime.a ${BPFTIME_STATIC_LIB_LIBTOOL_FILES}
