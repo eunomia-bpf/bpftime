@@ -62,16 +62,16 @@ function(bpftime_add_libs_component_command target_path)
         COMMAND ${CMAKE_AR} -x ${target_path}
         COMMAND ${CMAKE_AR} -t ${target_path} | xargs -I '{}' mv '{}' objs/${target_name}
       )
-      set(BPFTIME_STATIC_LLVM_LIB_AR_CMDS ${WASMEDGE_STATIC_LLVM_LIB_AR_CMDS} ${CMDS} PARENT_SCOPE)
+      set(BPFTIME_STATIC_LLVM_LIB_AR_CMDS ${BPFTIME_STATIC_LLVM_LIB_AR_CMDS} ${CMDS} PARENT_SCOPE)
     elseif(CMAKE_AR_NAME STREQUAL "libtool")
-      set(BPFTIME_STATIC_LIB_LIBTOOL_FILES ${WASMEDGE_STATIC_LIB_LIBTOOL_FILES} ${target_path} PARENT_SCOPE)
+      set(BPFTIME_STATIC_LIB_LIBTOOL_FILES ${BPFTIME_STATIC_LIB_LIBTOOL_FILES} ${target_path} PARENT_SCOPE)
     endif()
   else()
     list(APPEND CMDS
       COMMAND ${CMAKE_COMMAND} -E make_directory objs/${target_name}
       COMMAND ${CMAKE_COMMAND} -E chdir objs/${target_name} ${CMAKE_AR} -x ${target_path}
     )
-    set(BPFTIME_STATIC_LLVM_LIB_AR_CMDS ${WASMEDGE_STATIC_LLVM_LIB_AR_CMDS} ${CMDS} PARENT_SCOPE)
+    set(BPFTIME_STATIC_LLVM_LIB_AR_CMDS ${BPFTIME_STATIC_LLVM_LIB_AR_CMDS} ${CMDS} PARENT_SCOPE)
   endif()
 endfunction()
 
