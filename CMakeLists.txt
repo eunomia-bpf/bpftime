@@ -33,8 +33,7 @@ function(bpftime_add_static_lib_component_command target)
     if(CMAKE_AR_NAME STREQUAL "ar")
       list(APPEND CMDS
         COMMAND ${CMAKE_COMMAND} -E make_directory objs/${target}
-        COMMAND ${CMAKE_AR} -x $<TARGET_FILE:${target}>
-        COMMAND ${CMAKE_AR} -t $<TARGET_FILE:${target}> | xargs -I '{}' mv '{}' objs/${target}
+        COMMAND bash ${CMAKE_SOURCE_DIR}/cmake/extract_and_rename.sh $<TARGET_FILE:${target}> objs/${target}
       )
       set(BPFTIME_STATIC_LIB_AR_CMDS ${BPFTIME_STATIC_LIB_AR_CMDS} ${CMDS} PARENT_SCOPE)
     elseif(CMAKE_AR_NAME STREQUAL "libtool")
@@ -43,7 +42,7 @@ function(bpftime_add_static_lib_component_command target)
   else()
     list(APPEND CMDS
       COMMAND ${CMAKE_COMMAND} -E make_directory objs/${target}
-      COMMAND ${CMAKE_COMMAND} -E chdir objs/${target} ${CMAKE_AR} -x $<TARGET_FILE:${target}>
+      COMMAND bash ${CMAKE_SOURCE_DIR}/cmake/extract_and_rename.sh $<TARGET_FILE:${target}> objs/${target}
     )
     set(BPFTIME_STATIC_LIB_AR_CMDS ${BPFTIME_STATIC_LIB_AR_CMDS} ${CMDS} PARENT_SCOPE)
   endif()
@@ -55,12 +54,10 @@ function(bpftime_add_libs_component_command target_path)
   string(REGEX REPLACE "^lib" "" target_name ${target_name})
   string(REGEX REPLACE "\.a$" "" target_name ${target_name})
   if(APPLE)
-    get_filename_component(CMAKE_AR_NAME "${CMAKE_AR}" NAME)
     if(CMAKE_AR_NAME STREQUAL "ar")
       list(APPEND CMDS
         COMMAND ${CMAKE_COMMAND} -E make_directory objs/${target_name}
-        COMMAND ${CMAKE_AR} -x ${target_path}
-        COMMAND ${CMAKE_AR} -t ${target_path} | xargs -I '{}' mv '{}' objs/${target_name}
+        COMMAND ${CMAKE_COMMAND} -E env bash ${CMAKE_SOURCE_DIR}/cmake/extract_and_rename.sh ${target_path} ${CMAKE_BINARY_DIR}/objs/${target_name}
       )
       set(BPFTIME_STATIC_LLVM_LIB_AR_CMDS ${BPFTIME_STATIC_LLVM_LIB_AR_CMDS} ${CMDS} PARENT_SCOPE)
     elseif(CMAKE_AR_NAME STREQUAL "libtool")
@@ -69,7 +66,7 @@ function(bpftime_add_libs_component_command target_path)
   else()
     list(APPEND CMDS
       COMMAND ${CMAKE_COMMAND} -E make_directory objs/${target_name}
-      COMMAND ${CMAKE_COMMAND} -E chdir objs/${target_name} ${CMAKE_AR} -x ${target_path}
+      COMMAND ${CMAKE_COMMAND} -E env bash ${CMAKE_SOURCE_DIR}/cmake/extract_and_rename.sh ${target_path} ${CMAKE_BINARY_DIR}/objs/${target_name}
     )
     set(BPFTIME_STATIC_LLVM_LIB_AR_CMDS ${BPFTIME_STATIC_LLVM_LIB_AR_CMDS} ${CMDS} PARENT_SCOPE)
   endif()
@@ -148,14 +145,14 @@ add_subdirectory(runtime)
 if (${BPFTIME_BUILD_STATIC_LIB})
 set(UBPF_BUILD_DIR ${CMAKE_CURRENT_BINARY_DIR}/vm/ubpf-vm/ubpf)
 message(STATUS " Adding libraries to single static archive file")
-bpftime_add_static_lib_component_command(runtime)
-bpftime_add_static_lib_component_command(spdlog)
 bpftime_add_static_lib_component_command(bpftime_vm)
 bpftime_add_static_lib_component_command(bpftime_ubpf_vm)
+bpftime_add_libs_component_command(${FRIDA_GUM_INSTALL_DIR}/libfrida-gum.a)
 bpftime_add_static_lib_component_command(bpftime_frida_uprobe_attach_impl)
 bpftime_add_static_lib_component_command(bpftime_syscall_trace_attach_impl)
-bpftime_add_libs_component_command(${FRIDA_GUM_INSTALL_DIR}/libfrida-gum.a)
 bpftime_add_libs_component_command(${UBPF_BUILD_DIR}/lib/libubpf.a)
+bpftime_add_static_lib_component_command(runtime)
+bpftime_add_static_lib_component_command(spdlog)
   if(CMAKE_AR_NAME STREQUAL "libtool")
   add_custom_command(OUTPUT "libbpftime.a"
     COMMAND ${CMAKE_AR} -static -o libbpftime.a ${BPFTIME_STATIC_LIB_LIBTOOL_FILES}
