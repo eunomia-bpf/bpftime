@@ -18,7 +18,7 @@ cmake --build build --config Release --target install
 command to execute the code:
 when not using llvm-jit
 ```shell
-g++ -o example main.cpp -I/home/fedora/codes/bpftime-hp/runtime/include/ -I/home/fedora/codes/bpftime-hp/vm/vm-core/compat/include -I/home/fedora/codes/bpftime-hp/vm/compat/include/ -L/home/fedora/.bpftime -lbpftime -lboost_system -lrt -lbpf -L/home/fedora/codes/bpftime-hp/build/vm/ubpf-vm/ubpf/lib -lubpf
+g++ -o example main.cpp -I/home/fedora/codes/bpftime-hp/runtime/include -I/home/fedora/codes/bpftime-hp/vm/compat/include/ -I/home/fedora/codes/bpftime-hp/third_party/spdlog/include -I/home/fedora/codes/bpftime-hp/vm/vm-core/include -L/home/fedora/.bpftime -lbpftime -lboost_system -lrt -lbpf
 ```
 
 for `spdlog_exam.cpp`
