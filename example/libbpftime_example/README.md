@@ -15,6 +15,22 @@ cmake -Bbuild  -DCMAKE_BUILD_TYPE:STRING=Release \
 cmake --build build --config Release --target install
 ```
 
+
+### Build
+
+- Makefile
+
+You can make examples using makefile:
+
+run `make` and you will see the following output
+
+```shell
+Available targets:
+ shm_example          build shared memory example
+ sdplog_exam          build spdlog example
+ clean                clean the build
+```
+
 command to execute the code:
 when not using llvm-jit
 ```shell
