@@ -29,7 +29,6 @@ run `make` and you will see the following output
 ```shell
 Available targets:
  shm_example          build shared memory example
- sdplog_exam          build spdlog example
  clean                clean the build
 ```
 
@@ -37,9 +36,4 @@ command to execute the code:
 when not using llvm-jit
 ```shell
 g++ -o example main.cpp -I../../runtime/include -I../../vm/compat/include/ -I../../third_party/spdlog/include -I../../vm/vm-core/include -L~/.bpftime -lbpftime -lboost_system -lrt -lbpf
-```
-
-for `spdlog_exam.cpp`
-```shell
-g++ -o example spdlog_exam.cpp -I../../runtime/include -I../../vm/vm-core/compat/include -I../../vm/compat/include/ -I../../third_party/spdlog/include -L~/.bpftime -lbpftime -lboost_system -lrt -lbpf
 ```
