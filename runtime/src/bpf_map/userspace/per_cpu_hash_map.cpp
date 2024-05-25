@@ -27,7 +27,7 @@ per_cpu_hash_map_impl::per_cpu_hash_map_impl(
 	  value_size(value_size), ncpu(ncpu),
 	  key_templates(memory.get_segment_manager()),
 	  value_template(value_size * ncpu, memory.get_segment_manager()),
-	  single_value_template(memory.get_segment_manager())
+	  single_value_templates(memory.get_segment_manager())
 {
 	SPDLOG_DEBUG(
 		"Initializing per cpu hash, key size {}, value size {}, ncpu {}",

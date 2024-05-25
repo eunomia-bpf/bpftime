@@ -31,6 +31,7 @@ class hash_map_impl {
 	uint32_t _key_size;
 	uint32_t _value_size;
 
+	// buffers used to access the key and value in hash map
 	bytes_vec key_vec;
 	bytes_vec value_vec;
 
