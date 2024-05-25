@@ -115,7 +115,7 @@ uint64_t bpftime_get_current_comm(uint64_t buf, uint64_t size, uint64_t,
 {
 	static std::string filename_buf;
 
-	if (filename_buf.empty()) {
+	if (unlikely(filename_buf.empty())) {
 		char strbuf[PATH_MAX];
 
 		auto len = readlink("/proc/self/exe", strbuf,
@@ -220,6 +220,7 @@ uint64_t bpf_ringbuf_submit(uint64_t data, uint64_t flags, uint64_t, uint64_t,
 	bpftime_ringbuf_submit(fd, (void *)(uintptr_t)data, false);
 	return 0;
 }
+
 uint64_t bpf_ringbuf_discard(uint64_t data, uint64_t flags, uint64_t, uint64_t,
 			     uint64_t)
 {
@@ -387,13 +388,21 @@ Exit:
 	return csum_diff;
 }
 
+#define ETH_HLEN 14 /* Total octets in header.	 */
+
 long bpftime_xdp_adjust_head(struct xdp_md_userspace *xdp, int offset)
 {
 	// We don't use xdp meta data
 	uint64_t data = xdp->data + offset;
-	if (data > xdp->data_end || data < xdp->buffer_start ||
-	    data > xdp->buffer_end) {
+	if (unlikely(data > xdp->data_end - ETH_HLEN) || data > xdp->buffer_end)
 		return -EINVAL;
+	if (data < xdp->buffer_start) {
+		// move the data so the buffer can place the new header
+		memmove(reinterpret_cast<void *>(xdp->buffer_start +
+						 (xdp->buffer_start - data)),
+			reinterpret_cast<void *>(xdp->data),
+			xdp->data_end - xdp->data);
+		data = xdp->buffer_start;
 	}
 	xdp->data = data;
 	return 0;
@@ -419,7 +428,7 @@ long bpftime_xdp_load_bytes(struct xdp_md_userspace *xdp_md, __u32 offset,
 	if (data + len > xdp_md->data_end) {
 		return -EINVAL;
 	}
-	memcpy(buf, reinterpret_cast<void*>(data), len);
+	memcpy(buf, reinterpret_cast<void *>(data), len);
 	return 0;
 }
 

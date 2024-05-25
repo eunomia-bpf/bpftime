@@ -16,6 +16,7 @@
 #include <bpf_map/shared/percpu_array_map_kernel_user.hpp>
 #include <bpf_map/shared/perf_event_array_kernel_user.hpp>
 #include <bpf_map/userspace/prog_array.hpp>
+#include <bpf_map/userspace/map_in_maps.hpp>
 #include <unistd.h>
 
 using boost::interprocess::interprocess_sharable_mutex;
@@ -134,6 +135,11 @@ const void *bpf_map_handler::map_lookup_elem(const void *key,
 			static_cast<prog_array_map_impl *>(map_impl_ptr.get());
 		return do_lookup(impl);
 	}
+	case bpf_map_type::BPF_MAP_TYPE_ARRAY_OF_MAPS: {
+		auto impl = static_cast<array_map_of_maps_impl *>(
+			map_impl_ptr.get());
+		return do_lookup(impl);
+	}
 	default:
 		auto func_ptr = global_map_ops_table[(int)type].elem_lookup;
 		if (func_ptr) {
@@ -221,6 +227,15 @@ long bpf_map_handler::map_update_elem(const void *key, const void *value,
 			static_cast<prog_array_map_impl *>(map_impl_ptr.get());
 		return do_update(impl);
 	}
+	case bpf_map_type::BPF_MAP_TYPE_ARRAY_OF_MAPS: {
+		if (!from_syscall) {
+			// Map in maps only support update from syscall
+			return -EINVAL;
+		}
+		auto impl = static_cast<array_map_of_maps_impl *>(
+			map_impl_ptr.get());
+		return do_update(impl);
+	}
 	default:
 		auto func_ptr = global_map_ops_table[(int)type].elem_update;
 		if (func_ptr) {
@@ -295,6 +310,11 @@ int bpf_map_handler::bpf_map_get_next_key(const void *key, void *next_key,
 	case bpf_map_type::BPF_MAP_TYPE_PROG_ARRAY: {
 		auto impl =
 			static_cast<prog_array_map_impl *>(map_impl_ptr.get());
+		return do_get_next_key(impl);
+	}
+	case bpf_map_type::BPF_MAP_TYPE_ARRAY_OF_MAPS: {
+		auto impl = static_cast<array_map_of_maps_impl *>(
+			map_impl_ptr.get());
 		return do_get_next_key(impl);
 	}
 	default:
@@ -382,6 +402,15 @@ long bpf_map_handler::map_delete_elem(const void *key, bool from_syscall) const
 	case bpf_map_type::BPF_MAP_TYPE_PROG_ARRAY: {
 		auto impl =
 			static_cast<prog_array_map_impl *>(map_impl_ptr.get());
+		return do_delete(impl);
+	}
+	case bpf_map_type::BPF_MAP_TYPE_ARRAY_OF_MAPS: {
+		if (!from_syscall) {
+			// Map in maps only support update from syscall
+			return -EINVAL;
+		}
+		auto impl = static_cast<array_map_of_maps_impl *>(
+			map_impl_ptr.get());
 		return do_delete(impl);
 	}
 	default:
@@ -476,7 +505,11 @@ int bpf_map_handler::map_init(managed_shared_memory &memory)
 						max_entries);
 		return 0;
 	}
-
+	case bpf_map_type::BPF_MAP_TYPE_ARRAY_OF_MAPS: {
+		map_impl_ptr = memory.construct<array_map_of_maps_impl>(
+			container_name.c_str())(memory, max_entries);
+		return 0;
+	}
 	default:
 		if (bpftime_get_agent_config().allow_non_buildin_map_types) {
 			SPDLOG_INFO("non-builtin map type: {}", (int)type);
