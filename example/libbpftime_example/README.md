@@ -22,6 +22,8 @@ cmake --build build --config Release --target install
 
 You can make examples using makefile:
 
+> Using make to run examples is preferred
+
 run `make` and you will see the following output
 
 ```shell
@@ -34,10 +36,10 @@ Available targets:
 command to execute the code:
 when not using llvm-jit
 ```shell
-g++ -o example main.cpp -I/home/fedora/codes/bpftime-hp/runtime/include -I/home/fedora/codes/bpftime-hp/vm/compat/include/ -I/home/fedora/codes/bpftime-hp/third_party/spdlog/include -I/home/fedora/codes/bpftime-hp/vm/vm-core/include -L/home/fedora/.bpftime -lbpftime -lboost_system -lrt -lbpf
+g++ -o example main.cpp -I../../runtime/include -I../../vm/compat/include/ -I../../third_party/spdlog/include -I../../vm/vm-core/include -L~/.bpftime -lbpftime -lboost_system -lrt -lbpf
 ```
 
 for `spdlog_exam.cpp`
 ```shell
-g++ -o example spdlog_exam.cpp -I/home/fedora/codes/bpftime-hp/runtime/include -I/home/fedora/codes/bpftime-hp/vm/vm-core/compat/include -I/home/fedora/codes/bpftime-hp/vm/compat/include/ -I/home/fedora/codes/bpftime-hp/third_party/spdlog/include -L/home/fedora/.bpftime -lbpftime -lboost_system -lrt -lbpf
+g++ -o example spdlog_exam.cpp -I../../runtime/include -I../../vm/vm-core/compat/include -I../../vm/compat/include/ -I../../third_party/spdlog/include -L~/.bpftime -lbpftime -lboost_system -lrt -lbpf
 ```

@@ -36,8 +36,8 @@ function(bpftime_add_static_lib_component_command target)
         COMMAND bash ${CMAKE_SOURCE_DIR}/cmake/extract_and_rename.sh $<TARGET_FILE:${target}> objs/${target}
       )
       set(BPFTIME_STATIC_LIB_AR_CMDS ${BPFTIME_STATIC_LIB_AR_CMDS} ${CMDS} PARENT_SCOPE)
-    elseif(CMAKE_AR_NAME STREQUAL "libtool")
-      set(BPFTIME_STATIC_LIB_LIBTOOL_FILES ${BPFTIME_STATIC_LIB_LIBTOOL_FILES} $<TARGET_FILE:${target}> PARENT_SCOPE)
+    else()
+      message(ERROR " CMAKE_AR is not `ar`. Only archiving with `ar` is supported.")
     endif()
   else()
     list(APPEND CMDS
@@ -60,8 +60,8 @@ function(bpftime_add_libs_component_command target_path)
         COMMAND ${CMAKE_COMMAND} -E env bash ${CMAKE_SOURCE_DIR}/cmake/extract_and_rename.sh ${target_path} ${CMAKE_BINARY_DIR}/objs/${target_name}
       )
       set(BPFTIME_STATIC_LLVM_LIB_AR_CMDS ${BPFTIME_STATIC_LLVM_LIB_AR_CMDS} ${CMDS} PARENT_SCOPE)
-    elseif(CMAKE_AR_NAME STREQUAL "libtool")
-      set(BPFTIME_STATIC_LIB_LIBTOOL_FILES ${BPFTIME_STATIC_LIB_LIBTOOL_FILES} ${target_path} PARENT_SCOPE)
+    else()
+      message(ERROR " CMAKE_AR is not `ar`. Only archiving with `ar` is supported.")
     endif()
   else()
     list(APPEND CMDS
@@ -158,22 +158,14 @@ bpftime_add_static_lib_component_command(bpftime_frida_uprobe_attach_impl)
 bpftime_add_static_lib_component_command(bpftime_syscall_trace_attach_impl)
 bpftime_add_static_lib_component_command(runtime)
 bpftime_add_static_lib_component_command(spdlog)
-  if(CMAKE_AR_NAME STREQUAL "libtool")
-  add_custom_command(OUTPUT "libbpftime.a"
-    COMMAND ${CMAKE_AR} -static -o libbpftime.a ${BPFTIME_STATIC_LIB_LIBTOOL_FILES}
-    WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
-    DEPENDS ${BPFTIME_STATIC_LIB_DEPS}
-  )
-  else()
-  add_custom_command(OUTPUT "libbpftime.a"
+add_custom_command(OUTPUT "libbpftime.a"
     ${BPFTIME_STATIC_LIB_AR_CMDS}
     ${BPFTIME_STATIC_LLVM_LIB_AR_CMDS}
     COMMAND ${CMAKE_AR} -qcs libbpftime.a objs/*/*.o
     COMMAND ${CMAKE_COMMAND} -E remove_directory objs
     WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
     DEPENDS ${BPFTIME_STATIC_LIB_DEPS}
-  )
-  endif()
+    )
 add_custom_target(bpftime_static_target ALL DEPENDS "libbpftime.a")
 add_library(bpftime_static STATIC IMPORTED GLOBAL)
 add_dependencies(bpftime_static bpftime_static_target)
