@@ -25,9 +25,9 @@ hash_map_impl::hash_map_impl(managed_shared_memory &memory, uint32_t key_size,
 void *hash_map_impl::elem_lookup(const void *key)
 {
 	SPDLOG_TRACE("Peform elem lookup of hash map");
-	// Allocate as a local variable to make
-	//  it thread safe, since we use sharable lock
-	bytes_vec key_vec = this->key_vec;
+	// Since we use lock here, we don't need to allocate key_vec and
+	// value_vec
+	key_vec = this->key_vec;
 	key_vec.assign((uint8_t *)key, (uint8_t *)key + _key_size);
 	if (auto itr = map_impl.find(key_vec); itr != map_impl.end()) {
 		SPDLOG_TRACE("Exit elem lookup of hash map");
@@ -42,8 +42,8 @@ void *hash_map_impl::elem_lookup(const void *key)
 long hash_map_impl::elem_update(const void *key, const void *value,
 				uint64_t flags)
 {
-	bytes_vec key_vec = this->key_vec;
-	bytes_vec value_vec = this->value_vec;
+	key_vec = this->key_vec;
+	value_vec = this->value_vec;
 	key_vec.assign((uint8_t *)key, (uint8_t *)key + _key_size);
 	value_vec.assign((uint8_t *)value, (uint8_t *)value + _value_size);
 	if (auto itr = map_impl.find(key_vec); itr != map_impl.end()) {
@@ -56,7 +56,7 @@ long hash_map_impl::elem_update(const void *key, const void *value,
 
 long hash_map_impl::elem_delete(const void *key)
 {
-	bytes_vec key_vec = this->key_vec;
+	key_vec = this->key_vec;
 	key_vec.assign((uint8_t *)key, (uint8_t *)key + _key_size);
 	map_impl.erase(key_vec);
 	return 0;
@@ -75,9 +75,9 @@ int hash_map_impl::map_get_next_key(const void *key, void *next_key)
 			  (uint8_t *)next_key);
 		return 0;
 	}
-	// No need to be allocated at shm. Allocate as a local variable to make
-	// it thread safe, since we use sharable lock
-	bytes_vec key_vec = this->key_vec;
+	// Since we use lock here, we don't need to allocate key_vec and
+	// value_vec
+	key_vec = this->key_vec;
 	key_vec.assign((uint8_t *)key, (uint8_t *)key + _key_size);
 
 	auto itr = map_impl.find(key_vec);
