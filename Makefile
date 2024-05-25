@@ -66,7 +66,7 @@ release-with-llvm-jit: ## build the package, with llvm-jit
 
 release-with-static-lib: ## build the release version with libbpftime archive
 	cmake -Bbuild  -DCMAKE_BUILD_TYPE:STRING=RelWithDebInfo \
-				   -DSPDLOG_ACTIVE_LEVEL=SPDLOG_LEVEL_INFO -DBPTIME_BULD_STATIC=ON
+				   -DSPDLOG_ACTIVE_LEVEL=SPDLOG_LEVEL_INFO -DBPFTIME_BUILD_STATIC_LIB=ON
 	cmake --build build --config RelWithDebInfo --target install  -j$(JOBS)
 
 build-vm: ## build only the core library
