@@ -568,7 +568,7 @@ bpftime_shm::bpftime_shm(const char *shm_name, shm_open_type type)
 		segment = boost::interprocess::managed_shared_memory(
 			boost::interprocess::open_or_create,
 			// Allocate 20M bytes of memory by default
-			shm_name, 20 << 20);
+			shm_name, 200 << 20);
 
 		manager = segment.find_or_construct<bpftime::handler_manager>(
 			bpftime::DEFAULT_GLOBAL_HANDLER_NAME)(segment);
@@ -601,7 +601,7 @@ bpftime_shm::bpftime_shm(const char *shm_name, shm_open_type type)
 		segment = boost::interprocess::managed_shared_memory(
 			boost::interprocess::create_only,
 			// Allocate 20M bytes of memory by default
-			shm_name, 20 << 20);
+			shm_name, 200 << 20);
 		SPDLOG_DEBUG("done: bpftime_shm for server setup: segment");
 
 		manager = segment.construct<bpftime::handler_manager>(

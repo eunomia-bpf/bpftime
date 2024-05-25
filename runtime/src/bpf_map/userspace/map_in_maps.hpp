@@ -15,13 +15,18 @@ namespace bpftime
 // implementation of array map
 class array_map_of_maps_impl : public array_map_impl {
     public:
-	array_map_of_maps_impl(boost::interprocess::managed_shared_memory &memory, uint32_t max_entries) : array_map_impl(memory, sizeof(int), max_entries){
-			   }
+	array_map_of_maps_impl(
+		boost::interprocess::managed_shared_memory &memory,
+		uint32_t max_entries)
+		: array_map_impl(memory, sizeof(int), max_entries)
+	{
+	}
 	// TODO: add verify the correctness of the key
-	void *elem_lookup(const void *key) {
+	void *elem_lookup(const void *key)
+	{
 		auto key_val = array_map_impl::elem_lookup(key);
 		int map_id = *(int *)key_val;
-		return (void*)((u_int64_t)map_id << 32);
+		return (void *)((u_int64_t)map_id << 32);
 	}
 };
 

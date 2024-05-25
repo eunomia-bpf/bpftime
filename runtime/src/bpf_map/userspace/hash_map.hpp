@@ -31,11 +31,12 @@ class hash_map_impl {
 	uint32_t _key_size;
 	uint32_t _value_size;
 
+	// buffers used to access the key and value in hash map
 	bytes_vec key_vec;
 	bytes_vec value_vec;
 
     public:
-	const static bool should_lock = true;
+	const static bool should_lock = false;
 	hash_map_impl(managed_shared_memory &memory, uint32_t key_size,
 		      uint32_t value_size);
 

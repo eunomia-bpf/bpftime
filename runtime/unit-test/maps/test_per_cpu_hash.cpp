@@ -44,9 +44,8 @@ TEST_CASE("Test basic operations of hash map")
 				for (uint32_t i = 0; i < 100; i++) {
 					uint64_t val =
 						(((uint64_t)keys[i]) << 32) | j;
-					INFO("Set index " << keys[i] << " cpu "
-							  << j << " to "
-							  << val);
+					SPDLOG_INFO("Set key {} cpu {} to {}", keys[i],
+						    j, val);
 					REQUIRE(map.elem_update(&keys[i], &val,
 								0) == 0);
 				}
@@ -55,7 +54,9 @@ TEST_CASE("Test basic operations of hash map")
 		for (uint32_t i = 0; i < 100; i++) {
 			uint64_t *p =
 				(uint64_t *)map.elem_lookup_userspace(&keys[i]);
+			REQUIRE(p != nullptr);
 			for (uint32_t j = 0; j < ncpu; j++) {
+				printf("j = %u\n", j);
 				REQUIRE(p[j] ==
 					((((uint64_t)keys[i]) << 32) | j));
 			}
