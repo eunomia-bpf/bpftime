@@ -1,5 +1,6 @@
-#include "bpftime_shm.hpp"
 #include <iostream>
+#include "bpftime_shm.hpp"
+#include "spdlog/spdlog.h"
 
 int main() {
     bpftime_initialize_global_shm(bpftime::shm_open_type::SHM_CREATE_OR_OPEN);
