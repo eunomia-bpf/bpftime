@@ -23,9 +23,6 @@ using bytes_vec = boost::interprocess::vector<uint8_t, bytes_vec_allocator>;
 template <class T>
 static inline T ensure_on_current_cpu(std::function<T(int cpu)> func)
 {
-	// here we simplify this to "thread local map", to avoid the overhead of
-	// get cpu, which requires a syscall. FIXME: refactor the per cpu map to
-	// use the tid
 	return func(sched_getcpu());
 }
 
