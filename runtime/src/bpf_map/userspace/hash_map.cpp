@@ -43,11 +43,7 @@ long hash_map_impl::elem_update(const void *key, const void *value,
 {
 	key_vec.assign((uint8_t *)key, (uint8_t *)key + _key_size);
 	value_vec.assign((uint8_t *)value, (uint8_t *)value + _value_size);
-	if (auto itr = map_impl.find(key_vec); itr != map_impl.end()) {
-		itr->second = value_vec;
-	} else {
-		map_impl.insert(bi_map_value_ty(key_vec, value_vec));
-	}
+	map_impl.insert_or_assign(key_vec, value_vec);
 	return 0;
 }
 
