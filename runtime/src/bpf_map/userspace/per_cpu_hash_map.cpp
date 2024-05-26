@@ -25,74 +25,78 @@ per_cpu_hash_map_impl::per_cpu_hash_map_impl(
 	uint32_t value_size, int ncpu)
 	: impl(memory.get_segment_manager()), key_size(key_size),
 	  value_size(value_size), ncpu(ncpu),
-	  key_template(key_size, memory.get_segment_manager()),
 	  value_template(value_size * ncpu, memory.get_segment_manager()),
-	  single_value_template(value_size, memory.get_segment_manager())
+	  key_templates(memory.get_segment_manager()),
+	  single_value_templates(memory.get_segment_manager())
 {
 	SPDLOG_DEBUG(
 		"Initializing per cpu hash, key size {}, value size {}, ncpu {}",
 		key_size, value_size, ncpu);
+	for (int i = 0; i < ncpu; i++) {
+		bytes_vec key_vec(key_size, memory.get_segment_manager());
+		key_templates.push_back(key_vec);
+		bytes_vec value_vec(value_size, memory.get_segment_manager());
+		single_value_templates.push_back(value_vec);
+	}
 }
 
 void *per_cpu_hash_map_impl::elem_lookup(const void *key)
 {
-	return ensure_on_current_cpu<void *>([&](int cpu) -> void * {
-		SPDLOG_DEBUG("Run per cpu hash lookup at cpu {}", cpu);
-		if (key == nullptr) {
-			errno = ENOENT;
-			return nullptr;
-		}
-		bytes_vec key_vec = this->key_template;
-		key_vec.assign((uint8_t *)key, (uint8_t *)key + key_size);
-		if (auto itr = impl.find(key_vec); itr != impl.end()) {
-			SPDLOG_TRACE("Exit elem lookup of hash map");
-			return &itr->second[value_size * cpu];
-		} else {
-			SPDLOG_TRACE("Exit elem lookup of hash map");
-			errno = ENOENT;
-			return nullptr;
-		}
-	});
+	int cpu = sched_getcpu();
+	SPDLOG_DEBUG("Run per cpu hash lookup at cpu {}", cpu);
+	if (key == nullptr) {
+		errno = ENOENT;
+		return nullptr;
+	}
+	bytes_vec &key_vec = this->key_templates[cpu];
+	key_vec.assign((uint8_t *)key, (uint8_t *)key + key_size);
+	if (auto itr = impl.find(key_vec); itr != impl.end()) {
+		SPDLOG_TRACE("Exit elem lookup of hash map");
+		return &itr->second[value_size * cpu];
+	} else {
+		SPDLOG_TRACE("Exit elem lookup of hash map");
+		errno = ENOENT;
+		return nullptr;
+	}
 }
 
 long per_cpu_hash_map_impl::elem_update(const void *key, const void *value,
 					uint64_t flags)
 {
-	SPDLOG_DEBUG("Per cpu update, key {}, value {}",(const char*)key,*(long*)value);
-	return ensure_on_current_cpu<long>([&](int cpu) -> long {
-		SPDLOG_DEBUG("Run per cpu hash update at cpu {}", cpu);
-		bytes_vec key_vec = this->key_template;
-		bytes_vec value_vec = this->single_value_template;
-		key_vec.assign((uint8_t *)key, (uint8_t *)key + key_size);
-		value_vec.assign((uint8_t *)value,
-				 (uint8_t *)value + value_size);
-		if (auto itr = impl.find(key_vec); itr != impl.end()) {
-			std::copy(value_vec.begin(), value_vec.end(),
-				  itr->second.begin() + cpu * value_size);
-		} else {
-			bytes_vec full_value_vec = this->value_template;
-			std::copy(value_vec.begin(), value_vec.end(),
-				  full_value_vec.begin() + cpu * value_size);
+	int cpu = sched_getcpu();
+	SPDLOG_DEBUG("Per cpu update, key {}, value {}", (const char *)key,
+		     *(long *)value);
 
-			impl.insert(bi_map_value_ty(key_vec, full_value_vec));
-		}
+	SPDLOG_DEBUG("Run per cpu hash update at cpu {}", cpu);
+	bytes_vec &key_vec = this->key_templates[cpu];
+	bytes_vec &value_vec = this->single_value_templates[cpu];
+	key_vec.assign((uint8_t *)key, (uint8_t *)key + key_size);
+	value_vec.assign((uint8_t *)value, (uint8_t *)value + value_size);
+	if (auto itr = impl.find(key_vec); itr != impl.end()) {
+		std::copy(value_vec.begin(), value_vec.end(),
+			  itr->second.begin() + cpu * value_size);
+	} else {
+		bytes_vec full_value_vec = this->value_template;
+		std::copy(value_vec.begin(), value_vec.end(),
+			  full_value_vec.begin() + cpu * value_size);
 
-		return 0;
-	});
+		impl.insert(bi_map_value_ty(key_vec, full_value_vec));
+	}
+
+	return 0;
 }
 
 long per_cpu_hash_map_impl::elem_delete(const void *key)
 {
-	return ensure_on_current_cpu<long>([&](int cpu) -> long {
-		SPDLOG_DEBUG("Run per cpu hash delete at cpu {}", cpu);
-		bytes_vec key_vec = this->key_template;
-		key_vec.assign((uint8_t *)key, (uint8_t *)key + key_size);
-		if (auto itr = impl.find(key_vec); itr != impl.end()) {
-			std::fill(itr->second.begin(),
-				  itr->second.begin() + cpu * value_size, 0);
-		}
-		return 0;
-	});
+	int cpu = sched_getcpu();
+	SPDLOG_DEBUG("Run per cpu hash delete at cpu {}", cpu);
+	bytes_vec &key_vec = this->key_templates[cpu];
+	key_vec.assign((uint8_t *)key, (uint8_t *)key + key_size);
+	if (auto itr = impl.find(key_vec); itr != impl.end()) {
+		std::fill(itr->second.begin(),
+			  itr->second.begin() + cpu * value_size, 0);
+	}
+	return 0;
 }
 
 int per_cpu_hash_map_impl::map_get_next_key(const void *key, void *next_key)
@@ -110,7 +114,7 @@ int per_cpu_hash_map_impl::map_get_next_key(const void *key, void *next_key)
 	}
 	// No need to be allocated at shm. Allocate as a local variable to make
 	// it thread safe, since we use sharable lock
-	bytes_vec key_vec = this->key_template;
+	bytes_vec key_vec = this->key_templates[0];
 	key_vec.assign((uint8_t *)key, (uint8_t *)key + key_size);
 
 	auto itr = impl.find(key_vec);
@@ -134,10 +138,12 @@ void *per_cpu_hash_map_impl::elem_lookup_userspace(const void *key)
 		errno = ENOENT;
 		return nullptr;
 	}
-	bytes_vec key_vec = this->key_template;
+	bytes_vec key_vec = this->key_templates[0];
 	key_vec.assign((uint8_t *)key, (uint8_t *)key + key_size);
 	if (auto itr = impl.find(key_vec); itr != impl.end()) {
-		SPDLOG_TRACE("Exit elem lookup of hash map: {}",spdlog::to_hex(itr->second.begin(),itr->second.end()));
+		SPDLOG_TRACE("Exit elem lookup of hash map: {}",
+			     spdlog::to_hex(itr->second.begin(),
+					    itr->second.end()));
 		return &itr->second[0];
 	} else {
 		SPDLOG_TRACE("Exit elem lookup of hash map");
@@ -150,7 +156,7 @@ long per_cpu_hash_map_impl::elem_update_userspace(const void *key,
 						  const void *value,
 						  uint64_t flags)
 {
-	bytes_vec key_vec = this->key_template;
+	bytes_vec key_vec = this->key_templates[0];
 	bytes_vec value_vec = this->value_template;
 	key_vec.assign((uint8_t *)key, (uint8_t *)key + key_size);
 	value_vec.assign((uint8_t *)value,
@@ -165,7 +171,7 @@ long per_cpu_hash_map_impl::elem_update_userspace(const void *key,
 }
 long per_cpu_hash_map_impl::elem_delete_userspace(const void *key)
 {
-	bytes_vec key_vec = this->key_template;
+	bytes_vec key_vec = this->key_templates[0];
 	key_vec.assign((uint8_t *)key, (uint8_t *)key + key_size);
 	impl.erase(key_vec);
 	return 0;
