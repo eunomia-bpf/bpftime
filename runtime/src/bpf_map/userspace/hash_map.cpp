@@ -27,7 +27,6 @@ void *hash_map_impl::elem_lookup(const void *key)
 	SPDLOG_TRACE("Peform elem lookup of hash map");
 	// Since we use lock here, we don't need to allocate key_vec and
 	// value_vec
-	key_vec = this->key_vec;
 	key_vec.assign((uint8_t *)key, (uint8_t *)key + _key_size);
 	if (auto itr = map_impl.find(key_vec); itr != map_impl.end()) {
 		SPDLOG_TRACE("Exit elem lookup of hash map");
@@ -42,8 +41,6 @@ void *hash_map_impl::elem_lookup(const void *key)
 long hash_map_impl::elem_update(const void *key, const void *value,
 				uint64_t flags)
 {
-	key_vec = this->key_vec;
-	value_vec = this->value_vec;
 	key_vec.assign((uint8_t *)key, (uint8_t *)key + _key_size);
 	value_vec.assign((uint8_t *)value, (uint8_t *)value + _value_size);
 	if (auto itr = map_impl.find(key_vec); itr != map_impl.end()) {
@@ -56,7 +53,6 @@ long hash_map_impl::elem_update(const void *key, const void *value,
 
 long hash_map_impl::elem_delete(const void *key)
 {
-	key_vec = this->key_vec;
 	key_vec.assign((uint8_t *)key, (uint8_t *)key + _key_size);
 	map_impl.erase(key_vec);
 	return 0;
@@ -77,7 +73,6 @@ int hash_map_impl::map_get_next_key(const void *key, void *next_key)
 	}
 	// Since we use lock here, we don't need to allocate key_vec and
 	// value_vec
-	key_vec = this->key_vec;
 	key_vec.assign((uint8_t *)key, (uint8_t *)key + _key_size);
 
 	auto itr = map_impl.find(key_vec);
