@@ -8,17 +8,16 @@
 #include <algorithm>
 #include <functional>
 #include <unistd.h>
+#include <unordered_map>
 
 namespace bpftime
 {
 
-hash_map_impl::hash_map_impl(managed_shared_memory &memory, uint32_t key_size,
-			     uint32_t value_size)
-	: map_impl(10, bytes_vec_hasher(), std::equal_to<bytes_vec>(),
-		   bi_map_allocator(memory.get_segment_manager())),
+hash_map_impl::hash_map_impl(managed_shared_memory &memory, size_t num_buckets,
+			     size_t key_size, size_t value_size)
+	: map_impl(memory, num_buckets, key_size, value_size),
 	  _key_size(key_size), _value_size(value_size),
-	  key_vec(key_size, memory.get_segment_manager()),
-	  value_vec(value_size, memory.get_segment_manager())
+	  _num_buckets(num_buckets)
 {
 }
 
@@ -27,64 +26,59 @@ void *hash_map_impl::elem_lookup(const void *key)
 	SPDLOG_TRACE("Peform elem lookup of hash map");
 	// Since we use lock here, we don't need to allocate key_vec and
 	// value_vec
-	key_vec.assign((uint8_t *)key, (uint8_t *)key + _key_size);
-	if (auto itr = map_impl.find(key_vec); itr != map_impl.end()) {
-		SPDLOG_TRACE("Exit elem lookup of hash map");
-		return &itr->second[0];
-	} else {
-		SPDLOG_TRACE("Exit elem lookup of hash map");
-		errno = ENOENT;
-		return nullptr;
-	}
+	return map_impl.elem_lookup(key);
 }
 
 long hash_map_impl::elem_update(const void *key, const void *value,
 				uint64_t flags)
 {
-	key_vec.assign((uint8_t *)key, (uint8_t *)key + _key_size);
-	value_vec.assign((uint8_t *)value, (uint8_t *)value + _value_size);
-	map_impl.insert_or_assign(key_vec, value_vec);
+	map_impl.elem_update(key, value);
 	return 0;
 }
 
 long hash_map_impl::elem_delete(const void *key)
 {
-	key_vec.assign((uint8_t *)key, (uint8_t *)key + _key_size);
-	map_impl.erase(key_vec);
+	map_impl.elem_delete(key);
 	return 0;
 }
 
 int hash_map_impl::map_get_next_key(const void *key, void *next_key)
 {
-	if (key == nullptr) {
-		// nullptr means the first key
-		auto itr = map_impl.begin();
-		if (itr == map_impl.end()) {
-			errno = ENOENT;
-			return -1;
-		}
-		std::copy(itr->first.begin(), itr->first.end(),
-			  (uint8_t *)next_key);
-		return 0;
-	}
-	// Since we use lock here, we don't need to allocate key_vec and
-	// value_vec
-	key_vec.assign((uint8_t *)key, (uint8_t *)key + _key_size);
-
-	auto itr = map_impl.find(key_vec);
-	if (itr == map_impl.end()) {
-		// not found, should be refer to the first key
-		return map_get_next_key(nullptr, next_key);
-	}
-	itr++;
-	if (itr == map_impl.end()) {
-		// If *key* is the last element, returns -1 and *errno*
-		// is set to **ENOENT**.
-		errno = ENOENT;
+	SPDLOG_TRACE("Peform map get next key of hash map");
+	if (next_key == nullptr) {
+		errno = EINVAL;
 		return -1;
 	}
-	std::copy(itr->first.begin(), itr->first.end(), (uint8_t *)next_key);
-	return 0;
+	if (key == nullptr) {
+		// get the first key
+		for (size_t i = 0; i < _num_buckets; i++) {
+			if (map_impl.is_empty(i)) {
+				continue;
+			}
+			memcpy(next_key, map_impl.get_key(i), _key_size);
+			return 0;
+		}
+		errno = ENOENT;
+		// no key found
+		return -1;
+	}
+	// get the next key
+	void* value_ptr = elem_lookup(key);
+	if (value_ptr == nullptr) {
+		return map_get_next_key(nullptr, next_key);
+	}
+	// get_next_key
+	size_t index = map_impl.get_index_of_value(value_ptr);
+	for (size_t i = index + 1; i < _num_buckets; i++) {
+		if (map_impl.is_empty(i)) {
+			continue;
+		}
+		memcpy(next_key, map_impl.get_key(i), _key_size);
+		return 0;
+	}
+	// if this is the last key
+	errno = ENOENT;
+	return -1;
 }
 
 } // namespace bpftime
