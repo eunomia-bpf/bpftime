@@ -45,6 +45,9 @@ endif()
 find_package(Boost REQUIRED)
 
 # Find all headers and implementation files
+if(NOT DEFINED ARCH)
+  set(ARCH ${CMAKE_SYSTEM_PROCESSOR})
+endif()
 message(STATUS "Building for architecture: ${ARCH}")
 
 set(sources

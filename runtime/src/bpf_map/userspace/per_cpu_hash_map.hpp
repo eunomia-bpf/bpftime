@@ -26,13 +26,21 @@ class per_cpu_hash_map_impl {
 		boost::unordered_map<bytes_vec, bytes_vec, bytes_vec_hasher,
 				     std::equal_to<bytes_vec>, bi_map_allocator>;
 
+	using shm_hash_map_vec_allocator = boost::interprocess::allocator<
+		shm_hash_map, boost::interprocess::managed_shared_memory::segment_manager>;
+	using shm_hash_map_vec = boost::interprocess::vector<shm_hash_map, shm_hash_map_vec_allocator>;
+	
+	using bytes_vec_vec_allocator = boost::interprocess::allocator<
+		bytes_vec, boost::interprocess::managed_shared_memory::segment_manager>;
+	using bytes_vec_vec = boost::interprocess::vector<bytes_vec, bytes_vec_vec_allocator>;
+
 	shm_hash_map impl;
 	uint32_t key_size;
 	uint32_t value_size;
 	int ncpu;
 
-	bytes_vec key_template, value_template, single_value_template;
-
+	bytes_vec value_template;
+	bytes_vec_vec key_templates, single_value_templates;
     public:
 	const static bool should_lock = false;
 

@@ -71,9 +71,6 @@ long per_cpu_array_map_impl::elem_delete(const void *key)
 	errno = ENOTSUP;
 	SPDLOG_ERROR("Deleting of per cpu array is not supported");
 	return -1;
-	// return ensure_on_current_cpu<long>([&](int cpu) {
-
-	// });
 }
 
 int per_cpu_array_map_impl::map_get_next_key(const void *key,

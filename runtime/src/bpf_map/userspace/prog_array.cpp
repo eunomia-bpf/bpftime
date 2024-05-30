@@ -98,6 +98,7 @@ void *prog_array_map_impl::elem_lookup(const void *key)
 	current_thread_lookup_val = fd;
 	return &current_thread_lookup_val;
 }
+
 long prog_array_map_impl::elem_update(const void *key, const void *value,
 				      uint64_t flags)
 {
