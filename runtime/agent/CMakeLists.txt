@@ -1,5 +1,6 @@
 add_library(bpftime-agent SHARED
   agent.cpp
+  ../src/bpftime_logger.cpp
 )
 add_dependencies(bpftime-agent FridaGum spdlog::spdlog bpftime_frida_uprobe_attach_impl bpftime_syscall_trace_attach_impl)
 set_property(TARGET bpftime-agent PROPERTY CXX_STANDARD 20)

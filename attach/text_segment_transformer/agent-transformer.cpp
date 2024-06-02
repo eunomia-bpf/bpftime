@@ -1,12 +1,8 @@
-#include "spdlog/cfg/env.h"
-#include "spdlog/sinks/stdout_color_sinks.h"
-#include "spdlog/sinks/stdout_sinks.h"
-#include "spdlog/spdlog.h"
 #include <cstdlib>
 #include <dlfcn.h>
 #include <frida-gum.h>
+#include "bpftime_logger.hpp"
 #include "text_segment_transformer.hpp"
-#include <spdlog/cfg/env.h>
 #include <string>
 #include <frida-gum.h>
 
@@ -35,6 +31,7 @@ extern "C" int __libc_start_main(int (*main)(int, char **, char **), int argc,
 				 void (*fini)(void), void (*rtld_fini)(void),
 				 void *stack_end)
 {
+	bpftime::bpftime_set_logger_from_env();
 	injected_with_frida = false;
 	SPDLOG_INFO("Entering bpftime syscal transformer agent");
 	orig_main_func = main;
@@ -47,9 +44,6 @@ extern "C" int __libc_start_main(int (*main)(int, char **, char **), int argc,
 
 extern "C" void bpftime_agent_main(const gchar *data, gboolean *stay_resident)
 {
-	auto logger = spdlog::stderr_color_mt("stderr");
-	spdlog::set_default_logger(logger);
-	spdlog::cfg::load_env_levels();
 	/* We don't want to our library to be unloaded after we return. */
 	*stay_resident = TRUE;
 
