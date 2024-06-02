@@ -431,7 +431,7 @@ int bpf_map_handler::map_init(managed_shared_memory &memory)
 	switch (type) {
 	case bpf_map_type::BPF_MAP_TYPE_HASH: {
 		map_impl_ptr = memory.construct<hash_map_impl>(
-			container_name.c_str())(memory, key_size, value_size);
+			container_name.c_str())(memory, max_entries, key_size, value_size);
 		return 0;
 	}
 	case bpf_map_type::BPF_MAP_TYPE_ARRAY: {
