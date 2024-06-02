@@ -11,7 +11,9 @@
 #include <boost/interprocess/containers/string.hpp>
 #include <cstdint>
 #include <ebpf-vm.h>
+#if __linux__
 #include <sys/epoll.h>
+#endif
 
 namespace bpftime
 {

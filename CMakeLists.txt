@@ -109,8 +109,9 @@ if(PROJECT_SOURCE_DIR STREQUAL PROJECT_BINARY_DIR)
   message(FATAL_ERROR "In-source builds not allowed. Please make a new directory (called a build directory) and run CMake from there.\n")
 endif()
 
-include(cmake/libbpf.cmake)
-
+if(${BPFTIME_BUILD_WITH_LIBBPF})
+  include(cmake/libbpf.cmake)
+endif()
 # install frida
 include(cmake/frida.cmake)
 
@@ -196,4 +197,8 @@ add_subdirectory(benchmark)
 
 set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>DLL")
 
-install(TARGETS bpftime-agent bpftime_text_segment_transformer bpftime-syscall-server CONFIGURATIONS Release Debug RelWithDebInfo DESTINATION ~/.bpftime)
+if(${BPFTIME_BUILD_WITH_LIBBPF})
+ install(TARGETS bpftime-agent bpftime_text_segment_transformer bpftime-syscall-server CONFIGURATIONS Release Debug RelWithDebInfo DESTINATION ~/.bpftime)
+else()
+ install(TARGETS bpftime-agent CONFIGURATIONS Release Debug RelWithDebInfo DESTINATION ~/.bpftime)
+endif() 

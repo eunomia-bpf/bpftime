@@ -27,10 +27,10 @@ elseif(${FRIDA_OS_ARCH} MATCHES "linux-arm.*")
   # Frida only has armhf builds..
   set(FRIDA_OS_ARCH "linux-armhf")
 elseif(${FRIDA_OS_ARCH} MATCHES "darwin-arm.*")
-  set(FRIDA_CORE_DEVKIT_SHA256 "50aea2d5dfff000ed1f1dc1fdb2db67a02e4c4f44e782fa311f8afa31df327b6")
-  set(FRIDA_GUM_DEVKIT_SHA256 "b40c08bebd6958d41d91b7819171a457448cccad5faf417c9b4901be54b6c633")
+  set(FRIDA_CORE_DEVKIT_SHA256 "7811e516e6b7bbc0153d30095560e0b1133f154060c5542764100d3e0eb2ab2b")
+  set(FRIDA_GUM_DEVKIT_SHA256 "03f6085ae5330cf38e0a498784500675fc5bd7361bb551a9097ba5fe397aceda")
   # for macos-arm m* chip series 
-  set(FRIDA_OS_ARCH "macos-arm64e")
+  set(FRIDA_OS_ARCH "macos-arm64")
 else()
   message(FATAL_ERROR "Unsupported frida arch ${FRIDA_OS_ARCH}")
 endif()

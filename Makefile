@@ -54,6 +54,10 @@ build-iouring: ## build the package with iouring extension
 	cmake -Bbuild -DBPFTIME_ENABLE_IOURING_EXT=1 -DCMAKE_BUILD_TYPE:STRING=RelWithDebInfo
 	cmake --build build --config RelWithDebInfo  -j$(JOBS)
 
+build-wo-libbpf: ## build the package with iouring extension
+	cmake -Bbuild -DBPFTIME_ENABLE_IOURING_EXT=1 -DCMAKE_BUILD_TYPE:STRING=RelWithDebInfo -DBPFTIME_BUILD_WITH_LIBBPF=OFF
+	cmake --build build --config RelWithDebInfo  -j$(JOBS)
+
 release: ## build the release version
 	cmake -Bbuild  -DCMAKE_BUILD_TYPE:STRING=RelWithDebInfo \
 				   -DSPDLOG_ACTIVE_LEVEL=SPDLOG_LEVEL_INFO

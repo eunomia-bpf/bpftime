@@ -1,10 +1,12 @@
-# Create a target that builds the ebpf program
-add_ebpf_program_target(bpftime_daemon_ebpf_target ${CMAKE_CURRENT_SOURCE_DIR}/kernel/bpf_tracer.bpf.c ${CMAKE_CURRENT_BINARY_DIR}/bpf_tracer.bpf.o)
+if(${BPFTIME_BUILD_WITH_LIBBPF})
+    # Create a target that builds the ebpf program
+    add_ebpf_program_target(bpftime_daemon_ebpf_target ${CMAKE_CURRENT_SOURCE_DIR}/kernel/bpf_tracer.bpf.c ${CMAKE_CURRENT_BINARY_DIR}/bpf_tracer.bpf.o)
 
-# Create a target that generated the bpf skeleton
-add_bpf_skel_generating_target(bpftime_daemon_ebpf_skel ${CMAKE_CURRENT_BINARY_DIR}/bpf_tracer.bpf.o ${CMAKE_CURRENT_BINARY_DIR}/bpf_tracer.skel.h)
+    # Create a target that generated the bpf skeleton
+    add_bpf_skel_generating_target(bpftime_daemon_ebpf_skel ${CMAKE_CURRENT_BINARY_DIR}/bpf_tracer.bpf.o ${CMAKE_CURRENT_BINARY_DIR}/bpf_tracer.skel.h)
 
-add_dependencies(bpftime_daemon_ebpf_skel bpftime_daemon_ebpf_target)
+    add_dependencies(bpftime_daemon_ebpf_skel bpftime_daemon_ebpf_target)
+endif()
 
 add_executable(embedfile ${CMAKE_CURRENT_SOURCE_DIR}/assets/embedfile.c)
 
@@ -27,12 +29,19 @@ add_executable(bpftime_daemon
     user/main.cpp
 )
 
-add_dependencies(libbpftime_daemon
-    bpftime_daemon_ebpf_skel
-    libbpf
-    spdlog::spdlog
-    runtime
-)
+if(${BPFTIME_BUILD_WITH_LIBBPF})
+    add_dependencies(libbpftime_daemon
+        bpftime_daemon_ebpf_skel
+        libbpf
+        spdlog::spdlog
+        runtime
+    )
+else()
+    add_dependencies(libbpftime_daemon
+        spdlog::spdlog
+        runtime
+    )
+endif()
 
 target_include_directories(libbpftime_daemon PRIVATE
     ${CMAKE_CURRENT_BINARY_DIR}

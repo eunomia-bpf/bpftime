@@ -73,8 +73,12 @@ extern "C" void bpftime_agent_main(const gchar *data, gboolean *stay_resident)
 	cs_arch_register_x86();
 	bpftime::setup_syscall_tracer();
 	SPDLOG_DEBUG("Loading dynamic library..");
-	auto next_handle =
+	#if __linux__
+		auto next_handle =
 		dlmopen(LM_ID_NEWLM, agent_so, RTLD_NOW | RTLD_LOCAL);
+	#elif __APPLE__
+		auto next_handle = dlopen(agent_so, RTLD_NOW | RTLD_LOCAL);
+	#endif
 	if (next_handle == nullptr) {
 		SPDLOG_ERROR("Failed to open agent: {}", dlerror());
 		exit(1);

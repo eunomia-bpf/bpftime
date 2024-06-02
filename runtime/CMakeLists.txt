@@ -44,6 +44,13 @@ endif()
 #
 find_package(Boost REQUIRED)
 
+if(Boost_FOUND)
+    include_directories(${Boost_INCLUDE_DIRS})
+    message(STATUS "Boost include dirs: ${Boost_INCLUDE_DIRS}")
+    message(STATUS "Boost libraries: ${Boost_LIBRARIES}")
+else()
+    message(FATAL_ERROR "Boost not found. Please install Boost and set BOOST_ROOT if necessary.")
+endif()
 # Find all headers and implementation files
 if(NOT DEFINED ARCH)
   set(ARCH ${CMAKE_SYSTEM_PROCESSOR})
@@ -130,7 +137,11 @@ target_link_libraries(${PROJECT_NAME}
   spdlog::spdlog
   bpftime_base_attach_impl
 )
-add_dependencies(${PROJECT_NAME} bpftime_vm FridaGum spdlog::spdlog libbpf bpftime_base_attach_impl)
+if(${BPFTIME_BUILD_WITH_LIBBPF})
+  add_dependencies(${PROJECT_NAME} bpftime_vm FridaGum spdlog::spdlog libbpf bpftime_base_attach_impl)
+else()
+  add_dependencies(${PROJECT_NAME} bpftime_vm FridaGum spdlog::spdlog bpftime_base_attach_impl)
+endif()  
 
 if(BPFTIME_ENABLE_IOURING_EXT)
   target_link_libraries(${PROJECT_NAME}
