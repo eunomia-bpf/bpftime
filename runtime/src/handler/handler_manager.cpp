@@ -11,6 +11,7 @@
 #include <handler/handler_manager.hpp>
 #include <variant>
 #include <algorithm>
+#include "spinlock_wrapper.hpp"
 namespace bpftime
 {
 handler_manager::handler_manager(managed_shared_memory &mem,

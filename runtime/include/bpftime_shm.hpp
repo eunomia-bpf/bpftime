@@ -13,6 +13,8 @@
 #include <ebpf-vm.h>
 #if __linux__
 #include <sys/epoll.h>
+#elif __APPLE__
+#include "bpftime_epoll.h"
 #endif
 
 namespace bpftime

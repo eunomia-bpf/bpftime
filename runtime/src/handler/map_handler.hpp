@@ -18,6 +18,7 @@
 #include <optional>
 #include <unistd.h>
 #include <bpf_map/shared/perf_event_array_kernel_user.hpp>
+#include "spinlock_wrapper.hpp"
 namespace bpftime
 {
 using char_allocator = boost::interprocess::allocator<
@@ -46,7 +47,6 @@ class bpftime_lock_guard {
 	{
 		pthread_spin_unlock(&spinlock);
 	}
-
 	// Delete copy constructor and assignment operator
 	bpftime_lock_guard(const bpftime_lock_guard &) = delete;
 	bpftime_lock_guard &operator=(const bpftime_lock_guard &) = delete;
