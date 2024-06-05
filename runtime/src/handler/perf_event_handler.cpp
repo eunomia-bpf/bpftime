@@ -3,7 +3,11 @@
  * Copyright (c) 2022, eunomia-bpf org
  * All rights reserved.
  */
+#if __linux__
 #include "linux/perf_event.h"
+#elif __APPLE__
+#include "bpftime_epoll.h"
+#endif
 #include "spdlog/spdlog.h"
 #include <boost/interprocess/detail/segment_manager_helper.hpp>
 #include <boost/interprocess/smart_ptr/shared_ptr.hpp>

@@ -15,7 +15,11 @@
 #include <cerrno>
 #include <errno.h>
 #include <bpftime_shm_internal.hpp>
+#if __linux__
 #include <sys/epoll.h>
+#elif __APPLE__
+#include "bpftime_epoll.h"
+#endif
 #include <thread>
 #include <chrono>
 #include <variant>
@@ -326,7 +330,7 @@ int bpftime_epoll_wait(int fd, struct epoll_event *out_evts, int max_evt,
 	sigaddset(&to_block, SIGINT);
 	sigaddset(&to_block, SIGTERM);
 
-	// Block the develivery of some signals, so we would be able to catch
+	// Block the delivery of some signals, so we would be able to catch
 	// them when sleeping
 	if (int err = sigprocmask(SIG_BLOCK, &to_block, &orig_sigset);
 	    err == -1) {

@@ -10,8 +10,24 @@ public:
     // Default constructor to initialize the atomic_flag
     Spinlock() : lock(ATOMIC_FLAG_INIT) {}
 
-    // Deleted copy constructor to prevent copying
+    // // Deleted copy constructor to prevent copying
     Spinlock(const Spinlock&) = delete;
+    Spinlock& operator=(const Spinlock&) = delete;
+
+    Spinlock(Spinlock&& other) noexcept : lock(ATOMIC_FLAG_INIT) {
+        if (other.lock.test_and_set(std::memory_order_acquire)) {
+            lock.clear(std::memory_order_release);
+        }
+    }
+
+    Spinlock& operator=(Spinlock&& other) noexcept {
+        if (this != &other) {
+            if (other.lock.test_and_set(std::memory_order_acquire)) {
+                lock.clear(std::memory_order_release);
+            }
+        }
+        return *this;
+    }
 
     void spin_lock() {
         while (lock.test_and_set(std::memory_order_acquire)) {
