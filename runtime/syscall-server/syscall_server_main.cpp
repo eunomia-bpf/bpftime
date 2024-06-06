@@ -64,6 +64,28 @@ extern "C" int close(int fd)
 	return context.handle_close(fd);
 }
 
+extern "C" int openat(int fd, const char *file, int oflag, ...)
+{
+	va_list args;
+	va_start(args, oflag);
+	long arg4 = va_arg(args, long);
+	va_end(args);
+	SPDLOG_DEBUG("openat {} {:x} {} {}", fd, (uintptr_t)file, oflag, arg4);
+	unsigned short mode = (unsigned short)arg4;
+	return context.handle_openat(fd, file, oflag, mode);
+}
+
+extern "C" int open(const char *file, int oflag, ...)
+{
+	va_list args;
+	va_start(args, oflag);
+	long arg3 = va_arg(args, long);
+	va_end(args);
+	SPDLOG_DEBUG("open {:x} {} {}", (uintptr_t)file, oflag, arg3);
+	unsigned short mode = (unsigned short)arg3;
+	return context.handle_open(file, oflag, mode);
+}
+
 extern "C" long syscall(long sysno, ...)
 {
 	// glibc directly reads the arguments without considering
