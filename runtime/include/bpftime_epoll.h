@@ -8,6 +8,9 @@
  <linux/perf_event.h>
  <linux/types.h>
 */
+
+#define EPOLLIN 0x001
+
 union epoll_data {
            void     *ptr;
            int       fd;
@@ -592,4 +595,5 @@ enum perf_event_type {
 	PERF_RECORD_AUX_OUTPUT_HW_ID		= 21,
 
 	PERF_RECORD_MAX,			/* non-ABI */
+
 };

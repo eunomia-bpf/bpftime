@@ -43,6 +43,7 @@ else()
     )
 endif()
 
+if(${BPFTIME_BUILD_WITH_LIBBPF})
 target_include_directories(libbpftime_daemon PRIVATE
     ${CMAKE_CURRENT_BINARY_DIR}
     ${LIBBPF_INCLUDE_DIRS}
@@ -61,6 +62,23 @@ target_link_libraries(libbpftime_daemon PRIVATE
     PUBLIC
     rt
 )
+else()
+target_include_directories(libbpftime_daemon PRIVATE
+    ${CMAKE_CURRENT_BINARY_DIR}
+    ${CMAKE_CURRENT_SOURCE_DIR}
+    ${CMAKE_CURRENT_SOURCE_DIR}/../vm/include
+    ${CMAKE_CURRENT_SOURCE_DIR}/../runtime/include
+)
+target_link_libraries(libbpftime_daemon PRIVATE
+    elf
+    z
+    spdlog::spdlog
+    runtime
+    PUBLIC
+    rt
+)
+endif()
+
 set_property(TARGET libbpftime_daemon PROPERTY CXX_STANDARD 20)
 
 add_dependencies(bpftime_daemon libbpftime_daemon)

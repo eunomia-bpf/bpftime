@@ -44,13 +44,6 @@ endif()
 #
 find_package(Boost REQUIRED)
 
-if(Boost_FOUND)
-    include_directories(${Boost_INCLUDE_DIRS})
-    message(STATUS "Boost include dirs: ${Boost_INCLUDE_DIRS}")
-    message(STATUS "Boost libraries: ${Boost_LIBRARIES}")
-else()
-    message(FATAL_ERROR "Boost not found. Please install Boost and set BOOST_ROOT if necessary.")
-endif()
 # Find all headers and implementation files
 if(NOT DEFINED ARCH)
   set(ARCH ${CMAKE_SYSTEM_PROCESSOR})
@@ -83,7 +76,7 @@ set(sources
   extension/extension_helper.cpp
 )
 
-if(BPFTIME_BUILD_KERNEL_BPF)
+if(BPFTIME_BUILD_KERNEL_BPF AND BPFTIME_BUILD_WITH_LIBBPF)
   list(APPEND sources
     src/bpf_map/shared/array_map_kernel_user.cpp
     src/bpf_map/shared/hash_map_kernel_user.cpp
@@ -204,9 +197,11 @@ message(DEBUG "Successfully added all dependencies and linked against them.")
 
 set(BPFTIME_RUNTIME_INCLUDE ${CMAKE_CURRENT_SOURCE_DIR}/include ${CMAKE_CURRENT_SOURCE_DIR}/src)
 
+if(BPFTIME_BUILD_WITH_LIBBPF)
 add_subdirectory(object)
 add_subdirectory(agent)
 add_subdirectory(syscall-server)
+endif(BPFTIME_BUILD_WITH_LIBBPF)
 
 #
 # Unit testing setup

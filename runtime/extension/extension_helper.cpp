@@ -20,7 +20,9 @@
 #include <vector>
 
 #ifdef BPFTIME_ENABLE_IOURING_EXT
+#ifdef USE_BPF
 #include "liburing.h"
+#endif
 #endif
 
 using namespace std;
@@ -47,7 +49,7 @@ uint64_t bpftime_path_join(const char *filename1, const char *filename2,
 namespace bpftime
 {
 #ifdef BPFTIME_ENABLE_IOURING_EXT
-
+#ifdef USE_BPF
 static int submit_io_uring_write(struct io_uring *ring, int fd, char *buf,
 				 size_t size)
 {
@@ -126,6 +128,7 @@ uint64_t bpftime_io_uring_submit(void)
 	return io_uring_submit(&ring);
 }
 #endif
+#endif 
 
 extern const bpftime_helper_group extesion_group = { {
 	{ UFUNC_HELPER_ID_FIND_ID,
@@ -155,6 +158,7 @@ extern const bpftime_helper_group extesion_group = { {
 	  } },
 #endif
 #ifdef BPFTIME_ENABLE_IOURING_EXT
+#ifdef USE_BPF
 	{ EXTENDED_HELPER_IOURING_INIT,
 	  bpftime_helper_info{
 		  .index = EXTENDED_HELPER_IOURING_INIT,
@@ -185,6 +189,7 @@ extern const bpftime_helper_group extesion_group = { {
 		  .name = "io_uring_submit",
 		  .fn = (void *)bpftime_io_uring_submit,
 	  } },
+#endif
 #endif
 } };
 

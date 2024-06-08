@@ -1,4 +1,6 @@
+#if __linux__
 #include <linux/bpf.h>
+#endif
 #include <string>
 #include <list>
 #include <memory>
@@ -8,11 +10,13 @@
 using namespace std;
 using namespace bpftime;
 
+#ifdef USE_BPF
 extern "C" {
 #include <bpf/libbpf.h>
 #include <bpf/btf.h>
 #include <bpf/bpf.h>
 }
+#endif
 
 namespace bpftime
 {

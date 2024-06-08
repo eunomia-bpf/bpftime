@@ -1,9 +1,11 @@
 
-add_library(bpftime-object OBJECT
-  bpf_object.cpp
-)
+
+
 
 if(${BPFTIME_BUILD_WITH_LIBBPF})
+  add_library(bpftime-object OBJECT
+    bpf_object.cpp
+  )
   add_dependencies(bpftime-object copy_headers libbpf spdlog::spdlog bpftime_vm)
 else()
   add_dependencies(bpftime-object spdlog::spdlog bpftime_vm)

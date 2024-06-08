@@ -10,6 +10,9 @@
 #include <bpf_map/userspace/ringbuf_map.hpp>
 #include <spdlog/spdlog.h>
 #include <stdexcept>
+#if __APPLE__
+#include "bpftime_epoll.h"
+#endif
 
 enum {
 	BPF_RINGBUF_BUSY_BIT = 2147483648,

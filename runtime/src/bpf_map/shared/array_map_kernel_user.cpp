@@ -6,8 +6,10 @@
 #include "spdlog/spdlog.h"
 #include <bpf_map/shared/array_map_kernel_user.hpp>
 #include <cerrno>
+#if __linux__
 #include <bpf/libbpf.h>
 #include <bpf/bpf.h>
+#endif
 
 #ifndef roundup
 #define roundup(x, y)                                                          \
@@ -29,6 +31,7 @@ static size_t bpf_map_mmap_sz(unsigned int value_sz, unsigned int max_entries)
 	map_sz = roundup(map_sz, page_sz);
 	return map_sz;
 }
+
 
 void array_map_kernel_user_impl::init_map_fd()
 {

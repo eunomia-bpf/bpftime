@@ -84,6 +84,11 @@ endif()
 
 message(STATUS "Started CMake for ${PROJECT_NAME} v${PROJECT_VERSION}...\n")
 
+# if option to build without libbpf is set
+if(BPFTIME_BUILD_WITH_LIBBPF)
+  add_definitions(-DUSE_LIBBPF)
+endif()
+
 if(UNIX)
   add_compile_options("$<$<CONFIG:DEBUG>:-D_DEBUG>") # this will allow to use same _DEBUG macro available in both Linux as well as Windows - MSCV environment. Easy to put Debug specific code.
 endif(UNIX)
@@ -156,7 +161,9 @@ endif()
 bpftime_add_libs_component_command(${FRIDA_GUM_INSTALL_DIR}/libfrida-gum.a)
 bpftime_add_libs_component_command(${CMAKE_CURRENT_BUILD_DIR}/libbpf/libbpf/libbpf.a)
 bpftime_add_static_lib_component_command(bpftime_frida_uprobe_attach_impl)
+if(BPFTIME_BUILD_WITH_LIBBPF)
 bpftime_add_static_lib_component_command(bpftime_syscall_trace_attach_impl)
+endif(BPFTIME_BUILD_WITH_LIBBPF)
 bpftime_add_static_lib_component_command(runtime)
 bpftime_add_static_lib_component_command(spdlog)
 add_custom_command(OUTPUT "libbpftime.a"
@@ -182,7 +189,7 @@ DESTINATION ~/.bpftime
 
 endif()
 
-if (${BUILD_BPFTIME_DAEMON})
+if (${BUILD_BPFTIME_DAEMON} AND ${BPFTIME_BUILD_WITH_LIBBPF})
   add_subdirectory(daemon)
 endif()
 add_subdirectory(tools)
@@ -200,5 +207,5 @@ set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>DLL")
 if(${BPFTIME_BUILD_WITH_LIBBPF})
  install(TARGETS bpftime-agent bpftime_text_segment_transformer bpftime-syscall-server CONFIGURATIONS Release Debug RelWithDebInfo DESTINATION ~/.bpftime)
 else()
- install(TARGETS bpftime-agent CONFIGURATIONS Release Debug RelWithDebInfo DESTINATION ~/.bpftime)
+ install(TARGETS CONFIGURATIONS Release Debug RelWithDebInfo DESTINATION ~/.bpftime)
 endif() 

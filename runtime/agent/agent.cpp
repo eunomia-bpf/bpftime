@@ -6,8 +6,10 @@
 #include "spdlog/common.h"
 #include "spdlog/sinks/stdout_color_sinks.h"
 #include "spdlog/sinks/stdout_sinks.h"
+#if __linux__
 #include "syscall_trace_attach_impl.hpp"
 #include "syscall_trace_attach_private_data.hpp"
+#endif
 #include <chrono>
 #include <csignal>
 #include <exception>

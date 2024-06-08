@@ -1,19 +1,18 @@
 #include "platform_utils.hpp"
 
-#if defined(__linux__)
+#if __linux__
 
 int sched_getcpu() {
     return ::sched_getcpu();
 }
 
-#elif defined(__APPLE__) && defined(__MACH__)
+#elif __APPLE__
 
 int sched_getcpu() {
     int cpu = -1;
     size_t len = sizeof(cpu);
-    int mib[2] = { CTL_HW, HW_CPUID };
 
-    if (sysctl(mib, 2, &cpu, &len, NULL, 0) == -1) {
+    if (sysctlbyname("hw.cpulocation", &cpu, &len, NULL, 0) == -1) {
         return -1;  // Handle error
     }
     return cpu;

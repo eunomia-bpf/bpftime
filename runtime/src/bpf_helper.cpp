@@ -3,13 +3,22 @@
  * Copyright (c) 2022, eunomia-bpf org
  * All rights reserved.
  */
+#include <_types/_uint64_t.h>
+#include <pthread.h>
+#ifdef USE_BPF
 #include "bpf/bpf.h"
 #include "bpf/libbpf_common.h"
+#endif 
 #include "bpftime_helper_group.hpp"
 #include <cerrno>
-#include <sched.h>
 #ifdef ENABLE_BPFTIME_VERIFIER
 #include "bpftime-verifier.hpp"
+#endif
+
+#if __linux__
+#include <sched.h>
+#elif __APPLE__
+#include "platform_utils.hpp"
 #endif
 #include "spdlog/spdlog.h"
 #include <map>
@@ -82,7 +91,11 @@ uint64_t bpftime_ktime_get_coarse_ns(uint64_t, uint64_t, uint64_t, uint64_t,
 				     uint64_t)
 {
 	timespec spec;
+	#ifdef __APPLE__
+	clock_gettime(CLOCK_MONOTONIC, &spec); // or CLOCK_MONOTONIC_RAW
+	#else
 	clock_gettime(CLOCK_MONOTONIC_COARSE, &spec);
+	#endif
 	return spec.tv_sec * (uint64_t)1000000000 + spec.tv_nsec;
 }
 
@@ -90,9 +103,19 @@ uint64_t bpftime_get_current_pid_tgid(uint64_t, uint64_t, uint64_t, uint64_t,
 				      uint64_t)
 {
 	static int tgid = getpid();
+	#if __linux__
 	static thread_local int tid = -1;
+	#elif __APPLE__
+	static thread_local uint64_t tid = -1;
+	#endif
 	if (tid == -1)
-		tid = gettid();
+		{
+			#if __linux__
+			tid = gettid();
+			#elif __APPLE__
+			pthread_threadid_np(NULL, &tid);
+			#endif
+		}
 	return ((uint64_t)tgid << 32) | tid;
 }
 
@@ -175,7 +198,11 @@ uint64_t bpf_ktime_get_coarse_ns(uint64_t, uint64_t, uint64_t, uint64_t,
 				 uint64_t)
 {
 	struct timespec ts;
-	clock_gettime(CLOCK_MONOTONIC_COARSE, &ts);
+	#ifdef __APPLE__
+	clock_gettime(CLOCK_MONOTONIC, &ts); // or CLOCK_MONOTONIC_RAW
+	#else
+	clock_gettime(CLOCK_MONOTONIC_COARSE, &spec);
+	#endif
 	return (uint64_t)ts.tv_sec * 1000000000 + ts.tv_nsec;
 }
 
@@ -292,7 +319,7 @@ uint64_t bpf_perf_event_output(uint64_t ctx, uint64_t map, uint64_t flags,
 	sched_setaffinity(0, sizeof(orig), &orig);
 	return (uint64_t)ret;
 }
-
+#if __linux__
 uint64_t bpftime_tail_call(uint64_t ctx, uint64_t prog_array, uint64_t index)
 {
 	int fd = prog_array >> 32;
@@ -330,6 +357,7 @@ uint64_t bpftime_tail_call(uint64_t ctx, uint64_t prog_array, uint64_t index)
 	close(to_call_fd);
 	return run_opts.retval;
 }
+#endif
 
 uint64_t bpftime_get_attach_cookie(uint64_t ctx, uint64_t, uint64_t, uint64_t,
 				   uint64_t)
@@ -727,7 +755,7 @@ const bpftime_helper_group shm_maps_group = { {
 } };
 
 extern const bpftime_helper_group extesion_group;
-
+#if __linux
 const bpftime_helper_group kernel_helper_group = {
 	{ { BPF_FUNC_probe_read,
 	    bpftime_helper_info{
@@ -886,20 +914,21 @@ const bpftime_helper_group kernel_helper_group = {
 				 .fn = (void *)bpftime_get_attach_cookie } } }
 
 };
-
+#endif
 // Utility function to get the UFUNC helper group
 const bpftime_helper_group &bpftime_helper_group::get_ufunc_helper_group()
 {
 	return extesion_group;
 }
 
+#if __linux
 // Utility function to get the kernel utilities helper group
 const bpftime_helper_group &
 bpftime_helper_group::get_kernel_utils_helper_group()
 {
 	return kernel_helper_group;
 }
-
+#endif
 const bpftime_helper_group &bpftime_helper_group::get_shm_maps_helper_group()
 {
 	return shm_maps_group;

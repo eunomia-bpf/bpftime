@@ -9,7 +9,11 @@
 #include "spdlog/spdlog.h"
 #include <bpftime_shm_internal.hpp>
 #include <cstdio>
+#if __linux__
 #include <sys/epoll.h>
+#elif __APPLE__
+#include "bpftime_epoll.h"
+#endif
 #include <unistd.h>
 #include <variant>
 #include <fstream>
