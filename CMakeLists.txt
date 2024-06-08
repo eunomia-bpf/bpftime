@@ -199,7 +199,10 @@ if(${BUILD_ATTACH_IMPL_EXAMPLE})
 endif()
 
 # benchmark that requires bpftime libraries
+if(${BPFTIME_BUILD_WITH_LIBBPF})
+# Currently benchmark is using libbpf
 add_subdirectory(benchmark)
+endif()
 
 
 set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>DLL")
@@ -207,5 +210,5 @@ set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>DLL")
 if(${BPFTIME_BUILD_WITH_LIBBPF})
  install(TARGETS bpftime-agent bpftime_text_segment_transformer bpftime-syscall-server CONFIGURATIONS Release Debug RelWithDebInfo DESTINATION ~/.bpftime)
 else()
- install(TARGETS CONFIGURATIONS Release Debug RelWithDebInfo DESTINATION ~/.bpftime)
+ install(TARGETS bpftime-agent CONFIGURATIONS Release Debug RelWithDebInfo DESTINATION ~/.bpftime)
 endif() 

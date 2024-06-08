@@ -19,6 +19,38 @@
 #include <tuple>
 #include <sys/wait.h>
 
+#ifdef __APPLE__
+#include <crt_externs.h>
+#include <cstdlib>
+#include <cerrno>
+#include <cstring>
+#include <unistd.h>
+#define environ (*_NSGetEnviron())
+const char *strchrnul(const char *s, int c) {
+    while (*s && *s != (char)c) {
+        s++;
+    }
+    return s;
+}
+int execvpe(const char *file, char *const argv[], char *const envp[]) {
+    for (const char *path = getenv("PATH"); path && *path; path = strchr(path, ':') + 1) {
+        char buf[PATH_MAX];
+        const char *end = strchrnul(path, ':');
+        size_t len = end - path;
+        memcpy(buf, path, len);
+        buf[len] = '/';
+        strcpy(buf + len + 1, file);
+        execve(buf, argv, envp);
+        if (errno != ENOENT)
+            return -1;
+    }
+    errno = ENOENT;
+    return -1;
+}
+#else
+extern char **environ;
+#endif
+
 static int subprocess_pid = 0;
 
 static bool str_starts_with(const char *main, const char *pat)

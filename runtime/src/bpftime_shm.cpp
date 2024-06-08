@@ -516,6 +516,7 @@ int bpftime_perf_event_output(int fd, const void *buf, size_t sz)
 	}
 }
 
+#if __linux__
 int bpftime_shared_perf_event_output(int map_fd, const void *buf, size_t sz)
 {
 	SPDLOG_DEBUG("Output data into shared perf event array fd {}", map_fd);
@@ -543,6 +544,7 @@ int bpftime_shared_perf_event_output(int map_fd, const void *buf, size_t sz)
 		return -1;
 	}
 }
+#endif 
 
 int bpftime_is_prog_array(int fd)
 {

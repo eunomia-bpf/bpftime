@@ -7,8 +7,10 @@
 #include <stdio.h>
 #include <stdint.h>
 #include <ebpf-vm.h>
+#ifdef USE_LIBBPF
 #include <bpf/libbpf.h>
 #include <bpf/bpf.h>
+#endif
 #include <errno.h>
 #include <stdbool.h>
 
@@ -76,11 +78,19 @@ void end_timer()
 	clock_gettime(CLOCK_MONOTONIC_RAW, &end_time);
 }
 
+#if __linux__
 __attribute_noinline__ uint64_t __benchmark_test_function3(const char *a, int b,
 							   uint64_t c)
 {
 	return a[b] + c;
 }
+#elif __APPLE__
+__attribute((noinline)) uint64_t __benchmark_test_function3(const char *a, int b,
+							   uint64_t c)
+{
+	return a[b] + c;
+}
+#endif
 
 uint64_t test_func_wrapper(const char *a, int b, uint64_t c)
 {

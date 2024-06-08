@@ -351,7 +351,9 @@ int bpftime_add_software_perf_event(int cpu, int32_t sample_type,
 int bpftime_is_software_perf_event(int fd);
 void *bpftime_get_software_perf_event_raw_buffer(int fd, size_t expected_size);
 int bpftime_perf_event_output(int fd, const void *buf, size_t sz);
+#if __linux__
 int bpftime_shared_perf_event_output(int map_fd, const void *buf, size_t sz);
+#endif
 int bpftime_add_ureplace_or_override(int fd, int pid, const char *name,
 				     uint64_t offset, bool is_replace);
 

@@ -37,3 +37,13 @@ int sched_setaffinity(pid_t pid, size_t cpusetsize, const cpu_set_t *mask) {
 }
 
 #endif
+
+int get_current_cpu() {
+#if __linux__
+    return sched_getcpu();
+#elif __APPLE__
+    return sched_getcpu();
+#else
+    return -1; // Unsupported platform
+#endif
+}

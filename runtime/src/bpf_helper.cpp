@@ -305,12 +305,16 @@ uint64_t bpf_perf_event_output(uint64_t ctx, uint64_t map, uint64_t flags,
 		ret = bpftime_perf_event_output(perf_handler_fd,
 						(const void *)(uintptr_t)data,
 						(size_t)size);
-	} else if (map_ty ==
+	} 
+	#if __linux__
+	else if (map_ty ==
 		   bpftime::bpf_map_type::
 			   BPF_MAP_TYPE_KERNEL_USER_PERF_EVENT_ARRAY) {
 		ret = bpftime_shared_perf_event_output(
 			fd, (const void *)(uintptr_t)data, (size_t)size);
-	} else {
+	} 
+	#endif 
+	else {
 		SPDLOG_ERROR(
 			"Attempting to run perf_output on a non-perf array map");
 		ret = -1;

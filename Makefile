@@ -55,7 +55,7 @@ build-iouring: ## build the package with iouring extension
 	cmake --build build --config RelWithDebInfo  -j$(JOBS)
 
 build-wo-libbpf: ## build the package with iouring extension
-	cmake -Bbuild -DBPFTIME_ENABLE_IOURING_EXT=1 -DCMAKE_BUILD_TYPE:STRING=RelWithDebInfo -DBPFTIME_BUILD_WITH_LIBBPF=OFF
+	cmake -Bbuild -DBPFTIME_ENABLE_IOURING_EXT=1 -DCMAKE_BUILD_TYPE:STRING=RelWithDebInfo -DBPFTIME_BUILD_WITH_LIBBPF=OFF -DBPFTIME_ENABLE_IOURING_EXT=OFF
 	cmake --build build --config RelWithDebInfo  -j$(JOBS)
 
 release: ## build the release version

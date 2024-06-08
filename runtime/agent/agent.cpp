@@ -121,6 +121,7 @@ extern "C" void bpftime_agent_main(const gchar *data, gboolean *stay_resident)
 			getpid());
 	}
 	ctx_holder.init();
+	#ifdef USE_LIBBPF
 	// Register syscall trace impl
 	auto syscall_trace_impl = std::make_unique<syscall_trace_attach_impl>();
 	syscall_trace_impl->set_original_syscall_function(orig_hooker);
@@ -138,6 +139,7 @@ extern "C" void bpftime_agent_main(const gchar *data, gboolean *stay_resident)
 			}
 			return priv_data;
 		});
+	#endif
 	// Register uprobe attach impl
 	ctx_holder.ctx.register_attach_impl(
 		{ ATTACH_UPROBE, ATTACH_URETPROBE, ATTACH_UPROBE_OVERRIDE,
@@ -174,6 +176,9 @@ extern "C" void bpftime_agent_main(const gchar *data, gboolean *stay_resident)
 	SPDLOG_INFO("Attach successfully");
 }
 
+// using definition for libbpf for syscall issues
+// maybe should separate libbpf and kernel features separately
+#ifdef USE_LIBBPF
 extern "C" int64_t syscall_callback(int64_t sys_nr, int64_t arg1, int64_t arg2,
 				    int64_t arg3, int64_t arg4, int64_t arg5,
 				    int64_t arg6)
@@ -191,3 +196,4 @@ _bpftime__setup_syscall_trace_callback(syscall_hooker_func_t *hooker)
 	bpftime_agent_main("", &val);
 	SPDLOG_INFO("Agent syscall trace setup exiting..");
 }
+#endif

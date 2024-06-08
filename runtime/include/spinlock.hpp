@@ -8,13 +8,13 @@ public:
     std::atomic_flag lock = ATOMIC_FLAG_INIT;
 
     // Default constructor to initialize the atomic_flag
-    Spinlock() : lock(ATOMIC_FLAG_INIT) {}
+    Spinlock() = default; 
 
     // // Deleted copy constructor to prevent copying
     Spinlock(const Spinlock&) = delete;
     Spinlock& operator=(const Spinlock&) = delete;
 
-    Spinlock(Spinlock&& other) noexcept : lock(ATOMIC_FLAG_INIT) {
+    Spinlock(Spinlock&& other) noexcept : lock() {
         if (other.lock.test_and_set(std::memory_order_acquire)) {
             lock.clear(std::memory_order_release);
         }
