@@ -20,7 +20,7 @@
 #include <vector>
 
 #ifdef BPFTIME_ENABLE_IOURING_EXT
-#ifdef USE_BPF
+#if __linux__
 #include "liburing.h"
 #endif
 #endif
@@ -48,8 +48,13 @@ uint64_t bpftime_path_join(const char *filename1, const char *filename2,
 
 namespace bpftime
 {
+/*
+io_uring are only available in linux atm 
+so adding linux guards to the following code
+*/
+
 #ifdef BPFTIME_ENABLE_IOURING_EXT
-#ifdef USE_BPF
+#if __linux__
 static int submit_io_uring_write(struct io_uring *ring, int fd, char *buf,
 				 size_t size)
 {
@@ -158,7 +163,7 @@ extern const bpftime_helper_group extesion_group = { {
 	  } },
 #endif
 #ifdef BPFTIME_ENABLE_IOURING_EXT
-#ifdef USE_BPF
+#if __linux__
 	{ EXTENDED_HELPER_IOURING_INIT,
 	  bpftime_helper_info{
 		  .index = EXTENDED_HELPER_IOURING_INIT,

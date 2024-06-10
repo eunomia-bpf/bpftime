@@ -251,7 +251,11 @@ int main(int argc, const char **argv)
 		return run_command(executable_path.c_str(), extra_args,
 				   so_path.c_str(), nullptr);
 	} else if (program.is_subcommand_used("start")) {
+		#if __linux__
 		auto agent_path = install_path / "libbpftime-agent.so";
+		#elif __APPLE__
+		auto agent_path = install_path / "libbpftime-agent.dylib";
+		#endif
 		if (!std::filesystem::exists(agent_path)) {
 			spdlog::error("Library not found: {}",
 				      agent_path.c_str());
@@ -277,7 +281,11 @@ int main(int argc, const char **argv)
 					   agent_path.c_str(), nullptr);
 		}
 	} else if (program.is_subcommand_used("attach")) {
+		#if __linux__
 		auto agent_path = install_path / "libbpftime-agent.so";
+		#elif __APPLE__
+		auto agent_path = install_path / "libbpftime-agent.dylib";
+		#endif
 		if (!std::filesystem::exists(agent_path)) {
 			spdlog::error("Library not found: {}",
 				      agent_path.c_str());

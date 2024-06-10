@@ -42,12 +42,7 @@ endif()
 #
 # Create library, setup header and source files
 #
-set(Boost_ROOT "/usr/local")
 find_package(Boost REQUIRED)
-
-include_directories(${Boost_ROOT}/include)
-link_directories(${Boost_ROOT}/lib)
-
 # Find all headers and implementation files
 if(NOT DEFINED ARCH)
   set(ARCH ${CMAKE_SYSTEM_PROCESSOR})
@@ -81,7 +76,7 @@ set(sources
   extension/extension_helper.cpp
 )
 
-if(BPFTIME_BUILD_KERNEL_BPF AND BPFTIME_BUILD_WITH_LIBBPF)
+if(UNIX AND NOT APPLE)
   list(APPEND sources
     src/bpf_map/shared/array_map_kernel_user.cpp
     src/bpf_map/shared/hash_map_kernel_user.cpp
@@ -242,10 +237,11 @@ message(DEBUG "Successfully added all dependencies and linked against them.")
 
 set(BPFTIME_RUNTIME_INCLUDE ${CMAKE_CURRENT_SOURCE_DIR}/include ${CMAKE_CURRENT_SOURCE_DIR}/src)
 
-if(BPFTIME_BUILD_WITH_LIBBPF)
+
+if(UNIX AND NOT APPLE)
 add_subdirectory(object)
 add_subdirectory(syscall-server)
-endif(BPFTIME_BUILD_WITH_LIBBPF)
+endif()
 
 add_subdirectory(agent)
 #

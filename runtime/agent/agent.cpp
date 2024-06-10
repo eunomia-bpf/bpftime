@@ -6,10 +6,6 @@
 #include "spdlog/common.h"
 #include "spdlog/sinks/stdout_color_sinks.h"
 #include "spdlog/sinks/stdout_sinks.h"
-#if __linux__
-#include "syscall_trace_attach_impl.hpp"
-#include "syscall_trace_attach_private_data.hpp"
-#endif
 #include <chrono>
 #include <csignal>
 #include <exception>
@@ -25,6 +21,10 @@
 #include "bpftime_shm.hpp"
 #include <spdlog/spdlog.h>
 #include <spdlog/cfg/env.h>
+#if __linux__
+#include "syscall_trace_attach_impl.hpp"
+#include "syscall_trace_attach_private_data.hpp"
+#endif
 using namespace bpftime;
 using namespace bpftime::attach;
 using main_func_t = int (*)(int, char **, char **);

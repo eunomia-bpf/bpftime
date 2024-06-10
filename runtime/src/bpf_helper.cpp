@@ -4,6 +4,7 @@
  * All rights reserved.
  */
 #include <_types/_uint64_t.h>
+#include <cstdint>
 #include <pthread.h>
 #ifdef USE_BPF
 #include "bpf/bpf.h"
@@ -105,17 +106,17 @@ uint64_t bpftime_get_current_pid_tgid(uint64_t, uint64_t, uint64_t, uint64_t,
 	static int tgid = getpid();
 	#if __linux__
 	static thread_local int tid = -1;
+	if(tid == -1) 
+	{
+		tid = gettid();
+	}
 	#elif __APPLE__
-	static thread_local uint64_t tid = -1;
-	#endif
-	if (tid == -1)
-		{
-			#if __linux__
-			tid = gettid();
-			#elif __APPLE__
+	static thread_local uint64_t tid = UINT64_MAX; //cannot use int because pthread_threadid_np expects only uint64_t
+	if (tid == UINT64_MAX)
+	{
 			pthread_threadid_np(NULL, &tid);
-			#endif
-		}
+	}
+	#endif
 	return ((uint64_t)tgid << 32) | tid;
 }
 
