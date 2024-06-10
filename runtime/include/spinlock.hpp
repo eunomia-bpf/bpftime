@@ -2,41 +2,48 @@
 #define SPINLOCK_HPP
 
 #include <atomic>
+#include <cstddef>
+#include <ctime>
+#include <time.h>
 
 class Spinlock {
+    std::atomic<unsigned int> lock;
 public:
-    std::atomic_flag lock = ATOMIC_FLAG_INIT;
 
     // Default constructor to initialize the atomic_flag
-    Spinlock() = default; 
+    Spinlock() : lock(0) {}
 
-    // // Deleted copy constructor to prevent copying
+    // Deleted copy constructor to prevent copying
     Spinlock(const Spinlock&) = delete;
     Spinlock& operator=(const Spinlock&) = delete;
 
     Spinlock(Spinlock&& other) noexcept : lock() {
-        if (other.lock.test_and_set(std::memory_order_acquire)) {
-            lock.clear(std::memory_order_release);
+        if (other.lock.exchange(1, std::memory_order_acquire)) {
+            lock.store(0, std::memory_order_release);
         }
     }
 
     Spinlock& operator=(Spinlock&& other) noexcept {
         if (this != &other) {
-            if (other.lock.test_and_set(std::memory_order_acquire)) {
-                lock.clear(std::memory_order_release);
+            if (other.lock.exchange(1, std::memory_order_acquire)) {
+                lock.store(0, std::memory_order_release);
             }
         }
         return *this;
     }
 
     void spin_lock() {
-        while (lock.test_and_set(std::memory_order_acquire)) {
-            // busy-wait
+        static const timespec ns = {0, 1};
+        for(int i = 0; lock.load(std::memory_order_relaxed) || lock.exchange(1, std::memory_order_acquire); ++i) {
+            if(i==8){
+                i=0;
+                nanosleep(&ns, NULL);
+            }
         }
     }
 
     void spin_unlock() {
-        lock.clear(std::memory_order_release);
+        lock.store(0, std::memory_order_release);
     }
 };
 

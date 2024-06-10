@@ -1,6 +1,7 @@
 #ifndef SPINLOCK_WRAPPER_HPP
 #define SPINLOCK_WRAPPER_HPP
 
+#include <new>
 #include <pthread.h>
 #include <atomic>
 
@@ -14,12 +15,12 @@ typedef Spinlock pthread_spinlock_t; // Define custom spinlock type
 // Non-volatile version
 inline int pthread_spin_init(pthread_spinlock_t* lock, int pshared) {
     (void)pshared; // suppress unused parameter warning
-    lock->lock.clear();
+    new(lock) pthread_spinlock_t(); // Placement new to initialize the Spinlock object
     return 0;
 }
 
 inline int pthread_spin_destroy(pthread_spinlock_t* lock) {
-    (void)lock; // suppress unused parameter warning
+    lock->~Spinlock(); // Explicitly call the destructor
     return 0;
 }
 
@@ -35,24 +36,19 @@ inline int pthread_spin_unlock(pthread_spinlock_t* lock) {
 
 // Volatile version
 inline int pthread_spin_init(volatile pthread_spinlock_t* lock, int pshared) {
-    (void)pshared; // suppress unused parameter warning
-    const_cast<pthread_spinlock_t*>(lock)->lock.clear();
-    return 0;
+    return pthread_spin_init(const_cast<pthread_spinlock_t*>(lock), pshared);
 }
 
 inline int pthread_spin_destroy(volatile pthread_spinlock_t* lock) {
-    (void)lock; // suppress unused parameter warning
-    return 0;
+    return pthread_spin_destroy(const_cast<pthread_spinlock_t*>(lock));
 }
 
 inline int pthread_spin_lock(volatile pthread_spinlock_t* lock) {
-    spin_lock(const_cast<pthread_spinlock_t*>(lock));
-    return 0;
+    return pthread_spin_lock(const_cast<pthread_spinlock_t*>(lock));
 }
 
 inline int pthread_spin_unlock(volatile pthread_spinlock_t* lock) {
-    spin_unlock(const_cast<pthread_spinlock_t*>(lock));
-    return 0;
+    return pthread_spin_unlock(const_cast<pthread_spinlock_t*>(lock));
 }
 
 #else
