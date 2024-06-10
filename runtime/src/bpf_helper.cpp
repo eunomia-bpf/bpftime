@@ -18,11 +18,7 @@
 #include "bpftime-verifier.hpp"
 #endif
 
-#if __linux__
-#include <sched.h>
-#elif __APPLE__
 #include "platform_utils.hpp"
-#endif
 #include "spdlog/spdlog.h"
 #include <map>
 #include <stdio.h>
