@@ -26,7 +26,7 @@ elseif(${FRIDA_OS_ARCH} MATCHES "linux-arm.*")
   set(FRIDA_GUM_DEVKIT_SHA256 "6b5963eb740062aec6c22c46ec2944a68006f72d290f714fb747ffe75b448a60")
   # Frida only has armhf builds..
   set(FRIDA_OS_ARCH "linux-armhf")
-elseif(${FRIDA_OS_ARCH} MATCHES "darwin-arm.*")
+elseif(${FRIDA_OS_ARCH} MATCHES "darwin-arm64")
   set(FRIDA_CORE_DEVKIT_SHA256 "7811e516e6b7bbc0153d30095560e0b1133f154060c5542764100d3e0eb2ab2b")
   set(FRIDA_GUM_DEVKIT_SHA256 "03f6085ae5330cf38e0a498784500675fc5bd7361bb551a9097ba5fe397aceda")
   # for macos-arm m* chip series 
