@@ -23,7 +23,7 @@
     }
     int sched_getaffinity(pid_t pid, size_t cpusetsize, cpu_set_t *mask);
     int sched_setaffinity(pid_t pid, size_t cpusetsize, const cpu_set_t *mask);
-    int sched_getcpu(); 
+    int my_sched_getcpu(); 
 #else
     #error "Unsupported platform"
 #endif
