@@ -10,7 +10,7 @@
 using namespace std;
 using namespace bpftime;
 
-#ifdef USE_BPF
+#ifdef USE_LIBBPF
 extern "C" {
 #include <bpf/libbpf.h>
 #include <bpf/btf.h>

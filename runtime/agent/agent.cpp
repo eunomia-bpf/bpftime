@@ -121,7 +121,7 @@ extern "C" void bpftime_agent_main(const gchar *data, gboolean *stay_resident)
 			getpid());
 	}
 	ctx_holder.init();
-	#ifdef USE_LIBBPF
+	#if __linux__
 	// Register syscall trace impl
 	auto syscall_trace_impl = std::make_unique<syscall_trace_attach_impl>();
 	syscall_trace_impl->set_original_syscall_function(orig_hooker);
@@ -178,7 +178,7 @@ extern "C" void bpftime_agent_main(const gchar *data, gboolean *stay_resident)
 
 // using definition for libbpf for syscall issues
 // maybe should separate libbpf and kernel features separately
-#ifdef USE_LIBBPF
+#if __linux__
 extern "C" int64_t syscall_callback(int64_t sys_nr, int64_t arg1, int64_t arg2,
 				    int64_t arg3, int64_t arg4, int64_t arg5,
 				    int64_t arg6)

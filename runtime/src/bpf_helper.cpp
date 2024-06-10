@@ -8,7 +8,7 @@
 #include <cstdint>
 #include <pthread.h>
 #endif
-#ifdef USE_BPF
+#ifdef USE_LIBBPF
 #include "bpf/bpf.h"
 #include "bpf/libbpf_common.h"
 #endif 
