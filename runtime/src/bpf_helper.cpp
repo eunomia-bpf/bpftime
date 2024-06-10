@@ -199,10 +199,10 @@ uint64_t bpf_ktime_get_coarse_ns(uint64_t, uint64_t, uint64_t, uint64_t,
 				 uint64_t)
 {
 	struct timespec ts;
-	#ifdef __APPLE__
+	#if __APPLE__
 	clock_gettime(CLOCK_MONOTONIC, &ts); // or CLOCK_MONOTONIC_RAW
 	#else
-	clock_gettime(CLOCK_MONOTONIC_COARSE, &spec);
+	clock_gettime(CLOCK_MONOTONIC_COARSE, &ts);
 	#endif
 	return (uint64_t)ts.tv_sec * 1000000000 + ts.tv_nsec;
 }
