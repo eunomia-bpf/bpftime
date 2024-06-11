@@ -11,7 +11,9 @@
 #include <handler/handler_manager.hpp>
 #include <variant>
 #include <algorithm>
+#if __APPLE__
 #include "spinlock_wrapper.hpp"
+#endif
 namespace bpftime
 {
 handler_manager::handler_manager(managed_shared_memory &mem,

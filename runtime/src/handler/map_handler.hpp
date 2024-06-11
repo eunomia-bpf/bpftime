@@ -18,7 +18,9 @@
 #include <optional>
 #include <unistd.h>
 #include <bpf_map/shared/perf_event_array_kernel_user.hpp>
+#if __APPLE__
 #include "spinlock_wrapper.hpp"
+#endif
 namespace bpftime
 {
 using char_allocator = boost::interprocess::allocator<
