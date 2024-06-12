@@ -126,7 +126,6 @@ target_include_directories(${PROJECT_NAME}
   ${Boost_INCLUDE_DIRS}
 )
 
-message(INFO " Found the following boost link dirs : ${Boost_LIBRARIES}")
 target_link_libraries(${PROJECT_NAME}
   PUBLIC
   bpftime_vm
