@@ -29,21 +29,13 @@ add_executable(bpftime_daemon
     user/main.cpp
 )
 
-if(${BPFTIME_BUILD_WITH_LIBBPF})
-    add_dependencies(libbpftime_daemon
-        bpftime_daemon_ebpf_skel
-        libbpf
-        spdlog::spdlog
-        runtime
-    )
-else()
-    add_dependencies(libbpftime_daemon
-        spdlog::spdlog
-        runtime
-    )
-endif()
+add_dependencies(libbpftime_daemon
+    bpftime_daemon_ebpf_skel
+    libbpf
+    spdlog::spdlog
+    runtime
+)
 
-if(${BPFTIME_BUILD_WITH_LIBBPF})
 target_include_directories(libbpftime_daemon PRIVATE
     ${CMAKE_CURRENT_BINARY_DIR}
     ${LIBBPF_INCLUDE_DIRS}
@@ -62,22 +54,6 @@ target_link_libraries(libbpftime_daemon PRIVATE
     PUBLIC
     rt
 )
-else()
-target_include_directories(libbpftime_daemon PRIVATE
-    ${CMAKE_CURRENT_BINARY_DIR}
-    ${CMAKE_CURRENT_SOURCE_DIR}
-    ${CMAKE_CURRENT_SOURCE_DIR}/../vm/include
-    ${CMAKE_CURRENT_SOURCE_DIR}/../runtime/include
-)
-target_link_libraries(libbpftime_daemon PRIVATE
-    elf
-    z
-    spdlog::spdlog
-    runtime
-    PUBLIC
-    rt
-)
-endif()
 
 set_property(TARGET libbpftime_daemon PROPERTY CXX_STANDARD 20)
 
