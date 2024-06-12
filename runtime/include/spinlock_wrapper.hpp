@@ -13,8 +13,7 @@
 typedef Spinlock pthread_spinlock_t; // Define custom spinlock type
 
 // Non-volatile version
-inline int pthread_spin_init(pthread_spinlock_t* lock, int pshared) {
-    (void)pshared; // suppress unused parameter warning
+inline int pthread_spin_init(pthread_spinlock_t* lock, [[maybe_unused]]int pshared) {
     new(lock) pthread_spinlock_t(); // Placement new to initialize the Spinlock object
     return 0;
 }
