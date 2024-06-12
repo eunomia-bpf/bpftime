@@ -18,7 +18,13 @@ using namespace std;
 namespace bpftime
 {
 
+
+#ifdef __APPLE__
+__thread std::optional<uint64_t> current_thread_bpf_cookie;
+#else
 thread_local std::optional<uint64_t> current_thread_bpf_cookie;
+#endif
+
 
 bpftime_prog::bpftime_prog(const struct ebpf_inst *insn, size_t insn_cnt,
 			   const char *name)

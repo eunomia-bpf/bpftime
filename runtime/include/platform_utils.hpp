@@ -28,5 +28,4 @@
 #endif
 
 int my_sched_getcpu(); 
-int get_current_cpu();
 #endif

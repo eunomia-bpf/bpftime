@@ -240,10 +240,10 @@ set(BPFTIME_RUNTIME_INCLUDE ${CMAKE_CURRENT_SOURCE_DIR}/include ${CMAKE_CURRENT_
 
 if(UNIX AND NOT APPLE)
 add_subdirectory(object)
-add_subdirectory(syscall-server)
 endif()
 
 add_subdirectory(agent)
+add_subdirectory(syscall-server)
 #
 # Unit testing setup
 #

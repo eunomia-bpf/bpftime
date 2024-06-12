@@ -758,7 +758,7 @@ const bpftime_helper_group shm_maps_group = { {
 } };
 
 extern const bpftime_helper_group extesion_group;
-#if __linux
+#if __linux__
 const bpftime_helper_group kernel_helper_group = {
 	{ { BPF_FUNC_probe_read,
 	    bpftime_helper_info{
@@ -924,7 +924,7 @@ const bpftime_helper_group &bpftime_helper_group::get_ufunc_helper_group()
 	return extesion_group;
 }
 
-#if __linux
+#if __linux__
 // Utility function to get the kernel utilities helper group
 const bpftime_helper_group &
 bpftime_helper_group::get_kernel_utils_helper_group()
