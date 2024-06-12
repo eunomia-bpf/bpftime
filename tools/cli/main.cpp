@@ -26,6 +26,9 @@
 #include <cstring>
 #include <unistd.h>
 #define environ (*_NSGetEnviron())
+#define AGENT_LIBRARY "libbpftime-agent.dylib"
+#define SYSCALL_SERVER_LIBRARY "libbpftime-syscall-server.dylib"
+#define AGENT_TRANSFORMER_LIBRARY "libbpftime-agent-transformer.dylib"
 const char *strchrnul(const char *s, int c) {
     while (*s && *s != (char)c) {
         s++;
@@ -49,6 +52,9 @@ int execvpe(const char *file, char *const argv[], char *const envp[]) {
 }
 #else
 extern char **environ;
+#define AGENT_LIBRARY "libbpftime-agent.so"
+#define SYSCALL_SERVER_LIBRARY "libbpftime-syscall-server.so"
+#define AGENT_TRANSFORMER_LIBRARY "libbpftime-agent-transformer.so"
 #endif
 
 static int subprocess_pid = 0;
@@ -241,7 +247,7 @@ int main(int argc, const char **argv)
 	}
 	std::filesystem::path install_path(program.get("install-location"));
 	if (program.is_subcommand_used("load")) {
-		auto so_path = install_path / "libbpftime-syscall-server.so";
+		auto so_path = install_path / SYSCALL_SERVER_LIBRARY;
 		if (!std::filesystem::exists(so_path)) {
 			spdlog::error("Library not found: {}", so_path.c_str());
 			return 1;
@@ -251,11 +257,7 @@ int main(int argc, const char **argv)
 		return run_command(executable_path.c_str(), extra_args,
 				   so_path.c_str(), nullptr);
 	} else if (program.is_subcommand_used("start")) {
-		#if __linux__
-		auto agent_path = install_path / "libbpftime-agent.so";
-		#elif __APPLE__
-		auto agent_path = install_path / "libbpftime-agent.dylib";
-		#endif
+		auto agent_path = install_path / AGENT_LIBRARY;
 		if (!std::filesystem::exists(agent_path)) {
 			spdlog::error("Library not found: {}",
 				      agent_path.c_str());
@@ -281,11 +283,7 @@ int main(int argc, const char **argv)
 					   agent_path.c_str(), nullptr);
 		}
 	} else if (program.is_subcommand_used("attach")) {
-		#if __linux__
-		auto agent_path = install_path / "libbpftime-agent.so";
-		#elif __APPLE__
-		auto agent_path = install_path / "libbpftime-agent.dylib";
-		#endif
+		auto agent_path = install_path / AGENT_LIBRARY;
 		if (!std::filesystem::exists(agent_path)) {
 			spdlog::error("Library not found: {}",
 				      agent_path.c_str());
