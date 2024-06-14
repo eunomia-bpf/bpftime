@@ -33,11 +33,15 @@ public:
     }
 
     void spin_lock() {
-        static const timespec ns = {0, 1};
         for(int i = 0; lock.load(std::memory_order_relaxed) || lock.exchange(1, std::memory_order_acquire); ++i) {
             if(i==8){
                 i=0;
-                nanosleep(&ns, NULL);
+                #if __APPLE__ 
+                __asm__ __volatile__ ("yield");
+                #else 
+                __asm__ __volatile__ ("pause")
+                #endif
+
             }
         }
     }
