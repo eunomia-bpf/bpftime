@@ -33,16 +33,8 @@ public:
     }
 
     void spin_lock() {
-        for(int i = 0; lock.load(std::memory_order_relaxed) || lock.exchange(1, std::memory_order_acquire); ++i) {
-            if(i==8){
-                i=0;
-                #if __APPLE__ 
+        while(lock.load(std::memory_order_relaxed) || lock.exchange(1, std::memory_order_acquire)){
                 __asm__ __volatile__ ("yield");
-                #else 
-                __asm__ __volatile__ ("pause")
-                #endif
-
-            }
         }
     }
 
