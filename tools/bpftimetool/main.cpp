@@ -83,11 +83,8 @@ int bpftime_run_ebpf_program(int id,
 			auto new_prog = bpftime_prog(prog.insns.data(),
 							 prog.insns.size(),
 							 prog.name.c_str());
-			// kernel function can only be used in linux env
-			#if __linux__
-					bpftime::bpftime_helper_group::get_kernel_utils_helper_group()
+			bpftime::bpftime_helper_group::get_kernel_utils_helper_group()
 			.add_helper_group_to_prog(&new_prog);
-			#endif
 			bpftime::bpftime_helper_group::get_shm_maps_helper_group()
 				.add_helper_group_to_prog(&new_prog);
 			if (run_type == "JIT") {

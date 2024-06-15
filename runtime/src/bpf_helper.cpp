@@ -322,7 +322,6 @@ uint64_t bpf_perf_event_output(uint64_t ctx, uint64_t map, uint64_t flags,
 	sched_setaffinity(0, sizeof(orig), &orig);
 	return (uint64_t)ret;
 }
-#if __linux__
 uint64_t bpftime_tail_call(uint64_t ctx, uint64_t prog_array, uint64_t index)
 {
 	int fd = prog_array >> 32;
@@ -346,6 +345,7 @@ uint64_t bpftime_tail_call(uint64_t ctx, uint64_t prog_array, uint64_t index)
 	} else {
 		memset(context, 0, sizeof(context));
 	}
+	#ifdef USE_LIBBPF
 	LIBBPF_OPTS(bpf_test_run_opts, run_opts, .ctx_in = context,
 		    // .ctx_out = context_out,
 		    .ctx_size_in = sizeof(context),
@@ -359,8 +359,8 @@ uint64_t bpftime_tail_call(uint64_t ctx, uint64_t prog_array, uint64_t index)
 	}
 	close(to_call_fd);
 	return run_opts.retval;
+	#endif
 }
-#endif
 
 uint64_t bpftime_get_attach_cookie(uint64_t ctx, uint64_t, uint64_t, uint64_t,
 				   uint64_t)
@@ -758,7 +758,6 @@ const bpftime_helper_group shm_maps_group = { {
 } };
 
 extern const bpftime_helper_group extesion_group;
-#if __linux__
 const bpftime_helper_group kernel_helper_group = {
 	{ { BPF_FUNC_probe_read,
 	    bpftime_helper_info{
@@ -917,21 +916,18 @@ const bpftime_helper_group kernel_helper_group = {
 				 .fn = (void *)bpftime_get_attach_cookie } } }
 
 };
-#endif
 // Utility function to get the UFUNC helper group
 const bpftime_helper_group &bpftime_helper_group::get_ufunc_helper_group()
 {
 	return extesion_group;
 }
 
-#if __linux__
 // Utility function to get the kernel utilities helper group
 const bpftime_helper_group &
 bpftime_helper_group::get_kernel_utils_helper_group()
 {
 	return kernel_helper_group;
 }
-#endif
 const bpftime_helper_group &bpftime_helper_group::get_shm_maps_helper_group()
 {
 	return shm_maps_group;
