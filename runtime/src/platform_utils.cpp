@@ -1,4 +1,5 @@
 #include "platform_utils.hpp"
+#include "spdlog/spdlog.h"
 
 #if __linux__
 #include <sched.h>
@@ -16,7 +17,8 @@ int my_sched_getcpu() {
     size_t len = sizeof(cpu);
 
     if (sysctlbyname("hw.cpulocation", &cpu, &len, NULL, 0) == -1) {
-        return -1;  // Handle error
+        SPDLOG_ERROR("Couldn't get cpu location for the system");
+        return -1;  
     }
     return cpu;
 }
