@@ -23,18 +23,13 @@ int my_sched_getcpu() {
     return cpu;
 }
 
-int sched_getaffinity(pid_t pid, size_t cpusetsize, cpu_set_t *mask) {
-    (void)pid;
-    (void)cpusetsize;
+int sched_getaffinity([[maybe_unused]] pid_t pid, [[maybe_unused]]size_t cpusetsize, cpu_set_t *mask) {
     CPU_ZERO(mask);
     CPU_SET(my_sched_getcpu(), mask);
     return 0;
 }
 
-int sched_setaffinity(pid_t pid, size_t cpusetsize, const cpu_set_t *mask) {
-    (void)pid;
-    (void)cpusetsize;
-    (void)mask;
+int sched_setaffinity([[maybe_unused]]pid_t pid, [[maybe_unused]]size_t cpusetsize, [[maybe_unused]]const cpu_set_t *mask) {
     return 0;
 }
 
