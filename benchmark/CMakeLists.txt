@@ -1,10 +1,7 @@
 add_executable(simple-benchmark-with-embed-ebpf-calling test_embed.c)
 
-if(${BPFTIME_BUILD_WITH_LIBBPF})
-    add_dependencies(simple-benchmark-with-embed-ebpf-calling bpftime_vm libbpf)
-else()
-    add_dependencies(simple-benchmark-with-embed-ebpf-calling bpftime_vm)
-endif()
+add_dependencies(simple-benchmark-with-embed-ebpf-calling bpftime_vm libbpf)
+add_dependencies(simple-benchmark-with-embed-ebpf-calling bpftime_vm)
 target_compile_definitions(simple-benchmark-with-embed-ebpf-calling
     PRIVATE
 )
