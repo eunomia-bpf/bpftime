@@ -13,11 +13,7 @@
 namespace bpftime
 {
 
-#ifdef __APPLE__
-extern __thread std::optional<uint64_t> current_thread_bpf_cookie;
-#else
 extern thread_local std::optional<uint64_t> current_thread_bpf_cookie;
-#endif
 
 // executable program for bpf function
 class bpftime_prog {

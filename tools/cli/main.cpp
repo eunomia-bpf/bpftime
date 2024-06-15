@@ -25,10 +25,12 @@
 #include <cerrno>
 #include <cstring>
 #include <unistd.h>
-#define environ (*_NSGetEnviron())
-#define AGENT_LIBRARY "libbpftime-agent.dylib"
-#define SYSCALL_SERVER_LIBRARY "libbpftime-syscall-server.dylib"
-#define AGENT_TRANSFORMER_LIBRARY "libbpftime-agent-transformer.dylib"
+inline char** get_environ() {
+    return *_NSGetEnviron();
+}
+constexpr const char* AGENT_LIBRARY = "libbpftime-agent.dylib";
+constexpr const char* SYSCALL_SERVER_LIBRARY = "libbpftime-syscall-server.dylib";
+constexpr const char* AGENT_TRANSFORMER_LIBRARY = "libbpftime-agent-transformer.dylib";
 const char *strchrnul(const char *s, int c) {
     while (*s && *s != (char)c) {
         s++;
@@ -52,9 +54,9 @@ int execvpe(const char *file, char *const argv[], char *const envp[]) {
 }
 #else
 extern char **environ;
-#define AGENT_LIBRARY "libbpftime-agent.so"
-#define SYSCALL_SERVER_LIBRARY "libbpftime-syscall-server.so"
-#define AGENT_TRANSFORMER_LIBRARY "libbpftime-agent-transformer.so"
+constexpr const char* AGENT_LIBRARY = "libbpftime-agent.so";
+constexpr const char* SYSCALL_SERVER_LIBRARY = "libbpftime-syscall-server.so";
+constexpr const char* AGENT_TRANSFORMER_LIBRARY = "libbpftime-agent-transformer.so";
 #endif
 
 static int subprocess_pid = 0;
@@ -79,7 +81,11 @@ static int run_command(const char *path, const std::vector<std::string> &argv,
 			agent_so_str += agent_so;
 		}
 		std::vector<const char *> env_arr;
+		#if __APPLE__
+		char **p = get_environ();
+		#else
 		char **p = environ;
+		#endif
 		while (*p) {
 			env_arr.push_back(*p);
 			p++;
