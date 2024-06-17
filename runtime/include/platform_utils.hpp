@@ -4,10 +4,10 @@
 #include <functional>
 
 #if __linux__
-    #include <sched.h>
+#include <sched.h>
 #elif __APPLE__
-    #include <sys/sysctl.h>
-    #include <pthread.h>
+#include <sys/sysctl.h>
+#include <pthread.h>
     typedef int cpu_set_t;
 
     inline void CPU_ZERO(cpu_set_t *set) {
