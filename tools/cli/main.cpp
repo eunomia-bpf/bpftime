@@ -52,11 +52,13 @@ int execvpe(const char *file, char *const argv[], char *const envp[]) {
     errno = ENOENT;
     return -1;
 }
-#else
+#elif __linux__
 extern char **environ;
 constexpr const char* AGENT_LIBRARY = "libbpftime-agent.so";
 constexpr const char* SYSCALL_SERVER_LIBRARY = "libbpftime-syscall-server.so";
 constexpr const char* AGENT_TRANSFORMER_LIBRARY = "libbpftime-agent-transformer.so";
+#else 
+#error "Unsupported Platform"
 #endif
 
 static int subprocess_pid = 0;

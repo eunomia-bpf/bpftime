@@ -4,7 +4,6 @@
  * All rights reserved.
  */
 #if __APPLE__
-#include <_types/_uint64_t.h>
 #include <cstdint>
 #include <pthread.h>
 #endif

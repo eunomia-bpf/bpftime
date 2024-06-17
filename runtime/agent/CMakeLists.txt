@@ -8,7 +8,7 @@ else()
 endif()
 set_target_properties(bpftime-agent PROPERTIES CXX_STANDARD 20 LINK_DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/agent.version)
 target_link_options(bpftime-agent PRIVATE -Wl,--version-script=${CMAKE_CURRENT_SOURCE_DIR}/agent.version)
-if(BPFTIME_BUILD_WITH_LIBBPF)
+if(${BPFTIME_BUILD_WITH_LIBBPF})
 target_include_directories(bpftime-agent
   PRIVATE
   ${FRIDA_GUM_INSTALL_DIR}

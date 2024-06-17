@@ -85,7 +85,7 @@ endif()
 message(STATUS "Started CMake for ${PROJECT_NAME} v${PROJECT_VERSION}...\n")
 
 # if option to build without libbpf is set
-if(BPFTIME_BUILD_WITH_LIBBPF)
+if(${BPFTIME_BUILD_WITH_LIBBPF})
   add_definitions(-DUSE_LIBBPF)
 endif()
 
@@ -160,10 +160,10 @@ bpftime_add_libs_component_command(${UBPF_BUILD_DIR}/lib/libubpf.a)
 endif()
 bpftime_add_libs_component_command(${FRIDA_GUM_INSTALL_DIR}/libfrida-gum.a)
 bpftime_add_static_lib_component_command(bpftime_frida_uprobe_attach_impl)
-if(BPFTIME_BUILD_WITH_LIBBPF)
+if(${BPFTIME_BUILD_WITH_LIBBPF})
 bpftime_add_libs_component_command(${CMAKE_CURRENT_BUILD_DIR}/libbpf/libbpf/libbpf.a)
 bpftime_add_static_lib_component_command(bpftime_syscall_trace_attach_impl)
-endif(BPFTIME_BUILD_WITH_LIBBPF)
+endif()
 bpftime_add_static_lib_component_command(runtime)
 bpftime_add_static_lib_component_command(spdlog)
 add_custom_command(OUTPUT "libbpftime.a"

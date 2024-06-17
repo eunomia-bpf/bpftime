@@ -19,10 +19,8 @@
 #include <spdlog/spdlog.h>
 #include <vector>
 
-#ifdef BPFTIME_ENABLE_IOURING_EXT
-#if __linux__
+#if defined (BPFTIME_ENABLE_IOURING_EXT) && __linux__
 #include "liburing.h"
-#endif
 #endif
 
 using namespace std;
@@ -53,8 +51,7 @@ io_uring are only available in linux atm
 so adding linux guards to the following code
 */
 
-#ifdef BPFTIME_ENABLE_IOURING_EXT
-#if __linux__
+#if defined (BPFTIME_ENABLE_IOURING_EXT) && __linux__
 static int submit_io_uring_write(struct io_uring *ring, int fd, char *buf,
 				 size_t size)
 {
@@ -133,7 +130,6 @@ uint64_t bpftime_io_uring_submit(void)
 	return io_uring_submit(&ring);
 }
 #endif
-#endif 
 
 extern const bpftime_helper_group extesion_group = { {
 	{ UFUNC_HELPER_ID_FIND_ID,
@@ -162,8 +158,7 @@ extern const bpftime_helper_group extesion_group = { {
 		  .fn = (void *)bpftime_path_join,
 	  } },
 #endif
-#ifdef BPFTIME_ENABLE_IOURING_EXT
-#if __linux__
+#if defined (BPFTIME_ENABLE_IOURING_EXT) && __linux__
 	{ EXTENDED_HELPER_IOURING_INIT,
 	  bpftime_helper_info{
 		  .index = EXTENDED_HELPER_IOURING_INIT,
@@ -194,7 +189,6 @@ extern const bpftime_helper_group extesion_group = { {
 		  .name = "io_uring_submit",
 		  .fn = (void *)bpftime_io_uring_submit,
 	  } },
-#endif
 #endif
 } };
 

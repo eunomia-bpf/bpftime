@@ -16,7 +16,7 @@ target_link_libraries(bpftime-syscall-server PUBLIC
     -ldl
     spdlog::spdlog)
 add_dependencies(bpftime-syscall-server spdlog::spdlog)
-if(BPFTIME_BUILD_WITH_LIBBPF)
+if(${BPFTIME_BUILD_WITH_LIBBPF})
 target_include_directories(bpftime-syscall-server
     PUBLIC
     "../../core"
