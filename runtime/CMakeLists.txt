@@ -237,10 +237,7 @@ message(DEBUG "Successfully added all dependencies and linked against them.")
 set(BPFTIME_RUNTIME_INCLUDE ${CMAKE_CURRENT_SOURCE_DIR}/include ${CMAKE_CURRENT_SOURCE_DIR}/src)
 
 
-if(UNIX AND NOT APPLE)
 add_subdirectory(object)
-endif()
-
 add_subdirectory(agent)
 add_subdirectory(syscall-server)
 #

@@ -23,6 +23,12 @@
 #define __NR_bpf 515 // This is a placeholder value. Linux assigns syscall numbers dynamically.
 #endif
 
+#if __GNUC__ >= 4
+#define LIBBPF_API __attribute__((visibility("default")))
+#else
+#define LIBBPF_API
+#endif
+
 #ifndef __NR_perf_event_open
 #define __NR_perf_event_open 516 // This is a placeholder value. Linux assigns syscall numbers dynamically.
 #endif
@@ -770,6 +776,7 @@ struct perf_event_attr {
 
 	__u64	config3; /* extension of config2 */
 };
+
 namespace bpftime_epoll{
 struct bpf_map_info {
 	__u32 type;
@@ -1241,6 +1248,35 @@ static inline int sys_bpf(enum bpf_cmd cmd, union bpf_attr *attr,
 	// No-op stub
 	return 0;
 }
+
+// from libbpf/btf
+void btf__free(struct btf *btf);
+// from libbpf
+void
+bpf_object__close(struct bpf_object* object); 
+
+LIBBPF_API struct bpf_program *
+bpf_object__next_program(const struct bpf_object *obj, struct bpf_program *prog);
+
+#define bpf_object__for_each_program(pos, obj)			\
+	for ((pos) = bpf_object__next_program((obj), NULL);	\
+	     (pos) != NULL;					\
+	     (pos) = bpf_object__next_program((obj), (pos)))
+
+struct bpf_program;
+
+LIBBPF_API const struct bpf_insn *bpf_program__insns(const struct bpf_program *prog);
+LIBBPF_API size_t bpf_program__insn_cnt(const struct bpf_program *prog);
+LIBBPF_API const char *bpf_program__name(const struct bpf_program *prog);
+LIBBPF_API const char *bpf_program__section_name(const struct bpf_program *prog);
+LIBBPF_API struct bpf_object *bpf_object__open(const char *path);
+
+enum libbpf_print_level {
+        LIBBPF_WARN,
+        LIBBPF_INFO,
+        LIBBPF_DEBUG,
+};
+
 // https://github.com/torvalds/linux/blob/2ef5971ff345d3c000873725db555085e0131961/tools/lib/bpf/bpf.h#L503
 inline int bpf_obj_get_info_by_fd(int bpf_fd, void *info, __u32 *info_len)
 {
