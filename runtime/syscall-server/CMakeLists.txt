@@ -23,8 +23,8 @@ target_include_directories(bpftime-syscall-server
     "../../third_party/libbpf/include/uapi"
     ${SPDLOG_INCLUDE}
 )
-set_property(TARGET bpftime-syscall-server PROPERTY CXX_STANDARD 20)
-
+set_target_properties(bpftime-syscall-server PROPERTIES CXX_STANDARD 20 LINK_DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/syscall-server.version)
+target_link_options(bpftime-syscall-server PRIVATE -Wl,--version-script=${CMAKE_CURRENT_SOURCE_DIR}/syscall-server.version)
 if(${ENABLE_EBPF_VERIFIER})
     add_dependencies(bpftime-syscall-server bpftime-verifier)
     target_link_libraries(bpftime-syscall-server PRIVATE bpftime-verifier)
