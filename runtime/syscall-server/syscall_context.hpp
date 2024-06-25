@@ -5,7 +5,11 @@
  */
 #ifndef _SYSCALL_CONTEXT_HPP
 #define _SYSCALL_CONTEXT_HPP
+#if __linux__
 #include "linux/perf_event.h"
+#elif __APPLE__
+#include "bpftime_epoll.h"
+#endif
 #include <cstddef>
 #include <cstdlib>
 #include <dlfcn.h>
@@ -13,6 +17,9 @@
 #include <spdlog/spdlog.h>
 #include <unordered_set>
 
+#if __APPLE__
+using namespace bpftime_epoll;
+#endif
 class syscall_context {
 	using syscall_fn = long (*)(long, ...);
 	using close_fn = int (*)(int);

@@ -1,4 +1,8 @@
+#if __linux__
 #include <linux/bpf.h>
+#elif __APPLE__
+#include "bpftime_epoll.h"
+#endif
 #include <string>
 #include <list>
 #include <memory>
@@ -7,12 +11,17 @@
 #include <spdlog/spdlog.h>
 using namespace std;
 using namespace bpftime;
+#if __APPLE__
+using namespace bpftime_epoll;
+#endif
 
+#ifdef USE_LIBBPF
 extern "C" {
 #include <bpf/libbpf.h>
 #include <bpf/btf.h>
 #include <bpf/bpf.h>
 }
+#endif
 
 namespace bpftime
 {

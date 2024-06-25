@@ -85,3 +85,6 @@ option(BPFTIME_BUILD_KERNEL_BPF "Whether to build with bpf share maps" ON)
 
 # whether to build single static library
 option(BPFTIME_BUILD_STATIC_LIB "Whether to build a single static library for different archive files" OFF)
+
+# whether to build bpftime with libbpf and other linux headers
+option(BPFTIME_BUILD_WITH_LIBBPF "Whether to build with libbpf and other linux headers" ON)

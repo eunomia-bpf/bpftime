@@ -11,10 +11,12 @@
 #include <bpf_map/userspace/array_map.hpp>
 #include <bpf_map/userspace/hash_map.hpp>
 #include <bpf_map/userspace/ringbuf_map.hpp>
+#ifdef USE_LIBBPF
 #include <bpf_map/shared/array_map_kernel_user.hpp>
 #include <bpf_map/shared/hash_map_kernel_user.hpp>
 #include <bpf_map/shared/percpu_array_map_kernel_user.hpp>
 #include <bpf_map/shared/perf_event_array_kernel_user.hpp>
+#endif
 #include <bpf_map/userspace/prog_array.hpp>
 #include <bpf_map/userspace/map_in_maps.hpp>
 #include <unistd.h>
@@ -110,6 +112,7 @@ const void *bpf_map_handler::map_lookup_elem(const void *key,
 		return from_syscall ? do_lookup_userspace(impl) :
 				      do_lookup(impl);
 	}
+	#ifdef USE_LIBBPF
 	case bpf_map_type::BPF_MAP_TYPE_KERNEL_USER_ARRAY: {
 		auto impl = static_cast<array_map_kernel_user_impl *>(
 			map_impl_ptr.get());
@@ -135,6 +138,7 @@ const void *bpf_map_handler::map_lookup_elem(const void *key,
 			static_cast<prog_array_map_impl *>(map_impl_ptr.get());
 		return do_lookup(impl);
 	}
+	#endif 
 	case bpf_map_type::BPF_MAP_TYPE_ARRAY_OF_MAPS: {
 		auto impl = static_cast<array_map_of_maps_impl *>(
 			map_impl_ptr.get());
@@ -202,6 +206,7 @@ long bpf_map_handler::map_update_elem(const void *key, const void *value,
 		return from_syscall ? do_update_userspace(impl) :
 				      do_update(impl);
 	}
+	#ifdef USE_LIBBPF
 	case bpf_map_type::BPF_MAP_TYPE_KERNEL_USER_ARRAY: {
 		auto impl = static_cast<array_map_kernel_user_impl *>(
 			map_impl_ptr.get());
@@ -227,6 +232,7 @@ long bpf_map_handler::map_update_elem(const void *key, const void *value,
 			static_cast<prog_array_map_impl *>(map_impl_ptr.get());
 		return do_update(impl);
 	}
+	#endif
 	case bpf_map_type::BPF_MAP_TYPE_ARRAY_OF_MAPS: {
 		if (!from_syscall) {
 			// Map in maps only support update from syscall
@@ -287,6 +293,7 @@ int bpf_map_handler::bpf_map_get_next_key(const void *key, void *next_key,
 			map_impl_ptr.get());
 		return do_get_next_key(impl);
 	}
+	#if __linux__
 	case bpf_map_type::BPF_MAP_TYPE_KERNEL_USER_ARRAY: {
 		auto impl = static_cast<array_map_kernel_user_impl *>(
 			map_impl_ptr.get());
@@ -312,6 +319,7 @@ int bpf_map_handler::bpf_map_get_next_key(const void *key, void *next_key,
 			static_cast<prog_array_map_impl *>(map_impl_ptr.get());
 		return do_get_next_key(impl);
 	}
+	#endif
 	case bpf_map_type::BPF_MAP_TYPE_ARRAY_OF_MAPS: {
 		auto impl = static_cast<array_map_of_maps_impl *>(
 			map_impl_ptr.get());
@@ -379,6 +387,7 @@ long bpf_map_handler::map_delete_elem(const void *key, bool from_syscall) const
 		return from_syscall ? do_delete_userspace(impl) :
 				      do_delete(impl);
 	}
+	#ifdef USE_LIBBPF
 	case bpf_map_type::BPF_MAP_TYPE_KERNEL_USER_ARRAY: {
 		auto impl = static_cast<array_map_kernel_user_impl *>(
 			map_impl_ptr.get());
@@ -404,6 +413,7 @@ long bpf_map_handler::map_delete_elem(const void *key, bool from_syscall) const
 			static_cast<prog_array_map_impl *>(map_impl_ptr.get());
 		return do_delete(impl);
 	}
+	#endif 
 	case bpf_map_type::BPF_MAP_TYPE_ARRAY_OF_MAPS: {
 		if (!from_syscall) {
 			// Map in maps only support update from syscall
@@ -474,6 +484,7 @@ int bpf_map_handler::map_init(managed_shared_memory &memory)
 			container_name.c_str())(memory, key_size, value_size);
 		return 0;
 	}
+	#ifdef USE_LIBBPF
 	case bpf_map_type::BPF_MAP_TYPE_KERNEL_USER_ARRAY: {
 		map_impl_ptr = memory.construct<array_map_kernel_user_impl>(
 			container_name.c_str())(memory, attr.kernel_bpf_map_id);
@@ -505,6 +516,7 @@ int bpf_map_handler::map_init(managed_shared_memory &memory)
 						max_entries);
 		return 0;
 	}
+	#endif
 	case bpf_map_type::BPF_MAP_TYPE_ARRAY_OF_MAPS: {
 		map_impl_ptr = memory.construct<array_map_of_maps_impl>(
 			container_name.c_str())(memory, max_entries);
@@ -551,6 +563,7 @@ void bpf_map_handler::map_free(managed_shared_memory &memory)
 	case bpf_map_type::BPF_MAP_TYPE_PERCPU_HASH:
 		memory.destroy<per_cpu_hash_map_impl>(container_name.c_str());
 		break;
+	#ifdef USE_LIBBPF
 	case bpf_map_type::BPF_MAP_TYPE_KERNEL_USER_ARRAY:
 		memory.destroy<array_map_kernel_user_impl>(
 			container_name.c_str());
@@ -570,6 +583,7 @@ void bpf_map_handler::map_free(managed_shared_memory &memory)
 	case bpf_map_type::BPF_MAP_TYPE_PROG_ARRAY:
 		memory.destroy<prog_array_map_impl>(container_name.c_str());
 		break;
+	#endif
 	default:
 		auto func_ptr = global_map_ops_table[(int)type].map_free;
 		if (func_ptr) {

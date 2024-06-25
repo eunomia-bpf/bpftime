@@ -33,10 +33,12 @@ namespace bpftime
 
 static int load_prog_and_helpers(bpftime_prog *prog, const agent_config &config)
 {
+	#if __linux__
 	if (config.enable_kernel_helper_group) {
 		bpftime_helper_group::get_kernel_utils_helper_group()
 			.add_helper_group_to_prog(prog);
 	}
+	#endif
 	if (config.enable_ufunc_helper_group) {
 		bpftime_helper_group::get_ufunc_helper_group()
 			.add_helper_group_to_prog(prog);

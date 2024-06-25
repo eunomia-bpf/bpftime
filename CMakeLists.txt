@@ -84,6 +84,11 @@ endif()
 
 message(STATUS "Started CMake for ${PROJECT_NAME} v${PROJECT_VERSION}...\n")
 
+# if option to build without libbpf is set
+if(${BPFTIME_BUILD_WITH_LIBBPF})
+  add_definitions(-DUSE_LIBBPF)
+endif()
+
 if(UNIX)
   add_compile_options("$<$<CONFIG:DEBUG>:-D_DEBUG>") # this will allow to use same _DEBUG macro available in both Linux as well as Windows - MSCV environment. Easy to put Debug specific code.
 endif(UNIX)
@@ -109,8 +114,9 @@ if(PROJECT_SOURCE_DIR STREQUAL PROJECT_BINARY_DIR)
   message(FATAL_ERROR "In-source builds not allowed. Please make a new directory (called a build directory) and run CMake from there.\n")
 endif()
 
-include(cmake/libbpf.cmake)
-
+if(${BPFTIME_BUILD_WITH_LIBBPF})
+  include(cmake/libbpf.cmake)
+endif()
 # install frida
 include(cmake/frida.cmake)
 
@@ -153,9 +159,11 @@ bpftime_add_static_lib_component_command(bpftime_ubpf_vm)
 bpftime_add_libs_component_command(${UBPF_BUILD_DIR}/lib/libubpf.a)
 endif()
 bpftime_add_libs_component_command(${FRIDA_GUM_INSTALL_DIR}/libfrida-gum.a)
-bpftime_add_libs_component_command(${CMAKE_CURRENT_BUILD_DIR}/libbpf/libbpf/libbpf.a)
 bpftime_add_static_lib_component_command(bpftime_frida_uprobe_attach_impl)
+if(${BPFTIME_BUILD_WITH_LIBBPF})
+bpftime_add_libs_component_command(${CMAKE_CURRENT_BUILD_DIR}/libbpf/libbpf/libbpf.a)
 bpftime_add_static_lib_component_command(bpftime_syscall_trace_attach_impl)
+endif()
 bpftime_add_static_lib_component_command(runtime)
 bpftime_add_static_lib_component_command(spdlog)
 add_custom_command(OUTPUT "libbpftime.a"
@@ -181,7 +189,7 @@ DESTINATION ~/.bpftime
 
 endif()
 
-if (${BUILD_BPFTIME_DAEMON})
+if (${BUILD_BPFTIME_DAEMON} AND ${BPFTIME_BUILD_WITH_LIBBPF})
   add_subdirectory(daemon)
 endif()
 add_subdirectory(tools)
@@ -191,9 +199,17 @@ if(${BUILD_ATTACH_IMPL_EXAMPLE})
 endif()
 
 # benchmark that requires bpftime libraries
+if(${BPFTIME_BUILD_WITH_LIBBPF})
+# Currently benchmark is using libbpf
 add_subdirectory(benchmark)
+endif()
 
 
 set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>DLL")
 
-install(TARGETS bpftime-agent bpftime_text_segment_transformer bpftime-syscall-server CONFIGURATIONS Release Debug RelWithDebInfo DESTINATION ~/.bpftime)
+set(DEST_DIR "$ENV{HOME}/.bpftime")
+if(${BPFTIME_BUILD_WITH_LIBBPF})
+    install(TARGETS bpftime-agent bpftime_text_segment_transformer bpftime-syscall-server CONFIGURATIONS Release Debug RelWithDebInfo DESTINATION ${DEST_DIR})
+else()
+    install(TARGETS bpftime-agent bpftime-syscall-server CONFIGURATIONS Release Debug RelWithDebInfo DESTINATION ${DEST_DIR})
+endif()

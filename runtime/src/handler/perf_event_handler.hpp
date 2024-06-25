@@ -14,7 +14,9 @@
 #include <boost/interprocess/allocators/allocator.hpp>
 #include <boost/interprocess/smart_ptr/shared_ptr.hpp>
 #include <boost/interprocess/smart_ptr/weak_ptr.hpp>
+#if __linux__
 #include "linux/perf_event.h"
+#endif
 #include "bpftime_shm.hpp"
 #include <variant>
 

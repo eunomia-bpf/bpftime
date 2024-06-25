@@ -5,13 +5,15 @@
  */
 #include "syscall_context.hpp"
 #include "bpftime_shm.hpp"
+#if __linux__
 #include "linux/bpf.h"
 #include <asm-generic/errno-base.h>
+#include <sys/epoll.h>
+#endif
 #include <cstdlib>
 #include <cstring>
 #include <spdlog/spdlog.h>
 #include <unistd.h>
-#include <sys/epoll.h>
 #include <spdlog/cfg/env.h>
 #include <cstdarg>
 using namespace bpftime;
@@ -64,6 +66,7 @@ extern "C" int close(int fd)
 	return context.handle_close(fd);
 }
 
+#if __linux__
 extern "C" long syscall(long sysno, ...)
 {
 	// glibc directly reads the arguments without considering
@@ -97,6 +100,7 @@ extern "C" long syscall(long sysno, ...)
 	return context.orig_syscall_fn(sysno, arg1, arg2, arg3, arg4, arg5,
 				       arg6);
 }
+#endif
 
 extern "C" int munmap(void *addr, size_t size)
 {

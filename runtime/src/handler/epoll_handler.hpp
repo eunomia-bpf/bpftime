@@ -9,7 +9,11 @@
 #include <boost/interprocess/allocators/allocator.hpp>
 #include <boost/interprocess/containers/vector.hpp>
 #include <bpf_map/userspace/ringbuf_map.hpp>
+#if __linux__
 #include <sys/epoll.h>
+#elif __APPLE__
+#include "bpftime_epoll.h"
+#endif
 #include <variant>
 namespace bpftime
 {

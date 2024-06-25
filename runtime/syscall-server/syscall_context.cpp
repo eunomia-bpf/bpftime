@@ -3,26 +3,32 @@
  * Copyright (c) 2022, eunomia-bpf org
  * All rights reserved.
  */
-#include "syscall_context.hpp"
 #include "bpftime_shm.hpp"
+#include "syscall_context.hpp"
 #include "handler/perf_event_handler.hpp"
+#if __linux__
 #include "linux/perf_event.h"
+#include <linux/bpf.h>
+#include <sys/epoll.h>
+#include <bpf/bpf.h>
+#include <linux/perf_event.h>
+#include <linux/filter.h>
+#elif __APPLE__
+#include "bpftime_epoll.h"
+#endif 
 #include "spdlog/spdlog.h"
 #include <cerrno>
 #include <cstdlib>
-#include <linux/bpf.h>
 #include "syscall_server_utils.hpp"
 #include <optional>
-#include <sys/epoll.h>
 #include <sys/mman.h>
 #include <unistd.h>
-#include <bpf/bpf.h>
 #include <regex>
-#include <linux/bpf.h>
-#include <linux/perf_event.h>
-#include <linux/filter.h>
 
 using namespace bpftime;
+#if __APPLE__
+using namespace bpftime_epoll;
+#endif
 
 void syscall_context::load_config_from_env()
 {
@@ -58,7 +64,6 @@ int syscall_context::handle_close(int fd)
 	bpftime_close(fd);
 	return orig_close_fn(fd);
 }
-
 int syscall_context::create_kernel_bpf_map(int map_fd)
 {
 	bpf_map_info info = {};
@@ -442,7 +447,6 @@ long syscall_context::handle_sysbpf(int cmd, union bpf_attr *attr, size_t size)
 	};
 	return 0;
 }
-
 int syscall_context::handle_perfevent(perf_event_attr *attr, pid_t pid, int cpu,
 				      int group_fd, unsigned long flags)
 {

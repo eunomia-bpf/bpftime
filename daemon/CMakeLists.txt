@@ -52,6 +52,7 @@ target_link_libraries(libbpftime_daemon PRIVATE
     PUBLIC
     rt
 )
+
 set_property(TARGET libbpftime_daemon PROPERTY CXX_STANDARD 20)
 
 add_dependencies(bpftime_daemon libbpftime_daemon)
