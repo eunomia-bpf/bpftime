@@ -15,6 +15,8 @@
 #include <handler/handler_manager.hpp>
 #include <optional>
 
+extern size_t BPFTIME_SHARED_MEMORY_SIZE;
+
 namespace bpftime
 {
 

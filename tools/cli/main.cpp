@@ -202,6 +202,14 @@ int main(int argc, const char **argv)
 			.nargs(1);
 	}
 
+	// Add the --shared-memory-size argument
+    program.add_argument("--shared-memory-size")
+        .help("Set the size of the shared memory in megabytes")
+        .default_value(std::string("20"))  // defaulting to the original #define value
+        .action([](const std::string& value) {
+            BPFTIME_SHARED_MEMORY_SIZE = std::stoi(value); // Convert MB to bytes
+        });
+
 	program.add_argument("-d", "--dry-run")
 		.help("Run without commiting any modifications")
 		.flag();
