@@ -7,7 +7,9 @@ else()
   add_dependencies(bpftime-agent FridaGum spdlog::spdlog bpftime_frida_uprobe_attach_impl)
 endif()
 set_target_properties(bpftime-agent PROPERTIES CXX_STANDARD 20 LINK_DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/agent.version)
+if(UNIX AND NOT APPLE)
 target_link_options(bpftime-agent PRIVATE -Wl,--version-script=${CMAKE_CURRENT_SOURCE_DIR}/agent.version)
+endif()
 if(${BPFTIME_BUILD_WITH_LIBBPF})
 target_include_directories(bpftime-agent
   PRIVATE
