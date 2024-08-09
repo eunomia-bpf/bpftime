@@ -17,9 +17,36 @@ class bpftime_hash_map {
 	{
 		return index * (4 + _key_size + _value_size);
 	}
-	size_t _num_buckets;
+
+	inline bool is_prime(size_t n) const
+	{
+		if (n <= 1)
+			return false;
+		if (n <= 3)
+			return true;
+		if (n % 2 == 0 || n % 3 == 0)
+			return false;
+		// any prime number greater than 3 can be written in the form
+		// 6k+-1 for some integer k
+		for (size_t i = 5; i * i <= n; i += 6) {
+			if (n % i == 0 || n % (i + 2) == 0)
+				return false;
+		}
+		return true;
+	}
+
+	inline size_t next_prime(size_t n) const
+	{
+		while (!is_prime(n)) {
+			++n;
+		}
+		return n;
+	}
+
 	size_t _key_size;
 	size_t _value_size;
+	size_t _num_buckets;
+
 	// The data is stored in a contiguous memory region.
 	// The layout of elem is:
 	// 4 bytes is empty or not
@@ -31,11 +58,12 @@ class bpftime_hash_map {
     public:
 	bpftime_hash_map(managed_shared_memory &memory, size_t num_buckets,
 			 size_t key_size, size_t value_size)
-		: _num_buckets(num_buckets), _key_size(key_size),
-		  _value_size(value_size),
+		: _key_size(key_size), _value_size(value_size),
+		  _num_buckets(next_prime(num_buckets)), // Use nearest prime
+							 // number
 		  data_buffer(memory.get_segment_manager())
 	{
-		data_buffer.resize(num_buckets * (4 + key_size + value_size),
+		data_buffer.resize(_num_buckets * (4 + key_size + value_size),
 				   0);
 	}
 
