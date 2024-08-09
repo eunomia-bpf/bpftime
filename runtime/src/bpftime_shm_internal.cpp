@@ -546,7 +546,8 @@ bool bpftime_shm::is_exist_fake_fd(int fd) const
 bpftime_shm::bpftime_shm(const char *shm_name, shm_open_type type)
 	: open_type(type)
 {
-	size_t memory_size = get_agent_config().shm_memory_size;
+	// Get the config from env because the shared memory is not initialized
+	size_t memory_size = get_agent_config_from_env().shm_memory_size;
 	if (type == shm_open_type::SHM_OPEN_ONLY) {
 		SPDLOG_DEBUG("start: bpftime_shm for client setup");
 		// open the shm

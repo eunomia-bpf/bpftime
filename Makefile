@@ -60,17 +60,18 @@ build-wo-libbpf: ## build the package with iouring extension
 
 release: ## build the release version
 	cmake -Bbuild  -DCMAKE_BUILD_TYPE:STRING=RelWithDebInfo \
-				   -DSPDLOG_ACTIVE_LEVEL=SPDLOG_LEVEL_INFO
+				   -DBUILD_BPFTIME_DAEMON=1
 	cmake --build build --config RelWithDebInfo --target install  -j$(JOBS)
 
 release-with-llvm-jit: ## build the package, with llvm-jit
 	cmake -Bbuild  -DCMAKE_BUILD_TYPE:STRING=RelWithDebInfo \
 				   -DBPFTIME_LLVM_JIT=1
+				   -DBUILD_BPFTIME_DAEMON=1
 	cmake --build build --config RelWithDebInfo --target install -j$(JOBS)
 
 release-with-static-lib: ## build the release version with libbpftime archive
 	cmake -Bbuild  -DCMAKE_BUILD_TYPE:STRING=RelWithDebInfo \
-				   -DSPDLOG_ACTIVE_LEVEL=SPDLOG_LEVEL_INFO -DBPFTIME_BUILD_STATIC_LIB=ON
+				   -DBPFTIME_BUILD_STATIC_LIB=ON
 	cmake --build build --config RelWithDebInfo --target install  -j$(JOBS)
 
 build-vm: ## build only the core library
