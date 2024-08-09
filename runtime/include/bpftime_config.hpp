@@ -1,8 +1,13 @@
 #ifndef _CONFIG_MANAGER_HPP
 #define _CONFIG_MANAGER_HPP
 
+#include <cstdlib>
+#include <string>
+
 namespace bpftime
 {
+// Configuration for the bpftime runtime
+// Initialize the configuration from the environment variables
 struct agent_config {
 	bool debug = false;
 	// Enable JIT?
@@ -18,7 +23,16 @@ struct agent_config {
 	// self-defined or non-buildin supported map type, if will not be
 	// rejected
 	bool allow_non_buildin_map_types = false;
+
+	// memory size will determine the maximum size of the shared memory
+	// available for the eBPF programs and maps
+	// The value is in MB
+	int shm_memory_size = 20; // 20MB
 };
+
+// Get the bpftime configuration from the environment variables
+const agent_config get_agent_config_from_env();
+
 } // namespace bpftime
 
 #endif
