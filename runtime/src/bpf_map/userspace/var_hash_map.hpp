@@ -3,8 +3,8 @@
  * Copyright (c) 2022, eunomia-bpf org
  * All rights reserved.
  */
-#ifndef _HASHMAP_HPP
-#define _HASHMAP_HPP
+#ifndef _VAR_HASHMAP_HPP
+#define _VAR_HASHMAP_HPP
 #include <boost/container_hash/hash_fwd.hpp>
 #include <boost/interprocess/managed_shared_memory.hpp>
 #include <boost/interprocess/containers/map.hpp>
@@ -19,7 +19,7 @@ namespace bpftime
 using namespace boost::interprocess;
 
 // implementation of hash map
-class hash_map_impl {
+class var_size_hash_map_impl {
 	using bi_map_value_ty = std::pair<const bytes_vec, bytes_vec>;
 	using bi_map_allocator =
 		allocator<bi_map_value_ty,
@@ -37,8 +37,8 @@ class hash_map_impl {
 
     public:
 	const static bool should_lock = true;
-	hash_map_impl(managed_shared_memory &memory, uint32_t key_size,
-		      uint32_t value_size);
+	var_size_hash_map_impl(managed_shared_memory &memory, uint32_t key_size,
+			       uint32_t value_size);
 
 	void *elem_lookup(const void *key);
 
@@ -50,4 +50,5 @@ class hash_map_impl {
 };
 
 } // namespace bpftime
+
 #endif

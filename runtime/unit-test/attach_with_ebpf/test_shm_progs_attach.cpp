@@ -32,7 +32,8 @@ static const char *HANDLER_NAME = "my_handler";
 static const char *SHM_NAME = "my_shm_attach_test";
 
 // This is the original function to hook.
-extern "C" __attribute__((__noinline__, noinline, optnone)) int
+// optnone attribute may be needed to prevent LTO from optimizing the function
+extern "C" __attribute__((__noinline__, noinline)) int
 _bpftime_test_shm_progs_attach_my_function(int parm1, const char *str, char c)
 {
 	asm("");
@@ -41,7 +42,7 @@ _bpftime_test_shm_progs_attach_my_function(int parm1, const char *str, char c)
 	return ret;
 }
 
-extern "C" __attribute__((__noinline__, noinline, optnone)) int
+extern "C" __attribute__((__noinline__, noinline)) int
 _bpftime_test_shm_progs_attach_my_uprobe_function(int parm1, const char *str,
 						  char c)
 {

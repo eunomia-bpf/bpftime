@@ -4,7 +4,7 @@
  * All rights reserved.
  */
 #include "spdlog/spdlog.h"
-#include <bpf_map/userspace/hash_map.hpp>
+#include <bpf_map/userspace/var_hash_map.hpp>
 #include <algorithm>
 #include <functional>
 #include <unistd.h>
@@ -12,8 +12,9 @@
 namespace bpftime
 {
 
-hash_map_impl::hash_map_impl(managed_shared_memory &memory, uint32_t key_size,
-			     uint32_t value_size)
+var_size_hash_map_impl::var_size_hash_map_impl(managed_shared_memory &memory,
+					       uint32_t key_size,
+					       uint32_t value_size)
 	: map_impl(10, bytes_vec_hasher(), std::equal_to<bytes_vec>(),
 		   bi_map_allocator(memory.get_segment_manager())),
 	  _key_size(key_size), _value_size(value_size),
@@ -22,7 +23,7 @@ hash_map_impl::hash_map_impl(managed_shared_memory &memory, uint32_t key_size,
 {
 }
 
-void *hash_map_impl::elem_lookup(const void *key)
+void *var_size_hash_map_impl::elem_lookup(const void *key)
 {
 	SPDLOG_TRACE("Peform elem lookup of hash map");
 	// Since we use lock here, we don't need to allocate key_vec and
@@ -38,8 +39,8 @@ void *hash_map_impl::elem_lookup(const void *key)
 	}
 }
 
-long hash_map_impl::elem_update(const void *key, const void *value,
-				uint64_t flags)
+long var_size_hash_map_impl::elem_update(const void *key, const void *value,
+					 uint64_t flags)
 {
 	key_vec.assign((uint8_t *)key, (uint8_t *)key + _key_size);
 	value_vec.assign((uint8_t *)value, (uint8_t *)value + _value_size);
@@ -47,14 +48,14 @@ long hash_map_impl::elem_update(const void *key, const void *value,
 	return 0;
 }
 
-long hash_map_impl::elem_delete(const void *key)
+long var_size_hash_map_impl::elem_delete(const void *key)
 {
 	key_vec.assign((uint8_t *)key, (uint8_t *)key + _key_size);
 	map_impl.erase(key_vec);
 	return 0;
 }
 
-int hash_map_impl::map_get_next_key(const void *key, void *next_key)
+int var_size_hash_map_impl::map_get_next_key(const void *key, void *next_key)
 {
 	if (key == nullptr) {
 		// nullptr means the first key
