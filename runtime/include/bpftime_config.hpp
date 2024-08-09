@@ -4,9 +4,10 @@
 #include <cstdlib>
 #include <string>
 
-
 namespace bpftime
 {
+// Configuration for the bpftime runtime
+// Initialize the configuration from the environment variables
 struct agent_config {
 	bool debug = false;
 	// Enable JIT?
@@ -26,7 +27,7 @@ struct agent_config {
 	// memory size will determine the maximum size of the shared memory
 	// available for the eBPF programs and maps
 	// The value is in MB
-	int shm_memory_size = 50; // 50MB
+	int shm_memory_size = 20; // 20MB
 };
 
 // Get the bpftime configuration from the environment variables

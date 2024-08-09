@@ -575,7 +575,7 @@ bpftime_shm::bpftime_shm(const char *shm_name, shm_open_type type)
 			memory_size);
 		segment = boost::interprocess::managed_shared_memory(
 			boost::interprocess::open_or_create,
-			// Allocate 50M bytes of memory by default
+			// Allocate 20M bytes of memory by default
 			shm_name, memory_size << 20);
 
 		manager = segment.find_or_construct<bpftime::handler_manager>(
