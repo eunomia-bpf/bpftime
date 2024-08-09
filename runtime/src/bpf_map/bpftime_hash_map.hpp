@@ -76,7 +76,7 @@ class bpftime_hash_map {
 	inline size_t get_index_of_value(const void *value)
 	{
 		if (value == nullptr || value < &data_buffer[0] ||
-		    value >= &data_buffer[data_buffer.size()]) {
+		    value >= data_buffer.data() + data_buffer.size()) {
 			return -1;
 		}
 		return (((uint8_t *)value) - &data_buffer[0]) /
