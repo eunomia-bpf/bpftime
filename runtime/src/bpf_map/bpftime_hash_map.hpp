@@ -26,8 +26,8 @@ class bpftime_hash_map {
 			return true;
 		if (n % 2 == 0 || n % 3 == 0)
 			return false;
-		// any prime number greater than 3 can be written in the form
-		// 6k+-1 for some integer k
+		// Any prime number greater than 3 can be written in the form
+		// 6k ± 1 for some integer k.
 		for (size_t i = 5; i * i <= n; i += 6) {
 			if (n % i == 0 || n % (i + 2) == 0)
 				return false;
@@ -45,7 +45,10 @@ class bpftime_hash_map {
 
 	size_t _key_size;
 	size_t _value_size;
-	size_t _num_buckets;
+	size_t _num_buckets; // Adjusted number of buckets (prime)
+	size_t _max_element_count; // Maximum number of elements based on the
+				   // original num_buckets
+	size_t _count; // Current number of elements
 
 	// The data is stored in a contiguous memory region.
 	// The layout of elem is:
@@ -59,9 +62,12 @@ class bpftime_hash_map {
 	bpftime_hash_map(managed_shared_memory &memory, size_t num_buckets,
 			 size_t key_size, size_t value_size)
 		: _key_size(key_size), _value_size(value_size),
-		  _num_buckets(next_prime(num_buckets)), // Use nearest prime
-							 // number
-		  data_buffer(memory.get_segment_manager())
+		  // Use nearest prime  number
+		  _num_buckets(next_prime(num_buckets)),
+		  // Use the original bucket count
+		  _max_element_count(num_buckets),
+		  // Initialize count to 0
+		  _count(0), data_buffer(memory.get_segment_manager())
 	{
 		data_buffer.resize(_num_buckets * (4 + key_size + value_size),
 				   0);
@@ -131,18 +137,39 @@ class bpftime_hash_map {
 	{
 		size_t index = hash_func(key) % _num_buckets;
 		size_t start_index = index;
+
+		// Iterate over the hash map using linear probing
 		do {
-			if (is_empty(index) ||
-			    std::memcmp(get_key(index), key, _key_size) == 0) {
+			if (is_empty(index)) {
+				// If the current bucket is empty, insert the
+				// new element
+				if (_count >= _max_element_count) {
+					// Reject if the hash map is full
+					return false;
+				}
+				// Insert the new element
 				std::memcpy(get_key(index), key, _key_size);
 				std::memcpy(get_value(index), value,
 					    _value_size);
 				set_filled(index);
+				_count++; // Increase the count for the new
+					  // element
+				return true;
+			} else if (std::memcmp(get_key(index), key,
+					       _key_size) == 0) {
+				// If the current bucket has a matching key,
+				// update the value
+				std::memcpy(get_value(index), value,
+					    _value_size);
 				return true;
 			}
+
+			// Move to the next bucket
 			index = (index + 1) % _num_buckets;
 		} while (index != start_index);
-		return false; // Hashmap is full
+
+		return false; // The hash map is full and no empty or matching
+			      // slot was found
 	}
 
 	bool elem_delete(const void *key)
@@ -155,6 +182,8 @@ class bpftime_hash_map {
 			}
 			if (std::memcmp(get_key(index), key, _key_size) == 0) {
 				set_empty(index);
+				// Decrease count if deleting an element
+				_count--;
 				return true;
 			}
 			index = (index + 1) % _num_buckets;
@@ -164,13 +193,7 @@ class bpftime_hash_map {
 
 	size_t get_elem_count() const
 	{
-		size_t count = 0;
-		for (size_t i = 0; i < _num_buckets; ++i) {
-			if (!is_empty(i)) {
-				++count;
-			}
-		}
-		return count;
+		return _count;
 	}
 };
 
