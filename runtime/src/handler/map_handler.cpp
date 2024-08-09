@@ -9,7 +9,8 @@
 #include "spdlog/spdlog.h"
 #include <handler/map_handler.hpp>
 #include <bpf_map/userspace/array_map.hpp>
-#include <bpf_map/userspace/hash_map.hpp>
+#include <bpf_map/userspace/fix_hash_map.hpp>
+#include <bpf_map/userspace/var_hash_map.hpp>
 #include <bpf_map/userspace/ringbuf_map.hpp>
 #include <bpf_map/shared/array_map_kernel_user.hpp>
 #include <bpf_map/shared/hash_map_kernel_user.hpp>
@@ -25,6 +26,12 @@ using boost::interprocess::sharable_lock;
 
 namespace bpftime
 {
+
+#ifdef BPFTIME_USE_VAR_HASH_MAP
+using hash_map_impl = var_size_hash_map_impl;
+#else
+using hash_map_impl = fix_size_hash_map_impl;
+#endif
 
 bpftime_map_ops global_map_ops_table[(int)bpf_map_type::BPF_MAP_TYPE_MAX] = {
 	{ 0 }

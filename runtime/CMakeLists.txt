@@ -67,7 +67,8 @@ set(sources
   src/bpf_helper.cpp
 
   src/bpf_map/userspace/array_map.cpp
-  src/bpf_map/userspace/hash_map.cpp
+  src/bpf_map/userspace/fix_hash_map.cpp
+  src/bpf_map/userspace/var_hash_map.cpp
   src/bpf_map/userspace/ringbuf_map.cpp
   src/bpf_map/userspace/perf_event_array_map.cpp
   src/bpf_map/userspace/per_cpu_array_map.cpp

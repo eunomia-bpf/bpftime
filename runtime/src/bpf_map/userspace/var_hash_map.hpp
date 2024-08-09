@@ -3,8 +3,8 @@
  * Copyright (c) 2022, eunomia-bpf org
  * All rights reserved.
  */
-#ifndef _HASHMAP_HPP
-#define _HASHMAP_HPP
+#ifndef _VAR_HASHMAP_HPP
+#define _VAR_HASHMAP_HPP
 #include <boost/container_hash/hash_fwd.hpp>
 #include <boost/interprocess/managed_shared_memory.hpp>
 #include <boost/interprocess/containers/map.hpp>
@@ -12,7 +12,6 @@
 #include <bpf_map/map_common_def.hpp>
 #include <boost/unordered/unordered_map.hpp>
 #include <boost/functional/hash.hpp>
-#include <bpf_map/bpftime_hash_map.hpp>
 
 namespace bpftime
 {
@@ -20,16 +19,26 @@ namespace bpftime
 using namespace boost::interprocess;
 
 // implementation of hash map
-class hash_map_impl {
-	bpftime_hash_map map_impl;
+class var_size_hash_map_impl {
+	using bi_map_value_ty = std::pair<const bytes_vec, bytes_vec>;
+	using bi_map_allocator =
+		allocator<bi_map_value_ty,
+			  managed_shared_memory::segment_manager>;
+	using shm_hash_map =
+		boost::unordered_map<bytes_vec, bytes_vec, bytes_vec_hasher,
+				     std::equal_to<bytes_vec>, bi_map_allocator>;
+	shm_hash_map map_impl;
 	uint32_t _key_size;
 	uint32_t _value_size;
-	uint32_t _num_buckets;
+
+	// buffers used to access the key and value in hash map
+	bytes_vec key_vec;
+	bytes_vec value_vec;
 
     public:
 	const static bool should_lock = true;
-	hash_map_impl(managed_shared_memory &memory, size_t num_buckets,
-			     size_t key_size, size_t value_size);
+	var_size_hash_map_impl(managed_shared_memory &memory, uint32_t key_size,
+			       uint32_t value_size);
 
 	void *elem_lookup(const void *key);
 
@@ -41,4 +50,5 @@ class hash_map_impl {
 };
 
 } // namespace bpftime
+
 #endif
