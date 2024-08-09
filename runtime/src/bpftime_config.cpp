@@ -38,7 +38,7 @@ static void process_helper_sv(const std::string_view &str, const char delimiter,
 	}
 }
 
-const agent_config get_agent_config_from_env()
+const agent_config bpftime::get_agent_config_from_env()
 {
 	bpftime::agent_config agent_config;
 	if (const char *custom_helpers = getenv("BPFTIME_HELPER_GROUPS");
