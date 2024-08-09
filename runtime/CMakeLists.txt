@@ -62,6 +62,7 @@ set(sources
   src/bpftime_shm_internal.cpp
   src/bpftime_shm_json.cpp
   src/bpftime_prog.cpp
+  src/bpftime_config.cpp
   src/ufunc.cpp
   src/bpf_helper.cpp
   src/platform_utils.cpp

@@ -592,40 +592,6 @@ extern "C" uint64_t map_val(uint64_t map_ptr)
 	return (uint64_t)handler.map_lookup_elem(key.data());
 }
 
-static void process_token(const std::string_view &token, agent_config &config)
-{
-	if (token == "ufunc") {
-		SPDLOG_INFO("Enabling ufunc helper group");
-		config.enable_ufunc_helper_group = true;
-	} else if (token == "kernel") {
-		SPDLOG_INFO("Enabling kernel helper group");
-		config.enable_kernel_helper_group = true;
-	} else if (token == "shm_map") {
-		SPDLOG_INFO("Enabling shm_map helper group");
-		config.enable_shm_maps_helper_group = true;
-	} else {
-		spdlog::warn("Unknown helper group: {}", token);
-	}
-}
-
-static void process_helper_sv(const std::string_view &str, const char delimiter,
-			      agent_config &config)
-{
-	std::string::size_type start = 0;
-	std::string::size_type end = str.find(delimiter);
-
-	while (end != std::string::npos) {
-		process_token(str.substr(start, end - start), config);
-		start = end + 1;
-		end = str.find(delimiter, start);
-	}
-
-	// Handle the last token, if any
-	if (start < str.size()) {
-		process_token(str.substr(start), config);
-	}
-}
-
 int bpftime_add_custom_perf_event(int type, const char *attach_argument)
 {
 	return shm_holder.global_shared_memory.add_custom_perf_event(
