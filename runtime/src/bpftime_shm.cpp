@@ -626,32 +626,6 @@ static void process_helper_sv(const std::string_view &str, const char delimiter,
 	}
 }
 
-const bpftime::agent_config &bpftime::set_agent_config_from_env()
-{
-	bpftime::agent_config agent_config;
-	if (const char *custom_helpers = getenv("BPFTIME_HELPER_GROUPS");
-	    custom_helpers != nullptr) {
-		agent_config.enable_kernel_helper_group =
-			agent_config.enable_ufunc_helper_group =
-				agent_config.enable_shm_maps_helper_group =
-					false;
-		auto helpers_sv = std::string_view(custom_helpers);
-		process_helper_sv(helpers_sv, ',', agent_config);
-	} else {
-		SPDLOG_INFO(
-			"Enabling helper groups ufunc, kernel, shm_map by default");
-		agent_config.enable_kernel_helper_group =
-			agent_config.enable_shm_maps_helper_group =
-				agent_config.enable_ufunc_helper_group = true;
-	}
-	const char *use_jit = getenv("BPFTIME_USE_JIT");
-	agent_config.jit_enabled = use_jit != nullptr;
-	agent_config.allow_non_buildin_map_types =
-		getenv("BPFTIME_ALLOW_EXTERNAL_MAPS") != nullptr;
-	bpftime_set_agent_config(agent_config);
-	return bpftime_get_agent_config();
-}
-
 int bpftime_add_custom_perf_event(int type, const char *attach_argument)
 {
 	return shm_holder.global_shared_memory.add_custom_perf_event(

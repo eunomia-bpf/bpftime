@@ -546,6 +546,7 @@ bool bpftime_shm::is_exist_fake_fd(int fd) const
 bpftime_shm::bpftime_shm(const char *shm_name, shm_open_type type)
 	: open_type(type)
 {
+	size_t memory_size = get_agent_config().shm_memory_size;
 	if (type == shm_open_type::SHM_OPEN_ONLY) {
 		SPDLOG_DEBUG("start: bpftime_shm for client setup");
 		// open the shm
@@ -569,11 +570,13 @@ bpftime_shm::bpftime_shm(const char *shm_name, shm_open_type type)
 				.first;
 		SPDLOG_DEBUG("done: bpftime_shm for client setup");
 	} else if (type == shm_open_type::SHM_CREATE_OR_OPEN) {
-		SPDLOG_DEBUG("start: bpftime_shm for create or open setup");
+		SPDLOG_DEBUG(
+			"start: bpftime_shm for create or open setup for memory size {}",
+			memory_size);
 		segment = boost::interprocess::managed_shared_memory(
 			boost::interprocess::open_or_create,
-			// Allocate 200M bytes of memory by default
-			shm_name, 200 << 20);
+			// Allocate 50M bytes of memory by default
+			shm_name, memory_size << 20);
 
 		manager = segment.find_or_construct<bpftime::handler_manager>(
 			bpftime::DEFAULT_GLOBAL_HANDLER_NAME)(segment);
@@ -598,7 +601,9 @@ bpftime_shm::bpftime_shm(const char *shm_name, shm_open_type type)
 				segment.get_segment_manager()));
 		SPDLOG_DEBUG("done: bpftime_shm for open_or_create setup");
 	} else if (type == shm_open_type::SHM_REMOVE_AND_CREATE) {
-		SPDLOG_DEBUG("start: bpftime_shm for server setup");
+		SPDLOG_DEBUG(
+			"start: bpftime_shm for server setup for memory size {}",
+			memory_size);
 		boost::interprocess::shared_memory_object::remove(shm_name);
 		// create the shm
 		SPDLOG_DEBUG(
@@ -606,7 +611,7 @@ bpftime_shm::bpftime_shm(const char *shm_name, shm_open_type type)
 		segment = boost::interprocess::managed_shared_memory(
 			boost::interprocess::create_only,
 			// Allocate 20M bytes of memory by default
-			shm_name, 20 << 20);
+			shm_name, memory_size << 20);
 		SPDLOG_DEBUG("done: bpftime_shm for server setup: segment");
 
 		manager = segment.construct<bpftime::handler_manager>(
@@ -741,7 +746,7 @@ const bpftime::agent_config &bpftime_get_agent_config()
 	return shm_holder.global_shared_memory.get_agent_config();
 }
 
-void bpftime_set_agent_config(bpftime::agent_config &cfg)
+void bpftime_set_agent_config(const bpftime::agent_config &cfg)
 {
 	shm_holder.global_shared_memory.set_agent_config(cfg);
 }

@@ -153,9 +153,8 @@ enum class bpf_prog_type {
 };
 
 extern const shm_open_type global_shm_open_type;
-const bpftime::agent_config &set_agent_config_from_env();
 const bpftime::agent_config &bpftime_get_agent_config();
-void bpftime_set_agent_config(bpftime::agent_config &cfg);
+void bpftime_set_agent_config(const bpftime::agent_config &cfg);
 
 // Map ops for register external map types and operations
 //

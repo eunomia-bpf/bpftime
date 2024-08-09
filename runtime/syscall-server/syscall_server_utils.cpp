@@ -25,7 +25,8 @@ void start_up()
 	spdlog::cfg::load_env_levels();
 	spdlog::set_pattern("[%Y-%m-%d %H:%M:%S][%^%l%$][%t] %v");
 	bpftime_initialize_global_shm(shm_open_type::SHM_REMOVE_AND_CREATE);
-	const auto &agent_config = set_agent_config_from_env();
+	const auto agent_config = get_agent_config_from_env();
+	bpftime_set_agent_config(agent_config);
 #ifdef ENABLE_BPFTIME_VERIFIER
 	std::vector<int32_t> helper_ids;
 	std::map<int32_t, bpftime::verifier::BpftimeHelperProrotype>
