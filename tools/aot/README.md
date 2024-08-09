@@ -85,7 +85,7 @@ You will get a native ELF file named `do_count.o`.
 You can link it with your program and execute it:
 
 ```sh
-cd example
+cd bpftime/tools/aot/example
 clang -O2 main.c do_count.o -o malloc
 ```
 

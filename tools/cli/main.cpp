@@ -19,6 +19,48 @@
 #include <tuple>
 #include <sys/wait.h>
 
+#ifdef __APPLE__
+#include <crt_externs.h>
+#include <cstdlib>
+#include <cerrno>
+#include <cstring>
+#include <unistd.h>
+inline char** get_environ() {
+    return *_NSGetEnviron();
+}
+constexpr const char* AGENT_LIBRARY = "libbpftime-agent.dylib";
+constexpr const char* SYSCALL_SERVER_LIBRARY = "libbpftime-syscall-server.dylib";
+constexpr const char* AGENT_TRANSFORMER_LIBRARY = "libbpftime-agent-transformer.dylib";
+const char *strchrnul(const char *s, int c) {
+    while (*s && *s != (char)c) {
+        s++;
+    }
+    return s;
+}
+int execvpe(const char *file, char *const argv[], char *const envp[]) {
+    for (const char *path = getenv("PATH"); path && *path; path = strchr(path, ':') + 1) {
+        char buf[PATH_MAX];
+        const char *end = strchrnul(path, ':');
+        size_t len = end - path;
+        memcpy(buf, path, len);
+        buf[len] = '/';
+        strcpy(buf + len + 1, file);
+        execve(buf, argv, envp);
+        if (errno != ENOENT)
+            return -1;
+    }
+    errno = ENOENT;
+    return -1;
+}
+#elif __linux__
+extern char **environ;
+constexpr const char* AGENT_LIBRARY = "libbpftime-agent.so";
+constexpr const char* SYSCALL_SERVER_LIBRARY = "libbpftime-syscall-server.so";
+constexpr const char* AGENT_TRANSFORMER_LIBRARY = "libbpftime-agent-transformer.so";
+#else 
+#error "Unsupported Platform"
+#endif
+
 static int subprocess_pid = 0;
 
 static bool str_starts_with(const char *main, const char *pat)
@@ -41,7 +83,11 @@ static int run_command(const char *path, const std::vector<std::string> &argv,
 			agent_so_str += agent_so;
 		}
 		std::vector<const char *> env_arr;
+		#if __APPLE__
+		char **p = get_environ();
+		#else
 		char **p = environ;
+		#endif
 		while (*p) {
 			env_arr.push_back(*p);
 			p++;
@@ -209,7 +255,7 @@ int main(int argc, const char **argv)
 	}
 	std::filesystem::path install_path(program.get("install-location"));
 	if (program.is_subcommand_used("load")) {
-		auto so_path = install_path / "libbpftime-syscall-server.so";
+		auto so_path = install_path / SYSCALL_SERVER_LIBRARY;
 		if (!std::filesystem::exists(so_path)) {
 			spdlog::error("Library not found: {}", so_path.c_str());
 			return 1;
@@ -219,7 +265,7 @@ int main(int argc, const char **argv)
 		return run_command(executable_path.c_str(), extra_args,
 				   so_path.c_str(), nullptr);
 	} else if (program.is_subcommand_used("start")) {
-		auto agent_path = install_path / "libbpftime-agent.so";
+		auto agent_path = install_path / AGENT_LIBRARY;
 		if (!std::filesystem::exists(agent_path)) {
 			spdlog::error("Library not found: {}",
 				      agent_path.c_str());
@@ -245,7 +291,7 @@ int main(int argc, const char **argv)
 					   agent_path.c_str(), nullptr);
 		}
 	} else if (program.is_subcommand_used("attach")) {
-		auto agent_path = install_path / "libbpftime-agent.so";
+		auto agent_path = install_path / AGENT_LIBRARY;
 		if (!std::filesystem::exists(agent_path)) {
 			spdlog::error("Library not found: {}",
 				      agent_path.c_str());

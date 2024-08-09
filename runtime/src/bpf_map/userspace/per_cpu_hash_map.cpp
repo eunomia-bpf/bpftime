@@ -9,6 +9,7 @@
 #include <algorithm>
 #include <bpf_map/userspace/per_cpu_hash_map.hpp>
 #include <unistd.h>
+#include "platform_utils.hpp"
 
 namespace bpftime
 {
@@ -42,7 +43,7 @@ per_cpu_hash_map_impl::per_cpu_hash_map_impl(
 
 void *per_cpu_hash_map_impl::elem_lookup(const void *key)
 {
-	int cpu = sched_getcpu();
+	int cpu = my_sched_getcpu();
 	SPDLOG_DEBUG("Run per cpu hash lookup at cpu {}", cpu);
 	if (key == nullptr) {
 		errno = ENOENT;
@@ -63,7 +64,7 @@ void *per_cpu_hash_map_impl::elem_lookup(const void *key)
 long per_cpu_hash_map_impl::elem_update(const void *key, const void *value,
 					uint64_t flags)
 {
-	int cpu = sched_getcpu();
+	int cpu = my_sched_getcpu();
 	SPDLOG_DEBUG("Per cpu update, key {}, value {}", (const char *)key,
 		     *(long *)value);
 
@@ -88,7 +89,7 @@ long per_cpu_hash_map_impl::elem_update(const void *key, const void *value,
 
 long per_cpu_hash_map_impl::elem_delete(const void *key)
 {
-	int cpu = sched_getcpu();
+	int cpu = my_sched_getcpu();
 	SPDLOG_DEBUG("Run per cpu hash delete at cpu {}", cpu);
 	bytes_vec &key_vec = this->key_templates[cpu];
 	key_vec.assign((uint8_t *)key, (uint8_t *)key + key_size);

@@ -1,0 +1,4 @@
+{
+    global: epoll_wait; epoll_ctl; epoll_create1; ioctl; mmap64; mmap; close; syscall; munmap;
+    local: *;
+};

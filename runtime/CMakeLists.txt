@@ -43,7 +43,6 @@ endif()
 # Create library, setup header and source files
 #
 find_package(Boost REQUIRED)
-
 # Find all headers and implementation files
 if(NOT DEFINED ARCH)
   set(ARCH ${CMAKE_SYSTEM_PROCESSOR})
@@ -65,6 +64,7 @@ set(sources
   src/bpftime_prog.cpp
   src/ufunc.cpp
   src/bpf_helper.cpp
+  src/platform_utils.cpp
 
   src/bpf_map/userspace/array_map.cpp
   src/bpf_map/userspace/fix_hash_map.cpp
@@ -77,7 +77,7 @@ set(sources
   extension/extension_helper.cpp
 )
 
-if(BPFTIME_BUILD_KERNEL_BPF)
+if(UNIX AND NOT APPLE)
   list(APPEND sources
     src/bpf_map/shared/array_map_kernel_user.cpp
     src/bpf_map/shared/hash_map_kernel_user.cpp
@@ -91,8 +91,8 @@ set(headers
   include/
 )
 message(INFO " Headers: ${headers}")
-
 message(INFO " Found the following sources: ${sources}")
+
 
 if(CMAKE_BUILD_TYPE STREQUAL "Debug")
   add_definitions(-DSPDLOG_ACTIVE_LEVEL=SPDLOG_LEVEL_DEBUG)
@@ -115,6 +115,7 @@ add_custom_target(
   DEPENDS ${CMAKE_CURRENT_BINARY_DIR}/syscall_id_list.h
 )
 
+message(INFO " Found the following boost include dirs : ${Boost_INCLUDE_DIRS}")
 target_include_directories(${PROJECT_NAME}
   PUBLIC
   ${CMAKE_CURRENT_SOURCE_DIR}/../vm/include
@@ -123,6 +124,7 @@ target_include_directories(${PROJECT_NAME}
   ${CMAKE_CURRENT_BINARY_DIR}
   ${CMAKE_CURRENT_SOURCE_DIR}/../third_party
   ${SPDLOG_INCLUDE}
+  ${Boost_INCLUDE_DIRS}
 )
 
 target_link_libraries(${PROJECT_NAME}
@@ -131,7 +133,11 @@ target_link_libraries(${PROJECT_NAME}
   spdlog::spdlog
   bpftime_base_attach_impl
 )
-add_dependencies(${PROJECT_NAME} bpftime_vm FridaGum spdlog::spdlog libbpf bpftime_base_attach_impl)
+if(${BPFTIME_BUILD_WITH_LIBBPF})
+  add_dependencies(${PROJECT_NAME} bpftime_vm FridaGum spdlog::spdlog libbpf bpftime_base_attach_impl)
+else()
+  add_dependencies(${PROJECT_NAME} bpftime_vm FridaGum spdlog::spdlog bpftime_base_attach_impl)
+endif()  
 
 if(BPFTIME_ENABLE_IOURING_EXT)
   target_link_libraries(${PROJECT_NAME}
@@ -167,6 +173,17 @@ set_project_warnings(runtime)
 
 message(DEBUG "Applied compiler warnings. Using standard ${CMAKE_CXX_STANDARD}.")
 
+if(APPLE)
+  find_library(COCOA_LIBRARY Cocoa)
+  find_library(FOUNDATION_LIBRARY Foundation)
+  find_library(APPKIT_LIBRARY AppKit)
+  find_library(COREF_LIBRARY CoreFoundation)
+  find_library(RESOLV_LIBRARY resolv)
+  mark_as_advanced(COCOA_LIBRARY FOUNDATION_LIBRARY APPKIT_LIBRARY COREF_LIBRARY RESOLV_LIBRARY)
+  set(EXTRA_LIBS ${COCOA_LIBRARY} ${FOUNDATION_LIBRARY} ${APPKIT_LIBRARY} ${COREF_LIBRARY} ${RESOLV_LIBRARY})
+endif()
+
+if(${BPFTIME_BUILD_WITH_LIBBPF})
 target_link_libraries(${PROJECT_NAME}
   PUBLIC
   ${LIBBPF_LIBRARIES}
@@ -177,8 +194,24 @@ target_link_libraries(${PROJECT_NAME}
   -lz
   -lelf
   bpftime_base_attach_impl
+  ${EXTRA_LIBS}
 )
+else()
+target_link_libraries(${PROJECT_NAME}
+  PUBLIC
+  ${FRIDA_GUM_INSTALL_DIR}/libfrida-gum.a
+  -lpthread
+  -lm
+  -ldl
+  -lz
+  bpftime_base_attach_impl
+  ${EXTRA_LIBS}
+)
+endif()
 
+
+
+if(BPFTIME_BUILD_WITH_LIBBPF)
 target_include_directories(${PROJECT_NAME} PUBLIC
   ${LIBBPF_INCLUDE_DIRS}/uapi
   ${LIBBPF_INCLUDE_DIRS}
@@ -189,15 +222,25 @@ target_include_directories(${PROJECT_NAME} PUBLIC
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src>
 )
+else()
+target_include_directories(${PROJECT_NAME} PUBLIC
+  ${FRIDA_GUM_INSTALL_DIR}
+  $<INSTALL_INTERFACE:runtime>
+  $<INSTALL_INTERFACE:runtime/src>
+  $<INSTALL_INTERFACE:include>
+  $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+  $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src>
+)
+endif()
 
 message(DEBUG "Successfully added all dependencies and linked against them.")
 
 set(BPFTIME_RUNTIME_INCLUDE ${CMAKE_CURRENT_SOURCE_DIR}/include ${CMAKE_CURRENT_SOURCE_DIR}/src)
 
+
 add_subdirectory(object)
 add_subdirectory(agent)
 add_subdirectory(syscall-server)
-
 #
 # Unit testing setup
 #

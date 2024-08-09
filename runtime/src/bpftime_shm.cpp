@@ -15,10 +15,45 @@
 #include <cerrno>
 #include <errno.h>
 #include <bpftime_shm_internal.hpp>
+#if __linux__
 #include <sys/epoll.h>
+#elif __APPLE__
+#include "bpftime_epoll.h"
+#endif
 #include <thread>
 #include <chrono>
 #include <variant>
+
+#ifdef __APPLE__
+// Custom implementation for sigtimedwait
+int sigtimedwait(const sigset_t *set, siginfo_t *info, const struct timespec *timeout) {
+    struct timespec start, now;
+    clock_gettime(CLOCK_REALTIME, &start);
+    int sig;
+
+    while (true) {
+        // Try to wait for a signal
+        if (sigwait(set, &sig) == 0) {
+            if (info != nullptr) {
+                memset(info, 0, sizeof(*info));
+                info->si_signo = sig;
+            }
+            return sig;
+        }
+
+        // Check if the timeout has expired
+        clock_gettime(CLOCK_REALTIME, &now);
+        if ((now.tv_sec - start.tv_sec) > timeout->tv_sec ||
+            ((now.tv_sec - start.tv_sec) == timeout->tv_sec && (now.tv_nsec - start.tv_nsec) > timeout->tv_nsec)) {
+            errno = EAGAIN;
+            return -1;
+        }
+
+        // Sleep for a short time before retrying
+        usleep(1000); // Sleep for 1ms before retrying
+    }
+}
+#endif
 
 using namespace bpftime;
 
@@ -326,7 +361,7 @@ int bpftime_epoll_wait(int fd, struct epoll_event *out_evts, int max_evt,
 	sigaddset(&to_block, SIGINT);
 	sigaddset(&to_block, SIGTERM);
 
-	// Block the develivery of some signals, so we would be able to catch
+	// Block the delivery of some signals, so we would be able to catch
 	// them when sleeping
 	if (int err = sigprocmask(SIG_BLOCK, &to_block, &orig_sigset);
 	    err == -1) {
@@ -481,6 +516,7 @@ int bpftime_perf_event_output(int fd, const void *buf, size_t sz)
 	}
 }
 
+#if __linux__
 int bpftime_shared_perf_event_output(int map_fd, const void *buf, size_t sz)
 {
 	SPDLOG_DEBUG("Output data into shared perf event array fd {}", map_fd);
@@ -508,6 +544,7 @@ int bpftime_shared_perf_event_output(int map_fd, const void *buf, size_t sz)
 		return -1;
 	}
 }
+#endif 
 
 int bpftime_is_prog_array(int fd)
 {

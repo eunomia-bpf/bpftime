@@ -3,17 +3,31 @@
 #include <filesystem>
 #include <spdlog/spdlog.h>
 #include <frida-gum.h>
+#include <unistd.h>
+#if __APPLE__
+#include <libproc.h>
+#endif
 static std::string get_executable_path()
 {
 	char exec_path[PATH_MAX] = { 0 };
-	ssize_t len =
-		readlink("/proc/self/exe", exec_path, sizeof(exec_path) - 1);
-	if (len != -1) {
-		exec_path[len] = '\0'; // Null-terminate the string
-		SPDLOG_INFO("Executable path: {}", exec_path);
-	} else {
-		SPDLOG_ERROR("Error retrieving executable path: {}", errno);
-	}
+
+	#if __linux__
+		ssize_t len =
+			readlink("/proc/self/exe", exec_path, sizeof(exec_path) - 1);
+		if (len != -1) {
+			exec_path[len] = '\0'; // Null-terminate the string
+			SPDLOG_INFO("Executable path: {}", exec_path);
+		} else {
+			SPDLOG_ERROR("Error retrieving executable path: {}", errno);
+		}
+	#elif __APPLE__
+		pid_t pid = getpid();
+		if (proc_pidpath(pid, exec_path, sizeof(exec_path)) > 0) {
+			SPDLOG_INFO("Executable path: {}", exec_path);
+		} else {
+			SPDLOG_ERROR("Error retrieving executable path: {}", errno);
+		}
+	#endif 
 	return exec_path;
 }
 namespace bpftime
