@@ -41,7 +41,7 @@ class bpftime_vm_impl {
 	 */
 	virtual bool toggle_bounds_check(bool enable)
 	{
-		SPDLOG_WARN("Not implemented yet: toggle_bounds_check");
+		SPDLOG_DEBUG("Not implemented yet: toggle_bounds_check");
 		return false;
 	}
 	/**

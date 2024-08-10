@@ -49,3 +49,5 @@ third_party/frida
 third_party/phaole
 third_party/phaole1
 output_metrics.json
+perf.data
+perf.data.old

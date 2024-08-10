@@ -214,7 +214,7 @@ int frida_attach_impl::create_attach_with_ebpf_callback(
 				}
 			}
 			if (!ok) {
-				SPDLOG_ERROR(
+				SPDLOG_INFO(
 					"Unable to attach: module name {} doesn't exist in current process's memory maps",
 					sub.module_name);
 				return -EINVAL;

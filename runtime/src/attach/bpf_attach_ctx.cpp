@@ -70,7 +70,7 @@ int bpf_attach_ctx::init_attach_ctx_from_handlers(
 			if (int err = instantiate_handler_at(manager, i, stk,
 							     config);
 			    err < 0) {
-				SPDLOG_ERROR("Failed to instantiate handler {}",
+				SPDLOG_INFO("Failed to instantiate handler {}",
 					     i);
 				return err;
 			}
@@ -146,7 +146,7 @@ int bpf_attach_ctx::instantiate_handler_at(const handler_manager *manager,
 		}
 		if (int err = instantiate_bpf_link_handler_at(id, link_handler);
 		    err < 0) {
-			SPDLOG_ERROR(
+			SPDLOG_DEBUG(
 				"Unable to instantiate bpf link handler {}: {}",
 				id, err);
 			return err;
