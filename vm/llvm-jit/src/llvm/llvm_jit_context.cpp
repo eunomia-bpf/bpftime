@@ -141,9 +141,6 @@
 #include "bpftime_vm_compat.hpp"
 #include "compiler_utils.hpp"
 #include "spdlog/spdlog.h"
-#include <cstdlib>
-#include <filesystem>
-#include <fstream>
 #include <iterator>
 
 #include "llvm/IR/Module.h"
@@ -159,12 +156,9 @@
 #include <llvm/MC/TargetRegistry.h>
 #include <memory>
 #include <pthread.h>
-#include <sstream>
 #include <stdexcept>
 #include <sys/stat.h>
-#include <system_error>
 #include <utility>
-#include <iostream>
 #include <string>
 #include <spdlog/spdlog.h>
 #include <tuple>

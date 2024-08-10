@@ -643,18 +643,43 @@ Expected<ThreadSafeModule> llvm_bpf_jit_context::generateModule(
 				SPDLOG_DEBUG(
 					"Emit lddw helper 1 (map_by_fd) at pc {}, imm={}, patched at compile time",
 					pc, inst.imm);
-				builder.CreateStore(
-					builder.getInt64(
-						vm->map_by_fd(inst.imm)),
-					regs[inst.dst_reg]);
+				if (vm->map_by_fd) {
+					builder.CreateStore(
+						builder.getInt64(vm->map_by_fd(
+							inst.imm)),
+						regs[inst.dst_reg]);
+				} else {
+					SPDLOG_INFO(
+						"map_by_fd is called in eBPF code, but is not provided, will use the default behavior");
+					// Default: input value
+					builder.CreateStore(
+						builder.getInt64(
+							(int64_t)inst.imm),
+						regs[inst.dst_reg]);
+				}
+
 			} else if (inst.src_reg == 2) {
 				SPDLOG_DEBUG(
 					"Emit lddw helper 2 (map_by_fd + map_val) at pc {}, imm1={}, imm2={}",
 					pc, inst.imm, nextInst.imm);
-				auto mapPtr = vm->map_by_fd(inst.imm);
+				uint64_t mapPtr;
+				if (vm->map_by_fd) {
+					mapPtr = vm->map_by_fd(inst.imm);
+				} else {
+					SPDLOG_INFO(
+						"map_by_fd is called in eBPF code, but is not provided, will use the default behavior");
+					// Default: returns the input value
+					mapPtr = (uint64_t)inst.imm;
+				}
 				if (patch_map_val_at_compile_time) {
 					SPDLOG_DEBUG(
 						"map_val is required to be evaluated at compile time");
+					if (!vm->map_val) {
+						return llvm::make_error<
+							llvm::StringError>(
+							"map_val is not provided, unable to compile",
+							llvm::inconvertibleErrorCode());
+					}
 					builder.CreateStore(
 						builder.getInt64(
 							vm->map_val(mapPtr) +
@@ -683,7 +708,7 @@ Expected<ThreadSafeModule> llvm_bpf_jit_context::generateModule(
 					} else {
 						return llvm::make_error<
 							llvm::StringError>(
-							"Using lddw helper 2, which requires map_val to be defined. This should not happen",
+							"Using lddw helper 2, which requires map_val to be defined.",
 							llvm::inconvertibleErrorCode());
 					}
 				}
@@ -692,6 +717,12 @@ Expected<ThreadSafeModule> llvm_bpf_jit_context::generateModule(
 				SPDLOG_DEBUG(
 					"Emit lddw helper 3 (var_addr) at pc {}, imm1={}",
 					pc, inst.imm);
+				if (!vm->var_addr) {
+					return llvm::make_error<
+						llvm::StringError>(
+						"var_addr is not provided, unable to compile",
+						llvm::inconvertibleErrorCode());
+				}
 				builder.CreateStore(
 					builder.getInt64(
 						vm->var_addr(inst.imm)),
@@ -700,6 +731,12 @@ Expected<ThreadSafeModule> llvm_bpf_jit_context::generateModule(
 				SPDLOG_DEBUG(
 					"Emit lddw helper 4 (code_addr) at pc {}, imm1={}",
 					pc, inst.imm);
+				if (!vm->code_addr) {
+					return llvm::make_error<
+						llvm::StringError>(
+						"code_addr is not provided, unable to compile",
+						llvm::inconvertibleErrorCode());
+				}
 				builder.CreateStore(
 					builder.getInt64(
 						vm->code_addr(inst.imm)),
@@ -708,23 +745,52 @@ Expected<ThreadSafeModule> llvm_bpf_jit_context::generateModule(
 				SPDLOG_DEBUG(
 					"Emit lddw helper 4 (map_by_idx) at pc {}, imm1={}",
 					pc, inst.imm);
-				builder.CreateStore(
-					builder.getInt64(
-						vm->map_by_idx(inst.imm)),
-					regs[inst.dst_reg]);
+				if (vm->map_by_idx) {
+					builder.CreateStore(
+						builder.getInt64(vm->map_by_idx(
+							inst.imm)),
+						regs[inst.dst_reg]);
+				} else {
+					SPDLOG_INFO(
+						"map_by_idx is called in eBPF code, but it's not provided, will use the default behavior");
+					// Default: returns the input value
+					builder.CreateStore(
+						builder.getInt64(
+							(int64_t)inst.imm),
+						regs[inst.dst_reg]);
+				}
+
 			} else if (inst.src_reg == 6) {
-				auto mapPtr = vm->map_by_idx(inst.imm);
 				SPDLOG_DEBUG(
 					"Emit lddw helper 6 (map_by_idx + map_val) at pc {}, imm1={}, imm2={}",
 					pc, inst.imm, nextInst.imm);
+
+				uint64_t mapPtr;
+				if (vm->map_by_idx) {
+					mapPtr = vm->map_by_idx(inst.imm);
+				} else {
+					SPDLOG_DEBUG(
+						"map_by_idx is called in eBPF code, but it's not provided, will use the default behavior");
+					// Default: returns the input value
+					mapPtr = (int64_t)inst.imm;
+				}
 				if (patch_map_val_at_compile_time) {
 					SPDLOG_DEBUG(
 						"Required to evaluate map_val at compile time");
-					builder.CreateStore(
-						builder.getInt64(
-							vm->map_val(mapPtr) +
-							nextInst.imm),
-						regs[inst.dst_reg]);
+					if (vm->map_val) {
+						builder.CreateStore(
+							builder.getInt64(
+								vm->map_val(
+									mapPtr) +
+								nextInst.imm),
+							regs[inst.dst_reg]);
+					} else {
+						return llvm::make_error<
+							llvm::StringError>(
+							"map_val is not provided, unable to compile",
+							llvm::inconvertibleErrorCode());
+					}
+
 				} else {
 					SPDLOG_DEBUG(
 						"Required to evaluate map_val at runtime time");
