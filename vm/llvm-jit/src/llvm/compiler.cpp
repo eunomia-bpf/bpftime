@@ -632,7 +632,7 @@ Expected<ThreadSafeModule> llvm_bpf_jit_context::generateModule(
 				(((uint64_t)((uint32_t)nextInst.imm)) << 32);
 			pc++;
 
-			SPDLOG_TRACE("Load LDDW val= {} part1={:x} part2={:x}",
+			SPDLOG_DEBUG("Load LDDW val= {} part1={:x} part2={:x}",
 				     val, (uint64_t)inst.imm,
 				     (uint64_t)nextInst.imm);
 			if (inst.src_reg == 0) {
@@ -644,7 +644,7 @@ Expected<ThreadSafeModule> llvm_bpf_jit_context::generateModule(
 					"Emit lddw helper 1 (map_by_fd) at pc {}, imm={}, patched at compile time",
 					pc, inst.imm);
 				builder.CreateStore(
-					builder.getInt32(
+					builder.getInt64(
 						vm->map_by_fd(inst.imm)),
 					regs[inst.dst_reg]);
 			} else if (inst.src_reg == 2) {
