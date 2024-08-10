@@ -90,7 +90,7 @@ async def run_userspace_uprobe_test():
     await server_start_cb.wait()
     print("server started!")
     result = None
-    for i in range(100):
+    for i in range(10):
         victim = await asyncio.subprocess.create_subprocess_shell(
             str(CURR_FILE_DIR / "test"),
             stdout=asyncio.subprocess.PIPE,
@@ -138,7 +138,7 @@ async def run_kernel_uprobe_test():
     print("server started!")
     # await asyncio.sleep(10)
     result = None
-    for i in range(100):
+    for i in range(10):
         victim = await asyncio.subprocess.create_subprocess_shell(
             str(CURR_FILE_DIR / "test"),
             stdout=asyncio.subprocess.PIPE,
@@ -170,7 +170,7 @@ def handle_embed_victim_out(i: str) -> float:
 async def run_embed_vm_test():
     result = {"embed": []}
     bpf_path = str(CURR_FILE_DIR / "uprobe/.output/uprobe.bpf.o")
-    for i in range(100):
+    for i in range(10):
         victim = await asyncio.subprocess.create_subprocess_shell(
             " ".join(
                 [
@@ -198,7 +198,7 @@ async def main():
     out = {"kernel_uprobe": k, "userspace_uprobe": u, "embed": e}
     with open("benchmark-output.json", "w") as f:
         json.dump(out, f)
-
+    print(out)
 
 if __name__ == "__main__":
     asyncio.run(main())

@@ -9,6 +9,7 @@ add_library(bpftime-syscall-server SHARED
     syscall_server_main.cpp
     syscall_server_utils.cpp
 )
+
 target_link_libraries(bpftime-syscall-server PUBLIC
     runtime
     -lpthread
