@@ -11,23 +11,23 @@ static std::string get_executable_path()
 {
 	char exec_path[PATH_MAX] = { 0 };
 
-	#if __linux__
-		ssize_t len =
-			readlink("/proc/self/exe", exec_path, sizeof(exec_path) - 1);
-		if (len != -1) {
-			exec_path[len] = '\0'; // Null-terminate the string
-			SPDLOG_INFO("Executable path: {}", exec_path);
-		} else {
-			SPDLOG_ERROR("Error retrieving executable path: {}", errno);
-		}
-	#elif __APPLE__
-		pid_t pid = getpid();
-		if (proc_pidpath(pid, exec_path, sizeof(exec_path)) > 0) {
-			SPDLOG_INFO("Executable path: {}", exec_path);
-		} else {
-			SPDLOG_ERROR("Error retrieving executable path: {}", errno);
-		}
-	#endif 
+#if __linux__
+	ssize_t len =
+		readlink("/proc/self/exe", exec_path, sizeof(exec_path) - 1);
+	if (len != -1) {
+		exec_path[len] = '\0'; // Null-terminate the string
+		SPDLOG_INFO("Executable path: {}", exec_path);
+	} else {
+		SPDLOG_ERROR("Error retrieving executable path: {}", errno);
+	}
+#elif __APPLE__
+	pid_t pid = getpid();
+	if (proc_pidpath(pid, exec_path, sizeof(exec_path)) > 0) {
+		SPDLOG_INFO("Executable path: {}", exec_path);
+	} else {
+		SPDLOG_ERROR("Error retrieving executable path: {}", errno);
+	}
+#endif
 	return exec_path;
 }
 namespace bpftime
@@ -47,8 +47,10 @@ resolve_function_addr_by_module_offset(const std::string_view &module_name,
 			get_module_base_addr(std::string(module_name).c_str());
 	}
 	if (!module_base_addr) {
-		SPDLOG_ERROR("Failed to find module base address for {}",
-			     module_name);
+		// It's not a bug, it might be attach to a unrelated process
+		// when using the LD_PRELOAD
+		SPDLOG_INFO("Failed to find module base address for {}",
+			    module_name);
 		return nullptr;
 	}
 

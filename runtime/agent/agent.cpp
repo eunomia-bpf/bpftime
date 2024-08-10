@@ -166,11 +166,11 @@ extern "C" void bpftime_agent_main(const gchar *data, gboolean *stay_resident)
 		res = ctx_holder.ctx.init_attach_ctx_from_handlers(
 			bpftime_get_agent_config());
 		if (res != 0) {
-			SPDLOG_ERROR("Failed to initialize attach context");
+			SPDLOG_INFO("Failed to initialize attach context, exiting..");
 			return;
 		}
 	} catch (std::exception &ex) {
-		SPDLOG_ERROR("Unable to instantiate handlers: {}", ex.what());
+		SPDLOG_ERROR("Unable to instantiate handlers with error: {}", ex.what());
 		return;
 	}
 	SPDLOG_INFO("Attach successfully");

@@ -13,7 +13,7 @@ With userspace eBPF runntime, we can:
 | Syscall Tracepoint     | 151.82801    | 232.57691      | 4    |
 | Embedding runtime      | Not avaliable |  110.008430   | 4    |
 
-## build
+## build and run at a click
 
 Build the agent first. In project root:
 
@@ -25,6 +25,13 @@ build the benchmark driver:
 
 ```sh
 make -C benchmark
+```
+
+Run the uprobe bench:
+
+```sh
+cd benchmark
+python3 run_benchmark.py
 ```
 
 ## test environment

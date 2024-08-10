@@ -70,9 +70,10 @@ int bpf_attach_ctx::init_attach_ctx_from_handlers(
 			if (int err = instantiate_handler_at(manager, i, stk,
 							     config);
 			    err < 0) {
-				SPDLOG_ERROR("Failed to instantiate handler {}",
+				SPDLOG_INFO("Failed to instantiate handler {}",
 					     i);
-				return err;
+				// Unable to instantiate handler may not be an error.
+				// We can continue trying to instantiate other handlers.
 			}
 		}
 	}
@@ -146,7 +147,7 @@ int bpf_attach_ctx::instantiate_handler_at(const handler_manager *manager,
 		}
 		if (int err = instantiate_bpf_link_handler_at(id, link_handler);
 		    err < 0) {
-			SPDLOG_ERROR(
+			SPDLOG_DEBUG(
 				"Unable to instantiate bpf link handler {}: {}",
 				id, err);
 			return err;
@@ -216,6 +217,7 @@ int bpf_attach_ctx::instantiate_bpf_link_handler_at(
 	auto &[priv_data, attach_type] =
 		instantiated_perf_events[handler.attach_target_id];
 	attach::base_attach_impl *attach_impl;
+	// Find what kind of attach type it is
 	if (auto itr = attach_impls.find(attach_type);
 	    itr != attach_impls.end()) {
 		attach_impl = itr->second.first;
@@ -234,7 +236,9 @@ int bpf_attach_ctx::instantiate_bpf_link_handler_at(
 		},
 		*priv_data, attach_type);
 	if (attach_id < 0) {
-		SPDLOG_ERROR("Unable to instantiate bpf link handler {}: {}",
+		// Since the agent might be attach to a unrelated process
+		// Using LD_PRELOAD, it's not an error here.
+		SPDLOG_DEBUG("Unable to instantiate bpf link handler {}: {}",
 			     id, attach_id);
 		return attach_id;
 	}

@@ -18,9 +18,7 @@ using namespace std;
 namespace bpftime
 {
 
-
 thread_local std::optional<uint64_t> current_thread_bpf_cookie;
-
 
 bpftime_prog::bpftime_prog(const struct ebpf_inst *insn, size_t insn_cnt,
 			   const char *name)
@@ -29,7 +27,8 @@ bpftime_prog::bpftime_prog(const struct ebpf_inst *insn, size_t insn_cnt,
 	SPDLOG_DEBUG("Creating bpftime_prog with name {}", name);
 	insns.assign(insn, insn + insn_cnt);
 	vm = ebpf_create();
-	ebpf_toggle_bounds_check(vm, false);
+	// Disable bounds check because we have no implementation yet
+	// ebpf_toggle_bounds_check(vm, false);
 	ebpf_set_lddw_helpers(vm, map_ptr_by_fd, nullptr, map_val, nullptr,
 			      nullptr);
 }
@@ -111,7 +110,8 @@ int bpftime_prog::bpftime_prog_register_raw_helper(
 	return ebpf_register(vm, info.index, info.name.c_str(), info.fn);
 }
 
-int bpftime_prog::load_aot_object(const std::vector<uint8_t> &buf) {
+int bpftime_prog::load_aot_object(const std::vector<uint8_t> &buf)
+{
 	ebpf_jit_fn res = ebpf_load_aot_object(vm, buf.data(), buf.size());
 	if (res == nullptr) {
 		SPDLOG_ERROR("Failed to load aot object");

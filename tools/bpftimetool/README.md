@@ -28,21 +28,3 @@ SPDLOG_LEVEL=Debug ~/.bpftime/bpftimetool import /home/yunwei/bpftime/tools/bpft
 [2023-10-23 19:02:04.956] [info] import handler type bpf_perf_event_handler fd 5
 INFO [99712]: Global shm destructed
 ```
-
-## Run program with bpftime
-
-```console
-$ SPDLOG_LEVEL=Debug bpftime start ./example/minimal/victim
-[2023-10-23 19:03:26.105] [info] Entering bpftime agent
-[2023-10-23 19:03:26.106] [info] Global shm constructed. shm_open_type 1 for bpftime_maps_shm
-[2023-10-23 19:03:26.106] [info] Initializing agent..
-[2023-10-23 19:03:26][info][99986] Executable path: /home/yunwei/bpftime/example/minimal/victim
-[2023-10-23 19:03:26][info][99986] Attached 1 uprobe programs to function 5590e1d41169
-[2023-10-23 19:03:26][info][99986] Attach successfully
-target_func called.
-target_func
-target_func called.
-target_func
-target_func called.
-target_func
-```
