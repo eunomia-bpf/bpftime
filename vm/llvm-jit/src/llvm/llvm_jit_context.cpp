@@ -13,7 +13,6 @@
 #include <iostream>
 #include <sstream>
 
-
 #include <llvm/ExecutionEngine/MCJIT.h>
 #include <llvm/ExecutionEngine/ObjectCache.h>
 #include <llvm/IR/IRPrintingPasses.h>
@@ -177,10 +176,6 @@ using namespace llvm::orc;
 using namespace bpftime;
 using namespace std;
 
-
-
-
-
 struct spin_lock_guard {
 	pthread_spinlock_t *spin;
 	spin_lock_guard(pthread_spinlock_t *spin) : spin(spin)
@@ -197,46 +192,48 @@ static ExitOnError ExitOnErr;
 
 static void optimizeModule(llvm::Module &M)
 {
-	// std::cout << "LLVM_VERSION_MAJOR: " << LLVM_VERSION_MAJOR << std::endl;
-    #if LLVM_VERSION_MAJOR >= 17
-        // =====================
-        // Create the analysis managers.
-        // These must be declared in this order so that they are destroyed in the
-        // correct order due to inter-analysis-manager references.
-        LoopAnalysisManager LAM;
-        FunctionAnalysisManager FAM;
-        CGSCCAnalysisManager CGAM;
-        ModuleAnalysisManager MAM;
+	// std::cout << "LLVM_VERSION_MAJOR: " << LLVM_VERSION_MAJOR <<
+	// std::endl;
+#if LLVM_VERSION_MAJOR >= 17
+	// =====================
+	// Create the analysis managers.
+	// These must be declared in this order so that they are destroyed in
+	// the correct order due to inter-analysis-manager references.
+	LoopAnalysisManager LAM;
+	FunctionAnalysisManager FAM;
+	CGSCCAnalysisManager CGAM;
+	ModuleAnalysisManager MAM;
 
-        // Create the new pass manager builder.
-        // Take a look at the PassBuilder constructor parameters for more
-        // customization, e.g. specifying a TargetMachine or various debugging
-        // options.
-        PassBuilder PB;
+	// Create the new pass manager builder.
+	// Take a look at the PassBuilder constructor parameters for more
+	// customization, e.g. specifying a TargetMachine or various debugging
+	// options.
+	PassBuilder PB;
 
-        // Register all the basic analyses with the managers.
-        PB.registerModuleAnalyses(MAM);
-        PB.registerCGSCCAnalyses(CGAM);
-        PB.registerFunctionAnalyses(FAM);
-        PB.registerLoopAnalyses(LAM);
-        PB.crossRegisterProxies(LAM, FAM, CGAM, MAM);
+	// Register all the basic analyses with the managers.
+	PB.registerModuleAnalyses(MAM);
+	PB.registerCGSCCAnalyses(CGAM);
+	PB.registerFunctionAnalyses(FAM);
+	PB.registerLoopAnalyses(LAM);
+	PB.crossRegisterProxies(LAM, FAM, CGAM, MAM);
 
-        // Create the pass manager.
-        // This one corresponds to a typical -O2 optimization pipeline.
-        ModulePassManager MPM = PB.buildPerModuleDefaultPipeline(OptimizationLevel::O3);
+	// Create the pass manager.
+	// This one corresponds to a typical -O2 optimization pipeline.
+	ModulePassManager MPM =
+		PB.buildPerModuleDefaultPipeline(OptimizationLevel::O3);
 
-        // Optimize the IR!
-        MPM.run(M, MAM);
-        // =====================================
-    #else 
-        llvm::legacy::PassManager PM;
+	// Optimize the IR!
+	MPM.run(M, MAM);
+	// =====================================
+#else
+	llvm::legacy::PassManager PM;
 
-        llvm::PassManagerBuilder PMB;
-        PMB.OptLevel = 3;
-        PMB.populateModulePassManager(PM);
+	llvm::PassManagerBuilder PMB;
+	PMB.OptLevel = 3;
+	PMB.populateModulePassManager(PM);
 
-        PM.run(M);
-    #endif
+	PM.run(M);
+#endif
 }
 
 #if defined(__arm__) || defined(_M_ARM)
@@ -264,8 +261,8 @@ void llvm_bpf_jit_context::do_jit_compile()
 {
 	auto [jit, extFuncNames, definedLddwHelpers] =
 		create_and_initialize_lljit_instance();
-	auto bpfModule =
-		ExitOnErr(generateModule(extFuncNames, definedLddwHelpers));
+	auto bpfModule = ExitOnErr(
+		generateModule(extFuncNames, definedLddwHelpers, true));
 	bpfModule.withModuleDo([](auto &M) { optimizeModule(M); });
 	ExitOnErr(jit->addIRModule(std::move(bpfModule)));
 	this->jit = std::move(jit);
@@ -293,7 +290,8 @@ std::vector<uint8_t> llvm_bpf_jit_context::do_aot_compile(
 	const std::vector<std::string> &lddwHelpers, bool print_ir)
 {
 	SPDLOG_DEBUG("AOT: start");
-	if (auto module = generateModule(extFuncNames, lddwHelpers); module) {
+	if (auto module = generateModule(extFuncNames, lddwHelpers, false);
+	    module) {
 		auto defaultTargetTriple = llvm::sys::getDefaultTargetTriple();
 		SPDLOG_DEBUG("AOT: target triple: {}", defaultTargetTriple);
 		return module->withModuleDo([&](auto &module)
@@ -327,20 +325,29 @@ std::vector<uint8_t> llvm_bpf_jit_context::do_aot_compile(
 				std::make_unique<raw_svector_ostream>(
 					objStream);
 
-legacy::PassManager pass;
+			legacy::PassManager pass;
 // auto FileType = CGFT_ObjectFile;
 #if LLVM_VERSION_MAJOR >= 18
-if (targetMachine->addPassesToEmitFile(pass, *BOS, nullptr, CodeGenFileType::ObjectFile)) {
+			if (targetMachine->addPassesToEmitFile(
+				    pass, *BOS, nullptr,
+				    CodeGenFileType::ObjectFile)) {
 #elif LLVM_VERSION_MAJOR >= 10
-if (targetMachine->addPassesToEmitFile(pass, *BOS, nullptr, CGFT_ObjectFile)) {
+			if (targetMachine->addPassesToEmitFile(
+				    pass, *BOS, nullptr, CGFT_ObjectFile)) {
 #elif LLVM_VERSION_MAJOR >= 8
-if (targetMachine->addPassesToEmitFile(pass, *BOS, nullptr, TargetMachine::CGFT_ObjectFile)) {
+			if (targetMachine->addPassesToEmitFile(
+				    pass, *BOS, nullptr,
+				    TargetMachine::CGFT_ObjectFile)) {
 #else
-if (targetMachine->addPassesToEmitFile(pass, *BOS, TargetMachine::CGFT_ObjectFile, true)) {
+			if (targetMachine->addPassesToEmitFile(
+				    pass, *BOS, TargetMachine::CGFT_ObjectFile,
+				    true)) {
 #endif
-    SPDLOG_ERROR("Unable to emit module for target machine");
-    throw std::runtime_error("Unable to emit module for target machine");
-}
+				SPDLOG_ERROR(
+					"Unable to emit module for target machine");
+				throw std::runtime_error(
+					"Unable to emit module for target machine");
+			}
 
 			pass.run(module);
 			SPDLOG_INFO("AOT: done, received {} bytes",
@@ -364,28 +371,30 @@ std::vector<uint8_t> llvm_bpf_jit_context::do_aot_compile(bool print_ir)
 	std::vector<std::string> extNames, lddwNames;
 	for (uint32_t i = 0; i < std::size(vm->ext_funcs); i++) {
 		if (vm->ext_funcs[i].has_value()) {
-			#if LLVM_VERSION_MAJOR >= 16
-				extNames.emplace_back(ext_func_sym(i));
-			#else
-				extNames.push_back(ext_func_sym(i));
-			#endif
+#if LLVM_VERSION_MAJOR >= 16
+			extNames.emplace_back(ext_func_sym(i));
+#else
+			extNames.push_back(ext_func_sym(i));
+#endif
 		}
 	}
 
 	const auto tryDefineLddwHelper = [&](const char *name, void *func) {
 		if (func) {
-			#if LLVM_VERSION_MAJOR >= 16
-				lddwNames.emplace_back(name);
-			#else
-				lddwNames.push_back(name);
-			#endif
+#if LLVM_VERSION_MAJOR >= 16
+			lddwNames.emplace_back(name);
+#else
+			lddwNames.push_back(name);
+#endif
 		}
 	};
-	tryDefineLddwHelper(LDDW_HELPER_MAP_BY_FD, (void *)vm->map_by_fd);
-	tryDefineLddwHelper(LDDW_HELPER_MAP_BY_IDX, (void *)vm->map_by_idx);
+	// Only map_val will have a chance to be called at runtime
 	tryDefineLddwHelper(LDDW_HELPER_MAP_VAL, (void *)vm->map_val);
-	tryDefineLddwHelper(LDDW_HELPER_CODE_ADDR, (void *)vm->code_addr);
-	tryDefineLddwHelper(LDDW_HELPER_VAR_ADDR, (void *)vm->var_addr);
+	// These symbols won't be used at runtime
+	// tryDefineLddwHelper(LDDW_HELPER_MAP_BY_FD, (void *)vm->map_by_fd);
+	// tryDefineLddwHelper(LDDW_HELPER_MAP_BY_IDX, (void *)vm->map_by_idx);
+	// tryDefineLddwHelper(LDDW_HELPER_CODE_ADDR, (void *)vm->code_addr);
+	// tryDefineLddwHelper(LDDW_HELPER_VAR_ADDR, (void *)vm->var_addr);
 	return this->do_aot_compile(extNames, lddwNames, print_ir);
 }
 
@@ -433,17 +442,17 @@ llvm_bpf_jit_context::create_and_initialize_lljit_instance()
 				ext_func_sym(i));
 			sym.setFlags(JITSymbolFlags::Callable |
 				     JITSymbolFlags::Exported);
-			
 
-		#if LLVM_VERSION_MAJOR < 17
+#if LLVM_VERSION_MAJOR < 17
 			extSymbols.try_emplace(symName, sym);
 			extFuncNames.push_back(ext_func_sym(i));
-		#else
-			auto symbol = ::llvm::orc::ExecutorSymbolDef (::llvm::orc::ExecutorAddr (sym.getAddress()), sym.getFlags());
+#else
+			auto symbol = ::llvm::orc::ExecutorSymbolDef(
+				::llvm::orc::ExecutorAddr(sym.getAddress()),
+				sym.getFlags());
 			extSymbols.try_emplace(symName, symbol);
 			extFuncNames.emplace_back(ext_func_sym(i));
-		#endif
-			
+#endif
 		}
 	}
 #if defined(__arm__) || defined(_M_ARM)
@@ -464,31 +473,36 @@ llvm_bpf_jit_context::create_and_initialize_lljit_instance()
 			// printf("The type of sym %s\n", typeid(sym).name());
 			sym.setFlags(JITSymbolFlags::Callable |
 				     JITSymbolFlags::Exported);
-			
-			
 
-		#if LLVM_VERSION_MAJOR < 17
-			lddwSyms.try_emplace(jit->getExecutionSession().intern(name), sym);
+#if LLVM_VERSION_MAJOR < 17
+			lddwSyms.try_emplace(
+				jit->getExecutionSession().intern(name), sym);
 			definedLddwHelpers.push_back(name);
-		#else
-			auto symbol = ::llvm::orc::ExecutorSymbolDef (::llvm::orc::ExecutorAddr (sym.getAddress()), sym.getFlags());
-			lddwSyms.try_emplace(jit->getExecutionSession().intern(name), symbol);
+#else
+			auto symbol = ::llvm::orc::ExecutorSymbolDef(
+				::llvm::orc::ExecutorAddr(sym.getAddress()),
+				sym.getFlags());
+			lddwSyms.try_emplace(
+				jit->getExecutionSession().intern(name),
+				symbol);
 			definedLddwHelpers.emplace_back(name);
-		#endif
-			
-			
+#endif
 		}
 	};
-	tryDefineLddwHelper(LDDW_HELPER_MAP_BY_FD, (void *)vm->map_by_fd);
-	tryDefineLddwHelper(LDDW_HELPER_MAP_BY_IDX, (void *)vm->map_by_idx);
+	// Only map_val will have a chance to be called at runtime, so it's the
+	// only symbol to be defined
 	tryDefineLddwHelper(LDDW_HELPER_MAP_VAL, (void *)vm->map_val);
-	tryDefineLddwHelper(LDDW_HELPER_CODE_ADDR, (void *)vm->code_addr);
-	tryDefineLddwHelper(LDDW_HELPER_VAR_ADDR, (void *)vm->var_addr);
+	// These symbols won't be used at runtime
+	// tryDefineLddwHelper(LDDW_HELPER_MAP_BY_FD, (void *)vm->map_by_fd);
+	// tryDefineLddwHelper(LDDW_HELPER_MAP_BY_IDX, (void *)vm->map_by_idx);
+	// tryDefineLddwHelper(LDDW_HELPER_CODE_ADDR, (void *)vm->code_addr);
+	// tryDefineLddwHelper(LDDW_HELPER_VAR_ADDR, (void *)vm->var_addr);
 	ExitOnErr(mainDylib.define(absoluteSymbols(lddwSyms)));
 	return { std::move(jit), extFuncNames, definedLddwHelpers };
 }
 
-bpftime::vm::compat::precompiled_ebpf_function llvm_bpf_jit_context::get_entry_address()
+bpftime::vm::compat::precompiled_ebpf_function
+llvm_bpf_jit_context::get_entry_address()
 {
 	if (!this->jit.has_value()) {
 		SPDLOG_CRITICAL(

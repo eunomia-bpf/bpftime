@@ -1,10 +1,39 @@
 #include "spdlog/spdlog.h"
 #include <bpftime_vm_compat.hpp>
 #include <cerrno>
+#include <cstdint>
 #include <memory>
 #include <ebpf_inst.h>
 #include "compat_llvm.hpp"
 #include "../llvm/llvm_jit_context.hpp"
+
+static uint64_t default_map_by_fd(uint32_t)
+{
+	SPDLOG_WARN("map_by_fd not defined, but called");
+	return 0;
+}
+
+static uint64_t default_map_by_idx(uint32_t)
+{
+	SPDLOG_WARN("map_by_idx not defined, but called");
+	return 0;
+}
+
+static uint64_t default_map_val(uint64_t)
+{
+	SPDLOG_WARN("map_val not defined, but called");
+	return 0;
+}
+static uint64_t default_var_addr(uint32_t)
+{
+	SPDLOG_WARN("var_addr not defined, but called");
+	return 0;
+}
+static uint64_t default_code_addr(uint32_t)
+{
+	SPDLOG_WARN("code_addr not defined, but called");
+	return 0;
+}
 namespace bpftime::vm::compat
 {
 
@@ -21,6 +50,11 @@ bpftime_llvm_jit_vm::bpftime_llvm_jit_vm() : ext_funcs(MAX_EXT_FUNCS)
 
 {
 	this->jit_ctx = std::make_unique<llvm_bpf_jit_context>(this);
+	map_by_fd = &default_map_by_fd;
+	map_by_idx = &default_map_by_idx;
+	map_val = &default_map_val;
+	code_addr = &default_code_addr;
+	var_addr = &default_var_addr;
 }
 
 std::string bpftime_llvm_jit_vm::get_error_message()
@@ -98,11 +132,16 @@ void bpftime_llvm_jit_vm::set_lddw_helpers(uint64_t (*map_by_fd)(uint32_t),
 					   uint64_t (*var_addr)(uint32_t),
 					   uint64_t (*code_addr)(uint32_t))
 {
-	this->map_by_fd = map_by_fd;
-	this->map_by_idx = map_by_idx;
-	this->map_val = map_val;
-	this->var_addr = var_addr;
-	this->code_addr = code_addr;
+	if (map_by_fd)
+		this->map_by_fd = map_by_fd;
+	if (map_by_idx)
+		this->map_by_idx = map_by_idx;
+	if (map_val)
+		this->map_val = map_val;
+	if (var_addr)
+		this->var_addr = var_addr;
+	if (code_addr)
+		this->code_addr = code_addr;
 }
 
 std::vector<uint8_t> bpftime_llvm_jit_vm::do_aot_compile(bool print_ir)

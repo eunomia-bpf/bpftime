@@ -86,8 +86,11 @@ const size_t MAX_LOCAL_FUNC_DEPTH = 32;
 */
 Expected<ThreadSafeModule> llvm_bpf_jit_context::generateModule(
 	const std::vector<std::string> &extFuncNames,
-	const std::vector<std::string> &lddwHelpers)
+	const std::vector<std::string> &lddwHelpers,
+	bool patch_map_val_at_compile_time)
 {
+	SPDLOG_DEBUG("Generating module: patch_map_val_at_compile_time={}",
+		     patch_map_val_at_compile_time);
 	auto context = std::make_unique<LLVMContext>();
 	auto jitModule = std::make_unique<Module>("bpf-jit", *context);
 	const auto &insts = vm->instructions;
@@ -155,17 +158,15 @@ Expected<ThreadSafeModule> llvm_bpf_jit_context::generateModule(
 	// The main function
 	Function *bpf_func = Function::Create(
 		FunctionType::get(Type::getInt64Ty(*context),
-				  { llvm::PointerType::getUnqual(llvm::Type::getInt8Ty(*context)),
+				  { llvm::PointerType::getUnqual(
+					    llvm::Type::getInt8Ty(*context)),
 				    Type::getInt64Ty(*context) },
 				  false),
 		Function::ExternalLinkage, "bpf_main", jitModule.get());
-	
+
 	// Get args of uint64_t bpf_main(uint64_t, uint64_t)
-	llvm::Argument* mem = bpf_func->getArg(0);
-	llvm::Argument* mem_len = bpf_func->getArg(1);
-
-
-
+	llvm::Argument *mem = bpf_func->getArg(0);
+	llvm::Argument *mem_len = bpf_func->getArg(1);
 
 	std::vector<Value *> regs;
 	std::vector<BasicBlock *> allBlocks;
@@ -639,43 +640,38 @@ Expected<ThreadSafeModule> llvm_bpf_jit_context::generateModule(
 				builder.CreateStore(builder.getInt64(val),
 						    regs[inst.dst_reg]);
 			} else if (inst.src_reg == 1) {
-				if (auto itr = lddwHelper.find(
-					    LDDW_HELPER_MAP_BY_FD);
-				    itr != lddwHelper.end())
-
-				{
+				SPDLOG_DEBUG(
+					"Emit lddw helper 1 (map_by_fd) at pc {}, imm={}, patched at compile time",
+					pc, inst.imm);
+				builder.CreateStore(
+					builder.getInt32(
+						vm->map_by_fd(inst.imm)),
+					regs[inst.dst_reg]);
+			} else if (inst.src_reg == 2) {
+				SPDLOG_DEBUG(
+					"Emit lddw helper 2 (map_by_fd + map_val) at pc {}, imm1={}, imm2={}",
+					pc, inst.imm, nextInst.imm);
+				auto mapPtr = vm->map_by_fd(inst.imm);
+				if (patch_map_val_at_compile_time) {
 					SPDLOG_DEBUG(
-						"Emit lddw helper 1 (map_by_fd) at pc {}, imm={}",
-						pc, inst.imm);
+						"map_val is required to be evaluated at compile time");
 					builder.CreateStore(
-						builder.CreateCall(
-							lddwHelperWithUint32,
-							itr->second,
-							{ builder.getInt32(
-								inst.imm) }),
+						builder.getInt64(
+							vm->map_val(mapPtr) +
+							nextInst.imm),
 						regs[inst.dst_reg]);
 				} else {
-					return llvm::make_error<
-						llvm::StringError>(
-						"Using lddw helper 1, which requires map_by_fd",
-						llvm::inconvertibleErrorCode());
-				}
-			} else if (inst.src_reg == 2) {
-				if (auto itrMapByFd = lddwHelper.find(
-					    LDDW_HELPER_MAP_BY_FD);
-				    itrMapByFd != lddwHelper.end()) {
+					SPDLOG_DEBUG(
+						"map_val is requires to be evaluated at runtime, emitting calling instructions");
+
 					if (auto itrMapVal = lddwHelper.find(
 						    LDDW_HELPER_MAP_VAL);
 					    itrMapVal != lddwHelper.end()) {
-						auto retMapByFd = builder.CreateCall(
-							lddwHelperWithUint32,
-							itrMapByFd->second,
-							{ builder.getInt32(
-								inst.imm) });
 						auto retMapVal = builder.CreateCall(
 							lddwHelperWithUint64,
 							itrMapVal->second,
-							{ retMapByFd });
+							{ builder.getInt64(
+								mapPtr) });
 						auto finalRet = builder.CreateAdd(
 							retMapVal,
 							builder.getInt64(
@@ -683,99 +679,63 @@ Expected<ThreadSafeModule> llvm_bpf_jit_context::generateModule(
 						builder.CreateStore(
 							finalRet,
 							regs[inst.dst_reg]);
-						SPDLOG_DEBUG(
-							"Emit lddw helper 2 (map_by_fd + map_val) at pc {}, imm1={}, imm2={}",
-							pc, inst.imm,
-							nextInst.imm);
+
 					} else {
 						return llvm::make_error<
 							llvm::StringError>(
-							"Using lddw helper 2, which requires map_val",
+							"Using lddw helper 2, which requires map_val to be defined. This should not happen",
 							llvm::inconvertibleErrorCode());
 					}
+				}
 
-				} else {
-					return llvm::make_error<
-						llvm::StringError>(
-						"Using lddw helper 2, which requires map_by_fd",
-						llvm::inconvertibleErrorCode());
-				}
 			} else if (inst.src_reg == 3) {
-				if (auto itr = lddwHelper.find(
-					    LDDW_HELPER_VAR_ADDR);
-				    itr != lddwHelper.end()) {
-					builder.CreateStore(
-						builder.CreateCall(
-							lddwHelperWithUint32,
-							itr->second,
-							{ builder.getInt32(
-								inst.imm) }),
-						regs[inst.dst_reg]);
-					SPDLOG_DEBUG(
-						"Emit lddw helper 3 (var_addr) at pc {}, imm1={}",
-						pc, inst.imm);
-				} else {
-					return llvm::make_error<
-						llvm::StringError>(
-						"Using lddw helper 3, which requires var_addr",
-						llvm::inconvertibleErrorCode());
-				}
+				SPDLOG_DEBUG(
+					"Emit lddw helper 3 (var_addr) at pc {}, imm1={}",
+					pc, inst.imm);
+				builder.CreateStore(
+					builder.getInt64(
+						vm->var_addr(inst.imm)),
+					regs[inst.dst_reg]);
 			} else if (inst.src_reg == 4) {
-				if (auto itr = lddwHelper.find(
-					    LDDW_HELPER_CODE_ADDR);
-				    itr != lddwHelper.end()) {
-					builder.CreateStore(
-						builder.CreateCall(
-							lddwHelperWithUint32,
-							itr->second,
-							{ builder.getInt32(
-								inst.imm) }),
-						regs[inst.dst_reg]);
-					SPDLOG_DEBUG(
-						"Emit lddw helper 4 (code_addr) at pc {}, imm1={}",
-						pc, inst.imm);
-				} else {
-					return llvm::make_error<
-						llvm::StringError>(
-						"Using lddw helper 4, which requires code_addr",
-						llvm::inconvertibleErrorCode());
-				}
+				SPDLOG_DEBUG(
+					"Emit lddw helper 4 (code_addr) at pc {}, imm1={}",
+					pc, inst.imm);
+				builder.CreateStore(
+					builder.getInt64(
+						vm->code_addr(inst.imm)),
+					regs[inst.dst_reg]);
 			} else if (inst.src_reg == 5) {
-				if (auto itr = lddwHelper.find(
-					    LDDW_HELPER_MAP_BY_IDX);
-				    itr != lddwHelper.end()) {
-					builder.CreateStore(
-						builder.CreateCall(
-							lddwHelperWithUint32,
-							itr->second,
-							{ builder.getInt32(
-								inst.imm) }),
-						regs[inst.dst_reg]);
-					SPDLOG_DEBUG(
-						"Emit lddw helper 4 (map_by_idx) at pc {}, imm1={}",
-						pc, inst.imm);
-				} else {
-					return llvm::make_error<
-						llvm::StringError>(
-						"Using lddw helper 5, which requires map_by_idx",
-						llvm::inconvertibleErrorCode());
-				}
+				SPDLOG_DEBUG(
+					"Emit lddw helper 4 (map_by_idx) at pc {}, imm1={}",
+					pc, inst.imm);
+				builder.CreateStore(
+					builder.getInt64(
+						vm->map_by_idx(inst.imm)),
+					regs[inst.dst_reg]);
 			} else if (inst.src_reg == 6) {
-				if (auto itrMapByIdx = lddwHelper.find(
-					    LDDW_HELPER_MAP_BY_IDX);
-				    itrMapByIdx != lddwHelper.end()) {
+				auto mapPtr = vm->map_by_idx(inst.imm);
+				SPDLOG_DEBUG(
+					"Emit lddw helper 6 (map_by_idx + map_val) at pc {}, imm1={}, imm2={}",
+					pc, inst.imm, nextInst.imm);
+				if (patch_map_val_at_compile_time) {
+					SPDLOG_DEBUG(
+						"Required to evaluate map_val at compile time");
+					builder.CreateStore(
+						builder.getInt64(
+							vm->map_val(mapPtr) +
+							nextInst.imm),
+						regs[inst.dst_reg]);
+				} else {
+					SPDLOG_DEBUG(
+						"Required to evaluate map_val at runtime time");
 					if (auto itrMapVal = lddwHelper.find(
 						    LDDW_HELPER_MAP_VAL);
 					    itrMapVal != lddwHelper.end()) {
-						auto retMapByIdx = builder.CreateCall(
-							lddwHelperWithUint32,
-							itrMapByIdx->second,
-							{ builder.getInt32(
-								inst.imm) });
 						auto retMapVal = builder.CreateCall(
 							lddwHelperWithUint64,
 							itrMapVal->second,
-							{ retMapByIdx });
+							{ builder.getInt64(
+								mapPtr) });
 						auto finalRet = builder.CreateAdd(
 							retMapVal,
 							builder.getInt64(
@@ -783,21 +743,13 @@ Expected<ThreadSafeModule> llvm_bpf_jit_context::generateModule(
 						builder.CreateStore(
 							finalRet,
 							regs[inst.dst_reg]);
-						SPDLOG_DEBUG(
-							"Emit lddw helper 6 (map_by_idx + map_val) at pc {}, imm1={}, imm2={}",
-							pc, inst.imm,
-							nextInst.imm);
+
 					} else {
 						return llvm::make_error<
 							llvm::StringError>(
 							"Using lddw helper 6, which requires map_val",
 							llvm::inconvertibleErrorCode());
 					}
-				} else {
-					return llvm::make_error<
-						llvm::StringError>(
-						"Using lddw helper 6, which requires map_by_idx",
-						llvm::inconvertibleErrorCode());
 				}
 			}
 			break;

@@ -41,11 +41,11 @@ class bpftime_llvm_jit_vm : public bpftime::vm::compat::bpftime_vm_impl {
 	}
 
     private:
-	uint64_t (*map_by_fd)(uint32_t) = nullptr;
-	uint64_t (*map_by_idx)(uint32_t) = nullptr;
-	uint64_t (*map_val)(uint64_t) = nullptr;
-	uint64_t (*var_addr)(uint32_t) = nullptr;
-	uint64_t (*code_addr)(uint32_t) = nullptr;
+	uint64_t (*map_by_fd)(uint32_t);
+	uint64_t (*map_by_idx)(uint32_t);
+	uint64_t (*map_val)(uint64_t);
+	uint64_t (*var_addr)(uint32_t);
+	uint64_t (*code_addr)(uint32_t);
 	std::vector<ebpf_inst> instructions;
 	std::vector<std::optional<external_function> > ext_funcs;
 

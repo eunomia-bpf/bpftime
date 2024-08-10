@@ -33,12 +33,13 @@ class llvm_bpf_jit_context {
 	std::unique_ptr<pthread_spinlock_t> compiling;
 	llvm::Expected<llvm::orc::ThreadSafeModule>
 	generateModule(const std::vector<std::string> &extFuncNames,
-		       const std::vector<std::string> &lddwHelpers);
+		       const std::vector<std::string> &lddwHelpers,
+		       bool patch_map_val_at_compile_time);
 	std::vector<uint8_t>
 	do_aot_compile(const std::vector<std::string> &extFuncNames,
 		       const std::vector<std::string> &lddwHelpers,
 		       bool print_ir);
-	// (JIT, extFuncs, lddwHelpers)
+	// (JIT, extFuncs, definedLddwSymbols)
 	std::tuple<std::unique_ptr<llvm::orc::LLJIT>, std::vector<std::string>,
 		   std::vector<std::string> >
 	create_and_initialize_lljit_instance();
