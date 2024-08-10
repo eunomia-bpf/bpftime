@@ -1,10 +1,12 @@
 #include "spdlog/spdlog.h"
 #include <bpftime_vm_compat.hpp>
 #include <cerrno>
+#include <cstdint>
 #include <memory>
 #include <ebpf_inst.h>
 #include "compat_llvm.hpp"
 #include "../llvm/llvm_jit_context.hpp"
+
 namespace bpftime::vm::compat
 {
 
