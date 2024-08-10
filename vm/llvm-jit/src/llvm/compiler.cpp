@@ -662,7 +662,7 @@ Expected<ThreadSafeModule> llvm_bpf_jit_context::generateModule(
 						regs[inst.dst_reg]);
 				} else {
 					SPDLOG_DEBUG(
-						"map_val is requires to be evaluated at runtime, emitting calling instructions");
+						"map_val is required to be evaluated at runtime, emitting calling instructions");
 
 					if (auto itrMapVal = lddwHelper.find(
 						    LDDW_HELPER_MAP_VAL);
