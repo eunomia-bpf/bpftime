@@ -2,6 +2,7 @@
 #include <unistd.h>
 #if __linux__
 #include <linux/bpf.h>
+#include <sys/syscall.h>
 #elif defined(__APPLE__)
 #include "bpftime_epoll.h"
 #endif
