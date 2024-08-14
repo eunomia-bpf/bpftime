@@ -8,6 +8,7 @@ add_library(bpftime-syscall-server SHARED
     syscall_context.cpp
     syscall_server_main.cpp
     syscall_server_utils.cpp
+    ../src/bpftime_logger.cpp
 )
 target_link_libraries(bpftime-syscall-server PUBLIC
     runtime
@@ -19,6 +20,7 @@ add_dependencies(bpftime-syscall-server spdlog::spdlog)
 if(${BPFTIME_BUILD_WITH_LIBBPF})
 target_include_directories(bpftime-syscall-server
     PUBLIC
+    "../include"
     "../../core"
     "../../third_party/libbpf/include"
     "../../third_party/libbpf/include/uapi"

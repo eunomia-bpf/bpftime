@@ -3,6 +3,8 @@
  * Copyright (c) 2022, eunomia-bpf org
  * All rights reserved.
  */
+#include "bpftime_logger.hpp"
+#include "syscall_context.hpp"
 #include "bpftime_shm.hpp"
 #include "syscall_context.hpp"
 #include "handler/perf_event_handler.hpp"
@@ -32,6 +34,7 @@ using namespace bpftime_epoll;
 
 void syscall_context::load_config_from_env()
 {
+	bpftime::bpftime_set_logger_from_env();
 	const char *run_with_kernel_env = getenv("BPFTIME_RUN_WITH_KERNEL");
 	if (run_with_kernel_env != nullptr) {
 		run_with_kernel = true;

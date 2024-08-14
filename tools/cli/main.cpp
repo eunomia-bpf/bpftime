@@ -1,7 +1,6 @@
 #include "bpftime_shm.hpp"
 #include "bpftime_shm_internal.hpp"
-#include "spdlog/spdlog.h"
-#include "spdlog/cfg/env.h"
+#include "bpftime_logger.hpp"
 #include <cerrno>
 #include <csignal>
 #include <cstdlib>
@@ -181,6 +180,7 @@ static void signal_handler(int sig)
 int main(int argc, const char **argv)
 {
 	spdlog::cfg::load_env_levels();
+
 	signal(SIGINT, signal_handler);
 	signal(SIGTSTP, signal_handler);
 	argparse::ArgumentParser program(argv[0]);
@@ -237,6 +237,14 @@ int main(int argc, const char **argv)
 
 	argparse::ArgumentParser detach_command("detach");
 	detach_command.add_description("Detach all attached agents");
+
+	// TODO. Add trace command here.
+	// argparse::ArgumentParser trace_command("trace");
+
+	// trace_command.add_description("Show bpftime runtime log of some process.");
+	// attach_command.add_argument("-s", "--")
+	// 	.help("Whether to enable syscall trace")
+	// 	.flag();
 
 	program.add_subparser(load_command);
 	program.add_subparser(start_command);

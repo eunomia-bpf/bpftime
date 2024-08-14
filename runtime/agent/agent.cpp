@@ -6,6 +6,9 @@
 #include "spdlog/common.h"
 #include "spdlog/sinks/stdout_color_sinks.h"
 #include "spdlog/sinks/stdout_sinks.h"
+#include "bpftime_logger.hpp"
+#include "syscall_trace_attach_impl.hpp"
+#include "syscall_trace_attach_private_data.hpp"
 #include <chrono>
 #include <csignal>
 #include <exception>
@@ -25,6 +28,7 @@
 #include "syscall_trace_attach_impl.hpp"
 #include "syscall_trace_attach_private_data.hpp"
 #endif
+
 using namespace bpftime;
 using namespace bpftime::attach;
 using main_func_t = int (*)(int, char **, char **);
@@ -94,13 +98,13 @@ static void sig_handler_sigusr1(int sig)
 	shm_holder.global_shared_memory.remove_pid_from_alive_agent_set(
 		getpid());
 	SPDLOG_DEBUG("Detaching done");
+	bpftime_logger_flush();
 }
 
 extern "C" void bpftime_agent_main(const gchar *data, gboolean *stay_resident)
 {
-	auto logger = spdlog::stderr_color_mt("stderr");
-	logger->set_pattern("[%Y-%m-%d %H:%M:%S][%^%l%$][%t] %v");
-	spdlog::set_default_logger(logger);
+	bpftime_set_logger_from_env();
+
 	SPDLOG_DEBUG("Entered bpftime_agent_main");
 	SPDLOG_DEBUG("Registering signal handler");
 	// We use SIGUSR1 to indicate the detaching
