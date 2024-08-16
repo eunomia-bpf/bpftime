@@ -5,8 +5,8 @@ total_sendmsg_time=0
 
 for i in {1..10}
 do
-    output=$(sudo AGENT_SO=/tmp/bpftime/runtime/agent/libbpftime-agent.so LD_PRELOAD=/tmp/bpftime/attach/text_segment_transformer/libbpftime-agent-transformer.so ./benchmark/syscount/read-sendmsg)
-    # output=$(sudo ./benchmark/syscount/read-sendmsg)
+    # output=$(sudo AGENT_SO=/tmp/bpftime/runtime/agent/libbpftime-agent.so LD_PRELOAD=/tmp/bpftime/attach/text_segment_transformer/libbpftime-agent-transformer.so ./benchmark/syscount/read-sendmsg)
+    output=$(sudo ./benchmark/syscount/read-sendmsg)
     read_time=$(echo "$output" | grep "Average read() time" | awk '{print $4}')
     sendmsg_time=$(echo "$output" | grep "Average sendmsg() time" | awk '{print $4}')
     
