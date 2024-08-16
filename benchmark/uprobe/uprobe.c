@@ -57,9 +57,6 @@ int main(int argc, char **argv)
 	}
 
 	printf("Successfully started! Press Ctrl+C to stop.\n");
-	printf("__bench_uprobe_uretprobe is for both uprobe and uretprobe\n");
-	printf("__bench_uretprobe is for uretprobe only\n");
-	printf("__bench_probe is for uprobe only\n");
 	fflush(stdout);
 	while (!exiting) {
 		sleep(1);

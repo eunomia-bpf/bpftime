@@ -3,46 +3,56 @@
 #include <bpf/bpf_helpers.h>
 #include <bpf/bpf_tracing.h>
 
-
-struct {
-	__uint(type, BPF_MAP_TYPE_HASH);
-	__uint(max_entries, 1024);
-	__type(key, u32);
-	__type(value, u64);
-} libc_malloc_calls_total SEC(".maps");
-
-SEC("uprobe/benchmark/test:__bench_map_update")
-int test_update(struct pt_regs *ctx)
-{
-	for (int i = 0; i < 1000; i++) {
-		u32 key = i;
-		u64 value = i;
-		bpf_map_update_elem(&libc_malloc_calls_total, &key, &value, BPF_ANY);
-	}
-	return 0;
+#define DEFINE_MAP_OPERATIONS(map_name, map_type) \
+struct { \
+    __uint(type, map_type); \
+    __uint(max_entries, 1024); \
+    __type(key, u32); \
+    __type(value, u64); \
+} map_name SEC(".maps"); \
+\
+SEC("uprobe/benchmark/test:__bench_" #map_name "_update") \
+int map_name##_update(struct pt_regs *ctx) \
+{ \
+    for (int i = 0; i < 1000; i++) { \
+        u32 key = i; \
+        u64 value = i; \
+        bpf_map_update_elem(&map_name, &key, &value, BPF_ANY); \
+    } \
+    return 0; \
+} \
+\
+SEC("uprobe/benchmark/test:__bench_" #map_name "_delete") \
+int map_name##_delete(struct pt_regs *ctx) \
+{ \
+    for (int i = 0; i < 1000; i++) { \
+        u32 key = i; \
+        bpf_map_delete_elem(&map_name, &key); \
+    } \
+    return 0; \
+} \
+\
+SEC("uprobe/benchmark/test:__bench_" #map_name "_lookup") \
+int map_name##_lookup(struct pt_regs *ctx) \
+{ \
+    for (int i = 0; i < 1000; i++) { \
+        u32 key = i; \
+        bpf_map_lookup_elem(&map_name, &key); \
+    } \
+    return 0; \
 }
 
-SEC("uprobe/benchmark/test:__bench_map_delete")
-int test_delete(struct pt_regs *ctx)
-{
-	for (int i = 0; i < 1000; i++) {
-		u32 key = i;
-		bpf_map_delete_elem(&libc_malloc_calls_total, &key);
-	}
-	return 0;
-}
+// Define operations for an array map
+DEFINE_MAP_OPERATIONS(array_map, BPF_MAP_TYPE_ARRAY)
 
-SEC("uprobe/benchmark/test:__bench_map_lookup")
-int test_lookup(struct pt_regs *ctx)
-{
-	for (int i = 0; i < 1000; i++) {
-		u32 key = i;
-		u64 value = i;
-		bpf_map_lookup_elem(&libc_malloc_calls_total, &key);
-	}
-	return 0;
-}
+// Define operations for a hash map
+DEFINE_MAP_OPERATIONS(hash_map, BPF_MAP_TYPE_HASH)
 
+// Define operations for a per-cpu array map
+DEFINE_MAP_OPERATIONS(per_cpu_hash_map, BPF_MAP_TYPE_PERCPU_HASH)
+
+// Define operations for a per-cpu hash map
+DEFINE_MAP_OPERATIONS(per_cpu_array_map, BPF_MAP_TYPE_PERCPU_ARRAY)
 
 SEC("uprobe/benchmark/test:__bench_write")
 int BPF_UPROBE(__bench_write, char *a, int b, uint64_t c)

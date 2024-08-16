@@ -4,54 +4,29 @@
 #include <stdint.h>
 #include <pthread.h>
 
-
-__attribute_noinline__ uint64_t __bench_map_lookup(char *a, int b,
-							   uint64_t c)
-{
-	return a[b] + c;
+#define BENCH_FUNC(name) \
+__attribute_noinline__ uint64_t name(char *a, int b, uint64_t c) \
+{ \
+    return a[b] + c; \
 }
 
-__attribute_noinline__ uint64_t __bench_map_delete(char *a, int b,
-							   uint64_t c)
-{
-	return a[b] + c;
-}
-
-__attribute_noinline__ uint64_t __bench_map_update(char *a, int b,
-							   uint64_t c)
-{
-	return a[b] + c;
-}
-
-
-__attribute_noinline__ uint64_t __bench_read(char *a, int b,
-							   uint64_t c)
-{
-	return a[b] + c;
-}
-
-__attribute_noinline__ uint64_t __bench_write(char *a, int b,
-							   uint64_t c)
-{
-	return a[b] + c;
-}
-__attribute_noinline__ uint64_t __bench_uprobe(char *a, int b,
-							   uint64_t c)
-{
-	return a[b] + c;
-}
-
-__attribute_noinline__ uint64_t __bench_uretprobe(char *a, int b,
-							   uint64_t c)
-{
-	return a[b] + c;
-}
-
-__attribute_noinline__ uint64_t __bench_uprobe_uretprobe(char *a, int b,
-							   uint64_t c)
-{
-	return a[b] + c;
-}
+BENCH_FUNC(__bench_array_map_lookup)
+BENCH_FUNC(__bench_array_map_delete)
+BENCH_FUNC(__bench_array_map_update)
+BENCH_FUNC(__bench_hash_map_lookup)
+BENCH_FUNC(__bench_hash_map_delete)
+BENCH_FUNC(__bench_hash_map_update)
+BENCH_FUNC(__bench_per_cpu_hash_map_lookup)
+BENCH_FUNC(__bench_per_cpu_hash_map_delete)
+BENCH_FUNC(__bench_per_cpu_hash_map_update)
+BENCH_FUNC(__bench_per_cpu_array_map_lookup)
+BENCH_FUNC(__bench_per_cpu_array_map_delete)
+BENCH_FUNC(__bench_per_cpu_array_map_update)
+BENCH_FUNC(__bench_read)
+BENCH_FUNC(__bench_write)
+BENCH_FUNC(__bench_uprobe)
+BENCH_FUNC(__bench_uretprobe)
+BENCH_FUNC(__bench_uprobe_uretprobe)
 
 typedef uint64_t (*benchmark_test_function_t)(char *, int, uint64_t);
 
@@ -104,7 +79,7 @@ void do_benchmark_userspace(benchmark_test_function_t func, const char *name,
 
 #define do_benchmark_func(func, iter, id)                                      \
 	do {                                                                   \
-		do_benchmark_userspace(func, #func, iter, id);                        \
+		do_benchmark_userspace(func, #func, iter, id);                 \
 	} while (0)
 
 int iter = 100 * 1000;
@@ -118,9 +93,18 @@ void *run_bench_functions(void *id_ptr)
 	do_benchmark_func(__bench_uprobe, iter, id);
 	do_benchmark_func(__bench_read, iter, id);
 	do_benchmark_func(__bench_write, iter, id);
-	do_benchmark_func(__bench_map_update, iter, id);
-	do_benchmark_func(__bench_map_lookup, iter, id);
-	do_benchmark_func(__bench_map_delete, iter, id);
+	do_benchmark_func(__bench_hash_map_update, iter, id);
+	do_benchmark_func(__bench_hash_map_lookup, iter, id);
+	do_benchmark_func(__bench_hash_map_delete, iter, id);
+	do_benchmark_func(__bench_array_map_update, iter, id);
+	do_benchmark_func(__bench_array_map_lookup, iter, id);
+	do_benchmark_func(__bench_array_map_delete, iter, id);
+	do_benchmark_func(__bench_per_cpu_hash_map_update, iter, id);
+	do_benchmark_func(__bench_per_cpu_hash_map_lookup, iter, id);
+	do_benchmark_func(__bench_per_cpu_hash_map_delete, iter, id);
+	do_benchmark_func(__bench_per_cpu_array_map_update, iter, id);
+	do_benchmark_func(__bench_per_cpu_array_map_lookup, iter, id);
+	do_benchmark_func(__bench_per_cpu_array_map_delete, iter, id);
 	return NULL;
 }
 
