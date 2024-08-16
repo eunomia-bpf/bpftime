@@ -119,8 +119,8 @@ void *run_bench_functions(void *id_ptr)
 	do_benchmark_func(__bench_read, iter, id);
 	do_benchmark_func(__bench_write, iter, id);
 	do_benchmark_func(__bench_map_update, iter, id);
-	do_benchmark_func(__bench_map_delete, iter, id);
 	do_benchmark_func(__bench_map_lookup, iter, id);
+	do_benchmark_func(__bench_map_delete, iter, id);
 	return NULL;
 }
 
