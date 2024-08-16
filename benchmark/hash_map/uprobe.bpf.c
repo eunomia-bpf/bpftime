@@ -10,7 +10,7 @@ struct {
 	__type(value, u64);
 } libc_malloc_calls_total SEC(".maps");
 
-SEC("uprobe/benchmark/test:__benchmark_test_function3")
+SEC("uprobe/benchmark/test:__bench_probe")
 int test_update(struct pt_regs *ctx)
 {
 	u32 key = 0;
@@ -20,7 +20,7 @@ int test_update(struct pt_regs *ctx)
 	return 0;
 }
 
-SEC("uprobe/benchmark/test:__benchmark_test_function2")
+SEC("uprobe/benchmark/test:__bench_uretprobe")
 int test_delete(struct pt_regs *ctx)
 {
 	u32 key = 0;
@@ -30,7 +30,7 @@ int test_delete(struct pt_regs *ctx)
 	return 0;
 }
 
-SEC("uprobe/benchmark/test:__benchmark_test_function1")
+SEC("uprobe/benchmark/test:__bench_uprobe_uretprobe")
 int test_lookup(struct pt_regs *ctx)
 {
 	u32 key = 0;

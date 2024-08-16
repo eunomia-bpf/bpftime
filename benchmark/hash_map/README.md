@@ -1,8 +1,8 @@
 # benchmark of hash maps
 
-- __benchmark_test_function1: hashmap bpf_map_lookup_elem
-- __benchmark_test_function2: hashmap bpf_map_delete_elem
-- __benchmark_test_function3: hashmap bpf_map_update_elem
+- __bench_uprobe_uretprobe: hashmap bpf_map_lookup_elem
+- __bench_uretprobe: hashmap bpf_map_delete_elem
+- __bench_probe: hashmap bpf_map_update_elem
 
 run the uprobe:
 
@@ -23,17 +23,17 @@ in another terminal, run the benchmark:
 ```console
 $ LD_PRELOAD=build/runtime/agent/libbpftime-agent.so benchmark/test
 
-Benchmarking __benchmark_test_function1
+Benchmarking __bench_uprobe_uretprobe
 a[b] + c for 100000 times
 Elapsed time: 0.038217773 seconds
 Average time usage 382.177730 ns
 
-Benchmarking __benchmark_test_function2
+Benchmarking __bench_uretprobe
 a[b] + c for 100000 times
 Elapsed time: 0.020004455 seconds
 Average time usage 200.044550 ns
 
-Benchmarking __benchmark_test_function3
+Benchmarking __bench_probe
 a[b] + c for 100000 times
 Elapsed time: 0.047916014 seconds
 Average time usage 479.160140 ns

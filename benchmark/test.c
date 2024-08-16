@@ -4,27 +4,37 @@
 #include <stdint.h>
 #include <pthread.h>
 
-__attribute_noinline__ uint64_t __benchmark_test_function3(const char *a, int b,
+__attribute_noinline__ uint64_t __bench_read(char *a, int b,
 							   uint64_t c)
 {
 	return a[b] + c;
 }
 
-__attribute_noinline__ uint64_t __benchmark_test_function2(const char *a, int b,
-							   uint64_t c)
-{
-	static int i = 0;
-	__sync_fetch_and_add(&i, 1);
-	return a[b] + c;
-}
-
-__attribute_noinline__ uint64_t __benchmark_test_function1(const char *a, int b,
+__attribute_noinline__ uint64_t __bench_write(char *a, int b,
 							   uint64_t c)
 {
 	return a[b] + c;
 }
 
-typedef uint64_t (*benchmark_test_function_t)(const char *, int, uint64_t);
+__attribute_noinline__ uint64_t __bench_uprobe(char *a, int b,
+							   uint64_t c)
+{
+	return a[b] + c;
+}
+
+__attribute_noinline__ uint64_t __bench_uretprobe(char *a, int b,
+							   uint64_t c)
+{
+	return a[b] + c;
+}
+
+__attribute_noinline__ uint64_t __bench_uprobe_uretprobe(char *a, int b,
+							   uint64_t c)
+{
+	return a[b] + c;
+}
+
+typedef uint64_t (*benchmark_test_function_t)(char *, int, uint64_t);
 
 void start_timer(struct timespec *start_time)
 {
@@ -53,9 +63,10 @@ static double get_function_time(benchmark_test_function_t func, int iter)
 	// The timespec struct holds seconds and nanoseconds
 	struct timespec start_time, end_time;
 	start_timer(&start_time);
+	char buffer[20] = "hello world";
 	// test base line
 	for (int i = 0; i < iter; i++) {
-		func("hello", i % 4, i);
+		func(buffer, i % 4, i);
 	}
 	end_timer(&end_time);
 	double time = get_elapsed_time(start_time, end_time);
@@ -83,9 +94,11 @@ void *run_bench_functions(void *id_ptr)
 {
 	int id = *(int *)id_ptr;
 	printf("id: %d\n", id);
-	do_benchmark_func(__benchmark_test_function1, iter, id);
-	do_benchmark_func(__benchmark_test_function2, iter, id);
-	do_benchmark_func(__benchmark_test_function3, iter, id);
+	do_benchmark_func(__bench_uprobe_uretprobe, iter, id);
+	do_benchmark_func(__bench_uretprobe, iter, id);
+	do_benchmark_func(__bench_uprobe, iter, id);
+	do_benchmark_func(__bench_read, iter, id);
+	do_benchmark_func(__bench_write, iter, id);
 	return NULL;
 }
 

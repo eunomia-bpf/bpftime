@@ -222,8 +222,42 @@ You can use python script to run the benchmark:
 python3 benchmark/tools/driving.py
 ```
 
-## Benchmark runner
+## Results on another machine
 
-### Usage
-- `make -C ./benchmark`
-- `python3 ./benchmark/run_benchmark.py`
+kernel:
+
+```txt
+Benchmarking __bench_uprobe_uretprobe in thread 1
+Average time usage 3060.196770 ns, iter 100000 times
+
+Benchmarking __bench_uretprobe in thread 1
+Average time usage 2958.493390 ns, iter 100000 times
+
+Benchmarking __bench_uprobe in thread 1
+Average time usage 1910.731360 ns, iter 100000 times
+
+Benchmarking __bench_read in thread 1
+Average time usage 1957.552190 ns, iter 100000 times
+
+Benchmarking __bench_write in thread 1
+Average time usage 1955.735460 ns, iter 100000 times
+```
+
+Userspace:
+
+```txt
+Benchmarking __bench_uprobe_uretprobe in thread 1
+Average time usage 412.607790 ns, iter 100000 times
+
+Benchmarking __bench_uretprobe in thread 1
+Average time usage 389.096230 ns, iter 100000 times
+
+Benchmarking __bench_uprobe in thread 1
+Average time usage 387.022160 ns, iter 100000 times
+
+Benchmarking __bench_read in thread 1
+Average time usage 415.350530 ns, iter 100000 times
+
+Benchmarking __bench_write in thread 1
+Average time usage 414.350230 ns, iter 100000 times
+```

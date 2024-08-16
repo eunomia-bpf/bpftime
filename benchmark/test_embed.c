@@ -76,7 +76,7 @@ void end_timer()
 	clock_gettime(CLOCK_MONOTONIC_RAW, &end_time);
 }
 
-__attribute_noinline__ uint64_t __benchmark_test_function3(const char *a, int b,
+__attribute_noinline__ uint64_t __bench_probe(const char *a, int b,
 							   uint64_t c)
 {
 	return a[b] + c;
@@ -93,7 +93,7 @@ uint64_t test_func_wrapper(const char *a, int b, uint64_t c)
 		PT_REGS_PARM3(&regs) = c;
 		ebpf_exec(begin_vm, &regs, sizeof(regs), &ret);
 	}
-	uint64_t hook_func_ret = __benchmark_test_function3(a, b, c);
+	uint64_t hook_func_ret = __bench_probe(a, b, c);
 	if (enable_ebpf) {
 		memset(&regs, 0, sizeof(regs));
 		PT_REGS_PARM1(&regs) = hook_func_ret;
