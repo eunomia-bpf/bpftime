@@ -4,6 +4,26 @@
 #include <stdint.h>
 #include <pthread.h>
 
+
+__attribute_noinline__ uint64_t __bench_map_lookup(char *a, int b,
+							   uint64_t c)
+{
+	return a[b] + c;
+}
+
+__attribute_noinline__ uint64_t __bench_map_delete(char *a, int b,
+							   uint64_t c)
+{
+	return a[b] + c;
+}
+
+__attribute_noinline__ uint64_t __bench_map_update(char *a, int b,
+							   uint64_t c)
+{
+	return a[b] + c;
+}
+
+
 __attribute_noinline__ uint64_t __bench_read(char *a, int b,
 							   uint64_t c)
 {
@@ -15,7 +35,6 @@ __attribute_noinline__ uint64_t __bench_write(char *a, int b,
 {
 	return a[b] + c;
 }
-
 __attribute_noinline__ uint64_t __bench_uprobe(char *a, int b,
 							   uint64_t c)
 {
@@ -99,6 +118,9 @@ void *run_bench_functions(void *id_ptr)
 	do_benchmark_func(__bench_uprobe, iter, id);
 	do_benchmark_func(__bench_read, iter, id);
 	do_benchmark_func(__bench_write, iter, id);
+	do_benchmark_func(__bench_map_update, iter, id);
+	do_benchmark_func(__bench_map_delete, iter, id);
+	do_benchmark_func(__bench_map_lookup, iter, id);
 	return NULL;
 }
 
