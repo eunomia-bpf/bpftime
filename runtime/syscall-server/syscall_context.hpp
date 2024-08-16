@@ -32,6 +32,7 @@ class syscall_context {
 	using munmap_fn = int (*)(void *, size_t);
 	using openat_fn = int (*)(int, const char *, int, ...);
 	using open_fn = int (*)(const char *, int, ...);
+	using read_fn = ssize_t (*)(int fd, void *buf, size_t count);
 	close_fn orig_close_fn = nullptr;
 	mmap64_fn orig_mmap64_fn = nullptr;
 	ioctl_fn orig_ioctl_fn = nullptr;
@@ -42,7 +43,7 @@ class syscall_context {
 	openat_fn orig_openat_fn = nullptr;
 	open_fn orig_open_fn = nullptr;
 	mmap_fn orig_mmap_fn = nullptr;
-
+	read_fn orig_read_fn = nullptr;
 	std::unordered_set<uintptr_t> mocked_mmap_values;
 	void init_original_functions()
 	{
@@ -61,7 +62,8 @@ class syscall_context {
 		orig_openat_fn = (openat_fn)dlsym(RTLD_NEXT, "openat");
 		orig_open_fn = (open_fn)dlsym(RTLD_NEXT, "open");
 		// To avoid polluting other child processes,
-		// unset the LD_PRELOAD env var after syscall context being initialized
+		// unset the LD_PRELOAD env var after syscall context being
+		// initialized
 		unsetenv("LD_PRELOAD");
 		SPDLOG_DEBUG(
 			"Function addrs: {:x} {:x} {:x} {:x} {:x} {:x} {:x} {:x} {:x} {:x} {:x}",
@@ -75,9 +77,8 @@ class syscall_context {
 	}
 
 	int create_kernel_bpf_map(int fd);
-	int create_kernel_bpf_prog_in_userspace(int cmd,
-							 union bpf_attr *attr,
-							 size_t size);
+	int create_kernel_bpf_prog_in_userspace(int cmd, union bpf_attr *attr,
+						size_t size);
 	// try loading the bpf syscall helpers.
 	// if the syscall original function is not prepared, it will cause a
 	// segfault.
@@ -89,8 +90,8 @@ class syscall_context {
 	// by pass the verifier to make it work.
 	std::string by_pass_kernel_verifier_pattern;
 	void load_config_from_env();
-    public:
 
+    public:
 	// enable mock the syscall behavior in userspace
 	bool enable_mock = true;
 	syscall_context()
@@ -117,8 +118,10 @@ class syscall_context {
 	int handle_epoll_wait(int epfd, epoll_event *evt, int maxevents,
 			      int timeout);
 	int handle_munmap(void *addr, size_t size);
-	int handle_openat(int fd, const char *file, int oflag, unsigned short mode);
+	int handle_openat(int fd, const char *file, int oflag,
+			  unsigned short mode);
 	int handle_open(const char *file, int oflag, unsigned short mode);
+	ssize_t handle_read(int fd, void *buf, size_t count);
 };
 
 #endif

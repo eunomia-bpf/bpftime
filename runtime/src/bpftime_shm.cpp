@@ -232,19 +232,6 @@ const char * expand_filename(const char *filename)
 	return result;
 }
 
-const char * bpftime_checkfile(const char * filename)
-{
-	if (strcmp(filename, "/sys/bus/event_source/devices/uprobe/type") == 0){
-		const char *homestart_filename = ".bpftime/event_source/devices/uprobe/type";
-		return expand_filename(homestart_filename);
-	}else if(strcmp(filename, "/sys/bus/event_source/devices/uprobe/format/retprobe") == 0){
-		const char *homestart_filename = ".bpftime/event_source/devices/uprobe/format/retprobe";
-		return expand_filename(homestart_filename);
-	}
-
-	return filename;
-}
-
 int bpftime_map_get_info(int fd, bpftime::bpf_map_attr *out_attr,
 			 const char **out_name, bpftime::bpf_map_type *type)
 {

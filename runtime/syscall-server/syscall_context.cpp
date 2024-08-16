@@ -15,7 +15,7 @@
 #include <linux/filter.h>
 #elif __APPLE__
 #include "bpftime_epoll.h"
-#endif 
+#endif
 #include "spdlog/spdlog.h"
 #include <cerrno>
 #include <cstdlib>
@@ -65,27 +65,33 @@ int syscall_context::handle_close(int fd)
 	return orig_close_fn(fd);
 }
 
-FILE* syscall_context::handle_fopen(const char * filename, const char * modes)
+int syscall_context::handle_openat(int fd, const char *file, int oflag,
+				   unsigned short mode)
 {
-	if (!enable_mock){
-		return orig_fopen_fn(filename, modes);
-	}
+	if (!enable_mock)
+		return orig_openat_fn(fd, file, oflag, mode);
 	try_startup();
-	printf("2:%s\n",file);
-	const char * new_file = bpftime_checkfile(file);
-	printf("3:%s\n",new_file);
-	return orig_openat_fn(fd, new_file, oflag, mode);
+	// const char * new_file = bpftime_checkfile(file);
+	return orig_openat_fn(fd, file, oflag, mode);
 }
 
-int syscall_context::handle_open(const char *file, int oflag, unsigned short mode)
+int syscall_context::handle_open(const char *file, int oflag,
+				 unsigned short mode)
 {
 	if (!enable_mock)
 		return orig_open_fn(file, oflag, mode);
 	try_startup();
-	const char * new_file = bpftime_checkfile(file);
-	return orig_open_fn(new_file, oflag, mode);
+	// const char * new_file = bpftime_checkfile(file);
+	return orig_open_fn(file, oflag, mode);
 }
 
+ssize_t syscall_context::handle_read(int fd, void *buf, size_t count)
+{
+	if (!enable_mock)
+		return orig_read_fn(fd, buf, count);
+	try_startup();
+	return orig_read_fn(fd, buf, count);
+}
 int syscall_context::create_kernel_bpf_map(int map_fd)
 {
 	bpf_map_info info = {};

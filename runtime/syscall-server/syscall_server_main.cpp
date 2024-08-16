@@ -22,8 +22,8 @@ using namespace bpftime;
 static syscall_context context;
 
 template <typename F, typename... Args>
-auto handle_exceptions(F &&f, Args &&...args) noexcept
-	-> decltype(f(std::forward<Args>(args)...))
+auto handle_exceptions(F &&f, Args &&...args) noexcept->decltype(
+	f(std::forward<Args>(args)...))
 {
 	try {
 		return f(std::forward<Args>(args)...);
@@ -89,9 +89,8 @@ extern "C" void *mmap(void *addr, size_t length, int prot, int flags, int fd,
 
 extern "C" int munmap(void *addr, size_t size)
 {
-	return handle_exceptions([&]() {
-		return context.handle_munmap(addr, size);
-	});
+	return handle_exceptions(
+		[&]() { return context.handle_munmap(addr, size); });
 }
 
 extern "C" int close(int fd)
@@ -120,7 +119,10 @@ extern "C" int open(const char *file, int oflag, ...)
 	unsigned short mode = (unsigned short)arg3;
 	return context.handle_open(file, oflag, mode);
 }
-
+extern "C" ssize_t read(int fd, void *buf, size_t count)
+{
+	return context.handle_read(fd, buf, count);
+}
 #if __linux__
 extern "C" long syscall(long sysno, ...)
 {
