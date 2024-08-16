@@ -13,6 +13,13 @@ With userspace eBPF runntime, we can:
 | Syscall Tracepoint     | 151.82801    | 232.57691      | 4    |
 | Embedding runtime      | Not avaliable |  110.008430   | 4    |
 
+## Suggest build configuration
+
+```sh
+cmake -Bbuild -DLLVM_DIR=/usr/lib/llvm-15/cmake -DCMAKE_BUILD_TYPE:STRING=RelWithDebInfo -DBPFTIME_LLVM_JIT=1 -DBPFTIME_ENABLE_LTO=1
+cmake --build build --config RelWithDebInfo --target install -j
+```
+
 ## build and run at a click
 
 Build the agent first. In project root:
@@ -43,11 +50,8 @@ Linux yunwei37server 6.2.0-32-generic #32-Ubuntu SMP PREEMPT_DYNAMIC Mon Aug 14 
 
 ## base line
 
-```console
-$ benchmark/test
-a[b] + c for 100000 times
-Elapsed time: 0.000446995 seconds
-avg function elapse time: 4.469950 ns
+```sh
+benchmark/test
 ```
 
 The base line function elapsed time is 0.000243087 seconds, for the test function:
@@ -72,22 +76,14 @@ make -C benchmark/uretprobe
 
 run the uprobe:
 
-```console
-$  sudo benchmark/uprobe/uprobe
-libbpf: loading object 'uprobe_bpf' from buffer
-libbpf: elf: section(2) .symtab, size 120, link 1, flags 0, type=2
-...
-loaded ebpf program...
-...
+```sh
+sudo benchmark/uprobe/uprobe
 ```
 
 in another terminal, run the benchmark:
 
-```console
-$ benchmark/test
-a[b] + c for 100000 times
-Elapsed time: 0.322417276 seconds
-avg function elapse time: 3224.172760 ns
+```sh
+benchmark/test
 ```
 
 The uprobe or uretprobe function we used is like:
@@ -100,53 +96,18 @@ int BPF_UPROBE(__benchmark_test_function, const char *a, int b, uint64_t c)
 }
 ```
 
-## kernel uretuprobe
-
-run the uretprobe:
-
-```console
-$  sudo benchmark/uretprobe/uretprobe
-libbpf: loading object 'uprobe_bpf' from buffer
-libbpf: elf: section(2) .symtab, size 120, link 1, flags 0, type=2
-...
-loaded ebpf program...
-...
-
-in another terminal, run the benchmark:
-
-```console
-$ benchmark/test
-a[b] + c for 100000 times
-Elapsed time: 0.589970682 seconds
-avg function elapse time: 3996.799580 ns
-```
-
 ## userspace uprobe
 
 run the uprobe:
 
-```console
-$ LD_PRELOAD=build/runtime/syscall-server/libbpftime-syscall-server.so benchmark/uprobe/uprobe
-manager constructed
-global_shm_open_type 0 for bpftime_maps_shm
-Closing 3
-libbpf: loading object 'uprobe_bpf' from buffer
-libbpf: elf: section(2) .symtab, size 120, link 1, flags 0, type=2
-...
-loaded ebpf program...
-...
+```sh
+LD_PRELOAD=build/runtime/syscall-server/libbpftime-syscall-server.so benchmark/uprobe/uprobe
 ```
 
 in another terminal, run the benchmark:
 
-```console
-$ LD_PRELOAD=build/runtime/agent/libbpftime-agent.so benchmark/test
-attaching prog 3 to fd 4
-Successfully attached
-
-a[b] + c for 100000 times
-Elapsed time: 0.031456911 seconds
-avg function elapse time: 314.569110 ns
+```sh
+LD_PRELOAD=build/runtime/agent/libbpftime-agent.so benchmark/test
 ```
 
 If errors like:
@@ -159,43 +120,10 @@ Aborted (core dumped)
 
 happpens, try to use `sudo` mode.
 
-## userspace uretprobe
-
-run the uretprobe:
-
-```console
-$ LD_PRELOAD=build/runtime/syscall-server/libbpftime-syscall-server.so benchmark/uretprobe/uretprobe
-manager constructed
-global_shm_open_type 0 for bpftime_maps_shm
-Closing 3
-libbpf: loading object 'uprobe_bpf' from buffer
-libbpf: elf: section(2) .symtab, size 120, link 1, flags 0, type=2
-...
-loaded ebpf program...
-...
-```
-
-in another terminal, run the benchmark:
-
-```console
-$ LD_PRELOAD=build/runtime/agent/libbpftime-agent.so benchmark/test
-attaching prog 3 to fd 4
-Successfully attached
-
-a[b] + c for 100000 times
-Elapsed time: 0.038127027 seconds
-avg function elapse time: 381.270270 ns
-```
-
 ## embed runtime
 
-```console
-$ build/benchmark/simple-benchmark-with-embed-ebpf-calling
-uprobe elf: /home/yunwei/bpftime/build/benchmark/uprobe_prog.bpf.o
-uretprobe elf:/home/yunwei/bpftime/build/benchmark/uretprobe_prog.bpf.o
-a[b] + c for 100000 times
-Elapsed time: 0.011000843 seconds
-avg function elapse time: 110.008430 ns
+```sh
+build/benchmark/simple-benchmark-with-embed-ebpf-calling
 ```
 
 ## userspace syscall
@@ -220,6 +148,31 @@ You can use python script to run the benchmark:
 
 ```console
 python3 benchmark/tools/driving.py
+```
+
+## Test syscall trace and untrace
+
+run the test:
+
+```sh
+bash ./benchmark/syscount/test.sh
+```
+
+result:
+
+```txt
+# baseline, no trace syscall
+Average read() time over 10 runs: 349 ns
+Average sendmsg() time over 10 runs: 3640 ns
+# trace with syscount
+Average read() time over 10 runs: 437 ns
+Average sendmsg() time over 10 runs: 3952 ns
+# filter out the pid
+Average read() time over 10 runs: 398 ns
+Average sendmsg() time over 10 runs: 3690 ns
+# trace with userspace syscall tracepoint
+Average read() time over 10 runs: 531 ns
+Average sendmsg() time over 10 runs: 3681 ns
 ```
 
 ## Results on another machine
@@ -247,17 +200,17 @@ Userspace:
 
 ```txt
 Benchmarking __bench_uprobe_uretprobe in thread 1
-Average time usage 412.607790 ns, iter 100000 times
+Average time usage 391.967450 ns, iter 100000 times
 
 Benchmarking __bench_uretprobe in thread 1
-Average time usage 389.096230 ns, iter 100000 times
+Average time usage 383.851670 ns, iter 100000 times
 
 Benchmarking __bench_uprobe in thread 1
-Average time usage 387.022160 ns, iter 100000 times
+Average time usage 380.935190 ns, iter 100000 times
 
 Benchmarking __bench_read in thread 1
-Average time usage 415.350530 ns, iter 100000 times
+Average time usage 383.135720 ns, iter 100000 times
 
 Benchmarking __bench_write in thread 1
-Average time usage 414.350230 ns, iter 100000 times
+Average time usage 389.037170 ns, iter 100000 times
 ```
