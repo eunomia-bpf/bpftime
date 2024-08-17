@@ -121,5 +121,5 @@ client
 
 ```sh
 sudo ~/.bpftime/bpftime start -s ./victim
-# or AGENT_SO=build/runtime/agent/libbpftime-agent.so LD_PRELOAD=build/runtime/agent-transformer/libbpftime-agent-transformer.so ./victim
+# or AGENT_SO=build/runtime/agent/libbpftime-agent.so LD_PRELOAD=build/attach/text_segment_transformer/libbpftime-agent-transformer.so ./victim
 ```
