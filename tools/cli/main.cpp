@@ -1,7 +1,7 @@
 #include "bpftime_shm.hpp"
 #include "bpftime_shm_internal.hpp"
-#include "spdlog/spdlog.h"
-#include "spdlog/cfg/env.h"
+#include "bpftime_config.hpp"
+#include "bpftime_logger.hpp"
 #include <cerrno>
 #include <csignal>
 #include <cstdlib>
@@ -25,39 +25,46 @@
 #include <cerrno>
 #include <cstring>
 #include <unistd.h>
-inline char** get_environ() {
-    return *_NSGetEnviron();
+inline char **get_environ()
+{
+	return *_NSGetEnviron();
 }
-constexpr const char* AGENT_LIBRARY = "libbpftime-agent.dylib";
-constexpr const char* SYSCALL_SERVER_LIBRARY = "libbpftime-syscall-server.dylib";
-constexpr const char* AGENT_TRANSFORMER_LIBRARY = "libbpftime-agent-transformer.dylib";
-const char *strchrnul(const char *s, int c) {
-    while (*s && *s != (char)c) {
-        s++;
-    }
-    return s;
+constexpr const char *AGENT_LIBRARY = "libbpftime-agent.dylib";
+constexpr const char *SYSCALL_SERVER_LIBRARY =
+	"libbpftime-syscall-server.dylib";
+constexpr const char *AGENT_TRANSFORMER_LIBRARY =
+	"libbpftime-agent-transformer.dylib";
+const char *strchrnul(const char *s, int c)
+{
+	while (*s && *s != (char)c) {
+		s++;
+	}
+	return s;
 }
-int execvpe(const char *file, char *const argv[], char *const envp[]) {
-    for (const char *path = getenv("PATH"); path && *path; path = strchr(path, ':') + 1) {
-        char buf[PATH_MAX];
-        const char *end = strchrnul(path, ':');
-        size_t len = end - path;
-        memcpy(buf, path, len);
-        buf[len] = '/';
-        strcpy(buf + len + 1, file);
-        execve(buf, argv, envp);
-        if (errno != ENOENT)
-            return -1;
-    }
-    errno = ENOENT;
-    return -1;
+int execvpe(const char *file, char *const argv[], char *const envp[])
+{
+	for (const char *path = getenv("PATH"); path && *path;
+	     path = strchr(path, ':') + 1) {
+		char buf[PATH_MAX];
+		const char *end = strchrnul(path, ':');
+		size_t len = end - path;
+		memcpy(buf, path, len);
+		buf[len] = '/';
+		strcpy(buf + len + 1, file);
+		execve(buf, argv, envp);
+		if (errno != ENOENT)
+			return -1;
+	}
+	errno = ENOENT;
+	return -1;
 }
 #elif __linux__
 extern char **environ;
-constexpr const char* AGENT_LIBRARY = "libbpftime-agent.so";
-constexpr const char* SYSCALL_SERVER_LIBRARY = "libbpftime-syscall-server.so";
-constexpr const char* AGENT_TRANSFORMER_LIBRARY = "libbpftime-agent-transformer.so";
-#else 
+constexpr const char *AGENT_LIBRARY = "libbpftime-agent.so";
+constexpr const char *SYSCALL_SERVER_LIBRARY = "libbpftime-syscall-server.so";
+constexpr const char *AGENT_TRANSFORMER_LIBRARY =
+	"libbpftime-agent-transformer.so";
+#else
 #error "Unsupported Platform"
 #endif
 
@@ -83,11 +90,11 @@ static int run_command(const char *path, const std::vector<std::string> &argv,
 			agent_so_str += agent_so;
 		}
 		std::vector<const char *> env_arr;
-		#if __APPLE__
+#if __APPLE__
 		char **p = get_environ();
-		#else
+#else
 		char **p = environ;
-		#endif
+#endif
 		while (*p) {
 			env_arr.push_back(*p);
 			p++;
@@ -180,7 +187,8 @@ static void signal_handler(int sig)
 
 int main(int argc, const char **argv)
 {
-	spdlog::cfg::load_env_levels();
+	const auto agent_config = bpftime::get_agent_config_from_env();
+	bpftime::bpftime_set_logger(agent_config.logger_output_path);
 	signal(SIGINT, signal_handler);
 	signal(SIGTSTP, signal_handler);
 	argparse::ArgumentParser program(argv[0]);

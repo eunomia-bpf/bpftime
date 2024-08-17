@@ -4,6 +4,7 @@
  * All rights reserved.
  */
 #include "bpftime_shm.hpp"
+#include <ebpf-vm.h>
 #include "handler/epoll_handler.hpp"
 #include "handler/handler_manager.hpp"
 #include "handler/link_handler.hpp"
@@ -41,8 +42,10 @@ extern "C" void bpftime_destroy_global_shm()
 		shm_holder.global_shared_memory.~bpftime_shm();
 		// Why not spdlog? because global variables that spdlog used
 		// were already destroyed..
+#ifdef DEBUG
 		fprintf(stderr, "INFO [%d]: Global shm destructed\n",
 			(int)getpid());
+#endif
 	}
 }
 
@@ -736,7 +739,7 @@ void bpftime_shm::set_agent_config(const struct agent_config &config)
 const struct agent_config &bpftime_shm::get_agent_config()
 {
 	if (agent_config == nullptr) {
-		SPDLOG_INFO("use current process config");
+		SPDLOG_DEBUG("use current process config");
 		return local_agent_config;
 	}
 	return *agent_config;

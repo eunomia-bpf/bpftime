@@ -6,6 +6,7 @@
 #include "bpftime_shm_internal.hpp"
 #include <spdlog/cfg/env.h>
 #include <spdlog/spdlog.h>
+#include "bpftime_logger.hpp"
 #include <bpftime_shm.hpp>
 #ifdef ENABLE_BPFTIME_VERIFIER
 #include <bpftime-verifier.hpp>
@@ -21,11 +22,11 @@ void start_up()
 	if (already_setup)
 		return;
 	already_setup = true;
-	SPDLOG_INFO("Initialize syscall server");
-	spdlog::cfg::load_env_levels();
-	spdlog::set_pattern("[%Y-%m-%d %H:%M:%S][%^%l%$][%t] %v");
-	bpftime_initialize_global_shm(shm_open_type::SHM_REMOVE_AND_CREATE);
 	const auto agent_config = get_agent_config_from_env();
+	bpftime_set_logger(agent_config.logger_output_path);
+	SPDLOG_INFO("Initialize syscall server");
+
+	bpftime_initialize_global_shm(shm_open_type::SHM_REMOVE_AND_CREATE);
 	bpftime_set_agent_config(agent_config);
 #ifdef ENABLE_BPFTIME_VERIFIER
 	std::vector<int32_t> helper_ids;

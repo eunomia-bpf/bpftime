@@ -15,7 +15,7 @@ using namespace bpftime;
 using namespace bpftime_epoll;
 #endif
 
-#ifdef USE_LIBBPF
+#ifdef BPFTIME_BUILD_WITH_LIBBPF
 extern "C" {
 #include <bpf/libbpf.h>
 #include <bpf/btf.h>

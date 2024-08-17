@@ -31,7 +31,7 @@ auto handle_exceptions(F &&f, Args &&...args) noexcept
 		SPDLOG_ERROR("Boost interprocess bad_alloc: {}", e.what());
 		SPDLOG_ERROR("Consider increasing the shared memory size by "
 			     "setting the BPFTIME_SHM_MEMORY_MB env var.");
-		std::abort();
+		std::exit(1);
 		// Terminate the program after logging the exception
 	}
 	// More exceptions can be added here
