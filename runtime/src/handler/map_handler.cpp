@@ -12,7 +12,7 @@
 #include <bpf_map/userspace/fix_hash_map.hpp>
 #include <bpf_map/userspace/var_hash_map.hpp>
 #include <bpf_map/userspace/ringbuf_map.hpp>
-#ifdef USE_LIBBPF
+#ifdef BPFTIME_BUILD_WITH_LIBBPF
 #include <bpf_map/shared/array_map_kernel_user.hpp>
 #include <bpf_map/shared/hash_map_kernel_user.hpp>
 #include <bpf_map/shared/percpu_array_map_kernel_user.hpp>
@@ -119,7 +119,7 @@ const void *bpf_map_handler::map_lookup_elem(const void *key,
 		return from_syscall ? do_lookup_userspace(impl) :
 				      do_lookup(impl);
 	}
-	#ifdef USE_LIBBPF
+	#ifdef BPFTIME_BUILD_WITH_LIBBPF
 	case bpf_map_type::BPF_MAP_TYPE_KERNEL_USER_ARRAY: {
 		auto impl = static_cast<array_map_kernel_user_impl *>(
 			map_impl_ptr.get());
@@ -213,7 +213,7 @@ long bpf_map_handler::map_update_elem(const void *key, const void *value,
 		return from_syscall ? do_update_userspace(impl) :
 				      do_update(impl);
 	}
-	#ifdef USE_LIBBPF
+	#ifdef BPFTIME_BUILD_WITH_LIBBPF
 	case bpf_map_type::BPF_MAP_TYPE_KERNEL_USER_ARRAY: {
 		auto impl = static_cast<array_map_kernel_user_impl *>(
 			map_impl_ptr.get());
@@ -300,7 +300,7 @@ int bpf_map_handler::bpf_map_get_next_key(const void *key, void *next_key,
 			map_impl_ptr.get());
 		return do_get_next_key(impl);
 	}
-	#if __linux__
+	#if __linux__ && defined(BPFTIME_BUILD_WITH_LIBBPF)
 	case bpf_map_type::BPF_MAP_TYPE_KERNEL_USER_ARRAY: {
 		auto impl = static_cast<array_map_kernel_user_impl *>(
 			map_impl_ptr.get());
@@ -394,7 +394,7 @@ long bpf_map_handler::map_delete_elem(const void *key, bool from_syscall) const
 		return from_syscall ? do_delete_userspace(impl) :
 				      do_delete(impl);
 	}
-	#ifdef USE_LIBBPF
+	#ifdef BPFTIME_BUILD_WITH_LIBBPF
 	case bpf_map_type::BPF_MAP_TYPE_KERNEL_USER_ARRAY: {
 		auto impl = static_cast<array_map_kernel_user_impl *>(
 			map_impl_ptr.get());
@@ -491,7 +491,7 @@ int bpf_map_handler::map_init(managed_shared_memory &memory)
 			container_name.c_str())(memory, key_size, value_size);
 		return 0;
 	}
-	#ifdef USE_LIBBPF
+	#ifdef BPFTIME_BUILD_WITH_LIBBPF
 	case bpf_map_type::BPF_MAP_TYPE_KERNEL_USER_ARRAY: {
 		map_impl_ptr = memory.construct<array_map_kernel_user_impl>(
 			container_name.c_str())(memory, attr.kernel_bpf_map_id);
@@ -570,7 +570,7 @@ void bpf_map_handler::map_free(managed_shared_memory &memory)
 	case bpf_map_type::BPF_MAP_TYPE_PERCPU_HASH:
 		memory.destroy<per_cpu_hash_map_impl>(container_name.c_str());
 		break;
-	#ifdef USE_LIBBPF
+	#ifdef BPFTIME_BUILD_WITH_LIBBPF
 	case bpf_map_type::BPF_MAP_TYPE_KERNEL_USER_ARRAY:
 		memory.destroy<array_map_kernel_user_impl>(
 			container_name.c_str());

@@ -3,7 +3,9 @@
  * Copyright (c) 2022, eunomia-bpf org
  * All rights reserved.
  */
+#include "bpftime_logger.hpp"
 #include "bpftime_shm.hpp"
+#include <ebpf-vm.h>
 #include "syscall_context.hpp"
 #include "handler/perf_event_handler.hpp"
 #if __linux__
@@ -15,7 +17,7 @@
 #include <linux/filter.h>
 #elif __APPLE__
 #include "bpftime_epoll.h"
-#endif 
+#endif
 #include "spdlog/spdlog.h"
 #include <cerrno>
 #include <cstdlib>
@@ -24,6 +26,25 @@
 #include <sys/mman.h>
 #include <unistd.h>
 #include <regex>
+
+// In build option without libbpf, there might be no BPF_EXIT_INSN
+#ifndef BPF_EXIT_INSN
+#define BPF_EXIT_INSN()                                                        \
+	((struct bpf_insn){ .code = BPF_JMP | BPF_EXIT,                        \
+			    .dst_reg = 0,                                      \
+			    .src_reg = 0,                                      \
+			    .off = 0,                                          \
+			    .imm = 0 })
+#endif
+
+#ifndef BPF_MOV64_IMM
+#define BPF_MOV64_IMM(DST, IMM)                                                \
+	((struct bpf_insn){ .code = BPF_ALU64 | BPF_MOV | BPF_K,               \
+			    .dst_reg = DST,                                    \
+			    .src_reg = 0,                                      \
+			    .off = 0,                                          \
+			    .imm = IMM })
+#endif
 
 using namespace bpftime;
 #if __APPLE__
@@ -47,6 +68,17 @@ void syscall_context::load_config_from_env()
 	} else {
 		by_pass_kernel_verifier_pattern.clear();
 	}
+}
+
+syscall_context::syscall_context()
+{
+	init_original_functions();
+	// FIXME: merge this into the runtime config
+	load_config_from_env();
+	auto runtime_config = bpftime::get_agent_config_from_env();
+	SPDLOG_INFO("Init bpftime syscall mocking..");
+	SPDLOG_INFO("The log will be written to: {}",
+		    runtime_config.logger_output_path);
 }
 
 void syscall_context::try_startup()

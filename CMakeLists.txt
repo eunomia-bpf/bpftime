@@ -86,7 +86,7 @@ message(STATUS "Started CMake for ${PROJECT_NAME} v${PROJECT_VERSION}...\n")
 
 # if option to build without libbpf is set
 if(${BPFTIME_BUILD_WITH_LIBBPF})
-  add_definitions(-DUSE_LIBBPF)
+  add_definitions(-DBPFTIME_BUILD_WITH_LIBBPF=1)
 endif()
 
 if(UNIX)
@@ -135,7 +135,7 @@ endif()
 add_subdirectory(third_party/spdlog)
 if(NOT DEFINED SPDLOG_ACTIVE_LEVEL)
   if(CMAKE_BUILD_TYPE STREQUAL "Debug")
-    add_compile_definitions(SPDLOG_ACTIVE_LEVEL=SPDLOG_LEVEL_DEBUG)
+    add_compile_definitions(SPDLOG_ACTIVE_LEVEL=SPDLOG_LEVEL_TRACE)
   else()
     add_compile_definitions(SPDLOG_ACTIVE_LEVEL=SPDLOG_LEVEL_INFO)
   endif()
