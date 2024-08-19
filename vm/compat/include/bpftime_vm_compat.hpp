@@ -16,9 +16,12 @@
 #ifndef MAX_EXT_FUNCS
 #define MAX_EXT_FUNCS 8192
 #endif
+
 namespace bpftime::vm::compat
 {
+
 using precompiled_ebpf_function = uint64_t (*)(void *mem, size_t mem_len);
+
 class bpftime_vm_impl {
     public:
 	virtual ~bpftime_vm_impl()
@@ -44,6 +47,7 @@ class bpftime_vm_impl {
 		SPDLOG_DEBUG("Not implemented yet: toggle_bounds_check");
 		return false;
 	}
+
 	/**
 	 * @brief Register a C-style print function for printing error strings
 	 *
@@ -55,6 +59,7 @@ class bpftime_vm_impl {
 		SPDLOG_WARN(
 			"Not implemented yet: register_error_print_callback");
 	}
+
 	/**
 	 * @brief Register a helper function
 	 *
@@ -72,6 +77,7 @@ class bpftime_vm_impl {
 			"Not implemented yet: register_external_function");
 		return -1;
 	}
+
 	/**
 	 * @brief Load code into the vm
 	 *
@@ -80,6 +86,7 @@ class bpftime_vm_impl {
 	 * @return int
 	 */
 	virtual int load_code(const void *code, size_t code_len) = 0;
+
 	/**
 	 * @brief Unload the code
 	 *
@@ -88,6 +95,7 @@ class bpftime_vm_impl {
 	{
 		SPDLOG_CRITICAL("Not implemented yet: unload_code");
 	}
+
 	/**
 	 * @brief Try to execute eBPF program in intepreter mode. If not
 	 * supported, use JIT
@@ -99,6 +107,7 @@ class bpftime_vm_impl {
 	 */
 	virtual int exec(void *mem, size_t mem_len,
 			 uint64_t &bpf_return_value) = 0;
+
 	/**
 	 * @brief Compile the eBPF program, return the compiled program
 	 *
@@ -109,6 +118,7 @@ class bpftime_vm_impl {
 		SPDLOG_CRITICAL("Not implemented yet: compile");
 		return {};
 	}
+
 	/**
 	 * @brief Register helper functions using the lddw instruction. See
 	 * https://docs.kernel.org/bpf/instruction-set.html#id15 for details.
@@ -133,6 +143,7 @@ class bpftime_vm_impl {
 	{
 		SPDLOG_CRITICAL("Not implemented yet: set_lddw_helpers");
 	}
+
 	/**
 	 * @brief Optional secret to improve ROP protection.
 	 *
@@ -145,6 +156,7 @@ class bpftime_vm_impl {
 		SPDLOG_WARN("Not implemented yet: set_pointer_secret");
 		return -1;
 	}
+
 	/**
 	 * @brief Instruct the ebpf runtime to apply unwind-on-success semantics
 	 * to a helper function. If the function returns 0, the ebpf runtime
@@ -178,6 +190,7 @@ class bpftime_vm_impl {
 };
 
 std::unique_ptr<bpftime_vm_impl> create_vm_instance();
+
 } // namespace bpftime::vm::compat
 struct ebpf_vm {
 	std::unique_ptr<bpftime::vm::compat::bpftime_vm_impl> vm_instance;

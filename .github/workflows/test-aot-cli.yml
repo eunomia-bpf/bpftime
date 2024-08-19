@@ -1,4 +1,4 @@
-name: Build and test AOT cli
+name: Build and test bpftool and AOT cli
 
 on:
   push:

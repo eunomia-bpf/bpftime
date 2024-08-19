@@ -1,8 +1,10 @@
 #include <bpftime_vm_compat.hpp>
 #include <map>
 #include <string>
+
 namespace bpftime::vm::ubpf
 {
+
 class bpftime_ubpf_vm : public compat::bpftime_vm_impl {
     public:
 	bpftime_ubpf_vm();

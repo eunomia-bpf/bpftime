@@ -8,14 +8,18 @@
 #include <bpftime_vm_compat.hpp>
 #include <compat_ubpf.hpp>
 #include <vector>
+
 namespace bpftime::vm::compat
 {
+
 std::unique_ptr<bpftime_vm_impl> create_vm_instance()
 {
 	return std::make_unique<ubpf::bpftime_ubpf_vm>();
 }
+
 } // namespace bpftime::vm::compat
 using namespace bpftime::vm::ubpf;
+
 bpftime_ubpf_vm::bpftime_ubpf_vm()
 {
 	ubpf_vm = ubpf_create();
@@ -29,6 +33,7 @@ std::string bpftime_ubpf_vm::get_error_message()
 {
 	return error_string;
 }
+
 bool bpftime_ubpf_vm::toggle_bounds_check(bool enable)
 {
 	return ubpf_toggle_bounds_check(ubpf_vm, enable);
@@ -40,6 +45,7 @@ void bpftime_ubpf_vm::register_error_print_callback(int (*fn)(FILE *,
 {
 	ubpf_set_error_print(ubpf_vm, fn);
 }
+
 int bpftime_ubpf_vm::register_external_function(size_t index,
 						const std::string &name,
 						void *fn)
@@ -191,14 +197,17 @@ int bpftime_ubpf_vm::load_code(const void *code, size_t code_len)
 	}
 	return err;
 }
+
 void bpftime_ubpf_vm::unload_code()
 {
 	ubpf_unload_code(ubpf_vm);
 }
+
 int bpftime_ubpf_vm::exec(void *mem, size_t mem_len, uint64_t &bpf_return_value)
 {
 	return ubpf_exec(ubpf_vm, mem, mem_len, &bpf_return_value);
 }
+
 std::optional<bpftime::vm::compat::precompiled_ebpf_function>
 bpftime_ubpf_vm::compile()
 {
@@ -212,6 +221,7 @@ bpftime_ubpf_vm::compile()
 	}
 	return result;
 }
+
 void bpftime_ubpf_vm::set_lddw_helpers(uint64_t (*map_by_fd)(uint32_t),
 				       uint64_t (*map_by_idx)(uint32_t),
 				       uint64_t (*map_val)(uint64_t),
@@ -224,10 +234,12 @@ void bpftime_ubpf_vm::set_lddw_helpers(uint64_t (*map_by_fd)(uint32_t),
 	this->var_addr = var_addr;
 	this->code_addr = code_addr;
 }
+
 int bpftime_ubpf_vm::set_unwind_function_index(size_t idx)
 {
 	return ubpf_set_unwind_function_index(ubpf_vm, idx);
 }
+
 int bpftime_ubpf_vm::set_pointer_secret(uint64_t secret)
 {
 	return ubpf_set_pointer_secret(ubpf_vm, secret);
