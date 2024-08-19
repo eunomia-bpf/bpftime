@@ -16,7 +16,7 @@
 #include <bpftime_vm_compat.hpp>
 namespace bpftime::vm::llvm
 {
-class bpftime_llvm_jit_vm;
+class bpftime_llvm_vm;
 }
 
 const static char *LDDW_HELPER_MAP_BY_FD = "__lddw_helper_map_by_fd";
@@ -28,7 +28,7 @@ const static char *LDDW_HELPER_CODE_ADDR = "__lddw_helper_code_addr";
 #define IS_ALIGNED(x, a) (((uintptr_t)(x) & ((a)-1)) == 0)
 
 class llvm_bpf_jit_context {
-	class bpftime::vm::llvm::bpftime_llvm_jit_vm *vm;
+	class bpftime::vm::llvm::bpftime_llvm_vm *vm;
 	std::optional<std::unique_ptr<llvm::orc::LLJIT> > jit;
 	std::unique_ptr<pthread_spinlock_t> compiling;
 	llvm::Expected<llvm::orc::ThreadSafeModule>
@@ -46,7 +46,7 @@ class llvm_bpf_jit_context {
 
     public:
 	void do_jit_compile();
-	llvm_bpf_jit_context(class bpftime::vm::llvm::bpftime_llvm_jit_vm *vm);
+	llvm_bpf_jit_context(class bpftime::vm::llvm::bpftime_llvm_vm *vm);
 	virtual ~llvm_bpf_jit_context();
 	bpftime::vm::compat::precompiled_ebpf_function compile();
 	bpftime::vm::compat::precompiled_ebpf_function get_entry_address();

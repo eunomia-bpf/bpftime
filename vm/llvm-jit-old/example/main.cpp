@@ -64,7 +64,7 @@ int main(int argc, char *argv[])
 
 	cl::ParseCommandLineOptions(argc, argv, "HowToUseLLJIT");
 
-	bpftime::vm::llvm::bpftime_llvm_jit_vm vm;
+	bpftime::vm::llvm::bpftime_llvm_vm vm;
 
 	res = vm.load_code(TEST_BPF_CODE, TEST_BPF_SIZE);
 	if (res) {

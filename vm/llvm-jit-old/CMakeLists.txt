@@ -28,14 +28,14 @@ function(bpftime_add_library target)
     bpftime_setup_target(${target})
 endfunction()
 
-bpftime_add_library(bpftime_llvm_jit_vm
+bpftime_add_library(bpftime_llvm_vm
     src/llvm/llvm_jit_context.cpp
     src/llvm/compiler.cpp
     src/llvm/compiler_utils.cpp
     src/compat/compat_llvm.cpp
 )
 
-set_target_properties(bpftime_llvm_jit_vm PROPERTIES ARCHIVE_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/../")
+set_target_properties(bpftime_llvm_vm PROPERTIES ARCHIVE_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/../")
 
 find_package(LLVM REQUIRED CONFIG)
 
@@ -79,11 +79,11 @@ endif()
 message(STATUS "LLVM_LIBS=${LLVM_LIBS}")
 find_package(Boost REQUIRED)
 
-target_link_libraries(bpftime_llvm_jit_vm PUBLIC ${LLVM_LIBS} bpftime_vm_compat PRIVATE spdlog::spdlog)
-    target_include_directories(bpftime_llvm_jit_vm 
+target_link_libraries(bpftime_llvm_vm PUBLIC ${LLVM_LIBS} bpftime_vm_compat PRIVATE spdlog::spdlog)
+    target_include_directories(bpftime_llvm_vm 
     PUBLIC ${LLVM_INCLUDE_DIRS} ${SPDLOG_INCLUDE} ${Boost_INCLUDE} ../include include #LLVM jit also used these headers
 )
-add_dependencies(bpftime_llvm_jit_vm bpftime_vm_compat spdlog::spdlog)
+add_dependencies(bpftime_llvm_vm bpftime_vm_compat spdlog::spdlog)
 
 if(BPFTIME_ENABLE_UNIT_TESTING)
   message(STATUS "Build unit tests for the project. Tests should always be found in the test folder\n")

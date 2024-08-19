@@ -14,7 +14,7 @@ target_include_directories(bpftime_vm_compat INTERFACE ${CMAKE_CURRENT_SOURCE_DI
 if(${BPFTIME_LLVM_JIT})
   message(STATUS "Using llvm-jit")
   add_subdirectory(llvm-vm)
-  set(BPFTIME_BPF_RUNTIME_NAME "bpftime_llvm_jit_vm")
+  set(BPFTIME_BPF_RUNTIME_NAME "bpftime_llvm_vm")
 else()
   message(STATUS "Using ubpf-jit")
   add_subdirectory(ubpf-vm)

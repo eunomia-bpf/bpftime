@@ -56,7 +56,7 @@ static int build_ebpf_program(const std::string &ebpf_elf,
 	{
 		auto name = bpf_program__name(prog);
 		SPDLOG_INFO("Processing program {}", name);
-		bpftime::vm::llvm::bpftime_llvm_jit_vm vm;
+		bpftime::vm::llvm::bpftime_llvm_vm vm;
 
 		if (vm.load_code((const void *)bpf_program__insns(prog),
 				 (uint32_t)bpf_program__insn_cnt(prog) * 8) <

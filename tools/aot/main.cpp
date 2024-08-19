@@ -97,7 +97,7 @@ static int build_ebpf_program(const std::string &ebpf_elf,
 		helper_group.add_helper_group_to_prog(&bpftime_prog);
 		bpftime_prog.bpftime_prog_load(true);
 		llvm_bpf_jit_context ctx(
-			dynamic_cast<bpftime::vm::llvm::bpftime_llvm_jit_vm *>(
+			dynamic_cast<bpftime::vm::llvm::bpftime_llvm_vm *>(
 				bpftime_prog.get_vm()->vm_instance.get()));
 		auto result = ctx.do_aot_compile(emit_llvm_ir);
 		auto out_path = output / (std::string(name) + ".o");
@@ -129,7 +129,7 @@ static int compile_ebpf_program(const std::filesystem::path &output)
 			new_prog.bpftime_prog_load(true);
 			llvm_bpf_jit_context ctx(
 				dynamic_cast<
-					bpftime::vm::llvm::bpftime_llvm_jit_vm *>(
+					bpftime::vm::llvm::bpftime_llvm_vm *>(
 					new_prog.get_vm()->vm_instance.get()));
 			auto result = ctx.do_aot_compile(emit_llvm_ir);
 			auto out_path = output /
@@ -230,7 +230,7 @@ static int run_ebpf_program(const std::filesystem::path &elf,
 	bpftime::bpftime_helper_group::get_shm_maps_helper_group()
 		.add_helper_group_to_prog(&bpftime_prog);
 	auto vm = bpftime_prog.get_vm();
-	auto &jit_ctx = *dynamic_cast<bpftime::vm::llvm::bpftime_llvm_jit_vm &>(
+	auto &jit_ctx = *dynamic_cast<bpftime::vm::llvm::bpftime_llvm_vm &>(
 				 *vm->vm_instance)
 				 .get_jit_context();
 	jit_ctx.load_aot_object(file_buf);

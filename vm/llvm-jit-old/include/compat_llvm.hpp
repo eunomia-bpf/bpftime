@@ -14,9 +14,9 @@ struct external_function {
 	void *fn;
 };
 
-class bpftime_llvm_jit_vm : public bpftime::vm::compat::bpftime_vm_impl {
+class bpftime_llvm_vm : public bpftime::vm::compat::bpftime_vm_impl {
     public:
-	bpftime_llvm_jit_vm();
+	bpftime_llvm_vm();
 	/* override */
 	std::string get_error_message() override;
 	int register_external_function(size_t index, const std::string &name,

@@ -1,3 +1,6 @@
+#ifndef BPFTIME_UBPF_COMPACT_H
+#define BPFTIME_UBPF_COMPACT_H
+
 #include <bpftime_vm_compat.hpp>
 #include <map>
 #include <string>
@@ -40,3 +43,5 @@ class bpftime_ubpf_vm : public compat::bpftime_vm_impl {
 	size_t next_helper_id = 1;
 };
 } // namespace bpftime::vm::ubpf
+
+#endif // BPFTIME_UBPF_COMPACT_H

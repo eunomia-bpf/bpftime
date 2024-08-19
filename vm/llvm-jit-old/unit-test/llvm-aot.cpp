@@ -13,7 +13,7 @@ extern "C" uint64_t add_func(uint64_t a, uint64_t b, uint64_t, uint64_t,
 
 TEST_CASE("Test aot compilation")
 {
-	bpftime::vm::llvm::bpftime_llvm_jit_vm vm;
+	bpftime::vm::llvm::bpftime_llvm_vm vm;
 	REQUIRE(vm.register_external_function(1, "add", (void *)add_func) == 0);
 
 	struct bpf_insn insns[] = { BPF_MOV64_IMM(1, 123),
