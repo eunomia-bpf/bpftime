@@ -5,6 +5,7 @@
  */
 #include "bpftime_shm.hpp"
 #include "syscall_context.hpp"
+#include "handler/map_handler.hpp"
 #include "handler/perf_event_handler.hpp"
 #if __linux__
 #include "linux/perf_event.h"
@@ -61,6 +62,15 @@ int syscall_context::handle_close(int fd)
 	if (!enable_mock)
 		return orig_close_fn(fd);
 	try_startup();
+	{
+		bpftime_lock_guard _guard(this->mocked_file_lock);
+		if (auto itr = this->mocked_files.find(fd);
+		    itr != this->mocked_files.end()) {
+			SPDLOG_DEBUG("Removing mocked file fd {}", fd);
+			this->mocked_files.erase(itr);
+			return 0;
+		}
+	}
 	bpftime_close(fd);
 	return orig_close_fn(fd);
 }
@@ -90,6 +100,17 @@ ssize_t syscall_context::handle_read(int fd, void *buf, size_t count)
 	if (!enable_mock)
 		return orig_read_fn(fd, buf, count);
 	try_startup();
+	{
+		bpftime_lock_guard _guard(this->mocked_file_lock);
+		if (auto itr = this->mocked_files.find(fd);
+		    itr != this->mocked_files.end()) {
+			SPDLOG_DEBUG("Mock read fd={}, buf={:x}, count={}", fd,
+				     (uintptr_t)buf, count);
+
+			bpftime_lock_guard _access_guard(
+				itr->second.access_lock);
+		}
+	}
 	return orig_read_fn(fd, buf, count);
 }
 int syscall_context::create_kernel_bpf_map(int map_fd)

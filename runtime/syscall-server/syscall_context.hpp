@@ -5,6 +5,7 @@
  */
 #ifndef _SYSCALL_CONTEXT_HPP
 #define _SYSCALL_CONTEXT_HPP
+#include <unordered_map>
 #if __linux__
 #include "linux/perf_event.h"
 #elif __APPLE__
@@ -16,10 +17,25 @@
 #include <sys/types.h>
 #include <spdlog/spdlog.h>
 #include <unordered_set>
-
+#include <pthread.h>
 #if __APPLE__
 using namespace bpftime_epoll;
 #endif
+
+struct mocked_file_provider {
+	int cursor = 0;
+	std::string buf;
+	pthread_spinlock_t access_lock;
+	mocked_file_provider()
+	{
+		pthread_spin_init(&access_lock, 0);
+	}
+	virtual ~mocked_file_provider()
+	{
+		pthread_spin_destroy(&access_lock);
+	}
+};
+
 class syscall_context {
 	using syscall_fn = long (*)(long, ...);
 	using close_fn = int (*)(int);
@@ -45,6 +61,8 @@ class syscall_context {
 	mmap_fn orig_mmap_fn = nullptr;
 	read_fn orig_read_fn = nullptr;
 	std::unordered_set<uintptr_t> mocked_mmap_values;
+	pthread_spinlock_t mocked_file_lock;
+	std::unordered_map<int, mocked_file_provider> mocked_files;
 	void init_original_functions()
 	{
 		orig_epoll_wait_fn =
@@ -98,7 +116,12 @@ class syscall_context {
 	{
 		init_original_functions();
 		load_config_from_env();
+		pthread_spin_init(&this->mocked_file_lock, 0);
 		SPDLOG_INFO("manager constructed");
+	}
+	~syscall_context()
+	{
+		pthread_spin_destroy(&this->mocked_file_lock);
 	}
 	syscall_fn orig_syscall_fn = nullptr;
 
