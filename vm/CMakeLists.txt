@@ -55,7 +55,6 @@ set(test_sources
 if(BPFTIME_ENABLE_UNIT_TESTING)
   enable_testing()
   message(STATUS "Build unit tests for the project. Tests should always be found in the test folder\n")
-  add_subdirectory(test)
 endif()
 
 add_subdirectory(test-runner)
