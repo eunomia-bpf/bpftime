@@ -1,6 +1,0 @@
-/build
-build
-/.vscode
-/.cache
-test*
-libvm-bpf.a
