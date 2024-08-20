@@ -8,8 +8,7 @@ set_target_properties(bpftime-aot-cli PROPERTIES OUTPUT_NAME "bpftime-aot")
 target_include_directories(bpftime-aot-cli PRIVATE 
     ${SPDLOG_INCLUDE} 
     ${argparse_INCLUDE} 
-    ${CMAKE_CURRENT_SOURCE_DIR}/../../vm/llvm-jit/src 
-    ${CMAKE_CURRENT_SOURCE_DIR}/../vm/llvm-jit/include
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../vm/compat/include
     ../../runtime/include/
     ../../runtime/src/
     ${LIBBPF_INCLUDE_DIRS})

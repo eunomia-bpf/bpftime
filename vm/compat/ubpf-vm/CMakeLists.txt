@@ -5,7 +5,7 @@ set(UBPF_BUILD_DIR ${CMAKE_CURRENT_BINARY_DIR}/ubpf)
 include(ExternalProject)
 ExternalProject_Add(
     ubpf
-    SOURCE_DIR  ${CMAKE_CURRENT_SOURCE_DIR}/../../third_party/ubpf
+    SOURCE_DIR  ${CMAKE_CURRENT_SOURCE_DIR}/../../../third_party/ubpf
     BINARY_DIR ${UBPF_BUILD_DIR}
     BUILD_BYPRODUCTS ${UBPF_BUILD_DIR}/lib/libubpf.a ${UBPF_BUILD_DIR}/vm/ubpf_config.h
     # CMAKE_ARGS -DCMAKE_BUILD_TYPE=Debug

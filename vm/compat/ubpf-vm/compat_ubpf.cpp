@@ -18,6 +18,7 @@ std::unique_ptr<bpftime_vm_impl> create_vm_instance()
 }
 
 } // namespace bpftime::vm::compat
+
 using namespace bpftime::vm::ubpf;
 
 bpftime_ubpf_vm::bpftime_ubpf_vm()
