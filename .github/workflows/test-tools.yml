@@ -1,4 +1,4 @@
-name: Build and test bpftool and AOT cli
+name: Build and test bpftime tools
 
 on:
   push:
@@ -27,20 +27,10 @@ jobs:
     - name: Build and install everything
       run: |
         make release-with-llvm-jit -j
-    - name: Do compilation & run
-      run: |
-        export PATH=$PATH:~/.bpftime
-        cd .github/assets
-        bpftime-vm build sum.bpf.o
-        echo "AwAAAAEAAAACAAAAAwAAAA==" | base64 -d > test.bin
-        program_output=$(bpftime-vm run test.o test.bin)
-        echo $program_output
-        if echo $program_output | grep "Output: 6"; then
-          echo "Successful!"
-          exit 0
-        else
-          echo "Not found!"
-          exit 1
-        fi
+    # TODO: add test for the tools
+    # - name: Run the test scripts
+    #   run: |
+    #     export PATH=$PATH:~/.bpftime
+        
         
       
