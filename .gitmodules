@@ -16,3 +16,6 @@
 [submodule "third_party/ubpf"]
 	path = third_party/ubpf
 	url = https://github.com/iovisor/ubpf
+[submodule "vm/llvm-jit"]
+	path = vm/llvm-jit
+	url = https://github.com/eunomia-bpf/llvmbpf

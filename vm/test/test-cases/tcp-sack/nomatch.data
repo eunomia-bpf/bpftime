@@ -1,4 +1,0 @@
--- asm @ tcp-sack.asm
--- mem @ pkt-nosack.hex
--- result
-0x0
