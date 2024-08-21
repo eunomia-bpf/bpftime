@@ -4,6 +4,11 @@
 #include <cstdlib>
 #include <string>
 
+#ifndef DEFAULT_LOGGER_OUTPUT_PATH
+#define DEFAULT_LOGGER_OUTPUT_PATH "~/.bpftime/runtime.log"
+#endif
+#define stringize(x) #x
+
 namespace bpftime
 {
 // Configuration for the bpftime runtime
@@ -28,10 +33,16 @@ struct agent_config {
 	// available for the eBPF programs and maps
 	// The value is in MB
 	int shm_memory_size = 20; // 20MB
+
+	// specify the where the logger output should be written to
+	// It can be a file path or "console".
+	// If it is "console", the logger will output to stderr
+	std::string logger_output_path = DEFAULT_LOGGER_OUTPUT_PATH;
 };
 
 // Get the bpftime configuration from the environment variables
-const agent_config get_agent_config_from_env();
+// If the shared memory is not int, this should be called first
+const agent_config get_agent_config_from_env() noexcept;
 
 } // namespace bpftime
 

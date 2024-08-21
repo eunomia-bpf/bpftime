@@ -1,11 +1,10 @@
-## Example program
+# Example program
 
 This is a sample program showcasing the use of libbpftime.
 
 I am using headers from runtime and I am linking `libbpftime.a` which is installed in `~/.bpftime`
 
-
-### Prerequisites
+## Prerequisites
 
 following command should have been run, so that `libbpftime.a` exists in `~/.bpftime` directory
 
@@ -15,8 +14,7 @@ cmake -Bbuild  -DCMAKE_BUILD_TYPE:STRING=Release \
 cmake --build build --config Release --target install
 ```
 
-
-### Build
+## Build
 
 - Makefile
 
@@ -34,6 +32,7 @@ Available targets:
 
 command to execute the code:
 when not using llvm-jit
+
 ```shell
 g++ -o example main.cpp -I../../runtime/include -I../../vm/compat/include/ -I../../third_party/spdlog/include -I../../vm/vm-core/include -L~/.bpftime -lbpftime -lboost_system -lrt -lbpf
 ```

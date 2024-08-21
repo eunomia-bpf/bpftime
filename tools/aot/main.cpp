@@ -1,4 +1,3 @@
-#include "compat_llvm.hpp"
 #include "ebpf-vm.h"
 #include "bpftime_helper_group.hpp"
 #include "bpftime_prog.hpp"
@@ -9,14 +8,12 @@
 #include <argparse/argparse.hpp>
 #include <cstdarg>
 #include <cstdint>
+#include <cassert>
 #include <cstdio>
 #include <fcntl.h>
 #include <filesystem>
 #include <iostream>
 #include <libelf.h>
-#include <llvm/ExecutionEngine/Orc/LLJIT.h>
-#include <llvm/Support/MemoryBuffer.h>
-#include <llvm/llvm_jit_context.hpp>
 #include <string>
 #include <unistd.h>
 #include <bpf/libbpf.h>
@@ -27,9 +24,6 @@
 #include <variant>
 #include <vector>
 #include <bpftime_vm_compat.hpp>
-
-using namespace llvm;
-using namespace llvm::orc;
 
 extern "C" int _libbpf_print(libbpf_print_level level, const char *fmt,
 			     va_list ap)
@@ -96,10 +90,10 @@ static int build_ebpf_program(const std::string &ebpf_elf,
 		auto helper_group = create_all_helpers();
 		helper_group.add_helper_group_to_prog(&bpftime_prog);
 		bpftime_prog.bpftime_prog_load(true);
-		llvm_bpf_jit_context ctx(
-			dynamic_cast<bpftime::vm::llvm::bpftime_llvm_jit_vm *>(
-				bpftime_prog.get_vm()->vm_instance.get()));
-		auto result = ctx.do_aot_compile(emit_llvm_ir);
+		auto vm = bpftime_prog.get_vm();
+		// The vm instance should not be empty
+		assert(vm && vm->vm_instance);
+		auto result = vm->vm_instance->do_aot_compile(emit_llvm_ir);
 		auto out_path = output / (std::string(name) + ".o");
 		std::ofstream ofs(out_path, std::ios::binary);
 		ofs.write((const char *)result.data(), result.size());
@@ -127,11 +121,11 @@ static int compile_ebpf_program(const std::filesystem::path &output)
 			auto helper_group = create_all_helpers();
 			helper_group.add_helper_group_to_prog(&new_prog);
 			new_prog.bpftime_prog_load(true);
-			llvm_bpf_jit_context ctx(
-				dynamic_cast<
-					bpftime::vm::llvm::bpftime_llvm_jit_vm *>(
-					new_prog.get_vm()->vm_instance.get()));
-			auto result = ctx.do_aot_compile(emit_llvm_ir);
+			auto vm = new_prog.get_vm();
+			// The vm instance should not be empty
+			assert(vm && vm->vm_instance);
+			auto result =
+				vm->vm_instance->do_aot_compile(emit_llvm_ir);
 			auto out_path = output /
 					(std::string(prog.name.c_str()) + ".o");
 			std::ofstream ofs(out_path, std::ios::binary);
@@ -187,9 +181,6 @@ static int load_ebpf_program(const std::filesystem::path &elf, int id)
 	return 0;
 }
 
-static ExitOnError exit_on_error;
-using bpf_func = uint64_t (*)(const void *, uint64_t);
-
 static int run_ebpf_program(const std::filesystem::path &elf,
 			    std::optional<std::string> memory)
 {
@@ -229,13 +220,14 @@ static int run_ebpf_program(const std::filesystem::path &elf,
 		.add_helper_group_to_prog(&bpftime_prog);
 	bpftime::bpftime_helper_group::get_shm_maps_helper_group()
 		.add_helper_group_to_prog(&bpftime_prog);
-	auto vm = bpftime_prog.get_vm();
-	auto &jit_ctx = *dynamic_cast<bpftime::vm::llvm::bpftime_llvm_jit_vm &>(
-				 *vm->vm_instance)
-				 .get_jit_context();
-	jit_ctx.load_aot_object(file_buf);
-	int ret = jit_ctx.get_entry_address()(&mem, sizeof(mem));
-	SPDLOG_INFO("Output: {}", ret);
+	bpftime_prog.load_aot_object(file_buf);
+	uint64_t retval;
+	int ret = bpftime_prog.bpftime_prog_exec(&mem, sizeof(mem), &retval);
+	if (ret < 0) {
+		SPDLOG_ERROR("Failed to exec the eBPF program: {}", ret);
+		return 0;
+	}
+	SPDLOG_INFO("Output: {}", retval);
 	return 0;
 }
 
@@ -243,8 +235,6 @@ int main(int argc, const char **argv)
 {
 	spdlog::cfg::load_env_levels();
 	libbpf_set_print(_libbpf_print);
-	InitializeNativeTarget();
-	InitializeNativeTargetAsmPrinter();
 	argparse::ArgumentParser program(argv[0]);
 
 	argparse::ArgumentParser build_command("build");

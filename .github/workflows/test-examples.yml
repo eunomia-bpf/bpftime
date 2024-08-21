@@ -31,11 +31,19 @@ jobs:
       - name: Build and install runtime (with llvm-jit)
         if: ${{matrix.enable_jit}}
         run: |
-          make release-with-llvm-jit -j
+          cmake -Bbuild  -DCMAKE_BUILD_TYPE:STRING=RelWithDebInfo \
+            -DBPFTIME_LLVM_JIT=1 \
+            -DBUILD_BPFTIME_DAEMON=1 \
+            -DCMAKE_CXX_FLAGS="-DDEFAULT_LOGGER_OUTPUT_PATH='\"console\"'"
+          cmake --build build --config RelWithDebInfo --target install -j
       - name: Build and install runtime (without llvm-jit)
         if: ${{!matrix.enable_jit}}
         run: |
-          make release -j
+          cmake -Bbuild  -DCMAKE_BUILD_TYPE:STRING=RelWithDebInfo \
+            -DBPFTIME_LLVM_JIT=0 \
+            -DBUILD_BPFTIME_DAEMON=1 \
+            -DCMAKE_CXX_FLAGS="-DDEFAULT_LOGGER_OUTPUT_PATH='\"console\"'"
+          cmake --build build --config RelWithDebInfo --target install -j
       - name: Upload build results (without jit)
         uses: actions/upload-artifact@v3
         if: ${{!matrix.enable_jit}}

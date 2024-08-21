@@ -107,12 +107,14 @@ class syscall_context {
 	// if the syscall original function is not prepared, it will cause a
 	// segfault.
 	void try_startup();
+
 	// enable userspace eBPF runing with kernel eBPF.
 	bool run_with_kernel = false;
 	// allow programs to by pass the verifier
 	// some extensions are not supported by the verifier, so we need to
 	// by pass the verifier to make it work.
 	std::string by_pass_kernel_verifier_pattern;
+
 	void load_config_from_env();
 
     public:

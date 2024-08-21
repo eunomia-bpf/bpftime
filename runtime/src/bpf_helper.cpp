@@ -7,10 +7,10 @@
 #include <cstdint>
 #include <pthread.h>
 #endif
-#ifdef USE_LIBBPF
+#ifdef BPFTIME_BUILD_WITH_LIBBPF
 #include "bpf/bpf.h"
 #include "bpf/libbpf_common.h"
-#endif 
+#endif
 #include "bpftime_helper_group.hpp"
 #include <cerrno>
 #ifdef ENABLE_BPFTIME_VERIFIER
@@ -89,11 +89,11 @@ uint64_t bpftime_ktime_get_coarse_ns(uint64_t, uint64_t, uint64_t, uint64_t,
 				     uint64_t)
 {
 	timespec spec;
-	#ifdef __APPLE__
+#ifdef __APPLE__
 	clock_gettime(CLOCK_MONOTONIC, &spec); // or CLOCK_MONOTONIC_RAW
-	#else
+#else
 	clock_gettime(CLOCK_MONOTONIC_COARSE, &spec);
-	#endif
+#endif
 	return spec.tv_sec * (uint64_t)1000000000 + spec.tv_nsec;
 }
 
@@ -101,19 +101,19 @@ uint64_t bpftime_get_current_pid_tgid(uint64_t, uint64_t, uint64_t, uint64_t,
 				      uint64_t)
 {
 	static int tgid = getpid();
-	#if __linux__
+#if __linux__
 	static thread_local int tid = -1;
-	if(tid == -1) 
-	{
+	if (tid == -1) {
 		tid = gettid();
 	}
-	#elif __APPLE__
-	static thread_local uint64_t tid = UINT64_MAX; //cannot use int because pthread_threadid_np expects only uint64_t
-	if (tid == UINT64_MAX)
-	{
-			pthread_threadid_np(NULL, &tid);
+#elif __APPLE__
+	static thread_local uint64_t tid = UINT64_MAX; // cannot use int because
+						       // pthread_threadid_np
+						       // expects only uint64_t
+	if (tid == UINT64_MAX) {
+		pthread_threadid_np(NULL, &tid);
 	}
-	#endif
+#endif
 	return ((uint64_t)tgid << 32) | tid;
 }
 
@@ -196,11 +196,11 @@ uint64_t bpf_ktime_get_coarse_ns(uint64_t, uint64_t, uint64_t, uint64_t,
 				 uint64_t)
 {
 	struct timespec ts;
-	#if __APPLE__
+#if __APPLE__
 	clock_gettime(CLOCK_MONOTONIC, &ts); // or CLOCK_MONOTONIC_RAW
-	#else
+#else
 	clock_gettime(CLOCK_MONOTONIC_COARSE, &ts);
-	#endif
+#endif
 	return (uint64_t)ts.tv_sec * 1000000000 + ts.tv_nsec;
 }
 
@@ -303,15 +303,14 @@ uint64_t bpf_perf_event_output(uint64_t ctx, uint64_t map, uint64_t flags,
 		ret = bpftime_perf_event_output(perf_handler_fd,
 						(const void *)(uintptr_t)data,
 						(size_t)size);
-	} 
-	#if __linux__
-	else if (map_ty ==
-		   bpftime::bpf_map_type::
-			   BPF_MAP_TYPE_KERNEL_USER_PERF_EVENT_ARRAY) {
+	}
+#if __linux__ && BPFTIME_BUILD_WITH_LIBBPF
+	else if (map_ty == bpftime::bpf_map_type::
+				   BPF_MAP_TYPE_KERNEL_USER_PERF_EVENT_ARRAY) {
 		ret = bpftime_shared_perf_event_output(
 			fd, (const void *)(uintptr_t)data, (size_t)size);
-	} 
-	#endif 
+	}
+#endif
 	else {
 		SPDLOG_ERROR(
 			"Attempting to run perf_output on a non-perf array map");
@@ -321,8 +320,10 @@ uint64_t bpf_perf_event_output(uint64_t ctx, uint64_t map, uint64_t flags,
 	sched_setaffinity(0, sizeof(orig), &orig);
 	return (uint64_t)ret;
 }
+
 uint64_t bpftime_tail_call(uint64_t ctx, uint64_t prog_array, uint64_t index)
 {
+#ifdef BPFTIME_BUILD_WITH_LIBBPF
 	int fd = prog_array >> 32;
 	if (!bpftime_is_prog_array(fd)) {
 		SPDLOG_ERROR("Expected fd {} to be a prog array fd", fd);
@@ -344,7 +345,6 @@ uint64_t bpftime_tail_call(uint64_t ctx, uint64_t prog_array, uint64_t index)
 	} else {
 		memset(context, 0, sizeof(context));
 	}
-	#ifdef USE_LIBBPF
 	LIBBPF_OPTS(bpf_test_run_opts, run_opts, .ctx_in = context,
 		    // .ctx_out = context_out,
 		    .ctx_size_in = sizeof(context),
@@ -358,7 +358,10 @@ uint64_t bpftime_tail_call(uint64_t ctx, uint64_t prog_array, uint64_t index)
 	}
 	close(to_call_fd);
 	return run_opts.retval;
-	#endif
+#else
+	SPDLOG_ERROR("tail_call is not supported in this build");
+	return -ENOTSUP;
+#endif
 }
 
 uint64_t bpftime_get_attach_cookie(uint64_t ctx, uint64_t, uint64_t, uint64_t,
