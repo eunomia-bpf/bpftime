@@ -37,6 +37,24 @@ jobs:
         cmake -Bbuild -DBPFTIME_LLVM_JIT=YES  -DBPFTIME_ENABLE_UNIT_TESTING=YES -DBPFTIME_ENABLE_MPK=YES -DCMAKE_BUILD_TYPE=Debug
         cmake --build build --config Debug --target bpftime_runtime_tests -j$(nproc)
 
-
     - name: test runtime with mpk
       run:  ./build/runtime/unit-test/bpftime_runtime_tests
+
+    - name: build runtime with ubpf and verifier enable
+      run: |
+        rm -rf build
+        cmake -Bbuild -DBPFTIME_LLVM_JIT=0  -DBPFTIME_ENABLE_UNIT_TESTING=1 -DCMAKE_BUILD_TYPE=Release -DBPFTIME_ENABLE_LTO=1 \
+          -DBUILD_BPFTIME_DAEMON=1
+        cmake --build build --config Release
+
+    - name: build runtime without libbpf
+      run: |
+        rm -rf build
+        cmake -Bbuild -DBPFTIME_BUILD_WITH_LIBBPF=0
+        cmake --build build --config Release
+
+    - name: build runtime static lib
+      run: |
+        rm -rf build
+        cmake -Bbuild -DBPFTIME_BUILD_STATIC_LIB=1
+        cmake --build build --config Release
