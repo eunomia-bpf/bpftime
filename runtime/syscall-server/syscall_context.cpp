@@ -78,6 +78,7 @@ syscall_context::syscall_context()
 	// FIXME: merge this into the runtime config
 	load_config_from_env();
 	auto runtime_config = bpftime::get_agent_config_from_env();
+	pthread_spin_init(&this->mocked_file_lock, 0);
 	SPDLOG_INFO("Init bpftime syscall mocking..");
 	SPDLOG_INFO("The log will be written to: {}",
 		    runtime_config.logger_output_path);

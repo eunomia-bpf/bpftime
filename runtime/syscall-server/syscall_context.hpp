@@ -120,14 +120,8 @@ class syscall_context {
     public:
 	// enable mock the syscall behavior in userspace
 	bool enable_mock = true;
-	syscall_context()
-	{
-		init_original_functions();
-		load_config_from_env();
-		pthread_spin_init(&this->mocked_file_lock, 0);
-		SPDLOG_INFO("manager constructed");
-	}
-	~syscall_context()
+	syscall_context();
+	virtual ~syscall_context()
 	{
 		pthread_spin_destroy(&this->mocked_file_lock);
 	}
