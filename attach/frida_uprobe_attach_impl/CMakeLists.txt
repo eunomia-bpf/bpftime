@@ -39,7 +39,7 @@ if(${ENABLE_EBPF_VERIFIER} AND NOT TARGET Catch2)
 endif()
 
 add_dependencies(bpftime_frida_uprobe_attach_tests Catch2 bpftime_frida_uprobe_attach_impl spdlog::spdlog)
-target_link_libraries(bpftime_frida_uprobe_attach_tests PRIVATE Catch2::Catch2WithMain bpftime_frida_uprobe_attach_impl spdlog::spdlog)
+target_link_libraries(bpftime_frida_uprobe_attach_tests PRIVATE Catch2::Catch2WithMain bpftime_frida_uprobe_attach_impl spdlog::spdlog dl)
 target_include_directories(bpftime_frida_uprobe_attach_tests PRIVATE ${FRIDA_UPROBE_ATTACH_IMPL_INCLUDE} ${Catch2_INCLUDE} ${SPDLOG_INCLUDE})
 
 add_test(NAME bpftime_frida_uprobe_attach_tests COMMAND bpftime_frida_uprobe_attach_tests)

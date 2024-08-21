@@ -10,5 +10,3 @@ target_include_directories(bpftime_base_attach_impl
 add_dependencies(bpftime_base_attach_impl spdlog::spdlog)
 
 target_link_libraries(bpftime_base_attach_impl INTERFACE spdlog::spdlog)
-
-set_property(TARGET bpftime_base_attach_impl PROPERTY CXX_STANDARD 20)
