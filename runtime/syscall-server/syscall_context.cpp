@@ -7,6 +7,7 @@
 #include "syscall_context.hpp"
 #include "handler/map_handler.hpp"
 #include "handler/perf_event_handler.hpp"
+#include <cstring>
 #if __linux__
 #include "linux/perf_event.h"
 #include <linux/bpf.h>
@@ -106,9 +107,19 @@ ssize_t syscall_context::handle_read(int fd, void *buf, size_t count)
 		    itr != this->mocked_files.end()) {
 			SPDLOG_DEBUG("Mock read fd={}, buf={:x}, count={}", fd,
 				     (uintptr_t)buf, count);
+			auto &mock_file = itr->second;
+			bpftime_lock_guard _access_guard(mock_file.access_lock);
+			auto can_read_bytes = std::min(
+				count, mock_file.buf.size() - mock_file.cursor);
+			SPDLOG_DEBUG("Reading {} bytes", can_read_bytes);
+			if (can_read_bytes == 0)
+				return can_read_bytes;
+			memcpy(buf, &mock_file.buf[mock_file.cursor],
+			       can_read_bytes);
+			mock_file.cursor += can_read_bytes;
+			SPDLOG_DEBUG("Copied {} bytes", can_read_bytes);
 
-			bpftime_lock_guard _access_guard(
-				itr->second.access_lock);
+			return can_read_bytes;
 		}
 	}
 	return orig_read_fn(fd, buf, count);

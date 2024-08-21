@@ -4,6 +4,8 @@
  * All rights reserved.
  */
 #include "bpftime_shm_internal.hpp"
+#include "syscall_context.hpp"
+#include <filesystem>
 #include <spdlog/cfg/env.h>
 #include <spdlog/spdlog.h>
 #include <bpftime_shm.hpp>
@@ -98,7 +100,11 @@ static int parse_uint_from_file(const char *file, const char *fmt)
 int determine_uprobe_perf_type()
 {
 	const char *file = "/sys/bus/event_source/devices/uprobe/type";
-
+	if (!std::filesystem::exists(file)) {
+		SPDLOG_DEBUG("Using mocked uporbe type value {} for file {}",
+			     MOCKED_UPROBE_TYPE_VALUE, file);
+		return MOCKED_UPROBE_TYPE_VALUE;
+	}
 	return parse_uint_from_file(file, "%d\n");
 }
 

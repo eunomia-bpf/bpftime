@@ -22,7 +22,13 @@
 using namespace bpftime_epoll;
 #endif
 
+constexpr const int MOCKED_UPROBE_TYPE_VALUE = 9;
+
 struct mocked_file_provider {
+	/**
+	 * @brief Next available byte
+	 * 
+	 */
 	int cursor = 0;
 	std::string buf;
 	pthread_spinlock_t access_lock;
