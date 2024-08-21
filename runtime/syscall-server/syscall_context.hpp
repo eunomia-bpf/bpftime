@@ -23,16 +23,16 @@ using namespace bpftime_epoll;
 #endif
 
 constexpr const int MOCKED_UPROBE_TYPE_VALUE = 9;
-
+constexpr const int MOCKED_URETPROBE_BIT = 0;
 struct mocked_file_provider {
 	/**
 	 * @brief Next available byte
-	 * 
+	 *
 	 */
 	int cursor = 0;
 	std::string buf;
 	pthread_spinlock_t access_lock;
-	mocked_file_provider()
+	mocked_file_provider(std::string buf) : buf(buf)
 	{
 		pthread_spin_init(&access_lock, 0);
 	}
