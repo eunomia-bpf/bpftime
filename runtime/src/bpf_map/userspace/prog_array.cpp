@@ -5,8 +5,8 @@
  */
 
 #if __linux__
-#include "bpf/bpf.h"
-#include "linux/bpf.h"
+#include <bpf/bpf.h>
+#include <linux/bpf.h>
 #include <bpf/libbpf.h>
 #include <gnu/lib-names.h>
 #elif __APPLE__
