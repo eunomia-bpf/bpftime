@@ -4,10 +4,12 @@
  * All rights reserved.
  */
 
-#if __linux__
-#include <bpf/bpf.h>
-#include <linux/bpf.h>
+#if __linux__ 
+#if BPFTIME_BUILD_WITH_LIBBPF
+#include "bpf/bpf.h"
+#include "linux/bpf.h"
 #include <bpf/libbpf.h>
+#endif
 #include <gnu/lib-names.h>
 #elif __APPLE__
 #include "bpftime_epoll.h"
@@ -26,6 +28,7 @@
 
 
 #if __linux__
+#if BPFTIME_BUILD_WITH_LIBBPF
 
 // syscall() function was hooked by syscall server, direct call to it will lead
 // to a result provided by bpftime. So if we want to get things from kernel, we
@@ -76,6 +79,7 @@ int my_bpf_prog_get_fd_by_id(__u32 id)
 }
 
 #endif
+#endif
 
 namespace bpftime
 {
@@ -94,6 +98,7 @@ prog_array_map_impl::prog_array_map_impl(
 }
 
 #if __linux__
+#if BPFTIME_BUILD_WITH_LIBBPF
 
 void *prog_array_map_impl::elem_lookup(const void *key)
 {
@@ -134,7 +139,7 @@ long prog_array_map_impl::elem_update(const void *key, const void *value,
 		     info.id);
 	return 0;
 }
-
+#endif
 #endif
 
 long prog_array_map_impl::elem_delete(const void *key)
