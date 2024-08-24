@@ -15,6 +15,7 @@
 #if BPFTIME_BUILD_WITH_LIBBPF
 #include <bpf/bpf.h>
 #endif
+#include <linux/version.h>
 #include <linux/bpf.h>
 #include "linux/perf_event.h"
 #include <sys/epoll.h>
@@ -370,7 +371,15 @@ long syscall_context::handle_sysbpf(int cmd, union bpf_attr *attr, size_t size)
 				attr->btf_id,
 				attr->btf_key_type_id,
 				attr->btf_value_type_id,
-				attr->map_extra,
+				#if __linux__ 
+				#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 16, 0)
+                	attr->map_extra,
+				#else
+					0, // or some appropriate default value
+    	        #endif
+				#elif __APPLE__
+				attr->map_extra
+				#endif
 			});
 		SPDLOG_DEBUG(
 			"Created map {}, type={}, name={}, key_size={}, value_size={}",
@@ -572,7 +581,13 @@ long syscall_context::handle_sysbpf(int cmd, union bpf_attr *attr, size_t size)
 			ptr->key_size = map_attr.key_size;
 			ptr->id = attr->info.bpf_fd;
 			ptr->ifindex = map_attr.ifindex;
+			#if __linux__
+			#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 16, 0)
 			ptr->map_extra = map_attr.map_extra;
+			#endif 
+			#elif __APPLE__
+			ptr->map_extra = map_attr.map_extra;
+			#endif
 			// TODO: handle the rest info
 			ptr->max_entries = map_attr.max_ents;
 			ptr->map_flags = map_attr.flags;
