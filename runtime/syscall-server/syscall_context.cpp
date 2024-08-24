@@ -53,7 +53,7 @@
 
 #if linux && !BPFTIME_BUILD_WITH_LIBBPF
 #define offsetofend(type, member) (offsetof(type, member) + sizeof(((type *)0)->member))
-
+static void *libc_handle = dlopen(LIBC_SO, RTLD_LAZY);
 static auto libc_syscall =
 	reinterpret_cast<decltype(&::syscall)>(dlsym(libc_handle, "syscall"));
 
