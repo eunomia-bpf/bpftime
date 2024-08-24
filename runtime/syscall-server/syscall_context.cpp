@@ -54,6 +54,9 @@
 #if linux && !BPFTIME_BUILD_WITH_LIBBPF
 #define offsetofend(type, member) (offsetof(type, member) + sizeof(((type *)0)->member))
 
+static auto libc_syscall =
+	reinterpret_cast<decltype(&::syscall)>(dlsym(libc_handle, "syscall"));
+
 static inline __u64 ptr_to_u64(const void *ptr)
 {
 	return (__u64) (unsigned long) ptr;
@@ -70,7 +73,7 @@ inline int bpf_obj_get_info_by_fd(int bpf_fd, void *info, __u32 *info_len)
 	attr.info.info_len = *info_len;
 	attr.info.info = ptr_to_u64(info);
 
-	err = SYS_bpf(BPF_OBJ_GET_INFO_BY_FD, &attr, attr_sz);
+	err = libc_syscall(__NR_bpf, BPF_OBJ_GET_INFO_BY_FD, &attr, attr_sz);
 	if (!err)
 		*info_len = attr.info.info_len;
 	// no-op stub
