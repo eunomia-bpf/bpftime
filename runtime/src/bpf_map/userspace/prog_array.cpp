@@ -7,9 +7,9 @@
 #if __linux__ 
 #if BPFTIME_BUILD_WITH_LIBBPF
 #include "bpf/bpf.h"
-#include "linux/bpf.h"
 #include <bpf/libbpf.h>
 #endif
+#include "linux/bpf.h"
 #include <gnu/lib-names.h>
 #elif __APPLE__
 #include "bpftime_epoll.h"

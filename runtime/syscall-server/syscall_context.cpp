@@ -12,10 +12,12 @@
 #include <cstring>
 #include <fcntl.h>
 #if __linux__
-#include "linux/perf_event.h"
-#include <linux/bpf.h>
-#include <sys/epoll.h>
+#if BPFTIME_BUILD_WITH_LIBBPF
 #include <bpf/bpf.h>
+#endif
+#include <linux/bpf.h>
+#include "linux/perf_event.h"
+#include <sys/epoll.h>
 #include <linux/perf_event.h>
 #include <linux/filter.h>
 #elif __APPLE__
@@ -47,6 +49,27 @@
 			    .src_reg = 0,                                      \
 			    .off = 0,                                          \
 			    .imm = IMM })
+#endif
+
+#if linux && !BPFTIME_BUILD_WITH_LIBBPF
+inline int bpf_obj_get_info_by_fd(int bpf_fd, void *info, __u32 *info_len)
+{
+	const size_t attr_sz = offsetofend(union bpf_attr, info);
+	union bpf_attr attr;
+	int err;
+
+	memset(&attr, 0, attr_sz);
+	attr.info.bpf_fd = bpf_fd;
+	attr.info.info_len = *info_len;
+	attr.info.info = ptr_to_u64(info);
+
+	err = sys_bpf(BPF_OBJ_GET_INFO_BY_FD, &attr, attr_sz);
+	if (!err)
+		*info_len = attr.info.info_len;
+	// no-op stub
+	// return libbpf_err_errno(err);
+	return 1;
+}
 #endif
 
 using namespace bpftime;
