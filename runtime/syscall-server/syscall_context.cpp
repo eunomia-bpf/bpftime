@@ -70,7 +70,7 @@ inline int bpf_obj_get_info_by_fd(int bpf_fd, void *info, __u32 *info_len)
 	attr.info.info_len = *info_len;
 	attr.info.info = ptr_to_u64(info);
 
-	err = sys_bpf(BPF_OBJ_GET_INFO_BY_FD, &attr, attr_sz);
+	err = SYS_bpf(BPF_OBJ_GET_INFO_BY_FD, &attr, attr_sz);
 	if (!err)
 		*info_len = attr.info.info_len;
 	// no-op stub
