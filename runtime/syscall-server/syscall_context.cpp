@@ -20,6 +20,7 @@
 #include <sys/epoll.h>
 #include <linux/perf_event.h>
 #include <linux/filter.h>
+#include <gnu/lib-names.h>
 #elif __APPLE__
 #include "bpftime_epoll.h"
 #endif
