@@ -16,13 +16,13 @@ jobs:
           - true
           - false
         container:
-          - image: ubuntu-2204
+          - image: ubuntu-2404
             name: ubuntu
           - image: fedora-39
             name: fedora
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-24.04
     container: 
-      image: "manjusakalza/bpftime-base-image:${{matrix.container.image}}"
+      image: "hp77creator/bpftime-base-image:${{matrix.container.image}}"
       options: --privileged
     steps:
       - uses: actions/checkout@v2
@@ -59,11 +59,11 @@ jobs:
           path: |
             ~/.bpftime
   build-and-test:
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-24.04
     needs: [build-runtime]
     container: 
-      image: "manjusakalza/bpftime-base-image:${{matrix.container.image}}"
-      options: " ${{matrix.privilege_options.options}}"
+      image: "hp77creator/bpftime-base-image:${{matrix.container.image}}"
+      options: --privileged -v /sys/kernel/debug/:/sys/kernel/debug:rw -v /sys/kernel/tracing:/sys/kernel/tracing:rw
     strategy:
       fail-fast: true
       matrix:
@@ -82,7 +82,7 @@ jobs:
           - options: ""
             enable: false
         container:
-          - image: ubuntu-2204
+          - image: ubuntu-2404
             name: ubuntu
           - image: fedora-39
             name: fedora
