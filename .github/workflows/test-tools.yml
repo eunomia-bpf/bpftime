@@ -13,11 +13,11 @@ jobs:
     strategy:
       matrix:
         container:
-          - ubuntu-2404
+          - ubuntu-2204
           - fedora-39
     runs-on: ubuntu-latest
     container: 
-      image: "hp77creator/bpftime-base-image:${{matrix.container}}"
+      image: "manjusakalza/bpftime-base-image:${{matrix.container}}"
       options: --privileged
     steps:
     - uses: actions/checkout@v2

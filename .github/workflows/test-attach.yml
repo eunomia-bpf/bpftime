@@ -17,10 +17,10 @@ jobs:
     strategy:
       matrix:
         container:
-          - ubuntu-2404
+          - ubuntu-2204
           - fedora-39
     container:
-      image: "hp77creator/bpftime-base-image:${{matrix.container}}"
+      image: "manjusakalza/bpftime-base-image:${{matrix.container}}"
       options: --privileged -v /sys/kernel/debug/:/sys/kernel/debug:rw -v /sys/kernel/tracing:/sys/kernel/tracing:rw
     steps:
       - uses: actions/checkout@v2

@@ -22,7 +22,7 @@ jobs:
             name: fedora
     runs-on: ubuntu-22.04
     container: 
-      image: "hp77creator/bpftime-base-image:${{matrix.container.image}}"
+      image: "manjusakalza/bpftime-base-image:${{matrix.container.image}}"
       options: --privileged
     steps:
       - uses: actions/checkout@v2
@@ -62,7 +62,7 @@ jobs:
     runs-on: ubuntu-22.04
     needs: [build-runtime]
     container: 
-      image: "hp77creator/bpftime-base-image:${{matrix.container.image}}"
+      image: "manjusakalza/bpftime-base-image:${{matrix.container.image}}"
       options: --privileged -v /sys/kernel/debug/:/sys/kernel/debug:rw -v /sys/kernel/tracing:/sys/kernel/tracing:rw
     strategy:
       fail-fast: true
