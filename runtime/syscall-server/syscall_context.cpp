@@ -52,6 +52,13 @@
 #endif
 
 #if linux && !BPFTIME_BUILD_WITH_LIBBPF
+#define offsetofend(type, member) (offsetof(type, member) + sizeof(((type *)0)->member))
+
+static inline __u64 ptr_to_u64(const void *ptr)
+{
+	return (__u64) (unsigned long) ptr;
+}
+
 inline int bpf_obj_get_info_by_fd(int bpf_fd, void *info, __u32 *info_len)
 {
 	const size_t attr_sz = offsetofend(union bpf_attr, info);
