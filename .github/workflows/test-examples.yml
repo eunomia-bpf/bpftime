@@ -16,11 +16,11 @@ jobs:
           - true
           - false
         container:
-          - image: ubuntu-2404
+          - image: ubuntu-2204
             name: ubuntu
           - image: fedora-39
             name: fedora
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-22.04
     container: 
       image: "hp77creator/bpftime-base-image:${{matrix.container.image}}"
       options: --privileged
@@ -59,7 +59,7 @@ jobs:
           path: |
             ~/.bpftime
   build-and-test:
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-22.04
     needs: [build-runtime]
     container: 
       image: "hp77creator/bpftime-base-image:${{matrix.container.image}}"
@@ -82,7 +82,7 @@ jobs:
           - options: ""
             enable: false
         container:
-          - image: ubuntu-2404
+          - image: ubuntu-2204
             name: ubuntu
           - image: fedora-39
             name: fedora
