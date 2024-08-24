@@ -42,7 +42,7 @@ jobs:
           # relative path to the place where source code with Dockerfile is located
           context: ./
           file: Dockerfile
-          platforms: linux/amd64
+          platforms: linux/arm64
           # Note: tags has to be all lower-case
           tags: |
             ghcr.io/${{ github.repository_owner }}/bpftime:latest
