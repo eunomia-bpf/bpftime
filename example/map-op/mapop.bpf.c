@@ -1,13 +1,8 @@
-#include <stdint.h>
 
-#ifdef __linux__
 #include <linux/bpf.h>
 #include <bpf/bpf_helpers.h>
-#elif defined(__APPLE__)
-#include "bpftime_epoll.h"
-#else
-#error "Unsupported platform"
-#endif
+#include <linux/types.h>
+
 
 struct bpf_map_def {
     unsigned int type;
