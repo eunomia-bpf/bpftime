@@ -4,7 +4,8 @@
  * All rights reserved.
  */
 #include "syscall_context.hpp"
-#include "bpftime_shm.hpp"
+#include <boost/interprocess/exceptions.hpp>
+#include <cstdio>
 #if __linux__
 #include "linux/bpf.h"
 #include <asm-generic/errno-base.h>
@@ -16,8 +17,6 @@
 #include <unistd.h>
 #include <spdlog/cfg/env.h>
 #include <cstdarg>
-using namespace bpftime;
-
 // global context for bpf syscall server
 static syscall_context context;
 
@@ -123,6 +122,46 @@ extern "C" ssize_t read(int fd, void *buf, size_t count)
 {
 	return context.handle_read(fd, buf, count);
 }
+
+extern "C" FILE *fopen(const char *pathname, const char *flags)
+{
+	SPDLOG_DEBUG("fopen {} {}", pathname, flags);
+	return context.handle_fopen(pathname, flags);
+}
+extern "C" FILE *fopen64(const char *pathname, const char *flags)
+{
+	SPDLOG_DEBUG("fopen64 {} {}", pathname, flags);
+	return context.handle_fopen(pathname, flags);
+}
+extern "C" FILE *_IO_new_fopen(const char *pathname, const char *flags)
+{
+	SPDLOG_DEBUG("_IO_new_fopen {} {}", pathname, flags);
+	return context.handle_fopen(pathname, flags);
+}
+// extern "C" int fclose(FILE *f)
+// {
+// 	SPDLOG_DEBUG("fclose {:x}", (uintptr_t)f);
+// 	return context.handle_fclose(f);
+// }
+// extern "C" int fscanf(FILE *fp, const char *fmt, ...)
+// {
+// 	SPDLOG_DEBUG("fscanf {:x} {}", (uintptr_t)fp, fmt);
+// 	va_list args;
+// 	va_start(args, fmt);
+// 	int result = context.handle_fscanf(fp, fmt, args);
+// 	va_end(args);
+// 	return result;
+// }
+
+// extern "C" int __isoc99_fscanf(FILE *fp, const char *fmt, ...)
+// {
+// 	SPDLOG_DEBUG("__isoc99_fscanf {:x} {}", (uintptr_t)fp, fmt);
+// 	va_list args;
+// 	va_start(args, fmt);
+// 	int result = context.handle_fscanf(fp, fmt, args);
+// 	va_end(args);
+// 	return result;
+// }
 #if __linux__
 extern "C" long syscall(long sysno, ...)
 {

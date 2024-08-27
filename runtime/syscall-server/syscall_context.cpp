@@ -5,6 +5,7 @@
  */
 #include "bpftime_logger.hpp"
 #include "bpftime_shm.hpp"
+#include <cstdio>
 #include <ebpf-vm.h>
 #include "syscall_context.hpp"
 #include "handler/map_handler.hpp"
@@ -809,4 +810,34 @@ int syscall_context::handle_munmap(void *addr, size_t size)
 	} else {
 		return orig_munmap_fn(addr, size);
 	}
+}
+
+FILE *syscall_context::handle_fopen(const char *pathname, const char *flags)
+{
+	if (!enable_mock)
+		return orig_fopen_fn(pathname, flags);
+	try_startup();
+	if (auto mocker = create_mocked_file_based_on_full_path(pathname);
+	    mocker) {
+		bpftime_lock_guard _guard(this->mocked_file_lock);
+		char filename_buf[] = "/tmp/bpftime-mock.XXXXXX";
+		int fake_fd = mkstemp(filename_buf);
+		if (fake_fd < 0) {
+			SPDLOG_WARN("Unable to create mock fd: {}", errno);
+			return orig_fopen_fn(pathname, flags);
+		}
+		auto itr =
+			this->mocked_files.emplace(fake_fd, std::move(*mocker))
+				.first;
+		FILE *replacement_fp = fopen(filename_buf, "r");
+
+		itr->second->replacement_file = replacement_fp;
+		auto size_written = write(fake_fd, itr->second->buf.c_str(),
+					  itr->second->buf.size());
+		SPDLOG_DEBUG(
+			"Created fake fd {}, replacement fp {:x}, written {} bytes",
+			fake_fd, (uintptr_t)replacement_fp, size_written);
+		return replacement_fp;
+	}
+	return orig_fopen_fn(pathname, flags);
 }

@@ -32,6 +32,7 @@ struct mocked_file_provider {
 	int cursor = 0;
 	std::string buf;
 	pthread_spinlock_t access_lock;
+	FILE *replacement_file = nullptr;
 	mocked_file_provider(std::string buf) : buf(buf)
 	{
 		pthread_spin_init(&access_lock, 0);
@@ -60,6 +61,8 @@ class syscall_context {
 	using openat_fn = int (*)(int, const char *, int, ...);
 	using open_fn = int (*)(const char *, int, ...);
 	using read_fn = ssize_t (*)(int fd, void *buf, size_t count);
+	using fopen_fn = FILE *(*)(const char *, const char *);
+
 	close_fn orig_close_fn = nullptr;
 	mmap64_fn orig_mmap64_fn = nullptr;
 	ioctl_fn orig_ioctl_fn = nullptr;
@@ -71,6 +74,8 @@ class syscall_context {
 	open_fn orig_open_fn = nullptr;
 	mmap_fn orig_mmap_fn = nullptr;
 	read_fn orig_read_fn = nullptr;
+	fopen_fn orig_fopen_fn = nullptr;
+
 	std::unordered_set<uintptr_t> mocked_mmap_values;
 	pthread_spinlock_t mocked_file_lock;
 	std::unordered_map<int, std::unique_ptr<mocked_file_provider> >
@@ -91,6 +96,8 @@ class syscall_context {
 			(mmap_fn)dlsym(RTLD_NEXT, "mmap");
 		orig_openat_fn = (openat_fn)dlsym(RTLD_NEXT, "openat");
 		orig_open_fn = (open_fn)dlsym(RTLD_NEXT, "open");
+		orig_fopen_fn = (fopen_fn)dlsym(RTLD_NEXT, "fopen");
+
 		// To avoid polluting other child processes,
 		// unset the LD_PRELOAD env var after syscall context being
 		// initialized
@@ -103,7 +110,8 @@ class syscall_context {
 			(uintptr_t)orig_ioctl_fn, (uintptr_t)orig_syscall_fn,
 			(uintptr_t)orig_mmap64_fn, (uintptr_t)orig_close_fn,
 			(uintptr_t)orig_munmap_fn, (uintptr_t)orig_mmap_fn,
-			(uintptr_t)orig_openat_fn, (uintptr_t)orig_open_fn);
+			(uintptr_t)orig_openat_fn, (uintptr_t)orig_open_fn,
+			(uintptr_t)orig_fopen_fn);
 	}
 
 	int create_kernel_bpf_map(int fd);
@@ -153,6 +161,7 @@ class syscall_context {
 			  unsigned short mode);
 	int handle_open(const char *file, int oflag, unsigned short mode);
 	ssize_t handle_read(int fd, void *buf, size_t count);
+	FILE *handle_fopen(const char *pathname, const char *flags);
 };
 
 #endif
