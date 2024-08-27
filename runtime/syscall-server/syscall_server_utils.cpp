@@ -6,6 +6,7 @@
 #include "bpftime_shm_internal.hpp"
 #include "syscall_context.hpp"
 #include <filesystem>
+#include <memory>
 #include <spdlog/cfg/env.h>
 #include <spdlog/spdlog.h>
 #include "bpftime_logger.hpp"
@@ -126,16 +127,16 @@ int determine_uprobe_retprobe_bit()
 				    "config:%d\n");
 }
 
-std::optional<mocked_file_provider>
+std::optional<std::unique_ptr<mocked_file_provider> >
 create_mocked_file_based_on_full_path(const std::filesystem::path &path)
 {
 	if (path == UPROBE_TYPE_FILE_NAME) {
 		SPDLOG_DEBUG("{} is uprobe type file", path.c_str());
-		return mocked_file_provider(
+		return std::make_unique<mocked_file_provider>(
 			std::to_string(MOCKED_UPROBE_TYPE_VALUE));
 	} else if (path == URETPROBE_BIT_FILE_NAME) {
 		SPDLOG_DEBUG("{} is uretprobe bit file", path.c_str());
-		return mocked_file_provider(
+		return std::make_unique<mocked_file_provider>(
 			"config:" + std::to_string(MOCKED_URETPROBE_BIT));
 	} else {
 		SPDLOG_DEBUG("Unmocked file path: {}", path.c_str());
@@ -144,7 +145,7 @@ create_mocked_file_based_on_full_path(const std::filesystem::path &path)
 }
 
 std::optional<std::filesystem::path>
-filename_and_fd_to_full_path(int fd, const char *file)
+resolve_filename_and_fd_to_full_path(int fd, const char *file)
 {
 	std::error_code ec;
 	auto dir_path = std::filesystem::read_symlink(

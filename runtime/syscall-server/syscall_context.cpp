@@ -8,8 +8,8 @@
 #include <ebpf-vm.h>
 #include "syscall_context.hpp"
 #include "handler/map_handler.hpp"
-#include "handler/perf_event_handler.hpp"
 #include <cstring>
+#include <fcntl.h>
 #if __linux__
 #include "linux/perf_event.h"
 #include <linux/bpf.h>
@@ -115,7 +115,24 @@ int syscall_context::handle_openat(int fd, const char *file, int oflag,
 	if (!enable_mock)
 		return orig_openat_fn(fd, file, oflag, mode);
 	try_startup();
-	// const char * new_file = bpftime_checkfile(file);
+	auto path = resolve_filename_and_fd_to_full_path(fd, file);
+	if (!path) {
+		SPDLOG_WARN("Failed to resolve fd={}/file=`{}`", fd, file);
+		return orig_openat_fn(fd, file, oflag, mode);
+	}
+	if (auto mocker = create_mocked_file_based_on_full_path(*path);
+	    mocker) {
+		bpftime_lock_guard _guard(this->mocked_file_lock);
+		char filename_buf[] = "/tmp/bpftime-mock.XXXXXX";
+		int fake_fd = mkstemp(filename_buf);
+		if (fake_fd < 0) {
+			SPDLOG_WARN("Unable to create mock fd: {}", errno);
+			return orig_open_fn(file, oflag, mode);
+		}
+		this->mocked_files.emplace(fake_fd, std::move(*mocker));
+		SPDLOG_DEBUG("Created mocked file with fd {}", fake_fd);
+		return fake_fd;
+	}
 	return orig_openat_fn(fd, file, oflag, mode);
 }
 
@@ -125,7 +142,18 @@ int syscall_context::handle_open(const char *file, int oflag,
 	if (!enable_mock)
 		return orig_open_fn(file, oflag, mode);
 	try_startup();
-	// const char * new_file = bpftime_checkfile(file);
+	if (auto mocker = create_mocked_file_based_on_full_path(file); mocker) {
+		bpftime_lock_guard _guard(this->mocked_file_lock);
+		char filename_buf[] = "/tmp/bpftime-mock.XXXXXX";
+		int fake_fd = mkstemp(filename_buf);
+		if (fake_fd < 0) {
+			SPDLOG_WARN("Unable to create mock fd: {}", errno);
+			return orig_open_fn(file, oflag, mode);
+		}
+		this->mocked_files.emplace(fake_fd, std::move(*mocker));
+		SPDLOG_DEBUG("Created mocked file with fd {}", fake_fd);
+		return fake_fd;
+	}
 	return orig_open_fn(file, oflag, mode);
 }
 
@@ -141,15 +169,17 @@ ssize_t syscall_context::handle_read(int fd, void *buf, size_t count)
 			SPDLOG_DEBUG("Mock read fd={}, buf={:x}, count={}", fd,
 				     (uintptr_t)buf, count);
 			auto &mock_file = itr->second;
-			bpftime_lock_guard _access_guard(mock_file.access_lock);
-			auto can_read_bytes = std::min(
-				count, mock_file.buf.size() - mock_file.cursor);
+			bpftime_lock_guard _access_guard(
+				mock_file->access_lock);
+			auto can_read_bytes =
+				std::min(count, mock_file->buf.size() -
+							mock_file->cursor);
 			SPDLOG_DEBUG("Reading {} bytes", can_read_bytes);
 			if (can_read_bytes == 0)
 				return can_read_bytes;
-			memcpy(buf, &mock_file.buf[mock_file.cursor],
+			memcpy(buf, &mock_file->buf[mock_file->cursor],
 			       can_read_bytes);
-			mock_file.cursor += can_read_bytes;
+			mock_file->cursor += can_read_bytes;
 			SPDLOG_DEBUG("Copied {} bytes", can_read_bytes);
 
 			return can_read_bytes;

@@ -40,6 +40,11 @@ struct mocked_file_provider {
 	{
 		pthread_spin_destroy(&access_lock);
 	}
+	mocked_file_provider(const mocked_file_provider &) = delete;
+	mocked_file_provider &operator=(const mocked_file_provider &) = delete;
+
+	mocked_file_provider(mocked_file_provider &&) = default;
+	mocked_file_provider &operator=(mocked_file_provider &&) = default;
 };
 
 class syscall_context {
@@ -68,7 +73,8 @@ class syscall_context {
 	read_fn orig_read_fn = nullptr;
 	std::unordered_set<uintptr_t> mocked_mmap_values;
 	pthread_spinlock_t mocked_file_lock;
-	std::unordered_map<int, mocked_file_provider> mocked_files;
+	std::unordered_map<int, std::unique_ptr<mocked_file_provider> >
+		mocked_files;
 	void init_original_functions()
 	{
 		orig_epoll_wait_fn =
