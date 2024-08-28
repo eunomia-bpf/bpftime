@@ -63,7 +63,7 @@ jobs:
     needs: [build-runtime]
     container: 
       image: "manjusakalza/bpftime-base-image:${{matrix.container.image}}"
-      options: ${{matrix.extra_options}}
+      options: "${{matrix.extra_options}}"
     strategy:
       fail-fast: true
       matrix:
