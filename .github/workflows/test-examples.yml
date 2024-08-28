@@ -70,7 +70,7 @@ jobs:
         exclude:
           - privilege_options:
               enable: false
-          - examples:
+            examples:
               syscall_trace: true
         privilege_options:
           - options: "--privileged -v /sys/kernel/debug/:/sys/kernel/debug:rw -v /sys/kernel/tracing:/sys/kernel/tracing:rw"
