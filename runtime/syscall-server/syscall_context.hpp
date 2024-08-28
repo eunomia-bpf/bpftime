@@ -96,6 +96,7 @@ class syscall_context {
 			(mmap_fn)dlsym(RTLD_NEXT, "mmap");
 		orig_openat_fn = (openat_fn)dlsym(RTLD_NEXT, "openat");
 		orig_open_fn = (open_fn)dlsym(RTLD_NEXT, "open");
+		orig_read_fn = (read_fn)dlsym(RTLD_NEXT, "read");
 		orig_fopen_fn = (fopen_fn)dlsym(RTLD_NEXT, "fopen");
 
 		// To avoid polluting other child processes,
