@@ -63,13 +63,20 @@ jobs:
     needs: [build-runtime]
     container: 
       image: "manjusakalza/bpftime-base-image:${{matrix.container.image}}"
-      options: " ${{matrix.extra_options}}"
+      options: " ${{matrix.privilege_options.options}}"
     strategy:
       fail-fast: false
       matrix:
-        extra_options:
-          - "--privileged -v /sys/kernel/debug/:/sys/kernel/debug:rw -v /sys/kernel/tracing:/sys/kernel/tracing:rw"
-          - ""
+        exclude:
+          - examples:
+            syscall_trace: true
+          - privilege_options:
+            enable: true
+        privilege_options:
+          - options: "--privileged -v /sys/kernel/debug/:/sys/kernel/debug:rw -v /sys/kernel/tracing:/sys/kernel/tracing:rw"
+            enable: true
+          - options: ""
+            enable: false
         container:
           - image: ubuntu-2204
             name: ubuntu
