@@ -65,13 +65,13 @@ jobs:
       image: "manjusakalza/bpftime-base-image:${{matrix.container.image}}"
       options: " ${{matrix.privilege_options.options}}"
     strategy:
-      fail-fast: false
+      fail-fast: true
       matrix:
         exclude:
-          - examples:
-            syscall_trace: true
           - privilege_options:
-            enable: true
+              enable: false
+          - examples:
+              syscall_trace: true
         privilege_options:
           - options: "--privileged -v /sys/kernel/debug/:/sys/kernel/debug:rw -v /sys/kernel/tracing:/sys/kernel/tracing:rw"
             enable: true
