@@ -44,6 +44,9 @@ jobs:
             -DBUILD_BPFTIME_DAEMON=1 \
             -DCMAKE_CXX_FLAGS="-DDEFAULT_LOGGER_OUTPUT_PATH='\"console\"'"
           cmake --build build --config RelWithDebInfo --target install -j
+      - name: Build basic examples
+        run: |
+            make -C example -j
       - name: Upload build results (without jit)
         uses: actions/upload-artifact@v3
         if: ${{!matrix.enable_jit}}
