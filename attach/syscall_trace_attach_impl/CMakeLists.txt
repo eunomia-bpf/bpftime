@@ -30,7 +30,8 @@ set(TEST_SOURCES
 )
 add_executable(bpftime_syscall_trace_attach_tests ${TEST_SOURCES})
 
-if(${ENABLE_EBPF_VERIFIER})
+if(${ENABLE_EBPF_VERIFIER} AND NOT TARGET Catch2)
+    message(STATUS "Adding Catch2 by FetchContent at syscall_trace_attach_impl")
     Include(FetchContent)
     FetchContent_Declare(
         Catch2

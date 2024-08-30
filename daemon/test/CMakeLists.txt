@@ -1,4 +1,5 @@
-if(${ENABLE_EBPF_VERIFIER})
+if(${ENABLE_EBPF_VERIFIER} AND NOT TARGET Catch2)
+    message(STATUS "Adding Catch2 by FetchContent at bpftime-daemon")
     Include(FetchContent)
     FetchContent_Declare(
         Catch2
@@ -6,6 +7,7 @@ if(${ENABLE_EBPF_VERIFIER})
         GIT_TAG v3.4.0
     )
     FetchContent_MakeAvailable(Catch2)
+
     # if not enable verifier, we will use the catch2 from submodule
 endif()
 
