@@ -20,6 +20,7 @@
 #define CTRL_ARRAY_SIZE 2
 #define CNTRS_ARRAY_SIZE 512
 
+// use map type define
 struct {
   __uint(type, BPF_MAP_TYPE_ARRAY);
   __type(key, __u32);
@@ -27,12 +28,8 @@ struct {
   __uint(max_entries, CTRL_ARRAY_SIZE);
 } ctl_array SEC(".maps");
 
-struct {
-  __uint(type, BPF_MAP_TYPE_PERCPU_ARRAY);
-  __type(key, __u32);
-  __type(value, __u64);
-  __uint(max_entries, CNTRS_ARRAY_SIZE);
-} cntrs_array SEC(".maps");
+// use global variable define
+__u64 cntrs_array[CNTRS_ARRAY_SIZE];
 
 static void swap_src_dst_mac(void *data)
 {
@@ -56,16 +53,15 @@ int xdp_pass(struct xdp_md* ctx) {
   void* data = (void*)(long)ctx->data;
   __u32 ctl_flag_pos = 0;
   __u32 cntr_pos = 0;
-  __u32* flag = bpf_map_lookup_elem(&ctl_array, &ctl_flag_pos);
 
+  // access maps with helpers
+  __u32* flag = bpf_map_lookup_elem(&ctl_array, &ctl_flag_pos);
   if (!flag || (*flag != 0)) {
     return XDP_PASS;
   };
 
-  __u64* cntr_val = bpf_map_lookup_elem(&cntrs_array, &cntr_pos);
-  if (cntr_val) {
-    *cntr_val += 1;
-  };
+  // access maps with global variables
+  cntrs_array[cntr_pos]++;
 
 	if (data + sizeof(struct ethhdr) > data_end)
 		return XDP_DROP;
