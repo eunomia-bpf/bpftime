@@ -1,4 +1,4 @@
 {
-    global: epoll_wait; epoll_ctl; epoll_create1; ioctl; mmap64; mmap; close; syscall; munmap;
+    global: epoll_wait; epoll_ctl; epoll_create1; ioctl; mmap64; mmap; close; syscall; munmap; open; openat; read; fopen; fopen64; _IO_new_fopen;
     local: *;
 };

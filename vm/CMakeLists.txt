@@ -19,11 +19,6 @@ if(NOT DEFINED SPDLOG_INCLUDE)
   add_subdirectory(../third_party/spdlog ${CMAKE_CURRENT_BINARY_DIR}/spdlog)
   set(SPDLOG_INCLUDE ${CMAKE_CURRENT_SOURCE_DIR}/../third_party/spdlog/include)
 endif()
-if(CMAKE_BUILD_TYPE STREQUAL "Debug")
-  add_definitions(-DSPDLOG_ACTIVE_LEVEL=SPDLOG_LEVEL_DEBUG)
-else()
-  add_definitions(-DSPDLOG_ACTIVE_LEVEL=SPDLOG_LEVEL_INFO)
-endif()
 
 if(${BPFTIME_BUILD_STANDALONE_VM})
   include(../cmake/libbpf.cmake)
@@ -31,14 +26,11 @@ if(${BPFTIME_BUILD_STANDALONE_VM})
 endif()
 
 if(${BPFTIME_LLVM_JIT})
-  message(STATUS "Using llvm-jit")
-  add_subdirectory(llvm-jit)
-  set(BPFTIME_BPF_RUNTIME_NAME "bpftime_llvm_jit_vm")
+  set(BPFTIME_BPF_RUNTIME_NAME "bpftime_llvm_vm")
 else()
-  message(STATUS "Not using llvm-jit")
-  add_subdirectory(ubpf-vm)
   set(BPFTIME_BPF_RUNTIME_NAME "bpftime_ubpf_vm")
 endif()
+
 add_subdirectory(compat)
 add_subdirectory(vm-core)
 
@@ -55,8 +47,4 @@ set(test_sources
 if(BPFTIME_ENABLE_UNIT_TESTING)
   enable_testing()
   message(STATUS "Build unit tests for the project. Tests should always be found in the test folder\n")
-  add_subdirectory(test)
 endif()
-
-add_subdirectory(test-runner)
-

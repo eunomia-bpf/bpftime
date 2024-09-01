@@ -65,7 +65,7 @@ release: ## build the release version
 
 release-with-llvm-jit: ## build the package, with llvm-jit
 	cmake -Bbuild  -DCMAKE_BUILD_TYPE:STRING=RelWithDebInfo \
-				   -DBPFTIME_LLVM_JIT=1
+				   -DBPFTIME_LLVM_JIT=1 \
 				   -DBUILD_BPFTIME_DAEMON=1
 	cmake --build build --config RelWithDebInfo --target install -j$(JOBS)
 

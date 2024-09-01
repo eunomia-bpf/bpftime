@@ -26,32 +26,35 @@
 
 #ifdef __APPLE__
 // Custom implementation for sigtimedwait
-int sigtimedwait(const sigset_t *set, siginfo_t *info, const struct timespec *timeout) {
-    struct timespec start, now;
-    clock_gettime(CLOCK_REALTIME, &start);
-    int sig;
+int sigtimedwait(const sigset_t *set, siginfo_t *info,
+		 const struct timespec *timeout)
+{
+	struct timespec start, now;
+	clock_gettime(CLOCK_REALTIME, &start);
+	int sig;
 
-    while (true) {
-        // Try to wait for a signal
-        if (sigwait(set, &sig) == 0) {
-            if (info != nullptr) {
-                memset(info, 0, sizeof(*info));
-                info->si_signo = sig;
-            }
-            return sig;
-        }
+	while (true) {
+		// Try to wait for a signal
+		if (sigwait(set, &sig) == 0) {
+			if (info != nullptr) {
+				memset(info, 0, sizeof(*info));
+				info->si_signo = sig;
+			}
+			return sig;
+		}
 
-        // Check if the timeout has expired
-        clock_gettime(CLOCK_REALTIME, &now);
-        if ((now.tv_sec - start.tv_sec) > timeout->tv_sec ||
-            ((now.tv_sec - start.tv_sec) == timeout->tv_sec && (now.tv_nsec - start.tv_nsec) > timeout->tv_nsec)) {
-            errno = EAGAIN;
-            return -1;
-        }
+		// Check if the timeout has expired
+		clock_gettime(CLOCK_REALTIME, &now);
+		if ((now.tv_sec - start.tv_sec) > timeout->tv_sec ||
+		    ((now.tv_sec - start.tv_sec) == timeout->tv_sec &&
+		     (now.tv_nsec - start.tv_nsec) > timeout->tv_nsec)) {
+			errno = EAGAIN;
+			return -1;
+		}
 
-        // Sleep for a short time before retrying
-        usleep(1000); // Sleep for 1ms before retrying
-    }
+		// Sleep for a short time before retrying
+		usleep(1000); // Sleep for 1ms before retrying
+	}
 }
 #endif
 
@@ -516,7 +519,7 @@ int bpftime_perf_event_output(int fd, const void *buf, size_t sz)
 	}
 }
 
-#if __linux__
+#if __linux__ && BPFTIME_BUILD_WITH_LIBBPF
 int bpftime_shared_perf_event_output(int map_fd, const void *buf, size_t sz)
 {
 	SPDLOG_DEBUG("Output data into shared perf event array fd {}", map_fd);
@@ -544,7 +547,7 @@ int bpftime_shared_perf_event_output(int map_fd, const void *buf, size_t sz)
 		return -1;
 	}
 }
-#endif 
+#endif
 
 int bpftime_is_prog_array(int fd)
 {

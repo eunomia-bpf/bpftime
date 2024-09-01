@@ -1,4 +1,5 @@
-if(${ENABLE_EBPF_VERIFIER})
+if(${ENABLE_EBPF_VERIFIER} AND NOT TARGET Catch2)
+    message(STATUS "Adding Catch2 by FetchContent from runtime/unit-test")
     Include(FetchContent)
     FetchContent_Declare(
         Catch2

@@ -1,0 +1,36 @@
+name: Build and test bpftime tools
+
+on:
+  push:
+    branches: [ master ]
+  pull_request:
+    branches: [ master ]
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}-${{ github.event_name }}
+  cancel-in-progress: true
+jobs:
+  build:
+    strategy:
+      matrix:
+        container:
+          - ubuntu-2204
+          - fedora-39
+    runs-on: ubuntu-latest
+    container: 
+      image: "manjusakalza/bpftime-base-image:${{matrix.container}}"
+      options: --privileged
+    steps:
+    - uses: actions/checkout@v2
+      with:
+        submodules: 'recursive'
+
+    - name: Build and install everything
+      run: |
+        make release-with-llvm-jit -j
+    # TODO: add test for the tools
+    # - name: Run the test scripts
+    #   run: |
+    #     export PATH=$PATH:~/.bpftime
+        
+        
+      

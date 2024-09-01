@@ -46,6 +46,7 @@ function(bpftime_add_static_lib_component_command target)
     )
     set(BPFTIME_STATIC_LIB_AR_CMDS ${BPFTIME_STATIC_LIB_AR_CMDS} ${CMDS} PARENT_SCOPE)
   endif()
+
   set(BPFTIME_STATIC_LIB_DEPS ${BPFTIME_STATIC_LIB_DEPS} ${target} PARENT_SCOPE)
 endfunction()
 
@@ -53,6 +54,7 @@ function(bpftime_add_libs_component_command target_path)
   get_filename_component(target_name ${target_path} NAME)
   string(REGEX REPLACE "^lib" "" target_name ${target_name})
   string(REGEX REPLACE "\.a$" "" target_name ${target_name})
+
   if(APPLE)
     if(CMAKE_AR_NAME STREQUAL "ar")
       list(APPEND CMDS
@@ -86,7 +88,7 @@ message(STATUS "Started CMake for ${PROJECT_NAME} v${PROJECT_VERSION}...\n")
 
 # if option to build without libbpf is set
 if(${BPFTIME_BUILD_WITH_LIBBPF})
-  add_definitions(-DUSE_LIBBPF)
+  add_definitions(-DBPFTIME_BUILD_WITH_LIBBPF=1)
 endif()
 
 if(UNIX)
@@ -117,9 +119,9 @@ endif()
 if(${BPFTIME_BUILD_WITH_LIBBPF})
   include(cmake/libbpf.cmake)
 endif()
+
 # install frida
 include(cmake/frida.cmake)
-
 
 set(CMAKE_POSITION_INDEPENDENT_CODE YES)
 
@@ -127,21 +129,24 @@ if(${ENABLE_EBPF_VERIFIER})
   add_subdirectory(bpftime-verifier)
 else()
   message(STATUS "Skipping ebpf verifier")
+
   # Catch2
-  add_subdirectory(third_party/Catch2)
+  if(NOT DEFINED Catch2_INCLUDE)
+    message(STATUS "Adding Catch2 by subdirectory")
+    add_subdirectory(third_party/Catch2)
+  endif()
 endif()
 
 # spdlog
 add_subdirectory(third_party/spdlog)
+
 if(NOT DEFINED SPDLOG_ACTIVE_LEVEL)
   if(CMAKE_BUILD_TYPE STREQUAL "Debug")
-    add_compile_definitions(SPDLOG_ACTIVE_LEVEL=SPDLOG_LEVEL_DEBUG)
+    add_compile_definitions(SPDLOG_ACTIVE_LEVEL=SPDLOG_LEVEL_TRACE)
   else()
     add_compile_definitions(SPDLOG_ACTIVE_LEVEL=SPDLOG_LEVEL_INFO)
   endif()
 endif()
-
-
 
 set(SPDLOG_INCLUDE ${CMAKE_CURRENT_SOURCE_DIR}/third_party/spdlog/include)
 
@@ -155,52 +160,55 @@ add_subdirectory(attach)
 
 add_subdirectory(runtime)
 
-
 # add to single archive if option is enabled
-if (${BPFTIME_BUILD_STATIC_LIB})
-set(UBPF_BUILD_DIR ${CMAKE_CURRENT_BINARY_DIR}/vm/ubpf-vm/ubpf)
-message(STATUS " Adding libraries to single static archive file")
-bpftime_add_static_lib_component_command(bpftime_vm)
-if(${BPFTIME_LLVM_JIT})
-bpftime_add_static_lib_component_command(bpftime_llvm_jit_vm)
-else()
-bpftime_add_static_lib_component_command(bpftime_ubpf_vm)
-bpftime_add_libs_component_command(${UBPF_BUILD_DIR}/lib/libubpf.a)
-endif()
-bpftime_add_libs_component_command(${FRIDA_GUM_INSTALL_DIR}/libfrida-gum.a)
-bpftime_add_static_lib_component_command(bpftime_frida_uprobe_attach_impl)
-if(${BPFTIME_BUILD_WITH_LIBBPF})
-bpftime_add_libs_component_command(${CMAKE_CURRENT_BUILD_DIR}/libbpf/libbpf/libbpf.a)
-bpftime_add_static_lib_component_command(bpftime_syscall_trace_attach_impl)
-endif()
-bpftime_add_static_lib_component_command(runtime)
-bpftime_add_static_lib_component_command(spdlog)
-add_custom_command(OUTPUT "libbpftime.a"
+if(${BPFTIME_BUILD_STATIC_LIB})
+  set(UBPF_BUILD_DIR ${CMAKE_CURRENT_BINARY_DIR}/vm/ubpf-vm/ubpf)
+  message(STATUS " Adding libraries to single static archive file")
+  bpftime_add_static_lib_component_command(bpftime_vm)
+
+  if(${BPFTIME_LLVM_JIT})
+    bpftime_add_static_lib_component_command(bpftime_llvm_vm)
+  else()
+    bpftime_add_static_lib_component_command(bpftime_ubpf_vm)
+    bpftime_add_libs_component_command(${UBPF_BUILD_DIR}/lib/libubpf.a)
+  endif()
+
+  bpftime_add_libs_component_command(${FRIDA_GUM_INSTALL_DIR}/libfrida-gum.a)
+  bpftime_add_static_lib_component_command(bpftime_frida_uprobe_attach_impl)
+
+  if(${BPFTIME_BUILD_WITH_LIBBPF})
+    bpftime_add_libs_component_command(${CMAKE_CURRENT_BUILD_DIR}/libbpf/libbpf/libbpf.a)
+    bpftime_add_static_lib_component_command(bpftime_syscall_trace_attach_impl)
+  endif()
+
+  bpftime_add_static_lib_component_command(runtime)
+  bpftime_add_static_lib_component_command(spdlog)
+  add_custom_command(OUTPUT "libbpftime.a"
     ${BPFTIME_STATIC_LIB_AR_CMDS}
     ${BPFTIME_STATIC_LLVM_LIB_AR_CMDS}
     COMMAND ${CMAKE_AR} -qcs libbpftime.a objs/*/*.o
     COMMAND ${CMAKE_COMMAND} -E remove_directory objs
     WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
     DEPENDS ${BPFTIME_STATIC_LIB_DEPS}
-    )
-add_custom_target(bpftime_static_target ALL DEPENDS "libbpftime.a")
-add_library(bpftime_static STATIC IMPORTED GLOBAL)
-add_dependencies(bpftime_static bpftime_static_target)
+  )
+  add_custom_target(bpftime_static_target ALL DEPENDS "libbpftime.a")
+  add_library(bpftime_static STATIC IMPORTED GLOBAL)
+  add_dependencies(bpftime_static bpftime_static_target)
 
-set_target_properties(bpftime_static
-PROPERTIES
-IMPORTED_LOCATION "${CMAKE_CURRENT_BINARY_DIR}/libbpftime.a"
-)
+  set_target_properties(bpftime_static
+    PROPERTIES
+    IMPORTED_LOCATION "${CMAKE_CURRENT_BINARY_DIR}/libbpftime.a"
+  )
 
-install(FILES ${CMAKE_CURRENT_BINARY_DIR}/libbpftime.a
-DESTINATION ~/.bpftime 
-)
-
+  install(FILES ${CMAKE_CURRENT_BINARY_DIR}/libbpftime.a
+    DESTINATION ~/.bpftime
+  )
 endif()
 
-if (${BUILD_BPFTIME_DAEMON} AND ${BPFTIME_BUILD_WITH_LIBBPF})
+if(${BUILD_BPFTIME_DAEMON} AND ${BPFTIME_BUILD_WITH_LIBBPF})
   add_subdirectory(daemon)
 endif()
+
 add_subdirectory(tools)
 
 if(${BUILD_ATTACH_IMPL_EXAMPLE})
@@ -209,16 +217,16 @@ endif()
 
 # benchmark that requires bpftime libraries
 if(${BPFTIME_BUILD_WITH_LIBBPF})
-# Currently benchmark is using libbpf
-add_subdirectory(benchmark)
+  # Currently benchmark is using libbpf
+  add_subdirectory(benchmark)
 endif()
-
 
 set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>DLL")
 
 set(DEST_DIR "$ENV{HOME}/.bpftime")
+
 if(${BPFTIME_BUILD_WITH_LIBBPF})
-    install(TARGETS bpftime-agent bpftime_text_segment_transformer bpftime-syscall-server CONFIGURATIONS Release Debug RelWithDebInfo DESTINATION ${DEST_DIR})
+  install(TARGETS bpftime-agent bpftime_text_segment_transformer bpftime-syscall-server CONFIGURATIONS Release Debug RelWithDebInfo DESTINATION ${DEST_DIR})
 else()
-    install(TARGETS bpftime-agent bpftime-syscall-server CONFIGURATIONS Release Debug RelWithDebInfo DESTINATION ${DEST_DIR})
+  install(TARGETS bpftime-agent bpftime-syscall-server CONFIGURATIONS Release Debug RelWithDebInfo DESTINATION ${DEST_DIR})
 endif()

@@ -17,18 +17,18 @@
 
 ## Key Features
 
-- **Uprobe and Syscall hooks based on binary rewriting**: Run eBPF programs in userspace, attaching them to Uprobes and Syscall tracepoints: **No manual instrumentation or restart required!**. It can `trace` or `change` the execution of a function, `hook` or `filter` all syscalls of a process safely, and efficiently with an eBPF userspace runtime.
-- **Performance**: Experience up to a `10x` speedup in Uprobe overhead compared to kernel uprobe and uretprobe.
+- **Uprobe and Syscall hooks based on binary rewriting**: Run eBPF programs in userspace, attaching them to Uprobes and Syscall tracepoints: **No manual instrumentation or restart required!**. It can `trace` or `change` the execution of a function, `hook` or `filter` all syscalls of a process safely, and efficiently with an eBPF userspace runtime. Can inject eBPF runtime into any running process without the need for a restart or manual recompilation.
+- **Performance**: Experience up to a `10x` speedup in Uprobe overhead compared to kernel uprobe and uretprobe. Read/Write userspace memory is also faster than kernel eBPF.
 - **Interprocess eBPF Maps**: Implement userspace `eBPF maps` in shared userspace memory for summary aggregation or control plane communication.
-- **Compatibility**: use `existing eBPF toolchains` like clang and libbpf to develop userspace eBPF without any modifications. Supporting CO-RE via BTF, and offering userspace host function access.
-- **JIT Support**: Benefit from a cross-platform eBPF interpreter and a high-speed `JIT/AOT` compiler powered by LLVM. It also includes a handcrafted x86 JIT in C for limited resources. The vm can be built as `a standalone library` like ubpf.
-- **No instrumentation**: Can inject eBPF runtime into any running process without the need for a restart or manual recompilation.
+- **Compatibility**: use `existing eBPF toolchains` like clang, libbpf and bpftrace to develop userspace eBPF application without any modifications. Supporting CO-RE via BTF, and offering userspace `ufunc` access.
+- **Multi JIT Support**: Support [llvmbpf](https://github.com/eunomia-bpf/llvmbpf), a high-speed `JIT/AOT` compiler powered by LLVM, or using `ubpf JIT` and INTERPRETER. The vm can be built as `a standalone library` like ubpf.
 - **Run with kernel eBPF**: Can load userspace eBPF from kernel, and using kernel eBPF maps to cooperate with kernel eBPF programs like kprobes and network filters.
 
 ## Components
 
-- [`vm`](https://github.com/eunomia-bpf/bpftime/tree/master/vm): The eBPF VM and JIT for eBPF, you can choose from bpftime LLVM JIT and a simple JIT/interpreter based on ubpf. It can be built as a standalone library and integrated into other projects. The API is similar to ubpf.
-- [`runtime`](https://github.com/eunomia-bpf/bpftime/tree/master/runtime): The userspace runtime for eBPF, including the syscall server and agent, attaching eBPF programs to Uprobes and Syscall tracepoints, and eBPF maps in shared memory.
+- [`vm`](https://github.com/eunomia-bpf/bpftime/tree/master/vm): The eBPF VM and JIT compiler for bpftime, you can choose from [bpftime LLVM JIT/AOT compiler](https://github.com/eunomia-bpf/llvmbpf) and [ubpf](https://github.com/iovisor/ubpf). The [llvm-based vm](https://github.com/eunomia-bpf/llvmbpf) in bpftime can also be built as a standalone library and integrated into other projects, similar to ubpf.
+- [`runtime`](https://github.com/eunomia-bpf/bpftime/tree/master/runtime): The userspace runtime for eBPF, including the bpf-syscall loader(`syscall-server`) and agent, support attaching eBPF programs to Uprobes, Syscall tracepoints and other events, as well as eBPF maps in shared memory.
+- [verifier](https://github.com/eunomia-bpf/bpftime/tree/master/bpftime-verifier): Support using [PREVAIL](https://github.com/vbpf/ebpf-verifier) as userspace verifier, or using Linux kernel verifier as an option.
 - [`daemon`](https://github.com/eunomia-bpf/bpftime/tree/master/daemon): A daemon to make userspace eBPF working with kernel and compatible with kernel uprobe. Monitor and modify kernel eBPF events and syscalls, load eBPF in userspace from kernel.
 
 ## Quick Start

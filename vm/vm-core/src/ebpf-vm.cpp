@@ -26,6 +26,7 @@ ebpf_set_error_print(struct ebpf_vm *vm,
 {
 	vm->vm_instance->register_error_print_callback(error_printf);
 }
+
 extern "C" int ebpf_register(struct ebpf_vm *vm, unsigned int index,
 			     const char *name, void *fn)
 {
@@ -52,6 +53,7 @@ extern "C" int ebpf_exec(const struct ebpf_vm *vm, void *mem, size_t mem_len,
 {
 	return vm->vm_instance->exec(mem, mem_len, *bpf_return_value);
 }
+
 extern "C" ebpf_jit_fn ebpf_compile(struct ebpf_vm *vm, char **errmsg)
 {
 	auto func = vm->vm_instance->compile();
@@ -59,6 +61,7 @@ extern "C" ebpf_jit_fn ebpf_compile(struct ebpf_vm *vm, char **errmsg)
 		*errmsg = strdup(vm->vm_instance->get_error_message().c_str());
 	return func.value_or(nullptr);
 }
+
 extern "C" void ebpf_set_lddw_helpers(struct ebpf_vm *vm,
 				      uint64_t (*map_by_fd)(uint32_t),
 				      uint64_t (*map_by_idx)(uint32_t),
@@ -69,6 +72,7 @@ extern "C" void ebpf_set_lddw_helpers(struct ebpf_vm *vm,
 	vm->vm_instance->set_lddw_helpers(map_by_fd, map_by_idx, map_val,
 					  var_addr, code_addr);
 }
+
 extern "C" int ebpf_set_unwind_function_index(struct ebpf_vm *vm,
 					      unsigned int idx)
 {

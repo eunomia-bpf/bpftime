@@ -6,6 +6,7 @@
 #include "spdlog/common.h"
 #include "spdlog/sinks/stdout_color_sinks.h"
 #include "spdlog/sinks/stdout_sinks.h"
+#include "bpftime_logger.hpp"
 #include <chrono>
 #include <csignal>
 #include <exception>
@@ -21,10 +22,11 @@
 #include "bpftime_shm.hpp"
 #include <spdlog/spdlog.h>
 #include <spdlog/cfg/env.h>
-#if __linux__
+#if __linux__ && BPFTIME_BUILD_WITH_LIBBPF
 #include "syscall_trace_attach_impl.hpp"
 #include "syscall_trace_attach_private_data.hpp"
 #endif
+
 using namespace bpftime;
 using namespace bpftime::attach;
 using main_func_t = int (*)(int, char **, char **);
@@ -94,18 +96,17 @@ static void sig_handler_sigusr1(int sig)
 	shm_holder.global_shared_memory.remove_pid_from_alive_agent_set(
 		getpid());
 	SPDLOG_DEBUG("Detaching done");
+	bpftime_logger_flush();
 }
 
 extern "C" void bpftime_agent_main(const gchar *data, gboolean *stay_resident)
 {
-	auto logger = spdlog::stderr_color_mt("stderr");
-	logger->set_pattern("[%Y-%m-%d %H:%M:%S][%^%l%$][%t] %v");
-	spdlog::set_default_logger(logger);
+	auto runtime_config = bpftime_get_agent_config();
+	bpftime_set_logger(runtime_config.logger_output_path);
 	SPDLOG_DEBUG("Entered bpftime_agent_main");
 	SPDLOG_DEBUG("Registering signal handler");
 	// We use SIGUSR1 to indicate the detaching
 	signal(SIGUSR1, sig_handler_sigusr1);
-	spdlog::cfg::load_env_levels();
 	try {
 		// If we are unable to initialize shared memory..
 		bpftime_initialize_global_shm(shm_open_type::SHM_OPEN_ONLY);
@@ -121,7 +122,7 @@ extern "C" void bpftime_agent_main(const gchar *data, gboolean *stay_resident)
 			getpid());
 	}
 	ctx_holder.init();
-	#if __linux__
+	#if __linux__ && BPFTIME_BUILD_WITH_LIBBPF
 	// Register syscall trace impl
 	auto syscall_trace_impl = std::make_unique<syscall_trace_attach_impl>();
 	syscall_trace_impl->set_original_syscall_function(orig_hooker);
@@ -164,7 +165,7 @@ extern "C" void bpftime_agent_main(const gchar *data, gboolean *stay_resident)
 	SPDLOG_DEBUG("Set environment variable BPFTIME_USED");
 	try {
 		res = ctx_holder.ctx.init_attach_ctx_from_handlers(
-			bpftime_get_agent_config());
+			runtime_config);
 		if (res != 0) {
 			SPDLOG_INFO("Failed to initialize attach context, exiting..");
 			return;
@@ -178,7 +179,7 @@ extern "C" void bpftime_agent_main(const gchar *data, gboolean *stay_resident)
 
 // using definition for libbpf for syscall issues
 // maybe should separate libbpf and kernel features separately
-#if __linux__
+#if __linux__ && BPFTIME_BUILD_WITH_LIBBPF
 extern "C" int64_t syscall_callback(int64_t sys_nr, int64_t arg1, int64_t arg2,
 				    int64_t arg3, int64_t arg4, int64_t arg5,
 				    int64_t arg6)

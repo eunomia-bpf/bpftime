@@ -4,7 +4,8 @@
  * All rights reserved.
  */
 #include "syscall_context.hpp"
-#include "bpftime_shm.hpp"
+#include <boost/interprocess/exceptions.hpp>
+#include <cstdio>
 #if __linux__
 #include "linux/bpf.h"
 #include <asm-generic/errno-base.h>
@@ -16,14 +17,12 @@
 #include <unistd.h>
 #include <spdlog/cfg/env.h>
 #include <cstdarg>
-using namespace bpftime;
-
 // global context for bpf syscall server
 static syscall_context context;
 
 template <typename F, typename... Args>
-auto handle_exceptions(F &&f, Args &&...args) noexcept
-	-> decltype(f(std::forward<Args>(args)...))
+auto handle_exceptions(F &&f, Args &&...args) noexcept->decltype(
+	f(std::forward<Args>(args)...))
 {
 	try {
 		return f(std::forward<Args>(args)...);
@@ -31,7 +30,7 @@ auto handle_exceptions(F &&f, Args &&...args) noexcept
 		SPDLOG_ERROR("Boost interprocess bad_alloc: {}", e.what());
 		SPDLOG_ERROR("Consider increasing the shared memory size by "
 			     "setting the BPFTIME_SHM_MEMORY_MB env var.");
-		std::abort();
+		std::exit(1);
 		// Terminate the program after logging the exception
 	}
 	// More exceptions can be added here
@@ -89,9 +88,8 @@ extern "C" void *mmap(void *addr, size_t length, int prot, int flags, int fd,
 
 extern "C" int munmap(void *addr, size_t size)
 {
-	return handle_exceptions([&]() {
-		return context.handle_munmap(addr, size);
-	});
+	return handle_exceptions(
+		[&]() { return context.handle_munmap(addr, size); });
 }
 
 extern "C" int close(int fd)
@@ -100,6 +98,70 @@ extern "C" int close(int fd)
 	return handle_exceptions([&]() { return context.handle_close(fd); });
 }
 
+extern "C" int openat(int fd, const char *file, int oflag, ...)
+{
+	va_list args;
+	va_start(args, oflag);
+	long arg4 = va_arg(args, long);
+	va_end(args);
+	SPDLOG_DEBUG("openat {} {:x} {} {}", fd, (uintptr_t)file, oflag, arg4);
+	unsigned short mode = (unsigned short)arg4;
+	return context.handle_openat(fd, file, oflag, mode);
+}
+extern "C" int open(const char *file, int oflag, ...)
+{
+	va_list args;
+	va_start(args, oflag);
+	long arg3 = va_arg(args, long);
+	va_end(args);
+	SPDLOG_DEBUG("open {:x} {} {}", (uintptr_t)file, oflag, arg3);
+	unsigned short mode = (unsigned short)arg3;
+	return context.handle_open(file, oflag, mode);
+}
+extern "C" ssize_t read(int fd, void *buf, size_t count)
+{
+	return context.handle_read(fd, buf, count);
+}
+
+extern "C" FILE *fopen(const char *pathname, const char *flags)
+{
+	SPDLOG_DEBUG("fopen {} {}", pathname, flags);
+	return context.handle_fopen(pathname, flags);
+}
+extern "C" FILE *fopen64(const char *pathname, const char *flags)
+{
+	SPDLOG_DEBUG("fopen64 {} {}", pathname, flags);
+	return context.handle_fopen(pathname, flags);
+}
+extern "C" FILE *_IO_new_fopen(const char *pathname, const char *flags)
+{
+	SPDLOG_DEBUG("_IO_new_fopen {} {}", pathname, flags);
+	return context.handle_fopen(pathname, flags);
+}
+// extern "C" int fclose(FILE *f)
+// {
+// 	SPDLOG_DEBUG("fclose {:x}", (uintptr_t)f);
+// 	return context.handle_fclose(f);
+// }
+// extern "C" int fscanf(FILE *fp, const char *fmt, ...)
+// {
+// 	SPDLOG_DEBUG("fscanf {:x} {}", (uintptr_t)fp, fmt);
+// 	va_list args;
+// 	va_start(args, fmt);
+// 	int result = context.handle_fscanf(fp, fmt, args);
+// 	va_end(args);
+// 	return result;
+// }
+
+// extern "C" int __isoc99_fscanf(FILE *fp, const char *fmt, ...)
+// {
+// 	SPDLOG_DEBUG("__isoc99_fscanf {:x} {}", (uintptr_t)fp, fmt);
+// 	va_list args;
+// 	va_start(args, fmt);
+// 	int result = context.handle_fscanf(fp, fmt, args);
+// 	va_end(args);
+// 	return result;
+// }
 #if __linux__
 extern "C" long syscall(long sysno, ...)
 {

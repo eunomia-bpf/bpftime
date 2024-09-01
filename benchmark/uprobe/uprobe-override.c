@@ -55,7 +55,7 @@ int main(int argc, char **argv)
 	}
 	err = bpf_prog_attach_uprobe_with_override(
 		bpf_program__fd(skel->progs.do_uprobe_override_patch), "benchmark/test",
-		"__benchmark_test_function1");
+		"__bench_uprobe_uretprobe");
 	if (err) {
 		fprintf(stderr, "Failed to attach BPF program\n");
 		goto cleanup;

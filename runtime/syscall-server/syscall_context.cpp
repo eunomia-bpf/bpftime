@@ -3,9 +3,14 @@
  * Copyright (c) 2022, eunomia-bpf org
  * All rights reserved.
  */
+#include "bpftime_logger.hpp"
 #include "bpftime_shm.hpp"
+#include <cstdio>
+#include <ebpf-vm.h>
 #include "syscall_context.hpp"
-#include "handler/perf_event_handler.hpp"
+#include "handler/map_handler.hpp"
+#include <cstring>
+#include <fcntl.h>
 #if __linux__
 #include "linux/perf_event.h"
 #include <linux/bpf.h>
@@ -15,7 +20,7 @@
 #include <linux/filter.h>
 #elif __APPLE__
 #include "bpftime_epoll.h"
-#endif 
+#endif
 #include "spdlog/spdlog.h"
 #include <cerrno>
 #include <cstdlib>
@@ -24,6 +29,25 @@
 #include <sys/mman.h>
 #include <unistd.h>
 #include <regex>
+
+// In build option without libbpf, there might be no BPF_EXIT_INSN
+#ifndef BPF_EXIT_INSN
+#define BPF_EXIT_INSN()                                                        \
+	((struct bpf_insn){ .code = BPF_JMP | BPF_EXIT,                        \
+			    .dst_reg = 0,                                      \
+			    .src_reg = 0,                                      \
+			    .off = 0,                                          \
+			    .imm = 0 })
+#endif
+
+#ifndef BPF_MOV64_IMM
+#define BPF_MOV64_IMM(DST, IMM)                                                \
+	((struct bpf_insn){ .code = BPF_ALU64 | BPF_MOV | BPF_K,               \
+			    .dst_reg = DST,                                    \
+			    .src_reg = 0,                                      \
+			    .off = 0,                                          \
+			    .imm = IMM })
+#endif
 
 using namespace bpftime;
 #if __APPLE__
@@ -49,6 +73,18 @@ void syscall_context::load_config_from_env()
 	}
 }
 
+syscall_context::syscall_context()
+{
+	init_original_functions();
+	// FIXME: merge this into the runtime config
+	load_config_from_env();
+	auto runtime_config = bpftime::get_agent_config_from_env();
+	pthread_spin_init(&this->mocked_file_lock, 0);
+	SPDLOG_INFO("Init bpftime syscall mocking..");
+	SPDLOG_INFO("The log will be written to: {}",
+		    runtime_config.logger_output_path);
+}
+
 void syscall_context::try_startup()
 {
 	enable_mock = false;
@@ -61,8 +97,96 @@ int syscall_context::handle_close(int fd)
 	if (!enable_mock)
 		return orig_close_fn(fd);
 	try_startup();
+	{
+		bpftime_lock_guard _guard(this->mocked_file_lock);
+		if (auto itr = this->mocked_files.find(fd);
+		    itr != this->mocked_files.end()) {
+			SPDLOG_DEBUG("Removing mocked file fd {}", fd);
+			this->mocked_files.erase(itr);
+			return 0;
+		}
+	}
 	bpftime_close(fd);
 	return orig_close_fn(fd);
+}
+
+int syscall_context::handle_openat(int fd, const char *file, int oflag,
+				   unsigned short mode)
+{
+	if (!enable_mock)
+		return orig_openat_fn(fd, file, oflag, mode);
+	try_startup();
+	auto path = resolve_filename_and_fd_to_full_path(fd, file);
+	if (!path) {
+		SPDLOG_WARN("Failed to resolve fd={}/file=`{}`", fd, file);
+		return orig_openat_fn(fd, file, oflag, mode);
+	}
+	if (auto mocker = create_mocked_file_based_on_full_path(*path);
+	    mocker) {
+		bpftime_lock_guard _guard(this->mocked_file_lock);
+		char filename_buf[] = "/tmp/bpftime-mock.XXXXXX";
+		int fake_fd = mkstemp(filename_buf);
+		if (fake_fd < 0) {
+			SPDLOG_WARN("Unable to create mock fd: {}", errno);
+			return orig_open_fn(file, oflag, mode);
+		}
+		this->mocked_files.emplace(fake_fd, std::move(*mocker));
+		SPDLOG_DEBUG("Created mocked file with fd {}", fake_fd);
+		return fake_fd;
+	}
+	return orig_openat_fn(fd, file, oflag, mode);
+}
+
+int syscall_context::handle_open(const char *file, int oflag,
+				 unsigned short mode)
+{
+	if (!enable_mock)
+		return orig_open_fn(file, oflag, mode);
+	try_startup();
+	if (auto mocker = create_mocked_file_based_on_full_path(file); mocker) {
+		bpftime_lock_guard _guard(this->mocked_file_lock);
+		char filename_buf[] = "/tmp/bpftime-mock.XXXXXX";
+		int fake_fd = mkstemp(filename_buf);
+		if (fake_fd < 0) {
+			SPDLOG_WARN("Unable to create mock fd: {}", errno);
+			return orig_open_fn(file, oflag, mode);
+		}
+		this->mocked_files.emplace(fake_fd, std::move(*mocker));
+		SPDLOG_DEBUG("Created mocked file with fd {}", fake_fd);
+		return fake_fd;
+	}
+	return orig_open_fn(file, oflag, mode);
+}
+
+ssize_t syscall_context::handle_read(int fd, void *buf, size_t count)
+{
+	if (!enable_mock)
+		return orig_read_fn(fd, buf, count);
+	try_startup();
+	{
+		bpftime_lock_guard _guard(this->mocked_file_lock);
+		if (auto itr = this->mocked_files.find(fd);
+		    itr != this->mocked_files.end()) {
+			SPDLOG_DEBUG("Mock read fd={}, buf={:x}, count={}", fd,
+				     (uintptr_t)buf, count);
+			auto &mock_file = itr->second;
+			bpftime_lock_guard _access_guard(
+				mock_file->access_lock);
+			auto can_read_bytes =
+				std::min(count, mock_file->buf.size() -
+							mock_file->cursor);
+			SPDLOG_DEBUG("Reading {} bytes", can_read_bytes);
+			if (can_read_bytes == 0)
+				return can_read_bytes;
+			memcpy(buf, &mock_file->buf[mock_file->cursor],
+			       can_read_bytes);
+			mock_file->cursor += can_read_bytes;
+			SPDLOG_DEBUG("Copied {} bytes", can_read_bytes);
+
+			return can_read_bytes;
+		}
+	}
+	return orig_read_fn(fd, buf, count);
 }
 int syscall_context::create_kernel_bpf_map(int map_fd)
 {
@@ -686,4 +810,34 @@ int syscall_context::handle_munmap(void *addr, size_t size)
 	} else {
 		return orig_munmap_fn(addr, size);
 	}
+}
+
+FILE *syscall_context::handle_fopen(const char *pathname, const char *flags)
+{
+	if (!enable_mock)
+		return orig_fopen_fn(pathname, flags);
+	try_startup();
+	if (auto mocker = create_mocked_file_based_on_full_path(pathname);
+	    mocker) {
+		bpftime_lock_guard _guard(this->mocked_file_lock);
+		char filename_buf[] = "/tmp/bpftime-mock.XXXXXX";
+		int fake_fd = mkstemp(filename_buf);
+		if (fake_fd < 0) {
+			SPDLOG_WARN("Unable to create mock fd: {}", errno);
+			return orig_fopen_fn(pathname, flags);
+		}
+		auto itr =
+			this->mocked_files.emplace(fake_fd, std::move(*mocker))
+				.first;
+		FILE *replacement_fp = fopen(filename_buf, "r");
+
+		itr->second->replacement_file = replacement_fp;
+		auto size_written = write(fake_fd, itr->second->buf.c_str(),
+					  itr->second->buf.size());
+		SPDLOG_DEBUG(
+			"Created fake fd {}, replacement fp {:x}, written {} bytes",
+			fake_fd, (uintptr_t)replacement_fp, size_written);
+		return replacement_fp;
+	}
+	return orig_fopen_fn(pathname, flags);
 }

@@ -84,7 +84,7 @@ async def run_userspace_uprobe_test():
             server.stdout,
             should_exit,
             "SERVER",
-            (server_start_cb, "__benchmark_test_function3 is for uprobe only"),
+            (server_start_cb, "__bench_probe is for uprobe only"),
         )
     )
     await server_start_cb.wait()
@@ -131,7 +131,7 @@ async def run_kernel_uprobe_test():
             server.stdout,
             should_exit,
             "SERVER",
-            (server_start_cb, "__benchmark_test_function3 is for uprobe only"),
+            (server_start_cb, "__bench_probe is for uprobe only"),
         )
     )
     await server_start_cb.wait()

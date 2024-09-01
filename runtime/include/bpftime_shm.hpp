@@ -10,12 +10,15 @@
 #include <boost/interprocess/smart_ptr/unique_ptr.hpp>
 #include <boost/interprocess/containers/string.hpp>
 #include <cstdint>
-#include <ebpf-vm.h>
 #if __linux__
 #include <sys/epoll.h>
 #elif __APPLE__
 #include "bpftime_epoll.h"
 #endif
+
+extern "C" {
+struct ebpf_inst;
+}
 
 namespace bpftime
 {
@@ -153,7 +156,13 @@ enum class bpf_prog_type {
 };
 
 extern const shm_open_type global_shm_open_type;
+
+// Get the runtime config in the shared memory.
+// The shared memory should be initialized before calling this function.
+// This should be called by the agent side instead of the server side.
 const bpftime::agent_config &bpftime_get_agent_config();
+
+// Set the runtime config in the shared memory.
 void bpftime_set_agent_config(const bpftime::agent_config &cfg);
 
 // Map ops for register external map types and operations
@@ -272,7 +281,6 @@ int bpftime_link_create(int fd, struct bpf_link_create_args *args);
 int bpftime_progs_create(int fd, const ebpf_inst *insn, size_t insn_cnt,
 			 const char *prog_name, int prog_type);
 
-
 // create a bpf map in the global shared memory
 //
 // @param[fd]: fd is the fd allocated by the kernel. if fd is -1, then the
@@ -314,19 +322,26 @@ int bpftime_perf_event_enable(int fd);
 // disable the perf event
 int bpftime_perf_event_disable(int fd);
 
+// find the minimal unused fd in shared memory
+// Which is a available handler for bpf related object
 int bpftime_find_minimal_unused_fd();
 
 int bpftime_attach_perf_to_bpf(int perf_fd, int bpf_fd);
 int bpftime_attach_perf_to_bpf_with_cookie(int perf_fd, int bpf_fd,
 					   uint64_t cookie);
+
 int bpftime_add_ringbuf_fd_to_epoll(int ringbuf_fd, int epoll_fd,
 				    epoll_data_t extra_data);
+
 int bpftime_add_software_perf_event_fd_to_epoll(int swpe_fd, int epoll_fd,
 						epoll_data_t extra_data);
 
 int bpftime_epoll_create();
 void *bpftime_get_ringbuf_consumer_page(int ringbuf_fd);
 void *bpftime_get_ringbuf_producer_page(int ringbuf_fd);
+
+int bpftime_poll_from_ringbuf(int rb_fd, void *ctx,
+			      int (*cb)(void *, void *, size_t));
 
 int bpftime_is_ringbuf_map(int fd);
 int bpftime_is_array_map(int fd);
@@ -350,7 +365,7 @@ int bpftime_add_software_perf_event(int cpu, int32_t sample_type,
 int bpftime_is_software_perf_event(int fd);
 void *bpftime_get_software_perf_event_raw_buffer(int fd, size_t expected_size);
 int bpftime_perf_event_output(int fd, const void *buf, size_t sz);
-#if __linux__
+#if __linux__ && BPFTIME_BUILD_WITH_LIBBPF
 int bpftime_shared_perf_event_output(int map_fd, const void *buf, size_t sz);
 #endif
 int bpftime_add_ureplace_or_override(int fd, int pid, const char *name,
@@ -359,9 +374,6 @@ int bpftime_add_ureplace_or_override(int fd, int pid, const char *name,
 int bpftime_get_current_thread_cookie(uint64_t *out);
 
 int bpftime_add_custom_perf_event(int type, const char *attach_argument);
-
-int bpftime_poll_from_ringbuf(int rb_fd, void *ctx,
-			      int (*cb)(void *, void *, size_t));
 }
 
 #endif // BPFTIME_SHM_CPP_H
