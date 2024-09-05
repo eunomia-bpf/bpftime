@@ -48,17 +48,19 @@ jobs:
         run: |
             make -C example -j
       - name: Upload build results (without jit)
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         if: ${{!matrix.enable_jit}}
         with:
           name: runtime-package-no-jit-${{matrix.container.name}}
+          include-hidden-files: true
           path: |
             ~/.bpftime
       - name: Upload build results (with jit)
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         if: ${{matrix.enable_jit}}
         with:
           name: runtime-package-jit-${{matrix.container.name}}
+          include-hidden-files: true
           path: |
             ~/.bpftime
   build-and-test:
@@ -162,13 +164,13 @@ jobs:
     steps:
       - name: Download prebuilt runtime (with jit)
         if: ${{matrix.enable_jit}}
-        uses: actions/download-artifact@v3
+        uses: actions/download-artifact@v4
         with:
           name: runtime-package-jit-${{matrix.container.name}}
           path: ~/.bpftime
       - name: Download prebuilt runtime (without jit)
         if: ${{!matrix.enable_jit}}
-        uses: actions/download-artifact@v3
+        uses: actions/download-artifact@v4
         with:
           name: runtime-package-no-jit-${{matrix.container.name}}
           path: ~/.bpftime
