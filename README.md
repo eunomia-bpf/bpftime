@@ -41,6 +41,7 @@ To get started, you can build and run a libbpf based eBPF program starts with `b
 
 ```console
 make -C example/malloc # Build the eBPF program example
+export PATH=$PATH:~/.bpftime/
 bpftime load ./example/malloc/malloc
 ```
 
