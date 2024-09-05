@@ -9,6 +9,7 @@
 #include "libbpf/include/linux/filter.h"
 #include <linux/bpf_common.h>
 #include <linux/perf_event.h>
+#include <asm/unistd.h> 
 #include <sys/ioctl.h>
 #include <bpf/libbpf.h>
 #include <bpf/bpf.h>
