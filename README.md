@@ -1,10 +1,12 @@
-# bpftime: Userspace eBPF runtime for fast Uprobe & Syscall Hook & Extensions
+# bpftime: Userspace eBPF runtime for Observability, Network and general extensions
 
 [![Build and Test VM](https://github.com/eunomia-bpf/bpftime/actions/workflows/test-vm.yml/badge.svg)](https://github.com/eunomia-bpf/bpftime/actions/workflows/test-vm.yml)
 [![Build and test runtime](https://github.com/eunomia-bpf/bpftime/actions/workflows/test-runtime.yml/badge.svg)](https://github.com/eunomia-bpf/bpftime/actions/workflows/test-runtime.yml)
 [![DOI](https://zenodo.org/badge/676866666.svg)](https://doi.org/10.48550/arXiv.2311.07923)
 
-`bpftime`, a full-featured, high-performance eBPF runtime designed to operate in userspace. It offers fast Uprobe and Syscall hook capabilities: Userspace uprobe can be **10x faster than kernel uprobe!** and can programmatically **hook all syscalls of a process** safely and efficiently.
+`bpftime`, a full-featured, high-performance eBPF runtime designed to operate in userspace. It offers fast Uprobe and Syscall hook capabilities: bpftime in Userspace uprobe can be **10x faster than kernel uprobe!**, the `syscall hook` can programmatically **hook all syscalls of a process** safely and efficiently, and can also run XDP in userspace.
+
+> ⚠️ **Note**: `bpftime` is actively under development, and it's not yet recommended for production use now. See our [roadmap](#roadmap) for details. We'd love to hear your feedback and suggestions! Please feel free to open an issue or [Contact us](#contact-and-citations).
 
 📦 [Key Features](#key-features) \
 🔨 [Quick Start](#quick-start) \
@@ -97,8 +99,6 @@ $ sudo example/malloc/malloc
 See [eunomia.dev/bpftime/documents/usage](https://eunomia.dev/bpftime/documents/usage) for more details.
 
 ## Examples & Use Cases
-
-> ⚠️ **Note**: `bpftime` is actively under development, and it's not yet recommended for production use. See our [roadmap](#roadmap) for details. We'd love to hear your feedback and suggestions! Please feel free to open an issue or [Contact us](#contact-and-citations).
 
 For more examples and details, please refer to [eunomia.dev/bpftime/documents/examples/](https://eunomia.dev/bpftime/documents/examples/) webpage.
 
