@@ -17,6 +17,9 @@
 
 [**Checkout our documents in eunomia.dev!**](https://eunomia.dev/bpftime/)
 
+bpftime is not `userspace eBPF VM`, it's a runtime framework includes everything to run eBPF in userspace: loader, verifier, helpers, maps and ufunc. It has multiple VM options support. For eBPF VM only, please see  [llvmbpf](https://github.com/eunomia-bpf/llvmbpf), [ubpf](
+https://github.com/iovisor/ubpf) and [rbpf](https://github.com/qmonnet/rbpf).
+
 ## Why bpftime? What's the design Goal?
 
 - **Performance Gains**: Achieve better performance by `bypassing the kernel` (e.g., via `Userspace DBI` or `Network Drivers`), with more configurable, optimized and more arch supported JIT/AOT options like `LLVM`, while maintaining compatibility with Linux kernel eBPF.
