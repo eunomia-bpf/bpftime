@@ -120,8 +120,8 @@ Examples including:
   - [opensnoop](https://github.com/eunomia-bpf/bpftime/tree/master/example/opensnoop) for trace file open syscalls.
   - More [bcc/libbpf-tools](https://github.com/eunomia-bpf/bpftime/tree/master/example/libbpf-tools).
   - Run with [bpftrace](https://github.com/eunomia-bpf/bpftime/tree/master/example/bpftrace) commands or scripts.
-- [error injection](https://github.com/eunomia-bpf/bpftime/tree/master/example/error-injection): change function behavior with `bpf_override_return`.
-- Use the eBPF LLVM JIT/AOT vm as [a standalone library](https://github.com/eunomia-bpf/bpftime/tree/master/vm/llvm-jit/example).
+- [error injection](https://github.com/eunomia-bpf/bpftime/tree/master/example/error-inject): change function behavior with `bpf_override_return`.
+- Use the eBPF LLVM JIT/AOT vm as [a standalone library](https://github.com/eunomia-bpf/llvmbpf/tree/main/example).
 - Userspace [XDP with DPDK and AF_XDP](https://github.com/userspace-xdp/userspace-xdp)
 
 ## In-Depth
