@@ -26,24 +26,35 @@ jobs:
       - uses: actions/checkout@v2
         with:
           submodules: 'recursive'
-          
+      - name: Install lcov
+        run: |
+          sudo apt install -y lcov libzstd-dev libboost-all-dev
       - name: Build for frida uprobe attach tests
         run: |
-          cmake -B build
+          cmake -DTEST_LCOV=ON -B build
           cmake --build build --config Debug --target bpftime_frida_uprobe_attach_tests -j$(nproc)
           
       - name: Run frida uprobe attach tests
         run: |
           ./build/attach/frida_uprobe_attach_impl/bpftime_frida_uprobe_attach_tests
-
+      - name: upload frida uprobe attach test coverage
+        run: |
+          lcov --capture --directory . --output-file coverage.info
+          lcov --remove coverage.info '/usr/*' --output-file coverage.info
+          lcov --list coverage.info
       - name: Remove the build
         run: rm -rf build
 
       - name: Build syscall trace uprobe attach tests
         run: |
-          cmake -B build
+          cmake -DTEST_LCOV=ON -B build
           cmake --build build --config Debug --target bpftime_syscall_trace_attach_tests -j$(nproc)
           
       - name: Run syscall trace uprobe attach tests
         run: |
           ./build/attach/syscall_trace_attach_impl/bpftime_syscall_trace_attach_tests
+      - name: upload syscall trace uprobe attach coverage
+        run: |
+          lcov --capture --directory . --output-file coverage.info
+          lcov --remove coverage.info '/usr/*' --output-file coverage.info
+          lcov --list coverage.info
