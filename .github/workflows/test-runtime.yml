@@ -25,8 +25,14 @@ jobs:
       with:
         submodules: 'recursive'
     - name: Install lcov
+      if: "matrix.container == 'ubuntu-2204'"
       run: |
         apt-get install -y lcov libzstd-dev libboost-all-dev
+    - name: Install lcov
+      if: "matrix.container == 'fedora-39'"
+      run: |
+        dnf install -y lcov
+  
     - name: Build
       run: |
         cmake -DTEST_LCOV=ON -DBPFTIME_LLVM_JIT=YES -DBPFTIME_ENABLE_UNIT_TESTING=YES -DCMAKE_BUILD_TYPE=Debug -B build
