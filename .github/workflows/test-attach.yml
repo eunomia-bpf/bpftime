@@ -30,10 +30,10 @@ jobs:
         if: "matrix.container == 'ubuntu-2204'"
         run: |
           apt-get install -y lcov libzstd-dev libboost-all-dev
-      - name: Install lcov and which
+      - name: Install lcov
         if: "matrix.container == 'fedora-39'"
         run: |
-          dnf install -y lcov which
+          dnf install -y lcov
     
       - name: Build for frida uprobe attach tests
         run: |
@@ -43,7 +43,14 @@ jobs:
       - name: Run frida uprobe attach tests
         run: |
           ./build/attach/frida_uprobe_attach_impl/bpftime_frida_uprobe_attach_tests
-      - name: Generate frida uprobe attach test coverage
+      - name: Generate frida uprobe attach test coverage (Fedora)
+        if: "matrix.container == 'fedora-39'"
+        run: |
+          lcov --capture --directory . --output-file coverage-uprobe.info
+          lcov --remove coverage-uprobe.info '/usr/*' --output-file coverage-uprobe.info
+          lcov --list coverage-uprobe.info
+      - name: Generate frida uprobe attach test coverage (Ubuntu)
+        if: "matrix.container == 'ubuntu-2204'"
         run: |
           lcov --capture --directory . --output-file coverage-uprobe.info --gcov-tool $(which gcov-12)
           lcov --remove coverage-uprobe.info '/usr/*' --output-file coverage-uprobe.info
@@ -66,9 +73,16 @@ jobs:
       - name: Run syscall trace uprobe attach tests
         run: |
           ./build/attach/syscall_trace_attach_impl/bpftime_syscall_trace_attach_tests
-      - name: Generate syscall trace uprobe attach coverage
+      - name: Generate syscall trace uprobe attach coverage (Ubuntu)
+        if: "matrix.container == 'ubuntu-2204'"
         run: |
           lcov --capture --directory . --output-file coverage-syscall-trace.info --gcov-tool $(which gcov-12)
+          lcov --remove coverage-syscall-trace.info '/usr/*' --output-file coverage-syscall-trace.info
+          lcov --list coverage-syscall-trace.info
+      - name: Generate syscall trace uprobe attach coverage (Fedora)
+        if: "matrix.container == 'fedora-39'"
+        run: |
+          lcov --capture --directory . --output-file coverage-syscall-trace.info
           lcov --remove coverage-syscall-trace.info '/usr/*' --output-file coverage-syscall-trace.info
           lcov --list coverage-syscall-trace.info
       - name: Upload uprobe coverage

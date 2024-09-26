@@ -28,10 +28,10 @@ jobs:
       if: "matrix.container == 'ubuntu-2204'"
       run: |
         apt-get install -y lcov libzstd-dev libboost-all-dev
-    - name: Install lcov and which
+    - name: Install lcov
       if: "matrix.container == 'fedora-39'"
       run: |
-        dnf install -y lcov which
+        dnf install -y lcov
   
     - name: Build
       run: |
@@ -39,6 +39,18 @@ jobs:
         cmake --build build --config Debug --target bpftime_runtime_tests -j$(nproc)
     - name: Test Runtime
       run:  ./build/runtime/unit-test/bpftime_runtime_tests
+    - name: Generate runtime coverage (Ubuntu)
+      if: "matrix.container == 'ubuntu-2204'"
+      run: |
+        lcov --capture --directory . --output-file coverage-runtime.info --gcov-tool $(which gcov-12)
+        lcov --remove coverage-runtime.info '/usr/*' --output-file coverage-runtime.info
+        lcov --list coverage-runtime.info
+    - name: Generate runtime coverage (Fedora)
+      if: "matrix.container == 'fedora-39'"
+      run: |
+        lcov --capture --directory . --output-file coverage-runtime.info
+        lcov --remove coverage-runtime.info '/usr/*' --output-file coverage-runtime.info
+        lcov --list coverage-runtime.info
     - name: Generate runtime coverage
       run: |
         lcov --capture --directory . --output-file coverage-runtime.info --gcov-tool $(which gcov-12)
@@ -60,9 +72,16 @@ jobs:
         cmake --build build --config Debug --target bpftime_runtime_tests -j$(nproc)
     - name: test runtime with mpk
       run:  ./build/runtime/unit-test/bpftime_runtime_tests
-    - name: Generate runtime with mpk enable coverage
+    - name: Generate runtime with mpk enable coverage (Ubuntu)
+      if: "matrix.container == 'ubuntu-2204'"
       run: |
         lcov --capture --directory . --output-file coverage-runtime-mpk.info --gcov-tool $(which gcov-12)
+        lcov --remove coverage-runtime-mpk.info '/usr/*' --output-file coverage-runtime-mpk.info
+        lcov --list coverage-runtime-mpk.info
+    - name: Generate runtime with mpk enable coverage (Fedora)
+      if: "matrix.container == 'fedora-39'"
+      run: |
+        lcov --capture --directory . --output-file coverage-runtime-mpk.info
         lcov --remove coverage-runtime-mpk.info '/usr/*' --output-file coverage-runtime-mpk.info
         lcov --list coverage-runtime-mpk.info
     - name: Upload runtime-mpk coverage
