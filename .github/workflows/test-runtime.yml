@@ -26,7 +26,7 @@ jobs:
         submodules: 'recursive'
     - name: Install lcov
       run: |
-        sudo apt install -y lcov libzstd-dev libboost-all-dev
+        apt-get install -y lcov libzstd-dev libboost-all-dev
     - name: Build
       run: |
         cmake -DTEST_LCOV=ON -DBPFTIME_LLVM_JIT=YES -DBPFTIME_ENABLE_UNIT_TESTING=YES -DCMAKE_BUILD_TYPE=Debug -B build
