@@ -46,7 +46,7 @@ jobs:
       - name: Generate frida uprobe attach test coverage
         run: |
           lcov --capture --directory . --output-file coverage-uprobe.info --gcov-tool $(which gcov-12)
-          lcov --remove coverage.info '/usr/*' --output-file coverage-uprobe.info
+          lcov --remove coverage-uprobe.info '/usr/*' --output-file coverage-uprobe.info
           lcov --list coverage-uprobe.info
       - name: Upload uprobe coverage
         uses: actions/upload-artifact@v4
