@@ -43,11 +43,18 @@ jobs:
       - name: Run frida uprobe attach tests
         run: |
           ./build/attach/frida_uprobe_attach_impl/bpftime_frida_uprobe_attach_tests
-      - name: upload frida uprobe attach test coverage
+      - name: Generate frida uprobe attach test coverage
         run: |
-          lcov --capture --directory . --output-file coverage.info
-          lcov --remove coverage.info '/usr/*' --output-file coverage.info
-          lcov --list coverage.info
+          lcov --capture --directory . --output-file coverage-uprobe.info
+          lcov --remove coverage.info '/usr/*' --output-file coverage-uprobe.info
+          lcov --list coverage-uprobe.info
+      - name: Upload uprobe coverage
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-uprobe
+          include-hidden-files: false
+          path: |
+            ./coverage-uprobe.info
       - name: Remove the build
         run: rm -rf build
 
@@ -59,8 +66,15 @@ jobs:
       - name: Run syscall trace uprobe attach tests
         run: |
           ./build/attach/syscall_trace_attach_impl/bpftime_syscall_trace_attach_tests
-      - name: upload syscall trace uprobe attach coverage
+      - name: Generate syscall trace uprobe attach coverage
         run: |
-          lcov --capture --directory . --output-file coverage.info
-          lcov --remove coverage.info '/usr/*' --output-file coverage.info
-          lcov --list coverage.info
+          lcov --capture --directory . --output-file coverage-syscall-trace.info
+          lcov --remove coverage-syscall-trace.info '/usr/*' --output-file coverage-syscall-trace.info
+          lcov --list coverage-syscall-trace.info
+      - name: Upload uprobe coverage
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-syscall-trace
+          include-hidden-files: false
+          path: |
+            ./coverage-syscall-trace.info
