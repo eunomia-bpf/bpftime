@@ -28,7 +28,7 @@ jobs:
           submodules: 'recursive'
       - name: Install lcov
         run: |
-          sudo apt install -y lcov libzstd-dev libboost-all-dev
+          apt-get install -y lcov libzstd-dev libboost-all-dev
       - name: Build for frida uprobe attach tests
         run: |
           cmake -DTEST_LCOV=ON -B build
