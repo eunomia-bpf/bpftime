@@ -59,7 +59,7 @@ jobs:
       - name: Upload runtime coverage
         uses: actions/upload-artifact@v4
         with:
-          name: coverage-runtime
+          name: coverage-runtime-${{matrix.container}}
           include-hidden-files: false
           path: |
             ./coverage-runtime.info
@@ -87,7 +87,7 @@ jobs:
     - name: Upload runtime-mpk coverage
       uses: actions/upload-artifact@v4
       with:
-        name: coverage-runtime-mpk
+        name: coverage-runtime-mpk-${{matrix.container}}
         include-hidden-files: false
         path: |
           ./coverage-runtime-mpk.info
