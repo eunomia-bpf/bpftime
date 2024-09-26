@@ -28,10 +28,10 @@ jobs:
       if: "matrix.container == 'ubuntu-2204'"
       run: |
         apt-get install -y lcov libzstd-dev libboost-all-dev
-    - name: Install lcov
+    - name: Install lcov and which
       if: "matrix.container == 'fedora-39'"
       run: |
-        dnf install -y lcov
+        dnf install -y lcov which
   
     - name: Build
       run: |
