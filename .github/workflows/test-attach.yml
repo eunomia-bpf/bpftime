@@ -45,7 +45,7 @@ jobs:
           ./build/attach/frida_uprobe_attach_impl/bpftime_frida_uprobe_attach_tests
       - name: Generate frida uprobe attach test coverage
         run: |
-          lcov --capture --directory . --output-file coverage-uprobe.info
+          lcov --capture --directory . --output-file coverage-uprobe.info --gcov-tool $(which gcov-12)
           lcov --remove coverage.info '/usr/*' --output-file coverage-uprobe.info
           lcov --list coverage-uprobe.info
       - name: Upload uprobe coverage
@@ -68,7 +68,7 @@ jobs:
           ./build/attach/syscall_trace_attach_impl/bpftime_syscall_trace_attach_tests
       - name: Generate syscall trace uprobe attach coverage
         run: |
-          lcov --capture --directory . --output-file coverage-syscall-trace.info
+          lcov --capture --directory . --output-file coverage-syscall-trace.info --gcov-tool $(which gcov-12)
           lcov --remove coverage-syscall-trace.info '/usr/*' --output-file coverage-syscall-trace.info
           lcov --list coverage-syscall-trace.info
       - name: Upload uprobe coverage
