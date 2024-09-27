@@ -59,7 +59,7 @@ long var_size_hash_map_impl::elem_update(const void *key, const void *value,
 	}
 	key_vec.assign((uint8_t *)key, (uint8_t *)key + _key_size);
 	value_vec.assign((uint8_t *)value, (uint8_t *)value + _value_size);
-	bool element_exists = map_impl.contains(key_vec);
+	bool element_exists = map_impl.find(key_vec) != map_impl.end();
 	// Check if the element exists...
 	if (flags == BPF_NOEXIST && element_exists) {
 		errno = EEXIST;
