@@ -92,3 +92,10 @@ jobs:
           include-hidden-files: false
           path: |
             ./coverage-syscall-trace.info
+      - uses: codecov/codecov-action@v4
+        with:
+              fail_ci_if_error: true # optional (default = false)
+              files: ./coverage-syscall-trace.info, ./coverage-uprobe.info # optional
+              flags: attach tests (uprobe & syscall trace)
+              token: ${{ secrets.CODECOV_TOKEN }} # required
+              verbose: true # optional (default = false)

@@ -92,3 +92,11 @@ jobs:
         path: |
           ./coverage-runtime-mpk.info
 
+    - uses: codecov/codecov-action@v4
+      with:
+            fail_ci_if_error: true # optional (default = false)
+            files: ./coverage-runtime.info
+            flags: runtime tests
+            token: ${{ secrets.CODECOV_TOKEN }} # required
+            verbose: true # optional (default = false)
+      
