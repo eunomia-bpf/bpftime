@@ -30,6 +30,7 @@ class var_size_hash_map_impl {
 	shm_hash_map map_impl;
 	uint32_t _key_size;
 	uint32_t _value_size;
+	uint32_t _max_entries;
 
 	// buffers used to access the key and value in hash map
 	bytes_vec key_vec;
@@ -38,7 +39,7 @@ class var_size_hash_map_impl {
     public:
 	const static bool should_lock = true;
 	var_size_hash_map_impl(managed_shared_memory &memory, uint32_t key_size,
-			       uint32_t value_size);
+			       uint32_t value_size, uint32_t max_entries);
 
 	void *elem_lookup(const void *key);
 
@@ -47,6 +48,8 @@ class var_size_hash_map_impl {
 	long elem_delete(const void *key);
 
 	int map_get_next_key(const void *key, void *next_key);
+
+	int lookup_and_delete(const void *key, void *value_out);
 };
 
 } // namespace bpftime
