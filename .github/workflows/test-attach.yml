@@ -26,24 +26,76 @@ jobs:
       - uses: actions/checkout@v2
         with:
           submodules: 'recursive'
-          
+      - name: Install dependencies
+        if: "matrix.container == 'ubuntu-2204'"
+        run: |
+          apt-get install -y lcov libzstd-dev libboost-all-dev gpg
+      - name: Install lcov
+        if: "matrix.container == 'fedora-39'"
+        run: |
+          dnf install -y lcov
+    
       - name: Build for frida uprobe attach tests
         run: |
-          cmake -B build
+          cmake -DTEST_LCOV=ON -B build
           cmake --build build --config Debug --target bpftime_frida_uprobe_attach_tests -j$(nproc)
           
       - name: Run frida uprobe attach tests
         run: |
           ./build/attach/frida_uprobe_attach_impl/bpftime_frida_uprobe_attach_tests
-
+      - name: Generate frida uprobe attach test coverage (Fedora)
+        if: "matrix.container == 'fedora-39'"
+        run: |
+          lcov --capture --directory . --output-file coverage-uprobe.info
+          lcov --remove coverage-uprobe.info '/usr/*' --output-file coverage-uprobe.info
+          lcov --list coverage-uprobe.info
+      - name: Generate frida uprobe attach test coverage (Ubuntu)
+        if: "matrix.container == 'ubuntu-2204'"
+        run: |
+          lcov --capture --directory . --output-file coverage-uprobe.info --gcov-tool $(which gcov-12)
+          lcov --remove coverage-uprobe.info '/usr/*' --output-file coverage-uprobe.info
+          lcov --list coverage-uprobe.info
+      - name: Upload uprobe coverage
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-uprobe-${{matrix.container}}
+          include-hidden-files: false
+          path: |
+            ./coverage-uprobe.info
       - name: Remove the build
         run: rm -rf build
 
       - name: Build syscall trace uprobe attach tests
         run: |
-          cmake -B build
+          cmake -DTEST_LCOV=ON -B build
           cmake --build build --config Debug --target bpftime_syscall_trace_attach_tests -j$(nproc)
           
       - name: Run syscall trace uprobe attach tests
         run: |
           ./build/attach/syscall_trace_attach_impl/bpftime_syscall_trace_attach_tests
+      - name: Generate syscall trace uprobe attach coverage (Ubuntu)
+        if: "matrix.container == 'ubuntu-2204'"
+        run: |
+          lcov --capture --directory . --output-file coverage-syscall-trace.info --gcov-tool $(which gcov-12)
+          lcov --remove coverage-syscall-trace.info '/usr/*' --output-file coverage-syscall-trace.info
+          lcov --list coverage-syscall-trace.info
+      - name: Generate syscall trace uprobe attach coverage (Fedora)
+        if: "matrix.container == 'fedora-39'"
+        run: |
+          lcov --capture --directory . --output-file coverage-syscall-trace.info
+          lcov --remove coverage-syscall-trace.info '/usr/*' --output-file coverage-syscall-trace.info
+          lcov --list coverage-syscall-trace.info
+      - name: Upload uprobe coverage
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-syscall-trace-${{matrix.container}}
+          include-hidden-files: false
+          path: |
+            ./coverage-syscall-trace.info
+      - uses: codecov/codecov-action@v4
+        with:
+              fail_ci_if_error: true # optional (default = false)
+              files: ./coverage-syscall-trace.info, ./coverage-uprobe.info # optional
+              flags: attach tests (uprobe & syscall trace)
+              token: ${{ secrets.CODECOV_TOKEN }} # required
+              verbose: true # optional (default = false)
