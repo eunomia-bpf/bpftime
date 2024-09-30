@@ -56,13 +56,13 @@ jobs:
         lcov --capture --directory . --output-file coverage-runtime.info --gcov-tool $(which gcov-12)
         lcov --remove coverage-runtime.info '/usr/*' --output-file coverage-runtime.info
         lcov --list coverage-runtime.info
-      - name: Upload runtime coverage
-        uses: actions/upload-artifact@v4
-        with:
-          name: coverage-runtime-${{matrix.container}}
-          include-hidden-files: false
-          path: |
-            ./coverage-runtime.info
+    - name: Upload runtime coverage
+      uses: actions/upload-artifact@v4
+      with:
+        name: coverage-runtime-${{matrix.container}}
+        include-hidden-files: false
+        path: |
+          ./coverage-runtime.info
 
     
     - name: build runtime with mpk enable
