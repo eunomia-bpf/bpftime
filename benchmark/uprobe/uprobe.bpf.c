@@ -58,7 +58,9 @@ SEC("uprobe/benchmark/test:__bench_write")
 int BPF_UPROBE(__bench_write, char *a, int b, uint64_t c)
 {
 	char buffer[5] = "text";
-	bpf_probe_write_user(a, buffer, sizeof(buffer));
+    for (int i = 0; i < 1000; i++) {
+	    bpf_probe_write_user(a, buffer, sizeof(buffer));
+    }
 	return b + c;
 }
 
@@ -66,7 +68,10 @@ SEC("uprobe/benchmark/test:__bench_read")
 int BPF_UPROBE(__bench_read, char *a, int b, uint64_t c)
 {
 	char buffer[5];
-	int res = bpf_probe_read_user(buffer, sizeof(buffer), a);
+    int res;
+    for (int i = 0; i < 1000; i++) {
+	    bpf_probe_read_user(buffer, sizeof(buffer), a);
+    }
 	return b + c + res + buffer[1];
 }
 

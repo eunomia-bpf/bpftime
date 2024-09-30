@@ -6,8 +6,6 @@
 
 `bpftime` is a High-Performance userspace eBPF runtime and General Extension Framework designed for userspace. It enables faster Uprobe, USDT, Syscall hooks, XDP, and more event sources by bypassing the kernel and utilizing an optimized compiler like `LLVM`.
 
-> ⚠️ **Note**: `bpftime` is actively under development, and it's not yet recommended for production use now. See our [roadmap](#roadmap) for details. We'd love to hear your feedback and suggestions! Please feel free to open an issue or [Contact us](#contact-and-citations).
-
 📦 [Key Features](#key-features) \
 🔨 [Quick Start](#quick-start) \
 🔌 [Examples & Use Cases](#examples--use-cases) \
@@ -18,6 +16,8 @@
 [**Checkout our documents in eunomia.dev!**](https://eunomia.dev/bpftime/)
 
 bpftime is not `userspace eBPF VM`, it's a userspace runtime framework includes everything to run eBPF in userspace: `loader`, `verifier`, `helpers`, `maps`, `ufunc` and multiple `events` such as Observability, Network, Policy or Access Control. It has multiple VM backend options support. For eBPF VM only, please see [llvmbpf](https://github.com/eunomia-bpf/llvmbpf).
+
+> ⚠️ **Note**: `bpftime` is currently under active development and may contain bugs or unstable API. Please use it with caution. For more details, check our [roadmap](#roadmap). We'd love to hear your feedback and suggestions! Feel free to open an issue or [Contact us](#contact-and-citations).
 
 ## Why bpftime? What's the design Goal?
 
@@ -197,6 +197,7 @@ See [eunomia.dev/bpftime/documents/build-and-test](https://eunomia.dev/bpftime/d
 `bpftime` is continuously evolving with more features in the pipeline:
 
 - [ ] Keep compatibility with the evolving kernel
+- [ ] Refactor for General Extension Framework
 - [ ] Trying to refactor, bug fixing for `Production`.
 - [ ] More examples and usecases:
   - [X] Userspace Network Driver on userspace eBPF
