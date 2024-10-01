@@ -27,7 +27,7 @@ jobs:
     - name: Install lcov
       if: "matrix.container == 'ubuntu-2204'"
       run: |
-        apt-get install -y lcov libzstd-dev libboost-all-dev
+        apt-get install -y lcov libzstd-dev libboost-all-dev gpg
     - name: Install lcov
       if: "matrix.container == 'fedora-39'"
       run: |
@@ -51,18 +51,13 @@ jobs:
         lcov --capture --directory . --output-file coverage-runtime.info
         lcov --remove coverage-runtime.info '/usr/*' --output-file coverage-runtime.info
         lcov --list coverage-runtime.info
-    - name: Generate runtime coverage
-      run: |
-        lcov --capture --directory . --output-file coverage-runtime.info --gcov-tool $(which gcov-12)
-        lcov --remove coverage-runtime.info '/usr/*' --output-file coverage-runtime.info
-        lcov --list coverage-runtime.info
-      - name: Upload runtime coverage
-        uses: actions/upload-artifact@v4
-        with:
-          name: coverage-runtime-${{matrix.container}}
-          include-hidden-files: false
-          path: |
-            ./coverage-runtime.info
+    - name: Upload runtime coverage
+      uses: actions/upload-artifact@v4
+      with:
+        name: coverage-runtime-${{matrix.container}}
+        include-hidden-files: false
+        path: |
+          ./coverage-runtime.info
 
     
     - name: build runtime with mpk enable
