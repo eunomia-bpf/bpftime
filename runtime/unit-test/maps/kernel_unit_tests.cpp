@@ -435,3 +435,36 @@ TEST_CASE("test_arraymap_percpu (kernel)")
 	key = 1;
 	REQUIRE((map.elem_delete_userspace(&key) < 0 && errno == EINVAL));
 }
+TEST_CASE("test_arraymap_percpu_many_keys (kernel)")
+{
+	shm_remove remover(SHM_NAME);
+	managed_shared_memory mem(boost::interprocess::create_only, SHM_NAME,
+				  20 << 20);
+
+	unsigned int nr_cpus = sysconf(_SC_NPROCESSORS_ONLN);
+	BPF_DECLARE_PERCPU(long, values);
+	/* nr_keys is not too large otherwise the test stresses percpu
+	 * allocator more than anything else
+	 */
+	unsigned int nr_keys = 2000;
+	int key, i;
+
+	per_cpu_array_map_impl map(mem, sizeof(bpf_percpu(values, 0)), nr_keys);
+
+	for (i = 0; i < (int)nr_cpus; i++)
+		bpf_percpu(values, i) = i + 10;
+
+	for (key = 0; key < (int)nr_keys; key++)
+		REQUIRE(map.elem_update_userspace(&key, values, BPF_ANY) == 0);
+
+	for (key = 0; key < (int)nr_keys; key++) {
+		for (i = 0; i < (int)nr_cpus; i++)
+			bpf_percpu(values, i) = 0;
+		void *value_ptr;
+		REQUIRE((value_ptr = map.elem_lookup_userspace(&key)) !=
+			nullptr);
+		memcpy(values, value_ptr, sizeof(values));
+		for (i = 0; i < (int)nr_cpus; i++)
+			REQUIRE(bpf_percpu(values, i) == i + 10);
+	}
+}
