@@ -250,3 +250,71 @@ TEST_CASE("test_hashmap_percpu (kernel)")
 	REQUIRE((map.map_get_next_key(NULL, &next_key) < 0 && errno == ENOENT));
 	REQUIRE((map.map_get_next_key(&key, &next_key) < 0 && errno == ENOENT));
 }
+
+#define VALUE_SIZE 3
+static inline var_size_hash_map_impl
+helper_fill_hashmap(int max_entries, managed_shared_memory &mem)
+{
+	int i, fd, ret;
+	long long key, value[VALUE_SIZE] = {};
+
+	var_size_hash_map_impl map(mem, sizeof(key), sizeof(value),
+				   max_entries);
+
+	for (i = 0; i < max_entries; i++) {
+		key = i;
+		value[0] = key;
+		ret = map.elem_update(&key, value, BPF_NOEXIST);
+		REQUIRE((ret == 0 && "Unable to update hash map"));
+	}
+
+	return map;
+}
+
+TEST_CASE("test_hashmap_walk (kernel)")
+{
+	shm_remove remover(SHM_NAME);
+	managed_shared_memory mem(boost::interprocess::create_only, SHM_NAME,
+				  20 << 20);
+	int i, max_entries = 10000;
+	long long key, value[VALUE_SIZE], next_key;
+	bool next_key_valid = true;
+
+	auto map = helper_fill_hashmap(max_entries, mem);
+
+	const auto lookup_helper = [&](const void *key, void *value) -> long {
+		auto returned_value = map.elem_lookup(key);
+		if (!returned_value)
+			return -1;
+		memcpy(value, returned_value, map.get_value_size());
+		return 0;
+	};
+
+	for (i = 0; map.map_get_next_key(!i ? NULL : &key, &next_key) == 0;
+	     i++) {
+		key = next_key;
+		REQUIRE(lookup_helper(&key, value) == 0);
+	}
+
+	REQUIRE(i == max_entries);
+
+	REQUIRE(map.map_get_next_key(NULL, &key) == 0);
+	for (i = 0; next_key_valid; i++) {
+		next_key_valid = map.map_get_next_key(&key, &next_key) == 0;
+		REQUIRE(lookup_helper(&key, value) == 0);
+		value[0]++;
+		REQUIRE(map.elem_update(&key, value, BPF_EXIST) == 0);
+		key = next_key;
+	}
+
+	REQUIRE(i == max_entries);
+
+	for (i = 0; map.map_get_next_key(!i ? NULL : &key, &next_key) == 0;
+	     i++) {
+		key = next_key;
+		REQUIRE(lookup_helper(&key, value) == 0);
+		REQUIRE(value[0] - 1 == key);
+	}
+
+	REQUIRE(i == max_entries);
+}

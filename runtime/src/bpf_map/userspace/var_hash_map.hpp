@@ -50,6 +50,10 @@ class var_size_hash_map_impl {
 	int map_get_next_key(const void *key, void *next_key);
 
 	int lookup_and_delete(const void *key, void *value_out);
+	uint32_t get_value_size() const
+	{
+		return _value_size;
+	}
 };
 
 } // namespace bpftime
