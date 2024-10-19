@@ -19,10 +19,19 @@ jobs:
         run: | 
           sudo apt-get update -y
           sudo apt-get install binutils-dev libboost1.74-all-dev libelf-dev zlib1g-dev ninja-build libyaml-cpp-dev -y
+      - name: Install lcov
+        run: |
+          sudo apt install -y lcov libzstd-dev
       - name: Build test target
         run: |
-          cmake -DBPFTIME_ENABLE_UNIT_TESTING=YES -DBPFTIME_LLVM_JIT=NO -DENABLE_EBPF_VERIFIER=YES -DCMAKE_BUILD_TYPE:STRING=Release -S . -B build -G Ninja
+          cmake -DTEST_LCOV=ON -DBPFTIME_ENABLE_UNIT_TESTING=YES -DBPFTIME_LLVM_JIT=NO -DENABLE_EBPF_VERIFIER=YES -DCMAKE_BUILD_TYPE:STRING=Release -S . -B build -G Ninja
           cmake --build build --config Release --target bpftime_verifier_tests
       - name: Run tests
         run: |
           ./build/bpftime-verifier/bpftime_verifier_tests
+      - name: upload runtime coverage
+        run: |
+          lcov --capture --directory . --output-file coverage.info
+          lcov --remove coverage.info '/usr/*' --output-file coverage.info
+          lcov --list coverage.info
+

@@ -28,7 +28,12 @@ set(TEST_SOURCES
     test/test_private_data_parsing.cpp
     test/test_syscall_dispatch.cpp
 )
+option(TEST_LCOV "option for lcov" OFF)
 add_executable(bpftime_syscall_trace_attach_tests ${TEST_SOURCES})
+
+if (${TEST_LCOV}) 
+    target_compile_options(bpftime_syscall_trace_attach_tests PRIVATE -fprofile-arcs -ftest-coverage)
+endif()
 
 if(${ENABLE_EBPF_VERIFIER} AND NOT TARGET Catch2)
     message(STATUS "Adding Catch2 by FetchContent at syscall_trace_attach_impl")
@@ -44,7 +49,12 @@ if(${ENABLE_EBPF_VERIFIER} AND NOT TARGET Catch2)
 endif()
 
 add_dependencies(bpftime_syscall_trace_attach_tests Catch2 bpftime_syscall_trace_attach_impl spdlog::spdlog)
-target_link_libraries(bpftime_syscall_trace_attach_tests PRIVATE Catch2::Catch2WithMain bpftime_syscall_trace_attach_impl spdlog::spdlog)
+if (${TEST_LCOV}) 
+    target_link_options(bpftime_syscall_trace_attach_tests PRIVATE -lgcov)
+    target_link_libraries(bpftime_syscall_trace_attach_tests PRIVATE Catch2::Catch2WithMain bpftime_syscall_trace_attach_impl spdlog::spdlog gcov)
+else ()
+    target_link_libraries(bpftime_syscall_trace_attach_tests PRIVATE Catch2::Catch2WithMain bpftime_syscall_trace_attach_impl spdlog::spdlog)
+endif()
 target_include_directories(bpftime_syscall_trace_attach_tests PRIVATE ${SYSCALL_TRACE_ATTACH_IMPL_INCLUDE} ${Catch2_INCLUDE} ${SPDLOG_INCLUDE})
 
 add_test(NAME bpftime_syscall_trace_attach_tests COMMAND bpftime_syscall_trace_attach_tests)
