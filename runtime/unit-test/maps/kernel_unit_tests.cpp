@@ -1,4 +1,5 @@
 #include "bpf_map/userspace/array_map.hpp"
+#include "bpf_map/userspace/per_cpu_array_map.hpp"
 #include "bpf_map/userspace/per_cpu_hash_map.hpp"
 #include "catch2/catch_test_macros.hpp"
 #include "linux/bpf.h"
@@ -374,4 +375,63 @@ TEST_CASE("test_arraymap (kernel)")
 	/* Delete shouldn't succeed. */
 	key = 1;
 	REQUIRE((map.elem_delete(&key) < 0 && errno == EINVAL));
+}
+
+TEST_CASE("test_arraymap_percpu (kernel)")
+{
+	shm_remove remover(SHM_NAME);
+	managed_shared_memory mem(boost::interprocess::create_only, SHM_NAME,
+				  20 << 20);
+	unsigned int nr_cpus = sysconf(_SC_NPROCESSORS_ONLN);
+	BPF_DECLARE_PERCPU(long, values);
+	int key, next_key, i;
+	per_cpu_array_map_impl map(mem, sizeof(bpf_percpu(values, 0)), 2);
+	const auto lookup_helper = [&](const void *key, void *value) -> long {
+		auto returned_value = map.elem_lookup_userspace(key);
+		if (!returned_value)
+			return -1;
+		memcpy(value, returned_value, sizeof(values));
+		return 0;
+	};
+
+	for (i = 0; i < (int)nr_cpus; i++)
+		bpf_percpu(values, i) = i + 100;
+
+	key = 1;
+	/* Insert key=1 element. */
+	REQUIRE(map.elem_update_userspace(&key, values, BPF_ANY) == 0);
+
+	bpf_percpu(values, 0) = 0;
+	REQUIRE((map.elem_update_userspace(&key, values, BPF_NOEXIST) < 0 &&
+		 errno == EEXIST));
+
+	/* Check that key=1 can be found. */
+	REQUIRE((lookup_helper(&key, values) == 0 &&
+		 bpf_percpu(values, 0) == 100));
+
+	key = 0;
+	/* Check that key=0 is also found and zero initialized. */
+	REQUIRE((lookup_helper(&key, values) == 0 &&
+		 bpf_percpu(values, 0) == 0 &&
+		 bpf_percpu(values, nr_cpus - 1) == 0));
+
+	/* Check that key=2 cannot be inserted due to max_entries limit. */
+	key = 2;
+	REQUIRE((map.elem_update_userspace(&key, values, BPF_EXIST) < 0 &&
+		 errno == E2BIG));
+
+	/* Check that key = 2 doesn't exist. */
+	REQUIRE((lookup_helper(&key, values) < 0 && errno == ENOENT));
+
+	/* Iterate over two elements. */
+	REQUIRE((map.map_get_next_key(NULL, &next_key) == 0 && next_key == 0));
+	REQUIRE((map.map_get_next_key(&key, &next_key) == 0 && next_key == 0));
+	REQUIRE((map.map_get_next_key(&next_key, &next_key) == 0 &&
+		 next_key == 1));
+	REQUIRE((map.map_get_next_key(&next_key, &next_key) < 0 &&
+		 errno == ENOENT));
+
+	/* Delete shouldn't succeed. */
+	key = 1;
+	REQUIRE((map.elem_delete_userspace(&key) < 0 && errno == EINVAL));
 }
