@@ -24,19 +24,74 @@ jobs:
     - uses: actions/checkout@v2
       with:
         submodules: 'recursive'
+    - name: Install lcov
+      if: "matrix.container == 'ubuntu-2204'"
+      run: |
+        apt-get install -y lcov libzstd-dev libboost-all-dev gpg
+    - name: Install lcov
+      if: "matrix.container == 'fedora-39'"
+      run: |
+        dnf install -y lcov
+  
     - name: Build
       run: |
-        cmake -DBPFTIME_LLVM_JIT=YES -DBPFTIME_ENABLE_UNIT_TESTING=YES -DCMAKE_BUILD_TYPE=Debug -B build
+        cmake -DTEST_LCOV=ON -DBPFTIME_LLVM_JIT=YES -DBPFTIME_ENABLE_UNIT_TESTING=YES -DCMAKE_BUILD_TYPE=Debug -B build
         cmake --build build --config Debug --target bpftime_runtime_tests -j$(nproc)
     - name: Test Runtime
       run:  ./build/runtime/unit-test/bpftime_runtime_tests
+    - name: Generate runtime coverage (Ubuntu)
+      if: "matrix.container == 'ubuntu-2204'"
+      run: |
+        lcov --capture --directory . --output-file coverage-runtime.info --gcov-tool $(which gcov-12)
+        lcov --remove coverage-runtime.info '/usr/*' --output-file coverage-runtime.info
+        lcov --list coverage-runtime.info
+    - name: Generate runtime coverage (Fedora)
+      if: "matrix.container == 'fedora-39'"
+      run: |
+        lcov --capture --directory . --output-file coverage-runtime.info
+        lcov --remove coverage-runtime.info '/usr/*' --output-file coverage-runtime.info
+        lcov --list coverage-runtime.info
+    - name: Upload runtime coverage
+      uses: actions/upload-artifact@v4
+      with:
+        name: coverage-runtime-${{matrix.container}}
+        include-hidden-files: false
+        path: |
+          ./coverage-runtime.info
 
+    
     - name: build runtime with mpk enable
       run: |
         rm -rf build
-        cmake -Bbuild -DBPFTIME_LLVM_JIT=YES  -DBPFTIME_ENABLE_UNIT_TESTING=YES -DBPFTIME_ENABLE_MPK=YES -DCMAKE_BUILD_TYPE=Debug
+        cmake -Bbuild -DTEST_LCOV=ON -DBPFTIME_LLVM_JIT=YES  -DBPFTIME_ENABLE_UNIT_TESTING=YES -DBPFTIME_ENABLE_MPK=YES -DCMAKE_BUILD_TYPE=Debug
         cmake --build build --config Debug --target bpftime_runtime_tests -j$(nproc)
-
-
     - name: test runtime with mpk
       run:  ./build/runtime/unit-test/bpftime_runtime_tests
+    - name: Generate runtime with mpk enable coverage (Ubuntu)
+      if: "matrix.container == 'ubuntu-2204'"
+      run: |
+        lcov --capture --directory . --output-file coverage-runtime-mpk.info --gcov-tool $(which gcov-12)
+        lcov --remove coverage-runtime-mpk.info '/usr/*' --output-file coverage-runtime-mpk.info
+        lcov --list coverage-runtime-mpk.info
+    - name: Generate runtime with mpk enable coverage (Fedora)
+      if: "matrix.container == 'fedora-39'"
+      run: |
+        lcov --capture --directory . --output-file coverage-runtime-mpk.info
+        lcov --remove coverage-runtime-mpk.info '/usr/*' --output-file coverage-runtime-mpk.info
+        lcov --list coverage-runtime-mpk.info
+    - name: Upload runtime-mpk coverage
+      uses: actions/upload-artifact@v4
+      with:
+        name: coverage-runtime-mpk-${{matrix.container}}
+        include-hidden-files: false
+        path: |
+          ./coverage-runtime-mpk.info
+
+    - uses: codecov/codecov-action@v4
+      with:
+            fail_ci_if_error: true # optional (default = false)
+            files: ./coverage-runtime.info
+            flags: runtime tests
+            token: ${{ secrets.CODECOV_TOKEN }} # required
+            verbose: true # optional (default = false)
+      
