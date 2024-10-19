@@ -14,14 +14,6 @@
 #include <unistd.h>
 #include "platform_utils.hpp"
 
-static inline bool check_update_flags(uint64_t flags)
-{
-	if (flags != BPF_ANY && flags != BPF_NOEXIST && flags != BPF_EXIST) {
-		errno = EINVAL;
-		return false;
-	}
-	return true;
-}
 
 namespace bpftime
 {

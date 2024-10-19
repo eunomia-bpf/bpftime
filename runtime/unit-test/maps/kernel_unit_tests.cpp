@@ -1,3 +1,4 @@
+#include "bpf_map/userspace/array_map.hpp"
 #include "bpf_map/userspace/per_cpu_hash_map.hpp"
 #include "catch2/catch_test_macros.hpp"
 #include "linux/bpf.h"
@@ -317,4 +318,60 @@ TEST_CASE("test_hashmap_walk (kernel)")
 	}
 
 	REQUIRE(i == max_entries);
+}
+
+TEST_CASE("test_arraymap (kernel)")
+{
+	shm_remove remover(SHM_NAME);
+	managed_shared_memory mem(boost::interprocess::create_only, SHM_NAME,
+				  20 << 20);
+	int key, next_key;
+	long long value;
+	auto value_size = sizeof(value);
+	array_map_impl map(mem, sizeof(value), 2);
+	const auto lookup_helper = [&](const void *key, void *value) -> long {
+		auto returned_value = map.elem_lookup(key);
+		if (!returned_value)
+			return -1;
+		memcpy(value, returned_value, sizeof(value_size));
+		return 0;
+	};
+
+	key = 1;
+	value = 1234;
+	/* Insert key=1 element. */
+	REQUIRE(map.elem_update(&key, &value, BPF_ANY) == 0);
+
+	value = 0;
+	REQUIRE((map.elem_update(&key, &value, BPF_NOEXIST) < 0 &&
+		 errno == EEXIST));
+
+	/* Check that key=1 can be found. */
+	REQUIRE((lookup_helper(&key, &value) == 0 && value == 1234));
+
+	key = 0;
+	/* Check that key=0 is also found and zero initialized. */
+	REQUIRE((lookup_helper(&key, &value) == 0 && value == 0));
+
+	/* key=0 and key=1 were inserted, check that key=2 cannot be inserted
+	 * due to max_entries limit.
+	 */
+	key = 2;
+	REQUIRE((map.elem_update(&key, &value, BPF_EXIST) < 0 &&
+		 errno == E2BIG));
+
+	/* Check that key = 2 doesn't exist. */
+	REQUIRE((lookup_helper(&key, &value) < 0 && errno == ENOENT));
+
+	/* Iterate over two elements. */
+	REQUIRE((map.map_get_next_key(NULL, &next_key) == 0 && next_key == 0));
+	REQUIRE((map.map_get_next_key(&key, &next_key) == 0 && next_key == 0));
+	REQUIRE((map.map_get_next_key(&next_key, &next_key) == 0 &&
+		 next_key == 1));
+	REQUIRE((map.map_get_next_key(&next_key, &next_key) < 0 &&
+		 errno == ENOENT));
+
+	/* Delete shouldn't succeed. */
+	key = 1;
+	REQUIRE((map.elem_delete(&key) < 0 && errno == EINVAL));
 }
