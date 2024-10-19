@@ -5,7 +5,6 @@
  */
 #ifndef _MAP_COMMON_DEF_HPP
 #define _MAP_COMMON_DEF_HPP
-#include "linux/bpf.h"
 #include "spdlog/spdlog.h"
 #include <boost/container_hash/hash.hpp>
 #include <cinttypes>
@@ -69,9 +68,11 @@ struct bytes_vec_hasher {
 		return seed;
 	}
 };
+
 static inline bool check_update_flags(uint64_t flags)
 {
-	if (flags != BPF_ANY && flags != BPF_NOEXIST && flags != BPF_EXIST) {
+	if (flags != 0 /*BPF_ANY*/ && flags != 1 /*BPF_NOEXIST*/ &&
+	    flags != 2 /*BPF_EXIST*/) {
 		errno = EINVAL;
 		return false;
 	}
