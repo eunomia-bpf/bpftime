@@ -52,7 +52,7 @@ static void test_hashmap(std::string memory_name = SHM_NAME,
 	auto &mem = *shm.mem;
 
 	long long key, next_key, first_key, value;
-	var_size_hash_map_impl map(mem, sizeof(key), sizeof(value), 2);
+	var_size_hash_map_impl map(mem, sizeof(key), sizeof(value), 2, 0);
 	key = 1;
 	value = 1234;
 	/* Insert key=1 element. */
@@ -154,7 +154,7 @@ static void test_hashmap_sizes(std::string memory_name = SHM_NAME,
 
 	for (i = 1; i <= 512; i <<= 1)
 		for (j = 1; j <= 1 << 18; j <<= 1) {
-			var_size_hash_map_impl map(mem, i, j, 2);
+			var_size_hash_map_impl map(mem, i, j, 2, 0);
 			usleep(10);
 		}
 }
@@ -302,8 +302,8 @@ helper_fill_hashmap(int max_entries, managed_shared_memory &mem)
 	int i, ret;
 	long long key, value[VALUE_SIZE] = {};
 
-	var_size_hash_map_impl map(mem, sizeof(key), sizeof(value),
-				   max_entries);
+	var_size_hash_map_impl map(mem, sizeof(key), sizeof(value), max_entries,
+				   0);
 
 	for (i = 0; i < max_entries; i++) {
 		key = i;
@@ -533,7 +533,8 @@ TEST_CASE("test_map_large (kernel)", "[kernel][large_memory]")
 	} key;
 	int i, value;
 
-	var_size_hash_map_impl map(mem, sizeof(key), sizeof(value), MAP_SIZE);
+	var_size_hash_map_impl map(mem, sizeof(key), sizeof(value), MAP_SIZE,
+				   0);
 	const auto lookup_helper = [&](const void *key, void *value) -> long {
 		auto returned_value = map.elem_lookup(key);
 		if (!returned_value)
@@ -711,7 +712,8 @@ TEST_CASE("test_map_parallel (kernel)", "[kernel][large_memory]")
 
 	int i, key = 0, value = 0, j = 0;
 
-	var_size_hash_map_impl map(mem, sizeof(key), sizeof(value), MAP_SIZE);
+	var_size_hash_map_impl map(mem, sizeof(key), sizeof(value), MAP_SIZE,
+				   0);
 	pthread_spinlock_t lock;
 	pthread_spin_init(&lock, 0);
 again:
@@ -764,4 +766,40 @@ again:
 	if (j++ < 5)
 		goto again;
 	pthread_spin_destroy(&lock);
+}
+
+TEST_CASE("test_map_rdonly (kernel)", "[kernel]")
+{
+	shm_initializer shm(SHM_NAME, true);
+	auto &mem = *shm.mem;
+	int key = 0, value = 0;
+
+	var_size_hash_map_impl map(mem, sizeof(key), sizeof(value), MAP_SIZE,
+				   BPF_F_RDONLY);
+	key = 1;
+	value = 1234;
+	/* Try to insert key=1 element. */
+	REQUIRE((map.elem_update(&key, &value, BPF_ANY) < 0 && errno == EPERM));
+
+	/* Check that key=1 is not found. */
+	REQUIRE((map.elem_lookup(&key) == nullptr && errno == ENOENT));
+	REQUIRE((map.map_get_next_key(&key, &value) < 0 && errno == ENOENT));
+}
+
+TEST_CASE("test_map_wronly (kernel)", "[kernel]")
+{
+	shm_initializer shm(SHM_NAME, true);
+	auto &mem = *shm.mem;
+	int key = 0, value = 0;
+
+	var_size_hash_map_impl map(mem, sizeof(key), sizeof(value), MAP_SIZE,
+				   BPF_F_WRONLY);
+	key = 1;
+	value = 1234;
+	/* Insert key=1 element. */
+	REQUIRE(map.elem_update(&key, &value, BPF_ANY) == 0);
+
+	/* Check that reading elements and keys from the map is not allowed. */
+	REQUIRE((map.elem_lookup(&key) == nullptr && errno == EPERM));
+	REQUIRE((map.map_get_next_key(&key, &value) < 0 && errno == EPERM));
 }

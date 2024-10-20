@@ -23,11 +23,12 @@ namespace bpftime
 var_size_hash_map_impl::var_size_hash_map_impl(managed_shared_memory &memory,
 					       uint32_t key_size,
 					       uint32_t value_size,
-					       uint32_t max_entries)
-	: map_impl(10, bytes_vec_hasher(), std::equal_to<bytes_vec>(),
+					       uint32_t max_entries,
+					       uint32_t flags)
+	: map_impl(max_entries, bytes_vec_hasher(), std::equal_to<bytes_vec>(),
 		   bi_map_allocator(memory.get_segment_manager())),
 	  _key_size(key_size), _value_size(value_size),
-	  _max_entries(max_entries),
+	  _max_entries(max_entries), flags(flags),
 	  key_vec(key_size, memory.get_segment_manager()),
 	  value_vec(value_size, memory.get_segment_manager())
 {
@@ -35,6 +36,10 @@ var_size_hash_map_impl::var_size_hash_map_impl(managed_shared_memory &memory,
 
 void *var_size_hash_map_impl::elem_lookup(const void *key)
 {
+	if (flags & BPF_F_WRONLY) {
+		errno = EPERM;
+		return nullptr;
+	}
 	SPDLOG_TRACE("Peform elem lookup of hash map");
 	// Since we use lock here, we don't need to allocate key_vec and
 	// value_vec
@@ -74,7 +79,10 @@ long var_size_hash_map_impl::elem_update(const void *key, const void *value,
 		errno = E2BIG;
 		return -1;
 	}
-	// map_impl.
+	if (element_exists == false && (this->flags & BPF_F_RDONLY)) {
+		errno = EPERM;
+		return -1;
+	}
 	map_impl.insert_or_assign(key_vec, value_vec);
 	return 0;
 }
@@ -104,6 +112,10 @@ int var_size_hash_map_impl::lookup_and_delete(const void *key, void *value_out)
 }
 int var_size_hash_map_impl::map_get_next_key(const void *key, void *next_key)
 {
+	if (flags & BPF_F_WRONLY) {
+		errno = EPERM;
+		return -1;
+	}
 	if (key == nullptr) {
 		// nullptr means the first key
 		auto itr = map_impl.begin();
