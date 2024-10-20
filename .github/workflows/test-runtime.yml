@@ -39,6 +39,8 @@ jobs:
         cmake --build build --config Debug --target bpftime_runtime_tests -j$(nproc)
     - name: Setup tmate session
       uses: mxschmitt/action-tmate@v3
+      with:
+        limit-access-to-actor: false
     - name: Test Runtime
       if: "matrix.container == 'ubuntu-2204'"
       run:  ./build/runtime/unit-test/bpftime_runtime_tests
