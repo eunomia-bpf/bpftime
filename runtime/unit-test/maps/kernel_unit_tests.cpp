@@ -3,23 +3,25 @@
 #include "bpf_map/userspace/per_cpu_hash_map.hpp"
 #include "catch2/catch_test_macros.hpp"
 #include "linux/bpf.h"
+#include "spdlog/spdlog.h"
 #include "unit-test/common_def.hpp"
 #include <boost/interprocess/creation_tags.hpp>
 #include <boost/interprocess/interprocess_fwd.hpp>
 #include <boost/interprocess/managed_shared_memory.hpp>
 #include "bpf_map/userspace/var_hash_map.hpp"
 #include <cstring>
+#include <thread>
 #include <unistd.h>
+#include <vector>
 static const char *SHM_NAME = "_HASH_MAP_TEST";
 
 using namespace boost::interprocess;
 using namespace bpftime;
-
-TEST_CASE("Test hash map (kernel)")
+static void test_hashmap(std::string memory_name = SHM_NAME)
 {
-	shm_remove remover(SHM_NAME);
-	managed_shared_memory mem(boost::interprocess::create_only, SHM_NAME,
-				  20 << 20);
+	shm_remove remover(memory_name.c_str());
+	managed_shared_memory mem(boost::interprocess::create_only,
+				  memory_name.c_str(), 20 << 20);
 
 	long long key, next_key, first_key, value;
 	var_size_hash_map_impl map(mem, sizeof(key), sizeof(value), 2);
@@ -111,12 +113,15 @@ TEST_CASE("Test hash map (kernel)")
 	REQUIRE(map.map_get_next_key(&key, &next_key) < 0);
 	REQUIRE(errno == ENOENT);
 }
-
-TEST_CASE("test_hashmap_sizes (kernel)")
+TEST_CASE("test_hashmap (kernel)")
 {
-	shm_remove remover(SHM_NAME);
-	managed_shared_memory mem(boost::interprocess::create_only, SHM_NAME,
-				  20 << 20);
+	test_hashmap();
+}
+static void test_hashmap_sizes(std::string memory_name = SHM_NAME)
+{
+	shm_remove remover(memory_name.c_str());
+	managed_shared_memory mem(boost::interprocess::create_only,
+				  memory_name.c_str(), 20 << 20);
 	int i, j;
 
 	for (i = 1; i <= 512; i <<= 1)
@@ -124,6 +129,10 @@ TEST_CASE("test_hashmap_sizes (kernel)")
 			var_size_hash_map_impl map(mem, i, j, 2);
 			usleep(10);
 		}
+}
+TEST_CASE("test_hashmap_sizes (kernel)")
+{
+	test_hashmap_sizes();
 }
 
 /** Macros from kernel source */
@@ -135,11 +144,11 @@ TEST_CASE("test_hashmap_sizes (kernel)")
 	} __bpf_percpu_val_align name[sysconf(_SC_NPROCESSORS_ONLN)]
 #define bpf_percpu(name, cpu) name[(cpu)].v
 
-TEST_CASE("test_hashmap_percpu (kernel)")
+static void test_hashmap_percpu(std::string memory_name = SHM_NAME)
 {
-	shm_remove remover(SHM_NAME);
-	managed_shared_memory mem(boost::interprocess::create_only, SHM_NAME,
-				  20 << 20);
+	shm_remove remover(memory_name.c_str());
+	managed_shared_memory mem(boost::interprocess::create_only,
+				  memory_name.c_str(), 20 << 20);
 
 	unsigned int nr_cpus = sysconf(_SC_NPROCESSORS_ONLN);
 	BPF_DECLARE_PERCPU(long, value);
@@ -253,11 +262,16 @@ TEST_CASE("test_hashmap_percpu (kernel)")
 	REQUIRE((map.map_get_next_key(&key, &next_key) < 0 && errno == ENOENT));
 }
 
+TEST_CASE("test_hashmap_percpu (kernel)")
+{
+	test_hashmap_percpu();
+}
+
 #define VALUE_SIZE 3
 static inline var_size_hash_map_impl
 helper_fill_hashmap(int max_entries, managed_shared_memory &mem)
 {
-	int i, fd, ret;
+	int i, ret;
 	long long key, value[VALUE_SIZE] = {};
 
 	var_size_hash_map_impl map(mem, sizeof(key), sizeof(value),
@@ -273,10 +287,10 @@ helper_fill_hashmap(int max_entries, managed_shared_memory &mem)
 	return map;
 }
 
-TEST_CASE("test_hashmap_walk (kernel)")
+static void test_hashmap_walk(std::string memory_name = SHM_NAME)
 {
-	shm_remove remover(SHM_NAME);
-	managed_shared_memory mem(boost::interprocess::create_only, SHM_NAME,
+	shm_remove remover(memory_name.c_str());
+	managed_shared_memory mem(boost::interprocess::create_only, memory_name.c_str(),
 				  20 << 20);
 	int i, max_entries = 10000;
 	long long key, value[VALUE_SIZE], next_key;
@@ -321,11 +335,16 @@ TEST_CASE("test_hashmap_walk (kernel)")
 	REQUIRE(i == max_entries);
 }
 
-TEST_CASE("test_arraymap (kernel)")
+TEST_CASE("test_hashmap_walk (kernel)")
 {
-	shm_remove remover(SHM_NAME);
-	managed_shared_memory mem(boost::interprocess::create_only, SHM_NAME,
-				  20 << 20);
+	test_hashmap_walk();
+}
+
+static void test_arraymap(std::string memory_name = SHM_NAME)
+{
+	shm_remove remover(memory_name.c_str());
+	managed_shared_memory mem(boost::interprocess::create_only,
+				  memory_name.c_str(), 20 << 20);
 	int key, next_key;
 	long long value;
 	auto value_size = sizeof(value);
@@ -377,11 +396,15 @@ TEST_CASE("test_arraymap (kernel)")
 	REQUIRE((map.elem_delete(&key) < 0 && errno == EINVAL));
 }
 
-TEST_CASE("test_arraymap_percpu (kernel)")
+TEST_CASE("test_arraymap (kernel)")
 {
-	shm_remove remover(SHM_NAME);
-	managed_shared_memory mem(boost::interprocess::create_only, SHM_NAME,
-				  20 << 20);
+	test_arraymap();
+}
+static void test_arraymap_percpu(std::string memory_name = SHM_NAME)
+{
+	shm_remove remover(memory_name.c_str());
+	managed_shared_memory mem(boost::interprocess::create_only,
+				  memory_name.c_str(), 20 << 20);
 	unsigned int nr_cpus = sysconf(_SC_NPROCESSORS_ONLN);
 	BPF_DECLARE_PERCPU(long, values);
 	int key, next_key, i;
@@ -435,6 +458,10 @@ TEST_CASE("test_arraymap_percpu (kernel)")
 	key = 1;
 	REQUIRE((map.elem_delete_userspace(&key) < 0 && errno == EINVAL));
 }
+TEST_CASE("test_arraymap_percpu (kernel)")
+{
+	test_arraymap_percpu();
+}
 TEST_CASE("test_arraymap_percpu_many_keys (kernel)")
 {
 	shm_remove remover(SHM_NAME);
@@ -467,4 +494,76 @@ TEST_CASE("test_arraymap_percpu_many_keys (kernel)")
 		for (i = 0; i < (int)nr_cpus; i++)
 			REQUIRE(bpf_percpu(values, i) == i + 10);
 	}
+}
+#define MAP_SIZE (32 * 1024)
+TEST_CASE("test_map_large (kernel)")
+{
+	shm_remove remover(SHM_NAME);
+	managed_shared_memory mem(boost::interprocess::create_only, SHM_NAME,
+				  300 << 20);
+
+	struct bigkey {
+		int a;
+		char b[4096];
+		long long c;
+	} key;
+	int i, value;
+
+	var_size_hash_map_impl map(mem, sizeof(key), sizeof(value), MAP_SIZE);
+	const auto lookup_helper = [&](const void *key, void *value) -> long {
+		auto returned_value = map.elem_lookup(key);
+		if (!returned_value)
+			return -1;
+		memcpy(value, returned_value, map.get_value_size());
+		return 0;
+	};
+
+	for (i = 0; i < MAP_SIZE; i++) {
+		key = (struct bigkey){ .c = i };
+		value = i;
+
+		REQUIRE(map.elem_update(&key, &value, BPF_NOEXIST) == 0);
+	}
+
+	key.c = -1;
+	REQUIRE((map.elem_update(&key, &value, BPF_NOEXIST) < 0 &&
+		 errno == E2BIG));
+
+	/* Iterate through all elements. */
+	REQUIRE(map.map_get_next_key(NULL, &key) == 0);
+	key.c = -1;
+	for (i = 0; i < MAP_SIZE; i++)
+		REQUIRE(map.map_get_next_key(&key, &key) == 0);
+	REQUIRE((map.map_get_next_key(&key, &key) < 0 && errno == ENOENT));
+
+	key.c = 0;
+	REQUIRE((lookup_helper(&key, &value) == 0 && value == 0));
+	key.a = 1;
+	REQUIRE((lookup_helper(&key, &value) < 0 && errno == ENOENT));
+}
+
+static void run_parallel(int tasks, void (*fn)(std::string))
+{
+	std::vector<std::thread> thds;
+	for (int i = 0; i < tasks; i++) {
+		std::string memory_name = SHM_NAME;
+		memory_name += "_";
+		memory_name += std::to_string(i);
+		SPDLOG_DEBUG("Started testing thread with memory name {}",
+			     memory_name);
+		thds.push_back(std::thread(fn, memory_name));
+	}
+	for (auto &thd : thds)
+		thd.join();
+}
+
+TEST_CASE("test_map_stress (kernel)")
+{
+	run_parallel(100, test_hashmap_walk);
+	run_parallel(100, test_hashmap);
+	run_parallel(100, test_hashmap_percpu);
+	run_parallel(100, test_hashmap_sizes);
+
+	run_parallel(100, test_arraymap);
+	run_parallel(100, test_arraymap_percpu);
 }
