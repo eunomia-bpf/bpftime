@@ -198,11 +198,6 @@ jobs:
         run: |
           export PATH=$PATH:~/.bpftime
           bpftime --help
-      # - name: Setup tmate session
-      #   if: "${{matrix.container.name == 'fedora' && matrix.enable_jit && matrix.examples.path == 'malloc'}}"
-      #   uses: mxschmitt/action-tmate@v3
-      #   with:
-      #     limit-access-to-actor: false
       - name: Test CLI - attach by running (syscall_trace)
         if: matrix.examples.syscall_trace
         shell: bash
@@ -217,3 +212,8 @@ jobs:
           ROOT=$(pwd)
           cd example/${{matrix.examples.path}}
           python3 $ROOT/.github/script/run_example.py "${{matrix.examples.executable}}" "${{matrix.examples.victim}}" "${{matrix.examples.expected_str}}" "/github/home/.bpftime/bpftime -i /github/home/.bpftime" 0
+      - name: Setup tmate session
+        if: "${{ failure() }}"
+        uses: mxschmitt/action-tmate@v3
+        with:
+          limit-access-to-actor: false
