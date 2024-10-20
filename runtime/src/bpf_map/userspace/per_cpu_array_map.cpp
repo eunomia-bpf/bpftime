@@ -139,7 +139,7 @@ long per_cpu_array_map_impl::elem_update_userspace(const void *key,
 long per_cpu_array_map_impl::elem_delete_userspace(const void *key)
 {
 	errno = EINVAL;
-	SPDLOG_ERROR("Element delete is not supported by per cpu array");
+	SPDLOG_WARN("Element delete is not supported by per cpu array");
 	return -1;
 }
 
