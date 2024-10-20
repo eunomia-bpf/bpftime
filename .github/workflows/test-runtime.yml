@@ -38,7 +38,12 @@ jobs:
         cmake -DTEST_LCOV=ON -DBPFTIME_LLVM_JIT=YES -DBPFTIME_ENABLE_UNIT_TESTING=YES -DCMAKE_BUILD_TYPE=Debug -B build
         cmake --build build --config Debug --target bpftime_runtime_tests -j$(nproc)
     - name: Test Runtime
+      if: "matrix.container == 'ubuntu-2204'"
       run:  ./build/runtime/unit-test/bpftime_runtime_tests
+    - name: Test Runtime
+      if: "matrix.container == 'fedora-39'"
+      run:  ./build/runtime/unit-test/bpftime_runtime_tests "~[large_memory]"
+    
     - name: Generate runtime coverage (Ubuntu)
       if: "matrix.container == 'ubuntu-2204'"
       run: |

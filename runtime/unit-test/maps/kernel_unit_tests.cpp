@@ -522,7 +522,7 @@ TEST_CASE("test_arraymap_percpu_many_keys (kernel)", "[kernel]")
 	}
 }
 #define MAP_SIZE (32 * 1024)
-TEST_CASE("test_map_large (kernel)", "[kernel]")
+TEST_CASE("test_map_large (kernel)", "[kernel][large_memory]")
 {
 	shm_initializer shm(SHM_NAME, true, 150 << 20);
 	auto &mem = *shm.mem;
@@ -705,7 +705,7 @@ static void test_update_delete(unsigned int fn, int do_update,
 	}
 }
 
-TEST_CASE("test_map_parallel (kernel)", "[kernel]")
+TEST_CASE("test_map_parallel (kernel)", "[kernel][large_memory]")
 {
 	shm_initializer shm(SHM_NAME, true, 150 << 20);
 	auto &mem = *shm.mem;
