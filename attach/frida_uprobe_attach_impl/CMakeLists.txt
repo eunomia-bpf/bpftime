@@ -27,7 +27,7 @@ option(TEST_LCOV "option for lcov" OFF)
 add_executable(bpftime_frida_uprobe_attach_tests ${TEST_SOURCES})
 
 if (${TEST_LCOV}) 
-    target_compile_options(bpftime_frida_uprobe_attach_tests PRIVATE -fprofile-arcs -ftest-coverage)
+    target_compile_options(bpftime_frida_uprobe_attach_tests PRIVATE -fprofile-arcs -ftest-coverage -fprofile-update=atomic)
 endif()
 
 if(${ENABLE_EBPF_VERIFIER} AND NOT TARGET Catch2)

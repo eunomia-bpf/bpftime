@@ -26,6 +26,7 @@ jobs:
         submodules: 'recursive'
     - name: Remount shm dev
       # The size of /dev/shm defaults to be 64M, but boost won't detect this at all, leaving bus error to us..
+      # So we remount it to make it larger
       run: |
         mount -o remount,size=1G /dev/shm
     - name: Install lcov
