@@ -657,7 +657,6 @@ static int map_delete_retriable(var_size_hash_map_impl &map, const void *key,
 			pthread_spinlock_guard guard(lock);
 			if (map.elem_delete(key) == 0)
 				break;
-			
 		}
 		if (!attempts || (errno != EAGAIN && errno != EBUSY))
 			return -errno;
