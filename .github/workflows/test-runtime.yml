@@ -24,6 +24,11 @@ jobs:
     - uses: actions/checkout@v2
       with:
         submodules: 'recursive'
+    - name: Remount shm dev
+      # The size of /dev/shm defaults to be 64M, but boost won't detect this at all, leaving bus error to us..
+      # So we remount it to make it larger
+      run: |
+        mount -o remount,size=1G /dev/shm
     - name: Install lcov
       if: "matrix.container == 'ubuntu-2204'"
       run: |
@@ -39,6 +44,7 @@ jobs:
         cmake --build build --config Debug --target bpftime_runtime_tests -j$(nproc)
     - name: Test Runtime
       run:  ./build/runtime/unit-test/bpftime_runtime_tests
+    
     - name: Generate runtime coverage (Ubuntu)
       if: "matrix.container == 'ubuntu-2204'"
       run: |

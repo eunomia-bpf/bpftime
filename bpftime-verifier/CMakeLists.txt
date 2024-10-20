@@ -38,7 +38,7 @@ option(TEST_LCOV "option for lcov" OFF)
 add_executable(bpftime_verifier_tests ${TEST_SOURCES})
 
 if (${TEST_LCOV}) 
-    target_compile_options(bpftime_verifier_tests PRIVATE -fprofile-arcs -ftest-coverage)
+    target_compile_options(bpftime_verifier_tests PRIVATE -fprofile-arcs -ftest-coverage -fprofile-update=atomic)
 endif()
 
 add_dependencies(bpftime_verifier_tests bpftime-verifier)
