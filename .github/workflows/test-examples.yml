@@ -81,6 +81,10 @@ jobs:
               enable: false
             examples:
               path: tailcall_minimal
+          - privilege_options:
+              enable: false
+            examples:
+              path: malloc
         privilege_options:
           - options: "--privileged -v /sys/kernel/debug/:/sys/kernel/debug:rw -v /sys/kernel/tracing:/sys/kernel/tracing:rw"
             enable: true
@@ -194,11 +198,11 @@ jobs:
         run: |
           export PATH=$PATH:~/.bpftime
           bpftime --help
-      - name: Setup tmate session
-        if: "${{matrix.container.name == 'fedora' && matrix.enable_jit && matrix.examples.path == 'malloc'}}"
-        uses: mxschmitt/action-tmate@v3
-        with:
-          limit-access-to-actor: false
+      # - name: Setup tmate session
+      #   if: "${{matrix.container.name == 'fedora' && matrix.enable_jit && matrix.examples.path == 'malloc'}}"
+      #   uses: mxschmitt/action-tmate@v3
+      #   with:
+      #     limit-access-to-actor: false
       - name: Test CLI - attach by running (syscall_trace)
         if: matrix.examples.syscall_trace
         shell: bash
