@@ -36,7 +36,7 @@ option(TEST_LCOV "option for lcov" OFF)
 add_executable(bpftime_runtime_tests ${TEST_SOURCES})
 
 if (${TEST_LCOV}) 
-    target_compile_options(bpftime_runtime_tests PRIVATE -fprofile-arcs -ftest-coverage)
+    target_compile_options(bpftime_runtime_tests PRIVATE -fprofile-arcs -ftest-coverage -fprofile-update=atomic)
 endif()
 
 set_property(TARGET bpftime_runtime_tests PROPERTY CXX_STANDARD 20)
