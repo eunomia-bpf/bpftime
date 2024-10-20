@@ -213,7 +213,8 @@ jobs:
           cd example/${{matrix.examples.path}}
           python3 $ROOT/.github/script/run_example.py "${{matrix.examples.executable}}" "${{matrix.examples.victim}}" "${{matrix.examples.expected_str}}" "/github/home/.bpftime/bpftime -i /github/home/.bpftime" 0
       - name: Setup tmate session
-        if: "${{ failure() }}"
+        # Setup SSH when manually triggered and failing, so we can debug CI more conveniently
+        if: "${{ failure() && github.event_name == 'workflow_dispatch' }}"
         uses: mxschmitt/action-tmate@v3
         with:
-          limit-access-to-actor: false
+          limit-access-to-actor: true
