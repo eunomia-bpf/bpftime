@@ -5,6 +5,7 @@
 #include <functional>
 #include <optional>
 #include "attach_private_data.hpp"
+#include <stdexcept>
 namespace bpftime
 {
 namespace attach
@@ -71,7 +72,8 @@ inline uint64_t bpftime_set_retval(uint64_t value)
 	} else {
 		spdlog::error(
 			"Called bpftime_set_retval, but no retval callback was set");
-		assert(false);
+		throw std::invalid_argument(
+			"Called bpftime_set_retval, but no retval callback was set");
 	}
 	return 0;
 }
@@ -87,7 +89,8 @@ inline uint64_t bpftime_override_return(uint64_t ctx, uint64_t value)
 	} else {
 		spdlog::error(
 			"Called bpftime_override_return, but no retval callback was set");
-		assert(false);
+		throw std::invalid_argument(
+			"Called bpftime_override_return, but no retval callback was set");
 	}
 	return 0;
 }
