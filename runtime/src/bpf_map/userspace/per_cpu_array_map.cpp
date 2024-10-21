@@ -4,6 +4,7 @@
  * All rights reserved.
  */
 #include "bpf_map/map_common_def.hpp"
+#include "linux/bpf.h"
 #include "spdlog/spdlog.h"
 #include <algorithm>
 #include <bpf_map/userspace/per_cpu_array_map.hpp>
@@ -39,7 +40,7 @@ void *per_cpu_array_map_impl::elem_lookup(const void *key)
 		}
 		uint32_t key_val = *(uint32_t *)key;
 		if (key_val >= max_ent) {
-			errno = E2BIG;
+			errno = ENOENT;
 			return nullptr;
 		}
 		return data_at(key_val, cpu);
@@ -49,6 +50,8 @@ void *per_cpu_array_map_impl::elem_lookup(const void *key)
 long per_cpu_array_map_impl::elem_update(const void *key, const void *value,
 					 uint64_t flags)
 {
+	if (!check_update_flags(flags))
+		return -1;
 	return ensure_on_current_cpu<long>([&](int cpu) -> long {
 		// return impl[cpu].elem_update(key, value, flags);
 		if (key == nullptr) {
@@ -56,6 +59,10 @@ long per_cpu_array_map_impl::elem_update(const void *key, const void *value,
 			return -1;
 		}
 		uint32_t key_val = *(uint32_t *)key;
+		if (key_val < max_ent && flags == BPF_NOEXIST) {
+			errno = EEXIST;
+			return -1;
+		}
 		if (key_val >= max_ent) {
 			errno = E2BIG;
 			return -1;
@@ -68,13 +75,12 @@ long per_cpu_array_map_impl::elem_update(const void *key, const void *value,
 
 long per_cpu_array_map_impl::elem_delete(const void *key)
 {
-	errno = ENOTSUP;
+	errno = EINVAL;
 	SPDLOG_DEBUG("Deleting of per cpu array is not supported");
 	return -1;
 }
 
-int per_cpu_array_map_impl::map_get_next_key(const void *key,
-						 void *next_key)
+int per_cpu_array_map_impl::map_get_next_key(const void *key, void *next_key)
 {
 	// Not found
 	if (key == nullptr || *(uint32_t *)key >= max_ent) {
@@ -100,7 +106,7 @@ void *per_cpu_array_map_impl::elem_lookup_userspace(const void *key)
 	}
 	uint32_t key_val = *(uint32_t *)key;
 	if (key_val >= max_ent) {
-		errno = E2BIG;
+		errno = ENOENT;
 		return nullptr;
 	}
 	return data_at(key_val, 0);
@@ -110,11 +116,17 @@ long per_cpu_array_map_impl::elem_update_userspace(const void *key,
 						   const void *value,
 						   uint64_t flags)
 {
+	if (!check_update_flags(flags))
+		return -1;
 	if (key == nullptr) {
 		errno = ENOENT;
 		return -1;
 	}
 	uint32_t key_val = *(uint32_t *)key;
+	if (key_val < max_ent && flags == BPF_NOEXIST) {
+		errno = EEXIST;
+		return -1;
+	}
 	if (key_val >= max_ent) {
 		errno = E2BIG;
 		return -1;
@@ -126,8 +138,8 @@ long per_cpu_array_map_impl::elem_update_userspace(const void *key,
 
 long per_cpu_array_map_impl::elem_delete_userspace(const void *key)
 {
-	errno = ENOTSUP;
-	SPDLOG_ERROR("Element delete is not supported by per cpu array");
+	errno = EINVAL;
+	SPDLOG_WARN("Element delete is not supported by per cpu array");
 	return -1;
 }
 
