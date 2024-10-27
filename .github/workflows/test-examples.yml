@@ -279,7 +279,7 @@ jobs:
       
       - name: Setup tmate session
         # Setup SSH when manually triggered and failing, so we can debug CI more conveniently
-        if: "${{ failure() && github.event_name == 'workflow_dispatch' }}"
+        if: "${{ failure() }}"
         uses: mxschmitt/action-tmate@v3
         with:
           limit-access-to-actor: true
