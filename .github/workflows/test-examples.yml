@@ -269,7 +269,7 @@ jobs:
         if: "matrix.container.image == 'fedora-39'"
         run: |
           dnf install -y lcov
-          lcov --capture --directory . --directory .github --directory /github/home/.bpftime --output-file coverage-example.info
+          lcov --capture --directory . --output-file coverage-example.info
           lcov --remove coverage-example.info '/usr/*' --output-file coverage-example.info
           lcov --list coverage-example.info
       - name: Upload example coverage
