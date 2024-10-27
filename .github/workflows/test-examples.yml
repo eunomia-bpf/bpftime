@@ -218,14 +218,14 @@ jobs:
         if: "matrix.container.image == 'ubuntu-2204'"
         run: |
           apt-get install -y gpg lcov
-          lcov --capture --directory . --directory .github --output-file coverage-example.info --gcov-tool $(which gcov-12)
+          lcov --capture --directory . --directory .github --directory /github/home/.bpftime --output-file coverage-example.info --gcov-tool $(which gcov-12)
           lcov --remove coverage-example.info '/usr/*' --output-file coverage-example.info
           lcov --list coverage-example.info
       - name: Generate example coverage (Fedora)
         if: "matrix.container.image == 'fedora-39'"
         run: |
           dnf install -y lcov
-          lcov --capture --directory . --directory .github --output-file coverage-example.info
+          lcov --capture --directory . --directory .github --directory /github/home/.bpftime --output-file coverage-example.info
           lcov --remove coverage-example.info '/usr/*' --output-file coverage-example.info
           lcov --list coverage-example.info
       - name: Upload example coverage
