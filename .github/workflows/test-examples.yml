@@ -214,16 +214,16 @@ jobs:
           ROOT=$(pwd)
           cd example/${{matrix.examples.path}}
           python3 $ROOT/.github/script/run_example.py "${{matrix.examples.executable}}" "${{matrix.examples.victim}}" "${{matrix.examples.expected_str}}" "/github/home/.bpftime/bpftime -i /github/home/.bpftime" 0
-      - name: Generate runtime with mpk enable coverage (Ubuntu)
+      - name: Generate example coverage (Ubuntu)
         if: "matrix.container == 'ubuntu-2204'"
         run: |
-          lcov --capture --directory . --output-file coverage-runtime-mpk.info --gcov-tool $(which gcov-12)
+          lcov --capture --directory . --output-file coverage-example.info --gcov-tool $(which gcov-12)
           lcov --remove coverage-runtime-mpk.info '/usr/*' --output-file coverage-runtime-mpk.info
           lcov --list coverage-example.info
-      - name: Generate runtime with mpk enable coverage (Fedora)
+      - name: Generate example coverage (Fedora)
         if: "matrix.container == 'fedora-39'"
         run: |
-          lcov --capture --directory . --output-file coverage-runtime-mpk.info
+          lcov --capture --directory . --output-file coverage-example.info
           lcov --remove coverage-runtime-mpk.info '/usr/*' --output-file coverage-runtime-mpk.info
           lcov --list coverage-example.info
       - name: Upload runtime-mpk coverage
@@ -233,7 +233,14 @@ jobs:
           include-hidden-files: false
           path: |
             ./coverage-example.info
-    
+      - uses: codecov/codecov-action@v4
+        with:
+              fail_ci_if_error: true # optional (default = false)
+              files: ./coverage-example.info
+              flags: coverage-example-${{matrix.container.name}}-${{matrix.enable_jit}}-${{matrix.examples.path}}
+              token: ${{ secrets.CODECOV_TOKEN }} # required
+              verbose: true # optional (default = false)
+      
       - name: Setup tmate session
         # Setup SSH when manually triggered and failing, so we can debug CI more conveniently
         if: "${{ failure() && github.event_name == 'workflow_dispatch' }}"
