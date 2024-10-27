@@ -57,6 +57,16 @@ jobs:
       - name: Build basic examples
         run: |
             make -C example -j
+      - name: Package gcno files
+        run: |
+          find / -type f -name "*.gcno" | tar --create --gzip --file=gcno_files.tar.gz --files-from=-
+      - name: Upload gcno file
+        uses: actions/upload-artifact@v4
+        with:
+          name: runtime-package-${{matrix.enable_jit && 'jit' || 'no-jit'}}-${{matrix.container.name}}
+          include-hidden-files: true
+          path: |
+            ./gcon_files.tar.gz
       - name: Upload build results (without jit)
         uses: actions/upload-artifact@v4
         if: ${{!matrix.enable_jit}}
@@ -188,6 +198,15 @@ jobs:
         with:
           name: runtime-package-no-jit-${{matrix.container.name}}
           path: ~/.bpftime
+      - name: Download gcno files
+        uses: actions/download-artifact@v4
+        with:
+          name: runtime-package-${{matrix.enable_jit && 'jit' || 'no-jit'}}-${{matrix.container.name}}
+          path: .
+      - name: Extract gcno files
+        run: |
+          ls *
+          tar -zxvf gcon_files.tar.gz
       - name: Install which(required by funclatency on fedora)
         if: ${{matrix.container.name=='fedora' && matrix.examples.path=='libbpf-tools/funclatency'}}
         run: |
