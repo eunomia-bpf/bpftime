@@ -67,7 +67,7 @@ jobs:
           name: gcno-files-${{matrix.enable_jit && 'jit' || 'no-jit'}}-${{matrix.container.name}}
           include-hidden-files: true
           path: |
-            ./gcon_files.tar.gz
+            ./gcno_files.tar.gz
       - name: Upload build results (without jit)
         uses: actions/upload-artifact@v4
         if: ${{!matrix.enable_jit}}
