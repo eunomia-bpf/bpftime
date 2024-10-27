@@ -214,7 +214,6 @@ jobs:
           ls -lah .
           tar -zxvf gcno_files.tar.gz
           pwd
-          tree .
       - name: Install which(required by funclatency on fedora)
         if: ${{matrix.container.name=='fedora' && matrix.examples.path=='libbpf-tools/funclatency'}}
         run: |
