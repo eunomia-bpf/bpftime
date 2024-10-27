@@ -49,3 +49,8 @@ if(${ENABLE_EBPF_VERIFIER})
     target_include_directories(bpftime-syscall-server PRIVATE ${BPFTIME_VERIFIER_INCLUDE})
     target_compile_definitions(bpftime-syscall-server PRIVATE ENABLE_EBPF_VERIFIER ENABLE_BPFTIME_VERIFIER)
 endif()
+
+if (${TEST_LCOV}) 
+    target_compile_options(bpftime-syscall-server PRIVATE -fprofile-arcs -ftest-coverage -fprofile-update=atomic)
+    target_link_options(bpftime-syscall-server PRIVATE -fprofile-arcs)
+endif()

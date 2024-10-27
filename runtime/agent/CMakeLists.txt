@@ -10,6 +10,12 @@ set_target_properties(bpftime-agent PROPERTIES CXX_STANDARD 20 LINK_DEPENDS ${CM
 if(UNIX AND NOT APPLE)
 target_link_options(bpftime-agent PRIVATE -Wl,--version-script=${CMAKE_CURRENT_SOURCE_DIR}/agent.version)
 endif()
+
+if (${TEST_LCOV}) 
+  target_compile_options(bpftime-agent PRIVATE -fprofile-arcs -ftest-coverage -fprofile-update=atomic)
+  target_link_options(bpftime-agent PRIVATE -fprofile-arcs)
+endif()
+
 if(${BPFTIME_BUILD_WITH_LIBBPF})
 target_include_directories(bpftime-agent
   PRIVATE
