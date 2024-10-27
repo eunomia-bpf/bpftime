@@ -31,11 +31,11 @@ jobs:
       - name: Install lcov (Ubuntu)
         if: ${{matrix.container.name=='ubuntu'}}
         run: |
-          apt-get install -y lcov
+          apt-get install -y lcov tree
       - name: Install lcov (Fedora)
         if: ${{matrix.container.name =='fedora'}}
         run: |
-          dnf install -y lcov
+          dnf install -y lcov tree
       - name: Build and install runtime (with llvm-jit)
         if: ${{matrix.enable_jit}}
         run: |
