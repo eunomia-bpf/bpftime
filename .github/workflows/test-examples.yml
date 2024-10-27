@@ -275,7 +275,7 @@ jobs:
       - name: Upload example coverage
         uses: actions/upload-artifact@v4
         with:
-          name: coverage-example-${{matrix.container.name}}-${{matrix.enable_jit}}-${{matrix.examples.name}}
+          name: coverage-example-${{matrix.container.name}}-${{matrix.enable_jit}}-${{matrix.examples.name}}-${{matrix.privilege_options.enable}}
           include-hidden-files: false
           path: |
             ./coverage-example.info
@@ -283,7 +283,7 @@ jobs:
         with:
               fail_ci_if_error: true # optional (default = false)
               files: ./coverage-example.info
-              flags: coverage-example-${{matrix.container.name}}-${{matrix.enable_jit}}-${{matrix.examples.name}}
+              flags: coverage-example-${{matrix.container.name}}-${{matrix.enable_jit}}-${{matrix.examples.name}}-${{matrix.privilege_options.enable}}
               token: ${{ secrets.CODECOV_TOKEN }} # required
               verbose: true # optional (default = false)
       
