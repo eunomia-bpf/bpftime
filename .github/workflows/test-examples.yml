@@ -217,6 +217,7 @@ jobs:
       - name: Generate example coverage (Ubuntu)
         if: "matrix.container == 'ubuntu-2204'"
         run: |
+          apt-get install -y gpg
           lcov --capture --directory . --output-file coverage-example.info --gcov-tool $(which gcov-12)
           lcov --remove coverage-runtime-mpk.info '/usr/*' --output-file coverage-runtime-mpk.info
           lcov --list coverage-example.info
