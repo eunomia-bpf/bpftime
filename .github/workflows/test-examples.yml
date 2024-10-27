@@ -215,19 +215,19 @@ jobs:
           cd example/${{matrix.examples.path}}
           python3 $ROOT/.github/script/run_example.py "${{matrix.examples.executable}}" "${{matrix.examples.victim}}" "${{matrix.examples.expected_str}}" "/github/home/.bpftime/bpftime -i /github/home/.bpftime" 0
       - name: Generate example coverage (Ubuntu)
-        if: "matrix.container == 'ubuntu-2204'"
+        if: "matrix.container.image == 'ubuntu-2204'"
         run: |
           apt-get install -y gpg
           lcov --capture --directory . --output-file coverage-example.info --gcov-tool $(which gcov-12)
           lcov --remove coverage-runtime-mpk.info '/usr/*' --output-file coverage-runtime-mpk.info
           lcov --list coverage-example.info
       - name: Generate example coverage (Fedora)
-        if: "matrix.container == 'fedora-39'"
+        if: "matrix.container.image == 'fedora-39'"
         run: |
           lcov --capture --directory . --output-file coverage-example.info
           lcov --remove coverage-runtime-mpk.info '/usr/*' --output-file coverage-runtime-mpk.info
           lcov --list coverage-example.info
-      - name: Upload runtime-mpk coverage
+      - name: Upload example coverage
         uses: actions/upload-artifact@v4
         with:
           name: coverage-example-${{matrix.container.name}}-${{matrix.enable_jit}}-${{matrix.examples.path}}
