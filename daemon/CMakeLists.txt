@@ -12,9 +12,9 @@ set(PLACEHOLDER_INPUT ${CMAKE_CURRENT_SOURCE_DIR}/assets/placeholder)
 set(PLACEHOLDER_OUTPUT placeholder.c)
 
 add_custom_command(
-  OUTPUT placeholder.c
-  COMMAND embedfile placeholder ${PLACEHOLDER_INPUT} ${PLACEHOLDER_OUTPUT}
-  DEPENDS ${PLACEHOLDER_INPUT})
+    OUTPUT placeholder.c
+    COMMAND embedfile placeholder ${PLACEHOLDER_INPUT} ${PLACEHOLDER_OUTPUT}
+    DEPENDS ${PLACEHOLDER_INPUT})
 
 add_library(libbpftime_daemon STATIC
     user/bpf_tracer.cpp
@@ -62,4 +62,9 @@ install(TARGETS bpftime_daemon CONFIGURATIONS Release Debug RelWithDebInfo DESTI
 
 if(BPFTIME_ENABLE_UNIT_TESTING)
     add_subdirectory(test)
+endif()
+
+if(${TEST_LCOV})
+    target_compile_options(bpftime_daemon PUBLIC -fprofile-arcs -ftest-coverage -fprofile-update=atomic)
+    target_link_options(bpftime_daemon PUBLIC -fprofile-arcs)
 endif()
