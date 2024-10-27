@@ -59,7 +59,8 @@ jobs:
             make -C example -j
       - name: Package gcno files
         run: |
-          find / -type f -name "*.gcno" | tar --create --gzip --file=gcno_files.tar.gz --files-from=-
+          find . -type f -name "*.gcno" | tar --create --gzip --file=gcno_files.tar.gz --files-from=-
+          ls -la
       - name: Upload gcno file
         uses: actions/upload-artifact@v4
         with:
