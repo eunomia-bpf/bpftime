@@ -210,7 +210,7 @@ jobs:
       - name: Extract gcno files
         run: |
           ls -lah .
-          tar -zxvf gcon_files.tar.gz
+          tar -zxvf gcno_files.tar.gz
       - name: Install which(required by funclatency on fedora)
         if: ${{matrix.container.name=='fedora' && matrix.examples.path=='libbpf-tools/funclatency'}}
         run: |
