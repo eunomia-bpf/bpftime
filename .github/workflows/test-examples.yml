@@ -186,6 +186,9 @@ jobs:
             expected_str: "bpf:"
 
     steps:
+      - uses: actions/checkout@v2
+        with:
+          submodules: 'recursive'
       - name: Download prebuilt runtime (with jit)
         if: ${{matrix.enable_jit}}
         uses: actions/download-artifact@v4
@@ -202,7 +205,7 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: runtime-package-${{matrix.enable_jit && 'jit' || 'no-jit'}}-${{matrix.container.name}}
-          path: .
+          path: ./gcno_files.tar.gz
       - name: Extract gcno files
         run: |
           ls *
