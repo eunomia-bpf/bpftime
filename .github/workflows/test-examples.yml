@@ -206,7 +206,7 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: gcno-files-${{matrix.enable_jit && 'jit' || 'no-jit'}}-${{matrix.container.name}}
-          path: ./gcno_files.tar.gz
+          path: .
       - name: Extract gcno files
         run: |
           ls -lah .
