@@ -61,6 +61,8 @@ jobs:
         run: |
           find . -type f -name "*.gcno" | tar --create --gzip --file=gcno_files.tar.gz --files-from=-
           ls -la
+          pwd
+          tree .
       - name: Upload gcno file
         uses: actions/upload-artifact@v4
         with:
@@ -211,6 +213,8 @@ jobs:
         run: |
           ls -lah .
           tar -zxvf gcno_files.tar.gz
+          pwd
+          tree .
       - name: Install which(required by funclatency on fedora)
         if: ${{matrix.container.name=='fedora' && matrix.examples.path=='libbpf-tools/funclatency'}}
         run: |
