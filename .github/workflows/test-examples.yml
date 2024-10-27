@@ -63,7 +63,7 @@ jobs:
       - name: Upload gcno file
         uses: actions/upload-artifact@v4
         with:
-          name: runtime-package-${{matrix.enable_jit && 'jit' || 'no-jit'}}-${{matrix.container.name}}
+          name: gcno-files-${{matrix.enable_jit && 'jit' || 'no-jit'}}-${{matrix.container.name}}
           include-hidden-files: true
           path: |
             ./gcon_files.tar.gz
@@ -204,11 +204,11 @@ jobs:
       - name: Download gcno files
         uses: actions/download-artifact@v4
         with:
-          name: runtime-package-${{matrix.enable_jit && 'jit' || 'no-jit'}}-${{matrix.container.name}}
+          name: gcno-files-${{matrix.enable_jit && 'jit' || 'no-jit'}}-${{matrix.container.name}}
           path: ./gcno_files.tar.gz
       - name: Extract gcno files
         run: |
-          ls *
+          ls -lah .
           tar -zxvf gcon_files.tar.gz
       - name: Install which(required by funclatency on fedora)
         if: ${{matrix.container.name=='fedora' && matrix.examples.path=='libbpf-tools/funclatency'}}
