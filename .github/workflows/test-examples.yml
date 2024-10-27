@@ -33,6 +33,7 @@ jobs:
         run: |
           cmake -Bbuild  -DCMAKE_BUILD_TYPE:STRING=RelWithDebInfo \
             -DBPFTIME_LLVM_JIT=1 \
+            -DTEST_LCOV=YES \
             -DBUILD_BPFTIME_DAEMON=1 \
             -DCMAKE_CXX_FLAGS="-DDEFAULT_LOGGER_OUTPUT_PATH='\"console\"'"
           cmake --build build --config RelWithDebInfo --target install -j
@@ -41,6 +42,7 @@ jobs:
         run: |
           cmake -Bbuild  -DCMAKE_BUILD_TYPE:STRING=RelWithDebInfo \
             -DBPFTIME_LLVM_JIT=0 \
+            -DTEST_LCOV=YES \
             -DBUILD_BPFTIME_DAEMON=1 \
             -DCMAKE_CXX_FLAGS="-DDEFAULT_LOGGER_OUTPUT_PATH='\"console\"'"
           cmake --build build --config RelWithDebInfo --target install -j
@@ -212,6 +214,26 @@ jobs:
           ROOT=$(pwd)
           cd example/${{matrix.examples.path}}
           python3 $ROOT/.github/script/run_example.py "${{matrix.examples.executable}}" "${{matrix.examples.victim}}" "${{matrix.examples.expected_str}}" "/github/home/.bpftime/bpftime -i /github/home/.bpftime" 0
+      - name: Generate runtime with mpk enable coverage (Ubuntu)
+        if: "matrix.container == 'ubuntu-2204'"
+        run: |
+          lcov --capture --directory . --output-file coverage-runtime-mpk.info --gcov-tool $(which gcov-12)
+          lcov --remove coverage-runtime-mpk.info '/usr/*' --output-file coverage-runtime-mpk.info
+          lcov --list coverage-example.info
+      - name: Generate runtime with mpk enable coverage (Fedora)
+        if: "matrix.container == 'fedora-39'"
+        run: |
+          lcov --capture --directory . --output-file coverage-runtime-mpk.info
+          lcov --remove coverage-runtime-mpk.info '/usr/*' --output-file coverage-runtime-mpk.info
+          lcov --list coverage-example.info
+      - name: Upload runtime-mpk coverage
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-example-${{matrix.container.name}}-${{matrix.enable_jit}}-${{matrix.examples.path}}
+          include-hidden-files: false
+          path: |
+            ./coverage-example.info
+    
       - name: Setup tmate session
         # Setup SSH when manually triggered and failing, so we can debug CI more conveniently
         if: "${{ failure() && github.event_name == 'workflow_dispatch' }}"
