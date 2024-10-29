@@ -28,11 +28,20 @@ jobs:
       - uses: actions/checkout@v2
         with:
           submodules: 'recursive'
+      - name: Install lcov (Ubuntu)
+        if: ${{matrix.container.name=='ubuntu'}}
+        run: |
+          apt-get install -y lcov tree
+      - name: Install lcov (Fedora)
+        if: ${{matrix.container.name =='fedora'}}
+        run: |
+          dnf install -y lcov tree
       - name: Build and install runtime (with llvm-jit)
         if: ${{matrix.enable_jit}}
         run: |
           cmake -Bbuild  -DCMAKE_BUILD_TYPE:STRING=RelWithDebInfo \
             -DBPFTIME_LLVM_JIT=1 \
+            -DTEST_LCOV=YES \
             -DBUILD_BPFTIME_DAEMON=1 \
             -DCMAKE_CXX_FLAGS="-DDEFAULT_LOGGER_OUTPUT_PATH='\"console\"'"
           cmake --build build --config RelWithDebInfo --target install -j
@@ -41,12 +50,26 @@ jobs:
         run: |
           cmake -Bbuild  -DCMAKE_BUILD_TYPE:STRING=RelWithDebInfo \
             -DBPFTIME_LLVM_JIT=0 \
+            -DTEST_LCOV=YES \
             -DBUILD_BPFTIME_DAEMON=1 \
             -DCMAKE_CXX_FLAGS="-DDEFAULT_LOGGER_OUTPUT_PATH='\"console\"'"
           cmake --build build --config RelWithDebInfo --target install -j
       - name: Build basic examples
         run: |
             make -C example -j
+      - name: Package gcno files
+        run: |
+          find . -type f -name "*.gcno" | tar --create --gzip --file=gcno_files.tar.gz --files-from=-
+          ls -la
+          pwd
+          tree .
+      - name: Upload gcno file
+        uses: actions/upload-artifact@v4
+        with:
+          name: gcno-files-${{matrix.enable_jit && 'jit' || 'no-jit'}}-${{matrix.container.name}}
+          include-hidden-files: true
+          path: |
+            ./gcno_files.tar.gz
       - name: Upload build results (without jit)
         uses: actions/upload-artifact@v4
         if: ${{!matrix.enable_jit}}
@@ -104,68 +127,84 @@ jobs:
             victim: ./victim
             syscall_trace: true
             expected_str: "   0 test.txt"
+            name: opensnoop-libbpf-tools
           - path: libbpf-tools/statsnoop
             executable: ./statsnoop
             victim: ./victim
             syscall_trace: true
             expected_str: "victim               0    0    /sys" 
+            name: statsnoop
           - path: malloc
             executable: ./malloc
             victim: ./victim
             syscall_trace: false
             expected_str: "malloc calls: "
+            name: malloc
           - path: minimal
             executable: ./uprobe
             victim: ./victim
             syscall_trace: false
             expected_str: ""
+            name: minimal
           - path: opensnoop
             executable: ./opensnoop
             victim: ./victim
             syscall_trace: true
             expected_str: "   0 test.txt"
+            name: opensnoop
           - path: sslsniff
             executable: ./sslsniff
             victim: /bin/wget https://www.google.com
             syscall_trace: false
             expected_str: "----- DATA -----"
+            name: sslsniff
           - path: libbpf-tools/bashreadline
             executable: ./readline
             victim: /bin/bash
             syscall_trace: false
             expected_str: "info"
+            name: bashreadline
           - path: libbpf-tools/syscount
             executable: ./syscount
             victim: /bin/bash
             syscall_trace: false
             expected_str: "info"
+            name: syscount
           - path: libbpf-tools/funclatency
             executable: ./funclatency -i 1 ./victim:plus
             victim: ./victim
             syscall_trace: false
             expected_str: "|*"
+            name: funclatency
           - path: libbpf-tools/mountsnoop
             executable: ./mountsnoop
             victim: ./victim
             syscall_trace: true
             expected_str:  mount(
+            name: mountsnoop
           - path: libbpf-tools/sigsnoop
             executable: ./sigsnoop
             victim: ./victim
             syscall_trace: true
             expected_str: "victim           0         -1      0"
+            name: sigsnoop
           - path: tailcall_minimal
             executable: ./tailcall_minimal
             victim: ./victim
             syscall_trace: false
             expected_str: "See /sys/kernel/debug/tracing/trace_pipe for output (15)"
+            name: tailcall_minimal
           - path: usdt_minimal
             executable: ./usdt_minimal
             victim: ./victim
             syscall_trace: false
             expected_str: "bpf:"
+            name: usdt_minimal
 
     steps:
+      - uses: actions/checkout@v2
+        with:
+          submodules: 'recursive'
       - name: Download prebuilt runtime (with jit)
         if: ${{matrix.enable_jit}}
         uses: actions/download-artifact@v4
@@ -178,6 +217,16 @@ jobs:
         with:
           name: runtime-package-no-jit-${{matrix.container.name}}
           path: ~/.bpftime
+      - name: Download gcno files
+        uses: actions/download-artifact@v4
+        with:
+          name: gcno-files-${{matrix.enable_jit && 'jit' || 'no-jit'}}-${{matrix.container.name}}
+          path: .
+      - name: Extract gcno files
+        run: |
+          ls -lah .
+          tar -zxvf gcno_files.tar.gz
+          pwd
       - name: Install which(required by funclatency on fedora)
         if: ${{matrix.container.name=='fedora' && matrix.examples.path=='libbpf-tools/funclatency'}}
         run: |
@@ -188,9 +237,6 @@ jobs:
       - name: Show downloaded artifacts
         run: |
           ls ~/.bpftime
-      - uses: actions/checkout@v2
-        with:
-          submodules: 'recursive'
       - name: Build test assets
         run: |
           make -C example/${{matrix.examples.path}} -j
@@ -212,9 +258,38 @@ jobs:
           ROOT=$(pwd)
           cd example/${{matrix.examples.path}}
           python3 $ROOT/.github/script/run_example.py "${{matrix.examples.executable}}" "${{matrix.examples.victim}}" "${{matrix.examples.expected_str}}" "/github/home/.bpftime/bpftime -i /github/home/.bpftime" 0
+      - name: Generate example coverage (Ubuntu)
+        if: "matrix.container.image == 'ubuntu-2204'"
+        run: |
+          apt-get install -y gpg lcov
+          lcov --capture --directory . --directory .github --directory /github/home/.bpftime --output-file coverage-example.info --gcov-tool $(which gcov-12)
+          lcov --remove coverage-example.info '/usr/*' --output-file coverage-example.info
+          lcov --list coverage-example.info
+      - name: Generate example coverage (Fedora)
+        if: "matrix.container.image == 'fedora-39'"
+        run: |
+          dnf install -y lcov
+          lcov --capture --directory . --output-file coverage-example.info
+          lcov --remove coverage-example.info '/usr/*' --output-file coverage-example.info
+          lcov --list coverage-example.info
+      - name: Upload example coverage
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-example-${{matrix.container.name}}-${{matrix.enable_jit}}-${{matrix.examples.name}}-${{matrix.privilege_options.enable}}
+          include-hidden-files: false
+          path: |
+            ./coverage-example.info
+      - uses: codecov/codecov-action@v4
+        with:
+              fail_ci_if_error: true # optional (default = false)
+              files: ./coverage-example.info
+              flags: coverage-example-${{matrix.container.name}}-${{matrix.enable_jit}}-${{matrix.examples.name}}-${{matrix.privilege_options.enable}}
+              token: ${{ secrets.CODECOV_TOKEN }} # required
+              verbose: true # optional (default = false)
+      
       - name: Setup tmate session
         # Setup SSH when manually triggered and failing, so we can debug CI more conveniently
         if: "${{ failure() && github.event_name == 'workflow_dispatch' }}"
         uses: mxschmitt/action-tmate@v3
         with:
-          limit-access-to-actor: true
+          limit-access-to-actor: false
