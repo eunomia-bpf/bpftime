@@ -1,4 +1,4 @@
-FROM ubuntu:23.04
+FROM ubuntu:24.04
 WORKDIR /bpftime
 RUN apt-get update && apt-get install -y --no-install-recommends \
         libelf1 libelf-dev zlib1g-dev make cmake git libboost1.74-all-dev \
