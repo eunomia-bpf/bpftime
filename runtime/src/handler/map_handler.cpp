@@ -593,6 +593,9 @@ void bpf_map_handler::map_free(managed_shared_memory &memory)
 		memory.destroy<prog_array_map_impl>(container_name.c_str());
 		break;
 #endif
+	case bpf_map_type::BPF_MAP_TYPE_ARRAY_OF_MAPS:
+		memory.destroy<array_map_of_maps_impl>(container_name.c_str());
+		break;
 	default:
 		auto func_ptr = global_map_ops_table[(int)type].map_free;
 		if (func_ptr) {

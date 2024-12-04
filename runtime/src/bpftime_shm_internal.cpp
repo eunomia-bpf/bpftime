@@ -396,8 +396,10 @@ bool bpftime_shm::is_map_fd(int fd) const
 }
 bool bpftime_shm::is_ringbuf_map_fd(int fd) const
 {
-	if (!is_map_fd(fd))
+	if (!is_map_fd(fd)) {
+		SPDLOG_ERROR("Expected fd {} to be a map fd", fd);
 		return false;
+	}
 	auto &map_impl = std::get<bpf_map_handler>(manager->get_handler(fd));
 	return map_impl.type == bpf_map_type::BPF_MAP_TYPE_RINGBUF;
 }
@@ -703,7 +705,10 @@ const handler_manager *bpftime_shm::get_manager() const
 {
 	return manager;
 }
-
+handler_manager &bpftime_shm::get_manager_mut()
+{
+	return *manager;
+}
 bool bpftime_shm::is_perf_event_handler_fd(int fd) const
 {
 	if (manager == nullptr || fd < 0 ||
