@@ -59,8 +59,12 @@ extern "C" int epoll_create1(int flags)
 		[&]() { return context.handle_epoll_create1(flags); });
 }
 
-extern "C" int ioctl(int fd, unsigned long req, int data)
+extern "C" int ioctl(int fd, unsigned long req, ...) __THROW
 {
+	va_list args;
+	va_start(args, req);
+	int data = va_arg(args, int);
+	va_end(args);
 	SPDLOG_DEBUG("ioctl {} {} {}", fd, req, data);
 	return handle_exceptions(
 		[&]() { return context.handle_ioctl(fd, req, data); });

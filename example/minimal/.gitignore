@@ -12,3 +12,4 @@ victim
 uprobe-override
 syscall
 ufilter
+uprobe-ufunc
