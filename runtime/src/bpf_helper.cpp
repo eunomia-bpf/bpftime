@@ -35,6 +35,8 @@
 #include <vector>
 #include <bpftime_shm_internal.hpp>
 #include <chrono>
+#include <setjmp.h>
+#include <signal.h>
 
 #define PATH_MAX 4096
 
@@ -64,20 +66,93 @@ long bpftime_strncmp(const char *s1, uint64_t s1_sz, const char *s2)
 	return strncmp(s1, s2, s1_sz);
 }
 
+static sigjmp_buf jump_buffer;
+
+// used for sigsetjmp to avoid faulting in probe_write_user & probe_read_user
+void segv_handler(int signum)
+{
+	siglongjmp(jump_buffer, 1);
+}
+
 uint64_t bpftime_probe_read(uint64_t dst, uint64_t size, uint64_t ptr, uint64_t,
 			    uint64_t)
 {
-	memcpy((void *)(uintptr_t)dst, (void *)(uintptr_t)ptr,
-	       (size_t)(uint32_t)(size));
-	return 0;
+	if (size <= 0) {
+		return -EINVAL;
+	}
+	struct sigaction sa, old_sa;
+	uint64_t ret = 0;
+
+	sa.sa_handler = segv_handler; // set signal handler
+	sigemptyset(&sa.sa_mask); // clear signal set
+	sa.sa_flags = 0;
+
+	if (sigaction(SIGSEGV, &sa, &old_sa) == -1) {
+		// if failed to set signal handler, return -EFAULT
+		SPDLOG_ERROR("sigaction failed");
+		return -EFAULT;
+	}
+
+	if (sigsetjmp(jump_buffer, 1) == 0) {
+		// to avoid faulting for src & dst (which is NULL)
+		memcpy((void *)(uintptr_t)dst, (void *)(uintptr_t)ptr,
+		       (size_t)(uint32_t)(size));
+		SPDLOG_TRACE("probe_read: dst={}, src={}, len={}", dst, ptr,
+			     size);
+	} else {
+		SPDLOG_ERROR("probe_read: failed to read from src={}", ptr);
+		ret = -EFAULT;
+	}
+
+	// restore the origin signal handler
+	if (sigaction(SIGSEGV, &old_sa, NULL) == -1) {
+		SPDLOG_ERROR("sigaction restore failed");
+		// if failed to restore, return -EFAULT
+		return -EFAULT;
+	}
+
+	return ret;
 }
 
 uint64_t bpftime_probe_write_user(uint64_t dst, uint64_t src, uint64_t len,
-				  uint64_t, uint64_t)
+				  uint64_t arg4, uint64_t arg5)
 {
-	memcpy((void *)(uintptr_t)dst, (void *)(uintptr_t)src,
-	       (size_t)(uint32_t)(len));
-	return 0;
+	if (len <= 0) {
+		return -EINVAL;
+	}
+	struct sigaction sa, old_sa;
+	uint64_t ret = 0;
+
+	sa.sa_handler = segv_handler; // set signal handler
+	sigemptyset(&sa.sa_mask); // clear signal set
+	sa.sa_flags = 0;
+
+	if (sigaction(SIGSEGV, &sa, &old_sa) == -1) {
+		// if failed to set signal handler, return -EFAULT
+		SPDLOG_ERROR("sigaction failed");
+		return -EFAULT;
+	}
+
+	if (sigsetjmp(jump_buffer, 1) == 0) {
+		// to avoid faulting for src & dst (which is NULL)
+		memcpy((void *)(uintptr_t)dst, (void *)(uintptr_t)src,
+		       (size_t)(uint32_t)(len));
+		SPDLOG_TRACE("probe_write_user: dst={}, src={}, len={}", dst,
+			     src, len);
+	} else {
+		SPDLOG_ERROR("probe_write_user: failed to write to dst={}",
+			     dst);
+		ret = -EFAULT; // TO BE checked later
+	}
+
+	// restore the origin signal handler
+	if (sigaction(SIGSEGV, &old_sa, NULL) == -1) {
+		SPDLOG_ERROR("sigaction restore failed");
+		// if failed to restore, return -EFAULT
+		return -EFAULT;
+	}
+
+	return ret;
 }
 
 uint64_t bpftime_get_prandom_u32()

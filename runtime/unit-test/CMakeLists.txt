@@ -22,6 +22,7 @@ set(TEST_SOURCES
     maps/kernel_unit_tests.cpp
     
     test_bpftime_shm_json.cpp
+    test_probe.cpp
     attach_with_ebpf/test_attach_filter_with_ebpf.cpp
     attach_with_ebpf/test_attach_uprobe_with_ebpf.cpp
     attach_with_ebpf/test_helpers.cpp
