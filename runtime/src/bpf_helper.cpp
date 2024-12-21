@@ -35,6 +35,9 @@
 #include <vector>
 #include <bpftime_shm_internal.hpp>
 #include <chrono>
+#include <thread>
+#include <setjmp.h>
+#include <signal.h>
 
 #define PATH_MAX 4096
 
@@ -64,20 +67,151 @@ long bpftime_strncmp(const char *s1, uint64_t s1_sz, const char *s2)
 	return strncmp(s1, s2, s1_sz);
 }
 
-uint64_t bpftime_probe_read(uint64_t dst, uint64_t size, uint64_t ptr, uint64_t,
-			    uint64_t)
+extern void jump_point_read();
+extern void jump_point_write();
+/*
+status instruction for probe_read and probe_write
+ -1 = not running
+ 0 = running but no error
+ 1 = running with error
+*/
+thread_local int status_probe_write = -1;
+thread_local int status_probe_read = -1;
+/*
+origin handler exist for probe_read and probe_write
+ -1 = not checked
+ 0 = not exist
+ 1 = exist
+*/
+thread_local int origin_handler_exist_read = -1;
+thread_local int origin_handler_exist_write = -1;
+thread_local void (*origin_segv_read_handler)(int, siginfo_t *,
+					      void *) = nullptr;
+thread_local void (*origin_segv_write_handler)(int, siginfo_t *,
+					       void *) = nullptr;
+
+static void segv_read_handler(int sig, siginfo_t *siginfo, void *ctx)
 {
-	memcpy((void *)(uintptr_t)dst, (void *)(uintptr_t)ptr,
-	       (size_t)(uint32_t)(size));
-	return 0;
+	// SPDLOG_TRACE("segv_handler for probe_read called");
+	if (status_probe_read == -1) {
+		if (origin_segv_read_handler) {
+			origin_segv_read_handler(sig, siginfo, ctx);
+		} else {
+			abort();
+		}
+	} else if (status_probe_read == 0) {
+		auto uctx = (ucontext_t *)ctx;
+		auto *rip = (uintptr_t *)(&uctx->uc_mcontext.gregs[REG_RIP]);
+		status_probe_read = 1;
+		*rip = (uintptr_t)&jump_point_read;
+	}
 }
 
-uint64_t bpftime_probe_write_user(uint64_t dst, uint64_t src, uint64_t len,
-				  uint64_t, uint64_t)
+int64_t
+// __attribute__((optimize("O0")))
+bpftime_probe_read(uint64_t dst, uint64_t size, uint64_t ptr, uint64_t,
+		   uint64_t)
 {
-	memcpy((void *)(uintptr_t)dst, (void *)(uintptr_t)src,
-	       (size_t)(uint32_t)(len));
-	return 0;
+	int64_t ret = 0;
+	status_probe_read = 0;
+
+	struct sigaction sa, original_sa;
+	// set up the signal handler
+	if (origin_handler_exist_read == -1) {
+		sigaction(SIGSEGV, NULL, &original_sa);
+		if (original_sa.sa_sigaction == nullptr) {
+			origin_handler_exist_read = 0;
+		} else {
+			origin_handler_exist_read = 1;
+			origin_segv_read_handler = original_sa.sa_sigaction;
+		}
+	}
+
+	if (original_sa.sa_sigaction != segv_read_handler) {
+		sa.sa_flags = SA_SIGINFO;
+		sigemptyset(&sa.sa_mask);
+		sa.sa_sigaction = segv_read_handler;
+		sigaction(SIGSEGV, &sa, NULL);
+	}
+	unsigned char *dst_p = (unsigned char *)dst;
+	unsigned char *src_p = (unsigned char *)ptr;
+	while (size--) {
+		*((unsigned char *)dst_p) = *((unsigned char *)src_p);
+		dst_p++;
+		src_p++;
+	}
+
+	__asm__("jump_point_read:");
+	if (status_probe_read) {
+		ret = -EFAULT;
+	}
+
+	status_probe_read = -1;
+
+	return ret;
+}
+
+static void segv_write_handler(int sig, siginfo_t *siginfo, void *ctx)
+{
+	// SPDLOG_TRACE("segv_handler for probe_write called");
+	if (status_probe_write == -1) {
+		if (origin_segv_write_handler) {
+			origin_segv_write_handler(sig, siginfo, ctx);
+		} else {
+			abort();
+		}
+	} else if (status_probe_write == 0) {
+		auto uctx = (ucontext_t *)ctx;
+		auto *rip = (uintptr_t *)(&uctx->uc_mcontext.gregs[REG_RIP]);
+		status_probe_write = 1;
+		*rip = (uintptr_t)&jump_point_write;
+	}
+}
+
+int64_t
+//  __attribute__((optimize("O0")))
+bpftime_probe_write_user(uint64_t dst, uint64_t src, uint64_t len, uint64_t,
+			 uint64_t)
+{
+	int64_t ret = 0;
+
+	status_probe_write = 0;
+	// set up the signal handler
+	struct sigaction sa, original_sa;
+	// set up the signal handler
+	if (origin_handler_exist_write == -1) {
+		sigaction(SIGSEGV, NULL, &original_sa);
+		if (original_sa.sa_sigaction == nullptr) {
+			origin_handler_exist_write = 0;
+		} else {
+			origin_handler_exist_write = 1;
+			origin_segv_write_handler = original_sa.sa_sigaction;
+		}
+	}
+
+	if (original_sa.sa_sigaction != segv_write_handler) {
+		sa.sa_flags = SA_SIGINFO;
+		sigemptyset(&sa.sa_mask);
+		sa.sa_sigaction = segv_write_handler;
+		sigaction(SIGSEGV, &sa, NULL);
+	}
+
+	unsigned char *dst_p = (unsigned char *)dst;
+	unsigned char *src_p = (unsigned char *)src;
+	while (len--) {
+		*((unsigned char *)dst_p) = *((unsigned char *)src_p);
+		dst_p++;
+		src_p++;
+	}
+
+	__asm__("jump_point_write:");
+	if (status_probe_write) {
+		ret = -EFAULT;
+	}
+
+	status_probe_write = -1;
+
+	return ret;
 }
 
 uint64_t bpftime_get_prandom_u32()
