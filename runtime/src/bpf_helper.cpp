@@ -94,9 +94,9 @@ thread_local static ORIGIN_HANDLER_EXIST_FLAG origin_handler_exist_read =
 thread_local static ORIGIN_HANDLER_EXIST_FLAG origin_handler_exist_write =
 	ORIGIN_HANDLER_NOT_CHECKED;
 
-thread_local void (*origin_segv_read_handler)(int, siginfo_t *,
+thread_local static void (*origin_segv_read_handler)(int, siginfo_t *,
 					      void *) = nullptr;
-thread_local void (*origin_segv_write_handler)(int, siginfo_t *,
+thread_local static void (*origin_segv_write_handler)(int, siginfo_t *,
 					       void *) = nullptr;
 
 static void segv_read_handler(int sig, siginfo_t *siginfo, void *ctx)
@@ -126,7 +126,11 @@ int64_t bpftime_probe_read(uint64_t dst, uint64_t size, uint64_t ptr, uint64_t,
 	struct sigaction sa, original_sa;
 	// set up the signal handler
 	if (origin_handler_exist_read == ORIGIN_HANDLER_NOT_CHECKED) {
-		sigaction(SIGSEGV, NULL, &original_sa);
+		int err = sigaction(SIGSEGV, nullptr, &original_sa);
+		if (err) {
+			SPDLOG_ERROR("Failed to get signal handler: {}", errno);
+			return -EFAULT;
+		}
 		if (original_sa.sa_sigaction == nullptr) {
 			origin_handler_exist_read = ORIGIN_HANDLER_NOT_EXIST;
 		} else {
@@ -137,9 +141,18 @@ int64_t bpftime_probe_read(uint64_t dst, uint64_t size, uint64_t ptr, uint64_t,
 
 	if (original_sa.sa_sigaction != segv_read_handler) {
 		sa.sa_flags = SA_SIGINFO;
-		sigemptyset(&sa.sa_mask);
+		int err = 0;
+		err = sigemptyset(&sa.sa_mask);
+		if(err){
+			SPDLOG_ERROR("Failed to set signal handler: {}", errno);
+			return -EFAULT;
+		}
 		sa.sa_sigaction = segv_read_handler;
-		sigaction(SIGSEGV, &sa, NULL);
+		err = sigaction(SIGSEGV, &sa, nullptr);
+		if (err) {
+			SPDLOG_ERROR("Failed to set signal handler: {}", errno);
+			return -EFAULT;
+		}
 	}
 	unsigned char *dst_p = (unsigned char *)dst;
 	unsigned char *src_p = (unsigned char *)ptr;
@@ -187,7 +200,12 @@ int64_t bpftime_probe_write_user(uint64_t dst, uint64_t src, uint64_t len,
 	struct sigaction sa, original_sa;
 	// set up the signal handler
 	if (origin_handler_exist_write == ORIGIN_HANDLER_NOT_CHECKED) {
-		sigaction(SIGSEGV, NULL, &original_sa);
+		int err = sigaction(SIGSEGV, nullptr, &original_sa);
+		if (err) {
+			SPDLOG_ERROR("Failed to get signal handler: {}", errno);
+			return -EFAULT;
+		}
+
 		if (original_sa.sa_sigaction == nullptr) {
 			origin_handler_exist_write = ORIGIN_HANDLER_NOT_EXIST;
 		} else {
@@ -198,9 +216,19 @@ int64_t bpftime_probe_write_user(uint64_t dst, uint64_t src, uint64_t len,
 
 	if (original_sa.sa_sigaction != segv_write_handler) {
 		sa.sa_flags = SA_SIGINFO;
-		sigemptyset(&sa.sa_mask);
+		int err = 0 ;
+		err = sigemptyset(&sa.sa_mask);
+		if(err){
+			SPDLOG_ERROR("Failed to set signal handler: {}", errno);
+			return -EFAULT;
+		}
+		
 		sa.sa_sigaction = segv_write_handler;
-		sigaction(SIGSEGV, &sa, NULL);
+		err = sigaction(SIGSEGV, &sa, nullptr);
+		if (err) {
+			SPDLOG_ERROR("Failed to set signal handler: {}", errno);
+			return -EFAULT;
+		}
 	}
 
 	unsigned char *dst_p = (unsigned char *)dst;
