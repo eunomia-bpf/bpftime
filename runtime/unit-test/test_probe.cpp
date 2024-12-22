@@ -46,11 +46,11 @@ TEST_CASE("Test bpftime_probe_read") // test for bpftime_probe_read
 	for (size_t i = 0; i < len; i++) {
 		REQUIRE(dst[i] == src[i]);
 	}
-	ret = bpftime_probe_read((uint64_t)dst, size, (uint64_t)(NULL), 0, 0);
+	ret = bpftime_probe_read((uint64_t)dst, size, (uint64_t)(nullptr), 0, 0);
 	REQUIRE(ret == -EFAULT);
 
 	ret = 0;
-	ret = bpftime_probe_read((uint64_t)(NULL), size, (uint64_t)(NULL), 0, 0);
+	ret = bpftime_probe_read((uint64_t)(nullptr), size, (uint64_t)(nullptr), 0, 0);
 	REQUIRE(ret == -EFAULT);
 }
 
@@ -67,13 +67,12 @@ TEST_CASE("Test bpftime_probe_write_user") // test for bpftime_probe_write_user
 		REQUIRE(dst[i] == src[i]);
 	}
 
-	ret = bpftime_probe_write_user((uint64_t)(NULL), (uint64_t)(src), size,
+	ret = bpftime_probe_write_user((uint64_t)(nullptr), (uint64_t)(src), size,
 				       0, 0);
 	REQUIRE(ret == -EFAULT);
 
-	ret = bpftime_probe_write_user((uint64_t)dst, (uint64_t)(NULL), size, 0,
+	ret = bpftime_probe_write_user((uint64_t)dst, (uint64_t)(nullptr), size, 0,
 				       0);
-	SPDLOG_INFO("ret = {}", ret);
 	REQUIRE(ret == -EFAULT);
 
 	void *dst1 = (void *)(dst);
