@@ -33,6 +33,10 @@ help:
 	@python3 -c "$$PRINT_HELP_PYSCRIPT" < $(MAKEFILE_LIST)
 
 build-unit-test:
+	cmake -Bbuild  -DBPFTIME_ENABLE_UNIT_TESTING=1 -DCMAKE_BUILD_TYPE:STRING=Debug -DENABLE_PROBE_WRITE_CHECK=1 -DENABLE_PROBE_READ_CHECK=1
+	cmake --build build --config Debug --target bpftime_runtime_tests bpftime_daemon_tests  -j$(JOBS)
+
+build-unit-test-without-probe-check:
 	cmake -Bbuild  -DBPFTIME_ENABLE_UNIT_TESTING=1 -DCMAKE_BUILD_TYPE:STRING=Debug
 	cmake --build build --config Debug --target bpftime_runtime_tests bpftime_daemon_tests  -j$(JOBS)
 
