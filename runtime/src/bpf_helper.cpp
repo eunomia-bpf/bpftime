@@ -67,52 +67,53 @@ long bpftime_strncmp(const char *s1, uint64_t s1_sz, const char *s2)
 	return strncmp(s1, s2, s1_sz);
 }
 
-extern void jump_point_read();
-extern void jump_point_write();
+extern "C" void jump_point_read();
+extern "C" void jump_point_write();
 
 /*
 status instruction for probe_read and probe_write
 */
-enum PROBE_STATUS {
-	PROBE_NOT_RUNNING = -1,
-	PROBE_RUNNING_NO_ERROR = 0,
-	PROBE_RUNNING_ERROR = 1
+enum class PROBE_STATUS {
+	NOT_RUNNING = -1,
+	RUNNING_NO_ERROR = 0,
+	RUNNING_ERROR = 1
 };
 
-thread_local static PROBE_STATUS status_probe_write = PROBE_NOT_RUNNING;
-thread_local static PROBE_STATUS status_probe_read = PROBE_NOT_RUNNING;
+thread_local static PROBE_STATUS status_probe_write = PROBE_STATUS::NOT_RUNNING;
+thread_local static PROBE_STATUS status_probe_read = PROBE_STATUS::NOT_RUNNING;
 /*
 origin handler exist flag for probe_read and probe_write
 */
-enum ORIGIN_HANDLER_EXIST_FLAG {
-	ORIGIN_HANDLER_NOT_CHECKED = -1,
-	ORIGIN_HANDLER_NOT_EXIST = 0,
-	ORIGIN_HANDLER_EXIST = 1
+enum class ORIGIN_HANDLER_EXIST_FLAG {
+	NOT_CHECKED = -1,
+	NOT_EXIST = 0,
+	EXIST = 1
 };
-thread_local static ORIGIN_HANDLER_EXIST_FLAG origin_handler_exist_read =
-	ORIGIN_HANDLER_NOT_CHECKED;
-thread_local static ORIGIN_HANDLER_EXIST_FLAG origin_handler_exist_write =
-	ORIGIN_HANDLER_NOT_CHECKED;
+thread_local static ORIGIN_HANDLER_EXIST_FLAG exist_read =
+	ORIGIN_HANDLER_EXIST_FLAG::NOT_CHECKED;
+thread_local static ORIGIN_HANDLER_EXIST_FLAG exist_write =
+	ORIGIN_HANDLER_EXIST_FLAG::NOT_CHECKED;
 
 thread_local static void (*origin_segv_read_handler)(int, siginfo_t *,
-					      void *) = nullptr;
+						     void *) = nullptr;
 thread_local static void (*origin_segv_write_handler)(int, siginfo_t *,
-					       void *) = nullptr;
+						      void *) = nullptr;
+
 
 static void segv_read_handler(int sig, siginfo_t *siginfo, void *ctx)
 {
 	SPDLOG_TRACE("segv_handler for probe_read called");
-	if (status_probe_read == PROBE_NOT_RUNNING) {
+	if (status_probe_read == PROBE_STATUS::NOT_RUNNING) {
 		if (origin_segv_read_handler) {
 			origin_segv_read_handler(sig, siginfo, ctx);
 		} else {
 			abort();
 		}
-	} else if (status_probe_read == PROBE_RUNNING_NO_ERROR) {
+	} else if (status_probe_read == PROBE_STATUS::RUNNING_NO_ERROR) {
 		// set status to error
 		auto uctx = (ucontext_t *)ctx;
 		auto *rip = (uintptr_t *)(&uctx->uc_mcontext.gregs[REG_RIP]);
-		status_probe_read = PROBE_RUNNING_ERROR;
+		status_probe_read = PROBE_STATUS::RUNNING_ERROR;
 		*rip = (uintptr_t)&jump_point_read;
 	}
 }
@@ -121,20 +122,22 @@ int64_t bpftime_probe_read(uint64_t dst, uint64_t size, uint64_t ptr, uint64_t,
 			   uint64_t)
 {
 	int64_t ret = 0;
-	status_probe_read = PROBE_RUNNING_NO_ERROR;
+
+#ifdef ENABLE_PROBE_READ_CHECK
+	status_probe_read = PROBE_STATUS::RUNNING_NO_ERROR;
 
 	struct sigaction sa, original_sa;
 	// set up the signal handler
-	if (origin_handler_exist_read == ORIGIN_HANDLER_NOT_CHECKED) {
+	if (exist_read == ORIGIN_HANDLER_EXIST_FLAG::NOT_CHECKED) {
 		int err = sigaction(SIGSEGV, nullptr, &original_sa);
 		if (err) {
 			SPDLOG_ERROR("Failed to get signal handler: {}", errno);
 			return -EFAULT;
 		}
 		if (original_sa.sa_sigaction == nullptr) {
-			origin_handler_exist_read = ORIGIN_HANDLER_NOT_EXIST;
+			exist_read = ORIGIN_HANDLER_EXIST_FLAG::NOT_EXIST;
 		} else {
-			origin_handler_exist_read = ORIGIN_HANDLER_EXIST;
+			exist_read = ORIGIN_HANDLER_EXIST_FLAG::EXIST;
 			origin_segv_read_handler = original_sa.sa_sigaction;
 		}
 	}
@@ -143,7 +146,7 @@ int64_t bpftime_probe_read(uint64_t dst, uint64_t size, uint64_t ptr, uint64_t,
 		sa.sa_flags = SA_SIGINFO;
 		int err = 0;
 		err = sigemptyset(&sa.sa_mask);
-		if(err){
+		if (err) {
 			SPDLOG_ERROR("Failed to set signal handler: {}", errno);
 			return -EFAULT;
 		}
@@ -154,6 +157,7 @@ int64_t bpftime_probe_read(uint64_t dst, uint64_t size, uint64_t ptr, uint64_t,
 			return -EFAULT;
 		}
 	}
+#endif
 	unsigned char *dst_p = (unsigned char *)dst;
 	unsigned char *src_p = (unsigned char *)ptr;
 	while (size--) {
@@ -161,31 +165,32 @@ int64_t bpftime_probe_read(uint64_t dst, uint64_t size, uint64_t ptr, uint64_t,
 		dst_p++;
 		src_p++;
 	}
-
 	__asm__("jump_point_read:");
-	if (status_probe_read) {
+
+#ifdef ENABLE_PROBE_READ_CHECK
+	if (status_probe_read == PROBE_STATUS::RUNNING_ERROR) {
 		ret = -EFAULT;
 	}
 
-	status_probe_read = PROBE_NOT_RUNNING;
-
+	status_probe_read = PROBE_STATUS::NOT_RUNNING;
+#endif
 	return ret;
 }
 
 static void segv_write_handler(int sig, siginfo_t *siginfo, void *ctx)
 {
 	SPDLOG_TRACE("segv_handler for probe_write called");
-	if (status_probe_write == PROBE_NOT_RUNNING) {
+	if (status_probe_write == PROBE_STATUS::NOT_RUNNING) {
 		if (origin_segv_write_handler) {
 			origin_segv_write_handler(sig, siginfo, ctx);
 		} else {
 			abort();
 		}
-	} else if (status_probe_write == PROBE_RUNNING_NO_ERROR) {
+	} else if (status_probe_write == PROBE_STATUS::RUNNING_NO_ERROR) {
 		// set status to error
 		auto uctx = (ucontext_t *)ctx;
 		auto *rip = (uintptr_t *)(&uctx->uc_mcontext.gregs[REG_RIP]);
-		status_probe_write = PROBE_RUNNING_ERROR;
+		status_probe_write = PROBE_STATUS::RUNNING_ERROR;
 		*rip = (uintptr_t)&jump_point_write;
 	}
 }
@@ -195,11 +200,12 @@ int64_t bpftime_probe_write_user(uint64_t dst, uint64_t src, uint64_t len,
 {
 	int64_t ret = 0;
 
-	status_probe_write = PROBE_RUNNING_NO_ERROR;
+#ifdef ENABLE_PROBE_WRITE_CHECK
+	status_probe_write = PROBE_STATUS::RUNNING_NO_ERROR;
 
 	struct sigaction sa, original_sa;
 	// set up the signal handler
-	if (origin_handler_exist_write == ORIGIN_HANDLER_NOT_CHECKED) {
+	if (exist_write == ORIGIN_HANDLER_EXIST_FLAG::NOT_CHECKED) {
 		int err = sigaction(SIGSEGV, nullptr, &original_sa);
 		if (err) {
 			SPDLOG_ERROR("Failed to get signal handler: {}", errno);
@@ -207,22 +213,22 @@ int64_t bpftime_probe_write_user(uint64_t dst, uint64_t src, uint64_t len,
 		}
 
 		if (original_sa.sa_sigaction == nullptr) {
-			origin_handler_exist_write = ORIGIN_HANDLER_NOT_EXIST;
+			exist_write = ORIGIN_HANDLER_EXIST_FLAG::NOT_EXIST;
 		} else {
-			origin_handler_exist_write = ORIGIN_HANDLER_EXIST;
+			exist_write = ORIGIN_HANDLER_EXIST_FLAG::EXIST;
 			origin_segv_write_handler = original_sa.sa_sigaction;
 		}
 	}
 
 	if (original_sa.sa_sigaction != segv_write_handler) {
 		sa.sa_flags = SA_SIGINFO;
-		int err = 0 ;
+		int err = 0;
 		err = sigemptyset(&sa.sa_mask);
-		if(err){
+		if (err) {
 			SPDLOG_ERROR("Failed to set signal handler: {}", errno);
 			return -EFAULT;
 		}
-		
+
 		sa.sa_sigaction = segv_write_handler;
 		err = sigaction(SIGSEGV, &sa, nullptr);
 		if (err) {
@@ -230,7 +236,7 @@ int64_t bpftime_probe_write_user(uint64_t dst, uint64_t src, uint64_t len,
 			return -EFAULT;
 		}
 	}
-
+#endif
 	unsigned char *dst_p = (unsigned char *)dst;
 	unsigned char *src_p = (unsigned char *)src;
 	while (len--) {
@@ -240,12 +246,14 @@ int64_t bpftime_probe_write_user(uint64_t dst, uint64_t src, uint64_t len,
 	}
 
 	__asm__("jump_point_write:");
-	if (status_probe_write) {
+#ifdef ENABLE_PROBE_WRITE_CHECK
+	if (status_probe_write == PROBE_STATUS::RUNNING_ERROR) {
 		ret = -EFAULT;
 	}
 
-	status_probe_write = PROBE_NOT_RUNNING;
+	status_probe_write = PROBE_STATUS::NOT_RUNNING;
 
+#endif
 	return ret;
 }
 

@@ -86,6 +86,15 @@ endif()
 
 message(STATUS "Started CMake for ${PROJECT_NAME} v${PROJECT_VERSION}...\n")
 
+# option to use probe read/write checks
+if(DEFINED ENABLE_PROBE_READ_CHECK)
+  add_compile_definitions(ENABLE_PROBE_READ_CHECK=1)
+endif()
+
+if(DEFINED ENABLE_PROBE_WRITE_CHECK)
+  add_compile_definitions(ENABLE_PROBE_WRITE_CHECK=1)
+endif()
+
 # if option to build without libbpf is set
 if(${BPFTIME_BUILD_WITH_LIBBPF})
   add_definitions(-DBPFTIME_BUILD_WITH_LIBBPF=1)
