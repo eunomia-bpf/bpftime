@@ -3,6 +3,8 @@
  * Copyright (c) 2022, eunomia-bpf org
  * All rights reserved.
  */
+#include <stdexcept>
+#include <system_error>
 #if __APPLE__
 #include <cstdint>
 #include <pthread.h>
@@ -99,28 +101,34 @@ thread_local static void (*origin_segv_read_handler)(int, siginfo_t *,
 thread_local static void (*origin_segv_write_handler)(int, siginfo_t *,
 						      void *) = nullptr;
 
-
 static void segv_read_handler(int sig, siginfo_t *siginfo, void *ctx)
 {
-	SPDLOG_TRACE("segv_handler for probe_read called");
+	SPDLOG_INFO("segv_handler for probe_read called");
 	if (status_probe_read == PROBE_STATUS::NOT_RUNNING) {
-		if (origin_segv_read_handler) {
+		SPDLOG_INFO("segv_handler for probe_read called 2");
+		if (origin_segv_read_handler != nullptr) {
 			origin_segv_read_handler(sig, siginfo, ctx);
 		} else {
-			abort();
+			SPDLOG_INFO("segv_handler for probe_read called 3");
+			throw std::runtime_error(
+				"segv_handler for probe_read called");
 		}
 	} else if (status_probe_read == PROBE_STATUS::RUNNING_NO_ERROR) {
 		// set status to error
 		auto uctx = (ucontext_t *)ctx;
-		auto *rip = (uintptr_t *)(&uctx->uc_mcontext.gregs[REG_RIP]);
+		auto *rip = (greg_t *)(&uctx->uc_mcontext.gregs[REG_RIP]);
 		status_probe_read = PROBE_STATUS::RUNNING_ERROR;
-		*rip = (uintptr_t)&jump_point_read;
+		*rip = (greg_t)&jump_point_read;
 	}
 }
 
-int64_t bpftime_probe_read(uint64_t dst, uint64_t size, uint64_t ptr, uint64_t,
+int64_t bpftime_probe_read(uint64_t dst, int64_t size, uint64_t ptr, uint64_t,
 			   uint64_t)
 {
+	if (size < 0) {
+		SPDLOG_ERROR("Invalid size: {}", size);
+		return -EFAULT;
+	}
 	int64_t ret = 0;
 
 #ifdef ENABLE_PROBE_READ_CHECK
@@ -189,15 +197,19 @@ static void segv_write_handler(int sig, siginfo_t *siginfo, void *ctx)
 	} else if (status_probe_write == PROBE_STATUS::RUNNING_NO_ERROR) {
 		// set status to error
 		auto uctx = (ucontext_t *)ctx;
-		auto *rip = (uintptr_t *)(&uctx->uc_mcontext.gregs[REG_RIP]);
+		auto *rip = (greg_t *)(&uctx->uc_mcontext.gregs[REG_RIP]);
 		status_probe_write = PROBE_STATUS::RUNNING_ERROR;
-		*rip = (uintptr_t)&jump_point_write;
+		*rip = (greg_t)&jump_point_write;
 	}
 }
 
-int64_t bpftime_probe_write_user(uint64_t dst, uint64_t src, uint64_t len,
+int64_t bpftime_probe_write_user(uint64_t dst, uint64_t src, int64_t len,
 				 uint64_t, uint64_t)
 {
+	if (len < 0) {
+		SPDLOG_ERROR("Invalid len: {}", len);
+		return -EFAULT;
+	}
 	int64_t ret = 0;
 
 #ifdef ENABLE_PROBE_WRITE_CHECK
