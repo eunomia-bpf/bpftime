@@ -88,3 +88,9 @@ option(BPFTIME_BUILD_STATIC_LIB "Whether to build a single static library for di
 
 # whether to build bpftime with libbpf and other linux headers
 option(BPFTIME_BUILD_WITH_LIBBPF "Whether to build with libbpf and other linux headers" ON)
+
+# whether to enable probe write check
+option(ENABLE_PROBE_WRITE_CHECK "Whether to enable probe write check" OFF)
+
+# whether to enable probe read check
+option(ENABLE_PROBE_READ_CHECK "Whether to enable probe read check" OFF)
