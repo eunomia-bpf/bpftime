@@ -103,13 +103,11 @@ thread_local static void (*origin_segv_write_handler)(int, siginfo_t *,
 
 static void segv_read_handler(int sig, siginfo_t *siginfo, void *ctx)
 {
-	SPDLOG_INFO("segv_handler for probe_read called");
 	if (status_probe_read == PROBE_STATUS::NOT_RUNNING) {
-		SPDLOG_INFO("segv_handler for probe_read called 2");
 		if (origin_segv_read_handler != nullptr) {
 			origin_segv_read_handler(sig, siginfo, ctx);
 		} else {
-			SPDLOG_INFO("segv_handler for probe_read called 3");
+			SPDLOG_ERROR("no origin handler for probe_read");
 			throw std::runtime_error(
 				"segv_handler for probe_read called");
 		}
@@ -192,7 +190,9 @@ static void segv_write_handler(int sig, siginfo_t *siginfo, void *ctx)
 		if (origin_segv_write_handler) {
 			origin_segv_write_handler(sig, siginfo, ctx);
 		} else {
-			abort();
+			SPDLOG_ERROR("no origin handler for probe_write");
+			throw std::runtime_error(
+				"segv_handler for probe_write called");
 		}
 	} else if (status_probe_write == PROBE_STATUS::RUNNING_NO_ERROR) {
 		// set status to error

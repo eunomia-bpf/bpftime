@@ -1,5 +1,6 @@
 #include "catch2/catch_test_macros.hpp"
 #include "spdlog/spdlog.h"
+#include <csetjmp>
 #include <cstdlib>
 #include <cstring>
 #include <unistd.h>
@@ -83,4 +84,27 @@ TEST_CASE("Test Probe read/write size valid or not ")
 	for (size_t i = 0; i < 4; i++) {
 		REQUIRE(dst[i] == src[i]);
 	}
+}
+
+
+TEST_CASE("Test origin handler is null")
+{
+	struct sigaction original_sa, sa;
+	int dst[4] = { 0 };
+	int src[4] = { 1, 2, 3, 4 };
+	sa.sa_flags = SA_SIGINFO;
+	sigemptyset(&sa.sa_mask);
+	sa.sa_sigaction = nullptr;
+	if (sigaction(SIGSEGV, &sa, nullptr) < 0) {
+		REQUIRE(false);
+	}
+	uint64_t size = sizeof(src);
+
+	int ret = bpftime_probe_read((uint64_t)(dst), size, (uint64_t)(src), 0,
+				     0);
+	REQUIRE(ret == 0);
+
+	sigaction(SIGSEGV, nullptr, &original_sa);
+	auto handler = original_sa.sa_sigaction;
+	REQUIRE(handler != nullptr);
 }
