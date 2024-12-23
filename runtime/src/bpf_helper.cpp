@@ -69,8 +69,8 @@ long bpftime_strncmp(const char *s1, uint64_t s1_sz, const char *s2)
 	return strncmp(s1, s2, s1_sz);
 }
 
-extern "C" void jump_point_read();
-extern "C" void jump_point_write();
+
+#if defined(ENABLE_PROBE_WRITE_CHECK) || defined(ENABLE_PROBE_READ_CHECK)
 
 /*
 status instruction for probe_read and probe_write
@@ -81,8 +81,6 @@ enum class PROBE_STATUS {
 	RUNNING_ERROR = 1
 };
 
-thread_local static PROBE_STATUS status_probe_write = PROBE_STATUS::NOT_RUNNING;
-thread_local static PROBE_STATUS status_probe_read = PROBE_STATUS::NOT_RUNNING;
 /*
 origin handler exist flag for probe_read and probe_write
 */
@@ -91,16 +89,31 @@ enum class ORIGIN_HANDLER_EXIST_FLAG {
 	NOT_EXIST = 0,
 	EXIST = 1
 };
+
+#endif
+
+#ifdef ENABLE_PROBE_READ_CHECK
+extern "C" void jump_point_read();
+
+thread_local static PROBE_STATUS status_probe_write = PROBE_STATUS::NOT_RUNNING;
+
 thread_local static ORIGIN_HANDLER_EXIST_FLAG exist_read =
-	ORIGIN_HANDLER_EXIST_FLAG::NOT_CHECKED;
-thread_local static ORIGIN_HANDLER_EXIST_FLAG exist_write =
 	ORIGIN_HANDLER_EXIST_FLAG::NOT_CHECKED;
 
 thread_local static void (*origin_segv_read_handler)(int, siginfo_t *,
 						     void *) = nullptr;
+#endif
+#ifdef ENABLE_PROBE_WRITE_CHECK
+
+extern "C" void jump_point_write();
+thread_local static PROBE_STATUS status_probe_read = PROBE_STATUS::NOT_RUNNING;
+
+thread_local static ORIGIN_HANDLER_EXIST_FLAG exist_write =
+	ORIGIN_HANDLER_EXIST_FLAG::NOT_CHECKED;
+
 thread_local static void (*origin_segv_write_handler)(int, siginfo_t *,
 						      void *) = nullptr;
-
+#endif
 
 #ifdef ENABLE_PROBE_READ_CHECK
 static void segv_read_handler(int sig, siginfo_t *siginfo, void *ctx)
@@ -185,7 +198,6 @@ int64_t bpftime_probe_read(uint64_t dst, int64_t size, uint64_t ptr, uint64_t,
 #endif
 	return ret;
 }
-
 
 #ifdef ENABLE_PROBE_WRITE_CHECK
 static void segv_write_handler(int sig, siginfo_t *siginfo, void *ctx)
