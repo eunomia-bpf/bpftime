@@ -101,6 +101,8 @@ thread_local static void (*origin_segv_read_handler)(int, siginfo_t *,
 thread_local static void (*origin_segv_write_handler)(int, siginfo_t *,
 						      void *) = nullptr;
 
+
+#ifdef ENABLE_PROBE_READ_CHECK
 static void segv_read_handler(int sig, siginfo_t *siginfo, void *ctx)
 {
 	if (status_probe_read == PROBE_STATUS::NOT_RUNNING) {
@@ -119,6 +121,7 @@ static void segv_read_handler(int sig, siginfo_t *siginfo, void *ctx)
 		*rip = (greg_t)&jump_point_read;
 	}
 }
+#endif
 
 int64_t bpftime_probe_read(uint64_t dst, int64_t size, uint64_t ptr, uint64_t,
 			   uint64_t)
@@ -183,6 +186,8 @@ int64_t bpftime_probe_read(uint64_t dst, int64_t size, uint64_t ptr, uint64_t,
 	return ret;
 }
 
+
+#ifdef ENABLE_PROBE_WRITE_CHECK
 static void segv_write_handler(int sig, siginfo_t *siginfo, void *ctx)
 {
 	SPDLOG_TRACE("segv_handler for probe_write called");
@@ -202,6 +207,7 @@ static void segv_write_handler(int sig, siginfo_t *siginfo, void *ctx)
 		*rip = (greg_t)&jump_point_write;
 	}
 }
+#endif
 
 int64_t bpftime_probe_write_user(uint64_t dst, uint64_t src, int64_t len,
 				 uint64_t, uint64_t)
