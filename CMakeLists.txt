@@ -160,6 +160,15 @@ add_subdirectory(attach)
 
 add_subdirectory(runtime)
 
+# option to use probe read/write checks
+if(DEFINED ENABLE_PROBE_READ_CHECK)
+  target_compile_definitions(runtime PRIVATE ENABLE_PROBE_READ_CHECK=1)
+endif()
+
+if(DEFINED ENABLE_PROBE_WRITE_CHECK)
+  target_compile_definitions(runtime PRIVATE ENABLE_PROBE_WRITE_CHECK=1)
+endif()
+
 # add to single archive if option is enabled
 if(${BPFTIME_BUILD_STATIC_LIB})
   set(UBPF_BUILD_DIR ${CMAKE_CURRENT_BINARY_DIR}/vm/ubpf-vm/ubpf)
