@@ -22,6 +22,8 @@ set(TEST_SOURCES
     maps/kernel_unit_tests.cpp
     maps/test_stack_trace_map.cpp
     
+    maps/test_lru_var_hash_map.cpp
+
     test_bpftime_shm_json.cpp
     test_probe.cpp
     test_config.cpp
@@ -34,6 +36,8 @@ set(TEST_SOURCES
     attach_with_ebpf/test_attach_replace.cpp
 
     tailcall/test_user_to_kernel_tailcall.cpp
+
+    cuda/test_cuda_compile.cpp
 )
 
 option(TEST_LCOV "option for lcov" OFF)
@@ -48,9 +52,9 @@ add_dependencies(bpftime_runtime_tests runtime bpftime-object bpftime_frida_upro
 
 if (${TEST_LCOV}) 
     target_link_options(bpftime_runtime_tests PRIVATE -lgcov)
-    target_link_libraries(bpftime_runtime_tests PRIVATE runtime bpftime-object Catch2::Catch2WithMain bpftime_frida_uprobe_attach_impl gcov)
+    target_link_libraries(bpftime_runtime_tests PRIVATE runtime bpftime-object Catch2::Catch2WithMain bpftime_frida_uprobe_attach_impl gcov cuda cudart)
 else ()
-    target_link_libraries(bpftime_runtime_tests PRIVATE runtime bpftime-object Catch2::Catch2WithMain bpftime_frida_uprobe_attach_impl)
+    target_link_libraries(bpftime_runtime_tests PRIVATE runtime bpftime-object Catch2::Catch2WithMain bpftime_frida_uprobe_attach_impl cuda cudart)
 endif()
 
 target_include_directories(bpftime_runtime_tests PRIVATE ${BPFTIME_RUNTIME_INCLUDE} ${BPFTIME_OBJECT_INCLUDE_DIRS} ${Catch2_INCLUDE} ${Boost_INCLUDE} ${FRIDA_UPROBE_ATTACH_IMPL_INCLUDE})

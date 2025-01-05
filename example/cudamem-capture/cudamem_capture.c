@@ -12,7 +12,7 @@
 #include <bpf/bpf.h>
 #include <unistd.h>
 #include <stdlib.h>
-#include "error_inject.skel.h"
+#include "cudamem_capture.skel.h"
 #include <inttypes.h>
 #include "attach_override.h"
 
@@ -57,8 +57,8 @@ int main(int argc, char **argv)
 		goto cleanup;
 	}
 	err = bpf_prog_attach_uprobe_with_override(
-		bpf_program__fd(skel->progs.do_cudamem_capture_patch), "./victim",
-		"target_func");
+		bpf_program__fd(skel->progs.do_cudamem_capture), "./victim",
+		"infinite_kernel__cuda");
 	if (err) {
 		fprintf(stderr, "Failed to attach BPF program\n");
 		goto cleanup;

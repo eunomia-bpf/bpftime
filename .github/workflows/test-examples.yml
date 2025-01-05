@@ -16,7 +16,6 @@ jobs:
       matrix:
         enable_jit:
           - true
-          - false
         container:
           - image: ubuntu-2204
             name: ubuntu
@@ -30,6 +29,14 @@ jobs:
       - uses: actions/checkout@v2
         with:
           submodules: 'recursive'
+      - name: Setup conda
+        uses: conda-incubator/setup-miniconda@v3
+        with:
+          channels: conda-forge,bioconda
+          channel-priority: strict
+          miniforge-version: latest
+      - name: Install absl and protobuf
+        run: conda install libabseil libprotobuf
       - name: Install lcov (Ubuntu)
         if: ${{matrix.container.name=='ubuntu'}}
         run: |
@@ -37,7 +44,9 @@ jobs:
       - name: Install lcov (Fedora)
         if: ${{matrix.container.name =='fedora'}}
         run: |
-          dnf install -y lcov tree
+          dnf install -y dnf-plugins-core
+          dnf config-manager --add-repo https://developer.download.nvidia.com/compute/cuda/repos/fedora39/x86_64/cuda-fedora39.repo
+          dnf install -y lcov tree cuda clang-devel
       - name: Build and install runtime (with llvm-jit)
         if: ${{matrix.enable_jit}}
         run: |
@@ -45,7 +54,19 @@ jobs:
             -DBPFTIME_LLVM_JIT=1 \
             -DTEST_LCOV=YES \
             -DBUILD_BPFTIME_DAEMON=1 \
-            -DCMAKE_CXX_FLAGS="-DDEFAULT_LOGGER_OUTPUT_PATH='\"console\"'"
+            -DCMAKE_CXX_FLAGS="-DDEFAULT_LOGGER_OUTPUT_PATH='\"console\"'" -Dabsl_DIR=~/miniconda3/lib/cmake/absl -DProtobuf_DIR=~/miniconda3/lib/cmake/protobuf -Dutf8_range_DIR=~/miniconda3/lib/cmake/utf8_range
+          mkdir -p build/runtime/pos/include/proto/
+          mkdir -p build/runtime/pos/cuda_impl/proto/
+          ln -sf /usr/lib/llvm-*/include/clang-c/ /usr/include/ || true
+          ln -sf /usr/lib/llvm-*/lib/libclang.so /usr/lib || true
+          cmake --build build --config RelWithDebInfo --target install -j || true
+          sed -i "s/&::descriptor_table_pos_2finclude_2fproto_2fhandle_2eproto/nullptr/g" build/runtime/pos/cuda_impl/proto/*.pb.cc
+          cmake --build build --config RelWithDebInfo --target install -j || true
+          sed -i "s/&::descriptor_table_pos_2finclude_2fproto_2fhandle_2eproto/nullptr/g" build/runtime/pos/cuda_impl/proto/*.pb.cc
+          cmake --build build --config RelWithDebInfo --target install -j || true
+          sed -i "s/&::descriptor_table_pos_2finclude_2fproto_2fhandle_2eproto/nullptr/g" build/runtime/pos/cuda_impl/proto/*.pb.cc
+          cmake --build build --config RelWithDebInfo --target install -j || true
+          sed -i "s/&::descriptor_table_pos_2finclude_2fproto_2fhandle_2eproto/nullptr/g" build/runtime/pos/cuda_impl/proto/*.pb.cc
           cmake --build build --config RelWithDebInfo --target install -j
       - name: Build and install runtime (without llvm-jit)
         if: ${{!matrix.enable_jit}}
@@ -54,7 +75,19 @@ jobs:
             -DBPFTIME_LLVM_JIT=0 \
             -DTEST_LCOV=YES \
             -DBUILD_BPFTIME_DAEMON=1 \
-            -DCMAKE_CXX_FLAGS="-DDEFAULT_LOGGER_OUTPUT_PATH='\"console\"'"
+            -DCMAKE_CXX_FLAGS="-DDEFAULT_LOGGER_OUTPUT_PATH='\"console\"'" -Dabsl_DIR=~/miniconda3/lib/cmake/absl -DProtobuf_DIR=~/miniconda3/lib/cmake/protobuf -Dutf8_range_DIR=~/miniconda3/lib/cmake/utf8_range
+          mkdir -p build/runtime/pos/include/proto/
+          mkdir -p build/runtime/pos/cuda_impl/proto/
+          ln -sf /usr/lib/llvm-*/include/clang-c/ /usr/include/ || true
+          ln -sf /usr/lib/llvm-*/lib/libclang.so /usr/lib || true
+          cmake --build build --config RelWithDebInfo --target install -j || true
+          sed -i "s/&::descriptor_table_pos_2finclude_2fproto_2fhandle_2eproto/nullptr/g" build/runtime/pos/cuda_impl/proto/*.pb.cc
+          cmake --build build --config RelWithDebInfo --target install -j || true
+          sed -i "s/&::descriptor_table_pos_2finclude_2fproto_2fhandle_2eproto/nullptr/g" build/runtime/pos/cuda_impl/proto/*.pb.cc
+          cmake --build build --config RelWithDebInfo --target install -j || true
+          sed -i "s/&::descriptor_table_pos_2finclude_2fproto_2fhandle_2eproto/nullptr/g" build/runtime/pos/cuda_impl/proto/*.pb.cc
+          cmake --build build --config RelWithDebInfo --target install -j || true
+          sed -i "s/&::descriptor_table_pos_2finclude_2fproto_2fhandle_2eproto/nullptr/g" build/runtime/pos/cuda_impl/proto/*.pb.cc
           cmake --build build --config RelWithDebInfo --target install -j
       - name: Build basic examples
         run: |

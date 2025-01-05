@@ -1,0 +1,51 @@
+/*
+ * Copyright 2024 The PhoenixOS Authors. All rights reserved.
+ * 
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *   http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+syntax = "proto3";
+
+package pos_protobuf;
+
+import "pos/include/proto/handle.proto";
+
+
+/*!
+ *  \brief  binary format of a pair of confirmed suspicious pointer param
+ *          index -> offset
+ */
+message Bin_Suspicious_Param_Pair {
+    uint32 index = 1;
+    uint64 offset = 2;
+}
+
+
+/*!
+ *  \brief  binary format of POSHandle_CUDA_Function
+ */
+message Bin_POSHandle_CUDA_Function {
+    Bin_POSHandle base = 1;
+    string name = 2;
+    string signature = 3;
+    uint32 nb_params = 4;
+    repeated uint32 param_offsets = 5;
+    repeated uint32 param_sizes = 6;
+    repeated uint32 input_pointer_params = 7;
+    repeated uint32 inout_pointer_params = 8;
+    repeated uint32 output_pointer_params = 9;
+    repeated uint32 suspicious_params = 10;
+    bool has_verified_params = 11;
+    repeated Bin_Suspicious_Param_Pair confirmed_suspicious_params = 12;
+    uint64 cbank_param_size = 13;
+}

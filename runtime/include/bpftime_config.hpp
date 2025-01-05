@@ -9,7 +9,12 @@
 #include <variant>
 
 #ifndef DEFAULT_LOGGER_OUTPUT_PATH
-#define DEFAULT_LOGGER_OUTPUT_PATH "~/.bpftime/runtime.log"
+constexpr std::string_view DEFAULT_LOGGER_OUTPUT_PATH =
+	"~/.bpftime/runtime.log";
+#endif
+
+#ifndef DEFAULT_VM_NAME
+constexpr std::string_view DEFAULT_VM_NAME = "llvm";
 #endif
 
 #ifndef DEFAULT_VM_NAME

@@ -18,4 +18,4 @@
 	url = https://github.com/iovisor/ubpf
 [submodule "vm/llvm-jit"]
 	path = vm/llvm-jit
-	url = https://github.com/eunomia-bpf/llvmbpf
+	url = https://github.com/eunomia-bpf/llvmbpf-nvptx

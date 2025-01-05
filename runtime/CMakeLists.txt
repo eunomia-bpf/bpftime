@@ -53,6 +53,7 @@ message(STATUS "Building for architecture: ${ARCH}")
 
 set(sources
   src/attach/bpf_attach_ctx.cpp
+  src/attach/bpf_attach_ctx_cuda.cpp
 
   src/handler/handler_manager.cpp
   src/handler/map_handler.cpp
@@ -78,6 +79,8 @@ set(sources
   src/bpf_map/userspace/per_cpu_hash_map.cpp
   src/bpf_map/userspace/prog_array.cpp
   src/bpf_map/userspace/stack_trace_map.cpp
+  src/bpf_map/userspace/lru_var_hash_map.cpp
+
   extension/extension_helper.cpp
 )
 
@@ -112,6 +115,10 @@ add_custom_target(
 )
 
 message(INFO " Found the following boost include dirs : ${Boost_INCLUDE_DIRS}")
+
+include(../cmake/cuda.cmake)
+find_cuda()
+
 target_include_directories(${PROJECT_NAME}
   PUBLIC
   ${CMAKE_CURRENT_SOURCE_DIR}/../vm/include
@@ -119,16 +126,22 @@ target_include_directories(${PROJECT_NAME}
   ${CMAKE_CURRENT_SOURCE_DIR}/../runtime
   ${CMAKE_CURRENT_BINARY_DIR}
   ${CMAKE_CURRENT_SOURCE_DIR}/../third_party
+  ${CMAKE_CURRENT_SOURCE_DIR}
   ${SPDLOG_INCLUDE}
   ${Boost_INCLUDE_DIRS}
+  ${CUDA_INCLUDE_PATH}
 )
-
+target_link_directories(${PROJECT_NAME} PUBLIC ${CUDA_LIBRARY_PATH})
 target_link_libraries(${PROJECT_NAME}
   PUBLIC
   bpftime_vm
   spdlog::spdlog
   bpftime_base_attach_impl
+  bpftime_nv_attach_impl
+  ${CUDA_LIBS}
 )
+
+message(STATUS "runtime CUDA libs= ${CUDA_LIBS}")
 
 if(${BPFTIME_BUILD_WITH_LIBBPF})
   add_dependencies(${PROJECT_NAME} bpftime_vm FridaGum spdlog::spdlog libbpf bpftime_base_attach_impl)
@@ -145,7 +158,7 @@ endif()
 
 if(${ENABLE_EBPF_VERIFIER})
   target_include_directories(${PROJECT_NAME} PRIVATE ${BPFTIME_VERIFIER_INCLUDE})
-  target_link_libraries(${PROJECT_NAME} PRIVATE bpftime-verifier)
+  target_link_libraries(${PROJECT_NAME} PRIVATE bpftime-verifier cuda)
   add_dependencies(${PROJECT_NAME} bpftime-verifier)
   target_compile_definitions(${PROJECT_NAME} PRIVATE ENABLE_EBPF_VERIFIER ENABLE_BPFTIME_VERIFIER)
 endif()
@@ -191,7 +204,9 @@ if(${BPFTIME_BUILD_WITH_LIBBPF})
     -lz
     -lelf
     bpftime_base_attach_impl
+    bpftime_nv_attach_impl
     ${EXTRA_LIBS}
+    cuda
   )
 else()
   target_link_libraries(${PROJECT_NAME}
@@ -202,7 +217,9 @@ else()
     -ldl
     -lz
     bpftime_base_attach_impl
+    bpftime_nv_attach_impl
     ${EXTRA_LIBS}
+    cuda
   )
 endif()
 
@@ -253,3 +270,9 @@ if(${TEST_LCOV})
   target_compile_options(${PROJECT_NAME} PUBLIC -fprofile-arcs -ftest-coverage -fprofile-update=atomic)
   target_link_options(${PROJECT_NAME} PUBLIC -fprofile-arcs)
 endif()
+
+add_dependencies(${PROJECT_NAME} bpftime_vm_compat llvmbpf_vm)
+target_link_libraries(${PROJECT_NAME} PUBLIC bpftime_vm_compat pos llvmbpf_vm)
+target_include_directories(${PROJECT_NAME} PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/../vm/llvm-jit/include)
+
+add_subdirectory(./pos-unit-test)

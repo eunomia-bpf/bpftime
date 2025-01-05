@@ -5,9 +5,17 @@
  */
 #include "attach_private_data.hpp"
 #include "base_attach_impl.hpp"
+#include "nv_attach_impl.hpp"
 #include "bpftime_shm.hpp"
+
+#include "cuda.h"
 #include "handler/link_handler.hpp"
+#include "handler/map_handler.hpp"
 #include "handler/prog_handler.hpp"
+#include "nv_attach_private_data.hpp"
+#include <chrono>
+#include <cstring>
+#include <iterator>
 #include <string>
 #include <unistd.h>
 #include <cerrno>
@@ -23,22 +31,22 @@
 #include <handler/perf_event_handler.hpp>
 #include <bpftime_helper_group.hpp>
 #include <handler/handler_manager.hpp>
-#include <tuple>
 #include <utility>
 #include <variant>
 #include <sys/resource.h>
+
 extern "C" uint64_t bpftime_set_retval(uint64_t value);
 namespace bpftime
 {
 
 static int load_prog_and_helpers(bpftime_prog *prog, const agent_config &config)
 {
-	#if __linux__
+#if __linux__
 	if (config.enable_kernel_helper_group) {
 		bpftime_helper_group::get_kernel_utils_helper_group()
 			.add_helper_group_to_prog(prog);
 	}
-	#endif
+#endif
 	if (config.enable_ufunc_helper_group) {
 		bpftime_helper_group::get_ufunc_helper_group()
 			.add_helper_group_to_prog(prog);
@@ -71,11 +79,19 @@ int bpf_attach_ctx::init_attach_ctx_from_handlers(
 							     config);
 			    err < 0) {
 				SPDLOG_INFO("Failed to instantiate handler {}",
-					     i);
-				// Unable to instantiate handler may not be an error.
-				// We can continue trying to instantiate other handlers.
+					    i);
+				// Unable to instantiate handler may not be an
+				// error. We can continue trying to instantiate
+				// other handlers.
 			}
 		}
+	}
+	SPDLOG_INFO(
+		"Main initializing for handlers done, try to initialize cuda programs..");
+	// start_cuda_demo_program();
+	for (const auto &prog : cuda_ctx->cuda_progs) {
+		SPDLOG_INFO("Handling prog {} hooked for {}", prog.prog_id,
+			    prog.probe_func);
 	}
 	return 0;
 }
@@ -83,13 +99,16 @@ int bpf_attach_ctx::init_attach_ctx_from_handlers(
 bpf_attach_ctx::~bpf_attach_ctx()
 {
 	SPDLOG_DEBUG("Destructor: bpf_attach_ctx");
+
+	cuda_ctx->cuda_watcher_should_stop->store(true);
 }
 
 // create a probe context
-bpf_attach_ctx::bpf_attach_ctx(void)
-
+bpf_attach_ctx::bpf_attach_ctx() : cuda_ctx(*cuda::create_cuda_context())
 {
 	current_id = CURRENT_ID_OFFSET;
+	SPDLOG_INFO("bpf_attach_ctx constructed");
+	start_cuda_watcher_thread();
 }
 
 int bpf_attach_ctx::instantiate_handler_at(const handler_manager *manager,
@@ -226,18 +245,42 @@ int bpf_attach_ctx::instantiate_bpf_link_handler_at(
 		return -ENOTSUP;
 	}
 	auto prog = instantiated_progs.at(handler.prog_id).get();
-	auto cookie = handler.attach_cookie;
-	int attach_id = attach_impl->create_attach_with_ebpf_callback(
-		[=](void *mem, size_t mem_size, uint64_t *ret) -> int {
-			current_thread_bpf_cookie = cookie;
-			int err = prog->bpftime_prog_exec((void *)mem, mem_size,
-							  ret);
-			return err;
-		},
-		*priv_data, attach_type);
+	int attach_id;
+	if (prog->is_cuda()) {
+		SPDLOG_INFO("Handling link to CUDA program: {}, recording it..",
+			    id);
+		// start_cuda_prober(handler.prog_id);
+		this->cuda_ctx->cuda_progs.push_back(cuda::CUDAProgramRecord{
+			.probe_func = (priv_data)->to_string(),
+			.prog_id = handler.prog_id });
+		auto &nv_attach_private_data =
+			dynamic_cast<attach::nv_attach_private_data &>(
+				*priv_data);
+		// nv_attach_private_data.probe_ptx = prog->get_ptx_code();
+		nv_attach_private_data.comm_shared_mem =
+			(uintptr_t)this->cuda_ctx->cuda_shared_mem.get();
+		nv_attach_private_data.instructions = prog->get_insns();
+		nv_attach_private_data.map_basic_info =
+			this->create_map_basic_info(256);
+		attach_id = attach_impl->create_attach_with_ebpf_callback(
+			[=](void *mem, size_t mem_size, uint64_t *ret) -> int {
+				return 0;
+			},
+			*priv_data, attach_type);
+	} else {
+		auto cookie = handler.attach_cookie;
+		attach_id = attach_impl->create_attach_with_ebpf_callback(
+			[=](void *mem, size_t mem_size, uint64_t *ret) -> int {
+				current_thread_bpf_cookie = cookie;
+				int err = prog->bpftime_prog_exec(
+					(void *)mem, mem_size, ret);
+				return err;
+			},
+			*priv_data, attach_type);
+	}
 	if (attach_id < 0) {
-		// Since the agent might be attach to a unrelated process
-		// Using LD_PRELOAD, it's not an error here.
+		// Since the agent might be attach to a unrelated
+		// process Using LD_PRELOAD, it's not an error here.
 		SPDLOG_DEBUG("Unable to instantiate bpf link handler {}: {}",
 			     id, attach_id);
 		return attach_id;
@@ -298,6 +341,23 @@ int bpf_attach_ctx::instantiate_perf_event_handler_at(
 				id, tracepoint_data.tracepoint_id, err);
 			return err;
 		}
+	} else if (perf_handler.type == (int)bpf_event_type::BPF_TYPE_KPROBE ||
+		   perf_handler.type ==
+			   (int)bpf_event_type::BPF_TYPE_KRETPROBE) {
+		auto &kprobe_data =
+			std::get<kprobe_perf_event_data>(perf_handler.data);
+		int err = 0;
+		priv_data =
+			private_data_gen(kprobe_data.func_name.c_str(), err);
+		if (err < 0) {
+			SPDLOG_ERROR(
+				"Unable to parse private data of kprobe/kretprobe {}, func name {}, err = {}",
+				id, kprobe_data.func_name, err);
+			return err;
+		}
+		SPDLOG_DEBUG(
+			"Created kprobe/kretprobe private data at id {}, string value {}",
+			id, priv_data->to_string());
 	} else {
 		auto &custom_data =
 			std::get<custom_perf_event_data>(perf_handler.data);
@@ -324,6 +384,11 @@ int bpf_attach_ctx::destroy_instantiated_attach_link(int link_id)
 	if (auto itr = instantiated_attach_links.find(link_id);
 	    itr != instantiated_attach_links.end()) {
 		auto [attach_id, impl] = itr->second;
+		if (impl == nullptr) {
+			SPDLOG_INFO("Detach: Ignore attach with empty impl: {}",
+				    link_id);
+			return 0;
+		}
 		if (int err = impl->detach_by_id(attach_id); err < 0) {
 			SPDLOG_ERROR(
 				"Failed to detach attach link id {}, attach-specified id {}: {}",
@@ -354,4 +419,5 @@ int bpf_attach_ctx::destroy_all_attach_links()
 	}
 	return 0;
 }
+
 } // namespace bpftime

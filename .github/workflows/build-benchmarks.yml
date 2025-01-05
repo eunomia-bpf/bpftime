@@ -1,0 +1,49 @@
+name: Build benchmarks
+
+on:
+  push:
+    branches: "master"
+  pull_request:
+    branches: "master"
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}-${{ github.event_name }}
+  cancel-in-progress: true
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+
+    steps:
+    - uses: actions/checkout@v3
+      with:
+        submodules: 'recursive'
+
+    - name: install deps
+      run: |
+        sudo apt update
+        wget https://apt.llvm.org/llvm.sh && chmod +x llvm.sh && sudo ./llvm.sh 17
+        sudo apt update
+        sudo apt install -y --no-install-recommends \
+        libelf1 libelf-dev zlib1g-dev make git libboost1.74-all-dev \
+        binutils-dev libyaml-cpp-dev  gcc-12 g++-12 llvm-17 clang-17
+
+    - name: verify llvm-17 installation
+      run: llvm-config-17 --version
+
+    - name: clear cmake cache
+      run: rm -rf build
+
+    - name: build runtime
+      run: |
+        cmake -Bbuild \
+          -DCMAKE_BUILD_TYPE=RelWithDebInfo \
+          -DBUILD_BPFTIME_DAEMON=1 \
+          -DCMAKE_C_COMPILER=/usr/lib/llvm-17/bin/clang \
+          -DCMAKE_CXX_COMPILER=/usr/lib/llvm-17/bin/clang++ \
+          -DLLVM_CONFIG=/usr/lib/llvm-17/bin/llvm-config \
+          -DLLVM_DIR=/usr/lib/llvm-17/lib/cmake/llvm
+
+    - name: build benchmarks
+      run:  make -C benchmark
+
+    # - name: run benchmarks
+    #   run:  cd benchmark && python3 run_benchmark.py
