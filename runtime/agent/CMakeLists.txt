@@ -25,6 +25,7 @@ target_include_directories(bpftime-agent
   ${SPDLOG_INCLUDE}
   ${FRIDA_UPROBE_ATTACH_IMPL_INCLUDE}
   ${SYSCALL_TRACE_ATTACH_IMPL_INCLUDE}
+  ${NV_ATTACH_IMPL_INCLUDE}
 )
 target_link_libraries(bpftime-agent
   ${FRIDA_GUM_INSTALL_DIR}/libfrida-gum.a
@@ -35,6 +36,7 @@ target_link_libraries(bpftime-agent
   spdlog::spdlog
   bpftime_frida_uprobe_attach_impl
   bpftime_syscall_trace_attach_impl
+  bpftime_nv_attach_impl
 )
 
 else()
@@ -45,6 +47,7 @@ target_include_directories(bpftime-agent
   ../../third_party/
   ${SPDLOG_INCLUDE}
   ${FRIDA_UPROBE_ATTACH_IMPL_INCLUDE}
+  ${NV_ATTACH_IMPL_INCLUDE}
 )
 target_link_libraries(bpftime-agent
   ${FRIDA_GUM_INSTALL_DIR}/libfrida-gum.a
@@ -54,5 +57,6 @@ target_link_libraries(bpftime-agent
   -ldl
   spdlog::spdlog
   bpftime_frida_uprobe_attach_impl
+  bpftime_nv_attach_impl
 )
 endif()
