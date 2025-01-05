@@ -21,7 +21,7 @@ INCLUDES := -I$(OUTPUT) -I../../third_party/libbpf/include/uapi -I$(dir $(VMLINU
 CFLAGS := -g -Wall
 ALL_LDFLAGS := $(LDFLAGS) $(EXTRA_LDFLAGS)
 
-APPS = error_inject error_inject_syscall # uprobe_legacy uprobe kprobe fentry usdt sockfilter tc ksyscall
+APPS = cudamem_capture # uprobe_legacy uprobe kprobe fentry usdt sockfilter tc ksyscall
 
 CARGO ?= $(shell which cargo)
 ifeq ($(strip $(CARGO)),)
@@ -70,7 +70,7 @@ all: $(APPS) victim
 
 victim: victim.cu
 	nvcc victim.cu -o victim.ptx -ptx -arch=sm_86
-	ptxas -v -O3 -arch=sm_86 -o victim victim.ptx
+	nvcc -arch sm_86 -fatbin victim.cu -o victim.fatbin
 
 .PHONY: clean
 clean:
