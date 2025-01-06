@@ -126,6 +126,7 @@ target_link_libraries(${PROJECT_NAME}
   bpftime_vm
   spdlog::spdlog
   bpftime_base_attach_impl
+  cuda
 )
 if(${BPFTIME_BUILD_WITH_LIBBPF})
   add_dependencies(${PROJECT_NAME} bpftime_vm FridaGum spdlog::spdlog libbpf bpftime_base_attach_impl)
@@ -142,7 +143,7 @@ endif()
 
 if(${ENABLE_EBPF_VERIFIER})
   target_include_directories(${PROJECT_NAME} PRIVATE ${BPFTIME_VERIFIER_INCLUDE})
-  target_link_libraries(${PROJECT_NAME} PRIVATE bpftime-verifier)
+  target_link_libraries(${PROJECT_NAME} PRIVATE bpftime-verifier cuda)
   add_dependencies(${PROJECT_NAME} bpftime-verifier)
   target_compile_definitions(${PROJECT_NAME} PRIVATE ENABLE_EBPF_VERIFIER ENABLE_BPFTIME_VERIFIER)
 endif()
@@ -189,6 +190,7 @@ target_link_libraries(${PROJECT_NAME}
   -lelf
   bpftime_base_attach_impl
   ${EXTRA_LIBS}
+  cuda
 )
 else()
 target_link_libraries(${PROJECT_NAME}
@@ -200,6 +202,7 @@ target_link_libraries(${PROJECT_NAME}
   -lz
   bpftime_base_attach_impl
   ${EXTRA_LIBS}
+  cuda
 )
 endif()
 

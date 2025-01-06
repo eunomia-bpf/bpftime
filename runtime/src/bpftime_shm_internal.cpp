@@ -15,6 +15,9 @@
 #include <cstdio>
 #if __linux__
 #include <sys/epoll.h>
+#include <cuda_runtime.h>
+#include <cuda_runtime_api.h>
+#include <cuda.h>
 #elif __APPLE__
 #include "bpftime_epoll.h"
 #endif
@@ -556,6 +559,7 @@ bpftime_shm::bpftime_shm(const char *shm_name, shm_open_type type)
 		// open the shm
 		segment = boost::interprocess::managed_shared_memory(
 			boost::interprocess::open_only, shm_name);
+		register_cuda_host_memory();
 		manager = segment.find<bpftime::handler_manager>(
 					 bpftime::DEFAULT_GLOBAL_HANDLER_NAME)
 				  .first;
@@ -778,6 +782,43 @@ int bpftime_shm::add_custom_perf_event(int type, const char *attach_argument)
 		fd, bpf_perf_event_handler(type, attach_argument, segment),
 		segment);
 	return fd;
+}
+
+bool bpftime_shm::register_cuda_host_memory()
+{
+    if (open_type == shm_open_type::SHM_NO_CREATE) {
+        SPDLOG_WARN("No shared memory was created (SHM_NO_CREATE), skipping CUDA registration.");
+        return false;
+    }
+
+    // 1. Get the base address and size of the Boost.Interprocess segment
+    void *base_addr = segment.get_address();        // Starting address
+    std::size_t seg_size = segment.get_size();      // Total bytes in segment
+
+    // 2. Register with CUDA
+    cudaError_t err = cudaHostRegister(base_addr, seg_size, cudaHostRegisterDefault);
+    if (err != cudaSuccess) {
+        SPDLOG_ERROR("cudaHostRegister() failed: {}", cudaGetErrorString(err));
+        return false;
+    }
+
+    SPDLOG_INFO("Registered shared memory with CUDA: addr={} size={}", base_addr, seg_size);
+    return true;
+}
+
+bpftime::bpftime_shm::~bpftime_shm()
+{
+	if (open_type == shm_open_type::SHM_NO_CREATE) {
+        return; // Nothing to do
+    }
+
+    void* base_addr = segment.get_address();
+    cudaError_t err = cudaHostUnregister(base_addr);
+    if (err != cudaSuccess) {
+        SPDLOG_ERROR("cudaHostUnregister() failed: {}", cudaGetErrorString(err));
+        return;
+    }
+    SPDLOG_INFO("bpftime_shm: Unregistered host memory from CUDA");
 }
 
 void bpftime_shm::add_pid_into_alive_agent_set(int pid)

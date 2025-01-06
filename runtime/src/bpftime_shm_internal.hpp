@@ -185,6 +185,8 @@ class bpftime_shm {
 	{
 		return open_type;
 	}
+	bool register_cuda_host_memory();
+	~bpftime_shm();
 };
 
 // memory region for maps and prog info
