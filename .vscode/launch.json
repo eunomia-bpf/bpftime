@@ -8,8 +8,8 @@
             "name": "(gdb) runtime",
             "type": "cppdbg",
             "request": "launch",
-            "program": "${workspaceFolder}/example/malloc/victim",
-            "args": [],
+            "program": "${workspaceFolder}/example/cudamem-capture/victim",
+            "args": ["./victim.ptx"],
             "stopAtEntry": true,
             "cwd": "${workspaceFolder}/",
             "environment": [

@@ -18,6 +18,8 @@ target_link_libraries(bpftimetool
   -ldl
   runtime
   bpftime-object
+  cuda
+  cudart
 )
 else()
 target_include_directories(bpftimetool PUBLIC
@@ -29,6 +31,8 @@ target_link_libraries(bpftimetool
   -lm
   -ldl
   runtime
+  cuda
+  cudart
 )
 endif()
 
