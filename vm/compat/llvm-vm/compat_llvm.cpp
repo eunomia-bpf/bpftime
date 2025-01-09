@@ -26,7 +26,7 @@ int bpftime_llvm_vm::exec(void *mem, size_t mem_len, uint64_t &bpf_return_value)
 }
 
 std::vector<uint8_t> bpftime_llvm_vm::do_aot_compile(bool print_ir) {
-    return bpftime::llvmbpf_vm::do_aot_compile(print_ir);
+    return bpftime::llvmbpf_vm::do_aot_compile(print_ir).value();
 }
 
 std::optional<compat::precompiled_ebpf_function> bpftime_llvm_vm::load_aot_object(const std::vector<uint8_t> &object) {

@@ -36,6 +36,39 @@
                     "ignoreFailures": true
                 }
             ]
+        },
+        {
+            "name": "(gdb) runtime1",
+            "type": "cppdbg",
+            "request": "launch",
+            "program": "${workspaceFolder}/build/tools/aot/bpftime-aot",
+            "args": ["compile"],
+            "stopAtEntry": true,
+            "cwd": "${workspaceFolder}/",
+            "environment": [
+                {
+                    "name": "LD_PRELOAD",
+                    "value": "/usr/lib/x86_64-linux-gnu/libcudart.so"
+                },
+                // {
+                //     "name": "LD_PRELOAD",
+                //     "value": "/home/yunwei/bpftime/build/runtime/syscall-server/libbpftime-syscall-server.so"
+                // }
+            ],
+            "externalConsole": false,
+            "MIMode": "gdb",
+            "setupCommands": [
+                {
+                    "description": "为 gdb 启用整齐打印",
+                    "text": "-enable-pretty-printing",
+                    "ignoreFailures": true
+                },
+                {
+                    "description": "将反汇编风格设置为 Intel",
+                    "text": "-gdb-set disassembly-flavor intel",
+                    "ignoreFailures": true
+                }
+            ]
         }
     ]
 }
