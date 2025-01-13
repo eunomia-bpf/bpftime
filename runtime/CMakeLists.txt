@@ -110,6 +110,10 @@ add_custom_target(
 )
 
 message(INFO " Found the following boost include dirs : ${Boost_INCLUDE_DIRS}")
+
+include(../cmake/cuda.cmake)
+find_cuda()
+
 target_include_directories(${PROJECT_NAME}
   PUBLIC
   ${CMAKE_CURRENT_SOURCE_DIR}/../vm/include
@@ -119,14 +123,15 @@ target_include_directories(${PROJECT_NAME}
   ${CMAKE_CURRENT_SOURCE_DIR}/../third_party
   ${SPDLOG_INCLUDE}
   ${Boost_INCLUDE_DIRS}
+  ${CUDA_INCLUDE_PATH}
 )
-
+target_link_directories(${PROJECT_NAME} PUBLIC ${CUDA_LIBRARY_PATH})
 target_link_libraries(${PROJECT_NAME}
   PUBLIC
   bpftime_vm
   spdlog::spdlog
   bpftime_base_attach_impl
-  cuda
+  ${CUDA_LIBS}
 )
 if(${BPFTIME_BUILD_WITH_LIBBPF})
   add_dependencies(${PROJECT_NAME} bpftime_vm FridaGum spdlog::spdlog libbpf bpftime_base_attach_impl)

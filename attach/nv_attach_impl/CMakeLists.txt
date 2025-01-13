@@ -1,3 +1,5 @@
+include(../../cmake/cuda.cmake)
+
 add_library(
     bpftime_nv_attach_impl STATIC
     nv_attach_impl.cpp
@@ -5,10 +7,13 @@ add_library(
 
 add_dependencies(bpftime_nv_attach_impl bpftime_base_attach_impl spdlog::spdlog)
 set(NV_ATTACH_IMPL_INCLUDE ${CMAKE_CURRENT_SOURCE_DIR}/include CACHE STRING "Include path of nv attach impl")
+find_cuda()
 
-target_include_directories(bpftime_nv_attach_impl PRIVATE ${SPDLOG_INCLUDE} ${CMAKE_CURRENT_BINARY_DIR} PUBLIC ${BASE_ATTACH_IMPL_INCLUDE} ${NV_ATTACH_IMPL_INCLUDE})
+target_include_directories(bpftime_nv_attach_impl PRIVATE ${SPDLOG_INCLUDE} ${CMAKE_CURRENT_BINARY_DIR} PUBLIC ${BASE_ATTACH_IMPL_INCLUDE} ${NV_ATTACH_IMPL_INCLUDE} ${CUDA_INCLUDE_PATH})
 
-target_link_libraries(bpftime_nv_attach_impl PUBLIC bpftime_base_attach_impl spdlog::spdlog)
+target_link_directories(bpftime_nv_attach_impl PUBLIC ${CUDA_LIBRARY_PATH})
+
+target_link_libraries(bpftime_nv_attach_impl PUBLIC bpftime_base_attach_impl spdlog::spdlog ${CUDA_LIBS})
 
 set_property(TARGET bpftime_nv_attach_impl PROPERTY CXX_STANDARD 20)
 
