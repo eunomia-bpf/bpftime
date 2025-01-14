@@ -33,12 +33,12 @@ namespace bpftime
 
 static int load_prog_and_helpers(bpftime_prog *prog, const agent_config &config)
 {
-	#if __linux__
+#if __linux__
 	if (config.enable_kernel_helper_group) {
 		bpftime_helper_group::get_kernel_utils_helper_group()
 			.add_helper_group_to_prog(prog);
 	}
-	#endif
+#endif
 	if (config.enable_ufunc_helper_group) {
 		bpftime_helper_group::get_ufunc_helper_group()
 			.add_helper_group_to_prog(prog);
@@ -71,9 +71,10 @@ int bpf_attach_ctx::init_attach_ctx_from_handlers(
 							     config);
 			    err < 0) {
 				SPDLOG_INFO("Failed to instantiate handler {}",
-					     i);
-				// Unable to instantiate handler may not be an error.
-				// We can continue trying to instantiate other handlers.
+					    i);
+				// Unable to instantiate handler may not be an
+				// error. We can continue trying to instantiate
+				// other handlers.
 			}
 		}
 	}
