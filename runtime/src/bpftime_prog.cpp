@@ -64,7 +64,6 @@ compile_ptx_to_elf(const std::string &ptx_code, const char *cpu_target)
 		if (sz != 0) {
 			NVPTXCOMPILER_SAFE_CALL(nvPTXCompilerGetErrorLog(
 				compiler.get(), (char *)error.c_str()));
-			// printf("Error log: %s\n", error.c_str());
 			SPDLOG_ERROR("Unable to compile ptx: {}", error);
 			return {};
 		}
