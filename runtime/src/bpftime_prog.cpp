@@ -6,13 +6,91 @@
 #include "bpftime.hpp"
 #include "bpftime_helper_group.hpp"
 #include "bpftime_internal.h"
+#include "bpftime_vm_compat.hpp"
 #include "ebpf-vm.h"
+#include "nvPTXCompiler.h"
 #include <cstring>
 #include <cstdlib>
 #include <cstdint>
 #include <cstddef>
+#include <iterator>
+#include <memory>
 #include <optional>
 #include <spdlog/spdlog.h>
+
+#define NVPTXCOMPILER_SAFE_CALL(x)                                             \
+	do {                                                                   \
+		nvPTXCompileResult result = x;                                 \
+		if (result != NVPTXCOMPILE_SUCCESS) {                          \
+			SPDLOG_ERROR("error: {} failed with error code {}",    \
+				     #x, (int)result);                         \
+			return {};                                             \
+		}                                                              \
+	} while (0)
+
+static std::optional<std::vector<char> >
+compile_ptx_to_elf(const std::string &ptx_code, const char *cpu_target)
+{
+	unsigned int minor_version, major_version;
+	NVPTXCOMPILER_SAFE_CALL(
+		nvPTXCompilerGetVersion(&major_version, &minor_version));
+	SPDLOG_INFO("ptx compiler version: {}.{}", major_version,
+		    minor_version);
+
+	nvPTXCompilerHandle handle = nullptr;
+	NVPTXCOMPILER_SAFE_CALL(nvPTXCompilerCreate(
+		&handle, (size_t)ptx_code.size(), ptx_code.c_str()));
+	const auto deleter = [](struct nvPTXCompiler *ptr) {
+		if (auto err = nvPTXCompilerDestroy(&ptr);
+		    err != NVPTXCOMPILE_SUCCESS) {
+			SPDLOG_ERROR("Unable to destroy compiler: {}",
+				     (int)err);
+		}
+	};
+	std::unique_ptr<struct nvPTXCompiler, decltype(deleter)> compiler(
+		handle, deleter);
+	std::string opt1 = "--gpu_name=";
+	opt1 += cpu_target;
+	const char *compile_options[] = { opt1.c_str(), "--verbose" };
+
+	if (auto result = nvPTXCompilerCompile(compiler.get(),
+					       std::size(compile_options),
+					       compile_options);
+	    result != NVPTXCOMPILE_SUCCESS) {
+		size_t sz;
+		NVPTXCOMPILER_SAFE_CALL(
+			nvPTXCompilerGetErrorLogSize(compiler.get(), &sz));
+		std::string error(sz, 0);
+		if (sz != 0) {
+			NVPTXCOMPILER_SAFE_CALL(nvPTXCompilerGetErrorLog(
+				compiler.get(), (char *)error.c_str()));
+			// printf("Error log: %s\n", error.c_str());
+			SPDLOG_ERROR("Unable to compile ptx: {}", error);
+			return {};
+		}
+	}
+	size_t elf_size;
+	NVPTXCOMPILER_SAFE_CALL(
+		nvPTXCompilerGetCompiledProgramSize(compiler.get(), &elf_size));
+	std::vector<char> elf_binary(elf_size, 0);
+	NVPTXCOMPILER_SAFE_CALL(nvPTXCompilerGetCompiledProgram(
+		compiler.get(), (void *)elf_binary.data()));
+
+	{
+		size_t info_size;
+
+		NVPTXCOMPILER_SAFE_CALL(nvPTXCompilerGetInfoLogSize(
+			compiler.get(), &info_size));
+		std::string info(info_size, 0);
+		if (info_size != 0) {
+			NVPTXCOMPILER_SAFE_CALL(nvPTXCompilerGetInfoLog(
+				compiler.get(), (char *)info.c_str()));
+			SPDLOG_INFO("Compiler log: {}", info);
+		}
+	}
+
+	return elf_binary;
+}
 
 using namespace std;
 namespace bpftime
@@ -29,8 +107,12 @@ bpftime_prog::bpftime_prog(const struct ebpf_inst *insn, size_t insn_cnt,
 	vm = ebpf_create();
 	// Disable bounds check because we have no implementation yet
 	// ebpf_toggle_bounds_check(vm, false);
-	ebpf_set_lddw_helpers(vm, map_ptr_by_fd, nullptr, map_val, nullptr,
-			      nullptr);
+	if (!is_cuda()) {
+		ebpf_set_lddw_helpers(vm, map_ptr_by_fd, nullptr, map_val,
+				      nullptr, nullptr);
+	} else {
+		SPDLOG_INFO("Do not set lddw helpers due to cuda program");
+	}
 }
 
 bpftime_prog::~bpftime_prog()
@@ -50,19 +132,33 @@ int bpftime_prog::bpftime_prog_load(bool jit)
 		SPDLOG_ERROR("Failed to load insn: {}", errmsg);
 		return res;
 	}
-	if (jit) {
-		// run with jit mode
-		jitted = true;
-		ebpf_jit_fn jit_fn = ebpf_compile(vm, &errmsg);
-		if (jit_fn == NULL) {
-			SPDLOG_ERROR("Failed to compile: {}", errmsg);
-			return -1;
+	if (is_cuda()) {
+		SPDLOG_INFO("Compiling CUDA program");
+		ptx_code = ((struct ebpf_vm *)vm)
+				   ->vm_instance->generate_ptx("sm_60");
+		if (!ptx_code.has_value()) {
+			throw std::runtime_error("Failed to generate ptx code");
 		}
-		fn = jit_fn;
+		cuda_elf_binary = compile_ptx_to_elf(*ptx_code, "sm_60");
+		if (!cuda_elf_binary.has_value()) {
+			throw std::runtime_error("unable to compile ptx code");
+		}
 	} else {
-		// ignore for vm
-		jitted = false;
+		if (jit) {
+			// run with jit mode
+			jitted = true;
+			ebpf_jit_fn jit_fn = ebpf_compile(vm, &errmsg);
+			if (jit_fn == NULL) {
+				SPDLOG_ERROR("Failed to compile: {}", errmsg);
+				return -1;
+			}
+			fn = jit_fn;
+		} else {
+			// ignore for vm
+			jitted = false;
+		}
 	}
+
 	return 0;
 }
 

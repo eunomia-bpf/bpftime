@@ -258,3 +258,6 @@ if (${TEST_LCOV})
   target_compile_options(${PROJECT_NAME} PUBLIC -fprofile-arcs -ftest-coverage -fprofile-update=atomic)
   target_link_options(${PROJECT_NAME} PUBLIC  -fprofile-arcs)
 endif()
+
+add_dependencies(${PROJECT_NAME} bpftime_vm_compat)
+target_link_libraries(${PROJECT_NAME} PUBLIC bpftime_vm_compat)
