@@ -6,9 +6,14 @@
 #include "attach_private_data.hpp"
 #include "base_attach_impl.hpp"
 #include "bpftime_shm.hpp"
+#include "cuda.h"
 #include "handler/link_handler.hpp"
 #include "handler/prog_handler.hpp"
+#include "nvPTXCompiler.h"
+#include <cstring>
+#include <stdexcept>
 #include <string>
+#include <thread>
 #include <unistd.h>
 #include <cerrno>
 #include <cstdint>
@@ -27,6 +32,17 @@
 #include <utility>
 #include <variant>
 #include <sys/resource.h>
+
+#define NV_SAFE_CALL(x, error_message)                                         \
+	do {                                                                   \
+		CUresult result = x;                                           \
+		if (result != CUDA_SUCCESS) {                                  \
+			SPDLOG_ERROR("error: {} failed with error code {}",    \
+				     #x, (int)result);                         \
+			throw std::runtime_error(error_message);               \
+		}                                                              \
+	} while (0)
+
 extern "C" uint64_t bpftime_set_retval(uint64_t value);
 namespace bpftime
 {
@@ -84,6 +100,7 @@ int bpf_attach_ctx::init_attach_ctx_from_handlers(
 bpf_attach_ctx::~bpf_attach_ctx()
 {
 	SPDLOG_DEBUG("Destructor: bpf_attach_ctx");
+	this->cuda_watcher_should_stop->store(true);
 }
 
 // create a probe context
@@ -91,6 +108,20 @@ bpf_attach_ctx::bpf_attach_ctx(void)
 
 {
 	current_id = CURRENT_ID_OFFSET;
+	SPDLOG_INFO("Initializing CUDA shared memory");
+	cuda_shared_mem = std::make_unique<cuda::SharedMem>();
+	memset(cuda_shared_mem.get(), 0, sizeof(*cuda_shared_mem));
+	NV_SAFE_CALL(cuMemHostRegister(cuda_shared_mem.get(),
+				       sizeof(cuda::SharedMem),
+				       CU_MEMHOSTREGISTER_DEVICEMAP),
+		     "Unable to register shared memory");
+	CUdeviceptr memDevPtr;
+	NV_SAFE_CALL(cuMemHostGetDevicePointer(&memDevPtr,
+					       cuda_shared_mem.get(), 0),
+		     "Unable to get device pointer");
+	SPDLOG_INFO("CUDA shared memory addr: {}",
+		    (uintptr_t)cuda_shared_mem.get());
+	cuda_shared_mem_device_pointer = memDevPtr;
 }
 
 int bpf_attach_ctx::instantiate_handler_at(const handler_manager *manager,
@@ -354,5 +385,35 @@ int bpf_attach_ctx::destroy_all_attach_links()
 		}
 	}
 	return 0;
+}
+
+void bpf_attach_ctx::start_cuda_watcher_thread()
+{
+	std::thread handle([=, this]() {
+		SPDLOG_INFO("CUDA watcher thread started");
+		while (!cuda_watcher_should_stop->load()) {
+			if (cuda_shared_mem->flag1 == 1) {
+				cuda_shared_mem->flag1 = 0;
+				auto req_id = cuda_shared_mem->request_id;
+
+				SPDLOG_DEBUG("CUDA Received call request id {}",
+					     req_id);
+				if (req_id == 1) {
+				} else if (req_id == 2) {
+				} else if (req_id == 3) {
+				} else {
+					SPDLOG_WARN("Unknown request id {}",
+						    req_id);
+				}
+				cuda_shared_mem->flag2 = 1;
+				std::atomic_thread_fence(
+					std::memory_order_seq_cst);
+			}
+			std::this_thread::sleep_for(
+				std::chrono::milliseconds(10));
+		}
+		SPDLOG_INFO("Exiting CUDA watcher thread");
+	});
+	handle.detach();
 }
 } // namespace bpftime

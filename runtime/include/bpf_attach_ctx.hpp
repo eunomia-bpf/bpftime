@@ -8,6 +8,7 @@
 #include "handler/link_handler.hpp"
 #include "handler/perf_event_handler.hpp"
 #include "handler/prog_handler.hpp"
+#include <atomic>
 #include <functional>
 #include <initializer_list>
 #include <map>
@@ -21,6 +22,51 @@ typedef struct _GumInvocationListener GumInvocationListener;
 
 namespace bpftime
 {
+
+namespace cuda
+{
+
+enum class MapOperation { LOOKUP = 1, UPDATE = 2, DELETE = 3, NEXT_KEY = 4 };
+
+union CallRequest {
+	struct {
+		char key[256];
+	} map_lookup;
+	struct {
+		char key[256];
+		char value[256];
+		uint64_t flags;
+	} map_update;
+	struct {
+		char key[256];
+	} map_delete;
+};
+
+union CallResponse {
+	struct {
+		int result;
+	} map_update, map_delete;
+	struct {
+		const void *value;
+	} map_lookup;
+};
+/**
+ * 我们在这块结构体里放两个标志位和一个简单的参数字段
+ * - flag1: device -> host 的信号，“我有请求要处理”
+ * - flag2: host   -> device 的信号，“我处理完了”
+ * - paramA: 设备端写入的参数，让主机端使用
+ */
+struct SharedMem {
+	int flag1;
+	int flag2;
+	int occupy_flag;
+	int request_id;
+	int map_id;
+	CallRequest req;
+	CallResponse resp;
+};
+
+} // namespace cuda
 class base_attach_manager;
 
 class handler_manager;
@@ -92,6 +138,17 @@ class bpf_attach_ctx {
 					    const bpf_link_handler &handler);
 	int instantiate_perf_event_handler_at(
 		int id, const bpf_perf_event_handler &perf_handler);
+	// Start host thread for handling map requests from CUDA
+	void start_cuda_watcher_thread();
+
+	// Indicate whether cuda watcher thread should stop
+	std::shared_ptr<std::atomic<bool> > cuda_watcher_should_stop =
+		std::make_shared<std::atomic<bool> >(false);
+
+	// Shared memory region for CUDA
+	std::unique_ptr<cuda::SharedMem> cuda_shared_mem;
+	// Mapped device pointer
+	std::optional<uintptr_t> cuda_shared_mem_device_pointer;
 };
 
 } // namespace bpftime
