@@ -31,6 +31,8 @@ set(TEST_SOURCES
     attach_with_ebpf/test_attach_replace.cpp
 
     tailcall/test_user_to_kernel_tailcall.cpp
+
+    cuda/test_cuda_compile.cpp
 )
 
 option(TEST_LCOV "option for lcov" OFF)

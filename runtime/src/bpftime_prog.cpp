@@ -49,7 +49,7 @@ compile_ptx_to_elf(const std::string &ptx_code, const char *cpu_target)
 	};
 	std::unique_ptr<struct nvPTXCompiler, decltype(deleter)> compiler(
 		handle, deleter);
-	std::string opt1 = "--gpu_name=";
+	std::string opt1 = "--gpu-name=";
 	opt1 += cpu_target;
 	const char *compile_options[] = { opt1.c_str(), "--verbose" };
 
