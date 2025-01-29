@@ -5,6 +5,7 @@
 #include "base_attach_impl.hpp"
 #include "bpftime_config.hpp"
 #include "bpftime_helper_group.hpp"
+#include "cuda.h"
 #include "handler/link_handler.hpp"
 #include "handler/perf_event_handler.hpp"
 #include "handler/prog_handler.hpp"
@@ -13,6 +14,7 @@
 #include <initializer_list>
 #include <map>
 #include <memory>
+#include <optional>
 #include <set>
 #include <string_view>
 #include <utility>
@@ -26,7 +28,7 @@ namespace bpftime
 namespace cuda
 {
 
-enum class MapOperation { LOOKUP = 1, UPDATE = 2, DELETE = 3, NEXT_KEY = 4 };
+enum class MapOperation { LOOKUP = 1, UPDATE = 2, DELETE = 3 };
 
 union CallRequest {
 	struct {
@@ -65,6 +67,41 @@ struct SharedMem {
 	CallRequest req;
 	CallResponse resp;
 };
+using cuda_context_type = std::remove_pointer<CUcontext>::type;
+using cuda_module_type = std::remove_pointer<CUmodule>::type;
+
+void cuda_context_destroyer(CUcontext ptr);
+void cuda_module_destroyer(CUmodule ptr);
+struct CUDAContext {
+	// Indicate whether cuda watcher thread should stop
+	std::shared_ptr<std::atomic<bool> > cuda_watcher_should_stop =
+		std::make_shared<std::atomic<bool> >(false);
+
+	// Shared memory region for CUDA
+	std::unique_ptr<cuda::SharedMem> cuda_shared_mem;
+	// Mapped device pointer
+	uintptr_t cuda_shared_mem_device_pointer;
+	// CUDA context
+	std::unique_ptr<cuda_context_type, decltype(&cuda_context_destroyer)>
+		ctx_container;
+	// Loaded module
+	std::optional<std::unique_ptr<cuda_module_type,
+				      decltype(&cuda_module_destroyer)> >
+		module_container;
+	CUDAContext(std::unique_ptr<cuda::SharedMem> &&mem, CUcontext raw_ctx)
+		: cuda_shared_mem(std::move(mem)),
+		  cuda_shared_mem_device_pointer(
+			  (uintptr_t)cuda_shared_mem.get()),
+		  ctx_container(raw_ctx, cuda_context_destroyer)
+	{
+	}
+	void set_module(CUmodule raw_ptr)
+	{
+		module_container.emplace(raw_ptr, cuda_module_destroyer);
+	}
+};
+
+std::optional<cuda::CUDAContext> create_cuda_context();
 
 } // namespace cuda
 class base_attach_manager;
@@ -140,15 +177,8 @@ class bpf_attach_ctx {
 		int id, const bpf_perf_event_handler &perf_handler);
 	// Start host thread for handling map requests from CUDA
 	void start_cuda_watcher_thread();
-
-	// Indicate whether cuda watcher thread should stop
-	std::shared_ptr<std::atomic<bool> > cuda_watcher_should_stop =
-		std::make_shared<std::atomic<bool> >(false);
-
-	// Shared memory region for CUDA
-	std::unique_ptr<cuda::SharedMem> cuda_shared_mem;
-	// Mapped device pointer
-	std::optional<uintptr_t> cuda_shared_mem_device_pointer;
+	int start_cuda_program(int id);
+	cuda::CUDAContext cuda_ctx;
 };
 
 } // namespace bpftime

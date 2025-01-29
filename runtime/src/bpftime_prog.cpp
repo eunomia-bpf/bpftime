@@ -17,6 +17,7 @@
 #include <memory>
 #include <optional>
 #include <spdlog/spdlog.h>
+#include <stdexcept>
 
 #define NVPTXCOMPILER_SAFE_CALL(x)                                             \
 	do {                                                                   \
@@ -174,6 +175,9 @@ int bpftime_prog::bpftime_prog_unload()
 int bpftime_prog::bpftime_prog_exec(void *memory, size_t memory_size,
 				    uint64_t *return_val) const
 {
+	if (is_cuda()) {
+		throw std::runtime_error("Unable to execute CUDA program");
+	}
 	uint64_t val = 0;
 	int res = 0;
 	// set share memory read and write able

@@ -13,6 +13,7 @@
 #include <bpftime_shm_internal.hpp>
 #include <cerrno>
 #include <cstdio>
+#include <memory>
 #if __linux__
 #include <sys/epoll.h>
 #include <cuda_runtime.h>
@@ -553,7 +554,7 @@ bpftime_shm::bpftime_shm(const char *shm_name, shm_open_type type)
 	: open_type(type)
 {
 	// Get the config from env because the shared memory is not initialized
-	size_t memory_size = get_agent_config_from_env().shm_memory_size;
+	size_t memory_size = construct_agent_config_from_env().shm_memory_size;
 	if (type == shm_open_type::SHM_OPEN_ONLY) {
 		SPDLOG_DEBUG("start: bpftime_shm for client setup");
 		// open the shm
@@ -600,7 +601,7 @@ bpftime_shm::bpftime_shm(const char *shm_name, shm_open_type type)
 			"done: bpftime_shm for server setup: syscall_pid_set");
 
 		agent_config = segment.find_or_construct<struct agent_config>(
-			bpftime::DEFAULT_AGENT_CONFIG_NAME)();
+			bpftime::DEFAULT_AGENT_CONFIG_NAME)(segment);
 
 		injected_pids = segment.find_or_construct<alive_agent_pids>(
 			bpftime::DEFAULT_ALIVE_AGENT_PIDS_NAME)(
@@ -635,7 +636,7 @@ bpftime_shm::bpftime_shm(const char *shm_name, shm_open_type type)
 			"done: bpftime_shm for server setup: syscall_pid_set");
 
 		agent_config = segment.construct<struct agent_config>(
-			bpftime::DEFAULT_AGENT_CONFIG_NAME)();
+			bpftime::DEFAULT_AGENT_CONFIG_NAME)(segment);
 		SPDLOG_DEBUG(
 			"done: bpftime_shm for server setup: agent_config");
 
@@ -651,6 +652,7 @@ bpftime_shm::bpftime_shm(const char *shm_name, shm_open_type type)
 			"NOT creating global shm. This is only for testing purpose.");
 		return;
 	}
+	local_agent_config.emplace(segment);
 
 #if BPFTIME_ENABLE_MPK
 	// init mpk key
@@ -727,24 +729,26 @@ bool bpftime_shm::is_software_perf_event_handler_fd(int fd) const
 }
 
 // local agent config can be used for test or local process
-static agent_config local_agent_config = {};
 
-void bpftime_shm::set_agent_config(const struct agent_config &config)
+void bpftime_shm::set_agent_config(struct agent_config &&config)
 {
 	if (agent_config == nullptr) {
 		SPDLOG_INFO(
 			"global agent_config is nullptr, set current process config");
-		local_agent_config = config;
+		local_agent_config.emplace(std::move(config));
 		return;
 	}
-	*agent_config = config;
+
+	agent_config->~agent_config();
+	config.change_to_shm_object(segment);
+	std::construct_at(agent_config, std::move(config));
 }
 
 const struct agent_config &bpftime_shm::get_agent_config()
 {
 	if (agent_config == nullptr) {
-		SPDLOG_DEBUG("use current process config");
-		return local_agent_config;
+		SPDLOG_INFO("use current process config");
+		return *local_agent_config;
 	}
 	return *agent_config;
 }
@@ -754,9 +758,9 @@ const bpftime::agent_config &bpftime_get_agent_config()
 	return shm_holder.global_shared_memory.get_agent_config();
 }
 
-void bpftime_set_agent_config(const bpftime::agent_config &cfg)
+void bpftime_set_agent_config(struct bpftime::agent_config &&cfg)
 {
-	shm_holder.global_shared_memory.set_agent_config(cfg);
+	shm_holder.global_shared_memory.set_agent_config(std::move(cfg));
 }
 
 std::optional<void *>
@@ -786,39 +790,44 @@ int bpftime_shm::add_custom_perf_event(int type, const char *attach_argument)
 
 bool bpftime_shm::register_cuda_host_memory()
 {
-    if (open_type == shm_open_type::SHM_NO_CREATE) {
-        SPDLOG_WARN("No shared memory was created (SHM_NO_CREATE), skipping CUDA registration.");
-        return false;
-    }
+	if (open_type == shm_open_type::SHM_NO_CREATE) {
+		SPDLOG_WARN(
+			"No shared memory was created (SHM_NO_CREATE), skipping CUDA registration.");
+		return false;
+	}
 
-    // 1. Get the base address and size of the Boost.Interprocess segment
-    void *base_addr = segment.get_address();        // Starting address
-    std::size_t seg_size = segment.get_size();      // Total bytes in segment
+	// 1. Get the base address and size of the Boost.Interprocess segment
+	void *base_addr = segment.get_address(); // Starting address
+	std::size_t seg_size = segment.get_size(); // Total bytes in segment
 
-    // 2. Register with CUDA
-    cudaError_t err = cudaHostRegister(base_addr, seg_size, cudaHostRegisterDefault);
-    if (err != cudaSuccess) {
-        SPDLOG_ERROR("cudaHostRegister() failed: {}", cudaGetErrorString(err));
-        return false;
-    }
+	// 2. Register with CUDA
+	cudaError_t err =
+		cudaHostRegister(base_addr, seg_size, cudaHostRegisterDefault);
+	if (err != cudaSuccess) {
+		SPDLOG_ERROR("cudaHostRegister() failed: {}",
+			     cudaGetErrorString(err));
+		return false;
+	}
 
-    SPDLOG_INFO("Registered shared memory with CUDA: addr={} size={}", base_addr, seg_size);
-    return true;
+	SPDLOG_INFO("Registered shared memory with CUDA: addr={} size={}",
+		    base_addr, seg_size);
+	return true;
 }
 
 bpftime::bpftime_shm::~bpftime_shm()
 {
 	if (open_type == shm_open_type::SHM_NO_CREATE) {
-        return; // Nothing to do
-    }
+		return; // Nothing to do
+	}
 
-    void* base_addr = segment.get_address();
-    cudaError_t err = cudaHostUnregister(base_addr);
-    if (err != cudaSuccess) {
-        SPDLOG_ERROR("cudaHostUnregister() failed: {}", cudaGetErrorString(err));
-        return;
-    }
-    SPDLOG_INFO("bpftime_shm: Unregistered host memory from CUDA");
+	void *base_addr = segment.get_address();
+	cudaError_t err = cudaHostUnregister(base_addr);
+	if (err != cudaSuccess) {
+		SPDLOG_ERROR("cudaHostUnregister() failed: {}",
+			     cudaGetErrorString(err));
+		return;
+	}
+	SPDLOG_INFO("bpftime_shm: Unregistered host memory from CUDA");
 }
 
 void bpftime_shm::add_pid_into_alive_agent_set(int pid)

@@ -44,12 +44,16 @@ class bpftime_prog {
 		return vm;
 	}
 	int load_aot_object(const std::vector<uint8_t> &buf);
-
-    private:
 	bool is_cuda() const
 	{
 		return name.ends_with("__cuda");
 	}
+	const void *get_cuda_elf_binary() const
+	{
+		return cuda_elf_binary->data();
+	}
+
+    private:
 	int bpftime_prog_set_insn(struct ebpf_inst *insn, size_t insn_cnt);
 	std::string name;
 	// vm at the first element
@@ -71,7 +75,7 @@ class bpftime_prog {
 	// ptx code
 	std::optional<std::string> ptx_code;
 	// cuda binary
-	std::optional<std::vector<char>> cuda_elf_binary;
+	std::optional<std::vector<char> > cuda_elf_binary;
 };
 
 } // namespace bpftime

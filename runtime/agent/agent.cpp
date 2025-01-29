@@ -9,6 +9,7 @@
 #include "bpftime_logger.hpp"
 #include <chrono>
 #include <csignal>
+#include <cstdio>
 #include <exception>
 #include <fcntl.h>
 #include <memory>
@@ -105,8 +106,6 @@ static void sig_handler_sigusr1(int sig)
 
 extern "C" void bpftime_agent_main(const gchar *data, gboolean *stay_resident)
 {
-	auto runtime_config = bpftime_get_agent_config();
-	bpftime_set_logger(runtime_config.logger_output_path);
 	SPDLOG_DEBUG("Entered bpftime_agent_main");
 	SPDLOG_DEBUG("Registering signal handler");
 	// We use SIGUSR1 to indicate the detaching
@@ -119,6 +118,9 @@ extern "C" void bpftime_agent_main(const gchar *data, gboolean *stay_resident)
 			     ex.what());
 		return;
 	}
+	auto &runtime_config = bpftime_get_agent_config();
+	bpftime_set_logger(
+		std::string(runtime_config.get_logger_output_path()));
 	// Only agents injected through frida could be detached
 	if (injected_with_frida) {
 		// Record the pid
@@ -126,7 +128,7 @@ extern "C" void bpftime_agent_main(const gchar *data, gboolean *stay_resident)
 			getpid());
 	}
 	ctx_holder.init();
-	#if __linux__ && BPFTIME_BUILD_WITH_LIBBPF
+#if __linux__ && BPFTIME_BUILD_WITH_LIBBPF
 	// Register syscall trace impl
 	auto syscall_trace_impl = std::make_unique<syscall_trace_attach_impl>();
 	syscall_trace_impl->set_original_syscall_function(orig_hooker);
@@ -144,24 +146,25 @@ extern "C" void bpftime_agent_main(const gchar *data, gboolean *stay_resident)
 			}
 			return priv_data;
 		});
-	#endif
-	#if __linux__
+#endif
+#if __linux__
 	// Register nv attach impl
 	auto nv_attacher = std::make_unique<nv_attach_impl>();
 	ctx_holder.ctx.register_attach_impl(
-		{ ATTACH_NV }, 
-		std::move(nv_attacher),
+		{ ATTACH_NV }, std::move(nv_attacher),
 		[](const std::string_view &sv, int &err) {
 			// Build the attach_private_data for NV from a string
-			auto priv_data = std::make_unique<nv_attach_private_data>();
-			if (int rc = priv_data->initialize_from_string(sv); rc < 0) {
+			auto priv_data =
+				std::make_unique<nv_attach_private_data>();
+			if (int rc = priv_data->initialize_from_string(sv);
+			    rc < 0) {
 				err = rc;
 				return std::unique_ptr<attach_private_data>();
 			}
-			return std::unique_ptr<attach_private_data>(std::move(priv_data));
-		}
-	);
-	#endif
+			return std::unique_ptr<attach_private_data>(
+				std::move(priv_data));
+		});
+#endif
 	// Register uprobe attach impl
 	ctx_holder.ctx.register_attach_impl(
 		{ ATTACH_UPROBE, ATTACH_URETPROBE, ATTACH_UPROBE_OVERRIDE,
@@ -188,11 +191,13 @@ extern "C" void bpftime_agent_main(const gchar *data, gboolean *stay_resident)
 		res = ctx_holder.ctx.init_attach_ctx_from_handlers(
 			runtime_config);
 		if (res != 0) {
-			SPDLOG_INFO("Failed to initialize attach context, exiting..");
+			SPDLOG_INFO(
+				"Failed to initialize attach context, exiting..");
 			return;
 		}
 	} catch (std::exception &ex) {
-		SPDLOG_ERROR("Unable to instantiate handlers with error: {}", ex.what());
+		SPDLOG_ERROR("Unable to instantiate handlers with error: {}",
+			     ex.what());
 		return;
 	}
 	SPDLOG_INFO("Attach successfully");

@@ -14,6 +14,7 @@
 #include <stdexcept>
 #include <string>
 #include <thread>
+#include <type_traits>
 #include <unistd.h>
 #include <cerrno>
 #include <cstdint>
@@ -40,6 +41,17 @@
 			SPDLOG_ERROR("error: {} failed with error code {}",    \
 				     #x, (int)result);                         \
 			throw std::runtime_error(error_message);               \
+		}                                                              \
+	} while (0)
+
+#define NV_SAFE_CALL_2(x, error_message)                                       \
+	do {                                                                   \
+		CUresult result = x;                                           \
+		if (result != CUDA_SUCCESS) {                                  \
+			SPDLOG_ERROR(                                          \
+				"error: {} failed with error code {}: {}", #x, \
+				(int)result, error_message);                   \
+			return -1;                                             \
 		}                                                              \
 	} while (0)
 
@@ -100,28 +112,14 @@ int bpf_attach_ctx::init_attach_ctx_from_handlers(
 bpf_attach_ctx::~bpf_attach_ctx()
 {
 	SPDLOG_DEBUG("Destructor: bpf_attach_ctx");
-	this->cuda_watcher_should_stop->store(true);
+
+	cuda_ctx.cuda_watcher_should_stop->store(true);
 }
 
 // create a probe context
-bpf_attach_ctx::bpf_attach_ctx(void)
-
+bpf_attach_ctx::bpf_attach_ctx(void) : cuda_ctx(*cuda::create_cuda_context())
 {
 	current_id = CURRENT_ID_OFFSET;
-	SPDLOG_INFO("Initializing CUDA shared memory");
-	cuda_shared_mem = std::make_unique<cuda::SharedMem>();
-	memset(cuda_shared_mem.get(), 0, sizeof(*cuda_shared_mem));
-	NV_SAFE_CALL(cuMemHostRegister(cuda_shared_mem.get(),
-				       sizeof(cuda::SharedMem),
-				       CU_MEMHOSTREGISTER_DEVICEMAP),
-		     "Unable to register shared memory");
-	CUdeviceptr memDevPtr;
-	NV_SAFE_CALL(cuMemHostGetDevicePointer(&memDevPtr,
-					       cuda_shared_mem.get(), 0),
-		     "Unable to get device pointer");
-	SPDLOG_INFO("CUDA shared memory addr: {}",
-		    (uintptr_t)cuda_shared_mem.get());
-	cuda_shared_mem_device_pointer = memDevPtr;
 }
 
 int bpf_attach_ctx::instantiate_handler_at(const handler_manager *manager,
@@ -391,21 +389,42 @@ void bpf_attach_ctx::start_cuda_watcher_thread()
 {
 	std::thread handle([=, this]() {
 		SPDLOG_INFO("CUDA watcher thread started");
-		while (!cuda_watcher_should_stop->load()) {
-			if (cuda_shared_mem->flag1 == 1) {
-				cuda_shared_mem->flag1 = 0;
-				auto req_id = cuda_shared_mem->request_id;
+		auto &ctx = cuda_ctx;
+
+		while (!ctx.cuda_watcher_should_stop->load()) {
+			if (ctx.cuda_shared_mem->flag1 == 1) {
+				ctx.cuda_shared_mem->flag1 = 0;
+				auto req_id = ctx.cuda_shared_mem->request_id;
 
 				SPDLOG_DEBUG("CUDA Received call request id {}",
 					     req_id);
-				if (req_id == 1) {
-				} else if (req_id == 2) {
-				} else if (req_id == 3) {
+				if (req_id == (int)cuda::MapOperation::LOOKUP) {
+					const auto &req =
+						ctx.cuda_shared_mem->req
+							.map_lookup;
+					auto &resp = ctx.cuda_shared_mem->resp
+							     .map_lookup;
+
+				} else if (req_id ==
+					   (int)cuda::MapOperation::UPDATE) {
+					const auto &req =
+						ctx.cuda_shared_mem->req
+							.map_update;
+					auto &resp = ctx.cuda_shared_mem->resp
+							     .map_update;
+
+				} else if (req_id ==
+					   (int)cuda::MapOperation::DELETE) {
+					const auto &req =
+						ctx.cuda_shared_mem->req
+							.map_delete;
+					auto &resp = ctx.cuda_shared_mem->resp
+							     .map_delete;
 				} else {
 					SPDLOG_WARN("Unknown request id {}",
 						    req_id);
 				}
-				cuda_shared_mem->flag2 = 1;
+				ctx.cuda_shared_mem->flag2 = 1;
 				std::atomic_thread_fence(
 					std::memory_order_seq_cst);
 			}
@@ -416,4 +435,86 @@ void bpf_attach_ctx::start_cuda_watcher_thread()
 	});
 	handle.detach();
 }
+
+int bpf_attach_ctx::start_cuda_program(int id)
+{
+	SPDLOG_DEBUG("Try starting CUDA program at {}", id);
+	auto itr = instantiated_progs.find(id);
+	if (itr == instantiated_progs.end()) {
+		SPDLOG_ERROR("Invalid cuda program id: {}", id);
+		return -1;
+	}
+	auto prog = *itr->second;
+	if (!prog.is_cuda()) {
+		SPDLOG_ERROR("Program id {} is not a CUDA program", id);
+		return -1;
+	}
+
+	CUmodule raw_module;
+	NV_SAFE_CALL_2(cuModuleLoadDataEx(&raw_module,
+					  prog.get_cuda_elf_binary(), 0, 0, 0),
+		       "Load CUDA module");
+	cuda_ctx.set_module(raw_module);
+
+	{
+		CUdeviceptr constDataPtr;
+		size_t constDataLen;
+
+		NV_SAFE_CALL_2(cuModuleGetGlobal(&constDataPtr, &constDataLen,
+						 raw_module, "constData"),
+			       "Unable to find constData section");
+		SPDLOG_INFO(
+			"CUDA binary constData device pointer: {}, constData size: {}",
+			(uintptr_t)constDataPtr, constDataLen);
+		uintptr_t shared_mem_dev_ptr =
+			cuda_ctx.cuda_shared_mem_device_pointer;
+		NV_SAFE_CALL_2(cuMemcpyHtoD(constDataPtr, &shared_mem_dev_ptr,
+					    sizeof(shared_mem_dev_ptr)),
+			       "Copy device pointer value to device");
+		SPDLOG_INFO("CUDA: constData set done");
+	}
+	CUfunction kernel;
+	NV_SAFE_CALL_2(cuModuleGetFunction(&kernel, raw_module, "bpf_main"),
+		       "get CUDA kernel function");
+
+	return 0;
+}
+
+namespace cuda
+{
+void cuda_context_destroyer(CUcontext ptr)
+{
+	NV_SAFE_CALL(cuCtxDestroy(ptr), "destroy cuda context");
+}
+void cuda_module_destroyer(CUmodule ptr)
+{
+	NV_SAFE_CALL(cuModuleUnload(ptr), "Unload CUDA module");
+}
+
+std::optional<cuda::CUDAContext> create_cuda_context()
+{
+	NV_SAFE_CALL(cuInit(0), "Unable to initialize CUDA");
+	SPDLOG_INFO("Initializing CUDA shared memory");
+	auto cuda_shared_mem = std::make_unique<cuda::SharedMem>();
+	memset(cuda_shared_mem.get(), 0, sizeof(*cuda_shared_mem));
+	NV_SAFE_CALL(cuMemHostRegister(cuda_shared_mem.get(),
+				       sizeof(cuda::SharedMem),
+				       CU_MEMHOSTREGISTER_DEVICEMAP),
+		     "Unable to register shared memory");
+	CUdeviceptr memDevPtr;
+	NV_SAFE_CALL(cuMemHostGetDevicePointer(&memDevPtr,
+					       cuda_shared_mem.get(), 0),
+		     "Unable to get device pointer");
+	SPDLOG_INFO("CUDA shared memory addr: {}",
+		    (uintptr_t)cuda_shared_mem.get());
+	CUdevice device;
+	NV_SAFE_CALL(cuDeviceGet(&device, 0), "Unable to get CUDA device");
+
+	CUcontext raw_ctx;
+	NV_SAFE_CALL(cuCtxCreate(&raw_ctx, 0, device), "Create CUDA context");
+	auto cuda_ctx = cuda::CUDAContext(std::move(cuda_shared_mem), raw_ctx);
+	SPDLOG_INFO("CUDA context initialized");
+	return cuda_ctx;
+}
+} // namespace cuda
 } // namespace bpftime
