@@ -95,13 +95,16 @@ struct CUDAContext {
 		  ctx_container(raw_ctx, cuda_context_destroyer)
 	{
 	}
+	CUDAContext(CUDAContext &&) = default;
+
+	virtual ~CUDAContext();
 	void set_module(CUmodule raw_ptr)
 	{
 		module_container.emplace(raw_ptr, cuda_module_destroyer);
 	}
 };
 
-std::optional<cuda::CUDAContext> create_cuda_context();
+std::optional<cuda::CUDAContext> &&create_cuda_context();
 
 } // namespace cuda
 class base_attach_manager;

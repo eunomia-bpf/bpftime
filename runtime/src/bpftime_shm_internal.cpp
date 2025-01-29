@@ -790,9 +790,8 @@ int bpftime_shm::add_custom_perf_event(int type, const char *attach_argument)
 
 bool bpftime_shm::register_cuda_host_memory()
 {
-	if (open_type == shm_open_type::SHM_NO_CREATE) {
-		SPDLOG_WARN(
-			"No shared memory was created (SHM_NO_CREATE), skipping CUDA registration.");
+	if (open_type != shm_open_type::SHM_OPEN_ONLY) {
+		SPDLOG_WARN("Only agent side can register cuda host memory");
 		return false;
 	}
 
