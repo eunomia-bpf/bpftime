@@ -96,6 +96,9 @@ struct CUDAContext {
 	{
 	}
 	CUDAContext(CUDAContext &&) = default;
+	CUDAContext &operator=(CUDAContext &&) = default;
+	CUDAContext(const CUDAContext &) = delete;
+	CUDAContext &operator=(const CUDAContext &) = delete;
 
 	virtual ~CUDAContext();
 	void set_module(CUmodule raw_ptr)
@@ -104,7 +107,7 @@ struct CUDAContext {
 	}
 };
 
-std::optional<cuda::CUDAContext> &&create_cuda_context();
+std::optional<std::unique_ptr<cuda::CUDAContext> > create_cuda_context();
 
 } // namespace cuda
 class base_attach_manager;
@@ -181,7 +184,7 @@ class bpf_attach_ctx {
 	// Start host thread for handling map requests from CUDA
 	void start_cuda_watcher_thread();
 	int start_cuda_program(int id);
-	cuda::CUDAContext cuda_ctx;
+	std::unique_ptr<cuda::CUDAContext> cuda_ctx;
 };
 
 } // namespace bpftime
