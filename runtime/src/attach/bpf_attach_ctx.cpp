@@ -121,6 +121,7 @@ bpf_attach_ctx::bpf_attach_ctx() : cuda_ctx(*cuda::create_cuda_context())
 {
 	current_id = CURRENT_ID_OFFSET;
 	SPDLOG_INFO("bpf_attach_ctx constructed");
+	start_cuda_watcher_thread();
 }
 
 int bpf_attach_ctx::instantiate_handler_at(const handler_manager *manager,
@@ -257,6 +258,18 @@ int bpf_attach_ctx::instantiate_bpf_link_handler_at(
 		return -ENOTSUP;
 	}
 	auto prog = instantiated_progs.at(handler.prog_id).get();
+	if (prog->is_cuda()) {
+		SPDLOG_INFO("Handling link to CUDA program: {}", id);
+		if (int err = start_cuda_program(handler.prog_id); err < 0) {
+			SPDLOG_ERROR(
+				"Unable to start CUDA program for link id {}, prog id {}",
+				id, handler.prog_id);
+			return err;
+		}
+		instantiated_attach_links[id] = std::make_pair(0, nullptr);
+
+		return 0;
+	}
 	auto cookie = handler.attach_cookie;
 	int attach_id = attach_impl->create_attach_with_ebpf_callback(
 		[=](void *mem, size_t mem_size, uint64_t *ret) -> int {
@@ -355,6 +368,11 @@ int bpf_attach_ctx::destroy_instantiated_attach_link(int link_id)
 	if (auto itr = instantiated_attach_links.find(link_id);
 	    itr != instantiated_attach_links.end()) {
 		auto [attach_id, impl] = itr->second;
+		if (impl == nullptr) {
+			SPDLOG_INFO("Detach: Ignore attach with empty impl: {}",
+				    link_id);
+			return 0;
+		}
 		if (int err = impl->detach_by_id(attach_id); err < 0) {
 			SPDLOG_ERROR(
 				"Failed to detach attach link id {}, attach-specified id {}: {}",
@@ -388,17 +406,21 @@ int bpf_attach_ctx::destroy_all_attach_links()
 
 void bpf_attach_ctx::start_cuda_watcher_thread()
 {
+	auto flag = this->cuda_ctx->cuda_watcher_should_stop;
 	std::thread handle([=, this]() {
 		SPDLOG_INFO("CUDA watcher thread started");
 		auto &ctx = cuda_ctx;
 
-		while (!ctx->cuda_watcher_should_stop->load()) {
+		while (!flag->load()) {
 			if (ctx->cuda_shared_mem->flag1 == 1) {
 				ctx->cuda_shared_mem->flag1 = 0;
 				auto req_id = ctx->cuda_shared_mem->request_id;
-				SPDLOG_DEBUG("CUDA Received call request id {}",
-					     req_id);
-				auto map_fd = ctx->cuda_shared_mem->map_id;
+
+				auto map_ptr = ctx->cuda_shared_mem->map_id;
+				auto map_fd = map_ptr >> 32;
+				SPDLOG_DEBUG(
+					"CUDA Received call request id {}, map_ptr = {}, map_fd = {}",
+					req_id, map_ptr, map_fd);
 				if (req_id == (int)cuda::MapOperation::LOOKUP) {
 					const auto &req =
 						ctx->cuda_shared_mem->req
@@ -501,6 +523,19 @@ int bpf_attach_ctx::start_cuda_program(int id)
 				      0, nullptr, // shared mem and stream
 				      args, 0),
 		       "Unable to start kernel"); // arguments
+	SPDLOG_INFO("CUDA program started..");
+	std::thread handle([=, this]() {
+		NV_SAFE_CALL(
+			cuCtxSetCurrent(this->cuda_ctx->ctx_container.get()),
+			"Unable to set CUDA context");
+		if (auto err = cuCtxSynchronize(); err != CUDA_SUCCESS) {
+			SPDLOG_ERROR("Unable to synchronize CUDA context: {}",
+				     (int)err);
+		} else {
+			SPDLOG_INFO("CUDA kernel exited..");
+		}
+	});
+	handle.detach();
 	return 0;
 }
 

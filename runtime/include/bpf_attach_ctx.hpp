@@ -63,7 +63,7 @@ struct SharedMem {
 	int flag2;
 	int occupy_flag;
 	int request_id;
-	int map_id;
+	long map_id;
 	CallRequest req;
 	CallResponse resp;
 };

@@ -111,7 +111,9 @@ bpftime_prog::bpftime_prog(const struct ebpf_inst *insn, size_t insn_cnt,
 		ebpf_set_lddw_helpers(vm, map_ptr_by_fd, nullptr, map_val,
 				      nullptr, nullptr);
 	} else {
-		SPDLOG_INFO("Do not set lddw helpers due to cuda program");
+		// SPDLOG_INFO("Do not set lddw helpers due to cuda program");
+		ebpf_set_lddw_helpers(vm, map_ptr_by_fd, nullptr, map_val,
+				      nullptr, nullptr);
 	}
 }
 

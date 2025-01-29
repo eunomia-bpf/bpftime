@@ -100,13 +100,13 @@ int main(int argc, char **argv)
 	}
 	LIBBPF_OPTS(bpf_uprobe_opts, attach_opts, .func_name = "malloc",
 		    .retprobe = false);
-	struct bpf_link *attach = bpf_program__attach_uprobe_opts(
-		skel->progs.do_count, -1, "libc.so.6", 0, &attach_opts);
-	if (!attach) {
-		fprintf(stderr, "Failed to attach BPF skeleton\n");
-		err = -1;
-		goto cleanup;
-	}
+	// struct bpf_link *attach = bpf_program__attach_uprobe_opts(
+	// 	skel->progs.do_count, -1, "libc.so.6", 0, &attach_opts);
+	// if (!attach) {
+	// 	fprintf(stderr, "Failed to attach BPF skeleton\n");
+	// 	err = -1;
+	// 	goto cleanup;
+	// }
 	struct bpf_link *attach_cuda = bpf_program__attach_uprobe_opts(
 		skel->progs.do_count__cuda, -1, "libc.so.6", 0, &attach_opts);
 	if (!attach_cuda) {
