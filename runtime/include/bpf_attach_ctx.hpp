@@ -67,6 +67,14 @@ struct SharedMem {
 	CallRequest req;
 	CallResponse resp;
 };
+
+struct MapBasicInfo {
+	bool enabled;
+	int key_size;
+	int value_size;
+	int max_entries;
+};
+
 using cuda_context_type = std::remove_pointer<CUcontext>::type;
 using cuda_module_type = std::remove_pointer<CUmodule>::type;
 

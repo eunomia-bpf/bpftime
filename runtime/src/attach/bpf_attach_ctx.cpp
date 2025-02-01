@@ -8,6 +8,7 @@
 #include "bpftime_shm.hpp"
 #include "cuda.h"
 #include "handler/link_handler.hpp"
+#include "handler/map_handler.hpp"
 #include "handler/prog_handler.hpp"
 #include "nvPTXCompiler.h"
 #include <cstring>
@@ -494,7 +495,7 @@ int bpf_attach_ctx::start_cuda_program(int id)
 					  prog.get_cuda_elf_binary(), 0, 0, 0),
 		       "Load CUDA module");
 	cuda_ctx->set_module(raw_module);
-
+	// Setup shared data pointer
 	{
 		CUdeviceptr constDataPtr;
 		size_t constDataLen;
@@ -511,6 +512,61 @@ int bpf_attach_ctx::start_cuda_program(int id)
 					    sizeof(shared_mem_dev_ptr)),
 			       "Copy device pointer value to device");
 		SPDLOG_INFO("CUDA: constData set done");
+	}
+	// Setup map_info data
+	{
+		CUdeviceptr map_info_ptr;
+		size_t map_info_len;
+		NV_SAFE_CALL_2(cuModuleGetGlobal(&map_info_ptr, &map_info_len,
+						 raw_module, "map_info"),
+			       "Unable to get map_info handle");
+		std::vector<cuda::MapBasicInfo> local_basic_info(256);
+		if (sizeof(cuda::MapBasicInfo) * local_basic_info.size() !=
+		    map_info_len) {
+			SPDLOG_ERROR(
+				"Unexpected map_info_len: {}, should be {}*{}",
+				map_info_len, sizeof(cuda::MapBasicInfo),
+				local_basic_info.size());
+			return -1;
+		}
+		for (auto &entry : local_basic_info) {
+			entry.enabled = false;
+			entry.key_size = 0;
+			entry.value_size = 0;
+			entry.max_entries = 0;
+		}
+		const auto &handler_manager =
+			*shm_holder.global_shared_memory.get_manager();
+		for (size_t i = 0; i < handler_manager.size(); i++) {
+			const auto &current_handler =
+				handler_manager.get_handler(i);
+			if (std::holds_alternative<bpf_map_handler>(
+				    current_handler)) {
+				auto &local = local_basic_info[i];
+				SPDLOG_INFO(
+					"Copying map fd {} to device, key size={}, value size={}, max ent={}",
+					i, local.key_size, local.value_size,
+					local.max_entries);
+				const auto &map = std::get<bpf_map_handler>(
+					current_handler);
+				if (i >= local_basic_info.size()) {
+					SPDLOG_ERROR(
+						"Too large map fd: {}, max to be {}",
+						i, local_basic_info.size());
+					return -1;
+				}
+
+				local.enabled = true;
+				local.key_size = map.get_key_size();
+				local.value_size = map.get_value_size();
+				local.max_entries = map.get_max_entries();
+			}
+		}
+		NV_SAFE_CALL_2(cuMemcpyHtoD(map_info_ptr,
+					    local_basic_info.data(),
+					    map_info_len),
+			       "Copy map_info to device");
+		SPDLOG_INFO("CUDA: map_info set done");
 	}
 	CUfunction kernel;
 	NV_SAFE_CALL_2(cuModuleGetFunction(&kernel, raw_module, "bpf_main"),
