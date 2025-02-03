@@ -20,7 +20,8 @@ set(TEST_SOURCES
     maps/test_external_map_ops.cpp
     maps/test_bpftime_hash_map.cpp
     maps/kernel_unit_tests.cpp
-    
+    maps/test_lru_var_hash_map.cpp
+
     test_bpftime_shm_json.cpp
     test_probe.cpp
     attach_with_ebpf/test_attach_filter_with_ebpf.cpp
