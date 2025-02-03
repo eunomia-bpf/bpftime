@@ -10,6 +10,13 @@ struct {
 	__type(value, u64);
 } libc_malloc_calls_total SEC(".maps");
 
+struct {
+	__uint(type, BPF_MAP_TYPE_LRU_HASH);
+	__uint(max_entries, 64);
+	__type(key, u32);
+	__type(value, u64);
+} lru_map SEC(".maps");
+
 static int increment_map(void *map, void *key, u64 increment)
 {
 	u64 zero = 0, *count = bpf_map_lookup_elem(map, key);
@@ -35,6 +42,9 @@ int do_count(struct pt_regs *ctx)
 
 	increment_map(&libc_malloc_calls_total, &pid, 1);
 
+	u32 rand = bpf_get_prandom_u32() % 256;
+	u32 value = 1;
+	bpf_map_update_elem(&lru_map, &rand, &value, 0);
 	return 0;
 }
 
@@ -42,8 +52,10 @@ SEC("uprobe/libc.so.6:free")
 int do_count__cuda(struct pt_regs *ctx)
 {
 	u64 key = 10;
-	increment_map(&libc_malloc_calls_total, &key, 2);
-
+	// increment_map(&libc_malloc_calls_total, &key, 2);
+	for (int i = 0; i < 256; i++) {
+		bpf_map_lookup_elem(&lru_map, &i);
+	}
 	return 0;
 }
 

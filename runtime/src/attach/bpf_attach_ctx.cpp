@@ -11,7 +11,10 @@
 #include "handler/map_handler.hpp"
 #include "handler/prog_handler.hpp"
 #include "nvPTXCompiler.h"
+#include <chrono>
 #include <cstring>
+#include <iterator>
+#include <ratio>
 #include <stdexcept>
 #include <string>
 #include <thread>
@@ -408,6 +411,24 @@ int bpf_attach_ctx::destroy_all_attach_links()
 void bpf_attach_ctx::start_cuda_watcher_thread()
 {
 	auto flag = this->cuda_ctx->cuda_watcher_should_stop;
+	std::thread([=, this]() {
+		auto &ctx = cuda_ctx;
+		while (!flag->load()) {
+			const auto &array = ctx->cuda_shared_mem->time_sum;
+			for (size_t i = 0; i < std::size(array); i++) {
+				uint64_t cuda_time_sum = __atomic_load_n(
+					&array[i], __ATOMIC_SEQ_CST);
+				auto host_time_sum =
+					ctx->operation_time_sum->at(i).load();
+
+				SPDLOG_INFO(
+					"Operation {} cuda_time_sum = {}, host_time_sum = {}, diff = {}",
+					i, cuda_time_sum, host_time_sum,
+					cuda_time_sum - host_time_sum);
+			}
+			std::this_thread::sleep_for(std::chrono::seconds(1));
+		}
+	}).detach();
 	std::thread handle([=, this]() {
 		SPDLOG_INFO("CUDA watcher thread started");
 		auto &ctx = cuda_ctx;
@@ -422,6 +443,8 @@ void bpf_attach_ctx::start_cuda_watcher_thread()
 				SPDLOG_DEBUG(
 					"CUDA Received call request id {}, map_ptr = {}, map_fd = {}",
 					req_id, map_ptr, map_fd);
+				auto start_time =
+					std::chrono::high_resolution_clock::now();
 				if (req_id == (int)cuda::MapOperation::LOOKUP) {
 					const auto &req =
 						ctx->cuda_shared_mem->req
@@ -463,6 +486,18 @@ void bpf_attach_ctx::start_cuda_watcher_thread()
 				} else {
 					SPDLOG_WARN("Unknown request id {}",
 						    req_id);
+				}
+
+				auto end_time =
+					std::chrono::high_resolution_clock::now();
+				if ((size_t)req_id <
+				ctx->operation_time_sum->size()) {
+					std::chrono::duration<uint64_t,
+							      std::nano>
+						elasped_nanosecond =
+							end_time - start_time;
+					ctx->operation_time_sum->at(req_id).fetch_add(
+						elasped_nanosecond.count());
 				}
 				ctx->cuda_shared_mem->flag2 = 1;
 				std::atomic_thread_fence(
@@ -640,6 +675,15 @@ CUDAContext::~CUDAContext()
 		SPDLOG_ERROR("Unable to unregister host memory: {}",
 			     (int)result);
 	}
+}
+CUDAContext::CUDAContext(std::unique_ptr<cuda::SharedMem> &&mem,
+			 CUcontext raw_ctx)
+	: cuda_shared_mem(std::move(mem)),
+	  cuda_shared_mem_device_pointer((uintptr_t)cuda_shared_mem.get()),
+	  ctx_container(raw_ctx, cuda_context_destroyer),
+	  operation_time_sum(
+		  std::make_unique<std::array<std::atomic<uint64_t>, 8> >())
+{
 }
 } // namespace cuda
 } // namespace bpftime

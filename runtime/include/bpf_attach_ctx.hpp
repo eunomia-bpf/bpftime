@@ -9,6 +9,7 @@
 #include "handler/link_handler.hpp"
 #include "handler/perf_event_handler.hpp"
 #include "handler/prog_handler.hpp"
+#include <array>
 #include <atomic>
 #include <functional>
 #include <initializer_list>
@@ -66,6 +67,7 @@ struct SharedMem {
 	long map_id;
 	CallRequest req;
 	CallResponse resp;
+	uint64_t time_sum[8];
 };
 
 struct MapBasicInfo {
@@ -96,13 +98,9 @@ struct CUDAContext {
 	std::optional<std::unique_ptr<cuda_module_type,
 				      decltype(&cuda_module_destroyer)> >
 		module_container;
-	CUDAContext(std::unique_ptr<cuda::SharedMem> &&mem, CUcontext raw_ctx)
-		: cuda_shared_mem(std::move(mem)),
-		  cuda_shared_mem_device_pointer(
-			  (uintptr_t)cuda_shared_mem.get()),
-		  ctx_container(raw_ctx, cuda_context_destroyer)
-	{
-	}
+	std::unique_ptr<std::array<std::atomic<uint64_t>, 8> >
+		operation_time_sum;
+	CUDAContext(std::unique_ptr<cuda::SharedMem> &&mem, CUcontext raw_ctx);
 	CUDAContext(CUDAContext &&) = default;
 	CUDAContext &operator=(CUDAContext &&) = default;
 	CUDAContext(const CUDAContext &) = delete;

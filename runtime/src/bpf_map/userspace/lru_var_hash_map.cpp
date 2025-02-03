@@ -16,9 +16,12 @@ lru_var_hash_map_impl::lru_var_hash_map_impl(
 	: map_impl(max_entries, memory.get_segment_manager()),
 	  key_size(key_size), value_size(value_size), max_entries(max_entries),
 	  key_vec(key_size, memory.get_segment_manager()),
-	  value_vec(value_size, memory.get_segment_manager()), memory(memory)
+	  value_vec(value_size, memory.get_segment_manager()),
+	  memory_allocator(memory.get_allocator<void>()),
+	  memory_deleter(memory.get_deleter<lru_linklist_entry>())
 
 {
+	memory.get_segment_manager();
 }
 
 void *lru_var_hash_map_impl::elem_lookup(const void *key)
@@ -40,15 +43,18 @@ void *lru_var_hash_map_impl::elem_lookup(const void *key)
 long lru_var_hash_map_impl::elem_update(const void *key, const void *value,
 					uint64_t flags)
 {
+	SPDLOG_DEBUG("Running lru hash update: key {:x}, value {:x}, flags {}",
+		     (uintptr_t)key, (uintptr_t)value, flags);
 	// Check flags
 	if (!is_good_update_flag(flags)) {
 		errno = EINVAL;
 		return -1;
 	}
+
 	key_vec.assign((uint8_t *)key, (uint8_t *)key + key_size);
 	auto itr = map_impl.find(key_vec);
 	bool element_exists = itr != map_impl.end();
-
+	SPDLOG_DEBUG("element exists={}", element_exists);
 	if (flags == BPF_NOEXIST && element_exists) {
 		errno = EEXIST;
 		return -1;
@@ -59,7 +65,7 @@ long lru_var_hash_map_impl::elem_update(const void *key, const void *value,
 	}
 	if (element_exists == false && map_impl.size() == max_entries) {
 		// Evict least recently used entry
-		SPDLOG_DEBUG("Evicting least recently used entry");
+		SPDLOG_TRACE("Evicting least recently used entry");
 		map_impl.erase(lru_link_list_tail->key);
 		evict_entry(lru_link_list_tail);
 	}
@@ -67,11 +73,13 @@ long lru_var_hash_map_impl::elem_update(const void *key, const void *value,
 		// Update the value
 		itr->second.value.assign((uint8_t *)value,
 					 (uint8_t *)value + value_size);
+		SPDLOG_TRACE("Value updated, moving to head");
 		move_to_head(itr->second.linked_list_entry);
 	} else {
 		// Insert a new one
 		value_vec.assign((uint8_t *)value,
 				 (uint8_t *)value + value_size);
+		SPDLOG_TRACE("Creating new lru entry");
 		auto entry_ptr = insert_new_entry(key_vec);
 		hash_map_value value{ .value = value_vec,
 				      .linked_list_entry = entry_ptr };
@@ -110,7 +118,6 @@ int lru_var_hash_map_impl::map_get_next_key(const void *key, void *next_key)
 	// Since we use lock here, we don't need to allocate key_vec and
 	// value_vec
 	key_vec.assign((uint8_t *)key, (uint8_t *)key + key_size);
-
 	auto itr = map_impl.find(key_vec);
 	if (itr == map_impl.end()) {
 		// not found, should be refer to the first key
@@ -156,10 +163,18 @@ void lru_var_hash_map_impl::move_to_head(lru_linklist_entry_shared_ptr entry)
 lru_linklist_entry_shared_ptr
 lru_var_hash_map_impl::insert_new_entry(const bytes_vec &key)
 {
-	auto entry_ptr = boost::interprocess::make_managed_shared_ptr(
-		memory.construct<lru_linklist_entry>(
-			boost::interprocess::anonymous_instance)(key),
-		memory);
+	SPDLOG_TRACE("Entered insert_new_entry");
+
+	auto inst =
+		memory_allocator.get_segment_manager()
+			->construct<lru_linklist_entry>(
+				boost::interprocess::anonymous_instance)(key);
+	SPDLOG_TRACE("constructed pointer: {:x}", (uintptr_t)inst);
+
+	auto entry_ptr = lru_linklist_entry_shared_ptr(inst, memory_allocator,
+						       memory_deleter);
+	SPDLOG_DEBUG("new LRU entry pointer: {:x}",
+		     (uintptr_t)entry_ptr.get().get());
 	// case1: empty
 	if (!lru_link_list_head) {
 		lru_link_list_head = lru_link_list_tail = entry_ptr;

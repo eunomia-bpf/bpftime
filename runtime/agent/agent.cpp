@@ -10,10 +10,12 @@
 #include <chrono>
 #include <csignal>
 #include <cstdio>
+#include <cstdlib>
 #include <exception>
 #include <fcntl.h>
 #include <memory>
 #include <pthread.h>
+#include <random>
 #include <string_view>
 #include <thread>
 #include <unistd.h>
@@ -108,6 +110,8 @@ extern "C" void bpftime_agent_main(const gchar *data, gboolean *stay_resident)
 {
 	SPDLOG_DEBUG("Entered bpftime_agent_main");
 	SPDLOG_DEBUG("Registering signal handler");
+
+	srand(std::random_device()());
 	// We use SIGUSR1 to indicate the detaching
 	signal(SIGUSR1, sig_handler_sigusr1);
 	try {

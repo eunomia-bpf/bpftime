@@ -61,8 +61,14 @@ class lru_var_hash_map_impl {
 	bytes_vec key_vec;
 	bytes_vec value_vec;
 
-	boost::interprocess::managed_shared_memory &memory;
-
+	boost::interprocess::allocator<
+		void,
+		boost::interprocess::managed_shared_memory::segment_manager>
+		memory_allocator;
+	boost::interprocess::deleter<
+		lru_linklist_entry,
+		boost::interprocess::managed_shared_memory::segment_manager>
+		memory_deleter;
 	void move_to_head(lru_linklist_entry_shared_ptr entry);
 	lru_linklist_entry_shared_ptr insert_new_entry(const bytes_vec &key);
 	void evict_entry(lru_linklist_entry_shared_ptr entry);
