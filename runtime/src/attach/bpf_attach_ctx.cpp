@@ -7,10 +7,10 @@
 #include "base_attach_impl.hpp"
 #include "bpftime_shm.hpp"
 #include "cuda.h"
+#include "cupti_activity.h"
 #include "handler/link_handler.hpp"
 #include "handler/map_handler.hpp"
 #include "handler/prog_handler.hpp"
-#include "nvPTXCompiler.h"
 #include <chrono>
 #include <cstring>
 #include <iterator>
@@ -18,7 +18,6 @@
 #include <stdexcept>
 #include <string>
 #include <thread>
-#include <type_traits>
 #include <unistd.h>
 #include <cerrno>
 #include <cstdint>
@@ -33,10 +32,21 @@
 #include <handler/perf_event_handler.hpp>
 #include <bpftime_helper_group.hpp>
 #include <handler/handler_manager.hpp>
-#include <tuple>
 #include <utility>
 #include <variant>
 #include <sys/resource.h>
+#include <cupti.h>
+
+#define CUPTI_CALL(call, error_message)                                        \
+	do {                                                                   \
+		CUptiResult _status = call;                                    \
+		if (_status != CUPTI_SUCCESS) {                                \
+			const char *errstr;                                    \
+			cuptiGetResultString(_status, &errstr);                \
+			SPDLOG_ERROR("CUPTI Error: {}", errstr);               \
+			throw std::runtime_error(error_message);               \
+		}                                                              \
+	} while (0)
 
 #define NV_SAFE_CALL(x, error_message)                                         \
 	do {                                                                   \
@@ -58,6 +68,45 @@
 			return -1;                                             \
 		}                                                              \
 	} while (0)
+
+static void CUPTIAPI cupti_buffer_requested(uint8_t **buffer, size_t *size,
+					    size_t *maxNumRecords)
+{
+	*size = 16 * 1024;
+	*buffer = new uint8_t[*size];
+	*maxNumRecords = 10;
+}
+static void CUPTIAPI cupti_buffer_completed(CUcontext ctx, uint32_t streamId,
+					    uint8_t *buffer, size_t size,
+					    size_t validSize)
+{
+	CUpti_Activity *record = nullptr;
+
+	do {
+		auto status =
+			cuptiActivityGetNextRecord(buffer, validSize, &record);
+		if (status == CUPTI_SUCCESS) {
+			if (record->kind == CUPTI_ACTIVITY_KIND_KERNEL) {
+				auto kernelActivity =
+					(CUpti_ActivityKernel4 *)record;
+				SPDLOG_INFO("Kernel {} consumed {} ns",
+					    kernelActivity->name,
+					    kernelActivity->end -
+						    kernelActivity->start);
+			}
+		} else if (status == CUPTI_ERROR_MAX_LIMIT_REACHED) {
+			break;
+		} else if (status == CUPTI_ERROR_INVALID_KIND) {
+			break;
+		} else {
+			const char *error_str;
+			cuptiGetResultString(status, &error_str);
+			SPDLOG_ERROR("Unable to read more cupti records: {}",
+				     error_str);
+		}
+	} while (true);
+	delete[] buffer;
+}
 
 extern "C" uint64_t bpftime_set_retval(uint64_t value);
 namespace bpftime
@@ -491,13 +540,14 @@ void bpf_attach_ctx::start_cuda_watcher_thread()
 				auto end_time =
 					std::chrono::high_resolution_clock::now();
 				if ((size_t)req_id <
-				ctx->operation_time_sum->size()) {
+				    ctx->operation_time_sum->size()) {
 					std::chrono::duration<uint64_t,
 							      std::nano>
 						elasped_nanosecond =
 							end_time - start_time;
-					ctx->operation_time_sum->at(req_id).fetch_add(
-						elasped_nanosecond.count());
+					ctx->operation_time_sum->at(req_id)
+						.fetch_add(elasped_nanosecond
+								   .count());
 				}
 				ctx->cuda_shared_mem->flag2 = 1;
 				std::atomic_thread_fence(
@@ -524,11 +574,22 @@ int bpf_attach_ctx::start_cuda_program(int id)
 		SPDLOG_ERROR("Program id {} is not a CUDA program", id);
 		return -1;
 	}
-
+	// Initialize CUPTI
+	{
+		CUPTI_CALL(
+			cuptiActivityRegisterCallbacks(cupti_buffer_requested,
+						       cupti_buffer_completed),
+			"register cupti callbacks");
+		SPDLOG_INFO("CUPTI callbacks registered");
+		CUPTI_CALL(cuptiActivityEnable(CUPTI_ACTIVITY_KIND_KERNEL),
+			   "enable cupti event");
+		SPDLOG_INFO("CUPTI initialized");
+	}
 	CUmodule raw_module;
 	NV_SAFE_CALL_2(cuModuleLoadDataEx(&raw_module,
 					  prog.get_cuda_elf_binary(), 0, 0, 0),
 		       "Load CUDA module");
+	SPDLOG_INFO("CUDA module loaded");
 	cuda_ctx->set_module(raw_module);
 	// Setup shared data pointer
 	{
@@ -625,6 +686,8 @@ int bpf_attach_ctx::start_cuda_program(int id)
 		} else {
 			SPDLOG_INFO("CUDA kernel exited..");
 		}
+		CUPTI_CALL(cuptiActivityFlushAll(0),
+			   "flushing cupti activities");
 	});
 	handle.detach();
 	return 0;
@@ -632,6 +695,7 @@ int bpf_attach_ctx::start_cuda_program(int id)
 
 namespace cuda
 {
+
 void cuda_context_destroyer(CUcontext ptr)
 {
 	NV_SAFE_CALL(cuCtxDestroy(ptr), "destroy cuda context");

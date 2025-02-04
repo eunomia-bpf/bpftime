@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: (LGPL-2.1 OR BSD-2-Clause)
 /* Copyright (c) 2020 Facebook */
+#include "cudatest.bpf.h"
 #include <signal.h>
 #include <stdio.h>
 #include <time.h>
@@ -11,6 +12,7 @@
 #include <stdlib.h>
 #include "cudatest.skel.h"
 #include <inttypes.h>
+
 #define warn(...) fprintf(stderr, __VA_ARGS__)
 
 static int libbpf_print_fn(enum libbpf_print_level level, const char *format,

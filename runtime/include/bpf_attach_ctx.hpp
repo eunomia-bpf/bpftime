@@ -33,15 +33,15 @@ enum class MapOperation { LOOKUP = 1, UPDATE = 2, DELETE = 3 };
 
 union CallRequest {
 	struct {
-		char key[256];
+		char key[1 << 30];
 	} map_lookup;
 	struct {
-		char key[256];
-		char value[256];
+		char key[1 << 30];
+		char value[1 << 30];
 		uint64_t flags;
 	} map_update;
 	struct {
-		char key[256];
+		char key[1 << 30];
 	} map_delete;
 };
 
