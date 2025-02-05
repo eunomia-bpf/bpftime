@@ -171,15 +171,23 @@ endif()
 
 # add to single archive if option is enabled
 if(${BPFTIME_BUILD_STATIC_LIB})
-  set(UBPF_BUILD_DIR ${CMAKE_CURRENT_BINARY_DIR}/vm/ubpf-vm/ubpf)
+  set(UBPF_BUILD_DIR ${CMAKE_CURRENT_BINARY_DIR}/vm/compat/ubpf-vm)
+  set(LLVM_BUILD_DIR ${CMAKE_CURRENT_BINARY_DIR}/vm/compat/llvm-vm)
+  # set(LLVMJIT_BUILD_DIR ${CMAKE_CURRENT_BINARY_DIR}/vm/llvm-jit
   message(STATUS " Adding libraries to single static archive file")
   bpftime_add_static_lib_component_command(bpftime_vm)
 
   if(${BPFTIME_LLVM_JIT})
     bpftime_add_static_lib_component_command(bpftime_llvm_vm)
+    bpftime_add_libs_component_command(${LLVM_BUILD_DIR}/libbpftime_llvm_vm.a)
+    message(STATUS " Adding LLVM JIT to static archive")
   else()
     bpftime_add_static_lib_component_command(bpftime_ubpf_vm)
-    bpftime_add_libs_component_command(${UBPF_BUILD_DIR}/lib/libubpf.a)
+    bpftime_add_libs_component_command(${UBPF_BUILD_DIR}/ubpf/lib/libubpf.a)
+    bpftime_add_libs_component_command(${UBPF_BUILD_DIR}/libbpftime_ubpf_vm.a)
+
+
+    message(STATUS " Adding uBPF JIT to static archive")
   endif()
 
   bpftime_add_libs_component_command(${FRIDA_GUM_INSTALL_DIR}/libfrida-gum.a)
