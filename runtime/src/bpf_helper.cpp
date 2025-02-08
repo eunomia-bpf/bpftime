@@ -328,7 +328,8 @@ uint64_t bpf_get_current_uid_gid(uint64_t, uint64_t, uint64_t, uint64_t,
 				 uint64_t)
 {
 	static int gid = getgid();
-	return (((uint64_t)gid) << 32) | gid;
+	static int uid = getuid();
+	return (((uint64_t)gid) << 32) | uid;
 }
 
 uint64_t bpftime_ktime_get_ns(uint64_t, uint64_t, uint64_t, uint64_t, uint64_t)

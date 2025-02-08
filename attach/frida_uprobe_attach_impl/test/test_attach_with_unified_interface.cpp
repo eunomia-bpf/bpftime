@@ -1,3 +1,4 @@
+#include "attach_private_data.hpp"
 #include "base_attach_impl.hpp"
 #include "catch2/catch_test_macros.hpp"
 #include "frida_attach_private_data.hpp"
@@ -7,13 +8,18 @@
 #include <frida_uprobe.hpp>
 #include <memory>
 #include <string>
-
 using namespace bpftime::attach;
 
 extern "C" uint64_t
 __bpftime_test_attach_with_unified_interface_func(uint64_t a, uint64_t b)
 {
 	return a + b;
+}
+
+TEST_CASE("Test base attach private data") {
+	attach_private_data data;
+	REQUIRE_THROWS(data.initialize_from_string("test"));
+
 }
 
 TEST_CASE("Test with unified interface")

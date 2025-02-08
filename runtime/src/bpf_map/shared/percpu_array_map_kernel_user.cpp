@@ -48,6 +48,7 @@ long percpu_array_map_kernel_user_impl::elem_update(const void *key,
 						    const void *value,
 						    uint64_t flags)
 {
+	SPDLOG_DEBUG("Updating percpu array shared");
 	return bpf_map_update_elem(kernel_map_fd, key, value, flags);
 }
 

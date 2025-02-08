@@ -55,6 +55,10 @@ class bpftime_shm {
 #endif
 
     public:
+	boost::interprocess::managed_shared_memory &get_segment_manager()
+	{
+		return segment;
+	}
 	// Get the configuration object
 	const struct agent_config &get_agent_config();
 	// Set the configuration object
@@ -176,7 +180,7 @@ class bpftime_shm {
 	bpftime_shm(const char *shm_name, shm_open_type type);
 
 	const handler_manager *get_manager() const;
-
+	handler_manager &get_manager_mut();
 	std::optional<void *>
 	get_software_perf_event_raw_buffer(int fd, size_t buffer_sz) const;
 
