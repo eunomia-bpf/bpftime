@@ -568,13 +568,13 @@ extern "C" uint64_t map_ptr_by_fd(uint32_t fd)
 		return INVALID_MAP_PTR;
 	}
 	// Use a convenient way to represent a pointer
-	return ((uint64_t)fd << 32) | 0xffffffff;
+	return fd;
 }
 
 extern "C" uint64_t map_val(uint64_t map_ptr)
 {
 	SPDLOG_DEBUG("Call map_val with map_ptr={:x}", map_ptr);
-	int fd = (int)(map_ptr >> 32);
+	int fd = (int)map_ptr;
 	if (!shm_holder.global_shared_memory.get_manager() ||
 	    !shm_holder.global_shared_memory.is_map_fd(fd)) {
 		SPDLOG_ERROR("Expected fd {} to be a map fd (map_val call)",
