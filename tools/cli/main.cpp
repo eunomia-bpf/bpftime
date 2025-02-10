@@ -187,8 +187,8 @@ static void signal_handler(int sig)
 
 int main(int argc, const char **argv)
 {
-	const auto agent_config = bpftime::get_agent_config_from_env();
-	bpftime::bpftime_set_logger(agent_config.logger_output_path);
+	const auto agent_config = bpftime::construct_agent_config_from_env();
+	bpftime::bpftime_set_logger(agent_config.get_logger_output_path());
 	signal(SIGINT, signal_handler);
 	signal(SIGTSTP, signal_handler);
 	argparse::ArgumentParser program(argv[0]);

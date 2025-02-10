@@ -187,6 +187,12 @@ class bpftime_vm_impl {
 		SPDLOG_CRITICAL("Not implemented yet: load_aot_object");
 		return {};
 	}
+
+	virtual std::optional<std::string> generate_ptx(const char *target_cpu)
+	{
+		SPDLOG_CRITICAL("Not implemented yet: generate_ptx");
+		return {};
+	}
 };
 
 std::unique_ptr<bpftime_vm_impl> create_vm_instance();

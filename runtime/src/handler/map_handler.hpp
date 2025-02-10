@@ -193,6 +193,15 @@ class bpf_map_handler {
 	std::optional<perf_event_array_kernel_user_impl *>
 	try_get_shared_perf_event_array_map_impl() const;
 
+	uint32_t get_key_size() const
+	{
+		return key_size;
+	}
+	uint32_t get_max_entries() const
+	{
+		return max_entries;
+	}
+
     private:
 	int id = 0;
 	std::string get_container_name();
