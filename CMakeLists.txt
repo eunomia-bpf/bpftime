@@ -141,11 +141,7 @@ endif()
 add_subdirectory(third_party/spdlog)
 
 if(NOT DEFINED SPDLOG_ACTIVE_LEVEL)
-  if(CMAKE_BUILD_TYPE STREQUAL "Debug")
-    add_compile_definitions(SPDLOG_ACTIVE_LEVEL=SPDLOG_LEVEL_TRACE)
-  else()
-    add_compile_definitions(SPDLOG_ACTIVE_LEVEL=SPDLOG_LEVEL_INFO)
-  endif()
+  add_compile_definitions(SPDLOG_ACTIVE_LEVEL=SPDLOG_LEVEL_TRACE)
 endif()
 
 set(SPDLOG_INCLUDE ${CMAKE_CURRENT_SOURCE_DIR}/third_party/spdlog/include)

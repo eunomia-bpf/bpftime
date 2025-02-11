@@ -8,19 +8,19 @@
             "name": "(gdb) runtime",
             "type": "cppdbg",
             "request": "launch",
-            "program": "${workspaceFolder}/example/malloc/victim",
+            "program": "${workspaceFolder}/example/malloc/malloc",
             "args": [],
             "stopAtEntry": true,
             "cwd": "${workspaceFolder}/",
             "environment": [
-                {
-                    "name": "LD_PRELOAD",
-                    "value": "${workspaceFolder}/build/runtime/agent/libbpftime-agent.so"
-                },
                 // {
                 //     "name": "LD_PRELOAD",
-                //     "value": "/home/yunwei/bpftime/build/runtime/syscall-server/libbpftime-syscall-server.so"
-                // }
+                //     "value": "${workspaceFolder}/build/runtime/agent/libbpftime-agent.so"
+                // },
+                {
+                    "name": "LD_PRELOAD",
+                    "value": "${workspaceFolder}/build/runtime/syscall-server/libbpftime-syscall-server.so"
+                }
             ],
             "externalConsole": false,
             "MIMode": "gdb",
