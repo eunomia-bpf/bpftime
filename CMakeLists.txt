@@ -157,11 +157,11 @@ add_subdirectory(attach)
 add_subdirectory(runtime)
 
 # option to use probe read/write checks
-if(DEFINED ENABLE_PROBE_READ_CHECK)
+if(ENABLE_PROBE_READ_CHECK)
   target_compile_definitions(runtime PRIVATE ENABLE_PROBE_READ_CHECK=1)
 endif()
 
-if(DEFINED ENABLE_PROBE_WRITE_CHECK)
+if(ENABLE_PROBE_WRITE_CHECK)
   target_compile_definitions(runtime PRIVATE ENABLE_PROBE_WRITE_CHECK=1)
 endif()
 
