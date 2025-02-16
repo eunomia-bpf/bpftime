@@ -1,7 +1,6 @@
 #include "bpftime_config.hpp"
 #include "spdlog/spdlog.h"
 #include <string_view>
-#include <filesystem>
 
 using namespace bpftime;
 
@@ -39,7 +38,7 @@ static void process_helper_sv(const std::string_view &str, const char delimiter,
 	}
 }
 
-const agent_config bpftime::get_agent_config_from_env() noexcept
+agent_config bpftime::construct_agent_config_from_env() noexcept
 {
 	bpftime::agent_config agent_config;
 	if (const char *custom_helpers = getenv("BPFTIME_HELPER_GROUPS");
@@ -78,7 +77,7 @@ const agent_config bpftime::get_agent_config_from_env() noexcept
 
 	const char *logger_target = std::getenv("BPFTIME_LOG_OUTPUT");
 	if (logger_target != NULL) {
-		agent_config.logger_output_path = logger_target;
+		agent_config.set_logger_output_path(logger_target);
 	}
 	return agent_config;
 }

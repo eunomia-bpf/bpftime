@@ -550,7 +550,7 @@ bpftime_shm::bpftime_shm(const char *shm_name, shm_open_type type)
 	: open_type(type)
 {
 	// Get the config from env because the shared memory is not initialized
-	size_t memory_size = get_agent_config_from_env().shm_memory_size;
+	size_t memory_size = construct_agent_config_from_env().shm_memory_size;
 	if (type == shm_open_type::SHM_OPEN_ONLY) {
 		SPDLOG_DEBUG("start: bpftime_shm for client setup");
 		// open the shm
@@ -722,25 +722,25 @@ bool bpftime_shm::is_software_perf_event_handler_fd(int fd) const
 	return hd.type == (int)bpf_event_type::PERF_TYPE_SOFTWARE;
 }
 
-// local agent config can be used for test or local process
-static agent_config local_agent_config = {};
-
-void bpftime_shm::set_agent_config(const struct agent_config &config)
+void bpftime_shm::set_agent_config(struct agent_config &&config)
 {
 	if (agent_config == nullptr) {
 		SPDLOG_INFO(
 			"global agent_config is nullptr, set current process config");
-		local_agent_config = config;
+		local_agent_config.emplace(std::move(config));
 		return;
 	}
-	*agent_config = config;
+
+	agent_config->~agent_config();
+	config.change_to_shm_object(segment);
+	std::construct_at(agent_config, std::move(config));
 }
 
 const struct agent_config &bpftime_shm::get_agent_config()
 {
 	if (agent_config == nullptr) {
 		SPDLOG_DEBUG("use current process config");
-		return local_agent_config;
+		return *local_agent_config;
 	}
 	return *agent_config;
 }
@@ -750,9 +750,9 @@ const bpftime::agent_config &bpftime_get_agent_config()
 	return shm_holder.global_shared_memory.get_agent_config();
 }
 
-void bpftime_set_agent_config(const bpftime::agent_config &cfg)
+void bpftime_set_agent_config(bpftime::agent_config &&cfg)
 {
-	shm_holder.global_shared_memory.set_agent_config(cfg);
+	shm_holder.global_shared_memory.set_agent_config(std::move(cfg));
 }
 
 std::optional<void *>
