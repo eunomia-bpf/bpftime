@@ -23,6 +23,8 @@ set(TEST_SOURCES
     
     test_bpftime_shm_json.cpp
     test_probe.cpp
+    test_config.cpp
+    
     attach_with_ebpf/test_attach_filter_with_ebpf.cpp
     attach_with_ebpf/test_attach_uprobe_with_ebpf.cpp
     attach_with_ebpf/test_helpers.cpp
