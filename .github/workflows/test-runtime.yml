@@ -94,6 +94,7 @@ jobs:
           ./coverage-runtime-mpk.info
 
     - uses: codecov/codecov-action@v4
+      if: github.repository == 'eunomia-bpf/bpftime'
       with:
             fail_ci_if_error: true # optional (default = false)
             files: ./coverage-runtime.info
