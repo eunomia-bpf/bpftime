@@ -163,7 +163,7 @@ extern const shm_open_type global_shm_open_type;
 const bpftime::agent_config &bpftime_get_agent_config();
 
 // Set the runtime config in the shared memory.
-void bpftime_set_agent_config(const bpftime::agent_config &cfg);
+void bpftime_set_agent_config(struct bpftime::agent_config &&cfg);
 
 // Map ops for register external map types and operations
 //

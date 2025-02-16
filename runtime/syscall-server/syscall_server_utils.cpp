@@ -3,6 +3,7 @@
  * Copyright (c) 2022, eunomia-bpf org
  * All rights reserved.
  */
+#include "bpftime_config.hpp"
 #include "bpftime_shm_internal.hpp"
 #include "syscall_context.hpp"
 #include <filesystem>
@@ -32,12 +33,12 @@ void start_up()
 	if (already_setup)
 		return;
 	already_setup = true;
-	const auto agent_config = get_agent_config_from_env();
-	bpftime_set_logger(agent_config.logger_output_path);
+	auto agent_config = construct_agent_config_from_env();
+	bpftime_set_logger(agent_config.get_logger_output_path());
 	SPDLOG_INFO("Initialize syscall server");
 
 	bpftime_initialize_global_shm(shm_open_type::SHM_REMOVE_AND_CREATE);
-	bpftime_set_agent_config(agent_config);
+
 #ifdef ENABLE_BPFTIME_VERIFIER
 	std::vector<int32_t> helper_ids;
 	std::map<int32_t, bpftime::verifier::BpftimeHelperProrotype>
@@ -69,6 +70,7 @@ void start_up()
 	SPDLOG_INFO("Enabling {} helpers", helper_ids.size());
 	verifier::set_non_kernel_helpers(non_kernel_helpers);
 #endif
+	bpftime_set_agent_config(std::move(agent_config));
 	// Set a variable to indicate the program that it's controlled by
 	// bpftime
 	setenv("BPFTIME_USED", "1", 0);

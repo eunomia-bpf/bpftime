@@ -280,6 +280,8 @@ jobs:
           path: |
             ./coverage-example.info
       - uses: codecov/codecov-action@v4
+        # Only upload when this workflow was run on the main repository
+        if: github.repository == 'eunomia-bpf/bpftime'
         with:
               fail_ci_if_error: true # optional (default = false)
               files: ./coverage-example.info
