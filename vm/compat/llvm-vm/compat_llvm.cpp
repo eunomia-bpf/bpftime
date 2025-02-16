@@ -2,17 +2,17 @@
 #include <compat_llvm.hpp>
 #include <memory> // 确保包含 memory 头文件，使用 std::make_unique 和 std::unique_ptr
 
-namespace bpftime::vm::compat {
-
-namespace llvm {
-
-// 静态的 LLVM VM 工厂函数
-static std::unique_ptr<bpftime_vm_impl> create_llvm_vm_instance()
+namespace bpftime::vm::compat
 {
 
-    return std::make_unique<bpftime::vm::llvm::bpftime_llvm_vm>();
+std::unique_ptr<bpftime_vm_impl> create_vm_instance()
+{
+	return std::make_unique<llvm::bpftime_llvm_vm>();
 }
 
+} // namespace bpftime::vm::compat
+
+namespace bpftime::vm::llvm {
 
 int bpftime_llvm_vm::register_external_function(size_t index, const std::string &name, void *fn) {
     return bpftime::llvmbpf_vm::register_external_function(index, name, fn);
@@ -46,17 +46,4 @@ void bpftime_llvm_vm::set_lddw_helpers(uint64_t (*map_by_fd)(uint32_t),
     bpftime::llvmbpf_vm::set_lddw_helpers(map_by_fd, map_by_idx, map_val, var_addr, code_addr);
 }
 
-} // namespace llvm
-
-} // namespace bpftime::vm::compat
-
-
-namespace bpftime::vm::compat {
-namespace llvm {
-__attribute__((constructor))
-static void register_llvm_vm_factory() {
-    register_vm_factory("llvm", create_llvm_vm_instance);
-    SPDLOG_INFO("Registered LLVM VM factory");
-}
-} // namespace llvm
-} // namespace bpftime::vm::compat
+} // namespace bpftime::vm::llvm
