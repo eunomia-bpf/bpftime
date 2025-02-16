@@ -11,6 +11,9 @@
 #ifndef DEFAULT_LOGGER_OUTPUT_PATH
 #define DEFAULT_LOGGER_OUTPUT_PATH "~/.bpftime/runtime.log"
 #endif
+#ifndef DEFAULT_VM_NAME
+#define DEFAULT_VM_NAME "llvm"
+#endif
 #define stringize(x) #x
 
 namespace bpftime
@@ -88,6 +91,7 @@ struct agent_config {
 	agent_config &operator=(const agent_config &) = delete;
 	agent_config(agent_config &&) noexcept = default;
 	agent_config &operator=(agent_config &&) noexcept = default;
+	std::string vm_name = DEFAULT_VM_NAME;
 };
 
 // Get the bpftime configuration from the environment variables

@@ -152,7 +152,8 @@ struct ebpf_vm *create_vm_from_elf(const char *elf_file,
 		fprintf(stderr, "No program found in %s\n", elf_file);
 		goto out;
 	}
-	vm = ebpf_create();
+	vm = ebpf_create("llvm"); // TODO
+	// vm = ebpf_create();
 	if (!vm) {
 		goto out;
 	}

@@ -12,7 +12,7 @@
 namespace bpftime::vm::compat
 {
 
-std::unique_ptr<bpftime_vm_impl> create_vm_instance()
+std::unique_ptr<bpftime_vm_impl> create_ubpf_vm_instance()
 {
 	return std::make_unique<ubpf::bpftime_ubpf_vm>();
 }
