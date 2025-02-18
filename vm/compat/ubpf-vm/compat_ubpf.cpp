@@ -245,3 +245,15 @@ int bpftime_ubpf_vm::set_pointer_secret(uint64_t secret)
 {
 	return ubpf_set_pointer_secret(ubpf_vm, secret);
 }
+
+namespace bpftime::vm::compat {
+namespace ubpf {
+__attribute__((constructor))
+static inline void register_ubpf_vm_factory() {
+    register_vm_factory("ubpf", create_ubpf_vm_instance);
+	std::cout<<"ubpf register vm factory " <<  std::endl; // 添加 std::cout 验证
+    SPDLOG_INFO("Registered UBPF VM factory");
+    std::cout<<"ubpf register vm factory " <<  std::endl; // 添加 std::cout 验证
+}
+} // namespace ubpf
+} // namespace bpftime::vm::compat

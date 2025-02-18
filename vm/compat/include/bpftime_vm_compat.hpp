@@ -194,9 +194,7 @@ class bpftime_vm_impl {
 using CreateVmInstanceFunc = std::unique_ptr<bpftime_vm_impl>(*)();
 
 // 声明静态 map，用于存储 VM 名字和对应的工厂函数
-namespace detail {
 inline std::map<std::string, CreateVmInstanceFunc> vm_factory_map; // 内联定义 vm_factory_map
-}
 
 // 修改 create_vm_instance 函数，根据 vm_name_str 从 map 中查找并调用工厂函数
 inline std::unique_ptr<bpftime_vm_impl> create_vm_instance(const char *vm_name_str) { // 内联实现
@@ -204,10 +202,10 @@ inline std::unique_ptr<bpftime_vm_impl> create_vm_instance(const char *vm_name_s
         SPDLOG_ERROR("VM name string is null");
         throw std::runtime_error("VM name cannot be null");
     }
-	std::cout<<"create vm instance " << vm_name_str << std::endl;
     std::string vm_name = vm_name_str;
-    auto it = detail::vm_factory_map.find(vm_name);
-    if (it == detail::vm_factory_map.end()) {
+    auto it = vm_factory_map.find(vm_name);
+    if (it == vm_factory_map.end()) {
+		std::cout<<"no vm factory registered for name: "<<vm_name<<std::endl;
         SPDLOG_ERROR("No VM factory registered for name: {}", vm_name);
         throw std::runtime_error("Unknown VM type requested: " + vm_name);
     }
@@ -216,11 +214,10 @@ inline std::unique_ptr<bpftime_vm_impl> create_vm_instance(const char *vm_name_s
 
 // 用于注册 VM 工厂函数的接口
 inline void register_vm_factory(const std::string &vm_name, CreateVmInstanceFunc factory_func) { // 内联实现
-    if (detail::vm_factory_map.count(vm_name)) {
+    if (vm_factory_map.count(vm_name)) {
         SPDLOG_WARN("VM factory for name: {} already registered, overwriting", vm_name);
     }
-	std::cout<<"register vm factory " << vm_name << std::endl;
-    detail::vm_factory_map[vm_name] = factory_func;
+    vm_factory_map[vm_name] = factory_func;
     SPDLOG_DEBUG("Registered VM factory for name: {}", vm_name);
 }
 

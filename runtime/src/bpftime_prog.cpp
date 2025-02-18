@@ -13,6 +13,7 @@
 #include <cstddef>
 #include <optional>
 #include <spdlog/spdlog.h>
+#include <iostream>
 
 using namespace std;
 namespace bpftime
@@ -26,8 +27,21 @@ bpftime_prog::bpftime_prog(const struct ebpf_inst *insn, size_t insn_cnt,
 {
 	SPDLOG_DEBUG("Creating bpftime_prog with name {}", name);
 	insns.assign(insn, insn + insn_cnt);
-	// auto vm_name = bpftime::bpftime_get_agent_config().vm_name.c_str();
+	// std::cout<<"GET AGENT CONFIG"<<std::endl;
+	// const char* vm_name = bpftime::bpftime_get_agent_config().vm_name.c_str();
 	const char *vm_name = "ubpf";
+	if(vm_name == "llvm"){
+		std::cout<<"Creating vm with name "<<vm_name<<std::endl;
+		SPDLOG_INFO("Creating vm with name {}", vm_name);
+	}else if(vm_name == "ubpf"){
+		std::cout<<"Creating vm with name "<<vm_name<<std::endl;
+		SPDLOG_INFO("Creating vm with name {}", vm_name);
+	}
+	else {
+		std::cout<<"Creating vm with other name "<<vm_name<<std::endl;
+		SPDLOG_ERROR("Invalid vm name: {}", vm_name);
+	}
+
 	vm = ebpf_create(vm_name);
 	// Disable bounds check because we have no implementation yet
 	// ebpf_toggle_bounds_check(vm, false);

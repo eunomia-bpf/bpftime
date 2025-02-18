@@ -75,6 +75,15 @@ agent_config bpftime::construct_agent_config_from_env() noexcept
 		}
 	}
 
+	const char *vm_name = std::getenv("BPFTIME_VM_NAME");
+
+	SPDLOG_INFO("Catch VM name");
+	if (vm_name != NULL) {
+		SPDLOG_INFO("Using VM: {}", vm_name);
+		agent_config.vm_name = vm_name;
+	}
+
+
 	const char *logger_target = std::getenv("BPFTIME_LOG_OUTPUT");
 	if (logger_target != NULL) {
 		agent_config.set_logger_output_path(logger_target);

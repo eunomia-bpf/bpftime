@@ -5,8 +5,9 @@
 namespace bpftime::vm::compat
 {
 
-std::unique_ptr<bpftime_vm_impl> create_vm_instance()
+std::unique_ptr<bpftime_vm_impl> create_llvm_vm_instance()
 {
+    std::cout<<"create llvm vm instance"<<std::endl;
 	return std::make_unique<llvm::bpftime_llvm_vm>();
 }
 
@@ -47,3 +48,18 @@ void bpftime_llvm_vm::set_lddw_helpers(uint64_t (*map_by_fd)(uint32_t),
 }
 
 } // namespace bpftime::vm::llvm
+
+namespace bpftime::vm::compat {
+namespace llvm {
+
+// 静态构造函数，用于注册 LLVM VM 工厂函数
+__attribute__((constructor))
+static inline void register_llvm_vm_factory() {
+    register_vm_factory("llvm", create_llvm_vm_instance);
+    std::cout<<"llvm register vm factory " <<  std::endl; // 添加 std::cout 验证
+    SPDLOG_INFO("Registered LLVM VM factory");
+    std::cout << "llvm vm factory registered at startup" << std::endl; // 添加 cout 验证
+}
+
+} // namespace llvm
+} // namespace bpftime::vm::compat
