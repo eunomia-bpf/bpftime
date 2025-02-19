@@ -1,8 +1,12 @@
 #ifndef _CONFIG_MANAGER_HPP
 #define _CONFIG_MANAGER_HPP
 
+#include <boost/interprocess/containers/string.hpp>
+#include <boost/interprocess/interprocess_fwd.hpp>
+#include <boost/interprocess/managed_shared_memory.hpp>
 #include <cstdlib>
 #include <string>
+#include <variant>
 
 #ifndef DEFAULT_LOGGER_OUTPUT_PATH
 #define DEFAULT_LOGGER_OUTPUT_PATH "~/.bpftime/runtime.log"
@@ -11,6 +15,13 @@
 
 namespace bpftime
 {
+using char_allocator = boost::interprocess::allocator<
+	char, boost::interprocess::managed_shared_memory::segment_manager>;
+
+using boost_shm_string =
+	boost::interprocess::basic_string<char, std::char_traits<char>,
+					  char_allocator>;
+
 // Configuration for the bpftime runtime
 // Initialize the configuration from the environment variables
 struct agent_config {
@@ -37,12 +48,51 @@ struct agent_config {
 	// specify the where the logger output should be written to
 	// It can be a file path or "console".
 	// If it is "console", the logger will output to stderr
-	std::string logger_output_path = DEFAULT_LOGGER_OUTPUT_PATH;
+
+	// Here it is a variant, since this object (agent_config) will be used
+	// for both local and shared memory
+	std::variant<std::string, boost_shm_string> logger_output_path;
+
+	agent_config(boost::interprocess::managed_shared_memory &memory)
+		: logger_output_path(
+			  boost_shm_string(memory.get_segment_manager()))
+	{
+		std::get<boost_shm_string>(logger_output_path) =
+			DEFAULT_LOGGER_OUTPUT_PATH;
+	}
+	agent_config()
+		: logger_output_path(std::string(DEFAULT_LOGGER_OUTPUT_PATH))
+	{
+	}
+	const char *get_logger_output_path() const
+	{
+		return std::visit(
+			[](auto &&arg) -> const char * { return arg.c_str(); },
+			logger_output_path);
+	}
+	void set_logger_output_path(const char *path)
+	{
+		std::visit([&](auto &&arg) { arg = path; }, logger_output_path);
+	}
+	void
+	change_to_shm_object(boost::interprocess::managed_shared_memory &memory)
+	{
+		if (std::holds_alternative<boost_shm_string>(
+			    logger_output_path))
+			return;
+		auto current_value = std::get<std::string>(logger_output_path);
+		logger_output_path.emplace<boost_shm_string>(
+			current_value.c_str(), memory.get_segment_manager());
+	}
+	agent_config(const agent_config &) = delete;
+	agent_config &operator=(const agent_config &) = delete;
+	agent_config(agent_config &&) noexcept = default;
+	agent_config &operator=(agent_config &&) noexcept = default;
 };
 
 // Get the bpftime configuration from the environment variables
 // If the shared memory is not int, this should be called first
-const agent_config get_agent_config_from_env() noexcept;
+agent_config construct_agent_config_from_env() noexcept;
 
 } // namespace bpftime
 
