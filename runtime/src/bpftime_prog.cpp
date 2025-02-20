@@ -28,8 +28,8 @@ bpftime_prog::bpftime_prog(const struct ebpf_inst *insn, size_t insn_cnt,
 	SPDLOG_DEBUG("Creating bpftime_prog with name {}", name);
 	insns.assign(insn, insn + insn_cnt);
 	// std::cout<<"GET AGENT CONFIG"<<std::endl;
-	// const char* vm_name = bpftime::bpftime_get_agent_config().vm_name.c_str();
-	const char *vm_name = "ubpf";
+	const char* vm_name = bpftime::bpftime_get_agent_config().get_vm_name();
+	// const char *vm_name = "ubpf";
 	if(vm_name == "llvm"){
 		std::cout<<"Creating vm with name "<<vm_name<<std::endl;
 		SPDLOG_INFO("Creating vm with name {}", vm_name);

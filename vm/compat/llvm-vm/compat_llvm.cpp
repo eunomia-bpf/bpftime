@@ -56,9 +56,7 @@ namespace llvm {
 __attribute__((constructor))
 static inline void register_llvm_vm_factory() {
     register_vm_factory("llvm", create_llvm_vm_instance);
-    std::cout<<"llvm register vm factory " <<  std::endl; // 添加 std::cout 验证
-    SPDLOG_INFO("Registered LLVM VM factory");
-    std::cout << "llvm vm factory registered at startup" << std::endl; // 添加 cout 验证
+    printf("llvm register vm factory\n");
 }
 
 } // namespace llvm

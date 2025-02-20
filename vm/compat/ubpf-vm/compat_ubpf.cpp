@@ -250,9 +250,8 @@ namespace bpftime::vm::compat {
 namespace ubpf {
 __attribute__((constructor))
 static inline void register_ubpf_vm_factory() {
-	printf("ubpf register vm factory 1\n");
     register_vm_factory("ubpf", create_ubpf_vm_instance);
-	printf("ubpf register vm factory 2\n");
+	printf("ubpf register vm factory\n");
 }
 } // namespace ubpf
 } // namespace bpftime::vm::compat

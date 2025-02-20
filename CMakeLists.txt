@@ -177,18 +177,19 @@ if(${BPFTIME_BUILD_STATIC_LIB})
   message(STATUS " Adding libraries to single static archive file")
   bpftime_add_static_lib_component_command(bpftime_vm)
 
-  if(${BPFTIME_LLVM_JIT})
+  # TODO: remove this
+  # if(${BPFTIME_LLVM_JIT})
     bpftime_add_static_lib_component_command(bpftime_llvm_vm)
     bpftime_add_libs_component_command(${LLVM_BUILD_DIR}/libbpftime_llvm_vm.a)
     message(STATUS " Adding LLVM JIT to static archive")
-  else()
+  # else()
     bpftime_add_static_lib_component_command(bpftime_ubpf_vm)
     bpftime_add_libs_component_command(${UBPF_BUILD_DIR}/ubpf/lib/libubpf.a)
     bpftime_add_libs_component_command(${UBPF_BUILD_DIR}/libbpftime_ubpf_vm.a)
 
 
     message(STATUS " Adding uBPF JIT to static archive")
-  endif()
+  # endif()
 
   bpftime_add_libs_component_command(${FRIDA_GUM_INSTALL_DIR}/libfrida-gum.a)
   bpftime_add_static_lib_component_command(bpftime_frida_uprobe_attach_impl)
