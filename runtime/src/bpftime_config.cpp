@@ -80,7 +80,7 @@ agent_config bpftime::construct_agent_config_from_env() noexcept
 	SPDLOG_INFO("Catch VM name");
 	if (vm_name != NULL) {
 		SPDLOG_INFO("Using VM: {}", vm_name);
-		agent_config.vm_name = vm_name;
+		agent_config.set_vm_name(vm_name);
 	}
 
 
