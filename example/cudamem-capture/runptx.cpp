@@ -16,12 +16,7 @@
 
 int main(int argc, char** argv) {
     // PTX file path passed as an argument for convenience
-    if (argc < 2) {
-        fprintf(stderr, "Usage: %s <path_to_ptx>\n", argv[0]);
-        return EXIT_FAILURE;
-    }
-
-    const char* ptxPath = argv[1];
+    const char* ptxPath = "victim.ptx";
 
     // 1. Initialize the CUDA driver
     CHECK_CU(cuInit(0));

@@ -69,9 +69,9 @@ $(call allow-override,LD,$(CROSS_COMPILE)ld)
 all: $(APPS) victim
 
 victim: victim.cu
-	nvcc victim.cu -o victim.ptx -ptx -arch=sm_86
-	nvcc -arch sm_86 -fatbin victim.cu -o victim.fatbin
-
+	/usr/local/cuda/bin/nvcc victim.cu -o victim.ptx -ptx -arch=sm_70
+	/usr/local/cuda/bin/nvcc -arch sm_70 -fatbin victim.cu -o victim.fatbin
+	g++ runptx.cpp -o victim -lcuda
 .PHONY: clean
 clean:
 	$(call msg,CLEAN)

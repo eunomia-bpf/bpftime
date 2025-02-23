@@ -9,7 +9,7 @@
 #include <bpf/bpf_tracing.h>
 
 SEC("uprobe")
-int do_cudamem_capture_patch(struct pt_regs *ctx)
+int do_cudamem_capture__cuda(struct pt_regs *ctx)
 {
 	int rand = bpf_get_prandom_u32();
 	if (rand % 2 == 0) {

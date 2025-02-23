@@ -8,6 +8,8 @@
 #include <sys/ptrace.h>
 #include <sys/wait.h>
 #include <fstream>
+#include "pos/include/workspace.h"
+#include "pos/cuda_impl/remoting/workspace.h"
 namespace bpftime
 {
 namespace attach
@@ -57,6 +59,8 @@ class CUDAInjector {
 			spdlog::error("cuInit(0) failed with code {}",
 				      static_cast<int>(res));
 		}
+		auto ws = pos_create_workspace_cuda();
+
 	}
 
 	bool attach()
