@@ -93,4 +93,6 @@ option(BPFTIME_BUILD_WITH_LIBBPF "Whether to build with libbpf and other linux h
 option(ENABLE_PROBE_WRITE_CHECK "Whether to enable probe write check" OFF)
 
 # whether to enable probe read check
-option(ENABLE_PROBE_READ_CHECK "Whether to enable probe read check" OFF)
+option(ENABLE_PROBE_READ_CHECK "Whether to enable probe read check" ON)
+# whether to enable probe write check
+option(ENABLE_PROBE_WRITE_CHECK "Whether to enable probe write check" ON)

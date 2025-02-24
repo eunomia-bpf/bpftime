@@ -26,7 +26,7 @@ Read and write user memory:
 ## Suggest build configuration
 
 ```sh
-cmake -Bbuild -DLLVM_DIR=/usr/lib/llvm-15/cmake -DCMAKE_BUILD_TYPE:STRING=RelWithDebInfo -DBPFTIME_LLVM_JIT=1 -DBPFTIME_ENABLE_LTO=1
+cmake -Bbuild -DLLVM_DIR=/usr/lib/llvm-15/cmake -DCMAKE_BUILD_TYPE:STRING=RelWithDebInfo -DBPFTIME_LLVM_JIT=1 -DBPFTIME_ENABLE_LTO=1 -DSPDLOG_ACTIVE_LEVEL=SPDLOG_LEVEL_INFO
 cmake --build build --config RelWithDebInfo --target install -j
 ```
 

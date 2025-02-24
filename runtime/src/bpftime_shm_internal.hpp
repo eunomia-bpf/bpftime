@@ -115,6 +115,7 @@ class bpftime_shm {
 
 	// create a bpf map fd
 	int add_bpf_map(int fd, const char *name, bpftime::bpf_map_attr attr);
+	int dup_bpf_map(int oldfd, int newfd);
 	uint32_t bpf_map_value_size(int fd) const;
 
 	const void *bpf_map_lookup_elem(int fd, const void *key,
