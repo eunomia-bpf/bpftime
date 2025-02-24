@@ -29,17 +29,15 @@ bpftime_prog::bpftime_prog(const struct ebpf_inst *insn, size_t insn_cnt,
 	insns.assign(insn, insn + insn_cnt);
 	// std::cout<<"GET AGENT CONFIG"<<std::endl;
 	const char* vm_name = bpftime::bpftime_get_agent_config().get_vm_name();
+	std::string vm_name_str = (std::string)vm_name;
 	// const char *vm_name = "ubpf";
-	if(vm_name == "llvm"){
-		std::cout<<"Creating vm with name "<<vm_name<<std::endl;
-		SPDLOG_INFO("Creating vm with name {}", vm_name);
-	}else if(vm_name == "ubpf"){
-		std::cout<<"Creating vm with name "<<vm_name<<std::endl;
-		SPDLOG_INFO("Creating vm with name {}", vm_name);
+	if(vm_name_str == "llvm"){
+		SPDLOG_DEBUG("Creating vm with name {}", vm_name_str);
+	}else if(vm_name_str == "ubpf"){
+		SPDLOG_DEBUG("Creating vm with name {}", vm_name_str);
 	}
 	else {
-		std::cout<<"Creating vm with other name "<<vm_name<<std::endl;
-		SPDLOG_ERROR("Invalid vm name: {}", vm_name);
+		SPDLOG_ERROR("Invalid vm name: {}", vm_name_str);
 	}
 
 	vm = ebpf_create(vm_name);
