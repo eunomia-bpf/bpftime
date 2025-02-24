@@ -261,7 +261,7 @@ pos_retval_t POSClient_CUDA::persist_handles(bool with_state){
         POS_WARN_C("failed to obtain directory to store trace result, failed to dump");
         goto exit;
     }
-    trace_dir += std::string("/")
+    trace_dir += std::string("/tmp/")
                 + std::to_string(this->_cxt.pid)
                 + std::string("-")
                 + std::to_string(this->_ws->tsc_timer.get_tsc());

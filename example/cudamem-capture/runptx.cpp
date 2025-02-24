@@ -34,7 +34,7 @@ int main(int argc, char** argv) {
     // 4. Retrieve the kernel (function) from the module
     //    Assume our PTX defines a kernel called "myKernel"
     CUfunction kernel;
-    CHECK_CU(cuModuleGetFunction(&kernel, module, "myKernel"));
+    CHECK_CU(cuModuleGetFunction(&kernel, module, "infinite_kernel"));
 
     // 5. Setup parameters for the kernel.
     //    Example: Suppose the kernel signature is something like:

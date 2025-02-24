@@ -148,20 +148,20 @@ POSWorkspace::POSWorkspace() :
     ws_conf(this)
 {
     // create out-of-band server
-    _oob_server = new POSOobServer(
-        /* ws */ this,
-        /* callback_handlers */ {
-            {   kPOS_OOB_Msg_Agent_Register_Client,     oob_functions::agent_register_client::sv    },
-            {   kPOS_OOB_Msg_Agent_Unregister_Client,   oob_functions::agent_unregister_client::sv  },
-            {   kPOS_OOB_Msg_CLI_Ckpt_PreDump,          oob_functions::cli_ckpt_predump::sv         },
-            {   kPOS_OOB_Msg_CLI_Ckpt_Dump,             oob_functions::cli_ckpt_dump::sv            },
-            {   kPOS_OOB_Msg_CLI_Restore,               oob_functions::cli_restore::sv              },
-            {   kPOS_OOB_Msg_CLI_Trace_Resource,        oob_functions::cli_trace_resource::sv       },
-        },
-        /* ip_str */ POS_OOB_SERVER_DEFAULT_IP,
-        /* port */ POS_OOB_SERVER_DEFAULT_PORT
-    );
-    POS_CHECK_POINTER(_oob_server);
+//    _oob_server = new POSOobServer(
+//        /* ws */ this,
+//        /* callback_handlers */ {
+//            {   kPOS_OOB_Msg_Agent_Register_Client,     oob_functions::agent_register_client::sv    },
+//            {   kPOS_OOB_Msg_Agent_Unregister_Client,   oob_functions::agent_unregister_client::sv  },
+//            {   kPOS_OOB_Msg_CLI_Ckpt_PreDump,          oob_functions::cli_ckpt_predump::sv         },
+//            {   kPOS_OOB_Msg_CLI_Ckpt_Dump,             oob_functions::cli_ckpt_dump::sv            },
+//            {   kPOS_OOB_Msg_CLI_Restore,               oob_functions::cli_restore::sv              },
+//            {   kPOS_OOB_Msg_CLI_Trace_Resource,        oob_functions::cli_trace_resource::sv       },
+//        },
+//        /* ip_str */ POS_OOB_SERVER_DEFAULT_IP,
+//        /* port */ POS_OOB_SERVER_DEFAULT_PORT
+//    );
+//    POS_CHECK_POINTER(_oob_server);
 
     // create daemon directory
     if (!std::filesystem::exists(this->ws_conf._runtime_daemon_log_path)) {
@@ -182,8 +182,8 @@ POSWorkspace::POSWorkspace() :
     // make sure the protobuf is working
     GOOGLE_PROTOBUF_VERIFY_VERSION;
 
-    POS_LOG(">>>>>>>>>> PhOS Workspace <<<<<<<<<<\n%s\n", pos_banner.c_str());
-    POS_LOG("PhoenixOS workspace created, welcome!");
+//    POS_LOG(">>>>>>>>>> PhOS Workspace <<<<<<<<<<\n%s\n", pos_banner.c_str());
+//    POS_LOG("PhoenixOS workspace created, welcome!");
 }
 
 

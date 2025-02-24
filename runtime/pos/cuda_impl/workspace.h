@@ -47,8 +47,7 @@ class POSWorkspace_CUDA : public POSWorkspace {
      *  \return POS_SUCCESS for successfully preserving
      */
     pos_retval_t preserve_resource(pos_resource_typeid_t rid, void *data) override;
- 
- protected:
+
     /*!
      *  \brief  create a specific-implemented client
      *  \param  parameter to create the client
@@ -57,6 +56,7 @@ class POSWorkspace_CUDA : public POSWorkspace {
      */
     pos_retval_t __create_client(pos_create_client_param_t& param, POSClient **client) override;
 
+protected:
     /*!
      *  \brief  destory a specific-implemented client
      *  \param  client  pointer to the client to be destoried

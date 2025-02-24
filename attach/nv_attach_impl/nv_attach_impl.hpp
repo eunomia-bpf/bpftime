@@ -18,13 +18,56 @@ namespace attach
 // You would replace this with your own memory reading utility.
 namespace memory_utils
 {
+ssize_t process_vm_readv(pid_t pid, const struct iovec *local_iov,
+			 unsigned long liovcnt, const struct iovec *remote_iov,
+			 unsigned long riovcnt, unsigned long flags)
+{
+	return syscall(SYS_process_vm_readv, pid, local_iov, liovcnt,
+		       remote_iov, riovcnt, flags);
+}
 template <typename T>
 bool read_memory(pid_t pid, const void *remote_addr, T *out_value)
 {
-	// Dummy / placeholder read. Real implementation would use
-	// process_vm_readv or ptrace. Return false to indicate we haven't
-	// implemented the real method here.
-	return false;
+	// 首先尝试使用 process_vm_readv
+	struct iovec local_iov = { .iov_base = out_value,
+				   .iov_len = sizeof(T) };
+
+	struct iovec remote_iov = { .iov_base = const_cast<void *>(remote_addr),
+				    .iov_len = sizeof(T) };
+
+	ssize_t read = process_vm_readv(pid, &local_iov, 1, &remote_iov, 1, 0);
+	if (read == sizeof(T)) {
+		return true;
+	}
+
+	// 如果 process_vm_readv 失败，尝试使用 ptrace
+	// 注意：这种方法需要进程被暂停（通过 PTRACE_ATTACH 或其他方式）
+
+	// 对于不同大小的数据类型，我们可能需要多次读取
+	const size_t word_size = sizeof(long);
+	const size_t num_words = (sizeof(T) + word_size - 1) / word_size;
+
+	uint8_t *buffer = reinterpret_cast<uint8_t *>(out_value);
+	uintptr_t addr = reinterpret_cast<uintptr_t>(remote_addr);
+
+	for (size_t i = 0; i < num_words; ++i) {
+		errno = 0;
+		long word = ptrace(PTRACE_PEEKDATA, pid, addr + (i * word_size),
+				   nullptr);
+
+		if (errno != 0) {
+			return false;
+		}
+
+		// 计算这个字应该复制多少字节
+		size_t bytes_to_copy =
+			std::min(word_size, sizeof(T) - (i * word_size));
+
+		// 复制数据到输出缓冲区
+		std::memcpy(buffer + (i * word_size), &word, bytes_to_copy);
+	}
+
+	return true;
 }
 } // namespace memory_utils
 
@@ -46,6 +89,8 @@ class CUDAInjector {
 		std::vector<char> original_code;
 	};
 	std::vector<CodeBackup> backups;
+	POSWorkspace_CUDA *ws = nullptr;
+	POSClient *client = nullptr;
 
     public:
 	explicit CUDAInjector(pid_t pid) : target_pid(pid)
@@ -53,14 +98,40 @@ class CUDAInjector {
 		spdlog::debug("CUDAInjector: constructor for PID {}",
 			      target_pid);
 
-		// Initialize the CUDA Driver API
+		// 检查目标进程是否存在
+		if (kill(target_pid, 0) != 0) {
+			throw std::runtime_error(
+				"Target process does not exist");
+		}
+
+		// 初始化 CUDA Driver API
 		CUresult res = cuInit(0);
 		if (res != CUDA_SUCCESS) {
-			spdlog::error("cuInit(0) failed with code {}",
-				      static_cast<int>(res));
+			const char *error_str;
+			cuGetErrorString(res, &error_str);
+			throw std::runtime_error(
+				std::string("CUDA initialization failed: ") +
+				error_str);
 		}
-		auto ws = pos_create_workspace_cuda();
 
+		// 检查是否有可用的 CUDA 设备
+		int device_count = 0;
+		res = cuDeviceGetCount(&device_count);
+		if (res != CUDA_SUCCESS || device_count == 0) {
+			throw std::runtime_error("No CUDA devices available");
+		}
+
+		spdlog::debug(
+			"CUDA initialized successfully with {} devices available",
+			device_count);
+		ws = pos_create_workspace_cuda();
+		pos_create_client_param_t param = { .job_name = "bpftime",
+						    .pid = target_pid,
+						    .id = 1,
+						    .is_restoring = false };
+		ws->__create_client(
+			param,
+			&client);
 	}
 
 	bool attach()
@@ -110,7 +181,7 @@ class CUDAInjector {
 	// ------------------------------------------------------------------------
 	bool get_cuda_context()
 	{
-		// Open the proc maps of the target
+		// 首先尝试获取目标进程的 CUDA 驱动符号
 		std::ifstream mapsFile("/proc/" + std::to_string(target_pid) +
 				       "/maps");
 		if (!mapsFile.is_open()) {
@@ -119,65 +190,116 @@ class CUDAInjector {
 			return false;
 		}
 
+		// 先初始化我们自己的 CUDA 上下文
+		CUdevice current_device;
+		CUresult res = cuDeviceGet(&current_device, 0);
+		if (res != CUDA_SUCCESS) {
+			spdlog::error("Failed to get CUDA device");
+			return false;
+		}
+
+		CUcontext our_context;
+		res = cuCtxCreate(&our_context, 0, current_device);
+		if (res != CUDA_SUCCESS) {
+			spdlog::error("Failed to create CUDA context");
+			return false;
+		}
+
 		std::string line;
+		std::vector<std::pair<uintptr_t, uintptr_t> > cuda_regions;
+
 		while (std::getline(mapsFile, line)) {
-			// For demo, we just check if the line references
-			// 'libcuda'.
 			if (line.find("libcuda.so") != std::string::npos) {
 				uintptr_t start, end;
 				if (sscanf(line.c_str(), "%lx-%lx", &start,
 					   &end) == 2) {
-					// Try reading pointers in [start, end)
-					// to see if any might be a CUcontext.
-					for (uintptr_t addr = start; addr < end;
-					     addr += sizeof(void *)) {
-						CUcontext possible_ctx;
-						if (memory_utils::read_memory(
-							    target_pid,
-							    (void *)addr,
-							    &possible_ctx)) {
-							if (validate_cuda_context(
-								    possible_ctx)) {
-								spdlog::info(
-									"Found valid CUDA context at remote address 0x{:x}",
-									addr);
-								cuda_ctx =
-									possible_ctx;
-								return true;
-							}
-						}
-					}
+					cuda_regions.push_back({ start, end });
 				}
 			}
 		}
+
+		// 对每个找到的 CUDA 内存区域进行扫描
+		for (const auto &region : cuda_regions) {
+			spdlog::debug("Scanning CUDA region: {:x}-{:x}",
+				      region.first, region.second);
+
+			for (uintptr_t addr = region.first;
+			     addr < region.second; addr += sizeof(void *)) {
+				CUcontext possible_ctx;
+				if (!memory_utils::read_memory(target_pid,
+							       (void *)addr,
+							       &possible_ctx)) {
+					continue;
+				}
+
+				// 跳过明显无效的指针
+				if (possible_ctx == nullptr ||
+				    reinterpret_cast<uintptr_t>(possible_ctx) <
+					    0x1000) {
+					continue;
+				}
+
+				if (validate_cuda_context(possible_ctx)) {
+					spdlog::info(
+						"Found valid CUDA context at remote address {:x}",
+						addr);
+					cuda_ctx = possible_ctx;
+					return true;
+				}
+			}
+		}
+
+		spdlog::error("No valid CUDA context found in target process");
 		return false;
 	}
 
-	bool validate_cuda_context(CUcontext ctx)
+	bool validate_cuda_context(CUcontext remote_ctx)
 	{
-		// Attempt to set the context in our own process. In a real
-		// scenario, this doesn’t necessarily work straightforwardly
-		// across processes! But for demonstration:
-		CUresult res = cuCtxSetCurrent(ctx);
+		// 不要直接使用远程进程的上下文
+		CUcontext current_ctx = nullptr;
+		CUresult res = cuCtxGetCurrent(&current_ctx);
+		if (res != CUDA_SUCCESS) {
+			spdlog::debug("No current CUDA context in our process");
+			return false;
+		}
+
+		// 检查远程上下文是否是有效的指针
+		if (remote_ctx == nullptr) {
+			return false;
+		}
+
+		// 尝试读取远程上下文的一些基本信息
+		CUdevice device;
+		if (!memory_utils::read_memory(
+			    target_pid, reinterpret_cast<void *>(remote_ctx),
+			    &device)) {
+			return false;
+		}
+
+		// 可以添加更多的验证逻辑
+		int compute_capability_major = 0;
+		res = cuDeviceGetAttribute(
+			&compute_capability_major,
+			CU_DEVICE_ATTRIBUTE_COMPUTE_CAPABILITY_MAJOR, device);
 		if (res != CUDA_SUCCESS) {
 			return false;
 		}
 
-		// If we can get a device from this context, we consider it
-		// valid.
-		CUdevice dev;
-		res = cuCtxGetDevice(&dev);
-		if (res != CUDA_SUCCESS) {
-			return false;
-		}
+		spdlog::debug(
+			"Found potential CUDA context with compute capability {}.x",
+			compute_capability_major);
 		return true;
 	}
-public:
+
+    public:
 	// Demonstrates how you might inject PTX or backup/restore code on the
 	// fly in a remote context. This is a stub for illustration.
 	bool inject_ptx(const char *ptx_code, CUdeviceptr target_addr,
 			size_t code_size)
 	{
+//		client->persist_handles(true);
+		client->persist((std::string &)"/tmp/bpftime");
+
 		// 1. Load the PTX into a module
 		CUmodule module;
 		CUresult result = cuModuleLoadData(&module, ptx_code);
@@ -234,35 +356,10 @@ public:
 
 		// Clean up
 		cuModuleUnload(module);
+		client->restore_apicxts((std::string&)"/tmp/bpftime");
+		client->restore_handles((std::string&)"/tmp/bpftime");
+
 		return true;
-	}
-
-	bool restore_code(CUdeviceptr addr)
-	{
-		for (auto &b : backups) {
-			if (b.addr == addr) {
-				CUresult result =
-					cuMemcpyHtoD(b.addr,
-						     b.original_code.data(),
-						     b.original_code.size());
-				return (result == CUDA_SUCCESS);
-			}
-		}
-		return false;
-	}
-
-	bool restore_all()
-	{
-		bool success = true;
-		for (auto &b : backups) {
-			CUresult result =
-				cuMemcpyHtoD(b.addr, b.original_code.data(),
-					     b.original_code.size());
-			if (result != CUDA_SUCCESS) {
-				success = false;
-			}
-		}
-		return success;
 	}
 };
 
@@ -276,8 +373,8 @@ struct nv_attach_private_data final : public attach_private_data {
 	uint64_t addr;
 	// Saved module name
 	pid_t pid;
-    // initialize_from_string
-    int initialize_from_string(const std::string_view &sv) override;
+	// initialize_from_string
+	int initialize_from_string(const std::string_view &sv) override;
 };
 
 constexpr int ATTACH_NV = 999;
