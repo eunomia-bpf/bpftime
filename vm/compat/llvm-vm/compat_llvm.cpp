@@ -1,5 +1,6 @@
 #include <bpftime_vm_compat.hpp>
 #include <compat_llvm.hpp>
+#include <optional>
 #include <memory> // 确保包含 memory 头文件，使用 std::make_unique 和 std::unique_ptr
 
 namespace bpftime::vm::compat
@@ -28,7 +29,8 @@ int bpftime_llvm_vm::exec(void *mem, size_t mem_len, uint64_t &bpf_return_value)
 }
 
 std::vector<uint8_t> bpftime_llvm_vm::do_aot_compile(bool print_ir) {
-    return bpftime::llvmbpf_vm::do_aot_compile(print_ir);
+    std::optional<std::vector<uint8_t>> bytecode_optional = bpftime::llvmbpf_vm::do_aot_compile(print_ir);
+    return bytecode_optional.value_or(std::vector<uint8_t>()); // Return empty vector if optional is empty
 }
 
 std::optional<compat::precompiled_ebpf_function> bpftime_llvm_vm::load_aot_object(const std::vector<uint8_t> &object) {
