@@ -7,6 +7,7 @@
 
 namespace bpftime::vm::ubpf
 {
+std::unique_ptr<bpftime::vm::compat::bpftime_vm_impl> create_ubpf_vm_instance();
 
 class bpftime_ubpf_vm : public compat::bpftime_vm_impl {
     public:

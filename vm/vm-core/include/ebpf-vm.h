@@ -63,7 +63,7 @@ typedef uint64_t (*ebpf_jit_fn)(void *mem, size_t mem_len);
  *
  * @return A pointer to the new VM, or NULL on failure.
  */
-struct ebpf_vm *ebpf_create(void);
+struct ebpf_vm *ebpf_create(const char *vm_name);
 
 /**
  * @brief Free a ebpf VM.

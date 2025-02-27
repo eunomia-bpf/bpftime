@@ -7,6 +7,8 @@
 #include <memory>
 #include <optional>
 #include <string>
+#include <map>
+#include <iostream>
 
 #ifndef EBPF_STACK_SIZE
 // Compatible to C headers
@@ -189,7 +191,44 @@ class bpftime_vm_impl {
 	}
 };
 
-std::unique_ptr<bpftime_vm_impl> create_vm_instance();
+using CreateVmInstanceFunc = std::unique_ptr<bpftime_vm_impl>(*)();
+
+namespace detail {
+    inline std::map<std::string, CreateVmInstanceFunc>& get_vm_factory_map() {
+		// printf("get vm factory map\n");
+        static std::map<std::string, CreateVmInstanceFunc> factory_map;
+        return factory_map;
+    }
+}
+
+// 修改 create_vm_instance 函数，根据 vm_name_str 从 map 中查找并调用工厂函数
+inline std::unique_ptr<bpftime_vm_impl> create_vm_instance(const char *vm_name_str) { // 内联实现
+    if (vm_name_str == nullptr) {
+        SPDLOG_ERROR("VM name string is null");
+        throw std::runtime_error("VM name cannot be null");
+    }
+    std::string vm_name = vm_name_str;
+	// printf("create vm instance for name: %s\n", vm_name.c_str());
+    auto& vm_factory_map = detail::get_vm_factory_map();
+    auto it = vm_factory_map.find(vm_name);
+    if (it == vm_factory_map.end()) {
+		std::cout<<"no vm factory registered for name: "<<vm_name<<std::endl;
+        SPDLOG_ERROR("No VM factory registered for name: {}", vm_name);
+        throw std::runtime_error("Unknown VM type requested: " + vm_name);
+    }
+    return it->second(); // 调用工厂函数创建 VM 实例
+}
+
+// 用于注册 VM 工厂函数的接口
+inline void register_vm_factory(const std::string &vm_name, CreateVmInstanceFunc factory_func) { // 内联实现
+    auto& vm_factory_map = detail::get_vm_factory_map();
+	// std::cout<<"register vm factory for name: "<<vm_name<<std::endl;
+    if (vm_factory_map.count(vm_name)) {
+        SPDLOG_WARN("VM factory for name: {} already registered, overwriting", vm_name);
+    }
+    vm_factory_map[vm_name] = factory_func;
+    SPDLOG_DEBUG("Registered VM factory for name: {}", vm_name);
+}
 
 } // namespace bpftime::vm::compat
 struct ebpf_vm {

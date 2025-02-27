@@ -36,7 +36,7 @@ test: build ## test the package
 
 build: ## build the package
 	rm -rf build/
-	cmake -Bbuild  -DBPFTIME_ENABLE_UNIT_TESTING=1
+	cmake -Bbuild  -DBPFTIME_ENABLE_UNIT_TESTING=1 -DCMAKE_BUILD_TYPE:STRING=Debug
 	cmake --build build --config Debug
 
 clean: ## clean the project
