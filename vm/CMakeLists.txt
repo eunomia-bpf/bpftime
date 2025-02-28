@@ -27,7 +27,9 @@ endif()
 
 if(${BPFTIME_LLVM_JIT})
   set(BPFTIME_BPF_RUNTIME_NAME "bpftime_llvm_vm")
-else()
+endif()
+
+if(${BPFTIME_UBPF_JIT})
   set(BPFTIME_BPF_RUNTIME_NAME "bpftime_ubpf_vm")
 endif()
 

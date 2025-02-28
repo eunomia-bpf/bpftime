@@ -218,7 +218,7 @@ inline std::unique_ptr<bpftime_vm_impl> create_vm_instance(const char *vm_name_s
 }
 
 
-inline void register_vm_factory(const std::string &vm_name, CreateVmInstanceFunc factory_func) { // 内联实现
+inline void register_vm_factory(const std::string &vm_name, create_vm_instance_func factory_func) { // 内联实现
     auto& vm_factory_map = detail::get_vm_factory_map();
     if (vm_factory_map.count(vm_name)) {
         SPDLOG_WARN("VM factory for name: {} already registered, overwriting", vm_name);
