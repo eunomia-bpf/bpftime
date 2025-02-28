@@ -3,10 +3,10 @@
 #include <cstring>
 #include <memory>
 
-extern "C" ebpf_vm *ebpf_create(void)
+extern "C" ebpf_vm *ebpf_create(const char *vm_name_str)
 {
 	auto vm = new ebpf_vm;
-	vm->vm_instance = bpftime::vm::compat::create_vm_instance();
+	vm->vm_instance = bpftime::vm::compat::create_vm_instance(vm_name_str);
 	return vm;
 }
 
@@ -84,7 +84,9 @@ extern "C" int ebpf_set_pointer_secret(struct ebpf_vm *vm, uint64_t secret)
 	return vm->vm_instance->set_pointer_secret(secret);
 }
 
-ebpf_jit_fn ebpf_load_aot_object(struct ebpf_vm *vm, const void *buf, size_t buf_len) {
+ebpf_jit_fn ebpf_load_aot_object(struct ebpf_vm *vm, const void *buf,
+				 size_t buf_len)
+{
 	std::vector<uint8_t> buf_vec((uint8_t *)buf, (uint8_t *)buf + buf_len);
 	auto func = vm->vm_instance->load_aot_object(buf_vec);
 	return func.value_or(nullptr);
