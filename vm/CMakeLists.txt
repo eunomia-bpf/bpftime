@@ -8,6 +8,14 @@ project(
   LANGUAGES C CXX
 )
 
+if(NOT DEFINED BPFTIME_LLVM_JIT)
+  set(BPFTIME_LLVM_JIT ON CACHE BOOL "Use LLVM as jit backend.")
+endif()
+
+if(NOT DEFINED BPFTIME_UBPF_JIT)
+  set(BPFTIME_UBPF_JIT ON CACHE BOOL "Use uBPF as jit backend.")
+endif()
+
 
 if(NOT CMAKE_BUILD_TYPE)
   set(CMAKE_BUILD_TYPE "Debug")
@@ -25,10 +33,10 @@ if(${BPFTIME_BUILD_STANDALONE_VM})
   add_subdirectory(../third_party/argparse ${CMAKE_CURRENT_BINARY_DIR}/argparse)
 endif()
 
-if(${BPFTIME_LLVM_JIT})
+if(BPFTIME_LLVM_JIT)
   set(BPFTIME_BPF_RUNTIME_NAME "bpftime_llvm_vm")
   message(STATUS "The runtime is ${BPFTIME_BPF_RUNTIME_NAME}")
-elseif(${BPFTIME_UBPF_JIT})
+elseif(BPFTIME_UBPF_JIT)
   set(BPFTIME_BPF_RUNTIME_NAME "bpftime_ubpf_vm")
   message(STATUS "The runtime is ${BPFTIME_BPF_RUNTIME_NAME}")
 else()
