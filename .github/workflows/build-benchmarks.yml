@@ -35,6 +35,8 @@ jobs:
     - name: build runtime
       run:  cmake -Bbuild  -DCMAKE_BUILD_TYPE:STRING=RelWithDebInfo \
              -DBUILD_BPFTIME_DAEMON=1 \
+             -DCMAKE_C_COMPILER=/usr/lib/llvm-17/bin/clang-17 \ # 显式指定 C 编译器
+             -DCMAKE_CXX_COMPILER=/usr/lib/llvm-17/bin/clang++-17 \ # 显式指定 C++ 编译器
              -DLLVM_CONFIG=/usr/lib/llvm-17/bin/llvm-config-17 # 显式指定 llvm-config
 
     - name: build benchmarks
