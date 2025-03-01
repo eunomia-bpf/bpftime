@@ -3,7 +3,7 @@ name: Build benchmarks
 on:
   push:
     branches: "master"
-  pull_request: 
+  pull_request:
     branches: "master"
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}-${{ github.event_name }}
@@ -20,9 +20,11 @@ jobs:
     - name: install deps
       run: |
         sudo apt update
+        wget https://apt.llvm.org/llvm.sh && chmod +x llvm.sh && sudo ./llvm.sh 17
+        sudo apt update
         sudo apt install -y --no-install-recommends \
         libelf1 libelf-dev zlib1g-dev make git libboost1.74-all-dev \
-        binutils-dev libyaml-cpp-dev  gcc-12 g++-12 llvm
+        binutils-dev libyaml-cpp-dev  gcc-12 g++-12 llvm-17 clang-17
 
     - name: build runtime
       run:  CC=gcc-12 CXX=g++-12 make release -j
