@@ -8,7 +8,7 @@ namespace bpftime::vm::compat
 
 std::unique_ptr<bpftime_vm_impl> create_llvm_vm_instance()
 {
-	std::cout << "create llvm vm instance" << std::endl;
+	SPDLOG_DEBUG("create llvm vm instance");
 	return std::make_unique<llvm::bpftime_llvm_vm>();
 }
 

@@ -209,7 +209,6 @@ inline std::unique_ptr<bpftime_vm_impl> create_vm_instance(const char *vm_name_s
     auto& vm_factory_map = detail::get_vm_factory_map();
     auto it = vm_factory_map.find(vm_name);
     if (it == vm_factory_map.end()) {
-		std::cout<<"no vm factory registered for name: "<<vm_name<<std::endl;
         SPDLOG_ERROR("No VM factory registered for name: {}", vm_name);
         throw std::runtime_error("Unknown VM type requested: " + vm_name);
     }

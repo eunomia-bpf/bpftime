@@ -35,7 +35,7 @@ bpftime_prog::bpftime_prog(const struct ebpf_inst *insn, size_t insn_cnt,
 	} else if (vm_name_str == "ubpf") {
 		SPDLOG_DEBUG("Creating vm with name {}", vm_name_str);
 	} else {
-		SPDLOG_ERROR("Invalid vm name: {}", vm_name_str);
+		SPDLOG_DEBUG("Trying enabling non-builtin vm {}", vm_name_str);
 	}
 
 	vm = ebpf_create(vm_name);
