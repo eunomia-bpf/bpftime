@@ -33,13 +33,14 @@ jobs:
       run: rm -rf build
 
     - name: build runtime
-      run:  cmake -Bbuild  \
-             -DCMAKE_BUILD_TYPE=RelWithDebInfo \
-             -DBUILD_BPFTIME_DAEMON=1 \
-             -DCMAKE_C_COMPILER=/usr/lib/llvm-17/bin/clang-17 \
-             -DCMAKE_CXX_COMPILER=/usr/lib/llvm-17/bin/clang++-17 \
-             -DLLVM_CONFIG=/usr/lib/llvm-17/bin/llvm-config-17 \
-             -DLLVM_DIR=/usr/lib/llvm-17  
+      run: |
+        cmake -Bbuild \
+          -DCMAKE_BUILD_TYPE=RelWithDebInfo \
+          -DBUILD_BPFTIME_DAEMON=1 \
+          -DCMAKE_C_COMPILER=/usr/lib/llvm-17/bin/clang \
+          -DCMAKE_CXX_COMPILER=/usr/lib/llvm-17/bin/clang++ \
+          -DLLVM_CONFIG=/usr/lib/llvm-17/bin/llvm-config \
+          -DLLVM_DIR=/usr/lib/llvm-17/lib/cmake/llvm
 
     - name: build benchmarks
       run:  make -C benchmark
