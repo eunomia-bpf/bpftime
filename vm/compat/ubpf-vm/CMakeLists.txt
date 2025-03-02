@@ -11,6 +11,7 @@ ExternalProject_Add(
     # CMAKE_ARGS -DCMAKE_BUILD_TYPE=Debug
     INSTALL_COMMAND ""
 )
+target_link_options(bpftime_ubpf_vm PUBLIC "-Wl,--whole-archive" "$<TARGET_FILE:bpftime_ubpf_vm>" "-Wl,--no-whole-archive")
 
 add_dependencies(bpftime_ubpf_vm ubpf spdlog::spdlog bpftime_vm_compat)
 

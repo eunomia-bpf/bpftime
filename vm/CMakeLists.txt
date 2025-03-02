@@ -8,6 +8,14 @@ project(
   LANGUAGES C CXX
 )
 
+if(NOT DEFINED BPFTIME_LLVM_JIT)
+  set(BPFTIME_LLVM_JIT ON CACHE BOOL "Use LLVM as jit backend.")
+endif()
+
+if(NOT DEFINED BPFTIME_UBPF_JIT)
+  set(BPFTIME_UBPF_JIT ON CACHE BOOL "Use uBPF as jit backend.")
+endif()
+
 
 if(NOT CMAKE_BUILD_TYPE)
   set(CMAKE_BUILD_TYPE "Debug")
@@ -27,8 +35,16 @@ endif()
 
 if(${BPFTIME_LLVM_JIT})
   set(BPFTIME_BPF_RUNTIME_NAME "bpftime_llvm_vm")
-else()
+  message(STATUS "The runtime is ${BPFTIME_BPF_RUNTIME_NAME}")
+endif()
+
+if(${BPFTIME_UBPF_JIT})
   set(BPFTIME_BPF_RUNTIME_NAME "bpftime_ubpf_vm")
+  message(STATUS "The runtime is ${BPFTIME_BPF_RUNTIME_NAME}")
+endif()
+
+if(NOT BPFTIME_BPF_RUNTIME_NAME)
+  message(FATAL_ERROR "No JIT engine selected")
 endif()
 
 add_subdirectory(compat)
