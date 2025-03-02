@@ -13,9 +13,11 @@ COPY . .
 # 更新子模块
 RUN git submodule update --init --recursive
 
-# 设置环境变量 (移除 CXX 和 CC，保留 LLVM_DIR 和 PATH)
+# 设置环境变量
+ENV BPFTIME_VM_NAME=llvm 
 ENV LLVM_DIR=/usr/lib/llvm-17/lib/cmake/llvm
 ENV PATH="${PATH}:/usr/lib/llvm-17/bin"
+
 
 # 使用您提供的cmake配置进行构建
 RUN rm -rf build && mkdir build && cmake -Bbuild \
@@ -25,12 +27,6 @@ RUN rm -rf build && mkdir build && cmake -Bbuild \
     -DCMAKE_CXX_COMPILER=/usr/lib/llvm-17/bin/clang++ \
     -DLLVM_CONFIG=/usr/lib/llvm-17/bin/llvm-config \
     -DLLVM_DIR=/usr/lib/llvm-17/lib/cmake/llvm
-
-# 调试信息: 列出目录内容
-RUN echo "Listing /usr/lib/llvm-17/include/llvm/Transforms/IPO/:"; ls -l /usr/lib/llvm-17/include/llvm/Transforms/IPO/
-RUN echo "Listing /usr/lib/llvm-17/bin/:"; ls -l /usr/lib/llvm-17/bin/
-RUN echo "Listing /usr/lib/llvm-17/lib/cmake/llvm/:"; ls -l /usr/lib/llvm-17/lib/cmake/llvm/
-
 
 # 编译
 RUN cd build && make -j$(nproc)
