@@ -1,7 +1,7 @@
 #include <bpftime_vm_compat.hpp>
 #include <compat_llvm.hpp>
 #include <optional>
-#include <memory> // 确保包含 memory 头文件，使用 std::make_unique 和 std::unique_ptr
+#include <memory>
 
 namespace bpftime::vm::compat
 {
@@ -73,8 +73,6 @@ namespace bpftime::vm::compat
 {
 namespace llvm
 {
-
-// 静态构造函数，用于注册 LLVM VM 工厂函数
 __attribute__((constructor)) static inline void register_llvm_vm_factory()
 {
 	register_vm_factory("llvm", create_llvm_vm_instance);
