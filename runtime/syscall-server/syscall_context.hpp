@@ -24,6 +24,10 @@ using namespace bpftime_epoll;
 
 constexpr const int MOCKED_UPROBE_TYPE_VALUE = 9;
 constexpr const int MOCKED_URETPROBE_BIT = 0;
+
+constexpr const int MOCKED_KPROBE_TYPE_VALUE = 8;
+constexpr const int MOCKED_KRETPROBE_BIT = 0;
+
 struct mocked_file_provider {
 	/**
 	 * @brief Next available byte

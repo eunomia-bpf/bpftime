@@ -36,7 +36,7 @@ target_link_libraries(bpftime-agent
   spdlog::spdlog
   bpftime_frida_uprobe_attach_impl
   bpftime_syscall_trace_attach_impl
-  bpftime_nv_attach_impl
+  # bpftime_nv_attach_impl
 )
 
 else()
@@ -57,6 +57,6 @@ target_link_libraries(bpftime-agent
   -ldl
   spdlog::spdlog
   bpftime_frida_uprobe_attach_impl
-  bpftime_nv_attach_impl
+  # bpftime_nv_attach_impl
 )
 endif()

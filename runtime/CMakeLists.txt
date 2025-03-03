@@ -249,7 +249,7 @@ endif()
 
 add_subdirectory(agent)
 add_subdirectory(syscall-server)
-add_subdirectory(pos)
+# add_subdirectory(pos)
 
 #
 # Unit testing setup

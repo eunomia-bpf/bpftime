@@ -31,7 +31,7 @@
 #endif
 #if __linux__
 // Temporarily comment out problematic include until file is created
-#include "../attach/nv_attach_impl/nv_attach_impl.hpp"
+// #include "../attach/nv_attach_impl/nv_attach_impl.hpp"
 #endif
 
 using namespace bpftime;
@@ -153,21 +153,21 @@ extern "C" void bpftime_agent_main(const gchar *data, gboolean *stay_resident)
 #endif
 #if __linux__
 	// Register nv attach impl
-	auto nv_attacher = std::make_unique<nv_attach_impl>();
-	ctx_holder.ctx.register_attach_impl(
-		{ ATTACH_NV }, std::move(nv_attacher),
-		[](const std::string_view &sv, int &err) {
-			// Build the attach_private_data for NV from a string
-			auto priv_data =
-				std::make_unique<nv_attach_private_data>();
-			if (int rc = priv_data->initialize_from_string(sv);
-			    rc < 0) {
-				err = rc;
-				return std::unique_ptr<attach_private_data>();
-			}
-			return std::unique_ptr<attach_private_data>(
-				std::move(priv_data));
-		});
+	// auto nv_attacher = std::make_unique<nv_attach_impl>();
+	// ctx_holder.ctx.register_attach_impl(
+	// 	{ ATTACH_NV }, std::move(nv_attacher),
+	// 	[](const std::string_view &sv, int &err) {
+	// 		// Build the attach_private_data for NV from a string
+	// 		auto priv_data =
+	// 			std::make_unique<nv_attach_private_data>();
+	// 		if (int rc = priv_data->initialize_from_string(sv);
+	// 		    rc < 0) {
+	// 			err = rc;
+	// 			return std::unique_ptr<attach_private_data>();
+	// 		}
+	// 		return std::unique_ptr<attach_private_data>(
+	// 			std::move(priv_data));
+	// 	});
 #endif
 	// Register uprobe attach impl
 	ctx_holder.ctx.register_attach_impl(

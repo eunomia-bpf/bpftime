@@ -161,6 +161,20 @@ int bpftime_shm::bpf_map_get_next_key(int fd, const void *key, void *next_key,
 	return handler.bpf_map_get_next_key(key, next_key, from_syscall);
 }
 
+int bpftime_shm::add_kprobe(std::optional<int> fd, const char *func_name,
+			    uint64_t addr, bool retprobe, size_t ref_ctr_off)
+{
+	int new_fd = fd.has_value() ? *fd : open_fake_fd();
+	SPDLOG_DEBUG(
+		"Set fd {} to kprobe, func_name={},addr={:x},retprobe={},ref_ctr_off={}",
+		new_fd, func_name, addr, retprobe, ref_ctr_off);
+
+	return manager->set_handler(
+		new_fd,
+		bpftime::bpf_perf_event_handler(retprobe, addr, func_name,
+						ref_ctr_off, segment),
+		segment);
+}
 int bpftime_shm::add_uprobe(int fd, int pid, const char *name, uint64_t offset,
 			    bool retprobe, size_t ref_ctr_off)
 {

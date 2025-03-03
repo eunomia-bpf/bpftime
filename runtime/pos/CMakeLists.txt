@@ -1,6 +1,6 @@
 
 find_package(absl REQUIRED)
-find_package(protobuf CONFIG REQUIRED)
+find_package(Protobuf CONFIG REQUIRED)
 
 add_library(apicxt-objects OBJECT "${CMAKE_CURRENT_SOURCE_DIR}/include/proto/apicxt.proto")
 
