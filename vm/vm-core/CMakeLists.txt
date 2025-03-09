@@ -4,8 +4,6 @@ add_library(bpftime_vm STATIC ./src/ebpf-vm.cpp)
 
 target_include_directories(bpftime_vm PRIVATE ./include INTERFACE ./include)
 
-message("The runtime is ${BPFTIME_BPF_RUNTIME_NAME}")
-
 if(${BPFTIME_UBPF_JIT})
   target_link_options(bpftime_vm PUBLIC "-Wl,--whole-archive" "$<TARGET_FILE:bpftime_ubpf_vm>" "-Wl,--no-whole-archive")
   add_dependencies(bpftime_vm bpftime_vm_compat spdlog "bpftime_ubpf_vm")
