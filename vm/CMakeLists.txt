@@ -33,7 +33,15 @@ if(${BPFTIME_BUILD_STANDALONE_VM})
   add_subdirectory(../third_party/argparse ${CMAKE_CURRENT_BINARY_DIR}/argparse)
 endif()
 
-if(NOT BPFTIME_LLVM_JIT AND NOT BPFTIME_UBPF_JIT)
+if(${BPFTIME_LLVM_JIT})
+  set(BPFTIME_BPF_RUNTIME_NAME "bpftime_llvm_vm")
+endif()
+
+if(${BPFTIME_UBPF_JIT})
+  set(BPFTIME_BPF_RUNTIME_NAME "bpftime_ubpf_vm")
+endif()
+
+if(NOT BPFTIME_BPF_RUNTIME_NAME)
   message(WARNING "No built-in VMs has been enabled.")
 endif()
 
