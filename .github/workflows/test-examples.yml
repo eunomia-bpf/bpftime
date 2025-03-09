@@ -253,6 +253,7 @@ jobs:
         shell: bash
         run: |
           ROOT=$(pwd)
+          export BPFTIME_VM_NAME=llvm
           cd example/${{matrix.examples.path}}
           python3 $ROOT/.github/script/run_example.py "${{matrix.examples.executable}}" "${{matrix.examples.victim}}" "${{matrix.examples.expected_str}}" "/github/home/.bpftime/bpftime -i /github/home/.bpftime" 1
       - name: Test CLI - attach by running (uprobe)
@@ -260,6 +261,7 @@ jobs:
         shell: bash
         run: |
           ROOT=$(pwd)
+          export BPFTIME_VM_NAME=llvm
           cd example/${{matrix.examples.path}}
           python3 $ROOT/.github/script/run_example.py "${{matrix.examples.executable}}" "${{matrix.examples.victim}}" "${{matrix.examples.expected_str}}" "/github/home/.bpftime/bpftime -i /github/home/.bpftime" 0
       - name: Generate example coverage (Ubuntu)
