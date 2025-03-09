@@ -9,6 +9,9 @@ on:
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}-${{ github.event_name }}
   cancel-in-progress: true
+env:
+  BPFTIME_VM_NAME: llvm
+
 jobs:
   build:
     runs-on: "ubuntu-latest"
