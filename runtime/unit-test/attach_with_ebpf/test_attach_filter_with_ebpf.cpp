@@ -12,8 +12,6 @@ extern "C" __attribute__((__noinline__)) int
 __bpftime_attach_filter_with_ebpf__my_function(const char *str, char c,
 					       long long parm1)
 {
-	bpftime::agent_config config = shm_holder.global_shared_memory.get_agent_config();
-	config.set_vm_name("llvm");
 	asm("");
 	// buggy code: not check str is NULL
 	int i = str[0];
@@ -38,6 +36,8 @@ static const char *ebpf_prog_path = TOSTRING(EBPF_PROGRAM_PATH_FILTER);
 
 TEST_CASE("Test attaching filter program with ebpf, and reverting")
 {
+	bpftime::agent_config config = shm_holder.global_shared_memory.get_agent_config();
+	config.set_vm_name("llvm");
 	REQUIRE(__bpftime_attach_filter_with_ebpf__my_function("hello aaa", 'c',
 							       182) == 182);
 	std::unique_ptr<bpftime_object, decltype(&bpftime_object_close)> obj(
