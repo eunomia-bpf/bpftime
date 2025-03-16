@@ -200,10 +200,10 @@ namespace detail {
     }
 }
 
-inline std::unique_ptr<bpftime_vm_impl> create_vm_instance(const char *vm_name_str) {
-    if (vm_name_str == nullptr) {
-        SPDLOG_ERROR("VM name string is null");
-        throw std::runtime_error("VM name cannot be null");
+inline std::unique_ptr<bpftime_vm_impl> create_vm_instance(const std::string& vm_name_str) {
+    if (vm_name_str.empty()) {
+        SPDLOG_ERROR("VM name string is empty");
+        throw std::runtime_error("VM name cannot be empty");
     }
     std::string vm_name = vm_name_str;
     auto& vm_factory_map = detail::get_vm_factory_map();

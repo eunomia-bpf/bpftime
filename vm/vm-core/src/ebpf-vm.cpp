@@ -6,7 +6,7 @@
 extern "C" ebpf_vm *ebpf_create(const char *vm_name_str)
 {
 	auto vm = new ebpf_vm;
-	vm->vm_instance = bpftime::vm::compat::create_vm_instance(vm_name_str);
+	vm->vm_instance = bpftime::vm::compat::create_vm_instance(std::string(vm_name_str));
 	return vm;
 }
 
