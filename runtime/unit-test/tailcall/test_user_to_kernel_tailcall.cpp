@@ -69,7 +69,7 @@ TEST_CASE("Test tail calling from userspace to kernel")
 	REQUIRE(prog_fd >= 0);
 	SPDLOG_INFO("Kernel program fd: {}", prog_fd);
 
-	shm_remove remover(SHM_NAME);
+	bpftime::shm_remove remover(SHM_NAME);
 	bpftime_initialize_global_shm(
 		bpftime::shm_open_type::SHM_REMOVE_AND_CREATE);
 	REQUIRE(bpftime_maps_create(PROG_ARRAY_MAP_FD, "prog_array",
