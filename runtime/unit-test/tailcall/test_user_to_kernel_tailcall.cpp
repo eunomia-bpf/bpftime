@@ -11,12 +11,16 @@
 #include <bpf/bpf.h>
 #include <bpf_map/userspace/prog_array.hpp>
 #include "../common_def.hpp"
+#include "bpftime_shm_internal.hpp"
 using namespace bpftime;
 
 static const char *SHM_NAME = "BPFTIME_PROG_ARRAY_AND_TAIL_CALL_TEST_SHM";
 static const int PROG_ARRAY_MAP_FD = 1001;
 TEST_CASE("Test tail calling from userspace to kernel")
 {
+	bpftime::agent_config config = shm_holder.global_shared_memory.get_agent_config();
+	config.set_vm_name("llvm");
+	shm_holder.global_shared_memory.set_agent_config(std::move(config));
 	int err;
 	// Create a kernel map
 	LIBBPF_OPTS(bpf_map_create_opts, map_create_opts);
