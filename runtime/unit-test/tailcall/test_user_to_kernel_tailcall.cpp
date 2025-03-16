@@ -10,7 +10,7 @@
 #include <bpf/libbpf.h>
 #include <bpf/bpf.h>
 #include <bpf_map/userspace/prog_array.hpp>
-#include "../common_def.hpp"
+#include <unit-test/common_def.hpp>
 #include "bpftime_shm_internal.hpp"
 using namespace bpftime;
 
