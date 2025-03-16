@@ -18,9 +18,6 @@ static const char *SHM_NAME = "BPFTIME_PROG_ARRAY_AND_TAIL_CALL_TEST_SHM";
 static const int PROG_ARRAY_MAP_FD = 1001;
 TEST_CASE("Test tail calling from userspace to kernel")
 {
-	bpftime::agent_config config = shm_holder.global_shared_memory.get_agent_config();
-	config.set_vm_name("llvm");
-	shm_holder.global_shared_memory.set_agent_config(std::move(config));
 	int err;
 	// Create a kernel map
 	LIBBPF_OPTS(bpf_map_create_opts, map_create_opts);
@@ -72,6 +69,11 @@ TEST_CASE("Test tail calling from userspace to kernel")
 	bpftime::shm_remove remover(SHM_NAME);
 	bpftime_initialize_global_shm(
 		bpftime::shm_open_type::SHM_REMOVE_AND_CREATE);
+	
+	bpftime::agent_config config = shm_holder.global_shared_memory.get_agent_config();
+	config.set_vm_name("llvm");
+	shm_holder.global_shared_memory.set_agent_config(std::move(config));
+	
 	REQUIRE(bpftime_maps_create(PROG_ARRAY_MAP_FD, "prog_array",
 				    bpftime::bpf_map_attr{
 					    .type = (int)bpftime::bpf_map_type::
