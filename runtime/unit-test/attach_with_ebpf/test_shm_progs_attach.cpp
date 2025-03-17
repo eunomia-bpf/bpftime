@@ -231,7 +231,6 @@ __attribute__((optnone)) TEST_CASE("Test shm progs attach")
 	int replace_link_id = attach_replace(manager_ref, segment, prog, ctx);
 	int uprobe_link_id = attach_uprobe(manager_ref, segment, prog, ctx);
 
-	agent_config config;
 	config.enable_ufunc_helper_group = true;
 	ctx.init_attach_ctx_from_handlers(manager, config);
 
