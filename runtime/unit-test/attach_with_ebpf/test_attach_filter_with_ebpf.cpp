@@ -36,13 +36,13 @@ static const char *ebpf_prog_path = TOSTRING(EBPF_PROGRAM_PATH_FILTER);
 
 TEST_CASE("Test attaching filter program with ebpf, and reverting")
 {
-	bpftime::agent_config config = shm_holder.global_shared_memory.get_agent_config();
+	bpftime::agent_config config;
 	config.set_vm_name("llvm");
-	shm_holder.global_shared_memory.set_agent_config(std::move(config));
 	REQUIRE(__bpftime_attach_filter_with_ebpf__my_function("hello aaa", 'c',
 							       182) == 182);
 	std::unique_ptr<bpftime_object, decltype(&bpftime_object_close)> obj(
-		bpftime_object_open(ebpf_prog_path), bpftime_object_close);
+		bpftime_object_open(ebpf_prog_path, std::move(config)),
+		bpftime_object_close);
 	REQUIRE(obj.get() != nullptr);
 	attach::frida_attach_impl man;
 	auto prog = bpftime_object__next_program(obj.get(), nullptr);

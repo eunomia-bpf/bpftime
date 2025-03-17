@@ -110,10 +110,10 @@ struct agent_config {
 				memory.get_segment_manager());
 		}
 	}
-	// agent_config(const agent_config &) = delete;
-	// agent_config &operator=(const agent_config &) = delete;
-	// agent_config(agent_config &&) noexcept = default;
-	// agent_config &operator=(agent_config &&) noexcept = default;
+	agent_config(const agent_config &) = delete;
+	agent_config &operator=(const agent_config &) = delete;
+	agent_config(agent_config &&) noexcept = default;
+	agent_config &operator=(agent_config &&) noexcept = default;
 };
 
 // Get the bpftime configuration from the environment variables

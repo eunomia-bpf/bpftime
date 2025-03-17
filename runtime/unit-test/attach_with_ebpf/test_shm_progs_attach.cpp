@@ -194,6 +194,8 @@ static void handle_sub_process()
 
 __attribute__((optnone)) TEST_CASE("Test shm progs attach")
 {
+	bpftime::agent_config config;
+	config.set_vm_name("llvm");
 	spdlog::set_level(spdlog::level::debug);
 	SPDLOG_INFO("parent process start");
 	bpftime::shm_remove remover(SHM_NAME);
@@ -205,7 +207,7 @@ __attribute__((optnone)) TEST_CASE("Test shm progs attach")
 	auto &manager_ref = *manager;
 
 	// open the object file
-	bpftime_object *obj = bpftime_object_open(obj_path);
+	bpftime_object *obj = bpftime_object_open(obj_path, std::move(config));
 	REQUIRE(obj != nullptr);
 	bpftime_prog *prog = bpftime_object__next_program(obj, NULL);
 
