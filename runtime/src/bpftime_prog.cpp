@@ -47,11 +47,12 @@ bpftime_prog::bpftime_prog(const struct ebpf_inst *insn, size_t insn_cnt,
 			      nullptr);
 }
 
-
 bpftime_prog::bpftime_prog(const struct ebpf_inst *insn, size_t insn_cnt,
-			   const char *name, agent_config&& config)
+			   const char *name, agent_config &&config)
 	: name(name)
 {
+	// BPFtime_prog relies on the global shared memory being properly
+	// initialized to function.
 	SPDLOG_DEBUG("Creating bpftime_prog with name {}", name);
 	insns.assign(insn, insn + insn_cnt);
 	bpftime::bpftime_set_agent_config(std::move(config));
