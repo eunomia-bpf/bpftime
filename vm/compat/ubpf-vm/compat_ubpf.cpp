@@ -246,11 +246,13 @@ int bpftime_ubpf_vm::set_pointer_secret(uint64_t secret)
 	return ubpf_set_pointer_secret(ubpf_vm, secret);
 }
 
-namespace bpftime::vm::compat {
-namespace ubpf {
-__attribute__((constructor))
-static inline void register_ubpf_vm_factory() {
-    register_vm_factory("ubpf", create_ubpf_vm_instance);
+namespace bpftime::vm::compat
+{
+namespace ubpf
+{
+__attribute__((constructor)) static inline void register_ubpf_vm_factory()
+{
+	register_vm_factory("ubpf", create_ubpf_vm_instance);
 	printf("ubpf register vm factory\n");
 }
 } // namespace ubpf
