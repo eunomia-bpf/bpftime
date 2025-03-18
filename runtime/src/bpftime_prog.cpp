@@ -48,7 +48,7 @@ bpftime_prog::bpftime_prog(const struct ebpf_inst *insn, size_t insn_cnt,
 }
 
 bpftime_prog::bpftime_prog(const struct ebpf_inst *insn, size_t insn_cnt,
-			   const char *name, agent_config &&config)
+			   const char *name, agent_config config)
 	: name(name)
 {
 	// BPFtime_prog relies on the global shared memory being properly

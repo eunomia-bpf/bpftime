@@ -30,7 +30,7 @@ namespace bpftime
 class bpftime_object {
     public:
 	bpftime_object(std::string_view path);
-	bpftime_object(std::string_view path, agent_config &&cfg);
+	bpftime_object(std::string_view path, agent_config cfg);
 	~bpftime_object() = default;
 	string obj_path;
 	std::unique_ptr<struct bpf_object, decltype(&bpf_object__close)> obj;
@@ -39,7 +39,7 @@ class bpftime_object {
 	std::list<std::unique_ptr<bpftime_prog> > progs;
 
 	void create_programs();
-	void create_programs(agent_config &&cfg);
+	void create_programs(agent_config cfg);
 	bpftime_prog *find_program_by_name(std::string_view name) const;
 	bpftime_prog *find_program_by_secname(std::string_view name) const;
 	bpftime_prog *next_program(bpftime_prog *prog) const;
@@ -87,7 +87,7 @@ void bpftime_object::create_programs()
 	}
 }
 
-void bpftime_object::create_programs(agent_config &&cfg)
+void bpftime_object::create_programs(agent_config cfg)
 {
 	bpf_program *prog;
 	bpf_object__for_each_program(prog, obj.get())
@@ -157,7 +157,7 @@ bpftime_object::bpftime_object(std::string_view path)
 	create_programs();
 }
 
-bpftime_object::bpftime_object(std::string_view path, agent_config &&cfg)
+bpftime_object::bpftime_object(std::string_view path, agent_config cfg)
 	: obj_path(path), obj(nullptr, bpf_object__close),
 	  host_btf(nullptr, btf__free)
 {
@@ -177,7 +177,7 @@ bpftime_object *bpftime_object_open(const char *obj_path)
 	return obj;
 }
 
-bpftime_object *bpftime_object_open(const char *obj_path, agent_config &&cfg)
+bpftime_object *bpftime_object_open(const char *obj_path, agent_config cfg)
 {
 	bpftime_object *obj = new bpftime_object(obj_path, std::move(cfg));
 	return obj;
