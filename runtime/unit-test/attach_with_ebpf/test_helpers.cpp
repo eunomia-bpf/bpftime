@@ -11,7 +11,6 @@
 #include <stdarg.h>
 #include <catch2/catch_test_macros.hpp>
 
-
 using namespace bpftime;
 
 struct data {
@@ -29,6 +28,8 @@ static void dump_type(void *ctx, const char *fmt, va_list args)
 
 TEST_CASE("Test helpers")
 {
+	bpftime::agent_config config;
+	config.set_vm_name("llvm");
 	const char *obj_path = NULL;
 
 	// use a struct as memory
@@ -37,7 +38,7 @@ TEST_CASE("Test helpers")
 	obj_path = TOSTRING(EBPF_PROGRAM_PATH_HELPERS);
 
 	// open the object file
-	bpftime_object *obj = bpftime_object_open(obj_path);
+	bpftime_object *obj = bpftime_object_open(obj_path, std::move(config));
 	REQUIRE(obj != nullptr);
 	bpftime_prog *prog = bpftime_object__next_program(obj, NULL);
 	REQUIRE(prog != nullptr);

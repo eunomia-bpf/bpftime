@@ -8,6 +8,8 @@ on:
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}-${{ github.event_name }}
   cancel-in-progress: true
+env:
+  BPFTIME_VM_NAME: llvm
 jobs: 
   build-runtime:
     strategy:
@@ -89,7 +91,7 @@ jobs:
   build-and-test:
     runs-on: ubuntu-22.04
     needs: [build-runtime]
-    container: 
+    container:
       image: "manjusakalza/bpftime-base-image:${{matrix.container.image}}"
       options: " ${{matrix.privilege_options.options}}"
     strategy:
@@ -121,7 +123,7 @@ jobs:
         enable_jit:
           - true
           - false
-        examples: 
+        examples:
           - path: libbpf-tools/opensnoop
             executable: ./opensnoop
             victim: ./victim
@@ -132,7 +134,7 @@ jobs:
             executable: ./statsnoop
             victim: ./victim
             syscall_trace: true
-            expected_str: "victim               0    0    /sys" 
+            expected_str: "victim               0    0    /sys"
             name: statsnoop
           - path: malloc
             executable: ./malloc
@@ -240,6 +242,10 @@ jobs:
       - name: Build test assets
         run: |
           make -C example/${{matrix.examples.path}} -j
+      - name: Set BPFTIME_VM_NAME for ubpf # Set environment variable when llvm-jit is disabled
+        if: '!matrix.enable_jit'
+        run: |
+          echo "BPFTIME_VM_NAME=ubpf" >> $GITHUB_ENV
       - name: Test CLI - show help
         run: |
           export PATH=$PATH:~/.bpftime
@@ -288,7 +294,7 @@ jobs:
               flags: coverage-example-${{matrix.container.name}}-${{matrix.enable_jit}}-${{matrix.examples.name}}-${{matrix.privilege_options.enable}}
               token: ${{ secrets.CODECOV_TOKEN }} # required
               verbose: true # optional (default = false)
-      
+
       - name: Setup tmate session
         # Setup SSH when manually triggered and failing, so we can debug CI more conveniently
         if: "${{ failure() && github.event_name == 'workflow_dispatch' }}"

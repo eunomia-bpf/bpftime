@@ -9,9 +9,13 @@
 #include <variant>
 
 #ifndef DEFAULT_LOGGER_OUTPUT_PATH
-#define DEFAULT_LOGGER_OUTPUT_PATH "~/.bpftime/runtime.log"
+constexpr std::string_view DEFAULT_LOGGER_OUTPUT_PATH =
+	"~/.bpftime/runtime.log";
 #endif
-#define stringize(x) #x
+
+#ifndef DEFAULT_VM_NAME
+constexpr std::string_view DEFAULT_VM_NAME = "ubpf";
+#endif
 
 namespace bpftime
 {
@@ -52,16 +56,20 @@ struct agent_config {
 	// Here it is a variant, since this object (agent_config) will be used
 	// for both local and shared memory
 	std::variant<std::string, boost_shm_string> logger_output_path;
+	std::variant<std::string, boost_shm_string> vm_name;
 
 	agent_config(boost::interprocess::managed_shared_memory &memory)
 		: logger_output_path(
-			  boost_shm_string(memory.get_segment_manager()))
+			  boost_shm_string(memory.get_segment_manager())),
+		  vm_name(boost_shm_string(memory.get_segment_manager()))
 	{
 		std::get<boost_shm_string>(logger_output_path) =
 			DEFAULT_LOGGER_OUTPUT_PATH;
+		std::get<boost_shm_string>(vm_name) = DEFAULT_VM_NAME;
 	}
 	agent_config()
-		: logger_output_path(std::string(DEFAULT_LOGGER_OUTPUT_PATH))
+		: logger_output_path(std::string(DEFAULT_LOGGER_OUTPUT_PATH)),
+		  vm_name(std::string(DEFAULT_VM_NAME))
 	{
 	}
 	const char *get_logger_output_path() const
@@ -74,15 +82,33 @@ struct agent_config {
 	{
 		std::visit([&](auto &&arg) { arg = path; }, logger_output_path);
 	}
+	void set_vm_name(const char *name)
+	{
+		std::visit([&](auto &&arg) { arg = name; }, vm_name);
+	}
+	const char *get_vm_name() const
+	{
+		return std::visit(
+			[](auto &&arg) -> const char * { return arg.c_str(); },
+			vm_name);
+	}
 	void
 	change_to_shm_object(boost::interprocess::managed_shared_memory &memory)
 	{
-		if (std::holds_alternative<boost_shm_string>(
-			    logger_output_path))
-			return;
-		auto current_value = std::get<std::string>(logger_output_path);
-		logger_output_path.emplace<boost_shm_string>(
-			current_value.c_str(), memory.get_segment_manager());
+		if (!std::holds_alternative<boost_shm_string>(
+			    logger_output_path)) {
+			auto current_value =
+				std::get<std::string>(logger_output_path);
+			logger_output_path.emplace<boost_shm_string>(
+				current_value.c_str(),
+				memory.get_segment_manager());
+		}
+		if (!std::holds_alternative<boost_shm_string>(vm_name)) {
+			auto current_value = std::get<std::string>(vm_name);
+			vm_name.emplace<boost_shm_string>(
+				current_value.c_str(),
+				memory.get_segment_manager());
+		}
 	}
 	agent_config(const agent_config &) = delete;
 	agent_config &operator=(const agent_config &) = delete;

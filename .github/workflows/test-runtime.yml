@@ -9,6 +9,9 @@ on:
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}-${{ github.event_name }}
   cancel-in-progress: true
+env:
+  BPFTIME_VM_NAME: llvm
+
 jobs:
   build:
     runs-on: "ubuntu-latest"
@@ -40,10 +43,13 @@ jobs:
   
     - name: Build
       run: |
+        export BPFTIME_VM_NAME=llvm
         cmake -DTEST_LCOV=ON -DBPFTIME_LLVM_JIT=YES -DBPFTIME_ENABLE_UNIT_TESTING=YES -DENABLE_PROBE_WRITE_CHECK=1 -DENABLE_PROBE_READ_CHECK=1 -DCMAKE_BUILD_TYPE=Debug -B build
         cmake --build build --config Debug --target bpftime_runtime_tests -j$(nproc)
     - name: Test Runtime
-      run:  ./build/runtime/unit-test/bpftime_runtime_tests
+      run:  |
+        export BPFTIME_VM_NAME=llvm
+        ./build/runtime/unit-test/bpftime_runtime_tests
     
     - name: Generate runtime coverage (Ubuntu)
       if: "matrix.container == 'ubuntu-2204'"
