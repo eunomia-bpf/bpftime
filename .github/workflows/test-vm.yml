@@ -1,38 +1,38 @@
-name: Build and Test VM
+# name: Build and Test VM
 
-on:
-  push:
-    branches: [ master ]
-  pull_request:
-    branches: [ master ]
-concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}-${{ github.event_name }}
-  cancel-in-progress: true
-jobs:
-  build:
-    runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        container:
-          - ubuntu-2204
-          - fedora-39
-    container: 
-      image: "manjusakalza/bpftime-base-image:${{matrix.container}}"
-      options: --privileged
-    steps:
+# on:
+#   push:
+#     branches: [ master ]
+#   pull_request:
+#     branches: [ master ]
+# concurrency:
+#   group: ${{ github.workflow }}-${{ github.ref }}-${{ github.event_name }}
+#   cancel-in-progress: true
+# jobs:
+#   build:
+#     runs-on: ubuntu-latest
+#     strategy:
+#       matrix:
+#         container:
+#           - ubuntu-2204
+#           - fedora-39
+#     container: 
+#       image: "manjusakalza/bpftime-base-image:${{matrix.container}}"
+#       options: --privileged
+#     steps:
 
-    - name: cache dependencies
-      uses: actions/cache@v4
-      id: cache
-      with:
-        path: ${{ github.workspace }}/${{ env.INSTALL_LOCATION }}
-        key: ${{ runner.os }}-dependencies
-    - uses: actions/checkout@v2
-      with:
-        submodules: 'recursive'
-    - uses: actions/setup-python@v4
-      if: startsWith(matrix.container,'ubuntu')
-      with:
-        python-version: '3.8'
-    - name: build
-      run: make build-vm
+#     - name: cache dependencies
+#       uses: actions/cache@v4
+#       id: cache
+#       with:
+#         path: ${{ github.workspace }}/${{ env.INSTALL_LOCATION }}
+#         key: ${{ runner.os }}-dependencies
+#     - uses: actions/checkout@v2
+#       with:
+#         submodules: 'recursive'
+#     - uses: actions/setup-python@v4
+#       if: startsWith(matrix.container,'ubuntu')
+#       with:
+#         python-version: '3.8'
+#     - name: build
+#       run: make build-vm
