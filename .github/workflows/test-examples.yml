@@ -1,4 +1,4 @@
-name: Build and run all integrated tests (examples)
+# name: Build and run all integrated tests (examples)
 
 on:
   push:
@@ -295,9 +295,9 @@ jobs:
               token: ${{ secrets.CODECOV_TOKEN }} # required
               verbose: true # optional (default = false)
 
-      - name: Setup tmate session
-        # Setup SSH when manually triggered and failing, so we can debug CI more conveniently
-        if: "${{ failure() && github.event_name == 'workflow_dispatch' }}"
-        uses: mxschmitt/action-tmate@v3
-        with:
-          limit-access-to-actor: false
+#       - name: Setup tmate session
+#         # Setup SSH when manually triggered and failing, so we can debug CI more conveniently
+#         if: "${{ failure() && github.event_name == 'workflow_dispatch' }}"
+#         uses: mxschmitt/action-tmate@v3
+#         with:
+#           limit-access-to-actor: false

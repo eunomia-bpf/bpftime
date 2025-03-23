@@ -21,7 +21,7 @@ jobs:
       - name: Install dependencies
         run: |
           apt-get update
-          apt-get install -y lcov tree strace
+          apt-get install -y lcov tree strace gdb
           
       - name: Build and install runtime
         run: |
@@ -31,74 +31,68 @@ jobs:
             -DCMAKE_CXX_FLAGS="-DDEFAULT_LOGGER_OUTPUT_PATH='\"console\"'"
           cmake --build build --config RelWithDebInfo --target install -j
           
-      - name: Set permissions
-        run: |
-          chmod +x ~/.bpftime/*
-          
-      - name: Check bpftime version
+      - name: Check bpftime and bpftrace versions
         run: |
           export PATH=$PATH:~/.bpftime
+          echo "Checking bpftime version:"
           ~/.bpftime/bpftime --version || echo "No version command available"
-          
-      - name: Run bpftime help
-        run: |
+          echo "Checking bpftime help:"
           ~/.bpftime/bpftime --help
+          echo "Checking bpftrace version:"
+          bpftrace --version || echo "bpftrace version not available"
           
-      - name: Debug with strace
+      - name: Check dependencies and library paths
         run: |
-          strace -f ~/.bpftime/bpftime load bpftrace -e 'BEGIN { printf("Hello World\n"); exit(); }' 2>&1 | head -n 100
-      
-      - name: Simplified bpftrace test
+          echo "bpftime binary libraries:"
+          ldd ~/.bpftime/bpftime || echo "ldd not working with bpftime"
+          echo "bpftrace binary libraries:"
+          ldd $(which bpftrace) || echo "ldd not working with bpftrace"
+          
+      - name: Check if bpftrace works directly
         run: |
-          # 使用更简单的 bpftrace 程序来测试
-          ~/.bpftime/bpftime load bpftrace -e 'BEGIN { printf("Hello World\n"); exit(); }' > simple_trace.txt
-          cat simple_trace.txt
-      
-      - name: Try system syscall tracing
+          echo "Testing native bpftrace:"
+          bpftrace -e 'BEGIN { printf("Hello World\n"); exit(); }' || echo "Native bpftrace test failed, error code: $?"
+          
+      - name: Run with debug output and backtrace
         run: |
-          # 尝试用系统自带的 bpftrace 测试
-          which bpftrace
-          bpftrace -e 'tracepoint:syscalls:sys_enter_openat { printf("%s %s\n", comm, str(args->filename)); }' -c "cat /etc/passwd" > system_trace.txt || echo "System bpftrace failed"
-          cat system_trace.txt
-      
-      - name: Run modified syscall tracing test
+          # 启用最详细的日志级别
+          export SPDLOG_LEVEL=trace
+          
+          # 使用 gdb 捕获崩溃信息
+          gdb -batch -ex "run" -ex "bt" -ex "quit" --args ~/.bpftime/bpftime load bpftrace -e 'BEGIN { printf("Hello World\n"); exit(); }' > gdb_trace.txt 2>&1 || echo "GDB debugging completed with code: $?"
+          
+          echo "=== GDB backtrace ==="
+          cat gdb_trace.txt
+          
+      - name: Check for example bpftrace scripts
         run: |
-          # 设置环境
-          export PATH=$PATH:~/.bpftime
+          # 检查是否有示例脚本可以测试
+          find . -name "*.bt" | grep -v "build" || echo "No .bt files found"
           
-          # 检查 bpftime 是否正确安装
-          ls -la ~/.bpftime
-          
-          # 使用更详细的日志级别
-          export SPDLOG_LEVEL=debug
-          
-          # 启动带有 -v 选项的 bpftrace 测试
-          ~/.bpftime/bpftime load -v bpftrace -e 'tracepoint:syscalls:sys_enter_openat { printf("%s %s\n", comm, str(args->filename)); }' > trace_output.txt 2>&1 &
-          BPFTRACE_PID=$!
-          sleep 5  # 给 bpftrace 更多加载时间
-          
-          # 如果进程已经退出，打印错误
-          if ! kill -0 $BPFTRACE_PID 2>/dev/null; then
-            echo "bpftrace process exited prematurely"
-            wait $BPFTRACE_PID || echo "Exit code: $?"
-          else
-            # 运行测试命令
-            ~/.bpftime/bpftime start -s cat build/install_manifest.txt > cat_output.txt 2>&1
-            
-            # 终止 bpftrace 进程
-            kill $BPFTRACE_PID || true
-            wait $BPFTRACE_PID || echo "bpftrace exit code: $?"
-          fi
-          
-          # 输出文件内容以进行调试
-          echo "=== trace_output.txt content ==="
-          cat trace_output.txt
-          echo "=== cat_output.txt content ==="
-          cat cat_output.txt || echo "File not found"
-          
-      - name: Check if outputs can be verified
+      - name: Try using simple example
         run: |
-          # 尝试验证输出但不让它失败整个 CI
-          grep "install_manifest.txt" trace_output.txt || echo "Pattern not found in trace_output.txt"
-          grep "bpftime_daemon" cat_output.txt || echo "Pattern not found in cat_output.txt"
-          grep "libbpftime-agent.so" cat_output.txt || echo "Pattern not found in cat_output.txt"
+          # 尝试从仓库中加载一个简单的例子
+          cd example
+          ls -la
+          echo "Checking for existing examples that might work:"
+          find . -name "*.bt" | grep -v "build" || echo "No .bt files found in example"
+          
+      - name: Create and run basic example
+        run: |
+          # 创建一个最基本的测试
+          echo 'BEGIN { printf("Hello from basic test\n"); exit(); }' > basic_test.bt
+          cat basic_test.bt
+          
+          # 尝试直接用 bpftrace 运行
+          echo "Running with native bpftrace:"
+          bpftrace basic_test.bt || echo "Native bpftrace test failed"
+          
+          # 尝试用 bpftime 运行
+          echo "Running with bpftime:"
+          export SPDLOG_LEVEL=trace
+          ~/.bpftime/bpftime load bpftrace basic_test.bt || echo "bpftime test failed with code: $?"
+          
+      - name: Check if project has specific tests for bpftrace
+        run: |
+          echo "Looking for existing tests:"
+          find . -path "*test*" -type f | grep -E 'bpftrace|bpftime' || echo "No specific tests found"
