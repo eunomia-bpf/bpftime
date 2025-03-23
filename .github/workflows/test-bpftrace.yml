@@ -1,0 +1,46 @@
+name: BPFtime CI
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential cmake bpftrace linux-headers-$(uname -r)
+          
+      - name: Build bpftime
+        run: |
+          mkdir -p build && cd build
+          cmake ..
+          make -j$(nproc)
+          sudo make install
+
+      - name: Run bpftime syscall tracing test
+        run: |
+          # Set up environment
+          export PATH=$PATH:$HOME/.bpftime
+
+          # Start bpftrace test in background
+          sudo SPDLOG_LEVEL=error $HOME/.bpftime/bpftime load bpftrace -e 'tracepoint:syscalls:sys_enter_openat { printf("%s %s\n", comm, str(args->filename)); }' > trace_output.txt &
+          BPFTRACE_PID=$!
+          sleep 2  # Give bpftrace time to load
+
+          # Run test command
+          sudo SPDLOG_LEVEL=error $HOME/.bpftime/bpftime start -s cat build/install_manifest.txt > cat_output.txt
+
+          # Kill bpftrace process
+          sudo kill $BPFTRACE_PID
+
+          # Verify outputs
+          grep "install_manifest.txt" trace_output.txt
+          grep "/root/.bpftime/bpftime_daemon" cat_output.txt
+          grep "/root/.bpftime/libbpftime-agent.so" cat_output.txt
