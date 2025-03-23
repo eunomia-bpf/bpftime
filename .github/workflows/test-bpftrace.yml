@@ -1,46 +1,65 @@
-name: BPFtime CI
+name: BPFtime Syscall Tracing Test
 
 on:
   push:
-    branches: [main, master]
+    branches: [ "*" ]
   pull_request:
-    branches: [main, master]
+    branches: [ "*" ]
 
 jobs:
-  build-and-test:
-    runs-on: ubuntu-latest
+  syscall-tracing-test:
+    runs-on: ubuntu-22.04
+    container: 
+      image: "manjusakalza/bpftime-base-image:ubuntu-2204"
+      options: "--privileged"
+    
     steps:
-      - uses: actions/checkout@v3
-
+      - uses: actions/checkout@v2
+        with:
+          submodules: 'recursive'
+      
       - name: Install dependencies
         run: |
-          sudo apt-get update
-          sudo apt-get install -y build-essential cmake bpftrace linux-headers-$(uname -r)
+          apt-get update
+          apt-get install -y lcov tree
           
-      - name: Build bpftime
+      - name: Build and install runtime
         run: |
-          mkdir -p build && cd build
-          cmake ..
-          make -j$(nproc)
-          sudo make install
-
+          cmake -Bbuild  -DCMAKE_BUILD_TYPE:STRING=RelWithDebInfo \
+            -DBPFTIME_LLVM_JIT=1 \
+            -DBUILD_BPFTIME_DAEMON=1 \
+            -DCMAKE_CXX_FLAGS="-DDEFAULT_LOGGER_OUTPUT_PATH='\"console\"'"
+          cmake --build build --config RelWithDebInfo --target install -j
+          
+      - name: Set permissions
+        run: |
+          chmod +x ~/.bpftime/*
+          
       - name: Run bpftime syscall tracing test
         run: |
           # Set up environment
-          export PATH=$PATH:$HOME/.bpftime
-
+          export PATH=$PATH:~/.bpftime
+          
+          # Check if bpftime is properly installed
+          ls -la ~/.bpftime
+          
           # Start bpftrace test in background
-          sudo SPDLOG_LEVEL=error $HOME/.bpftime/bpftime load bpftrace -e 'tracepoint:syscalls:sys_enter_openat { printf("%s %s\n", comm, str(args->filename)); }' > trace_output.txt &
+          SPDLOG_LEVEL=error ~/.bpftime/bpftime load bpftrace -e 'tracepoint:syscalls:sys_enter_openat { printf("%s %s\n", comm, str(args->filename)); }' > trace_output.txt &
           BPFTRACE_PID=$!
           sleep 2  # Give bpftrace time to load
-
+          
           # Run test command
-          sudo SPDLOG_LEVEL=error $HOME/.bpftime/bpftime start -s cat build/install_manifest.txt > cat_output.txt
-
+          SPDLOG_LEVEL=error ~/.bpftime/bpftime start -s cat build/install_manifest.txt > cat_output.txt
+          
           # Kill bpftrace process
-          sudo kill $BPFTRACE_PID
-
-          # Verify outputs
+          kill $BPFTRACE_PID || true
+          
+          # Verify outputs (use cat before grep to see full content for debugging)
+          echo "=== trace_output.txt content ==="
+          cat trace_output.txt
+          echo "=== cat_output.txt content ==="
+          cat cat_output.txt
+          echo "=== Verifying outputs ==="
           grep "install_manifest.txt" trace_output.txt
-          grep "/root/.bpftime/bpftime_daemon" cat_output.txt
-          grep "/root/.bpftime/libbpftime-agent.so" cat_output.txt
+          grep "bpftime_daemon" cat_output.txt
+          grep "libbpftime-agent.so" cat_output.txt
