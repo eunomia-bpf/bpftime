@@ -7,6 +7,8 @@
 #include <memory>
 #include <optional>
 #include <string>
+#include <map>
+#include <iostream>
 
 #ifndef EBPF_STACK_SIZE
 // Compatible to C headers
@@ -195,7 +197,39 @@ class bpftime_vm_impl {
 	}
 };
 
-std::unique_ptr<bpftime_vm_impl> create_vm_instance();
+using create_vm_instance_func = std::unique_ptr<bpftime_vm_impl>(*)();
+
+namespace detail {
+    inline std::map<std::string, create_vm_instance_func>& get_vm_factory_map() {
+        static std::map<std::string, create_vm_instance_func> factory_map;
+        return factory_map;
+    }
+}
+
+inline std::unique_ptr<bpftime_vm_impl> create_vm_instance(const std::string& vm_name_str) {
+    if (vm_name_str.empty()) {
+        SPDLOG_ERROR("VM name string is empty");
+        throw std::runtime_error("VM name cannot be empty");
+    }
+    std::string vm_name = vm_name_str;
+    auto& vm_factory_map = detail::get_vm_factory_map();
+    auto it = vm_factory_map.find(vm_name);
+    if (it == vm_factory_map.end()) {
+        SPDLOG_ERROR("No VM factory registered for name: {}", vm_name);
+        throw std::runtime_error("Unknown VM type requested: " + vm_name);
+    }
+    return it->second(); // use callback function to config vm
+}
+
+
+inline void register_vm_factory(const std::string &vm_name, create_vm_instance_func factory_func) {
+    auto& vm_factory_map = detail::get_vm_factory_map();
+    if (vm_factory_map.count(vm_name)) {
+        SPDLOG_WARN("VM factory for name: {} already registered, overwriting", vm_name);
+    }
+    vm_factory_map[vm_name] = factory_func;
+    SPDLOG_DEBUG("Registered VM factory for name: {}", vm_name);
+}
 
 } // namespace bpftime::vm::compat
 struct ebpf_vm {

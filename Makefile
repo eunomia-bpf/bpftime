@@ -45,6 +45,7 @@ unit-test-daemon:
 
 unit-test-runtime:
 	make -C runtime/test/bpf && cp runtime/test/bpf/*.bpf.o build/runtime/test/
+	export BPFTIME_VM_NAME=llvm 
 	./build/runtime/unit-test/bpftime_runtime_tests
 	cd build/runtime/test && make && ctest -VV
 

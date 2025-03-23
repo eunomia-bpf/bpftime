@@ -59,6 +59,8 @@ static int test_register_ufunc()
 
 TEST_CASE("Test ufunc register")
 {
+	bpftime::agent_config config;
+	config.set_vm_name("llvm");
 	const char *obj_path = NULL;
 	uint64_t return_val;
 
@@ -70,7 +72,7 @@ TEST_CASE("Test ufunc register")
 	test_register_ufunc();
 
 	// open the object file
-	bpftime_object *obj = bpftime_object_open(obj_path);
+	bpftime_object *obj = bpftime_object_open(obj_path, std::move(config));
 	REQUIRE(obj != nullptr);
 	bpftime_prog *prog = bpftime_object__next_program(obj, NULL);
 	REQUIRE(prog != nullptr);

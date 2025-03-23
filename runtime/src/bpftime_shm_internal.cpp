@@ -742,8 +742,6 @@ bool bpftime_shm::is_software_perf_event_handler_fd(int fd) const
 	return hd.type == (int)bpf_event_type::PERF_TYPE_SOFTWARE;
 }
 
-// local agent config can be used for test or local process
-
 void bpftime_shm::set_agent_config(struct agent_config &&config)
 {
 	if (agent_config == nullptr) {
@@ -761,7 +759,7 @@ void bpftime_shm::set_agent_config(struct agent_config &&config)
 const struct agent_config &bpftime_shm::get_agent_config()
 {
 	if (agent_config == nullptr) {
-		SPDLOG_INFO("use current process config");
+		SPDLOG_DEBUG("use current process config");
 		return *local_agent_config;
 	}
 	return *agent_config;
@@ -772,7 +770,7 @@ const bpftime::agent_config &bpftime_get_agent_config()
 	return shm_holder.global_shared_memory.get_agent_config();
 }
 
-void bpftime_set_agent_config(struct bpftime::agent_config &&cfg)
+void bpftime_set_agent_config(bpftime::agent_config &&cfg)
 {
 	shm_holder.global_shared_memory.set_agent_config(std::move(cfg));
 }

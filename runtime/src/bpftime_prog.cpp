@@ -4,9 +4,10 @@
  * All rights reserved.
  */
 #include "bpftime.hpp"
+#include "bpftime_config.hpp"
 #include "bpftime_helper_group.hpp"
 #include "bpftime_internal.h"
-#include "bpftime_vm_compat.hpp"
+#include "bpftime_shm.hpp"
 #include "ebpf-vm.h"
 #include "nvPTXCompiler.h"
 #include <cstring>
@@ -104,7 +105,45 @@ bpftime_prog::bpftime_prog(const struct ebpf_inst *insn, size_t insn_cnt,
 {
 	SPDLOG_DEBUG("Creating bpftime_prog with name {}", name);
 	insns.assign(insn, insn + insn_cnt);
-	vm = ebpf_create();
+	const char *vm_name = bpftime::bpftime_get_agent_config().get_vm_name();
+	std::string vm_name_str = (std::string)vm_name;
+
+	if (vm_name_str == "llvm") {
+		SPDLOG_DEBUG("Creating vm with name {}", vm_name_str);
+	} else if (vm_name_str == "ubpf") {
+		SPDLOG_DEBUG("Creating vm with name {}", vm_name_str);
+	} else {
+		SPDLOG_DEBUG("Trying enabling non-builtin vm {}", vm_name_str);
+	}
+
+	vm = ebpf_create(vm_name);
+	// Disable bounds check because we have no implementation yet
+	// ebpf_toggle_bounds_check(vm, false);
+	ebpf_set_lddw_helpers(vm, map_ptr_by_fd, nullptr, map_val, nullptr,
+			      nullptr);
+}
+
+bpftime_prog::bpftime_prog(const struct ebpf_inst *insn, size_t insn_cnt,
+			   const char *name, agent_config config)
+	: name(name)
+{
+	// BPFtime_prog relies on the global shared memory being properly
+	// initialized to function.
+	SPDLOG_DEBUG("Creating bpftime_prog with name {}", name);
+	insns.assign(insn, insn + insn_cnt);
+	bpftime::bpftime_set_agent_config(std::move(config));
+	const char *vm_name = bpftime::bpftime_get_agent_config().get_vm_name();
+	std::string vm_name_str = (std::string)vm_name;
+
+	if (vm_name_str == "llvm") {
+		SPDLOG_DEBUG("Creating vm with name {}", vm_name_str);
+	} else if (vm_name_str == "ubpf") {
+		SPDLOG_DEBUG("Creating vm with name {}", vm_name_str);
+	} else {
+		SPDLOG_DEBUG("Trying enabling non-builtin vm {}", vm_name_str);
+	}
+
+	vm = ebpf_create(vm_name);
 	// Disable bounds check because we have no implementation yet
 	// ebpf_toggle_bounds_check(vm, false);
 	if (!is_cuda()) {

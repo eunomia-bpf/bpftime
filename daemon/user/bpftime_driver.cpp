@@ -4,6 +4,7 @@
  * All rights reserved.
  */
 #include "bpftime_driver.hpp"
+#include "bpftime_config.hpp"
 #include <linux/bpf.h>
 #include <bpf/bpf.h>
 #include "ebpf_inst.h"

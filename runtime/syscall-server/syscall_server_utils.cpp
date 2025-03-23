@@ -3,6 +3,7 @@
  * Copyright (c) 2022, eunomia-bpf org
  * All rights reserved.
  */
+#include "bpftime_config.hpp"
 #include "bpftime_shm_internal.hpp"
 #include "syscall_context.hpp"
 #include <filesystem>

@@ -163,7 +163,7 @@ int main(int argc, char *argv[])
 		}
 		bpftime_initialize_global_shm(
 			shm_open_type::SHM_CREATE_OR_OPEN);
-		auto agent_config = construct_agent_config_from_env();
+		auto agent_config = bpftime::construct_agent_config_from_env();
 		bpftime_set_agent_config(std::move(agent_config));
 		auto filename = std::string(argv[2]);
 		return bpftime_import_global_shm_from_json(filename.c_str());

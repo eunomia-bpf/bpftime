@@ -11,13 +11,12 @@
 namespace bpftime::vm::llvm
 {
 
-class bpftime_llvm_vm : public bpftime::llvmbpf_vm,
-			public bpftime::vm::compat::bpftime_vm_impl {
-    public:
-	bpftime_llvm_vm() : bpftime::llvmbpf_vm()
-	{
-	}
-	virtual ~bpftime_llvm_vm() = default;
+std::unique_ptr<bpftime::vm::compat::bpftime_vm_impl> create_llvm_vm_instance();
+
+class bpftime_llvm_vm : public bpftime::llvmbpf_vm, public bpftime::vm::compat::bpftime_vm_impl {
+public:
+    bpftime_llvm_vm() : bpftime::llvmbpf_vm() {}
+    virtual ~bpftime_llvm_vm() = default;
 
 	std::string get_error_message() override
 	{

@@ -48,6 +48,7 @@ class bpftime_shm {
 	// Record which pids are injected by agent
 	alive_agent_pids *injected_pids;
 
+	// local agent config can be used for test or local process
 	std::optional<struct agent_config> local_agent_config;
 
 #if BPFTIME_ENABLE_MPK

@@ -1,12 +1,15 @@
 #include "llvmbpf.hpp"
 #include <bpftime_vm_compat.hpp>
 #include <compat_llvm.hpp>
+#include <optional>
+#include <memory>
 
 namespace bpftime::vm::compat
 {
 
-std::unique_ptr<bpftime_vm_impl> create_vm_instance()
+std::unique_ptr<bpftime_vm_impl> create_llvm_vm_instance()
 {
+	SPDLOG_DEBUG("create llvm vm instance");
 	return std::make_unique<llvm::bpftime_llvm_vm>();
 }
 
@@ -34,7 +37,14 @@ int bpftime_llvm_vm::exec(void *mem, size_t mem_len, uint64_t &bpf_return_value)
 
 std::vector<uint8_t> bpftime_llvm_vm::do_aot_compile(bool print_ir)
 {
-	return *bpftime::llvmbpf_vm::do_aot_compile(print_ir);
+	std::optional<std::vector<uint8_t> > bytecode_optional =
+		bpftime::llvmbpf_vm::do_aot_compile(print_ir);
+	if (bytecode_optional.has_value()) {
+		return bytecode_optional.value();
+	} else {
+		throw std::runtime_error(
+			"bpftime_llvm_vm::do_aot_compile: AOT compilation failed, bytecode_optional is empty.");
+	}
 }
 
 std::optional<compat::precompiled_ebpf_function>
@@ -62,3 +72,16 @@ std::optional<std::string> bpftime_llvm_vm::generate_ptx(const char *target_cpu)
 	return bpftime::llvmbpf_vm::generate_ptx(target_cpu);
 }
 } // namespace bpftime::vm::llvm
+
+namespace bpftime::vm::compat
+{
+namespace llvm
+{
+__attribute__((constructor)) static inline void register_llvm_vm_factory()
+{
+	register_vm_factory("llvm", create_llvm_vm_instance);
+	printf("llvm register vm factory\n");
+}
+
+} // namespace llvm
+} // namespace bpftime::vm::compat
