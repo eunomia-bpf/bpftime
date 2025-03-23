@@ -90,7 +90,7 @@ static void CUPTIAPI cupti_buffer_completed(CUcontext ctx, uint32_t streamId,
 				auto kernelActivity =
 					(CUpti_ActivityKernel4 *)record;
 				SPDLOG_INFO("Kernel {} consumed {} ns",
-					    kernelActivity->name,
+					    (const char *)kernelActivity->name,
 					    kernelActivity->end -
 						    kernelActivity->start);
 			}
