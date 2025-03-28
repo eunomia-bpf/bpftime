@@ -699,6 +699,33 @@ int bpftime_shm::add_bpf_map(int fd, const char *name,
 		fd, bpftime::bpf_map_handler(fd, name, segment, attr), segment);
 }
 
+int bpftime_shm::dup_bpf_map(int oldfd, int newfd)
+{
+	if (!is_map_fd(oldfd)) {
+		SPDLOG_ERROR("Expected {} to be a map fd", oldfd);
+		errno = EBADF;
+		return -1;
+	}
+	if (newfd < 0) {
+		// if fd is negative, we need to create a new fd for allocating
+		newfd = open_fake_fd();
+	}
+	if (!manager) {
+		return -1;
+	}
+	
+	// Get the original map handler
+	auto &handler =
+		std::get<bpftime::bpf_map_handler>(manager->get_handler(oldfd));	
+	std::string new_name = std::string("dup_") + handler.name.c_str();
+	// Create a new handler with the same parameters
+	return manager->set_handler(
+		newfd,
+		bpftime::bpf_map_handler(newfd, new_name.c_str(), segment, handler.attr), // Copy construct the handler
+		segment
+	);
+}
+
 const handler_manager *bpftime_shm::get_manager() const
 {
 	return manager;
