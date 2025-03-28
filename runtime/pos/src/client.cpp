@@ -260,7 +260,7 @@ pos_retval_t POSClient::restore_handles(std::string& ckpt_dir){
             retval = this->__reassign_handle_parents(handle);
             if(unlikely(retval != POS_SUCCESS)){
                 dirty_retval = retval;
-                POS_WARN_C("failed to reassign handle parents: rid(%u), hid(%lu)", map_iter->first, map_iter->second);
+                // POS_WARN_C("failed to reassign handle parents: rid(%u), hid(%lu)", map_iter->first, map_iter->second);
                 goto exit;
             }
             handle_list.push_back(handle);

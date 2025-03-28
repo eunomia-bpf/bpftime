@@ -651,8 +651,6 @@ class POSHandle {
     void* restore_binary_mapped;
     uint64_t restore_binary_mapped_size;
 
-
- protected:
     /*!
      *  \brief  restore the current handle when it becomes broken status
      *  \note   implemented by specific handle type
@@ -778,8 +776,6 @@ class POSHandleManager {
         uint64_t state_size = 0
     );
 
-
- protected:
     /*!
      *  \brief  list of handles managed by this manager (including those removed ones)
      */

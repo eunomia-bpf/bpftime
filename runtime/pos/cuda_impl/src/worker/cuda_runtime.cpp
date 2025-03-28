@@ -235,7 +235,7 @@ namespace cuda_launch_kernel {
         POS_CHECK_POINTER(args);
 
         // [Cricket Adapt] skip the metadata used by cricket
-        args += (sizeof(size_t) + sizeof(uint16_t) * function_handle->nb_params);
+        args = (char *) args+ (sizeof(size_t) + sizeof(uint16_t) * function_handle->nb_params);
 
         /*!
          *  \note   the actual kernel parameter list passed to the cuLaunchKernel is 
@@ -248,7 +248,7 @@ namespace cuda_launch_kernel {
         // }
 
         for(i=0; i<function_handle->nb_params; i++){
-            cuda_args[i] = args + function_handle->param_offsets[i];
+            cuda_args[i] = (char *)args + function_handle->param_offsets[i];
             POS_CHECK_POINTER(cuda_args[i]);
         }
         typedef struct __dim3 { uint32_t x; uint32_t y; uint32_t z; } __dim3_t;

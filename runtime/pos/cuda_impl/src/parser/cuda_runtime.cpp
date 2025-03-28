@@ -324,7 +324,7 @@ namespace cuda_launch_kernel {
         POS_CHECK_POINTER(args);
 
         // [Cricket Adapt] skip the metadata used by cricket
-        args += (sizeof(size_t) + sizeof(uint16_t) * function_handle->nb_params);
+        args = (char *)args+ (sizeof(size_t) + sizeof(uint16_t) * function_handle->nb_params);
         
         /*!
          *  \note   record all input memory areas
@@ -332,7 +332,7 @@ namespace cuda_launch_kernel {
         for(i=0; i<function_handle->input_pointer_params.size(); i++){
             param_index = function_handle->input_pointer_params[i];
  
-            arg_addr = args + function_handle->param_offsets[param_index];
+            arg_addr = (char *)args + function_handle->param_offsets[param_index];
             POS_CHECK_POINTER(arg_addr);
             arg_value = *((void**)arg_addr);
             
@@ -371,7 +371,7 @@ namespace cuda_launch_kernel {
         for(i=0; i<function_handle->inout_pointer_params.size(); i++){
             param_index = function_handle->inout_pointer_params[i];
 
-            arg_addr = args + function_handle->param_offsets[param_index];
+            arg_addr = (char*)args + function_handle->param_offsets[param_index];
             POS_CHECK_POINTER(arg_addr);
             arg_value = *((void**)arg_addr);
             
@@ -412,7 +412,7 @@ namespace cuda_launch_kernel {
         for(i=0; i<function_handle->output_pointer_params.size(); i++){
             param_index = function_handle->output_pointer_params[i];
 
-            arg_addr = args + function_handle->param_offsets[param_index];
+            arg_addr = (char*)args + function_handle->param_offsets[param_index];
             POS_CHECK_POINTER(arg_addr);
             arg_value = *((void**)arg_addr);
             
@@ -471,7 +471,7 @@ namespace cuda_launch_kernel {
                     continue;
                 }
 
-                arg_addr = args + function_handle->param_offsets[param_index];
+                arg_addr = (char *)args + function_handle->param_offsets[param_index];
                 POS_CHECK_POINTER(arg_addr);
 
                 struct_base_ptr = (uint8_t*)arg_addr;
@@ -513,9 +513,9 @@ namespace cuda_launch_kernel {
                 param_index = function_handle->confirmed_suspicious_params[i].first;
                 struct_offset = function_handle->confirmed_suspicious_params[i].second;
 
-                arg_addr = args + function_handle->param_offsets[param_index];
+                arg_addr = (char *)args + function_handle->param_offsets[param_index];
                 POS_CHECK_POINTER(arg_addr);
-                arg_value = *((void**)(arg_addr+struct_offset));
+                arg_value = *((void**)((char *)arg_addr+struct_offset));
 
                 /*!
                  *  \note   sometimes one would launch kernel with some pointer params are nullptr (at least pytorch did),

@@ -772,7 +772,7 @@ class POSUtil_CUDA_Fatbin {
             }
 
             while (secpos < data->d_size) {
-                struct nv_info_kernel_entry *entry = (struct nv_info_kernel_entry*)(data->d_buf+secpos);
+                struct nv_info_kernel_entry *entry = (struct nv_info_kernel_entry*)((char *)data->d_buf+secpos);
                 if (entry->format == EIFMT_SVAL && entry->attribute == EIATTR_KPARAM_INFO){
                     if (entry->values_size != 0xc) {
                         POS_WARN("EIATTR_KPARAM_INFO values size has not the expected value of 0xc");
@@ -857,7 +857,7 @@ class POSUtil_CUDA_Fatbin {
 
         // analyse all kernels within this section
         for (size_t secpos=0; secpos < data->d_size; secpos += sizeof(struct nv_info_entry)){
-            struct nv_info_entry *entry = (struct nv_info_entry *)(data->d_buf+secpos);
+            struct nv_info_entry *entry = (struct nv_info_entry *)((char*)data->d_buf+secpos);
 
             if (entry->values_size != 8) {
                 POS_WARN(

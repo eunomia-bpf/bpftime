@@ -175,3 +175,8 @@ add_library(pos ${SOURCE_FILES})
 target_include_directories(pos PRIVATE ${CMAKE_SOURCE_DIR}/runtime ${CMAKE_CURRENT_BINARY_DIR}/../)
 target_link_libraries(pos PRIVATE absl::strings absl::synchronization absl::flat_hash_map absl::time absl::base protobuf::libprotobuf cublas-objects device-objects event-objects function-objects memory-objects module-objects stream-objects var-objects context-objects cublas-objects apicxt-objects handle-objects client-objects cuda cublas elf ibverbs /usr/lib/llvm-14/lib/libclang.so)
 set(CMAKE_CXX_FLAGS "-I/home/geekpie/miniconda3/envs/asc25-rna/include/ -I/usr/lib/llvm-14/include/ -I${CMAKE_CURRENT_BINARY_DIR}/../")
+
+file(GLOB_RECURSE SOURCE_FILES gpu/src/*.c)
+add_library(pos-remote ${SOURCE_FILES})
+target_include_directories(pos-remote PRIVATE ${CMAKE_SOURCE_DIR}/gpu/include ${CMAKE_CURRENT_BINARY_DIR}/gpu/include/include ${CMAKE_CURRENT_BINARY_DIR}/gpu/include/gdb)
+target_link_libraries(pos-remote PRIVATE pos)

@@ -301,7 +301,7 @@ namespace cu_device_primary_ctx_get_state {
         wqe->api_cxt->return_code = cuDevicePrimaryCtxGetState(
             device_handle->id,
             (unsigned int*)(wqe->api_cxt->ret_data),
-            (int*)(wqe->api_cxt->ret_data + sizeof(unsigned int))
+            (int*)((char *)wqe->api_cxt->ret_data + sizeof(unsigned int))
         );
 
         if(unlikely(CUDA_SUCCESS != wqe->api_cxt->return_code)){ 
