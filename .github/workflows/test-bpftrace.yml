@@ -1,4 +1,4 @@
-name: BPFtime Syscall Tracing Test
+name: BPFtime Syscall Tracing Test (Revised)
 
 on:
   push:
@@ -9,279 +9,184 @@ on:
 jobs:
   syscall-tracing-test:
     runs-on: ubuntu-22.04
-    container: 
+    container:
+      # Ensure the image has necessary tools (bpftrace, build tools, sudo)
+      # If manjusakalza/bpftime-base-image:ubuntu-2204 doesn't have sudo configured passwordless
+      # for the runner user, this might need adjustments or a different base image.
       image: "manjusakalza/bpftime-base-image:ubuntu-2204"
-      options: "--privileged"
-    
+      options: "--privileged" # Essential for bpf/bpftrace
+
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v3
+      - uses: actions/checkout@v3 # Use a more recent version
         with:
           submodules: 'recursive'
-      
-      - name: System preparation
+
+      - name: Install dependencies
         run: |
-          # Update and install dependencies
           apt-get update
-          apt-get install -y lcov tree strace gdb sudo tmux bpftrace
-          
-          # Setup environment
-          echo "HOME=/root" >> $GITHUB_ENV
-          
-          # Ensure trace/debug filesystems are mounted
-          if ! mount | grep tracefs; then
-            mkdir -p /sys/kernel/tracing
-            mount -t tracefs nodev /sys/kernel/tracing || echo "Failed to mount tracefs"
-          fi
-          
-          if ! mount | grep debugfs; then
-            mkdir -p /sys/kernel/debug
-            mount -t debugfs nodev /sys/kernel/debug || echo "Failed to mount debugfs"
-          fi
-          
-          # Display system information
-          echo "===== System Information ====="
-          uname -a
-          mount | grep -E 'tracefs|debugfs'
-          find /sys/kernel/*/tracing/events/syscalls -name "sys_enter_*" | head -5 || echo "No tracepoints found"
-      
+          # Ensure sudo is installed and configured if not already in the base image
+          # Adding sudo here just in case, though it's usually present.
+          apt-get install -y --no-install-recommends \
+            lcov tree strace gdb sudo tmux screen bpftrace \
+            llvm-dev libelf-dev libbpf-dev libc6-dev # Add build deps just in case
+          echo "Runner user: $(whoami)"
+          # Verify bpftrace installation
+          which bpftrace || (echo "bpftrace not found" && exit 1)
+          bpftrace --version || (echo "bpftrace not working" && exit 1)
+          # Verify sudo works passwordless for the runner user (important for -E)
+          sudo -n true || (echo "Passwordless sudo check failed" && exit 1)
+
       - name: Build and install runtime
         run: |
-          # Build with debug options
-          cmake -Bbuild -DCMAKE_BUILD_TYPE:STRING=RelWithDebInfo \
+          # Using $HOME which is standard in Actions
+          echo "Building bpftime, installing to $HOME/.bpftime"
+          cmake -Bbuild  -DCMAKE_BUILD_TYPE:STRING=RelWithDebInfo \
+            -DCMAKE_INSTALL_PREFIX=$HOME/.bpftime \
             -DBPFTIME_LLVM_JIT=1 \
             -DBUILD_BPFTIME_DAEMON=1 \
-            -DCMAKE_CXX_FLAGS="-DDEFAULT_LOGGER_OUTPUT_PATH='\"console\"'" \
-            -DCMAKE_INSTALL_PREFIX=/root/.bpftime
-          
-          cmake --build build --config RelWithDebInfo -j
-          cmake --build build --config RelWithDebInfo --target install
-          
-          # Verify installation
-          echo "===== Installation verification ====="
-          ls -la /root/.bpftime/
-          
-          # Create test files
-          echo "Test content for example 1" > example1_test.txt
-          mkdir -p build
-          echo "/test/path/1" > build/install_manifest.txt
-          echo "/test/path/2" >> build/install_manifest.txt
-      
-      - name: Create test scripts
+            -DCMAKE_CXX_FLAGS="-DDEFAULT_LOGGER_OUTPUT_PATH='\"console\"'"
+          cmake --build build --config RelWithDebInfo --target install -j$(nproc)
+
+      - name: Verify installation
         run: |
-          #----------------
-          # Server script
-          #----------------
-          cat > server_script.sh << 'EOF'
+          echo "Checking installed bpftime files in $HOME/.bpftime:"
+          ls -la $HOME/.bpftime/
+          # Ensure key libraries exist
+          test -f $HOME/.bpftime/lib/libbpftime-syscall-server.so || (echo "libbpftime-syscall-server.so not found!" && exit 1)
+          test -f $HOME/.bpftime/lib/libbpftime-agent-transformer.so || (echo "libbpftime-agent-transformer.so not found!" && exit 1)
+          test -f $HOME/.bpftime/lib/libbpftime-agent.so || (echo "libbpftime-agent.so not found!" && exit 1)
+          # Ensure bpftrace can be found by sudo
+          sudo which bpftrace
+
+          # Create test files needed by the client
+          mkdir -p build
+          echo "/test/path/from/ci/1" > build/install_manifest.txt
+          echo "/test/path/from/ci/2" >> build/install_manifest.txt
+          echo "Created test file:"
+          cat build/install_manifest.txt
+
+      - name: Create script files for server and client
+        run: |
+          # Note: Using $HOME directly. LD_PRELOAD paths point to the install location.
+          # Added sudo -E to match manual commands.
+          # Using full path for bpftrace just to be safe within sudo.
+          BPFTRACE_PATH=$(which bpftrace)
+
+          # Create server script
+          cat > server_script.sh << EOF
           #!/bin/bash
-          set -x
-          export HOME_DIR=/root
-          
-          # Check for server library
-          if [ ! -f "$HOME_DIR/.bpftime/libbpftime-syscall-server.so" ]; then
-            echo "ERROR: libbpftime-syscall-server.so not found!"
-            ls -la $HOME_DIR/.bpftime/
-            exit 1
-          fi
-          
-          # Find available tracepoints
-          if [ -d "/sys/kernel/debug/tracing/events/syscalls/sys_enter_openat" ] || 
-             [ -d "/sys/kernel/tracing/events/syscalls/sys_enter_openat" ]; then
-            TRACEPOINT="tracepoint:syscalls:sys_enter_openat"
-            BPF_PROGRAM='tracepoint:syscalls:sys_enter_openat { printf("%s %s\n", comm, str(args->filename)); }'
-          else
-            # Try to find any available syscall tracepoint
-            AVAILABLE_TP=$(find /sys/kernel/*/tracing/events/syscalls -name "sys_enter_*" | head -1)
-            
-            if [ -n "$AVAILABLE_TP" ]; then
-              AVAILABLE_TP=$(basename $AVAILABLE_TP)
-              TRACEPOINT="tracepoint:syscalls:$AVAILABLE_TP"
-              echo "Using alternative tracepoint: $TRACEPOINT"
-              BPF_PROGRAM="$TRACEPOINT { printf(\"Syscall by %s (PID: %d)\\n\", comm, pid); }"
-            else
-              # Fallback to kprobe as last resort
-              TRACEPOINT="kprobe:do_sys_open"
-              echo "Falling back to: $TRACEPOINT"
-              BPF_PROGRAM="$TRACEPOINT { printf(\"Open syscall by %s (PID: %d)\\n\", comm, pid); }"
-            fi
-          fi
-          
-          echo "Using BPF program: $BPF_PROGRAM"
-          
-          # Run bpftrace with system trace preload
-          export LD_LIBRARY_PATH=$HOME_DIR/.bpftime:$LD_LIBRARY_PATH
-          BPFTIME_DEBUG_LEVEL=4 BPFTIME_VM_NAME=llvm \
-            LD_PRELOAD=$HOME_DIR/.bpftime/libbpftime-syscall-server.so \
-            bpftrace -e "$BPF_PROGRAM"
-          
-          echo "Server script completed with status $?"
+          set -e # Exit on error
+          echo "Starting bpftrace server with preload..."
+          echo "Using bpftrace at: $BPFTRACE_PATH"
+          echo "Preloading: $HOME/.bpftime/lib/libbpftime-syscall-server.so"
+          ls -la $HOME/.bpftime/lib/ # Verify lib exists just before use
+
+          # Use sudo -E to preserve environment variables like LD_PRELOAD
+          # Log stderr to stdout for easier capture
+          sudo -E bash -c "BPFTIME_VM_NAME=llvm LD_PRELOAD=\$HOME/.bpftime/lib/libbpftime-syscall-server.so $BPFTRACE_PATH -e 'tracepoint:syscalls:sys_enter_openat { printf(\"%-16s %s\\n\", comm, str(args->filename)); }'" 2>&1
+
+          echo "Server script intended execution finished." # Should not be reached if bpftrace blocks
           EOF
           chmod +x server_script.sh
-          
-          #----------------
-          # Client script
-          #----------------
-          cat > client_script.sh << 'EOF'
+          echo "--- Server Script Content ---"
+          cat server_script.sh
+          echo "-----------------------------"
+
+          # Create client script
+          cat > client_script.sh << EOF
           #!/bin/bash
-          set -x
-          export HOME_DIR=/root
-          
-          # Wait for server to initialize
-          echo "Waiting for server to initialize..."
-          sleep 8
-          
-          # Check for agent libraries
-          if [ ! -f "$HOME_DIR/.bpftime/libbpftime-agent-transformer.so" ]; then
-            echo "ERROR: libbpftime-agent-transformer.so not found!"
-            exit 1
-          fi
-          
-          if [ ! -f "$HOME_DIR/.bpftime/libbpftime-agent.so" ]; then
-            echo "ERROR: libbpftime-agent.so not found!"
-            exit 1
-          fi
-          
-          # Check for test file
-          if [ ! -f "build/install_manifest.txt" ]; then
-            echo "WARNING: Test file not found, creating it"
-            mkdir -p build
-            echo "/test/path/1" > build/install_manifest.txt
-            echo "/test/path/2" >> build/install_manifest.txt
-          fi
-          
-          # Run cat with agent preload
-          export LD_LIBRARY_PATH=$HOME_DIR/.bpftime:$LD_LIBRARY_PATH
-          BPFTIME_DEBUG_LEVEL=4 BPFTIME_VM_NAME=llvm \
-            LD_PRELOAD=$HOME_DIR/.bpftime/libbpftime-agent-transformer.so \
-            BPFTIME_LOG_OUTPUT=console \
-            AGENT_SO=$HOME_DIR/.bpftime/libbpftime-agent.so \
-            /bin/cat build/install_manifest.txt
-          
-          EXIT_CODE=$?
-          echo "Client command exited with status $EXIT_CODE"
-          
-          if [ $EXIT_CODE -ne 0 ]; then
-            echo "Trying direct cat as a test:"
-            /bin/cat build/install_manifest.txt
-          fi
-          
-          echo "Client script completed"
+          set -e # Exit on error
+          echo "Running cat client with agent preload..."
+          echo "Preloading: $HOME/.bpftime/lib/libbpftime-agent-transformer.so"
+          echo "Agent SO: $HOME/.bpftime/lib/libbpftime-agent.so"
+          echo "Target file: build/install_manifest.txt"
+          ls -la $HOME/.bpftime/lib/ # Verify libs exist just before use
+
+          # Use sudo -E to preserve environment variables
+          # Log stderr to stdout
+          sudo -E bash -c "BPFTIME_VM_NAME=llvm LD_PRELOAD=\$HOME/.bpftime/lib/libbpftime-agent-transformer.so BPFTIME_LOG_OUTPUT=stderr AGENT_SO=\$HOME/.bpftime/lib/libbpftime-agent.so cat build/install_manifest.txt" 2>&1
+
+          echo "Client script finished."
           EOF
           chmod +x client_script.sh
-      
-      - name: Test with tmux approach
-        id: tmux_test
+          echo "--- Client Script Content ---"
+          cat client_script.sh
+          echo "-----------------------------"
+
+      - name: Test Server and Client Interaction
         run: |
-          echo "===== Running Primary Test with tmux ====="
-          mkdir -p logs
-          
-          # Start tmux server in detached mode with logging
-          tmux -v new-session -d -s bpftime_server 'bash -x ./server_script.sh 2>&1 | tee logs/server_tmux.log'
-          
-          # Verify session started
-          sleep 2
-          if ! tmux has-session -t bpftime_server 2>/dev/null; then
-            echo "ERROR: Failed to start tmux session"
-            exit 1
-          fi
-          
-          # Run client script
-          bash -x ./client_script.sh 2>&1 | tee logs/client_tmux.log
-          
-          # Capture output to check
-          if grep -q "/test/path/" logs/client_tmux.log; then
-            echo "success=true" >> $GITHUB_OUTPUT
-          else
-            echo "success=false" >> $GITHUB_OUTPUT
-          fi
-          
-          # Kill tmux session
-          tmux kill-session -t bpftime_server || echo "Tmux session already ended"
-      
-      - name: Fallback test with daemon
-        if: steps.tmux_test.outputs.success != 'true'
-        run: |
-          echo "===== Running Fallback Test with daemon ====="
-          
-          # Start daemon in background
-          /root/.bpftime/bpftime_daemon > logs/daemon.log 2>&1 &
-          DAEMON_PID=$!
-          sleep 5
-          
-          # Try running with bpftime command
-          /root/.bpftime/bpftime load /bin/cat build/install_manifest.txt > logs/daemon_client.log 2>&1 || \
-            echo "Daemon client test failed"
-          
-          # Try alternative direct approach if needed
-          /root/.bpftime/bpftime load bpftrace -e 'BEGIN { printf("Test\n"); exit(); }' \
-            -c "/bin/cat build/install_manifest.txt" >> logs/daemon_client.log 2>&1 || \
-            echo "Daemon bpftrace test failed"
-          
-          # Cleanup
-          kill $DAEMON_PID || echo "Daemon process already ended"
-      
-      - name: Direct test method
-        if: steps.tmux_test.outputs.success != 'true'
-        run: |
-          echo "===== Running Direct Execution Test ====="
-          
-          # Direct execution with environment variables
-          export LD_LIBRARY_PATH=/root/.bpftime:$LD_LIBRARY_PATH
-          
-          # Start server directly in background
-          BPFTIME_DEBUG_LEVEL=4 BPFTIME_VM_NAME=llvm \
-            LD_PRELOAD=/root/.bpftime/libbpftime-syscall-server.so \
-            bpftrace -e 'BEGIN { printf("Server started\n"); }' > logs/direct_server.log 2>&1 &
-          
+          echo "Starting server script in background..."
+          # Redirect stdout/stderr to a file. Run with bash explicitly.
+          ./server_script.sh > server.log 2>&1 &
           SERVER_PID=$!
-          sleep 5
-          
-          # Run client directly
-          BPFTIME_DEBUG_LEVEL=4 BPFTIME_VM_NAME=llvm \
-            LD_PRELOAD=/root/.bpftime/libbpftime-agent-transformer.so \
-            BPFTIME_LOG_OUTPUT=console \
-            AGENT_SO=/root/.bpftime/libbpftime-agent.so \
-            /bin/cat build/install_manifest.txt > logs/direct_client.log 2>&1
-          
-          # Cleanup
-          kill $SERVER_PID || echo "Server process already ended"
-      
-      - name: Collect diagnostic information
-        if: always()
-        run: |
-          echo "===== Collecting Diagnostic Information ====="
-          
-          # Gather system state
-          ps aux > logs/process_list.txt
-          mount > logs/mount_info.txt
-          dmesg | tail -n 200 > logs/dmesg.txt
-          find /sys/kernel/*/tracing -type d | sort > logs/tracing_paths.txt
-          
-          # Check files
-          ls -la /root/.bpftime/ > logs/bpftime_files.txt
-          ls -la build/ > logs/build_files.txt
-          
-          # Show summary
-          echo "===== Test Summary ====="
-          grep -l "/test/path/" logs/*.log || echo "No successful test output found"
-      
-      - name: Upload logs
-        if: always()
-        uses: actions/upload-artifact@v3
-        with:
-          name: bpftime-test-logs
-          path: logs/
-          retention-days: 5
-      
-      - name: Result assessment
-        run: |
-          # Check all logs for any evidence of success
-          if grep -q "/test/path/" logs/*.log; then
-            echo "✅ TEST PASSED: Found expected output in logs"
-            exit 0
-          else
-            echo "❌ TEST FAILED: Did not find expected output"
-            # See if we can find any related output
-            grep -i "path\|openat\|syscall" logs/*.log || echo "No relevant output found"
+          echo "Server PID: $SERVER_PID"
+
+          # Allow server some time to initialize
+          echo "Waiting 10 seconds for server initialization..."
+          sleep 10
+
+          # Check if server process is still running before starting client
+          if ! ps -p $SERVER_PID > /dev/null; then
+            echo "Server process $SERVER_PID exited prematurely!"
+            echo "--- Server Log Start (Premature Exit) ---"
+            cat server.log
+            echo "--- Server Log End (Premature Exit) ---"
             exit 1
           fi
+          echo "Server process $SERVER_PID is running."
+
+          echo "Running client script..."
+          # Run client script and capture its output
+          ./client_script.sh > client.log 2>&1
+          CLIENT_EXIT_CODE=$?
+          echo "Client script exited with code $CLIENT_EXIT_CODE"
+
+          echo "--- Client Log Start ---"
+          cat client.log
+          echo "--- Client Log End ---"
+
+          # Allow some time for server to process events and flush logs
+          echo "Waiting 5 seconds for server to process events..."
+          sleep 5
+
+          echo "Stopping server script (PID: $SERVER_PID)..."
+          # Use sudo to kill if the server was started with sudo indirectly
+          sudo kill $SERVER_PID || echo "Server process $SERVER_PID already stopped."
+          # Wait for the process to ensure it's cleaned up
+          # timeout is useful in case kill fails silently but process lingers
+          timeout 5s wait $SERVER_PID || echo "Server process $SERVER_PID did not terminate gracefully after kill or was already gone."
+
+          echo "Server script stopped."
+
+          echo "--- Server Log Start ---"
+          cat server.log
+          echo "--- Server Log End ---"
+
+          echo "Verifying server captured the client's openat syscall..."
+          # Check if the server log contains the expected trace line for install_manifest.txt
+          # Adjust the grep pattern if the 'comm' field might vary (e.g., 'cat', 'sudo')
+          # Using grep -q for quiet check, then echo success/failure
+          if grep -E ' (cat|sudo) .*build/install_manifest.txt' server.log; then
+            echo "[SUCCESS] Server log contains the expected openat trace."
+          else
+            echo "[FAILURE] Server log does NOT contain the expected openat trace for build/install_manifest.txt."
+            exit 1
+          fi
+
+          # Optional: Check client exit code if needed
+          if [ $CLIENT_EXIT_CODE -ne 0 ]; then
+             echo "[WARNING] Client script exited with non-zero status ($CLIENT_EXIT_CODE)."
+             # Decide if this should be a failure
+             # exit 1
+          fi
+
+      - name: Final Summary
+        if: always() # Run even if previous steps failed
+        run: |
+          echo "==== Test Summary ===="
+          echo "Attempted to run bpftrace server in background and cat client in foreground."
+          echo "Checked server logs for expected syscall trace from the client."
+          echo "Final status: ${{ job.status }}"
+          echo "Listing key files:"
+          ls -la $HOME/.bpftime/lib/
+          ls -la build/
