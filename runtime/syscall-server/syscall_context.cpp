@@ -597,6 +597,20 @@ int syscall_context::handle_perfevent(perf_event_attr *attr, pid_t pid, int cpu,
 		// std::cout << "Created uprobe " << id << std::endl;
 		SPDLOG_DEBUG("Created uprobe {}", id);
 		return id;
+	} else if ((int)attr->type == determine_kprobe_perf_type()) {
+		bool is_ret_probe =
+			attr->config & (1 << determine_kprobe_retprobe_bit());
+		size_t ref_ctr_off =
+			attr->config >> PERF_UPROBE_REF_CTR_OFFSET_SHIFT;
+		const char *name = (const char *)(uintptr_t)attr->config1;
+		uint64_t addr = attr->config2;
+		SPDLOG_DEBUG(
+			"Creating kprobe func_name={} addr={} retprobe={} ref_ctr_off={} attr->config={:x}",
+			name, addr, is_ret_probe, ref_ctr_off, attr->config);
+		int id = bpftime_kprobe_create(-1, name, addr, is_ret_probe,
+					       ref_ctr_off);
+		SPDLOG_DEBUG("Created kprobe {}", id);
+		return id;
 	} else if ((int)attr->type ==
 		   (int)bpf_event_type::PERF_TYPE_TRACEPOINT) {
 		SPDLOG_DEBUG("Detected tracepoint perf event creation");

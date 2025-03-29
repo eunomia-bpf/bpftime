@@ -43,10 +43,12 @@ endif()
 # Create library, setup header and source files
 #
 find_package(Boost REQUIRED)
+
 # Find all headers and implementation files
 if(NOT DEFINED ARCH)
   set(ARCH ${CMAKE_SYSTEM_PROCESSOR})
 endif()
+
 message(STATUS "Building for architecture: ${ARCH}")
 
 set(sources
@@ -75,6 +77,8 @@ set(sources
   src/bpf_map/userspace/per_cpu_array_map.cpp
   src/bpf_map/userspace/per_cpu_hash_map.cpp
   src/bpf_map/userspace/prog_array.cpp
+  src/bpf_map/userspace/lru_var_hash_map.cpp
+
   extension/extension_helper.cpp
 )
 
@@ -86,7 +90,6 @@ if(UNIX AND NOT APPLE AND BPFTIME_BUILD_WITH_LIBBPF)
     src/bpf_map/shared/perf_event_array_kernel_user.cpp
   )
 endif()
-
 
 set(headers
   include/
@@ -110,6 +113,10 @@ add_custom_target(
 )
 
 message(INFO " Found the following boost include dirs : ${Boost_INCLUDE_DIRS}")
+
+include(../cmake/cuda.cmake)
+find_cuda()
+
 target_include_directories(${PROJECT_NAME}
   PUBLIC
   ${CMAKE_CURRENT_SOURCE_DIR}/../vm/include
@@ -119,19 +126,24 @@ target_include_directories(${PROJECT_NAME}
   ${CMAKE_CURRENT_SOURCE_DIR}/../third_party
   ${SPDLOG_INCLUDE}
   ${Boost_INCLUDE_DIRS}
+  ${CUDA_INCLUDE_PATH}
 )
-
+target_link_directories(${PROJECT_NAME} PUBLIC ${CUDA_LIBRARY_PATH})
 target_link_libraries(${PROJECT_NAME}
   PUBLIC
   bpftime_vm
   spdlog::spdlog
   bpftime_base_attach_impl
+  ${CUDA_LIBS}
 )
+
+message(STATUS "runtime CUDA libs= ${CUDA_LIBS}")
+
 if(${BPFTIME_BUILD_WITH_LIBBPF})
   add_dependencies(${PROJECT_NAME} bpftime_vm FridaGum spdlog::spdlog libbpf bpftime_base_attach_impl)
 else()
   add_dependencies(${PROJECT_NAME} bpftime_vm FridaGum spdlog::spdlog bpftime_base_attach_impl)
-endif()  
+endif()
 
 if(BPFTIME_ENABLE_IOURING_EXT)
   target_link_libraries(${PROJECT_NAME}
@@ -142,7 +154,7 @@ endif()
 
 if(${ENABLE_EBPF_VERIFIER})
   target_include_directories(${PROJECT_NAME} PRIVATE ${BPFTIME_VERIFIER_INCLUDE})
-  target_link_libraries(${PROJECT_NAME} PRIVATE bpftime-verifier)
+  target_link_libraries(${PROJECT_NAME} PRIVATE bpftime-verifier cuda)
   add_dependencies(${PROJECT_NAME} bpftime-verifier)
   target_compile_definitions(${PROJECT_NAME} PRIVATE ENABLE_EBPF_VERIFIER ENABLE_BPFTIME_VERIFIER)
 endif()
@@ -178,64 +190,67 @@ if(APPLE)
 endif()
 
 if(${BPFTIME_BUILD_WITH_LIBBPF})
-target_link_libraries(${PROJECT_NAME}
-  PUBLIC
-  ${LIBBPF_LIBRARIES}
-  ${FRIDA_GUM_INSTALL_DIR}/libfrida-gum.a
-  -lpthread
-  -lm
-  -ldl
-  -lz
-  -lelf
-  bpftime_base_attach_impl
-  ${EXTRA_LIBS}
-)
+  target_link_libraries(${PROJECT_NAME}
+    PUBLIC
+    ${LIBBPF_LIBRARIES}
+    ${FRIDA_GUM_INSTALL_DIR}/libfrida-gum.a
+    -lpthread
+    -lm
+    -ldl
+    -lz
+    -lelf
+    bpftime_base_attach_impl
+    ${EXTRA_LIBS}
+    cuda
+  )
 else()
-target_link_libraries(${PROJECT_NAME}
-  PUBLIC
-  ${FRIDA_GUM_INSTALL_DIR}/libfrida-gum.a
-  -lpthread
-  -lm
-  -ldl
-  -lz
-  bpftime_base_attach_impl
-  ${EXTRA_LIBS}
-)
+  target_link_libraries(${PROJECT_NAME}
+    PUBLIC
+    ${FRIDA_GUM_INSTALL_DIR}/libfrida-gum.a
+    -lpthread
+    -lm
+    -ldl
+    -lz
+    bpftime_base_attach_impl
+    ${EXTRA_LIBS}
+    cuda
+  )
 endif()
 
-
-
 if(BPFTIME_BUILD_WITH_LIBBPF)
-target_include_directories(${PROJECT_NAME} PUBLIC
-  ${LIBBPF_INCLUDE_DIRS}/uapi
-  ${LIBBPF_INCLUDE_DIRS}
-  ${FRIDA_GUM_INSTALL_DIR}
-  $<INSTALL_INTERFACE:runtime>
-  $<INSTALL_INTERFACE:runtime/src>
-  $<INSTALL_INTERFACE:include>
-  $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
-  $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src>
-)
+  target_include_directories(${PROJECT_NAME} PUBLIC
+    ${LIBBPF_INCLUDE_DIRS}/uapi
+    ${LIBBPF_INCLUDE_DIRS}
+    ${FRIDA_GUM_INSTALL_DIR}
+    $<INSTALL_INTERFACE:runtime>
+    $<INSTALL_INTERFACE:runtime/src>
+    $<INSTALL_INTERFACE:include>
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src>
+  )
 else()
-target_include_directories(${PROJECT_NAME} PUBLIC
-  ${FRIDA_GUM_INSTALL_DIR}
-  $<INSTALL_INTERFACE:runtime>
-  $<INSTALL_INTERFACE:runtime/src>
-  $<INSTALL_INTERFACE:include>
-  $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
-  $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src>
-)
+  target_include_directories(${PROJECT_NAME} PUBLIC
+    ${FRIDA_GUM_INSTALL_DIR}
+    $<INSTALL_INTERFACE:runtime>
+    $<INSTALL_INTERFACE:runtime/src>
+    $<INSTALL_INTERFACE:include>
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src>
+  )
 endif()
 
 message(DEBUG "Successfully added all dependencies and linked against them.")
 
 set(BPFTIME_RUNTIME_INCLUDE ${CMAKE_CURRENT_SOURCE_DIR}/include ${CMAKE_CURRENT_SOURCE_DIR}/src)
 
-if (BPFTIME_BUILD_WITH_LIBBPF)
-add_subdirectory(object)
+if(BPFTIME_BUILD_WITH_LIBBPF)
+  add_subdirectory(object)
 endif()
+
 add_subdirectory(agent)
 add_subdirectory(syscall-server)
+add_subdirectory(pos)
+
 #
 # Unit testing setup
 #
@@ -246,7 +261,10 @@ if(BPFTIME_ENABLE_UNIT_TESTING AND BPFTIME_BUILD_WITH_LIBBPF)
   add_subdirectory(unit-test)
 endif()
 
-if (${TEST_LCOV}) 
+if(${TEST_LCOV})
   target_compile_options(${PROJECT_NAME} PUBLIC -fprofile-arcs -ftest-coverage -fprofile-update=atomic)
-  target_link_options(${PROJECT_NAME} PUBLIC  -fprofile-arcs)
+  target_link_options(${PROJECT_NAME} PUBLIC -fprofile-arcs)
 endif()
+
+add_dependencies(${PROJECT_NAME} bpftime_vm_compat)
+target_link_libraries(${PROJECT_NAME} PUBLIC bpftime_vm_compat)

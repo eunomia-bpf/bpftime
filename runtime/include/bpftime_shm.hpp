@@ -51,6 +51,9 @@ enum class bpf_event_type {
 	// custom types
 	BPF_TYPE_UPROBE = 6,
 	BPF_TYPE_URETPROBE = 7,
+	BPF_TYPE_KPROBE = 8,
+	BPF_TYPE_KRETPROBE = 9,
+
 	BPF_TYPE_UPROBE_OVERRIDE = 1008,
 	BPF_TYPE_UREPLACE = 1009,
 };
@@ -309,6 +312,12 @@ long bpftime_map_delete_elem(int fd, const void *key);
 // @param[fd]: fd is the fd allocated by the kernel. if fd is -1, then the
 // function will allocate a new perf event fd.
 int bpftime_uprobe_create(int fd, int pid, const char *name, uint64_t offset,
+			  bool retprobe, size_t ref_ctr_off);
+// create kprobe in the global shared memory
+//
+// @param[fd]: fd is the fd allocated by the kernel. if fd is -1, then the
+// function will allocate a new perf event fd.
+int bpftime_kprobe_create(int fd, const char *func_name, uint64_t addr,
 			  bool retprobe, size_t ref_ctr_off);
 // create tracepoint in the global shared memory
 //

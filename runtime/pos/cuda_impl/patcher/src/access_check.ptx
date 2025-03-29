@@ -1,0 +1,46 @@
+{{
+    // pt is always true
+    .reg .pred pt;
+    setp.eq.u32 pt, 0, 0;
+
+    // 0->pred, 1->addr, 2->neg
+    // set neg if pred of st is not neg
+    @{2}{0} bra SKIP_ACCESS_CHECK;
+
+    .reg .pred is_global;
+    isspacep.global is_global, {1};
+    @!is_global bra SKIP_ACCESS_CHECK;
+
+    .reg .pred cmp_tmp, success, done;
+    .reg .u32 idx, range_cnt;
+    .reg .u64 range_min, range_max, check_passed_addr;
+    .reg .u64 range_min_addr, range_max_addr, range_min_addr_base, range_max_addr_base;
+
+    mov.u64 range_min_addr_base, range_min_param;
+    mov.u64 range_max_addr_base, range_max_param;
+    ld.param.u64 check_passed_addr, [check_passed_param];
+
+    mov.u32 idx, 0;
+    mov.pred success, 0;
+    ld.param.u32 range_cnt, [range_cnt_param];
+
+    ACCESS_CHECK_LOOP:
+    setp.hs.u32 done, idx, range_cnt;
+    @done bra ACCESS_CHECK_LOOP_END;
+
+    mad.wide.u32 range_min_addr, idx, 8, range_min_addr_base;
+    ld.param.u64 range_min, [range_min_addr];
+    setp.hs.u64 cmp_tmp, {1}, range_min;
+    mad.wide.u32 range_max_addr, idx, 8, range_max_addr_base;
+    ld.param.u64 range_max, [range_max_addr];
+    setp.ls.and.u64 cmp_tmp, {1}, range_max, cmp_tmp;
+    or.pred success, success, cmp_tmp;
+
+    add.u32 idx, idx, 1;
+    bra ACCESS_CHECK_LOOP;
+
+    ACCESS_CHECK_LOOP_END:
+    @!success st.global.u8 [check_passed_addr], 0;
+
+    SKIP_ACCESS_CHECK:
+}}
