@@ -1,4 +1,4 @@
-name: BPFtime Syscall Tracing Test (Revised & Corrected)
+name: BPFtime Syscall Tracing Test (Revised - Raw Syscalls)
 
 on:
   push:
@@ -10,61 +10,64 @@ jobs:
   syscall-tracing-test:
     runs-on: ubuntu-22.04
     container:
-      # Ensure the image has necessary tools (bpftrace, build tools, sudo)
-      # If manjusakalza/bpftime-base-image:ubuntu-2204 doesn't have sudo configured passwordless
-      # for the runner user, this might need adjustments or a different base image.
       image: "manjusakalza/bpftime-base-image:ubuntu-2204"
       options: "--privileged" # Essential for bpf/bpftrace
 
     steps:
-      - uses: actions/checkout@v3 # Use a more recent version
+      - uses: actions/checkout@v3
         with:
           submodules: 'recursive'
 
       - name: Install dependencies
         run: |
           apt-get update
-          # Ensure sudo is installed and configured if not already in the base image
-          # Adding sudo here just in case, though it's usually present.
           apt-get install -y --no-install-recommends \
             lcov tree strace gdb sudo tmux screen bpftrace \
-            llvm-dev libelf-dev libbpf-dev libc6-dev # Add build deps just in case
+            llvm-dev libelf-dev libbpf-dev libc6-dev auditd # auditd provides ausyscall
           echo "Runner user: $(whoami)"
-          # Verify bpftrace installation
           which bpftrace || (echo "bpftrace not found" && exit 1)
           bpftrace --version || (echo "bpftrace not working" && exit 1)
-          # Verify sudo works passwordless for the runner user (important for -E)
-          # This assumes the container user can sudo without password. If not, this step needs adjustment.
-          sudo -n true || (echo "Passwordless sudo check failed. Ensure container user can sudo without password." && exit 1)
+          # Check sudo again, just in case
+          sudo -n true || (echo "Passwordless sudo check failed." && exit 1)
+          # Find openat syscall number for x86_64 (usually 257)
+          # Using ausyscall, requires auditd package
+          OPENAT_SYSCALL_NR=$(ausyscall x86_64 openat)
+          echo "Detected openat syscall number: $OPENAT_SYSCALL_NR"
+          # Fallback if ausyscall failed or isn't available
+          if [ -z "$OPENAT_SYSCALL_NR" ] || [ "$OPENAT_SYSCALL_NR" = "0" ]; then
+            echo "ausyscall failed, using default 257 for openat x86_64"
+            OPENAT_SYSCALL_NR=257
+          fi
+          # Store it in the environment for later steps
+          echo "OPENAT_SYSCALL_NR=${OPENAT_SYSCALL_NR}" >> $GITHUB_ENV
 
       - name: Build and install runtime
         run: |
-          # Using $HOME which is standard in Actions
           echo "Building bpftime, installing to $HOME/.bpftime"
-          # Ensure install prefix is correctly set and used
           cmake -Bbuild  -DCMAKE_BUILD_TYPE:STRING=RelWithDebInfo \
             -DCMAKE_INSTALL_PREFIX=$HOME/.bpftime \
             -DBPFTIME_LLVM_JIT=1 \
             -DBUILD_BPFTIME_DAEMON=1 \
             -DCMAKE_CXX_FLAGS="-DDEFAULT_LOGGER_OUTPUT_PATH='\"console\"'"
-          # Run install target
           cmake --build build --config RelWithDebInfo --target install -j$(nproc)
 
-      - name: Verify installation
+      - name: Verify installation and List Tracepoints
         run: |
           echo "Checking installed bpftime files in $HOME/.bpftime:"
           ls -la $HOME/.bpftime/
-          # Ensure key libraries exist IN THE CORRECT LOCATION (directly under .bpftime)
           test -f $HOME/.bpftime/libbpftime-syscall-server.so || (echo "$HOME/.bpftime/libbpftime-syscall-server.so not found!" && exit 1)
           test -f $HOME/.bpftime/libbpftime-agent-transformer.so || (echo "$HOME/.bpftime/libbpftime-agent-transformer.so not found!" && exit 1)
           test -f $HOME/.bpftime/libbpftime-agent.so || (echo "$HOME/.bpftime/libbpftime-agent.so not found!" && exit 1)
-          # Ensure executables are present too (optional but good practice)
           test -f $HOME/.bpftime/bpftime || (echo "$HOME/.bpftime/bpftime executable not found!" && exit 1)
-
-          # Ensure bpftrace (system one) can be found by sudo
           sudo which bpftrace
 
-          # Create test files needed by the client
+          # List available syscall tracepoints for diagnostics
+          echo "--- Available Syscall Tracepoints ---"
+          sudo bpftrace -l 'tracepoint:syscalls:*' || echo "Could not list syscalls tracepoints"
+          echo "--- Available Raw Syscall Tracepoints ---"
+          sudo bpftrace -l 'tracepoint:raw_syscalls:*' || echo "Could not list raw_syscalls tracepoints"
+          echo "-----------------------------------"
+
           mkdir -p build
           echo "/test/path/from/ci/1" > build/install_manifest.txt
           echo "/test/path/from/ci/2" >> build/install_manifest.txt
@@ -72,50 +75,43 @@ jobs:
           cat build/install_manifest.txt
 
       - name: Create script files for server and client
+        env:
+          # Make the syscall number available inside the script creation step
+          OPENAT_NR: ${{ env.OPENAT_SYSCALL_NR }}
         run: |
-          # Using $HOME directly. LD_PRELOAD paths point to the install location.
-          # Added sudo -E to match manual commands.
-          # Using full path for bpftrace just to be safe within sudo.
           BPFTRACE_PATH=$(which bpftrace)
 
-          # Create server script
+          # Create server script using raw_syscalls tracepoint
           cat > server_script.sh << EOF
           #!/bin/bash
-          set -e # Exit on error
-          echo "Starting bpftrace server with preload..."
+          set -e
+          echo "Starting bpftrace server with preload (using raw_syscalls)..."
           echo "Using bpftrace at: $BPFTRACE_PATH"
-          # CORRECTED PATH: Points directly into $HOME/.bpftime
           echo "Preloading: $HOME/.bpftime/libbpftime-syscall-server.so"
-          ls -la $HOME/.bpftime/libbpftime-syscall-server.so # Verify lib exists just before use
+          echo "Filtering for openat syscall number: ${OPENAT_NR}"
+          ls -la $HOME/.bpftime/libbpftime-syscall-server.so
 
-          # Use sudo -E to preserve environment variables like LD_PRELOAD
-          # Log stderr to stdout for easier capture
-          # CORRECTED PATH: LD_PRELOAD points directly into $HOME/.bpftime
-          sudo -E bash -c "BPFTIME_VM_NAME=llvm LD_PRELOAD=\$HOME/.bpftime/libbpftime-syscall-server.so $BPFTRACE_PATH -e 'tracepoint:syscalls:sys_enter_openat { printf(\"%-16s %s\\n\", comm, str(args->filename)); }'" 2>&1
+          # Use raw_syscalls:sys_enter, filter by ID, get filename from args->args[1]
+          # Using the numeric syscall value determined earlier
+          sudo -E bash -c "BPFTIME_VM_NAME=llvm LD_PRELOAD=\$HOME/.bpftime/libbpftime-syscall-server.so $BPFTRACE_PATH -e 'tracepoint:raw_syscalls:sys_enter /args->id == ${OPENAT_NR}/ { printf(\"%-16s %s\\n\", comm, str(args->args[1])); }'" 2>&1
 
-          echo "Server script intended execution finished." # Should not be reached if bpftrace blocks
+          echo "Server script intended execution finished."
           EOF
           chmod +x server_script.sh
           echo "--- Server Script Content ---"
           cat server_script.sh
           echo "-----------------------------"
 
-          # Create client script
+          # Create client script (remains the same)
           cat > client_script.sh << EOF
           #!/bin/bash
-          set -e # Exit on error
+          set -e
           echo "Running cat client with agent preload..."
-          # CORRECTED PATH: Points directly into $HOME/.bpftime
           echo "Preloading: $HOME/.bpftime/libbpftime-agent-transformer.so"
-          # CORRECTED PATH: Points directly into $HOME/.bpftime
           echo "Agent SO: $HOME/.bpftime/libbpftime-agent.so"
           echo "Target file: build/install_manifest.txt"
-          # CORRECTED PATH: Verify libs directly in $HOME/.bpftime
-          ls -la $HOME/.bpftime/libbpftime-agent-transformer.so $HOME/.bpftime/libbpftime-agent.so # Verify libs exist just before use
+          ls -la $HOME/.bpftime/libbpftime-agent-transformer.so $HOME/.bpftime/libbpftime-agent.so
 
-          # Use sudo -E to preserve environment variables
-          # Log stderr to stdout
-          # CORRECTED PATH: LD_PRELOAD and AGENT_SO point directly into $HOME/.bpftime
           sudo -E bash -c "BPFTIME_VM_NAME=llvm LD_PRELOAD=\$HOME/.bpftime/libbpftime-agent-transformer.so BPFTIME_LOG_OUTPUT=stderr AGENT_SO=\$HOME/.bpftime/libbpftime-agent.so cat build/install_manifest.txt" 2>&1
 
           echo "Client script finished."
@@ -128,16 +124,13 @@ jobs:
       - name: Test Server and Client Interaction
         run: |
           echo "Starting server script in background..."
-          # Redirect stdout/stderr to a file. Run with bash explicitly.
           ./server_script.sh > server.log 2>&1 &
           SERVER_PID=$!
           echo "Server PID: $SERVER_PID"
 
-          # Allow server some time to initialize (adjust as needed)
           echo "Waiting 10 seconds for server initialization..."
           sleep 10
 
-          # Check if server process is still running before starting client
           if ! ps -p $SERVER_PID > /dev/null; then
             echo "Server process $SERVER_PID exited prematurely!"
             echo "--- Server Log Start (Premature Exit) ---"
@@ -148,7 +141,6 @@ jobs:
           echo "Server process $SERVER_PID is running."
 
           echo "Running client script..."
-          # Run client script and capture its output
           ./client_script.sh > client.log 2>&1
           CLIENT_EXIT_CODE=$?
           echo "Client script exited with code $CLIENT_EXIT_CODE"
@@ -157,16 +149,11 @@ jobs:
           cat client.log || echo "client.log not found or empty"
           echo "--- Client Log End ---"
 
-          # Allow some time for server to process events and flush logs
           echo "Waiting 5 seconds for server to process events..."
           sleep 5
 
           echo "Stopping server script (PID: $SERVER_PID)..."
-          # Use sudo to kill if the server was started with sudo indirectly
-          # Adding -9 for forceful kill if graceful (-15, default) doesn't work quickly
           sudo kill -9 $SERVER_PID || echo "Kill command failed (server process $SERVER_PID likely already stopped)."
-          # Wait for the process to ensure it's cleaned up
-          # timeout is useful in case kill fails silently but process lingers
           timeout 5s wait $SERVER_PID || echo "Server process $SERVER_PID did not terminate gracefully after kill or was already gone."
 
           echo "Server script stopped."
@@ -176,11 +163,7 @@ jobs:
           echo "--- Server Log End ---"
 
           echo "Verifying server captured the client's openat syscall..."
-          # Check if the server log contains the expected trace line for install_manifest.txt
-          # Adjust the grep pattern if the 'comm' field might vary (e.g., 'cat', 'sudo')
-          # Use grep -E for extended regex (to match 'cat' or 'sudo')
-          # Use grep -q for quiet check, then echo success/failure
-          # Allow spaces after command name using ' *'
+          # Check server log for the expected trace line from the raw_syscalls filter
           if grep -Eq ' (cat|sudo) *.*build/install_manifest.txt' server.log; then
             echo "[SUCCESS] Server log contains the expected openat trace."
           else
@@ -189,20 +172,18 @@ jobs:
             exit 1
           fi
 
-          # Optional: Check client exit code if needed
           if [ $CLIENT_EXIT_CODE -ne 0 ]; then
              echo "[WARNING] Client script exited with non-zero status ($CLIENT_EXIT_CODE)."
-             # Decide if this should be a failure
-             # exit 1
+             # exit 1 # Uncomment if client failure should fail the job
           fi
 
       - name: Final Summary
-        if: always() # Run even if previous steps failed
+        if: always()
         run: |
           echo "==== Test Summary ===="
-          echo "Attempted to run bpftrace server in background and cat client in foreground."
+          echo "Attempted to run bpftrace server (using raw_syscalls) and cat client."
           echo "Checked server logs for expected syscall trace from the client."
           echo "Final status: ${{ job.status }}"
           echo "Listing key files:"
-          ls -la $HOME/.bpftime/ # List the actual install directory content
+          ls -la $HOME/.bpftime/
           ls -la build/
