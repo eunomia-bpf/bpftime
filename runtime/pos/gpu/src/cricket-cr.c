@@ -252,7 +252,7 @@ bool cricket_cr_ckp_ssy(CUDBGAPI cudbgAPI, cricketWarpInfo *wi, uint32_t lane,
     }
 
     while (syn_pc > pc) {
-        res = cudbgAPI->singleStepWarp(wi->dev, wi->sm, wi->warp, 1, &sswarps);
+        res = cudbgAPI->singleStepWarp(wi->dev, wi->sm, wi->warp, &sswarps);
         if (res != CUDBG_SUCCESS) {
             LOGE(LOG_ERROR, "cuda error: %s", cudbgGetErrorString(res));
         }
@@ -412,13 +412,13 @@ bool cricket_cr_rst_subcall(CUDBGAPI cudbgAPI, cricketWarpInfo *wi,
         }
     }
 
-    res = cudbgAPI->singleStepWarp(wi->dev, wi->sm, wi->warp, 1, &sswarps);
+    res = cudbgAPI->singleStepWarp(wi->dev, wi->sm, wi->warp, &sswarps);
     if (res != CUDBG_SUCCESS) {
         LOGE(LOG_ERROR, "cuda error");
         goto error;
     }
 
-    res = cudbgAPI->singleStepWarp(wi->dev, wi->sm, wi->warp, 1, &sswarps);
+    res = cudbgAPI->singleStepWarp(wi->dev, wi->sm, wi->warp, &sswarps);
     if (res != CUDBG_SUCCESS) {
         LOGE(LOG_ERROR, "cuda error");
         goto error;
@@ -479,13 +479,13 @@ bool cricket_cr_rst_ssy(CUDBGAPI cudbgAPI, cricketWarpInfo *wi,
             }
         }
 
-        res = cudbgAPI->singleStepWarp(wi->dev, wi->sm, wi->warp, 1, &sswarps);
+        res = cudbgAPI->singleStepWarp(wi->dev, wi->sm, wi->warp, &sswarps);
         if (res != CUDBG_SUCCESS) {
             LOGE(LOG_ERROR, "cuda error: %s", cudbgGetErrorString(res));
             goto error;
         }
 
-        res = cudbgAPI->singleStepWarp(wi->dev, wi->sm, wi->warp, 1, &sswarps);
+        res = cudbgAPI->singleStepWarp(wi->dev, wi->sm, wi->warp, &sswarps);
         if (res != CUDBG_SUCCESS) {
             LOGE(LOG_ERROR, "cuda error: %s", cudbgGetErrorString(res));
             goto error;

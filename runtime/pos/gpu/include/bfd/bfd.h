@@ -110,12 +110,10 @@ extern "C" {
 
 #define BFD_HOST_64BIT_LONG 1
 #define BFD_HOST_64BIT_LONG_LONG 0
-#if 1
 #define BFD_HOST_64_BIT long
 #define BFD_HOST_U_64_BIT unsigned long
 typedef BFD_HOST_64_BIT bfd_int64_t;
 typedef BFD_HOST_U_64_BIT bfd_uint64_t;
-#endif
 
 #if BFD_ARCH_SIZE >= 64
 #define BFD64

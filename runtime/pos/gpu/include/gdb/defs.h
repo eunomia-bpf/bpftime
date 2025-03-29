@@ -116,7 +116,10 @@ typedef bfd_vma CORE_ADDR;
 /* This is to make sure that LONGEST is at least as big as CORE_ADDR.  */
 
 #ifdef BFD64
-
+#define BFD_HOST_64_BIT long
+#define BFD_HOST_U_64_BIT unsigned long
+typedef BFD_HOST_64_BIT bfd_int64_t;
+typedef BFD_HOST_U_64_BIT bfd_uint64_t;
 #define LONGEST BFD_HOST_64_BIT
 #define ULONGEST BFD_HOST_U_64_BIT
 

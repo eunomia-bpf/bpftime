@@ -1,5 +1,5 @@
 // #include "common-defs.h"
-#include "errors.h"
+// #include "errors.h"
 #include "cuda-tdep.h"
 #include "objfiles.h"
 #include <bfd.h>
@@ -63,23 +63,27 @@ bool cricket_file_cpy(const char *source, const char *destination)
 
 static void cricket_elf_get_symbols(struct objfile *objfile)
 {
-    struct minimal_symbol *msymbol;
-    int i = 0;
-    LOGE(LOG_DEBUG, "msym num: %d, cuda_objfile:%d", objfile->per_bfd->minimal_symbol_count,
-           objfile->cuda_objfile);
-    for (auto msymbol = objfile->msymbols().begin(); msymbol != objfile->msymbols().end(); ++msymbol) {
-        if (!*msymbol) {
-            i++;
-            continue;
-        }
-        LOGE(LOG_DEBUG, "%d: name: %s, section:%u, size: %lu, type: %u", i++,
-               (*msymbol)->mginfo.name, (*msymbol)->mginfo.section, (*msymbol)->size,
-               MSYMBOL_TYPE(*msymbol));
-        if ((*msymbol)->mginfo.name[0] != '.') {
-            LOGE(LOG_DEBUG, "%p\n", MSYMBOL_VALUE_ADDRESS(objfile, *msymbol));
+	struct minimal_symbol *msymbol;
+	int i = 0;
 
-        }
-    }
+	LOGE(LOG_DEBUG, "msym num: %d, cuda_objfile:%d", objfile->per_bfd->minimal_symbol_count,
+	     objfile->cuda_objfile);
+
+	/* Get the first minimal symbol from objfile */
+	ALL_OBJFILE_MSYMBOLS(objfile, msymbol) {
+		if (!msymbol) {
+			i++;
+			continue;
+		}
+
+		LOGE(LOG_DEBUG, "%d: name: %s, section:%u, size: %lu, type: %u", i++,
+		     msymbol->mginfo.name, msymbol->mginfo.section, msymbol->size,
+		     MSYMBOL_TYPE(msymbol));
+
+		if (msymbol->mginfo.name[0] != '.') {
+			LOGE(LOG_DEBUG, "%p\n", MSYMBOL_VALUE_ADDRESS(objfile, msymbol));
+		}
+	}
 }
 
 #define CRICKET_ELF_CONST_SUFFIX "_const"

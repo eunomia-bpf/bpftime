@@ -1,9 +1,9 @@
 #include "cricket-types.h"
-#include <stdio.h>
-#include <string.h>
-#include <math.h>
 #include "cricket-util.h"
-
+#include <stdio.h>
+#include <math.h>
+#include <stdint.h>
+#include <stdlib.h>
 
 void cricket_error_unreachable(void)
 {
@@ -15,7 +15,7 @@ double time_diff_sec(const struct timeval *tv1, const struct timeval *tv2)
                 ((tv2->tv_usec - tv1->tv_usec) / 1000000.0));
 }
 
-uint time_diff_usec(const struct timeval *tv1, const struct timeval *tv2)
+unsigned int time_diff_usec(const struct timeval *tv1, const struct timeval *tv2)
 {
     return abs((tv2->tv_sec - tv1->tv_sec) * 1000000 + tv2->tv_usec -
                tv1->tv_usec);

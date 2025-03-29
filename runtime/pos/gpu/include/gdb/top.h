@@ -60,7 +60,7 @@ extern void set_prompt (const char *s);
 extern int readnow_symbol_files;
 
 /* Perform _initialize initialization.  */
-extern void gdb_init (char *);
+extern int gdb_init (int argc, char **argv, char *execarg, char* pidarg);
 
 /* For use by event-top.c.  */
 /* Variables from top.c.  */

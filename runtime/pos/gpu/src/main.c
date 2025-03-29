@@ -412,7 +412,7 @@ int cricket_restore(int argc, char *argv[])
                     }
                 }
                 // Enter the jumptable
-                res = cudbgAPI->singleStepWarp(0, sm, warp, 1, &sswarps);
+                res = cudbgAPI->singleStepWarp(0, sm, warp, &sswarps);
                 if (res != CUDBG_SUCCESS) {
                     printf("%d:", __LINE__);
                     goto cuda_error;
@@ -447,7 +447,7 @@ int cricket_restore(int argc, char *argv[])
                             }
                         }
                     }
-                    res = cudbgAPI->singleStepWarp(0, sm, warp, 1, &sswarps);
+                    res = cudbgAPI->singleStepWarp(0, sm, warp, &sswarps);
                     if (res != CUDBG_SUCCESS) {
                         printf("%d:", __LINE__);
                         goto cuda_error;
@@ -521,7 +521,7 @@ int cricket_restore(int argc, char *argv[])
                             }
                         }
 
-                        res = cudbgAPI->singleStepWarp(0, sm, warp, 1, &sswarps);
+                        res = cudbgAPI->singleStepWarp(0, sm, warp, &sswarps);
                         if (res != CUDBG_SUCCESS) {
                             printf("%d:", __LINE__);
                             goto cuda_error;
@@ -567,12 +567,12 @@ int cricket_restore(int argc, char *argv[])
                             }
                         }
                     }
-                    res = cudbgAPI->singleStepWarp(0, sm, warp, 1, &sswarps);
+                    res = cudbgAPI->singleStepWarp(0, sm, warp, &sswarps);
                     if (res != CUDBG_SUCCESS) {
                         printf("%d:", __LINE__);
                         goto cuda_error;
                     }
-                    res = cudbgAPI->singleStepWarp(0, sm, warp, 1, &sswarps);
+                    res = cudbgAPI->singleStepWarp(0, sm, warp, &sswarps);
                     if (res != CUDBG_SUCCESS) {
                         printf("%d:", __LINE__);
                         goto cuda_error;
@@ -610,7 +610,7 @@ int cricket_restore(int argc, char *argv[])
                             }
                         }
                     }
-                    res = cudbgAPI->singleStepWarp(0, sm, warp, 1, &sswarps);
+                    res = cudbgAPI->singleStepWarp(0, sm, warp, &sswarps);
                     if (res != CUDBG_SUCCESS) {
                         printf("%d:", __LINE__);
                         goto cuda_error;

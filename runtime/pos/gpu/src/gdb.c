@@ -46,27 +46,27 @@
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <ctype.h>
-#include "event-loop.h"
+// #include "event-loop.h"
 #include "ui-out.h"
 
 #include "interps.h"
 #include "main.h"
-#include "source.h"
+// #include "source.h"
 #include "cli/cli-cmds.h"
 #include "objfiles.h"
-#include "auto-load.h"
-#include "maint.h"
-#include "cuda-gdb.h"
-
-#include "filenames.h"
-#include "common/filestuff.h"
-#include <signal.h>
-#include "event-top.h"
-#include "infrun.h"
-#include "common/signals-state-save-restore.h"
-#include <vector>
-#include "common/pathstuff.h"
-#include "cli/cli-style.h"
+// #include "auto-load.h"
+// #include "maint.h"
+// #include "cuda-gdb.h"
+//
+// #include "filenames.h"
+// #include "common/filestuff.h"
+// #include <signal.h>
+// #include "event-top.h"
+// #include "infrun.h"
+// #include "common/signals-state-save-restore.h"
+// #include <vector>
+// #include "common/pathstuff.h"
+// #include "cli/cli-style.h"
 
 /* The selected interpreter.  This will be used as a set command
    variable, so it should always be malloc'ed - since
@@ -333,11 +333,11 @@ static void captured_command_loop () __attribute__((noinline));
 static void
 captured_command_loop ()
 {
-  struct ui *ui = current_ui;
+  struct ui *ui = current_uiout;
 
   /* Top-level execution commands can be run in the background from
      here on.  */
-  current_ui->async = 1;
+  current_uiout->async = 1;
 
   /* Give the interpreter a chance to print a prompt, if necessary  */
   if (ui->prompt_state != PROMPT_BLOCKED)
