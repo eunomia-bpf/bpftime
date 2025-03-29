@@ -41,58 +41,103 @@ jobs:
           echo "Checking bpftrace version:"
           bpftrace --version || echo "bpftrace version not available"
           
-      - name: Check dependencies and library paths
+      - name: Test bpftrace openat syscall tracing
         run: |
-          echo "bpftime binary libraries:"
-          ldd ~/.bpftime/bpftime || echo "ldd not working with bpftime"
-          echo "bpftrace binary libraries:"
-          ldd $(which bpftrace) || echo "ldd not working with bpftrace"
+          # Create a test file to cat
+          echo "Test content" > test_file.txt
           
-      - name: Check if bpftrace works directly
+          # Create a script to capture the output
+          cat > test_syscall.sh << 'EOF'
+          #!/bin/bash
+          set -e
+          
+          # Start bpftrace in background and save PID
+          sudo SPDLOG_LEVEL=error ~/.bpftime/bpftime load bpftrace -e 'tracepoint:syscalls:sys_enter_openat { printf("%s %s\n", comm, str(args->filename)); }' > trace_output.txt &
+          BPFTRACE_PID=$!
+          
+          # Wait for bpftrace to initialize
+          sleep 2
+          
+          # Run the cat command that should be traced
+          cat test_file.txt
+          
+          # Give time for output to be captured
+          sleep 1
+          
+          # Kill the bpftrace process
+          kill $BPFTRACE_PID || true
+          
+          # Display captured output
+          cat trace_output.txt
+          
+          # Verify that cat command was captured in the trace
+          grep -q "cat test_file.txt" trace_output.txt && echo "✅ TEST PASSED: openat syscall for cat was traced" || { echo "❌ TEST FAILED: didn't find expected trace"; exit 1; }
+          EOF
+          
+          chmod +x test_syscall.sh
+          ./test_syscall.sh
+      
+      - name: Test bpftime start with cat command
         run: |
-          echo "Testing native bpftrace:"
-          bpftrace -e 'BEGIN { printf("Hello World\n"); exit(); }' || echo "Native bpftrace test failed, error code: $?"
+          # Create a test manifest file
+          mkdir -p build
+          echo "/test/path/1" > build/install_manifest.txt
+          echo "/test/path/2" >> build/install_manifest.txt
           
-      - name: Run with debug output and backtrace
+          # Run the bpftime start command and capture output
+          output=$(sudo SPDLOG_LEVEL=error ~/.bpftime/bpftime start -s cat build/install_manifest.txt)
+          
+          # Print the captured output
+          echo "Command output:"
+          echo "$output"
+          
+          # Verify that the manifest contents were displayed
+          echo "$output" | grep -q "/test/path/1" && echo " TEST PASSED: First manifest path was found" || { echo "❌ TEST FAILED: First manifest path not found"; exit 1; }
+          echo "$output" | grep -q "/test/path/2" && echo " TEST PASSED: Second manifest path was found" || { echo "❌ TEST FAILED: Second manifest path not found"; exit 1; }
+      
+      - name: Test userspace bpftrace example
         run: |
-          # 启用最详细的日志级别
-          export SPDLOG_LEVEL=trace
+          # Create a simple bpftrace script
+          cat > simple_trace.bt << 'EOF'
+          BEGIN { printf("Userspace bpftrace test started\n"); }
+          tracepoint:syscalls:sys_enter_write { printf("Write syscall by %s\n", comm); }
+          END { printf("Userspace bpftrace test completed\n"); exit(); }
+          EOF
           
-          # 使用 gdb 捕获崩溃信息
-          gdb -batch -ex "run" -ex "bt" -ex "quit" --args ~/.bpftime/bpftime load bpftrace -e 'BEGIN { printf("Hello World\n"); exit(); }' > gdb_trace.txt 2>&1 || echo "GDB debugging completed with code: $?"
+          # Run with bpftime in userspace mode
+          sudo SPDLOG_LEVEL=error ~/.bpftime/bpftime load bpftrace simple_trace.bt -c "echo 'Testing write syscall'" > userspace_output.txt
           
-          echo "=== GDB backtrace ==="
-          cat gdb_trace.txt
+          # Display result
+          cat userspace_output.txt
           
-      - name: Check for example bpftrace scripts
+          # Verify expected output
+          grep -q "Userspace bpftrace test started" userspace_output.txt && echo " TEST PASSED: Userspace test started properly" || { echo "❌ TEST FAILED: Test didn't start properly"; exit 1; }
+          grep -q "Write syscall by" userspace_output.txt && echo " TEST PASSED: Write syscall was traced" || { echo "❌ TEST FAILED: Write syscall not traced"; exit 1; }
+          grep -q "Userspace bpftrace test completed" userspace_output.txt && echo " TEST PASSED: Test completed properly" || { echo "❌ TEST FAILED: Test didn't complete properly"; exit 1; }
+      
+      - name: Handle test failures (if any)
+        if: ${{ failure() }}
         run: |
-          # 检查是否有示例脚本可以测试
-          find . -name "*.bt" | grep -v "build" || echo "No .bt files found"
+          echo "=== Debug information for failure analysis ==="
+          echo "System information:"
+          uname -a
+          lsb_release -a || true
           
-      - name: Try using simple example
-        run: |
-          # 尝试从仓库中加载一个简单的例子
-          cd example
-          ls -la
-          echo "Checking for existing examples that might work:"
-          find . -name "*.bt" | grep -v "build" || echo "No .bt files found in example"
+          echo "bpftime installation:"
+          ls -la ~/.bpftime/
           
-      - name: Create and run basic example
-        run: |
-          # 创建一个最基本的测试
-          echo 'BEGIN { printf("Hello from basic test\n"); exit(); }' > basic_test.bt
-          cat basic_test.bt
+          echo "bpftrace status:"
+          which bpftrace || echo "bpftrace not found"
+          bpftrace --info || echo "bpftrace info not available"
           
-          # 尝试直接用 bpftrace 运行
-          echo "Running with native bpftrace:"
-          bpftrace basic_test.bt || echo "Native bpftrace test failed"
+          echo "Process status during test:"
+          ps aux | grep -E 'bpf|trace'
           
-          # 尝试用 bpftime 运行
-          echo "Running with bpftime:"
-          export SPDLOG_LEVEL=trace
-          ~/.bpftime/bpftime load bpftrace basic_test.bt || echo "bpftime test failed with code: $?"
+          echo "Kernel capabilities:"
+          cat /proc/sys/kernel/cap_last_cap || echo "Cannot read capabilities"
           
-      - name: Check if project has specific tests for bpftrace
-        run: |
-          echo "Looking for existing tests:"
-          find . -path "*test*" -type f | grep -E 'bpftrace|bpftime' || echo "No specific tests found"
+          echo "Loaded kernel modules:"
+          lsmod | grep -E 'bpf|trace' || echo "No BPF modules found"
+          
+          echo "Check permissions on BPF filesystem:"
+          ls -la /sys/fs/bpf/ || echo "BPF filesystem not accessible"
