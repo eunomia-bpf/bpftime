@@ -15,10 +15,13 @@ namespace bpftime
 namespace attach
 {
 
+constexpr int ATTACH_CUDA_PROBE = 8;
+constexpr int ATTACH_CUDA_RETPROBE = 9;
+
 // You would replace this with your own memory reading utility.
 namespace memory_utils
 {
-ssize_t process_vm_readv(pid_t pid, const struct iovec *local_iov,
+static inline ssize_t process_vm_readv(pid_t pid, const struct iovec *local_iov,
 			 unsigned long liovcnt, const struct iovec *remote_iov,
 			 unsigned long riovcnt, unsigned long flags)
 {
@@ -129,9 +132,7 @@ class CUDAInjector {
 						    .pid = target_pid,
 						    .id = 1,
 						    .is_restoring = false };
-		ws->__create_client(
-			param,
-			&client);
+		ws->__create_client(param, &client);
 	}
 
 	bool attach()
@@ -297,7 +298,7 @@ class CUDAInjector {
 	bool inject_ptx(const char *ptx_code, CUdeviceptr target_addr,
 			size_t code_size)
 	{
-//		client->persist_handles(true);
+		//		client->persist_handles(true);
 		client->persist((std::string &)"/tmp/bpftime");
 
 		// 1. Load the PTX into a module
@@ -356,8 +357,8 @@ class CUDAInjector {
 
 		// Clean up
 		cuModuleUnload(module);
-		client->restore_apicxts((std::string&)"/tmp/bpftime");
-		client->restore_handles((std::string&)"/tmp/bpftime");
+		client->restore_apicxts((std::string &)"/tmp/bpftime");
+		client->restore_handles((std::string &)"/tmp/bpftime");
 
 		return true;
 	}
@@ -376,13 +377,6 @@ struct nv_attach_private_data final : public attach_private_data {
 	// initialize_from_string
 	int initialize_from_string(const std::string_view &sv) override;
 };
-
-constexpr int ATTACH_NV = 999;
-// Used by text segment transformer to setup syscall callback
-// Text segment transformer should provide a pointer to its syscall executor
-// function. syscall trace attach impl will save the original syscall function,
-// and replace it with one that was handled by syscall trace attach impl
-extern "C" void _bpftime__setup_nv_hooker_callback(nv_hooker_func_t *hooker);
 
 // Attach implementation of syscall trace
 // It provides a callback to receive original syscall calls, and dispatch the

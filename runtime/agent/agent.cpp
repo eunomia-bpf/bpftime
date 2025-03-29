@@ -16,6 +16,7 @@
 #include <memory>
 #include <pthread.h>
 #include <random>
+#include <stdexcept>
 #include <string_view>
 #include <thread>
 #include <unistd.h>
@@ -25,6 +26,7 @@
 #include "bpftime_shm.hpp"
 #include <spdlog/spdlog.h>
 #include <spdlog/cfg/env.h>
+#include "nv_attach_impl.hpp"
 #if __linux__ && BPFTIME_BUILD_WITH_LIBBPF
 #include "syscall_trace_attach_impl.hpp"
 #include "syscall_trace_attach_private_data.hpp"
@@ -165,6 +167,23 @@ extern "C" void bpftime_agent_main(const gchar *data, gboolean *stay_resident)
 				return std::unique_ptr<attach_private_data>();
 			}
 			return priv_data;
+		});
+
+	// register cuda attach impl
+	ctx_holder.ctx.register_attach_impl(
+		{ ATTACH_CUDA_PROBE, ATTACH_CUDA_RETPROBE },
+		std::make_unique<attach::nv_attach_impl>(),
+		[](const std::string_view &sv,
+		   int &err) -> std::unique_ptr<attach::attach_private_data> {
+			throw std::runtime_error("TODO!!");
+			// std::unique_ptr<attach_private_data> priv_data =
+			// 	std::make_unique<frida_attach_private_data>();
+			// if (int e = priv_data->initialize_from_string(sv);
+			//     e < 0) {
+			// 	err = e;
+			// 	return std::unique_ptr<attach_private_data>();
+			// }
+			// return priv_data;
 		});
 	SPDLOG_INFO("Initializing agent..");
 	/* We don't want to our library to be unloaded after we return. */

@@ -395,6 +395,12 @@ int bpf_attach_ctx::instantiate_perf_event_handler_at(
 				id, tracepoint_data.tracepoint_id, err);
 			return err;
 		}
+	} else if (perf_handler.type == (int)bpf_event_type::BPF_TYPE_KPROBE ||
+		   perf_handler.type ==
+			   (int)bpf_event_type::BPF_TYPE_KRETPROBE) {
+		auto &kprobe_data =
+			std::get<kprobe_perf_event_data>(perf_handler.data);
+
 	} else {
 		auto &custom_data =
 			std::get<custom_perf_event_data>(perf_handler.data);
