@@ -15,7 +15,7 @@ jobs:
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v3
+        uses: actions/checkout@v2
         with:
           submodules: 'recursive'
 
@@ -313,14 +313,6 @@ jobs:
           else
             echo "FAILED: Daemon test did not find expected output"
           fi
-
-      - name: Upload logs
-        if: always()
-        uses: actions/upload-artifact@v3
-        with:
-          name: bpftime-test-logs
-          path: logs/
-          retention-days: 5
 
       - name: Test summary
         run: |
