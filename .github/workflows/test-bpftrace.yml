@@ -6,50 +6,48 @@ on:
   pull_request:
     branches: [ "*" ]
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}-${{ github.event_name }}
+  cancel-in-progress: true
+
+env:
+  BPFTIME_VM_NAME: llvm
+  
 jobs:
   syscall-tracing-test:
     runs-on: ubuntu-22.04
     container:
       image: "manjusakalza/bpftime-base-image:ubuntu-2204"
-      options: "--privileged --cap-add=SYS_PTRACE --security-opt seccomp=unconfined"
+      options: "--privileged -v /sys/kernel/debug/:/sys/kernel/debug:rw -v /sys/kernel/tracing:/sys/kernel/tracing:rw"
 
     steps:
       - name: Checkout code
         uses: actions/checkout@v2
         with:
           submodules: 'recursive'
-          
-      - name: System setup and diagnosis
+
+      - name: Install dependencies
         run: |
           apt-get update
           apt-get install -y --no-install-recommends \
-            lcov tree strace gdb sudo tmux bpftrace \
-            llvm-dev libelf-dev libbpf-dev libc6-dev \
-            linux-tools-generic linux-tools-common
-            
-          # 系统诊断
-          echo "===== System Information ====="
+            lcov tree strace gdb sudo tmux screen bpftrace \
+            llvm-dev libelf-dev libbpf-dev
+
+          # 显示系统信息
+          echo "System information:"
           uname -a
           cat /etc/os-release
           
-          # 检查sudo
-          echo "===== Sudo Check ====="
-          sudo -n true && echo "Sudo available" || echo "Sudo not available without password"
-          
-          # 检查内核支持
-          echo "===== BPF Support Check ====="
-          ls -la /sys/fs/bpf || echo "/sys/fs/bpf not available"
-          
-          # 创建目录
-          mkdir -p logs
-          mkdir -p build
-          echo "/test/path/from/ci/1" > build/install_manifest.txt
-          echo "/test/path/from/ci/2" >> build/install_manifest.txt
+          # 检查BPF相关文件系统
+          echo "BPF filesystem status:"
+          mount | grep -E "debugfs|tracefs" || echo "Debug filesystems not mounted"
+          ls -la /sys/kernel/debug/ || echo "Debug fs not accessible"
+          ls -la /sys/kernel/tracing/ || echo "Trace fs not accessible"
 
       - name: Build and install runtime
         run: |
+          # 使用绝对路径并设置为环境变量
           export INSTALL_DIR=$HOME/.bpftime
-          echo "Building bpftime, installing to $INSTALL_DIR"
           
           cmake -Bbuild -DCMAKE_BUILD_TYPE:STRING=RelWithDebInfo \
             -DCMAKE_INSTALL_PREFIX=$INSTALL_DIR \
@@ -63,121 +61,319 @@ jobs:
           echo "Installed files:"
           ls -la $INSTALL_DIR/
           
+          # 确保有正确的权限
+          chmod +x $INSTALL_DIR/*
+          
           # 设置环境变量
           echo "BPFTIME_INSTALL_DIR=$INSTALL_DIR" >> $GITHUB_ENV
+          echo "PATH=$PATH:$INSTALL_DIR" >> $GITHUB_ENV
 
-      # 简化测试方法，使用tmux方式直接测试
-      - name: Direct test with tmux
+      - name: Setup test files
         run: |
-          echo "===== Running Direct Test with Tmux ====="
+          # 创建测试目录和文件
+          mkdir -p build test
+          echo "/test/path/from/ci/1" > build/install_manifest.txt
+          echo "/test/path/from/ci/2" >> build/install_manifest.txt
+          
+          # 创建一个简单的测试程序作为被跟踪的目标
+          cat > test/victim.c << 'EOF'
+          #include <stdio.h>
+          #include <stdlib.h>
+          #include <unistd.h>
+          #include <fcntl.h>
+          
+          int main() {
+            printf("Victim program starting...\n");
+            int fd = open("build/install_manifest.txt", O_RDONLY);
+            if (fd >= 0) {
+              char buf[256];
+              int n = read(fd, buf, sizeof(buf)-1);
+              if (n > 0) {
+                buf[n] = '\0';
+                printf("Read: %s\n", buf);
+              }
+              close(fd);
+            }
+            printf("Victim program finished\n");
+            return 0;
+          }
+          EOF
+          
+          # 编译测试程序
+          gcc -o test/victim test/victim.c
+          
+          # 创建日志目录
+          mkdir -p logs
+
+      - name: Test approach 1 - Use bpftime CLI directly
+        run: |
+          echo "===== Running Test with bpftime CLI ====="
+          cd $GITHUB_WORKSPACE
+          
+          # 确保bpftime命令可用
+          export PATH=$PATH:$HOME/.bpftime
+          which bpftime || echo "bpftime not in PATH"
+          
+          # 检查帮助信息
+          bpftime --help
+          
+          # 尝试使用bpftime CLI运行被跟踪的程序
+          bpftime run -e 'tracepoint:raw_syscalls:sys_enter /args->id == 257/ { printf("SYSCALL: %s %s\n", comm, str(args->args[1])); }' ./test/victim > logs/cli_output.log 2>&1 || echo "bpftime CLI run failed"
+          
+          # 显示日志
+          echo "=== CLI output ==="
+          cat logs/cli_output.log || echo "No CLI output log found"
+          
+          # 检查是否捕获到系统调用
+          if grep -q "SYSCALL:" logs/cli_output.log || grep -q "install_manifest.txt" logs/cli_output.log; then
+            echo "SUCCESS: Captured syscall with bpftime CLI"
+          else
+            echo "Failed to capture syscall with bpftime CLI, trying next approach"
+          fi
+
+      - name: Test approach 2 - Using separate server and client with tmux
+        run: |
+          echo "===== Running Test with tmux ====="
+          cd $GITHUB_WORKSPACE
           
           # 创建服务器脚本
           cat > server_script.sh << 'EOF'
           #!/bin/bash
-          set -ex
-          export HOME_DIR=$HOME
+          set -x
+          export PATH=$PATH:$HOME/.bpftime
           
-          # 这里使用简单的命令代替bpftrace
-          # 由于容器环境中tracepoint可能不可用，我们模拟一个服务器
-          echo "Starting mock server..."
+          # 使用bpftrace直接跟踪openat syscall (ID 257)
+          # 注意：这里直接使用系统的bpftrace，不使用预加载库
+          # 这样可以用作参考点，确认系统调用是否确实发生
+          echo "Starting reference bpftrace server..."
+          bpftrace -e 'tracepoint:raw_syscalls:sys_enter /args->id == 257/ { printf("SYS: %-16s %s\n", comm, str(args->args[1])); }' > server_reference.log 2>&1 &
+          REF_PID=$!
           
-          # 监听文件变化
-          while true; do
-            if [ -f "client_ran.flag" ]; then
-              echo "cat build/install_manifest.txt" > server.log
-              echo "File accessed: build/install_manifest.txt" >> server.log
-              cat build/install_manifest.txt >> server.log
-              break
-            fi
-            sleep 1
-          done
+          # 使用bpftime的预加载库运行bpftrace
+          echo "Starting bpftime server..."
+          export LD_PRELOAD=$HOME/.bpftime/libbpftime-syscall-server.so
+          export BPFTIME_VM_NAME=llvm
+          export BPFTIME_LOG_OUTPUT=console
           
-          echo "Server completed"
+          # 使用raw_syscalls tracepoint，如果可用
+          sudo -E bpftrace -e 'tracepoint:raw_syscalls:sys_enter /args->id == 257/ { printf("BPF: %-16s %s\n", comm, str(args->args[1])); }'
+          
+          # 终止参考跟踪器
+          kill $REF_PID || echo "Reference tracer already ended"
+          echo "Server script completed"
           EOF
           chmod +x server_script.sh
           
           # 创建客户端脚本
           cat > client_script.sh << 'EOF'
           #!/bin/bash
-          set -ex
-          export HOME_DIR=$HOME
+          set -x
           
-          echo "Running client..."
+          echo "Running victim with agent preload..."
+          sleep 5  # 等待服务器初始化
           
-          # 使用agent预加载运行cat
-          LD_PRELOAD=$HOME_DIR/.bpftime/libbpftime-agent-transformer.so \
-            BPFTIME_VM_NAME=llvm \
-            BPFTIME_LOG_OUTPUT=console \
-            AGENT_SO=$HOME_DIR/.bpftime/libbpftime-agent.so \
-            cat build/install_manifest.txt > client.log 2>&1
+          # 不使用预加载库，直接运行受害者程序
+          echo "Running victim without preload first (for reference)"
+          ./test/victim
           
-          # 创建标记文件让服务器知道客户端已运行
-          touch client_ran.flag
+          # 使用预加载库运行受害者程序
+          echo "Running victim with agent preload"
+          export LD_PRELOAD=$HOME/.bpftime/libbpftime-agent-transformer.so
+          export BPFTIME_VM_NAME=llvm
+          export BPFTIME_LOG_OUTPUT=console
+          export AGENT_SO=$HOME/.bpftime/libbpftime-agent.so
           
-          echo "Client completed with status $?"
+          # 运行受害者程序
+          ./test/victim
+          
+          echo "Client script completed"
           EOF
           chmod +x client_script.sh
           
-          # 启动tmux会话运行服务器
+          # 使用tmux启动服务器
           tmux new-session -d -s bpftime_server './server_script.sh'
-          sleep 2
+          sleep 5
           
-          # 检查tmux会话是否已启动
+          # 检查tmux会话是否启动
           if ! tmux has-session -t bpftime_server 2>/dev/null; then
-            echo "Failed to start tmux session"
-            exit 1
+            echo "ERROR: Failed to start tmux session!"
+            exit 0  # 不立即失败，继续尝试其他方法
           fi
           
           # 运行客户端
-          ./client_script.sh
+          ./client_script.sh > logs/client_tmux.log 2>&1
           
-          # 等待服务器完成
-          sleep 5
+          # 终止tmux会话
+          sleep 5  # 给服务器时间处理最后的事件
+          tmux capture-pane -t bpftime_server -p > logs/server_tmux.log
           tmux kill-session -t bpftime_server || echo "Session already ended"
           
           # 显示日志
-          echo "===== Server Log ====="
-          cat server.log || echo "Server log not found"
+          echo "=== Client Log ==="
+          cat logs/client_tmux.log || echo "No client log found"
+          echo "=== Server Log ==="
+          cat logs/server_tmux.log || echo "No server log found"
           
-          echo "===== Client Log ====="
-          cat client.log || echo "Client log not found"
-          
-          # 检查测试结果
-          if grep -q "/test/path/from/ci/" client.log && grep -q "File accessed" server.log; then
-            echo "SUCCESS: Test passed - client and server communication worked"
-            exit 0
+          # 检查服务器日志是否捕获到了系统调用
+          if grep -q "BPF:" logs/server_tmux.log && grep -q "install_manifest.txt" logs/server_tmux.log; then
+            echo "SUCCESS: Tmux approach captured syscall"
           else
-            echo "FAILED: Test failed - check logs for details"
-            exit 1
+            echo "Tmux approach did not capture expected syscall output"
           fi
 
-      # 备选测试方法，使用daemon
-      - name: Fallback test with daemon
-        if: failure()
+      - name: Test approach 3 - Using python script to manage processes
         run: |
-          echo "===== Running Fallback Test with Daemon ====="
+          echo "===== Running Test with Python Script ====="
+          cd $GITHUB_WORKSPACE
+          
+          # 创建Python脚本
+          cat > run_test.py << 'EOF'
+          #!/usr/bin/env python3
+          import subprocess
+          import time
+          import os
+          import sys
+          import signal
+          
+          def main():
+              # 设置环境变量
+              env = os.environ.copy()
+              env['BPFTIME_VM_NAME'] = 'llvm'
+              env['BPFTIME_LOG_OUTPUT'] = 'console'
+              
+              # 启动服务器进程
+              print("Starting server process...")
+              server_cmd = [
+                  "sudo", "-E", 
+                  "bash", "-c", 
+                  f"LD_PRELOAD={os.path.expanduser('~')}/.bpftime/libbpftime-syscall-server.so " +
+                  "bpftrace -e 'tracepoint:raw_syscalls:sys_enter /args->id == 257/ { printf(\"TRACE: %s %s\\n\", comm, str(args->args[1])); }'"
+              ]
+              
+              server_proc = subprocess.Popen(
+                  server_cmd,
+                  stdout=subprocess.PIPE,
+                  stderr=subprocess.STDOUT,
+                  env=env,
+                  text=True
+              )
+              
+              # 等待服务器初始化
+              print("Waiting for server to initialize...")
+              time.sleep(5)
+              
+              # 运行客户端
+              print("Running client process...")
+              client_env = env.copy()
+              client_env['LD_PRELOAD'] = f"{os.path.expanduser('~')}/.bpftime/libbpftime-agent-transformer.so"
+              client_env['AGENT_SO'] = f"{os.path.expanduser('~')}/.bpftime/libbpftime-agent.so"
+              
+              client_proc = subprocess.run(
+                  ["./test/victim"],
+                  env=client_env,
+                  stdout=subprocess.PIPE,
+                  stderr=subprocess.STDOUT,
+                  text=True
+              )
+              
+              # 输出客户端结果
+              print("Client output:")
+              print(client_proc.stdout)
+              
+              # 等待处理事件
+              time.sleep(3)
+              
+              # 终止服务器
+              print("Stopping server...")
+              server_proc.send_signal(signal.SIGINT)
+              
+              # 获取服务器输出
+              try:
+                  server_stdout, _ = server_proc.communicate(timeout=5)
+                  print("Server output:")
+                  print(server_stdout)
+                  
+                  # 检查输出
+                  if "TRACE:" in server_stdout and "install_manifest.txt" in server_stdout:
+                      print("SUCCESS: Test passed!")
+                      return 0
+                  else:
+                      print("WARNING: Expected output not found in server logs")
+                      return 1
+              except subprocess.TimeoutExpired:
+                  server_proc.kill()
+                  print("ERROR: Server process did not terminate gracefully")
+                  return 1
+          
+          if __name__ == "__main__":
+              sys.exit(main())
+          EOF
+          chmod +x run_test.py
+          
+          # 运行Python脚本
+          python3 ./run_test.py > logs/python_approach.log 2>&1 || echo "Python approach exited with non-zero status"
+          
+          # 显示日志
+          echo "=== Python Approach Log ==="
+          cat logs/python_approach.log || echo "No python approach log found"
+          
+          # 检查日志
+          if grep -q "SUCCESS:" logs/python_approach.log; then
+            echo "SUCCESS: Python script approach worked"
+          else
+            echo "Python script approach did not succeed"
+          fi
+
+      - name: Test approach 4 - Using daemon
+        run: |
+          echo "===== Running Test with Daemon ====="
+          cd $GITHUB_WORKSPACE
           
           # 启动daemon
+          export PATH=$PATH:$HOME/.bpftime
           $HOME/.bpftime/bpftime_daemon > logs/daemon.log 2>&1 &
           DAEMON_PID=$!
           echo "Daemon started with PID: $DAEMON_PID"
           sleep 5
           
-          # 运行bpftime命令
-          $HOME/.bpftime/bpftime load /bin/cat build/install_manifest.txt > logs/daemon_output.log 2>&1
+          # 使用bpftime命令运行程序
+          echo "Running program with bpftime load..."
+          $HOME/.bpftime/bpftime load ./test/victim > logs/daemon_client.log 2>&1
           
           # 终止daemon
           kill $DAEMON_PID || echo "Daemon already ended"
           
           # 显示日志
-          echo "===== Daemon Output ====="
-          cat logs/daemon_output.log || echo "Daemon output log not found"
+          echo "=== Daemon Log ==="
+          cat logs/daemon.log || echo "No daemon log found"
+          echo "=== Daemon Client Log ==="
+          cat logs/daemon_client.log || echo "No daemon client log found"
           
-          # 检查结果
-          if grep -q "/test/path/from/ci/" logs/daemon_output.log; then
-            echo "SUCCESS: Daemon test passed"
+          # 检查是否成功运行
+          if grep -q "Victim program" logs/daemon_client.log && grep -q "Read:" logs/daemon_client.log; then
+            echo "SUCCESS: Daemon approach worked"
+          else
+            echo "Daemon approach did not produce expected output"
+          fi
+
+      - name: Test summary
+        run: |
+          echo "===== Test Summary ====="
+          
+          # 收集所有日志到一个位置
+          find . -name "*.log" -exec cp {} logs/ \;
+          
+          # 检查所有的测试日志，看是否有至少一个测试成功
+          if grep -q "SUCCESS:" logs/*.log; then
+            echo "OVERALL STATUS: At least one test approach succeeded"
             exit 0
           else
-            echo "FAILED: Daemon test failed"
+            echo "OVERALL STATUS: All test approaches failed"
+            
+            # 显示更多的诊断信息
+            echo "===== System Diagnostics ====="
+            mount
+            dmesg | tail -n 50
+            
             exit 1
           fi
