@@ -9,10 +9,14 @@
 #include "bpftime_logger.hpp"
 #include <chrono>
 #include <csignal>
+#include <cstdio>
+#include <cstdlib>
 #include <exception>
 #include <fcntl.h>
 #include <memory>
 #include <pthread.h>
+#include <random>
+#include <stdexcept>
 #include <string_view>
 #include <thread>
 #include <unistd.h>
@@ -22,9 +26,14 @@
 #include "bpftime_shm.hpp"
 #include <spdlog/spdlog.h>
 #include <spdlog/cfg/env.h>
+#include "nv_attach_impl_basic.hpp"
 #if __linux__ && BPFTIME_BUILD_WITH_LIBBPF
 #include "syscall_trace_attach_impl.hpp"
 #include "syscall_trace_attach_private_data.hpp"
+#endif
+#if __linux__
+// Temporarily comment out problematic include until file is created
+// #include "../attach/nv_attach_impl/nv_attach_impl.hpp"
 #endif
 
 using namespace bpftime;
@@ -103,6 +112,8 @@ extern "C" void bpftime_agent_main(const gchar *data, gboolean *stay_resident)
 {
 	SPDLOG_DEBUG("Entered bpftime_agent_main");
 	SPDLOG_DEBUG("Registering signal handler");
+
+	srand(std::random_device()());
 	// We use SIGUSR1 to indicate the detaching
 	signal(SIGUSR1, sig_handler_sigusr1);
 	try {
@@ -150,6 +161,21 @@ extern "C" void bpftime_agent_main(const gchar *data, gboolean *stay_resident)
 		[](const std::string_view &sv, int &err) {
 			std::unique_ptr<attach_private_data> priv_data =
 				std::make_unique<frida_attach_private_data>();
+			if (int e = priv_data->initialize_from_string(sv);
+			    e < 0) {
+				err = e;
+				return std::unique_ptr<attach_private_data>();
+			}
+			return priv_data;
+		});
+
+	// register cuda attach impl
+	ctx_holder.ctx.register_attach_impl(
+		{ ATTACH_CUDA_PROBE, ATTACH_CUDA_RETPROBE },
+		std::make_unique<attach::nv_attach_impl_basic>(),
+		[](const std::string_view &sv, int &err) {
+			std::unique_ptr<attach_private_data> priv_data =
+				std::make_unique<nv_attach_basic_private_data>();
 			if (int e = priv_data->initialize_from_string(sv);
 			    e < 0) {
 				err = e;
