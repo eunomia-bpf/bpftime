@@ -27,6 +27,16 @@ jobs:
           apt-get update
           apt-get install -y --no-install-recommends \
             lcov tree strace gdb sudo libc6-dev
+            
+          # 检查bpftrace是否存在，不存在则不进行相关测试
+          if ! which bpftrace; then
+            echo "bpftrace command not found, skipping bpftrace tests"
+            echo "SKIP_BPFTRACE=true" >> $GITHUB_ENV
+          else
+            echo "bpftrace found at $(which bpftrace)"
+            echo "SKIP_BPFTRACE=false" >> $GITHUB_ENV
+            bpftrace --version || echo "bpftrace found but not working"
+          fi
 
           # 显示系统信息
           echo "==== System Information ===="
@@ -113,13 +123,13 @@ jobs:
           # 基本功能验证成功
           echo "Basic functionality test passed"
 
-      - name: Test direct command with load
+      - name: Test bpftime load command
         run: |
           echo "==== Testing bpftime load command ===="
           export PATH=$PATH:$HOME/.bpftime
           
           # 使用load命令运行程序
-          bpftime load ./victim > logs/load_output.log 2>&1 || echo "bpftime load failed"
+          $HOME/.bpftime/bpftime load ./victim > logs/load_output.log 2>&1 || echo "bpftime load failed"
           
           cat logs/load_output.log
           
@@ -150,32 +160,32 @@ jobs:
             echo "Agent preload direct test did not produce expected output"
           fi
           
-      - name: Test basic syscall tracing with direct execution
+      - name: Test with syscall-server preload directly
         run: |
-          echo "==== Testing basic syscall tracing ===="
-          export PATH=$PATH:$HOME/.bpftime
+          echo "==== Testing with syscall-server preload directly ===="
           
-          # 启动服务器进程并记录PID
+          # 使用预加载库直接运行victim
           LD_PRELOAD=$HOME/.bpftime/libbpftime-syscall-server.so \
           BPFTIME_VM_NAME=llvm \
           BPFTIME_LOG_OUTPUT=console \
-          bpftrace -e 'BEGIN { printf("Server started\n"); exit(); }' > logs/server_test.log 2>&1
+          ./victim > logs/syscall_server_direct.log 2>&1 || echo "Syscall server preload test failed"
           
-          # 检查服务器是否启动
-          if grep -q "Server started" logs/server_test.log; then
-            echo "Server test passed - can start with syscall-server preload"
+          cat logs/syscall_server_direct.log
+          
+          # 检查输出
+          if grep -q "Victim program" logs/syscall_server_direct.log && grep -q "Read:" logs/syscall_server_direct.log; then
+            echo "Syscall server preload direct test passed"
           else
-            echo "Server test failed - could not start with syscall-server preload"
-            cat logs/server_test.log
+            echo "Syscall server preload direct test did not produce expected output"
           fi
-          
-      - name: Test with start command
+
+      - name: Test with bpftime start command
         run: |
           echo "==== Testing bpftime start command ===="
           export PATH=$PATH:$HOME/.bpftime
           
           # 使用start命令运行程序
-          bpftime start ./victim > logs/start_output.log 2>&1 || echo "bpftime start failed"
+          $HOME/.bpftime/bpftime start ./victim > logs/start_output.log 2>&1 || echo "bpftime start failed"
           
           cat logs/start_output.log
           
@@ -186,41 +196,85 @@ jobs:
             echo "bpftime start command test did not produce expected output"
           fi
 
-      - name: Verify file access in victim
+      - name: Verify file access with strace
         run: |
-          echo "==== Verifying file access in victim program ===="
+          echo "==== Verifying file access with strace ===="
           
-          # 确认victim程序能够正确访问文件
-          strace -e open,openat ./victim > logs/strace_output.log 2>&1
+          # 使用strace跟踪openat系统调用
+          strace -f -e trace=openat ./victim > logs/strace_output.log 2>&1
           
           cat logs/strace_output.log
           
           # 检查strace是否捕获了openat系统调用
           if grep -q "openat.*build/install_manifest.txt" logs/strace_output.log; then
-            echo "Verified: victim program makes openat syscall to target file"
+            echo "Verified: openat syscall to target file captured by strace"
           else
             echo "WARNING: Could not verify openat syscall with strace"
+          fi
+
+      - name: Test with daemon
+        run: |
+          echo "==== Testing with daemon ===="
+          
+          # 启动daemon
+          $HOME/.bpftime/bpftime_daemon > logs/daemon.log 2>&1 &
+          DAEMON_PID=$!
+          echo "Daemon started with PID: $DAEMON_PID"
+          
+          # 等待daemon初始化
+          sleep 3
+          
+          # 确认daemon进程存在
+          if ps -p $DAEMON_PID > /dev/null; then
+            echo "Daemon is running with PID $DAEMON_PID"
+          else
+            echo "WARNING: Daemon process not found"
+            cat logs/daemon.log
+          fi
+          
+          # 尝试使用bpftime命令运行程序
+          $HOME/.bpftime/bpftime load ./victim > logs/daemon_output.log 2>&1 || echo "bpftime load with daemon failed"
+          
+          # 终止daemon
+          kill $DAEMON_PID 2>/dev/null || echo "Daemon already ended"
+          
+          cat logs/daemon_output.log
+          
+          # 检查输出
+          if grep -q "Victim program" logs/daemon_output.log && grep -q "Read:" logs/daemon_output.log; then
+            echo "Daemon test passed"
+          else
+            echo "Daemon test did not produce expected output"
           fi
 
       - name: Test summary
         run: |
           echo "==== Test Summary ===="
           
+          # 收集所有通过的测试
+          PASSED_TESTS=0
+          for log in $(grep -l "test passed" logs/*.log); do
+            PASSED_TESTS=$((PASSED_TESTS+1))
+            echo "✓ Passed: $log"
+          done
+          
           # 检查是否有任何测试成功
-          if grep -q "test passed" logs/*.log || grep -q "command test passed" logs/*.log; then
-            echo "SUCCESS: At least one test passed"
+          if [ $PASSED_TESTS -gt 0 ]; then
+            echo "SUCCESS: $PASSED_TESTS tests passed"
             exit 0
-          elif grep -q "Read:" logs/*.log; then
-            echo "PARTIAL SUCCESS: Program executed but tracing may not have worked"
+          elif grep -q "Victim program" logs/*.log && grep -q "Read:" logs/*.log; then
+            echo "PARTIAL SUCCESS: Programs executed but not all tests passed"
             exit 0
           else
             echo "WARNING: No tests passed definitively"
             
-            # 显示所有日志
+            # 显示所有日志的摘要
+            echo "--- Log Summaries ---"
             for log in logs/*.log; do
-              echo "--- $log ---"
-              cat $log
-              echo "-----------------"
+              echo "File: $log"
+              head -n 20 $log
+              echo "..."
+              echo ""
             done
             
             exit 1
