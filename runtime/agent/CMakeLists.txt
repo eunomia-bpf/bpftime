@@ -28,7 +28,7 @@ if(${BPFTIME_BUILD_WITH_LIBBPF})
     ${SPDLOG_INCLUDE}
     ${FRIDA_UPROBE_ATTACH_IMPL_INCLUDE}
     ${SYSCALL_TRACE_ATTACH_IMPL_INCLUDE}
-    ${NV_ATTACH_IMPL_INCLUDE}
+    ${NV_ATTACH_IMPL_BASIC_INCLUDE}
   )
   target_link_libraries(bpftime-agent
     ${FRIDA_GUM_INSTALL_DIR}/libfrida-gum.a
@@ -39,7 +39,7 @@ if(${BPFTIME_BUILD_WITH_LIBBPF})
     spdlog::spdlog
     bpftime_frida_uprobe_attach_impl
     bpftime_syscall_trace_attach_impl
-    bpftime_nv_attach_impl
+    bpftime_nv_attach_impl_basic
   )
 
 else()
@@ -50,7 +50,7 @@ else()
     ../../third_party/
     ${SPDLOG_INCLUDE}
     ${FRIDA_UPROBE_ATTACH_IMPL_INCLUDE}
-    ${NV_ATTACH_IMPL_INCLUDE}
+    ${NV_ATTACH_IMPL_BASIC_INCLUDE}
   )
   target_link_libraries(bpftime-agent
     ${FRIDA_GUM_INSTALL_DIR}/libfrida-gum.a
@@ -60,6 +60,6 @@ else()
     -ldl
     spdlog::spdlog
     bpftime_frida_uprobe_attach_impl
-    bpftime_nv_attach_impl
+    bpftime_nv_attach_impl_basic
   )
 endif()

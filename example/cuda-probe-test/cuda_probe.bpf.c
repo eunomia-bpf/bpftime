@@ -12,7 +12,7 @@ struct {
 } test_hash_map SEC(".maps");
 
 SEC("kretprobe/test_probe")
-int test_retprobe__cuda(struct pt_regs *ctx)
+int retprobe__cuda(struct pt_regs *ctx)
 {
 
 	return 0;
@@ -20,7 +20,7 @@ int test_retprobe__cuda(struct pt_regs *ctx)
 
 
 SEC("kprobe/test_probe")
-int test_probe__cuda(struct pt_regs *ctx)
+int probe__cuda(struct pt_regs *ctx)
 {
 
 	return 0;

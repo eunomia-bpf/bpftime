@@ -39,7 +39,7 @@ compile_ptx_to_elf(const std::string &ptx_code, const char *cpu_target)
 		nvPTXCompilerGetVersion(&major_version, &minor_version));
 	SPDLOG_INFO("ptx compiler version: {}.{}", major_version,
 		    minor_version);
-
+	SPDLOG_DEBUG("Starting compiling with ptx code: \n{}", ptx_code);
 	nvPTXCompilerHandle handle = nullptr;
 	NVPTXCOMPILER_SAFE_CALL(nvPTXCompilerCreate(
 		&handle, (size_t)ptx_code.size(), ptx_code.c_str()));
@@ -177,11 +177,11 @@ int bpftime_prog::bpftime_prog_load(bool jit)
 	if (is_cuda()) {
 		SPDLOG_INFO("Compiling CUDA program");
 		ptx_code = ((struct ebpf_vm *)vm)
-				   ->vm_instance->generate_ptx("sm75");
+				   ->vm_instance->generate_ptx("sm_60");
 		if (!ptx_code.has_value()) {
 			throw std::runtime_error("Failed to generate ptx code");
 		}
-		cuda_elf_binary = compile_ptx_to_elf(*ptx_code, "sm75");
+		cuda_elf_binary = compile_ptx_to_elf(*ptx_code, "sm_60");
 		if (!cuda_elf_binary.has_value()) {
 			throw std::runtime_error("unable to compile ptx code");
 		}

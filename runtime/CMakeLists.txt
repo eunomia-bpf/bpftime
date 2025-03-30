@@ -53,6 +53,7 @@ message(STATUS "Building for architecture: ${ARCH}")
 
 set(sources
   src/attach/bpf_attach_ctx.cpp
+  src/attach/bpf_attach_ctx_cuda.cpp
 
   src/handler/handler_manager.cpp
   src/handler/map_handler.cpp
@@ -249,7 +250,8 @@ endif()
 
 add_subdirectory(agent)
 add_subdirectory(syscall-server)
-add_subdirectory(pos)
+# Commented out due to linkage errors
+# add_subdirectory(pos)
 
 #
 # Unit testing setup

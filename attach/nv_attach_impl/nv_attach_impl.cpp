@@ -2,6 +2,7 @@
 #include "spdlog/spdlog.h"
 #include <cerrno>
 #include <optional>
+#include <stdexcept>
 
 #ifdef __linux__
 #include <asm/unistd.h> // For architecture-specific syscall numbers
@@ -16,7 +17,6 @@
 #include <link.h>
 #include <cstdio>
 #include <cstring>
-
 
 // ------------------------------------------------------------------
 // Implementation of the nv_attach_impl interface
@@ -129,7 +129,11 @@ extern "C" void _bpftime__setup_nv_hooker_callback(nv_hooker_func_t *hooker)
 int nv_attach_private_data::initialize_from_string(const std::string_view &sv)
 {
 	spdlog::info("nv_attach_private_data::initialize_from_string({})", sv);
-    
+	if (sv != "vprintf") {
+		throw std::runtime_error(
+			"For demo purpose, nv_attach_impl only supports probing vprintf");
+	}
+	this->probe_func_name = sv;
 	return 0;
 }
 

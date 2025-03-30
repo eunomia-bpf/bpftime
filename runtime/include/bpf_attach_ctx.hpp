@@ -97,7 +97,11 @@ struct CUDAContext {
 	// Loaded module
 	std::optional<std::unique_ptr<cuda_module_type,
 				      decltype(&cuda_module_destroyer)> >
-		module_container;
+		probe_module_container;
+	std::optional<std::unique_ptr<cuda_module_type,
+				      decltype(&cuda_module_destroyer)> >
+		demo_module_container;
+
 	std::unique_ptr<std::array<std::atomic<uint64_t>, 8> >
 		operation_time_sum;
 	CUDAContext(std::unique_ptr<cuda::SharedMem> &&mem, CUcontext raw_ctx);
@@ -109,7 +113,7 @@ struct CUDAContext {
 	virtual ~CUDAContext();
 	void set_module(CUmodule raw_ptr)
 	{
-		module_container.emplace(raw_ptr, cuda_module_destroyer);
+		probe_module_container.emplace(raw_ptr, cuda_module_destroyer);
 	}
 };
 
@@ -189,7 +193,7 @@ class bpf_attach_ctx {
 		int id, const bpf_perf_event_handler &perf_handler);
 	// Start host thread for handling map requests from CUDA
 	void start_cuda_watcher_thread();
-	int start_cuda_program(int id);
+	int start_cuda_prober(int id);
 	std::unique_ptr<cuda::CUDAContext> cuda_ctx;
 };
 

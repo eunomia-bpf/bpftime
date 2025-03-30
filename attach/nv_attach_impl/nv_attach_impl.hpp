@@ -127,12 +127,12 @@ class CUDAInjector {
 		spdlog::debug(
 			"CUDA initialized successfully with {} devices available",
 			device_count);
-		ws = pos_create_workspace_cuda();
-		pos_create_client_param_t param = { .job_name = "bpftime",
-						    .pid = target_pid,
-						    .id = 1,
-						    .is_restoring = false };
-		ws->__create_client(param, &client);
+		// ws = pos_create_workspace_cuda();
+		// pos_create_client_param_t param = { .job_name = "bpftime",
+		// 				    .pid = target_pid,
+		// 				    .id = 1,
+		// 				    .is_restoring = false };
+		// ws->__create_client(param, &client);
 	}
 
 	bool attach()
@@ -374,6 +374,8 @@ struct nv_attach_private_data final : public attach_private_data {
 	uint64_t addr;
 	// Saved module name
 	pid_t pid;
+	// function name to probe
+	std::string probe_func_name;
 	// initialize_from_string
 	int initialize_from_string(const std::string_view &sv) override;
 };
