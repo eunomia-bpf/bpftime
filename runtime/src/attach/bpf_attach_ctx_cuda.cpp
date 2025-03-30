@@ -1,6 +1,10 @@
+#include "bpftime_prog.hpp"
 #include "bpftime_shm_internal.hpp"
+#include <array>
 #include <bpf_attach_ctx.hpp>
 #include "demo_ptx_prog.hpp"
+#include <memory>
+#include <optional>
 #include <spdlog/spdlog.h>
 #include "cuda.h"
 #include "cupti_activity.h"
@@ -25,6 +29,15 @@
 		}                                                              \
 	} while (0)
 
+#define NV_SAFE_CALL_NO_THROW(x, error_message)                                \
+	do {                                                                   \
+		CUresult result = x;                                           \
+		if (result != CUDA_SUCCESS) {                                  \
+			SPDLOG_ERROR("error: {} failed with error code {}",    \
+				     #x, (int)result);                         \
+		}                                                              \
+	} while (0)
+
 #define NV_SAFE_CALL_2(x, error_message)                                       \
 	do {                                                                   \
 		CUresult result = x;                                           \
@@ -33,6 +46,17 @@
 				"error: {} failed with error code {}: {}", #x, \
 				(int)result, error_message);                   \
 			return -1;                                             \
+		}                                                              \
+	} while (0)
+
+#define NV_SAFE_CALL_3(x, error_message)                                       \
+	do {                                                                   \
+		CUresult result = x;                                           \
+		if (result != CUDA_SUCCESS) {                                  \
+			SPDLOG_ERROR(                                          \
+				"error: {} failed with error code {}: {}", #x, \
+				(int)result, error_message);                   \
+			return {};                                             \
 		}                                                              \
 	} while (0)
 
@@ -98,6 +122,7 @@ void bpf_attach_ctx::start_cuda_watcher_thread()
 			}
 			std::this_thread::sleep_for(std::chrono::seconds(1));
 		}
+		SPDLOG_INFO("statistics thread exited..");
 	}).detach();
 	std::thread handle([=, this]() {
 		SPDLOG_INFO("CUDA watcher thread started");
@@ -124,7 +149,7 @@ void bpf_attach_ctx::start_cuda_watcher_thread()
 					auto ptr = bpftime_map_lookup_elem(
 						map_fd, req.key);
 					resp.value = ptr;
-					SPDLOG_DEBUG(
+					SPDLOG_INFO(
 						"CUDA: Executing map lookup for {}, result = {}",
 						map_fd, (uintptr_t)resp.value);
 				} else if (req_id ==
@@ -137,7 +162,7 @@ void bpf_attach_ctx::start_cuda_watcher_thread()
 					resp.result = bpftime_map_update_elem(
 						map_fd, req.key, req.value,
 						req.flags);
-					SPDLOG_DEBUG(
+					SPDLOG_INFO(
 						"CUDA: Executing map update for {}, result = {}",
 						map_fd, resp.result);
 				} else if (req_id ==
@@ -150,11 +175,48 @@ void bpf_attach_ctx::start_cuda_watcher_thread()
 
 					resp.result = bpftime_map_delete_elem(
 						map_fd, req.key);
-					SPDLOG_DEBUG(
+					SPDLOG_INFO(
 						"CUDA: Executing map delete for {}, result = {}",
 						map_fd, resp.result);
 				} else if (req_id == 1000) {
 					SPDLOG_INFO("Request probing..");
+					std::thread thd([this]() {
+						NV_SAFE_CALL(
+							cuCtxSetCurrent(
+								this->cuda_ctx
+									->ctx_container
+									.get()),
+							"Unable to set CUDA context");
+						auto err = cuCtxSynchronize();
+						SPDLOG_INFO("kernel exited: {}",
+							    (int)err);
+						auto probe_progs =
+							this->cuda_ctx
+								->cuda_progs;
+						SPDLOG_INFO(
+							"Starting probe program..");
+						auto exit_flag =
+							*start_cuda_prober(
+								probe_progs
+									.at(0)
+									.prog_id);
+						SPDLOG_INFO(
+							"Waiting for prober to exit..");
+						while (true) {
+							if (exit_flag->load()) {
+								break;
+							}
+							SPDLOG_INFO(
+								"Checking if prober exited..");
+							std::this_thread::sleep_for(
+								std::chrono::seconds(
+									1));
+						}
+						SPDLOG_INFO(
+							"prober exited, re-running demo program..");
+						start_cuda_demo_program();
+					});
+					thd.detach();
 
 				} else {
 					SPDLOG_WARN("Unknown request id {}",
@@ -185,18 +247,21 @@ void bpf_attach_ctx::start_cuda_watcher_thread()
 	handle.detach();
 }
 
-int bpf_attach_ctx::start_cuda_prober(int id)
+std::optional<std::shared_ptr<std::atomic<bool> > >
+bpf_attach_ctx::start_cuda_prober(int id)
 {
+	auto exit_flag = std::make_shared<std::atomic<bool> >();
+
 	SPDLOG_DEBUG("Try starting CUDA program at {}", id);
 	auto itr = instantiated_progs.find(id);
 	if (itr == instantiated_progs.end()) {
 		SPDLOG_ERROR("Invalid cuda program id: {}", id);
-		return -1;
+		return {};
 	}
-	auto prog = *itr->second;
+	auto &prog = *itr->second;
 	if (!prog.is_cuda()) {
 		SPDLOG_ERROR("Program id {} is not a CUDA program", id);
-		return -1;
+		return {};
 	}
 	// Initialize CUPTI
 	{
@@ -210,7 +275,7 @@ int bpf_attach_ctx::start_cuda_prober(int id)
 		SPDLOG_INFO("CUPTI initialized");
 	}
 	CUmodule raw_module;
-	NV_SAFE_CALL_2(cuModuleLoadDataEx(&raw_module,
+	NV_SAFE_CALL_3(cuModuleLoadDataEx(&raw_module,
 					  prog.get_cuda_elf_binary(), 0, 0, 0),
 		       "Load CUDA module");
 	SPDLOG_INFO("CUDA module loaded");
@@ -220,7 +285,7 @@ int bpf_attach_ctx::start_cuda_prober(int id)
 		CUdeviceptr constDataPtr;
 		size_t constDataLen;
 
-		NV_SAFE_CALL_2(cuModuleGetGlobal(&constDataPtr, &constDataLen,
+		NV_SAFE_CALL_3(cuModuleGetGlobal(&constDataPtr, &constDataLen,
 						 raw_module, "constData"),
 			       "Unable to find constData section");
 		SPDLOG_INFO(
@@ -228,7 +293,7 @@ int bpf_attach_ctx::start_cuda_prober(int id)
 			(uintptr_t)constDataPtr, constDataLen);
 		uintptr_t shared_mem_dev_ptr =
 			cuda_ctx->cuda_shared_mem_device_pointer;
-		NV_SAFE_CALL_2(cuMemcpyHtoD(constDataPtr, &shared_mem_dev_ptr,
+		NV_SAFE_CALL_3(cuMemcpyHtoD(constDataPtr, &shared_mem_dev_ptr,
 					    sizeof(shared_mem_dev_ptr)),
 			       "Copy device pointer value to device");
 		SPDLOG_INFO("CUDA: constData set done");
@@ -237,7 +302,7 @@ int bpf_attach_ctx::start_cuda_prober(int id)
 	{
 		CUdeviceptr map_info_ptr;
 		size_t map_info_len;
-		NV_SAFE_CALL_2(cuModuleGetGlobal(&map_info_ptr, &map_info_len,
+		NV_SAFE_CALL_3(cuModuleGetGlobal(&map_info_ptr, &map_info_len,
 						 raw_module, "map_info"),
 			       "Unable to get map_info handle");
 		std::vector<cuda::MapBasicInfo> local_basic_info(256);
@@ -247,7 +312,7 @@ int bpf_attach_ctx::start_cuda_prober(int id)
 				"Unexpected map_info_len: {}, should be {}*{}",
 				map_info_len, sizeof(cuda::MapBasicInfo),
 				local_basic_info.size());
-			return -1;
+			return {};
 		}
 		for (auto &entry : local_basic_info) {
 			entry.enabled = false;
@@ -273,7 +338,7 @@ int bpf_attach_ctx::start_cuda_prober(int id)
 					SPDLOG_ERROR(
 						"Too large map fd: {}, max to be {}",
 						i, local_basic_info.size());
-					return -1;
+					return {};
 				}
 
 				local.enabled = true;
@@ -282,19 +347,19 @@ int bpf_attach_ctx::start_cuda_prober(int id)
 				local.max_entries = map.get_max_entries();
 			}
 		}
-		NV_SAFE_CALL_2(cuMemcpyHtoD(map_info_ptr,
+		NV_SAFE_CALL_3(cuMemcpyHtoD(map_info_ptr,
 					    local_basic_info.data(),
 					    map_info_len),
 			       "Copy map_info to device");
 		SPDLOG_INFO("CUDA: map_info set done");
 	}
 	CUfunction kernel;
-	NV_SAFE_CALL_2(cuModuleGetFunction(&kernel, raw_module, "bpf_main"),
+	NV_SAFE_CALL_3(cuModuleGetFunction(&kernel, raw_module, "bpf_main"),
 		       "get CUDA kernel function");
 	CUdeviceptr arg1 = 0;
 	uint64_t arg2 = 0;
 	void *args[2] = { &arg1, &arg2 };
-	NV_SAFE_CALL_2(cuLaunchKernel(kernel, 1, 1, 1, // grid dim
+	NV_SAFE_CALL_3(cuLaunchKernel(kernel, 1, 1, 1, // grid dim
 				      1, 1, 1, // block dim
 				      0, nullptr, // shared mem and stream
 				      args, 0),
@@ -312,11 +377,65 @@ int bpf_attach_ctx::start_cuda_prober(int id)
 		}
 		CUPTI_CALL(cuptiActivityFlushAll(0),
 			   "flushing cupti activities");
+		exit_flag->store(true);
 	});
 	handle.detach();
+	return exit_flag;
+}
+int bpf_attach_ctx::start_cuda_demo_program()
+{
+	SPDLOG_INFO("Starting demo program");
+	auto prog = compile_ptx_to_elf(DEMO_PTX_PROG, "sm_60");
+	SPDLOG_INFO("Demo program compiled to {} bytes", prog->size());
+	CUmodule raw_module;
+	NV_SAFE_CALL_2(cuModuleLoadDataEx(&raw_module, prog->data(), 0, 0, 0),
+		       "Load CUDA module");
+	SPDLOG_INFO("CUDA module (for demo program) loaded");
+	cuda_ctx->set_demo_module(raw_module);
+
+	// Setup shared data pointer
+	{
+		CUdeviceptr constDataPtr;
+		size_t constDataLen;
+
+		NV_SAFE_CALL_2(cuModuleGetGlobal(&constDataPtr, &constDataLen,
+						 raw_module, "constData"),
+			       "Unable to find constData section");
+		SPDLOG_INFO(
+			"(demo program) CUDA binary constData device pointer: {}, constData size: {}",
+			(uintptr_t)constDataPtr, constDataLen);
+		uintptr_t shared_mem_dev_ptr =
+			cuda_ctx->cuda_shared_mem_device_pointer;
+		NV_SAFE_CALL_2(cuMemcpyHtoD(constDataPtr, &shared_mem_dev_ptr,
+					    sizeof(shared_mem_dev_ptr)),
+			       "Copy device pointer value to device");
+		SPDLOG_INFO("CUDA: (demo program) constData set done");
+	}
+
+	CUfunction kernel;
+	NV_SAFE_CALL_2(cuModuleGetFunction(&kernel, raw_module, "probe_demo"),
+		       "get CUDA kernel function");
+	CUdeviceptr arg1;
+	int32_t arg2 = cuda_ctx->demo_prog_array->size();
+	CUdeviceptr arg3;
+
+	NV_SAFE_CALL_2(cuMemHostGetDevicePointer(
+			       &arg1, cuda_ctx->demo_prog_array->data(), 0),
+		       "unable to get device pointer of array");
+
+	NV_SAFE_CALL_2(cuMemHostGetDevicePointer(
+			       &arg3, cuda_ctx->demo_prog_sum_out.get(), 0),
+		       "unable to get device pointer of sum");
+	SPDLOG_INFO("arg1={:x}, arg2={}, arg3={:x}", arg1, arg2, arg3);
+	void *args[] = { &arg1, &arg2, &arg3 };
+	NV_SAFE_CALL_2(cuLaunchKernel(kernel, 1, 1, 1, // grid dim
+				      1, 1, 1, // block dim
+				      0, nullptr, // shared mem and stream
+				      args, 0),
+		       "Unable to start demo kernel"); // arguments
+	SPDLOG_INFO("CUDA program (demo) started..");
 	return 0;
 }
-
 namespace cuda
 {
 
@@ -350,8 +469,22 @@ std::optional<std::unique_ptr<cuda::CUDAContext> > create_cuda_context()
 
 	CUcontext raw_ctx;
 	NV_SAFE_CALL(cuCtxCreate(&raw_ctx, 0, device), "Create CUDA context");
+
+	auto demo_prog_array = std::make_unique<std::array<int32_t, 10> >(
+		std::array<int32_t, 10>({ 1, 2, 3, 4, 5, 6, 7, 8, 9, 10 }));
+	auto demo_prog_sum_out = std::make_unique<int64_t>(0);
+	NV_SAFE_CALL(
+		cuMemHostRegister(demo_prog_array->data(),
+				  sizeof(int32_t) * demo_prog_array->size(), 0),
+		"Unable to register shared memory for array used by demo program");
+	NV_SAFE_CALL(
+		cuMemHostRegister(demo_prog_sum_out.get(),
+				  sizeof(demo_prog_sum_out), 0),
+		"Unable to register shared memory for sum output used by demo program");
+
 	auto cuda_ctx = std::make_optional(std::make_unique<cuda::CUDAContext>(
-		std::move(cuda_shared_mem), raw_ctx));
+		std::move(cuda_shared_mem), raw_ctx, std::move(demo_prog_array),
+		std::move(demo_prog_sum_out)));
 	SPDLOG_INFO("CUDA context created");
 	return cuda_ctx;
 }
@@ -363,14 +496,22 @@ CUDAContext::~CUDAContext()
 		SPDLOG_ERROR("Unable to unregister host memory: {}",
 			     (int)result);
 	}
+	NV_SAFE_CALL_NO_THROW(cuMemHostUnregister(demo_prog_array->data()),
+			      "Unregister array used by demo");
+	NV_SAFE_CALL_NO_THROW(cuMemHostUnregister(demo_prog_sum_out.get()),
+			      "Unregister sum_out used by demo");
 }
-CUDAContext::CUDAContext(std::unique_ptr<cuda::SharedMem> &&mem,
-			 CUcontext raw_ctx)
+CUDAContext::CUDAContext(
+	std::unique_ptr<cuda::SharedMem> &&mem, CUcontext raw_ctx,
+	std::unique_ptr<std::array<int32_t, 10> > &&demo_prog_array,
+	std::unique_ptr<int64_t> &&demo_prog_sum_out)
 	: cuda_shared_mem(std::move(mem)),
 	  cuda_shared_mem_device_pointer((uintptr_t)cuda_shared_mem.get()),
 	  ctx_container(raw_ctx, cuda_context_destroyer),
 	  operation_time_sum(
-		  std::make_unique<std::array<std::atomic<uint64_t>, 8> >())
+		  std::make_unique<std::array<std::atomic<uint64_t>, 8> >()),
+	  demo_prog_array(std::move(demo_prog_array)),
+	  demo_prog_sum_out(std::move(demo_prog_sum_out))
 {
 }
 } // namespace cuda

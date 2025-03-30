@@ -25,6 +25,10 @@ struct nv_attach_basic_private_data final : public attach_private_data {
 	std::string probe_func_name;
 	// initialize_from_string
 	int initialize_from_string(const std::string_view &sv) override;
+	std::string to_string() const override
+	{
+		return probe_func_name;
+	}
 };
 
 // Attach implementation of syscall trace

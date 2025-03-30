@@ -573,111 +573,47 @@ $L__BB6_1:                              // =>This Inner Loop Header: Depth=1
 	.local .align 8 .b8 	__local_depot8[8];
 	.reg .b64 	%SP;
 	.reg .b64 	%SPL;
-	.reg .pred 	%p<5>;
-	.reg .b32 	%r<14>;
-	.reg .b64 	%rd<45>;
+	.reg .pred 	%p<2>;
+	.reg .b32 	%r<5>;
+	.reg .b64 	%rd<13>;
 
 // %bb.0:
 	mov.u64 	%SPL, __local_depot8;
 	cvta.local.u64 	%SP, %SPL;
-	ld.param.u32 	%r2, [probe_demo_param_1];
-	ld.param.u64 	%rd19, [probe_demo_param_2];
-	cvta.to.global.u64 	%rd1, %rd19;
-	setp.lt.s32 	%p1, %r2, 1;
-	mov.u64 	%rd44, 0;
-	@%p1 bra 	$L__BB8_6;
+	ld.param.u32 	%r1, [probe_demo_param_1];
+	setp.lt.s32 	%p1, %r1, 1;
+	@%p1 bra 	$L__BB8_2;
 // %bb.1:
-	ld.param.u64 	%rd18, [probe_demo_param_0];
-	cvta.to.global.u64 	%rd2, %rd18;
-	add.u64 	%rd20, %SP, 0;
+	ld.param.u64 	%rd4, [probe_demo_param_0];
+	ld.param.u64 	%rd5, [probe_demo_param_2];
+	cvta.to.global.u64 	%rd1, %rd5;
+	cvta.to.global.u64 	%rd2, %rd4;
+	add.u64 	%rd6, %SP, 0;
 	add.u64 	%rd3, %SPL, 0;
-	and.b32  	%r1, %r2, 1;
-	setp.eq.s32 	%p2, %r2, 1;
-	mov.u64 	%rd43, 0;
-	mov.u64 	%rd37, _$_str;
-	mov.u64 	%rd44, %rd43;
-	@%p2 bra 	$L__BB8_4;
-// %bb.2:
-	add.s64 	%rd42, %rd2, 4;
-	cvt.u64.u32 	%rd24, %r2;
-	and.b64  	%rd5, %rd24, 4294967294;
-	mov.u64 	%rd43, 0;
-	cvta.global.u64 	%rd28, %rd37;
-	cvt.u32.u64 	%r10, %rd5;
-	mov.u64 	%rd44, %rd43;
-$L__BB8_3:                              // =>This Inner Loop Header: Depth=1
-	ld.global.u32 	%r3, [%rd42+-4];
-	cvt.s64.s32 	%rd25, %r3;
-	add.s64 	%rd26, %rd44, %rd25;
-	st.local.u32 	[%rd3], %r3;
+	ld.global.u32 	%r2, [%rd2];
+	cvt.s64.s32 	%rd7, %r2;
+	ld.global.u64 	%rd8, [%rd1];
+	add.s64 	%rd9, %rd8, %rd7;
+	st.global.u64 	[%rd1], %rd9;
+	st.local.u32 	[%rd3], %r2;
+	mov.u64 	%rd10, _$_str;
+	cvta.global.u64 	%rd11, %rd10;
 	{ // callseq 1, 0
 	.reg .b32 temp_param_reg;
 	.param .b64 param0;
-	st.param.b64 	[param0+0], %rd28;
+	st.param.b64 	[param0+0], %rd11;
 	.param .b64 param1;
-	st.param.b64 	[param1+0], %rd20;
+	st.param.b64 	[param1+0], %rd6;
 	.param .b32 retval0;
 	call.uni (retval0), 
-	vprintf, 
+	vprintf_mocked, 
 	(
 	param0, 
 	param1
 	);
-	ld.param.b32 	%r4, [retval0+0];
+	ld.param.b32 	%r3, [retval0+0];
 	} // callseq 1
-	ld.global.u32 	%r6, [%rd42];
-	cvt.s64.s32 	%rd30, %r6;
-	add.s64 	%rd44, %rd26, %rd30;
-	st.local.u32 	[%rd3], %r6;
-	{ // callseq 2, 0
-	.reg .b32 temp_param_reg;
-	.param .b64 param0;
-	st.param.b64 	[param0+0], %rd28;
-	.param .b64 param1;
-	st.param.b64 	[param1+0], %rd20;
-	.param .b32 retval0;
-	call.uni (retval0), 
-	vprintf, 
-	(
-	param0, 
-	param1
-	);
-	ld.param.b32 	%r7, [retval0+0];
-	} // callseq 2
-	add.s64 	%rd43, %rd43, 2;
-	add.s64 	%rd42, %rd42, 8;
-	cvt.u32.u64 	%r9, %rd43;
-	setp.eq.s32 	%p3, %r10, %r9;
-	@%p3 bra 	$L__BB8_4;
-	bra.uni 	$L__BB8_3;
-$L__BB8_4:
-	setp.eq.s32 	%p4, %r1, 0;
-	@%p4 bra 	$L__BB8_6;
-// %bb.5:
-	shl.b64 	%rd31, %rd43, 2;
-	add.s64 	%rd32, %rd2, %rd31;
-	ld.global.u32 	%r11, [%rd32];
-	cvt.s64.s32 	%rd33, %r11;
-	add.s64 	%rd44, %rd44, %rd33;
-	st.local.u32 	[%rd3], %r11;
-	cvta.global.u64 	%rd35, %rd37;
-	{ // callseq 3, 0
-	.reg .b32 temp_param_reg;
-	.param .b64 param0;
-	st.param.b64 	[param0+0], %rd35;
-	.param .b64 param1;
-	st.param.b64 	[param1+0], %rd20;
-	.param .b32 retval0;
-	call.uni (retval0), 
-	vprintf, 
-	(
-	param0, 
-	param1
-	);
-	ld.param.b32 	%r12, [retval0+0];
-	} // callseq 3
-$L__BB8_6:
-	st.global.u64 	[%rd1], %rd44;
+$L__BB8_2:
 	ret;
                                         // -- End function
 }

@@ -61,12 +61,7 @@ static int print_stat(struct cuda_probe_bpf *obj)
 		}
 		printf("	pid=%-5" PRIu32 " ", key);
 		printf("	malloc calls: %" PRIu64 "\n", value);
-		err = bpf_map_delete_elem(fd, &key);
-		if (err) {
-			warn("bpf_map_delete_elem failed: %s\n",
-			     strerror(errno));
-			return err;
-		}
+
 		prev_key = &key;
 	}
 	fflush(stdout);

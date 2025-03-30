@@ -31,7 +31,10 @@
 		}                                                              \
 	} while (0)
 
-static std::optional<std::vector<char> >
+using namespace std;
+namespace bpftime
+{
+std::optional<std::vector<char> >
 compile_ptx_to_elf(const std::string &ptx_code, const char *cpu_target)
 {
 	unsigned int minor_version, major_version;
@@ -93,10 +96,6 @@ compile_ptx_to_elf(const std::string &ptx_code, const char *cpu_target)
 
 	return elf_binary;
 }
-
-using namespace std;
-namespace bpftime
-{
 
 thread_local std::optional<uint64_t> current_thread_bpf_cookie;
 

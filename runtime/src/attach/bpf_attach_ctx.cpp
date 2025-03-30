@@ -7,6 +7,7 @@
 #include "base_attach_impl.hpp"
 #include "bpftime_shm.hpp"
 
+#include "cuda.h"
 #include "handler/link_handler.hpp"
 #include "handler/map_handler.hpp"
 #include "handler/prog_handler.hpp"
@@ -86,6 +87,13 @@ int bpf_attach_ctx::init_attach_ctx_from_handlers(
 				// other handlers.
 			}
 		}
+	}
+	SPDLOG_INFO(
+		"Main initializing for handlers done, try to initialize cuda programs..");
+	start_cuda_demo_program();
+	for (const auto &prog : cuda_ctx->cuda_progs) {
+		SPDLOG_INFO("Handling prog {} hooked for {}", prog.prog_id,
+			    prog.probe_func);
 	}
 	return 0;
 }
@@ -240,13 +248,17 @@ int bpf_attach_ctx::instantiate_bpf_link_handler_at(
 	}
 	auto prog = instantiated_progs.at(handler.prog_id).get();
 	if (prog->is_cuda()) {
-		SPDLOG_INFO("Handling link to CUDA program: {}", id);
-		if (int err = start_cuda_prober(handler.prog_id); err < 0) {
-			SPDLOG_ERROR(
-				"Unable to start CUDA program for link id {}, prog id {}",
-				id, handler.prog_id);
-			return err;
-		}
+		SPDLOG_INFO("Handling link to CUDA program: {}, recording it..",
+			    id);
+		// if (int err = start_cuda_prober(handler.prog_id); err < 0) {
+		// 	SPDLOG_ERROR(
+		// 		"Unable to start CUDA program for link id {},
+		// prog id {}", 		id, handler.prog_id); 	return
+		// err;
+		// }
+		this->cuda_ctx->cuda_progs.push_back(cuda::CUDAProgramRecord{
+			.probe_func = priv_data->to_string(),
+			.prog_id = handler.prog_id });
 		instantiated_attach_links[id] = std::make_pair(0, nullptr);
 
 		return 0;
@@ -328,7 +340,18 @@ int bpf_attach_ctx::instantiate_perf_event_handler_at(
 			   (int)bpf_event_type::BPF_TYPE_KRETPROBE) {
 		auto &kprobe_data =
 			std::get<kprobe_perf_event_data>(perf_handler.data);
-
+		int err = 0;
+		priv_data =
+			private_data_gen(kprobe_data.func_name.c_str(), err);
+		if (err < 0) {
+			SPDLOG_ERROR(
+				"Unable to parse private data of kprobe/kretprobe {}, func name {}, err = {}",
+				id, kprobe_data.func_name, err);
+			return err;
+		}
+		SPDLOG_INFO(
+			"Created kprobe/kretprobe private data at id {}, string value {}",
+			id, priv_data->to_string());
 	} else {
 		auto &custom_data =
 			std::get<custom_perf_event_data>(perf_handler.data);
