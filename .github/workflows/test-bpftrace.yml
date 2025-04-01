@@ -2,13 +2,13 @@ name: BPFtime Syscall Tracing Test
 
 on:
   push:
-    branches: [ "*" ]
+    branches: ["*"]
   pull_request:
-    branches: [ "*" ]
+    branches: ["*"]
 
 env:
   BPFTIME_VM_NAME: llvm
-  
+
 jobs:
   syscall-tracing-test:
     runs-on: ubuntu-22.04
@@ -20,19 +20,21 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v2
         with:
-          submodules: 'recursive'
+          submodules: "recursive"
+      - name: Debugging with ssh
+        uses: lhotari/action-upterm@v1
 
       - name: System setup
         run: |
           apt-get update
           apt-get install -y --no-install-recommends \
             lcov tree strace gdb sudo libc6-dev tmux screen bpftrace
-          
+
           # 显示系统信息
           echo "==== System Information ===="
           uname -a
           cat /etc/os-release
-          
+
           # 检查bpftrace可用性
           if ! which bpftrace; then
             echo "bpftrace not found, trying to install..."
@@ -43,20 +45,20 @@ jobs:
               exit 1
             fi
           fi
-          
+
           bpftrace --version
           bpftrace --info
-          
+
           # 检查tracing功能
           echo "==== Tracing capabilities ===="
           ls -la /sys/kernel/debug/tracing/ || echo "Debug tracing not accessible"
           ls -la /sys/kernel/tracing/ || echo "Tracing not accessible"
-          
+
           # 创建测试文件
           mkdir -p build
           echo "Line 1 for testing" > build/install_manifest.txt
           echo "Line 2 for testing" >> build/install_manifest.txt
-          
+
           # 创建日志目录
           mkdir -p logs
 
@@ -64,22 +66,22 @@ jobs:
         run: |
           export INSTALL_DIR=$HOME/.bpftime
           echo "Building bpftime, installing to $INSTALL_DIR"
-          
+
           cmake -Bbuild -DCMAKE_BUILD_TYPE:STRING=RelWithDebInfo \
             -DCMAKE_INSTALL_PREFIX=$INSTALL_DIR \
             -DBPFTIME_LLVM_JIT=1 \
             -DBUILD_BPFTIME_DAEMON=1 \
             -DCMAKE_CXX_FLAGS="-DDEFAULT_LOGGER_OUTPUT_PATH='\"console\"'"
-          
+
           cmake --build build --config RelWithDebInfo --target install -j$(nproc)
-          
+
           # 验证安装
           echo "Installed files:"
           ls -la $INSTALL_DIR/
-          
+
           # 确保有正确的权限
           chmod +x $INSTALL_DIR/*
-          
+
           # 配置环境变量
           export PATH=$PATH:$INSTALL_DIR
           echo "PATH=$PATH" >> $GITHUB_ENV
@@ -89,13 +91,13 @@ jobs:
       - name: Verify tracepoints
         run: |
           echo "==== Verifying tracepoints ===="
-          
+
           # 检查系统调用tracepoints
           sudo bpftrace -l 'tracepoint:syscalls:sys_enter_*' | grep openat || echo "openat tracepoint not found"
-          
+
           # 检查raw syscalls tracepoints
           sudo bpftrace -l 'tracepoint:raw_syscalls:*' || echo "raw_syscalls tracepoints not found"
-          
+
           # 测试简单的bpftrace程序
           echo "Testing simple bpftrace program..."
           sudo bpftrace -e 'BEGIN { printf("Bpftrace test successful\n"); exit(); }' || echo "Simple bpftrace test failed"
@@ -103,29 +105,29 @@ jobs:
       - name: Syscall trace test
         run: |
           echo "==== Setting up syscall trace test ===="
-          
+
           # 创建名为pipe的命名管道，用于在脚本之间传递信号
           mkfifo pipe
-          
+
           # 创建服务器脚本
           cat > server.sh << 'EOF'
           #!/bin/bash
           set -x
-          
+
           echo "Starting syscall tracing server..."
           export HOME_DIR=$HOME
-          
+
           # 开始跟踪，捕获openat调用
           sudo -E bash -c "BPFTIME_VM_NAME=llvm LD_PRELOAD=$HOME_DIR/.bpftime/libbpftime-syscall-server.so bpftrace -e 'tracepoint:syscalls:sys_enter_openat { printf(\"SYSCALL: %s %s\\n\", comm, str(args->filename)); }'" > server.log 2>&1 &
           SERVER_PID=$!
-          
+
           # 写入管道，表示服务器已启动
           sleep 2
           echo "ready" > pipe
-          
+
           # 等待终止信号
           read -t 60 < pipe || true
-          
+
           # 终止服务器进程
           if ps -p $SERVER_PID > /dev/null; then
             sudo kill $SERVER_PID
@@ -135,50 +137,50 @@ jobs:
           fi
           EOF
           chmod +x server.sh
-          
+
           # 创建客户端脚本
           cat > client.sh << 'EOF'
           #!/bin/bash
           set -x
-          
+
           # 等待服务器准备好
           read < pipe
-          
+
           echo "Running client with agent preload..."
           export HOME_DIR=$HOME
-          
+
           # 运行带有agent预加载的cat命令
           sudo -E bash -c "BPFTIME_VM_NAME=llvm LD_PRELOAD=$HOME_DIR/.bpftime/libbpftime-agent-transformer.so BPFTIME_LOG_OUTPUT=console AGENT_SO=$HOME_DIR/.bpftime/libbpftime-agent.so cat build/install_manifest.txt" > client.log 2>&1
-          
+
           # 给服务器一些时间处理事件
           sleep 5
-          
+
           # 向管道写入终止信号
           echo "done" > pipe
           EOF
           chmod +x client.sh
-          
+
           # 启动服务器和客户端
           ./server.sh &
           ./client.sh
-          
+
           # 等待脚本完成
           wait
-          
+
           # 显示日志
           echo "==== Server log ===="
           cat server.log || echo "Server log not found"
-          
+
           echo "==== Client log ===="
           cat client.log || echo "Client log not found"
-          
+
           # 检查服务器日志是否包含预期输出
           if grep -q "Attaching.*probe" server.log; then
             echo "PASS: Found 'Attaching probe' message in server log"
           else
             echo "FAIL: Did not find 'Attaching probe' message in server log"
           fi
-          
+
           if grep -q "SYSCALL: cat.*install_manifest.txt" server.log; then
             echo "PASS: Server captured client's openat syscall for install_manifest.txt"
             exit 0
