@@ -1,0 +1,24 @@
+[package]
+name = "patcher"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+crate-type = ["staticlib"]
+path = "src/lib.rs"
+
+[[bin]]
+name = "patcher"
+path = "src/main.rs"
+
+[dependencies]
+anyhow = "1.0.86"
+binrw = "0.14.0"
+clap = { version = "4.5.11", features = ["derive"] }
+cxx = "1.0.124"
+nom = "7.1.3"
+regex = "1.10.6"
+tempfile = "3.11.0"
+
+[build-dependencies]
+cxx-build = "1.0.124"
