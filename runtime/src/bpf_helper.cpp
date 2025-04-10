@@ -94,8 +94,7 @@ enum class ORIGIN_HANDLER_EXIST_FLAG {
 
 #ifdef ENABLE_PROBE_READ_CHECK
 extern "C" void jump_point_read();
-
-thread_local static PROBE_STATUS status_probe_write = PROBE_STATUS::NOT_RUNNING;
+thread_local static PROBE_STATUS status_probe_read = PROBE_STATUS::NOT_RUNNING;
 
 thread_local static ORIGIN_HANDLER_EXIST_FLAG exist_read =
 	ORIGIN_HANDLER_EXIST_FLAG::NOT_CHECKED;
@@ -106,8 +105,7 @@ thread_local static void (*origin_segv_read_handler)(int, siginfo_t *,
 #ifdef ENABLE_PROBE_WRITE_CHECK
 
 extern "C" void jump_point_write();
-thread_local static PROBE_STATUS status_probe_read = PROBE_STATUS::NOT_RUNNING;
-
+thread_local static PROBE_STATUS status_probe_write = PROBE_STATUS::NOT_RUNNING;
 thread_local static ORIGIN_HANDLER_EXIST_FLAG exist_write =
 	ORIGIN_HANDLER_EXIST_FLAG::NOT_CHECKED;
 
