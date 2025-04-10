@@ -4,6 +4,7 @@
  * All rights reserved.
  */
 #include "bpftime_driver.hpp"
+#include "bpftime_config.hpp"
 #include <linux/bpf.h>
 #include <bpf/bpf.h>
 #include "ebpf_inst.h"
@@ -380,8 +381,8 @@ bpftime_driver::bpftime_driver(daemon_config cfg, struct bpf_tracer_bpf *obj)
 	config = cfg;
 	object = obj;
 	bpftime_initialize_global_shm(shm_open_type::SHM_REMOVE_AND_CREATE);
-	auto config = get_agent_config_from_env();
-	bpftime_set_agent_config(config);
+	auto config = construct_agent_config_from_env();
+	bpftime_set_agent_config(std::move(config));
 }
 
 bpftime_driver::~bpftime_driver()

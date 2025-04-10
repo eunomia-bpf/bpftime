@@ -12,7 +12,7 @@
 namespace bpftime::vm::compat
 {
 
-std::unique_ptr<bpftime_vm_impl> create_vm_instance()
+std::unique_ptr<bpftime_vm_impl> create_ubpf_vm_instance()
 {
 	return std::make_unique<ubpf::bpftime_ubpf_vm>();
 }
@@ -245,3 +245,15 @@ int bpftime_ubpf_vm::set_pointer_secret(uint64_t secret)
 {
 	return ubpf_set_pointer_secret(ubpf_vm, secret);
 }
+
+namespace bpftime::vm::compat
+{
+namespace ubpf
+{
+__attribute__((constructor)) static inline void register_ubpf_vm_factory()
+{
+	register_vm_factory("ubpf", create_ubpf_vm_instance);
+	printf("ubpf register vm factory\n");
+}
+} // namespace ubpf
+} // namespace bpftime::vm::compat

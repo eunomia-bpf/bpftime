@@ -72,7 +72,8 @@ static void register_ufunc_for_print_and_add(bpf_attach_ctx *probe_ctx)
 __attribute__((optnone)) TEST_CASE("Test attach replace with ebpf")
 {
 	int res = 1;
-
+	bpftime::agent_config config;
+	config.set_vm_name("llvm");
 	// test for no attach
 	res = _bpftime_test_attach_replace__my_function(1, "hello aaa", 'c');
 	spdlog::info("origin func return: {}", res);
@@ -80,7 +81,7 @@ __attribute__((optnone)) TEST_CASE("Test attach replace with ebpf")
 
 	bpf_attach_ctx probe_ctx;
 	register_ufunc_for_print_and_add(&probe_ctx);
-	bpftime_object *obj = bpftime_object_open(obj_path);
+	bpftime_object *obj = bpftime_object_open(obj_path, std::move(config));
 	REQUIRE(obj != nullptr);
 	// get the first program
 	bpftime_prog *prog = bpftime_object__next_program(obj, NULL);
