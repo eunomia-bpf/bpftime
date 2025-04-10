@@ -3,6 +3,8 @@
  * Copyright (c) 2022, eunomia-bpf org
  * All rights reserved.
  */
+#include "bpf_map/map_common_def.hpp"
+#include "linux/bpf.h"
 #include <bpf_map/userspace/array_map.hpp>
 #include <cerrno>
 
@@ -34,9 +36,16 @@ void *array_map_impl::elem_lookup(const void *key)
 long array_map_impl::elem_update(const void *key, const void *value,
 				 uint64_t flags)
 {
+	if (!check_update_flags(flags))
+		return -1;
 	auto key_val = *(uint32_t *)key;
+	if (key_val < _max_entries && flags == BPF_NOEXIST) {
+		errno = EEXIST;
+		return -1;
+	}
+
 	if (key_val >= _max_entries) {
-		errno = ENOENT;
+		errno = E2BIG;
 		return -1;
 	}
 	std::copy((uint8_t *)value, (uint8_t *)value + _value_size,
@@ -47,13 +56,16 @@ long array_map_impl::elem_update(const void *key, const void *value,
 long array_map_impl::elem_delete(const void *key)
 {
 	auto key_val = *(uint32_t *)key;
-	if (key_val >= _max_entries) {
-		errno = ENOENT;
-		return -1;
-	}
-	std::fill(&data[key_val * _value_size],
-		  &data[key_val * _value_size] + _value_size, 0);
-	return 0;
+	// kernel tests says element in an array map can't be deleted...
+	errno = EINVAL;
+	return -1;
+	// if (key_val >= _max_entries) {
+	// 	errno = ENOENT;
+	// 	return -1;
+	// }
+	// std::fill(&data[key_val * _value_size],
+	// 	  &data[key_val * _value_size] + _value_size, 0);
+	// return 0;
 }
 
 int array_map_impl::map_get_next_key(const void *key, void *next_key)

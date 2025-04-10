@@ -14,7 +14,7 @@ set(FRIDA_UPROBE_ATTACH_IMPL_INCLUDE ${CMAKE_CURRENT_SOURCE_DIR}/include CACHE S
 
 target_include_directories(bpftime_frida_uprobe_attach_impl PRIVATE ${SPDLOG_INCLUDE} ${FRIDA_UPROBE_ATTACH_IMPL_INCLUDE} PUBLIC ${FRIDA_GUM_INSTALL_DIR} ${BASE_ATTACH_IMPL_INCLUDE})
 
-target_link_libraries(bpftime_frida_uprobe_attach_impl PRIVATE ${FRIDA_GUM_INSTALL_DIR}/libfrida-gum.a PUBLIC bpftime_base_attach_impl spdlog::spdlog)
+target_link_libraries(bpftime_frida_uprobe_attach_impl PRIVATE ${FRIDA_GUM_INSTALL_DIR}/libfrida-gum.a PUBLIC bpftime_base_attach_impl spdlog::spdlog dl)
 
 set(TEST_SOURCES
     test/test_uprobe_uretprobe.cpp
@@ -22,8 +22,15 @@ set(TEST_SOURCES
     test/test_filter_attach_with_override.cpp
     test/test_replace_attach_with_override.cpp
     test/test_attach_with_unified_interface.cpp
+    test/test_attach_private_data_parsing.cpp
+    test/test_base_attach_impl.cpp
 )
+option(TEST_LCOV "option for lcov" OFF)
 add_executable(bpftime_frida_uprobe_attach_tests ${TEST_SOURCES})
+
+if (${TEST_LCOV}) 
+    target_compile_options(bpftime_frida_uprobe_attach_tests PRIVATE -fprofile-arcs -ftest-coverage -fprofile-update=atomic)
+endif()
 
 if(${ENABLE_EBPF_VERIFIER} AND NOT TARGET Catch2)
     message(STATUS "Adding Catch2 by FetchContent for frida_uprobe_attach_impl")
@@ -39,7 +46,12 @@ if(${ENABLE_EBPF_VERIFIER} AND NOT TARGET Catch2)
 endif()
 
 add_dependencies(bpftime_frida_uprobe_attach_tests Catch2 bpftime_frida_uprobe_attach_impl spdlog::spdlog)
-target_link_libraries(bpftime_frida_uprobe_attach_tests PRIVATE Catch2::Catch2WithMain bpftime_frida_uprobe_attach_impl spdlog::spdlog)
+if (${TEST_LCOV}) 
+    target_link_options(bpftime_frida_uprobe_attach_tests PRIVATE -lgcov)
+    target_link_libraries(bpftime_frida_uprobe_attach_tests PRIVATE Catch2::Catch2WithMain bpftime_frida_uprobe_attach_impl spdlog::spdlog gcov)
+else ()
+    target_link_libraries(bpftime_frida_uprobe_attach_tests PRIVATE Catch2::Catch2WithMain bpftime_frida_uprobe_attach_impl spdlog::spdlog)
+endif()
 target_include_directories(bpftime_frida_uprobe_attach_tests PRIVATE ${FRIDA_UPROBE_ATTACH_IMPL_INCLUDE} ${Catch2_INCLUDE} ${SPDLOG_INCLUDE})
 
 add_test(NAME bpftime_frida_uprobe_attach_tests COMMAND bpftime_frida_uprobe_attach_tests)

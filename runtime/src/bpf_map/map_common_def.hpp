@@ -68,6 +68,16 @@ struct bytes_vec_hasher {
 		return seed;
 	}
 };
+
+static inline bool check_update_flags(uint64_t flags)
+{
+	if (flags != 0 /*BPF_ANY*/ && flags != 1 /*BPF_NOEXIST*/ &&
+	    flags != 2 /*BPF_EXIST*/) {
+		errno = EINVAL;
+		return false;
+	}
+	return true;
+}
 } // namespace bpftime
 
 #endif

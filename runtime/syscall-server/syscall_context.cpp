@@ -78,11 +78,11 @@ syscall_context::syscall_context()
 	init_original_functions();
 	// FIXME: merge this into the runtime config
 	load_config_from_env();
-	auto runtime_config = bpftime::get_agent_config_from_env();
+	auto runtime_config = bpftime::construct_agent_config_from_env();
 	pthread_spin_init(&this->mocked_file_lock, 0);
 	SPDLOG_INFO("Init bpftime syscall mocking..");
 	SPDLOG_INFO("The log will be written to: {}",
-		    runtime_config.logger_output_path);
+		    runtime_config.get_logger_output_path());
 }
 
 void syscall_context::try_startup()
@@ -315,14 +315,18 @@ long syscall_context::handle_sysbpf(int cmd, union bpf_attr *attr, size_t size)
 	switch (cmd) {
 	case BPF_MAP_CREATE: {
 		if (run_with_kernel) {
-			SPDLOG_DEBUG("Creating kernel map");
+			std::string map_info = fmt::format("Creating kernel map type={}, name={}, key_size={}, value_size={}", 
+				attr->map_type, attr->map_name, attr->key_size, attr->value_size);
+			SPDLOG_DEBUG("{}", map_info);
 			int fd = orig_syscall_fn(__NR_bpf, (long)cmd,
 						 (long)(uintptr_t)attr,
 						 (long)size);
-			SPDLOG_DEBUG("Created kernel map {}", fd);
+			SPDLOG_DEBUG("Created kernel map finished, fd={}", fd);
 			return create_kernel_bpf_map(fd);
 		}
-		SPDLOG_DEBUG("Creating map");
+		std::string map_info = fmt::format("Creating map type={}, name={}, key_size={}, value_size={}", 
+			attr->map_type, attr->map_name, attr->key_size, attr->value_size);
+		SPDLOG_DEBUG("{}", map_info);
 		int id = bpftime_maps_create(
 			-1 /* let the shm alloc fd for us */, attr->map_name,
 			bpftime::bpf_map_attr{
@@ -345,7 +349,8 @@ long syscall_context::handle_sysbpf(int cmd, union bpf_attr *attr, size_t size)
 		return id;
 	}
 	case BPF_MAP_LOOKUP_ELEM: {
-		SPDLOG_DEBUG("Looking up map {}", attr->map_fd);
+		SPDLOG_DEBUG("Looking up map {}, key={:x}", attr->map_fd,
+			    (uintptr_t)attr->key);
 		if (run_with_kernel) {
 			return orig_syscall_fn(__NR_bpf, (long)cmd,
 					       (long)(uintptr_t)attr,
@@ -368,7 +373,9 @@ long syscall_context::handle_sysbpf(int cmd, union bpf_attr *attr, size_t size)
 		return 0;
 	}
 	case BPF_MAP_UPDATE_ELEM: {
-		SPDLOG_DEBUG("Updating map");
+		SPDLOG_DEBUG("Updating map {}, key={:x}, value={:x}, flags={}",
+			    attr->map_fd, (uintptr_t)attr->key,
+			    (uintptr_t)attr->value, attr->flags);
 		if (run_with_kernel) {
 			return orig_syscall_fn(__NR_bpf, (long)cmd,
 					       (long)(uintptr_t)attr,
@@ -380,7 +387,8 @@ long syscall_context::handle_sysbpf(int cmd, union bpf_attr *attr, size_t size)
 			(uint64_t)attr->flags);
 	}
 	case BPF_MAP_DELETE_ELEM: {
-		SPDLOG_DEBUG("Deleting map");
+		SPDLOG_DEBUG("Deleting map {}, key={:x}", attr->map_fd,
+			    (uintptr_t)attr->key);
 		if (run_with_kernel) {
 			return orig_syscall_fn(__NR_bpf, (long)cmd,
 					       (long)(uintptr_t)attr,
@@ -390,7 +398,8 @@ long syscall_context::handle_sysbpf(int cmd, union bpf_attr *attr, size_t size)
 			attr->map_fd, (const void *)(uintptr_t)attr->key);
 	}
 	case BPF_MAP_GET_NEXT_KEY: {
-		SPDLOG_DEBUG("Getting next key");
+		SPDLOG_DEBUG("Getting next key for map {}, key={:x}",
+			    attr->map_fd, (uintptr_t)attr->key);
 		if (run_with_kernel) {
 			return orig_syscall_fn(__NR_bpf, (long)cmd,
 					       (long)(uintptr_t)attr,
@@ -790,8 +799,7 @@ int syscall_context::handle_epoll_wait(int epfd, epoll_event *evt,
 		orig_epoll_wait_fn(epfd, evt, maxevents, timeout);
 	try_startup();
 	if (bpftime_is_epoll_handler(epfd)) {
-		int ret = bpftime_epoll_wait(epfd, evt, maxevents, timeout);
-		return ret;
+		return bpftime_epoll_wait(epfd, evt, maxevents, timeout);
 	}
 	return orig_epoll_wait_fn(epfd, evt, maxevents, timeout);
 }
@@ -840,4 +848,16 @@ FILE *syscall_context::handle_fopen(const char *pathname, const char *flags)
 		return replacement_fp;
 	}
 	return orig_fopen_fn(pathname, flags);
+}
+
+int syscall_context::handle_dup3(int oldfd, int newfd, int flags)
+{
+	SPDLOG_DEBUG("Calling mocked dup3 {}, {}", oldfd, newfd);
+	if (!enable_mock || run_with_kernel)
+		return orig_syscall_fn(__NR_dup3, (long)oldfd, (long)newfd, (long)flags);
+	try_startup();
+	if (bpftime_is_map_fd(oldfd)) {
+		return bpftime_maps_dup(oldfd, newfd);
+	}
+	return orig_syscall_fn(__NR_dup3, (long)oldfd, (long)newfd, (long)flags);
 }

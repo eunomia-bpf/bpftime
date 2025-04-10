@@ -141,11 +141,7 @@ endif()
 add_subdirectory(third_party/spdlog)
 
 if(NOT DEFINED SPDLOG_ACTIVE_LEVEL)
-  if(CMAKE_BUILD_TYPE STREQUAL "Debug")
-    add_compile_definitions(SPDLOG_ACTIVE_LEVEL=SPDLOG_LEVEL_TRACE)
-  else()
-    add_compile_definitions(SPDLOG_ACTIVE_LEVEL=SPDLOG_LEVEL_INFO)
-  endif()
+  add_compile_definitions(SPDLOG_ACTIVE_LEVEL=SPDLOG_LEVEL_TRACE)
 endif()
 
 set(SPDLOG_INCLUDE ${CMAKE_CURRENT_SOURCE_DIR}/third_party/spdlog/include)
@@ -160,18 +156,39 @@ add_subdirectory(attach)
 
 add_subdirectory(runtime)
 
+# option to use probe read/write checks
+if(ENABLE_PROBE_READ_CHECK)
+  target_compile_definitions(runtime PRIVATE ENABLE_PROBE_READ_CHECK=1)
+endif()
+
+if(ENABLE_PROBE_WRITE_CHECK)
+  target_compile_definitions(runtime PRIVATE ENABLE_PROBE_WRITE_CHECK=1)
+endif()
+
 # add to single archive if option is enabled
 if(${BPFTIME_BUILD_STATIC_LIB})
-  set(UBPF_BUILD_DIR ${CMAKE_CURRENT_BINARY_DIR}/vm/ubpf-vm/ubpf)
+  if(${BPFTIME_UBPF_JIT})
+      set(UBPF_BUILD_DIR ${CMAKE_CURRENT_BINARY_DIR}/vm/compat/ubpf-vm)
+  endif()
+  if(${BPFTIME_LLVM_JIT})
+    set(LLVM_BUILD_DIR ${CMAKE_CURRENT_BINARY_DIR}/vm/compat/llvm-vm)
+  endif()
   message(STATUS " Adding libraries to single static archive file")
   bpftime_add_static_lib_component_command(bpftime_vm)
 
-  if(${BPFTIME_LLVM_JIT})
-    bpftime_add_static_lib_component_command(bpftime_llvm_vm)
-  else()
-    bpftime_add_static_lib_component_command(bpftime_ubpf_vm)
-    bpftime_add_libs_component_command(${UBPF_BUILD_DIR}/lib/libubpf.a)
-  endif()
+if(${BPFTIME_LLVM_JIT})
+  bpftime_add_static_lib_component_command(bpftime_llvm_vm)
+  bpftime_add_libs_component_command(${LLVM_BUILD_DIR}/libbpftime_llvm_vm.a)
+  message(STATUS " Adding LLVM JIT to static archive")
+endif()
+
+if(${BPFTIME_UBPF_JIT})
+  bpftime_add_static_lib_component_command(bpftime_ubpf_vm)
+  bpftime_add_libs_component_command(${UBPF_BUILD_DIR}/ubpf/lib/libubpf.a)
+  bpftime_add_libs_component_command(${UBPF_BUILD_DIR}/libbpftime_ubpf_vm.a)
+  message(STATUS " Adding uBPF JIT to static archive")
+endif()
+  
 
   bpftime_add_libs_component_command(${FRIDA_GUM_INSTALL_DIR}/libfrida-gum.a)
   bpftime_add_static_lib_component_command(bpftime_frida_uprobe_attach_impl)

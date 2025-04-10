@@ -15,3 +15,8 @@ target_include_directories(bpftime_text_segment_transformer
     ${FRIDA_GUM_INSTALL_DIR}
     ${SPDLOG_INCLUDE}
 )
+
+if (${TEST_LCOV}) 
+    target_compile_options(bpftime_text_segment_transformer PRIVATE -fprofile-arcs -ftest-coverage -fprofile-update=atomic)
+    target_link_options(bpftime_text_segment_transformer PRIVATE -fprofile-arcs)
+endif()

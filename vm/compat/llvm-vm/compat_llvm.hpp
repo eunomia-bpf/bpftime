@@ -11,6 +11,8 @@
 namespace bpftime::vm::llvm
 {
 
+std::unique_ptr<bpftime::vm::compat::bpftime_vm_impl> create_llvm_vm_instance();
+
 class bpftime_llvm_vm : public bpftime::llvmbpf_vm, public bpftime::vm::compat::bpftime_vm_impl {
 public:
     bpftime_llvm_vm() : bpftime::llvmbpf_vm() {}

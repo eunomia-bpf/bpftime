@@ -194,6 +194,8 @@ static void handle_sub_process()
 
 __attribute__((optnone)) TEST_CASE("Test shm progs attach")
 {
+	bpftime::agent_config config;
+	config.set_vm_name("llvm");
 	spdlog::set_level(spdlog::level::debug);
 	SPDLOG_INFO("parent process start");
 	bpftime::shm_remove remover(SHM_NAME);
@@ -205,10 +207,10 @@ __attribute__((optnone)) TEST_CASE("Test shm progs attach")
 	auto &manager_ref = *manager;
 
 	// open the object file
-	bpftime_object *obj = bpftime_object_open(obj_path);
+	bpftime_object *obj = bpftime_object_open(obj_path, std::move(config));
 	REQUIRE(obj != nullptr);
 	bpftime_prog *prog = bpftime_object__next_program(obj, NULL);
-
+	REQUIRE(prog != nullptr);
 	// init the attach ctx
 	bpf_attach_ctx ctx;
 	ctx.register_attach_impl(
@@ -229,7 +231,6 @@ __attribute__((optnone)) TEST_CASE("Test shm progs attach")
 	int replace_link_id = attach_replace(manager_ref, segment, prog, ctx);
 	int uprobe_link_id = attach_uprobe(manager_ref, segment, prog, ctx);
 
-	agent_config config;
 	config.enable_ufunc_helper_group = true;
 	ctx.init_attach_ctx_from_handlers(manager, config);
 

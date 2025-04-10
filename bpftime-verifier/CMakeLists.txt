@@ -34,8 +34,20 @@ if(NOT TARGET Catch2)
     FetchContent_MakeAvailable(Catch2)
 endif()
 
+option(TEST_LCOV "option for lcov" OFF)
 add_executable(bpftime_verifier_tests ${TEST_SOURCES})
+
+if (${TEST_LCOV}) 
+    target_compile_options(bpftime_verifier_tests PRIVATE -fprofile-arcs -ftest-coverage -fprofile-update=atomic)
+endif()
+
 add_dependencies(bpftime_verifier_tests bpftime-verifier)
-target_link_libraries(bpftime_verifier_tests PRIVATE bpftime-verifier Catch2::Catch2WithMain)
+
+if (${TEST_LCOV}) 
+    target_link_options(bpftime_verifier_tests PRIVATE -lgcov)
+    target_link_libraries(bpftime_verifier_tests PRIVATE bpftime-verifier Catch2::Catch2WithMain gcov)
+else ()
+    target_link_libraries(bpftime_verifier_tests PRIVATE bpftime-verifier Catch2::Catch2WithMain)
+endif()
 target_include_directories(bpftime_verifier_tests PRIVATE ${BPFTIME_VERIFIER_INCLUDE})
 add_test(NAME bpftime_verifier_tests COMMAND bpftime_verifier_tests)

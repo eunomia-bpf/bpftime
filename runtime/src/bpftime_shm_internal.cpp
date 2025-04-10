@@ -550,7 +550,7 @@ bpftime_shm::bpftime_shm(const char *shm_name, shm_open_type type)
 	: open_type(type)
 {
 	// Get the config from env because the shared memory is not initialized
-	size_t memory_size = get_agent_config_from_env().shm_memory_size;
+	size_t memory_size = construct_agent_config_from_env().shm_memory_size;
 	if (type == shm_open_type::SHM_OPEN_ONLY) {
 		SPDLOG_DEBUG("start: bpftime_shm for client setup");
 		// open the shm
@@ -699,6 +699,33 @@ int bpftime_shm::add_bpf_map(int fd, const char *name,
 		fd, bpftime::bpf_map_handler(fd, name, segment, attr), segment);
 }
 
+int bpftime_shm::dup_bpf_map(int oldfd, int newfd)
+{
+	if (!is_map_fd(oldfd)) {
+		SPDLOG_ERROR("Expected {} to be a map fd", oldfd);
+		errno = EBADF;
+		return -1;
+	}
+	if (newfd < 0) {
+		// if fd is negative, we need to create a new fd for allocating
+		newfd = open_fake_fd();
+	}
+	if (!manager) {
+		return -1;
+	}
+	
+	// Get the original map handler
+	auto &handler =
+		std::get<bpftime::bpf_map_handler>(manager->get_handler(oldfd));	
+	std::string new_name = std::string("dup_") + handler.name.c_str();
+	// Create a new handler with the same parameters
+	return manager->set_handler(
+		newfd,
+		bpftime::bpf_map_handler(newfd, new_name.c_str(), segment, handler.attr), // Copy construct the handler
+		segment
+	);
+}
+
 const handler_manager *bpftime_shm::get_manager() const
 {
 	return manager;
@@ -722,25 +749,25 @@ bool bpftime_shm::is_software_perf_event_handler_fd(int fd) const
 	return hd.type == (int)bpf_event_type::PERF_TYPE_SOFTWARE;
 }
 
-// local agent config can be used for test or local process
-static agent_config local_agent_config = {};
-
-void bpftime_shm::set_agent_config(const struct agent_config &config)
+void bpftime_shm::set_agent_config(struct agent_config &&config)
 {
 	if (agent_config == nullptr) {
 		SPDLOG_INFO(
 			"global agent_config is nullptr, set current process config");
-		local_agent_config = config;
+		local_agent_config.emplace(std::move(config));
 		return;
 	}
-	*agent_config = config;
+
+	agent_config->~agent_config();
+	config.change_to_shm_object(segment);
+	std::construct_at(agent_config, std::move(config));
 }
 
 const struct agent_config &bpftime_shm::get_agent_config()
 {
 	if (agent_config == nullptr) {
 		SPDLOG_DEBUG("use current process config");
-		return local_agent_config;
+		return *local_agent_config;
 	}
 	return *agent_config;
 }
@@ -750,9 +777,9 @@ const bpftime::agent_config &bpftime_get_agent_config()
 	return shm_holder.global_shared_memory.get_agent_config();
 }
 
-void bpftime_set_agent_config(const bpftime::agent_config &cfg)
+void bpftime_set_agent_config(bpftime::agent_config &&cfg)
 {
-	shm_holder.global_shared_memory.set_agent_config(cfg);
+	shm_holder.global_shared_memory.set_agent_config(std::move(cfg));
 }
 
 std::optional<void *>

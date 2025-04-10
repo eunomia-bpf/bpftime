@@ -163,7 +163,7 @@ extern const shm_open_type global_shm_open_type;
 const bpftime::agent_config &bpftime_get_agent_config();
 
 // Set the runtime config in the shared memory.
-void bpftime_set_agent_config(const bpftime::agent_config &cfg);
+void bpftime_set_agent_config(struct bpftime::agent_config &&cfg);
 
 // Map ops for register external map types and operations
 //
@@ -286,7 +286,13 @@ int bpftime_progs_create(int fd, const ebpf_inst *insn, size_t insn_cnt,
 // @param[fd]: fd is the fd allocated by the kernel. if fd is -1, then the
 // function will allocate a new perf event fd.
 int bpftime_maps_create(int fd, const char *name, bpftime::bpf_map_attr attr);
-
+// duplicate a bpf map in the global shared memory
+//
+// @param[oldfd]: the fd of the map to be duplicated
+// @param[newfd]: the fd of the new map
+//
+// @return: the fd of the new map
+int bpftime_maps_dup(int oldfd, int newfd);
 // get the bpf map info from the global shared memory
 int bpftime_map_get_info(int fd, bpftime::bpf_map_attr *out_attr,
 			 const char **out_name, bpftime::bpf_map_type *type);

@@ -245,3 +245,8 @@ if(BPFTIME_ENABLE_UNIT_TESTING AND BPFTIME_BUILD_WITH_LIBBPF)
   add_subdirectory(test)
   add_subdirectory(unit-test)
 endif()
+
+if (${TEST_LCOV}) 
+  target_compile_options(${PROJECT_NAME} PUBLIC -fprofile-arcs -ftest-coverage -fprofile-update=atomic)
+  target_link_options(${PROJECT_NAME} PUBLIC  -fprofile-arcs)
+endif()

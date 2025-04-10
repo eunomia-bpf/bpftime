@@ -48,6 +48,9 @@ class bpftime_shm {
 	// Record which pids are injected by agent
 	alive_agent_pids *injected_pids;
 
+	// local agent config can be used for test or local process
+	std::optional<struct agent_config> local_agent_config;
+
 #if BPFTIME_ENABLE_MPK
 	// mpk key for protect shm
 	bool is_mpk_init = false;
@@ -58,7 +61,7 @@ class bpftime_shm {
 	// Get the configuration object
 	const struct agent_config &get_agent_config();
 	// Set the configuration object
-	void set_agent_config(const struct agent_config &config);
+	void set_agent_config(struct agent_config &&config);
 	// Check whether a certain pid was already equipped with syscall tracer
 	// Using a set stored in the shared memory
 	bool check_syscall_trace_setup(int pid);
@@ -112,6 +115,7 @@ class bpftime_shm {
 
 	// create a bpf map fd
 	int add_bpf_map(int fd, const char *name, bpftime::bpf_map_attr attr);
+	int dup_bpf_map(int oldfd, int newfd);
 	uint32_t bpf_map_value_size(int fd) const;
 
 	const void *bpf_map_lookup_elem(int fd, const void *key,

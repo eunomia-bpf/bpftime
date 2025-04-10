@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.21)
+cmake_minimum_required(VERSION 3.16)
 #
 # Project details
 #
@@ -7,6 +7,14 @@ project(
   VERSION 0.1.0
   LANGUAGES C CXX
 )
+
+if(NOT DEFINED BPFTIME_LLVM_JIT)
+  set(BPFTIME_LLVM_JIT ON CACHE BOOL "Use LLVM as jit backend.")
+endif()
+
+if(NOT DEFINED BPFTIME_UBPF_JIT)
+  set(BPFTIME_UBPF_JIT ON CACHE BOOL "Use uBPF as jit backend.")
+endif()
 
 
 if(NOT CMAKE_BUILD_TYPE)
@@ -27,8 +35,14 @@ endif()
 
 if(${BPFTIME_LLVM_JIT})
   set(BPFTIME_BPF_RUNTIME_NAME "bpftime_llvm_vm")
-else()
+endif()
+
+if(${BPFTIME_UBPF_JIT})
   set(BPFTIME_BPF_RUNTIME_NAME "bpftime_ubpf_vm")
+endif()
+
+if(NOT BPFTIME_BPF_RUNTIME_NAME)
+  message(WARNING "No built-in VMs has been enabled.")
 endif()
 
 add_subdirectory(compat)

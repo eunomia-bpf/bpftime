@@ -7,7 +7,8 @@ option(BPFTIME_BUILD_EXECUTABLE "Build the project as an executable, rather than
 #
 # library options
 #
-option(BPFTIME_LLVM_JIT "Use LLVM as jit backend." OFF)
+option(BPFTIME_LLVM_JIT "Use LLVM as jit backend." ON)
+option(BPFTIME_UBPF_JIT "Use uBPF as jit backend." ON)
 
 #
 # Compiler options
@@ -88,3 +89,11 @@ option(BPFTIME_BUILD_STATIC_LIB "Whether to build a single static library for di
 
 # whether to build bpftime with libbpf and other linux headers
 option(BPFTIME_BUILD_WITH_LIBBPF "Whether to build with libbpf and other linux headers" ON)
+
+# whether to enable probe write check
+option(ENABLE_PROBE_WRITE_CHECK "Whether to enable probe write check" OFF)
+
+# whether to enable probe read check
+option(ENABLE_PROBE_READ_CHECK "Whether to enable probe read check" ON)
+# whether to enable probe write check
+option(ENABLE_PROBE_WRITE_CHECK "Whether to enable probe write check" ON)

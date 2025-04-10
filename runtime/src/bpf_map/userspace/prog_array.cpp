@@ -9,6 +9,7 @@
 #include "linux/bpf.h"
 #include <bpf/libbpf.h>
 #include <gnu/lib-names.h>
+#include <asm/unistd.h>
 #elif __APPLE__
 #include "bpftime_epoll.h"
 #endif

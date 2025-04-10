@@ -4,28 +4,32 @@
  * All rights reserved.
  */
 #include "bpf_map/map_common_def.hpp"
+#include "linux/bpf.h"
 #include "spdlog/fmt/bin_to_hex.h"
 #include "spdlog/spdlog.h"
 #include <algorithm>
 #include <bpf_map/userspace/per_cpu_hash_map.hpp>
+#include <cerrno>
+#include <cstring>
 #include <unistd.h>
 #include "platform_utils.hpp"
+
 
 namespace bpftime
 {
 per_cpu_hash_map_impl::per_cpu_hash_map_impl(
 	boost::interprocess::managed_shared_memory &memory, uint32_t key_size,
-	uint32_t value_size)
-	: per_cpu_hash_map_impl(memory, key_size, value_size,
+	uint32_t value_size, uint32_t max_entries)
+	: per_cpu_hash_map_impl(memory, key_size, value_size, max_entries,
 				sysconf(_SC_NPROCESSORS_ONLN))
 {
 }
 
 per_cpu_hash_map_impl::per_cpu_hash_map_impl(
 	boost::interprocess::managed_shared_memory &memory, uint32_t key_size,
-	uint32_t value_size, int ncpu)
+	uint32_t value_size, uint32_t max_entries, int ncpu)
 	: impl(memory.get_segment_manager()), key_size(key_size),
-	  value_size(value_size), ncpu(ncpu),
+	  value_size(value_size), ncpu(ncpu), _max_entries(max_entries),
 	  value_template(value_size * ncpu, memory.get_segment_manager()),
 	  key_templates(memory.get_segment_manager()),
 	  single_value_templates(memory.get_segment_manager())
@@ -64,6 +68,8 @@ void *per_cpu_hash_map_impl::elem_lookup(const void *key)
 long per_cpu_hash_map_impl::elem_update(const void *key, const void *value,
 					uint64_t flags)
 {
+	if (!check_update_flags(flags))
+		return -1;
 	int cpu = my_sched_getcpu();
 	SPDLOG_DEBUG("Per cpu update, key {}, value {}", (const char *)key,
 		     *(long *)value);
@@ -115,7 +121,7 @@ int per_cpu_hash_map_impl::map_get_next_key(const void *key, void *next_key)
 	}
 	// No need to be allocated at shm. Allocate as a local variable to make
 	// it thread safe, since we use sharable lock
-	bytes_vec key_vec = this->key_templates[0];
+	bytes_vec &key_vec = this->key_templates[0];
 	key_vec.assign((uint8_t *)key, (uint8_t *)key + key_size);
 
 	auto itr = impl.find(key_vec);
@@ -139,7 +145,7 @@ void *per_cpu_hash_map_impl::elem_lookup_userspace(const void *key)
 		errno = ENOENT;
 		return nullptr;
 	}
-	bytes_vec key_vec = this->key_templates[0];
+	bytes_vec &key_vec = this->key_templates[0];
 	key_vec.assign((uint8_t *)key, (uint8_t *)key + key_size);
 	if (auto itr = impl.find(key_vec); itr != impl.end()) {
 		SPDLOG_TRACE("Exit elem lookup of hash map: {}",
@@ -157,24 +163,54 @@ long per_cpu_hash_map_impl::elem_update_userspace(const void *key,
 						  const void *value,
 						  uint64_t flags)
 {
-	bytes_vec key_vec = this->key_templates[0];
+	if (!check_update_flags(flags))
+		return -1;
+	bytes_vec &key_vec = this->key_templates[0];
 	bytes_vec value_vec = this->value_template;
 	key_vec.assign((uint8_t *)key, (uint8_t *)key + key_size);
 	value_vec.assign((uint8_t *)value,
 			 (uint8_t *)value + value_size * ncpu);
-
-	if (auto itr = impl.find(key_vec); itr != impl.end()) {
-		itr->second = value_vec;
-	} else {
-		impl.insert(bi_map_value_ty(key_vec, value_vec));
+	bool elem_exists = impl.find(key_vec) != impl.end();
+	if (flags == BPF_NOEXIST && elem_exists) {
+		errno = EEXIST;
+		return -1;
 	}
+	if (flags == BPF_EXIST && !elem_exists) {
+		errno = ENOENT;
+		return -1;
+	}
+	if (elem_exists == false && impl.size() == _max_entries) {
+		errno = E2BIG;
+		return -1;
+	}
+	impl.insert_or_assign(key_vec, value_vec);
 	return 0;
 }
 long per_cpu_hash_map_impl::elem_delete_userspace(const void *key)
 {
-	bytes_vec key_vec = this->key_templates[0];
+	bytes_vec &key_vec = this->key_templates[0];
 	key_vec.assign((uint8_t *)key, (uint8_t *)key + key_size);
-	impl.erase(key_vec);
+	auto itr = impl.find(key_vec);
+	if (itr == impl.end()) {
+		errno = ENOENT;
+		return -1;
+	}
+	impl.erase(itr);
+	return 0;
+}
+
+long per_cpu_hash_map_impl::lookup_and_delete_userspace(const void *key,
+							void *value)
+{
+	bytes_vec &key_vec = this->key_templates[0];
+	key_vec.assign((uint8_t *)key, (uint8_t *)key + key_size);
+	auto itr = this->impl.find(key_vec);
+	if (itr == impl.end()) {
+		errno = ENOENT;
+		return -1;
+	}
+	memcpy(value, itr->second.data(), ncpu * value_size);
+	impl.erase(itr);
 	return 0;
 }
 } // namespace bpftime

@@ -26,9 +26,11 @@ Read and write user memory:
 ## Suggest build configuration
 
 ```sh
-cmake -Bbuild -DLLVM_DIR=/usr/lib/llvm-15/cmake -DCMAKE_BUILD_TYPE:STRING=RelWithDebInfo -DBPFTIME_LLVM_JIT=1 -DBPFTIME_ENABLE_LTO=1
+cmake -Bbuild -DLLVM_DIR=/usr/lib/llvm-15/cmake -DCMAKE_BUILD_TYPE:STRING=RelWithDebInfo -DBPFTIME_LLVM_JIT=1 -DBPFTIME_ENABLE_LTO=1 -DSPDLOG_ACTIVE_LEVEL=SPDLOG_LEVEL_INFO
 cmake --build build --config RelWithDebInfo --target install -j
 ```
+
+If you fail to build , notice LLVM version.
 
 ## build and run at a click
 
@@ -195,7 +197,7 @@ Tested on `kernel version 6.2` and `Intel(R) Xeon(R) Gold 5418Y` CPU.
 
 ### Uprobe and read/write with `bpf_probe_write_user` and `bpf_probe_read_user`
 
-Userspace:
+Kernelspace:
 
 ```txt
 Benchmarking __bench_uprobe_uretprobe in thread 1
@@ -232,6 +234,8 @@ Average time usage 383.135720 ns, iter 100000 times
 Benchmarking __bench_write in thread 1
 Average time usage 389.037170 ns, iter 100000 times
 ```
+
+noted that the performance of `bpf_probe_read_user` and `bpf_probe_write_user` will be influenced by the option of `ENABLE_PROBE_WRITE_USER` and `ENABLE_PROBE_READ_USER`.
 
 ### maps operations
 
