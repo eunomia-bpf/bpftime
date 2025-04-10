@@ -33,7 +33,7 @@ jobs:
       - name: Install lcov (Ubuntu)
         if: ${{matrix.container.name=='ubuntu'}}
         run: |
-          apt-get install -y lcov tree
+          apt-get update -y && apt-get install -y lcov tree
       - name: Install lcov (Fedora)
         if: ${{matrix.container.name =='fedora'}}
         run: |
