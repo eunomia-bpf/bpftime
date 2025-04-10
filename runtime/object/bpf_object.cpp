@@ -73,6 +73,8 @@ void bpftime_object::create_programs()
 		if (!prog) {
 			continue;
 		}
+		SPDLOG_INFO("create_programs: found program {}",
+			   bpf_program__name(prog));
 		struct ebpf_inst *insns =
 			(struct ebpf_inst *)bpf_program__insns(prog);
 		size_t cnt = bpf_program__insn_cnt(prog);
@@ -205,7 +207,7 @@ static int libbpf_print_fn(enum libbpf_print_level level, const char *format,
 // The execution unit or bpf function.
 class bpftime_prog;
 // find the program by section name
-class bpftime_prog *bpftime_object_find_program_by_name(bpftime_object *obj,
+bpftime_prog *bpftime_object_find_program_by_name(bpftime_object *obj,
 							const char *name)
 {
 	if (!obj || !name) {
@@ -214,7 +216,7 @@ class bpftime_prog *bpftime_object_find_program_by_name(bpftime_object *obj,
 	return obj->find_program_by_name(name);
 }
 
-class bpftime_prog *bpftime_object_find_program_by_secname(bpftime_object *obj,
+bpftime_prog *bpftime_object_find_program_by_secname(bpftime_object *obj,
 							   const char *secname)
 {
 	if (!obj || !secname) {
@@ -223,7 +225,7 @@ class bpftime_prog *bpftime_object_find_program_by_secname(bpftime_object *obj,
 	return obj->find_program_by_secname(secname);
 }
 
-class bpftime_prog *bpftime_object__next_program(const bpftime_object *obj,
+bpftime_prog *bpftime_object__next_program(const bpftime_object *obj,
 						 class bpftime_prog *prog)
 {
 	if (!obj) {

@@ -33,7 +33,7 @@ jobs:
       - name: Install lcov (Ubuntu)
         if: ${{matrix.container.name=='ubuntu'}}
         run: |
-          apt-get install -y lcov tree
+          apt-get update -y && apt-get install -y lcov tree
       - name: Install lcov (Fedora)
         if: ${{matrix.container.name =='fedora'}}
         run: |
@@ -267,7 +267,7 @@ jobs:
       - name: Generate example coverage (Ubuntu)
         if: "matrix.container.image == 'ubuntu-2204'"
         run: |
-          apt-get install -y gpg lcov
+          apt-get update -y && apt-get install -y gpg lcov
           lcov --capture --directory . --directory .github --directory /github/home/.bpftime --output-file coverage-example.info --gcov-tool $(which gcov-12)
           lcov --remove coverage-example.info '/usr/*' --output-file coverage-example.info
           lcov --list coverage-example.info

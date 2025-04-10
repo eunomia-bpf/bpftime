@@ -210,7 +210,7 @@ __attribute__((optnone)) TEST_CASE("Test shm progs attach")
 	bpftime_object *obj = bpftime_object_open(obj_path, std::move(config));
 	REQUIRE(obj != nullptr);
 	bpftime_prog *prog = bpftime_object__next_program(obj, NULL);
-
+	REQUIRE(prog != nullptr);
 	// init the attach ctx
 	bpf_attach_ctx ctx;
 	ctx.register_attach_impl(
