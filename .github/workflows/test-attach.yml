@@ -11,29 +11,29 @@
 #   group: ${{ github.workflow }}-${{ github.ref }}-${{ github.event_name }}
 #   cancel-in-progress: true
 
-# jobs:
-#   build_and_test_attach:
-#     runs-on: "ubuntu-latest"
-#     strategy:
-#       matrix:
-#         container:
-#           - ubuntu-2204
-#           - fedora-39
-#     container:
-#       image: "manjusakalza/bpftime-base-image:${{matrix.container}}"
-#       options: --privileged -v /sys/kernel/debug/:/sys/kernel/debug:rw -v /sys/kernel/tracing:/sys/kernel/tracing:rw
-#     steps:
-#       - uses: actions/checkout@v2
-#         with:
-#           submodules: 'recursive'
-#       - name: Install dependencies
-#         if: "matrix.container == 'ubuntu-2204'"
-#         run: |
-#           apt-get install -y lcov libzstd-dev libboost-all-dev gpg
-#       - name: Install lcov
-#         if: "matrix.container == 'fedora-39'"
-#         run: |
-#           dnf install -y lcov
+jobs:
+  build_and_test_attach:
+    runs-on: "ubuntu-latest"
+    strategy:
+      matrix:
+        container:
+          - ubuntu-2204
+          - fedora-39
+    container:
+      image: "manjusakalza/bpftime-base-image:${{matrix.container}}"
+      options: --privileged -v /sys/kernel/debug/:/sys/kernel/debug:rw -v /sys/kernel/tracing:/sys/kernel/tracing:rw
+    steps:
+      - uses: actions/checkout@v2
+        with:
+          submodules: 'recursive'
+      - name: Install dependencies
+        if: "matrix.container == 'ubuntu-2204'"
+        run: |
+          apt-get update -y && apt-get install -y lcov libzstd-dev libboost-all-dev gpg
+      - name: Install lcov
+        if: "matrix.container == 'fedora-39'"
+        run: |
+          dnf install -y lcov
     
 #       - name: Build for frida uprobe attach tests
 #         run: |
