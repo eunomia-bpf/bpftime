@@ -251,7 +251,7 @@ endif()
 add_subdirectory(agent)
 add_subdirectory(syscall-server)
 # Commented out due to linkage errors
-# add_subdirectory(pos)
+add_subdirectory(pos)
 
 #
 # Unit testing setup

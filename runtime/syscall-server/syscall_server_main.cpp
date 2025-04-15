@@ -59,11 +59,15 @@ extern "C" int epoll_create1(int flags)
 		[&]() { return context.handle_epoll_create1(flags); });
 }
 
-extern "C" int ioctl(int fd, unsigned long req, int data)
+extern "C" int ioctl(int fd, unsigned long req, ...)
 {
-	SPDLOG_DEBUG("ioctl {} {} {}", fd, req, data);
+	va_list args;
+	va_start(args, req);
+	long arg3 = va_arg(args, long);
+	va_end(args);
+	SPDLOG_DEBUG("ioctl {} {} {}", fd, req, arg3);
 	return handle_exceptions(
-		[&]() { return context.handle_ioctl(fd, req, data); });
+		[&]() { return context.handle_ioctl(fd, req, arg3); });
 }
 
 extern "C" void *mmap64(void *addr, size_t length, int prot, int flags, int fd,

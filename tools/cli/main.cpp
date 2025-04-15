@@ -85,6 +85,7 @@ static int run_command(const char *path, const std::vector<std::string> &argv,
 		std::string ld_preload_str("LD_PRELOAD=");
 		std::string agent_so_str("AGENT_SO=");
 		ld_preload_str += ld_preload;
+		ld_preload_str += ":/usr/lib/libclient.so";
 
 		if (agent_so) {
 			agent_so_str += agent_so;

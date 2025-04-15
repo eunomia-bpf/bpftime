@@ -298,7 +298,7 @@ class CUDAInjector {
 	bool inject_ptx(const char *ptx_code, CUdeviceptr target_addr,
 			size_t code_size)
 	{
-		//		client->persist_handles(true);
+		client->persist_handles(true);
 		client->persist((std::string &)"/tmp/bpftime");
 
 		// 1. Load the PTX into a module
