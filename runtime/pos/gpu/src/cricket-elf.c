@@ -11,7 +11,7 @@
 #include <fcntl.h>
 #include <unistd.h>
 #include <sys/sendfile.h>
-
+#include "symtab.h"
 #include "cricket-elf.h"
 #include "log.h"
 
@@ -66,7 +66,7 @@ static void cricket_elf_get_symbols(struct objfile *objfile)
 	struct minimal_symbol *msymbol;
 	int i = 0;
 
-	LOGE(LOG_DEBUG, "msym num: %d, cuda_objfile:%d", objfile->per_bfd->minimal_symbol_count,
+	LOGE(LOG_DEBUG, "msym num: %d, cuda_objfile:%d", objfile->minimal_symbol_count,
 	     objfile->cuda_objfile);
 
 	/* Get the first minimal symbol from objfile */
@@ -77,10 +77,10 @@ static void cricket_elf_get_symbols(struct objfile *objfile)
 		}
 
 		LOGE(LOG_DEBUG, "%d: name: %s, section:%u, size: %lu, type: %u", i++,
-		     msymbol->mginfo.name, msymbol->mginfo.section, msymbol->size,
+		     msymbol->ginfo.name, msymbol->ginfo.section, msymbol->size,
 		     MSYMBOL_TYPE(msymbol));
 
-		if (msymbol->mginfo.name[0] != '.') {
+		if (msymbol->ginfo.name[0] != '.') {
 			LOGE(LOG_DEBUG, "%p\n", MSYMBOL_VALUE_ADDRESS(objfile, msymbol));
 		}
 	}

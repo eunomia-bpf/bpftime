@@ -51,3 +51,6 @@ third_party/phaole1
 output_metrics.json
 perf.data
 perf.data.old
+
+build
+target
