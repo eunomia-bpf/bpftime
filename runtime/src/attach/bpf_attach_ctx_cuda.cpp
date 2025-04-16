@@ -7,17 +7,17 @@
 #include <optional>
 #include <spdlog/spdlog.h>
 #include "cuda.h"
-#include "cupti_activity.h"
-#define CUPTI_CALL(call, error_message)                                        \
-	do {                                                                   \
-		CUptiResult _status = call;                                    \
-		if (_status != CUPTI_SUCCESS) {                                \
-			const char *errstr;                                    \
-			cuptiGetResultString(_status, &errstr);                \
-			SPDLOG_ERROR("CUPTI Error: {}", errstr);               \
-			throw std::runtime_error(error_message);               \
-		}                                                              \
-	} while (0)
+// #include "cupti_activity.h"
+// #define CUPTI_CALL(call, error_message) \
+// 	do {                                                                   \
+// 		CUptiResult _status = call;                                    \
+// 		if (_status != CUPTI_SUCCESS) {                                \
+// 			const char *errstr;                                    \
+// 			cuptiGetResultString(_status, &errstr);                \
+// 			SPDLOG_ERROR("CUPTI Error: {}", errstr);               \
+// 			throw std::runtime_error(error_message);               \
+// 		}                                                              \
+// 	} while (0)
 
 #define NV_SAFE_CALL(x, error_message)                                         \
 	do {                                                                   \
@@ -59,45 +59,6 @@
 			return {};                                             \
 		}                                                              \
 	} while (0)
-
-static void CUPTIAPI cupti_buffer_requested(uint8_t **buffer, size_t *size,
-					    size_t *maxNumRecords)
-{
-	*size = 16 * 1024;
-	*buffer = new uint8_t[*size];
-	*maxNumRecords = 10;
-}
-static void CUPTIAPI cupti_buffer_completed(CUcontext ctx, uint32_t streamId,
-					    uint8_t *buffer, size_t size,
-					    size_t validSize)
-{
-	CUpti_Activity *record = nullptr;
-
-	do {
-		auto status =
-			cuptiActivityGetNextRecord(buffer, validSize, &record);
-		if (status == CUPTI_SUCCESS) {
-			if (record->kind == CUPTI_ACTIVITY_KIND_KERNEL) {
-				auto kernelActivity =
-					(CUpti_ActivityKernel4 *)record;
-				SPDLOG_INFO("Kernel {} consumed {} ns",
-					    (const char *)kernelActivity->name,
-					    kernelActivity->end -
-						    kernelActivity->start);
-			}
-		} else if (status == CUPTI_ERROR_MAX_LIMIT_REACHED) {
-			break;
-		} else if (status == CUPTI_ERROR_INVALID_KIND) {
-			break;
-		} else {
-			const char *error_str;
-			cuptiGetResultString(status, &error_str);
-			SPDLOG_ERROR("Unable to read more cupti records: {}",
-				     error_str);
-		}
-	} while (true);
-	delete[] buffer;
-}
 
 namespace bpftime
 {
@@ -263,17 +224,6 @@ bpf_attach_ctx::start_cuda_prober(int id)
 		SPDLOG_ERROR("Program id {} is not a CUDA program", id);
 		return {};
 	}
-	// Initialize CUPTI
-	{
-		CUPTI_CALL(
-			cuptiActivityRegisterCallbacks(cupti_buffer_requested,
-						       cupti_buffer_completed),
-			"register cupti callbacks");
-		SPDLOG_INFO("CUPTI callbacks registered");
-		CUPTI_CALL(cuptiActivityEnable(CUPTI_ACTIVITY_KIND_KERNEL),
-			   "enable cupti event");
-		SPDLOG_INFO("CUPTI initialized");
-	}
 	CUmodule raw_module;
 	NV_SAFE_CALL_3(cuModuleLoadDataEx(&raw_module,
 					  prog.get_cuda_elf_binary(), 0, 0, 0),
@@ -375,8 +325,6 @@ bpf_attach_ctx::start_cuda_prober(int id)
 		} else {
 			SPDLOG_INFO("CUDA kernel exited..");
 		}
-		CUPTI_CALL(cuptiActivityFlushAll(0),
-			   "flushing cupti activities");
 		exit_flag->store(true);
 	});
 	handle.detach();
