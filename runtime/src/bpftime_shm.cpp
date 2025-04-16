@@ -83,6 +83,11 @@ int bpftime_maps_create(int fd, const char *name, bpftime::bpf_map_attr attr)
 	return shm_holder.global_shared_memory.add_bpf_map(fd, name, attr);
 }
 
+int bpftime_maps_dup(int oldfd, int newfd)
+{
+	return shm_holder.global_shared_memory.dup_bpf_map(oldfd, newfd);
+}
+
 uint32_t bpftime_map_value_size_from_syscall(int fd)
 {
 	return shm_holder.global_shared_memory.bpf_map_value_size(fd);

@@ -167,6 +167,7 @@ class syscall_context {
 	int handle_open(const char *file, int oflag, unsigned short mode);
 	ssize_t handle_read(int fd, void *buf, size_t count);
 	FILE *handle_fopen(const char *pathname, const char *flags);
+	int handle_dup3(int oldfd, int newfd, int flags);
 };
 
 #endif

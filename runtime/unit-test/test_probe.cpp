@@ -49,6 +49,8 @@ TEST_CASE("Test bpftime_probe_write_user") // test for bpftime_probe_write_user
 		REQUIRE(dst[i] == src[i]);
 	}
 
+#ifdef ENABLE_PROBE_WRITE_CHECK
+
 	ret = bpftime_probe_write_user((uint64_t)(nullptr), (uint64_t)(src),
 				       size, 0, 0);
 	REQUIRE(ret == -EFAULT);
@@ -56,6 +58,8 @@ TEST_CASE("Test bpftime_probe_write_user") // test for bpftime_probe_write_user
 	ret = bpftime_probe_write_user((uint64_t)dst, (uint64_t)(nullptr), size,
 				       0, 0);
 	REQUIRE(ret == -EFAULT);
+
+#endif
 
 	void *dst1 = (void *)(dst);
 	void *src1 = (void *)(src);

@@ -25,6 +25,7 @@ static inline uint64_t print_func(char *str)
 	return UFUNC_CALL_NAME_1("print_func", str);
 }
 
+SEC("uprobe")
 int BPF_UPROBE(my_function, int parm1, char *str, char c)
 {
 	uint64_t n = print_func(str);
