@@ -297,7 +297,7 @@ class POSClient {
      *  \param  ckpt_dir    checkpoint file path
      *  \return POS_SUCCESS for successfully persist
      */
-    pos_retval_t persist(std::string& ckpt_dir);
+    pos_retval_t persist(std::string ckpt_dir);
 
 
     /*!

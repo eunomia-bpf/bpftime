@@ -9,7 +9,7 @@ TEST_CASE("Test CUDAInjector - basic attach/detach")
 {
     // For demonstration, pick a dummy or real PID.
     // In a real-world test, you'd spawn a child process running a CUDA app.
-    pid_t test_pid = 2378827;
+    pid_t test_pid = 2663926;
 
     // 1. Construct the injector
     bpftime::attach::CUDAInjector injector(test_pid);
@@ -23,14 +23,10 @@ TEST_CASE("Test CUDAInjector - basic attach/detach")
     {
         // A trivial PTX kernel as an example
         const char* ptx_code = R"PTX(
-        .version 7.0
-        .target sm_70
-        .address_size 64
-
-        .visible .entry injected_kernel() {
+        .entry probe_infinite_kernel__cuda() {
             // A do-nothing kernel
             ret;
-        }Failed to get CUDA context from process
+        }
         )PTX";
 
         // Suppose we want to inject at some device memory address (dummy).

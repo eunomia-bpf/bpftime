@@ -589,7 +589,7 @@ class POSHandle {
      */
     virtual pos_retval_t __commit(uint64_t version_id, uint64_t stream_id=0, bool from_cow=false, bool is_sync=false){
         // only stateful handle should rewrite this function
-        POS_ERROR_C_DETAIL("%s shouldn't called __commit function", this->get_resource_name().c_str()); 
+        POS_DEBUG("%s shouldn't called __commit function", this->get_resource_name().c_str());
         return POS_FAILED_NOT_IMPLEMENTED;
     }
 

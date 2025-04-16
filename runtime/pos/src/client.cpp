@@ -121,7 +121,7 @@ exit:
 }
 
 
-pos_retval_t POSClient::persist(std::string& ckpt_dir){
+pos_retval_t POSClient::persist(std::string ckpt_dir){
     pos_retval_t retval = POS_SUCCESS;
     pos_protobuf::Bin_POSClient client_binary;
     std::ofstream ckpt_file_stream;

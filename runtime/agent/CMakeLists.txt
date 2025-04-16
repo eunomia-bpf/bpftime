@@ -40,6 +40,7 @@ if(${BPFTIME_BUILD_WITH_LIBBPF})
     bpftime_frida_uprobe_attach_impl
     bpftime_syscall_trace_attach_impl
     bpftime_nv_attach_impl
+    pos
   )
 
 else()

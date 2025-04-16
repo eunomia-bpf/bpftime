@@ -92,12 +92,13 @@ class CUDAInjector {
 		std::vector<char> original_code;
 	};
 	std::vector<CodeBackup> backups;
-	POSWorkspace_CUDA *ws = nullptr;
-	POSClient *client = nullptr;
+	POSWorkspace_CUDA *ws = new POSWorkspace_CUDA();
+	POSClient *client = new POSClient_CUDA();
 
     public:
 	explicit CUDAInjector(pid_t pid) : target_pid(pid)
 	{
+		client->init(false);
 		spdlog::debug("CUDAInjector: constructor for PID {}",
 			      target_pid);
 
@@ -127,12 +128,12 @@ class CUDAInjector {
 		spdlog::debug(
 			"CUDA initialized successfully with {} devices available",
 			device_count);
-		// ws = pos_create_workspace_cuda();
-		// pos_create_client_param_t param = { .job_name = "bpftime",
-		// 				    .pid = target_pid,
-		// 				    .id = 1,
-		// 				    .is_restoring = false };
-		// ws->__create_client(param, &client);
+		ws = pos_create_workspace_cuda();
+		pos_create_client_param_t param = { .job_name = "bpftime",
+						    .pid = target_pid,
+						    .id = 1,
+						    .is_restoring = false };
+		ws->__create_client(param, &client);
 	}
 
 	bool attach()
@@ -299,10 +300,11 @@ class CUDAInjector {
 			size_t code_size)
 	{
 		client->persist_handles(true);
-		client->persist((std::string &)"/tmp/bpftime");
+		client->persist("/tmp/bpftime");
 
 		// 1. Load the PTX into a module
 		CUmodule module;
+		// 字符串处理
 		CUresult result = cuModuleLoadData(&module, ptx_code);
 		if (result != CUDA_SUCCESS) {
 			spdlog::error("cuModuleLoadData() failed: {}",
@@ -313,7 +315,7 @@ class CUDAInjector {
 		// 2. Retrieve the function named "injected_kernel"
 		CUfunction kernel;
 		result =
-			cuModuleGetFunction(&kernel, module, "injected_kernel");
+			cuModuleGetFunction(&kernel, module, "infinite_kernel");
 		if (result != CUDA_SUCCESS) {
 			spdlog::error("cuModuleGetFunction() failed: {}",
 				      (int)result);
@@ -357,6 +359,7 @@ class CUDAInjector {
 
 		// Clean up
 		cuModuleUnload(module);
+		client->init(true);
 		client->restore_apicxts((std::string &)"/tmp/bpftime");
 		client->restore_handles((std::string &)"/tmp/bpftime");
 
