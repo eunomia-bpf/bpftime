@@ -250,14 +250,13 @@ int bpf_attach_ctx::instantiate_bpf_link_handler_at(
 	if (prog->is_cuda()) {
 		SPDLOG_INFO("Handling link to CUDA program: {}, recording it..",
 			    id);
-		// if (int err = start_cuda_prober(handler.prog_id); err < 0) {
+		start_cuda_prober(handler.prog_id);
 		// 	SPDLOG_ERROR(
 		// 		"Unable to start CUDA program for link id {},
 		// prog id {}", 		id, handler.prog_id); 	return
 		// err;
-		// }
 		this->cuda_ctx->cuda_progs.push_back(cuda::CUDAProgramRecord{
-			.probe_func = priv_data->to_string(),
+			.probe_func = ((attach::nv_attach_private_data *)priv_data)->to_string(),
 			.prog_id = handler.prog_id });
 		instantiated_attach_links[id] = std::make_pair(0, nullptr);
 
@@ -349,9 +348,9 @@ int bpf_attach_ctx::instantiate_perf_event_handler_at(
 				id, kprobe_data.func_name, err);
 			return err;
 		}
-		SPDLOG_INFO(
-			"Created kprobe/kretprobe private data at id {}, string value {}",
-			id, priv_data->to_string());
+		// SPDLOG_INFO(
+		// 	"Created kprobe/kretprobe private data at id {}, string value {}",
+		// 	id, priv_data->to_string());
 	} else {
 		auto &custom_data =
 			std::get<custom_perf_event_data>(perf_handler.data);
@@ -368,7 +367,7 @@ int bpf_attach_ctx::instantiate_perf_event_handler_at(
 	}
 	SPDLOG_DEBUG("Instantiated perf event handler {}", id);
 	instantiated_perf_events[id] =
-		std::make_pair(std::move(priv_data), (int)perf_handler.type);
+		std::make_pair(std::move(priv_data.get()), (int)perf_handler.type);
 
 	return 0;
 }

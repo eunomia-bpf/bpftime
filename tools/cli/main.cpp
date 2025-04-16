@@ -85,7 +85,6 @@ static int run_command(const char *path, const std::vector<std::string> &argv,
 		std::string ld_preload_str("LD_PRELOAD=");
 		std::string agent_so_str("AGENT_SO=");
 		ld_preload_str += ld_preload;
-		ld_preload_str += ":/usr/lib/libclient.so";
 
 		if (agent_so) {
 			agent_so_str += agent_so;
@@ -291,11 +290,12 @@ int main(int argc, const char **argv)
 					      transformer_path.c_str());
 				return 1;
 			}
-
+			transformer_path += ":/usr/lib/libclient.so";
 			return run_command(executable_path.c_str(), extra_args,
 					   transformer_path.c_str(),
 					   agent_path.c_str());
 		} else {
+			agent_path += ":/usr/lib/libclient.so";
 			return run_command(executable_path.c_str(), extra_args,
 					   agent_path.c_str(), nullptr);
 		}

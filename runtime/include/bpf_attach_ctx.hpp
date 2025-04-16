@@ -186,7 +186,7 @@ class bpf_attach_ctx {
 		instantiated_attach_links;
 	// handler_id -> instantiated attach private data & attach type
 	std::map<int,
-		 std::pair<std::unique_ptr<attach::attach_private_data>, int> >
+		 std::pair<attach::attach_private_data*, int> >
 		instantiated_perf_events;
 	// attach_type -> attach impl
 	std::map<int, std::pair<attach::base_attach_impl *,
