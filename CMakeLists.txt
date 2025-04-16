@@ -142,11 +142,7 @@ endif()
 add_subdirectory(third_party/spdlog)
 
 if(NOT DEFINED SPDLOG_ACTIVE_LEVEL)
-  if(CMAKE_BUILD_TYPE STREQUAL "Debug")
-    add_compile_definitions(SPDLOG_ACTIVE_LEVEL=SPDLOG_LEVEL_TRACE)
-  else()
-    add_compile_definitions(SPDLOG_ACTIVE_LEVEL=SPDLOG_LEVEL_INFO)
-  endif()
+  add_compile_definitions(SPDLOG_ACTIVE_LEVEL=SPDLOG_LEVEL_TRACE)
 endif()
 
 set(SPDLOG_INCLUDE ${CMAKE_CURRENT_SOURCE_DIR}/third_party/spdlog/include)
@@ -162,11 +158,11 @@ add_subdirectory(attach)
 add_subdirectory(runtime)
 
 # option to use probe read/write checks
-if(DEFINED ENABLE_PROBE_READ_CHECK)
+if(ENABLE_PROBE_READ_CHECK)
   target_compile_definitions(runtime PRIVATE ENABLE_PROBE_READ_CHECK=1)
 endif()
 
-if(DEFINED ENABLE_PROBE_WRITE_CHECK)
+if(ENABLE_PROBE_WRITE_CHECK)
   target_compile_definitions(runtime PRIVATE ENABLE_PROBE_WRITE_CHECK=1)
 endif()
 

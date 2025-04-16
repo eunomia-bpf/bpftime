@@ -18,6 +18,7 @@ enum filter_op {
 static const int (*test_pass_param)(char *str, char c,
 				    long long parm1) = (void *)40;
 
+SEC("uprobe")
 uint64_t BPF_UPROBE(my_function, char *str, char c, long long parm1)
 {
 	if (str == NULL) {

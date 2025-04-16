@@ -23,6 +23,12 @@ static inline uint64_t print_func(char *str)
 	return UFUNC_CALL_1(FUNC_PRINT, str);
 }
 
+#define SEC(name) _Pragma("GCC diagnostic push") \
+	_Pragma("GCC diagnostic ignored \"-Wignored-attributes\"") \
+	__attribute__((section(name), used)) \
+	_Pragma("GCC diagnostic pop")
+
+SEC("uprobe")
 int bpf_main(struct data *d)
 {
 	// not support global value
