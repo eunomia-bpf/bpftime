@@ -93,10 +93,11 @@ int nv_attach_impl::create_attach_with_ebpf_callback(
 	// For example, we interpret private_data.pid as the target PID:
 	pid_t target_pid =
 		static_cast<const nv_attach_private_data &>(private_data).pid;
-
+	std::string filename =
+		static_cast<const nv_attach_private_data &>(private_data).filename;
 	// Create our injector if not yet created
 	auto &implPtr = get_impl(*this);
-	implPtr->injector = std::make_unique<CUDAInjector>(target_pid);
+	implPtr->injector = std::make_unique<CUDAInjector>(target_pid,filename);
 
 	// Attempt to attach
 	if (!implPtr->injector->attach()) {
@@ -128,13 +129,39 @@ extern "C" void _bpftime__setup_nv_hooker_callback(nv_hooker_func_t *hooker)
 
 int nv_attach_private_data::initialize_from_string(const std::string_view &sv)
 {
-	spdlog::info("nv_attach_private_data::initialize_from_string({})", sv);
-	if (sv != "vprintf") {
-		throw std::runtime_error(
-			"For demo purpose, nv_attach_impl only supports probing vprintf");
+	// 检查输入是否为空
+	if (sv.empty()) {
+		return -1; // 返回错误代码
 	}
-	this->probe_func_name = sv;
-	return 0;
+
+	// 查找最后一个数字的开始位置
+	size_t pid_start = sv.find_last_not_of("0123456789");
+
+	// 如果未找到任何数字，或者所有字符都是数字
+	if (pid_start == std::string_view::npos) {
+		return -1; // 返回错误代码
+	}
+
+	// 如果找到数字的起始位置，调整指针
+	pid_start += 1;
+
+	// 检查是否有pid部分
+	if (pid_start >= sv.size()) {
+		return -1; // 没有pid部分
+	}
+
+	try {
+		// 提取pid部分并转换为整数
+		this->pid = std::stoi(std::string(sv.substr(pid_start)));
+
+		// 提取filename部分
+		this->filename = std::string(sv.substr(0, pid_start));
+
+		return 0; // 成功
+	} catch (const std::exception &e) {
+		// 转换失败处理
+		return -1;
+	}
 }
 
 } // namespace attach

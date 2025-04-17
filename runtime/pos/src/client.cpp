@@ -53,7 +53,6 @@ POSClient::POSClient()
         offline_counter(0),
         _ws(nullptr)
 {
-    POS_ERROR_C("shouldn't call, just for passing compilation");
 }
 
 

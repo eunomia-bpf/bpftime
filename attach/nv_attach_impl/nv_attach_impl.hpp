@@ -4,12 +4,15 @@
 #include <cuda_runtime.h>
 #include <cuda_runtime_api.h>
 #include <nvml.h>
+#include <regex>
 #include <cuda.h>
 #include <sys/ptrace.h>
 #include <sys/wait.h>
 #include <fstream>
+#include <utility>
 #include "pos/include/workspace.h"
 #include "pos/cuda_impl/remoting/workspace.h"
+
 namespace bpftime
 {
 namespace attach
@@ -22,8 +25,10 @@ constexpr int ATTACH_CUDA_RETPROBE = 9;
 namespace memory_utils
 {
 static inline ssize_t process_vm_readv(pid_t pid, const struct iovec *local_iov,
-			 unsigned long liovcnt, const struct iovec *remote_iov,
-			 unsigned long riovcnt, unsigned long flags)
+				       unsigned long liovcnt,
+				       const struct iovec *remote_iov,
+				       unsigned long riovcnt,
+				       unsigned long flags)
 {
 	return syscall(SYS_process_vm_readv, pid, local_iov, liovcnt,
 		       remote_iov, riovcnt, flags);
@@ -92,12 +97,29 @@ class CUDAInjector {
 		std::vector<char> original_code;
 	};
 	std::vector<CodeBackup> backups;
+	std::string orig_ptx;
 	POSWorkspace_CUDA *ws = new POSWorkspace_CUDA();
 	POSClient *client = new POSClient_CUDA();
 
     public:
-	explicit CUDAInjector(pid_t pid) : target_pid(pid)
+	explicit CUDAInjector(pid_t pid, std::string orig_ptx) : target_pid(pid)
 	{
+		// Lambda 表达式：用于读取文件内容到 std::string
+		auto orig_ptx_func =
+			[](const std::string &filename) -> std::string {
+			std::ifstream file(filename); // 打开文件输入流
+			if (!file.is_open()) {
+				throw std::ios_base::failure(
+					"Failed to open the file: " + filename);
+			}
+
+			// 使用 stringstream 将文件内容加载为字符串
+			std::ostringstream contentStream;
+			contentStream << file.rdbuf();
+			file.close();
+			return contentStream.str();
+		};
+		this->orig_ptx = orig_ptx_func(orig_ptx);
 		client->init(false);
 		spdlog::debug("CUDAInjector: constructor for PID {}",
 			      target_pid);
@@ -296,7 +318,7 @@ class CUDAInjector {
     public:
 	// Demonstrates how you might inject PTX or backup/restore code on the
 	// fly in a remote context. This is a stub for illustration.
-	bool inject_ptx(const char *ptx_code, CUdeviceptr target_addr,
+	bool inject_ptx(const char *ptx_code1, CUdeviceptr target_addr,
 			size_t code_size)
 	{
 		client->persist_handles(true);
@@ -304,8 +326,162 @@ class CUDAInjector {
 
 		// 1. Load the PTX into a module
 		CUmodule module;
-		// 字符串处理
-		CUresult result = cuModuleLoadData(&module, ptx_code);
+		std::string probe_func = ptx_code1;
+		std::string modified_ptx = this->orig_ptx;
+
+		// 使用正则表达式匹配probe函数
+		std::regex probe_regex(
+			R"(.entry probe_(.+)__cuda\(.*\) \{((.*\n)*)((.*ret;\s*\n)*)\})");
+		std::smatch probe_match;
+
+		if (std::regex_search(probe_func, probe_match, probe_regex)) {
+			// 从匹配结果中提取函数名和函数体
+			std::string function_body = probe_match[2];
+			std::string function_name_part =
+				probe_match[1]; // 获取函数名部分
+			std::cout << "函数体: " << function_body
+				  << "\n函数名部分: " << function_name_part
+				  << std::endl;
+
+			// 从函数体中移除ret指令
+			std::string body_without_ret = function_body;
+			size_t ret_pos = body_without_ret.find("ret;");
+			if (ret_pos != std::string::npos) {
+				// 找到ret;所在行的开始位置
+				size_t line_start =
+					body_without_ret.rfind('\n', ret_pos);
+				if (line_start == std::string::npos)
+					line_start = 0;
+				else
+					line_start++; // 跳过换行符
+
+				// 找到ret;所在行的结束位置
+				size_t line_end =
+					body_without_ret.find('\n', ret_pos);
+				if (line_end == std::string::npos)
+					line_end = body_without_ret.length();
+				else
+					line_end++; // 包含换行符
+
+				// 移除整行
+				body_without_ret.erase(line_start,
+						       line_end - line_start);
+			}
+
+			// 找到最后一个.reg声明的位置
+			std::regex reg_pattern(R"(\.reg \.b64 \t%rd<\d+>;)");
+			std::smatch reg_match;
+
+			if (std::regex_search(this->orig_ptx, reg_match,
+					      reg_pattern)) {
+				// 找到匹配的位置
+				size_t insert_pos = reg_match.position() +
+						    reg_match.length();
+
+				// 在.reg声明后插入probe函数体
+				modified_ptx.insert(insert_pos,
+						    "\n" + body_without_ret);
+			}
+
+			// 输出修改后的代码
+			std::cout << "修改后的代码：\n"
+				  << modified_ptx << std::endl;
+		} else {
+			std::cout << "正则表达式未能匹配probe函数" << std::endl;
+		}
+		// 使用正则表达式匹配retprobe函数
+		std::regex probe_regex1(
+			R"(.entry (retprobe)_(.+)__cuda\(.*\) \{((.*\n)*)((.*ret;\s*\n)*)\})");
+		std::smatch probe_match1;
+
+		if (std::regex_search(probe_func, probe_match1, probe_regex1)) {
+			// 从匹配结果中提取函数名和函数体
+			std::string probe_name = probe_match1[1]; // retprobe
+			std::string function_name =
+				probe_match1[2]; // infinite_kernel
+			std::string function_body = probe_match1[3]; // 函数体
+
+			std::cout << "探针名: " << probe_name << "\n"
+				  << "函数名: " << function_name << "\n"
+				  << "函数体: " << function_body << std::endl;
+
+			// 从函数体中移除ret指令
+			std::string body_without_ret = function_body;
+			size_t ret_pos = body_without_ret.find("ret;");
+			if (ret_pos != std::string::npos) {
+				// 找到ret;所在行的开始位置
+				size_t line_start =
+					body_without_ret.rfind('\n', ret_pos);
+				if (line_start == std::string::npos)
+					line_start = 0;
+				else
+					line_start++; // 跳过换行符
+
+				// 找到ret;所在行的结束位置
+				size_t line_end =
+					body_without_ret.find('\n', ret_pos);
+				if (line_end == std::string::npos)
+					line_end = body_without_ret.length();
+				else
+					line_end++; // 包含换行符
+
+				// 移除整行
+				body_without_ret.erase(line_start,
+						       line_end - line_start);
+			}
+
+			// 找到目标函数的右花括号位置
+			std::regex target_func_regex(R"(\.visible \.entry )" +
+						     function_name +
+						     R"(\(\)[\s\S]*?\})");
+			std::smatch target_match;
+
+			if (std::regex_search(modified_ptx, target_match,
+					      target_func_regex)) {
+				std::string target_func = target_match[0];
+				size_t closing_brace_pos =
+					target_match.position() +
+					target_func.rfind("}");
+
+				// 在右花括号前插入retprobe函数体
+				modified_ptx.insert(closing_brace_pos,
+						    "\n" + body_without_ret);
+
+				// 输出修改后的代码
+				std::cout << "修改后的代码：\n"
+					  << modified_ptx << std::endl;
+			} else {
+				std::cout << "未能找到目标函数 "
+					  << function_name << std::endl;
+			}
+		} else {
+			std::cout << "正则表达式未能匹配retprobe函数"
+				  << std::endl;
+		}
+		const std::string version_headers[] = {
+			".version 7.8\n.target sm_90\n.address_size 64\n",
+			".version 8.1\n.target sm_90\n.address_size 64\n"
+		};
+		const std::string entry_func = ".visible .func bpf_main";
+		std::string result(objStream.begin(), objStream.end());
+
+		for (const auto &entry : to_replace_names) {
+			auto idx = result.find(entry[0]);
+			if (idx != result.npos) {
+				result = result.replace(idx, entry[0].size(),
+							entry[1]);
+			}
+		}
+		for (const auto &header : version_headers) {
+			auto idx = result.find(header);
+			SPDLOG_INFO("Version header ({}) index: {}", header,
+				    idx);
+			if (idx != result.npos) {
+				result = result.replace(idx, header.size(), "");
+			}
+		}
+		CUresult result =
+			cuModuleLoadData(&module, modified_ptx.c_str());
 		if (result != CUDA_SUCCESS) {
 			spdlog::error("cuModuleLoadData() failed: {}",
 				      (int)result);
@@ -373,15 +549,16 @@ struct nv_hooker_func_t {
 };
 
 struct nv_attach_private_data final : public attach_private_data {
-	// The address to hook
-	uint64_t addr;
 	// Saved module name
 	pid_t pid;
 	// function name to probe
-	std::string probe_func_name;
+	std::string filename;
 	// initialize_from_string
 	int initialize_from_string(const std::string_view &sv) override;
-	std::string to_string() const override{return "";};
+	std::string to_string() const override
+	{
+		return std::format("{}{}", filename, pid);
+	};
 };
 
 // Attach implementation of syscall trace
