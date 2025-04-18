@@ -10,7 +10,7 @@ TEST_CASE("Test CUDAInjector - basic attach/detach")
 {
 	// For demonstration, pick a dummy or real PID.
 	// In a real-world test, you'd spawn a child process running a CUDA app.
-	pid_t test_pid = 2663926;
+	pid_t test_pid = 3347184;
 
 	// 1. Construct the injector
 	bpftime::attach::CUDAInjector injector(test_pid, "../example/cudamem-capture/victim.ptx");
@@ -30,11 +30,15 @@ TEST_CASE("Test CUDAInjector - basic attach/detach")
 
 		// Suppose we want to inject at some device memory address
 		// (dummy).
-		CUdeviceptr dummy_inject_addr = 0x10000000;
-		size_t dummy_code_size = 256; // Example
-
+		CUfunction dummy_inject_addr;
+		size_t      dummy_code_size=sizeof(injector .orig_ptx.c_str());
+		CUmodule    m;
+		CUresult rc = cuModuleLoadData(&m, injector.orig_ptx.c_str());
+		assert(rc == CUDA_SUCCESS);
+		rc = cuModuleGetFunction(&dummy_inject_addr, m, "infinite_kernel");
+		assert(rc == CUDA_SUCCESS);
 		// A hypothetical method in CUDAInjector for demonstration
-		bool success = injector.inject_ptx(ptx_code, dummy_inject_addr,
+		bool success = injector.inject_ptx(ptx_code, (CUdeviceptr)dummy_inject_addr,
 						   dummy_code_size);
 		REQUIRE(success == true);
 	}

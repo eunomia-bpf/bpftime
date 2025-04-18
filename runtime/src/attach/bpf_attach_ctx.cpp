@@ -5,6 +5,7 @@
  */
 #include "attach_private_data.hpp"
 #include "base_attach_impl.hpp"
+#include "nv_attach_impl.hpp"
 #include "bpftime_shm.hpp"
 
 #include "cuda.h"
@@ -14,10 +15,7 @@
 #include <chrono>
 #include <cstring>
 #include <iterator>
-#include <ratio>
-#include <stdexcept>
 #include <string>
-#include <thread>
 #include <unistd.h>
 #include <cerrno>
 #include <cstdint>
@@ -35,7 +33,6 @@
 #include <utility>
 #include <variant>
 #include <sys/resource.h>
-#include <cupti.h>
 
 extern "C" uint64_t bpftime_set_retval(uint64_t value);
 namespace bpftime

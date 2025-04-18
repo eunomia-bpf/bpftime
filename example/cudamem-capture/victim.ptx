@@ -7,10 +7,10 @@
 //
 
 .version 8.2
-.target sm_70
+.target sm_90
 .address_size 64
 
-	// .globl	infinite_kernel
+//.globl	infinite_kernel
 .extern .func  (.param .b32 func_retval0) vprintf
 (
 	.param .b64 vprintf_param_0,

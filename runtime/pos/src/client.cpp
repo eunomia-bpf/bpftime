@@ -172,7 +172,7 @@ exit:
 }
 
 
-pos_retval_t POSClient::restore_handles(std::string& ckpt_dir){
+pos_retval_t POSClient::restore_handles(std::string ckpt_dir){
     pos_retval_t retval = POS_SUCCESS, dirty_retval = POS_SUCCESS;
     uint64_t i;
     std::tuple<pos_resource_typeid_t, pos_u64id_t> handle_info;
@@ -323,7 +323,7 @@ exit:
 }
 
 
-pos_retval_t POSClient::restore_apicxts(std::string& ckpt_dir){
+pos_retval_t POSClient::restore_apicxts(std::string ckpt_dir){
     pos_retval_t retval = POS_SUCCESS;
     pos_u64id_t apicxt_id;
     std::set<std::filesystem::path> sorted_unexecuted_apicxts;

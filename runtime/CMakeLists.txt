@@ -135,6 +135,7 @@ target_link_libraries(${PROJECT_NAME}
   bpftime_vm
   spdlog::spdlog
   bpftime_base_attach_impl
+  bpftime_nv_attach_impl
   ${CUDA_LIBS}
 )
 
@@ -201,6 +202,7 @@ if(${BPFTIME_BUILD_WITH_LIBBPF})
     -lz
     -lelf
     bpftime_base_attach_impl
+    bpftime_nv_attach_impl
     ${EXTRA_LIBS}
     cuda
   )
@@ -213,6 +215,7 @@ else()
     -ldl
     -lz
     bpftime_base_attach_impl
+    bpftime_nv_attach_impl
     ${EXTRA_LIBS}
     cuda
   )

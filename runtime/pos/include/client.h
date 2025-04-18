@@ -316,7 +316,7 @@ class POSClient {
      *  \param  ckpt_dir    directory of checkpoing files of handles
      *  \return POS_SUCCESS for successfully restore
      */
-    pos_retval_t restore_handles(std::string& ckpt_dir);
+    pos_retval_t restore_handles(std::string ckpt_dir);
 
     
     /*!
@@ -324,7 +324,7 @@ class POSClient {
      *  \param  ckpt_dir    directory of checkpoing files of unexecuted API context
      *  \return POS_SUCCESS for successfully restore
      */
-    pos_retval_t restore_apicxts(std::string& ckpt_dir);
+    pos_retval_t restore_apicxts(std::string ckpt_dir);
 
 
  protected:

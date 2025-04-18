@@ -85,7 +85,7 @@ bool read_memory(pid_t pid, const void *remote_addr, T *out_value)
 // files.
 // ----------------------------------------------------------------------------
 class CUDAInjector {
-    private:
+    public:
 	pid_t target_pid;
 	CUcontext cuda_ctx{ nullptr };
 
@@ -94,14 +94,12 @@ class CUDAInjector {
 	// injection.
 	struct CodeBackup {
 		CUdeviceptr addr;
-		std::vector<char> original_code;
 	};
 	std::vector<CodeBackup> backups;
 	std::string orig_ptx;
 	POSWorkspace_CUDA *ws = new POSWorkspace_CUDA();
 	POSClient *client = new POSClient_CUDA();
 
-    public:
 	explicit CUDAInjector(pid_t pid, std::string orig_ptx) : target_pid(pid)
 	{
 		// Lambda 表达式：用于读取文件内容到 std::string
@@ -328,7 +326,7 @@ class CUDAInjector {
 		CUmodule module;
 		std::string probe_func = ptx_code1;
 		std::string modified_ptx = this->orig_ptx;
-
+		std::string function_name_part ;
 		// 使用正则表达式匹配probe函数
 		std::regex probe_regex(
 			R"(.entry probe_(.+)__cuda\(.*\) \{((.*\n)*)((.*ret;\s*\n)*)\})");
@@ -337,7 +335,7 @@ class CUDAInjector {
 		if (std::regex_search(probe_func, probe_match, probe_regex)) {
 			// 从匹配结果中提取函数名和函数体
 			std::string function_body = probe_match[2];
-			std::string function_name_part =
+			 function_name_part =
 				probe_match[1]; // 获取函数名部分
 			std::cout << "函数体: " << function_body
 				  << "\n函数名部分: " << function_name_part
@@ -458,28 +456,6 @@ class CUDAInjector {
 			std::cout << "正则表达式未能匹配retprobe函数"
 				  << std::endl;
 		}
-		const std::string version_headers[] = {
-			".version 7.8\n.target sm_90\n.address_size 64\n",
-			".version 8.1\n.target sm_90\n.address_size 64\n"
-		};
-		const std::string entry_func = ".visible .func bpf_main";
-		std::string result(objStream.begin(), objStream.end());
-
-		for (const auto &entry : to_replace_names) {
-			auto idx = result.find(entry[0]);
-			if (idx != result.npos) {
-				result = result.replace(idx, entry[0].size(),
-							entry[1]);
-			}
-		}
-		for (const auto &header : version_headers) {
-			auto idx = result.find(header);
-			SPDLOG_INFO("Version header ({}) index: {}", header,
-				    idx);
-			if (idx != result.npos) {
-				result = result.replace(idx, header.size(), "");
-			}
-		}
 		CUresult result =
 			cuModuleLoadData(&module, modified_ptx.c_str());
 		if (result != CUDA_SUCCESS) {
@@ -502,43 +478,26 @@ class CUDAInjector {
 		// 3. Backup the original code
 		CodeBackup backup;
 		backup.addr = target_addr;
-		backup.original_code.resize(code_size);
-		result = cuMemcpyDtoH(backup.original_code.data(), target_addr,
-				      code_size);
-		if (result != CUDA_SUCCESS) {
-			spdlog::error("cuMemcpyDtoH() failed: {}", (int)result);
-			cuModuleUnload(module);
-			return false;
-		}
 		backups.push_back(backup);
 
 		// 4. Retrieve the actual kernel code from the module’s global
 		// space
-		CUdeviceptr func_addr;
+		CUfunction func_addr;
 		size_t func_size;
-		result = cuModuleGetGlobal(&func_addr, &func_size, module,
-					   "injected_kernel");
+		result = cuModuleGetFunction(&func_addr, module, function_name_part.c_str());
 		if (result != CUDA_SUCCESS) {
-			spdlog::error("cuModuleGetGlobal() failed: {}",
+			spdlog::error("cuModuleGetFunction() failed: {}",
 				      (int)result);
 			cuModuleUnload(module);
 			return false;
 		}
 
-		// 5. Write the new code into the target location
-		result = cuMemcpyDtoD(target_addr, func_addr, func_size);
-		if (result != CUDA_SUCCESS) {
-			spdlog::error("cuMemcpyDtoD() failed: {}", (int)result);
-			cuModuleUnload(module);
-			return false;
-		}
-
 		// Clean up
-		cuModuleUnload(module);
+		// cuModuleUnload(module);
 		client->init(true);
-		client->restore_apicxts((std::string &)"/tmp/bpftime");
-		client->restore_handles((std::string &)"/tmp/bpftime");
-
+		client->restore_apicxts("/tmp/bpftime");
+		client->restore_handles("/tmp/bpftime");
+		// TODO redirect to new func_addr.
 		return true;
 	}
 };
