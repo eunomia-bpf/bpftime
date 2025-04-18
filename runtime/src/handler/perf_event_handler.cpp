@@ -103,6 +103,25 @@ bpf_perf_event_handler::bpf_perf_event_handler(
 		module_name, offset);
 }
 
+bpf_perf_event_handler::bpf_perf_event_handler(
+	bool is_retprobe, uint64_t addr, const char *func_name,
+	size_t ref_ctr_off, boost::interprocess::managed_shared_memory &mem)
+	: data(kprobe_perf_event_data{
+		  .func_name = boost_shm_string(
+			  char_allocator(mem.get_segment_manager())),
+		  .addr = addr,
+		  .ref_ctr_off = ref_ctr_off })
+{
+	std::get<kprobe_perf_event_data>(data).func_name = func_name;
+	if (is_retprobe) {
+		type = (int)bpf_event_type::BPF_TYPE_KRETPROBE;
+	} else {
+		type = (int)bpf_event_type::BPF_TYPE_KPROBE;
+	}
+	SPDLOG_INFO(
+		"Created kprobe/kretprobe perf event handler, func_name {}, addr {:x}",
+		func_name, addr);
+}
 // create tracepoint
 bpf_perf_event_handler::bpf_perf_event_handler(
 	int pid, int32_t tracepoint_id,

@@ -290,11 +290,12 @@ int main(int argc, const char **argv)
 					      transformer_path.c_str());
 				return 1;
 			}
-
+			transformer_path += ":/usr/lib/libclient.so";
 			return run_command(executable_path.c_str(), extra_args,
 					   transformer_path.c_str(),
 					   agent_path.c_str());
 		} else {
+			agent_path += ":/usr/lib/libclient.so";
 			return run_command(executable_path.c_str(), extra_args,
 					   agent_path.c_str(), nullptr);
 		}
