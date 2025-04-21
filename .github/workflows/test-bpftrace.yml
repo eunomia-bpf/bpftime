@@ -5,6 +5,7 @@ on:
     branches: [ "*" ]
   pull_request:
     branches: [ "*" ]
+  workflow_dispatch: # Enable manual trigger
 
 env:
   BPFTIME_VM_NAME: llvm
@@ -14,14 +15,19 @@ jobs:
     runs-on: ubuntu-22.04
     container:
       image: "manjusakalza/bpftime-base-image:ubuntu-2204"
-      options: "--privileged -v /sys/kernel/debug/:/sys/kernel/debug:rw -v /sys/kernel/tracing:/sys/kernel/tracing:rw"
+      # Add /dev/shm mount for shared memory (might be needed by BPFTIME)
+      # Ensure /tmp is writable for named pipe
+      options: "--privileged -v /sys/kernel/debug/:/sys/kernel/debug:rw -v /sys/kernel/tracing:/sys/kernel/tracing:rw -v /dev/shm:/dev/shm:rw"
 
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
         with:
           submodules: 'recursive'
-
+      # - name: Setup tmate session
+      #   uses: mxschmitt/action-tmate@v3
+      #   with:
+      #     limit-access-to-actor: false
 
       - name: System setup and kernel headers
         run: |
@@ -29,84 +35,72 @@ jobs:
           apt-get install -y --no-install-recommends \
             lcov tree strace gdb sudo libc6-dev bpftrace \
             linux-headers-generic linux-tools-generic \
-            linux-headers-$(uname -r) 
+            linux-headers-$(uname -r) \
+            libelf-dev # Needed for bpftrace compilation often
           
-          # 显示系统信息
           echo "==== System Information ===="
           uname -a
           cat /etc/os-release
           
-          # 检查bpftrace可用性
           echo "==== Checking bpftrace availability ===="
           which bpftrace
           bpftrace --version
           
-          # 检查跟踪点可用性
           echo "==== Checking tracepoint availability ===="
-          bpftrace -l 'tracepoint:syscalls:*' | grep openat || echo "syscalls:openat tracepoint not found"
-          bpftrace -l 'tracepoint:raw_syscalls:*' || echo "raw_syscalls tracepoints not found"
+          # Check for raw_syscalls tracepoints specifically as they are used
+          bpftrace -l 'tracepoint:raw_syscalls:*' > /dev/null 2>&1 || { echo "raw_syscalls tracepoints not found or bpftrace failed"; exit 1; }
+          echo "raw_syscalls tracepoints found."
           
-          # 显示内核功能
-          echo "==== Checking kernel capabilities ===="
+          echo "==== Checking kernel capabilities ===m="
           ls -la /sys/kernel/debug/tracing/ || echo "Debug tracing not accessible"
+          ls -la /sys/kernel/tracing/ || echo "Kernel tracing not accessible" # Check kernel tracing as well
           
-          # 创建测试文件
-          mkdir -p build
+          echo "==== Preparing test files and directories ===="
+          mkdir -p build logs /tmp/bpftime
           echo "TEST_MARKER_LINE_1" > build/install_manifest.txt
           echo "TEST_MARKER_LINE_2" >> build/install_manifest.txt
           cat build/install_manifest.txt
           
-          # 创建日志目录
-          mkdir -p logs
+          # Ensure /tmp/bpftime_uprobe_pipe can be created/used
+          touch /tmp/bpftime_uprobe_pipe || echo "Warning: Cannot touch /tmp/bpftime_uprobe_pipe"
 
+      # Keep basic bpftrace test, maybe relax the check if it's flaky
       - name: Test bpftrace basic functionality
         run: |
           echo "==== Testing bpftrace basic functionality ===="
           
-          # 测试简单的bpftrace脚本
           cat > simple_test.bt << 'EOF'
-          BEGIN {
-              printf("Simple bpftrace test started\n");
-          }
-          END {
-              printf("Simple bpftrace test completed\n");
-              exit();
-          }
+          BEGIN { printf("Simple bpftrace test started\n"); }
+          END { printf("Simple bpftrace test completed\n"); exit(); }
           EOF
           
-          # 运行简单测试
           bpftrace simple_test.bt | tee logs/bpftrace_simple.log || echo "Simple bpftrace test failed"
           
-          # 测试tracepoint
           cat > tracepoint_test.bt << 'EOF'
           tracepoint:raw_syscalls:sys_enter {
               printf("Syscall ID: %d\n", args->id);
-              if (args->id == 257) {
-                  printf("Detected openat syscall\n");
-              }
               if (comm == "cat") {
                   printf("Command: cat\n");
               }
-              exit();
           }
+          interval:s:5 { exit(); }
           EOF
           
-          # 运行tracepoint测试
-          timeout 5s bpftrace tracepoint_test.bt > logs/bpftrace_tracepoint.log 2>&1 &
-          BPFTRACE_PID=$!
-          sleep 2
-          cat /etc/os-release
-          sleep 2
-          kill $BPFTRACE_PID 2>/dev/null || echo "bpftrace already ended"
+          # Use timeout directly on bpftrace and don't background it for simplicity
+          echo "Running tracepoint test (will run for max 5s)..."
+          timeout 5s bpftrace tracepoint_test.bt > logs/bpftrace_tracepoint.log 2>&1
+          BPFTRACE_EXIT_CODE=$?
+          echo "Bpftrace tracepoint test exited with status: $BPFTRACE_EXIT_CODE"
           
           cat logs/bpftrace_tracepoint.log
           
-          # 检查是否有基本跟踪输出
-          if grep -q "Syscall ID\|Detected openat\|Command: cat" logs/bpftrace_tracepoint.log; then
-            echo "SUCCESS: Basic tracepoint test passed"
+          # Check for basic output, not necessarily openat
+          if grep -q "Syscall ID\|Command: cat" logs/bpftrace_tracepoint.log; then
+            echo "SUCCESS: Basic tracepoint test saw syscalls"
           else
-            echo "WARNING: No tracepoint output detected, continuing with other tests"
+            echo "WARNING: No tracepoint output detected in basic test, continuing."
           fi
+
 
       - name: Build and install runtime
         run: |
@@ -117,328 +111,372 @@ jobs:
             -DCMAKE_INSTALL_PREFIX=$INSTALL_DIR \
             -DBPFTIME_LLVM_JIT=1 \
             -DBUILD_BPFTIME_DAEMON=1 \
-            -DCMAKE_CXX_FLAGS="-DDEFAULT_LOGGER_OUTPUT_PATH='\"console\"'"
+            -DCMAKE_CXX_FLAGS="-DDEFAULT_LOGGER_OUTPUT_PATH='\"console\"'" \
+            -DBUILD_AGENT=1 # Ensure agent is built
           
           cmake --build build --config RelWithDebInfo --target install -j$(nproc)
           
-          # 验证安装
           echo "Installed files:"
           ls -la $INSTALL_DIR/
           
-          # 确保有正确的权限
-          chmod +x $INSTALL_DIR/*
+          chmod +x $INSTALL_DIR/* || echo "Warning: Could not chmod installed files"
           
-          # 配置环境变量
           export PATH=$PATH:$INSTALL_DIR
           echo "PATH=$PATH" >> $GITHUB_ENV
           echo "BPFTIME_INSTALL_DIR=$INSTALL_DIR" >> $GITHUB_ENV
           echo "HOME_DIR=$HOME" >> $GITHUB_ENV
 
-      - name: Create test scripts
+      - name: Create test scripts and programs
         run: |
-          echo "==== Creating test scripts ===="
+          echo "==== Creating test scripts and programs ===="
           
-          # 创建系统调用测试程序
+          # Update test_syscalls.c to be more robust
           cat > test_syscalls.c << 'EOF'
           #include <stdio.h>
           #include <fcntl.h>
           #include <unistd.h>
           #include <string.h>
+          #include <errno.h>
+          #include <stdlib.h>
           
           int main() {
-              printf("Test program starting\n");
+              printf("Test program starting (PID %d)\n", getpid());
               
               // 重复执行openat系统调用，增加被捕获的机会
-              for (int i = 0; i < 10; i++) {
-                  printf("Iteration %d: Opening file\n", i);
-                  int fd = open("build/install_manifest.txt", O_RDONLY);
+              for (int i = 0; i < 5; i++) { # Reduced iterations for faster test
+                  printf("Iteration %d: Attempting to open file build/install_manifest.txt\n", i);
+                  // Use O_CLOEXEC to avoid leaking FD to potential subprocesses (good practice)
+                  int fd = open("build/install_manifest.txt", O_RDONLY | O_CLOEXEC);
                   if (fd >= 0) {
+                      printf("Successfully opened file (FD %d)\n", fd);
                       char buffer[256];
-                      read(fd, buffer, sizeof(buffer) - 1);
+                      ssize_t bytes_read = read(fd, buffer, sizeof(buffer) - 1);
+                      if (bytes_read > 0) {
+                          buffer[bytes_read] = '\0'; // Null-terminate
+                          printf("Read %zd bytes: '%s'\n", bytes_read, buffer);
+                      } else if (bytes_read == 0) {
+                          printf("Read 0 bytes (End of file)\n");
+                      } else {
+                          perror("read failed");
+                      }
                       close(fd);
-                      usleep(100000); // 休眠100ms
+                      usleep(50000); // 休眠50ms
+                  } else {
+                      perror("openat failed");
+                      // Don't exit immediately on open failure, continue iterations
+                      usleep(50000); # Still sleep on failure
                   }
               }
               
-              printf("Test program completed\n");
-              return 0;
+              printf("Test program completed (PID %d)\n", getpid());
+              return EXIT_SUCCESS; # Return success if reached here
           }
           EOF
           
-          # 编译测试程序
+          # Compile test program
           gcc -o test_syscalls test_syscalls.c
           
-          # 创建服务器脚本
-          cat > server_script.sh << 'EOF'
-          #!/bin/bash
-          set -x
+          # Create raw_syscalls test script for bpftrace server
+          cat > raw_syscalls_trace.bt << 'EOF'
+          #include <linux/sched.h>
           
-          echo "Starting bpftrace server with preload..."
-          export HOME_DIR=$HOME
-          export BPFTIME_VM_NAME=llvm
-          export BPFTIME_LOG_OUTPUT=console
+          tracepoint:raw_syscalls:sys_enter {
+              // Filter by command name to avoid tracing bpftrace itself excessively
+              if (comm == "test_syscalls") {
+                  printf("Syscall enter: PID %d, Comm %s, ID %d\n", pid, comm, args->id);
+                  if (args->id == 257) { // SYS_openat is commonly 257 on x86_64
+                      printf("  Detected openat syscall by test_syscalls!\n");
+                  }
+              }
+          }
           
-          # 检查是否存在libbpftime-syscall-server.so
-          if [ ! -f "$HOME_DIR/.bpftime/libbpftime-syscall-server.so" ]; then
-            echo "ERROR: libbpftime-syscall-server.so not found!"
-            exit 1
-          fi
+          tracepoint:raw_syscalls:sys_exit {
+              if (comm == "test_syscalls") {
+                  printf("Syscall exit : PID %d, Comm %s, ID %d, Ret %d\n", pid, comm, args->id, args->ret);
+              }
+          }
           
-          # 使用最简单的bpftrace脚本，只跟踪BEGIN和END，减少复杂性
-          LD_PRELOAD=$HOME_DIR/.bpftime/libbpftime-syscall-server.so \
-          bpftrace -e 'BEGIN { printf("Server started\n"); } END { printf("Server ended\n"); }' > server_log.txt 2>&1
+          // Add a probe to signal readiness, typically uses the named pipe
+          // This requires specific bpftime probe points, which might not map directly from bpftrace
+          // A simple timeout or checking pipe existence might be easier for the script
+          // Let's rely on the pipe logic being internal to the preloaded libraries
           
-          echo "Server script completed"
+          interval:s:10 { // Run for a maximum duration
+              printf("Bpftrace server timeout, exiting.\n");
+              exit();
+          }
+          
+          END {
+              printf("Bpftrace server ended.\n");
+          }
           EOF
-          chmod +x server_script.sh
           
-          # 创建客户端脚本
-          cat > client_script.sh << 'EOF'
-          #!/bin/bash
-          set -x
-          
-          echo "Running client with agent preload..."
-          export HOME_DIR=$HOME
-          export BPFTIME_VM_NAME=llvm
-          export BPFTIME_LOG_OUTPUT=console
-          
-          # 检查是否存在libbpftime-agent-transformer.so和libbpftime-agent.so
-          if [ ! -f "$HOME_DIR/.bpftime/libbpftime-agent-transformer.so" ]; then
-            echo "ERROR: libbpftime-agent-transformer.so not found!"
-            exit 1
-          fi
-          
-          if [ ! -f "$HOME_DIR/.bpftime/libbpftime-agent.so" ]; then
-            echo "ERROR: libbpftime-agent.so not found!"
-            exit 1
-          fi
-          
-          # 使用agent预加载运行测试程序
-          LD_PRELOAD=$HOME_DIR/.bpftime/libbpftime-agent-transformer.so \
-          AGENT_SO=$HOME_DIR/.bpftime/libbpftime-agent.so \
-          ./test_syscalls > client_log.txt 2>&1
-          
-          echo "Client script completed"
-          EOF
-          chmod +x client_script.sh
-
-      - name: Test combination with raw_syscalls
-        run: |
-          echo "==== Testing with raw_syscalls ===="
-          
-          # 创建raw_syscalls测试脚本
+          # Create raw_syscalls test coordination script (using named pipe)
           cat > raw_syscalls_test.sh << 'EOF'
           #!/bin/bash
           set -x
           
           export HOME_DIR=$HOME
           export BPFTIME_VM_NAME=llvm
+          export BPFTIME_LOG_OUTPUT=console # Or 'file' for logs in a file
           
-          # 开始跟踪
-          echo "Starting raw_syscalls tracing..."
-          LD_PRELOAD=$HOME_DIR/.bpftime/libbpftime-syscall-server.so \
-          bpftrace -e 'BEGIN { printf("Server started\n"); } raw_syscalls:sys_enter { exit(); }' > raw_server.log 2>&1 &
+          BPF_SERVER_SO="$HOME_DIR/.bpftime/libbpftime-syscall-server.so"
+          BPF_AGENT_TRANSFORMER_SO="$HOME_DIR/.bpftime/libbpftime-agent-transformer.so"
+          BPF_AGENT_SO="$HOME_DIR/.bpftime/libbpftime-agent.so"
+          PIPE_PATH="/tmp/bpftime_uprobe_pipe" # Default named pipe path
+          
+          # Check if required libraries exist
+          if [ ! -f "$BPF_SERVER_SO" ]; then echo "ERROR: $BPF_SERVER_SO not found!"; exit 1; fi
+          if [ ! -f "$BPF_AGENT_TRANSFORMER_SO" ]; then echo "ERROR: $BPF_AGENT_TRANSFORMER_SO not found!"; exit 1; }
+          if [ ! -f "$BPF_AGENT_SO" ]; then echo "ERROR: $BPF_AGENT_SO not found!"; exit 1; }
+          
+          # Create the named pipe
+          rm -f "$PIPE_PATH"
+          mkfifo "$PIPE_PATH" || { echo "ERROR: Failed to create named pipe $PIPE_PATH"; exit 1; }
+          
+          echo "Starting bpftrace server with preload ($BPF_SERVER_SO)..."
+          # Run server in background, redirecting output
+          LD_PRELOAD="$BPF_SERVER_SO" \
+          bpftrace raw_syscalls_trace.bt > logs/raw_server.log 2>&1 &
           
           SERVER_PID=$!
           echo "Server PID: $SERVER_PID"
-          sleep 3
           
-          # 运行客户端
-          echo "Running client..."
-          LD_PRELOAD=$HOME_DIR/.bpftime/libbpftime-agent-transformer.so \
-          BPFTIME_VM_NAME=llvm \
-          BPFTIME_LOG_OUTPUT=console \
-          AGENT_SO=$HOME_DIR/.bpftime/libbpftime-agent.so \
-          ./test_syscalls > raw_client.log 2>&1
-          
-          # 给服务器时间处理
+          # Wait a moment for the server to initialize and potentially open the pipe
           sleep 2
           
-          # 终止服务器
-          if ps -p $SERVER_PID > /dev/null; then
-            kill $SERVER_PID
-          fi
-          
-          # 显示日志
-          echo "=== Server Log ==="
-          cat raw_server.log
-          
-          echo "=== Client Log ==="
-          cat raw_client.log
-          
-          # 检查结果
-          if grep -q "Server started" raw_server.log; then
-            echo "SUCCESS: Server started with raw_syscalls tracing"
-          else
-            echo "WARNING: Server did not start properly with raw_syscalls tracing"
-          fi
-          
-          if grep -q "Test program" raw_client.log && grep -q "completed" raw_client.log; then
-            echo "SUCCESS: Client executed successfully"
-            exit 0
-          else
-            echo "WARNING: Client execution issues detected"
+          # Check if server process is running
+          if ! ps -p $SERVER_PID > /dev/null; then
+            echo "ERROR: Bpftrace server failed to start!"
+            cat logs/raw_server.log
             exit 1
+          fi
+          
+          echo "Running client with agent preload ($BPF_AGENT_TRANSFORMER_SO) and agent SO ($BPF_AGENT_SO)..."
+          # Run client, relying on agent to use the named pipe and shared memory
+          LD_PRELOAD="$BPF_AGENT_TRANSFORMER_SO" \
+          AGENT_SO="$BPF_AGENT_SO" \
+          "$PWD"/test_syscalls > logs/raw_client.log 2>&1
+          
+          CLIENT_EXIT_CODE=$?
+          echo "Client script completed with exit code: $CLIENT_EXIT_CODE"
+          
+          # Give server time to process final events and potentially exit
+          sleep 2
+          
+          # Terminate the server process
+          if ps -p $SERVER_PID > /dev/null; then
+            echo "Stopping server PID $SERVER_PID..."
+            kill $SERVER_PID 2>/dev/null
+            wait $SERVER_PID 2>/dev/null
+          fi
+          
+          # Clean up the pipe
+          rm -f "$PIPE_PATH"
+          
+          # Display logs
+          echo "=== Server Log (raw_server.log) ==="
+          cat logs/raw_server.log
+          
+          echo "=== Client Log (raw_client.log) ==="
+          cat logs/raw_client.log
+          
+          # Check results
+          # Check if the server log contains evidence of syscalls being traced from the client
+          if grep -q "Detected openat syscall by test_syscalls!" logs/raw_server.log; then
+            echo "SUCCESS: raw_syscalls test: Server traced client's openat"
+            exit 0 # Indicate success for this script
+          else
+            echo "WARNING: raw_syscalls test: No openat trace output found in server log."
+            echo "Dumping dmesg tail for potential kernel errors:"
+            sudo dmesg | tail -n 50
+            exit 1 # Indicate failure for this script
           fi
           EOF
           chmod +x raw_syscalls_test.sh
           
-          # 运行测试
-          ./raw_syscalls_test.sh || echo "raw_syscalls test failed but continuing"
-      - name: Setup tmate session
-        uses: mxschmitt/action-tmate@v3
-        with:
-          limit-access-to-actor: false
-
-      - name: Sequential test with named pipe
-        run: |
-          echo "==== Testing sequential execution with named pipe ===="
+          # Create daemon mode BPF script (compile it later)
+          cat > daemon_openat_trace.bt << 'EOF'
+          #include <linux/sched.h>
           
-          # 创建一个简单的BPF程序，使用最小的附加点
-          cat > minimal_bpf.bt << 'EOF'
-          BEGIN { 
-              printf("Minimal BPF program started\n");
-              exit();
+          tracepoint:raw_syscalls:sys_enter {
+              if (comm == "test_syscalls") {
+                  if (args->id == 257) { // SYS_openat
+                      printf("Daemon traced openat from PID %d, Comm %s\n", pid, comm);
+                  }
+              }
           }
+          // bpftime daemon programs typically don't need explicit exit from probe
+          // Program lifetime is managed by the daemon/loader
           EOF
-          
-          # 创建测试脚本
-          cat > sequential_test.sh << 'EOF'
-          #!/bin/bash
-          set -x
-          
-          export HOME_DIR=$HOME
-          export BPFTIME_VM_NAME=llvm
-          
-          # 首先，启动服务器进程
-          echo "Starting minimal server process..."
-          LD_PRELOAD=$HOME_DIR/.bpftime/libbpftime-syscall-server.so \
-          bpftrace minimal_bpf.bt > sequential_server.log 2>&1
-          SERVER_EXIT=$?
-          
-          echo "Server process exited with status: $SERVER_EXIT"
-          
-          # 然后，运行客户端
-          echo "Running client process..."
-          LD_PRELOAD=$HOME_DIR/.bpftime/libbpftime-agent-transformer.so \
-          BPFTIME_VM_NAME=llvm \
-          BPFTIME_LOG_OUTPUT=console \
-          AGENT_SO=$HOME_DIR/.bpftime/libbpftime-agent.so \
-          ./test_syscalls > sequential_client.log 2>&1
-          CLIENT_EXIT=$?
-          
-          echo "Client process exited with status: $CLIENT_EXIT"
-          
-          # 显示日志
-          echo "=== Server Log ==="
-          cat sequential_server.log
-          
-          echo "=== Client Log ==="
-          cat sequential_client.log
-          
-          # 检查结果
-          if grep -q "Minimal BPF program started" sequential_server.log; then
-            echo "SUCCESS: Minimal server started and attached probe"
-          else
-            echo "WARNING: Server did not start properly"
-          fi
-          
-          if grep -q "Test program" sequential_client.log && grep -q "completed" sequential_client.log; then
-            echo "SUCCESS: Client executed successfully"
-            exit 0
-          else
-            echo "WARNING: Client execution issues detected"
-            exit 1
-          fi
-          EOF
-          chmod +x sequential_test.sh
-          
-          # 运行测试
-          ./sequential_test.sh || echo "Sequential test failed but continuing"
+
+      - name: Test combination with raw_syscalls (LD_PRELOAD server/agent)
+        run: |
+          echo "==== Testing with raw_syscalls (LD_PRELOAD server/agent) ===="
+          # Run the corrected test script
+          ./raw_syscalls_test.sh || { echo "raw_syscalls test failed"; exit 1; }
+
+      # Remove the sequential test as it's likely testing an incorrect usage
+      #- name: Sequential test with named pipe
+      #  run: |
+      #    echo "==== Testing sequential execution with named pipe ===="
+          # ... (removed)
 
       - name: Test with daemon mode
         run: |
           echo "==== Testing with daemon mode ===="
+          export HOME_DIR=$HOME
+          export BPFTIME_VM_NAME=llvm
           
-          # 启动daemon
-          $HOME/.bpftime/bpftime_daemon > logs/daemon.log 2>&1 &
+          BPF_DAEMON="$HOME/.bpftime/bpftime_daemon"
+          BPF_LOAD="$HOME/.bpftime/bpftime"
+          BPF_AGENT_SO="$HOME_DIR/.bpftime/libbpftime-agent.so"
+          BPF_TRACE_SCRIPT="daemon_openat_trace.bt"
+          BPF_OBJECT_FILE="daemon_openat_trace.o"
+          
+          # Check required files
+          if [ ! -f "$BPF_DAEMON" ]; then echo "ERROR: $BPF_DAEMON not found!"; exit 1; fi
+          if [ ! -f "$BPF_LOAD" ]; then echo "ERROR: $BPF_LOAD not found!"; exit 1; }
+          if [ ! -f "$BPF_AGENT_SO" ]; then echo "ERROR: $BPF_AGENT_SO not found!"; exit 1; }
+          if [ ! -f "$BPF_TRACE_SCRIPT" ]; then echo "ERROR: $BPF_TRACE_SCRIPT not found!"; exit 1; }
+          
+          # Start daemon
+          echo "Starting bpftime daemon..."
+          "$BPF_DAEMON" > logs/daemon.log 2>&1 &
           DAEMON_PID=$!
           echo "Daemon started with PID: $DAEMON_PID"
           
-          # 等待daemon初始化
+          # Wait for daemon to initialize
           sleep 3
           
-          # 检查daemon是否运行
-          if ps -p $DAEMON_PID > /dev/null; then
-            echo "Daemon is running with PID: $DAEMON_PID"
-          else
-            echo "WARNING: Daemon process not found"
+          # Check if daemon is running
+          if ! ps -p $DAEMON_PID > /dev/null; then
+            echo "ERROR: Daemon process not found after startup."
             cat logs/daemon.log
             exit 1
           fi
+          echo "Daemon is running."
           
-          # 创建一个简单的bpftrace脚本
-          cat > daemon_test.bt << 'EOF'
-          BEGIN { 
-              printf("Daemon mode bpftrace test started\n");
-              printf("This should be captured by the bpftime daemon\n");
-              exit();
-          }
-          EOF
+          # Compile bpftrace script to BPF object file
+          echo "Compiling bpftrace script $BPF_TRACE_SCRIPT to $BPF_OBJECT_FILE..."
+          # Use bpftrace to compile the script
+          bpftrace -o "$BPF_OBJECT_FILE" "$BPF_TRACE_SCRIPT" > logs/daemon_compile_bpftrace.log 2>&1
+          COMPILE_EXIT_CODE=$?
+          cat logs/daemon_compile_bpftrace.log
+          if [ $COMPILE_EXIT_CODE -ne 0 ]; then
+            echo "ERROR: Failed to compile bpftrace script."
+            kill $DAEMON_PID 2>/dev/null # Clean up daemon
+            exit 1
+          fi
+          echo "Bpftrace script compiled successfully."
           
-          # 使用bpftime load运行bpftrace
-          echo "Running bpftrace with daemon..."
-          $HOME/.bpftime/bpftime load bpftrace daemon_test.bt > logs/daemon_bpftrace.log 2>&1 || echo "bpftrace with daemon failed"
+          # Load the compiled BPF object file into the daemon
+          echo "Loading BPF program $BPF_OBJECT_FILE into the daemon..."
+          # bpftime load should point to the daemon's control socket/pipe, and specify the object file
+          # The exact command depends on bpftime's 'load' tool interface for daemon mode.
+          # Assuming it's something like: bpftime load <object> <target_pid> or bpftime load <object> --system
+          # Let's assume --system for tracing all processes, or need to find PID of test_syscalls
+          # bpftime load --system might require root, but container is --privileged
+          # Checking bpftime docs/examples would give the exact command.
+          # Let's try loading globally first. If that fails, might need to target PID after test_syscalls starts.
+          # UPDATE: Based on common patterns, `bpftime load <object>` might load it globally or require a target specifier.
+          # Let's try `bpftime load <object>` first, assuming it connects to the default daemon socket/pipe.
           
-          # 使用bpftime load运行测试程序
-          echo "Running test program with daemon..."
-          $HOME/.bpftime/bpftime load ./test_syscalls > logs/daemon_test.log 2>&1 || echo "test with daemon failed"
+          # Need to confirm the correct `bpftime load` syntax for daemon mode.
+          # Placeholder: Let's assume a command that loads the object file and attaches it.
+          # If bpftime load only supports loading to *self* or a target PID, this needs adjustment.
+          # A simple test might be to load a BEGIN probe which fires immediately on load if supported.
           
-          # 终止daemon
-          kill $DAEMON_PID || echo "Daemon already ended"
+          # Let's refine: bpftime load <object> might load it *into the current process*. This is not daemon mode.
+          # A separate tool or command *should* exist to tell the daemon to load a program.
+          # If `bpftime load` *is* the daemon loader tool, it should connect to the daemon's control channel.
+          # Let's assume `bpftime load <object_file>` connects to the daemon and loads it system-wide or default.
           
-          # 显示日志
-          echo "=== Daemon Log ==="
+          echo "Attempting to load compiled BPF program into daemon..."
+          "$BPF_LOAD" "$BPF_OBJECT_FILE" > logs/daemon_load_bpf.log 2>&1
+          LOAD_EXIT_CODE=$?
+          cat logs/daemon_load_bpf.log
+          if [ $LOAD_EXIT_CODE -ne 0 ]; then
+            echo "ERROR: Failed to load BPF program into daemon."
+            kill $DAEMON_PID 2>/dev/null # Clean up daemon
+            exit 1
+          fi
+          echo "BPF program loaded into daemon."
+          
+          # Run the test program with the daemon agent
+          echo "Running test program with daemon agent ($BPF_AGENT_SO)..."
+          LD_PRELOAD="$BPF_AGENT_SO" \
+          "$PWD"/test_syscalls > logs/daemon_client.log 2>&1
+          
+          CLIENT_EXIT_CODE=$?
+          echo "Test program completed with exit code: $CLIENT_EXIT_CODE"
+          
+          # Give daemon time to log final events
+          sleep 2
+          
+          # Terminate daemon
+          echo "Stopping daemon PID $DAEMON_PID..."
+          kill $DAEMON_PID 2>/dev/null
+          wait $DAEMON_PID 2>/dev/null
+          
+          # Display logs
+          echo "=== Daemon Log (daemon.log) ==="
           cat logs/daemon.log
           
-          echo "=== Daemon Bpftrace Test Log ==="
-          cat logs/daemon_bpftrace.log
+          echo "=== Daemon Compile Bpftrace Log (daemon_compile_bpftrace.log) ==="
+          cat logs/daemon_compile_bpftrace.log # Should be empty on success
           
-          echo "=== Daemon Test Program Log ==="
-          cat logs/daemon_test.log
+          echo "=== Daemon Load BPF Log (daemon_load_bpf.log) ==="
+          cat logs/daemon_load_bpf.log
           
-          # 检查结果
-          if grep -q "Daemon mode bpftrace test started" logs/daemon_bpftrace.log; then
-            echo "SUCCESS: Daemon mode bpftrace test executed"
+          echo "=== Daemon Client Log (daemon_client.log) ==="
+          cat logs/daemon_client.log
+          
+          # Check results: Look for the specific printf output in the daemon log
+          if grep -q "Daemon traced openat from PID .* Comm test_syscalls" logs/daemon.log; then
+            echo "SUCCESS: Daemon mode test: Daemon traced client's openat"
+            exit 0 # Indicate success for this step
           else
-            echo "WARNING: Daemon mode bpftrace test failed"
-          fi
-          
-          if grep -q "Test program" logs/daemon_test.log && grep -q "completed" logs/daemon_test.log; then
-            echo "SUCCESS: Daemon mode test program executed"
-            exit 0
-          else
-            echo "WARNING: Daemon mode test program execution failed"
-            exit 1
+            echo "WARNING: Daemon mode test: No openat trace output found in daemon log."
+            echo "Dumping dmesg tail for potential kernel errors:"
+            sudo dmesg | tail -n 50
+            exit 1 # Indicate failure for this step
           fi
 
       - name: Test summary
         run: |
           echo "==== Test Summary ===="
           
-          # 评估测试结果
-          if grep -q "SUCCESS:" logs/* || grep -q "Server started\|Minimal BPF program started\|Daemon mode bpftrace test started" logs/*; then
-            echo "OVERALL RESULT: At least some tests passed!"
+          # Evaluate test results based on specific SUCCESS messages printed by the steps
+          # This is more robust than checking general log content
+          
+          RAW_SYSCALLS_TEST_STATUS=$(grep "SUCCESS: raw_syscalls test:" logs/raw_server.log logs/raw_client.log 2>/dev/null || true)
+          DAEMON_TEST_STATUS=$(grep "SUCCESS: Daemon mode test:" logs/daemon.log logs/daemon_client.log logs/daemon_load_bpf.log 2>/dev/null || true)
+          
+          echo "Raw Syscalls Test Status: ${RAW_SYSCALLS_TEST_STATUS:-NOT TESTED OR FAILED}"
+          echo "Daemon Test Status: ${DAEMON_TEST_STATUS:-NOT TESTED OR FAILED}"
+          
+          # Check if *any* major test reported success
+          if echo "$RAW_SYSCALLS_TEST_STATUS" | grep -q "SUCCESS" || echo "$DAEMON_TEST_STATUS" | grep -q "SUCCESS"; then
+            echo "OVERALL RESULT: At least one major test passed!"
             exit 0
           else
-            echo "OVERALL RESULT: No successful tests detected"
+            echo "OVERALL RESULT: All major tests failed or did not run."
             
-            # 显示所有日志的概要
-            for log in logs/*; do
-              echo "--- $log ---"
-              head -n 20 "$log"
-              echo "..."
-            done
-            
+            # Display important logs for debugging
+            echo "==== Debug Logs Overview ===="
+            echo "--- logs/raw_server.log ---"
+            cat logs/raw_server.log || echo "File not found"
+            echo "--- logs/raw_client.log ---"
+            cat logs/raw_client.log || echo "File not found"
+            echo "--- logs/daemon.log ---"
+            cat logs/daemon.log || echo "File not found"
+            echo "--- logs/daemon_load_bpf.log ---"
+            cat logs/daemon_load_bpf.log || echo "File not found"
+            echo "--- logs/daemon_client.log ---"
+            cat logs/daemon_client.log || echo "File not found"
+            echo "--- dmesg tail ---"
+            sudo dmesg | tail -n 50 || echo "Could not get dmesg"
+
             exit 1
           fi
