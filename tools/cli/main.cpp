@@ -164,7 +164,7 @@ static int inject_by_frida(int pid, const char *inject_path, const char *arg)
 	return 0;
 }
 
-std::tuple<std::string, std::vector<std::string>, std::vector<const char *>>
+static std::tuple<std::string, std::vector<std::string>, std::vector<const char *>>
 extract_path_and_args(const argparse::ArgumentParser &parser)
 {
 	std::vector<std::string> items;
@@ -228,8 +228,8 @@ static void signal_handler(int sig)
 
 int main(int argc, const char **argv)
 {
-	const auto agent_config = bpftime::get_agent_config_from_env();
-	bpftime::bpftime_set_logger(agent_config.logger_output_path);
+	const auto agent_config = bpftime::construct_agent_config_from_env();
+	bpftime::bpftime_set_logger(agent_config.get_logger_output_path());
 	signal(SIGINT, signal_handler);
 	signal(SIGTSTP, signal_handler);
 	argparse::ArgumentParser program(argv[0]);
@@ -258,7 +258,9 @@ int main(int argc, const char **argv)
 	argparse::ArgumentParser load_command("load");
 
 	load_command.add_description(
-		"Start an application with bpftime-server injected");
+		"Start an application with bpftime-server injected")
+		.add_epilog("For more infomation and options, please see https://eunomia.dev/bpftime");
+	
 	load_command.add_argument("COMMAND")
 		.help("Command to run")
 		.nargs(argparse::nargs_pattern::at_least_one)
@@ -287,7 +289,8 @@ int main(int argc, const char **argv)
 	argparse::ArgumentParser start_command("start");
 
 	start_command.add_description(
-		"Start an application with bpftime-agent injected");
+		"Start an application with bpftime-agent injected")
+		.add_epilog("For more infomation and options, please see https://eunomia.dev/bpftime");;
 	start_command.add_argument("-s", "--enable-syscall-trace")
 		.help("Whether to enable syscall trace")
 		.flag();
@@ -318,14 +321,16 @@ int main(int argc, const char **argv)
 
 	argparse::ArgumentParser attach_command("attach");
 
-	attach_command.add_description("Inject bpftime-agent to a certain pid");
+	attach_command.add_description("Inject bpftime-agent to a certain pid")
+	.add_epilog("For more infomation and options, please see https://eunomia.dev/bpftime");;
 	attach_command.add_argument("-s", "--enable-syscall-trace")
 		.help("Whether to enable syscall trace")
 		.flag();
 	attach_command.add_argument("PID").scan<'i', int>();
 
 	argparse::ArgumentParser detach_command("detach");
-	detach_command.add_description("Detach all attached agents");
+	detach_command.add_description("Detach all attached agents")
+	.add_epilog("For more infomation and options, please see https://eunomia.dev/bpftime");;
 
 	program.add_subparser(load_command);
 	program.add_subparser(start_command);
