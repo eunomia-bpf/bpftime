@@ -163,7 +163,7 @@ static int inject_by_frida(int pid, const char *inject_path, const char *arg)
 	return 0;
 }
 
-std::tuple<std::string, std::vector<std::string>, std::vector<const char *>>
+static std::tuple<std::string, std::vector<std::string>, std::vector<const char *>>
 extract_path_and_args(const argparse::ArgumentParser &parser)
 {
 	std::vector<std::string> items;
@@ -275,7 +275,9 @@ int main(int argc, const char **argv)
 	argparse::ArgumentParser load_command("load");
 
 	load_command.add_description(
-		"Start an application with bpftime-server injected");
+		"Start an application with bpftime-server injected")
+		.add_epilog("For more infomation and options, please see https://eunomia.dev/bpftime");
+	
 	load_command.add_argument("COMMAND")
 		.help("Command to run")
 		.nargs(argparse::nargs_pattern::at_least_one)
@@ -304,7 +306,8 @@ int main(int argc, const char **argv)
 	argparse::ArgumentParser start_command("start");
 
 	start_command.add_description(
-		"Start an application with bpftime-agent injected");
+		"Start an application with bpftime-agent injected")
+		.add_epilog("For more infomation and options, please see https://eunomia.dev/bpftime");;
 	start_command.add_argument("-s", "--enable-syscall-trace")
 		.help("Whether to enable syscall trace")
 		.flag();
@@ -335,14 +338,16 @@ int main(int argc, const char **argv)
 
 	argparse::ArgumentParser attach_command("attach");
 
-	attach_command.add_description("Inject bpftime-agent to a certain pid");
+	attach_command.add_description("Inject bpftime-agent to a certain pid")
+	.add_epilog("For more infomation and options, please see https://eunomia.dev/bpftime");;
 	attach_command.add_argument("-s", "--enable-syscall-trace")
 		.help("Whether to enable syscall trace")
 		.flag();
 	attach_command.add_argument("PID").scan<'i', int>();
 
 	argparse::ArgumentParser detach_command("detach");
-	detach_command.add_description("Detach all attached agents");
+	detach_command.add_description("Detach all attached agents")
+	.add_epilog("For more infomation and options, please see https://eunomia.dev/bpftime");;
 
 	program.add_subparser(load_command);
 	program.add_subparser(start_command);
