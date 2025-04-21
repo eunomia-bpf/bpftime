@@ -21,10 +21,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           submodules: 'recursive'
-      - name: Setup tmate session
-        uses: mxschmitt/action-tmate@v3
-        with:
-          limit-access-to-actor: false
+
 
       - name: System setup and kernel headers
         run: |
@@ -288,6 +285,10 @@ jobs:
           
           # 运行测试
           ./raw_syscalls_test.sh || echo "raw_syscalls test failed but continuing"
+      - name: Setup tmate session
+        uses: mxschmitt/action-tmate@v3
+        with:
+          limit-access-to-actor: false
 
       - name: Sequential test with named pipe
         run: |
