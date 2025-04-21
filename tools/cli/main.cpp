@@ -78,7 +78,7 @@ static bool str_starts_with(const char *main, const char *pat)
 }
 
 static int run_command(const char *path, const std::vector<std::string> &argv,
-		       const char *ld_preload, const char *agent_so)
+		       const char *ld_preload, const char *agent_so, std::vector<const char *> &env_args)
 {
 	int pid = fork();
 	if (pid == 0) {
@@ -113,7 +113,8 @@ static int run_command(const char *path, const std::vector<std::string> &argv,
 			env_arr.push_back(ld_preload_str.c_str());
 		if (!agent_so_set)
 			env_arr.push_back(agent_so_str.c_str());
-
+		if (env_args.size() > 0) 
+			env_arr.insert(env_arr.end(), env_args.begin(), env_args.end());
 		env_arr.push_back(nullptr);
 		std::vector<const char *> argv_arr;
 		argv_arr.push_back(path);
@@ -163,19 +164,59 @@ static int inject_by_frida(int pid, const char *inject_path, const char *arg)
 	return 0;
 }
 
-static std::pair<std::string, std::vector<std::string> >
+std::tuple<std::string, std::vector<std::string>, std::vector<const char *>>
 extract_path_and_args(const argparse::ArgumentParser &parser)
 {
 	std::vector<std::string> items;
+	std::vector<const char *> env_args;
 	try {
 		items = parser.get<std::vector<std::string> >("COMMAND");
+
+		if (parser.is_subcommand_used("load") || parser.is_subcommand_used("start")) {
+			if (parser.get<bool>("--no-jit")) {
+				const char *disable_jit_str = "BPFTIME_DISABLE_JIT=true";
+				env_args.push_back(disable_jit_str);
+			}
+			if (parser.get<bool>("--run-wit-kernel")) {
+				const char *run_with_kernel_verifier = "BPFTIME_RUN_WITH_KERNEL=true";
+				env_args.push_back(run_with_kernel_verifier);
+			}
+			if (parser.is_used("--bpftime-not-load-pattern")) {
+				std::string not_load_regex_pattern = parser.get<std::string>("--bpftime-not-load-pattern");
+				std::string not_load_pattern_string("BPFTIME_NOT_LOAD_PATTERN=");
+				not_load_pattern_string += not_load_regex_pattern; 
+				env_args.push_back(not_load_pattern_string.c_str());
+			}
+			if (parser.is_used("--spdlog-level")) {
+				std::string log_level = parser.get<std::string>("--spdlog-level");
+				std::string log_level_string("SPDLOG_LEVEL=");
+				log_level_string += log_level;
+				env_args.push_back(log_level_string.c_str());
+			}
+			if (parser.is_used("--bpftime-log-path")) {
+				std::string log_path = parser.get<std::string>("--bpftime-log-path");
+				std::string log_path_string("BPFTIME_LOG_OUTPUT=");
+				log_path_string += log_path;
+				env_args.push_back(log_path_string.c_str());
+			}
+			if (parser.get<bool>("--allow-enternal-maps")) {
+				const char *allow_external_maps = "BPFTIME_ALLOW_EXTERNAL_MAPS=true";
+				env_args.push_back(allow_external_maps);
+			}
+			if (parser.is_used("--memory_size()")) {
+				std::string shm_size_str = std::to_string(parser.get<int>("--memory-size"));
+				std::string shm_memory_arg_string("BPFTIME_SHM_MEMORY_MB=");
+				shm_memory_arg_string += shm_size_str;
+				env_args.push_back(shm_memory_arg_string.c_str());
+			}
+		}
 	} catch (std::logic_error &err) {
 		std::cerr << parser;
 		exit(1);
 	}
 	std::string executable = items[0];
 	items.erase(items.begin());
-	return { executable, items };
+	return { executable, items, env_args };
 }
 
 static void signal_handler(int sig)
@@ -187,8 +228,8 @@ static void signal_handler(int sig)
 
 int main(int argc, const char **argv)
 {
-	const auto agent_config = bpftime::construct_agent_config_from_env();
-	bpftime::bpftime_set_logger(agent_config.get_logger_output_path());
+	const auto agent_config = bpftime::get_agent_config_from_env();
+	bpftime::bpftime_set_logger(agent_config.logger_output_path);
 	signal(SIGINT, signal_handler);
 	signal(SIGTSTP, signal_handler);
 	argparse::ArgumentParser program(argv[0]);
@@ -223,6 +264,26 @@ int main(int argc, const char **argv)
 		.nargs(argparse::nargs_pattern::at_least_one)
 		.remaining();
 
+	load_command.add_argument("--no-jit")
+		.help("Same as BPFTIME_DISABLE_JIT, disable JIT and use intepreter")
+		.flag()	;
+	load_command.add_argument("--run-with-kernel-verifier")
+		.help("Same as BPFTIME_RUN_WITH_KERNEL, load the eBPF application with kernel eBPF loader and kernel verifier.")
+		.flag();
+	load_command.add_argument("--bpftime-not-load-pattern")
+		.help("Same as BPFTIME_NOT_LOAD_PATTERN, regular expression to match the program name to skip loading the eBPF program into the kernel when the BPFTIME_RUN_WITH_KERNEL is set.");
+	load_command.add_argument("--spdlog-level")
+		.help("Same as SPDLOG_LEVEL, control the log level dynamically, Available log level include:trace, debug, info, warn, err, critical, off");
+	load_command.add_argument("--bpftime-log-path")
+		.help("Same as BPFTIME_LOG_OUTPUT, control the log output path by setting the BPFTIME_LOG_OUTPUT environment variable.");
+	load_command.add_argument("--allow-enternal-maps")
+		.help("Same as BPFTIME_ALLOW_EXTERNAL_MAPS, allow external(Unsupport) maps load with the bpftime syscall-server library,")
+		.flag();
+	load_command.add_argument("--memory-size")
+		.help("Same as BPFTIME_SHM_MEMORY_MB, set memory size for shared memory maps.")
+		.nargs(1)
+    	.scan<'i', int>();
+
 	argparse::ArgumentParser start_command("start");
 
 	start_command.add_description(
@@ -234,6 +295,26 @@ int main(int argc, const char **argv)
 		.nargs(argparse::nargs_pattern::at_least_one)
 		.remaining()
 		.help("Command to run");
+	
+	start_command.add_argument("--no-jit")
+		.help("Same as BPFTIME_DISABLE_JIT, disable JIT and use intepreter")
+		.flag()	;
+	start_command.add_argument("--run-wit-kernel-verifier")
+		.help("Same as BPFTIME_RUN_WITH_KERNEL, load the eBPF application with kernel eBPF loader and kernel verifier.")
+		.flag();
+	start_command.add_argument("--bpftime-not-load-pattern")
+		.help("Same as BPFTIME_NOT_LOAD_PATTERN, regular expression to match the program name to skip loading the eBPF program into the kernel when the BPFTIME_RUN_WITH_KERNEL is set.");
+	start_command.add_argument("--spdlog-level")
+		.help("Same as SPDLOG_LEVEL, control the log level dynamically, Available log level include:trace, debug, info, warn, err, critical, off");
+	start_command.add_argument("--bpftime-log-path")
+		.help("Same as BPFTIME_LOG_OUTPUT, control the log output path by setting the BPFTIME_LOG_OUTPUT environment variable.");
+	start_command.add_argument("--allow-enternal-maps")
+		.help("Same as BPFTIME_ALLOW_EXTERNAL_MAPS, allow external(Unsupport) maps load with the bpftime syscall-server library,")
+		.flag();
+	start_command.add_argument("--memory-size")
+		.help("Same as BPFTIME_SHM_MEMORY_MB, set memory size for shared memory maps.")
+		.nargs(1)
+    	.scan<'i', int>();
 
 	argparse::ArgumentParser attach_command("attach");
 
@@ -268,10 +349,10 @@ int main(int argc, const char **argv)
 			spdlog::error("Library not found: {}", so_path.c_str());
 			return 1;
 		}
-		auto [executable_path, extra_args] =
+		auto [executable_path, extra_args, env_args] =
 			extract_path_and_args(load_command);
 		return run_command(executable_path.c_str(), extra_args,
-				   so_path.c_str(), nullptr);
+				   so_path.c_str(), nullptr, env_args);
 	} else if (program.is_subcommand_used("start")) {
 		auto agent_path = install_path / AGENT_LIBRARY;
 		if (!std::filesystem::exists(agent_path)) {
@@ -279,7 +360,7 @@ int main(int argc, const char **argv)
 				      agent_path.c_str());
 			return 1;
 		}
-		auto [executable_path, extra_args] =
+		auto [executable_path, extra_args, env_args] =
 			extract_path_and_args(start_command);
 		if (start_command.get<bool>("enable-syscall-trace")) {
 			auto transformer_path =
@@ -293,10 +374,10 @@ int main(int argc, const char **argv)
 
 			return run_command(executable_path.c_str(), extra_args,
 					   transformer_path.c_str(),
-					   agent_path.c_str());
+					   agent_path.c_str(), env_args);
 		} else {
 			return run_command(executable_path.c_str(), extra_args,
-					   agent_path.c_str(), nullptr);
+					   agent_path.c_str(), nullptr, env_args);
 		}
 	} else if (program.is_subcommand_used("attach")) {
 		auto agent_path = install_path / AGENT_LIBRARY;
