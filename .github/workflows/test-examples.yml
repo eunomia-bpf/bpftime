@@ -169,30 +169,33 @@ jobs:
           # Compile test program
           gcc -o test_syscalls test_syscalls.c
           
-          # Create raw_syscalls test script for bpftrace server - 修复语法错误
+          # 创建 raw_syscalls 测试脚本，避免使用 BEGIN/END 探针
           cat > raw_syscalls_trace.bt << 'EOF'
           #include <linux/sched.h>
           
-          // 计数器，用于跟踪已捕获的系统调用数量
-          BEGIN {
-              @syscall_count = 0;
-          }
-          
-          tracepoint:raw_syscalls:sys_enter {
+          // 使用简单映射来跟踪系统调用计数，避免使用 BEGIN 探针
+          tracepoint:raw_syscalls:sys_enter 
+          {
               // 过滤特定进程名称，避免过度追踪 bpftrace 自身
               if (comm == "test_syscalls") {
                   printf("Syscall enter: PID %d, Comm %s, ID %d\n", pid, comm, args->id);
                   if (args->id == 257) { // SYS_openat 在 x86_64 上通常是 257
                       printf("  Detected openat syscall by test_syscalls!\n");
                   }
-                  @syscall_count++;
                   
-                  // 当捕获足够多的系统调用后退出
+                  // 增加计数器并检查是否达到退出条件
+                  @syscall_count = @syscall_count + 1;
                   if (@syscall_count > 100) {
                       printf("Captured enough syscalls, exiting.\n");
                       exit();
                   }
               }
+          }
+          
+          // 添加一个定时器作为备用退出机制
+          interval:s:10 {
+              printf("Timeout reached, exiting.\n");
+              exit();
           }
           
           tracepoint:raw_syscalls:sys_exit {
