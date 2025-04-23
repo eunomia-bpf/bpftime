@@ -1,4 +1,4 @@
-name: BPFtime Syscall Tracing (Multi-Step Load/Start) Original Client Cmd Test
+name: BPFtime Syscall Tracing (Multi-Step Load/Start) Original Client Cmd Test v2
 
 on:
   push:
@@ -43,8 +43,12 @@ jobs:
           uname -a && cat /etc/os-release
           echo "==== bpftrace version ===="
           which bpftrace && bpftrace --version || echo "bpftrace not found"
-          mkdir -p logs
-          # Create the target file for cat
+
+          # --- Create log AND build directories early ---
+          mkdir -p logs build
+          # ---
+
+          # Create the target file for cat (now build dir exists)
           echo "TEST_DATA_LINE_1_ABC" > build/install_manifest.txt
           echo "TEST_DATA_LINE_2_XYZ" >> build/install_manifest.txt
           echo "Created build/install_manifest.txt:"
@@ -76,7 +80,6 @@ jobs:
           set -x
           echo "==== Starting BPFTIME Server in background ===="
           BPFTIME_BIN="$BPFTIME_INSTALL_DIR/bpftime"
-          # This is the script the server loads - it should detect cat's openat
           BPFTRACE_SCRIPT='tracepoint:syscalls:sys_enter_openat { printf("SERVER_TRACE (openat): %s %s\n", comm, str(args->filename)); }'
 
           sudo -E "$BPFTIME_BIN" load bpftrace -e "$BPFTRACE_SCRIPT" > "$SERVER_LOG" 2>&1 &
@@ -108,29 +111,24 @@ jobs:
           fi
 
           BPFTIME_BIN="$BPFTIME_INSTALL_DIR/bpftime"
-          # --- Use the original client command ---
           CLIENT_COMMAND="cat build/install_manifest.txt"
 
           echo "Running client command: '$CLIENT_COMMAND'..."
           export BPFTIME_DEBUG=1
 
-          # --- Execute original command, no strace, keep || true ---
+          # Execute original command, keep || true to ensure next line runs
           sudo -E env BPFTIME_DEBUG=1 "$BPFTIME_BIN" start -s "$CLIENT_COMMAND" > "$CLIENT_LOG" 2>&1 || true
           _client_exit_code=$? # Capture the *actual* exit code of bpftime start
           echo "Client command finished with raw exit code: $_client_exit_code" # Log the captured code
 
-          # Now export the *actual* captured exit code. This line WILL execute.
+          # Export the *actual* captured exit code. This line WILL execute.
           echo "CLIENT_EXIT_CODE=$_client_exit_code" >> $GITHUB_ENV
           echo "Successfully exported CLIENT_EXIT_CODE=$_client_exit_code to GITHUB_ENV"
-          # ---
 
           # FORCE PRINT CLIENT LOGS IN THIS STEP
           echo ""; echo "#############################################"
           echo "### CLIENT LOG (immediately after run) ($CLIENT_LOG) ###"; echo "#############################################"
           cat "$CLIENT_LOG" || echo "<<< Client log file not found or empty >>>"; echo "#############################################"; echo ""
-
-          # Optional: Fail step immediately if needed
-          # exit $_client_exit_code
 
       - name: Stop Server and Analyze Results
         if: always() # Ensure cleanup and analysis
@@ -162,16 +160,14 @@ jobs:
           echo "--- Final Analysis ---"
           echo "Analyzing Client Exit Code: '$CLIENT_FINAL_EXIT_CODE'"
 
-          # --- Refined Analysis Logic ---
+          # Refined Analysis Logic
           if [ "$CLIENT_FINAL_EXIT_CODE" = "0" ]; then
               echo ">>> Client command ('cat build/install_manifest.txt') SUCCEEDED (Exit Code 0). Checking server log for trace... <<<"
-              # Define the expected pattern based on BPFTRACE_SCRIPT and CLIENT_COMMAND
               EXPECTED_PATTERN="SERVER_TRACE (openat): cat build/install_manifest.txt"
               echo "Searching server log ($SERVER_LOG) for pattern: '$EXPECTED_PATTERN'"
 
               if grep -F -q "$EXPECTED_PATTERN" "$SERVER_LOG"; then
                   echo "Found expected pattern in server log."
-                  # Optionally check for locale pattern if needed
                   if grep -F -q "SERVER_TRACE (openat): cat /usr/lib/locale/locale-archive" "$SERVER_LOG"; then
                       echo "Also found locale pattern trace."
                   fi
