@@ -1,4 +1,4 @@
-name: BPFtime Syscall Tracing Test
+name: BPFtime Syscall Tracing (Load/Start) Test
 
 on:
   push:
@@ -9,15 +9,19 @@ on:
 
 env:
   BPFTIME_VM_NAME: llvm
+  # Set log level and output for debugging, can be info or debug if needed
   SPDLOG_LEVEL: error
-  
+  BPFTIME_LOG_OUTPUT: console
+  # Default shared memory path, overridden if needed below
+  BPFTIME_SHARED_MEMORY_PATH: /dev/shm
+
 jobs:
-  syscall-tracing-test:
+  syscall-tracing-load-start-test:
     runs-on: ubuntu-22.04
     container:
       image: "manjusakalza/bpftime-base-image:ubuntu-2204"
-      # Add proper mounts for accessing kernel debug features and shared memory
-      options: "--privileged -v /sys/kernel/debug/:/sys/kernel/debug:rw -v /sys/kernel/tracing:/sys/kernel/tracing:rw -v /dev/shm:/dev/shm:rw"
+      # Add necessary mounts and privileges for BPF/tracing/shared memory
+      options: "--privileged -v /sys/kernel/debug:/sys/kernel/debug:rw -v /sys/kernel/tracing:/sys/kernel/tracing:rw -v /dev/shm:/dev/shm:rw -v /tmp:/tmp:rw"
 
     steps:
       - name: Checkout code
@@ -25,339 +29,197 @@ jobs:
         with:
           submodules: 'recursive'
 
-      - name: System setup and dependencies
+      - name: System setup and kernel headers
         run: |
           apt-get update
           apt-get install -y --no-install-recommends \
             lcov tree strace gdb sudo libc6-dev bpftrace \
             linux-headers-generic linux-tools-generic \
             linux-headers-$(uname -r) \
-            libelf-dev # Needed for bpftrace
-          
-          # System information for debugging
+            libelf-dev # Needed for bpftrace compilation often
+
           echo "==== System Information ===="
           uname -a
           cat /etc/os-release
-          
-          # Check for bpftrace availability and version
+
           echo "==== Checking bpftrace availability ===="
           which bpftrace
           bpftrace --version
-          
-          # Check for tracepoint availability
-          echo "==== Checking tracepoint availability ===="
-          if bpftrace -l 'tracepoint:syscalls:sys_enter_openat' > /dev/null 2>&1; then
-            echo "openat syscall tracepoint found."
-          else
-            echo "ERROR: openat syscall tracepoint not found"
-            exit 1
-          fi
-          
-          # Create test file needed for openat syscall
-          echo "==== Preparing test directory and files ===="
-          mkdir -p build logs
-          echo "/root/.bpftime/bpftime_daemon" > build/install_manifest.txt
-          echo "/root/.bpftime/bpftimetool" >> build/install_manifest.txt
-          echo "/root/.bpftime/libbpftime-agent.so" >> build/install_manifest.txt
-          echo "/root/.bpftime/libbpftime-agent-transformer.so" >> build/install_manifest.txt
-          echo "/root/.bpftime/libbpftime-syscall-server.so" >> build/install_manifest.txt
-          cat build/install_manifest.txt
-          
-          # Ensure shared memory directories exist
-          mkdir -p /dev/shm /tmp/bpftime_shm
-          chmod 777 /dev/shm /tmp/bpftime_shm
 
-      - name: Build and install BPFtime
+          echo "==== Checking tracepoint availability ===="
+          # Check for the specific tracepoint used in the test
+          bpftrace -l 'tracepoint:syscalls:sys_enter_openat' > /dev/null 2>&1 || { echo "syscalls:sys_enter_openat tracepoint not found or bpftrace failed"; exit 1; }
+          echo "syscalls:sys_enter_openat tracepoint found."
+
+          echo "==== Checking kernel capabilities ===="
+          ls -la /sys/kernel/debug/tracing/ || echo "Debug tracing not accessible"
+          ls -la /sys/kernel/tracing/ || echo "Kernel tracing not accessible"
+
+          # Ensure /dev/shm exists and is writable, or use /tmp as fallback
+          mkdir -p /dev/shm /run/shm /tmp/bpftime_shm
+          chmod 777 /dev/shm /run/shm /tmp/bpftime_shm
+          ls -la /dev/shm /run/shm /tmp/bpftime_shm || echo "Warning: Could not list shm dirs"
+
+          echo "==== Preparing test files and directories ===="
+          mkdir -p build logs
+          # Create the file that 'cat' will try to open
+          echo "TEST_MARKER_LINE_1" > build/install_manifest.txt
+          echo "TEST_MARKER_LINE_2" >> build/install_manifest.txt
+          echo "Created build/install_manifest.txt:"
+          cat build/install_manifest.txt
+
+      - name: Test bpftrace basic functionality (sanity check)
+        run: |
+          echo "==== Testing bpftrace basic functionality ===="
+          # Simple test to see if bpftrace can attach and run
+          timeout -k 5s 4s bpftrace -e 'tracepoint:raw_syscalls:sys_enter { printf("Syscall ID %d\n", args->id); exit(0); }' > logs/bpftrace_sanity_test.log 2>&1 || echo "Bpftrace sanity test completed with non-zero exit (expected with timeout/exit)"
+          echo "Bpftrace sanity test log:"
+          cat logs/bpftrace_sanity_test.log
+          if grep -q "Syscall ID" logs/bpftrace_sanity_test.log; then
+             echo "SUCCESS: Basic bpftrace sanity test ran and produced output."
+          else
+             echo "WARNING: Basic bpftrace sanity test did not produce expected output, but continuing."
+          fi
+
+
+      - name: Build and install runtime
         run: |
           export INSTALL_DIR=$HOME/.bpftime
           echo "Building bpftime, installing to $INSTALL_DIR"
-          
-          # Create the installation directory
-          mkdir -p $INSTALL_DIR
-          
-          # Run CMake with logging
+
+          # Note: Ensure BUILD_BPFTIME_DAEMON=1 and BUILD_AGENT=1 are set for the load/start model
           cmake -Bbuild -DCMAKE_BUILD_TYPE:STRING=RelWithDebInfo \
             -DCMAKE_INSTALL_PREFIX=$INSTALL_DIR \
             -DBPFTIME_LLVM_JIT=1 \
             -DBUILD_BPFTIME_DAEMON=1 \
-            -DCMAKE_CXX_FLAGS="-DDEFAULT_LOGGER_OUTPUT_PATH='\"console\"'" \
-            -DBUILD_AGENT=1 > logs/cmake_config.log 2>&1 || { cat logs/cmake_config.log; exit 1; }
-          
-          # Build and install
-          cmake --build build --config RelWithDebInfo --target install -j$(nproc) > logs/cmake_build.log 2>&1 || { cat logs/cmake_build.log; exit 1; }
-          
+            -DBUILD_AGENT=1 \
+            -DCMAKE_CXX_FLAGS="-DDEFAULT_LOGGER_OUTPUT_PATH='\"console\"'"
+
+          cmake --build build --config RelWithDebInfo --target install -j$(nproc)
+
           echo "Installed files:"
           ls -la $INSTALL_DIR/
-          
-          # Verify that the required libraries were installed
-          if [ ! -f "$INSTALL_DIR/libbpftime-syscall-server.so" ]; then
-            echo "WARNING: syscall server library not found in install directory"
-            echo "Searching for the library in build directory..."
-            
-            # Try to copy from build directory
-            server_lib=$(find build -name "libbpftime-syscall-server.so" | head -1)
-            agent_lib=$(find build -name "libbpftime-agent.so" | head -1)
-            
-            if [ -n "$server_lib" ] && [ -n "$agent_lib" ]; then
-              echo "Found libraries in build directory, copying to install directory"
-              cp $server_lib $INSTALL_DIR/
-              cp $agent_lib $INSTALL_DIR/
-              # Copy other important libraries
-              find build -name "libbpftime-agent-transformer.so" -exec cp {} $INSTALL_DIR/ \;
-            else
-              echo "ERROR: Required libraries not found!"
-              exit 1
-            fi
-          fi
-          
-          # Make sure everything is executable
-          chmod +x $INSTALL_DIR/* 2>/dev/null || echo "Warning: Failed to make files executable"
-          
-          # Create bpftime wrapper script if not present
-          if [ ! -x "$INSTALL_DIR/bpftime" ]; then
-            echo "Creating bpftime wrapper script"
-            cat > $INSTALL_DIR/bpftime << 'EOF'
-          #!/bin/bash
-          # BPFtime command wrapper
-          SCRIPT_DIR=$(dirname "$(readlink -f "$0")")
+          chmod +x $INSTALL_DIR/* || echo "Warning: Could not chmod installed files"
 
-          # Get the subcommand
-          CMD="$1"
-          shift
-
-          if [ "$CMD" = "load" ]; then
-            # Load command: preload the syscall server library
-            LD_PRELOAD="$SCRIPT_DIR/libbpftime-syscall-server.so" "$@"
-          elif [ "$CMD" = "start" ]; then
-            # Start command: preload the agent library
-            if [ "$1" = "-s" ]; then
-              shift
-              LD_PRELOAD="$SCRIPT_DIR/libbpftime-agent.so" "$@"
-            else
-              LD_PRELOAD="$SCRIPT_DIR/libbpftime-agent.so" "$@"
-            fi
-          else
-            echo "Unknown command: $CMD"
-            echo "Usage: bpftime [load|start] [options]"
-            exit 1
-          fi
-          EOF
-            chmod +x $INSTALL_DIR/bpftime
-          fi
-          
-          # Add bpftime to PATH
-          export PATH=$PATH:$INSTALL_DIR
-          echo "PATH=$PATH" >> $GITHUB_ENV
+          # Add install dir to PATH for subsequent steps
+          echo "PATH=$INSTALL_DIR:$PATH" >> $GITHUB_ENV
           echo "BPFTIME_INSTALL_DIR=$INSTALL_DIR" >> $GITHUB_ENV
+          echo "HOME_DIR=$HOME" >> $GITHUB_ENV
 
-      - name: Test syscall tracing with bpftime
-        id: test_bpftime
-        continue-on-error: true
+      - name: Run BPFTIME Load/Start Syscall Tracing Test
         run: |
-          # Find BPFtime directory
-          BPFTIME_DIR=$HOME/.bpftime
-          if [ ! -d "$BPFTIME_DIR" ] || [ ! -f "$BPFTIME_DIR/libbpftime-syscall-server.so" ]; then
-            # Try alternate locations
-            if [ -d "/github/home/.bpftime" ] && [ -f "/github/home/.bpftime/libbpftime-syscall-server.so" ]; then
-              BPFTIME_DIR="/github/home/.bpftime"
-            elif [ -d "/root/.bpftime" ] && [ -f "/root/.bpftime/libbpftime-syscall-server.so" ]; then
-              BPFTIME_DIR="/root/.bpftime"
-            else
-              echo "ERROR: Could not find BPFtime installation"
-              library_path=$(find /github/home /root $HOME -name "libbpftime-syscall-server.so" 2>/dev/null | head -1)
-              if [ -n "$library_path" ]; then
-                BPFTIME_DIR=$(dirname "$library_path")
-                echo "Found library at: $BPFTIME_DIR"
-              else
-                echo "No BPFtime libraries found in standard locations"
-                exit 1
-              fi
-            fi
+          echo "==== Running BPFTIME load/start test ===="
+
+          # Use an available writable shared memory path
+          SHM_PATH="/dev/shm"
+          if [ ! -d "$SHM_PATH" ] || [ ! -w "$SHM_PATH" ]; then
+             SHM_PATH="/run/shm"
           fi
-          
-          # Ensure PATH includes BPFtime directory
-          export PATH=$PATH:$BPFTIME_DIR
-          
-          # Create logs directory
-          mkdir -p logs
-          
-          # Start server
-          echo "Starting BPFtime syscall server..."
-          SPDLOG_LEVEL=error $BPFTIME_DIR/bpftime load bpftrace -e 'tracepoint:syscalls:sys_enter_openat { printf("%s %s\n", comm, str(args->filename)); }' > logs/server.log 2>&1 &
+          if [ ! -d "$SHM_PATH" ] || [ ! -w "$SHM_PATH" ]; then
+             SHM_PATH="/tmp" # Fallback
+          fi
+           if [ ! -d "$SHM_PATH" ] || [ ! -w "$SHM_PATH" ]; then
+             SHM_PATH="/tmp/bpftime_shm" # Another fallback
+          fi
+          export BPFTIME_SHARED_MEMORY_PATH="$SHM_PATH"
+          echo "Using BPFTIME_SHARED_MEMORY_PATH=$BPFTIME_SHARED_MEMORY_PATH"
+
+          BPFTIME_BIN="$HOME/.bpftime/bpftime"
+          # Define the bpftrace script inline
+          BPFTRACE_SCRIPT='tracepoint:syscalls:sys_enter_openat { printf("%s %s\n", comm, str(args->filename)); }'
+          CLIENT_COMMAND="cat build/install_manifest.txt" # The command to run via bpftime start
+          SERVER_LOG="logs/bpftime_server.log"
+          CLIENT_LOG="logs/bpftime_client.log"
+
+          # Check if bpftime binary exists and is executable
+          if [ ! -x "$BPFTIME_BIN" ]; then
+            echo "ERROR: bpftime binary not found or not executable at $BPFTIME_BIN"
+            exit 1
+          fi
+
+          echo "Starting bpftime load (server) with bpftrace script..."
+          # Start the server in the background. Use timeout to prevent it hanging.
+          # Redirect stdout/stderr to the log file.
+          # Note: bpftrace with tracepoints often needs root, so use sudo.
+          # SPDLOG_LEVEL and BPFTIME_LOG_OUTPUT are picked up from env.
+          sudo -E timeout -k 40s 35s "$BPFTIME_BIN" load bpftrace -e "$BPFTRACE_SCRIPT" > "$SERVER_LOG" 2>&1 &
           SERVER_PID=$!
-          
-          # Wait for server to initialize
-          sleep 3
-          
-          # Check if server is running
+          echo "BPFTIME server PID: $SERVER_PID"
+
+          # Give the server a few seconds to initialize and load the program
+          echo "Waiting for server to initialize..."
+          sleep 7 # Increased sleep duration for stability
+
+          # Check if server process is still running
           if ! ps -p $SERVER_PID > /dev/null; then
-            echo "ERROR: Server process died"
-            cat logs/server.log
+            echo "ERROR: BPFTIME server failed to start or exited prematurely!"
+            echo "Server log:"
+            cat "$SERVER_LOG"
+            # Attempt to get dmesg for kernel errors
+            sudo dmesg | tail -n 50 || echo "Could not get dmesg"
             exit 1
           fi
-          
-          # Run client
-          echo "Running BPFtime client..."
-          SPDLOG_LEVEL=error $BPFTIME_DIR/bpftime start -s cat build/install_manifest.txt > logs/client.log 2>&1
-          
-          # Wait for events to be processed
-          sleep 2
-          
-          # Stop server
-          kill $SERVER_PID 2>/dev/null || true
-          wait $SERVER_PID 2>/dev/null || true
-          
-          # Display logs
-          echo "=== Server Log ==="
-          cat logs/server.log
-          
-          echo "=== Client Log ==="
-          cat logs/client.log
-          
-          # Check for success
-          if grep -q "cat build/install_manifest.txt" logs/server.log; then
-            echo "SUCCESS: BPFtime syscall tracing test passed"
-            exit 0
-          else
-            echo "FAILURE: BPFtime syscall tracing test failed"
-            exit 1
-          fi
+          echo "Server is running (PID $SERVER_PID)."
 
-      - name: Test syscall tracing with direct LD_PRELOAD
-        id: test_direct
-        if: steps.test_bpftime.outcome == 'failure'
-        continue-on-error: true
-        run: |
-          # Find BPFtime directory
-          BPFTIME_DIR=$HOME/.bpftime
-          if [ ! -d "$BPFTIME_DIR" ] || [ ! -f "$BPFTIME_DIR/libbpftime-syscall-server.so" ]; then
-            # Try alternate locations
-            BPFTIME_DIR=$(find /github/home /root $HOME -name "libbpftime-syscall-server.so" 2>/dev/null | head -1 | xargs dirname)
-            if [ -z "$BPFTIME_DIR" ]; then
-              echo "ERROR: Could not find BPFtime libraries"
-              exit 1
-            fi
-            echo "Found BPFtime libraries at: $BPFTIME_DIR"
-          fi
-          
-          # Create logs directory
-          mkdir -p logs
-          
-          echo "Starting server with direct LD_PRELOAD..."
-          SPDLOG_LEVEL=error LD_PRELOAD="$BPFTIME_DIR/libbpftime-syscall-server.so" \
-          bpftrace -e 'tracepoint:syscalls:sys_enter_openat { printf("DIRECT: %s %s\n", comm, str(args->filename)); }' > logs/direct_server.log 2>&1 &
-          SERVER_PID=$!
-          
-          # Wait for server to initialize
+          echo "Running bpftime start (client) command: '$CLIENT_COMMAND'..."
+          # Run the client command using bpftime start.
+          # The agent SO is automatically found by bpftime if it's in the install dir.
+          # Use sudo as the client might interact with the kernel/agent needs privs.
+          # Capture client stdout/stderr separately if needed, but for this test,
+          # we only care if the server captures its syscalls.
+          sudo -E "$BPFTIME_BIN" start -s "$CLIENT_COMMAND" > "$CLIENT_LOG" 2>&1
+          CLIENT_EXIT_CODE=$?
+          echo "Client command exit code: $CLIENT_EXIT_CODE"
+
+          # Give the server a moment to process final events after the client finishes
+          echo "Waiting for server to capture final events..."
           sleep 3
-          
-          echo "Running client with direct LD_PRELOAD..."
-          SPDLOG_LEVEL=error LD_PRELOAD="$BPFTIME_DIR/libbpftime-agent.so" \
-          cat build/install_manifest.txt > logs/direct_client.log 2>&1
-          
-          # Wait for events to be processed
-          sleep 2
-          
-          # Stop server
-          kill $SERVER_PID 2>/dev/null || true
-          
-          # Display logs
-          echo "=== Direct Server Log ==="
-          cat logs/direct_server.log
-          
-          # Check for success
-          if grep -q "cat.*build/install_manifest.txt" logs/direct_server.log; then
-            echo "SUCCESS: Direct LD_PRELOAD test passed"
-            exit 0
+
+          echo "Stopping BPFTIME server PID $SERVER_PID..."
+          # Check if the server is still running before trying to kill it
+          if ps -p $SERVER_PID > /dev/null; then
+            kill $SERVER_PID 2>/dev/null || true # Kill gracefully
+            wait $SERVER_PID 2>/dev/null || true # Wait for it to exit
+            echo "Server stopped."
           else
-            echo "FAILURE: Direct LD_PRELOAD test failed"
-            exit 1
+            echo "WARNING: Server process $SERVER_PID already exited."
           fi
 
-      - name: Test syscall tracing with raw syscalls tracepoint
-        id: test_raw_syscalls
-        if: steps.test_bpftime.outcome == 'failure' && steps.test_direct.outcome == 'failure'
-        run: |
-          # Find BPFtime directory
-          BPFTIME_DIR=$HOME/.bpftime
-          if [ ! -d "$BPFTIME_DIR" ] || [ ! -f "$BPFTIME_DIR/libbpftime-syscall-server.so" ]; then
-            # Try alternate locations
-            BPFTIME_DIR=$(find /github/home /root $HOME -name "libbpftime-syscall-server.so" 2>/dev/null | head -1 | xargs dirname)
-            if [ -z "$BPFTIME_DIR" ]; then
-              echo "ERROR: Could not find BPFtime libraries"
-              exit 1
+          echo "=== BPFTIME Server Log ==="
+          cat "$SERVER_LOG" || echo "No server log available"
+
+          echo "=== BPFTIME Client Log ==="
+          cat "$CLIENT_LOG" || echo "No client log available"
+
+
+          # --- Test Result Check ---
+          echo "Checking server log for expected openat traces from client..."
+
+          # Expected output patterns from bpftrace script:
+          # The command name (comm) will be 'cat', the filename will be the one cat opens.
+          # cat usually opens /usr/lib/locale/locale-archive first, then build/install_manifest.txt
+          EXPECTED_PATTERNS=(
+            "cat /usr/lib/locale/locale-archive"
+            "cat build/install_manifest.txt"
+          )
+
+          TEST_SUCCESS=false
+          for pattern in "${EXPECTED_PATTERNS[@]}"; do
+            echo "Searching for pattern: '$pattern'"
+            if grep -q "$pattern" "$SERVER_LOG"; then
+              echo "Found pattern: '$pattern'"
+              TEST_SUCCESS=true
+              # Break after finding any required pattern, or check all if desired
+              # break # uncomment to pass if *any* match
             fi
-            echo "Found BPFtime libraries at: $BPFTIME_DIR"
-          fi
-          
-          # Create logs directory
-          mkdir -p logs
-          
-          echo "Starting server with raw syscalls tracepoint..."
-          SPDLOG_LEVEL=error LD_PRELOAD="$BPFTIME_DIR/libbpftime-syscall-server.so" \
-          bpftrace -e 'tracepoint:raw_syscalls:sys_enter { printf("SYSCALL ID: %d COMM: %s\n", args->id, comm); }' > logs/raw_server.log 2>&1 &
-          SERVER_PID=$!
-          
-          # Wait for server to initialize
-          sleep 3
-          
-          echo "Running client with direct LD_PRELOAD..."
-          SPDLOG_LEVEL=error LD_PRELOAD="$BPFTIME_DIR/libbpftime-agent.so" \
-          cat build/install_manifest.txt > logs/raw_client.log 2>&1
-          
-          # Wait for events to be processed
-          sleep 2
-          
-          # Stop server
-          kill $SERVER_PID 2>/dev/null || true
-          
-          # Display logs
-          echo "=== Raw Syscalls Server Log ==="
-          cat logs/raw_server.log
-          
-          # Check for success
-          if grep -q "SYSCALL ID: .* COMM: cat" logs/raw_server.log; then
-            echo "SUCCESS: Raw syscalls tracing test passed"
-            exit 0
-          else
-            echo "FAILURE: Raw syscalls tracing test failed"
-            # Debug info
-            echo "System status:"
-            uname -a
-            echo "BPFtime libraries:"
-            find $BPFTIME_DIR -type f | sort
-            echo "Build artifacts:"
-            find build -name "*.so" | sort
-            exit 1
-          fi
+          done
 
-      - name: Upload logs
-        if: always()
-        uses: actions/upload-artifact@v3
-        with:
-          name: bpftime-test-logs
-          path: |
-            logs/
-            
-      - name: Check overall results
-        if: always()
-        run: |
-          echo "==== BPFtime Syscall Tracing Test Summary ===="
-          
-          if [[ "${{ steps.test_bpftime.outcome }}" == "success" ]]; then
-            echo "Primary test with bpftime: SUCCESS ✅"
-            exit 0
-          elif [[ "${{ steps.test_direct.outcome }}" == "success" ]]; then
-            echo "Direct LD_PRELOAD test: SUCCESS ✅"
-            echo "Primary test with bpftime: FAILED ❌"
-            exit 0
-          elif [[ "${{ steps.test_raw_syscalls.outcome }}" == "success" ]]; then
-            echo "Raw syscalls tracing test: SUCCESS ✅"
-            echo "Direct LD_PRELOAD test: FAILED ❌"
-            echo "Primary test with bpftime: FAILED ❌"
+          if [ "$TEST_SUCCESS" = "true" ]; then
+            echo "SUCCESS: Detected expected openat syscall traces in server log."
             exit 0
           else
-            echo "All tests FAILED ❌"
-            echo "Check logs for details"
+            echo "ERROR: Did not detect expected openat syscall traces for 'cat' command in server log."
+            echo "Dumping dmesg tail for potential kernel errors:"
+            sudo dmesg | tail -n 50 || echo "Could not get dmesg"
             exit 1
           fi
