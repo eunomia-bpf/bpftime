@@ -1,4 +1,4 @@
-name: BPFtime Syscall Tracing (Multi-Step Load/Start) Original Client Cmd Test v2
+name: BPFtime Syscall Tracing (Multi-Step Load/Start) Final Debug
 
 on:
   push:
@@ -15,7 +15,6 @@ env:
   # Log file paths using relative path from workspace root
   SERVER_LOG: logs/bpftime_server.log
   CLIENT_LOG: logs/bpftime_client.log
-  # CLIENT_STRACE_LOG: logs/bpftime_client_strace.log # No longer using strace
 
 jobs:
   syscall-tracing-load-start-test:
@@ -37,22 +36,13 @@ jobs:
             lcov tree strace gdb sudo libc6-dev bpftrace \
             linux-headers-generic linux-tools-generic \
             linux-headers-$(uname -r) \
-            libelf-dev procps # strace no longer strictly needed but kept for now
-
-          echo "==== System Information ===="
-          uname -a && cat /etc/os-release
-          echo "==== bpftrace version ===="
-          which bpftrace && bpftrace --version || echo "bpftrace not found"
-
-          # --- Create log AND build directories early ---
+            libelf-dev procps
+          echo "==== System Information ===="; uname -a && cat /etc/os-release
+          echo "==== bpftrace version ===="; which bpftrace && bpftrace --version || echo "bpftrace not found"
           mkdir -p logs build
-          # ---
-
-          # Create the target file for cat (now build dir exists)
           echo "TEST_DATA_LINE_1_ABC" > build/install_manifest.txt
           echo "TEST_DATA_LINE_2_XYZ" >> build/install_manifest.txt
-          echo "Created build/install_manifest.txt:"
-          cat build/install_manifest.txt
+          echo "Created build/install_manifest.txt:"; cat build/install_manifest.txt
 
       - name: Build and install runtime (Original CMake approach)
         run: |
@@ -81,20 +71,11 @@ jobs:
           echo "==== Starting BPFTIME Server in background ===="
           BPFTIME_BIN="$BPFTIME_INSTALL_DIR/bpftime"
           BPFTRACE_SCRIPT='tracepoint:syscalls:sys_enter_openat { printf("SERVER_TRACE (openat): %s %s\n", comm, str(args->filename)); }'
-
           sudo -E "$BPFTIME_BIN" load bpftrace -e "$BPFTRACE_SCRIPT" > "$SERVER_LOG" 2>&1 &
           SERVER_PID=$!
-          echo "Server started in background with PID: $SERVER_PID"
-          echo "SERVER_PID=$SERVER_PID" >> $GITHUB_ENV
-
+          echo "Server started in background with PID: $SERVER_PID"; echo "SERVER_PID=$SERVER_PID" >> $GITHUB_ENV
           echo "Waiting for server to initialize (10s)..."; sleep 10
-          if ! ps -p $SERVER_PID > /dev/null; then
-            echo "ERROR: Server process $SERVER_PID did not start or died!"
-            echo "--- Server Log ---"; cat "$SERVER_LOG" || echo "log not found"; echo "--- End Log ---"
-            exit 1
-          else
-            echo "Server process $SERVER_PID confirmed running."
-          fi
+          if ! ps -p $SERVER_PID > /dev/null; then echo "ERROR: Server process $SERVER_PID did not start or died!"; echo "--- Server Log ---"; cat "$SERVER_LOG" || echo "log not found"; echo "--- End Log ---"; exit 1; else echo "Server process $SERVER_PID confirmed running."; fi
           ls -l "$BPFTIME_SHARED_MEMORY_PATH/bpftime_maps_shm" || echo "WARNING: SHM file not found yet."
 
       - name: Run BPFTIME Client (Original Command)
@@ -104,27 +85,17 @@ jobs:
           echo "==== Running BPFTIME Client (Original Command) ===="
           if [ -z "$SERVER_PID" ]; then echo "ERROR: SERVER_PID env var not set!"; exit 1; fi
           echo "Server PID from previous step: $SERVER_PID"
-          if ! ps -p $SERVER_PID > /dev/null; then
-             echo "ERROR: Server process $SERVER_PID is no longer running before client start!"
-             echo "--- Server Log ---"; cat "$SERVER_LOG" || echo "log not found"; echo "--- End Log ---"
-             exit 1
-          fi
-
+          if ! ps -p $SERVER_PID > /dev/null; then echo "ERROR: Server process $SERVER_PID is no longer running!"; echo "--- Server Log ---"; cat "$SERVER_LOG" || echo "log not found"; echo "--- End Log ---"; exit 1; fi
           BPFTIME_BIN="$BPFTIME_INSTALL_DIR/bpftime"
           CLIENT_COMMAND="cat build/install_manifest.txt"
-
-          echo "Running client command: '$CLIENT_COMMAND'..."
-          export BPFTIME_DEBUG=1
-
+          echo "Running client command: '$CLIENT_COMMAND'..."; export BPFTIME_DEBUG=1
           # Execute original command, keep || true to ensure next line runs
           sudo -E env BPFTIME_DEBUG=1 "$BPFTIME_BIN" start -s "$CLIENT_COMMAND" > "$CLIENT_LOG" 2>&1 || true
           _client_exit_code=$? # Capture the *actual* exit code of bpftime start
           echo "Client command finished with raw exit code: $_client_exit_code" # Log the captured code
-
           # Export the *actual* captured exit code. This line WILL execute.
           echo "CLIENT_EXIT_CODE=$_client_exit_code" >> $GITHUB_ENV
           echo "Successfully exported CLIENT_EXIT_CODE=$_client_exit_code to GITHUB_ENV"
-
           # FORCE PRINT CLIENT LOGS IN THIS STEP
           echo ""; echo "#############################################"
           echo "### CLIENT LOG (immediately after run) ($CLIENT_LOG) ###"; echo "#############################################"
@@ -138,51 +109,72 @@ jobs:
           SERVER_PID_TO_KILL=${{ env.SERVER_PID }}
           CLIENT_FINAL_EXIT_CODE=${CLIENT_EXIT_CODE:-99} # Default to 99 if unset
 
-          # Give server a moment
-          sleep 2
+          sleep 2 # Give server a moment
 
           echo "--- Final Server Log ($SERVER_LOG) ---"
           cat "$SERVER_LOG" || echo "<<< Server log file not found or empty >>>"
           echo "--- End Final Server Log ---"
+          echo "--- Final Client Log ($CLIENT_LOG) ---" # Also print client log again here for context
+          cat "$CLIENT_LOG" || echo "<<< Client log file not found or empty >>>"
+          echo "--- End Final Client Log ---"
+
 
           echo "Attempting to stop server process PID $SERVER_PID_TO_KILL..."
+          # --- Server Stop Logic (keep as is) ---
           if [ -n "$SERVER_PID_TO_KILL" ]; then
             if ps -p $SERVER_PID_TO_KILL > /dev/null; then
                sudo kill $SERVER_PID_TO_KILL 2>/dev/null || echo "Kill SIGTERM failed"
                sleep 2
-               if ps -p $SERVER_PID_TO_KILL > /dev/null; then
-                   echo "WARNING: Server still running, sending SIGKILL."
-                   sudo kill -9 $SERVER_PID_TO_KILL 2>/dev/null || true
-               else echo "Server terminated successfully."; fi
+               if ps -p $SERVER_PID_TO_KILL > /dev/null; then echo "WARNING: Server still running, sending SIGKILL."; sudo kill -9 $SERVER_PID_TO_KILL 2>/dev/null || true; else echo "Server terminated successfully."; fi
             else echo "Server process $SERVER_PID_TO_KILL was not running before kill."; fi
           else echo "No Server PID found to kill."; fi
 
           echo "--- Final Analysis ---"
           echo "Analyzing Client Exit Code: '$CLIENT_FINAL_EXIT_CODE'"
 
-          # Refined Analysis Logic
-          if [ "$CLIENT_FINAL_EXIT_CODE" = "0" ]; then
-              echo ">>> Client command ('cat build/install_manifest.txt') SUCCEEDED (Exit Code 0). Checking server log for trace... <<<"
-              EXPECTED_PATTERN="SERVER_TRACE (openat): cat build/install_manifest.txt"
-              echo "Searching server log ($SERVER_LOG) for pattern: '$EXPECTED_PATTERN'"
+          # --- MODIFIED Analysis Logic ---
+          CLIENT_LOG_HAS_ERROR=false
+          # Check if the client log file exists and contains the specific error message
+          if [ -f "$CLIENT_LOG" ] && grep -q 'Program exited abnormally' "$CLIENT_LOG"; then
+             CLIENT_LOG_HAS_ERROR=true
+             echo "Detected 'Program exited abnormally' error in client log."
+          fi
 
-              if grep -F -q "$EXPECTED_PATTERN" "$SERVER_LOG"; then
-                  echo "Found expected pattern in server log."
-                  if grep -F -q "SERVER_TRACE (openat): cat /usr/lib/locale/locale-archive" "$SERVER_LOG"; then
-                      echo "Also found locale pattern trace."
-                  fi
-                  echo ">>> OVERALL SUCCESS: Client ran successfully AND server traced the expected syscall. <<<"
-                  exit 0
-              else
-                  echo ">>> FAILURE (Secondary): Client ran successfully BUT expected trace pattern was NOT found in server log. <<<"
-                  echo ">>> Check server log output above for errors or unexpected behavior. <<<"
+          if [ "$CLIENT_FINAL_EXIT_CODE" = "0" ]; then
+              if [ "$CLIENT_LOG_HAS_ERROR" = "true" ]; then
+                  # Case 1: bpftime start returned 0, but logged internal error
+                  echo ">>> FAILURE (Inconsistent State): Client command reported exit 0 to shell, BUT bpftime logged internal error 'Program exited abnormally'. <<<"
+                  echo ">>> This suggests bpftime start did not propagate the target's failure. Check client log for details. <<<"
                   exit 1
+              else
+                  # Case 2: bpftime start returned 0, AND no internal error logged
+                  echo ">>> Client command ('cat build/install_manifest.txt') SUCCEEDED (Exit Code 0, no internal error). Checking server log for trace... <<<"
+                  EXPECTED_PATTERN="SERVER_TRACE (openat): cat build/install_manifest.txt"
+                  echo "Searching server log ($SERVER_LOG) for pattern: '$EXPECTED_PATTERN'"
+                  if grep -F -q "$EXPECTED_PATTERN" "$SERVER_LOG"; then
+                      echo "Found expected pattern in server log."
+                      if grep -F -q "SERVER_TRACE (openat): cat /usr/lib/locale/locale-archive" "$SERVER_LOG"; then echo "Also found locale pattern trace."; fi
+                      echo ">>> OVERALL SUCCESS: Client ran successfully AND server traced the expected syscall. <<<"
+                      exit 0
+                  else
+                      echo ">>> FAILURE (Secondary): Client ran successfully BUT expected trace pattern was NOT found in server log. <<<"
+                      echo ">>> Check server log output above for errors or unexpected behavior. <<<"
+                      exit 1
+                  fi
               fi
           elif [ "$CLIENT_FINAL_EXIT_CODE" = "99" ]; then
+              # Case 3: Exit code capture failed
               echo ">>> FAILURE: Client exit code capture possibly failed (default value 99 used). Review 'Run BPFTIME Client' step logs. <<<"
               exit 1
           else
+              # Case 4: bpftime start returned non-zero (this is actually preferred if target fails)
               echo ">>> FAILURE (Primary): Client command ('cat build/install_manifest.txt') exited with non-zero code ($CLIENT_FINAL_EXIT_CODE). <<<"
+              # Optionally check if the log ALSO has the error for consistency
+              if [ "$CLIENT_LOG_HAS_ERROR" = "true" ]; then
+                 echo ">>> Client log correctly contains 'Program exited abnormally' message, consistent with non-zero exit code. <<<"
+              else
+                 echo ">>> WARNING: Client command exited non-zero, but specific 'Program exited abnormally' message NOT found in client log. Examine client log anyway. <<<"
+              fi
               echo ">>> Examine Client Log printed in the 'Run BPFTIME Client' step for errors. <<<"
               exit 1
           fi
