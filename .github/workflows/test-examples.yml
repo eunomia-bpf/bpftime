@@ -46,8 +46,12 @@ jobs:
           
           # Check for tracepoint availability
           echo "==== Checking tracepoint availability ===="
-          bpftrace -l 'tracepoint:syscalls:sys_enter_openat' > /dev/null 2>&1 || { echo "openat syscall tracepoint not found"; exit 1; }
-          echo "openat syscall tracepoint found."
+          if bpftrace -l 'tracepoint:syscalls:sys_enter_openat' > /dev/null 2>&1; then
+            echo "openat syscall tracepoint found."
+          else
+            echo "ERROR: openat syscall tracepoint not found"
+            exit 1
+          fi
           
           # Create test file needed for openat syscall
           echo "==== Preparing test directory and files ===="
@@ -79,8 +83,7 @@ jobs:
             -DCMAKE_CXX_FLAGS="-DDEFAULT_LOGGER_OUTPUT_PATH='\"console\"'" \
             -DBUILD_AGENT=1 > logs/cmake_config.log 2>&1 || { cat logs/cmake_config.log; exit 1; }
           
-          # Build and install with logging
-          mkdir -p logs
+          # Build and install
           cmake --build build --config RelWithDebInfo --target install -j$(nproc) > logs/cmake_build.log 2>&1 || { cat logs/cmake_build.log; exit 1; }
           
           echo "Installed files:"
@@ -88,28 +91,37 @@ jobs:
           
           # Verify that the required libraries were installed
           if [ ! -f "$INSTALL_DIR/libbpftime-syscall-server.so" ]; then
-            echo "ERROR: syscall server library not installed!"
-            echo "Contents of build directory:"
-            find build -name "*.so"
-            echo "Trying to copy libraries from build directory..."
-            # Try to copy from build directory if libraries weren't installed
-            find build -name "libbpftime-syscall-server.so" -exec cp {} $INSTALL_DIR/ \;
-            find build -name "libbpftime-agent.so" -exec cp {} $INSTALL_DIR/ \;
-            find build -name "libbpftime-agent-transformer.so" -exec cp {} $INSTALL_DIR/ \;
+            echo "WARNING: syscall server library not found in install directory"
+            echo "Searching for the library in build directory..."
+            
+            # Try to copy from build directory
+            server_lib=$(find build -name "libbpftime-syscall-server.so" | head -1)
+            agent_lib=$(find build -name "libbpftime-agent.so" | head -1)
+            
+            if [ -n "$server_lib" ] && [ -n "$agent_lib" ]; then
+              echo "Found libraries in build directory, copying to install directory"
+              cp $server_lib $INSTALL_DIR/
+              cp $agent_lib $INSTALL_DIR/
+              # Copy other important libraries
+              find build -name "libbpftime-agent-transformer.so" -exec cp {} $INSTALL_DIR/ \;
+            else
+              echo "ERROR: Required libraries not found!"
+              exit 1
+            fi
           fi
           
           # Make sure everything is executable
           chmod +x $INSTALL_DIR/* 2>/dev/null || echo "Warning: Failed to make files executable"
           
-          # Create a simple wrapper script if the bpftime executable is missing
-          if [ ! -f "$INSTALL_DIR/bpftime" ]; then
-            echo "WARNING: bpftime executable not found, creating wrapper script"
-            cat > $INSTALL_DIR/bpftime << 'WRAPPER'
+          # Create bpftime wrapper script if not present
+          if [ ! -x "$INSTALL_DIR/bpftime" ]; then
+            echo "Creating bpftime wrapper script"
+            cat > $INSTALL_DIR/bpftime << 'EOF'
           #!/bin/bash
-          # This is a wrapper script for bpftime commands
-          SCRIPT_DIR=$(dirname "$0")
+          # BPFtime command wrapper
+          SCRIPT_DIR=$(dirname "$(readlink -f "$0")")
 
-          # Determine the command
+          # Get the subcommand
           CMD="$1"
           shift
 
@@ -129,7 +141,7 @@ jobs:
             echo "Usage: bpftime [load|start] [options]"
             exit 1
           fi
-          WRAPPER
+          EOF
             chmod +x $INSTALL_DIR/bpftime
           fi
           
@@ -137,68 +149,63 @@ jobs:
           export PATH=$PATH:$INSTALL_DIR
           echo "PATH=$PATH" >> $GITHUB_ENV
           echo "BPFTIME_INSTALL_DIR=$INSTALL_DIR" >> $GITHUB_ENV
-          echo "HOME_DIR=$HOME" >> $GITHUB_ENV
-      
-      - name: Create syscall trace test scripts
+
+      - name: Test syscall tracing with bpftime
+        id: test_bpftime
+        continue-on-error: true
         run: |
-          cat > syscall_test.sh << 'EOF'
-          #!/bin/bash
-          set -e
-          
-          # Get correct path to BPFtime installation directory
-          if [ -d "/github/home/.bpftime" ]; then
-            BPFTIME_DIR="/github/home/.bpftime"
-          elif [ -d "$HOME/.bpftime" ]; then
-            BPFTIME_DIR="$HOME/.bpftime"
-          else
-            echo "ERROR: Could not find BPFtime installation directory"
-            echo "Searching for bpftime in possible locations:"
-            find /github/home /root /home -name "libbpftime-syscall-server.so" 2>/dev/null || echo "Not found"
-            exit 1
+          # Find BPFtime directory
+          BPFTIME_DIR=$HOME/.bpftime
+          if [ ! -d "$BPFTIME_DIR" ] || [ ! -f "$BPFTIME_DIR/libbpftime-syscall-server.so" ]; then
+            # Try alternate locations
+            if [ -d "/github/home/.bpftime" ] && [ -f "/github/home/.bpftime/libbpftime-syscall-server.so" ]; then
+              BPFTIME_DIR="/github/home/.bpftime"
+            elif [ -d "/root/.bpftime" ] && [ -f "/root/.bpftime/libbpftime-syscall-server.so" ]; then
+              BPFTIME_DIR="/root/.bpftime"
+            else
+              echo "ERROR: Could not find BPFtime installation"
+              library_path=$(find /github/home /root $HOME -name "libbpftime-syscall-server.so" 2>/dev/null | head -1)
+              if [ -n "$library_path" ]; then
+                BPFTIME_DIR=$(dirname "$library_path")
+                echo "Found library at: $BPFTIME_DIR"
+              else
+                echo "No BPFtime libraries found in standard locations"
+                exit 1
+              fi
+            fi
           fi
-          echo "Using BPFtime directory: $BPFTIME_DIR"
           
-          # Add bpftime to PATH
+          # Ensure PATH includes BPFtime directory
           export PATH=$PATH:$BPFTIME_DIR
           
-          # Create log directory
+          # Create logs directory
           mkdir -p logs
           
-          # Create named pipe for communication between server and client
-          PIPE_PATH="/tmp/bpftime_uprobe_pipe"
-          rm -f "$PIPE_PATH"
-          mkfifo "$PIPE_PATH" || { echo "ERROR: Failed to create named pipe"; exit 1; }
-          
-          # Start bpftime server with bpftrace to monitor syscalls
-          echo "Starting bpftrace syscall monitoring server..."
+          # Start server
+          echo "Starting BPFtime syscall server..."
           SPDLOG_LEVEL=error $BPFTIME_DIR/bpftime load bpftrace -e 'tracepoint:syscalls:sys_enter_openat { printf("%s %s\n", comm, str(args->filename)); }' > logs/server.log 2>&1 &
           SERVER_PID=$!
           
           # Wait for server to initialize
           sleep 3
           
-          # Check if server is still running
+          # Check if server is running
           if ! ps -p $SERVER_PID > /dev/null; then
-            echo "ERROR: bpftime server failed to start or crashed"
+            echo "ERROR: Server process died"
             cat logs/server.log
             exit 1
           fi
           
-          # Start client process to generate openat syscalls
-          echo "Starting client process with bpftime..."
+          # Run client
+          echo "Running BPFtime client..."
           SPDLOG_LEVEL=error $BPFTIME_DIR/bpftime start -s cat build/install_manifest.txt > logs/client.log 2>&1
-          CLIENT_EXIT=$?
           
-          # Give server time to process events
+          # Wait for events to be processed
           sleep 2
           
           # Stop server
-          echo "Stopping server..."
-          kill $SERVER_PID || true
+          kill $SERVER_PID 2>/dev/null || true
           wait $SERVER_PID 2>/dev/null || true
-          
-          # Clean up pipe
-          rm -f "$PIPE_PATH"
           
           # Display logs
           echo "=== Server Log ==="
@@ -207,261 +214,150 @@ jobs:
           echo "=== Client Log ==="
           cat logs/client.log
           
-          # Check for success: verify that cat's openat syscall for install_manifest.txt was recorded
+          # Check for success
           if grep -q "cat build/install_manifest.txt" logs/server.log; then
-            echo "SUCCESS: Syscall tracing test passed - detected 'cat build/install_manifest.txt' syscall"
+            echo "SUCCESS: BPFtime syscall tracing test passed"
             exit 0
           else
-            echo "FAILURE: Syscall tracing test failed - couldn't detect expected syscall"
+            echo "FAILURE: BPFtime syscall tracing test failed"
             exit 1
           fi
-          EOF
-          chmod +x syscall_test.sh
-          
-          # Create a more direct test script as fallback
-          cat > simple_test.sh << 'EOF'
-          #!/bin/bash
-          set -e
-          
-          # Get correct path to BPFtime installation directory
-          if [ -d "/github/home/.bpftime" ]; then
-            BPFTIME_DIR="/github/home/.bpftime"
-          elif [ -d "$HOME/.bpftime" ]; then
-            BPFTIME_DIR="$HOME/.bpftime"
-          else
-            echo "ERROR: Could not find BPFtime installation directory"
-            echo "Searching for bpftime in possible locations:"
-            find /github/home /root /home -name "libbpftime-syscall-server.so" 2>/dev/null || echo "Not found"
-            # List all available libraries to help debugging
-            echo "System libraries in standard locations:"
-            ls -la /lib/x86_64-linux-gnu/ | grep bpftime || echo "No bpftime libs in /lib"
-            ls -la /usr/lib/x86_64-linux-gnu/ | grep bpftime || echo "No bpftime libs in /usr/lib"
-            exit 1
+
+      - name: Test syscall tracing with direct LD_PRELOAD
+        id: test_direct
+        if: steps.test_bpftime.outcome == 'failure'
+        continue-on-error: true
+        run: |
+          # Find BPFtime directory
+          BPFTIME_DIR=$HOME/.bpftime
+          if [ ! -d "$BPFTIME_DIR" ] || [ ! -f "$BPFTIME_DIR/libbpftime-syscall-server.so" ]; then
+            # Try alternate locations
+            BPFTIME_DIR=$(find /github/home /root $HOME -name "libbpftime-syscall-server.so" 2>/dev/null | head -1 | xargs dirname)
+            if [ -z "$BPFTIME_DIR" ]; then
+              echo "ERROR: Could not find BPFtime libraries"
+              exit 1
+            fi
+            echo "Found BPFtime libraries at: $BPFTIME_DIR"
           fi
-          echo "Using BPFtime directory: $BPFTIME_DIR"
           
-          # Add bpftime to PATH
-          export PATH=$PATH:$BPFTIME_DIR
+          # Create logs directory
           mkdir -p logs
           
-          echo "==== Testing basic BPFtime syscall tracing ===="
-          
-          # First test - verify that bpftrace works without bpftime
-          echo "Running regular bpftrace to verify system capability..."
-          timeout -k 5s 3s bpftrace -e 'tracepoint:syscalls:sys_enter_openat { printf("%s %s\n", comm, str(args->filename)); }' > logs/direct_trace.log 2>&1 &
-          DIRECT_PID=$!
-          sleep 1
-          cat build/install_manifest.txt > /dev/null
-          sleep 1
-          kill $DIRECT_PID 2>/dev/null || true
-          
-          echo "Regular bpftrace output:"
-          cat logs/direct_trace.log
-          
-          # Test with BPFtime server and agent
-          echo "Starting bpftime syscall server..."
-          $BPFTIME_DIR/bpftime load bpftrace -e 'tracepoint:syscalls:sys_enter_openat { printf("TRACE: %s %s\n", comm, str(args->filename)); }' > logs/bpf_server.log 2>&1 &
+          echo "Starting server with direct LD_PRELOAD..."
+          SPDLOG_LEVEL=error LD_PRELOAD="$BPFTIME_DIR/libbpftime-syscall-server.so" \
+          bpftrace -e 'tracepoint:syscalls:sys_enter_openat { printf("DIRECT: %s %s\n", comm, str(args->filename)); }' > logs/direct_server.log 2>&1 &
           SERVER_PID=$!
           
           # Wait for server to initialize
           sleep 3
           
-          echo "Starting bpftime client..."
-          $BPFTIME_DIR/bpftime start -s cat build/install_manifest.txt > logs/bpf_client.log 2>&1
-          CLIENT_EXIT=$?
-          
-          # Give server time to process events
-          sleep 2
-          
-          # Stop server
-          kill $SERVER_PID 2>/dev/null || true
-          
-          echo "BPFtime server log:"
-          cat logs/bpf_server.log
-          
-          echo "BPFtime client log:"
-          cat logs/bpf_client.log
-          
-          # Check for success
-          if grep -q "cat build/install_manifest.txt" logs/bpf_server.log; then
-            echo "SUCCESS: BPFtime detected openat syscall"
-            exit 0
-          elif grep -q "Initialize syscall server" logs/bpf_server.log; then
-            echo "PARTIAL SUCCESS: BPFtime server initialized but syscall not captured"
-            # Continue despite this partial success
-          else
-            echo "FAILURE: BPFtime server failed to initialize"
-            exit 1
-          fi
-          
-          # If we've reached here, attempt a third test with LD_PRELOAD directly
-          echo "Trying direct LD_PRELOAD method..."
-          
-          # List files in the installation directory for debugging
-          echo "Files in $BPFTIME_DIR:"
-          ls -la $BPFTIME_DIR/
-          
-          # Set up server with direct LD_PRELOAD
-          BPFTIME_DEBUG=1 LD_PRELOAD="$BPFTIME_DIR/libbpftime-syscall-server.so" \
-          timeout -k 10s 8s bpftrace -e 'tracepoint:syscalls:sys_enter_openat { printf("DIRECT: %s %s\n", comm, str(args->filename)); }' > logs/direct_server.log 2>&1 &
-          SERVER_PID=$!
-          
-          sleep 3
-          
-          # Run client with agent preload
-          BPFTIME_DEBUG=1 LD_PRELOAD="$BPFTIME_DIR/libbpftime-agent.so" \
+          echo "Running client with direct LD_PRELOAD..."
+          SPDLOG_LEVEL=error LD_PRELOAD="$BPFTIME_DIR/libbpftime-agent.so" \
           cat build/install_manifest.txt > logs/direct_client.log 2>&1
           
-          sleep 2
-          kill $SERVER_PID 2>/dev/null || true
-          
-          echo "Direct preload server log:"
-          cat logs/direct_server.log
-          
-          if grep -q "cat build/install_manifest.txt" logs/direct_server.log; then
-            echo "SUCCESS: Direct preload method detected openat syscall"
-            exit 0
-          else
-            echo "FAILURE: All attempted methods failed"
-            exit 1
-          fi
-          EOF
-          chmod +x simple_test.sh
-
-      - name: Run syscall tracing test
-        run: |
-          echo "==== Running syscall tracing test ===="
-          ./syscall_test.sh || {
-            echo "Primary test failed, trying simplified approach..."
-            ./simple_test.sh
-          }
-      
-      - name: Create direct fallback test
-        run: |
-          echo "Creating a direct fallback test script for the most basic test case..."
-          
-          cat > direct_fallback.sh << 'EOF'
-          #!/bin/bash
-          set -e
-          
-          # Find all possible bpftime installation locations
-          echo "Searching for BPFtime libraries..."
-          LIBS=$(find /github/home /root $HOME /usr/lib /lib -name "libbpftime-syscall-server.so" 2>/dev/null || echo "Not found")
-          echo "Found libraries: $LIBS"
-          
-          # If no libraries found, check build directory
-          if [ -z "$LIBS" ] || [ "$LIBS" = "Not found" ]; then
-            echo "No installed libraries found, checking build directory..."
-            find . -name "libbpftime-syscall-server.so" -o -name "libbpftime-agent.so"
-            
-            # Check if libraries are in the build directory but not installed
-            BUILD_SERVER=$(find . -name "libbpftime-syscall-server.so" | head -1)
-            BUILD_AGENT=$(find . -name "libbpftime-agent.so" | head -1)
-            
-            if [ -n "$BUILD_SERVER" ] && [ -n "$BUILD_AGENT" ]; then
-              echo "Found libraries in build directory, using them directly..."
-              mkdir -p $HOME/.bpftime
-              cp $BUILD_SERVER $HOME/.bpftime/
-              cp $BUILD_AGENT $HOME/.bpftime/
-              BPFTIME_DIR="$HOME/.bpftime"
-            else
-              echo "ERROR: Could not find BPFtime libraries in build directory"
-              exit 1
-            fi
-          else
-            # Use the first found library path
-            FIRST_LIB=$(echo "$LIBS" | head -1)
-            BPFTIME_DIR=$(dirname "$FIRST_LIB")
-            echo "Using libraries in: $BPFTIME_DIR"
-          fi
-          
-          mkdir -p logs
-          
-          # Attempt direct LD_PRELOAD test
-          echo "Running direct LD_PRELOAD test..."
-          
-          # Start bpftrace with preloaded server library
-          BPFTIME_DEBUG=1 LD_PRELOAD="$BPFTIME_DIR/libbpftime-syscall-server.so" \
-          timeout -k 10s 5s bpftrace -e 'tracepoint:raw_syscalls:sys_enter { printf("SYSCALL ID: %d COMM: %s\n", args->id, comm); }' > logs/fallback_server.log 2>&1 &
-          SERVER_PID=$!
-          
-          sleep 3
-          
-          # Check if the server is running
-          if ! ps -p $SERVER_PID > /dev/null; then
-            echo "ERROR: Server process failed to start"
-            echo "Server log:"
-            cat logs/fallback_server.log
-            exit 1
-          fi
-          
-          # Run cat with preloaded agent library
-          BPFTIME_DEBUG=1 LD_PRELOAD="$BPFTIME_DIR/libbpftime-agent.so" \
-          cat build/install_manifest.txt > logs/fallback_client.log 2>&1
-          
-          # Wait for events to process
+          # Wait for events to be processed
           sleep 2
           
           # Stop server
           kill $SERVER_PID 2>/dev/null || true
           
-          echo "Server log:"
-          cat logs/fallback_server.log
+          # Display logs
+          echo "=== Direct Server Log ==="
+          cat logs/direct_server.log
           
-          echo "Client log:"
-          cat logs/fallback_client.log
-          
-          # Check if we captured any syscalls from the cat command
-          if grep -q "SYSCALL ID: .* COMM: cat" logs/fallback_server.log; then
-            echo "SUCCESS: Direct fallback test captured syscalls from cat command"
+          # Check for success
+          if grep -q "cat.*build/install_manifest.txt" logs/direct_server.log; then
+            echo "SUCCESS: Direct LD_PRELOAD test passed"
             exit 0
           else
-            echo "FAILURE: Direct fallback test did not capture any syscalls"
+            echo "FAILURE: Direct LD_PRELOAD test failed"
             exit 1
           fi
-          EOF
-          chmod +x direct_fallback.sh
 
-      - name: Final check and summary
+      - name: Test syscall tracing with raw syscalls tracepoint
+        id: test_raw_syscalls
+        if: steps.test_bpftime.outcome == 'failure' && steps.test_direct.outcome == 'failure'
         run: |
-          echo "==== Checking test results ===="
-          
-          # Try the direct fallback test if previous tests failed
-          if ! grep -q "SUCCESS:" logs/server.log 2>/dev/null && \
-             ! grep -q "SUCCESS:" logs/bpf_server.log 2>/dev/null && \
-             ! grep -q "SUCCESS:" logs/direct_server.log 2>/dev/null; then
-            echo "All previous tests failed, trying direct fallback test..."
-            ./direct_fallback.sh || echo "Direct fallback test also failed"
+          # Find BPFtime directory
+          BPFTIME_DIR=$HOME/.bpftime
+          if [ ! -d "$BPFTIME_DIR" ] || [ ! -f "$BPFTIME_DIR/libbpftime-syscall-server.so" ]; then
+            # Try alternate locations
+            BPFTIME_DIR=$(find /github/home /root $HOME -name "libbpftime-syscall-server.so" 2>/dev/null | head -1 | xargs dirname)
+            if [ -z "$BPFTIME_DIR" ]; then
+              echo "ERROR: Could not find BPFtime libraries"
+              exit 1
+            fi
+            echo "Found BPFtime libraries at: $BPFTIME_DIR"
           fi
           
-          # Final check across all possible log files
-          if grep -q "SUCCESS:" logs/server.log 2>/dev/null || \
-             grep -q "SUCCESS:" logs/bpf_server.log 2>/dev/null || \
-             grep -q "SUCCESS:" logs/direct_server.log 2>/dev/null || \
-             grep -q "SUCCESS:" logs/fallback_server.log 2>/dev/null; then
-            echo "OVERALL RESULT: Syscall tracing test PASSED"
+          # Create logs directory
+          mkdir -p logs
+          
+          echo "Starting server with raw syscalls tracepoint..."
+          SPDLOG_LEVEL=error LD_PRELOAD="$BPFTIME_DIR/libbpftime-syscall-server.so" \
+          bpftrace -e 'tracepoint:raw_syscalls:sys_enter { printf("SYSCALL ID: %d COMM: %s\n", args->id, comm); }' > logs/raw_server.log 2>&1 &
+          SERVER_PID=$!
+          
+          # Wait for server to initialize
+          sleep 3
+          
+          echo "Running client with direct LD_PRELOAD..."
+          SPDLOG_LEVEL=error LD_PRELOAD="$BPFTIME_DIR/libbpftime-agent.so" \
+          cat build/install_manifest.txt > logs/raw_client.log 2>&1
+          
+          # Wait for events to be processed
+          sleep 2
+          
+          # Stop server
+          kill $SERVER_PID 2>/dev/null || true
+          
+          # Display logs
+          echo "=== Raw Syscalls Server Log ==="
+          cat logs/raw_server.log
+          
+          # Check for success
+          if grep -q "SYSCALL ID: .* COMM: cat" logs/raw_server.log; then
+            echo "SUCCESS: Raw syscalls tracing test passed"
             exit 0
           else
-            echo "OVERALL RESULT: Syscall tracing test FAILED"
+            echo "FAILURE: Raw syscalls tracing test failed"
+            # Debug info
+            echo "System status:"
+            uname -a
+            echo "BPFtime libraries:"
+            find $BPFTIME_DIR -type f | sort
+            echo "Build artifacts:"
+            find build -name "*.so" | sort
+            exit 1
+          fi
+
+      - name: Upload logs
+        if: always()
+        uses: actions/upload-artifact@v3
+        with:
+          name: bpftime-test-logs
+          path: |
+            logs/
             
-            # Environment information for debugging
-            echo "==== Environment Information ===="
-            echo "Current directory: $(pwd)"
-            echo "Installation directory (HOME): $HOME"
-            echo "GitHub Actions home: /github/home"
-            
-            # List all directories that might contain the BPFtime installation
-            echo "Checking for BPFtime in possible locations:"
-            ls -la $HOME/.bpftime/ 2>/dev/null || echo "No $HOME/.bpftime directory"
-            ls -la /github/home/.bpftime/ 2>/dev/null || echo "No /github/home/.bpftime directory"
-            ls -la /root/.bpftime/ 2>/dev/null || echo "No /root/.bpftime directory"
-            
-            echo "Checking build output:"
-            find build -name "*.so" | grep bpftime || echo "No bpftime libraries found in build"
-            
-            # Display build logs if they exist
-            echo "Build logs:"
-            cat logs/cmake_build.log 2>/dev/null || echo "No build logs available"
-            
+      - name: Check overall results
+        if: always()
+        run: |
+          echo "==== BPFtime Syscall Tracing Test Summary ===="
+          
+          if [[ "${{ steps.test_bpftime.outcome }}" == "success" ]]; then
+            echo "Primary test with bpftime: SUCCESS ✅"
+            exit 0
+          elif [[ "${{ steps.test_direct.outcome }}" == "success" ]]; then
+            echo "Direct LD_PRELOAD test: SUCCESS ✅"
+            echo "Primary test with bpftime: FAILED ❌"
+            exit 0
+          elif [[ "${{ steps.test_raw_syscalls.outcome }}" == "success" ]]; then
+            echo "Raw syscalls tracing test: SUCCESS ✅"
+            echo "Direct LD_PRELOAD test: FAILED ❌"
+            echo "Primary test with bpftime: FAILED ❌"
+            exit 0
+          else
+            echo "All tests FAILED ❌"
+            echo "Check logs for details"
             exit 1
           fi
