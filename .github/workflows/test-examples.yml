@@ -263,6 +263,7 @@ jobs:
           # 检查服务器日志是否包含来自客户端的系统调用被追踪的证据
           if grep -q "Detected openat syscall by test_syscalls!" logs/raw_server.log; then
             echo "SUCCESS: raw_syscalls test: Server traced client's openat"
+            echo "SUCCESS: raw_syscalls test: Server traced client's openat" >> logs/raw_server.log
             exit 0 # 表示脚本成功
           else
             echo "WARNING: raw_syscalls test: No openat trace output found in server log."
@@ -271,6 +272,7 @@ jobs:
             if grep -q "Syscall enter: PID .* Comm test_syscalls" logs/raw_server.log; then
               echo "PARTIAL SUCCESS: Server traced some syscalls from test_syscalls, but no openat specifically."
               echo "SUCCESS: raw_syscalls test: Server traced client's syscalls"
+              echo "SUCCESS: raw_syscalls test: Server traced client's syscalls" >> logs/raw_server.log
               exit 0 # 将这视为成功，因为基本功能工作
             else
               echo "Dumping dmesg tail for potential kernel errors:"
@@ -372,9 +374,11 @@ jobs:
           # 检查结果
           if [ $DIRECT_EXIT_CODE -eq 0 ] && grep -q "Test program completed" logs/daemon_direct.log; then
             echo "SUCCESS: Daemon mode test: Test program ran successfully with agent preload"
+            echo "SUCCESS: Daemon mode test: Test program ran successfully with agent preload" >> logs/daemon_direct.log
             exit 0 # 表示成功
           elif [ $CAT_EXIT_CODE -eq 0 ] && grep -q "TEST_MARKER_LINE_1" logs/daemon_cat.log; then
             echo "SUCCESS: Daemon mode test: Cat command ran successfully with agent preload"
+            echo "SUCCESS: Daemon mode test: Cat command ran successfully with agent preload" >> logs/daemon_cat.log
             exit 0 # 表示成功
           else
             echo "WARNING: Daemon mode test: No clear success evidence found."
@@ -383,6 +387,7 @@ jobs:
             if grep -q "Global shm constructed" logs/daemon.log; then
               echo "PARTIAL SUCCESS: Daemon mode test: Daemon started successfully."
               echo "SUCCESS: Daemon mode test: Basic functionality working"
+              echo "SUCCESS: Daemon mode test: Basic functionality working" >> logs/daemon.log
               exit 0 # 将这视为成功，因为基本功能工作
             else
               echo "Dumping dmesg tail for potential kernel errors:"
@@ -394,35 +399,40 @@ jobs:
         run: |
           echo "==== Test Summary ===="
           
-          # Evaluate test results based on specific SUCCESS messages printed by the steps
-          # This is more robust than checking general log content
+          # 检查实际的测试输出内容，而不仅仅是寻找特定的成功消息
+          RAW_SYSCALLS_SUCCESS=false
+          DAEMON_SUCCESS=false
           
-          RAW_SYSCALLS_TEST_STATUS=$(grep "SUCCESS: raw_syscalls test:" logs/raw_server.log logs/raw_client.log 2>/dev/null || true)
-          DAEMON_TEST_STATUS=$(grep "SUCCESS: Daemon mode test:" logs/daemon.log logs/daemon_direct.log logs/daemon_cat.log 2>/dev/null || true)
+          # 检查 raw_syscalls 测试是否成功
+          if grep -q "Detected openat syscall by test_syscalls!" logs/raw_server.log; then
+            RAW_SYSCALLS_SUCCESS=true
+            echo "Raw Syscalls Test: SUCCESS - Detected openat syscall"
+          elif grep -q "Syscall enter: PID .* Comm test_syscalls" logs/raw_server.log; then
+            RAW_SYSCALLS_SUCCESS=true
+            echo "Raw Syscalls Test: SUCCESS - Detected syscalls from test program"
+          else
+            echo "Raw Syscalls Test: FAILED - No syscalls detected"
+          fi
           
-          echo "Raw Syscalls Test Status: ${RAW_SYSCALLS_TEST_STATUS:-NOT TESTED OR FAILED}"
-          echo "Daemon Test Status: ${DAEMON_TEST_STATUS:-NOT TESTED OR FAILED}"
+          # 检查 daemon 模式测试是否成功
+          if grep -q "Test program completed" logs/daemon_direct.log; then
+            DAEMON_SUCCESS=true
+            echo "Daemon Mode Test: SUCCESS - Test program ran successfully"
+          elif grep -q "TEST_MARKER_LINE_1" logs/daemon_cat.log; then
+            DAEMON_SUCCESS=true
+            echo "Daemon Mode Test: SUCCESS - Cat command ran successfully"
+          elif grep -q "Global shm constructed" logs/daemon.log; then
+            DAEMON_SUCCESS=true
+            echo "Daemon Mode Test: PARTIAL SUCCESS - Daemon initialized correctly"
+          else
+            echo "Daemon Mode Test: FAILED - No success evidence found"
+          fi
           
-          # Check if *any* major test reported success
-          if echo "$RAW_SYSCALLS_TEST_STATUS" | grep -q "SUCCESS" || echo "$DAEMON_TEST_STATUS" | grep -q "SUCCESS"; then
+          # 根据测试结果决定整体成功或失败
+          if [ "$RAW_SYSCALLS_SUCCESS" = "true" ] || [ "$DAEMON_SUCCESS" = "true" ]; then
             echo "OVERALL RESULT: At least one major test passed!"
             exit 0
           else
-            echo "OVERALL RESULT: All major tests failed or did not run."
-            
-            # Display important logs for debugging
-            echo "==== Debug Logs Overview ===="
-            echo "--- logs/raw_server.log ---"
-            cat logs/raw_server.log || echo "File not found"
-            echo "--- logs/raw_client.log ---"
-            cat logs/raw_client.log || echo "File not found"
-            echo "--- logs/daemon.log ---"
-            cat logs/daemon.log || echo "File not found"
-            echo "--- logs/daemon_direct.log ---"
-            cat logs/daemon_direct.log || echo "File not found"
-            echo "--- logs/daemon_cat.log ---"
-            cat logs/daemon_cat.log || echo "File not found"
-            echo "--- dmesg tail ---"
-            sudo dmesg | tail -n 50 || echo "Could not get dmesg"
+            echo "OVERALL RESULT: All major tests failed."
             exit 1
           fi
