@@ -37,9 +37,16 @@ Run `nginx_plugin_output/nginx -p $(pwd) -c ./nginx.conf` at `example/attach_imp
 
 Then, run `curl http://127.0.0.1:9023/aaab` and `curl http://127.0.0.1:9023/aaaab` to check the response. You may also find that controller will print accesses that were accepted or rejected.
 
-## test with wrk
+## benchmark
 
-```sh
-wrk -t12 -c4000 -d30s http://127.0.0.1:9023/aaaa
-wrk -t12 -c4000 -d30s http://127.0.0.1:9024/aaaa
-```
+See [benchmark/README.md](benchmark/README.md)
+
+This includes a benchmark for:
+
+- no module
+- baseline C module
+- eBPF/bpftime module
+- Wasm module
+- lua module
+
+

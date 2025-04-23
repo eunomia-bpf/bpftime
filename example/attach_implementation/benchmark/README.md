@@ -158,7 +158,11 @@ To manually test the correctness of each implementation, follow these steps:
 
 ### Testing the Dynamic Load Module
 
-The dynamic load module doesn't require a separate controller as it loads the filter implementation directly from a shared library:
+The dynamic load module doesn't require a separate controller as it loads the filter implementation directly from a shared library. 
+
+This will be used for wasm module and lua module.
+
+It is configured through environment variables:
 
 1. Build the filter implementation library first:
    ```bash
@@ -169,7 +173,7 @@ The dynamic load module doesn't require a separate controller as it loads the fi
 2. Start Nginx with the dynamic load module:
    ```bash
    cd /path/to/bpftime/example/attach_implementation
-   nginx_plugin_output/nginx -p $(pwd) -c benchmark/dynamic_load_module.conf
+   DYNAMIC_LOAD_LIB_PATH="/home/yunwei37/bpftime/example/attach_implementation/benchmark/dynamic_load_plugin/libs/libfilter_impl.so"  DYNAMIC_LOAD_URL_PREFIX="/aaaa" nginx_plugin_output/nginx -p $(pwd) -c benchmark/dynamic_load_module.conf
    ```
 
 3. Test with curl:
@@ -181,7 +185,7 @@ The dynamic load module doesn't require a separate controller as it loads the fi
    curl http://localhost:9026/forbidden_path
    ```
 
-4. The filter library logs accepted/rejected requests internally, which can be retrieved from the nginx logs.
+5. The filter library logs accepted/rejected requests internally, which can be retrieved from the nginx logs.
 
 ## Notes
 

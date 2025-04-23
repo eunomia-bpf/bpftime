@@ -39,20 +39,12 @@ add_custom_command(
     COMMENT "Copy nginx modules and executable to ${CMAKE_CURRENT_SOURCE_DIR}/nginx_plugin_output/"
 )
 
-# Build the filter implementation shared library
-add_custom_target(
-    filter_impl
-    COMMAND make -C ${CMAKE_CURRENT_SOURCE_DIR}/benchmark/dynamic_load_plugin/libs
-    COMMENT "Building filter implementation shared library"
-)
-
 # for benchmark
 add_subdirectory(benchmark)
 
 add_dependencies(nginx_build 
     attach_impl_example_nginx_plugin_adaptor 
     attach_impl_example_controller
-    filter_impl
 )
 
 # This is to ensure backward compatibility for any targets that depend on the old target name

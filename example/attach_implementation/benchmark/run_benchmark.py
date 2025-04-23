@@ -73,17 +73,23 @@ def check_prerequisites():
     
     log_message("All prerequisites are met")
 
-def start_nginx(config_path, working_dir=PARENT_DIR):
+def start_nginx(config_path, working_dir=PARENT_DIR, env=None):
     """Start nginx with the specified configuration"""
     cmd = [NGINX_BIN, "-p", str(working_dir), "-c", config_path]
     cmd_str = ' '.join(cmd)
     log_message(f"Starting nginx with command: {cmd_str}")
     
+    # If environment variables are provided, log them
+    if env:
+        for key, value in env.items():
+            log_message(f"Environment variable: {key}={value}")
+    
     # Start nginx as a subprocess - using binary mode is safer for reading output
     process = subprocess.Popen(cmd, 
                               stdout=subprocess.PIPE,
                               stderr=subprocess.PIPE,
-                              cwd=working_dir)
+                              cwd=working_dir,
+                              env=env)
     
     # Give nginx time to start
     time.sleep(2)
@@ -341,8 +347,16 @@ def main():
     except subprocess.CalledProcessError as e:
         log_message(f"Failed to build filter implementation library: {e}")
     
+    # Set up environment variables for the dynamic load module
+    dynamic_env = os.environ.copy()
+    lib_path = str(SCRIPT_DIR / "dynamic_load_plugin" / "libs" / "libfilter_impl.so")
+    dynamic_env["DYNAMIC_LOAD_LIB_PATH"] = lib_path
+    dynamic_env["DYNAMIC_LOAD_URL_PREFIX"] = args.url_path
+    log_message(f"Setting DYNAMIC_LOAD_LIB_PATH={lib_path}")
+    log_message(f"Setting DYNAMIC_LOAD_URL_PREFIX={args.url_path}")
+    
     # Start nginx with dynamic load module - no separate controller needed
-    nginx_process = start_nginx(DYNAMIC_LOAD_CONF)
+    nginx_process = start_nginx(DYNAMIC_LOAD_CONF, env=dynamic_env)
     if nginx_process:
         url = f"http://127.0.0.1:{DYNAMIC_LOAD_PORT}{args.url_path}"
         time.sleep(1)

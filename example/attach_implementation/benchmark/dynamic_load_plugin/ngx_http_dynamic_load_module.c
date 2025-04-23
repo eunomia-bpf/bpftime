@@ -285,6 +285,11 @@ static ngx_int_t ngx_http_dynamic_load_init(ngx_conf_t *cf)
     ngx_http_core_main_conf_t *cmcf;
     ngx_http_dynamic_load_loc_conf_t *dlcf;
 
+    // Print environment variables for debugging
+    fprintf(stderr, "DEBUG: Checking environment variables:\n");
+    fprintf(stderr, "DEBUG: DYNAMIC_LOAD_LIB_PATH=%s\n", getenv("DYNAMIC_LOAD_LIB_PATH") ? getenv("DYNAMIC_LOAD_LIB_PATH") : "not set");
+    fprintf(stderr, "DEBUG: DYNAMIC_LOAD_URL_PREFIX=%s\n", getenv("DYNAMIC_LOAD_URL_PREFIX") ? getenv("DYNAMIC_LOAD_URL_PREFIX") : "not set");
+
     cmcf = ngx_http_conf_get_module_main_conf(cf, ngx_http_core_module);
 
     h = ngx_array_push(&cmcf->phases[NGX_HTTP_ACCESS_PHASE].handlers);
@@ -299,21 +304,46 @@ static ngx_int_t ngx_http_dynamic_load_init(ngx_conf_t *cf)
     
     // Initialize the dynamic module and load the filter library
     char prefix_buf[128] = "/";  // Default prefix
-    if (dlcf->prefix.data != NULL && dlcf->prefix.len > 0) {
+    
+    // Check environment variable for URL prefix first
+    const char *env_prefix = getenv("DYNAMIC_LOAD_URL_PREFIX");
+    if (env_prefix != NULL) {
+        strncpy(prefix_buf, env_prefix, sizeof(prefix_buf) - 1);
+        prefix_buf[sizeof(prefix_buf) - 1] = '\0';
+        ngx_log_error(NGX_LOG_INFO, cf->log, 0, 
+                    "Using URL prefix from environment: %s", prefix_buf);
+    }
+    // If not set via environment, use the config if available
+    else if (dlcf->prefix.data != NULL && dlcf->prefix.len > 0) {
         ngx_snprintf((u_char*)prefix_buf, sizeof(prefix_buf) - 1, "%V", &dlcf->prefix);
         prefix_buf[dlcf->prefix.len] = '\0';
     }
     
-    if (dlcf->lib_path.data == NULL || dlcf->lib_path.len == 0) {
+    // Check environment variable for library path first
+    const char *env_lib_path = getenv("DYNAMIC_LOAD_LIB_PATH");
+    char lib_path_buf[512] = {0};
+    
+    if (env_lib_path != NULL) {
+        strncpy(lib_path_buf, env_lib_path, sizeof(lib_path_buf) - 1);
+        lib_path_buf[sizeof(lib_path_buf) - 1] = '\0';
+        ngx_log_error(NGX_LOG_INFO, cf->log, 0, 
+                    "Using library path from environment: %s", lib_path_buf);
+    }
+    // If not set via environment, use the config if available
+    else if (dlcf->lib_path.data != NULL && dlcf->lib_path.len > 0) {
+        ngx_snprintf((u_char*)lib_path_buf, sizeof(lib_path_buf) - 1, "%V", &dlcf->lib_path);
+        lib_path_buf[dlcf->lib_path.len] = '\0';
+    }
+    else {
         ngx_log_error(NGX_LOG_ERR, cf->log, 0, 
-                    "No library path specified for dynamic_load module");
+                    "No library path specified for dynamic_load module (set DYNAMIC_LOAD_LIB_PATH environment variable)");
         return NGX_ERROR;
     }
     
-    char lib_path_buf[512];
-    ngx_snprintf((u_char*)lib_path_buf, sizeof(lib_path_buf) - 1, "%V", &dlcf->lib_path);
-    lib_path_buf[dlcf->lib_path.len] = '\0';
-    
+    // More debugging output
+    fprintf(stderr, "DEBUG: Using prefix: %s\n", prefix_buf);
+    fprintf(stderr, "DEBUG: Using lib_path: %s\n", lib_path_buf);
+
     int err = init_dynamic_module(lib_path_buf, prefix_buf);
     
     if (module_ctx != NULL) {
