@@ -3,7 +3,8 @@
 Benchmark script for comparing different nginx configurations:
 1. With bpftime module (eBPF-based filtering)
 2. With baseline C module (direct C implementation)
-3. Without any module (baseline performance)
+3. With dynamic load module (dynamically loads filter library)
+4. Without any module (baseline performance)
 
 This script will:
 - Start each nginx configuration
@@ -31,11 +32,13 @@ PARENT_DIR = SCRIPT_DIR.parent
 NGINX_BIN = str(PARENT_DIR / "nginx_plugin_output" / "nginx")
 BPFTIME_CONF = str(PARENT_DIR / "nginx.conf")
 BASELINE_CONF = str(SCRIPT_DIR / "baseline_c_module.conf")
+DYNAMIC_LOAD_CONF = str(SCRIPT_DIR / "dynamic_load_module.conf")
 NO_MODULE_CONF = str(SCRIPT_DIR / "no_module.conf")
 
 # Ports
 BPFTIME_PORT = 9023
 BASELINE_PORT = 9025
+DYNAMIC_LOAD_PORT = 9026
 NO_MODULE_PORT = 9024
 
 # URLs for testing
@@ -328,6 +331,26 @@ def main():
             stop_nginx(nginx_process)
         stop_controller(baseline_controller_process, "Baseline")
     
+    # Test with dynamic load module 
+    log_message("\n=== Testing nginx with dynamic load module ===")
+    # First make sure the filter implementation library is built
+    try:
+        build_cmd = ["make", "-C", str(SCRIPT_DIR / "dynamic_load_plugin" / "libs")]
+        log_message(f"Building filter implementation library with command: {' '.join(build_cmd)}")
+        subprocess.run(build_cmd, check=True)
+    except subprocess.CalledProcessError as e:
+        log_message(f"Failed to build filter implementation library: {e}")
+    
+    # Start nginx with dynamic load module - no separate controller needed
+    nginx_process = start_nginx(DYNAMIC_LOAD_CONF)
+    if nginx_process:
+        url = f"http://127.0.0.1:{DYNAMIC_LOAD_PORT}{args.url_path}"
+        time.sleep(1)
+        output = run_wrk_benchmark(url, args.duration, args.connections, args.threads)
+        results['dynamic_load'] = parse_wrk_output(output)
+        collect_process_output(nginx_process, "Dynamic Load Nginx")
+        stop_nginx(nginx_process)
+    
     # Test with bpftime module
     log_message("\n=== Testing nginx with bpftime module ===")
     bpftime_controller_process = start_bpftime_controller(args.url_path)
@@ -367,6 +390,22 @@ def main():
             overhead = (1 - results['baseline']['rps'] / results['no_module']['rps']) * 100
             log_message(f"  Overhead vs no module: {overhead:.2f}%")
     
+    if 'dynamic_load' in results and results['dynamic_load']:
+        dynamic_result = f"\nNginx with dynamic load module:"
+        dynamic_result += f"\n  Requests/sec: {results['dynamic_load']['rps']:.2f}"
+        dynamic_result += f"\n  Latency (avg): {results['dynamic_load']['latency_avg']}"
+        log_message(dynamic_result)
+        
+        # Calculate overhead compared to no module
+        if 'no_module' in results and results['no_module']:
+            overhead = (1 - results['dynamic_load']['rps'] / results['no_module']['rps']) * 100
+            log_message(f"  Overhead vs no module: {overhead:.2f}%")
+        
+        # Calculate overhead compared to baseline
+        if 'baseline' in results and results['baseline']:
+            overhead = (1 - results['dynamic_load']['rps'] / results['baseline']['rps']) * 100
+            log_message(f"  Overhead vs baseline C module: {overhead:.2f}%")
+    
     if 'bpftime' in results and results['bpftime']:
         bpftime_result = f"\nNginx with bpftime module:"
         bpftime_result += f"\n  Requests/sec: {results['bpftime']['rps']:.2f}"
@@ -382,6 +421,11 @@ def main():
         if 'baseline' in results and results['baseline']:
             overhead = (1 - results['bpftime']['rps'] / results['baseline']['rps']) * 100
             log_message(f"  Overhead vs baseline C module: {overhead:.2f}%")
+        
+        # Calculate overhead compared to dynamic load
+        if 'dynamic_load' in results and results['dynamic_load']:
+            overhead = (1 - results['bpftime']['rps'] / results['dynamic_load']['rps']) * 100
+            log_message(f"  Overhead vs dynamic load module: {overhead:.2f}%")
     
     log_message(f"\n=== Benchmark completed at {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')} ===")
     log_message(f"Full log available at: {BENCHMARK_LOG}")

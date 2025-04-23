@@ -1,17 +1,20 @@
 # Nginx Module Benchmarking
 
-This directory contains benchmarking tools to compare the performance of three different Nginx configurations:
+This directory contains benchmarking tools to compare the performance of four different Nginx configurations:
 
 1. **Nginx with bpftime module** - Uses eBPF-based URL filtering
 2. **Nginx with baseline C module** - Uses traditional C implementation with shared memory
-3. **Nginx without any module** - Baseline performance with no filtering
+3. **Nginx with dynamic load module** - Uses dynamic library loading at runtime
+4. **Nginx without any module** - Baseline performance with no filtering
 
 ## Directory Structure
 
 - `ebpf_controller/` - eBPF controller implementation
 - `baseline_nginx_plugin/` - Traditional C module implementation
+- `dynamic_load_plugin/` - Dynamic library loading implementation
 - `run_benchmark.py` - Python script to run benchmarks
 - `baseline_c_module.conf` - Nginx configuration for baseline C module
+- `dynamic_load_module.conf` - Nginx configuration for dynamic load module
 - `no_module.conf` - Nginx configuration without modules
 
 ## Prerequisites
@@ -153,12 +156,40 @@ To manually test the correctness of each implementation, follow these steps:
 
 4. Check the controller's output to see processed requests.
 
+### Testing the Dynamic Load Module
+
+The dynamic load module doesn't require a separate controller as it loads the filter implementation directly from a shared library:
+
+1. Build the filter implementation library first:
+   ```bash
+   cd /path/to/bpftime/example/attach_implementation/benchmark/dynamic_load_plugin/libs
+   make
+   ```
+
+2. Start Nginx with the dynamic load module:
+   ```bash
+   cd /path/to/bpftime/example/attach_implementation
+   nginx_plugin_output/nginx -p $(pwd) -c benchmark/dynamic_load_module.conf
+   ```
+
+3. Test with curl:
+   ```bash
+   # This should succeed (HTTP 200)
+   curl http://localhost:9026/aaaa
+
+   # This should fail (HTTP 403 Forbidden)
+   curl http://localhost:9026/forbidden_path
+   ```
+
+4. The filter library logs accepted/rejected requests internally, which can be retrieved from the nginx logs.
+
 ## Notes
 
 - The performance comparison focuses on the overhead introduced by each module implementation
-- Both implementations use the same string comparison logic for URL filtering
+- All implementations use the same string comparison logic for URL filtering
 - The baseline C module uses shared memory to share data with its controller
 - The bpftime module uses eBPF to implement the filtering logic
+- The dynamic load module loads a filter implementation shared library at runtime
 
 ## Troubleshooting
 

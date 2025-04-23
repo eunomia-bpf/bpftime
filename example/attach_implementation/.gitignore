@@ -9,3 +9,5 @@
 /uwsgi_temp
 /client_body_temp
 /benchmark/benchlog.txt
+/benchmark/dynamic_load_plugin/libs/libfilter_impl.so
+/benchmark/dynamic_load_plugin/libs/filter_impl.o

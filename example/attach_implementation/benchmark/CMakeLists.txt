@@ -1,2 +1,3 @@
 add_subdirectory(ebpf_controller)
 add_subdirectory(baseline_nginx_plugin)
+add_subdirectory(dynamic_load_plugin)
