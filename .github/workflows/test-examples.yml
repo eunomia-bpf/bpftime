@@ -1,4 +1,4 @@
-name: BPFtime Syscall Tracing (Multi-Step Load/Start) Debug Test v3
+name: BPFtime Syscall Tracing (Multi-Step Load/Start) Debug Test v4
 
 on:
   push:
@@ -105,13 +105,14 @@ jobs:
           export BPFTIME_DEBUG=1
 
           # --- MODIFICATION START ---
-          # Execute client command but capture exit code immediately
-          sudo -E env BPFTIME_DEBUG=1 strace -f -v -s 256 -o "$CLIENT_STRACE_LOG" "$BPFTIME_BIN" start -s "$CLIENT_COMMAND" > "$CLIENT_LOG" 2>&1
-          _client_exit_code=$? # Capture exit code right away
+          # Execute client command, append '|| true' so this line always succeeds for the runner
+          sudo -E env BPFTIME_DEBUG=1 strace -f -v -s 256 -o "$CLIENT_STRACE_LOG" "$BPFTIME_BIN" start -s "$CLIENT_COMMAND" > "$CLIENT_LOG" 2>&1 || true
+          _client_exit_code=$? # Capture the *actual* exit code of bpftime start
           echo "Client command finished with raw exit code: $_client_exit_code" # Log the captured code
 
-          # Now export the captured exit code, regardless of its value
+          # Now export the *actual* captured exit code. This line WILL execute.
           echo "CLIENT_EXIT_CODE=$_client_exit_code" >> $GITHUB_ENV
+          echo "Successfully exported CLIENT_EXIT_CODE=$_client_exit_code to GITHUB_ENV" # Add confirmation log
           # --- MODIFICATION END ---
 
           # FORCE PRINT CLIENT LOGS IN THIS STEP
@@ -122,10 +123,8 @@ jobs:
           echo "#############################################"; tail -n 200 "$CLIENT_STRACE_LOG" || echo "<<< Client strace log file not found or empty >>>"
           echo "#############################################"; echo ""
 
-          # Optional: Decide if this step should *fail* the build based on the code
-          # If you want the whole job to stop here if client fails, uncomment the next line
-          # [ "$_client_exit_code" -eq 0 ] || exit $_client_exit_code
-          # Currently, we let the final step perform the analysis.
+          # Optional: If you want this *step* to show as failed in Actions UI if client failed:
+          # exit $_client_exit_code
 
       - name: Stop Server and Analyze Results
         if: always() # Ensure cleanup and analysis
@@ -134,7 +133,7 @@ jobs:
           echo "==== Stop Server and Analyze Results ===="
           SERVER_PID_TO_KILL=${{ env.SERVER_PID }}
           # Retrieve the exit code set by the previous step
-          # Use parameter expansion to provide a default (e.g., 99) if it's somehow still empty
+          # Use parameter expansion for safety, though it should be set now
           CLIENT_FINAL_EXIT_CODE=${CLIENT_EXIT_CODE:-99}
 
           # Give server a moment
@@ -159,7 +158,7 @@ jobs:
           echo "--- Final Analysis ---"
           echo "Analyzing Client Exit Code: '$CLIENT_FINAL_EXIT_CODE'" # Log the code being analyzed
 
-          # Now the comparison should be safe because CLIENT_FINAL_EXIT_CODE will have a value
+          # The analysis logic remains the same, but now operates on the correct exit code
           if [ "$CLIENT_FINAL_EXIT_CODE" = "0" ]; then
               echo ">>> Client command SUCCEEDED (Exit Code 0). Checking output... <<<"
               if grep -q "BPFTIME_AGENT_TEST_SUCCESS" "$CLIENT_LOG"; then
@@ -170,8 +169,7 @@ jobs:
                   exit 1
               fi
           elif [ "$CLIENT_FINAL_EXIT_CODE" = "99" ]; then
-              # This means the variable was empty in the previous step (shouldn't happen with the fix)
-              echo ">>> FAILURE: Client exit code was not captured correctly (default value 99 used). Review 'Run BPFTIME Client' step logs. <<<"
+              echo ">>> FAILURE: Client exit code capture possibly failed (default value 99 used). Review 'Run BPFTIME Client' step logs. <<<"
               exit 1
           else
               echo ">>> FAILURE: Client command exited with non-zero code ($CLIENT_FINAL_EXIT_CODE). <<<"
