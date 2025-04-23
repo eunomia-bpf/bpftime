@@ -35,6 +35,7 @@ The `run_benchmark.py` script will automatically:
 2. Start Nginx with each configuration
 3. Run wrk benchmark against each
 4. Collect and display results
+5. Log all output to `benchlog.txt`
 
 Run the benchmark with:
 
@@ -53,6 +54,18 @@ For example, to run a shorter benchmark with fewer connections:
 ```bash
 python3 example/attach_implementation/benchmark/run_benchmark.py --duration 10 --connections 100 --url-path /aaaa
 ```
+
+### Benchmark Log
+
+All output from the benchmark, including:
+- Controller stdout/stderr
+- Nginx stdout/stderr
+- Detailed wrk benchmark results
+- Error messages
+
+are logged to the `benchlog.txt` file in the benchmark directory. This provides a complete record of the benchmark execution and can be useful for debugging if any issues occur.
+
+The log entries are timestamped, making it easy to track the sequence of events during the benchmark.
 
 ## Interpreting Results
 
@@ -167,4 +180,4 @@ To manually test the correctness of each implementation, follow these steps:
 
 - Check port conflicts (9023, 9024, 9025)
 - Ensure you have permissions to bind to these ports
-- Look for errors in the nginx error log  
+- Look for errors in the nginx error log or in benchlog.txt  
