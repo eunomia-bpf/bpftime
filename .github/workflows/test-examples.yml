@@ -12,10 +12,10 @@ env:
   SPDLOG_LEVEL: debug # Keep debug level
   BPFTIME_LOG_OUTPUT: console
   BPFTIME_SHARED_MEMORY_PATH: /dev/shm # Consistent SHM path
-  # Log file paths accessible across steps
-  SERVER_LOG: ${{ github.workspace }}/logs/bpftime_server.log
-  CLIENT_LOG: ${{ github.workspace }}/logs/bpftime_client.log
-  CLIENT_STRACE_LOG: ${{ github.workspace }}/logs/bpftime_client_strace.log
+  # Log file paths using default workspace (adjust if needed)
+  SERVER_LOG: logs/bpftime_server.log
+  CLIENT_LOG: logs/bpftime_client.log
+  CLIENT_STRACE_LOG: logs/bpftime_client_strace.log
 
 jobs:
   syscall-tracing-load-start-test:
@@ -25,11 +25,11 @@ jobs:
       options: "--privileged -v /sys/kernel/debug:/sys/kernel/debug:rw -v /sys/kernel/tracing:/sys/kernel/tracing:rw -v /dev/shm:/dev/shm:rw -v /tmp:/tmp:rw -v /run/shm:/run/shm:rw"
 
     steps:
-      - name: Checkout code
+      - name: Checkout code (Default Path)
         uses: actions/checkout@v4
         with:
           submodules: 'recursive'
-          path: ${{ github.workspace }} # Ensure checkout to known path
+          # Removed 'path' to let it checkout to the default GITHUB_WORKSPACE
 
       - name: System setup and kernel headers
         run: |
@@ -44,22 +44,29 @@ jobs:
           uname -a && cat /etc/os-release
           echo "==== bpftrace version ===="
           which bpftrace && bpftrace --version || echo "bpftrace not found"
-          # Create log directory early
-          mkdir -p ${{ github.workspace }}/logs
+          # Create log directory relative to workspace
+          mkdir -p logs
 
-      - name: Build and install runtime
+      - name: Build and install runtime (Original CMake approach)
         run: |
           INSTALL_DIR="$HOME/.bpftime"
           echo "Building bpftime, installing to $INSTALL_DIR"
-          # Use github.workspace for build directory to ensure consistency if HOME changes
-          cmake -S ${{ github.workspace }} -B ${{ github.workspace }}/build -DCMAKE_BUILD_TYPE:STRING=RelWithDebInfo \
+
+          # --- Add check for CMakeLists.txt in current directory ---
+          echo "--- Checking contents of current directory ($PWD) ---"
+          ls -la
+          echo "--- End checking contents ---"
+          # --- Check end ---
+
+          # Use relative build path, assume source is current dir (CMake default)
+          cmake -Bbuild -DCMAKE_BUILD_TYPE:STRING=RelWithDebInfo \
             -DCMAKE_INSTALL_PREFIX=$INSTALL_DIR \
             -DBPFTIME_LLVM_JIT=1 \
             -DBUILD_BPFTIME_DAEMON=1 \
             -DBUILD_AGENT=1 \
             -DCMAKE_CXX_FLAGS="-DDEFAULT_LOGGER_OUTPUT_PATH='\"console\"'"
 
-          cmake --build ${{ github.workspace }}/build --config RelWithDebInfo --target install -j$(nproc)
+          cmake --build build --config RelWithDebInfo --target install -j$(nproc)
 
           echo "Installed files:"
           ls -la $INSTALL_DIR/
@@ -81,23 +88,17 @@ jobs:
           set -x
           echo "==== Starting BPFTIME Server in background ===="
           BPFTIME_BIN="$BPFTIME_INSTALL_DIR/bpftime"
-          # Note: Server still targets openat tracepoint for demonstration, won't be hit by echo
           BPFTRACE_SCRIPT='tracepoint:syscalls:sys_enter_openat { printf("SERVER_TRACE (openat): %s %s\n", comm, str(args->filename)); }'
 
-          # Start server in background, redirect output to log file
-          # No timeout here, rely on cleanup step to kill it
+          # Start server in background, use relative log path
           sudo -E "$BPFTIME_BIN" load bpftrace -e "$BPFTRACE_SCRIPT" > "$SERVER_LOG" 2>&1 &
           SERVER_PID=$!
           echo "Server started in background with PID: $SERVER_PID"
-
-          # Export PID for other steps
           echo "SERVER_PID=$SERVER_PID" >> $GITHUB_ENV
 
-          # Give server time to initialize
           echo "Waiting for server to initialize (10s)..."
           sleep 10
 
-          # Verify server process started and shared memory exists
           if ! ps -p $SERVER_PID > /dev/null; then
             echo "ERROR: Server process $SERVER_PID did not start or died!"
             echo "--- Server Log ---"; cat "$SERVER_LOG" || echo "log not found"; echo "--- End Log ---"
@@ -105,20 +106,15 @@ jobs:
           else
             echo "Server process $SERVER_PID confirmed running."
           fi
-          ls -l "$BPFTIME_SHARED_MEMORY_PATH/bpftime_maps_shm" || echo "WARNING: SHM file not found yet, server might still be initializing."
+          ls -l "$BPFTIME_SHARED_MEMORY_PATH/bpftime_maps_shm" || echo "WARNING: SHM file not found yet."
 
       - name: Run BPFTIME Client
         id: run_client
         run: |
           set -x
           echo "==== Running BPFTIME Client ===="
-          # Check if server PID is available
-          if [ -z "$SERVER_PID" ]; then
-            echo "ERROR: SERVER_PID environment variable not set!"
-            exit 1
-          fi
+          if [ -z "$SERVER_PID" ]; then echo "ERROR: SERVER_PID env var not set!"; exit 1; fi
           echo "Server PID from previous step: $SERVER_PID"
-          # Check if server process is *still* running before starting client
           if ! ps -p $SERVER_PID > /dev/null; then
              echo "ERROR: Server process $SERVER_PID is no longer running before client start!"
              echo "--- Server Log ---"; cat "$SERVER_LOG" || echo "log not found"; echo "--- End Log ---"
@@ -129,95 +125,65 @@ jobs:
           CLIENT_COMMAND="/bin/echo BPFTIME_AGENT_TEST_SUCCESS" # Simplified command
 
           echo "Running client command with strace: '$CLIENT_COMMAND'..."
-          export BPFTIME_DEBUG=1 # Enable agent debug logs
-
-          # Execute client with strace, redirect logs
+          export BPFTIME_DEBUG=1
+          # Use relative log paths
           sudo -E env BPFTIME_DEBUG=1 strace -f -v -s 256 -o "$CLIENT_STRACE_LOG" "$BPFTIME_BIN" start -s "$CLIENT_COMMAND" > "$CLIENT_LOG" 2>&1
           CLIENT_EXIT_CODE=$?
           echo "Client command finished with exit code: $CLIENT_EXIT_CODE"
-
-          # Export exit code for analysis step
           echo "CLIENT_EXIT_CODE=$CLIENT_EXIT_CODE" >> $GITHUB_ENV
 
-          # FORCE PRINT CLIENT LOGS IN THIS STEP for immediate feedback
-          echo ""
-          echo "#############################################"
-          echo "### CLIENT LOG (immediately after run) (logs/bpftime_client.log) ###"
-          echo "#############################################"
-          cat "$CLIENT_LOG" || echo "<<< Client log file not found or empty >>>"
-          echo "#############################################"
-          echo ""
-          echo "#############################################"
-          echo "### CLIENT STRACE LOG (Tail) (immediately after run) (logs/bpftime_client_strace.log) ###"
-          echo "#############################################"
-          tail -n 200 "$CLIENT_STRACE_LOG" || echo "<<< Client strace log file not found or empty >>>"
-          echo "#############################################"
-          echo ""
+          # FORCE PRINT CLIENT LOGS IN THIS STEP
+          echo ""; echo "#############################################"
+          echo "### CLIENT LOG (immediately after run) ($CLIENT_LOG) ###"; echo "#############################################"
+          cat "$CLIENT_LOG" || echo "<<< Client log file not found or empty >>>"; echo "#############################################"; echo ""
+          echo "#############################################"; echo "### CLIENT STRACE LOG (Tail) (immediately after run) ($CLIENT_STRACE_LOG) ###"
+          echo "#############################################"; tail -n 200 "$CLIENT_STRACE_LOG" || echo "<<< Client strace log file not found or empty >>>"
+          echo "#############################################"; echo ""
 
-          # Check exit code here to fail fast if client failed
-          if [ "$CLIENT_EXIT_CODE" -ne 0 ]; then
-             echo ">>> CLIENT STEP FAILURE: Client command exited code $CLIENT_EXIT_CODE <<<"
-             # No exit 1 here, let the next step do final analysis, but report failure
-          fi
+          if [ "$CLIENT_EXIT_CODE" -ne 0 ]; then echo ">>> CLIENT STEP FAILURE: Client command exited code $CLIENT_EXIT_CODE <<<"; fi
 
 
       - name: Stop Server and Analyze Results
-        # Always run this step, even if prior steps failed, to ensure cleanup and log reporting
-        if: always()
+        if: always() # Ensure cleanup and analysis
         run: |
           set -x
           echo "==== Stop Server and Analyze Results ===="
-          # Retrieve variables from environment
           SERVER_PID_TO_KILL=${{ env.SERVER_PID }}
           CLIENT_FINAL_EXIT_CODE=${{ env.CLIENT_EXIT_CODE }}
 
-          # Give server a tiny bit more time just in case
+          # Give server a moment
           sleep 2
 
-          echo "--- Final Server Log ---"
+          echo "--- Final Server Log ($SERVER_LOG) ---"
           cat "$SERVER_LOG" || echo "<<< Server log file not found or empty >>>"
           echo "--- End Final Server Log ---"
 
           echo "Attempting to stop server process PID $SERVER_PID_TO_KILL..."
           if [ -n "$SERVER_PID_TO_KILL" ]; then
-            # Check if process exists before killing
             if ps -p $SERVER_PID_TO_KILL > /dev/null; then
-               sudo kill $SERVER_PID_TO_KILL 2>/dev/null || echo "Kill command failed (process might have exited)"
-               # Wait briefly for termination
+               sudo kill $SERVER_PID_TO_KILL 2>/dev/null || echo "Kill SIGTERM failed"
                sleep 2
                if ps -p $SERVER_PID_TO_KILL > /dev/null; then
-                   echo "WARNING: Server process $SERVER_PID_TO_KILL did not terminate after SIGTERM, sending SIGKILL."
+                   echo "WARNING: Server still running, sending SIGKILL."
                    sudo kill -9 $SERVER_PID_TO_KILL 2>/dev/null || true
-               else
-                   echo "Server process $SERVER_PID_TO_KILL terminated successfully."
-               fi
-            else
-               echo "Server process $SERVER_PID_TO_KILL was not running before kill attempt."
-            fi
-          else
-            echo "No Server PID found to kill."
-          fi
+               else echo "Server terminated successfully."; fi
+            else echo "Server process $SERVER_PID_TO_KILL was not running before kill."; fi
+          else echo "No Server PID found to kill."; fi
 
           echo "--- Final Analysis ---"
-          # Check the client exit code captured in the previous step
           if [ "$CLIENT_FINAL_EXIT_CODE" == "0" ]; then
               echo ">>> Client command SUCCEEDED (Exit Code 0). Checking output... <<<"
-              # Verify the expected output from the echo command
               if grep -q "BPFTIME_AGENT_TEST_SUCCESS" "$CLIENT_LOG"; then
                   echo ">>> SUCCESS: Simplified client command ran and produced expected output in client log. <<<"
-                  echo ">>> This confirms 'bpftime start' + agent injection work for basic commands. <<<"
                   exit 0
               else
-                  echo ">>> FAILURE: Simplified client command ran (Exit 0) but expected output 'BPFTIME_AGENT_TEST_SUCCESS' was NOT found in client log ($CLIENT_LOG). <<<"
+                  echo ">>> FAILURE: Client command ran (Exit 0) but expected output 'BPFTIME_AGENT_TEST_SUCCESS' was NOT found in client log ($CLIENT_LOG). <<<"
                   exit 1
               fi
           elif [ -z "$CLIENT_FINAL_EXIT_CODE" ]; then
-              # This case might happen if the client step failed *before* setting the env var
-              echo ">>> FAILURE: Client exit code was not captured. Client step likely failed very early. <<<"
-              echo ">>> Review the logs from the 'Run BPFTIME Client' step above. <<<"
+              echo ">>> FAILURE: Client exit code was not captured. Client step likely failed very early. Review 'Run BPFTIME Client' step logs. <<<"
               exit 1
           else
-              echo ">>> FAILURE: Client command exited with non-zero code ($CLIENT_FINAL_EXIT_CODE). <<<"
-              echo ">>> Examine the Client Log and Client Strace Log printed in the 'Run BPFTIME Client' step. <<<"
+              echo ">>> FAILURE: Client command exited with non-zero code ($CLIENT_FINAL_EXIT_CODE). Examine Client/Strace logs in 'Run BPFTIME Client' step. <<<"
               exit 1
           fi
