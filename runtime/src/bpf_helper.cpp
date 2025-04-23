@@ -137,7 +137,7 @@ static void segv_read_handler(int sig, siginfo_t *siginfo, void *ctx)
 int64_t bpftime_probe_read(uint64_t dst, int64_t size, uint64_t ptr, uint64_t,
 			   uint64_t)
 {
-	if (size < 0) {
+	if (unlikely(size < 0)) {
 		SPDLOG_ERROR("Invalid size: {}", size);
 		return -EFAULT;
 	}
@@ -178,16 +178,11 @@ int64_t bpftime_probe_read(uint64_t dst, int64_t size, uint64_t ptr, uint64_t,
 		}
 	}
 #endif
-	unsigned char *dst_p = (unsigned char *)dst;
-	unsigned char *src_p = (unsigned char *)ptr;
-	while (size--) {
-		*((unsigned char *)dst_p) = *((unsigned char *)src_p);
-		dst_p++;
-		src_p++;
-	}
-	__asm__("jump_point_read:");
+	memcpy((void *)dst, (void *)ptr, size);
 
 #ifdef ENABLE_PROBE_READ_CHECK
+	__asm__("jump_point_read:");
+
 	if (status_probe_read == PROBE_STATUS::RUNNING_ERROR) {
 		ret = -EFAULT;
 	}
@@ -222,7 +217,7 @@ static void segv_write_handler(int sig, siginfo_t *siginfo, void *ctx)
 int64_t bpftime_probe_write_user(uint64_t dst, uint64_t src, int64_t len,
 				 uint64_t, uint64_t)
 {
-	if (len < 0) {
+	if (unlikely(len < 0)) {
 		SPDLOG_ERROR("Invalid len: {}", len);
 		return -EFAULT;
 	}
@@ -265,16 +260,12 @@ int64_t bpftime_probe_write_user(uint64_t dst, uint64_t src, int64_t len,
 		}
 	}
 #endif
-	unsigned char *dst_p = (unsigned char *)dst;
-	unsigned char *src_p = (unsigned char *)src;
-	while (len--) {
-		*((unsigned char *)dst_p) = *((unsigned char *)src_p);
-		dst_p++;
-		src_p++;
-	}
 
-	__asm__("jump_point_write:");
+	memcpy((void *)dst, (void *)src, len);
+
 #ifdef ENABLE_PROBE_WRITE_CHECK
+	__asm__("jump_point_write:");
+
 	if (status_probe_write == PROBE_STATUS::RUNNING_ERROR) {
 		ret = -EFAULT;
 	}
@@ -468,7 +459,7 @@ uint64_t bpf_perf_event_output(uint64_t ctx, uint64_t map, uint64_t flags,
 			       uint64_t data, uint64_t size)
 {
 	int32_t current_cpu = my_sched_getcpu();
-	if (current_cpu == -1) {
+	if (unlikely(current_cpu == -1)) {
 		SPDLOG_ERROR(
 			"Unable to get current cpu when running perf event output");
 		return (uint64_t)-1;
