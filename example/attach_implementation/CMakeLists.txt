@@ -25,24 +25,33 @@ add_dependencies(attach_impl_example_controller runtime spdlog::spdlog bpftime-o
 target_link_libraries(attach_impl_example_controller PRIVATE runtime spdlog::spdlog bpftime-object)
 target_include_directories(attach_impl_example_controller PRIVATE ${BPFTIME_RUNTIME_INCLUDE} ${SPDLOG_INCLUDE} ${BPFTIME_OBJECT_INCLUDE_DIRS})
 
-
 # We need to download the source of nginx, since it requires them to build modules
+# Build nginx once with both modules included
 ExternalProject_Add(
-    attach_impl_example_nginx
+    nginx_build
     DOWNLOAD_COMMAND URL https://nginx.org/download/nginx-1.22.1.tar.gz
-    CONFIGURE_COMMAND cd ${CMAKE_CURRENT_BINARY_DIR}/attach_impl_example_nginx-prefix/src/attach_impl_example_nginx && LINK_LIB=${CMAKE_CURRENT_BINARY_DIR}/libattach_impl_example_nginx_plugin_adaptor.so ./configure --add-dynamic-module=${CMAKE_CURRENT_SOURCE_DIR}/nginx_plugin --with-compat --with-ld-opt=-Wl,-rpath=${CMAKE_CURRENT_BINARY_DIR}
-    BUILD_COMMAND make -C ${CMAKE_CURRENT_BINARY_DIR}/attach_impl_example_nginx-prefix/src/attach_impl_example_nginx -j32
+    CONFIGURE_COMMAND cd ${CMAKE_CURRENT_BINARY_DIR}/nginx_build-prefix/src/nginx_build && 
+                     LINK_LIB=${CMAKE_CURRENT_BINARY_DIR}/libattach_impl_example_nginx_plugin_adaptor.so
+                     ./configure 
+                     --add-dynamic-module=${CMAKE_CURRENT_SOURCE_DIR}/nginx_plugin 
+                     --add-dynamic-module=${CMAKE_CURRENT_SOURCE_DIR}/benchmark/baseline_nginx_plugin 
+                     --with-compat 
+                     --with-ld-opt=-Wl,-rpath=${CMAKE_CURRENT_BINARY_DIR}
+    BUILD_COMMAND make -C ${CMAKE_CURRENT_BINARY_DIR}/nginx_build-prefix/src/nginx_build -j32
     INSTALL_COMMAND ""
     BUILD_ALWAYS TRUE
     DEPENDS attach_impl_example_nginx_plugin_adaptor
 )
 
 add_custom_command(
-    TARGET attach_impl_example_nginx
+    TARGET nginx_build
     COMMAND ${CMAKE_COMMAND} -E make_directory ${CMAKE_CURRENT_SOURCE_DIR}/nginx_plugin_output
-    COMMAND ${CMAKE_COMMAND} -E copy ${CMAKE_CURRENT_BINARY_DIR}/attach_impl_example_nginx-prefix/src/attach_impl_example_nginx/objs/*.so ${CMAKE_CURRENT_SOURCE_DIR}/nginx_plugin_output/
-    COMMAND ${CMAKE_COMMAND} -E copy ${CMAKE_CURRENT_BINARY_DIR}/attach_impl_example_nginx-prefix/src/attach_impl_example_nginx/objs/nginx ${CMAKE_CURRENT_SOURCE_DIR}/nginx_plugin_output/
-    COMMENT "Copy nginx module and executable to ${CMAKE_CURRENT_SOURCE_DIR}/nginx_plugin_output/"
+    COMMAND ${CMAKE_COMMAND} -E copy ${CMAKE_CURRENT_BINARY_DIR}/nginx_build-prefix/src/nginx_build/objs/*.so ${CMAKE_CURRENT_SOURCE_DIR}/nginx_plugin_output/
+    COMMAND ${CMAKE_COMMAND} -E copy ${CMAKE_CURRENT_BINARY_DIR}/nginx_build-prefix/src/nginx_build/objs/nginx ${CMAKE_CURRENT_SOURCE_DIR}/nginx_plugin_output/
+    COMMENT "Copy nginx modules and executable to ${CMAKE_CURRENT_SOURCE_DIR}/nginx_plugin_output/"
 )
 
-add_dependencies(attach_impl_example_nginx attach_impl_example_nginx_plugin_adaptor attach_impl_example_controller)
+add_dependencies(nginx_build attach_impl_example_nginx_plugin_adaptor attach_impl_example_controller)
+
+# This is to ensure backward compatibility for any targets that depend on the old target name
+add_custom_target(attach_impl_example_nginx DEPENDS nginx_build)

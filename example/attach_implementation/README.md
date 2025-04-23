@@ -40,5 +40,6 @@ Then, run `curl http://127.0.0.1:9023/aaab` and `curl http://127.0.0.1:9023/aaaa
 ## test with wrk
 
 ```sh
-wrk -t12 -c400 -d30s http://127.0.0.1:9023/aaab
+wrk -t12 -c4000 -d30s http://127.0.0.1:9023/aaaa
+wrk -t12 -c4000 -d30s http://127.0.0.1:9024/aaaa
 ```
