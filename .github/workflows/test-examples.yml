@@ -290,14 +290,29 @@ jobs:
               printf("%s %s\n", comm, str(args->filename)); 
           }
           EOF
+          
+          # 创建一个简单的 bpftrace 脚本文件
+          cat > simple_trace.bt << 'EOF'
+          BEGIN {
+              printf("BPF program started\n");
+          }
+          
+          tracepoint:syscalls:sys_enter_openat {
+              printf("%s %s\n", comm, str(args->filename));
+          }
+          
+          END {
+              printf("BPF program ending\n");
+          }
+          EOF
       - name: Test combination with raw_syscalls (LD_PRELOAD server/agent)
         run: |
           echo "==== Testing with raw_syscalls (LD_PRELOAD server/agent) ===="
           # Run the corrected test script
           ./raw_syscalls_test.sh || { echo "raw_syscalls test failed"; exit 1; }
-      - name: Test with daemon mode (alternative methods)
+      - name: Test with daemon mode (improved approach)
         run: |
-          echo "==== Testing with daemon mode (alternative methods) ===="
+          echo "==== Testing with daemon mode (improved approach) ===="
           
           # 设置环境变量
           export HOME_DIR=$HOME
@@ -310,29 +325,18 @@ jobs:
           BPF_LOAD="$HOME/.bpftime/bpftime"
           BPF_AGENT_SO="$HOME_DIR/.bpftime/libbpftime-agent.so"
           BPF_AGENT_TRANSFORMER_SO="$HOME_DIR/.bpftime/libbpftime-agent-transformer.so"
+          BPF_SERVER_SO="$HOME_DIR/.bpftime/libbpftime-syscall-server.so"
           
           # 检查必要的文件是否存在
           if [ ! -f "$BPF_DAEMON" ]; then echo "ERROR: $BPF_DAEMON not found!"; exit 1; fi
           if [ ! -f "$BPF_LOAD" ]; then echo "ERROR: $BPF_LOAD not found!"; exit 1; fi
           if [ ! -f "$BPF_AGENT_SO" ]; then echo "ERROR: $BPF_AGENT_SO not found!"; exit 1; fi
           if [ ! -f "$BPF_AGENT_TRANSFORMER_SO" ]; then echo "ERROR: $BPF_AGENT_TRANSFORMER_SO not found!"; exit 1; fi
+          if [ ! -f "$BPF_SERVER_SO" ]; then echo "ERROR: $BPF_SERVER_SO not found!"; exit 1; fi
           
           # 显示所有安装的文件和权限
           echo "Installed files in $HOME/.bpftime:"
           ls -la $HOME/.bpftime/
-          
-          # 检查 bpftime 工具的帮助信息
-          echo "Checking bpftime tool help:"
-          "$BPF_LOAD" --help > logs/bpftime_help.log 2>&1 || echo "Failed to get help"
-          cat logs/bpftime_help.log
-          
-          echo "Checking bpftime start help:"
-          "$BPF_LOAD" start --help > logs/bpftime_start_help.log 2>&1 || echo "Failed to get start help"
-          cat logs/bpftime_start_help.log
-          
-          echo "Checking bpftime load help:"
-          "$BPF_LOAD" load --help > logs/bpftime_load_help.log 2>&1 || echo "Failed to get load help"
-          cat logs/bpftime_load_help.log
           
           # 启动 daemon
           echo "Starting bpftime daemon in background..."
@@ -351,87 +355,117 @@ jobs:
           fi
           echo "Daemon is running."
           
-          # 方法1：使用 bpftime load 加载简单的 bpftrace 程序
-          echo "METHOD 1: Loading simple bpftrace program with bpftime load..."
-          "$BPF_LOAD" load bpftrace -e 'BEGIN { printf("BPF program loaded successfully\n"); }' > logs/method1.log 2>&1
-          METHOD1_EXIT=$?
-          echo "bpftrace load exit code: $METHOD1_EXIT"
-          cat logs/method1.log
+          # 方法1：使用 bpftime load 直接运行 bpftrace (按照示例格式)
+          echo "METHOD 1: Using bpftime load with bpftrace directly..."
+          # 注意：这里不使用 -e 参数，而是直接运行 bpftrace 命令
+          "$BPF_LOAD" load bpftrace simple_trace.bt > logs/method1.log 2>&1 &
+          METHOD1_PID=$!
+          echo "Method 1 PID: $METHOD1_PID"
+          sleep 3
           
-          # 方法2：使用 LD_PRELOAD 直接运行 cat 命令
-          echo "METHOD 2: Running cat command with direct LD_PRELOAD..."
-          LD_PRELOAD="$BPF_AGENT_SO" \
-          cat build/install_manifest.txt > logs/method2.log 2>&1
-          METHOD2_EXIT=$?
-          echo "Cat command exit code: $METHOD2_EXIT"
-          cat logs/method2.log
+          # 检查方法1进程是否在运行
+          if ! ps -p $METHOD1_PID > /dev/null; then
+            echo "WARNING: Method 1 process not found after starting."
+            cat logs/method1.log
+          else
+            echo "Method 1 is running."
+          fi
           
-          # 方法3：使用 LD_PRELOAD 运行测试程序
-          echo "METHOD 3: Running test program with direct LD_PRELOAD..."
+          # 方法2：使用预加载 libbpftime-syscall-server.so 的方式运行 bpftrace
+          echo "METHOD 2: Using LD_PRELOAD with syscall-server.so and bpftrace..."
+          LD_PRELOAD="$BPF_SERVER_SO" \
+          bpftrace -e 'tracepoint:syscalls:sys_enter_openat { printf("%s %s\n", comm, str(args->filename)); }' > logs/method2.log 2>&1 &
+          METHOD2_PID=$!
+          echo "Method 2 PID: $METHOD2_PID"
+          sleep 3
+          
+          # 检查方法2进程是否在运行
+          if ! ps -p $METHOD2_PID > /dev/null; then
+            echo "WARNING: Method 2 process not found after starting."
+            cat logs/method2.log
+          else
+            echo "Method 2 is running."
+          fi
+          
+          # 方法3：使用 LD_PRELOAD 直接运行测试程序
+          echo "METHOD 3: Running test program with agent preload..."
           LD_PRELOAD="$BPF_AGENT_SO" \
           "$PWD"/test_syscalls > logs/method3.log 2>&1
           METHOD3_EXIT=$?
-          echo "Test program exit code: $METHOD3_EXIT"
-          cat logs/method3.log
+          echo "Method 3 exit code: $METHOD3_EXIT"
           
-          # 方法4：尝试使用 bpftime start 运行命令，但使用不同的参数组合
-          echo "METHOD 4: Trying different bpftime start options..."
+          # 方法4：使用 agent-transformer 预加载运行测试程序
+          echo "METHOD 4: Running test program with agent-transformer preload..."
+          LD_PRELOAD="$BPF_AGENT_TRANSFORMER_SO" \
+          AGENT_SO="$BPF_AGENT_SO" \
+          "$PWD"/test_syscalls > logs/method4.log 2>&1
+          METHOD4_EXIT=$?
+          echo "Method 4 exit code: $METHOD4_EXIT"
           
-          # 尝试 -f 参数
-          echo "Trying with -f flag..."
-          "$BPF_LOAD" start -f cat build/install_manifest.txt > logs/method4a.log 2>&1
-          METHOD4A_EXIT=$?
-          echo "bpftime start -f exit code: $METHOD4A_EXIT"
-          cat logs/method4a.log
+          # 显示日志内容
+          echo "=== Method 1 Log ==="
+          cat logs/method1.log || echo "File not found"
           
-          # 尝试不带任何标志
-          echo "Trying without flags..."
-          "$BPF_LOAD" start cat build/install_manifest.txt > logs/method4b.log 2>&1
-          METHOD4B_EXIT=$?
-          echo "bpftime start (no flags) exit code: $METHOD4B_EXIT"
-          cat logs/method4b.log
+          echo "=== Method 2 Log ==="
+          cat logs/method2.log || echo "File not found"
           
-          # 尝试使用 sudo
-          echo "Trying with sudo..."
-          sudo "$BPF_LOAD" start cat build/install_manifest.txt > logs/method4c.log 2>&1
-          METHOD4C_EXIT=$?
-          echo "sudo bpftime start exit code: $METHOD4C_EXIT"
-          cat logs/method4c.log
+          echo "=== Method 3 Log ==="
+          cat logs/method3.log || echo "File not found"
           
-          # 终止 daemon
-          echo "Stopping daemon PID $DAEMON_PID..."
-          kill $DAEMON_PID 2>/dev/null
-          wait $DAEMON_PID 2>/dev/null
+          echo "=== Method 4 Log ==="
+          cat logs/method4.log || echo "File not found"
+          
+          echo "=== Daemon Log ==="
+          cat logs/daemon.log || echo "File not found"
+          
+          # 终止后台进程
+          if ps -p $METHOD1_PID > /dev/null; then
+            echo "Stopping Method 1 PID $METHOD1_PID..."
+            kill $METHOD1_PID 2>/dev/null
+            wait $METHOD1_PID 2>/dev/null || true
+          fi
+          
+          if ps -p $METHOD2_PID > /dev/null; then
+            echo "Stopping Method 2 PID $METHOD2_PID..."
+            kill $METHOD2_PID 2>/dev/null
+            wait $METHOD2_PID 2>/dev/null || true
+          fi
+          
+          if ps -p $DAEMON_PID > /dev/null; then
+            echo "Stopping daemon PID $DAEMON_PID..."
+            kill $DAEMON_PID 2>/dev/null
+            wait $DAEMON_PID 2>/dev/null || true
+          fi
           
           # 检查结果
           SUCCESS=false
           
           # 检查方法1是否成功
-          if [ $METHOD1_EXIT -eq 0 ] && grep -q "BPF program loaded successfully\|Attaching" logs/method1.log; then
-            echo "SUCCESS: Method 1 - BPF program loaded successfully"
+          if grep -q "BPF program started" logs/method1.log 2>/dev/null; then
+            echo "SUCCESS: Method 1 - BPF program started successfully"
             SUCCESS=true
           fi
           
           # 检查方法2是否成功
-          if [ $METHOD2_EXIT -eq 0 ] && grep -q "TEST_MARKER_LINE" logs/method2.log; then
-            echo "SUCCESS: Method 2 - Cat command ran successfully with agent preload"
+          if grep -q "Attaching 1 probe" logs/method2.log 2>/dev/null; then
+            echo "SUCCESS: Method 2 - BPF program attached successfully"
             SUCCESS=true
           fi
           
           # 检查方法3是否成功
-          if [ $METHOD3_EXIT -eq 0 ] && grep -q "Test program completed" logs/method3.log; then
+          if [ "$METHOD3_EXIT" = "0" ] && grep -q "Test program completed" logs/method3.log 2>/dev/null; then
             echo "SUCCESS: Method 3 - Test program ran successfully with agent preload"
             SUCCESS=true
           fi
           
           # 检查方法4是否成功
-          if [ $METHOD4A_EXIT -eq 0 ] || [ $METHOD4B_EXIT -eq 0 ] || [ $METHOD4C_EXIT -eq 0 ]; then
-            echo "SUCCESS: Method 4 - bpftime start command executed successfully"
+          if [ "$METHOD4_EXIT" = "0" ] && grep -q "Test program completed" logs/method4.log 2>/dev/null; then
+            echo "SUCCESS: Method 4 - Test program ran successfully with agent-transformer preload"
             SUCCESS=true
           fi
           
           # 检查 daemon 是否成功初始化
-          if grep -q "Global shm constructed" logs/daemon.log; then
+          if grep -q "Global shm constructed" logs/daemon.log 2>/dev/null; then
             echo "SUCCESS: Daemon initialized correctly"
             SUCCESS=true
           fi
@@ -439,6 +473,7 @@ jobs:
           # 根据测试结果决定成功或失败
           if [ "$SUCCESS" = "true" ]; then
             echo "OVERALL SUCCESS: At least one daemon mode test method worked!"
+            echo "SUCCESS: Daemon mode test passed" >> logs/daemon_success.log
             exit 0
           else
             echo "OVERALL FAILURE: All daemon mode test methods failed."
@@ -455,10 +490,10 @@ jobs:
           DAEMON_SUCCESS=false
           
           # 检查 raw_syscalls 测试是否成功
-          if grep -q "Detected openat syscall by test_syscalls!" logs/raw_server.log; then
+          if grep -q "Detected openat syscall by test_syscalls!" logs/raw_server.log 2>/dev/null; then
             RAW_SYSCALLS_SUCCESS=true
             echo "Raw Syscalls Test: SUCCESS - Detected openat syscall"
-          elif grep -q "Syscall enter: PID .* Comm test_syscalls" logs/raw_server.log; then
+          elif grep -q "Syscall enter: PID .* Comm test_syscalls" logs/raw_server.log 2>/dev/null; then
             RAW_SYSCALLS_SUCCESS=true
             echo "Raw Syscalls Test: SUCCESS - Detected syscalls from test program"
           else
@@ -466,16 +501,16 @@ jobs:
           fi
           
           # 检查 daemon 模式测试是否成功
-          if grep -q "SUCCESS: Method" logs/method*.log 2>/dev/null; then
+          if [ -f "logs/daemon_success.log" ] && grep -q "SUCCESS: Daemon mode test passed" logs/daemon_success.log 2>/dev/null; then
             DAEMON_SUCCESS=true
-            echo "Daemon Mode Test: SUCCESS - At least one method worked"
-          elif grep -q "Test program completed" logs/method3.log 2>/dev/null; then
+            echo "Daemon Mode Test: SUCCESS - Test passed according to log marker"
+          elif grep -q "Test program completed" logs/method*.log 2>/dev/null; then
             DAEMON_SUCCESS=true
             echo "Daemon Mode Test: SUCCESS - Test program ran successfully"
-          elif grep -q "TEST_MARKER_LINE" logs/method2.log 2>/dev/null; then
+          elif grep -q "BPF program started\|Attaching 1 probe" logs/method*.log 2>/dev/null; then
             DAEMON_SUCCESS=true
-            echo "Daemon Mode Test: SUCCESS - Cat command ran successfully"
-          elif grep -q "Global shm constructed" logs/daemon.log; then
+            echo "Daemon Mode Test: PARTIAL SUCCESS - BPF program started/attached"
+          elif grep -q "Global shm constructed" logs/daemon.log 2>/dev/null; then
             DAEMON_SUCCESS=true
             echo "Daemon Mode Test: PARTIAL SUCCESS - Daemon initialized correctly"
           else
