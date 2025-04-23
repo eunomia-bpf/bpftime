@@ -9,14 +9,14 @@ on:
 
 env:
   BPFTIME_VM_NAME: llvm
+  SPDLOG_LEVEL: error
   
 jobs:
   syscall-tracing-test:
     runs-on: ubuntu-22.04
     container:
       image: "manjusakalza/bpftime-base-image:ubuntu-2204"
-      # Add /dev/shm mount for shared memory (might be needed by BPFTIME)
-      # Ensure /tmp is writable for named pipe
+      # Add proper mounts for accessing kernel debug features and shared memory
       options: "--privileged -v /sys/kernel/debug/:/sys/kernel/debug:rw -v /sys/kernel/tracing:/sys/kernel/tracing:rw -v /dev/shm:/dev/shm:rw"
 
     steps:
@@ -24,86 +24,46 @@ jobs:
         uses: actions/checkout@v4
         with:
           submodules: 'recursive'
-      # - name: Setup tmate session
-      #   uses: mxschmitt/action-tmate@v3
-      #   with:
-      #     limit-access-to-actor: false
 
-      - name: System setup and kernel headers
+      - name: System setup and dependencies
         run: |
           apt-get update
           apt-get install -y --no-install-recommends \
             lcov tree strace gdb sudo libc6-dev bpftrace \
             linux-headers-generic linux-tools-generic \
             linux-headers-$(uname -r) \
-            libelf-dev # Needed for bpftrace compilation often
+            libelf-dev # Needed for bpftrace
           
+          # System information for debugging
           echo "==== System Information ===="
           uname -a
           cat /etc/os-release
           
+          # Check for bpftrace availability and version
           echo "==== Checking bpftrace availability ===="
           which bpftrace
           bpftrace --version
           
+          # Check for tracepoint availability
           echo "==== Checking tracepoint availability ===="
-          # Check for raw_syscalls tracepoints specifically as they are used
-          bpftrace -l 'tracepoint:raw_syscalls:*' > /dev/null 2>&1 || { echo "raw_syscalls tracepoints not found or bpftrace failed"; exit 1; }
-          echo "raw_syscalls tracepoints found."
+          bpftrace -l 'tracepoint:syscalls:sys_enter_openat' > /dev/null 2>&1 || { echo "openat syscall tracepoint not found"; exit 1; }
+          echo "openat syscall tracepoint found."
           
-          echo "==== Checking kernel capabilities ===="
-          ls -la /sys/kernel/debug/tracing/ || echo "Debug tracing not accessible"
-          ls -la /sys/kernel/tracing/ || echo "Kernel tracing not accessible" # Check kernel tracing as well
-          
-          echo "==== Preparing test files and directories ===="
-          mkdir -p build logs /tmp/bpftime
-          echo "TEST_MARKER_LINE_1" > build/install_manifest.txt
-          echo "TEST_MARKER_LINE_2" >> build/install_manifest.txt
+          # Create test file needed for openat syscall
+          echo "==== Preparing test directory and files ===="
+          mkdir -p build logs
+          echo "/root/.bpftime/bpftime_daemon" > build/install_manifest.txt
+          echo "/root/.bpftime/bpftimetool" >> build/install_manifest.txt
+          echo "/root/.bpftime/libbpftime-agent.so" >> build/install_manifest.txt
+          echo "/root/.bpftime/libbpftime-agent-transformer.so" >> build/install_manifest.txt
+          echo "/root/.bpftime/libbpftime-syscall-server.so" >> build/install_manifest.txt
           cat build/install_manifest.txt
           
-          # Ensure /tmp/bpftime_uprobe_pipe can be created/used
-          touch /tmp/bpftime_uprobe_pipe || echo "Warning: Cannot touch /tmp/bpftime_uprobe_pipe"
-          
-          # 确保共享内存目录存在且有适当的权限
-          mkdir -p /dev/shm
-          chmod 777 /dev/shm
-          ls -la /dev/shm
-          
-          # 创建多个可能的共享内存目录
-          mkdir -p /tmp/bpftime_shm
-          chmod 777 /tmp/bpftime_shm
-          
-          mkdir -p /run/shm
-          chmod 777 /run/shm
-      # Use a simplified bpftrace test to check functionality
-      - name: Test bpftrace basic functionality
-        run: |
-          echo "==== Testing bpftrace basic functionality ===="
-          
-          # Create a simpler test without BEGIN/END probes
-          cat > syscall_test.bt << 'EOF'
-          tracepoint:raw_syscalls:sys_enter 
-          {
-              @syscalls[args->id] = count();
-              if (@syscalls[args->id] == 1) {
-                  printf("First occurrence of syscall ID %d\n", args->id);
-              }
-          }
-          EOF
-          
-          # Run the test with a shorter timeout
-          echo "Running syscall test (will run for max 4s)..."
-          timeout -k 5s 4s bpftrace syscall_test.bt > logs/bpftrace_test.log 2>&1 || echo "Bpftrace test completed with non-zero exit code (expected with timeout)"
-          
-          cat logs/bpftrace_test.log
-          
-          # Check for any output indicating bpftrace ran successfully
-          if grep -q "First occurrence of syscall\|Attaching\|Exiting" logs/bpftrace_test.log; then
-            echo "SUCCESS: Basic bpftrace test ran and produced output"
-          else
-            echo "WARNING: No expected output detected in basic test, but continuing anyway"
-          fi
-      - name: Build and install runtime
+          # Ensure shared memory directories exist
+          mkdir -p /dev/shm /tmp/bpftime_shm
+          chmod 777 /dev/shm /tmp/bpftime_shm
+
+      - name: Build and install BPFtime
         run: |
           export INSTALL_DIR=$HOME/.bpftime
           echo "Building bpftime, installing to $INSTALL_DIR"
@@ -113,431 +73,208 @@ jobs:
             -DBPFTIME_LLVM_JIT=1 \
             -DBUILD_BPFTIME_DAEMON=1 \
             -DCMAKE_CXX_FLAGS="-DDEFAULT_LOGGER_OUTPUT_PATH='\"console\"'" \
-            -DBUILD_AGENT=1 # Ensure agent is built
+            -DBUILD_AGENT=1
           
           cmake --build build --config RelWithDebInfo --target install -j$(nproc)
           
           echo "Installed files:"
           ls -la $INSTALL_DIR/
           
-          chmod +x $INSTALL_DIR/* || echo "Warning: Could not chmod installed files"
+          chmod +x $INSTALL_DIR/*
           
+          # Add bpftime to PATH
           export PATH=$PATH:$INSTALL_DIR
           echo "PATH=$PATH" >> $GITHUB_ENV
           echo "BPFTIME_INSTALL_DIR=$INSTALL_DIR" >> $GITHUB_ENV
           echo "HOME_DIR=$HOME" >> $GITHUB_ENV
-      - name: Create test scripts and programs
+      
+      - name: Create syscall trace test scripts
         run: |
-          echo "==== Creating test scripts and programs ===="
-          
-          # Update test_syscalls.c with proper C-style comments
-          cat > test_syscalls.c << 'EOF'
-          #include <stdio.h>
-          #include <fcntl.h>
-          #include <unistd.h>
-          #include <string.h>
-          #include <errno.h>
-          #include <stdlib.h>
-          
-          int main() {
-              printf("Test program starting (PID %d)\n", getpid());
-              
-              // 重复执行openat系统调用，增加被捕获的机会
-              for (int i = 0; i < 5; i++) { // Reduced iterations for faster test
-                  printf("Iteration %d: Attempting to open file build/install_manifest.txt\n", i);
-                  // Use O_CLOEXEC to avoid leaking FD to potential subprocesses (good practice)
-                  int fd = open("build/install_manifest.txt", O_RDONLY | O_CLOEXEC);
-                  if (fd >= 0) {
-                      printf("Successfully opened file (FD %d)\n", fd);
-                      char buffer[256];
-                      ssize_t bytes_read = read(fd, buffer, sizeof(buffer) - 1);
-                      if (bytes_read > 0) {
-                          buffer[bytes_read] = '\0'; // Null-terminate
-                          printf("Read %zd bytes: '%s'\n", bytes_read, buffer);
-                      } else if (bytes_read == 0) {
-                          printf("Read 0 bytes (End of file)\n");
-                      } else {
-                          perror("read failed");
-                      }
-                      close(fd);
-                      usleep(50000); // 休眠50ms
-                  } else {
-                      perror("openat failed");
-                      // Don't exit immediately on open failure, continue iterations
-                      usleep(50000); // Still sleep on failure
-                  }
-              }
-              
-              printf("Test program completed (PID %d)\n", getpid());
-              return EXIT_SUCCESS; // Return success if reached here
-          }
-          EOF
-          
-          # Compile test program
-          gcc -o test_syscalls test_syscalls.c
-          
-          # 创建极简 raw_syscalls 测试脚本，不使用任何复杂功能
-          cat > raw_syscalls_trace.bt << 'EOF'
-          #include <linux/sched.h>
-          
-          // 简单跟踪 raw_syscalls，只过滤进程名
-          tracepoint:raw_syscalls:sys_enter 
-          {
-              // 过滤特定进程名称
-              if (comm == "test_syscalls") {
-                  printf("Syscall enter: PID %d, Comm %s, ID %d\n", pid, comm, args->id);
-                  if (args->id == 257) { // SYS_openat 在 x86_64 上通常是 257
-                      printf("  Detected openat syscall by test_syscalls!\n");
-                  }
-              }
-          }
-          
-          tracepoint:raw_syscalls:sys_exit 
-          {
-              if (comm == "test_syscalls") {
-                  printf("Syscall exit : PID %d, Comm %s, ID %d, Ret %d\n", pid, comm, args->id, args->ret);
-              }
-          }
-          EOF
-          
-          # 创建调试脚本来查找共享内存路径
-          cat > debug_shm_paths.sh << 'EOF'
+          cat > syscall_test.sh << 'EOF'
           #!/bin/bash
+          set -e
           
-          # 列出所有可能的共享内存路径
-          echo "=== Possible shared memory paths ==="
-          for path in /dev/shm /run/shm /tmp /tmp/bpftime_shm; do
-            echo "Checking $path:"
-            if [ -d "$path" ]; then
-              ls -la "$path"
-              echo "Directory exists and contents shown above"
-            else
-              echo "Directory does not exist"
-            fi
-            echo ""
-          done
+          export PATH=$PATH:$HOME/.bpftime
           
-          # 查找 bpftime 可能创建的共享内存文件
-          echo "=== Finding potential bpftime shared memory files ==="
-          find /dev /run /tmp -name "*bpftime*" 2>/dev/null || echo "No bpftime files found"
-          find /dev /run /tmp -name "*shm*" 2>/dev/null || echo "No shm files found"
+          # Create log directory
+          mkdir -p logs
           
-          # 检查系统共享内存设置
-          echo "=== System shared memory settings ==="
-          mount | grep shm || echo "No shm mounts found"
-          df -h | grep shm || echo "No shm filesystems found"
-          cat /proc/mounts | grep shm || echo "No shm in /proc/mounts"
-          
-          # 尝试手动创建共享内存文件
-          echo "=== Testing shared memory creation ==="
-          for path in /dev/shm /run/shm /tmp /tmp/bpftime_shm; do
-            echo "Testing $path:"
-            if [ -d "$path" ]; then
-              touch "$path/test_shm_file" 2>/dev/null && echo "Successfully created test file" || echo "Failed to create test file"
-              rm -f "$path/test_shm_file" 2>/dev/null
-            else
-              echo "Directory does not exist"
-            fi
-          done
-          EOF
-          chmod +x debug_shm_paths.sh
-          
-          # 更新测试脚本，增加更多错误检查和详细日志
-          cat > raw_syscalls_test.sh << 'EOF'
-          #!/bin/bash
-          set -x
-          
-          export HOME_DIR=$HOME
-          export BPFTIME_VM_NAME=llvm
-          export BPFTIME_LOG_OUTPUT=console
-          
-          # 尝试多个可能的共享内存路径
-          for shm_path in /dev/shm /run/shm /tmp /tmp/bpftime_shm; do
-            if [ -d "$shm_path" ] && [ -w "$shm_path" ]; then
-              echo "Using shared memory path: $shm_path"
-              export BPFTIME_SHARED_MEMORY_PATH="$shm_path"
-              break
-            fi
-          done
-          
-          # 运行共享内存调试脚本
-          ./debug_shm_paths.sh > logs/shm_debug.log 2>&1 || echo "Warning: Debug script failed"
-          
-          # 显示共享内存调试信息
-          echo "=== Shared memory debug info ==="
-          cat logs/shm_debug.log || echo "No debug log available"
-          
-          BPF_SERVER_SO="$HOME_DIR/.bpftime/libbpftime-syscall-server.so"
-          BPF_AGENT_TRANSFORMER_SO="$HOME_DIR/.bpftime/libbpftime-agent-transformer.so"
-          BPF_AGENT_SO="$HOME_DIR/.bpftime/libbpftime-agent.so"
+          # Create named pipe for communication between server and client
           PIPE_PATH="/tmp/bpftime_uprobe_pipe"
-          
-          # 检查必要的库文件是否存在
-          if [ ! -f "$BPF_SERVER_SO" ]; then echo "ERROR: $BPF_SERVER_SO not found!"; exit 1; fi
-          if [ ! -f "$BPF_AGENT_TRANSFORMER_SO" ]; then echo "ERROR: $BPF_AGENT_TRANSFORMER_SO not found!"; exit 1; fi
-          if [ ! -f "$BPF_AGENT_SO" ]; then echo "ERROR: $BPF_AGENT_SO not found!"; exit 1; fi
-          
-          # 创建命名管道
           rm -f "$PIPE_PATH"
-          mkfifo "$PIPE_PATH" || { echo "ERROR: Failed to create named pipe $PIPE_PATH"; exit 1; }
+          mkfifo "$PIPE_PATH" || { echo "ERROR: Failed to create named pipe"; exit 1; }
           
-          echo "Starting bpftrace server with preload ($BPF_SERVER_SO)..."
-          # 启动服务器，增加 BPFTIME_DEBUG=1 来获取更多日志信息
-          # 使用后台进程和超时命令，而不是依赖 bpftrace 的 interval 探针
-          BPFTIME_DEBUG=1 LD_PRELOAD="$BPF_SERVER_SO" \
-          timeout -k 30s 20s bpftrace -v raw_syscalls_trace.bt > logs/raw_server.log 2>&1 &
-          
+          # Start bpftime server with bpftrace to monitor syscalls
+          echo "Starting bpftrace syscall monitoring server..."
+          SPDLOG_LEVEL=error sudo $HOME/.bpftime/bpftime load bpftrace -e 'tracepoint:syscalls:sys_enter_openat { printf("%s %s\n", comm, str(args->filename)); }' > logs/server.log 2>&1 &
           SERVER_PID=$!
-          echo "Server PID: $SERVER_PID"
           
-          # 等待服务器初始化
+          # Wait for server to initialize
           sleep 3
           
-          # 检查服务器进程是否在运行
+          # Check if server is still running
           if ! ps -p $SERVER_PID > /dev/null; then
-            echo "ERROR: Bpftrace server failed to start!"
-            echo "Server log:"
-            cat logs/raw_server.log
+            echo "ERROR: bpftime server failed to start or crashed"
+            cat logs/server.log
             exit 1
           fi
           
-          echo "Running client with agent preload ($BPF_AGENT_TRANSFORMER_SO) and agent SO ($BPF_AGENT_SO)..."
-          # 运行客户端，依靠代理使用命名管道和共享内存
-          # 尝试捕获崩溃信息
-          BPFTIME_DEBUG=1 LD_PRELOAD="$BPF_AGENT_TRANSFORMER_SO" \
-          AGENT_SO="$BPF_AGENT_SO" \
-          "$PWD"/test_syscalls > logs/raw_client.log 2>&1 || true
+          # Start client process to generate openat syscalls
+          echo "Starting client process with bpftime..."
+          SPDLOG_LEVEL=error sudo $HOME/.bpftime/bpftime start -s cat build/install_manifest.txt > logs/client.log 2>&1
+          CLIENT_EXIT=$?
           
-          CLIENT_EXIT_CODE=$?
-          echo "Client script completed with exit code: $CLIENT_EXIT_CODE"
-          
-          # 给服务器时间处理最终事件
+          # Give server time to process events
           sleep 2
           
-          # 终止服务器进程
-          if ps -p $SERVER_PID > /dev/null; then
-            echo "Stopping server PID $SERVER_PID..."
-            kill $SERVER_PID 2>/dev/null
-            wait $SERVER_PID 2>/dev/null || true
-          else
-            echo "WARNING: Server process $SERVER_PID already exited"
-          fi
+          # Stop server
+          echo "Stopping server..."
+          kill $SERVER_PID || true
+          wait $SERVER_PID 2>/dev/null || true
           
-          # 清理管道
+          # Clean up pipe
           rm -f "$PIPE_PATH"
           
-          # 显示日志
-          echo "=== Server Log (raw_server.log) ==="
-          cat logs/raw_server.log || echo "No server log available"
+          # Display logs
+          echo "=== Server Log ==="
+          cat logs/server.log
           
-          echo "=== Client Log (raw_client.log) ==="
-          cat logs/raw_client.log || echo "No client log available"
+          echo "=== Client Log ==="
+          cat logs/client.log
           
-          echo "=== Shared Memory Debug Log ==="
-          cat logs/shm_debug.log || echo "No shared memory debug log available"
-          
-          # 检查结果
-          # 检查服务器日志是否包含来自客户端的系统调用被追踪的证据
-          if grep -q "Detected openat syscall by test_syscalls!" logs/raw_server.log; then
-            echo "SUCCESS: raw_syscalls test: Server traced client's openat"
-            echo "SUCCESS: raw_syscalls test: Server traced client's openat" >> logs/raw_server.log
-            
-            # 显示警告，如果客户端崩溃但服务器仍然捕获了系统调用
-            if [ $CLIENT_EXIT_CODE -ne 0 ]; then
-              echo "WARNING: Client exited with code $CLIENT_EXIT_CODE, but server successfully traced syscalls"
-              echo "This is acceptable for this test, since we're primarily testing the tracing functionality"
-            fi
-            
-            exit 0 # 表示脚本成功
-          else
-            echo "WARNING: raw_syscalls test: No openat trace output found in server log."
-            
-            # 如果在日志中找不到特定的 openat 调用，检查是否至少有其他系统调用被追踪
-            if grep -q "Syscall enter: PID .* Comm test_syscalls" logs/raw_server.log; then
-              echo "PARTIAL SUCCESS: Server traced some syscalls from test_syscalls, but no openat specifically."
-              echo "SUCCESS: raw_syscalls test: Server traced client's syscalls"
-              echo "SUCCESS: raw_syscalls test: Server traced client's syscalls" >> logs/raw_server.log
-              exit 0 # 将这视为成功，因为基本功能工作
-            else
-              echo "ERROR: No syscalls from test_syscalls were traced."
-              echo "Server log excerpt:"
-              tail -n 50 logs/raw_server.log
-              echo "Client log excerpt:"
-              tail -n 50 logs/raw_client.log
-              echo "Dumping dmesg tail for potential kernel errors:"
-              sudo dmesg | tail -n 50
-              exit 1 # 表示脚本失败
-            fi
-          fi
-          EOF
-          chmod +x raw_syscalls_test.sh
-          
-          # 创建一个更简单的测试脚本，只关注基本功能
-          cat > simple_test.sh << 'EOF'
-          #!/bin/bash
-          set -x
-          
-          export HOME_DIR=$HOME
-          export BPFTIME_VM_NAME=llvm
-          export BPFTIME_LOG_OUTPUT=console
-          export BPFTIME_DEBUG=1
-          
-          echo "==== Running simple test ===="
-          
-          # 确保共享内存目录存在且有适当的权限
-          mkdir -p /dev/shm /run/shm /tmp/bpftime_shm
-          chmod 777 /dev/shm /run/shm /tmp/bpftime_shm
-          
-          # 尝试运行测试程序
-          echo "Running test program directly..."
-          ./test_syscalls > logs/direct_run.log 2>&1
-          DIRECT_EXIT=$?
-          echo "Direct run exit code: $DIRECT_EXIT"
-          
-          # 尝试使用 bpftrace 直接跟踪
-          echo "Running bpftrace directly..."
-          timeout -k 5s 4s bpftrace -e 'tracepoint:raw_syscalls:sys_enter { printf("SYSCALL: %d\n", args->id); }' > logs/direct_bpftrace.log 2>&1 &
-          BPFTRACE_PID=$!
-          sleep 1
-          ./test_syscalls > /dev/null 2>&1
-          sleep 1
-          kill $BPFTRACE_PID 2>/dev/null || true
-          
-          # 显示日志
-          echo "=== Direct Run Log ==="
-          cat logs/direct_run.log
-          
-          echo "=== Direct Bpftrace Log ==="
-          cat logs/direct_bpftrace.log
-          
-          # 检查基本功能是否正常
-          if [ $DIRECT_EXIT -eq 0 ] && grep -q "Test program completed" logs/direct_run.log; then
-            echo "SUCCESS: Test program runs correctly"
+          # Check for success: verify that cat's openat syscall for install_manifest.txt was recorded
+          if grep -q "cat build/install_manifest.txt" logs/server.log; then
+            echo "SUCCESS: Syscall tracing test passed - detected 'cat build/install_manifest.txt' syscall"
             exit 0
           else
-            echo "ERROR: Test program failed to run correctly"
+            echo "FAILURE: Syscall tracing test failed - couldn't detect expected syscall"
+            exit 1
+          fi
+          EOF
+          chmod +x syscall_test.sh
+          
+          # Create a more direct test script as fallback
+          cat > simple_test.sh << 'EOF'
+          #!/bin/bash
+          set -e
+          
+          export PATH=$PATH:$HOME/.bpftime
+          mkdir -p logs
+          
+          echo "==== Testing basic BPFtime syscall tracing ===="
+          
+          # First test - verify that bpftrace works without bpftime
+          echo "Running regular bpftrace to verify system capability..."
+          timeout -k 5s 3s bpftrace -e 'tracepoint:syscalls:sys_enter_openat { printf("%s %s\n", comm, str(args->filename)); }' > logs/direct_trace.log 2>&1 &
+          DIRECT_PID=$!
+          sleep 1
+          cat build/install_manifest.txt > /dev/null
+          sleep 1
+          kill $DIRECT_PID 2>/dev/null || true
+          
+          echo "Regular bpftrace output:"
+          cat logs/direct_trace.log
+          
+          # Test with BPFtime server and agent
+          echo "Starting bpftime syscall server..."
+          $HOME/.bpftime/bpftime load bpftrace -e 'tracepoint:syscalls:sys_enter_openat { printf("TRACE: %s %s\n", comm, str(args->filename)); }' > logs/bpf_server.log 2>&1 &
+          SERVER_PID=$!
+          
+          # Wait for server to initialize
+          sleep 3
+          
+          echo "Starting bpftime client..."
+          $HOME/.bpftime/bpftime start -s cat build/install_manifest.txt > logs/bpf_client.log 2>&1
+          CLIENT_EXIT=$?
+          
+          # Give server time to process events
+          sleep 2
+          
+          # Stop server
+          kill $SERVER_PID 2>/dev/null || true
+          
+          echo "BPFtime server log:"
+          cat logs/bpf_server.log
+          
+          echo "BPFtime client log:"
+          cat logs/bpf_client.log
+          
+          # Check for success
+          if grep -q "cat build/install_manifest.txt" logs/bpf_server.log; then
+            echo "SUCCESS: BPFtime detected openat syscall"
+            exit 0
+          elif grep -q "Initialize syscall server" logs/bpf_server.log; then
+            echo "PARTIAL SUCCESS: BPFtime server initialized but syscall not captured"
+            # Continue despite this partial success
+          else
+            echo "FAILURE: BPFtime server failed to initialize"
+            exit 1
+          fi
+          
+          # If we've reached here, attempt a third test with LD_PRELOAD directly
+          echo "Trying direct LD_PRELOAD method..."
+          
+          # Set up server with direct LD_PRELOAD
+          BPFTIME_DEBUG=1 LD_PRELOAD="$HOME/.bpftime/libbpftime-syscall-server.so" \
+          timeout -k 10s 8s bpftrace -e 'tracepoint:syscalls:sys_enter_openat { printf("DIRECT: %s %s\n", comm, str(args->filename)); }' > logs/direct_server.log 2>&1 &
+          SERVER_PID=$!
+          
+          sleep 3
+          
+          # Run client with agent preload
+          BPFTIME_DEBUG=1 LD_PRELOAD="$HOME/.bpftime/libbpftime-agent.so" \
+          cat build/install_manifest.txt > logs/direct_client.log 2>&1
+          
+          sleep 2
+          kill $SERVER_PID 2>/dev/null || true
+          
+          echo "Direct preload server log:"
+          cat logs/direct_server.log
+          
+          if grep -q "cat build/install_manifest.txt" logs/direct_server.log; then
+            echo "SUCCESS: Direct preload method detected openat syscall"
+            exit 0
+          else
+            echo "FAILURE: All attempted methods failed"
             exit 1
           fi
           EOF
           chmod +x simple_test.sh
-          
-          # 创建一个没有 BEGIN/END 探针的简单 bpftrace 脚本
-          cat > simple_trace.bt << 'EOF'
-          // 简单跟踪 syscalls:sys_enter_openat，不使用 BEGIN/END 探针
-          tracepoint:syscalls:sys_enter_openat { 
-              printf("%s %s\n", comm, str(args->filename)); 
+
+      - name: Run syscall tracing test
+        run: |
+          echo "==== Running syscall tracing test ===="
+          ./syscall_test.sh || {
+            echo "Primary test failed, trying simplified approach..."
+            ./simple_test.sh
           }
-          EOF
-      - name: Run simple test to verify basic functionality
+      
+      - name: Final check and summary
         run: |
-          echo "==== Running simple test to verify basic functionality ===="
-          ./simple_test.sh || echo "Simple test failed, but continuing"
-      - name: Test with raw_syscalls (simplified approach)
-        run: |
-          echo "==== Testing with raw_syscalls (simplified approach) ===="
+          echo "==== Checking test results ===="
           
-          # 确保共享内存目录存在且有适当的权限
-          mkdir -p /dev/shm /run/shm /tmp/bpftime_shm
-          chmod 777 /dev/shm /run/shm /tmp/bpftime_shm
-          
-          # 设置环境变量
-          export HOME_DIR=$HOME
-          export BPFTIME_VM_NAME=llvm
-          export BPFTIME_LOG_OUTPUT=console
-          export BPFTIME_DEBUG=1
-          export BPFTIME_SHARED_MEMORY_PATH=/dev/shm
-          
-          # 定义文件路径
-          BPF_SERVER_SO="$HOME_DIR/.bpftime/libbpftime-syscall-server.so"
-          BPF_AGENT_SO="$HOME_DIR/.bpftime/libbpftime-agent.so"
-          
-          # 检查文件是否存在
-          if [ ! -f "$BPF_SERVER_SO" ]; then echo "ERROR: $BPF_SERVER_SO not found!"; exit 1; fi
-          if [ ! -f "$BPF_AGENT_SO" ]; then echo "ERROR: $BPF_AGENT_SO not found!"; exit 1; fi
-          
-          # 步骤1：使用 LD_PRELOAD 运行 bpftrace
-          echo "Step 1: Running bpftrace with server preload..."
-          LD_PRELOAD="$BPF_SERVER_SO" \
-          timeout -k 10s 8s bpftrace -e 'tracepoint:raw_syscalls:sys_enter { if (comm == "test_syscalls") printf("SYSCALL: %d from %s\n", args->id, comm); }' > logs/simple_server.log 2>&1 &
-          SERVER_PID=$!
-          
-          # 等待服务器初始化
-          sleep 2
-          
-          # 步骤2：使用 LD_PRELOAD 运行测试程序
-          echo "Step 2: Running test program with agent preload..."
-          LD_PRELOAD="$BPF_AGENT_SO" \
-          ./test_syscalls > logs/simple_client.log 2>&1
-          CLIENT_EXIT=$?
-          
-          # 等待服务器记录日志
-          sleep 2
-          
-          # 终止服务器进程
-          kill $SERVER_PID 2>/dev/null || true
-          
-          # 显示日志
-          echo "=== Simple Server Log ==="
-          cat logs/simple_server.log
-          
-          echo "=== Simple Client Log ==="
-          cat logs/simple_client.log
-          
-          # 检查结果
-          if grep -q "SYSCALL: .* from test_syscalls" logs/simple_server.log; then
-            echo "SUCCESS: Simplified test - Server traced client's syscalls"
+          # Check if any of the tests succeeded
+          if grep -q "SUCCESS:" logs/server.log 2>/dev/null || \
+             grep -q "SUCCESS:" logs/bpf_server.log 2>/dev/null || \
+             grep -q "SUCCESS:" logs/direct_server.log 2>/dev/null; then
+            echo "OVERALL RESULT: Syscall tracing test PASSED"
             exit 0
           else
-            echo "WARNING: Simplified test - No syscall traces found"
-            # 继续执行更复杂的测试
-          fi
-          
-          # 如果简化测试失败，运行完整测试
-          echo "Running full test script..."
-          ./raw_syscalls_test.sh
-      - name: Test summary
-        run: |
-          echo "==== Test Summary ===="
-          
-          # 检查实际的测试输出内容，而不仅仅是寻找特定的成功消息
-          SIMPLE_TEST_SUCCESS=false
-          RAW_SYSCALLS_SUCCESS=false
-          
-          # 检查简单测试是否成功
-          if grep -q "SUCCESS: Test program runs correctly" logs/direct_run.log 2>/dev/null; then
-            SIMPLE_TEST_SUCCESS=true
-            echo "Simple Test: SUCCESS - Test program runs correctly"
-          elif grep -q "Test program completed" logs/direct_run.log 2>/dev/null; then
-            SIMPLE_TEST_SUCCESS=true
-            echo "Simple Test: SUCCESS - Test program completed"
-          else
-            echo "Simple Test: FAILED - Test program did not complete"
-          fi
-          
-          # 检查简化的 raw_syscalls 测试是否成功
-          if grep -q "SYSCALL: .* from test_syscalls" logs/simple_server.log 2>/dev/null; then
-            RAW_SYSCALLS_SUCCESS=true
-            echo "Simplified Raw Syscalls Test: SUCCESS - Detected syscalls from test program"
-          else
-            echo "Simplified Raw Syscalls Test: FAILED - No syscalls detected"
-          fi
-          
-          # 检查完整的 raw_syscalls 测试是否成功
-          if grep -q "Detected openat syscall by test_syscalls!" logs/raw_server.log 2>/dev/null; then
-            RAW_SYSCALLS_SUCCESS=true
-            echo "Full Raw Syscalls Test: SUCCESS - Detected openat syscall"
-          elif grep -q "Syscall enter: PID .* Comm test_syscalls" logs/raw_server.log 2>/dev/null; then
-            RAW_SYSCALLS_SUCCESS=true
-            echo "Full Raw Syscalls Test: SUCCESS - Detected syscalls from test program"
-          else
-            echo "Full Raw Syscalls Test: FAILED - No syscalls detected"
-          fi
-          
-          # 根据测试结果决定整体成功或失败
-          if [ "$SIMPLE_TEST_SUCCESS" = "true" ] || [ "$RAW_SYSCALLS_SUCCESS" = "true" ]; then
-            echo "OVERALL RESULT: At least one test passed!"
-            exit 0
-          else
-            echo "OVERALL RESULT: All tests failed."
+            echo "OVERALL RESULT: Syscall tracing test FAILED"
+            
+            # Display detailed logs for debugging
+            echo "==== Detailed Logs ===="
+            echo "Server logs:"
+            cat logs/server.log 2>/dev/null || echo "No server.log found"
+            
+            echo "Client logs:"
+            cat logs/client.log 2>/dev/null || echo "No client.log found"
+            
+            # Check if files and paths exist
+            echo "==== Environment Check ===="
+            ls -la $HOME/.bpftime/
+            ls -la /dev/shm/
+            ls -la /tmp/bpftime_shm/
+            
             exit 1
           fi
