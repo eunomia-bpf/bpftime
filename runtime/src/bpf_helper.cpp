@@ -178,7 +178,7 @@ int64_t bpftime_probe_read(uint64_t dst, int64_t size, uint64_t ptr, uint64_t,
 		}
 	}
 #endif
-	memcpy((void *)dst, (void *)ptr, size);
+	memcpy((void *)dst, (void *)ptr, (size_t)size);
 
 #ifdef ENABLE_PROBE_READ_CHECK
 	__asm__("jump_point_read:");
