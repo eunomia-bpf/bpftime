@@ -6,38 +6,126 @@
 #include <ngx_http.h>
 #include <stdio.h>
 #include <string.h>
+#include <stdint.h>
+#include <sys/mman.h>
+#include <fcntl.h>
+#include <unistd.h>
+#include <errno.h>
 
-static char bad_url_prefix[128] = "/";
+// Shared memory structure - must match the one in baseline_controller.cpp
+typedef struct {
+    char accept_url_prefix[128];
+    uint64_t accepted_count;
+    uint64_t rejected_count;
+} baseline_shared_data_t;
 
-// Simple string prefix check function
-static int str_startswith(const char* main, const char* prefix) 
+static const char* SHM_NAME = "/baseline_nginx_filter_shm";
+static baseline_shared_data_t* shared_data = NULL;
+static int shm_fd = -1;
+
+// String prefix check function - exact same implementation as in the eBPF code
+static int str_startswith(const char *main, const char *pat)
 {
-    size_t prefix_len = strlen(prefix);
-    size_t main_len = strlen(main);
-    
-    if (main_len < prefix_len) {
-        return 0;
+    int i = 0;
+    while (*main == *pat && *main != 0 && *pat != 0 && i++ < 128) {
+        main++;
+        pat++;
     }
-    
-    return strncmp(main, prefix, prefix_len) == 0 ? 1 : 0;
+    return *pat == 0;
 }
 
-int baseline_url_filter(const char* url)
+// Initialize shared memory - open existing shared memory created by controller
+static int init_shared_memory() 
 {
-    // Return 1 if the URL starts with the bad prefix (allow), 0 otherwise (deny)
-    return str_startswith(url, bad_url_prefix);
+    // Open existing shared memory (should be created by controller)
+    shm_fd = shm_open(SHM_NAME, O_RDWR, 0666);
+    if (shm_fd == -1) {
+        fprintf(stderr, "Failed to open shared memory: %s\n", strerror(errno));
+        fprintf(stderr, "Make sure the controller is running before starting Nginx\n");
+        return -1;
+    }
+
+    // Map shared memory segment into our address space
+    shared_data = (baseline_shared_data_t*)mmap(
+        NULL,
+        sizeof(baseline_shared_data_t),
+        PROT_READ | PROT_WRITE,
+        MAP_SHARED,
+        shm_fd,
+        0
+    );
+
+    if (shared_data == MAP_FAILED) {
+        fprintf(stderr, "Failed to map shared memory: %s\n", strerror(errno));
+        close(shm_fd);
+        return -1;
+    }
+
+    // We don't need to initialize values; they are already set by the controller
+    return 0;
 }
 
-int baseline_initialize(const char* prefix)
+// Clean up shared memory
+static void cleanup_shared_memory() 
 {
-    if (prefix != NULL) {
-        strncpy(bad_url_prefix, prefix, sizeof(bad_url_prefix) - 1);
-        bad_url_prefix[sizeof(bad_url_prefix) - 1] = '\0';
+    if (shared_data != NULL && shared_data != MAP_FAILED) {
+        munmap(shared_data, sizeof(baseline_shared_data_t));
+        shared_data = NULL;
     }
     
-    printf("Baseline URL filter initialized with prefix: %s\n", bad_url_prefix);
+    if (shm_fd != -1) {
+        close(shm_fd);
+        shm_fd = -1;
+    }
+    
+    // Do NOT unlink the shared memory, as the controller is responsible for that
+}
+
+int baseline_url_filter(const char *url)
+{
+    if (shared_data == NULL) {
+        return 1; // Default to accepting if shared memory not initialized
+    }
+
+    // Use the same logic as the eBPF filter
+    int result = str_startswith(url, shared_data->accept_url_prefix);
+    
+    // Update counters (same as eBPF implementation)
+    if (result) {
+        __sync_fetch_and_add(&shared_data->accepted_count, 1); // Thread-safe increment
+    } else {
+        __sync_fetch_and_add(&shared_data->rejected_count, 1); // Thread-safe increment
+    }
+    
+    return result;
+}
+
+int baseline_initialize(const char *prefix)
+{
+    // Initialize shared memory - opens existing shared memory created by controller
+    if (init_shared_memory() != 0) {
+        fprintf(stderr, "Failed to initialize shared memory\n");
+        return -1;
+    }
+    
+    // No need to set prefix, just read from shared memory what controller set
+    printf("Baseline URL filter initialized with prefix from controller: %s\n", 
+           shared_data->accept_url_prefix);
     return 0;
 } 
+
+// Function to get the current counter values (used for benchmarking)
+void baseline_get_counters(uint64_t *accepted, uint64_t *rejected)
+{
+    if (shared_data == NULL) {
+        if (accepted) *accepted = 0;
+        if (rejected) *rejected = 0;
+        return;
+    }
+
+    if (accepted) *accepted = shared_data->accepted_count;
+    if (rejected) *rejected = shared_data->rejected_count;
+}
 
 typedef struct {
     ngx_flag_t enable;
@@ -49,6 +137,7 @@ static void *ngx_http_baseline_create_loc_conf(ngx_conf_t *cf);
 static char *ngx_http_baseline_merge_loc_conf(ngx_conf_t *cf, void *parent, void *child);
 static ngx_int_t ngx_http_baseline_init(ngx_conf_t *cf);
 static char *ngx_http_baseline_set_prefix(ngx_conf_t *cf, ngx_command_t *cmd, void *conf);
+static void ngx_http_baseline_exit(ngx_cycle_t *cycle);
 
 static ngx_command_t ngx_http_baseline_commands[] = {
     { ngx_string("baseline_request_filter"),
@@ -93,9 +182,14 @@ ngx_module_t ngx_http_baseline_module = {
     NULL,                          /* init thread */
     NULL,                          /* exit thread */
     NULL,                          /* exit process */
-    NULL,                          /* exit master */
+    ngx_http_baseline_exit,        /* exit master */
     NGX_MODULE_V1_PADDING
 };
+
+static void ngx_http_baseline_exit(ngx_cycle_t *cycle)
+{
+    cleanup_shared_memory();
+}
 
 static char *ngx_http_baseline_set_prefix(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
 {
@@ -130,6 +224,7 @@ static ngx_int_t ngx_http_baseline_handler(ngx_http_request_t *r)
         // Call the filter function
         int ret = baseline_url_filter(buf);
 
+        // Same return values as the eBPF implementation
         if (ret == 0) {
             return NGX_HTTP_FORBIDDEN;
         }
@@ -172,7 +267,6 @@ static ngx_int_t ngx_http_baseline_init(ngx_conf_t *cf)
 {
     ngx_http_handler_pt *h;
     ngx_http_core_main_conf_t *cmcf;
-    ngx_http_baseline_loc_conf_t *blcf;
 
     cmcf = ngx_http_conf_get_module_main_conf(cf, ngx_http_core_module);
 
@@ -183,19 +277,18 @@ static ngx_int_t ngx_http_baseline_init(ngx_conf_t *cf)
 
     *h = ngx_http_baseline_handler;
     
-    // Get the location configuration to access the prefix
-    blcf = ngx_http_conf_get_module_loc_conf(cf, ngx_http_baseline_module);
+    // Initialize the baseline filter - connect to shared memory created by controller
+    int err = baseline_initialize(NULL);
     
-    // Initialize the baseline filter with the configured prefix
-    char prefix_buf[128] = "/";  // Default prefix
-    if (blcf->prefix.data != NULL && blcf->prefix.len > 0) {
-        ngx_snprintf((u_char*)prefix_buf, sizeof(prefix_buf) - 1, "%V", &blcf->prefix);
-        prefix_buf[blcf->prefix.len] = '\0';
+    if (shared_data != NULL) {
+        ngx_log_error(NGX_LOG_INFO, cf->log, 0, 
+                    "Baseline module initialized using controller's shared memory. Prefix: '%s' (accepted:%lu, rejected:%lu)", 
+                    shared_data->accept_url_prefix, err, 
+                    shared_data->accepted_count, shared_data->rejected_count);
+    } else {
+        ngx_log_error(NGX_LOG_ERR, cf->log, 0, 
+                    "Baseline module failed to connect to shared memory. Make sure controller is running.");
     }
-    
-    int err = baseline_initialize(prefix_buf);
-    ngx_log_error(NGX_LOG_INFO, cf->log, 0, "Baseline module initialized with prefix '%s': %d", 
-                  prefix_buf, err);
     
     return NGX_OK;
 }

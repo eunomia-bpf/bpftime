@@ -125,16 +125,16 @@ def parse_wrk_output(output):
     
     return metrics
 
-def start_controller(prefix):
+def start_bpftime_controller(prefix):
     """Start the bpftime controller with the specified prefix"""
     controller_path = PARENT_DIR.parent.parent / "build/example/attach_implementation/benchmark/ebpf_controller/nginx_benchmark_ebpf_controller"
     
     if not controller_path.exists():
-        print(f"Error: Controller not found at {controller_path}")
+        print(f"Error: bpftime controller not found at {controller_path}")
         return None
     
     cmd = [str(controller_path), prefix]
-    print(f"Starting controller with command: {' '.join(cmd)}")
+    print(f"Starting bpftime controller with command: {' '.join(cmd)}")
     
     process = subprocess.Popen(cmd,
                               stdout=subprocess.PIPE,
@@ -146,7 +146,34 @@ def start_controller(prefix):
     # Check if controller is running
     if process.poll() is not None:
         stdout, stderr = process.communicate()
-        print(f"Error starting controller: {stderr.decode()}")
+        print(f"Error starting bpftime controller: {stderr.decode()}")
+        return None
+    
+    return process
+
+def start_baseline_controller(prefix):
+    """Start the baseline controller with the specified prefix"""
+    controller_path = PARENT_DIR.parent.parent / "build/example/attach_implementation/benchmark/baseline_nginx_plugin/nginx_baseline_controller"
+    
+    if not controller_path.exists():
+        print(f"Error: Baseline controller not found at {controller_path}")
+        print("Make sure to build the baseline controller first")
+        return None
+    
+    cmd = [str(controller_path), prefix]
+    print(f"Starting baseline controller with command: {' '.join(cmd)}")
+    
+    process = subprocess.Popen(cmd,
+                              stdout=subprocess.PIPE,
+                              stderr=subprocess.PIPE)
+    
+    # Give controller time to start
+    time.sleep(2)
+    
+    # Check if controller is running
+    if process.poll() is not None:
+        stdout, stderr = process.communicate()
+        print(f"Error starting baseline controller: {stderr.decode()}")
         return None
     
     return process
@@ -174,24 +201,27 @@ def main():
     
     # Test with baseline C module
     print("\n=== Testing nginx with baseline C module ===")
-    nginx_process = start_nginx(BASELINE_CONF)
-    if nginx_process:
-        url = f"http://127.0.0.1:{BASELINE_PORT}{args.url_path}"
-        output = run_wrk_benchmark(url, args.duration, args.connections, args.threads)
-        results['baseline'] = parse_wrk_output(output)
-        stop_nginx(nginx_process)
+    baseline_controller_process = start_baseline_controller(args.url_path)
+    if baseline_controller_process:
+        nginx_process = start_nginx(BASELINE_CONF)
+        if nginx_process:
+            url = f"http://127.0.0.1:{BASELINE_PORT}{args.url_path}"
+            output = run_wrk_benchmark(url, args.duration, args.connections, args.threads)
+            results['baseline'] = parse_wrk_output(output)
+            stop_nginx(nginx_process)
+        baseline_controller_process.terminate()
     
     # Test with bpftime module
     print("\n=== Testing nginx with bpftime module ===")
-    controller_process = start_controller(args.url_path)
-    if controller_process:
+    bpftime_controller_process = start_bpftime_controller(args.url_path)
+    if bpftime_controller_process:
         nginx_process = start_nginx(BPFTIME_CONF)
         if nginx_process:
             url = f"http://127.0.0.1:{BPFTIME_PORT}{args.url_path}"
             output = run_wrk_benchmark(url, args.duration, args.connections, args.threads)
             results['bpftime'] = parse_wrk_output(output)
             stop_nginx(nginx_process)
-        controller_process.terminate()
+        bpftime_controller_process.terminate()
     
     # Print results
     print("\n=== Benchmark Results ===")
