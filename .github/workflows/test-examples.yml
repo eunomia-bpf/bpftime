@@ -68,6 +68,13 @@ jobs:
           mkdir -p /dev/shm
           chmod 777 /dev/shm
           ls -la /dev/shm
+          
+          # 创建多个可能的共享内存目录
+          mkdir -p /tmp/bpftime_shm
+          chmod 777 /tmp/bpftime_shm
+          
+          mkdir -p /run/shm
+          chmod 777 /run/shm
       # Use a simplified bpftrace test to check functionality
       - name: Test bpftrace basic functionality
         run: |
@@ -193,6 +200,48 @@ jobs:
           }
           EOF
           
+          # 创建调试脚本来查找共享内存路径
+          cat > debug_shm_paths.sh << 'EOF'
+          #!/bin/bash
+          
+          # 列出所有可能的共享内存路径
+          echo "=== Possible shared memory paths ==="
+          for path in /dev/shm /run/shm /tmp /tmp/bpftime_shm; do
+            echo "Checking $path:"
+            if [ -d "$path" ]; then
+              ls -la "$path"
+              echo "Directory exists and contents shown above"
+            else
+              echo "Directory does not exist"
+            fi
+            echo ""
+          done
+          
+          # 查找 bpftime 可能创建的共享内存文件
+          echo "=== Finding potential bpftime shared memory files ==="
+          find /dev /run /tmp -name "*bpftime*" 2>/dev/null || echo "No bpftime files found"
+          find /dev /run /tmp -name "*shm*" 2>/dev/null || echo "No shm files found"
+          
+          # 检查系统共享内存设置
+          echo "=== System shared memory settings ==="
+          mount | grep shm || echo "No shm mounts found"
+          df -h | grep shm || echo "No shm filesystems found"
+          cat /proc/mounts | grep shm || echo "No shm in /proc/mounts"
+          
+          # 尝试手动创建共享内存文件
+          echo "=== Testing shared memory creation ==="
+          for path in /dev/shm /run/shm /tmp /tmp/bpftime_shm; do
+            echo "Testing $path:"
+            if [ -d "$path" ]; then
+              touch "$path/test_shm_file" 2>/dev/null && echo "Successfully created test file" || echo "Failed to create test file"
+              rm -f "$path/test_shm_file" 2>/dev/null
+            else
+              echo "Directory does not exist"
+            fi
+          done
+          EOF
+          chmod +x debug_shm_paths.sh
+          
           # 更新测试脚本，使用外部超时而不是依赖 bpftrace 的 interval 探针
           cat > raw_syscalls_test.sh << 'EOF'
           #!/bin/bash
@@ -201,7 +250,18 @@ jobs:
           export HOME_DIR=$HOME
           export BPFTIME_VM_NAME=llvm
           export BPFTIME_LOG_OUTPUT=console
-          export BPFTIME_SHARED_MEMORY_PATH=/dev/shm  # 显式设置共享内存路径
+          
+          # 尝试多个可能的共享内存路径
+          for shm_path in /dev/shm /run/shm /tmp /tmp/bpftime_shm; do
+            if [ -d "$shm_path" ] && [ -w "$shm_path" ]; then
+              echo "Using shared memory path: $shm_path"
+              export BPFTIME_SHARED_MEMORY_PATH="$shm_path"
+              break
+            fi
+          done
+          
+          # 运行共享内存调试脚本
+          ./debug_shm_paths.sh > logs/shm_debug.log 2>&1
           
           BPF_SERVER_SO="$HOME_DIR/.bpftime/libbpftime-syscall-server.so"
           BPF_AGENT_TRANSFORMER_SO="$HOME_DIR/.bpftime/libbpftime-agent-transformer.so"
@@ -212,22 +272,6 @@ jobs:
           if [ ! -f "$BPF_SERVER_SO" ]; then echo "ERROR: $BPF_SERVER_SO not found!"; exit 1; fi
           if [ ! -f "$BPF_AGENT_TRANSFORMER_SO" ]; then echo "ERROR: $BPF_AGENT_TRANSFORMER_SO not found!"; exit 1; fi
           if [ ! -f "$BPF_AGENT_SO" ]; then echo "ERROR: $BPF_AGENT_SO not found!"; exit 1; fi
-          
-          # 检查共享内存目录是否存在且可写
-          if [ ! -d "/dev/shm" ]; then 
-            echo "ERROR: /dev/shm directory does not exist!"; 
-            mkdir -p /dev/shm
-            chmod 777 /dev/shm
-          fi
-          if [ ! -w "/dev/shm" ]; then echo "ERROR: /dev/shm directory is not writable!"; exit 1; fi
-          
-          # 确保命名管道目录存在且可写
-          if [ ! -d "$(dirname "$PIPE_PATH")" ]; then 
-            echo "ERROR: $(dirname "$PIPE_PATH") directory does not exist!"; 
-            mkdir -p "$(dirname "$PIPE_PATH")"
-            chmod 777 "$(dirname "$PIPE_PATH")"
-          fi
-          if [ ! -w "$(dirname "$PIPE_PATH")" ]; then echo "ERROR: $(dirname "$PIPE_PATH") directory is not writable!"; exit 1; fi
           
           # 创建命名管道
           rm -f "$PIPE_PATH"
@@ -257,7 +301,7 @@ jobs:
           # 尝试捕获崩溃信息
           BPFTIME_DEBUG=1 LD_PRELOAD="$BPF_AGENT_TRANSFORMER_SO" \
           AGENT_SO="$BPF_AGENT_SO" \
-          "$PWD"/test_syscalls > logs/raw_client.log 2>&1 || true
+          strace -f "$PWD"/test_syscalls > logs/raw_client.log 2>&1 || true
           
           CLIENT_EXIT_CODE=$?
           echo "Client script completed with exit code: $CLIENT_EXIT_CODE"
@@ -281,6 +325,9 @@ jobs:
           
           echo "=== Client Log (raw_client.log) ==="
           cat logs/raw_client.log
+          
+          echo "=== Shared Memory Debug Log ==="
+          cat logs/shm_debug.log
           
           # 检查结果
           # 检查服务器日志是否包含来自客户端的系统调用被追踪的证据
@@ -324,9 +371,8 @@ jobs:
         run: |
           echo "==== Testing with raw_syscalls (LD_PRELOAD server/agent) ===="
           # 确保共享内存目录存在且有适当的权限
-          mkdir -p /dev/shm
-          chmod 777 /dev/shm
-          ls -la /dev/shm
+          mkdir -p /dev/shm /run/shm /tmp/bpftime_shm
+          chmod 777 /dev/shm /run/shm /tmp/bpftime_shm
           
           # Run the corrected test script
           ./raw_syscalls_test.sh || { echo "raw_syscalls test failed"; exit 1; }
@@ -339,12 +385,22 @@ jobs:
           export BPFTIME_VM_NAME=llvm
           export PATH=$PATH:$HOME/.bpftime
           export SPDLOG_LEVEL=debug  # 使用 debug 级别获取更多信息
-          export BPFTIME_SHARED_MEMORY_PATH=/dev/shm  # 显式设置共享内存路径
+          
+          # 尝试多个可能的共享内存路径
+          for shm_path in /dev/shm /run/shm /tmp /tmp/bpftime_shm; do
+            if [ -d "$shm_path" ] && [ -w "$shm_path" ]; then
+              echo "Using shared memory path: $shm_path"
+              export BPFTIME_SHARED_MEMORY_PATH="$shm_path"
+              break
+            fi
+          done
           
           # 确保共享内存目录存在且有适当的权限
-          mkdir -p /dev/shm
-          chmod 777 /dev/shm
-          ls -la /dev/shm
+          mkdir -p /dev/shm /run/shm /tmp/bpftime_shm
+          chmod 777 /dev/shm /run/shm /tmp/bpftime_shm
+          
+          # 运行共享内存调试脚本
+          ./debug_shm_paths.sh > logs/shm_debug_daemon.log 2>&1
           
           # 定义文件路径
           BPF_DAEMON="$HOME/.bpftime/bpftime_daemon"
@@ -382,7 +438,7 @@ jobs:
           # 方法3：使用 LD_PRELOAD 直接运行测试程序 (已知成功的方法)
           echo "METHOD 3: Running test program with agent preload..."
           BPFTIME_DEBUG=1 LD_PRELOAD="$BPF_AGENT_SO" \
-          "$PWD"/test_syscalls > logs/method3.log 2>&1 || true
+          strace -f "$PWD"/test_syscalls > logs/method3.log 2>&1 || true
           
           METHOD3_EXIT=$?
           echo "Method 3 exit code: $METHOD3_EXIT"
@@ -393,6 +449,9 @@ jobs:
           
           echo "=== Daemon Log ==="
           cat logs/daemon.log || echo "File not found"
+          
+          echo "=== Shared Memory Debug Log ==="
+          cat logs/shm_debug_daemon.log || echo "File not found"
           
           # 终止 daemon
           if ps -p $DAEMON_PID > /dev/null; then
