@@ -261,7 +261,7 @@ int64_t bpftime_probe_write_user(uint64_t dst, uint64_t src, int64_t len,
 	}
 #endif
 
-	memcpy((void *)dst, (void *)src, len);
+	memcpy((void *)dst, (void *)src, (size_t)len);
 
 #ifdef ENABLE_PROBE_WRITE_CHECK
 	__asm__("jump_point_write:");
