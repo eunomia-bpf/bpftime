@@ -29,7 +29,7 @@ We need two terminals, one for the controller, another for running curl
 
 #### Terminal A
 
-Run `build/example/attach_implementation/attach_impl_example_controller /aaaa` at the project root. `/aaaa` is the path prefix that you want to filter. Only paths starts with this string would be accepted, others will be rejected with 403
+Run `build/example/attach_implementation/controller/attach_impl_example_controller /aaaa` at the project root. `/aaaa` is the path prefix that you want to filter. Only paths starts with this string would be accepted, others will be rejected with 403
 
 #### Terminal B
 

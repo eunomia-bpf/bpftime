@@ -127,7 +127,7 @@ def parse_wrk_output(output):
 
 def start_controller(prefix):
     """Start the bpftime controller with the specified prefix"""
-    controller_path = PARENT_DIR.parent.parent / "build" / "example" / "attach_implementation" / "attach_impl_example_controller"
+    controller_path = PARENT_DIR.parent.parent / "build/example/attach_implementation/benchmark/ebpf_controller/nginx_benchmark_ebpf_controller"
     
     if not controller_path.exists():
         print(f"Error: Controller not found at {controller_path}")

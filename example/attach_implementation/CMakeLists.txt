@@ -9,21 +9,8 @@ add_dependencies(attach_impl_example_nginx_plugin_adaptor bpftime_base_attach_im
 target_link_libraries(attach_impl_example_nginx_plugin_adaptor PRIVATE bpftime_base_attach_impl runtime spdlog::spdlog)
 target_include_directories(attach_impl_example_nginx_plugin_adaptor PRIVATE ${BPFTIME_RUNTIME_INCLUDE} ${SPDLOG_INCLUDE})
 
-# add eBPF program target and controller executable target
-add_executable(attach_impl_example_controller
-    ./controller/controller.cpp
-)
-add_ebpf_program_target(
-    attach_impl_example_ebpf_program
-    ${CMAKE_CURRENT_SOURCE_DIR}/controller/request_filter.bpf.c
-    ${CMAKE_CURRENT_BINARY_DIR}/request_filter.bpf.o
-)
-target_compile_definitions(attach_impl_example_controller PRIVATE EBPF_PROGRAM_PATH=${CMAKE_CURRENT_BINARY_DIR}/request_filter.bpf.o)
-
-add_dependencies(attach_impl_example_controller runtime spdlog::spdlog bpftime-object attach_impl_example_ebpf_program)
-
-target_link_libraries(attach_impl_example_controller PRIVATE runtime spdlog::spdlog bpftime-object)
-target_include_directories(attach_impl_example_controller PRIVATE ${BPFTIME_RUNTIME_INCLUDE} ${SPDLOG_INCLUDE} ${BPFTIME_OBJECT_INCLUDE_DIRS})
+# add controller target
+add_subdirectory(controller)
 
 # We need to download the source of nginx, since it requires them to build modules
 # Build nginx once with both modules included
@@ -51,7 +38,13 @@ add_custom_command(
     COMMENT "Copy nginx modules and executable to ${CMAKE_CURRENT_SOURCE_DIR}/nginx_plugin_output/"
 )
 
-add_dependencies(nginx_build attach_impl_example_nginx_plugin_adaptor attach_impl_example_controller)
+# for benchmark
+add_subdirectory(benchmark)
+
+add_dependencies(nginx_build 
+    attach_impl_example_nginx_plugin_adaptor 
+    attach_impl_example_controller
+)
 
 # This is to ensure backward compatibility for any targets that depend on the old target name
 add_custom_target(attach_impl_example_nginx DEPENDS nginx_build)

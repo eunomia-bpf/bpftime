@@ -127,7 +127,7 @@ static ngx_int_t ngx_http_bpftime_init(ngx_conf_t *cf)
 
 	*h = ngx_http_bpftime_handler;
 	int err = nginx_plugin_example_initialize();
-	ngx_log_error(NGX_LOG_ERR, cf->log, 0, "Module init: %d", err);
+	ngx_log_error(NGX_LOG_ERR, cf->log, 0, "Module init (0 is success): %d", err);
 	return NGX_OK;
 }
 
