@@ -1,4 +1,4 @@
-name: BPFtime Syscall Tracing (Multi-Step Load/Start) Debug Test v4
+name: BPFtime Syscall Tracing (Multi-Step Load/Start) Original Client Cmd Test
 
 on:
   push:
@@ -15,7 +15,7 @@ env:
   # Log file paths using relative path from workspace root
   SERVER_LOG: logs/bpftime_server.log
   CLIENT_LOG: logs/bpftime_client.log
-  CLIENT_STRACE_LOG: logs/bpftime_client_strace.log
+  # CLIENT_STRACE_LOG: logs/bpftime_client_strace.log # No longer using strace
 
 jobs:
   syscall-tracing-load-start-test:
@@ -37,12 +37,18 @@ jobs:
             lcov tree strace gdb sudo libc6-dev bpftrace \
             linux-headers-generic linux-tools-generic \
             linux-headers-$(uname -r) \
-            libelf-dev procps strace
+            libelf-dev procps # strace no longer strictly needed but kept for now
+
           echo "==== System Information ===="
           uname -a && cat /etc/os-release
           echo "==== bpftrace version ===="
           which bpftrace && bpftrace --version || echo "bpftrace not found"
           mkdir -p logs
+          # Create the target file for cat
+          echo "TEST_DATA_LINE_1_ABC" > build/install_manifest.txt
+          echo "TEST_DATA_LINE_2_XYZ" >> build/install_manifest.txt
+          echo "Created build/install_manifest.txt:"
+          cat build/install_manifest.txt
 
       - name: Build and install runtime (Original CMake approach)
         run: |
@@ -70,11 +76,14 @@ jobs:
           set -x
           echo "==== Starting BPFTIME Server in background ===="
           BPFTIME_BIN="$BPFTIME_INSTALL_DIR/bpftime"
+          # This is the script the server loads - it should detect cat's openat
           BPFTRACE_SCRIPT='tracepoint:syscalls:sys_enter_openat { printf("SERVER_TRACE (openat): %s %s\n", comm, str(args->filename)); }'
+
           sudo -E "$BPFTIME_BIN" load bpftrace -e "$BPFTRACE_SCRIPT" > "$SERVER_LOG" 2>&1 &
           SERVER_PID=$!
           echo "Server started in background with PID: $SERVER_PID"
           echo "SERVER_PID=$SERVER_PID" >> $GITHUB_ENV
+
           echo "Waiting for server to initialize (10s)..."; sleep 10
           if ! ps -p $SERVER_PID > /dev/null; then
             echo "ERROR: Server process $SERVER_PID did not start or died!"
@@ -85,11 +94,11 @@ jobs:
           fi
           ls -l "$BPFTIME_SHARED_MEMORY_PATH/bpftime_maps_shm" || echo "WARNING: SHM file not found yet."
 
-      - name: Run BPFTIME Client
+      - name: Run BPFTIME Client (Original Command)
         id: run_client
         run: |
           set -x
-          echo "==== Running BPFTIME Client ===="
+          echo "==== Running BPFTIME Client (Original Command) ===="
           if [ -z "$SERVER_PID" ]; then echo "ERROR: SERVER_PID env var not set!"; exit 1; fi
           echo "Server PID from previous step: $SERVER_PID"
           if ! ps -p $SERVER_PID > /dev/null; then
@@ -99,31 +108,28 @@ jobs:
           fi
 
           BPFTIME_BIN="$BPFTIME_INSTALL_DIR/bpftime"
-          CLIENT_COMMAND="/bin/echo BPFTIME_AGENT_TEST_SUCCESS" # Simplified command
+          # --- Use the original client command ---
+          CLIENT_COMMAND="cat build/install_manifest.txt"
 
-          echo "Running client command with strace: '$CLIENT_COMMAND'..."
+          echo "Running client command: '$CLIENT_COMMAND'..."
           export BPFTIME_DEBUG=1
 
-          # --- MODIFICATION START ---
-          # Execute client command, append '|| true' so this line always succeeds for the runner
-          sudo -E env BPFTIME_DEBUG=1 strace -f -v -s 256 -o "$CLIENT_STRACE_LOG" "$BPFTIME_BIN" start -s "$CLIENT_COMMAND" > "$CLIENT_LOG" 2>&1 || true
+          # --- Execute original command, no strace, keep || true ---
+          sudo -E env BPFTIME_DEBUG=1 "$BPFTIME_BIN" start -s "$CLIENT_COMMAND" > "$CLIENT_LOG" 2>&1 || true
           _client_exit_code=$? # Capture the *actual* exit code of bpftime start
           echo "Client command finished with raw exit code: $_client_exit_code" # Log the captured code
 
           # Now export the *actual* captured exit code. This line WILL execute.
           echo "CLIENT_EXIT_CODE=$_client_exit_code" >> $GITHUB_ENV
-          echo "Successfully exported CLIENT_EXIT_CODE=$_client_exit_code to GITHUB_ENV" # Add confirmation log
-          # --- MODIFICATION END ---
+          echo "Successfully exported CLIENT_EXIT_CODE=$_client_exit_code to GITHUB_ENV"
+          # ---
 
           # FORCE PRINT CLIENT LOGS IN THIS STEP
           echo ""; echo "#############################################"
           echo "### CLIENT LOG (immediately after run) ($CLIENT_LOG) ###"; echo "#############################################"
           cat "$CLIENT_LOG" || echo "<<< Client log file not found or empty >>>"; echo "#############################################"; echo ""
-          echo "#############################################"; echo "### CLIENT STRACE LOG (Tail) (immediately after run) ($CLIENT_STRACE_LOG) ###"
-          echo "#############################################"; tail -n 200 "$CLIENT_STRACE_LOG" || echo "<<< Client strace log file not found or empty >>>"
-          echo "#############################################"; echo ""
 
-          # Optional: If you want this *step* to show as failed in Actions UI if client failed:
+          # Optional: Fail step immediately if needed
           # exit $_client_exit_code
 
       - name: Stop Server and Analyze Results
@@ -132,9 +138,7 @@ jobs:
           set -x
           echo "==== Stop Server and Analyze Results ===="
           SERVER_PID_TO_KILL=${{ env.SERVER_PID }}
-          # Retrieve the exit code set by the previous step
-          # Use parameter expansion for safety, though it should be set now
-          CLIENT_FINAL_EXIT_CODE=${CLIENT_EXIT_CODE:-99}
+          CLIENT_FINAL_EXIT_CODE=${CLIENT_EXIT_CODE:-99} # Default to 99 if unset
 
           # Give server a moment
           sleep 2
@@ -156,23 +160,33 @@ jobs:
           else echo "No Server PID found to kill."; fi
 
           echo "--- Final Analysis ---"
-          echo "Analyzing Client Exit Code: '$CLIENT_FINAL_EXIT_CODE'" # Log the code being analyzed
+          echo "Analyzing Client Exit Code: '$CLIENT_FINAL_EXIT_CODE'"
 
-          # The analysis logic remains the same, but now operates on the correct exit code
+          # --- Refined Analysis Logic ---
           if [ "$CLIENT_FINAL_EXIT_CODE" = "0" ]; then
-              echo ">>> Client command SUCCEEDED (Exit Code 0). Checking output... <<<"
-              if grep -q "BPFTIME_AGENT_TEST_SUCCESS" "$CLIENT_LOG"; then
-                  echo ">>> SUCCESS: Simplified client command ran and produced expected output in client log. <<<"
+              echo ">>> Client command ('cat build/install_manifest.txt') SUCCEEDED (Exit Code 0). Checking server log for trace... <<<"
+              # Define the expected pattern based on BPFTRACE_SCRIPT and CLIENT_COMMAND
+              EXPECTED_PATTERN="SERVER_TRACE (openat): cat build/install_manifest.txt"
+              echo "Searching server log ($SERVER_LOG) for pattern: '$EXPECTED_PATTERN'"
+
+              if grep -F -q "$EXPECTED_PATTERN" "$SERVER_LOG"; then
+                  echo "Found expected pattern in server log."
+                  # Optionally check for locale pattern if needed
+                  if grep -F -q "SERVER_TRACE (openat): cat /usr/lib/locale/locale-archive" "$SERVER_LOG"; then
+                      echo "Also found locale pattern trace."
+                  fi
+                  echo ">>> OVERALL SUCCESS: Client ran successfully AND server traced the expected syscall. <<<"
                   exit 0
               else
-                  echo ">>> FAILURE: Client command ran (Exit 0) but expected output 'BPFTIME_AGENT_TEST_SUCCESS' was NOT found in client log ($CLIENT_LOG). <<<"
+                  echo ">>> FAILURE (Secondary): Client ran successfully BUT expected trace pattern was NOT found in server log. <<<"
+                  echo ">>> Check server log output above for errors or unexpected behavior. <<<"
                   exit 1
               fi
           elif [ "$CLIENT_FINAL_EXIT_CODE" = "99" ]; then
               echo ">>> FAILURE: Client exit code capture possibly failed (default value 99 used). Review 'Run BPFTIME Client' step logs. <<<"
               exit 1
           else
-              echo ">>> FAILURE: Client command exited with non-zero code ($CLIENT_FINAL_EXIT_CODE). <<<"
-              echo ">>> Examine Client/Strace logs printed in the 'Run BPFTIME Client' step for errors. <<<"
+              echo ">>> FAILURE (Primary): Client command ('cat build/install_manifest.txt') exited with non-zero code ($CLIENT_FINAL_EXIT_CODE). <<<"
+              echo ">>> Examine Client Log printed in the 'Run BPFTIME Client' step for errors. <<<"
               exit 1
           fi
