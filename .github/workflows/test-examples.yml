@@ -105,31 +105,31 @@ jobs:
           if [ ! -f "$INSTALL_DIR/bpftime" ]; then
             echo "WARNING: bpftime executable not found, creating wrapper script"
             cat > $INSTALL_DIR/bpftime << 'WRAPPER'
-#!/bin/bash
-# This is a wrapper script for bpftime commands
-SCRIPT_DIR=$(dirname "$0")
+          #!/bin/bash
+          # This is a wrapper script for bpftime commands
+          SCRIPT_DIR=$(dirname "$0")
 
-# Determine the command
-CMD="$1"
-shift
+          # Determine the command
+          CMD="$1"
+          shift
 
-if [ "$CMD" = "load" ]; then
-  # Load command: preload the syscall server library
-  LD_PRELOAD="$SCRIPT_DIR/libbpftime-syscall-server.so" "$@"
-elif [ "$CMD" = "start" ]; then
-  # Start command: preload the agent library
-  if [ "$1" = "-s" ]; then
-    shift
-    LD_PRELOAD="$SCRIPT_DIR/libbpftime-agent.so" "$@"
-  else
-    LD_PRELOAD="$SCRIPT_DIR/libbpftime-agent.so" "$@"
-  fi
-else
-  echo "Unknown command: $CMD"
-  echo "Usage: bpftime [load|start] [options]"
-  exit 1
-fi
-WRAPPER
+          if [ "$CMD" = "load" ]; then
+            # Load command: preload the syscall server library
+            LD_PRELOAD="$SCRIPT_DIR/libbpftime-syscall-server.so" "$@"
+          elif [ "$CMD" = "start" ]; then
+            # Start command: preload the agent library
+            if [ "$1" = "-s" ]; then
+              shift
+              LD_PRELOAD="$SCRIPT_DIR/libbpftime-agent.so" "$@"
+            else
+              LD_PRELOAD="$SCRIPT_DIR/libbpftime-agent.so" "$@"
+            fi
+          else
+            echo "Unknown command: $CMD"
+            echo "Usage: bpftime [load|start] [options]"
+            exit 1
+          fi
+          WRAPPER
             chmod +x $INSTALL_DIR/bpftime
           fi
           
