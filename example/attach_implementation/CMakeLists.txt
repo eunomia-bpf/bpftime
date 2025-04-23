@@ -9,16 +9,15 @@ add_dependencies(attach_impl_example_nginx_plugin_adaptor bpftime_base_attach_im
 target_link_libraries(attach_impl_example_nginx_plugin_adaptor PRIVATE bpftime_base_attach_impl runtime spdlog::spdlog)
 target_include_directories(attach_impl_example_nginx_plugin_adaptor PRIVATE ${BPFTIME_RUNTIME_INCLUDE} ${SPDLOG_INCLUDE})
 
+# add eBPF program target and controller executable target
 add_executable(attach_impl_example_controller
     ./controller/controller.cpp
 )
-
 add_ebpf_program_target(
     attach_impl_example_ebpf_program
     ${CMAKE_CURRENT_SOURCE_DIR}/controller/request_filter.bpf.c
     ${CMAKE_CURRENT_BINARY_DIR}/request_filter.bpf.o
 )
-
 target_compile_definitions(attach_impl_example_controller PRIVATE EBPF_PROGRAM_PATH=${CMAKE_CURRENT_BINARY_DIR}/request_filter.bpf.o)
 
 add_dependencies(attach_impl_example_controller runtime spdlog::spdlog bpftime-object attach_impl_example_ebpf_program)

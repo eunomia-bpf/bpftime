@@ -19,7 +19,7 @@ We assume you are using a nginx version that is compatible with `1.22.1`, if you
 
 Run the following command at the root directory of the repository:
 ```console
-cmake -DBPFTIME_LLVM_JIT=YES -DCMAKE_BUILD_TYPE:STRING=Release -DBUILD_ATTACH_IMPL_EXAMPLE=YES -B build -S .
+cmake -DBPFTIME_LLVM_JIT=0 -DCMAKE_BUILD_TYPE:STRING=Release -DBUILD_ATTACH_IMPL_EXAMPLE=YES -B build -S .
 cmake --build build --config Release --target attach_impl_example_nginx -j$(nproc)
 ```
 
@@ -36,3 +36,9 @@ Run `build/example/attach_implementation/attach_impl_example_controller /aaaa` a
 Run `nginx_plugin_output/nginx -p $(pwd) -c ./nginx.conf` at `example/attach_implementation` to start nginx. nginx should be started as a daemon process.
 
 Then, run `curl http://127.0.0.1:9023/aaab` and `curl http://127.0.0.1:9023/aaaab` to check the response. You may also find that controller will print accesses that were accepted or rejected.
+
+## test with wrk
+
+```sh
+wrk -t12 -c400 -d30s http://127.0.0.1:9023/aaab
+```
