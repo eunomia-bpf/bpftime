@@ -9,13 +9,15 @@
 #include <variant>
 
 #ifndef DEFAULT_LOGGER_OUTPUT_PATH
-constexpr std::string_view DEFAULT_LOGGER_OUTPUT_PATH =
-	"~/.bpftime/runtime.log";
+#define DEFAULT_LOGGER_OUTPUT_PATH "~/.bpftime/runtime.log"
 #endif
 
 #ifndef DEFAULT_VM_NAME
-constexpr std::string_view DEFAULT_VM_NAME = "ubpf";
+#define DEFAULT_VM_NAME "ubpf"
 #endif
+
+#define LOG_PATH_MAX_LEN 1024
+#define VM_NAME_MAX_LEN 128
 
 namespace bpftime
 {
@@ -55,65 +57,25 @@ struct agent_config {
 
 	// Here it is a variant, since this object (agent_config) will be used
 	// for both local and shared memory
-	std::variant<std::string, boost_shm_string> logger_output_path;
-	std::variant<std::string, boost_shm_string> vm_name;
+	char logger_output_path[LOG_PATH_MAX_LEN] = DEFAULT_LOGGER_OUTPUT_PATH;
+	char vm_name[VM_NAME_MAX_LEN] = DEFAULT_VM_NAME;
 
-	agent_config(boost::interprocess::managed_shared_memory &memory)
-		: logger_output_path(
-			  boost_shm_string(memory.get_segment_manager())),
-		  vm_name(boost_shm_string(memory.get_segment_manager()))
-	{
-		std::get<boost_shm_string>(logger_output_path) =
-			DEFAULT_LOGGER_OUTPUT_PATH;
-		std::get<boost_shm_string>(vm_name) = DEFAULT_VM_NAME;
-	}
-	agent_config()
-		: logger_output_path(std::string(DEFAULT_LOGGER_OUTPUT_PATH)),
-		  vm_name(std::string(DEFAULT_VM_NAME))
-	{
-	}
 	const char *get_logger_output_path() const
 	{
-		return std::visit(
-			[](auto &&arg) -> const char * { return arg.c_str(); },
-			logger_output_path);
+		return logger_output_path;
 	}
 	void set_logger_output_path(const char *path)
 	{
-		std::visit([&](auto &&arg) { arg = path; }, logger_output_path);
+		strcpy(logger_output_path, path);
 	}
 	void set_vm_name(const char *name)
 	{
-		std::visit([&](auto &&arg) { arg = name; }, vm_name);
+		strcpy(vm_name, name);
 	}
 	const char *get_vm_name() const
 	{
-		return std::visit(
-			[](auto &&arg) -> const char * { return arg.c_str(); },
-			vm_name);
+		return vm_name;
 	}
-	void
-	change_to_shm_object(boost::interprocess::managed_shared_memory &memory)
-	{
-		if (!std::holds_alternative<boost_shm_string>(
-			    logger_output_path)) {
-			auto current_value =
-				std::get<std::string>(logger_output_path);
-			logger_output_path.emplace<boost_shm_string>(
-				current_value.c_str(),
-				memory.get_segment_manager());
-		}
-		if (!std::holds_alternative<boost_shm_string>(vm_name)) {
-			auto current_value = std::get<std::string>(vm_name);
-			vm_name.emplace<boost_shm_string>(
-				current_value.c_str(),
-				memory.get_segment_manager());
-		}
-	}
-	agent_config(const agent_config &) = delete;
-	agent_config &operator=(const agent_config &) = delete;
-	agent_config(agent_config &&) noexcept = default;
-	agent_config &operator=(agent_config &&) noexcept = default;
 };
 
 // Get the bpftime configuration from the environment variables

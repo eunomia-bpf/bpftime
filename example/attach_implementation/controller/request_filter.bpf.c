@@ -21,6 +21,7 @@ static inline int str_startswith(const char *main, const char *pat)
 	return *pat == 0;
 }
 
+SEC("nginx/ngx_http_request_handler")
 int request_filter(struct request_filter_argument *arg)
 {
 	int result = 0;

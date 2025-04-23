@@ -33,6 +33,6 @@ Run `build/example/attach_implementation/attach_impl_example_controller /aaaa` a
 
 #### Terminal B
 
-Run `nginx -p $(pwd) -c ./nginx.conf` at `example/attach_implementation` to start nginx. nginx should be started as a daemon process.
+Run `nginx_plugin_output/nginx -p $(pwd) -c ./nginx.conf` at `example/attach_implementation` to start nginx. nginx should be started as a daemon process.
 
 Then, run `curl http://127.0.0.1:9023/aaab` and `curl http://127.0.0.1:9023/aaaab` to check the response. You may also find that controller will print accesses that were accepted or rejected.

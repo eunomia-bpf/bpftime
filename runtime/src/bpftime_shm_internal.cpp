@@ -759,7 +759,6 @@ void bpftime_shm::set_agent_config(struct agent_config &&config)
 	}
 
 	agent_config->~agent_config();
-	config.change_to_shm_object(segment);
 	std::construct_at(agent_config, std::move(config));
 }
 

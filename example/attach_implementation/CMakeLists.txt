@@ -1,4 +1,3 @@
-
 add_library(
     attach_impl_example_nginx_plugin_adaptor
     SHARED
@@ -33,7 +32,7 @@ ExternalProject_Add(
     attach_impl_example_nginx
     DOWNLOAD_COMMAND URL https://nginx.org/download/nginx-1.22.1.tar.gz
     CONFIGURE_COMMAND cd ${CMAKE_CURRENT_BINARY_DIR}/attach_impl_example_nginx-prefix/src/attach_impl_example_nginx && LINK_LIB=${CMAKE_CURRENT_BINARY_DIR}/libattach_impl_example_nginx_plugin_adaptor.so ./configure --add-dynamic-module=${CMAKE_CURRENT_SOURCE_DIR}/nginx_plugin --with-compat --with-ld-opt=-Wl,-rpath=${CMAKE_CURRENT_BINARY_DIR}
-    BUILD_COMMAND make -C ${CMAKE_CURRENT_BINARY_DIR}/attach_impl_example_nginx-prefix/src/attach_impl_example_nginx modules -j32
+    BUILD_COMMAND make -C ${CMAKE_CURRENT_BINARY_DIR}/attach_impl_example_nginx-prefix/src/attach_impl_example_nginx -j32
     INSTALL_COMMAND ""
     BUILD_ALWAYS TRUE
     DEPENDS attach_impl_example_nginx_plugin_adaptor
@@ -43,7 +42,8 @@ add_custom_command(
     TARGET attach_impl_example_nginx
     COMMAND ${CMAKE_COMMAND} -E make_directory ${CMAKE_CURRENT_SOURCE_DIR}/nginx_plugin_output
     COMMAND ${CMAKE_COMMAND} -E copy ${CMAKE_CURRENT_BINARY_DIR}/attach_impl_example_nginx-prefix/src/attach_impl_example_nginx/objs/*.so ${CMAKE_CURRENT_SOURCE_DIR}/nginx_plugin_output/
-    COMMENT "Copy nginx module to ${CMAKE_CURRENT_SOURCE_DIR}/nginx_plugin_output/"
+    COMMAND ${CMAKE_COMMAND} -E copy ${CMAKE_CURRENT_BINARY_DIR}/attach_impl_example_nginx-prefix/src/attach_impl_example_nginx/objs/nginx ${CMAKE_CURRENT_SOURCE_DIR}/nginx_plugin_output/
+    COMMENT "Copy nginx module and executable to ${CMAKE_CURRENT_SOURCE_DIR}/nginx_plugin_output/"
 )
 
 add_dependencies(attach_impl_example_nginx attach_impl_example_nginx_plugin_adaptor attach_impl_example_controller)
