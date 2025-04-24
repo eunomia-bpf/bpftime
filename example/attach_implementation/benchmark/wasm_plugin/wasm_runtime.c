@@ -59,6 +59,18 @@ static wasm_module_t module = NULL;
 static wasm_module_inst_t module_inst = NULL;
 static wasm_exec_env_t exec_env = NULL;
 
+// Pre-cached function instances for better performance
+static wasm_function_inst_t func_initialize = NULL;
+static wasm_function_inst_t func_url_filter = NULL;
+static wasm_function_inst_t func_get_counters = NULL;
+static wasm_function_inst_t func_set_buffer = NULL;
+static wasm_function_inst_t func_get_buffer = NULL;
+
+// Pre-allocated memory buffer for frequent operations
+static uint32_t wasm_buffer_offset = 0;
+static uint32_t wasm_buffer_size = 4096;  // 4KB buffer
+static void *wasm_buffer_native_ptr = NULL;
+
 // Function names from WASM module
 static const char *INITIALIZE_FUNC = "initialize";
 static const char *URL_FILTER_FUNC = "url_filter";
@@ -105,6 +117,31 @@ static NativeSymbol native_symbols[] = {
     {"abort", dummy_abort, "()v", NULL},
     {"__main_argc_argv", dummy_main, "(ii)i", NULL},
 };
+
+// Allocate a pre-allocated buffer for better performance
+static int allocate_static_buffer(void) {
+    if (wasm_buffer_offset != 0) {
+        // Buffer already allocated
+        return 0;
+    }
+    
+    wasm_module_inst_t inst = wasm_runtime_get_module_inst(exec_env);
+    wasm_buffer_offset = wasm_runtime_module_malloc(inst, wasm_buffer_size, NULL);
+    if (!wasm_buffer_offset) {
+        fprintf(stderr, "Failed to allocate static buffer in WASM memory\n");
+        return -1;
+    }
+    
+    if (!wasm_runtime_validate_app_addr(inst, wasm_buffer_offset, wasm_buffer_size)) {
+        fprintf(stderr, "Failed to validate static buffer address\n");
+        wasm_runtime_module_free(inst, wasm_buffer_offset);
+        wasm_buffer_offset = 0;
+        return -1;
+    }
+    
+    wasm_buffer_native_ptr = wasm_runtime_addr_app_to_native(inst, wasm_buffer_offset);
+    return 0;
+}
 
 // Initialize WAMR runtime and load the module
 int initialize(const char *prefix) {
@@ -200,45 +237,72 @@ int initialize(const char *prefix) {
         return -1;
     }
     
+    // Cache function instances for future calls
+    func_initialize = wasm_runtime_lookup_function(module_inst, INITIALIZE_FUNC);
+    func_url_filter = wasm_runtime_lookup_function(module_inst, URL_FILTER_FUNC);
+    func_get_counters = wasm_runtime_lookup_function(module_inst, GET_COUNTERS_FUNC);
+    func_set_buffer = wasm_runtime_lookup_function(module_inst, SET_BUFFER_FUNC);
+    func_get_buffer = wasm_runtime_lookup_function(module_inst, GET_BUFFER_FUNC);
+    
+    if (!func_initialize || !func_url_filter || !func_get_counters || 
+        !func_set_buffer || !func_get_buffer) {
+        fprintf(stderr, "Failed to find required WASM functions\n");
+        return -1;
+    }
+    
+    // Allocate a static buffer for better performance
+    if (allocate_static_buffer() != 0) {
+        fprintf(stderr, "Failed to allocate static buffer\n");
+        // Continue anyway, we'll allocate buffers dynamically
+    }
+    
     // Call initialize function with the prefix if provided
     if (prefix != NULL) {
-        // Get function
-        wasm_function_inst_t func = wasm_runtime_lookup_function(module_inst, INITIALIZE_FUNC);
-        if (!func) {
-            fprintf(stderr, "Failed to find initialize function\n");
-            return -1;
-        }
-        
-        // Allocate memory for prefix in WASM space
         uint32_t prefix_len = (uint32_t)strlen(prefix) + 1;
-        wasm_module_inst_t inst = wasm_runtime_get_module_inst(exec_env);
-        uint32_t prefix_offset = wasm_runtime_module_malloc(inst, prefix_len, NULL);
-        if (!prefix_offset) {
-            fprintf(stderr, "Failed to allocate memory for prefix\n");
-            return -1;
-        }
         
-        // Copy string to WASM memory
-        if (!wasm_runtime_validate_app_addr(inst, prefix_offset, prefix_len)) {
-            fprintf(stderr, "Failed to validate app addr\n");
+        // Use our pre-allocated buffer if it's large enough
+        if (wasm_buffer_offset != 0 && prefix_len <= wasm_buffer_size) {
+            // Copy string to pre-allocated WASM memory
+            memcpy(wasm_buffer_native_ptr, prefix, prefix_len);
+            
+            // Call function with the prefix parameter
+            uint32_t argv[1] = { wasm_buffer_offset };
+            if (!wasm_runtime_call_wasm(exec_env, func_initialize, 1, argv)) {
+                const char *exception = wasm_runtime_get_exception(module_inst);
+                fprintf(stderr, "Failed to call initialize function: %s\n", exception ? exception : "Unknown error");
+                return -1;
+            }
+        } else {
+            // Fall back to dynamic allocation if needed
+            wasm_module_inst_t inst = wasm_runtime_get_module_inst(exec_env);
+            uint32_t prefix_offset = wasm_runtime_module_malloc(inst, prefix_len, NULL);
+            if (!prefix_offset) {
+                fprintf(stderr, "Failed to allocate memory for prefix\n");
+                return -1;
+            }
+            
+            // Copy string to WASM memory
+            if (!wasm_runtime_validate_app_addr(inst, prefix_offset, prefix_len)) {
+                fprintf(stderr, "Failed to validate app addr\n");
+                wasm_runtime_module_free(inst, prefix_offset);
+                return -1;
+            }
+            
+            void *native_ptr = wasm_runtime_addr_app_to_native(inst, prefix_offset);
+            memcpy(native_ptr, prefix, prefix_len);
+            
+            // Call function with the prefix parameter
+            uint32_t argv[1] = { prefix_offset };
+            if (!wasm_runtime_call_wasm(exec_env, func_initialize, 1, argv)) {
+                const char *exception = wasm_runtime_get_exception(module_inst);
+                fprintf(stderr, "Failed to call initialize function: %s\n", exception ? exception : "Unknown error");
+                wasm_runtime_module_free(inst, prefix_offset);
+                return -1;
+            }
+            
+            // Free allocated memory
             wasm_runtime_module_free(inst, prefix_offset);
-            return -1;
         }
-        
-        void *native_ptr = wasm_runtime_addr_app_to_native(inst, prefix_offset);
-        memcpy(native_ptr, prefix, prefix_len);
-        
-        // Call function with the prefix parameter
-        uint32_t argv[1] = { prefix_offset };
-        if (!wasm_runtime_call_wasm(exec_env, func, 1, argv)) {
-            const char *exception = wasm_runtime_get_exception(module_inst);
-            fprintf(stderr, "Failed to call initialize function: %s\n", exception ? exception : "Unknown error");
-            wasm_runtime_module_free(inst, prefix_offset);
-            return -1;
-        }
-        
-        // Free allocated memory
-        wasm_runtime_module_free(inst, prefix_offset);
     }
     
     fprintf(stderr, "WebAssembly URL filter initialized successfully\n");
@@ -247,53 +311,65 @@ int initialize(const char *prefix) {
 
 // The URL filter function
 bool url_filter(const char *url) {
-    if (!module_inst || !exec_env) {
+    if (!module_inst || !exec_env || !func_url_filter) {
         fprintf(stderr, "WebAssembly runtime not initialized\n");
         return false;
     }
     
-    fprintf(stderr, "Filtering URL: %s\n", url);
-    
-    // Get function
-    wasm_function_inst_t func = wasm_runtime_lookup_function(module_inst, URL_FILTER_FUNC);
-    if (!func) {
-        fprintf(stderr, "Failed to find url_filter function\n");
-        return false;
-    }
-    
-    // Allocate memory for URL in WASM space
+    // Calculate URL length including null terminator
     uint32_t url_len = (uint32_t)strlen(url) + 1;
-    wasm_module_inst_t inst = wasm_runtime_get_module_inst(exec_env);
-    uint32_t url_offset = wasm_runtime_module_malloc(inst, url_len, NULL);
-    if (!url_offset) {
-        fprintf(stderr, "Failed to allocate memory for URL\n");
-        return false;
-    }
     
-    // Copy string to WASM memory
-    if (!wasm_runtime_validate_app_addr(inst, url_offset, url_len)) {
-        fprintf(stderr, "Failed to validate app addr\n");
-        wasm_runtime_module_free(inst, url_offset);
-        return false;
-    }
+    // Use pre-allocated buffer if it's large enough
+    uint32_t url_offset;
+    bool using_static_buffer = false;
     
-    void *native_ptr = wasm_runtime_addr_app_to_native(inst, url_offset);
-    memcpy(native_ptr, url, url_len);
+    if (wasm_buffer_offset != 0 && url_len <= wasm_buffer_size) {
+        url_offset = wasm_buffer_offset;
+        using_static_buffer = true;
+        
+        // Copy string to pre-allocated WASM memory
+        memcpy(wasm_buffer_native_ptr, url, url_len);
+    } else {
+        // Fall back to dynamic allocation
+        wasm_module_inst_t inst = wasm_runtime_get_module_inst(exec_env);
+        url_offset = wasm_runtime_module_malloc(inst, url_len, NULL);
+        if (!url_offset) {
+            fprintf(stderr, "Failed to allocate memory for URL\n");
+            return false;
+        }
+        
+        // Copy string to WASM memory
+        if (!wasm_runtime_validate_app_addr(inst, url_offset, url_len)) {
+            fprintf(stderr, "Failed to validate app addr\n");
+            wasm_runtime_module_free(inst, url_offset);
+            return false;
+        }
+        
+        void *native_ptr = wasm_runtime_addr_app_to_native(inst, url_offset);
+        memcpy(native_ptr, url, url_len);
+    }
     
     // Call function with the URL parameter
     uint32_t argv[1] = { url_offset };
-    if (!wasm_runtime_call_wasm(exec_env, func, 1, argv)) {
+    if (!wasm_runtime_call_wasm(exec_env, func_url_filter, 1, argv)) {
         const char *exception = wasm_runtime_get_exception(module_inst);
         fprintf(stderr, "Failed to call url_filter function: %s\n", exception ? exception : "Unknown error");
-        wasm_runtime_module_free(inst, url_offset);
+        
+        if (!using_static_buffer) {
+            wasm_module_inst_t inst = wasm_runtime_get_module_inst(exec_env);
+            wasm_runtime_module_free(inst, url_offset);
+        }
         return false;
     }
     
     // Get return value
     uint32_t ret = argv[0];
     
-    // Free allocated memory
-    wasm_runtime_module_free(inst, url_offset);
+    // Free allocated memory if we used dynamic allocation
+    if (!using_static_buffer) {
+        wasm_module_inst_t inst = wasm_runtime_get_module_inst(exec_env);
+        wasm_runtime_module_free(inst, url_offset);
+    }
    
     // IMPORTANT: In our API true means ALLOW the URL (return 200)
     // But in the NGINX filter context, returning true means the URL matches the filter,
@@ -303,23 +379,13 @@ bool url_filter(const char *url) {
 
 // Set data in the WebAssembly module's buffer
 int set_buffer(const char *data, size_t size) {
-    if (!module_inst || !exec_env) {
+    if (!module_inst || !exec_env || !func_set_buffer) {
         fprintf(stderr, "WebAssembly runtime not initialized\n");
         return -1;
     }
     
-    fprintf(stderr, "Setting buffer with %zu bytes of data\n", size);
-    
-    // Get function
-    wasm_function_inst_t func = wasm_runtime_lookup_function(module_inst, SET_BUFFER_FUNC);
-    if (!func) {
-        fprintf(stderr, "Failed to find set_buffer function\n");
-        return -1;
-    }
-    
+    // For large buffers, we always use dynamic allocation
     wasm_module_inst_t inst = wasm_runtime_get_module_inst(exec_env);
-    
-    // Allocate memory for data in WASM space
     uint32_t data_offset = wasm_runtime_module_malloc(inst, (uint32_t)size, NULL);
     if (!data_offset) {
         fprintf(stderr, "Failed to allocate memory for buffer data\n");
@@ -338,7 +404,7 @@ int set_buffer(const char *data, size_t size) {
     
     // Call function with data and size parameters
     uint32_t argv[2] = { data_offset, (uint32_t)size };
-    if (!wasm_runtime_call_wasm(exec_env, func, 2, argv)) {
+    if (!wasm_runtime_call_wasm(exec_env, func_set_buffer, 2, argv)) {
         const char *exception = wasm_runtime_get_exception(module_inst);
         fprintf(stderr, "Failed to call set_buffer function: %s\n", exception ? exception : "Unknown error");
         wasm_runtime_module_free(inst, data_offset);
@@ -356,15 +422,8 @@ int set_buffer(const char *data, size_t size) {
 
 // Get data from the WebAssembly module's buffer
 int get_buffer(const char **out_data, size_t *out_size) {
-    if (!module_inst || !exec_env) {
+    if (!module_inst || !exec_env || !func_get_buffer) {
         fprintf(stderr, "WebAssembly runtime not initialized\n");
-        return -1;
-    }
-    
-    // Get function
-    wasm_function_inst_t func = wasm_runtime_lookup_function(module_inst, GET_BUFFER_FUNC);
-    if (!func) {
-        fprintf(stderr, "Failed to find get_buffer function\n");
         return -1;
     }
     
@@ -386,7 +445,7 @@ int get_buffer(const char **out_data, size_t *out_size) {
     
     // Call function with pointers to receive the values
     uint32_t argv[2] = { out_data_offset, out_size_offset };
-    if (!wasm_runtime_call_wasm(exec_env, func, 2, argv)) {
+    if (!wasm_runtime_call_wasm(exec_env, func_get_buffer, 2, argv)) {
         const char *exception = wasm_runtime_get_exception(module_inst);
         fprintf(stderr, "Failed to call get_buffer function: %s\n", exception ? exception : "Unknown error");
         wasm_runtime_module_free(inst, out_data_offset);
@@ -417,21 +476,13 @@ int get_buffer(const char **out_data, size_t *out_size) {
     wasm_runtime_module_free(inst, out_data_offset);
     wasm_runtime_module_free(inst, out_size_offset);
     
-    fprintf(stderr, "Got buffer with %zu bytes of data\n", *out_size);
     return 0;
 }
 
 // Get statistics counters
 void get_counters(uint64_t *accepted, uint64_t *rejected) {
-    if (!module_inst || !exec_env) {
+    if (!module_inst || !exec_env || !func_get_counters) {
         fprintf(stderr, "WebAssembly runtime not initialized\n");
-        return;
-    }
-    
-    // Get function
-    wasm_function_inst_t func = wasm_runtime_lookup_function(module_inst, GET_COUNTERS_FUNC);
-    if (!func) {
-        fprintf(stderr, "Failed to find get_counters function\n");
         return;
     }
     
@@ -453,7 +504,7 @@ void get_counters(uint64_t *accepted, uint64_t *rejected) {
     
     // Call function with pointers to receive the values
     uint32_t argv[2] = { accepted_offset, rejected_offset };
-    if (!wasm_runtime_call_wasm(exec_env, func, 2, argv)) {
+    if (!wasm_runtime_call_wasm(exec_env, func_get_counters, 2, argv)) {
         const char *exception = wasm_runtime_get_exception(module_inst);
         fprintf(stderr, "Failed to call get_counters function: %s\n", exception ? exception : "Unknown error");
         wasm_runtime_module_free(inst, accepted_offset);
@@ -477,6 +528,15 @@ void get_counters(uint64_t *accepted, uint64_t *rejected) {
 // Cleanup function
 __attribute__((destructor))
 static void cleanup() {
+    if (wasm_buffer_offset != 0) {
+        wasm_module_inst_t inst = wasm_runtime_get_module_inst(exec_env);
+        if (inst) {
+            wasm_runtime_module_free(inst, wasm_buffer_offset);
+        }
+        wasm_buffer_offset = 0;
+        wasm_buffer_native_ptr = NULL;
+    }
+    
     if (exec_env) {
         wasm_runtime_destroy_exec_env(exec_env);
         exec_env = NULL;
@@ -493,4 +553,11 @@ static void cleanup() {
     }
     
     wasm_runtime_destroy();
+    
+    // Function pointers don't need to be freed, they're owned by the module instance
+    func_initialize = NULL;
+    func_url_filter = NULL;
+    func_get_counters = NULL;
+    func_set_buffer = NULL;
+    func_get_buffer = NULL;
 } 

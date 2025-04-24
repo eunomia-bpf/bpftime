@@ -167,14 +167,14 @@ It is configured through environment variables:
 
 1. Build the filter implementation library first:
    ```bash
-   cd /path/to/bpftime/example/attach_implementation/benchmark/dynamic_load_plugin/libs
+   cd /path/to/bpftime/example/attach_implementation/benchmark/dynamic_load_plugin/dynamic_tests
    make
    ```
 
 2. Start Nginx with the dynamic load module:
    ```bash
    cd /path/to/bpftime/example/attach_implementation
-   DYNAMIC_LOAD_LIB_PATH="/home/yunwei37/bpftime/example/attach_implementation/benchmark/dynamic_load_plugin/libs/libfilter_impl.so"  DYNAMIC_LOAD_URL_PREFIX="/aaaa" nginx_plugin_output/nginx -p $(pwd) -c benchmark/dynamic_load_module.conf
+   DYNAMIC_LOAD_LIB_PATH="/home/yunwei37/bpftime/example/attach_implementation/benchmark/dynamic_load_plugin/dynamic_tests/libfilter_impl.so"  DYNAMIC_LOAD_URL_PREFIX="/aaaa" nginx_plugin_output/nginx -p $(pwd) -c benchmark/dynamic_load_module.conf
    ```
 
 3. Test with curl:
