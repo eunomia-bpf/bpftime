@@ -17,6 +17,7 @@ WASI_FLAGS = -O2 \
              -Wl,--export=get_buffer \
              -Wl,--export=memory \
              -Wl,--no-entry \
+             -Wl,--allow-undefined \
              -Wl,--strip-all
 
 LDFLAGS = -shared
@@ -54,9 +55,9 @@ libiwasm.a: wamr_lib
 	@if [ ! -f "$(WAMR_DIR)/product-mini/platforms/linux/build/libiwasm.a" ]; then \
 		echo "Building WAMR static library..."; \
 		cd $(WAMR_DIR)/product-mini/platforms/linux/build && \
-		cmake -DWAMR_BUILD_INTERP=1 \
-		      -DWAMR_BUILD_FAST_INTERP=1 \
-		      -DWAMR_BUILD_JIT=0 \
+		cmake -DWAMR_BUILD_INTERP=0 \
+		      -DWAMR_BUILD_FAST_INTERP=0 \
+		      -DWAMR_BUILD_JIT=1 \
 		      -DWAMR_BUILD_LIBC_BUILTIN=1 \
 		      -DWAMR_BUILD_LIBC_WASI=0 \
 		      -DWAMR_BUILD_MULTI_MODULE=0 \

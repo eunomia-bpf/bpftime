@@ -45,6 +45,17 @@ int initialize(const char *prefix) {
     return 0;
 }
 
+
+static inline int str_startswith(const char *main, const char *pat)
+{
+	int i = 0;
+	while (*main == *pat && *main != 0 && *pat != 0 && i++ < 128) {
+		main++;
+		pat++;
+	}
+	return *pat == 0;
+}
+
 /**
  * Filter a URL based on the configured prefix
  * 
@@ -52,17 +63,9 @@ int initialize(const char *prefix) {
  * @return true if the URL starts with the configured prefix, false otherwise
  */
 bool url_filter(const char *url) {
-    // Consider empty URLs as not matching
-    if (url == NULL || *url == '\0') {
-        rejected_count++;
-        return false;
-    }
-    
-    // Get URL prefix length
-    size_t prefix_len = strlen(url_prefix);
     
     // Check if URL starts with the prefix
-    bool matches = (strncmp(url, url_prefix, prefix_len) == 0);
+    bool matches = str_startswith(url, url_prefix);
     
     // Update counters
     if (matches) {
