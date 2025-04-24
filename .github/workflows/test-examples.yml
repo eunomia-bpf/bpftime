@@ -265,19 +265,21 @@ jobs:
 
       - name: System setup and kernel headers
         run: |
-          apt-get update
-          apt-get install -y --no-install-recommends \
-            lcov tree strace gdb sudo libc6-dev bpftrace \
-            linux-headers-generic linux-tools-generic \
-            linux-headers-$(uname -r) \
-            libelf-dev procps expect
-          echo "==== System Information ===="; uname -a && cat /etc/os-release
-          echo "==== bpftrace version ===="; which bpftrace && bpftrace --version || echo "bpftrace not found"
-          mkdir -p logs build
-          
-          # 确保共享内存目录存在且权限正确
-          sudo mkdir -p $BPFTIME_SHARED_MEMORY_PATH
-          sudo chmod 1777 $BPFTIME_SHARED_MEMORY_PATH
+            export DEBIAN_FRONTEND=noninteractive
+            export TZ=Etc/UTC
+            apt-get update
+            apt-get install -y --no-install-recommends \
+              lcov tree strace gdb sudo libc6-dev bpftrace \
+              linux-headers-generic linux-tools-generic \
+              linux-headers-$(uname -r) \
+              libelf-dev procps expect
+            echo "==== System Information ===="; uname -a && cat /etc/os-release
+            echo "==== bpftrace version ===="; which bpftrace && bpftrace --version || echo "bpftrace not found"
+            mkdir -p logs build
+            
+            # 确保共享内存目录存在且权限正确
+            sudo mkdir -p $BPFTIME_SHARED_MEMORY_PATH
+            sudo chmod 1777 $BPFTIME_SHARED_MEMORY_PATH
 
       - name: Build bpftime
         run: |
