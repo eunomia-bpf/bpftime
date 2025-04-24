@@ -167,6 +167,55 @@ def run_benchmark_iteration(args):
             collect_process_output(nginx_process, "LuaJIT Nginx")
             stop_nginx(nginx_process, PARENT_DIR)
     
+    # Test with RLBox module
+    log_message("\n=== Testing nginx with RLBox module ===")
+    # First make sure the RLBox module is built
+    try:
+        # Build the appropriate variant based on command-line argument
+        if args.rlbox_variant == "wasm2c":
+            build_cmd = ["make", "wasm2c", "-C", str(SCRIPT_DIR / "rlbox_plugin")]
+            log_message(f"Building RLBox wasm2c sandbox with command: {' '.join(build_cmd)}")
+        else:
+            build_cmd = ["make", "-C", str(SCRIPT_DIR / "rlbox_plugin")]
+            log_message(f"Building RLBox noop sandbox with command: {' '.join(build_cmd)}")
+        
+        subprocess.run(build_cmd, check=True)
+    except subprocess.CalledProcessError as e:
+        log_message(f"Failed to build RLBox module: {e}")
+        log_message("Skipping RLBox benchmark")
+    else:
+        # Set up environment variables for the RLBox module
+        rlbox_env = os.environ.copy()
+        
+        if args.rlbox_variant == "wasm2c":
+            rlbox_lib_path = str(SCRIPT_DIR / "rlbox_plugin" / "libfilter_rlbox_wasm2c.so")
+            log_message("Using wasm2c sandbox (production) for RLBox")
+        else:
+            rlbox_lib_path = str(SCRIPT_DIR / "rlbox_plugin" / "libfilter_rlbox.so")
+            log_message("Using noop sandbox (development) for RLBox")
+            
+        rlbox_env["DYNAMIC_LOAD_LIB_PATH"] = rlbox_lib_path
+        rlbox_env["DYNAMIC_LOAD_URL_PREFIX"] = args.url_path
+        log_message(f"Setting DYNAMIC_LOAD_LIB_PATH={rlbox_lib_path}")
+        log_message(f"Setting DYNAMIC_LOAD_URL_PREFIX={args.url_path}")
+        
+        # Use the same dynamic_load_module.conf and port - we're running these tests sequentially
+        nginx_process = start_nginx(NGINX_BIN, DYNAMIC_LOAD_CONF, PARENT_DIR, env=rlbox_env)
+        if nginx_process:
+            url = f"http://127.0.0.1:{WASM_PORT}{args.url_path}"
+            time.sleep(1)
+            output = run_wrk_benchmark(url, args.duration, args.connections, args.threads)
+            
+            # Use different result keys for the variants
+            if args.rlbox_variant == "wasm2c":
+                results['rlbox_wasm2c'] = parse_wrk_output(output)
+                collect_process_output(nginx_process, "RLBox Wasm2c Nginx")
+            else:
+                results['rlbox'] = parse_wrk_output(output)
+                collect_process_output(nginx_process, "RLBox NoOp Nginx")
+                
+            stop_nginx(nginx_process, PARENT_DIR)
+    
     # Test with bpftime module
     log_message("\n=== Testing nginx with bpftime module ===")
     bpftime_controller_process = start_bpftime_controller(args.url_path)
@@ -193,7 +242,7 @@ def calculate_averages(all_results):
     std_dev = {}
     
     # Initialize results structure
-    for module in ['no_module', 'baseline', 'wasm', 'lua', 'bpftime']:
+    for module in ['no_module', 'baseline', 'wasm', 'lua', 'bpftime', 'rlbox', 'rlbox_wasm2c']:
         if any(module in results for results in all_results):
             avg_results[module] = {'rps': 0, 'latency_avg': '0ms', 'iterations': 0}
             std_dev[module] = {'rps': 0}
@@ -245,7 +294,7 @@ def calculate_overheads(avg_results):
     if 'no_module' in avg_results and avg_results['no_module']['rps'] > 0:
         no_module_rps = avg_results['no_module']['rps']
         
-        for module in ['baseline', 'wasm', 'lua', 'bpftime']:
+        for module in ['baseline', 'wasm', 'lua', 'bpftime', 'rlbox', 'rlbox_wasm2c']:
             if module in avg_results and avg_results[module]['rps'] > 0:
                 overhead = (1 - avg_results[module]['rps'] / no_module_rps) * 100
                 overheads[f"{module}_vs_no_module"] = f"{overhead:.2f}%"
@@ -254,7 +303,7 @@ def calculate_overheads(avg_results):
     if 'baseline' in avg_results and avg_results['baseline']['rps'] > 0:
         baseline_rps = avg_results['baseline']['rps']
         
-        for module in ['wasm', 'lua', 'bpftime']:
+        for module in ['wasm', 'lua', 'bpftime', 'rlbox', 'rlbox_wasm2c']:
             if module in avg_results and avg_results[module]['rps'] > 0:
                 overhead = (1 - avg_results[module]['rps'] / baseline_rps) * 100
                 overheads[f"{module}_vs_baseline"] = f"{overhead:.2f}%"
@@ -274,6 +323,32 @@ def calculate_overheads(avg_results):
         if 'bpftime' in avg_results and avg_results['bpftime']['rps'] > 0:
             overhead = (1 - avg_results['bpftime']['rps'] / lua_rps) * 100
             overheads["bpftime_vs_lua"] = f"{overhead:.2f}%"
+    
+    # RLBox module comparisons (noop variant)
+    if 'rlbox' in avg_results and avg_results['rlbox']['rps'] > 0:
+        rlbox_rps = avg_results['rlbox']['rps']
+        
+        if 'bpftime' in avg_results and avg_results['bpftime']['rps'] > 0:
+            overhead = (1 - avg_results['bpftime']['rps'] / rlbox_rps) * 100
+            overheads["bpftime_vs_rlbox"] = f"{overhead:.2f}%"
+            
+    # RLBox module comparisons (wasm2c variant)
+    if 'rlbox_wasm2c' in avg_results and avg_results['rlbox_wasm2c']['rps'] > 0:
+        rlbox_wasm2c_rps = avg_results['rlbox_wasm2c']['rps']
+        
+        if 'bpftime' in avg_results and avg_results['bpftime']['rps'] > 0:
+            overhead = (1 - avg_results['bpftime']['rps'] / rlbox_wasm2c_rps) * 100
+            overheads["bpftime_vs_rlbox_wasm2c"] = f"{overhead:.2f}%"
+            
+        # Compare RLBox wasm2c with WebAssembly module
+        if 'wasm' in avg_results and avg_results['wasm']['rps'] > 0:
+            overhead = (1 - avg_results['rlbox_wasm2c']['rps'] / avg_results['wasm']['rps']) * 100
+            overheads["rlbox_wasm2c_vs_wasm"] = f"{overhead:.2f}%"
+            
+        # Compare RLBox NoOp with RLBox wasm2c
+        if 'rlbox' in avg_results and avg_results['rlbox']['rps'] > 0:
+            overhead = (1 - avg_results['rlbox_wasm2c']['rps'] / avg_results['rlbox']['rps']) * 100
+            overheads["rlbox_wasm2c_vs_rlbox"] = f"{overhead:.2f}%"
     
     return overheads
 
@@ -313,14 +388,16 @@ def print_results_summary(avg_results, std_dev, overheads):
     summary = "\n\n=== Benchmark Results Summary ==="
     
     # Print module results
-    for module in ['no_module', 'baseline', 'wasm', 'lua', 'bpftime']:
+    for module in ['no_module', 'baseline', 'wasm', 'lua', 'bpftime', 'rlbox', 'rlbox_wasm2c']:
         if module in avg_results:
             module_name = {
                 'no_module': 'Nginx without module',
                 'baseline': 'Nginx with baseline C module',
                 'wasm': 'Nginx with WebAssembly module',
                 'lua': 'Nginx with LuaJIT module',
-                'bpftime': 'Nginx with bpftime module'
+                'bpftime': 'Nginx with bpftime module',
+                'rlbox': 'Nginx with RLBox NoOp module',
+                'rlbox_wasm2c': 'Nginx with RLBox Wasm2c module'
             }.get(module, module)
             
             summary += f"\n\n{module_name}:"
@@ -333,12 +410,14 @@ def print_results_summary(avg_results, std_dev, overheads):
         summary += "\n\nOverhead Comparisons:"
         
         # Group overheads by base module
-        for base in ['no_module', 'baseline', 'wasm', 'lua']:
+        for base in ['no_module', 'baseline', 'wasm', 'lua', 'rlbox', 'rlbox_wasm2c']:
             base_name = {
                 'no_module': 'no module',
                 'baseline': 'baseline C module',
                 'wasm': 'WebAssembly module', 
-                'lua': 'LuaJIT module'
+                'lua': 'LuaJIT module',
+                'rlbox': 'RLBox NoOp module',
+                'rlbox_wasm2c': 'RLBox Wasm2c module'
             }.get(base, base)
             
             relevant_overheads = {k: v for k, v in overheads.items() if f"_vs_{base}" in k}
@@ -351,7 +430,9 @@ def print_results_summary(avg_results, std_dev, overheads):
                         'baseline': 'Baseline C',
                         'wasm': 'WebAssembly',
                         'lua': 'LuaJIT',
-                        'bpftime': 'BPFtime'
+                        'bpftime': 'BPFtime',
+                        'rlbox': 'RLBox NoOp',
+                        'rlbox_wasm2c': 'RLBox Wasm2c'
                     }.get(module, module)
                     summary += f"\n    {module_name}: {v}"
     
@@ -367,6 +448,8 @@ def main():
     parser.add_argument("--iterations", type=int, default=10, help="Number of benchmark iterations to run")
     parser.add_argument("--save-all-iterations", action="store_true", help="Save all iteration data in the JSON output")
     parser.add_argument("--json-output", type=str, help="Custom path for JSON output file")
+    parser.add_argument("--rlbox-variant", type=str, choices=["noop", "wasm2c"], default="noop", 
+                       help="RLBox sandbox variant to use (noop for development, wasm2c for production)")
     args = parser.parse_args()
     
     # Initialize or clear the log file
