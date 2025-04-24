@@ -3,7 +3,7 @@
 Benchmark script for comparing different nginx configurations:
 1. With bpftime module (eBPF-based filtering)
 2. With baseline C module (direct C implementation)
-3. With dynamic load module (dynamically loads filter library)
+3. With WebAssembly module (WASM-based filtering)
 4. Without any module (baseline performance)
 
 This script will:
@@ -38,7 +38,7 @@ NO_MODULE_CONF = str(SCRIPT_DIR / "no_module.conf")
 # Ports
 BPFTIME_PORT = 9023
 BASELINE_PORT = 9025
-DYNAMIC_LOAD_PORT = 9026
+WASM_PORT = 9026  # Using the same port as dynamic_load
 NO_MODULE_PORT = 9024
 
 # URLs for testing
@@ -337,32 +337,35 @@ def main():
             stop_nginx(nginx_process)
         stop_controller(baseline_controller_process, "Baseline")
     
-    # Test with dynamic load module 
-    log_message("\n=== Testing nginx with dynamic load module ===")
-    # First make sure the filter implementation library is built
+    # Test with WebAssembly module
+    log_message("\n=== Testing nginx with WebAssembly module ===")
+    # First make sure the WebAssembly module and runtime wrapper are built
     try:
-        build_cmd = ["make", "-C", str(SCRIPT_DIR / "dynamic_load_plugin" / "libs")]
-        log_message(f"Building filter implementation library with command: {' '.join(build_cmd)}")
+        build_cmd = ["make", "-C", str(SCRIPT_DIR / "wasm_plugin")]
+        log_message(f"Building WebAssembly module with command: {' '.join(build_cmd)}")
         subprocess.run(build_cmd, check=True)
     except subprocess.CalledProcessError as e:
-        log_message(f"Failed to build filter implementation library: {e}")
+        log_message(f"Failed to build WebAssembly module: {e}")
     
-    # Set up environment variables for the dynamic load module
-    dynamic_env = os.environ.copy()
-    lib_path = str(SCRIPT_DIR / "dynamic_load_plugin" / "libs" / "libfilter_impl.so")
-    dynamic_env["DYNAMIC_LOAD_LIB_PATH"] = lib_path
-    dynamic_env["DYNAMIC_LOAD_URL_PREFIX"] = args.url_path
+    # Set up environment variables for the WebAssembly module
+    wasm_env = os.environ.copy()
+    lib_path = str(SCRIPT_DIR / "wasm_plugin" / "libwasm_filter.so")
+    wasm_module_path = str(SCRIPT_DIR / "wasm_plugin" / "url_filter.wasm")
+    wasm_env["DYNAMIC_LOAD_LIB_PATH"] = lib_path
+    wasm_env["DYNAMIC_LOAD_URL_PREFIX"] = args.url_path
+    wasm_env["WASM_MODULE_PATH"] = wasm_module_path
     log_message(f"Setting DYNAMIC_LOAD_LIB_PATH={lib_path}")
     log_message(f"Setting DYNAMIC_LOAD_URL_PREFIX={args.url_path}")
+    log_message(f"Setting WASM_MODULE_PATH={wasm_module_path}")
     
-    # Start nginx with dynamic load module - no separate controller needed
-    nginx_process = start_nginx(DYNAMIC_LOAD_CONF, env=dynamic_env)
+    # Start nginx with WebAssembly module - no separate controller needed
+    nginx_process = start_nginx(DYNAMIC_LOAD_CONF, env=wasm_env)
     if nginx_process:
-        url = f"http://127.0.0.1:{DYNAMIC_LOAD_PORT}{args.url_path}"
+        url = f"http://127.0.0.1:{WASM_PORT}{args.url_path}"
         time.sleep(1)
         output = run_wrk_benchmark(url, args.duration, args.connections, args.threads)
-        results['dynamic_load'] = parse_wrk_output(output)
-        collect_process_output(nginx_process, "Dynamic Load Nginx")
+        results['wasm'] = parse_wrk_output(output)
+        collect_process_output(nginx_process, "WebAssembly Nginx")
         stop_nginx(nginx_process)
     
     # Test with bpftime module
@@ -404,20 +407,20 @@ def main():
             overhead = (1 - results['baseline']['rps'] / results['no_module']['rps']) * 100
             log_message(f"  Overhead vs no module: {overhead:.2f}%")
     
-    if 'dynamic_load' in results and results['dynamic_load']:
-        dynamic_result = f"\nNginx with dynamic load module:"
-        dynamic_result += f"\n  Requests/sec: {results['dynamic_load']['rps']:.2f}"
-        dynamic_result += f"\n  Latency (avg): {results['dynamic_load']['latency_avg']}"
-        log_message(dynamic_result)
+    if 'wasm' in results and results['wasm']:
+        wasm_result = f"\nNginx with WebAssembly module:"
+        wasm_result += f"\n  Requests/sec: {results['wasm']['rps']:.2f}"
+        wasm_result += f"\n  Latency (avg): {results['wasm']['latency_avg']}"
+        log_message(wasm_result)
         
         # Calculate overhead compared to no module
         if 'no_module' in results and results['no_module']:
-            overhead = (1 - results['dynamic_load']['rps'] / results['no_module']['rps']) * 100
+            overhead = (1 - results['wasm']['rps'] / results['no_module']['rps']) * 100
             log_message(f"  Overhead vs no module: {overhead:.2f}%")
         
         # Calculate overhead compared to baseline
         if 'baseline' in results and results['baseline']:
-            overhead = (1 - results['dynamic_load']['rps'] / results['baseline']['rps']) * 100
+            overhead = (1 - results['wasm']['rps'] / results['baseline']['rps']) * 100
             log_message(f"  Overhead vs baseline C module: {overhead:.2f}%")
     
     if 'bpftime' in results and results['bpftime']:
@@ -436,10 +439,10 @@ def main():
             overhead = (1 - results['bpftime']['rps'] / results['baseline']['rps']) * 100
             log_message(f"  Overhead vs baseline C module: {overhead:.2f}%")
         
-        # Calculate overhead compared to dynamic load
-        if 'dynamic_load' in results and results['dynamic_load']:
-            overhead = (1 - results['bpftime']['rps'] / results['dynamic_load']['rps']) * 100
-            log_message(f"  Overhead vs dynamic load module: {overhead:.2f}%")
+        # Calculate overhead compared to WebAssembly module
+        if 'wasm' in results and results['wasm']:
+            overhead = (1 - results['bpftime']['rps'] / results['wasm']['rps']) * 100
+            log_message(f"  Overhead vs WebAssembly module: {overhead:.2f}%")
     
     log_message(f"\n=== Benchmark completed at {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')} ===")
     log_message(f"Full log available at: {BENCHMARK_LOG}")
