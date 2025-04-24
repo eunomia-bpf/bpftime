@@ -12,6 +12,7 @@ This directory contains benchmarking tools to compare the performance of four di
 - `ebpf_controller/` - eBPF controller implementation
 - `baseline_nginx_plugin/` - Traditional C module implementation
 - `dynamic_load_plugin/` - Dynamic library loading implementation
+- `wasm_plugin/` - WebAssembly-based filter implementation
 - `run_benchmark.py` - Python script to run benchmarks
 - `baseline_c_module.conf` - Nginx configuration for baseline C module
 - `dynamic_load_module.conf` - Nginx configuration for dynamic load module
@@ -187,6 +188,40 @@ It is configured through environment variables:
 
 5. The filter library logs accepted/rejected requests internally, which can be retrieved from the nginx logs.
 
+### Testing the WebAssembly Filter
+
+The WebAssembly filter leverages the dynamic load module infrastructure but uses a WebAssembly runtime to execute the filter logic.
+
+1. Build the WebAssembly module and runtime wrapper:
+   ```bash
+   cd /path/to/bpftime/example/attach_implementation/benchmark/wasm_plugin
+   make
+   ```
+   
+   For more details, see the [WebAssembly Plugin README](wasm_plugin/README.md).
+
+2. Start Nginx with the WebAssembly filter:
+   ```bash
+   cd /path/to/bpftime/example/attach_implementation
+   
+   # Set the necessary environment variables
+   export DYNAMIC_LOAD_LIB_PATH="$(pwd)/benchmark/wasm_plugin/libwasm_filter.so"
+   export DYNAMIC_LOAD_URL_PREFIX="/aaaa"
+   export WASM_MODULE_PATH="$(pwd)/benchmark/wasm_plugin/url_filter.wasm"
+   
+   # Start Nginx with the dynamic load module
+   ./nginx_plugin_output/nginx -p $(pwd) -c benchmark/dynamic_load_module.conf
+   ```
+
+3. Test with curl:
+   ```bash
+   # This should succeed (HTTP 200)
+   curl http://localhost:9026/aaaa
+
+   # This should fail (HTTP 403 Forbidden)
+   curl http://localhost:9026/forbidden_path
+   ```
+
 ## Notes
 
 - The performance comparison focuses on the overhead introduced by each module implementation
@@ -194,6 +229,7 @@ It is configured through environment variables:
 - The baseline C module uses shared memory to share data with its controller
 - The bpftime module uses eBPF to implement the filtering logic
 - The dynamic load module loads a filter implementation shared library at runtime
+- The WebAssembly filter compiles the filter logic to WebAssembly and executes it in a WebAssembly runtime
 
 ## Troubleshooting
 
