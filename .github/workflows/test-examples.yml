@@ -1,4 +1,4 @@
-name: BPFtime Syscall Tracing (LD_PRELOAD Method)
+name: BPFtime Syscall Tracing (Complete LD_PRELOAD Method)
 
 on:
   push:
@@ -60,25 +60,75 @@ jobs:
           echo "Checking built libraries:"
           ls -la build/runtime/agent/
           ls -la build/runtime/syscall-server/
+          ls -la build/attach/text_segment_transformer/ || echo "Text segment transformer directory not found"
+
+      - name: Find all necessary libraries
+        run: |
+          echo "=== Finding all necessary libraries ==="
+          
+          # 查找所有可能需要的库文件
+          find build -name "*.so" | sort
+          
+          # 特别检查关键库文件
+          AGENT_LIB="build/runtime/agent/libbpftime-agent.so"
+          SERVER_LIB="build/runtime/syscall-server/libbpftime-syscall-server.so"
+          TRANSFORMER_LIB="build/attach/text_segment_transformer/libbpftime-agent-transformer.so"
+          
+          if [ ! -f "$AGENT_LIB" ]; then
+            echo "ERROR: Agent library not found at $AGENT_LIB"
+            # 尝试查找替代位置
+            AGENT_LIB=$(find build -name "libbpftime-agent.so" | head -1)
+            if [ -n "$AGENT_LIB" ]; then
+              echo "Found agent library at alternative location: $AGENT_LIB"
+            else
+              echo "Could not find agent library anywhere"
+              exit 1
+            fi
+          fi
+          
+          if [ ! -f "$SERVER_LIB" ]; then
+            echo "ERROR: Server library not found at $SERVER_LIB"
+            # 尝试查找替代位置
+            SERVER_LIB=$(find build -name "libbpftime-syscall-server.so" | head -1)
+            if [ -n "$SERVER_LIB" ]; then
+              echo "Found server library at alternative location: $SERVER_LIB"
+            else
+              echo "Could not find server library anywhere"
+              exit 1
+            fi
+          fi
+          
+          # 检查 transformer 库，可能不是必需的
+          if [ ! -f "$TRANSFORMER_LIB" ]; then
+            echo "WARNING: Transformer library not found at $TRANSFORMER_LIB"
+            # 尝试查找替代位置
+            TRANSFORMER_LIB=$(find build -name "libbpftime-agent-transformer.so" | head -1)
+            if [ -n "$TRANSFORMER_LIB" ]; then
+              echo "Found transformer library at alternative location: $TRANSFORMER_LIB"
+            else
+              echo "Could not find transformer library anywhere, will proceed without it"
+              TRANSFORMER_LIB=""
+            fi
+          fi
+          
+          # 保存库路径到环境变量
+          echo "AGENT_LIB=$AGENT_LIB" >> $GITHUB_ENV
+          echo "SERVER_LIB=$SERVER_LIB" >> $GITHUB_ENV
+          echo "TRANSFORMER_LIB=$TRANSFORMER_LIB" >> $GITHUB_ENV
 
       - name: Run server and client in the same step
         run: |
           echo "=== Running server and client in the same step ==="
           
-          # 设置库路径
-          SERVER_LIB="$PWD/build/runtime/syscall-server/libbpftime-syscall-server.so"
-          AGENT_LIB="$PWD/build/runtime/agent/libbpftime-agent.so"
+          # 获取库路径
+          AGENT_LIB="${{ env.AGENT_LIB }}"
+          SERVER_LIB="${{ env.SERVER_LIB }}"
+          TRANSFORMER_LIB="${{ env.TRANSFORMER_LIB }}"
           
-          # 确保库文件存在
-          if [ ! -f "$SERVER_LIB" ]; then
-            echo "ERROR: Server library not found at $SERVER_LIB"
-            exit 1
-          fi
-          
-          if [ ! -f "$AGENT_LIB" ]; then
-            echo "ERROR: Agent library not found at $AGENT_LIB"
-            exit 1
-          fi
+          echo "Using libraries:"
+          echo "AGENT_LIB: $AGENT_LIB"
+          echo "SERVER_LIB: $SERVER_LIB"
+          echo "TRANSFORMER_LIB: $TRANSFORMER_LIB"
           
           # 清理之前的日志
           mkdir -p logs
@@ -88,8 +138,8 @@ jobs:
           export BPFTIME_USED=1
           export SPDLOG_LEVEL=debug
           
-          # 使用-e选项直接指定bpftrace脚本，使用更简单的脚本
-          echo "Starting server in background with inline script..."
+          # 启动服务器
+          echo "Starting server in background..."
           sudo -E LD_PRELOAD=$SERVER_LIB bpftrace -e 'tracepoint:syscalls:sys_enter_openat { printf("SERVER_TRACE (openat): %s %s\n", comm, str(args->filename)); }' > "$SERVER_LOG" 2>&1 &
           
           SERVER_PID=$!
@@ -121,9 +171,22 @@ jobs:
           echo "Server log after initialization:"
           cat "$SERVER_LOG"
           
-          # 运行客户端命令
-          echo "Running cat command with LD_PRELOAD..."
-          sudo -E LD_PRELOAD=$AGENT_LIB cat build/install_manifest.txt | tee "$CLIENT_LOG"
+          # 运行客户端命令，使用完整的 LD_PRELOAD 配置
+          echo "Running cat command with complete LD_PRELOAD configuration..."
+          
+          # 准备 LD_PRELOAD 参数，根据 transformer 库是否存在进行调整
+          if [ -n "$TRANSFORMER_LIB" ]; then
+            # 同时使用 agent 和 transformer 库
+            echo "Using both agent and transformer libraries"
+            LD_PRELOAD_CMD="env AGENT_SO=$AGENT_LIB LD_PRELOAD=$TRANSFORMER_LIB"
+          else
+            # 只使用 agent 库
+            echo "Using only agent library"
+            LD_PRELOAD_CMD="env LD_PRELOAD=$AGENT_LIB"
+          fi
+          
+          # 执行命令
+          sudo -E $LD_PRELOAD_CMD cat build/install_manifest.txt | tee "$CLIENT_LOG"
           CAT_EXIT_CODE=$?
           
           # 等待服务器处理事件
