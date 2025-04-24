@@ -1,15 +1,23 @@
 #define RLBOX_SINGLE_THREADED_INVOCATIONS
-// Use dynamic loading for wasm2c
-#define RLBOX_USE_DYNAMIC_CALLS() rlbox_wasm2c_sandbox_lookup_symbol
 
+// Define the module name for wasm2c (must be defined before including wasm2c headers)
+#define RLBOX_WASM2C_MODULE_NAME mylib
+// Use static calls for wasm2c
+#define RLBOX_USE_STATIC_CALLS() rlbox_wasm2c_sandbox_lookup_symbol
+
+// Include system headers
 #include <stdio.h>
 #include <cassert>
 #include <string.h>
 #include <memory>
-#include <rlbox.hpp>
-#include <rlbox_wasm2c_sandbox.hpp>
 
-#include "mylib.h"
+// Include RLBox headers (before mylib.wasm.h to ensure proper macro definitions)
+#include "rlbox.hpp"
+#include "rlbox_wasm2c_sandbox.hpp"
+
+// Include the generated wasm2c header
+#include "mylib.wasm.h"
+
 #include "rlbox_filter.h"
 
 #define release_assert(cond, msg) if (!(cond)) { fputs(msg, stderr); abort(); }
@@ -17,26 +25,17 @@
 using namespace std;
 using namespace rlbox;
 
-// Define base type for mylib using the wasm2c sandbox
+// Define base type for mylib using the noop sandbox (or wasm2c in production)
 RLBOX_DEFINE_BASE_TYPES_FOR(mylib, wasm2c);
 
 // Global sandbox instance
 static rlbox_sandbox_mylib* g_sandbox = nullptr;
 
-// Path to the compiled WASM module
-static const char* WASM_PATH = "mylib.wasm";
-
 // Initialize the module with the given prefix
 extern "C" int module_initialize(const char *prefix) {
     if (!g_sandbox) {
-        // Check for environment variable to override WASM path
-        const char* env_wasm_path = getenv("RLBOX_WASM_PATH");
-        const char* wasm_path = env_wasm_path ? env_wasm_path : WASM_PATH;
-        
-        fprintf(stderr, "Creating wasm2c sandbox with module: %s\n", wasm_path);
-        
         g_sandbox = new rlbox_sandbox_mylib();
-        g_sandbox->create_sandbox(wasm_path);
+        g_sandbox->create_sandbox();
     }
 
     // If prefix is null, just use default
@@ -100,10 +99,6 @@ extern "C" void module_get_counters(uint64_t *accepted, uint64_t *rejected) {
         return;
     }
 
-    // Create variables to hold the results
-    tainted_mylib<uint64_t> acceptedVal = 0;
-    tainted_mylib<uint64_t> rejectedVal = 0;
-    
     // Allocate memory in the sandbox for the counters
     tainted_mylib<uint64_t*> acceptedPtr = nullptr;
     tainted_mylib<uint64_t*> rejectedPtr = nullptr;
@@ -120,31 +115,38 @@ extern "C" void module_get_counters(uint64_t *accepted, uint64_t *rejected) {
     g_sandbox->invoke_sandbox_function(get_counters, acceptedPtr, rejectedPtr);
 
     // Verify and copy the results out of the sandbox
-    if (accepted && acceptedPtr) {
-        // Create a verification function to safely copy data from the sandbox
-        auto verifier = [](tainted_mylib<uint64_t> val) -> uint64_t {
-            // Simplest verification: just return the value
-            return val;
-        };
+    if (accepted && acceptedPtr.UNSAFE_unverified() != nullptr) {
+        // Read the value from the sandbox memory
+        tainted_mylib<uint64_t> taintedAccepted = *acceptedPtr.UNSAFE_unverified();
         
-        // Create a temporary variable to hold the value from the sandbox
-        tainted_mylib<uint64_t> taintedAccepted = acceptedPtr.UNSAFE_unverified()[0];
-        *accepted = taintedAccepted.copy_and_verify(verifier);
+        // Then verify and copy out of the sandbox
+        *accepted = taintedAccepted.copy_and_verify([](uint64_t val) {
+            return val; // Simply return the value
+        });
+    } else if (accepted) {
+        *accepted = 0;
     }
 
-    if (rejected && rejectedPtr) {
-        auto verifier = [](tainted_mylib<uint64_t> val) -> uint64_t {
-            // Simplest verification: just return the value
-            return val;
-        };
-
-        tainted_mylib<uint64_t> taintedRejected = rejectedPtr.UNSAFE_unverified()[0];
-        *rejected = taintedRejected.copy_and_verify(verifier);
+    if (rejected && rejectedPtr.UNSAFE_unverified() != nullptr) {
+        // Read the value from the sandbox memory
+        tainted_mylib<uint64_t> taintedRejected = *rejectedPtr.UNSAFE_unverified();
+        
+        // Then verify and copy out of the sandbox
+        *rejected = taintedRejected.copy_and_verify([](uint64_t val) {
+            return val; // Simply return the value
+        });
+    } else if (rejected) {
+        *rejected = 0;
     }
 
     // Free the allocated memory in sandbox
-    if (acceptedPtr) g_sandbox->free_in_sandbox(acceptedPtr);
-    if (rejectedPtr) g_sandbox->free_in_sandbox(rejectedPtr);
+    if (acceptedPtr.UNSAFE_unverified() != nullptr) {
+        g_sandbox->free_in_sandbox(acceptedPtr);
+    }
+    
+    if (rejectedPtr.UNSAFE_unverified() != nullptr) {
+        g_sandbox->free_in_sandbox(rejectedPtr);
+    }
 }
 
 // Cleanup function that gets called when the shared library is unloaded

@@ -62,7 +62,7 @@ This will create `libfilter_rlbox_wasm2c.so` which provides strong isolation via
 
 To run Nginx with the RLBox sandboxed filter:
 
-### Using the NoOp Sandbox
+### Using the RLbox Sandbox
 
 ```bash
 cd /path/to/bpftime/example/attach_implementation

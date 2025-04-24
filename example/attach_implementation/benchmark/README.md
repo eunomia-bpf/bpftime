@@ -76,22 +76,60 @@ The log entries are timestamped, making it easy to track the sequence of events 
 The benchmark script will output results like:
 
 ```
-=== Benchmark Results ===
+=== Results from iteration 10/10 ===
+no_module: 3515.29 req/s, 199.48ms latency
+baseline: 4590.82 req/s, 152.66ms latency
+wasm: 3546.83 req/s, 197.72ms latency
+lua: 3332.08 req/s, 210.17ms latency
+bpftime: 3735.74 req/s, 187.55ms latency
+
+
+=== Benchmark Results Summary ===
 
 Nginx without module:
-  Requests/sec: 50000.25
-  Latency (avg): 4.32ms
+  Requests/sec: 4248.51 ± 366.77
+  Latency (avg): 166.78ms
+  Successful iterations: 10
 
 Nginx with baseline C module:
-  Requests/sec: 48500.50
-  Latency (avg): 4.45ms
-  Overhead vs no module: 3.00%
+  Requests/sec: 4051.59 ± 678.14
+  Latency (avg): 177.37ms
+  Successful iterations: 10
+
+Nginx with WebAssembly module:
+  Requests/sec: 3541.31 ± 216.03
+  Latency (avg): 198.41ms
+  Successful iterations: 10
+
+Nginx with LuaJIT module:
+  Requests/sec: 3453.83 ± 149.75
+  Latency (avg): 203.09ms
+  Successful iterations: 10
 
 Nginx with bpftime module:
-  Requests/sec: 47200.75
-  Latency (avg): 4.58ms
-  Overhead vs no module: 5.60%
-  Overhead vs baseline C module: 2.68%
+  Requests/sec: 4056.18 ± 331.47
+  Latency (avg): 173.63ms
+  Successful iterations: 10
+
+Overhead Comparisons:
+  Compared to no module:
+    Baseline C: 4.64%
+    WebAssembly: 16.65%
+    LuaJIT: 18.70%
+    BPFtime: 4.53%
+  Compared to baseline C module:
+    WebAssembly: 12.59%
+    LuaJIT: 14.75%
+    BPFtime: -0.11%
+  Compared to WebAssembly module:
+    BPFtime: -14.54%
+  Compared to LuaJIT module:
+    BPFtime: -17.44%
+JSON results saved to: /home/yunwei37/bpftime/example/attach_implementation/benchmark/benchmark_results_20250423_215631.json
+
+=== Benchmark completed at 2025-04-23 21:56:31 ===
+Full log available at: /home/yunwei37/bpftime/example/attach_implementation/benchmark/benchlog.txt
+Results summary available at: /home/yunwei37/bpftime/example/attach_implementation/benchmark/benchmark_results_20250423_215631.json
 ```
 
 Key metrics to consider:
