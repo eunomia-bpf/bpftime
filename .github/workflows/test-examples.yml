@@ -61,28 +61,6 @@ jobs:
           ls -la build/runtime/agent/
           ls -la build/runtime/syscall-server/
 
-      - name: Create tracing script
-        run: |
-          echo "=== Creating tracing script ==="
-          
-          # 创建一个简单明确的bpftrace脚本，专注于捕获cat命令
-          cat > /tmp/cat_trace.bt << 'EOT'
-          BEGIN {
-              printf("Tracing started. Waiting for cat commands...\n");
-          }
-          
-          tracepoint:syscalls:sys_enter_openat { 
-              printf("SERVER_TRACE (openat): %s %s\n", comm, str(args->filename));
-              if (comm == "cat") {
-                  printf("CAT_COMMAND_DETECTED: %s is accessing file %s\n", comm, str(args->filename));
-              }
-          }
-          EOT
-          
-          chmod +x /tmp/cat_trace.bt
-          echo "Created tracing script:"
-          cat /tmp/cat_trace.bt
-
       - name: Run server and client in the same step
         run: |
           echo "=== Running server and client in the same step ==="
@@ -110,9 +88,10 @@ jobs:
           export BPFTIME_USED=1
           export SPDLOG_LEVEL=debug
           
-          # 启动服务器在后台运行
-          echo "Starting server in background..."
-          sudo -E LD_PRELOAD=$SERVER_LIB bpftrace /tmp/cat_trace.bt > "$SERVER_LOG" 2>&1 &
+          # 使用-e选项直接指定bpftrace脚本，使用更简单的脚本
+          echo "Starting server in background with inline script..."
+          sudo -E LD_PRELOAD=$SERVER_LIB bpftrace -e 'tracepoint:syscalls:sys_enter_openat { printf("SERVER_TRACE (openat): %s %s\n", comm, str(args->filename)); }' > "$SERVER_LOG" 2>&1 &
+          
           SERVER_PID=$!
           echo "Server started with PID: $SERVER_PID"
           
@@ -120,7 +99,7 @@ jobs:
           echo "Waiting for server to initialize..."
           INIT_TIMEOUT=30
           for i in $(seq 1 $INIT_TIMEOUT); do
-            if grep -q "Tracing started" "$SERVER_LOG"; then
+            if grep -q "Attaching" "$SERVER_LOG"; then
               echo "Server initialized after $i seconds"
               break
             fi
@@ -158,16 +137,7 @@ jobs:
           echo "Server log after client execution:"
           cat "$SERVER_LOG"
           
-          # 检查是否有cat命令的跟踪信息
-          if grep -q "CAT_COMMAND_DETECTED" "$SERVER_LOG"; then
-            echo "SUCCESS: Found CAT_COMMAND_DETECTED in server log"
-            CAT_COMMAND_DETECTED="true"
-          else
-            echo "FAILURE: Did not find CAT_COMMAND_DETECTED in server log"
-            CAT_COMMAND_DETECTED="false"
-          fi
-          
-          # 检查是否有SERVER_TRACE输出
+          # 检查是否有cat命令的SERVER_TRACE输出
           if grep -q "SERVER_TRACE.*cat.*build/install_manifest.txt" "$SERVER_LOG"; then
             echo "SUCCESS: Found SERVER_TRACE for cat command in server log"
             CAT_TRACE_FOUND="true"
@@ -194,7 +164,7 @@ jobs:
           fi
           
           # 检查是否捕获到cat命令
-          if [ "$CAT_COMMAND_DETECTED" = "true" ] || [ "$CAT_TRACE_FOUND" = "true" ]; then
+          if [ "$CAT_TRACE_FOUND" = "true" ]; then
             echo "SUCCESS: Cat command tracing is working"
             TRACING_SUCCESS="true"
           else
