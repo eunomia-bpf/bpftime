@@ -5,7 +5,8 @@ Benchmark script for comparing different nginx configurations:
 2. With baseline C module (direct C implementation)
 3. With WebAssembly module (WASM-based filtering)
 4. With LuaJIT module (Lua-based filtering)
-5. Without any module (baseline performance)
+5. With ERIM-protected module (MPK-based isolation)
+6. Without any module (baseline performance)
 
 This script will:
 - Start each nginx configuration
@@ -216,6 +217,35 @@ def run_benchmark_iteration(args):
                 
             stop_nginx(nginx_process, PARENT_DIR)
     
+    # Test with ERIM-protected module
+    log_message("\n=== Testing nginx with ERIM-protected module ===")
+    # First make sure the ERIM module is built
+    try:
+        build_cmd = ["make", "-C", str(SCRIPT_DIR / "erim_plugin")]
+        log_message(f"Building ERIM-protected module with command: {' '.join(build_cmd)}")
+        subprocess.run(build_cmd, check=True)
+    except subprocess.CalledProcessError as e:
+        log_message(f"Failed to build ERIM-protected module: {e}")
+        log_message("Skipping ERIM benchmark")
+    else:
+        # Set up environment variables for the ERIM module
+        erim_env = os.environ.copy()
+        erim_lib_path = str(SCRIPT_DIR / "erim_plugin" / "liberim_filter.so")
+        erim_env["DYNAMIC_LOAD_LIB_PATH"] = erim_lib_path
+        erim_env["DYNAMIC_LOAD_URL_PREFIX"] = args.url_path
+        log_message(f"Setting DYNAMIC_LOAD_LIB_PATH={erim_lib_path}")
+        log_message(f"Setting DYNAMIC_LOAD_URL_PREFIX={args.url_path}")
+        
+        # Use the same dynamic_load_module.conf and port - we're running these tests sequentially
+        nginx_process = start_nginx(NGINX_BIN, DYNAMIC_LOAD_CONF, PARENT_DIR, env=erim_env)
+        if nginx_process:
+            url = f"http://127.0.0.1:{WASM_PORT}{args.url_path}"
+            time.sleep(1)
+            output = run_wrk_benchmark(url, args.duration, args.connections, args.threads)
+            results['erim'] = parse_wrk_output(output)
+            collect_process_output(nginx_process, "ERIM-protected Nginx")
+            stop_nginx(nginx_process, PARENT_DIR)
+    
     # Test with bpftime module
     log_message("\n=== Testing nginx with bpftime module ===")
     bpftime_controller_process = start_bpftime_controller(args.url_path)
@@ -242,7 +272,7 @@ def calculate_averages(all_results):
     std_dev = {}
     
     # Initialize results structure
-    for module in ['no_module', 'baseline', 'wasm', 'lua', 'bpftime', 'rlbox', 'rlbox_wasm2c']:
+    for module in ['no_module', 'baseline', 'wasm', 'lua', 'bpftime', 'rlbox', 'rlbox_wasm2c', 'erim']:
         if any(module in results for results in all_results):
             avg_results[module] = {'rps': 0, 'latency_avg': '0ms', 'iterations': 0}
             std_dev[module] = {'rps': 0}
@@ -294,7 +324,7 @@ def calculate_overheads(avg_results):
     if 'no_module' in avg_results and avg_results['no_module']['rps'] > 0:
         no_module_rps = avg_results['no_module']['rps']
         
-        for module in ['baseline', 'wasm', 'lua', 'bpftime', 'rlbox', 'rlbox_wasm2c']:
+        for module in ['baseline', 'wasm', 'lua', 'bpftime', 'rlbox', 'rlbox_wasm2c', 'erim']:
             if module in avg_results and avg_results[module]['rps'] > 0:
                 overhead = (1 - avg_results[module]['rps'] / no_module_rps) * 100
                 overheads[f"{module}_vs_no_module"] = f"{overhead:.2f}%"
@@ -303,7 +333,7 @@ def calculate_overheads(avg_results):
     if 'baseline' in avg_results and avg_results['baseline']['rps'] > 0:
         baseline_rps = avg_results['baseline']['rps']
         
-        for module in ['wasm', 'lua', 'bpftime', 'rlbox', 'rlbox_wasm2c']:
+        for module in ['wasm', 'lua', 'bpftime', 'rlbox', 'rlbox_wasm2c', 'erim']:
             if module in avg_results and avg_results[module]['rps'] > 0:
                 overhead = (1 - avg_results[module]['rps'] / baseline_rps) * 100
                 overheads[f"{module}_vs_baseline"] = f"{overhead:.2f}%"
@@ -315,6 +345,10 @@ def calculate_overheads(avg_results):
         if 'bpftime' in avg_results and avg_results['bpftime']['rps'] > 0:
             overhead = (1 - avg_results['bpftime']['rps'] / wasm_rps) * 100
             overheads["bpftime_vs_wasm"] = f"{overhead:.2f}%"
+            
+        if 'erim' in avg_results and avg_results['erim']['rps'] > 0:
+            overhead = (1 - avg_results['erim']['rps'] / wasm_rps) * 100
+            overheads["erim_vs_wasm"] = f"{overhead:.2f}%"
     
     # LuaJIT module comparisons
     if 'lua' in avg_results and avg_results['lua']['rps'] > 0:
@@ -323,6 +357,10 @@ def calculate_overheads(avg_results):
         if 'bpftime' in avg_results and avg_results['bpftime']['rps'] > 0:
             overhead = (1 - avg_results['bpftime']['rps'] / lua_rps) * 100
             overheads["bpftime_vs_lua"] = f"{overhead:.2f}%"
+            
+        if 'erim' in avg_results and avg_results['erim']['rps'] > 0:
+            overhead = (1 - avg_results['erim']['rps'] / lua_rps) * 100
+            overheads["erim_vs_lua"] = f"{overhead:.2f}%"
     
     # RLBox module comparisons (noop variant)
     if 'rlbox' in avg_results and avg_results['rlbox']['rps'] > 0:
@@ -332,6 +370,10 @@ def calculate_overheads(avg_results):
             overhead = (1 - avg_results['bpftime']['rps'] / rlbox_rps) * 100
             overheads["bpftime_vs_rlbox"] = f"{overhead:.2f}%"
             
+        if 'erim' in avg_results and avg_results['erim']['rps'] > 0:
+            overhead = (1 - avg_results['erim']['rps'] / rlbox_rps) * 100
+            overheads["erim_vs_rlbox"] = f"{overhead:.2f}%"
+            
     # RLBox module comparisons (wasm2c variant)
     if 'rlbox_wasm2c' in avg_results and avg_results['rlbox_wasm2c']['rps'] > 0:
         rlbox_wasm2c_rps = avg_results['rlbox_wasm2c']['rps']
@@ -339,6 +381,10 @@ def calculate_overheads(avg_results):
         if 'bpftime' in avg_results and avg_results['bpftime']['rps'] > 0:
             overhead = (1 - avg_results['bpftime']['rps'] / rlbox_wasm2c_rps) * 100
             overheads["bpftime_vs_rlbox_wasm2c"] = f"{overhead:.2f}%"
+            
+        if 'erim' in avg_results and avg_results['erim']['rps'] > 0:
+            overhead = (1 - avg_results['erim']['rps'] / rlbox_wasm2c_rps) * 100
+            overheads["erim_vs_rlbox_wasm2c"] = f"{overhead:.2f}%"
             
         # Compare RLBox wasm2c with WebAssembly module
         if 'wasm' in avg_results and avg_results['wasm']['rps'] > 0:
@@ -349,6 +395,14 @@ def calculate_overheads(avg_results):
         if 'rlbox' in avg_results and avg_results['rlbox']['rps'] > 0:
             overhead = (1 - avg_results['rlbox_wasm2c']['rps'] / avg_results['rlbox']['rps']) * 100
             overheads["rlbox_wasm2c_vs_rlbox"] = f"{overhead:.2f}%"
+    
+    # ERIM module comparisons
+    if 'erim' in avg_results and avg_results['erim']['rps'] > 0:
+        erim_rps = avg_results['erim']['rps']
+        
+        if 'bpftime' in avg_results and avg_results['bpftime']['rps'] > 0:
+            overhead = (1 - avg_results['bpftime']['rps'] / erim_rps) * 100
+            overheads["bpftime_vs_erim"] = f"{overhead:.2f}%"
     
     return overheads
 
@@ -388,7 +442,7 @@ def print_results_summary(avg_results, std_dev, overheads):
     summary = "\n\n=== Benchmark Results Summary ==="
     
     # Print module results
-    for module in ['no_module', 'baseline', 'wasm', 'lua', 'bpftime', 'rlbox', 'rlbox_wasm2c']:
+    for module in ['no_module', 'baseline', 'wasm', 'lua', 'bpftime', 'rlbox', 'rlbox_wasm2c', 'erim']:
         if module in avg_results:
             module_name = {
                 'no_module': 'Nginx without module',
@@ -397,7 +451,8 @@ def print_results_summary(avg_results, std_dev, overheads):
                 'lua': 'Nginx with LuaJIT module',
                 'bpftime': 'Nginx with bpftime module',
                 'rlbox': 'Nginx with RLBox NoOp module',
-                'rlbox_wasm2c': 'Nginx with RLBox Wasm2c module'
+                'rlbox_wasm2c': 'Nginx with RLBox Wasm2c module',
+                'erim': 'Nginx with ERIM-protected module'
             }.get(module, module)
             
             summary += f"\n\n{module_name}:"
@@ -410,14 +465,15 @@ def print_results_summary(avg_results, std_dev, overheads):
         summary += "\n\nOverhead Comparisons:"
         
         # Group overheads by base module
-        for base in ['no_module', 'baseline', 'wasm', 'lua', 'rlbox', 'rlbox_wasm2c']:
+        for base in ['no_module', 'baseline', 'wasm', 'lua', 'rlbox', 'rlbox_wasm2c', 'erim']:
             base_name = {
                 'no_module': 'no module',
                 'baseline': 'baseline C module',
                 'wasm': 'WebAssembly module', 
                 'lua': 'LuaJIT module',
                 'rlbox': 'RLBox NoOp module',
-                'rlbox_wasm2c': 'RLBox Wasm2c module'
+                'rlbox_wasm2c': 'RLBox Wasm2c module',
+                'erim': 'ERIM-protected module'
             }.get(base, base)
             
             relevant_overheads = {k: v for k, v in overheads.items() if f"_vs_{base}" in k}
@@ -432,7 +488,8 @@ def print_results_summary(avg_results, std_dev, overheads):
                         'lua': 'LuaJIT',
                         'bpftime': 'BPFtime',
                         'rlbox': 'RLBox NoOp',
-                        'rlbox_wasm2c': 'RLBox Wasm2c'
+                        'rlbox_wasm2c': 'RLBox Wasm2c',
+                        'erim': 'ERIM'
                     }.get(module, module)
                     summary += f"\n    {module_name}: {v}"
     
@@ -442,10 +499,10 @@ def print_results_summary(avg_results, std_dev, overheads):
 def main():
     parser = argparse.ArgumentParser(description="Run nginx benchmarks with different configurations")
     parser.add_argument("--duration", type=int, default=60, help="Duration of each benchmark in seconds")
-    parser.add_argument("--connections", type=int, default=10, help="Number of connections to use")
+    parser.add_argument("--connections", type=int, default=2000, help="Number of connections to use")
     parser.add_argument("--threads", type=int, default=6, help="Number of threads to use")
     parser.add_argument("--url-path", type=str, default="/aaaa", help="URL path to test")
-    parser.add_argument("--iterations", type=int, default=10, help="Number of benchmark iterations to run")
+    parser.add_argument("--iterations", type=int, default=1, help="Number of benchmark iterations to run")
     parser.add_argument("--save-all-iterations", action="store_true", help="Save all iteration data in the JSON output")
     parser.add_argument("--json-output", type=str, help="Custom path for JSON output file")
     parser.add_argument("--rlbox-variant", type=str, choices=["noop", "wasm2c"], default="noop", 
