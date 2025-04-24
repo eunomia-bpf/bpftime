@@ -28,4 +28,22 @@ bool url_filter(const char *url);
  */
 void get_counters(uint64_t *accepted, uint64_t *rejected);
 
+/**
+ * Set data in the WebAssembly module's buffer
+ * 
+ * @param data The data to copy into the buffer
+ * @param size Size of the data
+ * @return 0 on success, -1 on failure
+ */
+int set_buffer(const char *data, size_t size);
+
+/**
+ * Get data from the WebAssembly module's buffer
+ * 
+ * @param out_data Pointer to store the result data (memory managed by WASM module)
+ * @param out_size Pointer to store the size of the data
+ * @return 0 on success, -1 on failure
+ */
+int get_buffer(const char **out_data, size_t *out_size);
+
 #endif /* WASM_RUNTIME_H */ 
