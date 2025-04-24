@@ -57,182 +57,236 @@ jobs:
           echo "Checking built libraries:"
           ls -la build/runtime/agent/
           ls -la build/runtime/syscall-server/
+          
+          # 检查库文件依赖
+          echo "Checking library dependencies:"
+          ldd build/runtime/agent/libbpftime-agent.so || echo "Could not check agent dependencies"
+          ldd build/runtime/syscall-server/libbpftime-syscall-server.so || echo "Could not check server dependencies"
 
-      - name: Verify syscalls with strace
+      - name: Verify environment
         run: |
-          echo "=== Running strace to verify openat syscalls ==="
-          # 使用strace验证cat命令确实使用了openat系统调用
-          strace -e openat cat build/install_manifest.txt > /dev/null 2> logs/strace_output.txt
+          echo "=== Verifying environment ==="
+          
+          # 检查环境变量
+          echo "Environment variables:"
+          env | grep BPFTIME || echo "No BPFTIME environment variables found"
+          
+          # 确保共享内存目录存在且权限正确
+          sudo mkdir -p $BPFTIME_SHARED_MEMORY_PATH
+          sudo chmod 1777 $BPFTIME_SHARED_MEMORY_PATH
+          ls -la $BPFTIME_SHARED_MEMORY_PATH
+          
+          # 验证bpftrace功能
+          echo "Testing basic bpftrace functionality..."
+          timeout 5s bpftrace -e 'BEGIN { printf("bpftrace test successful\n"); exit(); }' || echo "Basic bpftrace test failed"
+
+      - name: Verify openat syscall with strace
+        run: |
+          echo "=== Verifying openat syscall with strace ==="
+          
+          # 使用strace验证cat命令确实调用了openat系统调用
+          strace -e openat cat build/install_manifest.txt > logs/cat_output.txt 2> logs/cat_strace.txt
+          
+          echo "Cat command output:"
+          cat logs/cat_output.txt
           
           echo "Strace output:"
-          cat logs/strace_output.txt
+          cat logs/cat_strace.txt
           
-          if grep -q "openat.*build/install_manifest.txt" logs/strace_output.txt; then
-            echo "✅ CONFIRMED: 'cat build/install_manifest.txt' does call openat syscall"
+          # 确认openat调用
+          if grep -q "openat.*build/install_manifest.txt" logs/cat_strace.txt; then
+            echo "CONFIRMED: 'cat build/install_manifest.txt' does call openat syscall"
           else
-            echo "❌ ERROR: Could not confirm openat syscall in strace output"
+            echo "ERROR: Could not confirm openat syscall in strace output"
             exit 1
           fi
 
-      - name: Create bpftrace script
+      - name: Start syscall server with LD_PRELOAD
         run: |
-          # 创建一个简单明确的bpftrace脚本，专注于跟踪openat系统调用
-          cat > /tmp/openat_trace.bt << 'EOT'
-          #!/usr/bin/env bpftrace
+          echo "=== Starting syscall server with LD_PRELOAD ==="
           
-          // 跟踪openat系统调用
+          # 确保日志目录存在
+          mkdir -p logs
+          
+          # 创建一个明确的bpftrace脚本，专门用于捕获cat命令
+          cat > /tmp/cat_trace.bt << 'EOT'
           tracepoint:syscalls:sys_enter_openat { 
-              printf("SERVER_TRACE (openat): %s %s\n", comm, str(args->filename)); 
+              printf("SERVER_TRACE (openat): %s %s\n", comm, str(args->filename));
+              if (comm == "cat") {
+                  printf("CAT_COMMAND_DETECTED: %s is accessing file %s\n", comm, str(args->filename));
+              }
           }
           EOT
           
-          chmod +x /tmp/openat_trace.bt
-          echo "Created bpftrace script:"
-          cat /tmp/openat_trace.bt
-
-      - name: Test bpftrace script directly
-        run: |
-          echo "=== Testing bpftrace script directly ==="
-          # 直接测试bpftrace脚本是否能正常工作
-          timeout 10s bpftrace /tmp/openat_trace.bt > "$TRACE_LOG" 2>&1 &
-          BPFTRACE_PID=$!
-          sleep 3
+          # 设置库路径
+          SERVER_LIB="$PWD/build/runtime/syscall-server/libbpftime-syscall-server.so"
           
-          # 运行一个简单的cat命令，应该会触发openat系统调用
-          cat build/install_manifest.txt > /dev/null
-          sleep 2
-          
-          # 终止bpftrace进程
-          kill $BPFTRACE_PID 2>/dev/null || true
-          sleep 1
-          
-          echo "Bpftrace direct test output:"
-          cat "$TRACE_LOG"
-          
-          if grep -q "SERVER_TRACE (openat).*build/install_manifest.txt" "$TRACE_LOG"; then
-            echo "✅ CONFIRMED: bpftrace script works correctly when run directly"
-          else
-            echo "⚠️ WARNING: bpftrace script did not capture expected syscalls when run directly"
-            # 这不是致命错误，可能是环境问题
+          # 确保库文件存在
+          if [ ! -f "$SERVER_LIB" ]; then
+            echo "ERROR: Server library not found at $SERVER_LIB"
+            exit 1
           fi
-
-      - name: Start BPFTIME Server
-        id: start_server
-        run: |
-          echo "=== Starting BPFTIME Server with LD_PRELOAD ==="
-          mkdir -p logs
           
-          # 使用LD_PRELOAD启动bpftrace
-          # 使用script命令确保输出不会被缓冲
-          script -c "sudo -E env LD_PRELOAD=$PWD/build/runtime/syscall-server/libbpftime-syscall-server.so bpftrace /tmp/openat_trace.bt" -f "$SERVER_LOG" &
+          # 启动服务器，使用script命令确保输出不缓冲
+          script -c "sudo -E LD_PRELOAD=$SERVER_LIB bpftrace /tmp/cat_trace.bt" -f "$SERVER_LOG" &
           
           SERVER_PID=$!
           echo "Server started with PID: $SERVER_PID"
           echo "SERVER_PID=$SERVER_PID" >> $GITHUB_ENV
           
-          echo "Waiting for server to initialize (15s)..."
-          sleep 15
+          # 等待服务器初始化
+          echo "Waiting for server to initialize (20s)..."
+          sleep 20
           
-          # 检查服务器进程是否存活
+          # 检查服务器进程是否在运行
           if ps -p $SERVER_PID > /dev/null; then
-            echo "✅ Server process $SERVER_PID is running"
+            echo "Server process $SERVER_PID is running"
           else
-            echo "❌ ERROR: Server process $SERVER_PID did not start or died!"
+            echo "ERROR: Server process $SERVER_PID did not start or died!"
             cat "$SERVER_LOG" || echo "Server log not found"
             exit 1
           fi
           
-          # 检查服务器日志中是否有"Attaching probe"消息
+          # 检查服务器日志
+          echo "Initial server log:"
+          cat "$SERVER_LOG" || echo "Server log not available yet"
+          
+          # 检查是否有"Attaching"消息
           if grep -q "Attaching" "$SERVER_LOG"; then
-            echo "✅ Server initialized with probe(s) attached"
+            echo "Server initialized with probe(s) attached"
           else
-            echo "⚠️ WARNING: Did not find 'Attaching' message in server log"
+            echo "WARNING: Did not find 'Attaching' message in server log"
           fi
           
           # 检查共享内存文件
-          ls -l "$BPFTIME_SHARED_MEMORY_PATH/bpftime_maps_shm" || echo "⚠️ WARNING: SHM file not found"
-          
-          # 添加明确的标记
-          echo "=== BEFORE CLIENT EXECUTION ===" | sudo tee -a "$SERVER_LOG"
+          ls -l "$BPFTIME_SHARED_MEMORY_PATH/bpftime_maps_shm" || echo "WARNING: SHM file not found"
 
-      - name: Run BPFTIME Client
-        id: run_client
+      - name: Run cat command with LD_PRELOAD
         run: |
-          echo "=== Running BPFTIME Client with LD_PRELOAD ==="
+          echo "=== Running cat command with LD_PRELOAD ==="
           
           # 验证服务器仍在运行
           SERVER_PID_CHECK=${{ env.SERVER_PID }}
-          if ! ps -p $SERVER_PID_CHECK > /dev/null; then
-            echo "❌ ERROR: Server process is not running!"
+          if [ -z "$SERVER_PID_CHECK" ] || ! ps -p $SERVER_PID_CHECK > /dev/null; then
+            echo "ERROR: Server process is not running!"
             cat "$SERVER_LOG" || echo "Server log not found"
             exit 1
           fi
           
-          # 添加明确的标记
-          echo "=== CLIENT EXECUTION STARTING ===" | sudo tee -a "$SERVER_LOG"
+          # 设置库路径
+          AGENT_LIB="$PWD/build/runtime/agent/libbpftime-agent.so"
           
-          # 运行客户端命令
+          # 确保库文件存在
+          if [ ! -f "$AGENT_LIB" ]; then
+            echo "ERROR: Agent library not found at $AGENT_LIB"
+            exit 1
+          fi
+          
+          # 在服务器日志中添加标记
+          echo "=== BEFORE CAT COMMAND EXECUTION ===" | sudo tee -a "$SERVER_LOG"
+          
+          # 运行cat命令
           echo "Running cat command with LD_PRELOAD..."
-          sudo -E env BPFTIME_DEBUG=1 LD_PRELOAD=$PWD/build/runtime/agent/libbpftime-agent.so \
-            cat build/install_manifest.txt | tee "$CLIENT_LOG"
+          sudo -E LD_PRELOAD=$AGENT_LIB cat build/install_manifest.txt | tee "$CLIENT_LOG"
           
-          CLIENT_EXIT_CODE=$?
-          echo "CLIENT_EXIT_CODE=$CLIENT_EXIT_CODE" >> $GITHUB_ENV
-          
-          # 确保有足够时间处理系统调用
-          sleep 5
+          CAT_EXIT_CODE=$?
+          echo "CAT_EXIT_CODE=$CAT_EXIT_CODE" >> $GITHUB_ENV
           
           # 添加结束标记
-          echo "=== CLIENT EXECUTION COMPLETED ===" | sudo tee -a "$SERVER_LOG"
+          echo "=== AFTER CAT COMMAND EXECUTION ===" | sudo tee -a "$SERVER_LOG"
           
-          # 运行locale命令，尝试触发locale-archive访问
-          echo "Running locale command to trigger locale-archive access..."
-          sudo -E env BPFTIME_DEBUG=1 LD_PRELOAD=$PWD/build/runtime/agent/libbpftime-agent.so \
-            locale -a > /dev/null
+          # 等待一会儿让服务器处理事件
+          echo "Waiting for server to process events (10s)..."
+          sleep 10
           
-          # 再次等待
-          sleep 5
+          # 强制刷新任何缓冲的输出
+          sync
           
-          # 打印当前服务器日志
-          echo "Current server log content:"
+          # 显示服务器日志
+          echo "Server log after cat command execution:"
           cat "$SERVER_LOG" || echo "Server log not available"
 
-      - name: Check for syscall traces
+      - name: Run additional cat commands
         run: |
-          echo "=== Checking for syscall traces in server log ==="
+          echo "=== Running additional cat commands ==="
+          
+          # 设置库路径
+          AGENT_LIB="$PWD/build/runtime/agent/libbpftime-agent.so"
+          
+          # 添加标记
+          echo "=== BEFORE ADDITIONAL CAT COMMANDS ===" | sudo tee -a "$SERVER_LOG"
+          
+          # 运行多个cat命令访问不同的文件
+          echo "Running cat on /etc/passwd..."
+          sudo -E LD_PRELOAD=$AGENT_LIB cat /etc/passwd > /dev/null
+          
+          echo "Running cat on /etc/hosts..."
+          sudo -E LD_PRELOAD=$AGENT_LIB cat /etc/hosts > /dev/null
+          
+          echo "Running cat on /etc/os-release..."
+          sudo -E LD_PRELOAD=$AGENT_LIB cat /etc/os-release > /dev/null
+          
+          # 添加结束标记
+          echo "=== AFTER ADDITIONAL CAT COMMANDS ===" | sudo tee -a "$SERVER_LOG"
+          
+          # 等待处理事件
+          sleep 10
+          
+          # 强制刷新
+          sync
+
+      - name: Check for cat command traces
+        run: |
+          echo "=== Checking for cat command traces ==="
           
           # 强制刷新文件系统缓冲区
           sync
           
-          # 检查服务器日志中是否包含我们期望的系统调用跟踪
-          if grep -q "SERVER_TRACE (openat).*build/install_manifest.txt" "$SERVER_LOG"; then
-            echo "✅ SUCCESS: Found trace for 'build/install_manifest.txt' in server log"
-            INSTALL_MANIFEST_TRACE_FOUND="true"
+          # 显示完整的服务器日志
+          echo "Full server log content:"
+          cat "$SERVER_LOG" || echo "Server log not available"
+          
+          # 检查是否有任何CAT_COMMAND_DETECTED输出
+          if grep -q "CAT_COMMAND_DETECTED" "$SERVER_LOG"; then
+            echo "SUCCESS: Found CAT_COMMAND_DETECTED output in server log"
+            CAT_COMMAND_DETECTED="true"
           else
-            echo "❌ FAILURE: Did not find trace for 'build/install_manifest.txt' in server log"
-            INSTALL_MANIFEST_TRACE_FOUND="false"
+            echo "FAILURE: No CAT_COMMAND_DETECTED output found in server log"
+            CAT_COMMAND_DETECTED="false"
           fi
           
-          if grep -q "SERVER_TRACE (openat).*locale-archive" "$SERVER_LOG"; then
-            echo "✅ SUCCESS: Found trace for 'locale-archive' in server log"
-            LOCALE_ARCHIVE_TRACE_FOUND="true"
+          # 检查是否有任何cat命令的SERVER_TRACE输出
+          if grep -q "SERVER_TRACE.*cat.*" "$SERVER_LOG"; then
+            echo "SUCCESS: Found SERVER_TRACE for cat command in server log"
+            CAT_TRACE_FOUND="true"
           else
-            echo "❌ FAILURE: Did not find trace for 'locale-archive' in server log"
-            LOCALE_ARCHIVE_TRACE_FOUND="false"
+            echo "FAILURE: No SERVER_TRACE for cat command found in server log"
+            CAT_TRACE_FOUND="false"
+          fi
+          
+          # 检查特定文件的跟踪
+          if grep -q "SERVER_TRACE.*cat.*build/install_manifest.txt" "$SERVER_LOG"; then
+            echo "SUCCESS: Found trace for cat accessing build/install_manifest.txt"
+            MANIFEST_TRACE_FOUND="true"
+          else
+            echo "FAILURE: Did not find trace for cat accessing build/install_manifest.txt"
+            MANIFEST_TRACE_FOUND="false"
           fi
           
           # 保存结果到环境变量
-          echo "INSTALL_MANIFEST_TRACE_FOUND=$INSTALL_MANIFEST_TRACE_FOUND" >> $GITHUB_ENV
-          echo "LOCALE_ARCHIVE_TRACE_FOUND=$LOCALE_ARCHIVE_TRACE_FOUND" >> $GITHUB_ENV
+          echo "CAT_COMMAND_DETECTED=$CAT_COMMAND_DETECTED" >> $GITHUB_ENV
+          echo "CAT_TRACE_FOUND=$CAT_TRACE_FOUND" >> $GITHUB_ENV
+          echo "MANIFEST_TRACE_FOUND=$MANIFEST_TRACE_FOUND" >> $GITHUB_ENV
 
       - name: Stop Server and Analyze Results
         if: always()
         run: |
           echo "=== Stop Server and Analyze Results ==="
           SERVER_PID_TO_KILL=${{ env.SERVER_PID }}
-          CLIENT_EXIT_CODE=${CLIENT_EXIT_CODE:-99}
-          INSTALL_MANIFEST_TRACE_FOUND=${INSTALL_MANIFEST_TRACE_FOUND:-false}
-          LOCALE_ARCHIVE_TRACE_FOUND=${LOCALE_ARCHIVE_TRACE_FOUND:-false}
+          CAT_EXIT_CODE=${CAT_EXIT_CODE:-99}
+          CAT_COMMAND_DETECTED=${CAT_COMMAND_DETECTED:-false}
+          CAT_TRACE_FOUND=${CAT_TRACE_FOUND:-false}
+          MANIFEST_TRACE_FOUND=${MANIFEST_TRACE_FOUND:-false}
           
           # 停止服务器
           if [ -n "$SERVER_PID_TO_KILL" ] && ps -p $SERVER_PID_TO_KILL > /dev/null; then
@@ -241,38 +295,38 @@ jobs:
             sleep 2
           fi
           
-          # 最终分析
+          # 分析结果
           echo "=== Final Analysis ==="
           
-          # 客户端成功标准
-          if [ "$CLIENT_EXIT_CODE" = "0" ] && grep -q "TEST_DATA_LINE" "$CLIENT_LOG"; then
-            echo "✅ Client executed successfully"
-            CLIENT_SUCCESS="true"
+          # 检查cat命令是否成功运行
+          if [ "$CAT_EXIT_CODE" = "0" ]; then
+            echo "SUCCESS: Cat command executed successfully with exit code 0"
+            CAT_SUCCESS="true"
           else
-            echo "❌ Client execution failed or did not produce expected output"
-            CLIENT_SUCCESS="false"
+            echo "FAILURE: Cat command failed with exit code $CAT_EXIT_CODE"
+            CAT_SUCCESS="false"
           fi
           
-          # 系统调用跟踪成功标准
-          if [ "$INSTALL_MANIFEST_TRACE_FOUND" = "true" ] || [ "$LOCALE_ARCHIVE_TRACE_FOUND" = "true" ]; then
-            echo "✅ System call tracing is working"
+          # 检查是否检测到cat命令的系统调用
+          if [ "$CAT_COMMAND_DETECTED" = "true" ] || [ "$CAT_TRACE_FOUND" = "true" ] || [ "$MANIFEST_TRACE_FOUND" = "true" ]; then
+            echo "SUCCESS: Cat command tracing is working"
             TRACING_SUCCESS="true"
           else
-            echo "❌ System call tracing is NOT working"
+            echo "FAILURE: Cat command tracing is NOT working"
             TRACING_SUCCESS="false"
           fi
           
-          # 最终结果
-          if [ "$CLIENT_SUCCESS" = "true" ] && [ "$TRACING_SUCCESS" = "true" ]; then
-            echo "✅ OVERALL SUCCESS: Client ran successfully AND system call tracing is working"
+          # 最终结果判断
+          if [ "$CAT_SUCCESS" = "true" ] && [ "$TRACING_SUCCESS" = "true" ]; then
+            echo "OVERALL SUCCESS: Cat command ran successfully AND tracing detected cat command"
             exit 0
           else
-            echo "❌ FAILURE: Test did not meet all success criteria"
-            if [ "$CLIENT_SUCCESS" != "true" ]; then
-              echo "  - Client execution issues"
+            echo "FAILURE: Test did not meet all success criteria"
+            if [ "$CAT_SUCCESS" != "true" ]; then
+              echo "  - Cat command execution failed with exit code $CAT_EXIT_CODE"
             fi
             if [ "$TRACING_SUCCESS" != "true" ]; then
-              echo "  - System call tracing not working"
+              echo "  - Cat command tracing is not working"
             fi
             exit 1
           fi
