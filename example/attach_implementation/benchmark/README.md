@@ -76,60 +76,52 @@ The log entries are timestamped, making it easy to track the sequence of events 
 The benchmark script will output results like:
 
 ```
-=== Results from iteration 10/10 ===
-no_module: 3515.29 req/s, 199.48ms latency
-baseline: 4590.82 req/s, 152.66ms latency
-wasm: 3546.83 req/s, 197.72ms latency
-lua: 3332.08 req/s, 210.17ms latency
-bpftime: 3735.74 req/s, 187.55ms latency
-
-
 === Benchmark Results Summary ===
 
 Nginx without module:
-  Requests/sec: 4248.51 ± 366.77
-  Latency (avg): 166.78ms
+  Requests/sec: 5521.09 ± 2229.70
+  Latency (avg): 137.16ms
   Successful iterations: 10
 
 Nginx with baseline C module:
-  Requests/sec: 4051.59 ± 678.14
-  Latency (avg): 177.37ms
+  Requests/sec: 4958.83 ± 317.04
+  Latency (avg): 141.83ms
   Successful iterations: 10
 
 Nginx with WebAssembly module:
-  Requests/sec: 3541.31 ± 216.03
-  Latency (avg): 198.41ms
+  Requests/sec: 4728.75 ± 1261.55
+  Latency (avg): 148.66ms
   Successful iterations: 10
 
 Nginx with LuaJIT module:
-  Requests/sec: 3453.83 ± 149.75
-  Latency (avg): 203.09ms
+  Requests/sec: 4403.50 ± 364.82
+  Latency (avg): 160.17ms
   Successful iterations: 10
 
 Nginx with bpftime module:
-  Requests/sec: 4056.18 ± 331.47
-  Latency (avg): 173.63ms
+  Requests/sec: 4777.81 ± 215.28
+  Latency (avg): 146.97ms
+  Successful iterations: 10
+
+Nginx with RLBox NoOp module:
+  Requests/sec: 4783.59 ± 252.86
+  Latency (avg): 146.88ms
+  Successful iterations: 10
+
+Nginx with ERIM-protected module:
+  Requests/sec: 4828.19 ± 318.56
+  Latency (avg): 145.80ms
   Successful iterations: 10
 
 Overhead Comparisons:
   Compared to no module:
-    Baseline C: 4.64%
-    WebAssembly: 16.65%
-    LuaJIT: 18.70%
-    BPFtime: 4.53%
-  Compared to baseline C module:
-    WebAssembly: 12.59%
-    LuaJIT: 14.75%
-    BPFtime: -0.11%
-  Compared to WebAssembly module:
-    BPFtime: -14.54%
-  Compared to LuaJIT module:
-    BPFtime: -17.44%
-JSON results saved to: /home/yunwei37/bpftime/example/attach_implementation/benchmark/benchmark_results_20250423_215631.json
-
-=== Benchmark completed at 2025-04-23 21:56:31 ===
-Full log available at: /home/yunwei37/bpftime/example/attach_implementation/benchmark/benchlog.txt
-Results summary available at: /home/yunwei37/bpftime/example/attach_implementation/benchmark/benchmark_results_20250423_215631.json
+    Baseline C: 10.18%
+    WebAssembly: 14.35%
+    LuaJIT: 20.24%
+    BPFtime: 13.46%
+    RLBox NoOp: 13.36%
+    ERIM: 12.55%
+JSON results saved to: /home/yunwei37/bpftime/example/attach_implementation/benchmark/benchmark_results_20250424_010202.json
 ```
 
 Key metrics to consider:
