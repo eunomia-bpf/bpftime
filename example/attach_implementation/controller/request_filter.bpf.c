@@ -20,7 +20,7 @@ static inline int str_startswith(const char *main, const char *pat)
 	}
 	return *pat == 0;
 }
-
+SEC("uprobe")
 int request_filter(struct request_filter_argument *arg)
 {
 	int result = 0;

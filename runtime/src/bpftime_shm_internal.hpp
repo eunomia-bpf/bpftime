@@ -189,6 +189,10 @@ class bpftime_shm {
 	{
 		return open_type;
 	}
+	boost::interprocess::managed_shared_memory &get_segment()
+	{
+		return segment;
+	}
 };
 
 // memory region for maps and prog info
