@@ -1,5 +1,7 @@
 
+#include "bpftime_config.hpp"
 #include "bpftime_shm.hpp"
+#include "bpftime_shm_internal.hpp"
 #include "request_filter.h"
 #include "spdlog/spdlog.h"
 #include <bpftime_prog.hpp>
@@ -41,7 +43,9 @@ int main(int argc, const char **argv)
 		return 1;
 	}
 	bpftime_initialize_global_shm(shm_open_type::SHM_REMOVE_AND_CREATE);
-
+	auto cfg = agent_config(shm_holder.global_shared_memory.get_segment());
+	cfg.set_vm_name("llvm");
+	shm_holder.global_shared_memory.set_agent_config(std::move(cfg));
 	signal(SIGINT, sig_handler);
 	signal(SIGTERM, sig_handler);
 
@@ -49,6 +53,10 @@ int main(int argc, const char **argv)
 	std::unique_ptr<bpftime_object, decltype(&bpftime_object_close)> obj(
 		bpftime_object_open(ebpf_prog_path), &bpftime_object_close);
 	auto prog = bpftime_object__next_program(obj.get(), nullptr);
+	if (prog == nullptr) {
+		SPDLOG_ERROR("Unable to find any eBPF program");
+		return 1;
+	}
 	int rb_map_fd = bpftime_maps_create(
 		-1, "nginx_ringbuf",
 		bpf_map_attr{ .type = (int)bpf_map_type::BPF_MAP_TYPE_RINGBUF,
