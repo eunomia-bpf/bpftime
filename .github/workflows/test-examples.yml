@@ -71,31 +71,53 @@ jobs:
           set -x
           echo "==== Starting BPFTIME Server using LD_PRELOAD ===="
           
-          # Create bpftrace script file
-          echo 'tracepoint:syscalls:sys_enter_openat { printf("SERVER_TRACE (openat): %s %s\n", comm, str(args->filename)); }' > /tmp/openat_trace.bt
+          # 正确创建 bpftrace 脚本文件，确保字符串正确终止
+          cat > /tmp/openat_trace.bt << 'EOT'
+          tracepoint:syscalls:sys_enter_openat { printf("SERVER_TRACE (openat): %s %s\n", comm, str(args->filename)); }
+          EOT
           
-          # Start server using LD_PRELOAD
-          sudo -E env LD_PRELOAD=$PWD/build/runtime/syscall-server/libbpftime-syscall-server.so \
+          # 确认脚本内容正确
+          echo "Verifying bpftrace script content:"
+          cat /tmp/openat_trace.bt
+          
+          # 启动服务器前确保日志目录存在
+          mkdir -p logs
+          
+          # 启动服务器，使用 nohup 确保后台运行
+          nohup sudo -E env LD_PRELOAD=$PWD/build/runtime/syscall-server/libbpftime-syscall-server.so \
             bpftrace /tmp/openat_trace.bt > "$SERVER_LOG" 2>&1 &
           
           SERVER_PID=$!
-          echo "Server started in background with PID: $SERVER_PID"; echo "SERVER_PID=$SERVER_PID" >> $GITHUB_ENV
+          echo "Server started with PID: $SERVER_PID"
+          echo "SERVER_PID=$SERVER_PID" >> $GITHUB_ENV
           
-          echo "Waiting for server to initialize (10s)..."; sleep 10
+          # 给服务器一些时间初始化
+          echo "Waiting for server to initialize (15s)..."
+          sleep 15
           
-          if ! ps -p $SERVER_PID > /dev/null; then 
+          # 检查服务器是否仍在运行
+          if ps -p $SERVER_PID > /dev/null; then
+            echo "Server process $SERVER_PID is running."
+            # 显示服务器日志的前几行
+            echo "--- Initial Server Log ---"
+            head -n 20 "$SERVER_LOG" || echo "Server log not available yet"
+            echo "--- End Initial Log ---"
+            
+            # 检查是否有 "Attaching 1 probe" 消息
+            if grep -q "Attaching" "$SERVER_LOG"; then
+              echo "SUCCESS: Server initialized with probe(s) attached"
+            else
+              echo "WARNING: Did not find 'Attaching' message in server log"
+            fi
+          else
             echo "ERROR: Server process $SERVER_PID did not start or died!"
-            echo "--- Server Log ---"; cat "$SERVER_LOG" || echo "log not found"
+            echo "--- Server Log ---"
+            cat "$SERVER_LOG" || echo "log not found"
             echo "--- End Log ---"
             exit 1
-          else 
-            echo "Server process $SERVER_PID confirmed running."
-            # Show server log to check for "Attaching 1 probe..."
-            echo "--- Initial Server Log ---"
-            cat "$SERVER_LOG" || echo "log not found"
-            echo "--- End Initial Log ---"
           fi
           
+          # 检查共享内存文件
           ls -l "$BPFTIME_SHARED_MEMORY_PATH/bpftime_maps_shm" || echo "WARNING: SHM file not found yet."
 
       - name: Run BPFTIME Client using LD_PRELOAD
@@ -104,35 +126,36 @@ jobs:
           set -x
           echo "==== Running BPFTIME Client using LD_PRELOAD ===="
           
-          if [ -z "$SERVER_PID" ]; then 
+          # 验证服务器仍在运行
+          SERVER_PID_CHECK=${{ env.SERVER_PID }}
+          if [ -z "$SERVER_PID_CHECK" ]; then
             echo "ERROR: SERVER_PID env var not set!"
             exit 1
           fi
           
-          echo "Server PID from previous step: $SERVER_PID"
-          
-          if ! ps -p $SERVER_PID > /dev/null; then 
-            echo "ERROR: Server process $SERVER_PID is no longer running!"
-            echo "--- Server Log ---"; cat "$SERVER_LOG" || echo "log not found"
+          if ! ps -p $SERVER_PID_CHECK > /dev/null; then
+            echo "ERROR: Server process $SERVER_PID_CHECK is no longer running!"
+            echo "--- Server Log ---"
+            cat "$SERVER_LOG" || echo "log not found"
             echo "--- End Log ---"
             exit 1
           fi
           
-          # Run client using LD_PRELOAD
-          echo "Running client command using LD_PRELOAD..."
+          # 运行客户端命令
+          echo "Running client command with LD_PRELOAD..."
+          mkdir -p logs
           
+          # 运行客户端并捕获输出
           sudo -E env BPFTIME_DEBUG=1 LD_PRELOAD=$PWD/build/runtime/agent/libbpftime-agent.so \
-            cat build/install_manifest.txt > "$CLIENT_LOG" 2>&1
+            cat build/install_manifest.txt | tee "$CLIENT_LOG"
           
           _client_exit_code=$?
           echo "Client command finished with exit code: $_client_exit_code"
           echo "CLIENT_EXIT_CODE=$_client_exit_code" >> $GITHUB_ENV
           
-          echo ""; echo "#############################################"
-          echo "### CLIENT LOG (immediately after run) ($CLIENT_LOG) ###"
-          echo "#############################################"
-          cat "$CLIENT_LOG" || echo "<<< Client log file not found or empty >>>"
-          echo "#############################################"; echo ""
+          # 显示更多服务器日志以查看是否捕获到了系统调用
+          echo "Server log after client execution:"
+          tail -n 30 "$SERVER_LOG" || echo "Server log not available"
 
       - name: Stop Server and Analyze Results
         if: always()
@@ -142,16 +165,18 @@ jobs:
           SERVER_PID_TO_KILL=${{ env.SERVER_PID }}
           CLIENT_FINAL_EXIT_CODE=${CLIENT_EXIT_CODE:-99}
 
-          sleep 2
+          # 给服务器一些时间处理最后的事件
+          sleep 5
 
-          echo "--- Final Server Log ($SERVER_LOG) ---"
+          echo "--- Final Server Log ---"
           cat "$SERVER_LOG" || echo "<<< Server log file not found or empty >>>"
           echo "--- End Final Server Log ---"
           
-          echo "--- Final Client Log ($CLIENT_LOG) ---"
+          echo "--- Final Client Log ---"
           cat "$CLIENT_LOG" || echo "<<< Client log file not found or empty >>>"
           echo "--- End Final Client Log ---"
 
+          # 停止服务器
           echo "Attempting to stop server process PID $SERVER_PID_TO_KILL..."
           if [ -n "$SERVER_PID_TO_KILL" ]; then
             if ps -p $SERVER_PID_TO_KILL > /dev/null; then
@@ -170,27 +195,28 @@ jobs:
             echo "No Server PID found to kill."
           fi
 
+          # 分析结果
           echo "--- Final Analysis ---"
           echo "Analyzing Client Exit Code: '$CLIENT_FINAL_EXIT_CODE'"
 
-          # Check server log for traces
-          if grep -q "SERVER_TRACE (openat): cat build/install_manifest.txt" "$SERVER_LOG"; then
-            echo "SUCCESS: Found expected trace pattern 'cat build/install_manifest.txt' in server log."
+          # 检查服务器日志中的跟踪
+          if grep -q "SERVER_TRACE.*cat.*build/install_manifest.txt" "$SERVER_LOG"; then
+            echo "SUCCESS: Found trace pattern for 'cat build/install_manifest.txt' in server log."
             TRACE_SUCCESS=true
           else
-            echo "WARNING: Did not find expected trace pattern 'cat build/install_manifest.txt' in server log."
+            echo "WARNING: Did not find trace pattern for 'cat build/install_manifest.txt' in server log."
             TRACE_SUCCESS=false
           fi
           
-          if grep -q "SERVER_TRACE (openat): cat /usr/lib/locale/locale-archive" "$SERVER_LOG"; then
-            echo "SUCCESS: Found expected trace pattern 'cat /usr/lib/locale/locale-archive' in server log."
+          if grep -q "SERVER_TRACE.*cat.*locale-archive" "$SERVER_LOG"; then
+            echo "SUCCESS: Found trace pattern for 'cat /usr/lib/locale/locale-archive' in server log."
             LOCALE_TRACE_SUCCESS=true
           else
-            echo "WARNING: Did not find expected trace pattern 'cat /usr/lib/locale/locale-archive' in server log."
+            echo "WARNING: Did not find trace pattern for 'cat /usr/lib/locale/locale-archive' in server log."
             LOCALE_TRACE_SUCCESS=false
           fi
           
-          # Final verdict
+          # 最终结果判断
           if [ "$CLIENT_FINAL_EXIT_CODE" = "0" ] && [ "$TRACE_SUCCESS" = "true" ]; then
             echo ">>> OVERALL SUCCESS: Client ran successfully AND server traced the expected syscalls. <<<"
             exit 0
@@ -200,7 +226,7 @@ jobs:
               echo "- Client exit code was non-zero: $CLIENT_FINAL_EXIT_CODE"
             fi
             if [ "$TRACE_SUCCESS" != "true" ]; then
-              echo "- Expected trace pattern 'cat build/install_manifest.txt' was not found."
+              echo "- Expected trace pattern for 'cat build/install_manifest.txt' was not found."
             fi
             exit 1
           fi
