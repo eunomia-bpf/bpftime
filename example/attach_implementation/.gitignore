@@ -12,3 +12,5 @@
 libfilter_impl.so
 .nfs*
 filter_impl.o
+*.o
+*.so

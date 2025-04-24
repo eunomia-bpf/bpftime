@@ -5,3 +5,5 @@ url_filter.wasm
 libwasm_filter.so
 wasm-micro-runtime
 libiwasm.a
+*.o
+*.so 
