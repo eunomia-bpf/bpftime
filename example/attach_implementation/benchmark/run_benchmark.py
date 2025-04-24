@@ -11,6 +11,8 @@ This script will:
 - Start each nginx configuration
 - Run wrk benchmarks against each
 - Collect and display results
+- Run multiple iterations if requested and average the results
+- Output results to a JSON file
 """
 
 import os
@@ -20,7 +22,9 @@ import signal
 import argparse
 import sys
 import datetime
+import json
 from pathlib import Path
+from statistics import mean, stdev
 
 # Import utility functions
 from utils import (
@@ -68,22 +72,8 @@ def start_baseline_controller(prefix):
     
     return start_controller(controller_path, prefix, "baseline")
 
-def main():
-    parser = argparse.ArgumentParser(description="Run nginx benchmarks with different configurations")
-    parser.add_argument("--duration", type=int, default=30, help="Duration of each benchmark in seconds")
-    parser.add_argument("--connections", type=int, default=4000, help="Number of connections to use")
-    parser.add_argument("--threads", type=int, default=12, help="Number of threads to use")
-    parser.add_argument("--url-path", type=str, default="/aaaa", help="URL path to test")
-    args = parser.parse_args()
-    
-    # Initialize or clear the log file
-    setup_log(BENCHMARK_LOG)
-    with open(BENCHMARK_LOG, 'w') as f:
-        f.write(f"=== Benchmark started at {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')} ===\n")
-        f.write(f"Duration: {args.duration}s, Connections: {args.connections}, Threads: {args.threads}, URL: {args.url_path}\n\n")
-    
-    check_prerequisites(["wrk", "nginx"], NGINX_BIN)
-    
+def run_benchmark_iteration(args):
+    """Run a single iteration of the benchmark suite"""
     results = {}
     
     # Test with no module
@@ -195,96 +185,230 @@ def main():
             stop_nginx(nginx_process, PARENT_DIR)
         stop_controller(bpftime_controller_process, "BPFtime")
     
-    # Print and log results
-    result_header = "\n=== Benchmark Results ==="
-    log_message(result_header)
-    
-    if 'no_module' in results and results['no_module']:
-        no_module_result = f"\nNginx without module:"
-        no_module_result += f"\n  Requests/sec: {results['no_module']['rps']:.2f}"
-        no_module_result += f"\n  Latency (avg): {results['no_module']['latency_avg']}"
-        log_message(no_module_result)
-    
-    if 'baseline' in results and results['baseline']:
-        baseline_result = f"\nNginx with baseline C module:"
-        baseline_result += f"\n  Requests/sec: {results['baseline']['rps']:.2f}"
-        baseline_result += f"\n  Latency (avg): {results['baseline']['latency_avg']}"
-        log_message(baseline_result)
-        
-        # Calculate overhead compared to no module
-        if 'no_module' in results and results['no_module']:
-            overhead = (1 - results['baseline']['rps'] / results['no_module']['rps']) * 100
-            log_message(f"  Overhead vs no module: {overhead:.2f}%")
-    
-    if 'wasm' in results and results['wasm']:
-        wasm_result = f"\nNginx with WebAssembly module:"
-        wasm_result += f"\n  Requests/sec: {results['wasm']['rps']:.2f}"
-        wasm_result += f"\n  Latency (avg): {results['wasm']['latency_avg']}"
-        log_message(wasm_result)
-        
-        # Calculate overhead compared to no module
-        if 'no_module' in results and results['no_module']:
-            overhead = (1 - results['wasm']['rps'] / results['no_module']['rps']) * 100
-            log_message(f"  Overhead vs no module: {overhead:.2f}%")
-        
-        # Calculate overhead compared to baseline
-        if 'baseline' in results and results['baseline']:
-            overhead = (1 - results['wasm']['rps'] / results['baseline']['rps']) * 100
-            log_message(f"  Overhead vs baseline C module: {overhead:.2f}%")
+    return results
 
-    if 'lua' in results and results['lua']:
-        lua_result = f"\nNginx with LuaJIT module:"
-        lua_result += f"\n  Requests/sec: {results['lua']['rps']:.2f}"
-        lua_result += f"\n  Latency (avg): {results['lua']['latency_avg']}"
-        log_message(lua_result)
-        
-        # Calculate overhead compared to no module
-        if 'no_module' in results and results['no_module']:
-            overhead = (1 - results['lua']['rps'] / results['no_module']['rps']) * 100
-            log_message(f"  Overhead vs no module: {overhead:.2f}%")
-        
-        # Calculate overhead compared to baseline
-        if 'baseline' in results and results['baseline']:
-            overhead = (1 - results['lua']['rps'] / results['baseline']['rps']) * 100
-            log_message(f"  Overhead vs baseline C module: {overhead:.2f}%")
-        
-        # Calculate overhead compared to WebAssembly module
-        if 'wasm' in results and results['wasm']:
-            overhead = (1 - results['lua']['rps'] / results['wasm']['rps']) * 100
-            log_message(f"  Overhead vs WebAssembly module: {overhead:.2f}%")
+def calculate_averages(all_results):
+    """Calculate average metrics from multiple benchmark iterations"""
+    avg_results = {}
+    std_dev = {}
     
-    if 'bpftime' in results and results['bpftime']:
-        bpftime_result = f"\nNginx with bpftime module:"
-        bpftime_result += f"\n  Requests/sec: {results['bpftime']['rps']:.2f}"
-        bpftime_result += f"\n  Latency (avg): {results['bpftime']['latency_avg']}"
-        log_message(bpftime_result)
-        
-        # Calculate overhead compared to no module
-        if 'no_module' in results and results['no_module']:
-            overhead = (1 - results['bpftime']['rps'] / results['no_module']['rps']) * 100
-            log_message(f"  Overhead vs no module: {overhead:.2f}%")
-        
-        # Calculate overhead compared to baseline
-        if 'baseline' in results and results['baseline']:
-            overhead = (1 - results['bpftime']['rps'] / results['baseline']['rps']) * 100
-            log_message(f"  Overhead vs baseline C module: {overhead:.2f}%")
-        
-        # Calculate overhead compared to WebAssembly module
-        if 'wasm' in results and results['wasm']:
-            overhead = (1 - results['bpftime']['rps'] / results['wasm']['rps']) * 100
-            log_message(f"  Overhead vs WebAssembly module: {overhead:.2f}%")
-        
-        # Calculate overhead compared to LuaJIT module
-        if 'lua' in results and results['lua']:
-            overhead = (1 - results['bpftime']['rps'] / results['lua']['rps']) * 100
-            log_message(f"  Overhead vs LuaJIT module: {overhead:.2f}%")
+    # Initialize results structure
+    for module in ['no_module', 'baseline', 'wasm', 'lua', 'bpftime']:
+        if any(module in results for results in all_results):
+            avg_results[module] = {'rps': 0, 'latency_avg': '0ms', 'iterations': 0}
+            std_dev[module] = {'rps': 0}
     
-    log_message(f"\n=== Benchmark completed at {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')} ===")
-    log_message(f"Full log available at: {BENCHMARK_LOG}")
+    # Collect all RPS values by module
+    rps_by_module = {module: [] for module in avg_results}
+    latency_by_module = {module: [] for module in avg_results}
+    
+    # Gather metrics from all iterations
+    for result in all_results:
+        for module, metrics in result.items():
+            if module in avg_results:
+                if 'rps' in metrics:
+                    rps_by_module[module].append(metrics['rps'])
+                if 'latency_avg' in metrics:
+                    # Convert latency to float for averaging (remove 'ms' suffix)
+                    try:
+                        lat_value = float(metrics['latency_avg'].rstrip('ms'))
+                        latency_by_module[module].append(lat_value)
+                    except ValueError:
+                        # If cannot convert to float, skip this latency value
+                        pass
+    
+    # Calculate averages and standard deviations
+    for module in avg_results:
+        if rps_by_module[module]:
+            avg_results[module]['rps'] = mean(rps_by_module[module])
+            avg_results[module]['iterations'] = len(rps_by_module[module])
+            if len(rps_by_module[module]) > 1:
+                std_dev[module]['rps'] = stdev(rps_by_module[module])
+            else:
+                std_dev[module]['rps'] = 0
+                
+        if latency_by_module[module]:
+            avg_latency = mean(latency_by_module[module])
+            avg_results[module]['latency_avg'] = f"{avg_latency:.2f}ms"
+            if len(latency_by_module[module]) > 1:
+                std_dev[module]['latency_avg'] = f"{stdev(latency_by_module[module]):.2f}ms"
+            else:
+                std_dev[module]['latency_avg'] = "0ms"
+    
+    return avg_results, std_dev, rps_by_module
 
-if __name__ == "__main__":
+def calculate_overheads(avg_results):
+    """Calculate the performance overhead between different modules"""
+    overheads = {}
+    
+    # No module as baseline
+    if 'no_module' in avg_results and avg_results['no_module']['rps'] > 0:
+        no_module_rps = avg_results['no_module']['rps']
+        
+        for module in ['baseline', 'wasm', 'lua', 'bpftime']:
+            if module in avg_results and avg_results[module]['rps'] > 0:
+                overhead = (1 - avg_results[module]['rps'] / no_module_rps) * 100
+                overheads[f"{module}_vs_no_module"] = f"{overhead:.2f}%"
+    
+    # C baseline module comparisons
+    if 'baseline' in avg_results and avg_results['baseline']['rps'] > 0:
+        baseline_rps = avg_results['baseline']['rps']
+        
+        for module in ['wasm', 'lua', 'bpftime']:
+            if module in avg_results and avg_results[module]['rps'] > 0:
+                overhead = (1 - avg_results[module]['rps'] / baseline_rps) * 100
+                overheads[f"{module}_vs_baseline"] = f"{overhead:.2f}%"
+    
+    # WebAssembly module comparisons
+    if 'wasm' in avg_results and avg_results['wasm']['rps'] > 0:
+        wasm_rps = avg_results['wasm']['rps']
+        
+        if 'bpftime' in avg_results and avg_results['bpftime']['rps'] > 0:
+            overhead = (1 - avg_results['bpftime']['rps'] / wasm_rps) * 100
+            overheads["bpftime_vs_wasm"] = f"{overhead:.2f}%"
+    
+    # LuaJIT module comparisons
+    if 'lua' in avg_results and avg_results['lua']['rps'] > 0:
+        lua_rps = avg_results['lua']['rps']
+        
+        if 'bpftime' in avg_results and avg_results['bpftime']['rps'] > 0:
+            overhead = (1 - avg_results['bpftime']['rps'] / lua_rps) * 100
+            overheads["bpftime_vs_lua"] = f"{overhead:.2f}%"
+    
+    return overheads
+
+def log_json_results(avg_results, std_dev, overheads, all_iterations, args):
+    """Create and save JSON results file"""
+    timestamp = datetime.datetime.now().strftime('%Y%m%d_%H%M%S')
+    json_file = str(SCRIPT_DIR / f"benchmark_results_{timestamp}.json")
+    
+    # Prepare JSON structure
+    json_data = {
+        "benchmark_info": {
+            "timestamp": datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+            "duration": args.duration,
+            "connections": args.connections,
+            "threads": args.threads,
+            "url_path": args.url_path,
+            "iterations": args.iterations
+        },
+        "average_results": avg_results,
+        "standard_deviation": std_dev,
+        "overheads": overheads,
+    }
+    
+    # Add raw iteration data
+    if args.save_all_iterations:
+        json_data["all_iterations"] = all_iterations
+    
+    # Write to file
+    with open(json_file, 'w') as f:
+        json.dump(json_data, f, indent=2)
+    
+    log_message(f"JSON results saved to: {json_file}")
+    return json_file
+
+def print_results_summary(avg_results, std_dev, overheads):
+    """Print a summary of the benchmark results to the console and log"""
+    summary = "\n\n=== Benchmark Results Summary ==="
+    
+    # Print module results
+    for module in ['no_module', 'baseline', 'wasm', 'lua', 'bpftime']:
+        if module in avg_results:
+            module_name = {
+                'no_module': 'Nginx without module',
+                'baseline': 'Nginx with baseline C module',
+                'wasm': 'Nginx with WebAssembly module',
+                'lua': 'Nginx with LuaJIT module',
+                'bpftime': 'Nginx with bpftime module'
+            }.get(module, module)
+            
+            summary += f"\n\n{module_name}:"
+            summary += f"\n  Requests/sec: {avg_results[module]['rps']:.2f} ± {std_dev[module]['rps']:.2f}"
+            summary += f"\n  Latency (avg): {avg_results[module]['latency_avg']}"
+            summary += f"\n  Successful iterations: {avg_results[module]['iterations']}"
+    
+    # Print overhead comparisons
+    if overheads:
+        summary += "\n\nOverhead Comparisons:"
+        
+        # Group overheads by base module
+        for base in ['no_module', 'baseline', 'wasm', 'lua']:
+            base_name = {
+                'no_module': 'no module',
+                'baseline': 'baseline C module',
+                'wasm': 'WebAssembly module', 
+                'lua': 'LuaJIT module'
+            }.get(base, base)
+            
+            relevant_overheads = {k: v for k, v in overheads.items() if f"_vs_{base}" in k}
+            
+            if relevant_overheads:
+                summary += f"\n  Compared to {base_name}:"
+                for k, v in relevant_overheads.items():
+                    module = k.split('_vs_')[0]
+                    module_name = {
+                        'baseline': 'Baseline C',
+                        'wasm': 'WebAssembly',
+                        'lua': 'LuaJIT',
+                        'bpftime': 'BPFtime'
+                    }.get(module, module)
+                    summary += f"\n    {module_name}: {v}"
+    
+    log_message(summary)
+    return summary
+
+def main():
+    parser = argparse.ArgumentParser(description="Run nginx benchmarks with different configurations")
+    parser.add_argument("--duration", type=int, default=60, help="Duration of each benchmark in seconds")
+    parser.add_argument("--connections", type=int, default=10, help="Number of connections to use")
+    parser.add_argument("--threads", type=int, default=6, help="Number of threads to use")
+    parser.add_argument("--url-path", type=str, default="/aaaa", help="URL path to test")
+    parser.add_argument("--iterations", type=int, default=10, help="Number of benchmark iterations to run")
+    parser.add_argument("--save-all-iterations", action="store_true", help="Save all iteration data in the JSON output")
+    parser.add_argument("--json-output", type=str, help="Custom path for JSON output file")
+    args = parser.parse_args()
+    
+    # Initialize or clear the log file
+    setup_log(BENCHMARK_LOG)
+    with open(BENCHMARK_LOG, 'w') as f:
+        f.write(f"=== Benchmark started at {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')} ===\n")
+        f.write(f"Duration: {args.duration}s, Connections: {args.connections}, Threads: {args.threads}, URL: {args.url_path}\n")
+        f.write(f"Iterations: {args.iterations}\n\n")
+    
+    check_prerequisites(["wrk", "nginx"], NGINX_BIN)
+    
+    all_results = []  # Store results from each iteration
+    
     try:
-        main()
+        # Run the benchmark iterations
+        for i in range(args.iterations):
+            log_message(f"\n\n=== Running benchmark iteration {i+1}/{args.iterations} ===\n")
+            iteration_results = run_benchmark_iteration(args)
+            all_results.append(iteration_results)
+            
+            # Print intermediate results after each iteration
+            log_message(f"\n=== Results from iteration {i+1}/{args.iterations} ===")
+            for module, metrics in iteration_results.items():
+                if metrics and 'rps' in metrics:
+                    log_message(f"{module}: {metrics['rps']:.2f} req/s, {metrics['latency_avg']} latency")
+        
+        # Calculate averages and standard deviations
+        avg_results, std_dev, raw_data = calculate_averages(all_results)
+        
+        # Calculate performance overheads
+        overheads = calculate_overheads(avg_results)
+        
+        # Print results summary
+        print_results_summary(avg_results, std_dev, overheads)
+        
+        # Save results to JSON
+        json_file = log_json_results(avg_results, std_dev, overheads, raw_data, args)
+        
+        log_message(f"\n=== Benchmark completed at {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')} ===")
+        log_message(f"Full log available at: {BENCHMARK_LOG}")
+        log_message(f"Results summary available at: {json_file}")
+        
     except KeyboardInterrupt:
         log_message("\nBenchmark interrupted by user")
         sys.exit(0)
@@ -292,4 +416,7 @@ if __name__ == "__main__":
         log_message(f"\nUnexpected error: {str(e)}")
         import traceback
         log_message(traceback.format_exc(), also_print=False)
-        sys.exit(1) 
+        sys.exit(1)
+
+if __name__ == "__main__":
+    main() 

@@ -14,3 +14,4 @@ libfilter_impl.so
 filter_impl.o
 *.o
 *.so
+benchmark_results_*.json
