@@ -2,9 +2,9 @@ name: BPFtime Syscall Tracing (Complete LD_PRELOAD Method)
 
 on:
   push:
-    branches: ["*"]
+    branches: [ "*" ]
   pull_request:
-    branches: ["*"]
+    branches: [ "*" ]
   workflow_dispatch:
 
 env:
@@ -26,7 +26,7 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
         with:
-          submodules: "recursive"
+          submodules: 'recursive'
 
       - name: System setup and kernel headers
         run: |
@@ -42,10 +42,11 @@ jobs:
           echo "TEST_DATA_LINE_1_ABC" > build/install_manifest.txt
           echo "TEST_DATA_LINE_2_XYZ" >> build/install_manifest.txt
           echo "Created build/install_manifest.txt:"; cat build/install_manifest.txt
-
+          
           # 确保共享内存目录存在且权限正确
           sudo mkdir -p $BPFTIME_SHARED_MEMORY_PATH
           sudo chmod 1777 $BPFTIME_SHARED_MEMORY_PATH
+
       - name: Build bpftime
         run: |
           echo "Building bpftime with CMake"
@@ -55,23 +56,24 @@ jobs:
             -DBUILD_AGENT=1 \
             -DCMAKE_CXX_FLAGS="-DDEFAULT_LOGGER_OUTPUT_PATH='\"console\"'"
           cmake --build build --config RelWithDebInfo -j$(nproc)
-
+          
           echo "Checking built libraries:"
           ls -la build/runtime/agent/
           ls -la build/runtime/syscall-server/
           ls -la build/attach/text_segment_transformer/ || echo "Text segment transformer directory not found"
+
       - name: Find all necessary libraries
         run: |
           echo "=== Finding all necessary libraries ==="
-
+          
           # 查找所有可能需要的库文件
           find build -name "*.so" | sort
-
+          
           # 特别检查关键库文件
           AGENT_LIB="build/runtime/agent/libbpftime-agent.so"
           SERVER_LIB="build/runtime/syscall-server/libbpftime-syscall-server.so"
           TRANSFORMER_LIB="build/attach/text_segment_transformer/libbpftime-agent-transformer.so"
-
+          
           if [ ! -f "$AGENT_LIB" ]; then
             echo "ERROR: Agent library not found at $AGENT_LIB"
             # 尝试查找替代位置
@@ -83,7 +85,7 @@ jobs:
               exit 1
             fi
           fi
-
+          
           if [ ! -f "$SERVER_LIB" ]; then
             echo "ERROR: Server library not found at $SERVER_LIB"
             # 尝试查找替代位置
@@ -95,7 +97,7 @@ jobs:
               exit 1
             fi
           fi
-
+          
           # 检查 transformer 库，可能不是必需的
           if [ ! -f "$TRANSFORMER_LIB" ]; then
             echo "WARNING: Transformer library not found at $TRANSFORMER_LIB"
@@ -108,40 +110,41 @@ jobs:
               TRANSFORMER_LIB=""
             fi
           fi
-
+          
           # 保存库路径到环境变量
           echo "AGENT_LIB=$AGENT_LIB" >> $GITHUB_ENV
           echo "SERVER_LIB=$SERVER_LIB" >> $GITHUB_ENV
           echo "TRANSFORMER_LIB=$TRANSFORMER_LIB" >> $GITHUB_ENV
+
       - name: Run server and client in the same step
         run: |
           echo "=== Running server and client in the same step ==="
-
+          
           # 获取库路径
           AGENT_LIB="${{ env.AGENT_LIB }}"
           SERVER_LIB="${{ env.SERVER_LIB }}"
           TRANSFORMER_LIB="${{ env.TRANSFORMER_LIB }}"
-
+          
           echo "Using libraries:"
           echo "AGENT_LIB: $AGENT_LIB"
           echo "SERVER_LIB: $SERVER_LIB"
           echo "TRANSFORMER_LIB: $TRANSFORMER_LIB"
-
+          
           # 清理之前的日志
           mkdir -p logs
           rm -f "$SERVER_LOG" "$CLIENT_LOG" 2>/dev/null || true
-
+          
           # 设置环境变量
           export BPFTIME_USED=1
           export SPDLOG_LEVEL=debug
-
+          
           # 启动服务器
           echo "Starting server in background..."
           sudo -E LD_PRELOAD=$SERVER_LIB bpftrace -e 'tracepoint:syscalls:sys_enter_openat { printf("SERVER_TRACE (openat): %s %s\n", comm, str(args->filename)); }' > "$SERVER_LOG" 2>&1 &
-
+          
           SERVER_PID=$!
           echo "Server started with PID: $SERVER_PID"
-
+          
           # 等待服务器初始化
           echo "Waiting for server to initialize..."
           INIT_TIMEOUT=30
@@ -157,20 +160,20 @@ jobs:
             fi
             sleep 1
           done
-
+          
           # 确认服务器进程仍在运行
           if ! ps -p $SERVER_PID > /dev/null; then
             echo "ERROR: Server process died during initialization"
             cat "$SERVER_LOG"
             exit 1
           fi
-
+          
           echo "Server log after initialization:"
           cat "$SERVER_LOG"
-
+          
           # 运行客户端命令，使用完整的 LD_PRELOAD 配置
           echo "Running cat command with complete LD_PRELOAD configuration..."
-
+          
           # 准备 LD_PRELOAD 参数，根据 transformer 库是否存在进行调整
           if [ -n "$TRANSFORMER_LIB" ]; then
             # 同时使用 agent 和 transformer 库
@@ -181,22 +184,22 @@ jobs:
             echo "Using only agent library"
             LD_PRELOAD_CMD="env LD_PRELOAD=$AGENT_LIB"
           fi
-
+          
           # 执行命令
           sudo -E $LD_PRELOAD_CMD cat build/install_manifest.txt | tee "$CLIENT_LOG"
           CAT_EXIT_CODE=$?
-
+          
           # 等待服务器处理事件
           echo "Waiting for server to process events..."
           sleep 10
-
+          
           # 强制刷新
           sync
-
+          
           # 显示服务器日志
           echo "Server log after client execution:"
           cat "$SERVER_LOG"
-
+          
           # 检查是否有cat命令的SERVER_TRACE输出
           if grep -q "SERVER_TRACE.*cat.*build/install_manifest.txt" "$SERVER_LOG"; then
             echo "SUCCESS: Found SERVER_TRACE for cat command in server log"
@@ -205,15 +208,15 @@ jobs:
             echo "FAILURE: Did not find SERVER_TRACE for cat command in server log"
             CAT_TRACE_FOUND="false"
           fi
-
+          
           # 停止服务器
           echo "Stopping server process PID $SERVER_PID"
           sudo kill -9 $SERVER_PID 2>/dev/null || echo "Kill failed"
           sleep 2
-
+          
           # 分析结果
           echo "=== Final Analysis ==="
-
+          
           # 检查cat命令是否成功执行
           if [ "$CAT_EXIT_CODE" = "0" ]; then
             echo "SUCCESS: Cat command executed successfully with exit code 0"
@@ -222,7 +225,7 @@ jobs:
             echo "FAILURE: Cat command failed with exit code $CAT_EXIT_CODE"
             CAT_SUCCESS="false"
           fi
-
+          
           # 检查是否捕获到cat命令
           if [ "$CAT_TRACE_FOUND" = "true" ]; then
             echo "SUCCESS: Cat command tracing is working"
@@ -231,7 +234,7 @@ jobs:
             echo "FAILURE: Cat command tracing is NOT working"
             TRACING_SUCCESS="false"
           fi
-
+          
           # 最终结果判断
           if [ "$CAT_SUCCESS" = "true" ] && [ "$TRACING_SUCCESS" = "true" ]; then
             echo "OVERALL SUCCESS: Cat command ran successfully AND tracing detected cat command"
@@ -246,6 +249,7 @@ jobs:
             fi
             exit 1
           fi
+
   uprobe-readline-test:
     name: BPFtime Uprobe Readline Test
     runs-on: ubuntu-22.04
@@ -257,25 +261,26 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
         with:
-          submodules: "recursive"
+          submodules: 'recursive'
 
       - name: System setup and kernel headers
         run: |
-          export DEBIAN_FRONTEND=noninteractive
-          export TZ=Etc/UTC
-          apt-get update
-          apt-get install -y --no-install-recommends \
-            lcov tree strace gdb sudo libc6-dev bpftrace \
-            linux-headers-generic linux-tools-generic \
-            linux-headers-$(uname -r) \
-            libelf-dev procps expect
-          echo "==== System Information ===="; uname -a && cat /etc/os-release
-          echo "==== bpftrace version ===="; which bpftrace && bpftrace --version || echo "bpftrace not found"
-          mkdir -p logs build
+            export DEBIAN_FRONTEND=noninteractive
+            export TZ=Etc/UTC
+            apt-get update
+            apt-get install -y --no-install-recommends \
+              lcov tree strace gdb sudo libc6-dev bpftrace \
+              linux-headers-generic linux-tools-generic \
+              linux-headers-$(uname -r) \
+              libelf-dev procps expect
+            echo "==== System Information ===="; uname -a && cat /etc/os-release
+            echo "==== bpftrace version ===="; which bpftrace && bpftrace --version || echo "bpftrace not found"
+            mkdir -p logs build
+            
+            # 确保共享内存目录存在且权限正确
+            sudo mkdir -p $BPFTIME_SHARED_MEMORY_PATH
+            sudo chmod 1777 $BPFTIME_SHARED_MEMORY_PATH
 
-          # 确保共享内存目录存在且权限正确
-          sudo mkdir -p $BPFTIME_SHARED_MEMORY_PATH
-          sudo chmod 1777 $BPFTIME_SHARED_MEMORY_PATH
       - name: Build bpftime
         run: |
           echo "Building bpftime with CMake"
@@ -285,23 +290,24 @@ jobs:
             -DBUILD_AGENT=1 \
             -DCMAKE_CXX_FLAGS="-DDEFAULT_LOGGER_OUTPUT_PATH='\"console\"'"
           cmake --build build --config RelWithDebInfo -j$(nproc)
-
+          
           echo "Checking built libraries:"
           ls -la build/runtime/agent/
           ls -la build/runtime/syscall-server/
           ls -la build/attach/text_segment_transformer/ || echo "Text segment transformer directory not found"
+
       - name: Find all necessary libraries
         run: |
           echo "=== Finding all necessary libraries ==="
-
+          
           # 查找所有可能需要的库文件
           find build -name "*.so" | sort
-
+          
           # 特别检查关键库文件
           AGENT_LIB="build/runtime/agent/libbpftime-agent.so"
           SERVER_LIB="build/runtime/syscall-server/libbpftime-syscall-server.so"
           TRANSFORMER_LIB="build/attach/text_segment_transformer/libbpftime-agent-transformer.so"
-
+          
           if [ ! -f "$AGENT_LIB" ]; then
             echo "ERROR: Agent library not found at $AGENT_LIB"
             # 尝试查找替代位置
@@ -313,7 +319,7 @@ jobs:
               exit 1
             fi
           fi
-
+          
           if [ ! -f "$SERVER_LIB" ]; then
             echo "ERROR: Server library not found at $SERVER_LIB"
             # 尝试查找替代位置
@@ -325,7 +331,7 @@ jobs:
               exit 1
             fi
           fi
-
+          
           # 检查 transformer 库，可能不是必需的
           if [ ! -f "$TRANSFORMER_LIB" ]; then
             echo "WARNING: Transformer library not found at $TRANSFORMER_LIB"
@@ -338,21 +344,25 @@ jobs:
               TRANSFORMER_LIB=""
             fi
           fi
-
+          
           # 保存库路径到环境变量
           echo "AGENT_LIB=$AGENT_LIB" >> $GITHUB_ENV
           echo "SERVER_LIB=$SERVER_LIB" >> $GITHUB_ENV
           echo "TRANSFORMER_LIB=$TRANSFORMER_LIB" >> $GITHUB_ENV
-    
+
       - name: Run server and client for uprobe test
         run: |
           echo "=== Running uprobe readline test ==="
           
           # 获取库路径
+          AGENT_LIB="${{ env.AGENT_LIB }}"
           SERVER_LIB="${{ env.SERVER_LIB }}"
+          TRANSFORMER_LIB="${{ env.TRANSFORMER_LIB }}"
           
           echo "Using libraries:"
+          echo "AGENT_LIB: $AGENT_LIB"
           echo "SERVER_LIB: $SERVER_LIB"
+          echo "TRANSFORMER_LIB: $TRANSFORMER_LIB"
           
           # 清理之前的日志
           mkdir -p logs
@@ -360,29 +370,24 @@ jobs:
           CLIENT_LOG="logs/uprobe_client.log"
           rm -f "$SERVER_LOG" "$CLIENT_LOG" 2>/dev/null || true
           
-          # 查找bash的readline函数的精确位置
-          readelf -s /bin/bash | grep readline | tee -a "$CLIENT_LOG"
+          # 设置环境变量
+          export BPFTIME_USED=1
+          export SPDLOG_LEVEL=debug
           
-          # 启动服务器 - 使用之前成功的方式
+          # 启动服务器 - 监控 bash 的 readline 函数
           echo "Starting server with uprobe on bash:readline..."
-          # 注意这里不再使用sudo -E，而是使用LD_PRELOAD=... sudo的形式
-          LD_PRELOAD=$SERVER_LIB sudo bpftrace -e 'uretprobe:/bin/bash:readline { printf("%-6d %s\n", pid, str(retval)); }' > "$SERVER_LOG" 2>&1 &
+          sudo -E LD_PRELOAD=$SERVER_LIB bpftrace -e 'uretprobe:/bin/bash:readline { printf("%-6d %s\n", pid, str(retval)); }' > "$SERVER_LOG" 2>&1 &
           
           SERVER_PID=$!
           echo "Server started with PID: $SERVER_PID"
           
           # 等待服务器初始化
           echo "Waiting for server to initialize..."
-          INIT_TIMEOUT=60  # 增加超时时间到60秒
+          INIT_TIMEOUT=30
           for i in $(seq 1 $INIT_TIMEOUT); do
             if grep -q "Attaching" "$SERVER_LOG"; then
               echo "Server initialized after $i seconds"
               break
-            fi
-            # 每10秒显示当前日志内容
-            if [ $((i % 10)) -eq 0 ]; then
-              echo "Still waiting after $i seconds. Current server log:"
-              cat "$SERVER_LOG"
             fi
             if [ $i -eq $INIT_TIMEOUT ]; then
               echo "ERROR: Server did not initialize after $INIT_TIMEOUT seconds"
@@ -402,24 +407,37 @@ jobs:
           echo "Server log after initialization:"
           cat "$SERVER_LOG"
           
-          # 使用expect自动化bash交互，准确复制之前成功的测试方式
-          echo "Running bash with --norc --noprofile..."
+          # 运行客户端命令，使用完整的 LD_PRELOAD 配置
+          echo "Running bash with complete LD_PRELOAD configuration..."
+          
+          # 准备 LD_PRELOAD 参数，根据 transformer 库是否存在进行调整
+          if [ -n "$TRANSFORMER_LIB" ]; then
+            # 同时使用 agent 和 transformer 库
+            echo "Using both agent and transformer libraries"
+            LD_PRELOAD_CMD="env AGENT_SO=$AGENT_LIB LD_PRELOAD=$TRANSFORMER_LIB"
+          else
+            # 只使用 agent 库
+            echo "Using only agent library"
+            LD_PRELOAD_CMD="env LD_PRELOAD=$AGENT_LIB"
+          fi
+          
+          # 使用expect自动化bash交互
           cat > logs/expect_script.exp << 'EOF'
           #!/usr/bin/expect -f
           set timeout 10
-          spawn sudo bash --norc --noprofile
-          expect "#"
-          send "1\r"
+          spawn sudo -E bash
           expect "#"
           send "pwd\r"
+          expect "#"
+          send "echo DONE_TESTING\r"
           expect "#"
           send "exit\r"
           expect eof
           EOF
           chmod +x logs/expect_script.exp
           
-          # 执行expect脚本
-          ./logs/expect_script.exp > "$CLIENT_LOG" 2>&1
+          # 执行expect脚本，捕获bash的输出
+          $LD_PRELOAD_CMD logs/expect_script.exp > "$CLIENT_LOG" 2>&1
           BASH_EXIT_CODE=$?
           
           # 等待服务器处理事件
@@ -436,13 +454,13 @@ jobs:
           echo "Server log after client execution:"
           cat "$SERVER_LOG"
           
-          # 检查是否有bash的uprobe输出
-          if grep -q -E "[0-9]+[[:space:]]+" "$SERVER_LOG"; then
-            echo "SUCCESS: Found uprobe trace in server log"
-            TRACE_FOUND="true"
+          # 检查是否有bash的uprobe输出（包含pid和pwd）
+          if grep -q "[0-9]\+[[:space:]]\+pwd" "$SERVER_LOG"; then
+            echo "SUCCESS: Found uprobe trace for pwd command in server log"
+            PWD_TRACE_FOUND="true"
           else
-            echo "FAILURE: Did not find any uprobe trace in server log"
-            TRACE_FOUND="false"
+            echo "FAILURE: Did not find uprobe trace for pwd command in server log"
+            PWD_TRACE_FOUND="false"
           fi
           
           # 停止服务器
@@ -463,7 +481,7 @@ jobs:
           fi
           
           # 检查是否捕获到bash的uprobe
-          if [ "$TRACE_FOUND" = "true" ]; then
+          if [ "$PWD_TRACE_FOUND" = "true" ]; then
             echo "SUCCESS: Uprobe tracing is working for bash:readline"
             TRACING_SUCCESS="true"
           else
@@ -473,7 +491,7 @@ jobs:
           
           # 最终结果判断
           if [ "$BASH_SUCCESS" = "true" ] && [ "$TRACING_SUCCESS" = "true" ]; then
-            echo "OVERALL SUCCESS: Bash command ran successfully AND uprobe tracing detected events"
+            echo "OVERALL SUCCESS: Bash command ran successfully AND uprobe tracing detected pwd command"
             exit 0
           else
             echo "FAILURE: Test did not meet all success criteria"
@@ -482,6 +500,191 @@ jobs:
             fi
             if [ "$TRACING_SUCCESS" != "true" ]; then
               echo "  - Uprobe tracing for bash:readline is not working"
+            fi
+            exit 1
+          fi
+
+  bpftime-example-test:
+    name: BPFtime Example Test
+    runs-on: ubuntu-22.04
+    container:
+      image: "manjusakalza/bpftime-base-image:ubuntu-2204"
+      options: "--privileged -v /sys/kernel/debug:/sys/kernel/debug:rw -v /sys/kernel/tracing:/sys/kernel/tracing:rw -v /dev/shm:/dev/shm:rw -v /tmp:/tmp:rw -v /run/shm:/run/shm:rw"
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          submodules: 'recursive'
+
+      - name: System setup and kernel headers
+        run: |
+            export DEBIAN_FRONTEND=noninteractive
+            export TZ=Etc/UTC
+            apt-get update
+            apt-get install -y --no-install-recommends \
+              lcov tree strace gdb sudo libc6-dev bpftrace \
+              linux-headers-generic linux-tools-generic \
+              linux-headers-$(uname -r) \
+              libelf-dev procps expect
+            echo "==== System Information ===="; uname -a && cat /etc/os-release
+            echo "==== bpftrace version ===="; which bpftrace && bpftrace --version || echo "bpftrace not found"
+            mkdir -p logs build ~/.bpftime
+            
+            # 确保共享内存目录存在且权限正确
+            sudo mkdir -p $BPFTIME_SHARED_MEMORY_PATH
+            sudo chmod 1777 $BPFTIME_SHARED_MEMORY_PATH
+
+      - name: Build bpftime
+        run: |
+          echo "Building bpftime with CMake"
+          cmake -Bbuild -DCMAKE_BUILD_TYPE:STRING=RelWithDebInfo \
+            -DBPFTIME_LLVM_JIT=1 \
+            -DBUILD_BPFTIME_DAEMON=1 \
+            -DBUILD_AGENT=1 \
+            -DCMAKE_CXX_FLAGS="-DDEFAULT_LOGGER_OUTPUT_PATH='\"console\"'"
+          cmake --build build --config RelWithDebInfo -j$(nproc)
+          
+          echo "Checking built libraries:"
+          ls -la build/runtime/agent/
+          ls -la build/runtime/syscall-server/
+          ls -la build/attach/text_segment_transformer/ || echo "Text segment transformer directory not found"
+          
+          # 复制库文件到~/.bpftime目录
+          mkdir -p ~/.bpftime
+          cp $(find build -name "libbpftime-agent.so" | head -1) ~/.bpftime/
+          cp $(find build -name "libbpftime-syscall-server.so" | head -1) ~/.bpftime/
+          echo "Copied libraries to ~/.bpftime:"
+          ls -la ~/.bpftime/
+
+      - name: Test bpftime example with bash readline
+        run: |
+          echo "=== Running bpftime example test with bash readline ==="
+          
+          # 清理之前的日志
+          mkdir -p logs
+          SERVER_LOG="logs/example_server.log"
+          CLIENT_LOG="logs/example_client.log"
+          rm -f "$SERVER_LOG" "$CLIENT_LOG" 2>/dev/null || true
+          
+          # 设置环境变量
+          export BPFTIME_USED=1
+          export SPDLOG_LEVEL=debug
+          
+          # 步骤1: 启动服务器 - 严格按照示例启动
+          echo "Starting server with LD_PRELOAD to monitor bash readline..."
+          LD_PRELOAD=~/.bpftime/libbpftime-syscall-server.so sudo bpftrace -e 'uretprobe:/bin/bash:readline { printf("%-6d %s\n", pid, str(retval)); }' > "$SERVER_LOG" 2>&1 &
+          
+          SERVER_PID=$!
+          echo "Server started with PID: $SERVER_PID"
+          
+          # 等待服务器初始化
+          echo "Waiting for server to initialize..."
+          INIT_TIMEOUT=30
+          for i in $(seq 1 $INIT_TIMEOUT); do
+            if grep -q "Attaching" "$SERVER_LOG"; then
+              echo "Server initialized after $i seconds"
+              break
+            fi
+            if [ $i -eq $INIT_TIMEOUT ]; then
+              echo "ERROR: Server did not initialize after $INIT_TIMEOUT seconds"
+              cat "$SERVER_LOG"
+              exit 1
+            fi
+            sleep 1
+          done
+          
+          # 确认服务器进程仍在运行
+          if ! ps -p $SERVER_PID > /dev/null; then
+            echo "ERROR: Server process died during initialization"
+            cat "$SERVER_LOG"
+            exit 1
+          fi
+          
+          echo "Server log after initialization:"
+          cat "$SERVER_LOG"
+          
+          # 步骤2: 使用LD_PRELOAD运行bash - 严格按照示例
+          echo "Running bash with LD_PRELOAD..."
+          
+          # 创建expect脚本来运行bash并输入命令
+          cat > logs/bash_input.exp << 'EOF'
+          #!/usr/bin/expect -f
+          set timeout 15
+          spawn sudo su
+          expect "#"
+          send "LD_PRELOAD=~/.bpftime/libbpftime-agent.so /bin/bash --norc --noprofile\r"
+          expect {
+            "llvm register vm factory" { }
+            timeout { puts "ERROR: Bash did not start with agent"; exit 1 }
+          }
+          expect "bash-"
+          send "1\r"
+          expect "command not found"
+          send "1\r"
+          expect "command not found"
+          send "1\r"
+          expect "command not found"
+          # 不执行pwd命令，严格按照示例
+          send "exit\r"
+          expect "#"
+          send "exit\r"
+          expect eof
+          EOF
+          chmod +x logs/bash_input.exp
+          
+          # 执行expect脚本
+          ./logs/bash_input.exp > "$CLIENT_LOG" 2>&1
+          BASH_EXIT_CODE=$?
+          
+          # 等待服务器处理事件
+          echo "Waiting for server to process events..."
+          sleep 10
+          
+          # 显示客户端和服务器日志
+          echo "Client log after execution:"
+          cat "$CLIENT_LOG"
+          
+          echo "Server log after client execution:"
+          cat "$SERVER_LOG"
+          
+          # 检查是否有"1"命令的输出
+          if grep -q "[0-9]\+[[:space:]]\+1" "$SERVER_LOG"; then
+            echo "SUCCESS: Found '1' command in server log"
+            CMD_TRACE_FOUND="true"
+          else
+            echo "FAILURE: Did not find '1' command in server log"
+            CMD_TRACE_FOUND="false"
+          fi
+          
+          # 停止服务器
+          echo "Stopping server process PID $SERVER_PID"
+          sudo kill -9 $SERVER_PID 2>/dev/null || echo "Kill failed"
+          sleep 2
+          
+          # 分析结果
+          echo "=== Final Analysis ==="
+          
+          # 检查bash命令是否成功执行
+          if [ "$BASH_EXIT_CODE" = "0" ]; then
+            echo "SUCCESS: Bash session executed successfully with exit code 0"
+            BASH_SUCCESS="true"
+          else
+            echo "FAILURE: Bash session failed with exit code $BASH_EXIT_CODE"
+            BASH_SUCCESS="false"
+          fi
+          
+          # 最终结果判断
+          if [ "$BASH_SUCCESS" = "true" ] && [ "$CMD_TRACE_FOUND" = "true" ]; then
+            echo "OVERALL SUCCESS: Bash ran successfully AND tracing captured '1' command"
+            exit 0
+          else
+            echo "FAILURE: Test did not meet all success criteria"
+            if [ "$BASH_SUCCESS" != "true" ]; then
+              echo "  - Bash session execution failed with exit code $BASH_EXIT_CODE"
+            fi
+            if [ "$CMD_TRACE_FOUND" != "true" ]; then
+              echo "  - Tracing did not capture '1' command"
             fi
             exit 1
           fi
