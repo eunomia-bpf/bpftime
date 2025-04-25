@@ -348,9 +348,11 @@ jobs:
           echo "=== Running uprobe readline test ==="
           
           # 获取库路径
+          AGENT_LIB="${{ env.AGENT_LIB }}"
           SERVER_LIB="${{ env.SERVER_LIB }}"
           
           echo "Using libraries:"
+          echo "AGENT_LIB: $AGENT_LIB"
           echo "SERVER_LIB: $SERVER_LIB"
           
           # 清理之前的日志
@@ -366,10 +368,9 @@ jobs:
           # 查找bash的readline函数的精确位置
           readelf -s /bin/bash | grep readline | tee -a "$CLIENT_LOG"
           
-          # 确保使用正确的函数名称进行跟踪
-          # 启动服务器 - 监控 bash 的 readline 函数，使用可能的不同函数名形式
+          # 启动服务器 - 使用LD_PRELOAD方法启动bpftrace监控bash的readline函数
           echo "Starting server with uprobe on bash:readline..."
-          sudo -E LD_PRELOAD=$SERVER_LIB bpftrace -e 'uretprobe:/bin/bash:readline { printf("%-6d %s\n", pid, str(retval)); }' > "$SERVER_LOG" 2>&1 &
+          LD_PRELOAD=$SERVER_LIB sudo bpftrace -e 'uretprobe:/bin/bash:readline { printf("%-6d %s\n", pid, str(retval)); }' > "$SERVER_LOG" 2>&1 &
           
           SERVER_PID=$!
           echo "Server started with PID: $SERVER_PID"
@@ -400,19 +401,39 @@ jobs:
           echo "Server log after initialization:"
           cat "$SERVER_LOG"
           
-          # 使用更简单的方式直接运行bash并执行命令
-          echo "Running simple bash command..."
+          # 创建命令文件，包含我们要测试的命令
+          echo "Creating test command file"
+          cat > logs/test_commands.txt << 'EOF'
+          pwd
+          ls
+          echo DONE_TESTING
+          exit
+          EOF
           
-          # 确保正在执行的bash进程会被跟踪 - 使用echo将命令传递给bash
-          echo "pwd" | sudo bash >> "$CLIENT_LOG" 2>&1
-          echo "ls" | sudo bash >> "$CLIENT_LOG" 2>&1
-          echo "echo hello" | sudo bash >> "$CLIENT_LOG" 2>&1
+          # 启动一个没有初始化脚本的bash实例
+          echo "Running bash with agent library..."
           
-          # 另外尝试通过-c参数运行命令
-          sudo bash -c "pwd" >> "$CLIENT_LOG" 2>&1
-          sudo bash -c "ls" >> "$CLIENT_LOG" 2>&1
-          sudo bash -c "echo DONE_TESTING" >> "$CLIENT_LOG" 2>&1
+          # 使用expect自动化bash交互，使用--norc --noprofile禁用初始化脚本
+          cat > logs/expect_script.exp << 'EOF'
+          #!/usr/bin/expect -f
+          set timeout 10
+          spawn sudo bash --norc --noprofile
+          expect "#"
+          send "1\r"
+          expect "#"
+          send "pwd\r"
+          expect "#"
+          send "ls\r"
+          expect "#"
+          send "echo DONE_TESTING\r"
+          expect "#"
+          send "exit\r"
+          expect eof
+          EOF
+          chmod +x logs/expect_script.exp
           
+          # 执行expect脚本
+          ./logs/expect_script.exp > "$CLIENT_LOG" 2>&1
           BASH_EXIT_CODE=$?
           
           # 等待服务器处理事件
@@ -429,7 +450,7 @@ jobs:
           echo "Server log after client execution:"
           cat "$SERVER_LOG"
           
-          # 放宽检查条件，查找任何可能的调用痕迹
+          # 检查是否有bash的uprobe输出
           if grep -q -E "[0-9]+[[:space:]]+" "$SERVER_LOG"; then
             echo "SUCCESS: Found uprobe trace in server log"
             TRACE_FOUND="true"
