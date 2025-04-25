@@ -343,37 +343,37 @@ jobs:
           echo "AGENT_LIB=$AGENT_LIB" >> $GITHUB_ENV
           echo "SERVER_LIB=$SERVER_LIB" >> $GITHUB_ENV
           echo "TRANSFORMER_LIB=$TRANSFORMER_LIB" >> $GITHUB_ENV
- - name: Run server and client for uprobe test
+      - name: Run server and client for uprobe test
         run: |
           echo "=== Running uprobe readline test ==="
-          
+
           # 获取库路径
           AGENT_LIB="${{ env.AGENT_LIB }}"
           SERVER_LIB="${{ env.SERVER_LIB }}"
           TRANSFORMER_LIB="${{ env.TRANSFORMER_LIB }}"
-          
+
           echo "Using libraries:"
           echo "AGENT_LIB: $AGENT_LIB"
           echo "SERVER_LIB: $SERVER_LIB"
           echo "TRANSFORMER_LIB: $TRANSFORMER_LIB"
-          
+
           # 清理之前的日志
           mkdir -p logs
           SERVER_LOG="logs/uprobe_server.log"
           CLIENT_LOG="logs/uprobe_client.log"
           rm -f "$SERVER_LOG" "$CLIENT_LOG" 2>/dev/null || true
-          
+
           # 设置环境变量
           export BPFTIME_USED=1
           export SPDLOG_LEVEL=debug
-          
+
           # 启动服务器 - 监控 bash 的 readline 函数 (只用SERVER_LIB，不用transformer)
           echo "Starting server with uprobe on bash:readline..."
           sudo -E LD_PRELOAD=$SERVER_LIB bpftrace -e 'uretprobe:/bin/bash:readline { printf("%-6d %s\n", pid, str(retval)); }' > "$SERVER_LOG" 2>&1 &
-          
+
           SERVER_PID=$!
           echo "Server started with PID: $SERVER_PID"
-          
+
           # 等待服务器初始化
           echo "Waiting for server to initialize..."
           INIT_TIMEOUT=30
@@ -389,24 +389,24 @@ jobs:
             fi
             sleep 1
           done
-          
+
           # 确认服务器进程仍在运行
           if ! ps -p $SERVER_PID > /dev/null; then
             echo "ERROR: Server process died during initialization"
             cat "$SERVER_LOG"
             exit 1
           fi
-          
+
           echo "Server log after initialization:"
           cat "$SERVER_LOG"
-          
+
           # 运行客户端命令，仅使用AGENT_LIB，避免使用transformer
           echo "Running bash with only AGENT_LIB..."
-          
+
           # 直接使用AGENT_LIB，不使用transformer
           echo "Using only agent library for client"
           LD_PRELOAD_CMD="env LD_PRELOAD=$AGENT_LIB"
-          
+
           # 使用expect自动化bash交互
           cat > logs/expect_script.exp << 'EOF'
           #!/usr/bin/expect -f
@@ -421,25 +421,25 @@ jobs:
           expect eof
           EOF
           chmod +x logs/expect_script.exp
-          
+
           # 执行expect脚本，捕获bash的输出
           $LD_PRELOAD_CMD logs/expect_script.exp > "$CLIENT_LOG" 2>&1
           BASH_EXIT_CODE=$?
-          
+
           # 等待服务器处理事件
           echo "Waiting for server to process events..."
           sleep 10
-          
+
           # 强制刷新
           sync
-          
+
           # 显示客户端和服务器日志
           echo "Client log after execution:"
           cat "$CLIENT_LOG"
-          
+
           echo "Server log after client execution:"
           cat "$SERVER_LOG"
-          
+
           # 检查是否有bash的uprobe输出（包含pid和pwd）
           if grep -q "[0-9]\+[[:space:]]\+pwd" "$SERVER_LOG"; then
             echo "SUCCESS: Found uprobe trace for pwd command in server log"
@@ -448,15 +448,15 @@ jobs:
             echo "FAILURE: Did not find uprobe trace for pwd command in server log"
             PWD_TRACE_FOUND="false"
           fi
-          
+
           # 停止服务器
           echo "Stopping server process PID $SERVER_PID"
           sudo kill -9 $SERVER_PID 2>/dev/null || echo "Kill failed"
           sleep 2
-          
+
           # 分析结果
           echo "=== Final Analysis ==="
-          
+
           # 检查bash命令是否成功执行
           if [ "$BASH_EXIT_CODE" = "0" ]; then
             echo "SUCCESS: Bash command executed successfully with exit code 0"
@@ -465,7 +465,7 @@ jobs:
             echo "FAILURE: Bash command failed with exit code $BASH_EXIT_CODE"
             BASH_SUCCESS="false"
           fi
-          
+
           # 检查是否捕获到bash的uprobe
           if [ "$PWD_TRACE_FOUND" = "true" ]; then
             echo "SUCCESS: Uprobe tracing is working for bash:readline"
@@ -474,7 +474,7 @@ jobs:
             echo "FAILURE: Uprobe tracing is NOT working for bash:readline"
             TRACING_SUCCESS="false"
           fi
-          
+
           # 最终结果判断
           if [ "$BASH_SUCCESS" = "true" ] && [ "$TRACING_SUCCESS" = "true" ]; then
             echo "OVERALL SUCCESS: Bash command ran successfully AND uprobe tracing detected pwd command"
