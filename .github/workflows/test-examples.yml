@@ -46,7 +46,6 @@ jobs:
           # 确保共享内存目录存在且权限正确
           sudo mkdir -p $BPFTIME_SHARED_MEMORY_PATH
           sudo chmod 1777 $BPFTIME_SHARED_MEMORY_PATH
-
       - name: Build bpftime
         run: |
           echo "Building bpftime with CMake"
@@ -61,7 +60,6 @@ jobs:
           ls -la build/runtime/agent/
           ls -la build/runtime/syscall-server/
           ls -la build/attach/text_segment_transformer/ || echo "Text segment transformer directory not found"
-
       - name: Find all necessary libraries
         run: |
           echo "=== Finding all necessary libraries ==="
@@ -115,7 +113,6 @@ jobs:
           echo "AGENT_LIB=$AGENT_LIB" >> $GITHUB_ENV
           echo "SERVER_LIB=$SERVER_LIB" >> $GITHUB_ENV
           echo "TRANSFORMER_LIB=$TRANSFORMER_LIB" >> $GITHUB_ENV
-
       - name: Run server and client in the same step
         run: |
           echo "=== Running server and client in the same step ==="
@@ -250,8 +247,7 @@ jobs:
             exit 1
           fi
 
-  bpftime-example-test:
-    name: BPFtime Example Test
+  malloc-example-test:
     runs-on: ubuntu-22.04
     container:
       image: "manjusakalza/bpftime-base-image:ubuntu-2204"
@@ -265,21 +261,19 @@ jobs:
 
       - name: System setup and kernel headers
         run: |
-            export DEBIAN_FRONTEND=noninteractive
-            export TZ=Etc/UTC
-            apt-get update
-            apt-get install -y --no-install-recommends \
-              lcov tree strace gdb sudo libc6-dev bpftrace \
-              linux-headers-generic linux-tools-generic \
-              linux-headers-$(uname -r) \
-              libelf-dev procps expect
-            echo "==== System Information ===="; uname -a && cat /etc/os-release
-            echo "==== bpftrace version ===="; which bpftrace && bpftrace --version || echo "bpftrace not found"
-            mkdir -p logs build ~/.bpftime
-            
-            # 确保共享内存目录存在且权限正确
-            sudo mkdir -p $BPFTIME_SHARED_MEMORY_PATH
-            sudo chmod 1777 $BPFTIME_SHARED_MEMORY_PATH
+          apt-get update
+          apt-get install -y --no-install-recommends \
+            lcov tree strace gdb sudo libc6-dev bpftrace \
+            linux-headers-generic linux-tools-generic \
+            linux-headers-$(uname -r) \
+            libelf-dev procps
+          echo "==== System Information ===="; uname -a && cat /etc/os-release
+          echo "==== bpftrace version ===="; which bpftrace && bpftrace --version || echo "bpftrace not found"
+          mkdir -p logs
+          
+          # 确保共享内存目录存在且权限正确
+          sudo mkdir -p $BPFTIME_SHARED_MEMORY_PATH
+          sudo chmod 1777 $BPFTIME_SHARED_MEMORY_PATH
 
       - name: Build bpftime
         run: |
@@ -295,65 +289,118 @@ jobs:
           ls -la build/runtime/agent/
           ls -la build/runtime/syscall-server/
           ls -la build/attach/text_segment_transformer/ || echo "Text segment transformer directory not found"
-          
-          # 复制库文件到~/.bpftime目录
-          mkdir -p ~/.bpftime
-          cp $(find build -name "libbpftime-agent.so" | head -1) ~/.bpftime/
-          cp $(find build -name "libbpftime-syscall-server.so" | head -1) ~/.bpftime/
-          echo "Copied libraries to ~/.bpftime:"
-          ls -la ~/.bpftime/
 
-      - name: Test bpftime example with bash readline
+      - name: Build malloc example
         run: |
-          echo "=== Running bpftime example test with bash readline ==="
+          echo "Building malloc example"
+          make -C example/malloc
+          
+          # 检查编译结果
+          if [ -f "example/malloc/malloc.o" ] && [ -f "example/malloc/victim" ]; then
+            echo "SUCCESS: Malloc example built successfully"
+            ls -la example/malloc/
+          else
+            echo "FAILURE: Malloc example build failed"
+            exit 1
+          fi
+
+      - name: Find all necessary libraries
+        run: |
+          echo "=== Finding all necessary libraries ==="
+          
+          # 查找所有可能需要的库文件
+          find build -name "*.so" | sort
+          
+          # 特别检查关键库文件
+          AGENT_LIB="build/runtime/agent/libbpftime-agent.so"
+          SERVER_LIB="build/runtime/syscall-server/libbpftime-syscall-server.so"
+          TRANSFORMER_LIB="build/attach/text_segment_transformer/libbpftime-agent-transformer.so"
+          
+          if [ ! -f "$AGENT_LIB" ]; then
+            echo "ERROR: Agent library not found at $AGENT_LIB"
+            # 尝试查找替代位置
+            AGENT_LIB=$(find build -name "libbpftime-agent.so" | head -1)
+            if [ -n "$AGENT_LIB" ]; then
+              echo "Found agent library at alternative location: $AGENT_LIB"
+            else
+              echo "Could not find agent library anywhere"
+              exit 1
+            fi
+          fi
+          
+          if [ ! -f "$SERVER_LIB" ]; then
+            echo "ERROR: Server library not found at $SERVER_LIB"
+            # 尝试查找替代位置
+            SERVER_LIB=$(find build -name "libbpftime-syscall-server.so" | head -1)
+            if [ -n "$SERVER_LIB" ]; then
+              echo "Found server library at alternative location: $SERVER_LIB"
+            else
+              echo "Could not find server library anywhere"
+              exit 1
+            fi
+          fi
+          
+          # 检查 transformer 库，可能不是必需的
+          if [ ! -f "$TRANSFORMER_LIB" ]; then
+            echo "WARNING: Transformer library not found at $TRANSFORMER_LIB"
+            # 尝试查找替代位置
+            TRANSFORMER_LIB=$(find build -name "libbpftime-agent-transformer.so" | head -1)
+            if [ -n "$TRANSFORMER_LIB" ]; then
+              echo "Found transformer library at alternative location: $TRANSFORMER_LIB"
+            else
+              echo "Could not find transformer library anywhere, will proceed without it"
+              TRANSFORMER_LIB=""
+            fi
+          fi
+          
+          # 保存库路径到环境变量
+          echo "AGENT_LIB=$AGENT_LIB" >> $GITHUB_ENV
+          echo "SERVER_LIB=$SERVER_LIB" >> $GITHUB_ENV
+          echo "TRANSFORMER_LIB=$TRANSFORMER_LIB" >> $GITHUB_ENV
+
+      - name: Run malloc example with LD_PRELOAD
+        run: |
+          echo "=== Running malloc example with LD_PRELOAD ==="
+          
+          # 获取库路径
+          AGENT_LIB="${{ env.AGENT_LIB }}"
+          SERVER_LIB="${{ env.SERVER_LIB }}"
+          TRANSFORMER_LIB="${{ env.TRANSFORMER_LIB }}"
+          
+          echo "Using libraries:"
+          echo "AGENT_LIB: $AGENT_LIB"
+          echo "SERVER_LIB: $SERVER_LIB"
+          echo "TRANSFORMER_LIB: $TRANSFORMER_LIB"
           
           # 清理之前的日志
           mkdir -p logs
-          SERVER_LOG="logs/example_server.log"
-          CLIENT_LOG="logs/example_client.log"
+          SERVER_LOG="logs/malloc_server.log"
+          CLIENT_LOG="logs/malloc_client.log"
           rm -f "$SERVER_LOG" "$CLIENT_LOG" 2>/dev/null || true
           
           # 设置环境变量
           export BPFTIME_USED=1
           export SPDLOG_LEVEL=debug
           
-          # 显示库文件
-          echo "Library files in ~/.bpftime:"
-          ls -la ~/.bpftime/
-          
-          # 步骤1: 启动服务器 - 使用更简单的bpftrace命令先测试
-          echo "Testing bpftrace basic functionality..."
-          sudo bpftrace -e 'BEGIN { printf("Bpftrace is working\n"); exit(); }' > logs/bpftrace_test.log 2>&1
-          cat logs/bpftrace_test.log
-          
-          # 步骤2: 启动服务器 - 先测试不带LD_PRELOAD的bpftrace
-          echo "Testing bpftrace with uprobe..."
-          sudo bpftrace -e 'uretprobe:/bin/bash:readline { printf("Basic uprobe test\n"); }' > logs/uprobe_test.log 2>&1 &
-          UPROBE_TEST_PID=$!
-          sleep 5
-          sudo kill -9 $UPROBE_TEST_PID 2>/dev/null || true
-          cat logs/uprobe_test.log
-          
-          # 步骤3: 启动服务器 - 严格按照示例启动，但增加详细日志
-          echo "Starting server with LD_PRELOAD to monitor bash readline..."
-          sudo bash -c "LD_PRELOAD=~/.bpftime/libbpftime-syscall-server.so SPDLOG_LEVEL=debug bpftrace -e 'uretprobe:/bin/bash:readline { printf(\"%-6d %s\\n\", pid, str(retval)); }'" > "$SERVER_LOG" 2>&1 &
+          # 启动服务器 - 使用服务器库加载 malloc eBPF 程序
+          echo "Starting server with malloc eBPF program in background..."
+          sudo -E LD_PRELOAD=$SERVER_LIB ./example/malloc/malloc > "$SERVER_LOG" 2>&1 &
           
           SERVER_PID=$!
           echo "Server started with PID: $SERVER_PID"
           
-          # 等待服务器初始化，放宽检查条件
+          # 等待服务器初始化
           echo "Waiting for server to initialize..."
-          INIT_TIMEOUT=60
+          INIT_TIMEOUT=30
           for i in $(seq 1 $INIT_TIMEOUT); do
-            if grep -q "Attaching" "$SERVER_LOG" || grep -q "bpftime-syscall-server started" "$SERVER_LOG"; then
+            if grep -q "Loaded" "$SERVER_LOG" || grep -q "Attaching" "$SERVER_LOG"; then
               echo "Server initialized after $i seconds"
               break
             fi
             if [ $i -eq $INIT_TIMEOUT ]; then
               echo "ERROR: Server did not initialize after $INIT_TIMEOUT seconds"
               cat "$SERVER_LOG"
-              # 我们继续执行，不退出，可能服务器仍在运行但没有预期的输出
-              echo "Continuing anyway..."
+              exit 1
             fi
             sleep 1
           done
@@ -368,57 +415,42 @@ jobs:
           echo "Server log after initialization:"
           cat "$SERVER_LOG"
           
-          # 步骤2: 使用LD_PRELOAD运行bash - 严格按照示例
-          echo "Running bash with LD_PRELOAD..."
+          # 运行客户端命令，使用完整的 LD_PRELOAD 配置
+          echo "Running victim program with complete LD_PRELOAD configuration..."
           
-          # 创建expect脚本来运行bash并输入命令
-          cat > logs/bash_input.exp << 'EOF'
-          #!/usr/bin/expect -f
-          set timeout 15
-          spawn sudo su
-          expect "#"
-          send "LD_PRELOAD=~/.bpftime/libbpftime-agent.so /bin/bash --norc --noprofile\r"
-          expect {
-            "llvm register vm factory" { }
-            timeout { puts "ERROR: Bash did not start with agent"; exit 1 }
-          }
-          expect "bash-"
-          send "1\r"
-          expect "command not found"
-          send "1\r"
-          expect "command not found"
-          send "1\r"
-          expect "command not found"
-          # 不执行pwd命令，严格按照示例
-          send "exit\r"
-          expect "#"
-          send "exit\r"
-          expect eof
-          EOF
-          chmod +x logs/bash_input.exp
+          # 准备 LD_PRELOAD 参数，根据 transformer 库是否存在进行调整
+          if [ -n "$TRANSFORMER_LIB" ]; then
+            # 同时使用 agent 和 transformer 库
+            echo "Using both agent and transformer libraries"
+            LD_PRELOAD_CMD="env AGENT_SO=$AGENT_LIB LD_PRELOAD=$TRANSFORMER_LIB"
+          else
+            # 只使用 agent 库
+            echo "Using only agent library"
+            LD_PRELOAD_CMD="env LD_PRELOAD=$AGENT_LIB"
+          fi
           
-          # 执行expect脚本
-          ./logs/bash_input.exp > "$CLIENT_LOG" 2>&1
-          BASH_EXIT_CODE=$?
+          # 执行 victim 程序
+          sudo -E $LD_PRELOAD_CMD ./example/malloc/victim | tee "$CLIENT_LOG"
+          VICTIM_EXIT_CODE=$?
           
           # 等待服务器处理事件
           echo "Waiting for server to process events..."
           sleep 10
           
-          # 显示客户端和服务器日志
+          # 强制刷新
+          sync
+          
+          # 显示客户端日志
           echo "Client log after execution:"
           cat "$CLIENT_LOG"
           
-          echo "Server log after client execution:"
-          cat "$SERVER_LOG"
-          
-          # 检查是否有"1"命令的输出
-          if grep -q "[0-9]\+[[:space:]]\+1" "$SERVER_LOG"; then
-            echo "SUCCESS: Found '1' command in server log"
-            CMD_TRACE_FOUND="true"
+          # 检查客户端输出是否包含预期的输出
+          if grep -q "Hello malloc!" "$CLIENT_LOG" && grep -q "malloc called from pid" "$CLIENT_LOG" && grep -q "continue malloc..." "$CLIENT_LOG"; then
+            echo "SUCCESS: Found expected malloc messages in client log"
+            MALLOC_OUTPUT_FOUND="true"
           else
-            echo "FAILURE: Did not find '1' command in server log"
-            CMD_TRACE_FOUND="false"
+            echo "FAILURE: Did not find expected malloc messages in client log"
+            MALLOC_OUTPUT_FOUND="false"
           fi
           
           # 停止服务器
@@ -429,26 +461,26 @@ jobs:
           # 分析结果
           echo "=== Final Analysis ==="
           
-          # 检查bash命令是否成功执行
-          if [ "$BASH_EXIT_CODE" = "0" ]; then
-            echo "SUCCESS: Bash session executed successfully with exit code 0"
-            BASH_SUCCESS="true"
+          # 检查victim命令是否成功执行
+          if [ "$VICTIM_EXIT_CODE" = "0" ]; then
+            echo "SUCCESS: Victim program executed successfully with exit code 0"
+            VICTIM_SUCCESS="true"
           else
-            echo "FAILURE: Bash session failed with exit code $BASH_EXIT_CODE"
-            BASH_SUCCESS="false"
+            echo "FAILURE: Victim program failed with exit code $VICTIM_EXIT_CODE"
+            VICTIM_SUCCESS="false"
           fi
           
           # 最终结果判断
-          if [ "$BASH_SUCCESS" = "true" ] && [ "$CMD_TRACE_FOUND" = "true" ]; then
-            echo "OVERALL SUCCESS: Bash ran successfully AND tracing captured '1' command"
+          if [ "$VICTIM_SUCCESS" = "true" ] && [ "$MALLOC_OUTPUT_FOUND" = "true" ]; then
+            echo "OVERALL SUCCESS: Malloc example test passed - victim program ran successfully AND expected output was detected"
             exit 0
           else
-            echo "FAILURE: Test did not meet all success criteria"
-            if [ "$BASH_SUCCESS" != "true" ]; then
-              echo "  - Bash session execution failed with exit code $BASH_EXIT_CODE"
+            echo "FAILURE: Malloc example test failed"
+            if [ "$VICTIM_SUCCESS" != "true" ]; then
+              echo "  - Victim program execution failed with exit code $VICTIM_EXIT_CODE"
             fi
-            if [ "$CMD_TRACE_FOUND" != "true" ]; then
-              echo "  - Tracing did not capture '1' command"
+            if [ "$MALLOC_OUTPUT_FOUND" != "true" ]; then
+              echo "  - Expected malloc messages were not found in output"
             fi
             exit 1
           fi
