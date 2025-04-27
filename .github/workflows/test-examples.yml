@@ -295,12 +295,20 @@ jobs:
           echo "Building malloc example"
           make -C example/malloc
           
-          # 检查编译结果
-          if [ -f "example/malloc/malloc.o" ] && [ -f "example/malloc/victim" ]; then
+          # 检查编译结果 - 注意可执行文件可能在 .output 目录或当前目录
+          if [ -f "example/malloc/malloc" ] && [ -f "example/malloc/victim" ]; then
             echo "SUCCESS: Malloc example built successfully"
             ls -la example/malloc/
+          elif [ -f "example/malloc/.output/malloc" ] && [ -f "example/malloc/victim" ]; then
+            echo "SUCCESS: Malloc example built successfully (malloc in .output directory)"
+            ls -la example/malloc/ example/malloc/.output/
           else
             echo "FAILURE: Malloc example build failed"
+            echo "Searching for malloc and victim executables:"
+            find example/malloc -type f -name "malloc" -o -name "victim" | sort
+            echo "Directory contents:"
+            ls -la example/malloc/
+            ls -la example/malloc/.output/ 2>/dev/null || echo "No .output directory"
             exit 1
           fi
 
@@ -382,9 +390,21 @@ jobs:
           export BPFTIME_USED=1
           export SPDLOG_LEVEL=debug
           
+          # 找到 malloc 可执行文件的位置
+          if [ -f "example/malloc/malloc" ]; then
+            MALLOC_BIN="example/malloc/malloc"
+          elif [ -f "example/malloc/.output/malloc" ]; then
+            MALLOC_BIN="example/malloc/.output/malloc"
+          else
+            echo "ERROR: Cannot find malloc executable"
+            find example/malloc -type f -name "malloc" | sort
+            exit 1
+          fi
+          echo "Using malloc binary: $MALLOC_BIN"
+          
           # 启动服务器 - 使用服务器库加载 malloc eBPF 程序
           echo "Starting server with malloc eBPF program in background..."
-          sudo -E LD_PRELOAD=$SERVER_LIB ./example/malloc/malloc > "$SERVER_LOG" 2>&1 &
+          sudo -E LD_PRELOAD=$SERVER_LIB $MALLOC_BIN > "$SERVER_LOG" 2>&1 &
           
           SERVER_PID=$!
           echo "Server started with PID: $SERVER_PID"
@@ -427,6 +447,13 @@ jobs:
             # 只使用 agent 库
             echo "Using only agent library"
             LD_PRELOAD_CMD="env LD_PRELOAD=$AGENT_LIB"
+          fi
+          
+          # 确认 victim 程序存在
+          if [ ! -f "example/malloc/victim" ]; then
+            echo "ERROR: Cannot find victim executable"
+            find example/malloc -type f -name "victim" | sort
+            exit 1
           fi
           
           # 执行 victim 程序
