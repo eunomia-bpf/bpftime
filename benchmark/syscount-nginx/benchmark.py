@@ -13,19 +13,20 @@ from pathlib import Path
 
 # Configuration
 NUM_RUNS = 10
-WRK_CMD = ["wrk", "https://127.0.0.1:4043/index.html", "-c", "100", "-d", "10"]
-NGINX_CMD = ["nginx", "-c", "nginx.conf", "-p", "benchmark/ssl-nginx"]
-TEST_URL = "https://127.0.0.1:4043/index.html"
-SSLSNIFF_PATH = "example/sslsniff/sslsniff"
-KERNEL_SSLSNIFF_PATH = "example/sslsniff/sslsniff"
+WRK_CMD = ["wrk", "http://127.0.0.1:801/index.html", "-c", "100", "-d", "10"]
+NGINX_CMD = ["nginx", "-c", "nginx.conf", "-p", "benchmark/syscount-nginx"]
+TEST_URL = "http://127.0.0.1:801/index.html"
+SYSCOUNT_PATH = "example/libbpf-tools/syscount/syscount"
 AGENT_PATH = "build/runtime/agent/libbpftime-agent.so"
 SYSCALL_SERVER_PATH = "build/runtime/syscall-server/libbpftime-syscall-server.so"
 
 # Result storage
 results = {
-    "baseline": [],
-    "kernel_sslsniff": [],
-    "bpftime_sslsniff": []
+    "native": [],               # No tracing
+    "kernel_targeted": [],      # Kernel syscount targeting nginx pid
+    "kernel_untargeted": [],    # Kernel syscount not targeting nginx
+    "userbpf_targeted": [],     # Userspace syscount targeting nginx pid
+    "userbpf_untargeted": [],   # Userspace syscount not targeting nginx
 }
 
 # Define a signal handler to prevent unexpected termination
@@ -44,8 +45,7 @@ def debug_print(message):
 
 def remove_access_log():
     """Remove the nginx access log file"""
-    # The log file is typically in the logs directory under the nginx directory
-    log_path = os.path.join("benchmark", "ssl-nginx", "access.log")
+    log_path = os.path.join("benchmark", "syscount-nginx", "access.log")
     abs_log_path = os.path.abspath(log_path)
     
     debug_print(f"Removing access log: {abs_log_path}")
@@ -99,16 +99,16 @@ def check_command_exists(cmd):
         return False
 
 def cleanup_processes():
-    """Kill any running nginx or sslsniff processes"""
+    """Kill any running nginx or syscount processes"""
     try:
         debug_print("Cleaning up processes...")
         
-        # Get the PIDs of nginx and sslsniff processes
+        # Get the PIDs of nginx and syscount processes
         nginx_pids = subprocess.run(["pgrep", "-x", "nginx"], capture_output=True, text=True).stdout.strip().split()
-        sslsniff_pids = subprocess.run(["pgrep", "-x", "sslsniff"], capture_output=True, text=True).stdout.strip().split()
+        syscount_pids = subprocess.run(["pgrep", "-x", "syscount"], capture_output=True, text=True).stdout.strip().split()
         
         debug_print(f"Found nginx PIDs: {nginx_pids}")
-        debug_print(f"Found sslsniff PIDs: {sslsniff_pids}")
+        debug_print(f"Found syscount PIDs: {syscount_pids}")
         
         # Kill nginx processes by PID
         for pid in nginx_pids:
@@ -118,13 +118,13 @@ def cleanup_processes():
             except Exception as e:
                 debug_print(f"Error terminating nginx PID {pid}: {e}")
         
-        # Kill sslsniff processes by PID
-        for pid in sslsniff_pids:
+        # Kill syscount processes by PID
+        for pid in syscount_pids:
             try:
-                debug_print(f"Terminating sslsniff process with PID {pid}")
+                debug_print(f"Terminating syscount process with PID {pid}")
                 subprocess.run(["kill", pid], stderr=subprocess.DEVNULL, check=False)
             except Exception as e:
-                debug_print(f"Error terminating sslsniff PID {pid}: {e}")
+                debug_print(f"Error terminating syscount PID {pid}: {e}")
                 try:
                     debug_print(f"Trying with sudo...")
                     subprocess.run(["sudo", "kill", pid], stderr=subprocess.DEVNULL, check=False)
@@ -136,9 +136,9 @@ def cleanup_processes():
         
         # Check if any processes are still running and try forceful termination if needed
         remaining_nginx_pids = subprocess.run(["pgrep", "-x", "nginx"], capture_output=True, text=True).stdout.strip().split()
-        remaining_sslsniff_pids = subprocess.run(["pgrep", "-x", "sslsniff"], capture_output=True, text=True).stdout.strip().split()
+        remaining_syscount_pids = subprocess.run(["pgrep", "-x", "syscount"], capture_output=True, text=True).stdout.strip().split()
         
-        debug_print(f"After cleanup: nginx PIDs: {remaining_nginx_pids}, sslsniff PIDs: {remaining_sslsniff_pids}")
+        debug_print(f"After cleanup: nginx PIDs: {remaining_nginx_pids}, syscount PIDs: {remaining_syscount_pids}")
         
         # Force kill remaining processes
         for pid in remaining_nginx_pids:
@@ -148,12 +148,12 @@ def cleanup_processes():
             except Exception as e:
                 debug_print(f"Error force killing nginx PID {pid}: {e}")
         
-        for pid in remaining_sslsniff_pids:
+        for pid in remaining_syscount_pids:
             try:
-                debug_print(f"Force killing sslsniff process with PID {pid}")
+                debug_print(f"Force killing syscount process with PID {pid}")
                 subprocess.run(["kill", "-9", pid], stderr=subprocess.DEVNULL, check=False)
             except Exception as e:
-                debug_print(f"Error force killing sslsniff PID {pid}: {e}")
+                debug_print(f"Error force killing syscount PID {pid}: {e}")
                 try:
                     debug_print(f"Trying with sudo...")
                     subprocess.run(["sudo", "kill", "-9", pid], stderr=subprocess.DEVNULL, check=False)
@@ -173,9 +173,8 @@ def parse_wrk_output(output):
     debug_print("Failed to parse wrk output")
     return None
 
-def run_baseline():
-    """Run baseline benchmarks (no sslsniff)"""
-    print("\n=== Running Baseline Tests ===")
+def start_nginx():
+    """Start nginx server and return process and PID"""
     cleanup_processes()
     remove_access_log()  # Remove access log before starting nginx
     
@@ -184,12 +183,12 @@ def run_baseline():
     
     # Check current directory
     debug_print(f"Current directory: {os.getcwd()}")
-    nginx_conf = "benchmark/ssl-nginx/nginx.conf"
+    nginx_conf = "benchmark/syscount-nginx/nginx.conf"
     debug_print(f"Checking if nginx.conf exists: {os.path.exists(nginx_conf)}")
     
     if not os.path.exists(nginx_conf):
         debug_print(f"ERROR: {nginx_conf} not found!")
-        return
+        return None, None
     
     # Start nginx with full path
     abs_nginx_conf = os.path.abspath(nginx_conf)
@@ -207,18 +206,40 @@ def run_baseline():
             debug_print(f"nginx failed to start. Exit code: {nginx_proc.returncode}")
             debug_print(f"stdout: {stdout.decode() if stdout else 'None'}")
             debug_print(f"stderr: {stderr.decode() if stderr else 'None'}")
-            return
+            return None, None
         
         debug_print("nginx started successfully")
         
         # Check if nginx is listening
         try:
-            curl_check = subprocess.run(["curl", "-k", "-s", "-o", "/dev/null", "-w", "%{http_code}", TEST_URL], 
+            curl_check = subprocess.run(["curl", "-s", "-o", "/dev/null", "-w", "%{http_code}", TEST_URL], 
                                         capture_output=True, text=True, timeout=5)
             debug_print(f"HTTP status code from nginx: {curl_check.stdout}")
+            
+            # Get nginx PID
+            nginx_pid = subprocess.run(["pgrep", "-f", "nginx -c"], capture_output=True, text=True).stdout.strip()
+            debug_print(f"nginx PID: {nginx_pid}")
+            return nginx_proc, nginx_pid
+            
         except Exception as e:
             debug_print(f"Error checking nginx: {e}")
-        
+            return nginx_proc, None
+    
+    except Exception as e:
+        debug_print(f"Error starting nginx: {e}")
+        traceback.print_exc()
+        return None, None
+
+def run_native():
+    """Run baseline benchmarks (no tracing)"""
+    print("\n=== Running Native Tests (No Tracing) ===")
+    
+    nginx_proc, nginx_pid = start_nginx()
+    if not nginx_proc:
+        debug_print("Failed to start nginx, skipping native test")
+        return
+    
+    try:
         for i in range(NUM_RUNS):
             print(f"Run {i+1}/{NUM_RUNS}...")
             debug_print(f"Running wrk with command: {' '.join(WRK_CMD)}")
@@ -236,7 +257,7 @@ def run_baseline():
                 
                 req_per_sec = parse_wrk_output(result.stdout)
                 if req_per_sec:
-                    results["baseline"].append(req_per_sec)
+                    results["native"].append(req_per_sec)
                     print(f"  Requests/sec: {req_per_sec:.2f}")
                 else:
                     debug_print(f"Failed to parse output: {result.stdout}")
@@ -247,95 +268,100 @@ def run_baseline():
                 traceback.print_exc()
     
     except Exception as e:
-        debug_print(f"Error in baseline test: {e}")
+        debug_print(f"Error in native test: {e}")
         traceback.print_exc()
     finally:
         # Cleanup
-        debug_print("Terminating nginx")
-        try:
-            nginx_proc.terminate()
-            nginx_proc.wait(timeout=5)
-        except Exception as e:
-            debug_print(f"Error terminating nginx: {e}")
+        if nginx_proc:
+            debug_print("Terminating nginx")
             try:
-                nginx_proc.kill()
-            except:
-                pass
+                nginx_proc.terminate()
+                nginx_proc.wait(timeout=5)
+            except Exception as e:
+                debug_print(f"Error terminating nginx: {e}")
+                try:
+                    nginx_proc.kill()
+                except:
+                    pass
 
-def run_kernel_sslsniff():
-    """Run kernel sslsniff benchmarks"""
-    print("\n=== Running Kernel sslsniff Tests ===")
-    cleanup_processes()
-    remove_access_log()  # Remove access log before starting nginx
+def run_kernel_syscount(target_pid=None):
+    """
+    Run kernel syscount benchmarks
+    If target_pid is provided, syscount will target that PID
+    Otherwise, it will track all processes
+    """
+    test_name = "kernel_targeted" if target_pid else "kernel_untargeted"
+    print(f"\n=== Running Kernel syscount Tests ({test_name}) ===")
     
-    # Check if sslsniff exists
-    if not check_file_exists(KERNEL_SSLSNIFF_PATH):
-        debug_print(f"Skipping kernel sslsniff tests: {KERNEL_SSLSNIFF_PATH} not found")
+    # Start nginx
+    nginx_proc, nginx_pid = start_nginx()
+    if not nginx_proc:
+        debug_print("Failed to start nginx, skipping kernel syscount test")
         return
     
-    # Use the same nginx path approach as baseline
-    nginx_conf = "benchmark/ssl-nginx/nginx.conf"
-    if not os.path.exists(nginx_conf):
-        debug_print(f"ERROR: {nginx_conf} not found!")
+    # Check if syscount exists
+    if not check_file_exists(SYSCOUNT_PATH):
+        debug_print(f"Skipping kernel syscount tests: {SYSCOUNT_PATH} not found")
         return
-    
-    # Start nginx with full path
-    abs_nginx_conf = os.path.abspath(nginx_conf)
-    abs_nginx_dir = os.path.dirname(abs_nginx_conf)
-    modified_nginx_cmd = ["nginx", "-c", abs_nginx_conf, "-p", abs_nginx_dir]
-    debug_print(f"Starting nginx with command: {' '.join(modified_nginx_cmd)}")
     
     try:
-        nginx_proc = subprocess.Popen(modified_nginx_cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-        time.sleep(2)  # Give nginx time to start
-        
-        # Check if nginx started successfully
-        if nginx_proc.poll() is not None:
-            stdout, stderr = nginx_proc.communicate()
-            debug_print(f"nginx failed to start. Exit code: {nginx_proc.returncode}")
-            debug_print(f"stdout: {stdout.decode() if stdout else 'None'}")
-            debug_print(f"stderr: {stderr.decode() if stderr else 'None'}")
-            return
-        
         for i in range(NUM_RUNS):
             print(f"Run {i+1}/{NUM_RUNS}...")
+
+            if not nginx_pid:
+                debug_print("nginx PID not found, skipping syscount")
+                continue
             
-            # Start sslsniff
-            debug_print(f"Starting kernel sslsniff: sudo {KERNEL_SSLSNIFF_PATH}")
+            # Start syscount
+            syscount_cmd = ["sudo", SYSCOUNT_PATH, "-d", "20"]
+            if target_pid:
+                syscount_cmd.extend(["-p", nginx_pid])
+            else:
+                # target another random pid
+                syscount_cmd.extend(["-p", "1"])
+            
+            debug_print(f"Starting kernel syscount: {' '.join(syscount_cmd)}")
             try:
-                sslsniff_proc = subprocess.Popen(["sudo", KERNEL_SSLSNIFF_PATH], 
-                                                stdout=subprocess.DEVNULL,
-                                                stderr=subprocess.DEVNULL)
-                time.sleep(2)  # Give sslsniff time to start
+                syscount_proc = subprocess.Popen(
+                    syscount_cmd, 
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL
+                )
+                time.sleep(2)  # Give syscount time to start
                 
                 # Run wrk
                 debug_print(f"Running wrk with command: {' '.join(WRK_CMD)}")
                 result = subprocess.run(WRK_CMD, capture_output=True, text=True, timeout=15)
                 req_per_sec = parse_wrk_output(result.stdout)
                 
-                # Kill sslsniff
-                debug_print("Killing sslsniff")
-                subprocess.run(["sudo", "pkill", "-f", "sslsniff"], stderr=subprocess.DEVNULL)
-                time.sleep(1)
-                
                 if req_per_sec:
-                    results["kernel_sslsniff"].append(req_per_sec)
+                    results[test_name].append(req_per_sec)
                     print(f"  Requests/sec: {req_per_sec:.2f}")
                 else:
                     debug_print(f"Failed to parse output: {result.stdout}")
+                
+                # Wait for syscount to finish
+                try:
+                    debug_print("Waiting for syscount to finish...")
+                    syscount_proc.wait(timeout=25)  # Give 5 seconds more than duration
+                except subprocess.TimeoutExpired:
+                    debug_print("syscount didn't finish within expected time, terminating...")
+                    subprocess.run(["sudo", "pkill", "-f", "syscount"], stderr=subprocess.DEVNULL)
+                    
             except Exception as e:
-                debug_print(f"Error in kernel sslsniff run: {e}")
+                debug_print(f"Error in kernel syscount run: {e}")
                 traceback.print_exc()
     
     except Exception as e:
-        debug_print(f"Error in kernel sslsniff test: {e}")
+        debug_print(f"Error in kernel syscount test: {e}")
         traceback.print_exc()
     finally:
         # Cleanup
         debug_print("Terminating nginx")
         try:
-            nginx_proc.terminate()
-            nginx_proc.wait(timeout=5)
+            if nginx_proc:
+                nginx_proc.terminate()
+                nginx_proc.wait(timeout=5)
         except Exception as e:
             debug_print(f"Error terminating nginx: {e}")
             try:
@@ -343,56 +369,77 @@ def run_kernel_sslsniff():
             except:
                 pass
 
-def run_bpftime_sslsniff():
-    """Run bpftime sslsniff benchmarks"""
-    print("\n=== Running bpftime sslsniff Tests ===")
-    cleanup_processes()
-    remove_access_log()  # Remove access log before starting nginx
+def run_userbpf_syscount(target_pid=None):
+    """
+    Run userspace BPF syscount benchmarks
+    If target_pid is provided, syscount will target that PID
+    Otherwise, it will track all processes
+    """
+    test_name = "userbpf_targeted" if target_pid else "userbpf_untargeted"
+    print(f"\n=== Running UserBPF syscount Tests ({test_name}) ===")
     
     # Check if required files exist
-    if not check_file_exists(SSLSNIFF_PATH) or not check_file_exists(AGENT_PATH) or not check_file_exists(SYSCALL_SERVER_PATH):
-        debug_print("Skipping bpftime sslsniff tests: required files not found")
+    if not check_file_exists(SYSCOUNT_PATH) or not check_file_exists(AGENT_PATH) or not check_file_exists(SYSCALL_SERVER_PATH):
+        debug_print("Skipping userspace BPF syscount tests: required files not found")
         return
-    
-    # Use the same nginx path approach as baseline
-    nginx_conf = "benchmark/ssl-nginx/nginx.conf"
-    if not os.path.exists(nginx_conf):
-        debug_print(f"ERROR: {nginx_conf} not found!")
-        return
-    
-    # Start nginx with full path
-    abs_nginx_conf = os.path.abspath(nginx_conf)
-    abs_nginx_dir = os.path.dirname(abs_nginx_conf)
-    modified_nginx_cmd = ["nginx", "-c", abs_nginx_conf, "-p", abs_nginx_dir]
     
     for i in range(NUM_RUNS):
         print(f"Run {i+1}/{NUM_RUNS}...")
         
         try:
-            # Start sslsniff with bpftime
-            debug_print(f"Starting sslsniff with bpftime: LD_PRELOAD={SYSCALL_SERVER_PATH} {SSLSNIFF_PATH}")
-            env = os.environ.copy()
-            env["LD_PRELOAD"] = SYSCALL_SERVER_PATH
-            sslsniff_proc = subprocess.Popen([SSLSNIFF_PATH], 
-                                            env=env,
-                                            stdout=subprocess.DEVNULL,
-                                            stderr=subprocess.DEVNULL)
-            time.sleep(2)  # Give sslsniff time to start
-            
             # Start nginx with bpftime
-            debug_print(f"Starting nginx with bpftime: LD_PRELOAD={AGENT_PATH} {' '.join(modified_nginx_cmd)}")
+            debug_print("Starting nginx with bpftime")
             env = os.environ.copy()
             env["LD_PRELOAD"] = AGENT_PATH
+            
+            # Use the same nginx path approach as baseline
+            nginx_conf = "benchmark/syscount-nginx/nginx.conf"
+            if not os.path.exists(nginx_conf):
+                debug_print(f"ERROR: {nginx_conf} not found!")
+                continue
+            
+            # Start nginx with full path
+            abs_nginx_conf = os.path.abspath(nginx_conf)
+            abs_nginx_dir = os.path.dirname(abs_nginx_conf)
+            modified_nginx_cmd = ["nginx", "-c", abs_nginx_conf, "-p", abs_nginx_dir]
+            
+            debug_print(f"Starting nginx with bpftime: {' '.join(modified_nginx_cmd)}")
             nginx_proc = subprocess.Popen(modified_nginx_cmd, env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
             time.sleep(2)  # Give nginx time to start
             
             # Check if nginx started successfully
             if nginx_proc.poll() is not None:
                 stdout, stderr = nginx_proc.communicate()
-                debug_print(f"nginx failed to start. Exit code: {nginx_proc.returncode}")
+                debug_print(f"nginx with bpftime failed to start. Exit code: {nginx_proc.returncode}")
                 debug_print(f"stdout: {stdout.decode() if stdout else 'None'}")
                 debug_print(f"stderr: {stderr.decode() if stderr else 'None'}")
                 continue
+            
+            # Get nginx PID
+            nginx_pid = subprocess.run(["pgrep", "-f", "nginx -c"], capture_output=True, text=True).stdout.strip()
+            debug_print(f"nginx PID: {nginx_pid}")
+            if not nginx_pid:
+                debug_print("nginx PID not found, skipping syscount")
+                continue
+            
+            # Start syscount with bpftime
+            syscount_cmd = [SYSCOUNT_PATH, "-d", "20"]
+            if target_pid:
+                syscount_cmd.extend(["-p", nginx_pid])
+            elif not target_pid:
+                # target another random pid
+                syscount_cmd.extend(["-p", "1"])
+            debug_print(f"Starting syscount with bpftime: {' '.join(syscount_cmd)}")
+            env = os.environ.copy()
+            env["LD_PRELOAD"] = SYSCALL_SERVER_PATH
+            
+            syscount_proc = subprocess.Popen(
+                syscount_cmd,
+                env=env,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL
+            )
+            time.sleep(2)  # Give syscount time to start
             
             # Run wrk
             debug_print(f"Running wrk with command: {' '.join(WRK_CMD)}")
@@ -400,13 +447,21 @@ def run_bpftime_sslsniff():
             req_per_sec = parse_wrk_output(result.stdout)
             
             if req_per_sec:
-                results["bpftime_sslsniff"].append(req_per_sec)
+                results[test_name].append(req_per_sec)
                 print(f"  Requests/sec: {req_per_sec:.2f}")
             else:
                 debug_print(f"Failed to parse output: {result.stdout}")
+            
+            # Wait for syscount to finish
+            try:
+                debug_print("Waiting for syscount to finish...")
+                syscount_proc.wait(timeout=25)  # Give 5 seconds more than duration
+            except subprocess.TimeoutExpired:
+                debug_print("syscount didn't finish within expected time, terminating...")
+                syscount_proc.terminate()
                 
         except Exception as e:
-            debug_print(f"Error in bpftime sslsniff run: {e}")
+            debug_print(f"Error in userspace BPF syscount run: {e}")
             traceback.print_exc()
         finally:
             # Cleanup
@@ -415,9 +470,9 @@ def run_bpftime_sslsniff():
                 if 'nginx_proc' in locals():
                     nginx_proc.terminate()
                     nginx_proc.wait(timeout=5)
-                if 'sslsniff_proc' in locals():
-                    sslsniff_proc.terminate()
-                    sslsniff_proc.wait(timeout=5)
+                if 'syscount_proc' in locals():
+                    syscount_proc.terminate()
+                    syscount_proc.wait(timeout=5)
             except Exception as e:
                 debug_print(f"Error terminating processes: {e}")
             
@@ -428,18 +483,31 @@ def print_statistics():
     print("\n=== Benchmark Results ===")
     print(f"Each configuration run {NUM_RUNS} times")
     
+    # Dictionary for formatted names for printing
+    name_map = {
+        "native": "Native (No tracing)",
+        "kernel_targeted": "Kernel syscount (targeting nginx)",
+        "kernel_untargeted": "Kernel syscount (not targeting nginx)",
+        "userbpf_targeted": "UserBPF syscount (targeting nginx)",
+        "userbpf_untargeted": "UserBPF syscount (not targeting nginx)"
+    }
+    
+    # For storing avg values for later comparison
+    avgs = {}
+    
     for test_name, values in results.items():
         if not values:
-            print(f"\n{test_name}: No valid results")
+            print(f"\n{name_map.get(test_name, test_name)}: No valid results")
             continue
             
         avg = statistics.mean(values)
+        avgs[test_name] = avg
         median = statistics.median(values)
         stdev = statistics.stdev(values) if len(values) > 1 else 0
         min_val = min(values)
         max_val = max(values)
         
-        print(f"\n{test_name.replace('_', ' ').title()}:")
+        print(f"\n{name_map.get(test_name, test_name)}:")
         print(f"  Requests/sec (mean):   {avg:.2f}")
         print(f"  Requests/sec (median): {median:.2f}")
         print(f"  Standard deviation:    {stdev:.2f}")
@@ -448,28 +516,32 @@ def print_statistics():
         print(f"  All runs:              {[round(x, 2) for x in values]}")
     
     # Compare results
-    if results["baseline"] and results["kernel_sslsniff"]:
-        baseline_avg = statistics.mean(results["baseline"])
-        kernel_avg = statistics.mean(results["kernel_sslsniff"])
-        kernel_impact = ((baseline_avg - kernel_avg) / baseline_avg) * 100
-        print(f"\nKernel sslsniff performance impact: {kernel_impact:.2f}% decrease")
+    if "native" in avgs:
+        native_avg = avgs["native"]
+        print("\n=== Performance Impact Compared to Native ===")
         
-    if results["baseline"] and results["bpftime_sslsniff"]:
-        baseline_avg = statistics.mean(results["baseline"])
-        bpftime_avg = statistics.mean(results["bpftime_sslsniff"])
-        bpftime_impact = ((baseline_avg - bpftime_avg) / baseline_avg) * 100
-        print(f"bpftime sslsniff performance impact: {bpftime_impact:.2f}% decrease")
+        for test_name, avg in avgs.items():
+            if test_name != "native":
+                impact = ((native_avg - avg) / native_avg) * 100
+                print(f"{name_map.get(test_name, test_name)}: {impact:.2f}% decrease")
+        
+    # Compare userBPF to kernel
+    if "kernel_targeted" in avgs and "userbpf_targeted" in avgs:
+        kernel_avg = avgs["kernel_targeted"]
+        userbpf_avg = avgs["userbpf_targeted"]
+        improvement = ((userbpf_avg - kernel_avg) / kernel_avg) * 100
+        print(f"\nUserBPF improvement over kernel (targeted): {improvement:.2f}%")
     
-    if results["kernel_sslsniff"] and results["bpftime_sslsniff"]:
-        kernel_avg = statistics.mean(results["kernel_sslsniff"])
-        bpftime_avg = statistics.mean(results["bpftime_sslsniff"])
-        improvement = ((bpftime_avg - kernel_avg) / kernel_avg) * 100
-        print(f"bpftime improvement over kernel: {improvement:.2f}%")
+    if "kernel_untargeted" in avgs and "userbpf_untargeted" in avgs:
+        kernel_avg = avgs["kernel_untargeted"]
+        userbpf_avg = avgs["userbpf_untargeted"]
+        improvement = ((userbpf_avg - kernel_avg) / kernel_avg) * 100
+        print(f"UserBPF improvement over kernel (untargeted): {improvement:.2f}%")
 
 def save_results():
     """Save results to a JSON file"""
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    filename = f"benchmark/ssl-nginx/benchmark_results_{timestamp}.json"
+    filename = f"benchmark/syscount-nginx/benchmark_results_{timestamp}.json"
     
     with open(filename, 'w') as f:
         json.dump({
@@ -501,7 +573,7 @@ def main():
             return
         
         # Check if we're in the right directory
-        if not os.path.exists("benchmark/ssl-nginx/nginx.conf"):
+        if not os.path.exists("benchmark/syscount-nginx/nginx.conf"):
             debug_print("nginx.conf not found in expected location")
             debug_print("Checking if we need to adjust paths...")
             
@@ -509,18 +581,18 @@ def main():
             script_dir = os.path.dirname(os.path.abspath(__file__))
             debug_print(f"Script directory: {script_dir}")
             
-            # If we're running from the benchmark/ssl-nginx directory, adjust paths
-            if os.path.basename(script_dir) == "ssl-nginx":
-                debug_print("Running from ssl-nginx directory, adjusting paths")
+            # If we're running from the benchmark/syscount-nginx directory, adjust paths
+            if os.path.basename(script_dir) == "syscount-nginx":
+                debug_print("Running from syscount-nginx directory, adjusting paths")
                 os.chdir(os.path.dirname(os.path.dirname(script_dir)))  # Go up two levels
                 debug_print(f"New working directory: {os.getcwd()}")
         
         # Check if we can access necessary files
-        for path in [AGENT_PATH, SYSCALL_SERVER_PATH, SSLSNIFF_PATH]:
+        for path in [AGENT_PATH, SYSCALL_SERVER_PATH, SYSCOUNT_PATH]:
             check_file_exists(path)
         
         # Check if nginx.conf exists
-        nginx_conf_path = "benchmark/ssl-nginx/nginx.conf"
+        nginx_conf_path = "benchmark/syscount-nginx/nginx.conf"
         if not os.path.exists(nginx_conf_path):
             debug_print(f"ERROR: {nginx_conf_path} not found!")
             debug_print("This is required for the benchmark to run.")
@@ -533,9 +605,11 @@ def main():
             return
         
         # Run benchmarks
-        run_baseline()
-        run_kernel_sslsniff()
-        run_bpftime_sslsniff()
+        run_native()                      # No tracing
+        run_kernel_syscount(target_pid=True)  # Kernel syscount targeting nginx
+        run_kernel_syscount(target_pid=False) # Kernel syscount not targeting nginx
+        run_userbpf_syscount(target_pid=True) # UserBPF syscount targeting nginx
+        run_userbpf_syscount(target_pid=False)# UserBPF syscount not targeting nginx
         
         # Print and save results
         print_statistics()

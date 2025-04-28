@@ -2,6 +2,17 @@
 
 This test is to show the performance impact of kernel sslsniff and userspace sslsniff. sslsniff is a tool to intercept the ssl handshake and print the packet content of encrypted ssl handshake. The similar approach is very common in modern observability tools and security tools.
 
+## Run with one click script
+
+```sh
+cd /path/to/bpftime
+python3 benchmark/ssl-nginx/draw_figture.py
+```
+
+The result is saved in `size_benchmark_*.txt` and `size_benchmark_*.json`.  You can also check the figture generated.
+
+## Test commands
+
 This test shows that:
 
 1. kernel sslsniff can significantly reduce the performance of nginx, lead to a 2x performance drop.

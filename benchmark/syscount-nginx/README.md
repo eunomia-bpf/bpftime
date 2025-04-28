@@ -8,5 +8,13 @@ We will test the syscount eBPF program tracing impact on nginx with 5 configurat
 4. Userspace syscount
 5. Userspace syscount do not target nginx pid
 
+## Run with one click script
+
+```sh
+cd /path/to/bpftime
+python3 benchmark/syscount-nginx/benchmark.py
+```
+
+
 
 

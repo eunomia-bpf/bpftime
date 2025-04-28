@@ -502,7 +502,7 @@ async def main():
     # Auto-elevate if needed before running kernel tests
     run_kernel = ensure_sudo()
     
-    num_runs = 1
+    num_runs = 10
     log_message(f"Will run each benchmark {num_runs} times")
 
     try:

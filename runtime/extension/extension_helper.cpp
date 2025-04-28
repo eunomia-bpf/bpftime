@@ -159,33 +159,33 @@ extern const bpftime_helper_group extesion_group = { {
 	  } },
 #endif
 #if defined (BPFTIME_ENABLE_IOURING_EXT) && __linux__
-	{ EXTENDED_HELPER_IOURING_INIT,
+	{ EXTENDED_UFUNC_IOURING_INIT,
 	  bpftime_helper_info{
-		  .index = EXTENDED_HELPER_IOURING_INIT,
+		  .index = EXTENDED_UFUNC_IOURING_INIT,
 		  .name = "io_uring_init",
 		  .fn = (void *)io_uring_init_global,
 	  } },
-	{ EXTENDED_HELPER_IOURING_SUBMIT_WRITE,
+	{ EXTENDED_UFUNC_IOURING_SUBMIT_WRITE,
 	  bpftime_helper_info{
-		  .index = EXTENDED_HELPER_IOURING_SUBMIT_WRITE,
+		  .index = EXTENDED_UFUNC_IOURING_SUBMIT_WRITE,
 		  .name = "io_uring_submit_write",
 		  .fn = (void *)bpftime_io_uring_submit_write,
 	  } },
-	{ EXTENDED_HELPER_IOURING_SUBMIT_FSYNC,
+	{ EXTENDED_UFUNC_IOURING_SUBMIT_FSYNC,
 	  bpftime_helper_info{
-		  .index = EXTENDED_HELPER_IOURING_SUBMIT_FSYNC,
+		  .index = EXTENDED_UFUNC_IOURING_SUBMIT_FSYNC,
 		  .name = "io_uring_submit_fsync",
 		  .fn = (void *)bpftime_io_uring_submit_fsync,
 	  } },
-	{ EXTENDED_HELPER_IOURING_WAIT_AND_SEEN,
+	{ EXTENDED_UFUNC_IOURING_WAIT_AND_SEEN,
 	  bpftime_helper_info{
-		  .index = EXTENDED_HELPER_IOURING_WAIT_AND_SEEN,
+		  .index = EXTENDED_UFUNC_IOURING_WAIT_AND_SEEN,
 		  .name = "io_uring_wait_and_seen",
 		  .fn = (void *)bpftime_io_uring_wait_and_seen,
 	  } },
-	{ EXTENDED_HELPER_IOURING_SUBMIT,
+	{ EXTENDED_UFUNC_IOURING_SUBMIT,
 	  bpftime_helper_info{
-		  .index = EXTENDED_HELPER_IOURING_SUBMIT,
+		  .index = EXTENDED_UFUNC_IOURING_SUBMIT,
 		  .name = "io_uring_submit",
 		  .fn = (void *)bpftime_io_uring_submit,
 	  } },

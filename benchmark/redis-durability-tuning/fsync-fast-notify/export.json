@@ -1,0 +1,89 @@
+{
+    "10": {
+        "attr": {
+            "_module_name": "/root/zys/bpftime-evaluation/redis/src/redis-server",
+            "offset": 1177888,
+            "pid": -1,
+            "ref_ctr_off": 65535,
+            "tracepoint_id": -1,
+            "type": 8
+        },
+        "type": "bpf_perf_event_handler"
+    },
+    "4": {
+        "attr": {
+            "btf_id": 2,
+            "btf_key_type_id": 0,
+            "btf_value_type_id": 17,
+            "btf_vmlinux_value_type_id": 0,
+            "flags": 128,
+            "ifindex": 0,
+            "kernel_bpf_map_id": 0,
+            "key_size": 4,
+            "map_extra": 0,
+            "map_type": 2,
+            "max_entries": 1,
+            "value_size": 32
+        },
+        "name": "rocksdb_.rodata",
+        "type": "bpf_map_handler"
+    },
+    "5": {
+        "attr": {
+            "attach_fds": [
+                10
+            ],
+            "cnt": 12,
+            "insns": "791660000000000079126800000000007911700000000000bf6300000000000085000000ef03000085000000f203000085000000f1030000b701000000000000bf62000000000000850000003a000000b7000000000000009500000000000000",
+            "type": 0
+        },
+        "name": "write",
+        "type": "bpf_prog_handler"
+    },
+    "6": {
+        "attr": {
+            "attach_fds": [
+                9
+            ],
+            "cnt": 9,
+            "insns": "791170000000000085000000f003000085000000f203000085000000f1030000b701000000000000b702000000000000850000003a000000b7000000000000009500000000000000",
+            "type": -16368
+        },
+        "name": "fsync",
+        "type": "bpf_prog_handler"
+    },
+    "7": {
+        "attr": {
+            "attach_fds": [
+                8
+            ],
+            "cnt": 7,
+            "insns": "18210000040000000000000000000000b702000020000000850000000600000085000000ee030000b7000000000000009500000000000000",
+            "type": -16368
+        },
+        "name": "start",
+        "type": "bpf_prog_handler"
+    },
+    "8": {
+        "attr": {
+            "_module_name": "/root/zys/bpftime-evaluation/redis/src/redis-server",
+            "offset": 620448,
+            "pid": -1,
+            "ref_ctr_off": 0,
+            "tracepoint_id": -1,
+            "type": 8
+        },
+        "type": "bpf_perf_event_handler"
+    },
+    "9": {
+        "attr": {
+            "_module_name": "/lib/x86_64-linux-gnu/libc.so.6",
+            "offset": 1126000,
+            "pid": -1,
+            "ref_ctr_off": 65535,
+            "tracepoint_id": -1,
+            "type": 8
+        },
+        "type": "bpf_perf_event_handler"
+    }
+}
