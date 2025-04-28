@@ -1,4 +1,4 @@
-name: BPFtime Syscall Tracing
+name: Build and run bpftrace tests
 
 on:
   push:
@@ -16,7 +16,7 @@ env:
   CLIENT_LOG: logs/bpftime_client.log
 
 jobs:
-  syscall-tracing-load-start-test:
+  build-and-run-syscall-tracing-load-start-test:
     runs-on: ubuntu-22.04
     container:
       image: "manjusakalza/bpftime-base-image:ubuntu-2204"
@@ -43,7 +43,7 @@ jobs:
           echo "TEST_DATA_LINE_2_XYZ" >> build/install_manifest.txt
           echo "Created build/install_manifest.txt:"; cat build/install_manifest.txt
           
-          # 确保共享内存目录存在且权限正确
+          # Ensure shared memory directory exists with correct permissions
           sudo mkdir -p $BPFTIME_SHARED_MEMORY_PATH
           sudo chmod 1777 $BPFTIME_SHARED_MEMORY_PATH
 
@@ -66,17 +66,17 @@ jobs:
         run: |
           echo "=== Finding all necessary libraries ==="
           
-          # 查找所有可能需要的库文件
+          # Find all potentially needed library files
           find build -name "*.so" | sort
           
-          # 特别检查关键库文件
+          # Specifically check critical library files
           AGENT_LIB="build/runtime/agent/libbpftime-agent.so"
           SERVER_LIB="build/runtime/syscall-server/libbpftime-syscall-server.so"
           TRANSFORMER_LIB="build/attach/text_segment_transformer/libbpftime-agent-transformer.so"
           
           if [ ! -f "$AGENT_LIB" ]; then
             echo "ERROR: Agent library not found at $AGENT_LIB"
-            # 尝试查找替代位置
+            # Try to find alternative location
             AGENT_LIB=$(find build -name "libbpftime-agent.so" | head -1)
             if [ -n "$AGENT_LIB" ]; then
               echo "Found agent library at alternative location: $AGENT_LIB"
@@ -88,7 +88,7 @@ jobs:
           
           if [ ! -f "$SERVER_LIB" ]; then
             echo "ERROR: Server library not found at $SERVER_LIB"
-            # 尝试查找替代位置
+            # Try to find alternative location
             SERVER_LIB=$(find build -name "libbpftime-syscall-server.so" | head -1)
             if [ -n "$SERVER_LIB" ]; then
               echo "Found server library at alternative location: $SERVER_LIB"
@@ -98,10 +98,10 @@ jobs:
             fi
           fi
           
-          # 检查 transformer 库，可能不是必需的
+          # Check transformer library, which may not be required
           if [ ! -f "$TRANSFORMER_LIB" ]; then
             echo "WARNING: Transformer library not found at $TRANSFORMER_LIB"
-            # 尝试查找替代位置
+            # Try to find alternative location
             TRANSFORMER_LIB=$(find build -name "libbpftime-agent-transformer.so" | head -1)
             if [ -n "$TRANSFORMER_LIB" ]; then
               echo "Found transformer library at alternative location: $TRANSFORMER_LIB"
@@ -111,7 +111,7 @@ jobs:
             fi
           fi
           
-          # 保存库路径到环境变量
+          # Save library paths to environment variables
           echo "AGENT_LIB=$AGENT_LIB" >> $GITHUB_ENV
           echo "SERVER_LIB=$SERVER_LIB" >> $GITHUB_ENV
           echo "TRANSFORMER_LIB=$TRANSFORMER_LIB" >> $GITHUB_ENV
@@ -120,7 +120,7 @@ jobs:
         run: |
           echo "=== Running server and client in the same step ==="
           
-          # 获取库路径
+          # Get library paths
           AGENT_LIB="${{ env.AGENT_LIB }}"
           SERVER_LIB="${{ env.SERVER_LIB }}"
           TRANSFORMER_LIB="${{ env.TRANSFORMER_LIB }}"
@@ -130,22 +130,22 @@ jobs:
           echo "SERVER_LIB: $SERVER_LIB"
           echo "TRANSFORMER_LIB: $TRANSFORMER_LIB"
           
-          # 清理之前的日志
+          # Clean previous logs
           mkdir -p logs
           rm -f "$SERVER_LOG" "$CLIENT_LOG" 2>/dev/null || true
           
-          # 设置环境变量
+          # Set environment variables
           export BPFTIME_USED=1
           export SPDLOG_LEVEL=debug
           
-          # 启动服务器
+          # Start server
           echo "Starting server in background..."
           sudo -E LD_PRELOAD=$SERVER_LIB bpftrace -e 'tracepoint:syscalls:sys_enter_openat { printf("SERVER_TRACE (openat): %s %s\n", comm, str(args->filename)); }' > "$SERVER_LOG" 2>&1 &
           
           SERVER_PID=$!
           echo "Server started with PID: $SERVER_PID"
           
-          # 等待服务器初始化
+          # Wait for server initialization
           echo "Waiting for server to initialize..."
           INIT_TIMEOUT=30
           for i in $(seq 1 $INIT_TIMEOUT); do
@@ -161,7 +161,7 @@ jobs:
             sleep 1
           done
           
-          # 确认服务器进程仍在运行
+          # Confirm server process is still running
           if ! ps -p $SERVER_PID > /dev/null; then
             echo "ERROR: Server process died during initialization"
             cat "$SERVER_LOG"
@@ -171,36 +171,36 @@ jobs:
           echo "Server log after initialization:"
           cat "$SERVER_LOG"
           
-          # 运行客户端命令，使用完整的 LD_PRELOAD 配置
+          # Run client command with complete LD_PRELOAD configuration
           echo "Running cat command with complete LD_PRELOAD configuration..."
           
-          # 准备 LD_PRELOAD 参数，根据 transformer 库是否存在进行调整
+          # Prepare LD_PRELOAD parameters, adjusting based on whether transformer library exists
           if [ -n "$TRANSFORMER_LIB" ]; then
-            # 同时使用 agent 和 transformer 库
+            # Use both agent and transformer libraries
             echo "Using both agent and transformer libraries"
             LD_PRELOAD_CMD="env AGENT_SO=$AGENT_LIB LD_PRELOAD=$TRANSFORMER_LIB"
           else
-            # 只使用 agent 库
+            # Use only agent library
             echo "Using only agent library"
             LD_PRELOAD_CMD="env LD_PRELOAD=$AGENT_LIB"
           fi
           
-          # 执行命令
+          # Execute command
           sudo -E $LD_PRELOAD_CMD cat build/install_manifest.txt | tee "$CLIENT_LOG"
           CAT_EXIT_CODE=$?
           
-          # 等待服务器处理事件
+          # Wait for server to process events
           echo "Waiting for server to process events..."
           sleep 10
           
-          # 强制刷新
+          # Force flush
           sync
           
-          # 显示服务器日志
+          # Display server log
           echo "Server log after client execution:"
           cat "$SERVER_LOG"
           
-          # 检查是否有cat命令的SERVER_TRACE输出
+          # Check if there's SERVER_TRACE output for the cat command
           if grep -q "SERVER_TRACE.*cat.*build/install_manifest.txt" "$SERVER_LOG"; then
             echo "SUCCESS: Found SERVER_TRACE for cat command in server log"
             CAT_TRACE_FOUND="true"
@@ -209,15 +209,15 @@ jobs:
             CAT_TRACE_FOUND="false"
           fi
           
-          # 停止服务器
+          # Stop server
           echo "Stopping server process PID $SERVER_PID"
           sudo kill -9 $SERVER_PID 2>/dev/null || echo "Kill failed"
           sleep 2
           
-          # 分析结果
+          # Analyze results
           echo "=== Final Analysis ==="
           
-          # 检查cat命令是否成功执行
+          # Check if cat command executed successfully
           if [ "$CAT_EXIT_CODE" = "0" ]; then
             echo "SUCCESS: Cat command executed successfully with exit code 0"
             CAT_SUCCESS="true"
@@ -226,7 +226,7 @@ jobs:
             CAT_SUCCESS="false"
           fi
           
-          # 检查是否捕获到cat命令
+          # Check if cat command was captured
           if [ "$CAT_TRACE_FOUND" = "true" ]; then
             echo "SUCCESS: Cat command tracing is working"
             TRACING_SUCCESS="true"
@@ -235,7 +235,7 @@ jobs:
             TRACING_SUCCESS="false"
           fi
           
-          # 最终结果判断
+          # Final result determination
           if [ "$CAT_SUCCESS" = "true" ] && [ "$TRACING_SUCCESS" = "true" ]; then
             echo "OVERALL SUCCESS: Cat command ran successfully AND tracing detected cat command"
             exit 0
@@ -250,7 +250,7 @@ jobs:
             exit 1
           fi
 
-  malloc-example-test:
+  build-and-run-malloc-example-test:
     runs-on: ubuntu-22.04
     container:
       image: "manjusakalza/bpftime-base-image:ubuntu-2204"
@@ -274,7 +274,7 @@ jobs:
           echo "==== bpftrace version ===="; which bpftrace && bpftrace --version || echo "bpftrace not found"
           mkdir -p logs
           
-          # 确保共享内存目录存在且权限正确
+          # Ensure shared memory directory exists with correct permissions
           sudo mkdir -p $BPFTIME_SHARED_MEMORY_PATH
           sudo chmod 1777 $BPFTIME_SHARED_MEMORY_PATH
 
@@ -298,7 +298,7 @@ jobs:
           echo "Building malloc example"
           make -C example/malloc
           
-          # 检查编译结果 - 注意可执行文件可能在 .output 目录或当前目录
+          # Check build results - note that executables may be in .output directory or current directory
           if [ -f "example/malloc/malloc" ] && [ -f "example/malloc/victim" ]; then
             echo "SUCCESS: Malloc example built successfully"
             ls -la example/malloc/
@@ -319,17 +319,17 @@ jobs:
         run: |
           echo "=== Finding all necessary libraries ==="
           
-          # 查找所有可能需要的库文件
+          # Find all potentially needed library files
           find build -name "*.so" | sort
           
-          # 检查关键库文件
+          # Check critical library files
           AGENT_LIB="build/runtime/agent/libbpftime-agent.so"
           SERVER_LIB="build/runtime/syscall-server/libbpftime-syscall-server.so"
           TRANSFORMER_LIB="build/attach/text_segment_transformer/libbpftime-agent-transformer.so"
           
           if [ ! -f "$AGENT_LIB" ]; then
             echo "ERROR: Agent library not found at $AGENT_LIB"
-            # 尝试查找替代位置
+            # Try to find alternative location
             AGENT_LIB=$(find build -name "libbpftime-agent.so" | head -1)
             if [ -n "$AGENT_LIB" ]; then
               echo "Found agent library at alternative location: $AGENT_LIB"
@@ -341,7 +341,7 @@ jobs:
           
           if [ ! -f "$SERVER_LIB" ]; then
             echo "ERROR: Server library not found at $SERVER_LIB"
-            # 尝试查找替代位置
+            # Try to find alternative location
             SERVER_LIB=$(find build -name "libbpftime-syscall-server.so" | head -1)
             if [ -n "$SERVER_LIB" ]; then
               echo "Found server library at alternative location: $SERVER_LIB"
@@ -352,7 +352,7 @@ jobs:
           fi
           
           
-          # 保存库路径到环境变量
+          # Save library paths to environment variables
           echo "AGENT_LIB=$AGENT_LIB" >> $GITHUB_ENV
           echo "SERVER_LIB=$SERVER_LIB" >> $GITHUB_ENV
           echo "TRANSFORMER_LIB=$TRANSFORMER_LIB" >> $GITHUB_ENV
@@ -361,7 +361,7 @@ jobs:
         run: |
           echo "=== Running malloc example with LD_PRELOAD ==="
           
-          # 获取库路径
+          # Get library paths
           AGENT_LIB="${{ env.AGENT_LIB }}"
           SERVER_LIB="${{ env.SERVER_LIB }}"
           TRANSFORMER_LIB="${{ env.TRANSFORMER_LIB }}"
@@ -371,17 +371,17 @@ jobs:
           echo "SERVER_LIB: $SERVER_LIB"
           echo "TRANSFORMER_LIB: $TRANSFORMER_LIB"
           
-          # 清理之前的日志
+          # Clean previous logs
           mkdir -p logs
           SERVER_LOG="logs/malloc_server.log"
           CLIENT_LOG="logs/malloc_client.log"
           rm -f "$SERVER_LOG" "$CLIENT_LOG" 2>/dev/null || true
           
-          # 设置环境变量
+          # Set environment variables
           export BPFTIME_USED=1
           export SPDLOG_LEVEL=debug
           
-          # 找到 malloc 可执行文件的位置
+          # Find the location of malloc executable
           if [ -f "example/malloc/malloc" ]; then
             MALLOC_BIN="example/malloc/malloc"
           elif [ -f "example/malloc/.output/malloc" ]; then
@@ -393,14 +393,14 @@ jobs:
           fi
           echo "Using malloc binary: $MALLOC_BIN"
           
-          # 启动服务器 - 使用 bpftrace 跟踪 malloc 函数
+          # Start server - use bpftrace to trace malloc function
           echo "Starting server with bpftrace to trace malloc function..."
           sudo -E LD_PRELOAD=$SERVER_LIB bpftrace -e 'uprobe:/lib/x86_64-linux-gnu/libc.so.6:malloc { printf("PID: %d (%s) malloc size: %d\n", pid, comm, arg0); }' > "$SERVER_LOG" 2>&1 &
           
           SERVER_PID=$!
           echo "Server started with PID: $SERVER_PID"
           
-          # 等待服务器初始化
+          # Wait for server initialization
           echo "Waiting for server to initialize..."
           INIT_TIMEOUT=30
           for i in $(seq 1 $INIT_TIMEOUT); do
@@ -416,7 +416,7 @@ jobs:
             sleep 1
           done
           
-          # 确认服务器进程仍在运行
+          # Confirm server process is still running
           if ! ps -p $SERVER_PID > /dev/null; then
             echo "ERROR: Server process died during initialization"
             cat "$SERVER_LOG"
@@ -426,47 +426,47 @@ jobs:
           echo "Server log after initialization:"
           cat "$SERVER_LOG"
           
-          # 运行客户端命令，使用完整的 LD_PRELOAD 配置
+          # Run client command with complete LD_PRELOAD configuration
           echo "Running victim program with complete LD_PRELOAD configuration..."
           
-          # 准备 LD_PRELOAD 参数，根据 transformer 库是否存在进行调整
+          # Prepare LD_PRELOAD parameters, adjusting based on whether transformer library exists
           if [ -n "$TRANSFORMER_LIB" ]; then
-            # 同时使用 agent 和 transformer 库
+            # Use both agent and transformer libraries
             echo "Using both agent and transformer libraries"
             LD_PRELOAD_CMD="env AGENT_SO=$AGENT_LIB LD_PRELOAD=$TRANSFORMER_LIB"
           else
-            # 只使用 agent 库
+            # Use only agent library
             echo "Using only agent library"
             LD_PRELOAD_CMD="env LD_PRELOAD=$AGENT_LIB"
           fi
           
-          # 确认 victim 程序存在
+          # Confirm victim program exists
           if [ ! -f "example/malloc/victim" ]; then
             echo "ERROR: Cannot find victim executable"
             find example/malloc -type f -name "victim" | sort
             exit 1
           fi
           
-          # 执行 victim 程序，使用 timeout 命令限制运行时间为 5 秒
+          # Execute victim program, using timeout command to limit running time to 5 seconds
           echo "Running victim program with 5 second timeout..."
           sudo -E timeout 5s $LD_PRELOAD_CMD ./example/malloc/victim | tee "$CLIENT_LOG"
           VICTIM_EXIT_CODE=$?
           
-          # 检查退出码，timeout 命令在超时终止程序时会返回 124
+          # Check exit code, timeout command returns 124 when terminating program after timeout
           if [ $VICTIM_EXIT_CODE -eq 124 ]; then
             echo "INFO: Victim program was terminated after timeout (5s). This is expected and not an error."
-            # 将退出码重置为 0，因为超时不是测试失败
+            # Reset exit code to 0, as timeout is not a test failure
             VICTIM_EXIT_CODE=0
           fi
           
-          # 等待服务器处理事件 - 减少等待时间
+          # Wait for server to process events - reduce waiting time
           echo "Waiting for server to process events..."
           sleep 3
           
-          # 强制刷新
+          # Force flush
           sync
           
-          # 显示服务器日志
+          # Display server log
           echo "Server log after victim execution:"
           cat "$SERVER_LOG"
           
@@ -478,23 +478,23 @@ jobs:
             MALLOC_TRACE_FOUND="false"
           fi
           
-          # 显示客户端日志
+          # Display client log
           echo "Client log after execution:"
           cat "$CLIENT_LOG"
           
-          # 客户端只需要成功运行，不需要检查特定输出
+          # Client only needs to run successfully, no need to check for specific output
           echo "NOTE: Not checking for specific client output, only verifying successful execution"
-          CLIENT_OUTPUT_FOUND="true"  # 只要客户端成功运行就算通过这项检查
+          CLIENT_OUTPUT_FOUND="true"  # As long as the client runs successfully, this check passes
           
-          # 停止服务器
+          # Stop server
           echo "Stopping server process PID $SERVER_PID"
           sudo kill -9 $SERVER_PID 2>/dev/null || echo "Kill failed"
           sleep 2
           
-          # 分析结果
+          # Analyze results
           echo "=== Final Analysis ==="
           
-          # 检查victim命令是否成功执行
+          # Check if victim command executed successfully
           if [ "$VICTIM_EXIT_CODE" = "0" ]; then
             echo "SUCCESS: Victim program executed successfully with exit code 0"
             VICTIM_SUCCESS="true"
@@ -503,7 +503,7 @@ jobs:
             VICTIM_SUCCESS="false"
           fi
           
-          # 最终结果判断 - 只检查程序是否成功运行和是否捕获到 malloc 调用
+          # Final result determination - only check if program ran successfully and if malloc calls were captured
           if [ "$VICTIM_SUCCESS" = "true" ] && [ "$MALLOC_TRACE_FOUND" = "true" ]; then
             echo "OVERALL SUCCESS: Malloc example test passed - victim program ran successfully AND malloc was traced"
             exit 0
