@@ -105,16 +105,18 @@ async def run_userspace_uprobe_test(num_runs=10):
     server_start_cb = asyncio.Event()
     
     log_message(f"Launching uprobe server: {UPROBE_DIR / 'uprobe'}")
+    # Add environment variable to enable detailed logging
+    env = {
+        "LD_PRELOAD": str(PROJECT_ROOT / "build/runtime/syscall-server/libbpftime-syscall-server.so"),
+        "SPDLOG_LEVEL": "debug"  # Enable more detailed debug output
+    }
+    
     server = await asyncio.subprocess.create_subprocess_exec(
         str(UPROBE_DIR / "uprobe"),
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.STDOUT,
         cwd=PROJECT_ROOT,
-        env={
-            "LD_PRELOAD": str(
-                PROJECT_ROOT / "build/runtime/syscall-server/libbpftime-syscall-server.so"
-            )
-        },
+        env=env,
     )
     
     server_stdout_task = asyncio.get_running_loop().create_task(
@@ -122,12 +124,23 @@ async def run_userspace_uprobe_test(num_runs=10):
             server.stdout,
             should_exit,
             "SERVER",
-            (server_start_cb, "__bench_probe is for uprobe only"),
+            (server_start_cb, "Successfully started!"),
         )
     )
     
-    await server_start_cb.wait()
-    log_message("Server started successfully")
+    try:
+        # Wait for server to start with timeout
+        await asyncio.wait_for(server_start_cb.wait(), timeout=10.0)
+        log_message("Server started successfully")
+        
+        # Wait 5 seconds after server starts before running tests
+        log_message("Waiting 5 seconds before starting tests...")
+        await asyncio.sleep(5)
+        log_message("Delay completed, starting tests now")
+    except asyncio.TimeoutError:
+        log_message("WARNING: Timeout waiting for server to start, proceeding anyway")
+        # Set the event to prevent hanging
+        server_start_cb.set()
     
     result = None
     for i in range(num_runs):
@@ -184,7 +197,7 @@ async def run_kernel_uprobe_test(num_runs=10):
             server.stdout,
             should_exit,
             "SERVER",
-            (server_start_cb, "__bench_probe is for uprobe only"),
+            (server_start_cb, "Successfully started!"),
         )
     )
     
@@ -192,6 +205,11 @@ async def run_kernel_uprobe_test(num_runs=10):
         # Wait for server to start with timeout
         await asyncio.wait_for(server_start_cb.wait(), timeout=10.0)
         log_message("Kernel uprobe server started successfully")
+        
+        # Wait 5 seconds after server starts before running tests
+        log_message("Waiting 5 seconds before starting tests...")
+        await asyncio.sleep(5)
+        log_message("Delay completed, starting tests now")
     except asyncio.TimeoutError:
         log_message("WARNING: Timeout waiting for server to start, proceeding anyway")
         # Set the event to prevent hanging
@@ -289,6 +307,187 @@ def ensure_sudo():
     return True
 
 
+def generate_markdown_report(results_json, output_path):
+    """
+    Generate a markdown report from benchmark results
+    
+    Args:
+        results_json: The benchmark results dictionary
+        output_path: Path to save the markdown report
+    """
+    log_message(f"Generating markdown report at {output_path}")
+    
+    # Get system information
+    import platform
+    from datetime import datetime
+    import os
+    
+    # Function to get CPU info in a more readable format
+    def get_cpu_info():
+        cpu_info = {"model": "Unknown", "cores": "Unknown", "threads": "Unknown"}
+        try:
+            # Try to get CPU model name from /proc/cpuinfo on Linux
+            if os.path.exists('/proc/cpuinfo'):
+                with open('/proc/cpuinfo', 'r') as f:
+                    model_name = None
+                    processor_count = 0
+                    for line in f:
+                        if line.startswith('model name'):
+                            if not model_name:  # Take only the first model name
+                                model_name = line.split(':')[1].strip()
+                        if line.startswith('processor'):
+                            processor_count += 1
+                    
+                    if model_name:
+                        cpu_info['model'] = model_name
+                    cpu_info['threads'] = processor_count
+                    
+                    # Try to get physical core count
+                    try:
+                        # Look for unique combinations of physical id and core id
+                        physical_ids = set()
+                        with open('/proc/cpuinfo', 'r') as f:
+                            physical_id = None
+                            core_id = None
+                            cores = set()
+                            for line in f:
+                                if line.startswith('physical id'):
+                                    physical_id = line.split(':')[1].strip()
+                                elif line.startswith('core id'):
+                                    core_id = line.split(':')[1].strip()
+                                elif line.strip() == '':
+                                    if physical_id is not None and core_id is not None:
+                                        cores.add((physical_id, core_id))
+                                    physical_id = None
+                                    core_id = None
+                            cpu_info['cores'] = len(cores)
+                    except:
+                        # Fallback if we can't get physical core count
+                        cpu_info['cores'] = cpu_info['threads']
+            else:
+                # Use platform module as fallback
+                cpu_info['model'] = platform.processor() or "Unknown"
+                # No reliable way to get core count with standard library only
+                cpu_info['cores'] = cpu_info['threads'] = os.cpu_count() or "Unknown"
+                
+            return cpu_info
+        except Exception as e:
+            log_message(f"Error getting CPU info: {e}")
+            return cpu_info
+    
+    # Get memory info
+    def get_memory_info():
+        try:
+            # Try to get memory info from /proc/meminfo on Linux
+            if os.path.exists('/proc/meminfo'):
+                with open('/proc/meminfo', 'r') as f:
+                    for line in f:
+                        if line.startswith('MemTotal:'):
+                            # Convert kB to GB
+                            total_kb = int(line.split()[1])
+                            return f"{total_kb / (1024**2):.2f} GB"
+            # Fallback
+            return "Unknown"
+        except Exception as e:
+            log_message(f"Error getting memory info: {e}")
+            return "Unknown"
+    
+    # Format environment info
+    cpu_info = get_cpu_info()
+    env_info = {
+        "OS": f"{platform.system()} {platform.release()}",
+        "CPU": f"{cpu_info.get('model', 'Unknown')} ({cpu_info.get('cores', 'Unknown')} cores, {cpu_info.get('threads', 'Unknown')} threads)",
+        "Memory": get_memory_info(),
+        "Date": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        "Python": platform.python_version(),
+    }
+    
+    # Start building markdown content
+    markdown = [
+        "# BPFtime Uprobe Benchmark Results\n",
+        f"*Generated on {env_info['Date']}*\n",
+        "## Environment\n",
+        f"- **OS:** {env_info['OS']}",
+        f"- **CPU:** {env_info['CPU']}",
+        f"- **Memory:** {env_info['Memory']}",
+        f"- **Python:** {env_info['Python']}",
+        "\n## Summary\n",
+        "This benchmark compares three different eBPF execution environments:",
+        "- **Kernel Uprobe**: Traditional kernel-based eBPF uprobes",
+        "- **Userspace Uprobe**: BPFtime's userspace implementation of uprobes",
+        "- **Embedded VM**: BPFtime's embedded eBPF VM",
+        "\n*Times shown in nanoseconds (ns) - lower is better*\n"
+    ]
+    
+    # Create comparison table for uprobes
+    markdown.extend([
+        "### Core Uprobe Performance\n",
+        "| Operation | Kernel Uprobe | Userspace Uprobe | Speedup |",
+        "|-----------|---------------|------------------|---------|"
+    ])
+    
+    # Get the uprobe results for comparison
+    uprobe_tests = ["__bench_uprobe", "__bench_uretprobe", "__bench_uprobe_uretprobe"]
+    for test in uprobe_tests:
+        if test in results_json.get("kernel_uprobe", {}) and test in results_json.get("userspace_uprobe", {}):
+            kernel_avg = results_json["kernel_uprobe"][test]["avg"]
+            user_avg = results_json["userspace_uprobe"][test]["avg"]
+            speedup = kernel_avg / user_avg if user_avg > 0 else "N/A"
+            if isinstance(speedup, float):
+                speedup = f"{speedup:.2f}x"
+            markdown.append(f"| {test} | {kernel_avg:.2f} | {user_avg:.2f} | {speedup} |")
+    
+    # Create detailed tables for each category
+    categories = {
+        "kernel_uprobe": "Kernel eBPF Performance",
+        "userspace_uprobe": "Userspace eBPF Performance",
+        "embed": "Embedded VM Performance"
+    }
+    
+    for category, title in categories.items():
+        if category in results_json:
+            markdown.extend([
+                f"\n### {title}\n",
+                "| Operation | Min (ns) | Max (ns) | Avg (ns) | Std Dev |",
+                "|-----------|----------|----------|----------|---------|"
+            ])
+            
+            for op, metrics in results_json[category].items():
+                # Skip nested structures like in the embed category
+                if isinstance(metrics, dict) and "avg" in metrics:
+                    # Handle infinity values
+                    min_val = "∞" if metrics["min"] == float('inf') else f"{metrics['min']:.2f}"
+                    max_val = "∞" if metrics["max"] == float('inf') else f"{metrics['max']:.2f}"
+                    avg_val = "∞" if metrics["avg"] == float('inf') else f"{metrics['avg']:.2f}"
+                    std_dev = f"{metrics['std_dev']:.2f}"
+                    
+                    markdown.append(f"| {op} | {min_val} | {max_val} | {avg_val} | {std_dev} |")
+    
+    # Add benchmark metadata
+    if "benchmark_info" in results_json:
+        info = results_json["benchmark_info"]
+        markdown.extend([
+            "\n## Benchmark Metadata\n",
+            f"- **Number of runs:** {info.get('num_runs', 'Unknown')}",
+            f"- **Timestamp:** {info.get('timestamp', 'Unknown')}",
+            f"- **Total duration:** {info.get('total_duration_seconds', 0):.2f} seconds\n"
+        ])
+    
+    # Add note about failures if embed test failed
+    if "embed" in results_json and isinstance(results_json["embed"], dict):
+        if any(isinstance(v, dict) and v.get("avg") == float('inf') for v in results_json["embed"].values()):
+            markdown.extend([
+                "\n## Notes\n",
+                "⚠️ The embedded VM benchmark reported infinity values, which indicates failures or timeouts."
+            ])
+    
+    # Write to file
+    with open(output_path, "w") as f:
+        f.write("\n".join(markdown))
+    
+    log_message(f"Markdown report generated successfully at {output_path}")
+
+
 async def main():
     start_time = time.time()
     log_message("Starting uprobe benchmark suite")
@@ -336,6 +535,10 @@ async def main():
         log_message(f"Saving benchmark results to {json_output_path}")
         with open(json_output_path, "w") as f:
             json.dump(out, f, indent=2)
+        
+        # Generate Markdown report
+        markdown_output_path = UPROBE_DIR / "results.md"
+        generate_markdown_report(out, markdown_output_path)
         
         # Save logs to text file
         log_output_path = UPROBE_DIR / "benchmark-logs.txt"

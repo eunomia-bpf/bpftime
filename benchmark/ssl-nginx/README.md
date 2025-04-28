@@ -2,7 +2,7 @@
 
 This test is to show the performance impact of kernel sslsniff and userspace sslsniff. sslsniff is a tool to intercept the ssl handshake and print the packet content of encrypted ssl handshake. The similar approach is very common in modern observability tools and security tools.
 
-This test shoes that:
+This test shows that:
 
 1. kernel sslsniff can significantly reduce the performance of nginx, lead to a 2x performance drop.
 
@@ -32,15 +32,7 @@ nginx -c $(pwd)/nginx.conf -p $(pwd)
 ## Test for no effect
 
 ```console
-$ wrk https://127.0.0.1:4043/index.html -c 100 -d 10
-Running 10s test @ https://127.0.0.1:4043/index.html
-  2 threads and 100 connections
-  Thread Stats   Avg      Stdev     Max   +/- Stdev
-    Latency     9.18ms   18.95ms 165.75ms   94.73%
-    Req/Sec     9.71k     5.05k   32.14k    87.56%
-  189498 requests in 10.02s, 49.70MB read
-Requests/sec:  18916.15
-Transfer/sec:      4.96MB
+wrk https://127.0.0.1:4043/index.html -c 100 -d 10
 ```
 
 ## Test for kernel sslsniff
@@ -64,15 +56,7 @@ This sslsniff is from bpftime/example/sslsniff/sslsniff. The userspace part modi
 In another shell
 
 ```console
-$ wrk https://127.0.0.1:4043/index.html -c 100 -d 10
-Running 10s test @ https://127.0.0.1:4043/index.html
-  2 threads and 100 connections
-  Thread Stats   Avg      Stdev     Max   +/- Stdev
-    Latency    13.59ms   11.30ms 156.13ms   91.27%
-    Req/Sec     4.01k     0.95k    5.95k    71.50%
-  80242 requests in 10.10s, 21.04MB read
-Requests/sec:   7948.46
-Transfer/sec:      2.08MB
+wrk https://127.0.0.1:4043/index.html -c 100 -d 10  
 ```
 
 ## test for userspace sslsniff
@@ -101,12 +85,4 @@ in another console, run wrk
 
 ```console
 $ ./wrk https://127.0.0.1:4043/index.html -c 100 -d 10
-Running 10s test @ https://127.0.0.1:4043/index.html
-  2 threads and 100 connections
-  Thread Stats   Avg      Stdev     Max   +/- Stdev
-    Latency     6.32ms    6.18ms 164.79ms   97.80%
-    Req/Sec     8.41k     1.30k   11.20k    87.37%
-  166451 requests in 10.04s, 43.65MB read
-Requests/sec:  16580.88
-Transfer/sec:      4.35MB
 ```
