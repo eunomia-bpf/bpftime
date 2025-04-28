@@ -240,17 +240,24 @@ jobs:
           CLIENT_LOG="logs/uprobe_client.log"
           rm -f "$SERVER_LOG" "$CLIENT_LOG" 2>/dev/null || true
           
+          # Check bash readline function locations
+          echo "Finding bash readline function location..."
           readelf -s /bin/bash | grep readline | tee -a "$CLIENT_LOG"
           
-          LD_PRELOAD=$SERVER_LIB sudo bpftrace -e 'uretprobe:/bin/bash:readline { printf("%-6d %s\n", pid, str(retval)); }' > "$SERVER_LOG" 2>&1 &
+          # Important: Use sudo -E to preserve environment variables
+          echo "Starting server with uprobe on bash:readline..."
+          sudo -E LD_PRELOAD=$SERVER_LIB bpftrace -e 'uretprobe:/bin/bash:readline { printf("%-6d %s\n", pid, str(retval)); }' > "$SERVER_LOG" 2>&1 &
           SERVER_PID=$!
           
+          # Wait longer for server initialization and show output
           INIT_TIMEOUT=60
           for i in $(seq 1 $INIT_TIMEOUT); do
             if grep -q "Attaching" "$SERVER_LOG"; then
+              echo "Server initialized after $i seconds"
               break
             fi
             if [ $((i % 10)) -eq 0 ]; then
+              echo "Still waiting after $i seconds. Current server log:"
               cat "$SERVER_LOG"
             fi
             if [ $i -eq $INIT_TIMEOUT ]; then
