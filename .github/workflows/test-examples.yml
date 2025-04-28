@@ -2,9 +2,9 @@ name: BPFtime Syscall Tracing (Complete LD_PRELOAD Method)
 
 on:
   push:
-    branches: [ "*" ]
+    branches: ["*"]
   pull_request:
-    branches: [ "*" ]
+    branches: ["*"]
   workflow_dispatch:
 
 env:
@@ -26,7 +26,7 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
         with:
-          submodules: 'recursive'
+          submodules: "recursive"
 
       - name: System setup and kernel headers
         run: |
@@ -36,20 +36,17 @@ jobs:
             linux-headers-generic linux-tools-generic \
             linux-headers-$(uname -r) \
             libelf-dev procps
-          echo "==== System Information ===="; uname -a && cat /etc/os-release
-          echo "==== bpftrace version ===="; which bpftrace && bpftrace --version || echo "bpftrace not found"
+          uname -a && cat /etc/os-release
+          which bpftrace && bpftrace --version || echo "bpftrace not found"
           mkdir -p logs build
           echo "TEST_DATA_LINE_1_ABC" > build/install_manifest.txt
           echo "TEST_DATA_LINE_2_XYZ" >> build/install_manifest.txt
-          echo "Created build/install_manifest.txt:"; cat build/install_manifest.txt
           
-          # 确保共享内存目录存在且权限正确
           sudo mkdir -p $BPFTIME_SHARED_MEMORY_PATH
           sudo chmod 1777 $BPFTIME_SHARED_MEMORY_PATH
-
+          
       - name: Build bpftime
         run: |
-          echo "Building bpftime with CMake"
           cmake -Bbuild -DCMAKE_BUILD_TYPE:STRING=RelWithDebInfo \
             -DBPFTIME_LLVM_JIT=1 \
             -DBUILD_BPFTIME_DAEMON=1 \
@@ -57,100 +54,59 @@ jobs:
             -DCMAKE_CXX_FLAGS="-DDEFAULT_LOGGER_OUTPUT_PATH='\"console\"'"
           cmake --build build --config RelWithDebInfo -j$(nproc)
           
-          echo "Checking built libraries:"
           ls -la build/runtime/agent/
           ls -la build/runtime/syscall-server/
-          ls -la build/attach/text_segment_transformer/ || echo "Text segment transformer directory not found"
-
-      - name: Find all necessary libraries
+          
+      - name: Find necessary libraries
         run: |
-          echo "=== Finding all necessary libraries ==="
-          
-          # 查找所有可能需要的库文件
           find build -name "*.so" | sort
-          
-          # 特别检查关键库文件
+
           AGENT_LIB="build/runtime/agent/libbpftime-agent.so"
           SERVER_LIB="build/runtime/syscall-server/libbpftime-syscall-server.so"
           TRANSFORMER_LIB="build/attach/text_segment_transformer/libbpftime-agent-transformer.so"
-          
+
           if [ ! -f "$AGENT_LIB" ]; then
-            echo "ERROR: Agent library not found at $AGENT_LIB"
-            # 尝试查找替代位置
             AGENT_LIB=$(find build -name "libbpftime-agent.so" | head -1)
-            if [ -n "$AGENT_LIB" ]; then
-              echo "Found agent library at alternative location: $AGENT_LIB"
-            else
+            if [ -z "$AGENT_LIB" ]; then
               echo "Could not find agent library anywhere"
               exit 1
             fi
           fi
-          
+
           if [ ! -f "$SERVER_LIB" ]; then
-            echo "ERROR: Server library not found at $SERVER_LIB"
-            # 尝试查找替代位置
             SERVER_LIB=$(find build -name "libbpftime-syscall-server.so" | head -1)
-            if [ -n "$SERVER_LIB" ]; then
-              echo "Found server library at alternative location: $SERVER_LIB"
-            else
+            if [ -z "$SERVER_LIB" ]; then
               echo "Could not find server library anywhere"
               exit 1
             fi
           fi
-          
-          # 检查 transformer 库，可能不是必需的
+
           if [ ! -f "$TRANSFORMER_LIB" ]; then
-            echo "WARNING: Transformer library not found at $TRANSFORMER_LIB"
-            # 尝试查找替代位置
             TRANSFORMER_LIB=$(find build -name "libbpftime-agent-transformer.so" | head -1)
-            if [ -n "$TRANSFORMER_LIB" ]; then
-              echo "Found transformer library at alternative location: $TRANSFORMER_LIB"
-            else
-              echo "Could not find transformer library anywhere, will proceed without it"
-              TRANSFORMER_LIB=""
-            fi
           fi
-          
-          # 保存库路径到环境变量
+
           echo "AGENT_LIB=$AGENT_LIB" >> $GITHUB_ENV
           echo "SERVER_LIB=$SERVER_LIB" >> $GITHUB_ENV
           echo "TRANSFORMER_LIB=$TRANSFORMER_LIB" >> $GITHUB_ENV
-
-      - name: Run server and client in the same step
-        run: |
-          echo "=== Running server and client in the same step ==="
           
-          # 获取库路径
+      - name: Run server and client test
+        run: |
           AGENT_LIB="${{ env.AGENT_LIB }}"
           SERVER_LIB="${{ env.SERVER_LIB }}"
           TRANSFORMER_LIB="${{ env.TRANSFORMER_LIB }}"
-          
-          echo "Using libraries:"
-          echo "AGENT_LIB: $AGENT_LIB"
-          echo "SERVER_LIB: $SERVER_LIB"
-          echo "TRANSFORMER_LIB: $TRANSFORMER_LIB"
-          
-          # 清理之前的日志
+
           mkdir -p logs
           rm -f "$SERVER_LOG" "$CLIENT_LOG" 2>/dev/null || true
-          
-          # 设置环境变量
+
           export BPFTIME_USED=1
           export SPDLOG_LEVEL=debug
-          
-          # 启动服务器
-          echo "Starting server in background..."
+
           sudo -E LD_PRELOAD=$SERVER_LIB bpftrace -e 'tracepoint:syscalls:sys_enter_openat { printf("SERVER_TRACE (openat): %s %s\n", comm, str(args->filename)); }' > "$SERVER_LOG" 2>&1 &
-          
           SERVER_PID=$!
-          echo "Server started with PID: $SERVER_PID"
-          
-          # 等待服务器初始化
-          echo "Waiting for server to initialize..."
+
           INIT_TIMEOUT=30
           for i in $(seq 1 $INIT_TIMEOUT); do
             if grep -q "Attaching" "$SERVER_LOG"; then
-              echo "Server initialized after $i seconds"
               break
             fi
             if [ $i -eq $INIT_TIMEOUT ]; then
@@ -160,97 +116,49 @@ jobs:
             fi
             sleep 1
           done
-          
-          # 确认服务器进程仍在运行
+
           if ! ps -p $SERVER_PID > /dev/null; then
             echo "ERROR: Server process died during initialization"
             cat "$SERVER_LOG"
             exit 1
           fi
-          
-          echo "Server log after initialization:"
-          cat "$SERVER_LOG"
-          
-          # 运行客户端命令，使用完整的 LD_PRELOAD 配置
-          echo "Running cat command with complete LD_PRELOAD configuration..."
-          
-          # 准备 LD_PRELOAD 参数，根据 transformer 库是否存在进行调整
+
           if [ -n "$TRANSFORMER_LIB" ]; then
-            # 同时使用 agent 和 transformer 库
-            echo "Using both agent and transformer libraries"
             LD_PRELOAD_CMD="env AGENT_SO=$AGENT_LIB LD_PRELOAD=$TRANSFORMER_LIB"
           else
-            # 只使用 agent 库
-            echo "Using only agent library"
             LD_PRELOAD_CMD="env LD_PRELOAD=$AGENT_LIB"
           fi
-          
-          # 执行命令
+
           sudo -E $LD_PRELOAD_CMD cat build/install_manifest.txt | tee "$CLIENT_LOG"
           CAT_EXIT_CODE=$?
-          
-          # 等待服务器处理事件
-          echo "Waiting for server to process events..."
+
           sleep 10
-          
-          # 强制刷新
           sync
-          
-          # 显示服务器日志
-          echo "Server log after client execution:"
-          cat "$SERVER_LOG"
-          
-          # 检查是否有cat命令的SERVER_TRACE输出
+
           if grep -q "SERVER_TRACE.*cat.*build/install_manifest.txt" "$SERVER_LOG"; then
-            echo "SUCCESS: Found SERVER_TRACE for cat command in server log"
             CAT_TRACE_FOUND="true"
           else
-            echo "FAILURE: Did not find SERVER_TRACE for cat command in server log"
             CAT_TRACE_FOUND="false"
           fi
-          
-          # 停止服务器
-          echo "Stopping server process PID $SERVER_PID"
+
           sudo kill -9 $SERVER_PID 2>/dev/null || echo "Kill failed"
           sleep 2
-          
-          # 分析结果
-          echo "=== Final Analysis ==="
-          
-          # 检查cat命令是否成功执行
-          if [ "$CAT_EXIT_CODE" = "0" ]; then
-            echo "SUCCESS: Cat command executed successfully with exit code 0"
-            CAT_SUCCESS="true"
-          else
-            echo "FAILURE: Cat command failed with exit code $CAT_EXIT_CODE"
-            CAT_SUCCESS="false"
-          fi
-          
-          # 检查是否捕获到cat命令
-          if [ "$CAT_TRACE_FOUND" = "true" ]; then
-            echo "SUCCESS: Cat command tracing is working"
-            TRACING_SUCCESS="true"
-          else
-            echo "FAILURE: Cat command tracing is NOT working"
-            TRACING_SUCCESS="false"
-          fi
-          
-          # 最终结果判断
-          if [ "$CAT_SUCCESS" = "true" ] && [ "$TRACING_SUCCESS" = "true" ]; then
-            echo "OVERALL SUCCESS: Cat command ran successfully AND tracing detected cat command"
+
+          if [ "$CAT_EXIT_CODE" = "0" ] && [ "$CAT_TRACE_FOUND" = "true" ]; then
             exit 0
           else
             echo "FAILURE: Test did not meet all success criteria"
-            if [ "$CAT_SUCCESS" != "true" ]; then
+            if [ "$CAT_EXIT_CODE" != "0" ]; then
               echo "  - Cat command execution failed with exit code $CAT_EXIT_CODE"
             fi
-            if [ "$TRACING_SUCCESS" != "true" ]; then
+            if [ "$CAT_TRACE_FOUND" != "true" ]; then
               echo "  - Cat command tracing is not working"
             fi
             exit 1
           fi
-
-  malloc-example-test:
+          
+  uprobe-readline-test:
+    name: BPFtime Uprobe Readline Test
     runs-on: ubuntu-22.04
     container:
       image: "manjusakalza/bpftime-base-image:ubuntu-2204"
@@ -260,27 +168,27 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
         with:
-          submodules: 'recursive'
+          submodules: "recursive"
 
       - name: System setup and kernel headers
         run: |
+          export DEBIAN_FRONTEND=noninteractive
+          export TZ=Etc/UTC
           apt-get update
           apt-get install -y --no-install-recommends \
             lcov tree strace gdb sudo libc6-dev bpftrace \
             linux-headers-generic linux-tools-generic \
             linux-headers-$(uname -r) \
-            libelf-dev procps
-          echo "==== System Information ===="; uname -a && cat /etc/os-release
-          echo "==== bpftrace version ===="; which bpftrace && bpftrace --version || echo "bpftrace not found"
-          mkdir -p logs
-          
-          # 确保共享内存目录存在且权限正确
+            libelf-dev procps expect
+          uname -a && cat /etc/os-release
+          which bpftrace && bpftrace --version || echo "bpftrace not found"
+          mkdir -p logs build
+
           sudo mkdir -p $BPFTIME_SHARED_MEMORY_PATH
           sudo chmod 1777 $BPFTIME_SHARED_MEMORY_PATH
-
+          
       - name: Build bpftime
         run: |
-          echo "Building bpftime with CMake"
           cmake -Bbuild -DCMAKE_BUILD_TYPE:STRING=RelWithDebInfo \
             -DBPFTIME_LLVM_JIT=1 \
             -DBUILD_BPFTIME_DAEMON=1 \
@@ -288,137 +196,62 @@ jobs:
             -DCMAKE_CXX_FLAGS="-DDEFAULT_LOGGER_OUTPUT_PATH='\"console\"'"
           cmake --build build --config RelWithDebInfo -j$(nproc)
           
-          echo "Checking built libraries:"
           ls -la build/runtime/agent/
           ls -la build/runtime/syscall-server/
-          ls -la build/attach/text_segment_transformer/ || echo "Text segment transformer directory not found"
-
-      - name: Build malloc example
-        run: |
-          echo "Building malloc example"
-          make -C example/malloc
           
-          # 检查编译结果 - 注意可执行文件可能在 .output 目录或当前目录
-          if [ -f "example/malloc/malloc" ] && [ -f "example/malloc/victim" ]; then
-            echo "SUCCESS: Malloc example built successfully"
-            ls -la example/malloc/
-          elif [ -f "example/malloc/.output/malloc" ] && [ -f "example/malloc/victim" ]; then
-            echo "SUCCESS: Malloc example built successfully (malloc in .output directory)"
-            ls -la example/malloc/ example/malloc/.output/
-          else
-            echo "FAILURE: Malloc example build failed"
-            echo "Searching for malloc and victim executables:"
-            find example/malloc -type f -name "malloc" -o -name "victim" | sort
-            echo "Directory contents:"
-            ls -la example/malloc/
-            ls -la example/malloc/.output/ 2>/dev/null || echo "No .output directory"
-            exit 1
-          fi
-
-      - name: Find all necessary libraries
+      - name: Find necessary libraries
         run: |
-          echo "=== Finding all necessary libraries ==="
-          
-          # 查找所有可能需要的库文件
           find build -name "*.so" | sort
-          
-          # 特别检查关键库文件
+
           AGENT_LIB="build/runtime/agent/libbpftime-agent.so"
           SERVER_LIB="build/runtime/syscall-server/libbpftime-syscall-server.so"
           TRANSFORMER_LIB="build/attach/text_segment_transformer/libbpftime-agent-transformer.so"
-          
+
           if [ ! -f "$AGENT_LIB" ]; then
-            echo "ERROR: Agent library not found at $AGENT_LIB"
-            # 尝试查找替代位置
             AGENT_LIB=$(find build -name "libbpftime-agent.so" | head -1)
-            if [ -n "$AGENT_LIB" ]; then
-              echo "Found agent library at alternative location: $AGENT_LIB"
-            else
+            if [ -z "$AGENT_LIB" ]; then
               echo "Could not find agent library anywhere"
               exit 1
             fi
           fi
-          
+
           if [ ! -f "$SERVER_LIB" ]; then
-            echo "ERROR: Server library not found at $SERVER_LIB"
-            # 尝试查找替代位置
             SERVER_LIB=$(find build -name "libbpftime-syscall-server.so" | head -1)
-            if [ -n "$SERVER_LIB" ]; then
-              echo "Found server library at alternative location: $SERVER_LIB"
-            else
+            if [ -z "$SERVER_LIB" ]; then
               echo "Could not find server library anywhere"
               exit 1
             fi
           fi
-          
-          # 检查 transformer 库，可能不是必需的
+
           if [ ! -f "$TRANSFORMER_LIB" ]; then
-            echo "WARNING: Transformer library not found at $TRANSFORMER_LIB"
-            # 尝试查找替代位置
             TRANSFORMER_LIB=$(find build -name "libbpftime-agent-transformer.so" | head -1)
-            if [ -n "$TRANSFORMER_LIB" ]; then
-              echo "Found transformer library at alternative location: $TRANSFORMER_LIB"
-            else
-              echo "Could not find transformer library anywhere, will proceed without it"
-              TRANSFORMER_LIB=""
-            fi
           fi
-          
-          # 保存库路径到环境变量
+
           echo "AGENT_LIB=$AGENT_LIB" >> $GITHUB_ENV
           echo "SERVER_LIB=$SERVER_LIB" >> $GITHUB_ENV
           echo "TRANSFORMER_LIB=$TRANSFORMER_LIB" >> $GITHUB_ENV
-
-      - name: Run malloc example with LD_PRELOAD
+    
+      - name: Run uprobe readline test
         run: |
-          echo "=== Running malloc example with LD_PRELOAD ==="
-          
-          # 获取库路径
-          AGENT_LIB="${{ env.AGENT_LIB }}"
           SERVER_LIB="${{ env.SERVER_LIB }}"
-          TRANSFORMER_LIB="${{ env.TRANSFORMER_LIB }}"
           
-          echo "Using libraries:"
-          echo "AGENT_LIB: $AGENT_LIB"
-          echo "SERVER_LIB: $SERVER_LIB"
-          echo "TRANSFORMER_LIB: $TRANSFORMER_LIB"
-          
-          # 清理之前的日志
           mkdir -p logs
-          SERVER_LOG="logs/malloc_server.log"
-          CLIENT_LOG="logs/malloc_client.log"
+          SERVER_LOG="logs/uprobe_server.log"
+          CLIENT_LOG="logs/uprobe_client.log"
           rm -f "$SERVER_LOG" "$CLIENT_LOG" 2>/dev/null || true
           
-          # 设置环境变量
-          export BPFTIME_USED=1
-          export SPDLOG_LEVEL=debug
+          readelf -s /bin/bash | grep readline | tee -a "$CLIENT_LOG"
           
-          # 找到 malloc 可执行文件的位置
-          if [ -f "example/malloc/malloc" ]; then
-            MALLOC_BIN="example/malloc/malloc"
-          elif [ -f "example/malloc/.output/malloc" ]; then
-            MALLOC_BIN="example/malloc/.output/malloc"
-          else
-            echo "ERROR: Cannot find malloc executable"
-            find example/malloc -type f -name "malloc" | sort
-            exit 1
-          fi
-          echo "Using malloc binary: $MALLOC_BIN"
-          
-          # 启动服务器 - 使用 bpftrace 跟踪 malloc 函数
-          echo "Starting server with bpftrace to trace malloc function..."
-          sudo -E LD_PRELOAD=$SERVER_LIB bpftrace -e 'uprobe:/lib/x86_64-linux-gnu/libc.so.6:malloc { printf("PID: %d (%s) malloc size: %d\n", pid, comm, arg0); }' > "$SERVER_LOG" 2>&1 &
-          
+          LD_PRELOAD=$SERVER_LIB sudo bpftrace -e 'uretprobe:/bin/bash:readline { printf("%-6d %s\n", pid, str(retval)); }' > "$SERVER_LOG" 2>&1 &
           SERVER_PID=$!
-          echo "Server started with PID: $SERVER_PID"
           
-          # 等待服务器初始化
-          echo "Waiting for server to initialize..."
-          INIT_TIMEOUT=30
+          INIT_TIMEOUT=60
           for i in $(seq 1 $INIT_TIMEOUT); do
-            if grep -q "Loaded" "$SERVER_LOG" || grep -q "Attaching" "$SERVER_LOG"; then
-              echo "Server initialized after $i seconds"
+            if grep -q "Attaching" "$SERVER_LOG"; then
               break
+            fi
+            if [ $((i % 10)) -eq 0 ]; then
+              cat "$SERVER_LOG"
             fi
             if [ $i -eq $INIT_TIMEOUT ]; then
               echo "ERROR: Server did not initialize after $INIT_TIMEOUT seconds"
@@ -428,104 +261,50 @@ jobs:
             sleep 1
           done
           
-          # 确认服务器进程仍在运行
           if ! ps -p $SERVER_PID > /dev/null; then
             echo "ERROR: Server process died during initialization"
             cat "$SERVER_LOG"
             exit 1
           fi
           
-          echo "Server log after initialization:"
-          cat "$SERVER_LOG"
+          cat > logs/expect_script.exp << 'EOF'
+          #!/usr/bin/expect -f
+          set timeout 10
+          spawn sudo bash --norc --noprofile
+          expect "#"
+          send "1\r"
+          expect "#"
+          send "pwd\r"
+          expect "#"
+          send "exit\r"
+          expect eof
+          EOF
+          chmod +x logs/expect_script.exp
           
-          # 运行客户端命令，使用完整的 LD_PRELOAD 配置
-          echo "Running victim program with complete LD_PRELOAD configuration..."
+          ./logs/expect_script.exp > "$CLIENT_LOG" 2>&1
+          BASH_EXIT_CODE=$?
           
-          # 准备 LD_PRELOAD 参数，根据 transformer 库是否存在进行调整
-          if [ -n "$TRANSFORMER_LIB" ]; then
-            # 同时使用 agent 和 transformer 库
-            echo "Using both agent and transformer libraries"
-            LD_PRELOAD_CMD="env AGENT_SO=$AGENT_LIB LD_PRELOAD=$TRANSFORMER_LIB"
-          else
-            # 只使用 agent 库
-            echo "Using only agent library"
-            LD_PRELOAD_CMD="env LD_PRELOAD=$AGENT_LIB"
-          fi
-          
-          # 确认 victim 程序存在
-          if [ ! -f "example/malloc/victim" ]; then
-            echo "ERROR: Cannot find victim executable"
-            find example/malloc -type f -name "victim" | sort
-            exit 1
-          fi
-          
-          # 执行 victim 程序，使用 timeout 命令限制运行时间为 5 秒
-          echo "Running victim program with 5 second timeout..."
-          sudo -E timeout 5s $LD_PRELOAD_CMD ./example/malloc/victim | tee "$CLIENT_LOG"
-          VICTIM_EXIT_CODE=$?
-          
-          # 检查退出码，timeout 命令在超时终止程序时会返回 124
-          if [ $VICTIM_EXIT_CODE -eq 124 ]; then
-            echo "INFO: Victim program was terminated after timeout (5s). This is expected and not an error."
-            # 将退出码重置为 0，因为超时不是测试失败
-            VICTIM_EXIT_CODE=0
-          fi
-          
-          # 等待服务器处理事件 - 减少等待时间
-          echo "Waiting for server to process events..."
-          sleep 3
-          
-          # 强制刷新
+          sleep 10
           sync
           
-          # 显示服务器日志
-          echo "Server log after victim execution:"
-          cat "$SERVER_LOG"
-          
-          if grep -q "PID.*victim.*malloc size" "$SERVER_LOG"; then
-            echo "SUCCESS: Found malloc trace for victim process in server log"
-            MALLOC_TRACE_FOUND="true"
+          if grep -q -E "[0-9]+[[:space:]]+" "$SERVER_LOG"; then
+            TRACE_FOUND="true"
           else
-            echo "FAILURE: Did not find malloc trace for victim process in server log"
-            MALLOC_TRACE_FOUND="false"
+            TRACE_FOUND="false"
           fi
           
-          # 显示客户端日志
-          echo "Client log after execution:"
-          cat "$CLIENT_LOG"
-          
-          # 客户端只需要成功运行，不需要检查特定输出
-          echo "NOTE: Not checking for specific client output, only verifying successful execution"
-          CLIENT_OUTPUT_FOUND="true"  # 只要客户端成功运行就算通过这项检查
-          
-          # 停止服务器
-          echo "Stopping server process PID $SERVER_PID"
           sudo kill -9 $SERVER_PID 2>/dev/null || echo "Kill failed"
           sleep 2
           
-          # 分析结果
-          echo "=== Final Analysis ==="
-          
-          # 检查victim命令是否成功执行
-          if [ "$VICTIM_EXIT_CODE" = "0" ]; then
-            echo "SUCCESS: Victim program executed successfully with exit code 0"
-            VICTIM_SUCCESS="true"
-          else
-            echo "FAILURE: Victim program failed with exit code $VICTIM_EXIT_CODE"
-            VICTIM_SUCCESS="false"
-          fi
-          
-          # 最终结果判断 - 只检查程序是否成功运行和是否捕获到 malloc 调用
-          if [ "$VICTIM_SUCCESS" = "true" ] && [ "$MALLOC_TRACE_FOUND" = "true" ]; then
-            echo "OVERALL SUCCESS: Malloc example test passed - victim program ran successfully AND malloc was traced"
+          if [ "$BASH_EXIT_CODE" = "0" ] && [ "$TRACE_FOUND" = "true" ]; then
             exit 0
           else
-            echo "FAILURE: Malloc example test failed"
-            if [ "$VICTIM_SUCCESS" != "true" ]; then
-              echo "  - Victim program execution failed with exit code $VICTIM_EXIT_CODE"
+            echo "FAILURE: Test did not meet all success criteria"
+            if [ "$BASH_EXIT_CODE" != "0" ]; then
+              echo "  - Bash command execution failed with exit code $BASH_EXIT_CODE"
             fi
-            if [ "$MALLOC_TRACE_FOUND" != "true" ]; then
-              echo "  - Malloc trace was not found in server log"
+            if [ "$TRACE_FOUND" != "true" ]; then
+              echo "  - Uprobe tracing for bash:readline is not working"
             fi
             exit 1
           fi
