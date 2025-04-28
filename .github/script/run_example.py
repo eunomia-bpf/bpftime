@@ -1,3 +1,4 @@
+import re
 import sys
 import asyncio
 import typing
@@ -25,14 +26,14 @@ async def handle_stdout(
         for item in pending:
             item.cancel()
         if t2 in done:
-            s = t2.result().decode()
-            print(f"{title}:", s, end="")
+            stdout_raw = t2.result().decode()
+            print(f"{title}:", stdout_raw, end="")
             for callback in callback_all:
                 evt, sig = callback
-                if sig in s:
+                if sig in stdout_raw or re.match(sig, stdout_raw.strip()):
                     evt.set()
                     print("Callback triggered")
-            if check_error and "[error]" in s:
+            if check_error and "[error]" in stdout_raw:
                 assert False, "Error occurred in agent!"
         if t1 in done:
             break
@@ -41,6 +42,17 @@ async def handle_stdout(
 
 
 async def main():
+    if len(sys.argv) < 6:
+        print(
+            "Usage: python script.py " \
+            "<executable :str>" \
+            "<victim :str> "\
+            "<expected_str :str (regexp also works)> "\
+            "<bpftime_cli :str> "\
+            "<is_a_syscall :Union[0, 1]>"
+        )
+        return
+
     (
         executable,
         victim,
@@ -73,7 +85,6 @@ async def main():
         )
 
         await asyncio.wait_for(server_started_signal.wait(), SERVER_TIMEOUT)
-        await asyncio.sleep(10)
         print("Server started!")
 
         # Start the agent
@@ -101,8 +112,6 @@ async def main():
             server.send_signal(signal.SIGINT)
             agent.send_signal(signal.SIGINT)
             await asyncio.gather(server_out, agent_out)
-            # for task in asyncio.all_tasks():
-            #     task.cancel()
             await asyncio.gather(server.communicate(), agent.communicate())
         except Exception as ex:
             print(ex) 

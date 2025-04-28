@@ -1,0 +1,210 @@
+name: Install and test bpftrace
+
+on:
+  workflow_dispatch:
+  push:
+    branches: ["*"]
+  pull_request: 
+    branches: ['master']
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}-${{ github.event_name }}
+  cancel-in-progress: true
+
+jobs:
+  build-runtime:
+    strategy:
+      matrix:
+        enable_jit:
+          - true
+          - false
+        container:
+          - image: ubuntu-2204
+            name: ubuntu
+          - image: fedora-39
+            name: fedora
+    runs-on: ubuntu-22.04
+    container: 
+      image: "manjusakalza/bpftime-base-image:${{matrix.container.image}}"
+      options: --privileged
+    steps:
+      - uses: actions/checkout@v2
+        name: "Clone the latest version"
+        with:
+          submodules: 'recursive'
+          path: ./bpftime
+      # - uses: actions/checkout@v2
+        # name: "Pull bpftrace"
+        # with:
+        #   repository: "bpftrace/bpftrace"
+        #   submodules: 'recursive'
+        #   path: './bpftrace_git'
+      # - name: Install bpftrace dependencies in fedora
+      #   if: ${{ matrix.container.name=='fedora' }}
+      #   run: |
+      #     dnf -y update && dnf install -y \
+      #           make \
+      #           gcc-c++-aarch64-linux-gnu \
+      #           gcc-arm-linux-gnu \
+      #           clang \
+      #           boost-devel \
+      #           zlib-devel \
+      #           libubsan \
+      #           g++ \
+      #           llvm \
+      #           elfutils-libelf-devel \
+      #           qemu-user \
+      #           cmake \
+      #           gcc-c++ \
+      #           gcc-aarch64-linux-gnu \
+      #           llvm15-devel \
+      #           systemtap-sdt-devel \
+      #           gcc \
+      #           asciidoctor \
+      #           bison \
+      #           binutils-devel \
+      #           bcc-devel \
+      #           cereal-devel \
+      #           clang-devel \
+      #           elfutils-devel \
+      #           elfutils-libs \
+      #           flex \
+      #           libpcap-devel \
+      #           libbpf-devel \
+      #           llvm-devel
+      # - name: Install bpftrace dependencies in ubuntu
+        # if: ${{ matrix.container.name=='ubuntu' }}
+        # run: |
+        #     apt-get update && apt-get install -y \
+        #       --no-install-recommends \
+        #       libelf1 \
+        #       libelf-dev \
+        #       zlib1g-dev \
+        #       make \
+        #       cmake \
+        #       git \
+        #       libboost1.74-all-dev \
+        #       binutils-dev \
+        #       libyaml-cpp-dev \
+        #       gcc \
+        #       g++ \
+        #       ca-certificates \
+        #       clang \
+        #       llvm \
+        #       systemtap-sdt-dev \
+        #       libclang-dev \
+        #       liblldb-dev \
+        #       llvm-dev \
+        #       libpcap-dev \
+        #       libiberty-dev \
+        #       libcereal-dev \
+        #       libbpfcc-dev \
+        #       flex \
+        #       build-essential \
+        #       bison \
+        #       asciidoctor \
+        #       libbpf-dev
+      # - name: Build and install bpftrace
+        # run: |
+        #   cd ./bpftrace_git
+        #   cmake -B ./bpftrace -DBUILD_TESTING=OFF
+        #   make -C ./bpftrace -j$(nproc)
+        #   cd -
+      - name: Build and install runtime (with llvm-jit)
+        if: ${{matrix.enable_jit}}
+        run: |
+          cd ./bpftime
+          make release-with-llvm-jit -j
+      - name: Build and install runtime (without llvm-jit)
+        if: ${{!matrix.enable_jit}}
+        run: |
+          cd ./bpftime
+          make release -j
+      - name: Upload build results (without jit)
+        uses: actions/upload-artifact@v3
+        if: ${{!matrix.enable_jit}}
+        with:
+          name: runtime-package-no-jit-${{matrix.container.name}}
+          path: ~/.bpftime
+      - name: Upload build results (with jit)
+        uses: actions/upload-artifact@v3
+        if: ${{matrix.enable_jit}}
+        with:
+          name: runtime-package-jit-${{matrix.container.name}}
+          path: ~/.bpftime
+      - name: Upload built bpftrace
+        uses: actions/upload-artifact@v3
+        with:
+          name: bpftrace
+          path: /bpftrace 
+  install-bpftrace-and-test:
+    runs-on: "ubuntu-latest"
+    needs: [build-runtime]
+    strategy:
+      matrix:
+        container:
+          - image: ubuntu-2204
+            name: ubuntu
+          - image: fedora-39
+            name: fedora
+        enable_jit:
+          - true
+          - false
+        bpftrace_tests:
+          - command: /__w/bpftime/bpftime/.github/script/bpftrace/trace_open_syscalls.bt
+            expected_output: ^\d+\s+\w+(\s+#\d+)?\s+-?\d+\s+-?\d+\s+\S+$
+            victim: 'bash'
+            is_a_syscall_tracing: true
+    container:
+      image: "manjusakalza/bpftime-base-image:${{matrix.container.image}}"
+      options: --privileged -v /sys/kernel/debug/:/sys/kernel/debug:rw -v /sys/kernel/tracing:/sys/kernel/tracing:rw -v /usr/src:/usr/src:ro -v /lib/modules/:/lib/modules:ro
+    steps:
+      - name: Download prebuilt runtime (with jit)
+        if: ${{matrix.enable_jit}}
+        uses: actions/download-artifact@v3
+        with:
+          name: runtime-package-jit-${{matrix.container.name}}
+          path: /app/.bpftime
+      - name: Download prebuilt runtime (without jit)
+        if: ${{!matrix.enable_jit}}
+        uses: actions/download-artifact@v3
+        with:
+          name: runtime-package-no-jit-${{matrix.container.name}}
+          path: /app/.bpftime
+      # - name: Download prebuilt bpftrace
+        # uses: actions/download-artifact@v3
+        # with:
+        #   name: bpftrace
+        #   path: /bpftrace
+      - name: Set permissions
+        run: |
+          chmod +x /app/.bpftime/*
+      - name: Show downloaded artifacts
+        run: |
+          ls /app/.bpftime
+      - uses: actions/checkout@v2
+        with:
+          submodules: 'recursive'
+      - name: Build bpftrace package in fedora
+        if: ${{ matrix.container.name=='fedora' }}
+        shell: bash
+        run: |
+          dnf update -y
+          dnf install -y bpftrace
+      - name: Build bpftrace package in ubuntu
+        if: ${{ matrix.container.name=='ubuntu' }}
+        shell: bash
+        run: apt update && apt install -y bpftrace
+      - name: Test bpftrace
+        shell: bash
+        run: bpftrace -e 'BEGIN { printf("hello world\n"); }'
+      - name: Test CLI - attach by running (is_a_syscall_tracing)
+        if: matrix.bpftrace_tests.is_a_syscall_tracing
+        shell: bash
+        run: |
+          python3 $(pwd)/.github/script/run_example.py "bpftrace ${{ matrix.bpftrace_tests.command }}" "${{matrix.bpftrace_tests.victim}}" "${{matrix.bpftrace_tests.expected_output}}" "/app/.bpftime/bpftime -i /app/.bpftime" 1
+      - name: Test CLI - attach by running (uprobe)
+        if: '!matrix.bpftrace_tests.is_a_syscall_tracing'
+        shell: bash
+        run: |
+          python3 $(pwd)/.github/script/run_example.py "bpftrace ${{ matrix.bpftrace_tests.command }}" "${{matrix.bpftrace_tests.victim}}" "${{matrix.bpftrace_tests.expected_output}}" "/app/.bpftime/bpftime -i /app/.bpftime" 0
