@@ -1,4 +1,4 @@
-name: BPFtime Syscall Tracing (Complete LD_PRELOAD Method)
+name: BPFtime Syscall Tracing
 
 on:
   push:
