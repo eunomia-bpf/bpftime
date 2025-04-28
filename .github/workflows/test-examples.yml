@@ -3,14 +3,14 @@ name: Build and run all integrated tests (examples)
 on:
   push:
     branches: "*"
-  pull_request:
+  pull_request: 
     branches: "*"
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}-${{ github.event_name }}
   cancel-in-progress: true
 env:
   BPFTIME_VM_NAME: llvm
-jobs:
+jobs: 
   build-runtime:
     strategy:
       matrix:
@@ -23,13 +23,13 @@ jobs:
           - image: fedora-39
             name: fedora
     runs-on: ubuntu-22.04
-    container:
+    container: 
       image: "manjusakalza/bpftime-base-image:${{matrix.container.image}}"
       options: --privileged
     steps:
       - uses: actions/checkout@v2
         with:
-          submodules: "recursive"
+          submodules: 'recursive'
       - name: Install lcov (Ubuntu)
         if: ${{matrix.container.name=='ubuntu'}}
         run: |
@@ -58,7 +58,7 @@ jobs:
           cmake --build build --config RelWithDebInfo --target install -j
       - name: Build basic examples
         run: |
-          make -C example -j
+            make -C example -j
       - name: Package gcno files
         run: |
           find . -type f -name "*.gcno" | tar --create --gzip --file=gcno_files.tar.gz --files-from=-
@@ -182,7 +182,7 @@ jobs:
             executable: ./mountsnoop
             victim: ./victim
             syscall_trace: true
-            expected_str: mount(
+            expected_str:  mount(
             name: mountsnoop
           - path: libbpf-tools/sigsnoop
             executable: ./sigsnoop
@@ -206,7 +206,7 @@ jobs:
     steps:
       - uses: actions/checkout@v2
         with:
-          submodules: "recursive"
+          submodules: 'recursive'
       - name: Download prebuilt runtime (with jit)
         if: ${{matrix.enable_jit}}
         uses: actions/download-artifact@v4
@@ -243,7 +243,7 @@ jobs:
         run: |
           make -C example/${{matrix.examples.path}} -j
       - name: Set BPFTIME_VM_NAME for ubpf # Set environment variable when llvm-jit is disabled
-        if: "!matrix.enable_jit"
+        if: '!matrix.enable_jit'
         run: |
           echo "BPFTIME_VM_NAME=ubpf" >> $GITHUB_ENV
       - name: Test CLI - show help
@@ -258,7 +258,7 @@ jobs:
           cd example/${{matrix.examples.path}}
           python3 $ROOT/.github/script/run_example.py "${{matrix.examples.executable}}" "${{matrix.examples.victim}}" "${{matrix.examples.expected_str}}" "/github/home/.bpftime/bpftime -i /github/home/.bpftime" 1
       - name: Test CLI - attach by running (uprobe)
-        if: "!matrix.examples.syscall_trace"
+        if: '!matrix.examples.syscall_trace'
         shell: bash
         run: |
           ROOT=$(pwd)
@@ -289,11 +289,11 @@ jobs:
         # Only upload when this workflow was run on the main repository
         if: github.repository == 'eunomia-bpf/bpftime'
         with:
-          fail_ci_if_error: true # optional (default = false)
-          files: ./coverage-example.info
-          flags: coverage-example-${{matrix.container.name}}-${{matrix.enable_jit}}-${{matrix.examples.name}}-${{matrix.privilege_options.enable}}
-          token: ${{ secrets.CODECOV_TOKEN }} # required
-          verbose: true # optional (default = false)
+              fail_ci_if_error: true # optional (default = false)
+              files: ./coverage-example.info
+              flags: coverage-example-${{matrix.container.name}}-${{matrix.enable_jit}}-${{matrix.examples.name}}-${{matrix.privilege_options.enable}}
+              token: ${{ secrets.CODECOV_TOKEN }} # required
+              verbose: true # optional (default = false)
 
       - name: Setup tmate session
         # Setup SSH when manually triggered and failing, so we can debug CI more conveniently
