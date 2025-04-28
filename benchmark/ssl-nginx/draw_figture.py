@@ -19,7 +19,7 @@ SIZES = {
     "256kb": 256 * 1024
 }
 
-BENCHMARK_CMD = ["python", "benchmark/ssl-nginx/benchmark.py", "--test"]
+BENCHMARK_CMD = ["python", "benchmark/ssl-nginx/benchmark.py"]
 OUTPUT_DIR = "benchmark/ssl-nginx"
 INDEX_HTML_PATH = "benchmark/ssl-nginx/index.html"
 
@@ -157,30 +157,6 @@ def plot_results(all_results, output_dir):
     # Save absolute performance plot
     abs_plot_path = f"{output_dir}/absolute_performance.png"
     plt.savefig(abs_plot_path)
-    
-    # Relative performance plot (% of baseline)
-    plt.figure(figsize=(12, 6))
-    
-    # Calculate relative performance
-    kernel_relative = [k/b*100 if b > 0 and k is not None else 0 for k, b in zip(kernel_values, baseline_values)]
-    bpftime_relative = [b/base*100 if base > 0 and b is not None else 0 for b, base in zip(bpftime_values, baseline_values)]
-    
-    plt.bar(x - width/2, kernel_relative, width, label='Kernel sslsniff')
-    plt.bar(x + width/2, bpftime_relative, width, label='BPFtime sslsniff')
-    
-    plt.xlabel('File Size')
-    plt.ylabel('Performance (% of baseline)')
-    plt.title('Relative Performance by File Size')
-    plt.xticks(x, sizes)
-    plt.legend()
-    plt.grid(axis='y', linestyle='--', alpha=0.7)
-    plt.axhline(y=100, color='r', linestyle='-', alpha=0.3, label='Baseline')
-    
-    # Save relative performance plot
-    rel_plot_path = f"{output_dir}/relative_performance.png"
-    plt.savefig(rel_plot_path)
-    
-    print(f"\nPlots saved to {abs_plot_path} and {rel_plot_path}")
 
 def main():
     try:

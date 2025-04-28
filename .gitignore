@@ -53,3 +53,4 @@ perf.data
 perf.data.old
 build-mpk
 /wasm-micro-runtime
+benchmark-logs-error.txt

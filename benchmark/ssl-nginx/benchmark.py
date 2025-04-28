@@ -42,6 +42,22 @@ def debug_print(message):
     timestamp = datetime.now().strftime("%H:%M:%S")
     print(f"[DEBUG {timestamp}] {message}")
 
+def remove_access_log():
+    """Remove the nginx access log file"""
+    # The log file is typically in the logs directory under the nginx directory
+    log_path = os.path.join("benchmark", "ssl-nginx", "logs", "access.log")
+    abs_log_path = os.path.abspath(log_path)
+    
+    debug_print(f"Removing access log: {abs_log_path}")
+    try:
+        if os.path.exists(abs_log_path):
+            os.remove(abs_log_path)
+            debug_print("Access log removed successfully")
+        else:
+            debug_print("Access log not found (this might be normal on first run)")
+    except Exception as e:
+        debug_print(f"Error removing access log: {e}")
+
 def check_file_exists(path):
     """Check if a file exists and print its absolute path"""
     abs_path = os.path.abspath(path)
@@ -161,6 +177,7 @@ def run_baseline():
     """Run baseline benchmarks (no sslsniff)"""
     print("\n=== Running Baseline Tests ===")
     cleanup_processes()
+    remove_access_log()  # Remove access log before starting nginx
     
     # Check if nginx exists
     check_command_exists("nginx")
@@ -249,6 +266,7 @@ def run_kernel_sslsniff():
     """Run kernel sslsniff benchmarks"""
     print("\n=== Running Kernel sslsniff Tests ===")
     cleanup_processes()
+    remove_access_log()  # Remove access log before starting nginx
     
     # Check if sslsniff exists
     if not check_file_exists(KERNEL_SSLSNIFF_PATH):
@@ -329,6 +347,7 @@ def run_bpftime_sslsniff():
     """Run bpftime sslsniff benchmarks"""
     print("\n=== Running bpftime sslsniff Tests ===")
     cleanup_processes()
+    remove_access_log()  # Remove access log before starting nginx
     
     # Check if required files exist
     if not check_file_exists(SSLSNIFF_PATH) or not check_file_exists(AGENT_PATH) or not check_file_exists(SYSCALL_SERVER_PATH):
