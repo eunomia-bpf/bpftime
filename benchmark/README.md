@@ -32,11 +32,11 @@ make benchmark
 
 Performance comparison including:
 
-- Uprobe/uretprobe (see `./uprobe/`)
-- Memory read/write operations (see `./uprobe/`)
-- Map operations (see `./uprobe/`)
-- Syscall tracepoint (see `./syscall/`)
-- MPK enable/disable (see `./mpk/`)
+- Uprobe/uretprobe (see [./uprobe/](./uprobe/))
+- Memory read/write operations (see [./uprobe/](./uprobe/))
+- Map operations (see [./uprobe/](./uprobe/))
+- Syscall tracepoint (see [./syscall/](./syscall/))
+- MPK enable/disable (see [./mpk/](./mpk/))
 
 #### Part 2: Execution Engine Efficiency
 
