@@ -32,7 +32,7 @@ nginx -c $(pwd)/nginx.conf -p $(pwd)
 ## Test for no effect
 
 ```console
-$ ./wrk https://127.0.0.1:4043/index.html -c 100 -d 10
+$ wrk https://127.0.0.1:4043/index.html -c 100 -d 10
 Running 10s test @ https://127.0.0.1:4043/index.html
   2 threads and 100 connections
   Thread Stats   Avg      Stdev     Max   +/- Stdev
@@ -48,7 +48,8 @@ Transfer/sec:      4.96MB
 in one console
 
 ```console
-$ sudo ./sslsniff 
+$ make -C example/sslsniff
+$ sudo example/sslsniff/sslsniff 
 OpenSSL path: /lib/x86_64-linux-gnu/libssl.so.3
 GnuTLS path: /lib/x86_64-linux-gnu/libgnutls.so.30
 NSS path: /lib/x86_64-linux-gnu/libnspr4.so
@@ -63,7 +64,7 @@ This sslsniff is from bpftime/example/sslsniff/sslsniff. The userspace part modi
 In another shell
 
 ```console
-$ ./wrk https://127.0.0.1:4043/index.html -c 100 -d 10
+$ wrk https://127.0.0.1:4043/index.html -c 100 -d 10
 Running 10s test @ https://127.0.0.1:4043/index.html
   2 threads and 100 connections
   Thread Stats   Avg      Stdev     Max   +/- Stdev
@@ -85,14 +86,15 @@ Note: you need to config bpftime to:
 in one console, start userspace sslsniff
 
 ```sh
-sudo ~/.bpftime/bpftime load example/sslsniff/sslsniff
+~/.bpftime/bpftime load example/sslsniff/sslsniff
+# or LD_PRELOAD=build/runtime/syscall-server/libbpftime-syscall-server.so example/sslsniff/sslsniff
 ```
 
 in another console, restart nginx
 
 ```sh
-sudo ~/.bpftime/bpftime start nginx -- -c nginx.conf -p benchmark/ssl-nginx
-# or sudo LD_PRELOAD=build/runtime/agent/libbpftime-agent.so nginx -c nginx.conf -p benchmark/ssl-nginx
+~/.bpftime/bpftime start nginx -- -c nginx.conf -p benchmark/ssl-nginx
+# or LD_PRELOAD=build/runtime/agent/libbpftime-agent.so nginx -c nginx.conf -p benchmark/ssl-nginx
 ```
 
 in another console, run wrk

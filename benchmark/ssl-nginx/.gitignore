@@ -3,3 +3,7 @@ nginx.pid
 nginx-error.txt
 sslsniff
 wrk
+results.txt
+benchmark_log.txt
+index.html
+benchmark_results_*.json
