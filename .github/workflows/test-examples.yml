@@ -1,519 +1,303 @@
-name: BPFtime Syscall Tracing
+name: Build and run all integrated tests (examples)
 
 on:
   push:
-    branches: [ "*" ]
+    branches: "*"
   pull_request:
-    branches: [ "*" ]
-  workflow_dispatch:
-
+    branches: "*"
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}-${{ github.event_name }}
+  cancel-in-progress: true
 env:
   BPFTIME_VM_NAME: llvm
-  SPDLOG_LEVEL: debug
-  BPFTIME_LOG_OUTPUT: console
-  BPFTIME_SHARED_MEMORY_PATH: /dev/shm
-  SERVER_LOG: logs/bpftime_server.log
-  CLIENT_LOG: logs/bpftime_client.log
-
 jobs:
-  syscall-tracing-load-start-test:
+  build-runtime:
+    strategy:
+      matrix:
+        enable_jit:
+          - true
+          - false
+        container:
+          - image: ubuntu-2204
+            name: ubuntu
+          - image: fedora-39
+            name: fedora
     runs-on: ubuntu-22.04
     container:
-      image: "manjusakalza/bpftime-base-image:ubuntu-2204"
-      options: "--privileged -v /sys/kernel/debug:/sys/kernel/debug:rw -v /sys/kernel/tracing:/sys/kernel/tracing:rw -v /dev/shm:/dev/shm:rw -v /tmp:/tmp:rw -v /run/shm:/run/shm:rw"
-
+      image: "manjusakalza/bpftime-base-image:${{matrix.container.image}}"
+      options: --privileged
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v2
         with:
-          submodules: 'recursive'
-
-      - name: System setup and kernel headers
+          submodules: "recursive"
+      - name: Install lcov (Ubuntu)
+        if: ${{matrix.container.name=='ubuntu'}}
         run: |
-          apt-get update
-          apt-get install -y --no-install-recommends \
-            lcov tree strace gdb sudo libc6-dev bpftrace \
-            linux-headers-generic linux-tools-generic \
-            linux-headers-$(uname -r) \
-            libelf-dev procps
-          echo "==== System Information ===="; uname -a && cat /etc/os-release
-          echo "==== bpftrace version ===="; which bpftrace && bpftrace --version || echo "bpftrace not found"
-          mkdir -p logs build
-          echo "TEST_DATA_LINE_1_ABC" > build/install_manifest.txt
-          echo "TEST_DATA_LINE_2_XYZ" >> build/install_manifest.txt
-          echo "Created build/install_manifest.txt:"; cat build/install_manifest.txt
-          
-          # 确保共享内存目录存在且权限正确
-          sudo mkdir -p $BPFTIME_SHARED_MEMORY_PATH
-          sudo chmod 1777 $BPFTIME_SHARED_MEMORY_PATH
-
-      - name: Build bpftime
+          apt-get update -y && apt-get install -y lcov tree
+      - name: Install lcov (Fedora)
+        if: ${{matrix.container.name =='fedora'}}
         run: |
-          echo "Building bpftime with CMake"
-          cmake -Bbuild -DCMAKE_BUILD_TYPE:STRING=RelWithDebInfo \
+          dnf install -y lcov tree
+      - name: Build and install runtime (with llvm-jit)
+        if: ${{matrix.enable_jit}}
+        run: |
+          cmake -Bbuild  -DCMAKE_BUILD_TYPE:STRING=RelWithDebInfo \
             -DBPFTIME_LLVM_JIT=1 \
+            -DTEST_LCOV=YES \
             -DBUILD_BPFTIME_DAEMON=1 \
-            -DBUILD_AGENT=1 \
             -DCMAKE_CXX_FLAGS="-DDEFAULT_LOGGER_OUTPUT_PATH='\"console\"'"
-          cmake --build build --config RelWithDebInfo -j$(nproc)
-          
-          echo "Checking built libraries:"
-          ls -la build/runtime/agent/
-          ls -la build/runtime/syscall-server/
-          ls -la build/attach/text_segment_transformer/ || echo "Text segment transformer directory not found"
-
-      - name: Find all necessary libraries
+          cmake --build build --config RelWithDebInfo --target install -j
+      - name: Build and install runtime (without llvm-jit)
+        if: ${{!matrix.enable_jit}}
         run: |
-          echo "=== Finding all necessary libraries ==="
-          
-          # 查找所有可能需要的库文件
-          find build -name "*.so" | sort
-          
-          # 特别检查关键库文件
-          AGENT_LIB="build/runtime/agent/libbpftime-agent.so"
-          SERVER_LIB="build/runtime/syscall-server/libbpftime-syscall-server.so"
-          TRANSFORMER_LIB="build/attach/text_segment_transformer/libbpftime-agent-transformer.so"
-          
-          if [ ! -f "$AGENT_LIB" ]; then
-            echo "ERROR: Agent library not found at $AGENT_LIB"
-            # 尝试查找替代位置
-            AGENT_LIB=$(find build -name "libbpftime-agent.so" | head -1)
-            if [ -n "$AGENT_LIB" ]; then
-              echo "Found agent library at alternative location: $AGENT_LIB"
-            else
-              echo "Could not find agent library anywhere"
-              exit 1
-            fi
-          fi
-          
-          if [ ! -f "$SERVER_LIB" ]; then
-            echo "ERROR: Server library not found at $SERVER_LIB"
-            # 尝试查找替代位置
-            SERVER_LIB=$(find build -name "libbpftime-syscall-server.so" | head -1)
-            if [ -n "$SERVER_LIB" ]; then
-              echo "Found server library at alternative location: $SERVER_LIB"
-            else
-              echo "Could not find server library anywhere"
-              exit 1
-            fi
-          fi
-          
-          # 检查 transformer 库，可能不是必需的
-          if [ ! -f "$TRANSFORMER_LIB" ]; then
-            echo "WARNING: Transformer library not found at $TRANSFORMER_LIB"
-            # 尝试查找替代位置
-            TRANSFORMER_LIB=$(find build -name "libbpftime-agent-transformer.so" | head -1)
-            if [ -n "$TRANSFORMER_LIB" ]; then
-              echo "Found transformer library at alternative location: $TRANSFORMER_LIB"
-            else
-              echo "Could not find transformer library anywhere, will proceed without it"
-              TRANSFORMER_LIB=""
-            fi
-          fi
-          
-          # 保存库路径到环境变量
-          echo "AGENT_LIB=$AGENT_LIB" >> $GITHUB_ENV
-          echo "SERVER_LIB=$SERVER_LIB" >> $GITHUB_ENV
-          echo "TRANSFORMER_LIB=$TRANSFORMER_LIB" >> $GITHUB_ENV
-
-      - name: Run server and client in the same step
+          cmake -Bbuild  -DCMAKE_BUILD_TYPE:STRING=RelWithDebInfo \
+            -DBPFTIME_LLVM_JIT=0 \
+            -DTEST_LCOV=YES \
+            -DBUILD_BPFTIME_DAEMON=1 \
+            -DCMAKE_CXX_FLAGS="-DDEFAULT_LOGGER_OUTPUT_PATH='\"console\"'"
+          cmake --build build --config RelWithDebInfo --target install -j
+      - name: Build basic examples
         run: |
-          echo "=== Running server and client in the same step ==="
-          
-          # 获取库路径
-          AGENT_LIB="${{ env.AGENT_LIB }}"
-          SERVER_LIB="${{ env.SERVER_LIB }}"
-          TRANSFORMER_LIB="${{ env.TRANSFORMER_LIB }}"
-          
-          echo "Using libraries:"
-          echo "AGENT_LIB: $AGENT_LIB"
-          echo "SERVER_LIB: $SERVER_LIB"
-          echo "TRANSFORMER_LIB: $TRANSFORMER_LIB"
-          
-          # 清理之前的日志
-          mkdir -p logs
-          rm -f "$SERVER_LOG" "$CLIENT_LOG" 2>/dev/null || true
-          
-          # 设置环境变量
-          export BPFTIME_USED=1
-          export SPDLOG_LEVEL=debug
-          
-          # 启动服务器
-          echo "Starting server in background..."
-          sudo -E LD_PRELOAD=$SERVER_LIB bpftrace -e 'tracepoint:syscalls:sys_enter_openat { printf("SERVER_TRACE (openat): %s %s\n", comm, str(args->filename)); }' > "$SERVER_LOG" 2>&1 &
-          
-          SERVER_PID=$!
-          echo "Server started with PID: $SERVER_PID"
-          
-          # 等待服务器初始化
-          echo "Waiting for server to initialize..."
-          INIT_TIMEOUT=30
-          for i in $(seq 1 $INIT_TIMEOUT); do
-            if grep -q "Attaching" "$SERVER_LOG"; then
-              echo "Server initialized after $i seconds"
-              break
-            fi
-            if [ $i -eq $INIT_TIMEOUT ]; then
-              echo "ERROR: Server did not initialize after $INIT_TIMEOUT seconds"
-              cat "$SERVER_LOG"
-              exit 1
-            fi
-            sleep 1
-          done
-          
-          # 确认服务器进程仍在运行
-          if ! ps -p $SERVER_PID > /dev/null; then
-            echo "ERROR: Server process died during initialization"
-            cat "$SERVER_LOG"
-            exit 1
-          fi
-          
-          echo "Server log after initialization:"
-          cat "$SERVER_LOG"
-          
-          # 运行客户端命令，使用完整的 LD_PRELOAD 配置
-          echo "Running cat command with complete LD_PRELOAD configuration..."
-          
-          # 准备 LD_PRELOAD 参数，根据 transformer 库是否存在进行调整
-          if [ -n "$TRANSFORMER_LIB" ]; then
-            # 同时使用 agent 和 transformer 库
-            echo "Using both agent and transformer libraries"
-            LD_PRELOAD_CMD="env AGENT_SO=$AGENT_LIB LD_PRELOAD=$TRANSFORMER_LIB"
-          else
-            # 只使用 agent 库
-            echo "Using only agent library"
-            LD_PRELOAD_CMD="env LD_PRELOAD=$AGENT_LIB"
-          fi
-          
-          # 执行命令
-          sudo -E $LD_PRELOAD_CMD cat build/install_manifest.txt | tee "$CLIENT_LOG"
-          CAT_EXIT_CODE=$?
-          
-          # 等待服务器处理事件
-          echo "Waiting for server to process events..."
-          sleep 10
-          
-          # 强制刷新
-          sync
-          
-          # 显示服务器日志
-          echo "Server log after client execution:"
-          cat "$SERVER_LOG"
-          
-          # 检查是否有cat命令的SERVER_TRACE输出
-          if grep -q "SERVER_TRACE.*cat.*build/install_manifest.txt" "$SERVER_LOG"; then
-            echo "SUCCESS: Found SERVER_TRACE for cat command in server log"
-            CAT_TRACE_FOUND="true"
-          else
-            echo "FAILURE: Did not find SERVER_TRACE for cat command in server log"
-            CAT_TRACE_FOUND="false"
-          fi
-          
-          # 停止服务器
-          echo "Stopping server process PID $SERVER_PID"
-          sudo kill -9 $SERVER_PID 2>/dev/null || echo "Kill failed"
-          sleep 2
-          
-          # 分析结果
-          echo "=== Final Analysis ==="
-          
-          # 检查cat命令是否成功执行
-          if [ "$CAT_EXIT_CODE" = "0" ]; then
-            echo "SUCCESS: Cat command executed successfully with exit code 0"
-            CAT_SUCCESS="true"
-          else
-            echo "FAILURE: Cat command failed with exit code $CAT_EXIT_CODE"
-            CAT_SUCCESS="false"
-          fi
-          
-          # 检查是否捕获到cat命令
-          if [ "$CAT_TRACE_FOUND" = "true" ]; then
-            echo "SUCCESS: Cat command tracing is working"
-            TRACING_SUCCESS="true"
-          else
-            echo "FAILURE: Cat command tracing is NOT working"
-            TRACING_SUCCESS="false"
-          fi
-          
-          # 最终结果判断
-          if [ "$CAT_SUCCESS" = "true" ] && [ "$TRACING_SUCCESS" = "true" ]; then
-            echo "OVERALL SUCCESS: Cat command ran successfully AND tracing detected cat command"
-            exit 0
-          else
-            echo "FAILURE: Test did not meet all success criteria"
-            if [ "$CAT_SUCCESS" != "true" ]; then
-              echo "  - Cat command execution failed with exit code $CAT_EXIT_CODE"
-            fi
-            if [ "$TRACING_SUCCESS" != "true" ]; then
-              echo "  - Cat command tracing is not working"
-            fi
-            exit 1
-          fi
-
-  malloc-example-test:
+          make -C example -j
+      - name: Package gcno files
+        run: |
+          find . -type f -name "*.gcno" | tar --create --gzip --file=gcno_files.tar.gz --files-from=-
+          ls -la
+          pwd
+          tree .
+      - name: Upload gcno file
+        uses: actions/upload-artifact@v4
+        with:
+          name: gcno-files-${{matrix.enable_jit && 'jit' || 'no-jit'}}-${{matrix.container.name}}
+          include-hidden-files: true
+          path: |
+            ./gcno_files.tar.gz
+      - name: Upload build results (without jit)
+        uses: actions/upload-artifact@v4
+        if: ${{!matrix.enable_jit}}
+        with:
+          name: runtime-package-no-jit-${{matrix.container.name}}
+          include-hidden-files: true
+          path: |
+            ~/.bpftime
+      - name: Upload build results (with jit)
+        uses: actions/upload-artifact@v4
+        if: ${{matrix.enable_jit}}
+        with:
+          name: runtime-package-jit-${{matrix.container.name}}
+          include-hidden-files: true
+          path: |
+            ~/.bpftime
+  build-and-test:
     runs-on: ubuntu-22.04
+    needs: [build-runtime]
     container:
-      image: "manjusakalza/bpftime-base-image:ubuntu-2204"
-      options: "--privileged -v /sys/kernel/debug:/sys/kernel/debug:rw -v /sys/kernel/tracing:/sys/kernel/tracing:rw -v /dev/shm:/dev/shm:rw -v /tmp:/tmp:rw -v /run/shm:/run/shm:rw"
+      image: "manjusakalza/bpftime-base-image:${{matrix.container.image}}"
+      options: " ${{matrix.privilege_options.options}}"
+    strategy:
+      fail-fast: true
+      matrix:
+        exclude:
+          - privilege_options:
+              enable: false
+            examples:
+              syscall_trace: true
+          - privilege_options:
+              enable: false
+            examples:
+              path: tailcall_minimal
+          - privilege_options:
+              enable: false
+            examples:
+              path: malloc
+        privilege_options:
+          - options: "--privileged -v /sys/kernel/debug/:/sys/kernel/debug:rw -v /sys/kernel/tracing:/sys/kernel/tracing:rw"
+            enable: true
+          - options: ""
+            enable: false
+        container:
+          - image: ubuntu-2204
+            name: ubuntu
+          - image: fedora-39
+            name: fedora
+        enable_jit:
+          - true
+          - false
+        examples:
+          - path: libbpf-tools/opensnoop
+            executable: ./opensnoop
+            victim: ./victim
+            syscall_trace: true
+            expected_str: "   0 test.txt"
+            name: opensnoop-libbpf-tools
+          - path: libbpf-tools/statsnoop
+            executable: ./statsnoop
+            victim: ./victim
+            syscall_trace: true
+            expected_str: "victim               0    0    /sys"
+            name: statsnoop
+          - path: malloc
+            executable: ./malloc
+            victim: ./victim
+            syscall_trace: false
+            expected_str: "malloc calls: "
+            name: malloc
+          - path: minimal
+            executable: ./uprobe
+            victim: ./victim
+            syscall_trace: false
+            expected_str: ""
+            name: minimal
+          - path: opensnoop
+            executable: ./opensnoop
+            victim: ./victim
+            syscall_trace: true
+            expected_str: "   0 test.txt"
+            name: opensnoop
+          - path: sslsniff
+            executable: ./sslsniff
+            victim: /bin/wget https://www.google.com
+            syscall_trace: false
+            expected_str: "----- DATA -----"
+            name: sslsniff
+          - path: libbpf-tools/bashreadline
+            executable: ./readline
+            victim: /bin/bash
+            syscall_trace: false
+            expected_str: "info"
+            name: bashreadline
+          - path: libbpf-tools/syscount
+            executable: ./syscount
+            victim: /bin/bash
+            syscall_trace: false
+            expected_str: "info"
+            name: syscount
+          - path: libbpf-tools/funclatency
+            executable: ./funclatency -i 1 ./victim:plus
+            victim: ./victim
+            syscall_trace: false
+            expected_str: "|*"
+            name: funclatency
+          - path: libbpf-tools/mountsnoop
+            executable: ./mountsnoop
+            victim: ./victim
+            syscall_trace: true
+            expected_str: mount(
+            name: mountsnoop
+          - path: libbpf-tools/sigsnoop
+            executable: ./sigsnoop
+            victim: ./victim
+            syscall_trace: true
+            expected_str: "victim           0         -1      0"
+            name: sigsnoop
+          - path: tailcall_minimal
+            executable: ./tailcall_minimal
+            victim: ./victim
+            syscall_trace: false
+            expected_str: "See /sys/kernel/debug/tracing/trace_pipe for output (15)"
+            name: tailcall_minimal
+          - path: usdt_minimal
+            executable: ./usdt_minimal
+            victim: ./victim
+            syscall_trace: false
+            expected_str: "bpf:"
+            name: usdt_minimal
 
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v2
         with:
-          submodules: 'recursive'
-
-      - name: System setup and kernel headers
+          submodules: "recursive"
+      - name: Download prebuilt runtime (with jit)
+        if: ${{matrix.enable_jit}}
+        uses: actions/download-artifact@v4
+        with:
+          name: runtime-package-jit-${{matrix.container.name}}
+          path: ~/.bpftime
+      - name: Download prebuilt runtime (without jit)
+        if: ${{!matrix.enable_jit}}
+        uses: actions/download-artifact@v4
+        with:
+          name: runtime-package-no-jit-${{matrix.container.name}}
+          path: ~/.bpftime
+      - name: Download gcno files
+        uses: actions/download-artifact@v4
+        with:
+          name: gcno-files-${{matrix.enable_jit && 'jit' || 'no-jit'}}-${{matrix.container.name}}
+          path: .
+      - name: Extract gcno files
         run: |
-          apt-get update
-          apt-get install -y --no-install-recommends \
-            lcov tree strace gdb sudo libc6-dev bpftrace \
-            linux-headers-generic linux-tools-generic \
-            linux-headers-$(uname -r) \
-            libelf-dev procps
-          echo "==== System Information ===="; uname -a && cat /etc/os-release
-          echo "==== bpftrace version ===="; which bpftrace && bpftrace --version || echo "bpftrace not found"
-          mkdir -p logs
-          
-          # 确保共享内存目录存在且权限正确
-          sudo mkdir -p $BPFTIME_SHARED_MEMORY_PATH
-          sudo chmod 1777 $BPFTIME_SHARED_MEMORY_PATH
-
-      - name: Build bpftime
+          ls -lah .
+          tar -zxvf gcno_files.tar.gz
+          pwd
+      - name: Install which(required by funclatency on fedora)
+        if: ${{matrix.container.name=='fedora' && matrix.examples.path=='libbpf-tools/funclatency'}}
         run: |
-          echo "Building bpftime with CMake"
-          cmake -Bbuild -DCMAKE_BUILD_TYPE:STRING=RelWithDebInfo \
-            -DBPFTIME_LLVM_JIT=1 \
-            -DBUILD_BPFTIME_DAEMON=1 \
-            -DBUILD_AGENT=1 \
-            -DCMAKE_CXX_FLAGS="-DDEFAULT_LOGGER_OUTPUT_PATH='\"console\"'"
-          cmake --build build --config RelWithDebInfo -j$(nproc)
-          
-          echo "Checking built libraries:"
-          ls -la build/runtime/agent/
-          ls -la build/runtime/syscall-server/
-          ls -la build/attach/text_segment_transformer/ || echo "Text segment transformer directory not found"
-
-      - name: Build malloc example
+          yum install -y which
+      - name: Set permissions
         run: |
-          echo "Building malloc example"
-          make -C example/malloc
-          
-          # 检查编译结果 - 注意可执行文件可能在 .output 目录或当前目录
-          if [ -f "example/malloc/malloc" ] && [ -f "example/malloc/victim" ]; then
-            echo "SUCCESS: Malloc example built successfully"
-            ls -la example/malloc/
-          elif [ -f "example/malloc/.output/malloc" ] && [ -f "example/malloc/victim" ]; then
-            echo "SUCCESS: Malloc example built successfully (malloc in .output directory)"
-            ls -la example/malloc/ example/malloc/.output/
-          else
-            echo "FAILURE: Malloc example build failed"
-            echo "Searching for malloc and victim executables:"
-            find example/malloc -type f -name "malloc" -o -name "victim" | sort
-            echo "Directory contents:"
-            ls -la example/malloc/
-            ls -la example/malloc/.output/ 2>/dev/null || echo "No .output directory"
-            exit 1
-          fi
-
-      - name: Find all necessary libraries
+          chmod +x ~/.bpftime/*
+      - name: Show downloaded artifacts
         run: |
-          echo "=== Finding all necessary libraries ==="
-          
-          # 查找所有可能需要的库文件
-          find build -name "*.so" | sort
-          
-          # 检查关键库文件
-          AGENT_LIB="build/runtime/agent/libbpftime-agent.so"
-          SERVER_LIB="build/runtime/syscall-server/libbpftime-syscall-server.so"
-          TRANSFORMER_LIB="build/attach/text_segment_transformer/libbpftime-agent-transformer.so"
-          
-          if [ ! -f "$AGENT_LIB" ]; then
-            echo "ERROR: Agent library not found at $AGENT_LIB"
-            # 尝试查找替代位置
-            AGENT_LIB=$(find build -name "libbpftime-agent.so" | head -1)
-            if [ -n "$AGENT_LIB" ]; then
-              echo "Found agent library at alternative location: $AGENT_LIB"
-            else
-              echo "Could not find agent library anywhere"
-              exit 1
-            fi
-          fi
-          
-          if [ ! -f "$SERVER_LIB" ]; then
-            echo "ERROR: Server library not found at $SERVER_LIB"
-            # 尝试查找替代位置
-            SERVER_LIB=$(find build -name "libbpftime-syscall-server.so" | head -1)
-            if [ -n "$SERVER_LIB" ]; then
-              echo "Found server library at alternative location: $SERVER_LIB"
-            else
-              echo "Could not find server library anywhere"
-              exit 1
-            fi
-          fi
-          
-          
-          # 保存库路径到环境变量
-          echo "AGENT_LIB=$AGENT_LIB" >> $GITHUB_ENV
-          echo "SERVER_LIB=$SERVER_LIB" >> $GITHUB_ENV
-          echo "TRANSFORMER_LIB=$TRANSFORMER_LIB" >> $GITHUB_ENV
-
-      - name: Run malloc example to test bpftrace uprobe
+          ls ~/.bpftime
+      - name: Build test assets
         run: |
-          echo "=== Running malloc example with LD_PRELOAD ==="
-          
-          # 获取库路径
-          AGENT_LIB="${{ env.AGENT_LIB }}"
-          SERVER_LIB="${{ env.SERVER_LIB }}"
-          TRANSFORMER_LIB="${{ env.TRANSFORMER_LIB }}"
-          
-          echo "Using libraries:"
-          echo "AGENT_LIB: $AGENT_LIB"
-          echo "SERVER_LIB: $SERVER_LIB"
-          echo "TRANSFORMER_LIB: $TRANSFORMER_LIB"
-          
-          # 清理之前的日志
-          mkdir -p logs
-          SERVER_LOG="logs/malloc_server.log"
-          CLIENT_LOG="logs/malloc_client.log"
-          rm -f "$SERVER_LOG" "$CLIENT_LOG" 2>/dev/null || true
-          
-          # 设置环境变量
-          export BPFTIME_USED=1
-          export SPDLOG_LEVEL=debug
-          
-          # 找到 malloc 可执行文件的位置
-          if [ -f "example/malloc/malloc" ]; then
-            MALLOC_BIN="example/malloc/malloc"
-          elif [ -f "example/malloc/.output/malloc" ]; then
-            MALLOC_BIN="example/malloc/.output/malloc"
-          else
-            echo "ERROR: Cannot find malloc executable"
-            find example/malloc -type f -name "malloc" | sort
-            exit 1
-          fi
-          echo "Using malloc binary: $MALLOC_BIN"
-          
-          # 启动服务器 - 使用 bpftrace 跟踪 malloc 函数
-          echo "Starting server with bpftrace to trace malloc function..."
-          sudo -E LD_PRELOAD=$SERVER_LIB bpftrace -e 'uprobe:/lib/x86_64-linux-gnu/libc.so.6:malloc { printf("PID: %d (%s) malloc size: %d\n", pid, comm, arg0); }' > "$SERVER_LOG" 2>&1 &
-          
-          SERVER_PID=$!
-          echo "Server started with PID: $SERVER_PID"
-          
-          # 等待服务器初始化
-          echo "Waiting for server to initialize..."
-          INIT_TIMEOUT=30
-          for i in $(seq 1 $INIT_TIMEOUT); do
-            if grep -q "Loaded" "$SERVER_LOG" || grep -q "Attaching" "$SERVER_LOG"; then
-              echo "Server initialized after $i seconds"
-              break
-            fi
-            if [ $i -eq $INIT_TIMEOUT ]; then
-              echo "ERROR: Server did not initialize after $INIT_TIMEOUT seconds"
-              cat "$SERVER_LOG"
-              exit 1
-            fi
-            sleep 1
-          done
-          
-          # 确认服务器进程仍在运行
-          if ! ps -p $SERVER_PID > /dev/null; then
-            echo "ERROR: Server process died during initialization"
-            cat "$SERVER_LOG"
-            exit 1
-          fi
-          
-          echo "Server log after initialization:"
-          cat "$SERVER_LOG"
-          
-          # 运行客户端命令，使用完整的 LD_PRELOAD 配置
-          echo "Running victim program with complete LD_PRELOAD configuration..."
-          
-          # 准备 LD_PRELOAD 参数，根据 transformer 库是否存在进行调整
-          if [ -n "$TRANSFORMER_LIB" ]; then
-            # 同时使用 agent 和 transformer 库
-            echo "Using both agent and transformer libraries"
-            LD_PRELOAD_CMD="env AGENT_SO=$AGENT_LIB LD_PRELOAD=$TRANSFORMER_LIB"
-          else
-            # 只使用 agent 库
-            echo "Using only agent library"
-            LD_PRELOAD_CMD="env LD_PRELOAD=$AGENT_LIB"
-          fi
-          
-          # 确认 victim 程序存在
-          if [ ! -f "example/malloc/victim" ]; then
-            echo "ERROR: Cannot find victim executable"
-            find example/malloc -type f -name "victim" | sort
-            exit 1
-          fi
-          
-          # 执行 victim 程序，使用 timeout 命令限制运行时间为 5 秒
-          echo "Running victim program with 5 second timeout..."
-          sudo -E timeout 5s $LD_PRELOAD_CMD ./example/malloc/victim | tee "$CLIENT_LOG"
-          VICTIM_EXIT_CODE=$?
-          
-          # 检查退出码，timeout 命令在超时终止程序时会返回 124
-          if [ $VICTIM_EXIT_CODE -eq 124 ]; then
-            echo "INFO: Victim program was terminated after timeout (5s). This is expected and not an error."
-            # 将退出码重置为 0，因为超时不是测试失败
-            VICTIM_EXIT_CODE=0
-          fi
-          
-          # 等待服务器处理事件 - 减少等待时间
-          echo "Waiting for server to process events..."
-          sleep 3
-          
-          # 强制刷新
-          sync
-          
-          # 显示服务器日志
-          echo "Server log after victim execution:"
-          cat "$SERVER_LOG"
-          
-          if grep -q "PID.*victim.*malloc size" "$SERVER_LOG"; then
-            echo "SUCCESS: Found malloc trace for victim process in server log"
-            MALLOC_TRACE_FOUND="true"
-          else
-            echo "FAILURE: Did not find malloc trace for victim process in server log"
-            MALLOC_TRACE_FOUND="false"
-          fi
-          
-          # 显示客户端日志
-          echo "Client log after execution:"
-          cat "$CLIENT_LOG"
-          
-          # 客户端只需要成功运行，不需要检查特定输出
-          echo "NOTE: Not checking for specific client output, only verifying successful execution"
-          CLIENT_OUTPUT_FOUND="true"  # 只要客户端成功运行就算通过这项检查
-          
-          # 停止服务器
-          echo "Stopping server process PID $SERVER_PID"
-          sudo kill -9 $SERVER_PID 2>/dev/null || echo "Kill failed"
-          sleep 2
-          
-          # 分析结果
-          echo "=== Final Analysis ==="
-          
-          # 检查victim命令是否成功执行
-          if [ "$VICTIM_EXIT_CODE" = "0" ]; then
-            echo "SUCCESS: Victim program executed successfully with exit code 0"
-            VICTIM_SUCCESS="true"
-          else
-            echo "FAILURE: Victim program failed with exit code $VICTIM_EXIT_CODE"
-            VICTIM_SUCCESS="false"
-          fi
-          
-          # 最终结果判断 - 只检查程序是否成功运行和是否捕获到 malloc 调用
-          if [ "$VICTIM_SUCCESS" = "true" ] && [ "$MALLOC_TRACE_FOUND" = "true" ]; then
-            echo "OVERALL SUCCESS: Malloc example test passed - victim program ran successfully AND malloc was traced"
-            exit 0
-          else
-            echo "FAILURE: Malloc example test failed"
-            if [ "$VICTIM_SUCCESS" != "true" ]; then
-              echo "  - Victim program execution failed with exit code $VICTIM_EXIT_CODE"
-            fi
-            if [ "$MALLOC_TRACE_FOUND" != "true" ]; then
-              echo "  - Malloc trace was not found in server log"
-            fi
-            exit 1
-          fi
+          make -C example/${{matrix.examples.path}} -j
+      - name: Set BPFTIME_VM_NAME for ubpf # Set environment variable when llvm-jit is disabled
+        if: "!matrix.enable_jit"
+        run: |
+          echo "BPFTIME_VM_NAME=ubpf" >> $GITHUB_ENV
+      - name: Test CLI - show help
+        run: |
+          export PATH=$PATH:~/.bpftime
+          bpftime --help
+      - name: Test CLI - attach by running (syscall_trace)
+        if: matrix.examples.syscall_trace
+        shell: bash
+        run: |
+          ROOT=$(pwd)
+          cd example/${{matrix.examples.path}}
+          python3 $ROOT/.github/script/run_example.py "${{matrix.examples.executable}}" "${{matrix.examples.victim}}" "${{matrix.examples.expected_str}}" "/github/home/.bpftime/bpftime -i /github/home/.bpftime" 1
+      - name: Test CLI - attach by running (uprobe)
+        if: "!matrix.examples.syscall_trace"
+        shell: bash
+        run: |
+          ROOT=$(pwd)
+          cd example/${{matrix.examples.path}}
+          python3 $ROOT/.github/script/run_example.py "${{matrix.examples.executable}}" "${{matrix.examples.victim}}" "${{matrix.examples.expected_str}}" "/github/home/.bpftime/bpftime -i /github/home/.bpftime" 0
+      - name: Generate example coverage (Ubuntu)
+        if: "matrix.container.image == 'ubuntu-2204'"
+        run: |
+          apt-get update -y && apt-get install -y gpg lcov
+          lcov --capture --directory . --directory .github --directory /github/home/.bpftime --output-file coverage-example.info --gcov-tool $(which gcov-12)
+          lcov --remove coverage-example.info '/usr/*' --output-file coverage-example.info
+          lcov --list coverage-example.info
+      - name: Generate example coverage (Fedora)
+        if: "matrix.container.image == 'fedora-39'"
+        run: |
+          dnf install -y lcov
+          lcov --capture --directory . --output-file coverage-example.info
+          lcov --remove coverage-example.info '/usr/*' --output-file coverage-example.info
+          lcov --list coverage-example.info
+      - name: Upload example coverage
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-example-${{matrix.container.name}}-${{matrix.enable_jit}}-${{matrix.examples.name}}-${{matrix.privilege_options.enable}}
+          include-hidden-files: false
+          path: |
+            ./coverage-example.info
+      - uses: codecov/codecov-action@v4
+        # Only upload when this workflow was run on the main repository
+        if: github.repository == 'eunomia-bpf/bpftime'
+        with:
+          fail_ci_if_error: true # optional (default = false)
+          files: ./coverage-example.info
+          flags: coverage-example-${{matrix.container.name}}-${{matrix.enable_jit}}-${{matrix.examples.name}}-${{matrix.privilege_options.enable}}
+          token: ${{ secrets.CODECOV_TOKEN }} # required
+          verbose: true # optional (default = false)
+
+      - name: Setup tmate session
+        # Setup SSH when manually triggered and failing, so we can debug CI more conveniently
+        if: "${{ failure() && github.event_name == 'workflow_dispatch' }}"
+        uses: mxschmitt/action-tmate@v3
+        with:
+          limit-access-to-actor: false
