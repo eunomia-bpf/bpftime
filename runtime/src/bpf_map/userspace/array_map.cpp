@@ -3,6 +3,7 @@
  * Copyright (c) 2022, eunomia-bpf org
  * All rights reserved.
  */
+#include "bpftime_internal.h"
 #include "bpf_map/map_common_def.hpp"
 #include "linux/bpf.h"
 #include <bpf_map/userspace/array_map.hpp>
@@ -36,15 +37,15 @@ void *array_map_impl::elem_lookup(const void *key)
 long array_map_impl::elem_update(const void *key, const void *value,
 				 uint64_t flags)
 {
-	if (!check_update_flags(flags))
+	if (unlikely(!check_update_flags(flags)))
 		return -1;
 	auto key_val = *(uint32_t *)key;
-	if (key_val < _max_entries && flags == BPF_NOEXIST) {
+	if (unlikely(key_val < _max_entries && flags == BPF_NOEXIST)) {
 		errno = EEXIST;
 		return -1;
 	}
 
-	if (key_val >= _max_entries) {
+	if (unlikely(key_val >= _max_entries)) {
 		errno = E2BIG;
 		return -1;
 	}
@@ -59,13 +60,6 @@ long array_map_impl::elem_delete(const void *key)
 	// kernel tests says element in an array map can't be deleted...
 	errno = EINVAL;
 	return -1;
-	// if (key_val >= _max_entries) {
-	// 	errno = ENOENT;
-	// 	return -1;
-	// }
-	// std::fill(&data[key_val * _value_size],
-	// 	  &data[key_val * _value_size] + _value_size, 0);
-	// return 0;
 }
 
 int array_map_impl::map_get_next_key(const void *key, void *next_key)

@@ -14,6 +14,10 @@
 using namespace bpftime;
 using namespace bpftime::attach;
 
+#ifndef unlikely
+#define unlikely(x) __builtin_expect(!!(x), 0)
+#endif
+
 static const int NGINX_REQUEST_FILTER_ATTACH_TYPE = 2001;
 
 static std::function<int(const char *)> global_url_filter;
@@ -29,8 +33,8 @@ class nginx_request_filter_private_data : public attach_private_data {
 };
 
 struct request_filter_argument {
-	char url_to_check[128];
-	char accept_prefix[128];
+	const char *url_to_check;
+	const char *accept_prefix;
 };
 
 class nginx_request_filter_attach_impl : public base_attach_impl {
@@ -38,14 +42,13 @@ class nginx_request_filter_attach_impl : public base_attach_impl {
 	nginx_request_filter_attach_impl()
 	{
 		global_url_filter = [this](const char *url) -> int {
-			SPDLOG_INFO("Running callback with {}", url);
 			uint64_t ret;
 			request_filter_argument arg;
-			strcpy(arg.accept_prefix, this->url.c_str());
-			strcpy(arg.url_to_check, url);
+			arg.accept_prefix = this->bad_url.c_str();
+			arg.url_to_check = url;
 			int err = this->cb.value()((void *)&arg, sizeof(arg),
 						   &ret);
-			if (err < 0) {
+			if (unlikely(err < 0)) {
 				SPDLOG_ERROR("Failed to run ebpf program: {}",
 					     err);
 				return 0;
@@ -54,7 +57,7 @@ class nginx_request_filter_attach_impl : public base_attach_impl {
 		};
 	}
 	std::optional<ebpf_run_callback> cb;
-	std::string url;
+	std::string bad_url;
 	int usable_id = -1;
 	int detach_by_id(int id)
 	{
@@ -80,9 +83,10 @@ class nginx_request_filter_attach_impl : public base_attach_impl {
 			return -EINVAL;
 		}
 		this->cb = std::move(cb);
-		url = dynamic_cast<const nginx_request_filter_private_data &>(
+		bad_url = dynamic_cast<const nginx_request_filter_private_data &>(
 			      private_data)
 			      .bad_url;
+		SPDLOG_INFO("create_attach_with_ebpf_callback: Bad url is {}", bad_url);
 		usable_id = allocate_id();
 		return usable_id;
 	}

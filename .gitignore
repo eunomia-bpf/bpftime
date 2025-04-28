@@ -52,3 +52,4 @@ output_metrics.json
 perf.data
 perf.data.old
 build-mpk
+/wasm-micro-runtime
