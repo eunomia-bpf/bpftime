@@ -35,6 +35,7 @@ First, build the main bpftime project including the Nginx plugin.(See parent [RE
 ## Running Automatic Benchmarks
 
 The `run_benchmark.py` script will automatically:
+
 1. Start the controllers (before Nginx)
 2. Start Nginx with each configuration
 3. Run wrk benchmark against each
@@ -49,12 +50,14 @@ python3 example/attach_implementation/benchmark/run_benchmark.py
 ```
 
 You can customize the benchmark with these options:
+
 - `--duration`: Duration of each benchmark in seconds (default: 30)
 - `--connections`: Number of connections to use (default: 400)
 - `--threads`: Number of threads to use (default: 12)
 - `--url-path`: URL path to test (default: "/aaaa")
 
 For example, to run a shorter benchmark with fewer connections:
+
 ```bash
 python3 example/attach_implementation/benchmark/run_benchmark.py --duration 10 --connections 100 --url-path /aaaa
 ```
@@ -62,6 +65,7 @@ python3 example/attach_implementation/benchmark/run_benchmark.py --duration 10 -
 ### Benchmark Log
 
 All output from the benchmark, including:
+
 - Controller stdout/stderr
 - Nginx stdout/stderr
 - Detailed wrk benchmark results
@@ -125,6 +129,7 @@ JSON results saved to: /home/yunwei37/bpftime/example/attach_implementation/benc
 ```
 
 Key metrics to consider:
+
 - **Requests/sec**: Higher is better
 - **Latency**: Lower is better
 - **Overhead percentages**: The performance cost of each filtering approach
@@ -138,10 +143,12 @@ To manually test the correctness of each implementation, follow these steps:
 > **IMPORTANT**: The controller must be started BEFORE the Nginx instance for the baseline C module. This is because the controller creates the shared memory that Nginx connects to.
 
 1. Start the baseline controller first:
+
    ```bash
    cd /path/to/bpftime
    build/example/attach_implementation/benchmark/baseline_nginx_plugin/nginx_baseline_controller /aaaa
    ```
+
    This configures the filter to accept URLs starting with "/aaaa" and reject others.
 
 2. In a new terminal, start Nginx with the baseline module:
@@ -152,6 +159,7 @@ To manually test the correctness of each implementation, follow these steps:
    ```
 
 3. Test with curl:
+
    ```bash
    # This should succeed (HTTP 200)
    curl http://localhost:9025/aaaa
@@ -165,18 +173,21 @@ To manually test the correctness of each implementation, follow these steps:
 ### Testing the eBPF/bpftime Module
 
 1. Start the eBPF controller:
+
    ```bash
    cd /path/to/bpftime/build
    ./example/attach_implementation/benchmark/ebpf_controller/nginx_benchmark_ebpf_controller /aaaa
    ```
 
 2. In a new terminal, start Nginx with the bpftime module:
+
    ```bash
    cd /path/to/bpftime/example/attach_implementation
    ./nginx_plugin_output/nginx -p $(pwd) -c nginx.conf
    ```
 
 3. Test with curl:
+
    ```bash
    # This should succeed (HTTP 200)
    curl http://localhost:9023/aaaa
@@ -189,25 +200,28 @@ To manually test the correctness of each implementation, follow these steps:
 
 ### Testing the Dynamic Load Module
 
-The dynamic load module doesn't require a separate controller as it loads the filter implementation directly from a shared library. 
+The dynamic load module doesn't require a separate controller as it loads the filter implementation directly from a shared library.
 
 This will be used for wasm module and lua module.
 
 It is configured through environment variables:
 
 1. Build the filter implementation library first:
+
    ```bash
    cd /path/to/bpftime/example/attach_implementation/benchmark/dynamic_load_plugin/dynamic_tests
    make
    ```
 
 2. Start Nginx with the dynamic load module:
+
    ```bash
    cd /path/to/bpftime/example/attach_implementation
    DYNAMIC_LOAD_LIB_PATH="/home/yunwei37/bpftime/example/attach_implementation/benchmark/dynamic_load_plugin/dynamic_tests/libfilter_impl.so"  DYNAMIC_LOAD_URL_PREFIX="/aaaa" nginx_plugin_output/nginx -p $(pwd) -c benchmark/dynamic_load_module.conf
    ```
 
 3. Test with curl:
+
    ```bash
    # This should succeed (HTTP 200)
    curl http://localhost:9026/aaaa
@@ -223,14 +237,16 @@ It is configured through environment variables:
 The WebAssembly filter leverages the dynamic load module infrastructure but uses a WebAssembly runtime to execute the filter logic.
 
 1. Build the WebAssembly module and runtime wrapper:
+
    ```bash
    cd /path/to/bpftime/example/attach_implementation/benchmark/wasm_plugin
    make
    ```
-   
+
    For more details, see the [WebAssembly Plugin README](wasm_plugin/README.md).
 
 2. Start Nginx with the WebAssembly filter:
+
    ```bash
    cd /path/to/bpftime/example/attach_implementation
    
@@ -244,6 +260,7 @@ The WebAssembly filter leverages the dynamic load module infrastructure but uses
    ```
 
 3. Test with curl:
+
    ```bash
    # This should succeed (HTTP 200)
    curl http://localhost:9026/aaaa
@@ -273,6 +290,7 @@ The WebAssembly filter leverages the dynamic load module infrastructure but uses
 
 - Ensure no previous instances of the controller or Nginx are running
 - You may need to manually clean up shared memory if a previous run crashed:
+
   ```bash
   rm /dev/shm/baseline_nginx_filter_shm
   ```
