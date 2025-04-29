@@ -32,10 +32,17 @@ jobs:
         run: |
           apt-get update
           apt-get install -y --no-install-recommends \
-            lcov tree strace gdb sudo libc6-dev bpftrace \
-            linux-headers-generic linux-tools-generic \
-            linux-headers-$(uname -r) \
-            libelf-dev procps
+          lcov tree strace gdb sudo libc6-dev bpftrace \
+          linux-headers-generic linux-tools-generic \
+          linux-headers-$(uname -r) \
+          libelf-dev procps gnupg gnupg-agent pinentry-curses dirmngr
+
+          mkdir -p ~/.gnupg
+          echo "allow-loopback-pinentry" > ~/.gnupg/gpg-agent.conf
+          echo "pinentry-program /usr/bin/pinentry-curses" >> ~/.gnupg/gpg-agent.conf
+          chmod 700 ~/.gnupg
+          gpgconf --kill gpg-agent || true
+          gpg-agent --daemon || true
           
           # Display GCC and GCOV versions for debugging
           echo "Installed GCC version:"
