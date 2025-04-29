@@ -36,6 +36,14 @@ jobs:
             linux-headers-generic linux-tools-generic \
             linux-headers-$(uname -r) \
             libelf-dev procps
+          
+          # Display GCC and GCOV versions for debugging
+          echo "Installed GCC version:"
+          gcc --version
+          echo "Installed GCOV version:"
+          gcov --version
+          echo "Checking for other GCOV versions:"
+          find /usr -name "gcov*" | sort
           echo "==== System Information ===="; uname -a && cat /etc/os-release
           echo "==== bpftrace version ===="; which bpftrace && bpftrace --version || echo "bpftrace not found"
           mkdir -p logs build
@@ -255,9 +263,54 @@ jobs:
         if: success() || failure()  # Run this step regardless of previous step result
         run: |
           echo "Generating code coverage for syscall-tracing test..."
-          lcov --capture --directory . --output-file coverage-syscall-tracing.info
-          lcov --remove coverage-syscall-tracing.info '/usr/*' --output-file coverage-syscall-tracing.info
-          lcov --list coverage-syscall-tracing.info
+          
+          # Identify which gcov version was used for compilation
+          echo "Checking for GCNO files format version:"
+          find . -name "*.gcno" -exec gcov -p -v {} \; | grep -i "version" | head -5 || true
+          
+          # Try to find compatible gcov version
+          GCOV_PATH=$(which gcov)
+          GCC_VER=$(gcc --version | head -1 | grep -o '[0-9]*\.[0-9]*\.[0-9]*' | head -1)
+          echo "Default GCC version: $GCC_VER"
+          
+          # Try to zero counters first to reset state
+          echo "Zeroing coverage counters..."
+          lcov --zerocounters --directory .
+          
+          # First attempt with default gcov
+          echo "First attempt with default gcov: $GCOV_PATH"
+          lcov --gcov-tool $GCOV_PATH --capture --directory . --output-file coverage-syscall-tracing.info || true
+          
+          # If that failed, try again with explicitly matching the gcov version to gcc
+          if [ ! -s coverage-syscall-tracing.info ]; then
+            # Try to find a matching gcov version
+            GCOV_MATCH="gcov-$(echo $GCC_VER | cut -d. -f1)"
+            if command -v $GCOV_MATCH > /dev/null; then
+              echo "Trying with matching gcov version: $GCOV_MATCH"
+              lcov --gcov-tool $(which $GCOV_MATCH) --capture --directory . --output-file coverage-syscall-tracing.info || true
+            fi
+          fi
+          
+          # If that failed too, try with a range of possible gcov versions
+          if [ ! -s coverage-syscall-tracing.info ]; then
+            for ver in {8..16}; do
+              GCOV_VER="gcov-$ver"
+              if command -v $GCOV_VER > /dev/null; then
+                echo "Trying with $GCOV_VER..."
+                lcov --gcov-tool $(which $GCOV_VER) --capture --directory . --output-file coverage-syscall-tracing.info && break || true
+              fi
+            done
+          fi
+          
+          # If we still failed, create an empty file to prevent pipeline failure
+          if [ ! -s coverage-syscall-tracing.info ]; then
+            echo "Warning: All attempts to generate coverage failed, creating empty coverage file"
+            echo "# Empty coverage file due to gcov version mismatch" > coverage-syscall-tracing.info
+          else
+            # Only remove usr paths if we have a valid coverage file
+            lcov --remove coverage-syscall-tracing.info '/usr/*' --output-file coverage-syscall-tracing.info
+            lcov --list coverage-syscall-tracing.info || true
+          fi
 
       - name: Upload syscall-tracing coverage
         if: success() || failure()  # Run this step regardless of previous step result
@@ -299,8 +352,19 @@ jobs:
             linux-headers-generic linux-tools-generic \
             linux-headers-$(uname -r) \
             libelf-dev procps
+          
+          # Try to install multiple GCC/GCOV versions to handle compatibility issues
+          echo "Installing additional GCC/GCOV versions for compatibility..."
+          apt-get install -y gcc-10 g++-10 || true
+          apt-get install -y gcc-11 g++-11 || true
+          apt-get install -y gcc-12 g++-12 || true
+          
           echo "==== System Information ===="; uname -a && cat /etc/os-release
           echo "==== bpftrace version ===="; which bpftrace && bpftrace --version || echo "bpftrace not found"
+          echo "==== GCC/GCOV versions ===="
+          gcc --version
+          gcov --version
+          ls -la /usr/bin/gcov* || true
           mkdir -p logs
           
           # Ensure shared memory directory exists with correct permissions
@@ -552,9 +616,46 @@ jobs:
         if: success() || failure()  # Run this step regardless of previous step result
         run: |
           echo "Generating code coverage for malloc example test..."
-          lcov --capture --directory . --output-file coverage-malloc-example.info
-          lcov --remove coverage-malloc-example.info '/usr/*' --output-file coverage-malloc-example.info
-          lcov --list coverage-malloc-example.info
+          
+          # Try to find compatible gcov version
+          GCOV_PATH=$(which gcov)
+          GCC_VER=$(gcc --version | head -1 | grep -o '[0-9]*\.[0-9]*\.[0-9]*' | head -1)
+          echo "Default GCC version: $GCC_VER"
+          
+          # First attempt with default gcov
+          echo "First attempt with default gcov: $GCOV_PATH"
+          lcov --gcov-tool $GCOV_PATH --capture --directory . --output-file coverage-malloc-example.info || true
+          
+          # If that failed, try again with explicitly matching the gcov version to gcc
+          if [ ! -s coverage-malloc-example.info ]; then
+            # Try to find a matching gcov version
+            GCOV_MATCH="gcov-$(echo $GCC_VER | cut -d. -f1)"
+            if command -v $GCOV_MATCH > /dev/null; then
+              echo "Trying with matching gcov version: $GCOV_MATCH"
+              lcov --gcov-tool $(which $GCOV_MATCH) --capture --directory . --output-file coverage-malloc-example.info || true
+            fi
+          fi
+          
+          # If that failed too, try with a range of possible gcov versions
+          if [ ! -s coverage-malloc-example.info ]; then
+            for ver in {8..16}; do
+              GCOV_VER="gcov-$ver"
+              if command -v $GCOV_VER > /dev/null; then
+                echo "Trying with $GCOV_VER..."
+                lcov --gcov-tool $(which $GCOV_VER) --capture --directory . --output-file coverage-malloc-example.info && break || true
+              fi
+            done
+          fi
+          
+          # If we still failed, create an empty file to prevent pipeline failure
+          if [ ! -s coverage-malloc-example.info ]; then
+            echo "Warning: All attempts to generate coverage failed, creating empty coverage file"
+            echo "# Empty coverage file due to gcov version mismatch" > coverage-malloc-example.info
+          else
+            # Only remove usr paths if we have a valid coverage file
+            lcov --remove coverage-malloc-example.info '/usr/*' --output-file coverage-malloc-example.info
+            lcov --list coverage-malloc-example.info || true
+          fi
 
       - name: Upload malloc example coverage
         if: success() || failure()  # Run this step regardless of previous step result
@@ -600,22 +701,44 @@ jobs:
       - name: Combine coverage reports
         run: |
           mkdir -p combined
-          # Initialize with the first report
-          FIRST_REPORT=$(find coverage-reports -type f -name "*.info" | head -1)
-          if [ -n "$FIRST_REPORT" ]; then
+          # Display info about available reports
+          echo "Available coverage reports:"
+          find coverage-reports -type f -name "*.info" -exec du -h {} \; | sort
+          
+          # Check if reports have content
+          echo "Checking content of reports:"
+          for report in $(find coverage-reports -type f -name "*.info"); do
+            LINES=$(wc -l < "$report")
+            echo "$report: $LINES lines"
+            if [ $LINES -lt 5 ]; then
+              echo "  Content of small report:"
+              cat "$report"
+            fi
+          done
+          
+          # Filter out empty reports
+          VALID_REPORTS=$(find coverage-reports -type f -name "*.info" -size +10c)
+          
+          if [ -n "$VALID_REPORTS" ]; then
+            # Initialize with the first report
+            FIRST_REPORT=$(echo "$VALID_REPORTS" | head -1)
+            echo "Using $FIRST_REPORT as base report"
             cp "$FIRST_REPORT" combined/combined-coverage.info
+            
             # Add all other reports
-            for report in $(find coverage-reports -type f -name "*.info" | grep -v "$FIRST_REPORT"); do
+            for report in $(echo "$VALID_REPORTS" | grep -v "$FIRST_REPORT"); do
               echo "Adding $report to combined report"
-              lcov --add-tracefile "$report" --add-tracefile combined/combined-coverage.info --output-file combined/combined-coverage.info
+              lcov --add-tracefile "$report" --add-tracefile combined/combined-coverage.info --output-file combined/combined-coverage.info || echo "Warning: Failed to add $report"
             done
+            
             # Remove system headers
-            lcov --remove combined/combined-coverage.info '/usr/*' --output-file combined/combined-coverage.info
+            lcov --remove combined/combined-coverage.info '/usr/*' --output-file combined/combined-coverage.info || echo "Warning: Failed to remove system headers"
+            
             # Show summary
-            lcov --list combined/combined-coverage.info
+            lcov --list combined/combined-coverage.info || echo "Warning: Failed to list combined coverage"
           else
-            echo "No coverage reports found"
-            touch combined/combined-coverage.info  # Create empty file to prevent failures
+            echo "No valid coverage reports found"
+            echo "# Empty combined coverage file - no valid input reports" > combined/combined-coverage.info
           fi
       
       - name: Upload combined coverage report
