@@ -1,4 +1,4 @@
-.PHONY: install coverage test docs help build clean unit-test-daemon unit-test unit-test-runtime
+.PHONY: install benchmark coverage test docs help build clean unit-test-daemon unit-test unit-test-runtime
 .DEFAULT_GOAL := help
 
 define BROWSER_PYSCRIPT
@@ -78,6 +78,29 @@ release-with-static-lib: ## build the release version with libbpftime archive
 	cmake -Bbuild  -DCMAKE_BUILD_TYPE:STRING=RelWithDebInfo \
 				   -DBPFTIME_BUILD_STATIC_LIB=ON
 	cmake --build build --config RelWithDebInfo --target install  -j$(JOBS)
+
+benchmark: ## build and run the benchmark
+	cmake -Bbuild -DLLVM_DIR=/usr/lib/llvm-15/cmake \
+		-DCMAKE_BUILD_TYPE:STRING=RelWithDebInfo \
+		-DBPFTIME_LLVM_JIT=1 \
+		-DBPFTIME_ENABLE_LTO=1 \
+		-DSPDLOG_ACTIVE_LEVEL=SPDLOG_LEVEL_INFO \
+		-DENABLE_PROBE_WRITE_CHECK=0 \
+		-DENABLE_PROBE_READ_CHECK=0 \
+		-DBUILD_ATTACH_IMPL_EXAMPLE=1
+	cmake --build build --config RelWithDebInfo --target install -j
+	# build the mpk version
+	cmake -Bbuild-mpk -DLLVM_DIR=/usr/lib/llvm-15/cmake \
+		-DCMAKE_BUILD_TYPE:STRING=RelWithDebInfo \
+		-DBPFTIME_LLVM_JIT=1 \
+		-DBPFTIME_ENABLE_LTO=1 \
+		-DSPDLOG_ACTIVE_LEVEL=SPDLOG_LEVEL_INFO \
+		-DENABLE_PROBE_WRITE_CHECK=0 \
+		-DENABLE_PROBE_READ_CHECK=0 \
+		-DBPFTIME_ENABLE_MPK=1
+	cmake --build build-mpk --config RelWithDebInfo --target install -j
+	cmake --build build --config RelWithDebInfo --target attach_impl_example_nginx -j
+	make -C benchmark
 
 build-vm: ## build only the core library
 	make -C vm build

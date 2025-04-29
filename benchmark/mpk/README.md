@@ -5,6 +5,8 @@ build the mpk version and put it in another directory, so we have two directorie
 - build-mpk
 - build
 
+Or run the `build.sh` script in this directory.
+
 results:
 
 ```console
