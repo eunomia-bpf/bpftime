@@ -54,6 +54,7 @@ jobs:
             -DBPFTIME_LLVM_JIT=1 \
             -DBUILD_BPFTIME_DAEMON=1 \
             -DBUILD_AGENT=1 \
+            -DTEST_LCOV=YES \
             -DCMAKE_CXX_FLAGS="-DDEFAULT_LOGGER_OUTPUT_PATH='\"console\"'"
           cmake --build build --config RelWithDebInfo -j$(nproc)
           
@@ -250,6 +251,34 @@ jobs:
             exit 1
           fi
 
+      - name: Generate syscall-tracing coverage
+        if: success() || failure()  # Run this step regardless of previous step result
+        run: |
+          echo "Generating code coverage for syscall-tracing test..."
+          lcov --capture --directory . --output-file coverage-syscall-tracing.info
+          lcov --remove coverage-syscall-tracing.info '/usr/*' --output-file coverage-syscall-tracing.info
+          lcov --list coverage-syscall-tracing.info
+
+      - name: Upload syscall-tracing coverage
+        if: success() || failure()  # Run this step regardless of previous step result
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-syscall-tracing-${{ runner.os }}
+          include-hidden-files: false
+          path: |
+            ./coverage-syscall-tracing.info
+
+      - name: Upload to Codecov
+        # Only upload when this workflow was run on the main repository
+        if: (success() || failure()) && github.repository == 'eunomia-bpf/bpftime'
+        uses: codecov/codecov-action@v4
+        with:
+          fail_ci_if_error: true
+          files: ./coverage-syscall-tracing.info
+          flags: coverage-syscall-tracing-${{ runner.os }}
+          token: ${{ secrets.CODECOV_TOKEN }}
+          verbose: true
+
   build-and-run-malloc-example-test:
     runs-on: ubuntu-22.04
     container:
@@ -285,6 +314,7 @@ jobs:
             -DBPFTIME_LLVM_JIT=1 \
             -DBUILD_BPFTIME_DAEMON=1 \
             -DBUILD_AGENT=1 \
+            -DTEST_LCOV=YES \
             -DCMAKE_CXX_FLAGS="-DDEFAULT_LOGGER_OUTPUT_PATH='\"console\"'"
           cmake --build build --config RelWithDebInfo -j$(nproc)
           
@@ -517,3 +547,89 @@ jobs:
             fi
             exit 1
           fi
+
+      - name: Generate malloc example coverage
+        if: success() || failure()  # Run this step regardless of previous step result
+        run: |
+          echo "Generating code coverage for malloc example test..."
+          lcov --capture --directory . --output-file coverage-malloc-example.info
+          lcov --remove coverage-malloc-example.info '/usr/*' --output-file coverage-malloc-example.info
+          lcov --list coverage-malloc-example.info
+
+      - name: Upload malloc example coverage
+        if: success() || failure()  # Run this step regardless of previous step result
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-malloc-example-${{ runner.os }}
+          include-hidden-files: false
+          path: |
+            ./coverage-malloc-example.info
+
+      - name: Upload to Codecov
+        # Only upload when this workflow was run on the main repository
+        if: (success() || failure()) && github.repository == 'eunomia-bpf/bpftime'
+        uses: codecov/codecov-action@v4
+        with:
+          fail_ci_if_error: true
+          files: ./coverage-malloc-example.info
+          flags: coverage-malloc-example-${{ runner.os }}
+          token: ${{ secrets.CODECOV_TOKEN }}
+          verbose: true
+
+  # New job to combine coverage reports
+  combine-coverage:
+    needs: [build-and-run-syscall-tracing-load-start-test, build-and-run-malloc-example-test]
+    runs-on: ubuntu-22.04
+    if: always()
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Install lcov
+        run: sudo apt-get update && sudo apt-get install -y lcov
+      
+      - name: Download all coverage reports
+        uses: actions/download-artifact@v4
+        with:
+          pattern: coverage-*
+          path: coverage-reports
+      
+      - name: List downloaded reports
+        run: find coverage-reports -type f -name "*.info" | sort
+      
+      - name: Combine coverage reports
+        run: |
+          mkdir -p combined
+          # Initialize with the first report
+          FIRST_REPORT=$(find coverage-reports -type f -name "*.info" | head -1)
+          if [ -n "$FIRST_REPORT" ]; then
+            cp "$FIRST_REPORT" combined/combined-coverage.info
+            # Add all other reports
+            for report in $(find coverage-reports -type f -name "*.info" | grep -v "$FIRST_REPORT"); do
+              echo "Adding $report to combined report"
+              lcov --add-tracefile "$report" --add-tracefile combined/combined-coverage.info --output-file combined/combined-coverage.info
+            done
+            # Remove system headers
+            lcov --remove combined/combined-coverage.info '/usr/*' --output-file combined/combined-coverage.info
+            # Show summary
+            lcov --list combined/combined-coverage.info
+          else
+            echo "No coverage reports found"
+            touch combined/combined-coverage.info  # Create empty file to prevent failures
+          fi
+      
+      - name: Upload combined coverage report
+        uses: actions/upload-artifact@v4
+        with:
+          name: combined-coverage-${{ runner.os }}
+          path: combined/combined-coverage.info
+      
+      - name: Upload combined coverage to Codecov
+        if: github.repository == 'eunomia-bpf/bpftime'
+        uses: codecov/codecov-action@v4
+        with:
+          fail_ci_if_error: true
+          files: combined/combined-coverage.info
+          flags: combined-coverage
+          token: ${{ secrets.CODECOV_TOKEN }}
+          verbose: true
