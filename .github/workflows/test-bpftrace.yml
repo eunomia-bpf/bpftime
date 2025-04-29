@@ -35,7 +35,7 @@ jobs:
             lcov tree strace gdb sudo libc6-dev bpftrace \
             linux-headers-generic linux-tools-generic \
             linux-headers-$(uname -r) \
-            libelf-dev procps
+            libelf-dev procps gpg
           
           # Display GCC and GCOV versions for debugging
           echo "Installed GCC version:"
@@ -351,7 +351,7 @@ jobs:
             lcov tree strace gdb sudo libc6-dev bpftrace \
             linux-headers-generic linux-tools-generic \
             linux-headers-$(uname -r) \
-            libelf-dev procps
+            libelf-dev procps gpg
           
           # Try to install multiple GCC/GCOV versions to handle compatibility issues
           echo "Installing additional GCC/GCOV versions for compatibility..."
