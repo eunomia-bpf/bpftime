@@ -52,7 +52,10 @@ jobs:
           echo "Checking for other GCOV versions:"
           find /usr -name "gcov*" | sort
           echo "==== System Information ===="; uname -a && cat /etc/os-release
-          echo "==== bpftrace version ===="; which bpftrace && bpftrace --version || echo "bpftrace not found"
+          echo "==== Checking bpftrace ===="
+          which bpftrace || { echo "ERROR: bpftrace not found! This is required for tests."; exit 1; }
+          bpftrace --version || { echo "ERROR: bpftrace installation is broken!"; exit 1; }
+          echo "bpftrace successfully verified."
           mkdir -p logs build
           echo "TEST_DATA_LINE_1_ABC" > build/install_manifest.txt
           echo "TEST_DATA_LINE_2_XYZ" >> build/install_manifest.txt
@@ -375,7 +378,10 @@ jobs:
           apt-get install -y gcc-12 g++-12 || true
           
           echo "==== System Information ===="; uname -a && cat /etc/os-release
-          echo "==== bpftrace version ===="; which bpftrace && bpftrace --version || echo "bpftrace not found"
+          echo "==== Checking bpftrace ===="
+          which bpftrace || { echo "ERROR: bpftrace not found! This is required for tests."; exit 1; }
+          bpftrace --version || { echo "ERROR: bpftrace installation is broken!"; exit 1; }
+          echo "bpftrace successfully verified."
           echo "==== GCC/GCOV versions ===="
           gcc --version
           gcov --version
