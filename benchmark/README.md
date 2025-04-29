@@ -10,11 +10,19 @@ This directory contains benchmarks and experiments for the bpftime project, incl
 
 ### Install Dependencies
 
-Please refer to our manual in [bpftime build and test documentation](https://eunomia.dev/bpftime/documents/build-and-test/) for installing dependencies or using the Docker image.
+Please refer to our manual in [bpftime build and test documentation](https://eunomia.dev/bpftime/documents/build-and-test/)
+for installing dependencies or using the Docker image.
+
+The benchmark experiment scripts may automatically install dependencies
+and clone repos from the GitHub. Make sure you have Network access.
+
+Run the experiments needs you have a Linux kernel with eBPF support, at lease 4 cores,
+and 16GB memory on x86_64 architecture.
 
 ### Basic Usage
 
-Check out the [bpftime usage documentation](https://eunomia.dev/bpftime/documents/usage/) for basic usage instructions.
+Check out the [bpftime usage documentation](https://eunomia.dev/bpftime/documents/usage/)
+for basic usage instructions. For the detail usage, please refer to each experiment directory.
 
 ### Run All Experiments
 
@@ -75,4 +83,4 @@ Redis durability tuning benchmarks - see [./redis-durability-tuning/](./redis-du
 
 ### Experiment 8: Compatibility
 
-Various compatibility examples - see [../example](../example) directory.
+Various compatibility examples that can run on both kernel eBPF and bpftime - see [../example](../example) directory.

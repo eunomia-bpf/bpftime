@@ -2,7 +2,7 @@
 // Copyright (c) 2019 Facebook
 // Copyright (c) 2020 Netflix
 //
-// Based on rocksdb(8) from BCC by Brendan Gregg and others.
+// Based on redis(8) from BCC by Brendan Gregg and others.
 // 14-Feb-2020   Brendan Gregg   Created this.
 #include "../attach_override.h"
 #include "redis.skel.h"
@@ -29,7 +29,7 @@ static void sig_int(int signo) { exiting = 1; }
 int main(int argc, char **argv) {
   LIBBPF_OPTS(bpf_object_open_opts, open_opts);
   // struct perf_buffer *pb = NULL;
-  struct rocksdb_bpf *obj;
+  struct redis_bpf *obj;
   int err;
 
   libbpf_set_print(libbpf_print_fn);
