@@ -1,4 +1,4 @@
-.PHONY: install coverage test docs help build clean unit-test-daemon unit-test unit-test-runtime
+.PHONY: install benchmark coverage test docs help build clean unit-test-daemon unit-test unit-test-runtime
 .DEFAULT_GOAL := help
 
 define BROWSER_PYSCRIPT

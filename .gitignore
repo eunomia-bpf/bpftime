@@ -51,6 +51,6 @@ third_party/phaole1
 output_metrics.json
 perf.data
 perf.data.old
-build-mpk
+/build-mpk
 /wasm-micro-runtime
 benchmark-logs-error.txt
