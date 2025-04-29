@@ -1,4 +1,4 @@
-all: ../../example/libbpf-tools/syscount/syscount index.html bench
+all: ../../example/libbpf-tools/syscount/syscount index.html
 
 index.html:
 	echo "Hello, World!" > index.html
