@@ -26,11 +26,21 @@ for basic usage instructions. For the detail usage, please refer to each experim
 
 ### Run All Experiments
 
+before running the experiments, you also need to install some additional dependencies for the python scripts:
+
 ```sh
 cd /path/to/bpftime
+pip install -r benchmark/requirements.txt
+```
+
+then you can build and run the experiments by:
+
+```sh
 make benchmark
 ./benchmark/run_all_experiment.sh
 ```
+
+You can also check the CI for how we build the experiments and run some of them in [.github/workflows/build-benchmarks.yml](../.github/workflows/benchmarks.yml).
 
 ## Experiments Overview
 
