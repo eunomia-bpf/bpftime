@@ -24,7 +24,7 @@ jobs:
         sudo apt update
         sudo apt install -y --no-install-recommends \
         libelf1 libelf-dev zlib1g-dev make git libboost1.74-all-dev \
-        binutils-dev libyaml-cpp-dev  gcc-12 g++-12 llvm-17 clang-17 llvm-17-tools
+        binutils-dev libyaml-cpp-dev  gcc-12 g++-12 llvm-17 clang-17 llvm-tools
 
     - name: install python dependencies
       run: |
