@@ -114,7 +114,7 @@ int open_main(int argc, char *argv[])
 		fd = open(path, O_RDONLY | O_DIRECTORY);
 		if (fd >= 0)
 		{
-			printf("open success\n");
+			// printf("open success\n");
 			close(fd);
 		}
 	}
