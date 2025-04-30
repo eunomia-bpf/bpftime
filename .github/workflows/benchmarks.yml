@@ -37,6 +37,10 @@ jobs:
           libelf1 libelf-dev zlib1g-dev make cmake git libboost-all-dev \
           binutils-dev libyaml-cpp-dev ca-certificates clang llvm pkg-config llvm-dev
 
+    - name: install additional dependencies for experiments
+      run: |
+        sudo apt-get install libfuse-dev fuse
+
     - name: install python dependencies
       run: |
         sudo apt install -y python3-pip
