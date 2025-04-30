@@ -8,6 +8,8 @@ While solutions like ExtFuse eliminate much of this overhead by enabling FUSE fi
 
 This project demonstrates how bpftime provides the same benefits without requiring custom kernel modules.
 
+For how to build and run the benchmark, please refer to the [bpf/README](bpf/README.md).
+
 ## Implementation
 
 We implement two extensions that accelerate applications using FUSE:
@@ -38,4 +40,12 @@ We evaluated performance improvements using bpftime to implement caching in FUSE
 1. 100,000 `fstatat` calls to a file in the FUSE directory
 2. 100,000 `openat` calls to a file in the FUSE directory
 3. The Linux utility `find` traversing through the directory
+
+## build and run
+
+```sh
+make
+```
+
+For how to run the benchmark, please refer to the [bpf/README](bpf/README.md).
 

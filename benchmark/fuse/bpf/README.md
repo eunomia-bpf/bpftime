@@ -15,14 +15,15 @@ mkdir -p benchmark/fuse/test_source
 echo "hello world" > benchmark/fuse/test_source/test.txt
 mkdir -p benchmark/fuse/test_mount
 # mount
-python3 benchmark/fuse/fs/passthrough.py benchmark/fuse/test_source benchmark/fuse/test_mount
+sudo benchmark/fuse/fs/passthrough benchmark/fuse/test_source benchmark/fuse/test_mount
+# sudo python3 benchmark/fuse/fs/passthrough.py benchmark/fuse/test_source benchmark/fuse/test_mount
 # it will keep open and print the op count of each syscall, stop it will unmount
 ```
 
 test baseline:
 
 ```console
-benchmark/fuse/filebench getdents64 benchmark/fuse/test_mount
+sudo benchmark/fuse/filebench getdents64 benchmark/fuse/test_mount
 ```
 
 run server:
