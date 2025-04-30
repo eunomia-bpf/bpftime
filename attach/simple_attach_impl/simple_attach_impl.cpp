@@ -41,7 +41,7 @@ int simple_attach_impl::detach_by_id(int id)
 	usable_id = -1;
 	return 0;
 }
-int simple_attach_impl::trigger()
+int simple_attach_impl::trigger(const std::string &trigger_argument)
 {
 	if (usable_id == -1) {
 		SPDLOG_WARN(
@@ -51,5 +51,5 @@ int simple_attach_impl::trigger()
 	}
 	SPDLOG_DEBUG("Triggering simple_attach_impl with type {}",
 		     predefined_attach_type);
-	return this->callback(argument, ebpf_callback);
+	return this->callback(argument, trigger_argument, ebpf_callback);
 }

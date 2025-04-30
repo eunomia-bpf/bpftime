@@ -7,16 +7,18 @@
 #include <memory>
 #include <optional>
 #include <string>
+#include <string_view>
 namespace bpftime
 {
 namespace simple_attach
 {
 
 /// Callback type for a simple attach impl
-/// (Attach argument, callback to execute the eBPF program related to this
-/// attach) -> status code
-using callback_type = std::function<int(const std::string &,
-					const attach::ebpf_run_callback &)>;
+/// (Attach argument, Trigger argument, callback to execute the eBPF program
+/// related to this attach) -> status code
+using callback_type =
+	std::function<int(const std::string &, const std::string &,
+			  const attach::ebpf_run_callback &)>;
 /// This is a wrapper for base_attach_impl, used together with other helpers in
 /// bpf_attach_ctx, to provide simpler but less flexible ways to register a
 /// custom attach impl
@@ -29,7 +31,7 @@ class simple_attach_impl : public attach::base_attach_impl {
 		const attach::attach_private_data &private_data,
 		int attach_type);
 	/// Trigger the event handled by this attach impl
-	int trigger();
+	int trigger(const std::string &);
 	int detach_by_id(int id);
 	bool is_attached() const
 	{
@@ -56,6 +58,9 @@ class simple_attach_impl : public attach::base_attach_impl {
 
 struct simple_attach_private_data : public attach::attach_private_data {
 	std::string data;
+	simple_attach_private_data(const std::string_view &data) : data(data)
+	{
+	}
 	int initialize_from_string(const std::string_view &sv) override
 	{
 		data = sv;
@@ -81,22 +86,27 @@ concept HasRegisterAttachImpl =
 /// A simple attach impl consists up of a callback, an attach type integer, and
 /// a trigger. The callback will be called when the trigger function was called.
 /// The callback function will receive another callback to execute the desired
-/// eBPF program linked with this attach.
+/// eBPF program linked with this attach. It will also received the argument
+/// provided at attach, and the argument provided at trigger
 template <class T>
-requires HasRegisterAttachImpl<T> static inline std::function<void()>
+requires HasRegisterAttachImpl<T> static inline std::function<
+	int(const std::string &)>
 add_simple_attach_impl_to_attach_ctx(int attach_type, callback_type &&callback,
 				     T &attach_ctx)
 {
 	auto simple_attach_impl = std::make_unique<class simple_attach_impl>(
 		std::move(callback), attach_type);
 	auto impl_ptr = simple_attach_impl.get();
-	auto result = [=]() { impl_ptr->trigger(); };
+	auto result = [=](const std::string &s) -> int {
+		return impl_ptr->trigger(s);
+	};
 
 	attach_ctx.register_attach_impl(
 		{ attach_type }, std::move(simple_attach_impl),
 		[](const std::string_view &sv, int &err) {
 			std::unique_ptr<attach::attach_private_data> priv_data =
-				std::make_unique<simple_attach_private_data>();
+				std::make_unique<simple_attach_private_data>(
+					sv);
 			err = 0;
 			return priv_data;
 		});
