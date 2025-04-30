@@ -153,7 +153,8 @@ async def run_userspace_uprobe_test(num_runs=10):
             env={
                 "LD_PRELOAD": str(
                     PROJECT_ROOT / "build/runtime/agent/libbpftime-agent.so"
-                )
+                ),
+                "BPFTIME_LOG_OUTPUT": "console"
             },
         )
         victim_out, _ = await victim.communicate()

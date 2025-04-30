@@ -202,8 +202,14 @@ namespace detail {
 
 inline std::unique_ptr<bpftime_vm_impl> create_vm_instance(const std::string& vm_name_str) {
     if (vm_name_str.empty()) {
-        SPDLOG_ERROR("VM name string is empty");
-        throw std::runtime_error("VM name cannot be empty");
+        // use default vm, which is the first registered vm
+        auto& vm_factory_map = detail::get_vm_factory_map();
+        if (vm_factory_map.empty()) {
+            SPDLOG_ERROR("No VM factory registered");
+            throw std::runtime_error("No VM factory registered");
+        }
+		SPDLOG_DEBUG("Using default VM: {}", vm_factory_map.begin()->first);
+        return vm_factory_map.begin()->second();
     }
     std::string vm_name = vm_name_str;
     auto& vm_factory_map = detail::get_vm_factory_map();
@@ -227,6 +233,7 @@ inline void register_vm_factory(const std::string &vm_name, create_vm_instance_f
 
 } // namespace bpftime::vm::compat
 struct ebpf_vm {
+	std::string vm_name;
 	std::unique_ptr<bpftime::vm::compat::bpftime_vm_impl> vm_instance;
 };
 
