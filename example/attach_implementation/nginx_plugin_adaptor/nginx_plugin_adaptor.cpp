@@ -92,24 +92,7 @@ class nginx_request_filter_attach_impl : public base_attach_impl {
 	}
 };
 
-union bpf_attach_ctx_holder {
-	bpf_attach_ctx ctx;
-	bpf_attach_ctx_holder()
-	{
-	}
-	~bpf_attach_ctx_holder()
-	{
-	}
-	void destroy()
-	{
-		ctx.~bpf_attach_ctx();
-	}
-	void init()
-	{
-		new (&ctx) bpf_attach_ctx;
-	}
-};
-static bpf_attach_ctx_holder ctx_holder;
+static std::optional<bpf_attach_ctx> ctx_holder;
 
 extern "C" int nginx_plugin_example_run_filter(const char *url)
 {
@@ -120,10 +103,11 @@ extern "C" int nginx_plugin_example_initialize()
 {
 	spdlog::cfg::load_env_levels();
 	bpftime_initialize_global_shm(shm_open_type::SHM_OPEN_ONLY);
-	ctx_holder.init();
+	// ctx_holder.init();
+	ctx_holder.emplace();
 	auto nginx_req_filter_impl =
 		std::make_unique<nginx_request_filter_attach_impl>();
-	ctx_holder.ctx.register_attach_impl(
+	ctx_holder->register_attach_impl(
 		{ NGINX_REQUEST_FILTER_ATTACH_TYPE },
 		std::move(nginx_req_filter_impl),
 		[](const std::string_view &sv, int &err) {
@@ -137,7 +121,7 @@ extern "C" int nginx_plugin_example_initialize()
 			}
 			return priv_data;
 		});
-	int res = ctx_holder.ctx.init_attach_ctx_from_handlers(
+	int res = ctx_holder->init_attach_ctx_from_handlers(
 		bpftime_get_agent_config());
 	if (res != 0) {
 		SPDLOG_ERROR("Failed to initialize attach context: {}", res);
