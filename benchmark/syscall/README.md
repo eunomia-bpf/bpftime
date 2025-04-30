@@ -1,5 +1,13 @@
 # syscall micro-benchmark
 
+Run the script to see the results:
+
+```sh
+sudo python benchmark/syscall/benchmark.py
+```
+
+You can see the results in the `results.md` file and the json file. An example result can be found in [example_results.md](example_results.md).
+
 ## userspace syscall
 
 ### run
@@ -7,7 +15,7 @@
 ```sh
 sudo ~/.bpftime/bpftime load benchmark/syscall/syscall
 # or
-LD_PRELOAD=build/runtime/syscall-server/libbpftime-syscall-server.so benchmark/syscall/syscall
+sudo LD_PRELOAD=build/runtime/syscall-server/libbpftime-syscall-server.so benchmark/syscall/syscall
 ```
 
 in another shell, run the target program with eBPF inside:
@@ -15,7 +23,7 @@ in another shell, run the target program with eBPF inside:
 ```sh
 sudo ~/.bpftime/bpftime start -s benchmark/syscall/victim
 # or
-AGENT_SO=build/runtime/agent/libbpftime-agent.so LD_PRELOAD=build/attach/text_segment_transformer/libbpftime-agent-transformer.so benchmark/syscall/victim
+sudo AGENT_SO=build/runtime/agent/libbpftime-agent.so LD_PRELOAD=build/attach/text_segment_transformer/libbpftime-agent-transformer.so benchmark/syscall/victim
 ```
 
 ## results (2023)
