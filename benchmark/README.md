@@ -26,11 +26,25 @@ for basic usage instructions. For the detail usage, please refer to each experim
 
 ### Run All Experiments
 
+before running the experiments, you also need to install some additional dependencies for the python scripts:
+
 ```sh
 cd /path/to/bpftime
-make benchmark
-./benchmark/run_all_experiment.sh
+pip install -r benchmark/requirements.txt
 ```
+
+then you can build and run the experiments by:
+
+```sh
+make benchmark # build the benchmark
+make run-all-benchmark # run all benchmarks
+```
+
+(build time: 10min - 20min)
+
+See the makefile for the details of the commands.
+
+You can also check the CI for how we build the experiments and run them in [.github/workflows/build-benchmarks.yml](../.github/workflows/benchmarks.yml).
 
 ## Experiments Overview
 
@@ -43,8 +57,13 @@ Performance comparison including:
 - Uprobe/uretprobe (see [./uprobe/](./uprobe/))
 - Memory read/write operations (see [./uprobe/](./uprobe/))
 - Map operations (see [./uprobe/](./uprobe/))
+- Embedded VM in your program without hooking (see [./uprobe/](./uprobe/) and the code in [test_embed.c](./test_embed.c))
 - Syscall tracepoint (see [./syscall/](./syscall/))
 - MPK enable/disable (see [./mpk/](./mpk/))
+
+You can check each directory for the details of the experiments, how to run them and the results.
+
+(20min - 30 min computation time)
 
 #### Part 2: Execution Engine Efficiency
 

@@ -13,7 +13,8 @@
 #endif
 
 #ifndef DEFAULT_VM_NAME
-#define DEFAULT_VM_NAME "ubpf"
+// empty string means the default vm.
+#define DEFAULT_VM_NAME ""
 #endif
 
 #define LOG_PATH_MAX_LEN 1024

@@ -1,32 +1,42 @@
-# test mpk protect overhead
+# Memory Protection Keys (MPK) Benchmark
 
-build the mpk version and put it in another directory, so we have two directories:
+This benchmark compares the performance of BPFtime with and without Memory Protection Keys (MPK) enabled to assess the performance impact of this security feature.
 
-- build-mpk
-- build
+## What is MPK?
 
-Or run the `build.sh` script in this directory.
+Memory Protection Keys (MPK) is a CPU feature available in recent Intel processors that allows user-space processes to protect regions of memory from access by other parts of the same process. In the context of BPFtime, MPK is used to isolate eBPF programs from the host application, providing an additional layer of security.
 
-results:
+## How to Run the Benchmark
 
-```console
-Running benchmarks (100 iterations each)...
+### Prerequisites
 
-Results Summary:
-------------------------------------------------------------
-Test Name            MPK (ns)        Normal (ns)     Difference     
-------------------------------------------------------------
-uprobe_uretprobe       228.21        229.44         -1.23 (-0.5%)
-  MPK stddev: 27.53
-  Normal stddev: 29.70
+- Linux system with Intel CPU supporting MPK (generally Intel Core 7th generation or newer)
+- BPFtime built both with and without MPK support
 
-uretprobe              225.66        222.39         +3.27 (+1.5%)
-  MPK stddev: 37.61
-  Normal stddev: 36.56
+### Build Instructions
 
-uprobe                 224.26        228.37         -4.11 (-1.8%)
-  MPK stddev: 29.71
-  Normal stddev: 31.92
+The benchmark requires two builds of BPFtime:
+
+1. A standard build (without MPK) in `build/`
+2. An MPK-enabled build in `build-mpk/`
+
+You can use the `build.sh` script in this directory to create both builds automatically.
+
+### Running the Benchmark
+
+```bash
+cd path/to/bpftime
+python benchmark/mpk/benchmark.py
 ```
 
-Seems nearly no difference.
+The script will:
+
+1. Start a server process for each configuration (MPK and standard)
+2. Run multiple benchmark tests with both configurations
+3. Generate a markdown report of the results in `benchmark/mpk/results.md`
+4. Save detailed benchmark data in JSON format in `benchmark/mpk/benchmark-output.json`
+
+## Example Results
+
+An example of benchmark results can be found in [example_results.md](example_results.md).
+
