@@ -13,8 +13,3 @@ target_link_libraries(nginx_baseline_controller
     rt    # For shared memory functions (shm_open, etc.)
     pthread
 )
-
-# Install the executable
-install(TARGETS nginx_baseline_controller
-    RUNTIME DESTINATION ${CMAKE_INSTALL_PREFIX}/bin
-) 

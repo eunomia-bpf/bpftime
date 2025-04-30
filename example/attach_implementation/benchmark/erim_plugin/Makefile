@@ -6,7 +6,17 @@ LDFLAGS = -shared
 ERIM_DIR = ./erim/src/erim
 ERIM_LIB = ./erim/bin/erim/liberim.a
 
-all: check-mpk liberim_filter.so
+all: clone-erim check-mpk liberim_filter.so
+
+# Automatically clone the ERIM repository if it doesn't exist
+clone-erim:
+	@if [ ! -d "./erim" ]; then \
+		echo "ERIM repository not found. Cloning from GitHub..."; \
+		git clone https://github.com/vahldiek/erim.git ./erim; \
+		echo "ERIM repository cloned successfully."; \
+	else \
+		echo "ERIM repository already exists."; \
+	fi
 
 # Check if CPU supports MPK (for informational purposes)
 check-mpk:
@@ -18,7 +28,7 @@ check-mpk:
 	fi
 
 # First build the ERIM library
-$(ERIM_LIB):
+$(ERIM_LIB): clone-erim
 	mkdir -p ./erim/bin/erim
 	CFLAGS="-fPIC $(CFLAGS)" $(MAKE) -C $(ERIM_DIR)
 
@@ -49,4 +59,4 @@ clean:
 	rm -f *.o *.so test_filter
 	$(MAKE) -C $(ERIM_DIR) clean
 
-.PHONY: all clean test test_filter check-mpk 
+.PHONY: all clean test test_filter check-mpk clone-erim 
