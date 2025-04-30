@@ -102,6 +102,16 @@ benchmark: ## build and run the benchmark
 	cmake --build build --config RelWithDebInfo --target attach_impl_example_nginx -j
 	make -C benchmark
 
+run-all-benchmark: ## run all benchmarks
+	# run micro-benchmarks
+	python3 benchmark/uprobe/benchmark.py
+	python3 benchmark/syscall/benchmark.py
+	python3 benchmark/mpk/benchmark.py
+
+	# run system-benchmarks
+	python3 benchmark/syscount-nginx/benchmark.py
+	python3 benchmark/ssl-nginx/draw_figture.py
+
 build-vm: ## build only the core library
 	make -C vm build
 

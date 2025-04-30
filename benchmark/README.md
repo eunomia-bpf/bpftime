@@ -36,9 +36,11 @@ pip install -r benchmark/requirements.txt
 then you can build and run the experiments by:
 
 ```sh
-make benchmark
-./benchmark/run_all_experiment.sh
+make benchmark # build the benchmark
+make run-all-benchmark # run all benchmarks
 ```
+
+See the makefile for the details of the commands.
 
 You can also check the CI for how we build the experiments and run some of them in [.github/workflows/build-benchmarks.yml](../.github/workflows/benchmarks.yml).
 
