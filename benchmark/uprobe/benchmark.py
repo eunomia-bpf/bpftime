@@ -7,6 +7,7 @@ import time
 import os
 import sys
 import subprocess
+import argparse  # Add this import for argument parsing
 
 # Fix the path structure to avoid duplicate bpftime directory
 # Set up paths to work from project root
@@ -512,6 +513,11 @@ def generate_markdown_report(results_json, output_path):
 
 
 async def main():
+    # Add argument parsing
+    parser = argparse.ArgumentParser(description='Run bpftime uprobe benchmarks')
+    parser.add_argument('--iter', type=int, default=10, help='Number of iterations for each benchmark test (default: 10)')
+    args = parser.parse_args()
+    
     start_time = time.time()
     log_message("Starting uprobe benchmark suite")
     log_message(f"Project root: {PROJECT_ROOT}")
@@ -525,7 +531,7 @@ async def main():
     # Auto-elevate if needed before running kernel tests
     run_kernel = ensure_sudo()
     
-    num_runs = 10
+    num_runs = args.iter  # Use the command line argument instead of hardcoded value
     log_message(f"Will run each benchmark {num_runs} times")
 
     try:

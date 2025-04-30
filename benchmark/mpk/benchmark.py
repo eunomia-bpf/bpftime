@@ -11,6 +11,7 @@ import platform
 from datetime import datetime
 import math
 import typing
+import argparse
 
 # Set up paths to work from project root
 PROJECT_ROOT = pathlib.Path(os.getcwd())
@@ -441,14 +442,19 @@ def generate_markdown_report(results, output_path):
     log_message(f"Markdown report generated successfully at {output_path}")
 
 async def main():
+    # Add argument parsing
+    parser = argparse.ArgumentParser(description='Run bpftime MPK benchmarks')
+    parser.add_argument('--iter', type=int, default=10, help='Number of iterations for each benchmark test (default: 10)')
+    args = parser.parse_args()
+
     start_time = time.time()
     log_message("Starting MPK benchmark suite")
     log_message(f"Project root: {PROJECT_ROOT}")
     log_message(f"Benchmark directory: {BENCHMARK_DIR}")
     log_message(f"MPK directory: {MPK_DIR}")
     
-    # Number of iterations
-    iterations = 10
+    # Number of iterations - use command line argument instead of hardcoded value
+    iterations = args.iter
     log_message(f"Will run each benchmark {iterations} times")
     
     try:
