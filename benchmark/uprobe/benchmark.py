@@ -7,6 +7,7 @@ import time
 import os
 import sys
 import subprocess
+import argparse  # Add this import for argument parsing
 
 # Fix the path structure to avoid duplicate bpftime directory
 # Set up paths to work from project root
@@ -153,7 +154,8 @@ async def run_userspace_uprobe_test(num_runs=10):
             env={
                 "LD_PRELOAD": str(
                     PROJECT_ROOT / "build/runtime/agent/libbpftime-agent.so"
-                )
+                ),
+                "BPFTIME_LOG_OUTPUT": "console"
             },
         )
         victim_out, _ = await victim.communicate()
@@ -419,9 +421,9 @@ def generate_markdown_report(results_json, output_path):
         "\n*Times shown in nanoseconds (ns) - lower is better*\n"
     ]
     
-    # Create comparison table for uprobes
+    # Create summary comparison table for uprobes
     markdown.extend([
-        "### Core Uprobe Performance\n",
+        "### Core Uprobe Performance Summary\n",
         "| Operation | Kernel Uprobe | Userspace Uprobe | Speedup |",
         "|-----------|---------------|------------------|---------|"
     ])
@@ -437,23 +439,27 @@ def generate_markdown_report(results_json, output_path):
                 speedup = f"{speedup:.2f}x"
             markdown.append(f"| {test} | {kernel_avg:.2f} | {user_avg:.2f} | {speedup} |")
     
-    # Create detailed tables for each category
-    categories = {
-        "kernel_uprobe": "Kernel eBPF Performance",
-        "userspace_uprobe": "Userspace eBPF Performance",
-        "embed": "Embedded VM Performance"
-    }
+    # Create detailed comparison table for kernel vs userspace
+    markdown.extend([
+        "\n### Kernel vs Userspace eBPF Detailed Comparison\n",
+        "| Operation | Environment | Min (ns) | Max (ns) | Avg (ns) | Std Dev |",
+        "|-----------|-------------|----------|----------|----------|---------|"
+    ])
     
-    for category, title in categories.items():
+    # Get all operations from both kernel and userspace
+    all_operations = set()
+    for category in ["kernel_uprobe", "userspace_uprobe"]:
         if category in results_json:
-            markdown.extend([
-                f"\n### {title}\n",
-                "| Operation | Min (ns) | Max (ns) | Avg (ns) | Std Dev |",
-                "|-----------|----------|----------|----------|---------|"
-            ])
-            
-            for op, metrics in results_json[category].items():
-                # Skip nested structures like in the embed category
+            all_operations.update(results_json[category].keys())
+    
+    # Sort operations for consistent ordering
+    sorted_operations = sorted(all_operations)
+    
+    # Add data for each operation from both environments
+    for op in sorted_operations:
+        for category, env_name in [("kernel_uprobe", "Kernel"), ("userspace_uprobe", "Userspace")]:
+            if category in results_json and op in results_json[category]:
+                metrics = results_json[category][op]
                 if isinstance(metrics, dict) and "avg" in metrics:
                     # Handle infinity values
                     min_val = "∞" if metrics["min"] == float('inf') else f"{metrics['min']:.2f}"
@@ -461,7 +467,25 @@ def generate_markdown_report(results_json, output_path):
                     avg_val = "∞" if metrics["avg"] == float('inf') else f"{metrics['avg']:.2f}"
                     std_dev = f"{metrics['std_dev']:.2f}"
                     
-                    markdown.append(f"| {op} | {min_val} | {max_val} | {avg_val} | {std_dev} |")
+                    markdown.append(f"| {op} | {env_name} | {min_val} | {max_val} | {avg_val} | {std_dev} |")
+    
+    # Add embedded VM performance table separately
+    if "embed" in results_json:
+        markdown.extend([
+            "\n### Embedded VM Performance\n",
+            "| Operation | Min (ns) | Max (ns) | Avg (ns) | Std Dev |",
+            "|-----------|----------|----------|----------|---------|"
+        ])
+        
+        for op, metrics in results_json["embed"].items():
+            if isinstance(metrics, dict) and "avg" in metrics:
+                # Handle infinity values
+                min_val = "∞" if metrics["min"] == float('inf') else f"{metrics['min']:.2f}"
+                max_val = "∞" if metrics["max"] == float('inf') else f"{metrics['max']:.2f}"
+                avg_val = "∞" if metrics["avg"] == float('inf') else f"{metrics['avg']:.2f}"
+                std_dev = f"{metrics['std_dev']:.2f}"
+                
+                markdown.append(f"| {op} | {min_val} | {max_val} | {avg_val} | {std_dev} |")
     
     # Add benchmark metadata
     if "benchmark_info" in results_json:
@@ -489,6 +513,11 @@ def generate_markdown_report(results_json, output_path):
 
 
 async def main():
+    # Add argument parsing
+    parser = argparse.ArgumentParser(description='Run bpftime uprobe benchmarks')
+    parser.add_argument('--iter', type=int, default=10, help='Number of iterations for each benchmark test (default: 10)')
+    args = parser.parse_args()
+    
     start_time = time.time()
     log_message("Starting uprobe benchmark suite")
     log_message(f"Project root: {PROJECT_ROOT}")
@@ -502,7 +531,7 @@ async def main():
     # Auto-elevate if needed before running kernel tests
     run_kernel = ensure_sudo()
     
-    num_runs = 10
+    num_runs = args.iter  # Use the command line argument instead of hardcoded value
     log_message(f"Will run each benchmark {num_runs} times")
 
     try:

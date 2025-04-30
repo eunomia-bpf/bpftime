@@ -56,7 +56,8 @@ make redis
 ```
 
 This will:
-1. Clone the Redis repository from https://github.com/eunomia-bpf/redis
+
+1. Clone the Redis repository from <https://github.com/eunomia-bpf/redis>
 2. Build Redis from source
 
 ### Building BPF Extensions
@@ -72,24 +73,28 @@ This command builds the `batch_process` implementation. To build all implementat
 #### Building Individual Implementations
 
 **Batch Process Implementation:**
+
 ```bash
 cd batch_process
 make
 ```
 
 **Delayed-Fsync Implementation:**
+
 ```bash
 cd delayed-fsync
 make
 ```
 
 **Fast-Notify Implementation:**
+
 ```bash
 cd fsync-fast-notify
 make
 ```
 
 **IO_uring Implementation:**
+
 ```bash
 cd poc-iouring-minimal
 make
@@ -116,6 +121,7 @@ Each approach is located in its own directory:
 - `bpf-sync-kernel/`: Kernel-level sync optimization
 
 Each implementation directory contains:
+
 - C source files for the BPF program
 - A Makefile for building
 - A README with implementation-specific details
@@ -141,4 +147,3 @@ redis-durability-tuning/
 ├── benchmark.py           # Benchmark script
 └── Makefile               # Main Makefile for building components
 ```
-

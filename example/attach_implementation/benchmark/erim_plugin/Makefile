@@ -13,6 +13,7 @@ clone-erim:
 	@if [ ! -d "./erim" ]; then \
 		echo "ERIM repository not found. Cloning from GitHub..."; \
 		git clone https://github.com/vahldiek/erim.git ./erim; \
+		cd ./erim && git checkout 7232f4762c5ff51035116f9664ec6e7af3b236af; \
 		echo "ERIM repository cloned successfully."; \
 	else \
 		echo "ERIM repository already exists."; \
@@ -57,6 +58,5 @@ test: test_filter
 
 clean:
 	rm -f *.o *.so test_filter
-	$(MAKE) -C $(ERIM_DIR) clean
-
+	rm -rf ./erim
 .PHONY: all clean test test_filter check-mpk clone-erim 

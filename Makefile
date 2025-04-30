@@ -102,6 +102,21 @@ benchmark: ## build and run the benchmark
 	cmake --build build --config RelWithDebInfo --target attach_impl_example_nginx -j
 	make -C benchmark
 
+run-all-benchmark: ## run all benchmarks
+	# run micro-benchmarks
+	python3 benchmark/uprobe/benchmark.py
+	# run remove to avoid conflict with the previous run
+	sudo build/tools/bpftimetool/bpftimetool remove
+	python3 benchmark/syscall/benchmark.py
+	sudo build/tools/bpftimetool/bpftimetool remove
+	python3 benchmark/mpk/benchmark.py
+
+	# run system-benchmarks
+	sudo build/tools/bpftimetool/bpftimetool remove
+	python3 benchmark/syscount-nginx/benchmark.py
+	sudo build/tools/bpftimetool/bpftimetool remove
+	python3 benchmark/ssl-nginx/draw_figture.py
+
 build-vm: ## build only the core library
 	make -C vm build
 

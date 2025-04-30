@@ -352,8 +352,8 @@ int tracepoint__syscalls__sys_enter_newfstatat(
 	const char *path = (const char *)ctx->args[1];
 	char buffer[NAME_MAX] = {};
 	bpf_probe_read_str(buffer, sizeof(buffer), path);
-	// bpf_printk("sys_enter_newfstatat fd: %d, path %s, dir path %s\n", fd,
-	// 	   buffer, dir_data->dir_path);
+	bpf_printk("sys_enter_newfstatat fd: %d, path %s, dir path %s\n", fd,
+		   buffer, dir_data->dir_path);
 	return 0;
 }
 

@@ -9,8 +9,6 @@ usage: run.py [-h] -t {no-probe,kernel-uprobe,no-uprobe,user-uprobe} [--http] [-
 run.py: error: the following arguments are required: -t/--type
 ```
 
-Certainly! I will provide the detailed data in two Markdown tables, one for HTTP and one for HTTPS. Each table will have the sub-key types (like 'kernel-uprobe', 'no-uprobe', etc.) as columns, and the sizes (1-256) as rows. Each cell will contain the average request and average transfer values, separated by a slash.
-
 ## result
 
 ### HTTPS Averages

@@ -32,6 +32,7 @@ install-rlbox:
 	@echo "Installing RLBox framework..."
 	@if [ ! -d "$(RLBOX_PATH)" ]; then \
 		git clone https://github.com/PLSysSec/rlbox $(RLBOX_PATH); \
+		cd $(RLBOX_PATH) && git checkout ba8a24ec9d2d418d400bcf584da5031f20fff453; \
 	else \
 		echo "RLBox directory already exists. Skipping clone."; \
 	fi
@@ -39,6 +40,7 @@ install-rlbox:
 	@echo "Installing RLBox wasm2c sandbox..."
 	@if [ ! -d "$(RLBOX_WASM2C_PATH)" ]; then \
 		git clone https://github.com/PLSysSec/rlbox_wasm2c_sandbox $(RLBOX_WASM2C_PATH); \
+		cd $(RLBOX_WASM2C_PATH) && git checkout 9c8e4dbb7d03947e8d61bcdb8fa0ce57d72a46b0; \
 	else \
 		echo "RLBox wasm2c sandbox directory already exists. Skipping clone."; \
 	fi
@@ -83,7 +85,7 @@ mylib.o: mylib.c mylib.h
 	$(CC) $(CFLAGS) -c -o $@ $<
 
 # Compile the RLBox wrapper with noop sandbox
-rlbox_filter_noop.o: rlbox_filter.cpp rlbox_filter.h
+rlbox_filter_noop.o: rlbox_filter.cpp rlbox_filter.h install-rlbox
 	$(CXX) $(CXXFLAGS) $(INCLUDES) -c -o $@ $<
 
 # Create shared library with noop sandbox
@@ -119,3 +121,5 @@ libfilter_rlbox_wasm2c.so: rlbox_filter_wasm2c.o
 
 clean:
 	rm -f *.o *.so *.wasm *.wasm.c *.wasm.h 
+	rm -rf $(RLBOX_PATH)
+	rm -rf $(RLBOX_WASM2C_PATH)

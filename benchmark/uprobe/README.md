@@ -9,6 +9,8 @@ python3 benchmark/uprobe/benchmark.py
 
 check the results in `results.md`. An example is [example_results.md](example_results.md).
 
+Below some details of the benchmark and how to run it mannually.
+
 ## base line
 
 ```sh

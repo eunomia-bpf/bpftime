@@ -10,6 +10,9 @@ import sys
 import traceback
 from datetime import datetime
 from pathlib import Path
+import matplotlib.pyplot as plt
+import numpy as np
+import matplotlib as mpl
 
 # Configuration
 NUM_RUNS = 10
@@ -537,6 +540,8 @@ def print_statistics():
         userbpf_avg = avgs["userbpf_untargeted"]
         improvement = ((userbpf_avg - kernel_avg) / kernel_avg) * 100
         print(f"UserBPF improvement over kernel (untargeted): {improvement:.2f}%")
+    
+    return avgs
 
 def save_results():
     """Save results to a JSON file"""
@@ -551,6 +556,291 @@ def save_results():
         }, f, indent=2)
     
     print(f"\nResults saved to {filename}")
+    return filename
+
+def generate_report(avgs, result_filename, timestamp):
+    """Generate a Markdown report from benchmark results"""
+    print("\n=== Generating Markdown Report ===")
+    
+    # Dictionary for formatted names for printing
+    name_map = {
+        "native": "Native (No tracing)",
+        "kernel_targeted": "Kernel syscount (targeting nginx)",
+        "kernel_untargeted": "Kernel syscount (not targeting nginx)",
+        "userbpf_targeted": "UserBPF syscount (targeting nginx)",
+        "userbpf_untargeted": "UserBPF syscount (not targeting nginx)"
+    }
+    
+    # Calculate percentage comparisons
+    comparisons = {}
+    if "native" in avgs:
+        native_avg = avgs["native"]
+        for test_name, avg in avgs.items():
+            if test_name != "native":
+                impact = ((avg - native_avg) / native_avg) * 100
+                comparisons[f"{test_name}_vs_native"] = impact
+    
+    # Compare userBPF to kernel
+    if "kernel_targeted" in avgs and "userbpf_targeted" in avgs:
+        kernel_avg = avgs["kernel_targeted"]
+        userbpf_avg = avgs["userbpf_targeted"]
+        improvement = ((userbpf_avg - kernel_avg) / kernel_avg) * 100
+        comparisons["userbpf_vs_kernel_targeted"] = improvement
+    
+    if "kernel_untargeted" in avgs and "userbpf_untargeted" in avgs:
+        kernel_avg = avgs["kernel_untargeted"]
+        userbpf_avg = avgs["userbpf_untargeted"]
+        improvement = ((userbpf_avg - kernel_avg) / kernel_avg) * 100
+        comparisons["userbpf_vs_kernel_untargeted"] = improvement
+    
+    # Generate report content
+    report = [
+        "# Benchmark Report: syscount-nginx Performance Analysis",
+        "",
+        "## Overview",
+        "This report analyzes the performance of nginx under different syscall counting methods, comparing native execution (no tracing), kernel-based syscount (both targeted and untargeted), and bpftime's userspace BPF implementation (both targeted and untargeted).",
+        "",
+        "## Test Environment",
+        f"- **Test Date**: {timestamp[:4]}-{timestamp[4:6]}-{timestamp[6:8]}",
+        "- **Benchmark Tool**: wrk (`http://127.0.0.1:801/index.html`, concurrency: 100, duration: 10s)",
+        f"- **Number of Runs**: {NUM_RUNS}",
+        "",
+        "## Performance Results",
+        "",
+        "| Configuration | Requests/sec | % vs Native | % vs Kernel (same targeting) |",
+        "|---------------|--------------|-------------|------------------------------|"
+    ]
+    
+    # Add table rows
+    if "native" in avgs:
+        report.append(f"| {name_map['native']} | {avgs['native']:,.2f} | - | - |")
+    
+    if "kernel_targeted" in avgs:
+        vs_native = comparisons.get("kernel_targeted_vs_native", 0)
+        report.append(f"| {name_map['kernel_targeted']} | {avgs['kernel_targeted']:,.2f} | {vs_native:+.2f}% | - |")
+    
+    if "kernel_untargeted" in avgs:
+        vs_native = comparisons.get("kernel_untargeted_vs_native", 0)
+        report.append(f"| {name_map['kernel_untargeted']} | {avgs['kernel_untargeted']:,.2f} | {vs_native:+.2f}% | - |")
+    
+    if "userbpf_targeted" in avgs:
+        vs_native = comparisons.get("userbpf_targeted_vs_native", 0)
+        vs_kernel = comparisons.get("userbpf_vs_kernel_targeted", 0)
+        report.append(f"| {name_map['userbpf_targeted']} | {avgs['userbpf_targeted']:,.2f} | {vs_native:+.2f}% | {vs_kernel:+.2f}% |")
+    
+    if "userbpf_untargeted" in avgs:
+        vs_native = comparisons.get("userbpf_untargeted_vs_native", 0)
+        vs_kernel = comparisons.get("userbpf_vs_kernel_untargeted", 0)
+        report.append(f"| {name_map['userbpf_untargeted']} | {avgs['userbpf_untargeted']:,.2f} | {vs_native:+.2f}% | {vs_kernel:+.2f}% |")
+    
+    # Add key findings
+    report.extend([
+        "",
+        "## Key Findings",
+        "",
+        "1. **Performance Comparison with Native Baseline**"
+    ])
+    
+    if all(comp > 0 for comp in [
+        comparisons.get("kernel_targeted_vs_native", 0),
+        comparisons.get("kernel_untargeted_vs_native", 0),
+        comparisons.get("userbpf_targeted_vs_native", 0),
+        comparisons.get("userbpf_untargeted_vs_native", 0)
+    ]):
+        report.extend([
+            "   - All tracing methods outperformed the native baseline.",
+            "   - This unexpected result might be due to caching effects or statistical variation.",
+            "   - In a more robust test with more runs, we would typically expect some performance penalty for tracing."
+        ])
+    else:
+        report.append("   - There's a mixed performance impact when comparing with the native baseline.")
+    
+    report.extend([
+        "",
+        "2. **UserBPF vs Kernel-based syscount**"
+    ])
+    
+    if "userbpf_vs_kernel_targeted" in comparisons:
+        if comparisons["userbpf_vs_kernel_targeted"] > 0:
+            report.append(f"   - When targeting nginx specifically, UserBPF showed {comparisons['userbpf_vs_kernel_targeted']:.2f}% better performance than the kernel equivalent.")
+        else:
+            report.append(f"   - When targeting nginx specifically, UserBPF showed {-comparisons['userbpf_vs_kernel_targeted']:.2f}% worse performance than the kernel equivalent.")
+    
+    if "userbpf_vs_kernel_untargeted" in comparisons:
+        if comparisons["userbpf_vs_kernel_untargeted"] > 0:
+            report.append(f"   - When not targeting nginx, UserBPF showed {comparisons['userbpf_vs_kernel_untargeted']:.2f}% better performance than the kernel equivalent.")
+        else:
+            report.append(f"   - When not targeting nginx, UserBPF showed {-comparisons['userbpf_vs_kernel_untargeted']:.2f}% worse performance than the kernel equivalent.")
+    
+    # Add targeted vs untargeted comparison
+    report.extend([
+        "",
+        "3. **Targeted vs. Untargeted Performance**"
+    ])
+    
+    if "kernel_targeted" in avgs and "kernel_untargeted" in avgs:
+        pct_diff = ((avgs["kernel_untargeted"] - avgs["kernel_targeted"]) / avgs["kernel_targeted"]) * 100
+        if pct_diff > 0:
+            report.append(f"   - For kernel-based tracing, the untargeted mode performed {pct_diff:.2f}% better than targeted mode.")
+        else:
+            report.append(f"   - For kernel-based tracing, the targeted mode performed {-pct_diff:.2f}% better than untargeted mode.")
+    
+    if "userbpf_targeted" in avgs and "userbpf_untargeted" in avgs:
+        pct_diff = ((avgs["userbpf_untargeted"] - avgs["userbpf_targeted"]) / avgs["userbpf_targeted"]) * 100
+        if pct_diff > 0:
+            report.append(f"   - For UserBPF, the untargeted mode performed {pct_diff:.2f}% better than targeted mode.")
+        else:
+            report.append(f"   - For UserBPF, the targeted mode performed {-pct_diff:.2f}% better than untargeted mode.")
+    
+    # Add conclusion
+    report.extend([
+        "",
+        "## Conclusion",
+        "",
+        "The benchmark results demonstrate that bpftime's userspace BPF implementation provides performance characteristics that differ from traditional kernel-based syscount for syscall tracing.",
+        "",
+        "This data suggests that userspace BPF may offer benefits for observability tools that need to monitor production systems with minimal overhead.",
+        "",
+        "## Recommendations",
+        "",
+        "1. **Extend testing with more runs**: Multiple benchmark runs with different loads would provide more statistical confidence.",
+        "",
+        "2. **Profile resource usage**: Adding CPU, memory, and I/O metrics would provide deeper insights into the efficiency differences.",
+        "",
+        "3. **Test with varied workloads**: Different nginx configurations and request patterns could reveal performance characteristics under various conditions.",
+        "",
+        f"## Raw Data",
+        "",
+        f"The raw benchmark data is available in the JSON file: `{result_filename}`",
+        "",
+        f"![Benchmark Results](benchmark_chart.png)"
+    ])
+    
+    # Write report to file
+    report_path = "benchmark/syscount-nginx/reports.md"
+    with open(report_path, 'w') as f:
+        f.write('\n'.join(report))
+    
+    print(f"Markdown report generated: {report_path}")
+    return report_path
+
+def generate_chart(avgs, timestamp):
+    """Generate a bar chart visualization of benchmark results"""
+    print("\n=== Generating Benchmark Chart ===")
+    
+    try:
+        # Set the style
+        plt.style.use('seaborn-v0_8-whitegrid')
+        
+        # Use a nicer font if available
+        try:
+            mpl.rcParams['font.family'] = 'DejaVu Sans'
+        except:
+            pass
+        
+        # Prepare data for plotting
+        categories = [
+            'Native\n(No tracing)',
+            'Kernel\n(targeting nginx)',
+            'Kernel\n(not targeting nginx)',
+            'UserBPF\n(targeting nginx)',
+            'UserBPF\n(not targeting nginx)'
+        ]
+        
+        metrics = [
+            avgs.get('native', 0),
+            avgs.get('kernel_targeted', 0),
+            avgs.get('kernel_untargeted', 0),
+            avgs.get('userbpf_targeted', 0),
+            avgs.get('userbpf_untargeted', 0)
+        ]
+        
+        # Set up figure size
+        plt.figure(figsize=(12, 8))
+        
+        # Set up colors
+        colors = ['#4C72B0', '#DD8452', '#55A868', '#C44E52', '#8172B3']
+        
+        # Create bar chart
+        bars = plt.bar(categories, metrics, color=colors, width=0.6)
+        
+        # Add values on top of bars
+        for bar in bars:
+            height = bar.get_height()
+            if height > 0:  # Only add text if there's a value
+                plt.text(bar.get_x() + bar.get_width()/2., height + 1000,
+                        f'{height:,.2f}',
+                        ha='center', va='bottom', fontsize=9)
+        
+        # Adjust layout
+        plt.title('Nginx Performance Under Different Syscount Methods', fontsize=16, pad=20)
+        plt.ylabel('Requests per Second', fontsize=14)
+        plt.ylim(0, max(metrics) * 1.15 if max(metrics) > 0 else 100000)  # Add 15% space for labels
+        
+        # Add grid
+        plt.grid(axis='y', linestyle='--', alpha=0.7)
+        
+        # Annotate with runs information
+        plt.annotate(f'Number of benchmark runs: {NUM_RUNS}', 
+                    xy=(0.02, 0.97), xycoords='figure fraction',
+                    fontsize=10, ha='left', va='top',
+                    bbox=dict(boxstyle='round,pad=0.5', facecolor='white', alpha=0.8))
+        
+        # Add percentage comparisons
+        if avgs.get('native', 0) > 0:  # If we have native results
+            # Calculate percentages vs native
+            for i in range(1, len(metrics)):
+                if metrics[i] > 0:  # Only add comparison if there's a value
+                    pct_diff = ((metrics[i] - metrics[0]) / metrics[0]) * 100
+                    plt.annotate(f'{pct_diff:+.2f}% vs native', 
+                                xy=(i, metrics[i] - metrics[i]*0.05), 
+                                ha='center', va='top',
+                                fontsize=9, color='black',
+                                bbox=dict(boxstyle='round,pad=0.2', facecolor='white', alpha=0.7))
+            
+            # Add UserBPF vs Kernel comparisons
+            k_targ, k_untarg, u_targ, u_untarg = metrics[1:5]
+            
+            if k_targ > 0 and u_targ > 0:
+                pct_diff = ((u_targ - k_targ) / k_targ) * 100
+                plt.annotate(f'{pct_diff:+.2f}% vs Kernel(targeted)', 
+                            xy=(3, metrics[3] - metrics[3]*0.15), 
+                            ha='center', va='top',
+                            fontsize=9, color='darkgreen',
+                            bbox=dict(boxstyle='round,pad=0.2', facecolor='white', alpha=0.7))
+            
+            if k_untarg > 0 and u_untarg > 0:
+                pct_diff = ((u_untarg - k_untarg) / k_untarg) * 100
+                plt.annotate(f'{pct_diff:+.2f}% vs Kernel(untargeted)', 
+                            xy=(4, metrics[4] - metrics[4]*0.15), 
+                            ha='center', va='top',
+                            fontsize=9, color='darkgreen',
+                            bbox=dict(boxstyle='round,pad=0.2', facecolor='white', alpha=0.7))
+        
+        # Add watermark
+        plt.figtext(0.5, 0.02, f'bpftime syscount-nginx benchmark - {timestamp}', 
+                   ha='center', va='bottom', fontsize=10, style='italic', alpha=0.7)
+        
+        # Tight layout
+        plt.tight_layout()
+        
+        # Save figure
+        chart_path = "benchmark/syscount-nginx/benchmark_chart.png"
+        plt.savefig(chart_path, dpi=300, bbox_inches='tight')
+        print(f"Chart saved to: {chart_path}")
+        
+        # Try to display (won't work in headless environment)
+        try:
+            plt.show()
+        except:
+            pass
+            
+        return chart_path
+        
+    except Exception as e:
+        debug_print(f"Error generating chart: {e}")
+        traceback.print_exc()
+        return None
 
 def main():
     try:
@@ -604,6 +894,14 @@ def main():
             debug_print("Please install wrk before running this benchmark.")
             return
         
+        # Check for matplotlib
+        try:
+            import matplotlib
+            debug_print(f"Matplotlib version: {matplotlib.__version__}")
+        except ImportError:
+            debug_print("WARNING: Matplotlib not found. Will skip chart generation.")
+            debug_print("Install matplotlib with: pip install matplotlib")
+        
         # Run benchmarks
         run_native()                      # No tracing
         run_kernel_syscount(target_pid=True)  # Kernel syscount targeting nginx
@@ -611,9 +909,21 @@ def main():
         run_userbpf_syscount(target_pid=True) # UserBPF syscount targeting nginx
         run_userbpf_syscount(target_pid=False)# UserBPF syscount not targeting nginx
         
-        # Print and save results
-        print_statistics()
-        save_results()
+        # Print statistics and get averages
+        avgs = print_statistics()
+        
+        # Save results to JSON
+        result_filename = save_results()
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        
+        # Generate report and chart
+        report_path = generate_report(avgs, os.path.basename(result_filename), timestamp)
+        chart_path = generate_chart(avgs, timestamp)
+        
+        if report_path and chart_path:
+            print("\n=== Benchmark Complete ===")
+            print(f"Report: {report_path}")
+            print(f"Chart: {chart_path}")
         
     except KeyboardInterrupt:
         print("\nBenchmark interrupted.")

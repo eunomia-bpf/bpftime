@@ -30,15 +30,12 @@ bpftime_prog::bpftime_prog(const struct ebpf_inst *insn, size_t insn_cnt,
 	SPDLOG_DEBUG("Creating bpftime_prog with name {}", name);
 	insns.assign(insn, insn + insn_cnt);
 
-	std::string vm_name_str = bpftime::bpftime_get_agent_config().vm_name;
-	SPDLOG_DEBUG("Creating vm with name {}", vm_name_str);
-
-	vm = ebpf_create(vm_name_str.c_str());
+	vm = ebpf_create("");
 	// Disable bounds check because we have no implementation yet
 	// ebpf_toggle_bounds_check(vm, false);
 	ebpf_set_lddw_helpers(vm, map_ptr_by_fd, nullptr, map_val, nullptr,
 			      nullptr);
-	SPDLOG_DEBUG("Created vm with name {}", vm_name_str);
+	SPDLOG_DEBUG("Created vm with name {}", ebpf_get_vm_name(vm));
 }
 
 bpftime_prog::bpftime_prog(const struct ebpf_inst *insn, size_t insn_cnt,

@@ -1,6 +1,6 @@
 # BPFtime Uprobe Benchmark Results
 
-*Generated on 2025-04-28 16:06:04*
+*Generated on 2025-04-30 03:01:13*
 
 ## Environment
 
@@ -18,71 +18,61 @@ This benchmark compares three different eBPF execution environments:
 
 *Times shown in nanoseconds (ns) - lower is better*
 
-### Core Uprobe Performance
+### Core Uprobe Performance Summary
 
 | Operation | Kernel Uprobe | Userspace Uprobe | Speedup |
 |-----------|---------------|------------------|---------|
-| __bench_uprobe | 2416.31 | 233.23 | 10.36x |
-| __bench_uretprobe | 2870.88 | 197.06 | 14.57x |
-| __bench_uprobe_uretprobe | 3040.79 | 196.79 | 15.45x |
+| __bench_uprobe | 2561.57 | 190.02 | 13.48x |
+| __bench_uretprobe | 3019.45 | 187.10 | 16.14x |
+| __bench_uprobe_uretprobe | 3119.28 | 191.63 | 16.28x |
 
-### Kernel eBPF Performance
+### Kernel vs Userspace eBPF Detailed Comparison
 
-| Operation | Min (ns) | Max (ns) | Avg (ns) | Std Dev |
-|-----------|----------|----------|----------|---------|
-| __bench_uprobe_uretprobe | 2634.01 | 3437.30 | 3040.79 | 243.78 |
-| __bench_uretprobe | 2548.73 | 3152.64 | 2870.88 | 230.91 |
-| __bench_uprobe | 1996.40 | 2819.68 | 2416.31 | 258.84 |
-| __bench_read | 20579.99 | 27294.64 | 23473.15 | 1911.24 |
-| __bench_write | 20784.80 | 29112.56 | 24698.55 | 2058.82 |
-| __bench_hash_map_update | 41468.41 | 53731.06 | 48651.75 | 4050.62 |
-| __bench_hash_map_lookup | 9374.40 | 13056.65 | 10926.05 | 909.83 |
-| __bench_hash_map_delete | 18335.53 | 25395.61 | 20698.13 | 2162.40 |
-| __bench_array_map_update | 9497.25 | 14364.52 | 11550.03 | 1269.28 |
-| __bench_array_map_lookup | 2509.89 | 3193.74 | 2831.07 | 229.90 |
-| __bench_array_map_delete | 2693.73 | 3300.11 | 2968.31 | 207.97 |
-| __bench_per_cpu_hash_map_update | 27081.29 | 36724.47 | 32425.47 | 3094.37 |
-| __bench_per_cpu_hash_map_lookup | 9211.39 | 11809.20 | 10928.61 | 882.25 |
-| __bench_per_cpu_hash_map_delete | 17740.25 | 23080.19 | 20610.10 | 1672.48 |
-| __bench_per_cpu_array_map_update | 9268.89 | 14245.44 | 11960.28 | 1451.85 |
-| __bench_per_cpu_array_map_lookup | 2527.32 | 3294.53 | 3036.76 | 208.42 |
-| __bench_per_cpu_array_map_delete | 2644.95 | 4024.94 | 3222.00 | 338.45 |
-
-### Userspace eBPF Performance
-
-| Operation | Min (ns) | Max (ns) | Avg (ns) | Std Dev |
-|-----------|----------|----------|----------|---------|
-| __bench_uprobe_uretprobe | 174.10 | 239.56 | 196.79 | 21.31 |
-| __bench_uretprobe | 169.87 | 295.02 | 197.06 | 34.42 |
-| __bench_uprobe | 179.34 | 429.95 | 233.23 | 69.89 |
-| __bench_read | 10508.48 | 13687.01 | 11847.26 | 1083.90 |
-| __bench_write | 10259.85 | 14321.91 | 11636.15 | 1196.29 |
-| __bench_hash_map_update | 32469.64 | 43609.21 | 37445.01 | 3711.02 |
-| __bench_hash_map_lookup | 33597.16 | 43795.69 | 37698.30 | 2983.71 |
-| __bench_hash_map_delete | 18632.17 | 24974.57 | 21429.89 | 1906.98 |
-| __bench_array_map_update | 13704.65 | 19370.81 | 15577.50 | 1751.59 |
-| __bench_array_map_lookup | 12884.14 | 19134.35 | 15329.19 | 2113.11 |
-| __bench_array_map_delete | 12723.94 | 16857.29 | 14443.25 | 1447.23 |
-| __bench_per_cpu_hash_map_update | 77958.47 | 105199.28 | 89354.41 | 7374.02 |
-| __bench_per_cpu_hash_map_lookup | 59281.19 | 73175.65 | 64278.19 | 4737.54 |
-| __bench_per_cpu_hash_map_delete | 65039.94 | 90497.46 | 75378.81 | 8447.67 |
-| __bench_per_cpu_array_map_update | 23634.05 | 37641.66 | 28365.97 | 3530.88 |
-| __bench_per_cpu_array_map_lookup | 17119.52 | 27462.59 | 19804.70 | 3006.58 |
-| __bench_per_cpu_array_map_delete | 12634.94 | 15814.25 | 14087.53 | 1088.89 |
+| Operation | Environment | Min (ns) | Max (ns) | Avg (ns) | Std Dev |
+|-----------|-------------|----------|----------|----------|---------|
+| __bench_array_map_delete | Kernel | 2725.99 | 3935.98 | 3237.62 | 359.11 |
+| __bench_array_map_delete | Userspace | 2909.07 | 3285.52 | 3096.46 | 114.99 |
+| __bench_array_map_lookup | Kernel | 2641.18 | 4155.25 | 2992.88 | 402.00 |
+| __bench_array_map_lookup | Userspace | 3354.17 | 3724.05 | 3486.81 | 108.63 |
+| __bench_array_map_update | Kernel | 9945.97 | 14917.03 | 12225.93 | 1508.60 |
+| __bench_array_map_update | Userspace | 4398.82 | 4841.92 | 4629.57 | 152.57 |
+| __bench_hash_map_delete | Kernel | 18560.92 | 27069.99 | 22082.68 | 2295.90 |
+| __bench_hash_map_delete | Userspace | 9557.35 | 11240.72 | 10253.54 | 473.67 |
+| __bench_hash_map_lookup | Kernel | 10181.58 | 13742.86 | 12375.69 | 1142.61 |
+| __bench_hash_map_lookup | Userspace | 20580.46 | 23586.77 | 22152.81 | 969.63 |
+| __bench_hash_map_update | Kernel | 43969.13 | 61331.16 | 53376.22 | 5497.51 |
+| __bench_hash_map_update | Userspace | 21172.05 | 25878.44 | 23992.67 | 1264.81 |
+| __bench_per_cpu_array_map_delete | Kernel | 2782.47 | 3716.44 | 3183.09 | 287.23 |
+| __bench_per_cpu_array_map_delete | Userspace | 2865.53 | 3409.70 | 3114.67 | 140.65 |
+| __bench_per_cpu_array_map_lookup | Kernel | 2773.47 | 4176.10 | 3170.42 | 416.42 |
+| __bench_per_cpu_array_map_lookup | Userspace | 6269.58 | 7395.49 | 7018.47 | 345.91 |
+| __bench_per_cpu_array_map_update | Kernel | 10662.37 | 15923.08 | 12326.39 | 1522.21 |
+| __bench_per_cpu_array_map_update | Userspace | 15592.15 | 17505.63 | 16528.99 | 553.50 |
+| __bench_per_cpu_hash_map_delete | Kernel | 19709.29 | 26844.96 | 21994.95 | 2243.80 |
+| __bench_per_cpu_hash_map_delete | Userspace | 55954.89 | 76124.07 | 65603.07 | 5986.58 |
+| __bench_per_cpu_hash_map_lookup | Kernel | 10783.48 | 15208.46 | 12315.21 | 1525.86 |
+| __bench_per_cpu_hash_map_lookup | Userspace | 48033.46 | 57481.09 | 50651.83 | 2503.34 |
+| __bench_per_cpu_hash_map_update | Kernel | 31072.46 | 43163.81 | 35580.60 | 3748.51 |
+| __bench_per_cpu_hash_map_update | Userspace | 73661.69 | 79157.12 | 76526.24 | 1868.13 |
+| __bench_read | Kernel | 22506.85 | 30934.20 | 25865.43 | 3018.32 |
+| __bench_read | Userspace | 1491.75 | 1862.13 | 1653.45 | 101.66 |
+| __bench_uprobe | Kernel | 2130.54 | 4389.26 | 2561.57 | 628.77 |
+| __bench_uprobe | Userspace | 166.54 | 232.13 | 190.02 | 16.11 |
+| __bench_uprobe_uretprobe | Kernel | 2658.28 | 3859.19 | 3119.28 | 311.45 |
+| __bench_uprobe_uretprobe | Userspace | 179.61 | 202.69 | 191.63 | 9.64 |
+| __bench_uretprobe | Kernel | 2581.48 | 3916.19 | 3019.45 | 359.75 |
+| __bench_uretprobe | Userspace | 175.54 | 196.49 | 187.10 | 7.66 |
+| __bench_write | Kernel | 22783.52 | 31415.49 | 26478.92 | 2787.90 |
+| __bench_write | Userspace | 1406.01 | 1802.50 | 1542.49 | 106.23 |
 
 ### Embedded VM Performance
 
 | Operation | Min (ns) | Max (ns) | Avg (ns) | Std Dev |
 |-----------|----------|----------|----------|---------|
-| embed | ∞ | ∞ | ∞ | 0.00 |
+| embed | 75.47 | 221.55 | 106.30 | 39.99 |
 
 ## Benchmark Metadata
 
 - **Number of runs:** 10
-- **Timestamp:** 2025-04-28 16:06:04
-- **Total duration:** 705.64 seconds
-
-
-## Notes
-
-⚠️ The embedded VM benchmark reported infinity values, which indicates failures or timeouts.
+- **Timestamp:** 2025-04-30 03:01:13
+- **Total duration:** 559.80 seconds
