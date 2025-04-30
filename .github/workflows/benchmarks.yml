@@ -1,15 +1,26 @@
-name: Build benchmarks
+name: Build benchmarks and publish results
 
 on:
   push:
     branches: "master"
   pull_request:
     branches: "master"
+  # human trigger
+  workflow_dispatch:
+
+# Sets permissions of the GITHUB_TOKEN to allow deployment to GitHub Pages
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Allow only one concurrent deployment for the pages part
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}-${{ github.event_name }}
   cancel-in-progress: true
+
 jobs:
-  build:
+  build-and-run:
     runs-on: ubuntu-latest
 
     steps:
@@ -26,6 +37,10 @@ jobs:
           libelf1 libelf-dev zlib1g-dev make cmake git libboost-all-dev \
           binutils-dev libyaml-cpp-dev ca-certificates clang llvm pkg-config llvm-dev
 
+    - name: install additional dependencies for experiments
+      run: |
+        sudo apt-get install libfuse-dev fuse
+
     - name: install python dependencies
       run: |
         sudo apt install -y python3-pip
@@ -38,7 +53,37 @@ jobs:
       run: rm -rf build
 
     - name: build benchmarks
-      run:  make benchmark
+      run: make benchmark
 
-      # - name: run benchmarks
-      #   run:  cd benchmark && python3 run_benchmark.py
+    - name: run micro-benchmarks
+      run: |
+        # run micro-benchmarks
+        python3 benchmark/uprobe/benchmark.py --iter 3
+        # run remove to avoid conflict with the previous run
+        sudo build/tools/bpftimetool/bpftimetool remove
+        python3 benchmark/syscall/benchmark.py
+        sudo build/tools/bpftimetool/bpftimetool remove
+        python3 benchmark/mpk/benchmark.py --iter 3
+
+    - name: Setup Pages
+      uses: actions/configure-pages@v5
+    - name: Build with Jekyll
+      uses: actions/jekyll-build-pages@v1
+      with:
+        source: ./
+        destination: ./_site
+    - name: Upload artifact
+      uses: actions/upload-pages-artifact@v3
+
+  # Deployment job
+  deploy:
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: ubuntu-latest
+    needs: build-and-run
+    if: github.ref == 'refs/heads/master'
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4

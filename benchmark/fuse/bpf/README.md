@@ -7,19 +7,40 @@
 
 ## Usage
 
-run agent
+mount fuse:
+
+```sh
+# create source and mount point
+mkdir -p benchmark/fuse/test_source
+echo "hello world" > benchmark/fuse/test_source/test.txt
+mkdir -p benchmark/fuse/test_mount
+# mount
+sudo benchmark/fuse/fs/passthrough benchmark/fuse/test_source benchmark/fuse/test_mount
+# sudo python3 benchmark/fuse/fs/passthrough.py benchmark/fuse/test_source benchmark/fuse/test_mount
+# it will keep open and print the op count of each syscall, stop it will unmount
+```
+
+test baseline:
 
 ```console
-# AGENT_SO=/root/zys/bpftime/build/runtime/agent/libbpftime-agent.so LD_PRELOAD=/root/zys/bpftime/build/runtime/agent-transformer/libbpftime-agent-transformer.so find ./example
+sudo benchmark/fuse/filebench getdents64 benchmark/fuse/test_mount
 ```
 
 run server:
 
 ```console
-LD_PRELOAD=/root/zys/bpftime/build/runtime/syscall-server/libbpftime-syscall-server.so ./fs-filter-cache/fs-cache
+sudo BPFTIME_SHM_MEMORY_MB=1024 LD_PRELOAD=build/runtime/syscall-server/libbpftime-syscall-server.so benchmark/fuse/bpf/fs-cache
 ```
 
-## cache for getdents64
+run agent
+
+```console
+# sudo AGENT_SO=build/runtime/agent/libbpftime-agent.so LD_PRELOAD=build/attach/text_segment_transformer/libbpftime-agent-transformer.so  benchmark/fuse/filebench getdents64 benchmark/fuse/test_mount
+```
+
+## Old benchmark result (2023)
+
+### cache for getdents64
 
 base line of getdents64 syscall
 
@@ -33,13 +54,7 @@ python3 passthrough.py  ~/linux ./data/
 ```
 
 ```console
-root@yunwei37server:/home/yunwei/bpftime# /home/yunwei/bpftime/example/fs-filter-cache/bench getdents64 /home/yunwei/bpftime-evaluation/fuse/data/virt
-inode=4294967295 offset=32 reclen=24 type=0 name=.
-inode=4294967295 offset=64 reclen=24 type=0 name=..
-inode=4294967295 offset=96 reclen=24 type=0 name=kvm
-inode=4294967295 offset=128 reclen=24 type=0 name=lib
-inode=4294967295 offset=160 reclen=32 type=0 name=Makefile
-Average time usage 36526.149010 ns, iter 100000 times
+benchmark/fuse/filebench getdents64 benchmark/fuse/test_mount
 ```
 
 use cache for getdents64 syscall
@@ -97,7 +112,7 @@ inode=1710894 offset=328 reclen=40 type=8 name=CMakeLists.txt
 Average time usage 1837.819106 ns, iter 1000000 times
 ```
 
-## filter for openat
+### filter for openat
 
 filter certain path in control plane, restrict access to certain files with uid based filter
 
@@ -163,8 +178,7 @@ Average time usage 740.980190 ns, iter 100000 times
 INFO [439292]: Global shm destructed
 ```
 
-## filebench with LoggerFS
-
+### filebench with LoggerFS
 
 Test with loggerFS:
 

@@ -4,7 +4,7 @@ import signal
 import threading
 import time
 from fuse import FUSE, Operations
-
+import sys
 
 class Passthrough(Operations):
     op_count = {}
@@ -121,9 +121,13 @@ def main(mountpoint, root):
     log_thread = threading.Thread(target=print_op_counts, daemon=True)
     log_thread.start()
 
-    FUSE(fs, mountpoint, nothreads=True, foreground=True, allow_root=True)
+    FUSE(fs, mountpoint, nothreads=True, foreground=True)
 
-if __name__ == "__main__":
-    import sys
-
+if __name__ == '__main__':
+    if len(sys.argv) < 3:
+        print("Usage: python passthrough.py SOURCE_DIR MOUNT_POINT")
+        print("\nExample:")
+        print("  python passthrough.py /path/to/source /path/to/mountpoint")
+        sys.exit(1)
+        
     main(sys.argv[2], sys.argv[1])

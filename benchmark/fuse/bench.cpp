@@ -114,7 +114,7 @@ int open_main(int argc, char *argv[])
 		fd = open(path, O_RDONLY | O_DIRECTORY);
 		if (fd >= 0)
 		{
-			printf("open success\n");
+			// printf("open success\n");
 			close(fd);
 		}
 	}
@@ -138,11 +138,18 @@ int newfsstatat_main(int argc, char *argv[])
 		perror("open");
 		exit(EXIT_FAILURE);
 	}
-	const char *file_name = argc > 2 ? argv[2] : ".profile";
+	const char *file_name = argc > 2 ? argv[2] : "test.txt";
+	// create a file in the directory
+	int fd = open(file_name, O_WRONLY | O_CREAT, 0644);
+	if (fd == -1)
+	{
+		perror("create file");
+		exit(EXIT_FAILURE);
+	}
 	// Use fstatat to get information about a file within that directory
 	if (fstatat(dfd, file_name, &statbuf, sflag) == -1)
 	{
-		perror("newfstatat");
+		perror("newfstatat error:");
 		close(dfd);
 		exit(EXIT_FAILURE);
 	}
