@@ -1,4 +1,4 @@
-# bpftime-super: Extending eBPF Programmability and Observability to GPUs
+# eGPU: Extending eBPF Programmability and Observability to GPUs
 
 [![Build and Test VM](https://github.com/eunomia-bpf/bpftime-super/actions/workflows/test-vm.yml/badge.svg)](https://github.com/eunomia-bpf/bpftime-super/actions/workflows/test-vm.yml)
 [![Build and test runtime](https://github.com/eunomia-bpf/bpftime-super/actions/workflows/test-runtime.yml/badge.svg)](https://github.com/eunomia-bpf/bpftime-super/actions/workflows/test-runtime.yml)
@@ -9,11 +9,11 @@
 ## Installation
 
 ```bash
-git clone https://github.com/eunomia-bpf/bpftime-super.git
+git clone https://github.com/eunomia-bpf/eGPU.git
 cd bpftime-super
 make release
 ```
-
+To support Intel GPU or AMD GPU, please use [ZLUDA](https://github.com/vickiegpt/ZLUDA) as backend.
 
 ## eGPU – Extending eBPF Programmability & Observability to GPUs
 
