@@ -18,7 +18,7 @@ jobs:
       - name: Install dependencies
         run: |
           apt-get update -y
-          apt-get install -y lcov libzstd-dev libboost-all-dev gpg nginx libelf-dev git cmake gcc g++ make clang llvm libpcre2-dev automake
+          apt-get install -y lcov libzstd-dev libboost-all-dev gpg nginx libelf-dev git cmake gcc g++ make clang llvm libpcre2-dev automake python3
       - uses: actions/checkout@v2
         with:
           submodules: 'recursive'   
@@ -31,4 +31,4 @@ jobs:
           nginx -v
       - name: Test
         run: |
-          python ./.github/script/run_nginx_attach_example.py nginx ./build/example/attach_implementation/controller/attach_impl_example_controller ./example/attach_implementation/
+          python3 ./.github/script/run_nginx_attach_example.py nginx ./build/example/attach_implementation/controller/attach_impl_example_controller ./example/attach_implementation/
