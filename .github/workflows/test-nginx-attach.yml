@@ -15,13 +15,13 @@ jobs:
       image: debian:12
       options: --privileged -v /sys/kernel/debug/:/sys/kernel/debug:rw -v /sys/kernel/tracing:/sys/kernel/tracing:rw
     steps:
-      - uses: actions/checkout@v2
-        with:
-          submodules: 'recursive'   
       - name: Install dependencies
         run: |
           apt-get update -y
-          apt-get install -y lcov libzstd-dev libboost-all-dev gpg nginx libelf-dev
+          apt-get install -y lcov libzstd-dev libboost-all-dev gpg nginx libelf-dev git cmake gcc g++ make
+      - uses: actions/checkout@v2
+        with:
+          submodules: 'recursive'   
       - name: Build
         run: |
           cmake -DBPFTIME_LLVM_JIT=0 -DCMAKE_BUILD_TYPE:STRING=Release -DBUILD_ATTACH_IMPL_EXAMPLE=YES -B build -S .
