@@ -18,7 +18,7 @@ jobs:
       - name: Install dependencies
         run: |
           apt-get update -y
-          apt-get install -y lcov libzstd-dev libboost-all-dev gpg nginx libelf-dev git cmake gcc g++ make
+          apt-get install -y lcov libzstd-dev libboost-all-dev gpg nginx libelf-dev git cmake gcc g++ make clang llvm
       - uses: actions/checkout@v2
         with:
           submodules: 'recursive'   
