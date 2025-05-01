@@ -32,6 +32,8 @@ extern "C" int nginx_plugin_example_initialize()
 	spdlog::cfg::load_env_levels();
 	bpftime_initialize_global_shm(shm_open_type::SHM_OPEN_ONLY);
 	ctx_holder.emplace();
+	// Save the trigger function to a global variable, after that, we can
+	// call it when nginx received any requests.
 	trigger_event = simple_attach::add_simple_attach_impl_to_attach_ctx(
 		NGINX_REQUEST_FILTER_ATTACH_TYPE,
 		[&](const std::string &attach_argument,
