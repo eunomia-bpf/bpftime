@@ -17,8 +17,8 @@ jobs:
           submodules: 'recursive'   
       - name: Install dependencies
         run: |
-          apt-get update -y
-          apt-get install -y lcov libzstd-dev libboost-all-dev gpg nginx
+          sudo apt-get update -y
+          sudo apt-get install -y lcov libzstd-dev libboost-all-dev gpg nginx
       - name: Build
         run: |
           cmake -DBPFTIME_LLVM_JIT=0 -DCMAKE_BUILD_TYPE:STRING=Release -DBUILD_ATTACH_IMPL_EXAMPLE=YES -B build -S .
@@ -28,4 +28,4 @@ jobs:
           nginx -v
       - name: Test
         run: |
-          python ./.github/script/run_nginx_attach_example.py nginx ./build/example/attach_implementation/controller/attach_impl_example_controller ./example/attach_implementation/
+          sudo python ./.github/script/run_nginx_attach_example.py nginx ./build/example/attach_implementation/controller/attach_impl_example_controller ./example/attach_implementation/
