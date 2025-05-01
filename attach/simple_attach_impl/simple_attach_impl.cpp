@@ -47,7 +47,7 @@ int simple_attach_impl::trigger(const std::string &trigger_argument)
 		SPDLOG_WARN(
 			"Triggering unregistered simple_attach_impl type {}",
 			predefined_attach_type);
-		return 01;
+		return 1;
 	}
 	SPDLOG_DEBUG("Triggering simple_attach_impl with type {}",
 		     predefined_attach_type);
