@@ -68,8 +68,8 @@ $(call allow-override,LD,$(CROSS_COMPILE)ld)
 .PHONY: all
 all: $(APPS) victim
 
-victim: victim.c
-	gcc victim.c -o victim -Wall -g
+victim: victim.cu
+	nvcc -cudart shared victim.cu -o victim -g
 
 .PHONY: clean
 clean:

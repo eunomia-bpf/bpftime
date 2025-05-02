@@ -38,6 +38,7 @@ void start_up()
 {
 	if (already_setup)
 		return;
+	SPDLOG_INFO("Starting syscall server..");
 	already_setup = true;
 	auto agent_config = construct_agent_config_from_env();
 	bpftime_set_logger(std::string(agent_config.get_logger_output_path()));

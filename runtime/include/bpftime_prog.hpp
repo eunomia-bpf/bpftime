@@ -50,7 +50,7 @@ class bpftime_prog {
 	int load_aot_object(const std::vector<uint8_t> &buf);
 	bool is_cuda() const
 	{
-		return true;
+		return name.ends_with("__cuda");
 	}
 	const void *get_cuda_elf_binary() const
 	{

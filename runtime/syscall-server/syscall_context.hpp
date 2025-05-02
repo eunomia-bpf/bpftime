@@ -5,6 +5,7 @@
  */
 #ifndef _SYSCALL_CONTEXT_HPP
 #define _SYSCALL_CONTEXT_HPP
+#include <cassert>
 #include <unordered_map>
 #if __linux__
 #include "linux/perf_event.h"
@@ -88,20 +89,36 @@ class syscall_context {
 	{
 		orig_epoll_wait_fn =
 			(epoll_wait_fn)dlsym(RTLD_NEXT, "epoll_wait");
+		assert(orig_epoll_wait_fn != nullptr);
 		orig_epoll_ctl_fn = (epoll_ctl_fn)dlsym(RTLD_NEXT, "epoll_ctl");
+		assert(orig_epoll_ctl_fn != nullptr);
 		orig_epoll_create1_fn =
 			(epoll_craete1_fn)dlsym(RTLD_NEXT, "epoll_create1");
+		assert(orig_epoll_create1_fn != nullptr);
 		orig_ioctl_fn = (ioctl_fn)dlsym(RTLD_NEXT, "ioctl");
+		assert(orig_ioctl_fn != nullptr);
 		orig_syscall_fn = (syscall_fn)dlsym(RTLD_NEXT, "syscall");
+		assert(orig_syscall_fn != nullptr);
 		// orig_mmap64_fn = (mmap64_fn)dlsym(RTLD_NEXT, "mmap64");
+		// assert(orig_mmap64_fn != nullptr);
 		orig_close_fn = (close_fn)dlsym(RTLD_NEXT, "close");
+		assert(orig_close_fn != nullptr);
 		orig_munmap_fn = (munmap_fn)dlsym(RTLD_NEXT, "munmap");
+		assert(orig_munmap_fn != nullptr);
 		orig_mmap64_fn = orig_mmap_fn =
 			(mmap_fn)dlsym(RTLD_NEXT, "mmap");
+		assert(orig_mmap_fn != nullptr);
+		assert(orig_mmap64_fn != nullptr);
 		orig_openat_fn = (openat_fn)dlsym(RTLD_NEXT, "openat");
+		assert(orig_openat_fn != nullptr);
 		orig_open_fn = (open_fn)dlsym(RTLD_NEXT, "open");
+		assert(orig_open_fn != nullptr);
 		orig_read_fn = (read_fn)dlsym(RTLD_NEXT, "read");
+		assert(orig_read_fn != nullptr);
 		orig_fopen_fn = (fopen_fn)dlsym(RTLD_NEXT, "fopen");
+		if (orig_fopen_fn == nullptr)
+			orig_fopen_fn = (fopen_fn)dlsym(RTLD_NEXT, "fopen64");
+		assert(orig_fopen_fn != nullptr);
 
 		// To avoid polluting other child processes,
 		// unset the LD_PRELOAD env var after syscall context being

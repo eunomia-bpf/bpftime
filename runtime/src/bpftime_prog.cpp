@@ -176,11 +176,11 @@ int bpftime_prog::bpftime_prog_load(bool jit)
 	if (is_cuda()) {
 		SPDLOG_INFO("Compiling CUDA program");
 		ptx_code = ((struct ebpf_vm *)vm)
-				   ->vm_instance->generate_ptx("sm_90");
+				   ->vm_instance->generate_ptx("sm_60");
 		if (!ptx_code.has_value()) {
 			throw std::runtime_error("Failed to generate ptx code");
 		}
-		cuda_elf_binary = compile_ptx_to_elf(*ptx_code, "sm_90");
+		cuda_elf_binary = compile_ptx_to_elf(*ptx_code, "sm_60");
 		if (!cuda_elf_binary.has_value()) {
 			throw std::runtime_error("unable to compile ptx code");
 		}

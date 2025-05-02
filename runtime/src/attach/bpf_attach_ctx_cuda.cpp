@@ -175,7 +175,7 @@ void bpf_attach_ctx::start_cuda_watcher_thread()
 						}
 						SPDLOG_INFO(
 							"prober exited, re-running demo program..");
-						start_cuda_demo_program();
+						// start_cuda_demo_program();
 					});
 					thd.detach();
 
@@ -333,7 +333,7 @@ bpf_attach_ctx::start_cuda_prober(int id)
 int bpf_attach_ctx::start_cuda_demo_program()
 {
 	SPDLOG_INFO("Starting demo program");
-	auto prog = compile_ptx_to_elf(DEMO_PTX_PROG, "sm_90");
+	auto prog = compile_ptx_to_elf(DEMO_PTX_PROG, "sm_60");
 	SPDLOG_INFO("Demo program compiled to {} bytes", prog->size());
 	CUmodule raw_module;
 	NV_SAFE_CALL_2(cuModuleLoadDataEx(&raw_module, prog->data(), 0, 0, 0),

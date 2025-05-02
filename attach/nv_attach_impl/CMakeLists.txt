@@ -3,6 +3,7 @@ include(../../cmake/cuda.cmake)
 add_library(
     bpftime_nv_attach_impl STATIC
     nv_attach_impl.cpp
+    ptx_load_mocker.cpp
 )
 
 add_dependencies(bpftime_nv_attach_impl bpftime_base_attach_impl spdlog::spdlog)
@@ -23,7 +24,7 @@ set(TEST_SOURCES
 option(TEST_LCOV "option for lcov" OFF)
 add_executable(bpftime_nv_attach_tests ${TEST_SOURCES})
 
-if (${TEST_LCOV}) 
+if(${TEST_LCOV})
     target_compile_options(bpftime_nv_attach_tests PRIVATE -fprofile-arcs -ftest-coverage -fprofile-update=atomic)
 endif()
 
@@ -41,10 +42,10 @@ if(${ENABLE_EBPF_VERIFIER} AND NOT TARGET Catch2)
 endif()
 
 add_dependencies(bpftime_nv_attach_tests Catch2 bpftime_nv_attach_impl spdlog::spdlog)
-if (${TEST_LCOV}) 
+if(${TEST_LCOV})
     target_link_options(bpftime_nv_attach_tests PRIVATE -lgcov)
     target_link_libraries(bpftime_nv_attach_tests PRIVATE Catch2::Catch2WithMain bpftime_nv_attach_impl spdlog::spdlog gcov cuda pos)
-else ()
+else()
     target_link_libraries(bpftime_nv_attach_tests PRIVATE Catch2::Catch2WithMain bpftime_nv_attach_impl spdlog::spdlog cuda pos)
 endif()
 target_include_directories(bpftime_nv_attach_tests PRIVATE ${CMAKE_SOURCE_DIR}/runtime/ ${NV_ATTACH_IMPL_INCLUDE} ${Catch2_INCLUDE} ${SPDLOG_INCLUDE})
@@ -52,3 +53,5 @@ target_include_directories(bpftime_nv_attach_tests PRIVATE ${CMAKE_SOURCE_DIR}/r
 add_test(NAME bpftime_nv_attach_tests COMMAND bpftime_nv_attach_tests)
 
 set_property(TARGET bpftime_nv_attach_tests PROPERTY CXX_STANDARD 20)
+
+target_link_options(bpftime_nv_attach_impl PUBLIC "-Wl,--whole-archive" "$<TARGET_FILE:bpftime_nv_attach_impl>" "-Wl,--no-whole-archive")

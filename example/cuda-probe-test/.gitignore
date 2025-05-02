@@ -9,3 +9,6 @@ cuda_probe
 .output
 test
 victim
+victim-new
+victim-new.cpp
+victim.cpp

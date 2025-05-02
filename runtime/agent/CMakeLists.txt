@@ -31,6 +31,7 @@ if(${BPFTIME_BUILD_WITH_LIBBPF})
     ${NV_ATTACH_IMPL_INCLUDE}
   )
   target_link_libraries(bpftime-agent
+    PUBLIC
     ${FRIDA_GUM_INSTALL_DIR}/libfrida-gum.a
     runtime
     -lpthread
@@ -39,10 +40,11 @@ if(${BPFTIME_BUILD_WITH_LIBBPF})
     spdlog::spdlog
     bpftime_frida_uprobe_attach_impl
     bpftime_syscall_trace_attach_impl
-    bpftime_nv_attach_impl
+    # bpftime_nv_attach_impl
     pos
   )
-
+  target_link_options(bpftime-agent PUBLIC "-Wl,--whole-archive" "$<TARGET_FILE:bpftime_nv_attach_impl>" "-Wl,--no-whole-archive")
+  target_link_libraries(bpftime-agent PUBLIC bpftime_nv_attach_impl)
 else()
   target_include_directories(bpftime-agent
     PRIVATE
@@ -64,3 +66,5 @@ else()
     bpftime_nv_attach_impl
   )
 endif()
+# set(CMAKE_EXE_LINKER_FLAGS "-Wl,-export-dynamic")
+target_link_options(bpftime-agent PUBLIC "-Wl,-export-dynamic")
