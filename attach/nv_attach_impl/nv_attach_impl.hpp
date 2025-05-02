@@ -330,36 +330,17 @@ class CUDAInjector {
 			size_t code_size, CUmodule &module)
 	{
 		pos_retval_t retval = POS_SUCCESS;
-		auto *payload = new oob_functions::cli_ckpt_dump::oob_payload_t;
-		std::string retmsg;
-		POSCommand_QE_t *cmd;
-		std::vector<POSCommand_QE_t *> cmds;
-		uint32_t i;
-		std::map<pos_resource_typeid_t, std::string>::iterator map_iter;
-
-		if (unlikely(client == nullptr)) {
-			retmsg = "no client with specified pid was found";
-			payload->retval = POS_FAILED_NOT_EXIST;
-			memcpy(payload->retmsg, retmsg.c_str(), retmsg.size());
+		retval = client->persist_handles(true);
+		if (retval != POS_SUCCESS) {
+			spdlog::error("client->persist_handles failed");
 			return false;
 		}
-
-		// form cmd
-		POS_CHECK_POINTER(cmd = new POSCommand_QE_t);
-		cmd->client_id = client->id;
-		cmd->type = kPOS_Command_Oob2Parser_Dump;
-		cmd->ckpt_dir = "/tmp/bpftime";
-		cmd->do_cow = payload->do_cow;
-		cmd->force_recompute = payload->force_recompute;
-		if (cmd->force_recompute == true)
-			POS_ASSERT(cmd->do_cow == true);
-
 		// before remove client, we persist the state of the client
-		if (unlikely(POS_SUCCESS != (payload->retval = client->persist(
-						     "/tmp/bpftime")))) {
-			POS_WARN("failed to persist the state of client");
-			retmsg = "see posd log for more details";
-			memcpy(payload->retmsg, retmsg.c_str(), retmsg.size());
+
+		retval = client->persist("/tmp/bpftime");
+		if (retval != POS_SUCCESS) {
+			spdlog::error("client->persist failed");
+			return false;
 		}
 
 		// 1. Load the PTX into a module
