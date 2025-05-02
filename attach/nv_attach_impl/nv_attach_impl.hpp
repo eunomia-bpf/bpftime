@@ -13,6 +13,8 @@
 #include "pos/include/workspace.h"
 #include "pos/cuda_impl/remoting/workspace.h"
 
+#include <pos/include/oob/ckpt_dump.h>
+
 namespace bpftime
 {
 namespace attach
@@ -90,7 +92,7 @@ class CUDAInjector {
 	CUcontext cuda_ctx{ nullptr };
 
 	// Storing a backup of code, for illustration.
-	// You can remove or adapt this if you don’t actually need code
+	// You can remove or adapt this if you don't actually need code
 	// injection.
 	struct CodeBackup {
 		CUdeviceptr addr;
@@ -165,8 +167,12 @@ class CUDAInjector {
 			return false;
 		}
 		// Wait for the process to stop
-		if (waitpid(target_pid, nullptr, 0) == -1) {
-			spdlog::error("waitpid failed: {}", strerror(errno));
+		// if (waitpid(target_pid, nullptr, 0) == -1) {
+		// 	spdlog::error("waitpid failed: {}", strerror(errno));
+		// 	return false;
+		// }
+		if (kill(target_pid, SIGSTOP) == -1) {
+			spdlog::error("kill failed: {}", strerror(errno));
 			return false;
 		}
 
@@ -185,6 +191,10 @@ class CUDAInjector {
 
 	bool detach()
 	{
+		if (kill(target_pid, SIGCONT) == -1) {
+			spdlog::error("kill failed: {}", strerror(errno));
+			return false;
+		}
 		spdlog::info("Detaching via PTRACE from PID {}", target_pid);
 		if (ptrace(PTRACE_DETACH, target_pid, nullptr, nullptr) == -1) {
 			spdlog::error("PTRACE_DETACH failed: {}",
@@ -197,7 +207,7 @@ class CUDAInjector {
     private:
 	// ------------------------------------------------------------------------
 	// Below is minimal logic to demonstrate how you MIGHT find a CUDA
-	// context. In reality, hooking into a remote process’s memory for CUDA
+	// context. In reality, hooking into a remote process's memory for CUDA
 	// contexts is significantly more complex (symbol lookup, driver calls,
 	// etc.).
 	// ------------------------------------------------------------------------
@@ -317,16 +327,45 @@ class CUDAInjector {
 	// Demonstrates how you might inject PTX or backup/restore code on the
 	// fly in a remote context. This is a stub for illustration.
 	bool inject_ptx(const char *ptx_code1, CUdeviceptr target_addr,
-			size_t code_size)
+			size_t code_size, CUmodule &module)
 	{
-		client->persist_handles(true);
-		client->persist("/tmp/bpftime");
+		pos_retval_t retval = POS_SUCCESS;
+		auto *payload = new oob_functions::cli_ckpt_dump::oob_payload_t;
+		std::string retmsg;
+		POSCommand_QE_t *cmd;
+		std::vector<POSCommand_QE_t *> cmds;
+		uint32_t i;
+		std::map<pos_resource_typeid_t, std::string>::iterator map_iter;
+
+		if (unlikely(client == nullptr)) {
+			retmsg = "no client with specified pid was found";
+			payload->retval = POS_FAILED_NOT_EXIST;
+			memcpy(payload->retmsg, retmsg.c_str(), retmsg.size());
+			return false;
+		}
+
+		// form cmd
+		POS_CHECK_POINTER(cmd = new POSCommand_QE_t);
+		cmd->client_id = client->id;
+		cmd->type = kPOS_Command_Oob2Parser_Dump;
+		cmd->ckpt_dir = "/tmp/bpftime";
+		cmd->do_cow = payload->do_cow;
+		cmd->force_recompute = payload->force_recompute;
+		if (cmd->force_recompute == true)
+			POS_ASSERT(cmd->do_cow == true);
+
+		// before remove client, we persist the state of the client
+		if (unlikely(POS_SUCCESS != (payload->retval = client->persist(
+						     "/tmp/bpftime")))) {
+			POS_WARN("failed to persist the state of client");
+			retmsg = "see posd log for more details";
+			memcpy(payload->retmsg, retmsg.c_str(), retmsg.size());
+		}
 
 		// 1. Load the PTX into a module
-		CUmodule module;
 		std::string probe_func = ptx_code1;
 		std::string modified_ptx = this->orig_ptx;
-		std::string function_name_part ;
+		std::string function_name_part;
 		// 使用正则表达式匹配probe函数
 		std::regex probe_regex(
 			R"(.entry probe_(.+)__cuda\(.*\) \{((.*\n)*)((.*ret;\s*\n)*)\})");
@@ -335,8 +374,7 @@ class CUDAInjector {
 		if (std::regex_search(probe_func, probe_match, probe_regex)) {
 			// 从匹配结果中提取函数名和函数体
 			std::string function_body = probe_match[2];
-			 function_name_part =
-				probe_match[1]; // 获取函数名部分
+			function_name_part = probe_match[1]; // 获取函数名部分
 			std::cout << "函数体: " << function_body
 				  << "\n函数名部分: " << function_name_part
 				  << std::endl;
@@ -480,11 +518,12 @@ class CUDAInjector {
 		backup.addr = target_addr;
 		backups.push_back(backup);
 
-		// 4. Retrieve the actual kernel code from the module’s global
+		// 4. Retrieve the actual kernel code from the module's global
 		// space
 		CUfunction func_addr;
 		size_t func_size;
-		result = cuModuleGetFunction(&func_addr, module, function_name_part.c_str());
+		result = cuModuleGetFunction(&func_addr, module,
+					     function_name_part.c_str());
 		if (result != CUDA_SUCCESS) {
 			spdlog::error("cuModuleGetFunction() failed: {}",
 				      (int)result);
@@ -493,11 +532,11 @@ class CUDAInjector {
 		}
 
 		// Clean up
-		// cuModuleUnload(module);
-		client->init(true);
+		ws->restore_client("/tmp/bpftime/c.bin", &client);
 		client->restore_apicxts("/tmp/bpftime");
 		client->restore_handles("/tmp/bpftime");
-		// TODO redirect to new func_addr.
+		client->status = kPOS_ClientStatus_Active;
+
 		return true;
 	}
 };

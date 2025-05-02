@@ -168,7 +168,7 @@ class POSWorkspace {
      *  \param  clnt        pointer to the restored client
      *  \return POS_SUCCESS for successfully restore
      */
-    pos_retval_t restore_client(std::string& ckpt_file, POSClient** clnt);
+    pos_retval_t restore_client(std::string ckpt_file, POSClient** clnt);
 
 
     /*!

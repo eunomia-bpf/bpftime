@@ -299,7 +299,7 @@ exit:
 }
 
 
-pos_retval_t POSWorkspace::restore_client(std::string& ckpt_file, POSClient** clnt){
+pos_retval_t POSWorkspace::restore_client(std::string ckpt_file, POSClient** clnt){
     pos_retval_t retval = POS_SUCCESS;
     pos_protobuf::Bin_POSClient client_binary;
     std::ifstream input;
@@ -351,7 +351,7 @@ pos_retval_t POSWorkspace::restore_client(std::string& ckpt_file, POSClient** cl
     (*clnt)->_api_inst_pc = client_binary.api_inst_pc();
 
     if(unlikely(this->_client_list.size() < (*clnt)->id))
-        this->_client_list.resize((*clnt)->id);
+        this->_client_list.resize((*clnt)->id+1);
     this->_client_list[(*clnt)->id] = (*clnt);
 
     this->_pid_client_map[(*clnt)->pid] = (*clnt);
