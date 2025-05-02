@@ -173,7 +173,42 @@ message(${CMAKE_CURRENT_SOURCE_DIR}/../)
 file(GLOB_RECURSE SOURCE_FILES src/*.cpp src/oob/*.cpp cuda_impl/*.cpp cuda_impl/*/*.cpp)
 add_library(pos ${SOURCE_FILES})
 target_include_directories(pos PRIVATE ${CMAKE_SOURCE_DIR}/runtime ${CMAKE_CURRENT_BINARY_DIR}/../)
-target_link_libraries(pos PRIVATE absl::strings absl::synchronization absl::flat_hash_map absl::time absl::base protobuf::libprotobuf cublas-objects device-objects event-objects function-objects memory-objects module-objects stream-objects var-objects context-objects cublas-objects apicxt-objects handle-objects client-objects cuda cublas elf ibverbs /usr/lib/llvm-20/lib/libclang.so)
-set(CMAKE_CXX_FLAGS "-I/home/geekpie/miniconda3/envs/asc25-rna/include/ -I/usr/lib/llvm-14/include/ -I${CMAKE_CURRENT_BINARY_DIR}/../")
+target_link_libraries(
+        pos
+        PRIVATE
+        absl::strings
+        absl::synchronization
+        absl::flat_hash_map
+        absl::time
+        absl::base
+        protobuf::libprotobuf
+        cublas-objects
+        device-objects
+        event-objects
+        function-objects
+        memory-objects
+        module-objects
+        stream-objects
+        var-objects
+        context-objects
+        cublas-objects
+        apicxt-objects
+        handle-objects
+        client-objects
+        cuda
+        cublas
+        elf
+        ibverbs
+        /usr/lib/llvm-20/lib/libclang.so
+)
+find_package(LLVM REQUIRED CONFIG)
+include(../../cmake/cuda.cmake)
+find_cuda()
+target_include_directories(pos PRIVATE ${LLVM_INCLUDE_DIRS} ${CUDA_INCLUDE_PATH})
+target_link_directories(pos PUBLIC ${CUDA_LIBRARY_PATH})
+target_link_libraries(pos PRIVATE LLVM ${CUDA_LIBS})
+
+
+set(CMAKE_CXX_FLAGS "-I/home/geekpie/miniconda3/envs/asc25-rna/include/ -I${CMAKE_CURRENT_BINARY_DIR}/../")
 
 
