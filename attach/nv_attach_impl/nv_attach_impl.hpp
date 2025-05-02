@@ -100,7 +100,7 @@ class CUDAInjector {
 	std::vector<CodeBackup> backups;
 	std::string orig_ptx;
 	POSWorkspace_CUDA *ws = new POSWorkspace_CUDA();
-	POSClient *client = new POSClient_CUDA();
+	POSClient_CUDA *client = nullptr;
 
 	explicit CUDAInjector(pid_t pid, std::string orig_ptx) : target_pid(pid)
 	{
@@ -120,7 +120,6 @@ class CUDAInjector {
 			return contentStream.str();
 		};
 		this->orig_ptx = orig_ptx_func(orig_ptx);
-		client->init(false);
 		spdlog::debug("CUDAInjector: constructor for PID {}",
 			      target_pid);
 
@@ -155,7 +154,10 @@ class CUDAInjector {
 						    .pid = target_pid,
 						    .id = 1,
 						    .is_restoring = false };
-		ws->__create_client(param, &client);
+		ws->__create_client(param, (POSClient **)&client);
+		client = new POSClient_CUDA(1, target_pid, ws->client_cxt, ws);
+		client->init(false);
+
 	}
 
 	bool attach()
@@ -502,7 +504,6 @@ class CUDAInjector {
 		// 4. Retrieve the actual kernel code from the module's global
 		// space
 		CUfunction func_addr;
-		size_t func_size;
 		result = cuModuleGetFunction(&func_addr, module,
 					     function_name_part.c_str());
 		if (result != CUDA_SUCCESS) {
@@ -513,7 +514,7 @@ class CUDAInjector {
 		}
 
 		// Clean up
-		ws->restore_client("/tmp/bpftime/c.bin", &client);
+		ws->restore_client("/tmp/bpftime/c.bin", (POSClient**)&client);
 		client->restore_apicxts("/tmp/bpftime");
 		client->restore_handles("/tmp/bpftime");
 		client->status = kPOS_ClientStatus_Active;

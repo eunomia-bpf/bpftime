@@ -2,7 +2,7 @@
 
 [![Build and Test VM](https://github.com/eunomia-bpf/bpftime-super/actions/workflows/test-vm.yml/badge.svg)](https://github.com/eunomia-bpf/bpftime-super/actions/workflows/test-vm.yml)
 [![Build and test runtime](https://github.com/eunomia-bpf/bpftime-super/actions/workflows/test-runtime.yml/badge.svg)](https://github.com/eunomia-bpf/bpftime-super/actions/workflows/test-runtime.yml)
-[![DOI](https://img.shields.io/badge/arXiv-2312.05531-blue.svg)](https://asplos.dev/pdf/bpftime_super.pdf)
+[![DOI](https://img.shields.io/badge/DOI-10.1145/3723851.3726984-1f57b6?style=flat&link=https://dl.acm.org/doi/pdf/10.1145/3723851.3726984)](https://dl.acm.org/doi/pdf/10.1145/3723851.3726984)
 
 `bpftime-super` is the first system to dynamically offload eBPF instrumentation and bytecode directly onto running GPU kernels using real-time PTX injection, significantly reducing instrumentation overhead compared to existing methods.
 
@@ -10,7 +10,7 @@
 
 ```bash
 git clone https://github.com/eunomia-bpf/eGPU.git
-cd bpftime-super
+cd eGPU
 make release
 ```
 To support Intel GPU or AMD GPU, please use [ZLUDA](https://github.com/vickiegpt/ZLUDA) as backend.
@@ -34,8 +34,6 @@ eGPU bridges that gap by marrying the flexibility of eBPF with the parallel fire
 
 ### Core capabilities
 
-
-
 | Capability                              | How it works                                                 | Benefit                                          |
 | --------------------------------------- | ------------------------------------------------------------ | ------------------------------------------------ |
 | **Dynamic PTX injection**               | At load‑time we JIT eBPF → PTX and patch it into the resident kernel | < 1 µs probe overhead on micro‑benchmarks        |
@@ -53,11 +51,11 @@ eGPU bridges that gap by marrying the flexibility of eBPF with the parallel fire
 - **Future‑proof:** Design anticipates Grace‑Hopper architectures & CXL memory pools.
 
 ```txt
-@article{yang2025bpftimesuper,
-      title={eGPU: Extending eBPF Programmability and Observability to GPUs}, 
-      author={Yiwei Yang, Yu Tong, Yusheng Zheng, Andrew Quinn},
-      year={2025},
-      archivePrefix={4th Workshop on Heterogeneous Composable and Disaggregated Systems},
-      primaryClass={cs.OS}
+@inproceedings{yang2025egpu,
+  title={eGPU: Extending eBPF Programmability and Observability to GPUs},
+  author={Yang, Yiwei and Yu, Tong and Zheng, Yusheng and Quinn, Andrew},
+  booktitle={Proceedings of the 4th Workshop on Heterogeneous Composable and Disaggregated Systems},
+  pages={73--79},
+  year={2025}
 }
 ```

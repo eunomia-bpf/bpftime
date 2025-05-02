@@ -158,7 +158,6 @@ pos_retval_t POSWorkspace_CUDA::__deinit(){
 
 pos_retval_t POSWorkspace_CUDA::__create_client(pos_create_client_param_t& param, POSClient **client){
     pos_retval_t retval = POS_SUCCESS;
-    pos_client_cxt_CUDA_t client_cxt;
     std::string runtime_daemon_log_path;
     std::string conf;
 

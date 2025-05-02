@@ -291,18 +291,11 @@ pos_retval_t POSClient_CUDA::persist_handles(bool with_state){
             POS_CHECK_POINTER(handle = hm->get_handle_by_id(i));
             if(with_state){
                 retval = handle->checkpoint_commit_sync(handle->latest_version, /* stream_id */ 0);
-                if(unlikely(POS_SUCCESS != retval)){
-                    POS_WARN_C("failed to commit the status of handle: rname(%s), hid(%u)", handle->get_resource_name().c_str(), handle->id);
-                    retval = POS_FAILED;
-                    goto exit;
-                }
             }
 
             retval = handle->checkpoint_persist_sync(resource_dir, with_state, handle->latest_version);
             if(unlikely(POS_SUCCESS != retval)){
                 POS_WARN_C("failed to persist handle: rname(%s), hid(%u)", handle->get_resource_name().c_str(), handle->id);
-                retval = POS_FAILED;
-                goto exit;
             }
         }
     }

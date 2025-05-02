@@ -55,6 +55,7 @@ class POSWorkspace_CUDA : public POSWorkspace {
      *  \return POS_SUCCESS for successfully creating
      */
     pos_retval_t __create_client(pos_create_client_param_t& param, POSClient **client) override;
+    pos_client_cxt_CUDA_t client_cxt;
 
 protected:
     /*!
