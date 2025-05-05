@@ -78,6 +78,7 @@ wamr_lib:
 	@if [ ! -d "$(WAMR_DIR)" ]; then \
 		echo "Cloning WAMR repository..."; \
 		git clone https://github.com/bytecodealliance/wasm-micro-runtime.git $(WAMR_DIR); \
+		cd $(WAMR_DIR) && git checkout a9966897b65914362a6835c26a8bd20372ec6053; \
 	fi
 	@if [ ! -d "$(WAMR_DIR)/product-mini/platforms/linux/build" ]; then \
 		echo "Creating WAMR build directory..."; \
