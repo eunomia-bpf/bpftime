@@ -10,7 +10,7 @@
 
 using namespace bpftime::attach;
 
-extern "C" uint64_t
+extern "C" __attribute__((__noinline__)) uint64_t
 __bpftime_test_attach_with_unified_interface_func(uint64_t a, uint64_t b)
 {
 	return a + b;
