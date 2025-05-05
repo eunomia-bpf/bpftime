@@ -7,6 +7,7 @@
 #include <regex>
 #include <cuda.h>
 #include <sys/ptrace.h>
+#include <sys/syscall.h>
 #include <sys/wait.h>
 #include <fstream>
 #include <utility>
@@ -240,7 +241,7 @@ class CUDAInjector {
 		}
 
 		std::string line;
-		std::vector<std::pair<uintptr_t, uintptr_t> > cuda_regions;
+		std::vector<std::pair<uintptr_t, uintptr_t>> cuda_regions;
 
 		while (std::getline(mapsFile, line)) {
 			if (line.find("libcuda.so") != std::string::npos) {
@@ -537,7 +538,8 @@ struct nv_attach_private_data final : public attach_private_data {
 	int initialize_from_string(const std::string_view &sv) override;
 	std::string to_string() const override
 	{
-		return std::format("{}{}", filename, pid);
+		// return std::format("{}{}", filename, pid);
+		return filename + std::to_string(pid);
 	};
 };
 

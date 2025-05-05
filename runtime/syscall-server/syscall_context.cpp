@@ -5,6 +5,7 @@
  */
 #include "bpftime_logger.hpp"
 #include "bpftime_shm.hpp"
+#include <asm/unistd_64.h>
 #include <cstdio>
 #include <ebpf-vm.h>
 #include "syscall_context.hpp"

@@ -209,6 +209,6 @@ target_link_directories(pos PUBLIC ${CUDA_LIBRARY_PATH})
 target_link_libraries(pos PRIVATE LLVM ${CUDA_LIBS})
 
 
-set(CMAKE_CXX_FLAGS "-I/home/geekpie/miniconda3/envs/asc25-rna/include/ -I${CMAKE_CURRENT_BINARY_DIR}/../")
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -I/home/geekpie/miniconda3/envs/asc25-rna/include/ -I${CMAKE_CURRENT_BINARY_DIR}/../")
 
 

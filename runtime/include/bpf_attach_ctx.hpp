@@ -30,9 +30,15 @@ namespace bpftime
 namespace cuda
 {
 
-enum class MapOperation { LOOKUP = 1, UPDATE = 2, DELETE = 3 };
+enum class HelperOperation {
+	MAP_LOOKUP = 1,
+	MAP_UPDATE = 2,
+	MAP_DELETE = 3,
+	MAP_GET_NEXT_KEY = 4,
+	TRACE_PRINTK = 6
+};
 
-union CallRequest {
+union HelperCallRequest {
 	struct {
 		char key[1 << 30];
 	} map_lookup;
@@ -44,12 +50,18 @@ union CallRequest {
 	struct {
 		char key[1 << 30];
 	} map_delete;
+
+	struct {
+		char fmt[1000];
+		int fmt_size;
+		unsigned long arg1, arg2, arg3;
+	} trace_printk;
 };
 
-union CallResponse {
+union HelperCallResponse {
 	struct {
 		int result;
-	} map_update, map_delete;
+	} map_update, map_delete, trace_printk;
 	struct {
 		const void *value;
 	} map_lookup;
@@ -60,14 +72,14 @@ union CallResponse {
  * - flag2: host   -> device 的信号，“我处理完了”
  * - paramA: 设备端写入的参数，让主机端使用
  */
-struct SharedMem {
+struct CommSharedMem {
 	int flag1;
 	int flag2;
 	int occupy_flag;
 	int request_id;
 	long map_id;
-	CallRequest req;
-	CallResponse resp;
+	HelperCallRequest req;
+	HelperCallResponse resp;
 	uint64_t time_sum[8];
 };
 
@@ -94,7 +106,7 @@ struct CUDAContext {
 		std::make_shared<std::atomic<bool> >(false);
 
 	// Shared memory region for CUDA
-	std::unique_ptr<cuda::SharedMem> cuda_shared_mem;
+	std::unique_ptr<cuda::CommSharedMem> cuda_shared_mem;
 	// Mapped device pointer
 	uintptr_t cuda_shared_mem_device_pointer;
 	// CUDA context
@@ -114,7 +126,8 @@ struct CUDAContext {
 	std::unique_ptr<std::array<int32_t, 10> > demo_prog_array;
 	std::unique_ptr<int64_t> demo_prog_sum_out;
 
-	CUDAContext(std::unique_ptr<cuda::SharedMem> &&mem, CUcontext raw_ctx,
+	CUDAContext(std::unique_ptr<cuda::CommSharedMem> &&mem,
+		    CUcontext raw_ctx,
 		    std::unique_ptr<std::array<int32_t, 10> > &&demo_prog_array,
 		    std::unique_ptr<int64_t> &&demo_prog_sum_out);
 	CUDAContext(CUDAContext &&) = default;

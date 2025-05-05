@@ -306,7 +306,7 @@ class POSOobServer {
             
             recvmsg = (POSOobMsg*)recvbuf;
             POS_DEBUG_C(
-                "oob recv info: recvmsg.msg_type(%lu), recvmsg.client(ip: %u, port: %u, pid: %d)",
+                "oob recv info: recvmsg.msg_type(%u), recvmsg.client(ip: %u, port: %u, pid: %d)",
                 recvmsg->msg_type, recvmsg->client_meta.ipv4, recvmsg->client_meta.port, recvmsg->client_meta.pid
             );
 

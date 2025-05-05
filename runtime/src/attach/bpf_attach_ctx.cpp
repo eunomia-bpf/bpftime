@@ -87,7 +87,7 @@ int bpf_attach_ctx::init_attach_ctx_from_handlers(
 	}
 	SPDLOG_INFO(
 		"Main initializing for handlers done, try to initialize cuda programs..");
-	// start_cuda_demo_program();
+	start_cuda_demo_program();
 	for (const auto &prog : cuda_ctx->cuda_progs) {
 		SPDLOG_INFO("Handling prog {} hooked for {}", prog.prog_id,
 			    prog.probe_func);

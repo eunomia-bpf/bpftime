@@ -4,6 +4,7 @@
  * All rights reserved.
  */
 #include "syscall_context.hpp"
+#include <asm/unistd_64.h>
 #include <boost/interprocess/exceptions.hpp>
 #include <cstdio>
 #if __linux__

@@ -129,6 +129,13 @@ extern "C" void _bpftime__setup_nv_hooker_callback(nv_hooker_func_t *hooker)
 
 int nv_attach_private_data::initialize_from_string(const std::string_view &sv)
 {
+
+	/// Temporary handling
+	{
+		this->filename = sv;
+		this->pid = 23333;
+		return 0;
+	}
 	// 检查输入是否为空
 	if (sv.empty()) {
 		return -1; // 返回错误代码

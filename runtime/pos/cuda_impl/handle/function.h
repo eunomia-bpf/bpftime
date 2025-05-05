@@ -69,7 +69,7 @@ class POSHandle_CUDA_Function final : public POSHandle_CUDA {
      *  \brief  obtain the resource name begind this handle
      *  \return resource name begind this handle
      */
-    std::string get_resource_name(){ return std::string("CUDA Function"); }
+    std::string get_resource_name()override{ return std::string("CUDA Function"); }
 
 
     /*!

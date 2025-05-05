@@ -18,7 +18,9 @@
 // 			throw std::runtime_error(error_message);               \
 // 		}                                                              \
 // 	} while (0)
-
+extern "C" {
+extern uint64_t bpftime_trace_printk(uint64_t fmt, uint64_t fmt_size, ...);
+}
 #define NV_SAFE_CALL(x, error_message)                                         \
 	do {                                                                   \
 		CUresult result = x;                                           \
@@ -101,7 +103,8 @@ void bpf_attach_ctx::start_cuda_watcher_thread()
 					req_id, map_ptr, map_fd);
 				auto start_time =
 					std::chrono::high_resolution_clock::now();
-				if (req_id == (int)cuda::MapOperation::LOOKUP) {
+				if (req_id ==
+				    (int)cuda::HelperOperation::MAP_LOOKUP) {
 					const auto &req =
 						ctx->cuda_shared_mem->req
 							.map_lookup;
@@ -114,7 +117,8 @@ void bpf_attach_ctx::start_cuda_watcher_thread()
 						"CUDA: Executing map lookup for {}, result = {}",
 						map_fd, (uintptr_t)resp.value);
 				} else if (req_id ==
-					   (int)cuda::MapOperation::UPDATE) {
+					   (int)cuda::HelperOperation::
+						   MAP_UPDATE) {
 					const auto &req =
 						ctx->cuda_shared_mem->req
 							.map_update;
@@ -127,7 +131,8 @@ void bpf_attach_ctx::start_cuda_watcher_thread()
 						"CUDA: Executing map update for {}, result = {}",
 						map_fd, resp.result);
 				} else if (req_id ==
-					   (int)cuda::MapOperation::DELETE) {
+					   (int)cuda::HelperOperation::
+						   MAP_DELETE) {
 					const auto &req =
 						ctx->cuda_shared_mem->req
 							.map_delete;
@@ -139,6 +144,23 @@ void bpf_attach_ctx::start_cuda_watcher_thread()
 					SPDLOG_INFO(
 						"CUDA: Executing map delete for {}, result = {}",
 						map_fd, resp.result);
+				} else if (req_id ==
+					   (int)cuda::HelperOperation::
+						   TRACE_PRINTK) {
+					const auto &req =
+						ctx->cuda_shared_mem->req
+							.trace_printk;
+					auto &resp = ctx->cuda_shared_mem->resp
+							     .trace_printk;
+
+					resp.result = bpftime_trace_printk(
+						(uintptr_t)req.fmt,
+						req.fmt_size, req.arg1,
+						req.arg2, req.arg3);
+					SPDLOG_INFO(
+						"CUDA: Executing bpf_printk: {}, arg1={}, arg2={}, arg3={}",
+						req.fmt, req.arg1, req.arg2,
+						req.arg3);
 				} else if (req_id == 1000) {
 					SPDLOG_INFO("Request probing..");
 					std::thread thd([this]() {
@@ -175,7 +197,7 @@ void bpf_attach_ctx::start_cuda_watcher_thread()
 						}
 						SPDLOG_INFO(
 							"prober exited, re-running demo program..");
-						// start_cuda_demo_program();
+						start_cuda_demo_program();
 					});
 					thd.detach();
 
@@ -400,10 +422,10 @@ std::optional<std::unique_ptr<cuda::CUDAContext> > create_cuda_context()
 {
 	NV_SAFE_CALL(cuInit(0), "Unable to initialize CUDA");
 	SPDLOG_INFO("Initializing CUDA shared memory");
-	auto cuda_shared_mem = std::make_unique<cuda::SharedMem>();
+	auto cuda_shared_mem = std::make_unique<cuda::CommSharedMem>();
 	memset(cuda_shared_mem.get(), 0, sizeof(*cuda_shared_mem));
 	NV_SAFE_CALL(cuMemHostRegister(cuda_shared_mem.get(),
-				       sizeof(cuda::SharedMem),
+				       sizeof(cuda::CommSharedMem),
 				       CU_MEMHOSTREGISTER_DEVICEMAP),
 		     "Unable to register shared memory");
 	CUdeviceptr memDevPtr;
@@ -450,7 +472,7 @@ CUDAContext::~CUDAContext()
 			      "Unregister sum_out used by demo");
 }
 CUDAContext::CUDAContext(
-	std::unique_ptr<cuda::SharedMem> &&mem, CUcontext raw_ctx,
+	std::unique_ptr<cuda::CommSharedMem> &&mem, CUcontext raw_ctx,
 	std::unique_ptr<std::array<int32_t, 10> > &&demo_prog_array,
 	std::unique_ptr<int64_t> &&demo_prog_sum_out)
 	: cuda_shared_mem(std::move(mem)),

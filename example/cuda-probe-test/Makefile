@@ -66,11 +66,12 @@ $(call allow-override,CC,$(CROSS_COMPILE)cc)
 $(call allow-override,LD,$(CROSS_COMPILE)ld)
 
 .PHONY: all
-all: $(APPS) victim
+all: $(APPS) victim simple_victim
 
 victim: victim.cu
 	nvcc -cudart shared victim.cu -o victim -g
-
+simple_vicitm: simple_victim.c
+	gcc -Wall simple_victim.c -o simple_victim
 .PHONY: clean
 clean:
 	$(call msg,CLEAN)
