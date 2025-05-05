@@ -1,3 +1,4 @@
+#include "cuda_injector.hpp"
 #include <catch2/catch_test_macros.hpp>
 #include <string>
 #include <vector>
@@ -13,7 +14,8 @@ TEST_CASE("Test CUDAInjector - basic attach/detach")
 	pid_t test_pid = 3347184;
 
 	// 1. Construct the injector
-	bpftime::attach::CUDAInjector injector(test_pid, "../example/cudamem-capture/victim.ptx");
+	bpftime::attach::CUDAInjector injector(
+		test_pid, "../example/cudamem-capture/victim.ptx");
 
 	// 2. Attempt to attach to the process
 	bool attached = injector.attach();
@@ -31,16 +33,17 @@ TEST_CASE("Test CUDAInjector - basic attach/detach")
 		// Suppose we want to inject at some device memory address
 		// (dummy).
 		CUfunction dummy_inject_addr;
-		size_t      dummy_code_size=sizeof(injector .orig_ptx.c_str());
-		CUmodule    m;
+		size_t dummy_code_size = sizeof(injector.orig_ptx.c_str());
+		CUmodule m;
 		CUresult rc = cuModuleLoadData(&m, injector.orig_ptx.c_str());
 		assert(rc == CUDA_SUCCESS);
-		rc = cuModuleGetFunction(&dummy_inject_addr, m, "infinite_kernel");
+		rc = cuModuleGetFunction(&dummy_inject_addr, m,
+					 "infinite_kernel");
 		assert(rc == CUDA_SUCCESS);
 		// A hypothetical method in CUDAInjector for demonstration
 		/// Commented out due to compile errors
-		// bool success = injector.inject_ptx(ptx_code, (CUdeviceptr)dummy_inject_addr,
-		// 				   dummy_code_size);
+		// bool success = injector.inject_ptx(ptx_code,
+		// (CUdeviceptr)dummy_inject_addr, 				   dummy_code_size);
 		// REQUIRE(success == true);
 	}
 
@@ -214,19 +217,22 @@ TEST_CASE("Test String Concat - ptx load/unload")
 		if (std::regex_search(ptx_code, target_match,
 				      target_func_regex)) {
 			std::string target_func = target_match[0];
-			size_t closing_brace_pos = target_match.position() + target_func.rfind("}");
+			size_t closing_brace_pos = target_match.position() +
+						   target_func.rfind("}");
 
-            // 在右花括号前插入retprobe函数体
-            std::string modified_ptx = ptx_code;
-            modified_ptx.insert(closing_brace_pos, "\n" + body_without_ret);
+			// 在右花括号前插入retprobe函数体
+			std::string modified_ptx = ptx_code;
+			modified_ptx.insert(closing_brace_pos,
+					    "\n" + body_without_ret);
 
-            // 输出修改后的代码
-            std::cout << "修改后的代码：\n" << modified_ptx << std::endl;
-        } else {
-            std::cout << "未能找到目标函数 " << function_name << std::endl;
-        }
-    } else {
-        std::cout << "正则表达式未能匹配retprobe函数" << std::endl;
-    }
-
+			// 输出修改后的代码
+			std::cout << "修改后的代码：\n"
+				  << modified_ptx << std::endl;
+		} else {
+			std::cout << "未能找到目标函数 " << function_name
+				  << std::endl;
+		}
+	} else {
+		std::cout << "正则表达式未能匹配retprobe函数" << std::endl;
+	}
 }

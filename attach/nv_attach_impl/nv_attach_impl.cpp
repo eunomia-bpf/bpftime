@@ -1,4 +1,5 @@
 #include "nv_attach_impl.hpp"
+#include "cuda_injector.hpp"
 #include "spdlog/spdlog.h"
 #include <cerrno>
 #include <optional>
@@ -86,35 +87,37 @@ int nv_attach_impl::create_attach_with_ebpf_callback(
 	ebpf_run_callback &&cb, const attach_private_data &private_data,
 	int attach_type)
 {
-	spdlog::info(
-		"nv_attach_impl::create_attach_with_ebpf_callback(...) attach_type={}",
-		attach_type);
+	// spdlog::info(
+	// 	"nv_attach_impl::create_attach_with_ebpf_callback(...)
+	// attach_type={}", 	attach_type);
 
-	// For example, we interpret private_data.pid as the target PID:
-	pid_t target_pid =
-		static_cast<const nv_attach_private_data &>(private_data).pid;
-	std::string filename =
-		static_cast<const nv_attach_private_data &>(private_data).filename;
-	// Create our injector if not yet created
-	auto &implPtr = get_impl(*this);
-	implPtr->injector = std::make_unique<CUDAInjector>(target_pid,filename);
+	// // For example, we interpret private_data.pid as the target PID:
+	// pid_t target_pid =
+	// 	static_cast<const nv_attach_private_data &>(private_data).pid;
+	// std::string filename =
+	// 	static_cast<const nv_attach_private_data
+	// &>(private_data).filename;
+	// // Create our injector if not yet created
+	// auto &implPtr = get_impl(*this);
+	// implPtr->injector =
+	// std::make_unique<CUDAInjector>(target_pid,filename);
 
-	// Attempt to attach
-	if (!implPtr->injector->attach()) {
-		spdlog::error("Failed to attach to PID {}", target_pid);
-		return -1;
-	}
+	// // Attempt to attach
+	// if (!implPtr->injector->attach()) {
+	// 	spdlog::error("Failed to attach to PID {}", target_pid);
+	// 	return -1;
+	// }
 
-	// If we have an eBPF callback, call it here
-	if (cb) {
-		// For example:
-		void *arg1 = nullptr;
-		unsigned long arg2 = 0;
-		unsigned long *arg3 = nullptr;
+	// // If we have an eBPF callback, call it here
+	// if (cb) {
+	// 	// For example:
+	// 	void *arg1 = nullptr;
+	// 	unsigned long arg2 = 0;
+	// 	unsigned long *arg3 = nullptr;
 
-		int rc = cb(arg1, arg2, arg3);
-		spdlog::info("ebpf_run_callback returned {}", rc);
-	}
+	// 	int rc = cb(arg1, arg2, arg3);
+	// 	spdlog::info("ebpf_run_callback returned {}", rc);
+	// }
 
 	return 0;
 }
@@ -125,50 +128,6 @@ extern "C" void _bpftime__setup_nv_hooker_callback(nv_hooker_func_t *hooker)
 	spdlog::info("_bpftime__setup_nv_hooker_callback(...) called");
 	// Example: store the callback pointer if you want
 	// In real usage, you might store it globally or pass it somewhere else.
-}
-
-int nv_attach_private_data::initialize_from_string(const std::string_view &sv)
-{
-
-	/// Temporary handling
-	{
-		this->filename = sv;
-		this->pid = 23333;
-		return 0;
-	}
-	// 检查输入是否为空
-	if (sv.empty()) {
-		return -1; // 返回错误代码
-	}
-
-	// 查找最后一个数字的开始位置
-	size_t pid_start = sv.find_last_not_of("0123456789");
-
-	// 如果未找到任何数字，或者所有字符都是数字
-	if (pid_start == std::string_view::npos) {
-		return -1; // 返回错误代码
-	}
-
-	// 如果找到数字的起始位置，调整指针
-	pid_start += 1;
-
-	// 检查是否有pid部分
-	if (pid_start >= sv.size()) {
-		return -1; // 没有pid部分
-	}
-
-	try {
-		// 提取pid部分并转换为整数
-		this->pid = std::stoi(std::string(sv.substr(pid_start)));
-
-		// 提取filename部分
-		this->filename = std::string(sv.substr(0, pid_start));
-
-		return 0; // 成功
-	} catch (const std::exception &e) {
-		// 转换失败处理
-		return -1;
-	}
 }
 
 } // namespace attach

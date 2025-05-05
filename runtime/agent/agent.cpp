@@ -3,6 +3,7 @@
 #include "bpftime_shm_internal.hpp"
 #include "frida_attach_private_data.hpp"
 #include "frida_uprobe_attach_impl.hpp"
+#include "nv_attach_private_data.hpp"
 #include "spdlog/common.h"
 #include "spdlog/sinks/stdout_color_sinks.h"
 #include "spdlog/sinks/stdout_sinks.h"

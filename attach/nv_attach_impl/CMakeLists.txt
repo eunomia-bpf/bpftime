@@ -4,6 +4,8 @@ add_library(
     bpftime_nv_attach_impl STATIC
     nv_attach_impl.cpp
     ptx_load_mocker.cpp
+    nv_attach_private_data.cpp
+    cuda_injector.cpp
 )
 
 add_dependencies(bpftime_nv_attach_impl bpftime_base_attach_impl spdlog::spdlog)
