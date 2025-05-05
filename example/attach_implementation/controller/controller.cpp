@@ -45,6 +45,8 @@ int main(int argc, const char **argv)
 	signal(SIGINT, sig_handler);
 	signal(SIGTERM, sig_handler);
 
+	SPDLOG_INFO("Allowed url prefix: {}", argv[1]);
+
 	SPDLOG_INFO("eBPF program at {}", ebpf_prog_path);
 	std::unique_ptr<bpftime_object, decltype(&bpftime_object_close)> obj(
 		bpftime_object_open(ebpf_prog_path), &bpftime_object_close);

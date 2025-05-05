@@ -1,0 +1,34 @@
+name: Integrated test for nginx attach implementation
+
+on:
+  workflow_dispatch:
+  push:
+    branches: "*"
+  pull_request: 
+    branches: "master"
+
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    container: 
+      image: debian:12
+      options: --privileged -v /sys/kernel/debug/:/sys/kernel/debug:rw -v /sys/kernel/tracing:/sys/kernel/tracing:rw
+    steps:
+      - name: Install dependencies
+        run: |
+          apt-get update -y
+          apt-get install -y lcov libzstd-dev libboost-all-dev gpg nginx libelf-dev git cmake gcc g++ make clang llvm libpcre2-dev automake python3 python3-pip python3-requests
+      - uses: actions/checkout@v2
+        with:
+          submodules: 'recursive'   
+      - name: Build
+        run: |
+          cmake -DBPFTIME_LLVM_JIT=0 -DCMAKE_BUILD_TYPE:STRING=Release -DBUILD_ATTACH_IMPL_EXAMPLE=YES -B build -S .
+          cmake --build build --config Release --target attach_impl_example_nginx -j$(nproc)
+      - name: Display version of nginx
+        run: |
+          nginx -v
+      - name: Test
+        run: |
+          python3 ./.github/script/run_nginx_attach_example.py nginx ./build/example/attach_implementation/controller/attach_impl_example_controller ./example/attach_implementation/
