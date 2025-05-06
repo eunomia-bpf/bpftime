@@ -15,8 +15,8 @@ namespace bpftime
 {
 
 extern thread_local std::optional<uint64_t> current_thread_bpf_cookie;
-std::optional<std::vector<char> >
-compile_ptx_to_elf(const std::string &ptx_code, const char *cpu_target);
+std::optional<std::vector<char>> compile_ptx_to_elf(const std::string &ptx_code,
+						    const char *cpu_target);
 // executable program for bpf function
 class bpftime_prog {
     public:
@@ -57,6 +57,11 @@ class bpftime_prog {
 		return cuda_elf_binary->data();
 	}
 
+	const std::string &get_ptx_code() const
+	{
+		return *ptx_code;
+	}
+
     private:
 	int bpftime_prog_set_insn(struct ebpf_inst *insn, size_t insn_cnt);
 	std::string name;
@@ -79,7 +84,7 @@ class bpftime_prog {
 	// ptx code
 	std::optional<std::string> ptx_code;
 	// cuda binary
-	std::optional<std::vector<char> > cuda_elf_binary;
+	std::optional<std::vector<char>> cuda_elf_binary;
 };
 
 } // namespace bpftime

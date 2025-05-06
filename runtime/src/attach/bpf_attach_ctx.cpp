@@ -12,6 +12,7 @@
 #include "handler/link_handler.hpp"
 #include "handler/map_handler.hpp"
 #include "handler/prog_handler.hpp"
+#include "nv_attach_private_data.hpp"
 #include <chrono>
 #include <cstring>
 #include <iterator>
@@ -244,33 +245,37 @@ int bpf_attach_ctx::instantiate_bpf_link_handler_at(
 		return -ENOTSUP;
 	}
 	auto prog = instantiated_progs.at(handler.prog_id).get();
+	int attach_id;
 	if (prog->is_cuda()) {
 		SPDLOG_INFO("Handling link to CUDA program: {}, recording it..",
 			    id);
-		start_cuda_prober(handler.prog_id);
-		// 	SPDLOG_ERROR(
-		// 		"Unable to start CUDA program for link id {},
-		// prog id {}", 		id, handler.prog_id); 	return
-		// err;
+		// start_cuda_prober(handler.prog_id);
 		this->cuda_ctx->cuda_progs.push_back(cuda::CUDAProgramRecord{
 			.probe_func = (priv_data)->to_string(),
 			.prog_id = handler.prog_id });
-		instantiated_attach_links[id] = std::make_pair(0, nullptr);
-
-		return 0;
+		auto &nv_attach_private_data =
+			dynamic_cast<attach::nv_attach_private_data &>(
+				*priv_data);
+		nv_attach_private_data.trampoline_ptx = prog->get_ptx_code();
+		attach_id = attach_impl->create_attach_with_ebpf_callback(
+			[=](void *mem, size_t mem_size, uint64_t *ret) -> int {
+				return 0;
+			},
+			*priv_data, attach_type);
+	} else {
+		auto cookie = handler.attach_cookie;
+		attach_id = attach_impl->create_attach_with_ebpf_callback(
+			[=](void *mem, size_t mem_size, uint64_t *ret) -> int {
+				current_thread_bpf_cookie = cookie;
+				int err = prog->bpftime_prog_exec(
+					(void *)mem, mem_size, ret);
+				return err;
+			},
+			*priv_data, attach_type);
 	}
-	auto cookie = handler.attach_cookie;
-	int attach_id = attach_impl->create_attach_with_ebpf_callback(
-		[=](void *mem, size_t mem_size, uint64_t *ret) -> int {
-			current_thread_bpf_cookie = cookie;
-			int err = prog->bpftime_prog_exec((void *)mem, mem_size,
-							  ret);
-			return err;
-		},
-		*priv_data, attach_type);
 	if (attach_id < 0) {
-		// Since the agent might be attach to a unrelated process
-		// Using LD_PRELOAD, it's not an error here.
+		// Since the agent might be attach to a unrelated
+		// process Using LD_PRELOAD, it's not an error here.
 		SPDLOG_DEBUG("Unable to instantiate bpf link handler {}: {}",
 			     id, attach_id);
 		return attach_id;
@@ -345,9 +350,9 @@ int bpf_attach_ctx::instantiate_perf_event_handler_at(
 				id, kprobe_data.func_name, err);
 			return err;
 		}
-		// SPDLOG_INFO(
-		// 	"Created kprobe/kretprobe private data at id {}, string
-		// value {}", 	id, priv_data->to_string());
+		SPDLOG_DEBUG(
+			"Created kprobe/kretprobe private data at id {}, string value {}",
+			id, priv_data->to_string());
 	} else {
 		auto &custom_data =
 			std::get<custom_perf_event_data>(perf_handler.data);
