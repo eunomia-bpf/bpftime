@@ -20,6 +20,7 @@
 #include <unordered_set>
 #include <pthread.h>
 #include <future>
+#include "pos/include/common.h"
 #include "pos/cli/cli.h"
 #if __APPLE__
 using namespace bpftime_epoll;

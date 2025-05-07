@@ -70,8 +70,8 @@ static void example_listener_on_enter(GumInvocationListener *listener,
 			if (curr_header->magic == FATBIN_TEXT_MAGIC) {
 				SPDLOG_INFO(
 					"Got CUBIN section header size = {}, size = {}",
-					curr_header->header_size,
-					curr_header->size);
+					static_cast<int>(curr_header->header_size),
+					static_cast<int>(curr_header->size));
 				tail = ((const char *)curr_header) +
 				       curr_header->header_size +
 				       curr_header->size;

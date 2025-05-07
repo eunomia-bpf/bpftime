@@ -7,79 +7,115 @@
 using namespace bpftime;
 using namespace attach;
 
+inline pos_retval_t __dispatch(pos_cli_options_t &clio){
+    switch (clio.action_type)
+    {
+    case kPOS_CliAction_Help:
+        return handle_help(clio);
+
+    case kPOS_CliAction_PreDump:
+        return handle_predump(clio);
+
+    case kPOS_CliAction_Dump:
+        return handle_dump(clio);
+
+    case kPOS_CliAction_Restore:
+        return handle_restore(clio);
+
+    case kPOS_CliAction_Migrate:
+        return handle_migrate(clio);
+
+    case kPOS_CliAction_TraceResource:
+        return handle_trace(clio);
+
+    case kPOS_CliAction_Start:
+        return handle_start(clio);
+
+    default:
+        return POS_FAILED_NOT_IMPLEMENTED;
+    }
+}
+
+namespace oob_functions {
+    POS_OOB_DECLARE_CLNT_FUNCTIONS(cli_ckpt_predump);
+    POS_OOB_DECLARE_CLNT_FUNCTIONS(cli_ckpt_dump);
+    POS_OOB_DECLARE_CLNT_FUNCTIONS(cli_restore);
+    POS_OOB_DECLARE_CLNT_FUNCTIONS(cli_trace_resource);
+}; // namespace oob_functions
+
 CUDAInjector::CUDAInjector(pid_t pid, std::string orig_ptx) : target_pid(pid)
 {
 	// Lambda 表达式：用于读取文件内容到 std::string
-	// auto orig_ptx_func = [](const std::string &filename) -> std::string {
-	// 	std::ifstream file(filename); // 打开文件输入流
-	// 	if (!file.is_open()) {
-	// 		throw std::ios_base::failure(
-	// 			"Failed to open the file: " + filename);
-	// 	}
+	auto orig_ptx_func = [](const std::string &filename) -> std::string {
+		std::ifstream file(filename); // 打开文件输入流
+		if (!file.is_open()) {
+			throw std::ios_base::failure(
+				"Failed to open the file: " + filename);
+		}
 
-	// 	// 使用 stringstream 将文件内容加载为字符串
-	// 	std::ostringstream contentStream;
-	// 	contentStream << file.rdbuf();
-	// 	file.close();
-	// 	return contentStream.str();
-	// };
-	// this->orig_ptx = orig_ptx_func(orig_ptx);
-	// SPDLOG_DEBUG("CUDAInjector: constructor for PID {}", target_pid);
+		// 使用 stringstream 将文件内容加载为字符串
+		std::ostringstream contentStream;
+		contentStream << file.rdbuf();
+		file.close();
+		return contentStream.str();
+	};
+	this->orig_ptx = orig_ptx_func(orig_ptx);
+	SPDLOG_DEBUG("CUDAInjector: constructor for PID {}", target_pid);
 
-	// // 检查目标进程是否存在
-	// if (kill(target_pid, 0) != 0) {
-	// 	throw std::runtime_error("Target process does not exist");
-	// }
+	// 检查目标进程是否存在
+	if (kill(target_pid, 0) != 0) {
+		throw std::runtime_error("Target process does not exist");
+	}
 
-	// // 初始化 CUDA Driver API
-	// CUresult res = cuInit(0);
-	// if (res != CUDA_SUCCESS) {
-	// 	const char *error_str;
-	// 	cuGetErrorString(res, &error_str);
-	// 	throw std::runtime_error(
-	// 		std::string("CUDA initialization failed: ") +
-	// 		error_str);
-	// }
+	// 初始化 CUDA Driver API
+	CUresult res = cuInit(0);
+	if (res != CUDA_SUCCESS) {
+		const char *error_str;
+		cuGetErrorString(res, &error_str);
+		throw std::runtime_error(
+			std::string("CUDA initialization failed: ") +
+			error_str);
+	}
 
-	// // 检查是否有可用的 CUDA 设备
-	// int device_count = 0;
-	// res = cuDeviceGetCount(&device_count);
-	// if (res != CUDA_SUCCESS || device_count == 0) {
-	// 	throw std::runtime_error("No CUDA devices available");
-	// }
+	// 检查是否有可用的 CUDA 设备
+	int device_count = 0;
+	res = cuDeviceGetCount(&device_count);
+	if (res != CUDA_SUCCESS || device_count == 0) {
+		throw std::runtime_error("No CUDA devices available");
+	}
 
-	// spdlog::debug("CUDA initialized successfully with {} devices available",
-	// 	      device_count);
+	spdlog::debug("CUDA initialized successfully with {} devices available",
+		      device_count);
 
-	// clio_checkpoint.action_type = kPOS_CliAction_Dump;
-	// clio_checkpoint.record_raw(static_cast<pos_cli_meta>(kPOS_CliMeta_Dir),
-	// 			   "/tmp/bpftime");
-	// clio_checkpoint.record_raw(static_cast<pos_cli_meta>(kPOS_CliMeta_Pid),
-	// 			   std::to_string(target_pid));
-	// clio_checkpoint.local_oob_client = new POSOobClient(
-	// 	/* req_functions */
-	// 	{
-	// 		{ kPOS_OOB_Msg_CLI_Ckpt_Dump,
-	// 		  oob_functions::cli_ckpt_dump::clnt },
-	// 	},
-	// 	/* local_port */ 10086,
-	// 	/* local_ip */ CLIENT_IP);
-	// POS_CHECK_POINTER(clio_checkpoint.local_oob_client);
+	clio_checkpoint.action_type = kPOS_CliAction_Dump;
+	clio_checkpoint.record_raw(static_cast<pos_cli_meta>(kPOS_CliMeta_Dir),
+				   "/tmp/bpftime");
+	clio_checkpoint.record_raw(static_cast<pos_cli_meta>(kPOS_CliMeta_Pid),
+				   std::to_string(target_pid));
+	clio_checkpoint.local_oob_client = new POSOobClient(
+		/* req_functions */
+		std::map<pos_oob_msg_typeid_t, oob_client_function_t> {
+			{ kPOS_OOB_Msg_CLI_Ckpt_Dump,
+			  oob_functions::cli_ckpt_dump::clnt }
+		},
+		/* local_port */ 10087,
+		/* local_ip */ "0.0.0.0");
+	POS_CHECK_POINTER(clio_checkpoint.local_oob_client);
 
-	// clio_restore.action_type = kPOS_CliAction_Restore;
-	// clio_restore.record_raw(static_cast<pos_cli_meta>(kPOS_CliMeta_Dir),
-	// 			"/tmp/bpftime");
-	// clio_restore.record_raw(static_cast<pos_cli_meta>(kPOS_CliMeta_Pid),
-	// 			std::to_string(target_pid));
-	// clio_restore.local_oob_client = new POSOobClient(
-	// 	/* req_functions */
-	// 	{
-	// 		{ kPOS_OOB_Msg_CLI_Restore,
-	// 		  oob_functions::cli_restore::clnt },
-	// 	},
-	// 	/* local_port */ 10086,
-	// 	/* local_ip */ CLIENT_IP);
-	// POS_CHECK_POINTER(clio_restore.local_oob_client);
+	clio_restore.action_type = kPOS_CliAction_Restore;
+	clio_restore.record_raw(static_cast<pos_cli_meta>(kPOS_CliMeta_Dir),
+				"/tmp/bpftime");
+	clio_restore.record_raw(static_cast<pos_cli_meta>(kPOS_CliMeta_Pid),
+				std::to_string(target_pid));
+	clio_restore.local_oob_client = new POSOobClient(
+		/* req_functions */
+		std::map<pos_oob_msg_typeid_t, oob_client_function_t> {
+			{ kPOS_OOB_Msg_CLI_Restore,
+			  oob_functions::cli_restore::clnt }
+		},
+		/* local_port */ 10088,
+		/* local_ip */ "0.0.0.0");
+	POS_CHECK_POINTER(clio_restore.local_oob_client);
 }
 
 bool CUDAInjector::attach()
@@ -90,20 +126,8 @@ bool CUDAInjector::attach()
 		return false;
 	}
 	// Wait for the process to stop
-	// if (waitpid(target_pid, nullptr, 0) == -1) {
-	// 	spdlog::error("waitpid failed: {}", strerror(errno));
-	// 	return false;
-	// }
-	if (kill(target_pid, SIGSTOP) == -1) {
-		spdlog::error("kill failed: {}", strerror(errno));
-		return false;
-	}
-
-	// Attempt to locate and set the CUDA context in the target
-	// process
-	if (!get_cuda_context()) {
-		spdlog::error("Failed to get CUDA context from process {}",
-			      target_pid);
+	if (waitpid(target_pid, nullptr, 0) == -1) {
+		spdlog::error("waitpid failed: {}", strerror(errno));
 		return false;
 	}
 
@@ -113,87 +137,12 @@ bool CUDAInjector::attach()
 
 bool CUDAInjector::detach()
 {
-	if (kill(target_pid, SIGCONT) == -1) {
-		spdlog::error("kill failed: {}", strerror(errno));
-		return false;
-	}
 	spdlog::info("Detaching via PTRACE from PID {}", target_pid);
 	if (ptrace(PTRACE_DETACH, target_pid, nullptr, nullptr) == -1) {
 		spdlog::error("PTRACE_DETACH failed: {}", strerror(errno));
 		return false;
 	}
 	return true;
-}
-
-bool CUDAInjector::get_cuda_context()
-{
-	// // 首先尝试获取目标进程的 CUDA 驱动符号
-	// std::ifstream mapsFile(std::string("/proc/") + std::to_string(target_pid) + "/maps");
-	// if (!mapsFile.is_open()) {
-	// 	spdlog::error("Failed to open /proc/{}/maps", target_pid);
-	// 	return false;
-	// }
-
-	// // 先初始化我们自己的 CUDA 上下文
-	// CUdevice current_device;
-	// CUresult res = cuDeviceGet(&current_device, 0);
-	// if (res != CUDA_SUCCESS) {
-	// 	spdlog::error("Failed to get CUDA device");
-	// 	return false;
-	// }
-
-	// CUcontext our_context;
-	// res = cuCtxCreate(&our_context, 0, current_device);
-	// if (res != CUDA_SUCCESS) {
-	// 	spdlog::error("Failed to create CUDA context");
-	// 	return false;
-	// }
-
-	// std::string line;
-	// std::vector<std::pair<uintptr_t, uintptr_t>> cuda_regions;
-
-	// while (std::getline(mapsFile, line)) {
-	// 	if (line.find("libcuda.so") != std::string::npos) {
-	// 		uintptr_t start, end;
-	// 		if (sscanf(line.c_str(), "%lx-%lx", &start, &end) ==
-	// 		    2) {
-	// 			cuda_regions.push_back({ start, end });
-	// 		}
-	// 	}
-	// }
-
-	// // 对每个找到的 CUDA 内存区域进行扫描
-	// for (const auto &region : cuda_regions) {
-	// 	spdlog::debug("Scanning CUDA region: {:x}-{:x}", region.first,
-	// 		      region.second);
-
-	// 	for (uintptr_t addr = region.first; addr < region.second;
-	// 	     addr += sizeof(void *)) {
-	// 		CUcontext possible_ctx;
-	// 		if (!memory_utils::read_memory(target_pid, (void *)addr,
-	// 					       &possible_ctx)) {
-	// 			continue;
-	// 		}
-
-	// 		// 跳过明显无效的指针
-	// 		if (possible_ctx == nullptr ||
-	// 		    reinterpret_cast<uintptr_t>(possible_ctx) <
-	// 			    0x1000) {
-	// 			continue;
-	// 		}
-
-	// 		if (validate_cuda_context(possible_ctx)) {
-	// 			spdlog::info(
-	// 				"Found valid CUDA context at remote address {:x}",
-	// 				addr);
-	// 			cuda_ctx = possible_ctx;
-	// 			return true;
-	// 		}
-	// 	}
-	// }
-
-	// spdlog::error("No valid CUDA context found in target process");
-	return false;
 }
 
 bool CUDAInjector::validate_cuda_context(CUcontext remote_ctx)
@@ -238,7 +187,7 @@ bool CUDAInjector::inject_ptx(const char *ptx_code1, CUdeviceptr target_addr,
 			      size_t code_size, CUmodule &module)
 {
 	pos_retval_t retval = POS_SUCCESS;
-	// retval = __dispatch(clio_checkpoint);
+	retval = __dispatch(clio_checkpoint);
 
 	// 1. Load the PTX into a module
 	std::string probe_func = ptx_code1;
@@ -385,7 +334,7 @@ bool CUDAInjector::inject_ptx(const char *ptx_code1, CUdeviceptr target_addr,
 	backup.addr = target_addr;
 	backups.push_back(backup);
 
-	// retval = __dispatch(clio_restore);
+	retval = __dispatch(clio_restore);
 	// need to hack the restored ptx code
 	return true;
 }

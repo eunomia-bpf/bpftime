@@ -3,8 +3,11 @@
 
 #include "cuda.h"
 #include "pos/cli/cli.h"
+#include "pos/include/workspace.h"
 #include "pos/include/common.h"
 #include "pos/include/oob.h"
+#include "pos/include/oob/ckpt_dump.h"
+#include "pos/include/oob/restore.h"
 #include <string>
 #include <vector>
 namespace bpftime

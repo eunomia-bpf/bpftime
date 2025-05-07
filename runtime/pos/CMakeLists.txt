@@ -170,7 +170,7 @@ protobuf_generate(
         PROTOC_OUT_DIR "${PROTO_BINARY_DIR}")
 message(${CMAKE_CURRENT_SOURCE_DIR}/../)
 
-file(GLOB_RECURSE SOURCE_FILES src/*.cpp src/oob/*.cpp cuda_impl/*.cpp cuda_impl/*/*.cpp)
+file(GLOB_RECURSE SOURCE_FILES src/*.cpp src/oob/*.cpp cuda_impl/*.cpp cuda_impl/*/*.cpp cli/src/*.cpp)
 add_library(pos ${SOURCE_FILES})
 target_include_directories(pos PRIVATE ${CMAKE_SOURCE_DIR}/runtime ${CMAKE_CURRENT_BINARY_DIR}/../)
 target_link_libraries(
@@ -199,7 +199,7 @@ target_link_libraries(
         cublas
         elf
         ibverbs
-        /usr/lib/llvm-20/lib/libclang.so
+        /usr/lib/llvm-18/lib/libclang.so
 )
 find_package(LLVM REQUIRED CONFIG)
 include(../../cmake/cuda.cmake)
