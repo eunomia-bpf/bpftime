@@ -41,7 +41,6 @@ __global__ void infinite_kernel()
 		}
 
 		// 让出一些时间给其他线程
-		__nanosleep(1000);
 	}
 
 	if (threadIdx.x == 0 && blockIdx.x == 0) {

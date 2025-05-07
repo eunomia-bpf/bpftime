@@ -1,6 +1,5 @@
 #include "cuda_injector.hpp"
 #include "memory_utils.hpp"
-#include "pos/cuda_impl/remoting/workspace.h"
 #include "spdlog/spdlog.h"
 #include <sys/ptrace.h>
 #include <regex>
@@ -51,14 +50,37 @@ CUDAInjector::CUDAInjector(pid_t pid, std::string orig_ptx) : target_pid(pid)
 
 	spdlog::debug("CUDA initialized successfully with {} devices available",
 		      device_count);
-	ws = pos_create_workspace_cuda();
-	pos_create_client_param_t param = { .job_name = "bpftime",
-					    .pid = target_pid,
-					    .id = 1,
-					    .is_restoring = false };
-	ws->__create_client(param, (POSClient **)&client);
-	client = new POSClient_CUDA(1, target_pid, ws->client_cxt, ws);
-	client->init(false);
+	
+
+	clio_checkpoint.action_type = kPOS_CliAction_Dump;
+	clio_checkpoint.record_raw(static_cast<pos_cli_meta>(kPOS_CliMeta_Dir),
+			"/tmp/bpftime");
+	clio_checkpoint.record_raw(static_cast<pos_cli_meta>(kPOS_CliMeta_Pid),
+			std::to_string(target_pid));
+	clio_checkpoint.local_oob_client = new POSOobClient(
+		/* req_functions */
+		{
+			{ kPOS_OOB_Msg_CLI_Ckpt_Dump,
+			  oob_functions::cli_ckpt_dump::clnt },
+		},
+		/* local_port */ 10086,
+		/* local_ip */ CLIENT_IP);
+	POS_CHECK_POINTER(clio_checkpoint.local_oob_client);
+
+	clio_restore.action_type = kPOS_CliAction_Restore;
+	clio_restore.record_raw(static_cast<pos_cli_meta>(kPOS_CliMeta_Dir),
+			"/tmp/bpftime");
+	clio_restore.record_raw(static_cast<pos_cli_meta>(kPOS_CliMeta_Pid),
+			std::to_string(target_pid));
+	clio_restore.local_oob_client = new POSOobClient(
+		/* req_functions */
+		{
+			{ kPOS_OOB_Msg_CLI_Restore,
+			  oob_functions::cli_restore::clnt },
+		},
+		/* local_port */ 10086,
+		/* local_ip */ CLIENT_IP);
+	POS_CHECK_POINTER(clio_restore.local_oob_client);
 }
 
 bool CUDAInjector::attach()
@@ -217,18 +239,7 @@ bool CUDAInjector::inject_ptx(const char *ptx_code1, CUdeviceptr target_addr,
 			      size_t code_size, CUmodule &module)
 {
 	pos_retval_t retval = POS_SUCCESS;
-	retval = client->persist_handles(true);
-	if (retval != POS_SUCCESS) {
-		spdlog::error("client->persist_handles failed");
-		return false;
-	}
-	// before remove client, we persist the state of the client
-
-	retval = client->persist("/tmp/bpftime");
-	if (retval != POS_SUCCESS) {
-		spdlog::error("client->persist failed");
-		return false;
-	}
+	retval = __dispatch(clio_checkpoint);
 
 	// 1. Load the PTX into a module
 	std::string probe_func = ptx_code1;
@@ -375,22 +386,7 @@ bool CUDAInjector::inject_ptx(const char *ptx_code1, CUdeviceptr target_addr,
 	backup.addr = target_addr;
 	backups.push_back(backup);
 
-	// 4. Retrieve the actual kernel code from the module's global
-	// space
-	CUfunction func_addr;
-	result = cuModuleGetFunction(&func_addr, module,
-				     function_name_part.c_str());
-	if (result != CUDA_SUCCESS) {
-		spdlog::error("cuModuleGetFunction() failed: {}", (int)result);
-		cuModuleUnload(module);
-		return false;
-	}
-
-	// Clean up
-	ws->restore_client("/tmp/bpftime/c.bin", (POSClient **)&client);
-	client->restore_apicxts("/tmp/bpftime");
-	client->restore_handles("/tmp/bpftime");
-	client->status = kPOS_ClientStatus_Active;
-
+	retval = __dispatch(clio_restore);
+	// need to hack the restored ptx code
 	return true;
 }

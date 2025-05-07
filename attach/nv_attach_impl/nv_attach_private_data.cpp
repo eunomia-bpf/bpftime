@@ -1,6 +1,7 @@
 #include "nv_attach_private_data.hpp"
 #include <ios>
 #include <ostream>
+#include <sstream>
 #include <string>
 
 using namespace bpftime;
@@ -8,7 +9,7 @@ using namespace attach;
 
 std::string nv_attach_private_data::to_string() const
 {
-	std::ostringstream oss;
+	std::ostringstream oss{};
 	oss << "nv_attach_private_data: ";
 	if (std::holds_alternative<uintptr_t>(code_addr_or_func_name))
 		oss << "code_addr=" << std::hex

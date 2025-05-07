@@ -2,7 +2,9 @@
 #define _CUDA_INJECTOR_HPP
 
 #include "cuda.h"
-#include "pos/cuda_impl/workspace.h"
+#include "pos/cli/cli.h"
+#include "pos/include/common.h"
+#include "pos/include/oob.h"
 #include <string>
 #include <vector>
 namespace bpftime
@@ -27,9 +29,8 @@ class CUDAInjector {
 	};
 	std::vector<CodeBackup> backups;
 	std::string orig_ptx;
-	POSWorkspace_CUDA *ws = new POSWorkspace_CUDA();
-	POSClient_CUDA *client = nullptr;
-
+	pos_cli_options_t clio_checkpoint;
+	pos_cli_options_t clio_restore;
 	explicit CUDAInjector(pid_t pid, std::string orig_ptx);
 
 	bool attach();
