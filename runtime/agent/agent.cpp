@@ -74,29 +74,29 @@ syscall_hooker_func_t orig_hooker;
 
 extern "C" void bpftime_agent_main(const gchar *data, gboolean *stay_resident);
 
-extern "C" int bpftime_hooked_main(int argc, char **argv, char **envp)
-{
-	int stay_resident = 0;
-	injected_with_frida = false;
-	bpftime_agent_main("", &stay_resident);
-	int ret = orig_main_func(argc, argv, envp);
-	ctx_holder.destroy();
-	return ret;
-}
+// extern "C" int bpftime_hooked_main(int argc, char **argv, char **envp)
+// {
+// 	int stay_resident = 0;
+// 	injected_with_frida = false;
+// 	bpftime_agent_main("", &stay_resident);
+// 	int ret = orig_main_func(argc, argv, envp);
+// 	// ctx_holder.destroy();
+// 	return ret;
+// }
 
-extern "C" int __libc_start_main(int (*main)(int, char **, char **), int argc,
-				 char **argv,
-				 int (*init)(int, char **, char **),
-				 void (*fini)(void), void (*rtld_fini)(void),
-				 void *stack_end)
-{
-	orig_main_func = main;
-	using this_func_t = decltype(&__libc_start_main);
-	this_func_t orig = (this_func_t)dlsym(RTLD_NEXT, "__libc_start_main");
+// extern "C" int __libc_start_main(int (*main)(int, char **, char **), int argc,
+// 				 char **argv,
+// 				 int (*init)(int, char **, char **),
+// 				 void (*fini)(void), void (*rtld_fini)(void),
+// 				 void *stack_end)
+// {
+// 	orig_main_func = main;
+// 	using this_func_t = decltype(&__libc_start_main);
+// 	this_func_t orig = (this_func_t)dlsym(RTLD_NEXT, "__libc_start_main");
 
-	return orig(bpftime_hooked_main, argc, argv, init, fini, rtld_fini,
-		    stack_end);
-}
+// 	return orig(bpftime_hooked_main, argc, argv, init, fini, rtld_fini,
+// 		    stack_end);
+// }
 
 static void sig_handler_sigusr1(int sig)
 {
@@ -111,6 +111,16 @@ static void sig_handler_sigusr1(int sig)
 	bpftime_logger_flush();
 }
 
+void **(*original___cudaRegisterFatBinary)(void *) = nullptr;
+
+extern "C" void **__cudaRegisterFatBinary(void *fatbin)
+{
+	auto orig = try_get_original_func("__cudaRegisterFatBinary",
+					  original___cudaRegisterFatBinary);
+	gboolean flag = false;
+	bpftime_agent_main(nullptr, &flag);
+	return orig(fatbin);
+}
 extern "C" void bpftime_agent_main(const gchar *data, gboolean *stay_resident)
 {
 	{

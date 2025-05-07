@@ -1,4 +1,5 @@
 #include "llvmbpf.hpp"
+#include "spdlog/spdlog.h"
 #include <bpftime_vm_compat.hpp>
 #include <compat_llvm.hpp>
 #include <optional>
@@ -80,7 +81,7 @@ namespace llvm
 __attribute__((constructor(0))) static inline void register_llvm_vm_factory()
 {
 	register_vm_factory("llvm", create_llvm_vm_instance);
-	printf("llvm register vm factory\n");
+	SPDLOG_DEBUG("llvm register vm factory\n");
 }
 
 } // namespace llvm

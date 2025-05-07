@@ -150,7 +150,7 @@ class syscall_context {
 	bool run_with_kernel = false;
 	// pos_cli result
 	std::string pos_result;
-	std::thread pos_thread;
+	// std::thread pos_thread;
 	std::promise<pos_retval_t> pos_thread_promise;
 	std::future<pos_retval_t> pos_thread_future;
 	// allow programs to by pass the verifier
