@@ -12,6 +12,10 @@ namespace bpftime
 {
 namespace nvattach
 {
+constexpr const uint32_t FATBIN_STRUCT_MAGIC = 0x466243b1;
+constexpr const uint32_t FATBIN_TEXT_MAGIC = 0xBA55ED50;
+
+
 extern "C" {
 typedef struct {
 	int magic;
@@ -20,6 +24,12 @@ typedef struct {
 	void *filename_or_fatbins;
 
 } __fatBinC_Wrapper_t;
+typedef struct __attribute__((__packed__)) fat_elf_header {
+	uint32_t magic;
+	uint16_t version;
+	uint16_t header_size;
+	uint64_t size;
+} fat_elf_header_t;
 }
 
 struct fatbin_data {
@@ -37,7 +47,6 @@ struct load_mocker {
 	std::map<void **, fatbin_data> fatbin_handle_to_data;
 
 	std::map<void *, host_wrapper_func> host_func_to_device_func;
-
 
 	void **(*orig___cudaRegisterFatBinary)(void *) = nullptr;
 

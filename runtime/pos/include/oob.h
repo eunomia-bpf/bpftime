@@ -353,7 +353,7 @@ class POSOobServer {
         uint16_t port=POS_OOB_SERVER_DEFAULT_PORT
     ){
         pos_retval_t retval = POS_SUCCESS;
-        uint8_t retry_time = 1;
+        uint16_t retry_time = 1;
         struct sockaddr_in spec_addr, res_addr;
         uint16_t new_session_port;
         int fd_flag;

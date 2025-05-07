@@ -4,6 +4,7 @@
 #include "vector_types.h"
 #include <cstdint>
 #include <dlfcn.h>
+#include <fstream>
 #include <thread>
 #include <unistd.h>
 #include <vector>
@@ -43,38 +44,6 @@ static inline T try_get_original_func(const char *name, T &store)
 	return store;
 }
 
-extern "C" void **__cudaRegisterFatBinary(void *fatbin)
-{
-	initialize_ctx();
-	std::thread([&]() {
-		while (true) {
-			auto p = mocker->get_last_executed_func();
-			if (p.has_value()) {
-				SPDLOG_INFO("Last call: {}", p->device_symbol);
-			} else {
-				SPDLOG_INFO("Not called kernel yet");
-			}
-			sleep(1);
-		}
-	}).detach();
-
-	auto orig = try_get_original_func("__cudaRegisterFatBinary",
-					  mocker->orig___cudaRegisterFatBinary);
-	auto header = (__fatBinC_Wrapper_t *)fatbin;
-	// data: [4byte magic] [4byte version] [8byte size] [size-bytes of data]
-	auto data = (const char *)header->data;
-	auto size = *(uint64_t *)(data + 8);
-	auto tail = data + 16 + size;
-	auto handle = orig(fatbin);
-	mocker->fatbin_handle_to_data[handle] = {
-		.binary = std::vector<char>(data, tail),
-		.host_funcs = std::vector<void *>()
-	};
-	SPDLOG_INFO(
-		"Mocked __cudaRegisterFatBinary: Received {} bytes fatbin for handle {:x}",
-		tail - data, (uintptr_t)handle);
-	return handle;
-}
 
 extern "C" void __cudaRegisterFunction(void **fatCubinHandle,
 				       const char *hostFun, char *deviceFun,

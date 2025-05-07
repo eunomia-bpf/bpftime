@@ -68,25 +68,25 @@ namespace bpftime
 void bpf_attach_ctx::start_cuda_watcher_thread()
 {
 	auto flag = this->cuda_ctx->cuda_watcher_should_stop;
-	std::thread([=, this]() {
-		auto &ctx = cuda_ctx;
-		while (!flag->load()) {
-			const auto &array = ctx->cuda_shared_mem->time_sum;
-			for (size_t i = 0; i < std::size(array); i++) {
-				uint64_t cuda_time_sum = __atomic_load_n(
-					&array[i], __ATOMIC_SEQ_CST);
-				auto host_time_sum =
-					ctx->operation_time_sum->at(i).load();
+	// std::thread([=, this]() {
+	// 	auto &ctx = cuda_ctx;
+	// 	while (!flag->load()) {
+	// 		const auto &array = ctx->cuda_shared_mem->time_sum;
+	// 		for (size_t i = 0; i < std::size(array); i++) {
+	// 			uint64_t cuda_time_sum = __atomic_load_n(
+	// 				&array[i], __ATOMIC_SEQ_CST);
+	// 			auto host_time_sum =
+	// 				ctx->operation_time_sum->at(i).load();
 
-				SPDLOG_INFO(
-					"Operation {} cuda_time_sum = {}, host_time_sum = {}, diff = {}",
-					i, cuda_time_sum, host_time_sum,
-					cuda_time_sum - host_time_sum);
-			}
-			std::this_thread::sleep_for(std::chrono::seconds(1));
-		}
-		SPDLOG_INFO("statistics thread exited..");
-	}).detach();
+	// 			SPDLOG_INFO(
+	// 				"Operation {} cuda_time_sum = {}, host_time_sum = {}, diff = {}",
+	// 				i, cuda_time_sum, host_time_sum,
+	// 				cuda_time_sum - host_time_sum);
+	// 		}
+	// 		std::this_thread::sleep_for(std::chrono::seconds(1));
+	// 	}
+	// 	SPDLOG_INFO("statistics thread exited..");
+	// }).detach();
 	std::thread handle([=, this]() {
 		SPDLOG_INFO("CUDA watcher thread started");
 		auto &ctx = cuda_ctx;

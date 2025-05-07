@@ -95,7 +95,7 @@ typedef struct POSCudaFunctionDesp {
 
 	// confirmed suspicious parameters: index of the parameter -> offset
 	// from the base address
-	std::vector<std::pair<uint32_t, uint64_t> > confirmed_suspicious_params;
+	std::vector<std::pair<uint32_t, uint64_t>> confirmed_suspicious_params;
 
 	// cbank parameter size (p.s., what is this?)
 	uint64_t cbank_param_size;
@@ -122,7 +122,7 @@ class POSUtil_CUDA_Kernel_Patcher {
 
 		POS_CHECK_POINTER(binary_ptr);
 
-		std::unique_ptr<std::vector<uint8_t> > _patched_fatbin =
+		std::unique_ptr<std::vector<uint8_t>> _patched_fatbin =
 			patch_fatbin(binary_ptr);
 		if (unlikely(_patched_fatbin == nullptr ||
 			     _patched_fatbin->size() == 0)) {
@@ -263,7 +263,7 @@ class POSUtil_CUDA_Fatbin {
 		size_t text_data_size = 0;
 		size_t fatbin_total_size = 0;
 		uint32_t nb_text_section = 1;
-
+		POS_DEBUG("nb_text_section=%d",(int)nb_text_section);
 		fat_elf_header_t *fatbin_elf_hdr;
 		fat_text_header_t *fatbin_text_hdr;
 
@@ -1024,8 +1024,8 @@ class POSUtil_CUDA_Fatbin {
 
 		tmp_retval = get_section_by_name(elf, ".nv.info", &section);
 		if (unlikely(tmp_retval != POS_SUCCESS)) {
-			// POS_WARN_DETAIL("failed to obtain section
-			// \".nv.info\" in the ELF");
+			POS_WARN_DETAIL(
+				"failed to obtain section\".nv.info\" in the ELF");
 			goto exit;
 		}
 

@@ -43,6 +43,8 @@ using main_func_t = int (*)(int, char **, char **);
 
 static main_func_t orig_main_func = nullptr;
 
+static int initialized = 0;
+
 // Whether this injected process was operated through frida?
 // Defaults to true. If __libc_start_main was called, it should be set to false;
 // Besides, if agent was loaded by text-transformer, this variable will be set
@@ -111,6 +113,18 @@ static void sig_handler_sigusr1(int sig)
 
 extern "C" void bpftime_agent_main(const gchar *data, gboolean *stay_resident)
 {
+	{
+		int expected = 0;
+		if (!__atomic_compare_exchange_n(&initialized, &expected, 1,
+						 false, __ATOMIC_SEQ_CST,
+						 __ATOMIC_SEQ_CST)) {
+			SPDLOG_INFO(
+				"Agent already initialized, skipping re-initializing..");
+
+			return;
+		}
+	}
+
 	SPDLOG_DEBUG("Entered bpftime_agent_main");
 	SPDLOG_DEBUG("Registering signal handler");
 

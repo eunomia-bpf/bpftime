@@ -274,3 +274,6 @@ endif()
 
 add_dependencies(${PROJECT_NAME} bpftime_vm_compat)
 target_link_libraries(${PROJECT_NAME} PUBLIC bpftime_vm_compat pos)
+
+
+add_subdirectory(./pos-unit-test)

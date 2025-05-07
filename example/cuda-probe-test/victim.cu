@@ -9,11 +9,24 @@
 #include <unistd.h>
 #include <vector>
 
+/*
+nvcc -x cu -cuda victim.cu -o victim.cpp
+python filter_hashtag.py
+g++ victim-new.cpp -Wall -L /usr/local/cuda-12.6/lib64 -lcudart -o victim
+ */
+
 __global__ void sumArray(uint64_t *input, uint64_t *output, size_t size)
 {
 	for (size_t i = 0; i < size; i++)
 		*output += input[i];
 	printf("From device side: sum = %lu\n", (unsigned long)*output);
+}
+
+__global__ void sumArraySqr(uint64_t *input, uint64_t *output, size_t size)
+{
+	for (size_t i = 0; i < size; i++)
+		*output += input[i] * input[i];
+	printf("From device side: sumSqr = %lu\n", (unsigned long)*output);
 }
 
 constexpr size_t ARR_SIZE = 1000;
@@ -26,21 +39,29 @@ int main()
 	}
 	auto data_size = sizeof(arr[0]) * arr.size();
 
-	uint64_t *d_input, *d_output;
+	uint64_t *d_input, *sum_output, *sqr_output;
 	cudaMalloc(&d_input, data_size);
-	cudaMalloc(&d_output, sizeof(arr[0]));
+	cudaMalloc(&sum_output, sizeof(arr[0]));
+	cudaMalloc(&sqr_output, sizeof(arr[0]));
+
 	cudaMemcpy(d_input, arr.data(), data_size, cudaMemcpyHostToDevice);
 	while (true) {
-		sumArray<<<1, 1, 1>>>(d_input, d_output, arr.size());
-		uint64_t host_sum;
-		cudaMemcpy(&host_sum, d_output, sizeof(arr[0]),
+		sumArray<<<1, 1, 1>>>(d_input, sum_output, arr.size());
+		sumArraySqr<<<1, 1, 1>>>(d_input, sqr_output, arr.size());
+
+		uint64_t host_sum, host_sqr;
+		cudaMemcpy(&host_sum, sum_output, sizeof(arr[0]),
 			   cudaMemcpyDeviceToHost);
+		cudaMemcpy(&host_sqr, sqr_output, sizeof(arr[0]),
+			   cudaMemcpyDeviceToHost);
+
 		cudaDeviceSynchronize();
-		std::cout << "Sum is " << host_sum << std::endl;
+		std::cout << "Sum is " << host_sum << ", sqr is " << host_sqr
+			  << std::endl;
 		sleep(1);
 	}
 	cudaFree(d_input);
-	cudaFree(d_output);
+	cudaFree(sum_output);
 
 	return 0;
 }
