@@ -53,7 +53,7 @@ pos_retval_t handle_restore(pos_cli_options_t &clio){
                     pos_retval_t retval = POS_SUCCESS;
                     std::filesystem::path absolute_path;
                     
-                    absolute_path = std::filesystem::absolute(meta_val);
+                    absolute_path = std::filesystem::absolute("/tmp/bpftime");
 
                     if(absolute_path.string().size() >= oob_functions::cli_ckpt_dump::kCkptFilePathMaxLen){
                         POS_WARN(
@@ -95,27 +95,27 @@ pos_retval_t handle_restore(pos_cli_options_t &clio){
     }
 
     // call criu
-    criu_cmd = std::string("criu restore")
-                +   std::string(" -D ") + std::string(clio.metas.ckpt.ckpt_dir)
-                +   std::string(" -j --display-stats");
-    retval = POSUtil_Command_Caller::exec_async(
-        criu_cmd, criu_thread, criu_thread_promise, criu_result,
-        /* ignore_error */ false,
-        /* print_stdout */ true,
-        /* print_stderr */ true
-    );
-    if(unlikely(retval != POS_SUCCESS)){
-        POS_WARN("failed to execute CRIU");
-        goto exit;
-    }
+    // criu_cmd = std::string("criu restore")
+    //             +   std::string(" -D ") + std::string(clio.metas.ckpt.ckpt_dir)
+    //             +   std::string(" -j --display-stats");
+    // retval = POSUtil_Command_Caller::exec_async(
+    //     criu_cmd, criu_thread, criu_thread_promise, criu_result,
+    //     /* ignore_error */ false,
+    //     /* print_stdout */ true,
+    //     /* print_stderr */ true
+    // );
+    // if(unlikely(retval != POS_SUCCESS)){
+    //     POS_WARN("failed to execute CRIU");
+    //     goto exit;
+    // }
 
     // check cpu restore
-    if(criu_thread.joinable()){ criu_thread.join(); }
-    criu_retval = criu_thread_future.get();
-    if(POS_SUCCESS != call_data.retval){
-        POS_WARN("cpu restore failed");
-        goto exit;
-    }
+    // if(criu_thread.joinable()){ criu_thread.join(); }
+    // criu_retval = criu_thread_future.get();
+    // if(POS_SUCCESS != call_data.retval){
+    //     POS_WARN("cpu restore failed");
+    //     goto exit;
+    // }
 
     POS_LOG("restore done");
 

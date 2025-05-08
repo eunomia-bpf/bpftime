@@ -188,7 +188,9 @@ bool CUDAInjector::inject_ptx(const char *ptx_code1, CUdeviceptr target_addr,
 {
 	pos_retval_t retval = POS_SUCCESS;
 	retval = __dispatch(clio_checkpoint);
-
+	if (retval!= POS_SUCCESS) {
+		return false;
+	}
 	// 1. Load the PTX into a module
 	std::string probe_func = ptx_code1;
 	std::string modified_ptx = this->orig_ptx;
@@ -333,8 +335,11 @@ bool CUDAInjector::inject_ptx(const char *ptx_code1, CUdeviceptr target_addr,
 	CodeBackup backup;
 	backup.addr = target_addr;
 	backups.push_back(backup);
-
+	// how to push ptx into clio_restore
 	retval = __dispatch(clio_restore);
+	if (retval != POS_SUCCESS) {
+		return false;
+	}
 	// need to hack the restored ptx code
 	return true;
 }

@@ -59,18 +59,6 @@ pos_retval_t handle_dump(pos_cli_options_t &clio){
         /* clio */ clio,
         /* rules */ {
             {
-                /* meta_type */ kPOS_CliMeta_Pid,
-                /* meta_name */ "pid",
-                /* meta_desp */ "pid of the process to be migrated",
-                /* cast_func */ [](pos_cli_options_t& clio, std::string& meta_val) -> pos_retval_t {
-                    pos_retval_t retval = POS_SUCCESS;
-                    clio.metas.ckpt.pid = std::stoull(meta_val);
-                exit:
-                    return retval;
-                },
-                /* is_required */ true
-            },
-            {
                 /* meta_type */ kPOS_CliMeta_Dir,
                 /* meta_name */ "dir",
                 /* meta_desp */ "directory to store the checkpoint files",
@@ -79,7 +67,7 @@ pos_retval_t handle_dump(pos_cli_options_t &clio){
                     std::filesystem::path absolute_path;
                     std::string dump_dir;
 
-                    absolute_path = std::filesystem::absolute(meta_val);
+                    absolute_path = std::filesystem::absolute("/tmp/bpftime");
 
                     if(absolute_path.string().size() >= oob_functions::cli_ckpt_dump::kCkptFilePathMaxLen){
                         POS_WARN(
@@ -367,21 +355,21 @@ pos_retval_t handle_dump(pos_cli_options_t &clio){
     // }
 
     // step 5: CPU-side dump (sync)
-    criu_cmd = std::string("criu dump")
-                +   std::string(" --images-dir ") + std::string(clio.metas.ckpt.ckpt_dir)
-                +   std::string(" --shell-job --display-stats")
-                +   std::string(" --tree ") + std::to_string(clio.metas.ckpt.pid);
-    retval = POSUtil_Command_Caller::exec_sync(
-        criu_cmd, criu_result,
-        /* ignore_error */ false,
-        /* print_stdout */ true,
-        /* print_stderr */ true
-    );
-    if(unlikely(retval != POS_SUCCESS)){
-        POS_WARN("dump failed, failed to dump cpu-side: retval(%u)", retval);
-        // POS_WARN("failed to execute CRIU");
-        goto exit;
-    }
+    // criu_cmd = std::string("criu dump")
+    //             +   std::string(" --images-dir ") + std::string(clio.metas.ckpt.ckpt_dir)
+    //             +   std::string(" --shell-job --display-stats")
+    //             +   std::string(" --tree ") + std::to_string(clio.metas.ckpt.pid);
+    // retval = POSUtil_Command_Caller::exec_sync(
+    //     criu_cmd, criu_result,
+    //     /* ignore_error */ false,
+    //     /* print_stdout */ true,
+    //     /* print_stderr */ true
+    // );
+    // if(unlikely(retval != POS_SUCCESS)){
+    //     POS_WARN("dump failed, failed to dump cpu-side: retval(%u)", retval);
+    //     // POS_WARN("failed to execute CRIU");
+    //     goto exit;
+    // }
 
     // step 6: check CPU-side predump result
     // if(criu_thread.joinable()){ criu_thread.join(); }

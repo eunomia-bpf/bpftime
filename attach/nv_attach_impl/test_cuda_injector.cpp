@@ -11,7 +11,7 @@ TEST_CASE("Test CUDAInjector - basic attach/detach")
 {
 	// For demonstration, pick a dummy or real PID.
 	// In a real-world test, you'd spawn a child process running a CUDA app.
-	pid_t test_pid = 3347184;
+	pid_t test_pid = 2384356;
 
 	// 1. Construct the injector
 	bpftime::attach::CUDAInjector injector(
@@ -42,9 +42,9 @@ TEST_CASE("Test CUDAInjector - basic attach/detach")
 		assert(rc == CUDA_SUCCESS);
 		// A hypothetical method in CUDAInjector for demonstration
 		/// Commented out due to compile errors
-		// bool success = injector.inject_ptx(ptx_code,
-		// (CUdeviceptr)dummy_inject_addr, 				   dummy_code_size);
-		// REQUIRE(success == true);
+		bool success = injector.inject_ptx(ptx_code,
+			(CUdeviceptr)dummy_inject_addr,dummy_code_size, m);
+		REQUIRE(success == true);
 	}
 
 	// 4. Detach from the process

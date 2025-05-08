@@ -85,18 +85,18 @@ syscall_context::syscall_context()
 	SPDLOG_INFO("The log will be written to: {}",
 		    runtime_config.get_logger_output_path());
 	auto pos_cmd = std::string("pos_cli --start --target daemon");
-	pos_thread_future =	pos_thread_promise.get_future();
-	// auto retval = POSUtil_Command_Caller::exec_async(
-	// 	pos_cmd, pos_thread, pos_thread_promise, pos_result,
-	// 	/* ignore_error */ false,
-	// 	/* print_stdout */ false,
-	// 	/* print_stderr */ false);
-	// if (unlikely(retval != POS_SUCCESS)) {
-	// 	SPDLOG_ERROR(
-	// 		"predump failed, failed to start cpu-side predump thread: retval({})",
-	// 		retval);
-	// 	exit(1);
-	// }
+	pos_thread_future = pos_thread_promise.get_future();
+	auto retval = POSUtil_Command_Caller::exec_async(
+		pos_cmd, pos_thread, pos_thread_promise, pos_result,
+		/* ignore_error */ false,
+		/* print_stdout */ true,
+		/* print_stderr */ true);
+	if (unlikely(retval != POS_SUCCESS)) {
+		SPDLOG_ERROR(
+			"error to start pos_cli: retval({})",
+			retval);
+		exit(1);
+	}
 }
 
 void syscall_context::try_startup()
