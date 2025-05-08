@@ -32,18 +32,10 @@ TEST_CASE("Test CUDAInjector - basic attach/detach")
 
 		// Suppose we want to inject at some device memory address
 		// (dummy).
-		CUfunction dummy_inject_addr;
-		size_t dummy_code_size = sizeof(injector.orig_ptx.c_str());
-		CUmodule m;
-		CUresult rc = cuModuleLoadData(&m, injector.orig_ptx.c_str());
-		assert(rc == CUDA_SUCCESS);
-		rc = cuModuleGetFunction(&dummy_inject_addr, m,
-					 "infinite_kernel");
-		assert(rc == CUDA_SUCCESS);
+
 		// A hypothetical method in CUDAInjector for demonstration
 		/// Commented out due to compile errors
-		bool success = injector.inject_ptx(ptx_code,
-			(CUdeviceptr)dummy_inject_addr,dummy_code_size, m);
+		bool success = injector.inject_ptx("infinite_kernel", m);
 		REQUIRE(success == true);
 	}
 

@@ -34,7 +34,7 @@ class CUDAInjector {
 	std::string orig_ptx;
 	pos_cli_options_t clio_checkpoint;
 	pos_cli_options_t clio_restore;
-	explicit CUDAInjector(pid_t pid, std::string orig_ptx);
+	explicit CUDAInjector(pid_t pid);
 
 	bool attach();
 
@@ -54,8 +54,7 @@ class CUDAInjector {
     public:
 	// Demonstrates how you might inject PTX or backup/restore code on the
 	// fly in a remote context. This is a stub for illustration.
-	bool inject_ptx(const char *ptx_code1, CUdeviceptr target_addr,
-			size_t code_size, CUmodule &module);
+	bool inject_ptx(const char *func_name, CUmodule &module);
 };
 } // namespace attach
 } // namespace bpftime
