@@ -22,39 +22,13 @@ namespace attach
 class CUDAInjector {
     public:
 	pid_t target_pid;
-	CUcontext cuda_ctx{ nullptr };
-
-	// Storing a backup of code, for illustration.
-	// You can remove or adapt this if you don't actually need code
-	// injection.
-	struct CodeBackup {
-		CUdeviceptr addr;
-	};
-	std::vector<CodeBackup> backups;
-	std::string orig_ptx;
 	pos_cli_options_t clio_checkpoint;
 	pos_cli_options_t clio_restore;
 	explicit CUDAInjector(pid_t pid);
-
-	bool attach();
-
-	bool detach();
-
-    private:
-	// ------------------------------------------------------------------------
-	// Below is minimal logic to demonstrate how you MIGHT find a CUDA
-	// context. In reality, hooking into a remote process's memory for CUDA
-	// contexts is significantly more complex (symbol lookup, driver calls,
-	// etc.).
-	// ------------------------------------------------------------------------
-	bool get_cuda_context();
-
-	bool validate_cuda_context(CUcontext remote_ctx);
-
     public:
 	// Demonstrates how you might inject PTX or backup/restore code on the
 	// fly in a remote context. This is a stub for illustration.
-	bool inject_ptx(const char *func_name, CUmodule &module);
+	bool inject_ptx();
 };
 } // namespace attach
 } // namespace bpftime

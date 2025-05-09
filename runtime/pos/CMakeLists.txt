@@ -170,7 +170,7 @@ protobuf_generate(
         PROTOC_OUT_DIR "${PROTO_BINARY_DIR}")
 message(${CMAKE_CURRENT_SOURCE_DIR}/../)
 
-file(GLOB_RECURSE SOURCE_FILES src/*.cpp src/oob/*.cpp cuda_impl/*.cpp cuda_impl/*/*.cpp )
+file(GLOB_RECURSE SOURCE_FILES src/*.cpp src/oob/*.cpp cuda_impl/*.cpp cuda_impl/*/*.cpp cli/src/*.cpp)
 add_library(pos ${SOURCE_FILES})
 target_include_directories(pos PRIVATE ${CMAKE_SOURCE_DIR}/runtime ${CMAKE_CURRENT_BINARY_DIR}/../)
 target_link_libraries(
@@ -209,11 +209,11 @@ target_link_directories(pos PUBLIC ${CUDA_LIBRARY_PATH})
 target_link_libraries(pos PRIVATE LLVM ${CUDA_LIBS})
 
 
-set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -I/home/geekpie/miniconda3/envs/asc25-rna/include/ -I${CMAKE_CURRENT_BINARY_DIR}/../")
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -I${CMAKE_CURRENT_BINARY_DIR}/../")
 
 
 file(GLOB_RECURSE POS_CLI_SOURCE_FILES cli/src/*.cpp)
-add_executable(pos-cli ${POS_CLI_SOURCE_FILES})
-target_link_libraries(pos-cli pos)
+add_executable(pos_cli ${POS_CLI_SOURCE_FILES})
+target_link_libraries(pos_cli pos)
 
-target_include_directories(pos-cli PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/..)
+target_include_directories(pos_cli PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/..)

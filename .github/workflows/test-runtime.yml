@@ -32,10 +32,23 @@ jobs:
       # So we remount it to make it larger
       run: |
         mount -o remount,size=1G /dev/shm
+    - name: Install miniconda
+      run: |
+        if [ ! -d "~/miniconda3" ]; then
+          wget -q http://repo.continuum.io/miniconda/Miniconda3-latest-Linux-x86_64.sh -O ~/miniconda.sh;
+          chmod +x ~/miniconda.sh;
+          ~/miniconda.sh -b -p ~/miniconda3;
+          ~/miniconda3/bin/conda init;
+        else
+          echo "Miniconda3 already set up.";
+        fi
+    - name: Install absl and protobuf
+      run: conda install conda-forge::libabseil conda-forge::libprotobuf
+      shell: bash
     - name: Install lcov
       if: "matrix.container == 'ubuntu-2204'"
       run: |
-        apt-get update -y && apt-get install -y lcov libzstd-dev libboost-all-dev libabsl-dev libprotobuf-dev gpg
+        apt-get update -y && apt-get install -y lcov libzstd-dev libboost-all-dev libprotobuf-dev gpg
     - name: Install lcov
       if: "matrix.container == 'fedora-39'"
       run: |
@@ -46,6 +59,7 @@ jobs:
         export BPFTIME_VM_NAME=llvm
         cmake -DTEST_LCOV=ON -DBPFTIME_LLVM_JIT=YES -DBPFTIME_ENABLE_UNIT_TESTING=YES -DENABLE_PROBE_WRITE_CHECK=1 -DENABLE_PROBE_READ_CHECK=1 -DCMAKE_BUILD_TYPE=Debug -B build
         cmake --build build --config Debug --target bpftime_runtime_tests -j$(nproc)
+      shell: bash
     - name: Test Runtime
       run:  |
         export BPFTIME_VM_NAME=llvm

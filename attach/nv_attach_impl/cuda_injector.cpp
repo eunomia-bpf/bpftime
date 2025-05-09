@@ -7,34 +7,34 @@
 using namespace bpftime;
 using namespace attach;
 
-// inline pos_retval_t __dispatch(pos_cli_options_t &clio)
-// {
-// 	switch (clio.action_type) {
-// 	case kPOS_CliAction_Help:
-// 		return handle_help(clio);
+inline pos_retval_t __dispatch(pos_cli_options_t &clio)
+{
+	switch (clio.action_type) {
+	case kPOS_CliAction_Help:
+		return handle_help(clio);
 
-// 	case kPOS_CliAction_PreDump:
-// 		return handle_predump(clio);
+	case kPOS_CliAction_PreDump:
+		return handle_predump(clio);
 
-// 	case kPOS_CliAction_Dump:
-// 		return handle_dump(clio);
+	case kPOS_CliAction_Dump:
+		return handle_dump(clio);
 
-// 	case kPOS_CliAction_Restore:
-// 		return handle_restore(clio);
+	case kPOS_CliAction_Restore:
+		return handle_restore(clio);
 
-// 	case kPOS_CliAction_Migrate:
-// 		return handle_migrate(clio);
+	case kPOS_CliAction_Migrate:
+		return handle_migrate(clio);
 
-// 	case kPOS_CliAction_TraceResource:
-// 		return handle_trace(clio);
+	case kPOS_CliAction_TraceResource:
+		return handle_trace(clio);
 
-// 	case kPOS_CliAction_Start:
-// 		return handle_start(clio);
+	case kPOS_CliAction_Start:
+		return handle_start(clio);
 
-// 	default:
-// 		return POS_FAILED_NOT_IMPLEMENTED;
-// 	}
-// }
+	default:
+		return POS_FAILED_NOT_IMPLEMENTED;
+	}
+}
 
 namespace oob_functions
 {
@@ -99,104 +99,17 @@ CUDAInjector::CUDAInjector(pid_t pid) : target_pid(pid)
 		/* local_ip */ "0.0.0.0");
 	POS_CHECK_POINTER(clio_restore.local_oob_client);
 }
-
-bool CUDAInjector::attach()
-{
-	spdlog::info("Attaching via PTRACE to PID {}", target_pid);
-	if (ptrace(PTRACE_ATTACH, target_pid, nullptr, nullptr) == -1) {
-		spdlog::error("PTRACE_ATTACH failed: {}", strerror(errno));
-		return false;
-	}
-	// Wait for the process to stop
-	if (waitpid(target_pid, nullptr, 0) == -1) {
-		spdlog::error("waitpid failed: {}", strerror(errno));
-		return false;
-	}
-
-	spdlog::info("Attach to PID {} successful", target_pid);
-	return true;
-}
-
-bool CUDAInjector::detach()
-{
-	spdlog::info("Detaching via PTRACE from PID {}", target_pid);
-	if (ptrace(PTRACE_DETACH, target_pid, nullptr, nullptr) == -1) {
-		spdlog::error("PTRACE_DETACH failed: {}", strerror(errno));
-		return false;
-	}
-	return true;
-}
-
-bool CUDAInjector::validate_cuda_context(CUcontext remote_ctx)
-{
-	// 不要直接使用远程进程的上下文
-	CUcontext current_ctx = nullptr;
-	CUresult res = cuCtxGetCurrent(&current_ctx);
-	if (res != CUDA_SUCCESS) {
-		spdlog::debug("No current CUDA context in our process");
-		return false;
-	}
-
-	// 检查远程上下文是否是有效的指针
-	if (remote_ctx == nullptr) {
-		return false;
-	}
-
-	// 尝试读取远程上下文的一些基本信息
-	CUdevice device;
-	if (!memory_utils::read_memory(target_pid,
-				       reinterpret_cast<void *>(remote_ctx),
-				       &device)) {
-		return false;
-	}
-
-	// 可以添加更多的验证逻辑
-	int compute_capability_major = 0;
-	res = cuDeviceGetAttribute(&compute_capability_major,
-				   CU_DEVICE_ATTRIBUTE_COMPUTE_CAPABILITY_MAJOR,
-				   device);
-	if (res != CUDA_SUCCESS) {
-		return false;
-	}
-
-	spdlog::debug(
-		"Found potential CUDA context with compute capability {}.x",
-		compute_capability_major);
-	return true;
-}
-
-bool CUDAInjector::inject_ptx(const char *func_name, CUmodule &module)
+bool CUDAInjector::inject_ptx()
 {
 	pos_retval_t retval = POS_SUCCESS;
-	// retval = __dispatch(clio_checkpoint);
-	// if (retval != POS_SUCCESS) {
-	// 	return false;
-	// }
-	CUfunction target_addr;
-	size_t dummy_code_size = sizeof(orig_ptx.c_str());
-	CUmodule m;
-	CUresult rc = cuModuleLoadData(&m, orig_ptx.c_str());
-	rc = cuModuleGetFunction(&target_addr, m,
-					func_name);
-
-	// 2. Retrieve the function named "injected_kernel"
-	CUfunction kernel;
-	auto result = cuModuleGetFunction(&kernel, module, func_name);
-	if (result != CUDA_SUCCESS) {
-		spdlog::error("cuModuleGetFunction() failed: {}", (int)result);
-		cuModuleUnload(module);
+	retval = __dispatch(clio_checkpoint);
+	if (retval != POS_SUCCESS) {
 		return false;
 	}
 
-	// 3. Backup the original code
-	CodeBackup backup;
-	backup.addr = reinterpret_cast<CUdeviceptr>(target_addr);
-	backups.push_back(backup);
-	// how to push ptx into clio_restore
-	// retval = __dispatch(clio_restore);
-	// if (retval != POS_SUCCESS) {
-	// 	return false;
-	// }
-	// need to hack the restored ptx code
+	retval = __dispatch(clio_restore);
+	if (retval != POS_SUCCESS) {
+		return false;
+	}
 	return true;
 }

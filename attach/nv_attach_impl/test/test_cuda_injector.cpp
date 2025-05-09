@@ -18,8 +18,6 @@ TEST_CASE("Test CUDAInjector - basic attach/detach")
 		test_pid);
 
 	// 2. Attempt to attach to the process
-	bool attached = injector.attach();
-	REQUIRE(attached == true);
 
 	// 3. [Optional] Attempt to inject PTX code
 	SECTION("Inject PTX code")
@@ -35,22 +33,10 @@ TEST_CASE("Test CUDAInjector - basic attach/detach")
 
 		// A hypothetical method in CUDAInjector for demonstration
 		/// Commented out due to compile errors
-		// bool success = injector.inject_ptx("infinite_kernel", m);
-		// REQUIRE(success == true);
+		bool success = injector.inject_ptx();
+		REQUIRE(success == true);
 	}
 
-	// 4. Detach from the process
-	bool detached = injector.detach();
-	REQUIRE(detached == true);
-
-	// 5. Attempting to attach again or inject code after detaching might
-	// fail
-	//    but you can add negative tests if you want:
-	SECTION("Attach again (negative test)")
-	{
-		bool reattach = injector.attach();
-		REQUIRE(reattach == true);
-	}
 }
 
 TEST_CASE("Test String Concat - ptx load/unload")
