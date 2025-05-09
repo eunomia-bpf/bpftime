@@ -215,3 +215,5 @@ set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -I/home/geekpie/miniconda3/envs/asc25-rn
 file(GLOB_RECURSE POS_CLI_SOURCE_FILES cli/src/*.cpp)
 add_executable(pos-cli ${POS_CLI_SOURCE_FILES})
 target_link_libraries(pos-cli pos)
+
+target_include_directories(pos-cli PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/..)

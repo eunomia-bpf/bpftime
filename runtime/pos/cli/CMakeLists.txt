@@ -9,7 +9,7 @@ project(pos_unittest LANGUAGES CXX CUDA)
 # SET(EXECUTABLE_OUTPUT_PATH ${CMAKE_CURRENT_SOURCE_DIR}/../../build)
 
 # per-API test
-add_executable(pos-cli ./main.cpp ./migrate.cpp)
+# add_executable(pos-cli ./main.cpp ./migrate.cpp)
 
 # set(TEST_TARGETS per_api_test hidden_api_test)
 set(TEST_TARGETS pos-cli)

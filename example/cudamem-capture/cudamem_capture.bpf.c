@@ -8,15 +8,16 @@
 #include <bpf/bpf_helpers.h>
 #include <bpf/bpf_tracing.h>
 
-SEC("kretprobe/infinite_kernel__cuda")
+SEC("kprobe/__memcapture_trace")
 int do_cudamem_capture(struct pt_regs *ctx)
 {
-	int rand = bpf_get_prandom_u32();
-	if (rand % 2 == 0) {
+	
+	// int rand = bpf_get_prandom_u32();
+	// if (rand % 2 == 0) {
 //		bpf_printk("bpf: Inject error. Target func will not exec.\n");
-		bpf_override_return(ctx, -1);
-		return 0;
-	}
+		// bpf_override_return(ctx, -1);
+		// return 0;
+	// }
 //	bpf_printk("bpf: Continue.\n");
 	return 0;
 }

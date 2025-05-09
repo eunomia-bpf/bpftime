@@ -7,9 +7,12 @@
 #include <asm/unistd.h> // For architecture-specific syscall numbers
 
 #include <cassert>
+#include <cstdlib>
 #include <cuda.h>
 #include <cuda_runtime.h>
 #include <dlfcn.h>
+#include <filesystem>
+#include <fstream>
 #include <memory>
 #include <sys/ptrace.h>
 #include <sys/wait.h>
@@ -81,42 +84,26 @@ static void example_listener_on_enter(GumInvocationListener *listener,
 		SPDLOG_INFO("Finally size = {}", data_vec.size());
 
 		// Patch the fatbin
-		std::vector<uint8_t> patched_fatbin((uint8_t *)data_vec.data(),
-						    (uint8_t *)data_vec.data() +
-							    data_vec.size());
-		// auto result =
+		// std::vector<uint8_t> patched_fatbin((uint8_t
+		// *)data_vec.data(), 				    (uint8_t
+		// *)data_vec.data() +
+		// data_vec.size()); auto result =
 		// POSUtil_CUDA_Kernel_Patcher::patch_fatbin_binary( 	(uint8_t
 		// *)data_vec.data(), patched_fatbin); if (result !=
 		// POS_SUCCESS) { 	SPDLOG_ERROR("Failed to patch fatbin");
 		// 	return;
 		// }
 
-		auto patched_fatbin_ptr =
-			std::make_unique<std::vector<uint8_t>>(patched_fatbin);
-		auto patched_header = std::make_unique<__fatBinC_Wrapper_t>();
-		patched_header->magic = 0x466243b1;
-		patched_header->version = 1;
-		patched_header->data =
-			(const unsigned long long *)patched_fatbin_ptr->data();
-		patched_header->filename_or_fatbins = 0;
-		context->impl->stored_binaries_body.push_back(
-			std::move(patched_fatbin_ptr));
-		context->impl->stored_binaries_header.push_back(
-			std::move(patched_header));
-		// Set the patched header as the argument
-		gum_invocation_context_replace_nth_argument(
-			gum_ctx, 0, patched_header.get());
-
+		std::vector<std::string> ptx_out;
 		{
 			SPDLOG_INFO("Listing functions in the patched ptx");
 			std::vector<POSCudaFunctionDesp *> desp;
 			std::map<std::string, POSCudaFunctionDesp *> cache;
-			std::vector<std::string> ptx_out;
+
 			auto result = POSUtil_CUDA_Fatbin::
 				obtain_functions_from_cuda_binary(
-					patched_fatbin_ptr->data(),
-					patched_fatbin_ptr->size(), &desp,
-					cache, ptx_out);
+					(uint8_t *)data_vec.data(),
+					data_vec.size(), &desp, cache, ptx_out);
 			if (result != POS_SUCCESS) {
 				SPDLOG_ERROR(
 					"Unable to parse functions from patched fatbin: {}",
@@ -129,13 +116,70 @@ static void example_listener_on_enter(GumInvocationListener *listener,
 				SPDLOG_INFO("{}", item->signature);
 			}
 		}
+		if (ptx_out.size() != 1) {
+			SPDLOG_ERROR(
+				"Expect the loaded fatbin to contain only 1 PTX code section, but it contains {}",
+				ptx_out.size());
+			return;
+		}
 
-		CUmodule module;
-		CUresult rc = cuModuleLoadData(&module,
-					       "injected_kernel.ptx"); // which
-								       // ptx?
-		context->impl->injector->attach();
-		context->impl->injector->inject_ptx("infinite_kernel", module);
+		/**
+		Here we can patch the PTX. Then recompile it.
+		*/
+
+		SPDLOG_INFO("Recompiling PTX with nvcc..");
+		char tmp_dir[] = "/tmp/bpftime-recompile-nvcc.XXXXXX";
+		mkdtemp(tmp_dir);
+		std::filesystem::path work_dir(tmp_dir);
+		SPDLOG_INFO("Working directory: {}", work_dir.c_str());
+		std::string command = "nvcc ";
+		{
+			auto ptx_in = work_dir / "main.ptx";
+			SPDLOG_INFO("PTX IN: {}", ptx_in.c_str());
+			std::ofstream ofs(ptx_in);
+			ofs << ptx_out[0];
+			command += ptx_in;
+			command += " ";
+		}
+		command += "-fatbin ";
+		auto fatbin_out = work_dir / "out.fatbin";
+		command += "-o ";
+		command += fatbin_out;
+		SPDLOG_INFO("Fatbin out {}", fatbin_out.c_str());
+		SPDLOG_INFO("Starting nvcc: {}", command);
+		if (int err = system(command.c_str()); err != 0) {
+			SPDLOG_ERROR("Unable to execute nvcc");
+			return;
+		}
+		SPDLOG_INFO("NVCC execution done.");
+		std::vector<uint8_t> fatbin_out_buf;
+		{
+			std::ifstream ifs(fatbin_out,
+					  std::ios::binary | std::ios::ate);
+			auto file_tail = ifs.tellg();
+			ifs.seekg(0, std::ios::beg);
+
+			fatbin_out_buf.resize(file_tail);
+			ifs.read((char *)fatbin_out_buf.data(), file_tail);
+		}
+		SPDLOG_INFO("Got patched fatbin in {} bytes",
+			    fatbin_out_buf.size());
+		auto patched_fatbin_ptr =
+			std::make_unique<std::vector<uint8_t>>(fatbin_out_buf);
+		auto patched_header = std::make_unique<__fatBinC_Wrapper_t>();
+		auto patched_header_ptr = patched_header.get();
+		patched_header->magic = 0x466243b1;
+		patched_header->version = 1;
+		patched_header->data =
+			(const unsigned long long *)patched_fatbin_ptr->data();
+		patched_header->filename_or_fatbins = 0;
+		context->impl->stored_binaries_body.push_back(
+			std::move(patched_fatbin_ptr));
+		context->impl->stored_binaries_header.push_back(
+			std::move(patched_header));
+		// Set the patched header as the argument
+		gum_invocation_context_replace_nth_argument(gum_ctx, 0,
+							    patched_header_ptr);
 	}
 }
 

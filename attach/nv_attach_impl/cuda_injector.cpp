@@ -7,34 +7,34 @@
 using namespace bpftime;
 using namespace attach;
 
-inline pos_retval_t __dispatch(pos_cli_options_t &clio)
-{
-	switch (clio.action_type) {
-	case kPOS_CliAction_Help:
-		return handle_help(clio);
+// inline pos_retval_t __dispatch(pos_cli_options_t &clio)
+// {
+// 	switch (clio.action_type) {
+// 	case kPOS_CliAction_Help:
+// 		return handle_help(clio);
 
-	case kPOS_CliAction_PreDump:
-		return handle_predump(clio);
+// 	case kPOS_CliAction_PreDump:
+// 		return handle_predump(clio);
 
-	case kPOS_CliAction_Dump:
-		return handle_dump(clio);
+// 	case kPOS_CliAction_Dump:
+// 		return handle_dump(clio);
 
-	case kPOS_CliAction_Restore:
-		return handle_restore(clio);
+// 	case kPOS_CliAction_Restore:
+// 		return handle_restore(clio);
 
-	case kPOS_CliAction_Migrate:
-		return handle_migrate(clio);
+// 	case kPOS_CliAction_Migrate:
+// 		return handle_migrate(clio);
 
-	case kPOS_CliAction_TraceResource:
-		return handle_trace(clio);
+// 	case kPOS_CliAction_TraceResource:
+// 		return handle_trace(clio);
 
-	case kPOS_CliAction_Start:
-		return handle_start(clio);
+// 	case kPOS_CliAction_Start:
+// 		return handle_start(clio);
 
-	default:
-		return POS_FAILED_NOT_IMPLEMENTED;
-	}
-}
+// 	default:
+// 		return POS_FAILED_NOT_IMPLEMENTED;
+// 	}
+// }
 
 namespace oob_functions
 {
@@ -168,10 +168,10 @@ bool CUDAInjector::validate_cuda_context(CUcontext remote_ctx)
 bool CUDAInjector::inject_ptx(const char *func_name, CUmodule &module)
 {
 	pos_retval_t retval = POS_SUCCESS;
-	retval = __dispatch(clio_checkpoint);
-	if (retval != POS_SUCCESS) {
-		return false;
-	}
+	// retval = __dispatch(clio_checkpoint);
+	// if (retval != POS_SUCCESS) {
+	// 	return false;
+	// }
 	CUfunction target_addr;
 	size_t dummy_code_size = sizeof(orig_ptx.c_str());
 	CUmodule m;
@@ -193,10 +193,10 @@ bool CUDAInjector::inject_ptx(const char *func_name, CUmodule &module)
 	backup.addr = reinterpret_cast<CUdeviceptr>(target_addr);
 	backups.push_back(backup);
 	// how to push ptx into clio_restore
-	retval = __dispatch(clio_restore);
-	if (retval != POS_SUCCESS) {
-		return false;
-	}
+	// retval = __dispatch(clio_restore);
+	// if (retval != POS_SUCCESS) {
+	// 	return false;
+	// }
 	// need to hack the restored ptx code
 	return true;
 }
