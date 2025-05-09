@@ -29,7 +29,7 @@ jobs:
       - name: Install dependencies
         if: "matrix.container == 'ubuntu-2204'"
         run: |
-          apt-get update -y && apt-get install -y lcov libzstd-dev libboost-all-dev gpg
+          apt-get update -y && apt-get install -y lcov libzstd-dev libboost-all-dev libabsl-dev libprotobuf-dev gpg
       - name: Install lcov
         if: "matrix.container == 'fedora-39'"
         run: |
