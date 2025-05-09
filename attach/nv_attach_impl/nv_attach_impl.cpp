@@ -18,6 +18,7 @@
 #include <link.h>
 #include <pos/cuda_impl/utils/fatbin.h>
 #include <unistd.h>
+#include <vector>
 using namespace bpftime;
 using namespace attach;
 
@@ -80,13 +81,15 @@ static void example_listener_on_enter(GumInvocationListener *listener,
 		SPDLOG_INFO("Finally size = {}", data_vec.size());
 
 		// Patch the fatbin
-		std::vector<uint8_t> patched_fatbin;
-		auto result = POSUtil_CUDA_Kernel_Patcher::patch_fatbin_binary(
-			(uint8_t *)data_vec.data(), patched_fatbin);
-		if (result != POS_SUCCESS) {
-			SPDLOG_ERROR("Failed to patch fatbin");
-			return;
-		}
+		std::vector<uint8_t> patched_fatbin((uint8_t *)data_vec.data(),
+						    (uint8_t *)data_vec.data() +
+							    data_vec.size());
+		// auto result =
+		// POSUtil_CUDA_Kernel_Patcher::patch_fatbin_binary( 	(uint8_t
+		// *)data_vec.data(), patched_fatbin); if (result !=
+		// POS_SUCCESS) { 	SPDLOG_ERROR("Failed to patch fatbin");
+		// 	return;
+		// }
 
 		auto patched_fatbin_ptr =
 			std::make_unique<std::vector<uint8_t>>(patched_fatbin);
@@ -108,13 +111,12 @@ static void example_listener_on_enter(GumInvocationListener *listener,
 			SPDLOG_INFO("Listing functions in the patched ptx");
 			std::vector<POSCudaFunctionDesp *> desp;
 			std::map<std::string, POSCudaFunctionDesp *> cache;
-			// POSUtil_CUDA_Kernel_Parser::parse_by_prototype();
-			// POSUtil_CUDA_Kernel_Patcher::patch_fatbin_binary();
-			result = POSUtil_CUDA_Fatbin::
+			std::vector<std::string> ptx_out;
+			auto result = POSUtil_CUDA_Fatbin::
 				obtain_functions_from_cuda_binary(
 					patched_fatbin_ptr->data(),
 					patched_fatbin_ptr->size(), &desp,
-					cache);
+					cache, ptx_out);
 			if (result != POS_SUCCESS) {
 				SPDLOG_ERROR(
 					"Unable to parse functions from patched fatbin: {}",

@@ -46,7 +46,7 @@ namespace cu_module_load {
         POSHandleManager_CUDA_Context *hm_context;
         POSHandleManager_CUDA_Module *hm_module;
         POSHandleManager_CUDA_Function *hm_function;
-
+        std::vector<std::string> _dummy;
     #define __POS_DUMP_FATBIN 0
     #if __POS_DUMP_FATBIN
         std::ofstream fatbin_file("/tmp/fatbin.bin", std::ios::binary);
@@ -136,7 +136,8 @@ namespace cu_module_load {
             /* binary_ptr */ (uint8_t*)(pos_api_param_addr(wqe, 1)),
             /* binary_size */ pos_api_param_size(wqe, 1),
             /* deps */ &(module_handle->function_desps),
-            /* cached_desp_map */ hm_module->cached_function_desps
+            /* cached_desp_map */ hm_module->cached_function_desps,
+            _dummy
         );
         POS_DEBUG(
             "parse(cu_module_load): found %lu functions in the fatbin",
@@ -227,7 +228,7 @@ namespace cu_module_load_data {
         POSHandleManager_CUDA_Context *hm_context;
         POSHandleManager_CUDA_Module *hm_module;
         POSHandleManager_CUDA_Function *hm_function;
-
+        std::vector<std::string> _dummy;
     #define __POS_DUMP_FATBIN 0
     #if __POS_DUMP_FATBIN 
         std::ofstream fatbin_file("/tmp/fatbin.bin", std::ios::binary);
@@ -311,13 +312,14 @@ namespace cu_module_load_data {
         wqe->record_handle<kPOS_Edge_Direction_Create>({
             /* handle */ module_handle
         });
-
+        
         // analyse the fatbin and stores the function attributes in the handle
         retval = POSUtil_CUDA_Fatbin::obtain_functions_from_cuda_binary(
             /* binary_ptr */ (uint8_t*)(pos_api_param_addr(wqe, 0)),
             /* binary_size */ pos_api_param_size(wqe, 0),
             /* deps */ &(module_handle->function_desps),
-            /* cached_desp_map */ hm_module->cached_function_desps
+            /* cached_desp_map */ hm_module->cached_function_desps,
+            _dummy
         );
         if(unlikely(retval != POS_SUCCESS)){
             POS_WARN(

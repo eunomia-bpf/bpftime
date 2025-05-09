@@ -16,6 +16,7 @@
 
 #pragma once
 
+#include <cstddef>
 #include <iostream>
 #include <fstream>
 #include <vector>
@@ -254,7 +255,8 @@ class POSUtil_CUDA_Fatbin {
 	static pos_retval_t obtain_functions_from_cuda_binary(
 		uint8_t *binary_ptr, uint64_t binary_size,
 		std::vector<POSCudaFunctionDesp *> *desps,
-		std::map<std::string, POSCudaFunctionDesp *> &cached_desp_map)
+		std::map<std::string, POSCudaFunctionDesp *> &cached_desp_map,
+		std::vector<std::string> &ptx_out)
 	{
 		pos_retval_t retval = POS_SUCCESS;
 		POSCudaFunctionDesp *new_desp;
@@ -263,7 +265,7 @@ class POSUtil_CUDA_Fatbin {
 		size_t text_data_size = 0;
 		size_t fatbin_total_size = 0;
 		uint32_t nb_text_section = 1;
-		POS_DEBUG("nb_text_section=%d",(int)nb_text_section);
+		POS_DEBUG("nb_text_section=%d", (int)nb_text_section);
 		fat_elf_header_t *fatbin_elf_hdr;
 		fat_text_header_t *fatbin_text_hdr;
 
@@ -390,6 +392,22 @@ class POSUtil_CUDA_Fatbin {
 					cubin_file.flush();
 					cubin_file.close();
 #endif
+					uint8_t *decomp_output;
+					size_t decomp_output_size;
+
+					__decompress_single_text_section(
+						input_pos, &decomp_output,
+						&decomp_output_size,
+						fatbin_elf_hdr,
+						fatbin_text_hdr);
+
+					std::string current_ptx(
+						(char *)decomp_output,
+						(char *)decomp_output +
+							decomp_output_size);
+					delete[] decomp_output;
+					ptx_out.push_back(
+						std::move(current_ptx));
 
 					input_pos += fatbin_text_hdr->size;
 					continue;

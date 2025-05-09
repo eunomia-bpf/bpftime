@@ -1,6 +1,9 @@
 #include "catch2/catch_message.hpp"
+#include "catch2/internal/catch_stdstreams.hpp"
 #include <catch2/catch_test_macros.hpp>
 #include <cstdint>
+#include <iostream>
+#include <ostream>
 #include <pos/cuda_impl/utils/fatbin.h>
 #define STRINGIFY(x) #x
 #define TOSTRING(x) STRINGIFY(x)
@@ -20,9 +23,15 @@ TEST_CASE("Test fatbin parse")
 	INFO("file_size=" << file_size);
 	std::vector<POSCudaFunctionDesp *> desp;
 	std::map<std::string, POSCudaFunctionDesp *> cache;
+	std::vector<std::string> ptx_out;
 	REQUIRE(POSUtil_CUDA_Fatbin::obtain_functions_from_cuda_binary(
-			(uint8_t *)buffer.data(), buffer.size(), &desp,
-			cache) == POS_SUCCESS);
+			(uint8_t *)buffer.data(), buffer.size(), &desp, cache,
+			ptx_out) == POS_SUCCESS);
 	REQUIRE(true);
 	REQUIRE(desp.size() >= 1);
+	INFO("Got ptx count" << ptx_out.size());
+	for (const auto &ptx : ptx_out) {
+		std::cout << "PTX " << ptx << std::endl;
+	}
+	REQUIRE(false);
 }
