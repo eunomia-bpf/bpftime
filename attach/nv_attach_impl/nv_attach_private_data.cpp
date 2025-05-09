@@ -19,7 +19,7 @@ std::string nv_attach_private_data::to_string() const
 		    << std::get<std::string>(code_addr_or_func_name) << " ";
 	}
 	oss << "comm_shared_mem=" << std::hex << comm_shared_mem << " ";
-	oss << "trampoline_ptx=" << trampoline_ptx << std::endl;
+	oss << "trampoline_ptx=" << probe_ptx << std::endl;
 	return oss.str();
 };
 

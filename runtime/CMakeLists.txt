@@ -272,8 +272,8 @@ if(${TEST_LCOV})
   target_link_options(${PROJECT_NAME} PUBLIC -fprofile-arcs)
 endif()
 
-add_dependencies(${PROJECT_NAME} bpftime_vm_compat)
-target_link_libraries(${PROJECT_NAME} PUBLIC bpftime_vm_compat pos)
-
+add_dependencies(${PROJECT_NAME} bpftime_vm_compat llvmbpf_vm)
+target_link_libraries(${PROJECT_NAME} PUBLIC bpftime_vm_compat pos llvmbpf_vm)
+target_include_directories(${PROJECT_NAME} PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/../vm/llvm-jit/include)
 
 add_subdirectory(./pos-unit-test)

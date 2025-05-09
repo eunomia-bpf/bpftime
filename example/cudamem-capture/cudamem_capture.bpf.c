@@ -8,7 +8,7 @@
 #include <bpf/bpf_helpers.h>
 #include <bpf/bpf_tracing.h>
 
-SEC("kprobe/__memcapture_trace")
+SEC("kprobe/__memcapture")
 int do_cudamem_capture(struct pt_regs *ctx)
 {
 	

@@ -14,7 +14,7 @@ constexpr std::string_view DEFAULT_LOGGER_OUTPUT_PATH =
 #endif
 
 #ifndef DEFAULT_VM_NAME
-constexpr std::string_view DEFAULT_VM_NAME = "ubpf";
+constexpr std::string_view DEFAULT_VM_NAME = "llvm";
 #endif
 
 namespace bpftime

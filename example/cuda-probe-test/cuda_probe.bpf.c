@@ -27,18 +27,18 @@ static int increment_map(void *map, void *key, u64 increment)
 	return *count;
 }
 
-SEC("kretprobe/vprintf")
-int retprobe__cuda(struct pt_regs *ctx)
-{
-	u64 key = 12345;
-	increment_map(&test_hash_map, &key, 1);
-		bpf_printk("Message from eBPF: %d, %lx", 10, 20);
+// SEC("kretprobe/__memcapture")
+// int retprobe__cuda(struct pt_regs *ctx)
+// {
+// 	u64 key = 12345;
+// 	increment_map(&test_hash_map, &key, 1);
+// 		bpf_printk("Message from eBPF: %d, %lx", 10, 20);
 
-	return 0;
-}
+// 	return 0;
+// }
 
 
-SEC("kprobe/vprintf")
+SEC("kprobe/__memcapture")
 int probe__cuda(struct pt_regs *ctx)
 {
 	u64 key = 12345;

@@ -1,11 +1,14 @@
 #ifndef _BPFTIME_NV_ATTACH_IMPL_HPP
 #define _BPFTIME_NV_ATTACH_IMPL_HPP
 #include "cuda_injector.hpp"
+#include "ebpf_inst.h"
+#include "nv_attach_utils.hpp"
 #include <base_attach_impl.hpp>
 #include <cstdint>
 #include <cuda_runtime.h>
 #include <cuda_runtime_api.h>
 #include <dlfcn.h>
+#include <map>
 #include <memory>
 #include <nvml.h>
 #include <cuda.h>
@@ -17,31 +20,17 @@
 #include <sys/wait.h>
 
 #include <pos/include/oob/ckpt_dump.h>
+#include <variant>
 #include <vector>
 
 namespace bpftime
 {
 namespace attach
 {
-extern "C" {
-typedef struct {
-	int magic;
-	int version;
-	const unsigned long long *data;
-	void *filename_or_fatbins;
+std::string filter_compiled_ptx_for_ebpf_program(std::string input);
 
-} __fatBinC_Wrapper_t;
-}
 constexpr int ATTACH_CUDA_PROBE = 8;
 constexpr int ATTACH_CUDA_RETPROBE = 9;
-template <class T>
-static inline T try_get_original_func(const char *name, T &store)
-{
-	if (store == nullptr) {
-		store = (T)dlsym(RTLD_NEXT, name);
-	}
-	return store;
-}
 
 struct nv_hooker_func_t {
 	void *func;
@@ -51,6 +40,21 @@ enum class AttachedToFunction { RegisterFatbin };
 struct CUDARuntimeFunctionHookerContext {
 	class nv_attach_impl *impl;
 	AttachedToFunction to_function;
+};
+
+struct nv_attach_cuda_memcapture {};
+struct nv_attach_function_probe {
+	std::string func;
+	bool is_retprobe;
+};
+
+using nv_attach_type =
+	std::variant<nv_attach_cuda_memcapture, nv_attach_function_probe>;
+struct nv_attach_entry {
+	std::string probe_ptx;
+	nv_attach_type type;
+	uintptr_t shared_mem_ptr;
+	std::vector<ebpf_inst> instuctions;
 };
 
 // Attach implementation of syscall trace
@@ -69,6 +73,10 @@ class nv_attach_impl final : public base_attach_impl {
 	std::unique_ptr<CUDAInjector> injector;
 	std::vector<std::unique_ptr<__fatBinC_Wrapper_t>> stored_binaries_header;
 	std::vector<std::unique_ptr<std::vector<uint8_t>>> stored_binaries_body;
+	std::optional<std::vector<uint8_t>>
+	hack_fatbin(std::vector<uint8_t> &&);
+	std::optional<std::string>
+	patch_with_memcapture(std::string, const nv_attach_entry &entry);
 
     private:
 	void *frida_interceptor;
@@ -76,6 +84,7 @@ class nv_attach_impl final : public base_attach_impl {
 	std::vector<std::unique_ptr<CUDARuntimeFunctionHookerContext>>
 		hooker_contexts;
 	std::set<std::string> to_hook_device_functions;
+	std::map<int, nv_attach_entry> hook_entries;
 };
 
 } // namespace attach
