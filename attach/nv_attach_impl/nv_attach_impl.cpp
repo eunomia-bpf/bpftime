@@ -1,4 +1,5 @@
 #include "nv_attach_impl.hpp"
+#include "cuda_injector.hpp"
 #include "frida-gum.h"
 
 #include "pos/include/common.h"
@@ -16,13 +17,13 @@
 #include <sys/uio.h>
 #include <link.h>
 #include <pos/cuda_impl/utils/fatbin.h>
+#include <unistd.h>
 using namespace bpftime;
 using namespace attach;
 
 typedef struct _CUDARuntimeFunctionHooker {
 	GObject parent;
 } CUDARuntimeFunctionHooker;
-static CUDAInjector injector(getpid()); // the pid of the target process
 
 static void cuda_runtime_function_hooker_iface_init(gpointer g_iface,
 						    gpointer iface_data);
@@ -37,13 +38,7 @@ G_DEFINE_TYPE_EXTENDED(
 			      cuda_runtime_function_hooker_iface_init))
 
 extern "C" {
-typedef struct {
-	int magic;
-	int version;
-	const unsigned long long *data;
-	void *filename_or_fatbins;
 
-} __fatBinC_Wrapper_t;
 typedef struct __attribute__((__packed__)) fat_elf_header {
 	uint32_t magic;
 	uint16_t version;
@@ -93,44 +88,64 @@ static void example_listener_on_enter(GumInvocationListener *listener,
 			return;
 		}
 
-		// Create a new header with patched fatbin
-		__fatBinC_Wrapper_t patched_header = *header;
-		patched_header.data =
-			(const unsigned long long *)patched_fatbin.data();
-
+		auto patched_fatbin_ptr =
+			std::make_unique<std::vector<uint8_t>>(patched_fatbin);
+		auto patched_header = std::make_unique<__fatBinC_Wrapper_t>();
+		patched_header->magic = 0x466243b1;
+		patched_header->version = 1;
+		patched_header->data =
+			(const unsigned long long *)patched_fatbin_ptr->data();
+		patched_header->filename_or_fatbins = 0;
+		context->impl->stored_binaries_body.push_back(
+			std::move(patched_fatbin_ptr));
+		context->impl->stored_binaries_header.push_back(
+			std::move(patched_header));
 		// Set the patched header as the argument
-		gum_invocation_context_replace_nth_argument(gum_ctx, 0,
-							    &patched_header);
+		gum_invocation_context_replace_nth_argument(
+			gum_ctx, 0, patched_header.get());
 
-		std::vector<POSCudaFunctionDesp *> desp;
-		std::map<std::string, POSCudaFunctionDesp *> cache;
+		{
+			SPDLOG_INFO("Listing functions in the patched ptx");
+			std::vector<POSCudaFunctionDesp *> desp;
+			std::map<std::string, POSCudaFunctionDesp *> cache;
+			// POSUtil_CUDA_Kernel_Parser::parse_by_prototype();
+			// POSUtil_CUDA_Kernel_Patcher::patch_fatbin_binary();
+			result = POSUtil_CUDA_Fatbin::
+				obtain_functions_from_cuda_binary(
+					patched_fatbin_ptr->data(),
+					patched_fatbin_ptr->size(), &desp,
+					cache);
+			if (result != POS_SUCCESS) {
+				SPDLOG_ERROR(
+					"Unable to parse functions from patched fatbin: {}",
+					(int)result);
+				return;
+			}
+			SPDLOG_INFO(
+				"Got these functions in the patched fatbin");
+			for (const auto &item : desp) {
+				SPDLOG_INFO("{}", item->signature);
+			}
+		}
 
-		result = POSUtil_CUDA_Fatbin::obtain_functions_from_cuda_binary(
-			patched_fatbin.data(), patched_fatbin.size(), &desp,
-			cache);
-		if (result != POS_SUCCESS) {
-			SPDLOG_ERROR(
-				"Unable to parse functions from patched fatbin: {}",
-				(int)result);
-			return;
-		}
-		SPDLOG_INFO("Got these functions in the patched fatbin");
-		for (const auto &item : desp) {
-			SPDLOG_INFO("{}", item->signature);
-		}
+		CUmodule module;
+		CUresult rc = cuModuleLoadData(&module,
+					       "injected_kernel.ptx"); // which
+								       // ptx?
+		context->impl->injector->attach();
+		context->impl->injector->inject_ptx("infinite_kernel", module);
 	}
-	CUmodule module;
-	CUresult rc = cuModuleLoadData(&module, "injected_kernel.ptx"); // which
-									// ptx?
-	injector.attach();
-	injector.inject_ptx("infinite_kernel", module);
 }
 
 static void example_listener_on_leave(GumInvocationListener *listener,
 				      GumInvocationContext *ic)
 {
 	SPDLOG_INFO("On leave");
-	injector.detach();
+	// injector.detach();
+	auto context =
+		GUM_IC_GET_FUNC_DATA(ic, CUDARuntimeFunctionHookerContext *);
+	if (context->to_function == AttachedToFunction::RegisterFatbin) {
+	}
 }
 
 static void
@@ -173,7 +188,7 @@ nv_attach_impl::nv_attach_impl()
 	assert(listener != nullptr);
 	this->frida_interceptor = interceptor;
 	this->frida_listener = listener;
-
+	this->injector = std::make_unique<CUDAInjector>(getpid());
 	gum_interceptor_begin_transaction(interceptor);
 	auto ctx = std::make_unique<CUDARuntimeFunctionHookerContext>();
 	ctx->to_function = AttachedToFunction::RegisterFatbin;
@@ -186,9 +201,7 @@ nv_attach_impl::nv_attach_impl()
 		interceptor,
 		// GSIZE_TO_POINTER(gum_module_find_export_by_name(
 		// 	nullptr, "__cudaRegisterFatBinary"))
-		(gpointer)original___cudaRegisterFatBinary
-
-		,
+		(gpointer)original___cudaRegisterFatBinary,
 		(GumInvocationListener *)listener, ctx_ptr);
 	if (result != GUM_ATTACH_OK) {
 		SPDLOG_ERROR("Unable to attach to CUDA functions: {}",
@@ -204,47 +217,3 @@ nv_attach_impl::~nv_attach_impl()
 	if (frida_listener)
 		g_object_unref(frida_listener);
 }
-// static void **(*original___cudaRegisterFatBinary)(void *) = nullptr;
-
-// extern "C" void **__cudaRegisterFatBinary(void *fatbin)
-// {
-// 	SPDLOG_INFO("Mocking __cudaRegisterFatBinary..");
-
-// 	auto orig = try_get_original_func("__cudaRegisterFatBinary",
-// 					  original___cudaRegisterFatBinary);
-
-// 	auto header = (__fatBinC_Wrapper_t *)fatbin;
-// 	auto data = (const char *)header->data;
-// 	fat_elf_header_t *curr_header = (fat_elf_header_t *)data;
-// 	const char *tail = (const char *)curr_header;
-// 	while (true) {
-// 		if (curr_header->magic == FATBIN_TEXT_MAGIC) {
-// 			SPDLOG_INFO(
-// 				"Got CUBIN section header size = {}, size = {}",
-// 				curr_header->header_size, curr_header->size);
-// 			tail = ((const char *)curr_header) +
-// 			       curr_header->header_size + curr_header->size;
-// 			curr_header = (fat_elf_header_t *)tail;
-// 		} else {
-// 			break;
-// 		}
-// 	};
-// 	std::vector<char> data_vec(data, tail);
-// 	SPDLOG_INFO("Finally size = {}", data_vec.size());
-
-// 	std::vector<POSCudaFunctionDesp *> desp;
-// 	std::map<std::string, POSCudaFunctionDesp *> cache;
-
-// 	auto result = POSUtil_CUDA_Fatbin::obtain_functions_from_cuda_binary(
-// 		(uint8_t *)data_vec.data(), data_vec.size(), &desp, cache);
-// 	if (result != POS_SUCCESS) {
-// 		SPDLOG_ERROR("Unable to parse functions from fatbin: {}",
-// 			     (int)result);
-// 		return orig(fatbin);
-// 	}
-// 	SPDLOG_INFO("Got these functions in the fatbin");
-// 	for (const auto &item : desp) {
-// 		SPDLOG_INFO("{}, {}", item->name, item->signature);
-// 	}
-// 	return orig(fatbin);
-// }

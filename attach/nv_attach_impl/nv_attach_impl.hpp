@@ -2,6 +2,7 @@
 #define _BPFTIME_NV_ATTACH_IMPL_HPP
 #include "cuda_injector.hpp"
 #include <base_attach_impl.hpp>
+#include <cstdint>
 #include <cuda_runtime.h>
 #include <cuda_runtime_api.h>
 #include <dlfcn.h>
@@ -22,7 +23,15 @@ namespace bpftime
 {
 namespace attach
 {
+extern "C" {
+typedef struct {
+	int magic;
+	int version;
+	const unsigned long long *data;
+	void *filename_or_fatbins;
 
+} __fatBinC_Wrapper_t;
+}
 constexpr int ATTACH_CUDA_PROBE = 8;
 constexpr int ATTACH_CUDA_RETPROBE = 9;
 template <class T>
@@ -57,15 +66,16 @@ class nv_attach_impl final : public base_attach_impl {
 	nv_attach_impl &operator=(const nv_attach_impl &) = delete;
 	nv_attach_impl();
 	virtual ~nv_attach_impl();
+	std::unique_ptr<CUDAInjector> injector;
+	std::vector<std::unique_ptr<__fatBinC_Wrapper_t>> stored_binaries_header;
+	std::vector<std::unique_ptr<std::vector<uint8_t>>> stored_binaries_body;
 
     private:
-	std::optional<CUDAInjector> injector;
 	void *frida_interceptor;
 	void *frida_listener;
 	std::vector<std::unique_ptr<CUDARuntimeFunctionHookerContext>>
 		hooker_contexts;
 	std::set<std::string> to_hook_device_functions;
-	std::vector<std::unique_ptr<std::vector<char>>> stored_binaries;
 };
 
 } // namespace attach
