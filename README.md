@@ -136,7 +136,7 @@ Left: original kernel eBPF | Right: bpftime
 
 ![How it works](https://eunomia.dev/bpftime/documents/bpftime.png)
 
-In this mode, bpftime can run eBPF programs in userspace without kernel, so it can be ported into low version of Linux or event other systems, and running without root permissions. It relies on a [userspace verifier](https://github.com/vbpf/ebpf-verifier) to ensure the safety of eBPF programs.
+In this mode, bpftime can run eBPF programs in userspace without kernel, so it can be ported into low version of Linux or even other systems, and running without root permissions. It relies on a [userspace verifier](https://github.com/vbpf/ebpf-verifier) to ensure the safety of eBPF programs.
 
 #### Run with kernel eBPF
 
