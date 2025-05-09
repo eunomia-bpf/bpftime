@@ -22,8 +22,20 @@
 #include <pos/cuda_impl/utils/fatbin.h>
 #include <unistd.h>
 #include <vector>
+#include <nvrtc.h>
 using namespace bpftime;
 using namespace attach;
+
+#define NVRTC_SAFE_CALL(x)                                                     \
+	do {                                                                   \
+		nvrtcResult result = x;                                        \
+		if (result != NVRTC_SUCCESS) {                                 \
+			SPDLOG_ERROR("NVRTC ERROR: {} at {}:{}",               \
+				     nvrtcGetErrorString(result), __FILE__,    \
+				     __LINE__);                                \
+			throw std::runtime_error("nvrtc error");               \
+		}                                                              \
+	} while (0)
 
 typedef struct _CUDARuntimeFunctionHooker {
 	GObject parent;
@@ -82,17 +94,6 @@ static void example_listener_on_enter(GumInvocationListener *listener,
 		};
 		std::vector<char> data_vec(data, tail);
 		SPDLOG_INFO("Finally size = {}", data_vec.size());
-
-		// Patch the fatbin
-		// std::vector<uint8_t> patched_fatbin((uint8_t
-		// *)data_vec.data(), 				    (uint8_t
-		// *)data_vec.data() +
-		// data_vec.size()); auto result =
-		// POSUtil_CUDA_Kernel_Patcher::patch_fatbin_binary( 	(uint8_t
-		// *)data_vec.data(), patched_fatbin); if (result !=
-		// POS_SUCCESS) { 	SPDLOG_ERROR("Failed to patch fatbin");
-		// 	return;
-		// }
 
 		std::vector<std::string> ptx_out;
 		{
@@ -162,6 +163,7 @@ static void example_listener_on_enter(GumInvocationListener *listener,
 			fatbin_out_buf.resize(file_tail);
 			ifs.read((char *)fatbin_out_buf.data(), file_tail);
 		}
+
 		SPDLOG_INFO("Got patched fatbin in {} bytes",
 			    fatbin_out_buf.size());
 		auto patched_fatbin_ptr =
