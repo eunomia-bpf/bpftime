@@ -1,5 +1,6 @@
 #include "pos/cuda_impl/utils/fatbin.h"
 #include "spdlog/spdlog.h"
+#include <cassert>
 #include <cstdint>
 #include <frida-gum.h>
 #include <vector>
@@ -41,7 +42,7 @@ static void example_listener_on_enter(GumInvocationListener *listener,
 	auto context =
 		GUM_IC_GET_FUNC_DATA(ic, CUDARuntimeFunctionHookerContext *);
 	if (context->to_function == AttachedToFunction::RegisterFatbin) {
-		SPDLOG_INFO("Mocking __cudaRegisterFatBinary..");
+		SPDLOG_INFO("Entering __cudaRegisterFatBinary..");
 
 		auto header = (__fatBinC_Wrapper_t *)
 			gum_invocation_context_get_nth_argument(gum_ctx, 0);
@@ -83,17 +84,52 @@ static void example_listener_on_enter(GumInvocationListener *listener,
 		// Set the patched header as the argument
 		gum_invocation_context_replace_nth_argument(gum_ctx, 0,
 							    patched_header_ptr);
+	} else if (context->to_function ==
+		   AttachedToFunction::RegisterFunction) {
+		SPDLOG_INFO("Entering __cudaRegisterFunction..");
+
+	} else if (context->to_function ==
+		   AttachedToFunction::RegisterFatbinEnd) {
+		SPDLOG_INFO("Entering __cudaRegisterFatBinaryEnd..");
+		auto &impl = *context->impl;
+		if (impl.trampoline_memory_state ==
+		    TrampolineMemorySetupStage::NotSet) {
+			auto arg = (void **)
+				gum_invocation_context_get_nth_argument(gum_ctx,
+									0);
+			if (int err = impl.register_trampoline_memory(arg);
+			    err != 0) {
+				assert(false);
+			}
+		}
+	} else if (context->to_function ==
+		   AttachedToFunction::CudaLaunchKernel) {
+		SPDLOG_INFO("Entering cudaLaunchKernel");
 	}
 }
 
 static void example_listener_on_leave(GumInvocationListener *listener,
 				      GumInvocationContext *ic)
 {
-	SPDLOG_INFO("On leave");
-	// injector.detach();
+	auto gum_ctx = gum_interceptor_get_current_invocation();
 	auto context =
 		GUM_IC_GET_FUNC_DATA(ic, CUDARuntimeFunctionHookerContext *);
 	if (context->to_function == AttachedToFunction::RegisterFatbin) {
+		SPDLOG_INFO("Leaving RegisterFatbin");
+	} else if (context->to_function ==
+		   AttachedToFunction::RegisterFunction) {
+		SPDLOG_INFO("Leaving RegisterFunction");
+	} else if (context->to_function ==
+		   AttachedToFunction::RegisterFatbinEnd) {
+		SPDLOG_INFO("Leaving __cudaRegisterFatBinaryEnd..");
+		if (int err = context->impl->copy_data_to_trampoline_memory();
+		    err != 0) {
+			SPDLOG_ERROR("Unable to copy data to trampoline");
+			assert(false);
+		}
+	} else if (context->to_function ==
+		   AttachedToFunction::CudaLaunchKernel) {
+		SPDLOG_INFO("Leaving cudaLaunchKernel");
 	}
 }
 

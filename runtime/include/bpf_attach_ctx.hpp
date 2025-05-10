@@ -9,6 +9,7 @@
 #include "handler/link_handler.hpp"
 #include "handler/perf_event_handler.hpp"
 #include "handler/prog_handler.hpp"
+#include "nv_attach_impl.hpp"
 #include <array>
 #include <atomic>
 #include <cstdint>
@@ -35,7 +36,8 @@ enum class HelperOperation {
 	MAP_UPDATE = 2,
 	MAP_DELETE = 3,
 	MAP_GET_NEXT_KEY = 4,
-	TRACE_PRINTK = 6
+	TRACE_PRINTK = 6,
+	PUTS = 501
 };
 
 union HelperCallRequest {
@@ -56,12 +58,15 @@ union HelperCallRequest {
 		int fmt_size;
 		unsigned long arg1, arg2, arg3;
 	} trace_printk;
+	struct {
+		char data[10000];
+	} puts;
 };
 
 union HelperCallResponse {
 	struct {
 		int result;
-	} map_update, map_delete, trace_printk;
+	} map_update, map_delete, trace_printk, puts;
 	struct {
 		const void *value;
 	} map_lookup;
@@ -83,13 +88,6 @@ struct CommSharedMem {
 	uint64_t time_sum[8];
 };
 
-struct MapBasicInfo {
-	bool enabled;
-	int key_size;
-	int value_size;
-	int max_entries;
-};
-
 using cuda_context_type = std::remove_pointer<CUcontext>::type;
 using cuda_module_type = std::remove_pointer<CUmodule>::type;
 
@@ -102,34 +100,36 @@ struct CUDAProgramRecord {
 };
 struct CUDAContext {
 	// Indicate whether cuda watcher thread should stop
-	std::shared_ptr<std::atomic<bool> > cuda_watcher_should_stop =
-		std::make_shared<std::atomic<bool> >(false);
+	std::shared_ptr<std::atomic<bool>> cuda_watcher_should_stop =
+		std::make_shared<std::atomic<bool>>(false);
 
 	// Shared memory region for CUDA
 	std::unique_ptr<cuda::CommSharedMem> cuda_shared_mem;
 	// Mapped device pointer
 	uintptr_t cuda_shared_mem_device_pointer;
 	// CUDA context
-	std::unique_ptr<cuda_context_type, decltype(&cuda_context_destroyer)>
-		ctx_container;
-	// Loaded module
-	std::optional<std::unique_ptr<cuda_module_type,
-				      decltype(&cuda_module_destroyer)> >
-		probe_module_container;
-	std::optional<std::unique_ptr<cuda_module_type,
-				      decltype(&cuda_module_destroyer)> >
-		demo_module_container;
+	// std::unique_ptr<cuda_context_type, decltype(&cuda_context_destroyer)>
+	// 	ctx_container;
+	// // Loaded module
+	// std::optional<std::unique_ptr<cuda_module_type,
+	// 			      decltype(&cuda_module_destroyer)>>
+	// 	probe_module_container;
+	// std::optional<std::unique_ptr<cuda_module_type,
+	// 			      decltype(&cuda_module_destroyer)>>
+	// 	demo_module_container;
 
-	std::unique_ptr<std::array<std::atomic<uint64_t>, 8> >
-		operation_time_sum;
+	// std::unique_ptr<std::array<std::atomic<uint64_t>, 8>>
+	// operation_time_sum;
 
-	std::unique_ptr<std::array<int32_t, 10> > demo_prog_array;
-	std::unique_ptr<int64_t> demo_prog_sum_out;
+	// std::unique_ptr<std::array<int32_t, 10>> demo_prog_array;
+	// std::unique_ptr<int64_t> demo_prog_sum_out;
 
-	CUDAContext(std::unique_ptr<cuda::CommSharedMem> &&mem,
-		    CUcontext raw_ctx,
-		    std::unique_ptr<std::array<int32_t, 10> > &&demo_prog_array,
-		    std::unique_ptr<int64_t> &&demo_prog_sum_out);
+	// CUDAContext(std::unique_ptr<cuda::CommSharedMem> &&mem,
+	// 	    CUcontext raw_ctx,
+	// 	    std::unique_ptr<std::array<int32_t, 10>> &&demo_prog_array,
+	// 	    std::unique_ptr<int64_t> &&demo_prog_sum_out);
+	CUDAContext(std::unique_ptr<cuda::CommSharedMem> &&mem);
+
 	CUDAContext(CUDAContext &&) = default;
 	CUDAContext &operator=(CUDAContext &&) = default;
 	CUDAContext(const CUDAContext &) = delete;
@@ -138,17 +138,17 @@ struct CUDAContext {
 	std::vector<CUDAProgramRecord> cuda_progs;
 
 	virtual ~CUDAContext();
-	void set_module(CUmodule raw_ptr)
-	{
-		probe_module_container.emplace(raw_ptr, cuda_module_destroyer);
-	}
-	void set_demo_module(CUmodule raw_ptr)
-	{
-		demo_module_container.emplace(raw_ptr, cuda_module_destroyer);
-	}
+	// void set_module(CUmodule raw_ptr)
+	// {
+	// 	probe_module_container.emplace(raw_ptr, cuda_module_destroyer);
+	// }
+	// void set_demo_module(CUmodule raw_ptr)
+	// {
+	// 	demo_module_container.emplace(raw_ptr, cuda_module_destroyer);
+	// }
 };
 
-std::optional<std::unique_ptr<cuda::CUDAContext> > create_cuda_context();
+std::optional<std::unique_ptr<cuda::CUDAContext>> create_cuda_context();
 
 } // namespace cuda
 class base_attach_manager;
@@ -193,22 +193,22 @@ class bpf_attach_ctx {
 	std::map<int, bpftime_helper_info> helpers;
 
 	// handler_id -> instantiated programs
-	std::map<int, std::unique_ptr<bpftime_prog> > instantiated_progs;
+	std::map<int, std::unique_ptr<bpftime_prog>> instantiated_progs;
 	// handler_id -> (instantiated attaches id, attach_impl*)
-	std::map<int, std::pair<int, attach::base_attach_impl *> >
+	std::map<int, std::pair<int, attach::base_attach_impl *>>
 		instantiated_attach_links;
 	// handler_id -> instantiated attach private data & attach type
 	std::map<int,
-		 std::pair<std::unique_ptr<attach::attach_private_data>, int> >
+		 std::pair<std::unique_ptr<attach::attach_private_data>, int>>
 		instantiated_perf_events;
 	// attach_type -> attach impl
 	std::map<int, std::pair<attach::base_attach_impl *,
 				std::function<std::unique_ptr<
 					attach::attach_private_data>(
-					const std::string_view &, int &)> > >
+					const std::string_view &, int &)>>>
 		attach_impls;
 	// Holds the ownership of all attach impls
-	std::vector<std::unique_ptr<attach::base_attach_impl> >
+	std::vector<std::unique_ptr<attach::base_attach_impl>>
 		attach_impl_holders;
 	// Record which handlers were already instantiated
 	std::set<int> instantiated_handlers;
@@ -224,10 +224,13 @@ class bpf_attach_ctx {
 		int id, const bpf_perf_event_handler &perf_handler);
 	// Start host thread for handling map requests from CUDA
 	void start_cuda_watcher_thread();
-	std::optional<std::shared_ptr<std::atomic<bool> > >
+	std::optional<std::shared_ptr<std::atomic<bool>>>
 	start_cuda_prober(int id);
 	int start_cuda_demo_program();
 	std::unique_ptr<cuda::CUDAContext> cuda_ctx;
+
+	std::vector<attach::MapBasicInfo>
+	create_map_basic_info(int filled_size);
 };
 
 } // namespace bpftime

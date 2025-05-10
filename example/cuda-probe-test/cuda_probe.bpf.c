@@ -3,7 +3,6 @@
 #include <bpf/bpf_helpers.h>
 #include <bpf/bpf_tracing.h>
 
-
 struct {
 	__uint(type, BPF_MAP_TYPE_HASH);
 	__uint(max_entries, 1024);
@@ -37,17 +36,19 @@ static int increment_map(void *map, void *key, u64 increment)
 // 	return 0;
 // }
 
+static const void (*ebpf_puts)(const char *) = 501;
 
 SEC("kprobe/__memcapture")
-int probe__cuda(struct pt_regs *ctx)
+int probe__cuda(const char *call_str)
 {
-	u64 key = 12345;
-	increment_map(&test_hash_map, &key, 1);
+	// u64 key = 12345;
+	// increment_map(&test_hash_map, &key, 1);
 	bpf_printk("Message from eBPF: %d, %lx", 10, 20);
+	// ebpf_puts("aaaaa");
+	// ebpf_puts(call_str);
 
 	return 0;
 }
-
 
 // For testing purpose
 // SEC("uprobe/./victim:main")
@@ -57,7 +58,5 @@ int probe__cuda(struct pt_regs *ctx)
 // 	increment_map(&test_hash_map, &key, 1);
 // 	return 0;
 // }
-
-
 
 char LICENSE[] SEC("license") = "GPL";

@@ -19,6 +19,7 @@ static std::string memcapture_func_name(int idx)
 }
 namespace bpftime::attach
 {
+
 std::string filter_compiled_ptx_for_ebpf_program(std::string input,
 						 std::string new_func_name)
 {
@@ -106,6 +107,8 @@ nv_attach_impl::patch_with_memcapture(std::string input,
 						      (void *)test_func);
 			vm.register_external_function(6, "print",
 						      (void *)test_func);
+			vm.register_external_function(501, "puts",
+						      (void *)test_func);
 
 			auto insts = entry.instuctions;
 
@@ -166,18 +169,14 @@ nv_attach_impl::patch_with_memcapture(std::string input,
 			auto probe_func_name = memcapture_func_name(count);
 
 			auto filtered_ptx =
-				filter_compiled_ptx_for_ebpf_program(
-					original_ptx, probe_func_name);
+				add_register_guard_for_ebpf_ptx_func(
+					filter_compiled_ptx_for_ebpf_program(
+						original_ptx, probe_func_name));
 			function_def << filtered_ptx << std::endl;
-			oss << "call " << probe_func_name << ";" << std::endl;
+			oss << "call " << probe_func_name << ";" <<
+			std::endl;
 		}
 	}
-	/**
-	TODO: 每个probe存成一个单独的函数，当probe触发时，去调用这个函数
-	给filter完成的probe ptx加一个函数头，然后塞到最前面即可
-	ld指令后面生成调用对应函数的代码即可
-	 *
-	 */
 	auto result = function_def.str() + "\n" + oss.str();
 	result = wrap_ptx_with_trampoline(result);
 	SPDLOG_INFO("Patched {} instructions. output size {}", count,

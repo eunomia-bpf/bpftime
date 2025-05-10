@@ -12,14 +12,17 @@
 /*
 nvcc -x cu -cuda victim.cu -o victim.cpp
 python filter_hashtag.py
-g++ victim-new.cpp -Wall -L /usr/local/cuda-12.6/lib64 -lcudart -o victim
+g++ victim-new.cpp -Wall -L /usr/local/cuda-12.6/lib64 -lcudart -o victim -g
  */
+
+__constant__ int const_integer;
 
 __global__ void sumArray(uint64_t *input, uint64_t *output, size_t size)
 {
 	for (size_t i = 0; i < size; i++)
 		*output += input[i];
-	printf("From device side: sum = %lu\n", (unsigned long)*output);
+	printf("From device side: sum = %lu, const integer = %d\n",
+	       (unsigned long)*output, const_integer);
 }
 
 __global__ void sumArraySqr(uint64_t *input, uint64_t *output, size_t size)
@@ -33,6 +36,9 @@ constexpr size_t ARR_SIZE = 1000;
 
 int main()
 {
+	int value = 1;
+	int err = cudaMemcpyToSymbol(const_integer, &value, sizeof(value));
+	std::cout<<"copy error = "<<(int)err<<std::endl;
 	std::vector<uint64_t> arr;
 	for (size_t i = 1; i <= ARR_SIZE; i++) {
 		arr.push_back(i);

@@ -3,11 +3,11 @@ include(../../cmake/cuda.cmake)
 add_library(
     bpftime_nv_attach_impl STATIC
     nv_attach_impl.cpp
-    ptx_load_mocker.cpp
     nv_attach_private_data.cpp
     cuda_injector.cpp
     nv_attach_impl_frida_setup.cpp
     nv_attach_impl_patcher.cpp
+    nv_attach_impl_register_guard_patcher.cpp
 )
 
 add_dependencies(bpftime_nv_attach_impl bpftime_base_attach_impl spdlog::spdlog FridaGum pos llvmbpf_vm bpftime_vm_compat)
