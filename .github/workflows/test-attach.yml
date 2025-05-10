@@ -26,19 +26,14 @@ jobs:
       - uses: actions/checkout@v2
         with:
           submodules: 'recursive'
-      - name: Install miniconda
-        run: |
-          if [ ! -d "~/miniconda3" ]; then
-            wget -q http://repo.continuum.io/miniconda/Miniconda3-latest-Linux-x86_64.sh -O ~/miniconda.sh;
-            chmod +x ~/miniconda.sh;
-            ~/miniconda.sh -b -p ~/miniconda3;
-            ~/miniconda3/bin/conda init
-          else
-            echo "Miniconda3 already set up.";
-          fi
+      - name: Setup conda
+        uses: conda-incubator/setup-miniconda@v3
+        with:
+          channels: conda-forge,bioconda
+          channel-priority: strict
+          miniforge-version: latest
       - name: Install absl and protobuf
-        run: conda install conda-forge::libabseil conda-forge::libprotobuf
-        shell: bash
+        run: conda install libabseil libprotobuf
       - name: Install dependencies
         if: "matrix.container == 'ubuntu-2204'"
         run: |
@@ -50,9 +45,8 @@ jobs:
     
       - name: Build for frida uprobe attach tests
         run: |
-          cmake -DTEST_LCOV=ON -B build
+          cmake -DTEST_LCOV=ON -B build -Dabsl_DIR=~/miniconda3/lib/cmake/absl -DProtobuf_DIR=~/miniconda3/lib/cmake/protobuf -Dutf8_range_DIR=~/miniconda3/lib/cmake/utf8_range
           cmake --build build --config Debug --target bpftime_frida_uprobe_attach_tests -j$(nproc)
-          shell: bash
       - name: Run frida uprobe attach tests
         run: |
           ./build/attach/frida_uprobe_attach_impl/bpftime_frida_uprobe_attach_tests
@@ -80,7 +74,7 @@ jobs:
 
       - name: Build syscall trace uprobe attach tests
         run: |
-          cmake -DTEST_LCOV=ON -B build
+          cmake -DTEST_LCOV=ON -B build -Dabsl_DIR=~/miniconda3/lib/cmake/absl -DProtobuf_DIR=~/miniconda3/lib/cmake/protobuf -Dutf8_range_DIR=~/miniconda3/lib/cmake/utf8_range
           cmake --build build --config Debug --target bpftime_syscall_trace_attach_tests -j$(nproc)
           
       - name: Run syscall trace uprobe attach tests

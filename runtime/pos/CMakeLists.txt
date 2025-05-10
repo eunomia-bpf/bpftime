@@ -170,6 +170,14 @@ protobuf_generate(
         PROTOC_OUT_DIR "${PROTO_BINARY_DIR}")
 message(${CMAKE_CURRENT_SOURCE_DIR}/../)
 
+add_dependencies(var-objects handle-objects)
+add_dependencies(cublas-objects handle-objects)
+add_dependencies(device-objects handle-objects)
+add_dependencies(event-objects handle-objects)
+add_dependencies(function-objects handle-objects)
+add_dependencies(memory-objects handle-objects)
+add_dependencies(module-objects handle-objects)
+add_dependencies(stream-objects handle-objects)
 file(GLOB_RECURSE SOURCE_FILES src/*.cpp src/oob/*.cpp cuda_impl/*.cpp cuda_impl/*/*.cpp cli/src/*.cpp)
 add_library(pos ${SOURCE_FILES})
 target_include_directories(pos PRIVATE ${CMAKE_SOURCE_DIR}/runtime ${CMAKE_CURRENT_BINARY_DIR}/../)
@@ -199,7 +207,7 @@ target_link_libraries(
         cublas
         elf
         ibverbs
-        /usr/lib/llvm-18/lib/libclang.so
+        /usr/lib/libclang.so
 )
 find_package(LLVM REQUIRED CONFIG)
 include(../../cmake/cuda.cmake)
