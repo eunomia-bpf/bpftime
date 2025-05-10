@@ -173,8 +173,7 @@ nv_attach_impl::patch_with_memcapture(std::string input,
 					filter_compiled_ptx_for_ebpf_program(
 						original_ptx, probe_func_name));
 			function_def << filtered_ptx << std::endl;
-			oss << "call " << probe_func_name << ";" <<
-			std::endl;
+			oss << "call " << probe_func_name << ";" << std::endl;
 		}
 	}
 	auto result = function_def.str() + "\n" + oss.str();

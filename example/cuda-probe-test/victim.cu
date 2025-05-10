@@ -38,7 +38,7 @@ int main()
 {
 	int value = 1;
 	int err = cudaMemcpyToSymbol(const_integer, &value, sizeof(value));
-	std::cout<<"copy error = "<<(int)err<<std::endl;
+	std::cout << "copy error = " << (int)err << std::endl;
 	std::vector<uint64_t> arr;
 	for (size_t i = 1; i <= ARR_SIZE; i++) {
 		arr.push_back(i);
@@ -53,7 +53,7 @@ int main()
 	cudaMemcpy(d_input, arr.data(), data_size, cudaMemcpyHostToDevice);
 	while (true) {
 		sumArray<<<1, 1, 1>>>(d_input, sum_output, arr.size());
-		sumArraySqr<<<1, 1, 1>>>(d_input, sqr_output, arr.size());
+		// sumArraySqr<<<1, 1, 1>>>(d_input, sqr_output, arr.size());
 
 		uint64_t host_sum, host_sqr;
 		cudaMemcpy(&host_sum, sum_output, sizeof(arr[0]),
@@ -61,7 +61,12 @@ int main()
 		cudaMemcpy(&host_sqr, sqr_output, sizeof(arr[0]),
 			   cudaMemcpyDeviceToHost);
 
-		cudaDeviceSynchronize();
+		auto err = cudaDeviceSynchronize();
+		if (err != cudaSuccess) {
+			std::cout << "error while cudaDeviceSync " << (int)err
+				  << std::endl;
+			return 1;
+		}
 		std::cout << "Sum is " << host_sum << ", sqr is " << host_sqr
 			  << std::endl;
 		sleep(1);

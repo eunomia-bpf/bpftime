@@ -211,9 +211,11 @@ nv_attach_impl::hack_fatbin(std::vector<uint8_t> &&data_vec)
 	mkdtemp(tmp_dir);
 	std::filesystem::path work_dir(tmp_dir);
 	SPDLOG_INFO("Working directory: {}", work_dir.c_str());
-	std::string command = "nvcc -arch=sm_60 ";
+	std::string command = "nvcc -G -g --keep-device-functions -arch=sm_60 ";
 	{
 		auto ptx_in = work_dir / "main.ptx";
+		// SPDLOG_WARN("Using /tmp/main.ptx as ptx for nvcc");
+		// std::string ptx_in = "/tmp/main.ptx";
 		SPDLOG_INFO("PTX IN: {}", ptx_in.c_str());
 		std::ofstream ofs(ptx_in);
 		ofs << ptx_out[0];
@@ -275,18 +277,6 @@ int nv_attach_impl::register_trampoline_memory(void **fatbin_handle)
 int nv_attach_impl::copy_data_to_trampoline_memory()
 {
 	SPDLOG_INFO("Copying data to device symbols..");
-	int data = 233;
-	// auto const_integer_sym =
-	// 	(const void *)dlsym(RTLD_NEXT, "const_integer");
-
-	// if (auto err = cudaMemcpyToSymbol(const_integer_sym, &data,
-	// sizeof(data));
-	//     err != cudaSuccess) {
-	// 	SPDLOG_ERROR("Unable to copy `const_integer`  to device: {}",
-	// 		     (int)err);
-	// 	return -1;
-	// }
-
 	if (auto err = cudaMemcpyToSymbol((const void *)&_constData_mock,
 					  &this->shared_mem_ptr,
 					  sizeof(_constData_mock));
