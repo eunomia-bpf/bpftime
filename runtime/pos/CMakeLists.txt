@@ -207,14 +207,14 @@ target_link_libraries(
         cublas
         elf
         ibverbs
-        /usr/lib/libclang.so
+        # /usr/lib/libclang.so
 )
 find_package(LLVM REQUIRED CONFIG)
 include(../../cmake/cuda.cmake)
 find_cuda()
 target_include_directories(pos PRIVATE ${LLVM_INCLUDE_DIRS} ${CUDA_INCLUDE_PATH})
 target_link_directories(pos PUBLIC ${CUDA_LIBRARY_PATH})
-target_link_libraries(pos PRIVATE LLVM ${CUDA_LIBS})
+target_link_libraries(pos PRIVATE LLVM clang ${CUDA_LIBS})
 
 
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -I${CMAKE_CURRENT_BINARY_DIR}/../")

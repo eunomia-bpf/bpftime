@@ -13,15 +13,20 @@
 using namespace bpftime;
 using namespace attach;
 
+static std::string memcapture_func_name(int idx)
+{
+	return std::string("__memcapture__") + std::to_string(idx);
+}
 namespace bpftime::attach
 {
-std::string filter_compiled_ptx_for_ebpf_program(std::string input)
+std::string filter_compiled_ptx_for_ebpf_program(std::string input,
+						 std::string new_func_name)
 {
 	std::istringstream iss(input);
 	std::ostringstream oss;
 	std::string line;
 	static const std::string FILTERED_OUT_PREFIXES[] = {
-		".version", ".target", ".address_size"
+		".version", ".target", ".address_size", "//"
 	};
 	static const std::regex FILTERED_OUT_REGEXS[] = {
 		std::regex(
@@ -54,7 +59,7 @@ std::string filter_compiled_ptx_for_ebpf_program(std::string input)
 	for (const auto &regex : FILTERED_OUT_REGEXS) {
 		result = std::regex_replace(result, regex, "");
 	}
-	return result;
+	return ".func " + new_func_name + " " + result;
 }
 } // namespace bpftime::attach
 
@@ -73,6 +78,8 @@ nv_attach_impl::patch_with_memcapture(std::string input,
 	SPDLOG_INFO("Patching memcapture: input size {}", input.size());
 	static std::regex pattern(
 		R"(^\s*(ld|st)\.(const|global|local|param)?\.(((s|u|b)(8|16|32|64))|\.b128|(\.f(16|16x2|32|64))) +(.+), *(.+);\s*$)");
+	std::ostringstream function_def;
+
 	std::istringstream iss(input);
 	std::ostringstream oss;
 	std::string line;
@@ -156,22 +163,23 @@ nv_attach_impl::patch_with_memcapture(std::string input,
 			vm.load_code(insts.data(), insts.size() * 8);
 			llvm_bpf_jit_context ctx(vm);
 			auto original_ptx = *ctx.generate_ptx();
+			auto probe_func_name = memcapture_func_name(count);
 
 			auto filtered_ptx =
 				filter_compiled_ptx_for_ebpf_program(
-					original_ptx);
-
-			oss << filtered_ptx << std::endl;
+					original_ptx, probe_func_name);
+			function_def << filtered_ptx << std::endl;
+			oss << "call " << probe_func_name << ";" << std::endl;
 		}
 	}
-    /**
-    TODO: 每个probe存成一个单独的函数，当probe触发时，去调用这个函数  
-    给filter完成的probe ptx加一个函数头，然后塞到最前面即可
-    ld指令后面生成调用对应函数的代码即可   
-     * 
-     */
-	// auto result = oss.str();
-	auto result = wrap_ptx_with_trampoline(oss.str());
+	/**
+	TODO: 每个probe存成一个单独的函数，当probe触发时，去调用这个函数
+	给filter完成的probe ptx加一个函数头，然后塞到最前面即可
+	ld指令后面生成调用对应函数的代码即可
+	 *
+	 */
+	auto result = function_def.str() + "\n" + oss.str();
+	result = wrap_ptx_with_trampoline(result);
 	SPDLOG_INFO("Patched {} instructions. output size {}", count,
 		    result.size());
 	return result;

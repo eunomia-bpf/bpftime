@@ -27,7 +27,8 @@ namespace bpftime
 {
 namespace attach
 {
-std::string filter_compiled_ptx_for_ebpf_program(std::string input);
+std::string filter_compiled_ptx_for_ebpf_program(std::string input,
+						 std::string);
 
 constexpr int ATTACH_CUDA_PROBE = 8;
 constexpr int ATTACH_CUDA_RETPROBE = 9;
