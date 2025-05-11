@@ -211,7 +211,7 @@ nv_attach_impl::hack_fatbin(std::vector<uint8_t> &&data_vec)
 	mkdtemp(tmp_dir);
 	std::filesystem::path work_dir(tmp_dir);
 	SPDLOG_INFO("Working directory: {}", work_dir.c_str());
-	std::string command = "nvcc -G -g --keep-device-functions -arch=sm_60 ";
+	std::string command = "nvcc -O2 -G -g --keep-device-functions -arch=sm_60 ";
 	{
 		auto ptx_in = work_dir / "main.ptx";
 		// SPDLOG_WARN("Using /tmp/main.ptx as ptx for nvcc");

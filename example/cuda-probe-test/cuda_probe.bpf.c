@@ -43,9 +43,10 @@ int probe__cuda(const char *call_str)
 {
 	// u64 key = 12345;
 	// increment_map(&test_hash_map, &key, 1);
-	bpf_printk("Message from eBPF: %d, %lx\n", 10, 20);
-	// ebpf_puts("aaaaa");
-	// ebpf_puts(call_str);
+	// bpf_printk("Message from eBPF: %d, %lx\n", 10, 20);
+	// const char text[]="aaaaa";
+	// ebpf_puts(text);
+	ebpf_puts(call_str);
 
 	return 0;
 }

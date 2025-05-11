@@ -125,7 +125,7 @@ void bpf_attach_ctx::start_cuda_watcher_thread()
 					auto ptr = bpftime_map_lookup_elem(
 						map_fd, req.key);
 					resp.value = ptr;
-					SPDLOG_INFO(
+					SPDLOG_DEBUG(
 						"CUDA: Executing map lookup for {}, result = {}",
 						map_fd, (uintptr_t)resp.value);
 				} else if (req_id ==
@@ -139,7 +139,7 @@ void bpf_attach_ctx::start_cuda_watcher_thread()
 					resp.result = bpftime_map_update_elem(
 						map_fd, req.key, req.value,
 						req.flags);
-					SPDLOG_INFO(
+					SPDLOG_DEBUG(
 						"CUDA: Executing map update for {}, result = {}",
 						map_fd, resp.result);
 				} else if (req_id ==
@@ -153,7 +153,7 @@ void bpf_attach_ctx::start_cuda_watcher_thread()
 
 					resp.result = bpftime_map_delete_elem(
 						map_fd, req.key);
-					SPDLOG_INFO(
+					SPDLOG_DEBUG(
 						"CUDA: Executing map delete for {}, result = {}",
 						map_fd, resp.result);
 				} else if (req_id ==
@@ -169,7 +169,7 @@ void bpf_attach_ctx::start_cuda_watcher_thread()
 						(uintptr_t)req.fmt,
 						req.fmt_size, req.arg1,
 						req.arg2, req.arg3);
-					SPDLOG_INFO(
+					SPDLOG_DEBUG(
 						"CUDA: Executing bpf_printk: {}, arg1={}, arg2={}, arg3={}",
 						req.fmt, req.arg1, req.arg2,
 						req.arg3);
