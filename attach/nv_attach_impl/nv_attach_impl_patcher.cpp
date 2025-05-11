@@ -3,6 +3,7 @@
 #include "llvmbpf.hpp"
 #include "nv_attach_impl.hpp"
 #include "spdlog/spdlog.h"
+#include <cassert>
 #include <cstdint>
 #include <fstream>
 #include <ostream>
@@ -116,15 +117,19 @@ nv_attach_impl::patch_with_memcapture(std::string input,
 				SPDLOG_INFO(
 					"Generating trampoline for ebpf entry..");
 				std::vector<ebpf_inst> entry;
-				// Set N = ceil(line.size() + 1 )
-				int32_t total_length =
-					(line.size() + 1 + 3) / 4;
-				// *(u32) (r10 - 4) = 0
+				int32_t total_length;
+				{
+					auto N = line.size() + 1;
+					total_length = N / 8 * 8 +
+						       ((N % 8 != 0) ? 8 : 0);
+				}
+				assert(total_length % 8 == 0);
+				// *(u64) (r10 - 8) = 0
 				entry.push_back(
-					ebpf_inst{ .opcode = EBPF_OP_STW,
+					ebpf_inst{ .opcode = EBPF_OP_STDW,
 						   .dst = 10,
 						   .src = 0,
-						   .offset = -4,
+						   .offset = -8,
 						   .imm = 0 });
 				// r10 -= N
 				entry.push_back(
@@ -138,26 +143,41 @@ nv_attach_impl::patch_with_memcapture(std::string input,
 					ebpf_inst{ .opcode = EBPF_OP_MOV64_REG,
 						   .dst = 1,
 						   .src = 10,
-
 						   .offset = 0,
 						   .imm = 0 });
 
-				for (int i = 0; i < line.size(); i += 4) {
-					uint32_t curr_word = 0;
+				for (int i = 0; i < line.size(); i += 8) {
+					uint64_t curr_word = 0;
 					for (int j = 0;
-					     j < 4 && (j + i) < line.size();
+					     j < 8 && (j + i) < line.size();
 					     j++) {
 						curr_word |=
-							(((uint32_t)line[i + j])
+							(((uint64_t)line[i + j])
 							 << (j * 8));
 					}
-					// *(u32) (r1 + i) = WORD
+					// r2 = <uint64_t>curr_word
 					entry.push_back(ebpf_inst{
-						.opcode = EBPF_OP_STW,
-						.dst = 1,
+						.opcode = EBPF_OP_LDDW,
+						.dst = 2,
 						.src = 0,
+						.offset = 0,
+						.imm = (int32_t)(uint32_t)
+							curr_word });
+					entry.push_back(ebpf_inst{
+						.opcode = 0,
+						.dst = 0,
+						.src = 0,
+						.offset = 0,
+						.imm = (int32_t)(uint32_t)(curr_word >>
+									   32) });
+
+					// *(u64) (r1 + i) = r2
+					entry.push_back(ebpf_inst{
+						.opcode = EBPF_OP_STXDW,
+						.dst = 1,
+						.src = 2,
 						.offset = (int16_t)(i),
-						.imm = (int32_t)curr_word });
+						.imm = 0 });
 				}
 				insts.insert(insts.begin(), entry.begin(),
 					     entry.end());
