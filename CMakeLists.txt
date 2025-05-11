@@ -199,7 +199,7 @@ endif()
   bpftime_add_static_lib_component_command(bpftime_frida_uprobe_attach_impl)
 
   if(${BPFTIME_BUILD_WITH_LIBBPF})
-    bpftime_add_libs_component_command(${CMAKE_CURRENT_BUILD_DIR}/libbpf/libbpf/libbpf.a)
+    bpftime_add_libs_component_command(${CMAKE_CURRENT_BUILD_DIR}libbpf/libbpf/libbpf.a)
     bpftime_add_static_lib_component_command(bpftime_syscall_trace_attach_impl)
   endif()
 
