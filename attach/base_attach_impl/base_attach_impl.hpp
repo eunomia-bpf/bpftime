@@ -1,6 +1,7 @@
 #ifndef _BPFTIME_BASE_ATTACH_IMPL_HPP
 #define _BPFTIME_BASE_ATTACH_IMPL_HPP
 
+#include "spdlog/spdlog.h"
 #include <cstdint>
 #include <functional>
 #include <optional>
@@ -50,6 +51,15 @@ class base_attach_impl {
 	virtual void
 	register_custom_helpers(ebpf_helper_register_callback register_callback)
 	{
+	}
+
+	/// Call some features provide by specified attach implementation.
+	virtual void *call_attach_specific_function(std::string name,
+						    void *data)
+	{
+		SPDLOG_WARN(
+			"Not implemented yet: call_attach_specific_function");
+		return nullptr;
 	}
 
 	virtual ~base_attach_impl(){};
