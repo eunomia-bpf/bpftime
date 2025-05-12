@@ -42,7 +42,7 @@ static void example_listener_on_enter(GumInvocationListener *listener,
 	auto context =
 		GUM_IC_GET_FUNC_DATA(ic, CUDARuntimeFunctionHookerContext *);
 	if (context->to_function == AttachedToFunction::RegisterFatbin) {
-		SPDLOG_INFO("Entering __cudaRegisterFatBinary..");
+		SPDLOG_DEBUG("Entering __cudaRegisterFatBinary..");
 
 		auto header = (__fatBinC_Wrapper_t *)
 			gum_invocation_context_get_nth_argument(gum_ctx, 0);
@@ -86,11 +86,11 @@ static void example_listener_on_enter(GumInvocationListener *listener,
 							    patched_header_ptr);
 	} else if (context->to_function ==
 		   AttachedToFunction::RegisterFunction) {
-		SPDLOG_INFO("Entering __cudaRegisterFunction..");
+		SPDLOG_DEBUG("Entering __cudaRegisterFunction..");
 
 	} else if (context->to_function ==
 		   AttachedToFunction::RegisterFatbinEnd) {
-		SPDLOG_INFO("Entering __cudaRegisterFatBinaryEnd..");
+		SPDLOG_DEBUG("Entering __cudaRegisterFatBinaryEnd..");
 		auto &impl = *context->impl;
 		if (impl.trampoline_memory_state ==
 		    TrampolineMemorySetupStage::NotSet) {
@@ -104,7 +104,7 @@ static void example_listener_on_enter(GumInvocationListener *listener,
 		}
 	} else if (context->to_function ==
 		   AttachedToFunction::CudaLaunchKernel) {
-		SPDLOG_INFO("Entering cudaLaunchKernel");
+		SPDLOG_DEBUG("Entering cudaLaunchKernel");
 	}
 }
 
@@ -115,13 +115,13 @@ static void example_listener_on_leave(GumInvocationListener *listener,
 	auto context =
 		GUM_IC_GET_FUNC_DATA(ic, CUDARuntimeFunctionHookerContext *);
 	if (context->to_function == AttachedToFunction::RegisterFatbin) {
-		SPDLOG_INFO("Leaving RegisterFatbin");
+		SPDLOG_DEBUG("Leaving RegisterFatbin");
 	} else if (context->to_function ==
 		   AttachedToFunction::RegisterFunction) {
-		SPDLOG_INFO("Leaving RegisterFunction");
+		SPDLOG_DEBUG("Leaving RegisterFunction");
 	} else if (context->to_function ==
 		   AttachedToFunction::RegisterFatbinEnd) {
-		SPDLOG_INFO("Leaving __cudaRegisterFatBinaryEnd..");
+		SPDLOG_DEBUG("Leaving __cudaRegisterFatBinaryEnd..");
 		if (int err = context->impl->copy_data_to_trampoline_memory();
 		    err != 0) {
 			SPDLOG_ERROR("Unable to copy data to trampoline");
@@ -129,7 +129,7 @@ static void example_listener_on_leave(GumInvocationListener *listener,
 		}
 	} else if (context->to_function ==
 		   AttachedToFunction::CudaLaunchKernel) {
-		SPDLOG_INFO("Leaving cudaLaunchKernel");
+		SPDLOG_DEBUG("Leaving cudaLaunchKernel");
 	}
 }
 

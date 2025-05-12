@@ -200,5 +200,16 @@ nv_attach_impl::patch_with_memcapture(std::string input,
 	result = wrap_ptx_with_trampoline(result);
 	SPDLOG_INFO("Patched {} instructions. output size {}", count,
 		    result.size());
-	return result;
+	{
+		// filter out comment lines
+		std::istringstream iss(result);
+		std::ostringstream oss;
+		std::string line;
+		while (std::getline(iss, line)) {
+			if (line.starts_with("/"))
+				continue;
+			oss << line << std::endl;
+		}
+		return oss.str();
+	}
 }
