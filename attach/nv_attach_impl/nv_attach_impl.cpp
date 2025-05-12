@@ -207,8 +207,8 @@ nv_attach_impl::hack_fatbin(std::vector<uint8_t> &&data_vec)
 		}
 	}
 	SPDLOG_INFO("Recompiling PTX with nvcc..");
-	char tmp_dir[] = "/tmp/bpftime-recompile-nvcc.XXXXXX";
-	mkdtemp(tmp_dir);
+	char tmp_dir[] = "/tmp/bpftime-recompile-nvcc";
+	// mkdtemp(tmp_dir);
 	std::filesystem::path work_dir(tmp_dir);
 	SPDLOG_INFO("Working directory: {}", work_dir.c_str());
 	std::string command = "nvcc -O2 -G -g --keep-device-functions -arch=sm_60 ";
