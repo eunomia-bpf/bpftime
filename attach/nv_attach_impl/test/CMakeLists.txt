@@ -1,7 +1,8 @@
 set(TEST_SOURCES
-    test_cuda_injector.cpp
+    # test_cuda_injector.cpp
     nv_attach_impl_tests.cpp
     test_register_guard.cpp
+    # test_kernel_finder.cpp
 )
 add_executable(bpftime_nv_attach_tests ${TEST_SOURCES})
 
@@ -26,9 +27,9 @@ endif()
 add_dependencies(bpftime_nv_attach_tests Catch2 bpftime_nv_attach_impl spdlog::spdlog)
 if(${TEST_LCOV})
     target_link_options(bpftime_nv_attach_tests PRIVATE -lgcov)
-    target_link_libraries(bpftime_nv_attach_tests PRIVATE Catch2::Catch2WithMain bpftime_nv_attach_impl spdlog::spdlog gcov cuda pos)
+    target_link_libraries(bpftime_nv_attach_tests PRIVATE Catch2::Catch2WithMain bpftime_nv_attach_impl spdlog::spdlog gcov cuda)
 else()
-    target_link_libraries(bpftime_nv_attach_tests PRIVATE Catch2::Catch2WithMain bpftime_nv_attach_impl spdlog::spdlog cuda pos)
+    target_link_libraries(bpftime_nv_attach_tests PRIVATE Catch2::Catch2WithMain bpftime_nv_attach_impl spdlog::spdlog cuda)
 endif()
 target_include_directories(bpftime_nv_attach_tests PRIVATE ${CMAKE_SOURCE_DIR}/runtime/ ${NV_ATTACH_IMPL_INCLUDE} ${Catch2_INCLUDE} ${SPDLOG_INCLUDE})
 

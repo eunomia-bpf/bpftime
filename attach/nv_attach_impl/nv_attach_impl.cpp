@@ -1,18 +1,24 @@
 #include "nv_attach_impl.hpp"
-#include "cuda_injector.hpp"
+// #include "cuda_injector.hpp"
 #include "cuda_runtime_api.h"
 #include "driver_types.h"
 #include "frida-gum.h"
 
+#include "llvm_jit_context.hpp"
 #include "nv_attach_private_data.hpp"
 #include "spdlog/spdlog.h"
 #include <asm/unistd.h> // For architecture-specific syscall numbers
-
+#include <boost/process/detail/child_decl.hpp>
+#include <boost/process/io.hpp>
+#include <boost/process/pipe.hpp>
+#include <cstdlib>
+#include <fstream>
 #include <cassert>
 #include <cstdint>
 #include <cuda.h>
 #include <cuda_runtime.h>
 #include <dlfcn.h>
+#include <filesystem>
 #include <iterator>
 #include <memory>
 #include <set>
@@ -23,11 +29,12 @@
 #include <sys/user.h>
 #include <sys/uio.h>
 #include <link.h>
-#include <pos/cuda_impl/utils/fatbin.h>
+// #include <pos/cuda_impl/utils/fatbin.h>
 #include <unistd.h>
 #include <variant>
 #include <vector>
-#include <nvrtc.h>
+#include <boost/asio.hpp>
+#include <boost/process.hpp>
 using namespace bpftime;
 using namespace attach;
 
@@ -43,10 +50,10 @@ int nv_attach_impl::create_attach_with_ebpf_callback(
 	ebpf_run_callback &&cb, const attach_private_data &private_data,
 	int attach_type)
 {
-	if (this->hook_entries.size() >= 1) {
-		SPDLOG_ERROR("Only one nv attach could be used");
-		return -1;
-	}
+	// if (this->hook_entries.size() >= 1) {
+	// 	SPDLOG_ERROR("Only one nv attach could be used");
+	// 	return -1;
+	// }
 	auto data = dynamic_cast<const nv_attach_private_data &>(private_data);
 	if (attach_type == ATTACH_CUDA_PROBE) {
 		if (std::get<std::string>(data.code_addr_or_func_name) ==
@@ -55,15 +62,48 @@ int nv_attach_impl::create_attach_with_ebpf_callback(
 			auto id = this->allocate_id();
 			hook_entries[id] = nv_attach_entry{
 				.type = nv_attach_cuda_memcapture{},
-				.instuctions = data.instructions
+				.instuctions = data.instructions,
+				.kernels = data.func_names
+			};
+			this->map_basic_info = data.map_basic_info;
+			this->shared_mem_ptr = data.comm_shared_mem;
+			return id;
+		} else {
+			SPDLOG_INFO("Recording kprobe for {}",
+				    std::get<std::string>(
+					    data.code_addr_or_func_name));
+			auto id = this->allocate_id();
+			hook_entries[id] = nv_attach_entry{
+				.type =
+					nv_attach_function_probe{
+						.func = std::get<std::string>(
+							data.code_addr_or_func_name),
+						.is_retprobe = false,
+					},
+				.instuctions = data.instructions,
+				.kernels = data.func_names
 			};
 			this->map_basic_info = data.map_basic_info;
 			this->shared_mem_ptr = data.comm_shared_mem;
 			return id;
 		}
-		throw std::runtime_error("TODO");
 	} else if (attach_type == ATTACH_CUDA_RETPROBE) {
-		throw std::runtime_error("TODO");
+		SPDLOG_INFO("Recording kretprobe for {}",
+			    std::get<std::string>(data.code_addr_or_func_name));
+		auto id = this->allocate_id();
+		hook_entries[id] = nv_attach_entry{
+			.type =
+				nv_attach_function_probe{
+					.func = std::get<std::string>(
+						data.code_addr_or_func_name),
+					.is_retprobe = true,
+				},
+			.instuctions = data.instructions,
+			.kernels = data.func_names
+		};
+		this->map_basic_info = data.map_basic_info;
+		this->shared_mem_ptr = data.comm_shared_mem;
+		return id;
 	} else {
 		SPDLOG_ERROR("Unsupported attach type for nv_attach_impl: {}",
 			     attach_type);
@@ -115,7 +155,7 @@ nv_attach_impl::nv_attach_impl()
 
 	// auto kids = list_children(pid, tid);
 	// this->injector = std::make_unique<CUDAInjector>(kids[0]);
-	this->injector = std::make_unique<CUDAInjector>(getpid());
+	// this->injector = std::make_unique<CUDAInjector>(getpid());
 
 	gum_interceptor_begin_transaction(interceptor);
 
@@ -161,23 +201,28 @@ nv_attach_impl::hack_fatbin(std::vector<uint8_t> &&data_vec)
 {
 	std::vector<std::string> ptx_out;
 	{
-		SPDLOG_INFO("Listing functions in the patched ptx");
-		std::vector<POSCudaFunctionDesp *> desp;
-		std::map<std::string, POSCudaFunctionDesp *> cache;
-
-		auto result =
-			POSUtil_CUDA_Fatbin::obtain_functions_from_cuda_binary(
-				(uint8_t *)data_vec.data(), data_vec.size(),
-				&desp, cache, ptx_out);
-		if (result != POS_SUCCESS) {
-			SPDLOG_ERROR(
-				"Unable to parse functions from patched fatbin: {}",
-				(int)result);
-			return {};
+		char tmp_dir[] = "/tmp/bpftime-fatbin-store.XXXXXX";
+		mkdtemp(tmp_dir);
+		auto output_path =
+			std::filesystem::path(tmp_dir) / "temp.fatbin";
+		{
+			std::ofstream ofs(output_path, std::ios::binary);
+			ofs.write((const char *)data_vec.data(),
+				  data_vec.size());
+			SPDLOG_INFO("Temporary fatbin written to {}",
+				    output_path.c_str());
 		}
-		SPDLOG_INFO("Got these functions in the patched fatbin");
-		for (const auto &item : desp) {
-			SPDLOG_INFO("{}", item->signature);
+		SPDLOG_INFO("Listing functions in the patched ptx");
+		boost::asio::io_context ctx;
+		boost::process::ipstream stream;
+		boost::process::child child(
+			std::string("cuobjdump --dump-ptx ") +
+				output_path.string(),
+			boost::process::std_out > stream);
+		std::string line;
+		std::string output;
+		while (stream && std::getline(stream, line)) {
+			output += line + "\n";
 		}
 	}
 	if (ptx_out.size() != 1) {
@@ -190,6 +235,7 @@ nv_attach_impl::hack_fatbin(std::vector<uint8_t> &&data_vec)
 	/**
 	Here we can patch the PTX. Then recompile it.
 	*/
+	bool trampoline_added = false;
 	auto &to_patch_ptx = ptx_out[0];
 	to_patch_ptx = filter_unprintable_chars(to_patch_ptx);
 	for (const auto &[_, entry] : hook_entries) {
@@ -197,21 +243,54 @@ nv_attach_impl::hack_fatbin(std::vector<uint8_t> &&data_vec)
 			    entry.type)) {
 			SPDLOG_INFO("Patching with memcapture..");
 			if (auto result = this->patch_with_memcapture(
-				    to_patch_ptx, entry);
+				    to_patch_ptx, entry, !trampoline_added);
 			    result.has_value()) {
 				to_patch_ptx = *result;
+				trampoline_added = true;
 			} else {
 				SPDLOG_ERROR("Failed to patch for memcapture");
 				return {};
 			}
+		} else if (std::holds_alternative<nv_attach_function_probe>(
+				   entry.type)) {
+			SPDLOG_INFO("Patching with kprobe/kretprobe");
+			if (auto result = this->patch_with_probe_and_retprobe(
+				    to_patch_ptx, entry, !trampoline_added);
+			    result.has_value()) {
+				to_patch_ptx = *result;
+				trampoline_added = true;
+			} else {
+				SPDLOG_ERROR(
+					"Failed to patch for probe/retprobe");
+				return {};
+			}
 		}
+	}
+	to_patch_ptx = wrap_ptx_with_trampoline(to_patch_ptx);
+	to_patch_ptx = filter_out_version_headers(to_patch_ptx);
+	{
+		// filter out comment lines
+		std::istringstream iss(to_patch_ptx);
+		std::ostringstream oss;
+		std::string line;
+		while (std::getline(iss, line)) {
+			if (line.starts_with("/"))
+				continue;
+			oss << line << std::endl;
+		}
+		to_patch_ptx = oss.str();
 	}
 	SPDLOG_INFO("Recompiling PTX with nvcc..");
 	char tmp_dir[] = "/tmp/bpftime-recompile-nvcc";
 	// mkdtemp(tmp_dir);
 	std::filesystem::path work_dir(tmp_dir);
+	if (!std::filesystem::exists(work_dir)) {
+		SPDLOG_INFO("Creating work dir: {}", work_dir.c_str());
+		std::filesystem::create_directories(work_dir);
+	}
 	SPDLOG_INFO("Working directory: {}", work_dir.c_str());
-	std::string command = "nvcc -O2 -G -g --keep-device-functions -arch=sm_60 ";
+	std::string command =
+		"nvcc -O2 -G -g --keep-device-functions -arch=sm_60 ";
 	{
 		auto ptx_in = work_dir / "main.ptx";
 		// SPDLOG_WARN("Using /tmp/main.ptx as ptx for nvcc");
@@ -285,6 +364,23 @@ int nv_attach_impl::copy_data_to_trampoline_memory()
 			"Unable to copy `constData` (shared memory address) to device: {}",
 			(int)err);
 		return -1;
+	}
+	// Prefill some data
+	// SPDLOG_WARN(
+	// 	"Prefilling key_size & value_size to 4 for all map_basic_info");
+	// for (auto &item : *this->map_basic_info) {
+	// 	item.key_size = 4;
+	// 	item.value_size = 4;
+	// }
+	SPDLOG_INFO("Copying the followed map info:");
+	for (int i = 0; i < this->map_basic_info->size(); i++) {
+		const auto &cur = this->map_basic_info->at(i);
+		if (cur.enabled) {
+			SPDLOG_INFO(
+				"Mapid {}, enabled = {}, key_size = {}, value_size = {}, max_ent={}",
+				i, cur.enabled, cur.key_size, cur.value_size,
+				cur.max_entries);
+		}
 	}
 	if (auto err = cudaMemcpyToSymbol((const void *)&map_basic_info_mock,
 					  this->map_basic_info->data(),

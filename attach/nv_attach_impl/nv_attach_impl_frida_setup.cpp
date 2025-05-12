@@ -1,4 +1,4 @@
-#include "pos/cuda_impl/utils/fatbin.h"
+// #include "pos/cuda_impl/utils/fatbin.h"
 #include "spdlog/spdlog.h"
 #include <cassert>
 #include <cstdint>
@@ -50,7 +50,8 @@ static void example_listener_on_enter(GumInvocationListener *listener,
 		fat_elf_header_t *curr_header = (fat_elf_header_t *)data;
 		const char *tail = (const char *)curr_header;
 		while (true) {
-			if (curr_header->magic == FATBIN_TEXT_MAGIC) {
+			// #define FATBIN_TEXT_MAGIC 0xBA55ED50
+			if (curr_header->magic == 0xBA55ED50) {
 				SPDLOG_INFO(
 					"Got CUBIN section header size = {}, size = {}",
 					static_cast<int>(

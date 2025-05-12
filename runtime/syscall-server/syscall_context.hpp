@@ -21,9 +21,9 @@
 #include <pthread.h>
 #include <future>
 #include <thread>
-#include "pos/include/common.h"
-#include "pos/include/utils/command_caller.h"
-#include "pos/cli/cli.h"
+// #include "pos/include/common.h"
+// #include "pos/include/utils/command_caller.h"
+// #include "pos/cli/cli.h"
 #if __APPLE__
 using namespace bpftime_epoll;
 #endif
@@ -152,10 +152,10 @@ class syscall_context {
 	// enable userspace eBPF runing with kernel eBPF.
 	bool run_with_kernel = false;
 	// pos_cli result
-	std::string pos_result = "";
-	std::thread pos_thread{};
-	std::promise<pos_retval_t> pos_thread_promise{};
-	std::future<pos_retval_t> pos_thread_future{};
+	// std::string pos_result = "";
+	// std::thread pos_thread{};
+	// std::promise<pos_retval_t> pos_thread_promise{};
+	// std::future<pos_retval_t> pos_thread_future{};
 	// allow programs to by pass the verifier
 	// some extensions are not supported by the verifier, so we need to
 	// by pass the verifier to make it work.

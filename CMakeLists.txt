@@ -256,3 +256,5 @@ if(${BPFTIME_BUILD_WITH_LIBBPF})
 else()
   install(TARGETS bpftime-agent bpftime-syscall-server CONFIGURATIONS Release Debug RelWithDebInfo DESTINATION ${DEST_DIR})
 endif()
+
+# add_subdirectory(./example/mix-schedule-mnist/cpu)

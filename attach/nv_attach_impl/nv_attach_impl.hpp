@@ -1,6 +1,6 @@
 #ifndef _BPFTIME_NV_ATTACH_IMPL_HPP
 #define _BPFTIME_NV_ATTACH_IMPL_HPP
-#include "cuda_injector.hpp"
+// #include "cuda_injector.hpp"
 #include "ebpf_inst.h"
 #include "nv_attach_utils.hpp"
 #include <base_attach_impl.hpp>
@@ -19,7 +19,7 @@
 #include <sys/syscall.h>
 #include <sys/wait.h>
 
-#include <pos/include/oob/ckpt_dump.h>
+// #include <pos/include/oob/ckpt_dump.h>
 #include <variant>
 #include <vector>
 
@@ -66,6 +66,8 @@ using nv_attach_type =
 struct nv_attach_entry {
 	nv_attach_type type;
 	std::vector<ebpf_inst> instuctions;
+	// Kernels to be patched for this attach entry
+	std::vector<std::string> kernels;
 };
 
 // Attach implementation of syscall trace
@@ -81,13 +83,17 @@ class nv_attach_impl final : public base_attach_impl {
 	nv_attach_impl &operator=(const nv_attach_impl &) = delete;
 	nv_attach_impl();
 	virtual ~nv_attach_impl();
-	std::unique_ptr<CUDAInjector> injector;
+	// std::unique_ptr<CUDAInjector> injector;
 	std::vector<std::unique_ptr<__fatBinC_Wrapper_t>> stored_binaries_header;
 	std::vector<std::unique_ptr<std::vector<uint8_t>>> stored_binaries_body;
 	std::optional<std::vector<uint8_t>>
 	hack_fatbin(std::vector<uint8_t> &&);
 	std::optional<std::string>
-	patch_with_memcapture(std::string, const nv_attach_entry &entry);
+	patch_with_memcapture(std::string, const nv_attach_entry &entry,
+			      bool should_set_trampoline);
+	std::optional<std::string>
+	patch_with_probe_and_retprobe(std::string, const nv_attach_entry &,
+				      bool should_set_trampoline);
 	int register_trampoline_memory(void **);
 	int copy_data_to_trampoline_memory();
 	TrampolineMemorySetupStage trampoline_memory_state =
@@ -104,7 +110,7 @@ class nv_attach_impl final : public base_attach_impl {
 	std::optional<std::vector<MapBasicInfo>> map_basic_info;
 };
 std::string filter_unprintable_chars(std::string input);
-
+std::string filter_out_version_headers(const std::string &input);
 } // namespace attach
 } // namespace bpftime
 #endif /* _BPFTIME_NV_ATTACH_IMPL_HPP */

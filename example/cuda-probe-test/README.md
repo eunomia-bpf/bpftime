@@ -1,1 +1,0 @@
-# CUDA probe test
