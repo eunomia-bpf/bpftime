@@ -87,11 +87,16 @@ class nv_attach_impl final : public base_attach_impl {
 	std::optional<std::vector<uint8_t>>
 	hack_fatbin(std::vector<uint8_t> &&);
 	std::optional<std::string>
-	patch_with_memcapture(std::string, const nv_attach_entry &entry);
+	patch_with_memcapture(std::string, const nv_attach_entry &entry,
+			      bool should_set_trampoline);
+	std::optional<std::string>
+	patch_with_probe_and_retprobe(std::string, const nv_attach_entry &,
+				      bool should_set_trampoline);
 	int register_trampoline_memory(void **);
 	int copy_data_to_trampoline_memory();
 	TrampolineMemorySetupStage trampoline_memory_state =
 		TrampolineMemorySetupStage::NotSet;
+
 
     private:
 	void *frida_interceptor;
@@ -104,7 +109,7 @@ class nv_attach_impl final : public base_attach_impl {
 	std::optional<std::vector<MapBasicInfo>> map_basic_info;
 };
 std::string filter_unprintable_chars(std::string input);
-
+std::string filter_out_version_headers(const std::string &input);
 } // namespace attach
 } // namespace bpftime
 #endif /* _BPFTIME_NV_ATTACH_IMPL_HPP */

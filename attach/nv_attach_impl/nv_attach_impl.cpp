@@ -4,6 +4,7 @@
 #include "driver_types.h"
 #include "frida-gum.h"
 
+#include "llvm_jit_context.hpp"
 #include "nv_attach_private_data.hpp"
 #include "spdlog/spdlog.h"
 #include <asm/unistd.h> // For architecture-specific syscall numbers
@@ -43,10 +44,10 @@ int nv_attach_impl::create_attach_with_ebpf_callback(
 	ebpf_run_callback &&cb, const attach_private_data &private_data,
 	int attach_type)
 {
-	if (this->hook_entries.size() >= 1) {
-		SPDLOG_ERROR("Only one nv attach could be used");
-		return -1;
-	}
+	// if (this->hook_entries.size() >= 1) {
+	// 	SPDLOG_ERROR("Only one nv attach could be used");
+	// 	return -1;
+	// }
 	auto data = dynamic_cast<const nv_attach_private_data &>(private_data);
 	if (attach_type == ATTACH_CUDA_PROBE) {
 		if (std::get<std::string>(data.code_addr_or_func_name) ==
@@ -60,10 +61,40 @@ int nv_attach_impl::create_attach_with_ebpf_callback(
 			this->map_basic_info = data.map_basic_info;
 			this->shared_mem_ptr = data.comm_shared_mem;
 			return id;
+		} else {
+			SPDLOG_INFO("Recording kprobe for {}",
+				    std::get<std::string>(
+					    data.code_addr_or_func_name));
+			auto id = this->allocate_id();
+			hook_entries[id] = nv_attach_entry{
+				.type =
+					nv_attach_function_probe{
+						.func = std::get<std::string>(
+							data.code_addr_or_func_name),
+						.is_retprobe = false,
+					},
+				.instuctions = data.instructions
+			};
+			this->map_basic_info = data.map_basic_info;
+			this->shared_mem_ptr = data.comm_shared_mem;
+			return id;
 		}
-		throw std::runtime_error("TODO");
 	} else if (attach_type == ATTACH_CUDA_RETPROBE) {
-		throw std::runtime_error("TODO");
+		SPDLOG_INFO("Recording kretprobe for {}",
+			    std::get<std::string>(data.code_addr_or_func_name));
+		auto id = this->allocate_id();
+		hook_entries[id] = nv_attach_entry{
+			.type =
+				nv_attach_function_probe{
+					.func = std::get<std::string>(
+						data.code_addr_or_func_name),
+					.is_retprobe = true,
+				},
+			.instuctions = data.instructions
+		};
+		this->map_basic_info = data.map_basic_info;
+		this->shared_mem_ptr = data.comm_shared_mem;
+		return id;
 	} else {
 		SPDLOG_ERROR("Unsupported attach type for nv_attach_impl: {}",
 			     attach_type);
@@ -190,6 +221,7 @@ nv_attach_impl::hack_fatbin(std::vector<uint8_t> &&data_vec)
 	/**
 	Here we can patch the PTX. Then recompile it.
 	*/
+	bool trampoline_added = false;
 	auto &to_patch_ptx = ptx_out[0];
 	to_patch_ptx = filter_unprintable_chars(to_patch_ptx);
 	for (const auto &[_, entry] : hook_entries) {
@@ -197,21 +229,50 @@ nv_attach_impl::hack_fatbin(std::vector<uint8_t> &&data_vec)
 			    entry.type)) {
 			SPDLOG_INFO("Patching with memcapture..");
 			if (auto result = this->patch_with_memcapture(
-				    to_patch_ptx, entry);
+				    to_patch_ptx, entry, !trampoline_added);
 			    result.has_value()) {
 				to_patch_ptx = *result;
+				trampoline_added = true;
 			} else {
 				SPDLOG_ERROR("Failed to patch for memcapture");
 				return {};
 			}
+		} else if (std::holds_alternative<nv_attach_function_probe>(
+				   entry.type)) {
+			SPDLOG_INFO("Patching with kprobe/kretprobe");
+			if (auto result = this->patch_with_probe_and_retprobe(
+				    to_patch_ptx, entry, !trampoline_added);
+			    result.has_value()) {
+				to_patch_ptx = *result;
+				trampoline_added = true;
+			} else {
+				SPDLOG_ERROR(
+					"Failed to patch for probe/retprobe");
+				return {};
+			}
 		}
+	}
+	to_patch_ptx = wrap_ptx_with_trampoline(to_patch_ptx);
+	to_patch_ptx = filter_out_version_headers(to_patch_ptx);
+	{
+		// filter out comment lines
+		std::istringstream iss(to_patch_ptx);
+		std::ostringstream oss;
+		std::string line;
+		while (std::getline(iss, line)) {
+			if (line.starts_with("/"))
+				continue;
+			oss << line << std::endl;
+		}
+		to_patch_ptx = oss.str();
 	}
 	SPDLOG_INFO("Recompiling PTX with nvcc..");
 	char tmp_dir[] = "/tmp/bpftime-recompile-nvcc";
 	// mkdtemp(tmp_dir);
 	std::filesystem::path work_dir(tmp_dir);
 	SPDLOG_INFO("Working directory: {}", work_dir.c_str());
-	std::string command = "nvcc -O2 -G -g --keep-device-functions -arch=sm_60 ";
+	std::string command =
+		"nvcc -O2 -G -g --keep-device-functions -arch=sm_60 ";
 	{
 		auto ptx_in = work_dir / "main.ptx";
 		// SPDLOG_WARN("Using /tmp/main.ptx as ptx for nvcc");
