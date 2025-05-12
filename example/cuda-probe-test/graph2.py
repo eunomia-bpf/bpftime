@@ -20,7 +20,7 @@ plt.ylabel('Time (µs)')
 plt.legend()
 
 # Annotate segments
-for i in r  ange(len(techniques)):
+for i in range(len(techniques)):
     plt.text(i, baseline_runtime[i]/2, f'{baseline_runtime[i]} µs', ha='center', va='center')
     plt.text(i, baseline_runtime[i] + overhead_runtime[i] + instrumentation_overhead[i]/2, f'{instrumentation_overhead[i]} µs', ha='center', va='center')
 

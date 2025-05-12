@@ -21,7 +21,7 @@ g++ victim-new.cpp -Wall -L /usr/local/cuda-12.6/lib64 -lcudart -o victim -g
  #define TILE_WIDTH 32
  
  // --------------------------------------------------
- // 1) Dense matrix multiplication (1024×1024) kernel
+ // 1) Dense matrix multiplication (2048×2048) kernel
  // --------------------------------------------------
  __global__ void matMulTiled(const float *A,
 							 const float *B,
@@ -68,7 +68,7 @@ int main()
 	std::cout << "copy error = " << (int)err << std::endl;
 
     // ---- 1) Dense mat-mul setup ----
-    const int h_N = 1024;
+    const int h_N = 2048;  // Increased matrix size to 2048x2048
     cudaMemcpyToSymbol(d_N, &h_N, sizeof(h_N));
 
     size_t matBytes = size_t(h_N) * h_N * sizeof(float);
@@ -92,15 +92,34 @@ int main()
     dim3 gridDim((h_N + TILE_WIDTH - 1) / TILE_WIDTH,
                  (h_N + TILE_WIDTH - 1) / TILE_WIDTH);
 
-	while (true) {
-		matMulTiled<<<1, 1, 1>>>(d_A, d_B, d_C);
+    // Create CUDA events for timing
+    cudaEvent_t start, stop;
+    cudaEventCreate(&start);
+    cudaEventCreate(&stop);
 
-		cudaMemcpy(h_C.data(), d_C, matBytes, cudaMemcpyDeviceToHost);
-		std::cout << "C[0,0] = " << h_C[0] << "  (expected "
-				  << float(h_N) * 2.0f << ")\n";
+    // Record start time
+    cudaEventRecord(start);
 
-		sleep(1);
-	}
+    // Launch kernel
+    matMulTiled<<<1, 1, 1>>>(d_A, d_B, d_C);
+
+    // Record stop time
+    cudaEventRecord(stop);
+    cudaEventSynchronize(stop);
+
+    // Calculate elapsed time
+    float milliseconds = 0;
+    cudaEventElapsedTime(&milliseconds, start, stop);
+    std::cout << "Kernel execution time: " << milliseconds << " ms" << std::endl;
+
+    // Clean up events
+    cudaEventDestroy(start);
+    cudaEventDestroy(stop);
+
+	cudaMemcpy(h_C.data(), d_C, matBytes, cudaMemcpyDeviceToHost);
+	std::cout << "C[0,0] = " << h_C[0] << "  (expected "
+			  << float(h_N) * 2.0f << ")\n";
+
 	cudaFree(d_A);
 	cudaFree(d_B);
 	cudaFree(d_C);
