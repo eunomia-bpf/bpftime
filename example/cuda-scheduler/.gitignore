@@ -10,3 +10,4 @@ cudatest
 test
 victim
 bfs
+cuda_scheduler

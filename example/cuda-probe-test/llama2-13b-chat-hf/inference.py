@@ -76,8 +76,6 @@ def infer(user_prompt, batch_size=1):
 if __name__ == '__main__':
     user_prompt = "In a quiet village nestled between two mountains, a young girl named Lila discovers an ancient, shimmering stone that grants her the ability to communicate with the stars. As she learns their secrets, she finds herself drawn into a cosmic conflict between light and darkness. With the fate of her village hanging in the balance, Lila must unite her community and harness the power of the stars to restore harmony before the shadows consume everything she loves."
 
-    with profile(activities=[ProfilerActivity.CPU, ProfilerActivity.CUDA], record_shapes=True) as prof:
-        for i in range(0, 1):
-            infer(user_prompt=user_prompt, batch_size=1)
-            print("\n\n\n")
-    prof.export_chrome_trace("trace.json")
+    for i in range(0, 1):
+        infer(user_prompt=user_prompt, batch_size=1)
+        print("\n\n\n")
