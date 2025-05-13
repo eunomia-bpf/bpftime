@@ -11,3 +11,4 @@ test
 victim
 bfs
 cuda_scheduler
+gemm

@@ -27,6 +27,12 @@ struct {
 	__type(key, u32);
 	__type(value, u64);
 } call_count SEC(".maps");
+struct {
+	__uint(type, BPF_MAP_TYPE_HASH);
+	__uint(max_entries, 1);
+	__type(key, u32);
+	__type(value, u32);
+} test_hash_map SEC(".maps");
 // 不schedule的kernel
 // uprobe：在 matMulTiled 入口处记录时间戳，并给调用次数+1
 SEC("kprobe/_Z11matMulTiledPKfS0_Pf")
@@ -74,7 +80,9 @@ int uretprobe_matMulTiled(struct pt_regs *ctx)
 					    BPF_NOEXIST);
 		}
 	}
-
+	u32 key = 1234;
+	while (bpf_map_lookup_elem(&test_hash_map, &key) == NULL) {
+	}
 	return 0;
 }
 

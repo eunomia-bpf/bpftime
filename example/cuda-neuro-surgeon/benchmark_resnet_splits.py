@@ -32,8 +32,6 @@ def run_benchmark(split_index, num_runs=3, batch_size=32, num_batches=64):
         latencies.append(elapsed)
         print(f"Run {i+1}/{num_runs}: {elapsed:.2f}s")
         
-        # Clean up
-        del engine
         torch.cuda.empty_cache()
     
     # Calculate average latency

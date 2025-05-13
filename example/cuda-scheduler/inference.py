@@ -3,18 +3,17 @@ import time
 
 from torch.utils.cpp_extension import load_inline
 MAX_PIDS = 1024
-fairshare = torch.zeros(MAX_PIDS, dtype=torch.int32,
-                        device='cuda').pin_memory().to('cuda')
-# launches = b.get_table("launch_count")
-# active   = b.get_table("active_pids")
+
+# Create fairshare tensor on CPU first, then pin memory, then move to GPU
+fairshare = torch.zeros(MAX_PIDS, dtype=torch.int32, device='cpu').pin_memory().to('cuda')
+
 cuda_src = r'''
 extern "C" {
 __device__ int get_pid() {
-    // 假设一个 block 对应一个 PID，并把 PID 传给 blockIdx.x
     return blockIdx.x;
 }
 
-// 全局数组，由 Host 更新
+// Global array for fair share scheduling
 extern __device__ int fairshare[];
 
 __device__ void scheduler_init(int pid, int *slice_rem) {
@@ -23,24 +22,24 @@ __device__ void scheduler_init(int pid, int *slice_rem) {
 
 __device__ void scheduler_maybe_yield(int *slice_rem) {
     if (atomicSub(slice_rem, 1) <= 0) {
-        // 简单 spin-yield 等待下一窗口
+        // Simple spin-yield wait for next time slice
         while (atomicAdd(slice_rem, 0) <= 0) { /* busy-wait */ }
     }
 }
 
 __global__ void fair_kernel(float *data, float *weight, float *out,
-                            int N, int *fs)
+                          int N, int *fs)
 {
     int pid = get_pid();
     int rem = 0;
     scheduler_init(pid, &rem);
 
-    // 简单模拟训练计算
+    // Simulate training computation
     int idx = threadIdx.x;
     float acc = 0.0f;
     for (int i=0; i<N; i+=blockDim.x) {
         acc += data[pid*N + i + idx] * weight[idx];
-        // 每做 32 次计算点，就做一次 yield 检查
+        // Check for yield every 32 computations
         if ((i/32) % 1 == 0) {
             scheduler_maybe_yield(&rem);
         }
@@ -50,6 +49,7 @@ __global__ void fair_kernel(float *data, float *weight, float *out,
 }
 '''
 
+# Load CUDA module
 module = load_inline(
     name="fairshare",
     cpp_sources="",
@@ -58,21 +58,42 @@ module = load_inline(
     verbose=False
 )
 
-# 5) 准备模拟“多进程”数据：用不同 block 模拟不同 PID 的训练
-num_procs = 4
-N = 1024
-data   = torch.randn(num_procs, N, device='cuda')
-weight = torch.randn(N, device='cuda')
-out    = torch.zeros(num_procs, device='cuda')
+def run_inference(num_procs=4, N=1024):
+    # Prepare data for multiple processes (simulated by different blocks)
+    data = torch.randn(num_procs, N, device='cuda')
+    weight = torch.randn(N, device='cuda')
+    out = torch.zeros(num_procs, device='cuda')
 
-print("启动带公平份额调度的 CUDA kernel …")
-module.fair_kernel(
-    grid=(num_procs,1,1), block=(256,1,1),
-    args=[data.data_ptr(),
-          weight.data_ptr(),
-          out.data_ptr(),
-          N,
-          fairshare.data_ptr()]
-)
+    print(f"Starting CUDA kernel with fair share scheduling for {num_procs} processes...")
+    
+    # Launch kernel
+    module.fair_kernel(
+        grid=(num_procs,1,1), 
+        block=(256,1,1),
+        args=[data.data_ptr(),
+              weight.data_ptr(),
+              out.data_ptr(),
+              N,
+              fairshare.data_ptr()]
+    )
 
-print("结果：", out)
+    # Synchronize and print results
+    torch.cuda.synchronize()
+    print("Results:", out)
+    
+    # Clean up
+    del data, weight, out
+    torch.cuda.empty_cache()
+
+def main():
+    # Test with different numbers of processes
+    process_counts = [2, 4, 8]
+    for num_procs in process_counts:
+        print(f"\nTesting with {num_procs} processes:")
+        run_inference(num_procs=num_procs)
+        
+        # Clean up between runs
+        torch.cuda.empty_cache()
+
+if __name__ == "__main__":
+    main()

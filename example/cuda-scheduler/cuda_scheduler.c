@@ -99,17 +99,17 @@ int main(int argc, char **argv)
 		fprintf(stderr, "Failed to load and verify BPF skeleton\n");
 		goto cleanup;
 	}
-	LIBBPF_OPTS(bpf_uprobe_opts, attach_opts, .func_name = "matMulTiled",
+	LIBBPF_OPTS(bpf_uprobe_opts, attach_opts, .func_name = "_Z11matMulTiledPKfS0_Pf",
 		    .retprobe = false);
 	struct bpf_link *attach = bpf_program__attach_uprobe_opts(
-		skel->progs.uprobe_matMulTiled, -1, "victim", 0, &attach_opts);
+		skel->progs.uprobe_matMulTiled, -1, "./victim", 0, &attach_opts);
 	if (!attach) {
 		fprintf(stderr, "Failed to attach BPF skeleton\n");
 		err = -1;
 		goto cleanup;
 	}
 	struct bpf_link *attach_cuda = bpf_program__attach_uprobe_opts(
-		skel->progs.uprobe_matMulTiled, -1, "victim", 0, &attach_opts);
+		skel->progs.uprobe_matMulTiled, -1, "./victim", 0, &attach_opts);
 	if (!attach_cuda) {
 		fprintf(stderr, "Failed to attach BPF skeleton (cuda)\n");
 		err = -1;
