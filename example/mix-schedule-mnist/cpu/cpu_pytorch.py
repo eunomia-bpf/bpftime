@@ -117,4 +117,8 @@ def main():
     print("\nPyTorch inference script finished.")
 
 if __name__ == '__main__':
+    import pathlib
+    this_file = pathlib.Path(__file__).parent.absolute()
+    import os
+    os.chdir(this_file)
     main()

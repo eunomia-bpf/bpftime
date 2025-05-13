@@ -1,6 +1,7 @@
 #include <Python.h>
 #include <atomic>
 #include <chrono>
+#include <filesystem>
 #include <fstream>
 #include <stdio.h>
 #include <stdlib.h>
@@ -9,11 +10,10 @@
 #include <signal.h>
 #include <pthread.h>
 #include <variant>
-
-// 全局标志，用于控制Python程序的执行状态
+#include <bpftime.hpp>
+#include <libgen.h>
 std::atomic<bool> python_paused = false;
 
-// 处理SIGUSR1信号，用于暂停Python执行
 void handle_signal(int sig)
 {
 	if (sig == SIGUSR1) {
@@ -32,34 +32,24 @@ void handle_signal(int sig)
 		printf("Python interpreter resumed execution.\n");
 	}
 }
+#define STRINGIFY(x) #x
+#define TOSTRING(x) STRINGIFY(x)
 
+static const char *executable_pdir = TOSTRING(SOURCE_DIR);
 int main(int argc, char *argv[])
 {
-	// 示例Python代码 - 一个简单的计数循环
-	// const char *python_code = "import time\n"
-	// 			  "import sys\n"
-	// 			  "\n"
-	// 			  "print('Python program started')\n"
-	// 			  "count = 0\n"
-	// 			  "try:\n"
-	// 			  "    while True:\n"
-	// 			  "        count += 1\n"
-	// 			  "        print(f'Counter: {count}')\n"
-	// 			  "        sys.stdout.flush()\n"
-	// 			  "        time.sleep(1)\n"
-	// 			  "except KeyboardInterrupt:\n"
-	// 			  "    print('Program interrupted')\n"
-	// 			  "print('Python program finished')\n";
-
-	std::string python_code;
-	{
-		std::ifstream ifs("cpu_pytorch.py", std::ios::ate);
-		auto tail = ifs.tellg();
-		ifs.seekg(0, std::ios::beg);
-		// std::get()
-		python_code.resize(tail);
-		ifs.read(python_code.data(), tail);
-	}
+	auto executable_dir = std::filesystem::path(executable_pdir);
+	// SPDLOG_INFO("Changing work directory to ")
+	// std::string python_code;
+	// {
+	// 	std::ifstream ifs(executable_dir / "cpu_pytorch.py",
+	// 			  std::ios::ate);
+	// 	auto tail = ifs.tellg();
+	// 	ifs.seekg(0, std::ios::beg);
+	// 	// std::get()
+	// 	python_code.resize(tail);
+	// 	ifs.read(python_code.data(), tail);
+	// }
 
 	pthread_t python_tid;
 
@@ -76,15 +66,15 @@ int main(int argc, char *argv[])
 
 		printf("Python interpreter started. Running code...\n");
 
-		// 运行Python代码
-		PyRun_SimpleString(python_code.c_str());
-
-		// 清理Python解释器
+		// PyRun_SimpleString(python_code.c_str());
+		auto python_file = executable_dir / "cpu_pytorch.py";
+		auto fp = fopen(python_file.c_str(), "r");
+		PyRun_SimpleFile(fp, python_file.c_str());
 		Py_Finalize();
 
 		printf("Python interpreter finished execution.\n");
 	});
-
+	
 	std::thread timer_thread([&]() {
 		// 等待10秒后暂停Python执行
 		sleep(10);
@@ -100,6 +90,6 @@ int main(int argc, char *argv[])
 		python_paused.store(false);
 	});
 	python_thd.join();
-
+	timer_thread.join();
 	return 0;
 }
