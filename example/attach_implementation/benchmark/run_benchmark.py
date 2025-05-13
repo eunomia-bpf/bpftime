@@ -498,11 +498,11 @@ def print_results_summary(avg_results, std_dev, overheads):
 
 def main():
     parser = argparse.ArgumentParser(description="Run nginx benchmarks with different configurations")
-    parser.add_argument("--duration", type=int, default=10, help="Duration of each benchmark in seconds")
-    parser.add_argument("--connections", type=int, default=100, help="Number of connections to use")
-    parser.add_argument("--threads", type=int, default=10, help="Number of threads to use")
+    parser.add_argument("--duration", type=int, default=30, help="Duration of each benchmark in seconds")
+    parser.add_argument("--connections", type=int, default=64, help="Number of connections to use")
+    parser.add_argument("--threads", type=int, default=8, help="Number of threads to use")
     parser.add_argument("--url-path", type=str, default="/aaaa", help="URL path to test")
-    parser.add_argument("--iterations", type=int, default=10, help="Number of benchmark iterations to run")
+    parser.add_argument("--iterations", type=int, default=20, help="Number of benchmark iterations to run")
     parser.add_argument("--save-all-iterations", action="store_true", help="Save all iteration data in the JSON output")
     parser.add_argument("--json-output", type=str, help="Custom path for JSON output file")
     parser.add_argument("--rlbox-variant", type=str, choices=["noop", "wasm2c"], default="noop", 
