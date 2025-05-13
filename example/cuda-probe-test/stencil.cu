@@ -75,9 +75,20 @@ int main()
     int gridSize  = (N + blockSize - 1) / blockSize;
     // shared memory 大小 = (blockSize + 2*RADIUS) * sizeof(float)
     size_t sharedBytes = (blockSize + 2 * RADIUS) * sizeof(float);
-
+    cudaEvent_t start, stop;
+    cudaEventCreate(&start);
+    cudaEventCreate(&stop);
+    cudaEventRecord(start);
     // 调用 kernel
-    stencil1D<<<gridSize, blockSize, sharedBytes>>>(d_x, d_y, N);
+    stencil1D<<<1, 1, 1>>>(d_x, d_y, N);
+    cudaEventRecord(stop);
+    cudaEventSynchronize(stop);
+    // Clean up events
+    float milliseconds = 0;
+    cudaEventElapsedTime(&milliseconds, start, stop);
+    std::cout << "Kernel execution time: " << milliseconds << " ms" << std::endl;
+    cudaEventDestroy(start);
+    cudaEventDestroy(stop);
     cudaDeviceSynchronize();
 
     // 拷回结果

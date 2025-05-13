@@ -130,7 +130,21 @@ int main()
 
     int blk = 256;
     int grd = (h_numRows + blk - 1) / blk;
-    spmvCSR_u64<<<grd, blk>>>(d_rowPtr, d_colInd, d_vals, d_x, d_y);
+
+    cudaEvent_t start, stop;
+    cudaEventCreate(&start);
+    cudaEventCreate(&stop);
+    cudaEventRecord(start);
+    // 调用 kernel
+    spmvCSR_u64<<<1, 1, 1>>>(d_rowPtr, d_colInd, d_vals, d_x, d_y);
+    cudaEventRecord(stop);
+    cudaEventSynchronize(stop);
+    // Clean up events
+    float milliseconds = 0;
+    cudaEventElapsedTime(&milliseconds, start, stop);
+    std::cout << "Kernel execution time: " << milliseconds << " ms" << std::endl;
+    cudaEventDestroy(start);
+    cudaEventDestroy(stop);
     cudaDeviceSynchronize();
     cudaMemcpy(h_y.data(), d_y, h_numRows*sizeof(uint64_t), cudaMemcpyDeviceToHost);
     std::cout << "y[0] = " << h_y[0] << "\n";

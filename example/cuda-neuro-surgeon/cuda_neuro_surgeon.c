@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: (LGPL-2.1 OR BSD-2-Clause)
 /* Copyright (c) 2020 Facebook */
-#include "cudatest.bpf.h"
+#include "cuda_neuro_surgeon.bpf.h"
 #include <signal.h>
 #include <stdio.h>
 #include <time.h>
@@ -10,7 +10,7 @@
 #include <bpf/bpf.h>
 #include <unistd.h>
 #include <stdlib.h>
-#include "cudatest.skel.h"
+#include "cuda_neuro_surgeon.skel.h"
 #include <inttypes.h>
 
 #define warn(...) fprintf(stderr, __VA_ARGS__)
@@ -28,7 +28,7 @@ static void sig_handler(int sig)
 	exiting = true;
 }
 
-static int print_stat(struct cudatest_bpf *obj)
+static int print_stat(struct cuda_neuro_surgeon_bpf *obj)
 {
 	time_t t;
 	struct tm *tm;
@@ -77,7 +77,7 @@ static int print_stat(struct cudatest_bpf *obj)
 
 int main(int argc, char **argv)
 {
-	struct cudatest_bpf *skel;
+	struct cuda_neuro_surgeon_bpf *skel;
 	int err;
 
 	/* Set up libbpf errors and debug info callback */
@@ -88,14 +88,14 @@ int main(int argc, char **argv)
 	signal(SIGTERM, sig_handler);
 
 	/* Load and verify BPF application */
-	skel = cudatest_bpf__open();
+	skel = cuda_neuro_surgeon_bpf__open();
 	if (!skel) {
 		fprintf(stderr, "Failed to open and load BPF skeleton\n");
 		return 1;
 	}
 
 	/* Load & verify BPF programs */
-	err = cudatest_bpf__load(skel);
+	err = cuda_neuro_surgeon_bpf__load(skel);
 	if (err) {
 		fprintf(stderr, "Failed to load and verify BPF skeleton\n");
 		goto cleanup;
@@ -122,7 +122,7 @@ int main(int argc, char **argv)
 	}
 cleanup:
 	/* Clean up */
-	cudatest_bpf__destroy(skel);
+	cuda_neuro_surgeon_bpf__destroy(skel);
 
 	return err < 0 ? -err : 0;
 }

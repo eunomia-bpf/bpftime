@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: (LGPL-2.1 OR BSD-2-Clause)
 /* Copyright (c) 2020 Facebook */
-#include "cudatest.bpf.h"
 #include <signal.h>
 #include <stdio.h>
 #include <time.h>
@@ -10,7 +9,7 @@
 #include <bpf/bpf.h>
 #include <unistd.h>
 #include <stdlib.h>
-#include "cudatest.skel.h"
+#include "cuda_scheduler.skel.h"
 #include <inttypes.h>
 
 #define warn(...) fprintf(stderr, __VA_ARGS__)
@@ -28,7 +27,7 @@ static void sig_handler(int sig)
 	exiting = true;
 }
 
-static int print_stat(struct cudatest_bpf *obj)
+static int print_stat(struct cuda_scheduler_bpf *obj)
 {
 	time_t t;
 	struct tm *tm;
@@ -36,7 +35,7 @@ static int print_stat(struct cudatest_bpf *obj)
 	uint32_t key, *prev_key = NULL;
 	uint64_t value;
 	int err = 0;
-	int fd = bpf_map__fd(obj->maps.libc_malloc_calls_total);
+	int fd = bpf_map__fd(obj->maps.call_count);
 
 	time(&t);
 	tm = localtime(&t);
@@ -77,7 +76,7 @@ static int print_stat(struct cudatest_bpf *obj)
 
 int main(int argc, char **argv)
 {
-	struct cudatest_bpf *skel;
+	struct cuda_scheduler_bpf *skel;
 	int err;
 
 	/* Set up libbpf errors and debug info callback */
@@ -88,29 +87,29 @@ int main(int argc, char **argv)
 	signal(SIGTERM, sig_handler);
 
 	/* Load and verify BPF application */
-	skel = cudatest_bpf__open();
+	skel = cuda_scheduler_bpf__open();
 	if (!skel) {
 		fprintf(stderr, "Failed to open and load BPF skeleton\n");
 		return 1;
 	}
 
 	/* Load & verify BPF programs */
-	err = cudatest_bpf__load(skel);
+	err = cuda_scheduler_bpf__load(skel);
 	if (err) {
 		fprintf(stderr, "Failed to load and verify BPF skeleton\n");
 		goto cleanup;
 	}
-	LIBBPF_OPTS(bpf_uprobe_opts, attach_opts, .func_name = "malloc",
+	LIBBPF_OPTS(bpf_uprobe_opts, attach_opts, .func_name = "matMulTiled",
 		    .retprobe = false);
 	struct bpf_link *attach = bpf_program__attach_uprobe_opts(
-		skel->progs.do_count, -1, "libc.so.6", 0, &attach_opts);
+		skel->progs.uprobe_matMulTiled, -1, "victim", 0, &attach_opts);
 	if (!attach) {
 		fprintf(stderr, "Failed to attach BPF skeleton\n");
 		err = -1;
 		goto cleanup;
 	}
 	struct bpf_link *attach_cuda = bpf_program__attach_uprobe_opts(
-		skel->progs.do_count__cuda, -1, "libc.so.6", 0, &attach_opts);
+		skel->progs.uprobe_matMulTiled, -1, "victim", 0, &attach_opts);
 	if (!attach_cuda) {
 		fprintf(stderr, "Failed to attach BPF skeleton (cuda)\n");
 		err = -1;
@@ -122,7 +121,7 @@ int main(int argc, char **argv)
 	}
 cleanup:
 	/* Clean up */
-	cudatest_bpf__destroy(skel);
+	cuda_scheduler_bpf__destroy(skel);
 
 	return err < 0 ? -err : 0;
 }
