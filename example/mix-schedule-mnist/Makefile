@@ -67,7 +67,6 @@ $(call allow-override,LD,$(CROSS_COMPILE)ld)
 
 .PHONY: all
 all: $(APPS)  cpu_runner
-	$(MAKE) -C ./cpu
 	$(MAKE) -C ./gpu
 
 victim: victim.cu

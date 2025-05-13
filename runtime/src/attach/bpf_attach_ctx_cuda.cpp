@@ -109,7 +109,7 @@ void bpf_attach_ctx::start_cuda_watcher_thread()
 				auto req_id = ctx->cuda_shared_mem->request_id;
 
 				auto map_ptr = ctx->cuda_shared_mem->map_id;
-				auto map_fd = map_ptr >> 32;
+				auto map_fd = map_ptr;
 				SPDLOG_DEBUG(
 					"CUDA Received call request id {}, map_ptr = {}, map_fd = {}",
 					req_id, map_ptr, map_fd);
@@ -126,8 +126,10 @@ void bpf_attach_ctx::start_cuda_watcher_thread()
 						map_fd, req.key);
 					resp.value = ptr;
 					SPDLOG_DEBUG(
-						"CUDA: Executing map lookup for {}, result = {}",
-						map_fd, (uintptr_t)resp.value);
+						"CUDA: Executing map lookup for {}, key= {:x} result = {:x}",
+						map_fd, *(uintptr_t *)&req.key,
+						(uintptr_t)resp.value);
+
 				} else if (req_id ==
 					   (int)cuda::HelperOperation::
 						   MAP_UPDATE) {

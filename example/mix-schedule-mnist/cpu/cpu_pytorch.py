@@ -115,6 +115,10 @@ def main():
         print(f"  True label: {sample_label}, Predicted: {predicted_class.item()}")
 
     print("\nPyTorch inference script finished.")
+    while True:
+        import time
+        time.sleep(0.1)
+        print("sleeping..")        
 
 if __name__ == '__main__':
     import pathlib

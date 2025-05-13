@@ -5,76 +5,22 @@
 
 struct {
 	__uint(type, BPF_MAP_TYPE_HASH);
-	__uint(max_entries, 1024);
+	__uint(max_entries, 1);
 	__type(key, u32);
-	__type(value, u64);
+	__type(value, u32);
 } test_hash_map SEC(".maps");
-
-static int increment_map(void *map, void *key, u64 increment)
-{
-	u64 zero = 0, *count = bpf_map_lookup_elem(map, key);
-	if (!count) {
-		bpf_map_update_elem(map, key, &zero, BPF_NOEXIST);
-		count = bpf_map_lookup_elem(map, key);
-		if (!count) {
-			return 0;
-		}
-	}
-	u64 res = *count + increment;
-	bpf_map_update_elem(map, key, &res, BPF_EXIST);
-
-	return *count;
-}
-
-// SEC("kretprobe/__memcapture")
-// int retprobe__cuda(struct pt_regs *ctx)
-// {
-// 	u64 key = 12345;
-// 	increment_map(&test_hash_map, &key, 1);
-// 		bpf_printk("Message from eBPF: %d, %lx", 10, 20);
-
-// 	return 0;
-// }
 
 static const void (*ebpf_puts)(const char *) = 501;
 
-SEC("kprobe/_Z11matMulTiledPKfS0_Pf")
-int probe__cuda(const char *call_str)
-{
-	bpf_printk("Entered _Z11matMulTiledPKfS0_Pf\n");
-
-	return 0;
-}
-
-
-SEC("kretprobe/_Z11matMulTiledPKfS0_Pf")
+SEC("kretprobe/_Z43matrix_multiply_add_bias_relu_kernel_SERIALPKfS0_S0_Pfiiib")
 int retprobe__cuda(const char *call_str)
 {
-	bpf_printk("Exited _Z11matMulTiledPKfS0_Pf\n");
-
+	bpf_printk(
+		"Exiting _Z43matrix_multiply_add_bias_relu_kernel_SERIALPKfS0_S0_Pfiiib\n");
+	u32 key = 1234;
+	while (bpf_map_lookup_elem(&test_hash_map, &key) == NULL) {
+	}
 	return 0;
 }
-SEC("kprobe/__memcapture")
-int probemem__cuda(const char *call_str)
-{
-	// u64 key = 12345;
-	// increment_map(&test_hash_map, &key, 1);
-	// bpf_printk("Message from eBPF: %d, %lx\n", 10, 20);
-	// const char text[]="aaaaa";
-	// ebpf_puts(text);
-	ebpf_puts(call_str);
-
-	return 0;
-}
-
-
-// For testing purpose
-// SEC("uprobe/./victim:main")
-// int uretprobe(struct pt_regs *ctx)
-// {
-// 	u64 key = 12345;
-// 	increment_map(&test_hash_map, &key, 1);
-// 	return 0;
-// }
 
 char LICENSE[] SEC("license") = "GPL";

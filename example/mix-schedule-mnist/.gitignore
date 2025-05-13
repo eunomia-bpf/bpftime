@@ -6,3 +6,5 @@ mnist_samples.png
 mlp_weights
 gpu_runner
 /.output
+/mix_schedule_gpu
+dump*

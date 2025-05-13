@@ -1,3 +1,4 @@
+#include "bpftime_shm.hpp"
 #include <Python.h>
 #include <atomic>
 #include <chrono>
@@ -16,6 +17,7 @@ std::atomic<bool> python_paused = false;
 
 void handle_signal(int sig)
 {
+	SPDLOG_INFO("Received sig {}", sig);
 	if (sig == SIGUSR1) {
 		// 设置暂停标志
 		python_paused.store(true);
@@ -36,21 +38,32 @@ void handle_signal(int sig)
 #define TOSTRING(x) STRINGIFY(x)
 
 static const char *executable_pdir = TOSTRING(SOURCE_DIR);
+
+static void signal_handler_switch(int sig)
+{
+	// When SIGUSR2, do the switch
+	int key = 1234;
+	long value = 0;
+	if (bpftime_map_lookup_elem(4, &key) == nullptr) {
+		SPDLOG_INFO("Switching to GPU");
+		bpftime_map_update_elem(4, &key, &value, 0);
+
+	} else {
+		SPDLOG_INFO("Switching to CPU");
+		bpftime_map_delete_elem(4, &key);
+	}
+}
+
 int main(int argc, char *argv[])
 {
 	auto executable_dir = std::filesystem::path(executable_pdir);
-	// SPDLOG_INFO("Changing work directory to ")
-	// std::string python_code;
-	// {
-	// 	std::ifstream ifs(executable_dir / "cpu_pytorch.py",
-	// 			  std::ios::ate);
-	// 	auto tail = ifs.tellg();
-	// 	ifs.seekg(0, std::ios::beg);
-	// 	// std::get()
-	// 	python_code.resize(tail);
-	// 	ifs.read(python_code.data(), tail);
-	// }
-
+	bpftime_initialize_global_shm(bpftime::shm_open_type::SHM_OPEN_ONLY);
+	{
+		struct sigaction sa;
+		memset(&sa, 0, sizeof(sa));
+		sa.sa_handler = signal_handler_switch;
+		sigaction(SIGUSR2, &sa, nullptr);
+	}
 	pthread_t python_tid;
 
 	std::thread python_thd([&]() {
@@ -74,20 +87,24 @@ int main(int argc, char *argv[])
 
 		printf("Python interpreter finished execution.\n");
 	});
-	
+
 	std::thread timer_thread([&]() {
-		// 等待10秒后暂停Python执行
-		sleep(10);
-
-		// 发送暂停信号
-		pthread_kill(python_tid, SIGUSR1);
-
-		// 等待1分钟
-		printf("Waiting for 10 seconds before resuming...\n");
-		sleep(10);
-
-		// 恢复Python执行
-		python_paused.store(false);
+		int key = 1234;
+		while (true) {
+			// Running on CPU
+			if (bpftime_map_lookup_elem(4, &key) == nullptr) {
+				SPDLOG_INFO("Running on CPU");
+				python_paused.store(false);
+			} else {
+				SPDLOG_INFO("Running on GPU");
+				if (python_paused.load() == false) {
+					SPDLOG_INFO("Stopping python thread..");
+					pthread_kill(python_tid, SIGUSR1);
+				}
+			}
+			std::this_thread::sleep_for(
+				std::chrono::milliseconds(300));
+		}
 	});
 	python_thd.join();
 	timer_thread.join();

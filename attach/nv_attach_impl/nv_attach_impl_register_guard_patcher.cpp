@@ -1,12 +1,16 @@
 #include <string>
 #include <vector>
 #include <regex>
+#include <sstream> // Required for std::stringstream
+#include <algorithm> // Required for std::find
+#include <iostream> // For potential debugging, can be removed
+
 namespace bpftime::attach
 {
 // Done by Gemini
 
 
-// (RegisterInfo struct and getRegisterSizeInBytes, getPtxTypeModifier functions remain the same)
+// (RegisterInfo struct and getRegisterSizeInBytes functions remain the same)
 struct RegisterInfo {
     std::string type;
     std::string baseName;
@@ -21,22 +25,21 @@ int getRegisterSizeInBytes(const std::string& type) {
     if (type == ".b16" || type == ".s16" || type == ".u16" || type == ".f16") return 2;
     if (type == ".b32" || type == ".s32" || type == ".u32" || type == ".f32") return 4;
     if (type == ".b64" || type == ".s64" || type == ".u64" || type == ".f64" || type == ".f64x2") return 8;
-    if (type == ".pred") return 1;
+    if (type == ".pred") return 1; // Predicate register size is 1 byte (logically, though often stored in more)
     return 0;
 }
 
-// Get PTX type modifier for st/ld, ensuring we handle predicates and smaller types correctly
-// when storing them in 8-byte aligned slots if needed.
-// For your reference, st.local will store the register's value.
-// We'll use the register's actual type for st/ld, but ensure offsets are 8-byte aligned.
+// Get PTX type modifier for st/ld.
+// Since predicate registers are no longer saved by this mechanism,
+// the special handling for .pred is removed. If it were to be called for a .pred,
+// it would fall into the sizeInBytes == 1 case.
 std::string getPtxStorageTypeModifier(const RegisterInfo& regInfo) {
-    if (regInfo.type == ".pred") return ".b8"; // Store predicate as a byte
-    // For direct storage of the register's type
+    // if (regInfo.type == ".pred") return ".b8"; // MODIFIED: No longer needed as .pred are not saved
     if (regInfo.sizeInBytes == 1) return ".u8";
     if (regInfo.sizeInBytes == 2) return ".u16";
     if (regInfo.sizeInBytes == 4) return ".u32";
     if (regInfo.sizeInBytes == 8) return ".u64";
-    return regInfo.type; // Fallback, should be specific
+    return regInfo.type; // Fallback, should be specific (e.g. ensure it's a valid st/ld modifier)
 }
 
 
@@ -104,12 +107,17 @@ std::string add_register_guard_for_ebpf_ptx_func(const std::string& ptxCode) {
                         regInfo.type = regMatch[1].str();
                         regInfo.baseName = regMatch[2].str();
                         regInfo.sizeInBytes = getRegisterSizeInBytes(regInfo.type);
-                        regInfo.ptxTypeModifier = getPtxStorageTypeModifier(regInfo); // Use storage type
+                        
 
-                        if (regInfo.baseName == "%SP" || regInfo.baseName == "%SPL" || regInfo.sizeInBytes == 0 ||
+                        // MODIFICATION: Skip predicate registers and other special/temporary registers
+                        if (regInfo.type == ".pred" || // <<< --- KEY CHANGE HERE --- >>>
+                            regInfo.baseName == "%SP" || regInfo.baseName == "%SPL" || regInfo.sizeInBytes == 0 ||
                             regInfo.baseName == tempBaseReg || regInfo.baseName == tempAddrReg) {
                             continue;
                         }
+                        // Get storage type modifier only for registers we intend to save
+                        regInfo.ptxTypeModifier = getPtxStorageTypeModifier(regInfo); 
+
                         bool name_conflict = false; // Basic check against our temp regs
                         for(const auto& r : registersToSaveInFunc) { if (r.baseName == regInfo.baseName) { name_conflict = true; break; } }
                         if (name_conflict) continue;
@@ -290,7 +298,7 @@ std::string add_register_guard_for_ebpf_ptx_func(const std::string& ptxCode) {
             }
         }
     }
-    if (inFunctionDefinition || inFunctionBody) {
+    if (inFunctionDefinition || inFunctionBody) { // Handle unterminated functions (e.g. if PTX ends mid-function)
         for (const auto& l : currentFunctionLines) {
             resultPtx += l + "\n";
         }

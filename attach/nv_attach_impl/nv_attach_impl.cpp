@@ -347,6 +347,13 @@ int nv_attach_impl::copy_data_to_trampoline_memory()
 			(int)err);
 		return -1;
 	}
+	// Prefill some data
+	for (auto &item : *this->map_basic_info) {
+		item.key_size = 4;
+		item.value_size = 4;
+		SPDLOG_WARN(
+			"Prefilling key_size & value_size to 4 for all map_basic_info");
+	}
 	if (auto err = cudaMemcpyToSymbol((const void *)&map_basic_info_mock,
 					  this->map_basic_info->data(),
 					  sizeof(map_basic_info_mock));
