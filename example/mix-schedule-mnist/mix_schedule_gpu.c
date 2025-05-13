@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: (LGPL-2.1 OR BSD-2-Clause)
 /* Copyright (c) 2020 Facebook */
-#include "cuda_neuro_surgeon.bpf.h"
 #include <signal.h>
 #include <stdio.h>
 #include <time.h>
@@ -10,10 +9,8 @@
 #include <bpf/bpf.h>
 #include <unistd.h>
 #include <stdlib.h>
-#include <errno.h>
-#include "cuda_neuro_surgeon.skel.h"
+#include "./.output/mix_schedule_gpu.skel.h"
 #include <inttypes.h>
-
 #define warn(...) fprintf(stderr, __VA_ARGS__)
 
 static int libbpf_print_fn(enum libbpf_print_level level, const char *format,
@@ -29,15 +26,15 @@ static void sig_handler(int sig)
 	exiting = true;
 }
 
-static int print_stats(struct cuda_neuro_surgeon_bpf *obj)
+static int print_stat(struct mix_schedule_gpu_bpf *obj)
 {
 	time_t t;
 	struct tm *tm;
 	char ts[16];
 	uint32_t key, *prev_key = NULL;
-	struct inference_stats value;
+	uint64_t value;
 	int err = 0;
-	int fd = bpf_map__fd(obj->maps.inference_stats);
+	int fd = bpf_map__fd(obj->maps.test_hash_map);
 
 	time(&t);
 	tm = localtime(&t);
@@ -62,20 +59,9 @@ static int print_stats(struct cuda_neuro_surgeon_bpf *obj)
 			     strerror(errno));
 			return err;
 		}
-		printf("PID=%-5" PRIu32 " CPU inferences: %" PRIu64
-		       " GPU inferences: %" PRIu64 "\n",
-		       key, value.cpu_inference_count,
-		       value.gpu_inference_count);
-		printf("Last CPU usage: %" PRIu64 " Last GPU usage: %" PRIu64
-		       "\n",
-		       value.last_cpu_usage, value.last_gpu_usage);
-		printf("Total latency: %" PRIu64 " ns\n", value.total_latency);
-		err = bpf_map_delete_elem(fd, &key);
-		if (err) {
-			warn("bpf_map_delete_elem failed: %s\n",
-			     strerror(errno));
-			return err;
-		}
+		printf("	pid=%-5" PRIu32 " ", key);
+		printf("	malloc calls: %" PRIu64 "\n", value);
+
 		prev_key = &key;
 	}
 	fflush(stdout);
@@ -84,7 +70,7 @@ static int print_stats(struct cuda_neuro_surgeon_bpf *obj)
 
 int main(int argc, char **argv)
 {
-	struct cuda_neuro_surgeon_bpf *skel;
+	struct mix_schedule_gpu_bpf *skel;
 	int err;
 
 	/* Set up libbpf errors and debug info callback */
@@ -95,37 +81,30 @@ int main(int argc, char **argv)
 	signal(SIGTERM, sig_handler);
 
 	/* Load and verify BPF application */
-	skel = cuda_neuro_surgeon_bpf__open();
+	skel = mix_schedule_gpu_bpf__open();
 	if (!skel) {
 		fprintf(stderr, "Failed to open and load BPF skeleton\n");
 		return 1;
 	}
 
 	/* Load & verify BPF programs */
-	err = cuda_neuro_surgeon_bpf__load(skel);
+	err = mix_schedule_gpu_bpf__load(skel);
 	if (err) {
 		fprintf(stderr, "Failed to load and verify BPF skeleton\n");
 		goto cleanup;
 	}
-
-	/* Attach tracepoints */
-	err = cuda_neuro_surgeon_bpf__attach(skel);
+	err = mix_schedule_gpu_bpf__attach(skel);
 	if (err) {
 		fprintf(stderr, "Failed to attach BPF skeleton\n");
 		goto cleanup;
 	}
-
-	printf("Successfully started! Ctrl-C to stop.\n");
-
-	/* Main loop */
 	while (!exiting) {
 		sleep(1);
-		print_stats(skel);
+		print_stat(skel);
 	}
-
 cleanup:
 	/* Clean up */
-	cuda_neuro_surgeon_bpf__destroy(skel);
+	mix_schedule_gpu_bpf__destroy(skel);
 
 	return err < 0 ? -err : 0;
 }

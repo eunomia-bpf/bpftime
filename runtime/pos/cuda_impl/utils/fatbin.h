@@ -902,7 +902,8 @@ class POSUtil_CUDA_Fatbin {
 			POS_CHECK_POINTER(elf);
 			POS_CHECK_POINTER(function_desp);
 			POS_CHECK_POINTER(memory);
-
+			POS_DEBUG("Checking function %s",
+				  (*function_desp)->name.c_str());
 			// obtain the section that contains the kernel
 			if ((section_name =
 				     get_kernel_section_name_from_kernel_name(

@@ -29,6 +29,7 @@ def run_benchmark(split_layer, num_runs=3):
         start = time.perf_counter()
         outputs = engine.infer(EXAMPLE_PROMPT, batch_size=1, max_new_tokens=256, stream=False)
         torch.cuda.synchronize()
+        del outputs, engine
         elapsed = time.perf_counter() - start
         latencies.append(elapsed)
         print(f"Run {i+1}/{num_runs}: {elapsed:.2f}s")
@@ -39,7 +40,7 @@ def run_benchmark(split_layer, num_runs=3):
 
 def main():
     # Test different split layer configurations
-    split_layers = range(5, 41, 5)  # From 5 to 40
+    split_layers = range(6, 41)  # From 5 to 40
     results = []
     
     for split_layer in split_layers:
