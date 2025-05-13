@@ -125,23 +125,6 @@ Overhead Comparisons:
     BPFtime: 1.67%
     RLBox NoOp: 8.56%
     ERIM: 11.30%
-  Compared to baseline C module:
-    WebAssembly: 12.10%
-    LuaJIT: 12.66%
-    BPFtime: 2.17%
-    RLBox NoOp: 9.02%
-    ERIM: 11.75%
-  Compared to WebAssembly module:
-    BPFtime: -11.30%
-    ERIM: -0.40%
-  Compared to LuaJIT module:
-    BPFtime: -12.01%
-    ERIM: -1.04%
-  Compared to RLBox NoOp module:
-    BPFtime: -7.53%
-    ERIM: 3.00%
-  Compared to ERIM-protected module:
-    BPFtime: -10.86%
 JSON results saved to: /home/yunwei37/bpftime/example/attach_implementation/benchmark/benchmark_results_20250512_173550.json
 ```
 
