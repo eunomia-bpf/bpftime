@@ -1,29 +1,55 @@
 import matplotlib.pyplot as plt
-import numpy as np  # Add NumPy import
+import numpy as np
+
+# Set font size
 font = {'size': 15}
 plt.rc('font', **font)
-# Data for the chart
-techniques = ['Static PTX', 'CUPTI + NVTX', 'NVBit']
-baseline_runtime = [100, 100, 100]  # baseline execution time in µs
-overhead_runtime = [5, 5, 100]  # baseline execution time in µs
-instrumentation_overhead = [0.8, 12, 8]  # instrumentation overhead in µs
 
-plt.figure(figsize=(6, 4))
-# Plot baseline and overhead segments
-plt.bar(techniques, baseline_runtime, label='Baseline Runtime')
-plt.bar(techniques, overhead_runtime, bottom=baseline_runtime, label='Overhead Runtime')
-# Convert lists to NumPy arrays for element-wise addition
-baseline_array = np.array(baseline_runtime)
-overhead_array = np.array(overhead_runtime)
-plt.bar(techniques, instrumentation_overhead, bottom=baseline_array + overhead_array, label='Instrumentation Overhead')
+# Techniques and data
+techniques = ['Cuprobe', 'CUPTI', 'NVBit']
 
-plt.ylabel('Time (µs)')
-plt.legend()
+# Large workload data
+baseline_large = np.array([100, 100, 100], dtype=float)
+overhead_large = np.array([5, 5, 100], dtype=float)
+instr_large = np.array([0.8, 12, 8], dtype=float)
 
-# Annotate segments
-for i in range(len(techniques)):
-    plt.text(i, baseline_runtime[i]/2, f'{baseline_runtime[i]} µs', ha='center', va='center')
-    plt.text(i, baseline_runtime[i] + overhead_runtime[i] + instrumentation_overhead[i]/2, f'{instrumentation_overhead[i]} µs', ha='center', va='center')
+# Small workload data
+baseline_small = np.array([1, 1, 1], dtype=float)
+overhead_small = np.array([1, 1, 20], dtype=float)
+instr_small = np.array([0.8, 12, 8], dtype=float)
+
+# Compute percentages
+total_large = baseline_large + overhead_large + instr_large
+baseline_pct_large = baseline_large / total_large * 100
+overhead_pct_large = overhead_large / total_large * 100
+instr_pct_large = instr_large / total_large * 100
+
+total_small = baseline_small + overhead_small + instr_small
+baseline_pct_small = baseline_small / total_small * 100
+overhead_pct_small = overhead_small / total_small * 100
+instr_pct_small = instr_small / total_small * 100
+
+# Create combined figure with two subplots
+fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 5), sharey=True)
+
+# Plot large workload percentages
+ax1.bar(techniques, baseline_pct_large, label='Baseline')
+ax1.bar(techniques, overhead_pct_large, bottom=baseline_pct_large, label='Overhead')
+ax1.bar(techniques, instr_pct_large, bottom=baseline_pct_large + overhead_pct_large, label='Instrumentation')
+ax1.set_ylabel('Percentage (%)')
+ax1.set_title('Large Workload')
+ax1.set_ylim(0, 100)
+
+# Plot small workload percentages
+ax2.bar(techniques, baseline_pct_small, label='Baseline')
+ax2.bar(techniques, overhead_pct_small, bottom=baseline_pct_small, label='Overhead')
+ax2.bar(techniques, instr_pct_small, bottom=baseline_pct_small + overhead_pct_small, label='Instrumentation')
+ax2.set_title('Small Workload')
+ax2.set_ylim(0, 100)
+
+# Common legend
+handles, labels = ax1.get_legend_handles_labels()
+fig.legend(handles, labels, loc='lower center', ncol=3, bbox_to_anchor=(0.5, -0.05))
 
 plt.tight_layout()
-plt.savefig('motivation.pdf')
+plt.savefig('motivation.pdf', bbox_inches='tight')

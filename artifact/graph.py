@@ -17,7 +17,7 @@ width = 0.25
 plt.figure()
 plt.bar([i - width for i in x], native, width=width, label='native', yerr=native_std)
 plt.bar(x, profiler, width=width, label='pytorch-profiler', yerr=profiler_std)
-plt.bar([i + width for i in x], egpu, width=width, label='egpu', yerr=egpu_std)
+plt.bar([i + width for i in x], egpu, width=width, label='cuprobe', yerr=egpu_std)
 plt.xticks(x, metrics)
 plt.ylabel('Latency (ms)')
 plt.title('Latency Metrics Comparison')
