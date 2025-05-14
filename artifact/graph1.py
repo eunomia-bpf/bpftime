@@ -1,5 +1,6 @@
 import matplotlib.pyplot as plt
-
+font = {'size': 20}
+plt.rc('font', **font)
 # 数据，单位：纳秒
 data = {
     "1B": 1003437566,
@@ -54,16 +55,14 @@ iguard_baseline = 1041843994045
 plt.axhline(y=iguard_baseline, color='red', linestyle='-', label='iGuard baseline')
 
 # 设置标题和坐标轴标签，同时增大字体
-plt.title("End to end latency (100 lookups)", fontsize=16)
-plt.xlabel("字节", fontsize=14)
-plt.ylabel("纳秒", fontsize=14)
+plt.xlabel("Bytes", )
+plt.ylabel("ns", )
 
 # 横轴采用对数刻度显示（数据跨度较大）
 plt.xscale('log')
 # 设置横轴刻度标签
-plt.xticks(x_vals, x_labels, rotation=45, fontsize=10)
-plt.yticks(fontsize=10)
+plt.xticks(x_vals, x_labels, rotation=45, )
 
-plt.legend(fontsize=12)
+plt.legend()
 plt.tight_layout()
 plt.savefig('end_to_end_latency.pdf')

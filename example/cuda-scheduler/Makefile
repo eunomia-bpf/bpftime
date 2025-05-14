@@ -66,12 +66,16 @@ $(call allow-override,CC,$(CROSS_COMPILE)cc)
 $(call allow-override,LD,$(CROSS_COMPILE)ld)
 
 .PHONY: all
-all: $(APPS) victim gemm
+all: $(APPS) victim victim_blocktime victim_fairshare gemm
 
 victim: victim.cu
-	nvcc -cudart shared victim.cu -o victim -g
+	nvcc -cudart shared victim.cu -o victim -g -arch=sm_60
+victim_blocktime: victim_blocktime.cu
+	nvcc -cudart shared victim_blocktime.cu -o victim_blocktime -g -arch=sm_60
+victim_fairshare: victim_fairshare.cu
+	nvcc -cudart shared victim_fairshare.cu -o victim_fairshare -g -arch=sm_60
 gemm: gemm.cu
-	nvcc -cudart shared gemm.cu -o gemm -g
+	nvcc -cudart shared gemm.cu -o gemm -g -arch=sm_60
 
 .PHONY: clean
 clean:

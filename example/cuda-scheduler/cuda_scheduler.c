@@ -1,77 +1,36 @@
-// SPDX-License-Identifier: (LGPL-2.1 OR BSD-2-Clause)
-/* Copyright (c) 2020 Facebook */
-#include <signal.h>
 #include <stdio.h>
-#include <time.h>
-#include <stdint.h>
-#include <sys/resource.h>
+#include <unistd.h>
+#include <stdlib.h>
+#include <fcntl.h>
+#include <signal.h>
 #include <bpf/libbpf.h>
 #include <bpf/bpf.h>
 #include <unistd.h>
-#include <stdlib.h>
-#include "cuda_scheduler.skel.h"
-#include <inttypes.h>
+#include <errno.h>
+#include <string.h>
+#include <linux/bpf.h>
+#include <sys/resource.h>
+#include <bpf/libbpf.h>
+#include <sys/types.h>
+#include <sys/stat.h>
+#include <fcntl.h>
 
-#define warn(...) fprintf(stderr, __VA_ARGS__)
-
-static int libbpf_print_fn(enum libbpf_print_level level, const char *format,
-			   va_list args)
-{
-	return vfprintf(stderr, format, args);
-}
+// 如果还没有生成 skeleton 文件，先使用这些定义
+#ifndef _CUDA_SCHEDULER_SKEL_H
+struct cuda_scheduler_bpf {
+	struct bpf_object *obj;
+	struct {
+		struct bpf_map *call_count;
+		struct bpf_map *run_pid_map;
+	} maps;
+};
+#endif
 
 static volatile bool exiting = false;
 
-static void sig_handler(int sig)
+void handle_sig(int sig)
 {
 	exiting = true;
-}
-
-static int print_stat(struct cuda_scheduler_bpf *obj)
-{
-	time_t t;
-	struct tm *tm;
-	char ts[16];
-	uint32_t key, *prev_key = NULL;
-	uint64_t value;
-	int err = 0;
-	int fd = bpf_map__fd(obj->maps.call_count);
-
-	time(&t);
-	tm = localtime(&t);
-	strftime(ts, sizeof(ts), "%H:%M:%S", tm);
-
-	printf("%-9s\n", ts);
-
-	while (1) {
-		err = bpf_map_get_next_key(fd, prev_key, &key);
-		if (err) {
-			if (errno == ENOENT) {
-				err = 0;
-				break;
-			}
-			warn("bpf_map_get_next_key failed: %s\n",
-			     strerror(errno));
-			return err;
-		}
-		err = bpf_map_lookup_elem(fd, &key, &value);
-		if (err) {
-			warn("bpf_map_lookup_elem failed: %s\n",
-			     strerror(errno));
-			return err;
-		}
-		printf("	pid=%-5" PRIu32 " ", key);
-		printf("	malloc calls: %" PRIu64 "\n", value);
-		err = bpf_map_delete_elem(fd, &key);
-		if (err) {
-			warn("bpf_map_delete_elem failed: %s\n",
-			     strerror(errno));
-			return err;
-		}
-		prev_key = &key;
-	}
-	fflush(stdout);
-	return err;
 }
 
 int main(int argc, char **argv)
@@ -79,49 +38,81 @@ int main(int argc, char **argv)
 	struct cuda_scheduler_bpf *skel;
 	int err;
 
-	/* Set up libbpf errors and debug info callback */
-	libbpf_set_print(libbpf_print_fn);
+	signal(SIGINT, handle_sig);
 
-	/* Cleaner handling of Ctrl-C */
-	signal(SIGINT, sig_handler);
-	signal(SIGTERM, sig_handler);
-
-	/* Load and verify BPF application */
-	skel = cuda_scheduler_bpf__open();
+	// 打开 BPF 对象
+	skel = calloc(1, sizeof(*skel));
 	if (!skel) {
-		fprintf(stderr, "Failed to open and load BPF skeleton\n");
+		fprintf(stderr, "Failed to allocate BPF skeleton\n");
 		return 1;
 	}
 
-	/* Load & verify BPF programs */
-	err = cuda_scheduler_bpf__load(skel);
-	if (err) {
-		fprintf(stderr, "Failed to load and verify BPF skeleton\n");
-		goto cleanup;
+	// 获取 map 文件描述符
+	int map_fd = bpf_obj_get("/sys/fs/bpf/call_count");
+	if (map_fd < 0) {
+		fprintf(stderr, "Failed to get call_count map: %s\n",
+			strerror(errno));
+		return 1;
 	}
-	LIBBPF_OPTS(bpf_uprobe_opts, attach_opts, .func_name = "_Z11matMulTiledPKfS0_Pf",
-		    .retprobe = false);
-	struct bpf_link *attach = bpf_program__attach_uprobe_opts(
-		skel->progs.uprobe_matMulTiled, -1, "./victim", 0, &attach_opts);
-	if (!attach) {
-		fprintf(stderr, "Failed to attach BPF skeleton\n");
-		err = -1;
-		goto cleanup;
-	}
-	struct bpf_link *attach_cuda = bpf_program__attach_uprobe_opts(
-		skel->progs.uprobe_matMulTiled, -1, "./victim", 0, &attach_opts);
-	if (!attach_cuda) {
-		fprintf(stderr, "Failed to attach BPF skeleton (cuda)\n");
-		err = -1;
-		goto cleanup;
-	}
-	while (!exiting) {
-		sleep(1);
-		print_stat(skel);
-	}
-cleanup:
-	/* Clean up */
-	cuda_scheduler_bpf__destroy(skel);
 
-	return err < 0 ? -err : 0;
+	int run_fd = bpf_obj_get("/sys/fs/bpf/run_pid_map");
+	if (run_fd < 0) {
+		fprintf(stderr, "Failed to get run_pid_map: %s\n",
+			strerror(errno));
+		return 1;
+	}
+
+	printf("Starting C-based fair-share scheduler (Jain's F)\n");
+	while (!exiting) {
+		// 读取所有 PID 及其调用次数
+		__u32 key = 0, next_key;
+		__u32 count;
+		// first, collect counts
+		struct {
+			__u32 pid;
+			__u64 cnt;
+		} entries[1024];
+		int n = 0;
+
+		// 遍历 map
+		while (bpf_map_get_next_key(map_fd, &key, &next_key) == 0) {
+			if (bpf_map_lookup_elem(map_fd, &next_key, &count) ==
+			    0) {
+				entries[n].pid = next_key;
+				entries[n].cnt = count;
+				n++;
+			}
+			key = next_key;
+		}
+
+		if (n > 0) {
+			__u64 sum = 0, sum2 = 0;
+			for (int i = 0; i < n; i++) {
+				sum += entries[i].cnt;
+				sum2 += entries[i].cnt * entries[i].cnt;
+			}
+			double bestF = -1;
+			__u32 bestPid = 0;
+			for (int i = 0; i < n; i++) {
+				__u64 c = entries[i].cnt;
+				double new_sum = sum + 1;
+				double new_sum2 = sum2 - (double)c * c +
+						  (double)(c + 1) * (c + 1);
+				double F = new_sum * new_sum / (n * new_sum2);
+				if (F > bestF) {
+					bestF = F;
+					bestPid = entries[i].pid;
+				}
+			}
+			// 更新 run_pid_map
+			__u32 idx = 0;
+			bpf_map_update_elem(run_fd, &idx, &bestPid, BPF_ANY);
+		}
+		usleep(10000); // 10 ms
+	}
+
+	close(map_fd);
+	close(run_fd);
+	free(skel);
+	return 0;
 }

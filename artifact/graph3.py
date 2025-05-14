@@ -1,10 +1,14 @@
 import matplotlib.pyplot as plt
-
+font = {'size': 15}
+plt.rc('font', **font)
 # Data
 workloads = ['gemm', 'stencil', 'spmv']
 nvbit = [38.151, 39.435, 40.647]
-cuprobe = [0.40, 0.40, 0.40]
+cuprobe = [0.41, 0.43, 0.38]
 native = [0.06, 0.04, 0.1]
+nvbit_std = [0.01, 0.01, 0.01]
+cuprobe_std = [0.01, 0.01, 0.01]
+native_std = [0.01, 0.01, 0.01]
 
 # Positions and width
 x = list(range(len(workloads)))
@@ -12,9 +16,9 @@ width = 0.2
 
 fig, ax = plt.subplots()
 
-bars_cuprobe = ax.bar([i - width for i in x], cuprobe, width, label='cuprobe')
-bars_native  = ax.bar(x, native, width, label='native')
-bars_nvbit   = ax.bar([i + width for i in x], nvbit,  width, label='nvbit')
+bars_cuprobe = ax.bar([i - width for i in x], cuprobe, width, yerr=cuprobe_std, label='cuprobe')
+bars_native  = ax.bar(x, native, width, yerr=native_std, label='native')
+bars_nvbit   = ax.bar([i + width for i in x], nvbit,  width, yerr=nvbit_std, label='nvbit')
 
 # Axis labels and limits
 ax.set_xticks(x)

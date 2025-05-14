@@ -1,6 +1,7 @@
 import matplotlib.pyplot as plt
 import numpy as np  # Add NumPy import
-
+font = {'size': 15}
+plt.rc('font', **font)
 # Data for the chart
 techniques = ['Static PTX', 'CUPTI + NVTX', 'NVBit']
 baseline_runtime = [100, 100, 100]  # baseline execution time in µs

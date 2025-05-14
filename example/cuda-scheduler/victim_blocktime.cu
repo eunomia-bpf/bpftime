@@ -9,6 +9,17 @@
 #include <atomic>
 #include <random>
 
+// Block allocation configuration
+struct BlockAllocator {
+    static constexpr int NUM_TENANTS = 3;  // Number of tenants
+    static constexpr int TOTAL_BLOCKS = 1024;  // Total number of blocks available
+    static constexpr int BLOCKS_PER_TENANT = TOTAL_BLOCKS / NUM_TENANTS;  // Equal division
+    
+    static int get_tenant_blocks(int tenant_id) {
+        return BLOCKS_PER_TENANT;
+    }
+};
+
 // CUDA kernel: 扫描当前 frontier，松弛所有邻居，构建 next frontier
 __global__
 void bfs_kernel(const int *row_ptr,
@@ -41,7 +52,8 @@ void bfs_cuda(int n,
               const std::vector<int>& row_ptr_h,
               const std::vector<int>& col_ind_h,
               int source,
-              std::vector<int>& dist_h)
+              std::vector<int>& dist_h,
+              int tenant_id)  // Added tenant_id parameter
 {
     // 1) 申请并拷贝图到设备
     int *d_row_ptr, *d_col_ind;
@@ -82,11 +94,14 @@ void bfs_cuda(int n,
         if (h_frontier_size == 0) break;
 
         int threads = 256;
-        int blocks  = (h_frontier_size + threads - 1) / threads;
+        // Use proportional block allocation
+        int blocks = std::min(BlockAllocator::get_tenant_blocks(tenant_id),
+                            (h_frontier_size + threads - 1) / threads);
+        
         // 每轮开始前，清 next_frontier_size
         cudaMemcpy(d_next_frontier_size, &zero, sizeof(int), cudaMemcpyHostToDevice);
 
-        // 运行 BFS kernel
+        // 运行 BFS kernel with allocated blocks
         bfs_kernel<<<blocks, threads>>>(
             d_row_ptr, d_col_ind,
             d_frontier, h_frontier_size,
@@ -181,7 +196,7 @@ void thread_function(int thread_id) {
     for(int i = 0; i < 200; i++) {
         auto start = std::chrono::high_resolution_clock::now();
         
-        bfs_cuda(n, row_ptr, col_ind, source, dist);
+        bfs_cuda(n, row_ptr, col_ind, source, dist, thread_id);  // Pass tenant_id
         
         auto end = std::chrono::high_resolution_clock::now();
         auto duration = std::chrono::duration_cast<std::chrono::microseconds>(end - start);
@@ -191,7 +206,8 @@ void thread_function(int thread_id) {
             std::lock_guard<std::mutex> lock(cout_mutex);
             std::cout << "Thread " << thread_id << " completed iteration " << i 
                       << " (Graph size: " << n << " nodes, " 
-                      << row_ptr[n] << " edges)" << std::endl;
+                      << row_ptr[n] << " edges, Blocks: " 
+                      << BlockAllocator::get_tenant_blocks(thread_id) << ")" << std::endl;
         }
     }
     

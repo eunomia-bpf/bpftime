@@ -8,7 +8,9 @@ ecli
 cudatest
 .output
 test
-victim
 bfs
 cuda_scheduler
 gemm
+victim_fairshare
+victim_blocktime
+victim

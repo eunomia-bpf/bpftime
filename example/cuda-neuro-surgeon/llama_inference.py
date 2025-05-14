@@ -7,24 +7,24 @@
 import os
 import time
 import torch
+import threading
 from transformers import (
     AutoTokenizer,
     AutoModelForCausalLM,
-    TextStreamer,
+    TextIteratorStreamer,
 )
 
 # ---------- configuration ----------------------------------------------------
 MODEL_PATH     = "../cuda-probe-test/llama2-13b-chat-hf/model"
 TOKENIZER_PATH = "../cuda-probe-test/llama2-13b-chat-hf/tokenizer"
 SPLIT_LAYER    = 5          # 0-based index: first GPU layer
-GPU_DEVICE     = 0           # CUDA device ID
+GPU_DEVICE     = 0          # CUDA device ID
 DTYPE          = torch.float16
 
 # Example user prompt
 EXAMPLE_PROMPT = """
 In a quiet village nestled between two mountains, a young girl named Lila
-discovers an ancient, shimmering stone that grants her the ability to
-communicate with the stars …
+... (your prompt here) ...
 """.strip()
 
 SYSTEM_PROMPT = (
@@ -35,7 +35,8 @@ SYSTEM_PROMPT = (
 # ---------- helper class -----------------------------------------------------
 class HybridLLaMAInference:
     def __init__(self, model_path, tokenizer_path,
-                 split_layer=40, gpu_device=0, torch_dtype=torch.float16):
+                 split_layer=SPLIT_LAYER, gpu_device=GPU_DEVICE,
+                 torch_dtype=DTYPE):
 
         # Build a device-map: first `split_layer` blocks on CPU, rest on GPU
         self.device_map = {
@@ -50,6 +51,7 @@ class HybridLLaMAInference:
         self.model = AutoModelForCausalLM.from_pretrained(
             model_path,
             device_map=self.device_map,
+            torch_dtype=torch_dtype,
             trust_remote_code=False,
         )
         torch.backends.cudnn.enabled = True
@@ -84,29 +86,51 @@ class HybridLLaMAInference:
             max_length=1024,
         )
 
-        streamer = TextStreamer(self.tokenizer) if stream else None
-
-        # ── run ───────────────────────────────────────────────────────────────
-        start = time.perf_counter()
-        outputs = self.model.generate(
-            **inputs,
-            streamer          = streamer,
-            max_new_tokens    = max_new_tokens,
-            do_sample         = False,
-            use_cache         = True,
-            eos_token_id      = self.tokenizer.eos_token_id,
-            pad_token_id      = self.tokenizer.pad_token_id,
+        # Use iterator-based streamer for token-by-token output
+        streamer = TextIteratorStreamer(
+            self.tokenizer,
+            skip_prompt=True,
+            skip_special_tokens=True
         )
-        torch.cuda.synchronize()       # accurate wall-time
-        elapsed = time.perf_counter() - start
-        # ── stats ─────────────────────────────────────────────────────────────
-        n_tokens = outputs.shape[1]
-        print("\n[STATS] duration         : %.2f s" % elapsed)
-        print("[STATS] tokens generated : %d"      % n_tokens)
-        print("[STATS] latency / token  : %.2f ms" % (elapsed / n_tokens * 1e3))
-        print("[STATS] throughput       : %.2f tok/s" % (n_tokens / elapsed))
 
-        return outputs
+        # Launch generation in a separate thread
+        gen_kwargs = dict(
+            **inputs,
+            streamer=streamer,
+            max_new_tokens=max_new_tokens,
+            do_sample=False,
+            use_cache=True,
+            eos_token_id=self.tokenizer.eos_token_id,
+            pad_token_id=self.tokenizer.pad_token_id,
+        )
+        gen_thread = threading.Thread(target=self.model.generate, kwargs=gen_kwargs)
+        gen_thread.start()
+
+        # Consume tokens and report throughput each second
+        token_count = 0
+        start_time = time.time()
+        last_print = start_time
+
+        for token in streamer:
+            print(token, end="", flush=True)
+            token_count += 1
+
+            now = time.time()
+            if now - last_print >= 1.0:
+                elapsed = now - start_time
+                tps = token_count / elapsed
+                print(f"\n[STATS] {tps:.2f} tokens/s\n", end="", flush=True)
+                last_print = now
+
+        # Wait for generation to finish
+        gen_thread.join()
+
+        # Final stats
+        total_elapsed = time.time() - start_time
+        print(f"\n[STATS] total tokens  : {token_count}")
+        print(f"[STATS] total duration: {total_elapsed:.2f} s")
+        print(f"[STATS] avg tps        : {token_count/total_elapsed:.2f} tok/s")
+        return None
 
 
 # ---------- main -------------------------------------------------------------
