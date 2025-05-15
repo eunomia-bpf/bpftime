@@ -27,13 +27,13 @@ tokenizer_path = './tokenizer'
 # download model parameter
 if not os.path.exists(model_path):
     os.makedirs(model_path)
-model = AutoModelForCausalLM.from_pretrained(model_id, device_map='cpu')
+model = AutoModelForCausalLM.from_pretrained(model_id, device_map='cpu',force_download=True)
 model.save_pretrained(model_path)
 
 # download tokenizer parameter
 if not os.path.exists(tokenizer_path):
     os.makedirs(tokenizer_path)
-tokenizer = AutoTokenizer.from_pretrained(model_id)
+tokenizer = AutoTokenizer.from_pretrained(model_id, force_download=True)
 tokenizer.save_pretrained(tokenizer_path)
 
 exit(0)
