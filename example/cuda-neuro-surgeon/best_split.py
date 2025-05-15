@@ -1,23 +1,20 @@
 #!/usr/bin/env python3
 """
-best_split_elegant.py
+best_split_hidden.py
 
-A script to benchmark split-point performance for LLaMA2-13b by copying partial forward pass hidden states
-from CPU to GPU and executing the remaining layers on GPU for various two-point splits, including end-to-end latency measurement.
+A script to benchmark split-point performance for LLaMA2-13b hidden representations
+by executing the first i layers on CPU and the remaining layers on GPU for each split (i, j),
+measuring end-to-end inference time (CPU + copy + GPU segments).
 """
 import sys
 import time
 import logging
 import argparse
+import torch
 from itertools import combinations
+from transformers import AutoTokenizer, AutoModelForCausalLM
 
-# Dependency check
-try:
-    import torch
-    from transformers import AutoTokenizer, AutoModelForCausalLM
-except ModuleNotFoundError as e:
-    sys.stderr.write(f"Error: Missing required module '{e.name}'. Install with 'pip install {e.name}'\n")
-    sys.exit(1)
+logging.basicConfig(level=logging.INFO, format='%(asctime)s %(levelname)s %(message)s')
 
 # Default configurations
 default_model_path = "../cuda-probe-test/llama2-13b-chat-hf/model"
@@ -28,20 +25,20 @@ default_prompt = (
 )
 default_max_len = 1024
 
-logging.basicConfig(level=logging.INFO, format='%(asctime)s %(levelname)s %(message)s')
-
 def load_models(model_path, tokenizer_path, dtype, device_cpu, device_gpu):
     tokenizer = AutoTokenizer.from_pretrained(tokenizer_path)
     if tokenizer.pad_token is None:
         tokenizer.pad_token = tokenizer.eos_token
 
+    # Full model for CPU (we'll run first i layers on CPU)
     model_cpu = AutoModelForCausalLM.from_pretrained(
         model_path,
         torch_dtype=dtype,
-        output_hidden_states=True,
+        output_hidden_states=False,
         trust_remote_code=False
     ).eval().to(device_cpu)
 
+    # Separate instance for GPU (to run layers i:j and j:)
     model_gpu = AutoModelForCausalLM.from_pretrained(
         model_path,
         torch_dtype=dtype,
@@ -49,110 +46,108 @@ def load_models(model_path, tokenizer_path, dtype, device_cpu, device_gpu):
         trust_remote_code=False
     ).eval().to(device_gpu)
 
+    # Disable KV cache for consistency
+    model_cpu.config.use_cache = False
+    model_gpu.config.use_cache = False
+
     return tokenizer, model_cpu, model_gpu
 
 
-def get_hidden_states(prompt, tokenizer, model_cpu, max_len, device_cpu):
-    inputs = tokenizer(
-        prompt,
-        return_tensors="pt",
-        padding=True,
-        truncation=True,
-        max_length=max_len
-    )
-    attention_mask = inputs.get("attention_mask")
-    inputs = {k: v.to(device_cpu) for k, v in inputs.items()}
-    with torch.no_grad():
-        outputs = model_cpu(**inputs, use_cache=False)
-    return outputs.hidden_states, attention_mask
+def measure_split(inputs, attention_mask, tokenizer, model_cpu, model_gpu, split, device_cpu, device_gpu):
+    i, j = split
+    # --- CPU partial forward up to layer i ---
+    start_cpu = time.time()
+    input_ids = inputs['input_ids'].to(device_cpu)
+    
+    # 将 attention_mask 转换为与 model 使用的 dtype 相同
+    attn_mask = attention_mask.to(device_cpu)
+    
+    # embedding + positional
+    hidden = model_cpu.model.embed_tokens(input_ids)
+    
+    # 确保 attention_mask 的类型与 hidden 相同
+    attn_mask = attn_mask.to(dtype=hidden.dtype)
+    
+    # pass first i layers
+    for layer in model_cpu.model.layers[:i]:
+        hidden = layer(hidden, attention_mask=attn_mask)[0]
+    cpu_time = time.time() - start_cpu
 
-
-def measure_split(hidden_states, model_gpu, attention_mask_cpu, i, j, device_gpu):
-    # Copy hidden state i from CPU to GPU
-    h_i = hidden_states[i]
-    t0 = time.time()
-    h_gpu = h_i.to(device_gpu)
+    # --- Copy hidden state to GPU ---
+    start_copy = time.time()
+    h_gpu = hidden.to(device_gpu)
     torch.cuda.synchronize()
-    t_copy = time.time() - t0
+    copy_time = time.time() - start_copy
 
-    # Ensure mask dtype matches
-    if attention_mask_cpu is not None:
-        attn_mask = attention_mask_cpu.to(device_gpu).to(h_gpu.dtype)
-    else:
-        attn_mask = None
-
-    # Middle segment
-    t0 = time.time()
+    # --- GPU middle segment i->j ---
+    start_mid = time.time()
+    # 确保 GPU attention_mask 类型正确
+    attn_mask_gpu = attn_mask.to(device_gpu).to(dtype=h_gpu.dtype)
     mid = h_gpu
     for layer in model_gpu.model.layers[i:j]:
-        out = layer(mid, attention_mask=attn_mask)
-        mid = out[0] if isinstance(out, (tuple, list)) else out
+        mid = layer(mid, attention_mask=attn_mask_gpu)[0]
     torch.cuda.synchronize()
-    t_mid = time.time() - t0
+    mid_time = time.time() - start_mid
 
-    # Final segment
-    t0 = time.time()
+    # --- GPU final segment j->end ---
+    start_fin = time.time()
     fin = mid
     for layer in model_gpu.model.layers[j:]:
-        out = layer(fin, attention_mask=attn_mask)
-        fin = out[0] if isinstance(out, (tuple, list)) else out
+        fin = layer(fin, attention_mask=attn_mask_gpu)[0]
     torch.cuda.synchronize()
-    t_fin = time.time() - t0
+    fin_time = time.time() - start_fin
 
-    return t_copy, t_mid, t_fin
+    total_time = cpu_time + copy_time + mid_time + fin_time
+    return cpu_time, copy_time, mid_time, fin_time, total_time
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Benchmark LLaMA2 split-point performance with E2E timing.")
+    parser = argparse.ArgumentParser(description="Benchmark LLaMA2 hidden split-point end-to-end performance.")
     parser.add_argument("--model_path", default=default_model_path)
     parser.add_argument("--tokenizer_path", default=default_tokenizer_path)
     parser.add_argument("--prompt", default=default_prompt)
     parser.add_argument("--max_len", type=int, default=default_max_len)
     parser.add_argument("--gpu", type=int, default=0)
-    parser.add_argument("--split", nargs=2, type=int, metavar=("I", "J"),
-                        help="Test a single split point I J instead of all combinations.")
-    parser.add_argument("--test", action="store_true", help="Run sanity test and exit.")
+    parser.add_argument("--split", nargs=2, type=int, metavar=("I","J"), help="Test single split I J")
+    parser.add_argument("--test", action="store_true", help="Sanity test on split (1,2)")
     args = parser.parse_args()
 
     device_cpu = torch.device("cpu")
-    device_gpu = torch.device(f"cuda:{args.gpu}")
+    device_gpu = torch.device(f"cuda:{args.gpu}" if torch.cuda.is_available() else "cpu")
 
     tokenizer, model_cpu, model_gpu = load_models(
         args.model_path, args.tokenizer_path, torch.float32, device_cpu, device_gpu
     )
 
-    # Measure CPU forward pass time
-    t0_cpu = time.time()
-    hidden_states, attention_mask = get_hidden_states(
-        args.prompt, tokenizer, model_cpu, args.max_len, device_cpu
+    # Tokenize inputs once
+    inputs = tokenizer(
+        args.prompt,
+        return_tensors="pt",
+        padding=True,
+        truncation=True,
+        max_length=args.max_len
     )
-    cpu_fwd_time = time.time() - t0_cpu
-    logging.info(f"CPU forward pass time: {cpu_fwd_time:.4f}s")
+    attention_mask = inputs.get('attention_mask')
+
+    splits = [tuple(args.split)] if args.split else list(combinations(range(1, len(model_cpu.model.layers)), 2))
 
     if args.test:
-        logging.info("Running sanity test for split 1,2 with E2E timing")
-        t_copy, t_mid, t_fin = measure_split(hidden_states, model_gpu, attention_mask, 1, 2, device_gpu)
-        e2e = cpu_fwd_time + t_copy + t_mid + t_fin
-        print(f"Sanity test results: cpu={cpu_fwd_time:.4f}s, copy={t_copy:.4f}s, mid={t_mid:.4f}s, fin={t_fin:.4f}s, e2e={e2e:.4f}s")
-        sys.exit(0)
-
-    splits = [tuple(args.split)] if args.split else list(combinations(range(1, len(hidden_states)), 2))
-
-    results = []
-    for i, j in splits:
-        logging.info(f"Measuring split ({i},{j})")
-        t_copy, t_mid, t_fin = measure_split(hidden_states, model_gpu, attention_mask, i, j, device_gpu)
-        t_e2e = cpu_fwd_time + t_copy + t_mid + t_fin
-        results.append((i, j, cpu_fwd_time, t_copy, t_mid, t_fin, t_e2e))
-        print(
-            f"({i},{j}) e2e={t_e2e:.3f}s  "
-            f"cpu={cpu_fwd_time:.3f}s, copy={t_copy:.3f}s, mid={t_mid:.3f}s, fin={t_fin:.3f}s"
+        cpu_t, copy_t, mid_t, fin_t, total = measure_split(
+            inputs, attention_mask, tokenizer, model_cpu, model_gpu, (1,2), device_cpu, device_gpu
         )
+        print(f"Sanity (1,2): cpu={cpu_t:.4f}s copy={copy_t:.4f}s mid={mid_t:.4f}s fin={fin_t:.4f}s total={total:.4f}s")
+        return
 
-    if results:
-        best = min(results, key=lambda x: x[-1])
-        i, j, *_ , best_e2e = best
-        print(f"Best split: ({i},{j}) e2e={best_e2e:.3f}s")
+    best = None
+    for split in splits:
+        cpu_t, copy_t, mid_t, fin_t, total = measure_split(
+            inputs, attention_mask, tokenizer, model_cpu, model_gpu, split, device_cpu, device_gpu
+        )
+        print(f"Split {split}: cpu={cpu_t:.3f}s copy={copy_t:.3f}s mid={mid_t:.3f}s fin={fin_t:.3f}s total={total:.3f}s")
+        if best is None or total < best[1]:
+            best = (split, total)
+
+    print(f"Best split {best[0]} with total={best[1]:.3f}s")
 
 if __name__ == "__main__":
     main()

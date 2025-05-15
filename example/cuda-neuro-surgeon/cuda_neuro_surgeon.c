@@ -37,7 +37,7 @@ static int print_stats(struct cuda_neuro_surgeon_bpf *obj)
 	uint32_t key, *prev_key = NULL;
 	struct inference_stats value;
 	int err = 0;
-	int fd = bpf_map__fd(obj->maps.inference_stats);
+	int fd = bpf_map__fd(obj->maps.lru_tensor_cache);
 
 	time(&t);
 	tm = localtime(&t);

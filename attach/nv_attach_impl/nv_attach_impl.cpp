@@ -252,7 +252,7 @@ nv_attach_impl::hack_fatbin(std::vector<uint8_t> &&data_vec)
 			}
 		}
 	}
-	to_patch_ptx = wrap_ptx_with_trampoline(to_patch_ptx);
+	// to_patch_ptx = wrap_ptx_with_trampoline(to_patch_ptx);
 	to_patch_ptx = filter_out_version_headers(to_patch_ptx);
 	{
 		// filter out comment lines
