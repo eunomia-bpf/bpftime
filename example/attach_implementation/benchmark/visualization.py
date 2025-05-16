@@ -51,7 +51,7 @@ for module, data in sorted_modules:
 colors = ['#a8d5d3', '#f2c091', '#e69a8b', '#a8d5d3', '#f2c091', '#e69a8b', '#a8d5d3']
 
 # Create the figure and axes
-plt.figure(figsize=(16, 10))
+plt.figure(figsize=(18, 9))
 plt.rcParams.update({'font.size': 20})  # Increase base font size
 
 # Plot horizontal bars with error bars
@@ -70,27 +70,27 @@ for i, bar in enumerate(bars):
         # Place label inside with right alignment and white color for contrast
         plt.text(bar.get_width() - (x_max * 0.02), bar.get_y() + bar.get_height()/2, 
                  f'{rps_values[i]:.1f}', va='center', ha='right', 
-                 fontsize=22, fontweight='bold', color='white')
+                 fontsize=30, fontweight='bold', color='white')
     else:
         # Place label after the bar but ensure it doesn't extend beyond the plot
         label_pos = min(bar.get_width() + (x_max * 0.02), x_max * 0.95)
         plt.text(label_pos, bar.get_y() + bar.get_height()/2, 
                  f'{rps_values[i]:.1f}', va='center', 
-                 fontsize=22, fontweight='bold')
+                 fontsize=30, fontweight='bold')
 
 # Set chart labels with larger font
-plt.xlabel('Requests per Second (RPS)', fontsize=26, labelpad=15)
-plt.ylabel('Module Type', fontsize=26, labelpad=15)
+plt.xlabel('Requests per Second (RPS)', fontsize=35, labelpad=15)
+# plt.ylabel('Module Type', fontsize=40, labelpad=15)
 
 # Format x-axis to show thousands properly and increase tick size
 plt.gca().xaxis.set_major_formatter(ticker.StrMethodFormatter('{x:,.0f}'))
-plt.xticks(fontsize=22)
-plt.yticks(fontsize=22)
+plt.xticks(fontsize=45)
+plt.yticks(fontsize=35)
 
 # Add grid for better readability
 plt.grid(axis='x', linestyle='--', alpha=0.7)
 
 # Adjust layout and save
 plt.tight_layout()
-plt.savefig('benchmark_comparison.png', dpi=300)
+plt.savefig('bpftime-nginx-module.pdf')
 plt.show() 
