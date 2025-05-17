@@ -1,5 +1,5 @@
 import matplotlib.pyplot as plt
-font = {'size': 15}
+font = {'size': 20}
 plt.rc('font', **font)
 # Data
 workloads = ['gemm', 'stencil', 'spmv']
@@ -14,7 +14,7 @@ native_std = [0.01, 0.01, 0.01]
 x = list(range(len(workloads)))
 width = 0.2
 
-fig, ax = plt.subplots()
+fig, ax = plt.subplots(figsize=(15, 6))
 
 bars_cuprobe = ax.bar([i - width for i in x], cuprobe, width, yerr=cuprobe_std, label='cuprobe')
 bars_native  = ax.bar(x, native, width, yerr=native_std, label='native')

@@ -1,0 +1,10 @@
+/data
+cpu_runner
+accuracy_plot.png
+mnist_model.pth
+mnist_samples.png
+mlp_weights
+gpu_runner
+/.output
+/mix_schedule_gpu
+dump*

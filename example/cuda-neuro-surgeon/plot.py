@@ -4,1001 +4,474 @@ import matplotlib.pyplot as plt
 
 # Raw log lines provided by the user
 log = """
-(1,2) e2e=9.144s  cpu=9.110s, copy=0.000s, mid=0.166s, fin=0.039s
-2025-05-15 00:16:04,386 INFO Measuring split (1,3)
-(1,3) e2e=9.144s  cpu=9.110s, copy=0.000s, mid=0.003s, fin=0.031s
-2025-05-15 00:16:04,422 INFO Measuring split (1,4)
-(1,4) e2e=9.144s  cpu=9.110s, copy=0.000s, mid=0.004s, fin=0.030s
-2025-05-15 00:16:04,457 INFO Measuring split (1,5)
-(1,5) e2e=9.144s  cpu=9.110s, copy=0.000s, mid=0.005s, fin=0.029s
-2025-05-15 00:16:04,493 INFO Measuring split (1,6)
-(1,6) e2e=9.144s  cpu=9.110s, copy=0.000s, mid=0.006s, fin=0.028s
-2025-05-15 00:16:04,529 INFO Measuring split (1,7)
-(1,7) e2e=9.144s  cpu=9.110s, copy=0.000s, mid=0.007s, fin=0.027s
-2025-05-15 00:16:04,564 INFO Measuring split (1,8)
-(1,8) e2e=9.144s  cpu=9.110s, copy=0.000s, mid=0.008s, fin=0.026s
-2025-05-15 00:16:04,599 INFO Measuring split (1,9)
-(1,9) e2e=9.144s  cpu=9.110s, copy=0.000s, mid=0.009s, fin=0.025s
-2025-05-15 00:16:04,635 INFO Measuring split (1,10)
-(1,10) e2e=9.144s  cpu=9.110s, copy=0.000s, mid=0.010s, fin=0.024s
-2025-05-15 00:16:04,670 INFO Measuring split (1,11)
-(1,11) e2e=9.144s  cpu=9.110s, copy=0.000s, mid=0.011s, fin=0.023s
-2025-05-15 00:16:04,706 INFO Measuring split (1,12)
-(1,12) e2e=9.144s  cpu=9.110s, copy=0.000s, mid=0.012s, fin=0.022s
-2025-05-15 00:16:04,742 INFO Measuring split (1,13)
-(1,13) e2e=9.144s  cpu=9.110s, copy=0.000s, mid=0.013s, fin=0.020s
-2025-05-15 00:16:04,777 INFO Measuring split (1,14)
-(1,14) e2e=9.144s  cpu=9.110s, copy=0.000s, mid=0.015s, fin=0.020s
-2025-05-15 00:16:04,813 INFO Measuring split (1,15)
-(1,15) e2e=9.144s  cpu=9.110s, copy=0.000s, mid=0.016s, fin=0.019s
-2025-05-15 00:16:04,848 INFO Measuring split (1,16)
-(1,16) e2e=9.144s  cpu=9.110s, copy=0.000s, mid=0.017s, fin=0.018s
-2025-05-15 00:16:04,884 INFO Measuring split (1,17)
-(1,17) e2e=9.144s  cpu=9.110s, copy=0.000s, mid=0.018s, fin=0.016s
-2025-05-15 00:16:04,920 INFO Measuring split (1,18)
-(1,18) e2e=9.144s  cpu=9.110s, copy=0.000s, mid=0.019s, fin=0.015s
-2025-05-15 00:16:04,955 INFO Measuring split (1,19)
-(1,19) e2e=9.144s  cpu=9.110s, copy=0.000s, mid=0.020s, fin=0.014s
-2025-05-15 00:16:04,991 INFO Measuring split (1,20)
-(1,20) e2e=9.144s  cpu=9.110s, copy=0.000s, mid=0.021s, fin=0.013s
-2025-05-15 00:16:05,027 INFO Measuring split (1,21)
-(1,21) e2e=9.144s  cpu=9.110s, copy=0.000s, mid=0.022s, fin=0.012s
-2025-05-15 00:16:05,063 INFO Measuring split (1,22)
-(1,22) e2e=9.146s  cpu=9.110s, copy=0.000s, mid=0.023s, fin=0.013s
-2025-05-15 00:16:05,100 INFO Measuring split (1,23)
-(1,23) e2e=9.144s  cpu=9.110s, copy=0.000s, mid=0.024s, fin=0.010s
-2025-05-15 00:16:05,135 INFO Measuring split (1,24)
-(1,24) e2e=9.144s  cpu=9.110s, copy=0.000s, mid=0.025s, fin=0.009s
-2025-05-15 00:16:05,171 INFO Measuring split (1,25)
-(1,25) e2e=9.144s  cpu=9.110s, copy=0.000s, mid=0.027s, fin=0.008s
-2025-05-15 00:16:05,207 INFO Measuring split (1,26)
-(1,26) e2e=9.144s  cpu=9.110s, copy=0.000s, mid=0.028s, fin=0.007s
-2025-05-15 00:16:05,243 INFO Measuring split (1,27)
-(1,27) e2e=9.144s  cpu=9.110s, copy=0.000s, mid=0.029s, fin=0.006s
-2025-05-15 00:16:05,278 INFO Measuring split (1,28)
-(1,28) e2e=9.144s  cpu=9.110s, copy=0.000s, mid=0.030s, fin=0.005s
-2025-05-15 00:16:05,314 INFO Measuring split (1,29)
-(1,29) e2e=9.144s  cpu=9.110s, copy=0.000s, mid=0.031s, fin=0.003s
-2025-05-15 00:16:05,350 INFO Measuring split (1,30)
-(1,30) e2e=9.144s  cpu=9.110s, copy=0.000s, mid=0.032s, fin=0.002s
-2025-05-15 00:16:05,386 INFO Measuring split (1,31)
-(1,31) e2e=9.144s  cpu=9.110s, copy=0.000s, mid=0.033s, fin=0.001s
-2025-05-15 00:16:05,422 INFO Measuring split (1,32)
-(1,32) e2e=9.144s  cpu=9.110s, copy=0.000s, mid=0.034s, fin=0.000s
-2025-05-15 00:16:05,457 INFO Measuring split (2,3)
-(2,3) e2e=9.143s  cpu=9.110s, copy=0.000s, mid=0.002s, fin=0.032s
-2025-05-15 00:16:05,492 INFO Measuring split (2,4)
-(2,4) e2e=9.143s  cpu=9.110s, copy=0.000s, mid=0.003s, fin=0.031s
-2025-05-15 00:16:05,526 INFO Measuring split (2,5)
-(2,5) e2e=9.143s  cpu=9.110s, copy=0.000s, mid=0.004s, fin=0.030s
-2025-05-15 00:16:05,561 INFO Measuring split (2,6)
-(2,6) e2e=9.143s  cpu=9.110s, copy=0.000s, mid=0.005s, fin=0.029s
-2025-05-15 00:16:05,596 INFO Measuring split (2,7)
-(2,7) e2e=9.143s  cpu=9.110s, copy=0.000s, mid=0.006s, fin=0.027s
-2025-05-15 00:16:05,631 INFO Measuring split (2,8)
-(2,8) e2e=9.143s  cpu=9.110s, copy=0.000s, mid=0.007s, fin=0.026s
-2025-05-15 00:16:05,665 INFO Measuring split (2,9)
-(2,9) e2e=9.143s  cpu=9.110s, copy=0.000s, mid=0.008s, fin=0.025s
-2025-05-15 00:16:05,700 INFO Measuring split (2,10)
-(2,10) e2e=9.143s  cpu=9.110s, copy=0.000s, mid=0.009s, fin=0.024s
-2025-05-15 00:16:05,734 INFO Measuring split (2,11)
-(2,11) e2e=9.143s  cpu=9.110s, copy=0.000s, mid=0.010s, fin=0.023s
-2025-05-15 00:16:05,769 INFO Measuring split (2,12)
-(2,12) e2e=9.143s  cpu=9.110s, copy=0.000s, mid=0.011s, fin=0.022s
-2025-05-15 00:16:05,804 INFO Measuring split (2,13)
-(2,13) e2e=9.143s  cpu=9.110s, copy=0.000s, mid=0.012s, fin=0.021s
-2025-05-15 00:16:05,839 INFO Measuring split (2,14)
-(2,14) e2e=9.143s  cpu=9.110s, copy=0.000s, mid=0.013s, fin=0.019s
-2025-05-15 00:16:05,873 INFO Measuring split (2,15)
-(2,15) e2e=9.143s  cpu=9.110s, copy=0.000s, mid=0.014s, fin=0.019s
-2025-05-15 00:16:05,908 INFO Measuring split (2,16)
-(2,16) e2e=9.143s  cpu=9.110s, copy=0.000s, mid=0.016s, fin=0.018s
-2025-05-15 00:16:05,943 INFO Measuring split (2,17)
-(2,17) e2e=9.143s  cpu=9.110s, copy=0.000s, mid=0.017s, fin=0.016s
-2025-05-15 00:16:05,978 INFO Measuring split (2,18)
-(2,18) e2e=9.143s  cpu=9.110s, copy=0.000s, mid=0.018s, fin=0.015s
-2025-05-15 00:16:06,012 INFO Measuring split (2,19)
-(2,19) e2e=9.143s  cpu=9.110s, copy=0.000s, mid=0.019s, fin=0.014s
-2025-05-15 00:16:06,047 INFO Measuring split (2,20)
-(2,20) e2e=9.143s  cpu=9.110s, copy=0.000s, mid=0.020s, fin=0.013s
-2025-05-15 00:16:06,082 INFO Measuring split (2,21)
-(2,21) e2e=9.143s  cpu=9.110s, copy=0.000s, mid=0.021s, fin=0.012s
-2025-05-15 00:16:06,117 INFO Measuring split (2,22)
-(2,22) e2e=9.143s  cpu=9.110s, copy=0.000s, mid=0.022s, fin=0.011s
-2025-05-15 00:16:06,152 INFO Measuring split (2,23)
-(2,23) e2e=9.143s  cpu=9.110s, copy=0.000s, mid=0.023s, fin=0.010s
-2025-05-15 00:16:06,186 INFO Measuring split (2,24)
-(2,24) e2e=9.143s  cpu=9.110s, copy=0.000s, mid=0.024s, fin=0.009s
-2025-05-15 00:16:06,221 INFO Measuring split (2,25)
-(2,25) e2e=9.143s  cpu=9.110s, copy=0.000s, mid=0.025s, fin=0.008s
-2025-05-15 00:16:06,255 INFO Measuring split (2,26)
-(2,26) e2e=9.143s  cpu=9.110s, copy=0.000s, mid=0.027s, fin=0.007s
-2025-05-15 00:16:06,290 INFO Measuring split (2,27)
-(2,27) e2e=9.143s  cpu=9.110s, copy=0.000s, mid=0.028s, fin=0.006s
-2025-05-15 00:16:06,324 INFO Measuring split (2,28)
-(2,28) e2e=9.143s  cpu=9.110s, copy=0.000s, mid=0.029s, fin=0.004s
-2025-05-15 00:16:06,358 INFO Measuring split (2,29)
-(2,29) e2e=9.143s  cpu=9.110s, copy=0.000s, mid=0.030s, fin=0.003s
-2025-05-15 00:16:06,393 INFO Measuring split (2,30)
-(2,30) e2e=9.143s  cpu=9.110s, copy=0.000s, mid=0.031s, fin=0.002s
-2025-05-15 00:16:06,428 INFO Measuring split (2,31)
-(2,31) e2e=9.143s  cpu=9.110s, copy=0.000s, mid=0.032s, fin=0.001s
-2025-05-15 00:16:06,463 INFO Measuring split (2,32)
-(2,32) e2e=9.143s  cpu=9.110s, copy=0.000s, mid=0.033s, fin=0.000s
-2025-05-15 00:16:06,497 INFO Measuring split (3,4)
-(3,4) e2e=9.142s  cpu=9.110s, copy=0.000s, mid=0.001s, fin=0.030s
-2025-05-15 00:16:06,530 INFO Measuring split (3,5)
-(3,5) e2e=9.142s  cpu=9.110s, copy=0.000s, mid=0.002s, fin=0.029s
-2025-05-15 00:16:06,564 INFO Measuring split (3,6)
-(3,6) e2e=9.142s  cpu=9.110s, copy=0.000s, mid=0.004s, fin=0.029s
-2025-05-15 00:16:06,597 INFO Measuring split (3,7)
-(3,7) e2e=9.142s  cpu=9.110s, copy=0.000s, mid=0.005s, fin=0.027s
-2025-05-15 00:16:06,631 INFO Measuring split (3,8)
-(3,8) e2e=9.142s  cpu=9.110s, copy=0.000s, mid=0.006s, fin=0.026s
-2025-05-15 00:16:06,664 INFO Measuring split (3,9)
-(3,9) e2e=9.142s  cpu=9.110s, copy=0.000s, mid=0.007s, fin=0.025s
-2025-05-15 00:16:06,698 INFO Measuring split (3,10)
-(3,10) e2e=9.142s  cpu=9.110s, copy=0.000s, mid=0.008s, fin=0.024s
-2025-05-15 00:16:06,731 INFO Measuring split (3,11)
-(3,11) e2e=9.142s  cpu=9.110s, copy=0.000s, mid=0.009s, fin=0.023s
-2025-05-15 00:16:06,764 INFO Measuring split (3,12)
-(3,12) e2e=9.142s  cpu=9.110s, copy=0.000s, mid=0.010s, fin=0.022s
-2025-05-15 00:16:06,797 INFO Measuring split (3,13)
-(3,13) e2e=9.142s  cpu=9.110s, copy=0.000s, mid=0.011s, fin=0.021s
-2025-05-15 00:16:06,830 INFO Measuring split (3,14)
-(3,14) e2e=9.142s  cpu=9.110s, copy=0.000s, mid=0.012s, fin=0.020s
-2025-05-15 00:16:06,863 INFO Measuring split (3,15)
-(3,15) e2e=9.142s  cpu=9.110s, copy=0.000s, mid=0.013s, fin=0.019s
-2025-05-15 00:16:06,897 INFO Measuring split (3,16)
-(3,16) e2e=9.142s  cpu=9.110s, copy=0.000s, mid=0.015s, fin=0.018s
-2025-05-15 00:16:06,930 INFO Measuring split (3,17)
-(3,17) e2e=9.142s  cpu=9.110s, copy=0.000s, mid=0.016s, fin=0.016s
-2025-05-15 00:16:06,964 INFO Measuring split (3,18)
-(3,18) e2e=9.142s  cpu=9.110s, copy=0.000s, mid=0.017s, fin=0.015s
-2025-05-15 00:16:06,997 INFO Measuring split (3,19)
-(3,19) e2e=9.142s  cpu=9.110s, copy=0.000s, mid=0.018s, fin=0.014s
-2025-05-15 00:16:07,030 INFO Measuring split (3,20)
-(3,20) e2e=9.142s  cpu=9.110s, copy=0.000s, mid=0.019s, fin=0.013s
-2025-05-15 00:16:07,064 INFO Measuring split (3,21)
-(3,21) e2e=9.142s  cpu=9.110s, copy=0.000s, mid=0.020s, fin=0.012s
-2025-05-15 00:16:07,097 INFO Measuring split (3,22)
-(3,22) e2e=9.142s  cpu=9.110s, copy=0.000s, mid=0.021s, fin=0.011s
-2025-05-15 00:16:07,130 INFO Measuring split (3,23)
-(3,23) e2e=9.142s  cpu=9.110s, copy=0.000s, mid=0.022s, fin=0.010s
-2025-05-15 00:16:07,164 INFO Measuring split (3,24)
-(3,24) e2e=9.142s  cpu=9.110s, copy=0.000s, mid=0.023s, fin=0.009s
-2025-05-15 00:16:07,198 INFO Measuring split (3,25)
-(3,25) e2e=9.142s  cpu=9.110s, copy=0.000s, mid=0.024s, fin=0.008s
-2025-05-15 00:16:07,231 INFO Measuring split (3,26)
-(3,26) e2e=9.142s  cpu=9.110s, copy=0.000s, mid=0.025s, fin=0.007s
-2025-05-15 00:16:07,265 INFO Measuring split (3,27)
-(3,27) e2e=9.142s  cpu=9.110s, copy=0.000s, mid=0.027s, fin=0.006s
-2025-05-15 00:16:07,298 INFO Measuring split (3,28)
-(3,28) e2e=9.142s  cpu=9.110s, copy=0.000s, mid=0.028s, fin=0.004s
-2025-05-15 00:16:07,332 INFO Measuring split (3,29)
-(3,29) e2e=9.142s  cpu=9.110s, copy=0.000s, mid=0.029s, fin=0.003s
-2025-05-15 00:16:07,365 INFO Measuring split (3,30)
-(3,30) e2e=9.142s  cpu=9.110s, copy=0.000s, mid=0.030s, fin=0.002s
-2025-05-15 00:16:07,399 INFO Measuring split (3,31)
-(3,31) e2e=9.142s  cpu=9.110s, copy=0.000s, mid=0.030s, fin=0.001s
-2025-05-15 00:16:07,432 INFO Measuring split (3,32)
-(3,32) e2e=9.142s  cpu=9.110s, copy=0.000s, mid=0.032s, fin=0.000s
-2025-05-15 00:16:07,465 INFO Measuring split (4,5)
-(4,5) e2e=9.141s  cpu=9.110s, copy=0.000s, mid=0.001s, fin=0.029s
-2025-05-15 00:16:07,497 INFO Measuring split (4,6)
-(4,6) e2e=9.141s  cpu=9.110s, copy=0.000s, mid=0.003s, fin=0.028s
-2025-05-15 00:16:07,530 INFO Measuring split (4,7)
-(4,7) e2e=9.141s  cpu=9.110s, copy=0.000s, mid=0.004s, fin=0.027s
-2025-05-15 00:16:07,562 INFO Measuring split (4,8)
-(4,8) e2e=9.142s  cpu=9.110s, copy=0.000s, mid=0.005s, fin=0.028s
-2025-05-15 00:16:07,596 INFO Measuring split (4,9)
-(4,9) e2e=9.141s  cpu=9.110s, copy=0.000s, mid=0.006s, fin=0.025s
-2025-05-15 00:16:07,629 INFO Measuring split (4,10)
-(4,10) e2e=9.141s  cpu=9.110s, copy=0.000s, mid=0.007s, fin=0.024s
-2025-05-15 00:16:07,661 INFO Measuring split (4,11)
-(4,11) e2e=9.141s  cpu=9.110s, copy=0.000s, mid=0.008s, fin=0.023s
-2025-05-15 00:16:07,693 INFO Measuring split (4,12)
-(4,12) e2e=9.141s  cpu=9.110s, copy=0.000s, mid=0.009s, fin=0.022s
-2025-05-15 00:16:07,726 INFO Measuring split (4,13)
-(4,13) e2e=9.141s  cpu=9.110s, copy=0.000s, mid=0.010s, fin=0.021s
-2025-05-15 00:16:07,759 INFO Measuring split (4,14)
-(4,14) e2e=9.141s  cpu=9.110s, copy=0.000s, mid=0.011s, fin=0.020s
-2025-05-15 00:16:07,791 INFO Measuring split (4,15)
-(4,15) e2e=9.141s  cpu=9.110s, copy=0.000s, mid=0.012s, fin=0.019s
-2025-05-15 00:16:07,823 INFO Measuring split (4,16)
-(4,16) e2e=9.141s  cpu=9.110s, copy=0.000s, mid=0.014s, fin=0.018s
-2025-05-15 00:16:07,856 INFO Measuring split (4,17)
-(4,17) e2e=9.141s  cpu=9.110s, copy=0.000s, mid=0.014s, fin=0.016s
-2025-05-15 00:16:07,888 INFO Measuring split (4,18)
-(4,18) e2e=9.141s  cpu=9.110s, copy=0.000s, mid=0.016s, fin=0.015s
-2025-05-15 00:16:07,920 INFO Measuring split (4,19)
-(4,19) e2e=9.141s  cpu=9.110s, copy=0.000s, mid=0.017s, fin=0.014s
-2025-05-15 00:16:07,952 INFO Measuring split (4,20)
-(4,20) e2e=9.141s  cpu=9.110s, copy=0.000s, mid=0.018s, fin=0.013s
-2025-05-15 00:16:07,984 INFO Measuring split (4,21)
-(4,21) e2e=9.141s  cpu=9.110s, copy=0.000s, mid=0.019s, fin=0.012s
-2025-05-15 00:16:08,017 INFO Measuring split (4,22)
-(4,22) e2e=9.141s  cpu=9.110s, copy=0.000s, mid=0.020s, fin=0.011s
-2025-05-15 00:16:08,049 INFO Measuring split (4,23)
-(4,23) e2e=9.141s  cpu=9.110s, copy=0.000s, mid=0.021s, fin=0.010s
-2025-05-15 00:16:08,081 INFO Measuring split (4,24)
-(4,24) e2e=9.141s  cpu=9.110s, copy=0.000s, mid=0.022s, fin=0.009s
-2025-05-15 00:16:08,113 INFO Measuring split (4,25)
-(4,25) e2e=9.141s  cpu=9.110s, copy=0.000s, mid=0.023s, fin=0.008s
-2025-05-15 00:16:08,145 INFO Measuring split (4,26)
-(4,26) e2e=9.141s  cpu=9.110s, copy=0.000s, mid=0.024s, fin=0.007s
-2025-05-15 00:16:08,178 INFO Measuring split (4,27)
-(4,27) e2e=9.141s  cpu=9.110s, copy=0.000s, mid=0.025s, fin=0.006s
-2025-05-15 00:16:08,210 INFO Measuring split (4,28)
-(4,28) e2e=9.141s  cpu=9.110s, copy=0.000s, mid=0.026s, fin=0.004s
-2025-05-15 00:16:08,242 INFO Measuring split (4,29)
-(4,29) e2e=9.141s  cpu=9.110s, copy=0.000s, mid=0.028s, fin=0.003s
-2025-05-15 00:16:08,274 INFO Measuring split (4,30)
-(4,30) e2e=9.141s  cpu=9.110s, copy=0.000s, mid=0.029s, fin=0.002s
-2025-05-15 00:16:08,306 INFO Measuring split (4,31)
-(4,31) e2e=9.141s  cpu=9.110s, copy=0.000s, mid=0.030s, fin=0.001s
-2025-05-15 00:16:08,338 INFO Measuring split (4,32)
-(4,32) e2e=9.141s  cpu=9.110s, copy=0.000s, mid=0.031s, fin=0.000s
-2025-05-15 00:16:08,370 INFO Measuring split (5,6)
-(5,6) e2e=9.140s  cpu=9.110s, copy=0.000s, mid=0.001s, fin=0.028s
-2025-05-15 00:16:08,401 INFO Measuring split (5,7)
-(5,7) e2e=9.140s  cpu=9.110s, copy=0.000s, mid=0.003s, fin=0.027s
-2025-05-15 00:16:08,432 INFO Measuring split (5,8)
-(5,8) e2e=9.140s  cpu=9.110s, copy=0.000s, mid=0.004s, fin=0.027s
-2025-05-15 00:16:08,463 INFO Measuring split (5,9)
-(5,9) e2e=9.140s  cpu=9.110s, copy=0.000s, mid=0.005s, fin=0.025s
-2025-05-15 00:16:08,494 INFO Measuring split (5,10)
-(5,10) e2e=9.140s  cpu=9.110s, copy=0.000s, mid=0.006s, fin=0.024s
-2025-05-15 00:16:08,525 INFO Measuring split (5,11)
-(5,11) e2e=9.140s  cpu=9.110s, copy=0.000s, mid=0.007s, fin=0.023s
-2025-05-15 00:16:08,556 INFO Measuring split (5,12)
-(5,12) e2e=9.140s  cpu=9.110s, copy=0.000s, mid=0.008s, fin=0.022s
-2025-05-15 00:16:08,587 INFO Measuring split (5,13)
-(5,13) e2e=9.140s  cpu=9.110s, copy=0.000s, mid=0.009s, fin=0.021s
-2025-05-15 00:16:08,618 INFO Measuring split (5,14)
-(5,14) e2e=9.140s  cpu=9.110s, copy=0.000s, mid=0.010s, fin=0.020s
-2025-05-15 00:16:08,649 INFO Measuring split (5,15)
-(5,15) e2e=9.140s  cpu=9.110s, copy=0.000s, mid=0.011s, fin=0.019s
-2025-05-15 00:16:08,680 INFO Measuring split (5,16)
-(5,16) e2e=9.140s  cpu=9.110s, copy=0.000s, mid=0.012s, fin=0.018s
-2025-05-15 00:16:08,712 INFO Measuring split (5,17)
-(5,17) e2e=9.140s  cpu=9.110s, copy=0.000s, mid=0.013s, fin=0.016s
-2025-05-15 00:16:08,742 INFO Measuring split (5,18)
-(5,18) e2e=9.140s  cpu=9.110s, copy=0.000s, mid=0.014s, fin=0.015s
-2025-05-15 00:16:08,774 INFO Measuring split (5,19)
-(5,19) e2e=9.140s  cpu=9.110s, copy=0.000s, mid=0.016s, fin=0.014s
-2025-05-15 00:16:08,805 INFO Measuring split (5,20)
-(5,20) e2e=9.140s  cpu=9.110s, copy=0.000s, mid=0.017s, fin=0.013s
-2025-05-15 00:16:08,837 INFO Measuring split (5,21)
-(5,21) e2e=9.140s  cpu=9.110s, copy=0.000s, mid=0.018s, fin=0.012s
-2025-05-15 00:16:08,868 INFO Measuring split (5,22)
-(5,22) e2e=9.140s  cpu=9.110s, copy=0.000s, mid=0.019s, fin=0.011s
-2025-05-15 00:16:08,899 INFO Measuring split (5,23)
-(5,23) e2e=9.140s  cpu=9.110s, copy=0.000s, mid=0.020s, fin=0.010s
-2025-05-15 00:16:08,930 INFO Measuring split (5,24)
-(5,24) e2e=9.140s  cpu=9.110s, copy=0.000s, mid=0.021s, fin=0.009s
-2025-05-15 00:16:08,961 INFO Measuring split (5,25)
-(5,25) e2e=9.140s  cpu=9.110s, copy=0.000s, mid=0.022s, fin=0.008s
-2025-05-15 00:16:08,992 INFO Measuring split (5,26)
-(5,26) e2e=9.140s  cpu=9.110s, copy=0.000s, mid=0.023s, fin=0.007s
-2025-05-15 00:16:09,023 INFO Measuring split (5,27)
-(5,27) e2e=9.140s  cpu=9.110s, copy=0.000s, mid=0.024s, fin=0.006s
-2025-05-15 00:16:09,054 INFO Measuring split (5,28)
-(5,28) e2e=9.140s  cpu=9.110s, copy=0.000s, mid=0.026s, fin=0.004s
-2025-05-15 00:16:09,085 INFO Measuring split (5,29)
-(5,29) e2e=9.140s  cpu=9.110s, copy=0.000s, mid=0.027s, fin=0.003s
-2025-05-15 00:16:09,117 INFO Measuring split (5,30)
-(5,30) e2e=9.140s  cpu=9.110s, copy=0.000s, mid=0.028s, fin=0.002s
-2025-05-15 00:16:09,148 INFO Measuring split (5,31)
-(5,31) e2e=9.140s  cpu=9.110s, copy=0.000s, mid=0.029s, fin=0.001s
-2025-05-15 00:16:09,179 INFO Measuring split (5,32)
-(5,32) e2e=9.140s  cpu=9.110s, copy=0.000s, mid=0.030s, fin=0.000s
-2025-05-15 00:16:09,210 INFO Measuring split (6,7)
-(6,7) e2e=9.139s  cpu=9.110s, copy=0.000s, mid=0.001s, fin=0.028s
-2025-05-15 00:16:09,240 INFO Measuring split (6,8)
-(6,8) e2e=9.139s  cpu=9.110s, copy=0.000s, mid=0.002s, fin=0.026s
-2025-05-15 00:16:09,270 INFO Measuring split (6,9)
-(6,9) e2e=9.139s  cpu=9.110s, copy=0.000s, mid=0.004s, fin=0.025s
-2025-05-15 00:16:09,300 INFO Measuring split (6,10)
-(6,10) e2e=9.139s  cpu=9.110s, copy=0.000s, mid=0.005s, fin=0.024s
-2025-05-15 00:16:09,330 INFO Measuring split (6,11)
-(6,11) e2e=9.139s  cpu=9.110s, copy=0.000s, mid=0.006s, fin=0.023s
-2025-05-15 00:16:09,360 INFO Measuring split (6,12)
-(6,12) e2e=9.139s  cpu=9.110s, copy=0.000s, mid=0.007s, fin=0.022s
-2025-05-15 00:16:09,390 INFO Measuring split (6,13)
-(6,13) e2e=9.139s  cpu=9.110s, copy=0.000s, mid=0.008s, fin=0.021s
-2025-05-15 00:16:09,420 INFO Measuring split (6,14)
-(6,14) e2e=9.139s  cpu=9.110s, copy=0.000s, mid=0.009s, fin=0.020s
-2025-05-15 00:16:09,450 INFO Measuring split (6,15)
-(6,15) e2e=9.139s  cpu=9.110s, copy=0.000s, mid=0.010s, fin=0.019s
-2025-05-15 00:16:09,480 INFO Measuring split (6,16)
-(6,16) e2e=9.139s  cpu=9.110s, copy=0.000s, mid=0.011s, fin=0.018s
-2025-05-15 00:16:09,511 INFO Measuring split (6,17)
-(6,17) e2e=9.139s  cpu=9.110s, copy=0.000s, mid=0.012s, fin=0.017s
-2025-05-15 00:16:09,541 INFO Measuring split (6,18)
-(6,18) e2e=9.139s  cpu=9.110s, copy=0.000s, mid=0.014s, fin=0.016s
-2025-05-15 00:16:09,572 INFO Measuring split (6,19)
-(6,19) e2e=9.139s  cpu=9.110s, copy=0.000s, mid=0.015s, fin=0.014s
-2025-05-15 00:16:09,602 INFO Measuring split (6,20)
-(6,20) e2e=9.139s  cpu=9.110s, copy=0.000s, mid=0.016s, fin=0.013s
-2025-05-15 00:16:09,632 INFO Measuring split (6,21)
-(6,21) e2e=9.139s  cpu=9.110s, copy=0.000s, mid=0.017s, fin=0.012s
-2025-05-15 00:16:09,662 INFO Measuring split (6,22)
-(6,22) e2e=9.139s  cpu=9.110s, copy=0.000s, mid=0.018s, fin=0.011s
-2025-05-15 00:16:09,692 INFO Measuring split (6,23)
-(6,23) e2e=9.139s  cpu=9.110s, copy=0.000s, mid=0.019s, fin=0.010s
-2025-05-15 00:16:09,722 INFO Measuring split (6,24)
-(6,24) e2e=9.139s  cpu=9.110s, copy=0.000s, mid=0.020s, fin=0.009s
-2025-05-15 00:16:09,752 INFO Measuring split (6,25)
-(6,25) e2e=9.139s  cpu=9.110s, copy=0.000s, mid=0.021s, fin=0.008s
-2025-05-15 00:16:09,782 INFO Measuring split (6,26)
-(6,26) e2e=9.139s  cpu=9.110s, copy=0.000s, mid=0.022s, fin=0.007s
-2025-05-15 00:16:09,813 INFO Measuring split (6,27)
-(6,27) e2e=9.139s  cpu=9.110s, copy=0.000s, mid=0.023s, fin=0.006s
-2025-05-15 00:16:09,843 INFO Measuring split (6,28)
-(6,28) e2e=9.139s  cpu=9.110s, copy=0.000s, mid=0.024s, fin=0.005s
-2025-05-15 00:16:09,873 INFO Measuring split (6,29)
-(6,29) e2e=9.139s  cpu=9.110s, copy=0.000s, mid=0.025s, fin=0.003s
-2025-05-15 00:16:09,903 INFO Measuring split (6,30)
-(6,30) e2e=9.139s  cpu=9.110s, copy=0.000s, mid=0.027s, fin=0.002s
-2025-05-15 00:16:09,933 INFO Measuring split (6,31)
-(6,31) e2e=9.139s  cpu=9.110s, copy=0.000s, mid=0.027s, fin=0.001s
-2025-05-15 00:16:09,963 INFO Measuring split (6,32)
-(6,32) e2e=9.139s  cpu=9.110s, copy=0.000s, mid=0.029s, fin=0.000s
-2025-05-15 00:16:09,993 INFO Measuring split (7,8)
-(7,8) e2e=9.138s  cpu=9.110s, copy=0.000s, mid=0.002s, fin=0.026s
-2025-05-15 00:16:10,022 INFO Measuring split (7,9)
-(7,9) e2e=9.138s  cpu=9.110s, copy=0.000s, mid=0.003s, fin=0.025s
-2025-05-15 00:16:10,052 INFO Measuring split (7,10)
-(7,10) e2e=9.138s  cpu=9.110s, copy=0.000s, mid=0.004s, fin=0.024s
-2025-05-15 00:16:10,081 INFO Measuring split (7,11)
-(7,11) e2e=9.137s  cpu=9.110s, copy=0.000s, mid=0.005s, fin=0.023s
-2025-05-15 00:16:10,110 INFO Measuring split (7,12)
-(7,12) e2e=9.138s  cpu=9.110s, copy=0.000s, mid=0.006s, fin=0.022s
-2025-05-15 00:16:10,139 INFO Measuring split (7,13)
-(7,13) e2e=9.138s  cpu=9.110s, copy=0.000s, mid=0.007s, fin=0.021s
-2025-05-15 00:16:10,167 INFO Measuring split (7,14)
-(7,14) e2e=9.138s  cpu=9.110s, copy=0.000s, mid=0.008s, fin=0.020s
-2025-05-15 00:16:10,196 INFO Measuring split (7,15)
-(7,15) e2e=9.138s  cpu=9.110s, copy=0.000s, mid=0.009s, fin=0.019s
-2025-05-15 00:16:10,225 INFO Measuring split (7,16)
-(7,16) e2e=9.138s  cpu=9.110s, copy=0.000s, mid=0.010s, fin=0.018s
-2025-05-15 00:16:10,254 INFO Measuring split (7,17)
-(7,17) e2e=9.138s  cpu=9.110s, copy=0.000s, mid=0.011s, fin=0.017s
-2025-05-15 00:16:10,283 INFO Measuring split (7,18)
-(7,18) e2e=9.138s  cpu=9.110s, copy=0.000s, mid=0.012s, fin=0.015s
-2025-05-15 00:16:10,312 INFO Measuring split (7,19)
-(7,19) e2e=9.138s  cpu=9.110s, copy=0.000s, mid=0.013s, fin=0.014s
-2025-05-15 00:16:10,341 INFO Measuring split (7,20)
-(7,20) e2e=9.137s  cpu=9.110s, copy=0.000s, mid=0.014s, fin=0.013s
-2025-05-15 00:16:10,369 INFO Measuring split (7,21)
-(7,21) e2e=9.138s  cpu=9.110s, copy=0.000s, mid=0.016s, fin=0.012s
-2025-05-15 00:16:10,399 INFO Measuring split (7,22)
-(7,22) e2e=9.138s  cpu=9.110s, copy=0.000s, mid=0.017s, fin=0.011s
-2025-05-15 00:16:10,428 INFO Measuring split (7,23)
-(7,23) e2e=9.138s  cpu=9.110s, copy=0.000s, mid=0.018s, fin=0.010s
-2025-05-15 00:16:10,457 INFO Measuring split (7,24)
-(7,24) e2e=9.138s  cpu=9.110s, copy=0.000s, mid=0.019s, fin=0.009s
-2025-05-15 00:16:10,486 INFO Measuring split (7,25)
-(7,25) e2e=9.138s  cpu=9.110s, copy=0.000s, mid=0.020s, fin=0.008s
-2025-05-15 00:16:10,515 INFO Measuring split (7,26)
-(7,26) e2e=9.138s  cpu=9.110s, copy=0.000s, mid=0.021s, fin=0.007s
-2025-05-15 00:16:10,544 INFO Measuring split (7,27)
-(7,27) e2e=9.138s  cpu=9.110s, copy=0.000s, mid=0.022s, fin=0.006s
-2025-05-15 00:16:10,573 INFO Measuring split (7,28)
-(7,28) e2e=9.138s  cpu=9.110s, copy=0.000s, mid=0.023s, fin=0.004s
-2025-05-15 00:16:10,602 INFO Measuring split (7,29)
-(7,29) e2e=9.138s  cpu=9.110s, copy=0.000s, mid=0.024s, fin=0.003s
-2025-05-15 00:16:10,631 INFO Measuring split (7,30)
-(7,30) e2e=9.138s  cpu=9.110s, copy=0.000s, mid=0.025s, fin=0.002s
-2025-05-15 00:16:10,660 INFO Measuring split (7,31)
-(7,31) e2e=9.138s  cpu=9.110s, copy=0.000s, mid=0.027s, fin=0.001s
-2025-05-15 00:16:10,689 INFO Measuring split (7,32)
-(7,32) e2e=9.138s  cpu=9.110s, copy=0.000s, mid=0.028s, fin=0.000s
-2025-05-15 00:16:10,718 INFO Measuring split (8,9)
-(8,9) e2e=9.137s  cpu=9.110s, copy=0.000s, mid=0.002s, fin=0.025s
-2025-05-15 00:16:10,746 INFO Measuring split (8,10)
-(8,10) e2e=9.137s  cpu=9.110s, copy=0.000s, mid=0.003s, fin=0.024s
-2025-05-15 00:16:10,774 INFO Measuring split (8,11)
-(8,11) e2e=9.137s  cpu=9.110s, copy=0.000s, mid=0.004s, fin=0.023s
-2025-05-15 00:16:10,802 INFO Measuring split (8,12)
-(8,12) e2e=9.137s  cpu=9.110s, copy=0.000s, mid=0.005s, fin=0.022s
-2025-05-15 00:16:10,830 INFO Measuring split (8,13)
-(8,13) e2e=9.137s  cpu=9.110s, copy=0.000s, mid=0.006s, fin=0.021s
-2025-05-15 00:16:10,858 INFO Measuring split (8,14)
-(8,14) e2e=9.137s  cpu=9.110s, copy=0.000s, mid=0.007s, fin=0.020s
-2025-05-15 00:16:10,886 INFO Measuring split (8,15)
-(8,15) e2e=9.137s  cpu=9.110s, copy=0.000s, mid=0.008s, fin=0.019s
-2025-05-15 00:16:10,915 INFO Measuring split (8,16)
-(8,16) e2e=9.137s  cpu=9.110s, copy=0.000s, mid=0.009s, fin=0.018s
-2025-05-15 00:16:10,943 INFO Measuring split (8,17)
-(8,17) e2e=9.137s  cpu=9.110s, copy=0.000s, mid=0.010s, fin=0.017s
-2025-05-15 00:16:10,971 INFO Measuring split (8,18)
-(8,18) e2e=9.137s  cpu=9.110s, copy=0.000s, mid=0.011s, fin=0.016s
-2025-05-15 00:16:10,999 INFO Measuring split (8,19)
-(8,19) e2e=9.137s  cpu=9.110s, copy=0.000s, mid=0.012s, fin=0.014s
-2025-05-15 00:16:11,027 INFO Measuring split (8,20)
-(8,20) e2e=9.137s  cpu=9.110s, copy=0.000s, mid=0.014s, fin=0.013s
-2025-05-15 00:16:11,055 INFO Measuring split (8,21)
-(8,21) e2e=9.137s  cpu=9.110s, copy=0.000s, mid=0.015s, fin=0.012s
-2025-05-15 00:16:11,083 INFO Measuring split (8,22)
-(8,22) e2e=9.136s  cpu=9.110s, copy=0.000s, mid=0.016s, fin=0.011s
-2025-05-15 00:16:11,111 INFO Measuring split (8,23)
-(8,23) e2e=9.136s  cpu=9.110s, copy=0.000s, mid=0.017s, fin=0.010s
-2025-05-15 00:16:11,138 INFO Measuring split (8,24)
-(8,24) e2e=9.136s  cpu=9.110s, copy=0.000s, mid=0.018s, fin=0.009s
-2025-05-15 00:16:11,166 INFO Measuring split (8,25)
-(8,25) e2e=9.136s  cpu=9.110s, copy=0.000s, mid=0.019s, fin=0.008s
-2025-05-15 00:16:11,193 INFO Measuring split (8,26)
-(8,26) e2e=9.136s  cpu=9.110s, copy=0.000s, mid=0.020s, fin=0.007s
-2025-05-15 00:16:11,220 INFO Measuring split (8,27)
-(8,27) e2e=9.137s  cpu=9.110s, copy=0.000s, mid=0.021s, fin=0.006s
-2025-05-15 00:16:11,248 INFO Measuring split (8,28)
-(8,28) e2e=9.137s  cpu=9.110s, copy=0.000s, mid=0.023s, fin=0.005s
-2025-05-15 00:16:11,277 INFO Measuring split (8,29)
-(8,29) e2e=9.137s  cpu=9.110s, copy=0.000s, mid=0.023s, fin=0.003s
-2025-05-15 00:16:11,305 INFO Measuring split (8,30)
-(8,30) e2e=9.137s  cpu=9.110s, copy=0.000s, mid=0.025s, fin=0.002s
-2025-05-15 00:16:11,334 INFO Measuring split (8,31)
-(8,31) e2e=9.137s  cpu=9.110s, copy=0.000s, mid=0.026s, fin=0.001s
-2025-05-15 00:16:11,361 INFO Measuring split (8,32)
-(8,32) e2e=9.136s  cpu=9.110s, copy=0.000s, mid=0.026s, fin=0.000s
-2025-05-15 00:16:11,389 INFO Measuring split (9,10)
-(9,10) e2e=9.136s  cpu=9.110s, copy=0.000s, mid=0.001s, fin=0.025s
-2025-05-15 00:16:11,416 INFO Measuring split (9,11)
-(9,11) e2e=9.136s  cpu=9.110s, copy=0.000s, mid=0.003s, fin=0.023s
-2025-05-15 00:16:11,443 INFO Measuring split (9,12)
-(9,12) e2e=9.136s  cpu=9.110s, copy=0.000s, mid=0.004s, fin=0.022s
-2025-05-15 00:16:11,470 INFO Measuring split (9,13)
-(9,13) e2e=9.136s  cpu=9.110s, copy=0.000s, mid=0.005s, fin=0.021s
-2025-05-15 00:16:11,497 INFO Measuring split (9,14)
-(9,14) e2e=9.136s  cpu=9.110s, copy=0.000s, mid=0.006s, fin=0.020s
-2025-05-15 00:16:11,524 INFO Measuring split (9,15)
-(9,15) e2e=9.136s  cpu=9.110s, copy=0.000s, mid=0.007s, fin=0.019s
-2025-05-15 00:16:11,551 INFO Measuring split (9,16)
-(9,16) e2e=9.136s  cpu=9.110s, copy=0.000s, mid=0.008s, fin=0.018s
-2025-05-15 00:16:11,578 INFO Measuring split (9,17)
-(9,17) e2e=9.136s  cpu=9.110s, copy=0.000s, mid=0.009s, fin=0.017s
-2025-05-15 00:16:11,605 INFO Measuring split (9,18)
-(9,18) e2e=9.136s  cpu=9.110s, copy=0.000s, mid=0.010s, fin=0.016s
-2025-05-15 00:16:11,632 INFO Measuring split (9,19)
-(9,19) e2e=9.136s  cpu=9.110s, copy=0.000s, mid=0.011s, fin=0.014s
-2025-05-15 00:16:11,659 INFO Measuring split (9,20)
-(9,20) e2e=9.136s  cpu=9.110s, copy=0.000s, mid=0.012s, fin=0.013s
-2025-05-15 00:16:11,686 INFO Measuring split (9,21)
-(9,21) e2e=9.136s  cpu=9.110s, copy=0.000s, mid=0.014s, fin=0.012s
-2025-05-15 00:16:11,713 INFO Measuring split (9,22)
-(9,22) e2e=9.136s  cpu=9.110s, copy=0.000s, mid=0.015s, fin=0.011s
-2025-05-15 00:16:11,740 INFO Measuring split (9,23)
-(9,23) e2e=9.135s  cpu=9.110s, copy=0.000s, mid=0.016s, fin=0.010s
-2025-05-15 00:16:11,767 INFO Measuring split (9,24)
-(9,24) e2e=9.135s  cpu=9.110s, copy=0.000s, mid=0.017s, fin=0.009s
-2025-05-15 00:16:11,793 INFO Measuring split (9,25)
-(9,25) e2e=9.136s  cpu=9.110s, copy=0.000s, mid=0.018s, fin=0.008s
-2025-05-15 00:16:11,820 INFO Measuring split (9,26)
-(9,26) e2e=9.138s  cpu=9.110s, copy=0.000s, mid=0.021s, fin=0.007s
-2025-05-15 00:16:11,849 INFO Measuring split (9,27)
-(9,27) e2e=9.135s  cpu=9.110s, copy=0.000s, mid=0.020s, fin=0.006s
-2025-05-15 00:16:11,876 INFO Measuring split (9,28)
-(9,28) e2e=9.136s  cpu=9.110s, copy=0.000s, mid=0.021s, fin=0.005s
-2025-05-15 00:16:11,903 INFO Measuring split (9,29)
-(9,29) e2e=9.136s  cpu=9.110s, copy=0.000s, mid=0.022s, fin=0.004s
-2025-05-15 00:16:11,930 INFO Measuring split (9,30)
-(9,30) e2e=9.136s  cpu=9.110s, copy=0.000s, mid=0.023s, fin=0.002s
-2025-05-15 00:16:11,957 INFO Measuring split (9,31)
-(9,31) e2e=9.136s  cpu=9.110s, copy=0.000s, mid=0.024s, fin=0.001s
-2025-05-15 00:16:11,984 INFO Measuring split (9,32)
-(9,32) e2e=9.135s  cpu=9.110s, copy=0.000s, mid=0.025s, fin=0.000s
-2025-05-15 00:16:12,011 INFO Measuring split (10,11)
-(10,11) e2e=9.135s  cpu=9.110s, copy=0.000s, mid=0.002s, fin=0.023s
-2025-05-15 00:16:12,037 INFO Measuring split (10,12)
-(10,12) e2e=9.135s  cpu=9.110s, copy=0.000s, mid=0.003s, fin=0.022s
-2025-05-15 00:16:12,063 INFO Measuring split (10,13)
-(10,13) e2e=9.135s  cpu=9.110s, copy=0.000s, mid=0.004s, fin=0.021s
-2025-05-15 00:16:12,088 INFO Measuring split (10,14)
-(10,14) e2e=9.135s  cpu=9.110s, copy=0.000s, mid=0.005s, fin=0.020s
-2025-05-15 00:16:12,114 INFO Measuring split (10,15)
-(10,15) e2e=9.135s  cpu=9.110s, copy=0.000s, mid=0.006s, fin=0.019s
-2025-05-15 00:16:12,140 INFO Measuring split (10,16)
-(10,16) e2e=9.134s  cpu=9.110s, copy=0.000s, mid=0.007s, fin=0.017s
-2025-05-15 00:16:12,165 INFO Measuring split (10,17)
-(10,17) e2e=9.134s  cpu=9.110s, copy=0.000s, mid=0.008s, fin=0.016s
-2025-05-15 00:16:12,190 INFO Measuring split (10,18)
-(10,18) e2e=9.134s  cpu=9.110s, copy=0.000s, mid=0.009s, fin=0.015s
-2025-05-15 00:16:12,215 INFO Measuring split (10,19)
-(10,19) e2e=9.134s  cpu=9.110s, copy=0.000s, mid=0.010s, fin=0.014s
-2025-05-15 00:16:12,240 INFO Measuring split (10,20)
-(10,20) e2e=9.134s  cpu=9.110s, copy=0.000s, mid=0.011s, fin=0.013s
-2025-05-15 00:16:12,266 INFO Measuring split (10,21)
-(10,21) e2e=9.134s  cpu=9.110s, copy=0.000s, mid=0.012s, fin=0.012s
-2025-05-15 00:16:12,291 INFO Measuring split (10,22)
-(10,22) e2e=9.134s  cpu=9.110s, copy=0.000s, mid=0.013s, fin=0.011s
-2025-05-15 00:16:12,316 INFO Measuring split (10,23)
-(10,23) e2e=9.134s  cpu=9.110s, copy=0.000s, mid=0.014s, fin=0.010s
-2025-05-15 00:16:12,342 INFO Measuring split (10,24)
-(10,24) e2e=9.134s  cpu=9.110s, copy=0.000s, mid=0.016s, fin=0.009s
-2025-05-15 00:16:12,367 INFO Measuring split (10,25)
-(10,25) e2e=9.134s  cpu=9.110s, copy=0.000s, mid=0.017s, fin=0.008s
-2025-05-15 00:16:12,393 INFO Measuring split (10,26)
-(10,26) e2e=9.134s  cpu=9.110s, copy=0.000s, mid=0.018s, fin=0.007s
-2025-05-15 00:16:12,418 INFO Measuring split (10,27)
-(10,27) e2e=9.134s  cpu=9.110s, copy=0.000s, mid=0.019s, fin=0.006s
-2025-05-15 00:16:12,444 INFO Measuring split (10,28)
-(10,28) e2e=9.134s  cpu=9.110s, copy=0.000s, mid=0.020s, fin=0.004s
-2025-05-15 00:16:12,469 INFO Measuring split (10,29)
-(10,29) e2e=9.134s  cpu=9.110s, copy=0.000s, mid=0.021s, fin=0.003s
-2025-05-15 00:16:12,495 INFO Measuring split (10,30)
-(10,30) e2e=9.134s  cpu=9.110s, copy=0.000s, mid=0.022s, fin=0.002s
-2025-05-15 00:16:12,521 INFO Measuring split (10,31)
-(10,31) e2e=9.134s  cpu=9.110s, copy=0.000s, mid=0.023s, fin=0.001s
-2025-05-15 00:16:12,546 INFO Measuring split (10,32)
-(10,32) e2e=9.134s  cpu=9.110s, copy=0.000s, mid=0.024s, fin=0.000s
-2025-05-15 00:16:12,571 INFO Measuring split (11,12)
-(11,12) e2e=9.133s  cpu=9.110s, copy=0.000s, mid=0.001s, fin=0.022s
-2025-05-15 00:16:12,596 INFO Measuring split (11,13)
-(11,13) e2e=9.133s  cpu=9.110s, copy=0.000s, mid=0.002s, fin=0.021s
-2025-05-15 00:16:12,620 INFO Measuring split (11,14)
-(11,14) e2e=9.133s  cpu=9.110s, copy=0.000s, mid=0.004s, fin=0.020s
-2025-05-15 00:16:12,644 INFO Measuring split (11,15)
-(11,15) e2e=9.133s  cpu=9.110s, copy=0.000s, mid=0.005s, fin=0.019s
-2025-05-15 00:16:12,671 INFO Measuring split (11,16)
-(11,16) e2e=9.134s  cpu=9.110s, copy=0.000s, mid=0.006s, fin=0.018s
-2025-05-15 00:16:12,696 INFO Measuring split (11,17)
-(11,17) e2e=9.133s  cpu=9.110s, copy=0.000s, mid=0.007s, fin=0.016s
-2025-05-15 00:16:12,720 INFO Measuring split (11,18)
-(11,18) e2e=9.133s  cpu=9.110s, copy=0.000s, mid=0.008s, fin=0.015s
-2025-05-15 00:16:12,744 INFO Measuring split (11,19)
-(11,19) e2e=9.133s  cpu=9.110s, copy=0.000s, mid=0.009s, fin=0.014s
-2025-05-15 00:16:12,768 INFO Measuring split (11,20)
-(11,20) e2e=9.133s  cpu=9.110s, copy=0.000s, mid=0.010s, fin=0.013s
-2025-05-15 00:16:12,793 INFO Measuring split (11,21)
-(11,21) e2e=9.133s  cpu=9.110s, copy=0.000s, mid=0.011s, fin=0.012s
-2025-05-15 00:16:12,817 INFO Measuring split (11,22)
-(11,22) e2e=9.133s  cpu=9.110s, copy=0.000s, mid=0.012s, fin=0.011s
-2025-05-15 00:16:12,841 INFO Measuring split (11,23)
-(11,23) e2e=9.133s  cpu=9.110s, copy=0.000s, mid=0.013s, fin=0.010s
-2025-05-15 00:16:12,865 INFO Measuring split (11,24)
-(11,24) e2e=9.133s  cpu=9.110s, copy=0.000s, mid=0.014s, fin=0.009s
-2025-05-15 00:16:12,889 INFO Measuring split (11,25)
-(11,25) e2e=9.133s  cpu=9.110s, copy=0.000s, mid=0.015s, fin=0.008s
-2025-05-15 00:16:12,913 INFO Measuring split (11,26)
-(11,26) e2e=9.133s  cpu=9.110s, copy=0.000s, mid=0.017s, fin=0.007s
-2025-05-15 00:16:12,937 INFO Measuring split (11,27)
-(11,27) e2e=9.133s  cpu=9.110s, copy=0.000s, mid=0.018s, fin=0.006s
-2025-05-15 00:16:12,961 INFO Measuring split (11,28)
-(11,28) e2e=9.133s  cpu=9.110s, copy=0.000s, mid=0.019s, fin=0.004s
-2025-05-15 00:16:12,986 INFO Measuring split (11,29)
-(11,29) e2e=9.133s  cpu=9.110s, copy=0.000s, mid=0.020s, fin=0.003s
-2025-05-15 00:16:13,010 INFO Measuring split (11,30)
-(11,30) e2e=9.133s  cpu=9.110s, copy=0.000s, mid=0.021s, fin=0.002s
-2025-05-15 00:16:13,034 INFO Measuring split (11,31)
-(11,31) e2e=9.133s  cpu=9.110s, copy=0.000s, mid=0.022s, fin=0.001s
-2025-05-15 00:16:13,059 INFO Measuring split (11,32)
-(11,32) e2e=9.133s  cpu=9.110s, copy=0.000s, mid=0.023s, fin=0.000s
-2025-05-15 00:16:13,083 INFO Measuring split (12,13)
-(12,13) e2e=9.132s  cpu=9.110s, copy=0.000s, mid=0.001s, fin=0.021s
-2025-05-15 00:16:13,106 INFO Measuring split (12,14)
-(12,14) e2e=9.132s  cpu=9.110s, copy=0.000s, mid=0.002s, fin=0.020s
-2025-05-15 00:16:13,130 INFO Measuring split (12,15)
-(12,15) e2e=9.132s  cpu=9.110s, copy=0.000s, mid=0.004s, fin=0.019s
-2025-05-15 00:16:13,153 INFO Measuring split (12,16)
-(12,16) e2e=9.132s  cpu=9.110s, copy=0.000s, mid=0.005s, fin=0.018s
-2025-05-15 00:16:13,176 INFO Measuring split (12,17)
-(12,17) e2e=9.132s  cpu=9.110s, copy=0.000s, mid=0.006s, fin=0.016s
-2025-05-15 00:16:13,200 INFO Measuring split (12,18)
-(12,18) e2e=9.132s  cpu=9.110s, copy=0.000s, mid=0.007s, fin=0.015s
-2025-05-15 00:16:13,223 INFO Measuring split (12,19)
-(12,19) e2e=9.132s  cpu=9.110s, copy=0.000s, mid=0.008s, fin=0.014s
-2025-05-15 00:16:13,247 INFO Measuring split (12,20)
-(12,20) e2e=9.132s  cpu=9.110s, copy=0.000s, mid=0.009s, fin=0.013s
-2025-05-15 00:16:13,270 INFO Measuring split (12,21)
-(12,21) e2e=9.132s  cpu=9.110s, copy=0.000s, mid=0.010s, fin=0.012s
-2025-05-15 00:16:13,293 INFO Measuring split (12,22)
-(12,22) e2e=9.132s  cpu=9.110s, copy=0.000s, mid=0.011s, fin=0.011s
-2025-05-15 00:16:13,316 INFO Measuring split (12,23)
-(12,23) e2e=9.132s  cpu=9.110s, copy=0.000s, mid=0.012s, fin=0.010s
-2025-05-15 00:16:13,339 INFO Measuring split (12,24)
-(12,24) e2e=9.132s  cpu=9.110s, copy=0.000s, mid=0.013s, fin=0.009s
-2025-05-15 00:16:13,362 INFO Measuring split (12,25)
-(12,25) e2e=9.132s  cpu=9.110s, copy=0.000s, mid=0.014s, fin=0.008s
-2025-05-15 00:16:13,385 INFO Measuring split (12,26)
-(12,26) e2e=9.132s  cpu=9.110s, copy=0.000s, mid=0.016s, fin=0.007s
-2025-05-15 00:16:13,409 INFO Measuring split (12,27)
-(12,27) e2e=9.132s  cpu=9.110s, copy=0.000s, mid=0.017s, fin=0.006s
-2025-05-15 00:16:13,432 INFO Measuring split (12,28)
-(12,28) e2e=9.132s  cpu=9.110s, copy=0.000s, mid=0.018s, fin=0.004s
-2025-05-15 00:16:13,455 INFO Measuring split (12,29)
-(12,29) e2e=9.132s  cpu=9.110s, copy=0.000s, mid=0.019s, fin=0.003s
-2025-05-15 00:16:13,479 INFO Measuring split (12,30)
-(12,30) e2e=9.132s  cpu=9.110s, copy=0.000s, mid=0.020s, fin=0.002s
-2025-05-15 00:16:13,502 INFO Measuring split (12,31)
-(12,31) e2e=9.133s  cpu=9.110s, copy=0.000s, mid=0.021s, fin=0.002s
-2025-05-15 00:16:13,526 INFO Measuring split (12,32)
-(12,32) e2e=9.132s  cpu=9.110s, copy=0.000s, mid=0.022s, fin=0.000s
-2025-05-15 00:16:13,549 INFO Measuring split (13,14)
-(13,14) e2e=9.131s  cpu=9.110s, copy=0.000s, mid=0.001s, fin=0.020s
-2025-05-15 00:16:13,572 INFO Measuring split (13,15)
-(13,15) e2e=9.131s  cpu=9.110s, copy=0.000s, mid=0.002s, fin=0.019s
-2025-05-15 00:16:13,594 INFO Measuring split (13,16)
-(13,16) e2e=9.131s  cpu=9.110s, copy=0.000s, mid=0.004s, fin=0.018s
-2025-05-15 00:16:13,616 INFO Measuring split (13,17)
-(13,17) e2e=9.131s  cpu=9.110s, copy=0.000s, mid=0.005s, fin=0.016s
-2025-05-15 00:16:13,638 INFO Measuring split (13,18)
-(13,18) e2e=9.131s  cpu=9.110s, copy=0.000s, mid=0.006s, fin=0.015s
-2025-05-15 00:16:13,659 INFO Measuring split (13,19)
-(13,19) e2e=9.131s  cpu=9.110s, copy=0.000s, mid=0.007s, fin=0.014s
-2025-05-15 00:16:13,682 INFO Measuring split (13,20)
-(13,20) e2e=9.131s  cpu=9.110s, copy=0.000s, mid=0.008s, fin=0.013s
-2025-05-15 00:16:13,704 INFO Measuring split (13,21)
-(13,21) e2e=9.131s  cpu=9.110s, copy=0.000s, mid=0.009s, fin=0.012s
-2025-05-15 00:16:13,726 INFO Measuring split (13,22)
-(13,22) e2e=9.131s  cpu=9.110s, copy=0.000s, mid=0.010s, fin=0.011s
-2025-05-15 00:16:13,749 INFO Measuring split (13,23)
-(13,23) e2e=9.131s  cpu=9.110s, copy=0.000s, mid=0.011s, fin=0.010s
-2025-05-15 00:16:13,771 INFO Measuring split (13,24)
-(13,24) e2e=9.131s  cpu=9.110s, copy=0.000s, mid=0.012s, fin=0.009s
-2025-05-15 00:16:13,793 INFO Measuring split (13,25)
-(13,25) e2e=9.131s  cpu=9.110s, copy=0.000s, mid=0.013s, fin=0.008s
-2025-05-15 00:16:13,815 INFO Measuring split (13,26)
-(13,26) e2e=9.131s  cpu=9.110s, copy=0.000s, mid=0.014s, fin=0.007s
-2025-05-15 00:16:13,837 INFO Measuring split (13,27)
-(13,27) e2e=9.131s  cpu=9.110s, copy=0.000s, mid=0.015s, fin=0.006s
-2025-05-15 00:16:13,859 INFO Measuring split (13,28)
-(13,28) e2e=9.131s  cpu=9.110s, copy=0.000s, mid=0.017s, fin=0.004s
-2025-05-15 00:16:13,881 INFO Measuring split (13,29)
-(13,29) e2e=9.131s  cpu=9.110s, copy=0.000s, mid=0.018s, fin=0.003s
-2025-05-15 00:16:13,903 INFO Measuring split (13,30)
-(13,30) e2e=9.131s  cpu=9.110s, copy=0.000s, mid=0.019s, fin=0.002s
-2025-05-15 00:16:13,924 INFO Measuring split (13,31)
-(13,31) e2e=9.131s  cpu=9.110s, copy=0.000s, mid=0.020s, fin=0.001s
-2025-05-15 00:16:13,947 INFO Measuring split (13,32)
-(13,32) e2e=9.131s  cpu=9.110s, copy=0.000s, mid=0.021s, fin=0.000s
-2025-05-15 00:16:13,968 INFO Measuring split (14,15)
-(14,15) e2e=9.130s  cpu=9.110s, copy=0.000s, mid=0.001s, fin=0.019s
-2025-05-15 00:16:13,989 INFO Measuring split (14,16)
-(14,16) e2e=9.130s  cpu=9.110s, copy=0.000s, mid=0.002s, fin=0.018s
-2025-05-15 00:16:14,010 INFO Measuring split (14,17)
-(14,17) e2e=9.130s  cpu=9.110s, copy=0.000s, mid=0.004s, fin=0.017s
-2025-05-15 00:16:14,031 INFO Measuring split (14,18)
-(14,18) e2e=9.130s  cpu=9.110s, copy=0.000s, mid=0.005s, fin=0.015s
-2025-05-15 00:16:14,052 INFO Measuring split (14,19)
-(14,19) e2e=9.130s  cpu=9.110s, copy=0.000s, mid=0.006s, fin=0.014s
-2025-05-15 00:16:14,074 INFO Measuring split (14,20)
-(14,20) e2e=9.130s  cpu=9.110s, copy=0.000s, mid=0.007s, fin=0.013s
-2025-05-15 00:16:14,095 INFO Measuring split (14,21)
-(14,21) e2e=9.130s  cpu=9.110s, copy=0.000s, mid=0.008s, fin=0.012s
-2025-05-15 00:16:14,116 INFO Measuring split (14,22)
-(14,22) e2e=9.130s  cpu=9.110s, copy=0.000s, mid=0.009s, fin=0.011s
-2025-05-15 00:16:14,137 INFO Measuring split (14,23)
-(14,23) e2e=9.130s  cpu=9.110s, copy=0.000s, mid=0.010s, fin=0.010s
-2025-05-15 00:16:14,158 INFO Measuring split (14,24)
-(14,24) e2e=9.130s  cpu=9.110s, copy=0.000s, mid=0.011s, fin=0.009s
-2025-05-15 00:16:14,179 INFO Measuring split (14,25)
-(14,25) e2e=9.130s  cpu=9.110s, copy=0.000s, mid=0.012s, fin=0.008s
-2025-05-15 00:16:14,200 INFO Measuring split (14,26)
-(14,26) e2e=9.130s  cpu=9.110s, copy=0.000s, mid=0.013s, fin=0.007s
-2025-05-15 00:16:14,221 INFO Measuring split (14,27)
-(14,27) e2e=9.130s  cpu=9.110s, copy=0.000s, mid=0.015s, fin=0.006s
-2025-05-15 00:16:14,242 INFO Measuring split (14,28)
-(14,28) e2e=9.130s  cpu=9.110s, copy=0.000s, mid=0.016s, fin=0.005s
-2025-05-15 00:16:14,263 INFO Measuring split (14,29)
-(14,29) e2e=9.130s  cpu=9.110s, copy=0.000s, mid=0.017s, fin=0.003s
-2025-05-15 00:16:14,284 INFO Measuring split (14,30)
-(14,30) e2e=9.130s  cpu=9.110s, copy=0.000s, mid=0.018s, fin=0.002s
-2025-05-15 00:16:14,305 INFO Measuring split (14,31)
-(14,31) e2e=9.130s  cpu=9.110s, copy=0.000s, mid=0.019s, fin=0.001s
-2025-05-15 00:16:14,327 INFO Measuring split (14,32)
-(14,32) e2e=9.130s  cpu=9.110s, copy=0.000s, mid=0.020s, fin=0.000s
-2025-05-15 00:16:14,347 INFO Measuring split (15,16)
-(15,16) e2e=9.129s  cpu=9.110s, copy=0.000s, mid=0.001s, fin=0.018s
-2025-05-15 00:16:14,367 INFO Measuring split (15,17)
-(15,17) e2e=9.129s  cpu=9.110s, copy=0.000s, mid=0.003s, fin=0.017s
-2025-05-15 00:16:14,387 INFO Measuring split (15,18)
-(15,18) e2e=9.129s  cpu=9.110s, copy=0.000s, mid=0.004s, fin=0.015s
-2025-05-15 00:16:14,407 INFO Measuring split (15,19)
-(15,19) e2e=9.129s  cpu=9.110s, copy=0.000s, mid=0.005s, fin=0.014s
-2025-05-15 00:16:14,427 INFO Measuring split (15,20)
-(15,20) e2e=9.129s  cpu=9.110s, copy=0.000s, mid=0.006s, fin=0.013s
-2025-05-15 00:16:14,447 INFO Measuring split (15,21)
-(15,21) e2e=9.129s  cpu=9.110s, copy=0.000s, mid=0.007s, fin=0.012s
-2025-05-15 00:16:14,467 INFO Measuring split (15,22)
-(15,22) e2e=9.129s  cpu=9.110s, copy=0.000s, mid=0.008s, fin=0.011s
-2025-05-15 00:16:14,487 INFO Measuring split (15,23)
-(15,23) e2e=9.129s  cpu=9.110s, copy=0.000s, mid=0.009s, fin=0.010s
-2025-05-15 00:16:14,507 INFO Measuring split (15,24)
-(15,24) e2e=9.129s  cpu=9.110s, copy=0.000s, mid=0.010s, fin=0.009s
-2025-05-15 00:16:14,527 INFO Measuring split (15,25)
-(15,25) e2e=9.129s  cpu=9.110s, copy=0.000s, mid=0.011s, fin=0.008s
-2025-05-15 00:16:14,547 INFO Measuring split (15,26)
-(15,26) e2e=9.129s  cpu=9.110s, copy=0.000s, mid=0.012s, fin=0.007s
-2025-05-15 00:16:14,567 INFO Measuring split (15,27)
-(15,27) e2e=9.129s  cpu=9.110s, copy=0.000s, mid=0.014s, fin=0.006s
-2025-05-15 00:16:14,587 INFO Measuring split (15,28)
-(15,28) e2e=9.129s  cpu=9.110s, copy=0.000s, mid=0.015s, fin=0.005s
-2025-05-15 00:16:14,607 INFO Measuring split (15,29)
-(15,29) e2e=9.129s  cpu=9.110s, copy=0.000s, mid=0.016s, fin=0.003s
-2025-05-15 00:16:14,627 INFO Measuring split (15,30)
-(15,30) e2e=9.129s  cpu=9.110s, copy=0.000s, mid=0.017s, fin=0.002s
-2025-05-15 00:16:14,647 INFO Measuring split (15,31)
-(15,31) e2e=9.129s  cpu=9.110s, copy=0.000s, mid=0.018s, fin=0.001s
-2025-05-15 00:16:14,668 INFO Measuring split (15,32)
-(15,32) e2e=9.129s  cpu=9.110s, copy=0.000s, mid=0.019s, fin=0.000s
-2025-05-15 00:16:14,688 INFO Measuring split (16,17)
-(16,17) e2e=9.128s  cpu=9.110s, copy=0.000s, mid=0.002s, fin=0.016s
-2025-05-15 00:16:14,706 INFO Measuring split (16,18)
-(16,18) e2e=9.128s  cpu=9.110s, copy=0.000s, mid=0.003s, fin=0.015s
-2025-05-15 00:16:14,725 INFO Measuring split (16,19)
-(16,19) e2e=9.128s  cpu=9.110s, copy=0.000s, mid=0.004s, fin=0.014s
-2025-05-15 00:16:14,744 INFO Measuring split (16,20)
-(16,20) e2e=9.128s  cpu=9.110s, copy=0.000s, mid=0.005s, fin=0.013s
-2025-05-15 00:16:14,763 INFO Measuring split (16,21)
-(16,21) e2e=9.128s  cpu=9.110s, copy=0.000s, mid=0.006s, fin=0.012s
-2025-05-15 00:16:14,782 INFO Measuring split (16,22)
-(16,22) e2e=9.128s  cpu=9.110s, copy=0.000s, mid=0.007s, fin=0.011s
-2025-05-15 00:16:14,801 INFO Measuring split (16,23)
-(16,23) e2e=9.128s  cpu=9.110s, copy=0.000s, mid=0.008s, fin=0.010s
-2025-05-15 00:16:14,820 INFO Measuring split (16,24)
-(16,24) e2e=9.128s  cpu=9.110s, copy=0.000s, mid=0.009s, fin=0.009s
-2025-05-15 00:16:14,838 INFO Measuring split (16,25)
-(16,25) e2e=9.128s  cpu=9.110s, copy=0.000s, mid=0.010s, fin=0.008s
-2025-05-15 00:16:14,856 INFO Measuring split (16,26)
-(16,26) e2e=9.128s  cpu=9.110s, copy=0.000s, mid=0.011s, fin=0.007s
-2025-05-15 00:16:14,875 INFO Measuring split (16,27)
-(16,27) e2e=9.128s  cpu=9.110s, copy=0.000s, mid=0.012s, fin=0.006s
-2025-05-15 00:16:14,893 INFO Measuring split (16,28)
-(16,28) e2e=9.128s  cpu=9.110s, copy=0.000s, mid=0.013s, fin=0.004s
-2025-05-15 00:16:14,912 INFO Measuring split (16,29)
-(16,29) e2e=9.128s  cpu=9.110s, copy=0.000s, mid=0.014s, fin=0.003s
-2025-05-15 00:16:14,931 INFO Measuring split (16,30)
-(16,30) e2e=9.128s  cpu=9.110s, copy=0.000s, mid=0.016s, fin=0.002s
-2025-05-15 00:16:14,950 INFO Measuring split (16,31)
-(16,31) e2e=9.128s  cpu=9.110s, copy=0.000s, mid=0.017s, fin=0.001s
-2025-05-15 00:16:14,969 INFO Measuring split (16,32)
-(16,32) e2e=9.128s  cpu=9.110s, copy=0.000s, mid=0.018s, fin=0.000s
-2025-05-15 00:16:14,988 INFO Measuring split (17,18)
-(17,18) e2e=9.127s  cpu=9.110s, copy=0.000s, mid=0.002s, fin=0.016s
-2025-05-15 00:16:15,006 INFO Measuring split (17,19)
-(17,19) e2e=9.127s  cpu=9.110s, copy=0.000s, mid=0.003s, fin=0.014s
-2025-05-15 00:16:15,023 INFO Measuring split (17,20)
-(17,20) e2e=9.127s  cpu=9.110s, copy=0.000s, mid=0.004s, fin=0.013s
-2025-05-15 00:16:15,041 INFO Measuring split (17,21)
-(17,21) e2e=9.127s  cpu=9.110s, copy=0.000s, mid=0.005s, fin=0.012s
-2025-05-15 00:16:15,059 INFO Measuring split (17,22)
-(17,22) e2e=9.127s  cpu=9.110s, copy=0.000s, mid=0.006s, fin=0.011s
-2025-05-15 00:16:15,077 INFO Measuring split (17,23)
-(17,23) e2e=9.127s  cpu=9.110s, copy=0.000s, mid=0.007s, fin=0.010s
-2025-05-15 00:16:15,095 INFO Measuring split (17,24)
-(17,24) e2e=9.127s  cpu=9.110s, copy=0.000s, mid=0.008s, fin=0.009s
-2025-05-15 00:16:15,112 INFO Measuring split (17,25)
-(17,25) e2e=9.127s  cpu=9.110s, copy=0.000s, mid=0.009s, fin=0.008s
-2025-05-15 00:16:15,130 INFO Measuring split (17,26)
-(17,26) e2e=9.127s  cpu=9.110s, copy=0.000s, mid=0.010s, fin=0.007s
-2025-05-15 00:16:15,147 INFO Measuring split (17,27)
-(17,27) e2e=9.127s  cpu=9.110s, copy=0.000s, mid=0.011s, fin=0.006s
-2025-05-15 00:16:15,165 INFO Measuring split (17,28)
-(17,28) e2e=9.127s  cpu=9.110s, copy=0.000s, mid=0.012s, fin=0.005s
-2025-05-15 00:16:15,182 INFO Measuring split (17,29)
-(17,29) e2e=9.127s  cpu=9.110s, copy=0.000s, mid=0.013s, fin=0.003s
-2025-05-15 00:16:15,200 INFO Measuring split (17,30)
-(17,30) e2e=9.127s  cpu=9.110s, copy=0.000s, mid=0.014s, fin=0.002s
-2025-05-15 00:16:15,217 INFO Measuring split (17,31)
-(17,31) e2e=9.127s  cpu=9.110s, copy=0.000s, mid=0.016s, fin=0.001s
-2025-05-15 00:16:15,235 INFO Measuring split (17,32)
-(17,32) e2e=9.127s  cpu=9.110s, copy=0.000s, mid=0.017s, fin=0.000s
-2025-05-15 00:16:15,252 INFO Measuring split (18,19)
-(18,19) e2e=9.126s  cpu=9.110s, copy=0.000s, mid=0.001s, fin=0.014s
-2025-05-15 00:16:15,268 INFO Measuring split (18,20)
-(18,20) e2e=9.125s  cpu=9.110s, copy=0.000s, mid=0.002s, fin=0.013s
-2025-05-15 00:16:15,285 INFO Measuring split (18,21)
-(18,21) e2e=9.126s  cpu=9.110s, copy=0.000s, mid=0.004s, fin=0.012s
-2025-05-15 00:16:15,301 INFO Measuring split (18,22)
-(18,22) e2e=9.125s  cpu=9.110s, copy=0.000s, mid=0.005s, fin=0.011s
-2025-05-15 00:16:15,317 INFO Measuring split (18,23)
-(18,23) e2e=9.125s  cpu=9.110s, copy=0.000s, mid=0.006s, fin=0.010s
-2025-05-15 00:16:15,333 INFO Measuring split (18,24)
-(18,24) e2e=9.125s  cpu=9.110s, copy=0.000s, mid=0.007s, fin=0.009s
-2025-05-15 00:16:15,350 INFO Measuring split (18,25)
-(18,25) e2e=9.125s  cpu=9.110s, copy=0.000s, mid=0.008s, fin=0.008s
-2025-05-15 00:16:15,366 INFO Measuring split (18,26)
-(18,26) e2e=9.125s  cpu=9.110s, copy=0.000s, mid=0.009s, fin=0.007s
-2025-05-15 00:16:15,382 INFO Measuring split (18,27)
-(18,27) e2e=9.125s  cpu=9.110s, copy=0.000s, mid=0.010s, fin=0.006s
-2025-05-15 00:16:15,398 INFO Measuring split (18,28)
-(18,28) e2e=9.125s  cpu=9.110s, copy=0.000s, mid=0.011s, fin=0.004s
-2025-05-15 00:16:15,414 INFO Measuring split (18,29)
-(18,29) e2e=9.125s  cpu=9.110s, copy=0.000s, mid=0.012s, fin=0.003s
-2025-05-15 00:16:15,430 INFO Measuring split (18,30)
-(18,30) e2e=9.125s  cpu=9.110s, copy=0.000s, mid=0.013s, fin=0.002s
-2025-05-15 00:16:15,447 INFO Measuring split (18,31)
-(18,31) e2e=9.126s  cpu=9.110s, copy=0.000s, mid=0.014s, fin=0.001s
-2025-05-15 00:16:15,463 INFO Measuring split (18,32)
-(18,32) e2e=9.125s  cpu=9.110s, copy=0.000s, mid=0.016s, fin=0.000s
-2025-05-15 00:16:15,479 INFO Measuring split (19,20)
-(19,20) e2e=9.124s  cpu=9.110s, copy=0.000s, mid=0.001s, fin=0.013s
-2025-05-15 00:16:15,494 INFO Measuring split (19,21)
-(19,21) e2e=9.124s  cpu=9.110s, copy=0.000s, mid=0.002s, fin=0.012s
-2025-05-15 00:16:15,509 INFO Measuring split (19,22)
-(19,22) e2e=9.124s  cpu=9.110s, copy=0.000s, mid=0.003s, fin=0.011s
-2025-05-15 00:16:15,524 INFO Measuring split (19,23)
-(19,23) e2e=9.124s  cpu=9.110s, copy=0.000s, mid=0.005s, fin=0.010s
-2025-05-15 00:16:15,539 INFO Measuring split (19,24)
-(19,24) e2e=9.124s  cpu=9.110s, copy=0.000s, mid=0.006s, fin=0.009s
-2025-05-15 00:16:15,555 INFO Measuring split (19,25)
-(19,25) e2e=9.124s  cpu=9.110s, copy=0.000s, mid=0.007s, fin=0.008s
-2025-05-15 00:16:15,570 INFO Measuring split (19,26)
-(19,26) e2e=9.124s  cpu=9.110s, copy=0.000s, mid=0.008s, fin=0.007s
-2025-05-15 00:16:15,585 INFO Measuring split (19,27)
-(19,27) e2e=9.124s  cpu=9.110s, copy=0.000s, mid=0.009s, fin=0.006s
-2025-05-15 00:16:15,600 INFO Measuring split (19,28)
-(19,28) e2e=9.124s  cpu=9.110s, copy=0.000s, mid=0.010s, fin=0.004s
-2025-05-15 00:16:15,615 INFO Measuring split (19,29)
-(19,29) e2e=9.124s  cpu=9.110s, copy=0.000s, mid=0.011s, fin=0.003s
-2025-05-15 00:16:15,630 INFO Measuring split (19,30)
-(19,30) e2e=9.124s  cpu=9.110s, copy=0.000s, mid=0.012s, fin=0.002s
-2025-05-15 00:16:15,645 INFO Measuring split (19,31)
-(19,31) e2e=9.124s  cpu=9.110s, copy=0.000s, mid=0.013s, fin=0.001s
-2025-05-15 00:16:15,660 INFO Measuring split (19,32)
-(19,32) e2e=9.124s  cpu=9.110s, copy=0.000s, mid=0.014s, fin=0.000s
-2025-05-15 00:16:15,676 INFO Measuring split (20,21)
-(20,21) e2e=9.123s  cpu=9.110s, copy=0.000s, mid=0.001s, fin=0.012s
-2025-05-15 00:16:15,690 INFO Measuring split (20,22)
-(20,22) e2e=9.123s  cpu=9.110s, copy=0.000s, mid=0.002s, fin=0.011s
-2025-05-15 00:16:15,704 INFO Measuring split (20,23)
-(20,23) e2e=9.123s  cpu=9.110s, copy=0.000s, mid=0.004s, fin=0.010s
-2025-05-15 00:16:15,718 INFO Measuring split (20,24)
-(20,24) e2e=9.123s  cpu=9.110s, copy=0.000s, mid=0.005s, fin=0.009s
-2025-05-15 00:16:15,732 INFO Measuring split (20,25)
-(20,25) e2e=9.123s  cpu=9.110s, copy=0.000s, mid=0.006s, fin=0.008s
-2025-05-15 00:16:15,746 INFO Measuring split (20,26)
-(20,26) e2e=9.123s  cpu=9.110s, copy=0.000s, mid=0.007s, fin=0.007s
-2025-05-15 00:16:15,760 INFO Measuring split (20,27)
-(20,27) e2e=9.123s  cpu=9.110s, copy=0.000s, mid=0.008s, fin=0.006s
-2025-05-15 00:16:15,774 INFO Measuring split (20,28)
-(20,28) e2e=9.123s  cpu=9.110s, copy=0.000s, mid=0.009s, fin=0.004s
-2025-05-15 00:16:15,788 INFO Measuring split (20,29)
-(20,29) e2e=9.123s  cpu=9.110s, copy=0.000s, mid=0.010s, fin=0.003s
-2025-05-15 00:16:15,802 INFO Measuring split (20,30)
-(20,30) e2e=9.123s  cpu=9.110s, copy=0.000s, mid=0.011s, fin=0.002s
-2025-05-15 00:16:15,816 INFO Measuring split (20,31)
-(20,31) e2e=9.123s  cpu=9.110s, copy=0.000s, mid=0.012s, fin=0.001s
-2025-05-15 00:16:15,830 INFO Measuring split (20,32)
-(20,32) e2e=9.123s  cpu=9.110s, copy=0.000s, mid=0.013s, fin=0.000s
-2025-05-15 00:16:15,843 INFO Measuring split (21,22)
-(21,22) e2e=9.122s  cpu=9.110s, copy=0.000s, mid=0.001s, fin=0.011s
-2025-05-15 00:16:15,856 INFO Measuring split (21,23)
-(21,23) e2e=9.122s  cpu=9.110s, copy=0.000s, mid=0.002s, fin=0.010s
-2025-05-15 00:16:15,869 INFO Measuring split (21,24)
-(21,24) e2e=9.122s  cpu=9.110s, copy=0.000s, mid=0.004s, fin=0.009s
-2025-05-15 00:16:15,882 INFO Measuring split (21,25)
-(21,25) e2e=9.122s  cpu=9.110s, copy=0.000s, mid=0.005s, fin=0.008s
-2025-05-15 00:16:15,895 INFO Measuring split (21,26)
-(21,26) e2e=9.122s  cpu=9.110s, copy=0.000s, mid=0.006s, fin=0.007s
-2025-05-15 00:16:15,908 INFO Measuring split (21,27)
-(21,27) e2e=9.122s  cpu=9.110s, copy=0.000s, mid=0.007s, fin=0.006s
-2025-05-15 00:16:15,921 INFO Measuring split (21,28)
-(21,28) e2e=9.122s  cpu=9.110s, copy=0.000s, mid=0.008s, fin=0.004s
-2025-05-15 00:16:15,934 INFO Measuring split (21,29)
-(21,29) e2e=9.122s  cpu=9.110s, copy=0.000s, mid=0.009s, fin=0.003s
-2025-05-15 00:16:15,947 INFO Measuring split (21,30)
-(21,30) e2e=9.122s  cpu=9.110s, copy=0.000s, mid=0.010s, fin=0.002s
-2025-05-15 00:16:15,959 INFO Measuring split (21,31)
-(21,31) e2e=9.122s  cpu=9.110s, copy=0.000s, mid=0.011s, fin=0.001s
-2025-05-15 00:16:15,972 INFO Measuring split (21,32)
-(21,32) e2e=9.122s  cpu=9.110s, copy=0.000s, mid=0.012s, fin=0.000s
-2025-05-15 00:16:15,985 INFO Measuring split (22,23)
-(22,23) e2e=9.121s  cpu=9.110s, copy=0.000s, mid=0.001s, fin=0.010s
-2025-05-15 00:16:15,997 INFO Measuring split (22,24)
-(22,24) e2e=9.121s  cpu=9.110s, copy=0.000s, mid=0.002s, fin=0.009s
-2025-05-15 00:16:16,009 INFO Measuring split (22,25)
-(22,25) e2e=9.121s  cpu=9.110s, copy=0.000s, mid=0.004s, fin=0.008s
-2025-05-15 00:16:16,020 INFO Measuring split (22,26)
-(22,26) e2e=9.121s  cpu=9.110s, copy=0.000s, mid=0.005s, fin=0.007s
-2025-05-15 00:16:16,032 INFO Measuring split (22,27)
-(22,27) e2e=9.121s  cpu=9.110s, copy=0.000s, mid=0.006s, fin=0.006s
-2025-05-15 00:16:16,044 INFO Measuring split (22,28)
-(22,28) e2e=9.122s  cpu=9.110s, copy=0.000s, mid=0.007s, fin=0.005s
-2025-05-15 00:16:16,057 INFO Measuring split (22,29)
-(22,29) e2e=9.121s  cpu=9.110s, copy=0.000s, mid=0.008s, fin=0.003s
-2025-05-15 00:16:16,068 INFO Measuring split (22,30)
-(22,30) e2e=9.121s  cpu=9.110s, copy=0.000s, mid=0.009s, fin=0.002s
-2025-05-15 00:16:16,080 INFO Measuring split (22,31)
-(22,31) e2e=9.121s  cpu=9.110s, copy=0.000s, mid=0.010s, fin=0.001s
-2025-05-15 00:16:16,092 INFO Measuring split (22,32)
-(22,32) e2e=9.121s  cpu=9.110s, copy=0.000s, mid=0.011s, fin=0.000s
-2025-05-15 00:16:16,104 INFO Measuring split (23,24)
-(23,24) e2e=9.120s  cpu=9.110s, copy=0.000s, mid=0.001s, fin=0.009s
-2025-05-15 00:16:16,114 INFO Measuring split (23,25)
-(23,25) e2e=9.120s  cpu=9.110s, copy=0.000s, mid=0.002s, fin=0.008s
-2025-05-15 00:16:16,125 INFO Measuring split (23,26)
-(23,26) e2e=9.120s  cpu=9.110s, copy=0.000s, mid=0.003s, fin=0.007s
-2025-05-15 00:16:16,136 INFO Measuring split (23,27)
-(23,27) e2e=9.120s  cpu=9.110s, copy=0.000s, mid=0.005s, fin=0.006s
-2025-05-15 00:16:16,146 INFO Measuring split (23,28)
-(23,28) e2e=9.120s  cpu=9.110s, copy=0.000s, mid=0.006s, fin=0.004s
-2025-05-15 00:16:16,157 INFO Measuring split (23,29)
-(23,29) e2e=9.120s  cpu=9.110s, copy=0.000s, mid=0.007s, fin=0.003s
-2025-05-15 00:16:16,168 INFO Measuring split (23,30)
-(23,30) e2e=9.120s  cpu=9.110s, copy=0.000s, mid=0.008s, fin=0.002s
-2025-05-15 00:16:16,178 INFO Measuring split (23,31)
-(23,31) e2e=9.120s  cpu=9.110s, copy=0.000s, mid=0.009s, fin=0.001s
-2025-05-15 00:16:16,189 INFO Measuring split (23,32)
-(23,32) e2e=9.120s  cpu=9.110s, copy=0.000s, mid=0.010s, fin=0.000s
-2025-05-15 00:16:16,199 INFO Measuring split (24,25)
-(24,25) e2e=9.119s  cpu=9.110s, copy=0.000s, mid=0.001s, fin=0.008s
-2025-05-15 00:16:16,209 INFO Measuring split (24,26)
-(24,26) e2e=9.119s  cpu=9.110s, copy=0.000s, mid=0.002s, fin=0.007s
-2025-05-15 00:16:16,218 INFO Measuring split (24,27)
-(24,27) e2e=9.119s  cpu=9.110s, copy=0.000s, mid=0.003s, fin=0.006s
-2025-05-15 00:16:16,228 INFO Measuring split (24,28)
-(24,28) e2e=9.119s  cpu=9.110s, copy=0.000s, mid=0.005s, fin=0.004s
-2025-05-15 00:16:16,237 INFO Measuring split (24,29)
-(24,29) e2e=9.119s  cpu=9.110s, copy=0.000s, mid=0.006s, fin=0.003s
-2025-05-15 00:16:16,247 INFO Measuring split (24,30)
-(24,30) e2e=9.119s  cpu=9.110s, copy=0.000s, mid=0.007s, fin=0.002s
-2025-05-15 00:16:16,256 INFO Measuring split (24,31)
-(24,31) e2e=9.119s  cpu=9.110s, copy=0.000s, mid=0.008s, fin=0.001s
-2025-05-15 00:16:16,266 INFO Measuring split (24,32)
-(24,32) e2e=9.119s  cpu=9.110s, copy=0.000s, mid=0.009s, fin=0.000s
-2025-05-15 00:16:16,275 INFO Measuring split (25,26)
-(25,26) e2e=9.118s  cpu=9.110s, copy=0.000s, mid=0.001s, fin=0.007s
-2025-05-15 00:16:16,284 INFO Measuring split (25,27)
-(25,27) e2e=9.118s  cpu=9.110s, copy=0.000s, mid=0.002s, fin=0.006s
-2025-05-15 00:16:16,292 INFO Measuring split (25,28)
-(25,28) e2e=9.118s  cpu=9.110s, copy=0.000s, mid=0.004s, fin=0.004s
-2025-05-15 00:16:16,300 INFO Measuring split (25,29)
-(25,29) e2e=9.118s  cpu=9.110s, copy=0.000s, mid=0.005s, fin=0.003s
-2025-05-15 00:16:16,309 INFO Measuring split (25,30)
-(25,30) e2e=9.118s  cpu=9.110s, copy=0.000s, mid=0.006s, fin=0.002s
-2025-05-15 00:16:16,317 INFO Measuring split (25,31)
-(25,31) e2e=9.118s  cpu=9.110s, copy=0.000s, mid=0.007s, fin=0.001s
-2025-05-15 00:16:16,326 INFO Measuring split (25,32)
-(25,32) e2e=9.118s  cpu=9.110s, copy=0.000s, mid=0.008s, fin=0.000s
-2025-05-15 00:16:16,334 INFO Measuring split (26,27)
-(26,27) e2e=9.117s  cpu=9.110s, copy=0.000s, mid=0.001s, fin=0.006s
-2025-05-15 00:16:16,341 INFO Measuring split (26,28)
-(26,28) e2e=9.117s  cpu=9.110s, copy=0.000s, mid=0.002s, fin=0.004s
-2025-05-15 00:16:16,348 INFO Measuring split (26,29)
-(26,29) e2e=9.117s  cpu=9.110s, copy=0.000s, mid=0.003s, fin=0.003s
-2025-05-15 00:16:16,356 INFO Measuring split (26,30)
-(26,30) e2e=9.117s  cpu=9.110s, copy=0.000s, mid=0.005s, fin=0.002s
-2025-05-15 00:16:16,363 INFO Measuring split (26,31)
-(26,31) e2e=9.117s  cpu=9.110s, copy=0.000s, mid=0.006s, fin=0.001s
-2025-05-15 00:16:16,370 INFO Measuring split (26,32)
-(26,32) e2e=9.117s  cpu=9.110s, copy=0.000s, mid=0.007s, fin=0.000s
-2025-05-15 00:16:16,377 INFO Measuring split (27,28)
-(27,28) e2e=9.116s  cpu=9.110s, copy=0.000s, mid=0.001s, fin=0.004s
-2025-05-15 00:16:16,383 INFO Measuring split (27,29)
-(27,29) e2e=9.116s  cpu=9.110s, copy=0.000s, mid=0.002s, fin=0.003s
-2025-05-15 00:16:16,389 INFO Measuring split (27,30)
-(27,30) e2e=9.116s  cpu=9.110s, copy=0.000s, mid=0.003s, fin=0.002s
-2025-05-15 00:16:16,396 INFO Measuring split (27,31)
-(27,31) e2e=9.116s  cpu=9.110s, copy=0.000s, mid=0.005s, fin=0.001s
-2025-05-15 00:16:16,402 INFO Measuring split (27,32)
-(27,32) e2e=9.116s  cpu=9.110s, copy=0.000s, mid=0.006s, fin=0.000s
-2025-05-15 00:16:16,408 INFO Measuring split (28,29)
-(28,29) e2e=9.115s  cpu=9.110s, copy=0.000s, mid=0.001s, fin=0.003s
-2025-05-15 00:16:16,413 INFO Measuring split (28,30)
-(28,30) e2e=9.115s  cpu=9.110s, copy=0.000s, mid=0.002s, fin=0.002s
-2025-05-15 00:16:16,418 INFO Measuring split (28,31)
-(28,31) e2e=9.115s  cpu=9.110s, copy=0.000s, mid=0.003s, fin=0.001s
-2025-05-15 00:16:16,423 INFO Measuring split (28,32)
-(28,32) e2e=9.114s  cpu=9.110s, copy=0.000s, mid=0.005s, fin=0.000s
-2025-05-15 00:16:16,428 INFO Measuring split (29,30)
-(29,30) e2e=9.113s  cpu=9.110s, copy=0.000s, mid=0.001s, fin=0.002s
-2025-05-15 00:16:16,432 INFO Measuring split (29,31)
-(29,31) e2e=9.113s  cpu=9.110s, copy=0.000s, mid=0.002s, fin=0.001s
-2025-05-15 00:16:16,435 INFO Measuring split (29,32)
-(29,32) e2e=9.113s  cpu=9.110s, copy=0.000s, mid=0.003s, fin=0.000s
-2025-05-15 00:16:16,439 INFO Measuring split (30,31)
-(30,31) e2e=9.112s  cpu=9.110s, copy=0.000s, mid=0.001s, fin=0.001s
-2025-05-15 00:16:16,442 INFO Measuring split (30,32)
-(30,32) e2e=9.112s  cpu=9.110s, copy=0.000s, mid=0.002s, fin=0.000s
-2025-05-15 00:16:16,445 INFO Measuring split (31,32)
-(31,32) e2e=9.111s  cpu=9.110s, copy=0.000s, mid=0.001s, fin=0.000s
+Split (1, 2): cpu=0.295s copy=0.000s mid=0.198s fin=0.038s total=0.532s
+Split (1, 3): cpu=0.293s copy=0.000s mid=0.003s fin=0.030s total=0.327s
+Split (1, 4): cpu=0.289s copy=0.000s mid=0.004s fin=0.030s total=0.323s
+Split (1, 5): cpu=0.277s copy=0.000s mid=0.005s fin=0.028s total=0.310s
+Split (1, 6): cpu=0.281s copy=0.000s mid=0.006s fin=0.027s total=0.315s
+Split (1, 7): cpu=0.283s copy=0.000s mid=0.007s fin=0.026s total=0.316s
+Split (1, 8): cpu=0.285s copy=0.000s mid=0.008s fin=0.025s total=0.318s
+Split (1, 9): cpu=0.285s copy=0.000s mid=0.009s fin=0.024s total=0.318s
+Split (1, 10): cpu=0.283s copy=0.000s mid=0.010s fin=0.023s total=0.316s
+Split (1, 11): cpu=0.281s copy=0.000s mid=0.011s fin=0.022s total=0.314s
+Split (1, 12): cpu=0.277s copy=0.000s mid=0.012s fin=0.021s total=0.310s
+Split (1, 13): cpu=0.281s copy=0.000s mid=0.013s fin=0.020s total=0.314s
+Split (1, 14): cpu=0.286s copy=0.000s mid=0.014s fin=0.019s total=0.319s
+Split (1, 15): cpu=0.275s copy=0.000s mid=0.015s fin=0.018s total=0.308s
+Split (1, 16): cpu=0.287s copy=0.000s mid=0.016s fin=0.017s total=0.320s
+Split (1, 17): cpu=0.285s copy=0.000s mid=0.017s fin=0.016s total=0.318s
+Split (1, 18): cpu=0.285s copy=0.000s mid=0.018s fin=0.015s total=0.318s
+Split (1, 19): cpu=0.279s copy=0.000s mid=0.019s fin=0.014s total=0.312s
+Split (1, 20): cpu=0.283s copy=0.000s mid=0.020s fin=0.013s total=0.317s
+Split (1, 21): cpu=0.275s copy=0.000s mid=0.021s fin=0.011s total=0.307s
+Split (1, 22): cpu=0.284s copy=0.000s mid=0.022s fin=0.011s total=0.317s
+Split (1, 23): cpu=0.289s copy=0.000s mid=0.023s fin=0.010s total=0.322s
+Split (1, 24): cpu=0.282s copy=0.000s mid=0.024s fin=0.008s total=0.315s
+Split (1, 25): cpu=0.275s copy=0.000s mid=0.025s fin=0.008s total=0.308s
+Split (1, 26): cpu=0.279s copy=0.000s mid=0.026s fin=0.006s total=0.312s
+Split (1, 27): cpu=0.286s copy=0.000s mid=0.027s fin=0.006s total=0.319s
+Split (1, 28): cpu=0.283s copy=0.000s mid=0.029s fin=0.004s total=0.316s
+Split (1, 29): cpu=0.285s copy=0.000s mid=0.030s fin=0.003s total=0.318s
+Split (1, 30): cpu=0.283s copy=0.000s mid=0.031s fin=0.002s total=0.316s
+Split (1, 31): cpu=0.273s copy=0.000s mid=0.032s fin=0.001s total=0.306s
+Split (2, 3): cpu=0.567s copy=0.000s mid=0.002s fin=0.030s total=0.599s
+Split (2, 4): cpu=0.558s copy=0.000s mid=0.003s fin=0.029s total=0.590s
+Split (2, 5): cpu=0.558s copy=0.000s mid=0.004s fin=0.028s total=0.590s
+Split (2, 6): cpu=0.560s copy=0.000s mid=0.005s fin=0.027s total=0.592s
+Split (2, 7): cpu=0.549s copy=0.000s mid=0.006s fin=0.026s total=0.581s
+Split (2, 8): cpu=0.563s copy=0.000s mid=0.007s fin=0.025s total=0.595s
+Split (2, 9): cpu=0.549s copy=0.000s mid=0.008s fin=0.024s total=0.581s
+Split (2, 10): cpu=0.560s copy=0.000s mid=0.009s fin=0.023s total=0.592s
+Split (2, 11): cpu=0.556s copy=0.000s mid=0.010s fin=0.022s total=0.588s
+Split (2, 12): cpu=0.552s copy=0.000s mid=0.011s fin=0.021s total=0.584s
+Split (2, 13): cpu=0.545s copy=0.000s mid=0.012s fin=0.020s total=0.577s
+Split (2, 14): cpu=0.537s copy=0.000s mid=0.013s fin=0.019s total=0.569s
+Split (2, 15): cpu=0.553s copy=0.000s mid=0.014s fin=0.018s total=0.585s
+Split (2, 16): cpu=0.562s copy=0.000s mid=0.015s fin=0.017s total=0.594s
+Split (2, 17): cpu=0.568s copy=0.000s mid=0.016s fin=0.016s total=0.600s
+Split (2, 18): cpu=0.558s copy=0.000s mid=0.017s fin=0.015s total=0.590s
+Split (2, 19): cpu=0.568s copy=0.000s mid=0.018s fin=0.014s total=0.600s
+Split (2, 20): cpu=0.563s copy=0.000s mid=0.019s fin=0.013s total=0.595s
+Split (2, 21): cpu=0.573s copy=0.000s mid=0.020s fin=0.012s total=0.605s
+Split (2, 22): cpu=0.567s copy=0.000s mid=0.021s fin=0.011s total=0.600s
+Split (2, 23): cpu=0.563s copy=0.000s mid=0.023s fin=0.010s total=0.596s
+Split (2, 24): cpu=0.563s copy=0.000s mid=0.023s fin=0.009s total=0.596s
+Split (2, 25): cpu=0.560s copy=0.000s mid=0.025s fin=0.008s total=0.592s
+Split (2, 26): cpu=0.548s copy=0.000s mid=0.026s fin=0.007s total=0.580s
+Split (2, 27): cpu=0.560s copy=0.000s mid=0.027s fin=0.006s total=0.592s
+Split (2, 28): cpu=0.555s copy=0.000s mid=0.028s fin=0.004s total=0.587s
+Split (2, 29): cpu=0.562s copy=0.000s mid=0.029s fin=0.003s total=0.595s
+Split (2, 30): cpu=0.555s copy=0.000s mid=0.030s fin=0.002s total=0.587s
+Split (2, 31): cpu=0.557s copy=0.000s mid=0.031s fin=0.001s total=0.590s
+Split (3, 4): cpu=0.823s copy=0.000s mid=0.002s fin=0.029s total=0.854s
+Split (3, 5): cpu=0.831s copy=0.000s mid=0.003s fin=0.028s total=0.862s
+Split (3, 6): cpu=0.837s copy=0.000s mid=0.004s fin=0.027s total=0.868s
+Split (3, 7): cpu=0.859s copy=0.000s mid=0.005s fin=0.026s total=0.890s
+Split (3, 8): cpu=0.853s copy=0.000s mid=0.006s fin=0.025s total=0.884s
+Split (3, 9): cpu=0.868s copy=0.000s mid=0.007s fin=0.024s total=0.899s
+Split (3, 10): cpu=0.890s copy=0.000s mid=0.008s fin=0.023s total=0.921s
+Split (3, 11): cpu=0.908s copy=0.000s mid=0.010s fin=0.022s total=0.940s
+Split (3, 12): cpu=0.851s copy=0.000s mid=0.010s fin=0.021s total=0.882s
+Split (3, 13): cpu=0.844s copy=0.000s mid=0.011s fin=0.020s total=0.875s
+Split (3, 14): cpu=0.842s copy=0.000s mid=0.012s fin=0.019s total=0.873s
+Split (3, 15): cpu=0.844s copy=0.000s mid=0.013s fin=0.018s total=0.875s
+Split (3, 16): cpu=0.863s copy=0.000s mid=0.014s fin=0.017s total=0.894s
+Split (3, 17): cpu=0.839s copy=0.000s mid=0.015s fin=0.016s total=0.870s
+Split (3, 18): cpu=0.852s copy=0.000s mid=0.016s fin=0.015s total=0.883s
+Split (3, 19): cpu=0.836s copy=0.000s mid=0.017s fin=0.014s total=0.867s
+Split (3, 20): cpu=0.847s copy=0.000s mid=0.018s fin=0.013s total=0.878s
+Split (3, 21): cpu=0.838s copy=0.000s mid=0.019s fin=0.012s total=0.869s
+Split (3, 22): cpu=0.839s copy=0.000s mid=0.020s fin=0.011s total=0.870s
+Split (3, 23): cpu=0.847s copy=0.000s mid=0.021s fin=0.010s total=0.878s
+Split (3, 24): cpu=0.844s copy=0.000s mid=0.022s fin=0.009s total=0.875s
+Split (3, 25): cpu=0.845s copy=0.000s mid=0.023s fin=0.007s total=0.876s
+Split (3, 26): cpu=0.835s copy=0.000s mid=0.024s fin=0.007s total=0.866s
+Split (3, 27): cpu=0.850s copy=0.000s mid=0.026s fin=0.006s total=0.881s
+Split (3, 28): cpu=0.835s copy=0.000s mid=0.027s fin=0.004s total=0.866s
+Split (3, 29): cpu=0.845s copy=0.000s mid=0.028s fin=0.003s total=0.877s
+Split (3, 30): cpu=0.850s copy=0.000s mid=0.029s fin=0.002s total=0.882s
+Split (3, 31): cpu=0.850s copy=0.000s mid=0.030s fin=0.001s total=0.881s
+Split (4, 5): cpu=1.123s copy=0.000s mid=0.002s fin=0.028s total=1.153s
+Split (4, 6): cpu=1.117s copy=0.000s mid=0.003s fin=0.027s total=1.147s
+Split (4, 7): cpu=1.123s copy=0.000s mid=0.004s fin=0.026s total=1.153s
+Split (4, 8): cpu=1.107s copy=0.000s mid=0.005s fin=0.025s total=1.137s
+Split (4, 9): cpu=1.107s copy=0.000s mid=0.006s fin=0.024s total=1.137s
+Split (4, 10): cpu=1.123s copy=0.000s mid=0.007s fin=0.023s total=1.153s
+Split (4, 11): cpu=1.122s copy=0.000s mid=0.008s fin=0.022s total=1.153s
+Split (4, 12): cpu=1.122s copy=0.000s mid=0.009s fin=0.021s total=1.153s
+Split (4, 13): cpu=1.133s copy=0.000s mid=0.010s fin=0.020s total=1.163s
+Split (4, 14): cpu=1.112s copy=0.000s mid=0.011s fin=0.019s total=1.143s
+Split (4, 15): cpu=1.110s copy=0.000s mid=0.012s fin=0.018s total=1.140s
+Split (4, 16): cpu=1.125s copy=0.000s mid=0.013s fin=0.017s total=1.156s
+Split (4, 17): cpu=1.113s copy=0.000s mid=0.014s fin=0.016s total=1.143s
+Split (4, 18): cpu=1.107s copy=0.000s mid=0.016s fin=0.015s total=1.138s
+Split (4, 19): cpu=1.083s copy=0.000s mid=0.016s fin=0.014s total=1.113s
+Split (4, 20): cpu=1.094s copy=0.000s mid=0.017s fin=0.013s total=1.124s
+Split (4, 21): cpu=1.096s copy=0.000s mid=0.018s fin=0.012s total=1.126s
+Split (4, 22): cpu=1.119s copy=0.000s mid=0.019s fin=0.011s total=1.149s
+Split (4, 23): cpu=1.118s copy=0.000s mid=0.020s fin=0.010s total=1.149s
+Split (4, 24): cpu=1.112s copy=0.000s mid=0.021s fin=0.009s total=1.142s
+Split (4, 25): cpu=1.109s copy=0.000s mid=0.022s fin=0.007s total=1.139s
+Split (4, 26): cpu=1.129s copy=0.000s mid=0.024s fin=0.006s total=1.159s
+Split (4, 27): cpu=1.120s copy=0.000s mid=0.025s fin=0.005s total=1.151s
+Split (4, 28): cpu=1.124s copy=0.000s mid=0.026s fin=0.004s total=1.155s
+Split (4, 29): cpu=1.123s copy=0.000s mid=0.027s fin=0.003s total=1.153s
+Split (4, 30): cpu=1.134s copy=0.000s mid=0.028s fin=0.002s total=1.165s
+Split (4, 31): cpu=1.119s copy=0.000s mid=0.029s fin=0.001s total=1.149s
+Split (5, 6): cpu=1.410s copy=0.000s mid=0.002s fin=0.027s total=1.439s
+Split (5, 7): cpu=1.393s copy=0.000s mid=0.003s fin=0.026s total=1.422s
+Split (5, 8): cpu=1.385s copy=0.000s mid=0.004s fin=0.025s total=1.414s
+Split (5, 9): cpu=1.400s copy=0.000s mid=0.005s fin=0.024s total=1.429s
+Split (5, 10): cpu=1.395s copy=0.000s mid=0.006s fin=0.023s total=1.424s
+Split (5, 11): cpu=1.390s copy=0.000s mid=0.007s fin=0.022s total=1.419s
+Split (5, 12): cpu=1.380s copy=0.000s mid=0.008s fin=0.021s total=1.409s
+Split (5, 13): cpu=1.393s copy=0.000s mid=0.009s fin=0.020s total=1.422s
+Split (5, 14): cpu=1.403s copy=0.000s mid=0.010s fin=0.019s total=1.433s
+Split (5, 15): cpu=1.405s copy=0.000s mid=0.011s fin=0.018s total=1.435s
+Split (5, 16): cpu=1.501s copy=0.000s mid=0.012s fin=0.017s total=1.530s
+Split (5, 17): cpu=1.559s copy=0.000s mid=0.016s fin=0.016s total=1.592s
+Split (5, 18): cpu=1.416s copy=0.000s mid=0.014s fin=0.015s total=1.446s
+Split (5, 19): cpu=1.407s copy=0.000s mid=0.015s fin=0.014s total=1.437s
+Split (5, 20): cpu=1.407s copy=0.000s mid=0.016s fin=0.013s total=1.436s
+Split (5, 21): cpu=1.430s copy=0.000s mid=0.017s fin=0.012s total=1.460s
+Split (5, 22): cpu=1.394s copy=0.000s mid=0.018s fin=0.011s total=1.424s
+Split (5, 23): cpu=1.408s copy=0.000s mid=0.020s fin=0.010s total=1.438s
+Split (5, 24): cpu=1.400s copy=0.000s mid=0.021s fin=0.009s total=1.430s
+Split (5, 25): cpu=1.395s copy=0.000s mid=0.022s fin=0.008s total=1.425s
+Split (5, 26): cpu=1.401s copy=0.000s mid=0.023s fin=0.007s total=1.430s
+Split (5, 27): cpu=1.403s copy=0.000s mid=0.024s fin=0.006s total=1.432s
+Split (5, 28): cpu=1.616s copy=0.000s mid=0.025s fin=0.004s total=1.645s
+Split (5, 29): cpu=1.379s copy=0.000s mid=0.026s fin=0.003s total=1.408s
+Split (5, 30): cpu=1.416s copy=0.000s mid=0.027s fin=0.002s total=1.445s
+Split (5, 31): cpu=1.434s copy=0.000s mid=0.028s fin=0.001s total=1.463s
+Split (6, 7): cpu=1.771s copy=0.000s mid=0.002s fin=0.026s total=1.800s
+Split (6, 8): cpu=1.749s copy=0.000s mid=0.003s fin=0.025s total=1.777s
+Split (6, 9): cpu=1.724s copy=0.000s mid=0.004s fin=0.024s total=1.753s
+Split (6, 10): cpu=1.708s copy=0.000s mid=0.005s fin=0.023s total=1.736s
+Split (6, 11): cpu=1.671s copy=0.000s mid=0.006s fin=0.022s total=1.700s
+Split (6, 12): cpu=1.672s copy=0.000s mid=0.007s fin=0.021s total=1.701s
+Split (6, 13): cpu=1.674s copy=0.000s mid=0.008s fin=0.020s total=1.702s
+Split (6, 14): cpu=1.856s copy=0.000s mid=0.009s fin=0.019s total=1.884s
+Split (6, 15): cpu=1.780s copy=0.000s mid=0.010s fin=0.018s total=1.808s
+Split (6, 16): cpu=1.893s copy=0.000s mid=0.011s fin=0.017s total=1.922s
+Split (6, 17): cpu=1.669s copy=0.000s mid=0.013s fin=0.016s total=1.698s
+Split (6, 18): cpu=1.674s copy=0.000s mid=0.014s fin=0.015s total=1.703s
+Split (6, 19): cpu=1.671s copy=0.000s mid=0.014s fin=0.014s total=1.700s
+Split (6, 20): cpu=1.646s copy=0.000s mid=0.015s fin=0.013s total=1.674s
+Split (6, 21): cpu=1.681s copy=0.000s mid=0.017s fin=0.012s total=1.710s
+Split (6, 22): cpu=1.665s copy=0.000s mid=0.018s fin=0.011s total=1.694s
+Split (6, 23): cpu=1.693s copy=0.000s mid=0.019s fin=0.010s total=1.722s
+Split (6, 24): cpu=1.695s copy=0.000s mid=0.020s fin=0.009s total=1.723s
+Split (6, 25): cpu=1.665s copy=0.000s mid=0.021s fin=0.008s total=1.694s
+Split (6, 26): cpu=1.665s copy=0.000s mid=0.022s fin=0.007s total=1.694s
+Split (6, 27): cpu=1.470s copy=0.000s mid=0.023s fin=0.006s total=1.498s
+Split (6, 28): cpu=1.669s copy=0.000s mid=0.024s fin=0.005s total=1.697s
+Split (6, 29): cpu=1.679s copy=0.000s mid=0.025s fin=0.003s total=1.708s
+Split (6, 30): cpu=1.659s copy=0.000s mid=0.026s fin=0.002s total=1.687s
+Split (6, 31): cpu=1.675s copy=0.000s mid=0.027s fin=0.001s total=1.703s
+Split (7, 8): cpu=1.952s copy=0.000s mid=0.002s fin=0.025s total=1.980s
+Split (7, 9): cpu=1.960s copy=0.000s mid=0.003s fin=0.024s total=1.987s
+Split (7, 10): cpu=1.975s copy=0.000s mid=0.004s fin=0.024s total=2.002s
+Split (7, 11): cpu=1.979s copy=0.001s mid=0.005s fin=0.022s total=2.006s
+Split (7, 12): cpu=1.952s copy=0.000s mid=0.006s fin=0.021s total=1.980s
+Split (7, 13): cpu=1.951s copy=0.000s mid=0.007s fin=0.020s total=1.979s
+Split (7, 14): cpu=1.943s copy=0.000s mid=0.008s fin=0.019s total=1.971s
+Split (7, 15): cpu=1.934s copy=0.000s mid=0.009s fin=0.018s total=1.961s
+Split (7, 16): cpu=1.906s copy=0.000s mid=0.010s fin=0.017s total=1.933s
+Split (7, 17): cpu=1.938s copy=0.000s mid=0.011s fin=0.016s total=1.965s
+Split (7, 18): cpu=1.944s copy=0.000s mid=0.012s fin=0.015s total=1.971s
+Split (7, 19): cpu=1.959s copy=0.000s mid=0.013s fin=0.014s total=1.987s
+Split (7, 20): cpu=1.942s copy=0.000s mid=0.014s fin=0.013s total=1.970s
+Split (7, 21): cpu=2.176s copy=0.000s mid=0.015s fin=0.012s total=2.204s
+Split (7, 22): cpu=1.924s copy=0.000s mid=0.017s fin=0.011s total=1.952s
+Split (7, 23): cpu=1.930s copy=0.000s mid=0.018s fin=0.010s total=1.957s
+Split (7, 24): cpu=1.951s copy=0.000s mid=0.019s fin=0.009s total=1.978s
+Split (7, 25): cpu=1.961s copy=0.000s mid=0.020s fin=0.008s total=1.988s
+Split (7, 26): cpu=1.936s copy=0.000s mid=0.021s fin=0.007s total=1.963s
+Split (7, 27): cpu=1.987s copy=0.000s mid=0.022s fin=0.005s total=2.014s
+Split (7, 28): cpu=1.989s copy=0.000s mid=0.023s fin=0.004s total=2.016s
+Split (7, 29): cpu=2.076s copy=0.000s mid=0.024s fin=0.003s total=2.103s
+Split (7, 30): cpu=2.062s copy=0.000s mid=0.025s fin=0.002s total=2.089s
+Split (7, 31): cpu=2.042s copy=0.000s mid=0.026s fin=0.001s total=2.070s
+Split (8, 9): cpu=2.275s copy=0.000s mid=0.002s fin=0.025s total=2.301s
+Split (8, 10): cpu=2.241s copy=0.000s mid=0.003s fin=0.023s total=2.267s
+Split (8, 11): cpu=2.165s copy=0.000s mid=0.004s fin=0.023s total=2.192s
+Split (8, 12): cpu=2.228s copy=0.000s mid=0.005s fin=0.021s total=2.254s
+Split (8, 13): cpu=2.259s copy=0.000s mid=0.006s fin=0.020s total=2.285s
+Split (8, 14): cpu=2.250s copy=0.000s mid=0.007s fin=0.019s total=2.276s
+Split (8, 15): cpu=2.285s copy=0.000s mid=0.008s fin=0.018s total=2.311s
+Split (8, 16): cpu=2.553s copy=0.000s mid=0.009s fin=0.017s total=2.579s
+Split (8, 17): cpu=2.365s copy=0.000s mid=0.010s fin=0.016s total=2.391s
+Split (8, 18): cpu=2.288s copy=0.000s mid=0.011s fin=0.015s total=2.314s
+Split (8, 19): cpu=2.255s copy=0.000s mid=0.012s fin=0.014s total=2.281s
+Split (8, 20): cpu=2.209s copy=0.000s mid=0.014s fin=0.013s total=2.236s
+Split (8, 21): cpu=2.206s copy=0.000s mid=0.014s fin=0.012s total=2.232s
+Split (8, 22): cpu=2.201s copy=0.000s mid=0.015s fin=0.011s total=2.228s
+Split (8, 23): cpu=2.207s copy=0.000s mid=0.017s fin=0.010s total=2.234s
+Split (8, 24): cpu=2.181s copy=0.000s mid=0.018s fin=0.009s total=2.207s
+Split (8, 25): cpu=2.225s copy=0.000s mid=0.019s fin=0.008s total=2.252s
+Split (8, 26): cpu=2.191s copy=0.000s mid=0.020s fin=0.007s total=2.218s
+Split (8, 27): cpu=2.203s copy=0.000s mid=0.021s fin=0.006s total=2.230s
+Split (8, 28): cpu=2.215s copy=0.000s mid=0.022s fin=0.004s total=2.242s
+Split (8, 29): cpu=2.238s copy=0.000s mid=0.023s fin=0.003s total=2.265s
+Split (8, 30): cpu=2.208s copy=0.000s mid=0.024s fin=0.002s total=2.235s
+Split (8, 31): cpu=2.191s copy=0.000s mid=0.025s fin=0.001s total=2.218s
+Split (9, 10): cpu=2.471s copy=0.000s mid=0.002s fin=0.024s total=2.497s
+Split (9, 11): cpu=2.479s copy=0.000s mid=0.003s fin=0.023s total=2.504s
+Split (9, 12): cpu=2.557s copy=0.000s mid=0.004s fin=0.021s total=2.583s
+Split (9, 13): cpu=2.657s copy=0.000s mid=0.005s fin=0.020s total=2.682s
+Split (9, 14): cpu=2.484s copy=0.000s mid=0.006s fin=0.019s total=2.510s
+Split (9, 15): cpu=2.713s copy=0.000s mid=0.007s fin=0.018s total=2.739s
+Split (9, 16): cpu=2.497s copy=0.000s mid=0.008s fin=0.017s total=2.522s
+Split (9, 17): cpu=2.670s copy=0.000s mid=0.009s fin=0.016s total=2.695s
+Split (9, 18): cpu=2.512s copy=0.000s mid=0.010s fin=0.015s total=2.537s
+Split (9, 19): cpu=2.496s copy=0.000s mid=0.011s fin=0.014s total=2.522s
+Split (9, 20): cpu=2.491s copy=0.000s mid=0.012s fin=0.013s total=2.517s
+Split (9, 21): cpu=2.480s copy=0.000s mid=0.013s fin=0.012s total=2.505s
+Split (9, 22): cpu=2.505s copy=0.000s mid=0.014s fin=0.011s total=2.531s
+Split (9, 23): cpu=2.732s copy=0.000s mid=0.016s fin=0.010s total=2.757s
+Split (9, 24): cpu=2.506s copy=0.000s mid=0.017s fin=0.009s total=2.531s
+Split (9, 25): cpu=2.744s copy=0.000s mid=0.018s fin=0.008s total=2.769s
+Split (9, 26): cpu=2.493s copy=0.000s mid=0.019s fin=0.007s total=2.518s
+Split (9, 27): cpu=2.721s copy=0.000s mid=0.020s fin=0.005s total=2.746s
+Split (9, 28): cpu=2.485s copy=0.000s mid=0.021s fin=0.004s total=2.510s
+Split (9, 29): cpu=2.514s copy=0.000s mid=0.022s fin=0.003s total=2.539s
+Split (9, 30): cpu=2.491s copy=0.000s mid=0.023s fin=0.002s total=2.516s
+Split (9, 31): cpu=2.484s copy=0.000s mid=0.024s fin=0.001s total=2.510s
+Split (10, 11): cpu=2.774s copy=0.000s mid=0.002s fin=0.022s total=2.798s
+Split (10, 12): cpu=2.782s copy=0.000s mid=0.003s fin=0.021s total=2.806s
+Split (10, 13): cpu=2.760s copy=0.000s mid=0.004s fin=0.020s total=2.785s
+Split (10, 14): cpu=2.773s copy=0.000s mid=0.005s fin=0.019s total=2.797s
+Split (10, 15): cpu=2.756s copy=0.000s mid=0.006s fin=0.018s total=2.780s
+Split (10, 16): cpu=2.775s copy=0.000s mid=0.007s fin=0.017s total=2.800s
+Split (10, 17): cpu=2.769s copy=0.000s mid=0.008s fin=0.016s total=2.794s
+Split (10, 18): cpu=2.752s copy=0.000s mid=0.009s fin=0.015s total=2.776s
+Split (10, 19): cpu=2.784s copy=0.000s mid=0.010s fin=0.014s total=2.808s
+Split (10, 20): cpu=2.794s copy=0.000s mid=0.011s fin=0.013s total=2.818s
+Split (10, 21): cpu=2.777s copy=0.000s mid=0.012s fin=0.012s total=2.801s
+Split (10, 22): cpu=2.776s copy=0.000s mid=0.013s fin=0.011s total=2.800s
+Split (10, 23): cpu=2.778s copy=0.000s mid=0.014s fin=0.010s total=2.802s
+Split (10, 24): cpu=2.745s copy=0.000s mid=0.016s fin=0.009s total=2.770s
+Split (10, 25): cpu=2.799s copy=0.000s mid=0.017s fin=0.008s total=2.823s
+Split (10, 26): cpu=2.846s copy=0.000s mid=0.018s fin=0.007s total=2.870s
+Split (10, 27): cpu=3.018s copy=0.000s mid=0.019s fin=0.005s total=3.042s
+Split (10, 28): cpu=2.764s copy=0.000s mid=0.020s fin=0.004s total=2.788s
+Split (10, 29): cpu=2.779s copy=0.000s mid=0.021s fin=0.003s total=2.803s
+Split (10, 30): cpu=2.779s copy=0.000s mid=0.022s fin=0.002s total=2.803s
+Split (10, 31): cpu=2.742s copy=0.000s mid=0.023s fin=0.001s total=2.767s
+Split (11, 12): cpu=3.043s copy=0.000s mid=0.002s fin=0.024s total=3.069s
+Split (11, 13): cpu=3.036s copy=0.000s mid=0.003s fin=0.020s total=3.060s
+Split (11, 14): cpu=3.027s copy=0.000s mid=0.004s fin=0.019s total=3.050s
+Split (11, 15): cpu=3.034s copy=0.000s mid=0.005s fin=0.018s total=3.058s
+Split (11, 16): cpu=3.055s copy=0.000s mid=0.006s fin=0.017s total=3.079s
+Split (11, 17): cpu=3.046s copy=0.000s mid=0.007s fin=0.016s total=3.070s
+Split (11, 18): cpu=3.037s copy=0.000s mid=0.008s fin=0.015s total=3.060s
+Split (11, 19): cpu=3.040s copy=0.000s mid=0.009s fin=0.014s total=3.064s
+Split (11, 20): cpu=3.029s copy=0.000s mid=0.010s fin=0.013s total=3.052s
+Split (11, 21): cpu=3.067s copy=0.000s mid=0.011s fin=0.012s total=3.091s
+Split (11, 22): cpu=3.274s copy=0.000s mid=0.012s fin=0.011s total=3.297s
+Split (11, 23): cpu=3.058s copy=0.000s mid=0.013s fin=0.010s total=3.081s
+Split (11, 24): cpu=3.045s copy=0.000s mid=0.014s fin=0.009s total=3.069s
+Split (11, 25): cpu=3.033s copy=0.000s mid=0.016s fin=0.008s total=3.056s
+Split (11, 26): cpu=3.038s copy=0.000s mid=0.017s fin=0.007s total=3.062s
+Split (11, 27): cpu=3.046s copy=0.000s mid=0.018s fin=0.006s total=3.069s
+Split (11, 28): cpu=3.044s copy=0.000s mid=0.019s fin=0.004s total=3.068s
+Split (11, 29): cpu=3.231s copy=0.000s mid=0.020s fin=0.003s total=3.254s
+Split (11, 30): cpu=3.074s copy=0.000s mid=0.021s fin=0.002s total=3.097s
+Split (11, 31): cpu=3.274s copy=0.000s mid=0.022s fin=0.001s total=3.297s
+Split (12, 13): cpu=3.290s copy=0.000s mid=0.002s fin=0.021s total=3.312s
+Split (12, 14): cpu=3.324s copy=0.000s mid=0.003s fin=0.020s total=3.347s
+Split (12, 15): cpu=3.288s copy=0.000s mid=0.004s fin=0.018s total=3.310s
+Split (12, 16): cpu=3.306s copy=0.000s mid=0.005s fin=0.017s total=3.328s
+Split (12, 17): cpu=3.332s copy=0.000s mid=0.006s fin=0.016s total=3.354s
+Split (12, 18): cpu=3.300s copy=0.000s mid=0.007s fin=0.015s total=3.322s
+Split (12, 19): cpu=3.299s copy=0.000s mid=0.008s fin=0.014s total=3.321s
+Split (12, 20): cpu=3.338s copy=0.000s mid=0.009s fin=0.013s total=3.360s
+Split (12, 21): cpu=3.327s copy=0.000s mid=0.010s fin=0.012s total=3.349s
+Split (12, 22): cpu=3.338s copy=0.000s mid=0.011s fin=0.011s total=3.360s
+Split (12, 23): cpu=3.321s copy=0.000s mid=0.012s fin=0.010s total=3.343s
+Split (12, 24): cpu=3.305s copy=0.000s mid=0.013s fin=0.009s total=3.327s
+Split (12, 25): cpu=3.316s copy=0.000s mid=0.015s fin=0.008s total=3.338s
+Split (12, 26): cpu=3.496s copy=0.001s mid=0.018s fin=0.007s total=3.522s
+Split (12, 27): cpu=3.552s copy=0.000s mid=0.017s fin=0.006s total=3.575s
+Split (12, 28): cpu=3.319s copy=0.000s mid=0.018s fin=0.004s total=3.341s
+Split (12, 29): cpu=3.303s copy=0.000s mid=0.019s fin=0.003s total=3.326s
+Split (12, 30): cpu=3.340s copy=0.000s mid=0.020s fin=0.002s total=3.362s
+Split (12, 31): cpu=3.331s copy=0.000s mid=0.021s fin=0.001s total=3.353s
+Split (13, 14): cpu=3.604s copy=0.000s mid=0.002s fin=0.019s total=3.626s
+Split (13, 15): cpu=3.595s copy=0.000s mid=0.003s fin=0.018s total=3.617s
+Split (13, 16): cpu=3.589s copy=0.000s mid=0.004s fin=0.017s total=3.611s
+Split (13, 17): cpu=3.617s copy=0.000s mid=0.005s fin=0.016s total=3.639s
+Split (13, 18): cpu=3.644s copy=0.000s mid=0.006s fin=0.015s total=3.665s
+Split (13, 19): cpu=3.698s copy=0.000s mid=0.007s fin=0.014s total=3.719s
+Split (13, 20): cpu=3.680s copy=0.000s mid=0.008s fin=0.013s total=3.701s
+Split (13, 21): cpu=3.667s copy=0.000s mid=0.009s fin=0.012s total=3.688s
+Split (13, 22): cpu=3.637s copy=0.000s mid=0.010s fin=0.011s total=3.659s
+Split (13, 23): cpu=3.866s copy=0.000s mid=0.011s fin=0.010s total=3.887s
+Split (13, 24): cpu=3.850s copy=0.000s mid=0.012s fin=0.009s total=3.871s
+Split (13, 25): cpu=3.597s copy=0.000s mid=0.014s fin=0.008s total=3.619s
+Split (13, 26): cpu=3.602s copy=0.000s mid=0.015s fin=0.007s total=3.624s
+Split (13, 27): cpu=3.609s copy=0.000s mid=0.016s fin=0.006s total=3.631s
+Split (13, 28): cpu=3.602s copy=0.000s mid=0.017s fin=0.004s total=3.624s
+Split (13, 29): cpu=3.598s copy=0.000s mid=0.018s fin=0.003s total=3.619s
+Split (13, 30): cpu=3.617s copy=0.000s mid=0.019s fin=0.002s total=3.638s
+Split (13, 31): cpu=3.615s copy=0.000s mid=0.020s fin=0.001s total=3.636s
+Split (14, 15): cpu=3.866s copy=0.000s mid=0.002s fin=0.018s total=3.886s
+Split (14, 16): cpu=3.860s copy=0.000s mid=0.003s fin=0.017s total=3.881s
+Split (14, 17): cpu=3.840s copy=0.000s mid=0.004s fin=0.016s total=3.861s
+Split (14, 18): cpu=4.035s copy=0.000s mid=0.005s fin=0.015s total=4.056s
+Split (14, 19): cpu=4.046s copy=0.000s mid=0.006s fin=0.014s total=4.067s
+Split (14, 20): cpu=3.913s copy=0.000s mid=0.007s fin=0.013s total=3.933s
+Split (14, 21): cpu=3.911s copy=0.000s mid=0.008s fin=0.012s total=3.931s
+Split (14, 22): cpu=3.864s copy=0.000s mid=0.009s fin=0.011s total=3.884s
+Split (14, 23): cpu=3.857s copy=0.000s mid=0.010s fin=0.010s total=3.877s
+Split (14, 24): cpu=3.862s copy=0.000s mid=0.011s fin=0.009s total=3.883s
+Split (14, 25): cpu=3.875s copy=0.000s mid=0.012s fin=0.008s total=3.895s
+Split (14, 26): cpu=3.887s copy=0.000s mid=0.014s fin=0.007s total=3.907s
+Split (14, 27): cpu=3.852s copy=0.000s mid=0.015s fin=0.006s total=3.873s
+Split (14, 28): cpu=3.870s copy=0.000s mid=0.016s fin=0.004s total=3.891s
+Split (14, 29): cpu=3.899s copy=0.000s mid=0.017s fin=0.003s total=3.920s
+Split (14, 30): cpu=3.886s copy=0.000s mid=0.018s fin=0.002s total=3.906s
+Split (14, 31): cpu=3.856s copy=0.000s mid=0.019s fin=0.001s total=3.876s
+Split (15, 16): cpu=4.146s copy=0.000s mid=0.002s fin=0.017s total=4.165s
+Split (15, 17): cpu=4.366s copy=0.000s mid=0.003s fin=0.016s total=4.386s
+Split (15, 18): cpu=4.280s copy=0.000s mid=0.004s fin=0.016s total=4.300s
+Split (15, 19): cpu=4.268s copy=0.000s mid=0.005s fin=0.014s total=4.287s
+Split (15, 20): cpu=4.173s copy=0.000s mid=0.006s fin=0.013s total=4.192s
+Split (15, 21): cpu=4.143s copy=0.000s mid=0.007s fin=0.012s total=4.162s
+Split (15, 22): cpu=4.416s copy=0.000s mid=0.008s fin=0.011s total=4.436s
+Split (15, 23): cpu=4.413s copy=0.000s mid=0.009s fin=0.010s total=4.433s
+Split (15, 24): cpu=4.160s copy=0.000s mid=0.010s fin=0.009s total=4.180s
+Split (15, 25): cpu=4.161s copy=0.000s mid=0.011s fin=0.008s total=4.180s
+Split (15, 26): cpu=4.180s copy=0.000s mid=0.013s fin=0.007s total=4.199s
+Split (15, 27): cpu=4.151s copy=0.000s mid=0.014s fin=0.006s total=4.170s
+Split (15, 28): cpu=4.140s copy=0.000s mid=0.015s fin=0.005s total=4.160s
+Split (15, 29): cpu=4.111s copy=0.000s mid=0.016s fin=0.003s total=4.130s
+Split (15, 30): cpu=4.145s copy=0.000s mid=0.017s fin=0.002s total=4.164s
+Split (15, 31): cpu=4.160s copy=0.000s mid=0.018s fin=0.001s total=4.180s
+Split (16, 17): cpu=4.463s copy=0.000s mid=0.002s fin=0.016s total=4.481s
+Split (16, 18): cpu=4.521s copy=0.000s mid=0.003s fin=0.015s total=4.540s
+Split (16, 19): cpu=4.472s copy=0.000s mid=0.004s fin=0.014s total=4.491s
+Split (16, 20): cpu=4.473s copy=0.000s mid=0.005s fin=0.013s total=4.491s
+Split (16, 21): cpu=4.609s copy=0.000s mid=0.006s fin=0.012s total=4.627s
+Split (16, 22): cpu=4.482s copy=0.000s mid=0.007s fin=0.011s total=4.500s
+Split (16, 23): cpu=4.479s copy=0.000s mid=0.008s fin=0.010s total=4.497s
+Split (16, 24): cpu=4.431s copy=0.000s mid=0.009s fin=0.009s total=4.450s
+Split (16, 25): cpu=4.420s copy=0.000s mid=0.010s fin=0.008s total=4.438s
+Split (16, 26): cpu=4.405s copy=0.000s mid=0.011s fin=0.007s total=4.423s
+Split (16, 27): cpu=4.397s copy=0.000s mid=0.013s fin=0.006s total=4.416s
+Split (16, 28): cpu=4.423s copy=0.000s mid=0.014s fin=0.004s total=4.441s
+Split (16, 29): cpu=4.423s copy=0.000s mid=0.015s fin=0.003s total=4.442s
+Split (16, 30): cpu=4.397s copy=0.000s mid=0.016s fin=0.002s total=4.416s
+Split (16, 31): cpu=4.452s copy=0.000s mid=0.017s fin=0.001s total=4.470s
+Split (17, 18): cpu=4.712s copy=0.000s mid=0.002s fin=0.016s total=4.730s
+Split (17, 19): cpu=5.054s copy=0.000s mid=0.003s fin=0.014s total=5.072s
+Split (17, 20): cpu=4.707s copy=0.000s mid=0.004s fin=0.013s total=4.724s
+Split (17, 21): cpu=4.689s copy=0.000s mid=0.005s fin=0.012s total=4.707s
+Split (17, 22): cpu=4.715s copy=0.000s mid=0.006s fin=0.011s total=4.732s
+Split (17, 23): cpu=4.676s copy=0.000s mid=0.007s fin=0.010s total=4.694s
+Split (17, 24): cpu=4.704s copy=0.000s mid=0.008s fin=0.009s total=4.721s
+Split (17, 25): cpu=4.723s copy=0.000s mid=0.009s fin=0.008s total=4.741s
+Split (17, 26): cpu=4.686s copy=0.000s mid=0.010s fin=0.007s total=4.703s
+Split (17, 27): cpu=4.719s copy=0.000s mid=0.012s fin=0.006s total=4.737s
+Split (17, 28): cpu=4.678s copy=0.000s mid=0.012s fin=0.004s total=4.695s
+Split (17, 29): cpu=4.946s copy=0.000s mid=0.014s fin=0.003s total=4.963s
+Split (17, 30): cpu=4.714s copy=0.000s mid=0.015s fin=0.002s total=4.731s
+Split (17, 31): cpu=4.696s copy=0.000s mid=0.016s fin=0.001s total=4.713s
+Split (18, 19): cpu=4.989s copy=0.000s mid=0.002s fin=0.014s total=5.005s
+Split (18, 20): cpu=4.975s copy=0.000s mid=0.003s fin=0.013s total=4.991s
+Split (18, 21): cpu=4.950s copy=0.000s mid=0.004s fin=0.012s total=4.967s
+Split (18, 22): cpu=4.983s copy=0.000s mid=0.005s fin=0.011s total=4.999s
+Split (18, 23): cpu=4.961s copy=0.000s mid=0.006s fin=0.010s total=4.977s
+Split (18, 24): cpu=4.960s copy=0.000s mid=0.007s fin=0.009s total=4.976s
+Split (18, 25): cpu=5.173s copy=0.000s mid=0.008s fin=0.008s total=5.189s
+Split (18, 26): cpu=4.961s copy=0.000s mid=0.009s fin=0.007s total=4.977s
+Split (18, 27): cpu=4.996s copy=0.000s mid=0.010s fin=0.006s total=5.012s
+Split (18, 28): cpu=4.988s copy=0.000s mid=0.011s fin=0.004s total=5.004s
+Split (18, 29): cpu=4.974s copy=0.000s mid=0.013s fin=0.003s total=4.990s
+Split (18, 30): cpu=4.959s copy=0.000s mid=0.014s fin=0.002s total=4.975s
+Split (18, 31): cpu=4.972s copy=0.000s mid=0.015s fin=0.001s total=4.988s
+Split (19, 20): cpu=5.248s copy=0.000s mid=0.002s fin=0.013s total=5.263s
+Split (19, 21): cpu=5.280s copy=0.000s mid=0.005s fin=0.012s total=5.297s
+Split (19, 22): cpu=5.514s copy=0.000s mid=0.004s fin=0.011s total=5.529s
+Split (19, 23): cpu=5.640s copy=0.000s mid=0.005s fin=0.010s total=5.655s
+Split (19, 24): cpu=5.262s copy=0.000s mid=0.006s fin=0.009s total=5.277s
+Split (19, 25): cpu=5.245s copy=0.000s mid=0.007s fin=0.008s total=5.260s
+Split (19, 26): cpu=5.258s copy=0.000s mid=0.008s fin=0.007s total=5.274s
+Split (19, 27): cpu=5.244s copy=0.000s mid=0.009s fin=0.006s total=5.260s
+Split (19, 28): cpu=5.267s copy=0.000s mid=0.010s fin=0.004s total=5.282s
+Split (19, 29): cpu=5.236s copy=0.000s mid=0.011s fin=0.003s total=5.251s
+Split (19, 30): cpu=5.261s copy=0.000s mid=0.012s fin=0.002s total=5.276s
+Split (19, 31): cpu=5.257s copy=0.000s mid=0.014s fin=0.001s total=5.272s
+Split (20, 21): cpu=5.496s copy=0.000s mid=0.002s fin=0.012s total=5.510s
+Split (20, 22): cpu=5.779s copy=0.000s mid=0.003s fin=0.011s total=5.793s
+Split (20, 23): cpu=5.772s copy=0.000s mid=0.004s fin=0.010s total=5.786s
+Split (20, 24): cpu=5.523s copy=0.000s mid=0.005s fin=0.009s total=5.537s
+Split (20, 25): cpu=5.483s copy=0.000s mid=0.006s fin=0.008s total=5.497s
+Split (20, 26): cpu=5.519s copy=0.000s mid=0.007s fin=0.007s total=5.533s
+Split (20, 27): cpu=5.475s copy=0.000s mid=0.008s fin=0.006s total=5.489s
+Split (20, 28): cpu=5.535s copy=0.000s mid=0.009s fin=0.004s total=5.549s
+Split (20, 29): cpu=5.572s copy=0.000s mid=0.010s fin=0.003s total=5.586s
+Split (20, 30): cpu=5.549s copy=0.000s mid=0.011s fin=0.002s total=5.562s
+Split (20, 31): cpu=5.542s copy=0.000s mid=0.013s fin=0.001s total=5.556s
+Split (21, 22): cpu=5.805s copy=0.000s mid=0.002s fin=0.011s total=5.818s
+Split (21, 23): cpu=5.938s copy=0.000s mid=0.003s fin=0.010s total=5.951s
+Split (21, 24): cpu=5.847s copy=0.000s mid=0.004s fin=0.009s total=5.860s
+Split (21, 25): cpu=5.812s copy=0.000s mid=0.005s fin=0.008s total=5.825s
+Split (21, 26): cpu=5.818s copy=0.000s mid=0.006s fin=0.007s total=5.830s
+Split (21, 27): cpu=5.817s copy=0.000s mid=0.007s fin=0.006s total=5.830s
+Split (21, 28): cpu=5.790s copy=0.000s mid=0.008s fin=0.004s total=5.803s
+Split (21, 29): cpu=5.818s copy=0.000s mid=0.009s fin=0.003s total=5.830s
+Split (21, 30): cpu=5.851s copy=0.000s mid=0.010s fin=0.002s total=5.863s
+Split (21, 31): cpu=5.788s copy=0.000s mid=0.011s fin=0.001s total=5.801s
+Split (22, 23): cpu=6.057s copy=0.000s mid=0.002s fin=0.010s total=6.068s
+Split (22, 24): cpu=6.077s copy=0.000s mid=0.003s fin=0.009s total=6.089s
+Split (22, 25): cpu=6.282s copy=0.000s mid=0.004s fin=0.008s total=6.294s
+Split (22, 26): cpu=6.327s copy=0.000s mid=0.005s fin=0.007s total=6.339s
+Split (22, 27): cpu=6.283s copy=0.000s mid=0.006s fin=0.006s total=6.295s
+Split (22, 28): cpu=6.056s copy=0.000s mid=0.007s fin=0.004s total=6.068s
+Split (22, 29): cpu=6.074s copy=0.000s mid=0.008s fin=0.003s total=6.086s
+Split (22, 30): cpu=6.045s copy=0.000s mid=0.009s fin=0.002s total=6.057s
+Split (22, 31): cpu=6.089s copy=0.000s mid=0.010s fin=0.001s total=6.101s
+Split (23, 24): cpu=6.426s copy=0.000s mid=0.002s fin=0.009s total=6.437s
+Split (23, 25): cpu=6.282s copy=0.000s mid=0.003s fin=0.008s total=6.292s
+Split (23, 26): cpu=6.305s copy=0.000s mid=0.004s fin=0.007s total=6.315s
+Split (23, 27): cpu=6.314s copy=0.000s mid=0.005s fin=0.006s total=6.325s
+Split (23, 28): cpu=6.327s copy=0.000s mid=0.006s fin=0.004s total=6.338s
+Split (23, 29): cpu=6.702s copy=0.000s mid=0.007s fin=0.003s total=6.713s
+Split (23, 30): cpu=6.504s copy=0.000s mid=0.009s fin=0.002s total=6.516s
+Split (23, 31): cpu=6.458s copy=0.000s mid=0.009s fin=0.001s total=6.468s
+Split (24, 25): cpu=6.614s copy=0.000s mid=0.002s fin=0.008s total=6.624s
+Split (24, 26): cpu=6.619s copy=0.000s mid=0.003s fin=0.007s total=6.629s
+Split (24, 27): cpu=6.629s copy=0.000s mid=0.004s fin=0.006s total=6.638s
+Split (24, 28): cpu=6.656s copy=0.000s mid=0.005s fin=0.004s total=6.666s
+Split (24, 29): cpu=6.693s copy=0.000s mid=0.006s fin=0.003s total=6.703s
+Split (24, 30): cpu=6.644s copy=0.000s mid=0.007s fin=0.002s total=6.653s
+Split (24, 31): cpu=6.986s copy=0.000s mid=0.008s fin=0.001s total=6.996s
+Split (25, 26): cpu=7.006s copy=0.000s mid=0.002s fin=0.007s total=7.014s
+Split (25, 27): cpu=6.935s copy=0.000s mid=0.003s fin=0.006s total=6.944s
+Split (25, 28): cpu=6.867s copy=0.000s mid=0.004s fin=0.004s total=6.875s
+Split (25, 29): cpu=6.925s copy=0.000s mid=0.005s fin=0.003s total=6.933s
+Split (25, 30): cpu=7.045s copy=0.000s mid=0.006s fin=0.002s total=7.054s
+Split (25, 31): cpu=7.210s copy=0.000s mid=0.007s fin=0.001s total=7.218s
+Split (26, 27): cpu=7.306s copy=0.000s mid=0.002s fin=0.007s total=7.315s
+Split (26, 28): cpu=7.501s copy=0.000s mid=0.003s fin=0.004s total=7.508s
+Split (26, 29): cpu=7.353s copy=0.000s mid=0.004s fin=0.003s total=7.360s
+Split (26, 30): cpu=7.223s copy=0.000s mid=0.005s fin=0.002s total=7.230s
+Split (26, 31): cpu=7.198s copy=0.000s mid=0.006s fin=0.001s total=7.206s
+Split (27, 28): cpu=7.489s copy=0.000s mid=0.002s fin=0.005s total=7.496s
+Split (27, 29): cpu=7.468s copy=0.000s mid=0.003s fin=0.003s total=7.474s
+Split (27, 30): cpu=7.443s copy=0.000s mid=0.004s fin=0.002s total=7.449s
+Split (27, 31): cpu=7.667s copy=0.000s mid=0.005s fin=0.001s total=7.673s
+Split (28, 29): cpu=8.165s copy=0.000s mid=0.002s fin=0.003s total=8.170s
+Split (28, 30): cpu=7.947s copy=0.000s mid=0.003s fin=0.002s total=7.952s
+Split (28, 31): cpu=7.723s copy=0.000s mid=0.004s fin=0.001s total=7.728s
+Split (29, 30): cpu=7.953s copy=0.000s mid=0.002s fin=0.002s total=7.958s
+Split (29, 31): cpu=7.961s copy=0.000s mid=0.003s fin=0.002s total=7.967s
+Split (30, 31): cpu=8.232s copy=0.000s mid=0.002s fin=0.001s total=8.236s
+Best split (1, 31) with total=0.306s
 """
-
-# Extract (i,j) -> e2e values
-pattern = re.compile(r'\((\d+),(\d+)\)\s+e2e=([\d.]+)s')
+pattern = re.compile(r'\((\d+),\s*(\d+)\):.*?total=([\d.]+)s')
 entries = pattern.findall(log)
 
 n = 32
@@ -1006,14 +479,18 @@ M = np.full((n, n), np.nan)
 for i, j, val in entries:
     M[int(i)-1, int(j)-1] = float(val)
 
-# Plot heatmap
-plt.figure(figsize=(8, 6))
-plt.imshow(M, aspect='auto')
-plt.colorbar(label='e2e Time (s)')
+# Mask NaNs
+masked_M = np.ma.masked_invalid(M)
+
+# Plot
+plt.figure(figsize=(10, 8))
+hm = plt.imshow(masked_M, aspect='auto', cmap='viridis')
+plt.colorbar(hm, label='e2e Time (s)')
 plt.xlabel('End Layer')
 plt.ylabel('Start Layer')
-plt.title('Heatmap of End-to-End (e2e) Times for Splits')
+plt.title('Heatmap of End-to-End (e2e) Times')
 plt.xticks(range(n), range(1, n+1))
 plt.yticks(range(n), range(1, n+1))
 plt.tight_layout()
-plt.savefig('heatmap.pdf')
+plt.savefig('heatmap1.pdf')
+plt.show()
