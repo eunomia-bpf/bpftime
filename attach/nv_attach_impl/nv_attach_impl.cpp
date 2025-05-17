@@ -14,6 +14,7 @@
 #include <cuda.h>
 #include <cuda_runtime.h>
 #include <dlfcn.h>
+#include <filesystem>
 #include <iterator>
 #include <memory>
 #include <set>
@@ -252,7 +253,7 @@ nv_attach_impl::hack_fatbin(std::vector<uint8_t> &&data_vec)
 			}
 		}
 	}
-	// to_patch_ptx = wrap_ptx_with_trampoline(to_patch_ptx);
+	to_patch_ptx = wrap_ptx_with_trampoline(to_patch_ptx);
 	to_patch_ptx = filter_out_version_headers(to_patch_ptx);
 	{
 		// filter out comment lines
@@ -270,6 +271,10 @@ nv_attach_impl::hack_fatbin(std::vector<uint8_t> &&data_vec)
 	char tmp_dir[] = "/tmp/bpftime-recompile-nvcc";
 	// mkdtemp(tmp_dir);
 	std::filesystem::path work_dir(tmp_dir);
+	if (!std::filesystem::exists(work_dir)) {
+		SPDLOG_INFO("Creating work dir: {}", work_dir.c_str());
+		std::filesystem::create_directories(work_dir);
+	}
 	SPDLOG_INFO("Working directory: {}", work_dir.c_str());
 	std::string command =
 		"nvcc -O2 -G -g --keep-device-functions -arch=sm_60 ";
@@ -348,11 +353,11 @@ int nv_attach_impl::copy_data_to_trampoline_memory()
 		return -1;
 	}
 	// Prefill some data
+	SPDLOG_WARN(
+		"Prefilling key_size & value_size to 4 for all map_basic_info");
 	for (auto &item : *this->map_basic_info) {
 		item.key_size = 4;
 		item.value_size = 4;
-		SPDLOG_WARN(
-			"Prefilling key_size & value_size to 4 for all map_basic_info");
 	}
 	if (auto err = cudaMemcpyToSymbol((const void *)&map_basic_info_mock,
 					  this->map_basic_info->data(),
