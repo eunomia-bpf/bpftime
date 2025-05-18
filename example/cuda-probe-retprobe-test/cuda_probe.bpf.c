@@ -38,9 +38,10 @@ int probe__cuda()
 {
 	u32 pid = bpf_get_current_pid_tgid() >> 32;
 	u64 ts = bpf_get_globaltimer();
-
+	u64 x, y, z;
+	bpf_get_block_idx(&x, &y, &z);
 	// Store entry timestamp
-	bpf_map_update_elem(&start_ts, &pid, &ts, BPF_ANY);
+	bpf_map_update_elem(&start_ts, &x, &ts, BPF_ANY);
 
 	// Increment call count
 	u64 one = 1;
@@ -51,18 +52,19 @@ int probe__cuda()
 	} else {
 		bpf_map_update_elem(&call_count, &pid, &one, BPF_NOEXIST);
 	}
-	u64 x, y, z;
-	bpf_get_block_idx(&x, &y, &z);
-	bpf_printk("Entered _Z9vectorAddPKfS0_Pf x=%lu, y=%lu, z=%lu\n", x, y,
-		   z);
+
+	bpf_printk("Entered _Z9vectorAddPKfS0_Pf x=%lu, ts=%lu\n", x, ts);
+
 	return 0;
 }
 
 SEC("kretprobe/_Z9vectorAddPKfS0_Pf")
 int retprobe__cuda()
 {
+	u64 x, y, z;
+	bpf_get_block_idx(&x, &y, &z);
 	u32 pid = bpf_get_current_pid_tgid() >> 32;
-	u64 *tsp = bpf_map_lookup_elem(&start_ts, &pid);
+	u64 *tsp = bpf_map_lookup_elem(&start_ts, &x);
 
 	if (tsp) {
 		u64 delta = bpf_get_globaltimer() - *tsp;
@@ -78,12 +80,14 @@ int retprobe__cuda()
 			bpf_map_update_elem(&total_time_ns, &pid, &delta,
 					    BPF_NOEXIST);
 		}
-		bpf_printk("pid=%u duration=%llu ns\n", pid, delta);
+		bpf_printk(
+			"Exited (with tsp) _Z9vectorAddPKfS0_Pf x=%lu duration=%llu tsp=%luns\n",
+			x, delta, *tsp);
+	} else {
+		bpf_printk("Exited (without tsp) _Z9vectorAddPKfS0_Pf x=%lu \n",
+			   x);
 	}
-	u64 x, y, z;
-	bpf_get_block_idx(&x, &y, &z);
-	bpf_printk("Exited _Z9vectorAddPKfS0_Pf x=%lu, y=%lu, z=%lu\n", x, y,
-		   z);
+
 	return 0;
 }
 
