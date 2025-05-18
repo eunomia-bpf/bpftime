@@ -37,6 +37,7 @@ enum class HelperOperation {
 	MAP_DELETE = 3,
 	MAP_GET_NEXT_KEY = 4,
 	TRACE_PRINTK = 6,
+	GET_CURRENT_PID_TGID = 14,
 	PUTS = 501
 };
 
@@ -61,6 +62,8 @@ union HelperCallRequest {
 	struct {
 		char data[10000];
 	} puts;
+	struct {
+	} get_tid_pgid;
 };
 
 union HelperCallResponse {
@@ -70,6 +73,9 @@ union HelperCallResponse {
 	struct {
 		const void *value;
 	} map_lookup;
+	struct {
+		uint64_t result;
+	} get_tid_pgid;
 };
 /**
  * 我们在这块结构体里放两个标志位和一个简单的参数字段
@@ -94,10 +100,6 @@ using cuda_module_type = std::remove_pointer<CUmodule>::type;
 void cuda_context_destroyer(CUcontext ptr);
 void cuda_module_destroyer(CUmodule ptr);
 
-struct CUDAProgramRecord {
-	std::string probe_func;
-	int prog_id;
-};
 struct CUDAContext {
 	// Indicate whether cuda watcher thread should stop
 	std::shared_ptr<std::atomic<bool>> cuda_watcher_should_stop =
@@ -107,27 +109,7 @@ struct CUDAContext {
 	std::unique_ptr<cuda::CommSharedMem> cuda_shared_mem;
 	// Mapped device pointer
 	uintptr_t cuda_shared_mem_device_pointer;
-	// CUDA context
-	// std::unique_ptr<cuda_context_type, decltype(&cuda_context_destroyer)>
-	// 	ctx_container;
-	// // Loaded module
-	// std::optional<std::unique_ptr<cuda_module_type,
-	// 			      decltype(&cuda_module_destroyer)>>
-	// 	probe_module_container;
-	// std::optional<std::unique_ptr<cuda_module_type,
-	// 			      decltype(&cuda_module_destroyer)>>
-	// 	demo_module_container;
 
-	// std::unique_ptr<std::array<std::atomic<uint64_t>, 8>>
-	// operation_time_sum;
-
-	// std::unique_ptr<std::array<int32_t, 10>> demo_prog_array;
-	// std::unique_ptr<int64_t> demo_prog_sum_out;
-
-	// CUDAContext(std::unique_ptr<cuda::CommSharedMem> &&mem,
-	// 	    CUcontext raw_ctx,
-	// 	    std::unique_ptr<std::array<int32_t, 10>> &&demo_prog_array,
-	// 	    std::unique_ptr<int64_t> &&demo_prog_sum_out);
 	CUDAContext(std::unique_ptr<cuda::CommSharedMem> &&mem);
 
 	CUDAContext(CUDAContext &&) = default;
@@ -135,17 +117,7 @@ struct CUDAContext {
 	CUDAContext(const CUDAContext &) = delete;
 	CUDAContext &operator=(const CUDAContext &) = delete;
 
-	std::vector<CUDAProgramRecord> cuda_progs;
-
 	virtual ~CUDAContext();
-	// void set_module(CUmodule raw_ptr)
-	// {
-	// 	probe_module_container.emplace(raw_ptr, cuda_module_destroyer);
-	// }
-	// void set_demo_module(CUmodule raw_ptr)
-	// {
-	// 	demo_module_container.emplace(raw_ptr, cuda_module_destroyer);
-	// }
 };
 
 std::optional<std::unique_ptr<cuda::CUDAContext>> create_cuda_context();
@@ -215,18 +187,17 @@ class bpf_attach_ctx {
 
 	int instantiate_handler_at(const handler_manager *manager, int id,
 				   std::set<int> &stk,
-				   const agent_config &config);
+				   const agent_config &config,
+				   bool handle_nv_attach_impl);
 	int instantiate_prog_handler_at(int id, const bpf_prog_handler &handler,
 					const agent_config &config);
 	int instantiate_bpf_link_handler_at(int id,
-					    const bpf_link_handler &handler);
+					    const bpf_link_handler &handler,
+					    bool handle_nv_attach_impl);
 	int instantiate_perf_event_handler_at(
 		int id, const bpf_perf_event_handler &perf_handler);
 	// Start host thread for handling map requests from CUDA
 	void start_cuda_watcher_thread();
-	std::optional<std::shared_ptr<std::atomic<bool>>>
-	start_cuda_prober(int id);
-	int start_cuda_demo_program();
 	std::unique_ptr<cuda::CUDAContext> cuda_ctx;
 
 	std::vector<attach::MapBasicInfo>

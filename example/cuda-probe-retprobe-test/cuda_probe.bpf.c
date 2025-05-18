@@ -3,78 +3,88 @@
 #include <bpf/bpf_helpers.h>
 #include <bpf/bpf_tracing.h>
 
+// Map to store entry timestamps
 struct {
 	__uint(type, BPF_MAP_TYPE_HASH);
 	__uint(max_entries, 1024);
 	__type(key, u32);
 	__type(value, u64);
-} test_hash_map SEC(".maps");
+} start_ts SEC(".maps");
 
-static int increment_map(void *map, void *key, u64 increment)
+// Map to store total execution time
+struct {
+	__uint(type, BPF_MAP_TYPE_HASH);
+	__uint(max_entries, 1024);
+	__type(key, u32);
+	__type(value, u64);
+} total_time_ns SEC(".maps");
+
+// Map to store call count
+struct {
+	__uint(type, BPF_MAP_TYPE_HASH);
+	__uint(max_entries, 1024);
+	__type(key, u32);
+	__type(value, u64);
+} call_count SEC(".maps");
+
+static const void (*ebpf_puts)(const char *) = (void *)501;
+static const u64 (*bpf_get_globaltimer)(void) = (void *)502;
+static const u64 (*bpf_get_block_idx)(u64 *x, u64 *y, u64 *z) = (void *)503;
+static const u64 (*bpf_get_block_dim)(u64 *x, u64 *y, u64 *z) = (void *)504;
+static const u64 (*bpf_get_thread_idx)(u64 *x, u64 *y, u64 *z) = (void *)505;
+
+SEC("kprobe/_Z9vectorAddPKfS0_Pf")
+int probe__cuda()
 {
-	u64 zero = 0, *count = bpf_map_lookup_elem(map, key);
-	if (!count) {
-		bpf_map_update_elem(map, key, &zero, BPF_NOEXIST);
-		count = bpf_map_lookup_elem(map, key);
-		if (!count) {
-			return 0;
-		}
+	u32 pid = bpf_get_current_pid_tgid() >> 32;
+	u64 ts = bpf_get_globaltimer();
+
+	// Store entry timestamp
+	bpf_map_update_elem(&start_ts, &pid, &ts, BPF_ANY);
+
+	// Increment call count
+	u64 one = 1;
+	u64 *cnt = bpf_map_lookup_elem(&call_count, &pid);
+	if (cnt) {
+		*cnt += 1;
+		bpf_map_update_elem(&call_count, &pid, cnt, BPF_EXIST);
+	} else {
+		bpf_map_update_elem(&call_count, &pid, &one, BPF_NOEXIST);
 	}
-	u64 res = *count + increment;
-	bpf_map_update_elem(map, key, &res, BPF_EXIST);
-
-	return *count;
-}
-
-// SEC("kretprobe/__memcapture")
-// int retprobe__cuda(struct pt_regs *ctx)
-// {
-// 	u64 key = 12345;
-// 	increment_map(&test_hash_map, &key, 1);
-// 		bpf_printk("Message from eBPF: %d, %lx", 10, 20);
-
-// 	return 0;
-// }
-
-static const void (*ebpf_puts)(const char *) = 501;
-
-SEC("kprobe/_Z11matMulTiledPKfS0_Pf")
-int probe__cuda(const char *call_str)
-{
-	bpf_printk("Entered _Z11matMulTiledPKfS0_Pf\n");
-
+	u64 x, y, z;
+	bpf_get_block_idx(&x, &y, &z);
+	bpf_printk("Entered _Z9vectorAddPKfS0_Pf x=%lu, y=%lu, z=%lu\n", x, y,
+		   z);
 	return 0;
 }
 
-
-SEC("kretprobe/_Z11matMulTiledPKfS0_Pf")
-int retprobe__cuda(const char *call_str)
+SEC("kretprobe/_Z9vectorAddPKfS0_Pf")
+int retprobe__cuda()
 {
-	bpf_printk("Exited _Z11matMulTiledPKfS0_Pf\n");
+	u32 pid = bpf_get_current_pid_tgid() >> 32;
+	u64 *tsp = bpf_map_lookup_elem(&start_ts, &pid);
 
+	if (tsp) {
+		u64 delta = bpf_get_globaltimer() - *tsp;
+		bpf_map_delete_elem(&start_ts, &pid);
+
+		// Update total time
+		u64 *total = bpf_map_lookup_elem(&total_time_ns, &pid);
+		if (total) {
+			*total += delta;
+			bpf_map_update_elem(&total_time_ns, &pid, total,
+					    BPF_EXIST);
+		} else {
+			bpf_map_update_elem(&total_time_ns, &pid, &delta,
+					    BPF_NOEXIST);
+		}
+		bpf_printk("pid=%u duration=%llu ns\n", pid, delta);
+	}
+	u64 x, y, z;
+	bpf_get_block_idx(&x, &y, &z);
+	bpf_printk("Exited _Z9vectorAddPKfS0_Pf x=%lu, y=%lu, z=%lu\n", x, y,
+		   z);
 	return 0;
 }
-SEC("kprobe/__memcapture")
-int probemem__cuda(const char *call_str)
-{
-	// u64 key = 12345;
-	// increment_map(&test_hash_map, &key, 1);
-	// bpf_printk("Message from eBPF: %d, %lx\n", 10, 20);
-	// const char text[]="aaaaa";
-	// ebpf_puts(text);
-	ebpf_puts(call_str);
-
-	return 0;
-}
-
-
-// For testing purpose
-// SEC("uprobe/./victim:main")
-// int uretprobe(struct pt_regs *ctx)
-// {
-// 	u64 key = 12345;
-// 	increment_map(&test_hash_map, &key, 1);
-// 	return 0;
-// }
 
 char LICENSE[] SEC("license") = "GPL";

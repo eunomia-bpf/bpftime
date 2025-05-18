@@ -119,7 +119,7 @@ class POSTransport_RDMA : public POSTransport<is_server> {
 
       }
 
-   exit:
+   // exit:
       return retval;
    }
 

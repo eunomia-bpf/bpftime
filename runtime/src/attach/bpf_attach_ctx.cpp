@@ -76,7 +76,7 @@ int bpf_attach_ctx::init_attach_ctx_from_handlers(
 		if (manager->is_allocated(i)) {
 			std::set<int> stk;
 			if (int err = instantiate_handler_at(manager, i, stk,
-							     config);
+							     config, false);
 			    err < 0) {
 				SPDLOG_INFO("Failed to instantiate handler {}",
 					    i);
@@ -87,11 +87,19 @@ int bpf_attach_ctx::init_attach_ctx_from_handlers(
 		}
 	}
 	SPDLOG_INFO(
-		"Main initializing for handlers done, try to initialize cuda programs..");
-	// start_cuda_demo_program();
-	for (const auto &prog : cuda_ctx->cuda_progs) {
-		SPDLOG_INFO("Handling prog {} hooked for {}", prog.prog_id,
-			    prog.probe_func);
+		"Main initializing for handlers done, try to initialize cuda link handles....");
+	/// Initialize nvda links at the last time, because they require
+	/// map_basic_info
+	for (int i = 0; i < (int)manager->size(); i++) {
+		if (manager->is_allocated(i)) {
+			std::set<int> stk;
+			if (int err = instantiate_handler_at(manager, i, stk,
+							     config, true);
+			    err < 0) {
+				SPDLOG_INFO("Failed to instantiate handler {}",
+					    i);
+			}
+		}
 	}
 	return 0;
 }
@@ -113,7 +121,8 @@ bpf_attach_ctx::bpf_attach_ctx() : cuda_ctx(*cuda::create_cuda_context())
 
 int bpf_attach_ctx::instantiate_handler_at(const handler_manager *manager,
 					   int id, std::set<int> &stk,
-					   const agent_config &config)
+					   const agent_config &config,
+					   bool handle_nv_attach_impl)
 {
 	SPDLOG_DEBUG("Instantiating handler at {}", id);
 	if (instantiated_handlers.contains(id)) {
@@ -148,7 +157,8 @@ int bpf_attach_ctx::instantiate_handler_at(const handler_manager *manager,
 	} else if (std::holds_alternative<bpf_link_handler>(handler)) {
 		auto &link_handler = std::get<bpf_link_handler>(handler);
 		if (int err = instantiate_handler_at(
-			    manager, link_handler.prog_id, stk, config);
+			    manager, link_handler.prog_id, stk, config,
+			    handle_nv_attach_impl);
 		    err < 0) {
 			SPDLOG_ERROR(
 				"Unable to instantiate prog handler {} when instantiating link handler {}: {}",
@@ -156,15 +166,16 @@ int bpf_attach_ctx::instantiate_handler_at(const handler_manager *manager,
 			return err;
 		}
 		if (int err = instantiate_handler_at(
-			    manager, link_handler.attach_target_id, stk,
-			    config);
+			    manager, link_handler.attach_target_id, stk, config,
+			    handle_nv_attach_impl);
 		    err < 0) {
 			SPDLOG_ERROR(
 				"Unable to instantiate perf event handler {} when instantiating link handler {}: {}",
 				link_handler.attach_target_id, id, err);
 			return err;
 		}
-		if (int err = instantiate_bpf_link_handler_at(id, link_handler);
+		if (int err = instantiate_bpf_link_handler_at(
+			    id, link_handler, handle_nv_attach_impl);
 		    err < 0) {
 			SPDLOG_DEBUG(
 				"Unable to instantiate bpf link handler {}: {}",
@@ -175,7 +186,7 @@ int bpf_attach_ctx::instantiate_handler_at(const handler_manager *manager,
 		SPDLOG_DEBUG("Instantiating type {}", handler.index());
 	}
 	stk.erase(id);
-	instantiated_handlers.insert(id);
+
 	SPDLOG_DEBUG("Instantiating done: {}", id);
 	return 0;
 }
@@ -224,10 +235,11 @@ int bpf_attach_ctx::instantiate_prog_handler_at(int id,
 	for (const auto &item : helpers) {
 		prog->bpftime_prog_register_raw_helper(item.second);
 	}
+	instantiated_handlers.insert(id);
 	return 0;
 }
 int bpf_attach_ctx::instantiate_bpf_link_handler_at(
-	int id, const bpf_link_handler &handler)
+	int id, const bpf_link_handler &handler, bool handle_nv_attach_impl)
 {
 	SPDLOG_DEBUG(
 		"Instantiating link handler: prog {} -> perf event {}, cookie {}",
@@ -247,26 +259,32 @@ int bpf_attach_ctx::instantiate_bpf_link_handler_at(
 	auto prog = instantiated_progs.at(handler.prog_id).get();
 	int attach_id;
 	if (prog->is_cuda()) {
-		SPDLOG_INFO("Handling link to CUDA program: {}, recording it..",
-			    id);
-		// start_cuda_prober(handler.prog_id);
-		this->cuda_ctx->cuda_progs.push_back(cuda::CUDAProgramRecord{
-			.probe_func = (priv_data)->to_string(),
-			.prog_id = handler.prog_id });
-		auto &nv_attach_private_data =
-			dynamic_cast<attach::nv_attach_private_data &>(
-				*priv_data);
-		// nv_attach_private_data.probe_ptx = prog->get_ptx_code();
-		nv_attach_private_data.comm_shared_mem =
-			(uintptr_t)this->cuda_ctx->cuda_shared_mem.get();
-		nv_attach_private_data.instructions = prog->get_insns();
-		nv_attach_private_data.map_basic_info =
-			this->create_map_basic_info(256);
-		attach_id = attach_impl->create_attach_with_ebpf_callback(
-			[=](void *mem, size_t mem_size, uint64_t *ret) -> int {
-				return 0;
-			},
-			*priv_data, attach_type);
+		if (handle_nv_attach_impl) {
+			SPDLOG_INFO(
+				"Handling link to CUDA program: {}, recording it..",
+				id);
+			auto &nv_attach_private_data =
+				dynamic_cast<attach::nv_attach_private_data &>(
+					*priv_data);
+			nv_attach_private_data.comm_shared_mem =
+				(uintptr_t)this->cuda_ctx->cuda_shared_mem.get();
+			nv_attach_private_data.instructions = prog->get_insns();
+			SPDLOG_INFO(
+				"Loaded {} instructions (original) for cuda ebpf program",
+				prog->get_insns().size());
+			nv_attach_private_data.map_basic_info =
+				this->create_map_basic_info(256);
+			attach_id =
+				attach_impl->create_attach_with_ebpf_callback(
+					[=](void *mem, size_t mem_size,
+					    uint64_t *ret) -> int { return 0; },
+					*priv_data, attach_type);
+		} else {
+			SPDLOG_INFO(
+				"Skipping nv attach handler {} since we are not handling nv handles",
+				id);
+			return 0;
+		}
 	} else {
 		auto cookie = handler.attach_cookie;
 		attach_id = attach_impl->create_attach_with_ebpf_callback(
@@ -286,6 +304,7 @@ int bpf_attach_ctx::instantiate_bpf_link_handler_at(
 		return attach_id;
 	}
 	instantiated_attach_links[id] = std::make_pair(attach_id, attach_impl);
+	instantiated_handlers.insert(id);
 	return 0;
 }
 int bpf_attach_ctx::instantiate_perf_event_handler_at(
@@ -373,6 +392,7 @@ int bpf_attach_ctx::instantiate_perf_event_handler_at(
 		}
 	}
 	SPDLOG_DEBUG("Instantiated perf event handler {}", id);
+	instantiated_handlers.insert(id);
 	instantiated_perf_events[id] =
 		std::make_pair(std::move(priv_data), (int)perf_handler.type);
 

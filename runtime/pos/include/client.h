@@ -542,7 +542,7 @@ class POSClient {
     POSHandleManager<POSHandle>* __get_handle_manager_by_resource_id(pos_resource_typeid_t rid){
         if(unlikely(this->handle_managers.count(rid) == 0)){
             POS_ERROR_C_DETAIL(
-                "no handle manager with specified type registered, this is a bug: type_id(%lu)", rid
+                "no handle manager with specified type registered, this is a bug: type_id(%lu)", (unsigned long)rid
             );
         }
         return this->handle_managers[rid];

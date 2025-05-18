@@ -66,14 +66,17 @@ $(call allow-override,CC,$(CROSS_COMPILE)cc)
 $(call allow-override,LD,$(CROSS_COMPILE)ld)
 
 .PHONY: all
-all: $(APPS) victim 
+all: $(APPS) victim vec_add
 
 victim: victim.cu
 	nvcc -cudart shared victim.cu -o victim -g
+vec_add: vec_add.cu
+	nvcc -cudart shared vec_add.cu -o vec_add -g
+
 .PHONY: clean
 clean:
 	$(call msg,CLEAN)
-	$(Q)rm -rf $(OUTPUT) $(APPS)
+	$(Q)rm -rf $(OUTPUT) $(APPS) vec_add
 
 $(OUTPUT) $(OUTPUT)/libbpf $(BPFTOOL_OUTPUT):
 	$(call msg,MKDIR,$@)

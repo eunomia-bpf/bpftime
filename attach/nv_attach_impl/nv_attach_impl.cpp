@@ -353,11 +353,21 @@ int nv_attach_impl::copy_data_to_trampoline_memory()
 		return -1;
 	}
 	// Prefill some data
-	SPDLOG_WARN(
-		"Prefilling key_size & value_size to 4 for all map_basic_info");
-	for (auto &item : *this->map_basic_info) {
-		item.key_size = 4;
-		item.value_size = 4;
+	// SPDLOG_WARN(
+	// 	"Prefilling key_size & value_size to 4 for all map_basic_info");
+	// for (auto &item : *this->map_basic_info) {
+	// 	item.key_size = 4;
+	// 	item.value_size = 4;
+	// }
+	SPDLOG_INFO("Copying the followed map info:");
+	for (int i = 0; i < this->map_basic_info->size(); i++) {
+		const auto &cur = this->map_basic_info->at(i);
+		if (cur.enabled) {
+			SPDLOG_INFO(
+				"Mapid {}, enabled = {}, key_size = {}, value_size = {}, max_ent={}",
+				i, cur.enabled, cur.key_size, cur.value_size,
+				cur.max_entries);
+		}
 	}
 	if (auto err = cudaMemcpyToSymbol((const void *)&map_basic_info_mock,
 					  this->map_basic_info->data(),

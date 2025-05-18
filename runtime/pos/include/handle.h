@@ -200,19 +200,19 @@ class POSHandle {
      */
     POSHandle(
         void* hm
-    ) : client_addr(nullptr),
-        server_addr(nullptr),
-        size(0),
-        id(0),
+    ) : id(0),
         resource_type_id(kPOS_ResourceTypeId_Unknown),
         status(kPOS_HandleStatus_Create_Pending),
         state_status(kPOS_HandleStatus_StateMiss),
+        client_addr(nullptr),
+        server_addr(nullptr),
+        size(0),
         state_size(0),
         latest_version(0),
         ckpt_bag(nullptr),
-        _hm(hm),
         _persist_thread(nullptr),
-        _persist_promise(nullptr)
+        _persist_promise(nullptr),
+        _hm(hm)
     {
         this->_state_preserve_counter.store(0);
     }
@@ -916,7 +916,7 @@ class POSHandleManager {
             // retval = POS_FAILED_ALREADY_EXIST;
         }
 
-    exit:
+    // exit:
         return retval;
     }
 
@@ -1268,7 +1268,7 @@ pos_retval_t POSHandleManager<T_POSHandle>::__allocate_mocked_resource(
     }
 
     POS_DEBUG_C(
-        "allocate new resource: _base_ptr(%p), size(%lu), POSHandle.resource_type_id(%u)",
+        "allocate new resource: _base_ptr(%lu), size(%lu), POSHandle.resource_type_id(%u)",
         this->_base_ptr, size, (*handle)->resource_type_id
     );
 
@@ -1363,7 +1363,7 @@ pos_retval_t POSHandleManager<T_POSHandle>::__get_handle_by_client_addr(void* cl
         }
     }
 
-not_found:
+// not_found:
     *handle = nullptr;
     ret = POS_FAILED_NOT_EXIST;
 

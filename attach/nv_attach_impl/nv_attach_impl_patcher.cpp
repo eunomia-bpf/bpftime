@@ -2,6 +2,7 @@
 #include "llvm_jit_context.hpp"
 #include "llvmbpf.hpp"
 #include "nv_attach_impl.hpp"
+#include "spdlog/common.h"
 #include "spdlog/spdlog.h"
 #include <cassert>
 #include <cstddef>
@@ -62,13 +63,15 @@ std::string filter_compiled_ptx_for_ebpf_program(std::string input,
 	};
 	static const std::regex FILTERED_OUT_REGEXS[] = {
 		std::regex(
-			R"(\.extern\s+\.func\s+\(\s*\.param\s+\.b64\s+func_retval0\s*\)\s+_bpf_helper_ext_\d{4}\s*\(\s*(?:\.param\s+\.b64\s+_bpf_helper_ext_\d{4}_param_\d+\s*,\s*)*\.param\s+\.b64\s+_bpf_helper_ext_\d{4}_param_\d+\s*\)\s*;)")
+			R"(\.extern\s+\.func\s+\(\s*\.param\s+\.b64\s+func_retval0\s*\)\s+_bpf_helper_ext_\d{4}\s*\(\s*(?:\.param\s+\.b64\s+_bpf_helper_ext_\d{4}_param_\d+\s*,\s*)*\.param\s+\.b64\s+_bpf_helper_ext_\d{4}_param_\d+\s*\)\s*;)"),
+
 	};
 	static const std::string FILTERED_OUT_SECTION[] = {
 		R"(.visible .func bpf_main(
 	.param .b64 bpf_main_param_0,
 	.param .b64 bpf_main_param_1
-))"
+))",
+		R"(.visible .func bpf_main())"
 	};
 	while (std::getline(iss, line)) {
 		// if(line.starts_with)
@@ -91,6 +94,7 @@ std::string filter_compiled_ptx_for_ebpf_program(std::string input,
 	for (const auto &regex : FILTERED_OUT_REGEXS) {
 		result = std::regex_replace(result, regex, "");
 	}
+
 	return ".func " + new_func_name + " " + result;
 }
 } // namespace bpftime::attach
@@ -100,18 +104,36 @@ static void test_func()
 }
 
 static std::string generate_ptx_for_ebpf(const std::vector<ebpf_inst> &inst,
-					 const std::string &func_name)
+					 const std::string &func_name,
+					 bool with_arguments)
 {
 	llvmbpf_vm vm;
 	vm.register_external_function(1, "map_lookup", (void *)test_func);
 	vm.register_external_function(2, "map_update", (void *)test_func);
 	vm.register_external_function(3, "map_delete", (void *)test_func);
 	vm.register_external_function(6, "print", (void *)test_func);
+	vm.register_external_function(14, "get_pid_tgid", (void *)test_func);
+
 	vm.register_external_function(501, "puts", (void *)test_func);
+	vm.register_external_function(502, "get_global_timer",
+				      (void *)test_func);
+	vm.register_external_function(503, "get_block_idx", (void *)test_func);
+	vm.register_external_function(504, "get_block_dim", (void *)test_func);
+	vm.register_external_function(505, "get_thread_idx", (void *)test_func);
+
 	vm.load_code(inst.data(), inst.size() * 8);
 	llvm_bpf_jit_context ctx(vm);
-	auto original_ptx = *ctx.generate_ptx();
+	SPDLOG_INFO(
+		"Compiling eBPF to PTX {}, eBPF instructions count {}, with arguments {}",
+		func_name, inst.size(), with_arguments);
+	auto original_ptx = *ctx.generate_ptx(with_arguments);
+	if (spdlog::get_level() <= SPDLOG_LEVEL_DEBUG) {
+		auto path = "/tmp/dump-ebpf." + func_name + ".ptx";
 
+		std::ofstream ofs(path);
+		ofs << original_ptx << std::endl;
+		SPDLOG_DEBUG("Dumped {}", path);
+	}
 	auto filtered_ptx = add_register_guard_for_ebpf_ptx_func(
 		filter_compiled_ptx_for_ebpf_program(original_ptx, func_name));
 
@@ -223,8 +245,8 @@ nv_attach_impl::patch_with_memcapture(std::string input,
 			}
 
 			auto probe_func_name = memcapture_func_name(count);
-			auto filtered_ptx =
-				generate_ptx_for_ebpf(insts, probe_func_name);
+			auto filtered_ptx = generate_ptx_for_ebpf(
+				insts, probe_func_name, true);
 			function_def << filtered_ptx << std::endl;
 			oss << "call " << probe_func_name << ";" << std::endl;
 		}
@@ -288,17 +310,18 @@ nv_attach_impl::patch_with_probe_and_retprobe(std::string ptx,
 		(probe_detail.is_retprobe ? std::string("__retprobe_func__") :
 					    std::string("__probe_func__")) +
 		probe_detail.func;
-
-	auto compiled_ebpf_ptx =
-		generate_ptx_for_ebpf(entry.instuctions, probe_func_name);
+	auto compiled_ebpf_ptx = generate_ptx_for_ebpf(entry.instuctions,
+						       probe_func_name, false);
 
 	for (const auto &kernel : kernels) {
 		if (kernel.name == probe_detail.func) {
-			SPDLOG_INFO("Patching kernel {} with probe..",
-				    kernel.name);
 			std::string sub_str = ptx.substr(
 				kernel.begin, kernel.end - kernel.begin);
 			if (probe_detail.is_retprobe) {
+				SPDLOG_INFO(
+					"Patching kernel {} with retprobe..",
+					kernel.name);
+
 				static std::regex ret_pattern(R"((\s+)(ret;))");
 				sub_str = std::regex_replace(
 					sub_str, ret_pattern,
@@ -306,6 +329,9 @@ nv_attach_impl::patch_with_probe_and_retprobe(std::string ptx,
 						";\n$1$2");
 
 			} else {
+				SPDLOG_INFO("Patching kernel {} with probe..",
+					    kernel.name);
+
 				static std::regex begin_pattern(
 					R"((\{)(\s*\.reg|\s*\.shared|\s*$))");
 				sub_str = std::regex_replace(
@@ -320,8 +346,6 @@ nv_attach_impl::patch_with_probe_and_retprobe(std::string ptx,
 	}
 	ptx = compiled_ebpf_ptx + "\n" + ptx;
 	ptx = filter_out_version_headers(ptx);
-	// if (should_set_trampoline)
-	// 	ptx = wrap_ptx_with_trampoline(ptx);
 
 	return ptx;
 }

@@ -55,7 +55,7 @@ int main()
     cudaMemcpy(d_B, h_B.data(), bytes, cudaMemcpyHostToDevice);
 
     // Set up execution parameters
-    int threads = 256;
+    int threads = 1;
     int blocks = (h_N + threads - 1) / threads;
 
     // Run the kernel in an infinite loop
@@ -64,7 +64,7 @@ int main()
         cudaMemset(d_C, 0, bytes);
         
         // Launch kernel
-        vectorAdd<<<blocks, 1>>>(d_A, d_B, d_C);
+        vectorAdd<<<10, 1>>>(d_A, d_B, d_C);
         // cudaSyncho
         // Copy result back to host
         cudaMemcpy(h_C.data(), d_C, bytes, cudaMemcpyDeviceToHost);
