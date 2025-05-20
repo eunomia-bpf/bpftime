@@ -13,13 +13,13 @@ std_data = results['standard_deviation']
 
 # Create user-friendly names for the modules
 module_names = {
-    'no_module': 'No Module',
-    'baseline': 'Baseline C Module',
-    'wasm': 'WebAssembly Module',
-    'lua': 'Lua Module',
-    'bpftime': 'BPFtime Module',
-    'rlbox': 'RLBox Module',
-    'erim': 'ERIM Module'
+    'no_module': 'Native',
+    'baseline': 'Baseline C',
+    'wasm': 'WebAssembly',
+    'lua': 'Lua',
+    'bpftime': 'bpftime',
+    'rlbox': 'RLBox',
+    'erim': 'ERIM'
 }
 
 # Special handling: separate "No Module" from other modules
@@ -48,43 +48,35 @@ for module, data in sorted_modules:
     std_values.append(std_data[module]['rps'])
 
 # Create colors similar to the image (mint green, peach, coral)
-colors = ['#a8d5d3', '#f2c091', '#e69a8b', '#a8d5d3', '#f2c091', '#e69a8b', '#a8d5d3']
+colors = [ '#a8d5d3', '#a8d5d3', '#e69a8b', '#f2c091', '#f2c091', '#f2c091', '#f2c091']
 
 # Create the figure and axes
 plt.figure(figsize=(18, 9))
 plt.rcParams.update({'font.size': 20})  # Increase base font size
 
 # Plot horizontal bars with error bars
-# bars = plt.barh(modules, rps_values, xerr=std_values, color=colors, 
-#                 height=0.6, capsize=8, error_kw={'elinewidth': 2})
 bars = plt.barh(modules, rps_values, color=colors, 
                 height=0.6, capsize=8, error_kw={'elinewidth': 2})
 
+# Calculate the maximum x value to ensure proper scaling
+max_value = max(rps_values)
+margin = max_value * 0.1  # Add 10% margin for the labels
+
+# Set x-axis limits with extended right margin to fit labels
+plt.xlim(0, max_value + margin)
+
 # Add value labels to the bars with larger font
 for i, bar in enumerate(bars):
-    # Get the current x axis limits
-    x_min, x_max = plt.xlim()
-    
-    # If the bar is long enough, place the label inside the bar
-    if bar.get_width() > x_max * 0.75:
-        # Place label inside with right alignment and white color for contrast
-        plt.text(bar.get_width() - (x_max * 0.02), bar.get_y() + bar.get_height()/2, 
-                 f'{rps_values[i]:.1f}', va='center', ha='right', 
-                 fontsize=30, fontweight='bold', color='white')
-    else:
-        # Place label after the bar but ensure it doesn't extend beyond the plot
-        label_pos = min(bar.get_width() + (x_max * 0.02), x_max * 0.95)
-        plt.text(label_pos, bar.get_y() + bar.get_height()/2, 
-                 f'{rps_values[i]:.1f}', va='center', 
-                 fontsize=30, fontweight='bold')
+    plt.text(bar.get_width(), bar.get_y() + bar.get_height()/2, 
+             f'{int(rps_values[i])}', va='center', ha='left', 
+             fontsize=35, color='black')
 
 # Set chart labels with larger font
 plt.xlabel('Requests per Second (RPS)', fontsize=35, labelpad=15)
-# plt.ylabel('Module Type', fontsize=40, labelpad=15)
 
 # Format x-axis to show thousands properly and increase tick size
 plt.gca().xaxis.set_major_formatter(ticker.StrMethodFormatter('{x:,.0f}'))
-plt.xticks(fontsize=45)
+plt.xticks(fontsize=35)
 plt.yticks(fontsize=35)
 
 # Add grid for better readability
@@ -92,5 +84,5 @@ plt.grid(axis='x', linestyle='--', alpha=0.7)
 
 # Adjust layout and save
 plt.tight_layout()
-plt.savefig('bpftime-nginx-module.pdf')
+plt.savefig('bpftime-nginx-module.pdf', bbox_inches='tight')  # Use tight bounding box
 plt.show() 
