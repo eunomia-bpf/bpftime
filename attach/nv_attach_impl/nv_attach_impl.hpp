@@ -66,6 +66,8 @@ using nv_attach_type =
 struct nv_attach_entry {
 	nv_attach_type type;
 	std::vector<ebpf_inst> instuctions;
+	// Kernels to be patched for this attach entry
+	std::vector<std::string> kernels;
 };
 
 // Attach implementation of syscall trace
@@ -96,7 +98,6 @@ class nv_attach_impl final : public base_attach_impl {
 	int copy_data_to_trampoline_memory();
 	TrampolineMemorySetupStage trampoline_memory_state =
 		TrampolineMemorySetupStage::NotSet;
-
 
     private:
 	void *frida_interceptor;

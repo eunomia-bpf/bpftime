@@ -57,7 +57,8 @@ int nv_attach_impl::create_attach_with_ebpf_callback(
 			auto id = this->allocate_id();
 			hook_entries[id] = nv_attach_entry{
 				.type = nv_attach_cuda_memcapture{},
-				.instuctions = data.instructions
+				.instuctions = data.instructions,
+				.kernels = data.func_names
 			};
 			this->map_basic_info = data.map_basic_info;
 			this->shared_mem_ptr = data.comm_shared_mem;
@@ -74,7 +75,8 @@ int nv_attach_impl::create_attach_with_ebpf_callback(
 							data.code_addr_or_func_name),
 						.is_retprobe = false,
 					},
-				.instuctions = data.instructions
+				.instuctions = data.instructions,
+				.kernels = data.func_names
 			};
 			this->map_basic_info = data.map_basic_info;
 			this->shared_mem_ptr = data.comm_shared_mem;
@@ -91,7 +93,8 @@ int nv_attach_impl::create_attach_with_ebpf_callback(
 						data.code_addr_or_func_name),
 					.is_retprobe = true,
 				},
-			.instuctions = data.instructions
+			.instuctions = data.instructions,
+			.kernels = data.func_names
 		};
 		this->map_basic_info = data.map_basic_info;
 		this->shared_mem_ptr = data.comm_shared_mem;
