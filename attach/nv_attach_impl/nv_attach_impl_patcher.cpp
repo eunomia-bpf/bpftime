@@ -121,8 +121,6 @@ static std::string generate_ptx_for_ebpf(const std::vector<ebpf_inst> &inst,
 	vm.register_external_function(504, "get_block_dim", (void *)test_func);
 	vm.register_external_function(505, "get_thread_idx", (void *)test_func);
 
-	
-
 	vm.load_code(inst.data(), inst.size() * 8);
 	llvm_bpf_jit_context ctx(vm);
 	SPDLOG_INFO(
@@ -266,88 +264,88 @@ nv_attach_impl::patch_with_probe_and_retprobe(std::string ptx,
 					      const nv_attach_entry &entry,
 					      bool should_set_trampoline)
 {
-	static std::regex kernel_entry_finder(
-		R"(\.visible\s+\.entry\s+(\w+)\s*\(([^)]*)\))");
-
-	struct kernel_section {
-		std::string name;
-		size_t begin;
-		size_t end;
-	};
-	std::vector<kernel_section> kernels;
-
-	std::smatch match;
-	std::string::const_iterator search_start(ptx.cbegin());
-	while (std::regex_search(search_start, ptx.cend(), match,
-				 kernel_entry_finder)) {
-		kernels.push_back(kernel_section{
-			.name = match[1],
-			.begin = (size_t)(match[0].first - ptx.cbegin()),
-			.end = 0 });
-		search_start = match.suffix().first;
-	}
-	for (auto &kernel_sec : kernels) {
-		SPDLOG_DEBUG("Testing kernel named {} started at {}",
-			     kernel_sec.name, kernel_sec.begin);
-		std::vector<char> stack;
-		size_t idx = kernel_sec.begin;
-		do {
-			while (ptx[idx] != '{' && ptx[idx] != '}')
-				idx++;
-			if (ptx[idx] == '{')
-				stack.push_back('{');
-			else {
-				assert(stack.back() == '{');
-				stack.pop_back();
-			}
-			idx++;
-		} while (!stack.empty());
-		kernel_sec.end = idx;
-		SPDLOG_DEBUG("Kernel {} ended at {}", kernel_sec.name,
-			     kernel_sec.end);
-	}
 	const auto &probe_detail =
 		std::get<nv_attach_function_probe>(entry.type);
-	auto probe_func_name =
-		(probe_detail.is_retprobe ? std::string("__retprobe_func__") :
-					    std::string("__probe_func__")) +
-		probe_detail.func;
-	auto compiled_ebpf_ptx = generate_ptx_for_ebpf(entry.instuctions,
-						       probe_func_name, false);
+	std::vector<std::string> targets = entry.kernels;
+	if (targets.empty())
+		targets.push_back(probe_detail.func);
 
-	for (const auto &kernel : kernels) {
-		if (kernel.name == probe_detail.func) {
-			std::string sub_str = ptx.substr(
-				kernel.begin, kernel.end - kernel.begin);
-			if (probe_detail.is_retprobe) {
-				SPDLOG_INFO(
-					"Patching kernel {} with retprobe..",
-					kernel.name);
+	for (const auto &target : targets) {
+		static std::regex kernel_entry_finder(
+			R"(\.visible\s+\.entry\s+(\w+)\s*\(([^)]*)\))");
+		struct kernel_section {
+			std::string name;
+			size_t begin;
+			size_t end;
+		};
+		std::vector<kernel_section> kernels;
 
-				static std::regex ret_pattern(R"((\s+)(ret;))");
-				sub_str = std::regex_replace(
-					sub_str, ret_pattern,
-					"$1call " + probe_func_name +
-						";\n$1$2");
-
-			} else {
-				SPDLOG_INFO("Patching kernel {} with probe..",
-					    kernel.name);
-
-				static std::regex begin_pattern(
-					R"((\{)(\s*\.reg|\s*\.shared|\s*$))");
-				sub_str = std::regex_replace(
-					sub_str, begin_pattern,
-					"$1\n    call " + probe_func_name +
-						";\n$2");
+		std::smatch match;
+		std::string::const_iterator search_start(ptx.cbegin());
+		while (std::regex_search(search_start, ptx.cend(), match,
+					 kernel_entry_finder)) {
+			kernels.push_back(kernel_section{
+				.name = match[1],
+				.begin =
+					(size_t)(match[0].first - ptx.cbegin()),
+				.end = 0 });
+			search_start = match.suffix().first;
+		}
+		for (auto &kernel_sec : kernels) {
+			std::vector<char> stack;
+			size_t idx = kernel_sec.begin;
+			do {
+				while (ptx[idx] != '{' && ptx[idx] != '}')
+					idx++;
+				if (ptx[idx] == '{')
+					stack.push_back('{');
+				else {
+					stack.pop_back();
+				}
+				idx++;
+			} while (!stack.empty());
+			kernel_sec.end = idx;
+			if (kernel_sec.name == target) {
+				auto probe_func_name =
+					(probe_detail.is_retprobe ?
+						 std::string(
+							 "__retprobe_func__") :
+						 std::string(
+							 "__probe_func__")) +
+					target;
+				auto compiled_ebpf_ptx =
+					generate_ptx_for_ebpf(entry.instuctions,
+							      probe_func_name,
+							      false);
+				std::string sub_str = ptx.substr(
+					kernel_sec.begin,
+					kernel_sec.end - kernel_sec.begin);
+				if (probe_detail.is_retprobe) {
+					static std::regex ret_pattern(
+						R"((\s+)(ret;))");
+					sub_str = std::regex_replace(
+						sub_str, ret_pattern,
+						"$1call " + probe_func_name +
+							";\n$1$2");
+				} else {
+					static std::regex begin_pattern(
+						R"((\{)(\s*\.reg|\s*\.shared|\s*$))");
+					sub_str = std::regex_replace(
+						sub_str, begin_pattern,
+						"$1\n    call " +
+							probe_func_name +
+							";\n$2");
+				}
+				ptx = ptx.replace(kernel_sec.begin,
+						  kernel_sec.end -
+							  kernel_sec.begin,
+						  sub_str);
+				ptx = compiled_ebpf_ptx + "\n" + ptx;
+				break;
 			}
-			ptx = ptx.replace(kernel.begin,
-					  kernel.end - kernel.begin, sub_str);
-			break;
 		}
 	}
-	ptx = compiled_ebpf_ptx + "\n" + ptx;
-	ptx = filter_out_version_headers(ptx);
 
+	ptx = filter_out_version_headers(ptx);
 	return ptx;
 }
