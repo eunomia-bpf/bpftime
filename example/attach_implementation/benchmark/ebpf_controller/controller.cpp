@@ -39,7 +39,7 @@ int main(int argc, const char **argv)
 		SPDLOG_ERROR("Failed to get program at {}", ebpf_prog_path);
 		return 1;
 	}
-	
+
 	// Create counter map
 	int counter_map_fd = bpftime_maps_create(
 		-1, "request_counter",
@@ -48,16 +48,16 @@ int main(int argc, const char **argv)
 			      .value_size = sizeof(request_counter),
 			      .max_ents = 1 });
 	SPDLOG_INFO("Counter map fd is {}", counter_map_fd);
-	
+
 	// Initialize counter with zeros
 	uint32_t key = 0;
-	request_counter counter = {0};
+	request_counter counter = { 0 };
 	int ret = bpftime_map_update_elem(counter_map_fd, &key, &counter, 0);
 	if (ret != 0) {
 		SPDLOG_ERROR("Failed to initialize counter map: {}", ret);
 		return 1;
 	}
-	
+
 	auto insns = prog->get_insns();
 	for (auto &insn : insns) {
 		if (insn.code == 0x18 && insn.src_reg == 0) {
@@ -77,33 +77,38 @@ int main(int argc, const char **argv)
 	SPDLOG_INFO("Perf event fd is {}", perf_event_fd);
 	int link_fd = bpftime_attach_perf_to_bpf(perf_event_fd, pfd);
 	SPDLOG_INFO("Link fd is {}", link_fd);
-	
+
 	// Previous counter values for calculating deltas
-	request_counter prev_counter = {0};
-	
+	request_counter prev_counter = { 0 };
+
 	while (!stop) {
 		// Sleep for a second
 		sleep(1);
-		
+
 		// Poll counter map
-		request_counter* curr_counter = (request_counter*)bpftime_map_lookup_elem(counter_map_fd, &key);
+		request_counter *curr_counter =
+			(request_counter *)bpftime_map_lookup_elem(
+				counter_map_fd, &key);
 		if (!curr_counter) {
 			SPDLOG_ERROR("Unable to lookup counter map");
 			continue;
 		}
-		
+
 		// Calculate and log deltas
-		uint64_t accepted_delta = curr_counter->accepted_count - prev_counter.accepted_count;
-		uint64_t rejected_delta = curr_counter->rejected_count - prev_counter.rejected_count;
-		
-		printf("Stats - Total: Accepted: %lu, Rejected: %lu\n", 
-			curr_counter->accepted_count, curr_counter->rejected_count);
-		printf("Stats - Last interval: Accepted: %lu, Rejected: %lu\n", 
-			accepted_delta, rejected_delta);	
-		
+		uint64_t accepted_delta = curr_counter->accepted_count -
+					  prev_counter.accepted_count;
+		uint64_t rejected_delta = curr_counter->rejected_count -
+					  prev_counter.rejected_count;
+
+		printf("Stats - Total: Accepted: %lu, Rejected: %lu\n",
+		       (unsigned long)curr_counter->accepted_count,
+		       (unsigned long)curr_counter->rejected_count);
+		printf("Stats - Last interval: Accepted: %lu, Rejected: %lu\n",
+		       accepted_delta, rejected_delta);
+
 		// Update previous values for next iteration
 		prev_counter = *curr_counter;
 	}
-	
+
 	return 0;
 }
