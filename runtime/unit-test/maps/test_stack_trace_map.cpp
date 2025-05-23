@@ -1,6 +1,7 @@
 #include "bpf_map/userspace/stack_trace_map.hpp"
 #include "catch2/catch_test_macros.hpp"
 #include "spdlog/cfg/env.h"
+#include "spdlog/spdlog.h"
 #include "unit-test/common_def.hpp"
 #include <algorithm>
 #include <cerrno>
@@ -35,7 +36,7 @@ TEST_CASE("Test stack trace map 1")
 static std::map<int, std::vector<std::vector<uint64_t> > >
 make_collision(int max_entries, int total_count, int vector_size)
 {
-	std::mt19937 gen((std::random_device()()));
+	std::mt19937 gen(12345);
 	std::uniform_int_distribution<uint32_t> rand(1, 1000);
 	std::map<int, std::vector<std::vector<uint64_t> > > result;
 	for (int i = 0; i < total_count; i++) {
@@ -70,11 +71,11 @@ TEST_CASE("Test stack trace map 2")
 				has_collision = true;
 		REQUIRE(has_collision);
 	}
-	auto stk1 = generated.begin()->second.at(0);
+	auto stk1 = generated[100].at(0);
 	int id1 = impl.fill_stack_trace(stk1, false, false);
 	REQUIRE(id1 >= 0);
 	// Make some collision
-	auto stk2 = generated.begin()->second.at(1);
+	auto stk2 = generated[100].at(1);
 
 	int id2 = impl.fill_stack_trace(stk2, false, true);
 	REQUIRE(id1 == id2);
@@ -83,12 +84,18 @@ TEST_CASE("Test stack trace map 2")
 		auto result = (uint64_t *)impl.elem_lookup(&id2);
 		REQUIRE(std::equal(stk1.begin(), stk1.end(), result));
 	}
+	SPDLOG_INFO("Checking insertion for two same stack trace..");
+	// Put two same entries into the map
+	auto stk3 = generated[233].at(2);
+	int id3 = impl.fill_stack_trace(stk3, true, false);
 
-	auto stk3 = generated.begin()->second.at(2);
-	int id3 = impl.fill_stack_trace(stk3, true, true);
-	// The query result should be the same as id3
+	auto stk4 = generated[233].at(2);
+	int id4 = impl.fill_stack_trace(stk4, true, false);
+
+	// The query result should be the same as id4
 	{
+		REQUIRE(id3 == id4);
 		auto result = (uint64_t *)impl.elem_lookup(&id3);
-		REQUIRE(std::equal(stk3.begin(), stk3.end(), result));
+		REQUIRE(std::equal(stk4.begin(), stk4.end(), result));
 	}
 }

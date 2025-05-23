@@ -101,16 +101,19 @@ int stack_trace_map_impl::fill_stack_trace(const std::vector<uint64_t> &stk,
 	} else {
 		bool equals = true;
 		if (!compare_only_by_hash) {
+			SPDLOG_DEBUG("Checking equality by content..");
 			equals = equals && itr->second.size() == stk.size();
 			if (!equals) {
 				equals = equals &&
 					 std::equal(stk.begin(), stk.end(),
 						    itr->second.begin());
 			}
+		} else {
+			SPDLOG_DEBUG("Checking equality by hash..");
 		}
 		SPDLOG_DEBUG("equals={}", equals);
 		if (equals) {
-			SPDLOG_DEBUG("Early return due to same hash");
+			SPDLOG_DEBUG("Early return due to equals");
 			return to_put_hash;
 		}
 		if (discard_old_one) {
