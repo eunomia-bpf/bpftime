@@ -42,11 +42,21 @@ void *stack_trace_map_impl::elem_lookup(const void *key)
 		return nullptr;
 	}
 	uint32_t index = *(int *)key;
+	SPDLOG_DEBUG("Performing stack trace lookup with key={}", index);
+
 	auto itr = this->data.find(index);
 	if (itr == data.end()) {
 		errno = ENOENT;
+		SPDLOG_DEBUG(
+			"Performing stack trace lookup with key={}, not found, ENOENT",
+			index);
+
 		return nullptr;
 	}
+	SPDLOG_DEBUG(
+		"Performing stack trace lookup with key={}, found, data size {}",
+		index, itr->second.size());
+
 	return itr->second.data();
 }
 

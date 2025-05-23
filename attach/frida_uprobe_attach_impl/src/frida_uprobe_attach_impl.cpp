@@ -290,7 +290,7 @@ void frida_attach_impl::register_custom_helpers(
 void *frida_attach_impl::call_attach_specific_function(std::string name,
 						       void *data)
 {
-	SPDLOG_INFO("Calling frida attach impl specified feature: {}", name);
+	SPDLOG_DEBUG("Calling frida attach impl specified feature: {}", name);
 	if (name == "generate_stack") {
 		if (!current_thread_gum_cpu_context.has_value()) {
 			SPDLOG_ERROR("There is no frida hook running");
@@ -318,7 +318,7 @@ void *frida_attach_impl::call_attach_specific_function(std::string name,
 			auto frame_addr = array.items[i];
 			result->push_back((uint64_t)(uintptr_t)frame_addr);
 		}
-		SPDLOG_INFO("Got {} stack traces", result->size());
+		SPDLOG_DEBUG("Got {} stack traces", result->size());
 		g_object_unref(tracer);
 		return result;
 

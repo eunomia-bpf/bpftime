@@ -6,6 +6,7 @@
 #include "bpf_attach_ctx.hpp"
 #include "handler/map_handler.hpp"
 #include "linux/bpf.h"
+#include <algorithm>
 #include <stdexcept>
 #include <system_error>
 #if __APPLE__
@@ -390,13 +391,6 @@ uint64_t bpf_probe_read_str(uint64_t buf, uint64_t bufsz, uint64_t ptr,
 	return 0;
 }
 
-uint64_t bpf_get_stack(uint64_t, uint64_t buf, uint64_t sz, uint64_t, uint64_t)
-{
-	// TODO: implement this
-	memset((void *)(uintptr_t)buf, 0, sz);
-	return sz;
-}
-
 uint64_t bpf_ktime_get_coarse_ns(uint64_t, uint64_t, uint64_t, uint64_t,
 				 uint64_t)
 {
@@ -700,9 +694,18 @@ int64_t bpftime_get_stackid(uint64_t ctx_raw, uint64_t map_raw, uint64_t flags,
 	std::unique_ptr<std::vector<uint64_t> > result(
 		(std::vector<uint64_t> *)raw_ptr);
 
-	auto frames_to_collect = flags & BPF_F_SKIP_FIELD_MASK;
-	// Collect the frames we need
-	result->resize(std::min(result->size(), frames_to_collect));
+	auto frames_to_skip = flags & BPF_F_SKIP_FIELD_MASK;
+	SPDLOG_DEBUG("Skipping {} frames", frames_to_skip);
+	if (frames_to_skip >= result->size()) {
+		result->resize(0);
+	} else {
+		std::vector<uint64_t> new_data;
+		new_data.resize(result->size() - frames_to_skip);
+		std::copy(result->begin() + frames_to_skip, result->end(),
+			  new_data.begin());
+		*result = new_data;
+	}
+	SPDLOG_DEBUG("After skipping, collected {} frames", result->size());
 	int real_map_fd = map_raw >> 32;
 	auto &map_handler = std::get<bpf_map_handler>(
 		shm_holder.global_shared_memory.get_handler(real_map_fd));
@@ -1125,10 +1128,6 @@ const bpftime_helper_group kernel_helper_group = {
 		    .name = "bpf_probe_str",
 		    .fn = (void *)bpf_probe_read_str,
 	    } },
-	  { BPF_FUNC_get_stack,
-	    bpftime_helper_info{ .index = BPF_FUNC_get_stack,
-				 .name = "bpf_get_stack",
-				 .fn = (void *)bpf_get_stack } },
 	  { BPF_FUNC_ktime_get_coarse_ns,
 	    bpftime_helper_info{ .index = BPF_FUNC_ktime_get_coarse_ns,
 				 .name = "bpf_ktime_get_coarse_ns",
