@@ -8,6 +8,7 @@ add_library(
     nv_attach_impl_frida_setup.cpp
     nv_attach_impl_patcher.cpp
     nv_attach_impl_register_guard_patcher.cpp
+    nv_attach_utils.cpp
 )
 
 add_dependencies(bpftime_nv_attach_impl bpftime_base_attach_impl spdlog::spdlog FridaGum pos llvmbpf_vm bpftime_vm_compat)
@@ -25,3 +26,4 @@ set_property(TARGET bpftime_nv_attach_impl PROPERTY CXX_STANDARD 20)
 target_link_options(bpftime_nv_attach_impl PUBLIC "-Wl,--whole-archive" "$<TARGET_FILE:bpftime_nv_attach_impl>" "-Wl,--no-whole-archive")
 
 add_subdirectory(test)
+add_subdirectory(examples)
