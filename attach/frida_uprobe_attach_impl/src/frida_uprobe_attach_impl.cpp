@@ -287,7 +287,7 @@ void frida_attach_impl::register_custom_helpers(
 			  (void *)bpftime_get_retval);
 }
 
-void *frida_attach_impl::call_attach_specific_function(std::string name,
+void *frida_attach_impl::call_attach_specific_function(const std::string& name,
 						       void *data)
 {
 	SPDLOG_DEBUG("Calling frida attach impl specified feature: {}", name);
