@@ -58,6 +58,11 @@ union bpf_attach_ctx_holder {
 };
 static bpf_attach_ctx_holder ctx_holder;
 
+bpf_attach_ctx &get_global_attach_ctx()
+{
+	return ctx_holder.ctx;
+}
+
 syscall_hooker_func_t orig_hooker;
 
 extern "C" void bpftime_agent_main(const gchar *data, gboolean *stay_resident);

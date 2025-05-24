@@ -20,6 +20,7 @@ set(TEST_SOURCES
     maps/test_external_map_ops.cpp
     maps/test_bpftime_hash_map.cpp
     maps/kernel_unit_tests.cpp
+    maps/test_stack_trace_map.cpp
     
     test_bpftime_shm_json.cpp
     test_probe.cpp

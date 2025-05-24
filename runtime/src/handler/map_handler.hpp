@@ -7,6 +7,7 @@
 #define _MAP_HANDLER
 #include "bpf_map/userspace/array_map.hpp"
 #include "bpf_map/userspace/ringbuf_map.hpp"
+#include "bpf_map/userspace/stack_trace_map.hpp"
 #include "bpftime_shm.hpp"
 #include "spdlog/spdlog.h"
 #include <boost/interprocess/managed_shared_memory.hpp>
@@ -192,6 +193,13 @@ class bpf_map_handler {
 	std::optional<array_map_impl *> try_get_array_map_impl() const;
 	std::optional<perf_event_array_kernel_user_impl *>
 	try_get_shared_perf_event_array_map_impl() const;
+
+	std::optional<stack_trace_map_impl *>
+	try_get_stack_trace_map_impl() const;
+	pthread_spinlock_t &get_raw_spin_lock() const
+	{
+		return map_lock;
+	}
 
     private:
 	int id = 0;
