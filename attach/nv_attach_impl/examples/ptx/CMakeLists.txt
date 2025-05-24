@@ -16,7 +16,8 @@ target_link_libraries(nv_attach_impl_ptx_test
   cuda
   libnvptxcompiler_static.a
   spdlog::spdlog
+  bpftime_nv_attach_impl
 )
-add_dependencies(nv_attach_impl_ptx_test llvmbpf_vm spdlog::spdlog)
+add_dependencies(nv_attach_impl_ptx_test llvmbpf_vm spdlog::spdlog bpftime_nv_attach_impl)
 set(LLVMBPF_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/../../../../vm/llvm-jit)
-target_include_directories(nv_attach_impl_ptx_test PRIVATE ${LLVM_INCLUDE_DIRS} ${LLVMBPF_ROOT}/src ${LLVMBPF_ROOT}/include ${LLVMBPF_CUDA_PATH}/include ${SPDLOG_INCLUDES})
+target_include_directories(nv_attach_impl_ptx_test PRIVATE ${LLVM_INCLUDE_DIRS} ${LLVMBPF_ROOT}/src ${LLVMBPF_ROOT}/include ${LLVMBPF_CUDA_PATH}/include ${SPDLOG_INCLUDES} ${NV_ATTACH_IMPL_INCLUDE})

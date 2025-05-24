@@ -16,6 +16,7 @@
 #include <fstream>
 #include <vector>
 #include <cuda_runtime.h>
+#include <nv_attach_impl.hpp>
 using namespace bpftime;
 using namespace std;
 
@@ -381,8 +382,8 @@ int main()
 		std::ofstream ofs_result("out.ptx");
 		ofs_result << result;
 	}
-	result = wrap_ptx_with_trampoline(patch_helper_names_and_header(
-		patch_main_from_func_to_entry(result)));
+	result = bpftime::attach::wrap_ptx_with_trampoline(bpftime::attach::patch_helper_names_and_header(
+		bpftime::attach::patch_main_from_func_to_entry(result)));
 	// auto result = load_local_ptx();
 	cout << result << std::endl;
 	auto bin = compile(result);
