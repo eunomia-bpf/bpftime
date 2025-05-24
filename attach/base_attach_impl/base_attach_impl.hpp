@@ -54,7 +54,7 @@ class base_attach_impl {
 	}
 
 	/// Call some features provide by specified attach implementation.
-	virtual void *call_attach_specific_function(std::string name,
+	virtual void *call_attach_specific_function(const std::string &name,
 						    void *data)
 	{
 		SPDLOG_WARN(
