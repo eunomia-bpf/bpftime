@@ -91,7 +91,7 @@ class frida_attach_impl final : public base_attach_impl {
 	frida_attach_impl &operator=(const frida_attach_impl &) = delete;
 	void register_custom_helpers(
 		ebpf_helper_register_callback register_callback) override;
-	void *call_attach_specific_function(std::string name,
+	void *call_attach_specific_function(const std::string& name,
 					    void *data) override;
 
     private:
