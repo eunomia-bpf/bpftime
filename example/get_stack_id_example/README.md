@@ -1,6 +1,6 @@
-# malloc trace
+# get_stack_id_example
 
-This code is a BPF (Berkeley Packet Filter) program written in C, often used for tracing and monitoring activities in the Linux kernel. BPF allows you to run custom programs within the kernel without modifying its source code. The code you provided creates a BPF program that uses a BPF map to count the number of times the `malloc` function is called within a specified cgroup.
+This code is a BPF (Berkeley Packet Filter) program written in C, designed to demonstrate stack trace collection using stack IDs. BPF allows you to run custom programs within the kernel without modifying its source code. The code provided creates a BPF program that uses a BPF map to store and count unique stack traces.
 
 ```c
 #include <vmlinux.h>
