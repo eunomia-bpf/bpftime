@@ -45,10 +45,16 @@ int main(int argc, const char **argv)
 	signal(SIGINT, sig_handler);
 	signal(SIGTERM, sig_handler);
 
+	SPDLOG_INFO("Allowed url prefix: {}", argv[1]);
+
 	SPDLOG_INFO("eBPF program at {}", ebpf_prog_path);
 	std::unique_ptr<bpftime_object, decltype(&bpftime_object_close)> obj(
 		bpftime_object_open(ebpf_prog_path), &bpftime_object_close);
 	auto prog = bpftime_object__next_program(obj.get(), nullptr);
+	if (!prog) {
+		SPDLOG_ERROR("Failed to get program at {}", ebpf_prog_path);
+		return 1;
+	}
 	int rb_map_fd = bpftime_maps_create(
 		-1, "nginx_ringbuf",
 		bpf_map_attr{ .type = (int)bpf_map_type::BPF_MAP_TYPE_RINGBUF,

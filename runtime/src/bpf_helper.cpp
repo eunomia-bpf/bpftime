@@ -3,6 +3,10 @@
  * Copyright (c) 2022, eunomia-bpf org
  * All rights reserved.
  */
+#include "bpf_attach_ctx.hpp"
+#include "handler/map_handler.hpp"
+#include "linux/bpf.h"
+#include <algorithm>
 #include <stdexcept>
 #include <system_error>
 #if __APPLE__
@@ -44,7 +48,14 @@
 #define PATH_MAX 4096
 
 using namespace std;
-
+bpftime::bpf_attach_ctx &get_global_attach_ctx();
+__attribute__((weak)) bpftime::bpf_attach_ctx &get_global_attach_ctx()
+{
+	SPDLOG_WARN(
+		"Calling mocked get_global_attach_ctx, this is not expected");
+	throw std::runtime_error(
+		"Calling mocked get_global_attach_ctx, this is not expected");
+}
 extern "C" {
 
 uint64_t bpftime_override_return(uint64_t ctx, uint64_t value);
@@ -68,7 +79,6 @@ long bpftime_strncmp(const char *s1, uint64_t s1_sz, const char *s2)
 {
 	return strncmp(s1, s2, s1_sz);
 }
-
 
 #if defined(ENABLE_PROBE_WRITE_CHECK) || defined(ENABLE_PROBE_READ_CHECK)
 
@@ -137,7 +147,7 @@ static void segv_read_handler(int sig, siginfo_t *siginfo, void *ctx)
 int64_t bpftime_probe_read(uint64_t dst, int64_t size, uint64_t ptr, uint64_t,
 			   uint64_t)
 {
-	if (size < 0) {
+	if (unlikely(size < 0)) {
 		SPDLOG_ERROR("Invalid size: {}", size);
 		return -EFAULT;
 	}
@@ -178,16 +188,11 @@ int64_t bpftime_probe_read(uint64_t dst, int64_t size, uint64_t ptr, uint64_t,
 		}
 	}
 #endif
-	unsigned char *dst_p = (unsigned char *)dst;
-	unsigned char *src_p = (unsigned char *)ptr;
-	while (size--) {
-		*((unsigned char *)dst_p) = *((unsigned char *)src_p);
-		dst_p++;
-		src_p++;
-	}
-	__asm__("jump_point_read:");
+	memcpy((void *)dst, (void *)ptr, (size_t)size);
 
 #ifdef ENABLE_PROBE_READ_CHECK
+	__asm__("jump_point_read:");
+
 	if (status_probe_read == PROBE_STATUS::RUNNING_ERROR) {
 		ret = -EFAULT;
 	}
@@ -222,7 +227,7 @@ static void segv_write_handler(int sig, siginfo_t *siginfo, void *ctx)
 int64_t bpftime_probe_write_user(uint64_t dst, uint64_t src, int64_t len,
 				 uint64_t, uint64_t)
 {
-	if (len < 0) {
+	if (unlikely(len < 0)) {
 		SPDLOG_ERROR("Invalid len: {}", len);
 		return -EFAULT;
 	}
@@ -265,16 +270,12 @@ int64_t bpftime_probe_write_user(uint64_t dst, uint64_t src, int64_t len,
 		}
 	}
 #endif
-	unsigned char *dst_p = (unsigned char *)dst;
-	unsigned char *src_p = (unsigned char *)src;
-	while (len--) {
-		*((unsigned char *)dst_p) = *((unsigned char *)src_p);
-		dst_p++;
-		src_p++;
-	}
 
-	__asm__("jump_point_write:");
+	memcpy((void *)dst, (void *)src, (size_t)len);
+
 #ifdef ENABLE_PROBE_WRITE_CHECK
+	__asm__("jump_point_write:");
+
 	if (status_probe_write == PROBE_STATUS::RUNNING_ERROR) {
 		ret = -EFAULT;
 	}
@@ -390,13 +391,6 @@ uint64_t bpf_probe_read_str(uint64_t buf, uint64_t bufsz, uint64_t ptr,
 	return 0;
 }
 
-uint64_t bpf_get_stack(uint64_t, uint64_t buf, uint64_t sz, uint64_t, uint64_t)
-{
-	// TODO: implement this
-	memset((void *)(uintptr_t)buf, 0, sz);
-	return sz;
-}
-
 uint64_t bpf_ktime_get_coarse_ns(uint64_t, uint64_t, uint64_t, uint64_t,
 				 uint64_t)
 {
@@ -468,7 +462,7 @@ uint64_t bpf_perf_event_output(uint64_t ctx, uint64_t map, uint64_t flags,
 			       uint64_t data, uint64_t size)
 {
 	int32_t current_cpu = my_sched_getcpu();
-	if (current_cpu == -1) {
+	if (unlikely(current_cpu == -1)) {
 		SPDLOG_ERROR(
 			"Unable to get current cpu when running perf event output");
 		return (uint64_t)-1;
@@ -667,6 +661,111 @@ long bpftime_xdp_load_bytes(struct xdp_md_userspace *xdp_md, __u32 offset,
 		return -EINVAL;
 	}
 	memcpy(buf, reinterpret_cast<void *>(data), len);
+	return 0;
+}
+using namespace bpftime;
+
+int64_t bpftime_get_stackid(uint64_t ctx_raw, uint64_t map_raw, uint64_t flags,
+			    uint64_t, uint64_t)
+{
+	if (!(flags & BPF_F_USER_STACK)) {
+		SPDLOG_ERROR(
+			"bpftime_get_stackid only supports collect user stack!");
+		return -ENOTSUP;
+	}
+
+	const int ATTACH_UPROBE = 6;
+
+	auto &attach_ctx = get_global_attach_ctx();
+	auto attach_impl =
+		attach_ctx.get_attach_impl_by_attach_type(ATTACH_UPROBE);
+	if (!attach_impl.has_value()) {
+		SPDLOG_ERROR(
+			"Unable to get stack id: frida_uprobe_attach_impl not registered");
+		return -ENOTSUP;
+	}
+	auto raw_ptr = (*attach_impl)
+			       ->call_attach_specific_function("generate_stack",
+							       nullptr);
+	if (raw_ptr == nullptr) {
+		SPDLOG_ERROR("Unable to get stack trace");
+		return -ENOENT;
+	}
+	std::unique_ptr<std::vector<uint64_t> > result(
+		(std::vector<uint64_t> *)raw_ptr);
+
+	auto frames_to_skip = flags & BPF_F_SKIP_FIELD_MASK;
+	SPDLOG_DEBUG("Skipping {} frames", frames_to_skip);
+	if (frames_to_skip >= result->size()) {
+		result->resize(0);
+	} else {
+		std::vector<uint64_t> new_data;
+		new_data.resize(result->size() - frames_to_skip);
+		std::copy(result->begin() + frames_to_skip, result->end(),
+			  new_data.begin());
+		*result = new_data;
+	}
+	SPDLOG_DEBUG("After skipping, collected {} frames", result->size());
+	int real_map_fd = map_raw >> 32;
+	auto &map_handler = std::get<bpf_map_handler>(
+		shm_holder.global_shared_memory.get_handler(real_map_fd));
+
+	bpftime_lock_guard guard(map_handler.get_raw_spin_lock());
+	auto impl = *shm_holder.global_shared_memory.try_get_stack_trace_impl(
+		real_map_fd);
+	int ret = impl->fill_stack_trace(*result, flags & BPF_F_REUSE_STACKID,
+					 flags & BPF_F_FAST_STACK_CMP);
+
+	SPDLOG_DEBUG("Got stackid {}", ret);
+	return (uint32_t)ret;
+}
+
+int64_t bpftime_get_stack(uint64_t ctx_raw, uint64_t buf, uint64_t size,
+			  uint64_t flags, uint64_t)
+{
+	if (!(flags & BPF_F_USER_STACK)) {
+		SPDLOG_ERROR(
+			"bpftime_get_stack only supports collect user stack!");
+		return -ENOTSUP;
+	}
+	if (!(flags & BPF_F_USER_BUILD_ID)) {
+		SPDLOG_ERROR("bpftime_get_stack doesn't support buildid!");
+		return -ENOTSUP;
+	}
+	const int ATTACH_UPROBE = 6;
+
+	auto &attach_ctx = get_global_attach_ctx();
+	auto attach_impl =
+		attach_ctx.get_attach_impl_by_attach_type(ATTACH_UPROBE);
+	if (!attach_impl.has_value()) {
+		SPDLOG_ERROR(
+			"Unable to get stack id: frida_uprobe_attach_impl not registered");
+		return -ENOTSUP;
+	}
+	auto raw_ptr = (*attach_impl)
+			       ->call_attach_specific_function("generate_stack",
+							       nullptr);
+	if (raw_ptr == nullptr) {
+		SPDLOG_ERROR("Unable to get stack trace");
+		return -ENOENT;
+	}
+	std::unique_ptr<std::vector<uint64_t> > result(
+		(std::vector<uint64_t> *)raw_ptr);
+
+	auto frames_to_skip = flags & BPF_F_SKIP_FIELD_MASK;
+	SPDLOG_DEBUG("Skipping {} frames", frames_to_skip);
+	if (frames_to_skip >= result->size()) {
+		result->resize(0);
+	} else {
+		std::vector<uint64_t> new_data;
+		new_data.resize(result->size() - frames_to_skip);
+		std::copy(result->begin() + frames_to_skip, result->end(),
+			  new_data.begin());
+		*result = new_data;
+	}
+	auto size_to_copy = std::min(result->size(), (uintptr_t)size);
+	SPDLOG_DEBUG("Copied {} bytes of stack", size_to_copy);
+	memcpy((void *)(uintptr_t)buf, result->data(), size_to_copy);
 	return 0;
 }
 
@@ -1078,10 +1177,6 @@ const bpftime_helper_group kernel_helper_group = {
 		    .name = "bpf_probe_str",
 		    .fn = (void *)bpf_probe_read_str,
 	    } },
-	  { BPF_FUNC_get_stack,
-	    bpftime_helper_info{ .index = BPF_FUNC_get_stack,
-				 .name = "bpf_get_stack",
-				 .fn = (void *)bpf_get_stack } },
 	  { BPF_FUNC_ktime_get_coarse_ns,
 	    bpftime_helper_info{ .index = BPF_FUNC_ktime_get_coarse_ns,
 				 .name = "bpf_ktime_get_coarse_ns",
@@ -1120,7 +1215,17 @@ const bpftime_helper_group kernel_helper_group = {
 	  { BPF_FUNC_get_attach_cookie,
 	    bpftime_helper_info{ .index = BPF_FUNC_get_attach_cookie,
 				 .name = "bpf_get_attach_cookie",
-				 .fn = (void *)bpftime_get_attach_cookie } } }
+				 .fn = (void *)bpftime_get_attach_cookie } },
+	  { BPF_FUNC_get_stackid,
+	    bpftime_helper_info{ .index = BPF_FUNC_get_stackid,
+				 .name = "bpf_get_stackid",
+				 .fn = (void *)bpftime_get_stackid } },
+	  { BPF_FUNC_get_stack,
+	    bpftime_helper_info{ .index = BPF_FUNC_get_stack,
+				 .name = "bpf_get_stack",
+				 .fn = (void *)bpftime_get_stack } }
+
+	},
 
 };
 // Utility function to get the UFUNC helper group

@@ -90,7 +90,7 @@ int BPF_URETPROBE(__bench_uretprobe, int ret)
 SEC("uprobe/benchmark/test:__bench_uprobe_uretprobe")
 int BPF_UPROBE(__bench_uprobe_uretprobe_1, char *a, int b, uint64_t c)
 {
-	return b + c;
+	return b;
 }
 
 SEC("uretprobe/benchmark/test:__bench_uprobe_uretprobe")

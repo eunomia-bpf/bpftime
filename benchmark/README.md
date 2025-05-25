@@ -1,356 +1,105 @@
-# benchmark of uprobe and uretprobe
+# Benchmark
 
-With userspace eBPF runntime, we can:
+This directory contains benchmarks and experiments for the bpftime project, including:
 
-- Speed up the uprobe and uretprobe by approximate `10x`
-- The userspace read and write user memory is approximate `10x` faster than kernel (~5ns vs ~50ns)
-- With out any kernel patch or modify the tracing eBPF program
-- No privilege is needed for running the eBPF tracing program.
+- Scripts for running experiments and generating figures
+- Benchmark environments for different use cases
+- Test code for performance evaluation
 
-Probes:
+## Getting Started
 
-| Probe/Tracepoint Types | Kernel (ns)  | Userspace (ns) | Insn Count |
-|------------------------|-------------:|---------------:|---------------:|
-| Uprobe                 | 3224.172760  | 314.569110     | 4    |
-| Uretprobe              | 3996.799580  | 381.270270     | 2    |
-| Syscall Tracepoint     | 151.82801    | 232.57691      | 4    |
-| Embedding runtime      | Not avaliable |  110.008430   | 4    |
+### Install Dependencies
 
-Read and write user memory:
+Please refer to our manual in [bpftime build and test documentation](https://eunomia.dev/bpftime/documents/build-and-test/)
+for installing dependencies or using the Docker image.
 
-| Probe/Tracepoint Types  | Kernel (ns)     | Userspace (ns) |
-|-------------------------|----------------:|---------------:|
-| bpf_probe_read - uprobe  | 46.820830       | 2.200530       |
-| bpf_probe_write_user - uprobe | 45.004100  | 8.101980       |
+The benchmark experiment scripts may automatically install dependencies
+and clone repos from the GitHub. Make sure you have Network access.
 
-## Suggest build configuration
+Run the experiments needs you have a Linux kernel with eBPF support, at lease 4 cores,
+and 16GB memory on x86_64 architecture.
 
-```sh
-cmake -Bbuild -DLLVM_DIR=/usr/lib/llvm-15/cmake -DCMAKE_BUILD_TYPE:STRING=RelWithDebInfo -DBPFTIME_LLVM_JIT=1 -DBPFTIME_ENABLE_LTO=1 -DSPDLOG_ACTIVE_LEVEL=SPDLOG_LEVEL_INFO
-cmake --build build --config RelWithDebInfo --target install -j
-```
+### Basic Usage
 
-If you fail to build , notice LLVM version.
+Check out the [bpftime usage documentation](https://eunomia.dev/bpftime/documents/usage/)
+for basic usage instructions. For the detail usage, please refer to each experiment directory.
 
-## build and run at a click
+### Run All Experiments
 
-Build the agent first. In project root:
+before running the experiments, you also need to install some additional dependencies for the python scripts:
 
 ```sh
-make build
+cd /path/to/bpftime
+pip install -r benchmark/requirements.txt
 ```
 
-build the benchmark driver:
+then you can build and run the experiments by:
 
 ```sh
-make -C benchmark
+make benchmark # build the benchmark
+make run-all-benchmark # run all benchmarks
 ```
 
-Run the uprobe bench:
+(build time: 10min - 20min)
 
-```sh
-cd benchmark
-python3 run_benchmark.py
-```
+See the makefile for the details of the commands.
 
-## base line
+You can also check the CI for how we build the experiments and run them in [.github/workflows/build-benchmarks.yml](../.github/workflows/benchmarks.yml).
 
-```sh
-benchmark/test
-```
+## Experiments Overview
 
-The base line function elapsed time is 0.000243087 seconds, for the test function:
+### Experiment 1: Micro-benchmarks
 
-```c
-__attribute_noinline__ 
-uint64_t __benchmark_test_function3(const char *a, int b,
-          uint64_t c)
-{
- return a[b] + c;
-}
-```
+#### Part 1: bpftime vs eBPF
 
-## kernel uprobe
+Performance comparison including:
 
-Build the uprobe and uretprobe:
+- Uprobe/uretprobe (see [./uprobe/](./uprobe/))
+- Memory read/write operations (see [./uprobe/](./uprobe/))
+- Map operations (see [./uprobe/](./uprobe/))
+- Embedded VM in your program without hooking (see [./uprobe/](./uprobe/) and the code in [test_embed.c](./test_embed.c))
+- Syscall tracepoint (see [./syscall/](./syscall/))
+- MPK enable/disable (see [./mpk/](./mpk/))
 
-```sh
-make -C benchmark/uprobe
-make -C benchmark/uretprobe
-```
+You can check each directory for the details of the experiments, how to run them and the results.
 
-run the uprobe:
+(20min - 30 min computation time)
 
-```sh
-sudo benchmark/uprobe/uprobe
-```
+#### Part 2: Execution Engine Efficiency
 
-in another terminal, run the benchmark:
+See the code used in our [bpf-benchmark repository](https://github.com/eunomia-bpf/bpf-benchmark).
 
-```sh
-benchmark/test
-```
+#### Part 3: Load Latency
 
-The uprobe or uretprobe function we used is like:
+The measurement tool is located in [../tools/cli/main.cpp](../tools/cli/main.cpp).
 
-```c
-SEC("uprobe/benchmark/test:__benchmark_test_function3")
-int BPF_UPROBE(__benchmark_test_function, const char *a, int b, uint64_t c)
-{
- return b + c;
-}
-```
+### Experiment 2: SSL/TLS Traffic Inspection (sslsniff)
 
-## userspace uprobe
+- Environment and results: See [./ssl-nginx/](./ssl-nginx/)
+- Example code: See [../example/sslsniff](../example/sslsniff)
 
-run the uprobe:
+### Experiment 3: System Call Counting (syscount)
 
-```sh
-LD_PRELOAD=build/runtime/syscall-server/libbpftime-syscall-server.so benchmark/uprobe/uprobe
-```
+- Environment and results: See [./syscount-nginx/](./syscount-nginx/)
+- Example code: See [../example/syscount](../example/syscount)
 
-in another terminal, run the benchmark:
+### Experiment 4: Nginx Plugin/Module
 
-```sh
-LD_PRELOAD=build/runtime/agent/libbpftime-agent.so benchmark/test
-```
+- Implementation code: See [../example/attach_implementation](../example/attach_implementation)
+- Benchmark scripts are included in the implementation directory
 
-If errors like:
+### Experiment 5: DeepFlow
 
-```txt
-terminate called after throwing an instance of 'boost::interprocess::interprocess_exception'
-  what():  File exists
-Aborted (core dumped)
-```
+Performance evaluation for DeepFlow integration - see [./deepflow/](./deepflow/) directory.
 
-happpens, try to use `sudo` mode.
+### Experiment 6: FUSE (Filesystem in Userspace)
 
-## embed runtime
+FUSE-related benchmarks - see [./fuse/](./fuse/) directory.
 
-```sh
-build/benchmark/simple-benchmark-with-embed-ebpf-calling
-```
+### Experiment 7: Redis Durability Tuning
 
-## userspace syscall
+Redis durability tuning benchmarks - see [./redis-durability-tuning/](./redis-durability-tuning/) directory.
 
-### run
+### Experiment 8: Compatibility
 
-```sh
-sudo ~/.bpftime/bpftime load benchmark/syscall/syscall
-```
-
-in another shell, run the target program with eBPF inside:
-
-```sh
-sudo ~/.bpftime/bpftime start -s benchmark/syscall/victim
-```
-
-- baseline: Average time usage 938.53511ns,  count 1000000
-- userspace syscall tracepoint: Average time usage 1489.04251ns,  count 1000000
-- kernel tracepoint：Average time usage 1499.47708ns,  count 1000000
-
-You can use python script to run the benchmark:
-
-```console
-python3 benchmark/tools/driving.py
-```
-
-## Test syscall trace and untrace with syscount
-
-run the test:
-
-```sh
-bash ./benchmark/syscount/test.sh
-```
-
-result:
-
-```txt
-# baseline, no trace syscall
-Average read() time over 10 runs: 349 ns
-Average sendmsg() time over 10 runs: 3640 ns
-# trace with syscount
-Average read() time over 10 runs: 437 ns
-Average sendmsg() time over 10 runs: 3952 ns
-# filter out the pid
-Average read() time over 10 runs: 398 ns
-Average sendmsg() time over 10 runs: 3690 ns
-# trace with userspace syscall tracepoint
-Average read() time over 10 runs: 531 ns
-Average sendmsg() time over 10 runs: 3681 ns
-```
-
-## Results for uprobe, uretprobe, and syscall tracepoint
-
-| Probe/Tracepoint Types | Kernel (ns)  | Userspace (ns) | Insn Count |
-|------------------------|-------------:|---------------:|---------------:|
-| Uprobe                 | 3224.172760  | 314.569110     | 4    |
-| Uretprobe              | 3996.799580  | 381.270270     | 2    |
-| Syscall Tracepoint     | 151.82801    | 232.57691      | 4    |
-| Embedding runtime      | Not avaliable |  110.008430   | 4    |
-
-Tested on `6.2.0-32-generic` kernel and `Intel(R) Core(TM) i7-11800H CPU @ 2.30GHz`.
-
-## Results on another machine
-
-Tested on `kernel version 6.2` and `Intel(R) Xeon(R) Gold 5418Y` CPU.
-
-### Uprobe and read/write with `bpf_probe_write_user` and `bpf_probe_read_user`
-
-Kernelspace:
-
-```txt
-Benchmarking __bench_uprobe_uretprobe in thread 1
-Average time usage 3060.196770 ns, iter 100000 times
-
-Benchmarking __bench_uretprobe in thread 1
-Average time usage 2958.493390 ns, iter 100000 times
-
-Benchmarking __bench_uprobe in thread 1
-Average time usage 1910.731360 ns, iter 100000 times
-
-Benchmarking __bench_read in thread 1
-Average time usage 1957.552190 ns, iter 100000 times
-
-Benchmarking __bench_write in thread 1
-Average time usage 1955.735460 ns, iter 100000 times
-```
-
-Userspace:
-
-```txt
-Benchmarking __bench_uprobe_uretprobe in thread 1
-Average time usage 391.967450 ns, iter 100000 times
-
-Benchmarking __bench_uretprobe in thread 1
-Average time usage 383.851670 ns, iter 100000 times
-
-Benchmarking __bench_uprobe in thread 1
-Average time usage 380.935190 ns, iter 100000 times
-
-Benchmarking __bench_read in thread 1
-Average time usage 383.135720 ns, iter 100000 times
-
-Benchmarking __bench_write in thread 1
-Average time usage 389.037170 ns, iter 100000 times
-```
-
-noted that the performance of `bpf_probe_read_user` and `bpf_probe_write_user` will be influenced by the option of `ENABLE_PROBE_WRITE_USER` and `ENABLE_PROBE_READ_USER`.
-
-### maps operations
-
-Run the map op 1000 times in one function. Userspace map op is also faster than the kernel in the current version. Current version is 10x faster than stupid old version.
-
-```c
-SEC("uprobe/benchmark/test:__bench_hash_map_lookup")
-int test_lookup(struct pt_regs *ctx)
-{
-    for (int i = 0; i < 1000; i++) {
-        u32 key = i;
-        u64 value = i;
-        bpf_map_lookup_elem(&test_hash_map, &key);
-    }
-    return 0;
-}
-```
-
-Kernel map op cost:
-
-```txt
-
-Benchmarking __bench_hash_map_update in thread 1
-Average time usage 64738.264680 ns, iter 100000 times
-
-Benchmarking __bench_hash_map_lookup in thread 1
-Average time usage 17805.898280 ns, iter 100000 times
-
-Benchmarking __bench_hash_map_delete in thread 1
-Average time usage 21795.665340 ns, iter 100000 times
-
-Benchmarking __bench_array_map_update in thread 1
-Average time usage 11449.295960 ns, iter 100000 times
-
-Benchmarking __bench_array_map_lookup in thread 1
-Average time usage 2093.886500 ns, iter 100000 times
-
-Benchmarking __bench_array_map_delete in thread 1
-Average time usage 2126.820310 ns, iter 100000 times
-
-Benchmarking __bench_per_cpu_hash_map_update in thread 1
-Average time usage 35050.915650 ns, iter 100000 times
-
-Benchmarking __bench_per_cpu_hash_map_lookup in thread 1
-Average time usage 15999.969590 ns, iter 100000 times
-
-Benchmarking __bench_per_cpu_hash_map_delete in thread 1
-Average time usage 21664.294940 ns, iter 100000 times
-
-Benchmarking __bench_per_cpu_array_map_update in thread 1
-Average time usage 10886.969860 ns, iter 100000 times
-
-Benchmarking __bench_per_cpu_array_map_lookup in thread 1
-Average time usage 2749.468760 ns, iter 100000 times
-
-Benchmarking __bench_per_cpu_array_map_delete in thread 1
-Average time usage 2778.679460 ns, iter 100000 times
-```
-
-Userspace map op cost:
-
-```txt
-Benchmarking __bench_hash_map_update in thread 1
-Average time usage 30676.986820 ns, iter 100000 times
-
-Benchmarking __bench_hash_map_lookup in thread 1
-Average time usage 23486.304570 ns, iter 100000 times
-
-Benchmarking __bench_hash_map_delete in thread 1
-Average time usage 13435.901160 ns, iter 100000 times
-
-Benchmarking __bench_array_map_update in thread 1
-Average time usage 7081.922160 ns, iter 100000 times
-
-Benchmarking __bench_array_map_lookup in thread 1
-Average time usage 4685.450360 ns, iter 100000 times
-
-Benchmarking __bench_array_map_delete in thread 1
-Average time usage 6367.443010 ns, iter 100000 times
-
-Benchmarking __bench_per_cpu_hash_map_update in thread 1
-Average time usage 95918.602090 ns, iter 100000 times
-
-Benchmarking __bench_per_cpu_hash_map_lookup in thread 1
-Average time usage 63294.791110 ns, iter 100000 times
-
-Benchmarking __bench_per_cpu_hash_map_delete in thread 1
-Average time usage 460207.364100 ns, iter 100000 times
-
-Benchmarking __bench_per_cpu_array_map_update in thread 1
-Average time usage 26109.863360 ns, iter 100000 times
-
-Benchmarking __bench_per_cpu_array_map_lookup in thread 1
-Average time usage 9139.355980 ns, iter 100000 times
-
-Benchmarking __bench_per_cpu_array_map_delete in thread 1
-Average time usage 5203.339320 ns, iter 100000 times
-```
-
-The benchmark without inline the map op function:
-
-| Map Operation                      | Kernel (op - uprobe) (ns) | Userspace (op - uprobe) (ns) |
-|------------------------------------|--------------------------:|-----------------------------:|
-| __bench_hash_map_update            | 62827.533320              | 30296.051630                 |
-| __bench_hash_map_lookup            | 15895.166920              | 23005.369380                 |
-| __bench_hash_map_delete            | 19884.933980              | 13054.965970                 |
-| __bench_array_map_update           | 9538.564600               | 6701.987970                  |
-| __bench_array_map_lookup           |  183.155140               | 4305.515170                  |
-| __bench_array_map_delete           |  216.088950               | 5987.507820                  |
-| __bench_per_cpu_hash_map_update    | 33140.184290              | 95537.666900                 |
-| __bench_per_cpu_hash_map_lookup    | 14089.238230              | 62913.855920                 |
-| __bench_per_cpu_hash_map_delete    | 19753.563580              | 459826.428910                |
-| __bench_per_cpu_array_map_update   |  8885.238500              | 25728.928170                 |
-| __bench_per_cpu_array_map_lookup   |  1838.737400              | 8759.420790                  |
-| __bench_per_cpu_array_map_delete   |  1867.948100              | 4802.404130                  |
-
-- Some overhead can be reduced by inlining the map op function.
-- We need to fix the performance issue of the per-cpu map in the userspace runtime.
+Various compatibility examples that can run on both kernel eBPF and bpftime - see [../example](../example) directory.

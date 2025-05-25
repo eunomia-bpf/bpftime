@@ -6,8 +6,14 @@
 extern "C" ebpf_vm *ebpf_create(const char *vm_name_str)
 {
 	auto vm = new ebpf_vm;
+	vm->vm_name = std::string(vm_name_str);
 	vm->vm_instance = bpftime::vm::compat::create_vm_instance(std::string(vm_name_str));
 	return vm;
+}
+
+extern "C" const char *ebpf_get_vm_name(struct ebpf_vm *vm)
+{
+	return vm->vm_name.c_str();
 }
 
 extern "C" void ebpf_destroy(struct ebpf_vm *vm)

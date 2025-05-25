@@ -385,6 +385,24 @@ bool bpftime_shm::is_epoll_fd(int fd) const
 	return std::holds_alternative<bpftime::epoll_handler>(handler);
 }
 
+bool bpftime_shm::is_stack_trace_map_fd(int fd) const
+{
+	if (!is_map_fd(fd))
+		return false;
+	auto &map_impl = std::get<bpf_map_handler>(manager->get_handler(fd));
+	return map_impl.type == bpf_map_type::BPF_MAP_TYPE_STACK_TRACE;
+}
+std::optional<stack_trace_map_impl *>
+bpftime_shm::try_get_stack_trace_impl(int fd) const
+{
+	if (!is_stack_trace_map_fd(fd)) {
+		SPDLOG_ERROR("Expected fd {} to be an stack trace map fd", fd);
+		return {};
+	}
+	auto &map_handler = std::get<bpf_map_handler>(manager->get_handler(fd));
+	return map_handler.try_get_stack_trace_map_impl();
+}
+
 bool bpftime_shm::is_map_fd(int fd) const
 {
 	if (manager == nullptr || fd < 0 ||
@@ -713,17 +731,18 @@ int bpftime_shm::dup_bpf_map(int oldfd, int newfd)
 	if (!manager) {
 		return -1;
 	}
-	
+
 	// Get the original map handler
 	auto &handler =
-		std::get<bpftime::bpf_map_handler>(manager->get_handler(oldfd));	
+		std::get<bpftime::bpf_map_handler>(manager->get_handler(oldfd));
 	std::string new_name = std::string("dup_") + handler.name.c_str();
 	// Create a new handler with the same parameters
 	return manager->set_handler(
 		newfd,
-		bpftime::bpf_map_handler(newfd, new_name.c_str(), segment, handler.attr), // Copy construct the handler
-		segment
-	);
+		bpftime::bpf_map_handler(newfd, new_name.c_str(), segment,
+					 handler.attr), // Copy construct the
+							// handler
+		segment);
 }
 
 const handler_manager *bpftime_shm::get_manager() const
@@ -759,7 +778,6 @@ void bpftime_shm::set_agent_config(struct agent_config &&config)
 	}
 
 	agent_config->~agent_config();
-	config.change_to_shm_object(segment);
 	std::construct_at(agent_config, std::move(config));
 }
 

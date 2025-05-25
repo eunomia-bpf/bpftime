@@ -18,8 +18,6 @@ TEST_CASE("Test bpftime agent_config")
 	agent_config cfg;
 	cfg.set_logger_output_path(test_string.c_str());
 	REQUIRE(cfg.get_logger_output_path() == test_string);
-	cfg.change_to_shm_object(mem);
-	REQUIRE(cfg.get_logger_output_path() == test_string);
 	cfg.set_logger_output_path(test_string_2.c_str());
 	REQUIRE(cfg.get_logger_output_path() == test_string_2);
 }

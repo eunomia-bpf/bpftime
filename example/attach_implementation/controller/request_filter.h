@@ -7,8 +7,8 @@ struct request_filter_event {
 };
 
 struct request_filter_argument {
-	char url_to_check[128];
-	char accept_prefix[128];
+	const char *url_to_check;
+	const char *accept_prefix;
 };
 
 #endif
