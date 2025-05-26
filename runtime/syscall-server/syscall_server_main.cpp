@@ -242,7 +242,7 @@ extern "C" long syscall(long sysno, ...)
 	} else if (sysno == __NR_dup3) {
 		SPDLOG_DEBUG("SYS_DUP3 oldfd={} newfd={} flags={}", arg1, arg2, arg3);
 		return handle_exceptions([&]() {
-			return context.handle_dup3((int)arg1, (int)arg2, (int)arg3);
+			return context->handle_dup3((int)arg1, (int)arg2, (int)arg3);
 		});
 	}
 	return context->orig_syscall_fn(sysno, arg1, arg2, arg3, arg4, arg5,

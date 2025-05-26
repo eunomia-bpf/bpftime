@@ -684,7 +684,7 @@ bpftime_shm::bpftime_shm(const char *shm_name, shm_open_type type)
 			"NOT creating global shm. This is only for testing purpose.");
 		return;
 	}
-	local_agent_config.emplace(segment);
+	// local_agent_config.emplace(segment);
 
 #if BPFTIME_ENABLE_MPK
 	// init mpk key
