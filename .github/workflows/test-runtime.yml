@@ -91,13 +91,13 @@ jobs:
         ln -sf /usr/lib/llvm-*/include/clang-c/ /usr/include/ || true
         ln -sf /usr/lib/llvm-*/lib/libclang.so /usr/lib || true
         cmake --build build --config Debug --target bpftime_runtime_tests -j$(nproc) || true
-        sed -i "s/&::descriptor_table_pos_2finclude_2fproto_2fhandle_2eproto/nullptr/g" build/runtime/pos/cuda_impl/proto/*.pb.cc
-        cmake --build build --config Debug --target bpftime_runtime_tests -j$(nproc) || true
-        sed -i "s/&::descriptor_table_pos_2finclude_2fproto_2fhandle_2eproto/nullptr/g" build/runtime/pos/cuda_impl/proto/*.pb.cc
-        cmake --build build --config Debug --target bpftime_runtime_tests -j$(nproc) || true
-        sed -i "s/&::descriptor_table_pos_2finclude_2fproto_2fhandle_2eproto/nullptr/g" build/runtime/pos/cuda_impl/proto/*.pb.cc
-        cmake --build build --config Debug --target bpftime_runtime_tests -j$(nproc) || true
-        sed -i "s/&::descriptor_table_pos_2finclude_2fproto_2fhandle_2eproto/nullptr/g" build/runtime/pos/cuda_impl/proto/*.pb.cc
+        # sed -i "s/&::descriptor_table_pos_2finclude_2fproto_2fhandle_2eproto/nullptr/g" build/runtime/pos/cuda_impl/proto/*.pb.cc
+        # cmake --build build --config Debug --target bpftime_runtime_tests -j$(nproc) || true
+        # sed -i "s/&::descriptor_table_pos_2finclude_2fproto_2fhandle_2eproto/nullptr/g" build/runtime/pos/cuda_impl/proto/*.pb.cc
+        # cmake --build build --config Debug --target bpftime_runtime_tests -j$(nproc) || true
+        # sed -i "s/&::descriptor_table_pos_2finclude_2fproto_2fhandle_2eproto/nullptr/g" build/runtime/pos/cuda_impl/proto/*.pb.cc
+        # cmake --build build --config Debug --target bpftime_runtime_tests -j$(nproc) || true
+        # sed -i "s/&::descriptor_table_pos_2finclude_2fproto_2fhandle_2eproto/nullptr/g" build/runtime/pos/cuda_impl/proto/*.pb.cc
         cmake --build build --config Debug --target bpftime_runtime_tests -j$(nproc)
     - name: test runtime with mpk
       run:  ./build/runtime/unit-test/bpftime_runtime_tests
