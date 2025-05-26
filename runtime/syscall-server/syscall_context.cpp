@@ -315,8 +315,10 @@ long syscall_context::handle_sysbpf(int cmd, union bpf_attr *attr, size_t size)
 	switch (cmd) {
 	case BPF_MAP_CREATE: {
 		if (run_with_kernel) {
-			std::string map_info = fmt::format("Creating kernel map type={}, name={}, key_size={}, value_size={}", 
-				attr->map_type, attr->map_name, attr->key_size, attr->value_size);
+			std::string map_info = fmt::format(
+				"Creating kernel map type={}, name={}, key_size={}, value_size={}",
+				attr->map_type, attr->map_name, attr->key_size,
+				attr->value_size);
 			SPDLOG_DEBUG("{}", map_info);
 			int fd = orig_syscall_fn(__NR_bpf, (long)cmd,
 						 (long)(uintptr_t)attr,
@@ -324,8 +326,10 @@ long syscall_context::handle_sysbpf(int cmd, union bpf_attr *attr, size_t size)
 			SPDLOG_DEBUG("Created kernel map finished, fd={}", fd);
 			return create_kernel_bpf_map(fd);
 		}
-		std::string map_info = fmt::format("Creating map type={}, name={}, key_size={}, value_size={}", 
-			attr->map_type, attr->map_name, attr->key_size, attr->value_size);
+		std::string map_info = fmt::format(
+			"Creating map type={}, name={}, key_size={}, value_size={}",
+			attr->map_type, attr->map_name, attr->key_size,
+			attr->value_size);
 		SPDLOG_DEBUG("{}", map_info);
 		int id = bpftime_maps_create(
 			-1 /* let the shm alloc fd for us */, attr->map_name,
@@ -350,7 +354,7 @@ long syscall_context::handle_sysbpf(int cmd, union bpf_attr *attr, size_t size)
 	}
 	case BPF_MAP_LOOKUP_ELEM: {
 		SPDLOG_DEBUG("Looking up map {}, key={:x}", attr->map_fd,
-			    (uintptr_t)attr->key);
+			     (uintptr_t)attr->key);
 		if (run_with_kernel) {
 			return orig_syscall_fn(__NR_bpf, (long)cmd,
 					       (long)(uintptr_t)attr,
@@ -374,8 +378,8 @@ long syscall_context::handle_sysbpf(int cmd, union bpf_attr *attr, size_t size)
 	}
 	case BPF_MAP_UPDATE_ELEM: {
 		SPDLOG_DEBUG("Updating map {}, key={:x}, value={:x}, flags={}",
-			    attr->map_fd, (uintptr_t)attr->key,
-			    (uintptr_t)attr->value, attr->flags);
+			     attr->map_fd, (uintptr_t)attr->key,
+			     (uintptr_t)attr->value, attr->flags);
 		if (run_with_kernel) {
 			return orig_syscall_fn(__NR_bpf, (long)cmd,
 					       (long)(uintptr_t)attr,
@@ -388,7 +392,7 @@ long syscall_context::handle_sysbpf(int cmd, union bpf_attr *attr, size_t size)
 	}
 	case BPF_MAP_DELETE_ELEM: {
 		SPDLOG_DEBUG("Deleting map {}, key={:x}", attr->map_fd,
-			    (uintptr_t)attr->key);
+			     (uintptr_t)attr->key);
 		if (run_with_kernel) {
 			return orig_syscall_fn(__NR_bpf, (long)cmd,
 					       (long)(uintptr_t)attr,
@@ -397,9 +401,21 @@ long syscall_context::handle_sysbpf(int cmd, union bpf_attr *attr, size_t size)
 		return bpftime_map_delete_elem(
 			attr->map_fd, (const void *)(uintptr_t)attr->key);
 	}
+	case BPF_MAP_LOOKUP_AND_DELETE_ELEM: {
+		SPDLOG_DEBUG("Lookup and delete map {}, value={:x}",
+			     attr->map_fd, (uintptr_t)attr->value);
+		if (run_with_kernel) {
+			return orig_syscall_fn(__NR_bpf, (long)cmd,
+					       (long)(uintptr_t)attr,
+					       (long)size);
+		}
+		// For queue maps, this is equivalent to pop operation
+		return bpftime_map_pop_elem(attr->map_fd,
+					    (void *)(uintptr_t)attr->value);
+	}
 	case BPF_MAP_GET_NEXT_KEY: {
 		SPDLOG_DEBUG("Getting next key for map {}, key={:x}",
-			    attr->map_fd, (uintptr_t)attr->key);
+			     attr->map_fd, (uintptr_t)attr->key);
 		if (run_with_kernel) {
 			return orig_syscall_fn(__NR_bpf, (long)cmd,
 					       (long)(uintptr_t)attr,
@@ -854,10 +870,12 @@ int syscall_context::handle_dup3(int oldfd, int newfd, int flags)
 {
 	SPDLOG_DEBUG("Calling mocked dup3 {}, {}", oldfd, newfd);
 	if (!enable_mock || run_with_kernel)
-		return orig_syscall_fn(__NR_dup3, (long)oldfd, (long)newfd, (long)flags);
+		return orig_syscall_fn(__NR_dup3, (long)oldfd, (long)newfd,
+				       (long)flags);
 	try_startup();
 	if (bpftime_is_map_fd(oldfd)) {
 		return bpftime_maps_dup(oldfd, newfd);
 	}
-	return orig_syscall_fn(__NR_dup3, (long)oldfd, (long)newfd, (long)flags);
+	return orig_syscall_fn(__NR_dup3, (long)oldfd, (long)newfd,
+			       (long)flags);
 }

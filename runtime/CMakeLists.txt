@@ -75,6 +75,8 @@ set(sources
   src/bpf_map/userspace/per_cpu_array_map.cpp
   src/bpf_map/userspace/per_cpu_hash_map.cpp
   src/bpf_map/userspace/prog_array.cpp
+  src/bpf_map/userspace/queue.cpp
+  src/bpf_map/userspace/stack.cpp
   extension/extension_helper.cpp
 )
 

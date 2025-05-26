@@ -145,6 +145,41 @@ long bpftime_shm::bpf_delete_elem(int fd, const void *key,
 	return handler.map_delete_elem(key, from_syscall);
 }
 
+long bpftime_shm::bpf_map_push_elem(int fd, const void *value, uint64_t flags,
+				    bool from_syscall) const
+{
+	if (!is_map_fd(fd)) {
+		errno = ENOENT;
+		return -1;
+	}
+	auto &handler =
+		std::get<bpftime::bpf_map_handler>(manager->get_handler(fd));
+	return handler.map_push_elem(value, flags, from_syscall);
+}
+
+long bpftime_shm::bpf_map_pop_elem(int fd, void *value, bool from_syscall) const
+{
+	if (!is_map_fd(fd)) {
+		errno = ENOENT;
+		return -1;
+	}
+	auto &handler =
+		std::get<bpftime::bpf_map_handler>(manager->get_handler(fd));
+	return handler.map_pop_elem(value, from_syscall);
+}
+
+long bpftime_shm::bpf_map_peek_elem(int fd, void *value,
+				    bool from_syscall) const
+{
+	if (!is_map_fd(fd)) {
+		errno = ENOENT;
+		return -1;
+	}
+	auto &handler =
+		std::get<bpftime::bpf_map_handler>(manager->get_handler(fd));
+	return handler.map_peek_elem(value, from_syscall);
+}
+
 int bpftime_shm::bpf_map_get_next_key(int fd, const void *key, void *next_key,
 				      bool from_syscall) const
 {
@@ -713,17 +748,18 @@ int bpftime_shm::dup_bpf_map(int oldfd, int newfd)
 	if (!manager) {
 		return -1;
 	}
-	
+
 	// Get the original map handler
 	auto &handler =
-		std::get<bpftime::bpf_map_handler>(manager->get_handler(oldfd));	
+		std::get<bpftime::bpf_map_handler>(manager->get_handler(oldfd));
 	std::string new_name = std::string("dup_") + handler.name.c_str();
 	// Create a new handler with the same parameters
 	return manager->set_handler(
 		newfd,
-		bpftime::bpf_map_handler(newfd, new_name.c_str(), segment, handler.attr), // Copy construct the handler
-		segment
-	);
+		bpftime::bpf_map_handler(newfd, new_name.c_str(), segment,
+					 handler.attr), // Copy construct the
+							// handler
+		segment);
 }
 
 const handler_manager *bpftime_shm::get_manager() const

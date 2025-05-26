@@ -126,6 +126,14 @@ class bpftime_shm {
 
 	long bpf_delete_elem(int fd, const void *key, bool from_syscall) const;
 
+	// Queue/stack map operations for push/pop/peek helper functions
+	long bpf_map_push_elem(int fd, const void *value, uint64_t flags,
+			       bool from_syscall) const;
+
+	long bpf_map_pop_elem(int fd, void *value, bool from_syscall) const;
+
+	long bpf_map_peek_elem(int fd, void *value, bool from_syscall) const;
+
 	int bpf_map_get_next_key(int fd, const void *key, void *next_key,
 				 bool from_syscall) const;
 
