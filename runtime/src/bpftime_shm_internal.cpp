@@ -633,7 +633,7 @@ bpftime_shm::bpftime_shm(const char *shm_name, shm_open_type type)
 			"done: bpftime_shm for server setup: syscall_pid_set");
 
 		agent_config = segment.find_or_construct<struct agent_config>(
-			bpftime::DEFAULT_AGENT_CONFIG_NAME)(segment);
+			bpftime::DEFAULT_AGENT_CONFIG_NAME)();
 
 		injected_pids = segment.find_or_construct<alive_agent_pids>(
 			bpftime::DEFAULT_ALIVE_AGENT_PIDS_NAME)(
@@ -668,7 +668,7 @@ bpftime_shm::bpftime_shm(const char *shm_name, shm_open_type type)
 			"done: bpftime_shm for server setup: syscall_pid_set");
 
 		agent_config = segment.construct<struct agent_config>(
-			bpftime::DEFAULT_AGENT_CONFIG_NAME)(segment);
+			bpftime::DEFAULT_AGENT_CONFIG_NAME)();
 		SPDLOG_DEBUG(
 			"done: bpftime_shm for server setup: agent_config");
 
@@ -799,7 +799,6 @@ void bpftime_shm::set_agent_config(struct agent_config &&config)
 	}
 
 	agent_config->~agent_config();
-	config.change_to_shm_object(segment);
 	std::construct_at(agent_config, std::move(config));
 }
 

@@ -1171,7 +1171,7 @@ bpftime_helper_group::get_kernel_utils_helper_group()
 		  { BPF_FUNC_get_stack,
 		    bpftime_helper_info{ .index = BPF_FUNC_get_stack,
 					 .name = "bpf_get_stack",
-					 .fn = (void *)bpf_get_stack } },
+					 .fn = (void *)bpftime_get_stack } },
 		  { BPF_FUNC_ktime_get_coarse_ns,
 		    bpftime_helper_info{
 			    .index = BPF_FUNC_ktime_get_coarse_ns,
