@@ -20,7 +20,16 @@ if(${TEST_LCOV})
   target_link_options(bpftime-agent PRIVATE -fprofile-arcs)
 endif()
 
-add_dependencies(bpftime-agent bpftime_llvm_vm llvmbpf_vm bpftime_vm)
+if(${BPFTIME_ENABLE_CUDA_ATTACH})
+  add_dependencies(bpftime-agent bpftime_llvm_vm llvmbpf_vm bpftime_vm)
+  target_link_options(bpftime-agent PUBLIC "-Wl,--whole-archive" "$<TARGET_FILE:bpftime_nv_attach_impl>" "$<TARGET_FILE:bpftime_llvm_vm>" "$<TARGET_FILE:bpftime_vm>" "$<TARGET_FILE:llvmbpf_vm>" "-Wl,--no-whole-archive")
+  target_link_libraries(bpftime-agent PUBLIC bpftime_nv_attach_impl)
+  target_include_directories(bpftime-agent PUBLIC ${NV_ATTACH_IMPL_INCLUDE})
+  set(EXTRA_LINK_LIBS bpftime_llvm_vm
+    bpftime_vm
+    llvmbpf_vm)
+endif()
+
 
 if(${BPFTIME_BUILD_WITH_LIBBPF})
   target_include_directories(bpftime-agent
@@ -43,11 +52,7 @@ if(${BPFTIME_BUILD_WITH_LIBBPF})
     spdlog::spdlog
     bpftime_frida_uprobe_attach_impl
     bpftime_syscall_trace_attach_impl
-    # bpftime_nv_attach_impl
-    # pos
-    bpftime_llvm_vm
-    bpftime_vm
-    llvmbpf_vm
+    ${EXTRA_LINK_LIBS}
   )
 
 else()
@@ -68,12 +73,7 @@ else()
     -ldl
     spdlog::spdlog
     bpftime_frida_uprobe_attach_impl
+    ${EXTRA_LINK_LIBS}
   )
 endif()
 target_link_options(bpftime-agent PUBLIC "-Wl,-export-dynamic")
-
-if(${BPFTIME_ENABLE_CUDA_ATTACH})
-  target_link_options(bpftime-agent PUBLIC "-Wl,--whole-archive" "$<TARGET_FILE:bpftime_nv_attach_impl>" "$<TARGET_FILE:bpftime_llvm_vm>" "$<TARGET_FILE:bpftime_vm>" "$<TARGET_FILE:llvmbpf_vm>" "-Wl,--no-whole-archive")
-  target_link_libraries(bpftime-agent PUBLIC bpftime_nv_attach_impl)
-  target_include_directories(bpftime-agent PUBLIC ${NV_ATTACH_IMPL_INCLUDE})
-endif()

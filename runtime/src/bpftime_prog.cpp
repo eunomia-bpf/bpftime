@@ -9,7 +9,6 @@
 #include "bpftime_internal.h"
 #include "bpftime_vm_compat.hpp"
 #include "ebpf-vm.h"
-#include "llvm_jit_context.hpp"
 #ifdef BPFTIME_ENABLE_CUDA_ATTACH
 #include "nvPTXCompiler.h"
 #endif
