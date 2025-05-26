@@ -2,9 +2,6 @@ add_library(bpftime-agent SHARED
   agent.cpp
 )
 
-if(NOT ${BPFTIME_LLVM_JIT})
-  message(FATAL_ERROR "LLVM_JIT must be enabled to use bpftime-super")
-endif()
 
 if(${BPFTIME_BUILD_WITH_LIBBPF})
   add_dependencies(bpftime-agent FridaGum spdlog::spdlog bpftime_frida_uprobe_attach_impl bpftime_syscall_trace_attach_impl)
