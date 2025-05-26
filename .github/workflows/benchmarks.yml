@@ -35,11 +35,11 @@ jobs:
         sudo apt update
         sudo apt install -y --no-install-recommends \
           libelf1 libelf-dev zlib1g-dev make cmake git libboost-all-dev \
-          binutils-dev libyaml-cpp-dev ca-certificates clang llvm pkg-config llvm-dev libfuse-dev libfuse3-dev
+          binutils-dev libyaml-cpp-dev ca-certificates clang llvm pkg-config llvm-dev 
 
     - name: install additional dependencies for experiments
       run: |
-        sudo apt-get install libfuse-dev fuse
+        sudo apt-get install libfuse-dev fuse libfuse3-dev 
 
     - name: install python dependencies
       run: |
