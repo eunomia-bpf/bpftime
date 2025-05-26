@@ -221,9 +221,15 @@ nv_attach_impl::hack_fatbin(std::vector<uint8_t> &&data_vec)
 			boost::process::std_out > stream);
 		std::string line;
 		std::string output;
+		bool should_record = false;
 		while (stream && std::getline(stream, line)) {
-			output += line + "\n";
+			if (should_record) {
+				output += line + "\n";
+			}
+			if (line.starts_with("ptxasOptions = "))
+				should_record = true;
 		}
+		ptx_out.push_back(output);
 	}
 	if (ptx_out.size() != 1) {
 		SPDLOG_ERROR(
