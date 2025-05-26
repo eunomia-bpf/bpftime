@@ -5,6 +5,7 @@
  */
 #include "bpftime_logger.hpp"
 #include "bpftime_shm.hpp"
+#include "spdlog/cfg/env.h"
 #include <cstdio>
 #include <ebpf-vm.h>
 #include "syscall_context.hpp"
@@ -83,6 +84,7 @@ syscall_context::syscall_context()
 	SPDLOG_INFO("Init bpftime syscall mocking..");
 	SPDLOG_INFO("The log will be written to: {}",
 		    runtime_config.get_logger_output_path());
+	spdlog::cfg::load_env_levels();
 }
 
 void syscall_context::try_startup()

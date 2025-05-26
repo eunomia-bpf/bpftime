@@ -5,6 +5,7 @@
  */
 #include "bpf_map/userspace/per_cpu_array_map.hpp"
 #include "bpf_map/userspace/per_cpu_hash_map.hpp"
+#include "bpf_map/userspace/stack_trace_map.hpp"
 #include <bpf_map/userspace/perf_event_array_map.hpp>
 #include <bpf_map/userspace/queue.hpp>
 #include <bpf_map/userspace/stack.hpp>
@@ -121,6 +122,11 @@ const void *bpf_map_handler::map_lookup_elem(const void *key,
 		return from_syscall ? do_lookup_userspace(impl) :
 				      do_lookup(impl);
 	}
+	case bpf_map_type::BPF_MAP_TYPE_STACK_TRACE: {
+		auto impl =
+			static_cast<stack_trace_map_impl *>(map_impl_ptr.get());
+		return do_lookup(impl);
+	}
 	case bpf_map_type::BPF_MAP_TYPE_QUEUE: {
 		auto impl = static_cast<queue_map_impl *>(map_impl_ptr.get());
 		return do_lookup(impl);
@@ -223,6 +229,11 @@ long bpf_map_handler::map_update_elem(const void *key, const void *value,
 		return from_syscall ? do_update_userspace(impl) :
 				      do_update(impl);
 	}
+	case bpf_map_type::BPF_MAP_TYPE_STACK_TRACE: {
+		auto impl =
+			static_cast<stack_trace_map_impl *>(map_impl_ptr.get());
+		return do_update(impl);
+	}
 	case bpf_map_type::BPF_MAP_TYPE_QUEUE: {
 		auto impl = static_cast<queue_map_impl *>(map_impl_ptr.get());
 		return do_update(impl);
@@ -316,6 +327,11 @@ int bpf_map_handler::bpf_map_get_next_key(const void *key, void *next_key,
 	case bpf_map_type::BPF_MAP_TYPE_PERCPU_HASH: {
 		auto impl = static_cast<per_cpu_hash_map_impl *>(
 			map_impl_ptr.get());
+		return do_get_next_key(impl);
+	}
+	case bpf_map_type::BPF_MAP_TYPE_STACK_TRACE: {
+		auto impl =
+			static_cast<stack_trace_map_impl *>(map_impl_ptr.get());
 		return do_get_next_key(impl);
 	}
 	case bpf_map_type::BPF_MAP_TYPE_QUEUE: {
@@ -419,6 +435,11 @@ long bpf_map_handler::map_delete_elem(const void *key, bool from_syscall) const
 			map_impl_ptr.get());
 		return from_syscall ? do_delete_userspace(impl) :
 				      do_delete(impl);
+	}
+	case bpf_map_type::BPF_MAP_TYPE_STACK_TRACE: {
+		auto impl =
+			static_cast<stack_trace_map_impl *>(map_impl_ptr.get());
+		return do_delete(impl);
 	}
 	case bpf_map_type::BPF_MAP_TYPE_QUEUE: {
 		auto impl = static_cast<queue_map_impl *>(map_impl_ptr.get());
@@ -571,6 +592,12 @@ int bpf_map_handler::map_init(managed_shared_memory &memory)
 						max_entries);
 		return 0;
 	}
+	case bpf_map_type::BPF_MAP_TYPE_STACK_TRACE: {
+		map_impl_ptr = memory.construct<stack_trace_map_impl>(
+			container_name.c_str())(memory, key_size, value_size,
+						max_entries);
+		return 0;
+	}
 #endif
 	case bpf_map_type::BPF_MAP_TYPE_ARRAY_OF_MAPS: {
 		map_impl_ptr = memory.construct<array_map_of_maps_impl>(
@@ -618,6 +645,9 @@ void bpf_map_handler::map_free(managed_shared_memory &memory)
 	case bpf_map_type::BPF_MAP_TYPE_PERCPU_HASH:
 		memory.destroy<per_cpu_hash_map_impl>(container_name.c_str());
 		break;
+	case bpf_map_type::BPF_MAP_TYPE_STACK_TRACE:
+		memory.destroy<stack_trace_map_impl>(container_name.c_str());
+		break;
 	case bpf_map_type::BPF_MAP_TYPE_QUEUE:
 		memory.destroy<queue_map_impl>(container_name.c_str());
 		break;
@@ -656,7 +686,13 @@ void bpf_map_handler::map_free(managed_shared_memory &memory)
 	map_impl_ptr = nullptr;
 	return;
 }
-
+std::optional<stack_trace_map_impl *>
+bpf_map_handler::try_get_stack_trace_map_impl() const
+{
+	if (type != bpf_map_type::BPF_MAP_TYPE_STACK_TRACE)
+		return {};
+	return static_cast<stack_trace_map_impl *>(map_impl_ptr.get());
+}
 std::optional<perf_event_array_kernel_user_impl *>
 bpf_map_handler::try_get_shared_perf_event_array_map_impl() const
 {

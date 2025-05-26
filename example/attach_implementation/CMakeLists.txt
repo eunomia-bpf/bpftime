@@ -4,10 +4,10 @@ add_library(
     ./nginx_plugin_adaptor/nginx_plugin_adaptor.cpp
 )
 
-add_dependencies(attach_impl_example_nginx_plugin_adaptor bpftime_base_attach_impl runtime spdlog::spdlog)
+add_dependencies(attach_impl_example_nginx_plugin_adaptor bpftime_simple_attach_impl runtime spdlog::spdlog)
 
-target_link_libraries(attach_impl_example_nginx_plugin_adaptor PRIVATE bpftime_base_attach_impl runtime spdlog::spdlog)
-target_include_directories(attach_impl_example_nginx_plugin_adaptor PRIVATE ${BPFTIME_RUNTIME_INCLUDE} ${SPDLOG_INCLUDE})
+target_link_libraries(attach_impl_example_nginx_plugin_adaptor PRIVATE bpftime_simple_attach_impl runtime spdlog::spdlog)
+target_include_directories(attach_impl_example_nginx_plugin_adaptor PRIVATE ${BPFTIME_RUNTIME_INCLUDE} ${SPDLOG_INCLUDE} ${SIMPLE_ATTACH_IMPL_INCLUDE})
 
 # add controller target
 add_subdirectory(controller)

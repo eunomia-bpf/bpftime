@@ -12,6 +12,7 @@
 #include <initializer_list>
 #include <map>
 #include <memory>
+#include <optional>
 #include <set>
 #include <string_view>
 #include <utility>
@@ -54,6 +55,16 @@ class bpf_attach_ctx {
 	int destroy_instantiated_attach_link(int link_id);
 	// Destroy all instantiated attach links
 	int destroy_all_attach_links();
+	std::optional<attach::base_attach_impl *>
+	get_attach_impl_by_attach_type(int attach_type)
+	{
+		if (auto itr = attach_impls.find(attach_type);
+		    itr != attach_impls.end()) {
+			return itr->second.first;
+		} else {
+			return {};
+		}
+	}
 
     private:
 	constexpr static int CURRENT_ID_OFFSET = 65536;

@@ -83,50 +83,52 @@ The benchmark script will output results like:
 === Benchmark Results Summary ===
 
 Nginx without module:
-  Requests/sec: 5521.09 ± 2229.70
-  Latency (avg): 137.16ms
-  Successful iterations: 10
+  Requests/sec: 4536.86 ± 1027.29
+  Latency (avg): 16.54ms
+  Successful iterations: 20
 
 Nginx with baseline C module:
-  Requests/sec: 4958.83 ± 317.04
-  Latency (avg): 141.83ms
-  Successful iterations: 10
+  Requests/sec: 4559.84 ± 1000.22
+  Latency (avg): 16.39ms
+  Successful iterations: 20
 
 Nginx with WebAssembly module:
-  Requests/sec: 4728.75 ± 1261.55
-  Latency (avg): 148.66ms
-  Successful iterations: 10
+  Requests/sec: 4008.00 ± 797.06
+  Latency (avg): 18.11ms
+  Successful iterations: 20
 
 Nginx with LuaJIT module:
-  Requests/sec: 4403.50 ± 364.82
-  Latency (avg): 160.17ms
-  Successful iterations: 10
+  Requests/sec: 3982.76 ± 644.57
+  Latency (avg): 17.94ms
+  Successful iterations: 20
 
 Nginx with bpftime module:
-  Requests/sec: 4777.81 ± 215.28
-  Latency (avg): 146.97ms
-  Successful iterations: 10
+  Requests/sec: 4461.00 ± 1031.08
+  Latency (avg): 16.68ms
+  Successful iterations: 20
 
 Nginx with RLBox NoOp module:
-  Requests/sec: 4783.59 ± 252.86
-  Latency (avg): 146.88ms
-  Successful iterations: 10
+  Requests/sec: 4148.58 ± 687.99
+  Latency (avg): 17.25ms
+  Successful iterations: 20
 
 Nginx with ERIM-protected module:
-  Requests/sec: 4828.19 ± 318.56
-  Latency (avg): 145.80ms
-  Successful iterations: 10
+  Requests/sec: 4024.11 ± 784.07
+  Latency (avg): 18.80ms
+  Successful iterations: 20
 
 Overhead Comparisons:
   Compared to no module:
-    Baseline C: 10.18%
-    WebAssembly: 14.35%
-    LuaJIT: 20.24%
-    BPFtime: 13.46%
-    RLBox NoOp: 13.36%
-    ERIM: 12.55%
-JSON results saved to: /home/yunwei37/bpftime/example/attach_implementation/benchmark/benchmark_results_20250424_010202.json
+    Baseline C: -0.51%
+    WebAssembly: 11.66%
+    LuaJIT: 12.21%
+    BPFtime: 1.67%
+    RLBox NoOp: 8.56%
+    ERIM: 11.30%
+JSON results saved to: /home/yunwei37/bpftime/example/attach_implementation/benchmark/benchmark_results_20250512_173550.json
 ```
+
+See the [example_benchmark_results.json](example_benchmark_results.json) for more details.
 
 Key metrics to consider:
 

@@ -202,6 +202,12 @@ jobs:
             syscall_trace: false
             expected_str: "bpf:"
             name: usdt_minimal
+          - path: get_stack_id_example
+            executable: ./get_stack_id_example
+            victim: ./victim
+            syscall_trace: false
+            expected_str: "Function: malloc enter"
+            name: get_stack_id_example
 
     steps:
       - uses: actions/checkout@v2

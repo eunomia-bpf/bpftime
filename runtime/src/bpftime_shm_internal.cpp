@@ -420,6 +420,24 @@ bool bpftime_shm::is_epoll_fd(int fd) const
 	return std::holds_alternative<bpftime::epoll_handler>(handler);
 }
 
+bool bpftime_shm::is_stack_trace_map_fd(int fd) const
+{
+	if (!is_map_fd(fd))
+		return false;
+	auto &map_impl = std::get<bpf_map_handler>(manager->get_handler(fd));
+	return map_impl.type == bpf_map_type::BPF_MAP_TYPE_STACK_TRACE;
+}
+std::optional<stack_trace_map_impl *>
+bpftime_shm::try_get_stack_trace_impl(int fd) const
+{
+	if (!is_stack_trace_map_fd(fd)) {
+		SPDLOG_ERROR("Expected fd {} to be an stack trace map fd", fd);
+		return {};
+	}
+	auto &map_handler = std::get<bpf_map_handler>(manager->get_handler(fd));
+	return map_handler.try_get_stack_trace_map_impl();
+}
+
 bool bpftime_shm::is_map_fd(int fd) const
 {
 	if (manager == nullptr || fd < 0 ||
