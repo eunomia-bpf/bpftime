@@ -193,6 +193,14 @@ class bpf_map_handler {
 	std::optional<perf_event_array_kernel_user_impl *>
 	try_get_shared_perf_event_array_map_impl() const;
 
+	// Queue/stack map helper functions for push/pop/peek operations
+	long map_push_elem(const void *value, uint64_t flags,
+			   bool from_syscall = false) const;
+
+	long map_pop_elem(void *value, bool from_syscall = false) const;
+
+	long map_peek_elem(void *value, bool from_syscall = false) const;
+
     private:
 	int id = 0;
 	std::string get_container_name();

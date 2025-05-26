@@ -145,6 +145,45 @@ long bpftime_map_delete_elem(int fd, const void *key)
 	}
 }
 
+long bpftime_map_push_elem(int fd, const void *value, uint64_t flags)
+{
+	try {
+		return shm_holder.global_shared_memory.bpf_map_push_elem(
+			fd, value, flags, true);
+	} catch (std::exception &ex) {
+		SPDLOG_ERROR(
+			"Exception happened when performing map push elem: {}",
+			ex.what());
+		return -1;
+	}
+}
+
+long bpftime_map_pop_elem(int fd, void *value)
+{
+	try {
+		return shm_holder.global_shared_memory.bpf_map_pop_elem(
+			fd, value, true);
+	} catch (std::exception &ex) {
+		SPDLOG_ERROR(
+			"Exception happened when performing map pop elem: {}",
+			ex.what());
+		return -1;
+	}
+}
+
+long bpftime_map_peek_elem(int fd, void *value)
+{
+	try {
+		return shm_holder.global_shared_memory.bpf_map_peek_elem(
+			fd, value, true);
+	} catch (std::exception &ex) {
+		SPDLOG_ERROR(
+			"Exception happened when performing map peek elem: {}",
+			ex.what());
+		return -1;
+	}
+}
+
 int bpftime_map_get_next_key(int fd, const void *key, void *next_key)
 {
 	try {
