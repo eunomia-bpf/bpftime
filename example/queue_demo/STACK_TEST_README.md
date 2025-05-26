@@ -2,12 +2,6 @@
 
 This document describes the implementation and testing of BPF Stack (`BPF_MAP_TYPE_STACK`) functionality in `bpftime`. BPF Stack follows Last In First Out (LIFO) data processing.
 
-## Core Feature: LIFO (Last In First Out)
-
-- **Processing Order**: Events are processed in reverse order of their entry
-- **Pop Behavior**: The last (newest) event pushed to stack is popped first
-- **Use Cases**: Suitable for scenarios requiring newest data priority, call stacks, or undo operations
-
 ## Components
 
 - `uprobe_stack.bpf.c`: eBPF kernel program defining and operating `BPF_MAP_TYPE_STACK`
@@ -102,33 +96,3 @@ struct event_data {
 - `BPF_MAP_LOOKUP_ELEM`: Peek operation on stack maps
 - LIFO data access pattern
 - Uprobe integration with stack maps
-
-## Common Use Cases
-
-- Function call chain tracing
-- Latest state tracking
-- Undo functionality implementation
-- Recursive algorithm state management
-- Hot function tracking in performance analysis
-
-## Troubleshooting
-
-1. **Environment Check**:
-   - Ensure commands run in `example/queue_demo/` directory
-   - Verify `bpftime` libraries exist in `../../build/runtime/`
-
-2. **Build Verification**:
-   - Run `make build` in project root
-   - Check `libbpftime-syscall-server.so` and `libbpftime-agent.so` exist
-
-3. **Target Program**:
-   - Ensure `target` compiled with `make uprobe_stack target`
-   - Test `./target` runs independently
-
-4. **LIFO Verification**:
-   - Compare push order in `bpf_printk` with pop order in user-space output
-   - Counter field should appear in reverse order during pop operations
-
-5. **Edge Cases**:
-   - Empty stack operations should return `-ENOENT`
-   - Full stack operations should return appropriate error codes 

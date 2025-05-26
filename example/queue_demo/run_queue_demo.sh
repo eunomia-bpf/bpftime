@@ -1,7 +1,7 @@
 #!/bin/bash
 
-# Stack Demo Dedicated Test Script
-# Dedicated test for BPF Stack Map LIFO (Last In, First Out) functionality
+# Queue Demo Dedicated Test Script
+# Dedicated test for BPF Queue Map FIFO (First In, First Out) functionality
 
 set -e
 
@@ -78,22 +78,22 @@ build_project() {
 
 # Check build status
 check_build_status() {
-    if [[ ! -x "./uprobe_stack" ]] || [[ ! -x "./target" ]]; then
+    if [[ ! -x "./uprobe_queue" ]] || [[ ! -x "./target" ]]; then
         print_warning "Programs not built or incomplete"
         print_info "Building now..."
         build_project
     fi
 }
 
-# Run Stack demo - server-client mode
-run_stack_demo_server_client() {
-    print_info "=== BPF Stack Map Demo (LIFO - Last In, First Out) ==="
-    print_info "Starting Stack Demo (Server-Client mode)..."
+# Run Queue demo - server-client mode
+run_queue_demo_server_client() {
+    print_info "=== BPF Queue Map Demo (FIFO - First In, First Out) ==="
+    print_info "Starting Queue Demo (Server-Client mode)..."
     echo
 
     # Check if programs exist
-    if [[ ! -x "./uprobe_stack" ]]; then
-        print_error "uprobe_stack program does not exist, please build first"
+    if [[ ! -x "./uprobe_queue" ]]; then
+        print_error "uprobe_queue program does not exist, please build first"
         exit 1
     fi
 
@@ -103,13 +103,13 @@ run_stack_demo_server_client() {
     fi
 
     # Start server side
-    print_info "Starting Stack Server (monitor program)..."
-    LD_PRELOAD=../../build/runtime/syscall-server/libbpftime-syscall-server.so ./uprobe_stack &
+    print_info "Starting Queue Server (monitor program)..."
+    LD_PRELOAD=../../build/runtime/syscall-server/libbpftime-syscall-server.so ./uprobe_queue &
     SERVER_PID=$!
 
     # Wait for server to start
     sleep 3
-    print_success "Stack Server started (PID: $SERVER_PID)"
+    print_success "Queue Server started (PID: $SERVER_PID)"
 
     # Start client side
     print_info "Starting Client (target program)..."
@@ -131,7 +131,7 @@ run_stack_demo_server_client() {
 
         if kill -0 $SERVER_PID 2>/dev/null; then
             kill $SERVER_PID
-            print_info "Stack Server stopped"
+            print_info "Queue Server stopped"
         fi
 
         exit 0
@@ -139,16 +139,16 @@ run_stack_demo_server_client() {
 
     trap cleanup SIGINT SIGTERM
 
-    print_info "Stack Demo is running..."
-    print_info "Note: Stack is LIFO (Last In, First Out), events are processed in reverse chronological order"
+    print_info "Queue Demo is running..."
+    print_info "Note: Queue is FIFO (First In, First Out), events are processed in chronological order"
     print_info "Press Ctrl+C to stop demo"
-    print_info "Or run 'pkill -f uprobe_stack' and 'pkill -f target' in another terminal to stop"
+    print_info "Or run 'pkill -f uprobe_queue' and 'pkill -f target' in another terminal to stop"
     echo
 
     # Wait for user interruption
     while true; do
         if ! kill -0 $SERVER_PID 2>/dev/null; then
-            print_error "Stack Server exited unexpectedly"
+            print_error "Queue Server exited unexpectedly"
             break
         fi
 
@@ -164,62 +164,62 @@ run_stack_demo_server_client() {
     cleanup
 }
 
-# Run Stack demo - manual mode (provide guidance)
-run_stack_demo_manual() {
-    print_info "Stack Demo Manual Mode - Please follow these steps:"
+# Run Queue demo - manual mode (provide guidance)
+run_queue_demo_manual() {
+    print_info "Queue Demo Manual Mode - Please follow these steps:"
     echo
-    print_info "Terminal 1 - Start Stack Server (monitor program):"
+    print_info "Terminal 1 - Start Queue Server (monitor program):"
     echo "  cd $(pwd)"
-    echo "  LD_PRELOAD=../../build/runtime/syscall-server/libbpftime-syscall-server.so ./uprobe_stack"
+    echo "  LD_PRELOAD=../../build/runtime/syscall-server/libbpftime-syscall-server.so ./uprobe_queue"
     echo
     print_info "Terminal 2 - Start Client (target program):"
     echo "  cd $(pwd)"
     echo "  LD_PRELOAD=../../build/runtime/agent/libbpftime-agent.so ./target"
     echo
     print_warning "Note: Please run Server first, then Client"
-    print_info "Stack is LIFO (Last In, First Out), events are processed in reverse chronological order"
+    print_info "Queue is FIFO (First In, First Out), events are processed in chronological order"
 }
 
 # Demonstrate bpftime command line tool usage
-run_stack_demo_bpftime_cli() {
-    print_info "Stack Demo bpftime CLI Mode - Please follow these steps:"
+run_queue_demo_bpftime_cli() {
+    print_info "Queue Demo bpftime CLI Mode - Please follow these steps:"
     echo
     print_info "Step 1 - Load eBPF program in bpftime root directory:"
     echo "  cd ../../"
-    echo "  sudo bpftime load example/queue_demo/uprobe_stack"
+    echo "  sudo bpftime load example/queue_demo/uprobe_queue"
     echo
     print_info "Step 2 - Run target program in another terminal:"
     echo "  cd example/queue_demo/"
     echo "  sudo bpftime start ./target"
     echo
     print_warning "Note: This mode requires sudo privileges"
-    print_info "Stack is LIFO (Last In, First Out), events are processed in reverse chronological order"
+    print_info "Queue is FIFO (First In, First Out), events are processed in chronological order"
 }
 
 # Show usage
 show_usage() {
-    echo "Stack Map Demo Dedicated Test Script"
+    echo "Queue Map Demo Dedicated Test Script"
     echo ""
     echo "Usage: $0 [options]"
     echo ""
     echo "Options:"
     echo "  -h, --help         Show help information"
     echo "  -b, --build        Build project only, do not run"
-    echo "  -r, --run          Run Stack demo (server-client auto mode)"
+    echo "  -r, --run          Run Queue demo (server-client auto mode)"
     echo "  -m, --manual       Show manual running guidance"
     echo "  -t, --bpftime-cli  Show bpftime command line tool usage"
     echo "  -c, --clean        Clean build files"
     echo ""
-    echo "Default behavior: Build and run Stack demo (server-client auto mode)"
+    echo "Default behavior: Build and run Queue demo (server-client auto mode)"
     echo ""
-    echo "Stack characteristics:"
-    echo "  - LIFO (Last In, First Out)"
-    echo "  - Events are processed in reverse chronological order"
-    echo "  - Latest events are popped first"
+    echo "Queue characteristics:"
+    echo "  - FIFO (First In, First Out)"
+    echo "  - Events are processed in chronological order"
+    echo "  - Earliest events are popped first"
     echo ""
     echo "Other scripts:"
     echo "  ./run_demo.sh        - Comprehensive test for Queue and Stack functionality"
-    echo "  ./run_queue_demo.sh  - Dedicated Queue functionality test"
+    echo "  ./run_stack_demo.sh  - Dedicated Stack functionality test"
 }
 
 # Clean function
@@ -244,19 +244,19 @@ main() {
     -r | --run)
         check_dependencies
         check_build_status
-        run_stack_demo_server_client
+        run_queue_demo_server_client
         exit 0
         ;;
     -m | --manual)
         check_dependencies
         check_build_status
-        run_stack_demo_manual
+        run_queue_demo_manual
         exit 0
         ;;
     -t | --bpftime-cli)
         check_dependencies
         check_build_status
-        run_stack_demo_bpftime_cli
+        run_queue_demo_bpftime_cli
         exit 0
         ;;
     -c | --clean)
@@ -264,10 +264,10 @@ main() {
         exit 0
         ;;
     "")
-        # Default: build and run Stack demo
+        # Default: build and run Queue demo
         check_dependencies
         build_project
-        run_stack_demo_server_client
+        run_queue_demo_server_client
         ;;
     *)
         print_error "Unknown option: $1"

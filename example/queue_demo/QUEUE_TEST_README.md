@@ -2,12 +2,6 @@
 
 This document describes the implementation and testing of BPF Queue (`BPF_MAP_TYPE_QUEUE`) functionality in `bpftime`. BPF Queue follows First In First Out (FIFO) data processing.
 
-## Core Feature: FIFO (First In First Out)
-
-- **Processing Order**: Events are processed in the same order as their entry
-- **Pop Behavior**: The first (oldest) event pushed to queue is popped first
-- **Use Cases**: Suitable for event streaming, task scheduling, and sequential data processing
-
 ## Components
 
 - `uprobe_queue.bpf.c`: eBPF kernel program defining and operating `BPF_MAP_TYPE_QUEUE`
@@ -102,41 +96,3 @@ struct event_data {
 - FIFO data access pattern
 - Uprobe integration with queue maps
 
-## Common Use Cases
-
-- Event streaming and processing
-- Task scheduling and job queues
-- Sequential data processing
-- Message passing between components
-- Rate limiting and buffering
-
-## Queue vs Stack Comparison
-
-| Feature          | Queue (FIFO)          | Stack (LIFO)          |
-| ---------------- | --------------------- | --------------------- |
-| Processing Order | First In First Out    | Last In First Out     |
-| Use Case         | Sequential processing | Recent data priority  |
-| Pop Behavior     | Oldest event first    | Newest event first    |
-| Example          | Event streaming       | Function call tracing |
-
-## Troubleshooting
-
-1. **Environment Check**:
-   - Ensure commands run in `example/queue_demo/` directory
-   - Verify `bpftime` libraries exist in `../../build/runtime/`
-
-2. **Build Verification**:
-   - Run `make build` in project root
-   - Check `libbpftime-syscall-server.so` and `libbpftime-agent.so` exist
-
-3. **Target Program**:
-   - Ensure `target` compiled with `make uprobe_queue target`
-   - Test `./target` runs independently
-
-4. **FIFO Verification**:
-   - Compare push order in `bpf_printk` with pop order in user-space output
-   - Counter field should appear in same order during pop operations
-
-5. **Edge Cases**:
-   - Empty queue operations should return `-ENOENT`
-   - Full queue operations should return appropriate error codes 
