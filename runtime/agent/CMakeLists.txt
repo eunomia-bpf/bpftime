@@ -52,8 +52,7 @@ if(${BPFTIME_BUILD_WITH_LIBBPF})
     bpftime_vm
     llvmbpf_vm
   )
-  target_link_options(bpftime-agent PUBLIC "-Wl,--whole-archive" "$<TARGET_FILE:bpftime_nv_attach_impl>" "$<TARGET_FILE:bpftime_llvm_vm>" "$<TARGET_FILE:bpftime_vm>" "$<TARGET_FILE:llvmbpf_vm>" "-Wl,--no-whole-archive")
-  target_link_libraries(bpftime-agent PUBLIC bpftime_nv_attach_impl)
+
 else()
   target_include_directories(bpftime-agent
     PRIVATE
@@ -62,7 +61,7 @@ else()
     ../../third_party/
     ${SPDLOG_INCLUDE}
     ${FRIDA_UPROBE_ATTACH_IMPL_INCLUDE}
-    ${NV_ATTACH_IMPL_INCLUDE}
+
   )
   target_link_libraries(bpftime-agent
     ${FRIDA_GUM_INSTALL_DIR}/libfrida-gum.a
@@ -72,7 +71,12 @@ else()
     -ldl
     spdlog::spdlog
     bpftime_frida_uprobe_attach_impl
-    bpftime_nv_attach_impl
   )
 endif()
 target_link_options(bpftime-agent PUBLIC "-Wl,-export-dynamic")
+
+if(${BPFTIME_ENABLE_CUDA_ATTACH})
+  target_link_options(bpftime-agent PUBLIC "-Wl,--whole-archive" "$<TARGET_FILE:bpftime_nv_attach_impl>" "$<TARGET_FILE:bpftime_llvm_vm>" "$<TARGET_FILE:bpftime_vm>" "$<TARGET_FILE:llvmbpf_vm>" "-Wl,--no-whole-archive")
+  target_link_libraries(bpftime-agent PUBLIC bpftime_nv_attach_impl)
+  target_include_directories(bpftime-agent PUBLIC ${NV_ATTACH_IMPL_INCLUDE})
+endif()

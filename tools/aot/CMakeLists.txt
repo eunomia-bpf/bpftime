@@ -15,7 +15,7 @@ target_include_directories(bpftime-aot-cli PRIVATE
     ${LIBBPF_INCLUDE_DIRS}
     ${LLVM_INCLUDE_DIRS}
 )
-target_link_libraries(bpftime-aot-cli PRIVATE -L/usr/lib/llvm-20/lib/ spdlog::spdlog argparse bpftime_vm_compat bpftime_llvm_vm runtime ${LIBBPF_LIBRARIES} elf z cuda cudart ${LLVM_LIBRARIES} ${llvm_libs})
+target_link_libraries(bpftime-aot-cli PRIVATE -L/usr/lib/llvm-20/lib/ spdlog::spdlog argparse bpftime_vm_compat bpftime_llvm_vm runtime ${LIBBPF_LIBRARIES} elf z ${LLVM_LIBRARIES} ${llvm_libs})
 set_property(TARGET bpftime-aot-cli PROPERTY CXX_STANDARD 20)
 
 target_compile_definitions(bpftime-aot-cli PRIVATE _GNU_SOURCE)

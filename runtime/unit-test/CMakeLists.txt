@@ -21,13 +21,13 @@ set(TEST_SOURCES
     maps/test_bpftime_hash_map.cpp
     maps/kernel_unit_tests.cpp
     maps/test_stack_trace_map.cpp
-    
+
     maps/test_lru_var_hash_map.cpp
 
     test_bpftime_shm_json.cpp
     test_probe.cpp
     test_config.cpp
-    
+
     attach_with_ebpf/test_attach_filter_with_ebpf.cpp
     attach_with_ebpf/test_attach_uprobe_with_ebpf.cpp
     attach_with_ebpf/test_helpers.cpp
@@ -37,24 +37,33 @@ set(TEST_SOURCES
 
     tailcall/test_user_to_kernel_tailcall.cpp
 
-    cuda/test_cuda_compile.cpp
 )
-
+if(${BPFTIME_ENABLE_CUDA_ATTACH})
+    list(APPEND TEST_SOURCES cuda/test_cuda_compile.cp)
+endif()
 option(TEST_LCOV "option for lcov" OFF)
 add_executable(bpftime_runtime_tests ${TEST_SOURCES})
 
-if (${TEST_LCOV}) 
+if(${TEST_LCOV})
     target_compile_options(bpftime_runtime_tests PRIVATE -fprofile-arcs -ftest-coverage -fprofile-update=atomic)
 endif()
 
 set_property(TARGET bpftime_runtime_tests PROPERTY CXX_STANDARD 20)
 add_dependencies(bpftime_runtime_tests runtime bpftime-object bpftime_frida_uprobe_attach_impl)
 
-if (${TEST_LCOV}) 
+if(${BPFTIME_ENABLE_CUDA_ATTACH})
+    include(../../cmake/cuda.cmake)
+    find_cuda()
+    target_include_directories(bpftime_runtime_tests PRIVATE ${CUDA_INCLUDE_PATH})
+    target_link_directories(bpftime_runtime_tests PRIVATE ${CUDA_LIBRARY_PATH})
+
+endif()
+
+if(${TEST_LCOV})
     target_link_options(bpftime_runtime_tests PRIVATE -lgcov)
-    target_link_libraries(bpftime_runtime_tests PRIVATE runtime bpftime-object Catch2::Catch2WithMain bpftime_frida_uprobe_attach_impl gcov cuda cudart)
-else ()
-    target_link_libraries(bpftime_runtime_tests PRIVATE runtime bpftime-object Catch2::Catch2WithMain bpftime_frida_uprobe_attach_impl cuda cudart)
+    target_link_libraries(bpftime_runtime_tests PRIVATE runtime bpftime-object Catch2::Catch2WithMain bpftime_frida_uprobe_attach_impl gcov ${CUDA_LIBS})
+else()
+    target_link_libraries(bpftime_runtime_tests PRIVATE runtime bpftime-object Catch2::Catch2WithMain bpftime_frida_uprobe_attach_impl ${CUDA_LIBS})
 endif()
 
 target_include_directories(bpftime_runtime_tests PRIVATE ${BPFTIME_RUNTIME_INCLUDE} ${BPFTIME_OBJECT_INCLUDE_DIRS} ${Catch2_INCLUDE} ${Boost_INCLUDE} ${FRIDA_UPROBE_ATTACH_IMPL_INCLUDE})

@@ -5,14 +5,11 @@
  */
 #include "attach_private_data.hpp"
 #include "base_attach_impl.hpp"
-#include "nv_attach_impl.hpp"
 #include "bpftime_shm.hpp"
 
-#include "cuda.h"
 #include "handler/link_handler.hpp"
 #include "handler/map_handler.hpp"
 #include "handler/prog_handler.hpp"
-#include "nv_attach_private_data.hpp"
 #include <chrono>
 #include <cstring>
 #include <iterator>
@@ -34,7 +31,11 @@
 #include <utility>
 #include <variant>
 #include <sys/resource.h>
-
+#ifdef BPFTIME_ENABLE_CUDA_ATTACH
+#include "nv_attach_impl.hpp"
+#include <cuda.h>
+#include "nv_attach_private_data.hpp"
+#endif
 extern "C" uint64_t bpftime_set_retval(uint64_t value);
 namespace bpftime
 {
@@ -107,16 +108,22 @@ int bpf_attach_ctx::init_attach_ctx_from_handlers(
 bpf_attach_ctx::~bpf_attach_ctx()
 {
 	SPDLOG_DEBUG("Destructor: bpf_attach_ctx");
-
+#ifdef BPFTIME_ENABLE_CUDA_ATTACH
 	cuda_ctx->cuda_watcher_should_stop->store(true);
+#endif
 }
 
 // create a probe context
-bpf_attach_ctx::bpf_attach_ctx() : cuda_ctx(*cuda::create_cuda_context())
+bpf_attach_ctx::bpf_attach_ctx()
+#ifdef BPFTIME_ENABLE_CUDA_ATTACH
+	: cuda_ctx(*cuda::create_cuda_context())
+#endif
 {
 	current_id = CURRENT_ID_OFFSET;
 	SPDLOG_INFO("bpf_attach_ctx constructed");
+#ifdef BPFTIME_ENABLE_CUDA_ATTACH
 	start_cuda_watcher_thread();
+#endif
 }
 
 int bpf_attach_ctx::instantiate_handler_at(const handler_manager *manager,
@@ -258,6 +265,7 @@ int bpf_attach_ctx::instantiate_bpf_link_handler_at(
 	}
 	auto prog = instantiated_progs.at(handler.prog_id).get();
 	int attach_id;
+#ifdef BPFTIME_ENABLE_CUDA_ATTACH
 	if (prog->is_cuda()) {
 		if (handle_nv_attach_impl) {
 			SPDLOG_INFO(
@@ -285,7 +293,9 @@ int bpf_attach_ctx::instantiate_bpf_link_handler_at(
 				id);
 			return 0;
 		}
-	} else {
+	} else
+#endif
+	{
 		auto cookie = handler.attach_cookie;
 		attach_id = attach_impl->create_attach_with_ebpf_callback(
 			[=](void *mem, size_t mem_size, uint64_t *ret) -> int {

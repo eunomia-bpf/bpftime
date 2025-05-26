@@ -53,7 +53,6 @@ message(STATUS "Building for architecture: ${ARCH}")
 
 set(sources
   src/attach/bpf_attach_ctx.cpp
-  src/attach/bpf_attach_ctx_cuda.cpp
 
   src/handler/handler_manager.cpp
   src/handler/map_handler.cpp
@@ -83,6 +82,10 @@ set(sources
 
   extension/extension_helper.cpp
 )
+
+if(${BPFTIME_ENABLE_CUDA_ATTACH})
+  list(APPEND sources src/attach/bpf_attach_ctx_cuda.cpp)
+endif()
 
 if(UNIX AND NOT APPLE AND BPFTIME_BUILD_WITH_LIBBPF)
   list(APPEND sources
@@ -116,8 +119,6 @@ add_custom_target(
 
 message(INFO " Found the following boost include dirs : ${Boost_INCLUDE_DIRS}")
 
-include(../cmake/cuda.cmake)
-find_cuda()
 
 target_include_directories(${PROJECT_NAME}
   PUBLIC
@@ -129,20 +130,26 @@ target_include_directories(${PROJECT_NAME}
   ${CMAKE_CURRENT_SOURCE_DIR}
   ${SPDLOG_INCLUDE}
   ${Boost_INCLUDE_DIRS}
-  ${CUDA_INCLUDE_PATH}
 )
-target_link_directories(${PROJECT_NAME} PUBLIC ${CUDA_LIBRARY_PATH})
+
 target_link_libraries(${PROJECT_NAME}
   PUBLIC
   bpftime_vm
   spdlog::spdlog
   bpftime_base_attach_impl
-  bpftime_nv_attach_impl
-  ${CUDA_LIBS}
+
 )
 
-message(STATUS "runtime CUDA libs= ${CUDA_LIBS}")
 
+if(${BPFTIME_ENABLE_CUDA_ATTACH})
+  include(../cmake/cuda.cmake)
+  find_cuda()
+  message(STATUS "runtime CUDA libs= ${CUDA_LIBS}")
+  target_include_directories(${PROJECT_NAME} PUBLIC ${CUDA_INCLUDE_PATH})
+  target_link_directories(${PROJECT_NAME} PUBLIC ${CUDA_LIBRARY_PATH})
+  target_link_libraries(${PROJECT_NAME} PUBLIC ${CUDA_LIBS} bpftime_nv_attach_impl cuda)
+  target_compile_definitions(${PROJECT_NAME} PUBLIC BPFTIME_ENABLE_CUDA_ATTACH=1)
+endif()
 if(${BPFTIME_BUILD_WITH_LIBBPF})
   add_dependencies(${PROJECT_NAME} bpftime_vm FridaGum spdlog::spdlog libbpf bpftime_base_attach_impl)
 else()
@@ -158,7 +165,7 @@ endif()
 
 if(${ENABLE_EBPF_VERIFIER})
   target_include_directories(${PROJECT_NAME} PRIVATE ${BPFTIME_VERIFIER_INCLUDE})
-  target_link_libraries(${PROJECT_NAME} PRIVATE bpftime-verifier cuda)
+  target_link_libraries(${PROJECT_NAME} PRIVATE bpftime-verifier)
   add_dependencies(${PROJECT_NAME} bpftime-verifier)
   target_compile_definitions(${PROJECT_NAME} PRIVATE ENABLE_EBPF_VERIFIER ENABLE_BPFTIME_VERIFIER)
 endif()
@@ -204,9 +211,7 @@ if(${BPFTIME_BUILD_WITH_LIBBPF})
     -lz
     -lelf
     bpftime_base_attach_impl
-    bpftime_nv_attach_impl
     ${EXTRA_LIBS}
-    cuda
   )
 else()
   target_link_libraries(${PROJECT_NAME}
@@ -217,9 +222,7 @@ else()
     -ldl
     -lz
     bpftime_base_attach_impl
-    bpftime_nv_attach_impl
     ${EXTRA_LIBS}
-    cuda
   )
 endif()
 

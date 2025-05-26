@@ -3,7 +3,7 @@
 #include "bpftime_shm_internal.hpp"
 #include "frida_attach_private_data.hpp"
 #include "frida_uprobe_attach_impl.hpp"
-#include "nv_attach_private_data.hpp"
+
 #include "spdlog/common.h"
 #include "spdlog/sinks/stdout_color_sinks.h"
 #include "spdlog/sinks/stdout_sinks.h"
@@ -27,14 +27,14 @@
 #include "bpftime_shm.hpp"
 #include <spdlog/spdlog.h>
 #include <spdlog/cfg/env.h>
+#ifdef BPFTIME_ENABLE_CUDA_ATTACH
+#include "nv_attach_private_data.hpp"
 #include "nv_attach_impl.hpp"
+#endif
+
 #if __linux__ && BPFTIME_BUILD_WITH_LIBBPF
 #include "syscall_trace_attach_impl.hpp"
 #include "syscall_trace_attach_private_data.hpp"
-#endif
-#if __linux__
-// Temporarily comment out problematic include until file is created
-// #include "../attach/nv_attach_impl/nv_attach_impl.hpp"
 #endif
 
 using namespace bpftime;
@@ -79,30 +79,29 @@ syscall_hooker_func_t orig_hooker;
 
 extern "C" void bpftime_agent_main(const gchar *data, gboolean *stay_resident);
 
-// extern "C" int bpftime_hooked_main(int argc, char **argv, char **envp)
-// {
-// 	int stay_resident = 0;
-// 	injected_with_frida = false;
-// 	bpftime_agent_main("", &stay_resident);
-// 	int ret = orig_main_func(argc, argv, envp);
-// 	// ctx_holder.destroy();
-// 	return ret;
-// }
+extern "C" int bpftime_hooked_main(int argc, char **argv, char **envp)
+{
+	int stay_resident = 0;
+	injected_with_frida = false;
+	bpftime_agent_main("", &stay_resident);
+	int ret = orig_main_func(argc, argv, envp);
+	// ctx_holder.destroy();
+	return ret;
+}
 
-// extern "C" int __libc_start_main(int (*main)(int, char **, char **), int argc,
-// 				 char **argv,
-// 				 int (*init)(int, char **, char **),
-// 				 void (*fini)(void), void (*rtld_fini)(void),
-// 				 void *stack_end)
-// {
-// 	orig_main_func = main;
-// 	using this_func_t = decltype(&__libc_start_main);
-// 	this_func_t orig = (this_func_t)dlsym(RTLD_NEXT, "__libc_start_main");
+extern "C" int __libc_start_main(int (*main)(int, char **, char **), int argc,
+				 char **argv,
+				 int (*init)(int, char **, char **),
+				 void (*fini)(void), void (*rtld_fini)(void),
+				 void *stack_end)
+{
+	orig_main_func = main;
+	using this_func_t = decltype(&__libc_start_main);
+	this_func_t orig = (this_func_t)dlsym(RTLD_NEXT, "__libc_start_main");
 
-// 	return orig(bpftime_hooked_main, argc, argv, init, fini, rtld_fini,
-// 		    stack_end);
-// }
-
+	return orig(bpftime_hooked_main, argc, argv, init, fini, rtld_fini,
+		    stack_end);
+}
 static void sig_handler_sigusr1(int sig)
 {
 	SPDLOG_INFO("Detaching..");
@@ -115,7 +114,7 @@ static void sig_handler_sigusr1(int sig)
 	SPDLOG_DEBUG("Detaching done");
 	bpftime_logger_flush();
 }
-
+#ifdef BPFTIME_ENABLE_CUDA_ATTACH
 void **(*original___cudaRegisterFatBinary)(void *) = nullptr;
 
 extern "C" void **__cudaRegisterFatBinary(void *fatbin)
@@ -126,6 +125,7 @@ extern "C" void **__cudaRegisterFatBinary(void *fatbin)
 	bpftime_agent_main(nullptr, &flag);
 	return orig(fatbin);
 }
+#endif
 extern "C" void bpftime_agent_main(const gchar *data, gboolean *stay_resident)
 {
 	{
@@ -199,6 +199,7 @@ extern "C" void bpftime_agent_main(const gchar *data, gboolean *stay_resident)
 			return priv_data;
 		});
 
+#ifdef BPFTIME_ENABLE_CUDA_ATTACH
 	// register cuda attach impl
 	ctx_holder.ctx.register_attach_impl(
 		{ ATTACH_CUDA_PROBE, ATTACH_CUDA_RETPROBE },
@@ -213,6 +214,7 @@ extern "C" void bpftime_agent_main(const gchar *data, gboolean *stay_resident)
 			}
 			return priv_data;
 		});
+#endif
 	SPDLOG_INFO("Initializing agent..");
 	/* We don't want to our library to be unloaded after we return. */
 	*stay_resident = TRUE;

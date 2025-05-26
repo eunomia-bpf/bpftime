@@ -198,7 +198,9 @@ class bpftime_shm {
 	{
 		return open_type;
 	}
+	#ifdef BPFTIME_ENABLE_CUDA_ATTACH
 	bool register_cuda_host_memory();
+	#endif
 	~bpftime_shm();
 };
 

@@ -5,11 +5,9 @@
 #include "base_attach_impl.hpp"
 #include "bpftime_config.hpp"
 #include "bpftime_helper_group.hpp"
-#include "cuda.h"
 #include "handler/link_handler.hpp"
 #include "handler/perf_event_handler.hpp"
 #include "handler/prog_handler.hpp"
-#include "nv_attach_impl.hpp"
 #include <array>
 #include <atomic>
 #include <cstdint>
@@ -22,12 +20,17 @@
 #include <string_view>
 #include <utility>
 #include <vector>
+
+#ifdef BPFTIME_ENABLE_CUDA_ATTACH
+#include "cuda.h"
+#endif
 typedef struct _GumInterceptor GumInterceptor;
 typedef struct _GumInvocationListener GumInvocationListener;
 
 namespace bpftime
 {
 
+#ifdef BPFTIME_ENABLE_CUDA_ATTACH
 namespace cuda
 {
 
@@ -93,13 +96,6 @@ struct CommSharedMem {
 	HelperCallResponse resp;
 	uint64_t time_sum[8];
 };
-
-using cuda_context_type = std::remove_pointer<CUcontext>::type;
-using cuda_module_type = std::remove_pointer<CUmodule>::type;
-
-void cuda_context_destroyer(CUcontext ptr);
-void cuda_module_destroyer(CUmodule ptr);
-
 struct CUDAContext {
 	// Indicate whether cuda watcher thread should stop
 	std::shared_ptr<std::atomic<bool>> cuda_watcher_should_stop =
@@ -123,6 +119,8 @@ struct CUDAContext {
 std::optional<std::unique_ptr<cuda::CUDAContext>> create_cuda_context();
 
 } // namespace cuda
+#endif
+
 class base_attach_manager;
 
 class handler_manager;
@@ -206,12 +204,14 @@ class bpf_attach_ctx {
 					    bool handle_nv_attach_impl);
 	int instantiate_perf_event_handler_at(
 		int id, const bpf_perf_event_handler &perf_handler);
+#ifdef BPFTIME_ENABLE_CUDA_ATTACH
 	// Start host thread for handling map requests from CUDA
 	void start_cuda_watcher_thread();
 	std::unique_ptr<cuda::CUDAContext> cuda_ctx;
 
 	std::vector<attach::MapBasicInfo>
 	create_map_basic_info(int filled_size);
+#endif
 };
 
 } // namespace bpftime

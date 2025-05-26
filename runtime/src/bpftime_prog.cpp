@@ -10,7 +10,9 @@
 #include "bpftime_vm_compat.hpp"
 #include "ebpf-vm.h"
 #include "llvm_jit_context.hpp"
+#ifdef BPFTIME_ENABLE_CUDA_ATTACH
 #include "nvPTXCompiler.h"
+#endif
 #include <cstring>
 #include <cstdlib>
 #include <cstdint>
@@ -36,6 +38,7 @@
 using namespace std;
 namespace bpftime
 {
+#ifdef BPFTIME_ENABLE_CUDA_ATTACH
 std::optional<std::vector<char>> compile_ptx_to_elf(const std::string &ptx_code,
 						    const char *cpu_target)
 {
@@ -98,7 +101,7 @@ std::optional<std::vector<char>> compile_ptx_to_elf(const std::string &ptx_code,
 
 	return elf_binary;
 }
-
+#endif
 thread_local std::optional<uint64_t> current_thread_bpf_cookie;
 
 bpftime_prog::bpftime_prog(const struct ebpf_inst *insn, size_t insn_cnt,

@@ -16,9 +16,11 @@
 #include <memory>
 #if __linux__
 #include <sys/epoll.h>
+#ifdef BPFTIME_ENABLE_CUDA_ATTACH
 #include <cuda_runtime.h>
 #include <cuda_runtime_api.h>
 #include <cuda.h>
+#endif
 #elif __APPLE__
 #include "bpftime_epoll.h"
 #endif
@@ -592,7 +594,9 @@ bpftime_shm::bpftime_shm(const char *shm_name, shm_open_type type)
 		// open the shm
 		segment = boost::interprocess::managed_shared_memory(
 			boost::interprocess::open_only, shm_name);
+			#ifdef BPFTIME_ENABLE_CUDA_ATTACH
 		register_cuda_host_memory();
+		#endif
 		manager = segment.find<bpftime::handler_manager>(
 					 bpftime::DEFAULT_GLOBAL_HANDLER_NAME)
 				  .first;
@@ -751,17 +755,18 @@ int bpftime_shm::dup_bpf_map(int oldfd, int newfd)
 	if (!manager) {
 		return -1;
 	}
-	
+
 	// Get the original map handler
 	auto &handler =
-		std::get<bpftime::bpf_map_handler>(manager->get_handler(oldfd));	
+		std::get<bpftime::bpf_map_handler>(manager->get_handler(oldfd));
 	std::string new_name = std::string("dup_") + handler.name.c_str();
 	// Create a new handler with the same parameters
 	return manager->set_handler(
 		newfd,
-		bpftime::bpf_map_handler(newfd, new_name.c_str(), segment, handler.attr), // Copy construct the handler
-		segment
-	);
+		bpftime::bpf_map_handler(newfd, new_name.c_str(), segment,
+					 handler.attr), // Copy construct the
+							// handler
+		segment);
 }
 
 const handler_manager *bpftime_shm::get_manager() const
@@ -845,7 +850,7 @@ int bpftime_shm::add_custom_perf_event(int type, const char *attach_argument)
 		segment);
 	return fd;
 }
-
+#ifdef BPFTIME_ENABLE_CUDA_ATTACH
 bool bpftime_shm::register_cuda_host_memory()
 {
 	if (open_type != shm_open_type::SHM_OPEN_ONLY) {
@@ -870,7 +875,7 @@ bool bpftime_shm::register_cuda_host_memory()
 		    base_addr, seg_size);
 	return true;
 }
-
+#endif
 bpftime::bpftime_shm::~bpftime_shm()
 {
 	if (open_type == shm_open_type::SHM_NO_CREATE) {
@@ -878,6 +883,7 @@ bpftime::bpftime_shm::~bpftime_shm()
 	}
 
 	void *base_addr = segment.get_address();
+#ifdef BPFTIME_ENABLE_CUDA_ATTACH
 	cudaError_t err = cudaHostUnregister(base_addr);
 	if (err != cudaSuccess) {
 		SPDLOG_ERROR("cudaHostUnregister() failed: {}",
@@ -885,6 +891,7 @@ bpftime::bpftime_shm::~bpftime_shm()
 		return;
 	}
 	SPDLOG_INFO("bpftime_shm: Unregistered host memory from CUDA");
+#endif
 }
 
 void bpftime_shm::add_pid_into_alive_agent_set(int pid)
