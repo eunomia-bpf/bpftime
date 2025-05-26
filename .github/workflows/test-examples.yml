@@ -55,18 +55,18 @@ jobs:
             -DTEST_LCOV=YES \
             -DBUILD_BPFTIME_DAEMON=1 \
             -DCMAKE_CXX_FLAGS="-DDEFAULT_LOGGER_OUTPUT_PATH='\"console\"'" -Dabsl_DIR=~/miniconda3/lib/cmake/absl -DProtobuf_DIR=~/miniconda3/lib/cmake/protobuf -Dutf8_range_DIR=~/miniconda3/lib/cmake/utf8_range
-          mkdir -p build/runtime/pos/include/proto/
-          mkdir -p build/runtime/pos/cuda_impl/proto/
-          ln -sf /usr/lib/llvm-*/include/clang-c/ /usr/include/ || true
-          ln -sf /usr/lib/llvm-*/lib/libclang.so /usr/lib || true
-          cmake --build build --config RelWithDebInfo --target install -j || true
-          sed -i "s/&::descriptor_table_pos_2finclude_2fproto_2fhandle_2eproto/nullptr/g" build/runtime/pos/cuda_impl/proto/*.pb.cc
-          cmake --build build --config RelWithDebInfo --target install -j || true
-          sed -i "s/&::descriptor_table_pos_2finclude_2fproto_2fhandle_2eproto/nullptr/g" build/runtime/pos/cuda_impl/proto/*.pb.cc
-          cmake --build build --config RelWithDebInfo --target install -j || true
-          sed -i "s/&::descriptor_table_pos_2finclude_2fproto_2fhandle_2eproto/nullptr/g" build/runtime/pos/cuda_impl/proto/*.pb.cc
-          cmake --build build --config RelWithDebInfo --target install -j || true
-          sed -i "s/&::descriptor_table_pos_2finclude_2fproto_2fhandle_2eproto/nullptr/g" build/runtime/pos/cuda_impl/proto/*.pb.cc
+          # mkdir -p build/runtime/pos/include/proto/
+          # mkdir -p build/runtime/pos/cuda_impl/proto/
+          # ln -sf /usr/lib/llvm-*/include/clang-c/ /usr/include/ || true
+          # ln -sf /usr/lib/llvm-*/lib/libclang.so /usr/lib || true
+          # cmake --build build --config RelWithDebInfo --target install -j || true
+          # sed -i "s/&::descriptor_table_pos_2finclude_2fproto_2fhandle_2eproto/nullptr/g" build/runtime/pos/cuda_impl/proto/*.pb.cc
+          # cmake --build build --config RelWithDebInfo --target install -j || true
+          # sed -i "s/&::descriptor_table_pos_2finclude_2fproto_2fhandle_2eproto/nullptr/g" build/runtime/pos/cuda_impl/proto/*.pb.cc
+          # cmake --build build --config RelWithDebInfo --target install -j || true
+          # sed -i "s/&::descriptor_table_pos_2finclude_2fproto_2fhandle_2eproto/nullptr/g" build/runtime/pos/cuda_impl/proto/*.pb.cc
+          # cmake --build build --config RelWithDebInfo --target install -j || true
+          # sed -i "s/&::descriptor_table_pos_2finclude_2fproto_2fhandle_2eproto/nullptr/g" build/runtime/pos/cuda_impl/proto/*.pb.cc
           cmake --build build --config RelWithDebInfo --target install -j
       - name: Build and install runtime (without llvm-jit)
         if: ${{!matrix.enable_jit}}
@@ -81,13 +81,13 @@ jobs:
           ln -sf /usr/lib/llvm-*/include/clang-c/ /usr/include/ || true
           ln -sf /usr/lib/llvm-*/lib/libclang.so /usr/lib || true
           cmake --build build --config RelWithDebInfo --target install -j || true
-          sed -i "s/&::descriptor_table_pos_2finclude_2fproto_2fhandle_2eproto/nullptr/g" build/runtime/pos/cuda_impl/proto/*.pb.cc
-          cmake --build build --config RelWithDebInfo --target install -j || true
-          sed -i "s/&::descriptor_table_pos_2finclude_2fproto_2fhandle_2eproto/nullptr/g" build/runtime/pos/cuda_impl/proto/*.pb.cc
-          cmake --build build --config RelWithDebInfo --target install -j || true
-          sed -i "s/&::descriptor_table_pos_2finclude_2fproto_2fhandle_2eproto/nullptr/g" build/runtime/pos/cuda_impl/proto/*.pb.cc
-          cmake --build build --config RelWithDebInfo --target install -j || true
-          sed -i "s/&::descriptor_table_pos_2finclude_2fproto_2fhandle_2eproto/nullptr/g" build/runtime/pos/cuda_impl/proto/*.pb.cc
+          # sed -i "s/&::descriptor_table_pos_2finclude_2fproto_2fhandle_2eproto/nullptr/g" build/runtime/pos/cuda_impl/proto/*.pb.cc
+          # cmake --build build --config RelWithDebInfo --target install -j || true
+          # sed -i "s/&::descriptor_table_pos_2finclude_2fproto_2fhandle_2eproto/nullptr/g" build/runtime/pos/cuda_impl/proto/*.pb.cc
+          # cmake --build build --config RelWithDebInfo --target install -j || true
+          # sed -i "s/&::descriptor_table_pos_2finclude_2fproto_2fhandle_2eproto/nullptr/g" build/runtime/pos/cuda_impl/proto/*.pb.cc
+          # cmake --build build --config RelWithDebInfo --target install -j || true
+          # sed -i "s/&::descriptor_table_pos_2finclude_2fproto_2fhandle_2eproto/nullptr/g" build/runtime/pos/cuda_impl/proto/*.pb.cc
           cmake --build build --config RelWithDebInfo --target install -j
       - name: Build basic examples
         run: |
