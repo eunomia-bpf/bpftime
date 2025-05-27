@@ -100,7 +100,7 @@ jobs:
           path: |
             ./coverage-syscall-trace.info
       - uses: codecov/codecov-action@v4
-        if: github.repository == 'eunomia-bpf/bpftime'
+        if: github.repository == 'eunomia-bpf/bpftime' && github.event_name == 'push' && github.ref == 'refs/heads/main'
         with:
               fail_ci_if_error: true # optional (default = false)
               files: ./coverage-syscall-trace.info, ./coverage-uprobe.info # optional
