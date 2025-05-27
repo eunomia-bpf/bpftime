@@ -17,91 +17,41 @@ namespace bpftime
 queue_map_impl::queue_map_impl(
 	boost::interprocess::managed_shared_memory &memory,
 	unsigned int value_size, unsigned int max_entries)
-	: head(0), tail(0), _value_size(value_size), _max_entries(max_entries),
-	  capacity(max_entries + 1),
-	  buffer_allocator(memory.get_segment_manager())
+	: _value_size(value_size), _max_entries(max_entries),
+	  data(byte_allocator(memory.get_segment_manager()))
 {
 	if (value_size == 0 || max_entries == 0) {
 		SPDLOG_ERROR(
 			"Queue map value_size ({}) or max_entries ({}) cannot be zero",
 			value_size, max_entries);
-		throw std::runtime_error(
+		throw std::invalid_argument(
 			"Queue map value_size or max_entries cannot be zero");
 	}
-	try {
-		// Allocate buffer in shared memory
-		buffer = buffer_allocator.allocate(capacity * _value_size);
-	} catch (const std::exception &ex) {
-		SPDLOG_ERROR(
-			"Failed to allocate buffer for queue map ({} bytes): {}",
-			capacity * _value_size, ex.what());
-		throw std::runtime_error(
-			"Failed to allocate shared memory buffer for queue map");
-	}
-	if (!buffer) {
-		SPDLOG_ERROR(
-			"Failed to allocate buffer for queue map ({} bytes) - allocate returned null",
-			capacity * _value_size);
-		throw std::runtime_error(
-			"Failed to allocate buffer for queue map - null pointer");
-	}
-	SPDLOG_DEBUG(
-		"Queue map constructed: value_size={}, max_entries={}, capacity={}, buffer_ptr={:p}",
-		_value_size, _max_entries, capacity, (void *)buffer.get());
-}
 
-// Destructor
-queue_map_impl::~queue_map_impl()
-{
-	SPDLOG_DEBUG("Destroying queue map: buffer_ptr={:p}, size={} bytes",
-		     (void *)buffer.get(), capacity * _value_size);
-	if (buffer) {
-		try {
-			// Deallocate the buffer using the stored allocator
-			buffer_allocator.deallocate(buffer.get(),
-						    capacity * _value_size);
-		} catch (const std::exception &ex) {
-			SPDLOG_ERROR(
-				"Exception during queue map buffer deallocation: {}",
-				ex.what());
-		} catch (...) {
-			SPDLOG_ERROR(
-				"Unknown exception during queue map buffer deallocation");
-		}
-	}
+	// Reserve space for maximum entries
+	data.reserve(max_entries * _value_size);
+
+	SPDLOG_DEBUG("Queue map constructed: value_size={}, max_entries={}",
+		     _value_size, _max_entries);
 }
 
 // --- Internal helper implementations ---
+size_t queue_map_impl::get_current_size() const
+{
+	return data.size() / _value_size;
+}
+
 bool queue_map_impl::is_full() const
 {
-	// Assumes called under lock or head/tail access is safe
-	return (tail + 1) % capacity == head;
+	return get_current_size() >= _max_entries;
 }
 
 bool queue_map_impl::is_empty() const
 {
-	// Assumes called under lock or head/tail access is safe
-	return head == tail;
+	return data.empty();
 }
 
-// Internal dequeue - Must be called under lock
-void queue_map_impl::internal_dequeue()
-{
-	// Caller must ensure queue is not empty
-	head = (head + 1) % capacity;
-}
-
-// Internal enqueue - Must be called under lock
-void queue_map_impl::internal_enqueue(const void *value)
-{
-	// Caller must ensure queue is not full
-	void *dest_ptr = buffer.get() + tail * _value_size;
-	memcpy(dest_ptr, value, _value_size);
-	tail = (tail + 1) % capacity;
-}
-
-// --- Methods mapping to standard BPF syscall commands (within signature
-// limits) ---
+// --- Methods mapping to standard BPF syscall commands ---
 
 // Peek operation (elem_lookup - returns internal pointer)
 void *queue_map_impl::elem_lookup(const void *key)
@@ -112,15 +62,14 @@ void *queue_map_impl::elem_lookup(const void *key)
 
 	if (is_empty()) {
 		SPDLOG_TRACE("Queue peek (lookup) failed: queue empty");
-		return nullptr; // Standard BPF lookup returns NULL on
-				// miss/failure.
+		errno = ENOTSUP; // Set errno as expected by tests
+		return nullptr;
 	}
 
-	// Calculate pointer to the element at the head
-	void *elem_ptr = buffer.get() + head * _value_size;
-	SPDLOG_TRACE("Queue peek (lookup) success: head={}, returning ptr={:p}",
-		     head, elem_ptr);
-	// Return direct pointer. Caller MUST copy data from this pointer.
+	// Return pointer to the first element (front of queue)
+	void *elem_ptr = data.data();
+	SPDLOG_TRACE("Queue peek (lookup) success: returning ptr={:p}",
+		     elem_ptr);
 	return elem_ptr;
 }
 
@@ -136,7 +85,7 @@ long queue_map_impl::elem_update(const void *key, const void *value,
 	if (value == NULL) {
 		SPDLOG_WARN(
 			"Queue push (update) failed: value pointer is NULL");
-		return -EINVAL; // Cannot push NULL value
+		return -EINVAL;
 	}
 
 	// Lock for thread/process safety
@@ -148,79 +97,56 @@ long queue_map_impl::elem_update(const void *key, const void *value,
 	if (full) {
 		// Queue is full, check flags
 		if (flags == BPF_EXIST) {
-			// BPF_EXIST: Overwrite oldest element
+			// BPF_EXIST: Overwrite oldest element (remove from
+			// front)
 			SPDLOG_TRACE(
-				"Queue push (BPF_EXIST): queue full, removing oldest element at head={}",
-				head);
-			internal_dequeue(); // Make space by removing the head
-					    // element
-			internal_enqueue(value); // Add the new element at the
-						 // tail
-			SPDLOG_TRACE(
-				"Queue push (BPF_EXIST): success, new tail={}",
-				tail);
-			return 0; // Success
-		} else if (flags == BPF_ANY) {
-			// BPF_ANY: Fail if full
-			SPDLOG_TRACE(
-				"Queue push (BPF_ANY): failed, queue full (head={}, tail={}, capacity={})",
-				head, tail, capacity);
-			return -EBUSY;
+				"Queue elem_update (BPF_EXIST): queue full, removing oldest element");
+			data.erase(data.begin(), data.begin() + _value_size);
 		} else {
-			// Invalid flags for push operation
-			SPDLOG_WARN("Queue push: invalid flags value: {}",
-				    flags);
-			return -EINVAL;
+			// flags == 0 or BPF_ANY: Fail if full
+			SPDLOG_TRACE(
+				"Queue elem_update: failed, queue full (size={})",
+				get_current_size());
+			return -E2BIG;
 		}
-	} else {
-		// Queue is not full, standard enqueue allowed for valid flags
-		if (flags != BPF_ANY && flags != BPF_EXIST) {
-			SPDLOG_WARN("Queue push: invalid flags value: {}",
-				    flags);
-			return -EINVAL;
-		}
-		// Perform the enqueue
-		internal_enqueue(value);
-		SPDLOG_TRACE(
-			"Queue push (BPF_ANY/EXIST): success, queue not full, new tail={}",
-			tail);
-		return 0; // Success
 	}
+
+	// Add new element to the back of the queue
+	const uint8_t *value_bytes = static_cast<const uint8_t *>(value);
+	data.insert(data.end(), value_bytes, value_bytes + _value_size);
+
+	SPDLOG_TRACE("Queue elem_update: success, new size={}",
+		     get_current_size());
+	return 0;
 }
 
-// Dequeue operation (elem_delete - delete part only)
+// Delete operation (elem_delete - removes front element)
 long queue_map_impl::elem_delete(const void *key)
 {
-	// key is ignored for queue dequeue.
+	// key is ignored for queue
 	boost::interprocess::scoped_lock<boost::interprocess::interprocess_mutex>
 		lock(mutex);
 
 	if (is_empty()) {
-		SPDLOG_TRACE("Queue pop (delete part) failed: queue empty");
-		return -ENOENT; // No element exists to be deleted
+		SPDLOG_TRACE("Queue elem_delete failed: queue empty");
+		return -ENOENT;
 	}
 
-	// Dequeue simply advances the head pointer.
-	unsigned int old_head = head;
-	internal_dequeue(); // Use the internal helper
-	SPDLOG_TRACE(
-		"Queue pop (delete part) success: old_head={}, new_head={}",
-		old_head, head);
-
-	// NOTE: This function ONLY performs the delete. The caller (bpftime
-	// handler) is responsible for calling elem_lookup first and copying the
-	// value to implement the full BPF_MAP_LOOKUP_AND_DELETE_ELEM semantic.
-	return 0; // Success
+	// Remove the front element
+	data.erase(data.begin(), data.begin() + _value_size);
+	SPDLOG_TRACE("Queue elem_delete success: new size={}",
+		     get_current_size());
+	return 0;
 }
 
-// Get next key - Not applicable
+// Get next key - not supported for queues
 int queue_map_impl::map_get_next_key(const void *key, void *next_key)
 {
-	SPDLOG_TRACE("Queue map_get_next_key called (operation not supported)");
+	// Not supported for queue maps
 	return -EINVAL;
 }
 
-// --- New helper function implementations mapping to Linux kernel patch ---
+// --- New methods mapping to bpf_map helper functions ---
 
 // Push operation for bpf_map_push_elem helper
 long queue_map_impl::map_push_elem(const void *value, uint64_t flags)
@@ -228,6 +154,13 @@ long queue_map_impl::map_push_elem(const void *value, uint64_t flags)
 	if (value == NULL) {
 		SPDLOG_WARN(
 			"Queue map_push_elem failed: value pointer is NULL");
+		return -EINVAL;
+	}
+
+	// Validate flags
+	if (flags != 0 && flags != BPF_ANY && flags != BPF_EXIST) {
+		SPDLOG_WARN("Queue map_push_elem failed: invalid flags ({})",
+			    flags);
 		return -EINVAL;
 	}
 
@@ -242,31 +175,24 @@ long queue_map_impl::map_push_elem(const void *value, uint64_t flags)
 		if (flags == BPF_EXIST) {
 			// BPF_EXIST: Overwrite oldest element
 			SPDLOG_TRACE(
-				"Queue map_push_elem (BPF_EXIST): queue full, removing oldest element at head={}",
-				head);
-			internal_dequeue(); // Make space by removing the head
-					    // element
-			internal_enqueue(value); // Add the new element at the
-						 // tail
-			SPDLOG_TRACE(
-				"Queue map_push_elem (BPF_EXIST): success, new tail={}",
-				tail);
-			return 0; // Success
+				"Queue map_push_elem (BPF_EXIST): queue full, removing oldest element");
+			data.erase(data.begin(), data.begin() + _value_size);
 		} else {
 			// flags == 0 or BPF_ANY: Fail if full
 			SPDLOG_TRACE(
-				"Queue map_push_elem: failed, queue full (head={}, tail={}, capacity={})",
-				head, tail, capacity);
+				"Queue map_push_elem: failed, queue full (size={})",
+				get_current_size());
 			return -E2BIG;
 		}
-	} else {
-		// Queue is not full, perform the enqueue for any valid flags
-		internal_enqueue(value);
-		SPDLOG_TRACE(
-			"Queue map_push_elem: success, queue not full, new tail={}",
-			tail);
-		return 0; // Success
 	}
+
+	// Add new element to the back of the queue
+	const uint8_t *value_bytes = static_cast<const uint8_t *>(value);
+	data.insert(data.end(), value_bytes, value_bytes + _value_size);
+
+	SPDLOG_TRACE("Queue map_push_elem: success, new size={}",
+		     get_current_size());
+	return 0;
 }
 
 // Pop operation for bpf_map_pop_elem helper
@@ -283,21 +209,18 @@ long queue_map_impl::map_pop_elem(void *value)
 
 	if (is_empty()) {
 		SPDLOG_TRACE("Queue map_pop_elem failed: queue empty");
-		return -ENOENT; // No element exists to be popped
+		return -ENOENT;
 	}
 
-	// Copy the element at the head to the output buffer
-	void *elem_ptr = buffer.get() + head * _value_size;
-	memcpy(value, elem_ptr, _value_size);
+	// Copy the front element to the output buffer
+	memcpy(value, data.data(), _value_size);
 
-	// Remove the element from the queue
-	unsigned int old_head = head;
-	internal_dequeue();
-	SPDLOG_TRACE(
-		"Queue map_pop_elem success: copied and removed element at old_head={}, new_head={}",
-		old_head, head);
+	// Remove the front element from the queue
+	data.erase(data.begin(), data.begin() + _value_size);
 
-	return 0; // Success
+	SPDLOG_TRACE("Queue map_pop_elem success: new size={}",
+		     get_current_size());
+	return 0;
 }
 
 // Peek operation for bpf_map_peek_elem helper
@@ -315,42 +238,25 @@ long queue_map_impl::map_peek_elem(void *value)
 
 	if (is_empty()) {
 		SPDLOG_TRACE("Queue map_peek_elem failed: queue empty");
-		return -ENOENT; // No element exists to be peeked
+		return -ENOENT;
 	}
 
-	// Copy the element at the head to the output buffer
-	void *elem_ptr = buffer.get() + head * _value_size;
-	memcpy(value, elem_ptr, _value_size);
-	SPDLOG_TRACE("Queue map_peek_elem success: copied element at head={}",
-		     head);
+	// Copy the front element to the output buffer
+	memcpy(value, data.data(), _value_size);
 
-	return 0; // Success
+	SPDLOG_TRACE("Queue map_peek_elem success");
+	return 0;
 }
 
 // --- Helper method implementations ---
 unsigned int queue_map_impl::get_value_size() const
 {
-	// No lock needed, immutable
 	return _value_size;
 }
 
 unsigned int queue_map_impl::get_max_entries() const
 {
-	// No lock needed, immutable
 	return _max_entries;
-}
-
-size_t queue_map_impl::get_current_size()
-{
-	// Lock to get consistent head/tail
-	boost::interprocess::scoped_lock<boost::interprocess::interprocess_mutex>
-		lock(mutex);
-	if (tail >= head) {
-		return tail - head;
-	} else {
-		// Tail has wrapped around
-		return capacity - head + tail;
-	}
 }
 
 } // namespace bpftime

@@ -19,7 +19,7 @@
 
 #include <boost/interprocess/managed_shared_memory.hpp>
 #include <boost/interprocess/sync/interprocess_mutex.hpp>
-#include <boost/interprocess/offset_ptr.hpp>
+#include <boost/interprocess/containers/vector.hpp>
 #include <boost/interprocess/allocators/allocator.hpp>
 // Include bpf.h for BPF flags like BPF_ANY, BPF_EXIST, etc.
 #include <bpf/bpf.h>
@@ -38,33 +38,23 @@ class queue_map_impl {
 	// Internal mutex for thread/process safety
 	boost::interprocess::interprocess_mutex mutex;
 
-	// Circular buffer indices
-	unsigned int head;
-	unsigned int tail;
-
 	// Configuration
 	unsigned int _value_size;
-	unsigned int capacity; // max_entries + 1
 	unsigned int _max_entries;
 
-	// Shared memory buffer pointer
-	boost::interprocess::offset_ptr<uint8_t> buffer;
-
-	// Allocator type and instance
-	using char_allocator = boost::interprocess::allocator<
+	// Vector type and allocator for storing queue elements
+	using byte_allocator = boost::interprocess::allocator<
 		uint8_t,
 		boost::interprocess::managed_shared_memory::segment_manager>;
-	char_allocator buffer_allocator;
+	using byte_vector =
+		boost::interprocess::vector<uint8_t, byte_allocator>;
+
+	// Vector to store queue data
+	byte_vector data;
 
 	// Internal helpers
 	bool is_full() const;
 	bool is_empty() const;
-	// Internal dequeue function used by push(BPF_EXIST) and delete
-	// Must be called under lock.
-	void internal_dequeue();
-	// Internal enqueue function used by push
-	// Must be called under lock.
-	void internal_enqueue(const void *value);
 
     public:
 	// Map handler should NOT lock externally, locking is internal.
@@ -82,7 +72,7 @@ class queue_map_impl {
 	/**
 	 * @brief Destroy the queue map impl object.
 	 */
-	~queue_map_impl();
+	~queue_map_impl() = default;
 
 	// Disable copy/assignment
 	queue_map_impl(const queue_map_impl &) = delete;
@@ -173,7 +163,8 @@ class queue_map_impl {
 	// --- Helper methods ---
 	unsigned int get_value_size() const;
 	unsigned int get_max_entries() const;
-	size_t get_current_size(); // Calculates current number of elements
+	size_t get_current_size() const; // Calculates current number of
+					 // elements
 };
 
 } // namespace bpftime
