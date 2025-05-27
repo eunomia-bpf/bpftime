@@ -129,7 +129,7 @@ jobs:
       image: "manjusakalza/bpftime-base-image:${{matrix.container.image}}"
       options: " ${{matrix.privilege_options.options}}"
     strategy:
-      fail-fast: false
+      fail-fast: true
       matrix:
         exclude:
           - privilege_options:

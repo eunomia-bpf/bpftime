@@ -41,7 +41,10 @@ jobs:
           -DCMAKE_CXX_COMPILER=/usr/lib/llvm-17/bin/clang++ \
           -DLLVM_CONFIG=/usr/lib/llvm-17/bin/llvm-config \
           -DLLVM_DIR=/usr/lib/llvm-17/lib/cmake/llvm
-
+    - name: List fuse headers
+      run: |
+        ls /usr/include/fuse || true
+        ls /usr/include/fuse3 || true
     - name: build benchmarks
       run:  make -C benchmark
 
