@@ -79,13 +79,14 @@ syscall_hooker_func_t orig_hooker;
 
 extern "C" void bpftime_agent_main(const gchar *data, gboolean *stay_resident);
 
+#ifndef BPFTIME_ENABLE_CUDA_ATTACH
+
 extern "C" int bpftime_hooked_main(int argc, char **argv, char **envp)
 {
 	int stay_resident = 0;
 	injected_with_frida = false;
 	bpftime_agent_main("", &stay_resident);
 	int ret = orig_main_func(argc, argv, envp);
-	// ctx_holder.destroy();
 	return ret;
 }
 
@@ -102,6 +103,7 @@ extern "C" int __libc_start_main(int (*main)(int, char **, char **), int argc,
 	return orig(bpftime_hooked_main, argc, argv, init, fini, rtld_fini,
 		    stack_end);
 }
+#endif
 static void sig_handler_sigusr1(int sig)
 {
 	SPDLOG_INFO("Detaching..");

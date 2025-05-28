@@ -39,7 +39,7 @@ set(TEST_SOURCES
 
 )
 if(${BPFTIME_ENABLE_CUDA_ATTACH})
-    list(APPEND TEST_SOURCES cuda/test_cuda_compile.cp)
+    list(APPEND TEST_SOURCES cuda/test_cuda_compile.cpp)
 endif()
 option(TEST_LCOV "option for lcov" OFF)
 add_executable(bpftime_runtime_tests ${TEST_SOURCES})

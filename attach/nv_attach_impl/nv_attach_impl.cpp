@@ -9,6 +9,7 @@
 #include "spdlog/spdlog.h"
 #include <asm/unistd.h> // For architecture-specific syscall numbers
 #include <boost/process/detail/child_decl.hpp>
+#include <boost/process/env.hpp>
 #include <boost/process/io.hpp>
 #include <boost/process/pipe.hpp>
 #include <cstdlib>
@@ -215,10 +216,15 @@ nv_attach_impl::hack_fatbin(std::vector<uint8_t> &&data_vec)
 		SPDLOG_INFO("Listing functions in the patched ptx");
 		boost::asio::io_context ctx;
 		boost::process::ipstream stream;
+		boost::process::environment env =
+			boost::this_process::environment();
+		env["LD_PRELOAD"] = "";
+
 		boost::process::child child(
 			std::string("cuobjdump --dump-ptx ") +
 				output_path.string(),
-			boost::process::std_out > stream);
+			boost::process::std_out > stream,
+			boost::process::env(env));
 		std::string line;
 		std::string output;
 		bool should_record = false;
@@ -230,6 +236,13 @@ nv_attach_impl::hack_fatbin(std::vector<uint8_t> &&data_vec)
 				should_record = true;
 		}
 		ptx_out.push_back(output);
+		{
+			auto temp_out =
+				std::filesystem::path(tmp_dir) / "temp.ptx";
+			std::ofstream export_ofs(temp_out);
+			export_ofs << output;
+			SPDLOG_INFO("Extracted PTX at {}", temp_out.c_str());
+		}
 	}
 	if (ptx_out.size() != 1) {
 		SPDLOG_ERROR(

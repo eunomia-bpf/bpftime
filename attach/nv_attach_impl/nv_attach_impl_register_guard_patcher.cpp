@@ -97,8 +97,110 @@ std::string add_register_guard_for_ebpf_ptx_func(const std::string &ptxCode)
 			if (std::regex_search(line, closingBraceRegex)) {
 				std::vector<RegisterInfo> registersToSaveInFunc;
 
-				for (size_t i = 0;
+				// 1. Determine the actual insertion point for
+				// declarations
+				size_t currentFuncActualOpeningBraceIdx =
+					std::string::npos;
+				size_t searchStartOffsetBrace = 0;
+				if (!currentFunctionLines.empty() &&
+				    std::regex_search(currentFunctionLines[0],
+						      funcDefRegex)) {
+					searchStartOffsetBrace = 1;
+				}
+				for (size_t i = searchStartOffsetBrace;
 				     i < currentFunctionLines.size(); ++i) {
+					if (std::regex_search(
+						    currentFunctionLines[i],
+						    openingBraceRegex)) {
+						currentFuncActualOpeningBraceIdx =
+							i;
+						break;
+					}
+					// This part ensures we don't
+					// accidentally break early if there are
+					// comments/decls before the brace
+					if (!std::regex_search(
+						    currentFunctionLines[i],
+						    commentOrEmptyRegex) &&
+					    !std::regex_search(
+						    currentFunctionLines[i],
+						    regDeclRegex) &&
+					    !std::regex_search(
+						    currentFunctionLines[i],
+						    localDeclRegex)) {
+						// If we hit a
+						// non-declaration/non-comment
+						// line before the brace,
+						// something is off, but for
+						// now, break. This case is less
+						// common for well-formed PTX.
+						break;
+					}
+				}
+
+				size_t declsInsertionPointInOriginalLines = 0;
+				if (currentFuncActualOpeningBraceIdx !=
+				    std::string::npos) {
+					declsInsertionPointInOriginalLines =
+						currentFuncActualOpeningBraceIdx +
+						1; // Start search *after* the
+						   // opening brace
+					for (size_t i =
+						     declsInsertionPointInOriginalLines;
+					     i < currentFunctionLines.size();
+					     ++i) {
+						const auto &l =
+							currentFunctionLines[i];
+						if (std::regex_search(
+							    l,
+							    commentOrEmptyRegex) ||
+						    std::regex_search(
+							    l, regDeclRegex) ||
+						    std::regex_search(
+							    l,
+							    localDeclRegex)) {
+							declsInsertionPointInOriginalLines =
+								i +
+								1; // Move
+								   // insertion
+								   // point past
+								   // this
+								   // declaration/comment
+						} else {
+							break; // Found first
+							       // non-declaration/non-comment
+							       // line, stop
+						}
+					}
+				} else {
+					// Should not happen for valid function
+					// definitions
+					for (const auto &l :
+					     currentFunctionLines) {
+						resultPtx += l + "\n";
+					}
+					currentFunctionLines.clear();
+					inFunctionBody = false;
+					continue;
+				}
+
+				// 2. Collect registers only from the initial
+				// declaration block Iterate only through the
+				// lines that are part of the initial
+				// declaration block This assumes that
+				// function-scoped registers are declared at the
+				// top of the function, before any actual
+				// instructions or nested blocks like callseq.
+				// The declsInsertionPointInOriginalLines is the
+				// index *after* the last
+				// declaration/comment/empty line. So we should
+				// iterate up to this index.
+				for (size_t i =
+					     currentFuncActualOpeningBraceIdx +
+					     1; // Start after the opening brace
+				     i < declsInsertionPointInOriginalLines &&
+				     i < currentFunctionLines.size();
+				     ++i) {
 					const std::string &funcLine =
 						currentFunctionLines[i];
 					std::smatch regMatch;
@@ -122,6 +224,14 @@ std::string add_register_guard_for_ebpf_ptx_func(const std::string &ptxCode)
 							getRegisterSizeInBytes(
 								regInfo.type);
 
+						// Exclude special registers
+						// like predicates, stack
+						// pointers, and our own
+						// temporary registers This
+						// implicitly excludes
+						// 'temp_param_reg' if it's
+						// declared later in a callseq
+						// block.
 						if (regInfo.type == ".pred" ||
 						    regInfo.baseName == "%SP" ||
 						    regInfo.baseName ==
@@ -385,96 +495,11 @@ std::string add_register_guard_for_ebpf_ptx_func(const std::string &ptxCode)
 				bool newDeclsActuallyInserted = false;
 				bool pushCodeActuallyInserted = false;
 
-				size_t currentFuncActualOpeningBraceIdx =
-					std::string::npos;
-				size_t searchStartOffsetBrace = 0;
-				if (!currentFunctionLines.empty() &&
-				    std::regex_search(currentFunctionLines[0],
-						      funcDefRegex)) {
-					searchStartOffsetBrace = 1;
-				}
-				for (size_t i = searchStartOffsetBrace;
-				     i < currentFunctionLines.size(); ++i) {
-					if (std::regex_search(
-						    currentFunctionLines[i],
-						    openingBraceRegex)) {
-						currentFuncActualOpeningBraceIdx =
-							i;
-						break;
-					}
-					if (!std::regex_search(
-						    currentFunctionLines[i],
-						    commentOrEmptyRegex) &&
-					    !std::regex_search(
-						    currentFunctionLines[i],
-						    regDeclRegex) &&
-					    !std::regex_search(
-						    currentFunctionLines[i],
-						    localDeclRegex)) {
-						break;
-					}
-				}
-
-				size_t declsInsertionPointInOriginalLines = 0;
-				size_t pushInsertionPointInOriginalLines = 0;
-
-				if (currentFuncActualOpeningBraceIdx !=
-				    std::string::npos) {
-					declsInsertionPointInOriginalLines =
-						currentFuncActualOpeningBraceIdx +
-						1;
-					for (size_t i =
-						     declsInsertionPointInOriginalLines;
-					     i < currentFunctionLines.size();
-					     ++i) {
-						const auto &l =
-							currentFunctionLines[i];
-						if (std::regex_search(
-							    l,
-							    commentOrEmptyRegex) ||
-						    std::regex_search(
-							    l, regDeclRegex) ||
-						    std::regex_search(
-							    l,
-							    localDeclRegex)) {
-							declsInsertionPointInOriginalLines =
-								i + 1;
-						} else {
-							break;
-						}
-					}
-
-					pushInsertionPointInOriginalLines =
-						declsInsertionPointInOriginalLines;
-					for (size_t i =
-						     pushInsertionPointInOriginalLines;
-					     i < currentFunctionLines.size();
-					     ++i) {
-						const auto &l =
-							currentFunctionLines[i];
-						if (std::regex_search(
-							    l,
-							    commentOrEmptyRegex) ||
-						    std::regex_search(
-							    l, regDeclRegex) ||
-						    std::regex_search(
-							    l,
-							    localDeclRegex)) {
-							pushInsertionPointInOriginalLines =
-								i + 1;
-						} else {
-							break;
-						}
-					}
-				} else {
-					for (const auto &l :
-					     currentFunctionLines) {
-						resultPtx += l + "\n";
-					}
-					currentFunctionLines.clear();
-					inFunctionBody = false;
-					continue;
-				}
+				// The 'currentFuncActualOpeningBraceIdx' and
+				// 'declsInsertionPointInOriginalLines' are
+				// already calculated above.
+				size_t pushInsertionPointInOriginalLines =
+					declsInsertionPointInOriginalLines; // Push code goes right after declarations
 
 				for (size_t i = 0;
 				     i < currentFunctionLines.size(); ++i) {
@@ -489,11 +514,23 @@ std::string add_register_guard_for_ebpf_ptx_func(const std::string &ptxCode)
 					if (i == pushInsertionPointInOriginalLines &&
 					    !pushCodeBlockStr.empty() &&
 					    !pushCodeActuallyInserted) {
+						// This condition handles the
+						// case where decls and push are
+						// at the same point
 						if (declsInsertionPointInOriginalLines ==
 							    pushInsertionPointInOriginalLines &&
 						    !newDeclsActuallyInserted &&
 						    !newLocalAndUtilRegDecls
 							     .empty()) {
+							// If new decls were not
+							// inserted yet, but
+							// they should be at
+							// this point, insert
+							// them before push
+							// code. This should be
+							// covered by the first
+							// 'if' but as a
+							// safeguard.
 							if (!newLocalAndUtilRegDecls
 								     .empty()) {
 								instrumentedLines
@@ -519,6 +556,8 @@ std::string add_register_guard_for_ebpf_ptx_func(const std::string &ptxCode)
 						currentFunctionLines[i]);
 				}
 
+				// Handle cases where insertion points are at
+				// the very end of the function lines
 				if (declsInsertionPointInOriginalLines ==
 					    currentFunctionLines.size() &&
 				    !newLocalAndUtilRegDecls.empty() &&
@@ -550,6 +589,8 @@ std::string add_register_guard_for_ebpf_ptx_func(const std::string &ptxCode)
 		}
 	}
 	if (inFunctionDefinition || inFunctionBody) {
+		// If the stream ended while still in a function, append
+		// remaining lines
 		for (const auto &l : currentFunctionLines) {
 			resultPtx += l + "\n";
 		}

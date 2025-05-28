@@ -8,6 +8,7 @@
 #include "handler/link_handler.hpp"
 #include "handler/perf_event_handler.hpp"
 #include "handler/prog_handler.hpp"
+#include "nv_attach_impl.hpp"
 #include <array>
 #include <atomic>
 #include <cstdint>
@@ -80,12 +81,6 @@ union HelperCallResponse {
 		uint64_t result;
 	} get_tid_pgid;
 };
-/**
- * 我们在这块结构体里放两个标志位和一个简单的参数字段
- * - flag1: device -> host 的信号，“我有请求要处理”
- * - flag2: host   -> device 的信号，“我处理完了”
- * - paramA: 设备端写入的参数，让主机端使用
- */
 struct CommSharedMem {
 	int flag1;
 	int flag2;
