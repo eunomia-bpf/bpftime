@@ -107,3 +107,9 @@ jobs:
               flags: attach tests (uprobe & syscall trace)
               token: ${{ secrets.CODECOV_TOKEN }} # required
               verbose: true # optional (default = false)
+      - name: Setup tmate session
+        # Setup SSH when manually triggered and failing, so we can debug CI more conveniently
+        if: "${{ failure() }}"
+        uses: mxschmitt/action-tmate@v3
+        with:
+          limit-access-to-actor: false
