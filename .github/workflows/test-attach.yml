@@ -45,7 +45,7 @@ jobs:
     
       - name: Build for frida uprobe attach tests
         run: |
-          cmake -DTEST_LCOV=ON -B build -Dabsl_DIR=~/miniconda3/lib/cmake/absl -DProtobuf_DIR=~/miniconda3/lib/cmake/protobuf -Dutf8_range_DIR=~/miniconda3/lib/cmake/utf8_range
+          cmake -DCMAKE_BUILD_TYPE:STRING=Debug -DTEST_LCOV=ON -B build -Dabsl_DIR=~/miniconda3/lib/cmake/absl -DProtobuf_DIR=~/miniconda3/lib/cmake/protobuf -Dutf8_range_DIR=~/miniconda3/lib/cmake/utf8_range
           cmake --build build --config Debug --target bpftime_frida_uprobe_attach_tests -j$(nproc)
       - name: Run frida uprobe attach tests
         run: |
