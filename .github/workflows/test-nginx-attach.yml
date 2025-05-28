@@ -24,7 +24,7 @@ jobs:
           submodules: 'recursive'   
       - name: Build
         run: |
-          cmake -DBPFTIME_LLVM_JIT=0 -DCMAKE_BUILD_TYPE:STRING=Release -DBUILD_ATTACH_IMPL_EXAMPLE=YES -DBPFTIME_LLVM_JIT=YES -B build -S .
+          cmake -DBPFTIME_LLVM_JIT=0 -DCMAKE_BUILD_TYPE:STRING=Release -DBUILD_ATTACH_IMPL_EXAMPLE=YES -DBPFTIME_LLVM_JIT=YES -DLLVM_DIR=/usr/lib/llvm-15/cmake -B build -S .
           cmake --build build --config Release --target attach_impl_example_nginx -j$(nproc)
       - name: Display version of nginx
         run: |
