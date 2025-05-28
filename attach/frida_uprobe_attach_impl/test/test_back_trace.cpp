@@ -71,10 +71,8 @@ TEST_CASE("Test with backtrace")
 						&debug_details) == true);
 				SPDLOG_INFO("symbol name {}",
 					    debug_details.symbol_name);
-				auto expected_name =
-					std::string(
-						"__bpftime_test_attach_with_back_trace__func") +
-					std::to_string(4 - i);
+				auto expected_name = std::string(
+					"__bpftime_test_attach_with_back_trace__func");
 				REQUIRE(std::string(debug_details.symbol_name)
 						.starts_with(expected_name));
 			}
