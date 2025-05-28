@@ -39,9 +39,6 @@ namespace bpftime
 
 class stack_map_impl {
     private:
-	// Internal mutex for thread/process safety
-	boost::interprocess::interprocess_mutex mutex;
-
 	// Configuration
 	unsigned int _value_size;
 	unsigned int _max_entries;
@@ -61,8 +58,8 @@ class stack_map_impl {
 	bool is_empty() const;
 
     public:
-	// Map handler should NOT lock externally, locking is internal.
-	const static bool should_lock = false;
+	// Map handler should lock externally
+	const static bool should_lock = true;
 
 	/**
 	 * @brief Construct a new stack map impl object.

@@ -18,7 +18,6 @@
 #define BPFTIME_QUEUE_MAP_HPP
 
 #include <boost/interprocess/managed_shared_memory.hpp>
-#include <boost/interprocess/sync/interprocess_mutex.hpp>
 #include <boost/interprocess/containers/vector.hpp>
 #include <boost/interprocess/allocators/allocator.hpp>
 // Include bpf.h for BPF flags like BPF_ANY, BPF_EXIST, etc.
@@ -35,9 +34,6 @@ namespace bpftime
 
 class queue_map_impl {
     private:
-	// Internal mutex for thread/process safety
-	boost::interprocess::interprocess_mutex mutex;
-
 	// Configuration
 	unsigned int _value_size;
 	unsigned int _max_entries;
@@ -49,16 +45,20 @@ class queue_map_impl {
 	using byte_vector =
 		boost::interprocess::vector<uint8_t, byte_allocator>;
 
-	// Vector to store queue data
+	// Circular queue implementation
 	byte_vector data;
+	unsigned int head; // Index of the first element
+	unsigned int tail; // Index where next element will be inserted
+	unsigned int count; // Current number of elements
 
 	// Internal helpers
 	bool is_full() const;
 	bool is_empty() const;
+	unsigned int next_index(unsigned int index) const;
 
     public:
-	// Map handler should NOT lock externally, locking is internal.
-	const static bool should_lock = false;
+	// Map handler should lock externally
+	const static bool should_lock = true;
 
 	/**
 	 * @brief Construct a new queue map impl object.
@@ -163,8 +163,7 @@ class queue_map_impl {
 	// --- Helper methods ---
 	unsigned int get_value_size() const;
 	unsigned int get_max_entries() const;
-	size_t get_current_size() const; // Calculates current number of
-					 // elements
+	size_t get_current_size() const; // Returns current number of elements
 };
 
 } // namespace bpftime
