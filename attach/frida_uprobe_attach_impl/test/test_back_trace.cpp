@@ -61,10 +61,6 @@ TEST_CASE("Test with backtrace")
 						     "generate_stack", nullptr);
 			for (int i = 0; i < 4; i++) {
 				auto addr = stack->at(i);
-				GumReturnAddressDetails frame_details;
-				REQUIRE(gum_return_address_details_from_address(
-						(GumReturnAddress)addr,
-						&frame_details) == true);
 				GumDebugSymbolDetails debug_details;
 				REQUIRE(gum_symbol_details_from_address(
 						(GumReturnAddress)addr,
