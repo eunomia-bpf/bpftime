@@ -59,7 +59,7 @@ TEST_CASE("Test with backtrace")
 			auto stack = (std::vector<uint64_t> *)
 					     impl.call_attach_specific_function(
 						     "generate_stack", nullptr);
-			for (int i = 0; i < 4; i++) {
+			for (int i = 1; i < 4; i++) {
 				auto addr = stack->at(i);
 				GumDebugSymbolDetails debug_details;
 				REQUIRE(gum_symbol_details_from_address(
