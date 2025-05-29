@@ -1,6 +1,5 @@
 #ifndef _BPFTIME_NV_ATTACH_IMPL_HPP
 #define _BPFTIME_NV_ATTACH_IMPL_HPP
-// #include "cuda_injector.hpp"
 #include "ebpf_inst.h"
 #include "nv_attach_utils.hpp"
 #include <base_attach_impl.hpp>

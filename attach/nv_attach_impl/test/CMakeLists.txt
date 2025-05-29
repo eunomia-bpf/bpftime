@@ -1,5 +1,4 @@
 set(TEST_SOURCES
-    # test_cuda_injector.cpp
     nv_attach_impl_tests.cpp
     test_register_guard.cpp
     # test_kernel_finder.cpp

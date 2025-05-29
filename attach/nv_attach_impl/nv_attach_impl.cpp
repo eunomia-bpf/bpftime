@@ -1,5 +1,4 @@
 #include "nv_attach_impl.hpp"
-// #include "cuda_injector.hpp"
 #include "cuda_runtime_api.h"
 #include "driver_types.h"
 #include "frida-gum.h"

@@ -1,3 +1,5 @@
+#include "bpftime_shm.hpp"
+#include <bpftime_shm_internal.hpp>
 #include <cerrno>
 #include <csignal>
 #include <cstdlib>
@@ -159,12 +161,12 @@ static int inject_by_frida(int pid, const char *inject_path, const char *arg)
 	return 0;
 }
 
-static std::pair<std::string, std::vector<std::string> >
+static std::pair<std::string, std::vector<std::string>>
 extract_path_and_args(const argparse::ArgumentParser &parser)
 {
 	std::vector<std::string> items;
 	try {
-		items = parser.get<std::vector<std::string> >("COMMAND");
+		items = parser.get<std::vector<std::string>>("COMMAND");
 	} catch (std::logic_error &err) {
 		std::cerr << parser;
 		exit(1);
@@ -317,32 +319,31 @@ int main(int argc, const char **argv)
 		} else {
 			return inject_by_frida(pid, agent_path.c_str(), "");
 		}
-	} 
-	// else if (program.is_subcommand_used("detach")) {
-	// 	SPDLOG_DEBUG("Detaching..");
-	// 	try {
-	// 		bpftime_initialize_global_shm(
-	// 			bpftime::shm_open_type::SHM_OPEN_ONLY);
-	// 	} catch (std::exception &ex) {
-	// 		SPDLOG_WARN(
-	// 			"Shared memory not created, seems syscall server is not running");
-	// 		return 0;
-	// 	}
-	// 	bool sended = false;
-	// 	bpftime::shm_holder.global_shared_memory
-	// 		.iterate_all_pids_in_alive_agent_set([&](int pid) {
-	// 			SPDLOG_INFO("Delivering SIGUSR1 to {}", pid);
-	// 			int err = kill(pid, SIGUSR1);
-	// 			if (err < 0) {
-	// 				SPDLOG_WARN(
-	// 					"Unable to signal process {}: {}",
-	// 					pid, strerror(errno));
-	// 			}
-	// 			sended = true;
-	// 		});
-	// 	if (!sended) {
-	// 		SPDLOG_INFO("No process was signaled.");
-	// 	}
-	// }
+	} else if (program.is_subcommand_used("detach")) {
+		SPDLOG_DEBUG("Detaching..");
+		try {
+			bpftime_initialize_global_shm(
+				bpftime::shm_open_type::SHM_OPEN_ONLY);
+		} catch (std::exception &ex) {
+			SPDLOG_WARN(
+				"Shared memory not created, seems syscall server is not running");
+			return 0;
+		}
+		bool sended = false;
+		bpftime::shm_holder.global_shared_memory
+			.iterate_all_pids_in_alive_agent_set([&](int pid) {
+				SPDLOG_INFO("Delivering SIGUSR1 to {}", pid);
+				int err = kill(pid, SIGUSR1);
+				if (err < 0) {
+					SPDLOG_WARN(
+						"Unable to signal process {}: {}",
+						pid, strerror(errno));
+				}
+				sended = true;
+			});
+		if (!sended) {
+			SPDLOG_INFO("No process was signaled.");
+		}
+	}
 	return 0;
 }

@@ -4,7 +4,6 @@ add_library(
     bpftime_nv_attach_impl STATIC
     nv_attach_impl.cpp
     nv_attach_private_data.cpp
-    # cuda_injector.cpp
     nv_attach_impl_frida_setup.cpp
     nv_attach_impl_patcher.cpp
     nv_attach_impl_register_guard_patcher.cpp
@@ -26,4 +25,3 @@ set_property(TARGET bpftime_nv_attach_impl PROPERTY CXX_STANDARD 20)
 target_link_options(bpftime_nv_attach_impl PUBLIC "-Wl,--whole-archive" "$<TARGET_FILE:bpftime_nv_attach_impl>" "-Wl,--no-whole-archive")
 
 add_subdirectory(test)
-add_subdirectory(examples)
