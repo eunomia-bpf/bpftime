@@ -8,7 +8,6 @@
 #include "handler/link_handler.hpp"
 #include "handler/perf_event_handler.hpp"
 #include "handler/prog_handler.hpp"
-#include "nv_attach_impl.hpp"
 #include <array>
 #include <atomic>
 #include <cstdint>
@@ -24,6 +23,7 @@
 
 #ifdef BPFTIME_ENABLE_CUDA_ATTACH
 #include "cuda.h"
+#include "nv_attach_impl.hpp"
 #endif
 typedef struct _GumInterceptor GumInterceptor;
 typedef struct _GumInvocationListener GumInvocationListener;
