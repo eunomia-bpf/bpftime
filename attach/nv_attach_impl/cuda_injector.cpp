@@ -46,7 +46,7 @@ POS_OOB_DECLARE_CLNT_FUNCTIONS(cli_trace_resource);
 
 CUDAInjector::CUDAInjector(pid_t pid) : target_pid(pid)
 {
-	// 检查目标进程是否存在
+	// Check if the target process exists
 	if (kill(target_pid, 0) != 0) {
 		throw std::runtime_error("Target process does not exist");
 	}
