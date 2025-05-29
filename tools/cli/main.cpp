@@ -185,8 +185,8 @@ static void signal_handler(int sig)
 
 int main(int argc, const char **argv)
 {
-	// const auto agent_config = bpftime::construct_agent_config_from_env();
-	// bpftime::bpftime_set_logger(agent_config.get_logger_output_path());
+	const auto agent_config = bpftime::construct_agent_config_from_env();
+	bpftime::bpftime_set_logger(agent_config.get_logger_output_path());
 	signal(SIGINT, signal_handler);
 	signal(SIGTSTP, signal_handler);
 	argparse::ArgumentParser program(argv[0]);
@@ -241,13 +241,13 @@ int main(int argc, const char **argv)
 		.flag();
 	attach_command.add_argument("PID").scan<'i', int>();
 
-	// argparse::ArgumentParser detach_command("detach");
-	// detach_command.add_description("Detach all attached agents");
+	argparse::ArgumentParser detach_command("detach");
+	detach_command.add_description("Detach all attached agents");
 
 	program.add_subparser(load_command);
 	program.add_subparser(start_command);
 	program.add_subparser(attach_command);
-	// program.add_subparser(detach_command);
+	program.add_subparser(detach_command);
 	try {
 		program.parse_args(argc, argv);
 	} catch (const std::exception &err) {
