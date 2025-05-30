@@ -76,7 +76,7 @@ long stack_map_impl::elem_update(const void *key, const void *value,
 	if (full) {
 		if (flags == BPF_EXIST) {
 			SPDLOG_TRACE(
-				"Stack elem_update (BPF_EXIST): stack full, removing oldest element");
+				"Stack elem_update (BPF_EXIST): stack full, removing oldest element (bottom)");
 			data.erase(data.begin(), data.begin() + _value_size);
 		} else {
 			SPDLOG_TRACE(
@@ -136,7 +136,7 @@ long stack_map_impl::map_push_elem(const void *value, uint64_t flags)
 	if (full) {
 		if (flags == BPF_EXIST) {
 			SPDLOG_TRACE(
-				"Stack map_push_elem (BPF_EXIST): stack full, removing oldest element");
+				"Stack map_push_elem (BPF_EXIST): stack full, removing oldest element (bottom)");
 			data.erase(data.begin(), data.begin() + _value_size);
 		} else {
 			SPDLOG_TRACE(
