@@ -4,10 +4,15 @@ if(CMAKE_VERSION VERSION_GREATER_EQUAL "3.24.0")
   cmake_policy(SET CMP0135 NEW)
 endif()
 
-SET(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -fno-omit-frame-pointer")
+set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -fno-omit-frame-pointer")
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fno-omit-frame-pointer")
 set(CMAKE_LINKER_FLAGS "${CMAKE_LINKER_FLAGS} -fno-omit-frame-pointer")
+set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -lncurses")
 
+
+# set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -stdlib=libc++")
+# set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -stdlib=libc++ -lc++abi")
+# set(CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} -stdlib=libc++ -lc++abi")
 #
 # Project details
 #
@@ -150,6 +155,13 @@ endif()
 
 set(SPDLOG_INCLUDE ${CMAKE_CURRENT_SOURCE_DIR}/third_party/spdlog/include)
 
+option(BPFTIME_CUDA_ROOT "Root for CUDA installation" "")
+option(BPFTIME_ENABLE_CUDA_ATTACH "Whether to enable CUDA attach" OFF)
+
+if(BPFTIME_ENABLE_CUDA_ATTACH)
+  add_compile_definitions(BPFTIME_ENABLE_CUDA_ATTACH=1)
+endif()
+
 # argparse
 add_subdirectory(third_party/argparse)
 
@@ -172,7 +184,7 @@ endif()
 # add to single archive if option is enabled
 if(${BPFTIME_BUILD_STATIC_LIB})
   if(${BPFTIME_UBPF_JIT})
-      set(UBPF_BUILD_DIR ${CMAKE_CURRENT_BINARY_DIR}/vm/compat/ubpf-vm)
+    set(UBPF_BUILD_DIR ${CMAKE_CURRENT_BINARY_DIR}/vm/compat/ubpf-vm)
   endif()
   if(${BPFTIME_LLVM_JIT})
     set(LLVM_BUILD_DIR ${CMAKE_CURRENT_BINARY_DIR}/vm/compat/llvm-vm)
@@ -180,25 +192,25 @@ if(${BPFTIME_BUILD_STATIC_LIB})
   message(STATUS " Adding libraries to single static archive file")
   bpftime_add_static_lib_component_command(bpftime_vm)
 
-if(${BPFTIME_LLVM_JIT})
-  bpftime_add_static_lib_component_command(bpftime_llvm_vm)
-  bpftime_add_libs_component_command(${LLVM_BUILD_DIR}/libbpftime_llvm_vm.a)
-  message(STATUS " Adding LLVM JIT to static archive")
-endif()
+  if(${BPFTIME_LLVM_JIT})
+    bpftime_add_static_lib_component_command(bpftime_llvm_vm)
+    bpftime_add_libs_component_command(${LLVM_BUILD_DIR}/libbpftime_llvm_vm.a)
+    message(STATUS " Adding LLVM JIT to static archive")
+  endif()
 
-if(${BPFTIME_UBPF_JIT})
-  bpftime_add_static_lib_component_command(bpftime_ubpf_vm)
-  bpftime_add_libs_component_command(${UBPF_BUILD_DIR}/ubpf/lib/libubpf.a)
-  bpftime_add_libs_component_command(${UBPF_BUILD_DIR}/libbpftime_ubpf_vm.a)
-  message(STATUS " Adding uBPF JIT to static archive")
-endif()
-  
+  if(${BPFTIME_UBPF_JIT})
+    bpftime_add_static_lib_component_command(bpftime_ubpf_vm)
+    bpftime_add_libs_component_command(${UBPF_BUILD_DIR}/ubpf/lib/libubpf.a)
+    bpftime_add_libs_component_command(${UBPF_BUILD_DIR}/libbpftime_ubpf_vm.a)
+    message(STATUS " Adding uBPF JIT to static archive")
+  endif()
+
 
   bpftime_add_libs_component_command(${FRIDA_GUM_INSTALL_DIR}/libfrida-gum.a)
   bpftime_add_static_lib_component_command(bpftime_frida_uprobe_attach_impl)
 
   if(${BPFTIME_BUILD_WITH_LIBBPF})
-    bpftime_add_libs_component_command(${CMAKE_CURRENT_BUILD_DIR}/libbpf/libbpf/libbpf.a)
+    bpftime_add_libs_component_command(${CMAKE_CURRENT_BUILD_DIR}libbpf/libbpf/libbpf.a)
     bpftime_add_static_lib_component_command(bpftime_syscall_trace_attach_impl)
   endif()
 
@@ -251,3 +263,5 @@ if(${BPFTIME_BUILD_WITH_LIBBPF})
 else()
   install(TARGETS bpftime-agent bpftime-syscall-server CONFIGURATIONS Release Debug RelWithDebInfo DESTINATION ${DEST_DIR})
 endif()
+
+# add_subdirectory(./example/mix-schedule-mnist/cpu)

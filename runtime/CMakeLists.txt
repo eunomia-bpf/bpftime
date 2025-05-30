@@ -78,10 +78,16 @@ set(sources
   src/bpf_map/userspace/per_cpu_hash_map.cpp
   src/bpf_map/userspace/prog_array.cpp
   src/bpf_map/userspace/stack_trace_map.cpp
+  src/bpf_map/userspace/lru_var_hash_map.cpp
+
   src/bpf_map/userspace/queue.cpp
   src/bpf_map/userspace/stack.cpp
   extension/extension_helper.cpp
 )
+
+if(${BPFTIME_ENABLE_CUDA_ATTACH})
+  list(APPEND sources src/attach/bpf_attach_ctx_cuda.cpp)
+endif()
 
 if(UNIX AND NOT APPLE AND BPFTIME_BUILD_WITH_LIBBPF)
   list(APPEND sources
@@ -114,6 +120,8 @@ add_custom_target(
 )
 
 message(INFO " Found the following boost include dirs : ${Boost_INCLUDE_DIRS}")
+
+
 target_include_directories(${PROJECT_NAME}
   PUBLIC
   ${CMAKE_CURRENT_SOURCE_DIR}/../vm/include
@@ -121,6 +129,7 @@ target_include_directories(${PROJECT_NAME}
   ${CMAKE_CURRENT_SOURCE_DIR}/../runtime
   ${CMAKE_CURRENT_BINARY_DIR}
   ${CMAKE_CURRENT_SOURCE_DIR}/../third_party
+  ${CMAKE_CURRENT_SOURCE_DIR}
   ${SPDLOG_INCLUDE}
   ${Boost_INCLUDE_DIRS}
 )
@@ -130,8 +139,22 @@ target_link_libraries(${PROJECT_NAME}
   bpftime_vm
   spdlog::spdlog
   bpftime_base_attach_impl
+
 )
 
+
+if(${BPFTIME_ENABLE_CUDA_ATTACH})
+  include(../cmake/cuda.cmake)
+  find_cuda()
+  message(STATUS "runtime CUDA libs= ${CUDA_LIBS}")
+  target_include_directories(${PROJECT_NAME} PUBLIC ${CUDA_INCLUDE_PATH} ${NV_ATTACH_IMPL_INCLUDE})
+  target_link_directories(${PROJECT_NAME} PUBLIC ${CUDA_LIBRARY_PATH})
+  target_link_libraries(${PROJECT_NAME} PUBLIC ${CUDA_LIBS} bpftime_nv_attach_impl cuda)
+  target_compile_definitions(${PROJECT_NAME} PUBLIC BPFTIME_ENABLE_CUDA_ATTACH=1)
+  add_dependencies(${PROJECT_NAME} bpftime_vm_compat llvmbpf_vm bpftime_nv_attach_impl)
+  target_link_libraries(${PROJECT_NAME} PUBLIC bpftime_vm_compat llvmbpf_vm bpftime_nv_attach_impl)
+  target_include_directories(${PROJECT_NAME} PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/../vm/llvm-jit/include)
+endif()
 if(${BPFTIME_BUILD_WITH_LIBBPF})
   add_dependencies(${PROJECT_NAME} bpftime_vm FridaGum spdlog::spdlog libbpf bpftime_base_attach_impl)
 else()
@@ -255,3 +278,4 @@ if(${TEST_LCOV})
   target_compile_options(${PROJECT_NAME} PUBLIC -fprofile-arcs -ftest-coverage -fprofile-update=atomic)
   target_link_options(${PROJECT_NAME} PUBLIC -fprofile-arcs)
 endif()
+

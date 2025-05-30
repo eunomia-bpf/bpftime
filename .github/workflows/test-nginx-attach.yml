@@ -18,13 +18,13 @@ jobs:
       - name: Install dependencies
         run: |
           apt-get update -y
-          apt-get install -y lcov libzstd-dev libboost-all-dev gpg nginx libelf-dev git cmake gcc g++ make clang llvm libpcre2-dev automake python3 python3-pip python3-requests
+          apt-get install -y lcov libzstd-dev libboost-all-dev gpg nginx libelf-dev git cmake gcc g++ make clang llvm-15 libpcre2-dev automake python3 python3-pip python3-requests llvm-15
       - uses: actions/checkout@v2
         with:
           submodules: 'recursive'   
       - name: Build
         run: |
-          cmake -DBPFTIME_LLVM_JIT=0 -DCMAKE_BUILD_TYPE:STRING=Release -DBUILD_ATTACH_IMPL_EXAMPLE=YES -B build -S .
+          cmake -DBPFTIME_LLVM_JIT=0 -DCMAKE_BUILD_TYPE:STRING=Release -DBUILD_ATTACH_IMPL_EXAMPLE=YES -DBPFTIME_LLVM_JIT=YES -DLLVM_DIR=/usr/lib/llvm-15/cmake -B build -S .
           cmake --build build --config Release --target attach_impl_example_nginx -j$(nproc)
       - name: Display version of nginx
         run: |

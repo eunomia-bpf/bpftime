@@ -58,3 +58,6 @@ benchmark-logs-error.txt
 # Embedded git repositories
 example/attach_implementation/benchmark/luajit_plugin/luajit-local/
 example/attach_implementation/benchmark/wasm-micro-runtime/
+
+build
+target

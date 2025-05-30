@@ -219,6 +219,15 @@ class bpf_map_handler {
 	[[maybe_unused]] uint64_t flags = 0;
 	uint32_t key_size = 0;
 	uint32_t value_size = 0;
+	public:
+	uint32_t get_key_size() const
+	{
+		return key_size;
+	}
+	uint32_t get_max_entries() const
+	{
+		return max_entries;
+	}
 };
 
 } // namespace bpftime

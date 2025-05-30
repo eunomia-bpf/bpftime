@@ -7,7 +7,7 @@ option(BPFTIME_BUILD_EXECUTABLE "Build the project as an executable, rather than
 #
 # library options
 #
-option(BPFTIME_LLVM_JIT "Use LLVM as jit backend." OFF)
+option(BPFTIME_LLVM_JIT "Use LLVM as jit backend." ON)
 option(BPFTIME_UBPF_JIT "Use uBPF as jit backend." ON)
 
 #

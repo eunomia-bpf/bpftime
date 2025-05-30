@@ -3,6 +3,7 @@
  * Copyright (c) 2022, eunomia-bpf org
  * All rights reserved.
  */
+#include "bpf_map/userspace/lru_var_hash_map.hpp"
 #include "bpf_map/userspace/per_cpu_array_map.hpp"
 #include "bpf_map/userspace/per_cpu_hash_map.hpp"
 #include "bpf_map/userspace/stack_trace_map.hpp"
@@ -167,6 +168,11 @@ const void *bpf_map_handler::map_lookup_elem(const void *key,
 			map_impl_ptr.get());
 		return do_lookup(impl);
 	}
+	case bpf_map_type::BPF_MAP_TYPE_LRU_HASH: {
+		auto impl = static_cast<lru_var_hash_map_impl *>(
+			map_impl_ptr.get());
+		return do_lookup(impl);
+	}
 	default:
 		auto func_ptr = global_map_ops_table[(int)type].elem_lookup;
 		if (func_ptr) {
@@ -278,6 +284,11 @@ long bpf_map_handler::map_update_elem(const void *key, const void *value,
 			map_impl_ptr.get());
 		return do_update(impl);
 	}
+	case bpf_map_type::BPF_MAP_TYPE_LRU_HASH: {
+		auto impl = static_cast<lru_var_hash_map_impl *>(
+			map_impl_ptr.get());
+		return do_update(impl);
+	}
 	default:
 		auto func_ptr = global_map_ops_table[(int)type].elem_update;
 		if (func_ptr) {
@@ -371,6 +382,11 @@ int bpf_map_handler::bpf_map_get_next_key(const void *key, void *next_key,
 #endif
 	case bpf_map_type::BPF_MAP_TYPE_ARRAY_OF_MAPS: {
 		auto impl = static_cast<array_map_of_maps_impl *>(
+			map_impl_ptr.get());
+		return do_get_next_key(impl);
+	}
+	case bpf_map_type::BPF_MAP_TYPE_LRU_HASH: {
+		auto impl = static_cast<lru_var_hash_map_impl *>(
 			map_impl_ptr.get());
 		return do_get_next_key(impl);
 	}
@@ -482,6 +498,11 @@ long bpf_map_handler::map_delete_elem(const void *key, bool from_syscall) const
 			return -EINVAL;
 		}
 		auto impl = static_cast<array_map_of_maps_impl *>(
+			map_impl_ptr.get());
+		return do_delete(impl);
+	}
+	case bpf_map_type::BPF_MAP_TYPE_LRU_HASH: {
+		auto impl = static_cast<lru_var_hash_map_impl *>(
 			map_impl_ptr.get());
 		return do_delete(impl);
 	}
@@ -604,6 +625,12 @@ int bpf_map_handler::map_init(managed_shared_memory &memory)
 			container_name.c_str())(memory, max_entries);
 		return 0;
 	}
+	case bpf_map_type::BPF_MAP_TYPE_LRU_HASH: {
+		map_impl_ptr = memory.construct<lru_var_hash_map_impl>(
+			container_name.c_str())(memory, key_size, value_size,
+						max_entries);
+		return 0;
+	}
 	default:
 		if (bpftime_get_agent_config().allow_non_buildin_map_types) {
 			SPDLOG_INFO("non-builtin map type: {}", (int)type);
@@ -673,6 +700,9 @@ void bpf_map_handler::map_free(managed_shared_memory &memory)
 		break;
 	case bpf_map_type::BPF_MAP_TYPE_PROG_ARRAY:
 		memory.destroy<prog_array_map_impl>(container_name.c_str());
+		break;
+	case bpf_map_type::BPF_MAP_TYPE_LRU_HASH:
+		memory.destroy<lru_var_hash_map_impl>(container_name.c_str());
 		break;
 #endif
 	default:

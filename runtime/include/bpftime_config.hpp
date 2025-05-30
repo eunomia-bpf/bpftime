@@ -13,8 +13,7 @@
 #endif
 
 #ifndef DEFAULT_VM_NAME
-// empty string means the default vm.
-#define DEFAULT_VM_NAME ""
+#define DEFAULT_VM_NAME "llvm"
 #endif
 
 #define LOG_PATH_MAX_LEN 1024

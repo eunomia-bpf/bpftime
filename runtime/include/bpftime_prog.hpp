@@ -15,7 +15,10 @@ namespace bpftime
 {
 
 extern thread_local std::optional<uint64_t> current_thread_bpf_cookie;
-
+#ifdef BPFTIME_ENABLE_CUDA_ATTACH
+std::optional<std::vector<char>> compile_ptx_to_elf(const std::string &ptx_code,
+						    const char *cpu_target);
+#endif
 // executable program for bpf function
 class bpftime_prog {
     public:
@@ -24,7 +27,8 @@ class bpftime_prog {
 		return name.c_str();
 	}
 	bpftime_prog(const ebpf_inst *insn, size_t insn_cnt, const char *name);
-	bpftime_prog(const ebpf_inst *insn, size_t insn_cnt, const char *name, agent_config config);
+	bpftime_prog(const ebpf_inst *insn, size_t insn_cnt, const char *name,
+		     agent_config config);
 	~bpftime_prog();
 
 	// load the programs to userspace vm or compile the jit program
@@ -41,8 +45,32 @@ class bpftime_prog {
 	{
 		return insns;
 	}
-	const struct ebpf_vm *get_vm() const { return vm; }
+	const struct ebpf_vm *get_vm() const
+	{
+		return vm;
+	}
 	int load_aot_object(const std::vector<uint8_t> &buf);
+#ifdef BPFTIME_ENABLE_CUDA_ATTACH
+	bool is_cuda() const
+	{
+		return name.ends_with("__cuda");
+	}
+	const void *get_cuda_elf_binary() const
+	{
+		return cuda_elf_binary->data();
+	}
+
+	const std::string &get_ptx_code() const
+	{
+		return *ptx_code;
+	}
+#else
+	bool is_cuda() const
+	{
+		return false;
+	}
+
+#endif
     private:
 	int bpftime_prog_set_insn(struct ebpf_inst *insn, size_t insn_cnt);
 	std::string name;
@@ -60,7 +88,12 @@ class bpftime_prog {
 	// ufunc ctx
 	struct bpftime_ufunc_ctx *ufunc_ctx;
 
-	// kernel runtime
+#ifdef BPFTIME_ENABLE_CUDA_ATTACH
+	// ptx code
+	std::optional<std::string> ptx_code;
+	// cuda binary
+	std::optional<std::vector<char>> cuda_elf_binary;
+#endif
 };
 
 } // namespace bpftime
