@@ -52,7 +52,7 @@ void *queue_map_impl::elem_lookup(const void *key)
 {
 	if (is_empty()) {
 		SPDLOG_TRACE("Queue peek (lookup) failed: queue empty");
-		errno = ENOTSUP;
+		errno = ENOENT;
 		return nullptr;
 	}
 
@@ -72,7 +72,8 @@ long queue_map_impl::elem_update(const void *key, const void *value,
 	if (value == nullptr) {
 		SPDLOG_WARN(
 			"Queue push (update) failed: value pointer is nullptr");
-		return -EINVAL;
+		errno = EINVAL;
+		return -1;
 	}
 
 	bool full = is_full();
@@ -87,7 +88,8 @@ long queue_map_impl::elem_update(const void *key, const void *value,
 			SPDLOG_TRACE(
 				"Queue elem_update: failed, queue full (size={})",
 				get_current_size());
-			return -E2BIG;
+			errno = E2BIG;
+			return -1;
 		}
 	}
 
@@ -105,7 +107,8 @@ long queue_map_impl::elem_delete(const void *key)
 {
 	if (is_empty()) {
 		SPDLOG_TRACE("Queue elem_delete failed: queue empty");
-		return -ENOENT;
+		errno = ENOENT;
+		return -1;
 	}
 
 	head = next_index(head);
@@ -117,7 +120,8 @@ long queue_map_impl::elem_delete(const void *key)
 
 int queue_map_impl::map_get_next_key(const void *key, void *next_key)
 {
-	return -EINVAL;
+	errno = EINVAL;
+	return -1;
 }
 
 long queue_map_impl::map_push_elem(const void *value, uint64_t flags)
@@ -125,13 +129,15 @@ long queue_map_impl::map_push_elem(const void *value, uint64_t flags)
 	if (value == nullptr) {
 		SPDLOG_WARN(
 			"Queue map_push_elem failed: value pointer is nullptr");
-		return -EINVAL;
+		errno = EINVAL;
+		return -1;
 	}
 
 	if (flags != 0 && flags != BPF_ANY && flags != BPF_EXIST) {
 		SPDLOG_WARN("Queue map_push_elem failed: invalid flags ({})",
 			    flags);
-		return -EINVAL;
+		errno = EINVAL;
+		return -1;
 	}
 
 	bool full = is_full();
@@ -146,7 +152,8 @@ long queue_map_impl::map_push_elem(const void *value, uint64_t flags)
 			SPDLOG_TRACE(
 				"Queue map_push_elem: failed, queue full (size={})",
 				get_current_size());
-			return -E2BIG;
+			errno = E2BIG;
+			return -1;
 		}
 	}
 
@@ -163,13 +170,16 @@ long queue_map_impl::map_push_elem(const void *value, uint64_t flags)
 long queue_map_impl::map_pop_elem(void *value)
 {
 	if (value == nullptr) {
-		SPDLOG_WARN("Queue map_pop_elem failed: value pointer is nullptr");
-		return -EINVAL;
+		SPDLOG_WARN(
+			"Queue map_pop_elem failed: value pointer is nullptr");
+		errno = EINVAL;
+		return -1;
 	}
 
 	if (is_empty()) {
 		SPDLOG_TRACE("Queue map_pop_elem failed: queue empty");
-		return -ENOENT;
+		errno = ENOENT;
+		return -1;
 	}
 
 	memcpy(value, data.data() + head * _value_size, _value_size);
@@ -187,12 +197,14 @@ long queue_map_impl::map_peek_elem(void *value)
 	if (value == nullptr) {
 		SPDLOG_WARN(
 			"Queue map_peek_elem failed: value pointer is nullptr");
-		return -EINVAL;
+		errno = EINVAL;
+		return -1;
 	}
 
 	if (is_empty()) {
 		SPDLOG_TRACE("Queue map_peek_elem failed: queue empty");
-		return -ENOENT;
+		errno = ENOENT;
+		return -1;
 	}
 
 	memcpy(value, data.data() + head * _value_size, _value_size);

@@ -46,6 +46,7 @@ void *stack_map_impl::elem_lookup(const void *key)
 {
 	if (is_empty()) {
 		SPDLOG_TRACE("Stack peek (lookup) failed: stack empty");
+		errno = ENOENT;
 		return nullptr;
 	}
 
@@ -66,7 +67,8 @@ long stack_map_impl::elem_update(const void *key, const void *value,
 	if (value == nullptr) {
 		SPDLOG_WARN(
 			"Stack push (update) failed: value pointer is nullptr");
-		return -EINVAL;
+		errno = EINVAL;
+		return -1;
 	}
 
 	bool full = is_full();
@@ -80,7 +82,8 @@ long stack_map_impl::elem_update(const void *key, const void *value,
 			SPDLOG_TRACE(
 				"Stack elem_update: failed, stack full (size={})",
 				get_current_size());
-			return -E2BIG;
+			errno = E2BIG;
+			return -1;
 		}
 	}
 
@@ -96,7 +99,8 @@ long stack_map_impl::elem_delete(const void *key)
 {
 	if (is_empty()) {
 		SPDLOG_TRACE("Stack elem_delete failed: stack empty");
-		return -ENOENT;
+		errno = ENOENT;
+		return -1;
 	}
 
 	data.erase(data.end() - _value_size, data.end());
@@ -107,7 +111,8 @@ long stack_map_impl::elem_delete(const void *key)
 
 int stack_map_impl::map_get_next_key(const void *key, void *next_key)
 {
-	return -EINVAL;
+	errno = EINVAL;
+	return -1;
 }
 
 long stack_map_impl::map_push_elem(const void *value, uint64_t flags)
@@ -115,13 +120,15 @@ long stack_map_impl::map_push_elem(const void *value, uint64_t flags)
 	if (value == nullptr) {
 		SPDLOG_WARN(
 			"Stack map_push_elem failed: value pointer is nullptr");
-		return -EINVAL;
+		errno = EINVAL;
+		return -1;
 	}
 
 	if (flags != 0 && flags != BPF_ANY && flags != BPF_EXIST) {
 		SPDLOG_WARN("Stack map_push_elem failed: invalid flags ({})",
 			    flags);
-		return -EINVAL;
+		errno = EINVAL;
+		return -1;
 	}
 
 	bool full = is_full();
@@ -135,7 +142,8 @@ long stack_map_impl::map_push_elem(const void *value, uint64_t flags)
 			SPDLOG_TRACE(
 				"Stack map_push_elem: failed, stack full (size={})",
 				get_current_size());
-			return -E2BIG;
+			errno = E2BIG;
+			return -1;
 		}
 	}
 
@@ -150,13 +158,16 @@ long stack_map_impl::map_push_elem(const void *value, uint64_t flags)
 long stack_map_impl::map_pop_elem(void *value)
 {
 	if (value == nullptr) {
-		SPDLOG_WARN("Stack map_pop_elem failed: value pointer is nullptr");
-		return -EINVAL;
+		SPDLOG_WARN(
+			"Stack map_pop_elem failed: value pointer is nullptr");
+		errno = EINVAL;
+		return -1;
 	}
 
 	if (is_empty()) {
 		SPDLOG_TRACE("Stack map_pop_elem failed: stack empty");
-		return -ENOENT;
+		errno = ENOENT;
+		return -1;
 	}
 
 	size_t top_offset = (get_current_size() - 1) * _value_size;
@@ -174,12 +185,14 @@ long stack_map_impl::map_peek_elem(void *value)
 	if (value == nullptr) {
 		SPDLOG_WARN(
 			"Stack map_peek_elem failed: value pointer is nullptr");
-		return -EINVAL;
+		errno = EINVAL;
+		return -1;
 	}
 
 	if (is_empty()) {
 		SPDLOG_TRACE("Stack map_peek_elem failed: stack empty");
-		return -ENOENT;
+		errno = ENOENT;
+		return -1;
 	}
 
 	size_t top_offset = (get_current_size() - 1) * _value_size;
