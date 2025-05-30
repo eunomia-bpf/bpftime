@@ -59,13 +59,13 @@ void *stack_map_impl::elem_lookup(const void *key)
 long stack_map_impl::elem_update(const void *key, const void *value,
 				 uint64_t flags)
 {
-	if (key != NULL) {
+	if (key != nullptr) {
 		SPDLOG_WARN(
-			"Stack push (update) called with non-NULL key, ignoring key.");
+			"Stack push (update) called with non-nullptr key, ignoring key.");
 	}
-	if (value == NULL) {
+	if (value == nullptr) {
 		SPDLOG_WARN(
-			"Stack push (update) failed: value pointer is NULL");
+			"Stack push (update) failed: value pointer is nullptr");
 		return -EINVAL;
 	}
 
@@ -112,9 +112,9 @@ int stack_map_impl::map_get_next_key(const void *key, void *next_key)
 
 long stack_map_impl::map_push_elem(const void *value, uint64_t flags)
 {
-	if (value == NULL) {
+	if (value == nullptr) {
 		SPDLOG_WARN(
-			"Stack map_push_elem failed: value pointer is NULL");
+			"Stack map_push_elem failed: value pointer is nullptr");
 		return -EINVAL;
 	}
 
@@ -149,8 +149,8 @@ long stack_map_impl::map_push_elem(const void *value, uint64_t flags)
 
 long stack_map_impl::map_pop_elem(void *value)
 {
-	if (value == NULL) {
-		SPDLOG_WARN("Stack map_pop_elem failed: value pointer is NULL");
+	if (value == nullptr) {
+		SPDLOG_WARN("Stack map_pop_elem failed: value pointer is nullptr");
 		return -EINVAL;
 	}
 
@@ -171,9 +171,9 @@ long stack_map_impl::map_pop_elem(void *value)
 
 long stack_map_impl::map_peek_elem(void *value)
 {
-	if (value == NULL) {
+	if (value == nullptr) {
 		SPDLOG_WARN(
-			"Stack map_peek_elem failed: value pointer is NULL");
+			"Stack map_peek_elem failed: value pointer is nullptr");
 		return -EINVAL;
 	}
 

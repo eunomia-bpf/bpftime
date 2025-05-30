@@ -62,15 +62,15 @@ $(OUTPUT)/%.bpf.o: %.bpf.c $(LIBBPF_OBJ) $(wildcard %.h) $(VMLINUX) | $(OUTPUT)
 $(OUTPUT)/%.skel.h: $(OUTPUT)/%.bpf.o | $(OUTPUT) $(BPFTOOL_EXEC)
 	$(BPFTOOL_EXEC) gen skeleton $< > $@
 
-# Build user-space code - uprobe_queue需要骨架文件
+# Build user-space code
 $(OUTPUT)/uprobe_queue.o: uprobe_queue.c $(OUTPUT)/uprobe_queue.skel.h $(LIBBPF_OBJ) | $(OUTPUT)
 	$(CC) $(CFLAGS) $(INCLUDES) -c $(filter %.c,$^) -o $@
 
-# Build user-space code - uprobe_stack需要骨架文件
+# Build user-space code
 $(OUTPUT)/uprobe_stack.o: uprobe_stack.c $(OUTPUT)/uprobe_stack.skel.h $(LIBBPF_OBJ) | $(OUTPUT)
 	$(CC) $(CFLAGS) $(INCLUDES) -c $(filter %.c,$^) -o $@
 
-# Build target.o - 不需要骨架文件
+# Build target.o
 $(OUTPUT)/target.o: target.c | $(OUTPUT)
 	$(CC) $(CFLAGS) -c $< -o $@
 

@@ -65,13 +65,13 @@ void *queue_map_impl::elem_lookup(const void *key)
 long queue_map_impl::elem_update(const void *key, const void *value,
 				 uint64_t flags)
 {
-	if (key != NULL) {
+	if (key != nullptr) {
 		SPDLOG_WARN(
-			"Queue push (update) called with non-NULL key, ignoring key.");
+			"Queue push (update) called with non-nullptr key, ignoring key.");
 	}
-	if (value == NULL) {
+	if (value == nullptr) {
 		SPDLOG_WARN(
-			"Queue push (update) failed: value pointer is NULL");
+			"Queue push (update) failed: value pointer is nullptr");
 		return -EINVAL;
 	}
 
@@ -122,9 +122,9 @@ int queue_map_impl::map_get_next_key(const void *key, void *next_key)
 
 long queue_map_impl::map_push_elem(const void *value, uint64_t flags)
 {
-	if (value == NULL) {
+	if (value == nullptr) {
 		SPDLOG_WARN(
-			"Queue map_push_elem failed: value pointer is NULL");
+			"Queue map_push_elem failed: value pointer is nullptr");
 		return -EINVAL;
 	}
 
@@ -162,8 +162,8 @@ long queue_map_impl::map_push_elem(const void *value, uint64_t flags)
 
 long queue_map_impl::map_pop_elem(void *value)
 {
-	if (value == NULL) {
-		SPDLOG_WARN("Queue map_pop_elem failed: value pointer is NULL");
+	if (value == nullptr) {
+		SPDLOG_WARN("Queue map_pop_elem failed: value pointer is nullptr");
 		return -EINVAL;
 	}
 
@@ -184,9 +184,9 @@ long queue_map_impl::map_pop_elem(void *value)
 
 long queue_map_impl::map_peek_elem(void *value)
 {
-	if (value == NULL) {
+	if (value == nullptr) {
 		SPDLOG_WARN(
-			"Queue map_peek_elem failed: value pointer is NULL");
+			"Queue map_peek_elem failed: value pointer is nullptr");
 		return -EINVAL;
 	}
 
