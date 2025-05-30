@@ -174,6 +174,8 @@ int frida_attach_impl::create_attach_with_ebpf_callback(
 	ebpf_run_callback &&cb, const attach_private_data &private_data,
 	int attach_type)
 {
+	SPDLOG_DEBUG("Attaching with private_data type {}",
+		     typeid(private_data).name());
 	try {
 		auto &sub = dynamic_cast<const frida_attach_private_data &>(
 			private_data);

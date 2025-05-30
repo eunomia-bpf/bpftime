@@ -26,6 +26,14 @@ jobs:
       - uses: actions/checkout@v2
         with:
           submodules: 'recursive'
+      - name: Setup conda
+        uses: conda-incubator/setup-miniconda@v3
+        with:
+          channels: conda-forge,bioconda
+          channel-priority: strict
+          miniforge-version: latest
+      - name: Install absl and protobuf
+        run: conda install libabseil libprotobuf
       - name: Install dependencies
         if: "matrix.container == 'ubuntu-2204'"
         run: |
@@ -37,12 +45,11 @@ jobs:
     
       - name: Build for frida uprobe attach tests
         run: |
-          cmake -DTEST_LCOV=ON -B build
+          cmake -DCMAKE_BUILD_TYPE:STRING=Debug -DTEST_LCOV=ON -B build -Dabsl_DIR=~/miniconda3/lib/cmake/absl -DProtobuf_DIR=~/miniconda3/lib/cmake/protobuf -Dutf8_range_DIR=~/miniconda3/lib/cmake/utf8_range
           cmake --build build --config Debug --target bpftime_frida_uprobe_attach_tests -j$(nproc)
-          
       - name: Run frida uprobe attach tests
         run: |
-          ./build/attach/frida_uprobe_attach_impl/bpftime_frida_uprobe_attach_tests
+          ./build/attach/frida_uprobe_attach_impl/bpftime_frida_uprobe_attach_tests  "~Test with backtrace"
       - name: Generate frida uprobe attach test coverage (Fedora)
         if: "matrix.container == 'fedora-39'"
         run: |
@@ -67,7 +74,7 @@ jobs:
 
       - name: Build syscall trace uprobe attach tests
         run: |
-          cmake -DTEST_LCOV=ON -B build
+          cmake -DTEST_LCOV=ON -B build -Dabsl_DIR=~/miniconda3/lib/cmake/absl -DProtobuf_DIR=~/miniconda3/lib/cmake/protobuf -Dutf8_range_DIR=~/miniconda3/lib/cmake/utf8_range
           cmake --build build --config Debug --target bpftime_syscall_trace_attach_tests -j$(nproc)
           
       - name: Run syscall trace uprobe attach tests
@@ -93,7 +100,7 @@ jobs:
           path: |
             ./coverage-syscall-trace.info
       - uses: codecov/codecov-action@v4
-        if: github.repository == 'eunomia-bpf/bpftime'
+        if: github.repository == 'eunomia-bpf/bpftime' && github.event_name == 'push' && github.ref == 'refs/heads/main'
         with:
               fail_ci_if_error: true # optional (default = false)
               files: ./coverage-syscall-trace.info, ./coverage-uprobe.info # optional

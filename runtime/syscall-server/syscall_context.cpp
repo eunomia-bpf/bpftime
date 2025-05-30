@@ -85,6 +85,19 @@ syscall_context::syscall_context()
 	SPDLOG_INFO("The log will be written to: {}",
 		    runtime_config.get_logger_output_path());
 	spdlog::cfg::load_env_levels();
+	// auto pos_cmd = std::string("pos_cli --start --target daemon");
+	// pos_thread_future = pos_thread_promise.get_future();
+	// auto retval = POSUtil_Command_Caller::exec_async(
+	// 	pos_cmd, pos_thread, pos_thread_promise, pos_result,
+	// 	/* ignore_error */ false,
+	// 	/* print_stdout */ true,
+	// 	/* print_stderr */ true);
+	// if (unlikely(retval != POS_SUCCESS)) {
+	// 	SPDLOG_ERROR(
+	// 		"error to start pos_cli: retval({})",
+	// 		retval);
+	// 	exit(1);
+	// }
 }
 
 void syscall_context::try_startup()
@@ -611,6 +624,20 @@ int syscall_context::handle_perfevent(perf_event_attr *attr, pid_t pid, int cpu,
 			retprobe, ref_ctr_off);
 		// std::cout << "Created uprobe " << id << std::endl;
 		SPDLOG_DEBUG("Created uprobe {}", id);
+		return id;
+	} else if ((int)attr->type == determine_kprobe_perf_type()) {
+		bool is_ret_probe =
+			attr->config & (1 << determine_kprobe_retprobe_bit());
+		size_t ref_ctr_off =
+			attr->config >> PERF_UPROBE_REF_CTR_OFFSET_SHIFT;
+		const char *name = (const char *)(uintptr_t)attr->config1;
+		uint64_t addr = attr->config2;
+		SPDLOG_DEBUG(
+			"Creating kprobe func_name={} addr={} retprobe={} ref_ctr_off={} attr->config={:x}",
+			name, addr, is_ret_probe, ref_ctr_off, attr->config);
+		int id = bpftime_kprobe_create(-1, name, addr, is_ret_probe,
+					       ref_ctr_off);
+		SPDLOG_DEBUG("Created kprobe {}", id);
 		return id;
 	} else if ((int)attr->type ==
 		   (int)bpf_event_type::PERF_TYPE_TRACEPOINT) {

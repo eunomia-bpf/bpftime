@@ -10,6 +10,7 @@
 #include <boost/interprocess/containers/string.hpp>
 #include <boost/interprocess/containers/vector.hpp>
 #include <cstddef>
+#include <cstdint>
 #include <optional>
 #include <boost/interprocess/allocators/allocator.hpp>
 #include <boost/interprocess/smart_ptr/shared_ptr.hpp>
@@ -103,6 +104,12 @@ struct uprobe_perf_event_data {
 	size_t ref_ctr_off;
 	boost_shm_string _module_name;
 };
+
+struct kprobe_perf_event_data {
+	boost_shm_string func_name;
+	uint64_t addr;
+	size_t ref_ctr_off;
+};
 struct tracepoint_perf_event_data {
 	int pid;
 	// Tracepoint id at /sys/kernel/tracing/events/syscalls/*/id, used to
@@ -116,7 +123,8 @@ struct custom_perf_event_data {
 
 using perf_event_data_variant =
 	std::variant<uprobe_perf_event_data, tracepoint_perf_event_data,
-		     software_perf_event_shared_ptr, custom_perf_event_data>;
+		     software_perf_event_shared_ptr, custom_perf_event_data,
+		     kprobe_perf_event_data>;
 
 // perf event handler
 struct bpf_perf_event_handler {
@@ -151,11 +159,15 @@ struct bpf_perf_event_handler {
 			       boost::interprocess::managed_shared_memory &mem,
 			       bool default_enabled = false);
 
-	// create uprobe/uretprobe with new perf event attr
+	// create uprobe/uretprobe  with new perf event attr
 	bpf_perf_event_handler(bool is_retprobe, uint64_t offset, int pid,
 			       const char *module_name, size_t ref_ctr_off,
 			       boost::interprocess::managed_shared_memory &mem);
 
+	// create kprobe/kretprobe
+	bpf_perf_event_handler(bool is_retprobe, uint64_t addr,
+			       const char *func_name, size_t ref_ctr_off,
+			       boost::interprocess::managed_shared_memory &mem);
 	// create tracepoint
 	bpf_perf_event_handler(int pid, int32_t tracepoint_id,
 			       boost::interprocess::managed_shared_memory &mem);

@@ -333,7 +333,7 @@ jobs:
 
       - name: Upload to Codecov
         # Only upload when this workflow was run on the main repository
-        if: (success() || failure()) && github.repository == 'eunomia-bpf/bpftime'
+        if: (success() || failure()) && github.repository == 'eunomia-bpf/bpftime' && github.event_name == 'push' && github.ref == 'refs/heads/main'
         uses: codecov/codecov-action@v4
         with:
           fail_ci_if_error: true
@@ -689,7 +689,7 @@ jobs:
 
       - name: Upload to Codecov
         # Only upload when this workflow was run on the main repository
-        if: (success() || failure()) && github.repository == 'eunomia-bpf/bpftime'
+        if: (success() || failure()) && github.repository == 'eunomia-bpf/bpftime' && github.event_name == 'push' && github.ref == 'refs/heads/main'
         uses: codecov/codecov-action@v4
         with:
           fail_ci_if_error: true
@@ -769,7 +769,7 @@ jobs:
           path: combined/combined-coverage.info
       
       - name: Upload combined coverage to Codecov
-        if: github.repository == 'eunomia-bpf/bpftime'
+        if: github.repository == 'eunomia-bpf/bpftime' && github.event_name == 'push' && github.ref == 'refs/heads/main'
         uses: codecov/codecov-action@v4
         with:
           fail_ci_if_error: false  # Changed to false to prevent CI failure on upload issues
