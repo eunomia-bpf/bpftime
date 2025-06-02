@@ -7,6 +7,7 @@
 #include "bpf_map/userspace/per_cpu_array_map.hpp"
 #include "bpf_map/userspace/per_cpu_hash_map.hpp"
 #include "bpf_map/userspace/stack_trace_map.hpp"
+#include "bpf_map/userspace/lpm_trie_map.hpp"
 #include <bpf_map/userspace/perf_event_array_map.hpp>
 #include <bpf_map/userspace/queue.hpp>
 #include <bpf_map/userspace/stack.hpp>
@@ -136,6 +137,16 @@ const void *bpf_map_handler::map_lookup_elem(const void *key,
 		auto impl = static_cast<stack_map_impl *>(map_impl_ptr.get());
 		return do_lookup(impl);
 	}
+	case bpf_map_type::BPF_MAP_TYPE_LRU_HASH: {
+		auto impl = static_cast<lru_var_hash_map_impl *>(
+			map_impl_ptr.get());
+		return do_lookup(impl);
+	}
+	case bpf_map_type::BPF_MAP_TYPE_LPM_TRIE: {
+		auto impl =
+			static_cast<lpm_trie_map_impl *>(map_impl_ptr.get());
+		return do_lookup(impl);
+	}
 #ifdef BPFTIME_BUILD_WITH_LIBBPF
 	case bpf_map_type::BPF_MAP_TYPE_KERNEL_USER_ARRAY: {
 		auto impl = static_cast<array_map_kernel_user_impl *>(
@@ -165,11 +176,6 @@ const void *bpf_map_handler::map_lookup_elem(const void *key,
 #endif
 	case bpf_map_type::BPF_MAP_TYPE_ARRAY_OF_MAPS: {
 		auto impl = static_cast<array_map_of_maps_impl *>(
-			map_impl_ptr.get());
-		return do_lookup(impl);
-	}
-	case bpf_map_type::BPF_MAP_TYPE_LRU_HASH: {
-		auto impl = static_cast<lru_var_hash_map_impl *>(
 			map_impl_ptr.get());
 		return do_lookup(impl);
 	}
@@ -289,6 +295,11 @@ long bpf_map_handler::map_update_elem(const void *key, const void *value,
 			map_impl_ptr.get());
 		return do_update(impl);
 	}
+	case bpf_map_type::BPF_MAP_TYPE_LPM_TRIE: {
+		auto impl =
+			static_cast<lpm_trie_map_impl *>(map_impl_ptr.get());
+		return do_update(impl);
+	}
 	default:
 		auto func_ptr = global_map_ops_table[(int)type].elem_update;
 		if (func_ptr) {
@@ -388,6 +399,11 @@ int bpf_map_handler::bpf_map_get_next_key(const void *key, void *next_key,
 	case bpf_map_type::BPF_MAP_TYPE_LRU_HASH: {
 		auto impl = static_cast<lru_var_hash_map_impl *>(
 			map_impl_ptr.get());
+		return do_get_next_key(impl);
+	}
+	case bpf_map_type::BPF_MAP_TYPE_LPM_TRIE: {
+		auto impl =
+			static_cast<lpm_trie_map_impl *>(map_impl_ptr.get());
 		return do_get_next_key(impl);
 	}
 	default:
@@ -504,6 +520,11 @@ long bpf_map_handler::map_delete_elem(const void *key, bool from_syscall) const
 	case bpf_map_type::BPF_MAP_TYPE_LRU_HASH: {
 		auto impl = static_cast<lru_var_hash_map_impl *>(
 			map_impl_ptr.get());
+		return do_delete(impl);
+	}
+	case bpf_map_type::BPF_MAP_TYPE_LPM_TRIE: {
+		auto impl =
+			static_cast<lpm_trie_map_impl *>(map_impl_ptr.get());
 		return do_delete(impl);
 	}
 	default:
@@ -631,6 +652,12 @@ int bpf_map_handler::map_init(managed_shared_memory &memory)
 						max_entries);
 		return 0;
 	}
+	case bpf_map_type::BPF_MAP_TYPE_LPM_TRIE: {
+		map_impl_ptr = memory.construct<lpm_trie_map_impl>(
+			container_name.c_str())(memory, key_size, value_size,
+						max_entries);
+		return 0;
+	}
 	default:
 		if (bpftime_get_agent_config().allow_non_buildin_map_types) {
 			SPDLOG_INFO("non-builtin map type: {}", (int)type);
@@ -703,6 +730,9 @@ void bpf_map_handler::map_free(managed_shared_memory &memory)
 		break;
 	case bpf_map_type::BPF_MAP_TYPE_LRU_HASH:
 		memory.destroy<lru_var_hash_map_impl>(container_name.c_str());
+		break;
+	case bpf_map_type::BPF_MAP_TYPE_LPM_TRIE:
+		memory.destroy<lpm_trie_map_impl>(container_name.c_str());
 		break;
 #endif
 	default:
