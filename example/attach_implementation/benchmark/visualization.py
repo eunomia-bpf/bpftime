@@ -2,6 +2,15 @@ import matplotlib.pyplot as plt
 import numpy as np
 import json
 import matplotlib.ticker as ticker
+import matplotlib as mpl
+
+# Configure matplotlib to embed fonts in PDF
+mpl.rcParams.update({
+    'pdf.fonttype': 42,  # TrueType fonts
+    'pdf.use14corefonts': False,
+    'pdf.embedded': True,
+    'font.family': 'sans-serif'
+})
 
 # Load the benchmark results
 with open('example/attach_implementation/benchmark/example_benchmark_results.json', 'r') as f:
