@@ -35,7 +35,6 @@ TEST_CASE("Test CUDAInjector - basic attach/detach")
 		bool success = injector.inject_ptx();
 		REQUIRE(success == true);
 	}
-
 }
 
 TEST_CASE("Test String Concat - ptx load/unload")
