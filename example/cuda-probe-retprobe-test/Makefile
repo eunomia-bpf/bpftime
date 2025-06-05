@@ -66,10 +66,8 @@ $(call allow-override,CC,$(CROSS_COMPILE)cc)
 $(call allow-override,LD,$(CROSS_COMPILE)ld)
 
 .PHONY: all
-all: $(APPS) victim vec_add
+all: $(APPS) vec_add
 
-victim: victim.cu
-	nvcc -cudart shared victim.cu -o victim -g
 vec_add: vec_add.cu
 	nvcc -cudart shared vec_add.cu -o vec_add -g
 
