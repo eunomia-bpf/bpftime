@@ -155,9 +155,6 @@ endif()
 
 set(SPDLOG_INCLUDE ${CMAKE_CURRENT_SOURCE_DIR}/third_party/spdlog/include)
 
-option(BPFTIME_CUDA_ROOT "Root for CUDA installation" "")
-option(BPFTIME_ENABLE_CUDA_ATTACH "Whether to enable CUDA attach" OFF)
-
 if(BPFTIME_ENABLE_CUDA_ATTACH)
   add_compile_definitions(BPFTIME_ENABLE_CUDA_ATTACH=1)
 endif()
