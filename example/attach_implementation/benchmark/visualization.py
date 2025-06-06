@@ -8,9 +8,11 @@ import matplotlib as mpl
 mpl.rcParams.update({
     'pdf.fonttype': 42,  # TrueType fonts
     'pdf.use14corefonts': False,
-    'pdf.embedded': True,
     'font.family': 'sans-serif'
 })
+
+mpl.rcParams['pdf.fonttype'] = 42
+mpl.rcParams['ps.fonttype'] = 42
 
 # Load the benchmark results
 with open('example/attach_implementation/benchmark/example_benchmark_results.json', 'r') as f:
