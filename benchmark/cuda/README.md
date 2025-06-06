@@ -27,6 +27,7 @@ To build all components:
 
 ```bash
 make
+make vec_add
 ```
 
 This will build:

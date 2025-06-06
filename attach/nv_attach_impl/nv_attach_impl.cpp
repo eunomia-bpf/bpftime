@@ -215,6 +215,7 @@ nv_attach_impl::hack_fatbin(std::vector<uint8_t> &&data_vec)
 		SPDLOG_INFO("Listing functions in the patched ptx");
 		boost::asio::io_context ctx;
 		boost::process::ipstream stream;
+		boost::process::ipstream err_stream;
 		boost::process::environment env =
 			boost::this_process::environment();
 		env["LD_PRELOAD"] = "";
@@ -223,9 +224,11 @@ nv_attach_impl::hack_fatbin(std::vector<uint8_t> &&data_vec)
 			std::string("cuobjdump --dump-ptx ") +
 				output_path.string(),
 			boost::process::std_out > stream,
+			boost::process::std_err > err_stream,
 			boost::process::env(env));
 		std::string line;
 		std::string output;
+		std::string error_output;
 		bool should_record = false;
 		while (stream && std::getline(stream, line)) {
 			if (should_record) {
@@ -233,6 +236,18 @@ nv_attach_impl::hack_fatbin(std::vector<uint8_t> &&data_vec)
 			}
 			if (line.starts_with("ptxasOptions = "))
 				should_record = true;
+		}
+		while (err_stream && std::getline(err_stream, line)) {
+			error_output += line + "\n";
+		}
+		child.wait();
+		if (child.exit_code() != 0) {
+			SPDLOG_ERROR("cuobjdump failed with exit code {}: {}", 
+				child.exit_code(), error_output);
+			return {};
+		}
+		if (!error_output.empty()) {
+			SPDLOG_WARN("cuobjdump warnings: {}", error_output);
 		}
 		ptx_out.push_back(output);
 		{
@@ -325,9 +340,39 @@ nv_attach_impl::hack_fatbin(std::vector<uint8_t> &&data_vec)
 	command += fatbin_out;
 	SPDLOG_INFO("Fatbin out {}", fatbin_out.c_str());
 	SPDLOG_INFO("Starting nvcc: {}", command);
-	if (int err = system(command.c_str()); err != 0) {
-		SPDLOG_ERROR("Unable to execute nvcc");
+	boost::process::ipstream nvcc_out;
+	boost::process::ipstream nvcc_err;
+	boost::process::child nvcc_child(
+		command,
+		boost::process::std_out > nvcc_out,
+		boost::process::std_err > nvcc_err
+	);
+	
+	std::string nvcc_output;
+	std::string nvcc_error;
+	std::string line;
+	
+	// Read stdout
+	while (nvcc_out && std::getline(nvcc_out, line)) {
+		nvcc_output += line + "\n";
+	}
+	
+	// Read stderr
+	while (nvcc_err && std::getline(nvcc_err, line)) {
+		nvcc_error += line + "\n";
+	}
+	
+	nvcc_child.wait();
+	if (nvcc_child.exit_code() != 0) {
+		SPDLOG_ERROR("nvcc failed with exit code {}: {}", 
+			nvcc_child.exit_code(), nvcc_error);
 		return {};
+	}
+	if (!nvcc_error.empty()) {
+		SPDLOG_WARN("nvcc warnings: {}", nvcc_error);
+	}
+	if (!nvcc_output.empty()) {
+		SPDLOG_INFO("nvcc output: {}", nvcc_output);
 	}
 	SPDLOG_INFO("NVCC execution done.");
 	std::vector<uint8_t> fatbin_out_buf;
@@ -433,8 +478,17 @@ std::string filter_unprintable_chars(std::string input)
 			continue;
 		result.push_back(c);
 	}
-	while (result.back() != '}')
-		result.pop_back();
+	
+	// Only try to remove characters if the string is not empty
+	if (!result.empty()) {
+		SPDLOG_INFO("try to remove characters if the string is not empty: {}", result);
+		// Find the last occurrence of '}'
+		size_t last_brace = result.find_last_of('}');
+		if (last_brace != std::string::npos) {
+			// If we found a '}', keep everything up to and including it
+			result = result.substr(0, last_brace + 1);
+		}
+	}
 	return result;
 };
 
