@@ -11,7 +11,6 @@ mpl.rcParams.update({
     'font.family': 'sans-serif'
 })
 
-mpl.rcParams['pdf.fonttype'] = 42
 mpl.rcParams['ps.fonttype'] = 42
 
 # Load the benchmark results
