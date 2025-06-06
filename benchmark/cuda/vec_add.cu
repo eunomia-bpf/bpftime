@@ -32,7 +32,11 @@ int main(int argc, char **argv)
 
     // Set vector size in constant memory
     const int h_N = 1 << 20;  // 1M elements
-    cudaMemcpyToSymbol(d_N, &h_N, sizeof(h_N));
+    cudaError_t err = cudaMemcpyToSymbol(d_N, &h_N, sizeof(h_N));
+    if (err != cudaSuccess) {
+        std::cerr << "cudaMemcpyToSymbol failed: " << cudaGetErrorString(err) << std::endl;
+        return -1;
+    }
     
     size_t bytes = h_N * sizeof(float);
     
