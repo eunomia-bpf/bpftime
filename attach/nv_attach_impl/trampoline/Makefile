@@ -17,7 +17,7 @@ default_trampoline-cuda-nvptx64-nvidia-cuda-sm_60.s: default_trampoline.cu
 	$(CLANG) -S $< -Wall --cuda-gpu-arch=$(PTX_TARGET_ARCH) -O2 $(CUDA_LIBS)
 
 # compile it to exec for test
-test: default_trampoline-cuda-nvptx64-nvidia-cuda-sm_60.s
+test: default_trampoline.cu
 	$(CLANG) -o test --cuda-gpu-arch=$(PTX_TARGET_ARCH) default_trampoline.cu $(CUDA_LIBS)
 
 clean:
