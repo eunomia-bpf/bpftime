@@ -54,15 +54,12 @@ cd bpftime
 mkdir -p build && cd build
 
 # Configure with CMake
-cmake .. \
+cmake -B build \
   -DBPFTIME_ENABLE_CUDA_ATTACH=1 \
   -DBPFTIME_CUDA_ROOT=/usr/local/cuda-12.6  # Specify your CUDA installation path
 
 # Build
-make -j$(nproc)
-
-# Optionally install
-make install
+make -j$(nproc) -C build
 ```
 
 ### CMake Options

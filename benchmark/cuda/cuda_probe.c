@@ -21,52 +21,11 @@ static int libbpf_print_fn(enum libbpf_print_level level, const char *format,
 
 static volatile bool exiting = false;
 
+
 static void sig_handler(int sig)
 {
 	exiting = true;
 }
-
-// static int print_stat(struct cuda_probe_bpf *obj)
-// {
-// 	time_t t;
-// 	struct tm *tm;
-// 	char ts[16];
-// 	uint32_t key, *prev_key = NULL;
-// 	uint64_t value;
-// 	int err = 0;
-// 	int fd = bpf_map__fd(obj->maps.test_hash_map);
-
-// 	time(&t);
-// 	tm = localtime(&t);
-// 	strftime(ts, sizeof(ts), "%H:%M:%S", tm);
-
-// 	printf("%-9s\n", ts);
-
-// 	while (1) {
-// 		err = bpf_map_get_next_key(fd, prev_key, &key);
-// 		if (err) {
-// 			if (errno == ENOENT) {
-// 				err = 0;
-// 				break;
-// 			}
-// 			warn("bpf_map_get_next_key failed: %s\n",
-// 			     strerror(errno));
-// 			return err;
-// 		}
-// 		err = bpf_map_lookup_elem(fd, &key, &value);
-// 		if (err) {
-// 			warn("bpf_map_lookup_elem failed: %s\n",
-// 			     strerror(errno));
-// 			return err;
-// 		}
-// 		printf("	pid=%-5" PRIu32 " ", key);
-// 		printf("	malloc calls: %" PRIu64 "\n", value);
-
-// 		prev_key = &key;
-// 	}
-// 	fflush(stdout);
-// 	return err;
-// }
 
 int main(int argc, char **argv)
 {
@@ -100,7 +59,6 @@ int main(int argc, char **argv)
 	}
 	while (!exiting) {
 		sleep(1);
-		// print_stat(skel);
 	}
 cleanup:
 	/* Clean up */
