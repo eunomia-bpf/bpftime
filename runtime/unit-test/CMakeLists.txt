@@ -21,6 +21,9 @@ set(TEST_SOURCES
     maps/test_bpftime_hash_map.cpp
     maps/kernel_unit_tests.cpp
     maps/test_stack_trace_map.cpp
+    maps/test_queue_map.cpp
+    maps/test_stack_map.cpp
+    maps/test_lpm_trie_map.cpp
 
     maps/test_lru_var_hash_map.cpp
 

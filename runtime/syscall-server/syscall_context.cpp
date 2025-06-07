@@ -416,6 +416,18 @@ long syscall_context::handle_sysbpf(int cmd, union bpf_attr *attr, size_t size)
 		return bpftime_map_delete_elem(
 			attr->map_fd, (const void *)(uintptr_t)attr->key);
 	}
+	case BPF_MAP_LOOKUP_AND_DELETE_ELEM: {
+		SPDLOG_DEBUG("Lookup and delete map {}, value={:x}",
+			     attr->map_fd, (uintptr_t)attr->value);
+		if (run_with_kernel) {
+			return orig_syscall_fn(__NR_bpf, (long)cmd,
+					       (long)(uintptr_t)attr,
+					       (long)size);
+		}
+		// For queue maps, this is equivalent to pop operation
+		return bpftime_map_pop_elem(attr->map_fd,
+					    (void *)(uintptr_t)attr->value);
+	}
 	case BPF_MAP_GET_NEXT_KEY: {
 		SPDLOG_DEBUG("Getting next key for map {}, key={:x}",
 			     attr->map_fd, (uintptr_t)attr->key);
