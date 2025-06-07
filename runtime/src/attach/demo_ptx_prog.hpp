@@ -7,7 +7,7 @@ static const char *DEMO_PTX_PROG = R"(
 //
 
 .version 8.1
-.target sm_60
+.target sm_90
 .address_size 64
 
 	// .globl	spin_lock               // -- Begin function spin_lock

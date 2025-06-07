@@ -11,7 +11,7 @@ static const char *ORIGINAL_TEXT = R"(//
 //
 
 .version 5.0
-.target sm_60
+.target sm_90
 .address_size 64
 
 	// .globl	bpf_main

@@ -35,10 +35,32 @@
 #include <vector>
 #include <boost/asio.hpp>
 #include <boost/process.hpp>
+#include <sstream>
 using namespace bpftime;
 using namespace attach;
 
 extern GType cuda_runtime_function_hooker_get_type();
+
+std::string get_device_sm_version() {
+	int device_count;
+	cudaError_t err = cudaGetDeviceCount(&device_count);
+	if (err != cudaSuccess || device_count == 0) {
+		SPDLOG_WARN("No CUDA devices found, using default sm_90");
+		return "sm_90";
+	}
+
+	cudaDeviceProp device_prop;
+	err = cudaGetDeviceProperties(&device_prop, 0);  // Get properties of first device
+	if (err != cudaSuccess) {
+		SPDLOG_WARN("Failed to get device properties, using default sm_90");
+		return "sm_90";
+	}
+
+	std::stringstream ss;
+	ss << "sm_" << device_prop.major << device_prop.minor;
+	SPDLOG_INFO("Detected CUDA device SM version: {}", ss.str());
+	return ss.str();
+}
 
 int nv_attach_impl::detach_by_id(int id)
 {
@@ -234,7 +256,7 @@ nv_attach_impl::hack_fatbin(std::vector<uint8_t> &&data_vec)
 			if (should_record) {
 				output += line + "\n";
 			}
-			if (line.starts_with("ptxasOptions = "))
+			if (line.starts_with("compressed"))
 				should_record = true;
 		}
 		while (err_stream && std::getline(err_stream, line)) {
@@ -323,7 +345,7 @@ nv_attach_impl::hack_fatbin(std::vector<uint8_t> &&data_vec)
 	}
 	SPDLOG_INFO("Working directory: {}", work_dir.c_str());
 	std::string command =
-		"nvcc -O2 -G -g --keep-device-functions -arch=sm_60 ";
+		"nvcc -O2 -G -g --keep-device-functions -arch=" + get_device_sm_version() + " ";
 	{
 		auto ptx_in = work_dir / "main.ptx";
 		// SPDLOG_WARN("Using /tmp/main.ptx as ptx for nvcc");

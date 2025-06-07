@@ -143,7 +143,7 @@ To clean all build artifacts:
 make clean
 ``` 
 
-## Basic results
+## Basic results 1
 
 | baseline | bpf | nvbit |
 |----------|-----|-------|
@@ -227,7 +227,7 @@ BPF:
 [2025-06-06 07:47:29][info][3396212] Working directory: /tmp/bpftime-recompile-nvcc
 [2025-06-06 07:47:29][info][3396212] PTX IN: /tmp/bpftime-recompile-nvcc/main.ptx
 [2025-06-06 07:47:29][info][3396212] Fatbin out /tmp/bpftime-recompile-nvcc/out.fatbin
-[2025-06-06 07:47:29][info][3396212] Starting nvcc: nvcc -O2 -G -g --keep-device-functions -arch=sm_60 /tmp/bpftime-recompile-nvcc/main.ptx -fatbin -o /tmp/bpftime-recompile-nvcc/out.fatbin
+[2025-06-06 07:47:29][info][3396212] Starting nvcc: nvcc -O2 -G -g --keep-device-functions -arch=sm_90 /tmp/bpftime-recompile-nvcc/main.ptx -fatbin -o /tmp/bpftime-recompile-nvcc/out.fatbin
 ptxas warning :  .debug_abbrev section not found
 ptxas warning :  .debug_info section not found
 [2025-06-06 07:47:29][info][3396212] NVCC execution done.
@@ -243,3 +243,11 @@ Total time: 810824 us
 Average kernel time: 81.0824 us
 Validation check: C[0] = 0, C[1] = 3
 ```
+
+## Basic results 2
+
+| baseline | bpf | nvbit |
+|----------|-----|-------|
+| 5.06454 us | 9.9309 us | 62.7732 us |
+
+Device: NVIDIA H100

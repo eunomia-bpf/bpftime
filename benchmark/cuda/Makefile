@@ -68,8 +68,8 @@ $(call allow-override,LD,$(CROSS_COMPILE)ld)
 .PHONY: all
 all: $(APPS)
 
-vec_add: vec_add.cu
-	nvcc -cudart shared vec_add.cu -o vec_add -g
+victim: vec_add.cu nvbit_vec_add.so
+	nvcc -cudart shared -arch=sm_90 vec_add.cu -o vec_add -g
 
 # NVBit tool compilation
 NVCC=nvcc -ccbin=$(CXX) -D_FORCE_INLINES

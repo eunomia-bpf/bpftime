@@ -23,8 +23,8 @@ std::string patch_helper_names_and_header(std::string result)
 
 	};
 	const std::string version_headers[] = {
-		".version 3.2\n.target sm_60\n.address_size 64\n",
-		".version 5.0\n.target sm_60\n.address_size 64\n"
+		".version 3.2\n.target sm_90\n.address_size 64\n",
+		".version 5.0\n.target sm_90\n.address_size 64\n"
 	};
 	for (const auto &entry : to_replace_names) {
 		auto idx = result.find(entry[0]);

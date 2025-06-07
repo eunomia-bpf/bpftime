@@ -14,7 +14,7 @@
 #include <thread>
 #include <vector>
 
-/* clang++-17 -S ./default_trampoline.cu -Wall --cuda-gpu-arch=sm_60 -O2 -L/usr/local/cuda/lib64/ -lcudart*/
+/* clang++-17 -S ./default_trampoline.cu -Wall --cuda-gpu-arch=sm_90 -O2 -L/usr/local/cuda/lib64/ -lcudart*/
 enum class HelperOperation {
 	MAP_LOOKUP = 1,
 	MAP_UPDATE = 2,
