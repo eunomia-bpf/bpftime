@@ -2,6 +2,7 @@
 #include "catch2/catch_message.hpp"
 
 #include "bpf_map/userspace/bloom_filter.hpp"
+#include "../common_def.hpp"
 #include <boost/interprocess/managed_shared_memory.hpp>
 #include <vector>
 #include <cstring>
@@ -21,19 +22,7 @@ TEST_CASE("Bloom Filter Constructor Validation", "[bloom_filter][constructor]")
 	const size_t SHARED_MEMORY_SIZE = 1024 * 1024;
 
 	// RAII for shared memory segment removal
-	struct ShmRemover {
-		const char *name;
-		ShmRemover(const char *n) : name(n)
-		{
-			// Pre-cleanup
-			boost::interprocess::shared_memory_object::remove(name);
-		}
-		~ShmRemover()
-		{
-			// Post-cleanup
-			boost::interprocess::shared_memory_object::remove(name);
-		}
-	} remover(SHARED_MEMORY_NAME);
+	shm_remove remover((std::string(SHARED_MEMORY_NAME)));
 
 	boost::interprocess::managed_shared_memory shm(
 		boost::interprocess::create_only, SHARED_MEMORY_NAME,
@@ -64,17 +53,7 @@ TEST_CASE("Bloom Filter Basic Operations", "[bloom_filter][basic]")
 	const char *SHARED_MEMORY_NAME = "BloomFilterBasicTestShm";
 	const size_t SHARED_MEMORY_SIZE = 1024 * 1024;
 
-	struct ShmRemover {
-		const char *name;
-		ShmRemover(const char *n) : name(n)
-		{
-			boost::interprocess::shared_memory_object::remove(name);
-		}
-		~ShmRemover()
-		{
-			boost::interprocess::shared_memory_object::remove(name);
-		}
-	} remover(SHARED_MEMORY_NAME);
+	shm_remove remover((std::string(SHARED_MEMORY_NAME)));
 
 	boost::interprocess::managed_shared_memory shm(
 		boost::interprocess::create_only, SHARED_MEMORY_NAME,
@@ -186,17 +165,7 @@ TEST_CASE("Bloom Filter False Positive Test", "[bloom_filter][false_positive]")
 	const char *SHARED_MEMORY_NAME = "BloomFilterFPTestShm";
 	const size_t SHARED_MEMORY_SIZE = 1024 * 1024;
 
-	struct ShmRemover {
-		const char *name;
-		ShmRemover(const char *n) : name(n)
-		{
-			boost::interprocess::shared_memory_object::remove(name);
-		}
-		~ShmRemover()
-		{
-			boost::interprocess::shared_memory_object::remove(name);
-		}
-	} remover(SHARED_MEMORY_NAME);
+	shm_remove remover((std::string(SHARED_MEMORY_NAME)));
 
 	boost::interprocess::managed_shared_memory shm(
 		boost::interprocess::create_only, SHARED_MEMORY_NAME,
@@ -251,17 +220,7 @@ TEST_CASE("Bloom Filter Different Hash Counts", "[bloom_filter][hash_count]")
 	const char *SHARED_MEMORY_NAME = "BloomFilterHashTestShm";
 	const size_t SHARED_MEMORY_SIZE = 1024 * 1024;
 
-	struct ShmRemover {
-		const char *name;
-		ShmRemover(const char *n) : name(n)
-		{
-			boost::interprocess::shared_memory_object::remove(name);
-		}
-		~ShmRemover()
-		{
-			boost::interprocess::shared_memory_object::remove(name);
-		}
-	} remover(SHARED_MEMORY_NAME);
+	shm_remove remover((std::string(SHARED_MEMORY_NAME)));
 
 	boost::interprocess::managed_shared_memory shm(
 		boost::interprocess::create_only, SHARED_MEMORY_NAME,
@@ -288,19 +247,7 @@ TEST_CASE("Bloom Filter Hash Algorithm Benchmark", "[bloom_filter][benchmark]")
 	const size_t SHARED_MEMORY_SIZE = 1024 * 1024;
 
 	// RAII for shared memory segment removal
-	struct ShmRemover {
-		const char *name;
-		ShmRemover(const char *n) : name(n)
-		{
-			// Pre-cleanup
-			boost::interprocess::shared_memory_object::remove(name);
-		}
-		~ShmRemover()
-		{
-			// Post-cleanup
-			boost::interprocess::shared_memory_object::remove(name);
-		}
-	} remover(SHARED_MEMORY_NAME);
+	shm_remove remover((std::string(SHARED_MEMORY_NAME)));
 
 	managed_shared_memory memory(create_only, SHARED_MEMORY_NAME,
 				     SHARED_MEMORY_SIZE);
@@ -403,19 +350,7 @@ TEST_CASE("Bloom Filter Hash Distribution Quality",
 	const size_t SHARED_MEMORY_SIZE = 1024 * 1024;
 
 	// RAII for shared memory segment removal
-	struct ShmRemover {
-		const char *name;
-		ShmRemover(const char *n) : name(n)
-		{
-			// Pre-cleanup
-			boost::interprocess::shared_memory_object::remove(name);
-		}
-		~ShmRemover()
-		{
-			// Post-cleanup
-			boost::interprocess::shared_memory_object::remove(name);
-		}
-	} remover(SHARED_MEMORY_NAME);
+	shm_remove remover((std::string(SHARED_MEMORY_NAME)));
 
 	managed_shared_memory memory(create_only, SHARED_MEMORY_NAME,
 				     SHARED_MEMORY_SIZE);
@@ -521,17 +456,7 @@ TEST_CASE("Bloom Filter Large Scale False Positive Test",
 	const char *SHARED_MEMORY_NAME = "BloomFilterLargeScaleShmCatch2";
 	const size_t SHARED_MEMORY_SIZE = 4 * 1024 * 1024; // 4MB
 
-	struct ShmRemover {
-		const char *name;
-		ShmRemover(const char *n) : name(n)
-		{
-			boost::interprocess::shared_memory_object::remove(name);
-		}
-		~ShmRemover()
-		{
-			boost::interprocess::shared_memory_object::remove(name);
-		}
-	} remover(SHARED_MEMORY_NAME);
+	shm_remove remover((std::string(SHARED_MEMORY_NAME)));
 
 	managed_shared_memory memory(create_only, SHARED_MEMORY_NAME,
 				     SHARED_MEMORY_SIZE);
@@ -552,19 +477,7 @@ TEST_CASE("Bloom Filter Large Scale False Positive Test",
 		std::string shm_name =
 			std::string(SHARED_MEMORY_NAME) + "_" + algo_name;
 
-		struct AlgoShmRemover {
-			std::string name;
-			AlgoShmRemover(const std::string &n) : name(n)
-			{
-				boost::interprocess::shared_memory_object::remove(
-					name.c_str());
-			}
-			~AlgoShmRemover()
-			{
-				boost::interprocess::shared_memory_object::remove(
-					name.c_str());
-			}
-		} algo_remover(shm_name);
+		shm_remove algo_remover((std::move(shm_name)));
 
 		managed_shared_memory algo_memory(create_only, shm_name.c_str(),
 						  SHARED_MEMORY_SIZE);
@@ -693,17 +606,7 @@ TEST_CASE("Bloom Filter Extreme Load Test", "[bloom_filter][extreme]")
 	const char *SHARED_MEMORY_NAME = "BloomFilterExtremeShmCatch2";
 	const size_t SHARED_MEMORY_SIZE = 8 * 1024 * 1024; // 8MB
 
-	struct ShmRemover {
-		const char *name;
-		ShmRemover(const char *n) : name(n)
-		{
-			boost::interprocess::shared_memory_object::remove(name);
-		}
-		~ShmRemover()
-		{
-			boost::interprocess::shared_memory_object::remove(name);
-		}
-	} remover(SHARED_MEMORY_NAME);
+	shm_remove remover((std::string(SHARED_MEMORY_NAME)));
 
 	managed_shared_memory memory(create_only, SHARED_MEMORY_NAME,
 				     SHARED_MEMORY_SIZE);
@@ -726,19 +629,7 @@ TEST_CASE("Bloom Filter Extreme Load Test", "[bloom_filter][extreme]")
 		std::string shm_name =
 			std::string(SHARED_MEMORY_NAME) + "_" + algo_name;
 
-		struct AlgoShmRemover {
-			std::string name;
-			AlgoShmRemover(const std::string &n) : name(n)
-			{
-				boost::interprocess::shared_memory_object::remove(
-					name.c_str());
-			}
-			~AlgoShmRemover()
-			{
-				boost::interprocess::shared_memory_object::remove(
-					name.c_str());
-			}
-		} algo_remover(shm_name);
+		shm_remove algo_remover((std::move(shm_name)));
 
 		managed_shared_memory algo_memory(create_only, shm_name.c_str(),
 						  SHARED_MEMORY_SIZE);

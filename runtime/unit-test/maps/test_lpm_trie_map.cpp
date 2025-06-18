@@ -2,6 +2,7 @@
 #include "catch2/catch_message.hpp"
 
 #include "bpf_map/userspace/lpm_trie_map.hpp"
+#include "../common_def.hpp"
 #include <boost/interprocess/managed_shared_memory.hpp>
 #include <cstring>
 #include <cerrno>
@@ -18,17 +19,7 @@ TEST_CASE("LPM Trie Map Constructor Validation", "[lpm_trie_map][constructor]")
 	const char *SHARED_MEMORY_NAME = "LPMTrieConstructorTestShm";
 	const size_t SHARED_MEMORY_SIZE = 1024;
 
-	struct ShmRemover {
-		const char *name;
-		ShmRemover(const char *n) : name(n)
-		{
-			boost::interprocess::shared_memory_object::remove(name);
-		}
-		~ShmRemover()
-		{
-			boost::interprocess::shared_memory_object::remove(name);
-		}
-	} remover(SHARED_MEMORY_NAME);
+	shm_remove remover((std::string(SHARED_MEMORY_NAME)));
 
 	boost::interprocess::managed_shared_memory shm(
 		boost::interprocess::create_only, SHARED_MEMORY_NAME,
@@ -55,17 +46,7 @@ TEST_CASE("LPM Trie Map IPv4 Operations", "[lpm_trie_map][ipv4]")
 	const char *SHARED_MEMORY_NAME = "LPMTrieIPv4TestShm";
 	const size_t SHARED_MEMORY_SIZE = 65536;
 
-	struct ShmRemover {
-		const char *name;
-		ShmRemover(const char *n) : name(n)
-		{
-			boost::interprocess::shared_memory_object::remove(name);
-		}
-		~ShmRemover()
-		{
-			boost::interprocess::shared_memory_object::remove(name);
-		}
-	} remover(SHARED_MEMORY_NAME);
+	shm_remove remover((std::string(SHARED_MEMORY_NAME)));
 
 	boost::interprocess::managed_shared_memory shm(
 		boost::interprocess::create_only, SHARED_MEMORY_NAME,
@@ -208,17 +189,7 @@ TEST_CASE("LPM Trie Map Longest Prefix Match", "[lpm_trie_map][lpm]")
 	const char *SHARED_MEMORY_NAME = "LPMTrieLPMTestShm";
 	const size_t SHARED_MEMORY_SIZE = 65536;
 
-	struct ShmRemover {
-		const char *name;
-		ShmRemover(const char *n) : name(n)
-		{
-			boost::interprocess::shared_memory_object::remove(name);
-		}
-		~ShmRemover()
-		{
-			boost::interprocess::shared_memory_object::remove(name);
-		}
-	} remover(SHARED_MEMORY_NAME);
+	shm_remove remover((std::string(SHARED_MEMORY_NAME)));
 
 	boost::interprocess::managed_shared_memory shm(
 		boost::interprocess::create_only, SHARED_MEMORY_NAME,

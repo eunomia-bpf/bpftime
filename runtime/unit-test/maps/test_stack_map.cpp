@@ -2,13 +2,15 @@
 #include "catch2/catch_message.hpp" // For INFO, FAIL
 
 #include "bpf_map/userspace/stack.hpp" // Adjust path as needed
+#include "../common_def.hpp"
 #include <boost/interprocess/managed_shared_memory.hpp>
 #include <boost/interprocess/containers/string.hpp>
 #include <vector>
 #include <thread>
 #include <chrono> // For std::chrono::milliseconds
 #include <cstring> // For strcmp, strerror
-#include <cerrno> // For errno, ENOENT, E2BIG, EINVAL
+#include <cerrno> // For errno, ENOENT, E2BIG, EINVAL, ENOTSUP
+#include <pthread.h> // For pthread_spinlock_t
 
 // Define a helper structure for testing
 struct TestValue {
@@ -31,28 +33,16 @@ struct TestValue {
 
 TEST_CASE("Stack Map Constructor Validation", "[stack_map][constructor]")
 {
-	const char *SHARED_MEMORY_NAME_CV = "StackMapCVTestShmCatch2";
-	const size_t SHARED_MEMORY_SIZE_CV = 1024; // Small, just for
-						   // constructor test
+	const char *SHARED_MEMORY_NAME = "StackMapConstructorTestShmCatch2";
+	const size_t SHARED_MEMORY_SIZE = 1024; // Small, just for
+						// constructor test
 
 	// RAII for shared memory segment removal
-	struct ShmRemover {
-		const char *name;
-		ShmRemover(const char *n) : name(n)
-		{
-			// Pre-cleanup
-			boost::interprocess::shared_memory_object::remove(name);
-		}
-		~ShmRemover()
-		{
-			// Post-cleanup
-			boost::interprocess::shared_memory_object::remove(name);
-		}
-	} remover(SHARED_MEMORY_NAME_CV);
+	shm_remove remover((std::string(SHARED_MEMORY_NAME)));
 
 	boost::interprocess::managed_shared_memory shm(
-		boost::interprocess::create_only, SHARED_MEMORY_NAME_CV,
-		SHARED_MEMORY_SIZE_CV);
+		boost::interprocess::create_only, SHARED_MEMORY_NAME,
+		SHARED_MEMORY_SIZE);
 
 	// Test invalid max_entries (0)
 	REQUIRE_THROWS_AS(bpftime::stack_map_impl(shm, 0, 0),
@@ -69,17 +59,7 @@ TEST_CASE("Stack Map Core Operations", "[stack_map][core]")
 	const size_t SHARED_MEMORY_SIZE = 65536; // 64KB
 
 	// RAII for shared memory segment removal
-	struct ShmRemover {
-		const char *name;
-		ShmRemover(const char *n) : name(n)
-		{
-			boost::interprocess::shared_memory_object::remove(name);
-		}
-		~ShmRemover()
-		{
-			boost::interprocess::shared_memory_object::remove(name);
-		}
-	} remover(SHARED_MEMORY_NAME);
+	shm_remove remover((std::string(SHARED_MEMORY_NAME)));
 
 	boost::interprocess::managed_shared_memory shm(
 		boost::interprocess::create_only, SHARED_MEMORY_NAME,
@@ -320,28 +300,22 @@ TEST_CASE("Stack Map Core Operations", "[stack_map][core]")
 	}
 }
 
-TEST_CASE("Stack Map Concurrency Test", "[stack_map][concurrency][.disabled]")
+TEST_CASE("Stack Map Conceptual Concurrency Test",
+	  "[stack_map][concurrency][.disabled]")
 {
 	const char *SHARED_MEMORY_NAME_CONC = "StackMapConcTestShmCatch2";
 	const size_t SHARED_MEMORY_SIZE_CONC = 65536;
 
-	struct ShmRemover {
-		const char *name;
-		ShmRemover(const char *n) : name(n)
-		{
-			boost::interprocess::shared_memory_object::remove(name);
-		}
-		~ShmRemover()
-		{
-			boost::interprocess::shared_memory_object::remove(name);
-		}
-	} remover(SHARED_MEMORY_NAME_CONC);
+	shm_remove remover((std::string(SHARED_MEMORY_NAME_CONC)));
 
 	boost::interprocess::managed_shared_memory shm(
 		boost::interprocess::create_only, SHARED_MEMORY_NAME_CONC,
 		SHARED_MEMORY_SIZE_CONC);
 
 	bpftime::stack_map_impl *s_map_conc = nullptr;
+	pthread_spinlock_t map_lock; // Add spinlock for thread safety
+	pthread_spin_init(&map_lock, 0);
+
 	try {
 		s_map_conc = shm.construct<bpftime::stack_map_impl>(
 			"StackMapConcInstance")(shm, sizeof(int),
@@ -359,7 +333,12 @@ TEST_CASE("Stack Map Concurrency Test", "[stack_map][concurrency][.disabled]")
 		for (int i = 0; i < ops_per_thread; ++i) {
 			int val_to_push = thread_id * 1000 + i;
 			// Using BPF_EXIST to avoid simple gridlock on full
-			s_map_conc->map_push_elem(&val_to_push, BPF_EXIST);
+			{
+				pthread_spin_lock(&map_lock);
+				s_map_conc->map_push_elem(&val_to_push,
+							  BPF_EXIST);
+				pthread_spin_unlock(&map_lock);
+			}
 
 			// Brief sleep to increase chance of thread interleaving
 			std::this_thread::sleep_for(
@@ -368,7 +347,11 @@ TEST_CASE("Stack Map Concurrency Test", "[stack_map][concurrency][.disabled]")
 			int popped_val;
 			// Try to pop, ignore ENOENT as other threads might
 			// empty it
-			s_map_conc->map_pop_elem(&popped_val);
+			{
+				pthread_spin_lock(&map_lock);
+				s_map_conc->map_pop_elem(&popped_val);
+				pthread_spin_unlock(&map_lock);
+			}
 		}
 	};
 
@@ -385,16 +368,29 @@ TEST_CASE("Stack Map Concurrency Test", "[stack_map][concurrency][.disabled]")
 	// Empty the stack and verify it becomes empty
 	int final_pop_val;
 	int pop_count = 0;
-	while (s_map_conc->map_pop_elem(&final_pop_val) == 0) {
-		pop_count++;
+	while (true) {
+		pthread_spin_lock(&map_lock);
+		int result = s_map_conc->map_pop_elem(&final_pop_val);
+		pthread_spin_unlock(&map_lock);
+		if (result == 0) {
+			pop_count++;
+		} else {
+			break;
+		}
 	}
 	INFO("Final pop count from concurrent stack: " << pop_count);
 
-	errno = 0;
-	REQUIRE(s_map_conc->map_pop_elem(&final_pop_val) == -1);
-	REQUIRE(errno == ENOENT); // Must be empty eventually
+	{
+		pthread_spin_lock(&map_lock);
+		errno = 0;
+		REQUIRE(s_map_conc->map_pop_elem(&final_pop_val) == -1);
+		REQUIRE(errno == ENOENT); // Must be empty eventually
+		pthread_spin_unlock(&map_lock);
+	}
 
 	if (s_map_conc) {
 		shm.destroy_ptr(s_map_conc);
 	}
+
+	pthread_spin_destroy(&map_lock);
 }

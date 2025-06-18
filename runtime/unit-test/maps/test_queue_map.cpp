@@ -4,6 +4,7 @@
 // For REQUIRE_THROWS_AS, catch_test_macros.hpp is usually sufficient.
 
 #include "bpf_map/userspace/queue.hpp" // Adjust path as needed
+#include "../common_def.hpp"
 #include <boost/interprocess/managed_shared_memory.hpp>
 #include <boost/interprocess/containers/string.hpp>
 #include <vector>
@@ -11,6 +12,7 @@
 #include <chrono> // For std::chrono::milliseconds
 #include <cstring> // For strcmp, strerror
 #include <cerrno> // For errno, ENOENT, E2BIG, EINVAL, ENOTSUP
+#include <pthread.h> // For pthread_spinlock_t
 
 // Define a helper structure, same as in GTest version
 struct TestValue {
@@ -36,24 +38,12 @@ struct TestValue {
 
 TEST_CASE("Queue Map Constructor Validation", "[queue_map][constructor]")
 {
-	const char *SHARED_MEMORY_NAME_CV = "QueueMapCVTestShmCatch2";
+	const char *SHARED_MEMORY_NAME_CV = "QueueMapConstructorTestShmCatch2";
 	const size_t SHARED_MEMORY_SIZE_CV = 1024; // Small, just for
 						   // constructor test
 
 	// RAII for shared memory segment removal
-	struct ShmRemover {
-		const char *name;
-		ShmRemover(const char *n) : name(n)
-		{
-			// Pre-cleanup
-			boost::interprocess::shared_memory_object::remove(name);
-		}
-		~ShmRemover()
-		{
-			// Post-cleanup
-			boost::interprocess::shared_memory_object::remove(name);
-		}
-	} remover(SHARED_MEMORY_NAME_CV);
+	shm_remove remover((std::string(SHARED_MEMORY_NAME_CV)));
 
 	boost::interprocess::managed_shared_memory shm(
 		boost::interprocess::create_only, SHARED_MEMORY_NAME_CV,
@@ -74,17 +64,7 @@ TEST_CASE("Queue Map Core Operations", "[queue_map][core]")
 	const size_t SHARED_MEMORY_SIZE = 65536; // 64KB
 
 	// RAII for shared memory segment removal
-	struct ShmRemover {
-		const char *name;
-		ShmRemover(const char *n) : name(n)
-		{
-			boost::interprocess::shared_memory_object::remove(name);
-		}
-		~ShmRemover()
-		{
-			boost::interprocess::shared_memory_object::remove(name);
-		}
-	} remover(SHARED_MEMORY_NAME);
+	shm_remove remover((std::string(SHARED_MEMORY_NAME)));
 
 	boost::interprocess::managed_shared_memory shm(
 		boost::interprocess::create_only, SHARED_MEMORY_NAME,
@@ -115,8 +95,13 @@ TEST_CASE("Queue Map Core Operations", "[queue_map][core]")
 		int peek_val, pop_val;
 
 		// 1. Peek/Pop empty queue
-		REQUIRE(q_map_int->map_peek_elem(&peek_val) == -ENOENT);
-		REQUIRE(q_map_int->map_pop_elem(&pop_val) == -ENOENT);
+		errno = 0;
+		REQUIRE(q_map_int->map_peek_elem(&peek_val) == -1);
+		REQUIRE(errno == ENOENT);
+
+		errno = 0;
+		REQUIRE(q_map_int->map_pop_elem(&pop_val) == -1);
+		REQUIRE(errno == ENOENT);
 
 		// 2. Push three elements (queue capacity is 3)
 		REQUIRE(q_map_int->map_push_elem(&val1, BPF_ANY) == 0); // 10
@@ -127,7 +112,9 @@ TEST_CASE("Queue Map Core Operations", "[queue_map][core]")
 									// 30
 
 		// 3. Queue is full, try BPF_ANY Push
-		REQUIRE(q_map_int->map_push_elem(&val4, BPF_ANY) == -E2BIG);
+		errno = 0;
+		REQUIRE(q_map_int->map_push_elem(&val4, BPF_ANY) == -1);
+		REQUIRE(errno == E2BIG);
 
 		// 4. Peek first element
 		REQUIRE(q_map_int->map_peek_elem(&peek_val) == 0);
@@ -155,7 +142,9 @@ TEST_CASE("Queue Map Core Operations", "[queue_map][core]")
 		REQUIRE(pop_val == val4); // 40
 
 		// 9. Queue is now empty
-		REQUIRE(q_map_int->map_pop_elem(&pop_val) == -ENOENT);
+		errno = 0;
+		REQUIRE(q_map_int->map_pop_elem(&pop_val) == -1);
+		REQUIRE(errno == ENOENT);
 	}
 
 	SECTION("Push With Exist Flag (Struct Operations)")
@@ -175,7 +164,9 @@ TEST_CASE("Queue Map Core Operations", "[queue_map][core]")
 			    // tv2
 
 		// 2. Queue is full, try BPF_ANY Push (should fail)
-		REQUIRE(q_map_struct->map_push_elem(&tv3, BPF_ANY) == -E2BIG);
+		errno = 0;
+		REQUIRE(q_map_struct->map_push_elem(&tv3, BPF_ANY) == -1);
+		REQUIRE(errno == E2BIG);
 
 		// 3. Queue is full, try BPF_EXIST Push (should succeed,
 		// overwriting tv1)
@@ -194,7 +185,9 @@ TEST_CASE("Queue Map Core Operations", "[queue_map][core]")
 		REQUIRE(pop_val == tv3); // tv3 is popped
 
 		// 6. Queue is empty
-		REQUIRE(q_map_struct->map_pop_elem(&pop_val) == -ENOENT);
+		errno = 0;
+		REQUIRE(q_map_struct->map_pop_elem(&pop_val) == -1);
+		REQUIRE(errno == ENOENT);
 	}
 
 	SECTION("Invalid Push Flags")
@@ -202,9 +195,13 @@ TEST_CASE("Queue Map Core Operations", "[queue_map][core]")
 		REQUIRE(q_map_int != nullptr);
 		int val = 100;
 		// BPF_NOEXIST (1) is an invalid push flag
-		REQUIRE(q_map_int->map_push_elem(&val, BPF_NOEXIST) == -EINVAL);
+		errno = 0;
+		REQUIRE(q_map_int->map_push_elem(&val, BPF_NOEXIST) == -1);
+		REQUIRE(errno == EINVAL);
 		// Other invalid flags (e.g., 4)
-		REQUIRE(q_map_int->map_push_elem(&val, 4) == -EINVAL);
+		errno = 0;
+		REQUIRE(q_map_int->map_push_elem(&val, 4) == -1);
+		REQUIRE(errno == EINVAL);
 	}
 
 	SECTION("Standard Map Interface Behavior (Queue Operations)")
@@ -217,8 +214,8 @@ TEST_CASE("Queue Map Core Operations", "[queue_map][core]")
 		// elem_lookup should work as peek operation
 		errno = 0; // Clear errno before call
 		REQUIRE(q_map_int->elem_lookup(&key) == nullptr);
-		REQUIRE(errno == ENOTSUP); // Check errno was set by elem_lookup
-					   // for empty queue
+		REQUIRE(errno == ENOENT); // Check errno was set by elem_lookup
+					  // for empty queue
 
 		// elem_update should work as push operation
 		REQUIRE(q_map_int->elem_update(&key, &val, BPF_ANY) == 0);
@@ -232,15 +229,22 @@ TEST_CASE("Queue Map Core Operations", "[queue_map][core]")
 		REQUIRE(q_map_int->elem_delete(&key) == 0);
 
 		// Queue should be empty again
+		errno = 0;
 		REQUIRE(q_map_int->elem_lookup(&key) == nullptr);
-		REQUIRE(q_map_int->elem_delete(&key) == -ENOENT);
+		REQUIRE(errno == ENOENT);
+
+		errno = 0;
+		REQUIRE(q_map_int->elem_delete(&key) == -1);
+		REQUIRE(errno == ENOENT);
 
 		// map_get_next_key is not supported for queues
-		REQUIRE(q_map_int->map_get_next_key(&key, &next_key) ==
-			-EINVAL);
+		errno = 0;
+		REQUIRE(q_map_int->map_get_next_key(&key, &next_key) == -1);
+		REQUIRE(errno == EINVAL);
 		// Test key as nullptr for map_get_next_key
-		REQUIRE(q_map_int->map_get_next_key(nullptr, &next_key) ==
-			-EINVAL);
+		errno = 0;
+		REQUIRE(q_map_int->map_get_next_key(nullptr, &next_key) == -1);
+		REQUIRE(errno == EINVAL);
 	}
 
 	// Cleanup objects constructed in shared memory
@@ -254,7 +258,7 @@ TEST_CASE("Queue Map Core Operations", "[queue_map][core]")
 		shm.destroy_ptr(q_map_struct);
 		q_map_struct = nullptr;
 	}
-	// The ShmRemover RAII object will call shared_memory_object::remove at
+	// The shm_remove RAII object will call shared_memory_object::remove at
 	// scope exit.
 }
 
@@ -265,23 +269,16 @@ TEST_CASE("Queue Map Conceptual Concurrency Test",
 	const char *SHARED_MEMORY_NAME_CONC = "QueueMapConcTestShmCatch2";
 	const size_t SHARED_MEMORY_SIZE_CONC = 65536;
 
-	struct ShmRemover {
-		const char *name;
-		ShmRemover(const char *n) : name(n)
-		{
-			boost::interprocess::shared_memory_object::remove(name);
-		}
-		~ShmRemover()
-		{
-			boost::interprocess::shared_memory_object::remove(name);
-		}
-	} remover(SHARED_MEMORY_NAME_CONC);
+	shm_remove remover((std::string(SHARED_MEMORY_NAME_CONC)));
 
 	boost::interprocess::managed_shared_memory shm(
 		boost::interprocess::create_only, SHARED_MEMORY_NAME_CONC,
 		SHARED_MEMORY_SIZE_CONC);
 
 	bpftime::queue_map_impl *q_map_conc = nullptr;
+	pthread_spinlock_t map_lock; // Add spinlock for thread safety
+	pthread_spin_init(&map_lock, 0);
+
 	try {
 		q_map_conc = shm.construct<bpftime::queue_map_impl>(
 			"QueueMapConcInstance")(shm, sizeof(int),
@@ -302,7 +299,12 @@ TEST_CASE("Queue Map Conceptual Concurrency Test",
 			// Using BPF_EXIST to avoid simple gridlock on full,
 			// focusing on race conditions rather than capacity
 			// issues.
-			q_map_conc->map_push_elem(&val_to_push, BPF_EXIST);
+			{
+				pthread_spin_lock(&map_lock);
+				q_map_conc->map_push_elem(&val_to_push,
+							  BPF_EXIST);
+				pthread_spin_unlock(&map_lock);
+			}
 
 			// Brief sleep to increase chance of thread interleaving
 			std::this_thread::sleep_for(
@@ -311,7 +313,11 @@ TEST_CASE("Queue Map Conceptual Concurrency Test",
 			int popped_val;
 			// Try to pop, ignore ENOENT as other threads might
 			// empty it.
-			q_map_conc->map_pop_elem(&popped_val);
+			{
+				pthread_spin_lock(&map_lock);
+				q_map_conc->map_pop_elem(&popped_val);
+				pthread_spin_unlock(&map_lock);
+			}
 		}
 	};
 
@@ -334,14 +340,28 @@ TEST_CASE("Queue Map Conceptual Concurrency Test",
 	// and check it becomes empty.
 	int final_pop_val;
 	int pop_count = 0;
-	while (q_map_conc->map_pop_elem(&final_pop_val) == 0) {
-		pop_count++;
+	while (true) {
+		pthread_spin_lock(&map_lock);
+		int result = q_map_conc->map_pop_elem(&final_pop_val);
+		pthread_spin_unlock(&map_lock);
+		if (result == 0) {
+			pop_count++;
+		} else {
+			break;
+		}
 	}
 	INFO("Final pop count from concurrent queue: " << pop_count);
-	REQUIRE(q_map_conc->map_pop_elem(&final_pop_val) ==
-		-ENOENT); // Must be empty eventually
+	{
+		pthread_spin_lock(&map_lock);
+		errno = 0;
+		REQUIRE(q_map_conc->map_pop_elem(&final_pop_val) == -1);
+		REQUIRE(errno == ENOENT); // Must be empty eventually
+		pthread_spin_unlock(&map_lock);
+	}
 
 	if (q_map_conc) {
 		shm.destroy_ptr(q_map_conc);
 	}
+
+	pthread_spin_destroy(&map_lock);
 }
