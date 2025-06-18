@@ -126,13 +126,13 @@ static void analyze_bloom_filter_performance(int stats_fd)
 		       total_accesses);
 
 		if (unique_users + repeat_users == total_accesses) {
-			printf("  ✅ Consistency check passed\n");
+			printf("  [PASS] Consistency check passed\n");
 		} else {
-			printf("  ❌ Consistency check failed\n");
+			printf("  [FAIL] Consistency check failed\n");
 		}
 
 		printf("\n  Bloom Filter characteristics verification:\n");
-		printf("  - No false negatives: all new users correctly identified ✅\n");
+		printf("  - No false negatives: all new users correctly identified [VERIFIED]\n");
 		printf("  - Possible false positives: some new users may be misjudged as repeat users\n");
 
 		if (bloom_hits > 0 && repeat_users > 0) {
