@@ -11,6 +11,7 @@
 #include <bpf_map/userspace/perf_event_array_map.hpp>
 #include <bpf_map/userspace/queue.hpp>
 #include <bpf_map/userspace/stack.hpp>
+#include <bpf_map/userspace/bloom_filter.hpp>
 #include "spdlog/spdlog.h"
 #include <handler/map_handler.hpp>
 #include <bpf_map/userspace/array_map.hpp>
@@ -137,6 +138,14 @@ const void *bpf_map_handler::map_lookup_elem(const void *key,
 		auto impl = static_cast<stack_map_impl *>(map_impl_ptr.get());
 		return do_lookup(impl);
 	}
+	case bpf_map_type::BPF_MAP_TYPE_BLOOM_FILTER: {
+		// For bloom filters, lookup is not supported in the traditional
+		// sense Bloom filters use map_peek_elem for membership testing
+		SPDLOG_WARN(
+			"elem_lookup not supported for bloom filter, use map_peek_elem instead");
+		errno = EINVAL;
+		return nullptr;
+	}
 	case bpf_map_type::BPF_MAP_TYPE_LRU_HASH: {
 		auto impl = static_cast<lru_var_hash_map_impl *>(
 			map_impl_ptr.get());
@@ -254,6 +263,11 @@ long bpf_map_handler::map_update_elem(const void *key, const void *value,
 		auto impl = static_cast<stack_map_impl *>(map_impl_ptr.get());
 		return do_update(impl);
 	}
+	case bpf_map_type::BPF_MAP_TYPE_BLOOM_FILTER: {
+		auto impl = static_cast<bloom_filter_map_impl *>(
+			map_impl_ptr.get());
+		return do_update(impl);
+	}
 #ifdef BPFTIME_BUILD_WITH_LIBBPF
 	case bpf_map_type::BPF_MAP_TYPE_KERNEL_USER_ARRAY: {
 		auto impl = static_cast<array_map_kernel_user_impl *>(
@@ -362,6 +376,11 @@ int bpf_map_handler::bpf_map_get_next_key(const void *key, void *next_key,
 	}
 	case bpf_map_type::BPF_MAP_TYPE_STACK: {
 		auto impl = static_cast<stack_map_impl *>(map_impl_ptr.get());
+		return do_get_next_key(impl);
+	}
+	case bpf_map_type::BPF_MAP_TYPE_BLOOM_FILTER: {
+		auto impl = static_cast<bloom_filter_map_impl *>(
+			map_impl_ptr.get());
 		return do_get_next_key(impl);
 	}
 #if __linux__ && defined(BPFTIME_BUILD_WITH_LIBBPF)
@@ -479,6 +498,11 @@ long bpf_map_handler::map_delete_elem(const void *key, bool from_syscall) const
 	}
 	case bpf_map_type::BPF_MAP_TYPE_STACK: {
 		auto impl = static_cast<stack_map_impl *>(map_impl_ptr.get());
+		return do_delete(impl);
+	}
+	case bpf_map_type::BPF_MAP_TYPE_BLOOM_FILTER: {
+		auto impl = static_cast<bloom_filter_map_impl *>(
+			map_impl_ptr.get());
 		return do_delete(impl);
 	}
 #ifdef BPFTIME_BUILD_WITH_LIBBPF
@@ -602,6 +626,30 @@ int bpf_map_handler::map_init(managed_shared_memory &memory)
 						max_entries);
 		return 0;
 	}
+	case bpf_map_type::BPF_MAP_TYPE_BLOOM_FILTER: {
+		// For bloom filters, key_size must be 0
+		if (key_size != 0) {
+			SPDLOG_ERROR("Bloom filter key_size must be 0, got {}",
+				     key_size);
+			return -1;
+		}
+		// Extract nr_hashes from map_extra (lower 4 bits)
+		unsigned int nr_hashes =
+			static_cast<unsigned int>(attr.map_extra & 0xF);
+		if (nr_hashes == 0) {
+			nr_hashes = 5; // Default value
+		}
+
+		// Use JHASH by default (Linux kernel compatible)
+		// Could be made configurable via map_extra upper bits in the
+		// future
+		BloomHashAlgorithm hash_algo = BloomHashAlgorithm::JHASH;
+
+		map_impl_ptr = memory.construct<bloom_filter_map_impl>(
+			container_name.c_str())(memory, value_size, max_entries,
+						nr_hashes, hash_algo);
+		return 0;
+	}
 #ifdef BPFTIME_BUILD_WITH_LIBBPF
 	case bpf_map_type::BPF_MAP_TYPE_KERNEL_USER_ARRAY: {
 		map_impl_ptr = memory.construct<array_map_kernel_user_impl>(
@@ -708,6 +756,9 @@ void bpf_map_handler::map_free(managed_shared_memory &memory)
 	case bpf_map_type::BPF_MAP_TYPE_STACK:
 		memory.destroy<stack_map_impl>(container_name.c_str());
 		break;
+	case bpf_map_type::BPF_MAP_TYPE_BLOOM_FILTER:
+		memory.destroy<bloom_filter_map_impl>(container_name.c_str());
+		break;
 #ifdef BPFTIME_BUILD_WITH_LIBBPF
 	case bpf_map_type::BPF_MAP_TYPE_KERNEL_USER_ARRAY:
 		memory.destroy<array_map_kernel_user_impl>(
@@ -794,6 +845,11 @@ long bpf_map_handler::map_push_elem(const void *value, uint64_t flags,
 		auto impl = static_cast<stack_map_impl *>(map_impl_ptr.get());
 		return do_push(impl);
 	}
+	case bpf_map_type::BPF_MAP_TYPE_BLOOM_FILTER: {
+		auto impl = static_cast<bloom_filter_map_impl *>(
+			map_impl_ptr.get());
+		return do_push(impl);
+	}
 	default:
 		SPDLOG_ERROR("map_push_elem not supported for map type: {}",
 			     (int)type);
@@ -846,6 +902,11 @@ long bpf_map_handler::map_peek_elem(void *value, bool from_syscall) const
 	}
 	case bpf_map_type::BPF_MAP_TYPE_STACK: {
 		auto impl = static_cast<stack_map_impl *>(map_impl_ptr.get());
+		return do_peek(impl);
+	}
+	case bpf_map_type::BPF_MAP_TYPE_BLOOM_FILTER: {
+		auto impl = static_cast<bloom_filter_map_impl *>(
+			map_impl_ptr.get());
 		return do_peek(impl);
 	}
 	default:
