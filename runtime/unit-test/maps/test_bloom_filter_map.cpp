@@ -152,11 +152,15 @@ TEST_CASE("Bloom Filter Basic Operations", "[bloom_filter][basic]")
 		REQUIRE(bf.map_get_next_key(nullptr, &next_key) == -1);
 		REQUIRE(errno == EOPNOTSUPP);
 
-		// elem_lookup should return error and suggest using
-		// map_peek_elem
+		// elem_lookup should return error (not supported)
 		errno = 0;
 		REQUIRE(bf.elem_lookup(nullptr) == nullptr);
-		REQUIRE(errno == EINVAL);
+		REQUIRE(errno == EOPNOTSUPP);
+
+		errno = 0;
+		int test_value = 999;
+		REQUIRE(bf.elem_lookup(&test_value) == nullptr);
+		REQUIRE(errno == EOPNOTSUPP);
 	}
 }
 

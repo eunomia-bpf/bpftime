@@ -95,13 +95,10 @@ class bloom_filter_map_impl {
 	// --- Methods mapping to standard BPF syscall commands ---
 
 	/**
-	 * @brief Implements BPF_MAP_LOOKUP_ELEM for Bloom Filter (Peek).
-	 * Checks if the element might exist in the bloom filter.
-	 * @param key Must be NULL for bloom filters.
-	 * @return Pointer to a dummy value if element might exist, nullptr if
-	 * definitely not present. Note: For bloom filters, the actual value to
-	 * check is passed through the syscall layer in a special way. This
-	 * function should not be called directly - use map_peek_elem instead.
+	 * @brief elem_lookup is not supported for Bloom Filter.
+	 * Use map_peek_elem instead for membership testing.
+	 * @param key Ignored.
+	 * @return Always returns nullptr with errno set to EOPNOTSUPP.
 	 */
 	void *elem_lookup(const void *key);
 

@@ -139,12 +139,9 @@ const void *bpf_map_handler::map_lookup_elem(const void *key,
 		return do_lookup(impl);
 	}
 	case bpf_map_type::BPF_MAP_TYPE_BLOOM_FILTER: {
-		// For bloom filters, lookup is not supported in the traditional
-		// sense Bloom filters use map_peek_elem for membership testing
-		SPDLOG_WARN(
-			"elem_lookup not supported for bloom filter, use map_peek_elem instead");
-		errno = EINVAL;
-		return nullptr;
+		auto impl = static_cast<bloom_filter_map_impl *>(
+			map_impl_ptr.get());
+		return do_lookup(impl);
 	}
 	case bpf_map_type::BPF_MAP_TYPE_LRU_HASH: {
 		auto impl = static_cast<lru_var_hash_map_impl *>(

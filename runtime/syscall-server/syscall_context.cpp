@@ -376,18 +376,26 @@ long syscall_context::handle_sysbpf(int cmd, union bpf_attr *attr, size_t size)
 					       (long)size);
 		}
 
-		// Check if this is a bloom filter map
-		bpftime::bpf_map_type map_type;
-		if (bpftime_map_get_info(attr->map_fd, nullptr, nullptr,
-					 &map_type) == 0 &&
-		    map_type ==
-			    bpftime::bpf_map_type::BPF_MAP_TYPE_BLOOM_FILTER) {
-			// For bloom filter, use map_peek_elem instead of
-			// elem_lookup The value to check is passed in
-			// attr->key for bpf_map_peek_elem calls
-			long ret = bpftime_map_peek_elem(
-				attr->map_fd, (void *)(uintptr_t)attr->key);
-			return ret;
+		// Special handling for bloom filter
+		// For bloom filters, BPF_MAP_LOOKUP_ELEM maps to peek operation
+		// where the value to check is passed via attr->key (not
+		// attr->value)
+		if (bpftime_is_map_fd(attr->map_fd)) {
+			bpftime::bpf_map_attr map_attr;
+			const char *map_name;
+			bpftime::bpf_map_type map_type;
+			int res = bpftime_map_get_info(attr->map_fd, &map_attr,
+						       &map_name, &map_type);
+			if (res == 0 &&
+			    map_type == bpftime::bpf_map_type::
+						BPF_MAP_TYPE_BLOOM_FILTER) {
+				// For bloom filter: key contains the value to
+				// check
+				long ret = bpftime_map_peek_elem(
+					attr->map_fd,
+					(void *)(uintptr_t)attr->key);
+				return ret;
+			}
 		}
 
 		// Note that bpftime_map_lookup_elem is adapted as a bpf helper,

@@ -244,11 +244,9 @@ bool bloom_filter_map_impl::test_bit(uint32_t bit_index) const
 
 void *bloom_filter_map_impl::elem_lookup(const void *key)
 {
-	// For bloom filters, key should be NULL and the actual value to check
-	// is passed through the syscall layer differently
 	SPDLOG_WARN(
 		"elem_lookup called on bloom filter - this should use map_peek_elem instead");
-	errno = EINVAL;
+	errno = EOPNOTSUPP;
 	return nullptr;
 }
 
