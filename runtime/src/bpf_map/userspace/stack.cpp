@@ -65,7 +65,7 @@ long stack_map_impl::elem_update(const void *key, const void *value,
 			"Stack push (update) called with non-nullptr key, ignoring key.");
 	}
 	if (value == nullptr) {
-		SPDLOG_WARN(
+		SPDLOG_ERROR(
 			"Stack push (update) failed: value pointer is nullptr");
 		errno = EINVAL;
 		return -1;
@@ -118,15 +118,15 @@ int stack_map_impl::map_get_next_key(const void *key, void *next_key)
 long stack_map_impl::map_push_elem(const void *value, uint64_t flags)
 {
 	if (value == nullptr) {
-		SPDLOG_WARN(
+		SPDLOG_ERROR(
 			"Stack map_push_elem failed: value pointer is nullptr");
 		errno = EINVAL;
 		return -1;
 	}
 
 	if (flags != 0 && flags != BPF_ANY && flags != BPF_EXIST) {
-		SPDLOG_WARN("Stack map_push_elem failed: invalid flags ({})",
-			    flags);
+		SPDLOG_ERROR("Stack map_push_elem failed: invalid flags ({})",
+			     flags);
 		errno = EINVAL;
 		return -1;
 	}
@@ -158,7 +158,7 @@ long stack_map_impl::map_push_elem(const void *value, uint64_t flags)
 long stack_map_impl::map_pop_elem(void *value)
 {
 	if (value == nullptr) {
-		SPDLOG_WARN(
+		SPDLOG_ERROR(
 			"Stack map_pop_elem failed: value pointer is nullptr");
 		errno = EINVAL;
 		return -1;
@@ -183,7 +183,7 @@ long stack_map_impl::map_pop_elem(void *value)
 long stack_map_impl::map_peek_elem(void *value)
 {
 	if (value == nullptr) {
-		SPDLOG_WARN(
+		SPDLOG_ERROR(
 			"Stack map_peek_elem failed: value pointer is nullptr");
 		errno = EINVAL;
 		return -1;

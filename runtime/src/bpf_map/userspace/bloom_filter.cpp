@@ -259,14 +259,14 @@ long bloom_filter_map_impl::elem_update(const void *key, const void *value,
 	}
 
 	if (value == nullptr) {
-		SPDLOG_WARN(
+		SPDLOG_ERROR(
 			"Bloom filter update failed: value pointer is nullptr");
 		errno = EINVAL;
 		return -1;
 	}
 
 	if (flags != BPF_ANY) {
-		SPDLOG_WARN(
+		SPDLOG_ERROR(
 			"Bloom filter update failed: invalid flags ({}), only BPF_ANY supported",
 			flags);
 		errno = EINVAL;
@@ -299,14 +299,14 @@ int bloom_filter_map_impl::map_get_next_key(const void *key, void *next_key)
 long bloom_filter_map_impl::map_push_elem(const void *value, uint64_t flags)
 {
 	if (value == nullptr) {
-		SPDLOG_WARN(
+		SPDLOG_ERROR(
 			"Bloom filter map_push_elem failed: value pointer is nullptr");
 		errno = EINVAL;
 		return -1;
 	}
 
 	if (flags != BPF_ANY) {
-		SPDLOG_WARN(
+		SPDLOG_ERROR(
 			"Bloom filter map_push_elem failed: invalid flags ({}), only BPF_ANY supported",
 			flags);
 		errno = EINVAL;
@@ -333,7 +333,7 @@ long bloom_filter_map_impl::map_pop_elem(void *value)
 long bloom_filter_map_impl::map_peek_elem(void *value)
 {
 	if (value == nullptr) {
-		SPDLOG_WARN(
+		SPDLOG_ERROR(
 			"Bloom filter map_peek_elem failed: value pointer is nullptr");
 		errno = EINVAL;
 		return -1;

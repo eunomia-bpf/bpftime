@@ -170,6 +170,8 @@ lpm_trie_map_impl::get_node_value_data(const lpm_trie_node *node) const
 void *lpm_trie_map_impl::elem_lookup(const void *key)
 {
 	if (!key) {
+		SPDLOG_ERROR(
+			"LPM Trie elem_lookup failed: key pointer is nullptr");
 		errno = EINVAL;
 		return nullptr;
 	}
@@ -178,6 +180,9 @@ void *lpm_trie_map_impl::elem_lookup(const void *key)
 		static_cast<const bpf_lpm_trie_key *>(key);
 
 	if (lpm_key->prefixlen > _max_prefixlen) {
+		SPDLOG_ERROR(
+			"LPM Trie elem_lookup failed: prefixlen ({}) exceeds maximum ({})",
+			lpm_key->prefixlen, _max_prefixlen);
 		errno = EINVAL;
 		return nullptr;
 	}
@@ -228,12 +233,18 @@ long lpm_trie_map_impl::elem_update(const void *key, const void *value,
 				    uint64_t flags)
 {
 	if (!key || !value) {
+		SPDLOG_ERROR(
+			"LPM Trie elem_update failed: key ({:p}) or value ({:p}) pointer is nullptr",
+			key, value);
 		errno = EINVAL;
 		return -1;
 	}
 
 	// LPM Trie ignores flags (behaves like BPF_ANY)
 	if (flags > 2) { // BPF_EXIST = 2
+		SPDLOG_ERROR(
+			"LPM Trie elem_update failed: invalid flags ({}), only 0-2 supported",
+			flags);
 		errno = EINVAL;
 		return -1;
 	}
@@ -242,6 +253,9 @@ long lpm_trie_map_impl::elem_update(const void *key, const void *value,
 		static_cast<const bpf_lpm_trie_key *>(key);
 
 	if (lpm_key->prefixlen > _max_prefixlen) {
+		SPDLOG_ERROR(
+			"LPM Trie elem_update failed: prefixlen ({}) exceeds maximum ({})",
+			lpm_key->prefixlen, _max_prefixlen);
 		errno = EINVAL;
 		return -1;
 	}
@@ -362,6 +376,8 @@ long lpm_trie_map_impl::elem_update(const void *key, const void *value,
 long lpm_trie_map_impl::elem_delete(const void *key)
 {
 	if (!key) {
+		SPDLOG_ERROR(
+			"LPM Trie elem_delete failed: key pointer is nullptr");
 		errno = EINVAL;
 		return -1;
 	}
@@ -370,6 +386,9 @@ long lpm_trie_map_impl::elem_delete(const void *key)
 		static_cast<const bpf_lpm_trie_key *>(key);
 
 	if (lpm_key->prefixlen > _max_prefixlen) {
+		SPDLOG_ERROR(
+			"LPM Trie elem_delete failed: prefixlen ({}) exceeds maximum ({})",
+			lpm_key->prefixlen, _max_prefixlen);
 		errno = EINVAL;
 		return -1;
 	}
@@ -441,6 +460,8 @@ long lpm_trie_map_impl::elem_delete(const void *key)
 int lpm_trie_map_impl::map_get_next_key(const void *key, void *next_key)
 {
 	if (!next_key) {
+		SPDLOG_ERROR(
+			"LPM Trie map_get_next_key failed: next_key pointer is nullptr");
 		errno = EINVAL;
 		return -1;
 	}
