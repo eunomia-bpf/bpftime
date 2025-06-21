@@ -9,6 +9,8 @@
 #include <boost/interprocess/managed_shared_memory.hpp>
 #include <boost/interprocess/allocators/allocator.hpp>
 #include <boost/interprocess/containers/vector.hpp>
+#include <boost/interprocess/smart_ptr/unique_ptr.hpp>
+#include <boost/interprocess/smart_ptr/deleter.hpp>
 #include <memory>
 #include <cstdint>
 
@@ -24,9 +26,17 @@ struct bpf_lpm_trie_key {
 // Forward declaration
 struct lpm_trie_node;
 
+// Type definitions for Boost.Interprocess smart pointers
+typedef boost::interprocess::managed_shared_memory::segment_manager
+	segment_manager_type;
+typedef boost::interprocess::deleter<lpm_trie_node, segment_manager_type>
+	node_deleter_type;
+typedef boost::interprocess::unique_ptr<lpm_trie_node, node_deleter_type>
+	node_unique_ptr;
+
 // LPM Trie node structure
 struct lpm_trie_node {
-	std::shared_ptr<lpm_trie_node> child[2]; // Left and right children
+	node_unique_ptr child[2]; // Left and right children
 	uint32_t prefixlen; // Prefix length
 	uint32_t flags; // Node flags
 	bool is_intermediate; // True if intermediate node
@@ -46,8 +56,14 @@ struct lpm_trie_node {
 		data;
 
 	lpm_trie_node(boost::interprocess::managed_shared_memory &memory)
-		: child{ nullptr, nullptr }, prefixlen(0), flags(0),
-		  is_intermediate(false),
+		: child{ node_unique_ptr(nullptr,
+					 node_deleter_type(
+						 memory.get_segment_manager())),
+			 node_unique_ptr(
+				 nullptr,
+				 node_deleter_type(
+					 memory.get_segment_manager())) },
+		  prefixlen(0), flags(0), is_intermediate(false),
 		  data(boost::interprocess::allocator<
 			  uint8_t,
 			  boost::interprocess::segment_manager<
@@ -75,7 +91,7 @@ class lpm_trie_map_impl {
 	unsigned int _data_size; // Key data size (key_size - sizeof(prefixlen))
 	unsigned int _max_prefixlen; // Maximum prefix length in bits
 
-	std::shared_ptr<lpm_trie_node> root;
+	node_unique_ptr root;
 	size_t n_entries;
 
 	boost::interprocess::managed_shared_memory &memory;
@@ -84,8 +100,8 @@ class lpm_trie_map_impl {
 	int extract_bit(const uint8_t *data, size_t index) const;
 	size_t longest_prefix_match(const lpm_trie_node *node,
 				    const bpf_lpm_trie_key *key) const;
-	std::shared_ptr<lpm_trie_node>
-	create_node(const void *value, bool is_intermediate = false);
+	node_unique_ptr create_node(const void *value,
+				    bool is_intermediate = false);
 	void copy_key_data(lpm_trie_node *node, const bpf_lpm_trie_key *key);
 	void copy_value_data(lpm_trie_node *node, const void *value);
 	uint8_t *get_node_prefix_data(lpm_trie_node *node);
