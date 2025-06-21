@@ -289,6 +289,38 @@ TEST_CASE("Stack Map Core Operations", "[stack_map][core]")
 		REQUIRE(pop_val == 1); // First in, last out
 	}
 
+	SECTION("Current Size Tracking")
+	{
+		REQUIRE(s_map_int != nullptr);
+
+		// Test empty stack size
+		REQUIRE(s_map_int->get_current_size() == 0);
+
+		// Test size increases with push operations
+		int values[] = { 10, 20, 30 };
+		for (int i = 0; i < 3; i++) {
+			REQUIRE(s_map_int->map_push_elem(&values[i], BPF_ANY) ==
+				0);
+			REQUIRE(s_map_int->get_current_size() == i + 1);
+		}
+
+		// Test size decreases with pop operations
+		int pop_val;
+		for (int i = 2; i >= 0; i--) {
+			REQUIRE(s_map_int->map_pop_elem(&pop_val) == 0);
+			REQUIRE(s_map_int->get_current_size() == i);
+		}
+
+		// Test size remains unchanged after peek
+		REQUIRE(s_map_int->map_push_elem(&values[0], BPF_ANY) == 0);
+		REQUIRE(s_map_int->get_current_size() == 1);
+
+		int peek_val;
+		REQUIRE(s_map_int->map_peek_elem(&peek_val) == 0);
+		REQUIRE(s_map_int->get_current_size() == 1); // Size unchanged
+							     // after peek
+	}
+
 	// Cleanup objects constructed in shared memory
 	if (s_map_int) {
 		shm.destroy_ptr(s_map_int);
