@@ -5,9 +5,42 @@
 #include <stdexcept>
 #include <random>
 #include <algorithm>
+#include <fstream>
+#include <chrono>
 
 namespace bpftime
 {
+
+// Function to generate a secure random seed
+static uint32_t generate_random_seed()
+{
+	uint32_t seed = 0;
+
+	// Try to read from /dev/urandom first (preferred for security)
+	std::ifstream urandom("/dev/urandom", std::ios::binary);
+	if (urandom.is_open() &&
+	    urandom.read(reinterpret_cast<char *>(&seed), sizeof(seed))) {
+		urandom.close();
+		SPDLOG_DEBUG("Generated hash seed from /dev/urandom: 0x{:08x}",
+			     seed);
+		return seed;
+	}
+
+	// Fallback to timestamp-based seed if /dev/urandom is not available
+	auto now = std::chrono::high_resolution_clock::now();
+	auto duration = now.time_since_epoch();
+	auto nanoseconds =
+		std::chrono::duration_cast<std::chrono::nanoseconds>(duration)
+			.count();
+
+	// Mix timestamp with some constants to improve randomness
+	seed = static_cast<uint32_t>(nanoseconds) ^
+	       static_cast<uint32_t>(nanoseconds >> 32) ^
+	       0x9e3779b9; // Golden ratio constant
+
+	SPDLOG_DEBUG("Generated hash seed from timestamp: 0x{:08x}", seed);
+	return seed;
+}
 
 bloom_filter_map_impl::bloom_filter_map_impl(
 	boost::interprocess::managed_shared_memory &memory,
@@ -50,8 +83,8 @@ bloom_filter_map_impl::bloom_filter_map_impl(
 	// Initialize bit array
 	bit_array.resize(_bit_array_size_bytes, 0);
 
-	// Initialize hash seed (use a fixed seed for deterministic behavior)
-	_hash_seed = 0x12345678;
+	// Initialize hash seed with secure random value
+	_hash_seed = generate_random_seed();
 
 	const char *algo_name = (_hash_algorithm == BloomHashAlgorithm::JHASH) ?
 					"JHASH" :
