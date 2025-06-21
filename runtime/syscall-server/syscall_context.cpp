@@ -425,9 +425,9 @@ long syscall_context::handle_sysbpf(int cmd, union bpf_attr *attr, size_t size)
 					       (long)(uintptr_t)attr,
 					       (long)size);
 		}
-		// For queue maps, this is equivalent to pop operation
-		return bpftime_map_pop_elem(attr->map_fd,
-					    (void *)(uintptr_t)attr->value);
+		// For queue/stack maps, this is equivalent to pop operation
+		return bpftime_map_lookup_and_delete_elem(
+			attr->map_fd, (void *)(uintptr_t)attr->value);
 	}
 	case BPF_MAP_GET_NEXT_KEY: {
 		SPDLOG_DEBUG("Getting next key for map {}, key={:x}",
