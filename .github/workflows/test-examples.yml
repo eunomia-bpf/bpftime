@@ -2,9 +2,9 @@ name: Build and run all integrated tests (examples)
 
 on:
   push:
-    branches: "*"
+    branches: ["*"]
   pull_request:
-    branches: "*"
+    branches: ["*"]
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}-${{ github.event_name }}
   cancel-in-progress: true
@@ -248,6 +248,24 @@ jobs:
             syscall_trace: false
             expected_str: "Bloom Filter Real-time Monitoring Statistics"
             name: bloom_filter_demo
+          - path: lpm_trie_demo
+            executable: ./file_access_monitor
+            victim: ./file_access_target
+            syscall_trace: false
+            expected_str: "BPF program loaded successfully"
+            name: lpm_trie_demo
+          - path: queue_demo
+            executable: ./uprobe_queue
+            victim: ./target
+            syscall_trace: false
+            expected_str: "Queue status: non-empty"
+            name: queue_demo
+          - path: queue_demo
+            executable: ./uprobe_stack
+            victim: ./target
+            syscall_trace: false
+            expected_str: "Starting to pop events from stack"
+            name: stack_demo
 
     steps:
       - uses: actions/checkout@v2
