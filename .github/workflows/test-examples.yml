@@ -98,21 +98,91 @@ jobs:
           cmake --build build --target libbpf -j || true
           cmake --build build --target bpftool -j || true
 
-          # Check and create proper symlinks for libbpf
+          # Check where libbpf.a actually exists and create proper symlinks
+          echo "Checking libbpf.a locations..."
+          find build -name "libbpf.a" -type f || echo "No libbpf.a found in build directory"
+
+          # Create the expected directory structure and symlinks
+          mkdir -p build/libbpf
+
+          # Try to find and link libbpf.a from various possible locations
           if [ -f "build/libbpf/libbpf/libbpf.a" ]; then
             echo "Found libbpf.a in build/libbpf/libbpf/, creating symlink..."
-            mkdir -p build/libbpf
             ln -sf libbpf/libbpf.a build/libbpf/libbpf.a
-          elif [ -f "build/libbpf/libbpf.a" ]; then
-            echo "Found libbpf.a in build/libbpf/"
+          elif [ -f "build/libbpf/src/libbpf.a" ]; then
+            echo "Found libbpf.a in build/libbpf/src/, creating symlink..."
+            ln -sf src/libbpf.a build/libbpf/libbpf.a
+          elif [ -f "build/_deps/libbpf-build/libbpf.a" ]; then
+            echo "Found libbpf.a in build/_deps/libbpf-build/, creating symlink..."
+            ln -sf ../_deps/libbpf-build/libbpf.a build/libbpf/libbpf.a
           else
-            echo "Warning: libbpf.a not found, examples may fail to build"
-            find build -name "libbpf.a" -type f || true
+            echo "Warning: libbpf.a not found in expected locations"
+            # Try to build libbpf manually as fallback
+            echo "Attempting to build libbpf manually..."
+            if [ -d "third_party/libbpf/src" ]; then
+              make -C third_party/libbpf/src BUILD_STATIC_ONLY=1 OBJDIR=../../build/libbpf DESTDIR=../../build/ install || echo "Manual libbpf build failed"
+            fi
           fi
 
-          # Build examples
+          # Verify libbpf.a exists where examples expect it
+          if [ ! -f "build/libbpf/libbpf.a" ]; then
+            echo "ERROR: Could not create build/libbpf/libbpf.a"
+            echo "Available libbpf files:"
+            find . -name "*libbpf*" -type f | head -10
+          else
+            echo "SUCCESS: build/libbpf/libbpf.a is available"
+            ls -la build/libbpf/libbpf.a
+          fi
+
+          # Fix clang BPF compilation issues for examples that use unsupported flags
+          echo "Fixing clang BPF compilation flags..."
+
+          # Fix lpm_trie_demo Makefile - remove unsupported -bpf-stack-size flag
+          if [ -f "example/lpm_trie_demo/Makefile" ]; then
+            sed -i 's/-mllvm -bpf-stack-size=8192//g' example/lpm_trie_demo/Makefile
+            echo "Fixed lpm_trie_demo Makefile clang flags"
+          fi
+
+          # Build examples with error handling
           echo "Building examples..."
-          make -C example -j || echo "Some examples failed to build, continuing..."
+
+          # Special handling for examples that need global libbpf vs local libbpf
+          GLOBAL_LIBBPF_EXAMPLES="bloom_filter_demo"
+          LOCAL_LIBBPF_EXAMPLES="minimal malloc opensnoop sslsniff tailcall_minimal usdt_minimal get_stack_id_example lpm_trie_demo queue_demo xdp-counter"
+
+          # Build examples that use global libbpf first (need build/libbpf/libbpf.a)
+          for example_name in $GLOBAL_LIBBPF_EXAMPLES; do
+            if [ -d "example/$example_name" ] && [ -f "example/$example_name/Makefile" ]; then
+              echo "Building $example_name (uses global libbpf)..."
+              if ! make -C "example/$example_name" -j; then
+                echo "Warning: Failed to build $example_name, continuing..."
+              fi
+            fi
+          done
+
+          # Build examples that build their own libbpf (use .output/libbpf.a)
+          for example_name in $LOCAL_LIBBPF_EXAMPLES; do
+            if [ -d "example/$example_name" ] && [ -f "example/$example_name/Makefile" ]; then
+              echo "Building $example_name (builds local libbpf)..."
+              if ! make -C "example/$example_name" -j; then
+                echo "Warning: Failed to build $example_name, continuing..."
+              fi
+            fi
+          done
+
+          # Build any remaining examples
+          for example_dir in example/*/; do
+            if [ -f "$example_dir/Makefile" ]; then
+              example_name=$(basename "$example_dir")
+              # Skip if already built above
+              if [[ ! " $GLOBAL_LIBBPF_EXAMPLES $LOCAL_LIBBPF_EXAMPLES " =~ " $example_name " ]]; then
+                echo "Building $example_name (other)..."
+                if ! make -C "$example_dir" -j; then
+                  echo "Warning: Failed to build $example_name, continuing..."
+                fi
+              fi
+            fi
+          done
       - name: Package gcno files
         run: |
           find . -type f -name "*.gcno" | tar --create --gzip --file=gcno_files.tar.gz --files-from=-
