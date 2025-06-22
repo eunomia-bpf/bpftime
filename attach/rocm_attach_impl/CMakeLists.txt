@@ -3,6 +3,7 @@ include(../../cmake/rocm.cmake)
 add_library(
     bpftime_rocm_attach_impl STATIC
     rocm_attach_impl.cpp
+    rocm_attach_impl_frida_setup.cpp
 )
 
 add_dependencies(bpftime_rocm_attach_impl bpftime_base_attach_impl spdlog::spdlog FridaGum  llvmbpf_vm bpftime_vm_compat)

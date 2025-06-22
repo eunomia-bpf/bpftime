@@ -159,6 +159,11 @@ if(BPFTIME_ENABLE_CUDA_ATTACH)
   add_compile_definitions(BPFTIME_ENABLE_CUDA_ATTACH=1)
 endif()
 
+if(BPFTIME_ENABLE_ROCM_ATTACH)
+  add_compile_definitions(BPFTIME_ENABLE_ROCM_ATTACH=1)
+endif()
+
+
 # argparse
 add_subdirectory(third_party/argparse)
 
