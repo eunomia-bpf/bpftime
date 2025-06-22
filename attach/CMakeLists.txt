@@ -8,5 +8,8 @@ if(UNIX AND NOT APPLE)
   if(${BPFTIME_ENABLE_CUDA_ATTACH})
     add_subdirectory(nv_attach_impl)
   endif()
+  if(${BPFTIME_ENABLE_ROCM_ATTACH})
+    add_subdirectory(rocm_attach_impl)
+  endif()
   
 endif()
