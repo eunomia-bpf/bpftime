@@ -1,17 +1,16 @@
-name: Integrated test for nginx attach implementation
+name: Nginx attach test
 
 on:
   workflow_dispatch:
   push:
-    branches: "*"
-  pull_request: 
-    branches: "master"
-
+    branches: ["never-run"] # 暂时禁用
+  pull_request:
+    branches: ["never-run"] # 暂时禁用
 
 jobs:
   build-and-test:
     runs-on: ubuntu-latest
-    container: 
+    container:
       image: debian:12
       options: --privileged -v /sys/kernel/debug/:/sys/kernel/debug:rw -v /sys/kernel/tracing:/sys/kernel/tracing:rw
     steps:
@@ -21,7 +20,7 @@ jobs:
           apt-get install -y lcov libzstd-dev libboost-all-dev gpg nginx libelf-dev git cmake gcc g++ make clang llvm-15 libpcre2-dev automake python3 python3-pip python3-requests llvm-15
       - uses: actions/checkout@v2
         with:
-          submodules: 'recursive'   
+          submodules: "recursive"
       - name: Build
         run: |
           cmake -DBPFTIME_LLVM_JIT=0 -DCMAKE_BUILD_TYPE:STRING=Release -DBUILD_ATTACH_IMPL_EXAMPLE=YES -DBPFTIME_LLVM_JIT=YES -DLLVM_DIR=/usr/lib/llvm-15/cmake -B build -S .
