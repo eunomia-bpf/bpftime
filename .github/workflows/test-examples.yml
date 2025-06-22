@@ -120,14 +120,27 @@ jobs:
             # Try to build libbpf manually as fallback
             echo "Attempting to build libbpf manually..."
             if [ -d "third_party/libbpf/src" ]; then
-              make -C third_party/libbpf/src BUILD_STATIC_ONLY=1 OBJDIR=../../build/libbpf DESTDIR=../../build/ install || echo "Manual libbpf build failed"
+              # Build libbpf directly in the expected location
+              make -C third_party/libbpf/src BUILD_STATIC_ONLY=1 \
+                OBJDIR=$(pwd)/build/libbpf \
+                DESTDIR=$(pwd)/build/ \
+                LIBDIR=libbpf \
+                install || echo "Manual libbpf build failed"
+            fi
+            
+            # If that didn't work, try to find it in bpftool's build directory
+            if [ ! -f "build/libbpf/libbpf.a" ] && [ -f "third_party/bpftool/build/libbpf/libbpf.a" ]; then
+              echo "Found libbpf.a in bpftool directory, creating symlink..."
+              ln -sf ../../third_party/bpftool/build/libbpf/libbpf.a build/libbpf/libbpf.a
             fi
           fi
 
           # Verify libbpf.a exists where examples expect it
           if [ ! -f "build/libbpf/libbpf.a" ]; then
             echo "ERROR: Could not create build/libbpf/libbpf.a"
-            echo "Available libbpf files:"
+            echo "Available libbpf.a files:"
+            find . -name "libbpf.a" -type f
+            echo "All libbpf files:"
             find . -name "*libbpf*" -type f | head -10
           else
             echo "SUCCESS: build/libbpf/libbpf.a is available"
@@ -411,16 +424,29 @@ jobs:
               ln -sf ../_deps/libbpf-build/libbpf.a build/libbpf/libbpf.a
             else
               echo "libbpf.a not found, building manually..."
-              # Build libbpf manually
+              # Build libbpf manually with correct paths
               if [ -d "third_party/libbpf/src" ]; then
-                make -C third_party/libbpf/src BUILD_STATIC_ONLY=1 OBJDIR=../../build/libbpf DESTDIR=../../build/ install || echo "Manual libbpf build failed"
+                # Build libbpf directly in the expected location
+                make -C third_party/libbpf/src BUILD_STATIC_ONLY=1 \
+                  OBJDIR=$(pwd)/build/libbpf \
+                  DESTDIR=$(pwd)/build/ \
+                  LIBDIR=libbpf \
+                  install || echo "Manual libbpf build failed"
+              fi
+              
+              # If that didn't work, try to find it in bpftool's build directory
+              if [ ! -f "build/libbpf/libbpf.a" ] && [ -f "third_party/bpftool/build/libbpf/libbpf.a" ]; then
+                echo "Found libbpf.a in bpftool directory, creating symlink..."
+                ln -sf ../../third_party/bpftool/build/libbpf/libbpf.a build/libbpf/libbpf.a
               fi
             fi
             
             # Verify libbpf.a exists
             if [ ! -f "build/libbpf/libbpf.a" ]; then
               echo "ERROR: Could not create build/libbpf/libbpf.a for ${{matrix.examples.path}}"
-              echo "Available files:"
+              echo "Available libbpf.a files:"
+              find . -name "libbpf.a" -type f
+              echo "All libbpf files:"
               find . -name "*libbpf*" -type f | head -10
               exit 1
             else
