@@ -44,7 +44,7 @@ static void rocm_listener_on_enter(GumInvocationListener *listener,
 		SPDLOG_DEBUG("Entering __hipRegisterFatbin");
 		auto arg1 = (HipFatbinWrapper *)
 			gum_invocation_context_get_nth_argument(gum_ctx, 0);
-
+        
 	} else if (context->to_function ==
 		   RocmAttachedToFunction::RegisterFunction) {
 		SPDLOG_DEBUG("Entering __hipRegisterFunction..");
