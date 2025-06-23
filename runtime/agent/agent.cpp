@@ -31,6 +31,9 @@
 #include "nv_attach_private_data.hpp"
 #include "nv_attach_impl.hpp"
 #endif
+#ifdef BPFTIME_ENABLE_ROCM_ATTACH
+
+#endif
 
 #if __linux__ && BPFTIME_BUILD_WITH_LIBBPF
 #include "syscall_trace_attach_impl.hpp"
@@ -128,6 +131,20 @@ extern "C" void **__cudaRegisterFatBinary(void *fatbin)
 	return orig(fatbin);
 }
 #endif
+
+#ifdef BPFTIME_ENABLE_ROCM_ATTACH
+void **(*original___hipRegisterFatBinary)(void *) = nullptr;
+
+extern "C" void **__hipRegisterFatBinary(void *fatbin)
+{
+	auto orig = try_get_original_func("__hipRegisterFatBinary",
+					  original___hipRegisterFatBinary);
+	gboolean flag = false;
+	bpftime_agent_main(nullptr, &flag);
+	return orig(fatbin);
+}
+#endif
+
 extern "C" void bpftime_agent_main(const gchar *data, gboolean *stay_resident)
 {
 	{
