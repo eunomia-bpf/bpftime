@@ -165,7 +165,13 @@ int bpftime_uprobe_create(int fd, int pid, const char *name, uint64_t offset,
 	return shm_holder.global_shared_memory.add_uprobe(
 		fd, pid, name, offset, retprobe, ref_ctr_off);
 }
-
+#ifdef BPFTIME_ENABLE_ROCM_ATTACH
+int bpftime_rocm_attach_create(int fd, const char *func_name, bool retprobe)
+{
+	return shm_holder.global_shared_memory.add_rocm_attach(
+		fd == -1 ? std::optional<int>() : fd, func_name, retprobe);
+}
+#endif
 int bpftime_kprobe_create(int fd, const char *func_name, uint64_t addr,
 			  bool retprobe, size_t ref_ctr_off)
 {

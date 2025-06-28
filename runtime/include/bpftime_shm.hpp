@@ -319,6 +319,10 @@ long bpftime_map_delete_elem(int fd, const void *key);
 // function will allocate a new perf event fd.
 int bpftime_uprobe_create(int fd, int pid, const char *name, uint64_t offset,
 			  bool retprobe, size_t ref_ctr_off);
+#ifdef BPFTIME_ENABLE_ROCM_ATTACH
+// Create a rocm attach probe entry
+int bpftime_rocm_attach_create(int fd, const char *func_name, bool retprobe);
+#endif
 // create kprobe in the global shared memory
 //
 // @param[fd]: fd is the fd allocated by the kernel. if fd is -1, then the

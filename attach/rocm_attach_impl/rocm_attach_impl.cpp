@@ -37,9 +37,6 @@ rocm_attach_impl::rocm_attach_impl()
 	register_hook(RocmAttachedToFunction::RegisterFunction,
 		      GSIZE_TO_POINTER(gum_module_find_export_by_name(
 			      nullptr, "__hipRegisterFunction")));
-	register_hook(RocmAttachedToFunction::RegisterFatbinEnd,
-		      GSIZE_TO_POINTER(gum_module_find_export_by_name(
-			      nullptr, "__hipRegisterFatBinaryEnd")));
 	register_hook(RocmAttachedToFunction::HipLaunchKernel,
 		      GSIZE_TO_POINTER(gum_module_find_export_by_name(
 			      nullptr, "hipLaunchKernel")));
@@ -51,4 +48,18 @@ rocm_attach_impl::~rocm_attach_impl()
 {
 	if (frida_listener)
 		g_object_unref(frida_listener);
+}
+
+int rocm_attach_impl::detach_by_id(int id)
+{
+	SPDLOG_WARN("Detaching is not supported by rocm attach impl yet");
+	return -1;
+}
+
+int rocm_attach_impl::create_attach_with_ebpf_callback(
+	ebpf_run_callback &&cb, const attach_private_data &private_data,
+	int attach_type)
+{
+	SPDLOG_WARN("TODO: rocm_attach_impl::create_attach_with_ebpf_callback");
+	return -1;
 }

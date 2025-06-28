@@ -64,6 +64,9 @@ bpf_perf_event_handler::bpf_perf_event_handler(
 		  .attach_argument = boost_shm_string(
 			  char_allocator(mem.get_segment_manager())) })
 {
+	SPDLOG_DEBUG(
+		"Creating custom perf event handler: type={}, attach_arg={}",
+		type, attach_arg);
 	std::get<custom_perf_event_data>(data).attach_argument = attach_arg;
 }
 

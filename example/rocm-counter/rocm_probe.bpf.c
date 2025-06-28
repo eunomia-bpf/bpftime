@@ -33,8 +33,8 @@ static const u64 (*bpf_get_block_idx)(u64 *x, u64 *y, u64 *z) = (void *)503;
 static const u64 (*bpf_get_block_dim)(u64 *x, u64 *y, u64 *z) = (void *)504;
 static const u64 (*bpf_get_thread_idx)(u64 *x, u64 *y, u64 *z) = (void *)505;
 
-SEC("kprobe/_Z9vectorAddPKfS0_Pf")
-int probe()
+SEC("kprobe/rocm___Z9vectorAddPKfS0_Pf")
+int probe__rocm()
 {
 	u32 pid = bpf_get_current_pid_tgid() >> 32;
 	u64 ts = bpf_get_globaltimer();
@@ -58,8 +58,8 @@ int probe()
 	return 0;
 }
 
-SEC("kretprobe/_Z9vectorAddPKfS0_Pf")
-int retprobe()
+SEC("kretprobe/rocm___Z9vectorAddPKfS0_Pf")
+int retprobe__rocm()
 {
 	u64 x, y, z;
 	bpf_get_block_idx(&x, &y, &z);

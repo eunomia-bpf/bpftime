@@ -1,15 +1,21 @@
 #include "bpftime_prog.hpp"
 #include "bpftime_shm_internal.hpp"
-#include "cuda_runtime_api.h"
-#include "driver_types.h"
+
 #include <array>
 #include <bpf_attach_ctx.hpp>
 #include "demo_ptx_prog.hpp"
 #include <memory>
 #include <optional>
 #include <spdlog/spdlog.h>
+#if defined(BPFTIME_ENABLE_CUDA_ATTACH)
 #include "cuda.h"
-
+#include "cuda_runtime_api.h"
+#include "driver_types.h"
+#endif
+#if defined(BPFTIME_ENABLE_ROCM_ATTACH)
+#define __HIP_PLATFORM_AMD__
+#include <hip/hip_runtime.h>
+#endif
 extern "C" {
 extern uint64_t bpftime_trace_printk(uint64_t fmt, uint64_t fmt_size, ...);
 }
@@ -66,19 +72,19 @@ extern uint64_t bpftime_trace_printk(uint64_t fmt, uint64_t fmt_size, ...);
 namespace bpftime
 {
 
-void bpf_attach_ctx::start_cuda_watcher_thread()
+void bpf_attach_ctx::start_gpu_watcher_thread()
 {
-	auto flag = this->cuda_ctx->cuda_watcher_should_stop;
+	auto flag = this->gpu_ctx->cuda_watcher_should_stop;
 	std::thread handle([=, this]() {
 		SPDLOG_INFO("CUDA watcher thread started");
-		auto &ctx = cuda_ctx;
+		auto &ctx = gpu_ctx;
 
 		while (!flag->load()) {
-			if (ctx->cuda_shared_mem->flag1 == 1) {
-				ctx->cuda_shared_mem->flag1 = 0;
-				auto req_id = ctx->cuda_shared_mem->request_id;
+			if (ctx->shared_mem->flag1 == 1) {
+				ctx->shared_mem->flag1 = 0;
+				auto req_id = ctx->shared_mem->request_id;
 
-				auto map_ptr = ctx->cuda_shared_mem->map_id;
+				auto map_ptr = ctx->shared_mem->map_id;
 				auto map_fd = map_ptr;
 				SPDLOG_DEBUG(
 					"CUDA Received call request id {}, map_ptr = {}, map_fd = {}",
@@ -86,12 +92,11 @@ void bpf_attach_ctx::start_cuda_watcher_thread()
 				auto start_time =
 					std::chrono::high_resolution_clock::now();
 				if (req_id ==
-				    (int)cuda::HelperOperation::MAP_LOOKUP) {
+				    (int)gpu::HelperOperation::MAP_LOOKUP) {
 					const auto &req =
-						ctx->cuda_shared_mem->req
-							.map_lookup;
-					auto &resp = ctx->cuda_shared_mem->resp
-							     .map_lookup;
+						ctx->shared_mem->req.map_lookup;
+					auto &resp =
+						ctx->shared_mem->resp.map_lookup;
 					auto ptr = bpftime_map_lookup_elem(
 						map_fd, req.key);
 					resp.value = ptr;
@@ -103,13 +108,11 @@ void bpf_attach_ctx::start_cuda_watcher_thread()
 						(uintptr_t)resp.value);
 
 				} else if (req_id ==
-					   (int)cuda::HelperOperation::
-						   MAP_UPDATE) {
+					   (int)gpu::HelperOperation::MAP_UPDATE) {
 					const auto &req =
-						ctx->cuda_shared_mem->req
-							.map_update;
-					auto &resp = ctx->cuda_shared_mem->resp
-							     .map_update;
+						ctx->shared_mem->req.map_update;
+					auto &resp =
+						ctx->shared_mem->resp.map_update;
 					resp.result = bpftime_map_update_elem(
 						map_fd, req.key, req.value,
 						req.flags);
@@ -117,26 +120,22 @@ void bpf_attach_ctx::start_cuda_watcher_thread()
 						"CUDA: Executing map update for {}, result = {}",
 						map_fd, resp.result);
 				} else if (req_id ==
-					   (int)cuda::HelperOperation::
-						   MAP_DELETE) {
+					   (int)gpu::HelperOperation::MAP_DELETE) {
 					const auto &req =
-						ctx->cuda_shared_mem->req
-							.map_delete;
-					auto &resp = ctx->cuda_shared_mem->resp
-							     .map_delete;
+						ctx->shared_mem->req.map_delete;
+					auto &resp =
+						ctx->shared_mem->resp.map_delete;
 
 					resp.result = bpftime_map_delete_elem(
 						map_fd, req.key);
 					SPDLOG_DEBUG(
 						"CUDA: Executing map delete for {}, result = {}",
 						map_fd, resp.result);
-				} else if (req_id ==
-					   (int)cuda::HelperOperation::
-						   TRACE_PRINTK) {
-					const auto &req =
-						ctx->cuda_shared_mem->req
-							.trace_printk;
-					auto &resp = ctx->cuda_shared_mem->resp
+				} else if (req_id == (int)gpu::HelperOperation::
+							     TRACE_PRINTK) {
+					const auto &req = ctx->shared_mem->req
+								  .trace_printk;
+					auto &resp = ctx->shared_mem->resp
 							     .trace_printk;
 
 					resp.result = bpftime_trace_printk(
@@ -148,9 +147,9 @@ void bpf_attach_ctx::start_cuda_watcher_thread()
 						req.fmt, req.arg1, req.arg2,
 						req.arg3);
 				} else if (req_id ==
-					   (int)cuda::HelperOperation::
+					   (int)gpu::HelperOperation::
 						   GET_CURRENT_PID_TGID) {
-					auto &resp = ctx->cuda_shared_mem->resp
+					auto &resp = ctx->shared_mem->resp
 							     .get_tid_pgid;
 					static int tgid = getpid();
 					static thread_local int tid = -1;
@@ -163,11 +162,10 @@ void bpf_attach_ctx::start_cuda_watcher_thread()
 					resp.result =
 						(((uint64_t)tgid) << 32) | tid;
 				} else if (req_id ==
-					   (int)cuda::HelperOperation::PUTS) {
+					   (int)gpu::HelperOperation::PUTS) {
 					const auto &req =
-						ctx->cuda_shared_mem->req.puts;
-					auto &resp =
-						ctx->cuda_shared_mem->resp.puts;
+						ctx->shared_mem->req.puts;
+					auto &resp = ctx->shared_mem->resp.puts;
 					SPDLOG_INFO("eBPF: {}", req.data);
 					resp.result = 0;
 				}
@@ -177,7 +175,7 @@ void bpf_attach_ctx::start_cuda_watcher_thread()
 						    req_id);
 				}
 
-				ctx->cuda_shared_mem->flag2 = 1;
+				ctx->shared_mem->flag2 = 1;
 				std::atomic_thread_fence(
 					std::memory_order_seq_cst);
 			}
@@ -227,50 +225,60 @@ bpf_attach_ctx::create_map_basic_info(int filled_size)
 	return local_basic_info;
 }
 
-namespace cuda
+namespace gpu
 {
-
-void cuda_context_destroyer(CUcontext ptr)
+std::optional<std::unique_ptr<gpu::GPUContext>> create_gpu_context()
 {
-	NV_SAFE_CALL(cuCtxDestroy(ptr), "destroy cuda context");
-}
-void cuda_module_destroyer(CUmodule ptr)
-{
-	NV_SAFE_CALL(cuModuleUnload(ptr), "Unload CUDA module");
-}
-
-std::optional<std::unique_ptr<cuda::CUDAContext>> create_cuda_context()
-{
-	SPDLOG_INFO("Initializing CUDA shared memory");
-	auto cuda_shared_mem = std::make_unique<cuda::CommSharedMem>();
-	memset(cuda_shared_mem.get(), 0, sizeof(*cuda_shared_mem));
-
-	CUDART_SAFE_CALL(cudaHostRegister(cuda_shared_mem.get(),
-					  sizeof(cuda::CommSharedMem),
+	SPDLOG_INFO("Initializing GPU shared memory");
+	auto gpu_shared_mem = std::make_unique<gpu::CommSharedMem>();
+	memset(gpu_shared_mem.get(), 0, sizeof(*gpu_shared_mem));
+#if defined(BPFTIME_ENABLE_CUDA_ATTACH)
+	CUDART_SAFE_CALL(cudaHostRegister(gpu_shared_mem.get(),
+					  sizeof(gpu::CommSharedMem),
 					  cudaHostRegisterDefault),
 			 "Unable to register shared memory");
+#endif
+#if defined(BPFTIME_ENABLE_ROCM_ATTACH)
+	if (auto err = hipHostRegister(gpu_shared_mem.get(),
+				       sizeof(gpu::CommSharedMem),
+				       hipHostRegisterDefault);
+	    err != hipSuccess) {
+		SPDLOG_ERROR("Unable to register HIP shared memory: {}",
+			     (int)err);
+		throw std::runtime_error(
+			"Unable to register HIP shared memory");
+	}
+#endif
 
-	auto cuda_ctx = std::make_optional(std::make_unique<cuda::CUDAContext>(
-		std::move(cuda_shared_mem)));
+	auto cuda_ctx = std::make_optional(
+		std::make_unique<gpu::GPUContext>(std::move(gpu_shared_mem)));
 
 	SPDLOG_INFO("CUDA context created");
 	return cuda_ctx;
 }
-CUDAContext::~CUDAContext()
+GPUContext::~GPUContext()
 {
 	SPDLOG_INFO("Destructing CUDAContext");
+
+#if defined(BPFTIME_ENABLE_CUDA_ATTACH)
 	if (auto result = cudaHostUnregister(cuda_shared_mem.get());
 	    result != cudaSuccess) {
 		SPDLOG_ERROR("Unable to unregister host memory: {}",
 			     (int)result);
 	}
+#endif
 }
-CUDAContext::CUDAContext(std::unique_ptr<cuda::CommSharedMem> &&mem)
-	: cuda_shared_mem(std::move(mem)),
-	  cuda_shared_mem_device_pointer((uintptr_t)cuda_shared_mem.get())
+GPUContext::GPUContext(std::unique_ptr<gpu::CommSharedMem> &&mem)
+	: shared_mem(std::move(mem))
 
 {
+#if defined(BPFTIME_ENABLE_CUDA_ATTACH)
+	cuda_shared_mem_device_pointer = (uintptr_t)shared_mem.get();
+#endif
+#if defined(BPFTIME_ENABLE_ROCM_ATTACH)
+	rocm_shared_mem_device_pointer = (uintptr_t)shared_mem.get();
+#endif
 }
 
-} // namespace cuda
+} // namespace gpu
 } // namespace bpftime

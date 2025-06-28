@@ -36,6 +36,10 @@
 #include <cuda.h>
 #include "nv_attach_private_data.hpp"
 #endif
+#ifdef BPFTIME_ENABLE_ROCM_ATTACH
+#include <rocm_attach_private_data.hpp>
+#endif
+
 extern "C" uint64_t bpftime_set_retval(uint64_t value);
 namespace bpftime
 {
@@ -108,21 +112,21 @@ int bpf_attach_ctx::init_attach_ctx_from_handlers(
 bpf_attach_ctx::~bpf_attach_ctx()
 {
 	SPDLOG_DEBUG("Destructor: bpf_attach_ctx");
-#ifdef BPFTIME_ENABLE_CUDA_ATTACH
+#if defined(BPFTIME_ENABLE_CUDA_ATTACH)
 	cuda_ctx->cuda_watcher_should_stop->store(true);
 #endif
 }
 
 // create a probe context
 bpf_attach_ctx::bpf_attach_ctx()
-#ifdef BPFTIME_ENABLE_CUDA_ATTACH
-	: cuda_ctx(*cuda::create_cuda_context())
+#if defined(BPFTIME_ENABLE_CUDA_ATTACH) || defined(BPFTIME_ENABLE_ROCM_ATTACH)
+	: gpu_ctx(*gpu::create_gpu_context())
 #endif
 {
 	current_id = CURRENT_ID_OFFSET;
 	SPDLOG_INFO("bpf_attach_ctx constructed");
-#ifdef BPFTIME_ENABLE_CUDA_ATTACH
-	start_cuda_watcher_thread();
+#if defined(BPFTIME_ENABLE_CUDA_ATTACH) || defined(BPFTIME_ENABLE_ROCM_ATTACH)
+	start_gpu_watcher_thread();
 #endif
 }
 
@@ -246,7 +250,7 @@ int bpf_attach_ctx::instantiate_prog_handler_at(int id,
 	return 0;
 }
 int bpf_attach_ctx::instantiate_bpf_link_handler_at(
-	int id, const bpf_link_handler &handler, bool handle_nv_attach_impl)
+	int id, const bpf_link_handler &handler, bool handle_gpu_attach_impl)
 {
 	SPDLOG_DEBUG(
 		"Instantiating link handler: prog {} -> perf event {}, cookie {}",
@@ -265,31 +269,52 @@ int bpf_attach_ctx::instantiate_bpf_link_handler_at(
 	}
 	auto prog = instantiated_progs.at(handler.prog_id).get();
 	int attach_id;
-#ifdef BPFTIME_ENABLE_CUDA_ATTACH
-	if (prog->is_cuda()) {
-		if (handle_nv_attach_impl) {
+#if defined(BPFTIME_ENABLE_CUDA_ATTACH) || defined(BPFTIME_ENABLE_ROCM_ATTACH)
+	auto fill_attach_private_data = [&](auto &data) {
+		data.comm_shared_mem =
+			(uintptr_t)this->gpu_ctx->shared_mem.get();
+		data.instructions = prog->get_insns();
+		SPDLOG_INFO(
+			"Loaded {} instructions (original) for cuda ebpf program",
+			prog->get_insns().size());
+		data.map_basic_info = this->create_map_basic_info(256);
+	};
+	if (handle_gpu_attach_impl) {
+#if defined(BPFTIME_ENABLE_CUDA_ATTACH)
+		if (prog->is_cuda()) {
 			SPDLOG_INFO(
 				"Handling link to CUDA program: {}, recording it..",
 				id);
 			auto &nv_attach_private_data =
 				dynamic_cast<attach::nv_attach_private_data &>(
 					*priv_data);
-			nv_attach_private_data.comm_shared_mem =
-				(uintptr_t)this->cuda_ctx->cuda_shared_mem.get();
-			nv_attach_private_data.instructions = prog->get_insns();
-			SPDLOG_INFO(
-				"Loaded {} instructions (original) for cuda ebpf program",
-				prog->get_insns().size());
-			nv_attach_private_data.map_basic_info =
-				this->create_map_basic_info(256);
+			fill_attach_private_data(nv_attach_private_data);
 			attach_id =
 				attach_impl->create_attach_with_ebpf_callback(
 					[=](void *mem, size_t mem_size,
 					    uint64_t *ret) -> int { return 0; },
 					*priv_data, attach_type);
-		} else {
+		} else
+#endif
+#if defined(BPFTIME_ENABLE_ROCM_ATTACH)
+			if (prog->is_rocm()) {
 			SPDLOG_INFO(
-				"Skipping nv attach handler {} since we are not handling nv handles",
+				"Handling link to ROCM program: {}, recording it..",
+				id);
+			auto &nv_attach_private_data =
+				dynamic_cast<attach::rocm_attach_private_data &>(
+					*priv_data);
+			fill_attach_private_data(nv_attach_private_data);
+			attach_id =
+				attach_impl->create_attach_with_ebpf_callback(
+					[=](void *mem, size_t mem_size,
+					    uint64_t *ret) -> int { return 0; },
+					*priv_data, attach_type);
+		} else
+#endif
+		{
+			SPDLOG_INFO(
+				"Skipping nv/rocm attach handler {} since we are not handling nv/rocm handles",
 				id);
 			return 0;
 		}

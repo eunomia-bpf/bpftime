@@ -32,7 +32,8 @@
 #include "nv_attach_impl.hpp"
 #endif
 #ifdef BPFTIME_ENABLE_ROCM_ATTACH
-
+#include "rocm_attach_impl.hpp"
+#include "rocm_attach_private_data.hpp"
 #endif
 
 #if __linux__ && BPFTIME_BUILD_WITH_LIBBPF
@@ -119,7 +120,16 @@ static void sig_handler_sigusr1(int sig)
 	SPDLOG_DEBUG("Detaching done");
 	bpftime_logger_flush();
 }
-#ifdef BPFTIME_ENABLE_CUDA_ATTACH
+template <class T>
+static inline T try_get_original_func(const char *name, T &store)
+{
+	if (store == nullptr) {
+		store = (T)dlsym(RTLD_NEXT, name);
+	}
+	return store;
+}
+
+#if defined(BPFTIME_ENABLE_CUDA_ATTACH)
 void **(*original___cudaRegisterFatBinary)(void *) = nullptr;
 
 extern "C" void **__cudaRegisterFatBinary(void *fatbin)
@@ -147,6 +157,7 @@ extern "C" void **__hipRegisterFatBinary(void *fatbin)
 
 extern "C" void bpftime_agent_main(const gchar *data, gboolean *stay_resident)
 {
+	spdlog::cfg::load_env_levels();
 	{
 		int expected = 0;
 		if (!__atomic_compare_exchange_n(&initialized, &expected, 1,
@@ -234,6 +245,22 @@ extern "C" void bpftime_agent_main(const gchar *data, gboolean *stay_resident)
 			return priv_data;
 		});
 #endif
+#ifdef BPFTIME_ENABLE_ROCM_ATTACH
+	ctx_holder.ctx.register_attach_impl(
+		{ ATTACH_ROCM_PROBE_AND_RETPROBE },
+		std::make_unique<attach::rocm_attach_impl>(),
+		[](const std::string_view &sv, int &err) {
+			std::unique_ptr<attach_private_data> priv_data =
+				std::make_unique<rocm_attach_private_data>();
+			if (int e = priv_data->initialize_from_string(sv);
+			    e < 0) {
+				err = e;
+				return std::unique_ptr<attach_private_data>();
+			}
+			return priv_data;
+		});
+#endif
+
 	SPDLOG_INFO("Initializing agent..");
 	/* We don't want to our library to be unloaded after we return. */
 	*stay_resident = TRUE;

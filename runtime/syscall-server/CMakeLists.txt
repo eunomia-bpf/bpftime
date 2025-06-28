@@ -54,3 +54,7 @@ if (${TEST_LCOV})
     target_compile_options(bpftime-syscall-server PRIVATE -fprofile-arcs -ftest-coverage -fprofile-update=atomic)
     target_link_options(bpftime-syscall-server PRIVATE -fprofile-arcs)
 endif()
+
+if(${BPFTIME_ENABLE_ROCM_ATTACH})
+  target_compile_definitions(bpftime-syscall-server PRIVATE BPFTIME_ENABLE_ROCM_ATTACH=1)
+endif()

@@ -4,7 +4,9 @@
 #include <cstdint>
 #include <frida-gum.h>
 #include "rocm_attach_impl.hpp"
-
+#include <clang/Driver/OffloadBundler.h>
+#include <llvm/ADT/StringRef.h>
+#include "llvm/Object/OffloadBinary.h"
 using namespace bpftime;
 using namespace attach;
 
@@ -13,7 +15,7 @@ struct HipFatbinWrapper {
 	uint32_t magic;
 	// 1
 	uint32_t unknown_field_1;
-    // pointer to clang offload bundle
+	// pointer to clang offload bundle
 	void *data;
 	// 0
 	uint64_t unknown_field_2;
@@ -44,7 +46,13 @@ static void rocm_listener_on_enter(GumInvocationListener *listener,
 		SPDLOG_DEBUG("Entering __hipRegisterFatbin");
 		auto arg1 = (HipFatbinWrapper *)
 			gum_invocation_context_get_nth_argument(gum_ctx, 0);
-        
+		std::unique_ptr<llvm::MemoryBuffer> input_buffer =
+			llvm::MemoryBuffer::getMemBuffer(
+				llvm::StringRef((const char *)arg1->data),
+				"bundled_input");
+		auto file = llvm::object::OffloadBinary::create(
+			std::move(*input_buffer));
+			
 	} else if (context->to_function ==
 		   RocmAttachedToFunction::RegisterFunction) {
 		SPDLOG_DEBUG("Entering __hipRegisterFunction..");

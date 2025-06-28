@@ -162,7 +162,28 @@ int bpftime_shm::bpf_map_get_next_key(int fd, const void *key, void *next_key,
 		std::get<bpftime::bpf_map_handler>(manager->get_handler(fd));
 	return handler.bpf_map_get_next_key(key, next_key, from_syscall);
 }
+#ifdef BPFTIME_ENABLE_ROCM_ATTACH
+int bpftime_shm::add_rocm_attach(std::optional<int> fd, const char *func_name,
+				 bool retprobe)
+{
+	int new_fd = fd.has_value() ? *fd : open_fake_fd();
+	SPDLOG_INFO(
+		"Set fd {} to rocm attach (custom attach), func_name={}, ret_probe={}",
+		new_fd, func_name, retprobe);
 
+	std::string attach_string = "rocm:";
+	if (retprobe)
+		attach_string += "exit:";
+	else
+		attach_string += "entry:";
+	attach_string += func_name;
+	return manager->set_handler(
+		new_fd,
+		bpftime::bpf_perf_event_handler(1018, attach_string.c_str(),
+						segment),
+		segment);
+}
+#endif
 int bpftime_shm::add_kprobe(std::optional<int> fd, const char *func_name,
 			    uint64_t addr, bool retprobe, size_t ref_ctr_off)
 {
@@ -594,9 +615,9 @@ bpftime_shm::bpftime_shm(const char *shm_name, shm_open_type type)
 		// open the shm
 		segment = boost::interprocess::managed_shared_memory(
 			boost::interprocess::open_only, shm_name);
-			#ifdef BPFTIME_ENABLE_CUDA_ATTACH
+#ifdef BPFTIME_ENABLE_CUDA_ATTACH
 		register_cuda_host_memory();
-		#endif
+#endif
 		manager = segment.find<bpftime::handler_manager>(
 					 bpftime::DEFAULT_GLOBAL_HANDLER_NAME)
 				  .first;

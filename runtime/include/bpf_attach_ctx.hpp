@@ -30,9 +30,12 @@ typedef struct _GumInvocationListener GumInvocationListener;
 
 namespace bpftime
 {
+namespace attach
+{
 
-#ifdef BPFTIME_ENABLE_CUDA_ATTACH
-namespace cuda
+} // namespace attach
+#if defined(BPFTIME_ENABLE_CUDA_ATTACH) || defined(BPFTIME_ENABLE_ROCM_ATTACH)
+namespace gpu
 {
 
 enum class HelperOperation {
@@ -91,29 +94,30 @@ struct CommSharedMem {
 	HelperCallResponse resp;
 	uint64_t time_sum[8];
 };
-struct CUDAContext {
+struct GPUContext {
 	// Indicate whether cuda watcher thread should stop
 	std::shared_ptr<std::atomic<bool>> cuda_watcher_should_stop =
 		std::make_shared<std::atomic<bool>>(false);
 
 	// Shared memory region for CUDA
-	std::unique_ptr<cuda::CommSharedMem> cuda_shared_mem;
+	std::unique_ptr<gpu::CommSharedMem> shared_mem;
 	// Mapped device pointer
-	uintptr_t cuda_shared_mem_device_pointer;
+	uintptr_t cuda_shared_mem_device_pointer = 0;
+	uintptr_t rocm_shared_mem_device_pointer = 0;
 
-	CUDAContext(std::unique_ptr<cuda::CommSharedMem> &&mem);
+	GPUContext(std::unique_ptr<gpu::CommSharedMem> &&mem);
 
-	CUDAContext(CUDAContext &&) = default;
-	CUDAContext &operator=(CUDAContext &&) = default;
-	CUDAContext(const CUDAContext &) = delete;
-	CUDAContext &operator=(const CUDAContext &) = delete;
+	GPUContext(GPUContext &&) = default;
+	GPUContext &operator=(GPUContext &&) = default;
+	GPUContext(const GPUContext &) = delete;
+	GPUContext &operator=(const GPUContext &) = delete;
 
-	virtual ~CUDAContext();
+	virtual ~GPUContext();
 };
 
-std::optional<std::unique_ptr<cuda::CUDAContext>> create_cuda_context();
+std::optional<std::unique_ptr<GPUContext>> create_gpu_context();
 
-} // namespace cuda
+} // namespace gpu
 #endif
 
 class base_attach_manager;
@@ -199,14 +203,14 @@ class bpf_attach_ctx {
 					    bool handle_nv_attach_impl);
 	int instantiate_perf_event_handler_at(
 		int id, const bpf_perf_event_handler &perf_handler);
-#ifdef BPFTIME_ENABLE_CUDA_ATTACH
+#if defined(BPFTIME_ENABLE_CUDA_ATTACH) || defined(BPFTIME_ENABLE_ROCM_ATTACH)
 	// Start host thread for handling map requests from CUDA
-	void start_cuda_watcher_thread();
-	std::unique_ptr<cuda::CUDAContext> cuda_ctx;
+	void start_gpu_watcher_thread();
+	std::unique_ptr<gpu::GPUContext> gpu_ctx;
 
+#endif
 	std::vector<attach::MapBasicInfo>
 	create_map_basic_info(int filled_size);
-#endif
 };
 
 } // namespace bpftime

@@ -4,6 +4,7 @@ add_library(
     bpftime_rocm_attach_impl STATIC
     rocm_attach_impl.cpp
     rocm_attach_impl_frida_setup.cpp
+    rocm_attach_private_data.cpp
 )
 
 add_dependencies(bpftime_rocm_attach_impl bpftime_base_attach_impl spdlog::spdlog FridaGum  llvmbpf_vm bpftime_vm_compat)
@@ -21,3 +22,22 @@ set_property(TARGET bpftime_rocm_attach_impl PROPERTY CXX_STANDARD 20)
 target_link_options(bpftime_rocm_attach_impl PUBLIC "-Wl,--whole-archive" "$<TARGET_FILE:bpftime_rocm_attach_impl>" "-Wl,--no-whole-archive")
 
 # add_subdirectory(test)
+find_package(LLVM REQUIRED CONFIG)
+
+
+if(ENABLE_LLVM_SHARED)
+    list(PREPEND LLVM_LIBS LLVM)
+else()
+    llvm_map_components_to_libnames(LLVM_LIBS
+        Core
+        # clangDriver
+        # clang
+        Support
+    )
+endif()
+
+message("LLVM_LIBRARY_DIRS=${LLVM_LIBRARY_DIRS}")
+
+target_link_directories(bpftime_rocm_attach_impl PRIVATE ${LLVM_LIBRARY_DIRS})
+target_link_libraries(bpftime_rocm_attach_impl PRIVATE ${LLVM_LIBS} ${LLVM_LIBRARY_DIRS}/libclang.so ${LLVM_LIBRARY_DIRS}/libclangDriver.a)
+target_include_directories(bpftime_rocm_attach_impl PRIVATE ${LLVM_INCLUDE_DIRS})

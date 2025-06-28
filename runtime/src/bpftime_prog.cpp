@@ -177,28 +177,8 @@ int bpftime_prog::bpftime_prog_load(bool jit)
 		SPDLOG_ERROR("Failed to load insn: {}", errmsg);
 		return res;
 	}
-	if (is_cuda()) {
-		// SPDLOG_INFO("Compiling CUDA program");
-
-		// this->bpftime_prog_register_raw_helper(bpftime_helper_info{
-		// 	.index = 501,
-		// 	.name = "puts",
-		// 	.fn = (void *)&puts,
-		// });
-
-		// ptx_code = ((struct ebpf_vm *)vm)
-		// 		   ->vm_instance->generate_ptx("sm_60");
-
-		// if (!ptx_code.has_value()) {
-		// 	throw std::runtime_error("Failed to generate ptx code");
-		// }
-		// *ptx_code =
-		// 	wrap_ptx_with_trampoline(patch_helper_names_and_header(
-		// 		patch_main_from_func_to_entry(*ptx_code)));
-		// cuda_elf_binary = compile_ptx_to_elf(*ptx_code, "sm_60");
-		// if (!cuda_elf_binary.has_value()) {
-		// 	throw std::runtime_error("unable to compile ptx code");
-		// }
+	if (is_cuda() || is_rocm()) {
+		SPDLOG_INFO("Skipping compiling cuda/rocm program");
 	} else {
 		if (jit) {
 			// run with jit mode
@@ -231,8 +211,8 @@ int bpftime_prog::bpftime_prog_unload()
 int bpftime_prog::bpftime_prog_exec(void *memory, size_t memory_size,
 				    uint64_t *return_val) const
 {
-	if (is_cuda()) {
-		throw std::runtime_error("Unable to execute CUDA program");
+	if (is_cuda() || is_rocm()) {
+		throw std::runtime_error("Unable to execute CUDA/ROCM program");
 	}
 	uint64_t val = 0;
 	int res = 0;

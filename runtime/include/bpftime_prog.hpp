@@ -69,6 +69,17 @@ class bpftime_prog {
 	{
 		return false;
 	}
+#endif
+#ifdef BPFTIME_ENABLE_ROCM_ATTACH
+	bool is_rocm() const
+	{
+		return name.ends_with("__rocm");
+	}
+#else
+	bool is_rocm() const
+	{
+		return false;
+	}
 
 #endif
     private:

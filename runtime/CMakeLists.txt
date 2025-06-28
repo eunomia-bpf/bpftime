@@ -83,8 +83,8 @@ set(sources
   extension/extension_helper.cpp
 )
 
-if(${BPFTIME_ENABLE_CUDA_ATTACH})
-  list(APPEND sources src/attach/bpf_attach_ctx_cuda.cpp)
+if(${BPFTIME_ENABLE_CUDA_ATTACH} OR ${BPFTIME_ENABLE_ROCM_ATTACH})
+  list(APPEND sources src/attach/bpf_attach_ctx_gpu.cpp)
 endif()
 
 if(UNIX AND NOT APPLE AND BPFTIME_BUILD_WITH_LIBBPF)
@@ -153,6 +153,21 @@ if(${BPFTIME_ENABLE_CUDA_ATTACH})
   target_link_libraries(${PROJECT_NAME} PUBLIC bpftime_vm_compat llvmbpf_vm bpftime_nv_attach_impl)
   target_include_directories(${PROJECT_NAME} PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/../vm/llvm-jit/include)
 endif()
+
+
+if(${BPFTIME_ENABLE_ROCM_ATTACH})
+  include(../cmake/rocm.cmake)
+  find_rocm()
+  message(STATUS "runtime rocm libs= ${ROCM_LIBS}")
+  target_include_directories(${PROJECT_NAME} PUBLIC ${ROCM_INCLUDE_PATH} ${ROCM_ATTACH_IMPL_INCLUDE})
+  target_link_directories(${PROJECT_NAME} PUBLIC ${ROCM_LIBRARY_PATH})
+  target_link_libraries(${PROJECT_NAME} PUBLIC ${ROCM_LIBS} bpftime_rocm_attach_impl)
+  target_compile_definitions(${PROJECT_NAME} PUBLIC BPFTIME_ENABLE_ROCM_ATTACH=1)
+  add_dependencies(${PROJECT_NAME} bpftime_vm_compat llvmbpf_vm bpftime_rocm_attach_impl)
+  target_link_libraries(${PROJECT_NAME} PUBLIC bpftime_vm_compat llvmbpf_vm bpftime_rocm_attach_impl)
+  target_include_directories(${PROJECT_NAME} PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/../vm/llvm-jit/include)
+endif()
+
 if(${BPFTIME_BUILD_WITH_LIBBPF})
   add_dependencies(${PROJECT_NAME} bpftime_vm FridaGum spdlog::spdlog libbpf bpftime_base_attach_impl)
 else()

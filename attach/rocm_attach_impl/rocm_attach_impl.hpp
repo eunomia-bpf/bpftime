@@ -6,6 +6,9 @@ namespace bpftime
 {
 namespace attach
 {
+
+constexpr int ATTACH_ROCM_PROBE_AND_RETPROBE = 1018;
+
 enum class RocmAttachedToFunction {
 	RegisterFatbin,
 	RegisterFunction,

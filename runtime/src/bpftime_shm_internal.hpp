@@ -141,6 +141,10 @@ class bpftime_shm {
 	// Create an kprobe
 	int add_kprobe(std::optional<int> fd, const char *func_name,
 		       uint64_t addr, bool retprobe, size_t ref_ctr_off);
+#ifdef BPFTIME_ENABLE_ROCM_ATTACH
+	int add_rocm_attach(std::optional<int> fd, const char *func_name,
+			    bool retprobe);
+#endif
 	// create a tracepoint fd
 	int add_tracepoint(int fd, int pid, int32_t tracepoint_id);
 	// create a software perf event fd, typically for a perf event
@@ -198,9 +202,9 @@ class bpftime_shm {
 	{
 		return open_type;
 	}
-	#ifdef BPFTIME_ENABLE_CUDA_ATTACH
+#ifdef BPFTIME_ENABLE_CUDA_ATTACH
 	bool register_cuda_host_memory();
-	#endif
+#endif
 	~bpftime_shm();
 };
 
