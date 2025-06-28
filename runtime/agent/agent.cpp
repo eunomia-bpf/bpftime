@@ -134,7 +134,7 @@ void **(*original___cudaRegisterFatBinary)(void *) = nullptr;
 
 extern "C" void **__cudaRegisterFatBinary(void *fatbin)
 {
-	auto orig = try_get_original_func("__cudaRegisterFatBinary",
+	auto orig = ::try_get_original_func("__cudaRegisterFatBinary",
 					  original___cudaRegisterFatBinary);
 	gboolean flag = false;
 	bpftime_agent_main(nullptr, &flag);

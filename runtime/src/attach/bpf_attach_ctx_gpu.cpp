@@ -261,7 +261,7 @@ GPUContext::~GPUContext()
 	SPDLOG_INFO("Destructing CUDAContext");
 
 #if defined(BPFTIME_ENABLE_CUDA_ATTACH)
-	if (auto result = cudaHostUnregister(cuda_shared_mem.get());
+	if (auto result = cudaHostUnregister(shared_mem.get());
 	    result != cudaSuccess) {
 		SPDLOG_ERROR("Unable to unregister host memory: {}",
 			     (int)result);

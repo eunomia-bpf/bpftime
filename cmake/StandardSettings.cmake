@@ -24,6 +24,16 @@ option(BPFTIME_WARNINGS_AS_ERRORS "Treat compiler warnings as errors." OFF)
 option(BPFTIME_CUDA_ROOT "Root for CUDA installation" "")
 option(BPFTIME_ENABLE_CUDA_ATTACH "Whether to enable CUDA attach" OFF)
 
+
+#
+#
+# ROCm options
+#
+
+option(BPFTIME_ROCM_ROOT "Root for ROCM installation" "")
+option(BPFTIME_ENABLE_ROCM_ATTACH "Whether to enable ROCM attach" OFF)
+
+
 #
 # Unit testing
 #

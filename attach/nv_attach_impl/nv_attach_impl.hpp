@@ -32,12 +32,7 @@ std::string add_register_guard_for_ebpf_ptx_func(const std::string &ptxCode);
 
 constexpr int ATTACH_CUDA_PROBE = 8;
 constexpr int ATTACH_CUDA_RETPROBE = 9;
-struct MapBasicInfo {
-	bool enabled;
-	int key_size;
-	int value_size;
-	int max_entries;
-};
+
 struct nv_hooker_func_t {
 	void *func;
 };

@@ -113,7 +113,7 @@ bpf_attach_ctx::~bpf_attach_ctx()
 {
 	SPDLOG_DEBUG("Destructor: bpf_attach_ctx");
 #if defined(BPFTIME_ENABLE_CUDA_ATTACH)
-	cuda_ctx->cuda_watcher_should_stop->store(true);
+	gpu_ctx->cuda_watcher_should_stop->store(true);
 #endif
 }
 
@@ -253,9 +253,9 @@ int bpf_attach_ctx::instantiate_bpf_link_handler_at(
 	int id, const bpf_link_handler &handler, bool handle_gpu_attach_impl)
 {
 	SPDLOG_DEBUG(
-		"Instantiating link handler: prog {} -> perf event {}, cookie {}",
+		"Instantiating link handler: prog {} -> perf event {}, cookie {}, handle_gpu_attach_impl = {}",
 		handler.prog_id, handler.attach_target_id,
-		handler.attach_cookie.value_or(0));
+		handler.attach_cookie.value_or(0), handle_gpu_attach_impl);
 	auto &[priv_data, attach_type] =
 		instantiated_perf_events[handler.attach_target_id];
 	attach::base_attach_impl *attach_impl;
@@ -268,7 +268,7 @@ int bpf_attach_ctx::instantiate_bpf_link_handler_at(
 		return -ENOTSUP;
 	}
 	auto prog = instantiated_progs.at(handler.prog_id).get();
-	int attach_id;
+	int attach_id = -1;
 #if defined(BPFTIME_ENABLE_CUDA_ATTACH) || defined(BPFTIME_ENABLE_ROCM_ATTACH)
 	auto fill_attach_private_data = [&](auto &data) {
 		data.comm_shared_mem =
@@ -279,7 +279,14 @@ int bpf_attach_ctx::instantiate_bpf_link_handler_at(
 			prog->get_insns().size());
 		data.map_basic_info = this->create_map_basic_info(256);
 	};
-	if (handle_gpu_attach_impl) {
+	if (prog->is_cuda() || prog->is_rocm()) {
+		if (!handle_gpu_attach_impl) {
+			SPDLOG_INFO(
+				"Skipping nv/rocm attach handler {} since we are not handling nv/rocm handles",
+				id);
+			return 0;
+		}
+
 #if defined(BPFTIME_ENABLE_CUDA_ATTACH)
 		if (prog->is_cuda()) {
 			SPDLOG_INFO(
@@ -294,10 +301,11 @@ int bpf_attach_ctx::instantiate_bpf_link_handler_at(
 					[=](void *mem, size_t mem_size,
 					    uint64_t *ret) -> int { return 0; },
 					*priv_data, attach_type);
-		} else
+			return attach_id;
+		}
 #endif
 #if defined(BPFTIME_ENABLE_ROCM_ATTACH)
-			if (prog->is_rocm()) {
+		if (prog->is_rocm()) {
 			SPDLOG_INFO(
 				"Handling link to ROCM program: {}, recording it..",
 				id);
@@ -310,14 +318,10 @@ int bpf_attach_ctx::instantiate_bpf_link_handler_at(
 					[=](void *mem, size_t mem_size,
 					    uint64_t *ret) -> int { return 0; },
 					*priv_data, attach_type);
-		} else
-#endif
-		{
-			SPDLOG_INFO(
-				"Skipping nv/rocm attach handler {} since we are not handling nv/rocm handles",
-				id);
-			return 0;
+			return attach_id;
 		}
+#endif
+
 	} else
 #endif
 	{
