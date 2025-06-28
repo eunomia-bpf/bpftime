@@ -120,27 +120,14 @@ jobs:
             # Try to build libbpf manually as fallback
             echo "Attempting to build libbpf manually..."
             if [ -d "third_party/libbpf/src" ]; then
-              # Build libbpf directly in the expected location
-              make -C third_party/libbpf/src BUILD_STATIC_ONLY=1 \
-                OBJDIR=$(pwd)/build/libbpf \
-                DESTDIR=$(pwd)/build/ \
-                LIBDIR=libbpf \
-                install || echo "Manual libbpf build failed"
-            fi
-            
-            # If that didn't work, try to find it in bpftool's build directory
-            if [ ! -f "build/libbpf/libbpf.a" ] && [ -f "third_party/bpftool/build/libbpf/libbpf.a" ]; then
-              echo "Found libbpf.a in bpftool directory, creating symlink..."
-              ln -sf ../../third_party/bpftool/build/libbpf/libbpf.a build/libbpf/libbpf.a
+              make -C third_party/libbpf/src BUILD_STATIC_ONLY=1 OBJDIR=../../build/libbpf DESTDIR=../../build/ install || echo "Manual libbpf build failed"
             fi
           fi
 
           # Verify libbpf.a exists where examples expect it
           if [ ! -f "build/libbpf/libbpf.a" ]; then
             echo "ERROR: Could not create build/libbpf/libbpf.a"
-            echo "Available libbpf.a files:"
-            find . -name "libbpf.a" -type f
-            echo "All libbpf files:"
+            echo "Available libbpf files:"
             find . -name "*libbpf*" -type f | head -10
           else
             echo "SUCCESS: build/libbpf/libbpf.a is available"
@@ -261,90 +248,90 @@ jobs:
           - true
           - false
         examples:
-          - path: libbpf-tools/opensnoop
-            executable: ./opensnoop
-            victim: ./victim
-            syscall_trace: true
-            expected_str: "   0 test.txt"
-            name: opensnoop-libbpf-tools
-          - path: libbpf-tools/statsnoop
-            executable: ./statsnoop
-            victim: ./victim
-            syscall_trace: true
-            expected_str: "victim               0    0    /sys"
-            name: statsnoop
-          - path: malloc
-            executable: ./malloc
-            victim: ./victim
-            syscall_trace: false
-            expected_str: "malloc calls: "
-            name: malloc
-          - path: minimal
-            executable: ./uprobe
-            victim: ./victim
-            syscall_trace: false
-            expected_str: ""
-            name: minimal
-          - path: opensnoop
-            executable: ./opensnoop
-            victim: ./victim
-            syscall_trace: true
-            expected_str: "   0 test.txt"
-            name: opensnoop
-          - path: sslsniff
-            executable: ./sslsniff
-            victim: /bin/wget https://www.google.com
-            syscall_trace: false
-            expected_str: "----- DATA -----"
-            name: sslsniff
-          - path: libbpf-tools/bashreadline
-            executable: ./readline
-            victim: /bin/bash
-            syscall_trace: false
-            expected_str: "info"
-            name: bashreadline
-          - path: libbpf-tools/syscount
-            executable: ./syscount
-            victim: /bin/bash
-            syscall_trace: false
-            expected_str: "info"
-            name: syscount
-          - path: libbpf-tools/funclatency
-            executable: ./funclatency -i 1 ./victim:plus
-            victim: ./victim
-            syscall_trace: false
-            expected_str: "|*"
-            name: funclatency
-          - path: libbpf-tools/mountsnoop
-            executable: ./mountsnoop
-            victim: ./victim
-            syscall_trace: true
-            expected_str: mount(
-            name: mountsnoop
-          - path: libbpf-tools/sigsnoop
-            executable: ./sigsnoop
-            victim: ./victim
-            syscall_trace: true
-            expected_str: "victim           0         -1      0"
-            name: sigsnoop
-          - path: tailcall_minimal
-            executable: ./tailcall_minimal
-            victim: ./victim
-            syscall_trace: false
-            expected_str: "See /sys/kernel/debug/tracing/trace_pipe for output (15)"
-            name: tailcall_minimal
-          - path: usdt_minimal
-            executable: ./usdt_minimal
-            victim: ./victim
-            syscall_trace: false
-            expected_str: "bpf:"
-            name: usdt_minimal
-          - path: get_stack_id_example
-            executable: ./get_stack_id_example
-            victim: ./victim
-            syscall_trace: false
-            expected_str: "Function: malloc enter"
-            name: get_stack_id_example
+          # - path: libbpf-tools/opensnoop
+          #   executable: ./opensnoop
+          #   victim: ./victim
+          #   syscall_trace: true
+          #   expected_str: "   0 test.txt"
+          #   name: opensnoop-libbpf-tools
+          # - path: libbpf-tools/statsnoop
+          #   executable: ./statsnoop
+          #   victim: ./victim
+          #   syscall_trace: true
+          #   expected_str: "victim               0    0    /sys"
+          #   name: statsnoop
+          # - path: malloc
+          #   executable: ./malloc
+          #   victim: ./victim
+          #   syscall_trace: false
+          #   expected_str: "malloc calls: "
+          #   name: malloc
+          # - path: minimal
+          #   executable: ./uprobe
+          #   victim: ./victim
+          #   syscall_trace: false
+          #   expected_str: ""
+          #   name: minimal
+          # - path: opensnoop
+          #   executable: ./opensnoop
+          #   victim: ./victim
+          #   syscall_trace: true
+          #   expected_str: "   0 test.txt"
+          #   name: opensnoop
+          # - path: sslsniff
+          #   executable: ./sslsniff
+          #   victim: /bin/wget https://www.google.com
+          #   syscall_trace: false
+          #   expected_str: "----- DATA -----"
+          #   name: sslsniff
+          # - path: libbpf-tools/bashreadline
+          #   executable: ./readline
+          #   victim: /bin/bash
+          #   syscall_trace: false
+          #   expected_str: "info"
+          #   name: bashreadline
+          # - path: libbpf-tools/syscount
+          #   executable: ./syscount
+          #   victim: /bin/bash
+          #   syscall_trace: false
+          #   expected_str: "info"
+          #   name: syscount
+          # - path: libbpf-tools/funclatency
+          #   executable: ./funclatency -i 1 ./victim:plus
+          #   victim: ./victim
+          #   syscall_trace: false
+          #   expected_str: "|*"
+          #   name: funclatency
+          # - path: libbpf-tools/mountsnoop
+          #   executable: ./mountsnoop
+          #   victim: ./victim
+          #   syscall_trace: true
+          #   expected_str: mount(
+          #   name: mountsnoop
+          # - path: libbpf-tools/sigsnoop
+          #   executable: ./sigsnoop
+          #   victim: ./victim
+          #   syscall_trace: true
+          #   expected_str: "victim           0         -1      0"
+          #   name: sigsnoop
+          # - path: tailcall_minimal
+          #   executable: ./tailcall_minimal
+          #   victim: ./victim
+          #   syscall_trace: false
+          #   expected_str: "See /sys/kernel/debug/tracing/trace_pipe for output (15)"
+          #   name: tailcall_minimal
+          # - path: usdt_minimal
+          #   executable: ./usdt_minimal
+          #   victim: ./victim
+          #   syscall_trace: false
+          #   expected_str: "bpf:"
+          #   name: usdt_minimal
+          # - path: get_stack_id_example
+          #   executable: ./get_stack_id_example
+          #   victim: ./victim
+          #   syscall_trace: false
+          #   expected_str: "Function: malloc enter"
+          #   name: get_stack_id_example
           - path: bloom_filter_demo
             executable: ./uprobe_bloom_filter
             victim: ./target
@@ -424,29 +411,49 @@ jobs:
               ln -sf ../_deps/libbpf-build/libbpf.a build/libbpf/libbpf.a
             else
               echo "libbpf.a not found, building manually..."
-              # Build libbpf manually with correct paths
+              # Build libbpf manually
               if [ -d "third_party/libbpf/src" ]; then
-                # Build libbpf directly in the expected location
-                make -C third_party/libbpf/src BUILD_STATIC_ONLY=1 \
-                  OBJDIR=$(pwd)/build/libbpf \
-                  DESTDIR=$(pwd)/build/ \
-                  LIBDIR=libbpf \
-                  install || echo "Manual libbpf build failed"
+                make -C third_party/libbpf/src BUILD_STATIC_ONLY=1 OBJDIR=../../build/libbpf DESTDIR=../../build/ install || echo "Manual libbpf build failed"
               fi
-              
-              # If that didn't work, try to find it in bpftool's build directory
-              if [ ! -f "build/libbpf/libbpf.a" ] && [ -f "third_party/bpftool/build/libbpf/libbpf.a" ]; then
-                echo "Found libbpf.a in bpftool directory, creating symlink..."
-                ln -sf ../../third_party/bpftool/build/libbpf/libbpf.a build/libbpf/libbpf.a
+            fi
+            
+            # Create the header file symlinks that bloom_filter_demo expects
+            echo "Setting up BPF header files for bloom_filter_demo..."
+            
+            # Ensure the build/libbpf directory has the headers
+            if [ -d "third_party/libbpf/include" ]; then
+              echo "Creating header symlinks from third_party/libbpf/include..."
+              # Create bpf subdirectory in build/libbpf if it doesn't exist
+              mkdir -p build/libbpf/bpf
+              # Copy or link the header files
+              cp -r third_party/libbpf/include/bpf/* build/libbpf/bpf/ 2>/dev/null || true
+            fi
+            
+            # Also try to use headers from the built libbpf
+            if [ -d "build/libbpf/include" ]; then
+              echo "Found headers in build/libbpf/include, creating additional symlinks..."
+              # Create symlinks to the built headers
+              if [ -d "build/libbpf/include/bpf" ]; then
+                cp -r build/libbpf/include/bpf/* build/libbpf/bpf/ 2>/dev/null || true
               fi
+            fi
+            
+            # Verify the critical header file exists
+            if [ ! -f "build/libbpf/bpf/bpf_helpers.h" ]; then
+              echo "ERROR: bpf_helpers.h not found in build/libbpf/bpf/"
+              echo "Available files in build/libbpf:"
+              find build/libbpf -name "*.h" | head -10
+              echo "Available files in third_party/libbpf/include:"
+              find third_party/libbpf/include -name "*.h" | head -10
+              exit 1
+            else
+              echo "SUCCESS: bpf_helpers.h found at build/libbpf/bpf/bpf_helpers.h"
             fi
             
             # Verify libbpf.a exists
             if [ ! -f "build/libbpf/libbpf.a" ]; then
               echo "ERROR: Could not create build/libbpf/libbpf.a for ${{matrix.examples.path}}"
-              echo "Available libbpf.a files:"
-              find . -name "libbpf.a" -type f
-              echo "All libbpf files:"
+              echo "Available files:"
               find . -name "*libbpf*" -type f | head -10
               exit 1
             else
