@@ -8,8 +8,17 @@ BPFTOOL_SRC := $(abspath ../../third_party/bpftool/src)
 # Use existing libbpf from build directory
 LIBBPF_OBJ := $(abspath ../../build/libbpf/libbpf.a)
 BPFTOOL_OUTPUT ?= $(abspath $(OUTPUT)/bpftool)
-# Use existing bpftool
-BPFTOOL_BIN := $(abspath ../../example/minimal/.output/bpftool/bootstrap/bpftool)
+# Try to find bpftool from multiple locations, or build our own
+BPFTOOL_BIN := $(shell \
+	if [ -f "../../build/bpftool/src/bpftool" ]; then \
+		echo "../../build/bpftool/src/bpftool"; \
+	elif [ -f "../../third_party/bpftool/src/bpftool" ]; then \
+		echo "../../third_party/bpftool/src/bpftool"; \
+	elif [ -f "$(BPFTOOL_OUTPUT)/bootstrap/bpftool" ]; then \
+		echo "$(BPFTOOL_OUTPUT)/bootstrap/bpftool"; \
+	else \
+		echo "$(BPFTOOL_OUTPUT)/bootstrap/bpftool"; \
+	fi)
 ARCH := $(shell uname -m | sed 's/x86_64/x86/' | sed 's/aarch64/arm64/' | sed 's/ppc64le/powerpc/' | sed 's/mips.*/mips/')
 VMLINUX := ../../third_party/vmlinux/$(ARCH)/vmlinux.h
 # Use our own libbpf API headers and Linux UAPI headers distributed with
@@ -47,9 +56,17 @@ clean:
 	$(call msg,CLEAN)
 	$(Q)rm -rf $(OUTPUT) $(APPS)
 
-$(OUTPUT):
+$(OUTPUT) $(BPFTOOL_OUTPUT):
 	$(call msg,MKDIR,$@)
 	$(Q)mkdir -p $@
+
+# Build bpftool if it doesn't exist
+$(BPFTOOL_BIN): | $(BPFTOOL_OUTPUT)
+	$(call msg,BPFTOOL,$@)
+	$(Q)if [ ! -f "$(BPFTOOL_BIN)" ]; then \
+		$(MAKE) -C $(BPFTOOL_SRC) bootstrap OUTPUT=$(BPFTOOL_OUTPUT)/ || \
+		$(MAKE) -C ../../third_party/bpftool/src bootstrap OUTPUT=$(BPFTOOL_OUTPUT)/; \
+	fi
 
 # Build BPF code
 $(OUTPUT)/%.bpf.o: %.bpf.c $(wildcard %.h) $(VMLINUX) | $(OUTPUT)
@@ -58,7 +75,7 @@ $(OUTPUT)/%.bpf.o: %.bpf.c $(wildcard %.h) $(VMLINUX) | $(OUTPUT)
 	$(Q)$(LLVM_STRIP) -g $@ # strip useless DWARF info
 
 # Generate BPF skeletons
-$(OUTPUT)/%.skel.h: $(OUTPUT)/%.bpf.o | $(OUTPUT)
+$(OUTPUT)/%.skel.h: $(OUTPUT)/%.bpf.o $(BPFTOOL_BIN) | $(OUTPUT)
 	$(call msg,GEN-SKEL,$@)
 	$(Q)$(BPFTOOL_BIN) gen skeleton $< > $@
 
