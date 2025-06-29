@@ -213,11 +213,11 @@ jobs:
           path: |
             ~/.bpftime
       - name: Setup tmate session for build debugging
-        # Setup SSH when manually triggered and failing, so we can debug build issues
-        if: "${{ failure() && github.event_name == 'workflow_dispatch' }}"
+        # Setup SSH when failing, so we can debug build issues
+        if: "${{ failure() }}"
         uses: mxschmitt/action-tmate@v3
         with:
-          limit-access-to-actor: true
+          limit-access-to-actor: false
           timeout-minutes: 30
   build-and-test:
     runs-on: ubuntu-22.04
@@ -532,8 +532,9 @@ jobs:
           verbose: true # optional (default = false)
 
       - name: Setup tmate session
-        # Setup SSH when manually triggered and failing, so we can debug CI more conveniently
-        if: "${{ failure() && github.event_name == 'workflow_dispatch' }}"
+        # Setup SSH when failing, so we can debug CI more conveniently
+        if: "${{ failure() }}"
         uses: mxschmitt/action-tmate@v3
         with:
           limit-access-to-actor: false
+          timeout-minutes: 30
