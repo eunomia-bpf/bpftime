@@ -83,7 +83,7 @@ syscall_hooker_func_t orig_hooker;
 
 extern "C" void bpftime_agent_main(const gchar *data, gboolean *stay_resident);
 
-#ifndef BPFTIME_ENABLE_CUDA_ATTACH
+#if !defined(BPFTIME_ENABLE_CUDA_ATTACH) && !defined(BPFTIME_ENABLE_ROCM_ATTACH)
 
 extern "C" int bpftime_hooked_main(int argc, char **argv, char **envp)
 {
@@ -135,7 +135,7 @@ void **(*original___cudaRegisterFatBinary)(void *) = nullptr;
 extern "C" void **__cudaRegisterFatBinary(void *fatbin)
 {
 	auto orig = ::try_get_original_func("__cudaRegisterFatBinary",
-					  original___cudaRegisterFatBinary);
+					    original___cudaRegisterFatBinary);
 	gboolean flag = false;
 	bpftime_agent_main(nullptr, &flag);
 	return orig(fatbin);
