@@ -2,10 +2,29 @@
 #define _BPFTIME_ROCM_ATTACH_IMPL_HPP
 
 #include "base_attach_impl.hpp"
+#include "ebpf_inst.h"
+#include <cstdint>
+#include <map>
+#include <variant>
+#include <vector>
 namespace bpftime
 {
 namespace attach
 {
+
+struct rocm_attach_memcapture {};
+struct rocm_attach_function_probe {
+	std::string func;
+	bool is_retprobe;
+};
+
+using rocm_attach_type =
+	std::variant<rocm_attach_function_probe, rocm_attach_memcapture>;
+
+struct rocm_attach_entry {
+	rocm_attach_type type;
+	std::vector<ebpf_inst> instructions;
+};
 
 constexpr int ATTACH_ROCM_PROBE_AND_RETPROBE = 1018;
 
@@ -35,6 +54,9 @@ class rocm_attach_impl final : public base_attach_impl {
 	void *frida_listener;
 	std::vector<std::unique_ptr<ROCMRuntimeFunctionHookerContext>>
 		hooker_contexts;
+	std::vector<MapBasicInfo> map_basic_info;
+	uintptr_t shared_mem;
+	std::map<int, rocm_attach_entry> hook_entries;
 };
 } // namespace attach
 } // namespace bpftime

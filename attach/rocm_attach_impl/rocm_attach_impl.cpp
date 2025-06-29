@@ -1,5 +1,6 @@
 #include "rocm_attach_impl.hpp"
 #include "frida-gum.h"
+#include "rocm_attach_private_data.hpp"
 #include "spdlog/spdlog.h"
 #include <dlfcn.h>
 using namespace bpftime;
@@ -60,6 +61,28 @@ int rocm_attach_impl::create_attach_with_ebpf_callback(
 	ebpf_run_callback &&cb, const attach_private_data &private_data,
 	int attach_type)
 {
-	SPDLOG_WARN("TODO: rocm_attach_impl::create_attach_with_ebpf_callback");
-	return -1;
+	if (attach_type == ATTACH_ROCM_PROBE_AND_RETPROBE) {
+		int id = this->allocate_id();
+		const auto &data =
+			dynamic_cast<const rocm_attach_private_data &>(
+				private_data);
+		this->hook_entries[id] = rocm_attach_entry{
+			.type =
+				rocm_attach_function_probe{
+					.func = data.func_name,
+					.is_retprobe = data.is_ret_probe },
+			.instructions = data.instructions
+		};
+		this->map_basic_info = data.map_basic_info;
+		this->shared_mem = data.comm_shared_mem;
+		SPDLOG_INFO(
+			"Recording probe/retprobe for rocm: func_name={}, retprobe={}, insn count={}, shared_mem_ptr={:x}",
+			data.func_name, data.is_ret_probe,
+			data.instructions.size(), data.comm_shared_mem);
+		return id;
+	} else {
+		SPDLOG_ERROR("Unsupported attach type by rocm attach impl: {}",
+			     attach_type);
+		return -1;
+	}
 }
