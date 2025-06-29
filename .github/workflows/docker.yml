@@ -1,10 +1,11 @@
-name: Build and public docker image
+name: Build and push docker image
 
 on:
+  workflow_dispatch:
   push:
-    branches: "master"
-  pull_request: 
-    branches: "master"
+    branches: ["never-run"] # 暂时禁用
+  pull_request:
+    branches: ["never-run"] # 暂时禁用
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}-${{ github.event_name }}
   cancel-in-progress: true
@@ -18,7 +19,7 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v3
         with:
-          submodules: 'recursive'
+          submodules: "recursive"
 
       # setup Docker buld action
       - name: Set up Docker Buildx
@@ -37,7 +38,7 @@ jobs:
 
       - name: Build image and push to GitHub Container Registry
         uses: docker/build-push-action@v2
-        if:   "github.repository_owner == 'eunomia-bpf' && !startsWith(github.ref, 'refs/pull/')"
+        if: "github.repository_owner == 'eunomia-bpf' && !startsWith(github.ref, 'refs/pull/')"
         with:
           # relative path to the place where source code with Dockerfile is located
           context: ./
