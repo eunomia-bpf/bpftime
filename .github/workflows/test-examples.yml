@@ -212,13 +212,7 @@ jobs:
           include-hidden-files: true
           path: |
             ~/.bpftime
-      - name: Setup tmate session for build debugging
-        # Setup SSH when failing, so we can debug build issues
-        if: "${{ failure() }}"
-        uses: mxschmitt/action-tmate@v3
-        with:
-          limit-access-to-actor: false
-          timeout-minutes: 30
+
   build-and-test:
     runs-on: ubuntu-22.04
     needs: [build-runtime]
@@ -226,7 +220,7 @@ jobs:
       image: "manjusakalza/bpftime-base-image:${{matrix.container.image}}"
       options: " ${{matrix.privilege_options.options}}"
     strategy:
-      fail-fast: true
+      fail-fast: false
       matrix:
         exclude:
           - privilege_options:
@@ -531,10 +525,3 @@ jobs:
           token: ${{ secrets.CODECOV_TOKEN }} # required
           verbose: true # optional (default = false)
 
-      - name: Setup tmate session
-        # Setup SSH when failing, so we can debug CI more conveniently
-        if: "${{ failure() }}"
-        uses: mxschmitt/action-tmate@v3
-        with:
-          limit-access-to-actor: false
-          timeout-minutes: 30
