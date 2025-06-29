@@ -412,31 +412,44 @@ jobs:
               ln -sf ../_deps/libbpf-build/libbpf.a build/libbpf/libbpf.a
             else
               echo "libbpf.a not found, building manually..."
-              # Build libbpf manually
+              # Build libbpf manually - try both possible locations
               if [ -d "third_party/libbpf/src" ]; then
-                make -C third_party/libbpf/src BUILD_STATIC_ONLY=1 OBJDIR=../../build/libbpf DESTDIR=../../build/ install || echo "Manual libbpf build failed"
+                echo "Building from third_party/libbpf/src..."
+                make -C third_party/libbpf/src BUILD_STATIC_ONLY=1 OBJDIR=../../build/libbpf DESTDIR=../../build/ install || echo "Manual libbpf build from third_party/libbpf/src failed"
+              elif [ -d "third_party/bpftool/libbpf/src" ]; then
+                echo "Building from third_party/bpftool/libbpf/src..."
+                make -C third_party/bpftool/libbpf/src BUILD_STATIC_ONLY=1 OBJDIR=../../../build/libbpf DESTDIR=../../../build/ install || echo "Manual libbpf build from bpftool/libbpf failed"
               fi
             fi
             
             # Create the header file symlinks that bloom_filter_demo expects
             echo "Setting up BPF header files for bloom_filter_demo..."
             
-            # Ensure the build/libbpf directory has the headers
-            if [ -d "third_party/libbpf/include" ]; then
-              echo "Creating header symlinks from third_party/libbpf/include..."
-              # Create bpf subdirectory in build/libbpf if it doesn't exist
+            # The make install command should have installed headers to build/libbpf/
+            # Let's check what was actually installed
+            echo "Checking installed files in build/libbpf:"
+            find build/libbpf -name "*.h" | head -10 || echo "No header files found in build/libbpf"
+            
+            # If headers are in build/libbpf/ directly, create the bpf/ subdirectory structure
+            if [ -f "build/libbpf/bpf_helpers.h" ]; then
+              echo "Found headers in build/libbpf/, creating bpf/ subdirectory..."
               mkdir -p build/libbpf/bpf
-              # Copy or link the header files
-              cp -r third_party/libbpf/include/bpf/* build/libbpf/bpf/ 2>/dev/null || true
+              # Move all BPF headers to the bpf/ subdirectory
+              cp build/libbpf/*.h build/libbpf/bpf/ 2>/dev/null || true
             fi
             
-            # Also try to use headers from the built libbpf
+            # Also check if headers are in other subdirectories
             if [ -d "build/libbpf/include" ]; then
-              echo "Found headers in build/libbpf/include, creating additional symlinks..."
-              # Create symlinks to the built headers
-              if [ -d "build/libbpf/include/bpf" ]; then
-                cp -r build/libbpf/include/bpf/* build/libbpf/bpf/ 2>/dev/null || true
-              fi
+              echo "Found headers in build/libbpf/include, copying to bpf/ subdirectory..."
+              mkdir -p build/libbpf/bpf
+              cp -r build/libbpf/include/* build/libbpf/bpf/ 2>/dev/null || true
+            fi
+            
+            # Try to copy from third_party as fallback
+            if [ -d "third_party/libbpf/include" ]; then
+              echo "Copying headers from third_party/libbpf/include as fallback..."
+              mkdir -p build/libbpf/bpf
+              cp -r third_party/libbpf/include/* build/libbpf/bpf/ 2>/dev/null || true
             fi
             
             # Verify the critical header file exists
