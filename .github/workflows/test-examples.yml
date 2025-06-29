@@ -343,7 +343,7 @@ jobs:
             executable: ./file_access_monitor
             victim: ./file_access_target
             syscall_trace: false
-            expected_str: "BPF program loaded successfully"
+            expected_str: "All tests passed! bpftime LPM Trie working correctly"
             name: lpm_trie_demo
           - path: queue_demo
             executable: ./uprobe_queue
