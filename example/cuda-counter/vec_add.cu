@@ -64,7 +64,7 @@ int main()
         cudaMemset(d_C, 0, bytes);
         
         // Launch kernel
-        vectorAdd<<<1, 1>>>(d_A, d_B, d_C);
+        vectorAdd<<<1, 10>>>(d_A, d_B, d_C);
         cudaDeviceSynchronize();
         // cudaSyncho
         // Copy result back to host
