@@ -116,22 +116,17 @@ extern "C" __device__ HelperCallResponse make_helper_call(long map_id,
 	int lane_id = threadIdx.x & 31;
 	HelperCallResponse my_resp = {};
 
-	// 每个线程按lane ID顺序串行执行
 	for (int active_lane = 0; active_lane < 32; active_lane++) {
-		// 检查当前lane是否有活跃线程
 		unsigned int active_mask = __activemask();
 		bool lane_is_active = (active_mask >> active_lane) & 1;
 
 		if (lane_is_active && lane_id == active_lane) {
-			// 轮到当前线程执行
 			spin_lock(&g_data->occupy_flag);
 
-			// 准备参数
 			int val = 42;
 			g_data->request_id = req_id;
 			g_data->map_id = map_id;
 
-			// 执行PTX内联汇编
 			asm volatile(".reg .pred p0;                   \n\t"
 				     "membar.sys;                      \n\t"
 				     "st.global.u32 [%1], 1;           \n\t"
@@ -147,13 +142,11 @@ extern "C" __device__ HelperCallResponse make_helper_call(long map_id,
 				       "l"(&g_data->flag2)
 				     : "memory");
 
-			// 获取响应
 			my_resp = g_data->resp;
 
 			spin_unlock(&g_data->occupy_flag);
 		}
 
-		// 等待当前活跃线程完成
 		__syncwarp(active_mask);
 	}
 
