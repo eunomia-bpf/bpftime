@@ -123,6 +123,7 @@ Examples including:
 - [error injection](https://github.com/eunomia-bpf/bpftime/tree/master/example/error-inject): change function behavior with `bpf_override_return`.
 - Use the eBPF LLVM JIT/AOT vm as [a standalone library](https://github.com/eunomia-bpf/llvmbpf/tree/main/example).
 - Userspace [XDP with DPDK and AF_XDP](https://github.com/userspace-xdp/userspace-xdp)
+- [CUDA eBPF Probe/Retprobe Example](https://github.com/eunomia-bpf/bpftime/tree/master/example/cuda-counter)
 
 ## In-Depth
 

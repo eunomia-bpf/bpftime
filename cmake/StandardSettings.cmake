@@ -17,6 +17,14 @@ option(BPFTIME_UBPF_JIT "Use uBPF as jit backend." ON)
 option(BPFTIME_WARNINGS_AS_ERRORS "Treat compiler warnings as errors." OFF)
 
 #
+#
+# CUDA options
+#
+
+option(BPFTIME_CUDA_ROOT "Root for CUDA installation" "")
+option(BPFTIME_ENABLE_CUDA_ATTACH "Whether to enable CUDA attach" OFF)
+
+#
 # Unit testing
 #
 # Currently supporting: GoogleTest, Catch2.
