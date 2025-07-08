@@ -113,47 +113,45 @@ extern "C" __device__ HelperCallResponse make_helper_call(long map_id,
 							  int req_id)
 {
 	CommSharedMem *g_data = (CommSharedMem *)constData;
-	// printf("make_map_call at %d, constdata=%lx\n",
-	//        threadIdx.x + blockIdx.x * blockDim.x, (uintptr_t)g_data);
-	// auto start_time = read_globaltimer();
-	spin_lock(&g_data->occupy_flag);
-	// 准备要写入的参数值
-	int val = 42; // 这里就写一个固定值，示例用
-	// g_data->req = req;
-	g_data->request_id = req_id;
-	g_data->map_id = map_id;
-	// printf("making call for %d\n", req_id);
-	// 在内联PTX里演示 store/load + acquire/release + 自旋
-	asm volatile(
-		".reg .pred p0;                   \n\t" // 声明谓词寄存器
-		"membar.sys;                      \n\t" // 内存屏障
-							// 设置 flag1 = 1 (替代
-							// st.global.rel.u32)
-		"st.global.u32 [%1], 1;           \n\t"
-		// 自旋等待 flag2 == 1 (替代 ld.global.acq.u32)
-		"spin_wait:                       \n\t"
-		"membar.sys;                      \n\t"
-		"ld.global.u32 %0, [%2];          \n\t" // 读取 flag2
-		"setp.eq.u32 p0, %0, 0;           \n\t" // 比较值
-		"@p0 bra spin_wait;               \n\t" // 谓词分支
-							// 若跳出循环，复位
-							// flag2 = 0
-		"st.global.u32 [%2], 0;           \n\t"
-		"membar.sys;                      \n\t"
-		:
-		: "r"(val), "l"(&g_data->flag1), "l"(&g_data->flag2)
-		: "memory");
-	HelperCallResponse resp = g_data->resp;
+	int lane_id = threadIdx.x & 31;
+	HelperCallResponse my_resp = {};
 
-	spin_unlock(&g_data->occupy_flag);
-	// auto end_time = read_globaltimer();
-	// if (req_id < 8) {
-	// 	atomicAdd((unsigned long long *)&g_data->time_sum[req_id],
-	// 		  end_time - start_time);
-	// }
-	return resp;
+	for (int active_lane = 0; active_lane < 32; active_lane++) {
+		unsigned int active_mask = __activemask();
+		bool lane_is_active = (active_mask >> active_lane) & 1;
+
+		if (lane_is_active && lane_id == active_lane) {
+			spin_lock(&g_data->occupy_flag);
+
+			int val = 42;
+			g_data->request_id = req_id;
+			g_data->map_id = map_id;
+
+			asm volatile(".reg .pred p0;                   \n\t"
+				     "membar.sys;                      \n\t"
+				     "st.global.u32 [%1], 1;           \n\t"
+				     "spin_wait:                       \n\t"
+				     "membar.sys;                      \n\t"
+				     "ld.global.u32 %0, [%2];          \n\t"
+				     "setp.eq.u32 p0, %0, 0;           \n\t"
+				     "@p0 bra spin_wait;               \n\t"
+				     "st.global.u32 [%2], 0;           \n\t"
+				     "membar.sys;                      \n\t"
+				     :
+				     : "r"(val), "l"(&g_data->flag1),
+				       "l"(&g_data->flag2)
+				     : "memory");
+
+			my_resp = g_data->resp;
+
+			spin_unlock(&g_data->occupy_flag);
+		}
+
+		__syncwarp(active_mask);
+	}
+
+	return my_resp;
 }
-
 extern "C" __device__ inline void simple_memcpy(void *dst, void *src, int sz)
 {
 	for (int i = 0; i < sz; i++)
