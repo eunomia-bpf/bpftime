@@ -1,4 +1,4 @@
-# bpftime: Userspace eBPF runtime for Observability, Network & General extensions Framework
+# bpftime: Userspace eBPF runtime for Observability, Network, GPU & General extensions Framework
 
 [![Build and Test VM](https://github.com/eunomia-bpf/bpftime/actions/workflows/test-vm.yml/badge.svg)](https://github.com/eunomia-bpf/bpftime/actions/workflows/test-vm.yml)
 [![Build and test runtime](https://github.com/eunomia-bpf/bpftime/actions/workflows/test-runtime.yml/badge.svg)](https://github.com/eunomia-bpf/bpftime/actions/workflows/test-runtime.yml)
