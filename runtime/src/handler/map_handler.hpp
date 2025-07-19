@@ -211,7 +211,8 @@ class bpf_map_handler {
 	[[maybe_unused]] uint64_t flags = 0;
 	uint32_t key_size = 0;
 	uint32_t value_size = 0;
-	public:
+
+    public:
 	uint32_t get_key_size() const
 	{
 		return key_size;
@@ -220,6 +221,10 @@ class bpf_map_handler {
 	{
 		return max_entries;
 	}
+	
+	void *get_gpu_map_extra_buffer() const;
+	uint64_t get_gpu_map_max_thread_count() const ;
+	
 };
 
 } // namespace bpftime
