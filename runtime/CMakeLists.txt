@@ -85,6 +85,7 @@ set(sources
 
 if(${BPFTIME_ENABLE_CUDA_ATTACH})
   list(APPEND sources src/attach/bpf_attach_ctx_cuda.cpp)
+  list(APPEND sources src/bpf_map/gpu/nv_gpu_array_map.cpp)
 endif()
 
 if(UNIX AND NOT APPLE AND BPFTIME_BUILD_WITH_LIBBPF)

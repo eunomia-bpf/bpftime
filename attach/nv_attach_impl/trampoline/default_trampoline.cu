@@ -83,8 +83,9 @@ struct MapBasicInfo {
 	int key_size;
 	int value_size;
 	int max_entries;
+	int map_type;
+	void* extra_buffer;
 };
-
 __device__ __forceinline__ uint64_t read_globaltimer()
 {
 	uint64_t timestamp;

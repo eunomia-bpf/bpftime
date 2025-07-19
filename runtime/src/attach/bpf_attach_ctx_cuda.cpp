@@ -197,6 +197,8 @@ bpf_attach_ctx::create_map_basic_info(int filled_size)
 		entry.key_size = 0;
 		entry.value_size = 0;
 		entry.max_entries = 0;
+		entry.map_type = 0;
+		entry.extra_buffer = nullptr;
 	}
 	const auto &handler_manager =
 		*shm_holder.global_shared_memory.get_manager();
@@ -221,6 +223,7 @@ bpf_attach_ctx::create_map_basic_info(int filled_size)
 			local.key_size = map.get_key_size();
 			local.value_size = map.get_value_size();
 			local.max_entries = map.get_max_entries();
+			local.map_type = (int)map.type;
 		}
 	}
 
