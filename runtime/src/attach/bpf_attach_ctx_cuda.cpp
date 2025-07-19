@@ -206,12 +206,15 @@ bpf_attach_ctx::create_map_basic_info(int filled_size)
 		const auto &current_handler = handler_manager.get_handler(i);
 		if (std::holds_alternative<bpf_map_handler>(current_handler)) {
 			auto &local = local_basic_info[i];
-			SPDLOG_INFO(
-				"Copying map fd {} to device, key size={}, value size={}, max ent={}",
-				i, local.key_size, local.value_size,
-				local.max_entries);
 			const auto &map =
 				std::get<bpf_map_handler>(current_handler);
+			auto gpu_buffer = map.get_gpu_map_extra_buffer();
+			SPDLOG_INFO(
+				"Copying map fd {} to device, key size={}, value size={}, max ent={}, map_type = {}, gpu_buffer = {:x}",
+				i, map.get_key_size(), map.get_value_size(),
+				map.get_max_entries(), (int)map.type,
+				(uintptr_t)gpu_buffer);
+
 			if (i >= local_basic_info.size()) {
 				SPDLOG_ERROR(
 					"Too large map fd: {}, max to be {}", i,
@@ -224,6 +227,7 @@ bpf_attach_ctx::create_map_basic_info(int filled_size)
 			local.value_size = map.get_value_size();
 			local.max_entries = map.get_max_entries();
 			local.map_type = (int)map.type;
+			local.extra_buffer = gpu_buffer;
 		}
 	}
 

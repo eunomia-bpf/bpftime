@@ -5,20 +5,28 @@
 #include "spdlog/spdlog.h"
 #include <cerrno>
 #include <cstdint>
+#include <stdexcept>
 
 using namespace bpftime;
 
 nv_gpu_array_map_impl::nv_gpu_array_map_impl(
 	boost::interprocess::managed_shared_memory &memory,
-	void *gpu_mem_buffer, uint32_t value_size, uint32_t max_entries,
-	uint32_t thread_count)
+	CUipcMemHandle gpu_mem_handle, uint64_t value_size,
+	uint64_t max_entries, uint64_t thread_count)
 
-	: gpu_mem_buffer(gpu_mem_buffer), value_size(value_size),
+	: gpu_mem_handle(gpu_mem_handle), value_size(value_size),
 	  max_entries(max_entries), thread_count(thread_count),
 	  value_buffer(memory.get_segment_manager())
 {
 	entry_size = thread_count * value_size;
 	value_buffer.resize(entry_size);
+	if (auto err = cuIpcOpenMemHandle(&gpu_shared_mem, gpu_mem_handle,
+					  CU_IPC_MEM_LAZY_ENABLE_PEER_ACCESS);
+	    err != CUDA_SUCCESS) {
+		SPDLOG_ERROR("Unable to map CUDA IPC memory, error={}",
+			     (int)err);
+		throw std::runtime_error("Unable to map CUDA IPC memory!");
+	}
 }
 
 void *nv_gpu_array_map_impl::elem_lookup(const void *key)
@@ -29,7 +37,7 @@ void *nv_gpu_array_map_impl::elem_lookup(const void *key)
 		return nullptr;
 	}
 	if (CUresult err = cuMemcpyDtoH(value_buffer.data(),
-					(CUdeviceptr)gpu_mem_buffer +
+					(CUdeviceptr)gpu_shared_mem +
 						key_val * entry_size,
 					entry_size);
 	    err != CUDA_SUCCESS) {
@@ -41,7 +49,7 @@ void *nv_gpu_array_map_impl::elem_lookup(const void *key)
 }
 
 long nv_gpu_array_map_impl::elem_update(const void *key, const void *value,
-					 uint64_t flags)
+					uint64_t flags)
 {
 	if (unlikely(!check_update_flags(flags)))
 		return -1;
@@ -55,7 +63,7 @@ long nv_gpu_array_map_impl::elem_update(const void *key, const void *value,
 		errno = E2BIG;
 		return -1;
 	}
-	if (auto err = cuMemcpyHtoD((CUdeviceptr)gpu_mem_buffer +
+	if (auto err = cuMemcpyHtoD((CUdeviceptr)gpu_shared_mem +
 					    key_val * entry_size,
 				    value, entry_size);
 	    err != CUDA_SUCCESS) {
@@ -97,10 +105,10 @@ int nv_gpu_array_map_impl::map_get_next_key(const void *key, void *next_key)
 
 nv_gpu_array_map_impl::~nv_gpu_array_map_impl()
 {
-	if (auto err = cuMemFree((CUdeviceptr)this->gpu_mem_buffer);
+	if (auto err = cuIpcCloseMemHandle(gpu_shared_mem);
 	    err != CUDA_SUCCESS) {
 		SPDLOG_WARN(
-			"Unable to free GPU mem when destroying nv_gpu_arracy_map_impl: {}",
+			"Unable to release CUDA IPC handle when destroying nv_gpu_arracy_map_impl: {}",
 			(int)err);
 	}
 }

@@ -2,12 +2,14 @@
 #define _NV_GPU_ARRAY_MAP_HPP
 
 #include "bpf_map/map_common_def.hpp"
+#include "cuda.h"
 #include <cstdint>
 namespace bpftime
 {
 class nv_gpu_array_map_impl {
 	// char BUF[MAX_ENTRIES][THREAD_COUNT][VALUE_SIZE]
-	void *gpu_mem_buffer;
+	CUipcMemHandle gpu_mem_handle;
+	CUdeviceptr gpu_shared_mem;
 	uint64_t value_size;
 	uint64_t max_entries;
 	uint64_t thread_count;
@@ -18,10 +20,10 @@ class nv_gpu_array_map_impl {
 
     public:
 	const static bool should_lock = false;
-	nv_gpu_array_map_impl(
-		boost::interprocess::managed_shared_memory &memory,
-		void *gpu_mem_buffer, uint32_t value_size, uint32_t max_entries,
-		uint32_t thread_count);
+	nv_gpu_array_map_impl(boost::interprocess::managed_shared_memory &memory,
+			      CUipcMemHandle gpu_mem_handle,
+			      uint64_t value_size, uint64_t max_entries,
+			      uint64_t thread_count);
 
 	void *elem_lookup(const void *key);
 
@@ -31,9 +33,9 @@ class nv_gpu_array_map_impl {
 
 	int map_get_next_key(const void *key, void *next_key);
 
-	void *get_gpu_mem_buffer() const
+	CUdeviceptr get_gpu_mem_buffer() const
 	{
-		return gpu_mem_buffer;
+		return gpu_shared_mem;
 	}
 	virtual ~nv_gpu_array_map_impl();
 };

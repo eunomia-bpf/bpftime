@@ -14,7 +14,8 @@
 #include <thread>
 #include <vector>
 
-/* clang++-17 -S ./default_trampoline.cu -Wall --cuda-gpu-arch=sm_60 -O2 -L/usr/local/cuda/lib64/ -lcudart*/
+/* clang++-17 -S ./default_trampoline.cu -Wall --cuda-gpu-arch=sm_60 -O2
+ * -L/usr/local/cuda/lib64/ -lcudart*/
 enum class HelperOperation {
 	MAP_LOOKUP = 1,
 	MAP_UPDATE = 2,
@@ -78,13 +79,15 @@ struct CommSharedMem {
 	uint64_t time_sum[8];
 };
 
+const int BPF_MAP_TYPE_NV_GPU_ARRAY_MAP = 1502;
+
 struct MapBasicInfo {
 	bool enabled;
 	int key_size;
 	int value_size;
 	int max_entries;
 	int map_type;
-	void* extra_buffer;
+	void *extra_buffer;
 };
 __device__ __forceinline__ uint64_t read_globaltimer()
 {

@@ -221,6 +221,7 @@ class bpf_map_handler {
 	{
 		return max_entries;
 	}
+	
 	void *get_gpu_map_extra_buffer() const;
 };
 

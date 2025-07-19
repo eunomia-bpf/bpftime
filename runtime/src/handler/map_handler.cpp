@@ -8,6 +8,9 @@
 #include "bpf_map/userspace/per_cpu_array_map.hpp"
 #include "bpf_map/userspace/per_cpu_hash_map.hpp"
 #include "bpf_map/userspace/stack_trace_map.hpp"
+#if defined(BPFTIME_ENABLE_CUDA_ATTACH)
+#include "cuda.h"
+#endif
 #include <bpf_map/userspace/perf_event_array_map.hpp>
 #include "spdlog/spdlog.h"
 #include <cassert>
@@ -617,10 +620,31 @@ int bpf_map_handler::map_init(managed_shared_memory &memory)
 	}
 #if defined(BPFTIME_ENABLE_CUDA_ATTACH)
 	case bpf_map_type::BPF_MAP_TYPE_NV_GPU_ARRAY_MAP: {
-		// TODO: fill gpu_mem_buffer and thread_count
+		auto total_buffer_size = (uint64_t)value_size * max_entries *
+					 attr.gpu_thread_count;
+		CUdeviceptr ptr;
+		if (auto err = cuMemAlloc(&ptr, total_buffer_size);
+		    err != CUDA_SUCCESS) {
+			SPDLOG_ERROR(
+				"Unable to allocate GPU buffer for nv_gpu_array_map_impl: {}",
+				(int)err);
+			return -1;
+		}
+		CUipcMemHandle handle;
+		if (auto err = cuIpcGetMemHandle(&handle, ptr);
+		    err != CUDA_SUCCESS) {
+			SPDLOG_ERROR(
+				"Unable to open CUDA IPC handle for nv_gpu_array_map_impl: {}",
+				(int)err);
+			return -1;
+		}
+		SPDLOG_INFO(
+			"Map {} (nv_gpu_array_map_impl) has space for thread count {}",
+			container_name.c_str(), attr.gpu_thread_count);
 		map_impl_ptr = memory.construct<nv_gpu_array_map_impl>(
-			container_name.c_str())(memory, nullptr, value_size,
-						max_entries, 0);
+			container_name.c_str())(memory, handle, value_size,
+						max_entries,
+						attr.gpu_thread_count);
 		return 0;
 	}
 #endif
@@ -732,7 +756,8 @@ void *bpf_map_handler::get_gpu_map_extra_buffer() const
 
 #if defined(BPFTIME_ENABLE_CUDA_ATTACH)
 	if (this->type == bpf_map_type::BPF_MAP_TYPE_NV_GPU_ARRAY_MAP) {
-		return static_cast<nv_gpu_array_map_impl *>(map_impl_ptr.get())
+		return (void *)static_cast<nv_gpu_array_map_impl *>(
+			       map_impl_ptr.get())
 			->get_gpu_mem_buffer();
 	}
 
