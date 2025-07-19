@@ -38,7 +38,8 @@ struct MapBasicInfo {
 	int value_size;
 	int max_entries;
 	int map_type;
-	void* extra_buffer;
+	void *extra_buffer;
+	uint64_t max_thread_count;
 };
 struct nv_hooker_func_t {
 	void *func;

@@ -199,6 +199,8 @@ bpf_attach_ctx::create_map_basic_info(int filled_size)
 		entry.max_entries = 0;
 		entry.map_type = 0;
 		entry.extra_buffer = nullptr;
+		entry.max_thread_count = 0;
+		
 	}
 	const auto &handler_manager =
 		*shm_holder.global_shared_memory.get_manager();
@@ -228,6 +230,7 @@ bpf_attach_ctx::create_map_basic_info(int filled_size)
 			local.max_entries = map.get_max_entries();
 			local.map_type = (int)map.type;
 			local.extra_buffer = gpu_buffer;
+			local.max_thread_count = map.get_gpu_map_max_thread_count();
 		}
 	}
 

@@ -223,6 +223,8 @@ class bpf_map_handler {
 	}
 	
 	void *get_gpu_map_extra_buffer() const;
+	uint64_t get_gpu_map_max_thread_count() const ;
+	
 };
 
 } // namespace bpftime

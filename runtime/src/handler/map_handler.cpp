@@ -747,7 +747,23 @@ bpf_map_handler::try_get_shared_perf_event_array_map_impl() const
 	return static_cast<perf_event_array_kernel_user_impl *>(
 		map_impl_ptr.get());
 }
+uint64_t bpf_map_handler::get_gpu_map_max_thread_count() const
+{
+#if !defined(BPFTIME_ENABLE_CUDA_ATTACH) && !defined(BPFTIME_ENABLE_ROCM_ATTACH)
+	return 0;
+#endif
 
+#if defined(BPFTIME_ENABLE_CUDA_ATTACH)
+	if (this->type == bpf_map_type::BPF_MAP_TYPE_NV_GPU_ARRAY_MAP) {
+		return static_cast<nv_gpu_array_map_impl *>(map_impl_ptr.get())
+			->get_max_thread_count();
+	}
+
+#endif
+
+	SPDLOG_ERROR("Not a GPU map!");
+	return 0;
+}
 void *bpf_map_handler::get_gpu_map_extra_buffer() const
 {
 #if !defined(BPFTIME_ENABLE_CUDA_ATTACH) && !defined(BPFTIME_ENABLE_ROCM_ATTACH)

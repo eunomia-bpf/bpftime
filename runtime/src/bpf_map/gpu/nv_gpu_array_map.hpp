@@ -37,6 +37,10 @@ class nv_gpu_array_map_impl {
 	{
 		return gpu_shared_mem;
 	}
+	uint64_t get_max_thread_count() const
+	{
+		return thread_count;
+	}
 	virtual ~nv_gpu_array_map_impl();
 };
 } // namespace bpftime
