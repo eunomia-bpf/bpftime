@@ -393,36 +393,6 @@ int nv_attach_impl::copy_data_to_trampoline_memory()
 				"Mapid {}, enabled = {}, key_size = {}, value_size = {}, max_ent={}, type={}",
 				i, cur.enabled, cur.key_size, cur.value_size,
 				cur.max_entries, cur.map_type);
-			// if (cur.extra_buffer) {
-			// 	std::thread([=]() {
-			// 		std::this_thread::sleep_for(
-			// 			std::chrono::seconds(10));
-			// 		CUdevice dev;
-			// 		cuDeviceGet(&dev, 0);
-			// 		CUcontext ctx;
-			// 		cuCtxCreate(&ctx, 0, dev);
-
-			// 		while (true) {
-			// 			SPDLOG_INFO("Printing data..");
-			// 			uint64_t buf[2000];
-			// 			int err = cuMemcpyDtoH(
-			// 				&buf,
-			// 				(CUdeviceptr)cur
-			// 					.extra_buffer,
-			// 				8000);
-			// 			SPDLOG_INFO("err={}", (int)err);
-			// 			assert(err == CUDA_SUCCESS);
-			// 			for (int i = 0; i < 5; i++) {
-			// 				SPDLOG_INFO(
-			// 					"entry {} = {}",
-			// 					i, buf[i]);
-			// 			}
-			// 			std::this_thread::sleep_for(
-			// 				std::chrono::seconds(
-			// 					1));
-			// 		}
-			// 	}).detach();
-			// }
 		}
 	}
 	if (auto err = cudaMemcpyToSymbol((const void *)&map_basic_info_mock,

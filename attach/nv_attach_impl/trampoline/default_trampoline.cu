@@ -174,10 +174,6 @@ __device__ uint64_t getGlobalThreadId()
 }
 __device__ void *array_map_offset(uint64_t idx, const MapBasicInfo &info)
 {
-	// printf("array map offset, idx=%lu, max thread count=%lu, value size
-	// =%d, thread idx=%lu\n",
-	//        idx, info.max_thread_count, info.value_size,
-	//        getGlobalThreadId());
 	return (void *)((uintptr_t)info.extra_buffer +
 			idx * info.max_thread_count * info.value_size +
 			getGlobalThreadId() * info.value_size);
@@ -193,12 +189,6 @@ extern "C" __noinline__ __device__ uint64_t _bpf_helper_ext_0001(
 	if (map_info.map_type == BPF_MAP_TYPE_NV_GPU_ARRAY_MAP) {
 		auto real_key = *(uint32_t *)(uintptr_t)key;
 		auto offset = array_map_offset(real_key, map_info);
-		// *(uint64_t *)offset += 1;
-		// printf("thread x=%d, y=%d, z=%d, idx=%lu, offset=%lu, offset val=%lu\n",
-		//        threadIdx.x, threadIdx.y, threadIdx.z,
-		//        getGlobalThreadId(), (uint64_t)offset,
-		//        *(uint64_t *)offset);
-
 		return (uint64_t)offset;
 	}
 	// printf("helper1 map %ld keysize=%d valuesize=%d\n", map,
