@@ -182,7 +182,7 @@ ssize_t syscall_context::handle_read(int fd, void *buf, size_t count)
 {
 	if (!enable_mock || initializing_cuda || !enable_mock_after_initialized)
 		return orig_read_fn(fd, buf, count);
-	SPDLOG_DEBUG("Calling mocked open");
+	SPDLOG_DEBUG("Calling mocked read");
 	try_startup();
 	{
 		bpftime_lock_guard _guard(this->mocked_file_lock);
