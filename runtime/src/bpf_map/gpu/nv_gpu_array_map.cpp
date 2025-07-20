@@ -138,7 +138,7 @@ nv_gpu_array_map_impl::~nv_gpu_array_map_impl()
 	if (auto err = cuIpcCloseMemHandle(server_gpu_shared_mem);
 	    err != CUDA_SUCCESS) {
 		SPDLOG_WARN(
-			"Unable to release CUDA IPC handle when destroying nv_gpu_arracy_map_impl: {}",
+			"Unable to release CUDA IPC handle when destroying nv_gpu_array_map_impl: {}",
 			(int)err);
 	}
 }
