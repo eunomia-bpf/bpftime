@@ -633,7 +633,7 @@ int bpf_map_handler::map_init(managed_shared_memory &memory)
 		return 0;
 	}
 
-	// TODO: Move these CUDA sentenses to a more appropriate position
+	// TODO: Move these CUDA sentences to a more appropriate position
 #if defined(BPFTIME_ENABLE_CUDA_ATTACH)
 		static CUcontext context;
 		static CUdevice device;
