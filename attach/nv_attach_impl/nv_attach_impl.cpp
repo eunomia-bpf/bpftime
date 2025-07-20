@@ -11,6 +11,7 @@
 #include <boost/process/env.hpp>
 #include <boost/process/io.hpp>
 #include <boost/process/pipe.hpp>
+#include <chrono>
 #include <cstdlib>
 #include <fstream>
 #include <cassert>
@@ -30,6 +31,7 @@
 #include <sys/uio.h>
 #include <link.h>
 // #include <pos/cuda_impl/utils/fatbin.h>
+#include <thread>
 #include <unistd.h>
 #include <variant>
 #include <vector>
@@ -383,21 +385,44 @@ int nv_attach_impl::copy_data_to_trampoline_memory()
 			(int)err);
 		return -1;
 	}
-	// Prefill some data
-	// SPDLOG_WARN(
-	// 	"Prefilling key_size & value_size to 4 for all map_basic_info");
-	// for (auto &item : *this->map_basic_info) {
-	// 	item.key_size = 4;
-	// 	item.value_size = 4;
-	// }
 	SPDLOG_INFO("Copying the followed map info:");
 	for (int i = 0; i < this->map_basic_info->size(); i++) {
 		const auto &cur = this->map_basic_info->at(i);
 		if (cur.enabled) {
 			SPDLOG_INFO(
-				"Mapid {}, enabled = {}, key_size = {}, value_size = {}, max_ent={}",
+				"Mapid {}, enabled = {}, key_size = {}, value_size = {}, max_ent={}, type={}",
 				i, cur.enabled, cur.key_size, cur.value_size,
-				cur.max_entries);
+				cur.max_entries, cur.map_type);
+			// if (cur.extra_buffer) {
+			// 	std::thread([=]() {
+			// 		std::this_thread::sleep_for(
+			// 			std::chrono::seconds(10));
+			// 		CUdevice dev;
+			// 		cuDeviceGet(&dev, 0);
+			// 		CUcontext ctx;
+			// 		cuCtxCreate(&ctx, 0, dev);
+
+			// 		while (true) {
+			// 			SPDLOG_INFO("Printing data..");
+			// 			uint64_t buf[2000];
+			// 			int err = cuMemcpyDtoH(
+			// 				&buf,
+			// 				(CUdeviceptr)cur
+			// 					.extra_buffer,
+			// 				8000);
+			// 			SPDLOG_INFO("err={}", (int)err);
+			// 			assert(err == CUDA_SUCCESS);
+			// 			for (int i = 0; i < 5; i++) {
+			// 				SPDLOG_INFO(
+			// 					"entry {} = {}",
+			// 					i, buf[i]);
+			// 			}
+			// 			std::this_thread::sleep_for(
+			// 				std::chrono::seconds(
+			// 					1));
+			// 		}
+			// 	}).detach();
+			// }
 		}
 	}
 	if (auto err = cudaMemcpyToSymbol((const void *)&map_basic_info_mock,

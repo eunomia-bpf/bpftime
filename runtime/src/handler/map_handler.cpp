@@ -8,6 +8,7 @@
 #include "bpf_map/userspace/per_cpu_array_map.hpp"
 #include "bpf_map/userspace/per_cpu_hash_map.hpp"
 #include "bpf_map/userspace/stack_trace_map.hpp"
+#include "bpftime_shm_internal.hpp"
 #if defined(BPFTIME_ENABLE_CUDA_ATTACH)
 #include "cuda.h"
 #endif
@@ -51,12 +52,21 @@ std::string bpf_map_handler::get_container_name()
 	return "ebpf_map_fd_" + std::string(name.c_str());
 }
 
-uint32_t bpf_map_handler::get_value_size() const
+uint32_t bpf_map_handler::get_value_size() const {
+	return value_size;
+}
+
+uint32_t bpf_map_handler::get_userspace_value_size() const
 {
 	auto result = value_size;
 	if ((type == bpf_map_type::BPF_MAP_TYPE_PERCPU_ARRAY) ||
 	    (type == bpf_map_type::BPF_MAP_TYPE_PERCPU_HASH)) {
 		result *= sysconf(_SC_NPROCESSORS_ONLN);
+	}
+	if (type == bpf_map_type::BPF_MAP_TYPE_NV_GPU_ARRAY_MAP) {
+		result *= this->attr.gpu_thread_count;
+		SPDLOG_DEBUG("Value size of BPF_MAP_TYPE_NV_GPU_ARRAY_MAP is {}",
+			    result);
 	}
 	return result;
 }
@@ -623,12 +633,27 @@ int bpf_map_handler::map_init(managed_shared_memory &memory)
 		auto total_buffer_size = (uint64_t)value_size * max_entries *
 					 attr.gpu_thread_count;
 		CUdeviceptr ptr;
+		SPDLOG_INFO(
+			"Initializing map type of BPF_MAP_TYPE_NV_GPU_ARRAY_MAP, total_buffer_size={}",
+			total_buffer_size);
+		static CUcontext context;
+		static CUdevice device;
+		shm_holder.global_shared_memory.set_enable_mock(false);
+		cuDeviceGet(&device, 0);
+		cuCtxCreate(&context, 0, device);
+		SPDLOG_INFO("CUDA context for thread {} has been set to {:x}",
+			    gettid(), (uintptr_t)context);
 		if (auto err = cuMemAlloc(&ptr, total_buffer_size);
 		    err != CUDA_SUCCESS) {
 			SPDLOG_ERROR(
 				"Unable to allocate GPU buffer for nv_gpu_array_map_impl: {}",
 				(int)err);
 			return -1;
+		}
+		if (auto err = cuMemsetD8(ptr, 0, total_buffer_size);
+		    err != CUDA_SUCCESS) {
+			SPDLOG_ERROR("Unable to fill GPU buffer with zero: {}",
+				     (int)err);
 		}
 		CUipcMemHandle handle;
 		if (auto err = cuIpcGetMemHandle(&handle, ptr);
@@ -638,11 +663,13 @@ int bpf_map_handler::map_init(managed_shared_memory &memory)
 				(int)err);
 			return -1;
 		}
+
+		shm_holder.global_shared_memory.set_enable_mock(true);
 		SPDLOG_INFO(
 			"Map {} (nv_gpu_array_map_impl) has space for thread count {}",
 			container_name.c_str(), attr.gpu_thread_count);
 		map_impl_ptr = memory.construct<nv_gpu_array_map_impl>(
-			container_name.c_str())(memory, handle, value_size,
+			container_name.c_str())(memory, handle, ptr, value_size,
 						max_entries,
 						attr.gpu_thread_count);
 		return 0;
@@ -761,7 +788,7 @@ uint64_t bpf_map_handler::get_gpu_map_max_thread_count() const
 
 #endif
 
-	SPDLOG_ERROR("Not a GPU map!");
+	SPDLOG_DEBUG("Not a GPU map!");
 	return 0;
 }
 void *bpf_map_handler::get_gpu_map_extra_buffer() const
