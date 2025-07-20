@@ -88,7 +88,7 @@ syscall_context::syscall_context()
 	SPDLOG_INFO("The log will be written to: {}",
 		    runtime_config.get_logger_output_path());
 	spdlog::cfg::load_env_levels();
-
+#ifdef BPFTIME_ENABLE_CUDA_ATTACH
 	SPDLOG_INFO("Initializing CUDA at syscall-server side");
 	initializing_cuda = true;
 	if (auto err = cuInit(0); err != CUDA_SUCCESS) {
@@ -100,6 +100,7 @@ syscall_context::syscall_context()
 	}
 	SPDLOG_INFO("CUDA initialized at syscall server side");
 	initializing_cuda = false;
+#endif
 }
 
 void syscall_context::try_startup()

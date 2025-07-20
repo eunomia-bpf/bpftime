@@ -3,7 +3,9 @@
  * Copyright (c) 2022, eunomia-bpf org
  * All rights reserved.
  */
+#ifdef BPFTIME_ENABLE_CUDA_ATTACH
 #include "bpf_map/gpu/nv_gpu_array_map.hpp"
+#endif
 #include "bpf_map/userspace/lru_var_hash_map.hpp"
 #include "bpf_map/userspace/per_cpu_array_map.hpp"
 #include "bpf_map/userspace/per_cpu_hash_map.hpp"
@@ -52,7 +54,8 @@ std::string bpf_map_handler::get_container_name()
 	return "ebpf_map_fd_" + std::string(name.c_str());
 }
 
-uint32_t bpf_map_handler::get_value_size() const {
+uint32_t bpf_map_handler::get_value_size() const
+{
 	return value_size;
 }
 
@@ -65,8 +68,9 @@ uint32_t bpf_map_handler::get_userspace_value_size() const
 	}
 	if (type == bpf_map_type::BPF_MAP_TYPE_NV_GPU_ARRAY_MAP) {
 		result *= this->attr.gpu_thread_count;
-		SPDLOG_DEBUG("Value size of BPF_MAP_TYPE_NV_GPU_ARRAY_MAP is {}",
-			    result);
+		SPDLOG_DEBUG(
+			"Value size of BPF_MAP_TYPE_NV_GPU_ARRAY_MAP is {}",
+			result);
 	}
 	return result;
 }
