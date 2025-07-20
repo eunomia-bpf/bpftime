@@ -96,7 +96,7 @@ syscall_context::syscall_context()
 			"Unable to initialize CUDA from syscall server side: {}",
 			(int)err);
 		throw std::runtime_error(
-			"Unable to initialize CUDA from syscall servsr side");
+			"Unable to initialize CUDA from syscall server side");
 	}
 	SPDLOG_INFO("CUDA initialized at syscall server side");
 	initializing_cuda = false;
