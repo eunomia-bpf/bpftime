@@ -632,7 +632,11 @@ int bpf_map_handler::map_init(managed_shared_memory &memory)
 						max_entries);
 		return 0;
 	}
+
+	// TODO: Move these CUDA sentenses to a more appropriate position
 #if defined(BPFTIME_ENABLE_CUDA_ATTACH)
+		static CUcontext context;
+		static CUdevice device;
 	case bpf_map_type::BPF_MAP_TYPE_NV_GPU_ARRAY_MAP: {
 		auto total_buffer_size = (uint64_t)value_size * max_entries *
 					 attr.gpu_thread_count;
@@ -640,13 +644,16 @@ int bpf_map_handler::map_init(managed_shared_memory &memory)
 		SPDLOG_INFO(
 			"Initializing map type of BPF_MAP_TYPE_NV_GPU_ARRAY_MAP, total_buffer_size={}",
 			total_buffer_size);
-		static CUcontext context;
-		static CUdevice device;
+
 		shm_holder.global_shared_memory.set_enable_mock(false);
-		cuDeviceGet(&device, 0);
-		cuCtxCreate(&context, 0, device);
-		SPDLOG_INFO("CUDA context for thread {} has been set to {:x}",
-			    gettid(), (uintptr_t)context);
+		if (!device) {
+			cuDeviceGet(&device, 0);
+			cuCtxCreate(&context, 0, device);
+			SPDLOG_INFO(
+				"CUDA context for thread {} has been set to {:x}",
+				gettid(), (uintptr_t)context);
+		}
+
 		if (auto err = cuMemAlloc(&ptr, total_buffer_size);
 		    err != CUDA_SUCCESS) {
 			SPDLOG_ERROR(
