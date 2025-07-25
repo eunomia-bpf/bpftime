@@ -268,3 +268,36 @@ static void sig_handler_sigusr1(int sig)
     SPDLOG_DEBUG("Detaching done");
     bpftime_logger_flush();
 }
+```
+
+## Testing Results
+
+After applying the fix and rebuilding, testing shows that the simple atomic store reset is not sufficient to solve the issue. The problem appears to be more complex:
+
+1. **The fix was applied**: Added `__atomic_store_n(&initialized, 0, __ATOMIC_SEQ_CST);` to the detach signal handler
+2. **Code was rebuilt**: Confirmed the fix is in the compiled library
+3. **Issue persists**: Re-attach still fails silently - no monitoring resumes after detach
+
+### Observations
+
+- First attach works correctly with monitoring
+- Detach stops monitoring as expected  
+- Re-attach appears successful from CLI but monitoring does not resume
+- No "Agent already initialized" message appears in logs with the fix
+- The agent seems to be in a non-functional state after re-attach
+
+### Possible Root Causes
+
+1. **Frida Injection State**: The agent is injected via Frida, and the injection state may not be fully cleaned up
+2. **Handler Context**: The `ctx_holder` object may need proper re-initialization beyond just resetting the flag
+3. **Shared Memory State**: The shared memory connections may need to be re-established
+4. **Signal Handler Limitations**: The detach handler runs in signal context with limited capabilities
+
+### Next Steps
+
+A more comprehensive fix is needed that:
+- Properly cleans up all agent state during detach
+- Ensures the agent can be fully re-initialized on re-attach
+- Handles the Frida injection lifecycle correctly
+
+The issue requires deeper investigation into the agent lifecycle and Frida injection mechanism.

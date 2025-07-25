@@ -113,6 +113,10 @@ static void sig_handler_sigusr1(int sig)
 	}
 	shm_holder.global_shared_memory.remove_pid_from_alive_agent_set(
 		getpid());
+	
+	// Reset initialization state to allow re-attachment
+	__atomic_store_n(&initialized, 0, __ATOMIC_SEQ_CST);
+	
 	SPDLOG_DEBUG("Detaching done");
 	bpftime_logger_flush();
 }
