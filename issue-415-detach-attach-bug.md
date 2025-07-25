@@ -152,7 +152,39 @@ Currently, the only workaround is to restart the target process entirely before 
 
 ## Reproduction Results (2025-07-25)
 
-Successfully reproduced the issue on the latest master branch. Key findings:
+Successfully reproduced the issue on the latest master branch.
+
+### Reproduction Steps Used
+
+```bash
+# 1. Build the malloc example
+cd /root/yunwei37/bpftime
+make -C example/malloc
+
+# 2. Start bpftime load with debug logging
+BPFTIME_LOG_LEVEL=debug bpftime load ./example/malloc/malloc 2>&1 | tee /tmp/bpftime_load_debug.log &
+
+# 3. Start victim process
+cd example/malloc
+BPFTIME_LOG_LEVEL=debug ./victim 2>&1 | tee /tmp/victim_debug.log &
+# Note actual PID: 320389
+
+# 4. First attach (works correctly)
+BPFTIME_LOG_LEVEL=debug bpftime attach 320389
+# Log shows: "Initializing agent.."
+# Monitoring works: "pid=320389 malloc calls: 20"
+
+# 5. Detach
+BPFTIME_LOG_LEVEL=debug bpftime detach
+# Monitoring stops as expected
+
+# 6. Re-attach attempt (FAILS)
+BPFTIME_LOG_LEVEL=debug bpftime attach 320389
+# Log shows: "Agent already initialized, skipping re-initializing.."
+# NO monitoring occurs despite successful injection
+```
+
+### Key findings:
 
 1. **First attach (PID 320389)**: Works correctly
    - Shows "Initializing agent.." in logs
@@ -168,3 +200,71 @@ Successfully reproduced the issue on the latest master branch. Key findings:
    - The agent is in a "zombie" state - appears attached but not functional
 
 The issue is confirmed: `bpftime detach` does not properly clean up the agent state, preventing successful re-attachment.
+
+## Root Cause Analysis
+
+After investigating the code, the root cause has been identified:
+
+### The Problem
+
+1. **Agent Initialization** (`runtime/agent/agent.cpp:134-142`):
+   ```cpp
+   static int initialized = 0;
+   
+   int expected = 0;
+   if (!__atomic_compare_exchange_n(&initialized, &expected, 1,
+                                   false, __ATOMIC_SEQ_CST,
+                                   __ATOMIC_SEQ_CST)) {
+       SPDLOG_INFO("Agent already initialized, skipping re-initializing..");
+       return;
+   }
+   ```
+   - Uses a static variable `initialized` to prevent multiple initializations
+   - Sets it from 0 to 1 atomically during first initialization
+
+2. **Detach Handler** (`runtime/agent/agent.cpp:107-118`):
+   ```cpp
+   static void sig_handler_sigusr1(int sig)
+   {
+       SPDLOG_INFO("Detaching..");
+       if (int err = ctx_holder.ctx.destroy_all_attach_links(); err < 0) {
+           SPDLOG_ERROR("Unable to detach: {}", err);
+           return;
+       }
+       shm_holder.global_shared_memory.remove_pid_from_alive_agent_set(getpid());
+       SPDLOG_DEBUG("Detaching done");
+       bpftime_logger_flush();
+   }
+   ```
+   - Destroys all attach links
+   - Removes PID from alive agent set
+   - **BUT does NOT reset the `initialized` variable back to 0**
+
+3. **Detach Command** (`tools/cli/main.cpp:334`):
+   - Sends SIGUSR1 to all processes in the alive agent set
+   - The signal triggers `sig_handler_sigusr1` in the target process
+
+### The Bug
+
+The `initialized` static variable persists with value 1 after detach, causing any subsequent attach attempt to skip initialization with "Agent already initialized, skipping re-initializing.." message.
+
+### Solution
+
+The fix would be to reset the `initialized` variable to 0 in the `sig_handler_sigusr1` function after successful detachment:
+
+```cpp
+static void sig_handler_sigusr1(int sig)
+{
+    SPDLOG_INFO("Detaching..");
+    if (int err = ctx_holder.ctx.destroy_all_attach_links(); err < 0) {
+        SPDLOG_ERROR("Unable to detach: {}", err);
+        return;
+    }
+    shm_holder.global_shared_memory.remove_pid_from_alive_agent_set(getpid());
+    
+    // Reset initialization state to allow re-attachment
+    __atomic_store_n(&initialized, 0, __ATOMIC_SEQ_CST);
+    
+    SPDLOG_DEBUG("Detaching done");
+    bpftime_logger_flush();
+}
