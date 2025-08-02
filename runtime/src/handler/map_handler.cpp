@@ -3,6 +3,7 @@
  * Copyright (c) 2022, eunomia-bpf org
  * All rights reserved.
  */
+#include "bpf_map/gpu/nv_gpu_ringbuf_map.hpp"
 #ifdef BPFTIME_ENABLE_CUDA_ATTACH
 #include "bpf_map/gpu/nv_gpu_array_map.hpp"
 #endif
@@ -638,13 +639,6 @@ int bpf_map_handler::map_init(managed_shared_memory &memory)
 		static CUcontext context;
 		static CUdevice device;
 	case bpf_map_type::BPF_MAP_TYPE_NV_GPU_ARRAY_MAP: {
-		auto total_buffer_size = (uint64_t)value_size * max_entries *
-					 attr.gpu_thread_count;
-		CUdeviceptr ptr;
-		SPDLOG_INFO(
-			"Initializing map type of BPF_MAP_TYPE_NV_GPU_ARRAY_MAP, total_buffer_size={}",
-			total_buffer_size);
-
 		shm_holder.global_shared_memory.set_enable_mock(false);
 		if (!device) {
 			cuDeviceGet(&device, 0);
@@ -653,36 +647,31 @@ int bpf_map_handler::map_init(managed_shared_memory &memory)
 				"CUDA context for thread {} has been set to {:x}",
 				gettid(), (uintptr_t)context);
 		}
-
-		if (auto err = cuMemAlloc(&ptr, total_buffer_size);
-		    err != CUDA_SUCCESS) {
-			SPDLOG_ERROR(
-				"Unable to allocate GPU buffer for nv_gpu_array_map_impl: {}",
-				(int)err);
-			return -1;
-		}
-		if (auto err = cuMemsetD8(ptr, 0, total_buffer_size);
-		    err != CUDA_SUCCESS) {
-			SPDLOG_ERROR("Unable to fill GPU buffer with zero: {}",
-				     (int)err);
-		}
-		CUipcMemHandle handle;
-		if (auto err = cuIpcGetMemHandle(&handle, ptr);
-		    err != CUDA_SUCCESS) {
-			SPDLOG_ERROR(
-				"Unable to open CUDA IPC handle for nv_gpu_array_map_impl: {}",
-				(int)err);
-			return -1;
-		}
-
-		shm_holder.global_shared_memory.set_enable_mock(true);
 		SPDLOG_INFO(
 			"Map {} (nv_gpu_array_map_impl) has space for thread count {}",
 			container_name.c_str(), attr.gpu_thread_count);
 		map_impl_ptr = memory.construct<nv_gpu_array_map_impl>(
-			container_name.c_str())(memory, handle, ptr, value_size,
-						max_entries,
+			container_name.c_str())(memory, value_size, max_entries,
 						attr.gpu_thread_count);
+		shm_holder.global_shared_memory.set_enable_mock(true);
+		return 0;
+	}
+	case bpf_map_type::BPF_MAP_TYPE_NV_GPU_RINGBUF_MAP: {
+		shm_holder.global_shared_memory.set_enable_mock(false);
+		if (!device) {
+			cuDeviceGet(&device, 0);
+			cuCtxCreate(&context, 0, device);
+			SPDLOG_INFO(
+				"CUDA context for thread {} has been set to {:x}",
+				gettid(), (uintptr_t)context);
+		}
+		SPDLOG_INFO(
+			"Map {} (nv_gpu_array_map_impl) has space for thread count {}",
+			container_name.c_str(), attr.gpu_thread_count);
+		map_impl_ptr = memory.construct<nv_gpu_ringbuf_map_impl>(
+			container_name.c_str())(memory, value_size, max_entries,
+						attr.gpu_thread_count);
+		shm_holder.global_shared_memory.set_enable_mock(true);
 		return 0;
 	}
 #endif
