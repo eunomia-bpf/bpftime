@@ -10,6 +10,7 @@
 #include <iostream>
 #include <iterator>
 #include <ostream>
+#include <stdio.h>
 #include <string>
 #include <thread>
 #include <vector>
@@ -80,6 +81,7 @@ struct CommSharedMem {
 };
 
 const int BPF_MAP_TYPE_NV_GPU_ARRAY_MAP = 1502;
+const int BPF_MAP_TYPE_NV_GPU_RINGBUF_MAP = 1527;
 
 struct MapBasicInfo {
 	bool enabled;
@@ -270,6 +272,60 @@ _bpf_helper_ext_0014(uint64_t, uint64_t, uint64_t, uint64_t, uint64_t)
 	HelperCallResponse resp =
 		make_helper_call(0, (int)HelperOperation::GET_CURRENT_PID_TGID);
 	return resp.get_tid_pgid.result;
+}
+struct ringbuf_header {
+	uint64_t head;
+	uint64_t tail;
+	int dirty;
+};
+
+// perf event output
+extern "C" __noinline__ __device__ uint64_t
+_bpf_helper_ext_0025(uint64_t ctx, uint64_t map, uint64_t flags, uint64_t data,
+		     uint64_t data_size)
+{
+	const auto &map_info = ::map_info[map];
+	if (map_info.map_type == BPF_MAP_TYPE_NV_GPU_RINGBUF_MAP) {
+		// printf("Starting perf output, value size=%d, max entries = %d\n",
+		//        map_info.value_size, map_info.max_entries);
+		auto entry_size = sizeof(ringbuf_header) +
+				  map_info.max_entries * (sizeof(uint64_t) +
+							  map_info.value_size);
+		auto header =
+			(ringbuf_header *)(uintptr_t)(getGlobalThreadId() *
+							      entry_size +
+						      (char *)map_info
+							      .extra_buffer);
+		// printf("header->head=%lu, header->tail=%lu\n", header->head,
+		//        header->tail);
+		if (header->tail - header->head == map_info.max_entries) {
+			// Buffer is full
+			// printf("Buffer is full\n");
+			return 2;
+		}
+		header->dirty = 1;
+		auto tail_to_put =
+			__atomic_fetch_add(&header->tail, 1, __ATOMIC_SEQ_CST);
+		auto real_tail = tail_to_put % map_info.max_entries;
+		// printf("real tail=%lu\n", real_tail);
+		auto buffer =
+			((char *)header) + sizeof(ringbuf_header) +
+			real_tail * (sizeof(uint64_t) + map_info.value_size);
+		// printf("before wrtting size to %lx, of %lu\n",
+		//        (uintptr_t)buffer, data_size);
+		*(uint64_t *)(uintptr_t)buffer = data_size;
+		// printf("before copying..\n");
+		simple_memcpy(buffer + sizeof(uint64_t),
+			      (void *)(uintptr_t)data, data_size);
+		// printf("data copied\n");
+		header->dirty = 0;
+		// printf("Generated %d bytes of data\n", (int)data_size);
+		return 0;
+
+	} else {
+		printf("Calling bpf_perf_event_output on unsupported map!");
+		return 1;
+	}
 }
 
 extern "C" __noinline__ __device__ uint64_t
