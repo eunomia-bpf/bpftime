@@ -910,6 +910,7 @@ void bpftime_shm::iterate_all_pids_in_alive_agent_set(
 		cb(x);
 	}
 }
+#ifdef BPFTIME_ENABLE_CUDA_ATTACH
 int bpftime_shm::poll_gpu_ringbuf_map(
 	int mapfd, const std::function<void(const void *, uint64_t)> &fn)
 {
@@ -924,5 +925,6 @@ int bpftime_shm::poll_gpu_ringbuf_map(
 	auto impl = *map_handler.try_get_nv_gpu_ringbuf_map_impl();
 	return impl->drain_data(fn);
 }
+#endif
 
 } // namespace bpftime
