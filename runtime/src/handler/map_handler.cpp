@@ -88,7 +88,15 @@ std::optional<array_map_impl *> bpf_map_handler::try_get_array_map_impl() const
 		return {};
 	return static_cast<array_map_impl *>(map_impl_ptr.get());
 }
-
+#if defined(BPFTIME_ENABLE_CUDA_ATTACH)
+std::optional<nv_gpu_ringbuf_map_impl *>
+bpf_map_handler::try_get_nv_gpu_ringbuf_map_impl() const
+{
+	if (type != bpf_map_type::BPF_MAP_TYPE_NV_GPU_RINGBUF_MAP)
+		return {};
+	return static_cast<nv_gpu_ringbuf_map_impl *>(map_impl_ptr.get());
+}
+#endif
 const void *bpf_map_handler::map_lookup_elem(const void *key,
 					     bool from_syscall) const
 {
@@ -187,6 +195,12 @@ const void *bpf_map_handler::map_lookup_elem(const void *key,
 			map_impl_ptr.get());
 		return do_lookup(impl);
 	}
+	case bpf_map_type::BPF_MAP_TYPE_NV_GPU_RINGBUF_MAP: {
+		auto impl = static_cast<nv_gpu_ringbuf_map_impl *>(
+			map_impl_ptr.get());
+		return do_lookup(impl);
+	}
+
 #endif
 	default:
 		auto func_ptr = global_map_ops_table[(int)type].elem_lookup;
@@ -302,6 +316,11 @@ long bpf_map_handler::map_update_elem(const void *key, const void *value,
 			map_impl_ptr.get());
 		return do_update(impl);
 	}
+	case bpf_map_type::BPF_MAP_TYPE_NV_GPU_RINGBUF_MAP: {
+		auto impl = static_cast<nv_gpu_ringbuf_map_impl *>(
+			map_impl_ptr.get());
+		return do_update(impl);
+	}
 #endif
 	default:
 		auto func_ptr = global_map_ops_table[(int)type].elem_update;
@@ -399,6 +418,11 @@ int bpf_map_handler::bpf_map_get_next_key(const void *key, void *next_key,
 #if defined(BPFTIME_ENABLE_CUDA_ATTACH)
 	case bpf_map_type::BPF_MAP_TYPE_NV_GPU_ARRAY_MAP: {
 		auto impl = static_cast<nv_gpu_array_map_impl *>(
+			map_impl_ptr.get());
+		return do_get_next_key(impl);
+	}
+	case bpf_map_type::BPF_MAP_TYPE_NV_GPU_RINGBUF_MAP: {
+		auto impl = static_cast<nv_gpu_ringbuf_map_impl *>(
 			map_impl_ptr.get());
 		return do_get_next_key(impl);
 	}
@@ -514,6 +538,11 @@ long bpf_map_handler::map_delete_elem(const void *key, bool from_syscall) const
 #if defined(BPFTIME_ENABLE_CUDA_ATTACH)
 	case bpf_map_type::BPF_MAP_TYPE_NV_GPU_ARRAY_MAP: {
 		auto impl = static_cast<nv_gpu_array_map_impl *>(
+			map_impl_ptr.get());
+		return do_delete(impl);
+	}
+	case bpf_map_type::BPF_MAP_TYPE_NV_GPU_RINGBUF_MAP: {
+		auto impl = static_cast<nv_gpu_ringbuf_map_impl *>(
 			map_impl_ptr.get());
 		return do_delete(impl);
 	}
@@ -745,6 +774,10 @@ void bpf_map_handler::map_free(managed_shared_memory &memory)
 	case bpf_map_type::BPF_MAP_TYPE_NV_GPU_ARRAY_MAP:
 		memory.destroy<nv_gpu_array_map_impl>(container_name.c_str());
 		break;
+	case bpf_map_type::BPF_MAP_TYPE_NV_GPU_RINGBUF_MAP:
+		memory.destroy<nv_gpu_ringbuf_map_impl>(container_name.c_str());
+		break;
+
 #endif
 	default:
 		auto func_ptr = global_map_ops_table[(int)type].map_free;
@@ -781,6 +814,11 @@ uint64_t bpf_map_handler::get_gpu_map_max_thread_count() const
 #if defined(BPFTIME_ENABLE_CUDA_ATTACH)
 	if (this->type == bpf_map_type::BPF_MAP_TYPE_NV_GPU_ARRAY_MAP) {
 		return static_cast<nv_gpu_array_map_impl *>(map_impl_ptr.get())
+			->get_max_thread_count();
+	}
+	if (this->type == bpf_map_type::BPF_MAP_TYPE_NV_GPU_RINGBUF_MAP) {
+		return static_cast<nv_gpu_ringbuf_map_impl *>(
+			       map_impl_ptr.get())
 			->get_max_thread_count();
 	}
 

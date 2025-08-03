@@ -4,6 +4,7 @@
  * All rights reserved.
  */
 #include "bpftime_shm.hpp"
+#include "handler/map_handler.hpp"
 #include <ebpf-vm.h>
 #include "handler/epoll_handler.hpp"
 #include "handler/handler_manager.hpp"
@@ -594,9 +595,9 @@ bpftime_shm::bpftime_shm(const char *shm_name, shm_open_type type)
 		// open the shm
 		segment = boost::interprocess::managed_shared_memory(
 			boost::interprocess::open_only, shm_name);
-			#ifdef BPFTIME_ENABLE_CUDA_ATTACH
+#ifdef BPFTIME_ENABLE_CUDA_ATTACH
 		register_cuda_host_memory();
-		#endif
+#endif
 		manager = segment.find<bpftime::handler_manager>(
 					 bpftime::DEFAULT_GLOBAL_HANDLER_NAME)
 				  .first;
@@ -909,4 +910,19 @@ void bpftime_shm::iterate_all_pids_in_alive_agent_set(
 		cb(x);
 	}
 }
+int bpftime_shm::poll_gpu_ringbuf_map(
+	int mapfd, const std::function<void(const void *, uint64_t)> &fn)
+{
+	if (!is_map_fd(mapfd)) {
+		SPDLOG_ERROR("Expected {} to be a mapfd", mapfd);
+		return -1;
+	}
+	auto &map_handler =
+		std::get<bpf_map_handler>(manager->get_handler(mapfd));
+	map_handler.try_get_array_map_impl();
+
+	auto impl = *map_handler.try_get_nv_gpu_ringbuf_map_impl();
+	return impl->drain_data(fn);
+}
+
 } // namespace bpftime

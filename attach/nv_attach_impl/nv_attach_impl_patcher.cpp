@@ -114,6 +114,7 @@ static std::string generate_ptx_for_ebpf(const std::vector<ebpf_inst> &inst,
 	vm.register_external_function(3, "map_delete", (void *)test_func);
 	vm.register_external_function(6, "print", (void *)test_func);
 	vm.register_external_function(14, "get_pid_tgid", (void *)test_func);
+	vm.register_external_function(25, "perf_event_output", (void *)test_func);
 
 	vm.register_external_function(501, "puts", (void *)test_func);
 	vm.register_external_function(502, "get_global_timer",

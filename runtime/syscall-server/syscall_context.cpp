@@ -914,3 +914,12 @@ int syscall_context::handle_dup3(int oldfd, int newfd, int flags)
 	return orig_syscall_fn(__NR_dup3, (long)oldfd, (long)newfd,
 			       (long)flags);
 }
+#if defined(BPFTIME_ENABLE_CUDA_ATTACH)
+int syscall_context::poll_gpu_ringbuf_map(int mapfd, void *ctx,
+
+					  void (*fn)(const void *, uint64_t,
+						     void *))
+{
+	return bpftime_poll_gpu_rintbuf_map(mapfd, ctx, fn);
+}
+#endif

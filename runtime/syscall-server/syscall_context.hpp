@@ -199,6 +199,12 @@ class syscall_context {
 	ssize_t handle_read(int fd, void *buf, size_t count);
 	FILE *handle_fopen(const char *pathname, const char *flags);
 	int handle_dup3(int oldfd, int newfd, int flags);
+
+#if defined(BPFTIME_ENABLE_CUDA_ATTACH)
+	int poll_gpu_ringbuf_map(int mapfd, void *ctx,
+
+				 void (*)(const void *, uint64_t, void *));
+#endif
 };
 
 #endif

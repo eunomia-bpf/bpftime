@@ -21,17 +21,19 @@ using pid_devptr_map =
 struct ringbuf_header {
 	uint64_t head;
 	uint64_t tail;
+	int dirty;
 };
 
 class nv_gpu_ringbuf_map_impl {
-	CUipcMemHandle gpu_mem_handle;
 	/**
 	    Memory layout of each thread:
-	    |struct ringbuf_header|page0 (in size of value size)|page1 (in size
+	    |struct ringbuf_header|(uint64_t)size of data in page 0|page0 (in
+	   size of value size)|(uint64_t) size of data in page 1|page1 (in size
 	   of value size)|.........
 	    */
 
-	void *server_shared_mem;
+	// CUdeviceptr server_gpu_memory;
+	bytes_vec data_buffer;
 	pid_devptr_map agent_gpu_shared_mem;
 	uint64_t value_size;
 	uint64_t max_entries;
@@ -42,13 +44,6 @@ class nv_gpu_ringbuf_map_impl {
 	uint64_t entry_size;
 
     public:
-	static inline size_t calculate_total_buffer_size(size_t thread_count,
-							 size_t value_size,
-							 size_t max_entries)
-	{
-		return thread_count *
-		       (value_size * max_entries + sizeof(ringbuf_header));
-	}
 	const static bool should_lock = true;
 	nv_gpu_ringbuf_map_impl(
 		boost::interprocess::managed_shared_memory &memory,
@@ -64,7 +59,8 @@ class nv_gpu_ringbuf_map_impl {
 
 	int map_get_next_key(const void *key, void *next_key);
 	// Only to be called at syscall server side
-	int drain_data(const std::function<void(const void *)> &fn);
+	int
+	drain_data(const std::function<void(const void *, uint64_t size)> &fn);
 
 	CUdeviceptr get_gpu_mem_buffer()
 	{
