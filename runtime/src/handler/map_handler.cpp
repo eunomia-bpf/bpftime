@@ -3,10 +3,6 @@
  * Copyright (c) 2022, eunomia-bpf org
  * All rights reserved.
  */
-#include "bpf_map/gpu/nv_gpu_ringbuf_map.hpp"
-#ifdef BPFTIME_ENABLE_CUDA_ATTACH
-#include "bpf_map/gpu/nv_gpu_array_map.hpp"
-#endif
 #include "bpf_map/userspace/lru_var_hash_map.hpp"
 #include "bpf_map/userspace/per_cpu_array_map.hpp"
 #include "bpf_map/userspace/per_cpu_hash_map.hpp"
@@ -14,6 +10,8 @@
 #include "bpftime_shm_internal.hpp"
 #if defined(BPFTIME_ENABLE_CUDA_ATTACH)
 #include "cuda.h"
+#include "bpf_map/gpu/nv_gpu_array_map.hpp"
+#include "bpf_map/gpu/nv_gpu_ringbuf_map.hpp"
 #endif
 #include <bpf_map/userspace/perf_event_array_map.hpp>
 #include "spdlog/spdlog.h"
@@ -803,10 +801,15 @@ void *bpf_map_handler::get_gpu_map_extra_buffer() const
 			       map_impl_ptr.get())
 			->get_gpu_mem_buffer();
 	}
+	if (this->type == bpf_map_type::BPF_MAP_TYPE_NV_GPU_RINGBUF_MAP) {
+		return (void *)static_cast<nv_gpu_ringbuf_map_impl *>(
+			       map_impl_ptr.get())
+			->get_gpu_mem_buffer();
+	}
 
 #endif
 
-	SPDLOG_ERROR("Not a GPU map!");
+	SPDLOG_WARN("Not a GPU map!");
 	return nullptr;
 }
 int bpftime_register_map_ops(int map_type, bpftime_map_ops *ops)

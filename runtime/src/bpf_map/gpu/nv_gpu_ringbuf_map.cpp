@@ -91,4 +91,9 @@ int nv_gpu_ringbuf_map_impl::drain_data(
 
 nv_gpu_ringbuf_map_impl::~nv_gpu_ringbuf_map_impl()
 {
+	if (auto err = cuMemFree((CUdeviceptr)server_shared_mem);
+	    err != CUDA_SUCCESS) {
+		SPDLOG_WARN(
+			"Unable to free memory for nv_gpu_ringbuf_map_impl");
+	}
 }
