@@ -44,6 +44,7 @@ using main_func_t = int (*)(int, char **, char **);
 static main_func_t orig_main_func = nullptr;
 
 static int initialized = 0;
+static int attached = 0;
 
 // Whether this injected process was operated through frida?
 // Defaults to true. If __libc_start_main was called, it should be set to false;
@@ -114,11 +115,24 @@ static void sig_handler_sigusr1(int sig)
 	shm_holder.global_shared_memory.remove_pid_from_alive_agent_set(
 		getpid());
 	
-	// Reset initialization state to allow re-attachment
-	__atomic_store_n(&initialized, 0, __ATOMIC_SEQ_CST);
+	// Reset attached state (but NOT initialized) to allow re-attachment
+	__atomic_store_n(&attached, 0, __ATOMIC_SEQ_CST);
 	
 	SPDLOG_DEBUG("Detaching done");
 	bpftime_logger_flush();
+}
+
+static void sig_handler_sigusr2(int sig)
+{
+	SPDLOG_INFO("Re-attaching..");
+	// Don't reset initialized - keep signal handlers, etc.
+	
+	// Reset attached state
+	__atomic_store_n(&attached, 0, __ATOMIC_SEQ_CST);
+	
+	// Re-run attachment logic
+	gboolean stay_resident = TRUE;
+	bpftime_agent_main("", &stay_resident);
 }
 #ifdef BPFTIME_ENABLE_CUDA_ATTACH
 void **(*original___cudaRegisterFatBinary)(void *) = nullptr;
@@ -134,35 +148,48 @@ extern "C" void **__cudaRegisterFatBinary(void *fatbin)
 #endif
 extern "C" void bpftime_agent_main(const gchar *data, gboolean *stay_resident)
 {
+	// One-time initialization
 	{
 		int expected = 0;
-		if (!__atomic_compare_exchange_n(&initialized, &expected, 1,
+		if (__atomic_compare_exchange_n(&initialized, &expected, 1,
 						 false, __ATOMIC_SEQ_CST,
 						 __ATOMIC_SEQ_CST)) {
-			SPDLOG_INFO(
-				"Agent already initialized, skipping re-initializing..");
+			SPDLOG_DEBUG("Entered bpftime_agent_main - first initialization");
+			SPDLOG_DEBUG("Registering signal handlers");
 
-			return;
+			srand(std::random_device()());
+			// Register signal handlers
+			signal(SIGUSR1, sig_handler_sigusr1);  // Detach
+			signal(SIGUSR2, sig_handler_sigusr2);  // Re-attach
+			
+			// Initialize shared memory
+			try {
+				bpftime_initialize_global_shm(shm_open_type::SHM_OPEN_ONLY);
+			} catch (std::exception &ex) {
+				SPDLOG_ERROR("Unable to initialize shared memory: {}",
+					     ex.what());
+				return;
+			}
+			
+			auto &runtime_config = bpftime_get_agent_config();
+			bpftime_set_logger(
+				std::string(runtime_config.get_logger_output_path()));
 		}
 	}
 
-	SPDLOG_DEBUG("Entered bpftime_agent_main");
-	SPDLOG_DEBUG("Registering signal handler");
-
-	srand(std::random_device()());
-	// We use SIGUSR1 to indicate the detaching
-	signal(SIGUSR1, sig_handler_sigusr1);
-	try {
-		// If we are unable to initialize shared memory..
-		bpftime_initialize_global_shm(shm_open_type::SHM_OPEN_ONLY);
-	} catch (std::exception &ex) {
-		SPDLOG_ERROR("Unable to initialize shared memory: {}",
-			     ex.what());
-		return;
+	// Check if already attached
+	{
+		int expected_attached = 0;
+		if (!__atomic_compare_exchange_n(&attached, &expected_attached, 1,
+						 false, __ATOMIC_SEQ_CST,
+						 __ATOMIC_SEQ_CST)) {
+			SPDLOG_INFO("Already attached, skipping");
+			return;
+		}
 	}
-	auto &runtime_config = bpftime_get_agent_config();
-	bpftime_set_logger(
-		std::string(runtime_config.get_logger_output_path()));
+	// Load eBPF programs
+	SPDLOG_INFO("Initializing agent..");
+	
 	// Only agents injected through frida could be detached
 	if (injected_with_frida) {
 		// Record the pid
@@ -228,6 +255,7 @@ extern "C" void bpftime_agent_main(const gchar *data, gboolean *stay_resident)
 	int res = 1;
 	setenv("BPFTIME_USED", "1", 0);
 	SPDLOG_DEBUG("Set environment variable BPFTIME_USED");
+	auto &runtime_config = bpftime_get_agent_config();
 	try {
 		res = ctx_holder.ctx.init_attach_ctx_from_handlers(
 			runtime_config);

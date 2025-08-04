@@ -154,6 +154,150 @@ Currently, the only workaround is to restart the target process entirely before 
 
 Successfully reproduced the issue on the latest master branch.
 
+### Test Commands Using Local Build Binaries
+
+```bash
+# Setup - Build everything first
+cd /root/yunwei37/bpftime
+make build
+make -C example/malloc
+
+# Terminal 1: Start bpftime load with local build binary
+export BPFTIME_LOG_LEVEL=debug
+./build/tools/cli/bpftime load ./example/malloc/malloc 2>&1 | tee /tmp/bpftime_load_debug.log
+
+# Terminal 2: Start victim process and capture PID
+cd /root/yunwei37/bpftime/example/malloc
+export BPFTIME_LOG_LEVEL=debug
+./victim 2>&1 | tee /tmp/victim_debug.log &
+export VICTIM_PID=$!
+echo "Victim PID: $VICTIM_PID"
+
+# Terminal 3: Test attach/detach cycle with local build binary
+cd /root/yunwei37/bpftime
+export BPFTIME_LOG_LEVEL=debug
+
+# First attach (should work)
+./build/tools/cli/bpftime attach $VICTIM_PID
+# Expected: "Initializing agent.." in logs
+# Expected: Terminal 1 shows "pid=XXX malloc calls: YY"
+
+# Detach
+./build/tools/cli/bpftime detach
+# Expected: "Detaching.." in victim logs
+# Expected: Terminal 1 stops showing malloc calls
+
+# Re-attach attempt (this will fail)
+./build/tools/cli/bpftime attach $VICTIM_PID  
+# BUG: Shows "Agent already initialized, skipping re-initializing.."
+# BUG: No monitoring in Terminal 1
+
+# Alternative: Test with specific PIDs
+# Replace $VICTIM_PID with actual PID from ps aux | grep victim
+```
+
+### Automated Test Script
+
+Create and run this test script:
+
+```bash
+#!/bin/bash
+# Save as: /tmp/test_attach_detach.sh
+
+# Configuration
+BPFTIME_DIR="/root/yunwei37/bpftime"
+BPFTIME_BIN="$BPFTIME_DIR/build/tools/cli/bpftime"
+export BPFTIME_LOG_LEVEL=debug
+export LD_LIBRARY_PATH=$BPFTIME_DIR/build/runtime:$LD_LIBRARY_PATH
+
+# Colors for output
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+NC='\033[0m' # No Color
+
+echo "Building bpftime and malloc example..."
+cd $BPFTIME_DIR
+make build
+make -C example/malloc
+
+echo -e "\n${GREEN}Starting bpftime load...${NC}"
+$BPFTIME_BIN load ./example/malloc/malloc 2>&1 | tee /tmp/bpftime_load.log &
+LOAD_PID=$!
+sleep 2
+
+echo -e "\n${GREEN}Starting victim process...${NC}"
+cd example/malloc
+./victim 2>&1 | tee /tmp/victim.log &
+VICTIM_PID=$!
+echo "Victim PID: $VICTIM_PID"
+sleep 2
+
+echo -e "\n${GREEN}First attach (should work)...${NC}"
+$BPFTIME_BIN attach $VICTIM_PID
+sleep 3
+
+# Check if monitoring is working
+if grep -q "malloc calls:" /tmp/bpftime_load.log; then
+    echo -e "${GREEN}✓ First attach successful - monitoring active${NC}"
+else
+    echo -e "${RED}✗ First attach failed - no monitoring${NC}"
+fi
+
+echo -e "\n${GREEN}Detaching...${NC}"
+$BPFTIME_BIN detach
+sleep 2
+
+# Clear log to check for new monitoring
+> /tmp/bpftime_load.log
+
+echo -e "\n${GREEN}Re-attaching (testing bug)...${NC}"
+$BPFTIME_BIN attach $VICTIM_PID
+sleep 3
+
+# Check if re-attach worked
+if grep -q "malloc calls:" /tmp/bpftime_load.log; then
+    echo -e "${GREEN}✓ Re-attach successful - monitoring active${NC}"
+else
+    echo -e "${RED}✗ Re-attach failed - BUG CONFIRMED${NC}"
+    grep "Agent already initialized" /tmp/victim.log
+fi
+
+# Cleanup
+echo -e "\n${GREEN}Cleaning up...${NC}"
+kill $VICTIM_PID 2>/dev/null
+kill $LOAD_PID 2>/dev/null
+
+echo -e "\nLogs saved to:"
+echo "  - /tmp/bpftime_load.log"
+echo "  - /tmp/victim.log"
+```
+
+### Quick Test Commands
+
+```bash
+# One-liner to test with local build binary
+cd /root/yunwei37/bpftime && make build && ./build/tools/cli/bpftime --version
+
+# Test if agent library exists in build directory
+ls -la ./build/runtime/libbpftime-agent.so
+
+# Check if victim is using the library after attach
+ps aux | grep victim | grep -v grep | awk '{print $2}' | xargs -I{} cat /proc/{}/maps | grep bpftime-agent
+
+# Monitor agent initialization in real-time
+tail -f /tmp/victim_debug.log | grep -E "(Initializing agent|Agent already initialized)"
+
+# Test with specific debug output for state tracking
+cd /root/yunwei37/bpftime
+BPFTIME_LOG_LEVEL=debug SPDLOG_LEVEL=debug ./build/tools/cli/bpftime attach $(pgrep victim)
+
+# Check agent library path used by bpftime CLI
+ldd ./build/tools/cli/bpftime | grep agent
+
+# Set library path if needed
+export LD_LIBRARY_PATH=/root/yunwei37/bpftime/build/runtime:$LD_LIBRARY_PATH
+```
+
 ### Reproduction Steps Used
 
 ```bash
@@ -161,8 +305,8 @@ Successfully reproduced the issue on the latest master branch.
 cd /root/yunwei37/bpftime
 make -C example/malloc
 
-# 2. Start bpftime load with debug logging
-BPFTIME_LOG_LEVEL=debug bpftime load ./example/malloc/malloc 2>&1 | tee /tmp/bpftime_load_debug.log &
+# 2. Start bpftime load with debug logging (using build binary)
+BPFTIME_LOG_LEVEL=debug ./build/tools/cli/bpftime load ./example/malloc/malloc 2>&1 | tee /tmp/bpftime_load_debug.log &
 
 # 3. Start victim process
 cd example/malloc
@@ -170,16 +314,17 @@ BPFTIME_LOG_LEVEL=debug ./victim 2>&1 | tee /tmp/victim_debug.log &
 # Note actual PID: 320389
 
 # 4. First attach (works correctly)
-BPFTIME_LOG_LEVEL=debug bpftime attach 320389
+cd /root/yunwei37/bpftime
+BPFTIME_LOG_LEVEL=debug ./build/tools/cli/bpftime attach 320389
 # Log shows: "Initializing agent.."
 # Monitoring works: "pid=320389 malloc calls: 20"
 
 # 5. Detach
-BPFTIME_LOG_LEVEL=debug bpftime detach
+BPFTIME_LOG_LEVEL=debug ./build/tools/cli/bpftime detach
 # Monitoring stops as expected
 
 # 6. Re-attach attempt (FAILS)
-BPFTIME_LOG_LEVEL=debug bpftime attach 320389
+BPFTIME_LOG_LEVEL=debug ./build/tools/cli/bpftime attach 320389
 # Log shows: "Agent already initialized, skipping re-initializing.."
 # NO monitoring occurs despite successful injection
 ```
@@ -301,3 +446,86 @@ A more comprehensive fix is needed that:
 - Handles the Frida injection lifecycle correctly
 
 The issue requires deeper investigation into the agent lifecycle and Frida injection mechanism.
+
+## Detailed Analysis of Attach/Detach Process
+
+### Current Attach Process
+
+1. **CLI Command**: `bpftime attach <PID>`
+   - Calls `inject_by_frida(pid, agent_path, "")` 
+   - Uses Frida to inject `libbpftime-agent.so` into the target process
+   - Calls the `bpftime_agent_main` function as entry point
+
+2. **Agent Initialization**: 
+   - Checks if already initialized using static `initialized` variable
+   - If already initialized, skips with "Agent already initialized" message
+   - Otherwise:
+     - Registers signal handlers (SIGUSR1 for detach)
+     - Initializes shared memory
+     - Sets up attach implementations (uprobe, syscall trace, etc.)
+     - Calls `init_attach_ctx_from_handlers()` to load eBPF programs
+     - Adds PID to alive agent set in shared memory
+
+### Current Detach Process  
+
+1. **CLI Command**: `bpftime detach`
+   - Iterates through all PIDs in alive agent set
+   - Sends SIGUSR1 to each PID
+
+2. **Agent Signal Handler** (`sig_handler_sigusr1`):
+   - Calls `ctx.destroy_all_attach_links()` - unhooks all probes
+   - Removes PID from alive agent set
+   - **BUT**: The agent library remains loaded in the process!
+
+### The Core Problem
+
+When re-attaching:
+1. Frida re-injects the library and calls `bpftime_agent_main` again
+2. The static `initialized` variable is still 1 (because the library was never unloaded)
+3. The function returns early without re-initializing
+4. No eBPF programs are loaded, no probes are attached
+
+### Proposed Solution: Signal-Based Re-initialization
+
+Instead of trying to re-inject with Frida, we should:
+
+1. **On Attach**: Check if the agent is already loaded
+   - Option A: Check if PID was previously in alive set but removed (detached)
+   - Option B: Try sending a different signal (e.g., SIGUSR2) for re-attach
+   - Option C: Check if the library is already loaded in `/proc/<pid>/maps`
+
+2. **New Re-attach Flow**:
+   ```
+   if (agent_already_loaded(pid)) {
+       // Send SIGUSR2 to trigger re-initialization
+       kill(pid, SIGUSR2);
+   } else {
+       // First time attach - inject with Frida
+       inject_by_frida(pid, agent_path, "");
+   }
+   ```
+
+3. **Agent Changes**:
+   - Add SIGUSR2 handler for re-initialization
+   - The handler would:
+     - Reset the `initialized` flag
+     - Call `bpftime_agent_main` again to reload programs
+     - Or directly call `init_attach_ctx_from_handlers()`
+
+### Alternative Solutions
+
+1. **Unload Library on Detach**: 
+   - More complex - would need to ensure all hooks are removed
+   - Might cause stability issues
+
+2. **Separate Init State**: 
+   - Keep `initialized` for one-time setup (signal handlers, etc.)
+   - Add `attached` flag for eBPF program state
+   - Allow re-attachment by just reloading programs
+
+3. **Persistent Agent Mode**:
+   - Agent stays loaded and ready
+   - Detach only removes probes, not the agent
+   - Re-attach just reloads the programs
+
+The signal-based approach is cleanest and avoids the complexity of multiple Frida injections.

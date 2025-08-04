@@ -17,6 +17,7 @@
 #include <tuple>
 #include <sys/wait.h>
 #include <spdlog/spdlog.h>
+#include <fstream>
 #ifdef __APPLE__
 #include <crt_externs.h>
 #include <cstdlib>
@@ -137,6 +138,46 @@ static int run_command(const char *path, const std::vector<std::string> &argv,
 	}
 	return 1;
 }
+static bool is_agent_loaded_in_process(int pid) {
+	std::ifstream maps("/proc/" + std::to_string(pid) + "/maps");
+	if (!maps.is_open()) {
+		return false;
+	}
+	std::string line;
+	while (std::getline(maps, line)) {
+		if (line.find("libbpftime-agent") != std::string::npos) {
+			return true;
+		}
+	}
+	return false;
+}
+
+static bool is_pid_in_alive_set(int pid) {
+	try {
+		bpftime_initialize_global_shm(bpftime::shm_open_type::SHM_OPEN_ONLY);
+		bool found = false;
+		bpftime::shm_holder.global_shared_memory
+			.iterate_all_pids_in_alive_agent_set([&](int alive_pid) {
+				if (alive_pid == pid) {
+					found = true;
+				}
+			});
+		return found;
+	} catch (std::exception &ex) {
+		return false;
+	}
+}
+
+static int send_reattach_signal(int pid) {
+	spdlog::info("Sending re-attach signal to process {}", pid);
+	if (kill(pid, SIGUSR2) < 0) {
+		spdlog::error("Failed to send SIGUSR2 to process {}: {}", pid, strerror(errno));
+		return 1;
+	}
+	spdlog::info("Re-attach signal sent successfully");
+	return 0;
+}
+
 static int inject_by_frida(int pid, const char *inject_path, const char *arg)
 {
 	spdlog::info("Injecting to {}", pid);
@@ -304,19 +345,35 @@ int main(int argc, const char **argv)
 			return 1;
 		}
 		auto pid = attach_command.get<int>("PID");
-		if (attach_command.get<bool>("enable-syscall-trace")) {
-			auto transformer_path =
-				install_path /
-				"libbpftime-agent-transformer.so";
-			if (!std::filesystem::exists(transformer_path)) {
-				spdlog::error("Library not found: {}",
-					      transformer_path.c_str());
-				return 1;
+		
+		// Check if agent is already loaded
+		if (is_agent_loaded_in_process(pid)) {
+			// Check if currently attached
+			if (is_pid_in_alive_set(pid)) {
+				spdlog::info("Process {} is already attached", pid);
+				return 0;
+			} else {
+				// Agent loaded but detached - send re-attach signal
+				spdlog::info("Re-attaching to process {} via signal", pid);
+				return send_reattach_signal(pid);
 			}
-			return inject_by_frida(pid, transformer_path.c_str(),
-					       agent_path.c_str());
 		} else {
-			return inject_by_frida(pid, agent_path.c_str(), "");
+			// First time attach - inject with Frida
+			spdlog::info("First time attach to process {}", pid);
+			if (attach_command.get<bool>("enable-syscall-trace")) {
+				auto transformer_path =
+					install_path /
+					"libbpftime-agent-transformer.so";
+				if (!std::filesystem::exists(transformer_path)) {
+					spdlog::error("Library not found: {}",
+						      transformer_path.c_str());
+					return 1;
+				}
+				return inject_by_frida(pid, transformer_path.c_str(),
+						       agent_path.c_str());
+			} else {
+				return inject_by_frida(pid, agent_path.c_str(), "");
+			}
 		}
 	} else if (program.is_subcommand_used("detach")) {
 		SPDLOG_DEBUG("Detaching..");

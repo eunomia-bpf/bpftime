@@ -47,7 +47,14 @@ extern "C" int __libc_start_main(int (*main)(int, char **, char **), int argc,
 
 extern "C" void bpftime_agent_main(const gchar *data, gboolean *stay_resident)
 {
-	auto logger = spdlog::stderr_color_mt("stderr");
+	std::shared_ptr<spdlog::logger> logger;
+	try {
+		// Try to get existing logger first
+		logger = spdlog::get("stderr");
+	} catch (const spdlog::spdlog_ex&) {
+		// Logger doesn't exist, create it
+		logger = spdlog::stderr_color_mt("stderr");
+	}
 	spdlog::set_default_logger(logger);
 	spdlog::cfg::load_env_levels();
 	/* We don't want to our library to be unloaded after we return. */
