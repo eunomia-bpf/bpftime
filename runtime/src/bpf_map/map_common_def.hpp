@@ -89,6 +89,12 @@ static inline bool check_update_flags(uint64_t flags)
 	}
 	return true;
 }
+struct int_hasher {
+	size_t operator()(int const &data) const
+	{
+		return data;
+	}
+};
 } // namespace bpftime
 
 #endif
