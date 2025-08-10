@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: (LGPL-2.1 OR BSD-2-Clause)
 /* Copyright (c) 2020 Facebook */
+#define _GNU_SOURCE
 #include <dlfcn.h>
 #include <signal.h>
 #include <stdio.h>
@@ -12,6 +13,7 @@
 #include <stdlib.h>
 #include "./.output/cuda_probe.skel.h"
 #include <inttypes.h>
+#include <time.h>
 #define warn(...) fprintf(stderr, __VA_ARGS__)
 
 static int libbpf_print_fn(enum libbpf_print_level level, const char *format,
@@ -27,13 +29,42 @@ static void sig_handler(int sig)
 	exiting = true;
 }
 struct data {
-	uint64_t x, y, z;
+	int type;
+	union {
+		struct {
+			uint64_t x, y, z;
+		} thread;
+		uint64_t time;
+	};
 };
+
+struct state {
+	uint64_t total_time_sum;
+	uint64_t count;
+};
+
+static bool poll_succeed = false;
+
 static void poll_callback(const void *data, uint64_t size, void *ctx)
 {
+	poll_succeed = true;
+	struct state *state = (struct state *)ctx;
 	const struct data *event = data;
-	printf("Data from thread: %lu, %lu, %lu\n", event->x, event->y,
-	       event->z);
+	if (event->type == 0) {
+		printf("Data from thread: %lu, %lu, %lu\n", event->thread.x,
+		       event->thread.y, event->thread.z);
+	} else if (event->type == 1) {
+		printf("GPU Time usage: %lu\n", event->time);
+		state->total_time_sum += event->time;
+		state->count += 1;
+	}
+}
+
+static uint64_t get_timestamp()
+{
+	struct timespec ts;
+	clock_gettime(CLOCK_MONOTONIC_COARSE, &ts);
+	return ts.tv_sec * (uint64_t)1000000000 + ts.tv_nsec;
 }
 
 int main(int argc, char **argv)
@@ -74,12 +105,30 @@ int main(int argc, char **argv)
 		goto cleanup;
 	}
 	int mapfd = bpf_map__fd(skel->maps.rb);
+	struct state gpu_state, cpu_state;
 	while (!exiting) {
 		sleep(1);
-		err = poll_fn(mapfd, NULL, poll_callback);
+		poll_succeed = false;
+		uint64_t begin = get_timestamp();
+		err = poll_fn(mapfd, &gpu_state, poll_callback);
+		uint64_t end = get_timestamp();
 		if (err < 0) {
 			printf("Unable to poll: %d\n", err);
 			goto cleanup;
+		}
+		if (gpu_state.count > 0) {
+			printf("Average GPU time usage: %lu (ns), count = %lu\n",
+			       gpu_state.total_time_sum / gpu_state.count,
+			       gpu_state.count);
+		}
+		if (poll_succeed) {
+			cpu_state.count += 1;
+			cpu_state.total_time_sum += end - begin;
+		}
+		if (cpu_state.count > 0) {
+			printf("Average CPU time usage: %lu (ns), count = %lu\n",
+			       cpu_state.total_time_sum / cpu_state.count,
+			       cpu_state.count);
 		}
 	}
 cleanup:

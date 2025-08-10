@@ -24,16 +24,29 @@ static const u64 (*bpf_get_block_dim)(u64 *x, u64 *y, u64 *z) = (void *)504;
 static const u64 (*bpf_get_thread_idx)(u64 *x, u64 *y, u64 *z) = (void *)505;
 
 struct data {
-	u64 x, y, z;
+	int type;
+	union {
+		struct {
+			u64 x, y, z;
+		} thread;
+		u64 time;
+	};
 };
 
 SEC("kretprobe/_Z9vectorAddPKfS0_Pf")
 int retprobe__cuda()
 {
 	struct data data;
-	bpf_get_thread_idx(&data.x, &data.y, &data.z);
-	bpf_perf_event_output(NULL, &rb, 0, &data, sizeof(struct data));
+	u64 begin, end;
 
+	data.type = 0;
+	bpf_get_thread_idx(&data.thread.x, &data.thread.y, &data.thread.z);
+	begin = bpf_get_globaltimer();
+	bpf_perf_event_output(NULL, &rb, 0, &data, sizeof(struct data));
+	end = bpf_get_globaltimer();
+	data.type = 1;
+	data.time = end - begin;
+	bpf_perf_event_output(NULL, &rb, 0, &data, sizeof(struct data));
 	return 0;
 }
 
