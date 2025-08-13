@@ -254,9 +254,13 @@ void *ringbuf::reserve(size_t size, int self_fd)
 			size, self_fd);
 		return nullptr;
 	}
-	sharable_lock<interprocess_sharable_mutex> guard(*reserve_mutex);
+	// sharable_lock<interprocess_sharable_mutex> guard(*reserve_mutex);
 	auto cons_pos = smp_load_acquire_ul(consumer_pos.get());
-	auto prod_pos = smp_load_acquire_ul(producer_pos.get());
+	// auto prod_pos = smp_load_acquire_ul(producer_pos.get());
+	unsigned long prod_pos =
+		__atomic_fetch_add(producer_pos.get(),
+				   (size + BPF_RINGBUF_HDR_SZ + 7) / 8 * 8,
+				   __ATOMIC_ACQ_REL);
 	auto avail_size = max_ent - (prod_pos - cons_pos);
 	auto total_size = (size + BPF_RINGBUF_HDR_SZ + 7) / 8 * 8;
 	if (total_size > max_ent) {
@@ -271,7 +275,7 @@ void *ringbuf::reserve(size_t size, int self_fd)
 		(ringbuf_hdr *)((uintptr_t)data.get() + (prod_pos & mask()));
 	header->len = size | BPF_RINGBUF_BUSY_BIT;
 	header->fd = self_fd;
-	smp_store_release_ul(producer_pos.get(), prod_pos + total_size);
+	// smp_store_release_ul(producer_pos.get(), prod_pos + total_size);
 	auto ptr = data.get() + ((prod_pos + BPF_RINGBUF_HDR_SZ) & mask());
 	SPDLOG_TRACE("ringbuf: reserved {} bytes at {}, fd {}", size,
 		     (void *)ptr, self_fd);
