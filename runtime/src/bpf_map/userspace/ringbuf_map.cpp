@@ -5,7 +5,9 @@
  */
 #include <boost/interprocess/interprocess_fwd.hpp>
 #include <boost/interprocess/smart_ptr/shared_ptr.hpp>
+#include <boost/interprocess/sync/interprocess_mutex.hpp>
 #include <boost/interprocess/sync/interprocess_sharable_mutex.hpp>
+#include <boost/interprocess/sync/scoped_lock.hpp>
 #include <boost/interprocess/sync/sharable_lock.hpp>
 #include <bpf_map/userspace/ringbuf_map.hpp>
 #include <spdlog/spdlog.h>
@@ -156,7 +158,7 @@ ringbuf::ringbuf(uint32_t max_ent,
 	: max_ent(max_ent),
 	  reserve_mutex(boost::interprocess::make_managed_unique_ptr(
 		  memory.construct<
-			  boost::interprocess::interprocess_sharable_mutex>(
+			  boost::interprocess::interprocess_mutex>(
 			  boost::interprocess::anonymous_instance)(),
 		  memory)),
 	  raw_buffer(boost::interprocess::make_managed_unique_ptr(
@@ -237,8 +239,8 @@ bool ringbuf::has_data() const
 	}
 	return false;
 }
-using boost::interprocess::interprocess_sharable_mutex;
-using boost::interprocess::sharable_lock;
+using boost::interprocess::interprocess_mutex;
+using boost::interprocess::scoped_lock;
 
 struct ringbuf_hdr {
 	uint32_t len;
@@ -256,11 +258,8 @@ void *ringbuf::reserve(size_t size, int self_fd)
 	}
 	// sharable_lock<interprocess_sharable_mutex> guard(*reserve_mutex);
 	auto cons_pos = smp_load_acquire_ul(consumer_pos.get());
-	// auto prod_pos = smp_load_acquire_ul(producer_pos.get());
-	unsigned long prod_pos =
-		__atomic_fetch_add(producer_pos.get(),
-				   (size + BPF_RINGBUF_HDR_SZ + 7) / 8 * 8,
-				   __ATOMIC_ACQ_REL);
+	scoped_lock<interprocess_mutex> guard(*reserve_mutex);
+	auto prod_pos = smp_load_acquire_ul(producer_pos.get());
 	auto avail_size = max_ent - (prod_pos - cons_pos);
 	auto total_size = (size + BPF_RINGBUF_HDR_SZ + 7) / 8 * 8;
 	if (total_size > max_ent) {
@@ -275,7 +274,7 @@ void *ringbuf::reserve(size_t size, int self_fd)
 		(ringbuf_hdr *)((uintptr_t)data.get() + (prod_pos & mask()));
 	header->len = size | BPF_RINGBUF_BUSY_BIT;
 	header->fd = self_fd;
-	// smp_store_release_ul(producer_pos.get(), prod_pos + total_size);
+	smp_store_release_ul(producer_pos.get(), prod_pos + total_size);
 	auto ptr = data.get() + ((prod_pos + BPF_RINGBUF_HDR_SZ) & mask());
 	SPDLOG_TRACE("ringbuf: reserved {} bytes at {}, fd {}", size,
 		     (void *)ptr, self_fd);

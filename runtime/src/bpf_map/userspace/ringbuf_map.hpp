@@ -14,6 +14,7 @@
 #include <boost/interprocess/smart_ptr/unique_ptr.hpp>
 #include <boost/interprocess/smart_ptr/shared_ptr.hpp>
 #include <boost/interprocess/smart_ptr/weak_ptr.hpp>
+#include <boost/interprocess/sync/interprocess_mutex.hpp>
 #include <cstddef>
 #include <functional>
 #include <optional>
@@ -23,6 +24,10 @@ namespace bpftime
 {
 using sharable_mutex_ptr = boost::interprocess::managed_unique_ptr<
 	boost::interprocess::interprocess_sharable_mutex,
+	boost::interprocess::managed_shared_memory>::type;
+
+using mutex_ptr = boost::interprocess::managed_unique_ptr<
+	boost::interprocess::interprocess_mutex,
 	boost::interprocess::managed_shared_memory>::type;
 
 class ringbuf {
@@ -41,7 +46,7 @@ class ringbuf {
 	boost::interprocess::offset_ptr<unsigned long> producer_pos;
 	boost::interprocess::offset_ptr<uint8_t> data;
 	// Guard for reserving memory
-	mutable sharable_mutex_ptr reserve_mutex;
+	mutable mutex_ptr reserve_mutex;
 	// raw buffer
 	buf_vec_unique_ptr raw_buffer;
 
@@ -80,7 +85,7 @@ class ringbuf_map_impl {
 	int map_get_next_key(const void *key, void *next_key);
 	ringbuf_weak_ptr create_impl_weak_ptr();
 	ringbuf_shared_ptr create_impl_shared_ptr();
-	
+
 	void *get_consumer_page() const;
 	void *get_producer_page() const;
 	void *reserve(size_t size, int self_fd);
