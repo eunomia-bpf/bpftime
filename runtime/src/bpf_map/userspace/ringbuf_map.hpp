@@ -18,6 +18,7 @@
 #include <cstddef>
 #include <functional>
 #include <optional>
+#include <pthread.h>
 #include <vector>
 
 namespace bpftime
@@ -46,7 +47,8 @@ class ringbuf {
 	boost::interprocess::offset_ptr<unsigned long> producer_pos;
 	boost::interprocess::offset_ptr<uint8_t> data;
 	// Guard for reserving memory
-	mutable mutex_ptr reserve_mutex;
+	// mutable mutex_ptr reserve_mutex;
+	mutable pthread_spinlock_t reserve_spin_lock;
 	// raw buffer
 	buf_vec_unique_ptr raw_buffer;
 
@@ -58,6 +60,7 @@ class ringbuf {
 	ringbuf(uint32_t max_ent,
 		boost::interprocess::managed_shared_memory &memory);
 	friend class ringbuf_map_impl;
+	~ringbuf();
 };
 
 using ringbuf_shared_ptr = boost::interprocess::managed_shared_ptr<
