@@ -5,9 +5,12 @@
  */
 #include <boost/interprocess/interprocess_fwd.hpp>
 #include <boost/interprocess/smart_ptr/shared_ptr.hpp>
+#include <boost/interprocess/sync/interprocess_mutex.hpp>
 #include <boost/interprocess/sync/interprocess_sharable_mutex.hpp>
+#include <boost/interprocess/sync/scoped_lock.hpp>
 #include <boost/interprocess/sync/sharable_lock.hpp>
 #include <bpf_map/userspace/ringbuf_map.hpp>
+#include <pthread.h>
 #include <spdlog/spdlog.h>
 #include <stdexcept>
 #if __APPLE__
@@ -154,11 +157,11 @@ void ringbuf_map_impl::submit(const void *sample, bool discard)
 ringbuf::ringbuf(uint32_t max_ent,
 		 boost::interprocess::managed_shared_memory &memory)
 	: max_ent(max_ent),
-	  reserve_mutex(boost::interprocess::make_managed_unique_ptr(
-		  memory.construct<
-			  boost::interprocess::interprocess_sharable_mutex>(
-			  boost::interprocess::anonymous_instance)(),
-		  memory)),
+	  //   reserve_mutex(boost::interprocess::make_managed_unique_ptr(
+	  // 	  memory.construct<
+	  // 		  boost::interprocess::interprocess_mutex>(
+	  // 		  boost::interprocess::anonymous_instance)(),
+	  // 	  memory)),
 	  raw_buffer(boost::interprocess::make_managed_unique_ptr(
 		  memory.construct<buf_vec>(
 			  boost::interprocess::anonymous_instance)(
@@ -176,6 +179,7 @@ ringbuf::ringbuf(uint32_t max_ent,
 	producer_pos =
 		(unsigned long *)(uintptr_t)(&((*raw_buffer)[page_size]));
 	data = (uint8_t *)(uintptr_t)(&((*raw_buffer)[page_size * 2]));
+	pthread_spin_init(&this->reserve_spin_lock, 1);
 }
 
 int ringbuf::fetch_data(std::function<int(void *, int)> cb)
@@ -237,12 +241,24 @@ bool ringbuf::has_data() const
 	}
 	return false;
 }
-using boost::interprocess::interprocess_sharable_mutex;
-using boost::interprocess::sharable_lock;
+using boost::interprocess::interprocess_mutex;
+using boost::interprocess::scoped_lock;
 
 struct ringbuf_hdr {
 	uint32_t len;
 	int32_t fd;
+};
+
+struct spin_lock_guard {
+	pthread_spinlock_t &lock;
+	spin_lock_guard(pthread_spinlock_t &lock) : lock(lock)
+	{
+		pthread_spin_lock(&lock);
+	}
+	~spin_lock_guard()
+	{
+		pthread_spin_unlock(&lock);
+	}
 };
 
 void *ringbuf::reserve(size_t size, int self_fd)
@@ -254,8 +270,10 @@ void *ringbuf::reserve(size_t size, int self_fd)
 			size, self_fd);
 		return nullptr;
 	}
-	sharable_lock<interprocess_sharable_mutex> guard(*reserve_mutex);
+	// sharable_lock<interprocess_sharable_mutex> guard(*reserve_mutex);
 	auto cons_pos = smp_load_acquire_ul(consumer_pos.get());
+	// scoped_lock<interprocess_mutex> guard(*reserve_mutex);
+	spin_lock_guard guard(reserve_spin_lock);
 	auto prod_pos = smp_load_acquire_ul(producer_pos.get());
 	auto avail_size = max_ent - (prod_pos - cons_pos);
 	auto total_size = (size + BPF_RINGBUF_HDR_SZ + 7) / 8 * 8;
@@ -290,5 +308,8 @@ void ringbuf::submit(const void *sample, bool discard)
 		new_len |= BPF_RINGBUF_DISCARD_BIT;
 	__atomic_exchange_n(&hdr->len, new_len, __ATOMIC_ACQ_REL);
 }
-
+ringbuf::~ringbuf()
+{
+	pthread_spin_destroy(&this->reserve_spin_lock);
+}
 } // namespace bpftime
