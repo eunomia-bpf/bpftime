@@ -147,6 +147,14 @@ jobs:
             cp -r third_party/libbpf/include/* build/libbpf/bpf/ 2>/dev/null || true
           fi
 
+          # Auto-detect bpf_helpers.h anywhere under build and copy sibling headers
+          FOUND_HEADER=$(find build -type f -name "bpf_helpers.h" 2>/dev/null | head -n1)
+          if [ -n "$FOUND_HEADER" ]; then
+            HEADER_SRC_DIR=$(dirname "$FOUND_HEADER")
+            echo "Auto-detected bpf headers at $HEADER_SRC_DIR, copying to build/libbpf/bpf..."
+            cp -r "$HEADER_SRC_DIR"/* build/libbpf/bpf/ 2>/dev/null || true
+          fi
+
           # Verify libbpf.a exists where examples expect it
           if [ ! -f "build/libbpf/libbpf.a" ]; then
             echo "ERROR: Could not create build/libbpf/libbpf.a"
@@ -484,6 +492,15 @@ jobs:
               echo "Copying headers from build/include/bpf to build/libbpf/bpf..."
               mkdir -p build/libbpf/bpf
               cp -r build/include/bpf/* build/libbpf/bpf/ 2>/dev/null || true
+            fi
+            
+            # Auto-detect bpf_helpers.h anywhere under build and copy sibling headers
+            FOUND_HEADER=$(find build -type f -name "bpf_helpers.h" 2>/dev/null | head -n1)
+            if [ -n "$FOUND_HEADER" ]; then
+              HEADER_SRC_DIR=$(dirname "$FOUND_HEADER")
+              echo "Auto-detected bpf headers at $HEADER_SRC_DIR, copying to build/libbpf/bpf..."
+              mkdir -p build/libbpf/bpf
+              cp -r "$HEADER_SRC_DIR"/* build/libbpf/bpf/ 2>/dev/null || true
             fi
             
             # Try to copy from third_party as fallback
