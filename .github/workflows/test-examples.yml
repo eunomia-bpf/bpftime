@@ -104,6 +104,7 @@ jobs:
 
           # Create the expected directory structure and symlinks
           mkdir -p build/libbpf
+          mkdir -p build/libbpf/bpf
 
           # Try to find and link libbpf.a from various possible locations
           if [ -f "build/libbpf/libbpf/libbpf.a" ]; then
@@ -122,6 +123,28 @@ jobs:
             if [ -d "third_party/libbpf/src" ]; then
               make -C third_party/libbpf/src BUILD_STATIC_ONLY=1 OBJDIR=../../build/libbpf DESTDIR=../../build/ install || echo "Manual libbpf build failed"
             fi
+          fi
+
+          # Try to collect headers into build/libbpf/bpf for global examples
+          if [ -d "build/libbpf/include" ]; then
+            echo "Found headers in build/libbpf/include, copying to bpf/ subdirectory..."
+            cp -r build/libbpf/include/* build/libbpf/bpf/ 2>/dev/null || true
+          fi
+          if [ -d "build/usr/include/bpf" ]; then
+            echo "Copying headers from build/usr/include/bpf to build/libbpf/bpf..."
+            cp -r build/usr/include/bpf/* build/libbpf/bpf/ 2>/dev/null || true
+          fi
+          if [ -d "build/usr/local/include/bpf" ]; then
+            echo "Copying headers from build/usr/local/include/bpf to build/libbpf/bpf..."
+            cp -r build/usr/local/include/bpf/* build/libbpf/bpf/ 2>/dev/null || true
+          fi
+          if [ -d "build/include/bpf" ]; then
+            echo "Copying headers from build/include/bpf to build/libbpf/bpf..."
+            cp -r build/include/bpf/* build/libbpf/bpf/ 2>/dev/null || true
+          fi
+          if [ -d "third_party/libbpf/include" ]; then
+            echo "Copying headers from third_party/libbpf/include as fallback..."
+            cp -r third_party/libbpf/include/* build/libbpf/bpf/ 2>/dev/null || true
           fi
 
           # Verify libbpf.a exists where examples expect it
@@ -402,6 +425,7 @@ jobs:
             
             # Create build directory structure
             mkdir -p build/libbpf
+            mkdir -p build/libbpf/bpf
             
             # Try to find libbpf.a from various locations
             if [ -f "build/libbpf/libbpf/libbpf.a" ]; then
@@ -443,6 +467,23 @@ jobs:
               echo "Found headers in build/libbpf/include, copying to bpf/ subdirectory..."
               mkdir -p build/libbpf/bpf
               cp -r build/libbpf/include/* build/libbpf/bpf/ 2>/dev/null || true
+            fi
+
+            # Copy headers from common DESTDIR install locations
+            if [ -d "build/usr/include/bpf" ]; then
+              echo "Copying headers from build/usr/include/bpf to build/libbpf/bpf..."
+              mkdir -p build/libbpf/bpf
+              cp -r build/usr/include/bpf/* build/libbpf/bpf/ 2>/dev/null || true
+            fi
+            if [ -d "build/usr/local/include/bpf" ]; then
+              echo "Copying headers from build/usr/local/include/bpf to build/libbpf/bpf..."
+              mkdir -p build/libbpf/bpf
+              cp -r build/usr/local/include/bpf/* build/libbpf/bpf/ 2>/dev/null || true
+            fi
+            if [ -d "build/include/bpf" ]; then
+              echo "Copying headers from build/include/bpf to build/libbpf/bpf..."
+              mkdir -p build/libbpf/bpf
+              cp -r build/include/bpf/* build/libbpf/bpf/ 2>/dev/null || true
             fi
             
             # Try to copy from third_party as fallback
