@@ -160,9 +160,38 @@ jobs:
             echo "Copying headers from build/include/bpf to build/libbpf/bpf..."
             cp -r build/include/bpf/* build/libbpf/bpf/ 2>/dev/null || true
           fi
+          # Copy headers from third_party bpftool/libbpf build trees if present
+          if [ -d "third_party/bpftool/build/usr/include/bpf" ]; then
+            echo "Copying headers from third_party/bpftool/build/usr/include/bpf to build/libbpf/bpf..."
+            cp -r third_party/bpftool/build/usr/include/bpf/* build/libbpf/bpf/ 2>/dev/null || true
+          fi
+          if [ -d "third_party/bpftool/build/include/bpf" ]; then
+            echo "Copying headers from third_party/bpftool/build/include/bpf to build/libbpf/bpf..."
+            cp -r third_party/bpftool/build/include/bpf/* build/libbpf/bpf/ 2>/dev/null || true
+          fi
+          if [ -d "third_party/libbpf/build/usr/include/bpf" ]; then
+            echo "Copying headers from third_party/libbpf/build/usr/include/bpf to build/libbpf/bpf..."
+            cp -r third_party/libbpf/build/usr/include/bpf/* build/libbpf/bpf/ 2>/dev/null || true
+          fi
+          if [ -d "third_party/libbpf/build/include/bpf" ]; then
+            echo "Copying headers from third_party/libbpf/build/include/bpf to build/libbpf/bpf..."
+            cp -r third_party/libbpf/build/include/bpf/* build/libbpf/bpf/ 2>/dev/null || true
+          fi
           if [ -d "third_party/libbpf/include" ]; then
             echo "Copying headers from third_party/libbpf/include as fallback..."
             cp -r third_party/libbpf/include/* build/libbpf/bpf/ 2>/dev/null || true
+          fi
+          # Search for libbpf.h within third_party and copy if found
+          FOUND_LIBBPF_H=$(find third_party -type f -name "libbpf.h" 2>/dev/null | head -n1)
+          if [ -n "$FOUND_LIBBPF_H" ]; then
+            SRC_DIR=$(dirname "$FOUND_LIBBPF_H")
+            echo "Copying libbpf headers from $SRC_DIR to build/libbpf/bpf..."
+            cp -f "$SRC_DIR"/libbpf.h build/libbpf/bpf/ 2>/dev/null || true
+            # Also copy common companions if they exist
+            cp -f "$SRC_DIR"/bpf.h build/libbpf/bpf/ 2>/dev/null || true
+            cp -f "$SRC_DIR"/btf.h build/libbpf/bpf/ 2>/dev/null || true
+            cp -f "$SRC_DIR"/libbpf_common.h build/libbpf/bpf/ 2>/dev/null || true
+            cp -f "$SRC_DIR"/libbpf_legacy.h build/libbpf/bpf/ 2>/dev/null || true
           fi
 
           # Also copy core BPF helper headers directly from libbpf source if present
@@ -666,6 +695,9 @@ jobs:
 
           # Build the example
           echo "Building example: ${{matrix.examples.path}}"
+          # Ensure compilers can find bpf/ headers regardless of where libbpf installed them
+          export C_INCLUDE_PATH="build/libbpf:build/libbpf/bpf:third_party/bpftool/build/usr/include:third_party/bpftool/build/usr/include/bpf:third_party/bpftool/build/include:third_party/bpftool/build/include/bpf:${C_INCLUDE_PATH}"
+          export CPLUS_INCLUDE_PATH="build/libbpf:build/libbpf/bpf:third_party/bpftool/build/usr/include:third_party/bpftool/build/usr/include/bpf:third_party/bpftool/build/include:third_party/bpftool/build/include/bpf:${CPLUS_INCLUDE_PATH}"
           make -C example/${{matrix.examples.path}} -j
       - name: Set BPFTIME_VM_NAME for ubpf # Set environment variable when llvm-jit is disabled
         if: "!matrix.enable_jit"
