@@ -38,6 +38,7 @@ struct bpf_map_attr {
 
 	// additional fields for bpftime only
 	uint32_t kernel_bpf_map_id = 0;
+	uint32_t gpu_thread_count = 1000;
 };
 
 enum class bpf_event_type {
@@ -59,6 +60,8 @@ enum class bpf_event_type {
 };
 
 #define KERNEL_USER_MAP_OFFSET 1000
+
+const int GPU_MAP_OFFSET = 1500;
 
 enum class bpf_map_type {
 	BPF_MAP_TYPE_UNSPEC,
@@ -111,6 +114,8 @@ enum class bpf_map_type {
 		KERNEL_USER_MAP_OFFSET + BPF_MAP_TYPE_PERCPU_ARRAY,
 	BPF_MAP_TYPE_KERNEL_USER_PERF_EVENT_ARRAY =
 		KERNEL_USER_MAP_OFFSET + BPF_MAP_TYPE_PERF_EVENT_ARRAY,
+
+	BPF_MAP_TYPE_NV_GPU_ARRAY_MAP = GPU_MAP_OFFSET + BPF_MAP_TYPE_ARRAY,
 
 	BPF_MAP_TYPE_MAX = 2048,
 };

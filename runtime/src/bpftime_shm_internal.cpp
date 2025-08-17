@@ -111,7 +111,7 @@ uint32_t bpftime_shm::bpf_map_value_size(int fd) const
 	}
 	auto &handler =
 		std::get<bpftime::bpf_map_handler>(manager->get_handler(fd));
-	return handler.get_value_size();
+	return handler.get_userspace_value_size();
 }
 
 const void *bpftime_shm::bpf_map_lookup_elem(int fd, const void *key,

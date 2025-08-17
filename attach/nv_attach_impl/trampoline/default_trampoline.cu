@@ -14,7 +14,8 @@
 #include <thread>
 #include <vector>
 
-/* clang++-17 -S ./default_trampoline.cu -Wall --cuda-gpu-arch=sm_60 -O2 -L/usr/local/cuda/lib64/ -lcudart*/
+/* clang++-17 -S ./default_trampoline.cu -Wall --cuda-gpu-arch=sm_60 -O2
+ * -L/usr/local/cuda/lib64/ -lcudart*/
 enum class HelperOperation {
 	MAP_LOOKUP = 1,
 	MAP_UPDATE = 2,
@@ -78,13 +79,17 @@ struct CommSharedMem {
 	uint64_t time_sum[8];
 };
 
+const int BPF_MAP_TYPE_NV_GPU_ARRAY_MAP = 1502;
+
 struct MapBasicInfo {
 	bool enabled;
 	int key_size;
 	int value_size;
 	int max_entries;
+	int map_type;
+	void *extra_buffer;
+	uint64_t max_thread_count;
 };
-
 __device__ __forceinline__ uint64_t read_globaltimer()
 {
 	uint64_t timestamp;
@@ -158,6 +163,22 @@ extern "C" __device__ inline void simple_memcpy(void *dst, void *src, int sz)
 		((char *)dst)[i] = ((char *)src)[i];
 }
 
+__device__ uint64_t getGlobalThreadId()
+{
+	int x = blockIdx.x * blockDim.x + threadIdx.x;
+	int y = blockIdx.y * blockDim.y + threadIdx.y;
+	int z = blockIdx.z * blockDim.z + threadIdx.z;
+	int width = gridDim.x * blockDim.x;
+	int height = gridDim.y * blockDim.y;
+	return ((uint64_t)z * width * height) + (y * width) + x;
+}
+__device__ void *array_map_offset(uint64_t idx, const MapBasicInfo &info)
+{
+	return (void *)((uintptr_t)info.extra_buffer +
+			idx * info.max_thread_count * info.value_size +
+			getGlobalThreadId() * info.value_size);
+}
+
 extern "C" __noinline__ __device__ uint64_t _bpf_helper_ext_0001(
 	uint64_t map, uint64_t key, uint64_t a, uint64_t b, uint64_t c)
 {
@@ -165,6 +186,11 @@ extern "C" __noinline__ __device__ uint64_t _bpf_helper_ext_0001(
 	auto &req = global_data->req;
 	// CallRequest req;
 	const auto &map_info = ::map_info[map];
+	if (map_info.map_type == BPF_MAP_TYPE_NV_GPU_ARRAY_MAP) {
+		auto real_key = *(uint32_t *)(uintptr_t)key;
+		auto offset = array_map_offset(real_key, map_info);
+		return (uint64_t)offset;
+	}
 	// printf("helper1 map %ld keysize=%d valuesize=%d\n", map,
 	//        map_info.key_size, map_info.value_size);
 	simple_memcpy(&req.map_lookup.key, (void *)(uintptr_t)key,
@@ -182,6 +208,13 @@ extern "C" __noinline__ __device__ uint64_t _bpf_helper_ext_0002(
 	CommSharedMem *global_data = (CommSharedMem *)constData;
 	auto &req = global_data->req;
 	const auto &map_info = ::map_info[map];
+	if (map_info.map_type == BPF_MAP_TYPE_NV_GPU_ARRAY_MAP) {
+		auto real_key = *(uint32_t *)(uintptr_t)key;
+		auto offset = array_map_offset(real_key, map_info);
+		simple_memcpy(offset, (void *)(uintptr_t)value,
+			      map_info.value_size);
+		return 0;
+	}
 	// printf("helper2 map %ld keysize=%d
 	// valuesize=%d\n",map,map_info.key_size,map_info.value_size);
 	simple_memcpy(&req.map_update.key, (void *)(uintptr_t)key,
@@ -291,6 +324,12 @@ _bpf_helper_ext_0505(uint64_t x, uint64_t y, uint64_t z, uint64_t, uint64_t)
 	*(uint64_t *)(uintptr_t)y = threadIdx.y;
 	*(uint64_t *)(uintptr_t)z = threadIdx.z;
 
+	return 0;
+}
+extern "C" __noinline__ __device__ uint64_t
+_bpf_helper_ext_0506(uint64_t, uint64_t, uint64_t, uint64_t, uint64_t)
+{
+	asm("membar.sys;                      \n\t");
 	return 0;
 }
 

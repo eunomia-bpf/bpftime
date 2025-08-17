@@ -33,6 +33,8 @@ using alive_agent_pids =
 
 // global bpftime share memory
 class bpftime_shm {
+	std::optional<std::function<void(bool)>> mock_setter;
+
 	bpftime::shm_open_type open_type;
 	// shared memory segment
 	boost::interprocess::managed_shared_memory segment;
@@ -59,6 +61,20 @@ class bpftime_shm {
 #endif
 
     public:
+	shm_open_type get_shm_open_type() const
+	{
+		return open_type;
+	}
+	void set_enable_mock(bool flag)
+	{
+		if (mock_setter.has_value())
+			(*mock_setter)(flag);
+	}
+	// Set a callback to configure whether syscall server should enable mock
+	void set_mock_setter(std::function<void(bool)> &&fn)
+	{
+		mock_setter = fn;
+	}
 	// Get the configuration object
 	const struct agent_config &get_agent_config();
 	// Set the configuration object
@@ -206,9 +222,9 @@ class bpftime_shm {
 	{
 		return open_type;
 	}
-	#ifdef BPFTIME_ENABLE_CUDA_ATTACH
+#ifdef BPFTIME_ENABLE_CUDA_ATTACH
 	bool register_cuda_host_memory();
-	#endif
+#endif
 	~bpftime_shm();
 };
 
