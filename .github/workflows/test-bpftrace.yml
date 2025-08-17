@@ -3,9 +3,9 @@ name: Build and run bpftrace test
 on:
   workflow_dispatch:
   push:
-    branches: ["never-run"] # 暂时禁用
+    branches: ["master"]
   pull_request:
-    branches: ["never-run"] # 暂时禁用
+    branches: ["master"]
 
 env:
   BPFTIME_VM_NAME: llvm

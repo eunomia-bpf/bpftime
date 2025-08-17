@@ -3,9 +3,9 @@ name: Nginx attach test
 on:
   workflow_dispatch:
   push:
-    branches: ["never-run"] # 暂时禁用
+    branches: ["*"]
   pull_request:
-    branches: ["never-run"] # 暂时禁用
+    branches: ["master"]
 
 jobs:
   build-and-test:

@@ -3,9 +3,9 @@ name: Build and push docker image
 on:
   workflow_dispatch:
   push:
-    branches: ["never-run"] # 暂时禁用
+    branches: ["master"]
   pull_request:
-    branches: ["never-run"] # 暂时禁用
+    branches: ["master"]
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}-${{ github.event_name }}
   cancel-in-progress: true

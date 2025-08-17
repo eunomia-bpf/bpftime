@@ -3,9 +3,9 @@ name: Benchmarks
 on:
   workflow_dispatch:
   push:
-    branches: ["never-run"] # 暂时禁用
+    branches: ["master"]
   pull_request:
-    branches: ["never-run"] # 暂时禁用
+    branches: ["master"]
 
 # Sets permissions of the GITHUB_TOKEN to allow deployment to GitHub Pages
 permissions:

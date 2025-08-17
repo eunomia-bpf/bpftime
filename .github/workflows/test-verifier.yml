@@ -1,21 +1,24 @@
 name: Build and test verifier
 
 on:
-  workflow_dispatch:
   push:
-    branches: ["never-run"] # 暂时禁用
-  pull_request:
-    branches: ["never-run"] # 暂时禁用
+    branches: "master"
+    paths:
+        - "bpftime-verifier/**"
+  pull_request: 
+    branches: "master"
+    paths:
+        - "bpftime-verifier/**"
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}-${{ github.event_name }}
   cancel-in-progress: true
-jobs:
+jobs: 
   build-and-run-verifier-test-target:
     runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v2
         with:
-          submodules: "recursive"
+          submodules: 'recursive'
       - name: Setup conda
         uses: conda-incubator/setup-miniconda@v3
         with:
@@ -23,7 +26,7 @@ jobs:
           channel-priority: strict
           miniforge-version: latest
       - name: Install dependencies
-        run: |
+        run: | 
           sudo apt-get update -y
           sudo apt-get install binutils-dev libboost1.74-all-dev libelf-dev zlib1g-dev ninja-build libyaml-cpp-dev -y
       - name: Install lcov
