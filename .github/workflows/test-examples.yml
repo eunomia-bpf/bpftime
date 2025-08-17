@@ -147,6 +147,26 @@ jobs:
             cp -r third_party/libbpf/include/* build/libbpf/bpf/ 2>/dev/null || true
           fi
 
+          # Also copy core BPF helper headers directly from libbpf source if present
+          if [ -d "third_party/bpftool/libbpf/src" ]; then
+            echo "Copying BPF helper headers from third_party/bpftool/libbpf/src..."
+            cp -f third_party/bpftool/libbpf/src/bpf_helpers.h build/libbpf/bpf/ 2>/dev/null || true
+            cp -f third_party/bpftool/libbpf/src/bpf_helper_defs.h build/libbpf/bpf/ 2>/dev/null || true
+            cp -f third_party/bpftool/libbpf/src/bpf_tracing.h build/libbpf/bpf/ 2>/dev/null || true
+            cp -f third_party/bpftool/libbpf/src/bpf_endian.h build/libbpf/bpf/ 2>/dev/null || true
+            cp -f third_party/bpftool/libbpf/src/bpf_core_read.h build/libbpf/bpf/ 2>/dev/null || true
+            cp -f third_party/bpftool/libbpf/src/usdt.bpf.h build/libbpf/bpf/ 2>/dev/null || true
+          fi
+          if [ -d "third_party/libbpf/src" ]; then
+            echo "Copying BPF helper headers from third_party/libbpf/src..."
+            cp -f third_party/libbpf/src/bpf_helpers.h build/libbpf/bpf/ 2>/dev/null || true
+            cp -f third_party/libbpf/src/bpf_helper_defs.h build/libbpf/bpf/ 2>/dev/null || true
+            cp -f third_party/libbpf/src/bpf_tracing.h build/libbpf/bpf/ 2>/dev/null || true
+            cp -f third_party/libbpf/src/bpf_endian.h build/libbpf/bpf/ 2>/dev/null || true
+            cp -f third_party/libbpf/src/bpf_core_read.h build/libbpf/bpf/ 2>/dev/null || true
+            cp -f third_party/libbpf/src/usdt.bpf.h build/libbpf/bpf/ 2>/dev/null || true
+          fi
+
           # Auto-detect bpf_helpers.h anywhere under build and copy sibling headers
           FOUND_HEADER=$(find build -type f -name "bpf_helpers.h" 2>/dev/null | head -n1)
           if [ -n "$FOUND_HEADER" ]; then
@@ -493,7 +513,51 @@ jobs:
               mkdir -p build/libbpf/bpf
               cp -r build/include/bpf/* build/libbpf/bpf/ 2>/dev/null || true
             fi
+
+            # Fallback: copy headers from system include paths (inside container)
+            if [ -d "/usr/include/bpf" ]; then
+              echo "Copying headers from /usr/include/bpf to build/libbpf/bpf..."
+              mkdir -p build/libbpf/bpf
+              cp -r /usr/include/bpf/* build/libbpf/bpf/ 2>/dev/null || true
+            fi
+            if [ -d "/usr/local/include/bpf" ]; then
+              echo "Copying headers from /usr/local/include/bpf to build/libbpf/bpf..."
+              mkdir -p build/libbpf/bpf
+              cp -r /usr/local/include/bpf/* build/libbpf/bpf/ 2>/dev/null || true
+            fi
+
+            # Also copy core BPF helper headers directly from libbpf source if present
+            if [ -d "third_party/bpftool/libbpf/src" ]; then
+              echo "Copying BPF helper headers from third_party/bpftool/libbpf/src..."
+              cp -f third_party/bpftool/libbpf/src/bpf_helpers.h build/libbpf/bpf/ 2>/dev/null || true
+              cp -f third_party/bpftool/libbpf/src/bpf_helper_defs.h build/libbpf/bpf/ 2>/dev/null || true
+              cp -f third_party/bpftool/libbpf/src/bpf_tracing.h build/libbpf/bpf/ 2>/dev/null || true
+              cp -f third_party/bpftool/libbpf/src/bpf_endian.h build/libbpf/bpf/ 2>/dev/null || true
+              cp -f third_party/bpftool/libbpf/src/bpf_core_read.h build/libbpf/bpf/ 2>/dev/null || true
+              cp -f third_party/bpftool/libbpf/src/usdt.bpf.h build/libbpf/bpf/ 2>/dev/null || true
+            fi
+            if [ -d "third_party/libbpf/src" ]; then
+              echo "Copying BPF helper headers from third_party/libbpf/src..."
+              cp -f third_party/libbpf/src/bpf_helpers.h build/libbpf/bpf/ 2>/dev/null || true
+              cp -f third_party/libbpf/src/bpf_helper_defs.h build/libbpf/bpf/ 2>/dev/null || true
+              cp -f third_party/libbpf/src/bpf_tracing.h build/libbpf/bpf/ 2>/dev/null || true
+              cp -f third_party/libbpf/src/bpf_endian.h build/libbpf/bpf/ 2>/dev/null || true
+              cp -f third_party/libbpf/src/bpf_core_read.h build/libbpf/bpf/ 2>/dev/null || true
+              cp -f third_party/libbpf/src/usdt.bpf.h build/libbpf/bpf/ 2>/dev/null || true
+            fi
             
+            # Fallback: copy headers from system include paths (inside container)
+            if [ -d "/usr/include/bpf" ]; then
+              echo "Copying headers from /usr/include/bpf to build/libbpf/bpf..."
+              mkdir -p build/libbpf/bpf
+              cp -r /usr/include/bpf/* build/libbpf/bpf/ 2>/dev/null || true
+            fi
+            if [ -d "/usr/local/include/bpf" ]; then
+              echo "Copying headers from /usr/local/include/bpf to build/libbpf/bpf..."
+              mkdir -p build/libbpf/bpf
+              cp -r /usr/local/include/bpf/* build/libbpf/bpf/ 2>/dev/null || true
+            fi
+
             # Auto-detect bpf_helpers.h anywhere under build and copy sibling headers
             FOUND_HEADER=$(find build -type f -name "bpf_helpers.h" 2>/dev/null | head -n1)
             if [ -n "$FOUND_HEADER" ]; then
@@ -508,6 +572,30 @@ jobs:
               echo "Copying headers from third_party/libbpf/include as fallback..."
               mkdir -p build/libbpf/bpf
               cp -r third_party/libbpf/include/* build/libbpf/bpf/ 2>/dev/null || true
+            fi
+
+            # Last-resort: copy helper headers directly from libbpf source trees
+            if [ ! -f "build/libbpf/bpf/bpf_helpers.h" ]; then
+              echo "Last-resort: copying helper headers from libbpf source tree..."
+              for SRC in third_party/bpftool/libbpf/src third_party/libbpf/src; do
+                if [ -d "$SRC" ]; then
+                  for H in bpf_helpers.h bpf_helper_defs.h bpf_tracing.h bpf_endian.h bpf_core_read.h usdt.bpf.h; do
+                    if [ -f "$SRC/$H" ]; then
+                      cp -f "$SRC/$H" build/libbpf/bpf/ 2>/dev/null || true
+                    fi
+                  done
+                fi
+              done
+            fi
+
+            # Absolute fallback: search and copy from anywhere under third_party
+            if [ ! -f "build/libbpf/bpf/bpf_helpers.h" ]; then
+              FOUND=$(find third_party -type f -name "bpf_helpers.h" 2>/dev/null | head -n1)
+              if [ -n "$FOUND" ]; then
+                SRC_DIR=$(dirname "$FOUND")
+                cp -f "$SRC_DIR"/bpf_*.h build/libbpf/bpf/ 2>/dev/null || true
+                cp -f "$SRC_DIR"/usdt.bpf.h build/libbpf/bpf/ 2>/dev/null || true
+              fi
             fi
             
             # Verify the critical header file exists
