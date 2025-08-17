@@ -5,7 +5,7 @@
 #include <stdint.h>
 #include <stdarg.h>
 #include <sys/resource.h>
-#include <bpf/libbpf.h>
+#include "compat_libbpf.h"
 #include <bpf/bpf.h>
 #include <unistd.h>
 #include <stdlib.h>
