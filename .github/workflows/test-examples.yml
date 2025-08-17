@@ -16,12 +16,12 @@ jobs:
       matrix:
         enable_jit:
           - true
-          # - false # FOR TEST
+          - false
         container:
           - image: ubuntu-2204
             name: ubuntu
-          # - image: fedora-39
-          #   name: fedora # FOR TEST
+          - image: fedora-39
+            name: fedora
     runs-on: ubuntu-22.04
     container:
       image: "manjusakalza/bpftime-base-image:${{matrix.container.image}}"
