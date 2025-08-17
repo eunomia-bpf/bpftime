@@ -125,6 +125,24 @@ jobs:
             fi
           fi
 
+          # Ensure libbpf.a is placed in build/libbpf/libbpf.a for global examples
+          if [ ! -f "build/libbpf/libbpf.a" ]; then
+            echo "Trying to place libbpf.a into build/libbpf/ from known locations..."
+            if [ -f "third_party/bpftool/build/libbpf/libbpf.a" ]; then
+              echo "Copying from third_party/bpftool/build/libbpf/libbpf.a"
+              cp -f third_party/bpftool/build/libbpf/libbpf.a build/libbpf/libbpf.a || true
+            elif [ -f "third_party/bpftool/build/usr/lib64/libbpf.a" ]; then
+              echo "Copying from third_party/bpftool/build/usr/lib64/libbpf.a"
+              cp -f third_party/bpftool/build/usr/lib64/libbpf.a build/libbpf/libbpf.a || true
+            else
+              FOUND_LIB=$(find third_party -type f -name "libbpf.a" 2>/dev/null | head -n1)
+              if [ -n "$FOUND_LIB" ]; then
+                echo "Copying from $FOUND_LIB"
+                cp -f "$FOUND_LIB" build/libbpf/libbpf.a || true
+              fi
+            fi
+          fi
+
           # Try to collect headers into build/libbpf/bpf for global examples
           if [ -d "build/libbpf/include" ]; then
             echo "Found headers in build/libbpf/include, copying to bpf/ subdirectory..."
@@ -610,6 +628,24 @@ jobs:
               echo "SUCCESS: bpf_helpers.h found at build/libbpf/bpf/bpf_helpers.h"
             fi
             
+            # Ensure libbpf.a is available at build/libbpf/libbpf.a
+            if [ ! -f "build/libbpf/libbpf.a" ]; then
+              echo "Trying to place libbpf.a into build/libbpf/ from known locations..."
+              if [ -f "third_party/bpftool/build/libbpf/libbpf.a" ]; then
+                echo "Copying from third_party/bpftool/build/libbpf/libbpf.a"
+                cp -f third_party/bpftool/build/libbpf/libbpf.a build/libbpf/libbpf.a || true
+              elif [ -f "third_party/bpftool/build/usr/lib64/libbpf.a" ]; then
+                echo "Copying from third_party/bpftool/build/usr/lib64/libbpf.a"
+                cp -f third_party/bpftool/build/usr/lib64/libbpf.a build/libbpf/libbpf.a || true
+              else
+                FOUND_LIB=$(find third_party -type f -name "libbpf.a" 2>/dev/null | head -n1)
+                if [ -n "$FOUND_LIB" ]; then
+                  echo "Copying from $FOUND_LIB"
+                  cp -f "$FOUND_LIB" build/libbpf/libbpf.a || true
+                fi
+              fi
+            fi
+
             # Verify libbpf.a exists
             if [ ! -f "build/libbpf/libbpf.a" ]; then
               echo "ERROR: Could not create build/libbpf/libbpf.a for ${{matrix.examples.path}}"
