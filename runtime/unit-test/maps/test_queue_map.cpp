@@ -365,3 +365,175 @@ TEST_CASE("Queue Map Conceptual Concurrency Test",
 
 	pthread_spin_destroy(&map_lock);
 }
+
+// Kernel-style tests using bpftime internal API
+// Based on kernel test_queuemap function
+TEST_CASE("Queue Map Kernel Style Test", "[queue_map][kernel_style]")
+{
+	const char *SHARED_MEMORY_NAME = "QueueMapKernelTestShmCatch2";
+	const size_t SHARED_MEMORY_SIZE = 65536;
+	const int MAP_SIZE = 32;
+
+	// RAII for shared memory segment removal
+	shm_remove remover((std::string(SHARED_MEMORY_NAME)));
+
+	boost::interprocess::managed_shared_memory shm(
+		boost::interprocess::create_only, SHARED_MEMORY_NAME,
+		SHARED_MEMORY_SIZE);
+
+	// Fill test values to be used
+	uint32_t vals[MAP_SIZE + MAP_SIZE / 2];
+	for (int i = 0; i < MAP_SIZE + MAP_SIZE / 2; i++)
+		vals[i] = rand();
+
+	bpftime::queue_map_impl *q_map = nullptr;
+
+	// Test invalid value_size (should fail in constructor)
+	REQUIRE_THROWS_AS(bpftime::queue_map_impl(shm, 0, MAP_SIZE),
+			  std::invalid_argument);
+
+	// Create valid queue map
+	try {
+		q_map = shm.construct<bpftime::queue_map_impl>(
+			"QueueMapKernelInstance")(shm, sizeof(uint32_t),
+						  MAP_SIZE);
+		REQUIRE(q_map != nullptr);
+	} catch (const std::exception &ex) {
+		FAIL("Failed during map construction: " << ex.what());
+	}
+
+	// Push MAP_SIZE elements
+	for (int i = 0; i < MAP_SIZE; i++) {
+		REQUIRE(q_map->map_push_elem(&vals[i], BPF_ANY) == 0);
+	}
+
+	// Check that element cannot be pushed due to max_entries limit
+	uint32_t val;
+	errno = 0;
+	REQUIRE(q_map->map_push_elem(&val, BPF_ANY) == -1);
+	REQUIRE(errno == E2BIG);
+
+	// Peek element (should be first element - FIFO)
+	REQUIRE(q_map->map_peek_elem(&val) == 0);
+	REQUIRE(val == vals[0]);
+
+	// Replace half elements using BPF_EXIST
+	for (int i = MAP_SIZE; i < MAP_SIZE + MAP_SIZE / 2; i++) {
+		REQUIRE(q_map->map_push_elem(&vals[i], BPF_EXIST) == 0);
+	}
+
+	// Pop all elements - should get the ones that weren't overwritten
+	for (int i = MAP_SIZE / 2; i < MAP_SIZE + MAP_SIZE / 2; i++) {
+		REQUIRE(q_map->map_pop_elem(&val) == 0);
+		REQUIRE(val == vals[i]);
+	}
+
+	// Check that there are no elements left
+	errno = 0;
+	REQUIRE(q_map->map_pop_elem(&val) == -1);
+	REQUIRE(errno == ENOENT);
+
+	// Check that non-supported functions set errno to EINVAL
+	// Note: elem_delete with nullptr returns ENOENT, but we want to test
+	// unsupported operations Let's test with map_get_next_key instead as
+	// that's truly unsupported
+	errno = 0;
+	REQUIRE(q_map->elem_delete(&val) == -1); // Try to delete from empty
+						 // queue
+	REQUIRE(errno == ENOENT);
+
+	uint32_t next_key;
+	errno = 0;
+	REQUIRE(q_map->map_get_next_key(nullptr, &next_key) == -1);
+	REQUIRE(errno == EINVAL);
+
+	// Cleanup
+	if (q_map) {
+		shm.destroy_ptr(q_map);
+	}
+}
+
+// Test using standard map interface (elem_update, elem_lookup, etc.)
+TEST_CASE("Queue Map Standard Interface Kernel Style",
+	  "[queue_map][kernel_style][std_interface]")
+{
+	const char *SHARED_MEMORY_NAME = "QueueMapStdKernelTestShmCatch2";
+	const size_t SHARED_MEMORY_SIZE = 65536;
+	const int MAP_SIZE = 32;
+
+	// RAII for shared memory segment removal
+	shm_remove remover((std::string(SHARED_MEMORY_NAME)));
+
+	boost::interprocess::managed_shared_memory shm(
+		boost::interprocess::create_only, SHARED_MEMORY_NAME,
+		SHARED_MEMORY_SIZE);
+
+	// Fill test values to be used
+	uint32_t vals[MAP_SIZE + MAP_SIZE / 2];
+	for (int i = 0; i < MAP_SIZE + MAP_SIZE / 2; i++)
+		vals[i] = rand();
+
+	bpftime::queue_map_impl *q_map = nullptr;
+
+	try {
+		q_map = shm.construct<bpftime::queue_map_impl>(
+			"QueueMapStdInstance")(shm, sizeof(uint32_t), MAP_SIZE);
+		REQUIRE(q_map != nullptr);
+	} catch (const std::exception &ex) {
+		FAIL("Failed during map construction: " << ex.what());
+	}
+
+	int key = 0; // Queue is keyless, but standard interface needs a key
+
+	// Push MAP_SIZE elements using elem_update
+	for (int i = 0; i < MAP_SIZE; i++) {
+		REQUIRE(q_map->elem_update(&key, &vals[i], BPF_ANY) == 0);
+	}
+
+	// Check that element cannot be pushed due to max_entries limit
+	uint32_t val;
+	errno = 0;
+	REQUIRE(q_map->elem_update(&key, &val, BPF_ANY) == -1);
+	REQUIRE(errno == E2BIG);
+
+	// Peek element using elem_lookup
+	void *ptr = q_map->elem_lookup(&key);
+	REQUIRE(ptr != nullptr);
+	REQUIRE(*(uint32_t *)ptr == vals[0]);
+
+	// Replace half elements using elem_update with BPF_EXIST
+	for (int i = MAP_SIZE; i < MAP_SIZE + MAP_SIZE / 2; i++) {
+		REQUIRE(q_map->elem_update(&key, &vals[i], BPF_EXIST) == 0);
+	}
+
+	// Pop all elements using elem_delete
+	for (int i = MAP_SIZE / 2; i < MAP_SIZE + MAP_SIZE / 2; i++) {
+		REQUIRE(q_map->elem_delete(&key) == 0);
+		// Note: elem_delete doesn't return the value, so we can't
+		// verify the exact value
+	}
+
+	// Check that there are no elements left
+	errno = 0;
+	REQUIRE(q_map->elem_lookup(&key) == nullptr);
+	REQUIRE(errno == ENOENT);
+
+	errno = 0;
+	REQUIRE(q_map->elem_delete(&key) == -1);
+	REQUIRE(errno == ENOENT);
+
+	// Check that non-supported functions set errno to EINVAL
+	uint32_t next_key;
+	errno = 0;
+	REQUIRE(q_map->map_get_next_key(&key, &next_key) == -1);
+	REQUIRE(errno == EINVAL);
+
+	errno = 0;
+	REQUIRE(q_map->map_get_next_key(nullptr, &next_key) == -1);
+	REQUIRE(errno == EINVAL);
+
+	// Cleanup
+	if (q_map) {
+		shm.destroy_ptr(q_map);
+	}
+}
