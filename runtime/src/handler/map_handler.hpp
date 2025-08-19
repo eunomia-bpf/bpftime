@@ -5,6 +5,7 @@
  */
 #ifndef _MAP_HANDLER
 #define _MAP_HANDLER
+
 #include "bpf_map/userspace/array_map.hpp"
 #include "bpf_map/userspace/ringbuf_map.hpp"
 #include "bpf_map/userspace/stack_trace_map.hpp"
@@ -19,6 +20,10 @@
 #include <optional>
 #include <unistd.h>
 #include <bpf_map/shared/perf_event_array_kernel_user.hpp>
+#if defined(BPFTIME_ENABLE_CUDA_ATTACH)
+#include "bpf_map/gpu/nv_gpu_ringbuf_map.hpp"
+#endif
+
 #if __APPLE__
 #include "spinlock_wrapper.hpp"
 #endif
@@ -201,6 +206,10 @@ class bpf_map_handler {
 		return map_lock;
 	}
 
+#if defined(BPFTIME_ENABLE_CUDA_ATTACH)
+	std::optional<nv_gpu_ringbuf_map_impl *>
+	try_get_nv_gpu_ringbuf_map_impl() const;
+#endif
     private:
 	int id = 0;
 	std::string get_container_name();

@@ -43,18 +43,41 @@ nv_gpu_array_map_impl::try_initialize_for_agent_and_get_mapped_address()
 	}
 }
 nv_gpu_array_map_impl::nv_gpu_array_map_impl(
-	boost::interprocess::managed_shared_memory &memory,
-	CUipcMemHandle gpu_mem_handle, CUdeviceptr gpu_shared_mem,
-	uint64_t value_size, uint64_t max_entries, uint64_t thread_count)
-	: gpu_mem_handle(gpu_mem_handle),
-	  agent_gpu_shared_mem(memory.get_segment_manager()),
+	boost::interprocess::managed_shared_memory &memory, uint64_t value_size,
+	uint64_t max_entries, uint64_t thread_count)
+	: agent_gpu_shared_mem(memory.get_segment_manager()),
 	  value_size(value_size), max_entries(max_entries),
 	  thread_count(thread_count), value_buffer(memory.get_segment_manager())
 {
 	entry_size = thread_count * value_size;
 	value_buffer.resize(entry_size);
-
-	this->server_gpu_shared_mem = gpu_shared_mem;
+	auto total_buffer_size =
+		(uint64_t)value_size * max_entries * thread_count;
+	SPDLOG_INFO(
+		"Initializing map type of BPF_MAP_TYPE_NV_GPU_ARRAY_MAP, total_buffer_size={}",
+		total_buffer_size);
+	if (auto err = cuMemAlloc(&server_gpu_shared_mem, total_buffer_size);
+	    err != CUDA_SUCCESS) {
+		SPDLOG_ERROR(
+			"Unable to allocate GPU buffer for nv_gpu_array_map_impl: {}",
+			(int)err);
+		throw std::runtime_error(
+			"Unable to allocate GPU buffer for nv_gpu_array_map_impl");
+	}
+	if (auto err = cuMemsetD8(server_gpu_shared_mem, 0, total_buffer_size);
+	    err != CUDA_SUCCESS) {
+		SPDLOG_ERROR("Unable to fill GPU buffer with zero: {}",
+			     (int)err);
+	}
+	if (auto err = cuIpcGetMemHandle(&this->gpu_mem_handle,
+					 server_gpu_shared_mem);
+	    err != CUDA_SUCCESS) {
+		SPDLOG_ERROR(
+			"Unable to open CUDA IPC handle for nv_gpu_array_map_impl: {}",
+			(int)err);
+		throw std::runtime_error(
+			"Unable to open CUDA IPC handle for nv_gpu_array_map_impl");
+	}
 }
 
 void *nv_gpu_array_map_impl::elem_lookup(const void *key)

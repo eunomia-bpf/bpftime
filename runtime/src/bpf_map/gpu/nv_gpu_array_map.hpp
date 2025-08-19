@@ -7,12 +7,6 @@
 #include <cstdint>
 namespace bpftime
 {
-struct int_hasher {
-	size_t operator()(int const &data) const
-	{
-		return data;
-	}
-};
 using pid_devptr_map_value_ty = std::pair<const int, CUdeviceptr>;
 using pid_devptr_map_allocator =
 	allocator<pid_devptr_map_value_ty,
@@ -37,8 +31,7 @@ class nv_gpu_array_map_impl {
     public:
 	const static bool should_lock = true;
 	nv_gpu_array_map_impl(boost::interprocess::managed_shared_memory &memory,
-			      CUipcMemHandle gpu_mem_handle,
-			      CUdeviceptr gpu_shared_mem, uint64_t value_size,
+			      uint64_t value_size,
 			      uint64_t max_entries, uint64_t thread_count);
 
 	void *elem_lookup(const void *key);
