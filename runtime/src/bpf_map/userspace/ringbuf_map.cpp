@@ -263,8 +263,8 @@ void *ringbuf::reserve(size_t size, int self_fd)
 			size, self_fd);
 		return nullptr;
 	}
-	auto cons_pos = smp_load_acquire_ul(consumer_pos.get());
 	spin_lock_guard guard(reserve_spin_lock);
+	auto cons_pos = smp_load_acquire_ul(consumer_pos.get());
 	auto prod_pos = smp_load_acquire_ul(producer_pos.get());
 	auto avail_size = max_ent - (prod_pos - cons_pos);
 	auto total_size = (size + BPF_RINGBUF_HDR_SZ + 7) / 8 * 8;
