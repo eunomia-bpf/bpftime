@@ -42,8 +42,6 @@ using boost_shm_string =
 	boost::interprocess::basic_string<char, std::char_traits<char>,
 					  char_allocator>;
 
-const size_t DEFAULT_MAX_FD = 1024 * 6;
-
 struct unused_handler {};
 
 using boost::interprocess::allocator;
@@ -96,7 +94,7 @@ using handler_variant_vector =
 class handler_manager {
     public:
 	handler_manager(managed_shared_memory &mem,
-			size_t max_fd_count = DEFAULT_MAX_FD);
+			size_t max_fd_count);
 
 	~handler_manager();
 

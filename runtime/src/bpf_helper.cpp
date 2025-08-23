@@ -137,9 +137,15 @@ static void segv_read_handler(int sig, siginfo_t *siginfo, void *ctx)
 	} else if (status_probe_read == PROBE_STATUS::RUNNING_NO_ERROR) {
 		// set status to error
 		auto uctx = (ucontext_t *)ctx;
-		auto *rip = (greg_t *)(&uctx->uc_mcontext.gregs[REG_RIP]);
+#if defined(__x86_64__) || defined(_M_X64)
+		auto *ip = (greg_t *)(&uctx->uc_mcontext.gregs[REG_RIP]);
+#elif defined(__aarch64__) || defined(_M_ARM64)
+		auto *ip = (greg_t *)(&uctx->uc_mcontext.pc);
+#else
+#error "Unsupported architecture"
+#endif
 		status_probe_read = PROBE_STATUS::RUNNING_ERROR;
-		*rip = (greg_t)&jump_point_read;
+		*ip = (greg_t)&jump_point_read;
 	}
 }
 #endif
@@ -217,9 +223,15 @@ static void segv_write_handler(int sig, siginfo_t *siginfo, void *ctx)
 	} else if (status_probe_write == PROBE_STATUS::RUNNING_NO_ERROR) {
 		// set status to error
 		auto uctx = (ucontext_t *)ctx;
-		auto *rip = (greg_t *)(&uctx->uc_mcontext.gregs[REG_RIP]);
+#if defined(__x86_64__) || defined(_M_X64)
+		auto *ip = (greg_t *)(&uctx->uc_mcontext.gregs[REG_RIP]);
+#elif defined(__aarch64__) || defined(_M_ARM64)
+		auto *ip = (greg_t *)(&uctx->uc_mcontext.pc);
+#else
+#error "Unsupported architecture"
+#endif
 		status_probe_write = PROBE_STATUS::RUNNING_ERROR;
-		*rip = (greg_t)&jump_point_write;
+		*ip = (greg_t)&jump_point_write;
 	}
 }
 #endif

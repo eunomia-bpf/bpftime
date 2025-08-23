@@ -4,7 +4,11 @@
  * All rights reserved.
  */
 #include "syscall_context.hpp"
+#if defined(__aarch64__)
+#include <asm-generic/unistd.h>
+#else
 #include <asm/unistd_64.h>
+#endif
 #include <boost/interprocess/exceptions.hpp>
 #include <cstdio>
 #if __linux__
