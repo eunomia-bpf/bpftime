@@ -11,6 +11,7 @@
 #include <csignal>
 #include <cstddef>
 #include <exception>
+#include <optional>
 #include <signal.h>
 #include <cerrno>
 #include <errno.h>
@@ -165,6 +166,13 @@ int bpftime_uprobe_create(int fd, int pid, const char *name, uint64_t offset,
 		fd, pid, name, offset, retprobe, ref_ctr_off);
 }
 
+int bpftime_kprobe_create(int fd, const char *func_name, uint64_t addr,
+			  bool retprobe, size_t ref_ctr_off)
+{
+	return shm_holder.global_shared_memory.add_kprobe(
+		fd == -1 ? std::optional<int>() : fd, func_name, addr, retprobe,
+		ref_ctr_off);
+}
 int bpftime_tracepoint_create(int fd, int pid, int32_t tp_id)
 {
 	return shm_holder.global_shared_memory.add_tracepoint(fd, pid, tp_id);

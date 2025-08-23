@@ -1,4 +1,4 @@
-# bpftime: Userspace eBPF runtime for Observability, Network & General extensions Framework
+# bpftime: Userspace eBPF runtime for Observability, Network, GPU & General extensions Framework
 
 [![Build and Test VM](https://github.com/eunomia-bpf/bpftime/actions/workflows/test-vm.yml/badge.svg)](https://github.com/eunomia-bpf/bpftime/actions/workflows/test-vm.yml)
 [![Build and test runtime](https://github.com/eunomia-bpf/bpftime/actions/workflows/test-runtime.yml/badge.svg)](https://github.com/eunomia-bpf/bpftime/actions/workflows/test-runtime.yml)
@@ -11,7 +11,7 @@
 🔌 [Examples & Use Cases](#examples--use-cases) \
 ⌨️ [Linux Plumbers 23 talk](https://lpc.events/event/17/contributions/1639/) \
 📖 [Slides](https://eunomia.dev/bpftime/documents/userspace-ebpf-bpftime-lpc.pdf) \
-📚 [Arxiv preprint](https://arxiv.org/abs/2311.07923)
+📚 [OSDI '25 Paper](https://www.usenix.org/conference/osdi25/presentation/zheng-yusheng)
 
 [**Checkout our documents in eunomia.dev!**](https://eunomia.dev/bpftime/)
 
@@ -123,6 +123,7 @@ Examples including:
 - [error injection](https://github.com/eunomia-bpf/bpftime/tree/master/example/error-inject): change function behavior with `bpf_override_return`.
 - Use the eBPF LLVM JIT/AOT vm as [a standalone library](https://github.com/eunomia-bpf/llvmbpf/tree/main/example).
 - Userspace [XDP with DPDK and AF_XDP](https://github.com/userspace-xdp/userspace-xdp)
+- [CUDA eBPF Probe/Retprobe Example](https://github.com/eunomia-bpf/bpftime/tree/master/example/cuda-counter)
 
 ## In-Depth
 
@@ -153,7 +154,7 @@ Current hook implementation is based on binary rewriting and the underly techniq
 
 The hook can be easily replaced with other DBI methods or frameworks, or add more hook mechanisms in the future.
 
-See our draft arxiv paper [bpftime: userspace eBPF Runtime for Uprobe, Syscall and Kernel-User Interactions](https://arxiv.org/abs/2311.07923) for details.
+See our OSDI '25 paper [Extending Applications Safely and Efficiently](https://www.usenix.org/conference/osdi25/presentation/zheng-yusheng) for details.
 
 ### **Performance Benchmarks**
 
@@ -218,16 +219,15 @@ This project is licensed under the MIT License.
 Have any questions or suggestions on future development? Free free to open an issue or contact
 <yunwei356@gmail.com> !
 
-Our arxiv preprint: <https://arxiv.org/abs/2311.07923>
+Our OSDI '25 paper: <https://www.usenix.org/conference/osdi25/presentation/zheng-yusheng>
 
 ```txt
-@misc{zheng2023bpftime,
-      title={bpftime: userspace eBPF Runtime for Uprobe, Syscall and Kernel-User Interactions}, 
-      author={Yusheng Zheng and Tong Yu and Yiwei Yang and Yanpeng Hu and XiaoZheng Lai and Andrew Quinn},
-      year={2023},
-      eprint={2311.07923},
-      archivePrefix={arXiv},
-      primaryClass={cs.OS}
+@inproceedings{zheng2025extending,
+  title={Extending Applications Safely and Efficiently},
+  author={Zheng, Yusheng and Yu, Tong and Yang, Yiwei and Hu, Yanpeng and Lai, Xiaozheng and Williams, Dan and Quinn, Andi},
+  booktitle={19th USENIX Symposium on Operating Systems Design and Implementation (OSDI 25)},
+  pages={557--574},
+  year={2025}
 }
 ```
 

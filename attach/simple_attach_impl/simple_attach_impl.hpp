@@ -68,19 +68,28 @@ struct simple_attach_private_data : public attach::attach_private_data {
 	}
 };
 
+// Replace concept with template metaprogramming for older compilers
 template <typename T>
-concept HasRegisterAttachImpl =
-	requires(T t, std::initializer_list<int> attach_types,
-		 std::unique_ptr<attach::base_attach_impl> impl,
-		 std::function<std::unique_ptr<attach::attach_private_data>(
-			 const std::string_view &, int &)>
-			 creator)
-{
-	{
-		t.register_attach_impl(std::move(attach_types), std::move(impl),
-				       creator)
-	} -> std::same_as<void>;
+struct has_register_attach_impl_helper {
+private:
+    template <typename C>
+    static auto test(int) -> decltype(
+        std::declval<C>().register_attach_impl(
+            std::declval<std::initializer_list<int>>(),
+            std::declval<std::unique_ptr<attach::base_attach_impl>>(),
+            std::declval<std::function<std::unique_ptr<attach::attach_private_data>(
+                const std::string_view &, int &)>>()
+        ), std::true_type());
+    
+    template <typename>
+    static std::false_type test(...);
+
+public:
+    using type = decltype(test<T>(0));
 };
+
+template <typename T>
+struct has_register_attach_impl : has_register_attach_impl_helper<T>::type {};
 
 /// Adds an simple defined attach impl to the specified bpf_attach_ctx
 /// A simple attach impl consists up of a callback, an attach type integer, and
@@ -89,8 +98,8 @@ concept HasRegisterAttachImpl =
 /// eBPF program linked with this attach. It will also received the argument
 /// provided at attach, and the argument provided at trigger
 template <class T>
-requires HasRegisterAttachImpl<T> static inline std::function<
-	int(const std::string &)>
+static inline
+typename std::enable_if<has_register_attach_impl<T>::value, std::function<int(const std::string &)>>::type
 add_simple_attach_impl_to_attach_ctx(int attach_type, callback_type &&callback,
 				     T &attach_ctx)
 {

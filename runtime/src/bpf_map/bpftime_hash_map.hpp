@@ -84,17 +84,20 @@ class bpftime_hash_map {
 
 	inline bool is_empty(size_t index) const
 	{
-		return *(uint32_t *)&data_buffer[get_elem_offset(index)] == 0;
+		return *(uint32_t *)(uintptr_t)&data_buffer[get_elem_offset(
+			       index)] == 0;
 	}
 
 	inline void set_empty(size_t index)
 	{
-		*(uint32_t *)&data_buffer[get_elem_offset(index)] = 0;
+		*(uint32_t *)(uintptr_t)&data_buffer[get_elem_offset(index)] =
+			0;
 	}
 
 	inline void set_filled(size_t index)
 	{
-		*(uint32_t *)&data_buffer[get_elem_offset(index)] = 1;
+		*(uint32_t *)(uintptr_t)&data_buffer[get_elem_offset(index)] =
+			1;
 	}
 
 	inline void *get_key(size_t index)

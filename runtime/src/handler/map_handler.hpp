@@ -188,7 +188,7 @@ class bpf_map_handler {
 				 bool from_syscall = false) const;
 	void map_free(boost::interprocess::managed_shared_memory &memory);
 	int map_init(boost::interprocess::managed_shared_memory &memory);
-	uint32_t get_value_size() const;
+	uint32_t get_userspace_value_size() const;
 	std::optional<ringbuf_map_impl *> try_get_ringbuf_map_impl() const;
 	std::optional<array_map_impl *> try_get_array_map_impl() const;
 	std::optional<perf_event_array_kernel_user_impl *>
@@ -211,6 +211,20 @@ class bpf_map_handler {
 	[[maybe_unused]] uint64_t flags = 0;
 	uint32_t key_size = 0;
 	uint32_t value_size = 0;
+
+    public:
+	uint32_t get_key_size() const
+	{
+		return key_size;
+	}
+	uint32_t get_value_size() const;
+	uint32_t get_max_entries() const
+	{
+		return max_entries;
+	}
+
+	void *get_gpu_map_extra_buffer() const;
+	uint64_t get_gpu_map_max_thread_count() const;
 };
 
 } // namespace bpftime

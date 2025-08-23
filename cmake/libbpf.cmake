@@ -7,7 +7,7 @@ ExternalProject_Add(libbpf
   PREFIX libbpf
   SOURCE_DIR ${LIBBPF_DIR}/src
   CONFIGURE_COMMAND "mkdir" "-p" "${CMAKE_CURRENT_BINARY_DIR}/libbpf/libbpf"
-  BUILD_COMMAND "INCLUDEDIR=" "LIBDIR=" "UAPIDIR=" "OBJDIR=${CMAKE_CURRENT_BINARY_DIR}/libbpf/libbpf" "DESTDIR=${CMAKE_CURRENT_BINARY_DIR}/libbpf" "make" "CFLAGS=-g -O2 -Werror -Wall -std=gnu89 -fPIC -fvisibility=hidden -DSHARED -DCUSTOM_DEFINE=1" "-j" "install"
+  BUILD_COMMAND "INCLUDEDIR=" "LIBDIR=" "UAPIDIR=" "OBJDIR=${CMAKE_CURRENT_BINARY_DIR}/libbpf/libbpf" "DESTDIR=${CMAKE_CURRENT_BINARY_DIR}/libbpf" "make" "CFLAGS=-g -O2 -std=gnu89 -fPIC -fvisibility=hidden -DSHARED -DCUSTOM_DEFINE=1" "-j" "install"
   BUILD_IN_SOURCE TRUE
   BUILD_ALWAYS TRUE
   INSTALL_COMMAND ""
@@ -77,7 +77,7 @@ ExternalProject_Add(bpftool
   PREFIX bpftool
   SOURCE_DIR ${BPFTOOL_DIR}/src
   CONFIGURE_COMMAND "mkdir" "-p" "${BPFTOOL_INSTALL_DIR}"
-  BUILD_COMMAND "make" "EXTRA_CFLAGS=-g -O2 -Wall -Werror " "-j"
+  BUILD_COMMAND "make" "EXTRA_CFLAGS=-g -O2 " "-j"
   INSTALL_COMMAND "cp" "${BPFTOOL_DIR}/src/bpftool" "${BPFTOOL_INSTALL_DIR}/bpftool"
   BUILD_IN_SOURCE TRUE
   BUILD_BYPRODUCTS ${BPFTOOL_DIR}/src/bpftool
@@ -110,7 +110,7 @@ function(add_ebpf_program_target target_name source_file output_file)
   string(STRIP ${UNAME_ARCH} UNAME_ARCH_STRIPPED)
   add_custom_command(
     OUTPUT ${output_file}
-    COMMAND clang -Xlinker --export-dynamic -O2 -target bpf -c -g -D__TARGET_ARCH_${UNAME_ARCH_STRIPPED} -I${CMAKE_SOURCE_DIR}/third_party/vmlinux/${UNAME_ARCH_STRIPPED} -I${LIBBPF_INCLUDE_DIRS}/uapi -I${LIBBPF_INCLUDE_DIRS} ${source_file} -o ${output_file}
+    COMMAND clang -O2 -target bpf -c -g -D__TARGET_ARCH_${UNAME_ARCH_STRIPPED} -I${CMAKE_SOURCE_DIR}/third_party/vmlinux/${UNAME_ARCH_STRIPPED} -I${LIBBPF_INCLUDE_DIRS}/uapi -I${LIBBPF_INCLUDE_DIRS} ${source_file} -o ${output_file}
     DEPENDS ${source_file}
   )
   add_custom_target(${target_name}

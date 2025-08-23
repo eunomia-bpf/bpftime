@@ -38,6 +38,7 @@ struct bpf_map_attr {
 
 	// additional fields for bpftime only
 	uint32_t kernel_bpf_map_id = 0;
+	uint32_t gpu_thread_count = 1000;
 };
 
 enum class bpf_event_type {
@@ -51,11 +52,16 @@ enum class bpf_event_type {
 	// custom types
 	BPF_TYPE_UPROBE = 6,
 	BPF_TYPE_URETPROBE = 7,
+	BPF_TYPE_KPROBE = 8,
+	BPF_TYPE_KRETPROBE = 9,
+
 	BPF_TYPE_UPROBE_OVERRIDE = 1008,
 	BPF_TYPE_UREPLACE = 1009,
 };
 
 #define KERNEL_USER_MAP_OFFSET 1000
+
+const int GPU_MAP_OFFSET = 1500;
 
 enum class bpf_map_type {
 	BPF_MAP_TYPE_UNSPEC,
@@ -108,6 +114,8 @@ enum class bpf_map_type {
 		KERNEL_USER_MAP_OFFSET + BPF_MAP_TYPE_PERCPU_ARRAY,
 	BPF_MAP_TYPE_KERNEL_USER_PERF_EVENT_ARRAY =
 		KERNEL_USER_MAP_OFFSET + BPF_MAP_TYPE_PERF_EVENT_ARRAY,
+
+	BPF_MAP_TYPE_NV_GPU_ARRAY_MAP = GPU_MAP_OFFSET + BPF_MAP_TYPE_ARRAY,
 
 	BPF_MAP_TYPE_MAX = 2048,
 };
@@ -315,6 +323,12 @@ long bpftime_map_delete_elem(int fd, const void *key);
 // @param[fd]: fd is the fd allocated by the kernel. if fd is -1, then the
 // function will allocate a new perf event fd.
 int bpftime_uprobe_create(int fd, int pid, const char *name, uint64_t offset,
+			  bool retprobe, size_t ref_ctr_off);
+// create kprobe in the global shared memory
+//
+// @param[fd]: fd is the fd allocated by the kernel. if fd is -1, then the
+// function will allocate a new perf event fd.
+int bpftime_kprobe_create(int fd, const char *func_name, uint64_t addr,
 			  bool retprobe, size_t ref_ctr_off);
 // create tracepoint in the global shared memory
 //

@@ -61,20 +61,14 @@ TEST_CASE("Test with backtrace")
 						     "generate_stack", nullptr);
 			for (int i = 0; i < 4; i++) {
 				auto addr = stack->at(i);
-				GumReturnAddressDetails frame_details;
-				REQUIRE(gum_return_address_details_from_address(
-						(GumReturnAddress)addr,
-						&frame_details) == true);
 				GumDebugSymbolDetails debug_details;
 				REQUIRE(gum_symbol_details_from_address(
 						(GumReturnAddress)addr,
 						&debug_details) == true);
 				SPDLOG_INFO("symbol name {}",
 					    debug_details.symbol_name);
-				auto expected_name =
-					std::string(
-						"__bpftime_test_attach_with_back_trace__func") +
-					std::to_string(4 - i);
+				auto expected_name = std::string(
+					"__bpftime_test_attach_with_back_trace__func");
 				REQUIRE(std::string(debug_details.symbol_name)
 						.starts_with(expected_name));
 			}

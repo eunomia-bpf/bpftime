@@ -43,6 +43,7 @@ target_include_directories(libbpftime_daemon PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/../third_party/libbpf/include
     ${CMAKE_CURRENT_SOURCE_DIR}/../third_party/libbpf/include/uapi
 )
+
 target_link_libraries(libbpftime_daemon PRIVATE
     ${LIBBPF_LIBRARIES}
     elf
@@ -52,6 +53,13 @@ target_link_libraries(libbpftime_daemon PRIVATE
     PUBLIC
     rt
 )
+
+if(${BPFTIME_ENABLE_CUDA_ATTACH})
+    include(../cmake/cuda.cmake)
+    find_cuda()
+    target_link_directories(libbpftime_daemon PUBLIC ${CUDA_LIBRARY_PATH})
+    target_link_libraries(libbpftime_daemon PRIVATE ${CUDA_LIBS})
+endif()
 
 set_property(TARGET libbpftime_daemon PROPERTY CXX_STANDARD 20)
 
