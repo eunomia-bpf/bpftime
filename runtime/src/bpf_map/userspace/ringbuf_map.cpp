@@ -157,11 +157,6 @@ void ringbuf_map_impl::submit(const void *sample, bool discard)
 ringbuf::ringbuf(uint32_t max_ent,
 		 boost::interprocess::managed_shared_memory &memory)
 	: max_ent(max_ent),
-	  //   reserve_mutex(boost::interprocess::make_managed_unique_ptr(
-	  // 	  memory.construct<
-	  // 		  boost::interprocess::interprocess_mutex>(
-	  // 		  boost::interprocess::anonymous_instance)(),
-	  // 	  memory)),
 	  raw_buffer(boost::interprocess::make_managed_unique_ptr(
 		  memory.construct<buf_vec>(
 			  boost::interprocess::anonymous_instance)(
@@ -182,7 +177,7 @@ ringbuf::ringbuf(uint32_t max_ent,
 	pthread_spin_init(&this->reserve_spin_lock, 1);
 }
 
-int ringbuf::fetch_data(std::function<int(void *, int)> cb)
+int ringbuf::fetch_data(int (*cb)(void *ctx, void *data, size_t len), void *ctx)
 {
 	int *len_ptr, len, err;
 	/* 64-bit to avoid overflow in case of extreme application behavior */
@@ -211,7 +206,7 @@ int ringbuf::fetch_data(std::function<int(void *, int)> cb)
 			if ((len & BPF_RINGBUF_DISCARD_BIT) == 0) {
 				sample = (void *)(((uintptr_t)len_ptr) +
 						  BPF_RINGBUF_HDR_SZ);
-				err = cb(sample, len);
+				err = cb(ctx, sample, len);
 				if (err < 0) {
 					/* update consumer pos and bail out */
 					smp_store_release_ul(consumer_pos.get(),
@@ -241,8 +236,6 @@ bool ringbuf::has_data() const
 	}
 	return false;
 }
-using boost::interprocess::interprocess_mutex;
-using boost::interprocess::scoped_lock;
 
 struct ringbuf_hdr {
 	uint32_t len;

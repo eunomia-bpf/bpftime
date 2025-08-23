@@ -56,7 +56,7 @@ class ringbuf {
 	bool has_data() const;
 	void *reserve(size_t size, int self_fd);
 	void submit(const void *sample, bool discard);
-	int fetch_data(std::function<int(void *, int)>);
+	int fetch_data(int (*)(void *ctx, void *data, size_t len), void *ctx);
 	ringbuf(uint32_t max_ent,
 		boost::interprocess::managed_shared_memory &memory);
 	friend class ringbuf_map_impl;
