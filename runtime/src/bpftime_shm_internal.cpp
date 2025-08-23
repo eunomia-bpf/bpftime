@@ -588,7 +588,9 @@ bpftime_shm::bpftime_shm(const char *shm_name, shm_open_type type)
 	: open_type(type)
 {
 	// Get the config from env because the shared memory is not initialized
-	size_t memory_size = construct_agent_config_from_env().shm_memory_size;
+	auto config = construct_agent_config_from_env();
+	size_t memory_size = config.shm_memory_size;
+	size_t max_fd_count = config.max_fd_count;
 	if (type == shm_open_type::SHM_OPEN_ONLY) {
 		SPDLOG_DEBUG("start: bpftime_shm for client setup");
 		// open the shm
@@ -624,7 +626,7 @@ bpftime_shm::bpftime_shm(const char *shm_name, shm_open_type type)
 			shm_name, memory_size << 20);
 
 		manager = segment.find_or_construct<bpftime::handler_manager>(
-			bpftime::DEFAULT_GLOBAL_HANDLER_NAME)(segment);
+			bpftime::DEFAULT_GLOBAL_HANDLER_NAME)(segment, max_fd_count);
 		SPDLOG_DEBUG("done: bpftime_shm for server setup: manager");
 
 		syscall_installed_pids =
@@ -637,7 +639,7 @@ bpftime_shm::bpftime_shm(const char *shm_name, shm_open_type type)
 			"done: bpftime_shm for server setup: syscall_pid_set");
 
 		agent_config = segment.find_or_construct<struct agent_config>(
-			bpftime::DEFAULT_AGENT_CONFIG_NAME)();
+			bpftime::DEFAULT_AGENT_CONFIG_NAME)(config);
 
 		injected_pids = segment.find_or_construct<alive_agent_pids>(
 			bpftime::DEFAULT_ALIVE_AGENT_PIDS_NAME)(
@@ -660,7 +662,7 @@ bpftime_shm::bpftime_shm(const char *shm_name, shm_open_type type)
 		SPDLOG_DEBUG("done: bpftime_shm for server setup: segment");
 
 		manager = segment.construct<bpftime::handler_manager>(
-			bpftime::DEFAULT_GLOBAL_HANDLER_NAME)(segment);
+			bpftime::DEFAULT_GLOBAL_HANDLER_NAME)(segment, max_fd_count);
 		SPDLOG_DEBUG("done: bpftime_shm for server setup: manager");
 
 		syscall_installed_pids = segment.construct<syscall_pid_set>(
@@ -672,7 +674,7 @@ bpftime_shm::bpftime_shm(const char *shm_name, shm_open_type type)
 			"done: bpftime_shm for server setup: syscall_pid_set");
 
 		agent_config = segment.construct<struct agent_config>(
-			bpftime::DEFAULT_AGENT_CONFIG_NAME)();
+			bpftime::DEFAULT_AGENT_CONFIG_NAME)(config);
 		SPDLOG_DEBUG(
 			"done: bpftime_shm for server setup: agent_config");
 
