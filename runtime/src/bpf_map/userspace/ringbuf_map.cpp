@@ -244,20 +244,18 @@ struct ringbuf_hdr {
 
 struct spin_lock_guard {
 	pthread_spinlock_t &lock;
-	bool locked;
-	spin_lock_guard(pthread_spinlock_t &lock) : lock(lock), locked(false)
+	spin_lock_guard(pthread_spinlock_t &lock) : lock(lock)
 	{
 		int ret = pthread_spin_lock(&lock);
 		if (ret != 0) {
-			throw std::runtime_error("Failed to acquire spin lock: pthread_spin_lock returned " + std::to_string(ret));
+			throw std::runtime_error(
+				"Failed to acquire spin lock: pthread_spin_lock returned " +
+				std::to_string(ret));
 		}
-		locked = true;
 	}
 	~spin_lock_guard()
 	{
-		if (locked) {
-			pthread_spin_unlock(&lock);
-		}
+		pthread_spin_unlock(&lock);
 	}
 };
 
