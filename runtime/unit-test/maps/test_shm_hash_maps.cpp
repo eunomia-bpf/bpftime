@@ -90,8 +90,10 @@ TEST_CASE("Test shm hash maps with sub process")
 
 	// The side that creates the mapping
 	managed_shared_memory segment(create_only, SHM_NAME, 1 << 20);
+	// Use default max_fd_count for tests
+	const size_t test_max_fd_count = DEFAULT_MAX_FD_COUNT;
 	auto manager =
-		segment.construct<handler_manager>(HANDLER_NAME)(segment);
+		segment.construct<handler_manager>(HANDLER_NAME)(segment, test_max_fd_count);
 	auto &manager_ref = *manager;
 
 	manager_ref.set_handler(1,
