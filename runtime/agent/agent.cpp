@@ -104,7 +104,7 @@ extern "C" int __libc_start_main(int (*main)(int, char **, char **), int argc,
 		    stack_end);
 }
 #endif
-static void sig_handler_sigusr1(int sig)
+static void sig_handler_sigusr1_detach(int sig)
 {
 	SPDLOG_INFO("Detaching..");
 	if (int err = ctx_holder.ctx.destroy_all_attach_links(); err < 0) {
@@ -148,7 +148,7 @@ extern "C" void bpftime_agent_main(const gchar *data, gboolean *stay_resident)
 
 	srand(std::random_device()());
 	// We use SIGUSR1 to indicate the detaching
-	signal(SIGUSR1, sig_handler_sigusr1);
+	signal(SIGUSR1, sig_handler_sigusr1_detach);
 	try {
 		// If we are unable to initialize shared memory..
 		bpftime_initialize_global_shm(shm_open_type::SHM_OPEN_ONLY);

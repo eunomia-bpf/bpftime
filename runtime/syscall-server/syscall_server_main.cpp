@@ -162,7 +162,6 @@ extern "C" int open(const char *file, int oflag, ...)
 extern "C" ssize_t read(int fd, void *buf, size_t count)
 {
 	initialize_ctx();
-	SPDLOG_DEBUG("read {} {:x} {}", fd, (uintptr_t)buf, count);
 	return context->handle_read(fd, buf, count);
 }
 

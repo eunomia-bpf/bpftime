@@ -25,8 +25,8 @@ inline std::string expand_user_path(const std::string &input_path)
 
 		if (input_path.size() == 1 || input_path[1] == '/') {
 			// Replace "~" with the home directory
-			std::string expandedPath = homeDir +
-				 input_path.substr(1);
+			std::string expandedPath =
+				homeDir + input_path.substr(1);
 			return expandedPath;
 		} else {
 			return "console"; // Unsupported path format
@@ -40,7 +40,7 @@ inline std::string expand_user_path(const std::string &input_path)
 inline void bpftime_set_logger(const std::string &target) noexcept
 {
 	std::string logger_target = expand_user_path(target);
-
+	spdlog::drop_all();
 	if (logger_target == "console") {
 		// Set logger to stderr
 		auto logger = spdlog::stderr_color_mt("stderr");
