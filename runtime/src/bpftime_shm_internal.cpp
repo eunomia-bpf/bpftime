@@ -589,7 +589,9 @@ bpftime_shm::bpftime_shm(const char *shm_name, shm_open_type type)
 	: open_type(type)
 {
 	// Get the config from env because the shared memory is not initialized
-	size_t memory_size = construct_agent_config_from_env().shm_memory_size;
+	auto config = construct_agent_config_from_env();
+	size_t memory_size = config.shm_memory_size;
+	size_t max_fd_count = config.max_fd_count;
 	if (type == shm_open_type::SHM_OPEN_ONLY) {
 		SPDLOG_DEBUG("start: bpftime_shm for client setup");
 		// open the shm
@@ -625,7 +627,8 @@ bpftime_shm::bpftime_shm(const char *shm_name, shm_open_type type)
 			shm_name, memory_size << 20);
 
 		manager = segment.find_or_construct<bpftime::handler_manager>(
-			bpftime::DEFAULT_GLOBAL_HANDLER_NAME)(segment);
+			bpftime::DEFAULT_GLOBAL_HANDLER_NAME)(segment,
+							      max_fd_count);
 		SPDLOG_DEBUG("done: bpftime_shm for server setup: manager");
 
 		syscall_installed_pids =
@@ -638,7 +641,7 @@ bpftime_shm::bpftime_shm(const char *shm_name, shm_open_type type)
 			"done: bpftime_shm for server setup: syscall_pid_set");
 
 		agent_config = segment.find_or_construct<struct agent_config>(
-			bpftime::DEFAULT_AGENT_CONFIG_NAME)();
+			bpftime::DEFAULT_AGENT_CONFIG_NAME)(config);
 
 		injected_pids = segment.find_or_construct<alive_agent_pids>(
 			bpftime::DEFAULT_ALIVE_AGENT_PIDS_NAME)(
@@ -661,7 +664,8 @@ bpftime_shm::bpftime_shm(const char *shm_name, shm_open_type type)
 		SPDLOG_DEBUG("done: bpftime_shm for server setup: segment");
 
 		manager = segment.construct<bpftime::handler_manager>(
-			bpftime::DEFAULT_GLOBAL_HANDLER_NAME)(segment);
+			bpftime::DEFAULT_GLOBAL_HANDLER_NAME)(segment,
+							      max_fd_count);
 		SPDLOG_DEBUG("done: bpftime_shm for server setup: manager");
 
 		syscall_installed_pids = segment.construct<syscall_pid_set>(
@@ -673,7 +677,7 @@ bpftime_shm::bpftime_shm(const char *shm_name, shm_open_type type)
 			"done: bpftime_shm for server setup: syscall_pid_set");
 
 		agent_config = segment.construct<struct agent_config>(
-			bpftime::DEFAULT_AGENT_CONFIG_NAME)();
+			bpftime::DEFAULT_AGENT_CONFIG_NAME)(config);
 		SPDLOG_DEBUG(
 			"done: bpftime_shm for server setup: agent_config");
 
@@ -685,7 +689,7 @@ bpftime_shm::bpftime_shm(const char *shm_name, shm_open_type type)
 		SPDLOG_DEBUG("done: bpftime_shm for server setup.");
 	} else if (type == shm_open_type::SHM_NO_CREATE) {
 		// not create any shm
-		spdlog::warn(
+		SPDLOG_WARN(
 			"NOT creating global shm. This is only for testing purpose.");
 		return;
 	}
@@ -886,12 +890,13 @@ bpftime::bpftime_shm::~bpftime_shm()
 	void *base_addr = segment.get_address();
 #ifdef BPFTIME_ENABLE_CUDA_ATTACH
 	cudaError_t err = cudaHostUnregister(base_addr);
+	// Use fprintf here to avoid spdlog de-initialized issues
 	if (err != cudaSuccess) {
-		SPDLOG_ERROR("cudaHostUnregister() failed: {}",
-			     cudaGetErrorString(err));
+		fprintf(stderr, "cudaHostUnregister() failed: %s\n",
+			cudaGetErrorString(err));
 		return;
 	}
-	SPDLOG_INFO("bpftime_shm: Unregistered host memory from CUDA");
+	fprintf(stderr, "bpftime_shm: Unregistered host memory from CUDA\n");
 #endif
 }
 

@@ -4,7 +4,11 @@
  * All rights reserved.
  */
 #include "syscall_context.hpp"
+#if defined(__aarch64__)
+#include <asm-generic/unistd.h>
+#else
 #include <asm/unistd_64.h>
+#endif
 #include <boost/interprocess/exceptions.hpp>
 #include <cstdio>
 #if __linux__
@@ -158,7 +162,6 @@ extern "C" int open(const char *file, int oflag, ...)
 extern "C" ssize_t read(int fd, void *buf, size_t count)
 {
 	initialize_ctx();
-	SPDLOG_DEBUG("read {} {:x} {}", fd, (uintptr_t)buf, count);
 	return context->handle_read(fd, buf, count);
 }
 
