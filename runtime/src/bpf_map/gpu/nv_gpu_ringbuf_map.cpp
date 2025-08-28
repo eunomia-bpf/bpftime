@@ -96,7 +96,7 @@ long nv_gpu_ringbuf_map_impl::elem_delete(const void *key)
 
 int nv_gpu_ringbuf_map_impl::map_get_next_key(const void *key, void *next_key)
 {
-	SPDLOG_ERROR("Get netx key is not supported by gpu ringbuf map");
+	SPDLOG_ERROR("Get next key is not supported by gpu ringbuf map");
 	errno = -ENOTSUP;
 	return -1;
 }

@@ -920,6 +920,6 @@ int syscall_context::poll_gpu_ringbuf_map(int mapfd, void *ctx,
 					  void (*fn)(const void *, uint64_t,
 						     void *))
 {
-	return bpftime_poll_gpu_rintbuf_map(mapfd, ctx, fn);
+	return bpftime_poll_gpu_ringbuf_map(mapfd, ctx, fn);
 }
 #endif

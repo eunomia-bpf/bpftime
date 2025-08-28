@@ -629,7 +629,7 @@ int bpftime_poll_from_ringbuf(int rb_fd, void *ctx,
 }
 
 #ifdef BPFTIME_ENABLE_CUDA_ATTACH
-int bpftime_poll_gpu_rintbuf_map(int mapfd, void *ctx,
+int bpftime_poll_gpu_ringbuf_map(int mapfd, void *ctx,
 				 void (*fn)(const void *, uint64_t, void *))
 {
 	auto &shm = shm_holder.global_shared_memory;
