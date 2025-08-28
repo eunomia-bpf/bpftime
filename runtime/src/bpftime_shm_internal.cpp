@@ -926,7 +926,12 @@ int bpftime_shm::poll_gpu_ringbuf_map(
 	auto &map_handler =
 		std::get<bpf_map_handler>(manager->get_handler(mapfd));
 
-	auto impl = *map_handler.try_get_nv_gpu_ringbuf_map_impl();
+	auto impl_opt = map_handler.try_get_nv_gpu_ringbuf_map_impl();
+	if (!impl_opt) {
+		SPDLOG_ERROR("Failed to get nv_gpu_ringbuf_map_impl for mapfd {}", mapfd);
+		return -1;
+	}
+	auto &impl = *impl_opt;
 	return impl->drain_data(fn);
 }
 #endif
