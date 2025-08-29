@@ -4,6 +4,7 @@
  * All rights reserved.
  */
 #include "bpftime_shm.hpp"
+#include "handler/map_handler.hpp"
 #include <ebpf-vm.h>
 #include "handler/epoll_handler.hpp"
 #include "handler/handler_manager.hpp"
@@ -914,4 +915,25 @@ void bpftime_shm::iterate_all_pids_in_alive_agent_set(
 		cb(x);
 	}
 }
+#ifdef BPFTIME_ENABLE_CUDA_ATTACH
+int bpftime_shm::poll_gpu_ringbuf_map(
+	int mapfd, const std::function<void(const void *, uint64_t)> &fn)
+{
+	if (!is_map_fd(mapfd)) {
+		SPDLOG_ERROR("Expected {} to be a mapfd", mapfd);
+		return -1;
+	}
+	auto &map_handler =
+		std::get<bpf_map_handler>(manager->get_handler(mapfd));
+
+	auto impl_opt = map_handler.try_get_nv_gpu_ringbuf_map_impl();
+	if (!impl_opt) {
+		SPDLOG_ERROR("Failed to get nv_gpu_ringbuf_map_impl for mapfd {}", mapfd);
+		return -1;
+	}
+	auto &impl = *impl_opt;
+	return impl->drain_data(fn);
+}
+#endif
+
 } // namespace bpftime

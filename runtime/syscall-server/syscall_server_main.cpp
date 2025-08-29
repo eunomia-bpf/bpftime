@@ -230,3 +230,13 @@ extern "C" long syscall(long sysno, ...)
 					arg6);
 }
 #endif
+
+#if defined(BPFTIME_ENABLE_CUDA_ATTACH)
+extern "C" int bpftime_syscall_server__poll_gpu_ringbuf_map(
+	int mapfd, void *ctx, void (*fn)(const void *, uint64_t, void *))
+{
+	return handle_exceptions([&]() {
+		return context->poll_gpu_ringbuf_map(mapfd, ctx, fn);
+	});
+}
+#endif
