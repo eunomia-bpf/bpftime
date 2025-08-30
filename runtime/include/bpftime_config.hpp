@@ -19,6 +19,11 @@
 #define LOG_PATH_MAX_LEN 1024
 #define VM_NAME_MAX_LEN 128
 
+// Default and limits for file descriptor count
+constexpr size_t DEFAULT_MAX_FD_COUNT = 1024 * 6;
+constexpr size_t MIN_MAX_FD_COUNT = 128;
+constexpr size_t MAX_MAX_FD_COUNT = 1024 * 1024; // 1M max
+
 namespace bpftime
 {
 using char_allocator = boost::interprocess::allocator<
@@ -50,6 +55,11 @@ struct agent_config {
 	// available for the eBPF programs and maps
 	// The value is in MB
 	int shm_memory_size = 20; // 20MB
+
+	// Maximum file descriptor count for handler manager
+	// This determines the size of the handler vector
+	// Default is DEFAULT_MAX_FD_COUNT (6144)
+	size_t max_fd_count = DEFAULT_MAX_FD_COUNT;
 
 	// specify the where the logger output should be written to
 	// It can be a file path or "console".

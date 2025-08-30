@@ -629,8 +629,7 @@ int bpftime_poll_from_ringbuf(int rb_fd, void *ctx,
 	auto &shm = shm_holder.global_shared_memory;
 	if (auto ret = shm.try_get_ringbuf_map_impl(rb_fd); ret.has_value()) {
 		auto impl = ret.value();
-		return impl->create_impl_shared_ptr()->fetch_data(
-			[=](void *buf, int sz) { return cb(ctx, buf, sz); });
+		return impl->create_impl_shared_ptr()->fetch_data(cb, ctx);
 	} else {
 		errno = EINVAL;
 		SPDLOG_ERROR("Expected fd {} to be ringbuf map fd ", rb_fd);
