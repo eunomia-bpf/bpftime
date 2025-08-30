@@ -10,7 +10,7 @@
 #include <cstring>
 #include <stdexcept>
 #include <algorithm>
-#include <vector>
+// #include <vector>
 
 namespace bpftime
 {
@@ -58,53 +58,29 @@ lpm_trie_map_impl::lpm_trie_map_impl(
 
 int lpm_trie_map_impl::extract_bit(const uint8_t *data, size_t index) const
 {
-	return !!(data[index / 8] & (1 << (7 - (index % 8))));
+	if (!data)
+		return 0;
+	const size_t max_bits = static_cast<size_t>(_data_size) * 8;
+	if (index >= max_bits)
+		return 0;
+	const uint8_t byte = data[index / 8];
+	const uint8_t bit_pos = static_cast<uint8_t>(7 - (index % 8));
+	return (byte >> bit_pos) & 0x01;
 }
 
 size_t
 lpm_trie_map_impl::longest_prefix_match(const lpm_trie_node *node,
 					const bpf_lpm_trie_key *key) const
 {
-	uint32_t limit = std::min(node->prefixlen, key->prefixlen);
-	uint32_t prefixlen = 0;
-
+	const uint32_t limit = std::min(node->prefixlen, key->prefixlen);
 	const uint8_t *node_data = get_node_prefix_data(node);
-
-	// Compare byte by byte
-	for (uint32_t i = 0; i < (_data_size + 3) / 4; i++) {
-		if (i * 4 >= _data_size)
+	size_t matched = 0;
+	for (; matched < limit; ++matched) {
+		if (extract_bit(node_data, matched) !=
+		    extract_bit(key->data, matched))
 			break;
-
-		// Compare up to 4 bytes at a time
-		uint32_t bytes_to_compare = std::min(4u, _data_size - i * 4);
-		for (uint32_t j = 0; j < bytes_to_compare; j++) {
-			uint32_t byte_idx = i * 4 + j;
-			if (prefixlen + 8 > limit) {
-				// Compare remaining bits
-				uint32_t remaining_bits = limit - prefixlen;
-				uint8_t mask = 0xFF << (8 - remaining_bits);
-				if ((node_data[byte_idx] & mask) !=
-				    (key->data[byte_idx] & mask)) {
-					return prefixlen +
-					       __builtin_clz(
-						       (node_data[byte_idx] ^
-							key->data[byte_idx])
-						       << 24);
-				}
-				return limit;
-			}
-
-			if (node_data[byte_idx] != key->data[byte_idx]) {
-				return prefixlen +
-				       __builtin_clz((node_data[byte_idx] ^
-						      key->data[byte_idx])
-						     << 24);
-			}
-			prefixlen += 8;
-		}
 	}
-
-	return std::min(prefixlen, limit);
+	return matched;
 }
 
 node_unique_ptr lpm_trie_map_impl::create_node(const void *value,

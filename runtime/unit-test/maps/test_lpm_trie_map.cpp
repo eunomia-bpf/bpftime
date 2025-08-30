@@ -240,7 +240,7 @@ TEST_CASE("LPM Trie Map vs TLPM Comparison",
 	size_t n_matches, n_matches_after_delete;
 	size_t i, j, n_nodes, n_lookups;
 	struct tlpm_node *t, *list = nullptr;
-	bpf_lpm_trie_key_u8 *key;
+	bpf_lpm_trie_key *key;
 	uint8_t *data, *value;
 
 	// Compare behavior of tlpm vs. bpftime lpm_trie. Create a randomized
@@ -259,7 +259,7 @@ TEST_CASE("LPM Trie Map vs TLPM Comparison",
 	value = (uint8_t *)alloca(keysize + 1);
 	memset(value, 0, keysize + 1);
 
-	key = (bpf_lpm_trie_key_u8 *)alloca(sizeof(*key) + keysize);
+	key = (bpf_lpm_trie_key *)alloca(sizeof(*key) + keysize);
 	memset(key, 0, sizeof(*key) + keysize);
 
 	// Create bpftime LPM Trie
