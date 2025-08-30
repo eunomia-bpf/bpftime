@@ -178,6 +178,7 @@ ringbuf::ringbuf(uint32_t max_ent,
 	data = (uint8_t *)(uintptr_t)(&((*raw_buffer)[page_size * 2]));
 }
 
+// This function is not used by libbpf. libbpf has its own ringbuf fetch implementation
 int ringbuf::fetch_data(std::function<int(void *, int)> cb)
 {
 	int *len_ptr, len, err;
