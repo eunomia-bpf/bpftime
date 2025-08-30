@@ -155,29 +155,30 @@ TEST_CASE("TLPM Basic Operations", "[lpm_trie][kernel_style][tlpm]")
 	struct tlpm_node *list = nullptr, *t1, *t2;
 
 	// very basic, static tests to verify tlpm works as expected
-
-	REQUIRE(tlpm_match(list, (uint8_t[]){ 0xff }, 8) == nullptr);
-
-	t1 = list = tlpm_add(list, (uint8_t[]){ 0xff }, 8);
-	REQUIRE(t1 == tlpm_match(list, (uint8_t[]){ 0xff }, 8));
-	REQUIRE(t1 == tlpm_match(list, (uint8_t[]){ 0xff, 0xff }, 16));
-	REQUIRE(t1 == tlpm_match(list, (uint8_t[]){ 0xff, 0x00 }, 16));
-	REQUIRE(tlpm_match(list, (uint8_t[]){ 0x7f }, 8) == nullptr);
-	REQUIRE(tlpm_match(list, (uint8_t[]){ 0xfe }, 8) == nullptr);
-	REQUIRE(tlpm_match(list, (uint8_t[]){ 0xff }, 7) == nullptr);
-
-	t2 = list = tlpm_add(list, (uint8_t[]){ 0xff, 0xff }, 16);
-	REQUIRE(t1 == tlpm_match(list, (uint8_t[]){ 0xff }, 8));
-	REQUIRE(t2 == tlpm_match(list, (uint8_t[]){ 0xff, 0xff }, 16));
-	REQUIRE(t1 == tlpm_match(list, (uint8_t[]){ 0xff, 0xff }, 15));
-	REQUIRE(tlpm_match(list, (uint8_t[]){ 0x7f, 0xff }, 16) == nullptr);
-
-	list = tlpm_delete(list, (uint8_t[]){ 0xff, 0xff }, 16);
-	REQUIRE(t1 == tlpm_match(list, (uint8_t[]){ 0xff }, 8));
-	REQUIRE(t1 == tlpm_match(list, (uint8_t[]){ 0xff, 0xff }, 16));
-
-	list = tlpm_delete(list, (uint8_t[]){ 0xff }, 8);
-	REQUIRE(tlpm_match(list, (uint8_t[]){ 0xff }, 8) == nullptr);
+	uint8_t key_ff[] = { 0xff };
+	uint8_t key_ff_ff[] = { 0xff, 0xff };
+	uint8_t key_ff_00[] = { 0xff, 0x00 };
+	uint8_t key_7f[] = { 0x7f };
+	uint8_t key_fe[] = { 0xfe };
+	REQUIRE(tlpm_match(list, key_ff, 8) == nullptr);
+	t1 = list = tlpm_add(list, key_ff, 8);
+	REQUIRE(t1 == tlpm_match(list, key_ff, 8));
+	REQUIRE(t1 == tlpm_match(list, key_ff_ff, 16));
+	REQUIRE(t1 == tlpm_match(list, key_ff_00, 16));
+	REQUIRE(tlpm_match(list, key_7f, 8) == nullptr);
+	REQUIRE(tlpm_match(list, key_fe, 8) == nullptr);
+	REQUIRE(tlpm_match(list, key_ff, 7) == nullptr);
+	t2 = list = tlpm_add(list, key_ff_ff, 16);
+	REQUIRE(t1 == tlpm_match(list, key_ff, 8));
+	REQUIRE(t2 == tlpm_match(list, key_ff_ff, 16));
+	REQUIRE(t1 == tlpm_match(list, key_ff_ff, 15));
+	uint8_t key_7f_ff[] = { 0x7f, 0xff };
+	REQUIRE(tlpm_match(list, key_7f_ff, 16) == nullptr);
+	list = tlpm_delete(list, key_ff_ff, 16);
+	REQUIRE(t1 == tlpm_match(list, key_ff, 8));
+	REQUIRE(t1 == tlpm_match(list, key_ff_ff, 16));
+	list = tlpm_delete(list, key_ff, 8);
+	REQUIRE(tlpm_match(list, key_ff, 8) == nullptr);
 
 	tlpm_clear(list);
 }
@@ -193,13 +194,11 @@ TEST_CASE("TLPM Order Independence", "[lpm_trie][kernel_style][tlpm]")
 	// the same data in reverse order into @l2. Then verify a lookup of
 	// random keys will yield the same result in both sets.
 
-	for (i = 0; i < (1 << 12); ++i)
-		l1 = tlpm_add(l1,
-			      (uint8_t[]){
-				      static_cast<uint8_t>(rand() % 0xff),
-				      static_cast<uint8_t>(rand() % 0xff),
-			      },
-			      rand() % 16 + 1);
+	for (i = 0; i < (1 << 12); ++i) {
+		uint8_t rnd_key[2] = { static_cast<uint8_t>(rand() % 0xff),
+				       static_cast<uint8_t>(rand() % 0xff) };
+		l1 = tlpm_add(l1, rnd_key, rand() % 16 + 1);
+	}
 
 	for (t1 = l1; t1; t1 = t1->next)
 		l2 = tlpm_add(l2, t1->key, t1->n_bits);
@@ -345,6 +344,11 @@ TEST_CASE("LPM Trie Map vs TLPM Comparison",
 			REQUIRE(t->n_bits == result_bytes[keysize]);
 		}
 	}
+
+	// Explicitly ignore counters in optimized builds if not asserted
+	// elsewhere
+	(void)n_matches;
+	(void)n_matches_after_delete;
 
 	// 先清理trie，再清理list，避免在shared memory销毁后访问trie
 	if (trie) {
@@ -541,9 +545,9 @@ TEST_CASE("LPM Trie Deletion Operations", "[lpm_trie][kernel_style][deletion]")
 	// 192.168.1.0/24   (4)
 	//
 	//         (1)
-	//        /   \
+	//        /   \\
 	//     (IM)    (3)
-	//    /   \
+	//    /   \\
 	//   (2)  (4)
 
 	value = 1;
