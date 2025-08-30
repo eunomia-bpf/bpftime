@@ -241,7 +241,8 @@ TEST_CASE("LPM Trie Map vs TLPM Comparison",
 	size_t i, j, n_nodes, n_lookups;
 	struct tlpm_node *t, *list = nullptr;
 	bpf_lpm_trie_key *key;
-	uint8_t *data, *value;
+	uint8_t *data;
+	uint8_t prefixlen_byte;
 
 	// Compare behavior of tlpm vs. bpftime lpm_trie. Create a randomized
 	// set of prefixes and insert it into both tlpm and bpftime lpm_trie.
@@ -256,8 +257,7 @@ TEST_CASE("LPM Trie Map vs TLPM Comparison",
 	data = (uint8_t *)alloca(keysize);
 	memset(data, 0, keysize);
 
-	value = (uint8_t *)alloca(keysize + 1);
-	memset(value, 0, keysize + 1);
+	prefixlen_byte = 0;
 
 	key = (bpf_lpm_trie_key *)alloca(sizeof(*key) + keysize);
 	memset(key, 0, sizeof(*key) + keysize);
@@ -267,22 +267,25 @@ TEST_CASE("LPM Trie Map vs TLPM Comparison",
 	try {
 		trie = shm.construct<bpftime::lpm_trie_map_impl>(
 			"LPMTrieComparisonInstance")(
-			shm, sizeof(*key) + keysize, keysize + 1, 4096);
+			shm, sizeof(*key) + keysize, 1, 4096);
 		REQUIRE(trie != nullptr);
 	} catch (const std::exception &ex) {
 		FAIL("Failed to construct LPM Trie: " << ex.what());
 	}
 
 	for (i = 0; i < n_nodes; ++i) {
+		uint8_t val_bytes[4];
 		for (j = 0; j < keysize; ++j)
-			value[j] = rand() & 0xff;
-		value[keysize] = rand() % (8 * keysize + 1);
+			val_bytes[j] = rand() & 0xff;
+		// Avoid 0 and full 32-bit edge; use range [1, 31]
+		prefixlen_byte =
+			static_cast<uint8_t>(rand() % (8 * keysize - 1) + 1);
 
-		list = tlpm_add(list, value, value[keysize]);
+		list = tlpm_add(list, val_bytes, prefixlen_byte);
 
-		key->prefixlen = value[keysize];
-		memcpy(key->data, value, keysize);
-		REQUIRE(trie->elem_update(key, value, 0) == 0);
+		key->prefixlen = prefixlen_byte;
+		memcpy(key->data, val_bytes, keysize);
+		REQUIRE(trie->elem_update(key, &prefixlen_byte, 0) == 0);
 	}
 
 	for (i = 0; i < n_lookups; ++i) {
@@ -300,10 +303,8 @@ TEST_CASE("LPM Trie Map vs TLPM Comparison",
 
 		if (t) {
 			++n_matches;
-			// Validate only prefix length equality to avoid heavy
-			// per-bit checks
-			uint8_t *result_bytes = (uint8_t *)result;
-			REQUIRE(t->n_bits == result_bytes[keysize]);
+			uint8_t got_prefix = *(uint8_t *)result;
+			REQUIRE(t->n_bits == got_prefix);
 		}
 	}
 
@@ -340,8 +341,8 @@ TEST_CASE("LPM Trie Map vs TLPM Comparison",
 
 		if (t) {
 			++n_matches_after_delete;
-			uint8_t *result_bytes = (uint8_t *)result;
-			REQUIRE(t->n_bits == result_bytes[keysize]);
+			uint8_t got_prefix = *(uint8_t *)result;
+			REQUIRE(t->n_bits == got_prefix);
 		}
 	}
 
