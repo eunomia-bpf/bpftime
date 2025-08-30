@@ -56,7 +56,7 @@ void array_map_kernel_user_impl::init_map_fd()
 		_value_size, _max_entries);
 	// TODO: is the check here necessary?
 	// if (!(info.map_flags & BPF_F_MMAPABLE)) {
-	// 	spdlog::warn("Map is not mmapable");
+	// 	SPDLOG_WARN("Map is not mmapable");
 	// 	return;
 	// }
 	size_t mmap_sz = bpf_map_mmap_sz(_value_size, _max_entries);

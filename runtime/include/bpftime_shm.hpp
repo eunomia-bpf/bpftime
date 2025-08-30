@@ -10,6 +10,7 @@
 #include <boost/interprocess/smart_ptr/unique_ptr.hpp>
 #include <boost/interprocess/containers/string.hpp>
 #include <cstdint>
+#include <functional>
 #if __linux__
 #include <sys/epoll.h>
 #elif __APPLE__
@@ -116,7 +117,7 @@ enum class bpf_map_type {
 		KERNEL_USER_MAP_OFFSET + BPF_MAP_TYPE_PERF_EVENT_ARRAY,
 
 	BPF_MAP_TYPE_NV_GPU_ARRAY_MAP = GPU_MAP_OFFSET + BPF_MAP_TYPE_ARRAY,
-
+	BPF_MAP_TYPE_NV_GPU_RINGBUF_MAP = GPU_MAP_OFFSET + BPF_MAP_TYPE_RINGBUF,
 	BPF_MAP_TYPE_MAX = 2048,
 };
 
@@ -405,6 +406,10 @@ int bpftime_add_ureplace_or_override(int fd, int pid, const char *name,
 int bpftime_get_current_thread_cookie(uint64_t *out);
 
 int bpftime_add_custom_perf_event(int type, const char *attach_argument);
+#ifdef BPFTIME_ENABLE_CUDA_ATTACH
+int bpftime_poll_gpu_ringbuf_map(int mapfd, void *ctx,
+				 void (*)(const void *, uint64_t, void *));
+#endif
 }
 
 #endif // BPFTIME_SHM_CPP_H

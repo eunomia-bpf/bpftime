@@ -224,6 +224,8 @@ class bpftime_shm {
 	}
 #ifdef BPFTIME_ENABLE_CUDA_ATTACH
 	bool register_cuda_host_memory();
+	int poll_gpu_ringbuf_map(
+		int mapfd, const std::function<void(const void *, uint64_t)> &);
 #endif
 	~bpftime_shm();
 };

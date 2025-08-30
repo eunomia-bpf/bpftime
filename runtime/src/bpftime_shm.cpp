@@ -672,11 +672,22 @@ int bpftime_poll_from_ringbuf(int rb_fd, void *ctx,
 	auto &shm = shm_holder.global_shared_memory;
 	if (auto ret = shm.try_get_ringbuf_map_impl(rb_fd); ret.has_value()) {
 		auto impl = ret.value();
-		return impl->create_impl_shared_ptr()->fetch_data(
-			[=](void *buf, int sz) { return cb(ctx, buf, sz); });
+		return impl->create_impl_shared_ptr()->fetch_data(cb, ctx);
 	} else {
 		errno = EINVAL;
 		SPDLOG_ERROR("Expected fd {} to be ringbuf map fd ", rb_fd);
 		return -EINVAL;
 	}
 }
+
+#ifdef BPFTIME_ENABLE_CUDA_ATTACH
+int bpftime_poll_gpu_ringbuf_map(int mapfd, void *ctx,
+				 void (*fn)(const void *, uint64_t, void *))
+{
+	auto &shm = shm_holder.global_shared_memory;
+	shm.poll_gpu_ringbuf_map(mapfd, [=](const void *buf, uint64_t size) {
+		fn(buf, size, ctx);
+	});
+	return 0;
+}
+#endif
