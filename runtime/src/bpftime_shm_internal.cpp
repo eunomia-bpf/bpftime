@@ -4,6 +4,7 @@
  * All rights reserved.
  */
 #include "bpftime_shm.hpp"
+#include "handler/map_handler.hpp"
 #include <ebpf-vm.h>
 #include "handler/epoll_handler.hpp"
 #include "handler/handler_manager.hpp"
@@ -596,9 +597,9 @@ bpftime_shm::bpftime_shm(const char *shm_name, shm_open_type type)
 		// open the shm
 		segment = boost::interprocess::managed_shared_memory(
 			boost::interprocess::open_only, shm_name);
-			#ifdef BPFTIME_ENABLE_CUDA_ATTACH
+#ifdef BPFTIME_ENABLE_CUDA_ATTACH
 		register_cuda_host_memory();
-		#endif
+#endif
 		manager = segment.find<bpftime::handler_manager>(
 					 bpftime::DEFAULT_GLOBAL_HANDLER_NAME)
 				  .first;
@@ -626,7 +627,8 @@ bpftime_shm::bpftime_shm(const char *shm_name, shm_open_type type)
 			shm_name, memory_size << 20);
 
 		manager = segment.find_or_construct<bpftime::handler_manager>(
-			bpftime::DEFAULT_GLOBAL_HANDLER_NAME)(segment, max_fd_count);
+			bpftime::DEFAULT_GLOBAL_HANDLER_NAME)(segment,
+							      max_fd_count);
 		SPDLOG_DEBUG("done: bpftime_shm for server setup: manager");
 
 		syscall_installed_pids =
@@ -662,7 +664,8 @@ bpftime_shm::bpftime_shm(const char *shm_name, shm_open_type type)
 		SPDLOG_DEBUG("done: bpftime_shm for server setup: segment");
 
 		manager = segment.construct<bpftime::handler_manager>(
-			bpftime::DEFAULT_GLOBAL_HANDLER_NAME)(segment, max_fd_count);
+			bpftime::DEFAULT_GLOBAL_HANDLER_NAME)(segment,
+							      max_fd_count);
 		SPDLOG_DEBUG("done: bpftime_shm for server setup: manager");
 
 		syscall_installed_pids = segment.construct<syscall_pid_set>(
@@ -686,7 +689,7 @@ bpftime_shm::bpftime_shm(const char *shm_name, shm_open_type type)
 		SPDLOG_DEBUG("done: bpftime_shm for server setup.");
 	} else if (type == shm_open_type::SHM_NO_CREATE) {
 		// not create any shm
-		spdlog::warn(
+		SPDLOG_WARN(
 			"NOT creating global shm. This is only for testing purpose.");
 		return;
 	}
@@ -887,12 +890,13 @@ bpftime::bpftime_shm::~bpftime_shm()
 	void *base_addr = segment.get_address();
 #ifdef BPFTIME_ENABLE_CUDA_ATTACH
 	cudaError_t err = cudaHostUnregister(base_addr);
+	// Use fprintf here to avoid spdlog de-initialized issues
 	if (err != cudaSuccess) {
-		SPDLOG_ERROR("cudaHostUnregister() failed: {}",
-			     cudaGetErrorString(err));
+		fprintf(stderr, "cudaHostUnregister() failed: %s\n",
+			cudaGetErrorString(err));
 		return;
 	}
-	SPDLOG_INFO("bpftime_shm: Unregistered host memory from CUDA");
+	fprintf(stderr, "bpftime_shm: Unregistered host memory from CUDA\n");
 #endif
 }
 
@@ -911,4 +915,25 @@ void bpftime_shm::iterate_all_pids_in_alive_agent_set(
 		cb(x);
 	}
 }
+#ifdef BPFTIME_ENABLE_CUDA_ATTACH
+int bpftime_shm::poll_gpu_ringbuf_map(
+	int mapfd, const std::function<void(const void *, uint64_t)> &fn)
+{
+	if (!is_map_fd(mapfd)) {
+		SPDLOG_ERROR("Expected {} to be a mapfd", mapfd);
+		return -1;
+	}
+	auto &map_handler =
+		std::get<bpf_map_handler>(manager->get_handler(mapfd));
+
+	auto impl_opt = map_handler.try_get_nv_gpu_ringbuf_map_impl();
+	if (!impl_opt) {
+		SPDLOG_ERROR("Failed to get nv_gpu_ringbuf_map_impl for mapfd {}", mapfd);
+		return -1;
+	}
+	auto &impl = *impl_opt;
+	return impl->drain_data(fn);
+}
+#endif
+
 } // namespace bpftime

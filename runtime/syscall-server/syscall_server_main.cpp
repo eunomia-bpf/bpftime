@@ -162,7 +162,6 @@ extern "C" int open(const char *file, int oflag, ...)
 extern "C" ssize_t read(int fd, void *buf, size_t count)
 {
 	initialize_ctx();
-	SPDLOG_DEBUG("read {} {:x} {}", fd, (uintptr_t)buf, count);
 	return context->handle_read(fd, buf, count);
 }
 
@@ -229,5 +228,15 @@ extern "C" long syscall(long sysno, ...)
 	}
 	return context->orig_syscall_fn(sysno, arg1, arg2, arg3, arg4, arg5,
 					arg6);
+}
+#endif
+
+#if defined(BPFTIME_ENABLE_CUDA_ATTACH)
+extern "C" int bpftime_syscall_server__poll_gpu_ringbuf_map(
+	int mapfd, void *ctx, void (*fn)(const void *, uint64_t, void *))
+{
+	return handle_exceptions([&]() {
+		return context->poll_gpu_ringbuf_map(mapfd, ctx, fn);
+	});
 }
 #endif

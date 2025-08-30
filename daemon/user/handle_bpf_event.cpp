@@ -245,7 +245,7 @@ int bpf_event_handler::handle_bpf_event(const struct event *e)
 				    driver.bpftime_attach_perf_to_bpf_fd_server(
 					    e->pid, perf, prog_fd);
 			    err < 0) {
-				spdlog::warn(
+				SPDLOG_WARN(
 					"Unable to attach perf {} to bpf prog {}, err={}",
 					perf, prog_fd, err);
 			}
@@ -321,7 +321,7 @@ int bpf_event_handler::handle_perf_event_open(const struct event *e)
 					e->perf_event_data.pid, name, offset,
 					retprobe, ref_ctr_off);
 			} else {
-				spdlog::warn("Unsupported perf event type: {}",
+				SPDLOG_WARN("Unsupported perf event type: {}",
 					     perf_type);
 			}
 		} else {

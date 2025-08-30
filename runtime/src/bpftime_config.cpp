@@ -64,7 +64,7 @@ static void process_token(const std::string_view &token, agent_config &config)
 		SPDLOG_INFO("Enabling shm_map helper group");
 		config.enable_shm_maps_helper_group = true;
 	} else {
-		spdlog::warn("Unknown helper group: {}", token);
+		SPDLOG_WARN("Unknown helper group: {}", token);
 	}
 }
 

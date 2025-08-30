@@ -420,7 +420,7 @@ uint64_t bpf_ringbuf_output(uint64_t rb, uint64_t data, uint64_t size,
 {
 	int fd = (int)(rb >> 32);
 	if (flags != 0) {
-		spdlog::warn(
+		SPDLOG_WARN(
 			"Currently only supports ringbuf_output with flags=0");
 	}
 	auto buf = bpftime_ringbuf_reserve(fd, size);
@@ -438,7 +438,7 @@ uint64_t bpf_ringbuf_reserve(uint64_t rb, uint64_t size, uint64_t flags,
 {
 	int fd = (int)(rb >> 32);
 	if (flags != 0) {
-		spdlog::warn(
+		SPDLOG_WARN(
 			"Currently only supports ringbuf_reserve with flags=0");
 	}
 	return (uint64_t)(uintptr_t)bpftime_ringbuf_reserve(fd, size);
@@ -450,7 +450,7 @@ uint64_t bpf_ringbuf_submit(uint64_t data, uint64_t flags, uint64_t, uint64_t,
 	int32_t *ptr = (int32_t *)(uintptr_t)data;
 	int fd = ptr[-1];
 	if (flags != 0) {
-		spdlog::warn(
+		SPDLOG_WARN(
 			"Currently only supports ringbuf_submit with flags=0");
 	}
 	bpftime_ringbuf_submit(fd, (void *)(uintptr_t)data, false);
@@ -463,7 +463,7 @@ uint64_t bpf_ringbuf_discard(uint64_t data, uint64_t flags, uint64_t, uint64_t,
 	int32_t *ptr = (int32_t *)(uintptr_t)data;
 	int fd = ptr[-1];
 	if (flags != 0) {
-		spdlog::warn(
+		SPDLOG_WARN(
 			"Currently only supports ringbuf_submit with flags=0");
 	}
 	bpftime_ringbuf_submit(fd, (void *)(uintptr_t)data, true);

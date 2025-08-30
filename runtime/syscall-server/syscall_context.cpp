@@ -770,7 +770,7 @@ int syscall_context::handle_ioctl(int fd, unsigned long req, unsigned long data)
 		res = bpftime_perf_event_enable(fd);
 		if (res >= 0)
 			return res;
-		spdlog::warn(
+		SPDLOG_WARN(
 			"Failed to call mocked ioctl PERF_EVENT_IOC_ENABLE: {}",
 			res);
 	} else if (req == PERF_EVENT_IOC_DISABLE) {
@@ -781,7 +781,7 @@ int syscall_context::handle_ioctl(int fd, unsigned long req, unsigned long data)
 		res = bpftime_perf_event_disable(fd);
 		if (res >= 0)
 			return res;
-		spdlog::warn(
+		SPDLOG_WARN(
 			"Failed to call mocked ioctl PERF_EVENT_IOC_DISABLE: {}",
 			res);
 	} else if (req == PERF_EVENT_IOC_SET_BPF) {
@@ -830,7 +830,7 @@ int syscall_context::handle_epoll_ctl(int epfd, int op, int fd,
 				return err;
 
 		} else {
-			spdlog::warn(
+			SPDLOG_WARN(
 				"Unsupported map fd for mocked epoll_ctl: {}, call the original one..",
 				fd);
 		}
@@ -914,3 +914,12 @@ int syscall_context::handle_dup3(int oldfd, int newfd, int flags)
 	return orig_syscall_fn(__NR_dup3, (long)oldfd, (long)newfd,
 			       (long)flags);
 }
+#if defined(BPFTIME_ENABLE_CUDA_ATTACH)
+int syscall_context::poll_gpu_ringbuf_map(int mapfd, void *ctx,
+
+					  void (*fn)(const void *, uint64_t,
+						     void *))
+{
+	return bpftime_poll_gpu_ringbuf_map(mapfd, ctx, fn);
+}
+#endif
