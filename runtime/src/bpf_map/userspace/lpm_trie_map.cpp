@@ -162,6 +162,8 @@ lpm_trie_map_impl::get_node_value_data(const lpm_trie_node *node) const
 
 void *lpm_trie_map_impl::elem_lookup(const void *key)
 {
+	boost::interprocess::scoped_lock<boost::interprocess::interprocess_mutex>
+		lock(mapMutex);
 	if (!key) {
 		SPDLOG_ERROR(
 			"LPM Trie elem_lookup failed: key pointer is nullptr");
@@ -221,12 +223,23 @@ void *lpm_trie_map_impl::elem_lookup(const void *key)
 		return nullptr;
 	}
 
-	return const_cast<uint8_t *>(get_node_value_data(found));
+	// Copy out to thread-local buffer to avoid concurrent invalidation
+	static thread_local std::vector<uint8_t> tl_value;
+	tl_value.resize(_value_size);
+	const uint8_t *src = get_node_value_data(found);
+	if (!src) {
+		errno = ENOENT;
+		return nullptr;
+	}
+	std::memcpy(tl_value.data(), src, _value_size);
+	return tl_value.data();
 }
 
 long lpm_trie_map_impl::elem_update(const void *key, const void *value,
 				    uint64_t flags)
 {
+	boost::interprocess::scoped_lock<boost::interprocess::interprocess_mutex>
+		lock(mapMutex);
 	if (!key || !value) {
 		SPDLOG_ERROR(
 			"LPM Trie elem_update failed: key ({:p}) or value ({:p}) pointer is nullptr",
@@ -235,11 +248,11 @@ long lpm_trie_map_impl::elem_update(const void *key, const void *value,
 		return -1;
 	}
 
-	// LPM Trie ignores flags (behaves like BPF_ANY)
-	if (flags > 2) { // BPF_EXIST = 2
-		SPDLOG_ERROR(
-			"LPM Trie elem_update failed: invalid flags ({}), only 0-2 supported",
-			flags);
+	// Validate flags
+	if (flags != 0 /*BPF_ANY*/ && flags != 1 /*BPF_NOEXIST*/ &&
+	    flags != 2 /*BPF_EXIST*/) {
+		SPDLOG_ERROR("LPM Trie elem_update failed: invalid flags ({})",
+			     flags);
 		errno = EINVAL;
 		return -1;
 	}
@@ -255,26 +268,31 @@ long lpm_trie_map_impl::elem_update(const void *key, const void *value,
 		return -1;
 	}
 
-	// Check if we're at capacity
-	if (n_entries >= _max_entries) {
-		errno = ENOSPC;
-		return -1;
-	}
+	// Helper lambdas
+	auto is_exact_match = [&](const lpm_trie_node *n) -> bool {
+		return n && n->prefixlen == lpm_key->prefixlen &&
+		       longest_prefix_match(n, lpm_key) == lpm_key->prefixlen;
+	};
 
-	// Create new node
-	auto new_node = create_node(value, false);
-	if (!new_node) {
-		errno = ENOMEM;
-		return -1;
-	}
-
-	new_node->prefixlen = lpm_key->prefixlen;
-	copy_key_data(
-		boost::interprocess::ipcdetail::to_raw_pointer(new_node.get()),
-		lpm_key);
-
-	// If tree is empty, make this the root
+	// If tree is empty
 	if (!root) {
+		if (flags == 2 /*BPF_EXIST*/) {
+			errno = ENOENT;
+			return -1;
+		}
+		if (n_entries >= _max_entries) {
+			errno = ENOSPC;
+			return -1;
+		}
+		auto new_node = create_node(value, false);
+		if (!new_node) {
+			errno = ENOMEM;
+			return -1;
+		}
+		new_node->prefixlen = lpm_key->prefixlen;
+		copy_key_data(boost::interprocess::ipcdetail::to_raw_pointer(
+				      new_node.get()),
+			      lpm_key);
 		root = std::move(new_node);
 		n_entries++;
 		SPDLOG_TRACE("LPM Trie: Added root node with prefix length {}",
@@ -282,28 +300,106 @@ long lpm_trie_map_impl::elem_update(const void *key, const void *value,
 		return 0;
 	}
 
-	// Find insertion point
+	// Walk to find position
 	node_unique_ptr *slot = &root;
 	lpm_trie_node *node = nullptr;
 	size_t matchlen = 0;
-
 	while (slot->get()) {
 		node = boost::interprocess::ipcdetail::to_raw_pointer(
 			slot->get());
 		matchlen = longest_prefix_match(node, lpm_key);
-
 		if (node->prefixlen != matchlen ||
 		    node->prefixlen == lpm_key->prefixlen ||
 		    node->prefixlen == _max_prefixlen) {
 			break;
 		}
-
 		int next_bit = extract_bit(lpm_key->data, node->prefixlen);
 		slot = &node->child[next_bit];
 	}
 
-	// If slot is empty, insert new node
+	// Case 1: same prefix length slot
+	if (slot->get() && node->prefixlen == lpm_key->prefixlen) {
+		bool exact = is_exact_match(node);
+		if (exact) {
+			bool exists_real = !node->is_intermediate;
+			if (flags == 1 /*NOEXIST*/) {
+				errno = EEXIST;
+				return -1;
+			}
+			if (flags == 2 /*EXIST*/ && !exists_real) {
+				errno = ENOENT;
+				return -1;
+			}
+			if (!exists_real) {
+				if (n_entries >= _max_entries) {
+					errno = ENOSPC;
+					return -1;
+				}
+				node->is_intermediate = false;
+				node->data.resize(_data_size + _value_size);
+				n_entries++;
+			}
+			copy_value_data(node, value);
+			return 0;
+		}
+		// Not exact: split at current matchlen into intermediate
+		if (flags == 2 /*EXIST*/) {
+			errno = ENOENT;
+			return -1;
+		}
+		if (n_entries >= _max_entries) {
+			errno = ENOSPC;
+			return -1;
+		}
+		auto new_node = create_node(value, false);
+		if (!new_node) {
+			errno = ENOMEM;
+			return -1;
+		}
+		new_node->prefixlen = lpm_key->prefixlen;
+		copy_key_data(boost::interprocess::ipcdetail::to_raw_pointer(
+				      new_node.get()),
+			      lpm_key);
+		auto im_node = create_node(nullptr, true);
+		if (!im_node) {
+			errno = ENOMEM;
+			return -1;
+		}
+		im_node->prefixlen = matchlen;
+		copy_key_data(boost::interprocess::ipcdetail::to_raw_pointer(
+				      im_node.get()),
+			      lpm_key);
+		if (extract_bit(lpm_key->data, matchlen)) {
+			im_node->child[0] = std::move(*slot);
+			im_node->child[1] = std::move(new_node);
+		} else {
+			im_node->child[0] = std::move(new_node);
+			im_node->child[1] = std::move(*slot);
+		}
+		*slot = std::move(im_node);
+		n_entries++;
+		return 0;
+	}
+
+	// Case 2: slot is empty -> pure insert
 	if (!slot->get()) {
+		if (flags == 2 /*EXIST*/) {
+			errno = ENOENT;
+			return -1;
+		}
+		if (n_entries >= _max_entries) {
+			errno = ENOSPC;
+			return -1;
+		}
+		auto new_node = create_node(value, false);
+		if (!new_node) {
+			errno = ENOMEM;
+			return -1;
+		}
+		new_node->prefixlen = lpm_key->prefixlen;
+		copy_key_data(boost::interprocess::ipcdetail::to_raw_pointer(
+				      new_node.get()),
+			      lpm_key);
 		*slot = std::move(new_node);
 		n_entries++;
 		SPDLOG_TRACE("LPM Trie: Added new node with prefix length {}",
@@ -311,28 +407,25 @@ long lpm_trie_map_impl::elem_update(const void *key, const void *value,
 		return 0;
 	}
 
-	// If exact match, replace the node
-	if (node->prefixlen == lpm_key->prefixlen) {
-		new_node->child[0] = std::move(node->child[0]);
-		new_node->child[1] = std::move(node->child[1]);
-
-		if (node->is_intermediate) {
-			// Converting intermediate to real node
-		} else {
-			// Replacing existing node, don't increment count
-			n_entries--;
-		}
-
-		*slot = std::move(new_node);
-		n_entries++;
-		SPDLOG_TRACE("LPM Trie: Replaced node with prefix length {}",
-			     lpm_key->prefixlen);
-		return 0;
-	}
-
-	// Need to create intermediate node or insert as ancestor
+	// Case 3: need to insert as ancestor of current node
 	if (matchlen == lpm_key->prefixlen) {
-		// New node becomes ancestor
+		if (flags == 2 /*EXIST*/) {
+			errno = ENOENT;
+			return -1;
+		}
+		if (n_entries >= _max_entries) {
+			errno = ENOSPC;
+			return -1;
+		}
+		auto new_node = create_node(value, false);
+		if (!new_node) {
+			errno = ENOMEM;
+			return -1;
+		}
+		new_node->prefixlen = lpm_key->prefixlen;
+		copy_key_data(boost::interprocess::ipcdetail::to_raw_pointer(
+				      new_node.get()),
+			      lpm_key);
 		int next_bit =
 			extract_bit(get_node_prefix_data(node), matchlen);
 		new_node->child[next_bit] = std::move(*slot);
@@ -344,19 +437,34 @@ long lpm_trie_map_impl::elem_update(const void *key, const void *value,
 		return 0;
 	}
 
-	// Create intermediate node
+	// Case 4: split by creating intermediate node between
+	if (flags == 2 /*EXIST*/) {
+		errno = ENOENT;
+		return -1;
+	}
+	if (n_entries >= _max_entries) {
+		errno = ENOSPC;
+		return -1;
+	}
+	auto new_node = create_node(value, false);
+	if (!new_node) {
+		errno = ENOMEM;
+		return -1;
+	}
+	new_node->prefixlen = lpm_key->prefixlen;
+	copy_key_data(
+		boost::interprocess::ipcdetail::to_raw_pointer(new_node.get()),
+		lpm_key);
+
 	auto im_node = create_node(nullptr, true);
 	if (!im_node) {
 		errno = ENOMEM;
 		return -1;
 	}
-
 	im_node->prefixlen = matchlen;
 	copy_key_data(
 		boost::interprocess::ipcdetail::to_raw_pointer(im_node.get()),
 		lpm_key);
-
-	// Determine child placement
 	if (extract_bit(lpm_key->data, matchlen)) {
 		im_node->child[0] = std::move(*slot);
 		im_node->child[1] = std::move(new_node);
@@ -364,7 +472,6 @@ long lpm_trie_map_impl::elem_update(const void *key, const void *value,
 		im_node->child[0] = std::move(new_node);
 		im_node->child[1] = std::move(*slot);
 	}
-
 	*slot = std::move(im_node);
 	n_entries++;
 	SPDLOG_TRACE(
@@ -375,6 +482,8 @@ long lpm_trie_map_impl::elem_update(const void *key, const void *value,
 
 long lpm_trie_map_impl::elem_delete(const void *key)
 {
+	boost::interprocess::scoped_lock<boost::interprocess::interprocess_mutex>
+		lock(mapMutex);
 	if (!key) {
 		SPDLOG_ERROR(
 			"LPM Trie elem_delete failed: key pointer is nullptr");
@@ -393,79 +502,47 @@ long lpm_trie_map_impl::elem_delete(const void *key)
 		return -1;
 	}
 
-	// Find the node to delete
-	node_unique_ptr *trim = &root;
-	node_unique_ptr *trim2 = trim;
+	// Traverse to find the slot pointing to the node to delete
+	node_unique_ptr *slot = &root;
+	node_unique_ptr *parent_slot = nullptr;
 	lpm_trie_node *parent = nullptr;
 	lpm_trie_node *node = nullptr;
-
-	while (trim->get()) {
+	while (slot->get()) {
 		node = boost::interprocess::ipcdetail::to_raw_pointer(
-			trim->get());
+			slot->get());
 		size_t matchlen = longest_prefix_match(node, lpm_key);
-
 		if (node->prefixlen != matchlen ||
 		    node->prefixlen == lpm_key->prefixlen) {
 			break;
 		}
-
+		parent_slot = slot;
 		parent = node;
-		trim2 = trim;
 		int next_bit = extract_bit(lpm_key->data, node->prefixlen);
-		trim = &node->child[next_bit];
+		slot = &node->child[next_bit];
 	}
 
-	if (!node || node->prefixlen != lpm_key->prefixlen ||
-	    node->prefixlen != longest_prefix_match(node, lpm_key) ||
+	if (!slot->get() || node->prefixlen != lpm_key->prefixlen ||
+	    longest_prefix_match(node, lpm_key) != node->prefixlen ||
 	    node->is_intermediate) {
 		errno = ENOENT;
 		return -1;
 	}
 
-	n_entries--;
-
-	// If node has two children, mark as intermediate
-	if (node->child[0] && node->child[1]) {
-		node->is_intermediate = true;
-		// Resize data to remove value part
-		node->data.resize(_data_size);
-		SPDLOG_TRACE("LPM Trie: Marked node as intermediate");
-		return 0;
+	// Mark node as intermediate (logical deletion), avoid structural
+	// changes
+	node->is_intermediate = true;
+	node->data.resize(_data_size);
+	if (n_entries > 0) {
+		n_entries--;
 	}
-
-	// Handle parent cleanup if it's intermediate and child has no siblings
-	if (parent && parent->is_intermediate && !node->child[0] &&
-	    !node->child[1]) {
-		if (boost::interprocess::ipcdetail::to_raw_pointer(
-			    trim->get()) ==
-		    boost::interprocess::ipcdetail::to_raw_pointer(
-			    parent->child[0].get())) {
-			*trim2 = std::move(parent->child[1]);
-		} else {
-			*trim2 = std::move(parent->child[0]);
-		}
-		SPDLOG_TRACE("LPM Trie: Removed node and promoted sibling");
-		return 0;
-	}
-
-	// Replace node with its single child (or null)
-	if (node->child[0]) {
-		*trim = std::move(node->child[0]);
-	} else if (node->child[1]) {
-		*trim = std::move(node->child[1]);
-	} else {
-		*trim = node_unique_ptr(
-			nullptr,
-			node_deleter_type(memory.get_segment_manager()));
-	}
-
-	SPDLOG_TRACE("LPM Trie: Removed node with prefix length {}",
-		     lpm_key->prefixlen);
+	SPDLOG_TRACE("LPM Trie: Marked node as intermediate (logical delete)");
 	return 0;
 }
 
 int lpm_trie_map_impl::map_get_next_key(const void *key, void *next_key)
 {
+	boost::interprocess::scoped_lock<boost::interprocess::interprocess_mutex>
+		lock(mapMutex);
 	if (!next_key) {
 		SPDLOG_ERROR(
 			"LPM Trie map_get_next_key failed: next_key pointer is nullptr");

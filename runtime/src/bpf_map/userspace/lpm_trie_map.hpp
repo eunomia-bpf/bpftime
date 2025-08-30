@@ -13,6 +13,7 @@
 #include <boost/interprocess/smart_ptr/deleter.hpp>
 #include <memory>
 #include <cstdint>
+#include <boost/interprocess/sync/interprocess_mutex.hpp>
 
 namespace bpftime
 {
@@ -95,6 +96,10 @@ class lpm_trie_map_impl {
 	size_t n_entries;
 
 	boost::interprocess::managed_shared_memory &memory;
+
+	// Coarse-grained mutex to protect concurrent accesses (object lives in
+	// SHM)
+	mutable boost::interprocess::interprocess_mutex mapMutex;
 
 	// Helper functions
 	int extract_bit(const uint8_t *data, size_t index) const;
