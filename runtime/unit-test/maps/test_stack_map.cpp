@@ -300,8 +300,7 @@ TEST_CASE("Stack Map Core Operations", "[stack_map][core]")
 	}
 }
 
-TEST_CASE("Stack Map Conceptual Concurrency Test",
-	  "[stack_map][concurrency][.disabled]")
+TEST_CASE("Stack Map Conceptual Concurrency Test", "[stack_map][concurrency]")
 {
 	const char *SHARED_MEMORY_NAME_CONC = "StackMapConcTestShmCatch2";
 	const size_t SHARED_MEMORY_SIZE_CONC = 65536;

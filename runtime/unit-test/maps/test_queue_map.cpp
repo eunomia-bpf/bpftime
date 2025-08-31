@@ -262,9 +262,8 @@ TEST_CASE("Queue Map Core Operations", "[queue_map][core]")
 	// scope exit.
 }
 
-// Using [.disabled] or [!hide] tag to disable a test in Catch2
-TEST_CASE("Queue Map Conceptual Concurrency Test",
-	  "[queue_map][concurrency][.disabled]")
+// Concurrency test for queue map
+TEST_CASE("Queue Map Conceptual Concurrency Test", "[queue_map][concurrency]")
 {
 	const char *SHARED_MEMORY_NAME_CONC = "QueueMapConcTestShmCatch2";
 	const size_t SHARED_MEMORY_SIZE_CONC = 65536;
