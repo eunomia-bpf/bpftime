@@ -251,8 +251,8 @@ TEST_CASE("LPM Trie Map vs TLPM Comparison",
 
 	n_matches = 0;
 	n_matches_after_delete = 0;
-	n_nodes = 1 << 3; // 减少节点数到8个
-	n_lookups = 1 << 4; // 减少查找数到16个
+	n_nodes = 1 << 3; // Reduce node count to 8
+	n_lookups = 1 << 4; // Reduce lookup count to 16
 
 	data = (uint8_t *)alloca(keysize);
 	memset(data, 0, keysize);
@@ -351,7 +351,8 @@ TEST_CASE("LPM Trie Map vs TLPM Comparison",
 	(void)n_matches;
 	(void)n_matches_after_delete;
 
-	// 先清理trie，再清理list，避免在shared memory销毁后访问trie
+	// Clean up trie before list to avoid accessing trie after shared memory
+	// destruction
 	if (trie) {
 		shm.destroy_ptr(trie);
 		trie = nullptr;
@@ -1080,7 +1081,7 @@ TEST_CASE("LPM Trie String Iteration",
 }
 
 // ========================================
-// 原有 bpftime LPM Trie 基础功能测试
+// Original bpftime LPM Trie basic functionality tests
 // ========================================
 
 // Helper structure for IPv4 testing

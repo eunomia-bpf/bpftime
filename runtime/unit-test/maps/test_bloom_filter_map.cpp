@@ -359,26 +359,27 @@ TEST_CASE("Bloom Filter Hash Distribution Quality",
 	managed_shared_memory memory(create_only, SHARED_MEMORY_NAME,
 				     SHARED_MEMORY_SIZE);
 
-	// 使用更合理的参数：
-	// - max_entries 设置为实际要添加的元素数量
-	// - 增加哈希函数数量
-	// - 减少测试数据量以避免过载
+	// Use more reasonable parameters:
+	// - Set max_entries to the number of elements actually added
+	// - Increase the number of hash functions
+	// - Reduce test data volume to avoid overload
 	const unsigned int value_size = 4;
-	const unsigned int max_entries = 1000; // 设计容量
-	const unsigned int nr_hashes = 5; // 增加哈希函数数量
-	const int num_elements_to_add = 500; // 只添加一半容量
-	const int num_test_elements = 1000; // 测试元素数量
+	const unsigned int max_entries = 1000; // Designed capacity
+	const unsigned int nr_hashes = 5; // More hash functions
+	const int num_elements_to_add = 500; // Add half of capacity
+	const int num_test_elements = 1000; // Number of test elements
 
-	// 创建更好的测试数据 - 使用随机分布而不是连续整数
+	// Create better test data - use random distribution instead of
+	// sequential integers
 	std::vector<uint32_t> added_values;
 	std::vector<uint32_t> test_values;
 
-	// 生成添加的值（使用大间隔避免模式）
+	// Generate values to add (use large gaps to avoid patterns)
 	for (int i = 0; i < num_elements_to_add; i++) {
 		added_values.push_back(static_cast<uint32_t>(i * 1000 + 12345));
 	}
 
-	// 生成测试的值（确保不与添加的值重叠）
+	// Generate test values (ensure no overlap with added values)
 	for (int i = 0; i < num_test_elements; i++) {
 		test_values.push_back(static_cast<uint32_t>(i * 1000 + 500000));
 	}
@@ -389,12 +390,12 @@ TEST_CASE("Bloom Filter Hash Distribution Quality",
 		bloom_filter_map_impl filter(memory, value_size, max_entries,
 					     nr_hashes, algo);
 
-		// 添加预定义的值
+		// Add predefined values
 		for (const auto &value : added_values) {
 			filter.map_push_elem(&value, BPF_ANY);
 		}
 
-		// 测试不在 filter 中的值
+		// Test values not in the filter
 		int false_positives = 0;
 		int true_negatives = 0;
 
@@ -411,13 +412,13 @@ TEST_CASE("Bloom Filter Hash Distribution Quality",
 			static_cast<double>(false_positives) /
 			test_values.size();
 
-		// 计算理论假阳性率
+		// Compute theoretical false positive rate
 		// p = (1 - e^(-k*n/m))^k
-		// 其中 k=nr_hashes, n=added_values.size(), m=bit_array_size
+		// where k=nr_hashes, n=added_values.size(), m=bit_array_size
 		double k = static_cast<double>(nr_hashes);
 		double n = static_cast<double>(added_values.size());
 		double m = static_cast<double>(max_entries * nr_hashes * 7 / 5);
-		// 调整为2的幂次
+		// Adjust to power of two
 		while (m < (max_entries * nr_hashes * 7 / 5)) {
 			m *= 2;
 		}
@@ -433,10 +434,12 @@ TEST_CASE("Bloom Filter Hash Distribution Quality",
 		INFO(algo_name << " bit array size: " << static_cast<int>(m)
 			       << " bits");
 
-		// 假阳性率应该在合理范围内（< 10%）
+		// False positive rate should be within a reasonable range (<
+		// 10%)
 		REQUIRE(false_positive_rate < 0.1);
 
-		// 实际假阳性率不应该远超理论值（允许一些偏差）
+		// Actual false positive rate should not far exceed the
+		// theoretical value (allow some deviation)
 		REQUIRE(false_positive_rate < theoretical_fp_rate * 3.0);
 
 		return false_positive_rate;
@@ -465,19 +468,19 @@ TEST_CASE("Bloom Filter Large Scale False Positive Test",
 	managed_shared_memory memory(create_only, SHARED_MEMORY_NAME,
 				     SHARED_MEMORY_SIZE);
 
-	// 大规模测试参数
+	// Large-scale test parameters
 	const unsigned int value_size = 8;
 	const unsigned int max_entries = 10000;
 	const unsigned int nr_hashes = 5;
-	const int num_elements_to_add = 8000; // 80% 负载
-	const int num_test_elements = 50000; // 大量测试数据
+	const int num_elements_to_add = 8000; // 80% load
+	const int num_test_elements = 50000; // Large test dataset
 
 	INFO("Testing with " << num_elements_to_add << " added elements and "
 			     << num_test_elements << " test elements");
 
 	auto test_large_scale = [&](BloomHashAlgorithm algo,
 				    const char *algo_name) {
-		// 为每个算法创建独立的共享内存段
+		// Create a separate shared memory segment for each algorithm
 		std::string shm_name =
 			std::string(SHARED_MEMORY_NAME) + "_" + algo_name;
 
@@ -489,24 +492,24 @@ TEST_CASE("Bloom Filter Large Scale False Positive Test",
 		bloom_filter_map_impl filter(algo_memory, value_size,
 					     max_entries, nr_hashes, algo);
 
-		// 生成随机数据而不是模式化数据
+		// Generate random data instead of patterned data
 		std::vector<uint64_t> added_values;
 		std::vector<uint64_t> test_values;
 
-		// 使用更复杂的随机数生成
+		// Use a more sophisticated random number generator
 		std::random_device rd;
-		std::mt19937_64 gen(12345); // 固定种子确保可重现
+		std::mt19937_64 gen(12345); // Fixed seed for reproducibility
 		std::uniform_int_distribution<uint64_t> dis(1, UINT64_MAX);
 
-		// 生成要添加的值
-		std::set<uint64_t> added_set; // 确保不重复
+		// Generate values to add
+		std::set<uint64_t> added_set; // Ensure uniqueness
 		while (added_set.size() <
 		       static_cast<size_t>(num_elements_to_add)) {
 			added_set.insert(dis(gen));
 		}
 		added_values.assign(added_set.begin(), added_set.end());
 
-		// 生成测试值（确保不与添加的值重叠）
+		// Generate test values (ensure no overlap with added values)
 		std::set<uint64_t> test_set;
 		while (test_set.size() <
 		       static_cast<size_t>(num_test_elements)) {
@@ -522,12 +525,12 @@ TEST_CASE("Bloom Filter Large Scale False Positive Test",
 		INFO("Generated " << test_values.size()
 				  << " unique test values");
 
-		// 添加元素到 bloom filter
+		// Add elements to the bloom filter
 		for (const auto &value : added_values) {
 			REQUIRE(filter.map_push_elem(&value, BPF_ANY) == 0);
 		}
 
-		// 验证所有添加的元素都能找到（不应该有假阴性）
+		// Verify all added elements are found (no false negatives)
 		int false_negatives = 0;
 		for (const auto &value : added_values) {
 			uint64_t val = value;
@@ -535,9 +538,9 @@ TEST_CASE("Bloom Filter Large Scale False Positive Test",
 				false_negatives++;
 			}
 		}
-		REQUIRE(false_negatives == 0); // 不应该有假阴性
+		REQUIRE(false_negatives == 0); // No false negatives expected
 
-		// 测试假阳性
+		// Test false positives
 		int false_positives = 0;
 		int true_negatives = 0;
 
@@ -554,11 +557,11 @@ TEST_CASE("Bloom Filter Large Scale False Positive Test",
 			static_cast<double>(false_positives) /
 			test_values.size();
 
-		// 计算理论假阳性率
+		// Compute theoretical false positive rate
 		double k = static_cast<double>(nr_hashes);
 		double n = static_cast<double>(added_values.size());
 		double m = static_cast<double>(max_entries * nr_hashes * 7 / 5);
-		// 调整为2的幂次
+		// Adjust to the next power of two
 		size_t bit_array_size = 1;
 		while (bit_array_size < static_cast<size_t>(m)) {
 			bit_array_size <<= 1;
@@ -580,15 +583,17 @@ TEST_CASE("Bloom Filter Large Scale False Positive Test",
 		INFO("  Bit array size: " << static_cast<size_t>(m) << " bits");
 		INFO("  Load factor: " << (n / max_entries * 100) << "%");
 
-		// 假阳性率应该在合理范围内
+		// False positive rate should be reasonable
 		REQUIRE(false_positive_rate >= 0.0);
-		REQUIRE(false_positive_rate < 0.5); // 不应该超过50%
+		REQUIRE(false_positive_rate < 0.5); // Should not exceed 50%
 
-		// 如果理论假阳性率很低，实际值可能为0，这是正常的
+		// If the theoretical rate is very low, actual rate may be 0,
+		// which is fine
 		if (theoretical_fp_rate > 0.001) {
-			// 只有当理论值足够大时才检查是否接近理论值
+			// Only check closeness when the theoretical value is
+			// large enough
 			REQUIRE(false_positive_rate <=
-				theoretical_fp_rate * 5.0); // 允许一些偏差
+				theoretical_fp_rate * 5.0);
 		}
 
 		return false_positive_rate;
@@ -599,7 +604,7 @@ TEST_CASE("Bloom Filter Large Scale False Positive Test",
 	double jhash_fp_rate =
 		test_large_scale(BloomHashAlgorithm::JHASH, "JHASH");
 
-	// 比较两种算法
+	// Compare the two algorithms
 	INFO("Algorithm comparison:");
 	INFO("  DJB2 false positive rate: " << (djb2_fp_rate * 100) << "%");
 	INFO("  JHASH false positive rate: " << (jhash_fp_rate * 100) << "%");
@@ -615,12 +620,12 @@ TEST_CASE("Bloom Filter Extreme Load Test", "[bloom_filter][extreme]")
 	managed_shared_memory memory(create_only, SHARED_MEMORY_NAME,
 				     SHARED_MEMORY_SIZE);
 
-	// 极端测试参数 - 过载 bloom filter
+	// Extreme test parameters - overloaded bloom filter
 	const unsigned int value_size = 8;
-	const unsigned int max_entries = 5000; // 较小的设计容量
-	const unsigned int nr_hashes = 3; // 较少的哈希函数
-	const int num_elements_to_add = 8000; // 160% 过载！
-	const int num_test_elements = 100000; // 大量测试数据
+	const unsigned int max_entries = 5000; // Smaller designed capacity
+	const unsigned int nr_hashes = 3; // Fewer hash functions
+	const int num_elements_to_add = 8000; // 160% overloaded
+	const int num_test_elements = 100000; // Large dataset
 
 	INFO("EXTREME TEST: "
 	     << num_elements_to_add << " elements in filter designed for "
@@ -629,7 +634,7 @@ TEST_CASE("Bloom Filter Extreme Load Test", "[bloom_filter][extreme]")
 
 	auto test_extreme_load = [&](BloomHashAlgorithm algo,
 				     const char *algo_name) {
-		// 为每个算法创建独立的共享内存段
+		// Create a dedicated shared memory segment for each algorithm
 		std::string shm_name =
 			std::string(SHARED_MEMORY_NAME) + "_" + algo_name;
 
@@ -641,14 +646,14 @@ TEST_CASE("Bloom Filter Extreme Load Test", "[bloom_filter][extreme]")
 		bloom_filter_map_impl filter(algo_memory, value_size,
 					     max_entries, nr_hashes, algo);
 
-		// 生成随机数据
+		// Generate random data
 		std::vector<uint64_t> added_values;
 		std::vector<uint64_t> test_values;
 
-		std::mt19937_64 gen(54321); // 不同的种子
+		std::mt19937_64 gen(54321); // Different seed
 		std::uniform_int_distribution<uint64_t> dis(1, UINT64_MAX);
 
-		// 生成要添加的值
+		// Generate values to add
 		std::set<uint64_t> added_set;
 		while (added_set.size() <
 		       static_cast<size_t>(num_elements_to_add)) {
@@ -656,7 +661,7 @@ TEST_CASE("Bloom Filter Extreme Load Test", "[bloom_filter][extreme]")
 		}
 		added_values.assign(added_set.begin(), added_set.end());
 
-		// 生成测试值
+		// Generate test values
 		std::set<uint64_t> test_set;
 		while (test_set.size() <
 		       static_cast<size_t>(num_test_elements)) {
@@ -667,12 +672,12 @@ TEST_CASE("Bloom Filter Extreme Load Test", "[bloom_filter][extreme]")
 		}
 		test_values.assign(test_set.begin(), test_set.end());
 
-		// 添加元素到 bloom filter
+		// Add elements to the bloom filter
 		for (const auto &value : added_values) {
 			REQUIRE(filter.map_push_elem(&value, BPF_ANY) == 0);
 		}
 
-		// 验证所有添加的元素都能找到
+		// Verify all added elements are found
 		int false_negatives = 0;
 		for (const auto &value : added_values) {
 			uint64_t val = value;
@@ -682,7 +687,7 @@ TEST_CASE("Bloom Filter Extreme Load Test", "[bloom_filter][extreme]")
 		}
 		REQUIRE(false_negatives == 0);
 
-		// 测试假阳性
+		// Test false positives
 		int false_positives = 0;
 		int true_negatives = 0;
 
@@ -699,7 +704,7 @@ TEST_CASE("Bloom Filter Extreme Load Test", "[bloom_filter][extreme]")
 			static_cast<double>(false_positives) /
 			test_values.size();
 
-		// 计算理论假阳性率
+		// Compute theoretical false positive rate
 		double k = static_cast<double>(nr_hashes);
 		double n = static_cast<double>(added_values.size());
 		double m = static_cast<double>(max_entries * nr_hashes * 7 / 5);
@@ -724,11 +729,13 @@ TEST_CASE("Bloom Filter Extreme Load Test", "[bloom_filter][extreme]")
 		INFO("  Bit array size: " << static_cast<size_t>(m) << " bits");
 		INFO("  Load factor: " << (n / max_entries * 100) << "%");
 
-		// 在极端负载下，假阳性率应该很高但仍然合理
+		// Under extreme load, false positive rate should be high but
+		// still reasonable
 		REQUIRE(false_positive_rate >= 0.0);
-		REQUIRE(false_positive_rate < 1.0); // 不应该是100%
+		REQUIRE(false_positive_rate < 1.0); // Should not be 100%
 
-		// 在过载情况下，实际假阳性率可能远超理论值，这是正常的
+		// Under overload, actual rate may far exceed theoretical value,
+		// which is expected
 		INFO("  Ratio to theoretical: "
 		     << (false_positive_rate / theoretical_fp_rate));
 
@@ -740,12 +747,12 @@ TEST_CASE("Bloom Filter Extreme Load Test", "[bloom_filter][extreme]")
 	double jhash_fp_rate =
 		test_extreme_load(BloomHashAlgorithm::JHASH, "JHASH");
 
-	// 比较两种算法在极端负载下的表现
+	// Compare both algorithms under extreme load
 	INFO("EXTREME load algorithm comparison:");
 	INFO("  DJB2 false positive rate: " << (djb2_fp_rate * 100) << "%");
 	INFO("  JHASH false positive rate: " << (jhash_fp_rate * 100) << "%");
 
-	// 两种算法都应该有相当高的假阳性率
-	REQUIRE(djb2_fp_rate > 0.01); // 至少1%
-	REQUIRE(jhash_fp_rate > 0.01); // 至少1%
+	// Both algorithms should have relatively high false positive rates
+	REQUIRE(djb2_fp_rate > 0.01); // At least 1%
+	REQUIRE(jhash_fp_rate > 0.01); // At least 1%
 }

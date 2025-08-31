@@ -52,14 +52,14 @@ TEST_CASE("LRU Hash Map Basic Operations", "[lru_hash][basic]")
 
 	SECTION("Insert and Lookup Operations")
 	{
-		// 插入一些元素
+		// Insert some elements
 		for (uint32_t i = 0; i < map_capacity; i++) {
 			uint64_t value = i * 100;
 			REQUIRE(lru_map->elem_update(&i, &value, BPF_NOEXIST) ==
 				0);
 		}
 
-		// 验证所有元素都能找到
+		// Verify all elements can be found
 		for (uint32_t i = 0; i < map_capacity; i++) {
 			void *result = lru_map->elem_lookup(&i);
 			REQUIRE(result != nullptr);
@@ -69,31 +69,31 @@ TEST_CASE("LRU Hash Map Basic Operations", "[lru_hash][basic]")
 
 	SECTION("LRU Eviction Test")
 	{
-		// 填充到容量上限
+		// Fill up to capacity
 		for (uint32_t i = 0; i < map_capacity; i++) {
 			uint64_t value = i;
 			REQUIRE(lru_map->elem_update(&i, &value, BPF_NOEXIST) ==
 				0);
 		}
 
-		// 访问除了key=0之外的所有元素，使key=0成为LRU
+		// Access all elements except key=0 so key=0 becomes the LRU
 		for (uint32_t i = 1; i < map_capacity; i++) {
 			void *result = lru_map->elem_lookup(&i);
 			REQUIRE(result != nullptr);
 		}
 
-		// 插入新元素，应该evict key=0
+		// Insert a new element; key=0 should be evicted
 		uint32_t new_key = map_capacity;
 		uint64_t new_value = 999;
 		REQUIRE(lru_map->elem_update(&new_key, &new_value,
 					     BPF_NOEXIST) == 0);
 
-		// 验证新元素存在
+		// Verify the new element exists
 		void *result = lru_map->elem_lookup(&new_key);
 		REQUIRE(result != nullptr);
 		REQUIRE(*(uint64_t *)result == new_value);
 
-		// 验证key=0被evicted
+		// Verify key=0 was evicted
 		uint32_t evicted_key = 0;
 		errno = 0;
 		result = lru_map->elem_lookup(&evicted_key);
@@ -107,17 +107,17 @@ TEST_CASE("LRU Hash Map Basic Operations", "[lru_hash][basic]")
 		uint64_t value1 = 123;
 		uint64_t value2 = 456;
 
-		// 插入元素
+		// Insert element
 		REQUIRE(lru_map->elem_update(&key, &value1, BPF_NOEXIST) == 0);
 
-		// 更新元素
+		// Update element
 		REQUIRE(lru_map->elem_update(&key, &value2, BPF_EXIST) == 0);
 
 		void *result = lru_map->elem_lookup(&key);
 		REQUIRE(result != nullptr);
 		REQUIRE(*(uint64_t *)result == value2);
 
-		// 删除元素
+		// Delete element
 		REQUIRE(lru_map->elem_delete(&key) == 0);
 
 		errno = 0;
@@ -125,7 +125,7 @@ TEST_CASE("LRU Hash Map Basic Operations", "[lru_hash][basic]")
 		REQUIRE(result == nullptr);
 		REQUIRE(errno == ENOENT);
 
-		// 重复删除应该失败
+		// Deleting again should fail
 		errno = 0;
 		REQUIRE(lru_map->elem_delete(&key) == -1);
 		REQUIRE(errno == ENOENT);
@@ -166,14 +166,14 @@ TEST_CASE("LRU Hash Map Update Flags", "[lru_hash][flags]")
 
 	SECTION("BPF_NOEXIST flag tests")
 	{
-		// 在空map中用BPF_NOEXIST插入应该成功
+		// In an empty map, inserting with BPF_NOEXIST should succeed
 		REQUIRE(lru_map->elem_update(&key, &value1, BPF_NOEXIST) == 0);
 
 		void *result = lru_map->elem_lookup(&key);
 		REQUIRE(result != nullptr);
 		REQUIRE(*(uint64_t *)result == value1);
 
-		// 重复插入相同key应该失败
+		// Re-inserting the same key should fail
 		errno = 0;
 		REQUIRE(lru_map->elem_update(&key, &value2, BPF_NOEXIST) == -1);
 		REQUIRE(errno == EEXIST);
@@ -181,20 +181,20 @@ TEST_CASE("LRU Hash Map Update Flags", "[lru_hash][flags]")
 
 	SECTION("BPF_EXIST flag tests")
 	{
-		// 先插入一个元素
+		// Insert an element first
 		REQUIRE(lru_map->elem_update(&key, &value1, BPF_NOEXIST) == 0);
 
-		// 用BPF_EXIST更新应该成功
+		// Updating with BPF_EXIST should succeed
 		REQUIRE(lru_map->elem_update(&key, &value2, BPF_EXIST) == 0);
 
 		void *result = lru_map->elem_lookup(&key);
 		REQUIRE(result != nullptr);
 		REQUIRE(*(uint64_t *)result == value2);
 
-		// 删除元素
+		// Delete element
 		REQUIRE(lru_map->elem_delete(&key) == 0);
 
-		// 对不存在的key用BPF_EXIST应该失败
+		// Using BPF_EXIST on a non-existent key should fail
 		errno = 0;
 		REQUIRE(lru_map->elem_update(&key, &value1, BPF_EXIST) == -1);
 		REQUIRE(errno == ENOENT);
@@ -202,10 +202,10 @@ TEST_CASE("LRU Hash Map Update Flags", "[lru_hash][flags]")
 
 	SECTION("BPF_ANY flag tests")
 	{
-		// BPF_ANY对不存在的key应该成功
+		// BPF_ANY should succeed for a non-existent key
 		REQUIRE(lru_map->elem_update(&key, &value1, BPF_ANY) == 0);
 
-		// BPF_ANY对已存在的key也应该成功
+		// BPF_ANY should also succeed for an existing key
 		REQUIRE(lru_map->elem_update(&key, &value2, BPF_ANY) == 0);
 
 		void *result = lru_map->elem_lookup(&key);
@@ -244,26 +244,27 @@ TEST_CASE("LRU Hash Map Capacity Limits", "[lru_hash][capacity]")
 		FAIL("Failed to construct LRU Hash Map: " << ex.what());
 	}
 
-	// 填充到容量上限
+	// Fill up to capacity
 	for (uint32_t i = 0; i < small_capacity; i++) {
 		uint64_t value = i * 10;
 		REQUIRE(lru_map->elem_update(&i, &value, BPF_NOEXIST) == 0);
 	}
 
-	// 验证所有元素存在
+	// Verify all elements exist
 	for (uint32_t i = 0; i < small_capacity; i++) {
 		void *result = lru_map->elem_lookup(&i);
 		REQUIRE(result != nullptr);
 		REQUIRE(*(uint64_t *)result == i * 10);
 	}
 
-	// 插入额外元素应该触发LRU eviction，而不是失败
+	// Inserting an extra element should trigger LRU eviction instead of
+	// failing
 	uint32_t extra_key = small_capacity;
 	uint64_t extra_value = 999;
 	REQUIRE(lru_map->elem_update(&extra_key, &extra_value, BPF_NOEXIST) ==
 		0);
 
-	// 验证新元素存在
+	// Verify the new element exists
 	void *result = lru_map->elem_lookup(&extra_key);
 	REQUIRE(result != nullptr);
 	REQUIRE(*(uint64_t *)result == extra_value);
