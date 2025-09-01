@@ -347,90 +347,90 @@ jobs:
           - true
           - false
         examples:
-          # - path: libbpf-tools/opensnoop
-          #   executable: ./opensnoop
-          #   victim: ./victim
-          #   syscall_trace: true
-          #   expected_str: "   0 test.txt"
-          #   name: opensnoop-libbpf-tools
-          # - path: libbpf-tools/statsnoop
-          #   executable: ./statsnoop
-          #   victim: ./victim
-          #   syscall_trace: true
-          #   expected_str: "victim               0    0    /sys"
-          #   name: statsnoop
-          # - path: malloc
-          #   executable: ./malloc
-          #   victim: ./victim
-          #   syscall_trace: false
-          #   expected_str: "malloc calls: "
-          #   name: malloc
-          # - path: minimal
-          #   executable: ./uprobe
-          #   victim: ./victim
-          #   syscall_trace: false
-          #   expected_str: ""
-          #   name: minimal
-          # - path: opensnoop
-          #   executable: ./opensnoop
-          #   victim: ./victim
-          #   syscall_trace: true
-          #   expected_str: "   0 test.txt"
-          #   name: opensnoop
-          # - path: sslsniff
-          #   executable: ./sslsniff
-          #   victim: /bin/wget https://www.google.com
-          #   syscall_trace: false
-          #   expected_str: "----- DATA -----"
-          #   name: sslsniff
-          # - path: libbpf-tools/bashreadline
-          #   executable: ./readline
-          #   victim: /bin/bash
-          #   syscall_trace: false
-          #   expected_str: "info"
-          #   name: bashreadline
-          # - path: libbpf-tools/syscount
-          #   executable: ./syscount
-          #   victim: /bin/bash
-          #   syscall_trace: false
-          #   expected_str: "info"
-          #   name: syscount
-          # - path: libbpf-tools/funclatency
-          #   executable: ./funclatency -i 1 ./victim:plus
-          #   victim: ./victim
-          #   syscall_trace: false
-          #   expected_str: "|*"
-          #   name: funclatency
-          # - path: libbpf-tools/mountsnoop
-          #   executable: ./mountsnoop
-          #   victim: ./victim
-          #   syscall_trace: true
-          #   expected_str: mount(
-          #   name: mountsnoop
-          # - path: libbpf-tools/sigsnoop
-          #   executable: ./sigsnoop
-          #   victim: ./victim
-          #   syscall_trace: true
-          #   expected_str: "victim           0         -1      0"
-          #   name: sigsnoop
-          # - path: tailcall_minimal
-          #   executable: ./tailcall_minimal
-          #   victim: ./victim
-          #   syscall_trace: false
-          #   expected_str: "See /sys/kernel/debug/tracing/trace_pipe for output (15)"
-          #   name: tailcall_minimal
-          # - path: usdt_minimal
-          #   executable: ./usdt_minimal
-          #   victim: ./victim
-          #   syscall_trace: false
-          #   expected_str: "bpf:"
-          #   name: usdt_minimal
-          # - path: get_stack_id_example
-          #   executable: ./get_stack_id_example
-          #   victim: ./victim
-          #   syscall_trace: false
-          #   expected_str: "Function: malloc enter"
-          #   name: get_stack_id_example
+          - path: libbpf-tools/opensnoop
+            executable: ./opensnoop
+            victim: ./victim
+            syscall_trace: true
+            expected_str: "   0 test.txt"
+            name: opensnoop-libbpf-tools
+          - path: libbpf-tools/statsnoop
+            executable: ./statsnoop
+            victim: ./victim
+            syscall_trace: true
+            expected_str: "victim               0    0    /sys"
+            name: statsnoop
+          - path: malloc
+            executable: ./malloc
+            victim: ./victim
+            syscall_trace: false
+            expected_str: "malloc calls: "
+            name: malloc
+          - path: minimal
+            executable: ./uprobe
+            victim: ./victim
+            syscall_trace: false
+            expected_str: ""
+            name: minimal
+          - path: opensnoop
+            executable: ./opensnoop
+            victim: ./victim
+            syscall_trace: true
+            expected_str: "   0 test.txt"
+            name: opensnoop
+          - path: sslsniff
+            executable: ./sslsniff
+            victim: /bin/wget https://www.google.com
+            syscall_trace: false
+            expected_str: "----- DATA -----"
+            name: sslsniff
+          - path: libbpf-tools/bashreadline
+            executable: ./readline
+            victim: /bin/bash
+            syscall_trace: false
+            expected_str: "info"
+            name: bashreadline
+          - path: libbpf-tools/syscount
+            executable: ./syscount
+            victim: /bin/bash
+            syscall_trace: false
+            expected_str: "info"
+            name: syscount
+          - path: libbpf-tools/funclatency
+            executable: ./funclatency -i 1 ./victim:plus
+            victim: ./victim
+            syscall_trace: false
+            expected_str: "|*"
+            name: funclatency
+          - path: libbpf-tools/mountsnoop
+            executable: ./mountsnoop
+            victim: ./victim
+            syscall_trace: true
+            expected_str: mount(
+            name: mountsnoop
+          - path: libbpf-tools/sigsnoop
+            executable: ./sigsnoop
+            victim: ./victim
+            syscall_trace: true
+            expected_str: "victim           0         -1      0"
+            name: sigsnoop
+          - path: tailcall_minimal
+            executable: ./tailcall_minimal
+            victim: ./victim
+            syscall_trace: false
+            expected_str: "See /sys/kernel/debug/tracing/trace_pipe for output (15)"
+            name: tailcall_minimal
+          - path: usdt_minimal
+            executable: ./usdt_minimal
+            victim: ./victim
+            syscall_trace: false
+            expected_str: "bpf:"
+            name: usdt_minimal
+          - path: get_stack_id_example
+            executable: ./get_stack_id_example
+            victim: ./victim
+            syscall_trace: false
+            expected_str: "Function: malloc enter"
+            name: get_stack_id_example
           - path: bloom_filter_demo
             executable: ./uprobe_bloom_filter
             victim: ./target
