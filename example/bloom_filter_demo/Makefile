@@ -5,8 +5,8 @@ LLVM_STRIP ?= llvm-strip
 BPFTOOL ?= bpftool
 LIBBPF_SRC := $(abspath ../../third_party/libbpf/src)
 BPFTOOL_SRC := $(abspath ../../third_party/bpftool/src)
-# Use existing libbpf from build directory
-LIBBPF_OBJ := $(abspath ../../build/libbpf/libbpf.a)
+# Build libbpf locally into .output
+LIBBPF_OBJ := $(abspath $(OUTPUT)/libbpf.a)
 BPFTOOL_OUTPUT ?= $(abspath $(OUTPUT)/bpftool)
 # Try to find bpftool from multiple locations, or build our own
 BPFTOOL_BIN := $(shell \
@@ -24,8 +24,9 @@ VMLINUX := ../../third_party/vmlinux/$(ARCH)/vmlinux.h
 # Use our own libbpf API headers and Linux UAPI headers distributed with
 # libbpf to avoid dependency on system-wide headers, which could be missing or
 # outdated
-INCLUDES := -I$(OUTPUT) -I../../third_party/libbpf/include/uapi -I$(dir $(VMLINUX)) -I../../build/libbpf \
-	-I../../build/libbpf/bpf \
+
+# Headers search: local output and vendored headers
+INCLUDES := -I$(OUTPUT) -I../../third_party/libbpf/include/uapi -I$(dir $(VMLINUX)) \
 	-I$(BPFTOOL_OUTPUT)/bootstrap/libbpf/include \
 	-I../../third_party/bpftool/build/usr/include \
 	-I../../third_party/libbpf/build/usr/include
@@ -60,9 +61,17 @@ clean:
 	$(call msg,CLEAN)
 	$(Q)rm -rf $(OUTPUT) $(APPS)
 
-$(OUTPUT) $(BPFTOOL_OUTPUT):
+$(OUTPUT) $(OUTPUT)/libbpf $(BPFTOOL_OUTPUT):
 	$(call msg,MKDIR,$@)
 	$(Q)mkdir -p $@
+
+# Build libbpf locally if not present
+$(LIBBPF_OBJ): $(wildcard $(LIBBPF_SRC)/*.[ch] $(LIBBPF_SRC)/Makefile) | $(OUTPUT)/libbpf
+	$(call msg,LIB,$@)
+	$(Q)$(MAKE) -C $(LIBBPF_SRC) BUILD_STATIC_ONLY=1 \
+	    OBJDIR=$(dir $@)/libbpf DESTDIR=$(dir $@) \
+	    INCLUDEDIR= LIBDIR= UAPIDIR= \
+	    install
 
 # Build bpftool if it doesn't exist
 $(BPFTOOL_BIN): | $(BPFTOOL_OUTPUT)
@@ -72,8 +81,8 @@ $(BPFTOOL_BIN): | $(BPFTOOL_OUTPUT)
 		$(MAKE) -C ../../third_party/bpftool/src bootstrap OUTPUT=$(BPFTOOL_OUTPUT)/; \
 	fi
 
-# Build BPF code
-$(OUTPUT)/%.bpf.o: %.bpf.c $(wildcard %.h) $(VMLINUX) | $(OUTPUT)
+# Build BPF code (ensure headers are installed via local libbpf)
+$(OUTPUT)/%.bpf.o: %.bpf.c $(wildcard %.h) $(VMLINUX) $(LIBBPF_OBJ) | $(OUTPUT)
 	$(call msg,BPF,$@)
 	$(Q)$(CLANG) -g -O2 -target bpf -D__TARGET_ARCH_$(ARCH) $(INCLUDES) $(CLANG_BPF_SYS_INCLUDES) -c $(filter %.c,$^) -o $@
 	$(Q)$(LLVM_STRIP) -g $@ # strip useless DWARF info
