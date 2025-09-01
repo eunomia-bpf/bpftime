@@ -360,7 +360,7 @@ int bpftime_is_epoll_handler(int fd)
 int bpftime_epoll_wait(int fd, struct epoll_event *out_evts, int max_evt,
 		       int timeout)
 {
-	if (timeout < 0 && timeout != -1) {
+	if (timeout < -1) {
 		SPDLOG_ERROR(
 			"bpftime_epoll_wait only accepts timeout=-1 when negative");
 		errno = EINVAL;
