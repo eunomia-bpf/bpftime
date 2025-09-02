@@ -4,8 +4,6 @@
 #include <cstring>
 #include <stdexcept>
 #include <random>
-#include <algorithm>
-#include <fstream>
 #include <chrono>
 
 namespace bpftime
@@ -16,14 +14,20 @@ static uint32_t generate_random_seed()
 {
 	uint32_t seed = 0;
 
-	// Try to read from /dev/urandom first (preferred for security)
-	std::ifstream urandom("/dev/urandom", std::ios::binary);
-	if (urandom.is_open() &&
-	    urandom.read(reinterpret_cast<char *>(&seed), sizeof(seed))) {
-		urandom.close();
-		SPDLOG_DEBUG("Generated hash seed from /dev/urandom: 0x{:08x}",
-			     seed);
+	// Prefer std::random_device for user-space non-deterministic randomness
+	try {
+		std::random_device rd;
+		uint32_t v1 = static_cast<uint32_t>(rd());
+		uint32_t v2 = static_cast<uint32_t>(rd());
+		seed = v1 ^ ((v2 << 1) | (v2 >> 31));
+		SPDLOG_DEBUG(
+			"Generated hash seed from std::random_device: 0x{:08x}",
+			seed);
 		return seed;
+	} catch (const std::exception &e) {
+		SPDLOG_WARN(
+			"std::random_device failed: {}. Falling back to timestamp-based seed",
+			e.what());
 	}
 
 	// Fallback to timestamp-based seed if /dev/urandom is not available
