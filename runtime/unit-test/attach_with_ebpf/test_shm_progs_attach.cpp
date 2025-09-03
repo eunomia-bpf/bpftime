@@ -10,6 +10,7 @@
 #include "frida_attach_utils.hpp"
 #include "frida_uprobe_attach_impl.hpp"
 #include "handler/handler_manager.hpp"
+#include "bpftime_config.hpp"
 #include "handler/link_handler.hpp"
 #include "spdlog/spdlog.h"
 #include <cstdlib>
@@ -202,8 +203,10 @@ __attribute__((optnone)) TEST_CASE("Test shm progs attach")
 
 	// The side that creates the mapping
 	managed_shared_memory segment(create_only, SHM_NAME, 1 << 20);
+	// Use default max_fd_count for tests
+	const size_t test_max_fd_count = DEFAULT_MAX_FD_COUNT;
 	auto manager =
-		segment.construct<handler_manager>(HANDLER_NAME)(segment);
+		segment.construct<handler_manager>(HANDLER_NAME)(segment, test_max_fd_count);
 	auto &manager_ref = *manager;
 
 	// open the object file

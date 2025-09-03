@@ -199,7 +199,7 @@ int main(int argc, const char **argv)
 			.required()
 			.nargs(1);
 	} else {
-		spdlog::warn(
+		SPDLOG_WARN(
 			"Unable to determine home directory. You must specify --install-location");
 		program.add_argument("-i", "--install-location")
 			.help("Installing location of bpftime")

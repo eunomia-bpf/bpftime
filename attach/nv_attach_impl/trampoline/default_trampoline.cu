@@ -10,11 +10,13 @@
 #include <iostream>
 #include <iterator>
 #include <ostream>
+#include <stdio.h>
 #include <string>
 #include <thread>
 #include <vector>
 
-/* clang++-17 -S ./default_trampoline.cu -Wall --cuda-gpu-arch=sm_60 -O2 -L/usr/local/cuda/lib64/ -lcudart*/
+/* clang++-17 -S ./default_trampoline.cu -Wall --cuda-gpu-arch=sm_60 -O2
+ * -L/usr/local/cuda/lib64/ -lcudart*/
 enum class HelperOperation {
 	MAP_LOOKUP = 1,
 	MAP_UPDATE = 2,
@@ -78,13 +80,18 @@ struct CommSharedMem {
 	uint64_t time_sum[8];
 };
 
+const int BPF_MAP_TYPE_NV_GPU_ARRAY_MAP = 1502;
+const int BPF_MAP_TYPE_NV_GPU_RINGBUF_MAP = 1527;
+
 struct MapBasicInfo {
 	bool enabled;
 	int key_size;
 	int value_size;
 	int max_entries;
+	int map_type;
+	void *extra_buffer;
+	uint64_t max_thread_count;
 };
-
 __device__ __forceinline__ uint64_t read_globaltimer()
 {
 	uint64_t timestamp;
@@ -113,51 +120,65 @@ extern "C" __device__ HelperCallResponse make_helper_call(long map_id,
 							  int req_id)
 {
 	CommSharedMem *g_data = (CommSharedMem *)constData;
-	// printf("make_map_call at %d, constdata=%lx\n",
-	//        threadIdx.x + blockIdx.x * blockDim.x, (uintptr_t)g_data);
-	// auto start_time = read_globaltimer();
-	spin_lock(&g_data->occupy_flag);
-	// 准备要写入的参数值
-	int val = 42; // 这里就写一个固定值，示例用
-	// g_data->req = req;
-	g_data->request_id = req_id;
-	g_data->map_id = map_id;
-	// printf("making call for %d\n", req_id);
-	// 在内联PTX里演示 store/load + acquire/release + 自旋
-	asm volatile(
-		".reg .pred p0;                   \n\t" // 声明谓词寄存器
-		"membar.sys;                      \n\t" // 内存屏障
-							// 设置 flag1 = 1 (替代
-							// st.global.rel.u32)
-		"st.global.u32 [%1], 1;           \n\t"
-		// 自旋等待 flag2 == 1 (替代 ld.global.acq.u32)
-		"spin_wait:                       \n\t"
-		"membar.sys;                      \n\t"
-		"ld.global.u32 %0, [%2];          \n\t" // 读取 flag2
-		"setp.eq.u32 p0, %0, 0;           \n\t" // 比较值
-		"@p0 bra spin_wait;               \n\t" // 谓词分支
-							// 若跳出循环，复位
-							// flag2 = 0
-		"st.global.u32 [%2], 0;           \n\t"
-		"membar.sys;                      \n\t"
-		:
-		: "r"(val), "l"(&g_data->flag1), "l"(&g_data->flag2)
-		: "memory");
-	HelperCallResponse resp = g_data->resp;
+	int lane_id = threadIdx.x & 31;
+	HelperCallResponse my_resp = {};
 
-	spin_unlock(&g_data->occupy_flag);
-	// auto end_time = read_globaltimer();
-	// if (req_id < 8) {
-	// 	atomicAdd((unsigned long long *)&g_data->time_sum[req_id],
-	// 		  end_time - start_time);
-	// }
-	return resp;
+	for (int active_lane = 0; active_lane < 32; active_lane++) {
+		unsigned int active_mask = __activemask();
+		bool lane_is_active = (active_mask >> active_lane) & 1;
+
+		if (lane_is_active && lane_id == active_lane) {
+			spin_lock(&g_data->occupy_flag);
+
+			int val = 42;
+			g_data->request_id = req_id;
+			g_data->map_id = map_id;
+
+			asm volatile(".reg .pred p0;                   \n\t"
+				     "membar.sys;                      \n\t"
+				     "st.global.u32 [%1], 1;           \n\t"
+				     "spin_wait:                       \n\t"
+				     "membar.sys;                      \n\t"
+				     "ld.global.u32 %0, [%2];          \n\t"
+				     "setp.eq.u32 p0, %0, 0;           \n\t"
+				     "@p0 bra spin_wait;               \n\t"
+				     "st.global.u32 [%2], 0;           \n\t"
+				     "membar.sys;                      \n\t"
+				     :
+				     : "r"(val), "l"(&g_data->flag1),
+				       "l"(&g_data->flag2)
+				     : "memory");
+
+			my_resp = g_data->resp;
+
+			spin_unlock(&g_data->occupy_flag);
+		}
+
+		__syncwarp(active_mask);
+	}
+
+	return my_resp;
 }
-
 extern "C" __device__ inline void simple_memcpy(void *dst, void *src, int sz)
 {
 	for (int i = 0; i < sz; i++)
 		((char *)dst)[i] = ((char *)src)[i];
+}
+
+__device__ uint64_t getGlobalThreadId()
+{
+	int x = blockIdx.x * blockDim.x + threadIdx.x;
+	int y = blockIdx.y * blockDim.y + threadIdx.y;
+	int z = blockIdx.z * blockDim.z + threadIdx.z;
+	int width = gridDim.x * blockDim.x;
+	int height = gridDim.y * blockDim.y;
+	return ((uint64_t)z * width * height) + (y * width) + x;
+}
+__device__ void *array_map_offset(uint64_t idx, const MapBasicInfo &info)
+{
+	return (void *)((uintptr_t)info.extra_buffer +
+			idx * info.max_thread_count * info.value_size +
+			getGlobalThreadId() * info.value_size);
 }
 
 extern "C" __noinline__ __device__ uint64_t _bpf_helper_ext_0001(
@@ -167,6 +188,11 @@ extern "C" __noinline__ __device__ uint64_t _bpf_helper_ext_0001(
 	auto &req = global_data->req;
 	// CallRequest req;
 	const auto &map_info = ::map_info[map];
+	if (map_info.map_type == BPF_MAP_TYPE_NV_GPU_ARRAY_MAP) {
+		auto real_key = *(uint32_t *)(uintptr_t)key;
+		auto offset = array_map_offset(real_key, map_info);
+		return (uint64_t)offset;
+	}
 	// printf("helper1 map %ld keysize=%d valuesize=%d\n", map,
 	//        map_info.key_size, map_info.value_size);
 	simple_memcpy(&req.map_lookup.key, (void *)(uintptr_t)key,
@@ -184,6 +210,13 @@ extern "C" __noinline__ __device__ uint64_t _bpf_helper_ext_0002(
 	CommSharedMem *global_data = (CommSharedMem *)constData;
 	auto &req = global_data->req;
 	const auto &map_info = ::map_info[map];
+	if (map_info.map_type == BPF_MAP_TYPE_NV_GPU_ARRAY_MAP) {
+		auto real_key = *(uint32_t *)(uintptr_t)key;
+		auto offset = array_map_offset(real_key, map_info);
+		simple_memcpy(offset, (void *)(uintptr_t)value,
+			      map_info.value_size);
+		return 0;
+	}
 	// printf("helper2 map %ld keysize=%d
 	// valuesize=%d\n",map,map_info.key_size,map_info.value_size);
 	simple_memcpy(&req.map_update.key, (void *)(uintptr_t)key,
@@ -240,6 +273,60 @@ _bpf_helper_ext_0014(uint64_t, uint64_t, uint64_t, uint64_t, uint64_t)
 		make_helper_call(0, (int)HelperOperation::GET_CURRENT_PID_TGID);
 	return resp.get_tid_pgid.result;
 }
+struct ringbuf_header {
+	uint64_t head;
+	uint64_t tail;
+	int dirty;
+};
+
+// perf event output
+extern "C" __noinline__ __device__ uint64_t
+_bpf_helper_ext_0025(uint64_t ctx, uint64_t map, uint64_t flags, uint64_t data,
+		     uint64_t data_size)
+{
+	const auto &map_info = ::map_info[map];
+	if (map_info.map_type == BPF_MAP_TYPE_NV_GPU_RINGBUF_MAP) {
+		// printf("Starting perf output, value size=%d, max entries = %d\n",
+		//        map_info.value_size, map_info.max_entries);
+		auto entry_size = sizeof(ringbuf_header) +
+				  map_info.max_entries * (sizeof(uint64_t) +
+							  map_info.value_size);
+		auto header =
+			(ringbuf_header *)(uintptr_t)(getGlobalThreadId() *
+							      entry_size +
+						      (char *)map_info
+							      .extra_buffer);
+		// printf("header->head=%lu, header->tail=%lu\n", header->head,
+		//        header->tail);
+		if (header->tail - header->head == map_info.max_entries) {
+			// Buffer is full
+			// printf("Buffer is full\n");
+			return 2;
+		}
+		header->dirty = 1;
+		auto tail_to_put =
+			__atomic_fetch_add(&header->tail, 1, __ATOMIC_SEQ_CST);
+		auto real_tail = tail_to_put % map_info.max_entries;
+		// printf("real tail=%lu\n", real_tail);
+		auto buffer =
+			((char *)header) + sizeof(ringbuf_header) +
+			real_tail * (sizeof(uint64_t) + map_info.value_size);
+		// printf("before wrtting size to %lx, of %lu\n",
+		//        (uintptr_t)buffer, data_size);
+		*(uint64_t *)(uintptr_t)buffer = data_size;
+		// printf("before copying..\n");
+		simple_memcpy(buffer + sizeof(uint64_t),
+			      (void *)(uintptr_t)data, data_size);
+		// printf("data copied\n");
+		header->dirty = 0;
+		// printf("Generated %d bytes of data\n", (int)data_size);
+		return 0;
+
+	} else {
+		printf("Calling bpf_perf_event_output on unsupported map!");
+		return 1;
+	}
+}
 
 extern "C" __noinline__ __device__ uint64_t
 _bpf_helper_ext_0501(uint64_t data, uint64_t, uint64_t, uint64_t, uint64_t)
@@ -293,6 +380,12 @@ _bpf_helper_ext_0505(uint64_t x, uint64_t y, uint64_t z, uint64_t, uint64_t)
 	*(uint64_t *)(uintptr_t)y = threadIdx.y;
 	*(uint64_t *)(uintptr_t)z = threadIdx.z;
 
+	return 0;
+}
+extern "C" __noinline__ __device__ uint64_t
+_bpf_helper_ext_0506(uint64_t, uint64_t, uint64_t, uint64_t, uint64_t)
+{
+	asm("membar.sys;                      \n\t");
 	return 0;
 }
 

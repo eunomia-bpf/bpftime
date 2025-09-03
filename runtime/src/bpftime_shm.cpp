@@ -360,6 +360,12 @@ int bpftime_is_epoll_handler(int fd)
 int bpftime_epoll_wait(int fd, struct epoll_event *out_evts, int max_evt,
 		       int timeout)
 {
+	if (timeout < -1) {
+		SPDLOG_ERROR(
+			"bpftime_epoll_wait only accepts timeout=-1 when negative");
+		errno = EINVAL;
+		return -1;
+	}
 	auto &shm = shm_holder.global_shared_memory;
 	if (!shm.is_epoll_fd(fd)) {
 		errno = EINVAL;
@@ -394,9 +400,12 @@ int bpftime_epoll_wait(int fd, struct epoll_event *out_evts, int max_evt,
 		auto now_time = high_resolution_clock::now();
 		auto elasped =
 			duration_cast<milliseconds>(now_time - start_time);
-		if (timeout && elasped.count() > timeout) {
+		if (timeout == 0)
+			return 0;
+		if (timeout > 0 && elasped.count() > timeout) {
 			break;
 		}
+
 		for (const auto &p : epoll_inst.files) {
 			if (std::holds_alternative<software_perf_event_weak_ptr>(
 				    p.file)) {
@@ -620,11 +629,22 @@ int bpftime_poll_from_ringbuf(int rb_fd, void *ctx,
 	auto &shm = shm_holder.global_shared_memory;
 	if (auto ret = shm.try_get_ringbuf_map_impl(rb_fd); ret.has_value()) {
 		auto impl = ret.value();
-		return impl->create_impl_shared_ptr()->fetch_data(
-			[=](void *buf, int sz) { return cb(ctx, buf, sz); });
+		return impl->create_impl_shared_ptr()->fetch_data(cb, ctx);
 	} else {
 		errno = EINVAL;
 		SPDLOG_ERROR("Expected fd {} to be ringbuf map fd ", rb_fd);
 		return -EINVAL;
 	}
 }
+
+#ifdef BPFTIME_ENABLE_CUDA_ATTACH
+int bpftime_poll_gpu_ringbuf_map(int mapfd, void *ctx,
+				 void (*fn)(const void *, uint64_t, void *))
+{
+	auto &shm = shm_holder.global_shared_memory;
+	shm.poll_gpu_ringbuf_map(mapfd, [=](const void *buf, uint64_t size) {
+		fn(buf, size, ctx);
+	});
+	return 0;
+}
+#endif

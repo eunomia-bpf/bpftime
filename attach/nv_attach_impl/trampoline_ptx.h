@@ -15,13 +15,14 @@ static const char TRAMPOLINE_PTX[] = R"(
 )
 ;
 .visible .const .align 8 .u64 constData;
-.visible .const .align 4 .b8 map_info[4096];
-.global .align 1 .b8 _$_str[45] = {107, 101, 114, 110, 101, 108, 32, 102, 117, 110, 99, 116, 105, 111, 110, 32, 101, 110, 116, 101, 114, 101, 100, 44, 32, 109, 101, 109, 61, 37, 108, 120, 44, 32, 109, 101, 109, 115, 122, 61, 37, 108, 100, 10, 0};
+.visible .const .align 8 .b8 map_info[10240];
+.global .align 1 .b8 _$_str[50] = {67, 97, 108, 108, 105, 110, 103, 32, 98, 112, 102, 95, 112, 101, 114, 102, 95, 101, 118, 101, 110, 116, 95, 111, 117, 116, 112, 117, 116, 32, 111, 110, 32, 117, 110, 115, 117, 112, 112, 111, 114, 116, 101, 100, 32, 109, 97, 112, 33, 0};
+.global .align 1 .b8 _$_str1[45] = {107, 101, 114, 110, 101, 108, 32, 102, 117, 110, 99, 116, 105, 111, 110, 32, 101, 110, 116, 101, 114, 101, 100, 44, 32, 109, 101, 109, 61, 37, 108, 120, 44, 32, 109, 101, 109, 115, 122, 61, 37, 108, 100, 10, 0};
 .global .align 1 .b8 __const_$_bpf_main_$_buf[16] = {97, 97, 97, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
-.global .align 1 .b8 _$_str1[32] = {115, 101, 116, 117, 112, 32, 102, 117, 110, 99, 116, 105, 111, 110, 44, 32, 99, 111, 110, 115, 116, 32, 100, 97, 116, 97, 61, 37, 108, 120, 10, 0};
+.global .align 1 .b8 _$_str2[32] = {115, 101, 116, 117, 112, 32, 102, 117, 110, 99, 116, 105, 111, 110, 44, 32, 99, 111, 110, 115, 116, 32, 100, 97, 116, 97, 61, 37, 108, 120, 10, 0};
 .global .align 1 .b8 __const_$_bpf_main_$_msg[26] = {77, 101, 115, 115, 97, 103, 101, 32, 102, 114, 111, 109, 32, 98, 112, 102, 58, 32, 37, 100, 44, 32, 37, 108, 120, 0};
-.global .align 1 .b8 _$_str2[11] = {99, 97, 108, 108, 32, 100, 111, 110, 101, 10, 0};
-.global .align 1 .b8 _$_str3[23] = {103, 111, 116, 32, 114, 101, 115, 112, 111, 110, 115, 101, 32, 37, 100, 32, 97, 116, 32, 37, 100, 10, 0};
+.global .align 1 .b8 _$_str3[11] = {99, 97, 108, 108, 32, 100, 111, 110, 101, 10, 0};
+.global .align 1 .b8 _$_str4[23] = {103, 111, 116, 32, 114, 101, 115, 112, 111, 110, 115, 101, 32, 37, 100, 32, 97, 116, 32, 37, 100, 10, 0};
                                         // @spin_lock
 .visible .func spin_lock(
 	.param .b64 spin_lock_param_0
@@ -61,40 +62,147 @@ $L__BB0_1:                              // =>This Inner Loop Header: Depth=1
 	.param .b32 make_helper_call_param_1
 )                                       // @make_helper_call
 {
-	.reg .pred 	%p<2>;
-	.reg .b32 	%r<5>;
-	.reg .b64 	%rd<8>;
+	.reg .pred 	%p<7>;
+	.reg .b32 	%r<15>;
+	.reg .b64 	%rd<14>;
 
 // %bb.0:
-	ld.param.u32 	%r1, [make_helper_call_param_1];
-	ld.param.u64 	%rd2, [make_helper_call_param_0];
-	ld.const.u64 	%rd4, [constData];
-	add.s64 	%rd3, %rd4, 8;
-$L__BB2_1:                              // =>This Inner Loop Header: Depth=1
-	atom.cas.b32 	%r2, [%rd3], 0, 1;
-	setp.eq.s32 	%p1, %r2, 1;
-	@%p1 bra 	$L__BB2_1;
-// %bb.2:
-	st.u32 	[%rd4+12], %r1;
-	st.u64 	[%rd4+16], %rd2;
-	add.s64 	%rd5, %rd4, 4;
-	mov.u32 	%r3, 42;
+	ld.param.u32 	%r5, [make_helper_call_param_1];
+	ld.param.u64 	%rd6, [make_helper_call_param_0];
+	ld.const.u64 	%rd1, [constData];
+	mov.u32 	%r7, %tid.x;
+	and.b32  	%r1, %r7, 31;
+	add.s64 	%rd10, %rd1, 4;
+	mov.u32 	%r14, 0;
+	mov.u64 	%rd13, 0;
+	add.s64 	%rd8, %rd1, 8;
+	mov.u32 	%r12, 42;
+	bra.uni 	$L__BB2_1;
+$L__BB2_4:                              //   in Loop: Header=BB2_1 Depth=1
+	bar.warp.sync 	%r3;
+	add.s32 	%r14, %r14, 1;
+	setp.eq.s32 	%p6, %r14, 32;
+	@%p6 bra 	$L__BB2_5;
+$L__BB2_1:                              // =>This Loop Header: Depth=1
+                                        //     Child Loop BB2_2 Depth 2
+	// begin inline asm
+	activemask.b32 %r3;
+	// end inline asm
+	shr.u32 	%r9, %r3, %r14;
+	and.b32  	%r10, %r9, 1;
+	setp.eq.b32 	%p1, %r10, 1;
+	not.pred 	%p2, %p1;
+	setp.ne.s32 	%p3, %r1, %r14;
+	or.pred  	%p4, %p3, %p2;
+	@%p4 bra 	$L__BB2_4;
+$L__BB2_2:                              //   Parent Loop BB2_1 Depth=1
+                                        // =>  This Inner Loop Header: Depth=2
+	atom.cas.b32 	%r11, [%rd8], 0, 1;
+	setp.eq.s32 	%p5, %r11, 1;
+	@%p5 bra 	$L__BB2_2;
+// %bb.3:                               //   in Loop: Header=BB2_1 Depth=1
+	st.u32 	[%rd1+12], %r5;
+	st.u64 	[%rd1+16], %rd6;
 	// begin inline asm
 	.reg .pred p0;                   
 	membar.sys;                      
-	st.global.u32 [%rd4], 1;           
+	st.global.u32 [%rd1], 1;           
 	spin_wait:                       
 	membar.sys;                      
-	ld.global.u32 %r3, [%rd5];          
-	setp.eq.u32 p0, %r3, 0;           
+	ld.global.u32 %r12, [%rd10];          
+	setp.eq.u32 p0, %r12, 0;           
 	@p0 bra spin_wait;               
-	st.global.u32 [%rd5], 0;           
+	st.global.u32 [%rd10], 0;           
 	membar.sys;                      
 	
 	// end inline asm
-	ld.u64 	%rd6, [%rd4+2147483680];
-	atom.exch.b32 	%r4, [%rd3], 0;
-	st.param.b64 	[func_retval0+0], %rd6;
+	ld.u64 	%rd13, [%rd1+2147483680];
+	atom.exch.b32 	%r13, [%rd8], 0;
+	bra.uni 	$L__BB2_4;
+$L__BB2_5:
+	st.param.b64 	[func_retval0+0], %rd13;
+	ret;
+                                        // -- End function
+}
+	// .globl	_Z17getGlobalThreadIdv  // -- Begin function _Z17getGlobalThreadIdv
+.visible .func  (.param .b64 func_retval0) _Z17getGlobalThreadIdv() // @_Z17getGlobalThreadIdv
+{
+	.reg .b32 	%r<18>;
+	.reg .b64 	%rd<8>;
+
+// %bb.0:
+	mov.u32 	%r1, %ctaid.x;
+	mov.u32 	%r2, %ntid.x;
+	mov.u32 	%r3, %tid.x;
+	mad.lo.s32 	%r4, %r1, %r2, %r3;
+	mov.u32 	%r5, %ctaid.y;
+	mov.u32 	%r6, %ntid.y;
+	mov.u32 	%r7, %tid.y;
+	mad.lo.s32 	%r8, %r5, %r6, %r7;
+	mov.u32 	%r9, %ctaid.z;
+	mov.u32 	%r10, %ntid.z;
+	mov.u32 	%r11, %tid.z;
+	mad.lo.s32 	%r12, %r9, %r10, %r11;
+	mov.u32 	%r13, %nctaid.x;
+	mul.lo.s32 	%r14, %r13, %r2;
+	mov.u32 	%r15, %nctaid.y;
+	mul.lo.s32 	%r16, %r15, %r6;
+	cvt.s64.s32 	%rd1, %r12;
+	mul.wide.s32 	%rd2, %r16, %r14;
+	mul.lo.s64 	%rd3, %rd2, %rd1;
+	mul.lo.s32 	%r17, %r8, %r14;
+	cvt.s64.s32 	%rd4, %r17;
+	cvt.s64.s32 	%rd5, %r4;
+	add.s64 	%rd6, %rd4, %rd5;
+	add.s64 	%rd7, %rd6, %rd3;
+	st.param.b64 	[func_retval0+0], %rd7;
+	ret;
+                                        // -- End function
+}
+	// .globl	_Z16array_map_offsetmRK12MapBasicInfo // -- Begin function _Z16array_map_offsetmRK12MapBasicInfo
+.visible .func  (.param .b64 func_retval0) _Z16array_map_offsetmRK12MapBasicInfo(
+	.param .b64 _Z16array_map_offsetmRK12MapBasicInfo_param_0,
+	.param .b64 _Z16array_map_offsetmRK12MapBasicInfo_param_1
+)                                       // @_Z16array_map_offsetmRK12MapBasicInfo
+{
+	.reg .b32 	%r<18>;
+	.reg .b64 	%rd<17>;
+
+// %bb.0:
+	ld.param.u64 	%rd1, [_Z16array_map_offsetmRK12MapBasicInfo_param_0];
+	ld.param.u64 	%rd2, [_Z16array_map_offsetmRK12MapBasicInfo_param_1];
+	ld.u64 	%rd3, [%rd2+24];
+	ld.u64 	%rd4, [%rd2+32];
+	ld.s32 	%rd5, [%rd2+8];
+	mul.lo.s64 	%rd6, %rd4, %rd1;
+	mov.u32 	%r1, %ctaid.x;
+	mov.u32 	%r2, %ntid.x;
+	mov.u32 	%r3, %tid.x;
+	mad.lo.s32 	%r4, %r1, %r2, %r3;
+	mov.u32 	%r5, %ctaid.y;
+	mov.u32 	%r6, %ntid.y;
+	mov.u32 	%r7, %tid.y;
+	mad.lo.s32 	%r8, %r5, %r6, %r7;
+	mov.u32 	%r9, %ctaid.z;
+	mov.u32 	%r10, %ntid.z;
+	mov.u32 	%r11, %tid.z;
+	mad.lo.s32 	%r12, %r9, %r10, %r11;
+	mov.u32 	%r13, %nctaid.x;
+	mul.lo.s32 	%r14, %r13, %r2;
+	mov.u32 	%r15, %nctaid.y;
+	mul.lo.s32 	%r16, %r15, %r6;
+	cvt.s64.s32 	%rd7, %r12;
+	mul.wide.s32 	%rd8, %r16, %r14;
+	mul.lo.s64 	%rd9, %rd8, %rd7;
+	mul.lo.s32 	%r17, %r8, %r14;
+	cvt.s64.s32 	%rd10, %r17;
+	cvt.s64.s32 	%rd11, %r4;
+	add.s64 	%rd12, %rd10, %rd11;
+	add.s64 	%rd13, %rd12, %rd9;
+	add.s64 	%rd14, %rd13, %rd6;
+	mul.lo.s64 	%rd15, %rd14, %rd5;
+	add.s64 	%rd16, %rd15, %rd3;
+	st.param.b64 	[func_retval0+0], %rd16;
 	ret;
                                         // -- End function
 }
@@ -107,95 +215,158 @@ $L__BB2_1:                              // =>This Inner Loop Header: Depth=1
 	.param .b64 _bpf_helper_ext_0001_param_4
 )                                       // @_bpf_helper_ext_0001
 {
-	.reg .pred 	%p<7>;
+	.reg .pred 	%p<13>;
 	.reg .b16 	%rs<6>;
-	.reg .b32 	%r<16>;
-	.reg .b64 	%rd<32>;
+	.reg .b32 	%r<45>;
+	.reg .b64 	%rd<62>;
 
 // %bb.0:
-	ld.param.u64 	%rd14, [_bpf_helper_ext_0001_param_0];
-	ld.const.u64 	%rd25, [constData];
-	shl.b64 	%rd16, %rd14, 4;
-	mov.u64 	%rd17, map_info;
-	add.s64 	%rd18, %rd17, %rd16;
-	ld.const.u32 	%r6, [%rd18+4];
-	setp.lt.s32 	%p1, %r6, 1;
-	@%p1 bra 	$L__BB3_7;
+	ld.param.u64 	%rd21, [_bpf_helper_ext_0001_param_1];
+	ld.param.u64 	%rd20, [_bpf_helper_ext_0001_param_0];
+	mul.lo.s64 	%rd22, %rd20, 40;
+	mov.u64 	%rd23, map_info;
+	add.s64 	%rd24, %rd23, %rd22;
+	ld.const.u32 	%r10, [%rd24+16];
+	setp.ne.s32 	%p1, %r10, 1502;
+	@%p1 bra 	$L__BB5_2;
 // %bb.1:
-	ld.param.u64 	%rd15, [_bpf_helper_ext_0001_param_1];
-	cvt.u64.u32 	%rd3, %r6;
-	cvt.u32.u64 	%r8, %rd3;
-	and.b32  	%r15, %r8, 3;
-	setp.lt.u32 	%p2, %r8, 4;
-	mov.u32 	%r14, 0;
-	@%p2 bra 	$L__BB3_4;
-// %bb.2:
-	add.s64 	%rd2, %rd25, 24;
-	and.b64  	%rd4, %rd3, 4294967292;
-	add.s64 	%rd5, %rd15, 3;
-	mov.u64 	%rd29, 0;
-	cvt.u32.u64 	%r9, %rd4;
-$L__BB3_3:                              // =>This Inner Loop Header: Depth=1
-	add.s64 	%rd20, %rd5, %rd29;
-	ld.u8 	%rs1, [%rd20+-3];
-	add.s64 	%rd21, %rd2, %rd29;
-	st.u8 	[%rd21], %rs1;
-	ld.u8 	%rs2, [%rd20+-2];
-	st.u8 	[%rd21+1], %rs2;
-	ld.u8 	%rs3, [%rd20+-1];
-	st.u8 	[%rd21+2], %rs3;
-	ld.u8 	%rs4, [%rd20];
-	st.u8 	[%rd21+3], %rs4;
-	add.s64 	%rd29, %rd29, 4;
-	cvt.u32.u64 	%r14, %rd29;
-	setp.ne.s32 	%p3, %r9, %r14;
-	@%p3 bra 	$L__BB3_3;
-$L__BB3_4:
-	setp.eq.s32 	%p4, %r15, 0;
-	@%p4 bra 	$L__BB3_7;
-// %bb.5:
-	cvt.u64.u32 	%rd22, %r14;
-	add.s64 	%rd23, %rd22, %rd25;
-	add.s64 	%rd31, %rd23, 24;
-	add.s64 	%rd30, %rd15, %rd22;
-$L__BB3_6:                              // =>This Inner Loop Header: Depth=1
+	ld.u32 	%rd38, [%rd21];
+	ld.const.u64 	%rd42, [%rd24+24];
+	ld.const.u64 	%rd43, [%rd24+32];
+	ld.const.s32 	%rd44, [%rd24+8];
+	mul.lo.s64 	%rd45, %rd43, %rd38;
+	mov.u32 	%r24, %ctaid.x;
+	mov.u32 	%r25, %ntid.x;
+	mov.u32 	%r26, %tid.x;
+	mad.lo.s32 	%r27, %r24, %r25, %r26;
+	mov.u32 	%r28, %ctaid.y;
+	mov.u32 	%r29, %ntid.y;
+	mov.u32 	%r30, %tid.y;
+	mad.lo.s32 	%r31, %r28, %r29, %r30;
+	mov.u32 	%r32, %ctaid.z;
+	mov.u32 	%r33, %ntid.z;
+	mov.u32 	%r34, %tid.z;
+	mad.lo.s32 	%r35, %r32, %r33, %r34;
+	mov.u32 	%r36, %nctaid.x;
+	mul.lo.s32 	%r37, %r36, %r25;
+	mov.u32 	%r38, %nctaid.y;
+	mul.lo.s32 	%r39, %r38, %r29;
+	cvt.s64.s32 	%rd46, %r35;
+	mul.wide.s32 	%rd47, %r39, %r37;
+	mul.lo.s64 	%rd48, %rd47, %rd46;
+	mul.lo.s32 	%r40, %r31, %r37;
+	cvt.s64.s32 	%rd49, %r40;
+	cvt.s64.s32 	%rd50, %r27;
+	add.s64 	%rd51, %rd49, %rd50;
+	add.s64 	%rd52, %rd51, %rd48;
+	add.s64 	%rd53, %rd52, %rd45;
+	mul.lo.s64 	%rd54, %rd53, %rd44;
+	add.s64 	%rd60, %rd54, %rd42;
+$L__BB5_14:
+	st.param.b64 	[func_retval0+0], %rd60;
+	ret;
+$L__BB5_2:
+	ld.const.u64 	%rd35, [constData];
+	ld.const.u32 	%r11, [%rd24+4];
+	setp.lt.s32 	%p2, %r11, 1;
+	@%p2 bra 	$L__BB5_9;
+// %bb.3:
+	cvt.u64.u32 	%rd4, %r11;
+	cvt.u32.u64 	%r13, %rd4;
+	and.b32  	%r43, %r13, 3;
+	setp.lt.u32 	%p3, %r13, 4;
+	mov.u32 	%r42, 0;
+	@%p3 bra 	$L__BB5_6;
+// %bb.4:
+	add.s64 	%rd3, %rd35, 24;
+	and.b64  	%rd5, %rd4, 4294967292;
+	add.s64 	%rd6, %rd21, 3;
+	mov.u64 	%rd56, 0;
+	cvt.u32.u64 	%r14, %rd5;
+$L__BB5_5:                              // =>This Inner Loop Header: Depth=1
+	add.s64 	%rd29, %rd6, %rd56;
+	ld.u8 	%rs1, [%rd29+-3];
+	add.s64 	%rd30, %rd3, %rd56;
+	st.u8 	[%rd30], %rs1;
+	ld.u8 	%rs2, [%rd29+-2];
+	st.u8 	[%rd30+1], %rs2;
+	ld.u8 	%rs3, [%rd29+-1];
+	st.u8 	[%rd30+2], %rs3;
+	ld.u8 	%rs4, [%rd29];
+	st.u8 	[%rd30+3], %rs4;
+	add.s64 	%rd56, %rd56, 4;
+	cvt.u32.u64 	%r42, %rd56;
+	setp.ne.s32 	%p4, %r14, %r42;
+	@%p4 bra 	$L__BB5_5;
+$L__BB5_6:
+	setp.eq.s32 	%p5, %r43, 0;
+	@%p5 bra 	$L__BB5_9;
+// %bb.7:
+	cvt.u64.u32 	%rd31, %r42;
+	add.s64 	%rd32, %rd31, %rd35;
+	add.s64 	%rd58, %rd32, 24;
+	add.s64 	%rd57, %rd21, %rd31;
+$L__BB5_8:                              // =>This Inner Loop Header: Depth=1
 	.pragma "nounroll";
-	ld.u8 	%rs5, [%rd30];
-	st.u8 	[%rd31], %rs5;
-	add.s64 	%rd31, %rd31, 1;
-	add.s64 	%rd30, %rd30, 1;
-	add.s32 	%r15, %r15, -1;
-	setp.ne.s32 	%p5, %r15, 0;
-	@%p5 bra 	$L__BB3_6;
-$L__BB3_7:
-	add.s64 	%rd24, %rd25, 8;
-$L__BB3_8:                              // =>This Inner Loop Header: Depth=1
-	atom.cas.b32 	%r10, [%rd24], 0, 1;
-	setp.eq.s32 	%p6, %r10, 1;
-	@%p6 bra 	$L__BB3_8;
-// %bb.9:
-	mov.u32 	%r12, 1;
-	st.u32 	[%rd25+12], %r12;
-	st.u64 	[%rd25+16], %rd14;
-	add.s64 	%rd26, %rd25, 4;
-	mov.u32 	%r11, 42;
+	ld.u8 	%rs5, [%rd57];
+	st.u8 	[%rd58], %rs5;
+	add.s64 	%rd58, %rd58, 1;
+	add.s64 	%rd57, %rd57, 1;
+	add.s32 	%r43, %r43, -1;
+	setp.ne.s32 	%p6, %r43, 0;
+	@%p6 bra 	$L__BB5_8;
+$L__BB5_9:
+	mov.u32 	%r44, 0;
+	mov.u64 	%rd60, 0;
+	mov.u32 	%r16, %tid.x;
+	and.b32  	%r6, %r16, 31;
+	add.s64 	%rd36, %rd35, 4;
+	add.s64 	%rd34, %rd35, 8;
+	mov.u32 	%r22, 1;
+	mov.u32 	%r21, 42;
+	bra.uni 	$L__BB5_10;
+$L__BB5_13:                             //   in Loop: Header=BB5_10 Depth=1
+	bar.warp.sync 	%r8;
+	add.s32 	%r44, %r44, 1;
+	setp.ne.s32 	%p12, %r44, 32;
+	@%p12 bra 	$L__BB5_10;
+	bra.uni 	$L__BB5_14;
+$L__BB5_10:                             // =>This Loop Header: Depth=1
+                                        //     Child Loop BB5_11 Depth 2
+	// begin inline asm
+	activemask.b32 %r8;
+	// end inline asm
+	shr.u32 	%r18, %r8, %r44;
+	and.b32  	%r19, %r18, 1;
+	setp.eq.b32 	%p7, %r19, 1;
+	not.pred 	%p8, %p7;
+	setp.ne.s32 	%p9, %r6, %r44;
+	or.pred  	%p10, %p9, %p8;
+	@%p10 bra 	$L__BB5_13;
+$L__BB5_11:                             //   Parent Loop BB5_10 Depth=1
+                                        // =>  This Inner Loop Header: Depth=2
+	atom.cas.b32 	%r20, [%rd34], 0, 1;
+	setp.eq.s32 	%p11, %r20, 1;
+	@%p11 bra 	$L__BB5_11;
+// %bb.12:                              //   in Loop: Header=BB5_10 Depth=1
+	st.u32 	[%rd35+12], %r22;
+	st.u64 	[%rd35+16], %rd20;
 	// begin inline asm
 	.reg .pred p0;                   
 	membar.sys;                      
-	st.global.u32 [%rd25], 1;           
+	st.global.u32 [%rd35], 1;           
 	spin_wait:                       
 	membar.sys;                      
-	ld.global.u32 %r11, [%rd26];          
-	setp.eq.u32 p0, %r11, 0;           
+	ld.global.u32 %r21, [%rd36];          
+	setp.eq.u32 p0, %r21, 0;           
 	@p0 bra spin_wait;               
-	st.global.u32 [%rd26], 0;           
+	st.global.u32 [%rd36], 0;           
 	membar.sys;                      
 	
 	// end inline asm
-	ld.u64 	%rd27, [%rd25+2147483680];
-	atom.exch.b32 	%r13, [%rd24], 0;
-	st.param.b64 	[func_retval0+0], %rd27;
-	ret;
+	ld.u64 	%rd60, [%rd35+2147483680];
+	atom.exch.b32 	%r23, [%rd34], 0;
+	bra.uni 	$L__BB5_13;
                                         // -- End function
 }
 	// .globl	_bpf_helper_ext_0002    // -- Begin function _bpf_helper_ext_0002
@@ -207,146 +378,260 @@ $L__BB3_8:                              // =>This Inner Loop Header: Depth=1
 	.param .b64 _bpf_helper_ext_0002_param_4
 )                                       // @_bpf_helper_ext_0002
 {
-	.reg .pred 	%p<12>;
-	.reg .b16 	%rs<11>;
-	.reg .b32 	%r<28>;
-	.reg .b64 	%rd<57>;
+	.reg .pred 	%p<23>;
+	.reg .b16 	%rs<16>;
+	.reg .b32 	%r<68>;
+	.reg .b64 	%rd<110>;
 
 // %bb.0:
-	ld.param.u64 	%rd26, [_bpf_helper_ext_0002_param_0];
-	ld.const.u64 	%rd47, [constData];
-	shl.b64 	%rd30, %rd26, 4;
-	mov.u64 	%rd31, map_info;
-	add.s64 	%rd32, %rd31, %rd30;
-	ld.const.u32 	%r11, [%rd32+4];
-	setp.lt.s32 	%p1, %r11, 1;
-	@%p1 bra 	$L__BB4_7;
+	ld.param.u64 	%rd46, [_bpf_helper_ext_0002_param_2];
+	ld.param.u64 	%rd45, [_bpf_helper_ext_0002_param_1];
+	ld.param.u64 	%rd44, [_bpf_helper_ext_0002_param_0];
+	mul.lo.s64 	%rd48, %rd44, 40;
+	mov.u64 	%rd49, map_info;
+	add.s64 	%rd50, %rd49, %rd48;
+	ld.const.u32 	%r20, [%rd50+16];
+	setp.ne.s32 	%p1, %r20, 1502;
+	@%p1 bra 	$L__BB6_8;
 // %bb.1:
-	ld.param.u64 	%rd27, [_bpf_helper_ext_0002_param_1];
-	cvt.u64.u32 	%rd3, %r11;
-	cvt.u32.u64 	%r13, %rd3;
-	and.b32  	%r25, %r13, 3;
-	setp.lt.u32 	%p2, %r13, 4;
-	mov.u32 	%r24, 0;
-	@%p2 bra 	$L__BB4_4;
+	ld.const.u32 	%r38, [%rd50+8];
+	setp.lt.s32 	%p18, %r38, 1;
+	mov.u64 	%rd109, 0;
+	@%p18 bra 	$L__BB6_28;
 // %bb.2:
-	add.s64 	%rd2, %rd47, 24;
-	and.b64  	%rd4, %rd3, 4294967292;
-	add.s64 	%rd5, %rd27, 3;
-	mov.u64 	%rd51, 0;
-	cvt.u32.u64 	%r14, %rd4;
-$L__BB4_3:                              // =>This Inner Loop Header: Depth=1
-	add.s64 	%rd34, %rd5, %rd51;
-	ld.u8 	%rs1, [%rd34+-3];
-	add.s64 	%rd35, %rd2, %rd51;
-	st.u8 	[%rd35], %rs1;
-	ld.u8 	%rs2, [%rd34+-2];
-	st.u8 	[%rd35+1], %rs2;
-	ld.u8 	%rs3, [%rd34+-1];
-	st.u8 	[%rd35+2], %rs3;
-	ld.u8 	%rs4, [%rd34];
-	st.u8 	[%rd35+3], %rs4;
-	add.s64 	%rd51, %rd51, 4;
-	cvt.u32.u64 	%r24, %rd51;
-	setp.ne.s32 	%p3, %r14, %r24;
-	@%p3 bra 	$L__BB4_3;
-$L__BB4_4:
-	setp.eq.s32 	%p4, %r25, 0;
-	@%p4 bra 	$L__BB4_7;
-// %bb.5:
-	cvt.u64.u32 	%rd36, %r24;
-	add.s64 	%rd37, %rd36, %rd47;
-	add.s64 	%rd53, %rd37, 24;
-	add.s64 	%rd52, %rd27, %rd36;
-$L__BB4_6:                              // =>This Inner Loop Header: Depth=1
+	ld.u32 	%rd73, [%rd45];
+	ld.const.u64 	%rd77, [%rd50+24];
+	ld.const.u64 	%rd78, [%rd50+32];
+	cvt.u64.u32 	%rd1, %r38;
+	cvt.s64.s32 	%rd79, %r38;
+	mul.lo.s64 	%rd80, %rd78, %rd73;
+	mov.u32 	%r39, %ctaid.x;
+	mov.u32 	%r40, %ntid.x;
+	mov.u32 	%r41, %tid.x;
+	mad.lo.s32 	%r42, %r39, %r40, %r41;
+	mov.u32 	%r43, %ctaid.y;
+	mov.u32 	%r44, %ntid.y;
+	mov.u32 	%r45, %tid.y;
+	mad.lo.s32 	%r46, %r43, %r44, %r45;
+	mov.u32 	%r47, %ctaid.z;
+	mov.u32 	%r48, %ntid.z;
+	mov.u32 	%r49, %tid.z;
+	mad.lo.s32 	%r50, %r47, %r48, %r49;
+	mov.u32 	%r51, %nctaid.x;
+	mul.lo.s32 	%r52, %r51, %r40;
+	mov.u32 	%r53, %nctaid.y;
+	mul.lo.s32 	%r54, %r53, %r44;
+	cvt.s64.s32 	%rd81, %r50;
+	mul.wide.s32 	%rd82, %r54, %r52;
+	mul.lo.s64 	%rd83, %rd82, %rd81;
+	mul.lo.s32 	%r55, %r46, %r52;
+	cvt.s64.s32 	%rd84, %r55;
+	cvt.s64.s32 	%rd85, %r42;
+	add.s64 	%rd86, %rd84, %rd85;
+	add.s64 	%rd87, %rd86, %rd83;
+	add.s64 	%rd88, %rd87, %rd80;
+	mul.lo.s64 	%rd89, %rd88, %rd79;
+	add.s64 	%rd2, %rd89, %rd77;
+	cvt.u32.u64 	%r57, %rd1;
+	and.b32  	%r67, %r57, 3;
+	setp.lt.u32 	%p19, %r57, 4;
+	mov.u32 	%r66, 0;
+	@%p19 bra 	$L__BB6_5;
+// %bb.3:
+	and.b64  	%rd3, %rd1, 4294967292;
+	add.s64 	%rd4, %rd46, 3;
+	mov.u64 	%rd98, 0;
+	cvt.u32.u64 	%r58, %rd3;
+$L__BB6_4:                              // =>This Inner Loop Header: Depth=1
+	add.s64 	%rd91, %rd4, %rd98;
+	ld.u8 	%rs11, [%rd91+-3];
+	add.s64 	%rd92, %rd2, %rd98;
+	st.u8 	[%rd92], %rs11;
+	ld.u8 	%rs12, [%rd91+-2];
+	st.u8 	[%rd92+1], %rs12;
+	ld.u8 	%rs13, [%rd91+-1];
+	st.u8 	[%rd92+2], %rs13;
+	ld.u8 	%rs14, [%rd91];
+	st.u8 	[%rd92+3], %rs14;
+	add.s64 	%rd98, %rd98, 4;
+	cvt.u32.u64 	%r66, %rd98;
+	setp.eq.s32 	%p20, %r58, %r66;
+	@%p20 bra 	$L__BB6_5;
+	bra.uni 	$L__BB6_4;
+$L__BB6_5:
+	setp.eq.s32 	%p21, %r67, 0;
+	@%p21 bra 	$L__BB6_28;
+// %bb.6:
+	cvt.u64.u32 	%rd94, %r66;
+	add.s64 	%rd108, %rd2, %rd94;
+	add.s64 	%rd107, %rd46, %rd94;
+$L__BB6_7:                              // =>This Inner Loop Header: Depth=1
 	.pragma "nounroll";
-	ld.u8 	%rs5, [%rd52];
-	st.u8 	[%rd53], %rs5;
-	add.s64 	%rd53, %rd53, 1;
-	add.s64 	%rd52, %rd52, 1;
-	add.s32 	%r25, %r25, -1;
-	setp.ne.s32 	%p5, %r25, 0;
-	@%p5 bra 	$L__BB4_6;
-$L__BB4_7:
-	ld.param.u64 	%rd29, [_bpf_helper_ext_0002_param_3];
-	ld.const.u32 	%r15, [%rd32+8];
-	setp.lt.s32 	%p6, %r15, 1;
-	@%p6 bra 	$L__BB4_14;
-// %bb.8:
-	ld.param.u64 	%rd28, [_bpf_helper_ext_0002_param_2];
-	mov.u32 	%r26, 0;
-	cvt.u64.u32 	%rd15, %r15;
-	cvt.u32.u64 	%r17, %rd15;
-	and.b32  	%r27, %r17, 3;
-	setp.lt.u32 	%p7, %r17, 4;
-	@%p7 bra 	$L__BB4_11;
+	ld.u8 	%rs15, [%rd107];
+	st.u8 	[%rd108], %rs15;
+	add.s64 	%rd108, %rd108, 1;
+	add.s64 	%rd107, %rd107, 1;
+	add.s32 	%r67, %r67, -1;
+	setp.ne.s32 	%p22, %r67, 0;
+	@%p22 bra 	$L__BB6_7;
+	bra.uni 	$L__BB6_28;
+$L__BB6_8:
+	ld.const.u64 	%rd69, [constData];
+	ld.const.u32 	%r21, [%rd50+4];
+	setp.lt.s32 	%p2, %r21, 1;
+	@%p2 bra 	$L__BB6_15;
 // %bb.9:
-	add.s64 	%rd14, %rd47, 1073741848;
-	and.b64  	%rd16, %rd15, 4294967292;
-	add.s64 	%rd17, %rd28, 3;
-	mov.u64 	%rd54, 0;
-	cvt.u32.u64 	%r18, %rd16;
-$L__BB4_10:                             // =>This Inner Loop Header: Depth=1
-	add.s64 	%rd42, %rd17, %rd54;
-	ld.u8 	%rs6, [%rd42+-3];
-	add.s64 	%rd43, %rd14, %rd54;
-	st.u8 	[%rd43], %rs6;
-	ld.u8 	%rs7, [%rd42+-2];
-	st.u8 	[%rd43+1], %rs7;
-	ld.u8 	%rs8, [%rd42+-1];
-	st.u8 	[%rd43+2], %rs8;
-	ld.u8 	%rs9, [%rd42];
-	st.u8 	[%rd43+3], %rs9;
-	add.s64 	%rd54, %rd54, 4;
-	cvt.u32.u64 	%r26, %rd54;
-	setp.ne.s32 	%p8, %r18, %r26;
-	@%p8 bra 	$L__BB4_10;
-$L__BB4_11:
-	setp.eq.s32 	%p9, %r27, 0;
-	@%p9 bra 	$L__BB4_14;
-// %bb.12:
-	cvt.u64.u32 	%rd44, %r26;
-	add.s64 	%rd45, %rd44, %rd47;
-	add.s64 	%rd56, %rd45, 1073741848;
-	add.s64 	%rd55, %rd28, %rd44;
-$L__BB4_13:                             // =>This Inner Loop Header: Depth=1
+	cvt.u64.u32 	%rd9, %r21;
+	cvt.u32.u64 	%r23, %rd9;
+	and.b32  	%r62, %r23, 3;
+	setp.lt.u32 	%p3, %r23, 4;
+	mov.u32 	%r61, 0;
+	@%p3 bra 	$L__BB6_12;
+// %bb.10:
+	add.s64 	%rd8, %rd69, 24;
+	and.b64  	%rd10, %rd9, 4294967292;
+	add.s64 	%rd11, %rd45, 3;
+	mov.u64 	%rd99, 0;
+	cvt.u32.u64 	%r24, %rd10;
+$L__BB6_11:                             // =>This Inner Loop Header: Depth=1
+	add.s64 	%rd55, %rd11, %rd99;
+	ld.u8 	%rs1, [%rd55+-3];
+	add.s64 	%rd56, %rd8, %rd99;
+	st.u8 	[%rd56], %rs1;
+	ld.u8 	%rs2, [%rd55+-2];
+	st.u8 	[%rd56+1], %rs2;
+	ld.u8 	%rs3, [%rd55+-1];
+	st.u8 	[%rd56+2], %rs3;
+	ld.u8 	%rs4, [%rd55];
+	st.u8 	[%rd56+3], %rs4;
+	add.s64 	%rd99, %rd99, 4;
+	cvt.u32.u64 	%r61, %rd99;
+	setp.ne.s32 	%p4, %r24, %r61;
+	@%p4 bra 	$L__BB6_11;
+$L__BB6_12:
+	setp.eq.s32 	%p5, %r62, 0;
+	@%p5 bra 	$L__BB6_15;
+// %bb.13:
+	cvt.u64.u32 	%rd57, %r61;
+	add.s64 	%rd58, %rd57, %rd69;
+	add.s64 	%rd101, %rd58, 24;
+	add.s64 	%rd100, %rd45, %rd57;
+$L__BB6_14:                             // =>This Inner Loop Header: Depth=1
 	.pragma "nounroll";
-	ld.u8 	%rs10, [%rd55];
-	st.u8 	[%rd56], %rs10;
-	add.s64 	%rd56, %rd56, 1;
-	add.s64 	%rd55, %rd55, 1;
-	add.s32 	%r27, %r27, -1;
-	setp.ne.s32 	%p10, %r27, 0;
-	@%p10 bra 	$L__BB4_13;
-$L__BB4_14:
-	st.u64 	[%rd47+2147483672], %rd29;
-	add.s64 	%rd46, %rd47, 8;
-$L__BB4_15:                             // =>This Inner Loop Header: Depth=1
-	atom.cas.b32 	%r19, [%rd46], 0, 1;
-	setp.eq.s32 	%p11, %r19, 1;
-	@%p11 bra 	$L__BB4_15;
+	ld.u8 	%rs5, [%rd100];
+	st.u8 	[%rd101], %rs5;
+	add.s64 	%rd101, %rd101, 1;
+	add.s64 	%rd100, %rd100, 1;
+	add.s32 	%r62, %r62, -1;
+	setp.ne.s32 	%p6, %r62, 0;
+	@%p6 bra 	$L__BB6_14;
+$L__BB6_15:
+	ld.param.u64 	%rd47, [_bpf_helper_ext_0002_param_3];
+	ld.const.u32 	%r25, [%rd50+8];
+	setp.lt.s32 	%p7, %r25, 1;
+	@%p7 bra 	$L__BB6_22;
 // %bb.16:
-	mov.u32 	%r21, 2;
-	st.u32 	[%rd47+12], %r21;
-	st.u64 	[%rd47+16], %rd26;
-	add.s64 	%rd48, %rd47, 4;
-	mov.u32 	%r20, 42;
+	cvt.u64.u32 	%rd21, %r25;
+	cvt.u32.u64 	%r27, %rd21;
+	and.b32  	%r64, %r27, 3;
+	setp.lt.u32 	%p8, %r27, 4;
+	mov.u32 	%r63, 0;
+	@%p8 bra 	$L__BB6_19;
+// %bb.17:
+	add.s64 	%rd20, %rd69, 1073741848;
+	and.b64  	%rd22, %rd21, 4294967292;
+	add.s64 	%rd23, %rd46, 3;
+	mov.u64 	%rd102, 0;
+	cvt.u32.u64 	%r28, %rd22;
+$L__BB6_18:                             // =>This Inner Loop Header: Depth=1
+	add.s64 	%rd63, %rd23, %rd102;
+	ld.u8 	%rs6, [%rd63+-3];
+	add.s64 	%rd64, %rd20, %rd102;
+	st.u8 	[%rd64], %rs6;
+	ld.u8 	%rs7, [%rd63+-2];
+	st.u8 	[%rd64+1], %rs7;
+	ld.u8 	%rs8, [%rd63+-1];
+	st.u8 	[%rd64+2], %rs8;
+	ld.u8 	%rs9, [%rd63];
+	st.u8 	[%rd64+3], %rs9;
+	add.s64 	%rd102, %rd102, 4;
+	cvt.u32.u64 	%r63, %rd102;
+	setp.ne.s32 	%p9, %r28, %r63;
+	@%p9 bra 	$L__BB6_18;
+$L__BB6_19:
+	setp.eq.s32 	%p10, %r64, 0;
+	@%p10 bra 	$L__BB6_22;
+// %bb.20:
+	cvt.u64.u32 	%rd65, %r63;
+	add.s64 	%rd66, %rd65, %rd69;
+	add.s64 	%rd104, %rd66, 1073741848;
+	add.s64 	%rd103, %rd46, %rd65;
+$L__BB6_21:                             // =>This Inner Loop Header: Depth=1
+	.pragma "nounroll";
+	ld.u8 	%rs10, [%rd103];
+	st.u8 	[%rd104], %rs10;
+	add.s64 	%rd104, %rd104, 1;
+	add.s64 	%rd103, %rd103, 1;
+	add.s32 	%r64, %r64, -1;
+	setp.ne.s32 	%p11, %r64, 0;
+	@%p11 bra 	$L__BB6_21;
+$L__BB6_22:
+	mov.u32 	%r65, 0;
+	mov.u64 	%rd106, 0;
+	st.u64 	[%rd69+2147483672], %rd47;
+	mov.u32 	%r30, %tid.x;
+	and.b32  	%r13, %r30, 31;
+	add.s64 	%rd70, %rd69, 4;
+	add.s64 	%rd68, %rd69, 8;
+	mov.u32 	%r36, 2;
+	mov.u32 	%r35, 42;
+	bra.uni 	$L__BB6_23;
+$L__BB6_26:                             //   in Loop: Header=BB6_23 Depth=1
+	bar.warp.sync 	%r15;
+	add.s32 	%r65, %r65, 1;
+	setp.ne.s32 	%p17, %r65, 32;
+	@%p17 bra 	$L__BB6_23;
+	bra.uni 	$L__BB6_27;
+$L__BB6_23:                             // =>This Loop Header: Depth=1
+                                        //     Child Loop BB6_24 Depth 2
+	// begin inline asm
+	activemask.b32 %r15;
+	// end inline asm
+	shr.u32 	%r32, %r15, %r65;
+	and.b32  	%r33, %r32, 1;
+	setp.eq.b32 	%p12, %r33, 1;
+	not.pred 	%p13, %p12;
+	setp.ne.s32 	%p14, %r13, %r65;
+	or.pred  	%p15, %p14, %p13;
+	@%p15 bra 	$L__BB6_26;
+$L__BB6_24:                             //   Parent Loop BB6_23 Depth=1
+                                        // =>  This Inner Loop Header: Depth=2
+	atom.cas.b32 	%r34, [%rd68], 0, 1;
+	setp.eq.s32 	%p16, %r34, 1;
+	@%p16 bra 	$L__BB6_24;
+// %bb.25:                              //   in Loop: Header=BB6_23 Depth=1
+	st.u32 	[%rd69+12], %r36;
+	st.u64 	[%rd69+16], %rd44;
 	// begin inline asm
 	.reg .pred p0;                   
 	membar.sys;                      
-	st.global.u32 [%rd47], 1;           
+	st.global.u32 [%rd69], 1;           
 	spin_wait:                       
 	membar.sys;                      
-	ld.global.u32 %r20, [%rd48];          
-	setp.eq.u32 p0, %r20, 0;           
+	ld.global.u32 %r35, [%rd70];          
+	setp.eq.u32 p0, %r35, 0;           
 	@p0 bra spin_wait;               
-	st.global.u32 [%rd48], 0;           
+	st.global.u32 [%rd70], 0;           
 	membar.sys;                      
 	
 	// end inline asm
-	ld.s32 	%rd49, [%rd47+2147483680];
-	atom.exch.b32 	%r22, [%rd46], 0;
-	st.param.b64 	[func_retval0+0], %rd49;
+	ld.u64 	%rd106, [%rd69+2147483680];
+	atom.exch.b32 	%r37, [%rd68], 0;
+	bra.uni 	$L__BB6_26;
+$L__BB6_27:
+	cvt.s64.s32 	%rd109, %rd106;
+$L__BB6_28:
+	st.param.b64 	[func_retval0+0], %rd109;
 	ret;
                                         // -- End function
 }
@@ -359,94 +644,121 @@ $L__BB4_15:                             // =>This Inner Loop Header: Depth=1
 	.param .b64 _bpf_helper_ext_0003_param_4
 )                                       // @_bpf_helper_ext_0003
 {
-	.reg .pred 	%p<7>;
+	.reg .pred 	%p<12>;
 	.reg .b16 	%rs<6>;
-	.reg .b32 	%r<16>;
-	.reg .b64 	%rd<32>;
+	.reg .b32 	%r<27>;
+	.reg .b64 	%rd<40>;
 
 // %bb.0:
-	ld.param.u64 	%rd14, [_bpf_helper_ext_0003_param_0];
-	ld.const.u64 	%rd25, [constData];
-	shl.b64 	%rd16, %rd14, 4;
-	mov.u64 	%rd17, map_info;
-	add.s64 	%rd18, %rd17, %rd16;
-	ld.const.u32 	%r6, [%rd18+4];
-	setp.lt.s32 	%p1, %r6, 1;
-	@%p1 bra 	$L__BB5_7;
+	ld.param.u64 	%rd18, [_bpf_helper_ext_0003_param_0];
+	ld.const.u64 	%rd30, [constData];
+	mul.lo.s64 	%rd20, %rd18, 40;
+	mov.u64 	%rd21, map_info;
+	add.s64 	%rd22, %rd21, %rd20;
+	ld.const.u32 	%r10, [%rd22+4];
+	setp.lt.s32 	%p1, %r10, 1;
+	@%p1 bra 	$L__BB7_7;
 // %bb.1:
-	ld.param.u64 	%rd15, [_bpf_helper_ext_0003_param_1];
-	cvt.u64.u32 	%rd3, %r6;
-	cvt.u32.u64 	%r8, %rd3;
-	and.b32  	%r15, %r8, 3;
-	setp.lt.u32 	%p2, %r8, 4;
-	mov.u32 	%r14, 0;
-	@%p2 bra 	$L__BB5_4;
+	ld.param.u64 	%rd19, [_bpf_helper_ext_0003_param_1];
+	cvt.u64.u32 	%rd3, %r10;
+	cvt.u32.u64 	%r12, %rd3;
+	and.b32  	%r25, %r12, 3;
+	setp.lt.u32 	%p2, %r12, 4;
+	mov.u32 	%r24, 0;
+	@%p2 bra 	$L__BB7_4;
 // %bb.2:
-	add.s64 	%rd2, %rd25, 24;
+	add.s64 	%rd2, %rd30, 24;
 	and.b64  	%rd4, %rd3, 4294967292;
-	add.s64 	%rd5, %rd15, 3;
-	mov.u64 	%rd29, 0;
-	cvt.u32.u64 	%r9, %rd4;
-$L__BB5_3:                              // =>This Inner Loop Header: Depth=1
-	add.s64 	%rd20, %rd5, %rd29;
-	ld.u8 	%rs1, [%rd20+-3];
-	add.s64 	%rd21, %rd2, %rd29;
-	st.u8 	[%rd21], %rs1;
-	ld.u8 	%rs2, [%rd20+-2];
-	st.u8 	[%rd21+1], %rs2;
-	ld.u8 	%rs3, [%rd20+-1];
-	st.u8 	[%rd21+2], %rs3;
-	ld.u8 	%rs4, [%rd20];
-	st.u8 	[%rd21+3], %rs4;
-	add.s64 	%rd29, %rd29, 4;
-	cvt.u32.u64 	%r14, %rd29;
-	setp.ne.s32 	%p3, %r9, %r14;
-	@%p3 bra 	$L__BB5_3;
-$L__BB5_4:
-	setp.eq.s32 	%p4, %r15, 0;
-	@%p4 bra 	$L__BB5_7;
+	add.s64 	%rd5, %rd19, 3;
+	mov.u64 	%rd35, 0;
+	cvt.u32.u64 	%r13, %rd4;
+$L__BB7_3:                              // =>This Inner Loop Header: Depth=1
+	add.s64 	%rd24, %rd5, %rd35;
+	ld.u8 	%rs1, [%rd24+-3];
+	add.s64 	%rd25, %rd2, %rd35;
+	st.u8 	[%rd25], %rs1;
+	ld.u8 	%rs2, [%rd24+-2];
+	st.u8 	[%rd25+1], %rs2;
+	ld.u8 	%rs3, [%rd24+-1];
+	st.u8 	[%rd25+2], %rs3;
+	ld.u8 	%rs4, [%rd24];
+	st.u8 	[%rd25+3], %rs4;
+	add.s64 	%rd35, %rd35, 4;
+	cvt.u32.u64 	%r24, %rd35;
+	setp.ne.s32 	%p3, %r13, %r24;
+	@%p3 bra 	$L__BB7_3;
+$L__BB7_4:
+	setp.eq.s32 	%p4, %r25, 0;
+	@%p4 bra 	$L__BB7_7;
 // %bb.5:
-	cvt.u64.u32 	%rd22, %r14;
-	add.s64 	%rd23, %rd22, %rd25;
-	add.s64 	%rd31, %rd23, 24;
-	add.s64 	%rd30, %rd15, %rd22;
-$L__BB5_6:                              // =>This Inner Loop Header: Depth=1
+	cvt.u64.u32 	%rd26, %r24;
+	add.s64 	%rd27, %rd26, %rd30;
+	add.s64 	%rd37, %rd27, 24;
+	add.s64 	%rd36, %rd19, %rd26;
+$L__BB7_6:                              // =>This Inner Loop Header: Depth=1
 	.pragma "nounroll";
-	ld.u8 	%rs5, [%rd30];
-	st.u8 	[%rd31], %rs5;
-	add.s64 	%rd31, %rd31, 1;
-	add.s64 	%rd30, %rd30, 1;
-	add.s32 	%r15, %r15, -1;
-	setp.ne.s32 	%p5, %r15, 0;
-	@%p5 bra 	$L__BB5_6;
-$L__BB5_7:
-	add.s64 	%rd24, %rd25, 8;
-$L__BB5_8:                              // =>This Inner Loop Header: Depth=1
-	atom.cas.b32 	%r10, [%rd24], 0, 1;
-	setp.eq.s32 	%p6, %r10, 1;
-	@%p6 bra 	$L__BB5_8;
-// %bb.9:
-	mov.u32 	%r12, 3;
-	st.u32 	[%rd25+12], %r12;
-	st.u64 	[%rd25+16], %rd14;
-	add.s64 	%rd26, %rd25, 4;
-	mov.u32 	%r11, 42;
+	ld.u8 	%rs5, [%rd36];
+	st.u8 	[%rd37], %rs5;
+	add.s64 	%rd37, %rd37, 1;
+	add.s64 	%rd36, %rd36, 1;
+	add.s32 	%r25, %r25, -1;
+	setp.ne.s32 	%p5, %r25, 0;
+	@%p5 bra 	$L__BB7_6;
+$L__BB7_7:
+	mov.u32 	%r26, 0;
+	mov.u64 	%rd39, 0;
+	mov.u32 	%r15, %tid.x;
+	and.b32  	%r6, %r15, 31;
+	add.s64 	%rd31, %rd30, 4;
+	add.s64 	%rd29, %rd30, 8;
+	mov.u32 	%r21, 3;
+	mov.u32 	%r20, 42;
+	bra.uni 	$L__BB7_8;
+$L__BB7_11:                             //   in Loop: Header=BB7_8 Depth=1
+	bar.warp.sync 	%r8;
+	add.s32 	%r26, %r26, 1;
+	setp.ne.s32 	%p11, %r26, 32;
+	@%p11 bra 	$L__BB7_8;
+	bra.uni 	$L__BB7_12;
+$L__BB7_8:                              // =>This Loop Header: Depth=1
+                                        //     Child Loop BB7_9 Depth 2
+	// begin inline asm
+	activemask.b32 %r8;
+	// end inline asm
+	shr.u32 	%r17, %r8, %r26;
+	and.b32  	%r18, %r17, 1;
+	setp.eq.b32 	%p6, %r18, 1;
+	not.pred 	%p7, %p6;
+	setp.ne.s32 	%p8, %r6, %r26;
+	or.pred  	%p9, %p8, %p7;
+	@%p9 bra 	$L__BB7_11;
+$L__BB7_9:                              //   Parent Loop BB7_8 Depth=1
+                                        // =>  This Inner Loop Header: Depth=2
+	atom.cas.b32 	%r19, [%rd29], 0, 1;
+	setp.eq.s32 	%p10, %r19, 1;
+	@%p10 bra 	$L__BB7_9;
+// %bb.10:                              //   in Loop: Header=BB7_8 Depth=1
+	st.u32 	[%rd30+12], %r21;
+	st.u64 	[%rd30+16], %rd18;
 	// begin inline asm
 	.reg .pred p0;                   
 	membar.sys;                      
-	st.global.u32 [%rd25], 1;           
+	st.global.u32 [%rd30], 1;           
 	spin_wait:                       
 	membar.sys;                      
-	ld.global.u32 %r11, [%rd26];          
-	setp.eq.u32 p0, %r11, 0;           
+	ld.global.u32 %r20, [%rd31];          
+	setp.eq.u32 p0, %r20, 0;           
 	@p0 bra spin_wait;               
-	st.global.u32 [%rd26], 0;           
+	st.global.u32 [%rd31], 0;           
 	membar.sys;                      
 	
 	// end inline asm
-	ld.s32 	%rd27, [%rd25+2147483680];
-	atom.exch.b32 	%r13, [%rd24], 0;
-	st.param.b64 	[func_retval0+0], %rd27;
+	ld.u64 	%rd39, [%rd30+2147483680];
+	atom.exch.b32 	%r22, [%rd29], 0;
+	bra.uni 	$L__BB7_11;
+$L__BB7_12:
+	cvt.s64.s32 	%rd33, %rd39;
+	st.param.b64 	[func_retval0+0], %rd33;
 	ret;
                                         // -- End function
 }
@@ -459,65 +771,92 @@ $L__BB5_8:                              // =>This Inner Loop Header: Depth=1
 	.param .b64 _bpf_helper_ext_0006_param_4
 )                                       // @_bpf_helper_ext_0006
 {
-	.reg .pred 	%p<4>;
+	.reg .pred 	%p<9>;
 	.reg .b16 	%rs<2>;
-	.reg .b32 	%r<5>;
-	.reg .b64 	%rd<22>;
+	.reg .b32 	%r<15>;
+	.reg .b64 	%rd<29>;
 
 // %bb.0:
-	ld.param.u64 	%rd9, [_bpf_helper_ext_0006_param_4];
-	ld.param.u64 	%rd8, [_bpf_helper_ext_0006_param_3];
-	ld.param.u64 	%rd7, [_bpf_helper_ext_0006_param_2];
-	ld.param.u64 	%rd6, [_bpf_helper_ext_0006_param_1];
+	ld.param.u64 	%rd13, [_bpf_helper_ext_0006_param_4];
+	ld.param.u64 	%rd12, [_bpf_helper_ext_0006_param_3];
+	ld.param.u64 	%rd11, [_bpf_helper_ext_0006_param_2];
+	ld.param.u64 	%rd10, [_bpf_helper_ext_0006_param_1];
 	ld.const.u64 	%rd1, [constData];
-	setp.eq.s64 	%p1, %rd6, 0;
-	@%p1 bra 	$L__BB6_3;
+	setp.eq.s64 	%p1, %rd10, 0;
+	@%p1 bra 	$L__BB8_3;
 // %bb.1:
-	ld.param.u64 	%rd5, [_bpf_helper_ext_0006_param_0];
+	ld.param.u64 	%rd9, [_bpf_helper_ext_0006_param_0];
 	add.s64 	%rd2, %rd1, 24;
-	mov.u64 	%rd21, 0;
-$L__BB6_2:                              // =>This Inner Loop Header: Depth=1
-	add.s64 	%rd11, %rd5, %rd21;
-	ld.u8 	%rs1, [%rd11];
-	add.s64 	%rd12, %rd2, %rd21;
-	st.u8 	[%rd12], %rs1;
-	add.s64 	%rd13, %rd21, 1;
-	and.b64  	%rd21, %rd13, 4294967295;
-	setp.lt.u64 	%p2, %rd21, %rd6;
-	@%p2 bra 	$L__BB6_2;
-$L__BB6_3:
-	st.u32 	[%rd1+1024], %rd6;
-	st.u64 	[%rd1+1032], %rd7;
-	st.u64 	[%rd1+1040], %rd8;
-	st.u64 	[%rd1+1048], %rd9;
-	add.s64 	%rd14, %rd1, 8;
-$L__BB6_4:                              // =>This Inner Loop Header: Depth=1
-	atom.cas.b32 	%r1, [%rd14], 0, 1;
-	setp.eq.s32 	%p3, %r1, 1;
-	@%p3 bra 	$L__BB6_4;
-// %bb.5:
-	mov.u32 	%r3, 6;
-	st.u32 	[%rd1+12], %r3;
-	mov.u64 	%rd17, 0;
-	st.u64 	[%rd1+16], %rd17;
-	add.s64 	%rd16, %rd1, 4;
-	mov.u32 	%r2, 42;
+	mov.u64 	%rd28, 0;
+$L__BB8_2:                              // =>This Inner Loop Header: Depth=1
+	add.s64 	%rd15, %rd9, %rd28;
+	ld.u8 	%rs1, [%rd15];
+	add.s64 	%rd16, %rd2, %rd28;
+	st.u8 	[%rd16], %rs1;
+	add.s64 	%rd17, %rd28, 1;
+	and.b64  	%rd28, %rd17, 4294967295;
+	setp.lt.u64 	%p2, %rd28, %rd10;
+	@%p2 bra 	$L__BB8_2;
+$L__BB8_3:
+	st.u32 	[%rd1+1024], %rd10;
+	st.u64 	[%rd1+1032], %rd11;
+	st.u64 	[%rd1+1040], %rd12;
+	st.u64 	[%rd1+1048], %rd13;
+	mov.u32 	%r6, %tid.x;
+	and.b32  	%r1, %r6, 31;
+	add.s64 	%rd21, %rd1, 4;
+	mov.u32 	%r14, 0;
+	mov.u64 	%rd27, 0;
+	add.s64 	%rd19, %rd1, 8;
+	mov.u32 	%r12, 6;
+	mov.u32 	%r11, 42;
+	bra.uni 	$L__BB8_4;
+$L__BB8_7:                              //   in Loop: Header=BB8_4 Depth=1
+	bar.warp.sync 	%r3;
+	add.s32 	%r14, %r14, 1;
+	setp.ne.s32 	%p8, %r14, 32;
+	@%p8 bra 	$L__BB8_4;
+	bra.uni 	$L__BB8_8;
+$L__BB8_4:                              // =>This Loop Header: Depth=1
+                                        //     Child Loop BB8_5 Depth 2
+	// begin inline asm
+	activemask.b32 %r3;
+	// end inline asm
+	shr.u32 	%r8, %r3, %r14;
+	and.b32  	%r9, %r8, 1;
+	setp.eq.b32 	%p3, %r9, 1;
+	not.pred 	%p4, %p3;
+	setp.ne.s32 	%p5, %r1, %r14;
+	or.pred  	%p6, %p5, %p4;
+	@%p6 bra 	$L__BB8_7;
+$L__BB8_5:                              //   Parent Loop BB8_4 Depth=1
+                                        // =>  This Inner Loop Header: Depth=2
+	atom.cas.b32 	%r10, [%rd19], 0, 1;
+	setp.eq.s32 	%p7, %r10, 1;
+	@%p7 bra 	$L__BB8_5;
+// %bb.6:                               //   in Loop: Header=BB8_4 Depth=1
+	st.u32 	[%rd1+12], %r12;
+	mov.u64 	%rd22, 0;
+	st.u64 	[%rd1+16], %rd22;
 	// begin inline asm
 	.reg .pred p0;                   
 	membar.sys;                      
 	st.global.u32 [%rd1], 1;           
 	spin_wait:                       
 	membar.sys;                      
-	ld.global.u32 %r2, [%rd16];          
-	setp.eq.u32 p0, %r2, 0;           
+	ld.global.u32 %r11, [%rd21];          
+	setp.eq.u32 p0, %r11, 0;           
 	@p0 bra spin_wait;               
-	st.global.u32 [%rd16], 0;           
+	st.global.u32 [%rd21], 0;           
 	membar.sys;                      
 	
 	// end inline asm
-	ld.s32 	%rd18, [%rd1+2147483680];
-	atom.exch.b32 	%r4, [%rd14], 0;
-	st.param.b64 	[func_retval0+0], %rd18;
+	ld.u64 	%rd27, [%rd1+2147483680];
+	atom.exch.b32 	%r13, [%rd19], 0;
+	bra.uni 	$L__BB8_7;
+$L__BB8_8:
+	cvt.s64.s32 	%rd24, %rd27;
+	st.param.b64 	[func_retval0+0], %rd24;
 	ret;
                                         // -- End function
 }
@@ -530,40 +869,229 @@ $L__BB6_4:                              // =>This Inner Loop Header: Depth=1
 	.param .b64 _bpf_helper_ext_0014_param_4
 )                                       // @_bpf_helper_ext_0014
 {
-	.reg .pred 	%p<2>;
-	.reg .b32 	%r<5>;
-	.reg .b64 	%rd<8>;
+	.reg .pred 	%p<7>;
+	.reg .b32 	%r<15>;
+	.reg .b64 	%rd<14>;
 
 // %bb.0:
-	ld.const.u64 	%rd3, [constData];
-	add.s64 	%rd2, %rd3, 8;
-$L__BB7_1:                              // =>This Inner Loop Header: Depth=1
-	atom.cas.b32 	%r1, [%rd2], 0, 1;
-	setp.eq.s32 	%p1, %r1, 1;
-	@%p1 bra 	$L__BB7_1;
-// %bb.2:
-	mov.u32 	%r3, 14;
-	st.u32 	[%rd3+12], %r3;
-	mov.u64 	%rd5, 0;
-	st.u64 	[%rd3+16], %rd5;
-	add.s64 	%rd4, %rd3, 4;
-	mov.u32 	%r2, 42;
+	ld.const.u64 	%rd8, [constData];
+	mov.u32 	%r6, %tid.x;
+	and.b32  	%r1, %r6, 31;
+	add.s64 	%rd9, %rd8, 4;
+	mov.u32 	%r14, 0;
+	mov.u64 	%rd6, 0;
+	add.s64 	%rd7, %rd8, 8;
+	mov.u32 	%r12, 14;
+	mov.u32 	%r11, 42;
+	mov.u64 	%rd13, %rd6;
+	bra.uni 	$L__BB9_1;
+$L__BB9_4:                              //   in Loop: Header=BB9_1 Depth=1
+	bar.warp.sync 	%r3;
+	add.s32 	%r14, %r14, 1;
+	setp.ne.s32 	%p6, %r14, 32;
+	@%p6 bra 	$L__BB9_1;
+	bra.uni 	$L__BB9_5;
+$L__BB9_1:                              // =>This Loop Header: Depth=1
+                                        //     Child Loop BB9_2 Depth 2
+	// begin inline asm
+	activemask.b32 %r3;
+	// end inline asm
+	shr.u32 	%r8, %r3, %r14;
+	and.b32  	%r9, %r8, 1;
+	setp.eq.b32 	%p1, %r9, 1;
+	not.pred 	%p2, %p1;
+	setp.ne.s32 	%p3, %r1, %r14;
+	or.pred  	%p4, %p3, %p2;
+	@%p4 bra 	$L__BB9_4;
+$L__BB9_2:                              //   Parent Loop BB9_1 Depth=1
+                                        // =>  This Inner Loop Header: Depth=2
+	atom.cas.b32 	%r10, [%rd7], 0, 1;
+	setp.eq.s32 	%p5, %r10, 1;
+	@%p5 bra 	$L__BB9_2;
+// %bb.3:                               //   in Loop: Header=BB9_1 Depth=1
+	st.u32 	[%rd8+12], %r12;
+	st.u64 	[%rd8+16], %rd6;
 	// begin inline asm
 	.reg .pred p0;                   
 	membar.sys;                      
-	st.global.u32 [%rd3], 1;           
+	st.global.u32 [%rd8], 1;           
 	spin_wait:                       
 	membar.sys;                      
-	ld.global.u32 %r2, [%rd4];          
-	setp.eq.u32 p0, %r2, 0;           
+	ld.global.u32 %r11, [%rd9];          
+	setp.eq.u32 p0, %r11, 0;           
 	@p0 bra spin_wait;               
-	st.global.u32 [%rd4], 0;           
+	st.global.u32 [%rd9], 0;           
 	membar.sys;                      
 	
 	// end inline asm
-	ld.u64 	%rd6, [%rd3+2147483680];
-	atom.exch.b32 	%r4, [%rd2], 0;
-	st.param.b64 	[func_retval0+0], %rd6;
+	ld.u64 	%rd13, [%rd8+2147483680];
+	atom.exch.b32 	%r13, [%rd7], 0;
+	bra.uni 	$L__BB9_4;
+$L__BB9_5:
+	st.param.b64 	[func_retval0+0], %rd13;
+	ret;
+                                        // -- End function
+}
+	// .globl	_bpf_helper_ext_0025    // -- Begin function _bpf_helper_ext_0025
+.visible .func  (.param .b64 func_retval0) _bpf_helper_ext_0025(
+	.param .b64 _bpf_helper_ext_0025_param_0,
+	.param .b64 _bpf_helper_ext_0025_param_1,
+	.param .b64 _bpf_helper_ext_0025_param_2,
+	.param .b64 _bpf_helper_ext_0025_param_3,
+	.param .b64 _bpf_helper_ext_0025_param_4
+)                                       // @_bpf_helper_ext_0025
+{
+	.reg .pred 	%p<9>;
+	.reg .b16 	%rs<6>;
+	.reg .b32 	%r<42>;
+	.reg .b64 	%rd<63>;
+
+// %bb.0:
+	ld.param.u64 	%rd16, [_bpf_helper_ext_0025_param_1];
+	mul.lo.s64 	%rd19, %rd16, 40;
+	mov.u64 	%rd20, map_info;
+	add.s64 	%rd21, %rd20, %rd19;
+	ld.const.u32 	%r9, [%rd21+16];
+	setp.ne.s32 	%p1, %r9, 1527;
+	@%p1 bra 	$L__BB10_13;
+// %bb.1:
+	ld.const.v2.u32 	{%r12, %r13}, [%rd21+8];
+	cvt.s64.s32 	%rd1, %r13;
+	cvt.s64.s32 	%rd30, %r12;
+	add.s64 	%rd2, %rd30, 8;
+	mul.lo.s64 	%rd31, %rd2, %rd1;
+	add.s64 	%rd32, %rd31, 24;
+	mov.u32 	%r14, %ctaid.x;
+	mov.u32 	%r15, %ntid.x;
+	mov.u32 	%r16, %tid.x;
+	mad.lo.s32 	%r17, %r14, %r15, %r16;
+	mov.u32 	%r18, %ctaid.y;
+	mov.u32 	%r19, %ntid.y;
+	mov.u32 	%r20, %tid.y;
+	mad.lo.s32 	%r21, %r18, %r19, %r20;
+	mov.u32 	%r22, %ctaid.z;
+	mov.u32 	%r23, %ntid.z;
+	mov.u32 	%r24, %tid.z;
+	mad.lo.s32 	%r25, %r22, %r23, %r24;
+	mov.u32 	%r26, %nctaid.x;
+	mul.lo.s32 	%r27, %r26, %r15;
+	mov.u32 	%r28, %nctaid.y;
+	mul.lo.s32 	%r29, %r28, %r19;
+	cvt.s64.s32 	%rd33, %r25;
+	mul.wide.s32 	%rd34, %r29, %r27;
+	mul.lo.s64 	%rd35, %rd34, %rd33;
+	mul.lo.s32 	%r30, %r21, %r27;
+	cvt.s64.s32 	%rd36, %r30;
+	cvt.s64.s32 	%rd37, %r17;
+	add.s64 	%rd38, %rd36, %rd37;
+	add.s64 	%rd39, %rd38, %rd35;
+	mul.lo.s64 	%rd40, %rd32, %rd39;
+	ld.const.u64 	%rd41, [%rd21+24];
+	add.s64 	%rd3, %rd41, %rd40;
+	ld.u64 	%rd42, [%rd3+8];
+	ld.u64 	%rd43, [%rd3];
+	sub.s64 	%rd44, %rd42, %rd43;
+	setp.eq.s64 	%p2, %rd44, %rd1;
+	mov.u64 	%rd62, 2;
+	@%p2 bra 	$L__BB10_14;
+// %bb.2:
+	ld.param.u64 	%rd18, [_bpf_helper_ext_0025_param_4];
+	mov.u32 	%r31, 1;
+	st.u32 	[%rd3+16], %r31;
+	add.s64 	%rd45, %rd3, 8;
+	atom.add.u64 	%rd4, [%rd45], 1;
+	or.b64  	%rd46, %rd4, %rd1;
+	and.b64  	%rd47, %rd46, -4294967296;
+	setp.ne.s64 	%p3, %rd47, 0;
+	@%p3 bra 	$L__BB10_4;
+	bra.uni 	$L__BB10_3;
+$L__BB10_4:
+	rem.u64 	%rd59, %rd4, %rd1;
+	bra.uni 	$L__BB10_5;
+$L__BB10_13:
+	mov.u64 	%rd23, _$_str;
+	cvta.global.u64 	%rd24, %rd23;
+	mov.u64 	%rd25, 0;
+	{ // callseq 0, 0
+	.reg .b32 temp_param_reg;
+	.param .b64 param0;
+	st.param.b64 	[param0+0], %rd24;
+	.param .b64 param1;
+	st.param.b64 	[param1+0], %rd25;
+	.param .b32 retval0;
+	call.uni (retval0), 
+	vprintf, 
+	(
+	param0, 
+	param1
+	);
+	ld.param.b32 	%r10, [retval0+0];
+	} // callseq 0
+	mov.u64 	%rd62, 1;
+	bra.uni 	$L__BB10_14;
+$L__BB10_3:
+	cvt.u32.u64 	%r32, %rd1;
+	cvt.u32.u64 	%r33, %rd4;
+	rem.u32 	%r34, %r33, %r32;
+	cvt.u64.u32 	%rd59, %r34;
+$L__BB10_5:
+	mul.lo.s64 	%rd48, %rd59, %rd2;
+	add.s64 	%rd49, %rd3, %rd48;
+	st.u64 	[%rd49+24], %rd18;
+	cvt.u32.u64 	%r1, %rd18;
+	setp.lt.s32 	%p4, %r1, 1;
+	mov.u32 	%r38, 0;
+	@%p4 bra 	$L__BB10_12;
+// %bb.6:
+	ld.param.u64 	%rd17, [_bpf_helper_ext_0025_param_3];
+	add.s64 	%rd8, %rd49, 32;
+	and.b32  	%r40, %r1, 3;
+	setp.lt.u32 	%p5, %r1, 4;
+	mov.u32 	%r41, %r38;
+	@%p5 bra 	$L__BB10_9;
+// %bb.7:
+	cvt.u64.u32 	%rd51, %r1;
+	and.b64  	%rd9, %rd51, 4294967292;
+	mov.u64 	%rd60, 0;
+	cvt.u32.u64 	%r36, %rd9;
+$L__BB10_8:                             // =>This Inner Loop Header: Depth=1
+	and.b64  	%rd52, %rd60, 4294967295;
+	add.s64 	%rd53, %rd17, %rd60;
+	ld.u8 	%rs1, [%rd53];
+	add.s64 	%rd54, %rd8, %rd52;
+	st.u8 	[%rd54], %rs1;
+	ld.u8 	%rs2, [%rd53+1];
+	st.u8 	[%rd54+1], %rs2;
+	ld.u8 	%rs3, [%rd53+2];
+	st.u8 	[%rd54+2], %rs3;
+	ld.u8 	%rs4, [%rd53+3];
+	st.u8 	[%rd54+3], %rs4;
+	add.s64 	%rd60, %rd60, 4;
+	cvt.u32.u64 	%r41, %rd60;
+	setp.ne.s32 	%p6, %r36, %r41;
+	@%p6 bra 	$L__BB10_8;
+$L__BB10_9:
+	setp.eq.s32 	%p7, %r40, 0;
+	@%p7 bra 	$L__BB10_12;
+// %bb.10:
+	cvt.u64.u32 	%rd55, %r41;
+	add.s64 	%rd61, %rd17, %rd55;
+$L__BB10_11:                            // =>This Inner Loop Header: Depth=1
+	.pragma "nounroll";
+	cvt.u64.u32 	%rd56, %r41;
+	ld.u8 	%rs5, [%rd61];
+	add.s64 	%rd57, %rd8, %rd56;
+	st.u8 	[%rd57], %rs5;
+	add.s32 	%r41, %r41, 1;
+	add.s64 	%rd61, %rd61, 1;
+	add.s32 	%r40, %r40, -1;
+	setp.ne.s32 	%p8, %r40, 0;
+	@%p8 bra 	$L__BB10_11;
+$L__BB10_12:
+	st.u32 	[%rd3+16], %r38;
+	mov.u64 	%rd62, 0;
+$L__BB10_14:
+	st.param.b64 	[func_retval0+0], %rd62;
 	ret;
                                         // -- End function
 }
@@ -576,62 +1104,89 @@ $L__BB7_1:                              // =>This Inner Loop Header: Depth=1
 	.param .b64 _bpf_helper_ext_0501_param_4
 )                                       // @_bpf_helper_ext_0501
 {
-	.reg .pred 	%p<4>;
+	.reg .pred 	%p<9>;
 	.reg .b16 	%rs<6>;
-	.reg .b32 	%r<5>;
-	.reg .b64 	%rd<21>;
+	.reg .b32 	%r<15>;
+	.reg .b64 	%rd<28>;
 
 // %bb.0:
-	ld.param.u64 	%rd7, [_bpf_helper_ext_0501_param_0];
-	ld.const.u64 	%rd14, [constData];
-	add.s64 	%rd2, %rd14, 24;
-	ld.u8 	%rs5, [%rd7];
-	setp.eq.s16 	%p1, %rs5, 0;
-	mov.u64 	%rd20, 0;
-	@%p1 bra 	$L__BB8_3;
-// %bb.1:
-	add.s64 	%rd3, %rd7, 1;
-	mov.u64 	%rd20, 0;
-$L__BB8_2:                              // =>This Inner Loop Header: Depth=1
-	add.s64 	%rd10, %rd2, %rd20;
-	st.u8 	[%rd10], %rs5;
-	add.s64 	%rd11, %rd3, %rd20;
+	ld.param.u64 	%rd11, [_bpf_helper_ext_0501_param_0];
+	ld.const.u64 	%rd19, [constData];
+	add.s64 	%rd2, %rd19, 24;
 	ld.u8 	%rs5, [%rd11];
+	setp.eq.s16 	%p1, %rs5, 0;
+	mov.u64 	%rd27, 0;
+	mov.u64 	%rd25, %rd27;
+	@%p1 bra 	$L__BB11_3;
+// %bb.1:
+	add.s64 	%rd3, %rd11, 1;
+	mov.u64 	%rd25, 0;
+$L__BB11_2:                             // =>This Inner Loop Header: Depth=1
+	add.s64 	%rd14, %rd2, %rd25;
+	st.u8 	[%rd14], %rs5;
+	add.s64 	%rd15, %rd3, %rd25;
+	ld.u8 	%rs5, [%rd15];
 	setp.ne.s16 	%p2, %rs5, 0;
-	add.s64 	%rd20, %rd20, 1;
-	@%p2 bra 	$L__BB8_2;
-$L__BB8_3:
-	add.s64 	%rd12, %rd2, %rd20;
+	add.s64 	%rd25, %rd25, 1;
+	@%p2 bra 	$L__BB11_2;
+$L__BB11_3:
+	add.s64 	%rd17, %rd2, %rd25;
 	mov.u16 	%rs4, 0;
-	st.u8 	[%rd12], %rs4;
-	add.s64 	%rd13, %rd14, 8;
-$L__BB8_4:                              // =>This Inner Loop Header: Depth=1
-	atom.cas.b32 	%r1, [%rd13], 0, 1;
-	setp.eq.s32 	%p3, %r1, 1;
-	@%p3 bra 	$L__BB8_4;
-// %bb.5:
-	mov.u32 	%r3, 501;
-	st.u32 	[%rd14+12], %r3;
-	mov.u64 	%rd16, 0;
-	st.u64 	[%rd14+16], %rd16;
-	add.s64 	%rd15, %rd14, 4;
-	mov.u32 	%r2, 42;
+	st.u8 	[%rd17], %rs4;
+	mov.u32 	%r6, %tid.x;
+	and.b32  	%r1, %r6, 31;
+	add.s64 	%rd20, %rd19, 4;
+	mov.u32 	%r14, 0;
+	add.s64 	%rd18, %rd19, 8;
+	mov.u32 	%r12, 501;
+	mov.u32 	%r11, 42;
+	bra.uni 	$L__BB11_4;
+$L__BB11_7:                             //   in Loop: Header=BB11_4 Depth=1
+	bar.warp.sync 	%r3;
+	add.s32 	%r14, %r14, 1;
+	setp.ne.s32 	%p8, %r14, 32;
+	@%p8 bra 	$L__BB11_4;
+	bra.uni 	$L__BB11_8;
+$L__BB11_4:                             // =>This Loop Header: Depth=1
+                                        //     Child Loop BB11_5 Depth 2
+	// begin inline asm
+	activemask.b32 %r3;
+	// end inline asm
+	shr.u32 	%r8, %r3, %r14;
+	and.b32  	%r9, %r8, 1;
+	setp.eq.b32 	%p3, %r9, 1;
+	not.pred 	%p4, %p3;
+	setp.ne.s32 	%p5, %r1, %r14;
+	or.pred  	%p6, %p5, %p4;
+	@%p6 bra 	$L__BB11_7;
+$L__BB11_5:                             //   Parent Loop BB11_4 Depth=1
+                                        // =>  This Inner Loop Header: Depth=2
+	atom.cas.b32 	%r10, [%rd18], 0, 1;
+	setp.eq.s32 	%p7, %r10, 1;
+	@%p7 bra 	$L__BB11_5;
+// %bb.6:                               //   in Loop: Header=BB11_4 Depth=1
+	st.u32 	[%rd19+12], %r12;
+	mov.u64 	%rd21, 0;
+	st.u64 	[%rd19+16], %rd21;
 	// begin inline asm
 	.reg .pred p0;                   
 	membar.sys;                      
-	st.global.u32 [%rd14], 1;           
+	st.global.u32 [%rd19], 1;           
 	spin_wait:                       
 	membar.sys;                      
-	ld.global.u32 %r2, [%rd15];          
-	setp.eq.u32 p0, %r2, 0;           
+	ld.global.u32 %r11, [%rd20];          
+	setp.eq.u32 p0, %r11, 0;           
 	@p0 bra spin_wait;               
-	st.global.u32 [%rd15], 0;           
+	st.global.u32 [%rd20], 0;           
 	membar.sys;                      
 	
 	// end inline asm
-	ld.s32 	%rd17, [%rd14+2147483680];
-	atom.exch.b32 	%r4, [%rd13], 0;
-	st.param.b64 	[func_retval0+0], %rd17;
+	ld.u64 	%rd27, [%rd19+2147483680];
+	atom.exch.b32 	%r13, [%rd18], 0;
+	bra.uni 	$L__BB11_7;
+$L__BB11_8:
+	cvt.s64.s32 	%rd23, %rd27;
+	st.param.b64 	[func_retval0+0], %rd23;
 	ret;
                                         // -- End function
 }
@@ -741,6 +1296,27 @@ $L__BB8_4:                              // =>This Inner Loop Header: Depth=1
 	st.u64 	[%rd4], %rd6;
 	mov.u64 	%rd7, 0;
 	st.param.b64 	[func_retval0+0], %rd7;
+	ret;
+                                        // -- End function
+}
+	// .globl	_bpf_helper_ext_0506    // -- Begin function _bpf_helper_ext_0506
+.visible .func  (.param .b64 func_retval0) _bpf_helper_ext_0506(
+	.param .b64 _bpf_helper_ext_0506_param_0,
+	.param .b64 _bpf_helper_ext_0506_param_1,
+	.param .b64 _bpf_helper_ext_0506_param_2,
+	.param .b64 _bpf_helper_ext_0506_param_3,
+	.param .b64 _bpf_helper_ext_0506_param_4
+)                                       // @_bpf_helper_ext_0506
+{
+	.reg .b64 	%rd<2>;
+
+// %bb.0:
+	// begin inline asm
+	membar.sys;                      
+	
+	// end inline asm
+	mov.u64 	%rd1, 0;
+	st.param.b64 	[func_retval0+0], %rd1;
 	ret;
                                         // -- End function
 }

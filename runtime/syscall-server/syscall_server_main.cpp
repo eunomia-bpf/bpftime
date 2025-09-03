@@ -4,7 +4,11 @@
  * All rights reserved.
  */
 #include "syscall_context.hpp"
+#if defined(__aarch64__)
+#include <asm-generic/unistd.h>
+#else
 #include <asm/unistd_64.h>
+#endif
 #include <boost/interprocess/exceptions.hpp>
 #include <cstdio>
 #if __linux__
@@ -42,8 +46,8 @@ static void initialize_ctx()
 	}
 }
 template <typename F, typename... Args>
-auto handle_exceptions(F &&f, Args &&...args) noexcept->decltype(
-	f(std::forward<Args>(args)...))
+auto handle_exceptions(F &&f, Args &&...args) noexcept
+	-> decltype(f(std::forward<Args>(args)...))
 {
 	try {
 		return f(std::forward<Args>(args)...);
@@ -89,7 +93,7 @@ extern "C" int ioctl(int fd, unsigned long req, ...)
 	initialize_ctx();
 	va_list args;
 	va_start(args, req);
-	long arg3 = va_arg(args, long);
+	unsigned long arg3 = va_arg(args, long);
 	va_end(args);
 	SPDLOG_DEBUG("ioctl {} {} {}", fd, req, arg3);
 	return handle_exceptions(
@@ -158,7 +162,6 @@ extern "C" int open(const char *file, int oflag, ...)
 extern "C" ssize_t read(int fd, void *buf, size_t count)
 {
 	initialize_ctx();
-	SPDLOG_DEBUG("read {} {:x} {}", fd, (uintptr_t)buf, count);
 	return context->handle_read(fd, buf, count);
 }
 
@@ -180,30 +183,6 @@ extern "C" FILE *_IO_new_fopen(const char *pathname, const char *flags)
 	SPDLOG_DEBUG("_IO_new_fopen {} {}", pathname, flags);
 	return context->handle_fopen(pathname, flags);
 }
-// extern "C" int fclose(FILE *f)
-// {
-// 	SPDLOG_DEBUG("fclose {:x}", (uintptr_t)f);
-// 	return context->handle_fclose(f);
-// }
-// extern "C" int fscanf(FILE *fp, const char *fmt, ...)
-// {
-// 	SPDLOG_DEBUG("fscanf {:x} {}", (uintptr_t)fp, fmt);
-// 	va_list args;
-// 	va_start(args, fmt);
-// 	int result = context->handle_fscanf(fp, fmt, args);
-// 	va_end(args);
-// 	return result;
-// }
-
-// extern "C" int __isoc99_fscanf(FILE *fp, const char *fmt, ...)
-// {
-// 	SPDLOG_DEBUG("__isoc99_fscanf {:x} {}", (uintptr_t)fp, fmt);
-// 	va_list args;
-// 	va_start(args, fmt);
-// 	int result = context->handle_fscanf(fp, fmt, args);
-// 	va_end(args);
-// 	return result;
-// }
 #if __linux__
 extern "C" long syscall(long sysno, ...)
 {
@@ -240,12 +219,24 @@ extern "C" long syscall(long sysno, ...)
 		SPDLOG_DEBUG("SYS_IOCTL {} {} {} {} {} {}", arg1, arg2, arg3,
 			     arg4, arg5, arg6);
 	} else if (sysno == __NR_dup3) {
-		SPDLOG_DEBUG("SYS_DUP3 oldfd={} newfd={} flags={}", arg1, arg2, arg3);
+		SPDLOG_DEBUG("SYS_DUP3 oldfd={} newfd={} flags={}", arg1, arg2,
+			     arg3);
 		return handle_exceptions([&]() {
-			return context->handle_dup3((int)arg1, (int)arg2, (int)arg3);
+			return context->handle_dup3((int)arg1, (int)arg2,
+						    (int)arg3);
 		});
 	}
 	return context->orig_syscall_fn(sysno, arg1, arg2, arg3, arg4, arg5,
 					arg6);
+}
+#endif
+
+#if defined(BPFTIME_ENABLE_CUDA_ATTACH)
+extern "C" int bpftime_syscall_server__poll_gpu_ringbuf_map(
+	int mapfd, void *ctx, void (*fn)(const void *, uint64_t, void *))
+{
+	return handle_exceptions([&]() {
+		return context->poll_gpu_ringbuf_map(mapfd, ctx, fn);
+	});
 }
 #endif

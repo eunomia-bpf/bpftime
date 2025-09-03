@@ -47,8 +47,7 @@ int probe__cuda()
 	u64 one = 1;
 	u64 *cnt = bpf_map_lookup_elem(&call_count, &pid);
 	if (cnt) {
-		*cnt += 1;
-		bpf_map_update_elem(&call_count, &pid, cnt, BPF_EXIST);
+		__atomic_add_fetch(cnt, 1, __ATOMIC_SEQ_CST);
 	} else {
 		bpf_map_update_elem(&call_count, &pid, &one, BPF_NOEXIST);
 	}

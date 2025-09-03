@@ -5,6 +5,7 @@
  */
 #ifndef _MAP_HANDLER
 #define _MAP_HANDLER
+
 #include "bpf_map/userspace/array_map.hpp"
 #include "bpf_map/userspace/ringbuf_map.hpp"
 #include "bpf_map/userspace/stack_trace_map.hpp"
@@ -19,6 +20,10 @@
 #include <optional>
 #include <unistd.h>
 #include <bpf_map/shared/perf_event_array_kernel_user.hpp>
+#if defined(BPFTIME_ENABLE_CUDA_ATTACH)
+#include "bpf_map/gpu/nv_gpu_ringbuf_map.hpp"
+#endif
+
 #if __APPLE__
 #include "spinlock_wrapper.hpp"
 #endif
@@ -188,7 +193,7 @@ class bpf_map_handler {
 				 bool from_syscall = false) const;
 	void map_free(boost::interprocess::managed_shared_memory &memory);
 	int map_init(boost::interprocess::managed_shared_memory &memory);
-	uint32_t get_value_size() const;
+	uint32_t get_userspace_value_size() const;
 	std::optional<ringbuf_map_impl *> try_get_ringbuf_map_impl() const;
 	std::optional<array_map_impl *> try_get_array_map_impl() const;
 	std::optional<perf_event_array_kernel_user_impl *>
@@ -201,6 +206,10 @@ class bpf_map_handler {
 		return map_lock;
 	}
 
+#if defined(BPFTIME_ENABLE_CUDA_ATTACH)
+	std::optional<nv_gpu_ringbuf_map_impl *>
+	try_get_nv_gpu_ringbuf_map_impl() const;
+#endif
     private:
 	int id = 0;
 	std::string get_container_name();
@@ -211,15 +220,20 @@ class bpf_map_handler {
 	[[maybe_unused]] uint64_t flags = 0;
 	uint32_t key_size = 0;
 	uint32_t value_size = 0;
-	public:
+
+    public:
 	uint32_t get_key_size() const
 	{
 		return key_size;
 	}
+	uint32_t get_value_size() const;
 	uint32_t get_max_entries() const
 	{
 		return max_entries;
 	}
+
+	void *get_gpu_map_extra_buffer() const;
+	uint64_t get_gpu_map_max_thread_count() const;
 };
 
 } // namespace bpftime

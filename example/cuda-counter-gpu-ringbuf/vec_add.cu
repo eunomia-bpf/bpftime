@@ -21,9 +21,12 @@ __constant__ int d_N;
 __global__ void vectorAdd(const float *A, const float *B, float *C)
 {
     int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx < d_N)
+    
+    // Grid-stride loop to handle cases where total threads < N
+    while (idx < d_N)
     {
         C[idx] = A[idx] + B[idx];
+        idx += blockDim.x * gridDim.x;  // Grid stride
     }
 }
 
@@ -54,9 +57,6 @@ int main()
     cudaMemcpy(d_A, h_A.data(), bytes, cudaMemcpyHostToDevice);
     cudaMemcpy(d_B, h_B.data(), bytes, cudaMemcpyHostToDevice);
 
-    // Set up execution parameters
-    int threads = 1;
-    int blocks = (h_N + threads - 1) / threads;
 
     // Run the kernel in an infinite loop
     while (true) {
@@ -64,7 +64,7 @@ int main()
         cudaMemset(d_C, 0, bytes);
         
         // Launch kernel
-        vectorAdd<<<1, 10>>>(d_A, d_B, d_C);
+        vectorAdd<<<1, 5>>>(d_A, d_B, d_C);
         cudaDeviceSynchronize();
         // cudaSyncho
         // Copy result back to host
@@ -73,6 +73,7 @@ int main()
         // Print first element as a check
         std::cout << "C[0] = " << h_C[0] << " (expected 0)\n";
         std::cout << "C[1] = " << h_C[1] << " (expected 3)\n";
+        std::cout << "C[2] = " << h_C[2] << " (expected 6)\n";
         
         // Sleep for 1 second
         sleep(1);
