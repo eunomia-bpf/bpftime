@@ -15,6 +15,23 @@
 namespace bpftime
 {
 
+namespace
+{
+struct SpinLockGuard {
+	pthread_spinlock_t &lock;
+	explicit SpinLockGuard(pthread_spinlock_t &l) : lock(l)
+	{
+		pthread_spin_lock(&lock);
+	}
+	~SpinLockGuard()
+	{
+		pthread_spin_unlock(&lock);
+	}
+	SpinLockGuard(const SpinLockGuard &) = delete;
+	SpinLockGuard &operator=(const SpinLockGuard &) = delete;
+};
+} // namespace
+
 // Constants
 static constexpr uint32_t LPM_DATA_SIZE_MAX = 256;
 static constexpr uint32_t LPM_DATA_SIZE_MIN = 1;
@@ -50,10 +67,22 @@ lpm_trie_map_impl::lpm_trie_map_impl(
 	_data_size = key_size - sizeof(uint32_t); // Subtract prefixlen field
 	_max_prefixlen = _data_size * 8; // Maximum prefix length in bits
 
+	// Initialize process-shared spin lock
+	int rc = pthread_spin_init(&mapSpin, PTHREAD_PROCESS_SHARED);
+	if (rc != 0) {
+		SPDLOG_ERROR("LPM Trie: pthread_spin_init failed: {}", rc);
+		throw std::runtime_error("Failed to initialize spin lock");
+	}
+
 	SPDLOG_DEBUG(
 		"LPM Trie constructed: key_size={}, value_size={}, max_entries={}, data_size={}, max_prefixlen={}",
 		_key_size, _value_size, _max_entries, _data_size,
 		_max_prefixlen);
+}
+
+lpm_trie_map_impl::~lpm_trie_map_impl()
+{
+	pthread_spin_destroy(&mapSpin);
 }
 
 int lpm_trie_map_impl::extract_bit(const uint8_t *data, size_t index) const
@@ -162,8 +191,7 @@ lpm_trie_map_impl::get_node_value_data(const lpm_trie_node *node) const
 
 void *lpm_trie_map_impl::elem_lookup(const void *key)
 {
-	boost::interprocess::scoped_lock<boost::interprocess::interprocess_mutex>
-		lock(mapMutex);
+	SpinLockGuard lock(mapSpin);
 	if (!key) {
 		SPDLOG_ERROR(
 			"LPM Trie elem_lookup failed: key pointer is nullptr");
@@ -238,8 +266,7 @@ void *lpm_trie_map_impl::elem_lookup(const void *key)
 long lpm_trie_map_impl::elem_update(const void *key, const void *value,
 				    uint64_t flags)
 {
-	boost::interprocess::scoped_lock<boost::interprocess::interprocess_mutex>
-		lock(mapMutex);
+	SpinLockGuard lock(mapSpin);
 	if (!key || !value) {
 		SPDLOG_ERROR(
 			"LPM Trie elem_update failed: key ({:p}) or value ({:p}) pointer is nullptr",
@@ -482,8 +509,7 @@ long lpm_trie_map_impl::elem_update(const void *key, const void *value,
 
 long lpm_trie_map_impl::elem_delete(const void *key)
 {
-	boost::interprocess::scoped_lock<boost::interprocess::interprocess_mutex>
-		lock(mapMutex);
+	SpinLockGuard lock(mapSpin);
 	if (!key) {
 		SPDLOG_ERROR(
 			"LPM Trie elem_delete failed: key pointer is nullptr");
@@ -504,8 +530,6 @@ long lpm_trie_map_impl::elem_delete(const void *key)
 
 	// Traverse to find the slot pointing to the node to delete
 	node_unique_ptr *slot = &root;
-	node_unique_ptr *parent_slot = nullptr;
-	lpm_trie_node *parent = nullptr;
 	lpm_trie_node *node = nullptr;
 	while (slot->get()) {
 		node = boost::interprocess::ipcdetail::to_raw_pointer(
@@ -515,8 +539,6 @@ long lpm_trie_map_impl::elem_delete(const void *key)
 		    node->prefixlen == lpm_key->prefixlen) {
 			break;
 		}
-		parent_slot = slot;
-		parent = node;
 		int next_bit = extract_bit(lpm_key->data, node->prefixlen);
 		slot = &node->child[next_bit];
 	}
@@ -541,8 +563,7 @@ long lpm_trie_map_impl::elem_delete(const void *key)
 
 int lpm_trie_map_impl::map_get_next_key(const void *key, void *next_key)
 {
-	boost::interprocess::scoped_lock<boost::interprocess::interprocess_mutex>
-		lock(mapMutex);
+	SpinLockGuard lock(mapSpin);
 	if (!next_key) {
 		SPDLOG_ERROR(
 			"LPM Trie map_get_next_key failed: next_key pointer is nullptr");
