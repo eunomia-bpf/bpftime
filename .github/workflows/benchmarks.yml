@@ -31,8 +31,6 @@ jobs:
     - name: install deps
       run: |
         sudo apt update
-        wget https://apt.llvm.org/llvm.sh && chmod +x llvm.sh && sudo ./llvm.sh 17
-        sudo apt update
         sudo apt install -y --no-install-recommends \
           libelf1 libelf-dev zlib1g-dev make cmake git libboost-all-dev \
           binutils-dev libyaml-cpp-dev ca-certificates clang llvm pkg-config llvm-dev 
@@ -46,8 +44,8 @@ jobs:
         sudo apt install -y python3-pip
         pip3 install -r benchmark/requirements.txt
 
-    - name: verify llvm-17 installation
-      run: llvm-config-17 --version
+    - name: verify llvm-18 installation
+      run: llvm-config-18 --version
 
     - name: clear cmake cache
       run: rm -rf build
