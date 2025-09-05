@@ -319,6 +319,17 @@ long bpftime_map_update_elem(int fd, const void *key, const void *value,
 // use from bpf syscall to delete the elem
 long bpftime_map_delete_elem(int fd, const void *key);
 
+// use from bpf syscall to lookup and delete the elem (equivalent to pop for
+// queue/stack maps)
+long bpftime_map_lookup_and_delete_elem(int fd, void *value);
+
+// Queue/stack map helper functions for push/pop/peek operations
+long bpftime_map_push_elem(int fd, const void *value, uint64_t flags);
+
+long bpftime_map_pop_elem(int fd, void *value);
+
+long bpftime_map_peek_elem(int fd, void *value);
+
 // create uprobe in the global shared memory
 //
 // @param[fd]: fd is the fd allocated by the kernel. if fd is -1, then the

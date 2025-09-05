@@ -152,6 +152,41 @@ long bpftime_shm::bpf_delete_elem(int fd, const void *key,
 	return handler.map_delete_elem(key, from_syscall);
 }
 
+long bpftime_shm::bpf_map_push_elem(int fd, const void *value, uint64_t flags,
+				    bool from_syscall) const
+{
+	if (!is_map_fd(fd)) {
+		errno = ENOENT;
+		return -1;
+	}
+	auto &handler =
+		std::get<bpftime::bpf_map_handler>(manager->get_handler(fd));
+	return handler.map_push_elem(value, flags, from_syscall);
+}
+
+long bpftime_shm::bpf_map_pop_elem(int fd, void *value, bool from_syscall) const
+{
+	if (!is_map_fd(fd)) {
+		errno = ENOENT;
+		return -1;
+	}
+	auto &handler =
+		std::get<bpftime::bpf_map_handler>(manager->get_handler(fd));
+	return handler.map_pop_elem(value, from_syscall);
+}
+
+long bpftime_shm::bpf_map_peek_elem(int fd, void *value,
+				    bool from_syscall) const
+{
+	if (!is_map_fd(fd)) {
+		errno = ENOENT;
+		return -1;
+	}
+	auto &handler =
+		std::get<bpftime::bpf_map_handler>(manager->get_handler(fd));
+	return handler.map_peek_elem(value, from_syscall);
+}
+
 int bpftime_shm::bpf_map_get_next_key(int fd, const void *key, void *next_key,
 				      bool from_syscall) const
 {
