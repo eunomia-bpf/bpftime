@@ -395,6 +395,27 @@ uint64_t bpftime_map_delete_elem_helper(uint64_t map, uint64_t key, uint64_t,
 		.bpf_delete_elem(map >> 32, (void *)key, false);
 }
 
+uint64_t bpftime_map_push_elem_helper(uint64_t map, uint64_t value,
+				      uint64_t flags, uint64_t, uint64_t)
+{
+	return (uint64_t)bpftime::shm_holder.global_shared_memory
+		.bpf_map_push_elem(map >> 32, (void *)value, flags, false);
+}
+
+uint64_t bpftime_map_pop_elem_helper(uint64_t map, uint64_t value, uint64_t,
+				     uint64_t, uint64_t)
+{
+	return (uint64_t)bpftime::shm_holder.global_shared_memory
+		.bpf_map_pop_elem(map >> 32, (void *)value, false);
+}
+
+uint64_t bpftime_map_peek_elem_helper(uint64_t map, uint64_t value, uint64_t,
+				      uint64_t, uint64_t)
+{
+	return (uint64_t)bpftime::shm_holder.global_shared_memory
+		.bpf_map_peek_elem(map >> 32, (void *)value, false);
+}
+
 uint64_t bpf_probe_read_str(uint64_t buf, uint64_t bufsz, uint64_t ptr,
 			    uint64_t, uint64_t)
 {
@@ -703,7 +724,7 @@ int64_t bpftime_get_stackid(uint64_t ctx_raw, uint64_t map_raw, uint64_t flags,
 		SPDLOG_ERROR("Unable to get stack trace");
 		return -ENOENT;
 	}
-	std::unique_ptr<std::vector<uint64_t> > result(
+	std::unique_ptr<std::vector<uint64_t>> result(
 		(std::vector<uint64_t> *)raw_ptr);
 
 	auto frames_to_skip = flags & BPF_F_SKIP_FIELD_MASK;
@@ -761,7 +782,7 @@ int64_t bpftime_get_stack(uint64_t ctx_raw, uint64_t buf, uint64_t size,
 		SPDLOG_ERROR("Unable to get stack trace");
 		return -ENOENT;
 	}
-	std::unique_ptr<std::vector<uint64_t> > result(
+	std::unique_ptr<std::vector<uint64_t>> result(
 		(std::vector<uint64_t> *)raw_ptr);
 
 	auto frames_to_skip = flags & BPF_F_SKIP_FIELD_MASK;
@@ -1184,11 +1205,11 @@ bpftime_helper_group::get_kernel_utils_helper_group()
 		    bpftime_helper_info{ .index = BPF_FUNC_get_stack,
 					 .name = "bpf_get_stack",
 					 .fn = (void *)bpftime_get_stack } },
-			{ BPF_FUNC_get_stackid,
+		  { BPF_FUNC_get_stackid,
 		    bpftime_helper_info{ .index = BPF_FUNC_get_stackid,
 					 .name = "bpf_get_stackid",
 					 .fn = (void *)bpftime_get_stackid } },
-			
+
 		  { BPF_FUNC_ktime_get_coarse_ns,
 		    bpftime_helper_info{
 			    .index = BPF_FUNC_ktime_get_coarse_ns,
@@ -1255,6 +1276,24 @@ const bpftime_helper_group &bpftime_helper_group::get_shm_maps_helper_group()
 			  .index = BPF_FUNC_map_delete_elem,
 			  .name = "bpf_map_delete_elem",
 			  .fn = (void *)bpftime_map_delete_elem_helper,
+		  } },
+		{ BPF_FUNC_map_push_elem,
+		  bpftime_helper_info{
+			  .index = BPF_FUNC_map_push_elem,
+			  .name = "bpf_map_push_elem",
+			  .fn = (void *)bpftime_map_push_elem_helper,
+		  } },
+		{ BPF_FUNC_map_pop_elem,
+		  bpftime_helper_info{
+			  .index = BPF_FUNC_map_pop_elem,
+			  .name = "bpf_map_pop_elem",
+			  .fn = (void *)bpftime_map_pop_elem_helper,
+		  } },
+		{ BPF_FUNC_map_peek_elem,
+		  bpftime_helper_info{
+			  .index = BPF_FUNC_map_peek_elem,
+			  .name = "bpf_map_peek_elem",
+			  .fn = (void *)bpftime_map_peek_elem_helper,
 		  } },
 	} };
 
