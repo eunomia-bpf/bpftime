@@ -1,0 +1,43 @@
+{
+	"sources" : 
+	[
+		{
+			"file" : "/home/runner/work/bpftime/bpftime/build-simple/vm/compat/ubpf-vm/CMakeFiles/ubpf"
+		},
+		{
+			"file" : "/home/runner/work/bpftime/bpftime/build-simple/vm/compat/ubpf-vm/CMakeFiles/ubpf.rule"
+		},
+		{
+			"file" : "/home/runner/work/bpftime/bpftime/build-simple/vm/compat/ubpf-vm/CMakeFiles/ubpf-complete.rule"
+		},
+		{
+			"file" : "/home/runner/work/bpftime/bpftime/build-simple/vm/compat/ubpf-vm/ubpf-prefix/src/ubpf-stamp/ubpf-build.rule"
+		},
+		{
+			"file" : "/home/runner/work/bpftime/bpftime/build-simple/vm/compat/ubpf-vm/ubpf-prefix/src/ubpf-stamp/ubpf-configure.rule"
+		},
+		{
+			"file" : "/home/runner/work/bpftime/bpftime/build-simple/vm/compat/ubpf-vm/ubpf-prefix/src/ubpf-stamp/ubpf-download.rule"
+		},
+		{
+			"file" : "/home/runner/work/bpftime/bpftime/build-simple/vm/compat/ubpf-vm/ubpf-prefix/src/ubpf-stamp/ubpf-install.rule"
+		},
+		{
+			"file" : "/home/runner/work/bpftime/bpftime/build-simple/vm/compat/ubpf-vm/ubpf-prefix/src/ubpf-stamp/ubpf-mkdir.rule"
+		},
+		{
+			"file" : "/home/runner/work/bpftime/bpftime/build-simple/vm/compat/ubpf-vm/ubpf-prefix/src/ubpf-stamp/ubpf-patch.rule"
+		},
+		{
+			"file" : "/home/runner/work/bpftime/bpftime/build-simple/vm/compat/ubpf-vm/ubpf-prefix/src/ubpf-stamp/ubpf-update.rule"
+		}
+	],
+	"target" : 
+	{
+		"labels" : 
+		[
+			"ubpf"
+		],
+		"name" : "ubpf"
+	}
+}

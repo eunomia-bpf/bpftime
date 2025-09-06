@@ -1,0 +1,2 @@
+/usr/bin/ar qc ../libllvmbpf_vm.a CMakeFiles/llvmbpf_vm.dir/src/llvm_jit_context.cpp.o CMakeFiles/llvmbpf_vm.dir/src/compiler.cpp.o CMakeFiles/llvmbpf_vm.dir/src/compiler_utils.cpp.o CMakeFiles/llvmbpf_vm.dir/src/vm.cpp.o
+/usr/bin/ranlib ../libllvmbpf_vm.a

@@ -1,0 +1,43 @@
+{
+	"sources" : 
+	[
+		{
+			"file" : "/home/runner/work/bpftime/bpftime/build-simple/vm/compat/llvm-vm/llvm-jit/cli/CMakeFiles/libbpf_project"
+		},
+		{
+			"file" : "/home/runner/work/bpftime/bpftime/build-simple/vm/compat/llvm-vm/llvm-jit/cli/CMakeFiles/libbpf_project.rule"
+		},
+		{
+			"file" : "/home/runner/work/bpftime/bpftime/build-simple/vm/compat/llvm-vm/llvm-jit/cli/CMakeFiles/libbpf_project-complete.rule"
+		},
+		{
+			"file" : "/home/runner/work/bpftime/bpftime/build-simple/vm/compat/llvm-vm/llvm-jit/cli/libbpf_project-prefix/src/libbpf_project-stamp/libbpf_project-build.rule"
+		},
+		{
+			"file" : "/home/runner/work/bpftime/bpftime/build-simple/vm/compat/llvm-vm/llvm-jit/cli/libbpf_project-prefix/src/libbpf_project-stamp/libbpf_project-configure.rule"
+		},
+		{
+			"file" : "/home/runner/work/bpftime/bpftime/build-simple/vm/compat/llvm-vm/llvm-jit/cli/libbpf_project-prefix/src/libbpf_project-stamp/libbpf_project-download.rule"
+		},
+		{
+			"file" : "/home/runner/work/bpftime/bpftime/build-simple/vm/compat/llvm-vm/llvm-jit/cli/libbpf_project-prefix/src/libbpf_project-stamp/libbpf_project-install.rule"
+		},
+		{
+			"file" : "/home/runner/work/bpftime/bpftime/build-simple/vm/compat/llvm-vm/llvm-jit/cli/libbpf_project-prefix/src/libbpf_project-stamp/libbpf_project-mkdir.rule"
+		},
+		{
+			"file" : "/home/runner/work/bpftime/bpftime/build-simple/vm/compat/llvm-vm/llvm-jit/cli/libbpf_project-prefix/src/libbpf_project-stamp/libbpf_project-patch.rule"
+		},
+		{
+			"file" : "/home/runner/work/bpftime/bpftime/build-simple/vm/compat/llvm-vm/llvm-jit/cli/libbpf_project-prefix/src/libbpf_project-stamp/libbpf_project-update.rule"
+		}
+	],
+	"target" : 
+	{
+		"labels" : 
+		[
+			"libbpf_project"
+		],
+		"name" : "libbpf_project"
+	}
+}

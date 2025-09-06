@@ -1,0 +1,13 @@
+# Target labels
+ libbpf_project
+# Source files and their labels
+/home/runner/work/bpftime/bpftime/build-simple/vm/compat/llvm-vm/llvm-jit/cli/CMakeFiles/libbpf_project
+/home/runner/work/bpftime/bpftime/build-simple/vm/compat/llvm-vm/llvm-jit/cli/CMakeFiles/libbpf_project.rule
+/home/runner/work/bpftime/bpftime/build-simple/vm/compat/llvm-vm/llvm-jit/cli/CMakeFiles/libbpf_project-complete.rule
+/home/runner/work/bpftime/bpftime/build-simple/vm/compat/llvm-vm/llvm-jit/cli/libbpf_project-prefix/src/libbpf_project-stamp/libbpf_project-build.rule
+/home/runner/work/bpftime/bpftime/build-simple/vm/compat/llvm-vm/llvm-jit/cli/libbpf_project-prefix/src/libbpf_project-stamp/libbpf_project-configure.rule
+/home/runner/work/bpftime/bpftime/build-simple/vm/compat/llvm-vm/llvm-jit/cli/libbpf_project-prefix/src/libbpf_project-stamp/libbpf_project-download.rule
+/home/runner/work/bpftime/bpftime/build-simple/vm/compat/llvm-vm/llvm-jit/cli/libbpf_project-prefix/src/libbpf_project-stamp/libbpf_project-install.rule
+/home/runner/work/bpftime/bpftime/build-simple/vm/compat/llvm-vm/llvm-jit/cli/libbpf_project-prefix/src/libbpf_project-stamp/libbpf_project-mkdir.rule
+/home/runner/work/bpftime/bpftime/build-simple/vm/compat/llvm-vm/llvm-jit/cli/libbpf_project-prefix/src/libbpf_project-stamp/libbpf_project-patch.rule
+/home/runner/work/bpftime/bpftime/build-simple/vm/compat/llvm-vm/llvm-jit/cli/libbpf_project-prefix/src/libbpf_project-stamp/libbpf_project-update.rule

@@ -1,0 +1,1106 @@
+[
+{
+  "directory": "/home/runner/work/bpftime/bpftime/build-simple/third_party/Catch2/src",
+  "command": "/usr/bin/c++  -I/home/runner/work/bpftime/bpftime/third_party/Catch2/src/catch2/.. -I/home/runner/work/bpftime/bpftime/build-simple/third_party/Catch2/generated-includes  -fno-omit-frame-pointer -g -std=gnu++20 -fPIC -D_DEBUG -ffile-prefix-map=/home/runner/work/bpftime/bpftime/third_party/Catch2/= -o CMakeFiles/Catch2.dir/catch2/benchmark/catch_chronometer.cpp.o -c /home/runner/work/bpftime/bpftime/third_party/Catch2/src/catch2/benchmark/catch_chronometer.cpp",
+  "file": "/home/runner/work/bpftime/bpftime/third_party/Catch2/src/catch2/benchmark/catch_chronometer.cpp",
+  "output": "third_party/Catch2/src/CMakeFiles/Catch2.dir/catch2/benchmark/catch_chronometer.cpp.o"
+},
+{
+  "directory": "/home/runner/work/bpftime/bpftime/build-simple/third_party/Catch2/src",
+  "command": "/usr/bin/c++  -I/home/runner/work/bpftime/bpftime/third_party/Catch2/src/catch2/.. -I/home/runner/work/bpftime/bpftime/build-simple/third_party/Catch2/generated-includes  -fno-omit-frame-pointer -g -std=gnu++20 -fPIC -D_DEBUG -ffile-prefix-map=/home/runner/work/bpftime/bpftime/third_party/Catch2/= -o CMakeFiles/Catch2.dir/catch2/benchmark/detail/catch_analyse.cpp.o -c /home/runner/work/bpftime/bpftime/third_party/Catch2/src/catch2/benchmark/detail/catch_analyse.cpp",
+  "file": "/home/runner/work/bpftime/bpftime/third_party/Catch2/src/catch2/benchmark/detail/catch_analyse.cpp",
+  "output": "third_party/Catch2/src/CMakeFiles/Catch2.dir/catch2/benchmark/detail/catch_analyse.cpp.o"
+},
+{
+  "directory": "/home/runner/work/bpftime/bpftime/build-simple/third_party/Catch2/src",
+  "command": "/usr/bin/c++  -I/home/runner/work/bpftime/bpftime/third_party/Catch2/src/catch2/.. -I/home/runner/work/bpftime/bpftime/build-simple/third_party/Catch2/generated-includes  -fno-omit-frame-pointer -g -std=gnu++20 -fPIC -D_DEBUG -ffile-prefix-map=/home/runner/work/bpftime/bpftime/third_party/Catch2/= -o CMakeFiles/Catch2.dir/catch2/benchmark/detail/catch_benchmark_function.cpp.o -c /home/runner/work/bpftime/bpftime/third_party/Catch2/src/catch2/benchmark/detail/catch_benchmark_function.cpp",
+  "file": "/home/runner/work/bpftime/bpftime/third_party/Catch2/src/catch2/benchmark/detail/catch_benchmark_function.cpp",
+  "output": "third_party/Catch2/src/CMakeFiles/Catch2.dir/catch2/benchmark/detail/catch_benchmark_function.cpp.o"
+},
+{
+  "directory": "/home/runner/work/bpftime/bpftime/build-simple/third_party/Catch2/src",
+  "command": "/usr/bin/c++  -I/home/runner/work/bpftime/bpftime/third_party/Catch2/src/catch2/.. -I/home/runner/work/bpftime/bpftime/build-simple/third_party/Catch2/generated-includes  -fno-omit-frame-pointer -g -std=gnu++20 -fPIC -D_DEBUG -ffile-prefix-map=/home/runner/work/bpftime/bpftime/third_party/Catch2/= -o CMakeFiles/Catch2.dir/catch2/benchmark/detail/catch_run_for_at_least.cpp.o -c /home/runner/work/bpftime/bpftime/third_party/Catch2/src/catch2/benchmark/detail/catch_run_for_at_least.cpp",
+  "file": "/home/runner/work/bpftime/bpftime/third_party/Catch2/src/catch2/benchmark/detail/catch_run_for_at_least.cpp",
+  "output": "third_party/Catch2/src/CMakeFiles/Catch2.dir/catch2/benchmark/detail/catch_run_for_at_least.cpp.o"
+},
+{
+  "directory": "/home/runner/work/bpftime/bpftime/build-simple/third_party/Catch2/src",
+  "command": "/usr/bin/c++  -I/home/runner/work/bpftime/bpftime/third_party/Catch2/src/catch2/.. -I/home/runner/work/bpftime/bpftime/build-simple/third_party/Catch2/generated-includes  -fno-omit-frame-pointer -g -std=gnu++20 -fPIC -D_DEBUG -ffile-prefix-map=/home/runner/work/bpftime/bpftime/third_party/Catch2/= -o CMakeFiles/Catch2.dir/catch2/benchmark/detail/catch_stats.cpp.o -c /home/runner/work/bpftime/bpftime/third_party/Catch2/src/catch2/benchmark/detail/catch_stats.cpp",
+  "file": "/home/runner/work/bpftime/bpftime/third_party/Catch2/src/catch2/benchmark/detail/catch_stats.cpp",
+  "output": "third_party/Catch2/src/CMakeFiles/Catch2.dir/catch2/benchmark/detail/catch_stats.cpp.o"
+},
+{
+  "directory": "/home/runner/work/bpftime/bpftime/build-simple/third_party/Catch2/src",
+  "command": "/usr/bin/c++  -I/home/runner/work/bpftime/bpftime/third_party/Catch2/src/catch2/.. -I/home/runner/work/bpftime/bpftime/build-simple/third_party/Catch2/generated-includes  -fno-omit-frame-pointer -g -std=gnu++20 -fPIC -D_DEBUG -ffile-prefix-map=/home/runner/work/bpftime/bpftime/third_party/Catch2/= -o CMakeFiles/Catch2.dir/catch2/generators/catch_generator_exception.cpp.o -c /home/runner/work/bpftime/bpftime/third_party/Catch2/src/catch2/generators/catch_generator_exception.cpp",
+  "file": "/home/runner/work/bpftime/bpftime/third_party/Catch2/src/catch2/generators/catch_generator_exception.cpp",
+  "output": "third_party/Catch2/src/CMakeFiles/Catch2.dir/catch2/generators/catch_generator_exception.cpp.o"
+},
+{
+  "directory": "/home/runner/work/bpftime/bpftime/build-simple/third_party/Catch2/src",
+  "command": "/usr/bin/c++  -I/home/runner/work/bpftime/bpftime/third_party/Catch2/src/catch2/.. -I/home/runner/work/bpftime/bpftime/build-simple/third_party/Catch2/generated-includes  -fno-omit-frame-pointer -g -std=gnu++20 -fPIC -D_DEBUG -ffile-prefix-map=/home/runner/work/bpftime/bpftime/third_party/Catch2/= -o CMakeFiles/Catch2.dir/catch2/generators/catch_generators.cpp.o -c /home/runner/work/bpftime/bpftime/third_party/Catch2/src/catch2/generators/catch_generators.cpp",
+  "file": "/home/runner/work/bpftime/bpftime/third_party/Catch2/src/catch2/generators/catch_generators.cpp",
+  "output": "third_party/Catch2/src/CMakeFiles/Catch2.dir/catch2/generators/catch_generators.cpp.o"
+},
+{
+  "directory": "/home/runner/work/bpftime/bpftime/build-simple/third_party/Catch2/src",
+  "command": "/usr/bin/c++  -I/home/runner/work/bpftime/bpftime/third_party/Catch2/src/catch2/.. -I/home/runner/work/bpftime/bpftime/build-simple/third_party/Catch2/generated-includes  -fno-omit-frame-pointer -g -std=gnu++20 -fPIC -D_DEBUG -ffile-prefix-map=/home/runner/work/bpftime/bpftime/third_party/Catch2/= -o CMakeFiles/Catch2.dir/catch2/generators/catch_generators_random.cpp.o -c /home/runner/work/bpftime/bpftime/third_party/Catch2/src/catch2/generators/catch_generators_random.cpp",
+  "file": "/home/runner/work/bpftime/bpftime/third_party/Catch2/src/catch2/generators/catch_generators_random.cpp",
+  "output": "third_party/Catch2/src/CMakeFiles/Catch2.dir/catch2/generators/catch_generators_random.cpp.o"
+},
+{
+  "directory": "/home/runner/work/bpftime/bpftime/build-simple/third_party/Catch2/src",
+  "command": "/usr/bin/c++  -I/home/runner/work/bpftime/bpftime/third_party/Catch2/src/catch2/.. -I/home/runner/work/bpftime/bpftime/build-simple/third_party/Catch2/generated-includes  -fno-omit-frame-pointer -g -std=gnu++20 -fPIC -D_DEBUG -ffile-prefix-map=/home/runner/work/bpftime/bpftime/third_party/Catch2/= -o CMakeFiles/Catch2.dir/catch2/reporters/catch_reporter_automake.cpp.o -c /home/runner/work/bpftime/bpftime/third_party/Catch2/src/catch2/reporters/catch_reporter_automake.cpp",
+  "file": "/home/runner/work/bpftime/bpftime/third_party/Catch2/src/catch2/reporters/catch_reporter_automake.cpp",
+  "output": "third_party/Catch2/src/CMakeFiles/Catch2.dir/catch2/reporters/catch_reporter_automake.cpp.o"
+},
+{
+  "directory": "/home/runner/work/bpftime/bpftime/build-simple/third_party/Catch2/src",
+  "command": "/usr/bin/c++  -I/home/runner/work/bpftime/bpftime/third_party/Catch2/src/catch2/.. -I/home/runner/work/bpftime/bpftime/build-simple/third_party/Catch2/generated-includes  -fno-omit-frame-pointer -g -std=gnu++20 -fPIC -D_DEBUG -ffile-prefix-map=/home/runner/work/bpftime/bpftime/third_party/Catch2/= -o CMakeFiles/Catch2.dir/catch2/reporters/catch_reporter_common_base.cpp.o -c /home/runner/work/bpftime/bpftime/third_party/Catch2/src/catch2/reporters/catch_reporter_common_base.cpp",
+  "file": "/home/runner/work/bpftime/bpftime/third_party/Catch2/src/catch2/reporters/catch_reporter_common_base.cpp",
+  "output": "third_party/Catch2/src/CMakeFiles/Catch2.dir/catch2/reporters/catch_reporter_common_base.cpp.o"
+},
+{
+  "directory": "/home/runner/work/bpftime/bpftime/build-simple/third_party/Catch2/src",
+  "command": "/usr/bin/c++  -I/home/runner/work/bpftime/bpftime/third_party/Catch2/src/catch2/.. -I/home/runner/work/bpftime/bpftime/build-simple/third_party/Catch2/generated-includes  -fno-omit-frame-pointer -g -std=gnu++20 -fPIC -D_DEBUG -ffile-prefix-map=/home/runner/work/bpftime/bpftime/third_party/Catch2/= -o CMakeFiles/Catch2.dir/catch2/reporters/catch_reporter_compact.cpp.o -c /home/runner/work/bpftime/bpftime/third_party/Catch2/src/catch2/reporters/catch_reporter_compact.cpp",
+  "file": "/home/runner/work/bpftime/bpftime/third_party/Catch2/src/catch2/reporters/catch_reporter_compact.cpp",
+  "output": "third_party/Catch2/src/CMakeFiles/Catch2.dir/catch2/reporters/catch_reporter_compact.cpp.o"
+},
+{
+  "directory": "/home/runner/work/bpftime/bpftime/build-simple/third_party/Catch2/src",
+  "command": "/usr/bin/c++  -I/home/runner/work/bpftime/bpftime/third_party/Catch2/src/catch2/.. -I/home/runner/work/bpftime/bpftime/build-simple/third_party/Catch2/generated-includes  -fno-omit-frame-pointer -g -std=gnu++20 -fPIC -D_DEBUG -ffile-prefix-map=/home/runner/work/bpftime/bpftime/third_party/Catch2/= -o CMakeFiles/Catch2.dir/catch2/reporters/catch_reporter_console.cpp.o -c /home/runner/work/bpftime/bpftime/third_party/Catch2/src/catch2/reporters/catch_reporter_console.cpp",
+  "file": "/home/runner/work/bpftime/bpftime/third_party/Catch2/src/catch2/reporters/catch_reporter_console.cpp",
+  "output": "third_party/Catch2/src/CMakeFiles/Catch2.dir/catch2/reporters/catch_reporter_console.cpp.o"
+},
+{
+  "directory": "/home/runner/work/bpftime/bpftime/build-simple/third_party/Catch2/src",
+  "command": "/usr/bin/c++  -I/home/runner/work/bpftime/bpftime/third_party/Catch2/src/catch2/.. -I/home/runner/work/bpftime/bpftime/build-simple/third_party/Catch2/generated-includes  -fno-omit-frame-pointer -g -std=gnu++20 -fPIC -D_DEBUG -ffile-prefix-map=/home/runner/work/bpftime/bpftime/third_party/Catch2/= -o CMakeFiles/Catch2.dir/catch2/reporters/catch_reporter_cumulative_base.cpp.o -c /home/runner/work/bpftime/bpftime/third_party/Catch2/src/catch2/reporters/catch_reporter_cumulative_base.cpp",
+  "file": "/home/runner/work/bpftime/bpftime/third_party/Catch2/src/catch2/reporters/catch_reporter_cumulative_base.cpp",
+  "output": "third_party/Catch2/src/CMakeFiles/Catch2.dir/catch2/reporters/catch_reporter_cumulative_base.cpp.o"
+},
+{
+  "directory": "/home/runner/work/bpftime/bpftime/build-simple/third_party/Catch2/src",
+  "command": "/usr/bin/c++  -I/home/runner/work/bpftime/bpftime/third_party/Catch2/src/catch2/.. -I/home/runner/work/bpftime/bpftime/build-simple/third_party/Catch2/generated-includes  -fno-omit-frame-pointer -g -std=gnu++20 -fPIC -D_DEBUG -ffile-prefix-map=/home/runner/work/bpftime/bpftime/third_party/Catch2/= -o CMakeFiles/Catch2.dir/catch2/reporters/catch_reporter_event_listener.cpp.o -c /home/runner/work/bpftime/bpftime/third_party/Catch2/src/catch2/reporters/catch_reporter_event_listener.cpp",
+  "file": "/home/runner/work/bpftime/bpftime/third_party/Catch2/src/catch2/reporters/catch_reporter_event_listener.cpp",
+  "output": "third_party/Catch2/src/CMakeFiles/Catch2.dir/catch2/reporters/catch_reporter_event_listener.cpp.o"
+},
+{
+  "directory": "/home/runner/work/bpftime/bpftime/build-simple/third_party/Catch2/src",
+  "command": "/usr/bin/c++  -I/home/runner/work/bpftime/bpftime/third_party/Catch2/src/catch2/.. -I/home/runner/work/bpftime/bpftime/build-simple/third_party/Catch2/generated-includes  -fno-omit-frame-pointer -g -std=gnu++20 -fPIC -D_DEBUG -ffile-prefix-map=/home/runner/work/bpftime/bpftime/third_party/Catch2/= -o CMakeFiles/Catch2.dir/catch2/reporters/catch_reporter_helpers.cpp.o -c /home/runner/work/bpftime/bpftime/third_party/Catch2/src/catch2/reporters/catch_reporter_helpers.cpp",
+  "file": "/home/runner/work/bpftime/bpftime/third_party/Catch2/src/catch2/reporters/catch_reporter_helpers.cpp",
+  "output": "third_party/Catch2/src/CMakeFiles/Catch2.dir/catch2/reporters/catch_reporter_helpers.cpp.o"
+},
+{
+  "directory": "/home/runner/work/bpftime/bpftime/build-simple/third_party/Catch2/src",
+  "command": "/usr/bin/c++  -I/home/runner/work/bpftime/bpftime/third_party/Catch2/src/catch2/.. -I/home/runner/work/bpftime/bpftime/build-simple/third_party/Catch2/generated-includes  -fno-omit-frame-pointer -g -std=gnu++20 -fPIC -D_DEBUG -ffile-prefix-map=/home/runner/work/bpftime/bpftime/third_party/Catch2/= -o CMakeFiles/Catch2.dir/catch2/reporters/catch_reporter_json.cpp.o -c /home/runner/work/bpftime/bpftime/third_party/Catch2/src/catch2/reporters/catch_reporter_json.cpp",
+  "file": "/home/runner/work/bpftime/bpftime/third_party/Catch2/src/catch2/reporters/catch_reporter_json.cpp",
+  "output": "third_party/Catch2/src/CMakeFiles/Catch2.dir/catch2/reporters/catch_reporter_json.cpp.o"
+},
+{
+  "directory": "/home/runner/work/bpftime/bpftime/build-simple/third_party/Catch2/src",
+  "command": "/usr/bin/c++  -I/home/runner/work/bpftime/bpftime/third_party/Catch2/src/catch2/.. -I/home/runner/work/bpftime/bpftime/build-simple/third_party/Catch2/generated-includes  -fno-omit-frame-pointer -g -std=gnu++20 -fPIC -D_DEBUG -ffile-prefix-map=/home/runner/work/bpftime/bpftime/third_party/Catch2/= -o CMakeFiles/Catch2.dir/catch2/reporters/catch_reporter_junit.cpp.o -c /home/runner/work/bpftime/bpftime/third_party/Catch2/src/catch2/reporters/catch_reporter_junit.cpp",
+  "file": "/home/runner/work/bpftime/bpftime/third_party/Catch2/src/catch2/reporters/catch_reporter_junit.cpp",
+  "output": "third_party/Catch2/src/CMakeFiles/Catch2.dir/catch2/reporters/catch_reporter_junit.cpp.o"
+},
+{
+  "directory": "/home/runner/work/bpftime/bpftime/build-simple/third_party/Catch2/src",
+  "command": "/usr/bin/c++  -I/home/runner/work/bpftime/bpftime/third_party/Catch2/src/catch2/.. -I/home/runner/work/bpftime/bpftime/build-simple/third_party/Catch2/generated-includes  -fno-omit-frame-pointer -g -std=gnu++20 -fPIC -D_DEBUG -ffile-prefix-map=/home/runner/work/bpftime/bpftime/third_party/Catch2/= -o CMakeFiles/Catch2.dir/catch2/reporters/catch_reporter_multi.cpp.o -c /home/runner/work/bpftime/bpftime/third_party/Catch2/src/catch2/reporters/catch_reporter_multi.cpp",
+  "file": "/home/runner/work/bpftime/bpftime/third_party/Catch2/src/catch2/reporters/catch_reporter_multi.cpp",
+  "output": "third_party/Catch2/src/CMakeFiles/Catch2.dir/catch2/reporters/catch_reporter_multi.cpp.o"
+},
+{
+  "directory": "/home/runner/work/bpftime/bpftime/build-simple/third_party/Catch2/src",
+  "command": "/usr/bin/c++  -I/home/runner/work/bpftime/bpftime/third_party/Catch2/src/catch2/.. -I/home/runner/work/bpftime/bpftime/build-simple/third_party/Catch2/generated-includes  -fno-omit-frame-pointer -g -std=gnu++20 -fPIC -D_DEBUG -ffile-prefix-map=/home/runner/work/bpftime/bpftime/third_party/Catch2/= -o CMakeFiles/Catch2.dir/catch2/reporters/catch_reporter_registrars.cpp.o -c /home/runner/work/bpftime/bpftime/third_party/Catch2/src/catch2/reporters/catch_reporter_registrars.cpp",
+  "file": "/home/runner/work/bpftime/bpftime/third_party/Catch2/src/catch2/reporters/catch_reporter_registrars.cpp",
+  "output": "third_party/Catch2/src/CMakeFiles/Catch2.dir/catch2/reporters/catch_reporter_registrars.cpp.o"
+},
+{
+  "directory": "/home/runner/work/bpftime/bpftime/build-simple/third_party/Catch2/src",
+  "command": "/usr/bin/c++  -I/home/runner/work/bpftime/bpftime/third_party/Catch2/src/catch2/.. -I/home/runner/work/bpftime/bpftime/build-simple/third_party/Catch2/generated-includes  -fno-omit-frame-pointer -g -std=gnu++20 -fPIC -D_DEBUG -ffile-prefix-map=/home/runner/work/bpftime/bpftime/third_party/Catch2/= -o CMakeFiles/Catch2.dir/catch2/reporters/catch_reporter_sonarqube.cpp.o -c /home/runner/work/bpftime/bpftime/third_party/Catch2/src/catch2/reporters/catch_reporter_sonarqube.cpp",
+  "file": "/home/runner/work/bpftime/bpftime/third_party/Catch2/src/catch2/reporters/catch_reporter_sonarqube.cpp",
+  "output": "third_party/Catch2/src/CMakeFiles/Catch2.dir/catch2/reporters/catch_reporter_sonarqube.cpp.o"
+},
+{
+  "directory": "/home/runner/work/bpftime/bpftime/build-simple/third_party/Catch2/src",
+  "command": "/usr/bin/c++  -I/home/runner/work/bpftime/bpftime/third_party/Catch2/src/catch2/.. -I/home/runner/work/bpftime/bpftime/build-simple/third_party/Catch2/generated-includes  -fno-omit-frame-pointer -g -std=gnu++20 -fPIC -D_DEBUG -ffile-prefix-map=/home/runner/work/bpftime/bpftime/third_party/Catch2/= -o CMakeFiles/Catch2.dir/catch2/reporters/catch_reporter_streaming_base.cpp.o -c /home/runner/work/bpftime/bpftime/third_party/Catch2/src/catch2/reporters/catch_reporter_streaming_base.cpp",
+  "file": "/home/runner/work/bpftime/bpftime/third_party/Catch2/src/catch2/reporters/catch_reporter_streaming_base.cpp",
+  "output": "third_party/Catch2/src/CMakeFiles/Catch2.dir/catch2/reporters/catch_reporter_streaming_base.cpp.o"
+},
+{
+  "directory": "/home/runner/work/bpftime/bpftime/build-simple/third_party/Catch2/src",
+  "command": "/usr/bin/c++  -I/home/runner/work/bpftime/bpftime/third_party/Catch2/src/catch2/.. -I/home/runner/work/bpftime/bpftime/build-simple/third_party/Catch2/generated-includes  -fno-omit-frame-pointer -g -std=gnu++20 -fPIC -D_DEBUG -ffile-prefix-map=/home/runner/work/bpftime/bpftime/third_party/Catch2/= -o CMakeFiles/Catch2.dir/catch2/reporters/catch_reporter_tap.cpp.o -c /home/runner/work/bpftime/bpftime/third_party/Catch2/src/catch2/reporters/catch_reporter_tap.cpp",
+  "file": "/home/runner/work/bpftime/bpftime/third_party/Catch2/src/catch2/reporters/catch_reporter_tap.cpp",
+  "output": "third_party/Catch2/src/CMakeFiles/Catch2.dir/catch2/reporters/catch_reporter_tap.cpp.o"
+},
+{
+  "directory": "/home/runner/work/bpftime/bpftime/build-simple/third_party/Catch2/src",
+  "command": "/usr/bin/c++  -I/home/runner/work/bpftime/bpftime/third_party/Catch2/src/catch2/.. -I/home/runner/work/bpftime/bpftime/build-simple/third_party/Catch2/generated-includes  -fno-omit-frame-pointer -g -std=gnu++20 -fPIC -D_DEBUG -ffile-prefix-map=/home/runner/work/bpftime/bpftime/third_party/Catch2/= -o CMakeFiles/Catch2.dir/catch2/reporters/catch_reporter_teamcity.cpp.o -c /home/runner/work/bpftime/bpftime/third_party/Catch2/src/catch2/reporters/catch_reporter_teamcity.cpp",
+  "file": "/home/runner/work/bpftime/bpftime/third_party/Catch2/src/catch2/reporters/catch_reporter_teamcity.cpp",
+  "output": "third_party/Catch2/src/CMakeFiles/Catch2.dir/catch2/reporters/catch_reporter_teamcity.cpp.o"
+},
+{
+  "directory": "/home/runner/work/bpftime/bpftime/build-simple/third_party/Catch2/src",
+  "command": "/usr/bin/c++  -I/home/runner/work/bpftime/bpftime/third_party/Catch2/src/catch2/.. -I/home/runner/work/bpftime/bpftime/build-simple/third_party/Catch2/generated-includes  -fno-omit-frame-pointer -g -std=gnu++20 -fPIC -D_DEBUG -ffile-prefix-map=/home/runner/work/bpftime/bpftime/third_party/Catch2/= -o CMakeFiles/Catch2.dir/catch2/reporters/catch_reporter_xml.cpp.o -c /home/runner/work/bpftime/bpftime/third_party/Catch2/src/catch2/reporters/catch_reporter_xml.cpp",
+  "file": "/home/runner/work/bpftime/bpftime/third_party/Catch2/src/catch2/reporters/catch_reporter_xml.cpp",
+  "output": "third_party/Catch2/src/CMakeFiles/Catch2.dir/catch2/reporters/catch_reporter_xml.cpp.o"
+},
+{
+  "directory": "/home/runner/work/bpftime/bpftime/build-simple/third_party/Catch2/src",
+  "command": "/usr/bin/c++  -I/home/runner/work/bpftime/bpftime/third_party/Catch2/src/catch2/.. -I/home/runner/work/bpftime/bpftime/build-simple/third_party/Catch2/generated-includes  -fno-omit-frame-pointer -g -std=gnu++20 -fPIC -D_DEBUG -ffile-prefix-map=/home/runner/work/bpftime/bpftime/third_party/Catch2/= -o CMakeFiles/Catch2.dir/catch2/interfaces/catch_interfaces_capture.cpp.o -c /home/runner/work/bpftime/bpftime/third_party/Catch2/src/catch2/interfaces/catch_interfaces_capture.cpp",
+  "file": "/home/runner/work/bpftime/bpftime/third_party/Catch2/src/catch2/interfaces/catch_interfaces_capture.cpp",
+  "output": "third_party/Catch2/src/CMakeFiles/Catch2.dir/catch2/interfaces/catch_interfaces_capture.cpp.o"
+},
+{
+  "directory": "/home/runner/work/bpftime/bpftime/build-simple/third_party/Catch2/src",
+  "command": "/usr/bin/c++  -I/home/runner/work/bpftime/bpftime/third_party/Catch2/src/catch2/.. -I/home/runner/work/bpftime/bpftime/build-simple/third_party/Catch2/generated-includes  -fno-omit-frame-pointer -g -std=gnu++20 -fPIC -D_DEBUG -ffile-prefix-map=/home/runner/work/bpftime/bpftime/third_party/Catch2/= -o CMakeFiles/Catch2.dir/catch2/interfaces/catch_interfaces_config.cpp.o -c /home/runner/work/bpftime/bpftime/third_party/Catch2/src/catch2/interfaces/catch_interfaces_config.cpp",
+  "file": "/home/runner/work/bpftime/bpftime/third_party/Catch2/src/catch2/interfaces/catch_interfaces_config.cpp",
+  "output": "third_party/Catch2/src/CMakeFiles/Catch2.dir/catch2/interfaces/catch_interfaces_config.cpp.o"
+},
+{
+  "directory": "/home/runner/work/bpftime/bpftime/build-simple/third_party/Catch2/src",
+  "command": "/usr/bin/c++  -I/home/runner/work/bpftime/bpftime/third_party/Catch2/src/catch2/.. -I/home/runner/work/bpftime/bpftime/build-simple/third_party/Catch2/generated-includes  -fno-omit-frame-pointer -g -std=gnu++20 -fPIC -D_DEBUG -ffile-prefix-map=/home/runner/work/bpftime/bpftime/third_party/Catch2/= -o CMakeFiles/Catch2.dir/catch2/interfaces/catch_interfaces_exception.cpp.o -c /home/runner/work/bpftime/bpftime/third_party/Catch2/src/catch2/interfaces/catch_interfaces_exception.cpp",
+  "file": "/home/runner/work/bpftime/bpftime/third_party/Catch2/src/catch2/interfaces/catch_interfaces_exception.cpp",
+  "output": "third_party/Catch2/src/CMakeFiles/Catch2.dir/catch2/interfaces/catch_interfaces_exception.cpp.o"
+},
+{
+  "directory": "/home/runner/work/bpftime/bpftime/build-simple/third_party/Catch2/src",
+  "command": "/usr/bin/c++  -I/home/runner/work/bpftime/bpftime/third_party/Catch2/src/catch2/.. -I/home/runner/work/bpftime/bpftime/build-simple/third_party/Catch2/generated-includes  -fno-omit-frame-pointer -g -std=gnu++20 -fPIC -D_DEBUG -ffile-prefix-map=/home/runner/work/bpftime/bpftime/third_party/Catch2/= -o CMakeFiles/Catch2.dir/catch2/interfaces/catch_interfaces_generatortracker.cpp.o -c /home/runner/work/bpftime/bpftime/third_party/Catch2/src/catch2/interfaces/catch_interfaces_generatortracker.cpp",
+  "file": "/home/runner/work/bpftime/bpftime/third_party/Catch2/src/catch2/interfaces/catch_interfaces_generatortracker.cpp",
+  "output": "third_party/Catch2/src/CMakeFiles/Catch2.dir/catch2/interfaces/catch_interfaces_generatortracker.cpp.o"
+},
+{
+  "directory": "/home/runner/work/bpftime/bpftime/build-simple/third_party/Catch2/src",
+  "command": "/usr/bin/c++  -I/home/runner/work/bpftime/bpftime/third_party/Catch2/src/catch2/.. -I/home/runner/work/bpftime/bpftime/build-simple/third_party/Catch2/generated-includes  -fno-omit-frame-pointer -g -std=gnu++20 -fPIC -D_DEBUG -ffile-prefix-map=/home/runner/work/bpftime/bpftime/third_party/Catch2/= -o CMakeFiles/Catch2.dir/catch2/interfaces/catch_interfaces_registry_hub.cpp.o -c /home/runner/work/bpftime/bpftime/third_party/Catch2/src/catch2/interfaces/catch_interfaces_registry_hub.cpp",
+  "file": "/home/runner/work/bpftime/bpftime/third_party/Catch2/src/catch2/interfaces/catch_interfaces_registry_hub.cpp",
+  "output": "third_party/Catch2/src/CMakeFiles/Catch2.dir/catch2/interfaces/catch_interfaces_registry_hub.cpp.o"
+},
+{
+  "directory": "/home/runner/work/bpftime/bpftime/build-simple/third_party/Catch2/src",
+  "command": "/usr/bin/c++  -I/home/runner/work/bpftime/bpftime/third_party/Catch2/src/catch2/.. -I/home/runner/work/bpftime/bpftime/build-simple/third_party/Catch2/generated-includes  -fno-omit-frame-pointer -g -std=gnu++20 -fPIC -D_DEBUG -ffile-prefix-map=/home/runner/work/bpftime/bpftime/third_party/Catch2/= -o CMakeFiles/Catch2.dir/catch2/interfaces/catch_interfaces_reporter.cpp.o -c /home/runner/work/bpftime/bpftime/third_party/Catch2/src/catch2/interfaces/catch_interfaces_reporter.cpp",
+  "file": "/home/runner/work/bpftime/bpftime/third_party/Catch2/src/catch2/interfaces/catch_interfaces_reporter.cpp",
+  "output": "third_party/Catch2/src/CMakeFiles/Catch2.dir/catch2/interfaces/catch_interfaces_reporter.cpp.o"
+},
+{
+  "directory": "/home/runner/work/bpftime/bpftime/build-simple/third_party/Catch2/src",
+  "command": "/usr/bin/c++  -I/home/runner/work/bpftime/bpftime/third_party/Catch2/src/catch2/.. -I/home/runner/work/bpftime/bpftime/build-simple/third_party/Catch2/generated-includes  -fno-omit-frame-pointer -g -std=gnu++20 -fPIC -D_DEBUG -ffile-prefix-map=/home/runner/work/bpftime/bpftime/third_party/Catch2/= -o CMakeFiles/Catch2.dir/catch2/interfaces/catch_interfaces_reporter_factory.cpp.o -c /home/runner/work/bpftime/bpftime/third_party/Catch2/src/catch2/interfaces/catch_interfaces_reporter_factory.cpp",
+  "file": "/home/runner/work/bpftime/bpftime/third_party/Catch2/src/catch2/interfaces/catch_interfaces_reporter_factory.cpp",
+  "output": "third_party/Catch2/src/CMakeFiles/Catch2.dir/catch2/interfaces/catch_interfaces_reporter_factory.cpp.o"
+},
+{
+  "directory": "/home/runner/work/bpftime/bpftime/build-simple/third_party/Catch2/src",
+  "command": "/usr/bin/c++  -I/home/runner/work/bpftime/bpftime/third_party/Catch2/src/catch2/.. -I/home/runner/work/bpftime/bpftime/build-simple/third_party/Catch2/generated-includes  -fno-omit-frame-pointer -g -std=gnu++20 -fPIC -D_DEBUG -ffile-prefix-map=/home/runner/work/bpftime/bpftime/third_party/Catch2/= -o CMakeFiles/Catch2.dir/catch2/interfaces/catch_interfaces_testcase.cpp.o -c /home/runner/work/bpftime/bpftime/third_party/Catch2/src/catch2/interfaces/catch_interfaces_testcase.cpp",
+  "file": "/home/runner/work/bpftime/bpftime/third_party/Catch2/src/catch2/interfaces/catch_interfaces_testcase.cpp",
+  "output": "third_party/Catch2/src/CMakeFiles/Catch2.dir/catch2/interfaces/catch_interfaces_testcase.cpp.o"
+},
+{
+  "directory": "/home/runner/work/bpftime/bpftime/build-simple/third_party/Catch2/src",
+  "command": "/usr/bin/c++  -I/home/runner/work/bpftime/bpftime/third_party/Catch2/src/catch2/.. -I/home/runner/work/bpftime/bpftime/build-simple/third_party/Catch2/generated-includes  -fno-omit-frame-pointer -g -std=gnu++20 -fPIC -D_DEBUG -ffile-prefix-map=/home/runner/work/bpftime/bpftime/third_party/Catch2/= -o CMakeFiles/Catch2.dir/catch2/catch_approx.cpp.o -c /home/runner/work/bpftime/bpftime/third_party/Catch2/src/catch2/catch_approx.cpp",
+  "file": "/home/runner/work/bpftime/bpftime/third_party/Catch2/src/catch2/catch_approx.cpp",
+  "output": "third_party/Catch2/src/CMakeFiles/Catch2.dir/catch2/catch_approx.cpp.o"
+},
+{
+  "directory": "/home/runner/work/bpftime/bpftime/build-simple/third_party/Catch2/src",
+  "command": "/usr/bin/c++  -I/home/runner/work/bpftime/bpftime/third_party/Catch2/src/catch2/.. -I/home/runner/work/bpftime/bpftime/build-simple/third_party/Catch2/generated-includes  -fno-omit-frame-pointer -g -std=gnu++20 -fPIC -D_DEBUG -ffile-prefix-map=/home/runner/work/bpftime/bpftime/third_party/Catch2/= -o CMakeFiles/Catch2.dir/catch2/catch_assertion_result.cpp.o -c /home/runner/work/bpftime/bpftime/third_party/Catch2/src/catch2/catch_assertion_result.cpp",
+  "file": "/home/runner/work/bpftime/bpftime/third_party/Catch2/src/catch2/catch_assertion_result.cpp",
+  "output": "third_party/Catch2/src/CMakeFiles/Catch2.dir/catch2/catch_assertion_result.cpp.o"
+},
+{
+  "directory": "/home/runner/work/bpftime/bpftime/build-simple/third_party/Catch2/src",
+  "command": "/usr/bin/c++  -I/home/runner/work/bpftime/bpftime/third_party/Catch2/src/catch2/.. -I/home/runner/work/bpftime/bpftime/build-simple/third_party/Catch2/generated-includes  -fno-omit-frame-pointer -g -std=gnu++20 -fPIC -D_DEBUG -ffile-prefix-map=/home/runner/work/bpftime/bpftime/third_party/Catch2/= -o CMakeFiles/Catch2.dir/catch2/catch_config.cpp.o -c /home/runner/work/bpftime/bpftime/third_party/Catch2/src/catch2/catch_config.cpp",
+  "file": "/home/runner/work/bpftime/bpftime/third_party/Catch2/src/catch2/catch_config.cpp",
+  "output": "third_party/Catch2/src/CMakeFiles/Catch2.dir/catch2/catch_config.cpp.o"
+},
+{
+  "directory": "/home/runner/work/bpftime/bpftime/build-simple/third_party/Catch2/src",
+  "command": "/usr/bin/c++  -I/home/runner/work/bpftime/bpftime/third_party/Catch2/src/catch2/.. -I/home/runner/work/bpftime/bpftime/build-simple/third_party/Catch2/generated-includes  -fno-omit-frame-pointer -g -std=gnu++20 -fPIC -D_DEBUG -ffile-prefix-map=/home/runner/work/bpftime/bpftime/third_party/Catch2/= -o CMakeFiles/Catch2.dir/catch2/catch_get_random_seed.cpp.o -c /home/runner/work/bpftime/bpftime/third_party/Catch2/src/catch2/catch_get_random_seed.cpp",
+  "file": "/home/runner/work/bpftime/bpftime/third_party/Catch2/src/catch2/catch_get_random_seed.cpp",
+  "output": "third_party/Catch2/src/CMakeFiles/Catch2.dir/catch2/catch_get_random_seed.cpp.o"
+},
+{
+  "directory": "/home/runner/work/bpftime/bpftime/build-simple/third_party/Catch2/src",
+  "command": "/usr/bin/c++  -I/home/runner/work/bpftime/bpftime/third_party/Catch2/src/catch2/.. -I/home/runner/work/bpftime/bpftime/build-simple/third_party/Catch2/generated-includes  -fno-omit-frame-pointer -g -std=gnu++20 -fPIC -D_DEBUG -ffile-prefix-map=/home/runner/work/bpftime/bpftime/third_party/Catch2/= -o CMakeFiles/Catch2.dir/catch2/catch_message.cpp.o -c /home/runner/work/bpftime/bpftime/third_party/Catch2/src/catch2/catch_message.cpp",
+  "file": "/home/runner/work/bpftime/bpftime/third_party/Catch2/src/catch2/catch_message.cpp",
+  "output": "third_party/Catch2/src/CMakeFiles/Catch2.dir/catch2/catch_message.cpp.o"
+},
+{
+  "directory": "/home/runner/work/bpftime/bpftime/build-simple/third_party/Catch2/src",
+  "command": "/usr/bin/c++  -I/home/runner/work/bpftime/bpftime/third_party/Catch2/src/catch2/.. -I/home/runner/work/bpftime/bpftime/build-simple/third_party/Catch2/generated-includes  -fno-omit-frame-pointer -g -std=gnu++20 -fPIC -D_DEBUG -ffile-prefix-map=/home/runner/work/bpftime/bpftime/third_party/Catch2/= -o CMakeFiles/Catch2.dir/catch2/catch_registry_hub.cpp.o -c /home/runner/work/bpftime/bpftime/third_party/Catch2/src/catch2/catch_registry_hub.cpp",
+  "file": "/home/runner/work/bpftime/bpftime/third_party/Catch2/src/catch2/catch_registry_hub.cpp",
+  "output": "third_party/Catch2/src/CMakeFiles/Catch2.dir/catch2/catch_registry_hub.cpp.o"
+},
+{
+  "directory": "/home/runner/work/bpftime/bpftime/build-simple/third_party/Catch2/src",
+  "command": "/usr/bin/c++  -I/home/runner/work/bpftime/bpftime/third_party/Catch2/src/catch2/.. -I/home/runner/work/bpftime/bpftime/build-simple/third_party/Catch2/generated-includes  -fno-omit-frame-pointer -g -std=gnu++20 -fPIC -D_DEBUG -ffile-prefix-map=/home/runner/work/bpftime/bpftime/third_party/Catch2/= -o CMakeFiles/Catch2.dir/catch2/catch_session.cpp.o -c /home/runner/work/bpftime/bpftime/third_party/Catch2/src/catch2/catch_session.cpp",
+  "file": "/home/runner/work/bpftime/bpftime/third_party/Catch2/src/catch2/catch_session.cpp",
+  "output": "third_party/Catch2/src/CMakeFiles/Catch2.dir/catch2/catch_session.cpp.o"
+},
+{
+  "directory": "/home/runner/work/bpftime/bpftime/build-simple/third_party/Catch2/src",
+  "command": "/usr/bin/c++  -I/home/runner/work/bpftime/bpftime/third_party/Catch2/src/catch2/.. -I/home/runner/work/bpftime/bpftime/build-simple/third_party/Catch2/generated-includes  -fno-omit-frame-pointer -g -std=gnu++20 -fPIC -D_DEBUG -ffile-prefix-map=/home/runner/work/bpftime/bpftime/third_party/Catch2/= -o CMakeFiles/Catch2.dir/catch2/catch_tag_alias_autoregistrar.cpp.o -c /home/runner/work/bpftime/bpftime/third_party/Catch2/src/catch2/catch_tag_alias_autoregistrar.cpp",
+  "file": "/home/runner/work/bpftime/bpftime/third_party/Catch2/src/catch2/catch_tag_alias_autoregistrar.cpp",
+  "output": "third_party/Catch2/src/CMakeFiles/Catch2.dir/catch2/catch_tag_alias_autoregistrar.cpp.o"
+},
+{
+  "directory": "/home/runner/work/bpftime/bpftime/build-simple/third_party/Catch2/src",
+  "command": "/usr/bin/c++  -I/home/runner/work/bpftime/bpftime/third_party/Catch2/src/catch2/.. -I/home/runner/work/bpftime/bpftime/build-simple/third_party/Catch2/generated-includes  -fno-omit-frame-pointer -g -std=gnu++20 -fPIC -D_DEBUG -ffile-prefix-map=/home/runner/work/bpftime/bpftime/third_party/Catch2/= -o CMakeFiles/Catch2.dir/catch2/catch_test_case_info.cpp.o -c /home/runner/work/bpftime/bpftime/third_party/Catch2/src/catch2/catch_test_case_info.cpp",
+  "file": "/home/runner/work/bpftime/bpftime/third_party/Catch2/src/catch2/catch_test_case_info.cpp",
+  "output": "third_party/Catch2/src/CMakeFiles/Catch2.dir/catch2/catch_test_case_info.cpp.o"
+},
+{
+  "directory": "/home/runner/work/bpftime/bpftime/build-simple/third_party/Catch2/src",
+  "command": "/usr/bin/c++  -I/home/runner/work/bpftime/bpftime/third_party/Catch2/src/catch2/.. -I/home/runner/work/bpftime/bpftime/build-simple/third_party/Catch2/generated-includes  -fno-omit-frame-pointer -g -std=gnu++20 -fPIC -D_DEBUG -ffile-prefix-map=/home/runner/work/bpftime/bpftime/third_party/Catch2/= -o CMakeFiles/Catch2.dir/catch2/catch_test_spec.cpp.o -c /home/runner/work/bpftime/bpftime/third_party/Catch2/src/catch2/catch_test_spec.cpp",
+  "file": "/home/runner/work/bpftime/bpftime/third_party/Catch2/src/catch2/catch_test_spec.cpp",
+  "output": "third_party/Catch2/src/CMakeFiles/Catch2.dir/catch2/catch_test_spec.cpp.o"
+},
+{
+  "directory": "/home/runner/work/bpftime/bpftime/build-simple/third_party/Catch2/src",
+  "command": "/usr/bin/c++  -I/home/runner/work/bpftime/bpftime/third_party/Catch2/src/catch2/.. -I/home/runner/work/bpftime/bpftime/build-simple/third_party/Catch2/generated-includes  -fno-omit-frame-pointer -g -std=gnu++20 -fPIC -D_DEBUG -ffile-prefix-map=/home/runner/work/bpftime/bpftime/third_party/Catch2/= -o CMakeFiles/Catch2.dir/catch2/catch_timer.cpp.o -c /home/runner/work/bpftime/bpftime/third_party/Catch2/src/catch2/catch_timer.cpp",
+  "file": "/home/runner/work/bpftime/bpftime/third_party/Catch2/src/catch2/catch_timer.cpp",
+  "output": "third_party/Catch2/src/CMakeFiles/Catch2.dir/catch2/catch_timer.cpp.o"
+},
+{
+  "directory": "/home/runner/work/bpftime/bpftime/build-simple/third_party/Catch2/src",
+  "command": "/usr/bin/c++  -I/home/runner/work/bpftime/bpftime/third_party/Catch2/src/catch2/.. -I/home/runner/work/bpftime/bpftime/build-simple/third_party/Catch2/generated-includes  -fno-omit-frame-pointer -g -std=gnu++20 -fPIC -D_DEBUG -ffile-prefix-map=/home/runner/work/bpftime/bpftime/third_party/Catch2/= -o CMakeFiles/Catch2.dir/catch2/catch_tostring.cpp.o -c /home/runner/work/bpftime/bpftime/third_party/Catch2/src/catch2/catch_tostring.cpp",
+  "file": "/home/runner/work/bpftime/bpftime/third_party/Catch2/src/catch2/catch_tostring.cpp",
+  "output": "third_party/Catch2/src/CMakeFiles/Catch2.dir/catch2/catch_tostring.cpp.o"
+},
+{
+  "directory": "/home/runner/work/bpftime/bpftime/build-simple/third_party/Catch2/src",
+  "command": "/usr/bin/c++  -I/home/runner/work/bpftime/bpftime/third_party/Catch2/src/catch2/.. -I/home/runner/work/bpftime/bpftime/build-simple/third_party/Catch2/generated-includes  -fno-omit-frame-pointer -g -std=gnu++20 -fPIC -D_DEBUG -ffile-prefix-map=/home/runner/work/bpftime/bpftime/third_party/Catch2/= -o CMakeFiles/Catch2.dir/catch2/catch_totals.cpp.o -c /home/runner/work/bpftime/bpftime/third_party/Catch2/src/catch2/catch_totals.cpp",
+  "file": "/home/runner/work/bpftime/bpftime/third_party/Catch2/src/catch2/catch_totals.cpp",
+  "output": "third_party/Catch2/src/CMakeFiles/Catch2.dir/catch2/catch_totals.cpp.o"
+},
+{
+  "directory": "/home/runner/work/bpftime/bpftime/build-simple/third_party/Catch2/src",
+  "command": "/usr/bin/c++  -I/home/runner/work/bpftime/bpftime/third_party/Catch2/src/catch2/.. -I/home/runner/work/bpftime/bpftime/build-simple/third_party/Catch2/generated-includes  -fno-omit-frame-pointer -g -std=gnu++20 -fPIC -D_DEBUG -ffile-prefix-map=/home/runner/work/bpftime/bpftime/third_party/Catch2/= -o CMakeFiles/Catch2.dir/catch2/catch_translate_exception.cpp.o -c /home/runner/work/bpftime/bpftime/third_party/Catch2/src/catch2/catch_translate_exception.cpp",
+  "file": "/home/runner/work/bpftime/bpftime/third_party/Catch2/src/catch2/catch_translate_exception.cpp",
+  "output": "third_party/Catch2/src/CMakeFiles/Catch2.dir/catch2/catch_translate_exception.cpp.o"
+},
+{
+  "directory": "/home/runner/work/bpftime/bpftime/build-simple/third_party/Catch2/src",
+  "command": "/usr/bin/c++  -I/home/runner/work/bpftime/bpftime/third_party/Catch2/src/catch2/.. -I/home/runner/work/bpftime/bpftime/build-simple/third_party/Catch2/generated-includes  -fno-omit-frame-pointer -g -std=gnu++20 -fPIC -D_DEBUG -ffile-prefix-map=/home/runner/work/bpftime/bpftime/third_party/Catch2/= -o CMakeFiles/Catch2.dir/catch2/catch_version.cpp.o -c /home/runner/work/bpftime/bpftime/third_party/Catch2/src/catch2/catch_version.cpp",
+  "file": "/home/runner/work/bpftime/bpftime/third_party/Catch2/src/catch2/catch_version.cpp",
+  "output": "third_party/Catch2/src/CMakeFiles/Catch2.dir/catch2/catch_version.cpp.o"
+},
+{
+  "directory": "/home/runner/work/bpftime/bpftime/build-simple/third_party/Catch2/src",
+  "command": "/usr/bin/c++  -I/home/runner/work/bpftime/bpftime/third_party/Catch2/src/catch2/.. -I/home/runner/work/bpftime/bpftime/build-simple/third_party/Catch2/generated-includes  -fno-omit-frame-pointer -g -std=gnu++20 -fPIC -D_DEBUG -ffile-prefix-map=/home/runner/work/bpftime/bpftime/third_party/Catch2/= -o CMakeFiles/Catch2.dir/catch2/internal/catch_assertion_handler.cpp.o -c /home/runner/work/bpftime/bpftime/third_party/Catch2/src/catch2/internal/catch_assertion_handler.cpp",
+  "file": "/home/runner/work/bpftime/bpftime/third_party/Catch2/src/catch2/internal/catch_assertion_handler.cpp",
+  "output": "third_party/Catch2/src/CMakeFiles/Catch2.dir/catch2/internal/catch_assertion_handler.cpp.o"
+},
+{
+  "directory": "/home/runner/work/bpftime/bpftime/build-simple/third_party/Catch2/src",
+  "command": "/usr/bin/c++  -I/home/runner/work/bpftime/bpftime/third_party/Catch2/src/catch2/.. -I/home/runner/work/bpftime/bpftime/build-simple/third_party/Catch2/generated-includes  -fno-omit-frame-pointer -g -std=gnu++20 -fPIC -D_DEBUG -ffile-prefix-map=/home/runner/work/bpftime/bpftime/third_party/Catch2/= -o CMakeFiles/Catch2.dir/catch2/internal/catch_case_insensitive_comparisons.cpp.o -c /home/runner/work/bpftime/bpftime/third_party/Catch2/src/catch2/internal/catch_case_insensitive_comparisons.cpp",
+  "file": "/home/runner/work/bpftime/bpftime/third_party/Catch2/src/catch2/internal/catch_case_insensitive_comparisons.cpp",
+  "output": "third_party/Catch2/src/CMakeFiles/Catch2.dir/catch2/internal/catch_case_insensitive_comparisons.cpp.o"
+},
+{
+  "directory": "/home/runner/work/bpftime/bpftime/build-simple/third_party/Catch2/src",
+  "command": "/usr/bin/c++  -I/home/runner/work/bpftime/bpftime/third_party/Catch2/src/catch2/.. -I/home/runner/work/bpftime/bpftime/build-simple/third_party/Catch2/generated-includes  -fno-omit-frame-pointer -g -std=gnu++20 -fPIC -D_DEBUG -ffile-prefix-map=/home/runner/work/bpftime/bpftime/third_party/Catch2/= -o CMakeFiles/Catch2.dir/catch2/internal/catch_clara.cpp.o -c /home/runner/work/bpftime/bpftime/third_party/Catch2/src/catch2/internal/catch_clara.cpp",
+  "file": "/home/runner/work/bpftime/bpftime/third_party/Catch2/src/catch2/internal/catch_clara.cpp",
+  "output": "third_party/Catch2/src/CMakeFiles/Catch2.dir/catch2/internal/catch_clara.cpp.o"
+},
+{
+  "directory": "/home/runner/work/bpftime/bpftime/build-simple/third_party/Catch2/src",
+  "command": "/usr/bin/c++  -I/home/runner/work/bpftime/bpftime/third_party/Catch2/src/catch2/.. -I/home/runner/work/bpftime/bpftime/build-simple/third_party/Catch2/generated-includes  -fno-omit-frame-pointer -g -std=gnu++20 -fPIC -D_DEBUG -ffile-prefix-map=/home/runner/work/bpftime/bpftime/third_party/Catch2/= -o CMakeFiles/Catch2.dir/catch2/internal/catch_commandline.cpp.o -c /home/runner/work/bpftime/bpftime/third_party/Catch2/src/catch2/internal/catch_commandline.cpp",
+  "file": "/home/runner/work/bpftime/bpftime/third_party/Catch2/src/catch2/internal/catch_commandline.cpp",
+  "output": "third_party/Catch2/src/CMakeFiles/Catch2.dir/catch2/internal/catch_commandline.cpp.o"
+},
+{
+  "directory": "/home/runner/work/bpftime/bpftime/build-simple/third_party/Catch2/src",
+  "command": "/usr/bin/c++  -I/home/runner/work/bpftime/bpftime/third_party/Catch2/src/catch2/.. -I/home/runner/work/bpftime/bpftime/build-simple/third_party/Catch2/generated-includes  -fno-omit-frame-pointer -g -std=gnu++20 -fPIC -D_DEBUG -ffile-prefix-map=/home/runner/work/bpftime/bpftime/third_party/Catch2/= -o CMakeFiles/Catch2.dir/catch2/internal/catch_console_colour.cpp.o -c /home/runner/work/bpftime/bpftime/third_party/Catch2/src/catch2/internal/catch_console_colour.cpp",
+  "file": "/home/runner/work/bpftime/bpftime/third_party/Catch2/src/catch2/internal/catch_console_colour.cpp",
+  "output": "third_party/Catch2/src/CMakeFiles/Catch2.dir/catch2/internal/catch_console_colour.cpp.o"
+},
+{
+  "directory": "/home/runner/work/bpftime/bpftime/build-simple/third_party/Catch2/src",
+  "command": "/usr/bin/c++  -I/home/runner/work/bpftime/bpftime/third_party/Catch2/src/catch2/.. -I/home/runner/work/bpftime/bpftime/build-simple/third_party/Catch2/generated-includes  -fno-omit-frame-pointer -g -std=gnu++20 -fPIC -D_DEBUG -ffile-prefix-map=/home/runner/work/bpftime/bpftime/third_party/Catch2/= -o CMakeFiles/Catch2.dir/catch2/internal/catch_context.cpp.o -c /home/runner/work/bpftime/bpftime/third_party/Catch2/src/catch2/internal/catch_context.cpp",
+  "file": "/home/runner/work/bpftime/bpftime/third_party/Catch2/src/catch2/internal/catch_context.cpp",
+  "output": "third_party/Catch2/src/CMakeFiles/Catch2.dir/catch2/internal/catch_context.cpp.o"
+},
+{
+  "directory": "/home/runner/work/bpftime/bpftime/build-simple/third_party/Catch2/src",
+  "command": "/usr/bin/c++  -I/home/runner/work/bpftime/bpftime/third_party/Catch2/src/catch2/.. -I/home/runner/work/bpftime/bpftime/build-simple/third_party/Catch2/generated-includes  -fno-omit-frame-pointer -g -std=gnu++20 -fPIC -D_DEBUG -ffile-prefix-map=/home/runner/work/bpftime/bpftime/third_party/Catch2/= -o CMakeFiles/Catch2.dir/catch2/internal/catch_debug_console.cpp.o -c /home/runner/work/bpftime/bpftime/third_party/Catch2/src/catch2/internal/catch_debug_console.cpp",
+  "file": "/home/runner/work/bpftime/bpftime/third_party/Catch2/src/catch2/internal/catch_debug_console.cpp",
+  "output": "third_party/Catch2/src/CMakeFiles/Catch2.dir/catch2/internal/catch_debug_console.cpp.o"
+},
+{
+  "directory": "/home/runner/work/bpftime/bpftime/build-simple/third_party/Catch2/src",
+  "command": "/usr/bin/c++  -I/home/runner/work/bpftime/bpftime/third_party/Catch2/src/catch2/.. -I/home/runner/work/bpftime/bpftime/build-simple/third_party/Catch2/generated-includes  -fno-omit-frame-pointer -g -std=gnu++20 -fPIC -D_DEBUG -ffile-prefix-map=/home/runner/work/bpftime/bpftime/third_party/Catch2/= -o CMakeFiles/Catch2.dir/catch2/internal/catch_debugger.cpp.o -c /home/runner/work/bpftime/bpftime/third_party/Catch2/src/catch2/internal/catch_debugger.cpp",
+  "file": "/home/runner/work/bpftime/bpftime/third_party/Catch2/src/catch2/internal/catch_debugger.cpp",
+  "output": "third_party/Catch2/src/CMakeFiles/Catch2.dir/catch2/internal/catch_debugger.cpp.o"
+},
+{
+  "directory": "/home/runner/work/bpftime/bpftime/build-simple/third_party/Catch2/src",
+  "command": "/usr/bin/c++  -I/home/runner/work/bpftime/bpftime/third_party/Catch2/src/catch2/.. -I/home/runner/work/bpftime/bpftime/build-simple/third_party/Catch2/generated-includes  -fno-omit-frame-pointer -g -std=gnu++20 -fPIC -D_DEBUG -ffile-prefix-map=/home/runner/work/bpftime/bpftime/third_party/Catch2/= -o CMakeFiles/Catch2.dir/catch2/internal/catch_decomposer.cpp.o -c /home/runner/work/bpftime/bpftime/third_party/Catch2/src/catch2/internal/catch_decomposer.cpp",
+  "file": "/home/runner/work/bpftime/bpftime/third_party/Catch2/src/catch2/internal/catch_decomposer.cpp",
+  "output": "third_party/Catch2/src/CMakeFiles/Catch2.dir/catch2/internal/catch_decomposer.cpp.o"
+},
+{
+  "directory": "/home/runner/work/bpftime/bpftime/build-simple/third_party/Catch2/src",
+  "command": "/usr/bin/c++  -I/home/runner/work/bpftime/bpftime/third_party/Catch2/src/catch2/.. -I/home/runner/work/bpftime/bpftime/build-simple/third_party/Catch2/generated-includes  -fno-omit-frame-pointer -g -std=gnu++20 -fPIC -D_DEBUG -ffile-prefix-map=/home/runner/work/bpftime/bpftime/third_party/Catch2/= -o CMakeFiles/Catch2.dir/catch2/internal/catch_enforce.cpp.o -c /home/runner/work/bpftime/bpftime/third_party/Catch2/src/catch2/internal/catch_enforce.cpp",
+  "file": "/home/runner/work/bpftime/bpftime/third_party/Catch2/src/catch2/internal/catch_enforce.cpp",
+  "output": "third_party/Catch2/src/CMakeFiles/Catch2.dir/catch2/internal/catch_enforce.cpp.o"
+},
+{
+  "directory": "/home/runner/work/bpftime/bpftime/build-simple/third_party/Catch2/src",
+  "command": "/usr/bin/c++  -I/home/runner/work/bpftime/bpftime/third_party/Catch2/src/catch2/.. -I/home/runner/work/bpftime/bpftime/build-simple/third_party/Catch2/generated-includes  -fno-omit-frame-pointer -g -std=gnu++20 -fPIC -D_DEBUG -ffile-prefix-map=/home/runner/work/bpftime/bpftime/third_party/Catch2/= -o CMakeFiles/Catch2.dir/catch2/internal/catch_enum_values_registry.cpp.o -c /home/runner/work/bpftime/bpftime/third_party/Catch2/src/catch2/internal/catch_enum_values_registry.cpp",
+  "file": "/home/runner/work/bpftime/bpftime/third_party/Catch2/src/catch2/internal/catch_enum_values_registry.cpp",
+  "output": "third_party/Catch2/src/CMakeFiles/Catch2.dir/catch2/internal/catch_enum_values_registry.cpp.o"
+},
+{
+  "directory": "/home/runner/work/bpftime/bpftime/build-simple/third_party/Catch2/src",
+  "command": "/usr/bin/c++  -I/home/runner/work/bpftime/bpftime/third_party/Catch2/src/catch2/.. -I/home/runner/work/bpftime/bpftime/build-simple/third_party/Catch2/generated-includes  -fno-omit-frame-pointer -g -std=gnu++20 -fPIC -D_DEBUG -ffile-prefix-map=/home/runner/work/bpftime/bpftime/third_party/Catch2/= -o CMakeFiles/Catch2.dir/catch2/internal/catch_errno_guard.cpp.o -c /home/runner/work/bpftime/bpftime/third_party/Catch2/src/catch2/internal/catch_errno_guard.cpp",
+  "file": "/home/runner/work/bpftime/bpftime/third_party/Catch2/src/catch2/internal/catch_errno_guard.cpp",
+  "output": "third_party/Catch2/src/CMakeFiles/Catch2.dir/catch2/internal/catch_errno_guard.cpp.o"
+},
+{
+  "directory": "/home/runner/work/bpftime/bpftime/build-simple/third_party/Catch2/src",
+  "command": "/usr/bin/c++  -I/home/runner/work/bpftime/bpftime/third_party/Catch2/src/catch2/.. -I/home/runner/work/bpftime/bpftime/build-simple/third_party/Catch2/generated-includes  -fno-omit-frame-pointer -g -std=gnu++20 -fPIC -D_DEBUG -ffile-prefix-map=/home/runner/work/bpftime/bpftime/third_party/Catch2/= -o CMakeFiles/Catch2.dir/catch2/internal/catch_exception_translator_registry.cpp.o -c /home/runner/work/bpftime/bpftime/third_party/Catch2/src/catch2/internal/catch_exception_translator_registry.cpp",
+  "file": "/home/runner/work/bpftime/bpftime/third_party/Catch2/src/catch2/internal/catch_exception_translator_registry.cpp",
+  "output": "third_party/Catch2/src/CMakeFiles/Catch2.dir/catch2/internal/catch_exception_translator_registry.cpp.o"
+},
+{
+  "directory": "/home/runner/work/bpftime/bpftime/build-simple/third_party/Catch2/src",
+  "command": "/usr/bin/c++  -I/home/runner/work/bpftime/bpftime/third_party/Catch2/src/catch2/.. -I/home/runner/work/bpftime/bpftime/build-simple/third_party/Catch2/generated-includes  -fno-omit-frame-pointer -g -std=gnu++20 -fPIC -D_DEBUG -ffile-prefix-map=/home/runner/work/bpftime/bpftime/third_party/Catch2/= -o CMakeFiles/Catch2.dir/catch2/internal/catch_fatal_condition_handler.cpp.o -c /home/runner/work/bpftime/bpftime/third_party/Catch2/src/catch2/internal/catch_fatal_condition_handler.cpp",
+  "file": "/home/runner/work/bpftime/bpftime/third_party/Catch2/src/catch2/internal/catch_fatal_condition_handler.cpp",
+  "output": "third_party/Catch2/src/CMakeFiles/Catch2.dir/catch2/internal/catch_fatal_condition_handler.cpp.o"
+},
+{
+  "directory": "/home/runner/work/bpftime/bpftime/build-simple/third_party/Catch2/src",
+  "command": "/usr/bin/c++  -I/home/runner/work/bpftime/bpftime/third_party/Catch2/src/catch2/.. -I/home/runner/work/bpftime/bpftime/build-simple/third_party/Catch2/generated-includes  -fno-omit-frame-pointer -g -std=gnu++20 -fPIC -D_DEBUG -ffile-prefix-map=/home/runner/work/bpftime/bpftime/third_party/Catch2/= -o CMakeFiles/Catch2.dir/catch2/internal/catch_floating_point_helpers.cpp.o -c /home/runner/work/bpftime/bpftime/third_party/Catch2/src/catch2/internal/catch_floating_point_helpers.cpp",
+  "file": "/home/runner/work/bpftime/bpftime/third_party/Catch2/src/catch2/internal/catch_floating_point_helpers.cpp",
+  "output": "third_party/Catch2/src/CMakeFiles/Catch2.dir/catch2/internal/catch_floating_point_helpers.cpp.o"
+},
+{
+  "directory": "/home/runner/work/bpftime/bpftime/build-simple/third_party/Catch2/src",
+  "command": "/usr/bin/c++  -I/home/runner/work/bpftime/bpftime/third_party/Catch2/src/catch2/.. -I/home/runner/work/bpftime/bpftime/build-simple/third_party/Catch2/generated-includes  -fno-omit-frame-pointer -g -std=gnu++20 -fPIC -D_DEBUG -ffile-prefix-map=/home/runner/work/bpftime/bpftime/third_party/Catch2/= -o CMakeFiles/Catch2.dir/catch2/internal/catch_getenv.cpp.o -c /home/runner/work/bpftime/bpftime/third_party/Catch2/src/catch2/internal/catch_getenv.cpp",
+  "file": "/home/runner/work/bpftime/bpftime/third_party/Catch2/src/catch2/internal/catch_getenv.cpp",
+  "output": "third_party/Catch2/src/CMakeFiles/Catch2.dir/catch2/internal/catch_getenv.cpp.o"
+},
+{
+  "directory": "/home/runner/work/bpftime/bpftime/build-simple/third_party/Catch2/src",
+  "command": "/usr/bin/c++  -I/home/runner/work/bpftime/bpftime/third_party/Catch2/src/catch2/.. -I/home/runner/work/bpftime/bpftime/build-simple/third_party/Catch2/generated-includes  -fno-omit-frame-pointer -g -std=gnu++20 -fPIC -D_DEBUG -ffile-prefix-map=/home/runner/work/bpftime/bpftime/third_party/Catch2/= -o CMakeFiles/Catch2.dir/catch2/internal/catch_istream.cpp.o -c /home/runner/work/bpftime/bpftime/third_party/Catch2/src/catch2/internal/catch_istream.cpp",
+  "file": "/home/runner/work/bpftime/bpftime/third_party/Catch2/src/catch2/internal/catch_istream.cpp",
+  "output": "third_party/Catch2/src/CMakeFiles/Catch2.dir/catch2/internal/catch_istream.cpp.o"
+},
+{
+  "directory": "/home/runner/work/bpftime/bpftime/build-simple/third_party/Catch2/src",
+  "command": "/usr/bin/c++  -I/home/runner/work/bpftime/bpftime/third_party/Catch2/src/catch2/.. -I/home/runner/work/bpftime/bpftime/build-simple/third_party/Catch2/generated-includes  -fno-omit-frame-pointer -g -std=gnu++20 -fPIC -D_DEBUG -ffile-prefix-map=/home/runner/work/bpftime/bpftime/third_party/Catch2/= -o CMakeFiles/Catch2.dir/catch2/internal/catch_jsonwriter.cpp.o -c /home/runner/work/bpftime/bpftime/third_party/Catch2/src/catch2/internal/catch_jsonwriter.cpp",
+  "file": "/home/runner/work/bpftime/bpftime/third_party/Catch2/src/catch2/internal/catch_jsonwriter.cpp",
+  "output": "third_party/Catch2/src/CMakeFiles/Catch2.dir/catch2/internal/catch_jsonwriter.cpp.o"
+},
+{
+  "directory": "/home/runner/work/bpftime/bpftime/build-simple/third_party/Catch2/src",
+  "command": "/usr/bin/c++  -I/home/runner/work/bpftime/bpftime/third_party/Catch2/src/catch2/.. -I/home/runner/work/bpftime/bpftime/build-simple/third_party/Catch2/generated-includes  -fno-omit-frame-pointer -g -std=gnu++20 -fPIC -D_DEBUG -ffile-prefix-map=/home/runner/work/bpftime/bpftime/third_party/Catch2/= -o CMakeFiles/Catch2.dir/catch2/internal/catch_lazy_expr.cpp.o -c /home/runner/work/bpftime/bpftime/third_party/Catch2/src/catch2/internal/catch_lazy_expr.cpp",
+  "file": "/home/runner/work/bpftime/bpftime/third_party/Catch2/src/catch2/internal/catch_lazy_expr.cpp",
+  "output": "third_party/Catch2/src/CMakeFiles/Catch2.dir/catch2/internal/catch_lazy_expr.cpp.o"
+},
+{
+  "directory": "/home/runner/work/bpftime/bpftime/build-simple/third_party/Catch2/src",
+  "command": "/usr/bin/c++  -I/home/runner/work/bpftime/bpftime/third_party/Catch2/src/catch2/.. -I/home/runner/work/bpftime/bpftime/build-simple/third_party/Catch2/generated-includes  -fno-omit-frame-pointer -g -std=gnu++20 -fPIC -D_DEBUG -ffile-prefix-map=/home/runner/work/bpftime/bpftime/third_party/Catch2/= -o CMakeFiles/Catch2.dir/catch2/internal/catch_leak_detector.cpp.o -c /home/runner/work/bpftime/bpftime/third_party/Catch2/src/catch2/internal/catch_leak_detector.cpp",
+  "file": "/home/runner/work/bpftime/bpftime/third_party/Catch2/src/catch2/internal/catch_leak_detector.cpp",
+  "output": "third_party/Catch2/src/CMakeFiles/Catch2.dir/catch2/internal/catch_leak_detector.cpp.o"
+},
+{
+  "directory": "/home/runner/work/bpftime/bpftime/build-simple/third_party/Catch2/src",
+  "command": "/usr/bin/c++  -I/home/runner/work/bpftime/bpftime/third_party/Catch2/src/catch2/.. -I/home/runner/work/bpftime/bpftime/build-simple/third_party/Catch2/generated-includes  -fno-omit-frame-pointer -g -std=gnu++20 -fPIC -D_DEBUG -ffile-prefix-map=/home/runner/work/bpftime/bpftime/third_party/Catch2/= -o CMakeFiles/Catch2.dir/catch2/internal/catch_list.cpp.o -c /home/runner/work/bpftime/bpftime/third_party/Catch2/src/catch2/internal/catch_list.cpp",
+  "file": "/home/runner/work/bpftime/bpftime/third_party/Catch2/src/catch2/internal/catch_list.cpp",
+  "output": "third_party/Catch2/src/CMakeFiles/Catch2.dir/catch2/internal/catch_list.cpp.o"
+},
+{
+  "directory": "/home/runner/work/bpftime/bpftime/build-simple/third_party/Catch2/src",
+  "command": "/usr/bin/c++  -I/home/runner/work/bpftime/bpftime/third_party/Catch2/src/catch2/.. -I/home/runner/work/bpftime/bpftime/build-simple/third_party/Catch2/generated-includes  -fno-omit-frame-pointer -g -std=gnu++20 -fPIC -D_DEBUG -ffile-prefix-map=/home/runner/work/bpftime/bpftime/third_party/Catch2/= -o CMakeFiles/Catch2.dir/catch2/internal/catch_message_info.cpp.o -c /home/runner/work/bpftime/bpftime/third_party/Catch2/src/catch2/internal/catch_message_info.cpp",
+  "file": "/home/runner/work/bpftime/bpftime/third_party/Catch2/src/catch2/internal/catch_message_info.cpp",
+  "output": "third_party/Catch2/src/CMakeFiles/Catch2.dir/catch2/internal/catch_message_info.cpp.o"
+},
+{
+  "directory": "/home/runner/work/bpftime/bpftime/build-simple/third_party/Catch2/src",
+  "command": "/usr/bin/c++  -I/home/runner/work/bpftime/bpftime/third_party/Catch2/src/catch2/.. -I/home/runner/work/bpftime/bpftime/build-simple/third_party/Catch2/generated-includes  -fno-omit-frame-pointer -g -std=gnu++20 -fPIC -D_DEBUG -ffile-prefix-map=/home/runner/work/bpftime/bpftime/third_party/Catch2/= -o CMakeFiles/Catch2.dir/catch2/internal/catch_output_redirect.cpp.o -c /home/runner/work/bpftime/bpftime/third_party/Catch2/src/catch2/internal/catch_output_redirect.cpp",
+  "file": "/home/runner/work/bpftime/bpftime/third_party/Catch2/src/catch2/internal/catch_output_redirect.cpp",
+  "output": "third_party/Catch2/src/CMakeFiles/Catch2.dir/catch2/internal/catch_output_redirect.cpp.o"
+},
+{
+  "directory": "/home/runner/work/bpftime/bpftime/build-simple/third_party/Catch2/src",
+  "command": "/usr/bin/c++  -I/home/runner/work/bpftime/bpftime/third_party/Catch2/src/catch2/.. -I/home/runner/work/bpftime/bpftime/build-simple/third_party/Catch2/generated-includes  -fno-omit-frame-pointer -g -std=gnu++20 -fPIC -D_DEBUG -ffile-prefix-map=/home/runner/work/bpftime/bpftime/third_party/Catch2/= -o CMakeFiles/Catch2.dir/catch2/internal/catch_parse_numbers.cpp.o -c /home/runner/work/bpftime/bpftime/third_party/Catch2/src/catch2/internal/catch_parse_numbers.cpp",
+  "file": "/home/runner/work/bpftime/bpftime/third_party/Catch2/src/catch2/internal/catch_parse_numbers.cpp",
+  "output": "third_party/Catch2/src/CMakeFiles/Catch2.dir/catch2/internal/catch_parse_numbers.cpp.o"
+},
+{
+  "directory": "/home/runner/work/bpftime/bpftime/build-simple/third_party/Catch2/src",
+  "command": "/usr/bin/c++  -I/home/runner/work/bpftime/bpftime/third_party/Catch2/src/catch2/.. -I/home/runner/work/bpftime/bpftime/build-simple/third_party/Catch2/generated-includes  -fno-omit-frame-pointer -g -std=gnu++20 -fPIC -D_DEBUG -ffile-prefix-map=/home/runner/work/bpftime/bpftime/third_party/Catch2/= -o CMakeFiles/Catch2.dir/catch2/internal/catch_polyfills.cpp.o -c /home/runner/work/bpftime/bpftime/third_party/Catch2/src/catch2/internal/catch_polyfills.cpp",
+  "file": "/home/runner/work/bpftime/bpftime/third_party/Catch2/src/catch2/internal/catch_polyfills.cpp",
+  "output": "third_party/Catch2/src/CMakeFiles/Catch2.dir/catch2/internal/catch_polyfills.cpp.o"
+},
+{
+  "directory": "/home/runner/work/bpftime/bpftime/build-simple/third_party/Catch2/src",
+  "command": "/usr/bin/c++  -I/home/runner/work/bpftime/bpftime/third_party/Catch2/src/catch2/.. -I/home/runner/work/bpftime/bpftime/build-simple/third_party/Catch2/generated-includes  -fno-omit-frame-pointer -g -std=gnu++20 -fPIC -D_DEBUG -ffile-prefix-map=/home/runner/work/bpftime/bpftime/third_party/Catch2/= -o CMakeFiles/Catch2.dir/catch2/internal/catch_random_number_generator.cpp.o -c /home/runner/work/bpftime/bpftime/third_party/Catch2/src/catch2/internal/catch_random_number_generator.cpp",
+  "file": "/home/runner/work/bpftime/bpftime/third_party/Catch2/src/catch2/internal/catch_random_number_generator.cpp",
+  "output": "third_party/Catch2/src/CMakeFiles/Catch2.dir/catch2/internal/catch_random_number_generator.cpp.o"
+},
+{
+  "directory": "/home/runner/work/bpftime/bpftime/build-simple/third_party/Catch2/src",
+  "command": "/usr/bin/c++  -I/home/runner/work/bpftime/bpftime/third_party/Catch2/src/catch2/.. -I/home/runner/work/bpftime/bpftime/build-simple/third_party/Catch2/generated-includes  -fno-omit-frame-pointer -g -std=gnu++20 -fPIC -D_DEBUG -ffile-prefix-map=/home/runner/work/bpftime/bpftime/third_party/Catch2/= -o CMakeFiles/Catch2.dir/catch2/internal/catch_random_seed_generation.cpp.o -c /home/runner/work/bpftime/bpftime/third_party/Catch2/src/catch2/internal/catch_random_seed_generation.cpp",
+  "file": "/home/runner/work/bpftime/bpftime/third_party/Catch2/src/catch2/internal/catch_random_seed_generation.cpp",
+  "output": "third_party/Catch2/src/CMakeFiles/Catch2.dir/catch2/internal/catch_random_seed_generation.cpp.o"
+},
+{
+  "directory": "/home/runner/work/bpftime/bpftime/build-simple/third_party/Catch2/src",
+  "command": "/usr/bin/c++  -I/home/runner/work/bpftime/bpftime/third_party/Catch2/src/catch2/.. -I/home/runner/work/bpftime/bpftime/build-simple/third_party/Catch2/generated-includes  -fno-omit-frame-pointer -g -std=gnu++20 -fPIC -D_DEBUG -ffile-prefix-map=/home/runner/work/bpftime/bpftime/third_party/Catch2/= -o CMakeFiles/Catch2.dir/catch2/internal/catch_reporter_registry.cpp.o -c /home/runner/work/bpftime/bpftime/third_party/Catch2/src/catch2/internal/catch_reporter_registry.cpp",
+  "file": "/home/runner/work/bpftime/bpftime/third_party/Catch2/src/catch2/internal/catch_reporter_registry.cpp",
+  "output": "third_party/Catch2/src/CMakeFiles/Catch2.dir/catch2/internal/catch_reporter_registry.cpp.o"
+},
+{
+  "directory": "/home/runner/work/bpftime/bpftime/build-simple/third_party/Catch2/src",
+  "command": "/usr/bin/c++  -I/home/runner/work/bpftime/bpftime/third_party/Catch2/src/catch2/.. -I/home/runner/work/bpftime/bpftime/build-simple/third_party/Catch2/generated-includes  -fno-omit-frame-pointer -g -std=gnu++20 -fPIC -D_DEBUG -ffile-prefix-map=/home/runner/work/bpftime/bpftime/third_party/Catch2/= -o CMakeFiles/Catch2.dir/catch2/internal/catch_reporter_spec_parser.cpp.o -c /home/runner/work/bpftime/bpftime/third_party/Catch2/src/catch2/internal/catch_reporter_spec_parser.cpp",
+  "file": "/home/runner/work/bpftime/bpftime/third_party/Catch2/src/catch2/internal/catch_reporter_spec_parser.cpp",
+  "output": "third_party/Catch2/src/CMakeFiles/Catch2.dir/catch2/internal/catch_reporter_spec_parser.cpp.o"
+},
+{
+  "directory": "/home/runner/work/bpftime/bpftime/build-simple/third_party/Catch2/src",
+  "command": "/usr/bin/c++  -I/home/runner/work/bpftime/bpftime/third_party/Catch2/src/catch2/.. -I/home/runner/work/bpftime/bpftime/build-simple/third_party/Catch2/generated-includes  -fno-omit-frame-pointer -g -std=gnu++20 -fPIC -D_DEBUG -ffile-prefix-map=/home/runner/work/bpftime/bpftime/third_party/Catch2/= -o CMakeFiles/Catch2.dir/catch2/internal/catch_reusable_string_stream.cpp.o -c /home/runner/work/bpftime/bpftime/third_party/Catch2/src/catch2/internal/catch_reusable_string_stream.cpp",
+  "file": "/home/runner/work/bpftime/bpftime/third_party/Catch2/src/catch2/internal/catch_reusable_string_stream.cpp",
+  "output": "third_party/Catch2/src/CMakeFiles/Catch2.dir/catch2/internal/catch_reusable_string_stream.cpp.o"
+},
+{
+  "directory": "/home/runner/work/bpftime/bpftime/build-simple/third_party/Catch2/src",
+  "command": "/usr/bin/c++  -I/home/runner/work/bpftime/bpftime/third_party/Catch2/src/catch2/.. -I/home/runner/work/bpftime/bpftime/build-simple/third_party/Catch2/generated-includes  -fno-omit-frame-pointer -g -std=gnu++20 -fPIC -D_DEBUG -ffile-prefix-map=/home/runner/work/bpftime/bpftime/third_party/Catch2/= -o CMakeFiles/Catch2.dir/catch2/internal/catch_run_context.cpp.o -c /home/runner/work/bpftime/bpftime/third_party/Catch2/src/catch2/internal/catch_run_context.cpp",
+  "file": "/home/runner/work/bpftime/bpftime/third_party/Catch2/src/catch2/internal/catch_run_context.cpp",
+  "output": "third_party/Catch2/src/CMakeFiles/Catch2.dir/catch2/internal/catch_run_context.cpp.o"
+},
+{
+  "directory": "/home/runner/work/bpftime/bpftime/build-simple/third_party/Catch2/src",
+  "command": "/usr/bin/c++  -I/home/runner/work/bpftime/bpftime/third_party/Catch2/src/catch2/.. -I/home/runner/work/bpftime/bpftime/build-simple/third_party/Catch2/generated-includes  -fno-omit-frame-pointer -g -std=gnu++20 -fPIC -D_DEBUG -ffile-prefix-map=/home/runner/work/bpftime/bpftime/third_party/Catch2/= -o CMakeFiles/Catch2.dir/catch2/internal/catch_section.cpp.o -c /home/runner/work/bpftime/bpftime/third_party/Catch2/src/catch2/internal/catch_section.cpp",
+  "file": "/home/runner/work/bpftime/bpftime/third_party/Catch2/src/catch2/internal/catch_section.cpp",
+  "output": "third_party/Catch2/src/CMakeFiles/Catch2.dir/catch2/internal/catch_section.cpp.o"
+},
+{
+  "directory": "/home/runner/work/bpftime/bpftime/build-simple/third_party/Catch2/src",
+  "command": "/usr/bin/c++  -I/home/runner/work/bpftime/bpftime/third_party/Catch2/src/catch2/.. -I/home/runner/work/bpftime/bpftime/build-simple/third_party/Catch2/generated-includes  -fno-omit-frame-pointer -g -std=gnu++20 -fPIC -D_DEBUG -ffile-prefix-map=/home/runner/work/bpftime/bpftime/third_party/Catch2/= -o CMakeFiles/Catch2.dir/catch2/internal/catch_singletons.cpp.o -c /home/runner/work/bpftime/bpftime/third_party/Catch2/src/catch2/internal/catch_singletons.cpp",
+  "file": "/home/runner/work/bpftime/bpftime/third_party/Catch2/src/catch2/internal/catch_singletons.cpp",
+  "output": "third_party/Catch2/src/CMakeFiles/Catch2.dir/catch2/internal/catch_singletons.cpp.o"
+},
+{
+  "directory": "/home/runner/work/bpftime/bpftime/build-simple/third_party/Catch2/src",
+  "command": "/usr/bin/c++  -I/home/runner/work/bpftime/bpftime/third_party/Catch2/src/catch2/.. -I/home/runner/work/bpftime/bpftime/build-simple/third_party/Catch2/generated-includes  -fno-omit-frame-pointer -g -std=gnu++20 -fPIC -D_DEBUG -ffile-prefix-map=/home/runner/work/bpftime/bpftime/third_party/Catch2/= -o CMakeFiles/Catch2.dir/catch2/internal/catch_source_line_info.cpp.o -c /home/runner/work/bpftime/bpftime/third_party/Catch2/src/catch2/internal/catch_source_line_info.cpp",
+  "file": "/home/runner/work/bpftime/bpftime/third_party/Catch2/src/catch2/internal/catch_source_line_info.cpp",
+  "output": "third_party/Catch2/src/CMakeFiles/Catch2.dir/catch2/internal/catch_source_line_info.cpp.o"
+},
+{
+  "directory": "/home/runner/work/bpftime/bpftime/build-simple/third_party/Catch2/src",
+  "command": "/usr/bin/c++  -I/home/runner/work/bpftime/bpftime/third_party/Catch2/src/catch2/.. -I/home/runner/work/bpftime/bpftime/build-simple/third_party/Catch2/generated-includes  -fno-omit-frame-pointer -g -std=gnu++20 -fPIC -D_DEBUG -ffile-prefix-map=/home/runner/work/bpftime/bpftime/third_party/Catch2/= -o CMakeFiles/Catch2.dir/catch2/internal/catch_startup_exception_registry.cpp.o -c /home/runner/work/bpftime/bpftime/third_party/Catch2/src/catch2/internal/catch_startup_exception_registry.cpp",
+  "file": "/home/runner/work/bpftime/bpftime/third_party/Catch2/src/catch2/internal/catch_startup_exception_registry.cpp",
+  "output": "third_party/Catch2/src/CMakeFiles/Catch2.dir/catch2/internal/catch_startup_exception_registry.cpp.o"
+},
+{
+  "directory": "/home/runner/work/bpftime/bpftime/build-simple/third_party/Catch2/src",
+  "command": "/usr/bin/c++  -I/home/runner/work/bpftime/bpftime/third_party/Catch2/src/catch2/.. -I/home/runner/work/bpftime/bpftime/build-simple/third_party/Catch2/generated-includes  -fno-omit-frame-pointer -g -std=gnu++20 -fPIC -D_DEBUG -ffile-prefix-map=/home/runner/work/bpftime/bpftime/third_party/Catch2/= -o CMakeFiles/Catch2.dir/catch2/internal/catch_stdstreams.cpp.o -c /home/runner/work/bpftime/bpftime/third_party/Catch2/src/catch2/internal/catch_stdstreams.cpp",
+  "file": "/home/runner/work/bpftime/bpftime/third_party/Catch2/src/catch2/internal/catch_stdstreams.cpp",
+  "output": "third_party/Catch2/src/CMakeFiles/Catch2.dir/catch2/internal/catch_stdstreams.cpp.o"
+},
+{
+  "directory": "/home/runner/work/bpftime/bpftime/build-simple/third_party/Catch2/src",
+  "command": "/usr/bin/c++  -I/home/runner/work/bpftime/bpftime/third_party/Catch2/src/catch2/.. -I/home/runner/work/bpftime/bpftime/build-simple/third_party/Catch2/generated-includes  -fno-omit-frame-pointer -g -std=gnu++20 -fPIC -D_DEBUG -ffile-prefix-map=/home/runner/work/bpftime/bpftime/third_party/Catch2/= -o CMakeFiles/Catch2.dir/catch2/internal/catch_string_manip.cpp.o -c /home/runner/work/bpftime/bpftime/third_party/Catch2/src/catch2/internal/catch_string_manip.cpp",
+  "file": "/home/runner/work/bpftime/bpftime/third_party/Catch2/src/catch2/internal/catch_string_manip.cpp",
+  "output": "third_party/Catch2/src/CMakeFiles/Catch2.dir/catch2/internal/catch_string_manip.cpp.o"
+},
+{
+  "directory": "/home/runner/work/bpftime/bpftime/build-simple/third_party/Catch2/src",
+  "command": "/usr/bin/c++  -I/home/runner/work/bpftime/bpftime/third_party/Catch2/src/catch2/.. -I/home/runner/work/bpftime/bpftime/build-simple/third_party/Catch2/generated-includes  -fno-omit-frame-pointer -g -std=gnu++20 -fPIC -D_DEBUG -ffile-prefix-map=/home/runner/work/bpftime/bpftime/third_party/Catch2/= -o CMakeFiles/Catch2.dir/catch2/internal/catch_stringref.cpp.o -c /home/runner/work/bpftime/bpftime/third_party/Catch2/src/catch2/internal/catch_stringref.cpp",
+  "file": "/home/runner/work/bpftime/bpftime/third_party/Catch2/src/catch2/internal/catch_stringref.cpp",
+  "output": "third_party/Catch2/src/CMakeFiles/Catch2.dir/catch2/internal/catch_stringref.cpp.o"
+},
+{
+  "directory": "/home/runner/work/bpftime/bpftime/build-simple/third_party/Catch2/src",
+  "command": "/usr/bin/c++  -I/home/runner/work/bpftime/bpftime/third_party/Catch2/src/catch2/.. -I/home/runner/work/bpftime/bpftime/build-simple/third_party/Catch2/generated-includes  -fno-omit-frame-pointer -g -std=gnu++20 -fPIC -D_DEBUG -ffile-prefix-map=/home/runner/work/bpftime/bpftime/third_party/Catch2/= -o CMakeFiles/Catch2.dir/catch2/internal/catch_tag_alias_registry.cpp.o -c /home/runner/work/bpftime/bpftime/third_party/Catch2/src/catch2/internal/catch_tag_alias_registry.cpp",
+  "file": "/home/runner/work/bpftime/bpftime/third_party/Catch2/src/catch2/internal/catch_tag_alias_registry.cpp",
+  "output": "third_party/Catch2/src/CMakeFiles/Catch2.dir/catch2/internal/catch_tag_alias_registry.cpp.o"
+},
+{
+  "directory": "/home/runner/work/bpftime/bpftime/build-simple/third_party/Catch2/src",
+  "command": "/usr/bin/c++  -I/home/runner/work/bpftime/bpftime/third_party/Catch2/src/catch2/.. -I/home/runner/work/bpftime/bpftime/build-simple/third_party/Catch2/generated-includes  -fno-omit-frame-pointer -g -std=gnu++20 -fPIC -D_DEBUG -ffile-prefix-map=/home/runner/work/bpftime/bpftime/third_party/Catch2/= -o CMakeFiles/Catch2.dir/catch2/internal/catch_test_case_info_hasher.cpp.o -c /home/runner/work/bpftime/bpftime/third_party/Catch2/src/catch2/internal/catch_test_case_info_hasher.cpp",
+  "file": "/home/runner/work/bpftime/bpftime/third_party/Catch2/src/catch2/internal/catch_test_case_info_hasher.cpp",
+  "output": "third_party/Catch2/src/CMakeFiles/Catch2.dir/catch2/internal/catch_test_case_info_hasher.cpp.o"
+},
+{
+  "directory": "/home/runner/work/bpftime/bpftime/build-simple/third_party/Catch2/src",
+  "command": "/usr/bin/c++  -I/home/runner/work/bpftime/bpftime/third_party/Catch2/src/catch2/.. -I/home/runner/work/bpftime/bpftime/build-simple/third_party/Catch2/generated-includes  -fno-omit-frame-pointer -g -std=gnu++20 -fPIC -D_DEBUG -ffile-prefix-map=/home/runner/work/bpftime/bpftime/third_party/Catch2/= -o CMakeFiles/Catch2.dir/catch2/internal/catch_test_case_registry_impl.cpp.o -c /home/runner/work/bpftime/bpftime/third_party/Catch2/src/catch2/internal/catch_test_case_registry_impl.cpp",
+  "file": "/home/runner/work/bpftime/bpftime/third_party/Catch2/src/catch2/internal/catch_test_case_registry_impl.cpp",
+  "output": "third_party/Catch2/src/CMakeFiles/Catch2.dir/catch2/internal/catch_test_case_registry_impl.cpp.o"
+},
+{
+  "directory": "/home/runner/work/bpftime/bpftime/build-simple/third_party/Catch2/src",
+  "command": "/usr/bin/c++  -I/home/runner/work/bpftime/bpftime/third_party/Catch2/src/catch2/.. -I/home/runner/work/bpftime/bpftime/build-simple/third_party/Catch2/generated-includes  -fno-omit-frame-pointer -g -std=gnu++20 -fPIC -D_DEBUG -ffile-prefix-map=/home/runner/work/bpftime/bpftime/third_party/Catch2/= -o CMakeFiles/Catch2.dir/catch2/internal/catch_test_case_tracker.cpp.o -c /home/runner/work/bpftime/bpftime/third_party/Catch2/src/catch2/internal/catch_test_case_tracker.cpp",
+  "file": "/home/runner/work/bpftime/bpftime/third_party/Catch2/src/catch2/internal/catch_test_case_tracker.cpp",
+  "output": "third_party/Catch2/src/CMakeFiles/Catch2.dir/catch2/internal/catch_test_case_tracker.cpp.o"
+},
+{
+  "directory": "/home/runner/work/bpftime/bpftime/build-simple/third_party/Catch2/src",
+  "command": "/usr/bin/c++  -I/home/runner/work/bpftime/bpftime/third_party/Catch2/src/catch2/.. -I/home/runner/work/bpftime/bpftime/build-simple/third_party/Catch2/generated-includes  -fno-omit-frame-pointer -g -std=gnu++20 -fPIC -D_DEBUG -ffile-prefix-map=/home/runner/work/bpftime/bpftime/third_party/Catch2/= -o CMakeFiles/Catch2.dir/catch2/internal/catch_test_failure_exception.cpp.o -c /home/runner/work/bpftime/bpftime/third_party/Catch2/src/catch2/internal/catch_test_failure_exception.cpp",
+  "file": "/home/runner/work/bpftime/bpftime/third_party/Catch2/src/catch2/internal/catch_test_failure_exception.cpp",
+  "output": "third_party/Catch2/src/CMakeFiles/Catch2.dir/catch2/internal/catch_test_failure_exception.cpp.o"
+},
+{
+  "directory": "/home/runner/work/bpftime/bpftime/build-simple/third_party/Catch2/src",
+  "command": "/usr/bin/c++  -I/home/runner/work/bpftime/bpftime/third_party/Catch2/src/catch2/.. -I/home/runner/work/bpftime/bpftime/build-simple/third_party/Catch2/generated-includes  -fno-omit-frame-pointer -g -std=gnu++20 -fPIC -D_DEBUG -ffile-prefix-map=/home/runner/work/bpftime/bpftime/third_party/Catch2/= -o CMakeFiles/Catch2.dir/catch2/internal/catch_test_registry.cpp.o -c /home/runner/work/bpftime/bpftime/third_party/Catch2/src/catch2/internal/catch_test_registry.cpp",
+  "file": "/home/runner/work/bpftime/bpftime/third_party/Catch2/src/catch2/internal/catch_test_registry.cpp",
+  "output": "third_party/Catch2/src/CMakeFiles/Catch2.dir/catch2/internal/catch_test_registry.cpp.o"
+},
+{
+  "directory": "/home/runner/work/bpftime/bpftime/build-simple/third_party/Catch2/src",
+  "command": "/usr/bin/c++  -I/home/runner/work/bpftime/bpftime/third_party/Catch2/src/catch2/.. -I/home/runner/work/bpftime/bpftime/build-simple/third_party/Catch2/generated-includes  -fno-omit-frame-pointer -g -std=gnu++20 -fPIC -D_DEBUG -ffile-prefix-map=/home/runner/work/bpftime/bpftime/third_party/Catch2/= -o CMakeFiles/Catch2.dir/catch2/internal/catch_test_spec_parser.cpp.o -c /home/runner/work/bpftime/bpftime/third_party/Catch2/src/catch2/internal/catch_test_spec_parser.cpp",
+  "file": "/home/runner/work/bpftime/bpftime/third_party/Catch2/src/catch2/internal/catch_test_spec_parser.cpp",
+  "output": "third_party/Catch2/src/CMakeFiles/Catch2.dir/catch2/internal/catch_test_spec_parser.cpp.o"
+},
+{
+  "directory": "/home/runner/work/bpftime/bpftime/build-simple/third_party/Catch2/src",
+  "command": "/usr/bin/c++  -I/home/runner/work/bpftime/bpftime/third_party/Catch2/src/catch2/.. -I/home/runner/work/bpftime/bpftime/build-simple/third_party/Catch2/generated-includes  -fno-omit-frame-pointer -g -std=gnu++20 -fPIC -D_DEBUG -ffile-prefix-map=/home/runner/work/bpftime/bpftime/third_party/Catch2/= -o CMakeFiles/Catch2.dir/catch2/internal/catch_textflow.cpp.o -c /home/runner/work/bpftime/bpftime/third_party/Catch2/src/catch2/internal/catch_textflow.cpp",
+  "file": "/home/runner/work/bpftime/bpftime/third_party/Catch2/src/catch2/internal/catch_textflow.cpp",
+  "output": "third_party/Catch2/src/CMakeFiles/Catch2.dir/catch2/internal/catch_textflow.cpp.o"
+},
+{
+  "directory": "/home/runner/work/bpftime/bpftime/build-simple/third_party/Catch2/src",
+  "command": "/usr/bin/c++  -I/home/runner/work/bpftime/bpftime/third_party/Catch2/src/catch2/.. -I/home/runner/work/bpftime/bpftime/build-simple/third_party/Catch2/generated-includes  -fno-omit-frame-pointer -g -std=gnu++20 -fPIC -D_DEBUG -ffile-prefix-map=/home/runner/work/bpftime/bpftime/third_party/Catch2/= -o CMakeFiles/Catch2.dir/catch2/internal/catch_uncaught_exceptions.cpp.o -c /home/runner/work/bpftime/bpftime/third_party/Catch2/src/catch2/internal/catch_uncaught_exceptions.cpp",
+  "file": "/home/runner/work/bpftime/bpftime/third_party/Catch2/src/catch2/internal/catch_uncaught_exceptions.cpp",
+  "output": "third_party/Catch2/src/CMakeFiles/Catch2.dir/catch2/internal/catch_uncaught_exceptions.cpp.o"
+},
+{
+  "directory": "/home/runner/work/bpftime/bpftime/build-simple/third_party/Catch2/src",
+  "command": "/usr/bin/c++  -I/home/runner/work/bpftime/bpftime/third_party/Catch2/src/catch2/.. -I/home/runner/work/bpftime/bpftime/build-simple/third_party/Catch2/generated-includes  -fno-omit-frame-pointer -g -std=gnu++20 -fPIC -D_DEBUG -ffile-prefix-map=/home/runner/work/bpftime/bpftime/third_party/Catch2/= -o CMakeFiles/Catch2.dir/catch2/internal/catch_wildcard_pattern.cpp.o -c /home/runner/work/bpftime/bpftime/third_party/Catch2/src/catch2/internal/catch_wildcard_pattern.cpp",
+  "file": "/home/runner/work/bpftime/bpftime/third_party/Catch2/src/catch2/internal/catch_wildcard_pattern.cpp",
+  "output": "third_party/Catch2/src/CMakeFiles/Catch2.dir/catch2/internal/catch_wildcard_pattern.cpp.o"
+},
+{
+  "directory": "/home/runner/work/bpftime/bpftime/build-simple/third_party/Catch2/src",
+  "command": "/usr/bin/c++  -I/home/runner/work/bpftime/bpftime/third_party/Catch2/src/catch2/.. -I/home/runner/work/bpftime/bpftime/build-simple/third_party/Catch2/generated-includes  -fno-omit-frame-pointer -g -std=gnu++20 -fPIC -D_DEBUG -ffile-prefix-map=/home/runner/work/bpftime/bpftime/third_party/Catch2/= -o CMakeFiles/Catch2.dir/catch2/internal/catch_xmlwriter.cpp.o -c /home/runner/work/bpftime/bpftime/third_party/Catch2/src/catch2/internal/catch_xmlwriter.cpp",
+  "file": "/home/runner/work/bpftime/bpftime/third_party/Catch2/src/catch2/internal/catch_xmlwriter.cpp",
+  "output": "third_party/Catch2/src/CMakeFiles/Catch2.dir/catch2/internal/catch_xmlwriter.cpp.o"
+},
+{
+  "directory": "/home/runner/work/bpftime/bpftime/build-simple/third_party/Catch2/src",
+  "command": "/usr/bin/c++  -I/home/runner/work/bpftime/bpftime/third_party/Catch2/src/catch2/.. -I/home/runner/work/bpftime/bpftime/build-simple/third_party/Catch2/generated-includes  -fno-omit-frame-pointer -g -std=gnu++20 -fPIC -D_DEBUG -ffile-prefix-map=/home/runner/work/bpftime/bpftime/third_party/Catch2/= -o CMakeFiles/Catch2.dir/catch2/matchers/catch_matchers.cpp.o -c /home/runner/work/bpftime/bpftime/third_party/Catch2/src/catch2/matchers/catch_matchers.cpp",
+  "file": "/home/runner/work/bpftime/bpftime/third_party/Catch2/src/catch2/matchers/catch_matchers.cpp",
+  "output": "third_party/Catch2/src/CMakeFiles/Catch2.dir/catch2/matchers/catch_matchers.cpp.o"
+},
+{
+  "directory": "/home/runner/work/bpftime/bpftime/build-simple/third_party/Catch2/src",
+  "command": "/usr/bin/c++  -I/home/runner/work/bpftime/bpftime/third_party/Catch2/src/catch2/.. -I/home/runner/work/bpftime/bpftime/build-simple/third_party/Catch2/generated-includes  -fno-omit-frame-pointer -g -std=gnu++20 -fPIC -D_DEBUG -ffile-prefix-map=/home/runner/work/bpftime/bpftime/third_party/Catch2/= -o CMakeFiles/Catch2.dir/catch2/matchers/catch_matchers_container_properties.cpp.o -c /home/runner/work/bpftime/bpftime/third_party/Catch2/src/catch2/matchers/catch_matchers_container_properties.cpp",
+  "file": "/home/runner/work/bpftime/bpftime/third_party/Catch2/src/catch2/matchers/catch_matchers_container_properties.cpp",
+  "output": "third_party/Catch2/src/CMakeFiles/Catch2.dir/catch2/matchers/catch_matchers_container_properties.cpp.o"
+},
+{
+  "directory": "/home/runner/work/bpftime/bpftime/build-simple/third_party/Catch2/src",
+  "command": "/usr/bin/c++  -I/home/runner/work/bpftime/bpftime/third_party/Catch2/src/catch2/.. -I/home/runner/work/bpftime/bpftime/build-simple/third_party/Catch2/generated-includes  -fno-omit-frame-pointer -g -std=gnu++20 -fPIC -D_DEBUG -ffile-prefix-map=/home/runner/work/bpftime/bpftime/third_party/Catch2/= -o CMakeFiles/Catch2.dir/catch2/matchers/catch_matchers_exception.cpp.o -c /home/runner/work/bpftime/bpftime/third_party/Catch2/src/catch2/matchers/catch_matchers_exception.cpp",
+  "file": "/home/runner/work/bpftime/bpftime/third_party/Catch2/src/catch2/matchers/catch_matchers_exception.cpp",
+  "output": "third_party/Catch2/src/CMakeFiles/Catch2.dir/catch2/matchers/catch_matchers_exception.cpp.o"
+},
+{
+  "directory": "/home/runner/work/bpftime/bpftime/build-simple/third_party/Catch2/src",
+  "command": "/usr/bin/c++  -I/home/runner/work/bpftime/bpftime/third_party/Catch2/src/catch2/.. -I/home/runner/work/bpftime/bpftime/build-simple/third_party/Catch2/generated-includes  -fno-omit-frame-pointer -g -std=gnu++20 -fPIC -D_DEBUG -ffile-prefix-map=/home/runner/work/bpftime/bpftime/third_party/Catch2/= -o CMakeFiles/Catch2.dir/catch2/matchers/catch_matchers_floating_point.cpp.o -c /home/runner/work/bpftime/bpftime/third_party/Catch2/src/catch2/matchers/catch_matchers_floating_point.cpp",
+  "file": "/home/runner/work/bpftime/bpftime/third_party/Catch2/src/catch2/matchers/catch_matchers_floating_point.cpp",
+  "output": "third_party/Catch2/src/CMakeFiles/Catch2.dir/catch2/matchers/catch_matchers_floating_point.cpp.o"
+},
+{
+  "directory": "/home/runner/work/bpftime/bpftime/build-simple/third_party/Catch2/src",
+  "command": "/usr/bin/c++  -I/home/runner/work/bpftime/bpftime/third_party/Catch2/src/catch2/.. -I/home/runner/work/bpftime/bpftime/build-simple/third_party/Catch2/generated-includes  -fno-omit-frame-pointer -g -std=gnu++20 -fPIC -D_DEBUG -ffile-prefix-map=/home/runner/work/bpftime/bpftime/third_party/Catch2/= -o CMakeFiles/Catch2.dir/catch2/matchers/catch_matchers_predicate.cpp.o -c /home/runner/work/bpftime/bpftime/third_party/Catch2/src/catch2/matchers/catch_matchers_predicate.cpp",
+  "file": "/home/runner/work/bpftime/bpftime/third_party/Catch2/src/catch2/matchers/catch_matchers_predicate.cpp",
+  "output": "third_party/Catch2/src/CMakeFiles/Catch2.dir/catch2/matchers/catch_matchers_predicate.cpp.o"
+},
+{
+  "directory": "/home/runner/work/bpftime/bpftime/build-simple/third_party/Catch2/src",
+  "command": "/usr/bin/c++  -I/home/runner/work/bpftime/bpftime/third_party/Catch2/src/catch2/.. -I/home/runner/work/bpftime/bpftime/build-simple/third_party/Catch2/generated-includes  -fno-omit-frame-pointer -g -std=gnu++20 -fPIC -D_DEBUG -ffile-prefix-map=/home/runner/work/bpftime/bpftime/third_party/Catch2/= -o CMakeFiles/Catch2.dir/catch2/matchers/catch_matchers_quantifiers.cpp.o -c /home/runner/work/bpftime/bpftime/third_party/Catch2/src/catch2/matchers/catch_matchers_quantifiers.cpp",
+  "file": "/home/runner/work/bpftime/bpftime/third_party/Catch2/src/catch2/matchers/catch_matchers_quantifiers.cpp",
+  "output": "third_party/Catch2/src/CMakeFiles/Catch2.dir/catch2/matchers/catch_matchers_quantifiers.cpp.o"
+},
+{
+  "directory": "/home/runner/work/bpftime/bpftime/build-simple/third_party/Catch2/src",
+  "command": "/usr/bin/c++  -I/home/runner/work/bpftime/bpftime/third_party/Catch2/src/catch2/.. -I/home/runner/work/bpftime/bpftime/build-simple/third_party/Catch2/generated-includes  -fno-omit-frame-pointer -g -std=gnu++20 -fPIC -D_DEBUG -ffile-prefix-map=/home/runner/work/bpftime/bpftime/third_party/Catch2/= -o CMakeFiles/Catch2.dir/catch2/matchers/catch_matchers_string.cpp.o -c /home/runner/work/bpftime/bpftime/third_party/Catch2/src/catch2/matchers/catch_matchers_string.cpp",
+  "file": "/home/runner/work/bpftime/bpftime/third_party/Catch2/src/catch2/matchers/catch_matchers_string.cpp",
+  "output": "third_party/Catch2/src/CMakeFiles/Catch2.dir/catch2/matchers/catch_matchers_string.cpp.o"
+},
+{
+  "directory": "/home/runner/work/bpftime/bpftime/build-simple/third_party/Catch2/src",
+  "command": "/usr/bin/c++  -I/home/runner/work/bpftime/bpftime/third_party/Catch2/src/catch2/.. -I/home/runner/work/bpftime/bpftime/build-simple/third_party/Catch2/generated-includes  -fno-omit-frame-pointer -g -std=gnu++20 -fPIC -D_DEBUG -ffile-prefix-map=/home/runner/work/bpftime/bpftime/third_party/Catch2/= -o CMakeFiles/Catch2.dir/catch2/matchers/catch_matchers_templated.cpp.o -c /home/runner/work/bpftime/bpftime/third_party/Catch2/src/catch2/matchers/catch_matchers_templated.cpp",
+  "file": "/home/runner/work/bpftime/bpftime/third_party/Catch2/src/catch2/matchers/catch_matchers_templated.cpp",
+  "output": "third_party/Catch2/src/CMakeFiles/Catch2.dir/catch2/matchers/catch_matchers_templated.cpp.o"
+},
+{
+  "directory": "/home/runner/work/bpftime/bpftime/build-simple/third_party/Catch2/src",
+  "command": "/usr/bin/c++  -I/home/runner/work/bpftime/bpftime/third_party/Catch2/src/catch2/.. -I/home/runner/work/bpftime/bpftime/build-simple/third_party/Catch2/generated-includes  -fno-omit-frame-pointer -g -std=gnu++20 -fPIC -D_DEBUG -ffile-prefix-map=/home/runner/work/bpftime/bpftime/third_party/Catch2/= -o CMakeFiles/Catch2.dir/catch2/matchers/internal/catch_matchers_impl.cpp.o -c /home/runner/work/bpftime/bpftime/third_party/Catch2/src/catch2/matchers/internal/catch_matchers_impl.cpp",
+  "file": "/home/runner/work/bpftime/bpftime/third_party/Catch2/src/catch2/matchers/internal/catch_matchers_impl.cpp",
+  "output": "third_party/Catch2/src/CMakeFiles/Catch2.dir/catch2/matchers/internal/catch_matchers_impl.cpp.o"
+},
+{
+  "directory": "/home/runner/work/bpftime/bpftime/build-simple/third_party/Catch2/src",
+  "command": "/usr/bin/c++  -I/home/runner/work/bpftime/bpftime/third_party/Catch2/src/catch2/.. -I/home/runner/work/bpftime/bpftime/build-simple/third_party/Catch2/generated-includes  -fno-omit-frame-pointer -g -std=gnu++20 -fPIC -D_DEBUG -ffile-prefix-map=/home/runner/work/bpftime/bpftime/third_party/Catch2/= -o CMakeFiles/Catch2WithMain.dir/catch2/internal/catch_main.cpp.o -c /home/runner/work/bpftime/bpftime/third_party/Catch2/src/catch2/internal/catch_main.cpp",
+  "file": "/home/runner/work/bpftime/bpftime/third_party/Catch2/src/catch2/internal/catch_main.cpp",
+  "output": "third_party/Catch2/src/CMakeFiles/Catch2WithMain.dir/catch2/internal/catch_main.cpp.o"
+},
+{
+  "directory": "/home/runner/work/bpftime/bpftime/build-simple/third_party/spdlog",
+  "command": "/usr/bin/c++ -DSPDLOG_COMPILED_LIB -DSPDLOG_FWRITE_UNLOCKED -I/home/runner/work/bpftime/bpftime/third_party/spdlog/include  -fno-omit-frame-pointer -g -std=c++20 -fPIC -D_DEBUG -o CMakeFiles/spdlog.dir/src/spdlog.cpp.o -c /home/runner/work/bpftime/bpftime/third_party/spdlog/src/spdlog.cpp",
+  "file": "/home/runner/work/bpftime/bpftime/third_party/spdlog/src/spdlog.cpp",
+  "output": "third_party/spdlog/CMakeFiles/spdlog.dir/src/spdlog.cpp.o"
+},
+{
+  "directory": "/home/runner/work/bpftime/bpftime/build-simple/third_party/spdlog",
+  "command": "/usr/bin/c++ -DSPDLOG_COMPILED_LIB -DSPDLOG_FWRITE_UNLOCKED -I/home/runner/work/bpftime/bpftime/third_party/spdlog/include  -fno-omit-frame-pointer -g -std=c++20 -fPIC -D_DEBUG -o CMakeFiles/spdlog.dir/src/stdout_sinks.cpp.o -c /home/runner/work/bpftime/bpftime/third_party/spdlog/src/stdout_sinks.cpp",
+  "file": "/home/runner/work/bpftime/bpftime/third_party/spdlog/src/stdout_sinks.cpp",
+  "output": "third_party/spdlog/CMakeFiles/spdlog.dir/src/stdout_sinks.cpp.o"
+},
+{
+  "directory": "/home/runner/work/bpftime/bpftime/build-simple/third_party/spdlog",
+  "command": "/usr/bin/c++ -DSPDLOG_COMPILED_LIB -DSPDLOG_FWRITE_UNLOCKED -I/home/runner/work/bpftime/bpftime/third_party/spdlog/include  -fno-omit-frame-pointer -g -std=c++20 -fPIC -D_DEBUG -o CMakeFiles/spdlog.dir/src/color_sinks.cpp.o -c /home/runner/work/bpftime/bpftime/third_party/spdlog/src/color_sinks.cpp",
+  "file": "/home/runner/work/bpftime/bpftime/third_party/spdlog/src/color_sinks.cpp",
+  "output": "third_party/spdlog/CMakeFiles/spdlog.dir/src/color_sinks.cpp.o"
+},
+{
+  "directory": "/home/runner/work/bpftime/bpftime/build-simple/third_party/spdlog",
+  "command": "/usr/bin/c++ -DSPDLOG_COMPILED_LIB -DSPDLOG_FWRITE_UNLOCKED -I/home/runner/work/bpftime/bpftime/third_party/spdlog/include  -fno-omit-frame-pointer -g -std=c++20 -fPIC -D_DEBUG -o CMakeFiles/spdlog.dir/src/file_sinks.cpp.o -c /home/runner/work/bpftime/bpftime/third_party/spdlog/src/file_sinks.cpp",
+  "file": "/home/runner/work/bpftime/bpftime/third_party/spdlog/src/file_sinks.cpp",
+  "output": "third_party/spdlog/CMakeFiles/spdlog.dir/src/file_sinks.cpp.o"
+},
+{
+  "directory": "/home/runner/work/bpftime/bpftime/build-simple/third_party/spdlog",
+  "command": "/usr/bin/c++ -DSPDLOG_COMPILED_LIB -DSPDLOG_FWRITE_UNLOCKED -I/home/runner/work/bpftime/bpftime/third_party/spdlog/include  -fno-omit-frame-pointer -g -std=c++20 -fPIC -D_DEBUG -o CMakeFiles/spdlog.dir/src/async.cpp.o -c /home/runner/work/bpftime/bpftime/third_party/spdlog/src/async.cpp",
+  "file": "/home/runner/work/bpftime/bpftime/third_party/spdlog/src/async.cpp",
+  "output": "third_party/spdlog/CMakeFiles/spdlog.dir/src/async.cpp.o"
+},
+{
+  "directory": "/home/runner/work/bpftime/bpftime/build-simple/third_party/spdlog",
+  "command": "/usr/bin/c++ -DSPDLOG_COMPILED_LIB -DSPDLOG_FWRITE_UNLOCKED -I/home/runner/work/bpftime/bpftime/third_party/spdlog/include  -fno-omit-frame-pointer -g -std=c++20 -fPIC -D_DEBUG -o CMakeFiles/spdlog.dir/src/cfg.cpp.o -c /home/runner/work/bpftime/bpftime/third_party/spdlog/src/cfg.cpp",
+  "file": "/home/runner/work/bpftime/bpftime/third_party/spdlog/src/cfg.cpp",
+  "output": "third_party/spdlog/CMakeFiles/spdlog.dir/src/cfg.cpp.o"
+},
+{
+  "directory": "/home/runner/work/bpftime/bpftime/build-simple/third_party/spdlog",
+  "command": "/usr/bin/c++ -DSPDLOG_COMPILED_LIB -DSPDLOG_FWRITE_UNLOCKED -I/home/runner/work/bpftime/bpftime/third_party/spdlog/include  -fno-omit-frame-pointer -g -std=c++20 -fPIC -D_DEBUG -o CMakeFiles/spdlog.dir/src/bundled_fmtlib_format.cpp.o -c /home/runner/work/bpftime/bpftime/third_party/spdlog/src/bundled_fmtlib_format.cpp",
+  "file": "/home/runner/work/bpftime/bpftime/third_party/spdlog/src/bundled_fmtlib_format.cpp",
+  "output": "third_party/spdlog/CMakeFiles/spdlog.dir/src/bundled_fmtlib_format.cpp.o"
+},
+{
+  "directory": "/home/runner/work/bpftime/bpftime/build-simple/vm/compat/llvm-vm",
+  "command": "/usr/bin/c++ -DSPDLOG_ACTIVE_LEVEL=SPDLOG_LEVEL_TRACE -DSPDLOG_COMPILED_LIB -I/home/runner/work/bpftime/bpftime/vm/compat/llvm-vm/../../llvm-jit/include -I/home/runner/work/bpftime/bpftime/vm/compat/llvm-vm -I/home/runner/work/bpftime/bpftime/third_party/spdlog/include -I/home/runner/work/bpftime/bpftime/vm/compat/include -I/home/runner/work/bpftime/bpftime/vm/llvm-jit/src -I/home/runner/work/bpftime/bpftime/vm/llvm-jit/include  -fno-omit-frame-pointer -g -std=gnu++20 -fPIC -D_DEBUG -o CMakeFiles/bpftime_llvm_vm.dir/compat_llvm.cpp.o -c /home/runner/work/bpftime/bpftime/vm/compat/llvm-vm/compat_llvm.cpp",
+  "file": "/home/runner/work/bpftime/bpftime/vm/compat/llvm-vm/compat_llvm.cpp",
+  "output": "vm/compat/llvm-vm/CMakeFiles/bpftime_llvm_vm.dir/compat_llvm.cpp.o"
+},
+{
+  "directory": "/home/runner/work/bpftime/bpftime/build-simple/vm/compat/llvm-vm/llvm-jit",
+  "command": "/usr/bin/c++ -DSPDLOG_ACTIVE_LEVEL=SPDLOG_LEVEL_TRACE -DSPDLOG_COMPILED_LIB -I/home/runner/work/bpftime/bpftime/vm/llvm-jit/src -I/home/runner/work/bpftime/bpftime/vm/llvm-jit/include -I/usr/lib/llvm-17/include -I/home/runner/work/bpftime/bpftime/third_party/spdlog/include -I/home/runner/work/bpftime/bpftime/vm/llvm-jit/../include  -fno-omit-frame-pointer -g -std=gnu++20 -fPIC -D_DEBUG -o CMakeFiles/llvmbpf_vm.dir/src/llvm_jit_context.cpp.o -c /home/runner/work/bpftime/bpftime/vm/llvm-jit/src/llvm_jit_context.cpp",
+  "file": "/home/runner/work/bpftime/bpftime/vm/llvm-jit/src/llvm_jit_context.cpp",
+  "output": "vm/compat/llvm-vm/llvm-jit/CMakeFiles/llvmbpf_vm.dir/src/llvm_jit_context.cpp.o"
+},
+{
+  "directory": "/home/runner/work/bpftime/bpftime/build-simple/vm/compat/llvm-vm/llvm-jit",
+  "command": "/usr/bin/c++ -DSPDLOG_ACTIVE_LEVEL=SPDLOG_LEVEL_TRACE -DSPDLOG_COMPILED_LIB -I/home/runner/work/bpftime/bpftime/vm/llvm-jit/src -I/home/runner/work/bpftime/bpftime/vm/llvm-jit/include -I/usr/lib/llvm-17/include -I/home/runner/work/bpftime/bpftime/third_party/spdlog/include -I/home/runner/work/bpftime/bpftime/vm/llvm-jit/../include  -fno-omit-frame-pointer -g -std=gnu++20 -fPIC -D_DEBUG -o CMakeFiles/llvmbpf_vm.dir/src/compiler.cpp.o -c /home/runner/work/bpftime/bpftime/vm/llvm-jit/src/compiler.cpp",
+  "file": "/home/runner/work/bpftime/bpftime/vm/llvm-jit/src/compiler.cpp",
+  "output": "vm/compat/llvm-vm/llvm-jit/CMakeFiles/llvmbpf_vm.dir/src/compiler.cpp.o"
+},
+{
+  "directory": "/home/runner/work/bpftime/bpftime/build-simple/vm/compat/llvm-vm/llvm-jit",
+  "command": "/usr/bin/c++ -DSPDLOG_ACTIVE_LEVEL=SPDLOG_LEVEL_TRACE -DSPDLOG_COMPILED_LIB -I/home/runner/work/bpftime/bpftime/vm/llvm-jit/src -I/home/runner/work/bpftime/bpftime/vm/llvm-jit/include -I/usr/lib/llvm-17/include -I/home/runner/work/bpftime/bpftime/third_party/spdlog/include -I/home/runner/work/bpftime/bpftime/vm/llvm-jit/../include  -fno-omit-frame-pointer -g -std=gnu++20 -fPIC -D_DEBUG -o CMakeFiles/llvmbpf_vm.dir/src/compiler_utils.cpp.o -c /home/runner/work/bpftime/bpftime/vm/llvm-jit/src/compiler_utils.cpp",
+  "file": "/home/runner/work/bpftime/bpftime/vm/llvm-jit/src/compiler_utils.cpp",
+  "output": "vm/compat/llvm-vm/llvm-jit/CMakeFiles/llvmbpf_vm.dir/src/compiler_utils.cpp.o"
+},
+{
+  "directory": "/home/runner/work/bpftime/bpftime/build-simple/vm/compat/llvm-vm/llvm-jit",
+  "command": "/usr/bin/c++ -DSPDLOG_ACTIVE_LEVEL=SPDLOG_LEVEL_TRACE -DSPDLOG_COMPILED_LIB -I/home/runner/work/bpftime/bpftime/vm/llvm-jit/src -I/home/runner/work/bpftime/bpftime/vm/llvm-jit/include -I/usr/lib/llvm-17/include -I/home/runner/work/bpftime/bpftime/third_party/spdlog/include -I/home/runner/work/bpftime/bpftime/vm/llvm-jit/../include  -fno-omit-frame-pointer -g -std=gnu++20 -fPIC -D_DEBUG -o CMakeFiles/llvmbpf_vm.dir/src/vm.cpp.o -c /home/runner/work/bpftime/bpftime/vm/llvm-jit/src/vm.cpp",
+  "file": "/home/runner/work/bpftime/bpftime/vm/llvm-jit/src/vm.cpp",
+  "output": "vm/compat/llvm-vm/llvm-jit/CMakeFiles/llvmbpf_vm.dir/src/vm.cpp.o"
+},
+{
+  "directory": "/home/runner/work/bpftime/bpftime/build-simple/vm/compat/llvm-vm/llvm-jit/cli",
+  "command": "/usr/bin/c++ -DSPDLOG_ACTIVE_LEVEL=SPDLOG_LEVEL_TRACE -DSPDLOG_COMPILED_LIB -D_GNU_SOURCE -I/home/runner/work/bpftime/bpftime/third_party/spdlog/include -I/home/runner/work/bpftime/bpftime/vm/llvm-jit/cli/../llvm-jit/src -I/home/runner/work/bpftime/bpftime/vm/llvm-jit/cli/../llvm-jit/include -I/home/runner/work/bpftime/bpftime/vm/llvm-jit/cli/../include -I/home/runner/work/bpftime/bpftime/vm/llvm-jit/cli/libbpf_project/src -I/home/runner/work/bpftime/bpftime/vm/llvm-jit/src -I/home/runner/work/bpftime/bpftime/vm/llvm-jit/include  -fno-omit-frame-pointer -g -std=gnu++20 -fPIE -D_DEBUG -o CMakeFiles/bpftime-vm-cli.dir/main.cpp.o -c /home/runner/work/bpftime/bpftime/vm/llvm-jit/cli/main.cpp",
+  "file": "/home/runner/work/bpftime/bpftime/vm/llvm-jit/cli/main.cpp",
+  "output": "vm/compat/llvm-vm/llvm-jit/cli/CMakeFiles/bpftime-vm-cli.dir/main.cpp.o"
+},
+{
+  "directory": "/home/runner/work/bpftime/bpftime/build-simple/vm/compat/llvm-vm/llvm-jit/test/bpf_conformance_runner",
+  "command": "/usr/bin/c++ -DSPDLOG_ACTIVE_LEVEL=SPDLOG_LEVEL_TRACE -I/home/runner/work/bpftime/bpftime/vm/llvm-jit/src -I/home/runner/work/bpftime/bpftime/vm/llvm-jit/include  -fno-omit-frame-pointer -g -std=gnu++20 -fPIE -D_DEBUG -o CMakeFiles/bpftime_vm_bpf_conformance_runner.dir/main-bpf-conformance.cpp.o -c /home/runner/work/bpftime/bpftime/vm/llvm-jit/test/bpf_conformance_runner/main-bpf-conformance.cpp",
+  "file": "/home/runner/work/bpftime/bpftime/vm/llvm-jit/test/bpf_conformance_runner/main-bpf-conformance.cpp",
+  "output": "vm/compat/llvm-vm/llvm-jit/test/bpf_conformance_runner/CMakeFiles/bpftime_vm_bpf_conformance_runner.dir/main-bpf-conformance.cpp.o"
+},
+{
+  "directory": "/home/runner/work/bpftime/bpftime/build-simple/vm/compat/llvm-vm/llvm-jit/test/unit-test",
+  "command": "/usr/bin/c++ -DSPDLOG_ACTIVE_LEVEL=SPDLOG_LEVEL_TRACE -I/home/runner/work/bpftime/bpftime/vm/llvm-jit/test/unit-test/../include -I/home/runner/work/bpftime/bpftime/vm/llvm-jit/test/unit-test/../src -I/uapi -I/home/runner/work/bpftime/bpftime/vm/llvm-jit/src -I/home/runner/work/bpftime/bpftime/vm/llvm-jit/include -I/home/runner/work/bpftime/bpftime/third_party/Catch2/src/catch2/.. -I/home/runner/work/bpftime/bpftime/build-simple/third_party/Catch2/generated-includes  -fno-omit-frame-pointer -g -std=gnu++20 -fPIE -D_DEBUG -o CMakeFiles/llvm_jit_tests.dir/bpf_prog_test.cpp.o -c /home/runner/work/bpftime/bpftime/vm/llvm-jit/test/unit-test/bpf_prog_test.cpp",
+  "file": "/home/runner/work/bpftime/bpftime/vm/llvm-jit/test/unit-test/bpf_prog_test.cpp",
+  "output": "vm/compat/llvm-vm/llvm-jit/test/unit-test/CMakeFiles/llvm_jit_tests.dir/bpf_prog_test.cpp.o"
+},
+{
+  "directory": "/home/runner/work/bpftime/bpftime/build-simple/vm/compat/llvm-vm/llvm-jit/test/unit-test",
+  "command": "/usr/bin/c++ -DSPDLOG_ACTIVE_LEVEL=SPDLOG_LEVEL_TRACE -I/home/runner/work/bpftime/bpftime/vm/llvm-jit/test/unit-test/../include -I/home/runner/work/bpftime/bpftime/vm/llvm-jit/test/unit-test/../src -I/uapi -I/home/runner/work/bpftime/bpftime/vm/llvm-jit/src -I/home/runner/work/bpftime/bpftime/vm/llvm-jit/include -I/home/runner/work/bpftime/bpftime/third_party/Catch2/src/catch2/.. -I/home/runner/work/bpftime/bpftime/build-simple/third_party/Catch2/generated-includes  -fno-omit-frame-pointer -g -std=gnu++20 -fPIE -D_DEBUG -o CMakeFiles/llvm_jit_tests.dir/vm_test.cpp.o -c /home/runner/work/bpftime/bpftime/vm/llvm-jit/test/unit-test/vm_test.cpp",
+  "file": "/home/runner/work/bpftime/bpftime/vm/llvm-jit/test/unit-test/vm_test.cpp",
+  "output": "vm/compat/llvm-vm/llvm-jit/test/unit-test/CMakeFiles/llvm_jit_tests.dir/vm_test.cpp.o"
+},
+{
+  "directory": "/home/runner/work/bpftime/bpftime/build-simple/vm/compat/llvm-vm/llvm-jit/example",
+  "command": "/usr/bin/c++ -DSPDLOG_ACTIVE_LEVEL=SPDLOG_LEVEL_TRACE -I/home/runner/work/bpftime/bpftime/vm/llvm-jit/example/src -I/home/runner/work/bpftime/bpftime/vm/llvm-jit/example/include -I/home/runner/work/bpftime/bpftime/vm/llvm-jit/src -I/home/runner/work/bpftime/bpftime/vm/llvm-jit/include  -fno-omit-frame-pointer -g -std=gnu++20 -fPIE -D_DEBUG -o CMakeFiles/vm-llvm-example.dir/basic.cpp.o -c /home/runner/work/bpftime/bpftime/vm/llvm-jit/example/basic.cpp",
+  "file": "/home/runner/work/bpftime/bpftime/vm/llvm-jit/example/basic.cpp",
+  "output": "vm/compat/llvm-vm/llvm-jit/example/CMakeFiles/vm-llvm-example.dir/basic.cpp.o"
+},
+{
+  "directory": "/home/runner/work/bpftime/bpftime/build-simple/vm/compat/llvm-vm/llvm-jit/example",
+  "command": "/usr/bin/c++ -DSPDLOG_ACTIVE_LEVEL=SPDLOG_LEVEL_TRACE -I/home/runner/work/bpftime/bpftime/vm/llvm-jit/example/src -I/home/runner/work/bpftime/bpftime/vm/llvm-jit/example/include -I/home/runner/work/bpftime/bpftime/vm/llvm-jit/src -I/home/runner/work/bpftime/bpftime/vm/llvm-jit/include  -fno-omit-frame-pointer -g -std=gnu++20 -fPIE -D_DEBUG -o CMakeFiles/maps-example.dir/maps.cpp.o -c /home/runner/work/bpftime/bpftime/vm/llvm-jit/example/maps.cpp",
+  "file": "/home/runner/work/bpftime/bpftime/vm/llvm-jit/example/maps.cpp",
+  "output": "vm/compat/llvm-vm/llvm-jit/example/CMakeFiles/maps-example.dir/maps.cpp.o"
+},
+{
+  "directory": "/home/runner/work/bpftime/bpftime/build-simple/vm/compat/ubpf-vm",
+  "command": "/usr/bin/c++ -DSPDLOG_ACTIVE_LEVEL=SPDLOG_LEVEL_TRACE -DSPDLOG_COMPILED_LIB -I/home/runner/work/bpftime/bpftime/vm/compat/ubpf-vm/../../../third_party/ubpf/vm/inc -I/home/runner/work/bpftime/bpftime/build-simple/vm/compat/ubpf-vm/ubpf/vm -I/home/runner/work/bpftime/bpftime/vm/compat/ubpf-vm -I/home/runner/work/bpftime/bpftime/third_party/spdlog/include -I/home/runner/work/bpftime/bpftime/vm/compat/include  -fno-omit-frame-pointer -g -std=gnu++20 -fPIC -D_DEBUG -o CMakeFiles/bpftime_ubpf_vm.dir/compat_ubpf.cpp.o -c /home/runner/work/bpftime/bpftime/vm/compat/ubpf-vm/compat_ubpf.cpp",
+  "file": "/home/runner/work/bpftime/bpftime/vm/compat/ubpf-vm/compat_ubpf.cpp",
+  "output": "vm/compat/ubpf-vm/CMakeFiles/bpftime_ubpf_vm.dir/compat_ubpf.cpp.o"
+},
+{
+  "directory": "/home/runner/work/bpftime/bpftime/build-simple/vm/vm-core",
+  "command": "/usr/bin/c++ -DSPDLOG_ACTIVE_LEVEL=SPDLOG_LEVEL_TRACE -DSPDLOG_COMPILED_LIB -I/home/runner/work/bpftime/bpftime/vm/vm-core/./include -I/home/runner/work/bpftime/bpftime/vm/compat/include -I/home/runner/work/bpftime/bpftime/third_party/spdlog/include -I/home/runner/work/bpftime/bpftime/vm/llvm-jit/src -I/home/runner/work/bpftime/bpftime/vm/llvm-jit/include  -fno-omit-frame-pointer -g -std=gnu++20 -fPIC -D_DEBUG -o CMakeFiles/bpftime_vm.dir/src/ebpf-vm.cpp.o -c /home/runner/work/bpftime/bpftime/vm/vm-core/src/ebpf-vm.cpp",
+  "file": "/home/runner/work/bpftime/bpftime/vm/vm-core/src/ebpf-vm.cpp",
+  "output": "vm/vm-core/CMakeFiles/bpftime_vm.dir/src/ebpf-vm.cpp.o"
+},
+{
+  "directory": "/home/runner/work/bpftime/bpftime/build-simple/attach/frida_uprobe_attach_impl",
+  "command": "/usr/bin/c++ -DSPDLOG_ACTIVE_LEVEL=SPDLOG_LEVEL_TRACE -DSPDLOG_COMPILED_LIB -I/home/runner/work/bpftime/bpftime/third_party/spdlog/include -I/home/runner/work/bpftime/bpftime/attach/frida_uprobe_attach_impl/include -I/home/runner/work/bpftime/bpftime/build-simple/FridaGum-prefix/src/FridaGum -I/home/runner/work/bpftime/bpftime/attach/base_attach_impl  -fno-omit-frame-pointer -g -std=gnu++20 -fPIC -D_DEBUG -o CMakeFiles/bpftime_frida_uprobe_attach_impl.dir/src/frida_uprobe_attach_impl.cpp.o -c /home/runner/work/bpftime/bpftime/attach/frida_uprobe_attach_impl/src/frida_uprobe_attach_impl.cpp",
+  "file": "/home/runner/work/bpftime/bpftime/attach/frida_uprobe_attach_impl/src/frida_uprobe_attach_impl.cpp",
+  "output": "attach/frida_uprobe_attach_impl/CMakeFiles/bpftime_frida_uprobe_attach_impl.dir/src/frida_uprobe_attach_impl.cpp.o"
+},
+{
+  "directory": "/home/runner/work/bpftime/bpftime/build-simple/attach/frida_uprobe_attach_impl",
+  "command": "/usr/bin/c++ -DSPDLOG_ACTIVE_LEVEL=SPDLOG_LEVEL_TRACE -DSPDLOG_COMPILED_LIB -I/home/runner/work/bpftime/bpftime/third_party/spdlog/include -I/home/runner/work/bpftime/bpftime/attach/frida_uprobe_attach_impl/include -I/home/runner/work/bpftime/bpftime/build-simple/FridaGum-prefix/src/FridaGum -I/home/runner/work/bpftime/bpftime/attach/base_attach_impl  -fno-omit-frame-pointer -g -std=gnu++20 -fPIC -D_DEBUG -o CMakeFiles/bpftime_frida_uprobe_attach_impl.dir/src/frida_internal_attach_entry.cpp.o -c /home/runner/work/bpftime/bpftime/attach/frida_uprobe_attach_impl/src/frida_internal_attach_entry.cpp",
+  "file": "/home/runner/work/bpftime/bpftime/attach/frida_uprobe_attach_impl/src/frida_internal_attach_entry.cpp",
+  "output": "attach/frida_uprobe_attach_impl/CMakeFiles/bpftime_frida_uprobe_attach_impl.dir/src/frida_internal_attach_entry.cpp.o"
+},
+{
+  "directory": "/home/runner/work/bpftime/bpftime/build-simple/attach/frida_uprobe_attach_impl",
+  "command": "/usr/bin/c++ -DSPDLOG_ACTIVE_LEVEL=SPDLOG_LEVEL_TRACE -DSPDLOG_COMPILED_LIB -I/home/runner/work/bpftime/bpftime/third_party/spdlog/include -I/home/runner/work/bpftime/bpftime/attach/frida_uprobe_attach_impl/include -I/home/runner/work/bpftime/bpftime/build-simple/FridaGum-prefix/src/FridaGum -I/home/runner/work/bpftime/bpftime/attach/base_attach_impl  -fno-omit-frame-pointer -g -std=gnu++20 -fPIC -D_DEBUG -o CMakeFiles/bpftime_frida_uprobe_attach_impl.dir/src/frida_attach_entry.cpp.o -c /home/runner/work/bpftime/bpftime/attach/frida_uprobe_attach_impl/src/frida_attach_entry.cpp",
+  "file": "/home/runner/work/bpftime/bpftime/attach/frida_uprobe_attach_impl/src/frida_attach_entry.cpp",
+  "output": "attach/frida_uprobe_attach_impl/CMakeFiles/bpftime_frida_uprobe_attach_impl.dir/src/frida_attach_entry.cpp.o"
+},
+{
+  "directory": "/home/runner/work/bpftime/bpftime/build-simple/attach/frida_uprobe_attach_impl",
+  "command": "/usr/bin/c++ -DSPDLOG_ACTIVE_LEVEL=SPDLOG_LEVEL_TRACE -DSPDLOG_COMPILED_LIB -I/home/runner/work/bpftime/bpftime/third_party/spdlog/include -I/home/runner/work/bpftime/bpftime/attach/frida_uprobe_attach_impl/include -I/home/runner/work/bpftime/bpftime/build-simple/FridaGum-prefix/src/FridaGum -I/home/runner/work/bpftime/bpftime/attach/base_attach_impl  -fno-omit-frame-pointer -g -std=gnu++20 -fPIC -D_DEBUG -o CMakeFiles/bpftime_frida_uprobe_attach_impl.dir/src/frida_attach_utils.cpp.o -c /home/runner/work/bpftime/bpftime/attach/frida_uprobe_attach_impl/src/frida_attach_utils.cpp",
+  "file": "/home/runner/work/bpftime/bpftime/attach/frida_uprobe_attach_impl/src/frida_attach_utils.cpp",
+  "output": "attach/frida_uprobe_attach_impl/CMakeFiles/bpftime_frida_uprobe_attach_impl.dir/src/frida_attach_utils.cpp.o"
+},
+{
+  "directory": "/home/runner/work/bpftime/bpftime/build-simple/attach/frida_uprobe_attach_impl",
+  "command": "/usr/bin/c++ -DSPDLOG_ACTIVE_LEVEL=SPDLOG_LEVEL_TRACE -DSPDLOG_COMPILED_LIB -I/home/runner/work/bpftime/bpftime/third_party/spdlog/include -I/home/runner/work/bpftime/bpftime/attach/frida_uprobe_attach_impl/include -I/home/runner/work/bpftime/bpftime/build-simple/FridaGum-prefix/src/FridaGum -I/home/runner/work/bpftime/bpftime/attach/base_attach_impl  -fno-omit-frame-pointer -g -std=gnu++20 -fPIC -D_DEBUG -o CMakeFiles/bpftime_frida_uprobe_attach_impl.dir/src/frida_attach_private_data.cpp.o -c /home/runner/work/bpftime/bpftime/attach/frida_uprobe_attach_impl/src/frida_attach_private_data.cpp",
+  "file": "/home/runner/work/bpftime/bpftime/attach/frida_uprobe_attach_impl/src/frida_attach_private_data.cpp",
+  "output": "attach/frida_uprobe_attach_impl/CMakeFiles/bpftime_frida_uprobe_attach_impl.dir/src/frida_attach_private_data.cpp.o"
+},
+{
+  "directory": "/home/runner/work/bpftime/bpftime/build-simple/attach/frida_uprobe_attach_impl",
+  "command": "/usr/bin/c++ -DSPDLOG_ACTIVE_LEVEL=SPDLOG_LEVEL_TRACE -DSPDLOG_COMPILED_LIB -I/home/runner/work/bpftime/bpftime/third_party/spdlog/include -I/home/runner/work/bpftime/bpftime/attach/frida_uprobe_attach_impl/include -I/home/runner/work/bpftime/bpftime/build-simple/FridaGum-prefix/src/FridaGum -I/home/runner/work/bpftime/bpftime/attach/base_attach_impl  -fno-omit-frame-pointer -g -std=gnu++20 -fPIC -D_DEBUG -o CMakeFiles/bpftime_frida_uprobe_attach_impl.dir/src/frida_register_conversion.cpp.o -c /home/runner/work/bpftime/bpftime/attach/frida_uprobe_attach_impl/src/frida_register_conversion.cpp",
+  "file": "/home/runner/work/bpftime/bpftime/attach/frida_uprobe_attach_impl/src/frida_register_conversion.cpp",
+  "output": "attach/frida_uprobe_attach_impl/CMakeFiles/bpftime_frida_uprobe_attach_impl.dir/src/frida_register_conversion.cpp.o"
+},
+{
+  "directory": "/home/runner/work/bpftime/bpftime/build-simple/attach/frida_uprobe_attach_impl",
+  "command": "/usr/bin/c++ -DSPDLOG_ACTIVE_LEVEL=SPDLOG_LEVEL_TRACE -DSPDLOG_COMPILED_LIB -I/home/runner/work/bpftime/bpftime/attach/frida_uprobe_attach_impl/include -I/home/runner/work/bpftime/bpftime/third_party/spdlog/include -I/home/runner/work/bpftime/bpftime/third_party/Catch2/src/catch2/.. -I/home/runner/work/bpftime/bpftime/build-simple/third_party/Catch2/generated-includes -I/home/runner/work/bpftime/bpftime/build-simple/FridaGum-prefix/src/FridaGum -I/home/runner/work/bpftime/bpftime/attach/base_attach_impl  -fno-omit-frame-pointer -g -std=gnu++20 -fPIE -D_DEBUG -o CMakeFiles/bpftime_frida_uprobe_attach_tests.dir/test/test_uprobe_uretprobe.cpp.o -c /home/runner/work/bpftime/bpftime/attach/frida_uprobe_attach_impl/test/test_uprobe_uretprobe.cpp",
+  "file": "/home/runner/work/bpftime/bpftime/attach/frida_uprobe_attach_impl/test/test_uprobe_uretprobe.cpp",
+  "output": "attach/frida_uprobe_attach_impl/CMakeFiles/bpftime_frida_uprobe_attach_tests.dir/test/test_uprobe_uretprobe.cpp.o"
+},
+{
+  "directory": "/home/runner/work/bpftime/bpftime/build-simple/attach/frida_uprobe_attach_impl",
+  "command": "/usr/bin/c++ -DSPDLOG_ACTIVE_LEVEL=SPDLOG_LEVEL_TRACE -DSPDLOG_COMPILED_LIB -I/home/runner/work/bpftime/bpftime/attach/frida_uprobe_attach_impl/include -I/home/runner/work/bpftime/bpftime/third_party/spdlog/include -I/home/runner/work/bpftime/bpftime/third_party/Catch2/src/catch2/.. -I/home/runner/work/bpftime/bpftime/build-simple/third_party/Catch2/generated-includes -I/home/runner/work/bpftime/bpftime/build-simple/FridaGum-prefix/src/FridaGum -I/home/runner/work/bpftime/bpftime/attach/base_attach_impl  -fno-omit-frame-pointer -g -std=gnu++20 -fPIE -D_DEBUG -o CMakeFiles/bpftime_frida_uprobe_attach_tests.dir/test/test_function_address_resolve.cpp.o -c /home/runner/work/bpftime/bpftime/attach/frida_uprobe_attach_impl/test/test_function_address_resolve.cpp",
+  "file": "/home/runner/work/bpftime/bpftime/attach/frida_uprobe_attach_impl/test/test_function_address_resolve.cpp",
+  "output": "attach/frida_uprobe_attach_impl/CMakeFiles/bpftime_frida_uprobe_attach_tests.dir/test/test_function_address_resolve.cpp.o"
+},
+{
+  "directory": "/home/runner/work/bpftime/bpftime/build-simple/attach/frida_uprobe_attach_impl",
+  "command": "/usr/bin/c++ -DSPDLOG_ACTIVE_LEVEL=SPDLOG_LEVEL_TRACE -DSPDLOG_COMPILED_LIB -I/home/runner/work/bpftime/bpftime/attach/frida_uprobe_attach_impl/include -I/home/runner/work/bpftime/bpftime/third_party/spdlog/include -I/home/runner/work/bpftime/bpftime/third_party/Catch2/src/catch2/.. -I/home/runner/work/bpftime/bpftime/build-simple/third_party/Catch2/generated-includes -I/home/runner/work/bpftime/bpftime/build-simple/FridaGum-prefix/src/FridaGum -I/home/runner/work/bpftime/bpftime/attach/base_attach_impl  -fno-omit-frame-pointer -g -std=gnu++20 -fPIE -D_DEBUG -o CMakeFiles/bpftime_frida_uprobe_attach_tests.dir/test/test_filter_attach_with_override.cpp.o -c /home/runner/work/bpftime/bpftime/attach/frida_uprobe_attach_impl/test/test_filter_attach_with_override.cpp",
+  "file": "/home/runner/work/bpftime/bpftime/attach/frida_uprobe_attach_impl/test/test_filter_attach_with_override.cpp",
+  "output": "attach/frida_uprobe_attach_impl/CMakeFiles/bpftime_frida_uprobe_attach_tests.dir/test/test_filter_attach_with_override.cpp.o"
+},
+{
+  "directory": "/home/runner/work/bpftime/bpftime/build-simple/attach/frida_uprobe_attach_impl",
+  "command": "/usr/bin/c++ -DSPDLOG_ACTIVE_LEVEL=SPDLOG_LEVEL_TRACE -DSPDLOG_COMPILED_LIB -I/home/runner/work/bpftime/bpftime/attach/frida_uprobe_attach_impl/include -I/home/runner/work/bpftime/bpftime/third_party/spdlog/include -I/home/runner/work/bpftime/bpftime/third_party/Catch2/src/catch2/.. -I/home/runner/work/bpftime/bpftime/build-simple/third_party/Catch2/generated-includes -I/home/runner/work/bpftime/bpftime/build-simple/FridaGum-prefix/src/FridaGum -I/home/runner/work/bpftime/bpftime/attach/base_attach_impl  -fno-omit-frame-pointer -g -std=gnu++20 -fPIE -D_DEBUG -o CMakeFiles/bpftime_frida_uprobe_attach_tests.dir/test/test_replace_attach_with_override.cpp.o -c /home/runner/work/bpftime/bpftime/attach/frida_uprobe_attach_impl/test/test_replace_attach_with_override.cpp",
+  "file": "/home/runner/work/bpftime/bpftime/attach/frida_uprobe_attach_impl/test/test_replace_attach_with_override.cpp",
+  "output": "attach/frida_uprobe_attach_impl/CMakeFiles/bpftime_frida_uprobe_attach_tests.dir/test/test_replace_attach_with_override.cpp.o"
+},
+{
+  "directory": "/home/runner/work/bpftime/bpftime/build-simple/attach/frida_uprobe_attach_impl",
+  "command": "/usr/bin/c++ -DSPDLOG_ACTIVE_LEVEL=SPDLOG_LEVEL_TRACE -DSPDLOG_COMPILED_LIB -I/home/runner/work/bpftime/bpftime/attach/frida_uprobe_attach_impl/include -I/home/runner/work/bpftime/bpftime/third_party/spdlog/include -I/home/runner/work/bpftime/bpftime/third_party/Catch2/src/catch2/.. -I/home/runner/work/bpftime/bpftime/build-simple/third_party/Catch2/generated-includes -I/home/runner/work/bpftime/bpftime/build-simple/FridaGum-prefix/src/FridaGum -I/home/runner/work/bpftime/bpftime/attach/base_attach_impl  -fno-omit-frame-pointer -g -std=gnu++20 -fPIE -D_DEBUG -o CMakeFiles/bpftime_frida_uprobe_attach_tests.dir/test/test_attach_with_unified_interface.cpp.o -c /home/runner/work/bpftime/bpftime/attach/frida_uprobe_attach_impl/test/test_attach_with_unified_interface.cpp",
+  "file": "/home/runner/work/bpftime/bpftime/attach/frida_uprobe_attach_impl/test/test_attach_with_unified_interface.cpp",
+  "output": "attach/frida_uprobe_attach_impl/CMakeFiles/bpftime_frida_uprobe_attach_tests.dir/test/test_attach_with_unified_interface.cpp.o"
+},
+{
+  "directory": "/home/runner/work/bpftime/bpftime/build-simple/attach/frida_uprobe_attach_impl",
+  "command": "/usr/bin/c++ -DSPDLOG_ACTIVE_LEVEL=SPDLOG_LEVEL_TRACE -DSPDLOG_COMPILED_LIB -I/home/runner/work/bpftime/bpftime/attach/frida_uprobe_attach_impl/include -I/home/runner/work/bpftime/bpftime/third_party/spdlog/include -I/home/runner/work/bpftime/bpftime/third_party/Catch2/src/catch2/.. -I/home/runner/work/bpftime/bpftime/build-simple/third_party/Catch2/generated-includes -I/home/runner/work/bpftime/bpftime/build-simple/FridaGum-prefix/src/FridaGum -I/home/runner/work/bpftime/bpftime/attach/base_attach_impl  -fno-omit-frame-pointer -g -std=gnu++20 -fPIE -D_DEBUG -o CMakeFiles/bpftime_frida_uprobe_attach_tests.dir/test/test_attach_private_data_parsing.cpp.o -c /home/runner/work/bpftime/bpftime/attach/frida_uprobe_attach_impl/test/test_attach_private_data_parsing.cpp",
+  "file": "/home/runner/work/bpftime/bpftime/attach/frida_uprobe_attach_impl/test/test_attach_private_data_parsing.cpp",
+  "output": "attach/frida_uprobe_attach_impl/CMakeFiles/bpftime_frida_uprobe_attach_tests.dir/test/test_attach_private_data_parsing.cpp.o"
+},
+{
+  "directory": "/home/runner/work/bpftime/bpftime/build-simple/attach/frida_uprobe_attach_impl",
+  "command": "/usr/bin/c++ -DSPDLOG_ACTIVE_LEVEL=SPDLOG_LEVEL_TRACE -DSPDLOG_COMPILED_LIB -I/home/runner/work/bpftime/bpftime/attach/frida_uprobe_attach_impl/include -I/home/runner/work/bpftime/bpftime/third_party/spdlog/include -I/home/runner/work/bpftime/bpftime/third_party/Catch2/src/catch2/.. -I/home/runner/work/bpftime/bpftime/build-simple/third_party/Catch2/generated-includes -I/home/runner/work/bpftime/bpftime/build-simple/FridaGum-prefix/src/FridaGum -I/home/runner/work/bpftime/bpftime/attach/base_attach_impl  -fno-omit-frame-pointer -g -std=gnu++20 -fPIE -D_DEBUG -o CMakeFiles/bpftime_frida_uprobe_attach_tests.dir/test/test_base_attach_impl.cpp.o -c /home/runner/work/bpftime/bpftime/attach/frida_uprobe_attach_impl/test/test_base_attach_impl.cpp",
+  "file": "/home/runner/work/bpftime/bpftime/attach/frida_uprobe_attach_impl/test/test_base_attach_impl.cpp",
+  "output": "attach/frida_uprobe_attach_impl/CMakeFiles/bpftime_frida_uprobe_attach_tests.dir/test/test_base_attach_impl.cpp.o"
+},
+{
+  "directory": "/home/runner/work/bpftime/bpftime/build-simple/attach/frida_uprobe_attach_impl",
+  "command": "/usr/bin/c++ -DSPDLOG_ACTIVE_LEVEL=SPDLOG_LEVEL_TRACE -DSPDLOG_COMPILED_LIB -I/home/runner/work/bpftime/bpftime/attach/frida_uprobe_attach_impl/include -I/home/runner/work/bpftime/bpftime/third_party/spdlog/include -I/home/runner/work/bpftime/bpftime/third_party/Catch2/src/catch2/.. -I/home/runner/work/bpftime/bpftime/build-simple/third_party/Catch2/generated-includes -I/home/runner/work/bpftime/bpftime/build-simple/FridaGum-prefix/src/FridaGum -I/home/runner/work/bpftime/bpftime/attach/base_attach_impl  -fno-omit-frame-pointer -g -std=gnu++20 -fPIE -D_DEBUG -o CMakeFiles/bpftime_frida_uprobe_attach_tests.dir/test/test_back_trace.cpp.o -c /home/runner/work/bpftime/bpftime/attach/frida_uprobe_attach_impl/test/test_back_trace.cpp",
+  "file": "/home/runner/work/bpftime/bpftime/attach/frida_uprobe_attach_impl/test/test_back_trace.cpp",
+  "output": "attach/frida_uprobe_attach_impl/CMakeFiles/bpftime_frida_uprobe_attach_tests.dir/test/test_back_trace.cpp.o"
+},
+{
+  "directory": "/home/runner/work/bpftime/bpftime/build-simple/attach/simple_attach_impl",
+  "command": "/usr/bin/c++ -DSPDLOG_ACTIVE_LEVEL=SPDLOG_LEVEL_TRACE -DSPDLOG_COMPILED_LIB -I/home/runner/work/bpftime/bpftime/third_party/spdlog/include -I/home/runner/work/bpftime/bpftime/attach/simple_attach_impl -I/home/runner/work/bpftime/bpftime/attach/base_attach_impl  -fno-omit-frame-pointer -g -std=gnu++20 -fPIC -D_DEBUG -o CMakeFiles/bpftime_simple_attach_impl.dir/simple_attach_impl.cpp.o -c /home/runner/work/bpftime/bpftime/attach/simple_attach_impl/simple_attach_impl.cpp",
+  "file": "/home/runner/work/bpftime/bpftime/attach/simple_attach_impl/simple_attach_impl.cpp",
+  "output": "attach/simple_attach_impl/CMakeFiles/bpftime_simple_attach_impl.dir/simple_attach_impl.cpp.o"
+},
+{
+  "directory": "/home/runner/work/bpftime/bpftime/build-simple/attach/syscall_trace_attach_impl",
+  "command": "/usr/bin/c++ -DSPDLOG_ACTIVE_LEVEL=SPDLOG_LEVEL_TRACE -DSPDLOG_COMPILED_LIB -I/home/runner/work/bpftime/bpftime/third_party/spdlog/include -I/home/runner/work/bpftime/bpftime/build-simple/attach/syscall_trace_attach_impl -I/home/runner/work/bpftime/bpftime/attach/base_attach_impl -I/home/runner/work/bpftime/bpftime/attach/syscall_trace_attach_impl/include  -fno-omit-frame-pointer -g -std=gnu++20 -fPIC -D_DEBUG -o CMakeFiles/bpftime_syscall_trace_attach_impl.dir/src/syscall_trace_attach_impl.cpp.o -c /home/runner/work/bpftime/bpftime/attach/syscall_trace_attach_impl/src/syscall_trace_attach_impl.cpp",
+  "file": "/home/runner/work/bpftime/bpftime/attach/syscall_trace_attach_impl/src/syscall_trace_attach_impl.cpp",
+  "output": "attach/syscall_trace_attach_impl/CMakeFiles/bpftime_syscall_trace_attach_impl.dir/src/syscall_trace_attach_impl.cpp.o"
+},
+{
+  "directory": "/home/runner/work/bpftime/bpftime/build-simple/attach/syscall_trace_attach_impl",
+  "command": "/usr/bin/c++ -DSPDLOG_ACTIVE_LEVEL=SPDLOG_LEVEL_TRACE -DSPDLOG_COMPILED_LIB -I/home/runner/work/bpftime/bpftime/third_party/spdlog/include -I/home/runner/work/bpftime/bpftime/build-simple/attach/syscall_trace_attach_impl -I/home/runner/work/bpftime/bpftime/attach/base_attach_impl -I/home/runner/work/bpftime/bpftime/attach/syscall_trace_attach_impl/include  -fno-omit-frame-pointer -g -std=gnu++20 -fPIC -D_DEBUG -o CMakeFiles/bpftime_syscall_trace_attach_impl.dir/src/syscall_table.cpp.o -c /home/runner/work/bpftime/bpftime/attach/syscall_trace_attach_impl/src/syscall_table.cpp",
+  "file": "/home/runner/work/bpftime/bpftime/attach/syscall_trace_attach_impl/src/syscall_table.cpp",
+  "output": "attach/syscall_trace_attach_impl/CMakeFiles/bpftime_syscall_trace_attach_impl.dir/src/syscall_table.cpp.o"
+},
+{
+  "directory": "/home/runner/work/bpftime/bpftime/build-simple/attach/syscall_trace_attach_impl",
+  "command": "/usr/bin/c++ -DSPDLOG_ACTIVE_LEVEL=SPDLOG_LEVEL_TRACE -DSPDLOG_COMPILED_LIB -I/home/runner/work/bpftime/bpftime/third_party/spdlog/include -I/home/runner/work/bpftime/bpftime/build-simple/attach/syscall_trace_attach_impl -I/home/runner/work/bpftime/bpftime/attach/base_attach_impl -I/home/runner/work/bpftime/bpftime/attach/syscall_trace_attach_impl/include  -fno-omit-frame-pointer -g -std=gnu++20 -fPIC -D_DEBUG -o CMakeFiles/bpftime_syscall_trace_attach_impl.dir/src/syscall_trace_attach_private_data.cpp.o -c /home/runner/work/bpftime/bpftime/attach/syscall_trace_attach_impl/src/syscall_trace_attach_private_data.cpp",
+  "file": "/home/runner/work/bpftime/bpftime/attach/syscall_trace_attach_impl/src/syscall_trace_attach_private_data.cpp",
+  "output": "attach/syscall_trace_attach_impl/CMakeFiles/bpftime_syscall_trace_attach_impl.dir/src/syscall_trace_attach_private_data.cpp.o"
+},
+{
+  "directory": "/home/runner/work/bpftime/bpftime/build-simple/attach/syscall_trace_attach_impl",
+  "command": "/usr/bin/c++ -DSPDLOG_ACTIVE_LEVEL=SPDLOG_LEVEL_TRACE -DSPDLOG_COMPILED_LIB -I/home/runner/work/bpftime/bpftime/attach/syscall_trace_attach_impl/include -I/home/runner/work/bpftime/bpftime/third_party/spdlog/include -I/home/runner/work/bpftime/bpftime/third_party/Catch2/src/catch2/.. -I/home/runner/work/bpftime/bpftime/build-simple/third_party/Catch2/generated-includes -I/home/runner/work/bpftime/bpftime/attach/base_attach_impl  -fno-omit-frame-pointer -g -std=gnu++20 -fPIE -D_DEBUG -o CMakeFiles/bpftime_syscall_trace_attach_tests.dir/test/test_private_data_parsing.cpp.o -c /home/runner/work/bpftime/bpftime/attach/syscall_trace_attach_impl/test/test_private_data_parsing.cpp",
+  "file": "/home/runner/work/bpftime/bpftime/attach/syscall_trace_attach_impl/test/test_private_data_parsing.cpp",
+  "output": "attach/syscall_trace_attach_impl/CMakeFiles/bpftime_syscall_trace_attach_tests.dir/test/test_private_data_parsing.cpp.o"
+},
+{
+  "directory": "/home/runner/work/bpftime/bpftime/build-simple/attach/syscall_trace_attach_impl",
+  "command": "/usr/bin/c++ -DSPDLOG_ACTIVE_LEVEL=SPDLOG_LEVEL_TRACE -DSPDLOG_COMPILED_LIB -I/home/runner/work/bpftime/bpftime/attach/syscall_trace_attach_impl/include -I/home/runner/work/bpftime/bpftime/third_party/spdlog/include -I/home/runner/work/bpftime/bpftime/third_party/Catch2/src/catch2/.. -I/home/runner/work/bpftime/bpftime/build-simple/third_party/Catch2/generated-includes -I/home/runner/work/bpftime/bpftime/attach/base_attach_impl  -fno-omit-frame-pointer -g -std=gnu++20 -fPIE -D_DEBUG -o CMakeFiles/bpftime_syscall_trace_attach_tests.dir/test/test_syscall_dispatch.cpp.o -c /home/runner/work/bpftime/bpftime/attach/syscall_trace_attach_impl/test/test_syscall_dispatch.cpp",
+  "file": "/home/runner/work/bpftime/bpftime/attach/syscall_trace_attach_impl/test/test_syscall_dispatch.cpp",
+  "output": "attach/syscall_trace_attach_impl/CMakeFiles/bpftime_syscall_trace_attach_tests.dir/test/test_syscall_dispatch.cpp.o"
+},
+{
+  "directory": "/home/runner/work/bpftime/bpftime/build-simple/attach/text_segment_transformer",
+  "command": "/usr/bin/c++ -DSPDLOG_ACTIVE_LEVEL=SPDLOG_LEVEL_TRACE -DSPDLOG_COMPILED_LIB -Dbpftime_text_segment_transformer_EXPORTS -I/home/runner/work/bpftime/bpftime/build-simple/FridaGum-prefix/src/FridaGum -I/home/runner/work/bpftime/bpftime/third_party/spdlog/include  -fno-omit-frame-pointer -g -std=gnu++20 -fPIC -D_DEBUG -o CMakeFiles/bpftime_text_segment_transformer.dir/agent-transformer.cpp.o -c /home/runner/work/bpftime/bpftime/attach/text_segment_transformer/agent-transformer.cpp",
+  "file": "/home/runner/work/bpftime/bpftime/attach/text_segment_transformer/agent-transformer.cpp",
+  "output": "attach/text_segment_transformer/CMakeFiles/bpftime_text_segment_transformer.dir/agent-transformer.cpp.o"
+},
+{
+  "directory": "/home/runner/work/bpftime/bpftime/build-simple/attach/text_segment_transformer",
+  "command": "/usr/bin/c++ -DSPDLOG_ACTIVE_LEVEL=SPDLOG_LEVEL_TRACE -DSPDLOG_COMPILED_LIB -Dbpftime_text_segment_transformer_EXPORTS -I/home/runner/work/bpftime/bpftime/build-simple/FridaGum-prefix/src/FridaGum -I/home/runner/work/bpftime/bpftime/third_party/spdlog/include  -fno-omit-frame-pointer -g -std=gnu++20 -fPIC -D_DEBUG -o CMakeFiles/bpftime_text_segment_transformer.dir/text_segment_transformer.cpp.o -c /home/runner/work/bpftime/bpftime/attach/text_segment_transformer/text_segment_transformer.cpp",
+  "file": "/home/runner/work/bpftime/bpftime/attach/text_segment_transformer/text_segment_transformer.cpp",
+  "output": "attach/text_segment_transformer/CMakeFiles/bpftime_text_segment_transformer.dir/text_segment_transformer.cpp.o"
+},
+{
+  "directory": "/home/runner/work/bpftime/bpftime/build-simple/runtime",
+  "command": "/usr/bin/c++ -DENABLE_PROBE_READ_CHECK=1 -DENABLE_PROBE_WRITE_CHECK=1 -DSPDLOG_ACTIVE_LEVEL=SPDLOG_LEVEL_TRACE -DSPDLOG_COMPILED_LIB -I/home/runner/work/bpftime/bpftime/runtime/../vm/include -I/home/runner/work/bpftime/bpftime/runtime/../runtime/include -I/home/runner/work/bpftime/bpftime/runtime/../runtime -I/home/runner/work/bpftime/bpftime/build-simple/runtime -I/home/runner/work/bpftime/bpftime/runtime/../third_party -I/home/runner/work/bpftime/bpftime/runtime -I/home/runner/work/bpftime/bpftime/third_party/spdlog/include -I/home/runner/work/bpftime/bpftime/build-simple/FridaGum-prefix/src/FridaGum -I/home/runner/work/bpftime/bpftime/runtime/include -I/home/runner/work/bpftime/bpftime/runtime/src -I/home/runner/work/bpftime/bpftime/vm/vm-core/./include -I/home/runner/work/bpftime/bpftime/vm/compat/include -I/home/runner/work/bpftime/bpftime/vm/llvm-jit/src -I/home/runner/work/bpftime/bpftime/vm/llvm-jit/include -I/home/runner/work/bpftime/bpftime/attach/base_attach_impl  -fno-omit-frame-pointer -g -std=gnu++20 -fPIC -D_DEBUG -Wall -Wextra -Wno-shadow -Wcast-align -Wunused -Wnull-dereference -Wdouble-promotion -Wformat=2 -fPIE -fPIC -fno-common -Wno-unused-function -Wno-unused-parameter -Wno-unused-variable -Wno-missing-field-initializers -Wmisleading-indentation -Wduplicated-cond -Wduplicated-branches -Wlogical-op -o CMakeFiles/runtime.dir/src/attach/bpf_attach_ctx.cpp.o -c /home/runner/work/bpftime/bpftime/runtime/src/attach/bpf_attach_ctx.cpp",
+  "file": "/home/runner/work/bpftime/bpftime/runtime/src/attach/bpf_attach_ctx.cpp",
+  "output": "runtime/CMakeFiles/runtime.dir/src/attach/bpf_attach_ctx.cpp.o"
+},
+{
+  "directory": "/home/runner/work/bpftime/bpftime/build-simple/runtime",
+  "command": "/usr/bin/c++ -DENABLE_PROBE_READ_CHECK=1 -DENABLE_PROBE_WRITE_CHECK=1 -DSPDLOG_ACTIVE_LEVEL=SPDLOG_LEVEL_TRACE -DSPDLOG_COMPILED_LIB -I/home/runner/work/bpftime/bpftime/runtime/../vm/include -I/home/runner/work/bpftime/bpftime/runtime/../runtime/include -I/home/runner/work/bpftime/bpftime/runtime/../runtime -I/home/runner/work/bpftime/bpftime/build-simple/runtime -I/home/runner/work/bpftime/bpftime/runtime/../third_party -I/home/runner/work/bpftime/bpftime/runtime -I/home/runner/work/bpftime/bpftime/third_party/spdlog/include -I/home/runner/work/bpftime/bpftime/build-simple/FridaGum-prefix/src/FridaGum -I/home/runner/work/bpftime/bpftime/runtime/include -I/home/runner/work/bpftime/bpftime/runtime/src -I/home/runner/work/bpftime/bpftime/vm/vm-core/./include -I/home/runner/work/bpftime/bpftime/vm/compat/include -I/home/runner/work/bpftime/bpftime/vm/llvm-jit/src -I/home/runner/work/bpftime/bpftime/vm/llvm-jit/include -I/home/runner/work/bpftime/bpftime/attach/base_attach_impl  -fno-omit-frame-pointer -g -std=gnu++20 -fPIC -D_DEBUG -Wall -Wextra -Wno-shadow -Wcast-align -Wunused -Wnull-dereference -Wdouble-promotion -Wformat=2 -fPIE -fPIC -fno-common -Wno-unused-function -Wno-unused-parameter -Wno-unused-variable -Wno-missing-field-initializers -Wmisleading-indentation -Wduplicated-cond -Wduplicated-branches -Wlogical-op -o CMakeFiles/runtime.dir/src/handler/handler_manager.cpp.o -c /home/runner/work/bpftime/bpftime/runtime/src/handler/handler_manager.cpp",
+  "file": "/home/runner/work/bpftime/bpftime/runtime/src/handler/handler_manager.cpp",
+  "output": "runtime/CMakeFiles/runtime.dir/src/handler/handler_manager.cpp.o"
+},
+{
+  "directory": "/home/runner/work/bpftime/bpftime/build-simple/runtime",
+  "command": "/usr/bin/c++ -DENABLE_PROBE_READ_CHECK=1 -DENABLE_PROBE_WRITE_CHECK=1 -DSPDLOG_ACTIVE_LEVEL=SPDLOG_LEVEL_TRACE -DSPDLOG_COMPILED_LIB -I/home/runner/work/bpftime/bpftime/runtime/../vm/include -I/home/runner/work/bpftime/bpftime/runtime/../runtime/include -I/home/runner/work/bpftime/bpftime/runtime/../runtime -I/home/runner/work/bpftime/bpftime/build-simple/runtime -I/home/runner/work/bpftime/bpftime/runtime/../third_party -I/home/runner/work/bpftime/bpftime/runtime -I/home/runner/work/bpftime/bpftime/third_party/spdlog/include -I/home/runner/work/bpftime/bpftime/build-simple/FridaGum-prefix/src/FridaGum -I/home/runner/work/bpftime/bpftime/runtime/include -I/home/runner/work/bpftime/bpftime/runtime/src -I/home/runner/work/bpftime/bpftime/vm/vm-core/./include -I/home/runner/work/bpftime/bpftime/vm/compat/include -I/home/runner/work/bpftime/bpftime/vm/llvm-jit/src -I/home/runner/work/bpftime/bpftime/vm/llvm-jit/include -I/home/runner/work/bpftime/bpftime/attach/base_attach_impl  -fno-omit-frame-pointer -g -std=gnu++20 -fPIC -D_DEBUG -Wall -Wextra -Wno-shadow -Wcast-align -Wunused -Wnull-dereference -Wdouble-promotion -Wformat=2 -fPIE -fPIC -fno-common -Wno-unused-function -Wno-unused-parameter -Wno-unused-variable -Wno-missing-field-initializers -Wmisleading-indentation -Wduplicated-cond -Wduplicated-branches -Wlogical-op -o CMakeFiles/runtime.dir/src/handler/map_handler.cpp.o -c /home/runner/work/bpftime/bpftime/runtime/src/handler/map_handler.cpp",
+  "file": "/home/runner/work/bpftime/bpftime/runtime/src/handler/map_handler.cpp",
+  "output": "runtime/CMakeFiles/runtime.dir/src/handler/map_handler.cpp.o"
+},
+{
+  "directory": "/home/runner/work/bpftime/bpftime/build-simple/runtime",
+  "command": "/usr/bin/c++ -DENABLE_PROBE_READ_CHECK=1 -DENABLE_PROBE_WRITE_CHECK=1 -DSPDLOG_ACTIVE_LEVEL=SPDLOG_LEVEL_TRACE -DSPDLOG_COMPILED_LIB -I/home/runner/work/bpftime/bpftime/runtime/../vm/include -I/home/runner/work/bpftime/bpftime/runtime/../runtime/include -I/home/runner/work/bpftime/bpftime/runtime/../runtime -I/home/runner/work/bpftime/bpftime/build-simple/runtime -I/home/runner/work/bpftime/bpftime/runtime/../third_party -I/home/runner/work/bpftime/bpftime/runtime -I/home/runner/work/bpftime/bpftime/third_party/spdlog/include -I/home/runner/work/bpftime/bpftime/build-simple/FridaGum-prefix/src/FridaGum -I/home/runner/work/bpftime/bpftime/runtime/include -I/home/runner/work/bpftime/bpftime/runtime/src -I/home/runner/work/bpftime/bpftime/vm/vm-core/./include -I/home/runner/work/bpftime/bpftime/vm/compat/include -I/home/runner/work/bpftime/bpftime/vm/llvm-jit/src -I/home/runner/work/bpftime/bpftime/vm/llvm-jit/include -I/home/runner/work/bpftime/bpftime/attach/base_attach_impl  -fno-omit-frame-pointer -g -std=gnu++20 -fPIC -D_DEBUG -Wall -Wextra -Wno-shadow -Wcast-align -Wunused -Wnull-dereference -Wdouble-promotion -Wformat=2 -fPIE -fPIC -fno-common -Wno-unused-function -Wno-unused-parameter -Wno-unused-variable -Wno-missing-field-initializers -Wmisleading-indentation -Wduplicated-cond -Wduplicated-branches -Wlogical-op -o CMakeFiles/runtime.dir/src/handler/perf_event_handler.cpp.o -c /home/runner/work/bpftime/bpftime/runtime/src/handler/perf_event_handler.cpp",
+  "file": "/home/runner/work/bpftime/bpftime/runtime/src/handler/perf_event_handler.cpp",
+  "output": "runtime/CMakeFiles/runtime.dir/src/handler/perf_event_handler.cpp.o"
+},
+{
+  "directory": "/home/runner/work/bpftime/bpftime/build-simple/runtime",
+  "command": "/usr/bin/c++ -DENABLE_PROBE_READ_CHECK=1 -DENABLE_PROBE_WRITE_CHECK=1 -DSPDLOG_ACTIVE_LEVEL=SPDLOG_LEVEL_TRACE -DSPDLOG_COMPILED_LIB -I/home/runner/work/bpftime/bpftime/runtime/../vm/include -I/home/runner/work/bpftime/bpftime/runtime/../runtime/include -I/home/runner/work/bpftime/bpftime/runtime/../runtime -I/home/runner/work/bpftime/bpftime/build-simple/runtime -I/home/runner/work/bpftime/bpftime/runtime/../third_party -I/home/runner/work/bpftime/bpftime/runtime -I/home/runner/work/bpftime/bpftime/third_party/spdlog/include -I/home/runner/work/bpftime/bpftime/build-simple/FridaGum-prefix/src/FridaGum -I/home/runner/work/bpftime/bpftime/runtime/include -I/home/runner/work/bpftime/bpftime/runtime/src -I/home/runner/work/bpftime/bpftime/vm/vm-core/./include -I/home/runner/work/bpftime/bpftime/vm/compat/include -I/home/runner/work/bpftime/bpftime/vm/llvm-jit/src -I/home/runner/work/bpftime/bpftime/vm/llvm-jit/include -I/home/runner/work/bpftime/bpftime/attach/base_attach_impl  -fno-omit-frame-pointer -g -std=gnu++20 -fPIC -D_DEBUG -Wall -Wextra -Wno-shadow -Wcast-align -Wunused -Wnull-dereference -Wdouble-promotion -Wformat=2 -fPIE -fPIC -fno-common -Wno-unused-function -Wno-unused-parameter -Wno-unused-variable -Wno-missing-field-initializers -Wmisleading-indentation -Wduplicated-cond -Wduplicated-branches -Wlogical-op -o CMakeFiles/runtime.dir/src/handler/prog_handler.cpp.o -c /home/runner/work/bpftime/bpftime/runtime/src/handler/prog_handler.cpp",
+  "file": "/home/runner/work/bpftime/bpftime/runtime/src/handler/prog_handler.cpp",
+  "output": "runtime/CMakeFiles/runtime.dir/src/handler/prog_handler.cpp.o"
+},
+{
+  "directory": "/home/runner/work/bpftime/bpftime/build-simple/runtime",
+  "command": "/usr/bin/c++ -DENABLE_PROBE_READ_CHECK=1 -DENABLE_PROBE_WRITE_CHECK=1 -DSPDLOG_ACTIVE_LEVEL=SPDLOG_LEVEL_TRACE -DSPDLOG_COMPILED_LIB -I/home/runner/work/bpftime/bpftime/runtime/../vm/include -I/home/runner/work/bpftime/bpftime/runtime/../runtime/include -I/home/runner/work/bpftime/bpftime/runtime/../runtime -I/home/runner/work/bpftime/bpftime/build-simple/runtime -I/home/runner/work/bpftime/bpftime/runtime/../third_party -I/home/runner/work/bpftime/bpftime/runtime -I/home/runner/work/bpftime/bpftime/third_party/spdlog/include -I/home/runner/work/bpftime/bpftime/build-simple/FridaGum-prefix/src/FridaGum -I/home/runner/work/bpftime/bpftime/runtime/include -I/home/runner/work/bpftime/bpftime/runtime/src -I/home/runner/work/bpftime/bpftime/vm/vm-core/./include -I/home/runner/work/bpftime/bpftime/vm/compat/include -I/home/runner/work/bpftime/bpftime/vm/llvm-jit/src -I/home/runner/work/bpftime/bpftime/vm/llvm-jit/include -I/home/runner/work/bpftime/bpftime/attach/base_attach_impl  -fno-omit-frame-pointer -g -std=gnu++20 -fPIC -D_DEBUG -Wall -Wextra -Wno-shadow -Wcast-align -Wunused -Wnull-dereference -Wdouble-promotion -Wformat=2 -fPIE -fPIC -fno-common -Wno-unused-function -Wno-unused-parameter -Wno-unused-variable -Wno-missing-field-initializers -Wmisleading-indentation -Wduplicated-cond -Wduplicated-branches -Wlogical-op -o CMakeFiles/runtime.dir/src/handler/epoll_handler.cpp.o -c /home/runner/work/bpftime/bpftime/runtime/src/handler/epoll_handler.cpp",
+  "file": "/home/runner/work/bpftime/bpftime/runtime/src/handler/epoll_handler.cpp",
+  "output": "runtime/CMakeFiles/runtime.dir/src/handler/epoll_handler.cpp.o"
+},
+{
+  "directory": "/home/runner/work/bpftime/bpftime/build-simple/runtime",
+  "command": "/usr/bin/c++ -DENABLE_PROBE_READ_CHECK=1 -DENABLE_PROBE_WRITE_CHECK=1 -DSPDLOG_ACTIVE_LEVEL=SPDLOG_LEVEL_TRACE -DSPDLOG_COMPILED_LIB -I/home/runner/work/bpftime/bpftime/runtime/../vm/include -I/home/runner/work/bpftime/bpftime/runtime/../runtime/include -I/home/runner/work/bpftime/bpftime/runtime/../runtime -I/home/runner/work/bpftime/bpftime/build-simple/runtime -I/home/runner/work/bpftime/bpftime/runtime/../third_party -I/home/runner/work/bpftime/bpftime/runtime -I/home/runner/work/bpftime/bpftime/third_party/spdlog/include -I/home/runner/work/bpftime/bpftime/build-simple/FridaGum-prefix/src/FridaGum -I/home/runner/work/bpftime/bpftime/runtime/include -I/home/runner/work/bpftime/bpftime/runtime/src -I/home/runner/work/bpftime/bpftime/vm/vm-core/./include -I/home/runner/work/bpftime/bpftime/vm/compat/include -I/home/runner/work/bpftime/bpftime/vm/llvm-jit/src -I/home/runner/work/bpftime/bpftime/vm/llvm-jit/include -I/home/runner/work/bpftime/bpftime/attach/base_attach_impl  -fno-omit-frame-pointer -g -std=gnu++20 -fPIC -D_DEBUG -Wall -Wextra -Wno-shadow -Wcast-align -Wunused -Wnull-dereference -Wdouble-promotion -Wformat=2 -fPIE -fPIC -fno-common -Wno-unused-function -Wno-unused-parameter -Wno-unused-variable -Wno-missing-field-initializers -Wmisleading-indentation -Wduplicated-cond -Wduplicated-branches -Wlogical-op -o CMakeFiles/runtime.dir/src/bpftime_shm.cpp.o -c /home/runner/work/bpftime/bpftime/runtime/src/bpftime_shm.cpp",
+  "file": "/home/runner/work/bpftime/bpftime/runtime/src/bpftime_shm.cpp",
+  "output": "runtime/CMakeFiles/runtime.dir/src/bpftime_shm.cpp.o"
+},
+{
+  "directory": "/home/runner/work/bpftime/bpftime/build-simple/runtime",
+  "command": "/usr/bin/c++ -DENABLE_PROBE_READ_CHECK=1 -DENABLE_PROBE_WRITE_CHECK=1 -DSPDLOG_ACTIVE_LEVEL=SPDLOG_LEVEL_TRACE -DSPDLOG_COMPILED_LIB -I/home/runner/work/bpftime/bpftime/runtime/../vm/include -I/home/runner/work/bpftime/bpftime/runtime/../runtime/include -I/home/runner/work/bpftime/bpftime/runtime/../runtime -I/home/runner/work/bpftime/bpftime/build-simple/runtime -I/home/runner/work/bpftime/bpftime/runtime/../third_party -I/home/runner/work/bpftime/bpftime/runtime -I/home/runner/work/bpftime/bpftime/third_party/spdlog/include -I/home/runner/work/bpftime/bpftime/build-simple/FridaGum-prefix/src/FridaGum -I/home/runner/work/bpftime/bpftime/runtime/include -I/home/runner/work/bpftime/bpftime/runtime/src -I/home/runner/work/bpftime/bpftime/vm/vm-core/./include -I/home/runner/work/bpftime/bpftime/vm/compat/include -I/home/runner/work/bpftime/bpftime/vm/llvm-jit/src -I/home/runner/work/bpftime/bpftime/vm/llvm-jit/include -I/home/runner/work/bpftime/bpftime/attach/base_attach_impl  -fno-omit-frame-pointer -g -std=gnu++20 -fPIC -D_DEBUG -Wall -Wextra -Wno-shadow -Wcast-align -Wunused -Wnull-dereference -Wdouble-promotion -Wformat=2 -fPIE -fPIC -fno-common -Wno-unused-function -Wno-unused-parameter -Wno-unused-variable -Wno-missing-field-initializers -Wmisleading-indentation -Wduplicated-cond -Wduplicated-branches -Wlogical-op -o CMakeFiles/runtime.dir/src/bpftime_shm_internal.cpp.o -c /home/runner/work/bpftime/bpftime/runtime/src/bpftime_shm_internal.cpp",
+  "file": "/home/runner/work/bpftime/bpftime/runtime/src/bpftime_shm_internal.cpp",
+  "output": "runtime/CMakeFiles/runtime.dir/src/bpftime_shm_internal.cpp.o"
+},
+{
+  "directory": "/home/runner/work/bpftime/bpftime/build-simple/runtime",
+  "command": "/usr/bin/c++ -DENABLE_PROBE_READ_CHECK=1 -DENABLE_PROBE_WRITE_CHECK=1 -DSPDLOG_ACTIVE_LEVEL=SPDLOG_LEVEL_TRACE -DSPDLOG_COMPILED_LIB -I/home/runner/work/bpftime/bpftime/runtime/../vm/include -I/home/runner/work/bpftime/bpftime/runtime/../runtime/include -I/home/runner/work/bpftime/bpftime/runtime/../runtime -I/home/runner/work/bpftime/bpftime/build-simple/runtime -I/home/runner/work/bpftime/bpftime/runtime/../third_party -I/home/runner/work/bpftime/bpftime/runtime -I/home/runner/work/bpftime/bpftime/third_party/spdlog/include -I/home/runner/work/bpftime/bpftime/build-simple/FridaGum-prefix/src/FridaGum -I/home/runner/work/bpftime/bpftime/runtime/include -I/home/runner/work/bpftime/bpftime/runtime/src -I/home/runner/work/bpftime/bpftime/vm/vm-core/./include -I/home/runner/work/bpftime/bpftime/vm/compat/include -I/home/runner/work/bpftime/bpftime/vm/llvm-jit/src -I/home/runner/work/bpftime/bpftime/vm/llvm-jit/include -I/home/runner/work/bpftime/bpftime/attach/base_attach_impl  -fno-omit-frame-pointer -g -std=gnu++20 -fPIC -D_DEBUG -Wall -Wextra -Wno-shadow -Wcast-align -Wunused -Wnull-dereference -Wdouble-promotion -Wformat=2 -fPIE -fPIC -fno-common -Wno-unused-function -Wno-unused-parameter -Wno-unused-variable -Wno-missing-field-initializers -Wmisleading-indentation -Wduplicated-cond -Wduplicated-branches -Wlogical-op -o CMakeFiles/runtime.dir/src/bpftime_shm_json.cpp.o -c /home/runner/work/bpftime/bpftime/runtime/src/bpftime_shm_json.cpp",
+  "file": "/home/runner/work/bpftime/bpftime/runtime/src/bpftime_shm_json.cpp",
+  "output": "runtime/CMakeFiles/runtime.dir/src/bpftime_shm_json.cpp.o"
+},
+{
+  "directory": "/home/runner/work/bpftime/bpftime/build-simple/runtime",
+  "command": "/usr/bin/c++ -DENABLE_PROBE_READ_CHECK=1 -DENABLE_PROBE_WRITE_CHECK=1 -DSPDLOG_ACTIVE_LEVEL=SPDLOG_LEVEL_TRACE -DSPDLOG_COMPILED_LIB -I/home/runner/work/bpftime/bpftime/runtime/../vm/include -I/home/runner/work/bpftime/bpftime/runtime/../runtime/include -I/home/runner/work/bpftime/bpftime/runtime/../runtime -I/home/runner/work/bpftime/bpftime/build-simple/runtime -I/home/runner/work/bpftime/bpftime/runtime/../third_party -I/home/runner/work/bpftime/bpftime/runtime -I/home/runner/work/bpftime/bpftime/third_party/spdlog/include -I/home/runner/work/bpftime/bpftime/build-simple/FridaGum-prefix/src/FridaGum -I/home/runner/work/bpftime/bpftime/runtime/include -I/home/runner/work/bpftime/bpftime/runtime/src -I/home/runner/work/bpftime/bpftime/vm/vm-core/./include -I/home/runner/work/bpftime/bpftime/vm/compat/include -I/home/runner/work/bpftime/bpftime/vm/llvm-jit/src -I/home/runner/work/bpftime/bpftime/vm/llvm-jit/include -I/home/runner/work/bpftime/bpftime/attach/base_attach_impl  -fno-omit-frame-pointer -g -std=gnu++20 -fPIC -D_DEBUG -Wall -Wextra -Wno-shadow -Wcast-align -Wunused -Wnull-dereference -Wdouble-promotion -Wformat=2 -fPIE -fPIC -fno-common -Wno-unused-function -Wno-unused-parameter -Wno-unused-variable -Wno-missing-field-initializers -Wmisleading-indentation -Wduplicated-cond -Wduplicated-branches -Wlogical-op -o CMakeFiles/runtime.dir/src/bpftime_prog.cpp.o -c /home/runner/work/bpftime/bpftime/runtime/src/bpftime_prog.cpp",
+  "file": "/home/runner/work/bpftime/bpftime/runtime/src/bpftime_prog.cpp",
+  "output": "runtime/CMakeFiles/runtime.dir/src/bpftime_prog.cpp.o"
+},
+{
+  "directory": "/home/runner/work/bpftime/bpftime/build-simple/runtime",
+  "command": "/usr/bin/c++ -DENABLE_PROBE_READ_CHECK=1 -DENABLE_PROBE_WRITE_CHECK=1 -DSPDLOG_ACTIVE_LEVEL=SPDLOG_LEVEL_TRACE -DSPDLOG_COMPILED_LIB -I/home/runner/work/bpftime/bpftime/runtime/../vm/include -I/home/runner/work/bpftime/bpftime/runtime/../runtime/include -I/home/runner/work/bpftime/bpftime/runtime/../runtime -I/home/runner/work/bpftime/bpftime/build-simple/runtime -I/home/runner/work/bpftime/bpftime/runtime/../third_party -I/home/runner/work/bpftime/bpftime/runtime -I/home/runner/work/bpftime/bpftime/third_party/spdlog/include -I/home/runner/work/bpftime/bpftime/build-simple/FridaGum-prefix/src/FridaGum -I/home/runner/work/bpftime/bpftime/runtime/include -I/home/runner/work/bpftime/bpftime/runtime/src -I/home/runner/work/bpftime/bpftime/vm/vm-core/./include -I/home/runner/work/bpftime/bpftime/vm/compat/include -I/home/runner/work/bpftime/bpftime/vm/llvm-jit/src -I/home/runner/work/bpftime/bpftime/vm/llvm-jit/include -I/home/runner/work/bpftime/bpftime/attach/base_attach_impl  -fno-omit-frame-pointer -g -std=gnu++20 -fPIC -D_DEBUG -Wall -Wextra -Wno-shadow -Wcast-align -Wunused -Wnull-dereference -Wdouble-promotion -Wformat=2 -fPIE -fPIC -fno-common -Wno-unused-function -Wno-unused-parameter -Wno-unused-variable -Wno-missing-field-initializers -Wmisleading-indentation -Wduplicated-cond -Wduplicated-branches -Wlogical-op -o CMakeFiles/runtime.dir/src/bpftime_config.cpp.o -c /home/runner/work/bpftime/bpftime/runtime/src/bpftime_config.cpp",
+  "file": "/home/runner/work/bpftime/bpftime/runtime/src/bpftime_config.cpp",
+  "output": "runtime/CMakeFiles/runtime.dir/src/bpftime_config.cpp.o"
+},
+{
+  "directory": "/home/runner/work/bpftime/bpftime/build-simple/runtime",
+  "command": "/usr/bin/c++ -DENABLE_PROBE_READ_CHECK=1 -DENABLE_PROBE_WRITE_CHECK=1 -DSPDLOG_ACTIVE_LEVEL=SPDLOG_LEVEL_TRACE -DSPDLOG_COMPILED_LIB -I/home/runner/work/bpftime/bpftime/runtime/../vm/include -I/home/runner/work/bpftime/bpftime/runtime/../runtime/include -I/home/runner/work/bpftime/bpftime/runtime/../runtime -I/home/runner/work/bpftime/bpftime/build-simple/runtime -I/home/runner/work/bpftime/bpftime/runtime/../third_party -I/home/runner/work/bpftime/bpftime/runtime -I/home/runner/work/bpftime/bpftime/third_party/spdlog/include -I/home/runner/work/bpftime/bpftime/build-simple/FridaGum-prefix/src/FridaGum -I/home/runner/work/bpftime/bpftime/runtime/include -I/home/runner/work/bpftime/bpftime/runtime/src -I/home/runner/work/bpftime/bpftime/vm/vm-core/./include -I/home/runner/work/bpftime/bpftime/vm/compat/include -I/home/runner/work/bpftime/bpftime/vm/llvm-jit/src -I/home/runner/work/bpftime/bpftime/vm/llvm-jit/include -I/home/runner/work/bpftime/bpftime/attach/base_attach_impl  -fno-omit-frame-pointer -g -std=gnu++20 -fPIC -D_DEBUG -Wall -Wextra -Wno-shadow -Wcast-align -Wunused -Wnull-dereference -Wdouble-promotion -Wformat=2 -fPIE -fPIC -fno-common -Wno-unused-function -Wno-unused-parameter -Wno-unused-variable -Wno-missing-field-initializers -Wmisleading-indentation -Wduplicated-cond -Wduplicated-branches -Wlogical-op -o CMakeFiles/runtime.dir/src/ufunc.cpp.o -c /home/runner/work/bpftime/bpftime/runtime/src/ufunc.cpp",
+  "file": "/home/runner/work/bpftime/bpftime/runtime/src/ufunc.cpp",
+  "output": "runtime/CMakeFiles/runtime.dir/src/ufunc.cpp.o"
+},
+{
+  "directory": "/home/runner/work/bpftime/bpftime/build-simple/runtime",
+  "command": "/usr/bin/c++ -DENABLE_PROBE_READ_CHECK=1 -DENABLE_PROBE_WRITE_CHECK=1 -DSPDLOG_ACTIVE_LEVEL=SPDLOG_LEVEL_TRACE -DSPDLOG_COMPILED_LIB -I/home/runner/work/bpftime/bpftime/runtime/../vm/include -I/home/runner/work/bpftime/bpftime/runtime/../runtime/include -I/home/runner/work/bpftime/bpftime/runtime/../runtime -I/home/runner/work/bpftime/bpftime/build-simple/runtime -I/home/runner/work/bpftime/bpftime/runtime/../third_party -I/home/runner/work/bpftime/bpftime/runtime -I/home/runner/work/bpftime/bpftime/third_party/spdlog/include -I/home/runner/work/bpftime/bpftime/build-simple/FridaGum-prefix/src/FridaGum -I/home/runner/work/bpftime/bpftime/runtime/include -I/home/runner/work/bpftime/bpftime/runtime/src -I/home/runner/work/bpftime/bpftime/vm/vm-core/./include -I/home/runner/work/bpftime/bpftime/vm/compat/include -I/home/runner/work/bpftime/bpftime/vm/llvm-jit/src -I/home/runner/work/bpftime/bpftime/vm/llvm-jit/include -I/home/runner/work/bpftime/bpftime/attach/base_attach_impl  -fno-omit-frame-pointer -g -std=gnu++20 -fPIC -D_DEBUG -Wall -Wextra -Wno-shadow -Wcast-align -Wunused -Wnull-dereference -Wdouble-promotion -Wformat=2 -fPIE -fPIC -fno-common -Wno-unused-function -Wno-unused-parameter -Wno-unused-variable -Wno-missing-field-initializers -Wmisleading-indentation -Wduplicated-cond -Wduplicated-branches -Wlogical-op -o CMakeFiles/runtime.dir/src/bpf_helper.cpp.o -c /home/runner/work/bpftime/bpftime/runtime/src/bpf_helper.cpp",
+  "file": "/home/runner/work/bpftime/bpftime/runtime/src/bpf_helper.cpp",
+  "output": "runtime/CMakeFiles/runtime.dir/src/bpf_helper.cpp.o"
+},
+{
+  "directory": "/home/runner/work/bpftime/bpftime/build-simple/runtime",
+  "command": "/usr/bin/c++ -DENABLE_PROBE_READ_CHECK=1 -DENABLE_PROBE_WRITE_CHECK=1 -DSPDLOG_ACTIVE_LEVEL=SPDLOG_LEVEL_TRACE -DSPDLOG_COMPILED_LIB -I/home/runner/work/bpftime/bpftime/runtime/../vm/include -I/home/runner/work/bpftime/bpftime/runtime/../runtime/include -I/home/runner/work/bpftime/bpftime/runtime/../runtime -I/home/runner/work/bpftime/bpftime/build-simple/runtime -I/home/runner/work/bpftime/bpftime/runtime/../third_party -I/home/runner/work/bpftime/bpftime/runtime -I/home/runner/work/bpftime/bpftime/third_party/spdlog/include -I/home/runner/work/bpftime/bpftime/build-simple/FridaGum-prefix/src/FridaGum -I/home/runner/work/bpftime/bpftime/runtime/include -I/home/runner/work/bpftime/bpftime/runtime/src -I/home/runner/work/bpftime/bpftime/vm/vm-core/./include -I/home/runner/work/bpftime/bpftime/vm/compat/include -I/home/runner/work/bpftime/bpftime/vm/llvm-jit/src -I/home/runner/work/bpftime/bpftime/vm/llvm-jit/include -I/home/runner/work/bpftime/bpftime/attach/base_attach_impl  -fno-omit-frame-pointer -g -std=gnu++20 -fPIC -D_DEBUG -Wall -Wextra -Wno-shadow -Wcast-align -Wunused -Wnull-dereference -Wdouble-promotion -Wformat=2 -fPIE -fPIC -fno-common -Wno-unused-function -Wno-unused-parameter -Wno-unused-variable -Wno-missing-field-initializers -Wmisleading-indentation -Wduplicated-cond -Wduplicated-branches -Wlogical-op -o CMakeFiles/runtime.dir/src/platform_utils.cpp.o -c /home/runner/work/bpftime/bpftime/runtime/src/platform_utils.cpp",
+  "file": "/home/runner/work/bpftime/bpftime/runtime/src/platform_utils.cpp",
+  "output": "runtime/CMakeFiles/runtime.dir/src/platform_utils.cpp.o"
+},
+{
+  "directory": "/home/runner/work/bpftime/bpftime/build-simple/runtime",
+  "command": "/usr/bin/c++ -DENABLE_PROBE_READ_CHECK=1 -DENABLE_PROBE_WRITE_CHECK=1 -DSPDLOG_ACTIVE_LEVEL=SPDLOG_LEVEL_TRACE -DSPDLOG_COMPILED_LIB -I/home/runner/work/bpftime/bpftime/runtime/../vm/include -I/home/runner/work/bpftime/bpftime/runtime/../runtime/include -I/home/runner/work/bpftime/bpftime/runtime/../runtime -I/home/runner/work/bpftime/bpftime/build-simple/runtime -I/home/runner/work/bpftime/bpftime/runtime/../third_party -I/home/runner/work/bpftime/bpftime/runtime -I/home/runner/work/bpftime/bpftime/third_party/spdlog/include -I/home/runner/work/bpftime/bpftime/build-simple/FridaGum-prefix/src/FridaGum -I/home/runner/work/bpftime/bpftime/runtime/include -I/home/runner/work/bpftime/bpftime/runtime/src -I/home/runner/work/bpftime/bpftime/vm/vm-core/./include -I/home/runner/work/bpftime/bpftime/vm/compat/include -I/home/runner/work/bpftime/bpftime/vm/llvm-jit/src -I/home/runner/work/bpftime/bpftime/vm/llvm-jit/include -I/home/runner/work/bpftime/bpftime/attach/base_attach_impl  -fno-omit-frame-pointer -g -std=gnu++20 -fPIC -D_DEBUG -Wall -Wextra -Wno-shadow -Wcast-align -Wunused -Wnull-dereference -Wdouble-promotion -Wformat=2 -fPIE -fPIC -fno-common -Wno-unused-function -Wno-unused-parameter -Wno-unused-variable -Wno-missing-field-initializers -Wmisleading-indentation -Wduplicated-cond -Wduplicated-branches -Wlogical-op -o CMakeFiles/runtime.dir/src/bpf_map/userspace/array_map.cpp.o -c /home/runner/work/bpftime/bpftime/runtime/src/bpf_map/userspace/array_map.cpp",
+  "file": "/home/runner/work/bpftime/bpftime/runtime/src/bpf_map/userspace/array_map.cpp",
+  "output": "runtime/CMakeFiles/runtime.dir/src/bpf_map/userspace/array_map.cpp.o"
+},
+{
+  "directory": "/home/runner/work/bpftime/bpftime/build-simple/runtime",
+  "command": "/usr/bin/c++ -DENABLE_PROBE_READ_CHECK=1 -DENABLE_PROBE_WRITE_CHECK=1 -DSPDLOG_ACTIVE_LEVEL=SPDLOG_LEVEL_TRACE -DSPDLOG_COMPILED_LIB -I/home/runner/work/bpftime/bpftime/runtime/../vm/include -I/home/runner/work/bpftime/bpftime/runtime/../runtime/include -I/home/runner/work/bpftime/bpftime/runtime/../runtime -I/home/runner/work/bpftime/bpftime/build-simple/runtime -I/home/runner/work/bpftime/bpftime/runtime/../third_party -I/home/runner/work/bpftime/bpftime/runtime -I/home/runner/work/bpftime/bpftime/third_party/spdlog/include -I/home/runner/work/bpftime/bpftime/build-simple/FridaGum-prefix/src/FridaGum -I/home/runner/work/bpftime/bpftime/runtime/include -I/home/runner/work/bpftime/bpftime/runtime/src -I/home/runner/work/bpftime/bpftime/vm/vm-core/./include -I/home/runner/work/bpftime/bpftime/vm/compat/include -I/home/runner/work/bpftime/bpftime/vm/llvm-jit/src -I/home/runner/work/bpftime/bpftime/vm/llvm-jit/include -I/home/runner/work/bpftime/bpftime/attach/base_attach_impl  -fno-omit-frame-pointer -g -std=gnu++20 -fPIC -D_DEBUG -Wall -Wextra -Wno-shadow -Wcast-align -Wunused -Wnull-dereference -Wdouble-promotion -Wformat=2 -fPIE -fPIC -fno-common -Wno-unused-function -Wno-unused-parameter -Wno-unused-variable -Wno-missing-field-initializers -Wmisleading-indentation -Wduplicated-cond -Wduplicated-branches -Wlogical-op -o CMakeFiles/runtime.dir/src/bpf_map/userspace/fix_hash_map.cpp.o -c /home/runner/work/bpftime/bpftime/runtime/src/bpf_map/userspace/fix_hash_map.cpp",
+  "file": "/home/runner/work/bpftime/bpftime/runtime/src/bpf_map/userspace/fix_hash_map.cpp",
+  "output": "runtime/CMakeFiles/runtime.dir/src/bpf_map/userspace/fix_hash_map.cpp.o"
+},
+{
+  "directory": "/home/runner/work/bpftime/bpftime/build-simple/runtime",
+  "command": "/usr/bin/c++ -DENABLE_PROBE_READ_CHECK=1 -DENABLE_PROBE_WRITE_CHECK=1 -DSPDLOG_ACTIVE_LEVEL=SPDLOG_LEVEL_TRACE -DSPDLOG_COMPILED_LIB -I/home/runner/work/bpftime/bpftime/runtime/../vm/include -I/home/runner/work/bpftime/bpftime/runtime/../runtime/include -I/home/runner/work/bpftime/bpftime/runtime/../runtime -I/home/runner/work/bpftime/bpftime/build-simple/runtime -I/home/runner/work/bpftime/bpftime/runtime/../third_party -I/home/runner/work/bpftime/bpftime/runtime -I/home/runner/work/bpftime/bpftime/third_party/spdlog/include -I/home/runner/work/bpftime/bpftime/build-simple/FridaGum-prefix/src/FridaGum -I/home/runner/work/bpftime/bpftime/runtime/include -I/home/runner/work/bpftime/bpftime/runtime/src -I/home/runner/work/bpftime/bpftime/vm/vm-core/./include -I/home/runner/work/bpftime/bpftime/vm/compat/include -I/home/runner/work/bpftime/bpftime/vm/llvm-jit/src -I/home/runner/work/bpftime/bpftime/vm/llvm-jit/include -I/home/runner/work/bpftime/bpftime/attach/base_attach_impl  -fno-omit-frame-pointer -g -std=gnu++20 -fPIC -D_DEBUG -Wall -Wextra -Wno-shadow -Wcast-align -Wunused -Wnull-dereference -Wdouble-promotion -Wformat=2 -fPIE -fPIC -fno-common -Wno-unused-function -Wno-unused-parameter -Wno-unused-variable -Wno-missing-field-initializers -Wmisleading-indentation -Wduplicated-cond -Wduplicated-branches -Wlogical-op -o CMakeFiles/runtime.dir/src/bpf_map/userspace/var_hash_map.cpp.o -c /home/runner/work/bpftime/bpftime/runtime/src/bpf_map/userspace/var_hash_map.cpp",
+  "file": "/home/runner/work/bpftime/bpftime/runtime/src/bpf_map/userspace/var_hash_map.cpp",
+  "output": "runtime/CMakeFiles/runtime.dir/src/bpf_map/userspace/var_hash_map.cpp.o"
+},
+{
+  "directory": "/home/runner/work/bpftime/bpftime/build-simple/runtime",
+  "command": "/usr/bin/c++ -DENABLE_PROBE_READ_CHECK=1 -DENABLE_PROBE_WRITE_CHECK=1 -DSPDLOG_ACTIVE_LEVEL=SPDLOG_LEVEL_TRACE -DSPDLOG_COMPILED_LIB -I/home/runner/work/bpftime/bpftime/runtime/../vm/include -I/home/runner/work/bpftime/bpftime/runtime/../runtime/include -I/home/runner/work/bpftime/bpftime/runtime/../runtime -I/home/runner/work/bpftime/bpftime/build-simple/runtime -I/home/runner/work/bpftime/bpftime/runtime/../third_party -I/home/runner/work/bpftime/bpftime/runtime -I/home/runner/work/bpftime/bpftime/third_party/spdlog/include -I/home/runner/work/bpftime/bpftime/build-simple/FridaGum-prefix/src/FridaGum -I/home/runner/work/bpftime/bpftime/runtime/include -I/home/runner/work/bpftime/bpftime/runtime/src -I/home/runner/work/bpftime/bpftime/vm/vm-core/./include -I/home/runner/work/bpftime/bpftime/vm/compat/include -I/home/runner/work/bpftime/bpftime/vm/llvm-jit/src -I/home/runner/work/bpftime/bpftime/vm/llvm-jit/include -I/home/runner/work/bpftime/bpftime/attach/base_attach_impl  -fno-omit-frame-pointer -g -std=gnu++20 -fPIC -D_DEBUG -Wall -Wextra -Wno-shadow -Wcast-align -Wunused -Wnull-dereference -Wdouble-promotion -Wformat=2 -fPIE -fPIC -fno-common -Wno-unused-function -Wno-unused-parameter -Wno-unused-variable -Wno-missing-field-initializers -Wmisleading-indentation -Wduplicated-cond -Wduplicated-branches -Wlogical-op -o CMakeFiles/runtime.dir/src/bpf_map/userspace/ringbuf_map.cpp.o -c /home/runner/work/bpftime/bpftime/runtime/src/bpf_map/userspace/ringbuf_map.cpp",
+  "file": "/home/runner/work/bpftime/bpftime/runtime/src/bpf_map/userspace/ringbuf_map.cpp",
+  "output": "runtime/CMakeFiles/runtime.dir/src/bpf_map/userspace/ringbuf_map.cpp.o"
+},
+{
+  "directory": "/home/runner/work/bpftime/bpftime/build-simple/runtime",
+  "command": "/usr/bin/c++ -DENABLE_PROBE_READ_CHECK=1 -DENABLE_PROBE_WRITE_CHECK=1 -DSPDLOG_ACTIVE_LEVEL=SPDLOG_LEVEL_TRACE -DSPDLOG_COMPILED_LIB -I/home/runner/work/bpftime/bpftime/runtime/../vm/include -I/home/runner/work/bpftime/bpftime/runtime/../runtime/include -I/home/runner/work/bpftime/bpftime/runtime/../runtime -I/home/runner/work/bpftime/bpftime/build-simple/runtime -I/home/runner/work/bpftime/bpftime/runtime/../third_party -I/home/runner/work/bpftime/bpftime/runtime -I/home/runner/work/bpftime/bpftime/third_party/spdlog/include -I/home/runner/work/bpftime/bpftime/build-simple/FridaGum-prefix/src/FridaGum -I/home/runner/work/bpftime/bpftime/runtime/include -I/home/runner/work/bpftime/bpftime/runtime/src -I/home/runner/work/bpftime/bpftime/vm/vm-core/./include -I/home/runner/work/bpftime/bpftime/vm/compat/include -I/home/runner/work/bpftime/bpftime/vm/llvm-jit/src -I/home/runner/work/bpftime/bpftime/vm/llvm-jit/include -I/home/runner/work/bpftime/bpftime/attach/base_attach_impl  -fno-omit-frame-pointer -g -std=gnu++20 -fPIC -D_DEBUG -Wall -Wextra -Wno-shadow -Wcast-align -Wunused -Wnull-dereference -Wdouble-promotion -Wformat=2 -fPIE -fPIC -fno-common -Wno-unused-function -Wno-unused-parameter -Wno-unused-variable -Wno-missing-field-initializers -Wmisleading-indentation -Wduplicated-cond -Wduplicated-branches -Wlogical-op -o CMakeFiles/runtime.dir/src/bpf_map/userspace/perf_event_array_map.cpp.o -c /home/runner/work/bpftime/bpftime/runtime/src/bpf_map/userspace/perf_event_array_map.cpp",
+  "file": "/home/runner/work/bpftime/bpftime/runtime/src/bpf_map/userspace/perf_event_array_map.cpp",
+  "output": "runtime/CMakeFiles/runtime.dir/src/bpf_map/userspace/perf_event_array_map.cpp.o"
+},
+{
+  "directory": "/home/runner/work/bpftime/bpftime/build-simple/runtime",
+  "command": "/usr/bin/c++ -DENABLE_PROBE_READ_CHECK=1 -DENABLE_PROBE_WRITE_CHECK=1 -DSPDLOG_ACTIVE_LEVEL=SPDLOG_LEVEL_TRACE -DSPDLOG_COMPILED_LIB -I/home/runner/work/bpftime/bpftime/runtime/../vm/include -I/home/runner/work/bpftime/bpftime/runtime/../runtime/include -I/home/runner/work/bpftime/bpftime/runtime/../runtime -I/home/runner/work/bpftime/bpftime/build-simple/runtime -I/home/runner/work/bpftime/bpftime/runtime/../third_party -I/home/runner/work/bpftime/bpftime/runtime -I/home/runner/work/bpftime/bpftime/third_party/spdlog/include -I/home/runner/work/bpftime/bpftime/build-simple/FridaGum-prefix/src/FridaGum -I/home/runner/work/bpftime/bpftime/runtime/include -I/home/runner/work/bpftime/bpftime/runtime/src -I/home/runner/work/bpftime/bpftime/vm/vm-core/./include -I/home/runner/work/bpftime/bpftime/vm/compat/include -I/home/runner/work/bpftime/bpftime/vm/llvm-jit/src -I/home/runner/work/bpftime/bpftime/vm/llvm-jit/include -I/home/runner/work/bpftime/bpftime/attach/base_attach_impl  -fno-omit-frame-pointer -g -std=gnu++20 -fPIC -D_DEBUG -Wall -Wextra -Wno-shadow -Wcast-align -Wunused -Wnull-dereference -Wdouble-promotion -Wformat=2 -fPIE -fPIC -fno-common -Wno-unused-function -Wno-unused-parameter -Wno-unused-variable -Wno-missing-field-initializers -Wmisleading-indentation -Wduplicated-cond -Wduplicated-branches -Wlogical-op -o CMakeFiles/runtime.dir/src/bpf_map/userspace/per_cpu_array_map.cpp.o -c /home/runner/work/bpftime/bpftime/runtime/src/bpf_map/userspace/per_cpu_array_map.cpp",
+  "file": "/home/runner/work/bpftime/bpftime/runtime/src/bpf_map/userspace/per_cpu_array_map.cpp",
+  "output": "runtime/CMakeFiles/runtime.dir/src/bpf_map/userspace/per_cpu_array_map.cpp.o"
+},
+{
+  "directory": "/home/runner/work/bpftime/bpftime/build-simple/runtime",
+  "command": "/usr/bin/c++ -DENABLE_PROBE_READ_CHECK=1 -DENABLE_PROBE_WRITE_CHECK=1 -DSPDLOG_ACTIVE_LEVEL=SPDLOG_LEVEL_TRACE -DSPDLOG_COMPILED_LIB -I/home/runner/work/bpftime/bpftime/runtime/../vm/include -I/home/runner/work/bpftime/bpftime/runtime/../runtime/include -I/home/runner/work/bpftime/bpftime/runtime/../runtime -I/home/runner/work/bpftime/bpftime/build-simple/runtime -I/home/runner/work/bpftime/bpftime/runtime/../third_party -I/home/runner/work/bpftime/bpftime/runtime -I/home/runner/work/bpftime/bpftime/third_party/spdlog/include -I/home/runner/work/bpftime/bpftime/build-simple/FridaGum-prefix/src/FridaGum -I/home/runner/work/bpftime/bpftime/runtime/include -I/home/runner/work/bpftime/bpftime/runtime/src -I/home/runner/work/bpftime/bpftime/vm/vm-core/./include -I/home/runner/work/bpftime/bpftime/vm/compat/include -I/home/runner/work/bpftime/bpftime/vm/llvm-jit/src -I/home/runner/work/bpftime/bpftime/vm/llvm-jit/include -I/home/runner/work/bpftime/bpftime/attach/base_attach_impl  -fno-omit-frame-pointer -g -std=gnu++20 -fPIC -D_DEBUG -Wall -Wextra -Wno-shadow -Wcast-align -Wunused -Wnull-dereference -Wdouble-promotion -Wformat=2 -fPIE -fPIC -fno-common -Wno-unused-function -Wno-unused-parameter -Wno-unused-variable -Wno-missing-field-initializers -Wmisleading-indentation -Wduplicated-cond -Wduplicated-branches -Wlogical-op -o CMakeFiles/runtime.dir/src/bpf_map/userspace/per_cpu_hash_map.cpp.o -c /home/runner/work/bpftime/bpftime/runtime/src/bpf_map/userspace/per_cpu_hash_map.cpp",
+  "file": "/home/runner/work/bpftime/bpftime/runtime/src/bpf_map/userspace/per_cpu_hash_map.cpp",
+  "output": "runtime/CMakeFiles/runtime.dir/src/bpf_map/userspace/per_cpu_hash_map.cpp.o"
+},
+{
+  "directory": "/home/runner/work/bpftime/bpftime/build-simple/runtime",
+  "command": "/usr/bin/c++ -DENABLE_PROBE_READ_CHECK=1 -DENABLE_PROBE_WRITE_CHECK=1 -DSPDLOG_ACTIVE_LEVEL=SPDLOG_LEVEL_TRACE -DSPDLOG_COMPILED_LIB -I/home/runner/work/bpftime/bpftime/runtime/../vm/include -I/home/runner/work/bpftime/bpftime/runtime/../runtime/include -I/home/runner/work/bpftime/bpftime/runtime/../runtime -I/home/runner/work/bpftime/bpftime/build-simple/runtime -I/home/runner/work/bpftime/bpftime/runtime/../third_party -I/home/runner/work/bpftime/bpftime/runtime -I/home/runner/work/bpftime/bpftime/third_party/spdlog/include -I/home/runner/work/bpftime/bpftime/build-simple/FridaGum-prefix/src/FridaGum -I/home/runner/work/bpftime/bpftime/runtime/include -I/home/runner/work/bpftime/bpftime/runtime/src -I/home/runner/work/bpftime/bpftime/vm/vm-core/./include -I/home/runner/work/bpftime/bpftime/vm/compat/include -I/home/runner/work/bpftime/bpftime/vm/llvm-jit/src -I/home/runner/work/bpftime/bpftime/vm/llvm-jit/include -I/home/runner/work/bpftime/bpftime/attach/base_attach_impl  -fno-omit-frame-pointer -g -std=gnu++20 -fPIC -D_DEBUG -Wall -Wextra -Wno-shadow -Wcast-align -Wunused -Wnull-dereference -Wdouble-promotion -Wformat=2 -fPIE -fPIC -fno-common -Wno-unused-function -Wno-unused-parameter -Wno-unused-variable -Wno-missing-field-initializers -Wmisleading-indentation -Wduplicated-cond -Wduplicated-branches -Wlogical-op -o CMakeFiles/runtime.dir/src/bpf_map/userspace/prog_array.cpp.o -c /home/runner/work/bpftime/bpftime/runtime/src/bpf_map/userspace/prog_array.cpp",
+  "file": "/home/runner/work/bpftime/bpftime/runtime/src/bpf_map/userspace/prog_array.cpp",
+  "output": "runtime/CMakeFiles/runtime.dir/src/bpf_map/userspace/prog_array.cpp.o"
+},
+{
+  "directory": "/home/runner/work/bpftime/bpftime/build-simple/runtime",
+  "command": "/usr/bin/c++ -DENABLE_PROBE_READ_CHECK=1 -DENABLE_PROBE_WRITE_CHECK=1 -DSPDLOG_ACTIVE_LEVEL=SPDLOG_LEVEL_TRACE -DSPDLOG_COMPILED_LIB -I/home/runner/work/bpftime/bpftime/runtime/../vm/include -I/home/runner/work/bpftime/bpftime/runtime/../runtime/include -I/home/runner/work/bpftime/bpftime/runtime/../runtime -I/home/runner/work/bpftime/bpftime/build-simple/runtime -I/home/runner/work/bpftime/bpftime/runtime/../third_party -I/home/runner/work/bpftime/bpftime/runtime -I/home/runner/work/bpftime/bpftime/third_party/spdlog/include -I/home/runner/work/bpftime/bpftime/build-simple/FridaGum-prefix/src/FridaGum -I/home/runner/work/bpftime/bpftime/runtime/include -I/home/runner/work/bpftime/bpftime/runtime/src -I/home/runner/work/bpftime/bpftime/vm/vm-core/./include -I/home/runner/work/bpftime/bpftime/vm/compat/include -I/home/runner/work/bpftime/bpftime/vm/llvm-jit/src -I/home/runner/work/bpftime/bpftime/vm/llvm-jit/include -I/home/runner/work/bpftime/bpftime/attach/base_attach_impl  -fno-omit-frame-pointer -g -std=gnu++20 -fPIC -D_DEBUG -Wall -Wextra -Wno-shadow -Wcast-align -Wunused -Wnull-dereference -Wdouble-promotion -Wformat=2 -fPIE -fPIC -fno-common -Wno-unused-function -Wno-unused-parameter -Wno-unused-variable -Wno-missing-field-initializers -Wmisleading-indentation -Wduplicated-cond -Wduplicated-branches -Wlogical-op -o CMakeFiles/runtime.dir/src/bpf_map/userspace/stack_trace_map.cpp.o -c /home/runner/work/bpftime/bpftime/runtime/src/bpf_map/userspace/stack_trace_map.cpp",
+  "file": "/home/runner/work/bpftime/bpftime/runtime/src/bpf_map/userspace/stack_trace_map.cpp",
+  "output": "runtime/CMakeFiles/runtime.dir/src/bpf_map/userspace/stack_trace_map.cpp.o"
+},
+{
+  "directory": "/home/runner/work/bpftime/bpftime/build-simple/runtime",
+  "command": "/usr/bin/c++ -DENABLE_PROBE_READ_CHECK=1 -DENABLE_PROBE_WRITE_CHECK=1 -DSPDLOG_ACTIVE_LEVEL=SPDLOG_LEVEL_TRACE -DSPDLOG_COMPILED_LIB -I/home/runner/work/bpftime/bpftime/runtime/../vm/include -I/home/runner/work/bpftime/bpftime/runtime/../runtime/include -I/home/runner/work/bpftime/bpftime/runtime/../runtime -I/home/runner/work/bpftime/bpftime/build-simple/runtime -I/home/runner/work/bpftime/bpftime/runtime/../third_party -I/home/runner/work/bpftime/bpftime/runtime -I/home/runner/work/bpftime/bpftime/third_party/spdlog/include -I/home/runner/work/bpftime/bpftime/build-simple/FridaGum-prefix/src/FridaGum -I/home/runner/work/bpftime/bpftime/runtime/include -I/home/runner/work/bpftime/bpftime/runtime/src -I/home/runner/work/bpftime/bpftime/vm/vm-core/./include -I/home/runner/work/bpftime/bpftime/vm/compat/include -I/home/runner/work/bpftime/bpftime/vm/llvm-jit/src -I/home/runner/work/bpftime/bpftime/vm/llvm-jit/include -I/home/runner/work/bpftime/bpftime/attach/base_attach_impl  -fno-omit-frame-pointer -g -std=gnu++20 -fPIC -D_DEBUG -Wall -Wextra -Wno-shadow -Wcast-align -Wunused -Wnull-dereference -Wdouble-promotion -Wformat=2 -fPIE -fPIC -fno-common -Wno-unused-function -Wno-unused-parameter -Wno-unused-variable -Wno-missing-field-initializers -Wmisleading-indentation -Wduplicated-cond -Wduplicated-branches -Wlogical-op -o CMakeFiles/runtime.dir/src/bpf_map/userspace/lru_var_hash_map.cpp.o -c /home/runner/work/bpftime/bpftime/runtime/src/bpf_map/userspace/lru_var_hash_map.cpp",
+  "file": "/home/runner/work/bpftime/bpftime/runtime/src/bpf_map/userspace/lru_var_hash_map.cpp",
+  "output": "runtime/CMakeFiles/runtime.dir/src/bpf_map/userspace/lru_var_hash_map.cpp.o"
+},
+{
+  "directory": "/home/runner/work/bpftime/bpftime/build-simple/runtime",
+  "command": "/usr/bin/c++ -DENABLE_PROBE_READ_CHECK=1 -DENABLE_PROBE_WRITE_CHECK=1 -DSPDLOG_ACTIVE_LEVEL=SPDLOG_LEVEL_TRACE -DSPDLOG_COMPILED_LIB -I/home/runner/work/bpftime/bpftime/runtime/../vm/include -I/home/runner/work/bpftime/bpftime/runtime/../runtime/include -I/home/runner/work/bpftime/bpftime/runtime/../runtime -I/home/runner/work/bpftime/bpftime/build-simple/runtime -I/home/runner/work/bpftime/bpftime/runtime/../third_party -I/home/runner/work/bpftime/bpftime/runtime -I/home/runner/work/bpftime/bpftime/third_party/spdlog/include -I/home/runner/work/bpftime/bpftime/build-simple/FridaGum-prefix/src/FridaGum -I/home/runner/work/bpftime/bpftime/runtime/include -I/home/runner/work/bpftime/bpftime/runtime/src -I/home/runner/work/bpftime/bpftime/vm/vm-core/./include -I/home/runner/work/bpftime/bpftime/vm/compat/include -I/home/runner/work/bpftime/bpftime/vm/llvm-jit/src -I/home/runner/work/bpftime/bpftime/vm/llvm-jit/include -I/home/runner/work/bpftime/bpftime/attach/base_attach_impl  -fno-omit-frame-pointer -g -std=gnu++20 -fPIC -D_DEBUG -Wall -Wextra -Wno-shadow -Wcast-align -Wunused -Wnull-dereference -Wdouble-promotion -Wformat=2 -fPIE -fPIC -fno-common -Wno-unused-function -Wno-unused-parameter -Wno-unused-variable -Wno-missing-field-initializers -Wmisleading-indentation -Wduplicated-cond -Wduplicated-branches -Wlogical-op -o CMakeFiles/runtime.dir/src/bpf_map/userspace/queue.cpp.o -c /home/runner/work/bpftime/bpftime/runtime/src/bpf_map/userspace/queue.cpp",
+  "file": "/home/runner/work/bpftime/bpftime/runtime/src/bpf_map/userspace/queue.cpp",
+  "output": "runtime/CMakeFiles/runtime.dir/src/bpf_map/userspace/queue.cpp.o"
+},
+{
+  "directory": "/home/runner/work/bpftime/bpftime/build-simple/runtime",
+  "command": "/usr/bin/c++ -DENABLE_PROBE_READ_CHECK=1 -DENABLE_PROBE_WRITE_CHECK=1 -DSPDLOG_ACTIVE_LEVEL=SPDLOG_LEVEL_TRACE -DSPDLOG_COMPILED_LIB -I/home/runner/work/bpftime/bpftime/runtime/../vm/include -I/home/runner/work/bpftime/bpftime/runtime/../runtime/include -I/home/runner/work/bpftime/bpftime/runtime/../runtime -I/home/runner/work/bpftime/bpftime/build-simple/runtime -I/home/runner/work/bpftime/bpftime/runtime/../third_party -I/home/runner/work/bpftime/bpftime/runtime -I/home/runner/work/bpftime/bpftime/third_party/spdlog/include -I/home/runner/work/bpftime/bpftime/build-simple/FridaGum-prefix/src/FridaGum -I/home/runner/work/bpftime/bpftime/runtime/include -I/home/runner/work/bpftime/bpftime/runtime/src -I/home/runner/work/bpftime/bpftime/vm/vm-core/./include -I/home/runner/work/bpftime/bpftime/vm/compat/include -I/home/runner/work/bpftime/bpftime/vm/llvm-jit/src -I/home/runner/work/bpftime/bpftime/vm/llvm-jit/include -I/home/runner/work/bpftime/bpftime/attach/base_attach_impl  -fno-omit-frame-pointer -g -std=gnu++20 -fPIC -D_DEBUG -Wall -Wextra -Wno-shadow -Wcast-align -Wunused -Wnull-dereference -Wdouble-promotion -Wformat=2 -fPIE -fPIC -fno-common -Wno-unused-function -Wno-unused-parameter -Wno-unused-variable -Wno-missing-field-initializers -Wmisleading-indentation -Wduplicated-cond -Wduplicated-branches -Wlogical-op -o CMakeFiles/runtime.dir/src/bpf_map/userspace/stack.cpp.o -c /home/runner/work/bpftime/bpftime/runtime/src/bpf_map/userspace/stack.cpp",
+  "file": "/home/runner/work/bpftime/bpftime/runtime/src/bpf_map/userspace/stack.cpp",
+  "output": "runtime/CMakeFiles/runtime.dir/src/bpf_map/userspace/stack.cpp.o"
+},
+{
+  "directory": "/home/runner/work/bpftime/bpftime/build-simple/runtime",
+  "command": "/usr/bin/c++ -DENABLE_PROBE_READ_CHECK=1 -DENABLE_PROBE_WRITE_CHECK=1 -DSPDLOG_ACTIVE_LEVEL=SPDLOG_LEVEL_TRACE -DSPDLOG_COMPILED_LIB -I/home/runner/work/bpftime/bpftime/runtime/../vm/include -I/home/runner/work/bpftime/bpftime/runtime/../runtime/include -I/home/runner/work/bpftime/bpftime/runtime/../runtime -I/home/runner/work/bpftime/bpftime/build-simple/runtime -I/home/runner/work/bpftime/bpftime/runtime/../third_party -I/home/runner/work/bpftime/bpftime/runtime -I/home/runner/work/bpftime/bpftime/third_party/spdlog/include -I/home/runner/work/bpftime/bpftime/build-simple/FridaGum-prefix/src/FridaGum -I/home/runner/work/bpftime/bpftime/runtime/include -I/home/runner/work/bpftime/bpftime/runtime/src -I/home/runner/work/bpftime/bpftime/vm/vm-core/./include -I/home/runner/work/bpftime/bpftime/vm/compat/include -I/home/runner/work/bpftime/bpftime/vm/llvm-jit/src -I/home/runner/work/bpftime/bpftime/vm/llvm-jit/include -I/home/runner/work/bpftime/bpftime/attach/base_attach_impl  -fno-omit-frame-pointer -g -std=gnu++20 -fPIC -D_DEBUG -Wall -Wextra -Wno-shadow -Wcast-align -Wunused -Wnull-dereference -Wdouble-promotion -Wformat=2 -fPIE -fPIC -fno-common -Wno-unused-function -Wno-unused-parameter -Wno-unused-variable -Wno-missing-field-initializers -Wmisleading-indentation -Wduplicated-cond -Wduplicated-branches -Wlogical-op -o CMakeFiles/runtime.dir/src/bpf_map/userspace/bloom_filter.cpp.o -c /home/runner/work/bpftime/bpftime/runtime/src/bpf_map/userspace/bloom_filter.cpp",
+  "file": "/home/runner/work/bpftime/bpftime/runtime/src/bpf_map/userspace/bloom_filter.cpp",
+  "output": "runtime/CMakeFiles/runtime.dir/src/bpf_map/userspace/bloom_filter.cpp.o"
+},
+{
+  "directory": "/home/runner/work/bpftime/bpftime/build-simple/runtime",
+  "command": "/usr/bin/c++ -DENABLE_PROBE_READ_CHECK=1 -DENABLE_PROBE_WRITE_CHECK=1 -DSPDLOG_ACTIVE_LEVEL=SPDLOG_LEVEL_TRACE -DSPDLOG_COMPILED_LIB -I/home/runner/work/bpftime/bpftime/runtime/../vm/include -I/home/runner/work/bpftime/bpftime/runtime/../runtime/include -I/home/runner/work/bpftime/bpftime/runtime/../runtime -I/home/runner/work/bpftime/bpftime/build-simple/runtime -I/home/runner/work/bpftime/bpftime/runtime/../third_party -I/home/runner/work/bpftime/bpftime/runtime -I/home/runner/work/bpftime/bpftime/third_party/spdlog/include -I/home/runner/work/bpftime/bpftime/build-simple/FridaGum-prefix/src/FridaGum -I/home/runner/work/bpftime/bpftime/runtime/include -I/home/runner/work/bpftime/bpftime/runtime/src -I/home/runner/work/bpftime/bpftime/vm/vm-core/./include -I/home/runner/work/bpftime/bpftime/vm/compat/include -I/home/runner/work/bpftime/bpftime/vm/llvm-jit/src -I/home/runner/work/bpftime/bpftime/vm/llvm-jit/include -I/home/runner/work/bpftime/bpftime/attach/base_attach_impl  -fno-omit-frame-pointer -g -std=gnu++20 -fPIC -D_DEBUG -Wall -Wextra -Wno-shadow -Wcast-align -Wunused -Wnull-dereference -Wdouble-promotion -Wformat=2 -fPIE -fPIC -fno-common -Wno-unused-function -Wno-unused-parameter -Wno-unused-variable -Wno-missing-field-initializers -Wmisleading-indentation -Wduplicated-cond -Wduplicated-branches -Wlogical-op -o CMakeFiles/runtime.dir/src/bpf_map/userspace/lpm_trie_map.cpp.o -c /home/runner/work/bpftime/bpftime/runtime/src/bpf_map/userspace/lpm_trie_map.cpp",
+  "file": "/home/runner/work/bpftime/bpftime/runtime/src/bpf_map/userspace/lpm_trie_map.cpp",
+  "output": "runtime/CMakeFiles/runtime.dir/src/bpf_map/userspace/lpm_trie_map.cpp.o"
+},
+{
+  "directory": "/home/runner/work/bpftime/bpftime/build-simple/runtime",
+  "command": "/usr/bin/c++ -DENABLE_PROBE_READ_CHECK=1 -DENABLE_PROBE_WRITE_CHECK=1 -DSPDLOG_ACTIVE_LEVEL=SPDLOG_LEVEL_TRACE -DSPDLOG_COMPILED_LIB -I/home/runner/work/bpftime/bpftime/runtime/../vm/include -I/home/runner/work/bpftime/bpftime/runtime/../runtime/include -I/home/runner/work/bpftime/bpftime/runtime/../runtime -I/home/runner/work/bpftime/bpftime/build-simple/runtime -I/home/runner/work/bpftime/bpftime/runtime/../third_party -I/home/runner/work/bpftime/bpftime/runtime -I/home/runner/work/bpftime/bpftime/third_party/spdlog/include -I/home/runner/work/bpftime/bpftime/build-simple/FridaGum-prefix/src/FridaGum -I/home/runner/work/bpftime/bpftime/runtime/include -I/home/runner/work/bpftime/bpftime/runtime/src -I/home/runner/work/bpftime/bpftime/vm/vm-core/./include -I/home/runner/work/bpftime/bpftime/vm/compat/include -I/home/runner/work/bpftime/bpftime/vm/llvm-jit/src -I/home/runner/work/bpftime/bpftime/vm/llvm-jit/include -I/home/runner/work/bpftime/bpftime/attach/base_attach_impl  -fno-omit-frame-pointer -g -std=gnu++20 -fPIC -D_DEBUG -Wall -Wextra -Wno-shadow -Wcast-align -Wunused -Wnull-dereference -Wdouble-promotion -Wformat=2 -fPIE -fPIC -fno-common -Wno-unused-function -Wno-unused-parameter -Wno-unused-variable -Wno-missing-field-initializers -Wmisleading-indentation -Wduplicated-cond -Wduplicated-branches -Wlogical-op -o CMakeFiles/runtime.dir/extension/extension_helper.cpp.o -c /home/runner/work/bpftime/bpftime/runtime/extension/extension_helper.cpp",
+  "file": "/home/runner/work/bpftime/bpftime/runtime/extension/extension_helper.cpp",
+  "output": "runtime/CMakeFiles/runtime.dir/extension/extension_helper.cpp.o"
+},
+{
+  "directory": "/home/runner/work/bpftime/bpftime/build-simple/runtime/agent",
+  "command": "/usr/bin/c++ -DSPDLOG_ACTIVE_LEVEL=SPDLOG_LEVEL_TRACE -DSPDLOG_COMPILED_LIB -Dbpftime_agent_EXPORTS -I/home/runner/work/bpftime/bpftime/build-simple/FridaGum-prefix/src/FridaGum -I/home/runner/work/bpftime/bpftime/runtime/agent/../include -I/home/runner/work/bpftime/bpftime/runtime/agent/../../third_party -I/home/runner/work/bpftime/bpftime/third_party/spdlog/include -I/home/runner/work/bpftime/bpftime/attach/frida_uprobe_attach_impl/include -I/home/runner/work/bpftime/bpftime/runtime/../vm/include -I/home/runner/work/bpftime/bpftime/runtime/../runtime/include -I/home/runner/work/bpftime/bpftime/runtime/../runtime -I/home/runner/work/bpftime/bpftime/build-simple/runtime -I/home/runner/work/bpftime/bpftime/runtime/../third_party -I/home/runner/work/bpftime/bpftime/runtime -I/home/runner/work/bpftime/bpftime/runtime/include -I/home/runner/work/bpftime/bpftime/runtime/src -I/home/runner/work/bpftime/bpftime/vm/vm-core/./include -I/home/runner/work/bpftime/bpftime/vm/compat/include -I/home/runner/work/bpftime/bpftime/vm/llvm-jit/src -I/home/runner/work/bpftime/bpftime/vm/llvm-jit/include -I/home/runner/work/bpftime/bpftime/attach/base_attach_impl  -fno-omit-frame-pointer -g -std=gnu++20 -fPIC -D_DEBUG -Wall -Wextra -Wno-shadow -Wcast-align -Wunused -Wnull-dereference -Wdouble-promotion -Wformat=2 -fPIE -fPIC -fno-common -Wno-unused-function -Wno-unused-parameter -Wno-unused-variable -Wno-missing-field-initializers -Wmisleading-indentation -Wduplicated-cond -Wduplicated-branches -Wlogical-op -o CMakeFiles/bpftime-agent.dir/agent.cpp.o -c /home/runner/work/bpftime/bpftime/runtime/agent/agent.cpp",
+  "file": "/home/runner/work/bpftime/bpftime/runtime/agent/agent.cpp",
+  "output": "runtime/agent/CMakeFiles/bpftime-agent.dir/agent.cpp.o"
+},
+{
+  "directory": "/home/runner/work/bpftime/bpftime/build-simple/runtime/syscall-server",
+  "command": "/usr/bin/c++ -DSPDLOG_ACTIVE_LEVEL=SPDLOG_LEVEL_TRACE -DSPDLOG_COMPILED_LIB -Dbpftime_syscall_server_EXPORTS -I/home/runner/work/bpftime/bpftime/runtime/syscall-server/../../vm -I/home/runner/work/bpftime/bpftime/third_party/spdlog/include -I/home/runner/work/bpftime/bpftime/runtime/../vm/include -I/home/runner/work/bpftime/bpftime/runtime/../runtime/include -I/home/runner/work/bpftime/bpftime/runtime/../runtime -I/home/runner/work/bpftime/bpftime/build-simple/runtime -I/home/runner/work/bpftime/bpftime/runtime/../third_party -I/home/runner/work/bpftime/bpftime/runtime -I/home/runner/work/bpftime/bpftime/build-simple/FridaGum-prefix/src/FridaGum -I/home/runner/work/bpftime/bpftime/runtime/include -I/home/runner/work/bpftime/bpftime/runtime/src -I/home/runner/work/bpftime/bpftime/vm/vm-core/./include -I/home/runner/work/bpftime/bpftime/vm/compat/include -I/home/runner/work/bpftime/bpftime/vm/llvm-jit/src -I/home/runner/work/bpftime/bpftime/vm/llvm-jit/include -I/home/runner/work/bpftime/bpftime/attach/base_attach_impl  -fno-omit-frame-pointer -g -std=gnu++20 -fPIC -D_DEBUG -Wall -Wextra -Wno-shadow -Wcast-align -Wunused -Wnull-dereference -Wdouble-promotion -Wformat=2 -fPIE -fPIC -fno-common -Wno-unused-function -Wno-unused-parameter -Wno-unused-variable -Wno-missing-field-initializers -Wmisleading-indentation -Wduplicated-cond -Wduplicated-branches -Wlogical-op -o CMakeFiles/bpftime-syscall-server.dir/syscall_context.cpp.o -c /home/runner/work/bpftime/bpftime/runtime/syscall-server/syscall_context.cpp",
+  "file": "/home/runner/work/bpftime/bpftime/runtime/syscall-server/syscall_context.cpp",
+  "output": "runtime/syscall-server/CMakeFiles/bpftime-syscall-server.dir/syscall_context.cpp.o"
+},
+{
+  "directory": "/home/runner/work/bpftime/bpftime/build-simple/runtime/syscall-server",
+  "command": "/usr/bin/c++ -DSPDLOG_ACTIVE_LEVEL=SPDLOG_LEVEL_TRACE -DSPDLOG_COMPILED_LIB -Dbpftime_syscall_server_EXPORTS -I/home/runner/work/bpftime/bpftime/runtime/syscall-server/../../vm -I/home/runner/work/bpftime/bpftime/third_party/spdlog/include -I/home/runner/work/bpftime/bpftime/runtime/../vm/include -I/home/runner/work/bpftime/bpftime/runtime/../runtime/include -I/home/runner/work/bpftime/bpftime/runtime/../runtime -I/home/runner/work/bpftime/bpftime/build-simple/runtime -I/home/runner/work/bpftime/bpftime/runtime/../third_party -I/home/runner/work/bpftime/bpftime/runtime -I/home/runner/work/bpftime/bpftime/build-simple/FridaGum-prefix/src/FridaGum -I/home/runner/work/bpftime/bpftime/runtime/include -I/home/runner/work/bpftime/bpftime/runtime/src -I/home/runner/work/bpftime/bpftime/vm/vm-core/./include -I/home/runner/work/bpftime/bpftime/vm/compat/include -I/home/runner/work/bpftime/bpftime/vm/llvm-jit/src -I/home/runner/work/bpftime/bpftime/vm/llvm-jit/include -I/home/runner/work/bpftime/bpftime/attach/base_attach_impl  -fno-omit-frame-pointer -g -std=gnu++20 -fPIC -D_DEBUG -Wall -Wextra -Wno-shadow -Wcast-align -Wunused -Wnull-dereference -Wdouble-promotion -Wformat=2 -fPIE -fPIC -fno-common -Wno-unused-function -Wno-unused-parameter -Wno-unused-variable -Wno-missing-field-initializers -Wmisleading-indentation -Wduplicated-cond -Wduplicated-branches -Wlogical-op -o CMakeFiles/bpftime-syscall-server.dir/syscall_server_main.cpp.o -c /home/runner/work/bpftime/bpftime/runtime/syscall-server/syscall_server_main.cpp",
+  "file": "/home/runner/work/bpftime/bpftime/runtime/syscall-server/syscall_server_main.cpp",
+  "output": "runtime/syscall-server/CMakeFiles/bpftime-syscall-server.dir/syscall_server_main.cpp.o"
+},
+{
+  "directory": "/home/runner/work/bpftime/bpftime/build-simple/runtime/syscall-server",
+  "command": "/usr/bin/c++ -DSPDLOG_ACTIVE_LEVEL=SPDLOG_LEVEL_TRACE -DSPDLOG_COMPILED_LIB -Dbpftime_syscall_server_EXPORTS -I/home/runner/work/bpftime/bpftime/runtime/syscall-server/../../vm -I/home/runner/work/bpftime/bpftime/third_party/spdlog/include -I/home/runner/work/bpftime/bpftime/runtime/../vm/include -I/home/runner/work/bpftime/bpftime/runtime/../runtime/include -I/home/runner/work/bpftime/bpftime/runtime/../runtime -I/home/runner/work/bpftime/bpftime/build-simple/runtime -I/home/runner/work/bpftime/bpftime/runtime/../third_party -I/home/runner/work/bpftime/bpftime/runtime -I/home/runner/work/bpftime/bpftime/build-simple/FridaGum-prefix/src/FridaGum -I/home/runner/work/bpftime/bpftime/runtime/include -I/home/runner/work/bpftime/bpftime/runtime/src -I/home/runner/work/bpftime/bpftime/vm/vm-core/./include -I/home/runner/work/bpftime/bpftime/vm/compat/include -I/home/runner/work/bpftime/bpftime/vm/llvm-jit/src -I/home/runner/work/bpftime/bpftime/vm/llvm-jit/include -I/home/runner/work/bpftime/bpftime/attach/base_attach_impl  -fno-omit-frame-pointer -g -std=gnu++20 -fPIC -D_DEBUG -Wall -Wextra -Wno-shadow -Wcast-align -Wunused -Wnull-dereference -Wdouble-promotion -Wformat=2 -fPIE -fPIC -fno-common -Wno-unused-function -Wno-unused-parameter -Wno-unused-variable -Wno-missing-field-initializers -Wmisleading-indentation -Wduplicated-cond -Wduplicated-branches -Wlogical-op -o CMakeFiles/bpftime-syscall-server.dir/syscall_server_utils.cpp.o -c /home/runner/work/bpftime/bpftime/runtime/syscall-server/syscall_server_utils.cpp",
+  "file": "/home/runner/work/bpftime/bpftime/runtime/syscall-server/syscall_server_utils.cpp",
+  "output": "runtime/syscall-server/CMakeFiles/bpftime-syscall-server.dir/syscall_server_utils.cpp.o"
+},
+{
+  "directory": "/home/runner/work/bpftime/bpftime/build-simple/tools/bpftimetool",
+  "command": "/usr/bin/c++ -DSPDLOG_ACTIVE_LEVEL=SPDLOG_LEVEL_TRACE -DSPDLOG_COMPILED_LIB -I/home/runner/work/bpftime/bpftime/tools/bpftimetool/../../third_party -I/home/runner/work/bpftime/bpftime/tools/bpftimetool/../../runtime/include -I/home/runner/work/bpftime/bpftime/runtime/../vm/include -I/home/runner/work/bpftime/bpftime/runtime/../runtime/include -I/home/runner/work/bpftime/bpftime/runtime/../runtime -I/home/runner/work/bpftime/bpftime/build-simple/runtime -I/home/runner/work/bpftime/bpftime/runtime/../third_party -I/home/runner/work/bpftime/bpftime/runtime -I/home/runner/work/bpftime/bpftime/third_party/spdlog/include -I/home/runner/work/bpftime/bpftime/build-simple/FridaGum-prefix/src/FridaGum -I/home/runner/work/bpftime/bpftime/runtime/include -I/home/runner/work/bpftime/bpftime/runtime/src -I/home/runner/work/bpftime/bpftime/vm/vm-core/./include -I/home/runner/work/bpftime/bpftime/vm/compat/include -I/home/runner/work/bpftime/bpftime/vm/llvm-jit/src -I/home/runner/work/bpftime/bpftime/vm/llvm-jit/include -I/home/runner/work/bpftime/bpftime/attach/base_attach_impl  -fno-omit-frame-pointer -g -std=gnu++20 -fPIE -D_DEBUG -Wall -Wextra -Wno-shadow -Wcast-align -Wunused -Wnull-dereference -Wdouble-promotion -Wformat=2 -fPIE -fPIC -fno-common -Wno-unused-function -Wno-unused-parameter -Wno-unused-variable -Wno-missing-field-initializers -Wmisleading-indentation -Wduplicated-cond -Wduplicated-branches -Wlogical-op -o CMakeFiles/bpftimetool.dir/main.cpp.o -c /home/runner/work/bpftime/bpftime/tools/bpftimetool/main.cpp",
+  "file": "/home/runner/work/bpftime/bpftime/tools/bpftimetool/main.cpp",
+  "output": "tools/bpftimetool/CMakeFiles/bpftimetool.dir/main.cpp.o"
+},
+{
+  "directory": "/home/runner/work/bpftime/bpftime/build-simple/tools/cli",
+  "command": "/usr/bin/c++ -DSPDLOG_ACTIVE_LEVEL=SPDLOG_LEVEL_TRACE -DSPDLOG_COMPILED_LIB -D_GNU_SOURCE -I/home/runner/work/bpftime/bpftime/build-simple/FridaCore-prefix/src/FridaCore -I/home/runner/work/bpftime/bpftime/third_party/spdlog/include -I/home/runner/work/bpftime/bpftime/tools/cli/../../runtime/include -I/home/runner/work/bpftime/bpftime/tools/cli/../../runtime/src -I/home/runner/work/bpftime/bpftime/tools/cli/../../vm/vm-core/include -I/home/runner/work/bpftime/bpftime/third_party/argparse/include -I/home/runner/work/bpftime/bpftime/vm/compat/include -I/home/runner/work/bpftime/bpftime/runtime/../vm/include -I/home/runner/work/bpftime/bpftime/runtime/../runtime/include -I/home/runner/work/bpftime/bpftime/runtime/../runtime -I/home/runner/work/bpftime/bpftime/build-simple/runtime -I/home/runner/work/bpftime/bpftime/runtime/../third_party -I/home/runner/work/bpftime/bpftime/runtime -I/home/runner/work/bpftime/bpftime/build-simple/FridaGum-prefix/src/FridaGum -I/home/runner/work/bpftime/bpftime/runtime/include -I/home/runner/work/bpftime/bpftime/runtime/src -I/home/runner/work/bpftime/bpftime/vm/vm-core/./include -I/home/runner/work/bpftime/bpftime/vm/llvm-jit/src -I/home/runner/work/bpftime/bpftime/vm/llvm-jit/include -I/home/runner/work/bpftime/bpftime/attach/base_attach_impl  -fno-omit-frame-pointer -g -std=gnu++20 -fPIE -D_DEBUG -Wall -Wextra -Wno-shadow -Wcast-align -Wunused -Wnull-dereference -Wdouble-promotion -Wformat=2 -fPIE -fPIC -fno-common -Wno-unused-function -Wno-unused-parameter -Wno-unused-variable -Wno-missing-field-initializers -Wmisleading-indentation -Wduplicated-cond -Wduplicated-branches -Wlogical-op -o CMakeFiles/bpftime-cli-cpp.dir/main.cpp.o -c /home/runner/work/bpftime/bpftime/tools/cli/main.cpp",
+  "file": "/home/runner/work/bpftime/bpftime/tools/cli/main.cpp",
+  "output": "tools/cli/CMakeFiles/bpftime-cli-cpp.dir/main.cpp.o"
+},
+{
+  "directory": "/home/runner/work/bpftime/bpftime/build-simple/tools/aot",
+  "command": "/usr/bin/c++ -DSPDLOG_ACTIVE_LEVEL=SPDLOG_LEVEL_TRACE -DSPDLOG_COMPILED_LIB -D_GNU_SOURCE -I/home/runner/work/bpftime/bpftime/third_party/spdlog/include -I/home/runner/work/bpftime/bpftime/tools/aot/../../vm/compat/include -I/home/runner/work/bpftime/bpftime/tools/aot/../../runtime/include -I/home/runner/work/bpftime/bpftime/tools/aot/../../runtime/src -I/home/runner/work/bpftime/bpftime/third_party/argparse/include -I/home/runner/work/bpftime/bpftime/vm/compat/include -I/home/runner/work/bpftime/bpftime/vm/llvm-jit/src -I/home/runner/work/bpftime/bpftime/vm/llvm-jit/include -I/home/runner/work/bpftime/bpftime/runtime/../vm/include -I/home/runner/work/bpftime/bpftime/runtime/../runtime/include -I/home/runner/work/bpftime/bpftime/runtime/../runtime -I/home/runner/work/bpftime/bpftime/build-simple/runtime -I/home/runner/work/bpftime/bpftime/runtime/../third_party -I/home/runner/work/bpftime/bpftime/runtime -I/home/runner/work/bpftime/bpftime/build-simple/FridaGum-prefix/src/FridaGum -I/home/runner/work/bpftime/bpftime/runtime/include -I/home/runner/work/bpftime/bpftime/runtime/src -I/home/runner/work/bpftime/bpftime/vm/vm-core/./include -I/home/runner/work/bpftime/bpftime/attach/base_attach_impl  -fno-omit-frame-pointer -g -std=gnu++20 -fPIE -D_DEBUG -Wall -Wextra -Wno-shadow -Wcast-align -Wunused -Wnull-dereference -Wdouble-promotion -Wformat=2 -fPIE -fPIC -fno-common -Wno-unused-function -Wno-unused-parameter -Wno-unused-variable -Wno-missing-field-initializers -Wmisleading-indentation -Wduplicated-cond -Wduplicated-branches -Wlogical-op -o CMakeFiles/bpftime-aot-cli.dir/main.cpp.o -c /home/runner/work/bpftime/bpftime/tools/aot/main.cpp",
+  "file": "/home/runner/work/bpftime/bpftime/tools/aot/main.cpp",
+  "output": "tools/aot/CMakeFiles/bpftime-aot-cli.dir/main.cpp.o"
+}
+]

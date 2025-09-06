@@ -1,0 +1,12 @@
+# This is a generated file and its contents are an internal implementation detail.
+# The download step will be re-executed if anything in this file changes.
+# No other meaning or use of this file is supported.
+
+method=url
+command=/usr/local/bin/cmake;-DCMAKE_MESSAGE_LOG_LEVEL=VERBOSE;-P;/home/runner/work/bpftime/bpftime/build-simple/FridaCore-prefix/src/FridaCore-stamp/download-FridaCore.cmake;COMMAND;/usr/local/bin/cmake;-DCMAKE_MESSAGE_LOG_LEVEL=VERBOSE;-P;/home/runner/work/bpftime/bpftime/build-simple/FridaCore-prefix/src/FridaCore-stamp/verify-FridaCore.cmake;COMMAND;/usr/local/bin/cmake;-DCMAKE_MESSAGE_LOG_LEVEL=VERBOSE;-P;/home/runner/work/bpftime/bpftime/build-simple/FridaCore-prefix/src/FridaCore-stamp/extract-FridaCore.cmake
+source_dir=/home/runner/work/bpftime/bpftime/build-simple/FridaCore-prefix/src/FridaCore
+work_dir=/home/runner/work/bpftime/bpftime/build-simple/FridaCore-prefix/src
+url(s)=https://github.com/frida/frida/releases/download/16.1.2/frida-core-devkit-16.1.2-linux-x86_64.tar.xz
+hash=SHA256=45a7e47c4181662611ce89c2891e5327676aaaf9e53ee205ef98f8d58a312a00
+      no_extract=
+

@@ -1,0 +1,13 @@
+# Target labels
+ ubpf
+# Source files and their labels
+/home/runner/work/bpftime/bpftime/build-simple/vm/compat/ubpf-vm/CMakeFiles/ubpf
+/home/runner/work/bpftime/bpftime/build-simple/vm/compat/ubpf-vm/CMakeFiles/ubpf.rule
+/home/runner/work/bpftime/bpftime/build-simple/vm/compat/ubpf-vm/CMakeFiles/ubpf-complete.rule
+/home/runner/work/bpftime/bpftime/build-simple/vm/compat/ubpf-vm/ubpf-prefix/src/ubpf-stamp/ubpf-build.rule
+/home/runner/work/bpftime/bpftime/build-simple/vm/compat/ubpf-vm/ubpf-prefix/src/ubpf-stamp/ubpf-configure.rule
+/home/runner/work/bpftime/bpftime/build-simple/vm/compat/ubpf-vm/ubpf-prefix/src/ubpf-stamp/ubpf-download.rule
+/home/runner/work/bpftime/bpftime/build-simple/vm/compat/ubpf-vm/ubpf-prefix/src/ubpf-stamp/ubpf-install.rule
+/home/runner/work/bpftime/bpftime/build-simple/vm/compat/ubpf-vm/ubpf-prefix/src/ubpf-stamp/ubpf-mkdir.rule
+/home/runner/work/bpftime/bpftime/build-simple/vm/compat/ubpf-vm/ubpf-prefix/src/ubpf-stamp/ubpf-patch.rule
+/home/runner/work/bpftime/bpftime/build-simple/vm/compat/ubpf-vm/ubpf-prefix/src/ubpf-stamp/ubpf-update.rule

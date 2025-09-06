@@ -1,0 +1,43 @@
+{
+	"sources" : 
+	[
+		{
+			"file" : "/home/runner/work/bpftime/bpftime/build-simple/CMakeFiles/FridaCore"
+		},
+		{
+			"file" : "/home/runner/work/bpftime/bpftime/build-simple/CMakeFiles/FridaCore.rule"
+		},
+		{
+			"file" : "/home/runner/work/bpftime/bpftime/build-simple/CMakeFiles/FridaCore-complete.rule"
+		},
+		{
+			"file" : "/home/runner/work/bpftime/bpftime/build-simple/FridaCore-prefix/src/FridaCore-stamp/FridaCore-build.rule"
+		},
+		{
+			"file" : "/home/runner/work/bpftime/bpftime/build-simple/FridaCore-prefix/src/FridaCore-stamp/FridaCore-configure.rule"
+		},
+		{
+			"file" : "/home/runner/work/bpftime/bpftime/build-simple/FridaCore-prefix/src/FridaCore-stamp/FridaCore-download.rule"
+		},
+		{
+			"file" : "/home/runner/work/bpftime/bpftime/build-simple/FridaCore-prefix/src/FridaCore-stamp/FridaCore-install.rule"
+		},
+		{
+			"file" : "/home/runner/work/bpftime/bpftime/build-simple/FridaCore-prefix/src/FridaCore-stamp/FridaCore-mkdir.rule"
+		},
+		{
+			"file" : "/home/runner/work/bpftime/bpftime/build-simple/FridaCore-prefix/src/FridaCore-stamp/FridaCore-patch.rule"
+		},
+		{
+			"file" : "/home/runner/work/bpftime/bpftime/build-simple/FridaCore-prefix/src/FridaCore-stamp/FridaCore-update.rule"
+		}
+	],
+	"target" : 
+	{
+		"labels" : 
+		[
+			"FridaCore"
+		],
+		"name" : "FridaCore"
+	}
+}

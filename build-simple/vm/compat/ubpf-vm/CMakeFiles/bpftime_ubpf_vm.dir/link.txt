@@ -1,0 +1,2 @@
+/usr/bin/ar qc libbpftime_ubpf_vm.a CMakeFiles/bpftime_ubpf_vm.dir/compat_ubpf.cpp.o
+/usr/bin/ranlib libbpftime_ubpf_vm.a

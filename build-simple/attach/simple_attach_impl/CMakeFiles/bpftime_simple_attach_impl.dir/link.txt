@@ -1,0 +1,2 @@
+/usr/bin/ar qc libbpftime_simple_attach_impl.a CMakeFiles/bpftime_simple_attach_impl.dir/simple_attach_impl.cpp.o
+/usr/bin/ranlib libbpftime_simple_attach_impl.a

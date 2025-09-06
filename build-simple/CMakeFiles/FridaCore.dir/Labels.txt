@@ -1,0 +1,13 @@
+# Target labels
+ FridaCore
+# Source files and their labels
+/home/runner/work/bpftime/bpftime/build-simple/CMakeFiles/FridaCore
+/home/runner/work/bpftime/bpftime/build-simple/CMakeFiles/FridaCore.rule
+/home/runner/work/bpftime/bpftime/build-simple/CMakeFiles/FridaCore-complete.rule
+/home/runner/work/bpftime/bpftime/build-simple/FridaCore-prefix/src/FridaCore-stamp/FridaCore-build.rule
+/home/runner/work/bpftime/bpftime/build-simple/FridaCore-prefix/src/FridaCore-stamp/FridaCore-configure.rule
+/home/runner/work/bpftime/bpftime/build-simple/FridaCore-prefix/src/FridaCore-stamp/FridaCore-download.rule
+/home/runner/work/bpftime/bpftime/build-simple/FridaCore-prefix/src/FridaCore-stamp/FridaCore-install.rule
+/home/runner/work/bpftime/bpftime/build-simple/FridaCore-prefix/src/FridaCore-stamp/FridaCore-mkdir.rule
+/home/runner/work/bpftime/bpftime/build-simple/FridaCore-prefix/src/FridaCore-stamp/FridaCore-patch.rule
+/home/runner/work/bpftime/bpftime/build-simple/FridaCore-prefix/src/FridaCore-stamp/FridaCore-update.rule

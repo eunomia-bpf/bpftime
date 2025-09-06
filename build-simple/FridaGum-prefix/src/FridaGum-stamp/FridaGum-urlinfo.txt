@@ -1,0 +1,12 @@
+# This is a generated file and its contents are an internal implementation detail.
+# The download step will be re-executed if anything in this file changes.
+# No other meaning or use of this file is supported.
+
+method=url
+command=/usr/local/bin/cmake;-DCMAKE_MESSAGE_LOG_LEVEL=VERBOSE;-P;/home/runner/work/bpftime/bpftime/build-simple/FridaGum-prefix/src/FridaGum-stamp/download-FridaGum.cmake;COMMAND;/usr/local/bin/cmake;-DCMAKE_MESSAGE_LOG_LEVEL=VERBOSE;-P;/home/runner/work/bpftime/bpftime/build-simple/FridaGum-prefix/src/FridaGum-stamp/verify-FridaGum.cmake;COMMAND;/usr/local/bin/cmake;-DCMAKE_MESSAGE_LOG_LEVEL=VERBOSE;-P;/home/runner/work/bpftime/bpftime/build-simple/FridaGum-prefix/src/FridaGum-stamp/extract-FridaGum.cmake
+source_dir=/home/runner/work/bpftime/bpftime/build-simple/FridaGum-prefix/src/FridaGum
+work_dir=/home/runner/work/bpftime/bpftime/build-simple/FridaGum-prefix/src
+url(s)=https://github.com/frida/frida/releases/download/16.1.2/frida-gum-devkit-16.1.2-linux-x86_64.tar.xz
+hash=SHA256=c20af106e089bbbdb9ed4d5dfc63ce9ae8f6643bbb76a6b0afb196726d9a241a
+      no_extract=
+

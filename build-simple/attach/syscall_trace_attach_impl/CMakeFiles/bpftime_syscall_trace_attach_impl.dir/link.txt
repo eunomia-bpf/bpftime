@@ -1,0 +1,2 @@
+/usr/bin/ar qc libbpftime_syscall_trace_attach_impl.a CMakeFiles/bpftime_syscall_trace_attach_impl.dir/src/syscall_trace_attach_impl.cpp.o CMakeFiles/bpftime_syscall_trace_attach_impl.dir/src/syscall_table.cpp.o CMakeFiles/bpftime_syscall_trace_attach_impl.dir/src/syscall_trace_attach_private_data.cpp.o
+/usr/bin/ranlib libbpftime_syscall_trace_attach_impl.a

@@ -1,0 +1,43 @@
+{
+	"sources" : 
+	[
+		{
+			"file" : "/home/runner/work/bpftime/bpftime/build-simple/CMakeFiles/FridaGum"
+		},
+		{
+			"file" : "/home/runner/work/bpftime/bpftime/build-simple/CMakeFiles/FridaGum.rule"
+		},
+		{
+			"file" : "/home/runner/work/bpftime/bpftime/build-simple/CMakeFiles/FridaGum-complete.rule"
+		},
+		{
+			"file" : "/home/runner/work/bpftime/bpftime/build-simple/FridaGum-prefix/src/FridaGum-stamp/FridaGum-build.rule"
+		},
+		{
+			"file" : "/home/runner/work/bpftime/bpftime/build-simple/FridaGum-prefix/src/FridaGum-stamp/FridaGum-configure.rule"
+		},
+		{
+			"file" : "/home/runner/work/bpftime/bpftime/build-simple/FridaGum-prefix/src/FridaGum-stamp/FridaGum-download.rule"
+		},
+		{
+			"file" : "/home/runner/work/bpftime/bpftime/build-simple/FridaGum-prefix/src/FridaGum-stamp/FridaGum-install.rule"
+		},
+		{
+			"file" : "/home/runner/work/bpftime/bpftime/build-simple/FridaGum-prefix/src/FridaGum-stamp/FridaGum-mkdir.rule"
+		},
+		{
+			"file" : "/home/runner/work/bpftime/bpftime/build-simple/FridaGum-prefix/src/FridaGum-stamp/FridaGum-patch.rule"
+		},
+		{
+			"file" : "/home/runner/work/bpftime/bpftime/build-simple/FridaGum-prefix/src/FridaGum-stamp/FridaGum-update.rule"
+		}
+	],
+	"target" : 
+	{
+		"labels" : 
+		[
+			"FridaGum"
+		],
+		"name" : "FridaGum"
+	}
+}

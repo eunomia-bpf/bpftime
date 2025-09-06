@@ -1,0 +1,13 @@
+# Target labels
+ FridaGum
+# Source files and their labels
+/home/runner/work/bpftime/bpftime/build-simple/CMakeFiles/FridaGum
+/home/runner/work/bpftime/bpftime/build-simple/CMakeFiles/FridaGum.rule
+/home/runner/work/bpftime/bpftime/build-simple/CMakeFiles/FridaGum-complete.rule
+/home/runner/work/bpftime/bpftime/build-simple/FridaGum-prefix/src/FridaGum-stamp/FridaGum-build.rule
+/home/runner/work/bpftime/bpftime/build-simple/FridaGum-prefix/src/FridaGum-stamp/FridaGum-configure.rule
+/home/runner/work/bpftime/bpftime/build-simple/FridaGum-prefix/src/FridaGum-stamp/FridaGum-download.rule
+/home/runner/work/bpftime/bpftime/build-simple/FridaGum-prefix/src/FridaGum-stamp/FridaGum-install.rule
+/home/runner/work/bpftime/bpftime/build-simple/FridaGum-prefix/src/FridaGum-stamp/FridaGum-mkdir.rule
+/home/runner/work/bpftime/bpftime/build-simple/FridaGum-prefix/src/FridaGum-stamp/FridaGum-patch.rule
+/home/runner/work/bpftime/bpftime/build-simple/FridaGum-prefix/src/FridaGum-stamp/FridaGum-update.rule

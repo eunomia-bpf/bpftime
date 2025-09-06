@@ -1,0 +1,2 @@
+/usr/bin/ar qc libbpftime_vm.a "CMakeFiles/bpftime_vm.dir/src/ebpf-vm.cpp.o"
+/usr/bin/ranlib libbpftime_vm.a

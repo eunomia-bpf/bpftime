@@ -1,0 +1,2 @@
+/usr/bin/ar qc libbpftime_llvm_vm.a CMakeFiles/bpftime_llvm_vm.dir/compat_llvm.cpp.o
+/usr/bin/ranlib libbpftime_llvm_vm.a
