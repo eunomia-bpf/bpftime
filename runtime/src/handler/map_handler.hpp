@@ -206,6 +206,14 @@ class bpf_map_handler {
 		return map_lock;
 	}
 
+	// Queue/stack map helper functions for push/pop/peek operations
+	long map_push_elem(const void *value, uint64_t flags,
+			   bool from_syscall = false) const;
+
+	long map_pop_elem(void *value, bool from_syscall = false) const;
+
+	long map_peek_elem(void *value, bool from_syscall = false) const;
+
 #if defined(BPFTIME_ENABLE_CUDA_ATTACH)
 	std::optional<nv_gpu_ringbuf_map_impl *>
 	try_get_nv_gpu_ringbuf_map_impl() const;

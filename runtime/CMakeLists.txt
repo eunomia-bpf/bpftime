@@ -81,6 +81,10 @@ set(sources
   src/bpf_map/userspace/stack_trace_map.cpp
   src/bpf_map/userspace/lru_var_hash_map.cpp
 
+  src/bpf_map/userspace/queue.cpp
+  src/bpf_map/userspace/stack.cpp
+  src/bpf_map/userspace/bloom_filter.cpp
+  src/bpf_map/userspace/lpm_trie_map.cpp
   extension/extension_helper.cpp
 )
 
