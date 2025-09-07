@@ -648,3 +648,9 @@ int bpftime_poll_gpu_ringbuf_map(int mapfd, void *ctx,
 	return 0;
 }
 #endif
+
+int bpftime_add_memfd_handler(const char *name, int flags)
+{
+	auto &shm = shm_holder.global_shared_memory;
+	return shm.add_memfd_handler(name, flags);
+}

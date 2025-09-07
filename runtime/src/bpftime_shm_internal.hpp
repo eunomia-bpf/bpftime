@@ -194,6 +194,8 @@ class bpftime_shm {
 	void close_fd(int fd);
 	bool is_exist_fake_fd(int fd) const;
 
+	int add_memfd_handler(const char *name, int flags);
+
 #if BPFTIME_ENABLE_MPK
 	void enable_mpk();
 	void disable_mpk();

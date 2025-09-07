@@ -225,6 +225,13 @@ extern "C" long syscall(long sysno, ...)
 			return context->handle_dup3((int)arg1, (int)arg2,
 						    (int)arg3);
 		});
+	} else if (sysno == __NR_memfd_create) {
+		SPDLOG_DEBUG("SYS_MEMFD_CREATE name={} flags={}",
+			     (const char *)arg1, arg2);
+		return handle_exceptions([&]() {
+			return context->handle_memfd_create((const char *)arg1,
+							    (int)arg2);
+		});
 	}
 	return context->orig_syscall_fn(sysno, arg1, arg2, arg3, arg4, arg5,
 					arg6);
