@@ -7,6 +7,7 @@
 #define _HANDLER_MANAGER_HPP
 #include "bpftime_config.hpp"
 #include "handler/epoll_handler.hpp"
+#include "handler/memfd_handler.hpp"
 #include "spdlog/spdlog.h"
 #include <boost/interprocess/interprocess_fwd.hpp>
 #include <cstddef>
@@ -51,7 +52,8 @@ constexpr const char *DEFAULT_GLOBAL_SHM_NAME = "bpftime_maps_shm";
 constexpr const char *DEFAULT_GLOBAL_HANDLER_NAME = "bpftime_handler";
 constexpr const char *DEFAULT_SYSCALL_PID_SET_NAME = "bpftime_syscall_pid_set";
 constexpr const char *DEFAULT_AGENT_CONFIG_NAME = "bpftime_agent_config";
-constexpr const char* DEFAULT_ALIVE_AGENT_PIDS_NAME = "bpftime_alive_agent_pids";
+constexpr const char *DEFAULT_ALIVE_AGENT_PIDS_NAME =
+	"bpftime_alive_agent_pids";
 inline const char *get_global_shm_name()
 {
 	const char *name = getenv("BPFTIME_GLOBAL_SHM_NAME");
@@ -81,7 +83,8 @@ struct shm_remove {
 
 using handler_variant =
 	std::variant<unused_handler, bpf_map_handler, bpf_link_handler,
-		     bpf_prog_handler, bpf_perf_event_handler, epoll_handler>;
+		     bpf_prog_handler, bpf_perf_event_handler, epoll_handler,
+		     memfd_handler>;
 
 using handler_variant_allocator =
 	allocator<handler_variant, managed_shared_memory::segment_manager>;
@@ -93,8 +96,7 @@ using handler_variant_vector =
 // This struct will be put on shared memory
 class handler_manager {
     public:
-	handler_manager(managed_shared_memory &mem,
-			size_t max_fd_count);
+	handler_manager(managed_shared_memory &mem, size_t max_fd_count);
 
 	~handler_manager();
 

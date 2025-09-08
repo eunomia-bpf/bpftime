@@ -52,7 +52,7 @@ bpftime_map_ops global_map_ops_table[(int)bpf_map_type::BPF_MAP_TYPE_MAX] = {
 	{ 0 }
 };
 
-std::string bpf_map_handler::get_container_name()
+std::string bpf_map_handler::get_container_name() const
 {
 	return "ebpf_map_fd_" + std::string(name.c_str());
 }
@@ -837,7 +837,7 @@ int bpf_map_handler::map_init(managed_shared_memory &memory)
 	return 0;
 }
 
-void bpf_map_handler::map_free(managed_shared_memory &memory)
+void bpf_map_handler::map_free(managed_shared_memory &memory) const
 {
 	auto container_name = get_container_name();
 	switch (type) {

@@ -20,13 +20,13 @@
 #include "linux/bpf.h"
 
 // Helper structures for kernel-style testing
-struct bpf_lpm_trie_key_hdr {
+struct test_bpf_lpm_trie_key_hdr {
 	uint32_t prefixlen;
 };
 
-struct bpf_lpm_trie_key_u8 {
+struct test_bpf_lpm_trie_key_u8 {
 	union {
-		struct bpf_lpm_trie_key_hdr hdr;
+		struct test_bpf_lpm_trie_key_hdr hdr;
 		uint32_t prefixlen;
 	};
 	uint8_t data[8];
@@ -34,7 +34,7 @@ struct bpf_lpm_trie_key_u8 {
 
 struct lpm_trie_int_key {
 	union {
-		struct bpf_lpm_trie_key_hdr hdr;
+		struct test_bpf_lpm_trie_key_hdr hdr;
 		uint32_t prefixlen;
 	};
 	uint32_t data;
@@ -42,7 +42,7 @@ struct lpm_trie_int_key {
 
 struct lpm_trie_bytes_key {
 	union {
-		struct bpf_lpm_trie_key_hdr hdr;
+		struct test_bpf_lpm_trie_key_hdr hdr;
 		uint32_t prefixlen;
 	};
 	uint8_t data[8];
@@ -373,16 +373,16 @@ TEST_CASE("LPM Trie IP Address Operations", "[lpm_trie][kernel_style][ipaddr]")
 		boost::interprocess::create_only, SHARED_MEMORY_NAME,
 		SHARED_MEMORY_SIZE);
 
-	bpf_lpm_trie_key_u8 *key_ipv4;
-	bpf_lpm_trie_key_u8 *key_ipv6;
+	test_bpf_lpm_trie_key_u8 *key_ipv4;
+	test_bpf_lpm_trie_key_u8 *key_ipv6;
 	size_t key_size_ipv4;
 	size_t key_size_ipv6;
 	uint64_t value;
 
 	key_size_ipv4 = sizeof(*key_ipv4) + sizeof(uint32_t);
 	key_size_ipv6 = sizeof(*key_ipv6) + sizeof(uint32_t) * 4;
-	key_ipv4 = (bpf_lpm_trie_key_u8 *)alloca(key_size_ipv4);
-	key_ipv6 = (bpf_lpm_trie_key_u8 *)alloca(key_size_ipv6);
+	key_ipv4 = (test_bpf_lpm_trie_key_u8 *)alloca(key_size_ipv4);
+	key_ipv6 = (test_bpf_lpm_trie_key_u8 *)alloca(key_size_ipv6);
 
 	// Create IPv4 LPM Trie
 	bpftime::lpm_trie_map_impl *trie_ipv4 = nullptr;
@@ -523,12 +523,12 @@ TEST_CASE("LPM Trie Deletion Operations", "[lpm_trie][kernel_style][deletion]")
 		boost::interprocess::create_only, SHARED_MEMORY_NAME,
 		SHARED_MEMORY_SIZE);
 
-	bpf_lpm_trie_key_u8 *key;
+	test_bpf_lpm_trie_key_u8 *key;
 	size_t key_size;
 	uint64_t value;
 
 	key_size = sizeof(*key) + sizeof(uint32_t);
-	key = (bpf_lpm_trie_key_u8 *)alloca(key_size);
+	key = (test_bpf_lpm_trie_key_u8 *)alloca(key_size);
 
 	bpftime::lpm_trie_map_impl *trie = nullptr;
 	try {
@@ -895,10 +895,10 @@ static void *lpm_test_command(void *arg)
 {
 	int i, j, ret, iter, key_size;
 	struct lpm_mt_test_info *info = (lpm_mt_test_info *)arg;
-	bpf_lpm_trie_key_u8 *key_p;
+	test_bpf_lpm_trie_key_u8 *key_p;
 
 	key_size = sizeof(*key_p) + sizeof(uint32_t);
-	key_p = (bpf_lpm_trie_key_u8 *)alloca(key_size);
+	key_p = (test_bpf_lpm_trie_key_u8 *)alloca(key_size);
 	for (iter = 0; iter < info->iter; iter++)
 		for (i = 0; i < MAX_TEST_KEYS; i++) {
 			// first half of iterations in forward order,
@@ -962,7 +962,7 @@ TEST_CASE("LPM Trie Multi-thread", "[lpm_trie][kernel_style][multithread]")
 
 	// create a trie
 	value_size = sizeof(uint32_t);
-	key_size = sizeof(struct bpf_lpm_trie_key_hdr) + value_size;
+	key_size = sizeof(struct test_bpf_lpm_trie_key_hdr) + value_size;
 
 	bpftime::lpm_trie_map_impl *trie = nullptr;
 	try {

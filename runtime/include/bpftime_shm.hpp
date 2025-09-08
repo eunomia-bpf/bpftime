@@ -410,6 +410,7 @@ int bpftime_add_custom_perf_event(int type, const char *attach_argument);
 int bpftime_poll_gpu_ringbuf_map(int mapfd, void *ctx,
 				 void (*)(const void *, uint64_t, void *));
 #endif
+int bpftime_add_memfd_handler(const char *name, int flags);
 }
 
 #endif // BPFTIME_SHM_CPP_H

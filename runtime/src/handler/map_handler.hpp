@@ -191,7 +191,7 @@ class bpf_map_handler {
 	// *
 	int bpf_map_get_next_key(const void *key, void *next_key,
 				 bool from_syscall = false) const;
-	void map_free(boost::interprocess::managed_shared_memory &memory);
+	void map_free(boost::interprocess::managed_shared_memory &memory) const;
 	int map_init(boost::interprocess::managed_shared_memory &memory);
 	uint32_t get_userspace_value_size() const;
 	std::optional<ringbuf_map_impl *> try_get_ringbuf_map_impl() const;
@@ -220,10 +220,10 @@ class bpf_map_handler {
 #endif
     private:
 	int id = 0;
-	std::string get_container_name();
+	std::string get_container_name() const;
 	mutable pthread_spinlock_t map_lock;
 	// The underlying data structure of the map
-	general_map_impl_ptr map_impl_ptr;
+	mutable general_map_impl_ptr map_impl_ptr;
 	uint32_t max_entries = 0;
 	[[maybe_unused]] uint64_t flags = 0;
 	uint32_t key_size = 0;

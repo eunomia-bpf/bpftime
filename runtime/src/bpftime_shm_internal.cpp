@@ -5,6 +5,7 @@
  */
 #include "bpftime_shm.hpp"
 #include "handler/map_handler.hpp"
+#include "handler/memfd_handler.hpp"
 #include <ebpf-vm.h>
 #include "handler/epoll_handler.hpp"
 #include "handler/handler_manager.hpp"
@@ -777,6 +778,11 @@ int bpftime_shm::add_bpf_map(int fd, const char *name,
 	};
 	verifier::set_map_descriptors(helpers);
 #endif
+	if (!std::holds_alternative<unused_handler>(manager->get_handler(fd))) {
+		SPDLOG_DEBUG(
+			"Creating map handler at {}, which must destroy the existing handler");
+		manager->clear_id_at(fd, segment);
+	}
 	return manager->set_handler(
 		fd, bpftime::bpf_map_handler(fd, name, segment, attr), segment);
 }
@@ -800,6 +806,13 @@ int bpftime_shm::dup_bpf_map(int oldfd, int newfd)
 	auto &handler =
 		std::get<bpftime::bpf_map_handler>(manager->get_handler(oldfd));
 	std::string new_name = std::string("dup_") + handler.name.c_str();
+	// Destroy old handler
+	auto &old_handler = manager->get_handler(newfd);
+	if (!std::holds_alternative<unused_handler>(old_handler)) {
+		SPDLOG_DEBUG("Dup to fd {}, destroying old handler", newfd);
+
+		manager->clear_id_at(newfd, segment);
+	}
 	// Create a new handler with the same parameters
 	return manager->set_handler(
 		newfd,
@@ -963,12 +976,22 @@ int bpftime_shm::poll_gpu_ringbuf_map(
 
 	auto impl_opt = map_handler.try_get_nv_gpu_ringbuf_map_impl();
 	if (!impl_opt) {
-		SPDLOG_ERROR("Failed to get nv_gpu_ringbuf_map_impl for mapfd {}", mapfd);
+		SPDLOG_ERROR(
+			"Failed to get nv_gpu_ringbuf_map_impl for mapfd {}",
+			mapfd);
 		return -1;
 	}
 	auto &impl = *impl_opt;
 	return impl->drain_data(fn);
 }
 #endif
-
+int bpftime_shm::add_memfd_handler(const char *name, int flags)
+{
+	int fd = open_fake_fd();
+	fd = manager->set_handler(fd, memfd_handler(name, flags, segment),
+				  segment);
+	SPDLOG_DEBUG("Created memfd handler at {}, name {}, flags {}", fd, name,
+		     flags);
+	return fd;
+}
 } // namespace bpftime

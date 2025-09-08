@@ -927,6 +927,17 @@ int syscall_context::handle_dup3(int oldfd, int newfd, int flags)
 	return orig_syscall_fn(__NR_dup3, (long)oldfd, (long)newfd,
 			       (long)flags);
 }
+
+int syscall_context::handle_memfd_create(const char *name, int flags)
+{
+	SPDLOG_DEBUG("Calling mocked memfd_create {}, {}", name, flags);
+	if (!enable_mock || run_with_kernel || initializing_cuda ||
+	    !enable_mock_after_initialized)
+		return orig_syscall_fn(__NR_dup3, (long)name, (long)flags);
+	try_startup();
+	return bpftime_add_memfd_handler(name, flags);
+}
+
 #if defined(BPFTIME_ENABLE_CUDA_ATTACH)
 int syscall_context::poll_gpu_ringbuf_map(int mapfd, void *ctx,
 
