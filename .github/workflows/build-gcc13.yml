@@ -23,7 +23,7 @@ jobs:
       - name: Install GCC 13 and dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y gcc-13 g++-13 cmake make libboost-dev libncurses-dev pkg-config libelf-dev zlib1g-dev flex bison
+          sudo apt-get install -y gcc-13 g++-13 cmake make libboost-dev libncurses-dev pkg-config libelf-dev zlib1g-dev flex bison clang llvm
 
       - name: Configure (CMake with GCC 13)
         env:
