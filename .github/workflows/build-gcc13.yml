@@ -1,0 +1,49 @@
+name: build-gcc13
+
+on:
+  push:
+    branches: [master, main, "ci/**"]
+  pull_request:
+    branches: ["**"]
+
+concurrency:
+  group: build-gcc13-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout repository (with submodules)
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          fetch-depth: 0
+
+      - name: Install GCC 13 and dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc-13 g++-13 cmake make libboost-dev libncurses-dev pkg-config libelf-dev zlib1g-dev flex bison clang llvm
+
+      - name: Configure (CMake with GCC 13)
+        env:
+          CC: gcc-13
+          CXX: g++-13
+        run: |
+          cmake -S . -B build \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_C_COMPILER=gcc-13 \
+            -DCMAKE_CXX_COMPILER=g++-13 \
+            -DBPFTIME_LLVM_JIT=OFF \
+            -DBPFTIME_BUILD_WITH_LIBBPF=ON \
+            -DBUILD_BPFTIME_DAEMON=OFF \
+            -DBPFTIME_ENABLE_UNIT_TESTING=OFF \
+            -DENABLE_EBPF_VERIFIER=OFF
+
+      - name: Build
+        run: cmake --build build -j$(nproc)
+
+      - name: List build outputs (first 200 lines)
+        if: always()
+        run: |
+          ls -R build | sed -n '1,200p'
