@@ -7,6 +7,7 @@ set_target_properties(bpftime-cli-cpp PROPERTIES OUTPUT_NAME "bpftime")
 
 target_include_directories(bpftime-cli-cpp PRIVATE ${FRIDA_CORE_INSTALL_DIR} ${SPDLOG_INCLUDE} ${argparse_INCLUDE} ${CMAKE_CURRENT_SOURCE_DIR}/../../runtime/include ${CMAKE_CURRENT_SOURCE_DIR}/../../runtime/src ${CMAKE_CURRENT_SOURCE_DIR}/../../vm/vm-core/include)
 target_link_libraries(bpftime-cli-cpp PRIVATE spdlog::spdlog ${FRIDA_CORE_INSTALL_DIR}/libfrida-core.a argparse spdlog::spdlog bpftime_vm_compat runtime)
+# Link the VM compat static libs exactly once via runtime to avoid duplicate symbols
 if(${BPFTIME_UBPF_JIT})
   add_dependencies(bpftime-cli-cpp bpftime_ubpf_vm)
   target_link_options(bpftime-cli-cpp PUBLIC "-Wl,--whole-archive" "$<TARGET_FILE:bpftime_ubpf_vm>" "-Wl,--no-whole-archive")

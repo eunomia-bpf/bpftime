@@ -11,6 +11,7 @@ add_library(bpftime-syscall-server SHARED
 )
 
 # Force link VM compat libraries so constructor-based factory registration is retained
+# Ensure VM compat libraries are linked (once) via the runtime library instead of duplicating at server
 if(${BPFTIME_UBPF_JIT})
   add_dependencies(bpftime-syscall-server bpftime_ubpf_vm)
   target_link_options(bpftime-syscall-server PUBLIC "-Wl,--whole-archive" "$<TARGET_FILE:bpftime_ubpf_vm>" "-Wl,--no-whole-archive")
