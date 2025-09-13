@@ -109,8 +109,7 @@ set(headers
 message(INFO " Headers: ${headers}")
 message(INFO " Found the following sources: ${sources}")
 
-# Add centralized VM registry source so symbols are available in libruntime
-list(APPEND sources src/vm_registry.cpp)
+# Keep constructor-based self-registration; do not add centralized registry
 
 add_library(
   ${PROJECT_NAME}

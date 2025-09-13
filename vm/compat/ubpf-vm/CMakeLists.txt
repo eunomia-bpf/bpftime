@@ -1,4 +1,4 @@
-add_library(bpftime_ubpf_vm STATIC ./compat_ubpf.cpp)
+add_library(bpftime_ubpf_vm_obj OBJECT ./compat_ubpf.cpp)
 
 # add_subdirectory(ubpf)
 set(UBPF_BUILD_DIR ${CMAKE_CURRENT_BINARY_DIR}/ubpf)
@@ -11,11 +11,9 @@ ExternalProject_Add(
     # CMAKE_ARGS -DCMAKE_BUILD_TYPE=Debug
     INSTALL_COMMAND ""
 )
-target_link_options(bpftime_ubpf_vm PUBLIC "-Wl,--whole-archive" "$<TARGET_FILE:bpftime_ubpf_vm>" "-Wl,--no-whole-archive")
+add_dependencies(bpftime_ubpf_vm_obj ubpf spdlog::spdlog bpftime_vm_compat)
 
-add_dependencies(bpftime_ubpf_vm ubpf spdlog::spdlog bpftime_vm_compat)
-
-
+add_library(bpftime_ubpf_vm STATIC $<TARGET_OBJECTS:bpftime_ubpf_vm_obj>)
 target_link_libraries(bpftime_ubpf_vm PUBLIC ${UBPF_BUILD_DIR}/lib/libubpf.a bpftime_vm_compat spdlog::spdlog)
 ExternalProject_Get_Property(ubpf SOURCE_DIR)
-target_include_directories(bpftime_ubpf_vm PRIVATE ${SOURCE_DIR}/vm/inc ${UBPF_BUILD_DIR}/vm/ ${CMAKE_CURRENT_SOURCE_DIR} ${SPDLOG_INCLUDE})
+target_include_directories(bpftime_ubpf_vm_obj PRIVATE ${SOURCE_DIR}/vm/inc ${UBPF_BUILD_DIR}/vm/ ${CMAKE_CURRENT_SOURCE_DIR} ${SPDLOG_INCLUDE} ${CMAKE_CURRENT_SOURCE_DIR}/../../vm-core/include ${CMAKE_CURRENT_SOURCE_DIR}/../include)

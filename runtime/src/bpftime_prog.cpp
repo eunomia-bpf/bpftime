@@ -107,8 +107,6 @@ bpftime_prog::bpftime_prog(const struct ebpf_inst *insn, size_t insn_cnt,
 			   const char *name)
 	: name(name)
 {
-	extern void bpftime_init_vm_registry();
-	bpftime_init_vm_registry();
 	SPDLOG_DEBUG("Creating bpftime_prog with name {}", name);
 	insns.assign(insn, insn + insn_cnt);
 	const char *vm_name = bpftime::bpftime_get_agent_config().get_vm_name();
@@ -133,8 +131,6 @@ bpftime_prog::bpftime_prog(const struct ebpf_inst *insn, size_t insn_cnt,
 			   const char *name, agent_config config)
 	: name(name)
 {
-	extern void bpftime_init_vm_registry();
-	bpftime_init_vm_registry();
 	// BPFtime_prog relies on the global shared memory being properly
 	// initialized to function.
 	SPDLOG_DEBUG("Creating bpftime_prog with name {}", name);
