@@ -509,7 +509,8 @@ jobs:
           # Start server - use bpftrace to trace malloc function
           echo "Starting server with bpftrace to trace malloc function..."
           # Do NOT preload syscall server into bpftrace; it intercepts perf_event_open and prevents real uprobe attach
-          sudo -E bpftrace -e 'uprobe:/lib/x86_64-linux-gnu/libc.so.6:malloc { printf("PID: %d (%s) malloc size: %d\n", pid, comm, arg0); }' > "$SERVER_LOG" 2>&1 &
+          # Filter only victim process events to match test expectation
+          sudo -E bpftrace -e 'uprobe:/lib/x86_64-linux-gnu/libc.so.6:malloc /comm == "victim"/ { printf("PID: %d (%s) malloc size: %d\n", pid, comm, arg0); }' > "$SERVER_LOG" 2>&1 &
 
           SERVER_PID=$!
           echo "Server started with PID: $SERVER_PID"
