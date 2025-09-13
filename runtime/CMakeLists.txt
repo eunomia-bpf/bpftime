@@ -109,11 +109,19 @@ set(headers
 message(INFO " Headers: ${headers}")
 message(INFO " Found the following sources: ${sources}")
 
+# Keep constructor-based self-registration; do not add centralized registry
+
 add_library(
   ${PROJECT_NAME}
   ${sources}
 )
 set_property(TARGET ${PROJECT_NAME} PROPERTY CXX_STANDARD 20)
+if(${BPFTIME_LLVM_JIT})
+  target_compile_definitions(${PROJECT_NAME} PUBLIC BPFTIME_LLVM_JIT=1)
+endif()
+if(${BPFTIME_UBPF_JIT})
+  target_compile_definitions(${PROJECT_NAME} PUBLIC BPFTIME_UBPF_JIT=1)
+endif()
 add_custom_command(
   OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/syscall_id_list.h
   COMMAND /bin/bash ${CMAKE_CURRENT_SOURCE_DIR}/generate_syscall_id_table.sh "${CMAKE_CURRENT_BINARY_DIR}/syscall_id_list.h"
