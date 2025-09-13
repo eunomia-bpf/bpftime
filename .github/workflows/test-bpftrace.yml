@@ -193,14 +193,12 @@ jobs:
           # Run client command with complete LD_PRELOAD configuration
           echo "Running cat command with complete LD_PRELOAD configuration..."
 
-          # Prepare LD_PRELOAD parameters, adjusting based on whether transformer library exists
+          # Prepare LD_PRELOAD parameters for victim only; do not preload server into bpftrace
           if [ -n "$TRANSFORMER_LIB" ]; then
-            # Use both agent and transformer libraries
-            echo "Using both agent and transformer libraries"
+            echo "Using both agent and transformer libraries for victim"
             LD_PRELOAD_CMD="env AGENT_SO=$AGENT_LIB LD_PRELOAD=$TRANSFORMER_LIB"
           else
-            # Use only agent library
-            echo "Using only agent library"
+            echo "Using only agent library for victim"
             LD_PRELOAD_CMD="env LD_PRELOAD=$AGENT_LIB"
           fi
 
@@ -510,7 +508,8 @@ jobs:
 
           # Start server - use bpftrace to trace malloc function
           echo "Starting server with bpftrace to trace malloc function..."
-          sudo -E LD_PRELOAD=$SERVER_LIB bpftrace -e 'uprobe:/lib/x86_64-linux-gnu/libc.so.6:malloc { printf("PID: %d (%s) malloc size: %d\n", pid, comm, arg0); }' > "$SERVER_LOG" 2>&1 &
+          # Do NOT preload syscall server into bpftrace; it intercepts perf_event_open and prevents real uprobe attach
+          sudo -E bpftrace -e 'uprobe:/lib/x86_64-linux-gnu/libc.so.6:malloc { printf("PID: %d (%s) malloc size: %d\n", pid, comm, arg0); }' > "$SERVER_LOG" 2>&1 &
 
           SERVER_PID=$!
           echo "Server started with PID: $SERVER_PID"

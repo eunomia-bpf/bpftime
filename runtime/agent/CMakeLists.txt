@@ -31,6 +31,8 @@ if(${BPFTIME_LLVM_JIT})
   add_dependencies(bpftime-agent bpftime_llvm_vm llvmbpf_vm)
   target_link_options(bpftime-agent PUBLIC "-Wl,--whole-archive" "$<TARGET_FILE:bpftime_llvm_vm>" "-Wl,--no-whole-archive")
   target_link_libraries(bpftime-agent PUBLIC bpftime_llvm_vm)
+  # Statically embed the compat_llvm constructor TU to guarantee VM factory registration in LD_PRELOAD context
+  target_sources(bpftime-agent PRIVATE $<TARGET_OBJECTS:bpftime_llvm_vm_obj>)
 endif()
 
 if(${BPFTIME_ENABLE_CUDA_ATTACH})
