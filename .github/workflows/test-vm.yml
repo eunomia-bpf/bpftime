@@ -35,6 +35,13 @@ jobs:
       with:
         path: ${{ github.workspace }}/${{ env.INSTALL_LOCATION }}
         key: ${{ runner.os }}-dependencies
+    - name: Install git (openEuler only)
+      if: matrix.container == 'openeuler-2403sp2'
+      run: |
+        set -e
+        if command -v dnf >/dev/null 2>&1; then PM=dnf; else PM=yum; fi
+        $PM -y update
+        $PM -y install git ca-certificates
     - uses: actions/checkout@v2
       with:
         submodules: 'recursive'
@@ -42,5 +49,51 @@ jobs:
       if: startsWith(matrix.container,'ubuntu')
       with:
         python-version: '3.8'
+    - name: Install build deps (openEuler only)
+      if: matrix.container == 'openeuler-2403sp2'
+      run: |
+        set -e
+        if command -v dnf >/dev/null 2>&1; then PM=dnf; else PM=yum; fi
+        $PM -y install cmake make gcc gcc-c++ clang llvm llvm-devel
     - name: build
       run: make build-vm
+    - name: Install deps (openEuler only)
+      if: matrix.container == 'openeuler-2403sp2'
+      run: |
+        set -e
+        if command -v dnf >/dev/null 2>&1; then PM=dnf; else PM=yum; fi
+        $PM -y update
+        $PM -y install \
+          git cmake make gcc gcc-c++ \
+          python3 python3-pip \
+          libstdc++-devel \
+          ncurses-devel zlib-devel \
+          elfutils-libelf-devel \
+          binutils-devel \
+          libcap-devel \
+          which file pkgconfig \
+          xz \
+          clang llvm llvm-devel
+    - name: Build runtime tests (openEuler only)
+      if: matrix.container == 'openeuler-2403sp2'
+      run: |
+        set -e
+        LLVM_CMAKE_DIR=$(llvm-config --cmakedir 2>/dev/null || true)
+        if [ -n "$LLVM_CMAKE_DIR" ]; then
+          cmake -B build -DBPFTIME_ENABLE_UNIT_TESTING=1 -DCMAKE_BUILD_TYPE=Debug -DLLVM_DIR="$LLVM_CMAKE_DIR"
+        else
+          cmake -B build -DBPFTIME_ENABLE_UNIT_TESTING=1 -DCMAKE_BUILD_TYPE=Debug
+        fi
+        cmake --build build --config Debug -j
+        make -C runtime/test/bpf || true
+        cp runtime/test/bpf/*.bpf.o build/runtime/test/ || true
+    - name: Test runtime with llvm_vm (openEuler only)
+      if: matrix.container == 'openeuler-2403sp2'
+      env:
+        BPFTIME_VM_NAME: llvm
+      run: ./build/runtime/unit-test/bpftime_runtime_tests
+    - name: Test runtime with ubpf_vm (openEuler only)
+      if: matrix.container == 'openeuler-2403sp2'
+      env:
+        BPFTIME_VM_NAME: ubpf
+      run: ./build/runtime/unit-test/bpftime_runtime_tests
