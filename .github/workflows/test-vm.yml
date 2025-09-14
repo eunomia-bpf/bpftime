@@ -54,7 +54,7 @@ jobs:
       run: |
         set -e
         if command -v dnf >/dev/null 2>&1; then PM=dnf; else PM=yum; fi
-        $PM -y install cmake make gcc gcc-c++ clang llvm llvm-devel
+        $PM -y install cmake make gcc gcc-c++ clang llvm llvm-devel zlib-devel
     - name: build
       run: make build-vm
     - name: Install deps (openEuler only)
