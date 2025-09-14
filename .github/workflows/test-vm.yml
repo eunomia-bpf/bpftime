@@ -18,6 +18,10 @@ jobs:
     strategy:
       matrix:
         include:
+          - container: ubuntu-2204
+            image: manjusakalza/bpftime-base-image:ubuntu-2204
+          - container: fedora-39
+            image: manjusakalza/bpftime-base-image:fedora-39
           - container: openeuler-2403sp2
             image: openeuler/openeuler:24.03-lts-sp1
     container:
