@@ -20,6 +20,7 @@ jobs:
         container:
           - ubuntu-2204
           - fedora-39
+          - openeuler-2403sp2
     container: 
       image: "manjusakalza/bpftime-base-image:${{matrix.container}}"
       options: --privileged
