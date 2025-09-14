@@ -22,8 +22,6 @@ jobs:
             image: manjusakalza/bpftime-base-image:ubuntu-2204
           - container: fedora-39
             image: manjusakalza/bpftime-base-image:fedora-39
-          - container: openeuler-2403sp2
-            image: openeuler/openeuler:24.03-lts-sp1
     container:
       image: "${{ matrix.image }}"
       options: --privileged
@@ -35,13 +33,6 @@ jobs:
       with:
         path: ${{ github.workspace }}/${{ env.INSTALL_LOCATION }}
         key: ${{ runner.os }}-dependencies
-    - name: Install git (openEuler only)
-      if: matrix.container == 'openeuler-2403sp2'
-      run: |
-        set -e
-        if command -v dnf >/dev/null 2>&1; then PM=dnf; else PM=yum; fi
-        $PM -y update
-        $PM -y install git ca-certificates
     - uses: actions/checkout@v2
       with:
         submodules: 'recursive'
@@ -49,12 +40,22 @@ jobs:
       if: startsWith(matrix.container,'ubuntu')
       with:
         python-version: '3.8'
-    - name: Install build deps (openEuler only)
-      if: matrix.container == 'openeuler-2403sp2'
-      run: |
-        set -e
-        if command -v dnf >/dev/null 2>&1; then PM=dnf; else PM=yum; fi
-        $PM -y install cmake make gcc gcc-c++ clang llvm llvm-devel zlib-devel elfutils-libelf-devel pkgconf-pkg-config
     - name: build
       run: make build-vm
+    - name: Build runtime tests (Ubuntu/Fedora only)
+      if: matrix.container != 'openeuler-2403sp2'
+      run: |
+        set -e
+        cmake -B build -DBPFTIME_ENABLE_UNIT_TESTING=1 -DCMAKE_BUILD_TYPE=Debug
+        cmake --build build --config Debug --target bpftime_runtime_tests -j$(nproc)
+    - name: Test runtime with llvm_vm (Ubuntu/Fedora only)
+      if: matrix.container != 'openeuler-2403sp2'
+      env:
+        BPFTIME_VM_NAME: llvm
+      run: ./build/runtime/unit-test/bpftime_runtime_tests
+    - name: Test runtime with ubpf_vm (Ubuntu/Fedora only)
+      if: matrix.container != 'openeuler-2403sp2'
+      env:
+        BPFTIME_VM_NAME: ubpf
+      run: ./build/runtime/unit-test/bpftime_runtime_tests
     

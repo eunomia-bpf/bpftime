@@ -14,20 +14,34 @@ env:
 
 jobs:
   build:
-    if: false
     runs-on: "ubuntu-latest"
     strategy:
       matrix:
-        container:
-          - ubuntu-2204
-          - fedora-39
+        include:
+          - container: openeuler-2403sp2
+            image: openeuler/openeuler:24.03-lts-sp1
     container:
-      image: "manjusakalza/bpftime-base-image:${{matrix.container}}"
+      image: "${{ matrix.image }}"
       options: --privileged
     steps:
+      - name: Install git (openEuler)
+        run: |
+          set -e
+          if command -v dnf >/dev/null 2>&1; then PM=dnf; else PM=yum; fi
+          $PM -y update
+          $PM -y install git ca-certificates
       - uses: actions/checkout@v2
         with:
           submodules: "recursive"
+      - name: Install deps (openEuler)
+        run: |
+          set -e
+          if command -v dnf >/dev/null 2>&1; then PM=dnf; else PM=yum; fi
+          $PM -y install \
+            cmake make gcc gcc-c++ \
+            clang llvm llvm-devel \
+            zlib-devel elfutils-libelf-devel pkgconf-pkg-config \
+            boost-devel
       - name: Remount shm dev
         # The size of /dev/shm defaults to be 64M, but boost won't detect this at all, leaving bus error to us..
         # So we remount it to make it larger
@@ -60,6 +74,10 @@ jobs:
       - name: Test Runtime
         run: |
           export BPFTIME_VM_NAME=llvm
+          ./build/runtime/unit-test/bpftime_runtime_tests
+      - name: Test Runtime (uBPF)
+        run: |
+          export BPFTIME_VM_NAME=ubpf
           ./build/runtime/unit-test/bpftime_runtime_tests
 
       - name: Generate runtime coverage (Ubuntu)
