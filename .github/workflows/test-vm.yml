@@ -23,7 +23,7 @@ jobs:
           - container: fedora-39
             image: manjusakalza/bpftime-base-image:fedora-39
           - container: openeuler-2403sp2
-            image: openeuler/openeuler:24.03-lts
+            image: openeuler/openeuler:24.03-lts-sp1
     container:
       image: "${{ matrix.image }}"
       options: --privileged
@@ -54,7 +54,7 @@ jobs:
       run: |
         set -e
         if command -v dnf >/dev/null 2>&1; then PM=dnf; else PM=yum; fi
-        $PM -y install cmake make gcc gcc-c++ clang llvm llvm-devel zlib-devel
+        $PM -y install cmake make gcc gcc-c++ clang llvm llvm-devel zlib-devel elfutils-libelf-devel pkgconf-pkg-config
     - name: build
       run: make build-vm
     - name: Install deps (openEuler only)
