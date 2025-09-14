@@ -80,26 +80,32 @@ jobs:
           fi
           if [ -n "$LLVM_LIBDIR" ]; then export LD_LIBRARY_PATH="$LLVM_LIBDIR:$LD_LIBRARY_PATH"; fi
           cmake --build build --config Debug --target bpftime_runtime_tests -j$(nproc)
-      - name: Test Runtime (LLVM, minimal VM-switch smoke)
+      - name: Test Runtime (LLVM, VM-switch smoke: agent_config)
         run: |
           LLVM_LIBDIR=$(llvm-config --libdir 2>/dev/null || true)
           if [ -n "$LLVM_LIBDIR" ]; then export LD_LIBRARY_PATH="$LLVM_LIBDIR:$LD_LIBRARY_PATH"; fi
-          LLVMSO=$(ls "$LLVM_LIBDIR"/libLLVM*.so 2>/dev/null | head -n1 || true)
-          if [ -n "$LLVMSO" ]; then export LD_PRELOAD="$LLVMSO:$LD_PRELOAD"; fi
           export BPFTIME_VM_NAME=llvm
-          timeout 300 ./build/runtime/unit-test/bpftime_runtime_tests \
-            "Test bpftime agent_config" \
-            "Test bpftime shm json import/export"
-      - name: Test Runtime (uBPF, minimal VM-switch smoke)
+          timeout 180 ./build/runtime/unit-test/bpftime_runtime_tests "Test bpftime agent_config"
+
+      - name: Test Runtime (LLVM, VM-switch smoke: shm json)
         run: |
           LLVM_LIBDIR=$(llvm-config --libdir 2>/dev/null || true)
           if [ -n "$LLVM_LIBDIR" ]; then export LD_LIBRARY_PATH="$LLVM_LIBDIR:$LD_LIBRARY_PATH"; fi
-          LLVMSO=$(ls "$LLVM_LIBDIR"/libLLVM*.so 2>/dev/null | head -n1 || true)
-          if [ -n "$LLVMSO" ]; then export LD_PRELOAD="$LLVMSO:$LD_PRELOAD"; fi
+          export BPFTIME_VM_NAME=llvm
+          timeout 180 ./build/runtime/unit-test/bpftime_runtime_tests "Test bpftime shm json import/export"
+      - name: Test Runtime (uBPF, VM-switch smoke: agent_config)
+        run: |
+          LLVM_LIBDIR=$(llvm-config --libdir 2>/dev/null || true)
+          if [ -n "$LLVM_LIBDIR" ]; then export LD_LIBRARY_PATH="$LLVM_LIBDIR:$LD_LIBRARY_PATH"; fi
           export BPFTIME_VM_NAME=ubpf
-          timeout 300 ./build/runtime/unit-test/bpftime_runtime_tests \
-            "Test bpftime agent_config" \
-            "Test bpftime shm json import/export"
+          timeout 180 ./build/runtime/unit-test/bpftime_runtime_tests "Test bpftime agent_config"
+
+      - name: Test Runtime (uBPF, VM-switch smoke: shm json)
+        run: |
+          LLVM_LIBDIR=$(llvm-config --libdir 2>/dev/null || true)
+          if [ -n "$LLVM_LIBDIR" ]; then export LD_LIBRARY_PATH="$LLVM_LIBDIR:$LD_LIBRARY_PATH"; fi
+          export BPFTIME_VM_NAME=ubpf
+          timeout 180 ./build/runtime/unit-test/bpftime_runtime_tests "Test bpftime shm json import/export"
 
       - name: Generate runtime coverage (Ubuntu)
         if: "matrix.container == 'ubuntu-2204'"
