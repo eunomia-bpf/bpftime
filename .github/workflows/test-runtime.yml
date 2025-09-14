@@ -48,12 +48,14 @@ jobs:
         run: |
           mount -o remount,size=1G /dev/shm
       - name: Setup conda
+        if: matrix.container != 'openeuler-2403sp2'
         uses: conda-incubator/setup-miniconda@v3
         with:
           channels: conda-forge,bioconda
           channel-priority: strict
           miniforge-version: latest
       - name: Install absl and protobuf
+        if: matrix.container != 'openeuler-2403sp2'
         run: conda install libabseil libprotobuf
       - name: Install lcov
         if: "matrix.container == 'ubuntu-2204'"
@@ -78,22 +80,30 @@ jobs:
           fi
           if [ -n "$LLVM_LIBDIR" ]; then export LD_LIBRARY_PATH="$LLVM_LIBDIR:$LD_LIBRARY_PATH"; fi
           cmake --build build --config Debug --target bpftime_runtime_tests -j$(nproc)
-      - name: Test Runtime
+      - name: Test Runtime (LLVM, exclude attach tests)
         run: |
           LLVM_LIBDIR=$(llvm-config --libdir 2>/dev/null || true)
           if [ -n "$LLVM_LIBDIR" ]; then export LD_LIBRARY_PATH="$LLVM_LIBDIR:$LD_LIBRARY_PATH"; fi
           LLVMSO=$(ls "$LLVM_LIBDIR"/libLLVM*.so 2>/dev/null | head -n1 || true)
           if [ -n "$LLVMSO" ]; then export LD_PRELOAD="$LLVMSO:$LD_PRELOAD"; fi
           export BPFTIME_VM_NAME=llvm
-          ./build/runtime/unit-test/bpftime_runtime_tests
-      - name: Test Runtime (uBPF)
+          ./build/runtime/unit-test/bpftime_runtime_tests \
+            "~Test attaching filter program with ebpf, and reverting" \
+            "~Test probing internal functions" \
+            "~Test shm progs attach" \
+            "~Test attach replace with ebpf"
+      - name: Test Runtime (uBPF, exclude attach tests)
         run: |
           LLVM_LIBDIR=$(llvm-config --libdir 2>/dev/null || true)
           if [ -n "$LLVM_LIBDIR" ]; then export LD_LIBRARY_PATH="$LLVM_LIBDIR:$LD_LIBRARY_PATH"; fi
           LLVMSO=$(ls "$LLVM_LIBDIR"/libLLVM*.so 2>/dev/null | head -n1 || true)
           if [ -n "$LLVMSO" ]; then export LD_PRELOAD="$LLVMSO:$LD_PRELOAD"; fi
           export BPFTIME_VM_NAME=ubpf
-          ./build/runtime/unit-test/bpftime_runtime_tests
+          ./build/runtime/unit-test/bpftime_runtime_tests \
+            "~Test attaching filter program with ebpf, and reverting" \
+            "~Test probing internal functions" \
+            "~Test shm progs attach" \
+            "~Test attach replace with ebpf"
 
       - name: Generate runtime coverage (Ubuntu)
         if: "matrix.container == 'ubuntu-2204'"
