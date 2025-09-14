@@ -17,13 +17,11 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        include:
-          - container: ubuntu-2204
-            image: manjusakalza/bpftime-base-image:ubuntu-2204
-          - container: fedora-39
-            image: manjusakalza/bpftime-base-image:fedora-39
-    container:
-      image: "${{ matrix.image }}"
+        container:
+          - ubuntu-2204
+          - fedora-39
+    container: 
+      image: "manjusakalza/bpftime-base-image:${{matrix.container}}"
       options: --privileged
     steps:
 
@@ -42,20 +40,4 @@ jobs:
         python-version: '3.8'
     - name: build
       run: make build-vm
-    - name: Build runtime tests (Ubuntu/Fedora only)
-      if: matrix.container != 'openeuler-2403sp2'
-      run: |
-        set -e
-        cmake -B build -DBPFTIME_ENABLE_UNIT_TESTING=1 -DCMAKE_BUILD_TYPE=Debug
-        cmake --build build --config Debug --target bpftime_runtime_tests -j$(nproc)
-    - name: Test runtime with llvm_vm (Ubuntu/Fedora only)
-      if: matrix.container != 'openeuler-2403sp2'
-      env:
-        BPFTIME_VM_NAME: llvm
-      run: ./build/runtime/unit-test/bpftime_runtime_tests
-    - name: Test runtime with ubpf_vm (Ubuntu/Fedora only)
-      if: matrix.container != 'openeuler-2403sp2'
-      env:
-        BPFTIME_VM_NAME: ubpf
-      run: ./build/runtime/unit-test/bpftime_runtime_tests
     

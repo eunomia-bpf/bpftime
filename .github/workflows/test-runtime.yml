@@ -69,14 +69,29 @@ jobs:
       - name: Build
         run: |
           export BPFTIME_VM_NAME=llvm
-          cmake -DTEST_LCOV=ON -DBPFTIME_LLVM_JIT=YES -DBPFTIME_ENABLE_UNIT_TESTING=YES -DENABLE_PROBE_WRITE_CHECK=1 -DENABLE_PROBE_READ_CHECK=1 -DCMAKE_BUILD_TYPE=Debug -B build
+          LLVM_CMAKE_DIR=$(llvm-config --cmakedir 2>/dev/null || true)
+          LLVM_LIBDIR=$(llvm-config --libdir 2>/dev/null || true)
+          if [ -n "$LLVM_CMAKE_DIR" ]; then
+            cmake -DTEST_LCOV=ON -DBPFTIME_LLVM_JIT=YES -DBPFTIME_ENABLE_UNIT_TESTING=YES -DENABLE_PROBE_WRITE_CHECK=1 -DENABLE_PROBE_READ_CHECK=1 -DENABLE_LLVM_SHARED=ON -DLLVM_DIR="$LLVM_CMAKE_DIR" -DCMAKE_BUILD_TYPE=Debug -B build
+          else
+            cmake -DTEST_LCOV=ON -DBPFTIME_LLVM_JIT=YES -DBPFTIME_ENABLE_UNIT_TESTING=YES -DENABLE_PROBE_WRITE_CHECK=1 -DENABLE_PROBE_READ_CHECK=1 -DENABLE_LLVM_SHARED=ON -DCMAKE_BUILD_TYPE=Debug -B build
+          fi
+          if [ -n "$LLVM_LIBDIR" ]; then export LD_LIBRARY_PATH="$LLVM_LIBDIR:$LD_LIBRARY_PATH"; fi
           cmake --build build --config Debug --target bpftime_runtime_tests -j$(nproc)
       - name: Test Runtime
         run: |
+          LLVM_LIBDIR=$(llvm-config --libdir 2>/dev/null || true)
+          if [ -n "$LLVM_LIBDIR" ]; then export LD_LIBRARY_PATH="$LLVM_LIBDIR:$LD_LIBRARY_PATH"; fi
+          LLVMSO=$(ls "$LLVM_LIBDIR"/libLLVM*.so 2>/dev/null | head -n1 || true)
+          if [ -n "$LLVMSO" ]; then export LD_PRELOAD="$LLVMSO:$LD_PRELOAD"; fi
           export BPFTIME_VM_NAME=llvm
           ./build/runtime/unit-test/bpftime_runtime_tests
       - name: Test Runtime (uBPF)
         run: |
+          LLVM_LIBDIR=$(llvm-config --libdir 2>/dev/null || true)
+          if [ -n "$LLVM_LIBDIR" ]; then export LD_LIBRARY_PATH="$LLVM_LIBDIR:$LD_LIBRARY_PATH"; fi
+          LLVMSO=$(ls "$LLVM_LIBDIR"/libLLVM*.so 2>/dev/null | head -n1 || true)
+          if [ -n "$LLVMSO" ]; then export LD_PRELOAD="$LLVMSO:$LD_PRELOAD"; fi
           export BPFTIME_VM_NAME=ubpf
           ./build/runtime/unit-test/bpftime_runtime_tests
 
