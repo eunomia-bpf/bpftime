@@ -5,7 +5,7 @@ on:
   push:
     branches: ["*"]
   pull_request:
-    branches: ["master"]
+    branches: ["master", "main"]
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}-${{ github.event_name }}
   cancel-in-progress: true
@@ -80,27 +80,27 @@ jobs:
           fi
           if [ -n "$LLVM_LIBDIR" ]; then export LD_LIBRARY_PATH="$LLVM_LIBDIR:$LD_LIBRARY_PATH"; fi
           cmake --build build --config Debug --target bpftime_runtime_tests -j$(nproc)
-      - name: Test Runtime (LLVM, VM-switch smoke: agent_config)
+      - name: 'Test Runtime (LLVM, VM-switch smoke: agent_config)'
         run: |
           LLVM_LIBDIR=$(llvm-config --libdir 2>/dev/null || true)
           if [ -n "$LLVM_LIBDIR" ]; then export LD_LIBRARY_PATH="$LLVM_LIBDIR:$LD_LIBRARY_PATH"; fi
           export BPFTIME_VM_NAME=llvm
           timeout 180 ./build/runtime/unit-test/bpftime_runtime_tests "Test bpftime agent_config"
 
-      - name: Test Runtime (LLVM, VM-switch smoke: shm json)
+      - name: 'Test Runtime (LLVM, VM-switch smoke: shm json)'
         run: |
           LLVM_LIBDIR=$(llvm-config --libdir 2>/dev/null || true)
           if [ -n "$LLVM_LIBDIR" ]; then export LD_LIBRARY_PATH="$LLVM_LIBDIR:$LD_LIBRARY_PATH"; fi
           export BPFTIME_VM_NAME=llvm
           timeout 180 ./build/runtime/unit-test/bpftime_runtime_tests "Test bpftime shm json import/export"
-      - name: Test Runtime (uBPF, VM-switch smoke: agent_config)
+      - name: 'Test Runtime (uBPF, VM-switch smoke: agent_config)'
         run: |
           LLVM_LIBDIR=$(llvm-config --libdir 2>/dev/null || true)
           if [ -n "$LLVM_LIBDIR" ]; then export LD_LIBRARY_PATH="$LLVM_LIBDIR:$LD_LIBRARY_PATH"; fi
           export BPFTIME_VM_NAME=ubpf
           timeout 180 ./build/runtime/unit-test/bpftime_runtime_tests "Test bpftime agent_config"
 
-      - name: Test Runtime (uBPF, VM-switch smoke: shm json)
+      - name: 'Test Runtime (uBPF, VM-switch smoke: shm json)'
         run: |
           LLVM_LIBDIR=$(llvm-config --libdir 2>/dev/null || true)
           if [ -n "$LLVM_LIBDIR" ]; then export LD_LIBRARY_PATH="$LLVM_LIBDIR:$LD_LIBRARY_PATH"; fi
