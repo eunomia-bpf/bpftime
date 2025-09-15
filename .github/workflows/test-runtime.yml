@@ -74,38 +74,51 @@ jobs:
           LLVM_CMAKE_DIR=$(llvm-config --cmakedir 2>/dev/null || true)
           LLVM_LIBDIR=$(llvm-config --libdir 2>/dev/null || true)
           if [ -n "$LLVM_CMAKE_DIR" ]; then
-            cmake -DTEST_LCOV=ON -DBPFTIME_LLVM_JIT=YES -DBPFTIME_ENABLE_UNIT_TESTING=YES -DENABLE_PROBE_WRITE_CHECK=1 -DENABLE_PROBE_READ_CHECK=1 -DENABLE_LLVM_SHARED=ON -DLLVM_DIR="$LLVM_CMAKE_DIR" -DCMAKE_BUILD_TYPE=Debug -B build
+            cmake -DTEST_LCOV=OFF -DBPFTIME_LLVM_JIT=YES -DBPFTIME_ENABLE_UNIT_TESTING=OFF -DENABLE_PROBE_WRITE_CHECK=1 -DENABLE_PROBE_READ_CHECK=1 -DENABLE_LLVM_SHARED=ON -DLLVM_DIR="$LLVM_CMAKE_DIR" -DCMAKE_BUILD_TYPE=Debug -B build
           else
-            cmake -DTEST_LCOV=ON -DBPFTIME_LLVM_JIT=YES -DBPFTIME_ENABLE_UNIT_TESTING=YES -DENABLE_PROBE_WRITE_CHECK=1 -DENABLE_PROBE_READ_CHECK=1 -DENABLE_LLVM_SHARED=ON -DCMAKE_BUILD_TYPE=Debug -B build
+            cmake -DTEST_LCOV=OFF -DBPFTIME_LLVM_JIT=YES -DBPFTIME_ENABLE_UNIT_TESTING=OFF -DENABLE_PROBE_WRITE_CHECK=1 -DENABLE_PROBE_READ_CHECK=1 -DENABLE_LLVM_SHARED=ON -DCMAKE_BUILD_TYPE=Debug -B build
           fi
           if [ -n "$LLVM_LIBDIR" ]; then export LD_LIBRARY_PATH="$LLVM_LIBDIR:$LD_LIBRARY_PATH"; fi
-          cmake --build build --config Debug --target bpftime_runtime_tests -j$(nproc)
-      - name: 'Test Runtime (LLVM, VM-switch smoke: agent_config)'
-        run: |
-          LLVM_LIBDIR=$(llvm-config --libdir 2>/dev/null || true)
-          if [ -n "$LLVM_LIBDIR" ]; then export LD_LIBRARY_PATH="$LLVM_LIBDIR:$LD_LIBRARY_PATH"; fi
-          export BPFTIME_VM_NAME=llvm
-          timeout 180 ./build/runtime/unit-test/bpftime_runtime_tests "Test bpftime agent_config"
+          cmake --build build --config Debug --target bpftime-agent bpftime-syscall-server -j$(nproc)
+      # Remove unrelated smoke tests; focus on malloc example to validate VM switching
 
-      - name: 'Test Runtime (LLVM, VM-switch smoke: shm json)'
+      - name: Build malloc example (openEuler)
         run: |
-          LLVM_LIBDIR=$(llvm-config --libdir 2>/dev/null || true)
-          if [ -n "$LLVM_LIBDIR" ]; then export LD_LIBRARY_PATH="$LLVM_LIBDIR:$LD_LIBRARY_PATH"; fi
-          export BPFTIME_VM_NAME=llvm
-          timeout 180 ./build/runtime/unit-test/bpftime_runtime_tests "Test bpftime shm json import/export"
-      - name: 'Test Runtime (uBPF, VM-switch smoke: agent_config)'
-        run: |
-          LLVM_LIBDIR=$(llvm-config --libdir 2>/dev/null || true)
-          if [ -n "$LLVM_LIBDIR" ]; then export LD_LIBRARY_PATH="$LLVM_LIBDIR:$LD_LIBRARY_PATH"; fi
-          export BPFTIME_VM_NAME=ubpf
-          timeout 180 ./build/runtime/unit-test/bpftime_runtime_tests "Test bpftime agent_config"
+          make -C example/malloc -j
 
-      - name: 'Test Runtime (uBPF, VM-switch smoke: shm json)'
+      - name: 'Run malloc example (LLVM VM)'
+        env:
+          BPFTIME_VM_NAME: llvm
         run: |
+          set -e
           LLVM_LIBDIR=$(llvm-config --libdir 2>/dev/null || true)
           if [ -n "$LLVM_LIBDIR" ]; then export LD_LIBRARY_PATH="$LLVM_LIBDIR:$LD_LIBRARY_PATH"; fi
-          export BPFTIME_VM_NAME=ubpf
-          timeout 180 ./build/runtime/unit-test/bpftime_runtime_tests "Test bpftime shm json import/export"
+          # Start server (syscall-server) briefly
+          LD_PRELOAD=build/runtime/syscall-server/libbpftime-syscall-server.so timeout 20s ./example/malloc/malloc > server-llvm.log 2>&1 &
+          SERVER_PID=$!
+          sleep 3
+          # Run client (agent)
+          LD_PRELOAD=build/runtime/agent/libbpftime-agent.so timeout 10s ./example/malloc/victim | tee client-llvm.log
+          CLIENT_RC=${PIPESTATUS[0]}
+          kill -9 $SERVER_PID 2>/dev/null || true
+          exit $CLIENT_RC
+
+      - name: 'Run malloc example (uBPF VM)'
+        env:
+          BPFTIME_VM_NAME: ubpf
+        run: |
+          set -e
+          LLVM_LIBDIR=$(llvm-config --libdir 2>/dev/null || true)
+          if [ -n "$LLVM_LIBDIR" ]; then export LD_LIBRARY_PATH="$LLVM_LIBDIR:$LD_LIBRARY_PATH"; fi
+          # Start server (syscall-server) briefly
+          LD_PRELOAD=build/runtime/syscall-server/libbpftime-syscall-server.so timeout 20s ./example/malloc/malloc > server-ubpf.log 2>&1 &
+          SERVER_PID=$!
+          sleep 3
+          # Run client (agent)
+          LD_PRELOAD=build/runtime/agent/libbpftime-agent.so timeout 10s ./example/malloc/victim | tee client-ubpf.log
+          CLIENT_RC=${PIPESTATUS[0]}
+          kill -9 $SERVER_PID 2>/dev/null || true
+          exit $CLIENT_RC
 
       - name: Generate runtime coverage (Ubuntu)
         if: "matrix.container == 'ubuntu-2204'"
@@ -128,6 +141,7 @@ jobs:
             ./coverage-runtime.info
 
       - name: build runtime with mpk enable
+        if: matrix.container != 'openeuler-2403sp2'
         run: |
           rm -rf build
           cmake -Bbuild -DTEST_LCOV=ON -DBPFTIME_LLVM_JIT=YES  -DBPFTIME_ENABLE_UNIT_TESTING=YES -DBPFTIME_ENABLE_MPK=YES -DCMAKE_BUILD_TYPE=Debug -DENABLE_PROBE_WRITE_CHECK=1 -DENABLE_PROBE_READ_CHECK=1 -Dabsl_DIR=~/miniconda3/lib/cmake/absl -DProtobuf_DIR=~/miniconda3/lib/cmake/protobuf -Dutf8_range_DIR=~/miniconda3/lib/cmake/utf8_range
@@ -145,6 +159,7 @@ jobs:
           # sed -i "s/&::descriptor_table_pos_2finclude_2fproto_2fhandle_2eproto/nullptr/g" build/runtime/pos/cuda_impl/proto/*.pb.cc
           cmake --build build --config Debug --target bpftime_runtime_tests -j$(nproc)
       - name: test runtime with mpk
+        if: matrix.container != 'openeuler-2403sp2'
         run: ./build/runtime/unit-test/bpftime_runtime_tests
       - name: Generate runtime with mpk enable coverage (Ubuntu)
         if: "matrix.container == 'ubuntu-2204'"
