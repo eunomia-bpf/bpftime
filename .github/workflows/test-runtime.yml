@@ -18,8 +18,8 @@ jobs:
     strategy:
       matrix:
         include:
-          - container: openeuler-2403sp2
-            image: openeuler/openeuler:24.03-lts-sp1
+          - container: openeuler-2403sp2 
+            image: openeuler/openeuler:24.03-lts-sp1 
     container:
       image: "${{ matrix.image }}"
       options: --privileged
