@@ -79,11 +79,13 @@ jobs:
             cmake -DTEST_LCOV=OFF -DBPFTIME_LLVM_JIT=YES -DBPFTIME_ENABLE_UNIT_TESTING=OFF -DENABLE_PROBE_WRITE_CHECK=1 -DENABLE_PROBE_READ_CHECK=1 -DENABLE_LLVM_SHARED=ON -DCMAKE_BUILD_TYPE=Debug -B build
           fi
           if [ -n "$LLVM_LIBDIR" ]; then export LD_LIBRARY_PATH="$LLVM_LIBDIR:$LD_LIBRARY_PATH"; fi
-          cmake --build build --config Debug --target bpftime-agent bpftime-syscall-server -j$(nproc)
+          cmake --build build --config Debug --target bpftime-agent bpftime-syscall-server libbpf bpftool -j$(nproc)
       # Remove unrelated smoke tests; focus on malloc example to validate VM switching
 
       - name: Build malloc example (openEuler)
         run: |
+          export C_INCLUDE_PATH="build/libbpf:build/libbpf/bpf:third_party/bpftool/build/usr/include:third_party/bpftool/build/usr/include/bpf:third_party/bpftool/build/include:third_party/bpftool/build/include/bpf:${C_INCLUDE_PATH}"
+          export CPLUS_INCLUDE_PATH="$C_INCLUDE_PATH"
           make -C example/malloc -j
 
       - name: 'Run malloc example (LLVM VM)'
@@ -96,7 +98,7 @@ jobs:
           if [ -n "$LLVM_LIBDIR" ]; then export LD_LIBRARY_PATH="$LLVM_LIBDIR:$LD_LIBRARY_PATH"; fi
           # Start server (syscall-server) briefly
           BPFTIME_LOG_OUTPUT=console SPDLOG_LEVEL=debug BPFTIME_SHARED_MEMORY_PATH=/dev/shm \
-          LD_PRELOAD=build/runtime/syscall-server/libbpftime-syscall-server.so timeout 25s /bin/sleep 25 > server-llvm.log 2>&1 &
+          LD_PRELOAD=build/runtime/syscall-server/libbpftime-syscall-server.so timeout 25s ./example/malloc/malloc > server-llvm.log 2>&1 &
           SERVER_PID=$!
           sleep 5
           # Run client (agent)
@@ -118,7 +120,7 @@ jobs:
           if [ -n "$LLVM_LIBDIR" ]; then export LD_LIBRARY_PATH="$LLVM_LIBDIR:$LD_LIBRARY_PATH"; fi
           # Start server (syscall-server) briefly
           BPFTIME_LOG_OUTPUT=console SPDLOG_LEVEL=debug BPFTIME_SHARED_MEMORY_PATH=/dev/shm \
-          LD_PRELOAD=build/runtime/syscall-server/libbpftime-syscall-server.so timeout 25s /bin/sleep 25 > server-ubpf.log 2>&1 &
+          LD_PRELOAD=build/runtime/syscall-server/libbpftime-syscall-server.so timeout 25s ./example/malloc/malloc > server-ubpf.log 2>&1 &
           SERVER_PID=$!
           sleep 5
           # Run client (agent)
