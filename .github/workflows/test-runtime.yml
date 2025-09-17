@@ -42,6 +42,11 @@ jobs:
             clang llvm llvm-devel \
             zlib-devel elfutils-libelf-devel pkgconf-pkg-config \
             boost-devel
+      - name: Install Python3 (openEuler)
+        run: |
+          set -e
+          if command -v dnf >/dev/null 2>&1; then PM=dnf; else PM=yum; fi
+          $PM -y install python3 || true
       - name: Remount shm dev
         # The size of /dev/shm defaults to be 64M, but boost won't detect this at all, leaving bus error to us..
         # So we remount it to make it larger
@@ -80,6 +85,11 @@ jobs:
           fi
           if [ -n "$LLVM_LIBDIR" ]; then export LD_LIBRARY_PATH="$LLVM_LIBDIR:$LD_LIBRARY_PATH"; fi
           cmake --build build --config Debug --target bpftime-agent bpftime-syscall-server libbpf bpftool -j$(nproc)
+      - name: Install CLI and runtime to home
+        run: |
+          set -e
+          cmake --build build --config Debug --target install -j$(nproc)
+          ls -la "$HOME/.bpftime" || true
       # Remove unrelated smoke tests; focus on malloc example to validate VM switching
 
       - name: Build malloc example (openEuler)
@@ -88,66 +98,31 @@ jobs:
           export CPLUS_INCLUDE_PATH="$C_INCLUDE_PATH"
           make -C example/malloc -j
 
-      - name: 'Run malloc example (LLVM VM)'
+      - name: 'Run malloc example via CLI (LLVM VM)'
+        shell: bash
         env:
           BPFTIME_VM_NAME: llvm
+          BPFTIME_LOG_OUTPUT: console
+          SPDLOG_LEVEL: debug
+          BPFTIME_SHARED_MEMORY_PATH: /dev/shm
         run: |
-          set -e
-          set -o pipefail
-          LLVM_LIBDIR=$(llvm-config --libdir 2>/dev/null || true)
-          if [ -n "$LLVM_LIBDIR" ]; then export LD_LIBRARY_PATH="$LLVM_LIBDIR:$LD_LIBRARY_PATH"; fi
-          # Start server (syscall-server) briefly
-          GLIBC_TUNABLES=glibc.malloc.check=0:glibc.malloc.tcache_count=0 MALLOC_CHECK_=0 MALLOC_ARENA_MAX=1 \
-          GLIBC_TUNABLES=glibc.malloc.tcache_count=0:glibc.malloc.tcache_max=0 MALLOC_CHECK_=0 LD_BIND_NOW=1 \
-          BPFTIME_USED=1 BPFTIME_RUN_WITH_KERNEL=false BPFTIME_LOG_OUTPUT=console SPDLOG_LEVEL=debug BPFTIME_SHARED_MEMORY_PATH=/dev/shm \
-          LD_PRELOAD=build/runtime/syscall-server/libbpftime-syscall-server.so timeout 25s ./example/malloc/malloc > server-llvm.log 2>&1 &
-          SERVER_PID=$!
-          sleep 5
-          # Wait until server shm ready
-          for i in $(seq 1 10); do \
-            if grep -q -E "bpftime-syscall-server started|Global shm constructed" server-llvm.log; then echo "server ready"; break; fi; \
-            sleep 1; \
-          done
-          # Run client (agent)
-          GLIBC_TUNABLES=glibc.malloc.check=0:glibc.malloc.tcache_count=0 MALLOC_CHECK_=0 MALLOC_ARENA_MAX=1 \
-          GLIBC_TUNABLES=glibc.malloc.tcache_count=0:glibc.malloc.tcache_max=0 MALLOC_CHECK_=0 LD_BIND_NOW=1 \
-          BPFTIME_USED=1 BPFTIME_RUN_WITH_KERNEL=false BPFTIME_LOG_OUTPUT=console SPDLOG_LEVEL=debug BPFTIME_SHARED_MEMORY_PATH=/dev/shm \
-          LD_PRELOAD=build/runtime/agent/libbpftime-agent.so timeout 12s ./example/malloc/victim | tee client-llvm.log
-          CLIENT_RC=${PIPESTATUS[0]}
-          kill -9 $SERVER_PID 2>/dev/null || true
-          echo '--- server-llvm.log ---' && tail -n +1 server-llvm.log || true
-          echo '--- client-llvm.log ---' && tail -n +1 client-llvm.log || true
-          exit $CLIENT_RC
+          set -euo pipefail
+          ROOT=$(pwd)
+          cd example/malloc
+          python3 "$ROOT/.github/script/run_example.py" "./malloc" "./victim" "malloc calls: " "$HOME/.bpftime/bpftime -i $HOME/.bpftime" 0
 
-      - name: 'Run malloc example (uBPF VM)'
+      - name: 'Run malloc example via CLI (uBPF VM)'
+        shell: bash
         env:
           BPFTIME_VM_NAME: ubpf
+          BPFTIME_LOG_OUTPUT: console
+          SPDLOG_LEVEL: debug
+          BPFTIME_SHARED_MEMORY_PATH: /dev/shm
         run: |
-          set -e
-          set -o pipefail
-          LLVM_LIBDIR=$(llvm-config --libdir 2>/dev/null || true)
-          if [ -n "$LLVM_LIBDIR" ]; then export LD_LIBRARY_PATH="$LLVM_LIBDIR:$LD_LIBRARY_PATH"; fi
-          # Start server (syscall-server) briefly
-          GLIBC_TUNABLES=glibc.malloc.check=0:glibc.malloc.tcache_count=0 MALLOC_CHECK_=0 MALLOC_ARENA_MAX=1 \
-          GLIBC_TUNABLES=glibc.malloc.tcache_count=0:glibc.malloc.tcache_max=0 MALLOC_CHECK_=0 LD_BIND_NOW=1 \
-          BPFTIME_USED=1 BPFTIME_RUN_WITH_KERNEL=false BPFTIME_LOG_OUTPUT=console SPDLOG_LEVEL=debug BPFTIME_SHARED_MEMORY_PATH=/dev/shm \
-          LD_PRELOAD=build/runtime/syscall-server/libbpftime-syscall-server.so timeout 25s ./example/malloc/malloc > server-ubpf.log 2>&1 &
-          SERVER_PID=$!
-          sleep 5
-          for i in $(seq 1 10); do \
-            if grep -q -E "bpftime-syscall-server started|Global shm constructed" server-ubpf.log; then echo "server ready"; break; fi; \
-            sleep 1; \
-          done
-          # Run client (agent)
-          GLIBC_TUNABLES=glibc.malloc.check=0:glibc.malloc.tcache_count=0 MALLOC_CHECK_=0 MALLOC_ARENA_MAX=1 \
-          GLIBC_TUNABLES=glibc.malloc.tcache_count=0:glibc.malloc.tcache_max=0 MALLOC_CHECK_=0 LD_BIND_NOW=1 \
-          BPFTIME_USED=1 BPFTIME_RUN_WITH_KERNEL=false BPFTIME_LOG_OUTPUT=console SPDLOG_LEVEL=debug BPFTIME_SHARED_MEMORY_PATH=/dev/shm \
-          LD_PRELOAD=build/runtime/agent/libbpftime-agent.so timeout 12s ./example/malloc/victim | tee client-ubpf.log
-          CLIENT_RC=${PIPESTATUS[0]}
-          kill -9 $SERVER_PID 2>/dev/null || true
-          echo '--- server-ubpf.log ---' && tail -n +1 server-ubpf.log || true
-          echo '--- client-ubpf.log ---' && tail -n +1 client-ubpf.log || true
-          exit $CLIENT_RC
+          set -euo pipefail
+          ROOT=$(pwd)
+          cd example/malloc
+          python3 "$ROOT/.github/script/run_example.py" "./malloc" "./victim" "malloc calls: " "$HOME/.bpftime/bpftime -i $HOME/.bpftime" 0
 
       - name: Generate runtime coverage (Ubuntu)
         if: "matrix.container == 'ubuntu-2204'"
