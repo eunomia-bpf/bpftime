@@ -97,12 +97,21 @@ jobs:
           LLVM_LIBDIR=$(llvm-config --libdir 2>/dev/null || true)
           if [ -n "$LLVM_LIBDIR" ]; then export LD_LIBRARY_PATH="$LLVM_LIBDIR:$LD_LIBRARY_PATH"; fi
           # Start server (syscall-server) briefly
-          BPFTIME_LOG_OUTPUT=console SPDLOG_LEVEL=debug BPFTIME_SHARED_MEMORY_PATH=/dev/shm \
+          GLIBC_TUNABLES=glibc.malloc.check=0:glibc.malloc.tcache_count=0 MALLOC_CHECK_=0 MALLOC_ARENA_MAX=1 \
+          GLIBC_TUNABLES=glibc.malloc.tcache_count=0:glibc.malloc.tcache_max=0 MALLOC_CHECK_=0 LD_BIND_NOW=1 \
+          BPFTIME_USED=1 BPFTIME_RUN_WITH_KERNEL=false BPFTIME_LOG_OUTPUT=console SPDLOG_LEVEL=debug BPFTIME_SHARED_MEMORY_PATH=/dev/shm \
           LD_PRELOAD=build/runtime/syscall-server/libbpftime-syscall-server.so timeout 25s ./example/malloc/malloc > server-llvm.log 2>&1 &
           SERVER_PID=$!
           sleep 5
+          # Wait until server shm ready
+          for i in $(seq 1 10); do \
+            if grep -q -E "bpftime-syscall-server started|Global shm constructed" server-llvm.log; then echo "server ready"; break; fi; \
+            sleep 1; \
+          done
           # Run client (agent)
-          BPFTIME_LOG_OUTPUT=console SPDLOG_LEVEL=debug BPFTIME_SHARED_MEMORY_PATH=/dev/shm \
+          GLIBC_TUNABLES=glibc.malloc.check=0:glibc.malloc.tcache_count=0 MALLOC_CHECK_=0 MALLOC_ARENA_MAX=1 \
+          GLIBC_TUNABLES=glibc.malloc.tcache_count=0:glibc.malloc.tcache_max=0 MALLOC_CHECK_=0 LD_BIND_NOW=1 \
+          BPFTIME_USED=1 BPFTIME_RUN_WITH_KERNEL=false BPFTIME_LOG_OUTPUT=console SPDLOG_LEVEL=debug BPFTIME_SHARED_MEMORY_PATH=/dev/shm \
           LD_PRELOAD=build/runtime/agent/libbpftime-agent.so timeout 12s ./example/malloc/victim | tee client-llvm.log
           CLIENT_RC=${PIPESTATUS[0]}
           kill -9 $SERVER_PID 2>/dev/null || true
@@ -119,12 +128,20 @@ jobs:
           LLVM_LIBDIR=$(llvm-config --libdir 2>/dev/null || true)
           if [ -n "$LLVM_LIBDIR" ]; then export LD_LIBRARY_PATH="$LLVM_LIBDIR:$LD_LIBRARY_PATH"; fi
           # Start server (syscall-server) briefly
-          BPFTIME_LOG_OUTPUT=console SPDLOG_LEVEL=debug BPFTIME_SHARED_MEMORY_PATH=/dev/shm \
+          GLIBC_TUNABLES=glibc.malloc.check=0:glibc.malloc.tcache_count=0 MALLOC_CHECK_=0 MALLOC_ARENA_MAX=1 \
+          GLIBC_TUNABLES=glibc.malloc.tcache_count=0:glibc.malloc.tcache_max=0 MALLOC_CHECK_=0 LD_BIND_NOW=1 \
+          BPFTIME_USED=1 BPFTIME_RUN_WITH_KERNEL=false BPFTIME_LOG_OUTPUT=console SPDLOG_LEVEL=debug BPFTIME_SHARED_MEMORY_PATH=/dev/shm \
           LD_PRELOAD=build/runtime/syscall-server/libbpftime-syscall-server.so timeout 25s ./example/malloc/malloc > server-ubpf.log 2>&1 &
           SERVER_PID=$!
           sleep 5
+          for i in $(seq 1 10); do \
+            if grep -q -E "bpftime-syscall-server started|Global shm constructed" server-ubpf.log; then echo "server ready"; break; fi; \
+            sleep 1; \
+          done
           # Run client (agent)
-          BPFTIME_LOG_OUTPUT=console SPDLOG_LEVEL=debug BPFTIME_SHARED_MEMORY_PATH=/dev/shm \
+          GLIBC_TUNABLES=glibc.malloc.check=0:glibc.malloc.tcache_count=0 MALLOC_CHECK_=0 MALLOC_ARENA_MAX=1 \
+          GLIBC_TUNABLES=glibc.malloc.tcache_count=0:glibc.malloc.tcache_max=0 MALLOC_CHECK_=0 LD_BIND_NOW=1 \
+          BPFTIME_USED=1 BPFTIME_RUN_WITH_KERNEL=false BPFTIME_LOG_OUTPUT=console SPDLOG_LEVEL=debug BPFTIME_SHARED_MEMORY_PATH=/dev/shm \
           LD_PRELOAD=build/runtime/agent/libbpftime-agent.so timeout 12s ./example/malloc/victim | tee client-ubpf.log
           CLIENT_RC=${PIPESTATUS[0]}
           kill -9 $SERVER_PID 2>/dev/null || true
