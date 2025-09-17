@@ -91,16 +91,21 @@ jobs:
           BPFTIME_VM_NAME: llvm
         run: |
           set -e
+          set -o pipefail
           LLVM_LIBDIR=$(llvm-config --libdir 2>/dev/null || true)
           if [ -n "$LLVM_LIBDIR" ]; then export LD_LIBRARY_PATH="$LLVM_LIBDIR:$LD_LIBRARY_PATH"; fi
           # Start server (syscall-server) briefly
-          LD_PRELOAD=build/runtime/syscall-server/libbpftime-syscall-server.so timeout 20s ./example/malloc/malloc > server-llvm.log 2>&1 &
+          BPFTIME_LOG_OUTPUT=console SPDLOG_LEVEL=debug BPFTIME_SHARED_MEMORY_PATH=/dev/shm \
+          LD_PRELOAD=build/runtime/syscall-server/libbpftime-syscall-server.so timeout 25s /bin/sleep 25 > server-llvm.log 2>&1 &
           SERVER_PID=$!
-          sleep 3
+          sleep 5
           # Run client (agent)
-          LD_PRELOAD=build/runtime/agent/libbpftime-agent.so timeout 10s ./example/malloc/victim | tee client-llvm.log
+          BPFTIME_LOG_OUTPUT=console SPDLOG_LEVEL=debug BPFTIME_SHARED_MEMORY_PATH=/dev/shm \
+          LD_PRELOAD=build/runtime/agent/libbpftime-agent.so timeout 12s ./example/malloc/victim | tee client-llvm.log
           CLIENT_RC=${PIPESTATUS[0]}
           kill -9 $SERVER_PID 2>/dev/null || true
+          echo '--- server-llvm.log ---' && tail -n +1 server-llvm.log || true
+          echo '--- client-llvm.log ---' && tail -n +1 client-llvm.log || true
           exit $CLIENT_RC
 
       - name: 'Run malloc example (uBPF VM)'
@@ -108,16 +113,21 @@ jobs:
           BPFTIME_VM_NAME: ubpf
         run: |
           set -e
+          set -o pipefail
           LLVM_LIBDIR=$(llvm-config --libdir 2>/dev/null || true)
           if [ -n "$LLVM_LIBDIR" ]; then export LD_LIBRARY_PATH="$LLVM_LIBDIR:$LD_LIBRARY_PATH"; fi
           # Start server (syscall-server) briefly
-          LD_PRELOAD=build/runtime/syscall-server/libbpftime-syscall-server.so timeout 20s ./example/malloc/malloc > server-ubpf.log 2>&1 &
+          BPFTIME_LOG_OUTPUT=console SPDLOG_LEVEL=debug BPFTIME_SHARED_MEMORY_PATH=/dev/shm \
+          LD_PRELOAD=build/runtime/syscall-server/libbpftime-syscall-server.so timeout 25s /bin/sleep 25 > server-ubpf.log 2>&1 &
           SERVER_PID=$!
-          sleep 3
+          sleep 5
           # Run client (agent)
-          LD_PRELOAD=build/runtime/agent/libbpftime-agent.so timeout 10s ./example/malloc/victim | tee client-ubpf.log
+          BPFTIME_LOG_OUTPUT=console SPDLOG_LEVEL=debug BPFTIME_SHARED_MEMORY_PATH=/dev/shm \
+          LD_PRELOAD=build/runtime/agent/libbpftime-agent.so timeout 12s ./example/malloc/victim | tee client-ubpf.log
           CLIENT_RC=${PIPESTATUS[0]}
           kill -9 $SERVER_PID 2>/dev/null || true
+          echo '--- server-ubpf.log ---' && tail -n +1 server-ubpf.log || true
+          echo '--- client-ubpf.log ---' && tail -n +1 client-ubpf.log || true
           exit $CLIENT_RC
 
       - name: Generate runtime coverage (Ubuntu)
