@@ -114,8 +114,8 @@ jobs:
           ROOT=$(pwd)
           cd example/malloc
           LLVM_LIBDIR=$(llvm-config --libdir 2>/dev/null || true)
-          if [ -n "$LLVM_LIBDIR" ]; then export LD_LIBRARY_PATH="$LLVM_LIBDIR:$LD_LIBRARY_PATH"; fi
-          BPFTIME_CLI="/usr/bin/env HOME=/github/home LD_LIBRARY_PATH=$LD_LIBRARY_PATH GLIBC_TUNABLES=glibc.malloc.check=0:glibc.malloc.tcache_count=0:glibc.malloc.tcache_max=0 MALLOC_CHECK_=0 MALLOC_ARENA_MAX=1 LD_BIND_NOW=1 /github/home/.bpftime/bpftime -i /github/home/.bpftime"
+          export LD_LIBRARY_PATH="${LLVM_LIBDIR:+$LLVM_LIBDIR:}${LD_LIBRARY_PATH:-}"
+          BPFTIME_CLI="/usr/bin/env HOME=/github/home LD_LIBRARY_PATH=${LD_LIBRARY_PATH:-} GLIBC_TUNABLES=glibc.malloc.check=0:glibc.malloc.tcache_count=0:glibc.malloc.tcache_max=0 MALLOC_CHECK_=0 MALLOC_ARENA_MAX=1 LD_BIND_NOW=1 /github/home/.bpftime/bpftime -i /github/home/.bpftime"
           python3 "$ROOT/.github/script/run_example.py" "./malloc" "./victim" "malloc calls: " "$BPFTIME_CLI" 0
 
       - name: 'Run malloc example via CLI (uBPF VM)'
