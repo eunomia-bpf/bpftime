@@ -1,7 +1,7 @@
-# Contributing to eunomia-bpd
+# Contributing to eunomia-bpf
 
-The eunomia-bpd team encourages community feedback and contributions.
-Thank you for your interest in making eunomia-bpd better! There are several
+The eunomia-bpf team encourages community feedback and contributions.
+Thank you for your interest in making eunomia-bpf better! There are several
 ways you can get involved.
 
 If you are looking for a good way to contribute to the project, please:
@@ -20,7 +20,7 @@ Should the template provided not suit your needs, feel free to make a
 [Custom Issue Report](https://github.com/eunomia-bpf/bpftime/issues/new?assignees=&labels=&projects=&template=custom.md&title=),
 but please label it accordingly.
 
-We are happy to hear your ideas for how to further improve eunomia-bpd,
+We are happy to hear your ideas for how to further improve eunomia-bpf,
 ensuring it suits your needs. Check the [Issues](https://github.com/eunomia-bpf/bpftime/issues)
 and see if others have submitted similar feedback. You can upvote existing feedback
 (using the thumbs up reaction/by commenting) or [submit a new suggestion](https://github.com/eunomia-bpf/bpftime/labels/feature).
