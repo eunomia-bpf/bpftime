@@ -20,7 +20,7 @@ The VM subsystem employs a layered architecture with clean abstractions:
 │  Backend    │                 │                              │
 └─────────────┴─────────────────┴─────────────────────────────┘
 ```
-See [example/main.c](example/main.cpp) for how to use it.
+See [example/main.cpp](example/main.cpp) for how to use it.
 
 ## Build
 
