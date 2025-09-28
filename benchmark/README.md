@@ -146,14 +146,14 @@ The measurement tool is located in [../tools/cli/main.cpp](https://github.com/eu
 This experiment demonstrates bpftime's capability to intercept and inspect SSL/TLS traffic in real-time by hooking into OpenSSL functions within nginx, measuring both performance impact and functionality.
 
 - Environment and results: See [./ssl-nginx/](https://github.com/eunomia-bpf/bpftime/tree/master/benchmark/ssl-nginx/)
-- Example code: See [../example/sslsniff](https://github.com/eunomia-bpf/bpftime/tree/master/example/sslsniff)
+- Example code: See [../example/tracing/sslsniff](https://github.com/eunomia-bpf/bpftime/tree/master/example/tracing/sslsniff)
 
 ### Experiment 3: System Call Counting (syscount)
 
 This experiment evaluates bpftime's ability to trace and count system calls made by applications like nginx, comparing the overhead and accuracy with kernel-based tracing.
 
 - Environment and results: See [./syscount-nginx/](https://github.com/eunomia-bpf/bpftime/tree/master/benchmark/syscount-nginx/)
-- Example code: See [../example/syscount](https://github.com/eunomia-bpf/bpftime/tree/master/example/syscount)
+- Example code: See [../example/tracing/syscount](https://github.com/eunomia-bpf/bpftime/tree/master/example/tracing/syscount)
 
 ### Experiment 4: Nginx Plugin/Module
 
