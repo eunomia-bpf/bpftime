@@ -69,7 +69,11 @@ $(call allow-override,LD,$(CROSS_COMPILE)ld)
 all: $(APPS) vec_add
 
 vec_add: vec_add.cu
-	nvcc -cudart shared vec_add.cu -o vec_add -g
+	@if command -v nvcc >/dev/null 2>&1; then \
+		nvcc -cudart shared vec_add.cu -o vec_add -g; \
+	else \
+		echo "Warning: CUDA not found, skipping vec_add build"; \
+	fi
 
 .PHONY: clean
 clean:

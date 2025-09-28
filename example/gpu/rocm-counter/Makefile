@@ -69,7 +69,11 @@ $(call allow-override,LD,$(CROSS_COMPILE)ld)
 all: $(APPS) vec_add
 
 vec_add: vec_add.hip
-	hipcc vec_add.hip -o vec_add -g
+	@if command -v hipcc >/dev/null 2>&1; then \
+		hipcc vec_add.hip -o vec_add -g; \
+	else \
+		echo "Warning: ROCm/HIP not found, skipping vec_add build"; \
+	fi
 
 .PHONY: clean
 clean:

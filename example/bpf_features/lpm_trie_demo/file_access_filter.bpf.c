@@ -2,7 +2,7 @@
 /* bpftime LPM Trie file access control */
 
 #define BPF_NO_GLOBAL_DATA
-#include "../../third_party/vmlinux/vmlinux.h"
+#include <vmlinux.h>
 #include <bpf/bpf_helpers.h>
 #include <bpf/bpf_tracing.h>
 
