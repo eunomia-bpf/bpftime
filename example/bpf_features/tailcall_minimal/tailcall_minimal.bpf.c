@@ -14,7 +14,6 @@ SEC("uprobe/./victim:add_func")
 int test_func(struct pt_regs *ctx)
 {
 	bpf_tail_call(ctx, &prog_array, 0);
-
 	return 0;
 }
 

@@ -194,7 +194,7 @@ jobs:
           - privilege_options:
               enable: false
             examples:
-              path: tailcall_minimal
+              path: bpf_features/tailcall_minimal
           - privilege_options:
               enable: false
             examples:
