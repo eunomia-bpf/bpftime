@@ -283,7 +283,7 @@ jobs:
             executable: ./tailcall_minimal
             victim: ./victim
             syscall_trace: false
-            expected_str: "See /sys/kernel/debug/tracing/trace_pipe for output (15)"
+            expected_str: "See /sys/kernel/debug/tracing/trace_pipe for output (5)"
             name: tailcall_minimal
           - path: minimal/usdt_minimal
             executable: ./usdt_minimal

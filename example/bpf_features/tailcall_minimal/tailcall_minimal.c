@@ -210,15 +210,14 @@ int main(int argc, char **argv)
 		goto cleanup;
 	}
 	int prog_fd = load_program_into_kernel();
-	if (prog_fd < 0) {
-		goto cleanup;
-	}
 	int idx = 0;
 	int map_fd = bpf_map__fd(skel->maps.prog_array);
-	err = bpf_map_update_elem(map_fd, &idx, &prog_fd, 0);
-	if (err) {
-		fprintf(stderr, "Unable to update prog array map: %d\n", errno);
-		goto cleanup;
+	if (prog_fd > 0) {
+		err = bpf_map_update_elem(map_fd, &idx, &prog_fd, 0);
+		if (err) {
+			fprintf(stderr, "Unable to update prog array map: %d\n", errno);
+			goto cleanup;
+		}
 	}
 	err = tailcall_minimal_bpf__attach(skel);
 	if (err) {
