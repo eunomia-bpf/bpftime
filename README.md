@@ -47,7 +47,7 @@ bpftime is not `userspace eBPF VM`, it's a userspace runtime framework includes 
 
 With `bpftime`, you can build eBPF applications using familiar tools like clang and libbpf, and execute them in userspace. For instance, the [`malloc`](https://github.com/eunomia-bpf/bpftime/tree/master/example/malloc) eBPF program traces malloc calls using uprobe and aggregates the counts using a hash map.
 
-You can refer to [eunomia.dev/bpftime/documents/build-and-test](https://eunomia.dev/bpftime/documents/build-and-test) for how to build the project, or using the container images from [GitHub packages](https://github.com/eunomia-bpf/bpftime/pkgs/container/bpftime).
+You can refer to [eunomia.dev/bpftime/documents/build-and-test](https://eunomia.dev/bpftime/documents/build-and-test) or the `installation.md` in the repo for how to build the project. Or You can using the container images from [GitHub packages](https://github.com/eunomia-bpf/bpftime/pkgs/container/bpftime).
 
 To get started, you can build and run a libbpf based eBPF program starts with `bpftime` cli:
 
@@ -66,6 +66,8 @@ malloc called from pid 250215
 continue malloc...
 malloc called from pid 250215
 ```
+
+You should always run the `load` first then run the `start` command, or the eBPF program will not be attached.
 
 You can also dynamically attach the eBPF program with a running process:
 
@@ -151,35 +153,14 @@ Current hook implementation is based on binary rewriting and the underly techniq
 
 - Userspace function hook: [frida-gum](https://github.com/frida/frida-gum)
 - Syscall hooks: [zpoline](https://www.usenix.org/conference/atc23/presentation/yasukata) and [pmem/syscall_intercept](https://github.com/pmem/syscall_intercept).
+- GPU hooks: our new implement by convert eBPF into PTX and inject into GPU kernel. See [attach/nv_attach_impl](https://github.com/eunomia-bpf/bpftime/tree/master/attach/nv_attach_impl) for more details.
+- XDP with DPDK. See the [uXDP paper](https://dl.acm.org/doi/10.1145/3748355.3748360) for more details.
 
-The hook can be easily replaced with other DBI methods or frameworks, or add more hook mechanisms in the future.
-
-See our OSDI '25 paper [Extending Applications Safely and Efficiently](https://www.usenix.org/conference/osdi25/presentation/zheng-yusheng) for details.
+The hook can be easily replaced with other DBI methods or frameworks, to make it a general extension framework. See our OSDI '25 paper [Extending Applications Safely and Efficiently](https://www.usenix.org/conference/osdi25/presentation/zheng-yusheng) for details.
 
 ### **Performance Benchmarks**
 
-How is the performance of `userspace uprobe` compared to `kernel uprobes`?
-
-| Probe/Tracepoint Types | Kernel (ns)  | Userspace (ns) |
-|------------------------|-------------:|---------------:|
-| Uprobe                 | 3224.172760  | 314.569110     |
-| Uretprobe              | 3996.799580  | 381.270270     |
-| Syscall Tracepoint     | 151.82801    | 232.57691      |
-| Manually Instrument    | Not avaliable |  110.008430   |
-
-It can be attached to functions in running process just like the kernel uprobe does.
-
-How is the performance of LLVM JIT/AOT compared to other eBPF userspace runtimes, native code or wasm runtimes?
-
-![LLVM jit benchmark](https://github.com/eunomia-bpf/bpf-benchmark/raw/main/example-output/jit_execution_times.png?raw=true)
-
-Across all tests, the LLVM JIT for bpftime consistently showcased superior performance. Both demonstrated high efficiency in integer computations (as seen in log2_int), complex mathematical operations (as observed in prime), and memory operations (evident in memcpy and strcmp). While they lead in performance across the board, each runtime exhibits unique strengths and weaknesses. These insights can be invaluable for users when choosing the most appropriate runtime for their specific use-cases.
-
 see [github.com/eunomia-bpf/bpf-benchmark](https://github.com/eunomia-bpf/bpf-benchmark) for how we evaluate and details.
-
-Hash map or ring buffer compared to kernel(TODO)
-
-See [benchmark](https://github.com/eunomia-bpf/bpftime/tree/master/benchmark) dir for detail performance benchmarks.
 
 ### Comparing with Kernel eBPF Runtime
 
@@ -192,23 +173,6 @@ Refer to [eunomia.dev/bpftime/documents/available-features](https://eunomia.dev/
 ## Build and test
 
 See [eunomia.dev/bpftime/documents/build-and-test](https://eunomia.dev/bpftime/documents/build-and-test) for details.
-
-## Roadmap
-
-`bpftime` is continuously evolving with more features in the pipeline:
-
-- [ ] Keep compatibility with the evolving kernel
-- [ ] Refactor for General Extension Framework
-- [ ] Trying to refactor, bug fixing for `Production`.
-- [ ] More examples and usecases:
-  - [X] Userspace Network Driver on userspace eBPF
-  - [X] Hotpatch userspace application
-  - [X] Error injection and filter syscall
-  - [X] Syscall bypassing, batching
-  - [X] Userspace Storage Driver on userspace eBPF
-  - [ ] etc...
-
-Stay tuned for more developments from this promising project! You can find `bpftime` on [GitHub](https://github.com/eunomia-bpf/bpftime).
 
 ## License
 
