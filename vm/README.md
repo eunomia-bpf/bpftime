@@ -31,7 +31,7 @@ make build-llvm # build llvm backend
 make build-ubpf # build ubpf backend
 ```
 
-see [llvm-jit/README.md](llvm-jit/README.md) for how to use 
+see [llvm-jit/README.md](llvm-jit/README.md) for how to use the LLVM JIT backend.
 
 You can also build the llvm JIT/AOT for eBPF as a standalone library in it's own directory:
 
