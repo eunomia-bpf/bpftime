@@ -1,4 +1,4 @@
-all: ../../example/sslsniff/sslsniff index.html
+all: ../../example/tracing/sslsniff/sslsniff index.html
 
 index.html:
 	echo "Hello, World!" > index.html
