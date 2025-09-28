@@ -102,8 +102,8 @@ jobs:
           echo "Fixing clang BPF compilation flags..."
 
           # Fix lpm_trie_demo Makefile - remove unsupported -bpf-stack-size flag
-          if [ -f "example/lpm_trie_demo/Makefile" ]; then
-            sed -i 's/-mllvm -bpf-stack-size=8192//g' example/lpm_trie_demo/Makefile
+          if [ -f "example/bpf_features/lpm_trie_demo/Makefile" ]; then
+            sed -i 's/-mllvm -bpf-stack-size=8192//g' example/bpf_features/lpm_trie_demo/Makefile
             echo "Fixed lpm_trie_demo Makefile clang flags"
           fi
 
@@ -112,7 +112,7 @@ jobs:
 
           # Special handling groups no longer needed; all examples build local libbpf now
           GLOBAL_LIBBPF_EXAMPLES=""
-          LOCAL_LIBBPF_EXAMPLES="bloom_filter_demo minimal malloc opensnoop sslsniff tailcall_minimal usdt_minimal get_stack_id_example lpm_trie_demo queue_demo xdp-counter"
+          LOCAL_LIBBPF_EXAMPLES="bpf_features/bloom_filter_demo minimal malloc tracing/opensnoop tracing/sslsniff bpf_features/tailcall_minimal minimal/usdt_minimal bpf_features/get_stack_id_example bpf_features/lpm_trie_demo bpf_features/queue_demo xdp-counter"
 
           # Build examples that use global libbpf first (need build/libbpf/libbpf.a)
           for example_name in $GLOBAL_LIBBPF_EXAMPLES; do
@@ -194,7 +194,7 @@ jobs:
           - privilege_options:
               enable: false
             examples:
-              path: tailcall_minimal
+              path: bpf_features/tailcall_minimal
           - privilege_options:
               enable: false
             examples:
@@ -213,13 +213,13 @@ jobs:
           - true
           - false
         examples:
-          - path: libbpf-tools/opensnoop
+          - path: tracing/opensnoop
             executable: ./opensnoop
             victim: ./victim
             syscall_trace: true
             expected_str: "   0 test.txt"
             name: opensnoop-libbpf-tools
-          - path: libbpf-tools/statsnoop
+          - path: tracing/statsnoop
             executable: ./statsnoop
             victim: ./victim
             syscall_trace: true
@@ -237,85 +237,85 @@ jobs:
             syscall_trace: false
             expected_str: ""
             name: minimal
-          - path: opensnoop
+          - path: tracing/opensnoop
             executable: ./opensnoop
             victim: ./victim
             syscall_trace: true
             expected_str: "   0 test.txt"
             name: opensnoop
-          - path: sslsniff
+          - path: tracing/sslsniff
             executable: ./sslsniff
             victim: /bin/wget https://www.google.com
             syscall_trace: false
             expected_str: "----- DATA -----"
             name: sslsniff
-          - path: libbpf-tools/bashreadline
+          - path: tracing/bashreadline
             executable: ./readline
             victim: /bin/bash
             syscall_trace: false
             expected_str: "info"
             name: bashreadline
-          - path: libbpf-tools/syscount
+          - path: tracing/syscount
             executable: ./syscount
             victim: /bin/bash
             syscall_trace: false
             expected_str: "info"
             name: syscount
-          - path: libbpf-tools/funclatency
+          - path: tracing/funclatency
             executable: ./funclatency -i 1 ./victim:plus
             victim: ./victim
             syscall_trace: false
             expected_str: "|*"
             name: funclatency
-          - path: libbpf-tools/mountsnoop
+          - path: tracing/mountsnoop
             executable: ./mountsnoop
             victim: ./victim
             syscall_trace: true
             expected_str: mount(
             name: mountsnoop
-          - path: libbpf-tools/sigsnoop
+          - path: tracing/sigsnoop
             executable: ./sigsnoop
             victim: ./victim
             syscall_trace: true
             expected_str: "victim           0         -1      0"
             name: sigsnoop
-          - path: tailcall_minimal
+          - path: bpf_features/tailcall_minimal
             executable: ./tailcall_minimal
             victim: ./victim
             syscall_trace: false
-            expected_str: "See /sys/kernel/debug/tracing/trace_pipe for output (15)"
+            expected_str: "See /sys/kernel/debug/tracing/trace_pipe for output (5)"
             name: tailcall_minimal
-          - path: usdt_minimal
+          - path: minimal/usdt_minimal
             executable: ./usdt_minimal
             victim: ./victim
             syscall_trace: false
             expected_str: "bpf:"
             name: usdt_minimal
-          - path: get_stack_id_example
+          - path: bpf_features/get_stack_id_example
             executable: ./get_stack_id_example
             victim: ./victim
             syscall_trace: false
             expected_str: "Function: malloc enter"
             name: get_stack_id_example
-          - path: bloom_filter_demo
+          - path: bpf_features/bloom_filter_demo
             executable: ./uprobe_bloom_filter
             victim: ./target
             syscall_trace: false
             expected_str: "Bloom Filter Real-time Monitoring Statistics"
             name: bloom_filter_demo
-          - path: lpm_trie_demo
+          - path: bpf_features/lpm_trie_demo
             executable: ./file_access_monitor
             victim: ./file_access_target
             syscall_trace: false
             expected_str: "All tests passed! bpftime LPM Trie working correctly"
             name: lpm_trie_demo
-          - path: queue_demo
+          - path: bpf_features/queue_demo
             executable: ./uprobe_queue
             victim: ./target
             syscall_trace: false
             expected_str: "Queue status: non-empty"
             name: queue_demo
-          - path: queue_demo
+          - path: bpf_features/queue_demo
             executable: ./uprobe_stack
             victim: ./target
             syscall_trace: false
@@ -349,7 +349,7 @@ jobs:
           tar -zxvf gcno_files.tar.gz
           pwd
       - name: Install which(required by funclatency on fedora)
-        if: ${{matrix.container.name=='fedora' && matrix.examples.path=='libbpf-tools/funclatency'}}
+        if: ${{matrix.container.name=='fedora' && matrix.examples.path=='tracing/funclatency'}}
         run: |
           yum install -y which
       - name: Set permissions
@@ -363,9 +363,9 @@ jobs:
           # No special global libbpf handling is needed anymore
 
           # Fix clang BPF compilation issues
-          if [ "${{matrix.examples.path}}" = "lpm_trie_demo" ]; then
+          if [ "${{matrix.examples.path}}" = "bpf_features/lpm_trie_demo" ]; then
             echo "Fixing clang BPF flags for lpm_trie_demo..."
-            sed -i 's/-mllvm -bpf-stack-size=8192//g' example/lpm_trie_demo/Makefile
+            sed -i 's/-mllvm -bpf-stack-size=8192//g' example/bpf_features/lpm_trie_demo/Makefile
           fi
 
           # Build the example
