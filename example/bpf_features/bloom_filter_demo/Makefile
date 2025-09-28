@@ -3,33 +3,33 @@ OUTPUT := .output
 CLANG ?= clang
 LLVM_STRIP ?= llvm-strip
 BPFTOOL ?= bpftool
-LIBBPF_SRC := $(abspath ../../third_party/libbpf/src)
-BPFTOOL_SRC := $(abspath ../../third_party/bpftool/src)
+LIBBPF_SRC := $(abspath ../../../third_party/libbpf/src)
+BPFTOOL_SRC := $(abspath ../../../third_party/bpftool/src)
 # Build libbpf locally into .output
 LIBBPF_OBJ := $(abspath $(OUTPUT)/libbpf.a)
 BPFTOOL_OUTPUT ?= $(abspath $(OUTPUT)/bpftool)
 # Try to find bpftool from multiple locations, or build our own
 BPFTOOL_BIN := $(shell \
-	if [ -f "../../build/bpftool/src/bpftool" ]; then \
-		echo "../../build/bpftool/src/bpftool"; \
-	elif [ -f "../../third_party/bpftool/src/bpftool" ]; then \
-		echo "../../third_party/bpftool/src/bpftool"; \
+	if [ -f "../../../build/bpftool/src/bpftool" ]; then \
+		echo "../../../build/bpftool/src/bpftool"; \
+	elif [ -f "../../../third_party/bpftool/src/bpftool" ]; then \
+		echo "../../../third_party/bpftool/src/bpftool"; \
 	elif [ -f "$(BPFTOOL_OUTPUT)/bootstrap/bpftool" ]; then \
 		echo "$(BPFTOOL_OUTPUT)/bootstrap/bpftool"; \
 	else \
 		echo "$(BPFTOOL_OUTPUT)/bootstrap/bpftool"; \
 	fi)
 ARCH := $(shell uname -m | sed 's/x86_64/x86/' | sed 's/aarch64/arm64/' | sed 's/ppc64le/powerpc/' | sed 's/mips.*/mips/')
-VMLINUX := ../../third_party/vmlinux/$(ARCH)/vmlinux.h
+VMLINUX := ../../../third_party/vmlinux/$(ARCH)/vmlinux.h
 # Use our own libbpf API headers and Linux UAPI headers distributed with
 # libbpf to avoid dependency on system-wide headers, which could be missing or
 # outdated
 
 # Headers search: local output and vendored headers
-INCLUDES := -I$(OUTPUT) -I../../third_party/libbpf/include/uapi -I$(dir $(VMLINUX)) \
+INCLUDES := -I$(OUTPUT) -I../../../third_party/libbpf/include/uapi -I$(dir $(VMLINUX)) \
 	-I$(BPFTOOL_OUTPUT)/bootstrap/libbpf/include \
-	-I../../third_party/bpftool/build/usr/include \
-	-I../../third_party/libbpf/build/usr/include
+	-I../../../third_party/bpftool/build/usr/include \
+	-I../../../third_party/libbpf/build/usr/include
 CFLAGS := -g -Wall
 ALL_LDFLAGS := $(LDFLAGS) $(EXTRA_LDFLAGS)
 
@@ -78,7 +78,7 @@ $(BPFTOOL_BIN): | $(BPFTOOL_OUTPUT)
 	$(call msg,BPFTOOL,$@)
 	$(Q)if [ ! -f "$(BPFTOOL_BIN)" ]; then \
 		$(MAKE) -C $(BPFTOOL_SRC) bootstrap OUTPUT=$(BPFTOOL_OUTPUT)/ || \
-		$(MAKE) -C ../../third_party/bpftool/src bootstrap OUTPUT=$(BPFTOOL_OUTPUT)/; \
+		$(MAKE) -C ../../../third_party/bpftool/src bootstrap OUTPUT=$(BPFTOOL_OUTPUT)/; \
 	fi
 
 # Build BPF code (ensure headers are installed via local libbpf)

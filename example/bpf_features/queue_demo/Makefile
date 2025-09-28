@@ -4,17 +4,17 @@ CLANG := clang
 LLVM_STRIP := llvm-strip
 BPFTOOL := bpftool
 MAKE := make
-LIBBPF_SRC := $(abspath ../../third_party/libbpf/src)
-BPFTOOL_SRC := $(abspath ../../third_party/bpftool/src)
+LIBBPF_SRC := $(abspath ../../../third_party/libbpf/src)
+BPFTOOL_SRC := $(abspath ../../../third_party/bpftool/src)
 LIBBPF_OBJ := $(abspath $(OUTPUT)/libbpf.a)
 BPFTOOL_OUTPUT := $(abspath $(OUTPUT)/bpftool)
 BPFTOOL_EXEC := $(BPFTOOL_OUTPUT)/bootstrap/bpftool
 ARCH := $(shell uname -m | sed 's/x86_64/x86/' | sed 's/aarch64/arm64/' | sed 's/ppc64le/powerpc/' | sed 's/mips.*/mips/')
-VMLINUX := ../../third_party/vmlinux/$(ARCH)/vmlinux.h
+VMLINUX := ../../../third_party/vmlinux/$(ARCH)/vmlinux.h
 # Use our own libbpf API headers and Linux UAPI headers distributed with
 # libbpf to avoid dependency on system-wide headers, which could be missing or
 # outdated
-INCLUDES := -I$(OUTPUT) -I../../third_party/libbpf/include/uapi -I$(dir $(VMLINUX))
+INCLUDES := -I$(OUTPUT) -I../../../third_party/libbpf/include/uapi -I$(dir $(VMLINUX))
 CFLAGS := -g -Wall
 ALL_LDFLAGS := $(LDFLAGS) $(EXTRA_LDFLAGS)
 
