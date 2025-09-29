@@ -804,6 +804,7 @@ int bpf_map_handler::map_init(managed_shared_memory &memory)
 				"CUDA context for thread {} has been set to {:x}",
 				gettid(), (uintptr_t)context);
 		}
+		SPDLOG_INFO(
 			"Map {} (nv_gpu_ringbuf_map_impl) has space for thread count {}",
 			container_name.c_str(), attr.gpu_thread_count);
 		map_impl_ptr = memory.construct<nv_gpu_ringbuf_map_impl>(
@@ -899,11 +900,6 @@ void bpf_map_handler::map_free(managed_shared_memory &memory) const
 		memory.destroy<lpm_trie_map_impl>(container_name.c_str());
 		break;
 	
-#endif
-#if defined(BPFTIME_ENABLE_CUDA_ATTACH)
-	case bpf_map_type::BPF_MAP_TYPE_NV_GPU_ARRAY_MAP:
-		memory.destroy<nv_gpu_array_map_impl>(container_name.c_str());
-		break;
 #endif
 #if defined(BPFTIME_ENABLE_CUDA_ATTACH)
 	case bpf_map_type::BPF_MAP_TYPE_NV_GPU_ARRAY_MAP:
