@@ -17,7 +17,6 @@ env:
 
 jobs:
   build-and-run-syscall-tracing-load-start-test:
-    if: false
     runs-on: ubuntu-22.04
     container:
       image: "manjusakalza/bpftime-base-image:ubuntu-2204"
@@ -342,7 +341,6 @@ jobs:
           verbose: true
 
   build-and-run-malloc-example-test:
-    if: false
     runs-on: ubuntu-22.04
     container:
       image: "manjusakalza/bpftime-base-image:ubuntu-2204"
@@ -702,7 +700,6 @@ jobs:
 
   # New job to combine coverage reports
   combine-coverage:
-    if: false
     needs:
       [
         build-and-run-syscall-tracing-load-start-test,
