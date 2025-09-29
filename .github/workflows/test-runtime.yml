@@ -18,13 +18,18 @@ jobs:
     strategy:
       matrix:
         include:
-          - container: openeuler-2403sp2 
+          - container: ubuntu-2204
+            image: manjusakalza/bpftime-base-image:ubuntu-2204
+          - container: fedora-39
+            image: manjusakalza/bpftime-base-image:fedora-39
+          - container: openeuler-2403sp2
             image: openeuler/openeuler:24.03-lts-sp1 
     container:
       image: "${{ matrix.image }}"
       options: --privileged
     steps:
       - name: Install git (openEuler)
+        if: matrix.container == 'openeuler-2403sp2'
         run: |
           set -e
           if command -v dnf >/dev/null 2>&1; then PM=dnf; else PM=yum; fi
@@ -34,6 +39,7 @@ jobs:
         with:
           submodules: "recursive"
       - name: Install deps (openEuler)
+        if: matrix.container == 'openeuler-2403sp2'
         run: |
           set -e
           if command -v dnf >/dev/null 2>&1; then PM=dnf; else PM=yum; fi
@@ -43,11 +49,13 @@ jobs:
             zlib-devel elfutils-libelf-devel pkgconf-pkg-config \
             boost-devel
       - name: Install Python3 (openEuler)
+        if: matrix.container == 'openeuler-2403sp2'
         run: |
           set -e
           if command -v dnf >/dev/null 2>&1; then PM=dnf; else PM=yum; fi
           $PM -y install python3 || true
       - name: Remount shm dev
+        if: matrix.container == 'openeuler-2403sp2'
         # The size of /dev/shm defaults to be 64M, but boost won't detect this at all, leaving bus error to us..
         # So we remount it to make it larger
         run: |
@@ -98,7 +106,46 @@ jobs:
           export CPLUS_INCLUDE_PATH="$C_INCLUDE_PATH"
           make -C example/malloc -j
 
+      - name: 'Run malloc example via LD_PRELOAD (LLVM server & agent)'
+        if: "matrix.container == 'openeuler-2403sp2'"
+        shell: bash
+        env:
+          BPFTIME_VM_NAME: llvm
+          BPFTIME_LOG_OUTPUT: console
+          SPDLOG_LEVEL: debug
+          BPFTIME_SHARED_MEMORY_PATH: /dev/shm
+          GLIBC_TUNABLES: glibc.malloc.check=0:glibc.malloc.tcache_count=0:glibc.malloc.tcache_max=0
+          MALLOC_CHECK_: "0"
+          MALLOC_ARENA_MAX: "1"
+          LD_BIND_NOW: "1"
+        run: |
+          set -euo pipefail
+          ROOT=$(pwd)
+          LLVM_LIBDIR=$(llvm-config --libdir 2>/dev/null || true)
+          export LD_LIBRARY_PATH="${LLVM_LIBDIR:+$LLVM_LIBDIR:}${LD_LIBRARY_PATH:-}"
+          SERVER_LIB="$ROOT/build/runtime/syscall-server/libbpftime-syscall-server.so"
+          AGENT_LIB="$ROOT/build/runtime/agent/libbpftime-agent.so"
+          test -f "$SERVER_LIB" && test -f "$AGENT_LIB"
+          LOG="$ROOT/openeuler_runtime_malloc.log"
+          :> "$LOG"
+          echo "SERVER_LIB=$SERVER_LIB" >> "$LOG"
+          echo "AGENT_LIB=$AGENT_LIB" >> "$LOG"
+          echo "LD_LIBRARY_PATH=$LD_LIBRARY_PATH" >> "$LOG"
+          # start server
+          LD_PRELOAD="$SERVER_LIB" timeout 25s "$ROOT/example/malloc/malloc" >> "$LOG" 2>&1 & SP=$!
+          sleep 2
+          # run victim (agent)
+          set +e
+          LD_PRELOAD="$AGENT_LIB" timeout 6s "$ROOT/example/malloc/victim" >> "$LOG" 2>&1
+          RC=$?
+          set -e
+          echo "victim rc=$RC" >> "$LOG"
+          wait $SP || true
+          tail -n 200 "$LOG"
+          grep -q "malloc calls: " "$LOG"
+
       - name: 'Run malloc example via CLI (LLVM VM)'
+        if: "matrix.container != 'openeuler-2403sp2'"
         shell: bash
         env:
           BPFTIME_VM_NAME: llvm
@@ -115,8 +162,8 @@ jobs:
           cd example/malloc
           LLVM_LIBDIR=$(llvm-config --libdir 2>/dev/null || true)
           export LD_LIBRARY_PATH="${LLVM_LIBDIR:+$LLVM_LIBDIR:}${LD_LIBRARY_PATH:-}"
-          # Force agent to use uBPF by setting VM in CLI env so preloaded agent (in 'env' shim) sees it
-          BPFTIME_CLI="/usr/bin/env HOME=/github/home LD_LIBRARY_PATH=${LD_LIBRARY_PATH:-} BPFTIME_VM_NAME=ubpf GLIBC_TUNABLES=glibc.malloc.check=0:glibc.malloc.tcache_count=0:glibc.malloc.tcache_max=0 MALLOC_CHECK_=0 MALLOC_ARENA_MAX=1 LD_BIND_NOW=1 /github/home/.bpftime/bpftime -i /github/home/.bpftime"
+          # Run with LLVM VM via CLI
+          BPFTIME_CLI="/usr/bin/env HOME=/github/home LD_LIBRARY_PATH=${LD_LIBRARY_PATH:-} BPFTIME_VM_NAME=${BPFTIME_VM_NAME} GLIBC_TUNABLES=glibc.malloc.check=0:glibc.malloc.tcache_count=0:glibc.malloc.tcache_max=0 MALLOC_CHECK_=0 MALLOC_ARENA_MAX=1 LD_BIND_NOW=1 /github/home/.bpftime/bpftime -i /github/home/.bpftime"
           python3 "$ROOT/.github/script/run_example.py" "./malloc" "./victim" "malloc calls: " "$BPFTIME_CLI" 0
 
       - name: 'Run malloc example via CLI (uBPF VM)'
