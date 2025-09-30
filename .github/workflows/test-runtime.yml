@@ -17,15 +17,9 @@ jobs:
     runs-on: "ubuntu-latest"
     strategy:
       matrix:
-        include:
-          - container: ubuntu-2204
-            image: manjusakalza/bpftime-base-image:ubuntu-2204
-          - container: fedora-39
-            image: manjusakalza/bpftime-base-image:fedora-39
-          - container: openeuler-2403sp2
-            image: openeuler/openeuler:24.03-lts-sp1 
+        container: ["ubuntu-2204", "fedora-39", "openeuler-2403sp2"]
     container:
-      image: "${{ matrix.image }}"
+      image: ${{ fromJSON('{"ubuntu-2204":"ubuntu:22.04","fedora-39":"fedora:39","openeuler-2403sp2":"openeuler/openeuler:24.03-lts-sp1"}')[matrix.container] }}
       options: --privileged
     steps:
       - name: Install git (openEuler)
