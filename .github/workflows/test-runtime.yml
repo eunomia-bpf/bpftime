@@ -48,7 +48,7 @@ jobs:
           $PM -y install \
             cmake make gcc gcc-c++ \
             clang llvm llvm-devel \
-            zlib-devel elfutils-libelf-devel pkgconf-pkg-config \
+            zlib-devel elfutils-libelf-devel pkgconf-pkg-config libasan \
             boost-devel
       - name: Install Python3 (openEuler)
         if: matrix.container == 'openeuler-2403sp2'
@@ -146,7 +146,7 @@ jobs:
           export CPLUS_INCLUDE_PATH="$C_INCLUDE_PATH"
           make -C example/malloc -j
 
-      - name: 'Run malloc example via LD_PRELOAD (LLVM server & agent)'
+      - name: 'Run malloc example via LD_PRELOAD (LLVM server & agent, openEuler)'
         if: "matrix.container == 'openeuler-2403sp2'"
         shell: bash
         env:
@@ -158,6 +158,9 @@ jobs:
           MALLOC_CHECK_: "0"
           MALLOC_ARENA_MAX: "1"
           LD_BIND_NOW: "1"
+          BPFTIME_LLJIT_DISABLE_EH_FRAME: "1"
+          BPFTIME_LLVM_SONAME: libLLVM-17.so
+          ASAN_OPTIONS: verify_asan_link_order=0:abort_on_error=1:disable_coredump=0:handle_segv=1:detect_leaks=0
         run: |
           set -euo pipefail
           ROOT=$(pwd)
@@ -171,12 +174,24 @@ jobs:
           echo "SERVER_LIB=$SERVER_LIB" >> "$LOG"
           echo "AGENT_LIB=$AGENT_LIB" >> "$LOG"
           echo "LD_LIBRARY_PATH=$LD_LIBRARY_PATH" >> "$LOG"
-          # start server
-          LD_PRELOAD="$SERVER_LIB" timeout 25s "$ROOT/example/malloc/malloc" >> "$LOG" 2>&1 & SP=$!
+          ASAN_SONAME=$(gcc -print-file-name=libasan.so 2>/dev/null || true)
+          if [ ! -f "$ASAN_SONAME" ]; then
+            ALT="/usr/lib/gcc/$(gcc -dumpmachine)/$(gcc -dumpversion)/libasan.so"
+            [ -f "$ALT" ] && ASAN_SONAME="$ALT" || true
+          fi
+          echo "ASAN_SONAME=$ASAN_SONAME" >> "$LOG"
+          SRV_PRELOAD="$SERVER_LIB"
+          VICT_PRELOAD="$AGENT_LIB"
+          if [ -n "${ASAN_SONAME:-}" ] && [ -f "$ASAN_SONAME" ]; then
+            SRV_PRELOAD="$ASAN_SONAME:$SRV_PRELOAD"
+            VICT_PRELOAD="$ASAN_SONAME:$VICT_PRELOAD"
+          fi
+          echo "SERVER LD_PRELOAD=$SRV_PRELOAD" >> "$LOG"
+          echo "VICTIM LD_PRELOAD=$VICT_PRELOAD" >> "$LOG"
+          LD_PRELOAD="$SRV_PRELOAD" timeout 25s "$ROOT/example/malloc/malloc" >> "$LOG" 2>&1 & SP=$!
           sleep 2
-          # run victim (agent)
           set +e
-          LD_PRELOAD="$AGENT_LIB" timeout 6s "$ROOT/example/malloc/victim" >> "$LOG" 2>&1
+          LD_PRELOAD="$VICT_PRELOAD" timeout 6s "$ROOT/example/malloc/victim" >> "$LOG" 2>&1
           RC=$?
           set -e
           echo "victim rc=$RC" >> "$LOG"
