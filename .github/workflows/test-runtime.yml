@@ -74,11 +74,13 @@ jobs:
       - name: Install lcov
         if: "matrix.container == 'ubuntu-2204'"
         run: |
-          true
+          apt-get update -y && apt-get install -y lcov libzstd-dev libboost-all-dev gpg
       - name: Install lcov
         if: "matrix.container == 'fedora-39'"
         run: |
-          true
+          dnf install -y dnf-plugins-core
+          dnf config-manager --add-repo https://developer.download.nvidia.com/compute/cuda/repos/fedora39/x86_64/cuda-fedora39.repo
+          dnf install -y lcov cuda clang-devel
       - name: Install build tools (Ubuntu)
         if: "matrix.container == 'ubuntu-2204'"
         run: |
