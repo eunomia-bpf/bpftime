@@ -66,7 +66,7 @@ $(call allow-override,CC,$(CROSS_COMPILE)cc)
 $(call allow-override,LD,$(CROSS_COMPILE)ld)
 
 .PHONY: all
-all: $(APPS)
+all: $(APPS) vec_add nvbit_vec_add.so
 
 vec_add: vec_add.cu
 	nvcc -cudart shared vec_add.cu -o vec_add -g
