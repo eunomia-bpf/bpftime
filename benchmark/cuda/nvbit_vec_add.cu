@@ -12,9 +12,9 @@
 #include <vector>
 
 /* Path to NVBit headers - adjust as needed */
-#include "../../../nvbit_release_x86_64/core/nvbit.h"
-#include "../../../nvbit_release_x86_64/core/nvbit_tool.h"
-#include "../../../nvbit_release_x86_64/core/utils/utils.h"
+#include "nvbit.h"
+#include "nvbit_tool.h"
+#include "utils/utils.h"
 
 /* kernel counter */
 uint32_t kernel_count = 0;
@@ -75,19 +75,10 @@ void nvbit_at_cuda_event(CUcontext ctx, int is_exit, nvbit_api_cuda_t cbid,
     /* Only handle kernel launches */
     if (cbid == API_CUDA_cuLaunch || cbid == API_CUDA_cuLaunchKernel_ptsz ||
         cbid == API_CUDA_cuLaunchGrid || cbid == API_CUDA_cuLaunchGridAsync ||
-        cbid == API_CUDA_cuLaunchKernel ||
-        cbid == API_CUDA_cuLaunchKernelEx ||
-        cbid == API_CUDA_cuLaunchKernelEx_ptsz) {
+        cbid == API_CUDA_cuLaunchKernel) {
         /* Get the function being launched */
-        CUfunction func;
-        if (cbid == API_CUDA_cuLaunchKernelEx_ptsz ||
-            cbid == API_CUDA_cuLaunchKernelEx) {
-            cuLaunchKernelEx_params* p = (cuLaunchKernelEx_params*)params;
-            func = p->f;
-        } else {
-            cuLaunchKernel_params* p = (cuLaunchKernel_params*)params;
-            func = p->f;
-        }
+        cuLaunchKernel_params* p = (cuLaunchKernel_params*)params;
+        CUfunction func = p->f;
 
         if (!is_exit) {
             /* On kernel launch entry */

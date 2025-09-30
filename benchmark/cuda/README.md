@@ -2,6 +2,13 @@
 
 This benchmark demonstrates a simple CUDA vector addition operation with eBPF and NVBit probes attached to monitor its execution.
 
+## Performance Results (10,000 iterations)
+
+| Device | Baseline | BPF (bpftime) | NVBit |
+|--------|----------|---------------|-------|
+| **NVIDIA P40** | 51.8 μs | 81.1 μs (1.56x) | 174.4 μs (3.37x) |
+| **NVIDIA RTX 5090** | 4.1 μs | 8.2 μs (2.0x) | 55.8 μs (13.6x) |
+
 ## Overview
 
 The benchmark consists of the following components:
@@ -42,10 +49,10 @@ This will build:
 1. To run the benchmark with BPF probes attached:
 
 ```bash
-LD_PRELOAD=build/runtime/syscall-server/libbpftime-syscall-server.so \
+BPFTIME_LOG_OUTPUT=console LD_PRELOAD=build/runtime/syscall-server/libbpftime-syscall-server.so \
   benchmark/cuda/cuda_probe
 # in another terminal
-LD_PRELOAD=build/runtime/agent/libbpftime-agent.so \
+BPFTIME_LOG_OUTPUT=console LD_PRELOAD=build/runtime/agent/libbpftime-agent.so \
   benchmark/cuda/vec_add
 ```
 
@@ -142,11 +149,7 @@ To clean all build artifacts:
 make clean
 ``` 
 
-## Basic results
-
-| baseline | bpf | nvbit |
-|----------|-----|-------|
-| 51.8076 us | 81.0824 us | 174.412 us |
+##only results
 
 Device: NVIDIA P40
 
@@ -164,81 +167,56 @@ Validation check: C[0] = 0, C[1] = 3
 NVbit:
 
 ```console
-#        CUDA_VISIBLE_DEVICES=0 LD_PRELOAD=./nvbit_vec_add.so ./vec_add 
-------------- NVBit (NVidia Binary Instrumentation Tool v1.7.5) Loaded --------------
-NVBit core environment variables (mostly for nvbit-devs):
-ACK_CTX_INIT_LIMITATION = 0 - if set, no warning will be printed for nvbit_at_ctx_init()
-            NVDISASM = nvdisasm - override default nvdisasm found in PATH
-            NOBANNER = 0 - if set, does not print this banner
-       NO_EAGER_LOAD = 0 - eager module loading is turned on by NVBit to prevent potential NVBit tool deadlock, turn it off if you want to use the lazy module loading feature
----------------------------------------------------------------------------------
-NVBit: Minimal Vector Addition Instrumentation Tool
-------------------------------------------------
-WARNING: Do not call CUDA memory allocation in nvbit_at_ctx_init(). It will cause deadlocks. Do them in nvbit_tool_init(). If you encounter deadlocks, remove CUDA API calls to debug.
 Running benchmark with 10000 iterations...
 Benchmark results:
 Total time: 1.74412e+06 us
 Average kernel time: 174.412 us
 Validation check: C[0] = 0, C[1] = 3
-
-NVBit Instrumentation Summary:
-Total kernel calls: 10001
-Total execution time: 0.000 ms
-Average kernel time: 0.000 us
 ```
 
 BPF:
 
 ```console
-# LD_PRELOAD=build/runtime/agent/libbpftime-agent.so   benchmark/cuda/vec_add
-[2025-06-06 07:47:25.901] [info] [bpftime_shm_internal.cpp:874] Registered shared memory with CUDA: addr=0x79d3d7200000 size=20971520
-[2025-06-06 07:47:25.901] [info] [bpftime_shm_internal.cpp:714] Global shm constructed. shm_open_type 1 for bpftime_maps_shm
-[2025-06-06 07:47:25.901] [info] [bpftime_shm_internal.cpp:40] Global shm initialized
-[2025-06-06 07:47:25][info][3396212] Initializing CUDA shared memory
-[2025-06-06 07:47:28][info][3396212] CUDA context created
-[2025-06-06 07:47:28][info][3396212] bpf_attach_ctx constructed
-[2025-06-06 07:47:28][info][3396261] CUDA watcher thread started
-[2025-06-06 07:47:28][info][3396212] Register attach-impl defined helper bpf_get_func_arg, index 183
-[2025-06-06 07:47:28][info][3396212] Register attach-impl defined helper bpf_get_func_ret_id, index 184
-[2025-06-06 07:47:28][info][3396212] Register attach-impl defined helper bpf_get_retval, index 186
-[2025-06-06 07:47:28][info][3396212] Starting nv_attach_impl
-[2025-06-06 07:47:28][info][3396212] Initializing agent..
-[2025-06-06 07:47:28][info][3396212] Skipping nv attach handler 8 since we are not handling nv handles
-[2025-06-06 07:47:28][info][3396212] Skipping nv attach handler 11 since we are not handling nv handles
-[2025-06-06 07:47:28][info][3396212] Main initializing for handlers done, try to initialize cuda link handles....
-[2025-06-06 07:47:28][info][3396212] Handling link to CUDA program: 8, recording it..
-[2025-06-06 07:47:28][info][3396212] Loaded 2 instructions (original) for cuda ebpf program
-[2025-06-06 07:47:28][info][3396212] Recording kprobe for _Z9vectorAddPKfS0_Pf
-[2025-06-06 07:47:28][info][3396212] Handling link to CUDA program: 11, recording it..
-[2025-06-06 07:47:28][info][3396212] Loaded 2 instructions (original) for cuda ebpf program
-[2025-06-06 07:47:28][info][3396212] Recording kretprobe for _Z9vectorAddPKfS0_Pf
-[2025-06-06 07:47:28][info][3396212] Attach successfully
-[2025-06-06 07:47:28][info][3396212] Got CUBIN section header size = 16, size = 3200
-[2025-06-06 07:47:28][info][3396212] Finally size = 3216
-[2025-06-06 07:47:28][info][3396212] Temporary fatbin written to /tmp/bpftime-fatbin-store.fN4PE3/temp.fatbin
-[2025-06-06 07:47:28][info][3396212] Listing functions in the patched ptx
-[2025-06-06 07:47:29][info][3396212] Extracted PTX at /tmp/bpftime-fatbin-store.fN4PE3/temp.ptx
-[2025-06-06 07:47:29][info][3396212] Patching with kprobe/kretprobe
-[2025-06-06 07:47:29][info][3396212] Compiling eBPF to PTX __probe_func___Z9vectorAddPKfS0_Pf, eBPF instructions count 2, with arguments false
-[2025-06-06 07:47:29][info][3396212] Patching with kprobe/kretprobe
-[2025-06-06 07:47:29][info][3396212] Compiling eBPF to PTX __retprobe_func___Z9vectorAddPKfS0_Pf, eBPF instructions count 2, with arguments false
-[2025-06-06 07:47:29][info][3396212] Recompiling PTX with nvcc..
-[2025-06-06 07:47:29][info][3396212] Working directory: /tmp/bpftime-recompile-nvcc
-[2025-06-06 07:47:29][info][3396212] PTX IN: /tmp/bpftime-recompile-nvcc/main.ptx
-[2025-06-06 07:47:29][info][3396212] Fatbin out /tmp/bpftime-recompile-nvcc/out.fatbin
-[2025-06-06 07:47:29][info][3396212] Starting nvcc: nvcc -O2 -G -g --keep-device-functions -arch=sm_60 /tmp/bpftime-recompile-nvcc/main.ptx -fatbin -o /tmp/bpftime-recompile-nvcc/out.fatbin
-ptxas warning :  .debug_abbrev section not found
-ptxas warning :  .debug_info section not found
-[2025-06-06 07:47:29][info][3396212] NVCC execution done.
-[2025-06-06 07:47:29][info][3396212] Got patched fatbin in 25064 bytes
-[2025-06-06 07:47:29][info][3396212] Registering trampoline memory
-[2025-06-06 07:47:29][info][3396212] Register trampoline memory done
-[2025-06-06 07:47:29][info][3396212] Copying data to device symbols..
-[2025-06-06 07:47:29][info][3396212] Copying the followed map info:
-[2025-06-06 07:47:29][info][3396212] constData and map_basic_info copied..
 Running benchmark with 10000 iterations...
 Benchmark results:
 Total time: 810824 us
 Average kernel time: 81.0824 us
+Validation check: C[0] = 0, C[1] = 3
+```
+
+Device: NVIDIA RTX 5090
+
+No trace:
+
+```
+$ benchmark/cuda/vec_add
+Running benchmark with 10000 iterations...
+Benchmark results:
+Total time: 40981.7 us
+Average kernel time: 4.09817 us
+Validation check: C[0] = 0, C[1] = 3
+```
+
+With bpftime:
+
+```console  
+Running benchmark with 10000 iterations...
+Benchmark results:
+Total time: 81883.6 us
+Average kernel time: 8.18836 us
+Validation check: C[0] = 0, C[1] = 3
+```
+
+
+with NVbit:
+
+```console
+$ make run_nvbit_verbose
+CUDA_VISIBLE_DEVICES=0 LD_PRELOAD=./nvbit_vec_add.so TOOL_VERBOSE=1 ./vec_add
+------------- NVBit (NVidia Binary Instrumentation Tool v1.7.6) Loaded --------------
+Running benchmark with 10000 iterations...
+Benchmark results:
+Total time: 557560 us
+Average kernel time: 55.756 us
 Validation check: C[0] = 0, C[1] = 3
 ```
