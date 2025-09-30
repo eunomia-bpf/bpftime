@@ -84,6 +84,17 @@ jobs:
           dnf install -y dnf-plugins-core
           dnf config-manager --add-repo https://developer.download.nvidia.com/compute/cuda/repos/fedora39/x86_64/cuda-fedora39.repo
           dnf install -y lcov cuda clang-devel
+      - name: Install build tools (Ubuntu)
+        if: "matrix.container == 'ubuntu-2204'"
+        run: |
+          set -e
+          apt-get update -y
+          apt-get install -y cmake make gcc g++ pkg-config
+      - name: Install build tools (Fedora)
+        if: "matrix.container == 'fedora-39'"
+        run: |
+          set -e
+          dnf install -y cmake make gcc gcc-c++ pkgconf-pkg-config llvm llvm-devel clang clang-devel
       - name: Install LLVM toolchain (Ubuntu)
         if: "matrix.container == 'ubuntu-2204'"
         run: |
