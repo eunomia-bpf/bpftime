@@ -22,6 +22,17 @@ jobs:
       image: ${{ fromJSON('{"ubuntu-2204":"ubuntu:22.04","fedora-39":"fedora:39","openeuler-2403sp2":"openeuler/openeuler:24.03-lts-sp1"}')[matrix.container] }}
       options: --privileged
     steps:
+      - name: Install git (Ubuntu)
+        if: matrix.container == 'ubuntu-2204'
+        run: |
+          set -e
+          apt-get update -y
+          apt-get install -y git ca-certificates
+      - name: Install git (Fedora)
+        if: matrix.container == 'fedora-39'
+        run: |
+          set -e
+          dnf -y install git ca-certificates
       - name: Install git (openEuler)
         if: matrix.container == 'openeuler-2403sp2'
         run: |
