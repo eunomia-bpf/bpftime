@@ -104,14 +104,24 @@ You may be interested in the following cmake options:
 - `CMAKE_BUILD_TYPE`: Specify the build type. It could be `Debug`, `Release`, `MinSizeRel` or `RelWithDebInfo`. If you are not going to debug bpftime, you just need to set it to `Release`. Default to `Debug`.
 - `BPFTIME_ENABLE_UNIT_TESTING`: Whether to build unit test targets. See `Testing targets` for details. Default to `NO`.
 - `BPFTIME_ENABLE_LTO`: Whether to enable Link Time Optimization. Enabling this may increase the compile time, but it may lead to a better performance. Default to `No`.
-- `ENABLE_EBPF_VERIFIER`: Whether to enable userspace eBPF verifier
-- `BPFTIME_LLVM_JIT`: Whether to use LLVM JIT as the ebpf runtime. Requires LLVM >= 15. It's recommended to enable this, since the ubpf intepreter is no longer maintained. Default to `NO`.
+- `BPFTIME_ENABLE_CCACHE`: Enable the usage of Ccache to speed up rebuild times. Default to `OFF`.
+- `BPFTIME_ENABLE_ASAN`: Enable Address Sanitizer to detect memory errors. Default to `OFF`.
+- `ENABLE_EBPF_VERIFIER`: Whether to enable userspace eBPF verifier. Default to `OFF`.
+- `BPFTIME_LLVM_JIT`: Whether to use LLVM JIT as the ebpf runtime. Requires LLVM >= 15. It's recommended to enable this, since the ubpf intepreter is no longer maintained. Default to `ON`.
+- `BPFTIME_UBPF_JIT`: Whether to use uBPF JIT backend. Default to `ON`.
 - `LLVM_DIR`: Specify the installing directory of LLVM. CMake may not discover the LLVM installation by default. Set this option to the directory that contains `LLVMConfig.cmake`, such as `/usr/lib/llvm-15/cmake` on Ubuntu
-- `BUILD_BPFTIME_DAEMON`: Build with the daemon for load the eBPF program into hkernel and se kernel verifier.
-- `BPFTIME_BUILD_WITH_LIBBPF` :Build bpftime without libbpf. It can only be run in userspace with this enabled, but it can be easily port into other platform, e.g. macOS.
-- `BPFTIME_BUILD_STATIC_LIB`: Build bpftime runtime into a whole static libraries. It can be easily linked into other programs.
-- `ENABLE_PROBE_WRITE_CHECK`: Enable the probe write check. It will check the bpf_probe_write_user operation and report the error if the probe write address is invalid.
-- `ENABLE_PROBE_READ_CHECK`: Enable the probe read check. It will check the bpf_probe_write operation and report the error if the probe read address is invalid.
+- `BUILD_BPFTIME_DAEMON`: Build with the daemon for load the eBPF program into hkernel and se kernel verifier. Default to `ON`.
+- `BPFTIME_BUILD_WITH_LIBBPF`: Build bpftime with libbpf. When disabled, it can only be run in userspace but can be easily ported to other platforms, e.g. macOS. Default to `ON`.
+- `BPFTIME_BUILD_KERNEL_BPF`: Whether to build with bpf share maps. Default to `ON`.
+- `BPFTIME_BUILD_STATIC_LIB`: Build bpftime runtime into a whole static libraries. It can be easily linked into other programs. Default to `OFF`.
+- `BPFTIME_ENABLE_MPK`: Enable Memory Protection Keys for the shared memory. Default to `OFF`.
+- `BPFTIME_ENABLE_IOURING_EXT`: Enable iouring helpers extensions. Default to `OFF`.
+- `ENABLE_PROBE_WRITE_CHECK`: Enable the probe write check. It will check the bpf_probe_write_user operation and report the error if the probe write address is invalid. Default to `ON`.
+- `ENABLE_PROBE_READ_CHECK`: Enable the probe read check. It will check the bpf_probe_write operation and report the error if the probe read address is invalid. Default to `ON`.
+- `BPFTIME_ENABLE_CUDA_ATTACH`: Enable CUDA/GPU attach support. Requires `BPFTIME_CUDA_ROOT` to be set to the CUDA installation directory (e.g., `/usr/local/cuda-12.8`). Default to `OFF`.
+- `BPFTIME_CUDA_ROOT`: Specify the root directory of CUDA installation. Required when `BPFTIME_ENABLE_CUDA_ATTACH=1`.
+- `BPFTIME_WARNINGS_AS_ERRORS`: Treat compiler warnings as errors. Default to `OFF`.
+- `BPFTIME_VERBOSE_OUTPUT`: Enable verbose output, allowing for a better understanding of each step taken. Default to `ON`.
 
 Please see <https://github.com/eunomia-bpf/bpftime/blob/master/cmake/StandardSettings.cmake> forall the build options.
 
@@ -164,6 +174,18 @@ This flag can be used to compile `bpftime` on macOS. It will disable all the lib
 cmake -Bbuild -DCMAKE_BUILD_TYPE:STRING=RelWithDebInfo -DBPFTIME_BUILD_WITH_LIBBPF=OFF -DBPFTIME_BUILD_KERNEL_BPF=OFF
 cmake --build build --config RelWithDebInfo  --target install -j$(JOBS)
 ```
+
+### Compile with CUDA/GPU attach support
+
+To enable CUDA attach support, set `BPFTIME_ENABLE_CUDA_ATTACH=1` and specify the CUDA installation path:
+
+```sh
+# Example with CUDA 12.8
+cmake -Bbuild -DCMAKE_BUILD_TYPE=Release -DBPFTIME_ENABLE_CUDA_ATTACH=1 -DBPFTIME_CUDA_ROOT=/usr/local/cuda-12.8
+cmake --build build --config Release --target install
+```
+
+Note: Ensure that `BPFTIME_CUDA_ROOT` points to your CUDA installation directory (e.g., `/usr/local/cuda-12.8`, `/usr/local/cuda-12.6`, etc.).
 
 ### Testing targets
 
