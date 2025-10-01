@@ -1,8 +1,8 @@
 # SPDX-License-Identifier: (LGPL-2.1 OR BSD-2-Clause)
 OUTPUT := .output
 CLANG ?= clang
-LIBBPF_SRC := $(abspath ../../third_party/libbpf/src)
-BPFTOOL_SRC := $(abspath ../../third_party/bpftool/src)
+LIBBPF_SRC := $(abspath ../../../third_party/libbpf/src)
+BPFTOOL_SRC := $(abspath ../../../third_party/bpftool/src)
 LIBBPF_OBJ := $(abspath $(OUTPUT)/libbpf.a)
 BPFTOOL_OUTPUT ?= $(abspath $(OUTPUT)/bpftool)
 BPFTOOL ?= $(BPFTOOL_OUTPUT)/bootstrap/bpftool
@@ -13,15 +13,15 @@ ARCH ?= $(shell uname -m | sed 's/x86_64/x86/' \
 			 | sed 's/mips.*/mips/' \
 			 | sed 's/riscv64/riscv/' \
 			 | sed 's/loongarch64/loongarch/')
-VMLINUX := ../../third_party/vmlinux/$(ARCH)/vmlinux.h
+VMLINUX := ../../../third_party/vmlinux/$(ARCH)/vmlinux.h
 # Use our own libbpf API headers and Linux UAPI headers distributed with
 # libbpf to avoid dependency on system-wide headers, which could be missing or
 # outdated
-INCLUDES := -I$(OUTPUT) -I../../third_party/libbpf/include/uapi -I$(dir $(VMLINUX))
+INCLUDES := -I$(OUTPUT) -I../../../third_party/libbpf/include/uapi -I$(dir $(VMLINUX))
 CFLAGS := -g -Wall
 ALL_LDFLAGS := $(LDFLAGS) $(EXTRA_LDFLAGS)
 
-APPS = cuda_probe # minimal minimal_legacy uprobe kprobe fentry usdt sockfilter tc ksyscall
+APPS = mem_trace # uprobe_legacy uprobe kprobe fentry usdt sockfilter tc ksyscall
 
 CARGO ?= $(shell which cargo)
 ifeq ($(strip $(CARGO)),)
@@ -66,45 +66,18 @@ $(call allow-override,CC,$(CROSS_COMPILE)cc)
 $(call allow-override,LD,$(CROSS_COMPILE)ld)
 
 .PHONY: all
-all: $(APPS)
+all: $(APPS) vec_add
 
 vec_add: vec_add.cu
-	nvcc -cudart shared vec_add.cu -o vec_add -g
-
-# NVBit tool compilation
-NVCC=nvcc -ccbin=$(CXX) -D_FORCE_INLINES
-PTXAS=ptxas
-
-ifeq ($(DEBUG),1)
-NVCC_OPT=-O0 -g
-else
-NVCC_OPT=-O3
-endif
-
-# Path to NVBit - adjust this to your system's NVBit location
-NVBIT_PATH=$(HOME)/yunwei37/nvbit_release_x86_64/core
-NVBIT_INCLUDES=-I$(NVBIT_PATH)
-
-NVBIT_LIBS=-L$(NVBIT_PATH) -lnvbit
-NVCC_PATH=-L $(subst bin/nvcc,lib64,$(shell which nvcc | tr -s /))
-
-NVBIT_SOURCES=nvbit_vec_add.cu nvbit_timing_funcs.cu
-NVBIT_OBJECTS=$(NVBIT_SOURCES:.cu=.o)
-CUDA_ARCH?=all
-
-nvbit_vec_add.so: $(NVBIT_OBJECTS) $(NVBIT_PATH)/libnvbit.a
-	$(NVCC) -arch=$(CUDA_ARCH) $(NVCC_OPT) $(NVBIT_OBJECTS) $(NVBIT_LIBS) $(NVCC_PATH) -lcuda -lcudart_static -shared -o $@
-
-%.o: %.cu
-	$(NVCC) -dc -c -std=c++11 $(NVBIT_INCLUDES) -Xptxas -cloning=no -Xcompiler -Wall -arch=$(CUDA_ARCH) $(NVCC_OPT) -Xcompiler -fPIC $< -o $@
-
-nvbit_timing_funcs.o: nvbit_timing_funcs.cu
-	$(NVCC) $(NVBIT_INCLUDES) -Xptxas -astoolspatch --keep-device-functions -arch=$(CUDA_ARCH) -Xcompiler -Wall -Xcompiler -fPIC -c $< -o $@
-
+	@if command -v nvcc >/dev/null 2>&1; then \
+		nvcc -cudart shared vec_add.cu -o vec_add -g; \
+	else \
+		echo "Warning: CUDA not found, skipping vec_add build"; \
+	fi
 .PHONY: clean
 clean:
 	$(call msg,CLEAN)
-	$(Q)rm -rf $(OUTPUT) $(APPS) vec_add nvbit_vec_add.so *.o
+	$(Q)rm -rf $(OUTPUT) $(APPS)
 
 $(OUTPUT) $(OUTPUT)/libbpf $(BPFTOOL_OUTPUT):
 	$(call msg,MKDIR,$@)
@@ -138,7 +111,7 @@ $(LIBBLAZESYM_HEADER): $(LIBBLAZESYM_SRC)/target/release/libblazesym.a | $(OUTPU
 # Build BPF code
 $(OUTPUT)/%.bpf.o: %.bpf.c $(LIBBPF_OBJ) $(wildcard %.h) $(VMLINUX) | $(OUTPUT) $(BPFTOOL)
 	$(call msg,BPF,$@)
-	$(Q)$(CLANG) -Xlinker --export-dynamic -g -O2 -target bpf -D__TARGET_ARCH_$(ARCH)		      \
+	$(Q)$(CLANG) -g -O2 -target bpf -D__TARGET_ARCH_$(ARCH)		      \
 		     $(INCLUDES) $(CLANG_BPF_SYS_INCLUDES)		      \
 		     -c $(filter %.c,$^) -o $(patsubst %.bpf.o,%.tmp.bpf.o,$@)
 	$(Q)$(BPFTOOL) gen object $@ $(patsubst %.bpf.o,%.tmp.bpf.o,$@)
@@ -163,14 +136,6 @@ $(BZS_APPS): $(LIBBLAZESYM_OBJ)
 $(APPS): %: $(OUTPUT)/%.o $(LIBBPF_OBJ) | $(OUTPUT)
 	$(call msg,BINARY,$@)
 	$(Q)$(CC) $(CFLAGS) $^ $(ALL_LDFLAGS) -lelf -lz -o $@
-
-# Run the CUDA vector addition benchmark with NVBit instrumentation
-run_nvbit: nvbit_vec_add.so
-	CUDA_VISIBLE_DEVICES=0 LD_PRELOAD=./nvbit_vec_add.so ./vec_add 100
-
-# Run with verbose output
-run_nvbit_verbose: nvbit_vec_add.so
-	CUDA_VISIBLE_DEVICES=0 LD_PRELOAD=./nvbit_vec_add.so TOOL_VERBOSE=1 ./vec_add 100
 
 # delete failed targets
 .DELETE_ON_ERROR:

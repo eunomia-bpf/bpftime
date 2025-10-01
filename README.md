@@ -27,8 +27,8 @@ bpftime is not `userspace eBPF VM`, it's a userspace runtime framework includes 
 
 ## Key Features
 
-- **Dynamic Binary rewriting**: Run eBPF programs in userspace, attaching them to `Uprobes` and `Syscall tracepoints`: **No manual instrumentation or restart required!**. It can `trace` or `change` the execution of a function, `hook` or `filter` all syscalls of a process safely, and efficiently with an eBPF userspace runtime. Can inject eBPF runtime into any running process without the need for a restart or manual recompilation.
-- **Performance**: Experience up to a `10x` speedup in Uprobe overhead compared to kernel uprobe and uretprobe. Read/Write userspace memory is also faster than kernel eBPF.
+- **Dynamic Binary rewriting**: Run eBPF programs in userspace, attaching them to `Uprobes`, `Syscall tracepoints` and inside `GPU` kernel: **No manual instrumentation or restart required!**. It can `trace` or `change` the execution of a function, `hook` or `filter` all syscalls of a process safely, and efficiently with an eBPF userspace runtime. Can inject eBPF runtime into any running process without the need for a restart or manual recompilation.
+- **Performance**: Experience up to a `10x` speedup in Uprobe overhead compared to kernel uprobe and uretprobe， up to a 10x faster than `NVbit`. Read/Write userspace memory is also faster than kernel eBPF.
 - **Interprocess eBPF Maps**: Implement userspace `eBPF maps` in shared userspace memory for summary aggregation or control plane communication.
 - **Compatibility**: use `existing eBPF toolchains` like clang, libbpf and bpftrace to develop userspace eBPF application without any modifications. Supporting CO-RE via BTF, and offering userspace `ufunc` access.
 - **Multi JIT Support**: Support [llvmbpf](https://github.com/eunomia-bpf/llvmbpf), a high-speed `JIT/AOT` compiler powered by LLVM, or using `ubpf JIT` and INTERPRETER. The vm can be built as `a standalone library` like ubpf.
@@ -112,20 +112,7 @@ See [eunomia.dev/bpftime/documents/usage](https://eunomia.dev/bpftime/documents/
 
 ## Examples & Use Cases
 
-For more examples and details, please refer to [eunomia.dev/bpftime/documents/examples/](https://eunomia.dev/bpftime/documents/examples/) webpage.
-
-Examples including:
-
-- [Minimal examples](https://github.com/eunomia-bpf/bpftime/tree/master/example/minimal) of eBPF programs.
-- eBPF `Uprobe/USDT` tracing and `syscall tracing`:
-  - [sslsniff](https://github.com/eunomia-bpf/bpftime/tree/master/example/sslsniff) for trace SSL/TLS unencrypted data.
-  - [opensnoop](https://github.com/eunomia-bpf/bpftime/tree/master/example/opensnoop) for trace file open syscalls.
-  - More [bcc/libbpf-tools](https://github.com/eunomia-bpf/bpftime/tree/master/example/libbpf-tools).
-  - Run with [bpftrace](https://github.com/eunomia-bpf/bpftime/tree/master/example/bpftrace) commands or scripts.
-- [error injection](https://github.com/eunomia-bpf/bpftime/tree/master/example/error-inject): change function behavior with `bpf_override_return`.
-- Use the eBPF LLVM JIT/AOT vm as [a standalone library](https://github.com/eunomia-bpf/llvmbpf/tree/main/example).
-- Userspace [XDP with DPDK and AF_XDP](https://github.com/userspace-xdp/userspace-xdp)
-- [CUDA eBPF Probe/Retprobe Example](https://github.com/eunomia-bpf/bpftime/tree/master/example/cuda-counter)
+For more examples and details, please refer to [eunomia.dev/bpftime/documents/examples/](https://eunomia.dev/bpftime/documents/examples/) webpage and [example](https://github.com/eunomia-bpf/bpftime/tree/master/example/) dir.
 
 ## In-Depth
 
@@ -153,7 +140,7 @@ Current hook implementation is based on binary rewriting and the underly techniq
 
 - Userspace function hook: [frida-gum](https://github.com/frida/frida-gum)
 - Syscall hooks: [zpoline](https://www.usenix.org/conference/atc23/presentation/yasukata) and [pmem/syscall_intercept](https://github.com/pmem/syscall_intercept).
-- GPU hooks: our new implement by convert eBPF into PTX and inject into GPU kernel. See [attach/nv_attach_impl](https://github.com/eunomia-bpf/bpftime/tree/master/attach/nv_attach_impl) for more details.
+- GPU hooks: our new implementation by converting eBPF into PTX and injecting into GPU kernels. See [attach/nv_attach_impl](https://github.com/eunomia-bpf/bpftime/tree/master/attach/nv_attach_impl) for more details.
 - XDP with DPDK. See the [uXDP paper](https://dl.acm.org/doi/10.1145/3748355.3748360) for more details.
 
 The hook can be easily replaced with other DBI methods or frameworks, to make it a general extension framework. See our OSDI '25 paper [Extending Applications Safely and Efficiently](https://www.usenix.org/conference/osdi25/presentation/zheng-yusheng) for details.
@@ -180,7 +167,7 @@ This project is licensed under the MIT License.
 
 ## Contact and citations
 
-Have any questions or suggestions on future development? Free free to open an issue or contact
+Have any questions or suggestions on future development? Feel free to open an issue or contact
 <yunwei356@gmail.com> !
 
 Our OSDI '25 paper: <https://www.usenix.org/conference/osdi25/presentation/zheng-yusheng>

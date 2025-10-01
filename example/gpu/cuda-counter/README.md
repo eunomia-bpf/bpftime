@@ -38,7 +38,7 @@ make -j$(nproc)
 
 # Build the example (from the build directory)
 cd ..
-make -C example/cuda-counter
+make -C example/gpu/cuda-counter
 ```
 
 ## Running the Example
@@ -49,7 +49,7 @@ You need to start two processes:
 
 ```bash
 LD_PRELOAD=build/runtime/syscall-server/libbpftime-syscall-server.so \
-  example/cuda-counter/cuda_probe
+  example/gpu/cuda-counter/cuda_probe
 ```
 
 This process loads the eBPF program and waits for CUDA events.
@@ -59,8 +59,8 @@ This process loads the eBPF program and waits for CUDA events.
 In another terminal:
 
 ```bash
-LD_PRELOAD=build/runtime/agent/libbpftime-agent.so \
-  example/cuda-counter/vec_add
+BPFTIME_OUTPUT= LD_PRELOAD=build/runtime/agent/libbpftime-agent.so \
+  example/gpu/cuda-counter/vec_add
 ```
 
 This runs the vector addition program with the bpftime agent, which connects to the first process for eBPF execution.
