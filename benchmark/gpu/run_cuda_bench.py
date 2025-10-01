@@ -137,7 +137,7 @@ def run_nvbit(bench_dir: str, iterations: int = 10000) -> Optional[float]:
 
     nvbit_so = f"{bench_dir}/nvbit_vec_add.so"
     if not os.path.exists(nvbit_so):
-        print(f"{Colors.FAIL}Error: {nvbit_so} not found. Did you run 'make' in benchmark/cuda?{Colors.ENDC}")
+        print(f"{Colors.FAIL}Error: {nvbit_so} not found. Did you run 'make' in benchmark/gpu?{Colors.ENDC}")
         return None
 
     try:
