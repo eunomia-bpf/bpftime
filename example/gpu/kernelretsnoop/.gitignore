@@ -1,4 +1,4 @@
-/cuda_probe
+/kernelretsnoop
 /.output
 /victim*
 /vec_add.cpp

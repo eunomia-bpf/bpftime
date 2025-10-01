@@ -1,4 +1,4 @@
-/cuda_probe
+/threadhist
 /.output
 /victim*
 /vec_add.cpp

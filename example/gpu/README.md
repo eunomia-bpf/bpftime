@@ -48,8 +48,8 @@ The GPU support is built on the `nv_attach_impl` system (`attach/nv_attach_impl/
 Complete working examples with full source code, build instructions, and READMEs are available on GitHub:
 
 - **[cuda-counter](https://github.com/eunomia-bpf/bpftime/tree/master/example/gpu/cuda-counter)**: Basic probe/retprobe with timing measurements
-- **[cuda-counter-gpu-array](https://github.com/eunomia-bpf/bpftime/tree/master/example/gpu/cuda-counter-gpu-array)**: Per-thread counters using GPU array maps
-- **[cuda-counter-gpu-ringbuf](https://github.com/eunomia-bpf/bpftime/tree/master/example/gpu/cuda-counter-gpu-ringbuf)**: Event streaming with ringbuf maps
+- **[kernelretsnoop](https://github.com/eunomia-bpf/bpftime/tree/master/example/gpu/kernelretsnoop)**: Captures per-thread exit timestamps to detect thread divergence, memory access patterns, and warp scheduling issues
+- **[threadhist](https://github.com/eunomia-bpf/bpftime/tree/master/example/gpu/threadhist)**: Per-thread execution histogram using GPU array maps to detect workload imbalance
 - **[rocm-counter](https://github.com/eunomia-bpf/bpftime/tree/master/example/gpu/rocm-counter)**: AMD GPU instrumentation (experimental)
 
 Each example includes CUDA/ROCm application source, eBPF probe programs, Makefile, and detailed usage instructions.

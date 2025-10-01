@@ -9,7 +9,7 @@
 #include <bpf/bpf.h>
 #include <unistd.h>
 #include <stdlib.h>
-#include "./.output/cuda_probe.skel.h"
+#include "./.output/threadhist.skel.h"
 #include <inttypes.h>
 #define warn(...) fprintf(stderr, __VA_ARGS__)
 
@@ -26,7 +26,7 @@ static void sig_handler(int sig)
 	exiting = true;
 }
 
-static int print_stat(struct cuda_probe_bpf *obj, uint64_t thread_count)
+static int print_stat(struct threadhist_bpf *obj, uint64_t thread_count)
 {
 	time_t t;
 	struct tm *tm;
@@ -54,7 +54,7 @@ static int print_stat(struct cuda_probe_bpf *obj, uint64_t thread_count)
 
 int main(int argc, char **argv)
 {
-	struct cuda_probe_bpf *skel;
+	struct threadhist_bpf *skel;
 	int err;
 
 	/* Set up libbpf errors and debug info callback */
@@ -65,19 +65,19 @@ int main(int argc, char **argv)
 	signal(SIGTERM, sig_handler);
 
 	/* Load and verify BPF application */
-	skel = cuda_probe_bpf__open();
+	skel = threadhist_bpf__open();
 	if (!skel) {
 		fprintf(stderr, "Failed to open and load BPF skeleton\n");
 		return 1;
 	}
 
 	/* Load & verify BPF programs */
-	err = cuda_probe_bpf__load(skel);
+	err = threadhist_bpf__load(skel);
 	if (err) {
 		fprintf(stderr, "Failed to load and verify BPF skeleton\n");
 		goto cleanup;
 	}
-	err = cuda_probe_bpf__attach(skel);
+	err = threadhist_bpf__attach(skel);
 	if (err) {
 		fprintf(stderr, "Failed to attach BPF skeleton\n");
 		goto cleanup;
@@ -88,7 +88,7 @@ int main(int argc, char **argv)
 	}
 cleanup:
 	/* Clean up */
-	cuda_probe_bpf__destroy(skel);
+	threadhist_bpf__destroy(skel);
 
 	return err < 0 ? -err : 0;
 }

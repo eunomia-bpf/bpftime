@@ -11,7 +11,7 @@
 #include <bpf/bpf.h>
 #include <unistd.h>
 #include <stdlib.h>
-#include "./.output/cuda_probe.skel.h"
+#include "./.output/kernelretsnoop.skel.h"
 #include <inttypes.h>
 #include <time.h>
 #define warn(...) fprintf(stderr, __VA_ARGS__)
@@ -29,35 +29,21 @@ static void sig_handler(int sig)
 	exiting = true;
 }
 struct data {
-	int type;
-	union {
-		struct {
-			uint64_t x, y, z;
-		} thread;
-		uint64_t time;
-	};
+	uint64_t x, y, z;
+	uint64_t timestamp;
 };
 
 struct state {
-	uint64_t total_time_sum;
 	uint64_t count;
 };
 
-static bool poll_succeed = false;
-
 static void poll_callback(const void *data, uint64_t size, void *ctx)
 {
-	poll_succeed = true;
 	struct state *state = (struct state *)ctx;
 	const struct data *event = data;
-	if (event->type == 0) {
-		printf("Data from thread: %lu, %lu, %lu\n", event->thread.x,
-		       event->thread.y, event->thread.z);
-	} else if (event->type == 1) {
-		printf("GPU Time usage: %lu\n", event->time);
-		state->total_time_sum += event->time;
-		state->count += 1;
-	}
+	printf("Thread (%lu, %lu, %lu) timestamp: %lu\n",
+	       event->x, event->y, event->z, event->timestamp);
+	state->count += 1;
 }
 
 static uint64_t get_timestamp()
@@ -69,7 +55,7 @@ static uint64_t get_timestamp()
 
 int main(int argc, char **argv)
 {
-	struct cuda_probe_bpf *skel;
+	struct kernelretsnoop_bpf *skel;
 	int err;
 
 	/* Set up libbpf errors and debug info callback */
@@ -80,19 +66,19 @@ int main(int argc, char **argv)
 	signal(SIGTERM, sig_handler);
 
 	/* Load and verify BPF application */
-	skel = cuda_probe_bpf__open();
+	skel = kernelretsnoop_bpf__open();
 	if (!skel) {
 		fprintf(stderr, "Failed to open and load BPF skeleton\n");
 		return 1;
 	}
 
 	/* Load & verify BPF programs */
-	err = cuda_probe_bpf__load(skel);
+	err = kernelretsnoop_bpf__load(skel);
 	if (err) {
 		fprintf(stderr, "Failed to load and verify BPF skeleton\n");
 		goto cleanup;
 	}
-	err = cuda_probe_bpf__attach(skel);
+	err = kernelretsnoop_bpf__attach(skel);
 	if (err) {
 		fprintf(stderr, "Failed to attach BPF skeleton\n");
 		goto cleanup;
@@ -105,35 +91,21 @@ int main(int argc, char **argv)
 		goto cleanup;
 	}
 	int mapfd = bpf_map__fd(skel->maps.rb);
-	struct state gpu_state, cpu_state;
+	struct state state = {0};
 	while (!exiting) {
 		sleep(1);
-		poll_succeed = false;
-		uint64_t begin = get_timestamp();
-		err = poll_fn(mapfd, &gpu_state, poll_callback);
-		uint64_t end = get_timestamp();
+		err = poll_fn(mapfd, &state, poll_callback);
 		if (err < 0) {
 			printf("Unable to poll: %d\n", err);
 			goto cleanup;
 		}
-		if (gpu_state.count > 0) {
-			printf("Average GPU time usage: %lu (ns), count = %lu\n",
-			       gpu_state.total_time_sum / gpu_state.count,
-			       gpu_state.count);
-		}
-		if (poll_succeed) {
-			cpu_state.count += 1;
-			cpu_state.total_time_sum += end - begin;
-		}
-		if (cpu_state.count > 0) {
-			printf("Average CPU time usage: %lu (ns), count = %lu\n",
-			       cpu_state.total_time_sum / cpu_state.count,
-			       cpu_state.count);
+		if (state.count > 0) {
+			printf("Total events collected: %lu\n", state.count);
 		}
 	}
 cleanup:
 	/* Clean up */
-	cuda_probe_bpf__destroy(skel);
+	kernelretsnoop_bpf__destroy(skel);
 
 	return err < 0 ? -err : 0;
 }
