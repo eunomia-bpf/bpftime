@@ -80,7 +80,7 @@ struct CommSharedMem {
 	uint64_t time_sum[8];
 };
 
-const int BPF_MAP_TYPE_PERGPUTREAD_ARRAY_MAP = 1502;
+const int BPF_MAP_TYPE_PERGPUTD_ARRAY_MAP = 1502;
 const int BPF_MAP_TYPE_GPU_RINGBUF_MAP = 1527;
 
 struct MapBasicInfo {
@@ -188,7 +188,7 @@ extern "C" __noinline__ __device__ uint64_t _bpf_helper_ext_0001(
 	auto &req = global_data->req;
 	// CallRequest req;
 	const auto &map_info = ::map_info[map];
-	if (map_info.map_type == BPF_MAP_TYPE_PERGPUTREAD_ARRAY_MAP) {
+	if (map_info.map_type == BPF_MAP_TYPE_PERGPUTD_ARRAY_MAP) {
 		auto real_key = *(uint32_t *)(uintptr_t)key;
 		auto offset = array_map_offset(real_key, map_info);
 		return (uint64_t)offset;
@@ -210,7 +210,7 @@ extern "C" __noinline__ __device__ uint64_t _bpf_helper_ext_0002(
 	CommSharedMem *global_data = (CommSharedMem *)constData;
 	auto &req = global_data->req;
 	const auto &map_info = ::map_info[map];
-	if (map_info.map_type == BPF_MAP_TYPE_PERGPUTREAD_ARRAY_MAP) {
+	if (map_info.map_type == BPF_MAP_TYPE_PERGPUTD_ARRAY_MAP) {
 		auto real_key = *(uint32_t *)(uintptr_t)key;
 		auto offset = array_map_offset(real_key, map_info);
 		simple_memcpy(offset, (void *)(uintptr_t)value,

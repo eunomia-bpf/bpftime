@@ -3,7 +3,7 @@
 #include <bpf/bpf_helpers.h>
 #include <bpf/bpf_tracing.h>
 
-#define BPF_MAP_TYPE_PERGPUTREAD_ARRAY_MAP 1502
+#define BPF_MAP_TYPE_PERGPUTD_ARRAY_MAP 1502
 #define BPF_MAP_TYPE_GPU_RINGBUF_MAP 1527
 
 struct big_struct {
