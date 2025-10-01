@@ -65,7 +65,7 @@ In synchronous execution, measuring individual API call durations allowed develo
 
 Asynchronous execution not only hides the GPU-internal details that were already invisible in synchronous mode (warp divergence, memory stalls, SM utilization), but also eliminates the coarse-grained phase timing that CPU tools could previously provide. Developers lose the ability to even perform basic triage. They cannot determine whether to focus optimization efforts on memory transfers, kernel logic, or API usage patterns without either (1) reverting to slow synchronous execution for debugging (defeating the purpose of async), or (2) adding manual instrumentation that requires recompilation and provides only static measurement points.
 
-Modern GPU applications further complicate this picture with advanced optimization techniques. Batching strategies combine multiple operations to amortize launch overhead, but make it harder to identify which individual operations are slow. Persistent kernels stay resident on the GPU processing multiple work batches, eliminating launch overhead but obscuring phase boundaries. Multi-stream execution with complex dependencies between streams creates intricate execution graphs where operations from different streams interleave unpredictably. Shared memory usage per thread block constrains occupancy and limits concurrent warp execution, creating subtle resource contention that varies based on kernel configuration. These optimizations significantly improve throughput but make the already-opaque async execution model even more difficult to observe and debug from the CPU side.
+Modern GPU applications like LLM serving further complicate this picture with advanced optimization techniques. Batching strategies combine multiple operations to maximize throughput like a pipeline, but make it harder to identify which individual operations are slow. Persistent kernels stay resident on the GPU processing multiple work batches, eliminating launch overhead but obscuring phase boundaries. Multi-stream execution with complex dependencies between streams creates intricate execution graphs where operations from different streams interleave unpredictably. Shared memory usage per thread block constrains occupancy and limits concurrent warp execution, creating subtle resource contention that varies based on kernel configuration. These optimizations significantly improve throughput but make the already-opaque async execution model even more difficult to observe and debug from the CPU side.
 
 > **The key insight:** Effective GPU observability and extensibility requires a unified solution that spans multiple layers of the heterogeneous computing stack: from userspace applications making CUDA API calls, through OS kernel drivers managing device resources, down to device code executing on GPU hardware. Traditional tools are fragmented across these layers, providing isolated visibility at the CPU-GPU boundary or within GPU kernels alone, but lacking the cross-layer correlation needed to understand how decisions and events at one level impact performance and behavior at another.
 
@@ -78,12 +78,14 @@ By running eBPF programs natively inside GPU kernels, we provides programmable, 
 **bpftime's approach** bridges this gap by extending eBPF's programmability and customization model directly into GPU execution contexts, enabling eBPF programs to run natively inside GPU kernels alongside application workloads. The system defines a comprehensive set of GPU-side attach points that mirror the flexibility of CPU-side kprobes/uprobes. Developers can instrument CUDA/ROCm device function entry and exit points (analogous to function probes), thread block lifecycle events (block begin/end), synchronization primitives (barriers, atomics), memory operations (loads, stores, transfers), and stream/event operations. eBPF programs written in restricted C are compiled through LLVM into device-native bytecode (PTX (Parallel Thread Execution) assembly for NVIDIA GPUs or SPIR-V for AMD/Intel) and dynamically injected into target kernels at runtime through binary instrumentation, without requiring source code modification or recompilation. The runtime provides a full eBPF execution environment on the GPU including (1) a safety verifier to ensure bounded execution and memory safety in the SIMT context, (2) a rich set of GPU-aware helper functions for accessing thread/block/grid context, timing, synchronization, and formatted output, (3) specialized BPF map types that live in GPU memory for high-throughput per-thread data collection (GPU array maps) and event streaming (GPU ringbuf maps), and (4) a host-GPU communication protocol using shared memory and spinlocks for safely calling host-side helpers when needed. This architecture enables not only collecting fine-grained telemetry (per-warp timing, memory access patterns, control flow divergence) at nanosecond granularity, but also adaptively modifying kernel behavior based on runtime conditions, building custom extensions and optimizations, and unifying GPU observability with existing CPU-side eBPF programs into a single analysis pipeline, all while maintaining production-ready overhead characteristics. This enables:
 
 - **3-10x faster performance** than tools like NVBit for instrumentation
-- **Vendor-neutral design** that works across NVIDIA and AMD GPUs
+- **Vendor-neutral design** that works across NVIDIA, AMD and Intel GPUs
 - **Unified observability and control** with Linux kernel eBPF programs (kprobes, uprobes)
 - **Fine-grained profiling and runtime customization** at the warp or instruction level
 - **Adaptive GPU kernel memory optimization** and programmable scheduling across SMs
 - **Dynamic extensions** for GPU workloads without recompilation
 - **Accelerated eBPF applications** by leveraging GPU compute power
+
+The architecture is designed to achieve four core goals: (1) provide a unified eBPF-based interface that works seamlessly across userspace, kernel, multiple CPU and GPU contexts from different vendors, (2) enable dynamic, runtime instrumentation without requiring source code modification or recompilation, and (3) maintain safe and efficient execution within the constraints of GPU hardware and SIMT execution models. (4) Less dependency and easy to deploy, built on top of existing CUDA/ROCm/OpenGL runtimes without requiring custom kernel drivers, firmware modifications, or heavy-weight runtimes like record-and-replay systems.
 
 ## Architecture
 
@@ -112,10 +114,10 @@ The GPU support is built on the `nv_attach_impl` system (`attach/nv_attach_impl/
 
 Complete working examples with full source code, build instructions, and READMEs are available on GitHub:
 
-- **[cuda-counter](https://github.com/eunomia-bpf/bpftime/tree/master/example/gpu/cuda-counter)**: Basic probe/retprobe with timing measurements
 - **[kernelretsnoop](https://github.com/eunomia-bpf/bpftime/tree/master/example/gpu/kernelretsnoop)**: Captures per-thread exit timestamps to detect thread divergence, memory access patterns, and warp scheduling issues
 - **[threadhist](https://github.com/eunomia-bpf/bpftime/tree/master/example/gpu/threadhist)**: Per-thread execution histogram using GPU array maps to detect workload imbalance
 - **[rocm-counter](https://github.com/eunomia-bpf/bpftime/tree/master/example/gpu/rocm-counter)**: AMD GPU instrumentation (experimental)
+- **[cuda-counter](https://github.com/eunomia-bpf/bpftime/tree/master/example/gpu/cuda-counter)**: Basic probe/retprobe with timing measurements
 
 Each example includes CUDA/ROCm application source, eBPF probe programs, Makefile, and detailed usage instructions.
 
@@ -140,7 +142,7 @@ All types support specifying target kernel functions by name (e.g., `_Z9vectorAd
 
 bpftime includes specialized map types optimized for GPU operations:
 
-### `BPF_MAP_TYPE_NV_GPU_ARRAY_MAP` (1502)
+### `BPF_MAP_TYPE_PERGPUTREAD_ARRAY_MAP` (1502)
 
 GPU-resident array maps with **per-thread storage** for high-performance data collection.
 
@@ -152,7 +154,7 @@ Key features:
 
 Implementation: `runtime/src/bpf_map/gpu/nv_gpu_array_map.cpp:14-81`
 
-### `BPF_MAP_TYPE_NV_GPU_RINGBUF_MAP` (1527)
+### `BPF_MAP_TYPE_GPU_RINGBUF_MAP` (1527)
 
 GPU ring buffer maps for efficient **per-thread event streaming** to host.
 

@@ -3,15 +3,15 @@
 #include <bpf/bpf_helpers.h>
 #include <bpf/bpf_tracing.h>
 
-#define BPF_MAP_TYPE_NV_GPU_ARRAY_MAP 1502
-#define BPF_MAP_TYPE_NV_GPU_RINGBUF_MAP 1527
+#define BPF_MAP_TYPE_PERGPUTREAD_ARRAY_MAP 1502
+#define BPF_MAP_TYPE_GPU_RINGBUF_MAP 1527
 
 struct big_struct {
 	char s[1024];
 };
 
 struct {
-	__uint(type, BPF_MAP_TYPE_NV_GPU_RINGBUF_MAP);
+	__uint(type, BPF_MAP_TYPE_GPU_RINGBUF_MAP);
 	__uint(max_entries, 16);
 	__type(key, u32);
 	__type(value, struct big_struct);
