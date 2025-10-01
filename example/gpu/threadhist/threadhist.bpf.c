@@ -3,10 +3,10 @@
 #include <bpf/bpf_helpers.h>
 #include <bpf/bpf_tracing.h>
 
-#define BPF_MAP_TYPE_NV_GPU_ARRAY_MAP 1502
+#define BPF_MAP_TYPE_PERGPUTD_ARRAY_MAP 1502
 
 struct {
-	__uint(type, BPF_MAP_TYPE_NV_GPU_ARRAY_MAP);
+	__uint(type, BPF_MAP_TYPE_PERGPUTD_ARRAY_MAP);
 	__uint(max_entries, 1);
 	__type(key, u32);
 	__type(value, u64);

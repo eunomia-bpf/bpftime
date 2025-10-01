@@ -23,7 +23,7 @@ These imbalances mean some threads are busy while others are idle, wasting preci
 
 `threadhist` uses a GPU array map to maintain a per-thread counter. Every time a thread exits the kernel, it increments its counter by 1. The userspace program periodically reads these counters and displays a histogram showing exactly how many times each thread has executed.
 
-## Why This Matters: Real Performance Stories
+## Why This Matters
 
 ### The Grid-Stride Workload Imbalance
 
