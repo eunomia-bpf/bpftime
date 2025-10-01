@@ -12,7 +12,6 @@ env:
   BPFTIME_VM_NAME: llvm
 jobs:
   build-runtime:
-    if: false
     strategy:
       matrix:
         enable_jit:
