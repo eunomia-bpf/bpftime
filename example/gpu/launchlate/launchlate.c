@@ -28,46 +28,77 @@ static void sig_handler(int sig)
 	exiting = true;
 }
 
-static int print_stat(struct launchlate_bpf *obj)
+static int print_histogram(struct launchlate_bpf *obj)
 {
 	time_t t;
 	struct tm *tm;
 	char ts[16];
-	uint32_t key, *prev_key = NULL;
+	uint32_t i;
 	uint64_t value;
 	int err = 0;
-	int fd = bpf_map__fd(obj->maps.call_count);
+	int fd = bpf_map__fd(obj->maps.time_histogram);
+	uint64_t total = 0;
+
+	// Time range labels for each bin
+	const char *labels[] = {
+		"0-100ns",
+		"100ns-1us",
+		"1-10us",
+		"10-100us",
+		"100us-1ms",
+		"1-10ms",
+		"10-100ms",
+		"100ms-1s",
+		"1s-10s",
+		">10s"
+	};
 
 	time(&t);
 	tm = localtime(&t);
 	strftime(ts, sizeof(ts), "%H:%M:%S", tm);
 
-	printf("%-9s\n", ts);
+	printf("\n%-9s Launch Latency Distribution:\n", ts);
+	printf("%-15s : count    distribution\n", "latency");
 
-	while (1) {
-		err = bpf_map_get_next_key(fd, prev_key, &key);
-		if (err) {
-			if (errno == ENOENT) {
-				err = 0;
-				break;
-			}
-			warn("bpf_map_get_next_key failed: %s\n",
-			     strerror(errno));
-			return err;
-		}
-		err = bpf_map_lookup_elem(fd, &key, &value);
-		if (err) {
+	// Read all histogram bins
+	for (i = 0; i < 10; i++) {
+		err = bpf_map_lookup_elem(fd, &i, &value);
+		if (err && errno != ENOENT) {
 			warn("bpf_map_lookup_elem failed: %s\n",
 			     strerror(errno));
 			return err;
 		}
-		printf("	pid=%-5" PRIu32 " ", key);
-		printf("	calls: %" PRIu64 "\n", value);
-
-		prev_key = &key;
+		if (!err && value > 0) {
+			total += value;
+		}
 	}
+
+	// Print histogram
+	for (i = 0; i < 10; i++) {
+		value = 0;
+		err = bpf_map_lookup_elem(fd, &i, &value);
+		if (err && errno != ENOENT) {
+			warn("bpf_map_lookup_elem failed: %s\n",
+			     strerror(errno));
+			return err;
+		}
+
+		if (value > 0) {
+			printf("%-15s : %-8" PRIu64 " |", labels[i], value);
+
+			// Print histogram bar
+			int bar_len = (value * 40) / (total > 0 ? total : 1);
+			if (bar_len == 0 && value > 0)
+				bar_len = 1;
+			for (int j = 0; j < bar_len; j++)
+				printf("*");
+			printf("\n");
+		}
+	}
+
+	printf("Total samples: %" PRIu64 "\n", total);
 	fflush(stdout);
-	return err;
+	return 0;
 }
 
 int main(int argc, char **argv)
@@ -129,9 +160,12 @@ int main(int argc, char **argv)
 		fprintf(stderr, "Failed to attach BPF skeleton\n");
 		goto cleanup;
 	}
+
+	printf("\nMonitoring CUDA kernel launch latency... Hit Ctrl-C to end.\n");
+
 	while (!exiting) {
-		sleep(1);
-		print_stat(skel);
+		sleep(2);  // Update every 2 seconds
+		print_histogram(skel);
 	}
 cleanup:
 	/* Clean up */
