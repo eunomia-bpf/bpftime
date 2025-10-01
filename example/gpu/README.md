@@ -114,14 +114,78 @@ The GPU support is built on the `nv_attach_impl` system (`attach/nv_attach_impl/
 
 ## Examples
 
-Complete working examples with full source code, build instructions, and READMEs are available on GitHub:
+### [kernelretsnoop](https://github.com/eunomia-bpf/bpftime/tree/master/example/gpu/kernelretsnoop) - Per-Thread Exit Timestamp Tracer
 
-- **[kernelretsnoop](https://github.com/eunomia-bpf/bpftime/tree/master/example/gpu/kernelretsnoop)**: Captures per-thread exit timestamps to detect thread divergence, memory access patterns, and warp scheduling issues
-- **[threadhist](https://github.com/eunomia-bpf/bpftime/tree/master/example/gpu/threadhist)**: Per-thread execution histogram using GPU array maps to detect workload imbalance
+Attaches to CUDA kernel exits and records the exact nanosecond timestamp when each GPU thread completes execution. This reveals thread divergence, memory access patterns, and warp scheduling issues that are invisible to traditional profilers.
+
+**Use case**: You notice your kernel is slower than expected. `kernelretsnoop` reveals that thread 31 in each warp finishes 750ns later than threads 0-30, exposing a boundary condition causing divergence. You refactor to eliminate the branch, and all threads now complete within nanoseconds of each other.
+
+```c
+// eBPF program runs on GPU at kernel exit
+SEC("kretprobe/_Z9vectorAddPKfS0_Pf")
+int ret__cuda() {
+    u64 tid_x, tid_y, tid_z;
+    bpf_get_thread_idx(&tid_x, &tid_y, &tid_z);  // Which thread am I?
+    u64 ts = bpf_get_globaltimer();               // When did I finish?
+
+    // Write to ringbuffer for userspace analysis
+    bpf_perf_event_output(ctx, &events, 0, &data, sizeof(data));
+}
+```
+
+### [threadhist](https://github.com/eunomia-bpf/bpftime/tree/master/example/gpu/threadhist) - Thread Execution Count Histogram
+
+Uses GPU array maps to count how many times each thread executes. Detects workload imbalance where some threads do far more work than others, wasting GPU compute capacity.
+
+**Use case**: Your grid-stride loop processes 1M elements with 5 threads. You expect balanced work, but `threadhist` shows thread 4 executes only 75% as often as threads 0-3. The boundary elements divide unevenly, leaving thread 4 idle while others work. You adjust the distribution and achieve balanced execution.
+
+```c
+// eBPF program runs on GPU at kernel exit
+SEC("kretprobe/_Z9vectorAddPKfS0_Pf")
+int ret__cuda() {
+    u64 tid_x, tid_y, tid_z;
+    bpf_get_thread_idx(&tid_x, &tid_y, &tid_z);
+
+    // Per-thread counter in GPU array map
+    u64 *count = bpf_map_lookup_elem(&thread_counts, &tid_x);
+    if (count) {
+        __atomic_add_fetch(count, 1, __ATOMIC_SEQ_CST);  // Thread N executed once more
+    }
+}
+```
+
+### [launchlate](https://github.com/eunomia-bpf/bpftime/tree/master/example/gpu/launchlate) - Kernel Launch Latency Profiler
+
+Measures the time between `cudaLaunchKernel()` on CPU and actual kernel execution on GPU. Reveals hidden queue delays, stream dependencies, and scheduling overhead that make fast kernels slow in production.
+
+**Use case**: Your kernels execute in 100μs each, but users report 50ms latency. `launchlate` shows 200-500μs launch latency per kernel because each waits for the previous one and memory transfers to complete. Total time is 5ms, not 1ms. You switch to CUDA graphs, batching all launches, and latency drops to 1.2ms.
+
+```c
+BPF_MAP_DEF(BPF_MAP_TYPE_ARRAY, launch_time);
+
+// CPU-side uprobe captures launch time
+SEC("uprobe/app:cudaLaunchKernel")
+int uprobe_launch(struct pt_regs *ctx) {
+    u64 ts_cpu = bpf_ktime_get_ns();  // When did CPU request launch?
+    bpf_map_update_elem(&launch_time, &key, &ts_cpu, BPF_ANY);
+}
+
+// GPU-side kprobe captures execution start
+SEC("kprobe/_Z9vectorAddPKfS0_Pf")
+int kprobe_exec() {
+    u64 ts_gpu = bpf_get_globaltimer();  // When did GPU actually start?
+    u64 *ts_cpu = bpf_map_lookup_elem(&launch_time, &key);
+
+    u64 latency = ts_gpu - *ts_cpu;  // How long did kernel wait in queue?
+    u32 bin = get_hist_bin(latency);
+    // Update histogram...
+}
+```
+
+### Other Examples
+
 - **[rocm-counter](https://github.com/eunomia-bpf/bpftime/tree/master/example/gpu/rocm-counter)**: AMD GPU instrumentation (experimental)
 - **[cuda-counter](https://github.com/eunomia-bpf/bpftime/tree/master/example/gpu/cuda-counter)**: Basic probe/retprobe with timing measurements
-
-Each example includes CUDA/ROCm application source, eBPF probe programs, Makefile, and detailed usage instructions.
 
 ### Key Components
 
