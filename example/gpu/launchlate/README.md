@@ -48,8 +48,7 @@ You need to start two processes:
 ### 1. Launch the eBPF Program (Server)
 
 ```bash
-BPFTIME_LOG_OUTPUT=console LD_PRELOAD=build/runtime/syscall-server/libbpftime-syscall-server.so \
-  example/gpu/launchlate/launchlate
+BPFTIME_LOG_OUTPUT=console LD_PRELOAD=build/runtime/syscall-server/libbpftime-syscall-server.so  example/gpu/launchlate/launchlate
 ```
 
 This process loads the eBPF program and waits for CUDA events.
@@ -59,8 +58,7 @@ This process loads the eBPF program and waits for CUDA events.
 In another terminal:
 
 ```bash
-BPFTIME_OUTPUT= LD_PRELOAD=build/runtime/agent/libbpftime-agent.so \
-  example/gpu/launchlate/vec_add
+BPFTIME_LOG_OUTPUT=console LD_PRELOAD=build/runtime/agent/libbpftime-agent.so  example/gpu/launchlate/vec_add
 ```
 
 This runs the vector addition program with the bpftime agent, which connects to the first process for eBPF execution.
