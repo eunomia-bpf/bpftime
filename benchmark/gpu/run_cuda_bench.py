@@ -225,11 +225,12 @@ def print_results_table(device: str, results: Dict[str, Optional[float]]):
 def main():
     # Determine paths
     script_dir = os.path.dirname(os.path.abspath(__file__))
-    bench_dir = os.path.join(script_dir, 'benchmark', 'cuda')
-    build_dir = os.path.join(script_dir, 'build')
+    repo_root = os.path.dirname(os.path.dirname(script_dir))
+    bench_dir = script_dir
+    build_dir = os.path.join(repo_root, 'build')
 
     if not os.path.exists(bench_dir):
-        print(f"{Colors.FAIL}Error: benchmark/cuda directory not found{Colors.ENDC}")
+        print(f"{Colors.FAIL}Error: benchmark/gpu directory not found{Colors.ENDC}")
         sys.exit(1)
 
     iterations = 10000
