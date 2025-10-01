@@ -59,7 +59,7 @@ This process loads the eBPF program and waits for CUDA events.
 In another terminal:
 
 ```bash
-LD_PRELOAD=build/runtime/agent/libbpftime-agent.so \
+BPFTIME_OUTPUT= LD_PRELOAD=build/runtime/agent/libbpftime-agent.so \
   example/gpu/cuda-counter/vec_add
 ```
 
