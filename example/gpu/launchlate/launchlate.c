@@ -9,6 +9,8 @@
 #include <bpf/bpf.h>
 #include <unistd.h>
 #include <stdlib.h>
+#include <errno.h>
+#include <string.h>
 #include "./.output/launchlate.skel.h"
 #include <inttypes.h>
 #define warn(...) fprintf(stderr, __VA_ARGS__)
@@ -72,6 +74,9 @@ int main(int argc, char **argv)
 {
 	struct launchlate_bpf *skel;
 	int err;
+	struct timespec ts_mono, ts_real;
+	int64_t offset_ns;
+	uint32_t key = 0;
 
 	/* Set up libbpf errors and debug info callback */
 	libbpf_set_print(libbpf_print_fn);
@@ -93,6 +98,32 @@ int main(int argc, char **argv)
 		fprintf(stderr, "Failed to load and verify BPF skeleton\n");
 		goto cleanup;
 	}
+
+	/* Calibrate clocks: compute offset between CLOCK_REALTIME and CLOCK_MONOTONIC */
+	if (clock_gettime(CLOCK_MONOTONIC, &ts_mono) < 0) {
+		fprintf(stderr, "Failed to get CLOCK_MONOTONIC: %s\n", strerror(errno));
+		goto cleanup;
+	}
+	if (clock_gettime(CLOCK_REALTIME, &ts_real) < 0) {
+		fprintf(stderr, "Failed to get CLOCK_REALTIME: %s\n", strerror(errno));
+		goto cleanup;
+	}
+
+	/* Calculate offset: realtime - monotonic */
+	offset_ns = (int64_t)(ts_real.tv_sec * 1000000000ULL + ts_real.tv_nsec) -
+		    (int64_t)(ts_mono.tv_sec * 1000000000ULL + ts_mono.tv_nsec);
+
+	printf("Clock calibration: REALTIME - MONOTONIC = %ld ns\n", offset_ns);
+	printf("  MONOTONIC: %ld.%09ld\n", ts_mono.tv_sec, ts_mono.tv_nsec);
+	printf("  REALTIME:  %ld.%09ld\n", ts_real.tv_sec, ts_real.tv_nsec);
+
+	/* Store offset in BPF map */
+	err = bpf_map_update_elem(bpf_map__fd(skel->maps.clock_offset), &key, &offset_ns, BPF_ANY);
+	if (err) {
+		fprintf(stderr, "Failed to update clock_offset map: %s\n", strerror(errno));
+		goto cleanup;
+	}
+
 	err = launchlate_bpf__attach(skel);
 	if (err) {
 		fprintf(stderr, "Failed to attach BPF skeleton\n");
