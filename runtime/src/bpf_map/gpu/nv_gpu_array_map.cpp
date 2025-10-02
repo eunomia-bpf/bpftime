@@ -54,7 +54,7 @@ nv_gpu_array_map_impl::nv_gpu_array_map_impl(
 	auto total_buffer_size =
 		(uint64_t)value_size * max_entries * thread_count;
 	SPDLOG_INFO(
-		"Initializing map type of BPF_MAP_TYPE_NV_GPU_ARRAY_MAP, total_buffer_size={}",
+		"Initializing map type of BPF_MAP_TYPE_PERGPUTD_ARRAY_MAP, total_buffer_size={}",
 		total_buffer_size);
 	if (auto err = cuMemAlloc(&server_gpu_shared_mem, total_buffer_size);
 	    err != CUDA_SUCCESS) {

@@ -48,7 +48,7 @@ You need to start two processes:
 ### 1. Launch the eBPF Program (Server)
 
 ```bash
-LD_PRELOAD=build/runtime/syscall-server/libbpftime-syscall-server.so \
+BPFTIME_LOG_OUTPUT=console LD_PRELOAD=build/runtime/syscall-server/libbpftime-syscall-server.so \
   example/cuda-counter/cuda_probe
 ```
 

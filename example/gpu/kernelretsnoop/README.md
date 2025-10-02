@@ -22,7 +22,7 @@ The challenge is that GPU hardware and traditional profilers only show you aggre
 
 This simple data unlocks powerful insights into your kernel's behavior.
 
-## Why This Matters: Real Performance Stories
+## Why This Matters
 
 ### The Case of the Divergent Warp
 
