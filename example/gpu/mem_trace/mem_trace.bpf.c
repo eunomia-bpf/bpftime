@@ -9,7 +9,7 @@
 #include <bpf/bpf_tracing.h>
 
 SEC("kprobe/__memcapture")
-int trace_cuda_kernel__cuda(struct pt_regs *ctx)
+int cuda__trace_cuda_kernel(struct pt_regs *ctx)
 {
 	bpf_printk("mem_trace called");
 	return 0;

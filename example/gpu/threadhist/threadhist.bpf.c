@@ -19,7 +19,7 @@ static const u64 (*bpf_get_block_dim)(u64 *x, u64 *y, u64 *z) = (void *)504;
 static const u64 (*bpf_get_thread_idx)(u64 *x, u64 *y, u64 *z) = (void *)505;
 
 SEC("kretprobe/_Z9vectorAddPKfS0_Pf")
-int retprobe__cuda()
+int cuda__retprobe()
 {
 	u32 key = 0;
 	u64 *cnt = bpf_map_lookup_elem(&call_count, &key);

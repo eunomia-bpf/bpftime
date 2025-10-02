@@ -60,7 +60,9 @@ int nv_attach_impl::create_attach_with_ebpf_callback(
 	if (attach_type == ATTACH_CUDA_PROBE) {
 		if (std::get<std::string>(data.code_addr_or_func_name) ==
 		    "__memcapture") {
-			SPDLOG_INFO("Recording memcapture in nv_attach_impl");
+			SPDLOG_INFO(
+				"Recording memcapture in nv_attach_impl, instructions count = {}",
+				data.instructions.size());
 			auto id = this->allocate_id();
 			hook_entries[id] = nv_attach_entry{
 				.type = nv_attach_cuda_memcapture{},
