@@ -90,6 +90,7 @@ class nv_attach_impl final : public base_attach_impl {
 	virtual ~nv_attach_impl();
 	std::vector<std::unique_ptr<__fatBinC_Wrapper_t>> stored_binaries_header;
 	std::vector<std::unique_ptr<std::vector<uint8_t>>> stored_binaries_body;
+	std::vector<void **> stored_binaries_handles;
 	std::optional<std::vector<uint8_t>>
 	hack_fatbin(std::vector<uint8_t> &&);
 	std::optional<std::string>

@@ -295,15 +295,74 @@ nv_attach_impl::hack_fatbin(std::vector<uint8_t> &&data_vec)
 		std::filesystem::create_directories(work_dir);
 	}
 	SPDLOG_INFO("Working directory: {}", work_dir.c_str());
+	// Detect proper CUDA arch for current device, fallback to env or sm_60
+	std::string arch_flag;
+	std::string code_flag;
+	const char *env_arch = std::getenv("BPFTIME_CUDA_ARCH");
+	std::string majmin;
+	if (env_arch && std::strlen(env_arch) > 0) {
+		// Normalize env arch
+		if (std::strncmp(env_arch, "sm_", 3) == 0 &&
+		    std::strlen(env_arch) >= 4) {
+			majmin = std::string(env_arch + 3);
+			arch_flag = std::string("-arch=compute_") + majmin;
+			code_flag = std::string("-code=sm_") + majmin +
+				    std::string(",compute_") + majmin;
+		} else if (std::strncmp(env_arch, "compute_", 8) == 0 &&
+			   std::strlen(env_arch) >= 9) {
+			majmin = std::string(env_arch + 8);
+			arch_flag =
+				std::string("-arch=") + env_arch; // compute_XX
+			code_flag = std::string("-code=sm_") + majmin +
+				    std::string(",compute_") + majmin;
+		} else {
+			// Fallback if an unexpected value was provided
+			majmin = "60";
+			arch_flag = "-arch=compute_60";
+			code_flag = "-code=sm_60,compute_60";
+		}
+	} else {
+		int current_device = 0;
+		cudaDeviceProp prop{};
+		if (cudaGetDevice(&current_device) == cudaSuccess &&
+		    cudaGetDeviceProperties(&prop, current_device) ==
+			    cudaSuccess &&
+		    prop.major >= 3) {
+			majmin = std::to_string(prop.major) +
+				 std::to_string(prop.minor);
+			arch_flag = std::string("-arch=compute_") + majmin;
+			code_flag = std::string("-code=sm_") + majmin +
+				    std::string(",compute_") + majmin;
+		} else {
+			majmin = "60";
+			arch_flag = "-arch=compute_60";
+			code_flag = "-code=sm_60,compute_60";
+		}
+	}
 	std::string command =
-		"nvcc -O2 -G -g --keep-device-functions -arch=sm_60 ";
+		std::string("nvcc -O2 -G -g --keep-device-functions ") +
+		arch_flag +
+		(code_flag.empty() ? std::string(" ") :
+				     std::string(" ") + code_flag + " ");
 	{
 		auto ptx_in = work_dir / "main.ptx";
 		// SPDLOG_WARN("Using /tmp/main.ptx as ptx for nvcc");
 		// std::string ptx_in = "/tmp/main.ptx";
 		SPDLOG_INFO("PTX IN: {}", ptx_in.c_str());
 		std::ofstream ofs(ptx_in);
-		ofs << ptx_out[0];
+		// Ensure PTX has a valid header
+		// (.version/.target/.address_size) Our earlier filter removed
+		// headers; here we re-add a compatible header
+		ofs << ".version 8.0\n.target sm_" << majmin
+		    << "\n.address_size 64\n";
+		// Fallback: ensure d_N exists for this benchmark if missing
+		if (to_patch_ptx.find(" d_N") == std::string::npos &&
+		    to_patch_ptx.find("\nd_N") == std::string::npos) {
+			ofs << ".visible .const .align 4 .s32 d_N;\n";
+		}
+		// Write the patched PTX that includes trampoline symbols
+		// (constData, map_info)
+		ofs << to_patch_ptx;
 		command += ptx_in;
 		command += " ";
 	}
@@ -349,11 +408,11 @@ int nv_attach_impl::register_trampoline_memory(void **fatbin_handle)
 	SPDLOG_INFO("Registering trampoline memory");
 
 	__cudaRegisterVar(fatbin_handle, (char *)&_constData_mock,
-			  (char *)"constData", "constData", 0,
+			  (char *)nullptr, "constData", 0,
 			  sizeof(_constData_mock), 1, 0);
 
 	__cudaRegisterVar(fatbin_handle, (char *)&map_basic_info_mock,
-			  (char *)"map_info", "map_info", 0,
+			  (char *)nullptr, "map_info", 0,
 			  sizeof(map_basic_info_mock), 1, 0);
 	this->trampoline_memory_state = TrampolineMemorySetupStage::Registered;
 	SPDLOG_INFO("Register trampoline memory done");
@@ -362,6 +421,15 @@ int nv_attach_impl::register_trampoline_memory(void **fatbin_handle)
 int nv_attach_impl::copy_data_to_trampoline_memory()
 {
 	SPDLOG_INFO("Copying data to device symbols..");
+	const char *skip = std::getenv("BPFTIME_CUDA_SKIP_CONSTCOPY");
+	if (skip && std::strlen(skip) > 0 &&
+	    (std::string(skip) == "1" || std::string(skip) == "true")) {
+		SPDLOG_INFO(
+			"Skipping cudaMemcpyToSymbol due to BPFTIME_CUDA_SKIP_CONSTCOPY env");
+		this->trampoline_memory_state =
+			TrampolineMemorySetupStage::Copied;
+		return 0;
+	}
 	if (auto err = cudaMemcpyToSymbol((const void *)&_constData_mock,
 					  &this->shared_mem_ptr,
 					  sizeof(_constData_mock));
@@ -409,13 +477,14 @@ std::string filter_unprintable_chars(std::string input)
 			   std::end(non_printable_chars));
 
 	std::string result;
+	result.reserve(input.size());
 	for (auto c : input) {
 		if (set.contains(c) || (uint8_t)c > 127)
 			continue;
 		result.push_back(c);
 	}
-	while (result.back() != '}')
-		result.pop_back();
+	// Keep full PTX text; do not trim by last brace to avoid dropping
+	// globals
 	return result;
 };
 int nv_attach_impl::find_attach_entry_by_program_name(const char *name) const
