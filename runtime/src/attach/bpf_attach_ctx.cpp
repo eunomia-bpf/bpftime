@@ -307,7 +307,7 @@ int bpf_attach_ctx::instantiate_bpf_link_handler_at(
 			    priv_data.get());
 		    p) {
 			SPDLOG_ERROR(
-				"A CUDA attach must be used with a CUDA program (program with name startes with `cuda__`), not {}",
+				"A CUDA attach must be used with a CUDA program (program with name starts with `cuda__`), not {}",
 				prog->prog_name());
 			return -1;
 		}
