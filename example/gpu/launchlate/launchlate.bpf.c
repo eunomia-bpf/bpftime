@@ -82,7 +82,7 @@ static __always_inline u32 get_hist_bin(u64 delta_ns)
 
 // GPU-side probe - tracks when kernel actually executes on GPU
 SEC("kprobe/_Z9vectorAddPKfS0_Pf")
-int probe__cuda()
+int cuda__probe()
 {
 	u64 gpu_ts = bpf_get_globaltimer();
 	u32 key = 0;

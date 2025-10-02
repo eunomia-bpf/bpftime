@@ -29,7 +29,7 @@ struct data {
 };
 
 SEC("kretprobe/_Z9vectorAddPKfS0_Pf")
-int retprobe__cuda()
+int cuda__retprobe()
 {
 	struct data data;
 

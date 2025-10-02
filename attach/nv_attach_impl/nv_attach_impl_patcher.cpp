@@ -114,7 +114,8 @@ static std::string generate_ptx_for_ebpf(const std::vector<ebpf_inst> &inst,
 	vm.register_external_function(3, "map_delete", (void *)test_func);
 	vm.register_external_function(6, "print", (void *)test_func);
 	vm.register_external_function(14, "get_pid_tgid", (void *)test_func);
-	vm.register_external_function(25, "perf_event_output", (void *)test_func);
+	vm.register_external_function(25, "perf_event_output",
+				      (void *)test_func);
 
 	vm.register_external_function(501, "puts", (void *)test_func);
 	vm.register_external_function(502, "get_global_timer",
@@ -129,6 +130,8 @@ static std::string generate_ptx_for_ebpf(const std::vector<ebpf_inst> &inst,
 		"Compiling eBPF to PTX {}, eBPF instructions count {}, with arguments {}",
 		func_name, inst.size(), with_arguments);
 	auto original_ptx = *ctx.generate_ptx(with_arguments);
+	SPDLOG_INFO("eBPF to PTX compilation done, PTX length {}",
+		    original_ptx.length());
 	if (spdlog::get_level() <= SPDLOG_LEVEL_DEBUG) {
 		auto path = "/tmp/dump-ebpf." + func_name + ".ptx";
 
@@ -151,7 +154,9 @@ nv_attach_impl::patch_with_memcapture(std::string input,
 		".target",
 		".address_size",
 	};
-	SPDLOG_INFO("Patching memcapture: input size {}", input.size());
+	SPDLOG_INFO(
+		"Patching memcapture: input size {}, original eBPF instructions count {}",
+		input.size(), entry.instuctions.size());
 	static std::regex pattern(
 		R"(^\s*(ld|st)\.(const|global|local|param)?\.(((s|u|b)(8|16|32|64))|\.b128|(\.f(16|16x2|32|64))) +(.+), *(.+);\s*$)");
 	std::ostringstream function_def;
@@ -175,10 +180,9 @@ nv_attach_impl::patch_with_memcapture(std::string input,
 			count++;
 
 			auto insts = entry.instuctions;
-
 			{
 				SPDLOG_INFO(
-					"Generating trampoline for ebpf entry..");
+					"Generating trampoline setting up argument of memcapture eBPF program");
 				std::vector<ebpf_inst> entry;
 				int32_t total_length;
 				{
@@ -242,6 +246,10 @@ nv_attach_impl::patch_with_memcapture(std::string input,
 						.offset = (int16_t)(i),
 						.imm = 0 });
 				}
+				SPDLOG_INFO(
+					"Inserted {} instructions to entry, after inserted total count {}",
+					entry.size(),
+					entry.size() + insts.size());
 				insts.insert(insts.begin(), entry.begin(),
 					     entry.end());
 			}
