@@ -22,14 +22,6 @@ jobs:
       image: ${{ fromJSON('{"ubuntu-2204":"manjusakalza/bpftime-base-image:ubuntu-2204","fedora-39":"manjusakalza/bpftime-base-image:fedora-39","openeuler-2403sp2":"openeuler/openeuler:24.03-lts-sp1"}')[matrix.container] }}
       options: --privileged
     steps:
-      - name: Install git (Ubuntu)
-        if: matrix.container == 'ubuntu-2204'
-        run: |
-          true
-      - name: Install git (Fedora)
-        if: matrix.container == 'fedora-39'
-        run: |
-          true
       - name: Install git (openEuler)
         if: matrix.container == 'openeuler-2403sp2'
         run: |
@@ -81,18 +73,6 @@ jobs:
           dnf install -y dnf-plugins-core
           dnf config-manager --add-repo https://developer.download.nvidia.com/compute/cuda/repos/fedora39/x86_64/cuda-fedora39.repo
           dnf install -y lcov cuda clang-devel
-      - name: Install build tools (Ubuntu)
-        if: "matrix.container == 'ubuntu-2204'"
-        run: |
-          true
-      - name: Install build tools (Fedora)
-        if: "matrix.container == 'fedora-39'"
-        run: |
-          true
-      - name: Install LLVM toolchain (Ubuntu)
-        if: "matrix.container == 'ubuntu-2204'"
-        run: |
-          true
 
       - name: Build runtime tests (Ubuntu/Fedora)
         if: matrix.container != 'openeuler-2403sp2'
