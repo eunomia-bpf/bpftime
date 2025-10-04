@@ -5,7 +5,7 @@ on:
   push:
     branches: ["*"]
   pull_request:
-    branches: ["master"]
+    branches: ["master", "main"]
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}-${{ github.event_name }}
   cancel-in-progress: true
@@ -17,28 +17,57 @@ jobs:
     runs-on: "ubuntu-latest"
     strategy:
       matrix:
-        container:
-          - ubuntu-2204
-          - fedora-39
+        include:
+          - container: ubuntu-2204
+            image: manjusakalza/bpftime-base-image:ubuntu-2204
+          - container: fedora-39
+            image: manjusakalza/bpftime-base-image:fedora-39
+          - container: openeuler-2403sp2
+            image: openeuler/openeuler:24.03-lts-sp1
     container:
-      image: "manjusakalza/bpftime-base-image:${{matrix.container}}"
+      image: "${{ matrix.image }}"
       options: --privileged
     steps:
+      - name: Install git (openEuler)
+        if: matrix.container == 'openeuler-2403sp2'
+        run: |
+          set -e
+          if command -v dnf >/dev/null 2>&1; then PM=dnf; else PM=yum; fi
+          $PM -y update
+          $PM -y install git ca-certificates
       - uses: actions/checkout@v2
         with:
           submodules: "recursive"
+      - name: Install deps (openEuler)
+        if: matrix.container == 'openeuler-2403sp2'
+        run: |
+          set -e
+          if command -v dnf >/dev/null 2>&1; then PM=dnf; else PM=yum; fi
+          $PM -y install \
+            cmake make gcc gcc-c++ \
+            clang llvm llvm-devel \
+            zlib-devel elfutils-libelf-devel pkgconf-pkg-config libasan \
+            boost-devel
+      - name: Install Python3 (openEuler)
+        if: matrix.container == 'openeuler-2403sp2'
+        run: |
+          set -e
+          if command -v dnf >/dev/null 2>&1; then PM=dnf; else PM=yum; fi
+          $PM -y install python3 || true
       - name: Remount shm dev
         # The size of /dev/shm defaults to be 64M, but boost won't detect this at all, leaving bus error to us..
         # So we remount it to make it larger
         run: |
           mount -o remount,size=1G /dev/shm
       - name: Setup conda
+        if: matrix.container != 'openeuler-2403sp2'
         uses: conda-incubator/setup-miniconda@v3
         with:
           channels: conda-forge,bioconda
           channel-priority: strict
           miniforge-version: latest
       - name: Install absl and protobuf
+        if: matrix.container != 'openeuler-2403sp2'
         run: conda install libabseil libprotobuf
       - name: Install lcov
         if: "matrix.container == 'ubuntu-2204'"
@@ -51,20 +80,118 @@ jobs:
           dnf config-manager --add-repo https://developer.download.nvidia.com/compute/cuda/repos/fedora39/x86_64/cuda-fedora39.repo
           dnf install -y lcov cuda clang-devel
 
-      - name: Build
+      - name: Build runtime tests (Ubuntu/Fedora)
+        if: matrix.container != 'openeuler-2403sp2'
         run: |
+          set -e
           export BPFTIME_VM_NAME=llvm
-          cmake -DTEST_LCOV=ON -DBPFTIME_LLVM_JIT=YES -DBPFTIME_ENABLE_UNIT_TESTING=YES -DENABLE_PROBE_WRITE_CHECK=1 -DENABLE_PROBE_READ_CHECK=1 -DCMAKE_BUILD_TYPE=Debug -B build
+          LLVM_CONFIG=""
+          for c in llvm-config-18 llvm-config-17 llvm-config-16 llvm-config-15 llvm-config; do
+            if command -v "$c" >/dev/null 2>&1; then LLVM_CONFIG="$c"; break; fi
+          done
+          echo "Using LLVM_CONFIG=${LLVM_CONFIG:-not found}"
+          LLVM_CMAKE_DIR=$([ -n "$LLVM_CONFIG" ] && "$LLVM_CONFIG" --cmakedir 2>/dev/null || true)
+          LLVM_LIBDIR=$([ -n "$LLVM_CONFIG" ] && "$LLVM_CONFIG" --libdir 2>/dev/null || true)
+          if [ -n "$LLVM_CMAKE_DIR" ]; then
+            cmake -DTEST_LCOV=ON -DBPFTIME_LLVM_JIT=YES -DBPFTIME_ENABLE_UNIT_TESTING=YES -DENABLE_PROBE_WRITE_CHECK=1 -DENABLE_PROBE_READ_CHECK=1 -DCMAKE_BUILD_TYPE=Debug -DLLVM_DIR="$LLVM_CMAKE_DIR" -B build
+          else
+            cmake -DTEST_LCOV=ON -DBPFTIME_LLVM_JIT=YES -DBPFTIME_ENABLE_UNIT_TESTING=YES -DENABLE_PROBE_WRITE_CHECK=1 -DENABLE_PROBE_READ_CHECK=1 -DCMAKE_BUILD_TYPE=Debug -B build
+          fi
+          if [ -n "$LLVM_LIBDIR" ]; then export LD_LIBRARY_PATH="$LLVM_LIBDIR:$LD_LIBRARY_PATH"; fi
           cmake --build build --config Debug --target bpftime_runtime_tests -j$(nproc)
-      - name: Test Runtime
+      - name: Test Runtime (Ubuntu/Fedora)
+        if: matrix.container != 'openeuler-2403sp2'
         run: |
           export BPFTIME_VM_NAME=llvm
           ./build/runtime/unit-test/bpftime_runtime_tests
+      - name: Build runtime libs for example (openEuler)
+        if: matrix.container == 'openeuler-2403sp2'
+        run: |
+          set -e
+          export BPFTIME_VM_NAME=llvm
+          LLVM_CONFIG=""
+          for c in llvm-config-18 llvm-config-17 llvm-config-16 llvm-config-15 llvm-config; do
+            if command -v "$c" >/dev/null 2>&1; then LLVM_CONFIG="$c"; break; fi
+          done
+          LLVM_CMAKE_DIR=$([ -n "$LLVM_CONFIG" ] && "$LLVM_CONFIG" --cmakedir 2>/dev/null || true)
+          LLVM_LIBDIR=$([ -n "$LLVM_CONFIG" ] && "$LLVM_CONFIG" --libdir 2>/dev/null || true)
+          if [ -n "$LLVM_CMAKE_DIR" ]; then
+            cmake -DTEST_LCOV=OFF -DBPFTIME_LLVM_JIT=YES -DBPFTIME_ENABLE_UNIT_TESTING=OFF -DENABLE_PROBE_WRITE_CHECK=1 -DENABLE_PROBE_READ_CHECK=1 -DENABLE_LLVM_SHARED=ON -DLLVM_DIR="$LLVM_CMAKE_DIR" -DCMAKE_BUILD_TYPE=Debug -B build
+          else
+            cmake -DTEST_LCOV=OFF -DBPFTIME_LLVM_JIT=YES -DBPFTIME_ENABLE_UNIT_TESTING=OFF -DENABLE_PROBE_WRITE_CHECK=1 -DENABLE_PROBE_READ_CHECK=1 -DENABLE_LLVM_SHARED=ON -DCMAKE_BUILD_TYPE=Debug -B build
+          fi
+          if [ -n "$LLVM_LIBDIR" ]; then export LD_LIBRARY_PATH="$LLVM_LIBDIR:$LD_LIBRARY_PATH"; fi
+          cmake --build build --config Debug --target bpftime-agent bpftime-syscall-server libbpf bpftool -j$(nproc)
+      
+      # Remove unrelated smoke tests; focus on malloc example to validate VM switching
+
+      - name: Build malloc example (openEuler)
+        if: matrix.container == 'openeuler-2403sp2'
+        run: |
+          export C_INCLUDE_PATH="build/libbpf:build/libbpf/bpf:third_party/bpftool/build/usr/include:third_party/bpftool/build/usr/include/bpf:third_party/bpftool/build/include:third_party/bpftool/build/include/bpf:${C_INCLUDE_PATH}"
+          export CPLUS_INCLUDE_PATH="$C_INCLUDE_PATH"
+          make -C example/malloc -j
+
+      - name: 'Run malloc example via LD_PRELOAD (LLVM server & agent, openEuler)'
+        if: "matrix.container == 'openeuler-2403sp2'"
+        shell: bash
+        env:
+          BPFTIME_VM_NAME: llvm
+          BPFTIME_LOG_OUTPUT: console
+          SPDLOG_LEVEL: debug
+          BPFTIME_SHARED_MEMORY_PATH: /dev/shm
+          GLIBC_TUNABLES: glibc.malloc.check=0:glibc.malloc.tcache_count=0:glibc.malloc.tcache_max=0
+          MALLOC_CHECK_: "0"
+          MALLOC_ARENA_MAX: "1"
+          LD_BIND_NOW: "1"
+          BPFTIME_LLJIT_DISABLE_EH_FRAME: "1"
+          BPFTIME_LLVM_SONAME: libLLVM-17.so
+          ASAN_OPTIONS: verify_asan_link_order=0:abort_on_error=1:disable_coredump=0:handle_segv=1:detect_leaks=0
+        run: |
+          set -euo pipefail
+          ROOT=$(pwd)
+          LLVM_LIBDIR=$(llvm-config --libdir 2>/dev/null || true)
+          export LD_LIBRARY_PATH="${LLVM_LIBDIR:+$LLVM_LIBDIR:}${LD_LIBRARY_PATH:-}"
+          SERVER_LIB="$ROOT/build/runtime/syscall-server/libbpftime-syscall-server.so"
+          AGENT_LIB="$ROOT/build/runtime/agent/libbpftime-agent.so"
+          test -f "$SERVER_LIB" && test -f "$AGENT_LIB"
+          LOG="$ROOT/openeuler_runtime_malloc.log"
+          :> "$LOG"
+          echo "SERVER_LIB=$SERVER_LIB" >> "$LOG"
+          echo "AGENT_LIB=$AGENT_LIB" >> "$LOG"
+          echo "LD_LIBRARY_PATH=$LD_LIBRARY_PATH" >> "$LOG"
+          ASAN_SONAME=$(gcc -print-file-name=libasan.so 2>/dev/null || true)
+          if [ ! -f "$ASAN_SONAME" ]; then
+            ALT="/usr/lib/gcc/$(gcc -dumpmachine)/$(gcc -dumpversion)/libasan.so"
+            [ -f "$ALT" ] && ASAN_SONAME="$ALT" || true
+          fi
+          echo "ASAN_SONAME=$ASAN_SONAME" >> "$LOG"
+          SRV_PRELOAD="$SERVER_LIB"
+          VICT_PRELOAD="$AGENT_LIB"
+          if [ -n "${ASAN_SONAME:-}" ] && [ -f "$ASAN_SONAME" ]; then
+            SRV_PRELOAD="$ASAN_SONAME:$SRV_PRELOAD"
+            VICT_PRELOAD="$ASAN_SONAME:$VICT_PRELOAD"
+          fi
+          echo "SERVER LD_PRELOAD=$SRV_PRELOAD" >> "$LOG"
+          echo "VICTIM LD_PRELOAD=$VICT_PRELOAD" >> "$LOG"
+          LD_PRELOAD="$SRV_PRELOAD" timeout 25s "$ROOT/example/malloc/malloc" >> "$LOG" 2>&1 & SP=$!
+          sleep 2
+          set +e
+          LD_PRELOAD="$VICT_PRELOAD" timeout 6s "$ROOT/example/malloc/victim" >> "$LOG" 2>&1
+          RC=$?
+          set -e
+          echo "victim rc=$RC" >> "$LOG"
+          wait $SP || true
+          tail -n 200 "$LOG"
+          grep -q "malloc calls: " "$LOG"
+
+
 
       - name: Generate runtime coverage (Ubuntu)
         if: "matrix.container == 'ubuntu-2204'"
         run: |
-          lcov --capture --directory . --output-file coverage-runtime.info --gcov-tool $(which gcov-12)
+          GCOV_BIN=$(command -v gcov-12 || command -v gcov-11 || command -v gcov || echo gcov)
+          lcov --capture --directory . --output-file coverage-runtime.info --gcov-tool "$GCOV_BIN"
           lcov --remove coverage-runtime.info '/usr/*' --output-file coverage-runtime.info
           lcov --list coverage-runtime.info
       - name: Generate runtime coverage (Fedora)
@@ -82,6 +209,7 @@ jobs:
             ./coverage-runtime.info
 
       - name: build runtime with mpk enable
+        if: matrix.container != 'openeuler-2403sp2'
         run: |
           rm -rf build
           cmake -Bbuild -DTEST_LCOV=ON -DBPFTIME_LLVM_JIT=YES  -DBPFTIME_ENABLE_UNIT_TESTING=YES -DBPFTIME_ENABLE_MPK=YES -DCMAKE_BUILD_TYPE=Debug -DENABLE_PROBE_WRITE_CHECK=1 -DENABLE_PROBE_READ_CHECK=1 -Dabsl_DIR=~/miniconda3/lib/cmake/absl -DProtobuf_DIR=~/miniconda3/lib/cmake/protobuf -Dutf8_range_DIR=~/miniconda3/lib/cmake/utf8_range
@@ -99,11 +227,13 @@ jobs:
           # sed -i "s/&::descriptor_table_pos_2finclude_2fproto_2fhandle_2eproto/nullptr/g" build/runtime/pos/cuda_impl/proto/*.pb.cc
           cmake --build build --config Debug --target bpftime_runtime_tests -j$(nproc)
       - name: test runtime with mpk
+        if: matrix.container != 'openeuler-2403sp2'
         run: ./build/runtime/unit-test/bpftime_runtime_tests
       - name: Generate runtime with mpk enable coverage (Ubuntu)
         if: "matrix.container == 'ubuntu-2204'"
         run: |
-          lcov --capture --directory . --output-file coverage-runtime-mpk.info --gcov-tool $(which gcov-12)
+          GCOV_BIN=$(command -v gcov-12 || command -v gcov-11 || command -v gcov || echo gcov)
+          lcov --capture --directory . --output-file coverage-runtime-mpk.info --gcov-tool "$GCOV_BIN"
           lcov --remove coverage-runtime-mpk.info '/usr/*' --output-file coverage-runtime-mpk.info
           lcov --list coverage-runtime-mpk.info
       - name: Generate runtime with mpk enable coverage (Fedora)
