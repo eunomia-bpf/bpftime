@@ -105,7 +105,7 @@ static void test_func()
 std::string
 generate_ptx_for_ebpf(const std::vector<ebpf_inst> &inst,
 		      const std::string &func_name, bool with_arguments,
-		      bool add_regiter_guard_and_filter_version_headers)
+		      bool add_register_guard_and_filter_version_headers)
 {
 	llvmbpf_vm vm;
 	vm.register_external_function(1, "map_lookup", (void *)test_func);
@@ -139,7 +139,7 @@ generate_ptx_for_ebpf(const std::vector<ebpf_inst> &inst,
 		SPDLOG_DEBUG("Dumped {}", path);
 	}
 	std::string filtered_ptx;
-	if (add_regiter_guard_and_filter_version_headers) {
+	if (add_register_guard_and_filter_version_headers) {
 		filtered_ptx = add_register_guard_for_ebpf_ptx_func(
 			filter_compiled_ptx_for_ebpf_program(original_ptx,
 							     func_name));

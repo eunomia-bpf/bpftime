@@ -120,7 +120,7 @@ std::string filter_out_version_headers(const std::string &input);
 std::string
 generate_ptx_for_ebpf(const std::vector<ebpf_inst> &inst,
 		      const std::string &func_name, bool with_arguments,
-		      bool add_regiter_guard_and_filter_version_headers);
+		      bool add_register_guard_and_filter_version_headers);
 
 } // namespace attach
 } // namespace bpftime
