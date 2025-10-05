@@ -52,10 +52,6 @@ int nv_attach_impl::create_attach_with_ebpf_callback(
 	ebpf_run_callback &&cb, const attach_private_data &private_data,
 	int attach_type)
 {
-	// if (this->hook_entries.size() >= 1) {
-	// 	SPDLOG_ERROR("Only one nv attach could be used");
-	// 	return -1;
-	// }
 	auto data = dynamic_cast<const nv_attach_private_data &>(private_data);
 	if (attach_type == ATTACH_CUDA_PROBE) {
 		if (std::get<std::string>(data.code_addr_or_func_name) ==
@@ -72,6 +68,19 @@ int nv_attach_impl::create_attach_with_ebpf_callback(
 			this->map_basic_info = data.map_basic_info;
 			this->shared_mem_ptr = data.comm_shared_mem;
 			return id;
+		} else if (std::get<std::string>(data.code_addr_or_func_name) ==
+			   "__directly_run") {
+			SPDLOG_INFO(
+				"Recording directly run program on GPU, instructions count = {}",
+				data.instructions.size());
+			auto id = allocate_id();
+			hook_entries[id] = nv_attach_entry{
+				.type = nv_attach_directly_run_on_gpu{},
+				.instuctions = data.instructions,
+				.kernels = data.func_names
+			};
+			this->map_basic_info = data.map_basic_info;
+			this->shared_mem_ptr = data.comm_shared_mem;
 		} else {
 			SPDLOG_INFO("Recording kprobe for {}",
 				    std::get<std::string>(
@@ -286,6 +295,10 @@ nv_attach_impl::hack_fatbin(std::vector<uint8_t> &&data_vec)
 					"Failed to patch for probe/retprobe");
 				return {};
 			}
+		} else if (std::holds_alternative<nv_attach_directly_run_on_gpu>(
+				   entry.type)) {
+			SPDLOG_INFO(
+				"Found attach with nv_type nv_attach_directly_run_on_gpu, no need to patch");
 		}
 	}
 	to_patch_ptx = wrap_ptx_with_trampoline(to_patch_ptx);

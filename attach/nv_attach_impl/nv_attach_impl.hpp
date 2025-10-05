@@ -62,9 +62,10 @@ struct nv_attach_function_probe {
 	std::string func;
 	bool is_retprobe;
 };
-
+struct nv_attach_directly_run_on_gpu {};
 using nv_attach_type =
-	std::variant<nv_attach_cuda_memcapture, nv_attach_function_probe>;
+	std::variant<nv_attach_cuda_memcapture, nv_attach_function_probe,
+		     nv_attach_directly_run_on_gpu>;
 struct nv_attach_entry {
 	nv_attach_type type;
 	std::vector<ebpf_inst> instuctions;
@@ -85,7 +86,6 @@ class nv_attach_impl final : public base_attach_impl {
 	nv_attach_impl &operator=(const nv_attach_impl &) = delete;
 	nv_attach_impl();
 	virtual ~nv_attach_impl();
-	// std::unique_ptr<CUDAInjector> injector;
 	std::vector<std::unique_ptr<__fatBinC_Wrapper_t>> stored_binaries_header;
 	std::vector<std::unique_ptr<std::vector<uint8_t>>> stored_binaries_body;
 	std::optional<std::vector<uint8_t>>
