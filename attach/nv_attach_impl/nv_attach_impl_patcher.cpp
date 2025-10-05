@@ -98,15 +98,14 @@ std::string filter_compiled_ptx_for_ebpf_program(std::string input,
 
 	return ".func " + new_func_name + " " + result;
 }
-} // namespace bpftime::attach
-
 static void test_func()
 {
 }
 
-static std::string generate_ptx_for_ebpf(const std::vector<ebpf_inst> &inst,
-					 const std::string &func_name,
-					 bool with_arguments)
+std::string
+generate_ptx_for_ebpf(const std::vector<ebpf_inst> &inst,
+		      const std::string &func_name, bool with_arguments,
+		      bool add_regiter_guard_and_filter_version_headers)
 {
 	llvmbpf_vm vm;
 	vm.register_external_function(1, "map_lookup", (void *)test_func);
@@ -139,11 +138,18 @@ static std::string generate_ptx_for_ebpf(const std::vector<ebpf_inst> &inst,
 		ofs << original_ptx << std::endl;
 		SPDLOG_DEBUG("Dumped {}", path);
 	}
-	auto filtered_ptx = add_register_guard_for_ebpf_ptx_func(
-		filter_compiled_ptx_for_ebpf_program(original_ptx, func_name));
-
+	std::string filtered_ptx;
+	if (add_regiter_guard_and_filter_version_headers) {
+		filtered_ptx = add_register_guard_for_ebpf_ptx_func(
+			filter_compiled_ptx_for_ebpf_program(original_ptx,
+							     func_name));
+	} else {
+		filtered_ptx = original_ptx;
+	}
 	return filtered_ptx;
 }
+} // namespace bpftime::attach
+
 std::optional<std::string>
 nv_attach_impl::patch_with_memcapture(std::string input,
 				      const nv_attach_entry &entry,
@@ -256,7 +262,7 @@ nv_attach_impl::patch_with_memcapture(std::string input,
 
 			auto probe_func_name = memcapture_func_name(count);
 			auto filtered_ptx = generate_ptx_for_ebpf(
-				insts, probe_func_name, true);
+				insts, probe_func_name, true, true);
 			function_def << filtered_ptx << std::endl;
 			oss << "call " << probe_func_name << ";" << std::endl;
 		}
@@ -326,7 +332,7 @@ nv_attach_impl::patch_with_probe_and_retprobe(std::string ptx,
 				auto compiled_ebpf_ptx =
 					generate_ptx_for_ebpf(entry.instuctions,
 							      probe_func_name,
-							      false);
+							      false, true);
 				std::string sub_str = ptx.substr(
 					kernel_sec.begin,
 					kernel_sec.end - kernel_sec.begin);

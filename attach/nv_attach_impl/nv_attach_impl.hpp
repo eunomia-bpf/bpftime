@@ -71,6 +71,8 @@ struct nv_attach_entry {
 	std::vector<ebpf_inst> instuctions;
 	// Kernels to be patched for this attach entry
 	std::vector<std::string> kernels;
+	// program name for this attach entry
+	std::string program_name;
 };
 
 // Attach implementation of syscall trace
@@ -100,6 +102,8 @@ class nv_attach_impl final : public base_attach_impl {
 	int copy_data_to_trampoline_memory();
 	TrampolineMemorySetupStage trampoline_memory_state =
 		TrampolineMemorySetupStage::NotSet;
+	int find_attach_entry_by_program_name(const char *name) const;
+	int run_attach_entry_on_gpu(int attach_id);
 
     private:
 	void *frida_interceptor;
@@ -113,6 +117,11 @@ class nv_attach_impl final : public base_attach_impl {
 };
 std::string filter_unprintable_chars(std::string input);
 std::string filter_out_version_headers(const std::string &input);
+std::string
+generate_ptx_for_ebpf(const std::vector<ebpf_inst> &inst,
+		      const std::string &func_name, bool with_arguments,
+		      bool add_regiter_guard_and_filter_version_headers);
+
 } // namespace attach
 } // namespace bpftime
 #endif /* _BPFTIME_NV_ATTACH_IMPL_HPP */

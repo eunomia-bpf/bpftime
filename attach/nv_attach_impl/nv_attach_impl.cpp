@@ -1,6 +1,7 @@
 #include "nv_attach_impl.hpp"
 #include "cuda_runtime_api.h"
 #include "driver_types.h"
+#include "ebpf_inst.h"
 #include "frida-gum.h"
 
 #include "llvm_jit_context.hpp"
@@ -63,7 +64,8 @@ int nv_attach_impl::create_attach_with_ebpf_callback(
 			hook_entries[id] = nv_attach_entry{
 				.type = nv_attach_cuda_memcapture{},
 				.instuctions = data.instructions,
-				.kernels = data.func_names
+				.kernels = data.func_names,
+				.program_name = data.program_name
 			};
 			this->map_basic_info = data.map_basic_info;
 			this->shared_mem_ptr = data.comm_shared_mem;
@@ -77,7 +79,8 @@ int nv_attach_impl::create_attach_with_ebpf_callback(
 			hook_entries[id] = nv_attach_entry{
 				.type = nv_attach_directly_run_on_gpu{},
 				.instuctions = data.instructions,
-				.kernels = data.func_names
+				.kernels = data.func_names,
+				.program_name = data.program_name
 			};
 			this->map_basic_info = data.map_basic_info;
 			this->shared_mem_ptr = data.comm_shared_mem;
@@ -94,7 +97,8 @@ int nv_attach_impl::create_attach_with_ebpf_callback(
 						.is_retprobe = false,
 					},
 				.instuctions = data.instructions,
-				.kernels = data.func_names
+				.kernels = data.func_names,
+				.program_name = data.program_name
 			};
 			this->map_basic_info = data.map_basic_info;
 			this->shared_mem_ptr = data.comm_shared_mem;
@@ -112,7 +116,8 @@ int nv_attach_impl::create_attach_with_ebpf_callback(
 					.is_retprobe = true,
 				},
 			.instuctions = data.instructions,
-			.kernels = data.func_names
+			.kernels = data.func_names,
+			.program_name = data.program_name
 		};
 		this->map_basic_info = data.map_basic_info;
 		this->shared_mem_ptr = data.comm_shared_mem;
@@ -135,41 +140,6 @@ nv_attach_impl::nv_attach_impl()
 	assert(listener != nullptr);
 	this->frida_interceptor = interceptor;
 	this->frida_listener = listener;
-	// Lambda: 获取当前线程 TID（Linux 特有）
-	// auto get_tid = []() -> pid_t {
-	// 	return static_cast<pid_t>(syscall(SYS_gettid));
-	// };
-
-	// // Lambda: 读取 /proc/<pid>/task/<tid>/children，返回子进程 PID 列表
-	// auto list_children = [](pid_t pid, pid_t tid) -> std::vector<pid_t> {
-	// 	std::vector<pid_t> children;
-	// 	std::string path = "/proc/" + std::to_string(pid) + "/task/" +
-	// 			   std::to_string(tid) + "/children";
-
-	// 	std::ifstream ifs(path);
-	// 	if (!ifs.is_open()) {
-	// 		std::perror(("open " + path).c_str());
-	// 		return children;
-	// 	}
-
-	// 	std::string line;
-	// 	if (std::getline(ifs, line)) {
-	// 		std::istringstream iss(line);
-	// 		pid_t cpid;
-	// 		while (iss >> cpid) {
-	// 			children.push_back(cpid);
-	// 		}
-	// 	}
-	// 	return children;
-	// };
-
-	// pid_t pid = getpid(); // 当前进程 PID
-	// pid_t tid = get_tid(); // 当前线程 TID
-
-	// auto kids = list_children(pid, tid);
-	// this->injector = std::make_unique<CUDAInjector>(kids[0]);
-	// this->injector = std::make_unique<CUDAInjector>(getpid());
-
 	gum_interceptor_begin_transaction(interceptor);
 
 	auto register_hook = [&](AttachedToFunction func, void *addr) {
@@ -447,5 +417,34 @@ std::string filter_unprintable_chars(std::string input)
 		result.pop_back();
 	return result;
 };
+int nv_attach_impl::find_attach_entry_by_program_name(const char *name) const
+{
+	for (const auto &entry : this->hook_entries) {
+		if (entry.second.program_name == name)
+			return entry.first;
+	}
+	return -1;
+}
+int nv_attach_impl::run_attach_entry_on_gpu(int attach_id)
+{
+	std::vector<ebpf_inst> insts;
+	if (auto itr = hook_entries.find(attach_id);
+	    itr != hook_entries.end()) {
+		if (std::holds_alternative<nv_attach_directly_run_on_gpu>(
+			    itr->second.type)) {
+			insts = itr->second.instuctions;
 
+		} else {
+			SPDLOG_ERROR(
+				"Attach id {} is not expected to directly run on GPU",
+				attach_id);
+			return -1;
+		}
+	} else {
+		SPDLOG_ERROR("Invalid attach id {}", attach_id);
+		return -1;
+	}
+
+	return 0;
+}
 } // namespace bpftime::attach
