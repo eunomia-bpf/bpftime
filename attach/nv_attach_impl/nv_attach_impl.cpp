@@ -444,7 +444,7 @@ int nv_attach_impl::run_attach_entry_on_gpu(int attach_id)
 		SPDLOG_ERROR("Invalid attach id {}", attach_id);
 		return -1;
 	}
-
+	SPDLOG_INFO("Running program on GPU");
 	return 0;
 }
 } // namespace bpftime::attach
