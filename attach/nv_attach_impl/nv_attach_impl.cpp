@@ -5,7 +5,9 @@
 #include "frida-gum.h"
 
 #include "llvm_jit_context.hpp"
+#include "nvPTXCompiler.h"
 #include "nv_attach_private_data.hpp"
+#include "nv_attach_utils.hpp"
 #include "spdlog/spdlog.h"
 #include <asm/unistd.h> // For architecture-specific syscall numbers
 #include <boost/process/detail/child_decl.hpp>
@@ -31,7 +33,6 @@
 #include <sys/user.h>
 #include <sys/uio.h>
 #include <link.h>
-// #include <pos/cuda_impl/utils/fatbin.h>
 #include <thread>
 #include <unistd.h>
 #include <variant>
@@ -425,8 +426,35 @@ int nv_attach_impl::find_attach_entry_by_program_name(const char *name) const
 	}
 	return -1;
 }
-int nv_attach_impl::run_attach_entry_on_gpu(int attach_id)
+#define NVPTXCOMPILER_SAFE_CALL(x)                                             \
+	do {                                                                   \
+		nvPTXCompileResult result = x;                                 \
+		if (result != NVPTXCOMPILE_SUCCESS) {                          \
+			SPDLOG_ERROR("{} failed with error code {}", #x,       \
+				     (int)result);                             \
+			return -1;                                             \
+		}                                                              \
+	} while (0)
+#define CUDA_SAFE_CALL(x)                                                      \
+	do {                                                                   \
+		CUresult result = x;                                           \
+		if (result != CUDA_SUCCESS) {                                  \
+			const char *msg;                                       \
+			cuGetErrorName(result, &msg);                          \
+			SPDLOG_ERROR("{} failed with error {}", #x, msg);      \
+			return -1;                                             \
+		}                                                              \
+	} while (0)
+
+int nv_attach_impl::run_attach_entry_on_gpu(int attach_id, int run_count,
+					    int grid_dim_x, int grid_dim_y,
+					    int grid_dim_z, int block_dim_x,
+					    int block_dim_y, int block_dim_z)
 {
+	if (run_count < 1) {
+		SPDLOG_ERROR("run_count must be greater than 0");
+		return -1;
+	}
 	std::vector<ebpf_inst> insts;
 	if (auto itr = hook_entries.find(attach_id);
 	    itr != hook_entries.end()) {
@@ -445,6 +473,122 @@ int nv_attach_impl::run_attach_entry_on_gpu(int attach_id)
 		return -1;
 	}
 	SPDLOG_INFO("Running program on GPU");
+
+	auto ptx = filter_out_version_headers(
+		wrap_ptx_with_trampoline(filter_compiled_ptx_for_ebpf_program(
+			generate_ptx_for_ebpf(insts, "bpf_main", false, false),
+			"bpf_main")));
+	{
+		const std::string to_replace = ".func bpf_main";
+
+		// Replace ".func bpf_main" to ".visible .entry bpf_main" so it
+		// can be executed
+		auto bpf_main_pos = ptx.find(to_replace);
+		assert(bpf_main_pos != ptx.npos);
+		ptx = ptx.replace(bpf_main_pos, to_replace.size(),
+				  ".visible .entry bpf_main");
+	}
+	if (spdlog::get_level() <= SPDLOG_LEVEL_DEBUG) {
+		auto path = "/tmp/directly-run.ptx";
+
+		std::ofstream ofs(path);
+		ofs << ptx << std::endl;
+		SPDLOG_DEBUG("Dumped directly run ptx to {}", path);
+	}
+	// Compile to ELF
+	std::vector<char> output_elf;
+	{
+		unsigned int major_ver, minor_ver;
+		NVPTXCOMPILER_SAFE_CALL(
+			nvPTXCompilerGetVersion(&major_ver, &minor_ver));
+		SPDLOG_INFO("PTX compiler version {}.{}", major_ver, minor_ver);
+		nvPTXCompilerHandle compiler = nullptr;
+		NVPTXCOMPILER_SAFE_CALL(nvPTXCompilerCreate(
+			&compiler, (size_t)ptx.size(), ptx.c_str()));
+		const char *compile_options[] = { "--gpu-name=sm_60",
+						  "--verbose" };
+		auto status = nvPTXCompilerCompile(
+			compiler, std::size(compile_options), compile_options);
+		if (status != NVPTXCOMPILE_SUCCESS) {
+			size_t error_size;
+
+			NVPTXCOMPILER_SAFE_CALL(nvPTXCompilerGetErrorLogSize(
+				compiler, &error_size));
+
+			if (error_size != 0) {
+				std::string error_log(error_size + 1, '\0');
+				NVPTXCOMPILER_SAFE_CALL(
+					nvPTXCompilerGetErrorLog(
+						compiler, error_log.data()));
+				SPDLOG_ERROR("Unable to compile: {}",
+					     error_log);
+			}
+			return -1;
+		}
+		size_t compiled_size;
+		NVPTXCOMPILER_SAFE_CALL(nvPTXCompilerGetCompiledProgramSize(
+			compiler, &compiled_size));
+		output_elf.resize(compiled_size);
+		NVPTXCOMPILER_SAFE_CALL(nvPTXCompilerGetCompiledProgram(
+			compiler, (void *)output_elf.data()));
+		size_t info_size;
+		NVPTXCOMPILER_SAFE_CALL(
+			nvPTXCompilerGetInfoLogSize(compiler, &info_size));
+		std::string info_log(info_size + 1, '\0');
+		NVPTXCOMPILER_SAFE_CALL(
+			nvPTXCompilerGetInfoLog(compiler, info_log.data()));
+		SPDLOG_INFO("{}", info_log);
+	}
+	SPDLOG_INFO("Compiled program size: {}", output_elf.size());
+	// Load and run the program
+	{
+		CUdevice cuDevice;
+		CUcontext context;
+		CUmodule module;
+		CUfunction kernel;
+		CUDA_SAFE_CALL(cuInit(0));
+		CUDA_SAFE_CALL(cuDeviceGet(&cuDevice, 0));
+
+		CUDA_SAFE_CALL(cuCtxCreate(&context, 0, cuDevice));
+		CUDA_SAFE_CALL(cuModuleLoadDataEx(&module, output_elf.data(), 0,
+						  0, 0));
+		// fill data into it
+		{
+			CUdeviceptr ptr;
+			size_t bytes;
+			CUDA_SAFE_CALL(cuModuleGetGlobal(&ptr, &bytes, module,
+							 "constData"));
+			CUDA_SAFE_CALL(
+				cuMemcpyHtoD(ptr, &this->shared_mem_ptr,
+					     sizeof(this->shared_mem_ptr)));
+			SPDLOG_INFO(
+				"shared_mem_ptr copied: device ptr {:x}, device size {}",
+				(uintptr_t)ptr, bytes);
+		}
+		{
+			CUdeviceptr ptr;
+			size_t bytes;
+			CUDA_SAFE_CALL(cuModuleGetGlobal(&ptr, &bytes, module,
+							 "map_info"));
+			CUDA_SAFE_CALL(cuMemcpyHtoD(
+				ptr, this->map_basic_info->data(),
+				sizeof(this->map_basic_info->at(0)) *
+					this->map_basic_info->size()));
+			SPDLOG_INFO(
+				"map_info copied: device ptr {:x}, device size {}",
+				(uintptr_t)ptr, bytes);
+		}
+		CUDA_SAFE_CALL(
+			cuModuleGetFunction(&kernel, module, "bpf_main"));
+		for (int i = 1; i <= run_count; i++) {
+			SPDLOG_INFO("Run {}", i);
+			CUDA_SAFE_CALL(cuLaunchKernel(
+				kernel, grid_dim_x, grid_dim_y, grid_dim_z,
+				block_dim_x, block_dim_y, block_dim_z, 0,
+				nullptr, nullptr, 0));
+			CUDA_SAFE_CALL(cuCtxSynchronize());
+		}
+	}
 	return 0;
 }
 } // namespace bpftime::attach

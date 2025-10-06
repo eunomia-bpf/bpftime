@@ -25,7 +25,7 @@ static std::string memcapture_func_name(int idx)
 
 namespace bpftime::attach
 {
-
+// Filter out version headers, only the second time
 std::string filter_out_version_headers(const std::string &input)
 {
 	static const std::string FILTERED_OUT_PREFIXES[] = {

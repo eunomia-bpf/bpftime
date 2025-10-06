@@ -103,7 +103,10 @@ class nv_attach_impl final : public base_attach_impl {
 	TrampolineMemorySetupStage trampoline_memory_state =
 		TrampolineMemorySetupStage::NotSet;
 	int find_attach_entry_by_program_name(const char *name) const;
-	int run_attach_entry_on_gpu(int attach_id);
+	int run_attach_entry_on_gpu(int attach_id, int run_count = 1,
+				    int grid_dim_x = 1, int grid_dim_y = 1,
+				    int grid_dim_z = 1, int block_dim_x = 1,
+				    int block_dim_y = 1, int block_dim_z = 1);
 
     private:
 	void *frida_interceptor;

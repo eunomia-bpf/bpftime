@@ -207,7 +207,7 @@ class bpf_attach_ctx {
 
 	std::vector<attach::MapBasicInfo>
 	create_map_basic_info(int filled_size);
-
+	// Lookup nv_attach_impl from stored attach_impls
     public:
 	std::optional<attach::nv_attach_impl *> find_nv_attach_impl() const;
 
