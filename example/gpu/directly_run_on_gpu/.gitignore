@@ -4,3 +4,4 @@ victim
 error_inject_syscall
 vec_add
 mem_trace
+directly_run
