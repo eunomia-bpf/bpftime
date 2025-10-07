@@ -2,6 +2,7 @@
 #include "bpftime_shm_internal.hpp"
 #include "cuda_runtime_api.h"
 #include "driver_types.h"
+#include "nv_attach_impl.hpp"
 #include <array>
 #include <bpf_attach_ctx.hpp>
 #include "demo_ptx_prog.hpp"
@@ -65,7 +66,17 @@ extern uint64_t bpftime_trace_printk(uint64_t fmt, uint64_t fmt_size, ...);
 
 namespace bpftime
 {
-
+std::optional<attach::nv_attach_impl *>
+bpf_attach_ctx::find_nv_attach_impl() const
+{
+	for (const auto &entry : this->attach_impl_holders) {
+		if (auto p =
+			    dynamic_cast<attach::nv_attach_impl *>(entry.get());
+		    p)
+			return p;
+	}
+	return {};
+}
 void bpf_attach_ctx::start_cuda_watcher_thread()
 {
 	auto flag = this->cuda_ctx->cuda_watcher_should_stop;
@@ -200,7 +211,6 @@ bpf_attach_ctx::create_map_basic_info(int filled_size)
 		entry.map_type = 0;
 		entry.extra_buffer = nullptr;
 		entry.max_thread_count = 0;
-		
 	}
 	const auto &handler_manager =
 		*shm_holder.global_shared_memory.get_manager();
@@ -230,7 +240,8 @@ bpf_attach_ctx::create_map_basic_info(int filled_size)
 			local.max_entries = map.get_max_entries();
 			local.map_type = (int)map.type;
 			local.extra_buffer = gpu_buffer;
-			local.max_thread_count = map.get_gpu_map_max_thread_count();
+			local.max_thread_count =
+				map.get_gpu_map_max_thread_count();
 		}
 	}
 

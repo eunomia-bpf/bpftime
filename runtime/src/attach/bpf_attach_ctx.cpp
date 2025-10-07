@@ -280,6 +280,7 @@ int bpf_attach_ctx::instantiate_bpf_link_handler_at(
 			auto &nv_attach_private_data =
 				dynamic_cast<attach::nv_attach_private_data &>(
 					*priv_data);
+			nv_attach_private_data.program_name = prog->prog_name();
 			nv_attach_private_data.comm_shared_mem =
 				(uintptr_t)this->cuda_ctx->cuda_shared_mem.get();
 			nv_attach_private_data.instructions = prog->get_insns();

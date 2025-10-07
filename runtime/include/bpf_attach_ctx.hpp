@@ -199,6 +199,7 @@ class bpf_attach_ctx {
 					    bool handle_nv_attach_impl);
 	int instantiate_perf_event_handler_at(
 		int id, const bpf_perf_event_handler &perf_handler);
+
 #ifdef BPFTIME_ENABLE_CUDA_ATTACH
 	// Start host thread for handling map requests from CUDA
 	void start_cuda_watcher_thread();
@@ -206,6 +207,10 @@ class bpf_attach_ctx {
 
 	std::vector<attach::MapBasicInfo>
 	create_map_basic_info(int filled_size);
+	// Lookup nv_attach_impl from stored attach_impls
+    public:
+	std::optional<attach::nv_attach_impl *> find_nv_attach_impl() const;
+
 #endif
 };
 

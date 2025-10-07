@@ -62,14 +62,17 @@ struct nv_attach_function_probe {
 	std::string func;
 	bool is_retprobe;
 };
-
+struct nv_attach_directly_run_on_gpu {};
 using nv_attach_type =
-	std::variant<nv_attach_cuda_memcapture, nv_attach_function_probe>;
+	std::variant<nv_attach_cuda_memcapture, nv_attach_function_probe,
+		     nv_attach_directly_run_on_gpu>;
 struct nv_attach_entry {
 	nv_attach_type type;
 	std::vector<ebpf_inst> instuctions;
 	// Kernels to be patched for this attach entry
 	std::vector<std::string> kernels;
+	// program name for this attach entry
+	std::string program_name;
 };
 
 // Attach implementation of syscall trace
@@ -85,7 +88,6 @@ class nv_attach_impl final : public base_attach_impl {
 	nv_attach_impl &operator=(const nv_attach_impl &) = delete;
 	nv_attach_impl();
 	virtual ~nv_attach_impl();
-	// std::unique_ptr<CUDAInjector> injector;
 	std::vector<std::unique_ptr<__fatBinC_Wrapper_t>> stored_binaries_header;
 	std::vector<std::unique_ptr<std::vector<uint8_t>>> stored_binaries_body;
 	std::optional<std::vector<uint8_t>>
@@ -100,6 +102,11 @@ class nv_attach_impl final : public base_attach_impl {
 	int copy_data_to_trampoline_memory();
 	TrampolineMemorySetupStage trampoline_memory_state =
 		TrampolineMemorySetupStage::NotSet;
+	int find_attach_entry_by_program_name(const char *name) const;
+	int run_attach_entry_on_gpu(int attach_id, int run_count = 1,
+				    int grid_dim_x = 1, int grid_dim_y = 1,
+				    int grid_dim_z = 1, int block_dim_x = 1,
+				    int block_dim_y = 1, int block_dim_z = 1);
 
     private:
 	void *frida_interceptor;
@@ -113,6 +120,11 @@ class nv_attach_impl final : public base_attach_impl {
 };
 std::string filter_unprintable_chars(std::string input);
 std::string filter_out_version_headers(const std::string &input);
+std::string
+generate_ptx_for_ebpf(const std::vector<ebpf_inst> &inst,
+		      const std::string &func_name, bool with_arguments,
+		      bool add_register_guard_and_filter_version_headers);
+
 } // namespace attach
 } // namespace bpftime
 #endif /* _BPFTIME_NV_ATTACH_IMPL_HPP */
