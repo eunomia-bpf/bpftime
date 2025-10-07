@@ -5,6 +5,7 @@
 #include <memory>
 #include <bpftime_shm.hpp>
 #include <ostream>
+#include <stdlib.h>
 #include <string>
 #include <filesystem>
 #include <spdlog/spdlog.h>
@@ -239,10 +240,15 @@ int main(int argc, char *argv[])
 	}
 #if defined(BPFTIME_ENABLE_CUDA_ATTACH)
 	else if (cmd == "run-on-cuda") {
-		if (argc != 3) {
+		if (argc != 3 && argc != 4) {
 			cerr << "Usage: " << argv[0]
-			     << " run-on-cuda [program name]" << endl;
+			     << " run-on-cuda [program name] [run count (optional, defaults to 1)]"
+			     << endl;
 			return 1;
+		}
+		int run_count = 1;
+		if (argc == 4) {
+			run_count = atoi(argv[3]);
 		}
 		bpftime_initialize_global_shm(shm_open_type::SHM_OPEN_ONLY);
 		auto &runtime_config = bpftime_get_agent_config();
@@ -276,7 +282,7 @@ int main(int argc, char *argv[])
 					    argv[2]);
 			    id != -1) {
 				if (auto err = (*impl)->run_attach_entry_on_gpu(
-					    id);
+					    id, run_count);
 				    err) {
 					SPDLOG_ERROR(
 						"Unable to run program: {}",
