@@ -9,7 +9,7 @@
 #include <string.h>
 #include <unistd.h>
 #include <stdint.h>
-#include "./.output/gpu-plain-array.skel.h"
+#include "./.output/gpu_shard_array.skel.h"
 
 static volatile int exiting;
 
@@ -20,24 +20,24 @@ static void sig_handler(int sig)
 
 int main()
 {
-	struct gpu_plain_array_bpf *skel;
+	struct gpu_shard_array_bpf *skel;
 	int err;
 
 	libbpf_set_strict_mode(LIBBPF_STRICT_ALL);
 	signal(SIGINT, sig_handler);
 	signal(SIGTERM, sig_handler);
 
-	skel = gpu_plain_array_bpf__open();
+	skel = gpu_shard_array_bpf__open();
 	if (!skel) {
 		fprintf(stderr, "open skel failed\n");
 		return 1;
 	}
-	err = gpu_plain_array_bpf__load(skel);
+	err = gpu_shard_array_bpf__load(skel);
 	if (err) {
 		fprintf(stderr, "load skel failed\n");
 		goto cleanup;
 	}
-	err = gpu_plain_array_bpf__attach(skel);
+	err = gpu_shard_array_bpf__attach(skel);
 	if (err) {
 		fprintf(stderr, "attach skel failed\n");
 		goto cleanup;
@@ -61,6 +61,6 @@ int main()
 	}
 
 cleanup:
-	gpu_plain_array_bpf__destroy(skel);
+	gpu_shard_array_bpf__destroy(skel);
 	return err != 0;
 }

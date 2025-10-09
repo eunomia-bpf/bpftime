@@ -4,7 +4,7 @@ set -euo pipefail
 cd "$(dirname "$0")"
 
 echo "[demo] build example if needed"
-if [ ! -x ./gpu-plain-array ] || [ ! -x ./vec_add ]; then
+if [ ! -x ./gpu_shard_array ] || [ ! -x ./vec_add ]; then
   make
 fi
 
@@ -23,12 +23,12 @@ fi
 
 ulimit -l unlimited 2>/dev/null || true
 
-echo "[demo] start gpu-plain-array (syscall-server) in background"
+echo "[demo] start gpu_shard_array (syscall-server) in background"
 OUT=demo_out.txt
 rm -f "$OUT" vec_add.out
 HB=1
 echo "[demo] HOST_WRITEBACK=$HB"
-env SPDLOG_LEVEL=debug BPFTIME_LOG_OUTPUT=console LD_PRELOAD="$SERVER_SO" HOST_WRITEBACK="$HB" stdbuf -oL -eL ./gpu-plain-array > "$OUT" 2>&1 &
+env SPDLOG_LEVEL=debug BPFTIME_LOG_OUTPUT=console LD_PRELOAD="$SERVER_SO" HOST_WRITEBACK="$HB" stdbuf -oL -eL ./gpu_shard_array > "$OUT" 2>&1 &
 SRV_PID=$!
 
 sleep 1

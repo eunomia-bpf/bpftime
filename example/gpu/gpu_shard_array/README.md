@@ -1,9 +1,9 @@
-# GPU Plain Array Map 示例
+# GPU Shard Array Map 示例
 
-本示例演示 `BPF_MAP_TYPE_GPU_ARRAY_MAP`（普通 array，非 per-thread）在用户态配合 bpftime 的行为。当前演示脚本采用 HOST 写回路径进行验证。
+本示例演示 `BPF_MAP_TYPE_GPU_ARRAY_MAP`（普通 array，非 per-thread，单副本共享）在用户态配合 bpftime 的行为。当前演示脚本采用 HOST 写回路径进行验证。
 
-- BPF 程序：`gpu-plain-array.bpf.c` 在 `kretprobe/_Z9vectorAddPKfS0_Pf` 处对 key=0 自增。
-- Host 程序：`gpu-plain-array.c` 周期性读取 `counter[0]` 打印。
+- BPF 程序：`gpu_shard_array.bpf.c` 在 `kretprobe/vectorAdd` 处对 key=0 自增。
+- Host 程序：`gpu_shard_array.c` 周期性读取 `counter[0]` 打印。
 - CUDA 程序：`vec_add.cu` 周期运行，触发 BPF 程序更新 map。
 
 ## 先决条件
@@ -15,11 +15,11 @@
 
 ## 构建
 ```bash
-cd example/gpu/gpu-plain-array
+cd example/gpu/gpu_shard_array
 make
 ```
 生成：
-- `gpu-plain-array`（host 程序）
+- `gpu_shard_array`（host 程序）
 - `vec_add`（CUDA 测试内核）
 - `.output/`（中间产物与 BPF skeleton）
 
@@ -30,9 +30,9 @@ make
 ```
 - 终端 B：
 ```bash
-./gpu-plain-array
+./gpu_shard_array
 ```
-预期：`gpu-plain-array` 每秒打印 `counter[0]=N`，值单调递增；停止 `vec_add` 后，计数停止增长。
+预期：`gpu_shard_array` 每秒打印 `counter[0]=N`，值单调递增；停止 `vec_add` 后，计数停止增长。
 
 ## 一键脚本
 可使用本目录脚本快速验证（带超时与输出检查）：
@@ -42,7 +42,7 @@ bash ./run_demo.sh
 脚本会：
 - 构建示例（如未构建）。
 - 启动 `vec_add`（10s 超时）。
-- 并行运行 `gpu-plain-array`（8s 超时），采样两次计数并校验递增。
+- 并行运行 `gpu_shard_array`（8s 超时），采样两次计数并校验递增。
 - 打印“PASS/FAIL”并输出日志到 `demo_out.txt`。
 
 > 说明：脚本固定使用 HOST 写回路径（内部强制 `HOST_WRITEBACK=1`），确保在不同环境下稳定通过。

@@ -220,12 +220,31 @@ bpf_attach_ctx::create_map_basic_info(int filled_size)
 			auto &local = local_basic_info[i];
 			const auto &map =
 				std::get<bpf_map_handler>(current_handler);
-			auto gpu_buffer = map.get_gpu_map_extra_buffer();
-			SPDLOG_INFO(
-				"Copying map fd {} to device, key size={}, value size={}, max ent={}, map_type = {}, gpu_buffer = {:x}",
-				i, map.get_key_size(), map.get_value_size(),
-				map.get_max_entries(), (int)map.type,
-				(uintptr_t)gpu_buffer);
+            auto gpu_buffer = map.get_gpu_map_extra_buffer();
+            void *gpu_buffer_dev = (void *)gpu_buffer;
+#ifdef BPFTIME_ENABLE_CUDA_ATTACH
+            // For host-shared maps (e.g., GPU_ARRAY_MAP backed by bpftime shared
+            // memory registered with CUDA), translate host pointer to device
+            // pointer so that device-side arithmetic is well-defined even when
+            // UVA does not equal host ptr representation.
+            if (map.type == bpf_map_type::BPF_MAP_TYPE_GPU_ARRAY_MAP ||
+                map.type == bpf_map_type::BPF_MAP_TYPE_GPU_RINGBUF_MAP) {
+                void *tmp = nullptr;
+                auto err = cudaHostGetDevicePointer(&tmp, gpu_buffer_dev, 0);
+                if (err == cudaSuccess && tmp != nullptr) {
+                    gpu_buffer_dev = tmp;
+                } else {
+                    SPDLOG_WARN(
+                        "cudaHostGetDevicePointer failed for map fd {}: {} (fallback to host ptr)",
+                        i, (int)err);
+                }
+            }
+#endif
+            SPDLOG_INFO(
+                "Copying map fd {} to device, key size={}, value size={}, max ent={}, map_type = {}, gpu_buffer = {:x}",
+                i, map.get_key_size(), map.get_value_size(),
+                map.get_max_entries(), (int)map.type,
+                (uintptr_t)gpu_buffer_dev);
 
 			if (i >= local_basic_info.size()) {
 				SPDLOG_ERROR(
@@ -239,7 +258,7 @@ bpf_attach_ctx::create_map_basic_info(int filled_size)
 			local.value_size = map.get_value_size();
 			local.max_entries = map.get_max_entries();
 			local.map_type = (int)map.type;
-			local.extra_buffer = gpu_buffer;
+            local.extra_buffer = gpu_buffer_dev;
 			local.max_thread_count =
 				map.get_gpu_map_max_thread_count();
 		}

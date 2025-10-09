@@ -18,7 +18,7 @@ INCLUDES := -I$(OUTPUT) -I../../../third_party/libbpf/include/uapi -I$(dir $(VML
 CFLAGS := -g -Wall
 ALL_LDFLAGS := $(LDFLAGS) $(EXTRA_LDFLAGS)
 
-APPS = gpu-plain-array
+APPS = gpu_shard_array
 
 .PHONY: all clean
 all: $(APPS) vec_add
@@ -37,13 +37,13 @@ $(OUTPUT) $(OUTPUT)/libbpf $(BPFTOOL_OUTPUT):
 	mkdir -p $@
 
 $(LIBBPF_OBJ): $(wildcard $(LIBBPF_SRC)/*.[ch] $(LIBBPF_SRC)/Makefile) | $(OUTPUT)/libbpf
-	$(MAKE) -C $(LIBBPF_SRC) BUILD_STATIC_ONLY=1 \
+	make -C $(LIBBPF_SRC) BUILD_STATIC_ONLY=1 \
 		OBJDIR=$(dir $@)/libbpf DESTDIR=$(dir $@) \
 		INCLUDEDIR= LIBDIR= UAPIDIR= \
 		install
 
 $(BPFTOOL): | $(BPFTOOL_OUTPUT)
-	$(MAKE) ARCH= CROSS_COMPILE= OUTPUT=$(BPFTOOL_OUTPUT)/ -C $(BPFTOOL_SRC) bootstrap
+	make ARCH= CROSS_COMPILE= OUTPUT=$(BPFTOOL_OUTPUT)/ -C $(BPFTOOL_SRC) bootstrap
 
 # Clang 系统头补全（与其它示例保持一致）
 CLANG_BPF_SYS_INCLUDES ?= $(shell $(CLANG) -v -E - </dev/null 2>&1 \
