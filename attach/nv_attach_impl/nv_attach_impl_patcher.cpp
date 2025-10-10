@@ -34,12 +34,17 @@ std::string filter_out_version_headers(const std::string &input)
 	std::istringstream iss(input);
 	std::ostringstream oss;
 	std::string line;
+	std::set<std::string> found_patterns;
 
 	while (std::getline(iss, line)) {
 		bool skip = false;
 		for (const auto &s : FILTERED_OUT_PREFIXES) {
 			if (line.starts_with(s)) {
-				skip = true; // 始终移除所有版本/目标/地址头与注释行
+				if (found_patterns.contains(s))
+					skip = true;
+				else {
+					found_patterns.insert(s);
+				}
 				break;
 			}
 		}

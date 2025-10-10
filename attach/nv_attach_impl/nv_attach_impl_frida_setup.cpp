@@ -5,7 +5,6 @@
 #include <frida-gum.h>
 #include <vector>
 #include "nv_attach_impl.hpp"
-#include <dlfcn.h>
 
 using namespace bpftime;
 using namespace attach;
@@ -83,7 +82,9 @@ static void example_listener_on_enter(GumInvocationListener *listener,
 			std::move(patched_fatbin_ptr));
 		context->impl->stored_binaries_header.push_back(
 			std::move(patched_header));
-		// 不替换原 fatbin，保留应用自身符号
+		// Set the patched header as the argument
+		gum_invocation_context_replace_nth_argument(gum_ctx, 0,
+							    patched_header_ptr);
 	} else if (context->to_function ==
 		   AttachedToFunction::RegisterFunction) {
 		SPDLOG_DEBUG("Entering __cudaRegisterFunction..");
@@ -92,40 +93,15 @@ static void example_listener_on_enter(GumInvocationListener *listener,
 		   AttachedToFunction::RegisterFatbinEnd) {
 		SPDLOG_DEBUG("Entering __cudaRegisterFatBinaryEnd..");
 		auto &impl = *context->impl;
-		// 在 FatbinEnd 时并行注册我们自己的已打补丁 fatbin
-		if (!impl.stored_binaries_header.empty()) {
-			auto patched_header_ptr =
-				impl.stored_binaries_header.back().get();
-			using RegFatbinFn = void **(*)(__fatBinC_Wrapper_t *);
-			auto reg_sym =
-				dlsym(RTLD_NEXT, "__cudaRegisterFatBinary");
-			if (!reg_sym) {
-				SPDLOG_ERROR(
-					"dlsym __cudaRegisterFatBinary failed");
+		if (impl.trampoline_memory_state ==
+		    TrampolineMemorySetupStage::NotSet) {
+			auto arg = (void **)
+				gum_invocation_context_get_nth_argument(gum_ctx,
+									0);
+			if (int err = impl.register_trampoline_memory(arg);
+			    err != 0) {
 				assert(false);
 			}
-			auto reg_f = reinterpret_cast<RegFatbinFn>(reg_sym);
-			void **new_handle = reg_f(patched_header_ptr);
-			impl.stored_binaries_handles.push_back(new_handle);
-			if (impl.trampoline_memory_state ==
-			    TrampolineMemorySetupStage::NotSet) {
-				if (int err = impl.register_trampoline_memory(
-					    new_handle);
-				    err != 0) {
-					assert(false);
-				}
-			}
-			// 调用 __cudaRegisterFatBinaryEnd(new_handle)
-			using RegFatbinEndFn = void (*)(void **);
-			auto end_sym =
-				dlsym(RTLD_NEXT, "__cudaRegisterFatBinaryEnd");
-			if (!end_sym) {
-				SPDLOG_ERROR(
-					"dlsym __cudaRegisterFatBinaryEnd failed");
-				assert(false);
-			}
-			auto end_f = reinterpret_cast<RegFatbinEndFn>(end_sym);
-			end_f(new_handle);
 		}
 	} else if (context->to_function ==
 		   AttachedToFunction::CudaLaunchKernel) {
