@@ -3,6 +3,16 @@ set -euo pipefail
 
 cd "$(dirname "$0")"
 
+# Prioritize externally injected CUDA root directories to ensure consistent build/run
+if [ -z "${BPFTIME_CUDA_ROOT:-}" ] && [ -d /usr/local/cuda-12.6 ]; then
+  BPFTIME_CUDA_ROOT=/usr/local/cuda-12.6
+fi
+if [ -n "${BPFTIME_CUDA_ROOT:-}" ]; then
+  export PATH="$BPFTIME_CUDA_ROOT/bin:$PATH"
+  export LD_LIBRARY_PATH="$BPFTIME_CUDA_ROOT/lib64:${LD_LIBRARY_PATH:-}"
+  echo "[demo] Using BPFTIME_CUDA_ROOT=$BPFTIME_CUDA_ROOT"
+fi
+
 echo "[demo] build example if needed"
 if [ ! -x ./gpu_shard_array ] || [ ! -x ./vec_add ]; then
   make
@@ -17,8 +27,13 @@ SERVER_SO="$ROOT/build/runtime/syscall-server/libbpftime-syscall-server.so"
 AGENT_SO="$ROOT/build/runtime/agent/libbpftime-agent.so"
 
 if [ ! -f "$SERVER_SO" ] || [ ! -f "$AGENT_SO" ]; then
-  echo "[demo][error] bpftime runtime not built. Please run: cmake -B build -S . -DBPFTIME_ENABLE_CUDA_ATTACH=ON && cmake --build build -j" >&2
-  exit 2
+  echo "[demo] runtime not found, auto-building..."
+  if [ -n "${BPFTIME_CUDA_ROOT:-}" ]; then
+    env -u LD_LIBRARY_PATH /usr/bin/cmake -B "$ROOT/build" -S "$ROOT" -DBPFTIME_ENABLE_CUDA_ATTACH=ON -DBPFTIME_CUDA_ROOT="$BPFTIME_CUDA_ROOT"
+  else
+    env -u LD_LIBRARY_PATH /usr/bin/cmake -B "$ROOT/build" -S "$ROOT" -DBPFTIME_ENABLE_CUDA_ATTACH=ON
+  fi
+  env -u LD_LIBRARY_PATH /usr/bin/cmake --build "$ROOT/build" -j
 fi
 
 ulimit -l unlimited 2>/dev/null || true
