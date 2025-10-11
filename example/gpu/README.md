@@ -201,8 +201,10 @@ int kprobe_exec() {
 
 ### Other Examples
 
-- **[rocm-counter](https://github.com/eunomia-bpf/bpftime/tree/master/example/gpu/rocm-counter)**: AMD GPU instrumentation (experimental)
 - **[cuda-counter](https://github.com/eunomia-bpf/bpftime/tree/master/example/gpu/cuda-counter)**: Basic probe/retprobe with timing measurements
+- **[mem_trace](https://github.com/eunomia-bpf/bpftime/tree/master/example/gpu/mem_trace)**: Memory access pattern tracing and analysis
+- **[directly_run_on_gpu](https://github.com/eunomia-bpf/bpftime/tree/master/example/gpu/directly_run_on_gpu)**: Run eBPF programs directly on GPU without attaching to kernels
+- **[rocm-counter](https://github.com/eunomia-bpf/bpftime/tree/master/example/gpu/rocm-counter)**: AMD ROCm GPU instrumentation (experimental)
 
 ### Key Components
 
