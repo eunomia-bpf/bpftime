@@ -97,8 +97,11 @@ The [example/bpf_features](https://github.com/eunomia-bpf/bpftime/tree/master/ex
 The [example/gpu](https://github.com/eunomia-bpf/bpftime/tree/master/example/gpu) directory contains examples for tracing GPU kernels:
 
 - [`cuda-counter`](https://github.com/eunomia-bpf/bpftime/tree/master/example/gpu/cuda-counter): Basic CUDA kernel tracing example
-- [`cuda-counter-gpu-array`](https://github.com/eunomia-bpf/bpftime/tree/master/example/gpu/cuda-counter-gpu-array): CUDA tracing with GPU array maps
-- [`cuda-counter-gpu-ringbuf`](https://github.com/eunomia-bpf/bpftime/tree/master/example/gpu/cuda-counter-gpu-ringbuf): CUDA tracing with GPU ring buffer
+- [`kernelretsnoop`](https://github.com/eunomia-bpf/bpftime/tree/master/example/gpu/kernelretsnoop): Per-thread exit timestamp tracer for CUDA kernels
+- [`threadhist`](https://github.com/eunomia-bpf/bpftime/tree/master/example/gpu/threadhist): Thread execution count histogram
+- [`launchlate`](https://github.com/eunomia-bpf/bpftime/tree/master/example/gpu/launchlate): Kernel launch latency profiler
+- [`mem_trace`](https://github.com/eunomia-bpf/bpftime/tree/master/example/gpu/mem_trace): Memory access pattern tracing
+- [`directly_run_on_gpu`](https://github.com/eunomia-bpf/bpftime/tree/master/example/gpu/directly_run_on_gpu): Run eBPF programs directly on GPU
 - [`rocm-counter`](https://github.com/eunomia-bpf/bpftime/tree/master/example/gpu/rocm-counter): AMD ROCm GPU kernel tracing
 
 ## Hotpatching Applications
