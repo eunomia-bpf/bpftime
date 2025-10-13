@@ -1,0 +1,8 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Community Discussion
+    url: https://github.com/eunomia-bpf/bpftime/discussions
+    about: Ask questions and discuss ideas with the community
+  - name: Documentation
+    url: https://eunomia.dev/bpftime/
+    about: Read the full documentation on eunomia.dev
