@@ -12,7 +12,7 @@ struct {
 	__type(value, u64);
 } counter SEC(".maps");
 
-// 在被跟踪的 CUDA kernel 返回点累加一个固定 key 的计数
+// At the CUDA kernel return point, increment the counter for a fixed key
 SEC("kretprobe/vectorAdd")
 int cuda__retprobe()
 {
@@ -32,15 +32,12 @@ int cuda__probe()
 {
 	u32 key = 0;
 	u64 *val = bpf_map_lookup_elem(&counter, &key);
-	u64 newv = 1;
-	if (val)
-		newv = *val + 1;
-	bpf_map_update_elem(&counter, &key, &newv, BPF_ANY);
 	char msg[] = "gpu_update_kprobe\\n";
 	bpf_trace_printk(msg, sizeof(msg));
 	return 0;
 }
 
-// (备用触发点已移除，避免 auto-attach 失败导致整体失败)
+// (Backup trigger removed to avoid auto-attach failure from causing overall
+// failure)
 
 char LICENSE[] SEC("license") = "GPL";
