@@ -22,6 +22,7 @@ target_link_libraries(bpftime_nv_attach_impl PUBLIC bpftime_base_attach_impl spd
 
 set_property(TARGET bpftime_nv_attach_impl PROPERTY CXX_STANDARD 20)
 
+target_link_options(bpftime_nv_attach_impl PUBLIC "-Wl,--whole-archive" "$<TARGET_FILE:bpftime_nv_attach_impl>" "-Wl,--no-whole-archive")
 # Note: If consumers need whole-archive behavior, they should use:
 # -Wl,--whole-archive target -Wl,--no-whole-archive in their link libraries
 
