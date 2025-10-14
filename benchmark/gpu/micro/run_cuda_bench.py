@@ -225,7 +225,7 @@ def print_results_table(device: str, results: Dict[str, Optional[float]]):
 def main():
     # Determine paths
     script_dir = os.path.dirname(os.path.abspath(__file__))
-    repo_root = os.path.dirname(os.path.dirname(script_dir))
+    repo_root = os.path.dirname(os.path.dirname(os.path.dirname(script_dir)))
     bench_dir = script_dir
     build_dir = os.path.join(repo_root, 'build')
 
