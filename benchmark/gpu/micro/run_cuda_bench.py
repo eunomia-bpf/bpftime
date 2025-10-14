@@ -47,12 +47,12 @@ def run_baseline(bench_dir: str, vec_add_args: str, log_file=None) -> Optional[f
     """Run baseline benchmark without instrumentation."""
     log(f"Running baseline benchmark with args: {vec_add_args}", log_file)
     try:
-        cmd = [f'{bench_dir}/vec_add'] + vec_add_args.split()
+        cmd = [f'{bench_dir}/vec_add'] + (vec_add_args.split() if vec_add_args else [])
         result = subprocess.run(
             cmd,
             capture_output=True,
             text=True,
-            timeout=60,
+            timeout=120,
             cwd=bench_dir
         )
         log(f"STDOUT:\n{result.stdout}", log_file)
@@ -116,12 +116,12 @@ def run_bpf_test(bench_dir: str, build_dir: str, cuda_probe_args: str, vec_add_a
         agent_env['BPFTIME_LOG_OUTPUT'] = 'console'
         agent_env['LD_PRELOAD'] = agent
 
-        vec_add_cmd = [f'{bench_dir}/vec_add'] + vec_add_args.split()
+        vec_add_cmd = [f'{bench_dir}/vec_add'] + (vec_add_args.split() if vec_add_args else [])
         result = subprocess.run(
             vec_add_cmd,
             capture_output=True,
             text=True,
-            timeout=60,
+            timeout=120,
             cwd=bench_dir,
             env=agent_env
         )
