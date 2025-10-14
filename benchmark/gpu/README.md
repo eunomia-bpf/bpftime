@@ -50,10 +50,10 @@ This will build:
 
 ```bash
 BPFTIME_LOG_OUTPUT=console LD_PRELOAD=build/runtime/syscall-server/libbpftime-syscall-server.so \
-  benchmark/cuda/cuda_probe
+  benchmark/gpu/micro/cuda_probe
 # in another terminal
 BPFTIME_LOG_OUTPUT=console LD_PRELOAD=build/runtime/agent/libbpftime-agent.so \
-  benchmark/cuda/vec_add
+  benchmark/gpu/micro/vec_add
 ```
 
 This will:

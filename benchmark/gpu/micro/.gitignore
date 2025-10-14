@@ -2,5 +2,8 @@
 /.output
 /cuda_bench
 /vec_add
-*.o 
+*.o
 nvbit_vec_add.so
+benchmark_*.log
+*.log
+cuda_probe_*.stderr

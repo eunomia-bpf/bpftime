@@ -69,8 +69,11 @@ $(call allow-override,LD,$(CROSS_COMPILE)ld)
 all: $(APPS)
 
 vec_add: vec_add.cu
-	nvcc vec_add.cu -o vec_add -g -Wno-deprecated-gpu-targets
-
+	@if command -v nvcc >/dev/null 2>&1; then \
+		nvcc -cudart shared vec_add.cu -o vec_add -g; \
+	else \
+		echo "Warning: CUDA not found, skipping vec_add build"; \
+	fi
 # NVBit tool compilation
 NVCC=nvcc -ccbin=$(CXX) -D_FORCE_INLINES
 PTXAS=ptxas
