@@ -66,7 +66,7 @@ $(call allow-override,CC,$(CROSS_COMPILE)cc)
 $(call allow-override,LD,$(CROSS_COMPILE)ld)
 
 .PHONY: all
-all: $(APPS)
+all: $(APPS) vec_add
 
 vec_add: vec_add.cu
 	@if command -v nvcc >/dev/null 2>&1; then \
