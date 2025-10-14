@@ -1,0 +1,65 @@
+{
+  "vec_add_args": "1024 100",
+  "test_cases": [
+    {
+      "name": "Empty probe",
+      "cuda_probe_args": "empty",
+      "vec_add_args": "1024 100"
+    },
+    {
+      "name": "Entry probe only",
+      "cuda_probe_args": "entry",
+      "vec_add_args": "1024 100"
+    },
+    {
+      "name": "Exit probe only",
+      "cuda_probe_args": "exit",
+      "vec_add_args": "1024 100"
+    },
+    {
+      "name": "Entry + Exit probes",
+      "cuda_probe_args": "both",
+      "vec_add_args": "1024 100"
+    },
+    {
+      "name": "Ring buffer test",
+      "cuda_probe_args": "ringbuf",
+      "vec_add_args": "1024 100"
+    },
+    {
+      "name": "Global timer test",
+      "cuda_probe_args": "globaltimer",
+      "vec_add_args": "1024 100"
+    },
+    {
+      "name": "Array map update",
+      "cuda_probe_args": "array-update",
+      "vec_add_args": "10 3"
+    },
+    {
+      "name": "Array map lookup",
+      "cuda_probe_args": "array-lookup",
+      "vec_add_args": "10 3"
+    },
+    {
+      "name": "Hash map update",
+      "cuda_probe_args": "hash-update",
+      "vec_add_args": "10 3"
+    },
+    {
+      "name": "Hash map lookup",
+      "cuda_probe_args": "hash-lookup",
+      "vec_add_args": "10 3"
+    },
+    {
+      "name": "Hash map delete",
+      "cuda_probe_args": "hash-delete",
+      "vec_add_args": "10 3"
+    },
+    {
+      "name": "Per-GPU-thread array lookup",
+      "cuda_probe_args": "pergputd-array-lookup",
+      "vec_add_args": "1024 100"
+    }
+  ]
+}

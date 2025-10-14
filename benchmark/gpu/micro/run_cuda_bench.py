@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 CUDA Benchmark Runner for bpftime
-Runs baseline, BPF, and NVBit benchmarks and prints performance comparison table.
+Runs benchmarks using JSON configuration.
 """
 
 import subprocess
@@ -9,9 +9,14 @@ import re
 import sys
 import os
 import time
-import signal
+import json
 from datetime import datetime
-from typing import Optional, Dict
+from typing import Optional, Dict, List, Any
+
+# Constants
+LOG_FILE = "micro_bench.log"
+RESULT_FILE = "micro_result.json"
+DEFAULT_CONFIG = "bench_config.json"
 
 def log(msg: str, log_file=None):
     """Log message to both stdout and file."""
@@ -38,12 +43,13 @@ def get_gpu_name() -> str:
         pass
     return "Unknown GPU"
 
-def run_baseline(bench_dir: str, iterations: int = 3, log_file=None) -> Optional[float]:
+def run_baseline(bench_dir: str, vec_add_args: str, log_file=None) -> Optional[float]:
     """Run baseline benchmark without instrumentation."""
-    log("Running baseline benchmark...", log_file)
+    log(f"Running baseline benchmark with args: {vec_add_args}", log_file)
     try:
+        cmd = [f'{bench_dir}/vec_add'] + vec_add_args.split()
         result = subprocess.run(
-            [f'{bench_dir}/vec_add', str(iterations)],
+            cmd,
             capture_output=True,
             text=True,
             timeout=60,
@@ -64,9 +70,9 @@ def run_baseline(bench_dir: str, iterations: int = 3, log_file=None) -> Optional
         log(f"Error running baseline: {e}", log_file)
         return None
 
-def run_bpf(bench_dir: str, build_dir: str, mode: str = "empty", iterations: int = 3, log_file=None) -> Optional[float]:
+def run_bpf_test(bench_dir: str, build_dir: str, cuda_probe_args: str, vec_add_args: str, log_file=None) -> Optional[float]:
     """Run benchmark with BPF instrumentation."""
-    log(f"Running BPF benchmark (mode: {mode})...", log_file)
+    log(f"Running BPF test: probe_args={cuda_probe_args}, vec_add_args={vec_add_args}", log_file)
 
     probe_process = None
     try:
@@ -85,10 +91,11 @@ def run_bpf(bench_dir: str, build_dir: str, mode: str = "empty", iterations: int
         probe_env['BPFTIME_LOG_OUTPUT'] = 'console'
         probe_env['LD_PRELOAD'] = syscall_server
 
-        probe_log = f"{bench_dir}/cuda_probe_{mode}.stderr"
+        probe_cmd = [f'{bench_dir}/cuda_probe'] + cuda_probe_args.split()
+        probe_log = f"{bench_dir}/.cuda_probe.stderr"
         with open(probe_log, 'w') as probe_stderr:
             probe_process = subprocess.Popen(
-                [f'{bench_dir}/cuda_probe', mode],
+                probe_cmd,
                 env=probe_env,
                 stdout=probe_stderr,
                 stderr=probe_stderr,
@@ -106,11 +113,12 @@ def run_bpf(bench_dir: str, build_dir: str, mode: str = "empty", iterations: int
 
         # Run benchmark with BPF agent
         agent_env = os.environ.copy()
-        agent_env['BPFTIME_LOG_OUTPUT'] = 'console'  # Note: agent uses BPFTIME_LOG_OUTPUT not BPFTIME_LOG_OUTPUT
+        agent_env['BPFTIME_LOG_OUTPUT'] = 'console'
         agent_env['LD_PRELOAD'] = agent
 
+        vec_add_cmd = [f'{bench_dir}/vec_add'] + vec_add_args.split()
         result = subprocess.run(
-            [f'{bench_dir}/vec_add', str(iterations)],
+            vec_add_cmd,
             capture_output=True,
             text=True,
             timeout=60,
@@ -127,7 +135,7 @@ def run_bpf(bench_dir: str, build_dir: str, mode: str = "empty", iterations: int
 
         avg_time = parse_benchmark_output(result.stdout)
         if avg_time:
-            log(f"✓ BPF ({mode}): {avg_time:.2f} μs", log_file)
+            log(f"✓ BPF test: {avg_time:.2f} μs", log_file)
         return avg_time
 
     except Exception as e:
@@ -142,139 +150,54 @@ def run_bpf(bench_dir: str, build_dir: str, mode: str = "empty", iterations: int
                 probe_process.kill()
 
         # Clean up probe log
-        probe_log = f"{bench_dir}/cuda_probe_{mode}.stderr"
         if os.path.exists(probe_log):
             try:
                 os.remove(probe_log)
             except:
                 pass
 
-def run_nvbit(bench_dir: str, iterations: int = 3, log_file=None) -> Optional[float]:
-    """Run benchmark with NVBit instrumentation."""
-    log("Running NVBit benchmark...", log_file)
+def load_config(config_path: str) -> Dict[str, Any]:
+    """Load benchmark configuration from JSON file."""
+    with open(config_path, 'r') as f:
+        return json.load(f)
 
-    nvbit_so = f"{bench_dir}/nvbit_vec_add.so"
-    if not os.path.exists(nvbit_so):
-        log(f"NVBit not found at {nvbit_so}, skipping", log_file)
-        return None
+def save_results(results: Dict[str, Any], output_path: str):
+    """Save benchmark results to JSON file."""
+    with open(output_path, 'w') as f:
+        json.dump(results, f, indent=2)
 
-    try:
-        env = os.environ.copy()
-        env['CUDA_VISIBLE_DEVICES'] = '0'
-        env['LD_PRELOAD'] = './nvbit_vec_add.so'
-
-        result = subprocess.run(
-            [f'{bench_dir}/vec_add', str(iterations)],
-            capture_output=True,
-            text=True,
-            timeout=120,
-            cwd=bench_dir,
-            env=env
-        )
-
-        log(f"STDOUT:\n{result.stdout}", log_file)
-        log(f"STDERR:\n{result.stderr}", log_file)
-
-        if result.returncode != 0:
-            log(f"NVBit benchmark failed with return code {result.returncode}", log_file)
-            return None
-
-        avg_time = parse_benchmark_output(result.stdout)
-        if avg_time:
-            log(f"✓ NVBit: {avg_time:.2f} μs", log_file)
-        return avg_time
-
-    except Exception as e:
-        log(f"Error running NVBit benchmark: {e}", log_file)
-        return None
-
-def print_results_table(device: str, results: Dict[str, Optional[float]], comprehensive: bool = False, log_file=None):
+def print_results_table(results: Dict[str, Any], log_file=None):
     """Print the results in a formatted table."""
     log("\n" + "="*80, log_file)
     log("CUDA Benchmark Results", log_file)
     log("="*80 + "\n", log_file)
 
-    baseline = results.get('baseline')
-    log(f"Device: {device}\n", log_file)
+    log(f"Device: {results.get('device', 'Unknown')}", log_file)
+    log(f"Timestamp: {results.get('timestamp', 'Unknown')}\n", log_file)
 
-    if comprehensive:
-        # Comprehensive benchmark results
-        log(f"{'Test Mode':<30} {'Avg Time (μs)':<15} {'Overhead':<15}", log_file)
-        log("-"*60, log_file)
+    baseline_time = results.get('baseline_time')
 
-        # Baseline
-        if baseline:
-            log(f"{'Baseline (no probe)':<30} {baseline:<15.2f} {'-':<15}", log_file)
-        else:
-            log(f"{'Baseline (no probe)':<30} {'FAILED':<15} {'-':<15}", log_file)
+    log(f"{'Test Name':<40} {'Avg Time (μs)':<15} {'Overhead':<15}", log_file)
+    log("-"*70, log_file)
 
-        # All BPF test modes
-        bpf_modes = [
-            ('bpf_empty', 'Empty probe'),
-            ('bpf_entry', 'Entry only'),
-            ('bpf_exit', 'Exit only'),
-            ('bpf_both', 'Entry + Exit'),
-            ('bpf_ringbuf', 'Ring buffer'),
-            ('bpf_array_update', 'Array map update'),
-            ('bpf_array_lookup', 'Array map lookup'),
-            ('bpf_hash_update', 'Hash map update'),
-            ('bpf_hash_lookup', 'Hash map lookup'),
-            ('bpf_hash_delete', 'Hash map delete'),
-            ('bpf_percpu_array_update', 'PerCPU array update'),
-            ('bpf_percpu_array_lookup', 'PerCPU array lookup'),
-            ('bpf_percpu_hash_update', 'PerCPU hash update'),
-            ('bpf_percpu_hash_lookup', 'PerCPU hash lookup'),
-        ]
-
-        for key, name in bpf_modes:
-            val = results.get(key)
-            if val and baseline:
-                overhead = f"{val/baseline:.2f}x (+{((val/baseline-1)*100):.1f}%)"
-                log(f"{name:<30} {val:<15.2f} {overhead:<15}", log_file)
-            elif val:
-                log(f"{name:<30} {val:<15.2f} {'-':<15}", log_file)
-            else:
-                log(f"{name:<30} {'FAILED':<15} {'-':<15}", log_file)
-
-        # NVBit
-        nvbit = results.get('nvbit')
-        if nvbit and baseline:
-            overhead = f"{nvbit/baseline:.2f}x (+{((nvbit/baseline-1)*100):.1f}%)"
-            log(f"{'NVBit':<30} {nvbit:<15.2f} {overhead:<15}", log_file)
-        elif nvbit:
-            log(f"{'NVBit':<30} {nvbit:<15.2f} {'-':<15}", log_file)
-
+    # Baseline
+    if baseline_time:
+        log(f"{'Baseline (no probe)':<40} {baseline_time:<15.2f} {'-':<15}", log_file)
     else:
-        # Simple benchmark results
-        bpf = results.get('bpf')
-        nvbit = results.get('nvbit')
+        log(f"{'Baseline (no probe)':<40} {'FAILED':<15} {'-':<15}", log_file)
 
-        log(f"{'Method':<20} {'Avg Time (μs)':<20} {'Overhead':<15}", log_file)
-        log("-"*55, log_file)
+    # Test cases
+    for test in results.get('tests', []):
+        name = test['name']
+        avg_time = test.get('avg_time_us')
 
-        # Baseline
-        if baseline:
-            log(f"{'Baseline':<20} {baseline:<20.2f} {'-':<15}", log_file)
+        if avg_time and baseline_time:
+            overhead = f"{avg_time/baseline_time:.2f}x (+{((avg_time/baseline_time-1)*100):.1f}%)"
+            log(f"{name:<40} {avg_time:<15.2f} {overhead:<15}", log_file)
+        elif avg_time:
+            log(f"{name:<40} {avg_time:<15.2f} {'-':<15}", log_file)
         else:
-            log(f"{'Baseline':<20} {'FAILED':<20} {'-':<15}", log_file)
-
-        # BPF
-        if bpf and baseline:
-            overhead = f"{bpf/baseline:.2f}x"
-            log(f"{'BPF (bpftime)':<20} {bpf:<20.2f} {overhead:<15}", log_file)
-        elif bpf:
-            log(f"{'BPF (bpftime)':<20} {bpf:<20.2f} {'-':<15}", log_file)
-        else:
-            log(f"{'BPF (bpftime)':<20} {'FAILED':<20} {'-':<15}", log_file)
-
-        # NVBit
-        if nvbit and baseline:
-            overhead = f"{nvbit/baseline:.2f}x"
-            log(f"{'NVBit':<20} {nvbit:<20.2f} {overhead:<15}", log_file)
-        elif nvbit:
-            log(f"{'NVBit':<20} {nvbit:<20.2f} {'-':<15}", log_file)
-        else:
-            log(f"{'NVBit':<20} {'FAILED':<20} {'-':<15}", log_file)
+            log(f"{name:<40} {'FAILED':<15} {'-':<15}", log_file)
 
     log("\n" + "="*80 + "\n", log_file)
 
@@ -284,87 +207,83 @@ def main():
     repo_root = os.path.dirname(os.path.dirname(os.path.dirname(script_dir)))
     bench_dir = script_dir
     build_dir = os.path.join(repo_root, 'build')
-
-    if not os.path.exists(bench_dir):
-        print("Error: benchmark/gpu directory not found")
-        sys.exit(1)
+    log_path = os.path.join(bench_dir, LOG_FILE)
+    result_path = os.path.join(bench_dir, RESULT_FILE)
 
     # Parse arguments
-    iterations = 3
-    comprehensive = False
+    config_file = DEFAULT_CONFIG
+    if len(sys.argv) > 1:
+        config_file = sys.argv[1]
 
-    for arg in sys.argv[1:]:
-        if arg == '--comprehensive' or arg == '-c':
-            comprehensive = True
-        else:
-            try:
-                iterations = int(arg)
-            except ValueError:
-                print(f"Invalid argument: {arg}")
-                print(f"Usage: {sys.argv[0]} [iterations] [--comprehensive|-c]")
-                sys.exit(1)
+    config_path = os.path.join(bench_dir, config_file)
+    if not os.path.exists(config_path):
+        print(f"Error: Config file not found: {config_path}")
+        print(f"Usage: {sys.argv[0]} [config.json]")
+        sys.exit(1)
 
-    # Create log file
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    log_filename = f"benchmark_{timestamp}.log"
-    log_path = os.path.join(bench_dir, log_filename)
+    # Load configuration
+    try:
+        config = load_config(config_path)
+    except Exception as e:
+        print(f"Error loading config: {e}")
+        sys.exit(1)
+
+    # Extract config
+    vec_add_args = config.get('vec_add_args', '1024 10')
+    test_cases = config.get('test_cases', [])
 
     with open(log_path, 'w') as log_file:
         log("="*80, log_file)
         log("CUDA Benchmark Suite", log_file)
         log("="*80, log_file)
         log(f"Timestamp: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}", log_file)
-        log(f"Iterations: {iterations}", log_file)
-        if comprehensive:
-            log("Mode: Comprehensive (all test scenarios)", log_file)
-        else:
-            log("Mode: Quick (baseline + empty probe only)", log_file)
+        log(f"Config file: {config_file}", log_file)
+        log(f"Vec_add args: {vec_add_args}", log_file)
         log("="*80 + "\n", log_file)
 
         # Get GPU name
         device = get_gpu_name()
         log(f"GPU: {device}\n", log_file)
 
-        # Run benchmarks
-        results = {}
-        results['baseline'] = run_baseline(bench_dir, iterations, log_file)
+        # Prepare results
+        results = {
+            'device': device,
+            'timestamp': datetime.now().isoformat(),
+            'config_file': config_file,
+            'vec_add_args': vec_add_args,
+            'baseline_time': None,
+            'tests': []
+        }
+
+        # Run baseline
+        results['baseline_time'] = run_baseline(bench_dir, vec_add_args, log_file)
         log("", log_file)
 
-        if comprehensive:
-            # Run all BPF test modes
-            bpf_modes = [
-                ('bpf_empty', 'empty'),
-                ('bpf_entry', 'entry'),
-                ('bpf_exit', 'exit'),
-                ('bpf_both', 'both'),
-                ('bpf_ringbuf', 'ringbuf'),
-                ('bpf_array_update', 'array-update'),
-                ('bpf_array_lookup', 'array-lookup'),
-                ('bpf_hash_update', 'hash-update'),
-                ('bpf_hash_lookup', 'hash-lookup'),
-                ('bpf_hash_delete', 'hash-delete'),
-                ('bpf_percpu_array_update', 'percpu-array-update'),
-                ('bpf_percpu_array_lookup', 'percpu-array-lookup'),
-                ('bpf_percpu_hash_update', 'percpu-hash-update'),
-                ('bpf_percpu_hash_lookup', 'percpu-hash-lookup'),
-            ]
+        # Run test cases
+        for test_case in test_cases:
+            name = test_case.get('name', 'Unknown')
+            cuda_probe_args = test_case.get('cuda_probe_args', '')
+            test_vec_add_args = test_case.get('vec_add_args', vec_add_args)
 
-            for key, mode in bpf_modes:
-                results[key] = run_bpf(bench_dir, build_dir, mode, iterations, log_file)
-                log("", log_file)
+            log(f"Running test: {name}", log_file)
+            avg_time = run_bpf_test(bench_dir, build_dir, cuda_probe_args, test_vec_add_args, log_file)
 
-            # Run NVBit
-            results['nvbit'] = run_nvbit(bench_dir, iterations, log_file)
-        else:
-            # Quick mode - just empty probe
-            results['bpf'] = run_bpf(bench_dir, build_dir, 'empty', iterations, log_file)
+            results['tests'].append({
+                'name': name,
+                'cuda_probe_args': cuda_probe_args,
+                'vec_add_args': test_vec_add_args,
+                'avg_time_us': avg_time
+            })
             log("", log_file)
-            results['nvbit'] = run_nvbit(bench_dir, iterations, log_file)
 
-        # Print results
-        print_results_table(device, results, comprehensive, log_file)
+        # Save results
+        save_results(results, result_path)
+        log(f"Results saved to: {RESULT_FILE}", log_file)
 
-        log(f"\nLog written to: {log_filename}", log_file)
+        # Print results table
+        print_results_table(results, log_file)
+
+        log(f"Log saved to: {LOG_FILE}", log_file)
 
 if __name__ == '__main__':
     main()

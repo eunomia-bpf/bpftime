@@ -59,19 +59,19 @@ Stats calculate_stats(std::vector<double>& times) {
 
 int main(int argc, char **argv)
 {
-    // Parse iterations
+    // Parse arguments: h_N (vector size) and iterations
+    int h_N = 1 << 10;  // Default: 1024 elements
     int iterations = 10;
     bool detailed = true;
 
     if (argc > 1) {
-        iterations = atoi(argv[1]);
+        h_N = atoi(argv[1]);
     }
-    if (argc > 2 && std::string(argv[2]) == "--detailed") {
-        detailed = true;
+    if (argc > 2) {
+        iterations = atoi(argv[2]);
     }
 
     // Set vector size in constant memory
-    const int h_N = 1 << 10;  // 1M elements
     cudaError_t err = cudaMemcpyToSymbol(d_N, &h_N, sizeof(h_N));
     if (err != cudaSuccess) {
         std::cerr << "cudaMemcpyToSymbol failed: " << cudaGetErrorString(err) << std::endl;
