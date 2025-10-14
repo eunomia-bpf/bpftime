@@ -281,8 +281,10 @@ int bpf_attach_ctx::instantiate_bpf_link_handler_at(
 				dynamic_cast<attach::nv_attach_private_data &>(
 					*priv_data);
 			nv_attach_private_data.program_name = prog->prog_name();
+			// Pass device-visible pointer to GPU side (pinned host
+			// memory mapped into device address space)
 			nv_attach_private_data.comm_shared_mem =
-				(uintptr_t)this->cuda_ctx->cuda_shared_mem.get();
+				this->cuda_ctx->cuda_shared_mem_device_pointer;
 			nv_attach_private_data.instructions = prog->get_insns();
 			SPDLOG_INFO(
 				"Loaded {} instructions (original) for cuda ebpf program",
