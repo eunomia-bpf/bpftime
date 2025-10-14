@@ -32,9 +32,8 @@ This example leverages bpftime's CUDA attachment implementation to:
 cd bpftime
 
 # Build the main bpftime project first
-mkdir -p build && cd build
-cmake .. -DBPFTIME_ENABLE_CUDA_ATTACH=1 -DBPFTIME_CUDA_ROOT=/usr/local/cuda-12.6
-make -j$(nproc)
+cmake -Bbuild -DBPFTIME_ENABLE_CUDA_ATTACH=1 -DBPFTIME_CUDA_ROOT=/usr/local/cuda-12.8 .
+make  -C build -j$(nproc)
 
 # Build the example (from the build directory)
 cd ..
@@ -59,7 +58,7 @@ This process loads the eBPF program and waits for CUDA events.
 In another terminal:
 
 ```bash
-BPFTIME_OUTPUT= LD_PRELOAD=build/runtime/agent/libbpftime-agent.so \
+BPFTIME_LOG_OUTPUT=console LD_PRELOAD=build/runtime/agent/libbpftime-agent.so \
   example/gpu/cuda-counter/vec_add
 ```
 

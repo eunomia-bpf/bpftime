@@ -305,11 +305,6 @@ cmake -Bbuild \
   -DBPFTIME_CUDA_ROOT=/usr/local/cuda-12.6 \
   -DCMAKE_BUILD_TYPE=Release
 
-# For AMD ROCm (experimental)
-cmake -Bbuild \
-  -DBPFTIME_ENABLE_ROCM_ATTACH=1 \
-  -DROCM_PATH=/opt/rocm
-
 make -j$(nproc)
 ```
 
