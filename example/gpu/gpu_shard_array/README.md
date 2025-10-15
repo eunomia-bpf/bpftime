@@ -36,31 +36,27 @@ LD_PRELOAD=/root/bpftime_sy03/bpftime/build/runtime/agent/libbpftime-agent.so \
   /root/bpftime_sy03/bpftime/example/gpu/gpu_shard_array/vec_add
 ```
 3) 预期输出：
-- server：周期打印 `counter[0]=N` 并单调递增。
-- agent：可见 `CUDA Received call request id ...` 与 `CUDA: MAP_UPDATE success ...`。
+- server：周期打印 `counter[0]=N` 并单调递增（受并发覆盖，趋势上递增）。
+- agent：可见 `CUDA Received call request id ...` 与相关日志（非 CPU 握手路径时日志将显著减少）。
 
 
 
 ## 一致性说明（简述）
-- 写入：单 key 自旋锁，写后 `__threadfence_system()`，保证写入对其他线程/主机可见。
-- 读取：无锁，可能读到写入前的旧值，但不会读到部分写入。
+- 写入：设备端 memcpy 覆盖写，写后执行 system 级内存栅栏（在 trampoline 中实现）以保证主机可见。
+- 读取：无锁，可能读到稍早的旧值，但不会读到部分写入。
 - 如需“更强一致读”，可在读取侧加锁或做双读版本校验（本示例未启用）。
 
 ## Non-Per-Thread GPU Map 的技术要点（当前实现）
 - 目标与形态：
   - **非 per-thread**：GPU/host 共享单副本 map（array），不同线程不再拥有独立副本。
   - **UVA 零拷贝**：host 侧共享内存由 agent 注册，GPU/host 通过 UVA 可见同一份数据。
-- 写入门禁（leader 线程）：
-  - 为避免多个 writer 对同一 key 的竞态，推荐以“leader 线程门禁”在更高层做串行化（例如仅主线程/特定 CPU 负责同一 key 的写入）。
-- fetch_add 语义：
-  - 通过高 32 位扩展标志位 `BPFTIME_UPDATE_OP_ADD` 请求 host 侧执行“软件 RMW”的自增：读取 u64、加 delta、写回。
-  - 该操作并非全局硬件原子；多个并发 writer 仍可能造成写入覆盖或丢失增量，因此需要结合“leader 门禁”或按 key 分片降低冲突。
+- 更新语义：
+  - 设备端直写（trampoline fast-path），memcpy 覆盖，非原子，最后写入者赢；写后有 system 栅栏保障可见性。
+  - 不再依赖 CPU 握手，减少延迟与开销；如需精确计数，请在上层聚合或分片 key 减少冲突。
 
-## fetch_add 的使用方式（示例回顾）
+## 示例写入方式（更新）
 - BPF 侧（`gpu_shard_array.bpf.c`）：
-  - 在 `kretprobe/vectorAdd` 中，对 `counter[0]` 执行 `bpf_map_update_elem(..., BPF_ANY | BPFTIME_UPDATE_OP_ADD)`，其中 value 传入 `delta=1`。
-- 后端（`nv_gpu_shared_array_map.cpp`）：
-  - 解析 flags 的高 32 位为 `BPFTIME_UPDATE_OP_ADD` 时，将 value 视为 u64 增量，做软件 RMW（读-加-写）。
+  - 在 `kretprobe/vectorAdd` 中，对 `counter[0]` 读取后加 1，再使用 `BPF_ANY` 覆盖写（设备端执行 memcpy）。
 
 ## Troubleshooting
 - 无 `nvcc`：脚本会提示跳过 CUDA 构建；示例无法触发计数递增。

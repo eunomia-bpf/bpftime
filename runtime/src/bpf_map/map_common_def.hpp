@@ -16,28 +16,6 @@
 
 namespace bpftime
 {
-// Extended update-op flags for bpftime GPU (stored in high 32 bits of flags)
-// This avoids collision with kernel BPF_ANY/BPF_NOEXIST/BPF_EXIST (low 32 bits)
-static constexpr uint64_t BPFTIME_UPDATE_OP_SHIFT = 32ULL;
-static constexpr uint64_t BPFTIME_UPDATE_OP_MASK = 0xFFFFFFFFULL
-						   << BPFTIME_UPDATE_OP_SHIFT;
-static constexpr uint64_t BPFTIME_UPDATE_OP_NONE = 0ULL;
-static constexpr uint64_t BPFTIME_UPDATE_OP_ADD = 1ULL
-						  << BPFTIME_UPDATE_OP_SHIFT;
-// Usage of extended-update flags:
-// - The low 32 bits keep the standard kernel flags (e.g., BPF_ANY/BPF_NOEXIST/BPF_EXIST).
-// - The high 32 bits encode a single bpftime-specific operation such as
-//   BPFTIME_UPDATE_OP_ADD to request a host-side fetch_add.
-// Semantics of BPFTIME_UPDATE_OP_ADD (fetch_add):
-// - The 'value' pointer provided to map_update_elem is treated as an unsigned
-//   64-bit delta.
-// - The map backend performs a software read-modify-write on the targeted
-//   element (load current u64, add delta, store back).
-// Concurrency:
-// - This is NOT a hardware-atomic RMW across threads/processes; without
-//   additional serialization, concurrent writers could lose updates.
-// - Deploy a higher-level gate (e.g., leader-thread guard) when multiple
-//   writers may update the same key.
 
 using bytes_vec_allocator = boost::interprocess::allocator<
 	uint8_t, boost::interprocess::managed_shared_memory::segment_manager>;

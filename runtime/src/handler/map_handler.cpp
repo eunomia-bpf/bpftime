@@ -235,7 +235,7 @@ const void *bpf_map_handler::map_lookup_elem(const void *key,
 		if (func_ptr) {
 			return func_ptr(id, key, from_syscall);
 		} else {
-			SPDLOG_ERROR("Unsupported map type: {}", (int)type);
+			SPDLOG_ERROR("[elem_lookup] Unsupported map type: {}", (int)type);
 			return nullptr;
 		}
 	}
@@ -378,7 +378,7 @@ long bpf_map_handler::map_update_elem(const void *key, const void *value,
 		if (func_ptr) {
 			return func_ptr(id, key, value, flags, from_syscall);
 		} else {
-			SPDLOG_ERROR("Unsupported map type: {}", (int)type);
+			SPDLOG_ERROR("[map_update_elem] Unsupported map type: {}", (int)type);
 			return -1;
 		}
 	}
@@ -507,7 +507,7 @@ int bpf_map_handler::bpf_map_get_next_key(const void *key, void *next_key,
 		if (func_ptr) {
 			return func_ptr(id, key, next_key, from_syscall);
 		} else {
-			SPDLOG_ERROR("Unsupported map type: {}", (int)type);
+			SPDLOG_ERROR("[bpf_map_get_next_key] Unsupported map type: {}", (int)type);
 			return -1;
 		}
 	}
@@ -649,7 +649,7 @@ long bpf_map_handler::map_delete_elem(const void *key, bool from_syscall) const
 		if (func_ptr) {
 			return func_ptr(id, key, from_syscall);
 		} else {
-			SPDLOG_ERROR("Unsupported map type: {}", (int)type);
+			SPDLOG_ERROR("[bpf_map_delete_elem] Unsupported map type: {}", (int)type);
 			return -1;
 		}
 	}
@@ -870,7 +870,7 @@ int bpf_map_handler::map_init(managed_shared_memory &memory)
 			}
 			return 0;
 		} else {
-			SPDLOG_ERROR("Unsupported map type: {}", (int)type);
+			SPDLOG_ERROR("[map_init] Unsupported map type: {}", (int)type);
 			return -1;
 		}
 	}
@@ -958,7 +958,7 @@ void bpf_map_handler::map_free(managed_shared_memory &memory) const
 		if (func_ptr) {
 			func_ptr(id);
 		} else {
-			SPDLOG_ERROR("Unsupported map type: {}", (int)type);
+			SPDLOG_ERROR("[map_free] Unsupported map type: {}", (int)type);
 		}
 	}
 	map_impl_ptr = nullptr;

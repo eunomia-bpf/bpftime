@@ -321,11 +321,7 @@ nv_attach_impl::patch_with_probe_and_retprobe(std::string ptx,
 				idx++;
 			} while (!stack.empty());
 			kernel_sec.end = idx;
-			bool matched = (kernel_sec.name == target) ||
-				       (!target.empty() && target[0] != '_' &&
-					kernel_sec.name.find(target) !=
-						std::string::npos);
-			if (matched) {
+			if (kernel_sec.name == target) {
 				auto probe_func_name =
 					(probe_detail.is_retprobe ?
 						 std::string(
@@ -340,99 +336,21 @@ nv_attach_impl::patch_with_probe_and_retprobe(std::string ptx,
 				std::string sub_str = ptx.substr(
 					kernel_sec.begin,
 					kernel_sec.end - kernel_sec.begin);
-				// Generate unique register and label names per
-				// injection to avoid duplicate definitions
-				// reported by ptxas
-				static std::atomic<uint32_t> gate_counter{ 0 };
-				uint32_t gate_id = ++gate_counter;
-				auto p0 = "%p_bpf_" + std::to_string(gate_id) +
-					  "_0";
-				auto p1 = "%p_bpf_" + std::to_string(gate_id) +
-					  "_1";
-				auto p2 = "%p_bpf_" + std::to_string(gate_id) +
-					  "_2";
-				auto r_tid = "%r_bpf_" +
-					     std::to_string(gate_id) + "_tid";
-				auto r_bx = "%r_bpf_" +
-					    std::to_string(gate_id) + "_bx";
-				std::string skip_label =
-					"L_BPF_SKIP_" +
-					std::to_string(gate_id) + "_" +
-					probe_func_name;
 				if (probe_detail.is_retprobe) {
 					static std::regex ret_pattern(
 						R"((\s+)(ret;))");
-					std::string gated =
-						"$1    // bpftime gate retprobe\n"
-						"    .reg .pred " +
-						p0 + ", " + p1 + ", " + p2 +
-						";\n"
-						"    .reg .u32 " +
-						r_tid + ", " + r_bx +
-						";\n"
-						"    mov.u32 " +
-						r_tid +
-						", %tid.x;\n"
-						"    setp.eq.u32 " +
-						p0 + ", " + r_tid +
-						", 0;\n"
-						"    mov.u32 " +
-						r_bx +
-						", %ctaid.x;\n"
-						"    setp.eq.u32 " +
-						p1 + ", " + r_bx +
-						", 0;\n"
-						"    and.pred " +
-						p2 + ", " + p0 + ", " + p1 +
-						";\n"
-						"    @!" +
-						p2 + " bra " + skip_label +
-						";\n"
-						"    call " +
-						probe_func_name +
-						";\n"
-						"" +
-						skip_label +
-						":\n"
-						"$1$2";
 					sub_str = std::regex_replace(
-						sub_str, ret_pattern, gated);
+						sub_str, ret_pattern,
+						"$1call " + probe_func_name +
+							";\n$1$2");
 				} else {
 					static std::regex begin_pattern(
 						R"((\{)(\s*\.reg|\s*\.shared|\s*$))");
-					std::string gated =
-						"$1\n    // bpftime gate probe\n"
-						"    .reg .pred " +
-						p0 + ", " + p1 + ", " + p2 +
-						";\n"
-						"    .reg .u32 " +
-						r_tid + ", " + r_bx +
-						";\n"
-						"    mov.u32 " +
-						r_tid +
-						", %tid.x;\n"
-						"    setp.eq.u32 " +
-						p0 + ", " + r_tid +
-						", 0;\n"
-						"    mov.u32 " +
-						r_bx +
-						", %ctaid.x;\n"
-						"    setp.eq.u32 " +
-						p1 + ", " + r_bx +
-						", 0;\n"
-						"    and.pred " +
-						p2 + ", " + p0 + ", " + p1 +
-						";\n"
-						"    @!" +
-						p2 + " bra " + skip_label +
-						";\n"
-						"    call " +
-						probe_func_name +
-						";\n"
-						"" +
-						skip_label + ":\n$2";
 					sub_str = std::regex_replace(
-						sub_str, begin_pattern, gated);
+						sub_str, begin_pattern,
+						"$1\n    call " +
+							probe_func_name +
+							";\n$2");
 				}
 				ptx = ptx.replace(kernel_sec.begin,
 						  kernel_sec.end -
@@ -444,8 +362,6 @@ nv_attach_impl::patch_with_probe_and_retprobe(std::string ptx,
 		}
 	}
 
-	// Trampoline is already included in base PTX for CUDA path; avoid
-	// duplicate wrapping to prevent duplicate symbol definitions
 	ptx = filter_out_version_headers(ptx);
 	return ptx;
 }

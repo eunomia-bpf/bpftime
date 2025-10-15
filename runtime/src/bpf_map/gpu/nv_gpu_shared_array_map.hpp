@@ -67,8 +67,9 @@ class nv_gpu_shared_array_map_impl {
 
 	void *get_gpu_mem_buffer()
 	{
-		// device direct access is disabled for GPU mode; host path only
-		return nullptr;
+		// Return the base of values region; device computes base + key
+		// * value_size
+		return (void *)values_region_base();
 	}
 	uint64_t get_max_thread_count() const
 	{

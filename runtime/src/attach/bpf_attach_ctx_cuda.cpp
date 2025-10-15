@@ -10,7 +10,6 @@
 #include <optional>
 #include <spdlog/spdlog.h>
 #include "cuda.h"
-#include <cstring>
 
 extern "C" {
 extern uint64_t bpftime_trace_printk(uint64_t fmt, uint64_t fmt_size, ...);
@@ -90,74 +89,13 @@ void bpf_attach_ctx::start_cuda_watcher_thread()
 				ctx->cuda_shared_mem->flag1 = 0;
 				auto req_id = ctx->cuda_shared_mem->request_id;
 
-				long raw_map = ctx->cuda_shared_mem->map_id;
-				unsigned long long raw_u =
-					(unsigned long long)raw_map;
-				int map_fd = (int)(raw_u >> 32);
-				if (map_fd <= 0 || map_fd > 1 << 30) {
-					map_fd = (int)(raw_u & 0xffffffffull);
-				}
-				// Validate/translate map_fd: fallback helper
-				// (applied for all requests) Rationale:
-				// device-side map-id encoding can sometimes be
-				// invalid or noisy. Normalizing fd here makes
-				// subsequent handling more robust at the cost
-				// of potentially more frequent fallback logs
-				// across helper types.
-				auto ensure_valid_gpu_array_fd =
-					[&](int fd) -> int {
-					const auto *manager =
-						shm_holder.global_shared_memory
-							.get_manager();
-					if (!manager)
-						return fd;
-					// Accept only GPU_ARRAY_MAP for
-					// implicit fallback. Other map types
-					// are not zero-copy GPU shared memory
-					// maps and should not be implicitly
-					// translated.
-					auto is_valid_gpu_array =
-						[&](int x) -> bool {
-						if (x < 0 ||
-						    x >= (int)manager->size() ||
-						    !manager->is_allocated(x))
-							return false;
-						const auto &h =
-							manager->get_handler(x);
-						if (!std::holds_alternative<
-							    bpf_map_handler>(h))
-							return false;
-						const auto &mh = std::get<
-							bpf_map_handler>(h);
-						return mh.type ==
-						       bpf_map_type::
-							       BPF_MAP_TYPE_GPU_ARRAY_MAP;
-					};
-					if (is_valid_gpu_array(fd))
-						return fd;
-					int target = -1;
-					for (int i = 0;
-					     i < (int)manager->size(); i++) {
-						if (!is_valid_gpu_array(i))
-							continue;
-						target = i;
-						break;
-					}
-					if (target != -1) {
-						SPDLOG_INFO(
-							"Fallback map fd from {} to {} (GPU_ARRAY_MAP)",
-							fd, target);
-						return target;
-					}
-					return fd;
-				};
-				// Apply fd fallback for all incoming requests
-				// Rationale: normalize invalid/placeholder fds
-				// before any branch-specific logic.
-				map_fd = ensure_valid_gpu_array_fd(map_fd);
-				SPDLOG_INFO(
-					"CUDA Received call request id {}, raw_map = {}, decoded map_fd = {}",
-					req_id, raw_map, map_fd);
+				auto map_ptr = ctx->cuda_shared_mem->map_id;
+				auto map_fd = map_ptr;
+				SPDLOG_DEBUG(
+					"CUDA Received call request id {}, map_ptr = {}, map_fd = {}",
+					req_id, map_ptr, map_fd);
+				auto start_time =
+					std::chrono::high_resolution_clock::now();
 				if (req_id ==
 				    (int)cuda::HelperOperation::MAP_LOOKUP) {
 					const auto &req =
@@ -165,93 +103,15 @@ void bpf_attach_ctx::start_cuda_watcher_thread()
 							.map_lookup;
 					auto &resp = ctx->cuda_shared_mem->resp
 							     .map_lookup;
-					// For GPU_ARRAY_MAP: copy key into a
-					// local buffer. Rationale:
-					// CommSharedMem request buffer can be
-					// reused by other helpers; local copy
-					// avoids key contamination (previously
-					// observed as ASCII remnants).
-					int map_type_for_lookup = -1;
-					if (const auto *manager =
-						    shm_holder
-							    .global_shared_memory
-							    .get_manager()) {
-						if (map_fd >= 0 &&
-						    map_fd < (int)manager
-								     ->size() &&
-						    manager->is_allocated(
-							    map_fd)) {
-							const auto &h =
-								manager->get_handler(
-									map_fd);
-							if (std::holds_alternative<
-								    bpf_map_handler>(
-								    h))
-								map_type_for_lookup =
-									(int)std::get<
-										bpf_map_handler>(
-										h)
-										.type;
-						}
-					}
-					// Copy key to a local buffer to avoid
-					// shared-memory reuse contamination
-					uint32_t key_local_l = 0;
-					const void *lookup_key_ptr =
-						(const void *)&req.key;
-					if (map_type_for_lookup ==
-					    (int)bpf_map_type::
-						    BPF_MAP_TYPE_GPU_ARRAY_MAP) {
-						std::memcpy(
-							&key_local_l,
-							(const void *)&req.key,
-							sizeof(uint32_t));
-						lookup_key_ptr =
-							(const void
-								 *)&key_local_l;
-					}
 					auto ptr = bpftime_map_lookup_elem(
-						map_fd, lookup_key_ptr);
-					// Copy looked-up value into
-					// shared-memory value slot and return a
-					// device-visible pointer.
-					// Rationale: device must dereference a
-					// device-visible address; we compute it
-					// as device_base + (host_value_addr -
-					// host_base) after host memcpy.
-					if (ptr) {
-						uint32_t value_size =
-							bpftime_map_value_size_from_syscall(
-								map_fd);
-						std::memcpy(
-							(void *)&ctx
-								->cuda_shared_mem
-								->req.map_update
-								.value,
-							ptr, value_size);
-						uintptr_t host_base =
-							(uintptr_t)ctx
-								->cuda_shared_mem
-								.get();
-						uintptr_t host_value_addr =
-							(uintptr_t)&ctx
-								->cuda_shared_mem
-								->req.map_update
-								.value;
-						uintptr_t offset =
-							host_value_addr -
-							host_base;
-						uintptr_t dev_base =
-							ctx->cuda_shared_mem_device_pointer;
-						resp.value =
-							(const void *)(dev_base +
-								       offset);
-					} else {
-						resp.value = nullptr;
-					}
+						map_fd, req.key);
+					resp.value = ptr;
 					SPDLOG_DEBUG(
-						"CUDA: map lookup for {}, resp.value(dev)={:x}",
-						map_fd, (uintptr_t)resp.value);
+						"CUDA: Executing map lookup for {}, key= {:x} result = {:x}",
+						map_fd,
+						*(uintptr_t *)(uintptr_t)&req
+							 .key,
+						(uintptr_t)resp.value);
 
 				} else if (req_id ==
 					   (int)cuda::HelperOperation::
@@ -261,57 +121,9 @@ void bpf_attach_ctx::start_cuda_watcher_thread()
 							.map_update;
 					auto &resp = ctx->cuda_shared_mem->resp
 							     .map_update;
-					// Identify map type and sizes for
-					// correct handling
-					int map_type_for_update = -1;
-					uint32_t m_key_size_u = 0,
-						 m_value_size_u = 0;
-					if (const auto *manager =
-						    shm_holder
-							    .global_shared_memory
-							    .get_manager()) {
-						if (map_fd >= 0 &&
-						    map_fd < (int)manager
-								     ->size() &&
-						    manager->is_allocated(
-							    map_fd)) {
-							const auto &h =
-								manager->get_handler(
-									map_fd);
-							if (std::holds_alternative<
-								    bpf_map_handler>(
-								    h)) {
-								const auto &mh = std::get<
-									bpf_map_handler>(
-									h);
-								map_type_for_update =
-									(int)mh.type;
-								m_key_size_u =
-									mh.get_key_size();
-								m_value_size_u =
-									mh.get_value_size();
-							}
-						}
-					}
-					// Copy key to a local buffer to avoid
-					// shared-memory reuse contamination
-					uint32_t key_local_u = 0;
-					const void *update_key_ptr =
-						(const void *)&req.key;
-					if (map_type_for_update ==
-					    (int)bpf_map_type::
-						    BPF_MAP_TYPE_GPU_ARRAY_MAP) {
-						std::memcpy(
-							&key_local_u,
-							(const void *)&req.key,
-							sizeof(uint32_t));
-						update_key_ptr =
-							(const void
-								 *)&key_local_u;
-					}
 					resp.result = bpftime_map_update_elem(
-						map_fd, update_key_ptr,
-						req.value, req.flags);
+						map_fd, req.key, req.value,
+						req.flags);
 					SPDLOG_DEBUG(
 						"CUDA: Executing map update for {}, result = {}",
 						map_fd, resp.result);
@@ -409,31 +221,11 @@ bpf_attach_ctx::create_map_basic_info(int filled_size)
 			const auto &map =
 				std::get<bpf_map_handler>(current_handler);
 			auto gpu_buffer = map.get_gpu_map_extra_buffer();
-			void *gpu_buffer_dev = (void *)gpu_buffer;
-#ifdef BPFTIME_ENABLE_CUDA_ATTACH
-			// Translate host pointer to a device-visible pointer
-			// (for host-shared GPU maps)
-			if (map.type ==
-				    bpf_map_type::BPF_MAP_TYPE_GPU_ARRAY_MAP ||
-			    map.type ==
-				    bpf_map_type::BPF_MAP_TYPE_GPU_RINGBUF_MAP) {
-				void *tmp = nullptr;
-				auto err = cudaHostGetDevicePointer(
-					&tmp, gpu_buffer_dev, 0);
-				if (err == cudaSuccess && tmp != nullptr) {
-					gpu_buffer_dev = tmp;
-				} else {
-					SPDLOG_WARN(
-						"cudaHostGetDevicePointer failed for map fd {}: {} (fallback to host ptr)",
-						i, (int)err);
-				}
-			}
-#endif
 			SPDLOG_INFO(
 				"Copying map fd {} to device, key size={}, value size={}, max ent={}, map_type = {}, gpu_buffer = {:x}",
 				i, map.get_key_size(), map.get_value_size(),
 				map.get_max_entries(), (int)map.type,
-				(uintptr_t)gpu_buffer_dev);
+				(uintptr_t)gpu_buffer);
 
 			if (i >= local_basic_info.size()) {
 				SPDLOG_ERROR(
@@ -447,7 +239,7 @@ bpf_attach_ctx::create_map_basic_info(int filled_size)
 			local.value_size = map.get_value_size();
 			local.max_entries = map.get_max_entries();
 			local.map_type = (int)map.type;
-			local.extra_buffer = gpu_buffer_dev;
+			local.extra_buffer = gpu_buffer;
 			local.max_thread_count =
 				map.get_gpu_map_max_thread_count();
 		}
@@ -476,30 +268,11 @@ std::optional<std::unique_ptr<cuda::CUDAContext>> create_cuda_context()
 
 	CUDART_SAFE_CALL(cudaHostRegister(cuda_shared_mem.get(),
 					  sizeof(cuda::CommSharedMem),
-					  cudaHostRegisterMapped),
+					  cudaHostRegisterDefault),
 			 "Unable to register shared memory");
 
 	auto cuda_ctx = std::make_optional(std::make_unique<cuda::CUDAContext>(
 		std::move(cuda_shared_mem)));
-	// Compute device-visible base address of shared memory for building
-	// device-visible resp.value pointers
-	{
-		void *device_ptr = nullptr;
-		auto err = cudaHostGetDevicePointer(
-			&device_ptr, (void *)(*cuda_ctx)->cuda_shared_mem.get(),
-			0);
-		if (err == cudaSuccess && device_ptr != nullptr) {
-			(*cuda_ctx)->cuda_shared_mem_device_pointer =
-				reinterpret_cast<uintptr_t>(device_ptr);
-			SPDLOG_INFO(
-				"Mapped CommSharedMem to device pointer {:x}",
-				(uintptr_t)device_ptr);
-		} else {
-			SPDLOG_WARN(
-				"cudaHostGetDevicePointer failed for CommSharedMem: {}",
-				(int)err);
-		}
-	}
 
 	SPDLOG_INFO("CUDA context created");
 	return cuda_ctx;
