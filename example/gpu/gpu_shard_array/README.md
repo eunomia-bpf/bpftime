@@ -46,6 +46,22 @@ LD_PRELOAD=/root/bpftime_sy03/bpftime/build/runtime/agent/libbpftime-agent.so \
 - 读取：无锁，可能读到写入前的旧值，但不会读到部分写入。
 - 如需“更强一致读”，可在读取侧加锁或做双读版本校验（本示例未启用）。
 
+## Non-Per-Thread GPU Map 的技术要点（当前实现）
+- 目标与形态：
+  - **非 per-thread**：GPU/host 共享单副本 map（array），不同线程不再拥有独立副本。
+  - **UVA 零拷贝**：host 侧共享内存由 agent 注册，GPU/host 通过 UVA 可见同一份数据。
+- 写入门禁（leader 线程）：
+  - 为避免多个 writer 对同一 key 的竞态，推荐以“leader 线程门禁”在更高层做串行化（例如仅主线程/特定 CPU 负责同一 key 的写入）。
+- fetch_add 语义：
+  - 通过高 32 位扩展标志位 `BPFTIME_UPDATE_OP_ADD` 请求 host 侧执行“软件 RMW”的自增：读取 u64、加 delta、写回。
+  - 该操作并非全局硬件原子；多个并发 writer 仍可能造成写入覆盖或丢失增量，因此需要结合“leader 门禁”或按 key 分片降低冲突。
+
+## fetch_add 的使用方式（示例回顾）
+- BPF 侧（`gpu_shard_array.bpf.c`）：
+  - 在 `kretprobe/vectorAdd` 中，对 `counter[0]` 执行 `bpf_map_update_elem(..., BPF_ANY | BPFTIME_UPDATE_OP_ADD)`，其中 value 传入 `delta=1`。
+- 后端（`nv_gpu_shared_array_map.cpp`）：
+  - 解析 flags 的高 32 位为 `BPFTIME_UPDATE_OP_ADD` 时，将 value 视为 u64 增量，做软件 RMW（读-加-写）。
+
 ## Troubleshooting
 - 无 `nvcc`：脚本会提示跳过 CUDA 构建；示例无法触发计数递增。
 - 权限/依赖：确认已安装 clang、make、gcc，且可从 `third_party/` 构建 libbpf/bpftool。
