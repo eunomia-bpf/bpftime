@@ -10,3 +10,4 @@ cuda_probe_*.stderr
 micro_result.json
 micro_bench.log
 .cuda_probe.stderr
+micro_example_result.json
