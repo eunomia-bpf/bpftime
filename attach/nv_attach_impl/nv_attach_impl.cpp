@@ -10,10 +10,7 @@
 #include "nv_attach_utils.hpp"
 #include "spdlog/spdlog.h"
 #include <asm/unistd.h> // For architecture-specific syscall numbers
-#include <boost/process/detail/child_decl.hpp>
-#include <boost/process/env.hpp>
-#include <boost/process/io.hpp>
-#include <boost/process/pipe.hpp>
+#include <boost/process.hpp>
 #include <chrono>
 #include <cstdlib>
 #include <fstream>
@@ -38,7 +35,6 @@
 #include <variant>
 #include <vector>
 #include <boost/asio.hpp>
-#include <boost/process.hpp>
 using namespace bpftime;
 using namespace attach;
 
@@ -333,7 +329,8 @@ nv_attach_impl::hack_fatbin(std::vector<uint8_t> &&data_vec)
 }
 
 static uint64_t _constData_mock;
-static char map_basic_info_mock[4096];
+// Ensure buffer size matches map_info layout used on device (256 entries)
+static char map_basic_info_mock[sizeof(attach::MapBasicInfo) * 256];
 extern "C" {
 void __cudaRegisterVar(void **fatCubinHandle, char *hostVar,
 		       char *deviceAddress, const char *deviceName, int ext,
@@ -362,6 +359,15 @@ int nv_attach_impl::register_trampoline_memory(void **fatbin_handle)
 int nv_attach_impl::copy_data_to_trampoline_memory()
 {
 	SPDLOG_INFO("Copying data to device symbols..");
+	size_t const_size = 0;
+	if (auto err = cudaGetSymbolSize(&const_size,
+					 (const void *)&_constData_mock);
+	    err != cudaSuccess || const_size < sizeof(_constData_mock)) {
+		SPDLOG_ERROR(
+			"cudaGetSymbolSize(constData) failed or size too small: {}",
+			(int)err);
+		return -1;
+	}
 	if (auto err = cudaMemcpyToSymbol((const void *)&_constData_mock,
 					  &this->shared_mem_ptr,
 					  sizeof(_constData_mock));
@@ -381,13 +387,30 @@ int nv_attach_impl::copy_data_to_trampoline_memory()
 				cur.max_entries, cur.map_type);
 		}
 	}
-	if (auto err = cudaMemcpyToSymbol((const void *)&map_basic_info_mock,
-					  this->map_basic_info->data(),
-					  sizeof(map_basic_info_mock));
-	    err != cudaSuccess) {
-		SPDLOG_ERROR("Unable to copy `map_basic_into` to device : {}",
-			     (int)err);
-		return -1;
+	{
+		size_t map_info_symbol_size = 0;
+		if (auto err = cudaGetSymbolSize(
+			    &map_info_symbol_size,
+			    (const void *)&map_basic_info_mock);
+		    err != cudaSuccess) {
+			SPDLOG_ERROR("cudaGetSymbolSize(map_info) failed: {}",
+				     (int)err);
+			return -1;
+		}
+		size_t host_bytes = this->map_basic_info->size() *
+				    sizeof(this->map_basic_info->at(0));
+		size_t copy_bytes = host_bytes < map_info_symbol_size ?
+					    host_bytes :
+					    map_info_symbol_size;
+		if (auto err = cudaMemcpyToSymbol(
+			    (const void *)&map_basic_info_mock,
+			    this->map_basic_info->data(), copy_bytes);
+		    err != cudaSuccess) {
+			SPDLOG_ERROR(
+				"Unable to copy `map_basic_info` to device : {}",
+				(int)err);
+			return -1;
+		}
 	}
 	this->trampoline_memory_state = TrampolineMemorySetupStage::Copied;
 	SPDLOG_INFO("constData and map_basic_info copied..");
