@@ -3,6 +3,7 @@
 #include <cstdio>
 #include <iostream>
 #include <ostream>
+#include <iomanip>
 #include <stdio.h>
 #include <stdlib.h>
 #include <cuda_runtime.h>
@@ -59,19 +60,28 @@ Stats calculate_stats(std::vector<double>& times) {
 
 int main(int argc, char **argv)
 {
-    // Parse iterations
-    int iterations = 10000;
-    bool detailed = false;
+    // Parse arguments: elements, iterations, threads_per_block, num_blocks
+    // If threads_per_block=0 or num_blocks=0, use automatic calculation
+    int h_N = 1 << 10;  // Default: 1024 elements
+    int iterations = 10;
+    int threads_per_block = 0;  // 0 = auto
+    int num_blocks = 0;  // 0 = auto
+    bool detailed = true;
 
     if (argc > 1) {
-        iterations = atoi(argv[1]);
+        h_N = atoi(argv[1]);
     }
-    if (argc > 2 && std::string(argv[2]) == "--detailed") {
-        detailed = true;
+    if (argc > 2) {
+        iterations = atoi(argv[2]);
+    }
+    if (argc > 3) {
+        threads_per_block = atoi(argv[3]);
+    }
+    if (argc > 4) {
+        num_blocks = atoi(argv[4]);
     }
 
     // Set vector size in constant memory
-    const int h_N = 1 << 20;  // 1M elements
     cudaError_t err = cudaMemcpyToSymbol(d_N, &h_N, sizeof(h_N));
     if (err != cudaSuccess) {
         std::cerr << "cudaMemcpyToSymbol failed: " << cudaGetErrorString(err) << std::endl;
@@ -112,8 +122,35 @@ int main(int argc, char **argv)
         h2d_end - h2d_start).count();
 
     // Set up execution parameters
-    int threads = 256;
-    int blocks = (h_N + threads - 1) / threads;
+    int threads, blocks;
+
+    // Use explicit configuration if provided
+    if (threads_per_block > 0 && num_blocks > 0) {
+        threads = threads_per_block;
+        blocks = num_blocks;
+    } else if (threads_per_block > 0) {
+        // Threads specified, auto-calculate blocks
+        threads = threads_per_block;
+        blocks = (h_N + threads - 1) / threads;
+    } else if (num_blocks > 0) {
+        // Blocks specified, auto-calculate threads
+        blocks = num_blocks;
+        threads = (h_N + blocks - 1) / blocks;
+        // Round up to nearest multiple of 32 (warp size)
+        threads = ((threads + 31) / 32) * 32;
+    } else {
+        // Auto mode - adaptive thread block size based on workload
+        if (h_N <= 32) {
+            threads = 32;  // Minimum: 1 warp
+        } else if (h_N <= 128) {
+            threads = 128;
+        } else if (h_N <= 1024) {
+            threads = 256;
+        } else {
+            threads = 512;  // Larger workloads benefit from more threads per block
+        }
+        blocks = (h_N + threads - 1) / threads;
+    }
 
     // Warm-up run
     vectorAdd<<<blocks, threads>>>(d_A, d_B, d_C);
@@ -125,9 +162,15 @@ int main(int argc, char **argv)
 
     // Benchmark loop with detailed timing
     std::cout << "Running benchmark with " << iterations << " iterations...\n";
-    std::cout << "Configuration: " << blocks << " blocks × " << threads << " threads = "
-              << blocks * threads << " threads\n";
-    std::cout << "Vector size: " << h_N << " elements (" << bytes / 1024 / 1024 << " MB)\n\n";
+    std::cout << "Vector size: " << h_N << " elements (" << bytes / 1024 / 1024 << " MB)\n";
+    std::cout << "Grid config: " << blocks << " blocks × " << threads << " threads/block = "
+              << blocks * threads << " total threads\n";
+    int active_threads = (h_N < blocks * threads) ? h_N : blocks * threads;
+    if (active_threads < blocks * threads) {
+        std::cout << "Active threads: " << active_threads << " ("
+                  << (100.0 * active_threads / (blocks * threads)) << "% utilization)\n";
+    }
+    std::cout << std::endl;
 
     std::vector<double> kernel_times;
     if (detailed) {
@@ -161,6 +204,7 @@ int main(int argc, char **argv)
 
     // Print benchmark results
     double avg_time_us = duration.count() / 1000.0 / iterations;
+    std::cout << std::fixed << std::setprecision(2);
     std::cout << "========================================\n";
     std::cout << "Benchmark results:\n";
     std::cout << "========================================\n";
