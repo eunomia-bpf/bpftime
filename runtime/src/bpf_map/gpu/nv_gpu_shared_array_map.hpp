@@ -2,53 +2,31 @@
 #define _NV_GPU_SHARED_ARRAY_MAP_HPP
 
 #include "bpf_map/map_common_def.hpp"
+#include "cuda.h"
+#include "handler/handler_manager.hpp"
 #include <cstdint>
-#include <boost/interprocess/managed_shared_memory.hpp>
 
 namespace bpftime
 {
 
+using pid_devptr_map_value_ty = std::pair<const int, CUdeviceptr>;
+using pid_devptr_map_allocator =
+	allocator<pid_devptr_map_value_ty,
+		  managed_shared_memory::segment_manager>;
+using pid_devptr_map =
+	boost::unordered_map<int, CUdeviceptr, int_hasher, std::equal_to<int>,
+			     pid_devptr_map_allocator>;
+
 class nv_gpu_shared_array_map_impl {
+	// Single-copy device buffer: char BUF[MAX_ENTRIES][VALUE_SIZE]
+	CUipcMemHandle gpu_mem_handle;
+	CUdeviceptr server_gpu_shared_mem;
+	pid_devptr_map agent_gpu_shared_mem;
 	uint64_t value_size;
 	uint64_t max_entries;
 
-	// Host-side backing storage inside bpftime shared memory
-	bytes_vec shared_area;
 	// Host-side staging buffer for single entry
 	bytes_vec value_buffer;
-
-	static inline uint64_t align_up(uint64_t x, uint64_t align)
-	{
-		return (x + align - 1) / align * align;
-	}
-	inline uint8_t *shared_base_ptr()
-	{
-		return shared_area.empty() ? nullptr : shared_area.data();
-	}
-	inline const uint8_t *shared_base_ptr() const
-	{
-		return shared_area.empty() ? nullptr : shared_area.data();
-	}
-	inline uint64_t locks_bytes() const
-	{
-		return max_entries * sizeof(int);
-	}
-	inline uint64_t dirty_bytes() const
-	{
-		return max_entries * sizeof(int);
-	}
-	inline uint64_t values_offset() const
-	{
-		return align_up(locks_bytes() + dirty_bytes(), 8);
-	}
-	inline uint8_t *values_region_base()
-	{
-		return shared_base_ptr() + values_offset();
-	}
-	inline const uint8_t *values_region_base() const
-	{
-		return shared_base_ptr() + values_offset();
-	}
 
     public:
 	const static bool should_lock = true;
@@ -65,17 +43,17 @@ class nv_gpu_shared_array_map_impl {
 
 	int map_get_next_key(const void *key, void *next_key);
 
-	void *get_gpu_mem_buffer()
+	CUdeviceptr get_gpu_mem_buffer()
 	{
-		// Return the base of values region; device computes base + key
-		// * value_size
-		return (void *)values_region_base();
+		return try_initialize_for_agent_and_get_mapped_address();
 	}
 	uint64_t get_max_thread_count() const
 	{
 		return 1;
 	}
 	virtual ~nv_gpu_shared_array_map_impl();
+
+	CUdeviceptr try_initialize_for_agent_and_get_mapped_address();
 };
 } // namespace bpftime
 
