@@ -2,7 +2,7 @@
 # CUDA Benchmark Results
 
 **Device:** NVIDIA GeForce RTX 5090  
-**Timestamp:** 2025-10-16T01:22:39.063760  
+**Timestamp:** 2025-10-16T01:58:20.009017  
 
 ## Workload Configuration
 
@@ -20,8 +20,9 @@
 | Test Name | Workload | Avg Time (μs) | vs Baseline | Overhead |
 |-----------|----------|---------------|-------------|----------|
 | Baseline (minimal) | minimal | 6.52 | - | - |
-| CUDA Counter (minimal) | minimal | 337996.00 | 6.52 | 51839.88x (+5183887.7%) |
-| Memory Trace (minimal) | minimal | 134768.51 | 6.52 | 20670.02x (+2066901.7%) |
-| Thread Histogram (minimal) | minimal | 10.94 | 6.52 | 1.68x (+67.8%) |
-| Launch Latency (minimal) | minimal | 8.42 | 6.52 | 1.29x (+29.1%) |
-| Kernel Retsnoop (minimal) | minimal | 8.77 | 6.52 | 1.35x (+34.5%) |
+| CUDA Counter (minimal) | minimal | 337482.88 | 6.52 | 51761.18x (+5176017.8%) |
+| Memory Trace (minimal) | minimal | 134815.58 | 6.52 | 20677.24x (+2067623.6%) |
+| Thread Histogram (minimal) | minimal | 10.80 | 6.52 | 1.66x (+65.6%) |
+| Launch Latency (minimal) | minimal | 8.41 | 6.52 | 1.29x (+29.0%) |
+| Kernel Retsnoop (minimal) | minimal | 7.09 | 6.52 | 1.09x (+8.7%) |
+

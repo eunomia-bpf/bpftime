@@ -130,19 +130,20 @@ def run_bpf_test(bench_dir: str, build_dir: str, probe_cmd: str, vec_add_args: s
 
         probe_full_cmd = [probe_binary] + probe_args
         probe_log = f"{bench_dir}/.cuda_probe.stderr"
-        with open(probe_log, 'w') as probe_stderr:
-            probe_process = subprocess.Popen(
-                probe_full_cmd,
-                env=probe_env,
-                stdout=probe_stderr,
-                stderr=probe_stderr,
-                cwd=repo_root
-            )
+        probe_stderr_file = open(probe_log, 'w')
+        probe_process = subprocess.Popen(
+            probe_full_cmd,
+            env=probe_env,
+            stdout=probe_stderr_file,
+            stderr=probe_stderr_file,
+            cwd=repo_root
+        )
 
         # Wait for probe to initialize
         time.sleep(2)
 
-        # Log probe startup
+        # Log probe startup (don't close the file yet, keep it open for continuous logging)
+        probe_stderr_file.flush()
         if os.path.exists(probe_log):
             with open(probe_log, 'r') as f:
                 probe_output = f.read()
@@ -174,21 +175,49 @@ def run_bpf_test(bench_dir: str, build_dir: str, probe_cmd: str, vec_add_args: s
         avg_time = parse_benchmark_output(result.stdout)
         if avg_time:
             log(f"✓ BPF test: {avg_time:.2f} μs", log_file)
+
         return avg_time
 
     except Exception as e:
         log(f"Error running BPF benchmark: {e}", log_file)
         return None
     finally:
+        # Stop probe process and capture remaining output
         if probe_process:
             try:
+                # Send SIGTERM to allow graceful shutdown
                 probe_process.terminate()
+                # Wait for it to finish and capture any remaining output
                 probe_process.wait(timeout=5)
-            except:
+            except subprocess.TimeoutExpired:
+                log("Probe process didn't terminate gracefully, killing it", log_file)
                 probe_process.kill()
+                probe_process.wait()
+            except Exception as e:
+                log(f"Error terminating probe: {e}", log_file)
+                try:
+                    probe_process.kill()
+                except:
+                    pass
 
-        # Clean up probe log
+        # Close the probe log file handle
+        try:
+            if 'probe_stderr_file' in locals():
+                probe_stderr_file.flush()
+                probe_stderr_file.close()
+        except:
+            pass
+
+        # Log all probe output (including what was printed during execution)
         if os.path.exists(probe_log):
+            try:
+                with open(probe_log, 'r') as f:
+                    full_probe_output = f.read()
+                    log(f"\n=== Complete Probe Output ===\n{full_probe_output}\n=== End Probe Output ===\n", log_file)
+            except Exception as e:
+                log(f"Error reading probe log: {e}", log_file)
+
+            # Clean up probe log file
             try:
                 os.remove(probe_log)
             except:
