@@ -1,220 +1,296 @@
 {
-  "vec_add_args": "10000 1000 256 40",
+  "workload_presets": {
+    "tiny": "32 10000 32 1",
+    "small": "1000 10000 256 4",
+    "medium": "10000 10000 256 40",
+    "large": "100000 1000 512 196",
+    "xlarge": "1000000 1000 512 1954",
+    "small_64x16": "1000 10000 64 16",
+    "minimal": "32 3 32 1"
+  },
   "test_cases": [
     {
-      "name": "Baseline - Empty probe - 32 elem, 1 block × 32 threads",
-      "cuda_probe_args": "empty",
-      "vec_add_args": "32 10000 32 1"
+      "name": "Baseline (tiny)",
+      "cuda_probe_args": "none",
+      "workload": "tiny"
     },
     {
-      "name": "Baseline - Empty probe - 1K elem, 4 blocks × 256 threads",
-      "cuda_probe_args": "empty",
-      "vec_add_args": "1000 10000 256 4"
+      "name": "Baseline (small)",
+      "cuda_probe_args": "none",
+      "workload": "small"
     },
     {
-      "name": "Baseline - Empty probe - 10K elem, 40 blocks × 256 threads",
-      "cuda_probe_args": "empty",
-      "vec_add_args": "10000 10000 256 40"
+      "name": "Baseline (medium)",
+      "cuda_probe_args": "none",
+      "workload": "medium"
     },
     {
-      "name": "Baseline - Empty probe - 100K elem, 196 blocks × 512 threads",
-      "cuda_probe_args": "empty",
-      "vec_add_args": "100000 1000 512 196"
+      "name": "Baseline (large)",
+      "cuda_probe_args": "none",
+      "workload": "large"
     },
     {
-      "name": "Baseline - Empty probe - 1M elem, 1954 blocks × 512 threads",
-      "cuda_probe_args": "empty",
-      "vec_add_args": "1000000 1000 512 1954"
+      "name": "Baseline (xlarge)",
+      "cuda_probe_args": "none",
+      "workload": "xlarge"
     },
     {
-      "name": "Entry probe - 32 elem, 1 block × 32 threads",
+      "name": "Empty probe (tiny)",
+      "cuda_probe_args": "empty",
+      "workload": "tiny",
+      "baseline": "Baseline (tiny)"
+    },
+    {
+      "name": "Empty probe (small)",
+      "cuda_probe_args": "empty",
+      "workload": "small",
+      "baseline": "Baseline (small)"
+    },
+    {
+      "name": "Empty probe (medium)",
+      "cuda_probe_args": "empty",
+      "workload": "medium",
+      "baseline": "Baseline (medium)"
+    },
+    {
+      "name": "Empty probe (large)",
+      "cuda_probe_args": "empty",
+      "workload": "large",
+      "baseline": "Baseline (large)"
+    },
+    {
+      "name": "Empty probe (xlarge)",
+      "cuda_probe_args": "empty",
+      "workload": "xlarge",
+      "baseline": "Baseline (xlarge)"
+    },
+    {
+      "name": "Entry probe (tiny)",
       "cuda_probe_args": "entry",
-      "vec_add_args": "32 10000 32 1"
+      "workload": "tiny",
+      "baseline": "Baseline (tiny)"
     },
     {
-      "name": "Entry probe - 1K elem, 4 blocks × 256 threads",
+      "name": "Entry probe (small)",
       "cuda_probe_args": "entry",
-      "vec_add_args": "1000 10000 256 4"
+      "workload": "small",
+      "baseline": "Baseline (small)"
     },
     {
-      "name": "Entry probe - 10K elem, 40 blocks × 256 threads",
+      "name": "Entry probe (medium)",
       "cuda_probe_args": "entry",
-      "vec_add_args": "10000 10000 256 40"
+      "workload": "medium",
+      "baseline": "Baseline (medium)"
     },
     {
-      "name": "Entry probe - 1M elem, 1954 blocks × 512 threads",
+      "name": "Entry probe (xlarge)",
       "cuda_probe_args": "entry",
-      "vec_add_args": "1000000 1000 512 1954"
+      "workload": "xlarge",
+      "baseline": "Baseline (xlarge)"
     },
     {
-      "name": "Exit probe - 32 elem, 1 block × 32 threads",
+      "name": "Exit probe (tiny)",
       "cuda_probe_args": "exit",
-      "vec_add_args": "32 10000 32 1"
+      "workload": "tiny",
+      "baseline": "Baseline (tiny)"
     },
     {
-      "name": "Exit probe - 1K elem, 4 blocks × 256 threads",
+      "name": "Exit probe (small)",
       "cuda_probe_args": "exit",
-      "vec_add_args": "1000 10000 256 4"
+      "workload": "small",
+      "baseline": "Baseline (small)"
     },
     {
-      "name": "Exit probe - 100K elem, 196 blocks × 512 threads",
+      "name": "Exit probe (large)",
       "cuda_probe_args": "exit",
-      "vec_add_args": "100000 1000 512 196"
+      "workload": "large",
+      "baseline": "Baseline (large)"
     },
     {
-      "name": "Entry+Exit - 32 elem, 1 block × 32 threads",
+      "name": "Entry+Exit (tiny)",
       "cuda_probe_args": "both",
-      "vec_add_args": "32 10000 32 1"
+      "workload": "tiny",
+      "baseline": "Baseline (tiny)"
     },
     {
-      "name": "Entry+Exit - 1K elem, 64 threads × 16 blocks",
+      "name": "Entry+Exit (small_64x16)",
       "cuda_probe_args": "both",
-      "vec_add_args": "1000 10000 64 16"
+      "workload": "small_64x16",
+      "baseline": "Baseline (small)"
     },
     {
-      "name": "Entry+Exit - 1K elem, 256 threads × 4 blocks",
+      "name": "Entry+Exit (small)",
       "cuda_probe_args": "both",
-      "vec_add_args": "1000 10000 256 4"
+      "workload": "small",
+      "baseline": "Baseline (small)"
     },
     {
-      "name": "Entry+Exit - 10K elem, 40 blocks × 256 threads",
+      "name": "Entry+Exit (medium)",
       "cuda_probe_args": "both",
-      "vec_add_args": "10000 10000 256 40"
+      "workload": "medium",
+      "baseline": "Baseline (medium)"
     },
     {
-      "name": "Entry+Exit - 100K elem, 196 blocks × 512 threads",
+      "name": "Entry+Exit (large)",
       "cuda_probe_args": "both",
-      "vec_add_args": "100000 1000 512 196"
+      "workload": "large",
+      "baseline": "Baseline (large)"
     },
     {
-      "name": "Entry+Exit - 1M elem, 1954 blocks × 512 threads",
+      "name": "Entry+Exit (xlarge)",
       "cuda_probe_args": "both",
-      "vec_add_args": "1000000 1000 512 1954"
+      "workload": "xlarge",
+      "baseline": "Baseline (xlarge)"
     },
     {
-      "name": "GPU Ringbuf - 32 elem, 1 block × 32 threads",
+      "name": "GPU Ringbuf (tiny)",
       "cuda_probe_args": "ringbuf",
-      "vec_add_args": "32 5000 32 1"
+      "workload": "tiny",
+      "baseline": "Baseline (tiny)"
     },
     {
-      "name": "GPU Ringbuf - 1K elem, 16 blocks × 64 threads",
+      "name": "GPU Ringbuf (small_64x16)",
       "cuda_probe_args": "ringbuf",
-      "vec_add_args": "1000 5000 64 16"
+      "workload": "small_64x16",
+      "baseline": "Baseline (small)"
     },
     {
-      "name": "GPU Ringbuf - 1K elem, 4 blocks × 256 threads",
+      "name": "GPU Ringbuf (small)",
       "cuda_probe_args": "ringbuf",
-      "vec_add_args": "1000 5000 256 4"
+      "workload": "small",
+      "baseline": "Baseline (small)"
     },
     {
-      "name": "GPU Ringbuf - 10K elem, 40 blocks × 256 threads",
+      "name": "GPU Ringbuf (medium)",
       "cuda_probe_args": "ringbuf",
-      "vec_add_args": "10000 5000 256 40"
+      "workload": "medium",
+      "baseline": "Baseline (medium)"
     },
     {
-      "name": "GPU Ringbuf - 100K elem, 196 blocks × 512 threads",
+      "name": "GPU Ringbuf (large)",
       "cuda_probe_args": "ringbuf",
-      "vec_add_args": "100000 500 512 196"
+      "workload": "large",
+      "baseline": "Baseline (large)"
     },
     {
-      "name": "GPU Ringbuf - 1M elem, 1954 blocks × 512 threads",
+      "name": "GPU Ringbuf (xlarge)",
       "cuda_probe_args": "ringbuf",
-      "vec_add_args": "1000000 500 512 1954"
+      "workload": "xlarge",
+      "baseline": "Baseline (xlarge)"
     },
     {
-      "name": "Global timer - 32 elem, 1 block × 32 threads",
+      "name": "Global timer (tiny)",
       "cuda_probe_args": "globaltimer",
-      "vec_add_args": "32 10000 32 1"
+      "workload": "tiny",
+      "baseline": "Baseline (tiny)"
     },
     {
-      "name": "Global timer - 1K elem, 4 blocks × 256 threads",
+      "name": "Global timer (small)",
       "cuda_probe_args": "globaltimer",
-      "vec_add_args": "1000 10000 256 4"
+      "workload": "small",
+      "baseline": "Baseline (small)"
     },
     {
-      "name": "Global timer - 10K elem, 40 blocks × 256 threads",
+      "name": "Global timer (medium)",
       "cuda_probe_args": "globaltimer",
-      "vec_add_args": "10000 10000 256 40"
+      "workload": "medium",
+      "baseline": "Baseline (medium)"
     },
     {
-      "name": "Global timer - 1M elem, 1954 blocks × 512 threads",
+      "name": "Global timer (xlarge)",
       "cuda_probe_args": "globaltimer",
-      "vec_add_args": "1000000 1000 512 1954"
+      "workload": "xlarge",
+      "baseline": "Baseline (xlarge)"
     },
     {
-      "name": "Per-GPU-thread array - 32 elem, 1 block × 32 threads",
+      "name": "Per-GPU-thread array (tiny)",
       "cuda_probe_args": "pergputd-array-lookup",
-      "vec_add_args": "32 10000 32 1"
+      "workload": "tiny",
+      "baseline": "Baseline (tiny)"
     },
     {
-      "name": "Per-GPU-thread array - 1K elem, 16 blocks × 64 threads",
+      "name": "Per-GPU-thread array (small_64x16)",
       "cuda_probe_args": "pergputd-array-lookup",
-      "vec_add_args": "1000 10000 64 16"
+      "workload": "small_64x16",
+      "baseline": "Baseline (small)"
     },
     {
-      "name": "Per-GPU-thread array - 1K elem, 4 blocks × 256 threads",
+      "name": "Per-GPU-thread array (small)",
       "cuda_probe_args": "pergputd-array-lookup",
-      "vec_add_args": "1000 10000 256 4"
+      "workload": "small",
+      "baseline": "Baseline (small)"
     },
     {
-      "name": "Per-GPU-thread array - 10K elem, 40 blocks × 256 threads",
+      "name": "Per-GPU-thread array (medium)",
       "cuda_probe_args": "pergputd-array-lookup",
-      "vec_add_args": "10000 10000 256 40"
+      "workload": "medium",
+      "baseline": "Baseline (medium)"
     },
     {
-      "name": "Per-GPU-thread array - 100K elem, 196 blocks × 512 threads",
+      "name": "Per-GPU-thread array (large)",
       "cuda_probe_args": "pergputd-array-lookup",
-      "vec_add_args": "100000 1000 512 196"
+      "workload": "large",
+      "baseline": "Baseline (large)"
     },
     {
-      "name": "Per-GPU-thread array - 1M elem, 1954 blocks × 512 threads",
+      "name": "Per-GPU-thread array (xlarge)",
       "cuda_probe_args": "pergputd-array-lookup",
-      "vec_add_args": "1000000 1000 512 1954"
+      "workload": "xlarge",
+      "baseline": "Baseline (xlarge)"
     },
     {
-      "name": "Memtrace - 32 elem, 1 block × 32 threads",
+      "name": "Memtrace (tiny)",
       "cuda_probe_args": "memtrace",
-      "vec_add_args": "32 10000 32 1"
+      "workload": "tiny",
+      "baseline": "Baseline (tiny)"
     },
     {
-      "name": "Memtrace - 1K elem, 4 blocks × 256 threads",
+      "name": "Memtrace (small)",
       "cuda_probe_args": "memtrace",
-      "vec_add_args": "1000 10000 256 4"
+      "workload": "small",
+      "baseline": "Baseline (small)"
     },
     {
-      "name": "Memtrace - 10K elem, 40 blocks × 256 threads",
+      "name": "Memtrace (medium)",
       "cuda_probe_args": "memtrace",
-      "vec_add_args": "10000 10000 256 40"
+      "workload": "medium",
+      "baseline": "Baseline (medium)"
     },
     {
-      "name": "Memtrace - 100K elem, 196 blocks × 512 threads",
+      "name": "Memtrace (large)",
       "cuda_probe_args": "memtrace",
-      "vec_add_args": "100000 1000 512 196"
+      "workload": "large",
+      "baseline": "Baseline (large)"
     },
     {
-      "name": "CPU Array map update - minimal, 1 block × 32 threads",
+      "name": "CPU Array map update (minimal)",
       "cuda_probe_args": "array-update",
-      "vec_add_args": "32 3 32 1"
+      "workload": "minimal",
+      "baseline": "Baseline (tiny)"
     },
     {
-      "name": "CPU Array map lookup - minimal, 1 block × 32 threads",
+      "name": "CPU Array map lookup (minimal)",
       "cuda_probe_args": "array-lookup",
-      "vec_add_args": "32 3 32 1"
+      "workload": "minimal",
+      "baseline": "Baseline (tiny)"
     },
     {
-      "name": "CPU Hash map update - minimal, 1 block × 32 threads",
+      "name": "CPU Hash map update (minimal)",
       "cuda_probe_args": "hash-update",
-      "vec_add_args": "32 3 32 1"
+      "workload": "minimal",
+      "baseline": "Baseline (tiny)"
     },
     {
-      "name": "CPU Hash map lookup - minimal, 1 block × 32 threads",
+      "name": "CPU Hash map lookup (minimal)",
       "cuda_probe_args": "hash-lookup",
-      "vec_add_args": "32 3 32 1"
+      "workload": "minimal",
+      "baseline": "Baseline (tiny)"
     },
     {
-      "name": "CPU Hash map delete - minimal, 1 block × 32 threads",
+      "name": "CPU Hash map delete (minimal)",
       "cuda_probe_args": "hash-delete",
-      "vec_add_args": "32 3 32 1"
+      "workload": "minimal",
+      "baseline": "Baseline (tiny)"
     }
   ]
 }

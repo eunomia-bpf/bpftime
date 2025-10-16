@@ -16,6 +16,7 @@ from typing import Optional, Dict, List, Any
 # Constants
 LOG_FILE = "micro_bench.log"
 RESULT_FILE = "micro_result.json"
+RESULT_MD_FILE = "micro_result.md"
 DEFAULT_CONFIG = "bench_config.json"
 
 def log(msg: str, log_file=None):
@@ -71,7 +72,36 @@ def run_baseline(bench_dir: str, vec_add_args: str, log_file=None) -> Optional[f
         return None
 
 def run_bpf_test(bench_dir: str, build_dir: str, cuda_probe_args: str, vec_add_args: str, log_file=None) -> Optional[float]:
-    """Run benchmark with BPF instrumentation."""
+    """Run benchmark with or without BPF instrumentation."""
+
+    # Special case: "none" means no eBPF at all (true baseline)
+    if cuda_probe_args == "none":
+        log(f"Running baseline (no eBPF): vec_add_args={vec_add_args}", log_file)
+        try:
+            cmd = [f'{bench_dir}/vec_add'] + (vec_add_args.split() if vec_add_args else [])
+            result = subprocess.run(
+                cmd,
+                capture_output=True,
+                text=True,
+                timeout=120,
+                cwd=bench_dir
+            )
+            log(f"STDOUT:\n{result.stdout}", log_file)
+            log(f"STDERR:\n{result.stderr}", log_file)
+
+            if result.returncode != 0:
+                log(f"Baseline failed with return code {result.returncode}", log_file)
+                return None
+
+            avg_time = parse_benchmark_output(result.stdout)
+            if avg_time:
+                log(f"✓ Baseline: {avg_time:.2f} μs", log_file)
+            return avg_time
+        except Exception as e:
+            log(f"Error running baseline: {e}", log_file)
+            return None
+
+    # Run with BPF instrumentation
     log(f"Running BPF test: probe_args={cuda_probe_args}, vec_add_args={vec_add_args}", log_file)
 
     probe_process = None
@@ -159,47 +189,101 @@ def run_bpf_test(bench_dir: str, build_dir: str, cuda_probe_args: str, vec_add_a
 def load_config(config_path: str) -> Dict[str, Any]:
     """Load benchmark configuration from JSON file."""
     with open(config_path, 'r') as f:
-        return json.load(f)
+        config = json.load(f)
+
+    # Resolve workload presets to actual vec_add_args
+    presets = config.get('workload_presets', {})
+    for test_case in config.get('test_cases', []):
+        workload = test_case.get('workload')
+        if workload and workload in presets:
+            test_case['vec_add_args'] = presets[workload]
+        # Keep existing vec_add_args if no workload specified
+
+    return config
 
 def save_results(results: Dict[str, Any], output_path: str):
     """Save benchmark results to JSON file."""
     with open(output_path, 'w') as f:
         json.dump(results, f, indent=2)
 
+def get_workload_description(workload_name: str, presets: Dict[str, str]) -> str:
+    """Get human-readable description of workload."""
+    if workload_name not in presets:
+        return workload_name
+
+    args = presets[workload_name].split()
+    if len(args) >= 4:
+        elements, iterations, threads, blocks = args[0], args[1], args[2], args[3]
+        return f"{elements} elements, {iterations} iterations, {threads} threads × {blocks} blocks"
+    return workload_name
+
 def print_results_table(results: Dict[str, Any], log_file=None):
-    """Print the results in a formatted table."""
-    log("\n" + "="*80, log_file)
-    log("CUDA Benchmark Results", log_file)
-    log("="*80 + "\n", log_file)
+    """Print the results in markdown format."""
+    config = results.get('config', {})
+    presets = config.get('workload_presets', {})
 
-    log(f"Device: {results.get('device', 'Unknown')}", log_file)
-    log(f"Timestamp: {results.get('timestamp', 'Unknown')}\n", log_file)
+    # Markdown header
+    log("\n# CUDA Benchmark Results\n", log_file)
+    log(f"**Device:** {results.get('device', 'Unknown')}  ", log_file)
+    log(f"**Timestamp:** {results.get('timestamp', 'Unknown')}  \n", log_file)
 
-    baseline_time = results.get('baseline_time')
+    # Workload configuration section
+    log("## Workload Configuration\n", log_file)
+    log("| Workload | Elements | Iterations | Threads | Blocks |", log_file)
+    log("|----------|----------|------------|---------|--------|", log_file)
+    for name, args in sorted(presets.items()):
+        parts = args.split()
+        if len(parts) >= 4:
+            log(f"| {name} | {parts[0]} | {parts[1]} | {parts[2]} | {parts[3]} |", log_file)
+    log("", log_file)
 
-    log(f"{'Test Name':<40} {'Avg Time (μs)':<15} {'Overhead':<15}", log_file)
-    log("-"*70, log_file)
+    # Build baseline lookup table by name
+    baseline_map = {}
+    for test in results.get('tests', []):
+        name = test['name']
+        if name.startswith('Baseline'):
+            baseline_map[name] = test.get('avg_time_us')
 
-    # Baseline
-    if baseline_time:
-        log(f"{'Baseline (no probe)':<40} {baseline_time:<15.2f} {'-':<15}", log_file)
-    else:
-        log(f"{'Baseline (no probe)':<40} {'FAILED':<15} {'-':<15}", log_file)
+    # Benchmark results table
+    log("## Benchmark Results\n", log_file)
+    log("| Test Name | Workload | Avg Time (μs) | vs Baseline | Overhead |", log_file)
+    log("|-----------|----------|---------------|-------------|----------|", log_file)
 
     # Test cases
     for test in results.get('tests', []):
         name = test['name']
         avg_time = test.get('avg_time_us')
+        baseline_ref = test.get('baseline')
+        workload = test.get('workload', '-')
+
+        # Get the baseline time for this specific test
+        baseline_time = None
+        if baseline_ref and baseline_ref in baseline_map:
+            baseline_time = baseline_map[baseline_ref]
 
         if avg_time and baseline_time:
-            overhead = f"{avg_time/baseline_time:.2f}x (+{((avg_time/baseline_time-1)*100):.1f}%)"
-            log(f"{name:<40} {avg_time:<15.2f} {overhead:<15}", log_file)
+            multiplier = avg_time / baseline_time
+            overhead_pct = (multiplier - 1) * 100
+            overhead_str = f"{multiplier:.2f}x" if multiplier >= 1 else f"0.{int(multiplier*100)}x"
+            overhead_pct_str = f"+{overhead_pct:.1f}%" if overhead_pct > 0 else f"{overhead_pct:.1f}%"
+            log(f"| {name} | {workload} | {avg_time:.2f} | {baseline_time:.2f} | {overhead_str} ({overhead_pct_str}) |", log_file)
         elif avg_time:
-            log(f"{name:<40} {avg_time:<15.2f} {'-':<15}", log_file)
+            log(f"| {name} | {workload} | {avg_time:.2f} | - | - |", log_file)
         else:
-            log(f"{name:<40} {'FAILED':<15} {'-':<15}", log_file)
+            log(f"| {name} | {workload} | FAILED | - | - |", log_file)
 
-    log("\n" + "="*80 + "\n", log_file)
+    log("\n## Test Case Descriptions\n", log_file)
+    log("- **Baseline**: No eBPF instrumentation (native CUDA performance)", log_file)
+    log("- **Empty probe**: Empty eBPF probe (minimal eBPF infrastructure overhead)", log_file)
+    log("- **Entry probe**: eBPF probe attached to CUDA kernel entry point", log_file)
+    log("- **Exit probe**: eBPF probe attached to CUDA kernel exit point", log_file)
+    log("- **Entry+Exit**: eBPF probes attached to both entry and exit points", log_file)
+    log("- **GPU Ringbuf**: GPU-side ring buffer for event logging", log_file)
+    log("- **Global timer**: Global GPU timer measurements", log_file)
+    log("- **Per-GPU-thread array**: Per-thread array lookups from GPU", log_file)
+    log("- **Memtrace**: Memory access tracing", log_file)
+    log("- **CPU Array/Hash map**: CPU-side map operations (update/lookup/delete)", log_file)
+    log("", log_file)
 
 def main():
     # Determine paths
@@ -229,7 +313,6 @@ def main():
         sys.exit(1)
 
     # Extract config
-    vec_add_args = config.get('vec_add_args', '1024 10')
     test_cases = config.get('test_cases', [])
 
     with open(log_path, 'w') as log_file:
@@ -238,7 +321,6 @@ def main():
         log("="*80, log_file)
         log(f"Timestamp: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}", log_file)
         log(f"Config file: {config_file}", log_file)
-        log(f"Vec_add args: {vec_add_args}", log_file)
         log("="*80 + "\n", log_file)
 
         # Get GPU name
@@ -250,20 +332,20 @@ def main():
             'device': device,
             'timestamp': datetime.now().isoformat(),
             'config_file': config_file,
-            'vec_add_args': vec_add_args,
-            'baseline_time': None,
+            'config': config,
             'tests': []
         }
-
-        # Run baseline
-        results['baseline_time'] = run_baseline(bench_dir, vec_add_args, log_file)
-        log("", log_file)
 
         # Run test cases
         for test_case in test_cases:
             name = test_case.get('name', 'Unknown')
             cuda_probe_args = test_case.get('cuda_probe_args', '')
-            test_vec_add_args = test_case.get('vec_add_args', vec_add_args)
+            test_vec_add_args = test_case.get('vec_add_args', '')
+            baseline_ref = test_case.get('baseline')
+
+            if not test_vec_add_args:
+                log(f"Skipping {name}: no vec_add_args specified", log_file)
+                continue
 
             log(f"Running test: {name}", log_file)
             avg_time = run_bpf_test(bench_dir, build_dir, cuda_probe_args, test_vec_add_args, log_file)
@@ -272,6 +354,8 @@ def main():
                 'name': name,
                 'cuda_probe_args': cuda_probe_args,
                 'vec_add_args': test_vec_add_args,
+                'workload': test_case.get('workload', ''),
+                'baseline': baseline_ref,
                 'avg_time_us': avg_time
             })
             log("", log_file)
@@ -280,10 +364,19 @@ def main():
         save_results(results, result_path)
         log(f"Results saved to: {RESULT_FILE}", log_file)
 
-        # Print results table
+        # Print results table to log
         print_results_table(results, log_file)
 
         log(f"Log saved to: {LOG_FILE}", log_file)
+
+    # Save markdown output
+    result_md_path = os.path.join(bench_dir, RESULT_MD_FILE)
+    with open(result_md_path, 'w') as md_file:
+        print_results_table(results, md_file)
+
+    print(f"\nMarkdown results saved to: {RESULT_MD_FILE}")
+    print(f"JSON results saved to: {RESULT_FILE}")
+    print(f"Log saved to: {LOG_FILE}")
 
 if __name__ == '__main__':
     main()
