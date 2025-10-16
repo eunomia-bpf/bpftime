@@ -18,7 +18,7 @@ struct {
 // At the CUDA kernel return point, update the counter for a fixed key.
 // NOTE: Non-atomic overwrite semantics; last-writer-wins. For accurate sums,
 // aggregate before write or shard keys to avoid contention.
-SEC("kretprobe/vectorAdd")
+SEC("kretprobe/_Z9vectorAddPKfS0_Pf")
 int cuda__retprobe()
 {
 	u32 key = 0;
@@ -34,7 +34,7 @@ int cuda__retprobe()
 	return 0;
 }
 
-SEC("kprobe/vectorAdd")
+SEC("kprobe/_Z9vectorAddPKfS0_Pf")
 int cuda__probe()
 {
 	u32 key = 0;
