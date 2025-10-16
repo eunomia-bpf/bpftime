@@ -43,6 +43,7 @@ static void print_usage(const char *prog)
 	fprintf(stderr, "  hash-lookup        - Hash map lookup\n");
 	fprintf(stderr, "  hash-delete        - Hash map delete\n");
 	fprintf(stderr, "  pergputd-array-lookup - Per-GPU-thread array map lookup\n");
+	fprintf(stderr, "  memtrace           - Memory trace test\n");
 	fprintf(stderr, "\nDefault: empty\n");
 }
 
@@ -63,6 +64,7 @@ static int attach_probes(struct cuda_probe_bpf *skel, const char *mode)
 	bpf_program__set_autoload(skel->progs.cuda__probe_hash_lookup, false);
 	bpf_program__set_autoload(skel->progs.cuda__probe_hash_delete, false);
 	bpf_program__set_autoload(skel->progs.cuda__probe_pergputd_array_lookup, false);
+	bpf_program__set_autoload(skel->progs.cuda__probe_memtrace, false);
 
 	// Enable the requested mode
 	if (strcmp(mode, "empty") == 0) {
@@ -103,6 +105,9 @@ static int attach_probes(struct cuda_probe_bpf *skel, const char *mode)
 	} else if (strcmp(mode, "pergputd-array-lookup") == 0) {
 		bpf_program__set_autoload(skel->progs.cuda__probe_pergputd_array_lookup, true);
 		fprintf(stderr, "Mode: Per-GPU-thread array map lookup\n");
+	} else if (strcmp(mode, "memtrace") == 0) {
+		bpf_program__set_autoload(skel->progs.cuda__probe_memtrace, true);
+		fprintf(stderr, "Mode: Memory trace test\n");
 	} else {
 		fprintf(stderr, "Unknown mode: %s\n", mode);
 		return -1;

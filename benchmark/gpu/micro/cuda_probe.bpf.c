@@ -187,4 +187,13 @@ int cuda__probe_pergputd_array_lookup()
     return 0;
 }
 
+// ============== Memtrace Test ==============
+
+SEC("kprobe/__memcapture")
+int cuda__probe_memtrace()
+{
+    // Basic memory trace - minimal body
+    return 0;
+}
+
 char LICENSE[] SEC("license") = "GPL";

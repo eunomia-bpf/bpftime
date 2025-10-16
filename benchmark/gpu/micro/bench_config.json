@@ -172,6 +172,26 @@
       "vec_add_args": "1000000 1000 512 1954"
     },
     {
+      "name": "Memtrace - 32 elem, 1 block × 32 threads",
+      "cuda_probe_args": "memtrace",
+      "vec_add_args": "32 10000 32 1"
+    },
+    {
+      "name": "Memtrace - 1K elem, 4 blocks × 256 threads",
+      "cuda_probe_args": "memtrace",
+      "vec_add_args": "1000 10000 256 4"
+    },
+    {
+      "name": "Memtrace - 10K elem, 40 blocks × 256 threads",
+      "cuda_probe_args": "memtrace",
+      "vec_add_args": "10000 10000 256 40"
+    },
+    {
+      "name": "Memtrace - 100K elem, 196 blocks × 512 threads",
+      "cuda_probe_args": "memtrace",
+      "vec_add_args": "100000 1000 512 196"
+    },
+    {
       "name": "CPU Array map update - minimal, 1 block × 32 threads",
       "cuda_probe_args": "array-update",
       "vec_add_args": "32 3 32 1"
