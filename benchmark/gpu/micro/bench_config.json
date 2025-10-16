@@ -263,6 +263,78 @@
       "baseline": "Baseline (large)"
     },
     {
+      "name": "GPU Array map update (tiny)",
+      "probe_binary_cmd": "benchmark/gpu/micro/cuda_probe gpu-array-update",
+      "workload": "tiny",
+      "baseline": "Baseline (tiny)"
+    },
+    {
+      "name": "GPU Array map update (small_64x16)",
+      "probe_binary_cmd": "benchmark/gpu/micro/cuda_probe gpu-array-update",
+      "workload": "small_64x16",
+      "baseline": "Baseline (small)"
+    },
+    {
+      "name": "GPU Array map update (small)",
+      "probe_binary_cmd": "benchmark/gpu/micro/cuda_probe gpu-array-update",
+      "workload": "small",
+      "baseline": "Baseline (small)"
+    },
+    {
+      "name": "GPU Array map update (medium)",
+      "probe_binary_cmd": "benchmark/gpu/micro/cuda_probe gpu-array-update",
+      "workload": "medium",
+      "baseline": "Baseline (medium)"
+    },
+    {
+      "name": "GPU Array map update (large)",
+      "probe_binary_cmd": "benchmark/gpu/micro/cuda_probe gpu-array-update",
+      "workload": "large",
+      "baseline": "Baseline (large)"
+    },
+    {
+      "name": "GPU Array map update (xlarge)",
+      "probe_binary_cmd": "benchmark/gpu/micro/cuda_probe gpu-array-update",
+      "workload": "xlarge",
+      "baseline": "Baseline (xlarge)"
+    },
+    {
+      "name": "GPU Array map lookup (tiny)",
+      "probe_binary_cmd": "benchmark/gpu/micro/cuda_probe gpu-array-lookup",
+      "workload": "tiny",
+      "baseline": "Baseline (tiny)"
+    },
+    {
+      "name": "GPU Array map lookup (small_64x16)",
+      "probe_binary_cmd": "benchmark/gpu/micro/cuda_probe gpu-array-lookup",
+      "workload": "small_64x16",
+      "baseline": "Baseline (small)"
+    },
+    {
+      "name": "GPU Array map lookup (small)",
+      "probe_binary_cmd": "benchmark/gpu/micro/cuda_probe gpu-array-lookup",
+      "workload": "small",
+      "baseline": "Baseline (small)"
+    },
+    {
+      "name": "GPU Array map lookup (medium)",
+      "probe_binary_cmd": "benchmark/gpu/micro/cuda_probe gpu-array-lookup",
+      "workload": "medium",
+      "baseline": "Baseline (medium)"
+    },
+    {
+      "name": "GPU Array map lookup (large)",
+      "probe_binary_cmd": "benchmark/gpu/micro/cuda_probe gpu-array-lookup",
+      "workload": "large",
+      "baseline": "Baseline (large)"
+    },
+    {
+      "name": "GPU Array map lookup (xlarge)",
+      "probe_binary_cmd": "benchmark/gpu/micro/cuda_probe gpu-array-lookup",
+      "workload": "xlarge",
+      "baseline": "Baseline (xlarge)"
+    },
+    {
       "name": "CPU Array map update (minimal)",
       "probe_binary_cmd": "benchmark/gpu/micro/cuda_probe array-update",
       "workload": "minimal",

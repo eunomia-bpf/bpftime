@@ -3,6 +3,8 @@
 #include <bpf/bpf_helpers.h>
 #include <bpf/bpf_tracing.h>
 
+#define BPF_MAP_TYPE_GPU_ARRAY_MAP 1503
+
 static const void (*ebpf_puts)(const char *) = (void *)501;
 static const u64 (*bpf_get_globaltimer)(void) = (void *)502;
 static const u64 (*bpf_get_block_idx)(u64 *x, u64 *y, u64 *z) = (void *)503;
@@ -16,7 +18,7 @@ static const u64 (*bpf_get_thread_idx)(u64 *x, u64 *y, u64 *z) = (void *)505;
 // Array map to store time distribution histogram
 // Each element represents count for a time range
 struct {
-	__uint(type, BPF_MAP_TYPE_ARRAY);
+	__uint(type, BPF_MAP_TYPE_GPU_ARRAY_MAP);
 	__uint(max_entries, HIST_BINS);
 	__type(key, u32);
 	__type(value, u64);
@@ -49,6 +51,9 @@ int BPF_KPROBE(uprobe_cuda_launch, const void *func, u64 gridDim, u64 blockDim)
 	s64 *offset_ptr;
 	u64 ts_calibrated = ts_mono;
 
+	bpf_printk("CPU: cudaLaunchKernel called at ts=%lu ns (calibrated=%lu), pid=%u\n",
+		   ts_mono, ts_calibrated, pid);
+
 	// Apply clock offset to convert monotonic time to approximate realtime
 	offset_ptr = bpf_map_lookup_elem(&clock_offset, &key);
 	if (offset_ptr) {
@@ -57,9 +62,6 @@ int BPF_KPROBE(uprobe_cuda_launch, const void *func, u64 gridDim, u64 blockDim)
 
 	// Store the timestamp for latency calculation
 	bpf_map_update_elem(&last_uprobe_time, &key, &ts_calibrated, BPF_ANY);
-
-	bpf_printk("CPU: cudaLaunchKernel called at ts=%lu ns (calibrated=%lu), pid=%u\n",
-		   ts_mono, ts_calibrated, pid);
 
 	return 0;
 }
@@ -103,7 +105,7 @@ int cuda__probe()
 		// Update the histogram count for this bin
 		u64 *count = bpf_map_lookup_elem(&time_histogram, &bin);
 		if (count) {
-			__atomic_add_fetch(count, 1, __ATOMIC_SEQ_CST);
+			*count += 1;
 		} else {
 			u64 one = 1;
 			bpf_map_update_elem(&time_histogram, &bin, &one, BPF_NOEXIST);
