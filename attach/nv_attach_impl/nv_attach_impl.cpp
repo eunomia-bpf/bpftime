@@ -51,9 +51,16 @@ int nv_attach_impl::create_attach_with_ebpf_callback(
 	int attach_type)
 {
 	auto data = dynamic_cast<const nv_attach_private_data &>(private_data);
+
+	// Safely access the variant
+	if (!std::holds_alternative<std::string>(data.code_addr_or_func_name)) {
+		SPDLOG_ERROR("code_addr_or_func_name does not hold a string value");
+		return -1;
+	}
+	const auto &func_name = std::get<std::string>(data.code_addr_or_func_name);
+
 	if (attach_type == ATTACH_CUDA_PROBE) {
-		if (std::get<std::string>(data.code_addr_or_func_name) ==
-		    "__memcapture") {
+		if (func_name == "__memcapture") {
 			SPDLOG_INFO(
 				"Recording memcapture in nv_attach_impl, instructions count = {}",
 				data.instructions.size());
@@ -67,8 +74,7 @@ int nv_attach_impl::create_attach_with_ebpf_callback(
 			this->map_basic_info = data.map_basic_info;
 			this->shared_mem_ptr = data.comm_shared_mem;
 			return id;
-		} else if (std::get<std::string>(data.code_addr_or_func_name) ==
-			   "__directly_run") {
+		} else if (func_name == "__directly_run") {
 			SPDLOG_INFO(
 				"Recording directly run program on GPU, instructions count = {}",
 				data.instructions.size());
@@ -82,15 +88,12 @@ int nv_attach_impl::create_attach_with_ebpf_callback(
 			this->map_basic_info = data.map_basic_info;
 			this->shared_mem_ptr = data.comm_shared_mem;
 		} else {
-			SPDLOG_INFO("Recording kprobe for {}",
-				    std::get<std::string>(
-					    data.code_addr_or_func_name));
+			SPDLOG_INFO("Recording kprobe for {}", func_name);
 			auto id = this->allocate_id();
 			hook_entries[id] = nv_attach_entry{
 				.type =
 					nv_attach_function_probe{
-						.func = std::get<std::string>(
-							data.code_addr_or_func_name),
+						.func = func_name,
 						.is_retprobe = false,
 					},
 				.instuctions = data.instructions,
@@ -102,14 +105,12 @@ int nv_attach_impl::create_attach_with_ebpf_callback(
 			return id;
 		}
 	} else if (attach_type == ATTACH_CUDA_RETPROBE) {
-		SPDLOG_INFO("Recording kretprobe for {}",
-			    std::get<std::string>(data.code_addr_or_func_name));
+		SPDLOG_INFO("Recording kretprobe for {}", func_name);
 		auto id = this->allocate_id();
 		hook_entries[id] = nv_attach_entry{
 			.type =
 				nv_attach_function_probe{
-					.func = std::get<std::string>(
-						data.code_addr_or_func_name),
+					.func = func_name,
 					.is_retprobe = true,
 				},
 			.instuctions = data.instructions,
@@ -131,15 +132,26 @@ nv_attach_impl::nv_attach_impl()
 	SPDLOG_INFO("Starting nv_attach_impl");
 	gum_init_embedded();
 	auto interceptor = gum_interceptor_obtain();
-	assert(interceptor != nullptr);
+	if (interceptor == nullptr) {
+		SPDLOG_ERROR("Failed to obtain Frida interceptor");
+		throw std::runtime_error("Failed to initialize Frida interceptor");
+	}
 	auto listener =
 		g_object_new(cuda_runtime_function_hooker_get_type(), nullptr);
-	assert(listener != nullptr);
+	if (listener == nullptr) {
+		SPDLOG_ERROR("Failed to create Frida listener");
+		throw std::runtime_error("Failed to initialize Frida listener");
+	}
 	this->frida_interceptor = interceptor;
 	this->frida_listener = listener;
 	gum_interceptor_begin_transaction(interceptor);
 
 	auto register_hook = [&](AttachedToFunction func, void *addr) {
+		if (addr == nullptr) {
+			SPDLOG_WARN("Skipping hook registration for function {} - symbol not found",
+				     (int)func);
+			return;
+		}
 		auto ctx = std::make_unique<CUDARuntimeFunctionHookerContext>();
 		ctx->to_function = func;
 		ctx->impl = this;
@@ -151,21 +163,24 @@ nv_attach_impl::nv_attach_impl()
 		    result != GUM_ATTACH_OK) {
 			SPDLOG_ERROR("Unable to attach to CUDA functions: {}",
 				     (int)result);
-			assert(false);
+			throw std::runtime_error("Failed to attach to CUDA function");
 		}
 	};
-	register_hook(AttachedToFunction::RegisterFatbin,
-		      (gpointer)dlsym(RTLD_NEXT, "__cudaRegisterFatBinary"));
 
-	register_hook(AttachedToFunction::RegisterFunction,
-		      GSIZE_TO_POINTER(gum_module_find_export_by_name(
-			      nullptr, "__cudaRegisterFunction")));
-	register_hook(AttachedToFunction::RegisterFatbinEnd,
-		      GSIZE_TO_POINTER(gum_module_find_export_by_name(
-			      nullptr, "__cudaRegisterFatBinaryEnd")));
-	register_hook(AttachedToFunction::CudaLaunchKernel,
-		      GSIZE_TO_POINTER(gum_module_find_export_by_name(
-			      nullptr, "cudaLaunchKernel")));
+	void *register_fatbin_addr = dlsym(RTLD_NEXT, "__cudaRegisterFatBinary");
+	register_hook(AttachedToFunction::RegisterFatbin, register_fatbin_addr);
+
+	void *register_function_addr = GSIZE_TO_POINTER(gum_module_find_export_by_name(
+		nullptr, "__cudaRegisterFunction"));
+	register_hook(AttachedToFunction::RegisterFunction, register_function_addr);
+
+	void *register_fatbin_end_addr = GSIZE_TO_POINTER(gum_module_find_export_by_name(
+		nullptr, "__cudaRegisterFatBinaryEnd"));
+	register_hook(AttachedToFunction::RegisterFatbinEnd, register_fatbin_end_addr);
+
+	void *cuda_launch_kernel_addr = GSIZE_TO_POINTER(gum_module_find_export_by_name(
+		nullptr, "cudaLaunchKernel"));
+	register_hook(AttachedToFunction::CudaLaunchKernel, cuda_launch_kernel_addr);
 
 	gum_interceptor_end_transaction(interceptor);
 }
@@ -377,6 +392,10 @@ int nv_attach_impl::copy_data_to_trampoline_memory()
 			(int)err);
 		return -1;
 	}
+	if (!this->map_basic_info.has_value()) {
+		SPDLOG_ERROR("map_basic_info is not set, cannot copy to device");
+		return -1;
+	}
 	SPDLOG_INFO("Copying the followed map info:");
 	for (int i = 0; i < this->map_basic_info->size(); i++) {
 		const auto &cur = this->map_basic_info->at(i);
@@ -437,8 +456,12 @@ std::string filter_unprintable_chars(std::string input)
 			continue;
 		result.push_back(c);
 	}
-	while (result.back() != '}')
+	while (!result.empty() && result.back() != '}')
 		result.pop_back();
+	if (result.empty()) {
+		SPDLOG_ERROR("filter_unprintable_chars: result is empty or no closing brace found");
+		return "";
+	}
 	return result;
 };
 int nv_attach_impl::find_attach_entry_by_program_name(const char *name) const
@@ -507,7 +530,10 @@ int nv_attach_impl::run_attach_entry_on_gpu(int attach_id, int run_count,
 		// Replace ".func bpf_main" to ".visible .entry bpf_main" so it
 		// can be executed
 		auto bpf_main_pos = ptx.find(to_replace);
-		assert(bpf_main_pos != ptx.npos);
+		if (bpf_main_pos == ptx.npos) {
+			SPDLOG_ERROR("Cannot find '{}' in generated PTX code", to_replace);
+			return -1;
+		}
 		ptx = ptx.replace(bpf_main_pos, to_replace.size(),
 				  ".visible .entry bpf_main");
 	}
@@ -593,6 +619,10 @@ int nv_attach_impl::run_attach_entry_on_gpu(int attach_id, int run_count,
 			size_t bytes;
 			CUDA_SAFE_CALL(cuModuleGetGlobal(&ptr, &bytes, module,
 							 "map_info"));
+			if (!this->map_basic_info.has_value()) {
+				SPDLOG_ERROR("map_basic_info is not set, cannot copy to device");
+				return -1;
+			}
 			CUDA_SAFE_CALL(cuMemcpyHtoD(
 				ptr, this->map_basic_info->data(),
 				sizeof(this->map_basic_info->at(0)) *

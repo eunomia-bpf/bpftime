@@ -1,0 +1,6 @@
+vec_add
+nvbit-tutorial/
+
+# Generated benchmark results
+*_result.json
+*.log

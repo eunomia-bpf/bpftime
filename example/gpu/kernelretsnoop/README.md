@@ -90,7 +90,7 @@ BPFTIME_SHM_MEMORY_MB=1000 BPFTIME_LOG_OUTPUT=console LD_PRELOAD=build/runtime/s
 
 ### Terminal 2: Run your CUDA application
 ```bash
-LD_PRELOAD=build/runtime/agent/libbpftime-agent.so \
+BPFTIME_LOG_OUTPUT=console LD_PRELOAD=build/runtime/agent/libbpftime-agent.so \
   example/gpu/kernelretsnoop/vec_add
 ```
 

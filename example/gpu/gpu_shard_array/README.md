@@ -31,9 +31,8 @@ make
 ```
 2) 启动 agent 目标程序（加载 CUDA attach，触发 BPF）：
 ```bash
-LD_PRELOAD=/root/bpftime_sy03/bpftime/build/runtime/agent/libbpftime-agent.so \
-  BPFTIME_LOG_OUTPUT=console SPDLOG_LEVEL=debug \
-  /root/bpftime_sy03/bpftime/example/gpu/gpu_shard_array/vec_add
+LD_PRELOAD=build/runtime/agent/libbpftime-agent.so \
+  BPFTIME_LOG_OUTPUT=console SPDLOG_LEVEL=debug example/gpu/gpu_shard_array/vec_add
 ```
 3) 预期输出：
 - server：周期打印 `counter[0]=N` 并单调递增（受并发覆盖，趋势上递增）。

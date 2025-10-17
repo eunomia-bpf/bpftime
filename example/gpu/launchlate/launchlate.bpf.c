@@ -3,6 +3,8 @@
 #include <bpf/bpf_helpers.h>
 #include <bpf/bpf_tracing.h>
 
+#define BPF_MAP_TYPE_GPU_ARRAY_MAP 1503
+
 static const void (*ebpf_puts)(const char *) = (void *)501;
 static const u64 (*bpf_get_globaltimer)(void) = (void *)502;
 static const u64 (*bpf_get_block_idx)(u64 *x, u64 *y, u64 *z) = (void *)503;
@@ -16,7 +18,7 @@ static const u64 (*bpf_get_thread_idx)(u64 *x, u64 *y, u64 *z) = (void *)505;
 // Array map to store time distribution histogram
 // Each element represents count for a time range
 struct {
-	__uint(type, BPF_MAP_TYPE_ARRAY);
+	__uint(type, BPF_MAP_TYPE_GPU_ARRAY_MAP);
 	__uint(max_entries, HIST_BINS);
 	__type(key, u32);
 	__type(value, u64);
@@ -25,7 +27,7 @@ struct {
 // Map to store the last uprobe timestamp for calculating latency
 struct {
 	__uint(type, BPF_MAP_TYPE_ARRAY);
-	__uint(max_entries, 1);
+	__uint(max_entries, 32);
 	__type(key, u32);
 	__type(value, u64);
 } last_uprobe_time SEC(".maps");
@@ -34,13 +36,14 @@ struct {
 // Index 0: realtime_ns - monotonic_ns offset
 struct {
 	__uint(type, BPF_MAP_TYPE_ARRAY);
-	__uint(max_entries, 1);
+	__uint(max_entries, 32);
 	__type(key, u32);
 	__type(value, s64);
 } clock_offset SEC(".maps");
 
 // Uprobe on cudaLaunchKernel - tracks when kernels are launched from CPU
-SEC("uprobe/example/gpu/launchlate/vec_add:_Z16cudaLaunchKernelIcE9cudaErrorPT_4dim3S3_PPvmP11CUstream_st")
+// Note: actual uprobe target is configured at runtime via bpf_program__attach_uprobe()
+SEC("uprobe")
 int BPF_KPROBE(uprobe_cuda_launch, const void *func, u64 gridDim, u64 blockDim)
 {
 	u64 ts_mono = bpf_ktime_get_ns();
@@ -49,17 +52,16 @@ int BPF_KPROBE(uprobe_cuda_launch, const void *func, u64 gridDim, u64 blockDim)
 	s64 *offset_ptr;
 	u64 ts_calibrated = ts_mono;
 
+	bpf_printk("CPU: cudaLaunchKernel called at ts=%lu ns (calibrated=%lu), pid=%u\n",
+		   ts_mono, ts_calibrated, pid);
+
 	// Apply clock offset to convert monotonic time to approximate realtime
 	offset_ptr = bpf_map_lookup_elem(&clock_offset, &key);
 	if (offset_ptr) {
 		ts_calibrated = ts_mono + *offset_ptr;
 	}
-
 	// Store the timestamp for latency calculation
 	bpf_map_update_elem(&last_uprobe_time, &key, &ts_calibrated, BPF_ANY);
-
-	bpf_printk("CPU: cudaLaunchKernel called at ts=%lu ns (calibrated=%lu), pid=%u\n",
-		   ts_mono, ts_calibrated, pid);
 
 	return 0;
 }
@@ -103,7 +105,7 @@ int cuda__probe()
 		// Update the histogram count for this bin
 		u64 *count = bpf_map_lookup_elem(&time_histogram, &bin);
 		if (count) {
-			__atomic_add_fetch(count, 1, __ATOMIC_SEQ_CST);
+			*count += 1;
 		} else {
 			u64 one = 1;
 			bpf_map_update_elem(&time_histogram, &bin, &one, BPF_NOEXIST);
