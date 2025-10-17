@@ -68,9 +68,33 @@ def run_baseline(bench_dir: str, vec_add_args: str, log_file=None) -> Optional[f
         log(f"Error running baseline: {e}", log_file)
         return None
 
+def resolve_env_paths(env_dict: Dict[str, str], repo_root: str) -> Dict[str, str]:
+    """Resolve relative paths in environment variables."""
+    resolved = {}
+    for key, value in env_dict.items():
+        # If it looks like a path and is relative, resolve it
+        if ('/' in value or '\\' in value) and not os.path.isabs(value):
+            resolved_path = os.path.join(repo_root, value)
+            if os.path.exists(resolved_path):
+                resolved[key] = resolved_path
+            else:
+                resolved[key] = value  # Use as-is if not found
+        else:
+            resolved[key] = value
+    return resolved
+
 def run_bpf_test(bench_dir: str, build_dir: str, probe_cmd: str, vec_add_args: str,
-                 repo_root: str, log_file=None, vec_add_binary: str = None) -> Optional[float]:
-    """Run benchmark with or without BPF instrumentation."""
+                 repo_root: str, log_file=None, vec_add_binary: str = None,
+                 test_env: Dict[str, str] = None, global_env: Dict[str, str] = None,
+                 probe_env_config: Dict[str, str] = None, agent_env_config: Dict[str, str] = None) -> Optional[float]:
+    """Run benchmark with or without BPF instrumentation.
+
+    Args:
+        test_env: Environment variables for simple test runs (no probe)
+        global_env: Global environment variables to apply to all runs
+        probe_env_config: Environment config for probe process (bpftime mode)
+        agent_env_config: Environment config for agent process (bpftime mode)
+    """
 
     # Use vec_add_binary if provided, otherwise raise error
     if vec_add_binary:
@@ -80,27 +104,48 @@ def run_bpf_test(bench_dir: str, build_dir: str, probe_cmd: str, vec_add_args: s
         raise RuntimeError("vec_add_binary must be provided")
 
     # Special case: empty probe_cmd means no eBPF at all (true baseline)
+    # Can still have test_env for simple LD_PRELOAD cases
     if not probe_cmd:
-        log(f"Running baseline (no eBPF): vec_add_binary={vec_add_cmd_base}, args={vec_add_args}", log_file)
+        if test_env or global_env:
+            log(f"Running test with custom env: vec_add_binary={vec_add_cmd_base}, args={vec_add_args}", log_file)
+        else:
+            log(f"Running baseline (no eBPF): vec_add_binary={vec_add_cmd_base}, args={vec_add_args}", log_file)
+
         try:
+            # Prepare environment: start with system env, apply global, then test-specific
+            run_env = os.environ.copy()
+
+            if global_env:
+                resolved_global = resolve_env_paths(global_env, repo_root)
+                run_env.update(resolved_global)
+
+            if test_env:
+                resolved_test = resolve_env_paths(test_env, repo_root)
+                run_env.update(resolved_test)
+
+            if test_env or global_env:
+                log(f"Environment variables: {test_env or global_env}", log_file)
+
             cmd = [vec_add_cmd_base] + (vec_add_args.split() if vec_add_args else [])
             result = subprocess.run(
                 cmd,
                 capture_output=True,
                 text=True,
                 timeout=120,
-                cwd=vec_add_dir
+                cwd=vec_add_dir,
+                env=run_env
             )
             log(f"STDOUT:\n{result.stdout}", log_file)
             log(f"STDERR:\n{result.stderr}", log_file)
 
             if result.returncode != 0:
-                log(f"Baseline failed with return code {result.returncode}", log_file)
+                log(f"Test failed with return code {result.returncode}", log_file)
                 return None
 
             avg_time = parse_benchmark_output(result.stdout)
             if avg_time:
-                log(f"✓ Baseline: {avg_time:.2f} μs", log_file)
+                test_type = "Test with custom env" if test_env else "Baseline"
+                log(f"✓ {test_type}: {avg_time:.2f} μs", log_file)
             return avg_time
         except Exception as e:
             log(f"Error running baseline: {e}", log_file)
@@ -112,20 +157,17 @@ def run_bpf_test(bench_dir: str, build_dir: str, probe_cmd: str, vec_add_args: s
     probe_process = None
     probe_log = f"{vec_add_dir}/.cuda_probe.stderr"
     try:
-        # Start BPF probe in background
-        syscall_server = f"{build_dir}/runtime/syscall-server/libbpftime-syscall-server.so"
-        agent = f"{build_dir}/runtime/agent/libbpftime-agent.so"
-
-        if not os.path.exists(syscall_server):
-            log(f"Error: {syscall_server} not found", log_file)
-            return None
-        if not os.path.exists(agent):
-            log(f"Error: {agent} not found", log_file)
-            return None
-
+        # Prepare probe environment: system env + global + probe-specific config
         probe_env = os.environ.copy()
-        probe_env['BPFTIME_LOG_OUTPUT'] = 'console'
-        probe_env['LD_PRELOAD'] = syscall_server
+
+        if global_env:
+            resolved_global = resolve_env_paths(global_env, repo_root)
+            probe_env.update(resolved_global)
+
+        if probe_env_config:
+            resolved_probe = resolve_env_paths(probe_env_config, repo_root)
+            probe_env.update(resolved_probe)
+            log(f"Probe environment: {probe_env_config}", log_file)
 
         # Parse probe command (can include arguments)
         probe_cmd_parts = probe_cmd.split()
@@ -156,10 +198,17 @@ def run_bpf_test(bench_dir: str, build_dir: str, probe_cmd: str, vec_add_args: s
                 probe_output = f.read()
                 log(f"Probe startup log:\n{probe_output}", log_file)
 
-        # Run benchmark with BPF agent
+        # Prepare agent environment: system env + global + agent-specific config
         agent_env = os.environ.copy()
-        agent_env['BPFTIME_LOG_OUTPUT'] = 'console'
-        agent_env['LD_PRELOAD'] = agent
+
+        if global_env:
+            resolved_global = resolve_env_paths(global_env, repo_root)
+            agent_env.update(resolved_global)
+
+        if agent_env_config:
+            resolved_agent = resolve_env_paths(agent_env_config, repo_root)
+            agent_env.update(resolved_agent)
+            log(f"Agent environment: {agent_env_config}", log_file)
 
         # Use vec_add binary (full path)
         vec_add_cmd = [vec_add_cmd_base] + (vec_add_args.split() if vec_add_args else [])
@@ -402,6 +451,11 @@ def main():
             'tests': []
         }
 
+        # Extract global and mode-specific environment configs
+        global_env = config.get('global_env', {})
+        probe_env_config = config.get('probe_env', {})
+        agent_env_config = config.get('agent_env', {})
+
         # Run test cases
         for test_case in test_cases:
             name = test_case.get('name', 'Unknown')
@@ -409,6 +463,7 @@ def main():
             test_vec_add_args = test_case.get('vec_add_args', '')
             baseline_ref = test_case.get('baseline')
             vec_add_binary = test_case.get('vec_add_binary')
+            test_env = test_case.get('env')  # Optional per-test environment variables
 
             if not test_vec_add_args:
                 log(f"Skipping {name}: no vec_add_args specified", log_file)
@@ -416,7 +471,8 @@ def main():
 
             log(f"Running test: {name}", log_file)
             avg_time = run_bpf_test(output_dir, build_dir, probe_binary_cmd, test_vec_add_args,
-                                   repo_root, log_file, vec_add_binary)
+                                   repo_root, log_file, vec_add_binary, test_env, global_env,
+                                   probe_env_config, agent_env_config)
 
             results['tests'].append({
                 'name': name,

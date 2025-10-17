@@ -1,5 +1,14 @@
 {
   "output_prefix": "benchmark/gpu/micro/micro_vec_add",
+  "global_env": {},
+  "probe_env": {
+    "BPFTIME_LOG_OUTPUT": "console",
+    "LD_PRELOAD": "build/runtime/syscall-server/libbpftime-syscall-server.so"
+  },
+  "agent_env": {
+    "BPFTIME_LOG_OUTPUT": "console",
+    "LD_PRELOAD": "build/runtime/agent/libbpftime-agent.so"
+  },
   "workload_presets": {
     "tiny": "benchmark/gpu/workload/vec_add 32 10000 32 1",
     "small": "benchmark/gpu/workload/vec_add 1000 10000 256 4",

@@ -1,0 +1,26 @@
+{
+  "output_prefix": "benchmark/gpu/nvbit_example",
+  "global_env": {},
+  "probe_env": {},
+  "agent_env": {},
+  "workload_presets": {
+    "small": "benchmark/gpu/workload/vec_add 1000 10000 256 4"
+  },
+  "test_cases": [
+    {
+      "name": "Baseline (small)",
+      "probe_binary_cmd": "",
+      "workload": "small"
+    },
+    {
+      "name": "NVBit Vec Add (small)",
+      "probe_binary_cmd": "",
+      "workload": "small",
+      "env": {
+        "LD_PRELOAD": "benchmark/gpu/nvbit/nvbit_vec_add.so",
+        "NOBANNER": "1"
+      },
+      "baseline": "Baseline (small)"
+    }
+  ]
+}

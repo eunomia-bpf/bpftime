@@ -1,5 +1,14 @@
 {
   "output_prefix": "benchmark/gpu/micro/examples_gemm",
+  "global_env": {},
+  "probe_env": {
+    "BPFTIME_LOG_OUTPUT": "console",
+    "LD_PRELOAD": "build/runtime/syscall-server/libbpftime-syscall-server.so"
+  },
+  "agent_env": {
+    "BPFTIME_LOG_OUTPUT": "console",
+    "LD_PRELOAD": "build/runtime/agent/libbpftime-agent.so"
+  },
   "workload_presets": {
     "tiny": "benchmark/gpu/workload/matrixMul 32 100 32 1",
     "small": "benchmark/gpu/workload/matrixMul 1000 100 256 4",
