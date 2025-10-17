@@ -21,7 +21,6 @@ struct {
 SEC("kprobe/__memcapture")
 int cuda__trace_cuda_kernel(struct pt_regs *ctx)
 {
-	// bpf_printk("mem_trace called");
 	u32 key = 0;
 	u64 *val = bpf_map_lookup_elem(&counter, &key);
 	if (val)
