@@ -6,8 +6,8 @@
 
 ## Workload Configuration
 
-| Workload | Elements | Iterations | Threads | Blocks |
-|----------|----------|------------|---------|--------|
+| Workload | Binary | Elements | Iterations | Threads | Blocks |
+|----------|--------|----------|------------|---------|--------|
 | large | benchmark/gpu/workload/vec_add | 100000 | 1000 | 512 |
 | medium | benchmark/gpu/workload/vec_add | 10000 | 10000 | 256 |
 | minimal | benchmark/gpu/workload/vec_add | 32 | 3 | 32 |
