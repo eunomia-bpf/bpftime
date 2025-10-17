@@ -1,14 +1,39 @@
 {
   "output_prefix": "benchmark/gpu/micro/examples_gemm",
   "workload_presets": {
-    "tiny": "bpftime/benchmark/gpu/workload/matrixMul 32 10000 32 1",
-    "small": "bpftime/benchmark/gpu/workload/matrixMul 1000 10000 256 4",
-    "medium": "bpftime/benchmark/gpu/workload/matrixMul 10000 10000 256 40",
-    "large": "bpftime/benchmark/gpu/workload/matrixMul 100000 1000 512 196",
-    "xlarge": "bpftime/benchmark/gpu/workload/matrixMul 1000000 1000 512 1954",
-    "minimal": "bpftime/benchmark/gpu/workload/matrixMul 32 3 32 1"
+    "tiny": "benchmark/gpu/workload/matrixMul 32 100 32 1",
+    "small": "benchmark/gpu/workload/matrixMul 1000 100 256 4",
+    "medium": "benchmark/gpu/workload/matrixMul 10000 100 256 40",
+    "large": "benchmark/gpu/workload/matrixMul 10000 100 512 196",
+    "xlarge": "benchmark/gpu/workload/matrixMul 10000 100 512 1954",
+    "minimal": "benchmark/gpu/workload/matrixMul 32 3 32 1"
   },
   "test_cases": [
+    {
+      "name": "Baseline (tiny)",
+      "probe_binary_cmd": "",
+      "workload": "tiny"
+    },
+    {
+      "name": "Baseline (small)",
+      "probe_binary_cmd": "",
+      "workload": "small"
+    },
+    {
+      "name": "Baseline (medium)",
+      "probe_binary_cmd": "",
+      "workload": "medium"
+    },
+    {
+      "name": "Baseline (large)",
+      "probe_binary_cmd": "",
+      "workload": "large"
+    },
+    {
+      "name": "Baseline (xlarge)",
+      "probe_binary_cmd": "",
+      "workload": "xlarge"
+    },
     {
       "name": "Baseline (minimal)",
       "probe_binary_cmd": "",
@@ -21,28 +46,28 @@
       "baseline": "Baseline (minimal)"
     },
     {
-      "name": "Memory Trace (minimal)",
+      "name": "Memory Trace (small)",
       "probe_binary_cmd": "example/gpu/mem_trace/mem_trace",
-      "workload": "minimal",
-      "baseline": "Baseline (minimal)"
+      "workload": "small",
+      "baseline": "Baseline (small)"
     },
     {
-      "name": "Thread Histogram (minimal)",
+      "name": "Thread Histogram (small)",
       "probe_binary_cmd": "example/gpu/threadhist/threadhist",
-      "workload": "minimal",
-      "baseline": "Baseline (minimal)"
+      "workload": "small",
+      "baseline": "Baseline (small)"
     },
     {
       "name": "Launch Latency (minimal)",
-      "probe_binary_cmd": "example/gpu/launchlate/launchlate bpftime/benchmark/gpu/workload/matrixMul:_Z16cudaLaunchKernelIcE9cudaErrorPT_4dim3S3_PPvmP11CUstream_st",
+      "probe_binary_cmd": "example/gpu/launchlate/launchlate benchmark/gpu/workload/matrixMul:_Z16cudaLaunchKernelIcE9cudaErrorPT_4dim3S3_PPvmP11CUstream_st",
       "workload": "minimal",
       "baseline": "Baseline (minimal)"
     },
     {
-      "name": "Kernel Retsnoop (minimal)",
+      "name": "Kernel Retsnoop (small)",
       "probe_binary_cmd": "example/gpu/kernelretsnoop/kernelretsnoop",
-      "workload": "minimal",
-      "baseline": "Baseline (minimal)"
+      "workload": "small",
+      "baseline": "Baseline (small)"
     }
   ]
 }
