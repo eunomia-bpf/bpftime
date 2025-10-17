@@ -1,17 +1,11 @@
-#include <cstddef>
-#include <cstdint>
 #include <cstdio>
 #include <iostream>
-#include <ostream>
-#include <iomanip>
 #include <stdio.h>
 #include <stdlib.h>
 #include <cuda_runtime.h>
-#include <unistd.h>
 #include <vector>
 #include <chrono>
-#include <numeric>
-#include <algorithm>
+#include "benchmark_common.h"
 
 __constant__ int d_N;
 
@@ -25,61 +19,12 @@ __global__ void vectorAdd(const float *A, const float *B, float *C)
     }
 }
 
-// Helper function to calculate statistics
-struct Stats {
-    double mean;
-    double median;
-    double min;
-    double max;
-    double p95;
-    double p99;
-    double stddev;
-};
-
-Stats calculate_stats(std::vector<double>& times) {
-    Stats stats;
-    std::sort(times.begin(), times.end());
-
-    stats.min = times.front();
-    stats.max = times.back();
-    stats.median = times[times.size() / 2];
-    stats.p95 = times[static_cast<size_t>(times.size() * 0.95)];
-    stats.p99 = times[static_cast<size_t>(times.size() * 0.99)];
-
-    double sum = std::accumulate(times.begin(), times.end(), 0.0);
-    stats.mean = sum / times.size();
-
-    double sq_sum = 0.0;
-    for (auto t : times) {
-        sq_sum += (t - stats.mean) * (t - stats.mean);
-    }
-    stats.stddev = std::sqrt(sq_sum / times.size());
-
-    return stats;
-}
-
 int main(int argc, char **argv)
 {
-    // Parse arguments: elements, iterations, threads_per_block, num_blocks
-    // If threads_per_block=0 or num_blocks=0, use automatic calculation
-    int h_N = 1 << 10;  // Default: 1024 elements
-    int iterations = 10;
-    int threads_per_block = 0;  // 0 = auto
-    int num_blocks = 0;  // 0 = auto
-    bool detailed = true;
-
-    if (argc > 1) {
-        h_N = atoi(argv[1]);
-    }
-    if (argc > 2) {
-        iterations = atoi(argv[2]);
-    }
-    if (argc > 3) {
-        threads_per_block = atoi(argv[3]);
-    }
-    if (argc > 4) {
-        num_blocks = atoi(argv[4]);
-    }
+    // Parse command line arguments
+    BenchmarkArgs args = BenchmarkArgs::parse(argc, argv);
+    int h_N = args.size;
+    int iterations = args.iterations;
 
     // Set vector size in constant memory
     cudaError_t err = cudaMemcpyToSymbol(d_N, &h_N, sizeof(h_N));
@@ -123,59 +68,17 @@ int main(int argc, char **argv)
 
     // Set up execution parameters
     int threads, blocks;
-
-    // Use explicit configuration if provided
-    if (threads_per_block > 0 && num_blocks > 0) {
-        threads = threads_per_block;
-        blocks = num_blocks;
-    } else if (threads_per_block > 0) {
-        // Threads specified, auto-calculate blocks
-        threads = threads_per_block;
-        blocks = (h_N + threads - 1) / threads;
-    } else if (num_blocks > 0) {
-        // Blocks specified, auto-calculate threads
-        blocks = num_blocks;
-        threads = (h_N + blocks - 1) / blocks;
-        // Round up to nearest multiple of 32 (warp size)
-        threads = ((threads + 31) / 32) * 32;
-    } else {
-        // Auto mode - adaptive thread block size based on workload
-        if (h_N <= 32) {
-            threads = 32;  // Minimum: 1 warp
-        } else if (h_N <= 128) {
-            threads = 128;
-        } else if (h_N <= 1024) {
-            threads = 256;
-        } else {
-            threads = 512;  // Larger workloads benefit from more threads per block
-        }
-        blocks = (h_N + threads - 1) / threads;
-    }
+    auto_grid_config(h_N, threads, blocks, args.threads_per_block, args.num_blocks);
 
     // Warm-up run
     vectorAdd<<<blocks, threads>>>(d_A, d_B, d_C);
     cudaDeviceSynchronize();
 
-    // Get CUDA device properties
-    cudaDeviceProp prop;
-    cudaGetDeviceProperties(&prop, 0);
-
-    // Benchmark loop with detailed timing
-    std::cout << "Running benchmark with " << iterations << " iterations...\n";
-    std::cout << "Vector size: " << h_N << " elements (" << bytes / 1024 / 1024 << " MB)\n";
-    std::cout << "Grid config: " << blocks << " blocks × " << threads << " threads/block = "
-              << blocks * threads << " total threads\n";
-    int active_threads = (h_N < blocks * threads) ? h_N : blocks * threads;
-    if (active_threads < blocks * threads) {
-        std::cout << "Active threads: " << active_threads << " ("
-                  << (100.0 * active_threads / (blocks * threads)) << "% utilization)\n";
-    }
-    std::cout << std::endl;
+    // Print benchmark header
+    print_benchmark_header("vectorAdd", iterations, bytes, blocks, threads);
 
     std::vector<double> kernel_times;
-    if (detailed) {
-        kernel_times.reserve(iterations);
-    }
+    kernel_times.reserve(iterations);
 
     auto start_time = std::chrono::high_resolution_clock::now();
 
@@ -185,11 +88,9 @@ int main(int argc, char **argv)
         cudaDeviceSynchronize();
         auto kernel_end = std::chrono::high_resolution_clock::now();
 
-        if (detailed) {
-            auto kernel_time = std::chrono::duration_cast<std::chrono::nanoseconds>(
-                kernel_end - kernel_start).count() / 1000.0;
-            kernel_times.push_back(kernel_time);
-        }
+        auto kernel_time = std::chrono::duration_cast<std::chrono::nanoseconds>(
+            kernel_end - kernel_start).count() / 1000.0;
+        kernel_times.push_back(kernel_time);
     }
 
     auto end_time = std::chrono::high_resolution_clock::now();
@@ -203,36 +104,14 @@ int main(int argc, char **argv)
         d2h_end - d2h_start).count();
 
     // Print benchmark results
-    double avg_time_us = duration.count() / 1000.0 / iterations;
-    std::cout << std::fixed << std::setprecision(2);
-    std::cout << "========================================\n";
-    std::cout << "Benchmark results:\n";
-    std::cout << "========================================\n";
-    std::cout << "Setup phase:\n";
-    std::cout << "  Host allocation:   " << host_alloc_time << " us\n";
-    std::cout << "  Device allocation: " << device_alloc_time << " us\n";
-    std::cout << "  Host to device:    " << h2d_time << " us ("
-              << (bytes / 1024.0 / 1024.0) / (h2d_time / 1000000.0) << " GB/s)\n";
-    std::cout << "  Device to host:    " << d2h_time << " us ("
-              << (bytes / 1024.0 / 1024.0) / (d2h_time / 1000000.0) << " GB/s)\n\n";
+    double total_time_us = duration.count() / 1000.0;
+    double avg_time_us = total_time_us / iterations;
 
-    std::cout << "Kernel execution:\n";
-    std::cout << "  Total time:        " << duration.count() / 1000.0 << " us\n";
-    std::cout << "  Average kernel time: " << avg_time_us << " us\n";
-    std::cout << "  Throughput:        " << (iterations * 1000000.0) / (duration.count() / 1000.0)
-              << " kernels/sec\n";
-
-    if (detailed && !kernel_times.empty()) {
-        Stats stats = calculate_stats(kernel_times);
-        std::cout << "\nDetailed statistics (μs):\n";
-        std::cout << "  Mean:              " << stats.mean << " us\n";
-        std::cout << "  Median:            " << stats.median << " us\n";
-        std::cout << "  Min:               " << stats.min << " us\n";
-        std::cout << "  Max:               " << stats.max << " us\n";
-        std::cout << "  P95:               " << stats.p95 << " us\n";
-        std::cout << "  P99:               " << stats.p99 << " us\n";
-        std::cout << "  Std dev:           " << stats.stddev << " us\n";
-    }
+    print_benchmark_results("vectorAdd", iterations, bytes,
+                           host_alloc_time, device_alloc_time,
+                           h2d_time, d2h_time,
+                           total_time_us, avg_time_us,
+                           &kernel_times);
 
     std::cout << "\nValidation check: C[0] = " << h_C[0] << ", C[1] = " << h_C[1] << "\n";
     std::cout << "========================================\n";

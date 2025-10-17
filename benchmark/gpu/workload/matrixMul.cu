@@ -1,61 +1,17 @@
-/* Copyright (c) 2022, NVIDIA CORPORATION. All rights reserved.
- *
- * Redistribution and use in source and binary forms, with or without
- * modification, are permitted provided that the following conditions
- * are met:
- *  * Redistributions of source code must retain the above copyright
- *    notice, this list of conditions and the following disclaimer.
- *  * Redistributions in binary form must reproduce the above copyright
- *    notice, this list of conditions and the following disclaimer in the
- *    documentation and/or other materials provided with the distribution.
- *  * Neither the name of NVIDIA CORPORATION nor the names of its
- *    contributors may be used to endorse or promote products derived
- *    from this software without specific prior written permission.
- *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS ``AS IS'' AND ANY
- * EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
- * IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR
- * PURPOSE ARE DISCLAIMED.  IN NO EVENT SHALL THE COPYRIGHT OWNER OR
- * CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL,
- * EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO,
- * PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR
- * PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY
- * OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
- * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
- * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- */
-
-/**
- * Matrix multiplication: C = A * B.
- * Host code.
- *
- * This sample implements matrix multiplication which makes use of shared memory
- * to ensure data reuse, the matrix multiplication is done using tiling approach.
- * It has been written for clarity of exposition to illustrate various CUDA programming
- * principles, not with the goal of providing the most performant generic kernel for matrix multiplication.
- * See also:
- * V. Volkov and J. Demmel, "Benchmarking GPUs to tune dense linear algebra,"
- * in Proc. 2008 ACM/IEEE Conf. on Supercomputing (SC '08),
- * Piscataway, NJ: IEEE Press, 2008, pp. Art. 31:1-11.
- */
-
-// System includes
-#include <assert.h>
+#include <cstdio>
+#include <iostream>
 #include <stdio.h>
-
-// CUDA runtime
-#include <cuda_profiler_api.h>
+#include <stdlib.h>
 #include <cuda_runtime.h>
+#include <vector>
+#include <chrono>
+#include "benchmark_common.h"
 
-// Helper functions and utilities to work with CUDA
-#include <helper_cuda.h>
-#include <helper_functions.h>
+#define BLOCK_SIZE 16
 
-/**
- * Matrix multiplication (CUDA Kernel) on the device: C = A * B
- * wA is A's width and wB is B's width
- */
-template <int BLOCK_SIZE> __global__ void MatrixMulCUDA(float *C, float *A, float *B, int wA, int wB)
+// Matrix multiplication kernel with shared memory tiling
+template <int BS>
+__global__ void vectorAdd(float *C, float *A, float *B, int wA, int wB)
 {
     // Block index
     int bx = blockIdx.x;
@@ -66,277 +22,160 @@ template <int BLOCK_SIZE> __global__ void MatrixMulCUDA(float *C, float *A, floa
     int ty = threadIdx.y;
 
     // Index of the first sub-matrix of A processed by the block
-    int aBegin = wA * BLOCK_SIZE * by;
-
-    // Index of the last sub-matrix of A processed by the block
+    int aBegin = wA * BS * by;
     int aEnd = aBegin + wA - 1;
-
-    // Step size used to iterate through the sub-matrices of A
-    int aStep = BLOCK_SIZE;
+    int aStep = BS;
 
     // Index of the first sub-matrix of B processed by the block
-    int bBegin = BLOCK_SIZE * bx;
+    int bBegin = BS * bx;
+    int bStep = BS * wB;
 
-    // Step size used to iterate through the sub-matrices of B
-    int bStep = BLOCK_SIZE * wB;
-
-    // Csub is used to store the element of the block sub-matrix
-    // that is computed by the thread
+    // Accumulated value
     float Csub = 0;
 
     // Loop over all the sub-matrices of A and B
-    // required to compute the block sub-matrix
     for (int a = aBegin, b = bBegin; a <= aEnd; a += aStep, b += bStep) {
-        // Declaration of the shared memory array As used to
-        // store the sub-matrix of A
-        __shared__ float As[BLOCK_SIZE][BLOCK_SIZE];
+        __shared__ float As[BS][BS];
+        __shared__ float Bs[BS][BS];
 
-        // Declaration of the shared memory array Bs used to
-        // store the sub-matrix of B
-        __shared__ float Bs[BLOCK_SIZE][BLOCK_SIZE];
-
-        // Load the matrices from device memory
-        // to shared memory; each thread loads
-        // one element of each matrix
+        // Load matrices from global memory to shared memory
         As[ty][tx] = A[a + wA * ty + tx];
         Bs[ty][tx] = B[b + wB * ty + tx];
 
-        // Synchronize to make sure the matrices are loaded
         __syncthreads();
 
-        // Multiply the two matrices together;
-        // each thread computes one element
-        // of the block sub-matrix
+        // Multiply the two matrices together
 #pragma unroll
-
-        for (int k = 0; k < BLOCK_SIZE; ++k) {
+        for (int k = 0; k < BS; ++k) {
             Csub += As[ty][k] * Bs[k][tx];
         }
 
-        // Synchronize to make sure that the preceding
-        // computation is done before loading two new
-        // sub-matrices of A and B in the next iteration
         __syncthreads();
     }
 
-    // Write the block sub-matrix to device memory;
-    // each thread writes one element
-    int c               = wB * BLOCK_SIZE * by + BLOCK_SIZE * bx;
+    // Write the block sub-matrix to device memory
+    int c = wB * BS * by + BS * bx;
     C[c + wB * ty + tx] = Csub;
 }
 
-void ConstantInit(float *data, int size, float val)
-{
-    for (int i = 0; i < size; ++i) {
-        data[i] = val;
-    }
-}
-
-/**
- * Run a simple test of matrix multiplication using CUDA
- */
-int MatrixMultiply(int argc, char **argv, int block_size, const dim3 &dimsA, const dim3 &dimsB)
-{
-    // Allocate host memory for matrices A and B
-    unsigned int size_A     = dimsA.x * dimsA.y;
-    unsigned int mem_size_A = sizeof(float) * size_A;
-    float       *h_A;
-    checkCudaErrors(cudaMallocHost(&h_A, mem_size_A));
-    unsigned int size_B     = dimsB.x * dimsB.y;
-    unsigned int mem_size_B = sizeof(float) * size_B;
-    float       *h_B;
-    checkCudaErrors(cudaMallocHost(&h_B, mem_size_B));
-    cudaStream_t stream;
-
-    // Initialize host memory
-    const float valB = 0.01f;
-    ConstantInit(h_A, size_A, 1.0f);
-    ConstantInit(h_B, size_B, valB);
-
-    // Allocate device memory
-    float *d_A, *d_B, *d_C;
-
-    // Allocate host matrix C
-    dim3         dimsC(dimsB.x, dimsA.y, 1);
-    unsigned int mem_size_C = dimsC.x * dimsC.y * sizeof(float);
-    float       *h_C;
-    checkCudaErrors(cudaMallocHost(&h_C, mem_size_C));
-
-    if (h_C == NULL) {
-        fprintf(stderr, "Failed to allocate host matrix C!\n");
-        exit(EXIT_FAILURE);
-    }
-
-    checkCudaErrors(cudaMalloc(reinterpret_cast<void **>(&d_A), mem_size_A));
-    checkCudaErrors(cudaMalloc(reinterpret_cast<void **>(&d_B), mem_size_B));
-    checkCudaErrors(cudaMalloc(reinterpret_cast<void **>(&d_C), mem_size_C));
-    // Allocate CUDA events that we'll use for timing
-    cudaEvent_t start, stop;
-    checkCudaErrors(cudaEventCreate(&start));
-    checkCudaErrors(cudaEventCreate(&stop));
-
-    checkCudaErrors(cudaStreamCreateWithFlags(&stream, cudaStreamNonBlocking));
-
-    // copy host memory to device
-    checkCudaErrors(cudaMemcpyAsync(d_A, h_A, mem_size_A, cudaMemcpyHostToDevice, stream));
-    checkCudaErrors(cudaMemcpyAsync(d_B, h_B, mem_size_B, cudaMemcpyHostToDevice, stream));
-
-    // Setup execution parameters
-    dim3 threads(block_size, block_size);
-    dim3 grid(dimsB.x / threads.x, dimsA.y / threads.y);
-
-    // Create and start timer
-    printf("Computing result using CUDA Kernel...\n");
-
-    // Performs warmup operation using matrixMul CUDA kernel
-    if (block_size == 16) {
-        MatrixMulCUDA<16><<<grid, threads, 0, stream>>>(d_C, d_A, d_B, dimsA.x, dimsB.x);
-    }
-    else {
-        MatrixMulCUDA<32><<<grid, threads, 0, stream>>>(d_C, d_A, d_B, dimsA.x, dimsB.x);
-    }
-
-    printf("done\n");
-    checkCudaErrors(cudaStreamSynchronize(stream));
-
-    // Record the start event
-    checkCudaErrors(cudaEventRecord(start, stream));
-
-    // Execute the kernel
-    int nIter = 300;
-
-    for (int j = 0; j < nIter; j++) {
-        if (block_size == 16) {
-            MatrixMulCUDA<16><<<grid, threads, 0, stream>>>(d_C, d_A, d_B, dimsA.x, dimsB.x);
-        }
-        else {
-            MatrixMulCUDA<32><<<grid, threads, 0, stream>>>(d_C, d_A, d_B, dimsA.x, dimsB.x);
-        }
-    }
-
-    // Record the stop event
-    checkCudaErrors(cudaEventRecord(stop, stream));
-
-    // Wait for the stop event to complete
-    checkCudaErrors(cudaEventSynchronize(stop));
-
-    float msecTotal = 0.0f;
-    checkCudaErrors(cudaEventElapsedTime(&msecTotal, start, stop));
-
-    // Compute and print the performance
-    float  msecPerMatrixMul = msecTotal / nIter;
-    double flopsPerMatrixMul =
-        2.0 * static_cast<double>(dimsA.x) * static_cast<double>(dimsA.y) * static_cast<double>(dimsB.x);
-    double gigaFlops = (flopsPerMatrixMul * 1.0e-9f) / (msecPerMatrixMul / 1000.0f);
-    printf("Performance= %.2f GFlop/s, Time= %.3f msec, Size= %.0f Ops,"
-           " WorkgroupSize= %u threads/block\n",
-           gigaFlops,
-           msecPerMatrixMul,
-           flopsPerMatrixMul,
-           threads.x * threads.y);
-
-    // Copy result from device to host
-    checkCudaErrors(cudaMemcpyAsync(h_C, d_C, mem_size_C, cudaMemcpyDeviceToHost, stream));
-    checkCudaErrors(cudaStreamSynchronize(stream));
-
-    printf("Checking computed result for correctness: ");
-    bool correct = true;
-
-    // test relative error by the formula
-    //     |<x, y>_cpu - <x,y>_gpu|/<|x|, |y|>  < eps
-    double eps = 1.e-6; // machine zero
-
-    for (int i = 0; i < static_cast<int>(dimsC.x * dimsC.y); i++) {
-        double abs_err    = fabs(h_C[i] - (dimsA.x * valB));
-        double dot_length = dimsA.x;
-        double abs_val    = fabs(h_C[i]);
-        double rel_err    = abs_err / abs_val / dot_length;
-
-        if (rel_err > eps) {
-            printf("Error! Matrix[%05d]=%.8f, ref=%.8f error term is > %E\n", i, h_C[i], dimsA.x * valB, eps);
-            correct = false;
-        }
-    }
-
-    printf("%s\n", correct ? "Result = PASS" : "Result = FAIL");
-
-    // Clean up memory
-    checkCudaErrors(cudaFreeHost(h_A));
-    checkCudaErrors(cudaFreeHost(h_B));
-    checkCudaErrors(cudaFreeHost(h_C));
-    checkCudaErrors(cudaFree(d_A));
-    checkCudaErrors(cudaFree(d_B));
-    checkCudaErrors(cudaFree(d_C));
-    checkCudaErrors(cudaEventDestroy(start));
-    checkCudaErrors(cudaEventDestroy(stop));
-    printf("\nNOTE: The CUDA Samples are not meant for performance "
-           "measurements. Results may vary when GPU Boost is enabled.\n");
-
-    if (correct) {
-        return EXIT_SUCCESS;
-    }
-    else {
-        return EXIT_FAILURE;
-    }
-}
-
-
-/**
- * Program main
- */
 int main(int argc, char **argv)
 {
-    printf("[Matrix Multiply Using CUDA] - Starting...\n");
+    // Parse command line arguments: matrix_dim, iterations, (threads_per_block not used for matrix mul)
+    BenchmarkArgs args = BenchmarkArgs::parse(argc, argv, 320, 10, BLOCK_SIZE);
+    int matrix_dim = args.size;  // Square matrix dimension
+    int iterations = args.iterations;
+    int block_size = (args.block_size > 0) ? args.block_size : BLOCK_SIZE;
 
-    if (checkCmdLineFlag(argc, (const char **)argv, "help") || checkCmdLineFlag(argc, (const char **)argv, "?")) {
-        printf("Usage -device=n (n >= 0 for deviceID)\n");
-        printf("      -wA=WidthA -hA=HeightA (Width x Height of Matrix A)\n");
-        printf("      -wB=WidthB -hB=HeightB (Width x Height of Matrix B)\n");
-        printf("  Note: Outer matrix dimensions of A & B matrices"
-               " must be equal.\n");
-
-        exit(EXIT_SUCCESS);
+    // Ensure matrix dimensions are multiples of block size
+    if (matrix_dim % block_size != 0) {
+        matrix_dim = ((matrix_dim + block_size - 1) / block_size) * block_size;
     }
 
-    // This will pick the best possible CUDA capable device, otherwise
-    // override the device ID based on input provided at the command line
-    int dev = findCudaDevice(argc, (const char **)argv);
+    size_t matrix_size = matrix_dim * matrix_dim;
+    size_t bytes = matrix_size * sizeof(float);
 
-    int block_size = 32;
+    // Allocate and initialize host memory
+    auto host_alloc_start = std::chrono::high_resolution_clock::now();
+    std::vector<float> h_A(matrix_size), h_B(matrix_size), h_C(matrix_size);
 
-    dim3 dimsA(5 * 2 * block_size, 5 * 2 * block_size, 1);
-    dim3 dimsB(5 * 4 * block_size, 5 * 2 * block_size, 1);
+    for (size_t i = 0; i < matrix_size; ++i) {
+        h_A[i] = 1.0f;
+        h_B[i] = 0.01f;
+    }
+    auto host_alloc_end = std::chrono::high_resolution_clock::now();
+    auto host_alloc_time = std::chrono::duration_cast<std::chrono::microseconds>(
+        host_alloc_end - host_alloc_start).count();
 
-    // width of Matrix A
-    if (checkCmdLineFlag(argc, (const char **)argv, "wA")) {
-        dimsA.x = getCmdLineArgumentInt(argc, (const char **)argv, "wA");
+    // Allocate device memory
+    auto device_alloc_start = std::chrono::high_resolution_clock::now();
+    float *d_A, *d_B, *d_C;
+    cudaMalloc(&d_A, bytes);
+    cudaMalloc(&d_B, bytes);
+    cudaMalloc(&d_C, bytes);
+    auto device_alloc_end = std::chrono::high_resolution_clock::now();
+    auto device_alloc_time = std::chrono::duration_cast<std::chrono::microseconds>(
+        device_alloc_end - device_alloc_start).count();
+
+    // Copy to device
+    auto h2d_start = std::chrono::high_resolution_clock::now();
+    cudaMemcpy(d_A, h_A.data(), bytes, cudaMemcpyHostToDevice);
+    cudaMemcpy(d_B, h_B.data(), bytes, cudaMemcpyHostToDevice);
+    auto h2d_end = std::chrono::high_resolution_clock::now();
+    auto h2d_time = std::chrono::duration_cast<std::chrono::microseconds>(
+        h2d_end - h2d_start).count();
+
+    // Set up execution parameters
+    dim3 threads(block_size, block_size);
+    dim3 blocks(matrix_dim / threads.x, matrix_dim / threads.y);
+
+    // Warm-up run
+    if (block_size == 16) {
+        vectorAdd<16><<<blocks, threads>>>(d_C, d_A, d_B, matrix_dim, matrix_dim);
+    } else {
+        vectorAdd<32><<<blocks, threads>>>(d_C, d_A, d_B, matrix_dim, matrix_dim);
+    }
+    cudaDeviceSynchronize();
+
+    // Print benchmark header
+    print_benchmark_header("MatrixMul", iterations, bytes, blocks.x * blocks.y, threads.x * threads.y);
+    std::cout << "Matrix: " << matrix_dim << "x" << matrix_dim << "\n\n";
+
+    std::vector<double> kernel_times;
+    kernel_times.reserve(iterations);
+
+    auto start_time = std::chrono::high_resolution_clock::now();
+
+    for (int i = 0; i < iterations; i++) {
+        auto kernel_start = std::chrono::high_resolution_clock::now();
+
+        if (block_size == 16) {
+            vectorAdd<16><<<blocks, threads>>>(d_C, d_A, d_B, matrix_dim, matrix_dim);
+        } else {
+            vectorAdd<32><<<blocks, threads>>>(d_C, d_A, d_B, matrix_dim, matrix_dim);
+        }
+
+        cudaDeviceSynchronize();
+        auto kernel_end = std::chrono::high_resolution_clock::now();
+
+        auto kernel_time = std::chrono::duration_cast<std::chrono::nanoseconds>(
+            kernel_end - kernel_start).count() / 1000.0;
+        kernel_times.push_back(kernel_time);
     }
 
-    // height of Matrix A
-    if (checkCmdLineFlag(argc, (const char **)argv, "hA")) {
-        dimsA.y = getCmdLineArgumentInt(argc, (const char **)argv, "hA");
-    }
+    auto end_time = std::chrono::high_resolution_clock::now();
+    auto duration = std::chrono::duration_cast<std::chrono::nanoseconds>(end_time - start_time);
 
-    // width of Matrix B
-    if (checkCmdLineFlag(argc, (const char **)argv, "wB")) {
-        dimsB.x = getCmdLineArgumentInt(argc, (const char **)argv, "wB");
-    }
+    // Copy result back to host
+    auto d2h_start = std::chrono::high_resolution_clock::now();
+    cudaMemcpy(h_C.data(), d_C, bytes, cudaMemcpyDeviceToHost);
+    auto d2h_end = std::chrono::high_resolution_clock::now();
+    auto d2h_time = std::chrono::duration_cast<std::chrono::microseconds>(
+        d2h_end - d2h_start).count();
 
-    // height of Matrix B
-    if (checkCmdLineFlag(argc, (const char **)argv, "hB")) {
-        dimsB.y = getCmdLineArgumentInt(argc, (const char **)argv, "hB");
-    }
+    // Print benchmark results
+    double total_time_us = duration.count() / 1000.0;
+    double avg_time_us = total_time_us / iterations;
 
-    if (dimsA.x != dimsB.y) {
-        printf("Error: outer matrix dimensions must be equal. (%d != %d)\n", dimsA.x, dimsB.y);
-        exit(EXIT_FAILURE);
-    }
+    print_benchmark_results("MatrixMul", iterations, bytes * 2,  // A and B
+                           host_alloc_time, device_alloc_time,
+                           h2d_time, d2h_time,
+                           total_time_us, avg_time_us,
+                           &kernel_times);
 
-    printf("MatrixA(%d,%d), MatrixB(%d,%d)\n", dimsA.x, dimsA.y, dimsB.x, dimsB.y);
+    // Calculate GFLOPS
+    double flops = 2.0 * static_cast<double>(matrix_dim) * matrix_dim * matrix_dim;
+    double gflops = (flops * 1.0e-9) / (avg_time_us / 1.0e6);
+    std::cout << "\nPerformance: " << gflops << " GFLOPS\n";
 
-    checkCudaErrors(cudaProfilerStart());
-    int matrix_result = MatrixMultiply(argc, argv, block_size, dimsA, dimsB);
-    checkCudaErrors(cudaProfilerStop());
+    // Validation
+    float expected = matrix_dim * 0.01f;  // Each row has matrix_dim * 0.01
+    std::cout << "Validation: C[0] = " << h_C[0] << ", expected ~" << expected << "\n";
+    std::cout << "========================================\n";
 
-    exit(matrix_result);
+    // Cleanup
+    cudaFree(d_A);
+    cudaFree(d_B);
+    cudaFree(d_C);
+
+    return 0;
 }

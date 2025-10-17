@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: (LGPL-2.1 OR BSD-2-Clause)
 
-NVCC ?= /usr/local/cuda-13.0/bin/nvcc
-NVCC_FLAGS = -g -Wno-deprecated-gpu-targets -rdc=false
+NVCC ?= nvcc
+NVCC_FLAGS = -cudart shared -g -Wno-deprecated-gpu-targets
 INCLUDE_FLAGS = -I. -Isample_headers
 CXX_FLAGS = -std=c++11
 
