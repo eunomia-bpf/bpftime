@@ -1,26 +1,231 @@
 {
-  "output_prefix": "benchmark/gpu/nvbit_example",
+  "output_prefix": "benchmark/gpu/nvbit/nvbit_vec_add",
   "global_env": {},
   "probe_env": {},
   "agent_env": {},
   "workload_presets": {
-    "small": "benchmark/gpu/workload/vec_add 1000 10000 256 4"
+    "tiny": "benchmark/gpu/workload/vec_add 32 10000 32 1",
+    "small": "benchmark/gpu/workload/vec_add 1000 10000 256 4",
+    "medium": "benchmark/gpu/workload/vec_add 10000 10000 256 40",
+    "large": "benchmark/gpu/workload/vec_add 100000 1000 512 196",
+    "minimal": "benchmark/gpu/workload/vec_add 32 3 32 1"
   },
   "test_cases": [
+    {
+      "name": "Baseline (minimal)",
+      "probe_binary_cmd": "",
+      "workload": "minimal"
+    },
+    {
+      "name": "Baseline (tiny)",
+      "probe_binary_cmd": "",
+      "workload": "tiny"
+    },
     {
       "name": "Baseline (small)",
       "probe_binary_cmd": "",
       "workload": "small"
     },
     {
-      "name": "NVBit Vec Add (small)",
+      "name": "Baseline (medium)",
+      "probe_binary_cmd": "",
+      "workload": "medium"
+    },
+    {
+      "name": "NVBit (minimal)",
+      "probe_binary_cmd": "",
+      "workload": "minimal",
+      "env": {
+        "LD_PRELOAD": "benchmark/gpu/nvbit/nvbit_vec_add.so"
+      },
+      "baseline": "Baseline (minimal)"
+    },
+    {
+      "name": "NVBit (tiny)",
+      "probe_binary_cmd": "",
+      "workload": "tiny",
+      "env": {
+        "LD_PRELOAD": "benchmark/gpu/nvbit/nvbit_vec_add.so"
+      },
+      "baseline": "Baseline (tiny)"
+    },
+    {
+      "name": "NVBit (small)",
       "probe_binary_cmd": "",
       "workload": "small",
       "env": {
-        "LD_PRELOAD": "benchmark/gpu/nvbit/nvbit_vec_add.so",
-        "NOBANNER": "1"
+        "LD_PRELOAD": "benchmark/gpu/nvbit/nvbit_vec_add.so"
       },
       "baseline": "Baseline (small)"
+    },
+    {
+      "name": "NVBit (medium)",
+      "probe_binary_cmd": "",
+      "workload": "medium",
+      "env": {
+        "LD_PRELOAD": "benchmark/gpu/nvbit/nvbit_vec_add.so"
+      },
+      "baseline": "Baseline (medium)"
+    },
+    {
+      "name": "NVBit Tutorial - instr_count (minimal)",
+      "probe_binary_cmd": "",
+      "workload": "minimal",
+      "env": {
+        "NOBANNER": "1",
+        "LD_PRELOAD": "benchmark/gpu/nvbit/nvbit-tutorial/tools/instr_count/instr_count.so"
+      },
+      "baseline": "Baseline (minimal)"
+    },
+    {
+      "name": "NVBit Tutorial - instr_count (tiny)",
+      "probe_binary_cmd": "",
+      "workload": "tiny",
+      "env": {
+        "NOBANNER": "1",
+        "LD_PRELOAD": "benchmark/gpu/nvbit/nvbit-tutorial/tools/instr_count/instr_count.so"
+      },
+      "baseline": "Baseline (tiny)"
+    },
+    {
+      "name": "NVBit Tutorial - mem_trace (minimal)",
+      "probe_binary_cmd": "",
+      "workload": "minimal",
+      "env": {
+        "NOBANNER": "1",
+        "LD_PRELOAD": "benchmark/gpu/nvbit/nvbit-tutorial/tools/mem_trace/mem_trace.so"
+      },
+      "baseline": "Baseline (minimal)"
+    },
+    {
+      "name": "NVBit Tutorial - mem_trace (tiny)",
+      "probe_binary_cmd": "",
+      "workload": "tiny",
+      "env": {
+        "NOBANNER": "1",
+        "LD_PRELOAD": "benchmark/gpu/nvbit/nvbit-tutorial/tools/mem_trace/mem_trace.so"
+      },
+      "baseline": "Baseline (tiny)"
+    },
+    {
+      "name": "NVBit Tutorial - opcode_hist (minimal)",
+      "probe_binary_cmd": "",
+      "workload": "minimal",
+      "env": {
+        "NOBANNER": "1",
+        "LD_PRELOAD": "benchmark/gpu/nvbit/nvbit-tutorial/tools/opcode_hist/opcode_hist.so"
+      },
+      "baseline": "Baseline (minimal)"
+    },
+    {
+      "name": "NVBit Tutorial - opcode_hist (tiny)",
+      "probe_binary_cmd": "",
+      "workload": "tiny",
+      "env": {
+        "NOBANNER": "1",
+        "LD_PRELOAD": "benchmark/gpu/nvbit/nvbit-tutorial/tools/opcode_hist/opcode_hist.so"
+      },
+      "baseline": "Baseline (tiny)"
+    },
+    {
+      "name": "NVBit Tutorial - instr_count_bb (minimal)",
+      "probe_binary_cmd": "",
+      "workload": "minimal",
+      "env": {
+        "NOBANNER": "1",
+        "LD_PRELOAD": "benchmark/gpu/nvbit/nvbit-tutorial/tools/instr_count_bb/instr_count_bb.so"
+      },
+      "baseline": "Baseline (minimal)"
+    },
+    {
+      "name": "NVBit Tutorial - instr_count_bb (tiny)",
+      "probe_binary_cmd": "",
+      "workload": "tiny",
+      "env": {
+        "NOBANNER": "1",
+        "LD_PRELOAD": "benchmark/gpu/nvbit/nvbit-tutorial/tools/instr_count_bb/instr_count_bb.so"
+      },
+      "baseline": "Baseline (tiny)"
+    },
+    {
+      "name": "NVBit Tutorial - instr_count_bb (small)",
+      "probe_binary_cmd": "",
+      "workload": "small",
+      "env": {
+        "NOBANNER": "1",
+        "LD_PRELOAD": "benchmark/gpu/nvbit/nvbit-tutorial/tools/instr_count_bb/instr_count_bb.so"
+      },
+      "baseline": "Baseline (small)"
+    },
+    {
+      "name": "NVBit Tutorial - mem_printf2 (minimal)",
+      "probe_binary_cmd": "",
+      "workload": "minimal",
+      "env": {
+        "NOBANNER": "1",
+        "LD_PRELOAD": "benchmark/gpu/nvbit/nvbit-tutorial/tools/mem_printf2/mem_printf2.so"
+      },
+      "baseline": "Baseline (minimal)"
+    },
+    {
+      "name": "NVBit Tutorial - mem_printf2 (tiny)",
+      "probe_binary_cmd": "",
+      "workload": "tiny",
+      "env": {
+        "NOBANNER": "1",
+        "LD_PRELOAD": "benchmark/gpu/nvbit/nvbit-tutorial/tools/mem_printf2/mem_printf2.so"
+      },
+      "baseline": "Baseline (tiny)"
+    },
+    {
+      "name": "NVBit Tutorial - record_reg_vals (minimal)",
+      "probe_binary_cmd": "",
+      "workload": "minimal",
+      "env": {
+        "NOBANNER": "1",
+        "LD_PRELOAD": "benchmark/gpu/nvbit/nvbit-tutorial/tools/record_reg_vals/record_reg_vals.so"
+      },
+      "baseline": "Baseline (minimal)"
+    },
+    {
+      "name": "NVBit Tutorial - mov_replace (minimal)",
+      "probe_binary_cmd": "",
+      "workload": "minimal",
+      "env": {
+        "NOBANNER": "1",
+        "LD_PRELOAD": "benchmark/gpu/nvbit/nvbit-tutorial/tools/mov_replace/mov_replace.so"
+      },
+      "baseline": "Baseline (minimal)"
+    },
+    {
+      "name": "NVBit Tutorial - mov_replace (tiny)",
+      "probe_binary_cmd": "",
+      "workload": "tiny",
+      "env": {
+        "NOBANNER": "1",
+        "LD_PRELOAD": "benchmark/gpu/nvbit/nvbit-tutorial/tools/mov_replace/mov_replace.so"
+      },
+      "baseline": "Baseline (tiny)"
+    },
+    {
+      "name": "NVBit Tutorial - mov_replace (small)",
+      "probe_binary_cmd": "",
+      "workload": "small",
+      "env": {
+        "NOBANNER": "1",
+        "LD_PRELOAD": "benchmark/gpu/nvbit/nvbit-tutorial/tools/mov_replace/mov_replace.so"
+      },
+      "baseline": "Baseline (small)"
+    },
+    {
+      "name": "NVBit Tutorial - mov_replace (medium)",
+      "probe_binary_cmd": "",
+      "workload": "medium",
+      "env": {
+        "NOBANNER": "1",
+        "LD_PRELOAD": "benchmark/gpu/nvbit/nvbit-tutorial/tools/mov_replace/mov_replace.so"
+      },
+      "baseline": "Baseline (medium)"
     }
   ]
 }

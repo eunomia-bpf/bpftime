@@ -69,3 +69,19 @@ vec_add: vec_add.cu
 	else \
 		echo "Warning: CUDA not found, skipping vec_add build"; \
 	fi
+
+# Clone nvbit-tutorial repository
+.PHONY: clone-tutorial
+clone-tutorial:
+	@if [ ! -d "nvbit-tutorial" ]; then \
+		echo "Cloning nvbit-tutorial repository..."; \
+		git clone --depth=1 https://github.com/eunomia-bpf/nvbit-tutorial; \
+	else \
+		echo "nvbit-tutorial already exists"; \
+	fi
+
+# Build nvbit-tutorial tools
+.PHONY: build-tutorial
+build-tutorial: clone-tutorial
+	@echo "Building nvbit-tutorial tools..."
+	cd nvbit-tutorial && $(MAKE)
