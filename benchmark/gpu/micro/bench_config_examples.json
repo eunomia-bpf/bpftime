@@ -33,7 +33,7 @@
     },
     {
       "name": "Launch Latency (minimal)",
-      "probe_binary_cmd": "example/gpu/launchlate/launchlate",
+      "probe_binary_cmd": "example/gpu/launchlate/launchlate benchmark/gpu/vec_add:_Z16cudaLaunchKernelIcE9cudaErrorPT_4dim3S3_PPvmP11CUstream_st",
       "workload": "minimal",
       "baseline": "Baseline (minimal)"
     },

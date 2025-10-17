@@ -51,6 +51,8 @@ int main()
 		if (bpf_map_lookup_elem(mapfd, &key, &value) == 0) {
 			printf("counter[0]=%lu\n", (unsigned long)value);
 		}
+		// value = 0;
+		// bpf_map_update_elem(mapfd, &key, &value, 0);
 		sleep(1);
 	}
 

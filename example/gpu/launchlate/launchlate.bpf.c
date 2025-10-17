@@ -27,7 +27,7 @@ struct {
 // Map to store the last uprobe timestamp for calculating latency
 struct {
 	__uint(type, BPF_MAP_TYPE_ARRAY);
-	__uint(max_entries, 1);
+	__uint(max_entries, 32);
 	__type(key, u32);
 	__type(value, u64);
 } last_uprobe_time SEC(".maps");
@@ -36,13 +36,14 @@ struct {
 // Index 0: realtime_ns - monotonic_ns offset
 struct {
 	__uint(type, BPF_MAP_TYPE_ARRAY);
-	__uint(max_entries, 1);
+	__uint(max_entries, 32);
 	__type(key, u32);
 	__type(value, s64);
 } clock_offset SEC(".maps");
 
 // Uprobe on cudaLaunchKernel - tracks when kernels are launched from CPU
-SEC("uprobe/example/gpu/launchlate/vec_add:_Z16cudaLaunchKernelIcE9cudaErrorPT_4dim3S3_PPvmP11CUstream_st")
+// Note: actual uprobe target is configured at runtime via bpf_program__attach_uprobe()
+SEC("uprobe")
 int BPF_KPROBE(uprobe_cuda_launch, const void *func, u64 gridDim, u64 blockDim)
 {
 	u64 ts_mono = bpf_ktime_get_ns();
@@ -59,7 +60,7 @@ int BPF_KPROBE(uprobe_cuda_launch, const void *func, u64 gridDim, u64 blockDim)
 	if (offset_ptr) {
 		ts_calibrated = ts_mono + *offset_ptr;
 	}
-
+	// bpf_printk("okk");
 	// Store the timestamp for latency calculation
 	bpf_map_update_elem(&last_uprobe_time, &key, &ts_calibrated, BPF_ANY);
 
