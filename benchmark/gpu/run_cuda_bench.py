@@ -110,6 +110,7 @@ def run_bpf_test(bench_dir: str, build_dir: str, probe_cmd: str, vec_add_args: s
     log(f"Running BPF test: probe_cmd={probe_cmd}, vec_add_args={vec_add_args}", log_file)
 
     probe_process = None
+    probe_log = f"{vec_add_dir}/.cuda_probe.stderr"
     try:
         # Start BPF probe in background
         syscall_server = f"{build_dir}/runtime/syscall-server/libbpftime-syscall-server.so"
@@ -136,7 +137,6 @@ def run_bpf_test(bench_dir: str, build_dir: str, probe_cmd: str, vec_add_args: s
             return None
 
         probe_full_cmd = [probe_binary] + probe_args
-        probe_log = f"{bench_dir}/.cuda_probe.stderr"
         probe_stderr_file = open(probe_log, 'w')
         probe_process = subprocess.Popen(
             probe_full_cmd,
