@@ -6,6 +6,7 @@
     "medium": "benchmark/gpu/workload/matrixMul 10000 100 256 40",
     "large": "benchmark/gpu/workload/matrixMul 10000 100 512 196",
     "xlarge": "benchmark/gpu/workload/matrixMul 10000 100 512 1954",
+    "small_64x16": "benchmark/gpu/workload/matrixMul 1000 100 64 16",
     "minimal": "benchmark/gpu/workload/matrixMul 32 3 32 1"
   },
   "test_cases": [
@@ -28,11 +29,6 @@
       "name": "Baseline (large)",
       "probe_binary_cmd": "",
       "workload": "large"
-    },
-    {
-      "name": "Baseline (xlarge)",
-      "probe_binary_cmd": "",
-      "workload": "xlarge"
     },
     {
       "name": "Baseline (minimal)",
