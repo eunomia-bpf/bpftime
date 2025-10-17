@@ -60,7 +60,6 @@ int BPF_KPROBE(uprobe_cuda_launch, const void *func, u64 gridDim, u64 blockDim)
 	if (offset_ptr) {
 		ts_calibrated = ts_mono + *offset_ptr;
 	}
-	// bpf_printk("okk");
 	// Store the timestamp for latency calculation
 	bpf_map_update_elem(&last_uprobe_time, &key, &ts_calibrated, BPF_ANY);
 
