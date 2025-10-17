@@ -1,11 +1,12 @@
 {
+  "output_prefix": "benchmark/gpu/micro/examples_vec_add",
   "workload_presets": {
-    "tiny": "32 10000 32 1",
-    "small": "1000 10000 256 4",
-    "medium": "10000 10000 256 40",
-    "large": "100000 1000 512 196",
-    "xlarge": "1000000 1000 512 1954",
-    "minimal": "32 3 32 1"
+    "tiny": "benchmark/gpu/workload/vec_add 32 10000 32 1",
+    "small": "benchmark/gpu/workload/vec_add 1000 10000 256 4",
+    "medium": "benchmark/gpu/workload/vec_add 10000 10000 256 40",
+    "large": "benchmark/gpu/workload/vec_add 100000 1000 512 196",
+    "xlarge": "benchmark/gpu/workload/vec_add 1000000 1000 512 1954",
+    "minimal": "benchmark/gpu/workload/vec_add 32 3 32 1"
   },
   "test_cases": [
     {
@@ -33,7 +34,7 @@
     },
     {
       "name": "Launch Latency (minimal)",
-      "probe_binary_cmd": "example/gpu/launchlate/launchlate benchmark/gpu/vec_add:_Z16cudaLaunchKernelIcE9cudaErrorPT_4dim3S3_PPvmP11CUstream_st",
+      "probe_binary_cmd": "example/gpu/launchlate/launchlate benchmark/gpu/workload/vec_add:_Z16cudaLaunchKernelIcE9cudaErrorPT_4dim3S3_PPvmP11CUstream_st",
       "workload": "minimal",
       "baseline": "Baseline (minimal)"
     },

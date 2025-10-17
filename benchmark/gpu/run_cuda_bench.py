@@ -69,20 +69,27 @@ def run_baseline(bench_dir: str, vec_add_args: str, log_file=None) -> Optional[f
         return None
 
 def run_bpf_test(bench_dir: str, build_dir: str, probe_cmd: str, vec_add_args: str,
-                 repo_root: str, log_file=None) -> Optional[float]:
+                 repo_root: str, log_file=None, vec_add_binary: str = None) -> Optional[float]:
     """Run benchmark with or without BPF instrumentation."""
+
+    # Use vec_add_binary if provided, otherwise raise error
+    if vec_add_binary:
+        vec_add_cmd_base = vec_add_binary
+        vec_add_dir = os.path.dirname(vec_add_binary)
+    else:
+        raise RuntimeError("vec_add_binary must be provided")
 
     # Special case: empty probe_cmd means no eBPF at all (true baseline)
     if not probe_cmd:
-        log(f"Running baseline (no eBPF): vec_add_args={vec_add_args}", log_file)
+        log(f"Running baseline (no eBPF): vec_add_binary={vec_add_cmd_base}, args={vec_add_args}", log_file)
         try:
-            cmd = [f'{bench_dir}/vec_add'] + (vec_add_args.split() if vec_add_args else [])
+            cmd = [vec_add_cmd_base] + (vec_add_args.split() if vec_add_args else [])
             result = subprocess.run(
                 cmd,
                 capture_output=True,
                 text=True,
                 timeout=120,
-                cwd=bench_dir
+                cwd=vec_add_dir
             )
             log(f"STDOUT:\n{result.stdout}", log_file)
             log(f"STDERR:\n{result.stderr}", log_file)
@@ -154,14 +161,14 @@ def run_bpf_test(bench_dir: str, build_dir: str, probe_cmd: str, vec_add_args: s
         agent_env['BPFTIME_LOG_OUTPUT'] = 'console'
         agent_env['LD_PRELOAD'] = agent
 
-        # Always use the micro-benchmark's vec_add binary
-        vec_add_cmd = [f'{bench_dir}/vec_add'] + (vec_add_args.split() if vec_add_args else [])
+        # Use vec_add binary (full path)
+        vec_add_cmd = [vec_add_cmd_base] + (vec_add_args.split() if vec_add_args else [])
         result = subprocess.run(
             vec_add_cmd,
             capture_output=True,
             text=True,
             timeout=120,
-            cwd=bench_dir,
+            cwd=vec_add_dir,
             env=agent_env
         )
 
@@ -223,17 +230,26 @@ def run_bpf_test(bench_dir: str, build_dir: str, probe_cmd: str, vec_add_args: s
             except:
                 pass
 
-def load_config(config_path: str) -> Dict[str, Any]:
+def load_config(config_path: str, repo_root: str) -> Dict[str, Any]:
     """Load benchmark configuration from JSON file."""
     with open(config_path, 'r') as f:
         config = json.load(f)
 
-    # Resolve workload presets to actual vec_add_args
+    # Resolve workload presets
     presets = config.get('workload_presets', {})
     for test_case in config.get('test_cases', []):
         workload = test_case.get('workload')
         if workload and workload in presets:
-            test_case['vec_add_args'] = presets[workload]
+            # Get the preset which now includes full binary path and args
+            preset_value = presets[workload]
+            # Split into binary path and args
+            parts = preset_value.split(' ', 1)
+            if len(parts) == 2:
+                binary_rel_path, args = parts
+                # Convert relative path to absolute
+                binary_path = os.path.join(repo_root, binary_rel_path)
+                test_case['vec_add_args'] = args
+                test_case['vec_add_binary'] = binary_path
         # Keep existing vec_add_args if no workload specified
 
     return config
@@ -314,8 +330,6 @@ def print_results_table(results: Dict[str, Any], log_file=None):
 def main():
     # Determine paths - assume running from repo root
     repo_root = os.getcwd()
-    script_dir = os.path.join(repo_root, 'benchmark/gpu/micro')
-    bench_dir = script_dir
     build_dir = os.path.join(repo_root, 'build')
 
     # Parse arguments
@@ -323,29 +337,12 @@ def main():
     if len(sys.argv) > 1:
         config_file = sys.argv[1]
 
-    # Config file path - if it's a full path, use it; otherwise join with bench_dir
+    # Config file path - if it's a full path, use it; otherwise relative to repo root
     if os.path.isabs(config_file):
         config_path = config_file
-    elif config_file.startswith('benchmark/'):
-        # Already includes benchmark/ prefix, use from repo root
+    else:
+        # Relative to repo root
         config_path = os.path.join(repo_root, config_file)
-    else:
-        # Relative to bench_dir
-        config_path = os.path.join(bench_dir, config_file)
-
-    # Determine output file names based on config file
-    if 'example' in config_file:
-        log_file_name = "micro_example_bench.log"
-        result_file_name = "micro_example_result.json"
-        result_md_file_name = "micro_example_result.md"
-    else:
-        log_file_name = "micro_bench.log"
-        result_file_name = "micro_result.json"
-        result_md_file_name = "micro_result.md"
-
-    log_path = os.path.join(bench_dir, log_file_name)
-    result_path = os.path.join(bench_dir, result_file_name)
-    result_md_path = os.path.join(bench_dir, result_md_file_name)
     if not os.path.exists(config_path):
         print(f"Error: Config file not found: {config_path}")
         print(f"Usage: {sys.argv[0]} [config.json]")
@@ -353,13 +350,36 @@ def main():
 
     # Load configuration
     try:
-        config = load_config(config_path)
+        config = load_config(config_path, repo_root)
     except Exception as e:
         print(f"Error loading config: {e}")
         sys.exit(1)
 
     # Extract config
     test_cases = config.get('test_cases', [])
+
+    # Get output path prefix from config (should be relative to repo root)
+    output_prefix = config.get('output_prefix', 'benchmark/gpu/result')
+
+    # Convert output_prefix to absolute path from repo root
+    if not os.path.isabs(output_prefix):
+        output_dir = os.path.dirname(os.path.join(repo_root, output_prefix))
+        output_basename = os.path.basename(output_prefix)
+    else:
+        output_dir = os.path.dirname(output_prefix)
+        output_basename = os.path.basename(output_prefix)
+
+    # Ensure output directory exists
+    os.makedirs(output_dir, exist_ok=True)
+
+    # Construct output file paths
+    log_file_name = f"{output_basename}_bench.log"
+    result_file_name = f"{output_basename}_result.json"
+    result_md_file_name = f"{output_basename}_result.md"
+
+    log_path = os.path.join(output_dir, log_file_name)
+    result_path = os.path.join(output_dir, result_file_name)
+    result_md_path = os.path.join(output_dir, result_md_file_name)
 
     with open(log_path, 'w') as log_file:
         log("="*80, log_file)
@@ -388,14 +408,15 @@ def main():
             probe_binary_cmd = test_case.get('probe_binary_cmd', '')
             test_vec_add_args = test_case.get('vec_add_args', '')
             baseline_ref = test_case.get('baseline')
+            vec_add_binary = test_case.get('vec_add_binary')
 
             if not test_vec_add_args:
                 log(f"Skipping {name}: no vec_add_args specified", log_file)
                 continue
 
             log(f"Running test: {name}", log_file)
-            avg_time = run_bpf_test(bench_dir, build_dir, probe_binary_cmd, test_vec_add_args,
-                                   repo_root, log_file)
+            avg_time = run_bpf_test(output_dir, build_dir, probe_binary_cmd, test_vec_add_args,
+                                   repo_root, log_file, vec_add_binary)
 
             results['tests'].append({
                 'name': name,
