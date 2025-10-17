@@ -22,6 +22,7 @@ index.html*
 .idea
 bpftime-nginx-module.pdf
 example/libffi/test
+nvbit_release_x86_64
 test/man
 test/lib
 test/bin

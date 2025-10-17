@@ -4,25 +4,25 @@ A flexible benchmarking framework for measuring GPU eBPF instrumentation overhea
 
 ## Quick Start
 
-**Important:** Run from the bpftime root directory (not from `benchmark/gpu/micro/`)
+**Important:** All commands must be run from the bpftime project root directory (not from `benchmark/gpu/micro/`)
 
 ### Run Built-in Micro-benchmarks
 ```bash
 cd /path/to/bpftime
-python3 benchmark/gpu/micro/run_cuda_bench.py benchmark/gpu/micro/bench_config.json
+python3 benchmark/gpu/run_cuda_bench.py benchmark/gpu/micro/micro_vec_add_config.json
 ```
 Tests various eBPF probe types: empty, entry, exit, both, ringbuf, timer, etc.
 
 ### Run Example Programs
 ```bash
 cd /path/to/bpftime
-python3 benchmark/gpu/micro/run_cuda_bench.py benchmark/gpu/micro/bench_config_examples.json
+python3 benchmark/gpu/run_cuda_bench.py benchmark/gpu/micro/examples_vec_add_config.json
 ```
 Tests real-world eBPF examples: cuda-counter, mem_trace, threadhist, etc.
 
 ## Configuration Files
 
-### `bench_config.json`
+### `micro_vec_add_config.json` / `micro_gemm_config.json`
 Built-in micro-benchmarks testing:
 - **Baseline**: No eBPF (native CUDA performance)
 - **Empty probe**: Minimal eBPF overhead
@@ -33,7 +33,7 @@ Built-in micro-benchmarks testing:
 - **Memtrace**: Memory access tracing
 - **CPU map operations**: Array/Hash map operations from GPU
 
-### `bench_config_examples.json`
+### `examples_vec_add_config.json` / `examples_gemm_config.json`
 Real-world examples from `example/gpu/`:
 - **cuda-counter**: Count kernel invocations
 - **mem_trace**: Trace memory access patterns
@@ -53,17 +53,17 @@ Real-world examples from `example/gpu/`:
 
 ## Output Files
 
-After running benchmarks, outputs are saved to `benchmark/gpu/micro/`:
+After running benchmarks, outputs are saved based on the `output_prefix` in the config file.
 
-**For micro-benchmarks (bench_config.json):**
-- **`micro_result.md`**: Markdown-formatted results
-- **`micro_result.json`**: Raw JSON data
-- **`micro_bench.log`**: Detailed execution log
+**For micro-benchmarks (e.g., `micro_vec_add_config.json` with prefix `benchmark/gpu/micro/micro_vec_add`):**
+- **`micro_vec_add_result.md`**: Markdown-formatted results
+- **`micro_vec_add_result.json`**: Raw JSON data
+- **`micro_vec_add_bench.log`**: Detailed execution log
 
-**For examples (bench_config_examples.json):**
-- **`micro_example_result.md`**: Markdown-formatted results
-- **`micro_example_result.json`**: Raw JSON data
-- **`micro_example_bench.log`**: Detailed execution log
+**For examples (e.g., `examples_vec_add_config.json` with prefix `benchmark/gpu/micro/examples_vec_add`):**
+- **`examples_vec_add_result.md`**: Markdown-formatted results
+- **`examples_vec_add_result.json`**: Raw JSON data
+- **`examples_vec_add_bench.log`**: Detailed execution log
 
 ## Configuration Structure
 
@@ -71,8 +71,9 @@ Both config files use the same structure:
 
 ```json
 {
+  "output_prefix": "benchmark/gpu/micro/micro_vec_add",
   "workload_presets": {
-    "minimal": "32 3 32 1"
+    "minimal": "benchmark/gpu/workload/vec_add 32 3 32 1"
   },
   "test_cases": [
     {
@@ -85,11 +86,13 @@ Both config files use the same structure:
 }
 ```
 
+- **`output_prefix`**: Base path for output files (relative to project root)
+- **`workload_presets`**: Each preset specifies the full path to the workload binary and its arguments
 - **Empty `probe_binary_cmd`**: Runs baseline (no eBPF)
 - **With probe path**: Runs with eBPF instrumentation
-- **Paths are relative to bpftime root**: `benchmark/gpu/micro/cuda_probe entry` or `example/gpu/mem_trace/mem_trace`
+- **All paths are relative to bpftime project root**: Examples: `benchmark/gpu/micro/cuda_probe entry` or `example/gpu/mem_trace/mem_trace`
 
-**Important:** All tests use `benchmark/gpu/micro/vec_add` for consistent benchmarking.
+**Important:** All tests use `benchmark/gpu/workload/vec_add` (or `matrixMul`, `simpleCUBLAS`) as the workload binary for consistent benchmarking.
 
 ## Architecture
 
@@ -103,10 +106,10 @@ Both config files use the same structure:
 │  - Generate reports                         │
 └─────────────────────────────────────────────┘
               │
-              ├──► bench_config.json
+              ├──► micro_vec_add_config.json
               │    (built-in micro-benchmarks)
               │
-              ├──► bench_config_examples.json
+              ├──► examples_vec_add_config.json
               │    (example programs)
               │
               └──► Custom configs
@@ -132,10 +135,10 @@ Both config files use the same structure:
 
 ## Troubleshooting
 
-**"Custom probe not found"**: Ensure examples are built
+**"Custom probe not found"**: Ensure examples are built (from project root)
 ```bash
-cd ../../example/gpu
-make
+cd /path/to/bpftime
+make -C example/gpu
 ```
 
 **"No vec_add_args specified"**: Each test case needs a workload preset
