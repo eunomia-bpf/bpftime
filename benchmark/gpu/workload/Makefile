@@ -1,15 +1,34 @@
 # SPDX-License-Identifier: (LGPL-2.1 OR BSD-2-Clause)
 
+NVCC ?= /usr/local/cuda-13.0/bin/nvcc
+NVCC_FLAGS = -g -Wno-deprecated-gpu-targets -rdc=false
+INCLUDE_FLAGS = -I. -Isample_headers
+CXX_FLAGS = -std=c++11
+
 .PHONY: all
-all: vec_add
+all: vec_add matrixMul simpleCUBLAS
 
 vec_add: vec_add.cu
-	@if command -v nvcc >/dev/null 2>&1; then \
-		nvcc -cudart shared vec_add.cu -o vec_add -g; \
+	@if command -v $(NVCC) >/dev/null 2>&1; then \
+		$(NVCC) $(NVCC_FLAGS) vec_add.cu -o vec_add; \
 	else \
 		echo "Warning: CUDA not found, skipping vec_add build"; \
 	fi
 
+matrixMul: matrixMul.cu
+	@if command -v $(NVCC) >/dev/null 2>&1; then \
+		$(NVCC) $(NVCC_FLAGS) $(INCLUDE_FLAGS) $(CXX_FLAGS) matrixMul.cu -o matrixMul; \
+	else \
+		echo "Warning: CUDA not found, skipping matrixMul build"; \
+	fi
+
+simpleCUBLAS: simpleCUBLAS.cpp
+	@if command -v $(NVCC) >/dev/null 2>&1; then \
+		$(NVCC) $(NVCC_FLAGS) $(INCLUDE_FLAGS) $(CXX_FLAGS) simpleCUBLAS.cpp -o simpleCUBLAS -lcublas; \
+	else \
+		echo "Warning: CUDA not found, skipping simpleCUBLAS build"; \
+	fi
+
 .PHONY: clean
 clean:
-	rm -f vec_add
+	rm -f vec_add matrixMul simpleCUBLAS
