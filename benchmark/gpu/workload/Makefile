@@ -10,14 +10,14 @@ all: vec_add matrixMul simpleCUBLAS
 
 vec_add: vec_add.cu
 	@if command -v $(NVCC) >/dev/null 2>&1; then \
-		$(NVCC) $(NVCC_FLAGS) vec_add.cu -o vec_add; \
+		$(NVCC) $(NVCC_FLAGS) -O3 vec_add.cu -o vec_add; \
 	else \
 		echo "Warning: CUDA not found, skipping vec_add build"; \
 	fi
 
 matrixMul: matrixMul.cu
 	@if command -v $(NVCC) >/dev/null 2>&1; then \
-		$(NVCC) $(NVCC_FLAGS) $(INCLUDE_FLAGS) $(CXX_FLAGS) matrixMul.cu -o matrixMul; \
+		$(NVCC) $(NVCC_FLAGS) -O3 $(INCLUDE_FLAGS) $(CXX_FLAGS) matrixMul.cu -o matrixMul; \
 	else \
 		echo "Warning: CUDA not found, skipping matrixMul build"; \
 	fi

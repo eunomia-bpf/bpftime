@@ -2,6 +2,8 @@
 
 This benchmark demonstrates a simple CUDA vector addition operation with eBPF and NVBit probes attached to monitor its execution.
 
+**Important:** All commands should be run from the bpftime project root directory unless otherwise specified.
+
 ## Performance Results (10,000 iterations)
 
 | Device | Baseline | BPF (bpftime) | NVBit |
@@ -53,7 +55,7 @@ BPFTIME_LOG_OUTPUT=console LD_PRELOAD=build/runtime/syscall-server/libbpftime-sy
   benchmark/gpu/micro/cuda_probe
 # in another terminal
 BPFTIME_LOG_OUTPUT=console LD_PRELOAD=build/runtime/agent/libbpftime-agent.so \
-  benchmark/gpu/micro/vec_add
+  benchmark/gpu/workload/vec_add
 ```
 
 This will:
@@ -156,7 +158,7 @@ Device: NVIDIA P40
 baseline:
 
 ```console
-#   benchmark/cuda/vec_add
+# benchmark/gpu/workload/vec_add
 Running benchmark with 10000 iterations...
 Benchmark results:
 Total time: 518076 us
@@ -189,7 +191,7 @@ Device: NVIDIA RTX 5090
 No trace:
 
 ```
-$ benchmark/cuda/vec_add
+$ benchmark/gpu/workload/vec_add
 Running benchmark with 10000 iterations...
 Benchmark results:
 Total time: 40981.7 us

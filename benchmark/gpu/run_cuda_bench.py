@@ -2,6 +2,9 @@
 """
 CUDA Benchmark Runner for bpftime
 Runs benchmarks using JSON configuration.
+
+IMPORTANT: This script must be run from the bpftime project root directory.
+Usage: python3 benchmark/gpu/run_cuda_bench.py <config.json>
 """
 
 import subprocess
@@ -14,7 +17,7 @@ from datetime import datetime
 from typing import Optional, Dict, List, Any
 
 # Constants
-DEFAULT_CONFIG = "bench_config_example.json"
+DEFAULT_CONFIG = "benchmark/gpu/micro/micro_vec_add_config.json"
 
 def log(msg: str, log_file=None):
     """Log message to both stdout and file."""
@@ -314,8 +317,9 @@ def get_workload_description(workload_name: str, presets: Dict[str, str]) -> str
         return workload_name
 
     args = presets[workload_name].split()
-    if len(args) >= 4:
-        elements, iterations, threads, blocks = args[0], args[1], args[2], args[3]
+    # Format: "binary_path elements iterations threads blocks"
+    if len(args) >= 5:
+        elements, iterations, threads, blocks = args[1], args[2], args[3], args[4]
         return f"{elements} elements, {iterations} iterations, {threads} threads × {blocks} blocks"
     return workload_name
 
@@ -331,12 +335,13 @@ def print_results_table(results: Dict[str, Any], log_file=None):
 
     # Workload configuration section
     log("## Workload Configuration\n", log_file)
-    log("| Workload | Elements | Iterations | Threads | Blocks |", log_file)
-    log("|----------|----------|------------|---------|--------|", log_file)
+    log("| Workload | Binary | Elements | Iterations | Threads | Blocks |", log_file)
+    log("|----------|--------|----------|------------|---------|--------|", log_file)
     for name, args in sorted(presets.items()):
         parts = args.split()
-        if len(parts) >= 4:
-            log(f"| {name} | {parts[0]} | {parts[1]} | {parts[2]} | {parts[3]} |", log_file)
+        # Format: "binary_path elements iterations threads blocks"
+        if len(parts) >= 5:
+            log(f"| {name} | {parts[0]} | {parts[1]} | {parts[2]} | {parts[3]} | {parts[4]} |", log_file)
     log("", log_file)
 
     # Build baseline lookup table by name

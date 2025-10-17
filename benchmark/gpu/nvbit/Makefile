@@ -10,12 +10,12 @@ else
 NVCC_OPT=-O3
 endif
 
-all: nvbit_vec_add.so
+all: $(NVBIT_PATH)/libnvbit.a nvbit_vec_add.so build-tutorial
 
 # Path to NVBit - NVBit is NOT part of CUDA Toolkit, will be auto-downloaded if needed
 # Adjust this to your system's NVBit installation location
-NVBIT_PATH?=$(HOME)/nvbit_release_x86_64/core
-NVBIT_RELEASE_DIR?=$(HOME)/nvbit_release_x86_64
+NVBIT_PATH?=./nvbit_release_x86_64/core
+NVBIT_RELEASE_DIR?=./nvbit_release_x86_64
 NVBIT_INCLUDES=-I$(NVBIT_PATH)
 
 NVBIT_LIBS=-L$(NVBIT_PATH) -lnvbit
