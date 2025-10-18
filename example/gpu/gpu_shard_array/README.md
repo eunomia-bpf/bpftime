@@ -1,65 +1,61 @@
-# GPU Shard Array Map 示例
+# GPU Shard Array Map Example
 
-本示例演示 `BPF_MAP_TYPE_GPU_ARRAY_MAP`（普通 array，非 per-thread，单副本共享）在用户态配合 bpftime 的行为。示例依赖 agent 侧更新，server 仅读取，不做 HOST 写回。
+This example demonstrates the behavior of `BPF_MAP_TYPE_GPU_ARRAY_MAP` (a normal, non-per-thread, single-copy shared array) in user space in conjunction with bpftime. This example relies on the agent side for updates, while the server only reads and does not write back to the HOST.
 
-- BPF 程序：`gpu_shard_array.bpf.c` 在 `kretprobe/vectorAdd` 处对 key=0 自增。
-- Host 程序：`gpu_shard_array.c` 周期性读取 `counter[0]` 打印。
-- CUDA 程序：`vec_add.cu` 周期运行，触发 BPF 程序更新 map。
+-   **BPF Program:** `gpu_shard_array.bpf.c` increments `key=0` at the `kretprobe/vectorAdd` hook.
+-   **Host Program:** `gpu_shard_array.c` periodically reads and prints `counter[0]`.
+-   **CUDA Program:** `vec_add.cu` runs periodically, triggering the BPF program to update the map.
 
-## 先决条件
-- 已安装 clang/llvm、make、gcc。
-- 可用的 CUDA 环境（`nvcc`、`libcudart`），且 GPU 可用。
-- 仓库子模块 `third_party/libbpf`、`third_party/bpftool` 可用（示例 Makefile 会自动构建 bootstrap bpftool 与静态 libbpf）。
-- 推荐：顶层已构建 bpftime（启用 CUDA attach）：
-  - `cmake -B build -S . -DBPFTIME_ENABLE_CUDA_ATTACH=ON -DBPFTIME_CUDA_ROOT=/usr/local/cuda`
-  - `cmake --build build -j`
+## Prerequisites
+-   clang/llvm, make, and gcc are installed.
+-   A working CUDA environment (`nvcc`, `libcudart`) is available, and a GPU is accessible.
+-   Repository submodules `third_party/libbpf` and `third_party/bpftool` are available (the example's Makefile will automatically build the bootstrap bpftool and a static libbpf).
+-   Recommended: bpftime has been built at the top level (with CUDA attach enabled):
+    -   `cmake -B build -S . -DBPFTIME_ENABLE_CUDA_ATTACH=ON -DBPFTIME_CUDA_ROOT=/usr/local/cuda`
+    -   `cmake --build build -j`
 
-## 构建
+## Build
 ```bash
 cd example/gpu/gpu_shard_array
 make
 ```
-生成：
-- `gpu_shard_array`（host 程序）
-- `vec_add`（CUDA 测试内核）
-- `.output/`（中间产物与 BPF skeleton）
+This generates:
+-   `gpu_shard_array` (the host program)
+-   `vec_add` (the CUDA test kernel)
+-   `.output/` (intermediate products and the BPF skeleton)
 
-## 运行步骤（agent/server 模式）
-1) 启动 server（只读进程）：
+## Running Steps (Agent/Server Mode)
+1) Start the server (read-only process):
 ```bash
 /root/bpftime_sy03/bpftime/build/tools/cli/bpftime load /root/bpftime_sy03/bpftime/example/gpu/gpu_shard_array/gpu_shard_array
 ```
-2) 启动 agent 目标程序（加载 CUDA attach，触发 BPF）：
+2) Start the agent's target program (loads CUDA attach, triggers BPF):
 ```bash
 LD_PRELOAD=build/runtime/agent/libbpftime-agent.so \
   BPFTIME_LOG_OUTPUT=console SPDLOG_LEVEL=debug example/gpu/gpu_shard_array/vec_add
 ```
-3) 预期输出：
-- server：周期打印 `counter[0]=N` 并单调递增（受并发覆盖，趋势上递增）。
-- agent：可见 `CUDA Received call request id ...` 与相关日志（非 CPU 握手路径时日志将显著减少）。
+3) Expected Output:
+-   **Server:** Periodically prints `counter[0]=N`, which should monotonically increase (subject to concurrent overwrites, but the trend is upward).
+-   **Agent:** You should see `CUDA Received call request id ...` and related logs (logs will be significantly reduced when not using the CPU handshake path).
 
+## Consistency Explanation (Brief)
+-   **Writes:** The device side performs a `memcpy` overwrite. After the write, a system-level memory fence is executed (implemented in the trampoline) to ensure visibility to the host.
+-   **Reads:** Reads are lock-free. It is possible to read a slightly older value, but you will not read a partially written value.
+-   For "stronger read consistency," locks or double-read version checks can be added on the reading side (this is not enabled in this example).
 
+## Technical Points of Non-Per-Thread GPU Map (Current Implementation)
+-   Goal and Form:
+    -   **Non-per-thread**: The GPU and host share a single copy of the map (array); different threads no longer have independent copies.
+    -   **UVA Zero-Copy**: Shared memory on the host side is registered by the agent, allowing both the GPU and the host to see the same data via UVA (Unified Virtual Addressing).
+-   Update Semantics:
+    -   Direct device-side writes (trampoline fast-path) use a `memcpy` overwrite, which is non-atomic; the last writer wins. A system fence after the write guarantees visibility.
+    -   This approach no longer relies on a CPU handshake, reducing latency and overhead. For precise counting, you should aggregate at a higher level or shard keys to reduce conflicts.
 
-## 一致性说明（简述）
-- 写入：设备端 memcpy 覆盖写，写后执行 system 级内存栅栏（在 trampoline 中实现）以保证主机可见。
-- 读取：无锁，可能读到稍早的旧值，但不会读到部分写入。
-- 如需“更强一致读”，可在读取侧加锁或做双读版本校验（本示例未启用）。
-
-## Non-Per-Thread GPU Map 的技术要点（当前实现）
-- 目标与形态：
-  - **非 per-thread**：GPU/host 共享单副本 map（array），不同线程不再拥有独立副本。
-  - **UVA 零拷贝**：host 侧共享内存由 agent 注册，GPU/host 通过 UVA 可见同一份数据。
-- 更新语义：
-  - 设备端直写（trampoline fast-path），memcpy 覆盖，非原子，最后写入者赢；写后有 system 栅栏保障可见性。
-  - 不再依赖 CPU 握手，减少延迟与开销；如需精确计数，请在上层聚合或分片 key 减少冲突。
-
-## 示例写入方式（更新）
-- BPF 侧（`gpu_shard_array.bpf.c`）：
-  - 在 `kretprobe/vectorAdd` 中，对 `counter[0]` 读取后加 1，再使用 `BPF_ANY` 覆盖写（设备端执行 memcpy）。
+## Example Write Method (Update)
+-   **BPF Side** (`gpu_shard_array.bpf.c`):
+    -   In `kretprobe/vectorAdd`, the program reads `counter[0]`, adds 1, and then uses `BPF_ANY` to overwrite the value (the `memcpy` is executed on the device).
 
 ## Troubleshooting
-- 无 `nvcc`：脚本会提示跳过 CUDA 构建；示例无法触发计数递增。
-- 权限/依赖：确认已安装 clang、make、gcc，且可从 `third_party/` 构建 libbpf/bpftool。
-- CUDA 驱动：需可运行最小 CUDA kernel；否则 `vec_add` 会失败。
-
-
+-   **No `nvcc`:** The script will prompt you to skip the CUDA build; the example will not be able to trigger the counter increment.
+-   **Permissions/Dependencies:** Confirm that clang, make, and gcc are installed, and that libbpf/bpftool can be built from the `third_party/` directory.
+-   **CUDA Driver:** You must be able to run a minimal CUDA kernel; otherwise, `vec_add` will fail.

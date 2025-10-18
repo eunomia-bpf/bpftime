@@ -21,6 +21,7 @@ class nv_gpu_shared_array_map_impl {
 	// Single-copy device buffer: char BUF[MAX_ENTRIES][VALUE_SIZE]
 	CUipcMemHandle gpu_mem_handle;
 	CUdeviceptr server_gpu_shared_mem;
+	CUcontext owner_cuda_context;
 	pid_devptr_map agent_gpu_shared_mem;
 	uint64_t value_size;
 	uint64_t max_entries;
