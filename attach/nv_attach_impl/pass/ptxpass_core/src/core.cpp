@@ -4,6 +4,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <iostream>
+#include <ostream>
 #include <sstream>
 #include <stdexcept>
 #include <string>
@@ -270,11 +271,11 @@ std::pair<size_t, size_t> find_kernel_body(const std::string &ptx,
 					   const std::string &kernel)
 {
 	static std::regex kernel_entry(
-		R"(\.visible\s+\.entry\s+(\w+)\s*\(([^)]*)\))");
+		R"((\.visible\s+)?\.entry\s+(\w+)\s*\(([^)]*)\))");
 	std::smatch m;
 	std::string::const_iterator search_start(ptx.cbegin());
 	while (std::regex_search(search_start, ptx.cend(), m, kernel_entry)) {
-		if (m[1] == kernel) {
+		if (m[2] == kernel) {
 			size_t begin = (size_t)(m[0].first - ptx.cbegin());
 			size_t end = begin;
 			std::vector<char> st;

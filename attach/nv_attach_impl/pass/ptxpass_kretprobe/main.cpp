@@ -1,5 +1,7 @@
 #include "json.hpp"
 #include "ptxpass/core.hpp"
+#include <cstring>
+#include <ostream>
 #include <vector>
 #include <exception>
 #include <iostream>
@@ -39,11 +41,12 @@ patch_retprobe(const std::string &ptx, const std::string &kernel,
 	auto func_ptx = ptxpass::compile_ebpf_to_ptx_from_words(
 		ebpf_words, "sm_60", fname, true, false);
 	auto body = ptxpass::find_kernel_body(ptx, kernel);
-	if (body.first == std::string::npos)
-		return { "", false };
+	if (body.first == std::string::npos) {
+		return { ptx, false };
+	}
 	std::string out = ptx;
 	std::string section = out.substr(body.first, body.second - body.first);
-	static std::regex retpat(R"((\s+)(ret;))");
+	static std::regex retpat(R"((\s*)(ret;))");
 	section = std::regex_replace(
 		section, retpat, std::string("$1call ") + fname + ";\n$1$2");
 	out.replace(body.first, body.second - body.first, section);
@@ -52,65 +55,22 @@ patch_retprobe(const std::string &ptx, const std::string &kernel,
 	return { out, true };
 }
 
-static void print_usage(const char *argv0)
+extern "C" void print_config(int length, char *out)
 {
-	std::cerr
-		<< "Usage: " << argv0
-		<< " [--config <path>|--config] [--print-config] [--log-level <level>] [--dry-run]\n";
+	auto cfg = get_default_config();
+	nlohmann::json output_json;
+	ptxpass::pass_config::to_json(output_json, cfg);
+	strncpy(out, output_json.dump().c_str(), length);
 }
 
-int main(int argc, char **argv)
+extern "C" int process_input(const char *input, int length, char *output)
 {
 	using namespace ptxpass;
-	std::string config_path;
-	bool dry_run = false;
-	bool print_config_only = false;
-
-	for (int i = 1; i < argc; ++i) {
-		std::string a = argv[i];
-		if (a == "--config") {
-			if (i + 1 < argc && argv[i + 1][0] != '-') {
-				config_path = argv[++i];
-			} else {
-				print_config_only = true;
-			}
-		} else if (a == "--print-config") {
-			print_config_only = true;
-		} else if (a == "--dry-run") {
-			dry_run = true;
-		} else if (a == "--help" || a == "-h") {
-			print_usage(argv[0]);
-			return ExitCode::Success;
-		} else if (a == "--log-level") {
-			// Ignored in minimal skeleton
-			if (i + 1 < argc)
-				++i;
-		} else {
-			// Ignore unknown for minimal version
-		}
-	}
-
 	try {
-		pass_config::PassConfig cfg;
-		if (print_config_only) {
-			cfg = get_default_config();
-			nlohmann::json output_json;
-			pass_config::to_json(output_json, cfg);
-			std::cout << output_json.dump(4);
-			return ExitCode::Success;
-		}
-		if (!config_path.empty()) {
-			cfg = load_pass_config_from_file(config_path);
-		} else {
-			cfg = get_default_config();
-		}
+		auto cfg = get_default_config();
 		auto matcher = AttachPointMatcher(cfg.attach_points);
 
-		std::string stdin_data = read_all_from_stdin();
-		auto runtime_request =
-			pass_runtime_request_from_string(stdin_data);
-		if (dry_run)
-			return ExitCode::Success;
+		auto runtime_request = pass_runtime_request_from_string(input);
 		if (!validate_input(runtime_request.input.full_ptx,
 				    cfg.validation))
 			return ExitCode::TransformFailed;
@@ -118,8 +78,8 @@ int main(int argc, char **argv)
 			runtime_request.input.full_ptx,
 			runtime_request.input.to_patch_kernel,
 			runtime_request.get_uint64_ebpf_instructions());
-		if (modified && !is_whitespace_only(out))
-			emit_runtime_response_and_print(out);
+		strncpy(output, emit_runtime_response_and_return(out).c_str(),
+			length);
 		return ExitCode::Success;
 	} catch (const std::runtime_error &e) {
 		std::cerr << e.what() << "\n";

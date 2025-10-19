@@ -7,10 +7,18 @@
 #include "nvPTXCompiler.h"
 #include "nv_attach_private_data.hpp"
 #include "nv_attach_utils.hpp"
-#include "ptxpass_pipeline.hpp"
 #include "spdlog/spdlog.h"
 #include <asm/unistd.h> // For architecture-specific syscall numbers
+#include <boost/asio/io_context.hpp>
+#include <boost/asio/post.hpp>
+#include <boost/asio/thread_pool.hpp>
 #include <boost/process.hpp>
+#include <boost/process/detail/child_decl.hpp>
+#include <boost/process/env.hpp>
+#include <boost/process/io.hpp>
+#include <boost/process/pipe.hpp>
+#include <boost/process/start_dir.hpp>
+#include <chrono>
 #include <cstdlib>
 #include <cstring>
 #include <fstream>
@@ -21,9 +29,12 @@
 #include <dlfcn.h>
 #include <filesystem>
 #include <iterator>
+#include <map>
 #include <memory>
+#include <mutex>
 #include <set>
 #include <regex>
+#include <sstream>
 #include <stdexcept>
 #include <string>
 #include <sstream>
@@ -55,40 +66,14 @@ static std::vector<std::filesystem::path> split_by_colon(const std::string &str)
 	delete[] buffer;
 	return result;
 }
+#define CUDA_DRIVER_CHECK_NO_EXCEPTION(expr, message)                          \
+	do {                                                                   \
+		if (auto err = expr; err != CUDA_SUCCESS) {                    \
+			SPDLOG_ERROR("{}: {}", message, (int)err);             \
+		}                                                              \
+	} while (false)
+
 extern GType cuda_runtime_function_hooker_get_type();
-
-namespace
-{
-// Host-side stub helpers used only for symbol binding during JIT; keep them
-// in an anonymous namespace to limit visibility and avoid global pollution.
-static inline uint64_t host_helper_ext_0502(uint64_t, uint64_t, uint64_t,
-					    uint64_t, uint64_t)
-{
-	using namespace std::chrono;
-	return (uint64_t)duration_cast<nanoseconds>(
-		       steady_clock::now().time_since_epoch())
-		.count();
-}
-
-static inline uint64_t host_helper_ext_xyz(uint64_t x, uint64_t y, uint64_t z,
-					   uint64_t, uint64_t)
-{
-	if (x)
-		*(uint64_t *)(uintptr_t)x = 0;
-	if (y)
-		*(uint64_t *)(uintptr_t)y = 0;
-	if (z)
-		*(uint64_t *)(uintptr_t)z = 0;
-	return 0;
-}
-
-static inline uint64_t host_helper_ext_membar(uint64_t, uint64_t, uint64_t,
-					      uint64_t, uint64_t)
-{
-	std::atomic_thread_fence(std::memory_order_seq_cst);
-	return 0;
-}
-} // namespace
 
 int nv_attach_impl::detach_by_id(int id)
 {
@@ -99,21 +84,6 @@ int nv_attach_impl::detach_by_id(int id)
 void nv_attach_impl::register_custom_helpers(
 	ebpf_helper_register_callback register_callback)
 {
-	// Register minimal CUDA ext helpers required by LLVM-JIT-compiled eBPF
-	// programs to resolve external calls in PTX trampoline. Indices must
-	// match those used by compile-time in PTX trampoline and llvmbpf_vm.
-	// 502: get_global_timer; 503/504/505: blockIdx/blockDim/threadIdx; 506:
-	// membar
-	register_callback(502, "get_global_timer",
-			  (void *)(uintptr_t)host_helper_ext_0502);
-	register_callback(503, "get_block_idx",
-			  (void *)(uintptr_t)host_helper_ext_xyz);
-	register_callback(504, "get_block_dim",
-			  (void *)(uintptr_t)host_helper_ext_xyz);
-	register_callback(505, "get_thread_idx",
-			  (void *)(uintptr_t)host_helper_ext_xyz);
-	register_callback(506, "gpu_membar_sys",
-			  (void *)(uintptr_t)host_helper_ext_membar);
 }
 
 int nv_attach_impl::create_attach_with_ebpf_callback(
@@ -138,15 +108,15 @@ int nv_attach_impl::create_attach_with_ebpf_callback(
 	} else {
 		attach_point_name = func_name;
 	}
-	const pass_configuration_with_executable_path *matched = nullptr;
+	struct pass_cfg_with_exec_path *matched = nullptr;
 	for (const auto &pd : this->pass_configurations) {
-		if (pd.pass_config.attach_type != attach_type)
+		if (pd->pass_config.attach_type != attach_type)
 			continue;
 		ptxpass::AttachPointMatcher matcher(
-			pd.pass_config.attach_points);
+			pd->pass_config.attach_points);
 
 		if (matcher.matches(attach_point_name)) {
-			matched = &pd;
+			matched = pd.get();
 			break; // pass_definitions is sorted deterministically
 			       // by executable
 		}
@@ -157,9 +127,7 @@ int nv_attach_impl::create_attach_with_ebpf_callback(
 		entry.instuctions = data.instructions;
 		entry.kernels = data.func_names;
 		entry.program_name = data.program_name;
-		entry.pass_exec = matched->executable_path;
-		entry.parameters["func_name"] = func_name;
-		entry.parameters["attach_type"] = std::to_string(attach_type);
+		entry.config = matched;
 
 		hook_entries[id] = std::move(entry);
 		this->map_basic_info = data.map_basic_info;
@@ -175,6 +143,15 @@ int nv_attach_impl::create_attach_with_ebpf_callback(
 		attach_point_name, attach_type);
 	return -1;
 }
+
+extern "C" {
+cudaError_t cuda_runtime_function__cudaLaunchKernel(const void *func,
+						    dim3 gridDim, dim3 blockDim,
+						    void **args,
+						    size_t sharedMem,
+						    cudaStream_t stream);
+}
+
 nv_attach_impl::nv_attach_impl()
 {
 	SPDLOG_INFO("Starting nv_attach_impl");
@@ -211,59 +188,123 @@ nv_attach_impl::nv_attach_impl()
 			    interceptor, (gpointer)addr,
 			    (GumInvocationListener *)listener, ctx_ptr);
 		    result != GUM_ATTACH_OK) {
-			SPDLOG_ERROR("Unable to attach to CUDA functions: {}",
-				     (int)result);
+			SPDLOG_ERROR(
+				"Unable to attach to CUDA functions: func={}, err={}",
+				(int)func, (int)result);
 			throw std::runtime_error(
 				"Failed to attach to CUDA function");
 		}
 	};
 
-	void *register_fatbin_addr =
-		dlsym(RTLD_NEXT, "__cudaRegisterFatBinary");
-	register_hook(AttachedToFunction::RegisterFatbin, register_fatbin_addr);
-
-	void *register_function_addr =
-		GSIZE_TO_POINTER(gum_module_find_export_by_name(
-			nullptr, "__cudaRegisterFunction"));
-	register_hook(AttachedToFunction::RegisterFunction,
-		      register_function_addr);
-
-	void *register_fatbin_end_addr =
-		GSIZE_TO_POINTER(gum_module_find_export_by_name(
-			nullptr, "__cudaRegisterFatBinaryEnd"));
-	register_hook(AttachedToFunction::RegisterFatbinEnd,
-		      register_fatbin_end_addr);
-
-	void *cuda_launch_kernel_addr = GSIZE_TO_POINTER(
-		gum_module_find_export_by_name(nullptr, "cudaLaunchKernel"));
-	register_hook(AttachedToFunction::CudaLaunchKernel,
-		      cuda_launch_kernel_addr);
-
-	gum_interceptor_end_transaction(interceptor);
-
-	static const char *ptx_pass_executables = DEFAULT_PTX_PASS_EXECUTABLE;
-	std::vector<std::filesystem::path> pass_executables;
 	{
-		const char *provided_executables =
-			getenv("BPFTIME_PTXPASS_EXECUTABLES");
-		if (provided_executables && strlen(provided_executables) > 0) {
-			ptx_pass_executables = provided_executables;
-			SPDLOG_INFO(
-				"Parsing user provided (by BPFTIME_PTXPASS_EXECUTABLES) executables: {}",
-				provided_executables);
-		} else {
-			SPDLOG_INFO("Parsing bundled executables: {}",
-				    ptx_pass_executables);
+		void *register_fatbin_addr =
+			dlsym(RTLD_NEXT, "__cudaRegisterFatBinary");
+		register_hook(AttachedToFunction::RegisterFatbin,
+			      register_fatbin_addr);
+	}
+	{
+		void *register_function_addr =
+			GSIZE_TO_POINTER(gum_module_find_export_by_name(
+				nullptr, "__cudaRegisterFunction"));
+		register_hook(AttachedToFunction::RegisterFunction,
+			      register_function_addr);
+	}
+	{
+		void *register_variable_addr =
+			GSIZE_TO_POINTER(gum_module_find_export_by_name(
+				nullptr, "__cudaRegisterVar"));
+		register_hook(AttachedToFunction::RegisterVariable,
+			      register_variable_addr);
+	}
+	{
+		void *register_fatbin_end_addr =
+			GSIZE_TO_POINTER(gum_module_find_export_by_name(
+				nullptr, "__cudaRegisterFatBinaryEnd"));
+		register_hook(AttachedToFunction::RegisterFatbinEnd,
+			      register_fatbin_end_addr);
+	}
+
+	{
+		void *cuda_malloc_addr = GSIZE_TO_POINTER(
+			gum_module_find_export_by_name(nullptr, "cudaMalloc"));
+		register_hook(AttachedToFunction::CudaMalloc, cuda_malloc_addr);
+	}
+	{
+		void *cuda_malloc_managed_addr =
+			GSIZE_TO_POINTER(gum_module_find_export_by_name(
+				nullptr, "cudaMallocManaged"));
+		register_hook(AttachedToFunction::CudaMallocManaged,
+			      cuda_malloc_managed_addr);
+	}
+	{
+		void *cuda_launch_kernel_addr =
+			GSIZE_TO_POINTER(gum_module_find_export_by_name(
+				nullptr, "cudaLaunchKernel"));
+
+		if (auto err = gum_interceptor_replace(
+			    interceptor, cuda_launch_kernel_addr,
+			    (gpointer)&cuda_runtime_function__cudaLaunchKernel,
+			    this, nullptr);
+		    err != GUM_REPLACE_OK) {
+			SPDLOG_ERROR("Unable to replace cudaLaunchKernel: {}",
+				     (int)err);
+			assert(false);
 		}
 	}
-	auto paths = split_by_colon(ptx_pass_executables);
+	gum_interceptor_end_transaction(interceptor);
+
+	static const char *ptx_pass_libraries = DEFAULT_PTX_PASS_EXECUTABLE;
+	std::vector<std::filesystem::path> pass_libraries;
+	{
+		const char *provided_libraries =
+			getenv("BPFTIME_PTXPASS_LIBRARIES");
+		if (provided_libraries && strlen(provided_libraries) > 0) {
+			ptx_pass_libraries = provided_libraries;
+			SPDLOG_INFO(
+				"Parsing user provided (by BPFTIME_PTXPASS_LIBRARIES) libraries: {}",
+				provided_libraries);
+		} else {
+			SPDLOG_INFO("Parsing bundled libraries: {}",
+				    ptx_pass_libraries);
+		}
+	}
+	auto paths = split_by_colon(ptx_pass_libraries);
 	for (const auto &path : paths) {
 		SPDLOG_INFO("Found path: {}, executing..", path.c_str());
-		auto config = *get_pass_config_from_executable(path);
+		void *handle = dlmopen(LM_ID_NEWLM, path.c_str(),
+				       RTLD_NOW | RTLD_LOCAL);
+		if (!handle) {
+			SPDLOG_ERROR(
+				"Unable to load dynamic library of pass {}: {}",
+				path.c_str(), dlerror());
+			continue;
+		}
+		auto print_config =
+			(print_config_fn)dlsym(handle, "print_config");
+		if (!print_config) {
+			SPDLOG_ERROR("Symbol print_config not found in {}",
+				     path.c_str());
+			continue;
+		}
+		auto process_input =
+			(process_input_fn)dlsym(handle, "process_input");
+		if (!process_input) {
+			SPDLOG_ERROR("Symbol process_input not found in {}",
+				     path.c_str());
+			continue;
+		}
+		ptxpass::pass_config::PassConfig config;
+		std::vector<char> buf(10 << 20);
+		print_config(buf.size(), buf.data());
+
+		auto json = nlohmann::json::parse(buf.data());
+		ptxpass::pass_config::from_json(json, config);
+		SPDLOG_INFO("Retrived config of {}", path.c_str());
+		SPDLOG_DEBUG("Config {}", json.dump(4));
 		this->pass_configurations.emplace_back(
-			pass_configuration_with_executable_path{
-				.executable_path = path,
-				.pass_config = config });
+			std::make_unique<pass_cfg_with_exec_path>(
+				path, config, print_config, process_input,
+				handle));
 	}
 }
 
@@ -272,309 +313,156 @@ nv_attach_impl::~nv_attach_impl()
 	if (frida_listener)
 		g_object_unref(frida_listener);
 }
-
-std::optional<std::vector<uint8_t>>
-nv_attach_impl::hack_fatbin(std::vector<uint8_t> &&data_vec)
+std::map<std::string, std::string>
+nv_attach_impl::extract_ptxs(std::vector<uint8_t> &&data_vec)
 {
-	std::vector<std::string> ptx_out;
+	std::map<std::string, std::string> all_ptx;
+	char tmp_dir[] = "/tmp/bpftime-fatbin-work.XXXXXX";
+	mkdtemp(tmp_dir);
+	auto working_dir = std::filesystem::path(tmp_dir);
+	auto fatbin_path = working_dir / "temp.fatbin";
 	{
-		char tmp_dir[] = "/tmp/bpftime-fatbin-store.XXXXXX";
-		mkdtemp(tmp_dir);
-		auto output_path =
-			std::filesystem::path(tmp_dir) / "temp.fatbin";
-		{
-			std::ofstream ofs(output_path, std::ios::binary);
-			ofs.write((const char *)data_vec.data(),
-				  data_vec.size());
-			SPDLOG_INFO("Temporary fatbin written to {}",
-				    output_path.c_str());
-		}
-		SPDLOG_INFO("Listing functions in the patched ptx");
-		boost::asio::io_context ctx;
-		boost::process::ipstream stream;
-		boost::process::environment env =
-			boost::this_process::environment();
-		env["LD_PRELOAD"] = "";
+		std::ofstream ofs(fatbin_path, std::ios::binary);
+		ofs.write((const char *)data_vec.data(), data_vec.size());
+		SPDLOG_INFO("Temporary fatbin written to {}",
+			    fatbin_path.c_str());
+	}
+	SPDLOG_INFO("Extracting PTX in the fatbin...");
+	boost::asio::io_context ctx;
+	boost::process::ipstream stream;
+	boost::process::environment env = boost::this_process::environment();
+	env["LD_PRELOAD"] = "";
+	auto cuobjdump_cmd_line = std::string("cuobjdump --extract-ptx all ") +
+				  fatbin_path.string();
+	SPDLOG_INFO("Calling cuobjdump: {}", cuobjdump_cmd_line);
+	boost::process::child child(cuobjdump_cmd_line,
+				    boost::process::std_out > stream,
+				    boost::process::env(env),
+				    boost::process::start_dir = tmp_dir);
 
-		boost::process::child child(
-			std::string("cuobjdump --dump-ptx ") +
-				output_path.string(),
-			boost::process::std_out > stream,
-			boost::process::env(env));
-		std::string line;
-		std::string output;
-		bool should_record = false;
-		while (stream && std::getline(stream, line)) {
-			if (should_record) {
-				output += line + "\n";
-			}
-			if (line.starts_with("ptxasOptions = "))
-				should_record = true;
-		}
-		ptx_out.push_back(output);
-		{
-			auto temp_out =
-				std::filesystem::path(tmp_dir) / "temp.ptx";
-			std::ofstream export_ofs(temp_out);
-			export_ofs << output;
-			SPDLOG_INFO("Extracted PTX at {}", temp_out.c_str());
+	std::string line;
+	while (std::getline(stream, line)) {
+		SPDLOG_DEBUG("cuobjdump output: {}", line);
+	}
+	for (const auto &entry :
+	     std::filesystem::directory_iterator(working_dir)) {
+		if (entry.is_regular_file() &&
+		    entry.path().string().ends_with(".ptx")) {
+			// Read the PTX into memory
+			std::ifstream ifs(entry.path());
+			std::stringstream buffer;
+			buffer << ifs.rdbuf();
+			all_ptx[entry.path().filename()] = buffer.str();
 		}
 	}
-	if (ptx_out.size() != 1) {
-		SPDLOG_ERROR(
-			"Expect the loaded fatbin to contain only 1 PTX code section, but it contains {}",
-			ptx_out.size());
-		return {};
-	}
+	SPDLOG_INFO("Got {} PTX files", all_ptx.size());
+	return all_ptx;
+}
+std::optional<std::map<std::string, std::string>>
+nv_attach_impl::hack_fatbin(std::map<std::string, std::string> all_ptx)
+{
+	char tmp_dir[] = "/tmp/bpftime-fatbin-work.XXXXXX";
+	mkdtemp(tmp_dir);
+	auto working_dir = std::filesystem::path(tmp_dir);
 
-	// New: run discovered JSON-based pass executables in a deterministic
-	// order
-	auto &to_patch_ptx = ptx_out[0];
-	to_patch_ptx = filter_unprintable_chars(to_patch_ptx);
-	const std::string map_sym = "map_info";
-	const std::string const_sym = "constData";
-	try {
-		// Build ordered list of ids for entries with configured pass
-		struct Item {
-			int id;
-		};
-		std::vector<Item> items;
-		for (const auto &kv : hook_entries) {
-			const auto &e = kv.second;
-			if (!e.pass_exec.empty())
-				items.push_back(Item{ kv.first });
-		}
-		std::sort(items.begin(), items.end(),
-			  [](const Item &a, const Item &b) {
-				  return a.id < b.id;
-			  });
-		for (const auto &it : items) {
-			const auto &e = hook_entries.at(it.id);
-			// Prefer attach_point_override when present
-			std::string attach_point;
-			if (e.attach_point_override.has_value())
-				attach_point = *e.attach_point_override;
-			// fallback: derive from parameters if needed (left as
-			// future extension) For each kernel, run the pass once;
-			// replace PTX if output is non-empty
-			const auto &kernels =
-				e.kernels.empty() ? std::vector<std::string>{} :
-						    e.kernels;
-			if (kernels.empty()) {
-				// Fallback to function name if provided in
-				// parameters
-				auto itf = e.parameters.find("func_name");
-				if (itf != e.parameters.end()) {
-					auto res = run_pass_executable_json(
-						e.pass_exec, to_patch_ptx,
-						itf->second, map_sym, const_sym,
-						e.instuctions);
-					if (res.has_value() && !res->empty())
-						to_patch_ptx = *res;
+	/**
+	Here we can patch the PTX.
+	*/
+	boost::asio::thread_pool pool(std::thread::hardware_concurrency());
+	std::map<std::string, std::string> ptx_out;
+	std::mutex map_mutex;
+	for (auto &[file_name, original_ptx] : all_ptx) {
+		boost::asio::post(
+			pool,
+			[this, original_ptx, file_name, &map_mutex,
+			 &ptx_out]() -> void {
+				auto current_ptx = original_ptx;
+				SPDLOG_INFO("Patching PTX: {}", file_name);
+
+				for (const auto &[_, hook_entry] :
+				     this->hook_entries) {
+					const auto &kernels =
+						hook_entry.kernels;
+					for (const auto &kernel : kernels) {
+						std::vector<uint64_t>
+							ebpf_inst_words;
+						ebpf_inst_words.assign(
+							(uint64_t *)(uintptr_t)
+								hook_entry
+									.instuctions
+									.data(),
+							(uint64_t *)(uintptr_t)hook_entry
+									.instuctions
+									.data() +
+								hook_entry
+									.instuctions
+									.size()
+
+						);
+						ptxpass::runtime_request::
+							RuntimeRequest req;
+						auto &ri = req.input;
+						ri.full_ptx = current_ptx;
+						ri.to_patch_kernel = kernel;
+						ri.global_ebpf_map_info_symbol =
+							"map_info";
+						ri.ebpf_communication_data_symbol =
+							"constData";
+
+						req.set_ebpf_instructions(
+							ebpf_inst_words);
+						nlohmann::json in;
+						ptxpass::runtime_request::to_json(
+							in, req);
+						SPDLOG_DEBUG("Input: {}",
+							     in.dump());
+						std::vector<char> buf(200
+								      << 20);
+						int err =
+							hook_entry.config->process_input(
+								in.dump().c_str(),
+								buf.size(),
+								buf.data());
+						if (err ==
+						    ptxpass::ExitCode::Success) {
+							auto json = nlohmann::json::
+								parse(buf.data());
+							using namespace ptxpass::
+								runtime_response;
+							RuntimeResponse resp;
+							from_json(json, resp);
+							current_ptx =
+								resp.output_ptx;
+
+						} else {
+							SPDLOG_ERROR(
+								"Unable to run pass on kernel {}: {}",
+								kernel,
+								(int)err);
+						}
+					}
 				}
-				continue;
-			}
-			for (const auto &k : kernels) {
-				auto res = run_pass_executable_json(
-					e.pass_exec, to_patch_ptx, k, map_sym,
-					const_sym, e.instuctions);
-				if (!res.has_value()) {
-					SPDLOG_WARN(
-						"Pass {} failed for kernel {}",
-						e.pass_exec, k);
-					continue;
-				}
-				if (!res->empty())
-					to_patch_ptx = *res;
-			}
-		}
-	} catch (const std::exception &e) {
-		SPDLOG_ERROR("Pass execution error: {}", e.what());
-		return {};
+				current_ptx =
+					ptxpass::filter_out_version_headers_ptx(
+						wrap_ptx_with_trampoline(
+							current_ptx));
+				std::lock_guard<std::mutex> _guard(map_mutex);
+				ptx_out["patched." + file_name] = current_ptx;
+			});
 	}
-	to_patch_ptx = wrap_ptx_with_trampoline(to_patch_ptx);
-	to_patch_ptx = ptxpass::filter_out_version_headers_ptx(to_patch_ptx);
-	{
-		// filter out comment lines
-		std::istringstream iss(to_patch_ptx);
-		std::ostringstream oss;
-		std::string line;
-		while (std::getline(iss, line)) {
-			if (line.starts_with("/"))
-				continue;
-			oss << line << std::endl;
-		}
-		to_patch_ptx = oss.str();
+	pool.join();
+	SPDLOG_INFO("Writting patched PTX to {}", working_dir.c_str());
+	for (const auto &[file_name, ptx] : ptx_out) {
+		auto path = working_dir / (file_name);
+		std::ofstream ofs(path);
+		ofs << ptx;
 	}
-	SPDLOG_INFO("Recompiling PTX with nvcc..");
-	char tmp_dir[] = "/tmp/bpftime-recompile-nvcc";
-	// mkdtemp(tmp_dir);
-	std::filesystem::path work_dir(tmp_dir);
-	if (!std::filesystem::exists(work_dir)) {
-		SPDLOG_INFO("Creating work dir: {}", work_dir.c_str());
-		std::filesystem::create_directories(work_dir);
-	}
-	SPDLOG_INFO("Working directory: {}", work_dir.c_str());
-	std::string command =
-		"nvcc -O2 -G -g --keep-device-functions -arch=sm_60 ";
-	{
-		auto ptx_in = work_dir / "main.ptx";
-		// SPDLOG_WARN("Using /tmp/main.ptx as ptx for nvcc");
-		// std::string ptx_in = "/tmp/main.ptx";
-		SPDLOG_INFO("PTX IN: {}", ptx_in.c_str());
-		std::ofstream ofs(ptx_in);
-		ofs << to_patch_ptx;
-		command += ptx_in;
-		command += " ";
-	}
-	command += "-fatbin ";
-	auto fatbin_out = work_dir / "out.fatbin";
-	command += "-o ";
-	command += fatbin_out;
-	SPDLOG_INFO("Fatbin out {}", fatbin_out.c_str());
-	SPDLOG_INFO("Starting nvcc: {}", command);
-	if (int err = system(command.c_str()); err != 0) {
-		SPDLOG_ERROR("Unable to execute nvcc");
-		return {};
-	}
-	SPDLOG_INFO("NVCC execution done.");
-	std::vector<uint8_t> fatbin_out_buf;
-	{
-		std::ifstream ifs(fatbin_out, std::ios::binary | std::ios::ate);
-		auto file_tail = ifs.tellg();
-		ifs.seekg(0, std::ios::beg);
-
-		fatbin_out_buf.resize(file_tail);
-		ifs.read((char *)fatbin_out_buf.data(), file_tail);
-	}
-
-	SPDLOG_INFO("Got patched fatbin in {} bytes", fatbin_out_buf.size());
-	return fatbin_out_buf;
-}
-
-static uint64_t _constData_mock;
-// Ensure buffer size matches map_info layout used on device (256 entries)
-static char map_basic_info_mock[sizeof(attach::MapBasicInfo) * 256];
-extern "C" {
-void __cudaRegisterVar(void **fatCubinHandle, char *hostVar,
-		       char *deviceAddress, const char *deviceName, int ext,
-		       size_t size, int constant, int global);
-}
-int nv_attach_impl::register_trampoline_memory(void **fatbin_handle)
-{
-	if (this->trampoline_memory_state !=
-	    TrampolineMemorySetupStage::NotSet) {
-		SPDLOG_INFO("Invalid stage for register trampoline memory");
-		return -1;
-	}
-	SPDLOG_INFO("Registering trampoline memory");
-
-	__cudaRegisterVar(fatbin_handle, (char *)&_constData_mock,
-			  (char *)"constData", "constData", 0,
-			  sizeof(_constData_mock), 1, 0);
-
-	__cudaRegisterVar(fatbin_handle, (char *)&map_basic_info_mock,
-			  (char *)"map_info", "map_info", 0,
-			  sizeof(map_basic_info_mock), 1, 0);
-	this->trampoline_memory_state = TrampolineMemorySetupStage::Registered;
-	SPDLOG_INFO("Register trampoline memory done");
-	return 0;
-}
-int nv_attach_impl::copy_data_to_trampoline_memory()
-{
-	SPDLOG_INFO("Copying data to device symbols..");
-	size_t const_size = 0;
-	if (auto err = cudaGetSymbolSize(&const_size,
-					 (const void *)&_constData_mock);
-	    err != cudaSuccess || const_size < sizeof(_constData_mock)) {
-		SPDLOG_ERROR(
-			"cudaGetSymbolSize(constData) failed or size too small: {}",
-			(int)err);
-		return -1;
-	}
-	if (auto err = cudaMemcpyToSymbol((const void *)&_constData_mock,
-					  &this->shared_mem_ptr,
-					  sizeof(_constData_mock));
-	    err != cudaSuccess) {
-		SPDLOG_ERROR(
-			"Unable to copy `constData` (shared memory address) to device: {}",
-			(int)err);
-		return -1;
-	}
-	if (!this->map_basic_info.has_value()) {
-		SPDLOG_ERROR(
-			"map_basic_info is not set, cannot copy to device");
-		return -1;
-	}
-	SPDLOG_INFO("Copying the followed map info:");
-	for (int i = 0; i < this->map_basic_info->size(); i++) {
-		const auto &cur = this->map_basic_info->at(i);
-		if (cur.enabled) {
-			SPDLOG_INFO(
-				"Mapid {}, enabled = {}, key_size = {}, value_size = {}, max_ent={}, type={}",
-				i, cur.enabled, cur.key_size, cur.value_size,
-				cur.max_entries, cur.map_type);
-		}
-	}
-	{
-		size_t map_info_symbol_size = 0;
-		if (auto err = cudaGetSymbolSize(
-			    &map_info_symbol_size,
-			    (const void *)&map_basic_info_mock);
-		    err != cudaSuccess) {
-			SPDLOG_ERROR("cudaGetSymbolSize(map_info) failed: {}",
-				     (int)err);
-			return -1;
-		}
-		size_t host_bytes = this->map_basic_info->size() *
-				    sizeof(this->map_basic_info->at(0));
-		size_t copy_bytes = host_bytes < map_info_symbol_size ?
-					    host_bytes :
-					    map_info_symbol_size;
-		if (auto err = cudaMemcpyToSymbol(
-			    (const void *)&map_basic_info_mock,
-			    this->map_basic_info->data(), copy_bytes);
-		    err != cudaSuccess) {
-			SPDLOG_ERROR(
-				"Unable to copy `map_basic_info` to device : {}",
-				(int)err);
-			return -1;
-		}
-	}
-	this->trampoline_memory_state = TrampolineMemorySetupStage::Copied;
-	SPDLOG_INFO("constData and map_basic_info copied..");
-
-	return 0;
+	return ptx_out;
 }
 
 namespace bpftime::attach
 {
-std::string filter_unprintable_chars(std::string input)
-{
-	static const char non_printable_chars[] = {
-		'\0',	'\x01', '\x02', '\x03', '\x04', '\x05', '\x06', '\a',
-		'\b',	'\v',	'\f',	'\r',	'\x0E', '\x0F', '\x10', '\x11',
-		'\x12', '\x13', '\x14', '\x15', '\x16', '\x17', '\x18', '\x19',
-		'\x1A', '\x1B', '\x1C', '\x1D', '\x1E', '\x1F', '\x7F'
-	};
-	std::set<char> set(std::begin(non_printable_chars),
-			   std::end(non_printable_chars));
 
-	std::string result;
-	for (auto c : input) {
-		if (set.contains(c) || (uint8_t)c > 127)
-			continue;
-		result.push_back(c);
-	}
-	while (!result.empty() && result.back() != '}')
-		result.pop_back();
-	if (result.empty()) {
-		SPDLOG_ERROR(
-			"filter_unprintable_chars: result is empty or no closing brace found");
-		return "";
-	}
-	return result;
-};
 int nv_attach_impl::find_attach_entry_by_program_name(const char *name) const
 {
 	for (const auto &entry : this->hook_entries) {
@@ -624,9 +512,14 @@ int nv_attach_impl::run_attach_entry_on_gpu(int attach_id, int run_count,
 	}
 	SPDLOG_INFO("Running program on GPU");
 
+	std::vector<uint64_t> ebpf_words;
+	for (const auto &insts : insts) {
+		ebpf_words.push_back(*(uint64_t *)(uintptr_t)&insts);
+	}
 	auto ptx = ptxpass::filter_out_version_headers_ptx(
 		wrap_ptx_with_trampoline(filter_compiled_ptx_for_ebpf_program(
-			generate_ptx_for_ebpf(insts, "bpf_main", false, false),
+			ptxpass::compile_ebpf_to_ptx_from_words(
+				ebpf_words, "sm_60", "bpf_main", false, false),
 			"bpf_main")));
 	{
 		const std::string to_replace = ".func bpf_main";
@@ -750,4 +643,5 @@ int nv_attach_impl::run_attach_entry_on_gpu(int attach_id, int run_count,
 	}
 	return 0;
 }
+
 } // namespace bpftime::attach
