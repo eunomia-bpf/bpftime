@@ -20,6 +20,21 @@
   },
   "test_cases": [
     {
+      "name": "Baseline (minimal)",
+      "probe_binary_cmd": "",
+      "workload": "minimal"
+    },
+    {
+      "name": "eBPF Direct Run GEMM (minimal)",
+      "probe_binary_cmd": "benchmark/gpu/micro/run_direct_gemm.sh",
+      "workload": "minimal",
+      "baseline": "Baseline (minimal)",
+      "env": {
+        "BPFTIME_LOG_OUTPUT": "console"
+      }
+    },
+    
+    {
       "name": "Baseline (tiny)",
       "probe_binary_cmd": "",
       "workload": "tiny"

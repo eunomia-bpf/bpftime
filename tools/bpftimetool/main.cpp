@@ -239,17 +239,30 @@ int main(int argc, char *argv[])
 						run_type);
 	}
 #if defined(BPFTIME_ENABLE_CUDA_ATTACH)
-	else if (cmd == "run-on-cuda") {
-		if (argc != 3 && argc != 4) {
-			cerr << "Usage: " << argv[0]
-			     << " run-on-cuda [program name] [run count (optional, defaults to 1)]"
-			     << endl;
-			return 1;
-		}
-		int run_count = 1;
-		if (argc == 4) {
-			run_count = atoi(argv[3]);
-		}
+    else if (cmd == "run-on-cuda") {
+        if (argc != 3 && argc != 4 && argc != 10) {
+            cerr << "Usage: " << argv[0]
+                 << " run-on-cuda [program name] [run count (optional, defaults to 1)]"
+                 << " [gridX gridY gridZ blockX blockY blockZ] (optional)"
+                 << endl;
+            return 1;
+        }
+        int run_count = 1;
+        if (argc >= 4) {
+            run_count = atoi(argv[3]);
+        }
+        int gridX = 1, gridY = 1, gridZ = 1;
+        int blockX = 1, blockY = 1, blockZ = 1;
+        bool has_dims = false;
+        if (argc == 10) {
+            has_dims = true;
+            gridX = atoi(argv[4]);
+            gridY = atoi(argv[5]);
+            gridZ = atoi(argv[6]);
+            blockX = atoi(argv[7]);
+            blockY = atoi(argv[8]);
+            blockZ = atoi(argv[9]);
+        }
 		bpftime_initialize_global_shm(shm_open_type::SHM_OPEN_ONLY);
 		auto &runtime_config = bpftime_get_agent_config();
 		bpftime_set_logger(
@@ -277,13 +290,19 @@ int main(int argc, char *argv[])
 			});
 		ctx.init_attach_ctx_from_handlers(runtime_config);
 		if (auto impl = ctx.find_nv_attach_impl(); impl) {
-			if (auto id =
-				    (*impl)->find_attach_entry_by_program_name(
-					    argv[2]);
-			    id != -1) {
-				if (auto err = (*impl)->run_attach_entry_on_gpu(
-					    id, run_count);
-				    err) {
+            if (auto id =
+                    (*impl)->find_attach_entry_by_program_name(
+                        argv[2]);
+                id != -1) {
+                int err = 0;
+                if (has_dims) {
+                    err = (*impl)->run_attach_entry_on_gpu(
+                        id, run_count, gridX, gridY, gridZ, blockX, blockY, blockZ);
+                } else {
+                    err = (*impl)->run_attach_entry_on_gpu(
+                        id, run_count);
+                }
+                if (err) {
 					SPDLOG_ERROR(
 						"Unable to run program: {}",
 						err);
