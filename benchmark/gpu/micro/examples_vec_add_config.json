@@ -24,6 +24,15 @@
       "workload": "minimal"
     },
     {
+      "name": "eBPF Direct Run VecAdd (minimal)",
+      "probe_binary_cmd": "benchmark/gpu/micro/run_direct_vecadd.sh",
+      "workload": "minimal",
+      "baseline": "Baseline (minimal)",
+      "env": {
+        "BPFTIME_LOG_OUTPUT": "console"
+      }
+    },
+    {
       "name": "CUDA Counter (minimal)",
       "probe_binary_cmd": "example/gpu/cuda-counter/cuda_probe",
       "workload": "minimal",
