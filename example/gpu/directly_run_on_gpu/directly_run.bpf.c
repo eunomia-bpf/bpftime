@@ -32,11 +32,11 @@ struct {
     __type(value, __u32);
 } vec_C SEC(".maps");
 
-	struct {
-	__uint(type, BPF_MAP_TYPE_GPU_ARRAY_MAP);
-	__uint(max_entries, 1);
-	__type(key, __u32);
-	__type(value, __u32);
+struct {
+    __uint(type, BPF_MAP_TYPE_GPU_ARRAY_MAP);
+    __uint(max_entries, 1);
+    __type(key, __u32);
+    __type(value, __u32);
 } vec_N SEC(".maps");
 
 static const __u64 (*bpf_get_block_idx)(__u64 *x, __u64 *y, __u64 *z) = (void *)503;
