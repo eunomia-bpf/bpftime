@@ -916,8 +916,8 @@ bool bpftime_shm::register_cuda_host_memory()
 	std::size_t seg_size = segment.get_size(); // Total bytes in segment
 
 	// 2. Register with CUDA
-	cudaError_t err =
-		cudaHostRegister(base_addr, seg_size, cudaHostRegisterDefault);
+    cudaError_t err =
+        cudaHostRegister(base_addr, seg_size, cudaHostRegisterMapped);
 	if (err != cudaSuccess) {
 		SPDLOG_ERROR("cudaHostRegister() failed: {}",
 			     cudaGetErrorString(err));
@@ -940,6 +940,13 @@ bpftime::bpftime_shm::~bpftime_shm()
 	cudaError_t err = cudaHostUnregister(base_addr);
 	// Use fprintf here to avoid spdlog de-initialized issues
 	if (err != cudaSuccess) {
+		// Suppress noisy teardown errors which are benign during
+		// shutdown
+		if (err == cudaErrorCudartUnloading ||
+		    err == cudaErrorInvalidValue ||
+		    err == cudaErrorInsufficientDriver) {
+			return;
+		}
 		fprintf(stderr, "cudaHostUnregister() failed: %s\n",
 			cudaGetErrorString(err));
 		return;

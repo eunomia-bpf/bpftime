@@ -66,14 +66,7 @@ $(call allow-override,CC,$(CROSS_COMPILE)cc)
 $(call allow-override,LD,$(CROSS_COMPILE)ld)
 
 .PHONY: all
-all: $(APPS) vec_add
-
-vec_add: vec_add.cu
-	@if command -v nvcc >/dev/null 2>&1; then \
-		nvcc -cudart shared vec_add.cu -o vec_add -g; \
-	else \
-		echo "Warning: CUDA not found, skipping vec_add build"; \
-	fi
+all: $(APPS)
 # NVBit tool compilation
 NVCC=nvcc -ccbin=$(CXX) -D_FORCE_INLINES
 PTXAS=ptxas
@@ -108,7 +101,7 @@ $(NVBIT_PATH)/libnvbit.a:
 	rm nvbit-Linux-x86_64-1.7.6.tar.bz2
 	@echo "NVBit 1.7.6 installed to $(NVBIT_RELEASE_DIR)"
 
-nvbit_vec_add.so: vec_add nvbit_vec_add.o nvbit_timing_funcs.o $(NVBIT_PATH)/libnvbit.a
+nvbit_vec_add.so: nvbit_vec_add.o nvbit_timing_funcs.o $(NVBIT_PATH)/libnvbit.a
 	g++ -shared -fPIC nvbit_vec_add.o nvbit_timing_funcs.o \
 		$(NVBIT_LIBS) $(NVCC_PATH) -lcuda -lcudart_static -lpthread -ldl -o $@
 
@@ -121,7 +114,7 @@ nvbit_timing_funcs.o: nvbit_timing_funcs.cu
 .PHONY: clean
 clean:
 	$(call msg,CLEAN)
-	$(Q)rm -rf $(OUTPUT) $(APPS) vec_add nvbit_vec_add.so *.o
+	$(Q)rm -rf $(OUTPUT) $(APPS) nvbit_vec_add.so *.o
 
 $(OUTPUT) $(OUTPUT)/libbpf $(BPFTOOL_OUTPUT):
 	$(call msg,MKDIR,$@)

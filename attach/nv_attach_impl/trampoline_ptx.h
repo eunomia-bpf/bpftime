@@ -215,7 +215,7 @@ $L__BB2_5:
 	.param .b64 _bpf_helper_ext_0001_param_4
 )                                       // @_bpf_helper_ext_0001
 {
-	.reg .pred 	%p<13>;
+    .reg .pred 	%p<14>;
 	.reg .b16 	%rs<6>;
 	.reg .b32 	%r<45>;
 	.reg .b64 	%rd<62>;
@@ -266,6 +266,16 @@ $L__BB5_14:
 	st.param.b64 	[func_retval0+0], %rd60;
 	ret;
 $L__BB5_2:
+	// fast-path for GPU_ARRAY_MAP (1503): base + key * value_size
+	setp.ne.s32 	%p13, %r10, 1503;
+	@%p13 bra 	$L__BB5_2_CONT;
+	ld.u32 	%rd38, [%rd21];
+	ld.const.u64 	%rd42, [%rd24+24];
+	ld.const.s32 	%rd44, [%rd24+8];
+	mul.lo.s64 	%rd54, %rd38, %rd44;
+	add.s64 	%rd60, %rd42, %rd54;
+	bra.uni 	$L__BB5_14;
+$L__BB5_2_CONT:
 	ld.const.u64 	%rd35, [constData];
 	ld.const.u32 	%r11, [%rd24+4];
 	setp.lt.s32 	%p2, %r11, 1;
@@ -378,7 +388,7 @@ $L__BB5_11:                             //   Parent Loop BB5_10 Depth=1
 	.param .b64 _bpf_helper_ext_0002_param_4
 )                                       // @_bpf_helper_ext_0002
 {
-	.reg .pred 	%p<23>;
+    .reg .pred 	%p<24>;
 	.reg .b16 	%rs<16>;
 	.reg .b32 	%r<68>;
 	.reg .b64 	%rd<110>;
@@ -476,6 +486,61 @@ $L__BB6_7:                              // =>This Inner Loop Header: Depth=1
 	@%p22 bra 	$L__BB6_7;
 	bra.uni 	$L__BB6_28;
 $L__BB6_8:
+	// fast-path for GPU_ARRAY_MAP (1503): memcpy overwrite to base + key * value_size
+	setp.ne.s32 	%p23, %r20, 1503;
+	@%p23 bra 	$L__BB6_8_CONT;
+	ld.const.u32 	%r25, [%rd50+8];
+	ld.u32 	%rd73, [%rd45];
+	ld.const.u64 	%rd77, [%rd50+24];
+	cvt.s64.s32 	%rd79, %r25;
+	mul.lo.s64 	%rd88, %rd73, %rd79;
+	add.s64 	%rd2, %rd77, %rd88;
+	// copy value_size bytes from %rd46 to %rd2
+	cvt.u64.u32 	%rd1, %r25;
+	cvt.u32.u64 	%r57, %rd1;
+	and.b32  	%r67, %r57, 3;
+	setp.lt.u32 	%p19, %r57, 4;
+	mov.u32 	%r66, 0;
+	@%p19 bra 	$L_GPU1503_COPY_REMAINDER;
+	and.b64  	%rd3, %rd1, 4294967292;
+	add.s64 	%rd4, %rd46, 3;
+	mov.u64 	%rd98, 0;
+	cvt.u32.u64 	%r58, %rd3;
+$L_GPU1503_COPY_DW:
+	add.s64 	%rd91, %rd4, %rd98;
+	ld.u8 	%rs11, [%rd91+-3];
+	add.s64 	%rd92, %rd2, %rd98;
+	st.u8 	[%rd92], %rs11;
+	ld.u8 	%rs12, [%rd91+-2];
+	st.u8 	[%rd92+1], %rs12;
+	ld.u8 	%rs13, [%rd91+-1];
+	st.u8 	[%rd92+2], %rs13;
+	ld.u8 	%rs14, [%rd91];
+	st.u8 	[%rd92+3], %rs14;
+	add.s64 	%rd98, %rd98, 4;
+	cvt.u32.u64 	%r66, %rd98;
+	setp.eq.s32 	%p20, %r58, %r66;
+	@%p20 bra 	$L_GPU1503_COPY_REMAINDER;
+	bra.uni 	$L_GPU1503_COPY_DW;
+$L_GPU1503_COPY_REMAINDER:
+	setp.eq.s32 	%p21, %r67, 0;
+	@%p21 bra 	$L_GPU1503_DONE;
+	cvt.u64.u32 	%rd94, %r66;
+	add.s64 	%rd108, %rd2, %rd94;
+	add.s64 	%rd107, %rd46, %rd94;
+$L_GPU1503_COPY_TAIL:
+	.pragma "nounroll";
+	ld.u8 	%rs15, [%rd107];
+	st.u8 	[%rd108], %rs15;
+	add.s64 	%rd108, %rd108, 1;
+	add.s64 	%rd107, %rd107, 1;
+	add.s32 	%r67, %r67, -1;
+	setp.ne.s32 	%p22, %r67, 0;
+	@%p22 bra 	$L_GPU1503_COPY_TAIL;
+$L_GPU1503_DONE:
+	mov.u64 	%rd109, 0;
+	bra.uni 	$L__BB6_28;
+$L__BB6_8_CONT:
 	ld.const.u64 	%rd69, [constData];
 	ld.const.u32 	%r21, [%rd50+4];
 	setp.lt.s32 	%p2, %r21, 1;

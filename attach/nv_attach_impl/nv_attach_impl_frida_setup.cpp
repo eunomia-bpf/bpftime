@@ -67,8 +67,13 @@ static void example_listener_on_enter(GumInvocationListener *listener,
 		};
 		std::vector<uint8_t> data_vec((uint8_t *)data, (uint8_t *)tail);
 		SPDLOG_INFO("Finally size = {}", data_vec.size());
-		auto patched_fatbin =
-			context->impl->hack_fatbin(std::move(data_vec)).value();
+		auto patched = context->impl->hack_fatbin(std::move(data_vec));
+		if (!patched.has_value()) {
+			SPDLOG_ERROR(
+				"hack_fatbin failed; skipping fatbin replacement");
+			return;
+		}
+		auto &patched_fatbin = *patched;
 		auto patched_fatbin_ptr =
 			std::make_unique<std::vector<uint8_t>>(patched_fatbin);
 		auto patched_header = std::make_unique<__fatBinC_Wrapper_t>();
@@ -125,8 +130,10 @@ static void example_listener_on_leave(GumInvocationListener *listener,
 		SPDLOG_DEBUG("Leaving __cudaRegisterFatBinaryEnd..");
 		if (int err = context->impl->copy_data_to_trampoline_memory();
 		    err != 0) {
-			SPDLOG_ERROR("Unable to copy data to trampoline");
-			assert(false);
+			SPDLOG_ERROR(
+				"Unable to copy data to trampoline, skipping due to environment");
+			// Do not abort process; continue without device-side
+			// trampolines
 		}
 	} else if (context->to_function ==
 		   AttachedToFunction::CudaLaunchKernel) {

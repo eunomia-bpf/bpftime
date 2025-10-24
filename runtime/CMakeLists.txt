@@ -91,6 +91,7 @@ set(sources
 if(${BPFTIME_ENABLE_CUDA_ATTACH})
   list(APPEND sources src/attach/bpf_attach_ctx_cuda.cpp)
   list(APPEND sources src/bpf_map/gpu/nv_gpu_array_map.cpp)
+  list(APPEND sources src/bpf_map/gpu/nv_gpu_shared_array_map.cpp)
   list(APPEND sources src/bpf_map/gpu/nv_gpu_ringbuf_map.cpp)    
 endif()
 

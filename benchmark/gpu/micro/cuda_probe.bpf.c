@@ -5,6 +5,7 @@
 
 #define BPF_MAP_TYPE_PERGPUTD_ARRAY_MAP 1502
 #define BPF_MAP_TYPE_GPU_RINGBUF_MAP 1527
+#define BPF_MAP_TYPE_GPU_ARRAY_MAP 1503
 
 struct event_data {
     u64 timestamp;
@@ -43,6 +44,14 @@ struct {
     __type(key, u32);
     __type(value, u64);
 } call_count SEC(".maps");
+
+// GPU array map for shared counter
+struct {
+    __uint(type, BPF_MAP_TYPE_GPU_ARRAY_MAP);
+    __uint(max_entries, 4);
+    __type(key, u32);
+    __type(value, u64);
+} gpu_counter SEC(".maps");
 
 static const u64 (*bpf_get_globaltimer)(void) = (void *)502;
 
@@ -183,6 +192,40 @@ int cuda__probe_pergputd_array_lookup()
     u64 *val = bpf_map_lookup_elem(&call_count, &key);
     if (val) {
         (*val)++;
+    }
+    return 0;
+}
+
+// ============== Memtrace Test ==============
+
+SEC("kprobe/__memcapture")
+int cuda__probe_memtrace()
+{
+    // Basic memory trace - minimal body
+    return 0;
+}
+
+// ============== GPU Array Map Tests ==============
+
+SEC("kretprobe/_Z9vectorAddPKfS0_Pf")
+int cuda__retprobe_gpu_array_update()
+{
+    u32 key = 0;
+    u64 *val = bpf_map_lookup_elem(&gpu_counter, &key);
+    u64 newv = 1;
+    if (val)
+        newv = *val + 1;
+    bpf_map_update_elem(&gpu_counter, &key, &newv, BPF_ANY);
+    return 0;
+}
+
+SEC("kretprobe/_Z9vectorAddPKfS0_Pf")
+int cuda__retprobe_gpu_array_lookup()
+{
+    u32 key = 0;
+    u64 *val = bpf_map_lookup_elem(&gpu_counter, &key);
+    if (val) {
+        // Read value from GPU array
     }
     return 0;
 }

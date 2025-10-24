@@ -7,6 +7,7 @@ nvbit_vec_add.so
 benchmark_*.log
 *.log
 cuda_probe_*.stderr
-micro_result.json
+*_result.json
 micro_bench.log
 .cuda_probe.stderr
+micro_example_result.json

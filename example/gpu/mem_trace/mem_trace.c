@@ -65,6 +65,12 @@ int main(int argc, char **argv)
 
 	while (!exiting) {
 		sleep(1);
+		uint32_t key = 0;
+		uint64_t value = 0;
+		int mapfd = bpf_map__fd(skel->maps.counter);
+		if (bpf_map_lookup_elem(mapfd, &key, &value) == 0) {
+			printf("counter[0]=%lu\n", (unsigned long)value);
+		}
 	}
 cleanup:
 	/* Clean up */

@@ -102,7 +102,7 @@ BPFTIME_LOG_OUTPUT=console LD_PRELOAD=build/runtime/syscall-server/libbpftime-sy
 
 ### Terminal 2: Run your CUDA application
 ```bash
-LD_PRELOAD=build/runtime/agent/libbpftime-agent.so  example/gpu/threadhist/vec_add
+BPFTIME_LOG_OUTPUT=console LD_PRELOAD=build/runtime/agent/libbpftime-agent.so  example/gpu/threadhist/vec_add
 ```
 
 Or trace any CUDA application:

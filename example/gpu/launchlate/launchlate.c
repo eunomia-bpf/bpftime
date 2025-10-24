@@ -108,7 +108,33 @@ int main(int argc, char **argv)
 	struct timespec ts_mono, ts_real;
 	int64_t offset_ns;
 	uint32_t key = 0;
+	const char *uprobe_spec = "example/gpu/launchlate/vec_add:_Z16cudaLaunchKernelIcE9cudaErrorPT_4dim3S3_PPvmP11CUstream_st";
+	char *binary_path = NULL;
+	char *func_name = NULL;
+	char *colon_pos = NULL;
 
+	/* Parse command line arguments */
+	if (argc > 1) {
+		uprobe_spec = argv[1];
+	}
+
+	/* Parse binary_path:func_name format */
+	binary_path = strdup(uprobe_spec);
+	if (!binary_path) {
+		fprintf(stderr, "Failed to allocate memory\n");
+		return 1;
+	}
+
+	colon_pos = strchr(binary_path, ':');
+	if (colon_pos) {
+		*colon_pos = '\0';
+		func_name = colon_pos + 1;
+	} else {
+		fprintf(stderr, "Invalid uprobe format. Expected: binary_path:func_name\n");
+		free(binary_path);
+		return 1;
+	}
+	
 	/* Set up libbpf errors and debug info callback */
 	libbpf_set_print(libbpf_print_fn);
 
@@ -155,18 +181,41 @@ int main(int argc, char **argv)
 		goto cleanup;
 	}
 
-	err = launchlate_bpf__attach(skel);
-	if (err) {
-		fprintf(stderr, "Failed to attach BPF skeleton\n");
+	printf("Attaching uprobe: binary_path='%s', func_name='%s'\n", binary_path, func_name);
+
+	/* Manually attach uprobe with configurable name */
+	LIBBPF_OPTS(bpf_uprobe_opts, uprobe_opts,
+		.func_name = func_name,
+		.retprobe = false,
+	);
+
+	skel->links.uprobe_cuda_launch = bpf_program__attach_uprobe_opts(
+		skel->progs.uprobe_cuda_launch, -1, binary_path, 0, &uprobe_opts);
+	if (!skel->links.uprobe_cuda_launch) {
+		err = -errno;
+		fprintf(stderr, "Failed to attach uprobe to '%s:%s': %s\n",
+			binary_path, func_name, strerror(errno));
+		free(binary_path);
 		goto cleanup;
 	}
 
-	printf("\nMonitoring CUDA kernel launch latency... Hit Ctrl-C to end.\n");
+	/* Attach kprobe */
+	err = launchlate_bpf__attach(skel);
+	if (err) {
+		fprintf(stderr, "Failed to attach BPF kprobe\n");
+		free(binary_path);
+		goto cleanup;
+	}
+
+	printf("\nMonitoring CUDA kernel launch latency (uprobe: %s:%s)... Hit Ctrl-C to end.\n",
+	       binary_path, func_name);
 
 	while (!exiting) {
 		sleep(2);  // Update every 2 seconds
 		print_histogram(skel);
 	}
+
+	free(binary_path);
 cleanup:
 	/* Clean up */
 	launchlate_bpf__destroy(skel);
