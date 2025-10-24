@@ -14,6 +14,7 @@
 #include <boost/process/env.hpp>
 #include <boost/process/io.hpp>
 #include <boost/process/pipe.hpp>
+#include <boost/process/start_dir.hpp>
 #include <chrono>
 #include <cstdlib>
 #include <fstream>
@@ -24,8 +25,10 @@
 #include <dlfcn.h>
 #include <filesystem>
 #include <iterator>
+#include <map>
 #include <memory>
 #include <set>
+#include <sstream>
 #include <stdexcept>
 #include <string>
 #include <sys/ptrace.h>
@@ -184,143 +187,169 @@ std::optional<std::vector<uint8_t>>
 nv_attach_impl::hack_fatbin(std::vector<uint8_t> &&data_vec)
 {
 	std::vector<std::string> ptx_out;
+	std::map<std::string, std::string> all_ptx;
+	char tmp_dir[] = "/tmp/bpftime-fatbin-work.XXXXXX";
+	mkdtemp(tmp_dir);
+	auto working_dir = std::filesystem::path(tmp_dir);
+
 	{
-		char tmp_dir[] = "/tmp/bpftime-fatbin-store.XXXXXX";
-		mkdtemp(tmp_dir);
-		auto output_path =
-			std::filesystem::path(tmp_dir) / "temp.fatbin";
+		auto fatbin_path = working_dir / "temp.fatbin";
 		{
-			std::ofstream ofs(output_path, std::ios::binary);
+			std::ofstream ofs(fatbin_path, std::ios::binary);
 			ofs.write((const char *)data_vec.data(),
 				  data_vec.size());
 			SPDLOG_INFO("Temporary fatbin written to {}",
-				    output_path.c_str());
+				    fatbin_path.c_str());
 		}
-		SPDLOG_INFO("Listing functions in the patched ptx");
+		SPDLOG_INFO("Extracting PTX in the fatbin...");
 		boost::asio::io_context ctx;
 		boost::process::ipstream stream;
 		boost::process::environment env =
 			boost::this_process::environment();
 		env["LD_PRELOAD"] = "";
-
+		auto cuobjdump_cmd_line =
+			std::string("cuobjdump --extract-ptx all ") +
+			fatbin_path.string();
+		SPDLOG_INFO("Calling cuobjdump: {}", cuobjdump_cmd_line);
 		boost::process::child child(
-			std::string("cuobjdump --dump-ptx ") +
-				output_path.string(),
-			boost::process::std_out > stream,
-			boost::process::env(env));
+			cuobjdump_cmd_line, boost::process::std_out > stream,
+			boost::process::env(env),
+			boost::process::start_dir = tmp_dir);
+
 		std::string line;
-		std::string output;
-		bool should_record = false;
-		while (stream && std::getline(stream, line)) {
-			if (should_record) {
-				output += line + "\n";
+		while (std::getline(stream, line)) {
+			SPDLOG_DEBUG("cuobjdump output: {}", line);
+		}
+		for (const auto &entry :
+		     std::filesystem::directory_iterator(working_dir)) {
+			if (entry.is_regular_file() &&
+			    entry.path().string().ends_with(".ptx")) {
+				// Read the PTX into memory
+				std::ifstream ifs(entry.path());
+				std::stringstream buffer;
+				buffer << ifs.rdbuf();
+				all_ptx[entry.path().filename()] = buffer.str();
 			}
-			if (line.starts_with("ptxasOptions = "))
-				should_record = true;
 		}
-		ptx_out.push_back(output);
-		{
-			auto temp_out =
-				std::filesystem::path(tmp_dir) / "temp.ptx";
-			std::ofstream export_ofs(temp_out);
-			export_ofs << output;
-			SPDLOG_INFO("Extracted PTX at {}", temp_out.c_str());
-		}
-	}
-	if (ptx_out.size() != 1) {
-		SPDLOG_ERROR(
-			"Expect the loaded fatbin to contain only 1 PTX code section, but it contains {}",
-			ptx_out.size());
-		return {};
 	}
 
+	SPDLOG_INFO("Got {} PTX files", all_ptx.size());
 	/**
 	Here we can patch the PTX. Then recompile it.
 	*/
-	bool trampoline_added = false;
-	auto &to_patch_ptx = ptx_out[0];
-	to_patch_ptx = filter_unprintable_chars(to_patch_ptx);
-	for (const auto &[_, entry] : hook_entries) {
-		if (std::holds_alternative<nv_attach_cuda_memcapture>(
-			    entry.type)) {
-			SPDLOG_INFO("Patching with memcapture..");
-			if (auto result = this->patch_with_memcapture(
-				    to_patch_ptx, entry, !trampoline_added);
-			    result.has_value()) {
-				to_patch_ptx = *result;
-				trampoline_added = true;
-			} else {
-				SPDLOG_ERROR("Failed to patch for memcapture");
-				return {};
+	for (auto &[file_name, to_patch_ptx] : all_ptx) {
+		SPDLOG_INFO("Patching PTX: {}", file_name);
+		bool trampoline_added = false;
+		to_patch_ptx = filter_unprintable_chars(to_patch_ptx);
+		for (const auto &[_, entry] : hook_entries) {
+			if (std::holds_alternative<nv_attach_cuda_memcapture>(
+				    entry.type)) {
+				SPDLOG_INFO("Patching with memcapture..");
+				if (auto result = this->patch_with_memcapture(
+					    to_patch_ptx, entry,
+					    !trampoline_added);
+				    result.has_value()) {
+					to_patch_ptx = *result;
+					trampoline_added = true;
+				} else {
+					SPDLOG_ERROR(
+						"Failed to patch for memcapture");
+					return {};
+				}
+			} else if (std::holds_alternative<
+					   nv_attach_function_probe>(
+					   entry.type)) {
+				SPDLOG_INFO("Patching with kprobe/kretprobe");
+				if (auto result =
+					    this->patch_with_probe_and_retprobe(
+						    to_patch_ptx, entry,
+						    !trampoline_added);
+				    result.has_value()) {
+					to_patch_ptx = *result;
+					trampoline_added = true;
+				} else {
+					SPDLOG_ERROR(
+						"Failed to patch for probe/retprobe");
+					return {};
+				}
+			} else if (std::holds_alternative<
+					   nv_attach_directly_run_on_gpu>(
+					   entry.type)) {
+				SPDLOG_INFO(
+					"Found attach with nv_type nv_attach_directly_run_on_gpu, no need to patch");
 			}
-		} else if (std::holds_alternative<nv_attach_function_probe>(
-				   entry.type)) {
-			SPDLOG_INFO("Patching with kprobe/kretprobe");
-			if (auto result = this->patch_with_probe_and_retprobe(
-				    to_patch_ptx, entry, !trampoline_added);
-			    result.has_value()) {
-				to_patch_ptx = *result;
-				trampoline_added = true;
-			} else {
-				SPDLOG_ERROR(
-					"Failed to patch for probe/retprobe");
-				return {};
+		}
+		to_patch_ptx = wrap_ptx_with_trampoline(to_patch_ptx);
+		to_patch_ptx = filter_out_version_headers(to_patch_ptx);
+		{
+			// filter out comment lines
+			std::istringstream iss(to_patch_ptx);
+			std::ostringstream oss;
+			std::string line;
+			while (std::getline(iss, line)) {
+				if (line.starts_with("/"))
+					continue;
+				oss << line << std::endl;
 			}
-		} else if (std::holds_alternative<nv_attach_directly_run_on_gpu>(
-				   entry.type)) {
-			SPDLOG_INFO(
-				"Found attach with nv_type nv_attach_directly_run_on_gpu, no need to patch");
+			to_patch_ptx = oss.str();
 		}
 	}
-	to_patch_ptx = wrap_ptx_with_trampoline(to_patch_ptx);
-	to_patch_ptx = filter_out_version_headers(to_patch_ptx);
-	{
-		// filter out comment lines
-		std::istringstream iss(to_patch_ptx);
-		std::ostringstream oss;
-		std::string line;
-		while (std::getline(iss, line)) {
-			if (line.starts_with("/"))
-				continue;
-			oss << line << std::endl;
-		}
-		to_patch_ptx = oss.str();
+	std::vector<std::filesystem::path> patched_path_list;
+
+	for (const auto &[file_name, ptx] : all_ptx) {
+		auto path = working_dir / ("patched." + file_name);
+		std::ofstream ofs(path);
+		ofs << ptx;
+		patched_path_list.push_back(path);
 	}
-	SPDLOG_INFO("Recompiling PTX with nvcc..");
-	char tmp_dir[] = "/tmp/bpftime-recompile-nvcc";
-	// mkdtemp(tmp_dir);
-	std::filesystem::path work_dir(tmp_dir);
-	if (!std::filesystem::exists(work_dir)) {
-		SPDLOG_INFO("Creating work dir: {}", work_dir.c_str());
-		std::filesystem::create_directories(work_dir);
+	SPDLOG_INFO("Calling fatbinary to compose PTX to fatbin");
+	auto output_fatbin = working_dir / "kernels.fatbin";
+	std::string fatbin_cmd = "fatbinary --create=";
+	fatbin_cmd += output_fatbin.string() + " ";
+	for (const auto &path : patched_path_list) {
+		fatbin_cmd += "--image=profile=compute_61,file=";
+		fatbin_cmd += path.string() + " ";
 	}
-	SPDLOG_INFO("Working directory: {}", work_dir.c_str());
-	std::string command =
-		"nvcc -O2 -G -g --keep-device-functions -arch=sm_60 ";
-	{
-		auto ptx_in = work_dir / "main.ptx";
-		// SPDLOG_WARN("Using /tmp/main.ptx as ptx for nvcc");
-		// std::string ptx_in = "/tmp/main.ptx";
-		SPDLOG_INFO("PTX IN: {}", ptx_in.c_str());
-		std::ofstream ofs(ptx_in);
-		ofs << ptx_out[0];
-		command += ptx_in;
-		command += " ";
-	}
-	command += "-fatbin ";
-	auto fatbin_out = work_dir / "out.fatbin";
-	command += "-o ";
-	command += fatbin_out;
-	SPDLOG_INFO("Fatbin out {}", fatbin_out.c_str());
-	SPDLOG_INFO("Starting nvcc: {}", command);
-	if (int err = system(command.c_str()); err != 0) {
-		SPDLOG_ERROR("Unable to execute nvcc");
+	// exit(0);
+	// {
+	// 	SPDLOG_INFO("Recompiling PTX with nvcc..");
+	// 	char tmp_dir[] = "/tmp/bpftime-recompile-nvcc";
+	// 	// mkdtemp(tmp_dir);
+	// 	std::filesystem::path work_dir(tmp_dir);
+	// 	if (!std::filesystem::exists(work_dir)) {
+	// 		SPDLOG_INFO("Creating work dir: {}", work_dir.c_str());
+	// 		std::filesystem::create_directories(work_dir);
+	// 	}
+	// 	SPDLOG_INFO("Working directory: {}", work_dir.c_str());
+	// 	std::string command =
+	// 		"nvcc -O2 -G -g --keep-device-functions -arch=sm_60 ";
+	// 	{
+	// 		auto ptx_in = work_dir / "main.ptx";
+	// 		SPDLOG_INFO("PTX IN: {}", ptx_in.c_str());
+	// 		std::ofstream ofs(ptx_in);
+	// 		ofs << ptx_out[0];
+	// 		command += ptx_in;
+	// 		command += " ";
+	// 	}
+	// 	command += "-fatbin ";
+	// 	auto fatbin_out = work_dir / "out.fatbin";
+	// 	command += "-o ";
+	// 	command += fatbin_out;
+
+	// }
+
+	SPDLOG_INFO("Fatbin output file: {}", output_fatbin.c_str());
+	SPDLOG_DEBUG("fatbinary cmdline: {}", fatbin_cmd);
+	SPDLOG_INFO("Calling fatbinary");
+	if (int err = system(fatbin_cmd.c_str()); err != 0) {
+		SPDLOG_ERROR("Unable to execute fatbinary");
 		return {};
 	}
-	SPDLOG_INFO("NVCC execution done.");
+	SPDLOG_INFO("fatbinary execution done.");
 	std::vector<uint8_t> fatbin_out_buf;
 	{
-		std::ifstream ifs(fatbin_out, std::ios::binary | std::ios::ate);
+		std::ifstream ifs(output_fatbin,
+				  std::ios::binary | std::ios::ate);
 		auto file_tail = ifs.tellg();
 		ifs.seekg(0, std::ios::beg);
 
@@ -372,6 +401,9 @@ int nv_attach_impl::copy_data_to_trampoline_memory()
 		return -1;
 	}
 	SPDLOG_INFO("Copying the followed map info:");
+	if (!map_basic_info.has_value()) {
+		throw std::runtime_error("map_basic_info not set!");
+	}
 	for (int i = 0; i < this->map_basic_info->size(); i++) {
 		const auto &cur = this->map_basic_info->at(i);
 		if (cur.enabled) {

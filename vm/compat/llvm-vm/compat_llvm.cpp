@@ -2,6 +2,7 @@
 #include "spdlog/spdlog.h"
 #include <bpftime_vm_compat.hpp>
 #include <compat_llvm.hpp>
+#include <cstdio>
 #include <optional>
 #include <memory>
 
@@ -81,7 +82,7 @@ namespace llvm
 __attribute__((constructor(0))) static inline void register_llvm_vm_factory()
 {
 	register_vm_factory("llvm", create_llvm_vm_instance);
-	SPDLOG_DEBUG("llvm register vm factory\n");
+	puts("llvm register vm factory");
 }
 
 } // namespace llvm
