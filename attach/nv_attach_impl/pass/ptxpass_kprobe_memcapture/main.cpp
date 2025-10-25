@@ -7,7 +7,6 @@
 #include <sstream>
 #include <ebpf_inst.h>
 
-// use ptxpass_core::filter_out_version_headers_ptx instead
 
 static std::pair<std::string, bool>
 patch_memcapture(const std::string &ptx,
@@ -182,7 +181,7 @@ int main(int argc, char **argv)
 
 		std::string stdinData = readAllFromStdin();
 		auto [ri, isJson] = parseRuntimeInput(stdinData);
-		// JSON-only 模式
+		// JSON-only 
 		if (!isJson) {
 			return ExitCode::InputError;
 		}

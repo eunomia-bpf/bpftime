@@ -4,6 +4,7 @@
 #include <string>
 #include <vector>
 #include <ebpf_inst.h>
+#include "json.hpp"
 
 namespace bpftime::attach
 {
@@ -16,6 +17,19 @@ struct PtxPassSpec {
 struct PtxPassesConfig {
 	std::vector<PtxPassSpec> passes;
 };
+
+// nlohmann::json ADL conversions
+inline void from_json(const nlohmann::json &j, PtxPassSpec &s)
+{
+	j.at("exec").get_to(s.exec);
+	j.at("config").get_to(s.config);
+}
+
+inline void from_json(const nlohmann::json &j, PtxPassesConfig &cfg)
+{
+	if (j.contains("passes"))
+		cfg.passes = j.at("passes").get<std::vector<PtxPassSpec>>();
+}
 
 // Load pipeline config from JSON file.
 PtxPassesConfig load_passes_config(const std::string &path);
@@ -46,12 +60,39 @@ std::optional<std::string> run_ptx_pipeline(const std::string &attach_point,
 struct PassAttachPointSpec {
 	int type;
 	std::string expected_func_name_regex;
+	// Optional: pass-config style attach points
+	std::vector<std::string> includes;
+	std::vector<std::string> excludes;
 };
 
 struct PassDefinition {
 	std::string executable;
 	PassAttachPointSpec attach_point;
 };
+
+inline void from_json(const nlohmann::json &j, PassAttachPointSpec &ap)
+{
+	if (j.contains("type"))
+		j.at("type").get_to(ap.type);
+	if (j.contains("expected_func_name_regex"))
+		j.at("expected_func_name_regex")
+			.get_to(ap.expected_func_name_regex);
+	if (j.contains("includes"))
+		ap.includes = j.at("includes").get<std::vector<std::string>>();
+	if (j.contains("excludes"))
+		ap.excludes = j.at("excludes").get<std::vector<std::string>>();
+}
+
+inline void from_json(const nlohmann::json &j, PassDefinition &d)
+{
+	j.at("executable").get_to(d.executable);
+	if (j.contains("attach_point"))
+		d.attach_point =
+			j.at("attach_point").get<PassAttachPointSpec>();
+	if (j.contains("attach_points"))
+		d.attach_point =
+			j.at("attach_points").get<PassAttachPointSpec>();
+}
 
 // Load pass definitions from a directory (each file is a JSON definition)
 std::vector<PassDefinition>

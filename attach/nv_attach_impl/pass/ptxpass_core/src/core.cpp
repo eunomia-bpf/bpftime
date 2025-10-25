@@ -46,29 +46,17 @@ PassConfig JsonConfigLoader::loadFromFile(const std::string &path)
 	}
 
 	PassConfig cfg;
-	if (j.contains("name"))
-		cfg.name = j["name"].get<std::string>();
-	if (j.contains("description"))
-		cfg.description = j["description"].get<std::string>();
-	if (!j.contains("attach_points") || !j["attach_points"].is_object()) {
+	try {
+		cfg = j.get<PassConfig>();
+	} catch (const std::exception &e) {
 		throw std::runtime_error(
-			"Invalid config: attach_points missing or not object");
+			std::string("Invalid pass config schema: ") + e.what());
 	}
-	auto &ap = j["attach_points"];
-	if (ap.contains("includes"))
-		cfg.attachPoints.includes =
-			ap["includes"].get<std::vector<std::string>>();
-	if (ap.contains("excludes"))
-		cfg.attachPoints.excludes =
-			ap["excludes"].get<std::vector<std::string>>();
+	// minimal validation
 	if (cfg.attachPoints.includes.empty()) {
 		throw std::runtime_error(
 			"Invalid config: attach_points.includes must have at least one regex");
 	}
-	if (j.contains("parameters"))
-		cfg.parameters = j["parameters"];
-	if (j.contains("validation"))
-		cfg.validation = j["validation"];
 	return cfg;
 }
 
@@ -143,8 +131,8 @@ std::pair<RuntimeInput, bool> parseRuntimeInput(const std::string &stdinData)
 
 void emitRuntimeOutput(const std::string &outputPtx)
 {
-	json j;
-	j["output_ptx"] = outputPtx;
+	RuntimeOutput ro{ outputPtx };
+	json j = ro;
 	std::cout << j.dump();
 }
 

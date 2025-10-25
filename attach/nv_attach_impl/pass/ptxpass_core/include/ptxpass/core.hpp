@@ -87,6 +87,11 @@ struct RuntimeInput {
 	std::string ebpf_communication_data_symbol;
 };
 
+// JSON stdout payload
+struct RuntimeOutput {
+	std::string output_ptx;
+};
+
 // Parameter structs for typed deserialization
 struct EntryParams {
 	std::string save_strategy = "minimal"; // "minimal" or "full"
@@ -132,6 +137,22 @@ inline void from_json(const nlohmann::json &j, RuntimeInput &ri)
 		j.value("global_ebpf_map_info_symbol", std::string("map_info"));
 	ri.ebpf_communication_data_symbol = j.value(
 		"ebpf_communication_data_symbol", std::string("constData"));
+}
+
+inline void to_json(nlohmann::json &j, const RuntimeInput &ri)
+{
+	j = nlohmann::json::object();
+	j["full_ptx"] = ri.full_ptx;
+	if (!ri.to_patch_kernel.empty())
+		j["to_patch_kernel"] = ri.to_patch_kernel;
+	j["global_ebpf_map_info_symbol"] = ri.global_ebpf_map_info_symbol;
+	j["ebpf_communication_data_symbol"] = ri.ebpf_communication_data_symbol;
+}
+
+inline void to_json(nlohmann::json &j, const RuntimeOutput &ro)
+{
+	j = nlohmann::json::object();
+	j["output_ptx"] = ro.output_ptx;
 }
 
 // Shared utilities for PTX passes (refactored from legacy code)

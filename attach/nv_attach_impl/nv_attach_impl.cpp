@@ -40,7 +40,10 @@ using namespace attach;
 
 extern GType cuda_runtime_function_hooker_get_type();
 
-// Host-side stub helpers to satisfy LLVM-JIT external symbol binding
+namespace
+{
+// Host-side stub helpers used only for symbol binding during JIT; keep them
+// in an anonymous namespace to limit visibility and avoid global pollution.
 static inline uint64_t host_helper_ext_0502(uint64_t, uint64_t, uint64_t,
 					    uint64_t, uint64_t)
 {
@@ -49,8 +52,9 @@ static inline uint64_t host_helper_ext_0502(uint64_t, uint64_t, uint64_t,
 		       steady_clock::now().time_since_epoch())
 		.count();
 }
-static inline uint64_t host_helper_ext_3xyz(uint64_t x, uint64_t y, uint64_t z,
-					    uint64_t, uint64_t)
+
+static inline uint64_t host_helper_ext_xyz(uint64_t x, uint64_t y, uint64_t z,
+					   uint64_t, uint64_t)
 {
 	if (x)
 		*(uint64_t *)(uintptr_t)x = 0;
@@ -60,12 +64,14 @@ static inline uint64_t host_helper_ext_3xyz(uint64_t x, uint64_t y, uint64_t z,
 		*(uint64_t *)(uintptr_t)z = 0;
 	return 0;
 }
+
 static inline uint64_t host_helper_ext_membar(uint64_t, uint64_t, uint64_t,
 					      uint64_t, uint64_t)
 {
 	std::atomic_thread_fence(std::memory_order_seq_cst);
 	return 0;
 }
+} // namespace
 
 int nv_attach_impl::detach_by_id(int id)
 {
@@ -84,11 +90,11 @@ void nv_attach_impl::register_custom_helpers(
 	register_callback(502, "get_global_timer",
 			  (void *)(uintptr_t)host_helper_ext_0502);
 	register_callback(503, "get_block_idx",
-			  (void *)(uintptr_t)host_helper_ext_3xyz);
+			  (void *)(uintptr_t)host_helper_ext_xyz);
 	register_callback(504, "get_block_dim",
-			  (void *)(uintptr_t)host_helper_ext_3xyz);
+			  (void *)(uintptr_t)host_helper_ext_xyz);
 	register_callback(505, "get_thread_idx",
-			  (void *)(uintptr_t)host_helper_ext_3xyz);
+			  (void *)(uintptr_t)host_helper_ext_xyz);
 	register_callback(506, "gpu_membar_sys",
 			  (void *)(uintptr_t)host_helper_ext_membar);
 }

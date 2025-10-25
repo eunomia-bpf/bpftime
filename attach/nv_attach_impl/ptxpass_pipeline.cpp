@@ -2,6 +2,7 @@
 #include <boost/process.hpp>
 #include <fstream>
 #include "json.hpp"
+#include "ptxpass/core.hpp"
 #include <filesystem>
 #include <optional>
 #include <sstream>
@@ -15,6 +16,9 @@ namespace bpftime::attach
 
 using nlohmann::json;
 
+// Use ptxpass::RuntimeInput for JSON payload; attach ebpf_instructions
+// separately
+
 PtxPassesConfig load_passes_config(const std::string &path)
 {
 	std::ifstream ifs(path);
@@ -23,16 +27,7 @@ PtxPassesConfig load_passes_config(const std::string &path)
 	}
 	json j;
 	ifs >> j;
-	PtxPassesConfig cfg;
-	if (j.contains("passes") && j["passes"].is_array()) {
-		for (auto &p : j["passes"]) {
-			PtxPassSpec spec;
-			spec.exec = p["exec"].get<std::string>();
-			spec.config = p["config"].get<std::string>();
-			cfg.passes.push_back(std::move(spec));
-		}
-	}
-	return cfg;
+	return j.get<PtxPassesConfig>();
 }
 
 PtxPassesConfig
@@ -98,7 +93,7 @@ std::optional<std::string> run_ptx_pipeline(const std::string &attach_point,
 						    to_patch_kernel, map_sym,
 						    const_sym, empty);
 		if (!res.has_value()) {
-			else continue;
+			continue;
 		}
 		if (!res->empty())
 			current = *res;
@@ -120,10 +115,7 @@ PtxPassesConfig load_passes_from_directory(const std::string &dir)
 			std::ifstream ifs(entry.path());
 			json j;
 			ifs >> j;
-			PtxPassSpec spec;
-			spec.exec = j.at("exec").get<std::string>();
-			spec.config = j.at("config").get<std::string>();
-			cfg.passes.push_back(std::move(spec));
+			cfg.passes.push_back(j.get<PtxPassSpec>());
 		} catch (...) {
 			// ignore broken file
 		}
@@ -174,20 +166,13 @@ load_pass_definitions_from_dir(const std::string &dir)
 			std::ifstream ifs(entry.path());
 			json j;
 			ifs >> j;
-			PassDefinition d;
-			std::string exec =
-				j.at("executable").get<std::string>();
-			if (!exec.empty() && !fs::path(exec).is_absolute()) {
-				// Resolve relative to the JSON file directory
-				exec = (entry.path().parent_path() / exec)
-					       .string();
+			PassDefinition d = j.get<PassDefinition>();
+			if (!d.executable.empty() &&
+			    !fs::path(d.executable).is_absolute()) {
+				d.executable = (entry.path().parent_path() /
+						d.executable)
+						       .string();
 			}
-			d.executable = exec;
-			auto &ap = j.at("attach_point");
-			d.attach_point.type = ap.at("type").get<int>();
-			d.attach_point.expected_func_name_regex =
-				ap.at("expected_func_name_regex")
-					.get<std::string>();
 			defs.push_back(std::move(d));
 		} catch (const std::exception &e) {
 			// skip invalid files silently; caller can log aggregate
@@ -214,22 +199,13 @@ std::optional<std::string> run_pass_executable_json(
 	opstream child_stdin;
 	child c(exec, std_out > child_stdout, std_err > child_stderr,
 		std_in < child_stdin);
-	json in = { { "full_ptx", full_ptx },
-		    { "to_patch_kernel", to_patch_kernel },
-		    { "global_ebpf_map_info_symbol", map_sym },
-		    { "ebpf_communication_data_symbol", const_sym } };
 	// Serialize eBPF instructions as array of 64-bit words (little endian)
 	// to keep compatibility and simplicity for pass executables.
+	std::vector<uint64_t> words;
 	if (!ebpf_insts.empty()) {
-		std::vector<uint64_t> words;
 		words.reserve(ebpf_insts.size());
 		for (const auto &ins : ebpf_insts) {
-			// Assuming ebpf_inst fits into 64-bit encoding in this
-			// project If structure differs, adjust serialization
-			// accordingly
 			uint64_t w = 0;
-			// best-effort: pack fields similar to kernel eBPF
-			// encoding
 			w |= (uint64_t)ins.opcode;
 			w |= (uint64_t)ins.dst << 8;
 			w |= (uint64_t)ins.src << 12;
@@ -237,8 +213,15 @@ std::optional<std::string> run_pass_executable_json(
 			w |= (uint64_t)(uint32_t)ins.imm << 32;
 			words.push_back(w);
 		}
-		in["ebpf_instructions"] = words;
 	}
+	ptxpass::RuntimeInput ri;
+	ri.full_ptx = full_ptx;
+	ri.to_patch_kernel = to_patch_kernel;
+	ri.global_ebpf_map_info_symbol = map_sym;
+	ri.ebpf_communication_data_symbol = const_sym;
+	nlohmann::json in = ri;
+	if (!words.empty())
+		in["ebpf_instructions"] = words;
 	child_stdin << in.dump();
 	child_stdin.flush();
 	child_stdin.pipe().close();
@@ -255,7 +238,7 @@ std::optional<std::string> run_pass_executable_json(
 	if (!is_nonempty_nonblank(out_str))
 		return std::string();
 	try {
-		auto j = json::parse(out_str);
+		auto j = nlohmann::json::parse(out_str);
 		if (j.contains("output_ptx") && j["output_ptx"].is_string())
 			return j["output_ptx"].get<std::string>();
 		return std::string();
