@@ -3,6 +3,7 @@
 #include <optional>
 #include <string>
 #include <vector>
+#include <ebpf_inst.h>
 
 namespace bpftime::attach
 {
@@ -20,16 +21,18 @@ struct PtxPassesConfig {
 // Load pipeline config from JSON file.
 PtxPassesConfig load_passes_config(const std::string &path);
 // Load from env (BPFTIME_PTXPASS_CONFIG) or default path
-PtxPassesConfig load_passes_config_from_env_or_default(const std::string &default_path);
+PtxPassesConfig
+load_passes_config_from_env_or_default(const std::string &default_path);
 
 // Load passes from a directory containing multiple JSON files with fields
-// { "exec": "/abs/path/to/executable", "config": "/abs/or/rel/config.json", "priority": 0 }
+// { "exec": "/abs/path/to/executable", "config": "/abs/or/rel/config.json" }
 PtxPassesConfig load_passes_from_directory(const std::string &dir);
 
-// Prefer directory from env (BPFTIME_PTXPASS_DIR). If found passes, return them;
-// otherwise, fallback to env config or default config path
-PtxPassesConfig load_passes_from_envdir_or_default(const std::string &default_dir,
-                                                   const std::string &default_config_path);
+// Prefer directory from env (BPFTIME_PTXPASS_DIR). If found passes, return
+// them; otherwise, fallback to env config or default config path
+PtxPassesConfig
+load_passes_from_envdir_or_default(const std::string &default_dir,
+				   const std::string &default_config_path);
 
 // Run PTX through all passes for a given attach point.
 // Returns transformed PTX string on success. When a pass fails:
@@ -51,7 +54,6 @@ struct PassAttachPointSpec {
 
 struct PassDefinition {
 	std::string executable;
-	int priority;
 	PassAttachPointSpec attach_point;
 };
 
@@ -67,12 +69,9 @@ load_pass_definitions_from_dir(const std::string &dir);
 //  - ebpf_communication_data_symbol
 // Output JSON fields:
 //  - output_ptx (may be empty or omitted to represent no-change)
-std::optional<std::string>
-run_pass_executable_json(const std::string &exec, const std::string &full_ptx,
-			 const std::string &to_patch_kernel,
-			 const std::string &map_sym,
-			 const std::string &const_sym);
+std::optional<std::string> run_pass_executable_json(
+	const std::string &exec, const std::string &full_ptx,
+	const std::string &to_patch_kernel, const std::string &map_sym,
+	const std::string &const_sym, const std::vector<ebpf_inst> &ebpf_insts);
 
 } // namespace bpftime::attach
-
-

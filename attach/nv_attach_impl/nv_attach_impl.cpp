@@ -4,14 +4,12 @@
 #include "ebpf_inst.h"
 #include "frida-gum.h"
 
-#include "llvm_jit_context.hpp"
 #include "nvPTXCompiler.h"
 #include "nv_attach_private_data.hpp"
 #include "nv_attach_utils.hpp"
 #include "spdlog/spdlog.h"
 #include <asm/unistd.h> // For architecture-specific syscall numbers
 #include <boost/process.hpp>
-#include <chrono>
 #include <cstdlib>
 #include <fstream>
 #include <cassert>
@@ -26,12 +24,12 @@
 #include <regex>
 #include <stdexcept>
 #include <string>
+#include <sstream>
 #include <sys/ptrace.h>
 #include <sys/wait.h>
 #include <sys/user.h>
 #include <sys/uio.h>
 #include <link.h>
-#include <thread>
 #include <unistd.h>
 #include <variant>
 #include <vector>
@@ -41,11 +39,89 @@ using namespace attach;
 
 extern GType cuda_runtime_function_hooker_get_type();
 
+// Host-side stub helpers to satisfy LLVM-JIT external symbol binding
+static inline uint64_t host_helper_ext_0502(uint64_t, uint64_t, uint64_t,
+					    uint64_t, uint64_t)
+{
+	using namespace std::chrono;
+	return (uint64_t)duration_cast<nanoseconds>(
+		       steady_clock::now().time_since_epoch())
+		.count();
+}
+static inline uint64_t host_helper_ext_3xyz(uint64_t x, uint64_t y, uint64_t z,
+					    uint64_t, uint64_t)
+{
+	if (x)
+		*(uint64_t *)(uintptr_t)x = 0;
+	if (y)
+		*(uint64_t *)(uintptr_t)y = 0;
+	if (z)
+		*(uint64_t *)(uintptr_t)z = 0;
+	return 0;
+}
+static inline uint64_t host_helper_ext_membar(uint64_t, uint64_t, uint64_t,
+					      uint64_t, uint64_t)
+{
+	std::atomic_thread_fence(std::memory_order_seq_cst);
+	return 0;
+}
+
 int nv_attach_impl::detach_by_id(int id)
 {
 	SPDLOG_INFO("Detaching is not supported by nv_attach_impl");
 	return 0;
 }
+
+void nv_attach_impl::register_custom_helpers(
+	ebpf_helper_register_callback register_callback)
+{
+	// Register minimal CUDA ext helpers required by LLVM-JIT-compiled eBPF
+	// programs to resolve external calls in PTX trampoline. Indices must
+	// match those used by compile-time in PTX trampoline and llvmbpf_vm.
+	// 502: get_global_timer; 503/504/505: blockIdx/blockDim/threadIdx; 506:
+	// membar
+	register_callback(502, "get_global_timer",
+			  (void *)(uintptr_t)host_helper_ext_0502);
+	register_callback(503, "get_block_idx",
+			  (void *)(uintptr_t)host_helper_ext_3xyz);
+	register_callback(504, "get_block_dim",
+			  (void *)(uintptr_t)host_helper_ext_3xyz);
+	register_callback(505, "get_thread_idx",
+			  (void *)(uintptr_t)host_helper_ext_3xyz);
+	register_callback(506, "gpu_membar_sys",
+			  (void *)(uintptr_t)host_helper_ext_membar);
+}
+
+// Provide local definition to avoid undefined symbol at runtime
+namespace bpftime::attach
+{
+std::string filter_out_version_headers(const std::string &input)
+{
+	static const std::string FILTERED_OUT_PREFIXES[] = {
+		".version", ".target", ".address_size", "//"
+	};
+	std::istringstream iss(input);
+	std::ostringstream oss;
+	std::string line;
+	std::set<std::string> found_patterns;
+
+	while (std::getline(iss, line)) {
+		bool skip = false;
+		for (const auto &s : FILTERED_OUT_PREFIXES) {
+			if (line.starts_with(s)) {
+				if (found_patterns.contains(s))
+					skip = true;
+				else
+					found_patterns.insert(s);
+				break;
+			}
+		}
+		if (!skip)
+			oss << line << std::endl;
+	}
+	return oss.str();
+}
+} // namespace bpftime::attach
 
 int nv_attach_impl::create_attach_with_ebpf_callback(
 	ebpf_run_callback &&cb, const attach_private_data &private_data,
@@ -76,8 +152,8 @@ int nv_attach_impl::create_attach_with_ebpf_callback(
 		}
 		if (std::regex_match(func_name, func_re)) {
 			matched = &pd;
-			break; // pass_definitions is sorted by priority then
-			       // name
+			break; // pass_definitions is sorted deterministically
+			       // by executable
 		}
 	}
 	if (matched) {
@@ -87,7 +163,6 @@ int nv_attach_impl::create_attach_with_ebpf_callback(
 		entry.kernels = data.func_names;
 		entry.program_name = data.program_name;
 		entry.pass_exec = matched->executable;
-		entry.priority = matched->priority;
 		entry.parameters["func_name"] = func_name;
 		entry.parameters["attach_type"] = std::to_string(attach_type);
 		// derive attach point override for fallback pipeline
@@ -105,8 +180,8 @@ int nv_attach_impl::create_attach_with_ebpf_callback(
 		hook_entries[id] = std::move(entry);
 		this->map_basic_info = data.map_basic_info;
 		this->shared_mem_ptr = data.comm_shared_mem;
-		SPDLOG_INFO("Recorded pass {} (priority {}) for func {}",
-			    matched->executable, matched->priority, func_name);
+		SPDLOG_INFO("Recorded pass {} for func {}", matched->executable,
+			    func_name);
 		return id;
 	}
 	// No matched definition: still record a generic entry for fallback
@@ -279,28 +354,25 @@ nv_attach_impl::hack_fatbin(std::vector<uint8_t> &&data_vec)
 		return {};
 	}
 
-	// New: run discovered JSON-based pass executables in priority order
+	// New: run discovered JSON-based pass executables in a deterministic
+	// order
 	auto &to_patch_ptx = ptx_out[0];
 	to_patch_ptx = filter_unprintable_chars(to_patch_ptx);
 	const std::string map_sym = "map_info";
 	const std::string const_sym = "constData";
 	try {
-		// Build ordered list of (priority, id) for entries with
-		// configured pass
+		// Build ordered list of ids for entries with configured pass
 		struct Item {
-			int priority;
 			int id;
 		};
 		std::vector<Item> items;
 		for (const auto &kv : hook_entries) {
 			const auto &e = kv.second;
 			if (!e.pass_exec.empty())
-				items.push_back(Item{ e.priority, kv.first });
+				items.push_back(Item{ kv.first });
 		}
 		std::sort(items.begin(), items.end(),
 			  [](const Item &a, const Item &b) {
-				  if (a.priority != b.priority)
-					  return a.priority < b.priority;
 				  return a.id < b.id;
 			  });
 		for (const auto &it : items) {
@@ -322,8 +394,8 @@ nv_attach_impl::hack_fatbin(std::vector<uint8_t> &&data_vec)
 				if (itf != e.parameters.end()) {
 					auto res = run_pass_executable_json(
 						e.pass_exec, to_patch_ptx,
-						itf->second, map_sym,
-						const_sym);
+						itf->second, map_sym, const_sym,
+						e.instuctions);
 					if (res.has_value() && !res->empty())
 						to_patch_ptx = *res;
 				}
@@ -332,7 +404,7 @@ nv_attach_impl::hack_fatbin(std::vector<uint8_t> &&data_vec)
 			for (const auto &k : kernels) {
 				auto res = run_pass_executable_json(
 					e.pass_exec, to_patch_ptx, k, map_sym,
-					const_sym);
+					const_sym, e.instuctions);
 				if (!res.has_value()) {
 					SPDLOG_WARN(
 						"Pass {} failed for kernel {}",

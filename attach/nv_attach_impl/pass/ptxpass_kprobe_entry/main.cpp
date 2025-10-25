@@ -1,7 +1,33 @@
 #include "ptxpass/core.hpp"
+#include <vector>
 #include <exception>
 #include <iostream>
 #include <string>
+
+static std::pair<std::string, bool>
+patch_entry(const std::string &ptx, const std::string &kernel,
+	    const std::vector<uint64_t> &ebpf_words)
+{
+	auto func_ptx =
+		ptxpass::compile_ebpf_to_ptx_from_words(ebpf_words, "sm_60");
+	auto body = ptxpass::find_kernel_body(ptx, kernel);
+	if (body.first == std::string::npos)
+		return { "", false };
+	std::string out = ptx;
+	size_t brace = out.find('{', body.first);
+	if (brace == std::string::npos)
+		return { "", false };
+	size_t insertPos = brace + 1;
+	if (insertPos < out.size() && out[insertPos] == '\n')
+		insertPos++;
+	std::string fname = std::string("__probe_func__") + kernel;
+	std::ostringstream def;
+	def << ".func " << fname << "\n" << func_ptx << "\n";
+	out.insert(insertPos, std::string("\n    call ") + fname + ";\n");
+	out = def.str() + "\n" + out;
+	ptxpass::log_transform_stats("kprobe_entry", 1, ptx.size(), out.size());
+	return { out, true };
+}
 
 static void print_usage(const char *argv0)
 {
@@ -46,10 +72,11 @@ int main(int argc, char **argv)
 			return ExitCode::ConfigError;
 		}
 
-        // JSON-only
-        std::string stdinData = readAllFromStdin();
-        auto [ri, isJson] = parseRuntimeInput(stdinData);
-        if (!isJson) return ExitCode::InputError;
+		// JSON-only
+		std::string stdinData = readAllFromStdin();
+		auto [ri, isJson] = parseRuntimeInput(stdinData);
+		if (!isJson)
+			return ExitCode::InputError;
 		if (!matcher.matches(ap)) {
 			// Not matched: empty output
 			return ExitCode::Success;
@@ -60,9 +87,18 @@ int main(int argc, char **argv)
 		if (!validateInput(ri.full_ptx, cfg.validation)) {
 			return ExitCode::TransformFailed;
 		}
+		std::vector<uint64_t> words;
+		try {
+			auto j = nlohmann::json::parse(stdinData);
+			if (j.contains("ebpf_instructions"))
+				words = j["ebpf_instructions"]
+						.get<std::vector<uint64_t>>();
+		} catch (...) {
+		}
 		auto [out, modified] =
-			instrumentEntry(ri.full_ptx, cfg.parameters);
-        if (modified && !isWhitespaceOnly(out)) emitRuntimeOutput(out);
+			patch_entry(ri.full_ptx, ri.to_patch_kernel, words);
+		if (modified && !isWhitespaceOnly(out))
+			emitRuntimeOutput(out);
 		return ExitCode::Success;
 	} catch (const std::runtime_error &e) {
 		std::cerr << e.what() << "\n";

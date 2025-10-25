@@ -1,9 +1,12 @@
 {
-    "executable": "ptxpass_kretprobe",
-    "priority": 20,
-    "attach_point": {
-        "type": 9,
-        "expected_func_name_regex": "^.+$"
-    }
+    "name": "kretprobe",
+    "description": "Inject call before ret for kretprobe/*",
+    "attach_points": {
+        "includes": [
+            "^kretprobe/.*$"
+        ],
+        "excludes": []
+    },
+    "parameters": {},
+    "validation": {}
 }
-

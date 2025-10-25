@@ -2,6 +2,140 @@
 #include <exception>
 #include <iostream>
 #include <string>
+#include <vector>
+#include <regex>
+#include <sstream>
+#include <ebpf_inst.h>
+
+// use ptxpass_core::filter_out_version_headers_ptx instead
+
+static std::pair<std::string, bool>
+patch_memcapture(const std::string &ptx,
+		 const std::vector<uint64_t> &ebpf_words)
+{
+	static std::regex ld_st_pattern(
+		R"(^\s*(ld|st)\.(const|global|local|param)?\.(((s|u|b)(8|16|32|64))|\.b128|(\.f(16|16x2|32|64))) +(.+), *(.+);\s*$)");
+	// no local ebpf_inst dependency here; we will pack words when needed
+
+	std::istringstream iss(ptx);
+	std::ostringstream out_body;
+	std::ostringstream out_funcs;
+	std::string line;
+	int count = 0;
+	while (std::getline(iss, line)) {
+		out_body << line << '\n';
+		if (std::regex_match(line, ld_st_pattern)) {
+			count++;
+			// rebuild ebpf_inst list from words each time
+			std::vector<ebpf_inst> insts_local;
+			insts_local.reserve(ebpf_words.size());
+			for (auto w : ebpf_words) {
+				ebpf_inst ins{};
+				ins.opcode = (uint8_t)(w & 0xFF);
+				ins.dst = (uint8_t)((w >> 8) & 0xF);
+				ins.src = (uint8_t)((w >> 12) & 0xF);
+				ins.offset = (int16_t)((w >> 16) & 0xFFFF);
+				ins.imm = (int32_t)(w >> 32);
+				insts_local.push_back(ins);
+			}
+			{
+				std::vector<ebpf_inst> prep;
+				int32_t total_length =
+					((int32_t)line.size() + 1 + 7) / 8 * 8;
+				{
+					ebpf_inst t{};
+					t.opcode = EBPF_OP_STDW;
+					t.dst = 10;
+					t.src = 0;
+					t.offset = -8;
+					t.imm = 0;
+					prep.push_back(t);
+				}
+				{
+					ebpf_inst t{};
+					t.opcode = EBPF_OP_SUB64_IMM;
+					t.dst = 10;
+					t.src = 0;
+					t.offset = 0;
+					t.imm = total_length;
+					prep.push_back(t);
+				}
+				{
+					ebpf_inst t{};
+					t.opcode = EBPF_OP_MOV64_REG;
+					t.dst = 1;
+					t.src = 10;
+					t.offset = 0;
+					t.imm = 0;
+					prep.push_back(t);
+				}
+				for (int i = 0; i < (int)line.size(); i += 8) {
+					uint64_t curr = 0;
+					for (int j = 0;
+					     j < 8 &&
+					     (j + i) < (int)line.size();
+					     j++)
+						curr |= ((uint64_t)line[i + j])
+							<< (j * 8);
+					{
+						ebpf_inst t{};
+						t.opcode = EBPF_OP_LDDW;
+						t.dst = 2;
+						t.src = 0;
+						t.offset = 0;
+						t.imm = (int32_t)(uint32_t)curr;
+						prep.push_back(t);
+					}
+					{
+						ebpf_inst t{};
+						t.opcode = 0;
+						t.dst = 0;
+						t.src = 0;
+						t.offset = 0;
+						t.imm = (int32_t)(uint32_t)(curr >>
+									    32);
+						prep.push_back(t);
+					}
+					{
+						ebpf_inst t{};
+						t.opcode = EBPF_OP_STXDW;
+						t.dst = 1;
+						t.src = 2;
+						t.offset = (int16_t)i;
+						t.imm = 0;
+						prep.push_back(t);
+					}
+				}
+				insts_local.insert(insts_local.begin(),
+						   prep.begin(), prep.end());
+			}
+			std::vector<uint64_t> packed;
+			packed.reserve(insts_local.size());
+			for (auto &ins : insts_local) {
+				uint64_t w = 0;
+				w |= (uint64_t)ins.opcode;
+				w |= (uint64_t)ins.dst << 8;
+				w |= (uint64_t)ins.src << 12;
+				w |= (uint64_t)(uint16_t)ins.offset << 16;
+				w |= (uint64_t)(uint32_t)ins.imm << 32;
+				packed.push_back(w);
+			}
+			auto func_ptx = ptxpass::compile_ebpf_to_ptx_from_words(
+				packed, "sm_60");
+			auto func_name = std::string("__memcapture__") +
+					 std::to_string(count);
+			out_funcs << ".func " << func_name << "\n"
+				  << func_ptx << "\n";
+			out_body << "call " << func_name << ";\n";
+		}
+	}
+	if (count == 0)
+		return { "", false };
+	auto out = out_funcs.str() + "\n" + out_body.str();
+	ptxpass::log_transform_stats("kprobe_memcapture", count, ptx.size(),
+				     out.size());
+	return { out, true };
+}
 
 static void print_usage(const char *argv0)
 {
@@ -46,33 +180,37 @@ int main(int argc, char **argv)
 			return ExitCode::ConfigError;
 		}
 
-        std::string stdinData = readAllFromStdin();
-        auto [ri, isJson] = parseRuntimeInput(stdinData);
-        // 强制 JSON-only 模式
-        if (!isJson) {
-            return ExitCode::InputError;
-        }
-        if (!matcher.matches(ap)) {
-            emitRuntimeOutput("");
-            return ExitCode::Success;
-        }
-        if (dryRun) {
-            emitRuntimeOutput("");
-            return ExitCode::Success;
-        }
-        if (!validateInput(ri.full_ptx, cfg.validation)) {
-            return ExitCode::TransformFailed;
-        }
-        int bufferBytes = cfg.parameters.value("buffer_bytes", 4096);
-        int maxSegments = cfg.parameters.value("max_segments", 4);
-        bool allowPartial = cfg.parameters.value("allow_partial", true);
-        std::string srcSym = ri.ebpf_communication_data_symbol.empty()
-                                     ? std::string("constData")
-                                     : ri.ebpf_communication_data_symbol;
-        auto [out, modified] = instrumentMemcaptureAdvanced(
-            ri.full_ptx, bufferBytes, maxSegments, allowPartial, srcSym);
-        emitRuntimeOutput(modified ? out : "");
-        return ExitCode::Success;
+		std::string stdinData = readAllFromStdin();
+		auto [ri, isJson] = parseRuntimeInput(stdinData);
+		// JSON-only 模式
+		if (!isJson) {
+			return ExitCode::InputError;
+		}
+		if (!matcher.matches(ap)) {
+			emitRuntimeOutput("");
+			return ExitCode::Success;
+		}
+		if (dryRun) {
+			emitRuntimeOutput("");
+			return ExitCode::Success;
+		}
+		if (!validateInput(ri.full_ptx, cfg.validation)) {
+			return ExitCode::TransformFailed;
+		}
+		// 方案1：复用旧编译链：从 stdin JSON 读取 ebpf_instructions
+		// 并按旧逻辑为每条 ld/st 生成专用 probe
+		std::vector<uint64_t> words;
+		try {
+			auto j = nlohmann::json::parse(stdinData);
+			if (j.contains("ebpf_instructions") &&
+			    j["ebpf_instructions"].is_array())
+				words = j["ebpf_instructions"]
+						.get<std::vector<uint64_t>>();
+		} catch (...) {
+		}
+		auto [out, modified] = patch_memcapture(ri.full_ptx, words);
+		emitRuntimeOutput(modified ? out : "");
+		return ExitCode::Success;
 	} catch (const std::runtime_error &e) {
 		std::cerr << e.what() << "\n";
 		return ExitCode::ConfigError;

@@ -95,9 +95,10 @@ std::optional<std::string> run_ptx_pipeline(const std::string &attach_point,
 	const std::string map_sym = "map_info";
 	const std::string const_sym = "constData";
 	for (const auto &pass : config.passes) {
+		std::vector<ebpf_inst> empty;
 		auto res = run_pass_executable_json(pass.exec, current,
 						    to_patch_kernel, map_sym,
-						    const_sym);
+						    const_sym, empty);
 		if (!res.has_value()) {
 			if (config.fail_fast)
 				return std::nullopt;
@@ -187,7 +188,6 @@ load_pass_definitions_from_dir(const std::string &dir)
 					       .string();
 			}
 			d.executable = exec;
-			d.priority = j.at("priority").get<int>();
 			auto &ap = j.at("attach_point");
 			d.attach_point.type = ap.at("type").get<int>();
 			d.attach_point.expected_func_name_regex =
@@ -201,8 +201,6 @@ load_pass_definitions_from_dir(const std::string &dir)
 	}
 	std::sort(defs.begin(), defs.end(),
 		  [](const PassDefinition &a, const PassDefinition &b) {
-			  if (a.priority != b.priority)
-				  return a.priority < b.priority;
 			  return a.executable < b.executable; // stable
 							      // deterministic
 							      // order
@@ -210,11 +208,10 @@ load_pass_definitions_from_dir(const std::string &dir)
 	return defs;
 }
 
-std::optional<std::string>
-run_pass_executable_json(const std::string &exec, const std::string &full_ptx,
-			 const std::string &to_patch_kernel,
-			 const std::string &map_sym,
-			 const std::string &const_sym)
+std::optional<std::string> run_pass_executable_json(
+	const std::string &exec, const std::string &full_ptx,
+	const std::string &to_patch_kernel, const std::string &map_sym,
+	const std::string &const_sym, const std::vector<ebpf_inst> &ebpf_insts)
 {
 	using namespace boost::process;
 	ipstream child_stdout;
@@ -226,6 +223,27 @@ run_pass_executable_json(const std::string &exec, const std::string &full_ptx,
 		    { "to_patch_kernel", to_patch_kernel },
 		    { "global_ebpf_map_info_symbol", map_sym },
 		    { "ebpf_communication_data_symbol", const_sym } };
+	// Serialize eBPF instructions as array of 64-bit words (little endian)
+	// to keep compatibility and simplicity for pass executables.
+	if (!ebpf_insts.empty()) {
+		std::vector<uint64_t> words;
+		words.reserve(ebpf_insts.size());
+		for (const auto &ins : ebpf_insts) {
+			// Assuming ebpf_inst fits into 64-bit encoding in this
+			// project If structure differs, adjust serialization
+			// accordingly
+			uint64_t w = 0;
+			// best-effort: pack fields similar to kernel eBPF
+			// encoding
+			w |= (uint64_t)ins.opcode;
+			w |= (uint64_t)ins.dst << 8;
+			w |= (uint64_t)ins.src << 12;
+			w |= (uint64_t)(uint16_t)ins.offset << 16;
+			w |= (uint64_t)(uint32_t)ins.imm << 32;
+			words.push_back(w);
+		}
+		in["ebpf_instructions"] = words;
+	}
 	child_stdin << in.dump();
 	child_stdin.flush();
 	child_stdin.pipe().close();

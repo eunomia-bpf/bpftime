@@ -19,7 +19,6 @@
 #include <sys/wait.h>
 
 // #include <pos/include/oob/ckpt_dump.h>
-#include <variant>
 #include <vector>
 #include "ptxpass_pipeline.hpp"
 
@@ -66,13 +65,12 @@ struct nv_attach_entry {
 	std::string program_name;
 	// pass-based execution fields
 	std::string pass_exec; // resolved executable path for matched pass
-	int priority = 0; // pass priority (smaller is higher priority)
 	std::map<std::string, std::string> parameters; // arbitrary parameters
 						       // for pass
-    // Optional override of attach point string such as "kprobe/sys_read"
-    std::optional<std::string> attach_point_override;
-    // Extra serialized parameters (JSON string) reserved for future use
-    std::optional<std::string> extras;
+	// Optional override of attach point string such as "kprobe/sys_read"
+	std::optional<std::string> attach_point_override;
+	// Extra serialized parameters (JSON string) reserved for future use
+	std::optional<std::string> extras;
 };
 
 // Attach implementation of syscall trace
@@ -84,6 +82,10 @@ class nv_attach_impl final : public base_attach_impl {
 	int create_attach_with_ebpf_callback(
 		ebpf_run_callback &&cb, const attach_private_data &private_data,
 		int attach_type);
+	// Register CUDA-specific ext helpers required by LLVM-JIT to resolve
+	// symbols like _bpf_helper_ext_0502/_0503 when compiling programs
+	void register_custom_helpers(
+		ebpf_helper_register_callback register_callback) override;
 	nv_attach_impl(const nv_attach_impl &) = delete;
 	nv_attach_impl &operator=(const nv_attach_impl &) = delete;
 	nv_attach_impl();

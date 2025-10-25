@@ -6,6 +6,9 @@
 #include <sstream>
 #include <stdexcept>
 #include <string>
+#include <set>
+#include <llvmbpf.hpp>
+#include <llvm_jit_context.hpp>
 
 #include "json.hpp"
 
@@ -25,45 +28,8 @@ compileRegexList(const std::vector<std::string> &patterns)
 	return out;
 }
 
-static bool jsonGetBool(const json &j, const char *key, bool defVal)
-{
-	if (!j.is_object())
-		return defVal;
-	if (!j.contains(key))
-		return defVal;
-	try {
-		return j.at(key).get<bool>();
-	} catch (...) {
-		return defVal;
-	}
-}
-
-static std::string jsonGetString(const json &j, const char *key,
-				 const std::string &defVal)
-{
-	if (!j.is_object())
-		return defVal;
-	if (!j.contains(key))
-		return defVal;
-	try {
-		return j.at(key).get<std::string>();
-	} catch (...) {
-		return defVal;
-	}
-}
-
-static int jsonGetInt(const json &j, const char *key, int defVal)
-{
-	if (!j.is_object())
-		return defVal;
-	if (!j.contains(key))
-		return defVal;
-	try {
-		return j.at(key).get<int>();
-	} catch (...) {
-		return defVal;
-	}
-}
+// typed conversions are defined inline in header; avoid duplicate definitions
+// here
 
 PassConfig JsonConfigLoader::loadFromFile(const std::string &path)
 {
@@ -84,7 +50,6 @@ PassConfig JsonConfigLoader::loadFromFile(const std::string &path)
 		cfg.name = j["name"].get<std::string>();
 	if (j.contains("description"))
 		cfg.description = j["description"].get<std::string>();
-
 	if (!j.contains("attach_points") || !j["attach_points"].is_object()) {
 		throw std::runtime_error(
 			"Invalid config: attach_points missing or not object");
@@ -164,18 +129,14 @@ std::pair<RuntimeInput, bool> parseRuntimeInput(const std::string &stdinData)
 	RuntimeInput ri;
 	try {
 		auto j = json::parse(stdinData);
-		if (j.contains("full_ptx"))
-			ri.full_ptx = j["full_ptx"].get<std::string>();
-		if (j.contains("to_patch_kernel"))
-			ri.to_patch_kernel =
-				j["to_patch_kernel"].get<std::string>();
-		ri.global_ebpf_map_info_symbol = jsonGetString(
-			j, "global_ebpf_map_info_symbol", "map_info");
-		ri.ebpf_communication_data_symbol = jsonGetString(
-			j, "ebpf_communication_data_symbol", "constData");
+		ri = j.get<RuntimeInput>();
 		return { ri, true };
+	} catch (const std::exception &e) {
+		std::cerr << "[ptxpass] Error: stdin must be JSON. "
+			  << "Parse failed: " << e.what() << "\n";
+		return { ri, false };
 	} catch (...) {
-		ri.full_ptx = stdinData;
+		std::cerr << "[ptxpass] Error: stdin must be JSON.\n";
 		return { ri, false };
 	}
 }
@@ -250,99 +211,45 @@ bool validatePtxVersion(const std::string &input, const std::string &minVersion)
 
 bool hasMarker(const std::string &input, const std::string &marker)
 {
-	return input.find(marker) != std::string::npos;
+	(void)input;
+	(void)marker;
+	return false;
 }
 
 std::pair<std::string, bool> instrumentEntry(const std::string &input,
-					     const json &params)
+					     const EntryParams &)
 {
-	const std::string marker = "// __ptxpass_entry_injected__";
-	if (hasMarker(input, marker))
-		return { "", false };
-	// Insert reg decl + timer read right after opening brace of the first
-	// entry
-	size_t entryPos = input.find(".visible .entry");
-	if (entryPos == std::string::npos)
-		return { "", false };
-	size_t bracePos = input.find('{', entryPos);
-	if (bracePos == std::string::npos)
-		return { "", false };
-	// Find end of line after '{'
-	size_t insertPos = bracePos + 1;
-	if (insertPos < input.size() && input[insertPos] == '\n') {
-		insertPos += 1;
-	} else {
-		// Ensure new line after brace
-		std::string out = input;
-		out.insert(insertPos, "\n");
-		// adjust positions
-		insertPos += 1;
-		// continue with out
-		std::string regblk = marker +
-				     "\n"
-				     ".reg .u64 %ptxpass_e0;\n"
-				     "mov.u64 %ptxpass_e0, %globaltimer;\n";
-		out.insert(insertPos, regblk);
-		return { out, true };
-	}
-	std::string out = input;
-	const std::string saveStrategy =
-		jsonGetString(params, "save_strategy", "minimal");
-	const bool emitNops =
-		jsonGetBool(params, "emit_nops_for_alignment", false);
-	int padNops = jsonGetInt(params, "pad_nops", emitNops ? 1 : 0);
-	std::ostringstream block;
-	block << marker << "\n";
-	// Save/restore占位：使用独立寄存器，避免影响原有寄存器
-	block << ".reg .u64 %ptxpass_e0;\n";
-	if (saveStrategy == "full") {
-		block << ".reg .u64 %ptxpass_e1;\n"; // 可扩展更多保存
-	}
-	block << "mov.u64 %ptxpass_e0, %globaltimer;\n";
-	while (padNops-- > 0)
-		block << "nop;\n";
-	out.insert(insertPos, block.str());
-	return { out, true };
+	return { "", false };
 }
 
 std::pair<std::string, bool> instrumentRetprobe(const std::string &input,
-						const json &params)
+						const RetprobeParams &params)
 {
-	const std::string marker = "// __ptxpass_ret_injected__";
-	if (hasMarker(input, marker))
-		return { "", false };
 	auto retPos = input.find("ret;");
 	if (retPos == std::string::npos)
 		return { "", false };
 	std::string out = input;
 	// Ensure reg decl exists near the start of function body
-	const std::string regMarker = "// __ptxpass_regdecl_ret__";
-	if (!hasMarker(out, regMarker)) {
-		size_t entryPos = out.find(".visible .entry");
-		if (entryPos != std::string::npos) {
-			size_t bracePos = out.find('{', entryPos);
-			if (bracePos != std::string::npos) {
-				size_t insertPos = bracePos + 1;
-				if (insertPos < out.size() &&
-				    out[insertPos] == '\n')
-					insertPos += 1;
-				std::ostringstream decl;
-				decl << regMarker << "\n";
-				decl << ".reg .u64 %ptxpass_r0;\n";
-				if (jsonGetString(params, "save_strategy",
-						  "minimal") == "full") {
-					decl << ".reg .u64 %ptxpass_r1;\n";
-				}
-				out.insert(insertPos, decl.str());
+	size_t entryPos = out.find(".visible .entry");
+	if (entryPos != std::string::npos) {
+		size_t bracePos = out.find('{', entryPos);
+		if (bracePos != std::string::npos) {
+			size_t insertPos = bracePos + 1;
+			if (insertPos < out.size() && out[insertPos] == '\n')
+				insertPos += 1;
+			std::ostringstream decl;
+			decl << ".reg .u64 %ptxpass_r0;\n";
+			if (params.save_strategy == "full") {
+				decl << ".reg .u64 %ptxpass_r1;\n";
 			}
+			out.insert(insertPos, decl.str());
 		}
 	}
-	// Insert timer read (以及可选的对齐nop) before 'ret;'
+	// Insert timer read
 	std::ostringstream inj;
-	inj << marker << "\n"
-	    << "mov.u64 %ptxpass_r0, %globaltimer;\n";
-	if (jsonGetBool(params, "emit_nops_for_alignment", false)) {
-		int padNops = jsonGetInt(params, "pad_nops", 1);
+	inj << "mov.u64 %ptxpass_r0, %globaltimer;\n";
+	if (params.emit_nops_for_alignment) {
+		int padNops = params.pad_nops;
 		while (padNops-- > 0)
 			inj << "nop;\n";
 	}
@@ -350,12 +257,9 @@ std::pair<std::string, bool> instrumentRetprobe(const std::string &input,
 	return { out, true };
 }
 
-std::pair<std::string, bool> instrumentMemcapture(const std::string &input,
-						  const json &params)
+std::pair<std::string, bool>
+instrumentMemcapture(const std::string &input, const MemcaptureParams &params)
 {
-	const std::string marker = "// __ptxpass_memcapture_injected__";
-	if (hasMarker(input, marker))
-		return { "", false };
 	size_t entryPos = input.find(".visible .entry");
 	if (entryPos == std::string::npos)
 		return { "", false };
@@ -366,16 +270,14 @@ std::pair<std::string, bool> instrumentMemcapture(const std::string &input,
 	if (insertPos < input.size() && input[insertPos] == '\n')
 		insertPos += 1;
 	std::string out = input;
-	const bool emitNops =
-		jsonGetBool(params, "emit_nops_for_alignment", false);
-	int padNops = jsonGetInt(params, "pad_nops", emitNops ? 1 : 0);
+	const bool emitNops = params.emit_nops_for_alignment;
+	int padNops = params.pad_nops;
 	std::ostringstream block;
-	block << marker << "\n";
 	block << ".reg .u64 %ptxpass_m0;\n";
 	block << "mov.u64 %ptxpass_m0, %globaltimer;\n";
-	// 预留memcapture参数注入位点
-	int bufferBytes = jsonGetInt(params, "buffer_bytes", 4096);
-	int maxSegments = jsonGetInt(params, "max_segments", 4);
+
+	int bufferBytes = params.buffer_bytes;
+	int maxSegments = params.max_segments;
 	(void)bufferBytes;
 	(void)maxSegments; // 先占位，不破坏参数接口
 	while (padNops-- > 0)
@@ -384,52 +286,142 @@ std::pair<std::string, bool> instrumentMemcapture(const std::string &input,
 	return { out, true };
 }
 
-std::pair<std::string, bool> instrumentMemcaptureAdvanced(
-    const std::string &input,
-    int bufferBytes,
-    int maxSegments,
-    bool allowPartial,
-    const std::string &srcRegOrSymbol)
+std::pair<std::string, bool>
+instrumentMemcaptureAdvanced(const std::string &input, int bufferBytes,
+			     int maxSegments, bool allowPartial,
+			     const std::string &srcRegOrSymbol)
 {
-    const std::string marker = "// __ptxpass_memcapture_injected__";
-    if (hasMarker(input, marker)) return {"", false};
-    size_t entryPos = input.find(".visible .entry");
-    if (entryPos == std::string::npos) return {"", false};
-    size_t bracePos = input.find('{', entryPos);
-    if (bracePos == std::string::npos) return {"", false};
-    size_t insertPos = bracePos + 1; if (insertPos < input.size() && input[insertPos] == '\n') insertPos += 1;
+	size_t entryPos = input.find(".visible .entry");
+	if (entryPos == std::string::npos)
+		return { "", false };
+	size_t bracePos = input.find('{', entryPos);
+	if (bracePos == std::string::npos)
+		return { "", false };
+	size_t insertPos = bracePos + 1;
+	if (insertPos < input.size() && input[insertPos] == '\n')
+		insertPos += 1;
 
-    std::ostringstream oss;
-    oss << marker << "\n";
-    int alignedBytes = ((bufferBytes + 15) / 16) * 16;
-    if (alignedBytes <= 0) alignedBytes = 16;
-    // declare locals and regs
-    oss << ".local .align 16 .b8 __ptxpass_mem_buf[" << alignedBytes << "];\n";
-    oss << ".reg .u64 %ptxpass_m0, %ptxpass_m1, %ptxpass_m2;\n";
-    oss << ".reg .pred %ptxpass_p0;\n";
-    // compute addresses
-    oss << "cvta.local.u64 %ptxpass_m0, __ptxpass_mem_buf;\n";
-    oss << "mov.u64 %ptxpass_m1, " << srcRegOrSymbol << ";\n";
-    // copy loop
-    oss << "mov.u64 %ptxpass_m2, 0;\n";
-    oss << "__ptxpass_mem_loop_check:\n";
-    oss << "setp.ge.u64 %ptxpass_p0, %ptxpass_m2, " << alignedBytes << ";\n";
-    oss << "@%ptxpass_p0 bra __ptxpass_mem_loop_end;\n";
-    if (!allowPartial) {
-        oss << "ld.global.v4.u32 {%r10,%r11,%r12,%r13}, [%ptxpass_m1+%ptxpass_m2];\n";
-        oss << "st.local.v4.u32 [%ptxpass_m0+%ptxpass_m2], {%r10,%r11,%r12,%r13};\n";
-    } else {
-        oss << "// partial allowed: best-effort 16B\n";
-        oss << "ld.global.v4.u32 {%r10,%r11,%r12,%r13}, [%ptxpass_m1+%ptxpass_m2];\n";
-        oss << "st.local.v4.u32 [%ptxpass_m0+%ptxpass_m2], {%r10,%r11,%r12,%r13};\n";
-    }
-    oss << "add.u64 %ptxpass_m2, %ptxpass_m2, 16;\n";
-    oss << "bra __ptxpass_mem_loop_check;\n";
-    oss << "__ptxpass_mem_loop_end:\n";
+	std::ostringstream oss;
+	int alignedBytes = ((bufferBytes + 15) / 16) * 16;
+	if (alignedBytes <= 0)
+		alignedBytes = 16;
+	// declare locals and regs
+	oss << ".local .align 16 .b8 __ptxpass_mem_buf[" << alignedBytes
+	    << "];\n";
+	oss << ".reg .u64 %ptxpass_m0, %ptxpass_m1, %ptxpass_m2;\n";
+	oss << ".reg .pred %ptxpass_p0;\n";
+	// compute addresses
+	oss << "cvta.local.u64 %ptxpass_m0, __ptxpass_mem_buf;\n";
+	oss << "mov.u64 %ptxpass_m1, " << srcRegOrSymbol << ";\n";
+	// copy loop
+	oss << "mov.u64 %ptxpass_m2, 0;\n";
+	oss << "__ptxpass_mem_loop_check:\n";
+	oss << "setp.ge.u64 %ptxpass_p0, %ptxpass_m2, " << alignedBytes
+	    << ";\n";
+	oss << "@%ptxpass_p0 bra __ptxpass_mem_loop_end;\n";
+	if (!allowPartial) {
+		oss << "ld.global.v4.u32 {%r10,%r11,%r12,%r13}, [%ptxpass_m1+%ptxpass_m2];\n";
+		oss << "st.local.v4.u32 [%ptxpass_m0+%ptxpass_m2], {%r10,%r11,%r12,%r13};\n";
+	} else {
+		oss << "// partial allowed: best-effort 16B\n";
+		oss << "ld.global.v4.u32 {%r10,%r11,%r12,%r13}, [%ptxpass_m1+%ptxpass_m2];\n";
+		oss << "st.local.v4.u32 [%ptxpass_m0+%ptxpass_m2], {%r10,%r11,%r12,%r13};\n";
+	}
+	oss << "add.u64 %ptxpass_m2, %ptxpass_m2, 16;\n";
+	oss << "bra __ptxpass_mem_loop_check;\n";
+	oss << "__ptxpass_mem_loop_end:\n";
 
-    std::string out = input;
-    out.insert(insertPos, oss.str());
-    return { out, true };
+	std::string out = input;
+	out.insert(insertPos, oss.str());
+	return { out, true };
 }
 
+} // namespace ptxpass
+
+namespace ptxpass
+{
+std::string filter_out_version_headers_ptx(const std::string &input)
+{
+	static const std::string FILTERED_OUT_PREFIXES[] = {
+		".version", ".target", ".address_size", "//"
+	};
+	std::istringstream iss(input);
+	std::ostringstream oss;
+	std::string line;
+	std::set<std::string> seen;
+	while (std::getline(iss, line)) {
+		bool skip = false;
+		for (const auto &p : FILTERED_OUT_PREFIXES) {
+			if (line.rfind(p, 0) == 0) {
+				if (seen.contains(p))
+					skip = true;
+				else
+					seen.insert(p);
+				break;
+			}
+		}
+		if (!skip)
+			oss << line << '\n';
+	}
+	return oss.str();
+}
+
+std::string compile_ebpf_to_ptx_from_words(const std::vector<uint64_t> &words,
+					   const std::string &target_sm)
+{
+	std::vector<ebpf_inst> insts;
+	insts.reserve(words.size());
+	for (auto w : words) {
+		ebpf_inst ins{};
+		ins.opcode = (uint8_t)(w & 0xFF);
+		ins.dst = (uint8_t)((w >> 8) & 0xF);
+		ins.src = (uint8_t)((w >> 12) & 0xF);
+		ins.offset = (int16_t)((w >> 16) & 0xFFFF);
+		ins.imm = (int32_t)(w >> 32);
+		insts.push_back(ins);
+	}
+	bpftime::llvmbpf_vm vm;
+	vm.unload_code();
+	vm.load_code(insts.data(), insts.size() * 8);
+	auto ptx = vm.generate_ptx(target_sm.c_str());
+	return filter_out_version_headers_ptx(ptx.value_or(""));
+}
+
+std::pair<size_t, size_t> find_kernel_body(const std::string &ptx,
+					   const std::string &kernel)
+{
+	static std::regex kernel_entry(
+		R"(\.visible\s+\.entry\s+(\w+)\s*\(([^)]*)\))");
+	std::smatch m;
+	std::string::const_iterator search_start(ptx.cbegin());
+	while (std::regex_search(search_start, ptx.cend(), m, kernel_entry)) {
+		if (m[1] == kernel) {
+			size_t begin = (size_t)(m[0].first - ptx.cbegin());
+			size_t end = begin;
+			std::vector<char> st;
+			do {
+				while (end < ptx.size() && ptx[end] != '{' &&
+				       ptx[end] != '}')
+					end++;
+				if (end >= ptx.size())
+					break;
+				if (ptx[end] == '{')
+					st.push_back('{');
+				else
+					st.pop_back();
+				end++;
+			} while (!st.empty());
+			return { begin, end };
+		}
+		search_start = m.suffix().first;
+	}
+	return { std::string::npos, std::string::npos };
+}
+
+void log_transform_stats(const char *pass_name, int matched, size_t bytes_in,
+			 size_t bytes_out)
+{
+	std::cerr << "[ptxpass] " << pass_name << ": matched=" << matched
+		  << ", in=" << bytes_in << ", out=" << bytes_out << "\n";
+}
 } // namespace ptxpass

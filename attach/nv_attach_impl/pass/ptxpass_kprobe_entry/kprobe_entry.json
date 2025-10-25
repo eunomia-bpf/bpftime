@@ -1,9 +1,12 @@
 {
-    "executable": "ptxpass_kprobe_entry",
-    "priority": 10,
-    "attach_point": {
-        "type": 8,
-        "expected_func_name_regex": "^.+$"
-    }
+    "name": "kprobe_entry",
+    "description": "Inject call at kernel entry for kprobe/*",
+    "attach_points": {
+        "includes": [
+            "^kprobe/.*$"
+        ],
+        "excludes": []
+    },
+    "parameters": {},
+    "validation": {}
 }
-

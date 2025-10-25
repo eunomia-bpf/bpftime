@@ -1,7 +1,31 @@
 #include "ptxpass/core.hpp"
+#include <vector>
 #include <exception>
 #include <iostream>
 #include <string>
+
+static std::pair<std::string, bool>
+patch_retprobe(const std::string &ptx, const std::string &kernel,
+	       const std::vector<uint64_t> &ebpf_words)
+{
+	auto func_ptx =
+		ptxpass::compile_ebpf_to_ptx_from_words(ebpf_words, "sm_60");
+	auto body = ptxpass::find_kernel_body(ptx, kernel);
+	if (body.first == std::string::npos)
+		return { "", false };
+	std::string out = ptx;
+	std::string section = out.substr(body.first, body.second - body.first);
+	static std::regex retpat(R"((\s+)(ret;))");
+	std::string fname = std::string("__probe_func__") + kernel;
+	std::ostringstream def;
+	def << ".func " << fname << "\n" << func_ptx << "\n";
+	section = std::regex_replace(
+		section, retpat, std::string("$1call ") + fname + ";\n$1$2");
+	out.replace(body.first, body.second - body.first, section);
+	out = def.str() + "\n" + out;
+	ptxpass::log_transform_stats("kretprobe", 1, ptx.size(), out.size());
+	return { out, true };
+}
 
 static void print_usage(const char *argv0)
 {
@@ -46,14 +70,28 @@ int main(int argc, char **argv)
 			return ExitCode::ConfigError;
 		}
 
-        std::string stdinData = readAllFromStdin();
-        auto [ri, isJson] = parseRuntimeInput(stdinData);
-        if (!isJson) return ExitCode::InputError;
-        if (!matcher.matches(ap)) return ExitCode::Success;
-        if (dryRun) return ExitCode::Success;
-        if (!validateInput(ri.full_ptx, cfg.validation)) return ExitCode::TransformFailed;
-        auto [out, modified] = instrumentRetprobe(ri.full_ptx, cfg.parameters);
-        if (modified && !isWhitespaceOnly(out)) emitRuntimeOutput(out);
+		std::string stdinData = readAllFromStdin();
+		auto [ri, isJson] = parseRuntimeInput(stdinData);
+		if (!isJson)
+			return ExitCode::InputError;
+		if (!matcher.matches(ap))
+			return ExitCode::Success;
+		if (dryRun)
+			return ExitCode::Success;
+		if (!validateInput(ri.full_ptx, cfg.validation))
+			return ExitCode::TransformFailed;
+		std::vector<uint64_t> words;
+		try {
+			auto j = nlohmann::json::parse(stdinData);
+			if (j.contains("ebpf_instructions"))
+				words = j["ebpf_instructions"]
+						.get<std::vector<uint64_t>>();
+		} catch (...) {
+		}
+		auto [out, modified] =
+			patch_retprobe(ri.full_ptx, ri.to_patch_kernel, words);
+		if (modified && !isWhitespaceOnly(out))
+			emitRuntimeOutput(out);
 		return ExitCode::Success;
 	} catch (const std::runtime_error &e) {
 		std::cerr << e.what() << "\n";
