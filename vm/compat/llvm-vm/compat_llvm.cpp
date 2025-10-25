@@ -2,6 +2,7 @@
 #include "spdlog/spdlog.h"
 #include <bpftime_vm_compat.hpp>
 #include <compat_llvm.hpp>
+#include <cstdio>
 #include <optional>
 #include <memory>
 
@@ -38,7 +39,7 @@ int bpftime_llvm_vm::exec(void *mem, size_t mem_len, uint64_t &bpf_return_value)
 
 std::vector<uint8_t> bpftime_llvm_vm::do_aot_compile(bool print_ir)
 {
-	std::optional<std::vector<uint8_t> > bytecode_optional =
+	std::optional<std::vector<uint8_t>> bytecode_optional =
 		bpftime::llvmbpf_vm::do_aot_compile(print_ir);
 	if (bytecode_optional.has_value()) {
 		return bytecode_optional.value();
@@ -78,7 +79,7 @@ namespace bpftime::vm::compat
 {
 namespace llvm
 {
-__attribute__((constructor(0))) static inline void register_llvm_vm_factory()
+__attribute__((constructor(0))) void register_llvm_vm_factory()
 {
 	register_vm_factory("llvm", create_llvm_vm_instance);
 	SPDLOG_DEBUG("llvm register vm factory\n");
