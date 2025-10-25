@@ -1,0 +1,20 @@
+{
+  "name": "kretprobe_default",
+  "description": "Default kretprobe transformer",
+  "attach_points": {
+    "includes": ["^kretprobe/.*$"]
+  },
+  "parameters": {
+    "preserve_original_return": true,
+    "record_latency_ns": true
+  },
+  "validation": {
+    "require_entry": true,
+    "require_ret": true
+  }
+}
+
+
+
+
+

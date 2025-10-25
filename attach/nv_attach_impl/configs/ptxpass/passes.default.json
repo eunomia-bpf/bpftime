@@ -1,0 +1,13 @@
+{
+  "passes": [
+    { "exec": "./build/attach/nv_attach_impl/pass/ptxpass_kprobe_entry/ptxpass_kprobe_entry", "config": "attach/nv_attach_impl/configs/ptxpass/kprobe_entry.json" },
+    { "exec": "./build/attach/nv_attach_impl/pass/ptxpass_kretprobe/ptxpass_kretprobe", "config": "attach/nv_attach_impl/configs/ptxpass/kretprobe.json" },
+    { "exec": "./build/attach/nv_attach_impl/pass/ptxpass_kprobe_memcapture/ptxpass_kprobe_memcapture", "config": "attach/nv_attach_impl/configs/ptxpass/kprobe_memcapture.json" }
+  ],
+  "fail_fast": false
+}
+
+
+
+
+

@@ -280,11 +280,7 @@ nv_attach_impl::patch_with_probe_and_retprobe(std::string ptx,
 					      const nv_attach_entry &entry,
 					      bool should_set_trampoline)
 {
-	const auto &probe_detail =
-		std::get<nv_attach_function_probe>(entry.type);
 	std::vector<std::string> targets = entry.kernels;
-	if (targets.empty())
-		targets.push_back(probe_detail.func);
 
 	for (const auto &target : targets) {
 		static std::regex kernel_entry_finder(
@@ -323,12 +319,7 @@ nv_attach_impl::patch_with_probe_and_retprobe(std::string ptx,
 			kernel_sec.end = idx;
 			if (kernel_sec.name == target) {
 				auto probe_func_name =
-					(probe_detail.is_retprobe ?
-						 std::string(
-							 "__retprobe_func__") :
-						 std::string(
-							 "__probe_func__")) +
-					target;
+					std::string("__probe_func__") + target;
 				auto compiled_ebpf_ptx =
 					generate_ptx_for_ebpf(entry.instuctions,
 							      probe_func_name,

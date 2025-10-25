@@ -1,0 +1,9 @@
+{
+    "executable": "ptxpass_kprobe_entry",
+    "priority": 10,
+    "attach_point": {
+        "type": 8,
+        "expected_func_name_regex": "^.+$"
+    }
+}
+
