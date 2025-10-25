@@ -24,8 +24,6 @@ PtxPassesConfig load_passes_config(const std::string &path)
 	json j;
 	ifs >> j;
 	PtxPassesConfig cfg;
-	if (j.contains("fail_fast"))
-		cfg.fail_fast = j["fail_fast"].get<bool>();
 	if (j.contains("passes") && j["passes"].is_array()) {
 		for (auto &p : j["passes"]) {
 			PtxPassSpec spec;
@@ -100,10 +98,7 @@ std::optional<std::string> run_ptx_pipeline(const std::string &attach_point,
 						    to_patch_kernel, map_sym,
 						    const_sym, empty);
 		if (!res.has_value()) {
-			if (config.fail_fast)
-				return std::nullopt;
-			else
-				continue;
+			else continue;
 		}
 		if (!res->empty())
 			current = *res;

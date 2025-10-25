@@ -15,7 +15,6 @@ struct PtxPassSpec {
 
 struct PtxPassesConfig {
 	std::vector<PtxPassSpec> passes;
-	bool fail_fast = false;
 };
 
 // Load pipeline config from JSON file.
@@ -35,9 +34,6 @@ load_passes_from_envdir_or_default(const std::string &default_dir,
 				   const std::string &default_config_path);
 
 // Run PTX through all passes for a given attach point.
-// Returns transformed PTX string on success. When a pass fails:
-// - if fail_fast is true, returns std::nullopt
-// - otherwise, continues with current PTX
 std::optional<std::string> run_ptx_pipeline(const std::string &attach_point,
 					    const std::string &original_ptx,
 					    const PtxPassesConfig &config);

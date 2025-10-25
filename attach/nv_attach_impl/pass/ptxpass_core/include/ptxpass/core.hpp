@@ -122,21 +122,6 @@ bool containsRetInstruction(const std::string &input);
 bool validatePtxVersion(const std::string &input,
 			const std::string &minVersion);
 
-// Markers and transforms (return {output, modified})
-bool hasMarker(const std::string &input, const std::string &marker);
-std::pair<std::string, bool> instrumentEntry(const std::string &input,
-					     const EntryParams &params);
-std::pair<std::string, bool> instrumentRetprobe(const std::string &input,
-						const RetprobeParams &params);
-std::pair<std::string, bool>
-instrumentMemcapture(const std::string &input, const MemcaptureParams &params);
-
-// Advanced memcapture with boundary checks and loop copy into a local buffer
-std::pair<std::string, bool>
-instrumentMemcaptureAdvanced(const std::string &input, int bufferBytes,
-			     int maxSegments, bool allowPartial,
-			     const std::string &srcRegOrSymbol);
-
 // nlohmann::json arbitrary type conversions for runtime and params
 inline void from_json(const nlohmann::json &j, RuntimeInput &ri)
 {
