@@ -1,59 +1,57 @@
-## NV PTX Passes - 如何运行端到端
+## NV PTX Passes - How to Run End-to-End
 
-本说明演示如何在现有 CUDA 例子上触发 nv_attach_impl 的 fatbin 处理流程（提取 PTX -> 串行执行外部 Pass -> 加 trampoline -> nvcc 重打包 fatbin）。
+This guide demonstrates how to trigger the `nv_attach_impl` fatbin processing workflow on an existing CUDA example. The process involves extracting PTX, serially executing external passes, adding a trampoline, and repackaging the fatbin with `nvcc`.
 
-### 先决条件
-- 已安装 CUDA（例如 `/usr/local/cuda-12.6`）。
-- 可用的 `nvcc` 和 `cuobjdump`。
+### Prerequisites
+- CUDA is installed (e.g., in `/usr/local/cuda-12.6`).
+- `nvcc` and `cuobjdump` are available in your PATH.
 
-### 构建与运行（自动脚本）
+### Build and Run (Automated Script)
 
 ```bash
-# 可选：指定 CUDA 路径
+# Optional: Specify the CUDA installation path
 export BPFTIME_CUDA_ROOT=/usr/local/cuda-12.6
 
-# 运行脚本（会自动构建并运行 server/client）
+# Run the script (this will automatically build and run the server/client)
 bash example/gpu/cuda-counter/run_nv_ptx_passes.sh
 ```
 
-脚本步骤：
-- 使用 `-DBPFTIME_ENABLE_CUDA_ATTACH=ON` 和 `-DBPFTIME_CUDA_ROOT` 构建 bpftime
-- 构建 `example/gpu/cuda-counter` 下的 `cuda_probe` 和 `vec_add`
-- 启动 server（syscall-server 预加载）
-- 以 agent 预加载方式运行 `vec_add`，触发 CUDA fatbin 注册
-- 在 `/tmp/bpftime-recompile-nvcc` 下检查 `main.ptx`（已串行执行外部 pass）、`out.fatbin`（重打包结果）
+**Script Steps:**
+- Builds `bpftime` with the flags `-DBPFTIME_ENABLE_CUDA_ATTACH=ON` and `-DBPFTIME_CUDA_ROOT`.
+- Builds the `cuda_probe` and `vec_add` examples located in `example/gpu/cuda-counter`.
+- Starts the server (with syscall-server preloaded).
+- Runs `vec_add` with the agent preloaded, which triggers the CUDA fatbin registration.
+- Inspects the output files `main.ptx` (after serial execution of external passes) and `out.fatbin` (the repackaged result) in the `/tmp/bpftime-recompile-nvcc` directory.
 
-### 预期结果
-- `vec_add` 正常运行输出；server 端日志可观察 CUDA 事件。
-- `/tmp/bpftime-recompile-nvcc/main.ptx` 存在，且包含注入标记与指令：
-  - `// __ptxpass_entry_injected__`、`// __ptxpass_ret_injected__`、`// __ptxpass_memcapture_injected__`
-  - 专用寄存器与 `mov.u64 %..., %globaltimer;` 指令
-- `/tmp/bpftime-recompile-nvcc/out.fatbin` 存在，显示非零大小（已用 nvcc 重打包）。
+### Expected Results
+- The `vec_add` program should run and produce its normal output; CUDA events should be observable in the server-side logs.
+- The file `/tmp/bpftime-recompile-nvcc/main.ptx` should exist and contain the following:
+  - A `.func __probe_func__<kernel>` definition.
+  - A `call __probe_func__<kernel>;` instruction inside the target kernel's body.
+  - If memory capture attach is enabled, a `.func __memcapture__N` definition and a corresponding `call __memcapture__N;` instruction will be present.
+  - The file should **not** contain any temporary registers like `%ptxpass_*`, `mov.u64 %..., %globaltimer;` instructions, or any injected marker comments (as these should have been removed).
+- The file `/tmp/bpftime-recompile-nvcc/out.fatbin` should exist and be non-empty (indicating it has been repackaged by `nvcc`).
 
-### 失败排查
-- 若未生成 `/tmp/bpftime-recompile-nvcc/main.ptx`：
-  - 检查 `passes.default.json` 路径是否为 `attach/nv_attach_impl/configs/ptxpass/passes.default.json`
-  - 检查三个可执行是否存在：
+### Troubleshooting
+- If `/tmp/bpftime-recompile-nvcc/main.ptx` is not generated:
+  - Verify that the following three executables exist:
     - `build/attach/nv_attach_impl/pass/ptxpass_kprobe_entry/ptxpass_kprobe_entry`
     - `build/attach/nv_attach_impl/pass/ptxpass_kretprobe/ptxpass_kretprobe`
     - `build/attach/nv_attach_impl/pass/ptxpass_kprobe_memcapture/ptxpass_kprobe_memcapture`
-  - 查看运行日志，确认 `hack_fatbin` 已执行
+  - To drive the pass order and subset via JSON configuration, set the `BPFTIME_PTXPASS_DIR` environment variable to a directory containing `*.json` configuration files. The log should print "Discovered <N> pass definitions from <dir>".
+  - If the log shows "Discovered 0 pass definitions...", the system will use a fallback process (which can still complete the injection and repackaging). Check the run logs to confirm that `hack_fatbin` has been executed.
 
-### Pass 独立可执行与配置（JSON-only I/O）
-- 路径：`attach/nv_attach_impl/pass/ptxpass_*`
-  - 所有 pass 通过 stdin/stdout 进行 JSON 结构通信（不再接受纯文本 PTX）：
-    - 输入（stdin）：
-      - `full_ptx`: string，完整待处理 PTX
-      - `to_patch_kernel`: string，目标 kernel 名（可选）
-      - `global_ebpf_map_info_symbol`: string，默认 `map_info`
-      - `ebpf_communication_data_symbol`: string，默认 `constData`
-      - 其他 pass 特定字段（如 memcapture 的 `source_symbol`、`copy_bytes`、`align_bytes` 等）
-    - 输出（stdout）：
-      - `output_ptx`: string，变换后的 PTX（空字符串或缺省表示不修改）
-  - `PTX_ATTACH_POINT` 环境变量传入当前处理的 attach point
-- 默认 JSON 配置位于：`attach/nv_attach_impl/configs/ptxpass/*.json`
-- 编排顺序配置：`attach/nv_attach_impl/configs/ptxpass/passes.default.json`
-
-
-
-
+### Pass Standalone Executable & Configuration (JSON-only I/O)
+- **Path:** `attach/nv_attach_impl/pass/ptxpass_*`
+  - All passes communicate via JSON-structured data through stdin/stdout (plain text PTX is no longer accepted):
+    - **Input (stdin):**
+      - `full_ptx`: string, the complete PTX to be processed.
+      - `to_patch_kernel`: string, the name of the target kernel (optional).
+      - `global_ebpf_map_info_symbol`: string, defaults to `map_info`.
+      - `ebpf_communication_data_symbol`: string, defaults to `constData`.
+      - Other pass-specific fields (e.g., `source_symbol`, `copy_bytes`, `align_bytes` for memcapture).
+    - **Output (stdout):**
+      - `output_ptx`: string, the transformed PTX (an empty string or omitted field indicates no modifications).
+  - The `PTX_ATTACH_POINT` environment variable is passed to specify the current attachment point being processed.
+  - **Note:** Stdin only accepts JSON. Non-JSON input will cause the program to error out and exit immediately.
+- **Default JSON configurations** are located at: `attach/nv_attach_impl/configs/ptxpass/*.json` (these can be copied to a custom directory and specified via `BPFTIME_PTXPASS_DIR`).

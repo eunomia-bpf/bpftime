@@ -34,6 +34,7 @@
 #include <variant>
 #include <vector>
 #include <boost/asio.hpp>
+#include "ptxpass/core.hpp"
 using namespace bpftime;
 using namespace attach;
 
@@ -91,37 +92,6 @@ void nv_attach_impl::register_custom_helpers(
 	register_callback(506, "gpu_membar_sys",
 			  (void *)(uintptr_t)host_helper_ext_membar);
 }
-
-// Provide local definition to avoid undefined symbol at runtime
-namespace bpftime::attach
-{
-std::string filter_out_version_headers(const std::string &input)
-{
-	static const std::string FILTERED_OUT_PREFIXES[] = {
-		".version", ".target", ".address_size", "//"
-	};
-	std::istringstream iss(input);
-	std::ostringstream oss;
-	std::string line;
-	std::set<std::string> found_patterns;
-
-	while (std::getline(iss, line)) {
-		bool skip = false;
-		for (const auto &s : FILTERED_OUT_PREFIXES) {
-			if (line.starts_with(s)) {
-				if (found_patterns.contains(s))
-					skip = true;
-				else
-					found_patterns.insert(s);
-				break;
-			}
-		}
-		if (!skip)
-			oss << line << std::endl;
-	}
-	return oss.str();
-}
-} // namespace bpftime::attach
 
 int nv_attach_impl::create_attach_with_ebpf_callback(
 	ebpf_run_callback &&cb, const attach_private_data &private_data,
@@ -420,7 +390,7 @@ nv_attach_impl::hack_fatbin(std::vector<uint8_t> &&data_vec)
 		return {};
 	}
 	to_patch_ptx = wrap_ptx_with_trampoline(to_patch_ptx);
-	to_patch_ptx = filter_out_version_headers(to_patch_ptx);
+	to_patch_ptx = ptxpass::filter_out_version_headers_ptx(to_patch_ptx);
 	{
 		// filter out comment lines
 		std::istringstream iss(to_patch_ptx);
@@ -651,7 +621,7 @@ int nv_attach_impl::run_attach_entry_on_gpu(int attach_id, int run_count,
 	}
 	SPDLOG_INFO("Running program on GPU");
 
-	auto ptx = filter_out_version_headers(
+	auto ptx = ptxpass::filter_out_version_headers_ptx(
 		wrap_ptx_with_trampoline(filter_compiled_ptx_for_ebpf_program(
 			generate_ptx_for_ebpf(insts, "bpf_main", false, false),
 			"bpf_main")));

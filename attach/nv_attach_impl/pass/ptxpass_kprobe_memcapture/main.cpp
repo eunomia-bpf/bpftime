@@ -197,8 +197,6 @@ int main(int argc, char **argv)
 		if (!validateInput(ri.full_ptx, cfg.validation)) {
 			return ExitCode::TransformFailed;
 		}
-		// 方案1：复用旧编译链：从 stdin JSON 读取 ebpf_instructions
-		// 并按旧逻辑为每条 ld/st 生成专用 probe
 		std::vector<uint64_t> words;
 		try {
 			auto j = nlohmann::json::parse(stdinData);

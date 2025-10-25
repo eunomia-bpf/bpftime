@@ -279,7 +279,7 @@ instrumentMemcapture(const std::string &input, const MemcaptureParams &params)
 	int bufferBytes = params.buffer_bytes;
 	int maxSegments = params.max_segments;
 	(void)bufferBytes;
-	(void)maxSegments; // 先占位，不破坏参数接口
+	(void)maxSegments; 
 	while (padNops-- > 0)
 		block << "nop;\n";
 	out.insert(insertPos, block.str());
