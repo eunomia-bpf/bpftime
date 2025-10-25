@@ -129,6 +129,24 @@ std::pair<RuntimeInput, bool> parseRuntimeInput(const std::string &stdinData)
 	}
 }
 
+std::pair<RuntimeRequest, bool>
+parseRuntimeRequest(const std::string &stdinData)
+{
+	RuntimeRequest rr;
+	try {
+		auto j = json::parse(stdinData);
+		rr = j.get<RuntimeRequest>();
+		return { rr, true };
+	} catch (const std::exception &e) {
+		std::cerr << "[ptxpass] Error: stdin must be JSON. "
+			  << "Parse failed: " << e.what() << "\n";
+		return { rr, false };
+	} catch (...) {
+		std::cerr << "[ptxpass] Error: stdin must be JSON.\n";
+		return { rr, false };
+	}
+}
+
 void emitRuntimeOutput(const std::string &outputPtx)
 {
 	RuntimeOutput ro{ outputPtx };

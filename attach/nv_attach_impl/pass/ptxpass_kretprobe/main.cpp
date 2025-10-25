@@ -71,25 +71,18 @@ int main(int argc, char **argv)
 		}
 
 		std::string stdinData = readAllFromStdin();
-		auto [ri, isJson] = parseRuntimeInput(stdinData);
+		auto [rr, isJson] = parseRuntimeRequest(stdinData);
 		if (!isJson)
 			return ExitCode::InputError;
 		if (!matcher.matches(ap))
 			return ExitCode::Success;
 		if (dryRun)
 			return ExitCode::Success;
-		if (!validateInput(ri.full_ptx, cfg.validation))
+		if (!validateInput(rr.input.full_ptx, cfg.validation))
 			return ExitCode::TransformFailed;
-		std::vector<uint64_t> words;
-		try {
-			auto j = nlohmann::json::parse(stdinData);
-			if (j.contains("ebpf_instructions"))
-				words = j["ebpf_instructions"]
-						.get<std::vector<uint64_t>>();
-		} catch (...) {
-		}
-		auto [out, modified] =
-			patch_retprobe(ri.full_ptx, ri.to_patch_kernel, words);
+		auto [out, modified] = patch_retprobe(rr.input.full_ptx,
+						      rr.input.to_patch_kernel,
+						      rr.ebpf_instructions);
 		if (modified && !isWhitespaceOnly(out))
 			emitRuntimeOutput(out);
 		return ExitCode::Success;

@@ -239,9 +239,8 @@ std::optional<std::string> run_pass_executable_json(
 		return std::string();
 	try {
 		auto j = nlohmann::json::parse(out_str);
-		if (j.contains("output_ptx") && j["output_ptx"].is_string())
-			return j["output_ptx"].get<std::string>();
-		return std::string();
+		ptxpass::RuntimeOutput ro = j.get<ptxpass::RuntimeOutput>();
+		return ro.output_ptx;
 	} catch (...) {
 		return std::nullopt; // invalid json
 	}

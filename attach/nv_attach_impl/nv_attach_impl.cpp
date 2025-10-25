@@ -160,34 +160,12 @@ int nv_attach_impl::create_attach_with_ebpf_callback(
 			    func_name);
 		return id;
 	}
-	// No matched definition: still record a generic entry for fallback
-	// pipeline
-	{
-		auto id = this->allocate_id();
-		nv_attach_entry entry;
-		entry.instuctions = data.instructions;
-		entry.kernels = data.func_names;
-		entry.program_name = data.program_name;
-		// derive attach point override
-		if (attach_type == ATTACH_CUDA_PROBE) {
-			if (func_name == "__memcapture")
-				entry.attach_point_override =
-					std::string("kprobe/__memcapture");
-			else
-				entry.attach_point_override =
-					std::string("kprobe/") + func_name;
-		} else if (attach_type == ATTACH_CUDA_RETPROBE) {
-			entry.attach_point_override =
-				std::string("kretprobe/") + func_name;
-		}
-		hook_entries[id] = std::move(entry);
-		this->map_basic_info = data.map_basic_info;
-		this->shared_mem_ptr = data.comm_shared_mem;
-		SPDLOG_INFO(
-			"No explicit pass matched; recorded generic entry for {}",
-			func_name);
-		return id;
-	}
+	// No matched definition: do not create generic entry; require explicit
+	// pass definition to avoid ambiguous instrumentation.
+	SPDLOG_WARN(
+		"No pass definition matched for function {}, attach_type {}. Skipping.",
+		func_name, attach_type);
+	return -1;
 }
 nv_attach_impl::nv_attach_impl()
 {

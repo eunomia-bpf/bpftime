@@ -7,7 +7,6 @@
 #include <sstream>
 #include <ebpf_inst.h>
 
-
 static std::pair<std::string, bool>
 patch_memcapture(const std::string &ptx,
 		 const std::vector<uint64_t> &ebpf_words)
@@ -180,8 +179,8 @@ int main(int argc, char **argv)
 		}
 
 		std::string stdinData = readAllFromStdin();
-		auto [ri, isJson] = parseRuntimeInput(stdinData);
-		// JSON-only 
+		auto [rr, isJson] = parseRuntimeRequest(stdinData);
+		// JSON-only
 		if (!isJson) {
 			return ExitCode::InputError;
 		}
@@ -193,19 +192,11 @@ int main(int argc, char **argv)
 			emitRuntimeOutput("");
 			return ExitCode::Success;
 		}
-		if (!validateInput(ri.full_ptx, cfg.validation)) {
+		if (!validateInput(rr.input.full_ptx, cfg.validation)) {
 			return ExitCode::TransformFailed;
 		}
-		std::vector<uint64_t> words;
-		try {
-			auto j = nlohmann::json::parse(stdinData);
-			if (j.contains("ebpf_instructions") &&
-			    j["ebpf_instructions"].is_array())
-				words = j["ebpf_instructions"]
-						.get<std::vector<uint64_t>>();
-		} catch (...) {
-		}
-		auto [out, modified] = patch_memcapture(ri.full_ptx, words);
+		auto [out, modified] = patch_memcapture(rr.input.full_ptx,
+							rr.ebpf_instructions);
 		emitRuntimeOutput(modified ? out : "");
 		return ExitCode::Success;
 	} catch (const std::runtime_error &e) {

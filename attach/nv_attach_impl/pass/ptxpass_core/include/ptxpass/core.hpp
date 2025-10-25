@@ -92,6 +92,11 @@ struct RuntimeOutput {
 	std::string output_ptx;
 };
 
+struct RuntimeRequest {
+	RuntimeInput input;
+	std::vector<uint64_t> ebpf_instructions;
+};
+
 // Parameter structs for typed deserialization
 struct EntryParams {
 	std::string save_strategy = "minimal"; // "minimal" or "full"
@@ -116,6 +121,10 @@ struct MemcaptureParams {
 // Try to parse JSON input using typed deserialization; fallback to plain PTX
 // Returns pair<RuntimeInput, bool isJsonMode>
 std::pair<RuntimeInput, bool> parseRuntimeInput(const std::string &stdinData);
+
+// Parse full request with ebpf_instructions; returns {request, is_json}
+std::pair<RuntimeRequest, bool>
+parseRuntimeRequest(const std::string &stdinData);
 
 // Emit JSON with {"output_ptx": "..."}
 void emitRuntimeOutput(const std::string &outputPtx);
@@ -153,6 +162,19 @@ inline void to_json(nlohmann::json &j, const RuntimeOutput &ro)
 {
 	j = nlohmann::json::object();
 	j["output_ptx"] = ro.output_ptx;
+}
+
+inline void from_json(const nlohmann::json &j, RuntimeOutput &ro)
+{
+	ro.output_ptx = j.value("output_ptx", std::string());
+}
+
+inline void from_json(const nlohmann::json &j, RuntimeRequest &rr)
+{
+	rr.input = j.get<RuntimeInput>();
+	if (j.contains("ebpf_instructions"))
+		rr.ebpf_instructions =
+			j.at("ebpf_instructions").get<std::vector<uint64_t>>();
 }
 
 // Shared utilities for PTX passes (refactored from legacy code)
