@@ -1,0 +1,17 @@
+{
+  "name": "kprobe_memcapture",
+  "description": "Capture memory at kprobe/__memcapture",
+  "attach_points": {
+    "includes": ["^kprobe/__memcapture$"]
+  },
+  "parameters": {
+    "buffer_bytes": 4096,
+    "max_segments": 4,
+    "allow_partial": true
+  }
+}
+
+
+
+
+

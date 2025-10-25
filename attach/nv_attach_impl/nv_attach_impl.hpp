@@ -21,6 +21,7 @@
 // #include <pos/include/oob/ckpt_dump.h>
 #include <variant>
 #include <vector>
+#include "ptxpass_pipeline.hpp"
 
 namespace bpftime
 {
@@ -57,22 +58,21 @@ struct CUDARuntimeFunctionHookerContext {
 	AttachedToFunction to_function;
 };
 
-struct nv_attach_cuda_memcapture {};
-struct nv_attach_function_probe {
-	std::string func;
-	bool is_retprobe;
-};
-struct nv_attach_directly_run_on_gpu {};
-using nv_attach_type =
-	std::variant<nv_attach_cuda_memcapture, nv_attach_function_probe,
-		     nv_attach_directly_run_on_gpu>;
 struct nv_attach_entry {
-	nv_attach_type type;
 	std::vector<ebpf_inst> instuctions;
 	// Kernels to be patched for this attach entry
 	std::vector<std::string> kernels;
 	// program name for this attach entry
 	std::string program_name;
+	// pass-based execution fields
+	std::string pass_exec; // resolved executable path for matched pass
+	int priority = 0; // pass priority (smaller is higher priority)
+	std::map<std::string, std::string> parameters; // arbitrary parameters
+						       // for pass
+    // Optional override of attach point string such as "kprobe/sys_read"
+    std::optional<std::string> attach_point_override;
+    // Extra serialized parameters (JSON string) reserved for future use
+    std::optional<std::string> extras;
 };
 
 // Attach implementation of syscall trace
@@ -117,6 +117,8 @@ class nv_attach_impl final : public base_attach_impl {
 	std::map<int, nv_attach_entry> hook_entries;
 	uintptr_t shared_mem_ptr;
 	std::optional<std::vector<MapBasicInfo>> map_basic_info;
+	// discovered pass definitions
+	std::vector<PassDefinition> pass_definitions;
 };
 std::string filter_unprintable_chars(std::string input);
 std::string filter_out_version_headers(const std::string &input);
