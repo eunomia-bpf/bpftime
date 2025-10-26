@@ -1,0 +1,12 @@
+{
+    "name": "kprobe_entry",
+    "description": "Inject call at kernel entry for kprobe/*",
+    "attach_points": {
+        "includes": [
+            "^kprobe/.*$"
+        ],
+        "excludes": []
+    },
+    "parameters": {},
+    "validation": {}
+}

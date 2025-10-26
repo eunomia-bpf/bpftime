@@ -1,0 +1,12 @@
+{
+    "name": "kretprobe",
+    "description": "Inject call before ret for kretprobe/*",
+    "attach_points": {
+        "includes": [
+            "^kretprobe/.*$"
+        ],
+        "excludes": []
+    },
+    "parameters": {},
+    "validation": {}
+}

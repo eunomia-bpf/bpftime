@@ -1,0 +1,11 @@
+{
+    "name": "kprobe_memcapture",
+    "description": "Emit a probe per ld/st and push source line text to eBPF stack",
+    "attach_points": {
+        "includes": [
+            "^kprobe/__memcapture$"
+        ]
+    },
+    "parameters": {},
+    "validation": {}
+}

@@ -4,14 +4,12 @@
 #include "ebpf_inst.h"
 #include "frida-gum.h"
 
-#include "llvm_jit_context.hpp"
 #include "nvPTXCompiler.h"
 #include "nv_attach_private_data.hpp"
 #include "nv_attach_utils.hpp"
 #include "spdlog/spdlog.h"
 #include <asm/unistd.h> // For architecture-specific syscall numbers
 #include <boost/process.hpp>
-#include <chrono>
 #include <cstdlib>
 #include <fstream>
 #include <cassert>
@@ -23,27 +21,82 @@
 #include <iterator>
 #include <memory>
 #include <set>
+#include <regex>
 #include <stdexcept>
 #include <string>
+#include <sstream>
 #include <sys/ptrace.h>
 #include <sys/wait.h>
 #include <sys/user.h>
 #include <sys/uio.h>
 #include <link.h>
-#include <thread>
 #include <unistd.h>
 #include <variant>
 #include <vector>
 #include <boost/asio.hpp>
+#include "ptxpass/core.hpp"
 using namespace bpftime;
 using namespace attach;
 
 extern GType cuda_runtime_function_hooker_get_type();
 
+namespace
+{
+// Host-side stub helpers used only for symbol binding during JIT; keep them
+// in an anonymous namespace to limit visibility and avoid global pollution.
+static inline uint64_t host_helper_ext_0502(uint64_t, uint64_t, uint64_t,
+					    uint64_t, uint64_t)
+{
+	using namespace std::chrono;
+	return (uint64_t)duration_cast<nanoseconds>(
+		       steady_clock::now().time_since_epoch())
+		.count();
+}
+
+static inline uint64_t host_helper_ext_xyz(uint64_t x, uint64_t y, uint64_t z,
+					   uint64_t, uint64_t)
+{
+	if (x)
+		*(uint64_t *)(uintptr_t)x = 0;
+	if (y)
+		*(uint64_t *)(uintptr_t)y = 0;
+	if (z)
+		*(uint64_t *)(uintptr_t)z = 0;
+	return 0;
+}
+
+static inline uint64_t host_helper_ext_membar(uint64_t, uint64_t, uint64_t,
+					      uint64_t, uint64_t)
+{
+	std::atomic_thread_fence(std::memory_order_seq_cst);
+	return 0;
+}
+} // namespace
+
 int nv_attach_impl::detach_by_id(int id)
 {
 	SPDLOG_INFO("Detaching is not supported by nv_attach_impl");
 	return 0;
+}
+
+void nv_attach_impl::register_custom_helpers(
+	ebpf_helper_register_callback register_callback)
+{
+	// Register minimal CUDA ext helpers required by LLVM-JIT-compiled eBPF
+	// programs to resolve external calls in PTX trampoline. Indices must
+	// match those used by compile-time in PTX trampoline and llvmbpf_vm.
+	// 502: get_global_timer; 503/504/505: blockIdx/blockDim/threadIdx; 506:
+	// membar
+	register_callback(502, "get_global_timer",
+			  (void *)(uintptr_t)host_helper_ext_0502);
+	register_callback(503, "get_block_idx",
+			  (void *)(uintptr_t)host_helper_ext_xyz);
+	register_callback(504, "get_block_dim",
+			  (void *)(uintptr_t)host_helper_ext_xyz);
+	register_callback(505, "get_thread_idx",
+			  (void *)(uintptr_t)host_helper_ext_xyz);
+	register_callback(506, "gpu_membar_sys",
+			  (void *)(uintptr_t)host_helper_ext_membar);
 }
 
 int nv_attach_impl::create_attach_with_ebpf_callback(
@@ -54,78 +107,65 @@ int nv_attach_impl::create_attach_with_ebpf_callback(
 
 	// Safely access the variant
 	if (!std::holds_alternative<std::string>(data.code_addr_or_func_name)) {
-		SPDLOG_ERROR("code_addr_or_func_name does not hold a string value");
+		SPDLOG_ERROR(
+			"code_addr_or_func_name does not hold a string value");
 		return -1;
 	}
-	const auto &func_name = std::get<std::string>(data.code_addr_or_func_name);
+	const auto &func_name =
+		std::get<std::string>(data.code_addr_or_func_name);
 
-	if (attach_type == ATTACH_CUDA_PROBE) {
-		if (func_name == "__memcapture") {
-			SPDLOG_INFO(
-				"Recording memcapture in nv_attach_impl, instructions count = {}",
-				data.instructions.size());
-			auto id = this->allocate_id();
-			hook_entries[id] = nv_attach_entry{
-				.type = nv_attach_cuda_memcapture{},
-				.instuctions = data.instructions,
-				.kernels = data.func_names,
-				.program_name = data.program_name
-			};
-			this->map_basic_info = data.map_basic_info;
-			this->shared_mem_ptr = data.comm_shared_mem;
-			return id;
-		} else if (func_name == "__directly_run") {
-			SPDLOG_INFO(
-				"Recording directly run program on GPU, instructions count = {}",
-				data.instructions.size());
-			auto id = allocate_id();
-			hook_entries[id] = nv_attach_entry{
-				.type = nv_attach_directly_run_on_gpu{},
-				.instuctions = data.instructions,
-				.kernels = data.func_names,
-				.program_name = data.program_name
-			};
-			this->map_basic_info = data.map_basic_info;
-			this->shared_mem_ptr = data.comm_shared_mem;
-		} else {
-			SPDLOG_INFO("Recording kprobe for {}", func_name);
-			auto id = this->allocate_id();
-			hook_entries[id] = nv_attach_entry{
-				.type =
-					nv_attach_function_probe{
-						.func = func_name,
-						.is_retprobe = false,
-					},
-				.instuctions = data.instructions,
-				.kernels = data.func_names,
-				.program_name = data.program_name
-			};
-			this->map_basic_info = data.map_basic_info;
-			this->shared_mem_ptr = data.comm_shared_mem;
-			return id;
+	// New: select pass by scanning configurations (type + regex)
+	const PassDefinition *matched = nullptr;
+	std::regex func_re;
+	for (const auto &pd : this->pass_definitions) {
+		if (pd.attach_point.type != attach_type)
+			continue;
+		try {
+			func_re = std::regex(
+				pd.attach_point.expected_func_name_regex);
+		} catch (...) {
+			continue;
 		}
-	} else if (attach_type == ATTACH_CUDA_RETPROBE) {
-		SPDLOG_INFO("Recording kretprobe for {}", func_name);
+		if (std::regex_match(func_name, func_re)) {
+			matched = &pd;
+			break; // pass_definitions is sorted deterministically
+			       // by executable
+		}
+	}
+	if (matched) {
 		auto id = this->allocate_id();
-		hook_entries[id] = nv_attach_entry{
-			.type =
-				nv_attach_function_probe{
-					.func = func_name,
-					.is_retprobe = true,
-				},
-			.instuctions = data.instructions,
-			.kernels = data.func_names,
-			.program_name = data.program_name
-		};
+		nv_attach_entry entry;
+		entry.instuctions = data.instructions;
+		entry.kernels = data.func_names;
+		entry.program_name = data.program_name;
+		entry.pass_exec = matched->executable;
+		entry.parameters["func_name"] = func_name;
+		entry.parameters["attach_type"] = std::to_string(attach_type);
+		// derive attach point override for fallback pipeline
+		if (attach_type == ATTACH_CUDA_PROBE) {
+			if (func_name == "__memcapture")
+				entry.attach_point_override =
+					std::string("kprobe/__memcapture");
+			else
+				entry.attach_point_override =
+					std::string("kprobe/") + func_name;
+		} else if (attach_type == ATTACH_CUDA_RETPROBE) {
+			entry.attach_point_override =
+				std::string("kretprobe/") + func_name;
+		}
+		hook_entries[id] = std::move(entry);
 		this->map_basic_info = data.map_basic_info;
 		this->shared_mem_ptr = data.comm_shared_mem;
+		SPDLOG_INFO("Recorded pass {} for func {}", matched->executable,
+			    func_name);
 		return id;
-	} else {
-		SPDLOG_ERROR("Unsupported attach type for nv_attach_impl: {}",
-			     attach_type);
-		return -1;
 	}
-	return 0;
+	// No matched definition: do not create generic entry; require explicit
+	// pass definition to avoid ambiguous instrumentation.
+	SPDLOG_WARN(
+		"No pass definition matched for function {}, attach_type {}. Skipping.",
+		func_name, attach_type);
+	return -1;
 }
 nv_attach_impl::nv_attach_impl()
 {
@@ -134,7 +174,8 @@ nv_attach_impl::nv_attach_impl()
 	auto interceptor = gum_interceptor_obtain();
 	if (interceptor == nullptr) {
 		SPDLOG_ERROR("Failed to obtain Frida interceptor");
-		throw std::runtime_error("Failed to initialize Frida interceptor");
+		throw std::runtime_error(
+			"Failed to initialize Frida interceptor");
 	}
 	auto listener =
 		g_object_new(cuda_runtime_function_hooker_get_type(), nullptr);
@@ -148,8 +189,9 @@ nv_attach_impl::nv_attach_impl()
 
 	auto register_hook = [&](AttachedToFunction func, void *addr) {
 		if (addr == nullptr) {
-			SPDLOG_WARN("Skipping hook registration for function {} - symbol not found",
-				     (int)func);
+			SPDLOG_WARN(
+				"Skipping hook registration for function {} - symbol not found",
+				(int)func);
 			return;
 		}
 		auto ctx = std::make_unique<CUDARuntimeFunctionHookerContext>();
@@ -163,26 +205,47 @@ nv_attach_impl::nv_attach_impl()
 		    result != GUM_ATTACH_OK) {
 			SPDLOG_ERROR("Unable to attach to CUDA functions: {}",
 				     (int)result);
-			throw std::runtime_error("Failed to attach to CUDA function");
+			throw std::runtime_error(
+				"Failed to attach to CUDA function");
 		}
 	};
 
-	void *register_fatbin_addr = dlsym(RTLD_NEXT, "__cudaRegisterFatBinary");
+	void *register_fatbin_addr =
+		dlsym(RTLD_NEXT, "__cudaRegisterFatBinary");
 	register_hook(AttachedToFunction::RegisterFatbin, register_fatbin_addr);
 
-	void *register_function_addr = GSIZE_TO_POINTER(gum_module_find_export_by_name(
-		nullptr, "__cudaRegisterFunction"));
-	register_hook(AttachedToFunction::RegisterFunction, register_function_addr);
+	void *register_function_addr =
+		GSIZE_TO_POINTER(gum_module_find_export_by_name(
+			nullptr, "__cudaRegisterFunction"));
+	register_hook(AttachedToFunction::RegisterFunction,
+		      register_function_addr);
 
-	void *register_fatbin_end_addr = GSIZE_TO_POINTER(gum_module_find_export_by_name(
-		nullptr, "__cudaRegisterFatBinaryEnd"));
-	register_hook(AttachedToFunction::RegisterFatbinEnd, register_fatbin_end_addr);
+	void *register_fatbin_end_addr =
+		GSIZE_TO_POINTER(gum_module_find_export_by_name(
+			nullptr, "__cudaRegisterFatBinaryEnd"));
+	register_hook(AttachedToFunction::RegisterFatbinEnd,
+		      register_fatbin_end_addr);
 
-	void *cuda_launch_kernel_addr = GSIZE_TO_POINTER(gum_module_find_export_by_name(
-		nullptr, "cudaLaunchKernel"));
-	register_hook(AttachedToFunction::CudaLaunchKernel, cuda_launch_kernel_addr);
+	void *cuda_launch_kernel_addr = GSIZE_TO_POINTER(
+		gum_module_find_export_by_name(nullptr, "cudaLaunchKernel"));
+	register_hook(AttachedToFunction::CudaLaunchKernel,
+		      cuda_launch_kernel_addr);
 
 	gum_interceptor_end_transaction(interceptor);
+
+	// Discover pass definitions from directory
+	try {
+		const char *env_dir = std::getenv("BPFTIME_PTXPASS_DIR");
+		std::string scan_dir = env_dir && std::strlen(env_dir) > 0 ?
+					       std::string(env_dir) :
+					       std::string(DEFAULT_PASSES_DIR);
+		this->pass_definitions =
+			load_pass_definitions_from_dir(scan_dir);
+		SPDLOG_INFO("Discovered {} pass definitions from {}",
+			    this->pass_definitions.size(), scan_dir.c_str());
+	} catch (const std::exception &e) {
+		SPDLOG_ERROR("Failed to load pass definitions: {}", e.what());
+	}
 }
 
 nv_attach_impl::~nv_attach_impl()
@@ -245,46 +308,73 @@ nv_attach_impl::hack_fatbin(std::vector<uint8_t> &&data_vec)
 		return {};
 	}
 
-	/**
-	Here we can patch the PTX. Then recompile it.
-	*/
-	bool trampoline_added = false;
+	// New: run discovered JSON-based pass executables in a deterministic
+	// order
 	auto &to_patch_ptx = ptx_out[0];
 	to_patch_ptx = filter_unprintable_chars(to_patch_ptx);
-	for (const auto &[_, entry] : hook_entries) {
-		if (std::holds_alternative<nv_attach_cuda_memcapture>(
-			    entry.type)) {
-			SPDLOG_INFO("Patching with memcapture..");
-			if (auto result = this->patch_with_memcapture(
-				    to_patch_ptx, entry, !trampoline_added);
-			    result.has_value()) {
-				to_patch_ptx = *result;
-				trampoline_added = true;
-			} else {
-				SPDLOG_ERROR("Failed to patch for memcapture");
-				return {};
-			}
-		} else if (std::holds_alternative<nv_attach_function_probe>(
-				   entry.type)) {
-			SPDLOG_INFO("Patching with kprobe/kretprobe");
-			if (auto result = this->patch_with_probe_and_retprobe(
-				    to_patch_ptx, entry, !trampoline_added);
-			    result.has_value()) {
-				to_patch_ptx = *result;
-				trampoline_added = true;
-			} else {
-				SPDLOG_ERROR(
-					"Failed to patch for probe/retprobe");
-				return {};
-			}
-		} else if (std::holds_alternative<nv_attach_directly_run_on_gpu>(
-				   entry.type)) {
-			SPDLOG_INFO(
-				"Found attach with nv_type nv_attach_directly_run_on_gpu, no need to patch");
+	const std::string map_sym = "map_info";
+	const std::string const_sym = "constData";
+	try {
+		// Build ordered list of ids for entries with configured pass
+		struct Item {
+			int id;
+		};
+		std::vector<Item> items;
+		for (const auto &kv : hook_entries) {
+			const auto &e = kv.second;
+			if (!e.pass_exec.empty())
+				items.push_back(Item{ kv.first });
 		}
+		std::sort(items.begin(), items.end(),
+			  [](const Item &a, const Item &b) {
+				  return a.id < b.id;
+			  });
+		for (const auto &it : items) {
+			const auto &e = hook_entries.at(it.id);
+			// Prefer attach_point_override when present
+			std::string attach_point;
+			if (e.attach_point_override.has_value())
+				attach_point = *e.attach_point_override;
+			// fallback: derive from parameters if needed (left as
+			// future extension) For each kernel, run the pass once;
+			// replace PTX if output is non-empty
+			const auto &kernels =
+				e.kernels.empty() ? std::vector<std::string>{} :
+						    e.kernels;
+			if (kernels.empty()) {
+				// Fallback to function name if provided in
+				// parameters
+				auto itf = e.parameters.find("func_name");
+				if (itf != e.parameters.end()) {
+					auto res = run_pass_executable_json(
+						e.pass_exec, to_patch_ptx,
+						itf->second, map_sym, const_sym,
+						e.instuctions);
+					if (res.has_value() && !res->empty())
+						to_patch_ptx = *res;
+				}
+				continue;
+			}
+			for (const auto &k : kernels) {
+				auto res = run_pass_executable_json(
+					e.pass_exec, to_patch_ptx, k, map_sym,
+					const_sym, e.instuctions);
+				if (!res.has_value()) {
+					SPDLOG_WARN(
+						"Pass {} failed for kernel {}",
+						e.pass_exec, k);
+					continue;
+				}
+				if (!res->empty())
+					to_patch_ptx = *res;
+			}
+		}
+	} catch (const std::exception &e) {
+		SPDLOG_ERROR("Pass execution error: {}", e.what());
+		return {};
 	}
 	to_patch_ptx = wrap_ptx_with_trampoline(to_patch_ptx);
-	to_patch_ptx = filter_out_version_headers(to_patch_ptx);
+	to_patch_ptx = ptxpass::filter_out_version_headers_ptx(to_patch_ptx);
 	{
 		// filter out comment lines
 		std::istringstream iss(to_patch_ptx);
@@ -314,7 +404,7 @@ nv_attach_impl::hack_fatbin(std::vector<uint8_t> &&data_vec)
 		// std::string ptx_in = "/tmp/main.ptx";
 		SPDLOG_INFO("PTX IN: {}", ptx_in.c_str());
 		std::ofstream ofs(ptx_in);
-		ofs << ptx_out[0];
+		ofs << to_patch_ptx;
 		command += ptx_in;
 		command += " ";
 	}
@@ -393,7 +483,8 @@ int nv_attach_impl::copy_data_to_trampoline_memory()
 		return -1;
 	}
 	if (!this->map_basic_info.has_value()) {
-		SPDLOG_ERROR("map_basic_info is not set, cannot copy to device");
+		SPDLOG_ERROR(
+			"map_basic_info is not set, cannot copy to device");
 		return -1;
 	}
 	SPDLOG_INFO("Copying the followed map info:");
@@ -459,7 +550,8 @@ std::string filter_unprintable_chars(std::string input)
 	while (!result.empty() && result.back() != '}')
 		result.pop_back();
 	if (result.empty()) {
-		SPDLOG_ERROR("filter_unprintable_chars: result is empty or no closing brace found");
+		SPDLOG_ERROR(
+			"filter_unprintable_chars: result is empty or no closing brace found");
 		return "";
 	}
 	return result;
@@ -504,23 +596,16 @@ int nv_attach_impl::run_attach_entry_on_gpu(int attach_id, int run_count,
 	std::vector<ebpf_inst> insts;
 	if (auto itr = hook_entries.find(attach_id);
 	    itr != hook_entries.end()) {
-		if (std::holds_alternative<nv_attach_directly_run_on_gpu>(
-			    itr->second.type)) {
-			insts = itr->second.instuctions;
-
-		} else {
-			SPDLOG_ERROR(
-				"Attach id {} is not expected to directly run on GPU",
-				attach_id);
-			return -1;
-		}
+		// In new flow, directly_run is not supported and should be
+		// represented by a dedicated pass
+		insts = itr->second.instuctions;
 	} else {
 		SPDLOG_ERROR("Invalid attach id {}", attach_id);
 		return -1;
 	}
 	SPDLOG_INFO("Running program on GPU");
 
-	auto ptx = filter_out_version_headers(
+	auto ptx = ptxpass::filter_out_version_headers_ptx(
 		wrap_ptx_with_trampoline(filter_compiled_ptx_for_ebpf_program(
 			generate_ptx_for_ebpf(insts, "bpf_main", false, false),
 			"bpf_main")));
@@ -531,7 +616,8 @@ int nv_attach_impl::run_attach_entry_on_gpu(int attach_id, int run_count,
 		// can be executed
 		auto bpf_main_pos = ptx.find(to_replace);
 		if (bpf_main_pos == ptx.npos) {
-			SPDLOG_ERROR("Cannot find '{}' in generated PTX code", to_replace);
+			SPDLOG_ERROR("Cannot find '{}' in generated PTX code",
+				     to_replace);
 			return -1;
 		}
 		ptx = ptx.replace(bpf_main_pos, to_replace.size(),
@@ -620,7 +706,8 @@ int nv_attach_impl::run_attach_entry_on_gpu(int attach_id, int run_count,
 			CUDA_SAFE_CALL(cuModuleGetGlobal(&ptr, &bytes, module,
 							 "map_info"));
 			if (!this->map_basic_info.has_value()) {
-				SPDLOG_ERROR("map_basic_info is not set, cannot copy to device");
+				SPDLOG_ERROR(
+					"map_basic_info is not set, cannot copy to device");
 				return -1;
 			}
 			CUDA_SAFE_CALL(cuMemcpyHtoD(
