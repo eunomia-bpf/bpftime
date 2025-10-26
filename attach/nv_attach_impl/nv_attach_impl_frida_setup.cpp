@@ -52,7 +52,7 @@ static void example_listener_on_enter(GumInvocationListener *listener,
 		while (true) {
 			// #define FATBIN_TEXT_MAGIC 0xBA55ED50
 			if (curr_header->magic == 0xBA55ED50) {
-				SPDLOG_INFO(
+				SPDLOG_DEBUG(
 					"Got CUBIN section header size = {}, size = {}",
 					static_cast<int>(
 						curr_header->header_size),
@@ -98,16 +98,13 @@ static void example_listener_on_enter(GumInvocationListener *listener,
 		   AttachedToFunction::RegisterFatbinEnd) {
 		SPDLOG_DEBUG("Entering __cudaRegisterFatBinaryEnd..");
 		auto &impl = *context->impl;
-		if (impl.trampoline_memory_state ==
-		    TrampolineMemorySetupStage::NotSet) {
-			auto arg = (void **)
+		auto arg = (void **)
 				gum_invocation_context_get_nth_argument(gum_ctx,
 									0);
 			if (int err = impl.register_trampoline_memory(arg);
 			    err != 0) {
 				assert(false);
 			}
-		}
 	} else if (context->to_function ==
 		   AttachedToFunction::CudaLaunchKernel) {
 		SPDLOG_DEBUG("Entering cudaLaunchKernel");

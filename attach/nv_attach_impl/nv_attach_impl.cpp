@@ -56,10 +56,12 @@ int nv_attach_impl::create_attach_with_ebpf_callback(
 
 	// Safely access the variant
 	if (!std::holds_alternative<std::string>(data.code_addr_or_func_name)) {
-		SPDLOG_ERROR("code_addr_or_func_name does not hold a string value");
+		SPDLOG_ERROR(
+			"code_addr_or_func_name does not hold a string value");
 		return -1;
 	}
-	const auto &func_name = std::get<std::string>(data.code_addr_or_func_name);
+	const auto &func_name =
+		std::get<std::string>(data.code_addr_or_func_name);
 
 	if (attach_type == ATTACH_CUDA_PROBE) {
 		if (func_name == "__memcapture") {
@@ -109,16 +111,15 @@ int nv_attach_impl::create_attach_with_ebpf_callback(
 	} else if (attach_type == ATTACH_CUDA_RETPROBE) {
 		SPDLOG_INFO("Recording kretprobe for {}", func_name);
 		auto id = this->allocate_id();
-		hook_entries[id] = nv_attach_entry{
-			.type =
-				nv_attach_function_probe{
-					.func = func_name,
-					.is_retprobe = true,
-				},
-			.instuctions = data.instructions,
-			.kernels = data.func_names,
-			.program_name = data.program_name
-		};
+		hook_entries[id] =
+			nv_attach_entry{ .type =
+						 nv_attach_function_probe{
+							 .func = func_name,
+							 .is_retprobe = true,
+						 },
+					 .instuctions = data.instructions,
+					 .kernels = data.func_names,
+					 .program_name = data.program_name };
 		this->map_basic_info = data.map_basic_info;
 		this->shared_mem_ptr = data.comm_shared_mem;
 		return id;
@@ -136,7 +137,8 @@ nv_attach_impl::nv_attach_impl()
 	auto interceptor = gum_interceptor_obtain();
 	if (interceptor == nullptr) {
 		SPDLOG_ERROR("Failed to obtain Frida interceptor");
-		throw std::runtime_error("Failed to initialize Frida interceptor");
+		throw std::runtime_error(
+			"Failed to initialize Frida interceptor");
 	}
 	auto listener =
 		g_object_new(cuda_runtime_function_hooker_get_type(), nullptr);
@@ -150,8 +152,9 @@ nv_attach_impl::nv_attach_impl()
 
 	auto register_hook = [&](AttachedToFunction func, void *addr) {
 		if (addr == nullptr) {
-			SPDLOG_WARN("Skipping hook registration for function {} - symbol not found",
-				     (int)func);
+			SPDLOG_WARN(
+				"Skipping hook registration for function {} - symbol not found",
+				(int)func);
 			return;
 		}
 		auto ctx = std::make_unique<CUDARuntimeFunctionHookerContext>();
@@ -165,24 +168,31 @@ nv_attach_impl::nv_attach_impl()
 		    result != GUM_ATTACH_OK) {
 			SPDLOG_ERROR("Unable to attach to CUDA functions: {}",
 				     (int)result);
-			throw std::runtime_error("Failed to attach to CUDA function");
+			throw std::runtime_error(
+				"Failed to attach to CUDA function");
 		}
 	};
 
-	void *register_fatbin_addr = dlsym(RTLD_NEXT, "__cudaRegisterFatBinary");
+	void *register_fatbin_addr =
+		dlsym(RTLD_NEXT, "__cudaRegisterFatBinary");
 	register_hook(AttachedToFunction::RegisterFatbin, register_fatbin_addr);
 
-	void *register_function_addr = GSIZE_TO_POINTER(gum_module_find_export_by_name(
-		nullptr, "__cudaRegisterFunction"));
-	register_hook(AttachedToFunction::RegisterFunction, register_function_addr);
+	void *register_function_addr =
+		GSIZE_TO_POINTER(gum_module_find_export_by_name(
+			nullptr, "__cudaRegisterFunction"));
+	register_hook(AttachedToFunction::RegisterFunction,
+		      register_function_addr);
 
-	void *register_fatbin_end_addr = GSIZE_TO_POINTER(gum_module_find_export_by_name(
-		nullptr, "__cudaRegisterFatBinaryEnd"));
-	register_hook(AttachedToFunction::RegisterFatbinEnd, register_fatbin_end_addr);
+	void *register_fatbin_end_addr =
+		GSIZE_TO_POINTER(gum_module_find_export_by_name(
+			nullptr, "__cudaRegisterFatBinaryEnd"));
+	register_hook(AttachedToFunction::RegisterFatbinEnd,
+		      register_fatbin_end_addr);
 
-	void *cuda_launch_kernel_addr = GSIZE_TO_POINTER(gum_module_find_export_by_name(
-		nullptr, "cudaLaunchKernel"));
-	register_hook(AttachedToFunction::CudaLaunchKernel, cuda_launch_kernel_addr);
+	void *cuda_launch_kernel_addr = GSIZE_TO_POINTER(
+		gum_module_find_export_by_name(nullptr, "cudaLaunchKernel"));
+	register_hook(AttachedToFunction::CudaLaunchKernel,
+		      cuda_launch_kernel_addr);
 
 	gum_interceptor_end_transaction(interceptor);
 }
@@ -242,8 +252,13 @@ nv_attach_impl::hack_fatbin(std::vector<uint8_t> &&data_vec)
 			}
 		}
 	}
-
 	SPDLOG_INFO("Got {} PTX files", all_ptx.size());
+	// For debugging purpose, remove in release
+	if (all_ptx.size() != 78) {
+		SPDLOG_INFO("Skipping........");
+		return data_vec;
+	}
+
 	/**
 	Here we can patch the PTX. Then recompile it.
 	*/
@@ -320,33 +335,6 @@ nv_attach_impl::hack_fatbin(std::vector<uint8_t> &&data_vec)
 		fatbin_cmd += "--image=profile=compute_61,file=";
 		fatbin_cmd += path.string() + " ";
 	}
-	// exit(0);
-	// {
-	// 	SPDLOG_INFO("Recompiling PTX with nvcc..");
-	// 	char tmp_dir[] = "/tmp/bpftime-recompile-nvcc";
-	// 	// mkdtemp(tmp_dir);
-	// 	std::filesystem::path work_dir(tmp_dir);
-	// 	if (!std::filesystem::exists(work_dir)) {
-	// 		SPDLOG_INFO("Creating work dir: {}", work_dir.c_str());
-	// 		std::filesystem::create_directories(work_dir);
-	// 	}
-	// 	SPDLOG_INFO("Working directory: {}", work_dir.c_str());
-	// 	std::string command =
-	// 		"nvcc -O2 -G -g --keep-device-functions -arch=sm_60 ";
-	// 	{
-	// 		auto ptx_in = work_dir / "main.ptx";
-	// 		SPDLOG_INFO("PTX IN: {}", ptx_in.c_str());
-	// 		std::ofstream ofs(ptx_in);
-	// 		ofs << ptx_out[0];
-	// 		command += ptx_in;
-	// 		command += " ";
-	// 	}
-	// 	command += "-fatbin ";
-	// 	auto fatbin_out = work_dir / "out.fatbin";
-	// 	command += "-o ";
-	// 	command += fatbin_out;
-
-	// }
 
 	SPDLOG_INFO("Fatbin output file: {}", output_fatbin.c_str());
 	SPDLOG_DEBUG("fatbinary cmdline: {}", fatbin_cmd);
@@ -381,21 +369,32 @@ void __cudaRegisterVar(void **fatCubinHandle, char *hostVar,
 }
 int nv_attach_impl::register_trampoline_memory(void **fatbin_handle)
 {
-	if (this->trampoline_memory_state !=
-	    TrampolineMemorySetupStage::NotSet) {
-		SPDLOG_INFO("Invalid stage for register trampoline memory");
+	// if (this->trampoline_memory_state !=
+	//     TrampolineMemorySetupStage::NotSet) {
+	// 	SPDLOG_INFO("Invalid stage for register trampoline memory");
+	// 	return -1;
+	// }
+	SPDLOG_INFO("Registering trampoline memory");
+	cudaGetLastError();
+	this->fatbin_symbols.push_back(fatbin_symbol_def{});
+	auto symbols = &this->fatbin_symbols.back();
+
+	__cudaRegisterVar(fatbin_handle, (char *)&symbols->_constData_mock,
+			  (char *)"constData", "constData", 0,
+			  sizeof(symbols->_constData_mock), 1, 0);
+	if (auto err = cudaGetLastError(); err != cudaSuccess) {
+		SPDLOG_ERROR("Unable to register cuda var: {}", (int)err);
 		return -1;
 	}
-	SPDLOG_INFO("Registering trampoline memory");
 
-	__cudaRegisterVar(fatbin_handle, (char *)&_constData_mock,
-			  (char *)"constData", "constData", 0,
-			  sizeof(_constData_mock), 1, 0);
-
-	__cudaRegisterVar(fatbin_handle, (char *)&map_basic_info_mock,
+	__cudaRegisterVar(fatbin_handle, (char *)&symbols->map_basic_info_mock,
 			  (char *)"map_info", "map_info", 0,
-			  sizeof(map_basic_info_mock), 1, 0);
-	this->trampoline_memory_state = TrampolineMemorySetupStage::Registered;
+			  sizeof(symbols->map_basic_info_mock), 1, 0);
+	if (auto err = cudaGetLastError(); err != cudaSuccess) {
+		SPDLOG_ERROR("Unable to register cuda var: {}", (int)err);
+		return -1;
+	}
+
 	SPDLOG_INFO("Register trampoline memory done");
 	return 0;
 }
@@ -403,25 +402,32 @@ int nv_attach_impl::copy_data_to_trampoline_memory()
 {
 	SPDLOG_INFO("Copying data to device symbols..");
 	size_t const_size = 0;
-	if (auto err = cudaGetSymbolSize(&const_size,
-					 (const void *)&_constData_mock);
-	    err != cudaSuccess || const_size < sizeof(_constData_mock)) {
+	auto symbols = &this->fatbin_symbols.back();
+
+	if (auto err = cudaGetSymbolSize(
+		    &const_size, (const void *)&symbols->_constData_mock);
+	    err != cudaSuccess ||
+	    const_size != sizeof(symbols->_constData_mock)) {
 		SPDLOG_ERROR(
-			"cudaGetSymbolSize(constData) failed or size too small: {}",
+			"cudaGetSymbolSize(constData) failed or size too small:	{}",
 			(int)err);
+		cudaGetLastError();
 		return -1;
 	}
-	if (auto err = cudaMemcpyToSymbol((const void *)&_constData_mock,
-					  &this->shared_mem_ptr,
-					  sizeof(_constData_mock));
+
+	if (auto err = cudaMemcpyToSymbol(
+		    (const void *)&symbols->_constData_mock,
+		    &this->shared_mem_ptr, sizeof(symbols->_constData_mock));
 	    err != cudaSuccess) {
 		SPDLOG_ERROR(
 			"Unable to copy `constData` (shared memory address) to device: {}",
 			(int)err);
+		cudaGetLastError();
 		return -1;
 	}
 	if (!this->map_basic_info.has_value()) {
-		SPDLOG_ERROR("map_basic_info is not set, cannot copy to device");
+		SPDLOG_ERROR(
+			"map_basic_info is not set, cannot copy to device");
 		return -1;
 	}
 	SPDLOG_INFO("Copying the followed map info:");
@@ -441,10 +447,11 @@ int nv_attach_impl::copy_data_to_trampoline_memory()
 		size_t map_info_symbol_size = 0;
 		if (auto err = cudaGetSymbolSize(
 			    &map_info_symbol_size,
-			    (const void *)&map_basic_info_mock);
+			    (const void *)&symbols->map_basic_info_mock);
 		    err != cudaSuccess) {
 			SPDLOG_ERROR("cudaGetSymbolSize(map_info) failed: {}",
 				     (int)err);
+			cudaGetLastError();
 			return -1;
 		}
 		size_t host_bytes = this->map_basic_info->size() *
@@ -453,16 +460,16 @@ int nv_attach_impl::copy_data_to_trampoline_memory()
 					    host_bytes :
 					    map_info_symbol_size;
 		if (auto err = cudaMemcpyToSymbol(
-			    (const void *)&map_basic_info_mock,
+			    (const void *)&symbols->map_basic_info_mock,
 			    this->map_basic_info->data(), copy_bytes);
 		    err != cudaSuccess) {
 			SPDLOG_ERROR(
 				"Unable to copy `map_basic_info` to device : {}",
 				(int)err);
+			cudaGetLastError();
 			return -1;
 		}
 	}
-	this->trampoline_memory_state = TrampolineMemorySetupStage::Copied;
 	SPDLOG_INFO("constData and map_basic_info copied..");
 
 	return 0;
@@ -490,7 +497,8 @@ std::string filter_unprintable_chars(std::string input)
 	while (!result.empty() && result.back() != '}')
 		result.pop_back();
 	if (result.empty()) {
-		SPDLOG_ERROR("filter_unprintable_chars: result is empty or no closing brace found");
+		SPDLOG_ERROR(
+			"filter_unprintable_chars: result is empty or no closing brace found");
 		return "";
 	}
 	return result;
@@ -562,7 +570,8 @@ int nv_attach_impl::run_attach_entry_on_gpu(int attach_id, int run_count,
 		// can be executed
 		auto bpf_main_pos = ptx.find(to_replace);
 		if (bpf_main_pos == ptx.npos) {
-			SPDLOG_ERROR("Cannot find '{}' in generated PTX code", to_replace);
+			SPDLOG_ERROR("Cannot find '{}' in generated PTX code",
+				     to_replace);
 			return -1;
 		}
 		ptx = ptx.replace(bpf_main_pos, to_replace.size(),
@@ -651,7 +660,8 @@ int nv_attach_impl::run_attach_entry_on_gpu(int attach_id, int run_count,
 			CUDA_SAFE_CALL(cuModuleGetGlobal(&ptr, &bytes, module,
 							 "map_info"));
 			if (!this->map_basic_info.has_value()) {
-				SPDLOG_ERROR("map_basic_info is not set, cannot copy to device");
+				SPDLOG_ERROR(
+					"map_basic_info is not set, cannot copy to device");
 				return -1;
 			}
 			CUDA_SAFE_CALL(cuMemcpyHtoD(

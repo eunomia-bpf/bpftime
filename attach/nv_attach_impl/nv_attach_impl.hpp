@@ -51,7 +51,6 @@ enum class AttachedToFunction {
 	RegisterFatbinEnd,
 	CudaLaunchKernel
 };
-enum class TrampolineMemorySetupStage { NotSet, Registered, Copied };
 struct CUDARuntimeFunctionHookerContext {
 	class nv_attach_impl *impl;
 	AttachedToFunction to_function;
@@ -100,8 +99,6 @@ class nv_attach_impl final : public base_attach_impl {
 				      bool should_set_trampoline);
 	int register_trampoline_memory(void **);
 	int copy_data_to_trampoline_memory();
-	TrampolineMemorySetupStage trampoline_memory_state =
-		TrampolineMemorySetupStage::NotSet;
 	int find_attach_entry_by_program_name(const char *name) const;
 	int run_attach_entry_on_gpu(int attach_id, int run_count = 1,
 				    int grid_dim_x = 1, int grid_dim_y = 1,
@@ -117,6 +114,11 @@ class nv_attach_impl final : public base_attach_impl {
 	std::map<int, nv_attach_entry> hook_entries;
 	uintptr_t shared_mem_ptr;
 	std::optional<std::vector<MapBasicInfo>> map_basic_info;
+	struct fatbin_symbol_def {
+		uint64_t _constData_mock;
+		char map_basic_info_mock[sizeof(attach::MapBasicInfo) * 256];
+	};
+	std::vector<fatbin_symbol_def> fatbin_symbols;
 };
 std::string filter_unprintable_chars(std::string input);
 std::string filter_out_version_headers(const std::string &input);
