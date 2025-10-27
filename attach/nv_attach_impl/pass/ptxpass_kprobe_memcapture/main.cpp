@@ -7,6 +7,19 @@
 #include <sstream>
 #include <ebpf_inst.h>
 
+static ptxpass::PassConfig getDefaultConfig()
+{
+	ptxpass::PassConfig cfg;
+	cfg.name = "kprobe_memcapture";
+	cfg.description =
+		"Emit a probe per ld/st and push source line text to eBPF stack";
+	cfg.attachPoints.includes = { "^kprobe/__memcapture$" };
+	cfg.attachPoints.excludes = {};
+	cfg.parameters = nlohmann::json::object();
+	cfg.validation = nlohmann::json::object();
+	return cfg;
+}
+
 static std::pair<std::string, bool>
 patch_memcapture(const std::string &ptx,
 		 const std::vector<uint64_t> &ebpf_words)
@@ -137,8 +150,9 @@ patch_memcapture(const std::string &ptx,
 
 static void print_usage(const char *argv0)
 {
-	std::cerr << "Usage: " << argv0
-		  << " --config <path> [--log-level <level>] [--dry-run]\n";
+	std::cerr
+		<< "Usage: " << argv0
+		<< " [--config <path>|--config] [--print-config] [--log-level <level>] [--dry-run]\n";
 }
 
 int main(int argc, char **argv)
@@ -146,11 +160,18 @@ int main(int argc, char **argv)
 	using namespace ptxpass;
 	std::string configPath;
 	bool dryRun = false;
+	bool printConfigOnly = false;
 
 	for (int i = 1; i < argc; ++i) {
 		std::string a = argv[i];
-		if (a == "--config" && i + 1 < argc) {
-			configPath = argv[++i];
+		if (a == "--config") {
+			if (i + 1 < argc && argv[i + 1][0] != '-') {
+				configPath = argv[++i];
+			} else {
+				printConfigOnly = true;
+			}
+		} else if (a == "--print-config") {
+			printConfigOnly = true;
 		} else if (a == "--dry-run") {
 			dryRun = true;
 		} else if (a == "--help" || a == "-h") {
@@ -166,11 +187,26 @@ int main(int argc, char **argv)
 	}
 
 	try {
-		if (configPath.empty()) {
-			std::cerr << "Missing --config\n";
-			return ExitCode::ConfigError;
+		PassConfig cfg;
+		if (printConfigOnly) {
+			cfg = getDefaultConfig();
+			nlohmann::json j;
+			j["name"] = cfg.name;
+			j["description"] = cfg.description;
+			j["attach_points"]["includes"] =
+				cfg.attachPoints.includes;
+			j["attach_points"]["excludes"] =
+				cfg.attachPoints.excludes;
+			j["parameters"] = cfg.parameters;
+			j["validation"] = cfg.validation;
+			std::cout << j.dump(4);
+			return ExitCode::Success;
 		}
-		auto cfg = JsonConfigLoader::loadFromFile(configPath);
+		if (!configPath.empty()) {
+			cfg = JsonConfigLoader::loadFromFile(configPath);
+		} else {
+			cfg = getDefaultConfig();
+		}
 		auto matcher = AttachPointMatcher(cfg.attachPoints);
 		auto ap = getEnv("PTX_ATTACH_POINT");
 		if (ap.empty()) {

@@ -22,7 +22,10 @@ struct PtxPassesConfig {
 inline void from_json(const nlohmann::json &j, PtxPassSpec &s)
 {
 	j.at("exec").get_to(s.exec);
-	j.at("config").get_to(s.config);
+	if (j.contains("config"))
+		j.at("config").get_to(s.config);
+	else
+		s.config = ""; // Empty config means use pass's built-in config
 }
 
 inline void from_json(const nlohmann::json &j, PtxPassesConfig &cfg)
