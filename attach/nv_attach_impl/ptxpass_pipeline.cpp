@@ -49,8 +49,11 @@ run_single_pass(const std::string &exec, const std::string &config,
 	opstream child_stdin;
 	boost::process::environment env = boost::this_process::environment();
 	env["PTX_ATTACH_POINT"] = attach_point;
-	child c(exec + " --config " + config, std_out > child_stdout,
-		std_err > child_stderr, std_in < child_stdin, env);
+	std::string cmd = exec;
+	if (!config.empty())
+		cmd += " --config " + config;
+	child c(cmd, std_out > child_stdout, std_err > child_stderr,
+		std_in < child_stdin, env);
 	child_stdin << input;
 	child_stdin.flush();
 	child_stdin.pipe().close();
