@@ -122,6 +122,8 @@ generate_ptx_for_ebpf(const std::vector<ebpf_inst> &inst,
 	vm.register_external_function(503, "get_block_idx", (void *)test_func);
 	vm.register_external_function(504, "get_block_dim", (void *)test_func);
 	vm.register_external_function(505, "get_thread_idx", (void *)test_func);
+	vm.register_external_function(507, "cuda_exit", (void *)test_func);
+	vm.register_external_function(508, "get_grid_dim", (void *)test_func);
 
 	vm.load_code(inst.data(), inst.size() * 8);
 	llvm_bpf_jit_context ctx(vm);
