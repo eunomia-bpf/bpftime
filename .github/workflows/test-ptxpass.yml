@@ -1,4 +1,4 @@
-name: Test PTX pass executables
+name: Build and test PTX pass executables
 
 on:
   workflow_dispatch:
