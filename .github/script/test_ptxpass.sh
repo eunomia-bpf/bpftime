@@ -26,16 +26,16 @@ PTX_MIN='.version 7.0\n.target sm_60\n.visible .entry test() {\n  ret;\n}'
 
 echo "[case] ptxpass_kprobe_entry --print-config has expected include/exclude"
 OUT=$("$ENTRY_EXE" --print-config)
-echo "$OUT" | grep -q "\^kprobe/.*\$"
-echo "$OUT" | grep -q "\^kprobe/__memcapture\$"
+echo "$OUT" | grep -Fq '^kprobe/.*$'
+echo "$OUT" | grep -Fq '^kprobe/__memcapture$'
 
 echo "[case] ptxpass_kretprobe --config (no arg) prints defaults"
 OUT=$("$RETPROBE_EXE" --config)
-echo "$OUT" | grep -q "\^kretprobe/.*\$"
+echo "$OUT" | grep -Fq '^kretprobe/.*$'
 
 echo "[case] ptxpass_kprobe_memcapture --print-config has expected include"
 OUT=$("$MEMCAP_EXE" --print-config)
-echo "$OUT" | grep -q "\^kprobe/__memcapture\$"
+echo "$OUT" | grep -Fq '^kprobe/__memcapture$'
 
 
 echo "[case] entry pass matches kprobe/test with empty eBPF words"
