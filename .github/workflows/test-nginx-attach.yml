@@ -9,7 +9,6 @@ on:
 
 jobs:
   build-and-test:
-    if: ${{ false }} # temporarily disabled
     runs-on: ubuntu-latest
     container:
       image: debian:12

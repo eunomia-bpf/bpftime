@@ -101,4 +101,3 @@ jobs:
           chmod +x .github/script/test_ptxpass.sh
           .github/script/test_ptxpass.sh
 
-

@@ -45,6 +45,9 @@ EOF
 )
 PTX_ATTACH_POINT="kprobe/test" "$ENTRY_EXE" <<<"$JSON_INPUT" >/dev/null
 
+echo "[case] entry pass unmatched attach point exits 0"
+PTX_ATTACH_POINT="kretprobe/test" "$ENTRY_EXE" <<<"$JSON_INPUT" >/dev/null
+
 echo "[case] retprobe pass unmatched attach point exits 0"
 PTX_ATTACH_POINT="kprobe/test" "$RETPROBE_EXE" <<<"$JSON_INPUT" >/dev/null
 
@@ -61,6 +64,9 @@ fi
 
 echo "[case] memcapture pass matches kprobe/__memcapture with empty eBPF"
 PTX_ATTACH_POINT="kprobe/__memcapture" "$MEMCAP_EXE" <<<"$JSON_INPUT" >/dev/null
+
+echo "[case] memcapture pass unmatched attach point exits 0"
+PTX_ATTACH_POINT="kprobe/test" "$MEMCAP_EXE" <<<"$JSON_INPUT" >/dev/null
 
 echo "[info] PTX pass tests completed successfully."
 

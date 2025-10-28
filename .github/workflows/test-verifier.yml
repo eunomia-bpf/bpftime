@@ -14,7 +14,6 @@ concurrency:
   cancel-in-progress: true
 jobs: 
   build-and-run-verifier-test-target:
-    if: ${{ false }} # temporarily disabled
     runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v2
