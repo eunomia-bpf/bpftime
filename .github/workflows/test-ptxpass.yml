@@ -60,7 +60,7 @@ jobs:
         run: |
           dnf install -y dnf-plugins-core
           dnf config-manager --add-repo https://developer.download.nvidia.com/compute/cuda/repos/fedora39/x86_64/cuda-fedora39.repo
-          dnf install -y lcov cuda clang-devel
+          dnf install -y lcov cuda clang-devel llvm llvm-devel
 
       - name: Configure CMake (Fedora only; enable CUDA attach for pass build)
         if: matrix.container == 'fedora-39'
