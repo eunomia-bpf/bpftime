@@ -20,6 +20,10 @@ static std::pair<std::string, bool>
 patch_entry(const std::string &ptx, const std::string &kernel,
 	    const std::vector<uint64_t> &ebpf_words)
 {
+    // If no eBPF instructions provided, do nothing but report matched success
+    if (ebpf_words.empty()) {
+        return { ptx, false };
+    }
 	auto func_ptx =
 		ptxpass::compile_ebpf_to_ptx_from_words(ebpf_words, "sm_60");
 	auto body = ptxpass::find_kernel_body(ptx, kernel);
