@@ -3,16 +3,15 @@ name: Build and push docker image
 on:
   workflow_dispatch:
   push:
-    if: false # temporarily disabled
     branches: ["master"]
   pull_request:
-    if: false # temporarily disabled
     branches: ["master"]
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}-${{ github.event_name }}
   cancel-in-progress: true
 jobs:
   build-and-push-image:
+    if: ${{ false }} # temporarily disabled
     runs-on: ubuntu-latest
     # run only when code is compiling and tests are passing
     if: "!contains(github.event.head_commit.message, '[skip ci]') && !contains(github.event.head_commit.message, '[ci skip]')"

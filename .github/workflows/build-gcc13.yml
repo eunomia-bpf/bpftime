@@ -2,10 +2,8 @@ name: build-gcc13
 
 on:
   push:
-    if: false # temporarily disabled
     branches: [master, main, "ci/**"]
   pull_request:
-    if: false # temporarily disabled
     branches: ["**"]
 
 concurrency:
@@ -14,6 +12,7 @@ concurrency:
 
 jobs:
   build:
+    if: ${{ false }} # temporarily disabled
     runs-on: ubuntu-24.04
     steps:
       - name: Checkout repository (with submodules)

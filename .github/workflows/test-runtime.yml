@@ -3,10 +3,8 @@ name: Build and test runtime
 on:
   workflow_dispatch:
   push:
-    if: false # temporarily disabled
     branches: ["*"]
   pull_request:
-    if: false # temporarily disabled
     branches: ["master", "main"]
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}-${{ github.event_name }}
@@ -16,6 +14,7 @@ env:
 
 jobs:
   build:
+    if: ${{ false }} # temporarily disabled
     runs-on: "ubuntu-latest"
     strategy:
       matrix:

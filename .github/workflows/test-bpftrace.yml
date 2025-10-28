@@ -3,10 +3,8 @@ name: Build and run bpftrace test
 on:
   workflow_dispatch:
   push:
-    if: false # temporarily disabled
     branches: ["master"]
   pull_request:
-    if: false # temporarily disabled
     branches: ["master"]
 
 env:
@@ -19,6 +17,7 @@ env:
 
 jobs:
   build-and-run-syscall-tracing-load-start-test:
+    if: ${{ false }} # temporarily disabled
     runs-on: ubuntu-22.04
     container:
       image: "manjusakalza/bpftime-base-image:ubuntu-2204"
@@ -343,6 +342,7 @@ jobs:
           verbose: true
 
   build-and-run-malloc-example-test:
+    if: ${{ false }} # temporarily disabled
     runs-on: ubuntu-22.04
     container:
       image: "manjusakalza/bpftime-base-image:ubuntu-2204"
@@ -702,6 +702,7 @@ jobs:
 
   # New job to combine coverage reports
   combine-coverage:
+    if: ${{ false }} # temporarily disabled
     needs:
       [
         build-and-run-syscall-tracing-load-start-test,

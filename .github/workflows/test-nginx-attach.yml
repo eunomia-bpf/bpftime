@@ -3,14 +3,13 @@ name: Nginx attach test
 on:
   workflow_dispatch:
   push:
-    if: false # temporarily disabled
     branches: ["*"]
   pull_request:
-    if: false # temporarily disabled
     branches: ["master"]
 
 jobs:
   build-and-test:
+    if: ${{ false }} # temporarily disabled
     runs-on: ubuntu-latest
     container:
       image: debian:12

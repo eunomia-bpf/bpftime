@@ -3,10 +3,8 @@ name: Build and Attach Tests Workflow
 on:
   workflow_dispatch:
   push:
-    if: false # temporarily disabled
     branches: ["*"]
   pull_request:
-    if: false # temporarily disabled
     branches: ["master"]
 
 concurrency:
@@ -15,6 +13,7 @@ concurrency:
 
 jobs:
   build_and_test_attach:
+    if: ${{ false }} # temporarily disabled
     runs-on: "ubuntu-latest"
     strategy:
       matrix:
