@@ -19,10 +19,6 @@ jobs:
         include:
           - container: ubuntu-2204
             image: manjusakalza/bpftime-base-image:ubuntu-2204
-          - container: fedora-39
-            image: manjusakalza/bpftime-base-image:fedora-39
-          - container: openeuler-2403sp2
-            image: openeuler/openeuler:24.03-lts-sp1
     container:
       image: ${{ matrix.image }}
       options: --privileged
@@ -55,15 +51,8 @@ jobs:
         run: |
           apt-get update -y && apt-get install -y lcov libzstd-dev libboost-all-dev gpg
 
-      - name: Install tools and CUDA (Fedora)
-        if: matrix.container == 'fedora-39'
-        run: |
-          dnf install -y dnf-plugins-core
-          dnf config-manager --add-repo https://developer.download.nvidia.com/compute/cuda/repos/fedora39/x86_64/cuda-fedora39.repo
-          dnf install -y lcov cuda clang-devel llvm llvm-devel
-
-      - name: Configure CMake (Fedora only; enable CUDA attach for pass build)
-        if: matrix.container == 'fedora-39'
+      - name: Detect LLVM and configure CMake (Ubuntu)
+        if: matrix.container == 'ubuntu-2204'
         shell: bash
         run: |
           set -e
@@ -80,7 +69,7 @@ jobs:
                 -DBPFTIME_LLVM_JIT=YES \
                 -DBPFTIME_ENABLE_UNIT_TESTING=NO \
                 -DBPFTIME_ENABLE_CUDA_ATTACH=ON \
-                -DBPFTIME_CUDA_ROOT=/usr/local/cuda \
+                -DBPFTIME_CUDA_ROOT=/usr/local/cuda-12.6 \
                 -DLLVM_DIR="$LLVM_CMAKE_DIR"
             else
               cmake -B build -S . \
@@ -88,7 +77,7 @@ jobs:
                 -DBPFTIME_LLVM_JIT=YES \
                 -DBPFTIME_ENABLE_UNIT_TESTING=NO \
                 -DBPFTIME_ENABLE_CUDA_ATTACH=ON \
-                -DBPFTIME_CUDA_ROOT=/usr/local/cuda
+                -DBPFTIME_CUDA_ROOT=/usr/local/cuda-12.6
             fi
           else
             cmake -B build -S . \
@@ -96,24 +85,20 @@ jobs:
               -DBPFTIME_LLVM_JIT=YES \
               -DBPFTIME_ENABLE_UNIT_TESTING=NO \
               -DBPFTIME_ENABLE_CUDA_ATTACH=ON \
-              -DBPFTIME_CUDA_ROOT=/usr/local/cuda
+              -DBPFTIME_CUDA_ROOT=/usr/local/cuda-12.6
           fi
 
-      - name: Build PTX pass executables (Fedora)
-        if: matrix.container == 'fedora-39'
+      - name: Build PTX pass executables (Ubuntu)
+        if: matrix.container == 'ubuntu-2204'
         run: |
           cmake --build build --config Debug --target \
             ptxpass_kprobe_entry ptxpass_kretprobe ptxpass_kprobe_memcapture -j$(nproc)
 
-      - name: Run PTX pass tests (Fedora)
-        if: matrix.container == 'fedora-39'
+      - name: Run PTX pass tests (Ubuntu)
+        if: matrix.container == 'ubuntu-2204'
         shell: bash
         run: |
           chmod +x .github/script/test_ptxpass.sh
           .github/script/test_ptxpass.sh
-
-      - name: Skip on non-Fedora containers
-        if: matrix.container != 'fedora-39'
-        run: echo "Skipping PTX pass build/tests on ${{ matrix.container }}"
 
 
