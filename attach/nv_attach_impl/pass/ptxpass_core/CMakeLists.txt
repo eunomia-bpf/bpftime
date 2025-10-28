@@ -7,6 +7,11 @@ if(DEFINED LLVM_INCLUDE_DIRS)
     target_include_directories(ptxpass_core PRIVATE ${LLVM_INCLUDE_DIRS})
 endif()
 
+get_target_property(LLVMBPF_VM_INCLUDES llvmbpf_vm INCLUDE_DIRECTORIES)
+if(LLVMBPF_VM_INCLUDES)
+    target_include_directories(ptxpass_core PRIVATE ${LLVMBPF_VM_INCLUDES})
+endif()
+
 
 
 
