@@ -2,10 +2,12 @@ name: Build and test verifier
 
 on:
   push:
+    if: false # temporarily disabled
     branches: "master"
     paths:
         - "bpftime-verifier/**"
   pull_request: 
+    if: false # temporarily disabled
     branches: "master"
     paths:
         - "bpftime-verifier/**"

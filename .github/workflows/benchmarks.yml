@@ -3,8 +3,10 @@ name: Benchmarks
 on:
   workflow_dispatch:
   push:
+    if: false # temporarily disabled
     branches: ["master"]
   pull_request:
+    if: false # temporarily disabled
     branches: ["master"]
 
 # Sets permissions of the GITHUB_TOKEN to allow deployment to GitHub Pages

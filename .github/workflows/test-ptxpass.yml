@@ -1,0 +1,119 @@
+name: Test PTX pass executables
+
+on:
+  workflow_dispatch:
+  push:
+    branches: ["*"]
+  pull_request:
+    branches: ["master", "main"]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}-${{ github.event_name }}
+  cancel-in-progress: true
+
+jobs:
+  test-ptxpass:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          - container: ubuntu-2204
+            image: manjusakalza/bpftime-base-image:ubuntu-2204
+          - container: fedora-39
+            image: manjusakalza/bpftime-base-image:fedora-39
+          - container: openeuler-2403sp2
+            image: openeuler/openeuler:24.03-lts-sp1
+    container:
+      image: ${{ matrix.image }}
+      options: --privileged
+    steps:
+      - name: Install git (openEuler)
+        if: matrix.container == 'openeuler-2403sp2'
+        run: |
+          set -e
+          if command -v dnf >/dev/null 2>&1; then PM=dnf; else PM=yum; fi
+          $PM -y update
+          $PM -y install git ca-certificates
+      - uses: actions/checkout@v2
+        with:
+          submodules: recursive
+
+      - name: Remount shm dev (boost shared memory needs enough space)
+        run: |
+          mount -o remount,size=1G /dev/shm
+
+      - name: Setup conda (for LLVM libraries if needed)
+        if: matrix.container != 'openeuler-2403sp2'
+        uses: conda-incubator/setup-miniconda@v3
+        with:
+          channels: conda-forge,bioconda
+          channel-priority: strict
+          miniforge-version: latest
+
+      - name: Install tools (Ubuntu)
+        if: matrix.container == 'ubuntu-2204'
+        run: |
+          apt-get update -y && apt-get install -y lcov libzstd-dev libboost-all-dev gpg
+
+      - name: Install tools and CUDA (Fedora)
+        if: matrix.container == 'fedora-39'
+        run: |
+          dnf install -y dnf-plugins-core
+          dnf config-manager --add-repo https://developer.download.nvidia.com/compute/cuda/repos/fedora39/x86_64/cuda-fedora39.repo
+          dnf install -y lcov cuda clang-devel
+
+      - name: Configure CMake (Fedora only; enable CUDA attach for pass build)
+        if: matrix.container == 'fedora-39'
+        shell: bash
+        run: |
+          set -e
+          LLVM_CONFIG=""
+          for c in llvm-config-18 llvm-config-17 llvm-config-16 llvm-config-15 llvm-config; do
+            if command -v "$c" >/dev/null 2>&1; then LLVM_CONFIG="$c"; break; fi
+          done
+          echo "Using LLVM_CONFIG=${LLVM_CONFIG:-not found}"
+          if [ -n "$LLVM_CONFIG" ]; then
+            LLVM_CMAKE_DIR=$($LLVM_CONFIG --cmakedir 2>/dev/null || true)
+            if [ -n "$LLVM_CMAKE_DIR" ]; then
+              cmake -B build -S . \
+                -DCMAKE_BUILD_TYPE=Debug \
+                -DBPFTIME_LLVM_JIT=YES \
+                -DBPFTIME_ENABLE_UNIT_TESTING=NO \
+                -DBPFTIME_ENABLE_CUDA_ATTACH=ON \
+                -DBPFTIME_CUDA_ROOT=/usr/local/cuda \
+                -DLLVM_DIR="$LLVM_CMAKE_DIR"
+            else
+              cmake -B build -S . \
+                -DCMAKE_BUILD_TYPE=Debug \
+                -DBPFTIME_LLVM_JIT=YES \
+                -DBPFTIME_ENABLE_UNIT_TESTING=NO \
+                -DBPFTIME_ENABLE_CUDA_ATTACH=ON \
+                -DBPFTIME_CUDA_ROOT=/usr/local/cuda
+            fi
+          else
+            cmake -B build -S . \
+              -DCMAKE_BUILD_TYPE=Debug \
+              -DBPFTIME_LLVM_JIT=YES \
+              -DBPFTIME_ENABLE_UNIT_TESTING=NO \
+              -DBPFTIME_ENABLE_CUDA_ATTACH=ON \
+              -DBPFTIME_CUDA_ROOT=/usr/local/cuda
+          fi
+
+      - name: Build PTX pass executables (Fedora)
+        if: matrix.container == 'fedora-39'
+        run: |
+          cmake --build build --config Debug --target \
+            ptxpass_kprobe_entry ptxpass_kretprobe ptxpass_kprobe_memcapture -j$(nproc)
+
+      - name: Run PTX pass tests (Fedora)
+        if: matrix.container == 'fedora-39'
+        shell: bash
+        run: |
+          chmod +x .github/script/test_ptxpass.sh
+          .github/script/test_ptxpass.sh
+
+      - name: Skip on non-Fedora containers
+        if: matrix.container != 'fedora-39'
+        run: echo "Skipping PTX pass build/tests on ${{ matrix.container }}"
+
+

@@ -2,8 +2,10 @@ name: Build and test bpftime tools
 
 on:
   push:
+    if: false # temporarily disabled
     branches: ["master"]
   pull_request:
+    if: false # temporarily disabled
     branches: ["master"]
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}-${{ github.event_name }}

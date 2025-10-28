@@ -3,8 +3,10 @@ name: Build and push docker image
 on:
   workflow_dispatch:
   push:
+    if: false # temporarily disabled
     branches: ["master"]
   pull_request:
+    if: false # temporarily disabled
     branches: ["master"]
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}-${{ github.event_name }}

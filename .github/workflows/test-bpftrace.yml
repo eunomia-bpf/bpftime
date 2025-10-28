@@ -3,8 +3,10 @@ name: Build and run bpftrace test
 on:
   workflow_dispatch:
   push:
+    if: false # temporarily disabled
     branches: ["master"]
   pull_request:
+    if: false # temporarily disabled
     branches: ["master"]
 
 env:

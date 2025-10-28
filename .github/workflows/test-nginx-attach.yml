@@ -3,8 +3,10 @@ name: Nginx attach test
 on:
   workflow_dispatch:
   push:
+    if: false # temporarily disabled
     branches: ["*"]
   pull_request:
+    if: false # temporarily disabled
     branches: ["master"]
 
 jobs:

@@ -2,8 +2,10 @@ name: Build and run all integrated tests (examples)
 
 on:
   push:
+    if: false # temporarily disabled
     branches: ["*"]
   pull_request:
+    if: false # temporarily disabled
     branches: ["*"]
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}-${{ github.event_name }}

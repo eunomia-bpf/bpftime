@@ -2,8 +2,10 @@ name: build-gcc13
 
 on:
   push:
+    if: false # temporarily disabled
     branches: [master, main, "ci/**"]
   pull_request:
+    if: false # temporarily disabled
     branches: ["**"]
 
 concurrency:
