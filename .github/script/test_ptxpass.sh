@@ -68,6 +68,38 @@ PTX_ATTACH_POINT="kprobe/__memcapture" "$MEMCAP_EXE" <<<"$JSON_INPUT" >/dev/null
 echo "[case] memcapture pass unmatched attach point exits 0"
 PTX_ATTACH_POINT="kprobe/test" "$MEMCAP_EXE" <<<"$JSON_INPUT" >/dev/null
 
+
+# PTX transformation tests with non-empty eBPF instructions
+# eBPF: [183,149] = MOV64_IMM R0,0; EXIT
+EBPF_RET0='[183,149]'
+
+echo "[case] entry pass PTX transformation with non-empty eBPF"
+JSON_ENTRY_TRANSFORM=$(cat <<EOF
+{"full_ptx":"$PTX_MIN","to_patch_kernel":"test","global_ebpf_map_info_symbol":"map_info","ebpf_communication_data_symbol":"constData","ebpf_instructions":$EBPF_RET0}
+EOF
+)
+OUT=$(PTX_ATTACH_POINT="kprobe/test" "$ENTRY_EXE" <<<"$JSON_ENTRY_TRANSFORM")
+echo "$OUT" | grep -Fq '"output_ptx"'
+echo "$OUT" | grep -Fq '.func __probe_func__test'
+echo "$OUT" | grep -Fq 'call __probe_func__test'
+
+echo "[case] retprobe pass PTX transformation with non-empty eBPF"
+OUT=$(PTX_ATTACH_POINT="kretprobe/test" "$RETPROBE_EXE" <<<"$JSON_ENTRY_TRANSFORM")
+echo "$OUT" | grep -Fq '"output_ptx"'
+echo "$OUT" | grep -Fq '.func __probe_func__test'
+echo "$OUT" | grep -Fq 'call __probe_func__test'
+
+echo "[case] memcapture pass PTX transformation with ld/st instruction"
+PTX_WITH_LDST='.version 7.0\n.target sm_60\n.visible .entry test() {\n    ld.global.u32 %r1, [%r1];\n    ret;\n}'
+JSON_MEMCAP_TRANSFORM=$(cat <<EOF
+{"full_ptx":"$PTX_WITH_LDST","to_patch_kernel":"test","global_ebpf_map_info_symbol":"map_info","ebpf_communication_data_symbol":"constData","ebpf_instructions":$EBPF_RET0}
+EOF
+)
+OUT=$(PTX_ATTACH_POINT="kprobe/__memcapture" "$MEMCAP_EXE" <<<"$JSON_MEMCAP_TRANSFORM")
+echo "$OUT" | grep -Fq '"output_ptx"'
+echo "$OUT" | grep -Fq '.func __memcapture__1'
+echo "$OUT" | grep -Fq 'call __memcapture__1'
+
 echo "[info] PTX pass tests completed successfully."
 
 
