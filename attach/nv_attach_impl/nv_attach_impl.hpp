@@ -17,8 +17,9 @@
 #include <sys/ptrace.h>
 #include <sys/syscall.h>
 #include <sys/wait.h>
-
+#include "nv_attach_fatbin_record.hpp"
 // #include <pos/include/oob/ckpt_dump.h>
+#include <tuple>
 #include <variant>
 #include <vector>
 
@@ -48,8 +49,8 @@ struct nv_hooker_func_t {
 enum class AttachedToFunction {
 	RegisterFatbin,
 	RegisterFunction,
+	RegisterVariable,
 	RegisterFatbinEnd,
-	CudaLaunchKernel
 };
 struct CUDARuntimeFunctionHookerContext {
 	class nv_attach_impl *impl;
@@ -89,21 +90,28 @@ class nv_attach_impl final : public base_attach_impl {
 	virtual ~nv_attach_impl();
 	std::vector<std::unique_ptr<__fatBinC_Wrapper_t>> stored_binaries_header;
 	std::vector<std::unique_ptr<std::vector<uint8_t>>> stored_binaries_body;
-	std::optional<std::vector<uint8_t>>
-	hack_fatbin(std::vector<uint8_t> &&);
+	std::optional<std::map<std::string, std::string>>
+		hack_fatbin(std::map<std::string, std::string>);
+	std::map<std::string, std::string>
+	extract_ptxs(std::vector<uint8_t> &&);
 	std::optional<std::string>
 	patch_with_memcapture(std::string, const nv_attach_entry &entry,
 			      bool should_set_trampoline);
 	std::optional<std::string>
 	patch_with_probe_and_retprobe(std::string, const nv_attach_entry &,
 				      bool should_set_trampoline);
-	int register_trampoline_memory(void **);
-	int copy_data_to_trampoline_memory();
+	// int register_trampoline_memory(void **);
+	// int copy_data_to_trampoline_memory();
 	int find_attach_entry_by_program_name(const char *name) const;
 	int run_attach_entry_on_gpu(int attach_id, int run_count = 1,
 				    int grid_dim_x = 1, int grid_dim_y = 1,
 				    int grid_dim_z = 1, int block_dim_x = 1,
 				    int block_dim_y = 1, int block_dim_z = 1);
+	std::vector<std::unique_ptr<fatbin_record>> fatbin_records;
+	fatbin_record *current_fatbin = nullptr;
+	std::map<void *, fatbin_record *> symbol_address_to_fatbin;
+	uintptr_t shared_mem_ptr;
+	std::optional<std::vector<MapBasicInfo>> map_basic_info;
 
     private:
 	void *frida_interceptor;
@@ -112,13 +120,12 @@ class nv_attach_impl final : public base_attach_impl {
 		hooker_contexts;
 	std::set<std::string> to_hook_device_functions;
 	std::map<int, nv_attach_entry> hook_entries;
-	uintptr_t shared_mem_ptr;
-	std::optional<std::vector<MapBasicInfo>> map_basic_info;
-	struct fatbin_symbol_def {
-		uint64_t _constData_mock;
-		char map_basic_info_mock[sizeof(attach::MapBasicInfo) * 256];
-	};
-	std::vector<fatbin_symbol_def> fatbin_symbols;
+
+	// struct fatbin_symbol_def {
+	// 	uint64_t _constData_mock;
+	// 	char map_basic_info_mock[sizeof(attach::MapBasicInfo) * 256];
+	// };
+	// std::vector<fatbin_symbol_def> fatbin_symbols;
 };
 std::string filter_unprintable_chars(std::string input);
 std::string filter_out_version_headers(const std::string &input);
@@ -126,7 +133,7 @@ std::string
 generate_ptx_for_ebpf(const std::vector<ebpf_inst> &inst,
 		      const std::string &func_name, bool with_arguments,
 		      bool add_register_guard_and_filter_version_headers);
-
+std::string add_semicolon_for_variable_lines(std::string input);
 } // namespace attach
 } // namespace bpftime
 #endif /* _BPFTIME_NV_ATTACH_IMPL_HPP */

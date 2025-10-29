@@ -25,6 +25,27 @@ static std::string memcapture_func_name(int idx)
 
 namespace bpftime::attach
 {
+
+std::string add_semicolon_for_variable_lines(std::string input)
+{
+	std::istringstream iss(input);
+	std::string line;
+	std::ostringstream oss;
+	while (std::getline(iss, line)) {
+		while (!line.empty() && line.ends_with("\n"))
+			line.pop_back();
+		oss << line;
+		if ((line.starts_with(".align") ||
+		     line.starts_with(".global")) &&
+		    !line.ends_with(";") && line.ends_with("}")) {
+			oss << ";";
+			SPDLOG_DEBUG("Patching line: {}", line);
+		}
+		oss << std::endl;
+	}
+	return oss.str();
+}
+
 // Filter out version headers, only the second time
 std::string filter_out_version_headers(const std::string &input)
 {

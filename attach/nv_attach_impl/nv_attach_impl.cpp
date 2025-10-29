@@ -40,6 +40,13 @@
 using namespace bpftime;
 using namespace attach;
 
+#define CUDA_DRIVER_CHECK_NO_EXCEPTION(expr, message)                          \
+	do {                                                                   \
+		if (auto err = expr; err != CUDA_SUCCESS) {                    \
+			SPDLOG_ERROR("{}: {}", message, (int)err);             \
+		}                                                              \
+	} while (false)
+
 extern GType cuda_runtime_function_hooker_get_type();
 
 int nv_attach_impl::detach_by_id(int id)
@@ -130,6 +137,15 @@ int nv_attach_impl::create_attach_with_ebpf_callback(
 	}
 	return 0;
 }
+
+extern "C" {
+cudaError_t cuda_runtime_function__cudaLaunchKernel(const void *func,
+						    dim3 gridDim, dim3 blockDim,
+						    void **args,
+						    size_t sharedMem,
+						    cudaStream_t stream);
+}
+
 nv_attach_impl::nv_attach_impl()
 {
 	SPDLOG_INFO("Starting nv_attach_impl");
@@ -183,6 +199,11 @@ nv_attach_impl::nv_attach_impl()
 	register_hook(AttachedToFunction::RegisterFunction,
 		      register_function_addr);
 
+	void *register_variable_addr = GSIZE_TO_POINTER(
+		gum_module_find_export_by_name(nullptr, "__cudaRegisterVar"));
+	register_hook(AttachedToFunction::RegisterVariable,
+		      register_variable_addr);
+
 	void *register_fatbin_end_addr =
 		GSIZE_TO_POINTER(gum_module_find_export_by_name(
 			nullptr, "__cudaRegisterFatBinaryEnd"));
@@ -191,9 +212,16 @@ nv_attach_impl::nv_attach_impl()
 
 	void *cuda_launch_kernel_addr = GSIZE_TO_POINTER(
 		gum_module_find_export_by_name(nullptr, "cudaLaunchKernel"));
-	register_hook(AttachedToFunction::CudaLaunchKernel,
-		      cuda_launch_kernel_addr);
 
+	if (auto err = gum_interceptor_replace(
+		    interceptor, cuda_launch_kernel_addr,
+		    (gpointer)&cuda_runtime_function__cudaLaunchKernel, this,
+		    nullptr);
+	    err != GUM_REPLACE_OK) {
+		SPDLOG_ERROR("Unable to replace cudaLaunchKernel: {}",
+			     (int)err);
+		assert(false);
+	}
 	gum_interceptor_end_transaction(interceptor);
 }
 
@@ -202,62 +230,63 @@ nv_attach_impl::~nv_attach_impl()
 	if (frida_listener)
 		g_object_unref(frida_listener);
 }
-
-std::optional<std::vector<uint8_t>>
-nv_attach_impl::hack_fatbin(std::vector<uint8_t> &&data_vec)
+std::map<std::string, std::string>
+nv_attach_impl::extract_ptxs(std::vector<uint8_t> &&data_vec)
 {
-	std::vector<std::string> ptx_out;
 	std::map<std::string, std::string> all_ptx;
 	char tmp_dir[] = "/tmp/bpftime-fatbin-work.XXXXXX";
 	mkdtemp(tmp_dir);
 	auto working_dir = std::filesystem::path(tmp_dir);
-
+	auto fatbin_path = working_dir / "temp.fatbin";
 	{
-		auto fatbin_path = working_dir / "temp.fatbin";
-		{
-			std::ofstream ofs(fatbin_path, std::ios::binary);
-			ofs.write((const char *)data_vec.data(),
-				  data_vec.size());
-			SPDLOG_INFO("Temporary fatbin written to {}",
-				    fatbin_path.c_str());
-		}
-		SPDLOG_INFO("Extracting PTX in the fatbin...");
-		boost::asio::io_context ctx;
-		boost::process::ipstream stream;
-		boost::process::environment env =
-			boost::this_process::environment();
-		env["LD_PRELOAD"] = "";
-		auto cuobjdump_cmd_line =
-			std::string("cuobjdump --extract-ptx all ") +
-			fatbin_path.string();
-		SPDLOG_INFO("Calling cuobjdump: {}", cuobjdump_cmd_line);
-		boost::process::child child(
-			cuobjdump_cmd_line, boost::process::std_out > stream,
-			boost::process::env(env),
-			boost::process::start_dir = tmp_dir);
+		std::ofstream ofs(fatbin_path, std::ios::binary);
+		ofs.write((const char *)data_vec.data(), data_vec.size());
+		SPDLOG_INFO("Temporary fatbin written to {}",
+			    fatbin_path.c_str());
+	}
+	SPDLOG_INFO("Extracting PTX in the fatbin...");
+	boost::asio::io_context ctx;
+	boost::process::ipstream stream;
+	boost::process::environment env = boost::this_process::environment();
+	env["LD_PRELOAD"] = "";
+	auto cuobjdump_cmd_line = std::string("cuobjdump --extract-ptx all ") +
+				  fatbin_path.string();
+	SPDLOG_INFO("Calling cuobjdump: {}", cuobjdump_cmd_line);
+	boost::process::child child(cuobjdump_cmd_line,
+				    boost::process::std_out > stream,
+				    boost::process::env(env),
+				    boost::process::start_dir = tmp_dir);
 
-		std::string line;
-		while (std::getline(stream, line)) {
-			SPDLOG_DEBUG("cuobjdump output: {}", line);
-		}
-		for (const auto &entry :
-		     std::filesystem::directory_iterator(working_dir)) {
-			if (entry.is_regular_file() &&
-			    entry.path().string().ends_with(".ptx")) {
-				// Read the PTX into memory
-				std::ifstream ifs(entry.path());
-				std::stringstream buffer;
-				buffer << ifs.rdbuf();
-				all_ptx[entry.path().filename()] = buffer.str();
-			}
+	std::string line;
+	while (std::getline(stream, line)) {
+		SPDLOG_DEBUG("cuobjdump output: {}", line);
+	}
+	for (const auto &entry :
+	     std::filesystem::directory_iterator(working_dir)) {
+		if (entry.is_regular_file() &&
+		    entry.path().string().ends_with(".ptx")) {
+			// Read the PTX into memory
+			std::ifstream ifs(entry.path());
+			std::stringstream buffer;
+			buffer << ifs.rdbuf();
+			all_ptx[entry.path().filename()] = buffer.str();
 		}
 	}
 	SPDLOG_INFO("Got {} PTX files", all_ptx.size());
+	return all_ptx;
+}
+std::optional<std::map<std::string, std::string>>
+nv_attach_impl::hack_fatbin(std::map<std::string, std::string> all_ptx)
+{
+	// std::vector<std::string> ptx_out;
+	char tmp_dir[] = "/tmp/bpftime-fatbin-work.XXXXXX";
+	mkdtemp(tmp_dir);
+	auto working_dir = std::filesystem::path(tmp_dir);
 	// For debugging purpose, remove in release
-	if (all_ptx.size() != 78) {
-		SPDLOG_INFO("Skipping........");
-		return data_vec;
-	}
+	// if (all_ptx.size() != 78) {
+	// 	SPDLOG_INFO("Skipping........");
+	// 	return data_vec;
+	// }
 
 	/**
 	Here we can patch the PTX. Then recompile it.
@@ -306,6 +335,7 @@ nv_attach_impl::hack_fatbin(std::vector<uint8_t> &&data_vec)
 		}
 		to_patch_ptx = wrap_ptx_with_trampoline(to_patch_ptx);
 		to_patch_ptx = filter_out_version_headers(to_patch_ptx);
+		to_patch_ptx = add_semicolon_for_variable_lines(to_patch_ptx);
 		{
 			// filter out comment lines
 			std::istringstream iss(to_patch_ptx);
@@ -319,161 +349,160 @@ nv_attach_impl::hack_fatbin(std::vector<uint8_t> &&data_vec)
 			to_patch_ptx = oss.str();
 		}
 	}
-	std::vector<std::filesystem::path> patched_path_list;
 
+	// std::vector<std::filesystem::path> patched_path_list;
+	SPDLOG_INFO("Writting patched PTX to {}", working_dir.c_str());
+	auto new_all_ptx = all_ptx;
+	new_all_ptx.clear();
 	for (const auto &[file_name, ptx] : all_ptx) {
 		auto path = working_dir / ("patched." + file_name);
 		std::ofstream ofs(path);
 		ofs << ptx;
-		patched_path_list.push_back(path);
+		// patched_path_list.push_back(path);
+		new_all_ptx["patched." + file_name] = ptx;
 	}
-	SPDLOG_INFO("Calling fatbinary to compose PTX to fatbin");
-	auto output_fatbin = working_dir / "kernels.fatbin";
-	std::string fatbin_cmd = "fatbinary --create=";
-	fatbin_cmd += output_fatbin.string() + " ";
-	for (const auto &path : patched_path_list) {
-		fatbin_cmd += "--image=profile=compute_61,file=";
-		fatbin_cmd += path.string() + " ";
-	}
-
-	SPDLOG_INFO("Fatbin output file: {}", output_fatbin.c_str());
-	SPDLOG_DEBUG("fatbinary cmdline: {}", fatbin_cmd);
-	SPDLOG_INFO("Calling fatbinary");
-	if (int err = system(fatbin_cmd.c_str()); err != 0) {
-		SPDLOG_ERROR("Unable to execute fatbinary");
-		return {};
-	}
-	SPDLOG_INFO("fatbinary execution done.");
-	std::vector<uint8_t> fatbin_out_buf;
-	{
-		std::ifstream ifs(output_fatbin,
-				  std::ios::binary | std::ios::ate);
-		auto file_tail = ifs.tellg();
-		ifs.seekg(0, std::ios::beg);
-
-		fatbin_out_buf.resize(file_tail);
-		ifs.read((char *)fatbin_out_buf.data(), file_tail);
-	}
-
-	SPDLOG_INFO("Got patched fatbin in {} bytes", fatbin_out_buf.size());
-	return fatbin_out_buf;
-}
-
-static uint64_t _constData_mock;
-// Ensure buffer size matches map_info layout used on device (256 entries)
-static char map_basic_info_mock[sizeof(attach::MapBasicInfo) * 256];
-extern "C" {
-void __cudaRegisterVar(void **fatCubinHandle, char *hostVar,
-		       char *deviceAddress, const char *deviceName, int ext,
-		       size_t size, int constant, int global);
-}
-int nv_attach_impl::register_trampoline_memory(void **fatbin_handle)
-{
-	// if (this->trampoline_memory_state !=
-	//     TrampolineMemorySetupStage::NotSet) {
-	// 	SPDLOG_INFO("Invalid stage for register trampoline memory");
-	// 	return -1;
+	return new_all_ptx;
+	// SPDLOG_INFO("Calling fatbinary to compose PTX to fatbin");
+	// auto output_fatbin = working_dir / "kernels.fatbin";
+	// std::string fatbin_cmd = "fatbinary --create=";
+	// fatbin_cmd += output_fatbin.string() + " ";
+	// for (const auto &path : patched_path_list) {
+	// 	fatbin_cmd += "--image=profile=compute_61,file=";
+	// 	fatbin_cmd += path.string() + " ";
 	// }
-	SPDLOG_INFO("Registering trampoline memory");
-	cudaGetLastError();
-	this->fatbin_symbols.push_back(fatbin_symbol_def{});
-	auto symbols = &this->fatbin_symbols.back();
 
-	__cudaRegisterVar(fatbin_handle, (char *)&symbols->_constData_mock,
-			  (char *)"constData", "constData", 0,
-			  sizeof(symbols->_constData_mock), 1, 0);
-	if (auto err = cudaGetLastError(); err != cudaSuccess) {
-		SPDLOG_ERROR("Unable to register cuda var: {}", (int)err);
-		return -1;
-	}
+	// SPDLOG_INFO("Fatbin output file: {}", output_fatbin.c_str());
+	// SPDLOG_DEBUG("fatbinary cmdline: {}", fatbin_cmd);
+	// SPDLOG_INFO("Calling fatbinary");
+	// if (int err = system(fatbin_cmd.c_str()); err != 0) {
+	// 	SPDLOG_ERROR("Unable to execute fatbinary");
+	// 	return {};
+	// }
+	// SPDLOG_INFO("fatbinary execution done.");
+	// std::vector<uint8_t> fatbin_out_buf;
+	// {
+	// 	std::ifstream ifs(output_fatbin,
+	// 			  std::ios::binary | std::ios::ate);
+	// 	auto file_tail = ifs.tellg();
+	// 	ifs.seekg(0, std::ios::beg);
 
-	__cudaRegisterVar(fatbin_handle, (char *)&symbols->map_basic_info_mock,
-			  (char *)"map_info", "map_info", 0,
-			  sizeof(symbols->map_basic_info_mock), 1, 0);
-	if (auto err = cudaGetLastError(); err != cudaSuccess) {
-		SPDLOG_ERROR("Unable to register cuda var: {}", (int)err);
-		return -1;
-	}
+	// 	fatbin_out_buf.resize(file_tail);
+	// 	ifs.read((char *)fatbin_out_buf.data(), file_tail);
+	// }
 
-	SPDLOG_INFO("Register trampoline memory done");
-	return 0;
+	// SPDLOG_INFO("Got patched fatbin in {} bytes", fatbin_out_buf.size());
+	// return fatbin_out_buf;
 }
-int nv_attach_impl::copy_data_to_trampoline_memory()
-{
-	SPDLOG_INFO("Copying data to device symbols..");
-	size_t const_size = 0;
-	auto symbols = &this->fatbin_symbols.back();
 
-	if (auto err = cudaGetSymbolSize(
-		    &const_size, (const void *)&symbols->_constData_mock);
-	    err != cudaSuccess ||
-	    const_size != sizeof(symbols->_constData_mock)) {
-		SPDLOG_ERROR(
-			"cudaGetSymbolSize(constData) failed or size too small:	{}",
-			(int)err);
-		cudaGetLastError();
-		return -1;
-	}
+// static uint64_t _constData_mock;
+// // Ensure buffer size matches map_info layout used on device (256 entries)
+// static char map_basic_info_mock[sizeof(attach::MapBasicInfo) * 256];
+// extern "C" {
+// void __cudaRegisterVar(void **fatCubinHandle, char *hostVar,
+// 		       char *deviceAddress, const char *deviceName, int ext,
+// 		       size_t size, int constant, int global);
+// }
 
-	if (auto err = cudaMemcpyToSymbol(
-		    (const void *)&symbols->_constData_mock,
-		    &this->shared_mem_ptr, sizeof(symbols->_constData_mock));
-	    err != cudaSuccess) {
-		SPDLOG_ERROR(
-			"Unable to copy `constData` (shared memory address) to device: {}",
-			(int)err);
-		cudaGetLastError();
-		return -1;
-	}
-	if (!this->map_basic_info.has_value()) {
-		SPDLOG_ERROR(
-			"map_basic_info is not set, cannot copy to device");
-		return -1;
-	}
-	SPDLOG_INFO("Copying the followed map info:");
-	if (!map_basic_info.has_value()) {
-		throw std::runtime_error("map_basic_info not set!");
-	}
-	for (int i = 0; i < this->map_basic_info->size(); i++) {
-		const auto &cur = this->map_basic_info->at(i);
-		if (cur.enabled) {
-			SPDLOG_INFO(
-				"Mapid {}, enabled = {}, key_size = {}, value_size = {}, max_ent={}, type={}",
-				i, cur.enabled, cur.key_size, cur.value_size,
-				cur.max_entries, cur.map_type);
-		}
-	}
-	{
-		size_t map_info_symbol_size = 0;
-		if (auto err = cudaGetSymbolSize(
-			    &map_info_symbol_size,
-			    (const void *)&symbols->map_basic_info_mock);
-		    err != cudaSuccess) {
-			SPDLOG_ERROR("cudaGetSymbolSize(map_info) failed: {}",
-				     (int)err);
-			cudaGetLastError();
-			return -1;
-		}
-		size_t host_bytes = this->map_basic_info->size() *
-				    sizeof(this->map_basic_info->at(0));
-		size_t copy_bytes = host_bytes < map_info_symbol_size ?
-					    host_bytes :
-					    map_info_symbol_size;
-		if (auto err = cudaMemcpyToSymbol(
-			    (const void *)&symbols->map_basic_info_mock,
-			    this->map_basic_info->data(), copy_bytes);
-		    err != cudaSuccess) {
-			SPDLOG_ERROR(
-				"Unable to copy `map_basic_info` to device : {}",
-				(int)err);
-			cudaGetLastError();
-			return -1;
-		}
-	}
-	SPDLOG_INFO("constData and map_basic_info copied..");
+// int nv_attach_impl::register_trampoline_memory(void **fatbin_handle)
+// {
+// 	SPDLOG_INFO("Registering trampoline memory");
+// 	cudaGetLastError();
+// 	this->fatbin_symbols.push_back(fatbin_symbol_def{});
+// 	auto symbols = &this->fatbin_symbols.back();
 
-	return 0;
-}
+// 	__cudaRegisterVar(fatbin_handle, (char *)&symbols->_constData_mock,
+// 			  (char *)"constData", "constData", 0,
+// 			  sizeof(symbols->_constData_mock), 1, 0);
+// 	if (auto err = cudaGetLastError(); err != cudaSuccess) {
+// 		SPDLOG_ERROR("Unable to register cuda var: {}", (int)err);
+// 		return -1;
+// 	}
+
+// 	__cudaRegisterVar(fatbin_handle, (char *)&symbols->map_basic_info_mock,
+// 			  (char *)"map_info", "map_info", 0,
+// 			  sizeof(symbols->map_basic_info_mock), 1, 0);
+// 	if (auto err = cudaGetLastError(); err != cudaSuccess) {
+// 		SPDLOG_ERROR("Unable to register cuda var: {}", (int)err);
+// 		return -1;
+// 	}
+
+// 	SPDLOG_INFO("Register trampoline memory done");
+// 	return 0;
+// }
+// int nv_attach_impl::copy_data_to_trampoline_memory()
+// {
+// 	SPDLOG_INFO("Copying data to device symbols..");
+// 	size_t const_size = 0;
+// 	auto symbols = &this->fatbin_symbols.back();
+
+// 	if (auto err = cudaGetSymbolSize(
+// 		    &const_size, (const void *)&symbols->_constData_mock);
+// 	    err != cudaSuccess ||
+// 	    const_size != sizeof(symbols->_constData_mock)) {
+// 		SPDLOG_ERROR(
+// 			"cudaGetSymbolSize(constData) failed or size too small:
+// {}", 			(int)err); 		cudaGetLastError();
+// return -1;
+// 	}
+
+// 	if (auto err = cudaMemcpyToSymbol(
+// 		    (const void *)&symbols->_constData_mock,
+// 		    &this->shared_mem_ptr, sizeof(symbols->_constData_mock));
+// 	    err != cudaSuccess) {
+// 		SPDLOG_ERROR(
+// 			"Unable to copy `constData` (shared memory address) to
+// device: {}", 			(int)err);
+// cudaGetLastError(); 		return -1;
+// 	}
+// 	if (!this->map_basic_info.has_value()) {
+// 		SPDLOG_ERROR(
+// 			"map_basic_info is not set, cannot copy to device");
+// 		return -1;
+// 	}
+// 	SPDLOG_INFO("Copying the followed map info:");
+// 	if (!map_basic_info.has_value()) {
+// 		throw std::runtime_error("map_basic_info not set!");
+// 	}
+// 	for (int i = 0; i < this->map_basic_info->size(); i++) {
+// 		const auto &cur = this->map_basic_info->at(i);
+// 		if (cur.enabled) {
+// 			SPDLOG_INFO(
+// 				"Mapid {}, enabled = {}, key_size = {},
+// value_size = {}, max_ent={}, type={}", 				i,
+// cur.enabled, cur.key_size, cur.value_size,
+// cur.max_entries, cur.map_type);
+// 		}
+// 	}
+// 	{
+// 		size_t map_info_symbol_size = 0;
+// 		if (auto err = cudaGetSymbolSize(
+// 			    &map_info_symbol_size,
+// 			    (const void *)&symbols->map_basic_info_mock);
+// 		    err != cudaSuccess) {
+// 			SPDLOG_ERROR("cudaGetSymbolSize(map_info) failed: {}",
+// 				     (int)err);
+// 			cudaGetLastError();
+// 			return -1;
+// 		}
+// 		size_t host_bytes = this->map_basic_info->size() *
+// 				    sizeof(this->map_basic_info->at(0));
+// 		size_t copy_bytes = host_bytes < map_info_symbol_size ?
+// 					    host_bytes :
+// 					    map_info_symbol_size;
+// 		if (auto err = cudaMemcpyToSymbol(
+// 			    (const void *)&symbols->map_basic_info_mock,
+// 			    this->map_basic_info->data(), copy_bytes);
+// 		    err != cudaSuccess) {
+// 			SPDLOG_ERROR(
+// 				"Unable to copy `map_basic_info` to device :
+// {}", 				(int)err);
+// cudaGetLastError(); 			return -1;
+// 		}
+// 	}
+// 	SPDLOG_INFO("constData and map_basic_info copied..");
+
+// 	return 0;
+// }
 
 namespace bpftime::attach
 {
@@ -685,4 +714,5 @@ int nv_attach_impl::run_attach_entry_on_gpu(int attach_id, int run_count,
 	}
 	return 0;
 }
+
 } // namespace bpftime::attach
