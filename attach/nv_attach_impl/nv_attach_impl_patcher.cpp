@@ -174,7 +174,7 @@ generate_ptx_for_ebpf(const std::vector<ebpf_inst> &inst,
 std::optional<std::string>
 nv_attach_impl::patch_with_memcapture(std::string input,
 				      const nv_attach_entry &entry,
-				      bool should_set_trampoline)
+				      bool should_set_trampoline) const
 {
 	static const std::string FILTERED_OUT_PREFIXES[] = {
 		".version",
@@ -299,7 +299,7 @@ nv_attach_impl::patch_with_memcapture(std::string input,
 std::optional<std::string>
 nv_attach_impl::patch_with_probe_and_retprobe(std::string ptx,
 					      const nv_attach_entry &entry,
-					      bool should_set_trampoline)
+					      bool should_set_trampoline) const
 {
 	const auto &probe_detail =
 		std::get<nv_attach_function_probe>(entry.type);

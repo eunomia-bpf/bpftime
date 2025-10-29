@@ -96,10 +96,10 @@ class nv_attach_impl final : public base_attach_impl {
 	extract_ptxs(std::vector<uint8_t> &&);
 	std::optional<std::string>
 	patch_with_memcapture(std::string, const nv_attach_entry &entry,
-			      bool should_set_trampoline);
+			      bool should_set_trampoline) const;
 	std::optional<std::string>
 	patch_with_probe_and_retprobe(std::string, const nv_attach_entry &,
-				      bool should_set_trampoline);
+				      bool should_set_trampoline) const;
 	// int register_trampoline_memory(void **);
 	// int copy_data_to_trampoline_memory();
 	int find_attach_entry_by_program_name(const char *name) const;

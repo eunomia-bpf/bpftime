@@ -10,6 +10,8 @@
 #include "nv_attach_utils.hpp"
 #include "spdlog/spdlog.h"
 #include <asm/unistd.h> // For architecture-specific syscall numbers
+#include <boost/asio/post.hpp>
+#include <boost/asio/thread_pool.hpp>
 #include <boost/process.hpp>
 #include <chrono>
 #include <cstdlib>
@@ -23,6 +25,7 @@
 #include <iterator>
 #include <map>
 #include <memory>
+#include <mutex>
 #include <set>
 #include <sstream>
 #include <stdexcept>
@@ -289,79 +292,91 @@ nv_attach_impl::hack_fatbin(std::map<std::string, std::string> all_ptx)
 	// }
 
 	/**
-	Here we can patch the PTX. Then recompile it.
+	Here we can patch the PTX.
 	*/
-	for (auto &[file_name, to_patch_ptx] : all_ptx) {
-		SPDLOG_INFO("Patching PTX: {}", file_name);
-		bool trampoline_added = false;
-		to_patch_ptx = filter_unprintable_chars(to_patch_ptx);
-		for (const auto &[_, entry] : hook_entries) {
-			if (std::holds_alternative<nv_attach_cuda_memcapture>(
-				    entry.type)) {
-				SPDLOG_INFO("Patching with memcapture..");
-				if (auto result = this->patch_with_memcapture(
-					    to_patch_ptx, entry,
-					    !trampoline_added);
-				    result.has_value()) {
-					to_patch_ptx = *result;
-					trampoline_added = true;
-				} else {
-					SPDLOG_ERROR(
-						"Failed to patch for memcapture");
-					return {};
+	boost::asio::thread_pool pool(std::thread::hardware_concurrency());
+	std::mutex map_mutex;
+	std::map<std::string, std::string> ptx_out;
+	SPDLOG_INFO("Using thread pool to patch PTXs");
+	for (auto &[file_name, original_ptx] : all_ptx) {
+		boost::asio::post(pool, [file_name, original_ptx, this, &map_mutex, &ptx_out]() -> int {
+			auto current_ptx = original_ptx;
+			SPDLOG_INFO("Patching PTX: {}", file_name);
+			bool trampoline_added = false;
+			current_ptx = filter_unprintable_chars(current_ptx);
+			for (const auto &[_, entry] : hook_entries) {
+				if (std::holds_alternative<
+					    nv_attach_cuda_memcapture>(
+					    entry.type)) {
+					SPDLOG_INFO(
+						"Patching with memcapture..");
+					if (auto result =
+						    this->patch_with_memcapture(
+							    current_ptx, entry,
+							    !trampoline_added);
+					    result.has_value()) {
+						current_ptx = *result;
+						trampoline_added = true;
+					} else {
+						SPDLOG_ERROR(
+							"Failed to patch for memcapture");
+						return -1;
+					}
+				} else if (std::holds_alternative<
+						   nv_attach_function_probe>(
+						   entry.type)) {
+					SPDLOG_INFO(
+						"Patching with kprobe/kretprobe");
+					if (auto result =
+						    this->patch_with_probe_and_retprobe(
+							    current_ptx, entry,
+							    !trampoline_added);
+					    result.has_value()) {
+						current_ptx = *result;
+						trampoline_added = true;
+					} else {
+						SPDLOG_ERROR(
+							"Failed to patch for probe/retprobe");
+						return -1;
+					}
+				} else if (std::holds_alternative<
+						   nv_attach_directly_run_on_gpu>(
+						   entry.type)) {
+					SPDLOG_INFO(
+						"Found attach with nv_type nv_attach_directly_run_on_gpu, no need to patch");
 				}
-			} else if (std::holds_alternative<
-					   nv_attach_function_probe>(
-					   entry.type)) {
-				SPDLOG_INFO("Patching with kprobe/kretprobe");
-				if (auto result =
-					    this->patch_with_probe_and_retprobe(
-						    to_patch_ptx, entry,
-						    !trampoline_added);
-				    result.has_value()) {
-					to_patch_ptx = *result;
-					trampoline_added = true;
-				} else {
-					SPDLOG_ERROR(
-						"Failed to patch for probe/retprobe");
-					return {};
+			}
+			current_ptx = wrap_ptx_with_trampoline(current_ptx);
+			current_ptx = filter_out_version_headers(current_ptx);
+			current_ptx =
+				add_semicolon_for_variable_lines(current_ptx);
+			{
+				// filter out comment lines
+				std::istringstream iss(current_ptx);
+				std::ostringstream oss;
+				std::string line;
+				while (std::getline(iss, line)) {
+					if (line.starts_with("/"))
+						continue;
+					oss << line << std::endl;
 				}
-			} else if (std::holds_alternative<
-					   nv_attach_directly_run_on_gpu>(
-					   entry.type)) {
-				SPDLOG_INFO(
-					"Found attach with nv_type nv_attach_directly_run_on_gpu, no need to patch");
+				std::lock_guard<std::mutex> _guard(map_mutex);
+				ptx_out["patched." + file_name] = oss.str();
 			}
-		}
-		to_patch_ptx = wrap_ptx_with_trampoline(to_patch_ptx);
-		to_patch_ptx = filter_out_version_headers(to_patch_ptx);
-		to_patch_ptx = add_semicolon_for_variable_lines(to_patch_ptx);
-		{
-			// filter out comment lines
-			std::istringstream iss(to_patch_ptx);
-			std::ostringstream oss;
-			std::string line;
-			while (std::getline(iss, line)) {
-				if (line.starts_with("/"))
-					continue;
-				oss << line << std::endl;
-			}
-			to_patch_ptx = oss.str();
-		}
-	}
 
+			return 0;
+		});
+	}
+	pool.join();
 	// std::vector<std::filesystem::path> patched_path_list;
 	SPDLOG_INFO("Writting patched PTX to {}", working_dir.c_str());
-	auto new_all_ptx = all_ptx;
-	new_all_ptx.clear();
-	for (const auto &[file_name, ptx] : all_ptx) {
-		auto path = working_dir / ("patched." + file_name);
+	for (const auto &[file_name, ptx] : ptx_out) {
+		auto path = working_dir / (file_name);
 		std::ofstream ofs(path);
 		ofs << ptx;
 		// patched_path_list.push_back(path);
-		new_all_ptx["patched." + file_name] = ptx;
 	}
-	return new_all_ptx;
+	return ptx_out;
 	// SPDLOG_INFO("Calling fatbinary to compose PTX to fatbin");
 	// auto output_fatbin = working_dir / "kernels.fatbin";
 	// std::string fatbin_cmd = "fatbinary --create=";
