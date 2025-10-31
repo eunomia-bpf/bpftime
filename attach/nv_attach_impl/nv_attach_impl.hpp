@@ -51,6 +51,8 @@ enum class AttachedToFunction {
 	RegisterFunction,
 	RegisterVariable,
 	RegisterFatbinEnd,
+	CudaMalloc,
+	CudaMallocManaged
 };
 struct CUDARuntimeFunctionHookerContext {
 	class nv_attach_impl *impl;
@@ -75,6 +77,12 @@ struct nv_attach_entry {
 	std::string program_name;
 };
 
+struct RegisterRecord {
+	void *addr;
+	std::string symbol_name;
+	fatbin_record *fatbin_record_instance;
+	bool is_function;
+};
 // Attach implementation of syscall trace
 // It provides a callback to receive original syscall calls, and dispatch the
 // concrete stuff to individual callbacks
@@ -88,8 +96,6 @@ class nv_attach_impl final : public base_attach_impl {
 	nv_attach_impl &operator=(const nv_attach_impl &) = delete;
 	nv_attach_impl();
 	virtual ~nv_attach_impl();
-	std::vector<std::unique_ptr<__fatBinC_Wrapper_t>> stored_binaries_header;
-	std::vector<std::unique_ptr<std::vector<uint8_t>>> stored_binaries_body;
 	std::optional<std::map<std::string, std::string>>
 		hack_fatbin(std::map<std::string, std::string>);
 	std::map<std::string, std::string>
@@ -100,8 +106,6 @@ class nv_attach_impl final : public base_attach_impl {
 	std::optional<std::string>
 	patch_with_probe_and_retprobe(std::string, const nv_attach_entry &,
 				      bool should_set_trampoline) const;
-	// int register_trampoline_memory(void **);
-	// int copy_data_to_trampoline_memory();
 	int find_attach_entry_by_program_name(const char *name) const;
 	int run_attach_entry_on_gpu(int attach_id, int run_count = 1,
 				    int grid_dim_x = 1, int grid_dim_y = 1,
@@ -112,6 +116,8 @@ class nv_attach_impl final : public base_attach_impl {
 	std::map<void *, fatbin_record *> symbol_address_to_fatbin;
 	uintptr_t shared_mem_ptr;
 	std::optional<std::vector<MapBasicInfo>> map_basic_info;
+	std::vector<RegisterRecord> records;
+	int apply_records();
 
     private:
 	void *frida_interceptor;
@@ -120,12 +126,6 @@ class nv_attach_impl final : public base_attach_impl {
 		hooker_contexts;
 	std::set<std::string> to_hook_device_functions;
 	std::map<int, nv_attach_entry> hook_entries;
-
-	// struct fatbin_symbol_def {
-	// 	uint64_t _constData_mock;
-	// 	char map_basic_info_mock[sizeof(attach::MapBasicInfo) * 256];
-	// };
-	// std::vector<fatbin_symbol_def> fatbin_symbols;
 };
 std::string filter_unprintable_chars(std::string input);
 std::string filter_out_version_headers(const std::string &input);

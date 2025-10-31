@@ -1,3 +1,6 @@
+#ifndef _NV_ATTACH_FATBIN_RECORD
+#define _NV_ATTACH_FATBIN_RECORD
+
 #include "cuda.h"
 #include <map>
 #include <memory>
@@ -30,7 +33,10 @@ struct fatbin_record {
 	std::vector<std::unique_ptr<ptx_in_module>> ptxs;
 	std::map<void *, variable_info> variable_addr_to_symbol;
 	std::map<void *, kernel_info> function_addr_to_symbol;
-	void **fatbin_handle = nullptr;
+	std::map<std::string, std::string> original_ptx;
+	bool ptx_loaded = false;
+	void try_loading_ptxs(class nv_attach_impl &);
+	// void **fatbin_handle = nullptr;
 	virtual ~fatbin_record();
 	bool find_and_fill_variable_info(void *ptr, const char *symbol_name);
 	bool find_and_fill_function_info(void *ptr, const char *symbol_name);
@@ -38,3 +44,5 @@ struct fatbin_record {
 
 } // namespace attach
 } // namespace bpftime
+
+#endif

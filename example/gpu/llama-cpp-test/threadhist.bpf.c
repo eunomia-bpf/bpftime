@@ -18,7 +18,7 @@ static const u64 (*bpf_get_block_idx)(u64 *x, u64 *y, u64 *z) = (void *)503;
 static const u64 (*bpf_get_block_dim)(u64 *x, u64 *y, u64 *z) = (void *)504;
 static const u64 (*bpf_get_thread_idx)(u64 *x, u64 *y, u64 *z) = (void *)505;
 
-SEC("kretprobe/_Z9scale_f32PKfPfffl")
+SEC("kretprobe/_Z12rms_norm_f32ILi1024ELb1ELb0EEvPKfPfilllfS1_lll5uint3S3_S3_S3_S1_lllS3_S3_S3_S3_")
 int cuda__retprobe()
 {
 	u32 key = 0;

@@ -185,45 +185,68 @@ nv_attach_impl::nv_attach_impl()
 			    interceptor, (gpointer)addr,
 			    (GumInvocationListener *)listener, ctx_ptr);
 		    result != GUM_ATTACH_OK) {
-			SPDLOG_ERROR("Unable to attach to CUDA functions: {}",
-				     (int)result);
+			SPDLOG_ERROR(
+				"Unable to attach to CUDA functions: func={}, err={}",
+				(int)func, (int)result);
 			throw std::runtime_error(
 				"Failed to attach to CUDA function");
 		}
 	};
 
-	void *register_fatbin_addr =
-		dlsym(RTLD_NEXT, "__cudaRegisterFatBinary");
-	register_hook(AttachedToFunction::RegisterFatbin, register_fatbin_addr);
+	{
+		void *register_fatbin_addr =
+			dlsym(RTLD_NEXT, "__cudaRegisterFatBinary");
+		register_hook(AttachedToFunction::RegisterFatbin,
+			      register_fatbin_addr);
+	}
+	{
+		void *register_function_addr =
+			GSIZE_TO_POINTER(gum_module_find_export_by_name(
+				nullptr, "__cudaRegisterFunction"));
+		register_hook(AttachedToFunction::RegisterFunction,
+			      register_function_addr);
+	}
+	{
+		void *register_variable_addr =
+			GSIZE_TO_POINTER(gum_module_find_export_by_name(
+				nullptr, "__cudaRegisterVar"));
+		register_hook(AttachedToFunction::RegisterVariable,
+			      register_variable_addr);
+	}
+	{
+		void *register_fatbin_end_addr =
+			GSIZE_TO_POINTER(gum_module_find_export_by_name(
+				nullptr, "__cudaRegisterFatBinaryEnd"));
+		register_hook(AttachedToFunction::RegisterFatbinEnd,
+			      register_fatbin_end_addr);
+	}
 
-	void *register_function_addr =
-		GSIZE_TO_POINTER(gum_module_find_export_by_name(
-			nullptr, "__cudaRegisterFunction"));
-	register_hook(AttachedToFunction::RegisterFunction,
-		      register_function_addr);
+	{
+		void *cuda_malloc_addr = GSIZE_TO_POINTER(
+			gum_module_find_export_by_name(nullptr, "cudaMalloc"));
+		register_hook(AttachedToFunction::CudaMalloc, cuda_malloc_addr);
+	}
+	{
+		void *cuda_malloc_managed_addr =
+			GSIZE_TO_POINTER(gum_module_find_export_by_name(
+				nullptr, "cudaMallocManaged"));
+		register_hook(AttachedToFunction::CudaMallocManaged,
+			      cuda_malloc_managed_addr);
+	}
+	{
+		void *cuda_launch_kernel_addr =
+			GSIZE_TO_POINTER(gum_module_find_export_by_name(
+				nullptr, "cudaLaunchKernel"));
 
-	void *register_variable_addr = GSIZE_TO_POINTER(
-		gum_module_find_export_by_name(nullptr, "__cudaRegisterVar"));
-	register_hook(AttachedToFunction::RegisterVariable,
-		      register_variable_addr);
-
-	void *register_fatbin_end_addr =
-		GSIZE_TO_POINTER(gum_module_find_export_by_name(
-			nullptr, "__cudaRegisterFatBinaryEnd"));
-	register_hook(AttachedToFunction::RegisterFatbinEnd,
-		      register_fatbin_end_addr);
-
-	void *cuda_launch_kernel_addr = GSIZE_TO_POINTER(
-		gum_module_find_export_by_name(nullptr, "cudaLaunchKernel"));
-
-	if (auto err = gum_interceptor_replace(
-		    interceptor, cuda_launch_kernel_addr,
-		    (gpointer)&cuda_runtime_function__cudaLaunchKernel, this,
-		    nullptr);
-	    err != GUM_REPLACE_OK) {
-		SPDLOG_ERROR("Unable to replace cudaLaunchKernel: {}",
-			     (int)err);
-		assert(false);
+		if (auto err = gum_interceptor_replace(
+			    interceptor, cuda_launch_kernel_addr,
+			    (gpointer)&cuda_runtime_function__cudaLaunchKernel,
+			    this, nullptr);
+		    err != GUM_REPLACE_OK) {
+			SPDLOG_ERROR("Unable to replace cudaLaunchKernel: {}",
+				     (int)err);
+			assert(false);
+		}
 	}
 	gum_interceptor_end_transaction(interceptor);
 }
@@ -581,5 +604,36 @@ int nv_attach_impl::run_attach_entry_on_gpu(int attach_id, int run_count,
 	}
 	return 0;
 }
+int nv_attach_impl::apply_records()
+{
+	if (records.empty())
+		return 0;
+	SPDLOG_INFO("Applying register records..");
 
+	for (const auto &entry : this->records) {
+		bool ok;
+		entry.fatbin_record_instance->try_loading_ptxs(*this);
+		if (entry.is_function) {
+			ok = entry.fatbin_record_instance
+				     ->find_and_fill_function_info(
+					     entry.addr,
+					     entry.symbol_name.c_str());
+
+		} else {
+			ok = entry.fatbin_record_instance
+				     ->find_and_fill_variable_info(
+					     entry.addr,
+					     entry.symbol_name.c_str());
+		}
+		if (!ok) {
+			SPDLOG_ERROR(
+				"Unable to apply record, symbol {} not found",
+				entry.symbol_name);
+			return -1;
+		}
+	}
+	records.clear();
+
+	return 0;
+}
 } // namespace bpftime::attach

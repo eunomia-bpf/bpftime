@@ -1,6 +1,7 @@
 #include "nv_attach_fatbin_record.hpp"
 #include "cuda.h"
 #include "spdlog/spdlog.h"
+#include "nv_attach_impl.hpp"
 #define CUDA_DRIVER_CHECK_NO_EXCEPTION(expr, message)                          \
 	do {                                                                   \
 		if (auto err = expr; err != CUDA_SUCCESS) {                    \
@@ -74,4 +75,63 @@ bool fatbin_record::find_and_fill_function_info(void *ptr,
 	}
 	return false;
 }
+
+void fatbin_record::try_loading_ptxs(class nv_attach_impl &impl)
+{
+	if (ptx_loaded)
+		return;
+	SPDLOG_INFO("Loading & patching current fatbin..");
+	auto patched_ptx = *impl.hack_fatbin(original_ptx);
+
+	for (const auto &[name, ptx] : patched_ptx) {
+		CUmodule module;
+		SPDLOG_INFO("Loading module: {}", name);
+		char error_buf[8192], info_buf[8192];
+		CUjit_option options[] = { CU_JIT_INFO_LOG_BUFFER,
+					   CU_JIT_INFO_LOG_BUFFER_SIZE_BYTES,
+					   CU_JIT_ERROR_LOG_BUFFER,
+					   CU_JIT_ERROR_LOG_BUFFER_SIZE_BYTES };
+		void *option_values[] = { (void *)info_buf,
+					  (void *)std::size(info_buf),
+					  (void *)error_buf,
+					  (void *)std::size(error_buf) };
+		if (auto err = cuModuleLoadDataEx(&module, ptx.data(),
+						  std::size(options), options,
+						  option_values);
+		    err != CUDA_SUCCESS) {
+			SPDLOG_ERROR("Unable to compile module {}: {}", name,
+				     (int)err);
+			SPDLOG_ERROR("Info: {}", info_buf);
+			SPDLOG_ERROR("Error: {}", error_buf);
+			throw std::runtime_error("Unable to compile module");
+		}
+		CUdeviceptr const_data_ptr, map_basic_info_ptr;
+		size_t const_data_size, map_basic_info_size;
+		SPDLOG_INFO("Copying trampoline data to device");
+		CUDA_DRIVER_CHECK_EXCEPTION(
+			cuModuleGetGlobal(&const_data_ptr, &const_data_size,
+					  module, "constData"),
+			"Unable to get pointer of constData");
+		CUDA_DRIVER_CHECK_EXCEPTION(
+			cuModuleGetGlobal(&map_basic_info_ptr,
+					  &map_basic_info_size, module,
+					  "map_info"),
+			"Unable to get pointer of map_info");
+		CUDA_DRIVER_CHECK_EXCEPTION(
+			cuMemcpyHtoD(const_data_ptr, &impl.shared_mem_ptr,
+				     const_data_size),
+			"Unable to copy constData pointer to device");
+		CUDA_DRIVER_CHECK_EXCEPTION(
+			cuMemcpyHtoD(map_basic_info_ptr,
+				     impl.map_basic_info->data(),
+				     map_basic_info_size),
+			"Unable to copy constData pointer to device");
+		SPDLOG_INFO("Trampoline data copied");
+		ptxs.emplace_back(
+			std::make_unique<fatbin_record::ptx_in_module>(module));
+		SPDLOG_INFO("Loaded module: {}", name);
+	}
+	ptx_loaded = true;
+}
+
 } // namespace bpftime::attach

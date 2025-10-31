@@ -82,124 +82,35 @@ static void example_listener_on_enter(GumInvocationListener *listener,
 		};
 		std::vector<uint8_t> data_vec((uint8_t *)data, (uint8_t *)tail);
 		SPDLOG_INFO("Finally size = {}", data_vec.size());
-		// auto patched =
-		// context->impl->hack_fatbin(std::move(data_vec)); if
-		// (!patched.has_value()) { 	SPDLOG_ERROR(
-		// "hack_fatbin failed; skipping fatbin replacement"); 	return;
-		// }
-		// auto &patched_fatbin = *patched;
 		auto extracted_ptx =
 			context->impl->extract_ptxs(std::move(data_vec));
 		SPDLOG_INFO("Patching PTXs");
-		auto patched_ptx = *context->impl->hack_fatbin(extracted_ptx);
 		auto fatbin_record = std::make_unique<struct fatbin_record>();
-		fatbin_record->fatbin_handle = (void **)header;
-		auto &impl = *context->impl;
-		for (const auto &[name, ptx] : patched_ptx) {
-			CUmodule module;
-			SPDLOG_INFO("Loading module: {}", name);
-			char error_buf[8192], info_buf[8192];
-			CUjit_option options[] = {
-				CU_JIT_INFO_LOG_BUFFER,
-				CU_JIT_INFO_LOG_BUFFER_SIZE_BYTES,
-				CU_JIT_ERROR_LOG_BUFFER,
-				CU_JIT_ERROR_LOG_BUFFER_SIZE_BYTES
-			};
-			void *option_values[] = {
-				(void *)info_buf, (void *)std::size(info_buf),
-				(void *)error_buf, (void *)std::size(error_buf)
-			};
-			if (auto err = cuModuleLoadDataEx(
-				    &module, ptx.data(), std::size(options),
-				    options, option_values);
-			    err != CUDA_SUCCESS) {
-				SPDLOG_ERROR("Unable to compile module {}: {}",
-					     name, (int)err);
-				SPDLOG_ERROR("Info: {}", info_buf);
-				SPDLOG_ERROR("Error: {}", error_buf);
-				throw std::runtime_error(
-					"Unable to compile module");
-			}
-			CUdeviceptr const_data_ptr, map_basic_info_ptr;
-			size_t const_data_size, map_basic_info_size;
-			SPDLOG_INFO("Copying trampoline data to device");
-			CUDA_DRIVER_CHECK_EXCEPTION(
-				cuModuleGetGlobal(&const_data_ptr,
-						  &const_data_size, module,
-						  "constData"),
-				"Unable to get pointer of constData");
-			CUDA_DRIVER_CHECK_EXCEPTION(
-				cuModuleGetGlobal(&map_basic_info_ptr,
-						  &map_basic_info_size, module,
-						  "map_info"),
-				"Unable to get pointer of map_info");
-			CUDA_DRIVER_CHECK_EXCEPTION(
-				cuMemcpyHtoD(const_data_ptr,
-					     &context->impl->shared_mem_ptr,
-					     const_data_size),
-				"Unable to copy constData pointer to device");
-			CUDA_DRIVER_CHECK_EXCEPTION(
-				cuMemcpyHtoD(
-					map_basic_info_ptr,
-					context->impl->map_basic_info->data(),
-					map_basic_info_size),
-				"Unable to copy constData pointer to device");
-			SPDLOG_INFO("Trampoline data copied");
-			fatbin_record->ptxs.emplace_back(
-				std::make_unique<fatbin_record::ptx_in_module>(
-					module));
-			SPDLOG_INFO("Loaded module: {}", name);
-		}
-		impl.current_fatbin = fatbin_record.get();
-		impl.fatbin_records.emplace_back(std::move(fatbin_record));
+		fatbin_record->original_ptx = extracted_ptx;
+		context->impl->current_fatbin = fatbin_record.get();
+		context->impl->fatbin_records.emplace_back(
+			std::move(fatbin_record));
 
-		// auto patched_fatbin_ptr =
-		// 	std::make_unique<std::vector<uint8_t>>(patched_fatbin);
-		// auto patched_header =
-		// std::make_unique<__fatBinC_Wrapper_t>(); auto
-		// patched_header_ptr = patched_header.get();
-		// patched_header->magic = 0x466243b1;
-		// patched_header->version = 1;
-		// patched_header->data =
-		// 	(const unsigned long long *)patched_fatbin_ptr->data();
-		// patched_header->filename_or_fatbins = 0;
-		// context->impl->stored_binaries_body.push_back(
-		// 	std::move(patched_fatbin_ptr));
-		// context->impl->stored_binaries_header.push_back(
-		// 	std::move(patched_header));
-		// // Set the patched header as the argument
-		// gum_invocation_context_replace_nth_argument(gum_ctx, 0,
-		// 					    patched_header_ptr);
 	} else if (context->to_function ==
 		   AttachedToFunction::RegisterFunction) {
 		SPDLOG_DEBUG("Entering __cudaRegisterFunction..");
-		auto fatbin_handle =
-			gum_invocation_context_get_nth_argument(gum_ctx, 0);
+		auto &impl = *context->impl;
 		auto current_fatbin = context->impl->current_fatbin;
-
 		auto func_addr =
 			gum_invocation_context_get_nth_argument(gum_ctx, 1);
 		auto symbol_name =
 			(const char *)gum_invocation_context_get_nth_argument(
 				gum_ctx, 3);
-		if (fatbin_handle != current_fatbin->fatbin_handle) {
-			SPDLOG_DEBUG(
-				"When registering kernel function {}, the provided fatbin handle (0x{:x}) doesn't match the fatbin handle provided by cudaRegisterFatbin (0x{:x})",
-				symbol_name, (uintptr_t)fatbin_handle,
-				(uintptr_t)current_fatbin->fatbin_handle);
-		}
-		if (auto result = current_fatbin->find_and_fill_function_info(
-			    func_addr, symbol_name);
-		    !result) {
-			SPDLOG_ERROR("Unable to find func symbol named {}",
-				     symbol_name);
-		} else {
-			context->impl->symbol_address_to_fatbin[func_addr] =
-				current_fatbin;
-			SPDLOG_DEBUG(
-				"Registered kernel function name {} addr {:x}",
-				symbol_name, (uintptr_t)func_addr);
-		}
+
+		context->impl->records.emplace_back(RegisterRecord{
+			.addr = func_addr,
+			.symbol_name = std::string(symbol_name),
+			.fatbin_record_instance = current_fatbin,
+			.is_function = true });
+		context->impl->symbol_address_to_fatbin[func_addr] =
+			current_fatbin;
+		SPDLOG_DEBUG("Registered kernel function name {} addr {:x}",
+			     symbol_name, (uintptr_t)func_addr);
 
 	} else if (context->to_function ==
 		   AttachedToFunction::RegisterVariable) {
@@ -213,54 +124,29 @@ static void example_listener_on_enter(GumInvocationListener *listener,
 		auto symbol_name =
 			(const char *)gum_invocation_context_get_nth_argument(
 				gum_ctx, 3);
-		auto ext =
-			(int)(uintptr_t)gum_invocation_context_get_nth_argument(
-				gum_ctx, 4);
-		auto size = (size_t)(uintptr_t)
-			gum_invocation_context_get_nth_argument(gum_ctx, 5);
 
-		auto constant =
-			(int)(uintptr_t)gum_invocation_context_get_nth_argument(
-				gum_ctx, 6);
-		auto global =
-			(int)(uintptr_t)gum_invocation_context_get_nth_argument(
-				gum_ctx, 7);
-		SPDLOG_DEBUG(
-			"Registering variable named {}, ext={}, size={}, constant={}, global={}",
-			symbol_name, ext, size, constant, global);
-		if (fatbin_handle != current_fatbin->fatbin_handle) {
-			SPDLOG_DEBUG(
-				"When registering variable {}, the provided fatbin handle (0x{:x}) doesn't match the fatbin handle provided by cudaRegisterFatbin (0x{:x})",
-				symbol_name, (uintptr_t)fatbin_handle,
-				(uintptr_t)current_fatbin->fatbin_handle);
-		}
-		if (auto result = current_fatbin->find_and_fill_variable_info(
-			    var_addr, symbol_name);
-		    !result) {
-			SPDLOG_ERROR("Unable to find variable symbol named {}",
-				     symbol_name);
-		} else {
-			context->impl->symbol_address_to_fatbin[var_addr] =
-				current_fatbin;
-			SPDLOG_DEBUG("Registered variable name {} addr {:x}",
-				     symbol_name, (uintptr_t)var_addr);
-		}
+		SPDLOG_DEBUG("Registering variable named {}", symbol_name);
+
+		context->impl->records.emplace_back(RegisterRecord{
+			.addr = var_addr,
+			.symbol_name = std::string(symbol_name),
+			.fatbin_record_instance = current_fatbin,
+			.is_function = false });
+		context->impl->symbol_address_to_fatbin[var_addr] =
+			current_fatbin;
+		SPDLOG_DEBUG("Registered variable name {} addr {:x}",
+			     symbol_name, (uintptr_t)var_addr);
 	} else if (context->to_function ==
 		   AttachedToFunction::RegisterFatbinEnd) {
 		SPDLOG_DEBUG("Entering __cudaRegisterFatBinaryEnd..");
-		// auto &impl = *context->impl;
-		// auto arg = (void **)
-		// 		gum_invocation_context_get_nth_argument(gum_ctx,
-		// 							0);
-		// 	if (int err = impl.register_trampoline_memory(arg);
-		// 	    err != 0) {
-		// 		assert(false);
-		// 	}
 		auto &current_fatbin = context->impl->current_fatbin;
-		SPDLOG_INFO("Got {} functions, {} variables defined",
-			    current_fatbin->function_addr_to_symbol.size(),
-			    current_fatbin->variable_addr_to_symbol.size());
+
 		current_fatbin = nullptr;
+	} else if (context->to_function == AttachedToFunction::CudaMalloc) {
+		SPDLOG_DEBUG("Entering cudaMalloc..");
+		if (auto err = context->impl->apply_records(); err != 0) {
+			throw std::runtime_error("Unable to apply records");
+		}
 	}
 }
 
@@ -281,15 +167,6 @@ static void example_listener_on_leave(GumInvocationListener *listener,
 	} else if (context->to_function ==
 		   AttachedToFunction::RegisterFatbinEnd) {
 		SPDLOG_DEBUG("Leaving __cudaRegisterFatBinaryEnd..");
-		// if (int err =
-		// context->impl->copy_data_to_trampoline_memory();
-		//     err != 0) {
-		// 	SPDLOG_ERROR(
-		// 		"Unable to copy data to trampoline, skipping due
-		// to environment");
-		// 	// Do not abort process; continue without device-side
-		// 	// trampolines
-		// }
 	}
 }
 
