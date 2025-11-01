@@ -139,12 +139,11 @@ patch_memcapture(const std::string &ptx,
 				packed_words + insts_local.size());
 			auto func_ptx = ptxpass::compile_ebpf_to_ptx_from_words(
 				packed, "sm_60",
-				"__memcapture_probe__" + std::to_string(count),
-				true, true);
+				"__memcapture__" + std::to_string(count), true,
+				false);
 			auto func_name = std::string("__memcapture__") +
 					 std::to_string(count);
-			out_funcs << ".func " << func_name << "\n"
-				  << func_ptx << "\n";
+			out_funcs << func_ptx << "\n";
 			out_body << "call " << func_name << ";\n";
 		}
 	}
