@@ -4,7 +4,7 @@
 #include <iostream>
 #include <string>
 
-static ptxpass::PassConfig GetDefaultConfig()
+static ptxpass::PassConfig get_default_config()
 {
 	ptxpass::PassConfig cfg;
 	cfg.name = "kprobe_entry";
@@ -17,8 +17,8 @@ static ptxpass::PassConfig GetDefaultConfig()
 }
 
 static std::pair<std::string, bool>
-PatchEntry(const std::string &ptx, const std::string &kernel,
-	   const std::vector<uint64_t> &ebpf_words)
+patch_entry(const std::string &ptx, const std::string &kernel,
+	    const std::vector<uint64_t> &ebpf_words)
 {
 	if (ebpf_words.empty()) {
 		return { ptx, false };
@@ -44,7 +44,7 @@ PatchEntry(const std::string &ptx, const std::string &kernel,
 	return { out, true };
 }
 
-static void PrintUsage(const char *argv0)
+static void print_usage(const char *argv0)
 {
 	std::cerr
 		<< "Usage: " << argv0
@@ -71,7 +71,7 @@ int main(int argc, char **argv)
 		} else if (a == "--dry-run") {
 			dryRun = true;
 		} else if (a == "--help" || a == "-h") {
-			PrintUsage(argv[0]);
+			print_usage(argv[0]);
 			return ExitCode::Success;
 		} else if (a == "--log-level") {
 			// Ignored in minimal skeleton
@@ -85,7 +85,7 @@ int main(int argc, char **argv)
 	try {
 		PassConfig cfg;
 		if (printConfigOnly) {
-			cfg = GetDefaultConfig();
+			cfg = get_default_config();
 			nlohmann::json j;
 			j["name"] = cfg.name;
 			j["description"] = cfg.description;
@@ -101,7 +101,7 @@ int main(int argc, char **argv)
 		if (!configPath.empty()) {
 			cfg = JsonConfigLoader::load_from_file(configPath);
 		} else {
-			cfg = GetDefaultConfig();
+			cfg = get_default_config();
 		}
 		auto matcher = AttachPointMatcher(cfg.attachPoints);
 		auto ap = get_env("PTX_ATTACH_POINT");
@@ -125,8 +125,8 @@ int main(int argc, char **argv)
 			return ExitCode::TransformFailed;
 		}
 		auto [out, modified] =
-			PatchEntry(rr.input.full_ptx, rr.input.to_patch_kernel,
-				   rr.ebpf_instructions);
+			patch_entry(rr.input.full_ptx, rr.input.to_patch_kernel,
+				    rr.ebpf_instructions);
 		if (modified && !is_whitespace_only(out))
 			emit_runtime_output(out);
 		return ExitCode::Success;

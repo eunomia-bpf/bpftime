@@ -7,7 +7,7 @@
 #include <sstream>
 #include <ebpf_inst.h>
 
-static ptxpass::PassConfig GetDefaultConfig()
+static ptxpass::PassConfig get_default_config()
 {
 	ptxpass::PassConfig cfg;
 	cfg.name = "kprobe_memcapture";
@@ -21,7 +21,8 @@ static ptxpass::PassConfig GetDefaultConfig()
 }
 
 static std::pair<std::string, bool>
-PatchMemcapture(const std::string &ptx, const std::vector<uint64_t> &ebpf_words)
+patch_memcapture(const std::string &ptx,
+		 const std::vector<uint64_t> &ebpf_words)
 {
 	static std::regex ld_st_pattern(
 		R"(^\s*(ld|st)\.(const|global|local|param)?\.(((s|u|b)(8|16|32|64))|\.b128|(\.f(16|16x2|32|64))) +(.+), *(.+);\s*$)");
@@ -147,7 +148,7 @@ PatchMemcapture(const std::string &ptx, const std::vector<uint64_t> &ebpf_words)
 	return { out, true };
 }
 
-static void PrintUsage(const char *argv0)
+static void print_usage(const char *argv0)
 {
 	std::cerr
 		<< "Usage: " << argv0
@@ -174,7 +175,7 @@ int main(int argc, char **argv)
 		} else if (a == "--dry-run") {
 			dryRun = true;
 		} else if (a == "--help" || a == "-h") {
-			PrintUsage(argv[0]);
+			print_usage(argv[0]);
 			return ExitCode::Success;
 		} else if (a == "--log-level") {
 			// Ignored in minimal skeleton
@@ -188,7 +189,7 @@ int main(int argc, char **argv)
 	try {
 		PassConfig cfg;
 		if (printConfigOnly) {
-			cfg = GetDefaultConfig();
+			cfg = get_default_config();
 			nlohmann::json j;
 			j["name"] = cfg.name;
 			j["description"] = cfg.description;
@@ -204,7 +205,7 @@ int main(int argc, char **argv)
 		if (!configPath.empty()) {
 			cfg = JsonConfigLoader::load_from_file(configPath);
 		} else {
-			cfg = GetDefaultConfig();
+			cfg = get_default_config();
 		}
 		auto matcher = AttachPointMatcher(cfg.attachPoints);
 		auto ap = get_env("PTX_ATTACH_POINT");
@@ -230,8 +231,8 @@ int main(int argc, char **argv)
 		if (!validate_input(rr.input.full_ptx, cfg.validation)) {
 			return ExitCode::TransformFailed;
 		}
-		auto [out, modified] = PatchMemcapture(rr.input.full_ptx,
-						       rr.ebpf_instructions);
+		auto [out, modified] = patch_memcapture(rr.input.full_ptx,
+							rr.ebpf_instructions);
 		emit_runtime_output(modified ? out : "");
 		return ExitCode::Success;
 	} catch (const std::runtime_error &e) {

@@ -4,7 +4,7 @@
 #include <iostream>
 #include <string>
 
-static ptxpass::PassConfig GetDefaultConfig()
+static ptxpass::PassConfig get_default_config()
 {
 	ptxpass::PassConfig cfg;
 	cfg.name = "kretprobe";
@@ -17,7 +17,7 @@ static ptxpass::PassConfig GetDefaultConfig()
 }
 
 static std::pair<std::string, bool>
-PatchRetprobe(const std::string &ptx, const std::string &kernel,
+patch_retprobe(const std::string &ptx, const std::string &kernel,
 	       const std::vector<uint64_t> &ebpf_words)
 {
 	auto func_ptx =
@@ -39,7 +39,7 @@ PatchRetprobe(const std::string &ptx, const std::string &kernel,
 	return { out, true };
 }
 
-static void PrintUsage(const char *argv0)
+static void print_usage(const char *argv0)
 {
 	std::cerr
 		<< "Usage: " << argv0
@@ -66,7 +66,7 @@ int main(int argc, char **argv)
 		} else if (a == "--dry-run") {
 			dryRun = true;
 		} else if (a == "--help" || a == "-h") {
-            PrintUsage(argv[0]);
+			print_usage(argv[0]);
 			return ExitCode::Success;
 		} else if (a == "--log-level") {
 			// Ignored in minimal skeleton
@@ -80,7 +80,7 @@ int main(int argc, char **argv)
 	try {
 		PassConfig cfg;
 		if (printConfigOnly) {
-            cfg = GetDefaultConfig();
+			cfg = get_default_config();
 			nlohmann::json j;
 			j["name"] = cfg.name;
 			j["description"] = cfg.description;
@@ -96,7 +96,7 @@ int main(int argc, char **argv)
 		if (!configPath.empty()) {
 			cfg = JsonConfigLoader::load_from_file(configPath);
 		} else {
-			cfg = GetDefaultConfig();
+			cfg = get_default_config();
 		}
 		auto matcher = AttachPointMatcher(cfg.attachPoints);
 		auto ap = get_env("PTX_ATTACH_POINT");
@@ -115,7 +115,7 @@ int main(int argc, char **argv)
 			return ExitCode::Success;
 		if (!validate_input(rr.input.full_ptx, cfg.validation))
 			return ExitCode::TransformFailed;
-		auto [out, modified] = PatchRetprobe(rr.input.full_ptx,
+		auto [out, modified] = patch_retprobe(rr.input.full_ptx,
 						      rr.input.to_patch_kernel,
 						      rr.ebpf_instructions);
 		if (modified && !is_whitespace_only(out))
