@@ -33,14 +33,58 @@ jobs:
         with:
           submodules: recursive
 
-      - name: Check installed tools
+      - name: Check and install required tools
         run: |
           echo "Checking installed tools..."
-          which cmake || echo "cmake not found"
-          which g++ || echo "g++ not found"
-          which make || echo "make not found"
-          which llvm-config || echo "llvm-config not found"
-          nvcc --version || echo "nvcc not found"
+          
+          # Check CMake
+          if ! command -v cmake &> /dev/null; then
+            echo "Installing cmake..."
+            sudo apt-get update
+            sudo apt-get install -y cmake
+          else
+            echo "cmake: $(which cmake)"
+            cmake --version
+          fi
+          
+          # Check compiler
+          if ! command -v g++ &> /dev/null; then
+            echo "Installing build essentials..."
+            sudo apt-get install -y build-essential
+          else
+            echo "g++: $(which g++)"
+            g++ --version | head -1
+          fi
+          
+          # Check other dependencies
+          echo "Installing required libraries..."
+          sudo apt-get install -y libboost-all-dev libzstd-dev pkg-config || true
+          
+          # Check and install LLVM
+          if ! command -v llvm-config &> /dev/null && \
+             ! command -v llvm-config-18 &> /dev/null && \
+             ! command -v llvm-config-17 &> /dev/null && \
+             ! command -v llvm-config-16 &> /dev/null && \
+             ! command -v llvm-config-15 &> /dev/null; then
+            echo "Installing LLVM..."
+            sudo apt-get install -y llvm-18 llvm-18-dev || \
+            sudo apt-get install -y llvm-17 llvm-17-dev || \
+            sudo apt-get install -y llvm-16 llvm-16-dev || \
+            sudo apt-get install -y llvm-15 llvm-15-dev || \
+            sudo apt-get install -y llvm llvm-dev
+          fi
+          
+          # Show LLVM version
+          for c in llvm-config-18 llvm-config-17 llvm-config-16 llvm-config-15 llvm-config; do
+            if command -v "$c" &> /dev/null; then
+              echo "Found: $c"
+              $c --version
+              break
+            fi
+          done
+          
+          # Check CUDA
+          nvcc --version || echo "nvcc not found (CUDA compiler)"
 
       - name: Check CUDA installation
         shell: bash
