@@ -1,5 +1,12 @@
 include(../../cmake/cuda.cmake)
 
+# PTX transform passes now live under pass/
+add_subdirectory(pass/ptxpass_core)
+add_subdirectory(pass/ptxpass_kprobe_entry)
+add_subdirectory(pass/ptxpass_kretprobe)
+add_subdirectory(pass/ptxpass_kprobe_memcapture)
+
+
 add_library(
     bpftime_nv_attach_impl STATIC
     nv_attach_impl.cpp
@@ -11,7 +18,7 @@ add_library(
     ptxpass_pipeline.cpp
 )
 
-add_dependencies(bpftime_nv_attach_impl bpftime_base_attach_impl spdlog::spdlog FridaGum  llvmbpf_vm bpftime_vm_compat)
+add_dependencies(bpftime_nv_attach_impl bpftime_base_attach_impl spdlog::spdlog FridaGum  llvmbpf_vm bpftime_vm_compat ptxpass_core)
 set(NV_ATTACH_IMPL_INCLUDE ${CMAKE_CURRENT_SOURCE_DIR} )
 find_cuda()
 
@@ -19,7 +26,7 @@ target_include_directories(bpftime_nv_attach_impl PRIVATE ${SPDLOG_INCLUDE} ${CM
 
 target_link_directories(bpftime_nv_attach_impl PUBLIC ${CUDA_LIBRARY_PATH} )
 
-target_link_libraries(bpftime_nv_attach_impl PUBLIC bpftime_base_attach_impl spdlog::spdlog ${CUDA_LIBS} PRIVATE  ${FRIDA_GUM_INSTALL_DIR}/libfrida-gum.a PUBLIC llvmbpf_vm bpftime_vm_compat)
+target_link_libraries(bpftime_nv_attach_impl PUBLIC bpftime_base_attach_impl spdlog::spdlog ${CUDA_LIBS} PRIVATE  ${FRIDA_GUM_INSTALL_DIR}/libfrida-gum.a PUBLIC llvmbpf_vm bpftime_vm_compat ptxpass_core)
 
 set_property(TARGET bpftime_nv_attach_impl PROPERTY CXX_STANDARD 20)
 
@@ -27,11 +34,6 @@ target_link_options(bpftime_nv_attach_impl PUBLIC "-Wl,--whole-archive" "$<TARGE
 # Note: If consumers need whole-archive behavior, they should use:
 # -Wl,--whole-archive target -Wl,--no-whole-archive in their link libraries
 
-# PTX transform passes now live under pass/
-add_subdirectory(pass/ptxpass_core)
-add_subdirectory(pass/ptxpass_kprobe_entry)
-add_subdirectory(pass/ptxpass_kretprobe)
-add_subdirectory(pass/ptxpass_kprobe_memcapture)
 
 # Copy default pass JSON definitions into build tree
 set(PASSES_JSON_DIR ${CMAKE_CURRENT_SOURCE_DIR}/pass)
