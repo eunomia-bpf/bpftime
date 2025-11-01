@@ -37,18 +37,11 @@ patch_memcapture(const std::string &ptx,
 		out_body << line << '\n';
 		if (std::regex_match(line, ld_st_pattern)) {
 			count++;
-			// rebuild ebpf_inst list from words each time
-			std::vector<ebpf_inst> insts_local;
-			insts_local.reserve(ebpf_words.size());
-			for (auto w : ebpf_words) {
-				ebpf_inst ins{};
-				ins.opcode = (uint8_t)(w & 0xFF);
-				ins.dst = (uint8_t)((w >> 8) & 0xF);
-				ins.src = (uint8_t)((w >> 12) & 0xF);
-				ins.offset = (int16_t)((w >> 16) & 0xFFFF);
-				ins.imm = (int32_t)(w >> 32);
-				insts_local.push_back(ins);
-			}
+			const ebpf_inst *base_insts =
+				reinterpret_cast<const ebpf_inst *>(
+					ebpf_words.data());
+			std::vector<ebpf_inst> insts_local(
+				base_insts, base_insts + ebpf_words.size());
 			{
 				std::vector<ebpf_inst> prep;
 				int32_t total_length =
@@ -120,17 +113,12 @@ patch_memcapture(const std::string &ptx,
 				insts_local.insert(insts_local.begin(),
 						   prep.begin(), prep.end());
 			}
-			std::vector<uint64_t> packed;
-			packed.reserve(insts_local.size());
-			for (auto &ins : insts_local) {
-				uint64_t w = 0;
-				w |= (uint64_t)ins.opcode;
-				w |= (uint64_t)ins.dst << 8;
-				w |= (uint64_t)ins.src << 12;
-				w |= (uint64_t)(uint16_t)ins.offset << 16;
-				w |= (uint64_t)(uint32_t)ins.imm << 32;
-				packed.push_back(w);
-			}
+			const uint64_t *packed_words =
+				reinterpret_cast<const uint64_t *>(
+					insts_local.data());
+			std::vector<uint64_t> packed(
+				packed_words,
+				packed_words + insts_local.size());
 			auto func_ptx = ptxpass::compile_ebpf_to_ptx_from_words(
 				packed, "sm_60");
 			auto func_name = std::string("__memcapture__") +

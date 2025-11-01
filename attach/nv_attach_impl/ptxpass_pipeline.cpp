@@ -201,20 +201,11 @@ std::optional<std::string> run_pass_executable_json(
 	opstream child_stdin;
 	child c(exec, std_out > child_stdout, std_err > child_stderr,
 		std_in < child_stdin);
-	// Serialize eBPF instructions as array of 64-bit words (little endian)
-	// to keep compatibility and simplicity for pass executables.
 	std::vector<uint64_t> words;
 	if (!ebpf_insts.empty()) {
-		words.reserve(ebpf_insts.size());
-		for (const auto &ins : ebpf_insts) {
-			uint64_t w = 0;
-			w |= (uint64_t)ins.opcode;
-			w |= (uint64_t)ins.dst << 8;
-			w |= (uint64_t)ins.src << 12;
-			w |= (uint64_t)(uint16_t)ins.offset << 16;
-			w |= (uint64_t)(uint32_t)ins.imm << 32;
-			words.push_back(w);
-		}
+		const uint64_t *words_ptr =
+			reinterpret_cast<const uint64_t *>(ebpf_insts.data());
+		words.assign(words_ptr, words_ptr + ebpf_insts.size());
 	}
 	ptxpass::RuntimeInput ri;
 	ri.full_ptx = full_ptx;

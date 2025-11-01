@@ -189,7 +189,8 @@ bool contains_ret_instruction(const std::string &input)
 	       input.find("\n\tret;") != std::string::npos;
 }
 
-bool validate_ptx_version(const std::string &input, const std::string &minVersion)
+bool validate_ptx_version(const std::string &input,
+			  const std::string &minVersion)
 {
 	// Expect line like: .version 7.0
 	std::istringstream iss(input);
@@ -246,28 +247,20 @@ std::string filter_out_version_headers_ptx(const std::string &input)
 }
 
 std::string compile_ebpf_to_ptx_from_words(const std::vector<uint64_t> &words,
-				   const std::string &target_sm)
+					   const std::string &target_sm)
 {
-	std::vector<ebpf_inst> insts;
-	insts.reserve(words.size());
-	for (auto w : words) {
-		ebpf_inst ins{};
-		ins.opcode = (uint8_t)(w & 0xFF);
-		ins.dst = (uint8_t)((w >> 8) & 0xF);
-		ins.src = (uint8_t)((w >> 12) & 0xF);
-		ins.offset = (int16_t)((w >> 16) & 0xFFFF);
-		ins.imm = (int32_t)(w >> 32);
-		insts.push_back(ins);
-	}
+	const ebpf_inst *insts =
+		reinterpret_cast<const ebpf_inst *>(words.data());
+	size_t insts_count = words.size();
 	bpftime::llvmbpf_vm vm;
 	vm.unload_code();
-	vm.load_code(insts.data(), insts.size() * 8);
+	vm.load_code(insts, insts_count * sizeof(ebpf_inst));
 	auto ptx = vm.generate_ptx(target_sm.c_str());
 	return filter_out_version_headers_ptx(ptx.value_or(""));
 }
 
 std::pair<size_t, size_t> find_kernel_body(const std::string &ptx,
-				   const std::string &kernel)
+					   const std::string &kernel)
 {
 	static std::regex kernel_entry(
 		R"(\.visible\s+\.entry\s+(\w+)\s*\(([^)]*)\))");
@@ -298,7 +291,7 @@ std::pair<size_t, size_t> find_kernel_body(const std::string &ptx,
 }
 
 void log_transform_stats(const char *pass_name, int matched, size_t bytes_in,
-		 size_t bytes_out)
+			 size_t bytes_out)
 {
 	std::cerr << "[ptxpass] " << pass_name << ": matched=" << matched
 		  << ", in=" << bytes_in << ", out=" << bytes_out << "\n";
