@@ -1,3 +1,4 @@
+#include "json.hpp"
 #include "ptxpass/core.hpp"
 #include <exception>
 #include <iostream>
@@ -6,17 +7,34 @@
 #include <regex>
 #include <sstream>
 #include <ebpf_inst.h>
-
-static ptxpass::PassConfig get_default_config()
+#include <fstream>
+namespace memcapture_params
 {
-	ptxpass::PassConfig cfg;
+struct MemcaptureParams {
+	int buffer_bytes = 4096;
+	int max_segments = 4;
+	bool allow_partial = true;
+	bool emit_nops_for_alignment = false;
+	int pad_nops = 0;
+};
+NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(MemcaptureParams, buffer_bytes,
+						max_segments, allow_partial,
+						emit_nops_for_alignment,
+						pad_nops)
+
+} // namespace memcapture_params
+
+static ptxpass::pass_config::PassConfig get_default_config()
+{
+	ptxpass::pass_config::PassConfig cfg;
 	cfg.name = "kprobe_memcapture";
 	cfg.description =
 		"Emit a probe per ld/st and push source line text to eBPF stack";
-	cfg.attachPoints.includes = { "^kprobe/__memcapture$" };
-	cfg.attachPoints.excludes = {};
+	cfg.attach_points.includes = { "^kprobe/__memcapture$" };
+	cfg.attach_points.excludes = {};
 	cfg.parameters = nlohmann::json::object();
 	cfg.validation = nlohmann::json::object();
+	cfg.attach_type = 8; // kprobe
 	return cfg;
 }
 
@@ -120,7 +138,9 @@ patch_memcapture(const std::string &ptx,
 				packed_words,
 				packed_words + insts_local.size());
 			auto func_ptx = ptxpass::compile_ebpf_to_ptx_from_words(
-				packed, "sm_60");
+				packed, "sm_60",
+				"__memcapture_probe__" + std::to_string(count),
+				true, true);
 			auto func_name = std::string("__memcapture__") +
 					 std::to_string(count);
 			out_funcs << ".func " << func_name << "\n"
@@ -146,22 +166,22 @@ static void print_usage(const char *argv0)
 int main(int argc, char **argv)
 {
 	using namespace ptxpass;
-	std::string configPath;
-	bool dryRun = false;
-	bool printConfigOnly = false;
+	std::string config_path;
+	bool dry_run = false;
+	bool print_config_only = false;
 
 	for (int i = 1; i < argc; ++i) {
 		std::string a = argv[i];
 		if (a == "--config") {
 			if (i + 1 < argc && argv[i + 1][0] != '-') {
-				configPath = argv[++i];
+				config_path = argv[++i];
 			} else {
-				printConfigOnly = true;
+				print_config_only = true;
 			}
 		} else if (a == "--print-config") {
-			printConfigOnly = true;
+			print_config_only = true;
 		} else if (a == "--dry-run") {
-			dryRun = true;
+			dry_run = true;
 		} else if (a == "--help" || a == "-h") {
 			print_usage(argv[0]);
 			return ExitCode::Success;
@@ -175,53 +195,39 @@ int main(int argc, char **argv)
 	}
 
 	try {
-		PassConfig cfg;
-		if (printConfigOnly) {
+		pass_config::PassConfig cfg;
+		if (print_config_only) {
 			cfg = get_default_config();
-			nlohmann::json j;
-			j["name"] = cfg.name;
-			j["description"] = cfg.description;
-			j["attach_points"]["includes"] =
-				cfg.attachPoints.includes;
-			j["attach_points"]["excludes"] =
-				cfg.attachPoints.excludes;
-			j["parameters"] = cfg.parameters;
-			j["validation"] = cfg.validation;
-			std::cout << j.dump(4);
+			nlohmann::json output_json;
+			pass_config::to_json(output_json, cfg);
+			std::cout << output_json.dump(4);
 			return ExitCode::Success;
 		}
-		if (!configPath.empty()) {
-			cfg = JsonConfigLoader::load_from_file(configPath);
+		if (!config_path.empty()) {
+			std::ifstream ifs(config_path);
+			auto input_json = nlohmann::json::parse(ifs);
+			pass_config::from_json(input_json, cfg);
 		} else {
 			cfg = get_default_config();
 		}
-		auto matcher = AttachPointMatcher(cfg.attachPoints);
-		auto ap = get_env("PTX_ATTACH_POINT");
-		if (ap.empty()) {
-			std::cerr << "PTX_ATTACH_POINT is not set\n";
-			return ExitCode::ConfigError;
-		}
+		auto matcher = AttachPointMatcher(cfg.attach_points);
 
-		std::string stdinData = read_all_from_stdin();
-		auto [rr, isJson] = parse_runtime_request(stdinData);
-		// JSON-only
-		if (!isJson) {
-			return ExitCode::InputError;
-		}
-		if (!matcher.matches(ap)) {
-			emit_runtime_output("");
+		std::string stdin_data = read_all_from_stdin();
+		auto runtime_request =
+			pass_runtime_request_from_string(stdin_data);
+
+		if (dry_run) {
+			emit_runtime_response_and_print("");
 			return ExitCode::Success;
 		}
-		if (dryRun) {
-			emit_runtime_output("");
-			return ExitCode::Success;
-		}
-		if (!validate_input(rr.input.full_ptx, cfg.validation)) {
+		if (!validate_input(runtime_request.input.full_ptx,
+				    cfg.validation)) {
 			return ExitCode::TransformFailed;
 		}
-		auto [out, modified] = patch_memcapture(rr.input.full_ptx,
-							rr.ebpf_instructions);
-		emit_runtime_output(modified ? out : "");
+		auto [out, modified] =
+			patch_memcapture(runtime_request.input.full_ptx,
+					 runtime_request.ebpf_instructions);
+		emit_runtime_response_and_print(modified ? out : "");
 		return ExitCode::Success;
 	} catch (const std::runtime_error &e) {
 		std::cerr << e.what() << "\n";

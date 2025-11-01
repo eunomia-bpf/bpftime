@@ -1,8 +1,8 @@
-add_library(ptxpass_core STATIC src/core.cpp)
-target_include_directories(ptxpass_core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include ${CMAKE_SOURCE_DIR}/third_party)
+add_library(ptxpass_core STATIC src/core.cpp src/nv_attach_impl_register_guard_patcher.cpp)
+target_include_directories(ptxpass_core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include ${CMAKE_SOURCE_DIR}/third_party ${SPDLOG_INCLUDE})
 set_property(TARGET ptxpass_core PROPERTY CXX_STANDARD 20)
-target_link_libraries(ptxpass_core PUBLIC llvmbpf_vm)
-add_dependencies(ptxpass_core llvmbpf_vm)
+target_link_libraries(ptxpass_core PUBLIC llvmbpf_vm spdlog::spdlog)
+add_dependencies(ptxpass_core llvmbpf_vm spdlog::spdlog)
 
 if(DEFINED LLVM_INCLUDE_DIRS)
     target_include_directories(ptxpass_core PRIVATE ${LLVM_INCLUDE_DIRS})

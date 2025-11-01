@@ -2,11 +2,13 @@
 #define _BPFTIME_NV_ATTACH_IMPL_HPP
 #include "ebpf_inst.h"
 #include "nv_attach_utils.hpp"
+#include "ptxpass/core.hpp"
 #include <base_attach_impl.hpp>
 #include <cstdint>
 #include <cuda_runtime.h>
 #include <cuda_runtime_api.h>
 #include <dlfcn.h>
+#include <filesystem>
 #include <map>
 #include <memory>
 #include <nvml.h>
@@ -28,7 +30,6 @@ namespace attach
 {
 std::string filter_compiled_ptx_for_ebpf_program(std::string input,
 						 std::string);
-std::string add_register_guard_for_ebpf_ptx_func(const std::string &ptxCode);
 
 constexpr int ATTACH_CUDA_PROBE = 8;
 constexpr int ATTACH_CUDA_RETPROBE = 9;
@@ -71,6 +72,11 @@ struct nv_attach_entry {
 	std::optional<std::string> attach_point_override;
 	// Extra serialized parameters (JSON string) reserved for future use
 	std::optional<std::string> extras;
+};
+
+struct pass_configuration_with_executable_path {
+	std::filesystem::path executable_path;
+	ptxpass::pass_config::PassConfig pass_config;
 };
 
 // Attach implementation of syscall trace
@@ -120,7 +126,7 @@ class nv_attach_impl final : public base_attach_impl {
 	uintptr_t shared_mem_ptr;
 	std::optional<std::vector<MapBasicInfo>> map_basic_info;
 	// discovered pass definitions
-	std::vector<PassDefinition> pass_definitions;
+	std::vector<pass_configuration_with_executable_path> pass_configurations;
 };
 std::string filter_unprintable_chars(std::string input);
 std::string filter_out_version_headers(const std::string &input);

@@ -1,58 +1,43 @@
 // Minimal core utilities for PTX pass executables
 #pragma once
 
+#include <filesystem>
+#include <iostream>
 #include <regex>
 #include <string>
 #include <vector>
 #include "json.hpp"
-
+#include <fstream>
 namespace ptxpass
 {
 
+namespace attach_points
+{
 struct AttachPoints {
 	std::vector<std::string> includes;
 	std::vector<std::string> excludes;
 };
+NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE(AttachPoints, includes, excludes);
 
+} // namespace attach_points
+namespace pass_config
+{
 struct PassConfig {
 	std::string name;
 	std::string description;
-	AttachPoints attachPoints;
+	attach_points::AttachPoints attach_points;
+	int attach_type;
 	nlohmann::json parameters; // optional
 	nlohmann::json validation; // optional
 };
-
-inline void from_json(const nlohmann::json &j, AttachPoints &ap)
-{
-	if (j.contains("includes"))
-		ap.includes = j.at("includes").get<std::vector<std::string>>();
-	if (j.contains("excludes"))
-		ap.excludes = j.at("excludes").get<std::vector<std::string>>();
-}
-
-inline void from_json(const nlohmann::json &j, PassConfig &cfg)
-{
-	if (j.contains("name"))
-		cfg.name = j.at("name").get<std::string>();
-	if (j.contains("description"))
-		cfg.description = j.at("description").get<std::string>();
-	if (j.contains("attach_points"))
-		cfg.attachPoints = j.at("attach_points").get<AttachPoints>();
-	if (j.contains("parameters"))
-		cfg.parameters = j.at("parameters");
-	if (j.contains("validation"))
-		cfg.validation = j.at("validation");
-}
-
-class JsonConfigLoader {
-    public:
-	// Parse JSON config from file path; throws std::runtime_error on error
-	static PassConfig load_from_file(const std::string &path);
-};
+NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(PassConfig, name, description,
+						attach_points, attach_type,
+						parameters, validation);
+} // namespace pass_config
 
 class AttachPointMatcher {
     public:
-	explicit AttachPointMatcher(const AttachPoints &points);
+	explicit AttachPointMatcher(const attach_points::AttachPoints &points);
 
 	bool matches(const std::string &attachPoint) const;
 
@@ -80,54 +65,37 @@ enum ExitCode {
 };
 
 // Runtime I/O (JSON over stdin/stdout)
+namespace runtime_input
+{
 struct RuntimeInput {
 	std::string full_ptx;
 	std::string to_patch_kernel;
-	std::string global_ebpf_map_info_symbol;
-	std::string ebpf_communication_data_symbol;
+	std::string global_ebpf_map_info_symbol = "map_info";
+	std::string ebpf_communication_data_symbol = "constData";
 };
+NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(RuntimeInput, full_ptx,
+						to_patch_kernel,
+						global_ebpf_map_info_symbol,
+						ebpf_communication_data_symbol);
+} // namespace runtime_input
 
 // JSON stdout payload
-struct RuntimeOutput {
+namespace runtime_response
+{
+struct RuntimeResponse {
 	std::string output_ptx;
 };
+NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE(RuntimeResponse, output_ptx);
+} // namespace runtime_response
 
+namespace runtime_request
+{
 struct RuntimeRequest {
-	RuntimeInput input;
+	runtime_input::RuntimeInput input;
 	std::vector<uint64_t> ebpf_instructions;
 };
-
-// Parameter structs for typed deserialization
-struct EntryParams {
-	std::string save_strategy = "minimal"; // "minimal" or "full"
-	bool emit_nops_for_alignment = false;
-	int pad_nops = 0;
-};
-
-struct RetprobeParams {
-	std::string save_strategy = "minimal"; // "minimal" or "full"
-	bool emit_nops_for_alignment = false;
-	int pad_nops = 1;
-};
-
-struct MemcaptureParams {
-	int buffer_bytes = 4096;
-	int max_segments = 4;
-	bool allow_partial = true;
-	bool emit_nops_for_alignment = false;
-	int pad_nops = 0;
-};
-
-// Try to parse JSON input using typed deserialization; fallback to plain PTX
-// Returns pair<RuntimeInput, bool isJsonMode>
-std::pair<RuntimeInput, bool> parse_runtime_input(const std::string &stdinData);
-
-// Parse full request with ebpf_instructions; returns {request, is_json}
-std::pair<RuntimeRequest, bool>
-parse_runtime_request(const std::string &stdinData);
-
-// Emit JSON with {"output_ptx": "..."}
-void emit_runtime_output(const std::string &outputPtx);
+NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE(RuntimeRequest, input, ebpf_instructions);
+} // namespace runtime_request
 
 // Validation helpers
 bool validate_input(const std::string &input, const nlohmann::json &validation);
@@ -136,47 +104,6 @@ bool contains_ret_instruction(const std::string &input);
 bool validate_ptx_version(const std::string &input,
 			  const std::string &minVersion);
 
-// nlohmann::json arbitrary type conversions for runtime and params
-inline void from_json(const nlohmann::json &j, RuntimeInput &ri)
-{
-	j.at("full_ptx").get_to(ri.full_ptx);
-	if (j.contains("to_patch_kernel"))
-		j.at("to_patch_kernel").get_to(ri.to_patch_kernel);
-	ri.global_ebpf_map_info_symbol =
-		j.value("global_ebpf_map_info_symbol", std::string("map_info"));
-	ri.ebpf_communication_data_symbol = j.value(
-		"ebpf_communication_data_symbol", std::string("constData"));
-}
-
-inline void to_json(nlohmann::json &j, const RuntimeInput &ri)
-{
-	j = nlohmann::json::object();
-	j["full_ptx"] = ri.full_ptx;
-	if (!ri.to_patch_kernel.empty())
-		j["to_patch_kernel"] = ri.to_patch_kernel;
-	j["global_ebpf_map_info_symbol"] = ri.global_ebpf_map_info_symbol;
-	j["ebpf_communication_data_symbol"] = ri.ebpf_communication_data_symbol;
-}
-
-inline void to_json(nlohmann::json &j, const RuntimeOutput &ro)
-{
-	j = nlohmann::json::object();
-	j["output_ptx"] = ro.output_ptx;
-}
-
-inline void from_json(const nlohmann::json &j, RuntimeOutput &ro)
-{
-	ro.output_ptx = j.value("output_ptx", std::string());
-}
-
-inline void from_json(const nlohmann::json &j, RuntimeRequest &rr)
-{
-	rr.input = j.get<RuntimeInput>();
-	if (j.contains("ebpf_instructions"))
-		rr.ebpf_instructions =
-			j.at("ebpf_instructions").get<std::vector<uint64_t>>();
-}
-
 // Shared utilities for PTX passes (refactored from legacy code)
 // Filter out duplicate/irrelevant PTX headers
 // (version/target/address_size/comments)
@@ -184,9 +111,12 @@ std::string filter_out_version_headers_ptx(const std::string &input);
 
 // Compile eBPF (64-bit words encoding) to PTX function text (optionally target
 // SM)
-std::string compile_ebpf_to_ptx_from_words(const std::vector<uint64_t> &words,
-					   const std::string &target_sm);
-
+std::string compile_ebpf_to_ptx_from_words(
+	const std::vector<uint64_t> &words, const std::string &target_sm,
+	const std::string &func_name,
+	bool add_register_guard_and_filter_version_headers,
+	bool with_arguments);
+std::string filter_compiled_ptx_for_ebpf_program(std::string input);
 // Find kernel body range [begin, end) for a given kernel name using .visible
 // .entry and brace depth Returns pair(begin,end); if not found, returns
 // {std::string::npos, std::string::npos}
@@ -197,27 +127,38 @@ std::pair<size_t, size_t> find_kernel_body(const std::string &ptx,
 void log_transform_stats(const char *pass_name, int matched, size_t bytes_in,
 			 size_t bytes_out);
 
-inline void from_json(const nlohmann::json &j, EntryParams &p)
+static inline void emit_runtime_response_and_print(const std::string &str)
 {
-	p.save_strategy = j.value("save_strategy", std::string("minimal"));
-	p.emit_nops_for_alignment = j.value("emit_nops_for_alignment", false);
-	p.pad_nops = j.value("pad_nops", 0);
+	using namespace runtime_response;
+	RuntimeResponse output;
+	nlohmann::json output_json;
+	output.output_ptx = str;
+	to_json(output_json, output);
+	std::cout << output_json.dump();
 }
 
-inline void from_json(const nlohmann::json &j, RetprobeParams &p)
+static inline pass_config::PassConfig
+load_pass_config_from_file(const std::filesystem::path &path)
 {
-	p.save_strategy = j.value("save_strategy", std::string("minimal"));
-	p.emit_nops_for_alignment = j.value("emit_nops_for_alignment", false);
-	p.pad_nops = j.value("pad_nops", 1);
+	pass_config::PassConfig cfg;
+	std::ifstream ifs(path);
+	auto input_json = nlohmann::json::parse(ifs);
+	pass_config::from_json(input_json, cfg);
+	return cfg;
 }
 
-inline void from_json(const nlohmann::json &j, MemcaptureParams &p)
+static inline runtime_request::RuntimeRequest
+pass_runtime_request_from_string(const std::string &str)
 {
-	p.buffer_bytes = j.value("buffer_bytes", 4096);
-	p.max_segments = j.value("max_segments", 4);
-	p.allow_partial = j.value("allow_partial", true);
-	p.emit_nops_for_alignment = j.value("emit_nops_for_alignment", false);
-	p.pad_nops = j.value("pad_nops", 0);
+	runtime_request::RuntimeRequest runtime_request;
+	auto input_json = nlohmann::json::parse(str);
+	runtime_request::from_json(input_json, runtime_request);
+	return runtime_request;
 }
-
 } // namespace ptxpass
+
+namespace bpftime::attach
+{
+std::string add_register_guard_for_ebpf_ptx_func(const std::string &ptxCode);
+
+}

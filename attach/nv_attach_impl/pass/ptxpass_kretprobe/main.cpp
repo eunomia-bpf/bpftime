@@ -1,18 +1,32 @@
+#include "json.hpp"
 #include "ptxpass/core.hpp"
 #include <vector>
 #include <exception>
 #include <iostream>
 #include <string>
 
-static ptxpass::PassConfig get_default_config()
+namespace retprobe_params
 {
-	ptxpass::PassConfig cfg;
+struct RetprobeParams {
+	std::string save_strategy = "minimal"; // "minimal" or "full"
+	bool emit_nops_for_alignment = false;
+	int pad_nops = 1;
+};
+NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(RetprobeParams, save_strategy,
+						emit_nops_for_alignment,
+						pad_nops);
+} // namespace retprobe_params
+
+static ptxpass::pass_config::PassConfig get_default_config()
+{
+	ptxpass::pass_config::PassConfig cfg;
 	cfg.name = "kretprobe";
 	cfg.description = "Inject call before ret for kretprobe/*";
-	cfg.attachPoints.includes = { "^kretprobe/.*$" };
-	cfg.attachPoints.excludes = {};
+	cfg.attach_points.includes = { "^kretprobe/.*$" };
+	cfg.attach_points.excludes = {};
 	cfg.parameters = nlohmann::json::object();
 	cfg.validation = nlohmann::json::object();
+	cfg.attach_type = 9; // kretprobe
 	return cfg;
 }
 
@@ -20,21 +34,20 @@ static std::pair<std::string, bool>
 patch_retprobe(const std::string &ptx, const std::string &kernel,
 	       const std::vector<uint64_t> &ebpf_words)
 {
-	auto func_ptx =
-		ptxpass::compile_ebpf_to_ptx_from_words(ebpf_words, "sm_60");
+	std::string fname = std::string("__retprobe_func__") + kernel;
+
+	auto func_ptx = ptxpass::compile_ebpf_to_ptx_from_words(
+		ebpf_words, "sm_60", fname, true, false);
 	auto body = ptxpass::find_kernel_body(ptx, kernel);
 	if (body.first == std::string::npos)
 		return { "", false };
 	std::string out = ptx;
 	std::string section = out.substr(body.first, body.second - body.first);
 	static std::regex retpat(R"((\s+)(ret;))");
-	std::string fname = std::string("__probe_func__") + kernel;
-	std::ostringstream def;
-	def << ".func " << fname << "\n" << func_ptx << "\n";
 	section = std::regex_replace(
 		section, retpat, std::string("$1call ") + fname + ";\n$1$2");
 	out.replace(body.first, body.second - body.first, section);
-	out = def.str() + "\n" + out;
+	out = func_ptx + "\n" + out;
 	ptxpass::log_transform_stats("kretprobe", 1, ptx.size(), out.size());
 	return { out, true };
 }
@@ -49,22 +62,22 @@ static void print_usage(const char *argv0)
 int main(int argc, char **argv)
 {
 	using namespace ptxpass;
-	std::string configPath;
-	bool dryRun = false;
-	bool printConfigOnly = false;
+	std::string config_path;
+	bool dry_run = false;
+	bool print_config_only = false;
 
 	for (int i = 1; i < argc; ++i) {
 		std::string a = argv[i];
 		if (a == "--config") {
 			if (i + 1 < argc && argv[i + 1][0] != '-') {
-				configPath = argv[++i];
+				config_path = argv[++i];
 			} else {
-				printConfigOnly = true;
+				print_config_only = true;
 			}
 		} else if (a == "--print-config") {
-			printConfigOnly = true;
+			print_config_only = true;
 		} else if (a == "--dry-run") {
-			dryRun = true;
+			dry_run = true;
 		} else if (a == "--help" || a == "-h") {
 			print_usage(argv[0]);
 			return ExitCode::Success;
@@ -78,48 +91,35 @@ int main(int argc, char **argv)
 	}
 
 	try {
-		PassConfig cfg;
-		if (printConfigOnly) {
+		pass_config::PassConfig cfg;
+		if (print_config_only) {
 			cfg = get_default_config();
-			nlohmann::json j;
-			j["name"] = cfg.name;
-			j["description"] = cfg.description;
-			j["attach_points"]["includes"] =
-				cfg.attachPoints.includes;
-			j["attach_points"]["excludes"] =
-				cfg.attachPoints.excludes;
-			j["parameters"] = cfg.parameters;
-			j["validation"] = cfg.validation;
-			std::cout << j.dump(4);
+			nlohmann::json output_json;
+			pass_config::to_json(output_json, cfg);
+			std::cout << output_json.dump(4);
 			return ExitCode::Success;
 		}
-		if (!configPath.empty()) {
-			cfg = JsonConfigLoader::load_from_file(configPath);
+		if (!config_path.empty()) {
+			cfg = load_pass_config_from_file(config_path);
 		} else {
 			cfg = get_default_config();
 		}
-		auto matcher = AttachPointMatcher(cfg.attachPoints);
-		auto ap = get_env("PTX_ATTACH_POINT");
-		if (ap.empty()) {
-			std::cerr << "PTX_ATTACH_POINT is not set\n";
-			return ExitCode::ConfigError;
-		}
+		auto matcher = AttachPointMatcher(cfg.attach_points);
 
-		std::string stdinData = read_all_from_stdin();
-		auto [rr, isJson] = parse_runtime_request(stdinData);
-		if (!isJson)
-			return ExitCode::InputError;
-		if (!matcher.matches(ap))
+		std::string stdin_data = read_all_from_stdin();
+		auto runtime_request =
+			pass_runtime_request_from_string(stdin_data);
+		if (dry_run)
 			return ExitCode::Success;
-		if (dryRun)
-			return ExitCode::Success;
-		if (!validate_input(rr.input.full_ptx, cfg.validation))
+		if (!validate_input(runtime_request.input.full_ptx,
+				    cfg.validation))
 			return ExitCode::TransformFailed;
-		auto [out, modified] = patch_retprobe(rr.input.full_ptx,
-						      rr.input.to_patch_kernel,
-						      rr.ebpf_instructions);
+		auto [out, modified] =
+			patch_retprobe(runtime_request.input.full_ptx,
+				       runtime_request.input.to_patch_kernel,
+				       runtime_request.ebpf_instructions);
 		if (modified && !is_whitespace_only(out))
-			emit_runtime_output(out);
+			emit_runtime_response_and_print(out);
 		return ExitCode::Success;
 	} catch (const std::runtime_error &e) {
 		std::cerr << e.what() << "\n";

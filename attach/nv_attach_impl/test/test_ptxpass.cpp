@@ -8,6 +8,16 @@
 
 using namespace ptxpass;
 
+static inline runtime_input::RuntimeInput
+pass_runtime_input_from_string(const std::string &str)
+{
+	using namespace runtime_input;
+	RuntimeInput runtime_input;
+	auto input_json = nlohmann::json::parse(str);
+	from_json(input_json, runtime_input);
+	return runtime_input;
+}
+
 static const std::string MINIMAL_PTX = R"(.version 7.0
 .target sm_60
 .address_size 64
@@ -69,8 +79,7 @@ TEST_CASE("parse_runtime_input parses JSON input", "[ptxpass_core]")
   "full_ptx": ".version 7.0\n.target sm_60\n",
   "to_patch_kernel": "test_kernel"
 })";
-		auto [input, is_json] = parse_runtime_input(json_input);
-		REQUIRE(is_json);
+		auto input = pass_runtime_input_from_string(json_input);
 		REQUIRE(input.full_ptx == ".version 7.0\n.target sm_60\n");
 		REQUIRE(input.to_patch_kernel == "test_kernel");
 	}
@@ -78,8 +87,7 @@ TEST_CASE("parse_runtime_input parses JSON input", "[ptxpass_core]")
 	SECTION("Invalid JSON returns false")
 	{
 		std::string invalid_json = "not json at all";
-		auto [input, is_json] = parse_runtime_input(invalid_json);
-		REQUIRE_FALSE(is_json);
+		REQUIRE_THROWS(pass_runtime_input_from_string(invalid_json));
 	}
 }
 
@@ -89,12 +97,13 @@ TEST_CASE("parse_runtime_request parses full request with ebpf_instructions",
 	SECTION("Valid request with ebpf_instructions")
 	{
 		std::string json_request = R"({
+			"input":{
   "full_ptx": ".version 7.0\n",
-  "to_patch_kernel": "foo",
+  "to_patch_kernel": "foo"
+},
   "ebpf_instructions": [100, 200, 300]
-})";
-		auto [request, is_json] = parse_runtime_request(json_request);
-		REQUIRE(is_json);
+		})";
+		auto request = pass_runtime_request_from_string(json_request);
 		REQUIRE(request.input.full_ptx == ".version 7.0\n");
 		REQUIRE(request.input.to_patch_kernel == "foo");
 		REQUIRE(request.ebpf_instructions.size() == 3);
@@ -109,7 +118,7 @@ TEST_CASE("emit_runtime_output produces JSON output", "[ptxpass_core]")
 	std::ostringstream oss;
 	std::streambuf *old_cout = std::cout.rdbuf(oss.rdbuf());
 
-	emit_runtime_output("test_ptx_output");
+	emit_runtime_response_and_print("test_ptx_output");
 
 	std::cout.rdbuf(old_cout);
 
@@ -224,7 +233,7 @@ TEST_CASE("find_kernel_body locates kernel boundaries", "[ptxpass_core]")
 
 TEST_CASE("AttachPointMatcher matches attach points", "[ptxpass_core]")
 {
-	AttachPoints points;
+	attach_points::AttachPoints points;
 	points.includes = { "kprobe/.*", "kretprobe/.*" };
 	points.excludes = { "kprobe/do_not_match" };
 
@@ -251,14 +260,18 @@ TEST_CASE("JsonConfigLoader loads config from file", "[ptxpass_core]")
   },
   "validation": {
     "require_entry": true
-  }
+  },
+  "name":"test",
+  "description":"test",
+  "attach_type":1001
 })";
 	ofs.close();
 
-	PassConfig cfg = JsonConfigLoader::load_from_file(temp_config_path);
-	REQUIRE(cfg.attachPoints.includes.size() == 1);
-	REQUIRE(cfg.attachPoints.includes[0] == "kprobe/.*");
-	REQUIRE(cfg.attachPoints.excludes.empty());
+	pass_config::PassConfig cfg =
+		load_pass_config_from_file(temp_config_path);
+	REQUIRE(cfg.attach_points.includes.size() == 1);
+	REQUIRE(cfg.attach_points.includes[0] == "kprobe/.*");
+	REQUIRE(cfg.attach_points.excludes.empty());
 	REQUIRE(cfg.validation["require_entry"].get<bool>());
 
 	std::remove(temp_config_path.c_str());
@@ -269,7 +282,8 @@ TEST_CASE("compile_ebpf_to_ptx_from_words compiles eBPF to PTX",
 {
 	std::vector<uint64_t> nop_ebpf = { 0x0000000000000095ULL };
 
-	std::string ptx = compile_ebpf_to_ptx_from_words(nop_ebpf, "sm_60");
+	std::string ptx = compile_ebpf_to_ptx_from_words(
+		nop_ebpf, "sm_60", "__probe__", true, false);
 
 	REQUIRE_FALSE(ptx.empty());
 	REQUIRE(ptx.find("ret") != std::string::npos);
@@ -296,11 +310,11 @@ TEST_CASE("PassConfig default includes and excludes work correctly",
 {
 	SECTION("kprobe_entry default config")
 	{
-		PassConfig cfg;
-		cfg.attachPoints.includes = { "^kprobe/.*$" };
-		cfg.attachPoints.excludes = { "^kprobe/__memcapture$" };
+		pass_config::PassConfig cfg;
+		cfg.attach_points.includes = { "^kprobe/.*$" };
+		cfg.attach_points.excludes = { "^kprobe/__memcapture$" };
 
-		AttachPointMatcher matcher(cfg.attachPoints);
+		AttachPointMatcher matcher(cfg.attach_points);
 
 		REQUIRE(matcher.matches("kprobe/test"));
 		REQUIRE(matcher.matches("kprobe/sys_read"));
@@ -310,10 +324,10 @@ TEST_CASE("PassConfig default includes and excludes work correctly",
 
 	SECTION("kretprobe default config")
 	{
-		PassConfig cfg;
-		cfg.attachPoints.includes = { "^kretprobe/.*$" };
+		pass_config::PassConfig cfg;
+		cfg.attach_points.includes = { "^kretprobe/.*$" };
 
-		AttachPointMatcher matcher(cfg.attachPoints);
+		AttachPointMatcher matcher(cfg.attach_points);
 
 		REQUIRE(matcher.matches("kretprobe/test"));
 		REQUIRE(matcher.matches("kretprobe/sys_read"));
@@ -322,10 +336,10 @@ TEST_CASE("PassConfig default includes and excludes work correctly",
 
 	SECTION("memcapture default config")
 	{
-		PassConfig cfg;
-		cfg.attachPoints.includes = { "^kprobe/__memcapture$" };
+		pass_config::PassConfig cfg;
+		cfg.attach_points.includes = { "^kprobe/__memcapture$" };
 
-		AttachPointMatcher matcher(cfg.attachPoints);
+		AttachPointMatcher matcher(cfg.attach_points);
 
 		REQUIRE(matcher.matches("kprobe/__memcapture"));
 		REQUIRE_FALSE(matcher.matches("kprobe/test"));
@@ -337,15 +351,14 @@ TEST_CASE("End-to-end JSON workflow with empty eBPF",
 	  "[ptxpass_core][integration]")
 {
 	std::string json_input = R"({
-  "full_ptx": ".version 7.0\n.target sm_60\n.visible .entry test() {\n  ret;\n}",
-  "to_patch_kernel": "test",
+  "input":{"full_ptx": ".version 7.0\n.target sm_60\n.visible .entry test() {\n  ret;\n}",
+  "to_patch_kernel": "test"},
   "ebpf_instructions": []
 })";
 
 	SECTION("parse_runtime_request handles minimal JSON")
 	{
-		auto [request, is_json] = parse_runtime_request(json_input);
-		REQUIRE(is_json);
+		auto request = pass_runtime_request_from_string(json_input);
 		REQUIRE(request.input.full_ptx.find(".version 7.0") !=
 			std::string::npos);
 		REQUIRE(request.input.to_patch_kernel == "test");
@@ -368,7 +381,8 @@ TEST_CASE("compile_ebpf_to_ptx_from_words handles exit instruction",
 {
 	std::vector<uint64_t> exit_only = { 0x0000000000000095ULL };
 
-	std::string result = compile_ebpf_to_ptx_from_words(exit_only, "sm_60");
+	std::string result = compile_ebpf_to_ptx_from_words(
+		exit_only, "sm_60", "__probe__", true, false);
 
 	REQUIRE_FALSE(result.empty());
 	REQUIRE(result.find("ret") != std::string::npos);
