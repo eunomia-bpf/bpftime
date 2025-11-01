@@ -28,7 +28,9 @@ jobs:
           echo "HTTP_PROXY=http://192.168.15.1:2345" >> $GITHUB_ENV
           echo "HTTPS_PROXY=http://192.168.15.1:2345" >> $GITHUB_ENV
           echo "no_proxy=localhost,127.0.0.1,192.168.0.0/16" >> $GITHUB_ENV
-      
+          git config --set http.proxy http://192.168.15.1:2345
+          git config --set https.proxy http://192.168.15.1:2345
+          
       - uses: actions/checkout@v2
         with:
           submodules: recursive
