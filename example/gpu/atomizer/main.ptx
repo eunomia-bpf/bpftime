@@ -1,0 +1,2654 @@
+
+
+.version 8.1
+.target sm_60
+.address_size 64
+
+	// .globl	spin_lock               // -- Begin function spin_lock
+.extern .func  (.param .b32 func_retval0) vprintf
+(
+	.param .b64 vprintf_param_0,
+	.param .b64 vprintf_param_1
+)
+;
+.visible .const .align 8 .u64 constData;
+.visible .const .align 8 .b8 map_info[10240];
+.global .align 1 .b8 _$_str[50] = {67, 97, 108, 108, 105, 110, 103, 32, 98, 112, 102, 95, 112, 101, 114, 102, 95, 101, 118, 101, 110, 116, 95, 111, 117, 116, 112, 117, 116, 32, 111, 110, 32, 117, 110, 115, 117, 112, 112, 111, 114, 116, 101, 100, 32, 109, 97, 112, 33, 0};
+.global .align 1 .b8 _$_str1[45] = {107, 101, 114, 110, 101, 108, 32, 102, 117, 110, 99, 116, 105, 111, 110, 32, 101, 110, 116, 101, 114, 101, 100, 44, 32, 109, 101, 109, 61, 37, 108, 120, 44, 32, 109, 101, 109, 115, 122, 61, 37, 108, 100, 10, 0};
+.global .align 1 .b8 __const_$_bpf_main_$_buf[16] = {97, 97, 97, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
+.global .align 1 .b8 _$_str2[32] = {115, 101, 116, 117, 112, 32, 102, 117, 110, 99, 116, 105, 111, 110, 44, 32, 99, 111, 110, 115, 116, 32, 100, 97, 116, 97, 61, 37, 108, 120, 10, 0};
+.global .align 1 .b8 __const_$_bpf_main_$_msg[26] = {77, 101, 115, 115, 97, 103, 101, 32, 102, 114, 111, 109, 32, 98, 112, 102, 58, 32, 37, 100, 44, 32, 37, 108, 120, 0};
+.global .align 1 .b8 _$_str3[11] = {99, 97, 108, 108, 32, 100, 111, 110, 101, 10, 0};
+.global .align 1 .b8 _$_str4[23] = {103, 111, 116, 32, 114, 101, 115, 112, 111, 110, 115, 101, 32, 37, 100, 32, 97, 116, 32, 37, 100, 10, 0};
+                                        // @spin_lock
+.visible .func spin_lock(
+	.param .b64 spin_lock_param_0
+)
+{
+	.reg .pred 	%p<2>;
+	.reg .b32 	%r<2>;
+	.reg .b64 	%rd<2>;
+
+	ld.param.u64 	%rd1, [spin_lock_param_0];
+$L__BB0_1:                              // =>This Inner Loop Header: Depth=1
+	atom.cas.b32 	%r1, [%rd1], 0, 1;
+	setp.eq.s32 	%p1, %r1, 1;
+	@%p1 bra 	$L__BB0_1;
+	ret;
+                                        // -- End function
+}
+	// .globl	spin_unlock             // -- Begin function spin_unlock
+.visible .func spin_unlock(
+	.param .b64 spin_unlock_param_0
+)                                       // @spin_unlock
+{
+	.reg .b32 	%r<2>;
+	.reg .b64 	%rd<2>;
+
+	ld.param.u64 	%rd1, [spin_unlock_param_0];
+	atom.exch.b32 	%r1, [%rd1], 0;
+	ret;
+                                        // -- End function
+}
+	// .globl	make_helper_call        // -- Begin function make_helper_call
+.visible .func  (.param .align 8 .b8 func_retval0[8]) make_helper_call(
+	.param .b64 make_helper_call_param_0,
+	.param .b32 make_helper_call_param_1
+)                                       // @make_helper_call
+{
+	.reg .pred 	%p<7>;
+	.reg .b32 	%r<15>;
+	.reg .b64 	%rd<14>;
+
+	ld.param.u32 	%r5, [make_helper_call_param_1];
+	ld.param.u64 	%rd6, [make_helper_call_param_0];
+	ld.const.u64 	%rd1, [constData];
+	mov.u32 	%r7, %tid.x;
+	and.b32  	%r1, %r7, 31;
+	add.s64 	%rd10, %rd1, 4;
+	mov.u32 	%r14, 0;
+	mov.u64 	%rd13, 0;
+	add.s64 	%rd8, %rd1, 8;
+	mov.u32 	%r12, 42;
+	bra.uni 	$L__BB2_1;
+$L__BB2_4:                              //   in Loop: Header=BB2_1 Depth=1
+	bar.warp.sync 	%r3;
+	add.s32 	%r14, %r14, 1;
+	setp.eq.s32 	%p6, %r14, 32;
+	@%p6 bra 	$L__BB2_5;
+$L__BB2_1:                              // =>This Loop Header: Depth=1
+                                        //     Child Loop BB2_2 Depth 2
+	// begin inline asm
+	activemask.b32 %r3;
+	// end inline asm
+	shr.u32 	%r9, %r3, %r14;
+	and.b32  	%r10, %r9, 1;
+	setp.eq.b32 	%p1, %r10, 1;
+	not.pred 	%p2, %p1;
+	setp.ne.s32 	%p3, %r1, %r14;
+	or.pred  	%p4, %p3, %p2;
+	@%p4 bra 	$L__BB2_4;
+$L__BB2_2:                              //   Parent Loop BB2_1 Depth=1
+                                        // =>  This Inner Loop Header: Depth=2
+	atom.cas.b32 	%r11, [%rd8], 0, 1;
+	setp.eq.s32 	%p5, %r11, 1;
+	@%p5 bra 	$L__BB2_2;
+	st.u32 	[%rd1+12], %r5;
+	st.u64 	[%rd1+16], %rd6;
+	// begin inline asm
+	.reg .pred p0;                   
+	membar.sys;                      
+	st.global.u32 [%rd1], 1;           
+	spin_wait:                       
+	membar.sys;                      
+	ld.global.u32 %r12, [%rd10];          
+	setp.eq.u32 p0, %r12, 0;           
+	@p0 bra spin_wait;               
+	st.global.u32 [%rd10], 0;           
+	membar.sys;                      
+	
+	// end inline asm
+	ld.u64 	%rd13, [%rd1+2147483680];
+	atom.exch.b32 	%r13, [%rd8], 0;
+	bra.uni 	$L__BB2_4;
+$L__BB2_5:
+	st.param.b64 	[func_retval0+0], %rd13;
+	ret;
+                                        // -- End function
+}
+	// .globl	_Z17getGlobalThreadIdv  // -- Begin function _Z17getGlobalThreadIdv
+.visible .func  (.param .b64 func_retval0) _Z17getGlobalThreadIdv() // @_Z17getGlobalThreadIdv
+{
+	.reg .b32 	%r<18>;
+	.reg .b64 	%rd<8>;
+
+	mov.u32 	%r1, %ctaid.x;
+	mov.u32 	%r2, %ntid.x;
+	mov.u32 	%r3, %tid.x;
+	mad.lo.s32 	%r4, %r1, %r2, %r3;
+	mov.u32 	%r5, %ctaid.y;
+	mov.u32 	%r6, %ntid.y;
+	mov.u32 	%r7, %tid.y;
+	mad.lo.s32 	%r8, %r5, %r6, %r7;
+	mov.u32 	%r9, %ctaid.z;
+	mov.u32 	%r10, %ntid.z;
+	mov.u32 	%r11, %tid.z;
+	mad.lo.s32 	%r12, %r9, %r10, %r11;
+	mov.u32 	%r13, %nctaid.x;
+	mul.lo.s32 	%r14, %r13, %r2;
+	mov.u32 	%r15, %nctaid.y;
+	mul.lo.s32 	%r16, %r15, %r6;
+	cvt.s64.s32 	%rd1, %r12;
+	mul.wide.s32 	%rd2, %r16, %r14;
+	mul.lo.s64 	%rd3, %rd2, %rd1;
+	mul.lo.s32 	%r17, %r8, %r14;
+	cvt.s64.s32 	%rd4, %r17;
+	cvt.s64.s32 	%rd5, %r4;
+	add.s64 	%rd6, %rd4, %rd5;
+	add.s64 	%rd7, %rd6, %rd3;
+	st.param.b64 	[func_retval0+0], %rd7;
+	ret;
+                                        // -- End function
+}
+	// .globl	_Z16array_map_offsetmRK12MapBasicInfo // -- Begin function _Z16array_map_offsetmRK12MapBasicInfo
+.visible .func  (.param .b64 func_retval0) _Z16array_map_offsetmRK12MapBasicInfo(
+	.param .b64 _Z16array_map_offsetmRK12MapBasicInfo_param_0,
+	.param .b64 _Z16array_map_offsetmRK12MapBasicInfo_param_1
+)                                       // @_Z16array_map_offsetmRK12MapBasicInfo
+{
+	.reg .b32 	%r<18>;
+	.reg .b64 	%rd<17>;
+
+	ld.param.u64 	%rd1, [_Z16array_map_offsetmRK12MapBasicInfo_param_0];
+	ld.param.u64 	%rd2, [_Z16array_map_offsetmRK12MapBasicInfo_param_1];
+	ld.u64 	%rd3, [%rd2+24];
+	ld.u64 	%rd4, [%rd2+32];
+	ld.s32 	%rd5, [%rd2+8];
+	mul.lo.s64 	%rd6, %rd4, %rd1;
+	mov.u32 	%r1, %ctaid.x;
+	mov.u32 	%r2, %ntid.x;
+	mov.u32 	%r3, %tid.x;
+	mad.lo.s32 	%r4, %r1, %r2, %r3;
+	mov.u32 	%r5, %ctaid.y;
+	mov.u32 	%r6, %ntid.y;
+	mov.u32 	%r7, %tid.y;
+	mad.lo.s32 	%r8, %r5, %r6, %r7;
+	mov.u32 	%r9, %ctaid.z;
+	mov.u32 	%r10, %ntid.z;
+	mov.u32 	%r11, %tid.z;
+	mad.lo.s32 	%r12, %r9, %r10, %r11;
+	mov.u32 	%r13, %nctaid.x;
+	mul.lo.s32 	%r14, %r13, %r2;
+	mov.u32 	%r15, %nctaid.y;
+	mul.lo.s32 	%r16, %r15, %r6;
+	cvt.s64.s32 	%rd7, %r12;
+	mul.wide.s32 	%rd8, %r16, %r14;
+	mul.lo.s64 	%rd9, %rd8, %rd7;
+	mul.lo.s32 	%r17, %r8, %r14;
+	cvt.s64.s32 	%rd10, %r17;
+	cvt.s64.s32 	%rd11, %r4;
+	add.s64 	%rd12, %rd10, %rd11;
+	add.s64 	%rd13, %rd12, %rd9;
+	add.s64 	%rd14, %rd13, %rd6;
+	mul.lo.s64 	%rd15, %rd14, %rd5;
+	add.s64 	%rd16, %rd15, %rd3;
+	st.param.b64 	[func_retval0+0], %rd16;
+	ret;
+                                        // -- End function
+}
+	// .globl	_bpf_helper_ext_0001    // -- Begin function _bpf_helper_ext_0001
+.visible .func  (.param .b64 func_retval0) _bpf_helper_ext_0001(
+	.param .b64 _bpf_helper_ext_0001_param_0,
+	.param .b64 _bpf_helper_ext_0001_param_1,
+	.param .b64 _bpf_helper_ext_0001_param_2,
+	.param .b64 _bpf_helper_ext_0001_param_3,
+	.param .b64 _bpf_helper_ext_0001_param_4
+)                                       // @_bpf_helper_ext_0001
+{
+    .reg .pred 	%p<14>;
+	.reg .b16 	%rs<6>;
+	.reg .b32 	%r<45>;
+	.reg .b64 	%rd<62>;
+
+	ld.param.u64 	%rd21, [_bpf_helper_ext_0001_param_1];
+	ld.param.u64 	%rd20, [_bpf_helper_ext_0001_param_0];
+	mul.lo.s64 	%rd22, %rd20, 40;
+	mov.u64 	%rd23, map_info;
+	add.s64 	%rd24, %rd23, %rd22;
+	ld.const.u32 	%r10, [%rd24+16];
+	setp.ne.s32 	%p1, %r10, 1502;
+	@%p1 bra 	$L__BB5_2;
+	ld.u32 	%rd38, [%rd21];
+	ld.const.u64 	%rd42, [%rd24+24];
+	ld.const.u64 	%rd43, [%rd24+32];
+	ld.const.s32 	%rd44, [%rd24+8];
+	mul.lo.s64 	%rd45, %rd43, %rd38;
+	mov.u32 	%r24, %ctaid.x;
+	mov.u32 	%r25, %ntid.x;
+	mov.u32 	%r26, %tid.x;
+	mad.lo.s32 	%r27, %r24, %r25, %r26;
+	mov.u32 	%r28, %ctaid.y;
+	mov.u32 	%r29, %ntid.y;
+	mov.u32 	%r30, %tid.y;
+	mad.lo.s32 	%r31, %r28, %r29, %r30;
+	mov.u32 	%r32, %ctaid.z;
+	mov.u32 	%r33, %ntid.z;
+	mov.u32 	%r34, %tid.z;
+	mad.lo.s32 	%r35, %r32, %r33, %r34;
+	mov.u32 	%r36, %nctaid.x;
+	mul.lo.s32 	%r37, %r36, %r25;
+	mov.u32 	%r38, %nctaid.y;
+	mul.lo.s32 	%r39, %r38, %r29;
+	cvt.s64.s32 	%rd46, %r35;
+	mul.wide.s32 	%rd47, %r39, %r37;
+	mul.lo.s64 	%rd48, %rd47, %rd46;
+	mul.lo.s32 	%r40, %r31, %r37;
+	cvt.s64.s32 	%rd49, %r40;
+	cvt.s64.s32 	%rd50, %r27;
+	add.s64 	%rd51, %rd49, %rd50;
+	add.s64 	%rd52, %rd51, %rd48;
+	add.s64 	%rd53, %rd52, %rd45;
+	mul.lo.s64 	%rd54, %rd53, %rd44;
+	add.s64 	%rd60, %rd54, %rd42;
+$L__BB5_14:
+	st.param.b64 	[func_retval0+0], %rd60;
+	ret;
+$L__BB5_2:
+	// fast-path for GPU_ARRAY_MAP (1503): base + key * value_size
+	setp.ne.s32 	%p13, %r10, 1503;
+	@%p13 bra 	$L__BB5_2_CONT;
+	ld.u32 	%rd38, [%rd21];
+	ld.const.u64 	%rd42, [%rd24+24];
+	ld.const.s32 	%rd44, [%rd24+8];
+	mul.lo.s64 	%rd54, %rd38, %rd44;
+	add.s64 	%rd60, %rd42, %rd54;
+	bra.uni 	$L__BB5_14;
+$L__BB5_2_CONT:
+	ld.const.u64 	%rd35, [constData];
+	ld.const.u32 	%r11, [%rd24+4];
+	setp.lt.s32 	%p2, %r11, 1;
+	@%p2 bra 	$L__BB5_9;
+	cvt.u64.u32 	%rd4, %r11;
+	cvt.u32.u64 	%r13, %rd4;
+	and.b32  	%r43, %r13, 3;
+	setp.lt.u32 	%p3, %r13, 4;
+	mov.u32 	%r42, 0;
+	@%p3 bra 	$L__BB5_6;
+	add.s64 	%rd3, %rd35, 24;
+	and.b64  	%rd5, %rd4, 4294967292;
+	add.s64 	%rd6, %rd21, 3;
+	mov.u64 	%rd56, 0;
+	cvt.u32.u64 	%r14, %rd5;
+$L__BB5_5:                              // =>This Inner Loop Header: Depth=1
+	add.s64 	%rd29, %rd6, %rd56;
+	ld.u8 	%rs1, [%rd29+-3];
+	add.s64 	%rd30, %rd3, %rd56;
+	st.u8 	[%rd30], %rs1;
+	ld.u8 	%rs2, [%rd29+-2];
+	st.u8 	[%rd30+1], %rs2;
+	ld.u8 	%rs3, [%rd29+-1];
+	st.u8 	[%rd30+2], %rs3;
+	ld.u8 	%rs4, [%rd29];
+	st.u8 	[%rd30+3], %rs4;
+	add.s64 	%rd56, %rd56, 4;
+	cvt.u32.u64 	%r42, %rd56;
+	setp.ne.s32 	%p4, %r14, %r42;
+	@%p4 bra 	$L__BB5_5;
+$L__BB5_6:
+	setp.eq.s32 	%p5, %r43, 0;
+	@%p5 bra 	$L__BB5_9;
+	cvt.u64.u32 	%rd31, %r42;
+	add.s64 	%rd32, %rd31, %rd35;
+	add.s64 	%rd58, %rd32, 24;
+	add.s64 	%rd57, %rd21, %rd31;
+$L__BB5_8:                              // =>This Inner Loop Header: Depth=1
+	.pragma "nounroll";
+	ld.u8 	%rs5, [%rd57];
+	st.u8 	[%rd58], %rs5;
+	add.s64 	%rd58, %rd58, 1;
+	add.s64 	%rd57, %rd57, 1;
+	add.s32 	%r43, %r43, -1;
+	setp.ne.s32 	%p6, %r43, 0;
+	@%p6 bra 	$L__BB5_8;
+$L__BB5_9:
+	mov.u32 	%r44, 0;
+	mov.u64 	%rd60, 0;
+	mov.u32 	%r16, %tid.x;
+	and.b32  	%r6, %r16, 31;
+	add.s64 	%rd36, %rd35, 4;
+	add.s64 	%rd34, %rd35, 8;
+	mov.u32 	%r22, 1;
+	mov.u32 	%r21, 42;
+	bra.uni 	$L__BB5_10;
+$L__BB5_13:                             //   in Loop: Header=BB5_10 Depth=1
+	bar.warp.sync 	%r8;
+	add.s32 	%r44, %r44, 1;
+	setp.ne.s32 	%p12, %r44, 32;
+	@%p12 bra 	$L__BB5_10;
+	bra.uni 	$L__BB5_14;
+$L__BB5_10:                             // =>This Loop Header: Depth=1
+                                        //     Child Loop BB5_11 Depth 2
+	// begin inline asm
+	activemask.b32 %r8;
+	// end inline asm
+	shr.u32 	%r18, %r8, %r44;
+	and.b32  	%r19, %r18, 1;
+	setp.eq.b32 	%p7, %r19, 1;
+	not.pred 	%p8, %p7;
+	setp.ne.s32 	%p9, %r6, %r44;
+	or.pred  	%p10, %p9, %p8;
+	@%p10 bra 	$L__BB5_13;
+$L__BB5_11:                             //   Parent Loop BB5_10 Depth=1
+                                        // =>  This Inner Loop Header: Depth=2
+	atom.cas.b32 	%r20, [%rd34], 0, 1;
+	setp.eq.s32 	%p11, %r20, 1;
+	@%p11 bra 	$L__BB5_11;
+	st.u32 	[%rd35+12], %r22;
+	st.u64 	[%rd35+16], %rd20;
+	// begin inline asm
+	.reg .pred p0;                   
+	membar.sys;                      
+	st.global.u32 [%rd35], 1;           
+	spin_wait:                       
+	membar.sys;                      
+	ld.global.u32 %r21, [%rd36];          
+	setp.eq.u32 p0, %r21, 0;           
+	@p0 bra spin_wait;               
+	st.global.u32 [%rd36], 0;           
+	membar.sys;                      
+	
+	// end inline asm
+	ld.u64 	%rd60, [%rd35+2147483680];
+	atom.exch.b32 	%r23, [%rd34], 0;
+	bra.uni 	$L__BB5_13;
+                                        // -- End function
+}
+	// .globl	_bpf_helper_ext_0002    // -- Begin function _bpf_helper_ext_0002
+.visible .func  (.param .b64 func_retval0) _bpf_helper_ext_0002(
+	.param .b64 _bpf_helper_ext_0002_param_0,
+	.param .b64 _bpf_helper_ext_0002_param_1,
+	.param .b64 _bpf_helper_ext_0002_param_2,
+	.param .b64 _bpf_helper_ext_0002_param_3,
+	.param .b64 _bpf_helper_ext_0002_param_4
+)                                       // @_bpf_helper_ext_0002
+{
+    .reg .pred 	%p<24>;
+	.reg .b16 	%rs<16>;
+	.reg .b32 	%r<68>;
+	.reg .b64 	%rd<110>;
+
+	ld.param.u64 	%rd46, [_bpf_helper_ext_0002_param_2];
+	ld.param.u64 	%rd45, [_bpf_helper_ext_0002_param_1];
+	ld.param.u64 	%rd44, [_bpf_helper_ext_0002_param_0];
+	mul.lo.s64 	%rd48, %rd44, 40;
+	mov.u64 	%rd49, map_info;
+	add.s64 	%rd50, %rd49, %rd48;
+	ld.const.u32 	%r20, [%rd50+16];
+	setp.ne.s32 	%p1, %r20, 1502;
+	@%p1 bra 	$L__BB6_8;
+	ld.const.u32 	%r38, [%rd50+8];
+	setp.lt.s32 	%p18, %r38, 1;
+	mov.u64 	%rd109, 0;
+	@%p18 bra 	$L__BB6_28;
+	ld.u32 	%rd73, [%rd45];
+	ld.const.u64 	%rd77, [%rd50+24];
+	ld.const.u64 	%rd78, [%rd50+32];
+	cvt.u64.u32 	%rd1, %r38;
+	cvt.s64.s32 	%rd79, %r38;
+	mul.lo.s64 	%rd80, %rd78, %rd73;
+	mov.u32 	%r39, %ctaid.x;
+	mov.u32 	%r40, %ntid.x;
+	mov.u32 	%r41, %tid.x;
+	mad.lo.s32 	%r42, %r39, %r40, %r41;
+	mov.u32 	%r43, %ctaid.y;
+	mov.u32 	%r44, %ntid.y;
+	mov.u32 	%r45, %tid.y;
+	mad.lo.s32 	%r46, %r43, %r44, %r45;
+	mov.u32 	%r47, %ctaid.z;
+	mov.u32 	%r48, %ntid.z;
+	mov.u32 	%r49, %tid.z;
+	mad.lo.s32 	%r50, %r47, %r48, %r49;
+	mov.u32 	%r51, %nctaid.x;
+	mul.lo.s32 	%r52, %r51, %r40;
+	mov.u32 	%r53, %nctaid.y;
+	mul.lo.s32 	%r54, %r53, %r44;
+	cvt.s64.s32 	%rd81, %r50;
+	mul.wide.s32 	%rd82, %r54, %r52;
+	mul.lo.s64 	%rd83, %rd82, %rd81;
+	mul.lo.s32 	%r55, %r46, %r52;
+	cvt.s64.s32 	%rd84, %r55;
+	cvt.s64.s32 	%rd85, %r42;
+	add.s64 	%rd86, %rd84, %rd85;
+	add.s64 	%rd87, %rd86, %rd83;
+	add.s64 	%rd88, %rd87, %rd80;
+	mul.lo.s64 	%rd89, %rd88, %rd79;
+	add.s64 	%rd2, %rd89, %rd77;
+	cvt.u32.u64 	%r57, %rd1;
+	and.b32  	%r67, %r57, 3;
+	setp.lt.u32 	%p19, %r57, 4;
+	mov.u32 	%r66, 0;
+	@%p19 bra 	$L__BB6_5;
+	and.b64  	%rd3, %rd1, 4294967292;
+	add.s64 	%rd4, %rd46, 3;
+	mov.u64 	%rd98, 0;
+	cvt.u32.u64 	%r58, %rd3;
+$L__BB6_4:                              // =>This Inner Loop Header: Depth=1
+	add.s64 	%rd91, %rd4, %rd98;
+	ld.u8 	%rs11, [%rd91+-3];
+	add.s64 	%rd92, %rd2, %rd98;
+	st.u8 	[%rd92], %rs11;
+	ld.u8 	%rs12, [%rd91+-2];
+	st.u8 	[%rd92+1], %rs12;
+	ld.u8 	%rs13, [%rd91+-1];
+	st.u8 	[%rd92+2], %rs13;
+	ld.u8 	%rs14, [%rd91];
+	st.u8 	[%rd92+3], %rs14;
+	add.s64 	%rd98, %rd98, 4;
+	cvt.u32.u64 	%r66, %rd98;
+	setp.eq.s32 	%p20, %r58, %r66;
+	@%p20 bra 	$L__BB6_5;
+	bra.uni 	$L__BB6_4;
+$L__BB6_5:
+	setp.eq.s32 	%p21, %r67, 0;
+	@%p21 bra 	$L__BB6_28;
+	cvt.u64.u32 	%rd94, %r66;
+	add.s64 	%rd108, %rd2, %rd94;
+	add.s64 	%rd107, %rd46, %rd94;
+$L__BB6_7:                              // =>This Inner Loop Header: Depth=1
+	.pragma "nounroll";
+	ld.u8 	%rs15, [%rd107];
+	st.u8 	[%rd108], %rs15;
+	add.s64 	%rd108, %rd108, 1;
+	add.s64 	%rd107, %rd107, 1;
+	add.s32 	%r67, %r67, -1;
+	setp.ne.s32 	%p22, %r67, 0;
+	@%p22 bra 	$L__BB6_7;
+	bra.uni 	$L__BB6_28;
+$L__BB6_8:
+	// fast-path for GPU_ARRAY_MAP (1503): memcpy overwrite to base + key * value_size
+	setp.ne.s32 	%p23, %r20, 1503;
+	@%p23 bra 	$L__BB6_8_CONT;
+	ld.const.u32 	%r25, [%rd50+8];
+	ld.u32 	%rd73, [%rd45];
+	ld.const.u64 	%rd77, [%rd50+24];
+	cvt.s64.s32 	%rd79, %r25;
+	mul.lo.s64 	%rd88, %rd73, %rd79;
+	add.s64 	%rd2, %rd77, %rd88;
+	// copy value_size bytes from %rd46 to %rd2
+	cvt.u64.u32 	%rd1, %r25;
+	cvt.u32.u64 	%r57, %rd1;
+	and.b32  	%r67, %r57, 3;
+	setp.lt.u32 	%p19, %r57, 4;
+	mov.u32 	%r66, 0;
+	@%p19 bra 	$L_GPU1503_COPY_REMAINDER;
+	and.b64  	%rd3, %rd1, 4294967292;
+	add.s64 	%rd4, %rd46, 3;
+	mov.u64 	%rd98, 0;
+	cvt.u32.u64 	%r58, %rd3;
+$L_GPU1503_COPY_DW:
+	add.s64 	%rd91, %rd4, %rd98;
+	ld.u8 	%rs11, [%rd91+-3];
+	add.s64 	%rd92, %rd2, %rd98;
+	st.u8 	[%rd92], %rs11;
+	ld.u8 	%rs12, [%rd91+-2];
+	st.u8 	[%rd92+1], %rs12;
+	ld.u8 	%rs13, [%rd91+-1];
+	st.u8 	[%rd92+2], %rs13;
+	ld.u8 	%rs14, [%rd91];
+	st.u8 	[%rd92+3], %rs14;
+	add.s64 	%rd98, %rd98, 4;
+	cvt.u32.u64 	%r66, %rd98;
+	setp.eq.s32 	%p20, %r58, %r66;
+	@%p20 bra 	$L_GPU1503_COPY_REMAINDER;
+	bra.uni 	$L_GPU1503_COPY_DW;
+$L_GPU1503_COPY_REMAINDER:
+	setp.eq.s32 	%p21, %r67, 0;
+	@%p21 bra 	$L_GPU1503_DONE;
+	cvt.u64.u32 	%rd94, %r66;
+	add.s64 	%rd108, %rd2, %rd94;
+	add.s64 	%rd107, %rd46, %rd94;
+$L_GPU1503_COPY_TAIL:
+	.pragma "nounroll";
+	ld.u8 	%rs15, [%rd107];
+	st.u8 	[%rd108], %rs15;
+	add.s64 	%rd108, %rd108, 1;
+	add.s64 	%rd107, %rd107, 1;
+	add.s32 	%r67, %r67, -1;
+	setp.ne.s32 	%p22, %r67, 0;
+	@%p22 bra 	$L_GPU1503_COPY_TAIL;
+$L_GPU1503_DONE:
+	mov.u64 	%rd109, 0;
+	bra.uni 	$L__BB6_28;
+$L__BB6_8_CONT:
+	ld.const.u64 	%rd69, [constData];
+	ld.const.u32 	%r21, [%rd50+4];
+	setp.lt.s32 	%p2, %r21, 1;
+	@%p2 bra 	$L__BB6_15;
+	cvt.u64.u32 	%rd9, %r21;
+	cvt.u32.u64 	%r23, %rd9;
+	and.b32  	%r62, %r23, 3;
+	setp.lt.u32 	%p3, %r23, 4;
+	mov.u32 	%r61, 0;
+	@%p3 bra 	$L__BB6_12;
+	add.s64 	%rd8, %rd69, 24;
+	and.b64  	%rd10, %rd9, 4294967292;
+	add.s64 	%rd11, %rd45, 3;
+	mov.u64 	%rd99, 0;
+	cvt.u32.u64 	%r24, %rd10;
+$L__BB6_11:                             // =>This Inner Loop Header: Depth=1
+	add.s64 	%rd55, %rd11, %rd99;
+	ld.u8 	%rs1, [%rd55+-3];
+	add.s64 	%rd56, %rd8, %rd99;
+	st.u8 	[%rd56], %rs1;
+	ld.u8 	%rs2, [%rd55+-2];
+	st.u8 	[%rd56+1], %rs2;
+	ld.u8 	%rs3, [%rd55+-1];
+	st.u8 	[%rd56+2], %rs3;
+	ld.u8 	%rs4, [%rd55];
+	st.u8 	[%rd56+3], %rs4;
+	add.s64 	%rd99, %rd99, 4;
+	cvt.u32.u64 	%r61, %rd99;
+	setp.ne.s32 	%p4, %r24, %r61;
+	@%p4 bra 	$L__BB6_11;
+$L__BB6_12:
+	setp.eq.s32 	%p5, %r62, 0;
+	@%p5 bra 	$L__BB6_15;
+	cvt.u64.u32 	%rd57, %r61;
+	add.s64 	%rd58, %rd57, %rd69;
+	add.s64 	%rd101, %rd58, 24;
+	add.s64 	%rd100, %rd45, %rd57;
+$L__BB6_14:                             // =>This Inner Loop Header: Depth=1
+	.pragma "nounroll";
+	ld.u8 	%rs5, [%rd100];
+	st.u8 	[%rd101], %rs5;
+	add.s64 	%rd101, %rd101, 1;
+	add.s64 	%rd100, %rd100, 1;
+	add.s32 	%r62, %r62, -1;
+	setp.ne.s32 	%p6, %r62, 0;
+	@%p6 bra 	$L__BB6_14;
+$L__BB6_15:
+	ld.param.u64 	%rd47, [_bpf_helper_ext_0002_param_3];
+	ld.const.u32 	%r25, [%rd50+8];
+	setp.lt.s32 	%p7, %r25, 1;
+	@%p7 bra 	$L__BB6_22;
+	cvt.u64.u32 	%rd21, %r25;
+	cvt.u32.u64 	%r27, %rd21;
+	and.b32  	%r64, %r27, 3;
+	setp.lt.u32 	%p8, %r27, 4;
+	mov.u32 	%r63, 0;
+	@%p8 bra 	$L__BB6_19;
+	add.s64 	%rd20, %rd69, 1073741848;
+	and.b64  	%rd22, %rd21, 4294967292;
+	add.s64 	%rd23, %rd46, 3;
+	mov.u64 	%rd102, 0;
+	cvt.u32.u64 	%r28, %rd22;
+$L__BB6_18:                             // =>This Inner Loop Header: Depth=1
+	add.s64 	%rd63, %rd23, %rd102;
+	ld.u8 	%rs6, [%rd63+-3];
+	add.s64 	%rd64, %rd20, %rd102;
+	st.u8 	[%rd64], %rs6;
+	ld.u8 	%rs7, [%rd63+-2];
+	st.u8 	[%rd64+1], %rs7;
+	ld.u8 	%rs8, [%rd63+-1];
+	st.u8 	[%rd64+2], %rs8;
+	ld.u8 	%rs9, [%rd63];
+	st.u8 	[%rd64+3], %rs9;
+	add.s64 	%rd102, %rd102, 4;
+	cvt.u32.u64 	%r63, %rd102;
+	setp.ne.s32 	%p9, %r28, %r63;
+	@%p9 bra 	$L__BB6_18;
+$L__BB6_19:
+	setp.eq.s32 	%p10, %r64, 0;
+	@%p10 bra 	$L__BB6_22;
+	cvt.u64.u32 	%rd65, %r63;
+	add.s64 	%rd66, %rd65, %rd69;
+	add.s64 	%rd104, %rd66, 1073741848;
+	add.s64 	%rd103, %rd46, %rd65;
+$L__BB6_21:                             // =>This Inner Loop Header: Depth=1
+	.pragma "nounroll";
+	ld.u8 	%rs10, [%rd103];
+	st.u8 	[%rd104], %rs10;
+	add.s64 	%rd104, %rd104, 1;
+	add.s64 	%rd103, %rd103, 1;
+	add.s32 	%r64, %r64, -1;
+	setp.ne.s32 	%p11, %r64, 0;
+	@%p11 bra 	$L__BB6_21;
+$L__BB6_22:
+	mov.u32 	%r65, 0;
+	mov.u64 	%rd106, 0;
+	st.u64 	[%rd69+2147483672], %rd47;
+	mov.u32 	%r30, %tid.x;
+	and.b32  	%r13, %r30, 31;
+	add.s64 	%rd70, %rd69, 4;
+	add.s64 	%rd68, %rd69, 8;
+	mov.u32 	%r36, 2;
+	mov.u32 	%r35, 42;
+	bra.uni 	$L__BB6_23;
+$L__BB6_26:                             //   in Loop: Header=BB6_23 Depth=1
+	bar.warp.sync 	%r15;
+	add.s32 	%r65, %r65, 1;
+	setp.ne.s32 	%p17, %r65, 32;
+	@%p17 bra 	$L__BB6_23;
+	bra.uni 	$L__BB6_27;
+$L__BB6_23:                             // =>This Loop Header: Depth=1
+                                        //     Child Loop BB6_24 Depth 2
+	// begin inline asm
+	activemask.b32 %r15;
+	// end inline asm
+	shr.u32 	%r32, %r15, %r65;
+	and.b32  	%r33, %r32, 1;
+	setp.eq.b32 	%p12, %r33, 1;
+	not.pred 	%p13, %p12;
+	setp.ne.s32 	%p14, %r13, %r65;
+	or.pred  	%p15, %p14, %p13;
+	@%p15 bra 	$L__BB6_26;
+$L__BB6_24:                             //   Parent Loop BB6_23 Depth=1
+                                        // =>  This Inner Loop Header: Depth=2
+	atom.cas.b32 	%r34, [%rd68], 0, 1;
+	setp.eq.s32 	%p16, %r34, 1;
+	@%p16 bra 	$L__BB6_24;
+	st.u32 	[%rd69+12], %r36;
+	st.u64 	[%rd69+16], %rd44;
+	// begin inline asm
+	.reg .pred p0;                   
+	membar.sys;                      
+	st.global.u32 [%rd69], 1;           
+	spin_wait:                       
+	membar.sys;                      
+	ld.global.u32 %r35, [%rd70];          
+	setp.eq.u32 p0, %r35, 0;           
+	@p0 bra spin_wait;               
+	st.global.u32 [%rd70], 0;           
+	membar.sys;                      
+	
+	// end inline asm
+	ld.u64 	%rd106, [%rd69+2147483680];
+	atom.exch.b32 	%r37, [%rd68], 0;
+	bra.uni 	$L__BB6_26;
+$L__BB6_27:
+	cvt.s64.s32 	%rd109, %rd106;
+$L__BB6_28:
+	st.param.b64 	[func_retval0+0], %rd109;
+	ret;
+                                        // -- End function
+}
+	// .globl	_bpf_helper_ext_0003    // -- Begin function _bpf_helper_ext_0003
+.visible .func  (.param .b64 func_retval0) _bpf_helper_ext_0003(
+	.param .b64 _bpf_helper_ext_0003_param_0,
+	.param .b64 _bpf_helper_ext_0003_param_1,
+	.param .b64 _bpf_helper_ext_0003_param_2,
+	.param .b64 _bpf_helper_ext_0003_param_3,
+	.param .b64 _bpf_helper_ext_0003_param_4
+)                                       // @_bpf_helper_ext_0003
+{
+	.reg .pred 	%p<12>;
+	.reg .b16 	%rs<6>;
+	.reg .b32 	%r<27>;
+	.reg .b64 	%rd<40>;
+
+	ld.param.u64 	%rd18, [_bpf_helper_ext_0003_param_0];
+	ld.const.u64 	%rd30, [constData];
+	mul.lo.s64 	%rd20, %rd18, 40;
+	mov.u64 	%rd21, map_info;
+	add.s64 	%rd22, %rd21, %rd20;
+	ld.const.u32 	%r10, [%rd22+4];
+	setp.lt.s32 	%p1, %r10, 1;
+	@%p1 bra 	$L__BB7_7;
+	ld.param.u64 	%rd19, [_bpf_helper_ext_0003_param_1];
+	cvt.u64.u32 	%rd3, %r10;
+	cvt.u32.u64 	%r12, %rd3;
+	and.b32  	%r25, %r12, 3;
+	setp.lt.u32 	%p2, %r12, 4;
+	mov.u32 	%r24, 0;
+	@%p2 bra 	$L__BB7_4;
+	add.s64 	%rd2, %rd30, 24;
+	and.b64  	%rd4, %rd3, 4294967292;
+	add.s64 	%rd5, %rd19, 3;
+	mov.u64 	%rd35, 0;
+	cvt.u32.u64 	%r13, %rd4;
+$L__BB7_3:                              // =>This Inner Loop Header: Depth=1
+	add.s64 	%rd24, %rd5, %rd35;
+	ld.u8 	%rs1, [%rd24+-3];
+	add.s64 	%rd25, %rd2, %rd35;
+	st.u8 	[%rd25], %rs1;
+	ld.u8 	%rs2, [%rd24+-2];
+	st.u8 	[%rd25+1], %rs2;
+	ld.u8 	%rs3, [%rd24+-1];
+	st.u8 	[%rd25+2], %rs3;
+	ld.u8 	%rs4, [%rd24];
+	st.u8 	[%rd25+3], %rs4;
+	add.s64 	%rd35, %rd35, 4;
+	cvt.u32.u64 	%r24, %rd35;
+	setp.ne.s32 	%p3, %r13, %r24;
+	@%p3 bra 	$L__BB7_3;
+$L__BB7_4:
+	setp.eq.s32 	%p4, %r25, 0;
+	@%p4 bra 	$L__BB7_7;
+	cvt.u64.u32 	%rd26, %r24;
+	add.s64 	%rd27, %rd26, %rd30;
+	add.s64 	%rd37, %rd27, 24;
+	add.s64 	%rd36, %rd19, %rd26;
+$L__BB7_6:                              // =>This Inner Loop Header: Depth=1
+	.pragma "nounroll";
+	ld.u8 	%rs5, [%rd36];
+	st.u8 	[%rd37], %rs5;
+	add.s64 	%rd37, %rd37, 1;
+	add.s64 	%rd36, %rd36, 1;
+	add.s32 	%r25, %r25, -1;
+	setp.ne.s32 	%p5, %r25, 0;
+	@%p5 bra 	$L__BB7_6;
+$L__BB7_7:
+	mov.u32 	%r26, 0;
+	mov.u64 	%rd39, 0;
+	mov.u32 	%r15, %tid.x;
+	and.b32  	%r6, %r15, 31;
+	add.s64 	%rd31, %rd30, 4;
+	add.s64 	%rd29, %rd30, 8;
+	mov.u32 	%r21, 3;
+	mov.u32 	%r20, 42;
+	bra.uni 	$L__BB7_8;
+$L__BB7_11:                             //   in Loop: Header=BB7_8 Depth=1
+	bar.warp.sync 	%r8;
+	add.s32 	%r26, %r26, 1;
+	setp.ne.s32 	%p11, %r26, 32;
+	@%p11 bra 	$L__BB7_8;
+	bra.uni 	$L__BB7_12;
+$L__BB7_8:                              // =>This Loop Header: Depth=1
+                                        //     Child Loop BB7_9 Depth 2
+	// begin inline asm
+	activemask.b32 %r8;
+	// end inline asm
+	shr.u32 	%r17, %r8, %r26;
+	and.b32  	%r18, %r17, 1;
+	setp.eq.b32 	%p6, %r18, 1;
+	not.pred 	%p7, %p6;
+	setp.ne.s32 	%p8, %r6, %r26;
+	or.pred  	%p9, %p8, %p7;
+	@%p9 bra 	$L__BB7_11;
+$L__BB7_9:                              //   Parent Loop BB7_8 Depth=1
+                                        // =>  This Inner Loop Header: Depth=2
+	atom.cas.b32 	%r19, [%rd29], 0, 1;
+	setp.eq.s32 	%p10, %r19, 1;
+	@%p10 bra 	$L__BB7_9;
+	st.u32 	[%rd30+12], %r21;
+	st.u64 	[%rd30+16], %rd18;
+	// begin inline asm
+	.reg .pred p0;                   
+	membar.sys;                      
+	st.global.u32 [%rd30], 1;           
+	spin_wait:                       
+	membar.sys;                      
+	ld.global.u32 %r20, [%rd31];          
+	setp.eq.u32 p0, %r20, 0;           
+	@p0 bra spin_wait;               
+	st.global.u32 [%rd31], 0;           
+	membar.sys;                      
+	
+	// end inline asm
+	ld.u64 	%rd39, [%rd30+2147483680];
+	atom.exch.b32 	%r22, [%rd29], 0;
+	bra.uni 	$L__BB7_11;
+$L__BB7_12:
+	cvt.s64.s32 	%rd33, %rd39;
+	st.param.b64 	[func_retval0+0], %rd33;
+	ret;
+                                        // -- End function
+}
+	// .globl	_bpf_helper_ext_0006    // -- Begin function _bpf_helper_ext_0006
+.visible .func  (.param .b64 func_retval0) _bpf_helper_ext_0006(
+	.param .b64 _bpf_helper_ext_0006_param_0,
+	.param .b64 _bpf_helper_ext_0006_param_1,
+	.param .b64 _bpf_helper_ext_0006_param_2,
+	.param .b64 _bpf_helper_ext_0006_param_3,
+	.param .b64 _bpf_helper_ext_0006_param_4
+)                                       // @_bpf_helper_ext_0006
+{
+	.reg .pred 	%p<9>;
+	.reg .b16 	%rs<2>;
+	.reg .b32 	%r<15>;
+	.reg .b64 	%rd<29>;
+
+	ld.param.u64 	%rd13, [_bpf_helper_ext_0006_param_4];
+	ld.param.u64 	%rd12, [_bpf_helper_ext_0006_param_3];
+	ld.param.u64 	%rd11, [_bpf_helper_ext_0006_param_2];
+	ld.param.u64 	%rd10, [_bpf_helper_ext_0006_param_1];
+	ld.const.u64 	%rd1, [constData];
+	setp.eq.s64 	%p1, %rd10, 0;
+	@%p1 bra 	$L__BB8_3;
+	ld.param.u64 	%rd9, [_bpf_helper_ext_0006_param_0];
+	add.s64 	%rd2, %rd1, 24;
+	mov.u64 	%rd28, 0;
+$L__BB8_2:                              // =>This Inner Loop Header: Depth=1
+	add.s64 	%rd15, %rd9, %rd28;
+	ld.u8 	%rs1, [%rd15];
+	add.s64 	%rd16, %rd2, %rd28;
+	st.u8 	[%rd16], %rs1;
+	add.s64 	%rd17, %rd28, 1;
+	and.b64  	%rd28, %rd17, 4294967295;
+	setp.lt.u64 	%p2, %rd28, %rd10;
+	@%p2 bra 	$L__BB8_2;
+$L__BB8_3:
+	st.u32 	[%rd1+1024], %rd10;
+	st.u64 	[%rd1+1032], %rd11;
+	st.u64 	[%rd1+1040], %rd12;
+	st.u64 	[%rd1+1048], %rd13;
+	mov.u32 	%r6, %tid.x;
+	and.b32  	%r1, %r6, 31;
+	add.s64 	%rd21, %rd1, 4;
+	mov.u32 	%r14, 0;
+	mov.u64 	%rd27, 0;
+	add.s64 	%rd19, %rd1, 8;
+	mov.u32 	%r12, 6;
+	mov.u32 	%r11, 42;
+	bra.uni 	$L__BB8_4;
+$L__BB8_7:                              //   in Loop: Header=BB8_4 Depth=1
+	bar.warp.sync 	%r3;
+	add.s32 	%r14, %r14, 1;
+	setp.ne.s32 	%p8, %r14, 32;
+	@%p8 bra 	$L__BB8_4;
+	bra.uni 	$L__BB8_8;
+$L__BB8_4:                              // =>This Loop Header: Depth=1
+                                        //     Child Loop BB8_5 Depth 2
+	// begin inline asm
+	activemask.b32 %r3;
+	// end inline asm
+	shr.u32 	%r8, %r3, %r14;
+	and.b32  	%r9, %r8, 1;
+	setp.eq.b32 	%p3, %r9, 1;
+	not.pred 	%p4, %p3;
+	setp.ne.s32 	%p5, %r1, %r14;
+	or.pred  	%p6, %p5, %p4;
+	@%p6 bra 	$L__BB8_7;
+$L__BB8_5:                              //   Parent Loop BB8_4 Depth=1
+                                        // =>  This Inner Loop Header: Depth=2
+	atom.cas.b32 	%r10, [%rd19], 0, 1;
+	setp.eq.s32 	%p7, %r10, 1;
+	@%p7 bra 	$L__BB8_5;
+	st.u32 	[%rd1+12], %r12;
+	mov.u64 	%rd22, 0;
+	st.u64 	[%rd1+16], %rd22;
+	// begin inline asm
+	.reg .pred p0;                   
+	membar.sys;                      
+	st.global.u32 [%rd1], 1;           
+	spin_wait:                       
+	membar.sys;                      
+	ld.global.u32 %r11, [%rd21];          
+	setp.eq.u32 p0, %r11, 0;           
+	@p0 bra spin_wait;               
+	st.global.u32 [%rd21], 0;           
+	membar.sys;                      
+	
+	// end inline asm
+	ld.u64 	%rd27, [%rd1+2147483680];
+	atom.exch.b32 	%r13, [%rd19], 0;
+	bra.uni 	$L__BB8_7;
+$L__BB8_8:
+	cvt.s64.s32 	%rd24, %rd27;
+	st.param.b64 	[func_retval0+0], %rd24;
+	ret;
+                                        // -- End function
+}
+	// .globl	_bpf_helper_ext_0014    // -- Begin function _bpf_helper_ext_0014
+.visible .func  (.param .b64 func_retval0) _bpf_helper_ext_0014(
+	.param .b64 _bpf_helper_ext_0014_param_0,
+	.param .b64 _bpf_helper_ext_0014_param_1,
+	.param .b64 _bpf_helper_ext_0014_param_2,
+	.param .b64 _bpf_helper_ext_0014_param_3,
+	.param .b64 _bpf_helper_ext_0014_param_4
+)                                       // @_bpf_helper_ext_0014
+{
+	.reg .pred 	%p<7>;
+	.reg .b32 	%r<15>;
+	.reg .b64 	%rd<14>;
+
+	ld.const.u64 	%rd8, [constData];
+	mov.u32 	%r6, %tid.x;
+	and.b32  	%r1, %r6, 31;
+	add.s64 	%rd9, %rd8, 4;
+	mov.u32 	%r14, 0;
+	mov.u64 	%rd6, 0;
+	add.s64 	%rd7, %rd8, 8;
+	mov.u32 	%r12, 14;
+	mov.u32 	%r11, 42;
+	mov.u64 	%rd13, %rd6;
+	bra.uni 	$L__BB9_1;
+$L__BB9_4:                              //   in Loop: Header=BB9_1 Depth=1
+	bar.warp.sync 	%r3;
+	add.s32 	%r14, %r14, 1;
+	setp.ne.s32 	%p6, %r14, 32;
+	@%p6 bra 	$L__BB9_1;
+	bra.uni 	$L__BB9_5;
+$L__BB9_1:                              // =>This Loop Header: Depth=1
+                                        //     Child Loop BB9_2 Depth 2
+	// begin inline asm
+	activemask.b32 %r3;
+	// end inline asm
+	shr.u32 	%r8, %r3, %r14;
+	and.b32  	%r9, %r8, 1;
+	setp.eq.b32 	%p1, %r9, 1;
+	not.pred 	%p2, %p1;
+	setp.ne.s32 	%p3, %r1, %r14;
+	or.pred  	%p4, %p3, %p2;
+	@%p4 bra 	$L__BB9_4;
+$L__BB9_2:                              //   Parent Loop BB9_1 Depth=1
+                                        // =>  This Inner Loop Header: Depth=2
+	atom.cas.b32 	%r10, [%rd7], 0, 1;
+	setp.eq.s32 	%p5, %r10, 1;
+	@%p5 bra 	$L__BB9_2;
+	st.u32 	[%rd8+12], %r12;
+	st.u64 	[%rd8+16], %rd6;
+	// begin inline asm
+	.reg .pred p0;                   
+	membar.sys;                      
+	st.global.u32 [%rd8], 1;           
+	spin_wait:                       
+	membar.sys;                      
+	ld.global.u32 %r11, [%rd9];          
+	setp.eq.u32 p0, %r11, 0;           
+	@p0 bra spin_wait;               
+	st.global.u32 [%rd9], 0;           
+	membar.sys;                      
+	
+	// end inline asm
+	ld.u64 	%rd13, [%rd8+2147483680];
+	atom.exch.b32 	%r13, [%rd7], 0;
+	bra.uni 	$L__BB9_4;
+$L__BB9_5:
+	st.param.b64 	[func_retval0+0], %rd13;
+	ret;
+                                        // -- End function
+}
+	// .globl	_bpf_helper_ext_0025    // -- Begin function _bpf_helper_ext_0025
+.visible .func  (.param .b64 func_retval0) _bpf_helper_ext_0025(
+	.param .b64 _bpf_helper_ext_0025_param_0,
+	.param .b64 _bpf_helper_ext_0025_param_1,
+	.param .b64 _bpf_helper_ext_0025_param_2,
+	.param .b64 _bpf_helper_ext_0025_param_3,
+	.param .b64 _bpf_helper_ext_0025_param_4
+)                                       // @_bpf_helper_ext_0025
+{
+	.reg .pred 	%p<9>;
+	.reg .b16 	%rs<6>;
+	.reg .b32 	%r<42>;
+	.reg .b64 	%rd<63>;
+
+	ld.param.u64 	%rd16, [_bpf_helper_ext_0025_param_1];
+	mul.lo.s64 	%rd19, %rd16, 40;
+	mov.u64 	%rd20, map_info;
+	add.s64 	%rd21, %rd20, %rd19;
+	ld.const.u32 	%r9, [%rd21+16];
+	setp.ne.s32 	%p1, %r9, 1527;
+	@%p1 bra 	$L__BB10_13;
+	ld.const.v2.u32 	{%r12, %r13}, [%rd21+8];
+	cvt.s64.s32 	%rd1, %r13;
+	cvt.s64.s32 	%rd30, %r12;
+	add.s64 	%rd2, %rd30, 8;
+	mul.lo.s64 	%rd31, %rd2, %rd1;
+	add.s64 	%rd32, %rd31, 24;
+	mov.u32 	%r14, %ctaid.x;
+	mov.u32 	%r15, %ntid.x;
+	mov.u32 	%r16, %tid.x;
+	mad.lo.s32 	%r17, %r14, %r15, %r16;
+	mov.u32 	%r18, %ctaid.y;
+	mov.u32 	%r19, %ntid.y;
+	mov.u32 	%r20, %tid.y;
+	mad.lo.s32 	%r21, %r18, %r19, %r20;
+	mov.u32 	%r22, %ctaid.z;
+	mov.u32 	%r23, %ntid.z;
+	mov.u32 	%r24, %tid.z;
+	mad.lo.s32 	%r25, %r22, %r23, %r24;
+	mov.u32 	%r26, %nctaid.x;
+	mul.lo.s32 	%r27, %r26, %r15;
+	mov.u32 	%r28, %nctaid.y;
+	mul.lo.s32 	%r29, %r28, %r19;
+	cvt.s64.s32 	%rd33, %r25;
+	mul.wide.s32 	%rd34, %r29, %r27;
+	mul.lo.s64 	%rd35, %rd34, %rd33;
+	mul.lo.s32 	%r30, %r21, %r27;
+	cvt.s64.s32 	%rd36, %r30;
+	cvt.s64.s32 	%rd37, %r17;
+	add.s64 	%rd38, %rd36, %rd37;
+	add.s64 	%rd39, %rd38, %rd35;
+	mul.lo.s64 	%rd40, %rd32, %rd39;
+	ld.const.u64 	%rd41, [%rd21+24];
+	add.s64 	%rd3, %rd41, %rd40;
+	ld.u64 	%rd42, [%rd3+8];
+	ld.u64 	%rd43, [%rd3];
+	sub.s64 	%rd44, %rd42, %rd43;
+	setp.eq.s64 	%p2, %rd44, %rd1;
+	mov.u64 	%rd62, 2;
+	@%p2 bra 	$L__BB10_14;
+	ld.param.u64 	%rd18, [_bpf_helper_ext_0025_param_4];
+	mov.u32 	%r31, 1;
+	st.u32 	[%rd3+16], %r31;
+	add.s64 	%rd45, %rd3, 8;
+	atom.add.u64 	%rd4, [%rd45], 1;
+	or.b64  	%rd46, %rd4, %rd1;
+	and.b64  	%rd47, %rd46, -4294967296;
+	setp.ne.s64 	%p3, %rd47, 0;
+	@%p3 bra 	$L__BB10_4;
+	bra.uni 	$L__BB10_3;
+$L__BB10_4:
+	rem.u64 	%rd59, %rd4, %rd1;
+	bra.uni 	$L__BB10_5;
+$L__BB10_13:
+	mov.u64 	%rd23, _$_str;
+	cvta.global.u64 	%rd24, %rd23;
+	mov.u64 	%rd25, 0;
+	{ // callseq 0, 0
+	.reg .b32 temp_param_reg;
+	.param .b64 param0;
+	st.param.b64 	[param0+0], %rd24;
+	.param .b64 param1;
+	st.param.b64 	[param1+0], %rd25;
+	.param .b32 retval0;
+	call.uni (retval0), 
+	vprintf, 
+	(
+	param0, 
+	param1
+	);
+	ld.param.b32 	%r10, [retval0+0];
+	} // callseq 0
+	mov.u64 	%rd62, 1;
+	bra.uni 	$L__BB10_14;
+$L__BB10_3:
+	cvt.u32.u64 	%r32, %rd1;
+	cvt.u32.u64 	%r33, %rd4;
+	rem.u32 	%r34, %r33, %r32;
+	cvt.u64.u32 	%rd59, %r34;
+$L__BB10_5:
+	mul.lo.s64 	%rd48, %rd59, %rd2;
+	add.s64 	%rd49, %rd3, %rd48;
+	st.u64 	[%rd49+24], %rd18;
+	cvt.u32.u64 	%r1, %rd18;
+	setp.lt.s32 	%p4, %r1, 1;
+	mov.u32 	%r38, 0;
+	@%p4 bra 	$L__BB10_12;
+	ld.param.u64 	%rd17, [_bpf_helper_ext_0025_param_3];
+	add.s64 	%rd8, %rd49, 32;
+	and.b32  	%r40, %r1, 3;
+	setp.lt.u32 	%p5, %r1, 4;
+	mov.u32 	%r41, %r38;
+	@%p5 bra 	$L__BB10_9;
+	cvt.u64.u32 	%rd51, %r1;
+	and.b64  	%rd9, %rd51, 4294967292;
+	mov.u64 	%rd60, 0;
+	cvt.u32.u64 	%r36, %rd9;
+$L__BB10_8:                             // =>This Inner Loop Header: Depth=1
+	and.b64  	%rd52, %rd60, 4294967295;
+	add.s64 	%rd53, %rd17, %rd60;
+	ld.u8 	%rs1, [%rd53];
+	add.s64 	%rd54, %rd8, %rd52;
+	st.u8 	[%rd54], %rs1;
+	ld.u8 	%rs2, [%rd53+1];
+	st.u8 	[%rd54+1], %rs2;
+	ld.u8 	%rs3, [%rd53+2];
+	st.u8 	[%rd54+2], %rs3;
+	ld.u8 	%rs4, [%rd53+3];
+	st.u8 	[%rd54+3], %rs4;
+	add.s64 	%rd60, %rd60, 4;
+	cvt.u32.u64 	%r41, %rd60;
+	setp.ne.s32 	%p6, %r36, %r41;
+	@%p6 bra 	$L__BB10_8;
+$L__BB10_9:
+	setp.eq.s32 	%p7, %r40, 0;
+	@%p7 bra 	$L__BB10_12;
+	cvt.u64.u32 	%rd55, %r41;
+	add.s64 	%rd61, %rd17, %rd55;
+$L__BB10_11:                            // =>This Inner Loop Header: Depth=1
+	.pragma "nounroll";
+	cvt.u64.u32 	%rd56, %r41;
+	ld.u8 	%rs5, [%rd61];
+	add.s64 	%rd57, %rd8, %rd56;
+	st.u8 	[%rd57], %rs5;
+	add.s32 	%r41, %r41, 1;
+	add.s64 	%rd61, %rd61, 1;
+	add.s32 	%r40, %r40, -1;
+	setp.ne.s32 	%p8, %r40, 0;
+	@%p8 bra 	$L__BB10_11;
+$L__BB10_12:
+	st.u32 	[%rd3+16], %r38;
+	mov.u64 	%rd62, 0;
+$L__BB10_14:
+	st.param.b64 	[func_retval0+0], %rd62;
+	ret;
+                                        // -- End function
+}
+	// .globl	_bpf_helper_ext_0501    // -- Begin function _bpf_helper_ext_0501
+.visible .func  (.param .b64 func_retval0) _bpf_helper_ext_0501(
+	.param .b64 _bpf_helper_ext_0501_param_0,
+	.param .b64 _bpf_helper_ext_0501_param_1,
+	.param .b64 _bpf_helper_ext_0501_param_2,
+	.param .b64 _bpf_helper_ext_0501_param_3,
+	.param .b64 _bpf_helper_ext_0501_param_4
+)                                       // @_bpf_helper_ext_0501
+{
+	.reg .pred 	%p<9>;
+	.reg .b16 	%rs<6>;
+	.reg .b32 	%r<15>;
+	.reg .b64 	%rd<28>;
+
+	ld.param.u64 	%rd11, [_bpf_helper_ext_0501_param_0];
+	ld.const.u64 	%rd19, [constData];
+	add.s64 	%rd2, %rd19, 24;
+	ld.u8 	%rs5, [%rd11];
+	setp.eq.s16 	%p1, %rs5, 0;
+	mov.u64 	%rd27, 0;
+	mov.u64 	%rd25, %rd27;
+	@%p1 bra 	$L__BB11_3;
+	add.s64 	%rd3, %rd11, 1;
+	mov.u64 	%rd25, 0;
+$L__BB11_2:                             // =>This Inner Loop Header: Depth=1
+	add.s64 	%rd14, %rd2, %rd25;
+	st.u8 	[%rd14], %rs5;
+	add.s64 	%rd15, %rd3, %rd25;
+	ld.u8 	%rs5, [%rd15];
+	setp.ne.s16 	%p2, %rs5, 0;
+	add.s64 	%rd25, %rd25, 1;
+	@%p2 bra 	$L__BB11_2;
+$L__BB11_3:
+	add.s64 	%rd17, %rd2, %rd25;
+	mov.u16 	%rs4, 0;
+	st.u8 	[%rd17], %rs4;
+	mov.u32 	%r6, %tid.x;
+	and.b32  	%r1, %r6, 31;
+	add.s64 	%rd20, %rd19, 4;
+	mov.u32 	%r14, 0;
+	add.s64 	%rd18, %rd19, 8;
+	mov.u32 	%r12, 501;
+	mov.u32 	%r11, 42;
+	bra.uni 	$L__BB11_4;
+$L__BB11_7:                             //   in Loop: Header=BB11_4 Depth=1
+	bar.warp.sync 	%r3;
+	add.s32 	%r14, %r14, 1;
+	setp.ne.s32 	%p8, %r14, 32;
+	@%p8 bra 	$L__BB11_4;
+	bra.uni 	$L__BB11_8;
+$L__BB11_4:                             // =>This Loop Header: Depth=1
+                                        //     Child Loop BB11_5 Depth 2
+	// begin inline asm
+	activemask.b32 %r3;
+	// end inline asm
+	shr.u32 	%r8, %r3, %r14;
+	and.b32  	%r9, %r8, 1;
+	setp.eq.b32 	%p3, %r9, 1;
+	not.pred 	%p4, %p3;
+	setp.ne.s32 	%p5, %r1, %r14;
+	or.pred  	%p6, %p5, %p4;
+	@%p6 bra 	$L__BB11_7;
+$L__BB11_5:                             //   Parent Loop BB11_4 Depth=1
+                                        // =>  This Inner Loop Header: Depth=2
+	atom.cas.b32 	%r10, [%rd18], 0, 1;
+	setp.eq.s32 	%p7, %r10, 1;
+	@%p7 bra 	$L__BB11_5;
+	st.u32 	[%rd19+12], %r12;
+	mov.u64 	%rd21, 0;
+	st.u64 	[%rd19+16], %rd21;
+	// begin inline asm
+	.reg .pred p0;                   
+	membar.sys;                      
+	st.global.u32 [%rd19], 1;           
+	spin_wait:                       
+	membar.sys;                      
+	ld.global.u32 %r11, [%rd20];          
+	setp.eq.u32 p0, %r11, 0;           
+	@p0 bra spin_wait;               
+	st.global.u32 [%rd20], 0;           
+	membar.sys;                      
+	
+	// end inline asm
+	ld.u64 	%rd27, [%rd19+2147483680];
+	atom.exch.b32 	%r13, [%rd18], 0;
+	bra.uni 	$L__BB11_7;
+$L__BB11_8:
+	cvt.s64.s32 	%rd23, %rd27;
+	st.param.b64 	[func_retval0+0], %rd23;
+	ret;
+                                        // -- End function
+}
+	// .globl	_bpf_helper_ext_0502    // -- Begin function _bpf_helper_ext_0502
+.visible .func  (.param .b64 func_retval0) _bpf_helper_ext_0502(
+	.param .b64 _bpf_helper_ext_0502_param_0,
+	.param .b64 _bpf_helper_ext_0502_param_1,
+	.param .b64 _bpf_helper_ext_0502_param_2,
+	.param .b64 _bpf_helper_ext_0502_param_3,
+	.param .b64 _bpf_helper_ext_0502_param_4
+)                                       // @_bpf_helper_ext_0502
+{
+	.reg .b64 	%rd<2>;
+
+	// begin inline asm
+	mov.u64 %rd1, %globaltimer;
+	// end inline asm
+	st.param.b64 	[func_retval0+0], %rd1;
+	ret;
+                                        // -- End function
+}
+	// .globl	_bpf_helper_ext_0503    // -- Begin function _bpf_helper_ext_0503
+.visible .func  (.param .b64 func_retval0) _bpf_helper_ext_0503(
+	.param .b64 _bpf_helper_ext_0503_param_0,
+	.param .b64 _bpf_helper_ext_0503_param_1,
+	.param .b64 _bpf_helper_ext_0503_param_2,
+	.param .b64 _bpf_helper_ext_0503_param_3,
+	.param .b64 _bpf_helper_ext_0503_param_4
+)                                       // @_bpf_helper_ext_0503
+{
+	.reg .b32 	%r<4>;
+	.reg .b64 	%rd<8>;
+
+	ld.param.u64 	%rd1, [_bpf_helper_ext_0503_param_0];
+	ld.param.u64 	%rd2, [_bpf_helper_ext_0503_param_1];
+	mov.u32 	%r1, %ctaid.x;
+	cvt.u64.u32 	%rd3, %r1;
+	ld.param.u64 	%rd4, [_bpf_helper_ext_0503_param_2];
+	st.u64 	[%rd1], %rd3;
+	mov.u32 	%r2, %ctaid.y;
+	cvt.u64.u32 	%rd5, %r2;
+	st.u64 	[%rd2], %rd5;
+	mov.u32 	%r3, %ctaid.z;
+	cvt.u64.u32 	%rd6, %r3;
+	st.u64 	[%rd4], %rd6;
+	mov.u64 	%rd7, 0;
+	st.param.b64 	[func_retval0+0], %rd7;
+	ret;
+                                        // -- End function
+}
+	// .globl	_bpf_helper_ext_0504    // -- Begin function _bpf_helper_ext_0504
+.visible .func  (.param .b64 func_retval0) _bpf_helper_ext_0504(
+	.param .b64 _bpf_helper_ext_0504_param_0,
+	.param .b64 _bpf_helper_ext_0504_param_1,
+	.param .b64 _bpf_helper_ext_0504_param_2,
+	.param .b64 _bpf_helper_ext_0504_param_3,
+	.param .b64 _bpf_helper_ext_0504_param_4
+)                                       // @_bpf_helper_ext_0504
+{
+	.reg .b32 	%r<4>;
+	.reg .b64 	%rd<8>;
+
+	ld.param.u64 	%rd1, [_bpf_helper_ext_0504_param_0];
+	ld.param.u64 	%rd2, [_bpf_helper_ext_0504_param_1];
+	mov.u32 	%r1, %ntid.x;
+	cvt.u64.u32 	%rd3, %r1;
+	ld.param.u64 	%rd4, [_bpf_helper_ext_0504_param_2];
+	st.u64 	[%rd1], %rd3;
+	mov.u32 	%r2, %ntid.y;
+	cvt.u64.u32 	%rd5, %r2;
+	st.u64 	[%rd2], %rd5;
+	mov.u32 	%r3, %ntid.z;
+	cvt.u64.u32 	%rd6, %r3;
+	st.u64 	[%rd4], %rd6;
+	mov.u64 	%rd7, 0;
+	st.param.b64 	[func_retval0+0], %rd7;
+	ret;
+                                        // -- End function
+}
+	// .globl	_bpf_helper_ext_0505    // -- Begin function _bpf_helper_ext_0505
+.visible .func  (.param .b64 func_retval0) _bpf_helper_ext_0505(
+	.param .b64 _bpf_helper_ext_0505_param_0,
+	.param .b64 _bpf_helper_ext_0505_param_1,
+	.param .b64 _bpf_helper_ext_0505_param_2,
+	.param .b64 _bpf_helper_ext_0505_param_3,
+	.param .b64 _bpf_helper_ext_0505_param_4
+)                                       // @_bpf_helper_ext_0505
+{
+	.reg .b32 	%r<4>;
+	.reg .b64 	%rd<8>;
+
+	ld.param.u64 	%rd1, [_bpf_helper_ext_0505_param_0];
+	ld.param.u64 	%rd2, [_bpf_helper_ext_0505_param_1];
+	mov.u32 	%r1, %tid.x;
+	cvt.u64.u32 	%rd3, %r1;
+	ld.param.u64 	%rd4, [_bpf_helper_ext_0505_param_2];
+	st.u64 	[%rd1], %rd3;
+	mov.u32 	%r2, %tid.y;
+	cvt.u64.u32 	%rd5, %r2;
+	st.u64 	[%rd2], %rd5;
+	mov.u32 	%r3, %tid.z;
+	cvt.u64.u32 	%rd6, %r3;
+	st.u64 	[%rd4], %rd6;
+	mov.u64 	%rd7, 0;
+	st.param.b64 	[func_retval0+0], %rd7;
+	ret;
+                                        // -- End function
+}
+	// .globl	_bpf_helper_ext_0506    // -- Begin function _bpf_helper_ext_0506
+.visible .func  (.param .b64 func_retval0) _bpf_helper_ext_0506(
+	.param .b64 _bpf_helper_ext_0506_param_0,
+	.param .b64 _bpf_helper_ext_0506_param_1,
+	.param .b64 _bpf_helper_ext_0506_param_2,
+	.param .b64 _bpf_helper_ext_0506_param_3,
+	.param .b64 _bpf_helper_ext_0506_param_4
+)                                       // @_bpf_helper_ext_0506
+{
+	.reg .b64 	%rd<2>;
+
+	// begin inline asm
+	membar.sys;                      
+	
+	// end inline asm
+	mov.u64 	%rd1, 0;
+	st.param.b64 	[func_retval0+0], %rd1;
+	ret;
+                                        // -- End function
+}
+    // .globl   _bpf_helper_ext_0507    // -- Begin function _bpf_helper_ext_0507
+.visible .func  (.param .b64 func_retval0) _bpf_helper_ext_0507(
+    .param .b64 _bpf_helper_ext_0507_param_0,
+    .param .b64 _bpf_helper_ext_0507_param_1,
+    .param .b64 _bpf_helper_ext_0507_param_2,
+    .param .b64 _bpf_helper_ext_0507_param_3,
+    .param .b64 _bpf_helper_ext_0507_param_4
+)                                       // @_bpf_helper_ext_0507
+{
+    .reg .b64   %rd<2>;
+
+    // begin inline asm
+    exit;                      
+    
+    // end inline asm
+    mov.u64     %rd1, 0;
+    st.param.b64    [func_retval0+0], %rd1;
+    ret;
+                                        // -- End function
+}
+.func __retprobe_func___Z9vectorAddPKfS0_Pf 
+	// .globl	bpf_main
+{
+	.local .align 8 .b8 	__local_depot0[16464];
+	.reg .b64 	%SP;
+	.reg .b64 	%SPL;
+	.reg .pred 	%p<3>;
+	.reg .b16 	%rs<3>;
+	.reg .b32 	%r<2>;
+	.reg .b64 	%rd<91>;
+	.local .align 8 .b8 	__ptx_register_save_area[768];
+	.reg .b64 %rd_ptx_instr_base;
+	.reg .b64 %rd_ptx_instr_addr;
+	// --- BEGIN REGISTER SAVING (PUSH to __ptx_register_save_area) ---
+	mov.u64 %rd_ptx_instr_base, __ptx_register_save_area;
+	add.u64 %rd_ptx_instr_addr, %rd_ptx_instr_base, 0;
+	st.local.u16 [%rd_ptx_instr_addr], %rs0;
+	add.u64 %rd_ptx_instr_addr, %rd_ptx_instr_base, 8;
+	st.local.u16 [%rd_ptx_instr_addr], %rs1;
+	add.u64 %rd_ptx_instr_addr, %rd_ptx_instr_base, 16;
+	st.local.u16 [%rd_ptx_instr_addr], %rs2;
+	add.u64 %rd_ptx_instr_addr, %rd_ptx_instr_base, 24;
+	st.local.u32 [%rd_ptx_instr_addr], %r0;
+	add.u64 %rd_ptx_instr_addr, %rd_ptx_instr_base, 32;
+	st.local.u32 [%rd_ptx_instr_addr], %r1;
+	add.u64 %rd_ptx_instr_addr, %rd_ptx_instr_base, 40;
+	st.local.u64 [%rd_ptx_instr_addr], %rd0;
+	add.u64 %rd_ptx_instr_addr, %rd_ptx_instr_base, 48;
+	st.local.u64 [%rd_ptx_instr_addr], %rd1;
+	add.u64 %rd_ptx_instr_addr, %rd_ptx_instr_base, 56;
+	st.local.u64 [%rd_ptx_instr_addr], %rd2;
+	add.u64 %rd_ptx_instr_addr, %rd_ptx_instr_base, 64;
+	st.local.u64 [%rd_ptx_instr_addr], %rd3;
+	add.u64 %rd_ptx_instr_addr, %rd_ptx_instr_base, 72;
+	st.local.u64 [%rd_ptx_instr_addr], %rd4;
+	add.u64 %rd_ptx_instr_addr, %rd_ptx_instr_base, 80;
+	st.local.u64 [%rd_ptx_instr_addr], %rd5;
+	add.u64 %rd_ptx_instr_addr, %rd_ptx_instr_base, 88;
+	st.local.u64 [%rd_ptx_instr_addr], %rd6;
+	add.u64 %rd_ptx_instr_addr, %rd_ptx_instr_base, 96;
+	st.local.u64 [%rd_ptx_instr_addr], %rd7;
+	add.u64 %rd_ptx_instr_addr, %rd_ptx_instr_base, 104;
+	st.local.u64 [%rd_ptx_instr_addr], %rd8;
+	add.u64 %rd_ptx_instr_addr, %rd_ptx_instr_base, 112;
+	st.local.u64 [%rd_ptx_instr_addr], %rd9;
+	add.u64 %rd_ptx_instr_addr, %rd_ptx_instr_base, 120;
+	st.local.u64 [%rd_ptx_instr_addr], %rd10;
+	add.u64 %rd_ptx_instr_addr, %rd_ptx_instr_base, 128;
+	st.local.u64 [%rd_ptx_instr_addr], %rd11;
+	add.u64 %rd_ptx_instr_addr, %rd_ptx_instr_base, 136;
+	st.local.u64 [%rd_ptx_instr_addr], %rd12;
+	add.u64 %rd_ptx_instr_addr, %rd_ptx_instr_base, 144;
+	st.local.u64 [%rd_ptx_instr_addr], %rd13;
+	add.u64 %rd_ptx_instr_addr, %rd_ptx_instr_base, 152;
+	st.local.u64 [%rd_ptx_instr_addr], %rd14;
+	add.u64 %rd_ptx_instr_addr, %rd_ptx_instr_base, 160;
+	st.local.u64 [%rd_ptx_instr_addr], %rd15;
+	add.u64 %rd_ptx_instr_addr, %rd_ptx_instr_base, 168;
+	st.local.u64 [%rd_ptx_instr_addr], %rd16;
+	add.u64 %rd_ptx_instr_addr, %rd_ptx_instr_base, 176;
+	st.local.u64 [%rd_ptx_instr_addr], %rd17;
+	add.u64 %rd_ptx_instr_addr, %rd_ptx_instr_base, 184;
+	st.local.u64 [%rd_ptx_instr_addr], %rd18;
+	add.u64 %rd_ptx_instr_addr, %rd_ptx_instr_base, 192;
+	st.local.u64 [%rd_ptx_instr_addr], %rd19;
+	add.u64 %rd_ptx_instr_addr, %rd_ptx_instr_base, 200;
+	st.local.u64 [%rd_ptx_instr_addr], %rd20;
+	add.u64 %rd_ptx_instr_addr, %rd_ptx_instr_base, 208;
+	st.local.u64 [%rd_ptx_instr_addr], %rd21;
+	add.u64 %rd_ptx_instr_addr, %rd_ptx_instr_base, 216;
+	st.local.u64 [%rd_ptx_instr_addr], %rd22;
+	add.u64 %rd_ptx_instr_addr, %rd_ptx_instr_base, 224;
+	st.local.u64 [%rd_ptx_instr_addr], %rd23;
+	add.u64 %rd_ptx_instr_addr, %rd_ptx_instr_base, 232;
+	st.local.u64 [%rd_ptx_instr_addr], %rd24;
+	add.u64 %rd_ptx_instr_addr, %rd_ptx_instr_base, 240;
+	st.local.u64 [%rd_ptx_instr_addr], %rd25;
+	add.u64 %rd_ptx_instr_addr, %rd_ptx_instr_base, 248;
+	st.local.u64 [%rd_ptx_instr_addr], %rd26;
+	add.u64 %rd_ptx_instr_addr, %rd_ptx_instr_base, 256;
+	st.local.u64 [%rd_ptx_instr_addr], %rd27;
+	add.u64 %rd_ptx_instr_addr, %rd_ptx_instr_base, 264;
+	st.local.u64 [%rd_ptx_instr_addr], %rd28;
+	add.u64 %rd_ptx_instr_addr, %rd_ptx_instr_base, 272;
+	st.local.u64 [%rd_ptx_instr_addr], %rd29;
+	add.u64 %rd_ptx_instr_addr, %rd_ptx_instr_base, 280;
+	st.local.u64 [%rd_ptx_instr_addr], %rd30;
+	add.u64 %rd_ptx_instr_addr, %rd_ptx_instr_base, 288;
+	st.local.u64 [%rd_ptx_instr_addr], %rd31;
+	add.u64 %rd_ptx_instr_addr, %rd_ptx_instr_base, 296;
+	st.local.u64 [%rd_ptx_instr_addr], %rd32;
+	add.u64 %rd_ptx_instr_addr, %rd_ptx_instr_base, 304;
+	st.local.u64 [%rd_ptx_instr_addr], %rd33;
+	add.u64 %rd_ptx_instr_addr, %rd_ptx_instr_base, 312;
+	st.local.u64 [%rd_ptx_instr_addr], %rd34;
+	add.u64 %rd_ptx_instr_addr, %rd_ptx_instr_base, 320;
+	st.local.u64 [%rd_ptx_instr_addr], %rd35;
+	add.u64 %rd_ptx_instr_addr, %rd_ptx_instr_base, 328;
+	st.local.u64 [%rd_ptx_instr_addr], %rd36;
+	add.u64 %rd_ptx_instr_addr, %rd_ptx_instr_base, 336;
+	st.local.u64 [%rd_ptx_instr_addr], %rd37;
+	add.u64 %rd_ptx_instr_addr, %rd_ptx_instr_base, 344;
+	st.local.u64 [%rd_ptx_instr_addr], %rd38;
+	add.u64 %rd_ptx_instr_addr, %rd_ptx_instr_base, 352;
+	st.local.u64 [%rd_ptx_instr_addr], %rd39;
+	add.u64 %rd_ptx_instr_addr, %rd_ptx_instr_base, 360;
+	st.local.u64 [%rd_ptx_instr_addr], %rd40;
+	add.u64 %rd_ptx_instr_addr, %rd_ptx_instr_base, 368;
+	st.local.u64 [%rd_ptx_instr_addr], %rd41;
+	add.u64 %rd_ptx_instr_addr, %rd_ptx_instr_base, 376;
+	st.local.u64 [%rd_ptx_instr_addr], %rd42;
+	add.u64 %rd_ptx_instr_addr, %rd_ptx_instr_base, 384;
+	st.local.u64 [%rd_ptx_instr_addr], %rd43;
+	add.u64 %rd_ptx_instr_addr, %rd_ptx_instr_base, 392;
+	st.local.u64 [%rd_ptx_instr_addr], %rd44;
+	add.u64 %rd_ptx_instr_addr, %rd_ptx_instr_base, 400;
+	st.local.u64 [%rd_ptx_instr_addr], %rd45;
+	add.u64 %rd_ptx_instr_addr, %rd_ptx_instr_base, 408;
+	st.local.u64 [%rd_ptx_instr_addr], %rd46;
+	add.u64 %rd_ptx_instr_addr, %rd_ptx_instr_base, 416;
+	st.local.u64 [%rd_ptx_instr_addr], %rd47;
+	add.u64 %rd_ptx_instr_addr, %rd_ptx_instr_base, 424;
+	st.local.u64 [%rd_ptx_instr_addr], %rd48;
+	add.u64 %rd_ptx_instr_addr, %rd_ptx_instr_base, 432;
+	st.local.u64 [%rd_ptx_instr_addr], %rd49;
+	add.u64 %rd_ptx_instr_addr, %rd_ptx_instr_base, 440;
+	st.local.u64 [%rd_ptx_instr_addr], %rd50;
+	add.u64 %rd_ptx_instr_addr, %rd_ptx_instr_base, 448;
+	st.local.u64 [%rd_ptx_instr_addr], %rd51;
+	add.u64 %rd_ptx_instr_addr, %rd_ptx_instr_base, 456;
+	st.local.u64 [%rd_ptx_instr_addr], %rd52;
+	add.u64 %rd_ptx_instr_addr, %rd_ptx_instr_base, 464;
+	st.local.u64 [%rd_ptx_instr_addr], %rd53;
+	add.u64 %rd_ptx_instr_addr, %rd_ptx_instr_base, 472;
+	st.local.u64 [%rd_ptx_instr_addr], %rd54;
+	add.u64 %rd_ptx_instr_addr, %rd_ptx_instr_base, 480;
+	st.local.u64 [%rd_ptx_instr_addr], %rd55;
+	add.u64 %rd_ptx_instr_addr, %rd_ptx_instr_base, 488;
+	st.local.u64 [%rd_ptx_instr_addr], %rd56;
+	add.u64 %rd_ptx_instr_addr, %rd_ptx_instr_base, 496;
+	st.local.u64 [%rd_ptx_instr_addr], %rd57;
+	add.u64 %rd_ptx_instr_addr, %rd_ptx_instr_base, 504;
+	st.local.u64 [%rd_ptx_instr_addr], %rd58;
+	add.u64 %rd_ptx_instr_addr, %rd_ptx_instr_base, 512;
+	st.local.u64 [%rd_ptx_instr_addr], %rd59;
+	add.u64 %rd_ptx_instr_addr, %rd_ptx_instr_base, 520;
+	st.local.u64 [%rd_ptx_instr_addr], %rd60;
+	add.u64 %rd_ptx_instr_addr, %rd_ptx_instr_base, 528;
+	st.local.u64 [%rd_ptx_instr_addr], %rd61;
+	add.u64 %rd_ptx_instr_addr, %rd_ptx_instr_base, 536;
+	st.local.u64 [%rd_ptx_instr_addr], %rd62;
+	add.u64 %rd_ptx_instr_addr, %rd_ptx_instr_base, 544;
+	st.local.u64 [%rd_ptx_instr_addr], %rd63;
+	add.u64 %rd_ptx_instr_addr, %rd_ptx_instr_base, 552;
+	st.local.u64 [%rd_ptx_instr_addr], %rd64;
+	add.u64 %rd_ptx_instr_addr, %rd_ptx_instr_base, 560;
+	st.local.u64 [%rd_ptx_instr_addr], %rd65;
+	add.u64 %rd_ptx_instr_addr, %rd_ptx_instr_base, 568;
+	st.local.u64 [%rd_ptx_instr_addr], %rd66;
+	add.u64 %rd_ptx_instr_addr, %rd_ptx_instr_base, 576;
+	st.local.u64 [%rd_ptx_instr_addr], %rd67;
+	add.u64 %rd_ptx_instr_addr, %rd_ptx_instr_base, 584;
+	st.local.u64 [%rd_ptx_instr_addr], %rd68;
+	add.u64 %rd_ptx_instr_addr, %rd_ptx_instr_base, 592;
+	st.local.u64 [%rd_ptx_instr_addr], %rd69;
+	add.u64 %rd_ptx_instr_addr, %rd_ptx_instr_base, 600;
+	st.local.u64 [%rd_ptx_instr_addr], %rd70;
+	add.u64 %rd_ptx_instr_addr, %rd_ptx_instr_base, 608;
+	st.local.u64 [%rd_ptx_instr_addr], %rd71;
+	add.u64 %rd_ptx_instr_addr, %rd_ptx_instr_base, 616;
+	st.local.u64 [%rd_ptx_instr_addr], %rd72;
+	add.u64 %rd_ptx_instr_addr, %rd_ptx_instr_base, 624;
+	st.local.u64 [%rd_ptx_instr_addr], %rd73;
+	add.u64 %rd_ptx_instr_addr, %rd_ptx_instr_base, 632;
+	st.local.u64 [%rd_ptx_instr_addr], %rd74;
+	add.u64 %rd_ptx_instr_addr, %rd_ptx_instr_base, 640;
+	st.local.u64 [%rd_ptx_instr_addr], %rd75;
+	add.u64 %rd_ptx_instr_addr, %rd_ptx_instr_base, 648;
+	st.local.u64 [%rd_ptx_instr_addr], %rd76;
+	add.u64 %rd_ptx_instr_addr, %rd_ptx_instr_base, 656;
+	st.local.u64 [%rd_ptx_instr_addr], %rd77;
+	add.u64 %rd_ptx_instr_addr, %rd_ptx_instr_base, 664;
+	st.local.u64 [%rd_ptx_instr_addr], %rd78;
+	add.u64 %rd_ptx_instr_addr, %rd_ptx_instr_base, 672;
+	st.local.u64 [%rd_ptx_instr_addr], %rd79;
+	add.u64 %rd_ptx_instr_addr, %rd_ptx_instr_base, 680;
+	st.local.u64 [%rd_ptx_instr_addr], %rd80;
+	add.u64 %rd_ptx_instr_addr, %rd_ptx_instr_base, 688;
+	st.local.u64 [%rd_ptx_instr_addr], %rd81;
+	add.u64 %rd_ptx_instr_addr, %rd_ptx_instr_base, 696;
+	st.local.u64 [%rd_ptx_instr_addr], %rd82;
+	add.u64 %rd_ptx_instr_addr, %rd_ptx_instr_base, 704;
+	st.local.u64 [%rd_ptx_instr_addr], %rd83;
+	add.u64 %rd_ptx_instr_addr, %rd_ptx_instr_base, 712;
+	st.local.u64 [%rd_ptx_instr_addr], %rd84;
+	add.u64 %rd_ptx_instr_addr, %rd_ptx_instr_base, 720;
+	st.local.u64 [%rd_ptx_instr_addr], %rd85;
+	add.u64 %rd_ptx_instr_addr, %rd_ptx_instr_base, 728;
+	st.local.u64 [%rd_ptx_instr_addr], %rd86;
+	add.u64 %rd_ptx_instr_addr, %rd_ptx_instr_base, 736;
+	st.local.u64 [%rd_ptx_instr_addr], %rd87;
+	add.u64 %rd_ptx_instr_addr, %rd_ptx_instr_base, 744;
+	st.local.u64 [%rd_ptx_instr_addr], %rd88;
+	add.u64 %rd_ptx_instr_addr, %rd_ptx_instr_base, 752;
+	st.local.u64 [%rd_ptx_instr_addr], %rd89;
+	add.u64 %rd_ptx_instr_addr, %rd_ptx_instr_base, 760;
+	st.local.u64 [%rd_ptx_instr_addr], %rd90;
+	// --- END REGISTER SAVING (PUSH to __ptx_register_save_area) ---
+	mov.u64 	%SPL, __local_depot0;
+	cvta.local.u64 	%SP, %SPL;
+	add.u64 	%rd11, %SP, 0;
+	add.u64 	%rd1, %SPL, 0;
+	add.s64 	%rd2, %rd11, 16384;
+	add.s64 	%rd3, %rd11, 16376;
+	add.s64 	%rd12, %rd11, 16368;
+	add.s64 	%rd4, %rd11, 16360;
+	{ // callseq 8, 0
+	.reg .b32 temp_param_reg;
+	.param .b64 param0;
+	st.param.b64 	[param0+0], %rd3;
+	.param .b64 param1;
+	st.param.b64 	[param1+0], %rd12;
+	.param .b64 param2;
+	st.param.b64 	[param2+0], %rd4;
+	.param .b64 param3;
+	st.param.b64 	[param3+0], %rd13;
+	.param .b64 param4;
+	st.param.b64 	[param4+0], %rd14;
+	.param .b64 retval0;
+	call.uni (retval0), 
+	_bpf_helper_ext_0503, 
+	(
+	param0, 
+	param1, 
+	param2, 
+	param3, 
+	param4
+	);
+	ld.param.b64 	%rd15, [retval0+0];
+	} // callseq 8
+	{ // callseq 9, 0
+	.reg .b32 temp_param_reg;
+	.param .b64 param0;
+	st.param.b64 	[param0+0], %rd3;
+	.param .b64 param1;
+	st.param.b64 	[param1+0], %rd12;
+	.param .b64 param2;
+	st.param.b64 	[param2+0], %rd4;
+	.param .b64 param3;
+	st.param.b64 	[param3+0], %rd17;
+	.param .b64 param4;
+	st.param.b64 	[param4+0], %rd18;
+	.param .b64 retval0;
+	call.uni (retval0), 
+	_bpf_helper_ext_0014, 
+	(
+	param0, 
+	param1, 
+	param2, 
+	param3, 
+	param4
+	);
+	ld.param.b64 	%rd19, [retval0+0];
+	} // callseq 9
+	shr.u64 	%rd21, %rd19, 32;
+	st.local.u32 	[%rd1+16356], %rd21;
+	mov.u64 	%rd22, 19;
+	{ // callseq 10, 0
+	.reg .b32 temp_param_reg;
+	.param .b64 param0;
+	st.param.b64 	[param0+0], %rd22;
+	.param .b64 param1;
+	st.param.b64 	[param1+0], %rd3;
+	.param .b64 param2;
+	st.param.b64 	[param2+0], %rd4;
+	.param .b64 param3;
+	st.param.b64 	[param3+0], %rd23;
+	.param .b64 param4;
+	st.param.b64 	[param4+0], %rd24;
+	.param .b64 retval0;
+	call.uni (retval0), 
+	_bpf_helper_ext_0001, 
+	(
+	param0, 
+	param1, 
+	param2, 
+	param3, 
+	param4
+	);
+	ld.param.b64 	%rd25, [retval0+0];
+	} // callseq 10
+	setp.eq.s64 	%p1, %rd25, 0;
+	@%p1 bra 	$L__BB0_3;
+	{ // callseq 11, 0
+	.reg .b32 temp_param_reg;
+	.param .b64 param0;
+	st.param.b64 	[param0+0], %rd22;
+	.param .b64 param1;
+	st.param.b64 	[param1+0], %rd3;
+	.param .b64 param2;
+	st.param.b64 	[param2+0], %rd4;
+	.param .b64 param3;
+	st.param.b64 	[param3+0], %rd27;
+	.param .b64 param4;
+	st.param.b64 	[param4+0], %rd28;
+	.param .b64 retval0;
+	call.uni (retval0), 
+	_bpf_helper_ext_0502, 
+	(
+	param0, 
+	param1, 
+	param2, 
+	param3, 
+	param4
+	);
+	ld.param.b64 	%rd29, [retval0+0];
+	} // callseq 11
+	ld.u32 	%rd31, [%rd25];
+	ld.u32 	%rd32, [%rd25+4];
+	shl.b64 	%rd33, %rd32, 32;
+	or.b64  	%rd34, %rd33, %rd31;
+	sub.s64 	%rd90, %rd29, %rd34;
+	st.local.u64 	[%rd1+16344], %rd90;
+	add.s64 	%rd7, %rd2, -28;
+	{ // callseq 12, 0
+	.reg .b32 temp_param_reg;
+	.param .b64 param0;
+	st.param.b64 	[param0+0], %rd22;
+	.param .b64 param1;
+	st.param.b64 	[param1+0], %rd7;
+	.param .b64 param2;
+	st.param.b64 	[param2+0], %rd4;
+	.param .b64 param3;
+	st.param.b64 	[param3+0], %rd35;
+	.param .b64 param4;
+	st.param.b64 	[param4+0], %rd36;
+	.param .b64 retval0;
+	call.uni (retval0), 
+	_bpf_helper_ext_0003, 
+	(
+	param0, 
+	param1, 
+	param2, 
+	param3, 
+	param4
+	);
+	ld.param.b64 	%rd37, [retval0+0];
+	} // callseq 12
+	mov.u64 	%rd39, 21;
+	{ // callseq 13, 0
+	.reg .b32 temp_param_reg;
+	.param .b64 param0;
+	st.param.b64 	[param0+0], %rd39;
+	.param .b64 param1;
+	st.param.b64 	[param1+0], %rd7;
+	.param .b64 param2;
+	st.param.b64 	[param2+0], %rd4;
+	.param .b64 param3;
+	st.param.b64 	[param3+0], %rd40;
+	.param .b64 param4;
+	st.param.b64 	[param4+0], %rd41;
+	.param .b64 retval0;
+	call.uni (retval0), 
+	_bpf_helper_ext_0001, 
+	(
+	param0, 
+	param1, 
+	param2, 
+	param3, 
+	param4
+	);
+	ld.param.b64 	%rd42, [retval0+0];
+	} // callseq 13
+	setp.eq.s64 	%p2, %rd42, 0;
+	@%p2 bra 	$L__BB0_4;
+	ld.u32 	%rd43, [%rd42];
+	ld.u32 	%rd44, [%rd42+4];
+	shl.b64 	%rd45, %rd44, 32;
+	or.b64  	%rd46, %rd45, %rd43;
+	add.s64 	%rd47, %rd46, %rd90;
+	st.u32 	[%rd42], %rd47;
+	shr.u64 	%rd48, %rd47, 32;
+	st.u32 	[%rd42+4], %rd48;
+	mov.u64 	%rd50, 2;
+	{ // callseq 14, 0
+	.reg .b32 temp_param_reg;
+	.param .b64 param0;
+	st.param.b64 	[param0+0], %rd39;
+	.param .b64 param1;
+	st.param.b64 	[param1+0], %rd7;
+	.param .b64 param2;
+	st.param.b64 	[param2+0], %rd42;
+	.param .b64 param3;
+	st.param.b64 	[param3+0], %rd50;
+	.param .b64 param4;
+	st.param.b64 	[param4+0], %rd51;
+	.param .b64 retval0;
+	call.uni (retval0), 
+	_bpf_helper_ext_0002, 
+	(
+	param0, 
+	param1, 
+	param2, 
+	param3, 
+	param4
+	);
+	ld.param.b64 	%rd52, [retval0+0];
+	} // callseq 14
+	bra.uni 	$L__BB0_5;
+$L__BB0_3:
+	mov.u16 	%rs2, 10;
+	st.local.u16 	[%rd1+16320], %rs2;
+	mov.u64 	%rd77, 2338894488689713254;
+	st.local.u64 	[%rd1+16312], %rd77;
+	mov.u64 	%rd78, 5791400780578377828;
+	st.local.u64 	[%rd1+16304], %rd78;
+	mov.u64 	%rd79, 7224181100298593654;
+	st.local.u64 	[%rd1+16296], %rd79;
+	mov.u64 	%rd80, 4132720199804679028;
+	st.local.u64 	[%rd1+16288], %rd80;
+	mov.u64 	%rd81, 2338623227866409335;
+	st.local.u64 	[%rd1+16280], %rd81;
+	mov.u64 	%rd82, 2891421347679402053;
+	st.local.u64 	[%rd1+16272], %rd82;
+	ld.local.u64 	%rd83, [%rd1+16376];
+	add.s64 	%rd84, %rd2, -112;
+	mov.u64 	%rd85, 50;
+	{ // callseq 17, 0
+	.reg .b32 temp_param_reg;
+	.param .b64 param0;
+	st.param.b64 	[param0+0], %rd84;
+	.param .b64 param1;
+	st.param.b64 	[param1+0], %rd85;
+	.param .b64 param2;
+	st.param.b64 	[param2+0], %rd83;
+	.param .b64 param3;
+	st.param.b64 	[param3+0], %rd86;
+	.param .b64 param4;
+	st.param.b64 	[param4+0], %rd87;
+	.param .b64 retval0;
+	call.uni (retval0), 
+	_bpf_helper_ext_0006, 
+	(
+	param0, 
+	param1, 
+	param2, 
+	param3, 
+	param4
+	);
+	ld.param.b64 	%rd88, [retval0+0];
+	} // callseq 17
+	bra.uni 	$L__BB0_6;
+$L__BB0_4:
+	add.s64 	%rd54, %rd2, -40;
+	mov.u64 	%rd56, 1;
+	{ // callseq 15, 0
+	.reg .b32 temp_param_reg;
+	.param .b64 param0;
+	st.param.b64 	[param0+0], %rd39;
+	.param .b64 param1;
+	st.param.b64 	[param1+0], %rd7;
+	.param .b64 param2;
+	st.param.b64 	[param2+0], %rd54;
+	.param .b64 param3;
+	st.param.b64 	[param3+0], %rd56;
+	.param .b64 param4;
+	st.param.b64 	[param4+0], %rd57;
+	.param .b64 retval0;
+	call.uni (retval0), 
+	_bpf_helper_ext_0002, 
+	(
+	param0, 
+	param1, 
+	param2, 
+	param3, 
+	param4
+	);
+	ld.param.b64 	%rd58, [retval0+0];
+	} // callseq 15
+	ld.local.u64 	%rd90, [%rd1+16344];
+$L__BB0_5:
+	mov.u16 	%rs1, 10;
+	st.local.u16 	[%rd1+16340], %rs1;
+	mov.b32 	%r1, 1936618860;
+	st.local.u32 	[%rd1+16336], %r1;
+	mov.u64 	%rd60, 2683424594154517868;
+	st.local.u64 	[%rd1+16328], %rd60;
+	mov.u64 	%rd61, 7792702274759390305;
+	st.local.u64 	[%rd1+16320], %rd61;
+	mov.u64 	%rd62, 8247608383170684221;
+	st.local.u64 	[%rd1+16312], %rd62;
+	mov.u64 	%rd63, 8656030979186512742;
+	st.local.u64 	[%rd1+16304], %rd63;
+	mov.u64 	%rd64, 5426947932738973556;
+	st.local.u64 	[%rd1+16296], %rd64;
+	mov.u64 	%rd65, 7162260771104038953;
+	st.local.u64 	[%rd1+16288], %rd65;
+	mov.u64 	%rd66, 8102947837109889399;
+	st.local.u64 	[%rd1+16280], %rd66;
+	mov.u64 	%rd67, 2891421347679402053;
+	st.local.u64 	[%rd1+16272], %rd67;
+	ld.u32 	%rd68, [%rd25];
+	ld.u32 	%rd69, [%rd25+4];
+	shl.b64 	%rd70, %rd69, 32;
+	or.b64  	%rd71, %rd70, %rd68;
+	ld.local.u64 	%rd72, [%rd1+16376];
+	add.s64 	%rd73, %rd2, -112;
+	mov.u64 	%rd74, 70;
+	{ // callseq 16, 0
+	.reg .b32 temp_param_reg;
+	.param .b64 param0;
+	st.param.b64 	[param0+0], %rd73;
+	.param .b64 param1;
+	st.param.b64 	[param1+0], %rd74;
+	.param .b64 param2;
+	st.param.b64 	[param2+0], %rd72;
+	.param .b64 param3;
+	st.param.b64 	[param3+0], %rd90;
+	.param .b64 param4;
+	st.param.b64 	[param4+0], %rd71;
+	.param .b64 retval0;
+	call.uni (retval0), 
+	_bpf_helper_ext_0006, 
+	(
+	param0, 
+	param1, 
+	param2, 
+	param3, 
+	param4
+	);
+	ld.param.b64 	%rd75, [retval0+0];
+	} // callseq 16
+$L__BB0_6:
+
+	// --- BEGIN REGISTER RESTORING (POP from __ptx_register_save_area) ---
+	mov.u64 %rd_ptx_instr_base, __ptx_register_save_area;
+	add.u64 %rd_ptx_instr_addr, %rd_ptx_instr_base, 760;
+	ld.local.u64 %rd90, [%rd_ptx_instr_addr];
+	add.u64 %rd_ptx_instr_addr, %rd_ptx_instr_base, 752;
+	ld.local.u64 %rd89, [%rd_ptx_instr_addr];
+	add.u64 %rd_ptx_instr_addr, %rd_ptx_instr_base, 744;
+	ld.local.u64 %rd88, [%rd_ptx_instr_addr];
+	add.u64 %rd_ptx_instr_addr, %rd_ptx_instr_base, 736;
+	ld.local.u64 %rd87, [%rd_ptx_instr_addr];
+	add.u64 %rd_ptx_instr_addr, %rd_ptx_instr_base, 728;
+	ld.local.u64 %rd86, [%rd_ptx_instr_addr];
+	add.u64 %rd_ptx_instr_addr, %rd_ptx_instr_base, 720;
+	ld.local.u64 %rd85, [%rd_ptx_instr_addr];
+	add.u64 %rd_ptx_instr_addr, %rd_ptx_instr_base, 712;
+	ld.local.u64 %rd84, [%rd_ptx_instr_addr];
+	add.u64 %rd_ptx_instr_addr, %rd_ptx_instr_base, 704;
+	ld.local.u64 %rd83, [%rd_ptx_instr_addr];
+	add.u64 %rd_ptx_instr_addr, %rd_ptx_instr_base, 696;
+	ld.local.u64 %rd82, [%rd_ptx_instr_addr];
+	add.u64 %rd_ptx_instr_addr, %rd_ptx_instr_base, 688;
+	ld.local.u64 %rd81, [%rd_ptx_instr_addr];
+	add.u64 %rd_ptx_instr_addr, %rd_ptx_instr_base, 680;
+	ld.local.u64 %rd80, [%rd_ptx_instr_addr];
+	add.u64 %rd_ptx_instr_addr, %rd_ptx_instr_base, 672;
+	ld.local.u64 %rd79, [%rd_ptx_instr_addr];
+	add.u64 %rd_ptx_instr_addr, %rd_ptx_instr_base, 664;
+	ld.local.u64 %rd78, [%rd_ptx_instr_addr];
+	add.u64 %rd_ptx_instr_addr, %rd_ptx_instr_base, 656;
+	ld.local.u64 %rd77, [%rd_ptx_instr_addr];
+	add.u64 %rd_ptx_instr_addr, %rd_ptx_instr_base, 648;
+	ld.local.u64 %rd76, [%rd_ptx_instr_addr];
+	add.u64 %rd_ptx_instr_addr, %rd_ptx_instr_base, 640;
+	ld.local.u64 %rd75, [%rd_ptx_instr_addr];
+	add.u64 %rd_ptx_instr_addr, %rd_ptx_instr_base, 632;
+	ld.local.u64 %rd74, [%rd_ptx_instr_addr];
+	add.u64 %rd_ptx_instr_addr, %rd_ptx_instr_base, 624;
+	ld.local.u64 %rd73, [%rd_ptx_instr_addr];
+	add.u64 %rd_ptx_instr_addr, %rd_ptx_instr_base, 616;
+	ld.local.u64 %rd72, [%rd_ptx_instr_addr];
+	add.u64 %rd_ptx_instr_addr, %rd_ptx_instr_base, 608;
+	ld.local.u64 %rd71, [%rd_ptx_instr_addr];
+	add.u64 %rd_ptx_instr_addr, %rd_ptx_instr_base, 600;
+	ld.local.u64 %rd70, [%rd_ptx_instr_addr];
+	add.u64 %rd_ptx_instr_addr, %rd_ptx_instr_base, 592;
+	ld.local.u64 %rd69, [%rd_ptx_instr_addr];
+	add.u64 %rd_ptx_instr_addr, %rd_ptx_instr_base, 584;
+	ld.local.u64 %rd68, [%rd_ptx_instr_addr];
+	add.u64 %rd_ptx_instr_addr, %rd_ptx_instr_base, 576;
+	ld.local.u64 %rd67, [%rd_ptx_instr_addr];
+	add.u64 %rd_ptx_instr_addr, %rd_ptx_instr_base, 568;
+	ld.local.u64 %rd66, [%rd_ptx_instr_addr];
+	add.u64 %rd_ptx_instr_addr, %rd_ptx_instr_base, 560;
+	ld.local.u64 %rd65, [%rd_ptx_instr_addr];
+	add.u64 %rd_ptx_instr_addr, %rd_ptx_instr_base, 552;
+	ld.local.u64 %rd64, [%rd_ptx_instr_addr];
+	add.u64 %rd_ptx_instr_addr, %rd_ptx_instr_base, 544;
+	ld.local.u64 %rd63, [%rd_ptx_instr_addr];
+	add.u64 %rd_ptx_instr_addr, %rd_ptx_instr_base, 536;
+	ld.local.u64 %rd62, [%rd_ptx_instr_addr];
+	add.u64 %rd_ptx_instr_addr, %rd_ptx_instr_base, 528;
+	ld.local.u64 %rd61, [%rd_ptx_instr_addr];
+	add.u64 %rd_ptx_instr_addr, %rd_ptx_instr_base, 520;
+	ld.local.u64 %rd60, [%rd_ptx_instr_addr];
+	add.u64 %rd_ptx_instr_addr, %rd_ptx_instr_base, 512;
+	ld.local.u64 %rd59, [%rd_ptx_instr_addr];
+	add.u64 %rd_ptx_instr_addr, %rd_ptx_instr_base, 504;
+	ld.local.u64 %rd58, [%rd_ptx_instr_addr];
+	add.u64 %rd_ptx_instr_addr, %rd_ptx_instr_base, 496;
+	ld.local.u64 %rd57, [%rd_ptx_instr_addr];
+	add.u64 %rd_ptx_instr_addr, %rd_ptx_instr_base, 488;
+	ld.local.u64 %rd56, [%rd_ptx_instr_addr];
+	add.u64 %rd_ptx_instr_addr, %rd_ptx_instr_base, 480;
+	ld.local.u64 %rd55, [%rd_ptx_instr_addr];
+	add.u64 %rd_ptx_instr_addr, %rd_ptx_instr_base, 472;
+	ld.local.u64 %rd54, [%rd_ptx_instr_addr];
+	add.u64 %rd_ptx_instr_addr, %rd_ptx_instr_base, 464;
+	ld.local.u64 %rd53, [%rd_ptx_instr_addr];
+	add.u64 %rd_ptx_instr_addr, %rd_ptx_instr_base, 456;
+	ld.local.u64 %rd52, [%rd_ptx_instr_addr];
+	add.u64 %rd_ptx_instr_addr, %rd_ptx_instr_base, 448;
+	ld.local.u64 %rd51, [%rd_ptx_instr_addr];
+	add.u64 %rd_ptx_instr_addr, %rd_ptx_instr_base, 440;
+	ld.local.u64 %rd50, [%rd_ptx_instr_addr];
+	add.u64 %rd_ptx_instr_addr, %rd_ptx_instr_base, 432;
+	ld.local.u64 %rd49, [%rd_ptx_instr_addr];
+	add.u64 %rd_ptx_instr_addr, %rd_ptx_instr_base, 424;
+	ld.local.u64 %rd48, [%rd_ptx_instr_addr];
+	add.u64 %rd_ptx_instr_addr, %rd_ptx_instr_base, 416;
+	ld.local.u64 %rd47, [%rd_ptx_instr_addr];
+	add.u64 %rd_ptx_instr_addr, %rd_ptx_instr_base, 408;
+	ld.local.u64 %rd46, [%rd_ptx_instr_addr];
+	add.u64 %rd_ptx_instr_addr, %rd_ptx_instr_base, 400;
+	ld.local.u64 %rd45, [%rd_ptx_instr_addr];
+	add.u64 %rd_ptx_instr_addr, %rd_ptx_instr_base, 392;
+	ld.local.u64 %rd44, [%rd_ptx_instr_addr];
+	add.u64 %rd_ptx_instr_addr, %rd_ptx_instr_base, 384;
+	ld.local.u64 %rd43, [%rd_ptx_instr_addr];
+	add.u64 %rd_ptx_instr_addr, %rd_ptx_instr_base, 376;
+	ld.local.u64 %rd42, [%rd_ptx_instr_addr];
+	add.u64 %rd_ptx_instr_addr, %rd_ptx_instr_base, 368;
+	ld.local.u64 %rd41, [%rd_ptx_instr_addr];
+	add.u64 %rd_ptx_instr_addr, %rd_ptx_instr_base, 360;
+	ld.local.u64 %rd40, [%rd_ptx_instr_addr];
+	add.u64 %rd_ptx_instr_addr, %rd_ptx_instr_base, 352;
+	ld.local.u64 %rd39, [%rd_ptx_instr_addr];
+	add.u64 %rd_ptx_instr_addr, %rd_ptx_instr_base, 344;
+	ld.local.u64 %rd38, [%rd_ptx_instr_addr];
+	add.u64 %rd_ptx_instr_addr, %rd_ptx_instr_base, 336;
+	ld.local.u64 %rd37, [%rd_ptx_instr_addr];
+	add.u64 %rd_ptx_instr_addr, %rd_ptx_instr_base, 328;
+	ld.local.u64 %rd36, [%rd_ptx_instr_addr];
+	add.u64 %rd_ptx_instr_addr, %rd_ptx_instr_base, 320;
+	ld.local.u64 %rd35, [%rd_ptx_instr_addr];
+	add.u64 %rd_ptx_instr_addr, %rd_ptx_instr_base, 312;
+	ld.local.u64 %rd34, [%rd_ptx_instr_addr];
+	add.u64 %rd_ptx_instr_addr, %rd_ptx_instr_base, 304;
+	ld.local.u64 %rd33, [%rd_ptx_instr_addr];
+	add.u64 %rd_ptx_instr_addr, %rd_ptx_instr_base, 296;
+	ld.local.u64 %rd32, [%rd_ptx_instr_addr];
+	add.u64 %rd_ptx_instr_addr, %rd_ptx_instr_base, 288;
+	ld.local.u64 %rd31, [%rd_ptx_instr_addr];
+	add.u64 %rd_ptx_instr_addr, %rd_ptx_instr_base, 280;
+	ld.local.u64 %rd30, [%rd_ptx_instr_addr];
+	add.u64 %rd_ptx_instr_addr, %rd_ptx_instr_base, 272;
+	ld.local.u64 %rd29, [%rd_ptx_instr_addr];
+	add.u64 %rd_ptx_instr_addr, %rd_ptx_instr_base, 264;
+	ld.local.u64 %rd28, [%rd_ptx_instr_addr];
+	add.u64 %rd_ptx_instr_addr, %rd_ptx_instr_base, 256;
+	ld.local.u64 %rd27, [%rd_ptx_instr_addr];
+	add.u64 %rd_ptx_instr_addr, %rd_ptx_instr_base, 248;
+	ld.local.u64 %rd26, [%rd_ptx_instr_addr];
+	add.u64 %rd_ptx_instr_addr, %rd_ptx_instr_base, 240;
+	ld.local.u64 %rd25, [%rd_ptx_instr_addr];
+	add.u64 %rd_ptx_instr_addr, %rd_ptx_instr_base, 232;
+	ld.local.u64 %rd24, [%rd_ptx_instr_addr];
+	add.u64 %rd_ptx_instr_addr, %rd_ptx_instr_base, 224;
+	ld.local.u64 %rd23, [%rd_ptx_instr_addr];
+	add.u64 %rd_ptx_instr_addr, %rd_ptx_instr_base, 216;
+	ld.local.u64 %rd22, [%rd_ptx_instr_addr];
+	add.u64 %rd_ptx_instr_addr, %rd_ptx_instr_base, 208;
+	ld.local.u64 %rd21, [%rd_ptx_instr_addr];
+	add.u64 %rd_ptx_instr_addr, %rd_ptx_instr_base, 200;
+	ld.local.u64 %rd20, [%rd_ptx_instr_addr];
+	add.u64 %rd_ptx_instr_addr, %rd_ptx_instr_base, 192;
+	ld.local.u64 %rd19, [%rd_ptx_instr_addr];
+	add.u64 %rd_ptx_instr_addr, %rd_ptx_instr_base, 184;
+	ld.local.u64 %rd18, [%rd_ptx_instr_addr];
+	add.u64 %rd_ptx_instr_addr, %rd_ptx_instr_base, 176;
+	ld.local.u64 %rd17, [%rd_ptx_instr_addr];
+	add.u64 %rd_ptx_instr_addr, %rd_ptx_instr_base, 168;
+	ld.local.u64 %rd16, [%rd_ptx_instr_addr];
+	add.u64 %rd_ptx_instr_addr, %rd_ptx_instr_base, 160;
+	ld.local.u64 %rd15, [%rd_ptx_instr_addr];
+	add.u64 %rd_ptx_instr_addr, %rd_ptx_instr_base, 152;
+	ld.local.u64 %rd14, [%rd_ptx_instr_addr];
+	add.u64 %rd_ptx_instr_addr, %rd_ptx_instr_base, 144;
+	ld.local.u64 %rd13, [%rd_ptx_instr_addr];
+	add.u64 %rd_ptx_instr_addr, %rd_ptx_instr_base, 136;
+	ld.local.u64 %rd12, [%rd_ptx_instr_addr];
+	add.u64 %rd_ptx_instr_addr, %rd_ptx_instr_base, 128;
+	ld.local.u64 %rd11, [%rd_ptx_instr_addr];
+	add.u64 %rd_ptx_instr_addr, %rd_ptx_instr_base, 120;
+	ld.local.u64 %rd10, [%rd_ptx_instr_addr];
+	add.u64 %rd_ptx_instr_addr, %rd_ptx_instr_base, 112;
+	ld.local.u64 %rd9, [%rd_ptx_instr_addr];
+	add.u64 %rd_ptx_instr_addr, %rd_ptx_instr_base, 104;
+	ld.local.u64 %rd8, [%rd_ptx_instr_addr];
+	add.u64 %rd_ptx_instr_addr, %rd_ptx_instr_base, 96;
+	ld.local.u64 %rd7, [%rd_ptx_instr_addr];
+	add.u64 %rd_ptx_instr_addr, %rd_ptx_instr_base, 88;
+	ld.local.u64 %rd6, [%rd_ptx_instr_addr];
+	add.u64 %rd_ptx_instr_addr, %rd_ptx_instr_base, 80;
+	ld.local.u64 %rd5, [%rd_ptx_instr_addr];
+	add.u64 %rd_ptx_instr_addr, %rd_ptx_instr_base, 72;
+	ld.local.u64 %rd4, [%rd_ptx_instr_addr];
+	add.u64 %rd_ptx_instr_addr, %rd_ptx_instr_base, 64;
+	ld.local.u64 %rd3, [%rd_ptx_instr_addr];
+	add.u64 %rd_ptx_instr_addr, %rd_ptx_instr_base, 56;
+	ld.local.u64 %rd2, [%rd_ptx_instr_addr];
+	add.u64 %rd_ptx_instr_addr, %rd_ptx_instr_base, 48;
+	ld.local.u64 %rd1, [%rd_ptx_instr_addr];
+	add.u64 %rd_ptx_instr_addr, %rd_ptx_instr_base, 40;
+	ld.local.u64 %rd0, [%rd_ptx_instr_addr];
+	add.u64 %rd_ptx_instr_addr, %rd_ptx_instr_base, 32;
+	ld.local.u32 %r1, [%rd_ptx_instr_addr];
+	add.u64 %rd_ptx_instr_addr, %rd_ptx_instr_base, 24;
+	ld.local.u32 %r0, [%rd_ptx_instr_addr];
+	add.u64 %rd_ptx_instr_addr, %rd_ptx_instr_base, 16;
+	ld.local.u16 %rs2, [%rd_ptx_instr_addr];
+	add.u64 %rd_ptx_instr_addr, %rd_ptx_instr_base, 8;
+	ld.local.u16 %rs1, [%rd_ptx_instr_addr];
+	add.u64 %rd_ptx_instr_addr, %rd_ptx_instr_base, 0;
+	ld.local.u16 %rs0, [%rd_ptx_instr_addr];
+	// --- END REGISTER RESTORING (POP from __ptx_register_save_area) ---
+	ret;
+}
+
+.func __probe_func___Z9vectorAddPKfS0_Pf 
+	// .globl	bpf_main
+{
+	.local .align 8 .b8 	__local_depot0[16464];
+	.reg .b64 	%SP;
+	.reg .b64 	%SPL;
+	.reg .pred 	%p<2>;
+	.reg .b32 	%r<2>;
+	.reg .b64 	%rd<64>;
+	.local .align 8 .b8 	__ptx_register_save_area[528];
+	.reg .b64 %rd_ptx_instr_base;
+	.reg .b64 %rd_ptx_instr_addr;
+	// --- BEGIN REGISTER SAVING (PUSH to __ptx_register_save_area) ---
+	mov.u64 %rd_ptx_instr_base, __ptx_register_save_area;
+	add.u64 %rd_ptx_instr_addr, %rd_ptx_instr_base, 0;
+	st.local.u32 [%rd_ptx_instr_addr], %r0;
+	add.u64 %rd_ptx_instr_addr, %rd_ptx_instr_base, 8;
+	st.local.u32 [%rd_ptx_instr_addr], %r1;
+	add.u64 %rd_ptx_instr_addr, %rd_ptx_instr_base, 16;
+	st.local.u64 [%rd_ptx_instr_addr], %rd0;
+	add.u64 %rd_ptx_instr_addr, %rd_ptx_instr_base, 24;
+	st.local.u64 [%rd_ptx_instr_addr], %rd1;
+	add.u64 %rd_ptx_instr_addr, %rd_ptx_instr_base, 32;
+	st.local.u64 [%rd_ptx_instr_addr], %rd2;
+	add.u64 %rd_ptx_instr_addr, %rd_ptx_instr_base, 40;
+	st.local.u64 [%rd_ptx_instr_addr], %rd3;
+	add.u64 %rd_ptx_instr_addr, %rd_ptx_instr_base, 48;
+	st.local.u64 [%rd_ptx_instr_addr], %rd4;
+	add.u64 %rd_ptx_instr_addr, %rd_ptx_instr_base, 56;
+	st.local.u64 [%rd_ptx_instr_addr], %rd5;
+	add.u64 %rd_ptx_instr_addr, %rd_ptx_instr_base, 64;
+	st.local.u64 [%rd_ptx_instr_addr], %rd6;
+	add.u64 %rd_ptx_instr_addr, %rd_ptx_instr_base, 72;
+	st.local.u64 [%rd_ptx_instr_addr], %rd7;
+	add.u64 %rd_ptx_instr_addr, %rd_ptx_instr_base, 80;
+	st.local.u64 [%rd_ptx_instr_addr], %rd8;
+	add.u64 %rd_ptx_instr_addr, %rd_ptx_instr_base, 88;
+	st.local.u64 [%rd_ptx_instr_addr], %rd9;
+	add.u64 %rd_ptx_instr_addr, %rd_ptx_instr_base, 96;
+	st.local.u64 [%rd_ptx_instr_addr], %rd10;
+	add.u64 %rd_ptx_instr_addr, %rd_ptx_instr_base, 104;
+	st.local.u64 [%rd_ptx_instr_addr], %rd11;
+	add.u64 %rd_ptx_instr_addr, %rd_ptx_instr_base, 112;
+	st.local.u64 [%rd_ptx_instr_addr], %rd12;
+	add.u64 %rd_ptx_instr_addr, %rd_ptx_instr_base, 120;
+	st.local.u64 [%rd_ptx_instr_addr], %rd13;
+	add.u64 %rd_ptx_instr_addr, %rd_ptx_instr_base, 128;
+	st.local.u64 [%rd_ptx_instr_addr], %rd14;
+	add.u64 %rd_ptx_instr_addr, %rd_ptx_instr_base, 136;
+	st.local.u64 [%rd_ptx_instr_addr], %rd15;
+	add.u64 %rd_ptx_instr_addr, %rd_ptx_instr_base, 144;
+	st.local.u64 [%rd_ptx_instr_addr], %rd16;
+	add.u64 %rd_ptx_instr_addr, %rd_ptx_instr_base, 152;
+	st.local.u64 [%rd_ptx_instr_addr], %rd17;
+	add.u64 %rd_ptx_instr_addr, %rd_ptx_instr_base, 160;
+	st.local.u64 [%rd_ptx_instr_addr], %rd18;
+	add.u64 %rd_ptx_instr_addr, %rd_ptx_instr_base, 168;
+	st.local.u64 [%rd_ptx_instr_addr], %rd19;
+	add.u64 %rd_ptx_instr_addr, %rd_ptx_instr_base, 176;
+	st.local.u64 [%rd_ptx_instr_addr], %rd20;
+	add.u64 %rd_ptx_instr_addr, %rd_ptx_instr_base, 184;
+	st.local.u64 [%rd_ptx_instr_addr], %rd21;
+	add.u64 %rd_ptx_instr_addr, %rd_ptx_instr_base, 192;
+	st.local.u64 [%rd_ptx_instr_addr], %rd22;
+	add.u64 %rd_ptx_instr_addr, %rd_ptx_instr_base, 200;
+	st.local.u64 [%rd_ptx_instr_addr], %rd23;
+	add.u64 %rd_ptx_instr_addr, %rd_ptx_instr_base, 208;
+	st.local.u64 [%rd_ptx_instr_addr], %rd24;
+	add.u64 %rd_ptx_instr_addr, %rd_ptx_instr_base, 216;
+	st.local.u64 [%rd_ptx_instr_addr], %rd25;
+	add.u64 %rd_ptx_instr_addr, %rd_ptx_instr_base, 224;
+	st.local.u64 [%rd_ptx_instr_addr], %rd26;
+	add.u64 %rd_ptx_instr_addr, %rd_ptx_instr_base, 232;
+	st.local.u64 [%rd_ptx_instr_addr], %rd27;
+	add.u64 %rd_ptx_instr_addr, %rd_ptx_instr_base, 240;
+	st.local.u64 [%rd_ptx_instr_addr], %rd28;
+	add.u64 %rd_ptx_instr_addr, %rd_ptx_instr_base, 248;
+	st.local.u64 [%rd_ptx_instr_addr], %rd29;
+	add.u64 %rd_ptx_instr_addr, %rd_ptx_instr_base, 256;
+	st.local.u64 [%rd_ptx_instr_addr], %rd30;
+	add.u64 %rd_ptx_instr_addr, %rd_ptx_instr_base, 264;
+	st.local.u64 [%rd_ptx_instr_addr], %rd31;
+	add.u64 %rd_ptx_instr_addr, %rd_ptx_instr_base, 272;
+	st.local.u64 [%rd_ptx_instr_addr], %rd32;
+	add.u64 %rd_ptx_instr_addr, %rd_ptx_instr_base, 280;
+	st.local.u64 [%rd_ptx_instr_addr], %rd33;
+	add.u64 %rd_ptx_instr_addr, %rd_ptx_instr_base, 288;
+	st.local.u64 [%rd_ptx_instr_addr], %rd34;
+	add.u64 %rd_ptx_instr_addr, %rd_ptx_instr_base, 296;
+	st.local.u64 [%rd_ptx_instr_addr], %rd35;
+	add.u64 %rd_ptx_instr_addr, %rd_ptx_instr_base, 304;
+	st.local.u64 [%rd_ptx_instr_addr], %rd36;
+	add.u64 %rd_ptx_instr_addr, %rd_ptx_instr_base, 312;
+	st.local.u64 [%rd_ptx_instr_addr], %rd37;
+	add.u64 %rd_ptx_instr_addr, %rd_ptx_instr_base, 320;
+	st.local.u64 [%rd_ptx_instr_addr], %rd38;
+	add.u64 %rd_ptx_instr_addr, %rd_ptx_instr_base, 328;
+	st.local.u64 [%rd_ptx_instr_addr], %rd39;
+	add.u64 %rd_ptx_instr_addr, %rd_ptx_instr_base, 336;
+	st.local.u64 [%rd_ptx_instr_addr], %rd40;
+	add.u64 %rd_ptx_instr_addr, %rd_ptx_instr_base, 344;
+	st.local.u64 [%rd_ptx_instr_addr], %rd41;
+	add.u64 %rd_ptx_instr_addr, %rd_ptx_instr_base, 352;
+	st.local.u64 [%rd_ptx_instr_addr], %rd42;
+	add.u64 %rd_ptx_instr_addr, %rd_ptx_instr_base, 360;
+	st.local.u64 [%rd_ptx_instr_addr], %rd43;
+	add.u64 %rd_ptx_instr_addr, %rd_ptx_instr_base, 368;
+	st.local.u64 [%rd_ptx_instr_addr], %rd44;
+	add.u64 %rd_ptx_instr_addr, %rd_ptx_instr_base, 376;
+	st.local.u64 [%rd_ptx_instr_addr], %rd45;
+	add.u64 %rd_ptx_instr_addr, %rd_ptx_instr_base, 384;
+	st.local.u64 [%rd_ptx_instr_addr], %rd46;
+	add.u64 %rd_ptx_instr_addr, %rd_ptx_instr_base, 392;
+	st.local.u64 [%rd_ptx_instr_addr], %rd47;
+	add.u64 %rd_ptx_instr_addr, %rd_ptx_instr_base, 400;
+	st.local.u64 [%rd_ptx_instr_addr], %rd48;
+	add.u64 %rd_ptx_instr_addr, %rd_ptx_instr_base, 408;
+	st.local.u64 [%rd_ptx_instr_addr], %rd49;
+	add.u64 %rd_ptx_instr_addr, %rd_ptx_instr_base, 416;
+	st.local.u64 [%rd_ptx_instr_addr], %rd50;
+	add.u64 %rd_ptx_instr_addr, %rd_ptx_instr_base, 424;
+	st.local.u64 [%rd_ptx_instr_addr], %rd51;
+	add.u64 %rd_ptx_instr_addr, %rd_ptx_instr_base, 432;
+	st.local.u64 [%rd_ptx_instr_addr], %rd52;
+	add.u64 %rd_ptx_instr_addr, %rd_ptx_instr_base, 440;
+	st.local.u64 [%rd_ptx_instr_addr], %rd53;
+	add.u64 %rd_ptx_instr_addr, %rd_ptx_instr_base, 448;
+	st.local.u64 [%rd_ptx_instr_addr], %rd54;
+	add.u64 %rd_ptx_instr_addr, %rd_ptx_instr_base, 456;
+	st.local.u64 [%rd_ptx_instr_addr], %rd55;
+	add.u64 %rd_ptx_instr_addr, %rd_ptx_instr_base, 464;
+	st.local.u64 [%rd_ptx_instr_addr], %rd56;
+	add.u64 %rd_ptx_instr_addr, %rd_ptx_instr_base, 472;
+	st.local.u64 [%rd_ptx_instr_addr], %rd57;
+	add.u64 %rd_ptx_instr_addr, %rd_ptx_instr_base, 480;
+	st.local.u64 [%rd_ptx_instr_addr], %rd58;
+	add.u64 %rd_ptx_instr_addr, %rd_ptx_instr_base, 488;
+	st.local.u64 [%rd_ptx_instr_addr], %rd59;
+	add.u64 %rd_ptx_instr_addr, %rd_ptx_instr_base, 496;
+	st.local.u64 [%rd_ptx_instr_addr], %rd60;
+	add.u64 %rd_ptx_instr_addr, %rd_ptx_instr_base, 504;
+	st.local.u64 [%rd_ptx_instr_addr], %rd61;
+	add.u64 %rd_ptx_instr_addr, %rd_ptx_instr_base, 512;
+	st.local.u64 [%rd_ptx_instr_addr], %rd62;
+	add.u64 %rd_ptx_instr_addr, %rd_ptx_instr_base, 520;
+	st.local.u64 [%rd_ptx_instr_addr], %rd63;
+	// --- END REGISTER SAVING (PUSH to __ptx_register_save_area) ---
+	mov.u64 	%SPL, __local_depot0;
+	cvta.local.u64 	%SP, %SPL;
+	add.u64 	%rd5, %SP, 0;
+	add.u64 	%rd1, %SPL, 0;
+	add.s64 	%rd2, %rd5, 16384;
+	{ // callseq 0, 0
+	.reg .b32 temp_param_reg;
+	.param .b64 param0;
+	st.param.b64 	[param0+0], %rd6;
+	.param .b64 param1;
+	st.param.b64 	[param1+0], %rd7;
+	.param .b64 param2;
+	st.param.b64 	[param2+0], %rd8;
+	.param .b64 param3;
+	st.param.b64 	[param3+0], %rd9;
+	.param .b64 param4;
+	st.param.b64 	[param4+0], %rd10;
+	.param .b64 retval0;
+	call.uni (retval0), 
+	_bpf_helper_ext_0507, 
+	(
+	param0, 
+	param1, 
+	param2, 
+	param3, 
+	param4
+	);
+	ld.param.b64 	%rd11, [retval0+0];
+	} // callseq 0
+	{ // callseq 1, 0
+	.reg .b32 temp_param_reg;
+	.param .b64 param0;
+	st.param.b64 	[param0+0], %rd13;
+	.param .b64 param1;
+	st.param.b64 	[param1+0], %rd14;
+	.param .b64 param2;
+	st.param.b64 	[param2+0], %rd15;
+	.param .b64 param3;
+	st.param.b64 	[param3+0], %rd16;
+	.param .b64 param4;
+	st.param.b64 	[param4+0], %rd17;
+	.param .b64 retval0;
+	call.uni (retval0), 
+	_bpf_helper_ext_0014, 
+	(
+	param0, 
+	param1, 
+	param2, 
+	param3, 
+	param4
+	);
+	ld.param.b64 	%rd18, [retval0+0];
+	} // callseq 1
+	shr.u64 	%rd20, %rd18, 32;
+	st.local.u32 	[%rd1+16380], %rd20;
+	{ // callseq 2, 0
+	.reg .b32 temp_param_reg;
+	.param .b64 param0;
+	st.param.b64 	[param0+0], %rd21;
+	.param .b64 param1;
+	st.param.b64 	[param1+0], %rd22;
+	.param .b64 param2;
+	st.param.b64 	[param2+0], %rd23;
+	.param .b64 param3;
+	st.param.b64 	[param3+0], %rd24;
+	.param .b64 param4;
+	st.param.b64 	[param4+0], %rd25;
+	.param .b64 retval0;
+	call.uni (retval0), 
+	_bpf_helper_ext_0502, 
+	(
+	param0, 
+	param1, 
+	param2, 
+	param3, 
+	param4
+	);
+	ld.param.b64 	%rd26, [retval0+0];
+	} // callseq 2
+	st.local.u64 	[%rd1+16368], %rd26;
+	add.s64 	%rd28, %rd5, 16360;
+	add.s64 	%rd29, %rd5, 16352;
+	add.s64 	%rd30, %rd5, 16344;
+	{ // callseq 3, 0
+	.reg .b32 temp_param_reg;
+	.param .b64 param0;
+	st.param.b64 	[param0+0], %rd28;
+	.param .b64 param1;
+	st.param.b64 	[param1+0], %rd29;
+	.param .b64 param2;
+	st.param.b64 	[param2+0], %rd30;
+	.param .b64 param3;
+	st.param.b64 	[param3+0], %rd31;
+	.param .b64 param4;
+	st.param.b64 	[param4+0], %rd32;
+	.param .b64 retval0;
+	call.uni (retval0), 
+	_bpf_helper_ext_0503, 
+	(
+	param0, 
+	param1, 
+	param2, 
+	param3, 
+	param4
+	);
+	ld.param.b64 	%rd33, [retval0+0];
+	} // callseq 3
+	add.s64 	%rd35, %rd5, 16368;
+	mov.u64 	%rd36, 19;
+	mov.u64 	%rd37, 0;
+	{ // callseq 4, 0
+	.reg .b32 temp_param_reg;
+	.param .b64 param0;
+	st.param.b64 	[param0+0], %rd36;
+	.param .b64 param1;
+	st.param.b64 	[param1+0], %rd28;
+	.param .b64 param2;
+	st.param.b64 	[param2+0], %rd35;
+	.param .b64 param3;
+	st.param.b64 	[param3+0], %rd37;
+	.param .b64 param4;
+	st.param.b64 	[param4+0], %rd38;
+	.param .b64 retval0;
+	call.uni (retval0), 
+	_bpf_helper_ext_0002, 
+	(
+	param0, 
+	param1, 
+	param2, 
+	param3, 
+	param4
+	);
+	ld.param.b64 	%rd39, [retval0+0];
+	} // callseq 4
+	mov.u64 	%rd41, 1;
+	st.local.u64 	[%rd1+16336], %rd41;
+	add.s64 	%rd3, %rd5, 16380;
+	mov.u64 	%rd42, 20;
+	{ // callseq 5, 0
+	.reg .b32 temp_param_reg;
+	.param .b64 param0;
+	st.param.b64 	[param0+0], %rd42;
+	.param .b64 param1;
+	st.param.b64 	[param1+0], %rd3;
+	.param .b64 param2;
+	st.param.b64 	[param2+0], %rd35;
+	.param .b64 param3;
+	st.param.b64 	[param3+0], %rd37;
+	.param .b64 param4;
+	st.param.b64 	[param4+0], %rd43;
+	.param .b64 retval0;
+	call.uni (retval0), 
+	_bpf_helper_ext_0001, 
+	(
+	param0, 
+	param1, 
+	param2, 
+	param3, 
+	param4
+	);
+	ld.param.b64 	%rd44, [retval0+0];
+	} // callseq 5
+	setp.eq.s64 	%p1, %rd44, 0;
+	@%p1 bra 	$L__BB0_2;
+	atom.add.u64 	%rd45, [%rd44], 1;
+	bra.uni 	$L__BB0_3;
+$L__BB0_2:
+	add.s64 	%rd46, %rd2, -48;
+	{ // callseq 6, 0
+	.reg .b32 temp_param_reg;
+	.param .b64 param0;
+	st.param.b64 	[param0+0], %rd42;
+	.param .b64 param1;
+	st.param.b64 	[param1+0], %rd3;
+	.param .b64 param2;
+	st.param.b64 	[param2+0], %rd46;
+	.param .b64 param3;
+	st.param.b64 	[param3+0], %rd41;
+	.param .b64 param4;
+	st.param.b64 	[param4+0], %rd49;
+	.param .b64 retval0;
+	call.uni (retval0), 
+	_bpf_helper_ext_0002, 
+	(
+	param0, 
+	param1, 
+	param2, 
+	param3, 
+	param4
+	);
+	ld.param.b64 	%rd50, [retval0+0];
+	} // callseq 6
+$L__BB0_3:
+	mov.b32 	%r1, 685420;
+	st.local.u32 	[%rd1+16328], %r1;
+	mov.u64 	%rd52, 2683427895575868780;
+	st.local.u64 	[%rd1+16320], %rd52;
+	mov.u64 	%rd53, 2683433033533513520;
+	st.local.u64 	[%rd1+16312], %rd53;
+	mov.u64 	%rd54, 6009573561426264434;
+	st.local.u64 	[%rd1+16304], %rd54;
+	mov.u64 	%rd55, 8031153322934753887;
+	st.local.u64 	[%rd1+16296], %rd55;
+	mov.u64 	%rd56, 2334102048887565893;
+	st.local.u64 	[%rd1+16288], %rd56;
+	ld.local.u64 	%rd57, [%rd1+16360];
+	ld.local.u64 	%rd58, [%rd1+16368];
+	add.s64 	%rd59, %rd2, -96;
+	mov.u64 	%rd60, 44;
+	{ // callseq 7, 0
+	.reg .b32 temp_param_reg;
+	.param .b64 param0;
+	st.param.b64 	[param0+0], %rd59;
+	.param .b64 param1;
+	st.param.b64 	[param1+0], %rd60;
+	.param .b64 param2;
+	st.param.b64 	[param2+0], %rd57;
+	.param .b64 param3;
+	st.param.b64 	[param3+0], %rd58;
+	.param .b64 param4;
+	st.param.b64 	[param4+0], %rd61;
+	.param .b64 retval0;
+	call.uni (retval0), 
+	_bpf_helper_ext_0006, 
+	(
+	param0, 
+	param1, 
+	param2, 
+	param3, 
+	param4
+	);
+	ld.param.b64 	%rd62, [retval0+0];
+	} // callseq 7
+
+	// --- BEGIN REGISTER RESTORING (POP from __ptx_register_save_area) ---
+	mov.u64 %rd_ptx_instr_base, __ptx_register_save_area;
+	add.u64 %rd_ptx_instr_addr, %rd_ptx_instr_base, 520;
+	ld.local.u64 %rd63, [%rd_ptx_instr_addr];
+	add.u64 %rd_ptx_instr_addr, %rd_ptx_instr_base, 512;
+	ld.local.u64 %rd62, [%rd_ptx_instr_addr];
+	add.u64 %rd_ptx_instr_addr, %rd_ptx_instr_base, 504;
+	ld.local.u64 %rd61, [%rd_ptx_instr_addr];
+	add.u64 %rd_ptx_instr_addr, %rd_ptx_instr_base, 496;
+	ld.local.u64 %rd60, [%rd_ptx_instr_addr];
+	add.u64 %rd_ptx_instr_addr, %rd_ptx_instr_base, 488;
+	ld.local.u64 %rd59, [%rd_ptx_instr_addr];
+	add.u64 %rd_ptx_instr_addr, %rd_ptx_instr_base, 480;
+	ld.local.u64 %rd58, [%rd_ptx_instr_addr];
+	add.u64 %rd_ptx_instr_addr, %rd_ptx_instr_base, 472;
+	ld.local.u64 %rd57, [%rd_ptx_instr_addr];
+	add.u64 %rd_ptx_instr_addr, %rd_ptx_instr_base, 464;
+	ld.local.u64 %rd56, [%rd_ptx_instr_addr];
+	add.u64 %rd_ptx_instr_addr, %rd_ptx_instr_base, 456;
+	ld.local.u64 %rd55, [%rd_ptx_instr_addr];
+	add.u64 %rd_ptx_instr_addr, %rd_ptx_instr_base, 448;
+	ld.local.u64 %rd54, [%rd_ptx_instr_addr];
+	add.u64 %rd_ptx_instr_addr, %rd_ptx_instr_base, 440;
+	ld.local.u64 %rd53, [%rd_ptx_instr_addr];
+	add.u64 %rd_ptx_instr_addr, %rd_ptx_instr_base, 432;
+	ld.local.u64 %rd52, [%rd_ptx_instr_addr];
+	add.u64 %rd_ptx_instr_addr, %rd_ptx_instr_base, 424;
+	ld.local.u64 %rd51, [%rd_ptx_instr_addr];
+	add.u64 %rd_ptx_instr_addr, %rd_ptx_instr_base, 416;
+	ld.local.u64 %rd50, [%rd_ptx_instr_addr];
+	add.u64 %rd_ptx_instr_addr, %rd_ptx_instr_base, 408;
+	ld.local.u64 %rd49, [%rd_ptx_instr_addr];
+	add.u64 %rd_ptx_instr_addr, %rd_ptx_instr_base, 400;
+	ld.local.u64 %rd48, [%rd_ptx_instr_addr];
+	add.u64 %rd_ptx_instr_addr, %rd_ptx_instr_base, 392;
+	ld.local.u64 %rd47, [%rd_ptx_instr_addr];
+	add.u64 %rd_ptx_instr_addr, %rd_ptx_instr_base, 384;
+	ld.local.u64 %rd46, [%rd_ptx_instr_addr];
+	add.u64 %rd_ptx_instr_addr, %rd_ptx_instr_base, 376;
+	ld.local.u64 %rd45, [%rd_ptx_instr_addr];
+	add.u64 %rd_ptx_instr_addr, %rd_ptx_instr_base, 368;
+	ld.local.u64 %rd44, [%rd_ptx_instr_addr];
+	add.u64 %rd_ptx_instr_addr, %rd_ptx_instr_base, 360;
+	ld.local.u64 %rd43, [%rd_ptx_instr_addr];
+	add.u64 %rd_ptx_instr_addr, %rd_ptx_instr_base, 352;
+	ld.local.u64 %rd42, [%rd_ptx_instr_addr];
+	add.u64 %rd_ptx_instr_addr, %rd_ptx_instr_base, 344;
+	ld.local.u64 %rd41, [%rd_ptx_instr_addr];
+	add.u64 %rd_ptx_instr_addr, %rd_ptx_instr_base, 336;
+	ld.local.u64 %rd40, [%rd_ptx_instr_addr];
+	add.u64 %rd_ptx_instr_addr, %rd_ptx_instr_base, 328;
+	ld.local.u64 %rd39, [%rd_ptx_instr_addr];
+	add.u64 %rd_ptx_instr_addr, %rd_ptx_instr_base, 320;
+	ld.local.u64 %rd38, [%rd_ptx_instr_addr];
+	add.u64 %rd_ptx_instr_addr, %rd_ptx_instr_base, 312;
+	ld.local.u64 %rd37, [%rd_ptx_instr_addr];
+	add.u64 %rd_ptx_instr_addr, %rd_ptx_instr_base, 304;
+	ld.local.u64 %rd36, [%rd_ptx_instr_addr];
+	add.u64 %rd_ptx_instr_addr, %rd_ptx_instr_base, 296;
+	ld.local.u64 %rd35, [%rd_ptx_instr_addr];
+	add.u64 %rd_ptx_instr_addr, %rd_ptx_instr_base, 288;
+	ld.local.u64 %rd34, [%rd_ptx_instr_addr];
+	add.u64 %rd_ptx_instr_addr, %rd_ptx_instr_base, 280;
+	ld.local.u64 %rd33, [%rd_ptx_instr_addr];
+	add.u64 %rd_ptx_instr_addr, %rd_ptx_instr_base, 272;
+	ld.local.u64 %rd32, [%rd_ptx_instr_addr];
+	add.u64 %rd_ptx_instr_addr, %rd_ptx_instr_base, 264;
+	ld.local.u64 %rd31, [%rd_ptx_instr_addr];
+	add.u64 %rd_ptx_instr_addr, %rd_ptx_instr_base, 256;
+	ld.local.u64 %rd30, [%rd_ptx_instr_addr];
+	add.u64 %rd_ptx_instr_addr, %rd_ptx_instr_base, 248;
+	ld.local.u64 %rd29, [%rd_ptx_instr_addr];
+	add.u64 %rd_ptx_instr_addr, %rd_ptx_instr_base, 240;
+	ld.local.u64 %rd28, [%rd_ptx_instr_addr];
+	add.u64 %rd_ptx_instr_addr, %rd_ptx_instr_base, 232;
+	ld.local.u64 %rd27, [%rd_ptx_instr_addr];
+	add.u64 %rd_ptx_instr_addr, %rd_ptx_instr_base, 224;
+	ld.local.u64 %rd26, [%rd_ptx_instr_addr];
+	add.u64 %rd_ptx_instr_addr, %rd_ptx_instr_base, 216;
+	ld.local.u64 %rd25, [%rd_ptx_instr_addr];
+	add.u64 %rd_ptx_instr_addr, %rd_ptx_instr_base, 208;
+	ld.local.u64 %rd24, [%rd_ptx_instr_addr];
+	add.u64 %rd_ptx_instr_addr, %rd_ptx_instr_base, 200;
+	ld.local.u64 %rd23, [%rd_ptx_instr_addr];
+	add.u64 %rd_ptx_instr_addr, %rd_ptx_instr_base, 192;
+	ld.local.u64 %rd22, [%rd_ptx_instr_addr];
+	add.u64 %rd_ptx_instr_addr, %rd_ptx_instr_base, 184;
+	ld.local.u64 %rd21, [%rd_ptx_instr_addr];
+	add.u64 %rd_ptx_instr_addr, %rd_ptx_instr_base, 176;
+	ld.local.u64 %rd20, [%rd_ptx_instr_addr];
+	add.u64 %rd_ptx_instr_addr, %rd_ptx_instr_base, 168;
+	ld.local.u64 %rd19, [%rd_ptx_instr_addr];
+	add.u64 %rd_ptx_instr_addr, %rd_ptx_instr_base, 160;
+	ld.local.u64 %rd18, [%rd_ptx_instr_addr];
+	add.u64 %rd_ptx_instr_addr, %rd_ptx_instr_base, 152;
+	ld.local.u64 %rd17, [%rd_ptx_instr_addr];
+	add.u64 %rd_ptx_instr_addr, %rd_ptx_instr_base, 144;
+	ld.local.u64 %rd16, [%rd_ptx_instr_addr];
+	add.u64 %rd_ptx_instr_addr, %rd_ptx_instr_base, 136;
+	ld.local.u64 %rd15, [%rd_ptx_instr_addr];
+	add.u64 %rd_ptx_instr_addr, %rd_ptx_instr_base, 128;
+	ld.local.u64 %rd14, [%rd_ptx_instr_addr];
+	add.u64 %rd_ptx_instr_addr, %rd_ptx_instr_base, 120;
+	ld.local.u64 %rd13, [%rd_ptx_instr_addr];
+	add.u64 %rd_ptx_instr_addr, %rd_ptx_instr_base, 112;
+	ld.local.u64 %rd12, [%rd_ptx_instr_addr];
+	add.u64 %rd_ptx_instr_addr, %rd_ptx_instr_base, 104;
+	ld.local.u64 %rd11, [%rd_ptx_instr_addr];
+	add.u64 %rd_ptx_instr_addr, %rd_ptx_instr_base, 96;
+	ld.local.u64 %rd10, [%rd_ptx_instr_addr];
+	add.u64 %rd_ptx_instr_addr, %rd_ptx_instr_base, 88;
+	ld.local.u64 %rd9, [%rd_ptx_instr_addr];
+	add.u64 %rd_ptx_instr_addr, %rd_ptx_instr_base, 80;
+	ld.local.u64 %rd8, [%rd_ptx_instr_addr];
+	add.u64 %rd_ptx_instr_addr, %rd_ptx_instr_base, 72;
+	ld.local.u64 %rd7, [%rd_ptx_instr_addr];
+	add.u64 %rd_ptx_instr_addr, %rd_ptx_instr_base, 64;
+	ld.local.u64 %rd6, [%rd_ptx_instr_addr];
+	add.u64 %rd_ptx_instr_addr, %rd_ptx_instr_base, 56;
+	ld.local.u64 %rd5, [%rd_ptx_instr_addr];
+	add.u64 %rd_ptx_instr_addr, %rd_ptx_instr_base, 48;
+	ld.local.u64 %rd4, [%rd_ptx_instr_addr];
+	add.u64 %rd_ptx_instr_addr, %rd_ptx_instr_base, 40;
+	ld.local.u64 %rd3, [%rd_ptx_instr_addr];
+	add.u64 %rd_ptx_instr_addr, %rd_ptx_instr_base, 32;
+	ld.local.u64 %rd2, [%rd_ptx_instr_addr];
+	add.u64 %rd_ptx_instr_addr, %rd_ptx_instr_base, 24;
+	ld.local.u64 %rd1, [%rd_ptx_instr_addr];
+	add.u64 %rd_ptx_instr_addr, %rd_ptx_instr_base, 16;
+	ld.local.u64 %rd0, [%rd_ptx_instr_addr];
+	add.u64 %rd_ptx_instr_addr, %rd_ptx_instr_base, 8;
+	ld.local.u32 %r1, [%rd_ptx_instr_addr];
+	add.u64 %rd_ptx_instr_addr, %rd_ptx_instr_base, 0;
+	ld.local.u32 %r0, [%rd_ptx_instr_addr];
+	// --- END REGISTER RESTORING (POP from __ptx_register_save_area) ---
+	ret;
+}
+
+
+
+
+.const .align 4 .u32 d_N;
+
+.visible .entry _Z9vectorAddPKfS0_Pf(
+.param .u64 _Z9vectorAddPKfS0_Pf_param_0,
+.param .u64 _Z9vectorAddPKfS0_Pf_param_1,
+.param .u64 _Z9vectorAddPKfS0_Pf_param_2
+)
+{
+    call __probe_func___Z9vectorAddPKfS0_Pf;
+
+.reg .pred %p<2>;
+.reg .f32 %f<4>;
+.reg .b32 %r<6>;
+.reg .b64 %rd<11>;
+
+
+ld.param.u64 %rd1, [_Z9vectorAddPKfS0_Pf_param_0];
+ld.param.u64 %rd2, [_Z9vectorAddPKfS0_Pf_param_1];
+ld.param.u64 %rd3, [_Z9vectorAddPKfS0_Pf_param_2];
+mov.u32 %r2, %ctaid.x;
+mov.u32 %r3, %ntid.x;
+mov.u32 %r4, %tid.x;
+mad.lo.s32 %r1, %r2, %r3, %r4;
+ld.const.u32 %r5, [d_N];
+setp.ge.s32 %p1, %r1, %r5;
+@%p1 bra $L__BB0_2;
+
+cvta.to.global.u64 %rd4, %rd1;
+mul.wide.s32 %rd5, %r1, 4;
+add.s64 %rd6, %rd4, %rd5;
+cvta.to.global.u64 %rd7, %rd2;
+add.s64 %rd8, %rd7, %rd5;
+ld.global.f32 %f1, [%rd8];
+ld.global.f32 %f2, [%rd6];
+add.f32 %f3, %f2, %f1;
+cvta.to.global.u64 %rd9, %rd3;
+add.s64 %rd10, %rd9, %rd5;
+st.global.f32 [%rd10], %f3;
+
+$L__BB0_2:
+call __retprobe_func___Z9vectorAddPKfS0_Pf;
+
+ret;
+
+}
