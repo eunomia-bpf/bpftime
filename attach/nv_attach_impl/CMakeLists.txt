@@ -6,6 +6,7 @@ add_library(
     nv_attach_private_data.cpp
     nv_attach_impl_frida_setup.cpp
     nv_attach_impl_register_guard_patcher.cpp
+    nv_attach_impl_patcher.cpp
     nv_attach_utils.cpp
     ptxpass_pipeline.cpp
 )

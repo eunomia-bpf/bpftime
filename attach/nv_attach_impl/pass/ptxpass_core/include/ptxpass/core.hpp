@@ -47,14 +47,14 @@ inline void from_json(const nlohmann::json &j, PassConfig &cfg)
 class JsonConfigLoader {
     public:
 	// Parse JSON config from file path; throws std::runtime_error on error
-	static PassConfig LoadFromFile(const std::string &path);
+	static PassConfig load_from_file(const std::string &path);
 };
 
 class AttachPointMatcher {
     public:
 	explicit AttachPointMatcher(const AttachPoints &points);
 
-	bool Matches(const std::string &attachPoint) const;
+	bool matches(const std::string &attachPoint) const;
 
     private:
 	std::vector<std::regex> includeRegexes;
@@ -62,13 +62,13 @@ class AttachPointMatcher {
 };
 
 // Read entire stdin into a string; throws std::runtime_error on error
-std::string ReadAllFromStdin();
+std::string read_all_from_stdin();
 
 // Return true if s is empty or contains only whitespace (space, tab, newlines)
-bool IsWhitespaceOnly(const std::string &s);
+bool is_whitespace_only(const std::string &s);
 
 // Fetch environment variable or empty string if not present
-std::string GetEnv(const char *key);
+std::string get_env(const char *key);
 
 // Standardized exit codes
 enum ExitCode {
@@ -120,21 +120,21 @@ struct MemcaptureParams {
 
 // Try to parse JSON input using typed deserialization; fallback to plain PTX
 // Returns pair<RuntimeInput, bool isJsonMode>
-std::pair<RuntimeInput, bool> ParseRuntimeInput(const std::string &stdinData);
+std::pair<RuntimeInput, bool> parse_runtime_input(const std::string &stdinData);
 
 // Parse full request with ebpf_instructions; returns {request, is_json}
 std::pair<RuntimeRequest, bool>
-ParseRuntimeRequest(const std::string &stdinData);
+parse_runtime_request(const std::string &stdinData);
 
 // Emit JSON with {"output_ptx": "..."}
-void EmitRuntimeOutput(const std::string &outputPtx);
+void emit_runtime_output(const std::string &outputPtx);
 
 // Validation helpers
-bool ValidateInput(const std::string &input, const nlohmann::json &validation);
-bool ContainsEntryFunction(const std::string &input);
-bool ContainsRetInstruction(const std::string &input);
-bool ValidatePtxVersion(const std::string &input,
-            const std::string &minVersion);
+bool validate_input(const std::string &input, const nlohmann::json &validation);
+bool contains_entry_function(const std::string &input);
+bool contains_ret_instruction(const std::string &input);
+bool validate_ptx_version(const std::string &input,
+			  const std::string &minVersion);
 
 // nlohmann::json arbitrary type conversions for runtime and params
 inline void from_json(const nlohmann::json &j, RuntimeInput &ri)
@@ -180,22 +180,22 @@ inline void from_json(const nlohmann::json &j, RuntimeRequest &rr)
 // Shared utilities for PTX passes (refactored from legacy code)
 // Filter out duplicate/irrelevant PTX headers
 // (version/target/address_size/comments)
-std::string FilterOutVersionHeadersPtx(const std::string &input);
+std::string filter_out_version_headers_ptx(const std::string &input);
 
 // Compile eBPF (64-bit words encoding) to PTX function text (optionally target
 // SM)
-std::string CompileEbpfToPtxFromWords(const std::vector<uint64_t> &words,
-                       const std::string &target_sm);
+std::string compile_ebpf_to_ptx_from_words(const std::vector<uint64_t> &words,
+					   const std::string &target_sm);
 
 // Find kernel body range [begin, end) for a given kernel name using .visible
 // .entry and brace depth Returns pair(begin,end); if not found, returns
 // {std::string::npos, std::string::npos}
-std::pair<size_t, size_t> FindKernelBody(const std::string &ptx,
-                       const std::string &kernel);
+std::pair<size_t, size_t> find_kernel_body(const std::string &ptx,
+					   const std::string &kernel);
 
 // Emit simple stats to stderr (pass name, matched count, in/out sizes)
-void LogTransformStats(const char *pass_name, int matched, size_t bytes_in,
-             size_t bytes_out);
+void log_transform_stats(const char *pass_name, int matched, size_t bytes_in,
+			 size_t bytes_out);
 
 inline void from_json(const nlohmann::json &j, EntryParams &p)
 {

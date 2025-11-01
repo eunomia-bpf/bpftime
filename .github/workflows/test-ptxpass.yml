@@ -67,7 +67,7 @@ jobs:
               cmake -B build -S . \
                 -DCMAKE_BUILD_TYPE=Debug \
                 -DBPFTIME_LLVM_JIT=YES \
-                -DBPFTIME_ENABLE_UNIT_TESTING=NO \
+                -DBPFTIME_ENABLE_UNIT_TESTING=YES \
                 -DBPFTIME_ENABLE_CUDA_ATTACH=ON \
                 -DBPFTIME_CUDA_ROOT=/usr/local/cuda-12.6 \
                 -DLLVM_DIR="$LLVM_CMAKE_DIR"
@@ -75,7 +75,7 @@ jobs:
               cmake -B build -S . \
                 -DCMAKE_BUILD_TYPE=Debug \
                 -DBPFTIME_LLVM_JIT=YES \
-                -DBPFTIME_ENABLE_UNIT_TESTING=NO \
+                -DBPFTIME_ENABLE_UNIT_TESTING=YES \
                 -DBPFTIME_ENABLE_CUDA_ATTACH=ON \
                 -DBPFTIME_CUDA_ROOT=/usr/local/cuda-12.6
             fi
@@ -83,21 +83,21 @@ jobs:
             cmake -B build -S . \
               -DCMAKE_BUILD_TYPE=Debug \
               -DBPFTIME_LLVM_JIT=YES \
-              -DBPFTIME_ENABLE_UNIT_TESTING=NO \
+              -DBPFTIME_ENABLE_UNIT_TESTING=YES \
               -DBPFTIME_ENABLE_CUDA_ATTACH=ON \
               -DBPFTIME_CUDA_ROOT=/usr/local/cuda-12.6
           fi
 
-      - name: Build PTX pass executables (Ubuntu)
+      - name: Build PTX pass targets (Ubuntu)
         if: matrix.container == 'ubuntu-2204'
         run: |
           cmake --build build --config Debug --target \
-            ptxpass_kprobe_entry ptxpass_kretprobe ptxpass_kprobe_memcapture -j$(nproc)
+            ptxpass_kprobe_entry ptxpass_kretprobe ptxpass_kprobe_memcapture bpftime_nv_attach_tests -j$(nproc)
 
-      - name: Run PTX pass tests (Ubuntu)
+      - name: Run PTX pass unit tests with Catch2 (Ubuntu)
         if: matrix.container == 'ubuntu-2204'
         shell: bash
         run: |
-          chmod +x .github/script/test_ptxpass.sh
-          .github/script/test_ptxpass.sh
+          cd build
+          ctest --output-on-failure -R bpftime_nv_attach_tests
 

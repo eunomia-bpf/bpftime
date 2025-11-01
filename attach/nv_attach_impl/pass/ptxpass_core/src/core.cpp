@@ -18,7 +18,7 @@ namespace ptxpass
 {
 
 static std::vector<std::regex>
-CompileRegexList(const std::vector<std::string> &patterns)
+compile_regex_list(const std::vector<std::string> &patterns)
 {
 	std::vector<std::regex> out;
 	out.reserve(patterns.size());
@@ -31,7 +31,7 @@ CompileRegexList(const std::vector<std::string> &patterns)
 // typed conversions are defined inline in header; avoid duplicate definitions
 // here
 
-PassConfig JsonConfigLoader::LoadFromFile(const std::string &path)
+PassConfig JsonConfigLoader::load_from_file(const std::string &path)
 {
 	std::ifstream ifs(path);
 	if (!ifs.is_open()) {
@@ -61,12 +61,12 @@ PassConfig JsonConfigLoader::LoadFromFile(const std::string &path)
 }
 
 AttachPointMatcher::AttachPointMatcher(const AttachPoints &points)
-	: includeRegexes(CompileRegexList(points.includes)),
-	  excludeRegexes(CompileRegexList(points.excludes))
+	: includeRegexes(compile_regex_list(points.includes)),
+	  excludeRegexes(compile_regex_list(points.excludes))
 {
 }
 
-bool AttachPointMatcher::Matches(const std::string &attachPoint) const
+bool AttachPointMatcher::matches(const std::string &attachPoint) const
 {
 	bool included = false;
 	for (const auto &r : includeRegexes) {
@@ -85,7 +85,7 @@ bool AttachPointMatcher::Matches(const std::string &attachPoint) const
 	return true;
 }
 
-std::string ReadAllFromStdin()
+std::string read_all_from_stdin()
 {
 	std::ostringstream oss;
 	oss << std::cin.rdbuf();
@@ -95,7 +95,7 @@ std::string ReadAllFromStdin()
 	return oss.str();
 }
 
-bool IsWhitespaceOnly(const std::string &s)
+bool is_whitespace_only(const std::string &s)
 {
 	for (char c : s) {
 		if (!(c == ' ' || c == '\n' || c == '\r' || c == '\t' ||
@@ -106,13 +106,13 @@ bool IsWhitespaceOnly(const std::string &s)
 	return true;
 }
 
-std::string GetEnv(const char *key)
+std::string get_env(const char *key)
 {
 	const char *v = std::getenv(key);
 	return v ? std::string(v) : std::string();
 }
 
-std::pair<RuntimeInput, bool> ParseRuntimeInput(const std::string &stdinData)
+std::pair<RuntimeInput, bool> parse_runtime_input(const std::string &stdinData)
 {
 	RuntimeInput ri;
 	try {
@@ -130,7 +130,7 @@ std::pair<RuntimeInput, bool> ParseRuntimeInput(const std::string &stdinData)
 }
 
 std::pair<RuntimeRequest, bool>
-ParseRuntimeRequest(const std::string &stdinData)
+parse_runtime_request(const std::string &stdinData)
 {
 	RuntimeRequest rr;
 	try {
@@ -147,7 +147,7 @@ ParseRuntimeRequest(const std::string &stdinData)
 	}
 }
 
-void EmitRuntimeOutput(const std::string &outputPtx)
+void emit_runtime_output(const std::string &outputPtx)
 {
 	RuntimeOutput ro{ outputPtx };
 	json j = ro;
@@ -155,22 +155,22 @@ void EmitRuntimeOutput(const std::string &outputPtx)
 }
 
 // Validation: basic checks as placeholders
-bool ValidateInput(const std::string &input, const json &validation)
+bool validate_input(const std::string &input, const json &validation)
 {
 	if (validation.is_null())
 		return true;
 	if (validation.contains("require_entry") &&
 	    validation["require_entry"].get<bool>()) {
-		if (!ContainsEntryFunction(input))
+		if (!contains_entry_function(input))
 			return false;
 	}
 	if (validation.contains("require_ret") &&
 	    validation["require_ret"].get<bool>()) {
-		if (!ContainsRetInstruction(input))
+		if (!contains_ret_instruction(input))
 			return false;
 	}
 	if (validation.contains("ptx_version_min")) {
-		if (!ValidatePtxVersion(
+		if (!validate_ptx_version(
 			    input,
 			    validation["ptx_version_min"].get<std::string>()))
 			return false;
@@ -178,18 +178,18 @@ bool ValidateInput(const std::string &input, const json &validation)
 	return true;
 }
 
-bool ContainsEntryFunction(const std::string &input)
+bool contains_entry_function(const std::string &input)
 {
 	return input.find(".visible .entry") != std::string::npos;
 }
 
-bool ContainsRetInstruction(const std::string &input)
+bool contains_ret_instruction(const std::string &input)
 {
 	return input.find("\n    ret;") != std::string::npos ||
 	       input.find("\n\tret;") != std::string::npos;
 }
 
-bool ValidatePtxVersion(const std::string &input, const std::string &minVersion)
+bool validate_ptx_version(const std::string &input, const std::string &minVersion)
 {
 	// Expect line like: .version 7.0
 	std::istringstream iss(input);
@@ -219,7 +219,7 @@ bool ValidatePtxVersion(const std::string &input, const std::string &minVersion)
 
 namespace ptxpass
 {
-std::string FilterOutVersionHeadersPtx(const std::string &input)
+std::string filter_out_version_headers_ptx(const std::string &input)
 {
 	static const std::string FILTERED_OUT_PREFIXES[] = {
 		".version", ".target", ".address_size", "//"
@@ -245,8 +245,8 @@ std::string FilterOutVersionHeadersPtx(const std::string &input)
 	return oss.str();
 }
 
-std::string CompileEbpfToPtxFromWords(const std::vector<uint64_t> &words,
-				      const std::string &target_sm)
+std::string compile_ebpf_to_ptx_from_words(const std::vector<uint64_t> &words,
+				   const std::string &target_sm)
 {
 	std::vector<ebpf_inst> insts;
 	insts.reserve(words.size());
@@ -263,11 +263,11 @@ std::string CompileEbpfToPtxFromWords(const std::vector<uint64_t> &words,
 	vm.unload_code();
 	vm.load_code(insts.data(), insts.size() * 8);
 	auto ptx = vm.generate_ptx(target_sm.c_str());
-	return FilterOutVersionHeadersPtx(ptx.value_or(""));
+	return filter_out_version_headers_ptx(ptx.value_or(""));
 }
 
-std::pair<size_t, size_t> FindKernelBody(const std::string &ptx,
-					 const std::string &kernel)
+std::pair<size_t, size_t> find_kernel_body(const std::string &ptx,
+				   const std::string &kernel)
 {
 	static std::regex kernel_entry(
 		R"(\.visible\s+\.entry\s+(\w+)\s*\(([^)]*)\))");
@@ -297,8 +297,8 @@ std::pair<size_t, size_t> FindKernelBody(const std::string &ptx,
 	return { std::string::npos, std::string::npos };
 }
 
-void LogTransformStats(const char *pass_name, int matched, size_t bytes_in,
-		       size_t bytes_out)
+void log_transform_stats(const char *pass_name, int matched, size_t bytes_in,
+		 size_t bytes_out)
 {
 	std::cerr << "[ptxpass] " << pass_name << ": matched=" << matched
 		  << ", in=" << bytes_in << ", out=" << bytes_out << "\n";

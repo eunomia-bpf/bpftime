@@ -18,11 +18,11 @@ static ptxpass::PassConfig GetDefaultConfig()
 
 static std::pair<std::string, bool>
 PatchRetprobe(const std::string &ptx, const std::string &kernel,
-           const std::vector<uint64_t> &ebpf_words)
+	       const std::vector<uint64_t> &ebpf_words)
 {
-    auto func_ptx =
-        ptxpass::CompileEbpfToPtxFromWords(ebpf_words, "sm_60");
-    auto body = ptxpass::FindKernelBody(ptx, kernel);
+	auto func_ptx =
+		ptxpass::compile_ebpf_to_ptx_from_words(ebpf_words, "sm_60");
+	auto body = ptxpass::find_kernel_body(ptx, kernel);
 	if (body.first == std::string::npos)
 		return { "", false };
 	std::string out = ptx;
@@ -35,7 +35,7 @@ PatchRetprobe(const std::string &ptx, const std::string &kernel,
 		section, retpat, std::string("$1call ") + fname + ";\n$1$2");
 	out.replace(body.first, body.second - body.first, section);
 	out = def.str() + "\n" + out;
-    ptxpass::LogTransformStats("kretprobe", 1, ptx.size(), out.size());
+	ptxpass::log_transform_stats("kretprobe", 1, ptx.size(), out.size());
 	return { out, true };
 }
 
@@ -94,32 +94,32 @@ int main(int argc, char **argv)
 			return ExitCode::Success;
 		}
 		if (!configPath.empty()) {
-            cfg = JsonConfigLoader::LoadFromFile(configPath);
+			cfg = JsonConfigLoader::load_from_file(configPath);
 		} else {
-            cfg = GetDefaultConfig();
+			cfg = GetDefaultConfig();
 		}
 		auto matcher = AttachPointMatcher(cfg.attachPoints);
-        auto ap = GetEnv("PTX_ATTACH_POINT");
+		auto ap = get_env("PTX_ATTACH_POINT");
 		if (ap.empty()) {
 			std::cerr << "PTX_ATTACH_POINT is not set\n";
 			return ExitCode::ConfigError;
 		}
 
-        std::string stdinData = ReadAllFromStdin();
-        auto [rr, isJson] = ParseRuntimeRequest(stdinData);
+		std::string stdinData = read_all_from_stdin();
+		auto [rr, isJson] = parse_runtime_request(stdinData);
 		if (!isJson)
 			return ExitCode::InputError;
-		if (!matcher.Matches(ap))
+		if (!matcher.matches(ap))
 			return ExitCode::Success;
 		if (dryRun)
 			return ExitCode::Success;
-        if (!ValidateInput(rr.input.full_ptx, cfg.validation))
+		if (!validate_input(rr.input.full_ptx, cfg.validation))
 			return ExitCode::TransformFailed;
-        auto [out, modified] = PatchRetprobe(rr.input.full_ptx,
+		auto [out, modified] = PatchRetprobe(rr.input.full_ptx,
 						      rr.input.to_patch_kernel,
 						      rr.ebpf_instructions);
-        if (modified && !IsWhitespaceOnly(out))
-            EmitRuntimeOutput(out);
+		if (modified && !is_whitespace_only(out))
+			emit_runtime_output(out);
 		return ExitCode::Success;
 	} catch (const std::runtime_error &e) {
 		std::cerr << e.what() << "\n";

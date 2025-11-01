@@ -374,7 +374,7 @@ nv_attach_impl::hack_fatbin(std::vector<uint8_t> &&data_vec)
 		return {};
 	}
 	to_patch_ptx = wrap_ptx_with_trampoline(to_patch_ptx);
-    to_patch_ptx = ptxpass::FilterOutVersionHeadersPtx(to_patch_ptx);
+	to_patch_ptx = ptxpass::filter_out_version_headers_ptx(to_patch_ptx);
 	{
 		// filter out comment lines
 		std::istringstream iss(to_patch_ptx);
@@ -605,7 +605,7 @@ int nv_attach_impl::run_attach_entry_on_gpu(int attach_id, int run_count,
 	}
 	SPDLOG_INFO("Running program on GPU");
 
-    auto ptx = ptxpass::FilterOutVersionHeadersPtx(
+	auto ptx = ptxpass::filter_out_version_headers_ptx(
 		wrap_ptx_with_trampoline(filter_compiled_ptx_for_ebpf_program(
 			generate_ptx_for_ebpf(insts, "bpf_main", false, false),
 			"bpf_main")));

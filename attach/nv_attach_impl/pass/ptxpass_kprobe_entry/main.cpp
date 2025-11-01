@@ -18,14 +18,14 @@ static ptxpass::PassConfig GetDefaultConfig()
 
 static std::pair<std::string, bool>
 PatchEntry(const std::string &ptx, const std::string &kernel,
-            const std::vector<uint64_t> &ebpf_words)
+	   const std::vector<uint64_t> &ebpf_words)
 {
 	if (ebpf_words.empty()) {
 		return { ptx, false };
 	}
-    auto func_ptx =
-        ptxpass::CompileEbpfToPtxFromWords(ebpf_words, "sm_60");
-    auto body = ptxpass::FindKernelBody(ptx, kernel);
+	auto func_ptx =
+		ptxpass::compile_ebpf_to_ptx_from_words(ebpf_words, "sm_60");
+	auto body = ptxpass::find_kernel_body(ptx, kernel);
 	if (body.first == std::string::npos)
 		return { "", false };
 	std::string out = ptx;
@@ -40,7 +40,7 @@ PatchEntry(const std::string &ptx, const std::string &kernel,
 	def << ".func " << fname << "\n" << func_ptx << "\n";
 	out.insert(insertPos, std::string("\n    call ") + fname + ";\n");
 	out = def.str() + "\n" + out;
-    ptxpass::LogTransformStats("kprobe_entry", 1, ptx.size(), out.size());
+	ptxpass::log_transform_stats("kprobe_entry", 1, ptx.size(), out.size());
 	return { out, true };
 }
 
@@ -71,7 +71,7 @@ int main(int argc, char **argv)
 		} else if (a == "--dry-run") {
 			dryRun = true;
 		} else if (a == "--help" || a == "-h") {
-            PrintUsage(argv[0]);
+			PrintUsage(argv[0]);
 			return ExitCode::Success;
 		} else if (a == "--log-level") {
 			// Ignored in minimal skeleton
@@ -85,7 +85,7 @@ int main(int argc, char **argv)
 	try {
 		PassConfig cfg;
 		if (printConfigOnly) {
-            cfg = GetDefaultConfig();
+			cfg = GetDefaultConfig();
 			nlohmann::json j;
 			j["name"] = cfg.name;
 			j["description"] = cfg.description;
@@ -99,36 +99,36 @@ int main(int argc, char **argv)
 			return ExitCode::Success;
 		}
 		if (!configPath.empty()) {
-            cfg = JsonConfigLoader::LoadFromFile(configPath);
+			cfg = JsonConfigLoader::load_from_file(configPath);
 		} else {
-            cfg = GetDefaultConfig();
+			cfg = GetDefaultConfig();
 		}
-        auto matcher = AttachPointMatcher(cfg.attachPoints);
-        auto ap = GetEnv("PTX_ATTACH_POINT");
+		auto matcher = AttachPointMatcher(cfg.attachPoints);
+		auto ap = get_env("PTX_ATTACH_POINT");
 		if (ap.empty()) {
 			std::cerr << "PTX_ATTACH_POINT is not set\n";
 			return ExitCode::ConfigError;
 		}
 
-        std::string stdinData = ReadAllFromStdin();
-        auto [rr, isJson] = ParseRuntimeRequest(stdinData);
+		std::string stdinData = read_all_from_stdin();
+		auto [rr, isJson] = parse_runtime_request(stdinData);
 		if (!isJson)
 			return ExitCode::InputError;
-        if (!matcher.Matches(ap)) {
+		if (!matcher.matches(ap)) {
 			// Not matched: empty output
 			return ExitCode::Success;
 		}
 		if (dryRun) {
 			return ExitCode::Success;
 		}
-        if (!ValidateInput(rr.input.full_ptx, cfg.validation)) {
+		if (!validate_input(rr.input.full_ptx, cfg.validation)) {
 			return ExitCode::TransformFailed;
 		}
 		auto [out, modified] =
-            PatchEntry(rr.input.full_ptx, rr.input.to_patch_kernel,
-				    rr.ebpf_instructions);
-        if (modified && !IsWhitespaceOnly(out))
-            EmitRuntimeOutput(out);
+			PatchEntry(rr.input.full_ptx, rr.input.to_patch_kernel,
+				   rr.ebpf_instructions);
+		if (modified && !is_whitespace_only(out))
+			emit_runtime_output(out);
 		return ExitCode::Success;
 	} catch (const std::runtime_error &e) {
 		std::cerr << e.what() << "\n";
