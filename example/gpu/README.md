@@ -225,9 +225,11 @@ All types support specifying target kernel functions by name (e.g., `_Z9vectorAd
 
 ## GPU-Specific BPF Maps
 
-bpftime includes specialized map types optimized for GPU operations:
+**bpftime supports ALL maps on CPU, however, directly using CPU eBPF maps will significantly downgrade the performance.**
 
-### `BPF_MAP_TYPE_PERGPUTD_ARRAY_MAP` (1502)
+bpftime includes specialized map types optimized for GPU operations, that does not have much performance impact:
+
+### `BPF_MAP_TYPE_PERGPUTD_ARRAY_MAP` and `BPF_MAP_TYPE_GPU_ARRAY_MAP`
 
 GPU-resident array maps with **per-thread storage** for high-performance data collection.
 
