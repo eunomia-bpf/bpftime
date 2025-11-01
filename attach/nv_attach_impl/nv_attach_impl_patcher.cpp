@@ -327,7 +327,14 @@ nv_attach_impl::patch_with_probe_and_retprobe(std::string ptx,
 				std::string sub_str = ptx.substr(
 					kernel_sec.begin,
 					kernel_sec.end - kernel_sec.begin);
-				if (probe_detail.is_retprobe) {
+				bool is_retprobe =
+					(entry.pass_exec.find("retprobe") !=
+					 std::string::npos) ||
+					(entry.attach_point_override &&
+					 entry.attach_point_override->find(
+						 "kretprobe") !=
+						 std::string::npos);
+				if (is_retprobe) {
 					static std::regex ret_pattern(
 						R"((\s+)(ret;))");
 					sub_str = std::regex_replace(

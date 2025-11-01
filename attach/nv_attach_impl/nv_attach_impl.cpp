@@ -7,10 +7,12 @@
 #include "nvPTXCompiler.h"
 #include "nv_attach_private_data.hpp"
 #include "nv_attach_utils.hpp"
+#include "ptxpass_pipeline.hpp"
 #include "spdlog/spdlog.h"
 #include <asm/unistd.h> // For architecture-specific syscall numbers
 #include <boost/process.hpp>
 #include <cstdlib>
+#include <cstring>
 #include <fstream>
 #include <cassert>
 #include <cstdint>
@@ -37,7 +39,22 @@
 #include "ptxpass/core.hpp"
 using namespace bpftime;
 using namespace attach;
+static std::vector<std::filesystem::path> split_by_colon(const std::string &str)
+{
+	std::vector<std::filesystem::path> result;
 
+	char *buffer = new char[str.length() + 1];
+	strcpy(buffer, str.c_str());
+
+	char *token = strtok(buffer, ":");
+	while (token != nullptr) {
+		result.push_back(token);
+		token = strtok(nullptr, ":");
+	}
+
+	delete[] buffer;
+	return result;
+}
 extern GType cuda_runtime_function_hooker_get_type();
 
 namespace
@@ -113,20 +130,22 @@ int nv_attach_impl::create_attach_with_ebpf_callback(
 	}
 	const auto &func_name =
 		std::get<std::string>(data.code_addr_or_func_name);
+	std::string attach_point_name;
+	if (attach_type == ATTACH_CUDA_PROBE) {
+		attach_point_name = "kprobe/" + func_name;
+	} else if (attach_type == ATTACH_CUDA_RETPROBE) {
+		attach_point_name = "kretprobe/" + func_name;
+	} else {
+		attach_point_name = func_name;
+	}
+	const pass_configuration_with_executable_path *matched = nullptr;
+	for (const auto &pd : this->pass_configurations) {
+		if (pd.pass_config.attach_type != attach_type)
+			continue;
+		ptxpass::AttachPointMatcher matcher(
+			pd.pass_config.attach_points);
 
-	// New: select pass by scanning configurations (type + regex)
-	const PassDefinition *matched = nullptr;
-	std::regex func_re;
-	for (const auto &pd : this->pass_definitions) {
-		if (pd.attach_point.type != attach_type)
-			continue;
-		try {
-			func_re = std::regex(
-				pd.attach_point.expected_func_name_regex);
-		} catch (...) {
-			continue;
-		}
-		if (std::regex_match(func_name, func_re)) {
+		if (matcher.matches(attach_point_name)) {
 			matched = &pd;
 			break; // pass_definitions is sorted deterministically
 			       // by executable
@@ -138,33 +157,22 @@ int nv_attach_impl::create_attach_with_ebpf_callback(
 		entry.instuctions = data.instructions;
 		entry.kernels = data.func_names;
 		entry.program_name = data.program_name;
-		entry.pass_exec = matched->executable;
+		entry.pass_exec = matched->executable_path;
 		entry.parameters["func_name"] = func_name;
 		entry.parameters["attach_type"] = std::to_string(attach_type);
-		// derive attach point override for fallback pipeline
-		if (attach_type == ATTACH_CUDA_PROBE) {
-			if (func_name == "__memcapture")
-				entry.attach_point_override =
-					std::string("kprobe/__memcapture");
-			else
-				entry.attach_point_override =
-					std::string("kprobe/") + func_name;
-		} else if (attach_type == ATTACH_CUDA_RETPROBE) {
-			entry.attach_point_override =
-				std::string("kretprobe/") + func_name;
-		}
+
 		hook_entries[id] = std::move(entry);
 		this->map_basic_info = data.map_basic_info;
 		this->shared_mem_ptr = data.comm_shared_mem;
-		SPDLOG_INFO("Recorded pass {} for func {}", matched->executable,
-			    func_name);
+		SPDLOG_INFO("Recorded pass {} for func {}",
+			    matched->executable_path.c_str(), func_name);
 		return id;
 	}
 	// No matched definition: do not create generic entry; require explicit
 	// pass definition to avoid ambiguous instrumentation.
 	SPDLOG_WARN(
 		"No pass definition matched for function {}, attach_type {}. Skipping.",
-		func_name, attach_type);
+		attach_point_name, attach_type);
 	return -1;
 }
 nv_attach_impl::nv_attach_impl()
@@ -233,18 +241,29 @@ nv_attach_impl::nv_attach_impl()
 
 	gum_interceptor_end_transaction(interceptor);
 
-	// Discover pass definitions from directory
-	try {
-		const char *env_dir = std::getenv("BPFTIME_PTXPASS_DIR");
-		std::string scan_dir = env_dir && std::strlen(env_dir) > 0 ?
-					       std::string(env_dir) :
-					       std::string(DEFAULT_PASSES_DIR);
-		this->pass_definitions =
-			load_pass_definitions_from_dir(scan_dir);
-		SPDLOG_INFO("Discovered {} pass definitions from {}",
-			    this->pass_definitions.size(), scan_dir.c_str());
-	} catch (const std::exception &e) {
-		SPDLOG_ERROR("Failed to load pass definitions: {}", e.what());
+	static const char *ptx_pass_executables = DEFAULT_PTX_PASS_EXECUTABLE;
+	std::vector<std::filesystem::path> pass_executables;
+	{
+		const char *provided_executables =
+			getenv("BPFTIME_PTXPASS_EXECUTABLES");
+		if (provided_executables && strlen(provided_executables) > 0) {
+			ptx_pass_executables = provided_executables;
+			SPDLOG_INFO(
+				"Parsing user provided (by BPFTIME_PTXPASS_EXECUTABLES) executables: {}",
+				provided_executables);
+		} else {
+			SPDLOG_INFO("Parsing bundled executables: {}",
+				    ptx_pass_executables);
+		}
+	}
+	auto paths = split_by_colon(ptx_pass_executables);
+	for (const auto &path : paths) {
+		SPDLOG_INFO("Found path: {}, executing..", path.c_str());
+		auto config = *get_pass_config_from_executable(path);
+		this->pass_configurations.emplace_back(
+			pass_configuration_with_executable_path{
+				.executable_path = path,
+				.pass_config = config });
 	}
 }
 

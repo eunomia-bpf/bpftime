@@ -1,4 +1,4 @@
-name: build-gcc13
+name: Build GCC 13
 
 on:
   push:
