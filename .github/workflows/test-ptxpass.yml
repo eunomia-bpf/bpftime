@@ -13,49 +13,86 @@ concurrency:
 
 jobs:
   test-ptxpass:
-    runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        include:
-          - container: ubuntu-2204
-            image: manjusakalza/bpftime-base-image:ubuntu-2204
-    container:
-      image: ${{ matrix.image }}
-      options: --privileged
+    runs-on: [self-hosted, Linux, X64, gpu]
     steps:
-      - name: Install git (openEuler)
-        if: matrix.container == 'openeuler-2403sp2'
+      - name: Configure proxy for China
         run: |
-          set -e
-          if command -v dnf >/dev/null 2>&1; then PM=dnf; else PM=yum; fi
-          $PM -y update
-          $PM -y install git ca-certificates
+          echo "Setting up proxy for China network..."
+          export http_proxy=http://192.168.15.1:2345
+          export https_proxy=http://192.168.15.1:2345
+          export HTTP_PROXY=http://192.168.15.1:2345
+          export HTTPS_PROXY=http://192.168.15.1:2345
+          export no_proxy=localhost,127.0.0.1,192.168.0.0/16
+          echo "http_proxy=http://192.168.15.1:2345" >> $GITHUB_ENV
+          echo "https_proxy=http://192.168.15.1:2345" >> $GITHUB_ENV
+          echo "HTTP_PROXY=http://192.168.15.1:2345" >> $GITHUB_ENV
+          echo "HTTPS_PROXY=http://192.168.15.1:2345" >> $GITHUB_ENV
+          echo "no_proxy=localhost,127.0.0.1,192.168.0.0/16" >> $GITHUB_ENV
+      
       - uses: actions/checkout@v2
         with:
           submodules: recursive
 
-      - name: Remount shm dev (boost shared memory needs enough space)
+      - name: Check installed tools
         run: |
-          mount -o remount,size=1G /dev/shm
+          echo "Checking installed tools..."
+          which cmake || echo "cmake not found"
+          which g++ || echo "g++ not found"
+          which make || echo "make not found"
+          which llvm-config || echo "llvm-config not found"
+          nvcc --version || echo "nvcc not found"
 
-      - name: Setup conda (for LLVM libraries if needed)
-        if: matrix.container != 'openeuler-2403sp2'
-        uses: conda-incubator/setup-miniconda@v3
-        with:
-          channels: conda-forge,bioconda
-          channel-priority: strict
-          miniforge-version: latest
-
-      - name: Install tools (Ubuntu)
-        if: matrix.container == 'ubuntu-2204'
+      - name: Check CUDA installation
+        shell: bash
         run: |
-          apt-get update -y && apt-get install -y lcov libzstd-dev libboost-all-dev gpg
+          echo "Checking for CUDA installation..."
+          if [ -d "/usr/local/cuda" ]; then
+            echo "Found CUDA at /usr/local/cuda"
+            ls -la /usr/local/cuda/ || true
+            if [ -f "/usr/local/cuda/version.json" ] || [ -f "/usr/local/cuda/version.txt" ]; then
+              echo "CUDA version info:"
+              cat /usr/local/cuda/version.json 2>/dev/null || cat /usr/local/cuda/version.txt 2>/dev/null || true
+            fi
+          fi
+          for cuda_dir in /usr/local/cuda-* ; do
+            if [ -d "$cuda_dir" ]; then
+              echo "Found CUDA at $cuda_dir"
+              ls -la "$cuda_dir/targets/x86_64-linux/include/" 2>/dev/null | head -20 || true
+            fi
+          done
 
-      - name: Detect LLVM and configure CMake (Ubuntu)
-        if: matrix.container == 'ubuntu-2204'
+      - name: Detect LLVM and configure CMake
         shell: bash
         run: |
           set -e
+          
+          # Find CUDA
+          CUDA_ROOT=""
+          if [ -d "/usr/local/cuda" ]; then
+            CUDA_ROOT="/usr/local/cuda"
+          else
+            for cuda_dir in /usr/local/cuda-* ; do
+              if [ -d "$cuda_dir" ]; then
+                CUDA_ROOT="$cuda_dir"
+                break
+              fi
+            done
+          fi
+          
+          if [ -z "$CUDA_ROOT" ]; then
+            echo "ERROR: CUDA not found in /usr/local/"
+            exit 1
+          fi
+          
+          echo "Using CUDA_ROOT=${CUDA_ROOT}"
+          
+          # Verify CUDA headers exist
+          if [ ! -f "${CUDA_ROOT}/targets/x86_64-linux/include/cuda_runtime.h" ] && \
+             [ ! -f "${CUDA_ROOT}/include/cuda_runtime.h" ]; then
+            echo "ERROR: cuda_runtime.h not found in ${CUDA_ROOT}"
+            exit 1
+          fi
+          
           LLVM_CONFIG=""
           for c in llvm-config-18 llvm-config-17 llvm-config-16 llvm-config-15 llvm-config; do
             if command -v "$c" >/dev/null 2>&1; then LLVM_CONFIG="$c"; break; fi
@@ -69,7 +106,7 @@ jobs:
                 -DBPFTIME_LLVM_JIT=YES \
                 -DBPFTIME_ENABLE_UNIT_TESTING=YES \
                 -DBPFTIME_ENABLE_CUDA_ATTACH=ON \
-                -DBPFTIME_CUDA_ROOT=/usr/local/cuda-12.6 \
+                -DBPFTIME_CUDA_ROOT="${CUDA_ROOT}" \
                 -DLLVM_DIR="$LLVM_CMAKE_DIR"
             else
               cmake -B build -S . \
@@ -77,7 +114,7 @@ jobs:
                 -DBPFTIME_LLVM_JIT=YES \
                 -DBPFTIME_ENABLE_UNIT_TESTING=YES \
                 -DBPFTIME_ENABLE_CUDA_ATTACH=ON \
-                -DBPFTIME_CUDA_ROOT=/usr/local/cuda-12.6
+                -DBPFTIME_CUDA_ROOT="${CUDA_ROOT}"
             fi
           else
             cmake -B build -S . \
@@ -85,17 +122,15 @@ jobs:
               -DBPFTIME_LLVM_JIT=YES \
               -DBPFTIME_ENABLE_UNIT_TESTING=YES \
               -DBPFTIME_ENABLE_CUDA_ATTACH=ON \
-              -DBPFTIME_CUDA_ROOT=/usr/local/cuda-12.6
+              -DBPFTIME_CUDA_ROOT="${CUDA_ROOT}"
           fi
 
-      - name: Build PTX pass targets (Ubuntu)
-        if: matrix.container == 'ubuntu-2204'
+      - name: Build PTX pass targets
         run: |
           cmake --build build --config Debug --target \
             ptxpass_kprobe_entry ptxpass_kretprobe ptxpass_kprobe_memcapture bpftime_nv_attach_tests -j$(nproc)
 
-      - name: Run PTX pass unit tests with Catch2 (Ubuntu)
-        if: matrix.container == 'ubuntu-2204'
+      - name: Run PTX pass unit tests with Catch2
         shell: bash
         run: |
           cd build
