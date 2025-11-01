@@ -39,94 +39,23 @@ jobs:
         run: |
           echo "Checking installed tools..."
           
-          sudo apt-get install -y build-essential llvm-20-dev cmake libboost-all-dev libzstd-dev pkg-config
+          sudo apt-get install -y build-essential llvm-20-dev cmake libboost-all-dev libzstd-dev pkg-config ninja-build
 
           # Check CUDA
           nvcc --version || echo "nvcc not found (CUDA compiler)"
-
-      - name: Check CUDA installation
-        shell: bash
-        run: |
-          echo "Checking for CUDA installation..."
-          if [ -d "/usr/local/cuda" ]; then
-            echo "Found CUDA at /usr/local/cuda"
-            ls -la /usr/local/cuda/ || true
-            if [ -f "/usr/local/cuda/version.json" ] || [ -f "/usr/local/cuda/version.txt" ]; then
-              echo "CUDA version info:"
-              cat /usr/local/cuda/version.json 2>/dev/null || cat /usr/local/cuda/version.txt 2>/dev/null || true
-            fi
-          fi
-          for cuda_dir in /usr/local/cuda-* ; do
-            if [ -d "$cuda_dir" ]; then
-              echo "Found CUDA at $cuda_dir"
-              ls -la "$cuda_dir/targets/x86_64-linux/include/" 2>/dev/null | head -20 || true
-            fi
-          done
-
+          echo $(which nvcc)
       - name: Detect LLVM and configure CMake
         shell: bash
         run: |
-          set -e
-          
-          # Find CUDA
-          CUDA_ROOT=""
-          if [ -d "/usr/local/cuda" ]; then
-            CUDA_ROOT="/usr/local/cuda"
-          else
-            for cuda_dir in /usr/local/cuda-* ; do
-              if [ -d "$cuda_dir" ]; then
-                CUDA_ROOT="$cuda_dir"
-                break
-              fi
-            done
-          fi
-          
-          if [ -z "$CUDA_ROOT" ]; then
-            echo "ERROR: CUDA not found in /usr/local/"
-            exit 1
-          fi
-          
-          echo "Using CUDA_ROOT=${CUDA_ROOT}"
-          
-          # Verify CUDA headers exist
-          if [ ! -f "${CUDA_ROOT}/targets/x86_64-linux/include/cuda_runtime.h" ] && \
-             [ ! -f "${CUDA_ROOT}/include/cuda_runtime.h" ]; then
-            echo "ERROR: cuda_runtime.h not found in ${CUDA_ROOT}"
-            exit 1
-          fi
-          
-          LLVM_CONFIG=""
-          for c in llvm-config-18 llvm-config-17 llvm-config-16 llvm-config-15 llvm-config; do
-            if command -v "$c" >/dev/null 2>&1; then LLVM_CONFIG="$c"; break; fi
-          done
-          echo "Using LLVM_CONFIG=${LLVM_CONFIG:-not found}"
-          if [ -n "$LLVM_CONFIG" ]; then
-            LLVM_CMAKE_DIR=$($LLVM_CONFIG --cmakedir 2>/dev/null || true)
-            if [ -n "$LLVM_CMAKE_DIR" ]; then
-              cmake -B build -S . \
-                -DCMAKE_BUILD_TYPE=Debug \
-                -DBPFTIME_LLVM_JIT=YES \
-                -DBPFTIME_ENABLE_UNIT_TESTING=YES \
-                -DBPFTIME_ENABLE_CUDA_ATTACH=ON \
-                -DBPFTIME_CUDA_ROOT="${CUDA_ROOT}" \
-                -DLLVM_DIR="$LLVM_CMAKE_DIR" -G Ninja
-            else
-              cmake -B build -S . \
-                -DCMAKE_BUILD_TYPE=Debug \
-                -DBPFTIME_LLVM_JIT=YES \
-                -DBPFTIME_ENABLE_UNIT_TESTING=YES \
-                -DBPFTIME_ENABLE_CUDA_ATTACH=ON \
-                -DBPFTIME_CUDA_ROOT="${CUDA_ROOT}" -G Ninja
-            fi
-          else
             cmake -B build -S . \
               -DCMAKE_BUILD_TYPE=Debug \
               -DBPFTIME_LLVM_JIT=YES \
               -DBPFTIME_ENABLE_UNIT_TESTING=YES \
               -DBPFTIME_ENABLE_CUDA_ATTACH=ON \
-              -DBPFTIME_CUDA_ROOT="${CUDA_ROOT}" -G Ninja
-          fi
-
+              -DBPFTIME_CUDA_ROOT="/usr/local/cuda" \
+              -DLLVM_DIR="/usr/lib/llvm-20/lib/cmake/llvm/" \ 
+              -G Ninja
+          
       - name: Build PTX pass targets
         run: |
           cmake --build build --config Debug --target \
