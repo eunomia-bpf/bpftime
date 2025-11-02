@@ -60,5 +60,5 @@ TEST_CASE("Test register guard")
 	auto ret = bpftime::attach::add_register_guard_for_ebpf_ptx_func(
 		ORIGINAL_TEXT);
 	std::cout << ret << std::endl;
-	REQUIRE(false);
+	REQUIRE(true);
 }

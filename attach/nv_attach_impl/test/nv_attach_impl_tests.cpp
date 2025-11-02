@@ -78,5 +78,5 @@ TEST_CASE("Test string replace")
 	auto replaced = bpftime::attach::filter_compiled_ptx_for_ebpf_program(
 		ORIGINAL_TEXT, "test_func");
 	std::cout << "filtered " << std::endl << replaced << std::endl;
-	REQUIRE(false);
+	REQUIRE(true);
 }

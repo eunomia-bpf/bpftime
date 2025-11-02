@@ -1,7 +1,8 @@
 #include "ptxpass/core.hpp"
+#include "spdlog/spdlog.h"
+#include <cstdint>
 #include <cstdio>
 #include <cstdlib>
-#include <fstream>
 #include <iostream>
 #include <sstream>
 #include <stdexcept>
@@ -18,7 +19,7 @@ namespace ptxpass
 {
 
 static std::vector<std::regex>
-compileRegexList(const std::vector<std::string> &patterns)
+compile_regex_list(const std::vector<std::string> &patterns)
 {
 	std::vector<std::regex> out;
 	out.reserve(patterns.size());
@@ -28,41 +29,9 @@ compileRegexList(const std::vector<std::string> &patterns)
 	return out;
 }
 
-// typed conversions are defined inline in header; avoid duplicate definitions
-// here
-
-PassConfig JsonConfigLoader::loadFromFile(const std::string &path)
-{
-	std::ifstream ifs(path);
-	if (!ifs.is_open()) {
-		throw std::runtime_error("Failed to open config file: " + path);
-	}
-	json j;
-	try {
-		ifs >> j;
-	} catch (const std::exception &e) {
-		throw std::runtime_error(std::string("Failed to parse JSON: ") +
-					 e.what());
-	}
-
-	PassConfig cfg;
-	try {
-		cfg = j.get<PassConfig>();
-	} catch (const std::exception &e) {
-		throw std::runtime_error(
-			std::string("Invalid pass config schema: ") + e.what());
-	}
-	// minimal validation
-	if (cfg.attachPoints.includes.empty()) {
-		throw std::runtime_error(
-			"Invalid config: attach_points.includes must have at least one regex");
-	}
-	return cfg;
-}
-
-AttachPointMatcher::AttachPointMatcher(const AttachPoints &points)
-	: includeRegexes(compileRegexList(points.includes)),
-	  excludeRegexes(compileRegexList(points.excludes))
+AttachPointMatcher::AttachPointMatcher(const attach_points::AttachPoints &points)
+	: includeRegexes(compile_regex_list(points.includes)),
+	  excludeRegexes(compile_regex_list(points.excludes))
 {
 }
 
@@ -85,7 +54,7 @@ bool AttachPointMatcher::matches(const std::string &attachPoint) const
 	return true;
 }
 
-std::string readAllFromStdin()
+std::string read_all_from_stdin()
 {
 	std::ostringstream oss;
 	oss << std::cin.rdbuf();
@@ -95,7 +64,7 @@ std::string readAllFromStdin()
 	return oss.str();
 }
 
-bool isWhitespaceOnly(const std::string &s)
+bool is_whitespace_only(const std::string &s)
 {
 	for (char c : s) {
 		if (!(c == ' ' || c == '\n' || c == '\r' || c == '\t' ||
@@ -106,71 +75,29 @@ bool isWhitespaceOnly(const std::string &s)
 	return true;
 }
 
-std::string getEnv(const char *key)
+std::string get_env(const char *key)
 {
 	const char *v = std::getenv(key);
 	return v ? std::string(v) : std::string();
 }
 
-std::pair<RuntimeInput, bool> parseRuntimeInput(const std::string &stdinData)
-{
-	RuntimeInput ri;
-	try {
-		auto j = json::parse(stdinData);
-		ri = j.get<RuntimeInput>();
-		return { ri, true };
-	} catch (const std::exception &e) {
-		std::cerr << "[ptxpass] Error: stdin must be JSON. "
-			  << "Parse failed: " << e.what() << "\n";
-		return { ri, false };
-	} catch (...) {
-		std::cerr << "[ptxpass] Error: stdin must be JSON.\n";
-		return { ri, false };
-	}
-}
-
-std::pair<RuntimeRequest, bool>
-parseRuntimeRequest(const std::string &stdinData)
-{
-	RuntimeRequest rr;
-	try {
-		auto j = json::parse(stdinData);
-		rr = j.get<RuntimeRequest>();
-		return { rr, true };
-	} catch (const std::exception &e) {
-		std::cerr << "[ptxpass] Error: stdin must be JSON. "
-			  << "Parse failed: " << e.what() << "\n";
-		return { rr, false };
-	} catch (...) {
-		std::cerr << "[ptxpass] Error: stdin must be JSON.\n";
-		return { rr, false };
-	}
-}
-
-void emitRuntimeOutput(const std::string &outputPtx)
-{
-	RuntimeOutput ro{ outputPtx };
-	json j = ro;
-	std::cout << j.dump();
-}
-
 // Validation: basic checks as placeholders
-bool validateInput(const std::string &input, const json &validation)
+bool validate_input(const std::string &input, const json &validation)
 {
 	if (validation.is_null())
 		return true;
 	if (validation.contains("require_entry") &&
 	    validation["require_entry"].get<bool>()) {
-		if (!containsEntryFunction(input))
+		if (!contains_entry_function(input))
 			return false;
 	}
 	if (validation.contains("require_ret") &&
 	    validation["require_ret"].get<bool>()) {
-		if (!containsRetInstruction(input))
+		if (!contains_ret_instruction(input))
 			return false;
 	}
 	if (validation.contains("ptx_version_min")) {
-		if (!validatePtxVersion(
+		if (!validate_ptx_version(
 			    input,
 			    validation["ptx_version_min"].get<std::string>()))
 			return false;
@@ -178,18 +105,19 @@ bool validateInput(const std::string &input, const json &validation)
 	return true;
 }
 
-bool containsEntryFunction(const std::string &input)
+bool contains_entry_function(const std::string &input)
 {
 	return input.find(".visible .entry") != std::string::npos;
 }
 
-bool containsRetInstruction(const std::string &input)
+bool contains_ret_instruction(const std::string &input)
 {
 	return input.find("\n    ret;") != std::string::npos ||
 	       input.find("\n\tret;") != std::string::npos;
 }
 
-bool validatePtxVersion(const std::string &input, const std::string &minVersion)
+bool validate_ptx_version(const std::string &input,
+			  const std::string &minVersion)
 {
 	// Expect line like: .version 7.0
 	std::istringstream iss(input);
@@ -244,28 +172,100 @@ std::string filter_out_version_headers_ptx(const std::string &input)
 	}
 	return oss.str();
 }
-
-std::string compile_ebpf_to_ptx_from_words(const std::vector<uint64_t> &words,
-					   const std::string &target_sm)
+static uint64_t test_func(uint64_t, uint64_t, uint64_t, uint64_t, uint64_t)
 {
-	std::vector<ebpf_inst> insts;
-	insts.reserve(words.size());
-	for (auto w : words) {
-		ebpf_inst ins{};
-		ins.opcode = (uint8_t)(w & 0xFF);
-		ins.dst = (uint8_t)((w >> 8) & 0xF);
-		ins.src = (uint8_t)((w >> 12) & 0xF);
-		ins.offset = (int16_t)((w >> 16) & 0xFFFF);
-		ins.imm = (int32_t)(w >> 32);
-		insts.push_back(ins);
-	}
-	bpftime::llvmbpf_vm vm;
-	vm.unload_code();
-	vm.load_code(insts.data(), insts.size() * 8);
-	auto ptx = vm.generate_ptx(target_sm.c_str());
-	return filter_out_version_headers_ptx(ptx.value_or(""));
+	return 0;
 }
+std::string compile_ebpf_to_ptx_from_words(
+	const std::vector<uint64_t> &words, const std::string &target_sm,
+	const std::string &func_name,
+	bool add_register_guard_and_filter_version_headers, bool with_arguments)
+{
+	const ebpf_inst *insts =
+		reinterpret_cast<const ebpf_inst *>(words.data());
+	size_t insts_count = words.size();
+	bpftime::llvmbpf_vm vm;
+	vm.register_external_function(1, "map_lookup", (void *)test_func);
+	vm.register_external_function(2, "map_update", (void *)test_func);
+	vm.register_external_function(3, "map_delete", (void *)test_func);
+	vm.register_external_function(6, "print", (void *)test_func);
+	vm.register_external_function(14, "get_pid_tgid", (void *)test_func);
+	vm.register_external_function(25, "perf_event_output",
+				      (void *)test_func);
 
+	vm.register_external_function(501, "puts", (void *)test_func);
+	vm.register_external_function(502, "get_global_timer",
+				      (void *)test_func);
+	vm.register_external_function(503, "get_block_idx", (void *)test_func);
+	vm.register_external_function(504, "get_block_dim", (void *)test_func);
+	vm.register_external_function(505, "get_thread_idx", (void *)test_func);
+
+	vm.load_code(insts, insts_count * sizeof(ebpf_inst));
+	bpftime::llvm_bpf_jit_context ctx(vm);
+	std::string original_ptx;
+	if (auto optional_ptx = ctx.generate_ptx(with_arguments, func_name,
+						 target_sm.c_str());
+	    optional_ptx) {
+		original_ptx = *optional_ptx;
+	} else {
+		SPDLOG_ERROR("Unable to produce PTX from eBPF");
+		throw std::runtime_error("Unable to produce PTX from eBPF");
+	}
+	std::string filtered_ptx;
+	if (add_register_guard_and_filter_version_headers) {
+		filtered_ptx =
+			bpftime::attach::add_register_guard_for_ebpf_ptx_func(
+				filter_compiled_ptx_for_ebpf_program(
+					original_ptx));
+	} else {
+		filtered_ptx = original_ptx;
+	}
+	return filtered_ptx;
+}
+std::string filter_compiled_ptx_for_ebpf_program(std::string input)
+{
+	std::istringstream iss(input);
+	std::ostringstream oss;
+	std::string line;
+	static const std::string FILTERED_OUT_PREFIXES[] = {
+		".version", ".target", ".address_size", "//"
+	};
+	static const std::regex FILTERED_OUT_REGEXS[] = {
+		std::regex(
+			R"(\.extern\s+\.func\s+\(\s*\.param\s+\.b64\s+func_retval0\s*\)\s+_bpf_helper_ext_\d{4}\s*\(\s*(?:\.param\s+\.b64\s+_bpf_helper_ext_\d{4}_param_\d+\s*,\s*)*\.param\s+\.b64\s+_bpf_helper_ext_\d{4}_param_\d+\s*\)\s*;)"),
+
+	};
+	static const std::string FILTERED_OUT_SECTION[] = {
+		R"(.visible .func bpf_main(
+	.param .b64 bpf_main_param_0,
+	.param .b64 bpf_main_param_1
+))",
+		R"(.visible .func bpf_main())"
+	};
+	while (std::getline(iss, line)) {
+		// if(line.starts_with)
+		bool skip = false;
+		for (const auto &prefix : FILTERED_OUT_PREFIXES) {
+			if (line.starts_with(prefix)) {
+				skip = true;
+				break;
+			}
+		}
+		if (!skip)
+			oss << line << std::endl;
+	}
+	auto result = oss.str();
+	for (const auto &sec : FILTERED_OUT_SECTION) {
+		if (auto pos = result.find(sec); pos != result.npos) {
+			result = result.replace(pos, sec.size(), "");
+		}
+	}
+	for (const auto &regex : FILTERED_OUT_REGEXS) {
+		result = std::regex_replace(result, regex, "");
+	}
+
+	return result;
+}
 std::pair<size_t, size_t> find_kernel_body(const std::string &ptx,
 					   const std::string &kernel)
 {
