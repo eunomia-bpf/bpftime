@@ -202,8 +202,15 @@ std::string compile_ebpf_to_ptx_from_words(
 
 	vm.load_code(insts, insts_count * sizeof(ebpf_inst));
 	bpftime::llvm_bpf_jit_context ctx(vm);
-	auto original_ptx =
-		*ctx.generate_ptx(with_arguments, func_name, target_sm.c_str());
+	std::string original_ptx;
+	if (auto optional_ptx = ctx.generate_ptx(with_arguments, func_name,
+						 target_sm.c_str());
+	    optional_ptx) {
+		original_ptx = *optional_ptx;
+	} else {
+		SPDLOG_ERROR("Unable to produce PTX from eBPF");
+		throw std::runtime_error("Unable to produce PTX from eBPF");
+	}
 	std::string filtered_ptx;
 	if (add_register_guard_and_filter_version_headers) {
 		filtered_ptx =
