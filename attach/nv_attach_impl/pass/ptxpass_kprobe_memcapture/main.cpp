@@ -225,7 +225,7 @@ int main(int argc, char **argv)
 		}
 		auto [out, modified] =
 			patch_memcapture(runtime_request.input.full_ptx,
-					 runtime_request.ebpf_instructions);
+					 runtime_request.get_uint64_ebpf_instructions());
 		emit_runtime_response_and_print(modified ? out : "");
 		return ExitCode::Success;
 	} catch (const std::runtime_error &e) {

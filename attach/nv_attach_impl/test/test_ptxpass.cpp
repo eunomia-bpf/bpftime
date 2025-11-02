@@ -101,15 +101,15 @@ TEST_CASE("parse_runtime_request parses full request with ebpf_instructions",
   "full_ptx": ".version 7.0\n",
   "to_patch_kernel": "foo"
 },
-  "ebpf_instructions": [100, 200, 300]
+  "ebpf_instructions": [{"upper_32bit":0,"lower_32bit":100}, {"upper_32bit":0,"lower_32bit":200}, {"upper_32bit":0,"lower_32bit":300}]
 		})";
 		auto request = pass_runtime_request_from_string(json_request);
 		REQUIRE(request.input.full_ptx == ".version 7.0\n");
 		REQUIRE(request.input.to_patch_kernel == "foo");
 		REQUIRE(request.ebpf_instructions.size() == 3);
-		REQUIRE(request.ebpf_instructions[0] == 100);
-		REQUIRE(request.ebpf_instructions[1] == 200);
-		REQUIRE(request.ebpf_instructions[2] == 300);
+		REQUIRE(request.ebpf_instructions[0].to_uint64() == 100);
+		REQUIRE(request.ebpf_instructions[1].to_uint64() == 200);
+		REQUIRE(request.ebpf_instructions[2].to_uint64() == 300);
 	}
 }
 

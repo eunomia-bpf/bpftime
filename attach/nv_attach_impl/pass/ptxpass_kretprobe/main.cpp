@@ -114,10 +114,10 @@ int main(int argc, char **argv)
 		if (!validate_input(runtime_request.input.full_ptx,
 				    cfg.validation))
 			return ExitCode::TransformFailed;
-		auto [out, modified] =
-			patch_retprobe(runtime_request.input.full_ptx,
-				       runtime_request.input.to_patch_kernel,
-				       runtime_request.ebpf_instructions);
+		auto [out, modified] = patch_retprobe(
+			runtime_request.input.full_ptx,
+			runtime_request.input.to_patch_kernel,
+			runtime_request.get_uint64_ebpf_instructions());
 		if (modified && !is_whitespace_only(out))
 			emit_runtime_response_and_print(out);
 		return ExitCode::Success;

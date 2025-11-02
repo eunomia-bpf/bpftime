@@ -124,7 +124,7 @@ int main(int argc, char **argv)
 		auto [out, modified] =
 			patch_entry(runtime_request.input.full_ptx,
 				    runtime_request.input.to_patch_kernel,
-				    runtime_request.ebpf_instructions);
+				    runtime_request.get_uint64_ebpf_instructions());
 		if (modified && !is_whitespace_only(out)) {
 			emit_runtime_response_and_print(out);
 		}

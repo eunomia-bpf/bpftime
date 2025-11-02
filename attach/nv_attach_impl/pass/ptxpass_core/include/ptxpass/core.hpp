@@ -1,6 +1,7 @@
 // Minimal core utilities for PTX pass executables
 #pragma once
 
+#include <cstdint>
 #include <filesystem>
 #include <iostream>
 #include <regex>
@@ -88,11 +89,41 @@ struct RuntimeResponse {
 NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE(RuntimeResponse, output_ptx);
 } // namespace runtime_response
 
+struct EbpfInstructionPair {
+	uint32_t upper_32bit;
+	uint32_t lower_32bit;
+	NLOHMANN_DEFINE_TYPE_INTRUSIVE(EbpfInstructionPair, upper_32bit,
+				       lower_32bit);
+	uint64_t to_uint64() const
+	{
+		return ((uint64_t)upper_32bit << 32) | lower_32bit;
+	}
+	EbpfInstructionPair(uint64_t inst = 0)
+	{
+		upper_32bit = inst >> 32;
+		lower_32bit = inst & 0xffffffff;
+	}
+};
+
 namespace runtime_request
 {
 struct RuntimeRequest {
 	runtime_input::RuntimeInput input;
-	std::vector<uint64_t> ebpf_instructions;
+	std::vector<EbpfInstructionPair> ebpf_instructions;
+	std::vector<uint64_t> get_uint64_ebpf_instructions() const
+	{
+		std::vector<uint64_t> result;
+		for (const auto &inst : ebpf_instructions)
+			result.push_back(inst.to_uint64());
+		return result;
+	}
+	void set_ebpf_instructions(const std::vector<uint64_t> &words)
+	{
+		ebpf_instructions.clear();
+		for (auto item : words) {
+			ebpf_instructions.emplace_back(item);
+		}
+	}
 };
 NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE(RuntimeRequest, input, ebpf_instructions);
 } // namespace runtime_request

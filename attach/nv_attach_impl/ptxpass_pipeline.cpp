@@ -54,7 +54,7 @@ std::optional<std::string> run_pass_executable_json(
 	ri.global_ebpf_map_info_symbol = map_sym;
 	ri.ebpf_communication_data_symbol = const_sym;
 
-	req.ebpf_instructions = words;
+	req.set_ebpf_instructions(words);
 	nlohmann::json in;
 	ptxpass::runtime_request::to_json(in, req);
 	child_stdin << in.dump();
