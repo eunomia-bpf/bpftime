@@ -179,8 +179,8 @@ extern "C" int process_input(const char *input, int length, char *output)
 		auto [out, modified] = patch_memcapture(
 			runtime_request.input.full_ptx,
 			runtime_request.get_uint64_ebpf_instructions());
-		strncpy(output, emit_runtime_response_and_return(out).c_str(),
-			length);
+		snprintf(output, length, "%s",
+			 emit_runtime_response_and_return(out).c_str());
 		return ExitCode::Success;
 	} catch (const std::runtime_error &e) {
 		std::cerr << e.what() << "\n";

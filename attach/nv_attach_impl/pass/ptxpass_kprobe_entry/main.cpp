@@ -1,5 +1,6 @@
 #include "json.hpp"
 #include "ptxpass/core.hpp"
+#include <cstdio>
 #include <cstring>
 #include <vector>
 #include <exception>
@@ -58,7 +59,6 @@ patch_entry(const std::string &ptx, const std::string &kernel,
 	return { out, true };
 }
 
-
 extern "C" void print_config(int length, char *out)
 {
 	auto cfg = get_default_config();
@@ -81,8 +81,8 @@ extern "C" int process_input(const char *input, int length, char *output)
 			runtime_request.input.full_ptx,
 			runtime_request.input.to_patch_kernel,
 			runtime_request.get_uint64_ebpf_instructions());
-		strncpy(output, emit_runtime_response_and_return(out).c_str(),
-			length);
+		snprintf(output, length, "%s",
+			 emit_runtime_response_and_return(out).c_str());
 		return ExitCode::Success;
 	} catch (const std::runtime_error &e) {
 		std::cerr << e.what() << "\n";
