@@ -168,19 +168,19 @@ extern "C" ssize_t read(int fd, void *buf, size_t count)
 extern "C" FILE *fopen(const char *pathname, const char *flags)
 {
 	initialize_ctx();
-	SPDLOG_DEBUG("fopen {} {}", pathname, flags);
+	// Note: Don't log here as fopen is called during logger initialization
 	return context->handle_fopen(pathname, flags);
 }
 extern "C" FILE *fopen64(const char *pathname, const char *flags)
 {
 	initialize_ctx();
-	SPDLOG_DEBUG("fopen64 {} {}", pathname, flags);
+	// Note: Don't log here as fopen64 is called during logger initialization
 	return context->handle_fopen(pathname, flags);
 }
 extern "C" FILE *_IO_new_fopen(const char *pathname, const char *flags)
 {
 	initialize_ctx();
-	SPDLOG_DEBUG("_IO_new_fopen {} {}", pathname, flags);
+	// Note: Don't log here as _IO_new_fopen is called during logger initialization
 	return context->handle_fopen(pathname, flags);
 }
 #if __linux__
