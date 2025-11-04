@@ -19,15 +19,19 @@
 #include <sys/ptrace.h>
 #include <sys/syscall.h>
 #include <sys/wait.h>
-
-// #include <pos/include/oob/ckpt_dump.h>
+#include "nv_attach_fatbin_record.hpp"
+#include <tuple>
+#include <variant>
 #include <vector>
-#include "ptxpass_pipeline.hpp"
 
 namespace bpftime
 {
 namespace attach
 {
+
+using print_config_fn = void (*)(int length, char *out);
+using process_input_fn = int (*)(const char *input, int length, char *output);
+
 std::string filter_compiled_ptx_for_ebpf_program(std::string input,
 						 std::string);
 
@@ -49,10 +53,11 @@ struct nv_hooker_func_t {
 enum class AttachedToFunction {
 	RegisterFatbin,
 	RegisterFunction,
+	RegisterVariable,
 	RegisterFatbinEnd,
-	CudaLaunchKernel
+	CudaMalloc,
+	CudaMallocManaged
 };
-enum class TrampolineMemorySetupStage { NotSet, Registered, Copied };
 struct CUDARuntimeFunctionHookerContext {
 	class nv_attach_impl *impl;
 	AttachedToFunction to_function;
@@ -65,18 +70,42 @@ struct nv_attach_entry {
 	// program name for this attach entry
 	std::string program_name;
 	// pass-based execution fields
-	std::string pass_exec; // resolved executable path for matched pass
 	std::map<std::string, std::string> parameters; // arbitrary parameters
 						       // for pass
-	// Optional override of attach point string such as "kprobe/sys_read"
-	std::optional<std::string> attach_point_override;
 	// Extra serialized parameters (JSON string) reserved for future use
 	std::optional<std::string> extras;
+	struct pass_cfg_with_exec_path *config;
 };
 
-struct pass_configuration_with_executable_path {
+struct pass_cfg_with_exec_path {
 	std::filesystem::path executable_path;
 	ptxpass::pass_config::PassConfig pass_config;
+	print_config_fn print_config;
+	process_input_fn process_input;
+
+	void *handle;
+
+	pass_cfg_with_exec_path(std::filesystem::path path,
+				ptxpass::pass_config::PassConfig config,
+				print_config_fn print_config,
+				process_input_fn process_input, void *handle)
+		: executable_path(path), pass_config(config),
+		  print_config(print_config), process_input(process_input),
+		  handle(handle)
+	{
+	}
+
+	pass_cfg_with_exec_path(const pass_cfg_with_exec_path &) = delete;
+	pass_cfg_with_exec_path &
+	operator=(const pass_cfg_with_exec_path &) = delete;
+	pass_cfg_with_exec_path(pass_cfg_with_exec_path &&) = default;
+	pass_cfg_with_exec_path &
+	operator=(pass_cfg_with_exec_path &&) = default;
+
+	~pass_cfg_with_exec_path()
+	{
+		dlclose(handle);
+	}
 };
 
 // Attach implementation of syscall trace
@@ -84,10 +113,10 @@ struct pass_configuration_with_executable_path {
 // concrete stuff to individual callbacks
 class nv_attach_impl final : public base_attach_impl {
     public:
-	int detach_by_id(int id);
+	int detach_by_id(int id) override;
 	int create_attach_with_ebpf_callback(
 		ebpf_run_callback &&cb, const attach_private_data &private_data,
-		int attach_type);
+		int attach_type) override;
 	// Register CUDA-specific ext helpers required by LLVM-JIT to resolve
 	// symbols like _bpf_helper_ext_0502/_0503 when compiling programs
 	void register_custom_helpers(
@@ -96,45 +125,34 @@ class nv_attach_impl final : public base_attach_impl {
 	nv_attach_impl &operator=(const nv_attach_impl &) = delete;
 	nv_attach_impl();
 	virtual ~nv_attach_impl();
-	std::vector<std::unique_ptr<__fatBinC_Wrapper_t>> stored_binaries_header;
-	std::vector<std::unique_ptr<std::vector<uint8_t>>> stored_binaries_body;
-	std::optional<std::vector<uint8_t>>
-	hack_fatbin(std::vector<uint8_t> &&);
-	std::optional<std::string>
-	patch_with_memcapture(std::string, const nv_attach_entry &entry,
-			      bool should_set_trampoline);
-	std::optional<std::string>
-	patch_with_probe_and_retprobe(std::string, const nv_attach_entry &,
-				      bool should_set_trampoline);
-	int register_trampoline_memory(void **);
-	int copy_data_to_trampoline_memory();
-	TrampolineMemorySetupStage trampoline_memory_state =
-		TrampolineMemorySetupStage::NotSet;
+	std::optional<std::map<std::string, std::string>>
+		hack_fatbin(std::map<std::string, std::string>);
+	std::map<std::string, std::string>
+	extract_ptxs(std::vector<uint8_t> &&);
+
 	int find_attach_entry_by_program_name(const char *name) const;
 	int run_attach_entry_on_gpu(int attach_id, int run_count = 1,
 				    int grid_dim_x = 1, int grid_dim_y = 1,
 				    int grid_dim_z = 1, int block_dim_x = 1,
 				    int block_dim_y = 1, int block_dim_z = 1);
+	std::vector<std::unique_ptr<fatbin_record>> fatbin_records;
+	fatbin_record *current_fatbin = nullptr;
+	std::map<void *, fatbin_record *> symbol_address_to_fatbin;
+	uintptr_t shared_mem_ptr;
+	std::optional<std::vector<MapBasicInfo>> map_basic_info;
 
     private:
 	void *frida_interceptor;
 	void *frida_listener;
 	std::vector<std::unique_ptr<CUDARuntimeFunctionHookerContext>>
 		hooker_contexts;
-	std::set<std::string> to_hook_device_functions;
 	std::map<int, nv_attach_entry> hook_entries;
-	uintptr_t shared_mem_ptr;
-	std::optional<std::vector<MapBasicInfo>> map_basic_info;
 	// discovered pass definitions
-	std::vector<pass_configuration_with_executable_path> pass_configurations;
+	std::vector<std::unique_ptr<pass_cfg_with_exec_path>>
+		pass_configurations;
 };
-std::string filter_unprintable_chars(std::string input);
-std::string filter_out_version_headers(const std::string &input);
-std::string
-generate_ptx_for_ebpf(const std::vector<ebpf_inst> &inst,
-		      const std::string &func_name, bool with_arguments,
-		      bool add_register_guard_and_filter_version_headers);
 
+std::string add_semicolon_for_variable_lines(std::string input);
 } // namespace attach
 } // namespace bpftime
 #endif /* _BPFTIME_NV_ATTACH_IMPL_HPP */

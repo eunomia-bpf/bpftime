@@ -168,6 +168,17 @@ static inline void emit_runtime_response_and_print(const std::string &str)
 	std::cout << output_json.dump();
 }
 
+static inline std::string
+emit_runtime_response_and_return(const std::string &str)
+{
+	using namespace runtime_response;
+	RuntimeResponse output;
+	nlohmann::json output_json;
+	output.output_ptx = str;
+	to_json(output_json, output);
+	return output_json.dump();
+}
+
 static inline pass_config::PassConfig
 load_pass_config_from_file(const std::filesystem::path &path)
 {

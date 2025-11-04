@@ -6,6 +6,8 @@ set(TEST_SOURCES
 )
 add_executable(bpftime_nv_attach_tests ${TEST_SOURCES})
 
+target_include_directories(bpftime_nv_attach_tests PUBLIC ${CMAKE_SOURCE_DIR}/third_party)
+
 option(TEST_LCOV "option for lcov" OFF)
 
 if(${TEST_LCOV})

@@ -118,12 +118,23 @@ static void sig_handler_sigusr1_detach(int sig)
 	bpftime_logger_flush();
 }
 #ifdef BPFTIME_ENABLE_CUDA_ATTACH
+namespace bpftime::vm::compat
+{
+namespace llvm
+{
+void register_llvm_vm_factory();
+}
+} // namespace bpftime::vm::compat
 void **(*original___cudaRegisterFatBinary)(void *) = nullptr;
 
 extern "C" void **__cudaRegisterFatBinary(void *fatbin)
 {
 	auto orig = try_get_original_func("__cudaRegisterFatBinary",
 					  original___cudaRegisterFatBinary);
+	// We have to register llvmbpf manually, since this function
+	// (__cudaRegisterFatBinary) might be called before llvm is registered
+
+	bpftime::vm::compat::llvm::register_llvm_vm_factory();
 	gboolean flag = false;
 	bpftime_agent_main(nullptr, &flag);
 	return orig(fatbin);
