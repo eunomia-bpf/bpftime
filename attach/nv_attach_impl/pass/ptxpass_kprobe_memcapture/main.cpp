@@ -160,7 +160,7 @@ extern "C" void print_config(int length, char *out)
 	auto cfg = get_default_config();
 	nlohmann::json output_json;
 	ptxpass::pass_config::to_json(output_json, cfg);
-	strncpy(out, output_json.dump().c_str(), length);
+	snprintf(out, length, "%s", output_json.dump().c_str());
 }
 
 extern "C" int process_input(const char *input, int length, char *output)
