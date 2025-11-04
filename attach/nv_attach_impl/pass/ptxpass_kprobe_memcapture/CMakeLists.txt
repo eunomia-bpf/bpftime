@@ -3,4 +3,3 @@ target_include_directories(ptxpass_kprobe_memcapture PRIVATE ${CMAKE_SOURCE_DIR}
 target_link_libraries(ptxpass_kprobe_memcapture PRIVATE ptxpass_core llvmbpf_vm)
 add_dependencies(ptxpass_kprobe_memcapture ptxpass_core llvmbpf_vm)
 set_property(TARGET ptxpass_kprobe_memcapture PROPERTY CXX_STANDARD 20)
-add_dependencies(ptxpass_kprobe_memcapture ptxpass_core llvmbpf_vm)
