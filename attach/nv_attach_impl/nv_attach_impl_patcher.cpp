@@ -18,11 +18,6 @@
 using namespace bpftime;
 using namespace attach;
 
-static std::string memcapture_func_name(int idx)
-{
-	return std::string("__memcapture__") + std::to_string(idx);
-}
-
 namespace bpftime::attach
 {
 
