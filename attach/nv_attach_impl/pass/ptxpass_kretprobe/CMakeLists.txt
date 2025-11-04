@@ -3,4 +3,3 @@ target_include_directories(ptxpass_kretprobe PRIVATE ${CMAKE_SOURCE_DIR}/third_p
 target_link_libraries(ptxpass_kretprobe PRIVATE ptxpass_core llvmbpf_vm)
 add_dependencies(ptxpass_kretprobe ptxpass_core llvmbpf_vm)
 set_property(TARGET ptxpass_kretprobe PROPERTY CXX_STANDARD 20)
-add_dependencies(ptxpass_kretprobe ptxpass_core llvmbpf_vm)
