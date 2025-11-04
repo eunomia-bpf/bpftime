@@ -128,7 +128,7 @@ build-llvm: ## build with llvm as jit backend
 
 build-gpu: ## build with CUDA/GPU support
 	cmake -Bbuild -DBPFTIME_ENABLE_CUDA_ATTACH=1 \
-				  -DBPFTIME_CUDA_ROOT=/usr/local/cuda-12.6 \
+				  -DBPFTIME_CUDA_ROOT=/usr/local/cuda-12.9 \
 				  -DCMAKE_BUILD_TYPE:STRING=RelWithDebInfo
 	cmake --build build --config RelWithDebInfo -j$(JOBS)
 
