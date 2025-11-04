@@ -20,8 +20,8 @@ nv_gpu_shared_array_map_impl::nv_gpu_shared_array_map_impl(
 {
     // Record the CUDA context that owns the device memory on server side
     owner_cuda_context = nullptr;
-    if (shm_holder.global_shared_memory.get_open_type() ==
-        shm_open_type::SHM_CREATE_OR_OPEN) {
+    if (shm_holder.global_shared_memory.get_open_type() !=
+        shm_open_type::SHM_OPEN_ONLY) {
         cuCtxGetCurrent(&owner_cuda_context);
         if (!owner_cuda_context) {
             SPDLOG_WARN(
@@ -68,8 +68,8 @@ void *nv_gpu_shared_array_map_impl::elem_lookup(const void *key)
     // Switch to owner context only on server side
     CUcontext prev_ctx = nullptr;
     bool did_switch_ctx = false;
-    if (shm_holder.global_shared_memory.get_open_type() ==
-        shm_open_type::SHM_CREATE_OR_OPEN) {
+    if (shm_holder.global_shared_memory.get_open_type() !=
+        shm_open_type::SHM_OPEN_ONLY) {
         if (owner_cuda_context) {
             cuCtxGetCurrent(&prev_ctx);
             if (prev_ctx != owner_cuda_context) {
@@ -116,8 +116,8 @@ long nv_gpu_shared_array_map_impl::elem_update(const void *key,
     auto base = try_initialize_for_agent_and_get_mapped_address();
     CUcontext prev_ctx = nullptr;
     bool did_switch_ctx = false;
-    if (shm_holder.global_shared_memory.get_open_type() ==
-        shm_open_type::SHM_CREATE_OR_OPEN) {
+    if (shm_holder.global_shared_memory.get_open_type() !=
+        shm_open_type::SHM_OPEN_ONLY) {
         if (owner_cuda_context) {
             cuCtxGetCurrent(&prev_ctx);
             if (prev_ctx != owner_cuda_context) {
@@ -175,8 +175,8 @@ int nv_gpu_shared_array_map_impl::map_get_next_key(const void *key,
 
 nv_gpu_shared_array_map_impl::~nv_gpu_shared_array_map_impl()
 {
-	if (shm_holder.global_shared_memory.get_open_type() ==
-	    shm_open_type::SHM_CREATE_OR_OPEN) {
+	if (shm_holder.global_shared_memory.get_open_type() !=
+	    shm_open_type::SHM_OPEN_ONLY) {
 		// Server side: free device memory
         CUcontext prev_ctx = nullptr;
         bool did_switch_ctx = false;
@@ -205,8 +205,8 @@ nv_gpu_shared_array_map_impl::~nv_gpu_shared_array_map_impl()
 CUdeviceptr
 nv_gpu_shared_array_map_impl::try_initialize_for_agent_and_get_mapped_address()
 {
-	if (shm_holder.global_shared_memory.get_open_type() !=
-	    shm_open_type::SHM_CREATE_OR_OPEN) {
+	if (shm_holder.global_shared_memory.get_open_type() ==
+	    shm_open_type::SHM_OPEN_ONLY) {
 		int pid = getpid();
 		if (auto itr = agent_gpu_shared_mem.find(pid);
 		    itr == agent_gpu_shared_mem.end()) {
