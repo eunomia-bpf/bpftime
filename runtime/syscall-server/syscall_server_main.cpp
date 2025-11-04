@@ -21,6 +21,16 @@
 #include <unistd.h>
 #include <spdlog/cfg/env.h>
 #include <cstdarg>
+
+// Helper functions for safe logging with pointer parameters
+inline const char* safe_ptr_str(const char* ptr) {
+	return ptr ? ptr : "<null>";
+}
+
+inline uintptr_t safe_ptr_hex(const void* ptr) {
+	return reinterpret_cast<uintptr_t>(ptr);
+}
+
 // global context for bpf syscall server
 union syscall_server_ctx_union {
 	syscall_context ctx;
@@ -144,7 +154,7 @@ extern "C" int openat(int fd, const char *file, int oflag, ...)
 	va_start(args, oflag);
 	long arg4 = va_arg(args, long);
 	va_end(args);
-	SPDLOG_DEBUG("openat {} {:x} {} {}", fd, (uintptr_t)file, oflag, arg4);
+	SPDLOG_DEBUG("openat {} {} {} {}", fd, safe_ptr_str(file), oflag, arg4);
 	unsigned short mode = (unsigned short)arg4;
 	return context->handle_openat(fd, file, oflag, mode);
 }
@@ -155,7 +165,7 @@ extern "C" int open(const char *file, int oflag, ...)
 	va_start(args, oflag);
 	long arg3 = va_arg(args, long);
 	va_end(args);
-	SPDLOG_DEBUG("open {:x} {} {}", (uintptr_t)file, oflag, arg3);
+	SPDLOG_DEBUG("open {} {} {}", safe_ptr_str(file), oflag, arg3);
 	unsigned short mode = (unsigned short)arg3;
 	return context->handle_open(file, oflag, mode);
 }
@@ -168,19 +178,25 @@ extern "C" ssize_t read(int fd, void *buf, size_t count)
 extern "C" FILE *fopen(const char *pathname, const char *flags)
 {
 	initialize_ctx();
-	// Note: Don't log here as fopen is called during logger initialization
+	if (spdlog::default_logger_raw()) {
+		SPDLOG_DEBUG("fopen {} {}", safe_ptr_str(pathname), safe_ptr_str(flags));
+	}
 	return context->handle_fopen(pathname, flags);
 }
 extern "C" FILE *fopen64(const char *pathname, const char *flags)
 {
 	initialize_ctx();
-	// Note: Don't log here as fopen64 is called during logger initialization
+	if (spdlog::default_logger_raw()) {
+		SPDLOG_DEBUG("fopen64 {} {}", safe_ptr_str(pathname), safe_ptr_str(flags));
+	}
 	return context->handle_fopen(pathname, flags);
 }
 extern "C" FILE *_IO_new_fopen(const char *pathname, const char *flags)
 {
 	initialize_ctx();
-	// Note: Don't log here as _IO_new_fopen is called during logger initialization
+	if (spdlog::default_logger_raw()) {
+		SPDLOG_DEBUG("_IO_new_fopen {} {}", safe_ptr_str(pathname), safe_ptr_str(flags));
+	}
 	return context->handle_fopen(pathname, flags);
 }
 #if __linux__
@@ -227,7 +243,7 @@ extern "C" long syscall(long sysno, ...)
 		});
 	} else if (sysno == __NR_memfd_create) {
 		SPDLOG_DEBUG("SYS_MEMFD_CREATE name={} flags={}",
-			     (const char *)arg1, arg2);
+			     safe_ptr_str((const char *)arg1), arg2);
 		return handle_exceptions([&]() {
 			return context->handle_memfd_create((const char *)arg1,
 							    (int)arg2);
