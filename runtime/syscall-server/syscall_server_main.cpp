@@ -22,13 +22,18 @@
 #include <spdlog/cfg/env.h>
 #include <cstdarg>
 
-// Helper functions for safe logging with pointer parameters
+// Helper function for safe logging with pointer parameters
 inline const char* safe_ptr_str(const char* ptr) {
 	return ptr ? ptr : "<null>";
 }
 
-inline uintptr_t safe_ptr_hex(const void* ptr) {
-	return reinterpret_cast<uintptr_t>(ptr);
+// Safe debug logging that checks if logger is initialized
+// This prevents crashes during logger initialization (e.g., when fopen is called by spdlog itself)
+template<typename... Args>
+inline void safe_spdlog_debug(spdlog::format_string_t<Args...> fmt, Args&&... args) {
+	if (spdlog::default_logger_raw()) {
+		spdlog::debug(fmt, std::forward<Args>(args)...);
+	}
 }
 
 // global context for bpf syscall server
@@ -75,7 +80,7 @@ extern "C" int epoll_wait(int epfd, epoll_event *evt, int maxevents,
 			  int timeout)
 {
 	initialize_ctx();
-	SPDLOG_DEBUG("epoll_wait {}", epfd);
+	safe_spdlog_debug("epoll_wait {}", epfd);
 	return handle_exceptions([&]() {
 		return context->handle_epoll_wait(epfd, evt, maxevents,
 						  timeout);
@@ -85,7 +90,7 @@ extern "C" int epoll_wait(int epfd, epoll_event *evt, int maxevents,
 extern "C" int epoll_ctl(int epfd, int op, int fd, epoll_event *evt)
 {
 	initialize_ctx();
-	SPDLOG_DEBUG("epoll_ctl {} {} {} {}", epfd, op, fd, (uintptr_t)evt);
+	safe_spdlog_debug("epoll_ctl {} {} {} {}", epfd, op, fd, (uintptr_t)evt);
 	return handle_exceptions(
 		[&]() { return context->handle_epoll_ctl(epfd, op, fd, evt); });
 }
@@ -93,7 +98,7 @@ extern "C" int epoll_ctl(int epfd, int op, int fd, epoll_event *evt)
 extern "C" int epoll_create1(int flags)
 {
 	initialize_ctx();
-	SPDLOG_DEBUG("epoll_create1 {}", flags);
+	safe_spdlog_debug("epoll_create1 {}", flags);
 	return handle_exceptions(
 		[&]() { return context->handle_epoll_create1(flags); });
 }
@@ -105,7 +110,7 @@ extern "C" int ioctl(int fd, unsigned long req, ...)
 	va_start(args, req);
 	unsigned long arg3 = va_arg(args, long);
 	va_end(args);
-	SPDLOG_DEBUG("ioctl {} {} {}", fd, req, arg3);
+	safe_spdlog_debug("ioctl {} {} {}", fd, req, arg3);
 	return handle_exceptions(
 		[&]() { return context->handle_ioctl(fd, req, arg3); });
 }
@@ -114,7 +119,7 @@ extern "C" void *mmap64(void *addr, size_t length, int prot, int flags, int fd,
 			off64_t offset)
 {
 	initialize_ctx();
-	SPDLOG_DEBUG("mmap64 {:x}", (uintptr_t)addr);
+	safe_spdlog_debug("mmap64 {:x}", (uintptr_t)addr);
 	return handle_exceptions([&]() {
 		return context->handle_mmap64(addr, length, prot, flags, fd,
 					      offset);
@@ -125,7 +130,7 @@ extern "C" void *mmap(void *addr, size_t length, int prot, int flags, int fd,
 		      off_t offset)
 {
 	initialize_ctx();
-	SPDLOG_DEBUG("mmap {:x}", (uintptr_t)addr);
+	safe_spdlog_debug("mmap {:x}", (uintptr_t)addr);
 	return handle_exceptions([&]() {
 		return context->handle_mmap(addr, length, prot, flags, fd,
 					    offset);
@@ -135,7 +140,7 @@ extern "C" void *mmap(void *addr, size_t length, int prot, int flags, int fd,
 extern "C" int munmap(void *addr, size_t size)
 {
 	initialize_ctx();
-	SPDLOG_DEBUG("munmap {:x} {}", (uintptr_t)addr, size);
+	safe_spdlog_debug("munmap {:x} {}", (uintptr_t)addr, size);
 	return handle_exceptions(
 		[&]() { return context->handle_munmap(addr, size); });
 }
@@ -143,7 +148,7 @@ extern "C" int munmap(void *addr, size_t size)
 extern "C" int close(int fd)
 {
 	initialize_ctx();
-	SPDLOG_DEBUG("Closing fd {}", fd);
+	safe_spdlog_debug("Closing fd {}", fd);
 	return handle_exceptions([&]() { return context->handle_close(fd); });
 }
 
@@ -154,7 +159,7 @@ extern "C" int openat(int fd, const char *file, int oflag, ...)
 	va_start(args, oflag);
 	long arg4 = va_arg(args, long);
 	va_end(args);
-	SPDLOG_DEBUG("openat {} {} {} {}", fd, safe_ptr_str(file), oflag, arg4);
+	safe_spdlog_debug("openat {} {} {} {}", fd, safe_ptr_str(file), oflag, arg4);
 	unsigned short mode = (unsigned short)arg4;
 	return context->handle_openat(fd, file, oflag, mode);
 }
@@ -165,7 +170,7 @@ extern "C" int open(const char *file, int oflag, ...)
 	va_start(args, oflag);
 	long arg3 = va_arg(args, long);
 	va_end(args);
-	SPDLOG_DEBUG("open {} {} {}", safe_ptr_str(file), oflag, arg3);
+	safe_spdlog_debug("open {} {} {}", safe_ptr_str(file), oflag, arg3);
 	unsigned short mode = (unsigned short)arg3;
 	return context->handle_open(file, oflag, mode);
 }
@@ -178,25 +183,19 @@ extern "C" ssize_t read(int fd, void *buf, size_t count)
 extern "C" FILE *fopen(const char *pathname, const char *flags)
 {
 	initialize_ctx();
-	if (spdlog::default_logger_raw()) {
-		SPDLOG_DEBUG("fopen {} {}", safe_ptr_str(pathname), safe_ptr_str(flags));
-	}
+	safe_spdlog_debug("fopen {} {}", safe_ptr_str(pathname), safe_ptr_str(flags));
 	return context->handle_fopen(pathname, flags);
 }
 extern "C" FILE *fopen64(const char *pathname, const char *flags)
 {
 	initialize_ctx();
-	if (spdlog::default_logger_raw()) {
-		SPDLOG_DEBUG("fopen64 {} {}", safe_ptr_str(pathname), safe_ptr_str(flags));
-	}
+	safe_spdlog_debug("fopen64 {} {}", safe_ptr_str(pathname), safe_ptr_str(flags));
 	return context->handle_fopen(pathname, flags);
 }
 extern "C" FILE *_IO_new_fopen(const char *pathname, const char *flags)
 {
 	initialize_ctx();
-	if (spdlog::default_logger_raw()) {
-		SPDLOG_DEBUG("_IO_new_fopen {} {}", safe_ptr_str(pathname), safe_ptr_str(flags));
-	}
+	safe_spdlog_debug("_IO_new_fopen {} {}", safe_ptr_str(pathname), safe_ptr_str(flags));
 	return context->handle_fopen(pathname, flags);
 }
 #if __linux__
@@ -215,7 +214,7 @@ extern "C" long syscall(long sysno, ...)
 	long arg6 = va_arg(args, long);
 	va_end(args);
 	if (sysno == __NR_bpf) {
-		SPDLOG_DEBUG("SYS_BPF {} {} {} {} {} {}", arg1, arg2, arg3,
+	safe_spdlog_debug("SYS_BPF {} {} {} {} {} {}", arg1, arg2, arg3,
 			     arg4, arg5, arg6);
 		int cmd = (int)arg1;
 		auto attr = (union bpf_attr *)(uintptr_t)arg2;
@@ -224,7 +223,7 @@ extern "C" long syscall(long sysno, ...)
 			return context->handle_sysbpf(cmd, attr, size);
 		});
 	} else if (sysno == __NR_perf_event_open) {
-		SPDLOG_DEBUG("SYS_PERF_EVENT_OPEN {} {} {} {} {} {}", arg1,
+	safe_spdlog_debug("SYS_PERF_EVENT_OPEN {} {} {} {} {} {}", arg1,
 			     arg2, arg3, arg4, arg5, arg6);
 		return handle_exceptions([&]() {
 			return context->handle_perfevent(
@@ -232,17 +231,17 @@ extern "C" long syscall(long sysno, ...)
 				(int)arg3, (int)arg4, (unsigned long)arg5);
 		});
 	} else if (sysno == __NR_ioctl) {
-		SPDLOG_DEBUG("SYS_IOCTL {} {} {} {} {} {}", arg1, arg2, arg3,
+	safe_spdlog_debug("SYS_IOCTL {} {} {} {} {} {}", arg1, arg2, arg3,
 			     arg4, arg5, arg6);
 	} else if (sysno == __NR_dup3) {
-		SPDLOG_DEBUG("SYS_DUP3 oldfd={} newfd={} flags={}", arg1, arg2,
+	safe_spdlog_debug("SYS_DUP3 oldfd={} newfd={} flags={}", arg1, arg2,
 			     arg3);
 		return handle_exceptions([&]() {
 			return context->handle_dup3((int)arg1, (int)arg2,
 						    (int)arg3);
 		});
 	} else if (sysno == __NR_memfd_create) {
-		SPDLOG_DEBUG("SYS_MEMFD_CREATE name={} flags={}",
+	safe_spdlog_debug("SYS_MEMFD_CREATE name={} flags={}",
 			     safe_ptr_str((const char *)arg1), arg2);
 		return handle_exceptions([&]() {
 			return context->handle_memfd_create((const char *)arg1,
