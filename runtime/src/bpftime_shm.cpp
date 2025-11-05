@@ -706,3 +706,19 @@ int bpftime_add_memfd_handler(const char *name, int flags)
 	auto &shm = shm_holder.global_shared_memory;
 	return shm.add_memfd_handler(name, flags);
 }
+
+int bpftime_is_agent()
+{
+	return shm_holder.global_shared_memory.get_open_type() ==
+			       shm_open_type::SHM_OPEN_ONLY ?
+		       1 :
+		       0;
+}
+
+int bpftime_is_server()
+{
+	return shm_holder.global_shared_memory.get_open_type() ==
+			       shm_open_type::SHM_REMOVE_AND_CREATE ?
+		       1 :
+		       0;
+}

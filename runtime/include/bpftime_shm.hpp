@@ -388,6 +388,14 @@ void *bpftime_get_array_map_raw_data(int fd);
 
 void bpftime_close(int fd);
 
+// Check if the current process is running as an agent (client)
+// Returns 1 if running as agent (SHM_OPEN_ONLY), 0 otherwise
+int bpftime_is_agent();
+
+// Check if the current process is running as a server
+// Returns 1 if running as server (SHM_REMOVE_AND_CREATE), 0 otherwise
+int bpftime_is_server();
+
 void *bpftime_ringbuf_reserve(int fd, uint64_t size);
 void bpftime_ringbuf_submit(int fd, void *data, int discard);
 int bpftime_epoll_wait(int fd, struct epoll_event *out_evts, int max_evt,
