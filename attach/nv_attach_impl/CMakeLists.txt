@@ -39,7 +39,6 @@ set_property(TARGET bpftime_nv_attach_impl PROPERTY CXX_STANDARD 20)
 file(GENERATE OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/ptx_pass_config.h"
      CONTENT "#pragma once\nstatic constexpr const char *DEFAULT_PTX_PASS_EXECUTABLE = \"$<JOIN:${PTX_PASS_EXECUTABLE},:>\";\n")
 
-target_include_directories(bpftime_nv_attach_impl PRIVATE ${CMAKE_CURRENT_BINARY_DIR})
 
 target_link_options(bpftime_nv_attach_impl PUBLIC "-Wl,--whole-archive" "$<TARGET_FILE:bpftime_nv_attach_impl>" "-Wl,--no-whole-archive")
 
