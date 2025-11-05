@@ -34,9 +34,12 @@ target_link_libraries(bpftime_nv_attach_impl PUBLIC bpftime_base_attach_impl spd
 
 set_property(TARGET bpftime_nv_attach_impl PROPERTY CXX_STANDARD 20)
 
-list(JOIN PTX_PASS_EXECUTABLE ":" PTX_PASS_EXECUTABLE_STR)
+# Create a build-time header file with the PTX pass paths
+# This avoids shell escaping issues with colons and quotes
+file(GENERATE OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/ptx_pass_config.h"
+     CONTENT "#pragma once\nstatic constexpr const char *DEFAULT_PTX_PASS_EXECUTABLE = \"$<JOIN:${PTX_PASS_EXECUTABLE},:>\";\n")
 
-target_compile_definitions(bpftime_nv_attach_impl PUBLIC "DEFAULT_PTX_PASS_EXECUTABLE=\"${PTX_PASS_EXECUTABLE_STR}\"")
+target_include_directories(bpftime_nv_attach_impl PRIVATE ${CMAKE_CURRENT_BINARY_DIR})
 
 target_link_options(bpftime_nv_attach_impl PUBLIC "-Wl,--whole-archive" "$<TARGET_FILE:bpftime_nv_attach_impl>" "-Wl,--no-whole-archive")
 
