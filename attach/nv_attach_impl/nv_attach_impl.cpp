@@ -48,6 +48,7 @@
 #include <vector>
 #include <boost/asio.hpp>
 #include "ptxpass/core.hpp"
+#include "ptx_pass_config.h"
 using namespace bpftime;
 using namespace attach;
 static std::vector<std::filesystem::path> split_by_colon(const std::string &str)
