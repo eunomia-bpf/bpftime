@@ -200,6 +200,8 @@ std::string compile_ebpf_to_ptx_from_words(
 	vm.register_external_function(503, "get_block_idx", (void *)test_func);
 	vm.register_external_function(504, "get_block_dim", (void *)test_func);
 	vm.register_external_function(505, "get_thread_idx", (void *)test_func);
+	vm.register_external_function(507, "cuda_exit", (void *)test_func);
+	vm.register_external_function(508, "get_grid_dim", (void *)test_func);
 
 	vm.load_code(insts, insts_count * sizeof(ebpf_inst));
 	bpftime::llvm_bpf_jit_context ctx(vm);
