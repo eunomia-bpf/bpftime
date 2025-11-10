@@ -214,7 +214,14 @@ cuda_runtime_function__cudaLaunchKernel(const void *func, dim3 grid_dim,
 			    block_dim.x, block_dim.y, block_dim.z, shared_mem,
 			    stream, args, nullptr);
 		    err != CUDA_SUCCESS) {
-			SPDLOG_ERROR("Unable to launch kernel: {}", (int)err);
+			const char* error_name = nullptr;
+			const char* error_string = nullptr;
+			cuGetErrorName(err, &error_name);
+			cuGetErrorString(err, &error_string);
+			SPDLOG_ERROR("Unable to launch kernel: {} ({})", 
+				     error_name ? error_name : "UNKNOWN",
+				     error_string ? error_string : "No description");
+			SPDLOG_ERROR("Error code: {}", (int)err);
 			return cudaErrorLaunchFailure;
 		}
 		return cudaSuccess;
