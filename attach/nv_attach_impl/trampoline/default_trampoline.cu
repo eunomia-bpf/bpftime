@@ -404,6 +404,22 @@ _bpf_helper_ext_0506(uint64_t, uint64_t, uint64_t, uint64_t, uint64_t)
 	asm("membar.sys;                      \n\t");
 	return 0;
 }
+extern "C" __noinline__ __device__ uint64_t
+_bpf_helper_ext_0507(uint64_t, uint64_t, uint64_t, uint64_t, uint64_t)
+{
+	asm("exit;                      \n\t");
+	return 0;
+}
+extern "C" __noinline__ __device__ uint64_t
+_bpf_helper_ext_0508(uint64_t x, uint64_t y, uint64_t z, uint64_t, uint64_t)
+{
+	// get grid dim
+	*(uint64_t *)(uintptr_t)x = gridDim.x;
+	*(uint64_t *)(uintptr_t)y = gridDim.y;
+	*(uint64_t *)(uintptr_t)z = gridDim.z;
+
+	return 0;
+}
 
 extern "C" __global__ void bpf_main(void *mem, size_t sz)
 {

@@ -149,6 +149,30 @@ static void example_listener_on_enter(GumInvocationListener *listener,
 		current_fatbin = nullptr;
 	} else if (context->to_function == AttachedToFunction::CudaMalloc) {
 		SPDLOG_DEBUG("Entering cudaMalloc..");
+	} else if (context->to_function == AttachedToFunction::CudaMemcpyToSymbol 
+		|| context->to_function == AttachedToFunction::CudaMemcpyToSymbolAsync) {
+		auto symbol =
+			(const void *)gum_invocation_context_get_nth_argument(
+				gum_ctx, 0);
+		auto src =
+			(const void *)gum_invocation_context_get_nth_argument(
+				gum_ctx, 1);
+		auto count = static_cast<size_t>(reinterpret_cast<uintptr_t>(
+			gum_invocation_context_get_nth_argument(gum_ctx, 2)));
+		auto offset = static_cast<size_t>(reinterpret_cast<uintptr_t>(
+			gum_invocation_context_get_nth_argument(gum_ctx, 3)));
+		auto kind =
+			static_cast<cudaMemcpyKind>(reinterpret_cast<uintptr_t>(
+				gum_invocation_context_get_nth_argument(gum_ctx,
+									4)));
+		cudaStream_t stream = nullptr;
+		bool async = context->to_function ==
+			     AttachedToFunction::CudaMemcpyToSymbolAsync;
+		if (async) {
+			stream = (cudaStream_t)gum_invocation_context_get_nth_argument(gum_ctx, 5);
+		}
+		context->impl->mirror_cuda_memcpy_to_symbol(
+			symbol, src, count, offset, kind, stream, async);
 	}
 }
 
