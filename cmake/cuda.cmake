@@ -17,8 +17,6 @@ function(find_cuda)
     endif()
 
     set(CUDA_LIBRARY_PATH ${BPFTIME_CUDA_ROOT}/targets/${CUDA_TARGET_ARCH}/lib/ ${BPFTIME_CUDA_ROOT}/targets/${CUDA_TARGET_ARCH}/lib/stubs/ ${BPFTIME_CUDA_ROOT}/extras/CUPTI/lib64/ PARENT_SCOPE)
-    # CUPTI include path should be dynamic based on detected CUDA version
-    set(CUDA_INCLUDE_PATH ${BPFTIME_CUDA_ROOT}/targets/${CUDA_TARGET_ARCH}/include ${BPFTIME_CUDA_ROOT}/cuda-${CUDA_VERSION_MAJOR}.${CUDA_VERSION_MINOR}/extras/CUPTI/include PARENT_SCOPE)
 
     # Detect CUDA version from version.json or version.txt
     if(EXISTS "${BPFTIME_CUDA_ROOT}/version.json")
@@ -38,6 +36,9 @@ function(find_cuda)
         set(CUDA_VERSION_MAJOR ${CMAKE_MATCH_1})
         set(CUDA_VERSION_MINOR ${CMAKE_MATCH_2})
     endif()
+
+    # CUPTI include path should be dynamic based on detected CUDA version
+    set(CUDA_INCLUDE_PATH ${BPFTIME_CUDA_ROOT}/targets/${CUDA_TARGET_ARCH}/include ${BPFTIME_CUDA_ROOT}/cuda-${CUDA_VERSION_MAJOR}.${CUDA_VERSION_MINOR}/extras/CUPTI/include PARENT_SCOPE)
 
     message(STATUS "Detected CUDA version: ${CUDA_VERSION_MAJOR}.${CUDA_VERSION_MINOR}")
 
