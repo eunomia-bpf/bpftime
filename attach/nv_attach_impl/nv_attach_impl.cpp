@@ -347,10 +347,15 @@ nv_attach_impl::extract_ptxs(std::vector<uint8_t> &&data_vec)
 	boost::process::ipstream stream;
 	boost::process::environment env = boost::this_process::environment();
 	env["LD_PRELOAD"] = "";
+	
+	// Build command line - use shell to properly search PATH
 	auto cuobjdump_cmd_line = std::string("cuobjdump --extract-ptx all ") +
 				  fatbin_path.string();
 	SPDLOG_INFO("Calling cuobjdump: {}", cuobjdump_cmd_line);
-	boost::process::child child(cuobjdump_cmd_line,
+	
+	// Execute through shell to properly use PATH
+	boost::process::child child("/bin/sh",
+				    boost::process::args({"-c", cuobjdump_cmd_line}),
 				    boost::process::std_out > stream,
 				    boost::process::env(env),
 				    boost::process::start_dir = tmp_dir);
@@ -527,6 +532,11 @@ int nv_attach_impl::run_attach_entry_on_gpu(int attach_id, int run_count,
 	}
 	SPDLOG_INFO("Running program on GPU");
 
+	// Get SM architecture from environment variable, default to sm_60
+	const char *sm_arch_env = std::getenv("BPFTIME_SM_ARCH");
+	std::string sm_arch = sm_arch_env ? sm_arch_env : "sm_60";
+	SPDLOG_INFO("Using SM architecture: {}", sm_arch);
+
 	std::vector<uint64_t> ebpf_words;
 	for (const auto &insts : insts) {
 		ebpf_words.push_back(*(uint64_t *)(uintptr_t)&insts);
@@ -534,7 +544,7 @@ int nv_attach_impl::run_attach_entry_on_gpu(int attach_id, int run_count,
 	auto ptx = ptxpass::filter_out_version_headers_ptx(
 		wrap_ptx_with_trampoline(filter_compiled_ptx_for_ebpf_program(
 			ptxpass::compile_ebpf_to_ptx_from_words(
-				ebpf_words, "sm_60", "bpf_main", false, false),
+				ebpf_words, sm_arch.c_str(), "bpf_main", false, false),
 			"bpf_main")));
 	{
 		const std::string to_replace = ".func bpf_main";
@@ -567,7 +577,8 @@ int nv_attach_impl::run_attach_entry_on_gpu(int attach_id, int run_count,
 		nvPTXCompilerHandle compiler = nullptr;
 		NVPTXCOMPILER_SAFE_CALL(nvPTXCompilerCreate(
 			&compiler, (size_t)ptx.size(), ptx.c_str()));
-		const char *compile_options[] = { "--gpu-name=sm_60",
+		std::string gpu_name_opt = "--gpu-name=" + sm_arch;
+		const char *compile_options[] = { gpu_name_opt.c_str(),
 						  "--verbose" };
 		auto status = nvPTXCompilerCompile(
 			compiler, std::size(compile_options), compile_options);
