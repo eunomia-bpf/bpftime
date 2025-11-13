@@ -11,9 +11,8 @@ concurrency:
   cancel-in-progress: true
 jobs:
   build-and-push-image:
+    if: false  # Disabled to save CI resources on dev/gpu_example branch
     runs-on: ubuntu-latest
-    # run only when code is compiling and tests are passing
-    if: "!contains(github.event.head_commit.message, '[skip ci]') && !contains(github.event.head_commit.message, '[ci skip]')"
     # steps to perform in job
     steps:
       - name: Checkout code

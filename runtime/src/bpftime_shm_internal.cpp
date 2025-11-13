@@ -22,6 +22,7 @@
 #include <cuda_runtime.h>
 #include <cuda_runtime_api.h>
 #include <cuda.h>
+#include "bpf_map/gpu/cuda_context_helpers.hpp"
 #endif
 #elif __APPLE__
 #include "bpftime_epoll.h"
@@ -916,6 +917,7 @@ bool bpftime_shm::register_cuda_host_memory()
 	std::size_t seg_size = segment.get_size(); // Total bytes in segment
 
 	// 2. Register with CUDA
+    bpftime::cuda_utils::ensure_device_can_map_host_memory();
     cudaError_t err =
         cudaHostRegister(base_addr, seg_size, cudaHostRegisterMapped);
 	if (err != cudaSuccess) {

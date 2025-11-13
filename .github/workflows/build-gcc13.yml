@@ -12,6 +12,7 @@ concurrency:
 
 jobs:
   build:
+    if: false  # Disabled to save CI resources on dev/gpu_example branch
     runs-on: ubuntu-24.04
     steps:
       - name: Checkout repository (with submodules)

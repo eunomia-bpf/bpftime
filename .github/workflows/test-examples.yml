@@ -12,6 +12,7 @@ env:
   BPFTIME_VM_NAME: llvm
 jobs:
   build-runtime:
+    if: false  # Disabled to save CI resources on dev/gpu_example branch
     strategy:
       matrix:
         enable_jit:

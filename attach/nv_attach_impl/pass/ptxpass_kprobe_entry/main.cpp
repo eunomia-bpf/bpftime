@@ -54,7 +54,41 @@ patch_entry(const std::string &ptx, const std::string &kernel,
 		insertPos++;
 
 	out.insert(insertPos, std::string("\n    call ") + fname + ";\n");
-	out = func_ptx + "\n" + out;
+	// Insert generated function AFTER PTX headers (before first
+	// .entry/.func)
+	{
+		// Recompile with headers filtered but WITHOUT register guard to
+		// reduce risk of illegal accesses
+		func_ptx = ptxpass::compile_ebpf_to_ptx_from_words(
+			ebpf_words, "sm_60", fname,
+			/*add_register_guard*/ false, false);
+		size_t insert_pos = std::string::npos;
+		auto update_pos = [&](size_t cand) {
+			if (cand != std::string::npos) {
+				if (insert_pos == std::string::npos ||
+				    cand < insert_pos) {
+					insert_pos = cand;
+				}
+			}
+		};
+		// Beginning of file checks
+		if (out.rfind(".visible .entry", 0) == 0)
+			update_pos(0);
+		if (out.rfind(".entry", 0) == 0)
+			update_pos(0);
+		if (out.rfind(".visible .func", 0) == 0)
+			update_pos(0);
+		if (out.rfind(".func", 0) == 0)
+			update_pos(0);
+		// After newline checks
+		update_pos(out.find("\n.visible .entry"));
+		update_pos(out.find("\n.entry"));
+		update_pos(out.find("\n.visible .func"));
+		update_pos(out.find("\n.func"));
+		if (insert_pos == std::string::npos)
+			insert_pos = out.size();
+		out.insert(insert_pos, func_ptx + "\n");
+	}
 	ptxpass::log_transform_stats("kprobe_entry", 1, ptx.size(), out.size());
 	return { out, true };
 }

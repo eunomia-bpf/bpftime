@@ -13,6 +13,7 @@ concurrency:
 
 jobs:
   test-ptxpass:
+    if: false  # Disabled to save CI resources on dev/gpu_example branch
     runs-on: [self-hosted, Linux, X64, gpu]
     steps:
       - name: Configure proxy for China

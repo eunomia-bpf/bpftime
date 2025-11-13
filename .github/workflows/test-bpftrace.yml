@@ -17,6 +17,7 @@ env:
 
 jobs:
   build-and-run-syscall-tracing-load-start-test:
+    if: false  # Disabled to save CI resources on dev/gpu_example branch
     runs-on: ubuntu-22.04
     container:
       image: "manjusakalza/bpftime-base-image:ubuntu-2204"

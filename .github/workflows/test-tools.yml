@@ -10,6 +10,7 @@ concurrency:
   cancel-in-progress: true
 jobs:
   build:
+    if: false  # Disabled to save CI resources on dev/gpu_example branch
     strategy:
       matrix:
         container:

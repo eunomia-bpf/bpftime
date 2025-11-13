@@ -2,6 +2,7 @@
 #include <vector>
 #include <regex>
 #include <sstream>
+#include <fstream>
 #include <algorithm> // Required for std::find, std::find_if
 #include <iostream> // For potential debugging, can be removed
 #include <stdexcept> // Required for std::invalid_argument, std::out_of_range
@@ -64,13 +65,16 @@ std::string add_register_guard_for_ebpf_ptx_func(const std::string &ptxCode)
 		R"(^\s*\.reg\s+(\.\w+)\s+([%a-zA-Z_][a-zA-Z0-9_@$.]*)(?:<(\d+)>)?\s*;)");
 	std::regex localDeclRegex(R"(^\s*\.local\s+)");
 	std::regex commentOrEmptyRegex(R"(^\s*(//.*|\s*$))");
-	std::regex openingBraceRegex(R"(^\s*\{\s*$)");
-	std::regex closingBraceRegex(R"(^\s*\}\s*$)");
+	std::regex openingBraceRegex(R"(^\s*\{\s*$)"); // Matches standalone {
+	std::regex closingBraceRegex(R"(^\s*\}\s*$)"); // Matches standalone }
+	std::regex hasOpeningBraceRegex(R"(\{)"); // Matches any { in the line
+	std::regex hasClosingBraceRegex(R"(\})"); // Matches any } in the line
 	std::regex retRegex(R"(^\s*(?:@%p\d+\s+)?ret\s*;)");
 
 	std::vector<std::string> currentFunctionLines;
 	bool inFunctionDefinition = false;
 	bool inFunctionBody = false;
+	int braceDepth = 0; // Track brace nesting depth
 
 	const std::string tempBaseReg = "%rd_ptx_instr_base";
 	const std::string tempAddrReg = "%rd_ptx_instr_addr";
@@ -88,13 +92,41 @@ std::string add_register_guard_for_ebpf_ptx_func(const std::string &ptxCode)
 			}
 		} else if (inFunctionDefinition) {
 			currentFunctionLines.push_back(line);
-			if (std::regex_search(line, openingBraceRegex)) {
+			// Check if this line contains opening brace(s)
+			// Count them properly in case there are multiple
+			int openBracesInLine = 0;
+			int closeBracesInLine = 0;
+			for (char c : line) {
+				if (c == '{')
+					openBracesInLine++;
+				else if (c == '}')
+					closeBracesInLine++;
+			}
+			if (openBracesInLine > 0) {
 				inFunctionBody = true;
 				inFunctionDefinition = false;
+				// Initialize braceDepth with net braces from
+				// this line
+				braceDepth =
+					openBracesInLine - closeBracesInLine;
 			}
 		} else if (inFunctionBody) {
+			// Count ALL braces on this line by scanning each
+			// character Cannot use regex_search because it only
+			// checks existence, not count
+			for (char c : line) {
+				if (c == '{') {
+					braceDepth++;
+				} else if (c == '}') {
+					braceDepth--;
+				}
+			}
+
 			currentFunctionLines.push_back(line);
-			if (std::regex_search(line, closingBraceRegex)) {
+
+			// Only process the function when we reach the matching
+			// closing brace
+			if (braceDepth == 0) {
 				std::vector<RegisterInfo> registersToSaveInFunc;
 
 				// 1. Determine the actual insertion point for
@@ -109,9 +141,11 @@ std::string add_register_guard_for_ebpf_ptx_func(const std::string &ptxCode)
 				}
 				for (size_t i = searchStartOffsetBrace;
 				     i < currentFunctionLines.size(); ++i) {
+					// Look for ANY line with opening brace,
+					// not just standalone
 					if (std::regex_search(
 						    currentFunctionLines[i],
-						    openingBraceRegex)) {
+						    hasOpeningBraceRegex)) {
 						currentFuncActualOpeningBraceIdx =
 							i;
 						break;
@@ -391,7 +425,9 @@ std::string add_register_guard_for_ebpf_ptx_func(const std::string &ptxCode)
 						pushSs << "\t// --- BEGIN REGISTER SAVING (PUSH to "
 						       << registerSaveAreaName
 						       << ") ---\n";
-						pushSs << "\tmov.u64 "
+						// Convert local symbol to a
+						// local-space pointer
+						pushSs << "\tcvta.local.u64 "
 						       << tempBaseReg << ", "
 						       << registerSaveAreaName
 						       << ";\n";
@@ -451,7 +487,9 @@ std::string add_register_guard_for_ebpf_ptx_func(const std::string &ptxCode)
 						popSs << "\n\t// --- BEGIN REGISTER RESTORING (POP from "
 						      << registerSaveAreaName
 						      << ") ---\n";
-						popSs << "\tmov.u64 "
+						// Convert local symbol to a
+						// local-space pointer
+						popSs << "\tcvta.local.u64 "
 						      << tempBaseReg << ", "
 						      << registerSaveAreaName
 						      << ";\n";
@@ -585,6 +623,8 @@ std::string add_register_guard_for_ebpf_ptx_func(const std::string &ptxCode)
 				}
 				currentFunctionLines.clear();
 				inFunctionBody = false;
+				braceDepth = 0; // Reset brace depth for next
+						// function
 			}
 		}
 	}
@@ -595,6 +635,22 @@ std::string add_register_guard_for_ebpf_ptx_func(const std::string &ptxCode)
 			resultPtx += l + "\n";
 		}
 	}
+
+	// Debug: Save result to a temp file for inspection (always enabled for
+	// debugging)
+	static int debug_counter = 0;
+	std::string debug_filename = "/tmp/ptx_register_guard_output_" +
+				     std::to_string(debug_counter++) + ".ptx";
+	std::ofstream debug_out(debug_filename);
+	if (debug_out.is_open()) {
+		debug_out << resultPtx;
+		debug_out.close();
+		// Log to stderr so it appears in CI logs
+		std::cerr << "[PTX_DEBUG] Saved register-guarded PTX (#"
+			  << (debug_counter - 1) << ") to " << debug_filename
+			  << " (" << resultPtx.size() << " bytes)" << std::endl;
+	}
+
 	return resultPtx;
 }
 

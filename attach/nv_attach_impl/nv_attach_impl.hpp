@@ -148,6 +148,7 @@ class nv_attach_impl final : public base_attach_impl {
 	std::optional<std::vector<MapBasicInfo>> map_basic_info;
 
     private:
+	void rebase_gpu_ringbuf_map_buffers();
 	void *frida_interceptor;
 	void *frida_listener;
 	std::vector<std::unique_ptr<CUDARuntimeFunctionHookerContext>>

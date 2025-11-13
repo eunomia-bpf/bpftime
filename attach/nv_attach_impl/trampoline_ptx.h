@@ -847,6 +847,13 @@ $L__BB7_12:
 	ld.param.u64 	%rd11, [_bpf_helper_ext_0006_param_2];
 	ld.param.u64 	%rd10, [_bpf_helper_ext_0006_param_1];
 	ld.const.u64 	%rd1, [constData];
+	// Early-out safety guard if constData was not initialized
+	setp.eq.s64 	%p1, %rd1, 0;
+	@!%p1 bra 	$L__BPF_EARLY_OK_0006;
+	mov.u64 	%rd27, 0;
+	st.param.b64 	[func_retval0+0], %rd27;
+	ret;
+$L__BPF_EARLY_OK_0006:
 	setp.eq.s64 	%p1, %rd10, 0;
 	@%p1 bra 	$L__BB8_3;
 // %bb.1:
@@ -940,6 +947,13 @@ $L__BB8_8:
 
 // %bb.0:
 	ld.const.u64 	%rd8, [constData];
+	// Early-out safety guard if constData was not initialized
+	setp.eq.s64 	%p1, %rd8, 0;
+	@!%p1 bra 	$L__BPF_EARLY_OK_0014;
+	mov.u64 	%rd13, 0;
+	st.param.b64 	[func_retval0+0], %rd13;
+	ret;
+$L__BPF_EARLY_OK_0014:
 	mov.u32 	%r6, %tid.x;
 	and.b32  	%r1, %r6, 31;
 	add.s64 	%rd9, %rd8, 4;
@@ -1267,6 +1281,8 @@ $L__BB11_8:
 	.reg .b64 	%rd<2>;
 
 // %bb.0:
+	// Initialize to 0 and try to read globaltimer; on unsupported arch the JIT may ignore it
+	mov.u64 %rd1, 0;
 	// begin inline asm
 	mov.u64 %rd1, %globaltimer;
 	// end inline asm

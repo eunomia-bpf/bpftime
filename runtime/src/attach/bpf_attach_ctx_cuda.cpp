@@ -1,5 +1,6 @@
 #include "bpftime_prog.hpp"
 #include "bpftime_shm_internal.hpp"
+#include "bpf_map/gpu/cuda_context_helpers.hpp"
 #include "cuda_runtime_api.h"
 #include "driver_types.h"
 #include "nv_attach_impl.hpp"
@@ -266,13 +267,32 @@ std::optional<std::unique_ptr<cuda::CUDAContext>> create_cuda_context()
 	auto cuda_shared_mem = std::make_unique<cuda::CommSharedMem>();
 	memset(cuda_shared_mem.get(), 0, sizeof(*cuda_shared_mem));
 
-	CUDART_SAFE_CALL(cudaHostRegister(cuda_shared_mem.get(),
-					  sizeof(cuda::CommSharedMem),
-					  cudaHostRegisterDefault),
-			 "Unable to register shared memory");
+    bpftime::cuda_utils::ensure_device_can_map_host_memory();
+    CUDART_SAFE_CALL(
+        cudaHostRegister(cuda_shared_mem.get(),
+                         sizeof(cuda::CommSharedMem),
+                         cudaHostRegisterMapped),
+        "Unable to register shared memory for CUDA helpers");
 
-	auto cuda_ctx = std::make_optional(std::make_unique<cuda::CUDAContext>(
-		std::move(cuda_shared_mem)));
+    auto cuda_ctx = std::make_optional(std::make_unique<cuda::CUDAContext>(
+        std::move(cuda_shared_mem)));
+
+    void *dev_ptr = nullptr;
+    CUDART_SAFE_CALL(
+        cudaHostGetDevicePointer(
+            &dev_ptr,
+            (void *)(*cuda_ctx)->cuda_shared_mem.get(), 0),
+        "Unable to fetch device pointer for CUDA helpers");
+    if (dev_ptr == nullptr) {
+        SPDLOG_ERROR(
+            "cudaHostGetDevicePointer returned nullptr for CUDA helper shared memory");
+        throw std::runtime_error(
+            "cudaHostGetDevicePointer returned nullptr");
+    }
+    (*cuda_ctx)->cuda_shared_mem_device_pointer =
+        reinterpret_cast<uintptr_t>(dev_ptr);
+    SPDLOG_INFO("CUDA mapped host shared memory to device pointer {:x}",
+                (uintptr_t)(*cuda_ctx)->cuda_shared_mem_device_pointer);
 
 	SPDLOG_INFO("CUDA context created");
 	return cuda_ctx;

@@ -47,6 +47,7 @@
 #include <variant>
 #include <vector>
 #include <boost/asio.hpp>
+#include <algorithm>
 #include "ptxpass/core.hpp"
 #include "ptx_pass_config.h"
 using namespace bpftime;
@@ -668,6 +669,12 @@ int nv_attach_impl::run_attach_entry_on_gpu(int attach_id, int run_count,
 		}
 	}
 	return 0;
+}
+
+void nv_attach_impl::rebase_gpu_ringbuf_map_buffers()
+{
+	SPDLOG_DEBUG(
+		"nv_attach_impl::rebase_gpu_ringbuf_map_buffers is a no-op (legacy placeholder)");
 }
 
 void nv_attach_impl::mirror_cuda_memcpy_to_symbol(

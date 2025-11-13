@@ -13,6 +13,7 @@ concurrency:
 
 jobs:
   build_and_test_attach:
+    if: false  # Disabled to save CI resources on dev/gpu_example branch
     runs-on: "ubuntu-latest"
     strategy:
       matrix:

@@ -1,0 +1,267 @@
+name: Build and run GPU integrated tests (examples)
+
+on:
+  workflow_dispatch:
+  push:
+    branches: ["*"]
+  pull_request:
+    branches: ["master", "main"]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}-${{ github.event_name }}
+  cancel-in-progress: true
+
+env:
+  BPFTIME_VM_NAME: llvm
+
+jobs:
+  build-and-test-gpu-examples:
+    runs-on: [self-hosted, Linux, X64, gpu]
+    strategy:
+      fail-fast: false
+      max-parallel: 1
+      matrix:
+        examples:
+          - path: kernelretsnoop
+            executable: ./kernelretsnoop
+            victim: ./vec_add
+            expected_str: "Thread ("
+            name: kernelretsnoop
+            server_timeout: 15
+          - path: threadhist
+            executable: ./threadhist
+            victim: ./vec_add
+            expected_str: "Thread "
+            name: threadhist
+            server_timeout: 15
+          - path: cuda-counter
+            executable: ./cuda_probe
+            victim: ./vec_add
+            expected_str: "calls:"
+            name: cuda-counter
+            server_timeout: 15
+          - path: launchlate
+            executable: ./launchlate
+            victim: ./vec_add
+            expected_str: "Monitoring CUDA kernel launch latency"
+            name: launchlate
+            server_timeout: 15
+          - path: mem_trace
+            executable: ./mem_trace
+            victim: ./vec_add
+            expected_str: "counter[0]="
+            name: mem_trace
+            server_timeout: 15
+
+    steps:
+      - name: Configure proxy for China
+        run: |
+          echo "Setting up proxy for China network..."
+          export http_proxy=http://192.168.15.1:2345
+          export https_proxy=http://192.168.15.1:2345
+          export HTTP_PROXY=http://192.168.15.1:2345
+          export HTTPS_PROXY=http://192.168.15.1:2345
+          export no_proxy=localhost,127.0.0.1,192.168.0.0/16
+          echo "http_proxy=http://192.168.15.1:2345" >> $GITHUB_ENV
+          echo "https_proxy=http://192.168.15.1:2345" >> $GITHUB_ENV
+          echo "HTTP_PROXY=http://192.168.15.1:2345" >> $GITHUB_ENV
+          echo "HTTPS_PROXY=http://192.168.15.1:2345" >> $GITHUB_ENV
+          echo "no_proxy=localhost,127.0.0.1,192.168.0.0/16" >> $GITHUB_ENV
+          git config --global --add http.proxy http://192.168.15.1:2345
+          git config --global --add https.proxy http://192.168.15.1:2345
+
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+ 
+
+      - name: Check and install required tools
+        run: |
+          echo "Checking installed tools..."
+          sudo apt-get update -y
+          sudo apt-get install -y build-essential llvm-dev llvm-18-dev cmake \
+            libboost-all-dev libzstd-dev pkg-config ninja-build \
+            libelf-dev zlib1g-dev libcurl4-openssl-dev \
+            clang clang-18 gdb
+          
+          # Check CUDA
+          nvcc --version || echo "nvcc not found (CUDA compiler)"
+          echo "CUDA location: $(which nvcc)"
+
+      - name: Print GPU info
+        run: |
+          echo "GPU inventory:"
+          nvidia-smi --query-gpu=index,name,driver_version,compute_cap --format=csv
+
+      - name: Build bpftime with CUDA support (LLVM JIT)
+        shell: bash
+        run: |
+          set -e
+          cmake -B build -S . \
+            -DCMAKE_BUILD_TYPE=Debug \
+            -DBPFTIME_LLVM_JIT=YES \
+            -DBPFTIME_ENABLE_CUDA_ATTACH=ON \
+            -DBPFTIME_CUDA_ROOT="/usr/local/cuda-12.6" \
+            -DLLVM_DIR="/usr/lib/llvm-18/lib/cmake/llvm/" \
+            -G Ninja
+          set +e
+          cmake --build build --config Debug --target bpftime-agent bpftime-syscall-server ptxpass_kprobe_entry ptxpass_kretprobe ptxpass_kprobe_memcapture -j$(nproc) --verbose -- -v | tee build_llvm_verbose.log
+          BUILD_RC=${PIPESTATUS[0]}
+          set -e
+          if [ $BUILD_RC -ne 0 ]; then
+            echo "Build failed. Showing last 300 lines of build_llvm_verbose.log:"
+            tail -n 300 build_llvm_verbose.log || true
+            exit $BUILD_RC
+          fi
+
+      - name: Build GPU example
+        run: |
+          echo "Building GPU example: ${{matrix.examples.path}}"
+          # Prefer system clang; fallback to clang-18 if needed
+          if ! command -v clang >/dev/null 2>&1 && command -v clang-18 >/dev/null 2>&1; then
+            export CLANG=clang-18
+          fi
+          make -C example/gpu/${{matrix.examples.path}} -j
+
+      - name: Test GPU example (per README two-process)
+        shell: bash
+        run: |
+          set -xeuo pipefail
+          ROOT_DIR=$(pwd)
+          EXAMPLE_DIR="$ROOT_DIR/example/gpu/${{matrix.examples.path}}"
+          BUILD_DIR="$ROOT_DIR/build"
+          SERVER_SO="$BUILD_DIR/runtime/syscall-server/libbpftime-syscall-server.so"
+          AGENT_SO="$BUILD_DIR/runtime/agent/libbpftime-agent.so"
+          EXE="$EXAMPLE_DIR/${{ matrix.examples.executable }}"
+          VICTIM="$EXAMPLE_DIR/${{ matrix.examples.victim }}"
+          EXPECTED="${{ matrix.examples.expected_str }}"
+          EXAMPLE_NAME="${{ matrix.examples.name }}"
+          CLIENT_TIMEOUT=60
+          # enable more logs and coredumps
+          export SPDLOG_LEVEL=trace
+          export BPFTIME_LOG_LEVEL=TRACE
+          export CUDA_LAUNCH_BLOCKING=1
+          export CUDA_MODULE_LOADING=LAZY
+          ulimit -c unlimited || true
+          # Clean up any previous bpftime processes and shared memory
+          echo "Cleaning up previous bpftime processes and shared memory..."
+          # Kill all bpftime related processes
+          pkill -9 -f "LD_PRELOAD.*libbpftime.*\.so" || true
+          pkill -9 -f "kernelretsnoop" || true
+          pkill -9 -f "threadhist" || true
+          pkill -9 -f "cuda_probe" || true
+          pkill -9 -f "launchlate" || true
+          pkill -9 -f "mem_trace" || true
+          pkill -9 -f "vec_add" || true
+          sleep 2
+          # Remove all bpftime shared memory segments and semaphores
+          rm -f /dev/shm/bpftime_maps_shm || true
+          rm -f /dev/shm/sem.bpftime_maps_shm* || true
+          rm -f /dev/shm/bpftime* || true
+          rm -f /dev/shm/sem.bpftime* || true
+          # Also clean up any POSIX message queues if they exist
+          rm -f /dev/mqueue/bpftime* || true
+          # Show what's left
+          echo "Remaining shared memory files:"
+          ls -la /dev/shm/ 2>/dev/null | grep -i bpftime || echo "No bpftime shared memory found"
+          # Clean up any leftover temporary files/directories quietly
+          shopt -s nullglob
+          for path in /tmp/bpftime-* /tmp/bpftime-mock.* /tmp/bpftime-fatbin-work.* /tmp/ptx_register_guard_output_*.ptx; do
+            rm -rf "$path" || true
+          done
+          shopt -u nullglob
+          # ensure previous logs do not interfere
+          rm -f server.log client.log || true
+          # tune shared memory size per example (ringbuf-heavy examples need more)
+          SHM_MB=16
+          case "$EXAMPLE_NAME" in
+            kernelretsnoop) SHM_MB=64 ;;  # ringbuf map needs larger shm
+          esac
+          echo "Launching server with $SERVER_SO: $EXE (BPFTIME_SHM_MEMORY_MB=$SHM_MB)"
+          BPFTIME_SHM_MEMORY_MB=$SHM_MB BPFTIME_LOG_OUTPUT=console LD_PRELOAD="$SERVER_SO" "$EXE" > server.log 2>&1 &
+          SERVER_PID=$!
+          echo "Server PID: $SERVER_PID"
+          sleep 5
+          if ! kill -0 "$SERVER_PID" 2>/dev/null; then
+            echo "Server crashed early. Showing server.log tail:"; tail -n 200 server.log || true
+            exit 1
+          fi
+          echo "Launching client with $AGENT_SO: $VICTIM"
+          set +e
+          timeout -s SIGKILL ${CLIENT_TIMEOUT}s env BPFTIME_LOG_OUTPUT=console LD_PRELOAD="$AGENT_SO" bash -lc "$VICTIM" > client.log 2>&1
+          CLIENT_RC=$?
+          set -e
+          echo "Checking expected output: $EXPECTED"
+          # treat crashes as failure even if expected string appears
+          if grep -Eiq "(core dumped|Segmentation fault|Aborted)" server.log client.log; then
+            echo "Detected crash in logs"; tail -n 200 server.log || true; tail -n 200 client.log || true; RESULT=1
+          else
+            EXAMPLE_NAME="${{ matrix.examples.name }}"
+            FOUND=1
+            case "$EXAMPLE_NAME" in
+              cuda-counter)
+                if grep -Fq "calls:" server.log || grep -Fq "C[0] =" client.log || grep -Fq "C[1] =" client.log; then
+                  FOUND=0
+                fi
+                ;;
+              mem_trace)
+                if grep -Fq "counter[0]=" server.log || grep -Fq "mem_traces:" server.log; then
+                  FOUND=0
+                fi
+                ;;
+              *)
+                if grep -Fq "$EXPECTED" server.log client.log; then
+                  FOUND=0
+                fi
+                ;;
+            esac
+            if [ $FOUND -eq 0 ]; then
+              echo "SUCCESS: found README-like output for $EXAMPLE_NAME"
+              RESULT=0
+            else
+              echo "FAILURE: expected output not found for $EXAMPLE_NAME"
+              echo "--- server.log (tail) ---"; tail -n 200 server.log || true
+              echo "--- client.log (tail) ---"; tail -n 200 client.log || true
+              RESULT=1
+            fi
+          fi
+          # Collect extra diagnostics
+          cat /proc/$SERVER_PID/maps > server.maps 2>/dev/null || true
+          dmesg | tail -n 200 > dmesg_tail.log 2>/dev/null || true
+          nvidia-smi -L > nvidia_smi_l.log 2>&1 || true
+          nvidia-smi -q -x > nvidia_smi_q.xml 2>&1 || true
+          # Collect debug PTX files
+          cp /tmp/ptx_register_guard_output_*.ptx . 2>/dev/null || true
+          cp /tmp/bpftime-fatbin-work.*/patched.*.ptx . 2>/dev/null || true
+          # Show error context from the last patched PTX file around line 819
+          LAST_PTX=$(ls -t /tmp/bpftime-fatbin-work.*/patched.*.ptx 2>/dev/null | head -1)
+          if [ -f "$LAST_PTX" ]; then
+            echo "=== Showing lines 810-830 from $LAST_PTX ==="
+            sed -n '810,830p' "$LAST_PTX" || true
+          fi
+          # Try backtrace core files if any
+          CORES=$(ls -1 core* 2>/dev/null || true)
+          if [ -n "$CORES" ]; then
+            for c in $CORES; do
+              gdb -q -batch -ex "thread apply all bt full" -ex "info registers" -ex quit "$VICTIM" "$c" > "$c.bt" 2>&1 || true
+            done
+          fi
+          kill $SERVER_PID 2>/dev/null || true
+          exit $RESULT
+
+      - name: Upload logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: gpu-example-${{ matrix.examples.name }}-logs
+          path: |
+            server.log
+            client.log
+            server.maps
+            dmesg_tail.log
+            nvidia_smi_l.log
+            nvidia_smi_q.xml
+            ptx_register_guard_output_*.ptx
+            patched.*.ptx
+            core*
+            *.bt

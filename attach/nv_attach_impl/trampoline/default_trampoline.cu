@@ -314,15 +314,18 @@ _bpf_helper_ext_0025(uint64_t ctx, uint64_t map, uint64_t flags, uint64_t data,
 							      .extra_buffer);
 		// printf("header->head=%lu, header->tail=%lu\n", header->head,
 		//        header->tail);
-		if (header->tail - header->head == map_info.max_entries) {
+		// NOTE: Avoid atomics on mapped host memory (sm_52 devices fault),
+		// rely on per-thread buffers + dirty flag for synchronization.
+		const uint64_t head_snapshot = header->head;
+		const uint64_t tail_snapshot = header->tail;
+		if (tail_snapshot - head_snapshot == map_info.max_entries) {
 			// Buffer is full
 			// printf("Buffer is full\n");
 			return 2;
 		}
 		header->dirty = 1;
-		auto tail_to_put =
-			__atomic_fetch_add(&header->tail, 1, __ATOMIC_SEQ_CST);
-		auto real_tail = tail_to_put % map_info.max_entries;
+		__threadfence_system();
+		auto real_tail = tail_snapshot % map_info.max_entries;
 		// printf("real tail=%lu\n", real_tail);
 		auto buffer =
 			((char *)header) + sizeof(ringbuf_header) +
@@ -334,6 +337,9 @@ _bpf_helper_ext_0025(uint64_t ctx, uint64_t map, uint64_t flags, uint64_t data,
 		simple_memcpy(buffer + sizeof(uint64_t),
 			      (void *)(uintptr_t)data, data_size);
 		// printf("data copied\n");
+		__threadfence_system();
+		header->tail = tail_snapshot + 1;
+		__threadfence_system();
 		header->dirty = 0;
 		// printf("Generated %d bytes of data\n", (int)data_size);
 		return 0;

@@ -36,6 +36,9 @@ int main(int argc, char **argv)
 	struct mem_trace_bpf *skel;
 	int err;
 
+	// Ensure stdout is flushed promptly when redirected to files (e.g., CI logs)
+	setvbuf(stdout, NULL, _IOLBF, 0);
+
 	/* Set up libbpf errors and debug info callback */
 	libbpf_set_print(libbpf_print_fn);
 
@@ -70,6 +73,7 @@ int main(int argc, char **argv)
 		int mapfd = bpf_map__fd(skel->maps.counter);
 		if (bpf_map_lookup_elem(mapfd, &key, &value) == 0) {
 			printf("counter[0]=%lu\n", (unsigned long)value);
+			fflush(stdout);
 		}
 	}
 cleanup:

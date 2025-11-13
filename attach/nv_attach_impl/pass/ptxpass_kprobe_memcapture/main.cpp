@@ -137,9 +137,10 @@ patch_memcapture(const std::string &ptx,
 			std::vector<uint64_t> packed(
 				packed_words,
 				packed_words + insts_local.size());
+			// Compile PTX with headers filtered but WITHOUT register guard
 			auto func_ptx = ptxpass::compile_ebpf_to_ptx_from_words(
 				packed, "sm_60",
-				"__memcapture__" + std::to_string(count), true,
+				"__memcapture__" + std::to_string(count), false,
 				false);
 			auto func_name = std::string("__memcapture__") +
 					 std::to_string(count);
@@ -149,7 +150,38 @@ patch_memcapture(const std::string &ptx,
 	}
 	if (count == 0)
 		return { ptx, false };
-	auto out = out_funcs.str() + "\n" + out_body.str();
+	// Insert generated functions AFTER PTX headers (before first .entry/.func)
+	std::string body_str = out_body.str();
+	std::string funcs_str = out_funcs.str();
+	size_t insert_pos = std::string::npos;
+	// Candidates to detect the first kernel/function definition
+	auto update_pos = [&](size_t cand) {
+		if (cand != std::string::npos) {
+			if (insert_pos == std::string::npos || cand < insert_pos) {
+				insert_pos = cand;
+			}
+		}
+	};
+	// Check for occurrences at the very beginning (no leading newline)
+	if (body_str.rfind(".visible .entry", 0) == 0)
+		update_pos(0);
+	if (body_str.rfind(".entry", 0) == 0)
+		update_pos(0);
+	if (body_str.rfind(".visible .func", 0) == 0)
+		update_pos(0);
+	if (body_str.rfind(".func", 0) == 0)
+		update_pos(0);
+	// Check for occurrences after a newline
+	update_pos(body_str.find("\n.visible .entry"));
+	update_pos(body_str.find("\n.entry"));
+	update_pos(body_str.find("\n.visible .func"));
+	update_pos(body_str.find("\n.func"));
+	// Default to appending at the end if we cannot find a good insertion point
+	if (insert_pos == std::string::npos)
+		insert_pos = body_str.size();
+	// Combine
+	std::string out = body_str.substr(0, insert_pos) + funcs_str + "\n" +
+			  body_str.substr(insert_pos);
 	ptxpass::log_transform_stats("kprobe_memcapture", count, ptx.size(),
 				     out.size());
 	return { out, true };

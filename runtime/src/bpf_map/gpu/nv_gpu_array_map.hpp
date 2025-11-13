@@ -25,6 +25,7 @@ class nv_gpu_array_map_impl {
 	uint64_t thread_count;
 
 	uint64_t entry_size;
+	CUcontext owner_cuda_context = nullptr;
 
 	bytes_vec value_buffer;
 

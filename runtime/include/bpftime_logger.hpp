@@ -1,4 +1,5 @@
 #include <string>
+#include <memory>
 #include "spdlog/spdlog.h"
 #include "spdlog/cfg/env.h"
 #include "spdlog/sinks/rotating_file_sink.h"
@@ -29,6 +30,7 @@ inline std::string expand_user_path(const std::string &input_path)
 				homeDir + input_path.substr(1);
 			return expandedPath;
 		} else {
+		// Create or reuse a named rotating file logger per target path.
 			return "console"; // Unsupported path format
 		}
 	}
@@ -40,23 +42,28 @@ inline std::string expand_user_path(const std::string &input_path)
 inline void bpftime_set_logger(const std::string &target) noexcept
 {
 	std::string logger_target = expand_user_path(target);
-	spdlog::drop_all();
+	std::shared_ptr<spdlog::logger> logger;
 	if (logger_target == "console") {
-		// Set logger to stderr
-		auto logger = spdlog::stderr_color_mt("stderr");
-		logger->set_pattern("[%Y-%m-%d %H:%M:%S][%^%l%$][%t] %v");
-		logger->flush_on(spdlog::level::info);
-		spdlog::set_default_logger(logger);
+		// Reuse the same console logger across initializations to avoid duplicate-name errors.
+		constexpr const char *logger_name = "bpftime_console";
+		logger = spdlog::get(logger_name);
+		if (!logger) {
+			logger = spdlog::stderr_color_mt(logger_name);
+		}
 	} else {
-		// Set logger to file, with rotation 5MB and 3 files
-		auto max_size = 1048576 * 5;
-		auto max_files = 3;
-		auto logger = spdlog::rotating_logger_mt(
-			"bpftime_logger", logger_target, max_size, max_files);
-		logger->set_pattern("[%Y-%m-%d %H:%M:%S][%^%l%$][%t] %v");
-		logger->flush_on(spdlog::level::info);
-		spdlog::set_default_logger(logger);
+		const std::string logger_name =
+			std::string("bpftime_file_") + logger_target;
+		logger = spdlog::get(logger_name);
+		if (!logger) {
+			auto max_size = 1048576 * 5;
+			auto max_files = 3;
+			logger = spdlog::rotating_logger_mt(
+				logger_name, logger_target, max_size, max_files);
+		}
 	}
+	logger->set_pattern("[%Y-%m-%d %H:%M:%S][%^%l%$][%t] %v");
+	logger->flush_on(spdlog::level::info);
+	spdlog::set_default_logger(logger);
 
 	// Load log level from environment
 	spdlog::cfg::load_env_levels();

@@ -20,6 +20,7 @@ concurrency:
 
 jobs:
   build-and-run:
+    if: false  # Disabled to save CI resources on dev/gpu_example branch
     runs-on: ubuntu-latest
 
     steps:

@@ -9,6 +9,7 @@ on:
 
 jobs:
   build-and-test:
+    if: false  # Disabled to save CI resources on dev/gpu_example branch
     runs-on: ubuntu-latest
     container:
       image: debian:12

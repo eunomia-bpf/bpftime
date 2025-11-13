@@ -1,11 +1,13 @@
 #include "nv_gpu_shared_array_map.hpp"
 #include "bpftime_shm.hpp"
 #include "bpftime_shm_internal.hpp"
+#include "bpf_map/gpu/cuda_context_helpers.hpp"
 #include "cuda.h"
 #include "linux/bpf.h"
 #include "spdlog/spdlog.h"
 #include <cerrno>
 #include <cstdint>
+#include <memory>
 #include <stdexcept>
 #include <unistd.h>
 
@@ -22,18 +24,19 @@ nv_gpu_shared_array_map_impl::nv_gpu_shared_array_map_impl(
     owner_cuda_context = nullptr;
     if (shm_holder.global_shared_memory.get_open_type() !=
         shm_open_type::SHM_OPEN_ONLY) {
-        cuCtxGetCurrent(&owner_cuda_context);
-        if (!owner_cuda_context) {
-            SPDLOG_WARN(
-                "Owner CUDA context not set at init; CUDA calls may fail");
-        }
+        owner_cuda_context =
+            bpftime::cuda_utils::get_or_create_primary_context();
     }
 	value_buffer.resize(value_size);
 	auto total_buffer_size = (uint64_t)value_size * max_entries;
 	SPDLOG_INFO(
 		"Initializing map type of BPF_MAP_TYPE_GPU_ARRAY_MAP (device), total_buffer_size={}",
 		total_buffer_size);
-	if (auto err = cuMemAlloc(&server_gpu_shared_mem, total_buffer_size);
+    {
+        bpftime::cuda_utils::scoped_primary_ctx ctx_guard(
+            owner_cuda_context);
+        if (auto err =
+		    cuMemAlloc(&server_gpu_shared_mem, total_buffer_size);
 	    err != CUDA_SUCCESS) {
 		SPDLOG_ERROR(
 			"Unable to allocate GPU buffer for nv_gpu_shared_array_map_impl: {}",
@@ -41,12 +44,13 @@ nv_gpu_shared_array_map_impl::nv_gpu_shared_array_map_impl(
 		throw std::runtime_error(
 			"Unable to allocate GPU buffer for nv_gpu_shared_array_map_impl");
 	}
-	if (auto err = cuMemsetD8(server_gpu_shared_mem, 0, total_buffer_size);
+        if (auto err = cuMemsetD8(server_gpu_shared_mem, 0,
+				  total_buffer_size);
 	    err != CUDA_SUCCESS) {
 		SPDLOG_ERROR("Unable to fill GPU buffer with zero: {}",
 			     (int)err);
 	}
-	if (auto err = cuIpcGetMemHandle(&this->gpu_mem_handle,
+        if (auto err = cuIpcGetMemHandle(&this->gpu_mem_handle,
 					 server_gpu_shared_mem);
 	    err != CUDA_SUCCESS) {
 		SPDLOG_ERROR(
@@ -55,6 +59,7 @@ nv_gpu_shared_array_map_impl::nv_gpu_shared_array_map_impl(
 		throw std::runtime_error(
 			"Unable to open CUDA IPC handle for nv_gpu_shared_array_map_impl");
 	}
+    }
 }
 
 void *nv_gpu_shared_array_map_impl::elem_lookup(const void *key)
@@ -65,33 +70,22 @@ void *nv_gpu_shared_array_map_impl::elem_lookup(const void *key)
 		return nullptr;
 	}
     auto base = try_initialize_for_agent_and_get_mapped_address();
-    // Switch to owner context only on server side
-    CUcontext prev_ctx = nullptr;
-    bool did_switch_ctx = false;
+    std::unique_ptr<bpftime::cuda_utils::scoped_primary_ctx> ctx_guard;
     if (shm_holder.global_shared_memory.get_open_type() !=
         shm_open_type::SHM_OPEN_ONLY) {
-        if (owner_cuda_context) {
-            cuCtxGetCurrent(&prev_ctx);
-            if (prev_ctx != owner_cuda_context) {
-                cuCtxSetCurrent(owner_cuda_context);
-                did_switch_ctx = true;
-            }
-        }
+        ctx_guard = std::make_unique<bpftime::cuda_utils::scoped_primary_ctx>(
+            owner_cuda_context);
     }
-    if (CUresult err = cuMemcpyDtoH(value_buffer.data(),
-                    (CUdeviceptr)base + (uint64_t)key_val * value_size,
-                    value_size);
+    if (CUresult err =
+            cuMemcpyDtoH(value_buffer.data(),
+                         (CUdeviceptr)base +
+                             (uint64_t)key_val * value_size,
+                         value_size);
         err != CUDA_SUCCESS) {
 		SPDLOG_ERROR("Unable to copy bytes from GPU to host: {}",
 			     (int)err);
-        if (did_switch_ctx) {
-            cuCtxSetCurrent(prev_ctx);
-        }
-        return nullptr;
+		return nullptr;
 	}
-    if (did_switch_ctx) {
-        cuCtxSetCurrent(prev_ctx);
-    }
     SPDLOG_DEBUG("Copied GPU memory base {:x} offset {} size {} to host",
              base, (uint64_t)key_val * value_size,
 		     value_size);
@@ -114,33 +108,21 @@ long nv_gpu_shared_array_map_impl::elem_update(const void *key,
 		return -1;
 	}
     auto base = try_initialize_for_agent_and_get_mapped_address();
-    CUcontext prev_ctx = nullptr;
-    bool did_switch_ctx = false;
+    std::unique_ptr<bpftime::cuda_utils::scoped_primary_ctx> ctx_guard;
     if (shm_holder.global_shared_memory.get_open_type() !=
         shm_open_type::SHM_OPEN_ONLY) {
-        if (owner_cuda_context) {
-            cuCtxGetCurrent(&prev_ctx);
-            if (prev_ctx != owner_cuda_context) {
-                cuCtxSetCurrent(owner_cuda_context);
-                did_switch_ctx = true;
-            }
-        }
+        ctx_guard = std::make_unique<bpftime::cuda_utils::scoped_primary_ctx>(
+            owner_cuda_context);
     }
     if (auto err = cuMemcpyHtoD((CUdeviceptr)base +
-                        (uint64_t)key_val * value_size,
-                    value, value_size);
+					    (uint64_t)key_val * value_size,
+				    value, value_size);
         err != CUDA_SUCCESS) {
 		SPDLOG_ERROR("Unable to copy {} bytes from host to GPU: {}",
 			     value_size, (int)err);
 		errno = EINVAL;
-        if (did_switch_ctx) {
-            cuCtxSetCurrent(prev_ctx);
-        }
 		return -1;
 	}
-    if (did_switch_ctx) {
-        cuCtxSetCurrent(prev_ctx);
-    }
 	return 0;
 }
 
@@ -178,24 +160,14 @@ nv_gpu_shared_array_map_impl::~nv_gpu_shared_array_map_impl()
 	if (shm_holder.global_shared_memory.get_open_type() !=
 	    shm_open_type::SHM_OPEN_ONLY) {
 		// Server side: free device memory
-        CUcontext prev_ctx = nullptr;
-        bool did_switch_ctx = false;
-        if (owner_cuda_context) {
-            cuCtxGetCurrent(&prev_ctx);
-            if (prev_ctx != owner_cuda_context) {
-                cuCtxSetCurrent(owner_cuda_context);
-                did_switch_ctx = true;
-            }
-        }
+        bpftime::cuda_utils::scoped_primary_ctx ctx_guard(
+            owner_cuda_context);
         if (auto err = cuMemFree(server_gpu_shared_mem);
 		    err != CUDA_SUCCESS) {
 			SPDLOG_WARN(
 				"Unable to free CUDA memory for nv_gpu_shared_array_map_impl: {}",
 				(int)err);
 		}
-        if (did_switch_ctx) {
-            cuCtxSetCurrent(prev_ctx);
-        }
 	} else {
 		// Agent side: nothing allocated here; mapping closed by CUDA
 		// context

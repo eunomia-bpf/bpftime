@@ -39,8 +39,9 @@ patch_retprobe(const std::string &ptx, const std::string &kernel,
 {
 	std::string fname = std::string("__retprobe_func__") + kernel;
 
+	// Compile eBPF PTX with headers filtered but WITHOUT register guard
 	auto func_ptx = ptxpass::compile_ebpf_to_ptx_from_words(
-		ebpf_words, "sm_60", fname, true, false);
+		ebpf_words, "sm_60", fname, false, false);
 	auto body = ptxpass::find_kernel_body(ptx, kernel);
 	if (body.first == std::string::npos) {
 		return { ptx, false };
@@ -51,7 +52,36 @@ patch_retprobe(const std::string &ptx, const std::string &kernel,
 	section = std::regex_replace(
 		section, retpat, std::string("$1call ") + fname + ";\n$1$2");
 	out.replace(body.first, body.second - body.first, section);
-	out = func_ptx + "\n" + out;
+	// Insert generated function AFTER PTX headers (before first
+	// .entry/.func)
+	{
+		size_t insert_pos = std::string::npos;
+		auto update_pos = [&](size_t cand) {
+			if (cand != std::string::npos) {
+				if (insert_pos == std::string::npos ||
+				    cand < insert_pos) {
+					insert_pos = cand;
+				}
+			}
+		};
+		// Beginning of file checks
+		if (out.rfind(".visible .entry", 0) == 0)
+			update_pos(0);
+		if (out.rfind(".entry", 0) == 0)
+			update_pos(0);
+		if (out.rfind(".visible .func", 0) == 0)
+			update_pos(0);
+		if (out.rfind(".func", 0) == 0)
+			update_pos(0);
+		// After newline checks
+		update_pos(out.find("\n.visible .entry"));
+		update_pos(out.find("\n.entry"));
+		update_pos(out.find("\n.visible .func"));
+		update_pos(out.find("\n.func"));
+		if (insert_pos == std::string::npos)
+			insert_pos = out.size();
+		out.insert(insert_pos, func_ptx + "\n");
+	}
 	ptxpass::log_transform_stats("kretprobe", 1, ptx.size(), out.size());
 	return { out, true };
 }

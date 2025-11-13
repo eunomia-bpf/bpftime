@@ -215,13 +215,14 @@ std::string compile_ebpf_to_ptx_from_words(
 		throw std::runtime_error("Unable to produce PTX from eBPF");
 	}
 	std::string filtered_ptx;
+	// Always remove version/target/address headers from generated PTX
+	auto no_header_ptx = filter_compiled_ptx_for_ebpf_program(original_ptx);
 	if (add_register_guard_and_filter_version_headers) {
 		filtered_ptx =
 			bpftime::attach::add_register_guard_for_ebpf_ptx_func(
-				filter_compiled_ptx_for_ebpf_program(
-					original_ptx));
+				no_header_ptx);
 	} else {
-		filtered_ptx = original_ptx;
+		filtered_ptx = no_header_ptx;
 	}
 	return filtered_ptx;
 }
@@ -238,13 +239,6 @@ std::string filter_compiled_ptx_for_ebpf_program(std::string input)
 			R"(\.extern\s+\.func\s+\(\s*\.param\s+\.b64\s+func_retval0\s*\)\s+_bpf_helper_ext_\d{4}\s*\(\s*(?:\.param\s+\.b64\s+_bpf_helper_ext_\d{4}_param_\d+\s*,\s*)*\.param\s+\.b64\s+_bpf_helper_ext_\d{4}_param_\d+\s*\)\s*;)"),
 
 	};
-	static const std::string FILTERED_OUT_SECTION[] = {
-		R"(.visible .func bpf_main(
-	.param .b64 bpf_main_param_0,
-	.param .b64 bpf_main_param_1
-))",
-		R"(.visible .func bpf_main())"
-	};
 	while (std::getline(iss, line)) {
 		// if(line.starts_with)
 		bool skip = false;
@@ -258,11 +252,76 @@ std::string filter_compiled_ptx_for_ebpf_program(std::string input)
 			oss << line << std::endl;
 	}
 	auto result = oss.str();
-	for (const auto &sec : FILTERED_OUT_SECTION) {
-		if (auto pos = result.find(sec); pos != result.npos) {
-			result = result.replace(pos, sec.size(), "");
+
+	// Remove entire bpf_main function (not just signature)
+	// Use manual search to handle brace matching properly
+	while (true) {
+		size_t pos = result.find(".func bpf_main");
+		if (pos == std::string::npos) {
+			break;
+		}
+
+		// Find start of line containing .func bpf_main
+		// This handles indentation and ensures we start from line
+		// beginning
+		size_t line_start = pos;
+		while (line_start > 0 && result[line_start - 1] != '\n') {
+			line_start--;
+		}
+
+		// Find the opening brace - it should be on its own line
+		// typically
+		size_t brace_start = result.find('{', pos);
+		if (brace_start == std::string::npos) {
+			// No opening brace found, just remove from line start
+			// to line end
+			size_t line_end = result.find('\n', pos);
+			if (line_end != std::string::npos) {
+				result.erase(line_start,
+					     line_end - line_start + 1);
+			} else {
+				result.erase(line_start);
+			}
+			continue;
+		}
+
+		// Find matching closing brace using proper bracket counting
+		int brace_count = 1;
+		size_t brace_end = brace_start + 1;
+		while (brace_end < result.size() && brace_count > 0) {
+			if (result[brace_end] == '{') {
+				brace_count++;
+			} else if (result[brace_end] == '}') {
+				brace_count--;
+			}
+			brace_end++;
+		}
+
+		if (brace_count == 0) {
+			// Remove entire function from line_start to after
+			// closing brace Skip to end of line after closing brace
+			while (brace_end < result.size() &&
+			       result[brace_end] != '\n') {
+				brace_end++;
+			}
+			if (brace_end < result.size() &&
+			    result[brace_end] == '\n') {
+				brace_end++;
+			}
+			result.erase(line_start, brace_end - line_start);
+		} else {
+			// Couldn't find matching brace, just remove the
+			// function declaration line
+			size_t line_end = result.find('\n', pos);
+			if (line_end != std::string::npos) {
+				result.erase(line_start,
+					     line_end - line_start + 1);
+			} else {
+				result.erase(line_start);
+			}
 		}
 	}
+
 	for (const auto &regex : FILTERED_OUT_REGEXS) {
 		result = std::regex_replace(result, regex, "");
 	}
