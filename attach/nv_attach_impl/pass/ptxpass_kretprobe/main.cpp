@@ -40,7 +40,7 @@ patch_retprobe(const std::string &ptx, const std::string &kernel,
 	std::string fname = std::string("__retprobe_func__") + kernel;
 
 	auto func_ptx = ptxpass::compile_ebpf_to_ptx_from_words(
-		ebpf_words, "sm_60", fname, true, false);
+		ebpf_words, "sm_61", fname, true, false);
 	auto body = ptxpass::find_kernel_body(ptx, kernel);
 	if (body.first == std::string::npos) {
 		return { ptx, false };
@@ -79,8 +79,9 @@ extern "C" int process_input(const char *input, int length, char *output)
 			runtime_request.input.full_ptx,
 			runtime_request.input.to_patch_kernel,
 			runtime_request.get_uint64_ebpf_instructions());
-		snprintf(output, length, "%s",
-			 emit_runtime_response_and_return(out).c_str());
+		snprintf(
+			output, length, "%s",
+			emit_runtime_response_and_return(out, modified).c_str());
 		return ExitCode::Success;
 	} catch (const std::runtime_error &e) {
 		std::cerr << e.what() << "\n";

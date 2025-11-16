@@ -85,8 +85,9 @@ namespace runtime_response
 {
 struct RuntimeResponse {
 	std::string output_ptx;
+	bool modified;
 };
-NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE(RuntimeResponse, output_ptx);
+NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE(RuntimeResponse, output_ptx, modified);
 } // namespace runtime_response
 
 struct EbpfInstructionPair {
@@ -169,12 +170,13 @@ static inline void emit_runtime_response_and_print(const std::string &str)
 }
 
 static inline std::string
-emit_runtime_response_and_return(const std::string &str)
+emit_runtime_response_and_return(const std::string &str, bool modified)
 {
 	using namespace runtime_response;
 	RuntimeResponse output;
 	nlohmann::json output_json;
 	output.output_ptx = str;
+	output.modified = modified;
 	to_json(output_json, output);
 	return output_json.dump();
 }

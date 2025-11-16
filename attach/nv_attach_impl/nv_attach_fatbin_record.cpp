@@ -1,7 +1,12 @@
 #include "nv_attach_fatbin_record.hpp"
 #include "cuda.h"
+#include "nvPTXCompiler.h"
 #include "spdlog/spdlog.h"
 #include "nv_attach_impl.hpp"
+#include <cstddef>
+#include <cstdint>
+#include <iterator>
+#include <stdexcept>
 #define CUDA_DRIVER_CHECK_NO_EXCEPTION(expr, message)                          \
 	do {                                                                   \
 		if (auto err = expr; err != CUDA_SUCCESS) {                    \
@@ -15,7 +20,15 @@
 			throw std::runtime_error(message);                     \
 		}                                                              \
 	} while (false)
-
+#define NVPTXCOMPILER_CHECK_EXCEPTION(x, message)                              \
+	do {                                                                   \
+		nvPTXCompileResult result = x;                                 \
+		if (result != NVPTXCOMPILE_SUCCESS) {                          \
+			SPDLOG_ERROR("error: {} failed with error code {}\n",  \
+				     #x, (int)result);                              \
+			throw std::runtime_error(message);                     \
+		}                                                              \
+	} while (0)
 namespace bpftime::attach
 {
 fatbin_record::~fatbin_record()
@@ -83,7 +96,79 @@ void fatbin_record::try_loading_ptxs(class nv_attach_impl &impl)
 	SPDLOG_INFO("Loading & patching current fatbin..");
 	auto patched_ptx = *impl.hack_fatbin(original_ptx);
 
-	for (const auto &[name, ptx] : patched_ptx) {
+	{
+		unsigned major, minor;
+		NVPTXCOMPILER_CHECK_EXCEPTION(nvPTXCompilerGetVersion(&major,
+								      &minor),
+					      "Unable to get compiler version");
+		SPDLOG_INFO("Compiler version: {}.{}", major, minor);
+	}
+
+	std::map<std::string, std::vector<uint8_t>> compiled_ptx;
+	for (const auto &[name, ptx_and_trampoline_flag] : patched_ptx) {
+		const auto &ptx = std::get<0>(ptx_and_trampoline_flag);
+		nvPTXCompilerHandle compiler = nullptr;
+		NVPTXCOMPILER_CHECK_EXCEPTION(
+			nvPTXCompilerCreate(&compiler, ptx.size(), ptx.c_str()),
+			"Unable to create JIT compiler");
+		const char *compile_options[] = { "--gpu-name=sm_61",
+						  "--verbose" };
+		if (auto err = nvPTXCompilerCompile(compiler,
+						    std::size(compile_options),
+						    compile_options);
+		    err != NVPTXCOMPILE_SUCCESS) {
+			size_t error_size;
+			NVPTXCOMPILER_CHECK_EXCEPTION(
+				nvPTXCompilerGetErrorLogSize(compiler,
+							     &error_size),
+				"Unable to get error size");
+			if (error_size != 0) {
+				char *error_log =
+					(char *)malloc(error_size + 1);
+				NVPTXCOMPILER_CHECK_EXCEPTION(
+					nvPTXCompilerGetErrorLog(compiler,
+								 error_log),
+					"Unable to get error_log");
+				SPDLOG_ERROR("Unable to compile PTX: {}",
+					     error_log);
+				free(error_log);
+			}
+			throw std::runtime_error("Unable to compile PTX");
+		}
+		size_t elf_size;
+		NVPTXCOMPILER_CHECK_EXCEPTION(
+			nvPTXCompilerGetCompiledProgramSize(compiler,
+							    &elf_size),
+			"Unable to get compiled program size");
+		std::vector<uint8_t> compiled_program(elf_size, 0);
+
+		NVPTXCOMPILER_CHECK_EXCEPTION(nvPTXCompilerGetCompiledProgram(
+						      compiler,
+						      compiled_program.data()),
+					      "Unable to get compiled program");
+		{
+			size_t info_size;
+
+			NVPTXCOMPILER_CHECK_EXCEPTION(
+				nvPTXCompilerGetInfoLogSize(compiler,
+							    &info_size),
+				"Unable to get info size");
+
+			if (info_size != 0) {
+				char *info_log = (char *)malloc(info_size + 1);
+				NVPTXCOMPILER_CHECK_EXCEPTION(
+					nvPTXCompilerGetInfoLog(compiler,
+								info_log),
+					"Unable to get info log");
+				SPDLOG_INFO("Info log: {}", info_log);
+				free(info_log);
+			}
+		}
+		compiled_ptx[name] = compiled_program;
+	}
+	for (const auto &[name, ptx_and_trampoline_flag] : patched_ptx) {
+		const auto &ptx = std::get<0>(ptx_and_trampoline_flag);
+		bool added_trampoline = std::get<1>(ptx_and_trampoline_flag);
 		CUmodule module;
 		SPDLOG_INFO("Loading module: {}", name);
 		char error_buf[8192], info_buf[8192];
@@ -95,9 +180,9 @@ void fatbin_record::try_loading_ptxs(class nv_attach_impl &impl)
 					  (void *)std::size(info_buf),
 					  (void *)error_buf,
 					  (void *)std::size(error_buf) };
-		if (auto err = cuModuleLoadDataEx(&module, ptx.data(),
-						  std::size(options), options,
-						  option_values);
+		if (auto err = cuModuleLoadDataEx(
+			    &module, compiled_ptx.at(name).data(),
+			    std::size(options), options, option_values);
 		    err != CUDA_SUCCESS) {
 			SPDLOG_ERROR("Unable to compile module {}: {}", name,
 				     (int)err);
@@ -105,28 +190,35 @@ void fatbin_record::try_loading_ptxs(class nv_attach_impl &impl)
 			SPDLOG_ERROR("Error: {}", error_buf);
 			throw std::runtime_error("Unable to compile module");
 		}
-		CUdeviceptr const_data_ptr, map_basic_info_ptr;
-		size_t const_data_size, map_basic_info_size;
-		SPDLOG_INFO("Copying trampoline data to device");
-		CUDA_DRIVER_CHECK_EXCEPTION(
-			cuModuleGetGlobal(&const_data_ptr, &const_data_size,
-					  module, "constData"),
-			"Unable to get pointer of constData");
-		CUDA_DRIVER_CHECK_EXCEPTION(
-			cuModuleGetGlobal(&map_basic_info_ptr,
-					  &map_basic_info_size, module,
-					  "map_info"),
-			"Unable to get pointer of map_info");
-		CUDA_DRIVER_CHECK_EXCEPTION(
-			cuMemcpyHtoD(const_data_ptr, &impl.shared_mem_ptr,
-				     const_data_size),
-			"Unable to copy constData pointer to device");
-		CUDA_DRIVER_CHECK_EXCEPTION(
-			cuMemcpyHtoD(map_basic_info_ptr,
-				     impl.map_basic_info->data(),
-				     map_basic_info_size),
-			"Unable to copy constData pointer to device");
-		SPDLOG_INFO("Trampoline data copied");
+		if (added_trampoline) {
+			CUdeviceptr const_data_ptr, map_basic_info_ptr;
+			size_t const_data_size, map_basic_info_size;
+			SPDLOG_INFO("Copying trampoline data to device");
+			CUDA_DRIVER_CHECK_EXCEPTION(
+				cuModuleGetGlobal(&const_data_ptr,
+						  &const_data_size, module,
+						  "constData"),
+				"Unable to get pointer of constData");
+			CUDA_DRIVER_CHECK_EXCEPTION(
+				cuModuleGetGlobal(&map_basic_info_ptr,
+						  &map_basic_info_size, module,
+						  "map_info"),
+				"Unable to get pointer of map_info");
+			CUDA_DRIVER_CHECK_EXCEPTION(
+				cuMemcpyHtoD(const_data_ptr,
+					     &impl.shared_mem_ptr,
+					     const_data_size),
+				"Unable to copy constData pointer to device");
+			CUDA_DRIVER_CHECK_EXCEPTION(
+				cuMemcpyHtoD(map_basic_info_ptr,
+					     impl.map_basic_info->data(),
+					     map_basic_info_size),
+				"Unable to copy constData pointer to device");
+			SPDLOG_INFO("Trampoline data copied");
+
+		} else {
+			SPDLOG_INFO("Trampoline not added, not copying data..");
+		}
 		ptxs.emplace_back(
 			std::make_unique<fatbin_record::ptx_in_module>(module));
 		SPDLOG_INFO("Loaded module: {}", name);

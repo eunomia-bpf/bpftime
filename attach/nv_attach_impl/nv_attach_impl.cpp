@@ -43,6 +43,7 @@
 #include <sys/user.h>
 #include <sys/uio.h>
 #include <link.h>
+#include <tuple>
 #include <unistd.h>
 #include <variant>
 #include <vector>
@@ -359,7 +360,7 @@ nv_attach_impl::extract_ptxs(std::vector<uint8_t> &&data_vec)
 	SPDLOG_INFO("Got {} PTX files", all_ptx.size());
 	return all_ptx;
 }
-std::optional<std::map<std::string, std::string>>
+std::optional<std::map<std::string, std::tuple<std::string, bool>>>
 nv_attach_impl::hack_fatbin(std::map<std::string, std::string> all_ptx)
 {
 	char tmp_dir[] = "/tmp/bpftime-fatbin-work.XXXXXX";
@@ -370,7 +371,7 @@ nv_attach_impl::hack_fatbin(std::map<std::string, std::string> all_ptx)
 	Here we can patch the PTX.
 	*/
 	boost::asio::thread_pool pool(std::thread::hardware_concurrency());
-	std::map<std::string, std::string> ptx_out;
+	std::map<std::string, std::tuple<std::string, bool>> ptx_out;
 	std::mutex map_mutex;
 	for (auto &[file_name, original_ptx] : all_ptx) {
 		boost::asio::post(
@@ -379,7 +380,7 @@ nv_attach_impl::hack_fatbin(std::map<std::string, std::string> all_ptx)
 			 &ptx_out]() -> void {
 				auto current_ptx = original_ptx;
 				SPDLOG_INFO("Patching PTX: {}", file_name);
-
+				bool should_add_trampoline = false;
 				for (const auto &[_, hook_entry] :
 				     this->hook_entries) {
 					const auto &kernels =
@@ -417,7 +418,7 @@ nv_attach_impl::hack_fatbin(std::map<std::string, std::string> all_ptx)
 							in, req);
 						SPDLOG_DEBUG("Input: {}",
 							     in.dump());
-						std::vector<char> buf(200
+						std::vector<char> buf(1024
 								      << 20);
 						int err =
 							hook_entry.config->process_input(
@@ -434,7 +435,9 @@ nv_attach_impl::hack_fatbin(std::map<std::string, std::string> all_ptx)
 							from_json(json, resp);
 							current_ptx =
 								resp.output_ptx;
-
+							should_add_trampoline =
+								should_add_trampoline ||
+								resp.modified;
 						} else {
 							SPDLOG_ERROR(
 								"Unable to run pass on kernel {}: {}",
@@ -443,12 +446,16 @@ nv_attach_impl::hack_fatbin(std::map<std::string, std::string> all_ptx)
 						}
 					}
 				}
-				current_ptx =
-					ptxpass::filter_out_version_headers_ptx(
-						wrap_ptx_with_trampoline(
-							current_ptx));
+				if (should_add_trampoline) {
+					current_ptx = ptxpass::
+						filter_out_version_headers_ptx(
+							wrap_ptx_with_trampoline(
+								current_ptx));
+				}
 				std::lock_guard<std::mutex> _guard(map_mutex);
-				ptx_out["patched." + file_name] = current_ptx;
+				ptx_out["patched." + file_name] =
+					std::make_tuple(current_ptx,
+							should_add_trampoline);
 			});
 	}
 	pool.join();
@@ -456,7 +463,7 @@ nv_attach_impl::hack_fatbin(std::map<std::string, std::string> all_ptx)
 	for (const auto &[file_name, ptx] : ptx_out) {
 		auto path = working_dir / (file_name);
 		std::ofstream ofs(path);
-		ofs << ptx;
+		ofs << std::get<0>(ptx);
 	}
 	return ptx_out;
 }
@@ -520,7 +527,7 @@ int nv_attach_impl::run_attach_entry_on_gpu(int attach_id, int run_count,
 	auto ptx = ptxpass::filter_out_version_headers_ptx(
 		wrap_ptx_with_trampoline(filter_compiled_ptx_for_ebpf_program(
 			ptxpass::compile_ebpf_to_ptx_from_words(
-				ebpf_words, "sm_60", "bpf_main", false, false),
+				ebpf_words, "sm_61", "bpf_main", false, false),
 			"bpf_main")));
 	{
 		const std::string to_replace = ".func bpf_main";
@@ -553,7 +560,7 @@ int nv_attach_impl::run_attach_entry_on_gpu(int attach_id, int run_count,
 		nvPTXCompilerHandle compiler = nullptr;
 		NVPTXCOMPILER_SAFE_CALL(nvPTXCompilerCreate(
 			&compiler, (size_t)ptx.size(), ptx.c_str()));
-		const char *compile_options[] = { "--gpu-name=sm_60",
+		const char *compile_options[] = { "--gpu-name=sm_61",
 						  "--verbose" };
 		auto status = nvPTXCompilerCompile(
 			compiler, std::size(compile_options), compile_options);

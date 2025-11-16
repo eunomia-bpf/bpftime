@@ -125,7 +125,7 @@ class nv_attach_impl final : public base_attach_impl {
 	nv_attach_impl &operator=(const nv_attach_impl &) = delete;
 	nv_attach_impl();
 	virtual ~nv_attach_impl();
-	std::optional<std::map<std::string, std::string>>
+	std::optional<std::map<std::string, std::tuple<std::string, bool>>>
 		hack_fatbin(std::map<std::string, std::string>);
 	std::map<std::string, std::string>
 	extract_ptxs(std::vector<uint8_t> &&);

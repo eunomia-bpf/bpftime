@@ -32,7 +32,6 @@ static inline T try_get_original_func(const char *name, T &store)
  * @return std::string
  */
 std::string get_default_trampoline_ptx();
-std::string patch_helper_names_and_header(std::string ptx_to_wrap);
 std::string patch_main_from_func_to_entry(std::string);
 std::string wrap_ptx_with_trampoline(std::string input);
 
