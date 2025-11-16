@@ -239,6 +239,20 @@ nv_attach_impl::nv_attach_impl()
 			      cuda_malloc_managed_addr);
 	}
 	{
+		void *cuda_memcpy_to_symbol_addr =
+			GSIZE_TO_POINTER(gum_module_find_export_by_name(
+				nullptr, "cudaMemcpyToSymbol"));
+		register_hook(AttachedToFunction::CudaMemcpyToSymbol,
+			      cuda_memcpy_to_symbol_addr);
+	}
+	{
+		void *cuda_memcpy_to_symbol_async_addr =
+			GSIZE_TO_POINTER(gum_module_find_export_by_name(
+				nullptr, "cudaMemcpyToSymbolAsync"));
+		register_hook(AttachedToFunction::CudaMemcpyToSymbolAsync,
+			      cuda_memcpy_to_symbol_async_addr);
+	}
+	{
 		void *cuda_launch_kernel_addr =
 			GSIZE_TO_POINTER(gum_module_find_export_by_name(
 				nullptr, "cudaLaunchKernel"));
@@ -334,13 +348,17 @@ nv_attach_impl::extract_ptxs(std::vector<uint8_t> &&data_vec)
 	boost::process::ipstream stream;
 	boost::process::environment env = boost::this_process::environment();
 	env["LD_PRELOAD"] = "";
+
+	// Build command line - use shell to properly search PATH
 	auto cuobjdump_cmd_line = std::string("cuobjdump --extract-ptx all ") +
 				  fatbin_path.string();
 	SPDLOG_INFO("Calling cuobjdump: {}", cuobjdump_cmd_line);
-	boost::process::child child(cuobjdump_cmd_line,
-				    boost::process::std_out > stream,
-				    boost::process::env(env),
-				    boost::process::start_dir = tmp_dir);
+
+	// Execute through shell to properly use PATH
+	boost::process::child child(
+		"/bin/sh", boost::process::args({ "-c", cuobjdump_cmd_line }),
+		boost::process::std_out > stream, boost::process::env(env),
+		boost::process::start_dir = tmp_dir);
 
 	std::string line;
 	while (std::getline(stream, line)) {
@@ -520,6 +538,11 @@ int nv_attach_impl::run_attach_entry_on_gpu(int attach_id, int run_count,
 	}
 	SPDLOG_INFO("Running program on GPU");
 
+	// Get SM architecture from environment variable, default to sm_60
+	const char *sm_arch_env = std::getenv("BPFTIME_SM_ARCH");
+	std::string sm_arch = sm_arch_env ? sm_arch_env : "sm_60";
+	SPDLOG_INFO("Using SM architecture: {}", sm_arch);
+
 	std::vector<uint64_t> ebpf_words;
 	for (const auto &insts : insts) {
 		ebpf_words.push_back(*(uint64_t *)(uintptr_t)&insts);
@@ -527,7 +550,8 @@ int nv_attach_impl::run_attach_entry_on_gpu(int attach_id, int run_count,
 	auto ptx = ptxpass::filter_out_version_headers_ptx(
 		wrap_ptx_with_trampoline(filter_compiled_ptx_for_ebpf_program(
 			ptxpass::compile_ebpf_to_ptx_from_words(
-				ebpf_words, "sm_61", "bpf_main", false, false),
+				ebpf_words, sm_arch.c_str(), "bpf_main", false,
+				false),
 			"bpf_main")));
 	{
 		const std::string to_replace = ".func bpf_main";
@@ -560,7 +584,8 @@ int nv_attach_impl::run_attach_entry_on_gpu(int attach_id, int run_count,
 		nvPTXCompilerHandle compiler = nullptr;
 		NVPTXCOMPILER_SAFE_CALL(nvPTXCompilerCreate(
 			&compiler, (size_t)ptx.size(), ptx.c_str()));
-		const char *compile_options[] = { "--gpu-name=sm_61",
+		std::string gpu_name_opt = "--gpu-name=" + sm_arch;
+		const char *compile_options[] = { gpu_name_opt.c_str(),
 						  "--verbose" };
 		auto status = nvPTXCompilerCompile(
 			compiler, std::size(compile_options), compile_options);
@@ -650,6 +675,72 @@ int nv_attach_impl::run_attach_entry_on_gpu(int attach_id, int run_count,
 		}
 	}
 	return 0;
+}
+
+void nv_attach_impl::mirror_cuda_memcpy_to_symbol(
+	const void *symbol, const void *src, size_t count, size_t offset,
+	cudaMemcpyKind kind, cudaStream_t stream, bool async)
+{
+	auto record_itr = symbol_address_to_fatbin.find((void *)symbol);
+	if (record_itr == symbol_address_to_fatbin.end())
+		return;
+	auto &record = *record_itr->second;
+	auto var_itr = record.variable_addr_to_symbol.find((void *)symbol);
+	if (var_itr == record.variable_addr_to_symbol.end()) {
+		SPDLOG_DEBUG(
+			"mirror_cuda_memcpy_to_symbol: no variable info for symbol pointer {:x}",
+			(uintptr_t)symbol);
+		return;
+	}
+	auto &var_info = var_itr->second;
+	if (offset >= var_info.size) {
+		SPDLOG_WARN(
+			"mirror_cuda_memcpy_to_symbol: offset {} exceeds size {} for symbol {}",
+			offset, var_info.size, var_info.symbol_name);
+		return;
+	}
+	size_t writable = var_info.size - offset;
+	size_t bytes_to_copy = std::min(count, writable);
+	if (bytes_to_copy == 0)
+		return;
+	if (bytes_to_copy != count) {
+		SPDLOG_WARN(
+			"mirror_cuda_memcpy_to_symbol: truncating copy for symbol {} (requested={}, allowed={})",
+			var_info.symbol_name, count, bytes_to_copy);
+	}
+	CUdeviceptr dst = var_info.ptr + offset;
+	CUstream cu_stream = reinterpret_cast<CUstream>(stream);
+	CUresult status = CUDA_SUCCESS;
+
+	auto copy_device_ptr = [](const void *ptr) -> CUdeviceptr {
+		return static_cast<CUdeviceptr>(
+			reinterpret_cast<uintptr_t>(ptr));
+	};
+
+	switch (kind) {
+	case cudaMemcpyHostToDevice:
+	case cudaMemcpyDefault:
+		status = async ? cuMemcpyHtoDAsync(dst, src, bytes_to_copy,
+						   cu_stream) :
+				 cuMemcpyHtoD(dst, src, bytes_to_copy);
+		break;
+	case cudaMemcpyDeviceToDevice:
+		status = async ? cuMemcpyDtoDAsync(dst, copy_device_ptr(src),
+						   bytes_to_copy, cu_stream) :
+				 cuMemcpyDtoD(dst, copy_device_ptr(src),
+					      bytes_to_copy);
+		break;
+	default:
+		SPDLOG_DEBUG(
+			"mirror_cuda_memcpy_to_symbol: unsupported memcpy kind {} for symbol {}",
+			(int)kind, var_info.symbol_name);
+		return;
+	}
+	if (status != CUDA_SUCCESS) {
+		SPDLOG_WARN(
+			"mirror_cuda_memcpy_to_symbol: failed to copy symbol {} (err={})",
+			var_info.symbol_name, (int)status);
+	}
 }
 
 } // namespace bpftime::attach

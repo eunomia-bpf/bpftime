@@ -149,6 +149,30 @@ static void example_listener_on_enter(GumInvocationListener *listener,
 		current_fatbin = nullptr;
 	} else if (context->to_function == AttachedToFunction::CudaMalloc) {
 		SPDLOG_DEBUG("Entering cudaMalloc..");
+	} else if (context->to_function == AttachedToFunction::CudaMemcpyToSymbol 
+		|| context->to_function == AttachedToFunction::CudaMemcpyToSymbolAsync) {
+		auto symbol =
+			(const void *)gum_invocation_context_get_nth_argument(
+				gum_ctx, 0);
+		auto src =
+			(const void *)gum_invocation_context_get_nth_argument(
+				gum_ctx, 1);
+		auto count = static_cast<size_t>(reinterpret_cast<uintptr_t>(
+			gum_invocation_context_get_nth_argument(gum_ctx, 2)));
+		auto offset = static_cast<size_t>(reinterpret_cast<uintptr_t>(
+			gum_invocation_context_get_nth_argument(gum_ctx, 3)));
+		auto kind =
+			static_cast<cudaMemcpyKind>(reinterpret_cast<uintptr_t>(
+				gum_invocation_context_get_nth_argument(gum_ctx,
+									4)));
+		cudaStream_t stream = nullptr;
+		bool async = context->to_function ==
+			     AttachedToFunction::CudaMemcpyToSymbolAsync;
+		if (async) {
+			stream = (cudaStream_t)gum_invocation_context_get_nth_argument(gum_ctx, 5);
+		}
+		context->impl->mirror_cuda_memcpy_to_symbol(
+			symbol, src, count, offset, kind, stream, async);
 	}
 }
 
@@ -214,7 +238,14 @@ cuda_runtime_function__cudaLaunchKernel(const void *func, dim3 grid_dim,
 			    block_dim.x, block_dim.y, block_dim.z, shared_mem,
 			    stream, args, nullptr);
 		    err != CUDA_SUCCESS) {
-			SPDLOG_ERROR("Unable to launch kernel: {}", (int)err);
+			const char* error_name = nullptr;
+			const char* error_string = nullptr;
+			cuGetErrorName(err, &error_name);
+			cuGetErrorString(err, &error_string);
+			SPDLOG_ERROR("Unable to launch kernel: {} ({})", 
+				     error_name ? error_name : "UNKNOWN",
+				     error_string ? error_string : "No description");
+			SPDLOG_ERROR("Error code: {}", (int)err);
 			return cudaErrorLaunchFailure;
 		}
 		return cudaSuccess;

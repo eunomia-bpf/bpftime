@@ -56,7 +56,9 @@ enum class AttachedToFunction {
 	RegisterVariable,
 	RegisterFatbinEnd,
 	CudaMalloc,
-	CudaMallocManaged
+	CudaMallocManaged,
+	CudaMemcpyToSymbol,
+	CudaMemcpyToSymbolAsync
 };
 struct CUDARuntimeFunctionHookerContext {
 	class nv_attach_impl *impl;
@@ -129,6 +131,10 @@ class nv_attach_impl final : public base_attach_impl {
 		hack_fatbin(std::map<std::string, std::string>);
 	std::map<std::string, std::string>
 	extract_ptxs(std::vector<uint8_t> &&);
+	void mirror_cuda_memcpy_to_symbol(const void *symbol, const void *src,
+					  size_t count, size_t offset,
+					  cudaMemcpyKind kind,
+					  cudaStream_t stream, bool async);
 
 	int find_attach_entry_by_program_name(const char *name) const;
 	int run_attach_entry_on_gpu(int attach_id, int run_count = 1,

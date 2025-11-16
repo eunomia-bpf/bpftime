@@ -1385,4 +1385,55 @@ $L__BB11_8:
 	ret;
                                         // -- End function
 }
+    // .globl   _bpf_helper_ext_0507    // -- Begin function _bpf_helper_ext_0507
+.visible .func  (.param .b64 func_retval0) _bpf_helper_ext_0507(
+    .param .b64 _bpf_helper_ext_0507_param_0,
+    .param .b64 _bpf_helper_ext_0507_param_1,
+    .param .b64 _bpf_helper_ext_0507_param_2,
+    .param .b64 _bpf_helper_ext_0507_param_3,
+    .param .b64 _bpf_helper_ext_0507_param_4
+)                                       // @_bpf_helper_ext_0507
+{
+    .reg .b64   %rd<2>;
+
+// %bb.0:
+    // begin inline asm
+    exit;                      
+    
+    // end inline asm
+    mov.u64     %rd1, 0;
+    st.param.b64    [func_retval0+0], %rd1;
+    ret;
+                                        // -- End function
+}
+	// .globl	_bpf_helper_ext_0508    // -- Begin function _bpf_helper_ext_0508
+.visible .func  (.param .b64 func_retval0) _bpf_helper_ext_0508(
+	.param .b64 _bpf_helper_ext_0508_param_0,
+	.param .b64 _bpf_helper_ext_0508_param_1,
+	.param .b64 _bpf_helper_ext_0508_param_2,
+	.param .b64 _bpf_helper_ext_0508_param_3,
+	.param .b64 _bpf_helper_ext_0508_param_4
+)                                       // @_bpf_helper_ext_0508
+{
+	.reg .b32 	%r<4>;
+	.reg .b64 	%rd<8>;
+
+// %bb.0:
+	ld.param.u64 	%rd1, [_bpf_helper_ext_0508_param_0];
+	ld.param.u64 	%rd2, [_bpf_helper_ext_0508_param_1];
+	mov.u32 	%r1, %nctaid.x;
+	cvt.u64.u32 	%rd3, %r1;
+	ld.param.u64 	%rd4, [_bpf_helper_ext_0508_param_2];
+	st.u64 	[%rd1], %rd3;
+	mov.u32 	%r2, %nctaid.y;
+	cvt.u64.u32 	%rd5, %r2;
+	st.u64 	[%rd2], %rd5;
+	mov.u32 	%r3, %nctaid.z;
+	cvt.u64.u32 	%rd6, %r3;
+	st.u64 	[%rd4], %rd6;
+	mov.u64 	%rd7, 0;
+	st.param.b64 	[func_retval0+0], %rd7;
+	ret;
+                                        // -- End function
+}
 )";
