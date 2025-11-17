@@ -263,7 +263,7 @@ void fatbin_record::try_loading_ptxs(class nv_attach_impl &impl)
 					cuMemcpyHtoD(map_basic_info_ptr,
 						     impl.map_basic_info->data(),
 						     map_basic_info_size),
-					"Unable to copy constData pointer to device");
+					"Unable to copy map_info pointer to device");
 				SPDLOG_INFO("Trampoline data copied");
 			}
 			auto ptr = std::make_shared<ptx_in_module>(module);

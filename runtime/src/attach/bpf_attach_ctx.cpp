@@ -108,9 +108,7 @@ int bpf_attach_ctx::init_attach_ctx_from_handlers(
 bpf_attach_ctx::~bpf_attach_ctx()
 {
 	SPDLOG_DEBUG("Destructor: bpf_attach_ctx");
-#ifdef BPFTIME_ENABLE_CUDA_ATTACH
-	cuda_ctx->cuda_watcher_should_stop->store(true);
-#endif
+	// CUDAContext destructor will handle stopping the worker thread
 }
 
 // create a probe context
@@ -121,9 +119,7 @@ bpf_attach_ctx::bpf_attach_ctx()
 {
 	current_id = CURRENT_ID_OFFSET;
 	SPDLOG_INFO("bpf_attach_ctx constructed");
-#ifdef BPFTIME_ENABLE_CUDA_ATTACH
-	start_cuda_watcher_thread();
-#endif
+	// Worker thread is automatically started in CUDAContext constructor
 }
 
 int bpf_attach_ctx::instantiate_handler_at(const handler_manager *manager,

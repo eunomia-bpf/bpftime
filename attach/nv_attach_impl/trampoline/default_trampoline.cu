@@ -73,11 +73,11 @@ union HelperCallResponse {
  * - paramA: 设备端写入的参数，让主机端使用
  */
 struct CommSharedMem {
-	int flag1;
-	int flag2;
+	volatile int flag1;
+	volatile int flag2;
 	int occupy_flag;
-	int request_id;
-	long map_id;
+	volatile int request_id;
+	volatile long map_id;
 	HelperCallRequest req;
 	HelperCallResponse resp;
 	uint64_t time_sum[8];
@@ -140,19 +140,20 @@ extern "C" __device__ HelperCallResponse make_helper_call(long map_id,
 			g_data->map_id = map_id;
 
 			asm volatile(".reg .pred p0;                   \n\t"
-				     "membar.sys;                      \n\t"
-				     "st.global.u32 [%1], 1;           \n\t"
-				     "spin_wait:                       \n\t"
-				     "membar.sys;                      \n\t"
-				     "ld.global.u32 %0, [%2];          \n\t"
-				     "setp.eq.u32 p0, %0, 0;           \n\t"
-				     "@p0 bra spin_wait;               \n\t"
-				     "st.global.u32 [%2], 0;           \n\t"
-				     "membar.sys;                      \n\t"
-				     :
-				     : "r"(val), "l"(&g_data->flag1),
-				       "l"(&g_data->flag2)
-				     : "memory");
+					"membar.sys;                      \n\t"
+					"st.global.u32 [%1], 1;           \n\t"
+					"spin_wait:                       \n\t"
+					"membar.sys;                      \n\t"
+					// volatile will force the read from memory, not cache
+					"ld.volatile.global.u32 %0, [%2];          \n\t"
+					"setp.eq.u32 p0, %0, 0;           \n\t"
+					"@p0 bra spin_wait;               \n\t"
+					"st.global.u32 [%2], 0;           \n\t"
+					"membar.sys;                      \n\t"
+					:
+					: "r"(val), "l"(&g_data->flag1),
+					"l"(&g_data->flag2)
+					: "memory");
 
 			my_resp = g_data->resp;
 
