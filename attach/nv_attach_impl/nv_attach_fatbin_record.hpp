@@ -34,9 +34,9 @@ struct fatbin_record {
 	std::map<void *, variable_info> variable_addr_to_symbol;
 	std::map<void *, kernel_info> function_addr_to_symbol;
 	std::map<std::string, std::string> original_ptx;
+	bool all_ptx_not_modified = true;
 	bool ptx_loaded = false;
 	void try_loading_ptxs(class nv_attach_impl &);
-	// void **fatbin_handle = nullptr;
 	virtual ~fatbin_record();
 	bool find_and_fill_variable_info(void *ptr, const char *symbol_name);
 	bool find_and_fill_function_info(void *ptr, const char *symbol_name);

@@ -538,9 +538,9 @@ int nv_attach_impl::run_attach_entry_on_gpu(int attach_id, int run_count,
 	}
 	SPDLOG_INFO("Running program on GPU");
 
-	// Get SM architecture from environment variable, default to sm_60
+	// Get SM architecture from environment variable, default to sm_61
 	const char *sm_arch_env = std::getenv("BPFTIME_SM_ARCH");
-	std::string sm_arch = sm_arch_env ? sm_arch_env : "sm_60";
+	std::string sm_arch = sm_arch_env ? sm_arch_env : "sm_61";
 	SPDLOG_INFO("Using SM architecture: {}", sm_arch);
 
 	std::vector<uint64_t> ebpf_words;
@@ -682,8 +682,17 @@ void nv_attach_impl::mirror_cuda_memcpy_to_symbol(
 	cudaMemcpyKind kind, cudaStream_t stream, bool async)
 {
 	auto record_itr = symbol_address_to_fatbin.find((void *)symbol);
-	if (record_itr == symbol_address_to_fatbin.end())
+	if (record_itr == symbol_address_to_fatbin.end()) {
+		SPDLOG_DEBUG(
+			"In mirror_cuda_memcpy_to_symbol: calling original cudaMemcpyToSymbol");
+		if (async) {
+			cudaMemcpyToSymbol(symbol, src, count, offset, kind);
+		} else {
+			cudaMemcpyToSymbolAsync(symbol, src, count, offset,
+						kind, stream);
+		}
 		return;
+	}
 	auto &record = *record_itr->second;
 	auto var_itr = record.variable_addr_to_symbol.find((void *)symbol);
 	if (var_itr == record.variable_addr_to_symbol.end()) {

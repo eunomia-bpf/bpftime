@@ -18,8 +18,7 @@ static const u64 (*bpf_get_block_idx)(u64 *x, u64 *y, u64 *z) = (void *)503;
 static const u64 (*bpf_get_block_dim)(u64 *x, u64 *y, u64 *z) = (void *)504;
 static const u64 (*bpf_get_thread_idx)(u64 *x, u64 *y, u64 *z) = (void *)505;
 
-SEC("kretprobe/maxwell_sgemm_128x64_nn")
-// SEC("kretprobe/_Z7acc_f32PKfS0_Pflllllllll")
+SEC("kretprobe/_ZN2at6native29vectorized_elementwise_kernelILi2ENS0_21CUDAFunctorOnSelf_addIlEESt5arrayIPcLm2EEEEviT0_T1_")
 int cuda__retprobe()
 {
 	u32 key = 0;
