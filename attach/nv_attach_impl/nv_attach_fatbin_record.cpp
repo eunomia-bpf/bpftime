@@ -7,8 +7,12 @@
 #include <boost/asio/thread_pool.hpp>
 #include <cstddef>
 #include <cstdint>
+#include <cstdio>
+#include <dlfcn.h>
 #include <iterator>
 #include <stdexcept>
+#include <ptx_pass_config.h>
+#include "ptx_compiler/ptx_compiler.hpp"
 #define CUDA_DRIVER_CHECK_NO_EXCEPTION(expr, message)                          \
 	do {                                                                   \
 		if (auto err = expr; err != CUDA_SUCCESS) {                    \
@@ -120,94 +124,38 @@ void fatbin_record::try_loading_ptxs(class nv_attach_impl &impl)
 	}
 
 	std::map<std::string, std::vector<uint8_t>> compiled_ptx;
-	boost::asio::thread_pool pool(std::thread::hardware_concurrency());
-	std::mutex map_mutex;
+	const auto &handler = impl.ptx_compiler;
 	for (const auto &[name, ptx_and_trampoline_flag] : patched_ptx) {
 		const auto &ptx = std::get<0>(ptx_and_trampoline_flag);
 		if (std::get<1>(ptx_and_trampoline_flag)) {
 			SPDLOG_INFO("Start compiling {}", name);
-
-			boost::asio::post(pool, [ptx, &map_mutex, &compiled_ptx, name]() -> void {
-				nvPTXCompilerHandle compiler = nullptr;
-				NVPTXCOMPILER_CHECK_EXCEPTION(
-					nvPTXCompilerCreate(&compiler,
-							    ptx.size(),
-							    ptx.c_str()),
-					"Unable to create JIT compiler");
-				const char *compile_options[] = {
-					"--gpu-name=sm_61", "--verbose"
-				};
-				if (auto err = nvPTXCompilerCompile(
-					    compiler,
-					    std::size(compile_options),
-					    compile_options);
-				    err != NVPTXCOMPILE_SUCCESS) {
-					size_t error_size;
-					NVPTXCOMPILER_CHECK_EXCEPTION(
-						nvPTXCompilerGetErrorLogSize(
-							compiler, &error_size),
-						"Unable to get error size");
-					if (error_size != 0) {
-						char *error_log =
-							(char *)malloc(
-								error_size + 1);
-						NVPTXCOMPILER_CHECK_EXCEPTION(
-							nvPTXCompilerGetErrorLog(
-								compiler,
-								error_log),
-							"Unable to get error_log");
-						SPDLOG_ERROR(
-							"Unable to compile PTX: {}",
-							error_log);
-						free(error_log);
-					}
-					throw std::runtime_error(
-						"Unable to compile PTX");
-				}
-				size_t elf_size;
-				NVPTXCOMPILER_CHECK_EXCEPTION(
-					nvPTXCompilerGetCompiledProgramSize(
-						compiler, &elf_size),
-					"Unable to get compiled program size");
-				std::vector<uint8_t> compiled_program(elf_size,
-								      0);
-
-				NVPTXCOMPILER_CHECK_EXCEPTION(
-					nvPTXCompilerGetCompiledProgram(
-						compiler,
-						compiled_program.data()),
-					"Unable to get compiled program");
-				{
-					size_t info_size;
-
-					NVPTXCOMPILER_CHECK_EXCEPTION(
-						nvPTXCompilerGetInfoLogSize(
-							compiler, &info_size),
-						"Unable to get info size");
-
-					if (info_size != 0) {
-						char *info_log = (char *)malloc(
-							info_size + 1);
-						NVPTXCOMPILER_CHECK_EXCEPTION(
-							nvPTXCompilerGetInfoLog(
-								compiler,
-								info_log),
-							"Unable to get info log");
-						SPDLOG_DEBUG("Info log: {}",
-							     info_log);
-						free(info_log);
-					}
-				}
-				SPDLOG_INFO("Compile of {} done", name);
-				std::lock_guard<std::mutex> _guard(map_mutex);
-				compiled_ptx[name] = compiled_program;
-			});
+			auto compiler = handler.create();
+			if (!compiler) {
+				throw std::runtime_error(
+					"Unable to create nv_attach_impl_ptx_compiler");
+			}
+			if (auto err = handler.compile(compiler, ptx.c_str());
+			    err != 0) {
+				SPDLOG_ERROR(
+					"Unable to compile: {}, error = {}",
+					err, handler.get_error_log(compiler));
+				throw std::runtime_error("Unable to compile");
+			}
+			SPDLOG_DEBUG("Info: {}",
+				     handler.get_info_log(compiler));
+			uint8_t *data;
+			size_t size;
+			handler.get_compiled_program(compiler, &data, &size);
+			std::vector<uint8_t> compiled_program(data,
+							      data + size);
+			handler.destroy(compiler);
+			compiled_ptx[name] = compiled_program;
+			SPDLOG_INFO("Compile of {} done", name);
 		} else {
 			SPDLOG_INFO("Not compiling {} since it's not modified",
 				    name);
 		}
 	}
-	pool.join();
 	for (const auto &[name, ptx_and_trampoline_flag] : patched_ptx) {
 		const auto &ptx = std::get<0>(ptx_and_trampoline_flag);
 		bool added_trampoline = std::get<1>(ptx_and_trampoline_flag);
@@ -215,7 +163,7 @@ void fatbin_record::try_loading_ptxs(class nv_attach_impl &impl)
 		if (added_trampoline) {
 			CUmodule module;
 			SPDLOG_INFO("Loading module: {}", name);
-			char error_buf[8192], info_buf[8192];
+			char error_buf[8192] = { 0 }, info_buf[8192] = { 0 };
 			CUjit_option options[] = {
 				CU_JIT_INFO_LOG_BUFFER,
 				CU_JIT_INFO_LOG_BUFFER_SIZE_BYTES,

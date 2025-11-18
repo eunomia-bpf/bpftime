@@ -12,6 +12,14 @@ list(APPEND PTX_PASS_EXECUTABLE $<TARGET_FILE:ptxpass_kprobe_memcapture>)
 
 message("PTX_PASS_EXECUTABLE=${PTX_PASS_EXECUTABLE}")
 
+
+# Independent PTX compiler
+add_subdirectory(ptx_compiler)
+
+list(APPEND PTX_COMPILER_SHARED_LIB $<TARGET_FILE:nv_attach_impl_ptx_compiler>)
+
+message("PTX_COMPILER_SHARED_LIB=${PTX_COMPILER_SHARED_LIB}")
+
 add_library(
     bpftime_nv_attach_impl STATIC
     nv_attach_impl.cpp
@@ -37,7 +45,7 @@ set_property(TARGET bpftime_nv_attach_impl PROPERTY CXX_STANDARD 20)
 # Create a build-time header file with the PTX pass paths
 # This avoids shell escaping issues with colons and quotes
 file(GENERATE OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/ptx_pass_config.h"
-     CONTENT "#pragma once\nstatic constexpr const char *DEFAULT_PTX_PASS_EXECUTABLE = \"$<JOIN:${PTX_PASS_EXECUTABLE},:>\";\n")
+     CONTENT "#pragma once\nstatic constexpr const char *DEFAULT_PTX_PASS_EXECUTABLE = \"$<JOIN:${PTX_PASS_EXECUTABLE},:>\";static constexpr const char* DEFAULT_PTX_COMPILER_SHARED_LIB=\"$<JOIN:${PTX_COMPILER_SHARED_LIB},:>\";\n")
 
 
 target_link_options(bpftime_nv_attach_impl PUBLIC "-Wl,--whole-archive" "$<TARGET_FILE:bpftime_nv_attach_impl>" "-Wl,--no-whole-archive")

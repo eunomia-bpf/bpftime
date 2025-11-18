@@ -7,6 +7,7 @@
 #include "nvPTXCompiler.h"
 #include "nv_attach_private_data.hpp"
 #include "nv_attach_utils.hpp"
+#include "ptx_compiler/ptx_compiler.hpp"
 #include "spdlog/spdlog.h"
 #include <asm/unistd.h> // For architecture-specific syscall numbers
 #include <boost/asio/io_context.hpp>
@@ -322,12 +323,20 @@ nv_attach_impl::nv_attach_impl()
 				path, config, print_config, process_input,
 				handle));
 	}
+	{
+		this->ptx_compiler = *load_nv_attach_impl_ptx_compiler(
+			DEFAULT_PTX_COMPILER_SHARED_LIB,
+			this->ptx_compiler_dl_handle);
+	}
 }
 
 nv_attach_impl::~nv_attach_impl()
 {
 	if (frida_listener)
 		g_object_unref(frida_listener);
+	if (ptx_compiler_dl_handle) {
+		dlclose(ptx_compiler_dl_handle);
+	}
 }
 std::map<std::string, std::string>
 nv_attach_impl::extract_ptxs(std::vector<uint8_t> &&data_vec)

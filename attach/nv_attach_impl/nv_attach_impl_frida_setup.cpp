@@ -117,11 +117,13 @@ static void example_listener_on_enter(GumInvocationListener *listener,
 			SPDLOG_WARN(
 				"Unable to find_and_fill function info of symbol named {}, the PTX may not be compiled due to not modifiying by nv_attach_impl",
 				symbol_name);
+		} else {
+			context->impl->symbol_address_to_fatbin[func_addr] =
+				current_fatbin;
+			SPDLOG_DEBUG(
+				"Registered kernel function name {} addr {:x}",
+				symbol_name, (uintptr_t)func_addr);
 		}
-		context->impl->symbol_address_to_fatbin[func_addr] =
-			current_fatbin;
-		SPDLOG_DEBUG("Registered kernel function name {} addr {:x}",
-			     symbol_name, (uintptr_t)func_addr);
 
 	} else if (context->to_function ==
 		   AttachedToFunction::RegisterVariable) {
@@ -149,11 +151,13 @@ static void example_listener_on_enter(GumInvocationListener *listener,
 			SPDLOG_WARN(
 				"Unable to find_and_fill variable info of symbol names {}, the PTX may not be compiled due to not modifiying by nv_attach_impl",
 				symbol_name);
+		} else {
+			context->impl->symbol_address_to_fatbin[var_addr] =
+				current_fatbin;
+			SPDLOG_DEBUG("Registered variable name {} addr {:x}",
+				     symbol_name, (uintptr_t)var_addr);
 		}
-		context->impl->symbol_address_to_fatbin[var_addr] =
-			current_fatbin;
-		SPDLOG_DEBUG("Registered variable name {} addr {:x}",
-			     symbol_name, (uintptr_t)var_addr);
+
 	} else if (context->to_function ==
 		   AttachedToFunction::RegisterFatbinEnd) {
 		SPDLOG_DEBUG("Entering __cudaRegisterFatBinaryEnd..");

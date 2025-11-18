@@ -10,6 +10,7 @@ namespace bpftime
 {
 namespace attach
 {
+
 struct fatbin_record {
 	struct ptx_in_module {
 		CUmodule module_ptr;
