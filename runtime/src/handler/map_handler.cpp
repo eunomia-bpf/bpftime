@@ -814,7 +814,7 @@ int bpf_map_handler::map_init(managed_shared_memory &memory)
 				gettid(), (uintptr_t)context);
 		}
 		SPDLOG_INFO(
-			"Map {} (nv_gpu_array_map_impl) has space for thread count {}",
+			"Map {} (nv_gpu_per_thread_array_map_impl) has space for thread count {}",
 			container_name.c_str(), attr.gpu_thread_count);
 		map_impl_ptr = memory.construct<nv_gpu_per_thread_array_map_impl>(
 			container_name.c_str())(memory, value_size, max_entries,
