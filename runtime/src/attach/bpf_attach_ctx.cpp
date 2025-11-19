@@ -278,7 +278,7 @@ int bpf_attach_ctx::instantiate_bpf_link_handler_at(
 					*priv_data);
 			nv_attach_private_data.program_name = prog->prog_name();
 			nv_attach_private_data.comm_shared_mem =
-				this->cuda_ctx->cuda_shared_mem_device_pointer;
+				(uintptr_t)this->cuda_ctx->get_shared_memory();
 			nv_attach_private_data.instructions = prog->get_insns();
 			SPDLOG_INFO(
 				"Loaded {} instructions (original) for cuda ebpf program",

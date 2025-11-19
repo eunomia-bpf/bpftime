@@ -88,14 +88,15 @@ void CUDAContext::CudaHostMemoryDeleter::operator()(CommSharedMem *ptr) const
 		auto err = cudaFreeHost(ptr);
 		if (err != cudaSuccess) {
 			SPDLOG_ERROR(
-				"Failed to free host memory with cudaHostFreeHost: {}",
+				"Failed to free host memory with cudaFreeHost {}",
 				cudaGetErrorString(err));
 		}
 	}
 }
 
 CUDAContext::CUDAContext(CommSharedMemPtr &&mem)
-	: cuda_shared_mem(std::move(mem))
+	: cuda_shared_mem(std::move(mem)),
+	  should_stop(false)
 {
 	worker_thread = std::thread(&CUDAContext::worker_func, this);
 }
@@ -103,7 +104,7 @@ CUDAContext::CUDAContext(CommSharedMemPtr &&mem)
 CUDAContext::~CUDAContext()
 {
 	SPDLOG_INFO("Destructing CUDAContext");
-	should_stop->store(true);
+	should_stop.store(true);
 	if (worker_thread.joinable()) {
 		worker_thread.join();
 	}
@@ -112,12 +113,17 @@ CUDAContext::~CUDAContext()
 
 void CUDAContext::worker_func()
 {
+#ifdef __linux__
 	// Set thread name in the executing thread context (max 15 chars + null)
-	pthread_setname_np(pthread_self(), "cuda_watcher");
+	int setname_ret = pthread_setname_np(pthread_self(), "cuda_watcher");
+	if (setname_ret != 0) {
+		SPDLOG_ERROR("Failed to set thread name: pthread_setname_np returned {}", setname_ret);
+	}
+#endif
 
 	SPDLOG_INFO("CUDA watcher thread started");
 
-	while (!should_stop->load()) {
+	while (!should_stop.load()) {
 		// use volatile to ensure that each time reads from memory
 		volatile int flag1_value = cuda_shared_mem->flag1;
 		if (flag1_value == 1) {
@@ -200,8 +206,7 @@ void CUDAContext::worker_func()
 			}
 
 			cuda_shared_mem->flag2 = 1;
-			std::atomic_thread_fence(
-				std::memory_order_seq_cst);
+			std::atomic_thread_fence(std::memory_order_seq_cst);
 		}
 		std::this_thread::sleep_for(std::chrono::milliseconds(1));
 	}
@@ -227,18 +232,17 @@ std::optional<std::unique_ptr<CUDAContext>> create_cuda_context()
 	if (err != cudaSuccess) {
 		SPDLOG_ERROR("cudaHostAlloc failed: {} ({})",
 			     cudaGetErrorName(err), cudaGetErrorString(err));
-		throw std::runtime_error("Failed to allocate pinned memory");
+		return std::nullopt;
 	}
 
 	CUDAContext::CommSharedMemPtr cuda_shared_mem(ptr);
 
-	SPDLOG_INFO("Allocated {} GB of pinned memory using cudaHostAlloc",
-		    sizeof(CommSharedMem) / (1024.0 * 1024 * 1024));
+	SPDLOG_INFO("Allocated {} MB of pinned memory using cudaHostAlloc",
+		sizeof(CommSharedMem) / (1024.0 * 1024));
 
 	memset(cuda_shared_mem.get(), 0, sizeof(CommSharedMem));
 
-	SPDLOG_INFO(
-		"✅ Successfully allocated pinned memory via cudaHostAlloc");
+	SPDLOG_INFO("Successfully allocated pinned memory via cudaHostAlloc");
 
 	auto cuda_ctx = std::make_optional(
 		std::make_unique<CUDAContext>(std::move(cuda_shared_mem)));

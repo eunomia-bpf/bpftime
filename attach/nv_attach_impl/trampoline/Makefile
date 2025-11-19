@@ -1,4 +1,4 @@
-CLANG ?= clang++-17
+CLANG ?= clang++
 CUDA_LIBS ?= -L/usr/local/cuda/lib64/ -lcudart -pthread
 PTX_TARGET_ARCH ?= sm_61
 

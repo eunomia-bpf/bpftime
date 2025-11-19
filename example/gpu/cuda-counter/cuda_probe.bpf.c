@@ -53,7 +53,6 @@ int cuda__probe()
 	}
 
 	bpf_printk("Entered _Z9vectorAddPKfS0_Pf x=%lu, ts=%lu\n", x, ts);
-
 	return 0;
 }
 
@@ -86,7 +85,6 @@ int cuda__retprobe()
 		bpf_printk("Exited (without tsp) _Z9vectorAddPKfS0_Pf x=%lu \n",
 			   x);
 	}
-
 	return 0;
 }
 
