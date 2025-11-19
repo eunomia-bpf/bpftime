@@ -158,6 +158,11 @@ cudaError_t cuda_runtime_function__cudaLaunchKernel(const void *func,
 nv_attach_impl::nv_attach_impl()
 {
 	SPDLOG_INFO("Starting nv_attach_impl");
+	this->module_pool = std::make_shared<
+		std::map<std::string, std::shared_ptr<ptx_in_module>>>();
+	this->ptx_pool =
+		std::make_shared<std::map<std::string, std::vector<uint8_t>>>();
+
 	gum_init_embedded();
 	auto interceptor = gum_interceptor_obtain();
 	if (interceptor == nullptr) {

@@ -1,6 +1,6 @@
 CLANG ?= clang++-17
 CUDA_LIBS ?= -L/usr/local/cuda/lib64/ -lcudart -pthread
-PTX_TARGET_ARCH ?= sm_60
+PTX_TARGET_ARCH ?= sm_61
 
 .PHONY: all clean
 

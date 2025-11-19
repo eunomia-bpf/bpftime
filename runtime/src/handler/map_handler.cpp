@@ -10,7 +10,7 @@
 #include "bpftime_shm_internal.hpp"
 #if defined(BPFTIME_ENABLE_CUDA_ATTACH)
 #include "cuda.h"
-#include "bpf_map/gpu/nv_gpu_array_map.hpp"
+#include "bpf_map/gpu/nv_gpu_per_thread_array_map.hpp"
 #include "bpf_map/gpu/nv_gpu_shared_array_map.hpp"
 #include "bpf_map/gpu/nv_gpu_ringbuf_map.hpp"
 #endif
@@ -214,7 +214,7 @@ const void *bpf_map_handler::map_lookup_elem(const void *key,
 	}
 #if defined(BPFTIME_ENABLE_CUDA_ATTACH)
 	case bpf_map_type::BPF_MAP_TYPE_PERGPUTD_ARRAY_MAP: {
-		auto impl = static_cast<nv_gpu_array_map_impl *>(
+		auto impl = static_cast<nv_gpu_per_thread_array_map_impl *>(
 			map_impl_ptr.get());
 		return do_lookup(impl);
 	}
@@ -353,7 +353,7 @@ long bpf_map_handler::map_update_elem(const void *key, const void *value,
 	}
 #if defined(BPFTIME_ENABLE_CUDA_ATTACH)
 	case bpf_map_type::BPF_MAP_TYPE_PERGPUTD_ARRAY_MAP: {
-		auto impl = static_cast<nv_gpu_array_map_impl *>(
+		auto impl = static_cast<nv_gpu_per_thread_array_map_impl *>(
 			map_impl_ptr.get());
 		return do_update(impl);
 	}
@@ -481,7 +481,7 @@ int bpf_map_handler::bpf_map_get_next_key(const void *key, void *next_key,
 	}
 #if defined(BPFTIME_ENABLE_CUDA_ATTACH)
 	case bpf_map_type::BPF_MAP_TYPE_PERGPUTD_ARRAY_MAP: {
-		auto impl = static_cast<nv_gpu_array_map_impl *>(
+		auto impl = static_cast<nv_gpu_per_thread_array_map_impl *>(
 			map_impl_ptr.get());
 		return do_get_next_key(impl);
 	}
@@ -624,7 +624,7 @@ long bpf_map_handler::map_delete_elem(const void *key, bool from_syscall) const
 	}
 #if defined(BPFTIME_ENABLE_CUDA_ATTACH)
 	case bpf_map_type::BPF_MAP_TYPE_PERGPUTD_ARRAY_MAP: {
-		auto impl = static_cast<nv_gpu_array_map_impl *>(
+		auto impl = static_cast<nv_gpu_per_thread_array_map_impl *>(
 			map_impl_ptr.get());
 		return do_delete(impl);
 	}
@@ -816,7 +816,7 @@ int bpf_map_handler::map_init(managed_shared_memory &memory)
 		SPDLOG_INFO(
 			"Map {} (nv_gpu_array_map_impl) has space for thread count {}",
 			container_name.c_str(), attr.gpu_thread_count);
-		map_impl_ptr = memory.construct<nv_gpu_array_map_impl>(
+		map_impl_ptr = memory.construct<nv_gpu_per_thread_array_map_impl>(
 			container_name.c_str())(memory, value_size, max_entries,
 						attr.gpu_thread_count);
 		shm_holder.global_shared_memory.set_enable_mock(true);
@@ -954,7 +954,7 @@ void bpf_map_handler::map_free(managed_shared_memory &memory) const
 #endif
 #if defined(BPFTIME_ENABLE_CUDA_ATTACH)
 	case bpf_map_type::BPF_MAP_TYPE_PERGPUTD_ARRAY_MAP:
-		memory.destroy<nv_gpu_array_map_impl>(container_name.c_str());
+		memory.destroy<nv_gpu_per_thread_array_map_impl>(container_name.c_str());
 		break;
 	case bpf_map_type::BPF_MAP_TYPE_GPU_ARRAY_MAP:
 		memory.destroy<nv_gpu_shared_array_map_impl>(
@@ -999,7 +999,7 @@ uint64_t bpf_map_handler::get_gpu_map_max_thread_count() const
 
 #if defined(BPFTIME_ENABLE_CUDA_ATTACH)
 	if (this->type == bpf_map_type::BPF_MAP_TYPE_PERGPUTD_ARRAY_MAP) {
-		return static_cast<nv_gpu_array_map_impl *>(map_impl_ptr.get())
+		return static_cast<nv_gpu_per_thread_array_map_impl *>(map_impl_ptr.get())
 			->get_max_thread_count();
 	}
 	if (this->type == bpf_map_type::BPF_MAP_TYPE_GPU_ARRAY_MAP) {
@@ -1024,7 +1024,7 @@ void *bpf_map_handler::get_gpu_map_extra_buffer() const
 
 #if defined(BPFTIME_ENABLE_CUDA_ATTACH)
 	if (this->type == bpf_map_type::BPF_MAP_TYPE_PERGPUTD_ARRAY_MAP) {
-		return (void *)static_cast<nv_gpu_array_map_impl *>(
+		return (void *)static_cast<nv_gpu_per_thread_array_map_impl *>(
 			       map_impl_ptr.get())
 			->get_gpu_mem_buffer();
 	}

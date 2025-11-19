@@ -1,6 +1,8 @@
 #include "nv_attach_utils.hpp"
 #include "trampoline_ptx.h"
+#include <iomanip>
 #include <spdlog/spdlog.h>
+#include <openssl/sha.h>
 namespace bpftime
 {
 namespace attach
@@ -27,6 +29,17 @@ std::string patch_main_from_func_to_entry(std::string result)
 	}
 	return result;
 }
+std::string sha256(const void *data, size_t length)
+{
+	unsigned char hash[SHA256_DIGEST_LENGTH];
+	SHA256((unsigned char *)data, length, hash);
 
+	std::stringstream ss;
+	for (int i = 0; i < SHA256_DIGEST_LENGTH; i++) {
+		ss << std::hex << std::setw(2) << std::setfill('0')
+		   << (int)hash[i];
+	}
+	return ss.str();
+}
 } // namespace attach
 } // namespace bpftime

@@ -42,7 +42,7 @@ static int print_stat(struct threadhist_bpf *obj, uint64_t thread_count)
 	printf("%-9s\n", ts);
 
 	key = 0;
-	uint64_t value[2000];
+	uint64_t value[512 * 1024];
 	bpf_map_lookup_elem(fd, &key, &value);
 	for (uint64_t i = 0; i < thread_count; i++) {
 		printf("Thread %lu: %lu\n", i, value[i]);

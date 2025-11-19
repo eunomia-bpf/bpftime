@@ -15,7 +15,7 @@ using pid_devptr_map =
 	boost::unordered_map<int, CUdeviceptr, int_hasher, std::equal_to<int>,
 			     pid_devptr_map_allocator>;
 
-class nv_gpu_array_map_impl {
+class nv_gpu_per_thread_array_map_impl {
 	// char BUF[MAX_ENTRIES][THREAD_COUNT][VALUE_SIZE]
 	CUipcMemHandle gpu_mem_handle;
 	CUdeviceptr server_gpu_shared_mem;
@@ -30,7 +30,7 @@ class nv_gpu_array_map_impl {
 
     public:
 	const static bool should_lock = true;
-	nv_gpu_array_map_impl(boost::interprocess::managed_shared_memory &memory,
+	nv_gpu_per_thread_array_map_impl(boost::interprocess::managed_shared_memory &memory,
 			      uint64_t value_size,
 			      uint64_t max_entries, uint64_t thread_count);
 
@@ -50,7 +50,7 @@ class nv_gpu_array_map_impl {
 	{
 		return thread_count;
 	}
-	virtual ~nv_gpu_array_map_impl();
+	virtual ~nv_gpu_per_thread_array_map_impl();
 
 	CUdeviceptr try_initialize_for_agent_and_get_mapped_address();
 };

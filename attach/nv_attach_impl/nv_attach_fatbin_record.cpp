@@ -1,6 +1,7 @@
 #include "nv_attach_fatbin_record.hpp"
 #include "cuda.h"
 #include "nvPTXCompiler.h"
+#include "nv_attach_utils.hpp"
 #include "spdlog/spdlog.h"
 #include "nv_attach_impl.hpp"
 #include <boost/asio/post.hpp>
@@ -13,6 +14,7 @@
 #include <stdexcept>
 #include <ptx_pass_config.h>
 #include "ptx_compiler/ptx_compiler.hpp"
+#include <utility>
 #define CUDA_DRIVER_CHECK_NO_EXCEPTION(expr, message)                          \
 	do {                                                                   \
 		if (auto err = expr; err != CUDA_SUCCESS) {                    \
@@ -40,7 +42,7 @@ namespace bpftime::attach
 fatbin_record::~fatbin_record()
 {
 }
-fatbin_record::ptx_in_module::~ptx_in_module()
+ptx_in_module::~ptx_in_module()
 {
 	CUDA_DRIVER_CHECK_NO_EXCEPTION(cuModuleUnload(this->module_ptr),
 				       "Unable to unload module");
@@ -102,19 +104,18 @@ void fatbin_record::try_loading_ptxs(class nv_attach_impl &impl)
 	SPDLOG_INFO("Loading & patching current fatbin..");
 
 	auto patched_ptx = *impl.hack_fatbin(original_ptx);
-	for (const auto &[_, ptx_and_trampoline_flag] : patched_ptx) {
-		if (std::get<1>(ptx_and_trampoline_flag)) {
-			all_ptx_not_modified = false;
-			break;
-		}
-	}
+	// for (const auto &[_, ptx_and_trampoline_flag] : patched_ptx) {
+	// 	if (std::get<1>(ptx_and_trampoline_flag)) {
+	// 		all_ptx_not_modified = false;
+	// 		break;
+	// 	}
+	// }
 
-	if (all_ptx_not_modified) {
-		SPDLOG_INFO(
-			"No ptx needed to be loaded, since no ptx was modified");
-		ptx_loaded = true;
-		return;
-	}
+	// if (all_ptx_not_modified) {
+	// 	SPDLOG_INFO(
+	// 		"No ptx needed to be loaded, since no ptx was
+	// modified"); 	ptx_loaded = true; 	return;
+	// }
 	{
 		unsigned major, minor;
 		NVPTXCOMPILER_CHECK_EXCEPTION(nvPTXCompilerGetVersion(&major,
@@ -125,44 +126,87 @@ void fatbin_record::try_loading_ptxs(class nv_attach_impl &impl)
 
 	std::map<std::string, std::vector<uint8_t>> compiled_ptx;
 	const auto &handler = impl.ptx_compiler;
+	boost::asio::thread_pool pool(std::thread::hardware_concurrency());
+	std::mutex map_lock;
 	for (const auto &[name, ptx_and_trampoline_flag] : patched_ptx) {
 		const auto &ptx = std::get<0>(ptx_and_trampoline_flag);
-		if (std::get<1>(ptx_and_trampoline_flag)) {
-			SPDLOG_INFO("Start compiling {}", name);
-			auto compiler = handler.create();
-			if (!compiler) {
-				throw std::runtime_error(
-					"Unable to create nv_attach_impl_ptx_compiler");
-			}
-			if (auto err = handler.compile(compiler, ptx.c_str());
-			    err != 0) {
-				SPDLOG_ERROR(
-					"Unable to compile: {}, error = {}",
-					err, handler.get_error_log(compiler));
-				throw std::runtime_error("Unable to compile");
-			}
-			SPDLOG_DEBUG("Info: {}",
-				     handler.get_info_log(compiler));
-			uint8_t *data;
-			size_t size;
-			handler.get_compiled_program(compiler, &data, &size);
-			std::vector<uint8_t> compiled_program(data,
-							      data + size);
-			handler.destroy(compiler);
-			compiled_ptx[name] = compiled_program;
-			SPDLOG_INFO("Compile of {} done", name);
-		} else {
-			SPDLOG_INFO("Not compiling {} since it's not modified",
-				    name);
-		}
+
+		boost::asio::post(
+			pool,
+			[&handler, ptx, name, &compiled_ptx, &map_lock,
+			 this]() -> void {
+				auto sha256_string =
+					sha256(ptx.data(), ptx.size());
+				if (auto itr =
+					    this->ptx_pool->find(sha256_string);
+				    itr != this->ptx_pool->end()) {
+					SPDLOG_INFO(
+						"PTX {} ({}) found in cache",
+						name, sha256_string);
+					std::lock_guard<std::mutex> _guard(
+						map_lock);
+					compiled_ptx[name] = itr->second;
+				} else {
+					SPDLOG_INFO(
+						"Start compiling {}, not found in cache",
+						name);
+					auto compiler = handler.create();
+					if (!compiler) {
+						throw std::runtime_error(
+							"Unable to create nv_attach_impl_ptx_compiler");
+					}
+					const char *compile_options[] = {
+						"--gpu-name=sm_61", "--verbose",
+						"-O3"
+					};
+					if (auto err = handler.compile(
+						    compiler, ptx.c_str(),
+						    compile_options,
+						    std::size(compile_options));
+					    err != 0) {
+						SPDLOG_ERROR(
+							"Unable to compile: {}, error = {}",
+							err,
+							handler.get_error_log(
+								compiler));
+						throw std::runtime_error(
+							"Unable to compile");
+					}
+					SPDLOG_DEBUG(
+						"Info: {}",
+						handler.get_info_log(compiler));
+					uint8_t *data;
+					size_t size;
+					handler.get_compiled_program(
+						compiler, &data, &size);
+					std::vector<uint8_t> compiled_program(
+						data, data + size);
+					handler.destroy(compiler);
+					std::lock_guard<std::mutex> _guard(
+						map_lock);
+					compiled_ptx[name] = compiled_program;
+					this->ptx_pool->insert(std::make_pair(
+						sha256_string,
+						compiled_program));
+					SPDLOG_INFO("Compile of {} done", name);
+				}
+			});
 	}
+	pool.join();
 	for (const auto &[name, ptx_and_trampoline_flag] : patched_ptx) {
 		const auto &ptx = std::get<0>(ptx_and_trampoline_flag);
 		bool added_trampoline = std::get<1>(ptx_and_trampoline_flag);
-
-		if (added_trampoline) {
+		const auto &compiled_elf = compiled_ptx.at(name);
+		auto sha256_string =
+			sha256(compiled_elf.data(), compiled_elf.size());
+		if (auto itr = module_pool->find(sha256_string);
+		    itr != module_pool->end()) {
+			SPDLOG_INFO("Module {} found in cache", name);
+			ptxs.push_back(itr->second);
+		} else {
 			CUmodule module;
-			SPDLOG_INFO("Loading module: {}", name);
+			SPDLOG_INFO("Loading module: {}, not found in cache",
+				    name);
 			char error_buf[8192] = { 0 }, info_buf[8192] = { 0 };
 			CUjit_option options[] = {
 				CU_JIT_INFO_LOG_BUFFER,
@@ -175,7 +219,7 @@ void fatbin_record::try_loading_ptxs(class nv_attach_impl &impl)
 				(void *)error_buf, (void *)std::size(error_buf)
 			};
 			if (auto err = cuModuleLoadDataEx(
-				    &module, compiled_ptx.at(name).data(),
+				    &module, compiled_elf.data(),
 				    std::size(options), options, option_values);
 			    err != CUDA_SUCCESS) {
 				SPDLOG_ERROR("Unable to compile module {}: {}",
@@ -185,38 +229,37 @@ void fatbin_record::try_loading_ptxs(class nv_attach_impl &impl)
 				throw std::runtime_error(
 					"Unable to compile module");
 			}
-			CUdeviceptr const_data_ptr, map_basic_info_ptr;
-			size_t const_data_size, map_basic_info_size;
-			SPDLOG_INFO("Copying trampoline data to device");
-			CUDA_DRIVER_CHECK_EXCEPTION(
-				cuModuleGetGlobal(&const_data_ptr,
-						  &const_data_size, module,
-						  "constData"),
-				"Unable to get pointer of constData");
-			CUDA_DRIVER_CHECK_EXCEPTION(
-				cuModuleGetGlobal(&map_basic_info_ptr,
-						  &map_basic_info_size, module,
-						  "map_info"),
-				"Unable to get pointer of map_info");
-			CUDA_DRIVER_CHECK_EXCEPTION(
-				cuMemcpyHtoD(const_data_ptr,
-					     &impl.shared_mem_ptr,
-					     const_data_size),
-				"Unable to copy constData pointer to device");
-			CUDA_DRIVER_CHECK_EXCEPTION(
-				cuMemcpyHtoD(map_basic_info_ptr,
-					     impl.map_basic_info->data(),
-					     map_basic_info_size),
-				"Unable to copy constData pointer to device");
-			SPDLOG_INFO("Trampoline data copied");
-			ptxs.emplace_back(
-				std::make_unique<fatbin_record::ptx_in_module>(
-					module));
+			if (added_trampoline) {
+				CUdeviceptr const_data_ptr, map_basic_info_ptr;
+				size_t const_data_size, map_basic_info_size;
+				SPDLOG_INFO(
+					"Copying trampoline data to device");
+				CUDA_DRIVER_CHECK_EXCEPTION(
+					cuModuleGetGlobal(&const_data_ptr,
+							  &const_data_size,
+							  module, "constData"),
+					"Unable to get pointer of constData");
+				CUDA_DRIVER_CHECK_EXCEPTION(
+					cuModuleGetGlobal(&map_basic_info_ptr,
+							  &map_basic_info_size,
+							  module, "map_info"),
+					"Unable to get pointer of map_info");
+				CUDA_DRIVER_CHECK_EXCEPTION(
+					cuMemcpyHtoD(const_data_ptr,
+						     &impl.shared_mem_ptr,
+						     const_data_size),
+					"Unable to copy constData pointer to device");
+				CUDA_DRIVER_CHECK_EXCEPTION(
+					cuMemcpyHtoD(map_basic_info_ptr,
+						     impl.map_basic_info->data(),
+						     map_basic_info_size),
+					"Unable to copy constData pointer to device");
+				SPDLOG_INFO("Trampoline data copied");
+			}
+			auto ptr = std::make_shared<ptx_in_module>(module);
+			module_pool->insert(std::make_pair(sha256_string, ptr));
+			ptxs.push_back(ptr);
 			SPDLOG_INFO("Loaded module: {}", name);
-		} else {
-			SPDLOG_INFO(
-				"Trampoline not added, not recording module {}",
-				name);
 		}
 	}
 	ptx_loaded = true;

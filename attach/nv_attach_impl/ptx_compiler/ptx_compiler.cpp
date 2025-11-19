@@ -17,6 +17,7 @@ struct nv_attach_impl_ptx_compiler {
 extern "C" {
 nv_attach_impl_ptx_compiler *nv_attach_impl_create_compiler()
 {
+	setlocale(LC_ALL, "");
 	auto *result = new nv_attach_impl_ptx_compiler;
 	return result;
 }
@@ -28,7 +29,8 @@ void nv_attach_impl_destroy_compiler(nv_attach_impl_ptx_compiler *ptr)
 	delete ptr;
 }
 
-int nv_attach_impl_compile(nv_attach_impl_ptx_compiler *ptr, const char *ptx)
+int nv_attach_impl_compile(nv_attach_impl_ptx_compiler *ptr, const char *ptx,
+			   const char **args, int arg_count)
 {
 	size_t len = strlen(ptx);
 	if (auto err = nvPTXCompilerCreate(&ptr->compiler, len, ptx);
@@ -56,11 +58,9 @@ int nv_attach_impl_compile(nv_attach_impl_ptx_compiler *ptr, const char *ptx)
 		}
 		return -1;
 	} else {
-		const char *compile_options[] = { "--gpu-name=sm_61",
-						  "--verbose" };
-		if (auto err = nvPTXCompilerCompile(ptr->compiler,
-						    std::size(compile_options),
-						    compile_options);
+
+		if (auto err = nvPTXCompilerCompile(ptr->compiler, arg_count,
+						    args);
 		    err != NVPTXCOMPILE_SUCCESS) {
 			std::cerr << "Unable to compile: " << (int)err
 				  << std::endl;

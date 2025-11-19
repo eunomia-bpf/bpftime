@@ -88,6 +88,9 @@ static void example_listener_on_enter(GumInvocationListener *listener,
 		SPDLOG_INFO("Patching PTXs");
 		auto fatbin_record = std::make_unique<struct fatbin_record>();
 		fatbin_record->original_ptx = extracted_ptx;
+		fatbin_record->module_pool = context->impl->module_pool;
+		fatbin_record->ptx_pool = context->impl->ptx_pool;
+		
 		context->impl->current_fatbin = fatbin_record.get();
 		context->impl->fatbin_records.emplace_back(
 			std::move(fatbin_record));
@@ -104,12 +107,12 @@ static void example_listener_on_enter(GumInvocationListener *listener,
 		auto symbol_name =
 			(const char *)gum_invocation_context_get_nth_argument(
 				gum_ctx, 3);
-		if (current_fatbin->all_ptx_not_modified) {
-			SPDLOG_INFO(
-				"Ignoring storing function {}, since all_ptx_not_modified marked with true",
-				symbol_name);
-			return;
-		}
+		// if (current_fatbin->all_ptx_not_modified) {
+		// 	SPDLOG_INFO(
+		// 		"Ignoring storing function {}, since all_ptx_not_modified marked with true",
+		// 		symbol_name);
+		// 	return;
+		// }
 
 		if (auto ok = current_fatbin->find_and_fill_function_info(
 			    func_addr, symbol_name);
@@ -137,12 +140,12 @@ static void example_listener_on_enter(GumInvocationListener *listener,
 		auto symbol_name =
 			(const char *)gum_invocation_context_get_nth_argument(
 				gum_ctx, 3);
-		if (current_fatbin->all_ptx_not_modified) {
-			SPDLOG_INFO(
-				"Ignoring storing variable {}, since all_ptx_not_modified marked with true",
-				symbol_name);
-			return;
-		}
+		// if (current_fatbin->all_ptx_not_modified) {
+		// 	SPDLOG_INFO(
+		// 		"Ignoring storing variable {}, since all_ptx_not_modified marked with true",
+		// 		symbol_name);
+		// 	return;
+		// }
 		SPDLOG_DEBUG("Registering variable named {}", symbol_name);
 
 		if (bool ok = current_fatbin->find_and_fill_variable_info(
@@ -277,6 +280,5 @@ cuda_runtime_function__cudaLaunchKernel(const void *func, dim3 grid_dim,
 			"Symbol not found, calling original cudaLaunchKernel");
 		return cudaLaunchKernel(func, grid_dim, block_dim, args,
 					shared_mem, stream);
-		// return cudaErrorSymbolNotFound;
 	}
 }

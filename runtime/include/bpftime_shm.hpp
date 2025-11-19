@@ -39,7 +39,7 @@ struct bpf_map_attr {
 
 	// additional fields for bpftime only
 	uint32_t kernel_bpf_map_id = 0;
-	uint32_t gpu_thread_count = 1000;
+	uint32_t gpu_thread_count = 1024 * 512;
 };
 
 enum class bpf_event_type {

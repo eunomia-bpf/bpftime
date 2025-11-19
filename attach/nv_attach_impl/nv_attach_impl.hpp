@@ -149,6 +149,11 @@ class nv_attach_impl final : public base_attach_impl {
 	std::optional<std::vector<MapBasicInfo>> map_basic_info;
 	void *ptx_compiler_dl_handle = nullptr;
 	nv_attach_impl_ptx_compiler_handler ptx_compiler;
+	/// SHA256 of ELF -> PTX module
+	std::shared_ptr<std::map<std::string, std::shared_ptr<ptx_in_module>>>
+		module_pool;
+	/// SHA256 of PTX -> ELF
+	std::shared_ptr<std::map<std::string, std::vector<uint8_t>>> ptx_pool;
 
     private:
 	void *frida_interceptor;

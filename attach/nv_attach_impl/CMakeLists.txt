@@ -51,3 +51,9 @@ file(GENERATE OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/ptx_pass_config.h"
 target_link_options(bpftime_nv_attach_impl PUBLIC "-Wl,--whole-archive" "$<TARGET_FILE:bpftime_nv_attach_impl>" "-Wl,--no-whole-archive")
 
 add_subdirectory(test)
+
+
+find_package(OpenSSL REQUIRED)
+
+target_link_libraries(bpftime_nv_attach_impl PRIVATE OpenSSL::SSL OpenSSL::Crypto)
+target_include_directories(bpftime_nv_attach_impl PRIVATE ${OPENSSL_INCLUDE_DIR})
