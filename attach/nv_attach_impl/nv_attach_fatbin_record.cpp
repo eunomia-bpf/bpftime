@@ -187,6 +187,10 @@ void fatbin_record::try_loading_ptxs(class nv_attach_impl &impl)
 {
 	if (ptx_loaded)
 		return;
+	if (impl.shared_mem_ptr == 0) {
+		throw std::runtime_error(
+			"shared_mem_ptr is not initialized before loading PTX");
+	}
 	SPDLOG_INFO("Loading & patching current fatbin..");
 
 	auto patched_ptx = *impl.hack_fatbin(original_ptx);
@@ -239,12 +243,18 @@ void fatbin_record::try_loading_ptxs(class nv_attach_impl &impl)
 							  &const_data_size,
 							  module, "constData"),
 					"Unable to get pointer of constData");
-				CUDA_DRIVER_CHECK_EXCEPTION(
+				SPDLOG_INFO(
+			"constData symbol device_ptr={:x} size={} shared_mem_ptr={:x}",
+			(uintptr_t)const_data_ptr, const_data_size,
+			(uintptr_t)impl.shared_mem_ptr);
+		CUDA_DRIVER_CHECK_EXCEPTION(
 					cuModuleGetGlobal(&map_basic_info_ptr,
 							  &map_basic_info_size,
 							  module, "map_info"),
 					"Unable to get pointer of map_info");
-				CUDA_DRIVER_CHECK_EXCEPTION(
+				SPDLOG_INFO("map_info symbol device_ptr={:x} size={}",
+			    (uintptr_t)map_basic_info_ptr, map_basic_info_size);
+		CUDA_DRIVER_CHECK_EXCEPTION(
 					cuMemcpyHtoD(const_data_ptr,
 						     &impl.shared_mem_ptr,
 						     const_data_size),

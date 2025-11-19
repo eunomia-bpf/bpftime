@@ -263,16 +263,17 @@ void cuda_module_destroyer(CUmodule ptr)
 std::optional<std::unique_ptr<cuda::CUDAContext>> create_cuda_context()
 {
 	SPDLOG_INFO("Initializing CUDA shared memory");
-	auto cuda_shared_mem = std::make_unique<cuda::CommSharedMem>();
-	memset(cuda_shared_mem.get(), 0, sizeof(*cuda_shared_mem));
+	auto *cuda_shared_mem =
+		shm_holder.global_shared_memory.get_cuda_comm_shared_mem();
+	if (!cuda_shared_mem) {
+		SPDLOG_ERROR(
+			"CUDA shared communication memory not initialized in shared segment");
+		return std::nullopt;
+	}
+	memset(cuda_shared_mem, 0, sizeof(*cuda_shared_mem));
 
-	CUDART_SAFE_CALL(cudaHostRegister(cuda_shared_mem.get(),
-					  sizeof(cuda::CommSharedMem),
-					  cudaHostRegisterDefault),
-			 "Unable to register shared memory");
-
-	auto cuda_ctx = std::make_optional(std::make_unique<cuda::CUDAContext>(
-		std::move(cuda_shared_mem)));
+	auto cuda_ctx = std::make_optional(
+		std::make_unique<cuda::CUDAContext>(cuda_shared_mem));
 
 	SPDLOG_INFO("CUDA context created");
 	return cuda_ctx;
@@ -280,17 +281,25 @@ std::optional<std::unique_ptr<cuda::CUDAContext>> create_cuda_context()
 CUDAContext::~CUDAContext()
 {
 	SPDLOG_INFO("Destructing CUDAContext");
-	if (auto result = cudaHostUnregister(cuda_shared_mem.get());
-	    result != cudaSuccess) {
-		SPDLOG_ERROR("Unable to unregister host memory: {}",
-			     (int)result);
-	}
 }
-CUDAContext::CUDAContext(std::unique_ptr<cuda::CommSharedMem> &&mem)
-	: cuda_shared_mem(std::move(mem)),
-	  cuda_shared_mem_device_pointer((uintptr_t)cuda_shared_mem.get())
+CUDAContext::CUDAContext(cuda::CommSharedMem *mem)
+	: cuda_shared_mem(mem), cuda_shared_mem_device_pointer(0)
 
 {
+	void *device_ptr = nullptr;
+	auto err =
+		cudaHostGetDevicePointer(&device_ptr, (void *)cuda_shared_mem, 0);
+	if (err != cudaSuccess) {
+		SPDLOG_ERROR(
+			"cudaHostGetDevicePointer failed for CommSharedMem: {}",
+			cudaGetErrorString(err));
+		throw std::runtime_error(
+			"Unable to get device pointer for CommSharedMem");
+	}
+	cuda_shared_mem_device_pointer =
+		reinterpret_cast<uintptr_t>(device_ptr);
+	SPDLOG_INFO("CommSharedMem host {:p} mapped to device {:p}",
+		    (void *)cuda_shared_mem, device_ptr);
 }
 
 } // namespace cuda
