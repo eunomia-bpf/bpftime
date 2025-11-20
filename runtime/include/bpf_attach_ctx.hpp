@@ -41,7 +41,8 @@ struct CommSharedMem;
 #ifdef BPFTIME_ENABLE_CUDA_ATTACH
 namespace cuda
 {
-static constexpr std::size_t GPU_HELPER_MAX_BUF = 1 << 20;
+// The old 1<<30 value makes the shared segment too large for Boost IPC.
+static constexpr std::size_t GPU_HELPER_MAX_BUF = 1 << 26;
 
 enum class HelperOperation {
 	MAP_LOOKUP = 1,
