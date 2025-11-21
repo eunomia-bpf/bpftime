@@ -54,7 +54,7 @@ struct agent_config {
 	// memory size will determine the maximum size of the shared memory
 	// available for the eBPF programs and maps
 	// The value is in MB
-	int shm_memory_size = 100; // 100MB
+	int shm_memory_size = 20; // 100MB
 
 	// Maximum file descriptor count for handler manager
 	// This determines the size of the handler vector
