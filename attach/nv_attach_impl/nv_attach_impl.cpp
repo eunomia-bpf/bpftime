@@ -390,10 +390,10 @@ nv_attach_impl::extract_ptxs(std::vector<uint8_t> &&data_vec)
 			all_ptx[entry.path().filename()] = buffer.str();
 		}
 	}
-	// if (!spdlog::should_log(spdlog::level::debug)) {
-	// 	SPDLOG_INFO("Remove extracted files..");
-	// 	std::filesystem::remove_all(working_dir);
-	// }
+	if (!spdlog::should_log(spdlog::level::debug)) {
+		SPDLOG_INFO("Remove extracted files..");
+		std::filesystem::remove_all(working_dir);
+	}
 	SPDLOG_INFO("Got {} PTX files", all_ptx.size());
 	return all_ptx;
 }

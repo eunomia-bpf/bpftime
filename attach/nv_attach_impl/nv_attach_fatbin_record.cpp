@@ -104,18 +104,6 @@ void fatbin_record::try_loading_ptxs(class nv_attach_impl &impl)
 	SPDLOG_INFO("Loading & patching current fatbin..");
 
 	auto patched_ptx = *impl.hack_fatbin(original_ptx);
-	// for (const auto &[_, ptx_and_trampoline_flag] : patched_ptx) {
-	// 	if (std::get<1>(ptx_and_trampoline_flag)) {
-	// 		all_ptx_not_modified = false;
-	// 		break;
-	// 	}
-	// }
-
-	// if (all_ptx_not_modified) {
-	// 	SPDLOG_INFO(
-	// 		"No ptx needed to be loaded, since no ptx was
-	// modified"); 	ptx_loaded = true; 	return;
-	// }
 	{
 		unsigned major, minor;
 		NVPTXCOMPILER_CHECK_EXCEPTION(nvPTXCompilerGetVersion(&major,
