@@ -164,6 +164,8 @@ class nv_attach_impl final : public base_attach_impl {
 	// discovered pass definitions
 	std::vector<std::unique_ptr<pass_cfg_with_exec_path>>
 		pass_configurations;
+	std::map<std::string, ptxpass::runtime_response::RuntimeResponse>
+		patch_cache;
 };
 
 std::string add_semicolon_for_variable_lines(std::string input);
