@@ -8,6 +8,8 @@
 #include "bpf_map/userspace/per_cpu_hash_map.hpp"
 #include "bpf_map/userspace/stack_trace_map.hpp"
 #include "bpftime_shm_internal.hpp"
+#include <cstdlib>
+#include <string>
 #if defined(BPFTIME_ENABLE_CUDA_ATTACH)
 #include "cuda.h"
 #include "bpf_map/gpu/nv_gpu_per_thread_array_map.hpp"
@@ -235,7 +237,8 @@ const void *bpf_map_handler::map_lookup_elem(const void *key,
 		if (func_ptr) {
 			return func_ptr(id, key, from_syscall);
 		} else {
-			SPDLOG_ERROR("[elem_lookup] Unsupported map type: {}", (int)type);
+			SPDLOG_ERROR("[elem_lookup] Unsupported map type: {}",
+				     (int)type);
 			return nullptr;
 		}
 	}
@@ -378,7 +381,9 @@ long bpf_map_handler::map_update_elem(const void *key, const void *value,
 		if (func_ptr) {
 			return func_ptr(id, key, value, flags, from_syscall);
 		} else {
-			SPDLOG_ERROR("[map_update_elem] Unsupported map type: {}", (int)type);
+			SPDLOG_ERROR(
+				"[map_update_elem] Unsupported map type: {}",
+				(int)type);
 			return -1;
 		}
 	}
@@ -507,7 +512,9 @@ int bpf_map_handler::bpf_map_get_next_key(const void *key, void *next_key,
 		if (func_ptr) {
 			return func_ptr(id, key, next_key, from_syscall);
 		} else {
-			SPDLOG_ERROR("[bpf_map_get_next_key] Unsupported map type: {}", (int)type);
+			SPDLOG_ERROR(
+				"[bpf_map_get_next_key] Unsupported map type: {}",
+				(int)type);
 			return -1;
 		}
 	}
@@ -649,7 +656,9 @@ long bpf_map_handler::map_delete_elem(const void *key, bool from_syscall) const
 		if (func_ptr) {
 			return func_ptr(id, key, from_syscall);
 		} else {
-			SPDLOG_ERROR("[bpf_map_delete_elem] Unsupported map type: {}", (int)type);
+			SPDLOG_ERROR(
+				"[bpf_map_delete_elem] Unsupported map type: {}",
+				(int)type);
 			return -1;
 		}
 	}
@@ -813,12 +822,23 @@ int bpf_map_handler::map_init(managed_shared_memory &memory)
 				"CUDA context for thread {} has been set to {:x}",
 				gettid(), (uintptr_t)context);
 		}
+		// Allow configuring thread count by environment variables
+		auto gpu_thread_count_env =
+			std::getenv("BPFTIME_MAP_GPU_THREAD_COUNT");
+		uint64_t thread_count;
+		if (gpu_thread_count_env) {
+			thread_count = std::stoull(gpu_thread_count_env);
+		} else {
+			thread_count = attr.gpu_thread_count;
+		}
 		SPDLOG_INFO(
 			"Map {} (nv_gpu_per_thread_array_map_impl) has space for thread count {}",
-			container_name.c_str(), attr.gpu_thread_count);
-		map_impl_ptr = memory.construct<nv_gpu_per_thread_array_map_impl>(
-			container_name.c_str())(memory, value_size, max_entries,
-						attr.gpu_thread_count);
+			container_name.c_str(), thread_count);
+		map_impl_ptr =
+			memory.construct<nv_gpu_per_thread_array_map_impl>(
+				container_name.c_str())(memory, value_size,
+							max_entries,
+							attr.gpu_thread_count);
 		shm_holder.global_shared_memory.set_enable_mock(true);
 		return 0;
 	}
@@ -882,7 +902,8 @@ int bpf_map_handler::map_init(managed_shared_memory &memory)
 			}
 			return 0;
 		} else {
-			SPDLOG_ERROR("[map_init] Unsupported map type: {}", (int)type);
+			SPDLOG_ERROR("[map_init] Unsupported map type: {}",
+				     (int)type);
 			return -1;
 		}
 	}
@@ -954,7 +975,8 @@ void bpf_map_handler::map_free(managed_shared_memory &memory) const
 #endif
 #if defined(BPFTIME_ENABLE_CUDA_ATTACH)
 	case bpf_map_type::BPF_MAP_TYPE_PERGPUTD_ARRAY_MAP:
-		memory.destroy<nv_gpu_per_thread_array_map_impl>(container_name.c_str());
+		memory.destroy<nv_gpu_per_thread_array_map_impl>(
+			container_name.c_str());
 		break;
 	case bpf_map_type::BPF_MAP_TYPE_GPU_ARRAY_MAP:
 		memory.destroy<nv_gpu_shared_array_map_impl>(
@@ -970,7 +992,8 @@ void bpf_map_handler::map_free(managed_shared_memory &memory) const
 		if (func_ptr) {
 			func_ptr(id);
 		} else {
-			SPDLOG_ERROR("[map_free] Unsupported map type: {}", (int)type);
+			SPDLOG_ERROR("[map_free] Unsupported map type: {}",
+				     (int)type);
 		}
 	}
 	map_impl_ptr = nullptr;
@@ -999,7 +1022,8 @@ uint64_t bpf_map_handler::get_gpu_map_max_thread_count() const
 
 #if defined(BPFTIME_ENABLE_CUDA_ATTACH)
 	if (this->type == bpf_map_type::BPF_MAP_TYPE_PERGPUTD_ARRAY_MAP) {
-		return static_cast<nv_gpu_per_thread_array_map_impl *>(map_impl_ptr.get())
+		return static_cast<nv_gpu_per_thread_array_map_impl *>(
+			       map_impl_ptr.get())
 			->get_max_thread_count();
 	}
 	if (this->type == bpf_map_type::BPF_MAP_TYPE_GPU_ARRAY_MAP) {
