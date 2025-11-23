@@ -38,7 +38,7 @@ struct nv_attach_impl_ptx_compiler_handler {
 static inline std::optional<nv_attach_impl_ptx_compiler_handler>
 load_nv_attach_impl_ptx_compiler(const char *path, void *&dl_handle)
 {
-	void *handle = dlmopen(LM_ID_NEWLM, path, RTLD_NOW | RTLD_LOCAL);
+	void *handle = dlopen(path, RTLD_NOW | RTLD_LOCAL);
 	if (!handle) {
 		std::cerr << "Unable to load dynamic library " << path << " = "
 			  << dlerror() << std::endl;
