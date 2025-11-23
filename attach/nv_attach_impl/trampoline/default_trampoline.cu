@@ -106,7 +106,6 @@ __constant__ MapBasicInfo map_info[256];
 extern "C" __device__ void spin_lock(volatile int *lock)
 {
 	while (atomicCAS((int *)lock, 0, 1) == 1) {
-		// 自旋等待锁变为可用
 	}
 	// printf("lock acquired by %d\n", threadIdx.x + blockIdx.x *
 	// blockDim.x);
@@ -114,7 +113,7 @@ extern "C" __device__ void spin_lock(volatile int *lock)
 
 extern "C" __device__ void spin_unlock(int *lock)
 {
-	atomicExch(lock, 0); // 将锁标志重置为 0
+	atomicExch(lock, 0);
 	// printf("lock released by %d\n", threadIdx.x + blockIdx.x *
 	// blockDim.x);
 }
@@ -180,8 +179,8 @@ __device__ void *array_map_offset(uint64_t idx, const MapBasicInfo &info,
 				  uint64_t map)
 {
 	if (info.max_thread_count <= getGlobalThreadId()) {
-		printf("WARNING: getGlobalThreadId() exceeds max_thread_count of map %lu, please set BPFTIME_MAP_GPU_THREAD_COUNT at syscall-server side",
-		       map);
+		printf("WARNING: getGlobalThreadId(%lu) exceeds max_thread_count (%lu) of map %lu, please set BPFTIME_MAP_GPU_THREAD_COUNT at syscall-server side\n",
+		       getGlobalThreadId(), info.max_thread_count, map);
 	}
 	return (void *)((uintptr_t)info.extra_buffer +
 			idx * info.max_thread_count * info.value_size +
