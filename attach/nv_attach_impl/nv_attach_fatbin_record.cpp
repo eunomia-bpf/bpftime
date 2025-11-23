@@ -97,20 +97,18 @@ bool fatbin_record::find_and_fill_function_info(void *ptr,
 	return false;
 }
 
-void fatbin_record::try_loading_ptxs(class nv_attach_impl &impl)
+std::map<std::string, std::vector<uint8_t>> fatbin_record::compile_ptxs(
+	class nv_attach_impl &impl,
+	std::map<std::string, std::tuple<std::string, bool>> patched_ptx)
 {
-	if (ptx_loaded)
-		return;
-	SPDLOG_INFO("Loading & patching current fatbin..");
+	const char *sm_arch_env = std::getenv("BPFTIME_SM_ARCH");
+	std::string sm_arch = sm_arch_env ? sm_arch_env : "sm_61";
+	SPDLOG_INFO("Compiling PTXs with sm_arch {}", sm_arch);
 
-	auto patched_ptx = *impl.hack_fatbin(original_ptx);
-	{
-		unsigned major, minor;
-		NVPTXCOMPILER_CHECK_EXCEPTION(nvPTXCompilerGetVersion(&major,
-								      &minor),
-					      "Unable to get compiler version");
-		SPDLOG_INFO("Compiler version: {}.{}", major, minor);
-	}
+	unsigned major, minor;
+	NVPTXCOMPILER_CHECK_EXCEPTION(nvPTXCompilerGetVersion(&major, &minor),
+				      "Unable to get compiler version");
+	SPDLOG_INFO("Compiler version: {}.{}", major, minor);
 
 	std::map<std::string, std::vector<uint8_t>> compiled_ptx;
 	const auto &handler = impl.ptx_compiler;
@@ -121,8 +119,8 @@ void fatbin_record::try_loading_ptxs(class nv_attach_impl &impl)
 
 		boost::asio::post(
 			pool,
-			[&handler, ptx, name, &compiled_ptx, &map_lock,
-			 this]() -> void {
+			[&handler, ptx, name, &compiled_ptx, &map_lock, this,
+			 sm_arch]() -> void {
 				auto sha256_string =
 					sha256(ptx.data(), ptx.size());
 				if (auto itr =
@@ -143,8 +141,10 @@ void fatbin_record::try_loading_ptxs(class nv_attach_impl &impl)
 						throw std::runtime_error(
 							"Unable to create nv_attach_impl_ptx_compiler");
 					}
+					std::string gpu_name =
+						"--gpu-name=" + sm_arch;
 					const char *compile_options[] = {
-						"--gpu-name=sm_61", "--verbose",
+						gpu_name.c_str(), "--verbose",
 						"-O3"
 					};
 					if (auto err = handler.compile(
@@ -181,6 +181,18 @@ void fatbin_record::try_loading_ptxs(class nv_attach_impl &impl)
 			});
 	}
 	pool.join();
+	return compiled_ptx;
+}
+void fatbin_record::try_loading_ptxs(class nv_attach_impl &impl)
+{
+	if (ptx_loaded)
+		return;
+	SPDLOG_INFO("Loading & patching current fatbin..");
+
+	auto patched_ptx = *impl.hack_fatbin(original_ptx);
+
+	auto compiled_ptx = compile_ptxs(impl, patched_ptx);
+
 	for (const auto &[name, ptx_and_trampoline_flag] : patched_ptx) {
 		const auto &ptx = std::get<0>(ptx_and_trampoline_flag);
 		bool added_trampoline = std::get<1>(ptx_and_trampoline_flag);

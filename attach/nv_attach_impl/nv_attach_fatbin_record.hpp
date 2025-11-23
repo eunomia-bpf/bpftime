@@ -43,6 +43,10 @@ struct fatbin_record {
 	virtual ~fatbin_record();
 	bool find_and_fill_variable_info(void *ptr, const char *symbol_name);
 	bool find_and_fill_function_info(void *ptr, const char *symbol_name);
+
+    private:
+	std::map<std::string, std::vector<uint8_t>>
+	compile_ptxs(class nv_attach_impl &impl,std::map<std::string, std::tuple<std::string, bool>>);
 };
 
 } // namespace attach
