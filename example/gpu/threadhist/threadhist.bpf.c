@@ -23,8 +23,7 @@ int cuda__retprobe()
 {
 	u32 key = 0;
 	u64 *cnt = bpf_map_lookup_elem(&call_count, &key);
-	// bpf_printk("cnt=%lx\n", (unsigned long)cnt);
-	if (cnt && (unsigned long)cnt != 0x7fffbec74400)
+	if (cnt)
 		*cnt += 1;
 
 	return 0;
