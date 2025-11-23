@@ -64,7 +64,6 @@ int main()
 		// Launch kernel
 		vectorAdd<<<dim3(512, 1, 1), dim3(1024, 1, 1)>>>(d_A, d_B, d_C);
 		cudaDeviceSynchronize();
-		// cudaSyncho
 		// Copy result back to host
 		cudaMemcpy(h_C.data(), d_C, bytes, cudaMemcpyDeviceToHost);
 

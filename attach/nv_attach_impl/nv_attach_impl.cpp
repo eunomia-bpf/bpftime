@@ -727,10 +727,10 @@ void nv_attach_impl::mirror_cuda_memcpy_to_symbol(
 		SPDLOG_DEBUG(
 			"In mirror_cuda_memcpy_to_symbol: calling original cudaMemcpyToSymbol");
 		if (async) {
-			cudaMemcpyToSymbol(symbol, src, count, offset, kind);
-		} else {
 			cudaMemcpyToSymbolAsync(symbol, src, count, offset,
 						kind, stream);
+		} else {
+			cudaMemcpyToSymbol(symbol, src, count, offset, kind);
 		}
 		return;
 	}

@@ -17,6 +17,8 @@ struct nv_attach_impl_ptx_compiler {
 extern "C" {
 nv_attach_impl_ptx_compiler *nv_attach_impl_create_compiler()
 {
+	/// ncPTXCompiler might call `isalpha`, before TLS was initialized.
+	/// Initialize locale configuration before it's calling to avoid SIGSEGV
 	setlocale(LC_ALL, "");
 	auto *result = new nv_attach_impl_ptx_compiler;
 	return result;
@@ -35,7 +37,7 @@ int nv_attach_impl_compile(nv_attach_impl_ptx_compiler *ptr, const char *ptx,
 	size_t len = strlen(ptx);
 	if (auto err = nvPTXCompilerCreate(&ptr->compiler, len, ptx);
 	    err != nvPTXCompileResult::NVPTXCOMPILE_SUCCESS) {
-		std::cerr << "Unable to create compiler: {}" << (int)err
+		std::cerr << "Unable to create compiler: " << (int)err
 			  << std::endl;
 		size_t error_size;
 		if (auto err = nvPTXCompilerGetErrorLogSize(ptr->compiler,
@@ -58,7 +60,6 @@ int nv_attach_impl_compile(nv_attach_impl_ptx_compiler *ptr, const char *ptx,
 		}
 		return -1;
 	} else {
-
 		if (auto err = nvPTXCompilerCompile(ptr->compiler, arg_count,
 						    args);
 		    err != NVPTXCOMPILE_SUCCESS) {
