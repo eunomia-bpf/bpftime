@@ -348,6 +348,12 @@ jobs:
           ls -lah .
           tar -zxvf gcno_files.tar.gz
           pwd
+      - name: Install CUDA runtime dependencies (Fedora)
+        if: ${{matrix.container.name == 'fedora'}}
+        run: |
+          dnf install -y dnf-plugins-core
+          dnf config-manager --add-repo https://developer.download.nvidia.com/compute/cuda/repos/fedora39/x86_64/cuda-fedora39.repo
+          dnf install -y cuda --skip-broken --nobest || echo "CUDA installation failed, continuing without CUDA"
       - name: Install which(required by funclatency on fedora)
         if: ${{matrix.container.name=='fedora' && matrix.examples.path=='tracing/funclatency'}}
         run: |
@@ -426,4 +432,3 @@ jobs:
           flags: coverage-example-${{matrix.container.name}}-${{matrix.enable_jit}}-${{matrix.examples.name}}-${{matrix.privilege_options.enable}}
           token: ${{ secrets.CODECOV_TOKEN }} # required
           verbose: true # optional (default = false)
-

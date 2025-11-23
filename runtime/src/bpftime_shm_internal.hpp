@@ -16,6 +16,16 @@
 #include <handler/handler_manager.hpp>
 #include <optional>
 
+#ifdef BPFTIME_ENABLE_CUDA_ATTACH
+namespace bpftime
+{
+namespace cuda
+{
+struct CommSharedMem;
+}
+} // namespace bpftime
+#endif
+
 namespace bpftime
 {
 
@@ -53,6 +63,10 @@ class bpftime_shm {
 
 	// local agent config can be used for test or local process
 	std::optional<struct agent_config> local_agent_config;
+#ifdef BPFTIME_ENABLE_CUDA_ATTACH
+	cuda::CommSharedMem *cuda_comm_shared_mem = nullptr;
+#endif
+
 
 #if BPFTIME_ENABLE_MPK
 	// mpk key for protect shm
@@ -226,6 +240,10 @@ class bpftime_shm {
 	}
 #ifdef BPFTIME_ENABLE_CUDA_ATTACH
 	bool register_cuda_host_memory();
+	cuda::CommSharedMem *get_cuda_comm_shared_mem() const
+	{
+		return cuda_comm_shared_mem;
+	}
 	int poll_gpu_ringbuf_map(
 		int mapfd, const std::function<void(const void *, uint64_t)> &);
 #endif

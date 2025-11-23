@@ -34,6 +34,15 @@ namespace bpftime
 #ifdef BPFTIME_ENABLE_CUDA_ATTACH
 namespace cuda
 {
+struct CommSharedMem;
+}
+#endif
+
+#ifdef BPFTIME_ENABLE_CUDA_ATTACH
+namespace cuda
+{
+// The old 1<<30 value makes the shared segment too large for Boost IPC.
+static constexpr std::size_t GPU_HELPER_MAX_BUF = 1 << 24;
 
 enum class HelperOperation {
 	MAP_LOOKUP = 1,
@@ -47,15 +56,15 @@ enum class HelperOperation {
 
 union HelperCallRequest {
 	struct {
-		char key[1 << 30];
+		char key[GPU_HELPER_MAX_BUF];
 	} map_lookup;
 	struct {
-		char key[1 << 30];
-		char value[1 << 30];
+		char key[GPU_HELPER_MAX_BUF];
+		char value[GPU_HELPER_MAX_BUF];
 		uint64_t flags;
 	} map_update;
 	struct {
-		char key[1 << 30];
+		char key[GPU_HELPER_MAX_BUF];
 	} map_delete;
 
 	struct {
@@ -97,11 +106,11 @@ struct CUDAContext {
 		std::make_shared<std::atomic<bool>>(false);
 
 	// Shared memory region for CUDA
-	std::unique_ptr<cuda::CommSharedMem> cuda_shared_mem;
+	cuda::CommSharedMem *cuda_shared_mem;
 	// Mapped device pointer
 	uintptr_t cuda_shared_mem_device_pointer;
 
-	CUDAContext(std::unique_ptr<cuda::CommSharedMem> &&mem);
+	CUDAContext(cuda::CommSharedMem *mem);
 
 	CUDAContext(CUDAContext &&) = default;
 	CUDAContext &operator=(CUDAContext &&) = default;

@@ -135,7 +135,22 @@ int nv_attach_impl::create_attach_with_ebpf_callback(
 
 		hook_entries[id] = std::move(entry);
 		this->map_basic_info = data.map_basic_info;
-		this->shared_mem_ptr = data.comm_shared_mem;
+		if (data.comm_shared_mem == 0) {
+			SPDLOG_ERROR(
+				"comm_shared_mem is null when creating CUDA attach for {}",
+				func_name);
+			return -1;
+		}
+		if (this->shared_mem_ptr == 0) {
+			this->shared_mem_ptr = data.comm_shared_mem;
+			SPDLOG_INFO("Cached shared_mem_ptr at {:x}",
+				    (uintptr_t)this->shared_mem_ptr);
+		} else if (this->shared_mem_ptr != data.comm_shared_mem) {
+			SPDLOG_WARN(
+				"Ignoring new comm_shared_mem {:x}; already using {:x}",
+				(uintptr_t)data.comm_shared_mem,
+				(uintptr_t)this->shared_mem_ptr);
+		}
 		SPDLOG_INFO("Recorded pass {} for func {}",
 			    matched->executable_path.c_str(), func_name);
 		return id;
@@ -164,6 +179,7 @@ nv_attach_impl::nv_attach_impl()
 	this->ptx_pool =
 		std::make_shared<std::map<std::string, std::vector<uint8_t>>>();
 
+	this->shared_mem_ptr = 0;
 	gum_init_embedded();
 	auto interceptor = gum_interceptor_obtain();
 	if (interceptor == nullptr) {
@@ -563,6 +579,12 @@ int nv_attach_impl::run_attach_entry_on_gpu(int attach_id, int run_count,
 					    int grid_dim_z, int block_dim_x,
 					    int block_dim_y, int block_dim_z)
 {
+	if (this->shared_mem_ptr == 0) {
+		SPDLOG_ERROR(
+			"shared_mem_ptr is not initialized; cannot run attach {} on GPU",
+			attach_id);
+		return -1;
+	}
 	if (run_count < 1) {
 		SPDLOG_ERROR("run_count must be greater than 0");
 		return -1;

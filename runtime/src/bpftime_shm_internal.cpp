@@ -22,6 +22,7 @@
 #include <cuda_runtime.h>
 #include <cuda_runtime_api.h>
 #include <cuda.h>
+#include <bpf_attach_ctx.hpp>
 #endif
 #elif __APPLE__
 #include "bpftime_epoll.h"
@@ -729,6 +730,35 @@ bpftime_shm::bpftime_shm(const char *shm_name, shm_open_type type)
 			"NOT creating global shm. This is only for testing purpose.");
 		return;
 	}
+#ifdef BPFTIME_ENABLE_CUDA_ATTACH
+// Move CommSharedMem from the agent’s local memory to shared memory to improve performance.
+	if (open_type == shm_open_type::SHM_OPEN_ONLY) {
+		auto pair =
+			segment.find<cuda::CommSharedMem>("cuda_comm_shared_mem");
+		if (pair.first == nullptr) {
+			SPDLOG_ERROR(
+				"CommSharedMem not found in shared memory; did syscall-server initialize CUDA support?");
+			cuda_comm_shared_mem = nullptr;
+		} else {
+			cuda_comm_shared_mem = pair.first;
+		}
+	} else {
+		auto pair =
+			segment.find<cuda::CommSharedMem>("cuda_comm_shared_mem");
+		if (pair.first != nullptr) {
+			cuda_comm_shared_mem = pair.first;
+		} else {
+			cuda_comm_shared_mem =
+				segment.construct<cuda::CommSharedMem>(
+					"cuda_comm_shared_mem")();
+			memset(cuda_comm_shared_mem, 0,
+			       sizeof(cuda::CommSharedMem));
+			SPDLOG_DEBUG(
+				"Constructed CommSharedMem in shared memory at {:p}",
+				(void *)cuda_comm_shared_mem);
+		}
+	}
+#endif
 	// local_agent_config.emplace(segment);
 
 #if BPFTIME_ENABLE_MPK
@@ -909,6 +939,18 @@ bool bpftime_shm::register_cuda_host_memory()
 	if (open_type != shm_open_type::SHM_OPEN_ONLY) {
 		SPDLOG_WARN("Only agent side can register cuda host memory");
 		return false;
+	}
+
+	// Ensure we can map host memory into device address space
+	cudaError_t flag_err = cudaSetDeviceFlags(cudaDeviceMapHost);
+	if (flag_err != cudaSuccess &&
+	    flag_err != cudaErrorSetOnActiveProcess) {
+		SPDLOG_WARN("cudaSetDeviceFlags(cudaDeviceMapHost) failed: {}",
+			    cudaGetErrorString(flag_err));
+	}
+	if (flag_err == cudaErrorSetOnActiveProcess) {
+		// Clear the sticky error
+		cudaGetLastError();
 	}
 
 	// 1. Get the base address and size of the Boost.Interprocess segment
