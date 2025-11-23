@@ -3,6 +3,7 @@
 #include <iomanip>
 #include <spdlog/spdlog.h>
 #include <openssl/sha.h>
+#include <sstream>
 namespace bpftime
 {
 namespace attach
