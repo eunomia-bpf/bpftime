@@ -39,6 +39,8 @@ struct bpf_map_attr {
 
 	// additional fields for bpftime only
 	uint32_t kernel_bpf_map_id = 0;
+	// Changed to 1024*1024 since some GPU programs may launch a kernel with
+	// threads in this number
 	uint64_t gpu_thread_count = 1024 * 1024;
 };
 
