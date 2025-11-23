@@ -517,7 +517,7 @@ nv_attach_impl::hack_fatbin(std::map<std::string, std::string> all_ptx)
 		mkdtemp(tmp_dir);
 		auto working_dir = std::filesystem::path(tmp_dir);
 
-		SPDLOG_DEBUG("Writting patched PTX to {}", working_dir.c_str());
+		SPDLOG_DEBUG("Writing patched PTX to {}", working_dir.c_str());
 		for (const auto &[file_name, ptx] : ptx_out) {
 			auto path = working_dir / (file_name);
 			std::ofstream ofs(path);
