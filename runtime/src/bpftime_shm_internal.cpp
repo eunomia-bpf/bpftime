@@ -731,6 +731,7 @@ bpftime_shm::bpftime_shm(const char *shm_name, shm_open_type type)
 		return;
 	}
 #ifdef BPFTIME_ENABLE_CUDA_ATTACH
+// Move CommSharedMem from the agent’s local memory to shared memory to improve performance.
 	if (open_type == shm_open_type::SHM_OPEN_ONLY) {
 		auto pair =
 			segment.find<cuda::CommSharedMem>("cuda_comm_shared_mem");

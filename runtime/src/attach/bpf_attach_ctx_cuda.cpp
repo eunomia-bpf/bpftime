@@ -286,6 +286,7 @@ CUDAContext::CUDAContext(cuda::CommSharedMem *mem)
 	: cuda_shared_mem(mem), cuda_shared_mem_device_pointer(0)
 
 {
+	// Move CommSharedMem from the agent’s local memory to shared memory to improve performance.
 	void *device_ptr = nullptr;
 	auto err =
 		cudaHostGetDevicePointer(&device_ptr, (void *)cuda_shared_mem, 0);
