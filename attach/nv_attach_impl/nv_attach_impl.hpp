@@ -8,9 +8,11 @@
 #include <cstdint>
 #include <cuda_runtime.h>
 #include <cuda_runtime_api.h>
+#include <nvrtc.h>
 #include <dlfcn.h>
 #include <filesystem>
 #include <map>
+#include <mutex>
 #include <memory>
 #include <nvml.h>
 #include <cuda.h>
@@ -132,6 +134,14 @@ class nv_attach_impl final : public base_attach_impl {
 		hack_fatbin(std::map<std::string, std::string>);
 	std::map<std::string, std::string>
 	extract_ptxs(std::vector<uint8_t> &&);
+	bool initialize_module_trampoline(CUmodule module, bool strict);
+	bool has_active_hook_entries() const;
+	std::string run_pass_pipeline_on_ptx(const std::string &input_ptx);
+	std::optional<std::string> generate_patched_ptx_for_nvrtc(nvrtcProgram program);
+	bool ensure_nvrtc_program_patched(nvrtcProgram program);
+	size_t get_nvrtc_cached_size(nvrtcProgram program);
+	bool copy_nvrtc_cached_ptx(nvrtcProgram program, char *dst);
+	void release_nvrtc_program(nvrtcProgram program);
 	void mirror_cuda_memcpy_to_symbol(const void *symbol, const void *src,
 					  size_t count, size_t offset,
 					  cudaMemcpyKind kind,

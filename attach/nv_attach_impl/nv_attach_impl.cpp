@@ -28,10 +28,12 @@
 #include <cstdint>
 #include <cuda.h>
 #include <cuda_runtime.h>
+#include <nvrtc.h>
 #include <dlfcn.h>
 #include <filesystem>
 #include <iterator>
 #include <map>
+#include <algorithm>
 #include <memory>
 #include <mutex>
 #include <set>
@@ -54,6 +56,56 @@
 #include "ptx_pass_config.h"
 using namespace bpftime;
 using namespace attach;
+static nv_attach_impl *g_nv_attach_impl_instance = nullptr;
+namespace {
+template <typename FnPtr>
+FnPtr resolve_symbol(FnPtr &cached, const char *name)
+{
+	if (!cached) {
+		cached = reinterpret_cast<FnPtr>(dlsym(RTLD_NEXT, name));
+		if (!cached) {
+			SPDLOG_ERROR("Failed to resolve symbol {}", name);
+		}
+	}
+	return cached;
+}
+using nvrtc_get_ptx_size_fn = nvrtcResult (*)(nvrtcProgram, size_t *);
+using nvrtc_get_ptx_fn = nvrtcResult (*)(nvrtcProgram, char *);
+using nvrtc_destroy_program_fn = nvrtcResult (*)(nvrtcProgram *);
+static nvrtc_get_ptx_size_fn real_nvrtc_get_ptx_size = nullptr;
+static nvrtc_get_ptx_fn real_nvrtc_get_ptx = nullptr;
+static nvrtc_destroy_program_fn real_nvrtc_destroy_program = nullptr;
+using cu_module_load_data_fn =
+	CUresult (*)(CUmodule *, const void *);
+using cu_module_load_data_ex_fn = CUresult (*)(CUmodule *, const void *,
+					       unsigned int, CUjit_option *,
+					       void **);
+static cu_module_load_data_fn real_cu_module_load_data = nullptr;
+static cu_module_load_data_ex_fn real_cu_module_load_data_ex = nullptr;
+
+static nvrtc_get_ptx_size_fn get_real_nvrtc_get_ptx_size()
+{
+	return resolve_symbol(real_nvrtc_get_ptx_size, "nvrtcGetPTXSize");
+}
+static nvrtc_get_ptx_fn get_real_nvrtc_get_ptx()
+{
+	return resolve_symbol(real_nvrtc_get_ptx, "nvrtcGetPTX");
+}
+static nvrtc_destroy_program_fn get_real_nvrtc_destroy_program()
+{
+	return resolve_symbol(real_nvrtc_destroy_program,
+			      "nvrtcDestroyProgram");
+}
+static cu_module_load_data_fn get_real_cu_module_load_data()
+{
+	return resolve_symbol(real_cu_module_load_data, "cuModuleLoadData");
+}
+static cu_module_load_data_ex_fn get_real_cu_module_load_data_ex()
+{
+	return resolve_symbol(real_cu_module_load_data_ex,
+			      "cuModuleLoadDataEx");
+}
+} // namespace
 static std::vector<std::filesystem::path> split_by_colon(const std::string &str)
 {
 	std::vector<std::filesystem::path> result;
@@ -816,3 +868,102 @@ void nv_attach_impl::mirror_cuda_memcpy_to_symbol(
 }
 
 } // namespace bpftime::attach
+
+// Intercept nvrtcGetPTXSize so we can substitute the PTX emitted by our pass
+// pipeline—the size we return must match the patched PTX cached by the impl.
+extern "C" nvrtcResult nvrtcGetPTXSize(nvrtcProgram prog, size_t *ptxSizeRet)
+{
+	auto real = get_real_nvrtc_get_ptx_size();
+	if (!real)
+		return NVRTC_ERROR_INTERNAL_ERROR;
+	auto impl = g_nv_attach_impl_instance;
+	if (!impl || !impl->has_active_hook_entries() ||
+	    !impl->ensure_nvrtc_program_patched(prog)) {
+		return real(prog, ptxSizeRet);
+	}
+	size_t patched_size = impl->get_nvrtc_cached_size(prog);
+	if (patched_size == 0)
+		return real(prog, ptxSizeRet);
+	if (ptxSizeRet)
+		*ptxSizeRet = patched_size;
+	return NVRTC_SUCCESS;
+}
+
+// Intercept nvrtcGetPTX to hand the application the patched PTX bytes that
+// include eBPF hooks instead of the original NVRTC output.
+extern "C" nvrtcResult nvrtcGetPTX(nvrtcProgram prog, char *ptx)
+{
+	auto real = get_real_nvrtc_get_ptx();
+	if (!real)
+		return NVRTC_ERROR_INTERNAL_ERROR;
+	auto impl = g_nv_attach_impl_instance;
+	if (!impl || !impl->has_active_hook_entries() ||
+	    !impl->ensure_nvrtc_program_patched(prog) ||
+	    !impl->copy_nvrtc_cached_ptx(prog, ptx)) {
+		return real(prog, ptx);
+	}
+	return NVRTC_SUCCESS;
+}
+
+// Track NVRTC program destruction so we can drop any cached patched PTX once
+// the application releases the program.
+extern "C" nvrtcResult nvrtcDestroyProgram(nvrtcProgram *prog)
+{
+	auto real = get_real_nvrtc_destroy_program();
+	if (!real)
+		return NVRTC_ERROR_INTERNAL_ERROR;
+	auto result = real(prog);
+	if (result == NVRTC_SUCCESS && prog && *prog) {
+		if (auto impl = g_nv_attach_impl_instance)
+			impl->release_nvrtc_program(*prog);
+	}
+	return result;
+}
+
+// Hook module loads (fatbins) to install trampolines that call into the GPU
+// maps/BPF programs whenever CUDA loads a new kernel.
+extern "C" CUresult cuModuleLoadData(CUmodule *module, const void *image)
+{
+	auto real = get_real_cu_module_load_data();
+	if (!real)
+		return CUDA_ERROR_UNKNOWN;
+	auto result = real(module, image);
+	if (result == CUDA_SUCCESS && module && *module) {
+		if (auto impl = g_nv_attach_impl_instance;
+		    impl && impl->has_active_hook_entries()) {
+			try {
+				impl->initialize_module_trampoline(*module,
+								   false);
+			} catch (const std::exception &ex) {
+				SPDLOG_DEBUG("Module init skipped: {}",
+					     ex.what());
+			}
+		}
+	}
+	return result;
+}
+
+// Same as above but for the cuModuleLoadDataEx variant that accepts options.
+extern "C" CUresult cuModuleLoadDataEx(CUmodule *module, const void *image,
+				       unsigned int numOptions,
+				       CUjit_option *options, void **optionValues)
+{
+	auto real = get_real_cu_module_load_data_ex();
+	if (!real)
+		return CUDA_ERROR_UNKNOWN;
+	auto result =
+		real(module, image, numOptions, options, optionValues);
+	if (result == CUDA_SUCCESS && module && *module) {
+		if (auto impl = g_nv_attach_impl_instance;
+		    impl && impl->has_active_hook_entries()) {
+			try {
+				impl->initialize_module_trampoline(*module,
+								   false);
+			} catch (const std::exception &ex) {
+				SPDLOG_DEBUG("Module init skipped: {}",
+					     ex.what());
+			}
+		}
+	}
+	return result;
+}
