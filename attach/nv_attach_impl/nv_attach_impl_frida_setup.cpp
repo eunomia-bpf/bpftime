@@ -1,5 +1,6 @@
 // #include "pos/cuda_impl/utils/fatbin.h"
 #include "cuda.h"
+#include "cuda_runtime_api.h"
 #include "driver_types.h"
 #include "spdlog/spdlog.h"
 #include "vector_types.h"
@@ -87,6 +88,9 @@ static void example_listener_on_enter(GumInvocationListener *listener,
 		SPDLOG_INFO("Patching PTXs");
 		auto fatbin_record = std::make_unique<struct fatbin_record>();
 		fatbin_record->original_ptx = extracted_ptx;
+		fatbin_record->module_pool = context->impl->module_pool;
+		fatbin_record->ptx_pool = context->impl->ptx_pool;
+		
 		context->impl->current_fatbin = fatbin_record.get();
 		context->impl->fatbin_records.emplace_back(
 			std::move(fatbin_record));
@@ -97,23 +101,25 @@ static void example_listener_on_enter(GumInvocationListener *listener,
 		auto &impl = *context->impl;
 		auto current_fatbin = context->impl->current_fatbin;
 		current_fatbin->try_loading_ptxs(*context->impl);
+
 		auto func_addr =
 			gum_invocation_context_get_nth_argument(gum_ctx, 1);
 		auto symbol_name =
 			(const char *)gum_invocation_context_get_nth_argument(
 				gum_ctx, 3);
-
 		if (auto ok = current_fatbin->find_and_fill_function_info(
 			    func_addr, symbol_name);
 		    !ok) {
-			SPDLOG_ERROR(
-				"Unable to find_and_fill function info of symbol named {}",
+			SPDLOG_WARN(
+				"Unable to find_and_fill function info of symbol named {}, the PTX may not be compiled due to not modifying by nv_attach_impl",
 				symbol_name);
+		} else {
+			context->impl->symbol_address_to_fatbin[func_addr] =
+				current_fatbin;
+			SPDLOG_DEBUG(
+				"Registered kernel function name {} addr {:x}",
+				symbol_name, (uintptr_t)func_addr);
 		}
-		context->impl->symbol_address_to_fatbin[func_addr] =
-			current_fatbin;
-		SPDLOG_DEBUG("Registered kernel function name {} addr {:x}",
-			     symbol_name, (uintptr_t)func_addr);
 
 	} else if (context->to_function ==
 		   AttachedToFunction::RegisterVariable) {
@@ -127,20 +133,21 @@ static void example_listener_on_enter(GumInvocationListener *listener,
 		auto symbol_name =
 			(const char *)gum_invocation_context_get_nth_argument(
 				gum_ctx, 3);
-
 		SPDLOG_DEBUG("Registering variable named {}", symbol_name);
 
 		if (bool ok = current_fatbin->find_and_fill_variable_info(
 			    var_addr, symbol_name);
 		    !ok) {
-			SPDLOG_ERROR(
-				"Unable to find_and_fill variable info of symbol names {}",
+			SPDLOG_WARN(
+				"Unable to find_and_fill variable info of symbol names {}, the PTX may not be compiled due to not modifying by nv_attach_impl",
 				symbol_name);
+		} else {
+			context->impl->symbol_address_to_fatbin[var_addr] =
+				current_fatbin;
+			SPDLOG_DEBUG("Registered variable name {} addr {:x}",
+				     symbol_name, (uintptr_t)var_addr);
 		}
-		context->impl->symbol_address_to_fatbin[var_addr] =
-			current_fatbin;
-		SPDLOG_DEBUG("Registered variable name {} addr {:x}",
-			     symbol_name, (uintptr_t)var_addr);
+
 	} else if (context->to_function ==
 		   AttachedToFunction::RegisterFatbinEnd) {
 		SPDLOG_DEBUG("Entering __cudaRegisterFatBinaryEnd..");
@@ -149,8 +156,10 @@ static void example_listener_on_enter(GumInvocationListener *listener,
 		current_fatbin = nullptr;
 	} else if (context->to_function == AttachedToFunction::CudaMalloc) {
 		SPDLOG_DEBUG("Entering cudaMalloc..");
-	} else if (context->to_function == AttachedToFunction::CudaMemcpyToSymbol 
-		|| context->to_function == AttachedToFunction::CudaMemcpyToSymbolAsync) {
+	} else if (context->to_function ==
+			   AttachedToFunction::CudaMemcpyToSymbol ||
+		   context->to_function ==
+			   AttachedToFunction::CudaMemcpyToSymbolAsync) {
 		auto symbol =
 			(const void *)gum_invocation_context_get_nth_argument(
 				gum_ctx, 0);
@@ -169,7 +178,9 @@ static void example_listener_on_enter(GumInvocationListener *listener,
 		bool async = context->to_function ==
 			     AttachedToFunction::CudaMemcpyToSymbolAsync;
 		if (async) {
-			stream = (cudaStream_t)gum_invocation_context_get_nth_argument(gum_ctx, 5);
+			stream = (cudaStream_t)
+				gum_invocation_context_get_nth_argument(gum_ctx,
+									5);
 		}
 		context->impl->mirror_cuda_memcpy_to_symbol(
 			symbol, src, count, offset, kind, stream, async);
@@ -238,20 +249,23 @@ cuda_runtime_function__cudaLaunchKernel(const void *func, dim3 grid_dim,
 			    block_dim.x, block_dim.y, block_dim.z, shared_mem,
 			    stream, args, nullptr);
 		    err != CUDA_SUCCESS) {
-			const char* error_name = nullptr;
-			const char* error_string = nullptr;
+			const char *error_name = nullptr;
+			const char *error_string = nullptr;
 			cuGetErrorName(err, &error_name);
 			cuGetErrorString(err, &error_string);
-			SPDLOG_ERROR("Unable to launch kernel: {} ({})", 
+			SPDLOG_ERROR("Unable to launch kernel: {} ({})",
 				     error_name ? error_name : "UNKNOWN",
-				     error_string ? error_string : "No description");
+				     error_string ? error_string :
+						    "No description");
 			SPDLOG_ERROR("Error code: {}", (int)err);
 			return cudaErrorLaunchFailure;
 		}
 		return cudaSuccess;
 
 	} else {
-		SPDLOG_DEBUG("Symbol not found ");
-		return cudaErrorSymbolNotFound;
+		SPDLOG_DEBUG(
+			"Symbol not found, calling original cudaLaunchKernel");
+		return cudaLaunchKernel(func, grid_dim, block_dim, args,
+					shared_mem, stream);
 	}
 }

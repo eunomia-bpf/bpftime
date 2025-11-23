@@ -1,4 +1,4 @@
-#include "nv_gpu_array_map.hpp"
+#include "nv_gpu_per_thread_array_map.hpp"
 #include "bpftime_internal.h"
 #include "bpftime_shm.hpp"
 #include "bpftime_shm_internal.hpp"
@@ -12,7 +12,7 @@
 
 using namespace bpftime;
 CUdeviceptr
-nv_gpu_array_map_impl::try_initialize_for_agent_and_get_mapped_address()
+nv_gpu_per_thread_array_map_impl::try_initialize_for_agent_and_get_mapped_address()
 {
 	if (shm_holder.global_shared_memory.get_open_type() !=
 	    shm_open_type::SHM_REMOVE_AND_CREATE) {
@@ -42,7 +42,7 @@ nv_gpu_array_map_impl::try_initialize_for_agent_and_get_mapped_address()
 		return server_gpu_shared_mem;
 	}
 }
-nv_gpu_array_map_impl::nv_gpu_array_map_impl(
+nv_gpu_per_thread_array_map_impl::nv_gpu_per_thread_array_map_impl(
 	boost::interprocess::managed_shared_memory &memory, uint64_t value_size,
 	uint64_t max_entries, uint64_t thread_count)
 	: agent_gpu_shared_mem(memory.get_segment_manager()),
@@ -80,7 +80,7 @@ nv_gpu_array_map_impl::nv_gpu_array_map_impl(
 	}
 }
 
-void *nv_gpu_array_map_impl::elem_lookup(const void *key)
+void *nv_gpu_per_thread_array_map_impl::elem_lookup(const void *key)
 {
 	auto key_val = *(uint32_t *)key;
 	if (key_val >= max_entries) {
@@ -101,7 +101,7 @@ void *nv_gpu_array_map_impl::elem_lookup(const void *key)
 	return value_buffer.data();
 }
 
-long nv_gpu_array_map_impl::elem_update(const void *key, const void *value,
+long nv_gpu_per_thread_array_map_impl::elem_update(const void *key, const void *value,
 					uint64_t flags)
 {
 	if (unlikely(!check_update_flags(flags)))
@@ -128,13 +128,13 @@ long nv_gpu_array_map_impl::elem_update(const void *key, const void *value,
 	return 0;
 }
 
-long nv_gpu_array_map_impl::elem_delete(const void *key)
+long nv_gpu_per_thread_array_map_impl::elem_delete(const void *key)
 {
 	errno = EINVAL;
 	return -1;
 }
 
-int nv_gpu_array_map_impl::map_get_next_key(const void *key, void *next_key)
+int nv_gpu_per_thread_array_map_impl::map_get_next_key(const void *key, void *next_key)
 {
 	auto &next_key_val = *(uint32_t *)next_key;
 
@@ -156,7 +156,7 @@ int nv_gpu_array_map_impl::map_get_next_key(const void *key, void *next_key)
 	}
 }
 
-nv_gpu_array_map_impl::~nv_gpu_array_map_impl()
+nv_gpu_per_thread_array_map_impl::~nv_gpu_per_thread_array_map_impl()
 {
 	if (auto err = cuIpcCloseMemHandle(server_gpu_shared_mem);
 	    err != CUDA_SUCCESS) {

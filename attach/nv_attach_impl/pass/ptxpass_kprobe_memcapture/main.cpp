@@ -138,7 +138,7 @@ patch_memcapture(const std::string &ptx,
 				packed_words,
 				packed_words + insts_local.size());
 			auto func_ptx = ptxpass::compile_ebpf_to_ptx_from_words(
-				packed, "sm_60",
+				packed, "sm_61",
 				"__memcapture__" + std::to_string(count), true,
 				false);
 			auto func_name = std::string("__memcapture__") +
@@ -179,8 +179,9 @@ extern "C" int process_input(const char *input, int length, char *output)
 		auto [out, modified] = patch_memcapture(
 			runtime_request.input.full_ptx,
 			runtime_request.get_uint64_ebpf_instructions());
-		snprintf(output, length, "%s",
-			 emit_runtime_response_and_return(out).c_str());
+		snprintf(
+			output, length, "%s",
+			emit_runtime_response_and_return(out, modified).c_str());
 		return ExitCode::Success;
 	} catch (const std::runtime_error &e) {
 		std::cerr << e.what() << "\n";

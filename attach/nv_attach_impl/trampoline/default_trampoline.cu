@@ -81,7 +81,8 @@ struct CommSharedMem {
 };
 
 const int BPF_MAP_TYPE_PERGPUTD_ARRAY_MAP = 1502;
-const int BPF_MAP_TYPE_GPU_ARRAY_MAP = 1503; // non-per-thread, single-copy shared array
+const int BPF_MAP_TYPE_GPU_ARRAY_MAP = 1503; // non-per-thread, single-copy
+					     // shared array
 const int BPF_MAP_TYPE_GPU_RINGBUF_MAP = 1527;
 
 struct MapBasicInfo {
@@ -105,7 +106,6 @@ __constant__ MapBasicInfo map_info[256];
 extern "C" __device__ void spin_lock(volatile int *lock)
 {
 	while (atomicCAS((int *)lock, 0, 1) == 1) {
-		// 自旋等待锁变为可用
 	}
 	// printf("lock acquired by %d\n", threadIdx.x + blockIdx.x *
 	// blockDim.x);
@@ -113,7 +113,7 @@ extern "C" __device__ void spin_lock(volatile int *lock)
 
 extern "C" __device__ void spin_unlock(int *lock)
 {
-	atomicExch(lock, 0); // 将锁标志重置为 0
+	atomicExch(lock, 0);
 	// printf("lock released by %d\n", threadIdx.x + blockIdx.x *
 	// blockDim.x);
 }
@@ -175,8 +175,13 @@ __device__ uint64_t getGlobalThreadId()
 	int height = gridDim.y * blockDim.y;
 	return ((uint64_t)z * width * height) + (y * width) + x;
 }
-__device__ void *array_map_offset(uint64_t idx, const MapBasicInfo &info)
+__device__ void *array_map_offset(uint64_t idx, const MapBasicInfo &info,
+				  uint64_t map)
 {
+	if (info.max_thread_count <= getGlobalThreadId()) {
+		printf("WARNING: getGlobalThreadId(%lu) exceeds max_thread_count (%lu) of map %lu, please set BPFTIME_MAP_GPU_THREAD_COUNT at syscall-server side\n",
+		       getGlobalThreadId(), info.max_thread_count, map);
+	}
 	return (void *)((uintptr_t)info.extra_buffer +
 			idx * info.max_thread_count * info.value_size +
 			getGlobalThreadId() * info.value_size);
@@ -191,14 +196,17 @@ extern "C" __noinline__ __device__ uint64_t _bpf_helper_ext_0001(
 	const auto &map_info = ::map_info[map];
 	if (map_info.map_type == BPF_MAP_TYPE_PERGPUTD_ARRAY_MAP) {
 		auto real_key = *(uint32_t *)(uintptr_t)key;
-		auto offset = array_map_offset(real_key, map_info);
+		auto offset = array_map_offset(real_key, map_info, map);
 		return (uint64_t)offset;
 	}
-	// Fast-path for non-per-thread GPU array map: single shared copy on device-visible UVA
+	// Fast-path for non-per-thread GPU array map: single shared copy on
+	// device-visible UVA
 	if (map_info.map_type == BPF_MAP_TYPE_GPU_ARRAY_MAP) {
 		auto real_key = *(uint32_t *)(uintptr_t)key;
 		auto base = (char *)map_info.extra_buffer;
-		return (uint64_t)(uintptr_t)(base + (uint64_t)real_key * map_info.value_size);
+		return (uint64_t)(uintptr_t)(base +
+					     (uint64_t)real_key *
+						     map_info.value_size);
 	}
 	// printf("helper1 map %ld keysize=%d valuesize=%d\n", map,
 	//        map_info.key_size, map_info.value_size);
@@ -219,17 +227,21 @@ extern "C" __noinline__ __device__ uint64_t _bpf_helper_ext_0002(
 	const auto &map_info = ::map_info[map];
 	if (map_info.map_type == BPF_MAP_TYPE_PERGPUTD_ARRAY_MAP) {
 		auto real_key = *(uint32_t *)(uintptr_t)key;
-		auto offset = array_map_offset(real_key, map_info);
+		auto offset = array_map_offset(real_key, map_info, map);
 		simple_memcpy(offset, (void *)(uintptr_t)value,
 			      map_info.value_size);
 		return 0;
 	}
-	// Fast-path for non-per-thread GPU array map: memcpy overwrite, system fence for visibility
+	// Fast-path for non-per-thread GPU array map: memcpy overwrite, system
+	// fence for visibility
 	if (map_info.map_type == BPF_MAP_TYPE_GPU_ARRAY_MAP) {
 		auto real_key = *(uint32_t *)(uintptr_t)key;
 		auto base = (char *)map_info.extra_buffer;
-		auto dst = (void *)(uintptr_t)(base + (uint64_t)real_key * map_info.value_size);
-		simple_memcpy(dst, (void *)(uintptr_t)value, map_info.value_size);
+		auto dst =
+			(void *)(uintptr_t)(base + (uint64_t)real_key *
+							   map_info.value_size);
+		simple_memcpy(dst, (void *)(uintptr_t)value,
+			      map_info.value_size);
 		asm("membar.sys;                      \n\t");
 		return 0;
 	}
@@ -302,7 +314,8 @@ _bpf_helper_ext_0025(uint64_t ctx, uint64_t map, uint64_t flags, uint64_t data,
 {
 	const auto &map_info = ::map_info[map];
 	if (map_info.map_type == BPF_MAP_TYPE_GPU_RINGBUF_MAP) {
-		// printf("Starting perf output, value size=%d, max entries = %d\n",
+		// printf("Starting perf output, value size=%d, max entries =
+		// %d\n",
 		//        map_info.value_size, map_info.max_entries);
 		auto entry_size = sizeof(ringbuf_header) +
 				  map_info.max_entries * (sizeof(uint64_t) +

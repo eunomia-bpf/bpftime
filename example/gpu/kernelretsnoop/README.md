@@ -1,5 +1,9 @@
 # kernelretsnoop - CUDA Kernel Thread Exit Timestamp Tracer
 
+## Note
+
+Environment variable `BPFTIME_MAP_GPU_THREAD_COUNT` should be set to a smaller value (such as 10) to avoid bad_alloc.
+
 ## Overview
 
 Imagine you're trying to understand why your CUDA kernel isn't as fast as you expected. Traditional profiling tools tell you the kernel took 10 milliseconds to run—but that's like knowing a marathon took 3 hours without knowing that half the runners got lost at mile 5. You need to see what each individual thread is doing, and when they're actually finishing their work.

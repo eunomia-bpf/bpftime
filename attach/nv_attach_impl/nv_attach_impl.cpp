@@ -7,6 +7,8 @@
 #include "nvPTXCompiler.h"
 #include "nv_attach_private_data.hpp"
 #include "nv_attach_utils.hpp"
+#include "ptx_compiler/ptx_compiler.hpp"
+// #include "spdlog/common.h"
 #include "spdlog/spdlog.h"
 #include <asm/unistd.h> // For architecture-specific syscall numbers
 #include <boost/asio/io_context.hpp>
@@ -43,6 +45,7 @@
 #include <sys/user.h>
 #include <sys/uio.h>
 #include <link.h>
+#include <tuple>
 #include <unistd.h>
 #include <variant>
 #include <vector>
@@ -156,6 +159,11 @@ cudaError_t cuda_runtime_function__cudaLaunchKernel(const void *func,
 nv_attach_impl::nv_attach_impl()
 {
 	SPDLOG_INFO("Starting nv_attach_impl");
+	this->module_pool = std::make_shared<
+		std::map<std::string, std::shared_ptr<ptx_in_module>>>();
+	this->ptx_pool =
+		std::make_shared<std::map<std::string, std::vector<uint8_t>>>();
+
 	gum_init_embedded();
 	auto interceptor = gum_interceptor_obtain();
 	if (interceptor == nullptr) {
@@ -321,12 +329,20 @@ nv_attach_impl::nv_attach_impl()
 				path, config, print_config, process_input,
 				handle));
 	}
+	{
+		this->ptx_compiler = *load_nv_attach_impl_ptx_compiler(
+			DEFAULT_PTX_COMPILER_SHARED_LIB,
+			this->ptx_compiler_dl_handle);
+	}
 }
 
 nv_attach_impl::~nv_attach_impl()
 {
 	if (frida_listener)
 		g_object_unref(frida_listener);
+	if (ptx_compiler_dl_handle) {
+		dlclose(ptx_compiler_dl_handle);
+	}
 }
 std::map<std::string, std::string>
 nv_attach_impl::extract_ptxs(std::vector<uint8_t> &&data_vec)
@@ -347,18 +363,17 @@ nv_attach_impl::extract_ptxs(std::vector<uint8_t> &&data_vec)
 	boost::process::ipstream stream;
 	boost::process::environment env = boost::this_process::environment();
 	env["LD_PRELOAD"] = "";
-	
+
 	// Build command line - use shell to properly search PATH
 	auto cuobjdump_cmd_line = std::string("cuobjdump --extract-ptx all ") +
 				  fatbin_path.string();
 	SPDLOG_INFO("Calling cuobjdump: {}", cuobjdump_cmd_line);
-	
+
 	// Execute through shell to properly use PATH
-	boost::process::child child("/bin/sh",
-				    boost::process::args({"-c", cuobjdump_cmd_line}),
-				    boost::process::std_out > stream,
-				    boost::process::env(env),
-				    boost::process::start_dir = tmp_dir);
+	boost::process::child child(
+		"/bin/sh", boost::process::args({ "-c", cuobjdump_cmd_line }),
+		boost::process::std_out > stream, boost::process::env(env),
+		boost::process::start_dir = tmp_dir);
 
 	std::string line;
 	while (std::getline(stream, line)) {
@@ -375,107 +390,139 @@ nv_attach_impl::extract_ptxs(std::vector<uint8_t> &&data_vec)
 			all_ptx[entry.path().filename()] = buffer.str();
 		}
 	}
+	if (!spdlog::should_log(spdlog::level::debug)) {
+		SPDLOG_INFO("Remove extracted files..");
+		std::filesystem::remove_all(working_dir);
+	}
 	SPDLOG_INFO("Got {} PTX files", all_ptx.size());
 	return all_ptx;
 }
-std::optional<std::map<std::string, std::string>>
+std::optional<std::map<std::string, std::tuple<std::string, bool>>>
 nv_attach_impl::hack_fatbin(std::map<std::string, std::string> all_ptx)
 {
-	char tmp_dir[] = "/tmp/bpftime-fatbin-work.XXXXXX";
-	mkdtemp(tmp_dir);
-	auto working_dir = std::filesystem::path(tmp_dir);
-
 	/**
 	Here we can patch the PTX.
 	*/
 	boost::asio::thread_pool pool(std::thread::hardware_concurrency());
-	std::map<std::string, std::string> ptx_out;
+	std::map<std::string, std::tuple<std::string, bool>> ptx_out;
 	std::mutex map_mutex;
+	std::mutex cache_mutex;
 	for (auto &[file_name, original_ptx] : all_ptx) {
-		boost::asio::post(
-			pool,
-			[this, original_ptx, file_name, &map_mutex,
-			 &ptx_out]() -> void {
-				auto current_ptx = original_ptx;
-				SPDLOG_INFO("Patching PTX: {}", file_name);
+		boost::asio::post(pool, [this, original_ptx, file_name, &map_mutex, &ptx_out, &cache_mutex]() -> void {
+			auto current_ptx = original_ptx;
+			SPDLOG_INFO("Patching PTX: {}", file_name);
+			bool should_add_trampoline = false;
+			for (const auto &[_, hook_entry] : this->hook_entries) {
+				const auto &kernels = hook_entry.kernels;
+				for (const auto &kernel : kernels) {
+					std::vector<uint64_t> ebpf_inst_words;
+					ebpf_inst_words.assign(
+						(uint64_t *)(uintptr_t)hook_entry
+							.instuctions.data(),
+						(uint64_t *)(uintptr_t)hook_entry
+								.instuctions
+								.data() +
+							hook_entry.instuctions
+								.size()
 
-				for (const auto &[_, hook_entry] :
-				     this->hook_entries) {
-					const auto &kernels =
-						hook_entry.kernels;
-					for (const auto &kernel : kernels) {
-						std::vector<uint64_t>
-							ebpf_inst_words;
-						ebpf_inst_words.assign(
-							(uint64_t *)(uintptr_t)
-								hook_entry
-									.instuctions
-									.data(),
-							(uint64_t *)(uintptr_t)hook_entry
-									.instuctions
-									.data() +
-								hook_entry
-									.instuctions
-									.size()
+					);
+					ptxpass::runtime_request::RuntimeRequest
+						req;
+					auto &ri = req.input;
+					ri.full_ptx = current_ptx;
+					ri.to_patch_kernel = kernel;
+					ri.global_ebpf_map_info_symbol =
+						"map_info";
+					ri.ebpf_communication_data_symbol =
+						"constData";
 
-						);
-						ptxpass::runtime_request::
-							RuntimeRequest req;
-						auto &ri = req.input;
-						ri.full_ptx = current_ptx;
-						ri.to_patch_kernel = kernel;
-						ri.global_ebpf_map_info_symbol =
-							"map_info";
-						ri.ebpf_communication_data_symbol =
-							"constData";
+					req.set_ebpf_instructions(
+						ebpf_inst_words);
+					nlohmann::json in;
+					ptxpass::runtime_request::to_json(in,
+									  req);
+					auto input_json = in.dump();
+					SPDLOG_DEBUG("Input: {}", input_json);
+					auto sha256_string =
+						sha256(input_json.data(),
+						       input_json.size());
 
-						req.set_ebpf_instructions(
-							ebpf_inst_words);
-						nlohmann::json in;
-						ptxpass::runtime_request::to_json(
-							in, req);
-						SPDLOG_DEBUG("Input: {}",
-							     in.dump());
-						std::vector<char> buf(200
-								      << 20);
+					ptxpass::runtime_response::RuntimeResponse
+						resp;
+
+					cache_mutex.lock();
+					if (auto itr = this->patch_cache.find(
+						    sha256_string);
+					    itr != this->patch_cache.end()) {
+						SPDLOG_INFO(
+							"Patching request {} found in cache",
+							sha256_string);
+						resp = itr->second;
+						cache_mutex.unlock();
+					} else {
+						cache_mutex.unlock();
+						SPDLOG_INFO(
+							"Patching request {} not found in cache, patching..",
+							sha256_string);
+						std::vector<char> buf(1 << 30);
 						int err =
 							hook_entry.config->process_input(
-								in.dump().c_str(),
+								input_json
+									.c_str(),
 								buf.size(),
 								buf.data());
+
 						if (err ==
 						    ptxpass::ExitCode::Success) {
 							auto json = nlohmann::json::
 								parse(buf.data());
 							using namespace ptxpass::
 								runtime_response;
-							RuntimeResponse resp;
+
 							from_json(json, resp);
-							current_ptx =
-								resp.output_ptx;
 
 						} else {
 							SPDLOG_ERROR(
 								"Unable to run pass on kernel {}: {}",
 								kernel,
 								(int)err);
+							return;
 						}
+						std::lock_guard<std::mutex>
+							_cache_guard(
+								cache_mutex);
+						patch_cache[sha256_string] =
+							resp;
 					}
+					current_ptx = resp.output_ptx;
+					should_add_trampoline =
+						should_add_trampoline ||
+						resp.modified;
 				}
+			}
+			if (should_add_trampoline) {
 				current_ptx =
 					ptxpass::filter_out_version_headers_ptx(
 						wrap_ptx_with_trampoline(
 							current_ptx));
-				std::lock_guard<std::mutex> _guard(map_mutex);
-				ptx_out["patched." + file_name] = current_ptx;
-			});
+			}
+			std::lock_guard<std::mutex> _guard(map_mutex);
+			ptx_out["patched." + file_name] = std::make_tuple(
+				current_ptx, should_add_trampoline);
+		});
 	}
 	pool.join();
-	SPDLOG_INFO("Writting patched PTX to {}", working_dir.c_str());
-	for (const auto &[file_name, ptx] : ptx_out) {
-		auto path = working_dir / (file_name);
-		std::ofstream ofs(path);
-		ofs << ptx;
+	if (spdlog::should_log(spdlog::level::debug)) {
+		char tmp_dir[] = "/tmp/bpftime-fatbin-work.XXXXXX";
+		mkdtemp(tmp_dir);
+		auto working_dir = std::filesystem::path(tmp_dir);
+
+		SPDLOG_DEBUG("Writing patched PTX to {}", working_dir.c_str());
+		for (const auto &[file_name, ptx] : ptx_out) {
+			auto path = working_dir / (file_name);
+			std::ofstream ofs(path);
+			ofs << std::get<0>(ptx);
+		}
 	}
 	return ptx_out;
 }
@@ -532,9 +579,9 @@ int nv_attach_impl::run_attach_entry_on_gpu(int attach_id, int run_count,
 	}
 	SPDLOG_INFO("Running program on GPU");
 
-	// Get SM architecture from environment variable, default to sm_60
+	// Get SM architecture from environment variable, default to sm_61
 	const char *sm_arch_env = std::getenv("BPFTIME_SM_ARCH");
-	std::string sm_arch = sm_arch_env ? sm_arch_env : "sm_60";
+	std::string sm_arch = sm_arch_env ? sm_arch_env : "sm_61";
 	SPDLOG_INFO("Using SM architecture: {}", sm_arch);
 
 	std::vector<uint64_t> ebpf_words;
@@ -544,7 +591,8 @@ int nv_attach_impl::run_attach_entry_on_gpu(int attach_id, int run_count,
 	auto ptx = ptxpass::filter_out_version_headers_ptx(
 		wrap_ptx_with_trampoline(filter_compiled_ptx_for_ebpf_program(
 			ptxpass::compile_ebpf_to_ptx_from_words(
-				ebpf_words, sm_arch.c_str(), "bpf_main", false, false),
+				ebpf_words, sm_arch.c_str(), "bpf_main", false,
+				false),
 			"bpf_main")));
 	{
 		const std::string to_replace = ".func bpf_main";
@@ -675,8 +723,17 @@ void nv_attach_impl::mirror_cuda_memcpy_to_symbol(
 	cudaMemcpyKind kind, cudaStream_t stream, bool async)
 {
 	auto record_itr = symbol_address_to_fatbin.find((void *)symbol);
-	if (record_itr == symbol_address_to_fatbin.end())
+	if (record_itr == symbol_address_to_fatbin.end()) {
+		SPDLOG_DEBUG(
+			"In mirror_cuda_memcpy_to_symbol: calling original cudaMemcpyToSymbol");
+		if (async) {
+			cudaMemcpyToSymbolAsync(symbol, src, count, offset,
+						kind, stream);
+		} else {
+			cudaMemcpyToSymbol(symbol, src, count, offset, kind);
+		}
 		return;
+	}
 	auto &record = *record_itr->second;
 	auto var_itr = record.variable_addr_to_symbol.find((void *)symbol);
 	if (var_itr == record.variable_addr_to_symbol.end()) {

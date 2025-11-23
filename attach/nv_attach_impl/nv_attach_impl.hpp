@@ -2,6 +2,7 @@
 #define _BPFTIME_NV_ATTACH_IMPL_HPP
 #include "ebpf_inst.h"
 #include "nv_attach_utils.hpp"
+#include "ptx_compiler/ptx_compiler.hpp"
 #include "ptxpass/core.hpp"
 #include <base_attach_impl.hpp>
 #include <cstdint>
@@ -127,7 +128,7 @@ class nv_attach_impl final : public base_attach_impl {
 	nv_attach_impl &operator=(const nv_attach_impl &) = delete;
 	nv_attach_impl();
 	virtual ~nv_attach_impl();
-	std::optional<std::map<std::string, std::string>>
+	std::optional<std::map<std::string, std::tuple<std::string, bool>>>
 		hack_fatbin(std::map<std::string, std::string>);
 	std::map<std::string, std::string>
 	extract_ptxs(std::vector<uint8_t> &&);
@@ -146,6 +147,13 @@ class nv_attach_impl final : public base_attach_impl {
 	std::map<void *, fatbin_record *> symbol_address_to_fatbin;
 	uintptr_t shared_mem_ptr;
 	std::optional<std::vector<MapBasicInfo>> map_basic_info;
+	void *ptx_compiler_dl_handle = nullptr;
+	nv_attach_impl_ptx_compiler_handler ptx_compiler;
+	/// SHA256 of ELF -> PTX module
+	std::shared_ptr<std::map<std::string, std::shared_ptr<ptx_in_module>>>
+		module_pool;
+	/// SHA256 of PTX -> ELF
+	std::shared_ptr<std::map<std::string, std::vector<uint8_t>>> ptx_pool;
 
     private:
 	void *frida_interceptor;
@@ -156,6 +164,8 @@ class nv_attach_impl final : public base_attach_impl {
 	// discovered pass definitions
 	std::vector<std::unique_ptr<pass_cfg_with_exec_path>>
 		pass_configurations;
+	std::map<std::string, ptxpass::runtime_response::RuntimeResponse>
+		patch_cache;
 };
 
 std::string add_semicolon_for_variable_lines(std::string input);

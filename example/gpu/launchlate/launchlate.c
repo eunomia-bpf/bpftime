@@ -108,7 +108,7 @@ int main(int argc, char **argv)
 	struct timespec ts_mono, ts_real;
 	int64_t offset_ns;
 	uint32_t key = 0;
-	const char *uprobe_spec = "example/gpu/launchlate/vec_add:_Z16cudaLaunchKernelIcE9cudaErrorPT_4dim3S3_PPvmP11CUstream_st";
+	const char *uprobe_spec = "./vec_add:_Z16cudaLaunchKernelIcE9cudaErrorPT_4dim3S3_PPvmP11CUstream_st";
 	char *binary_path = NULL;
 	char *func_name = NULL;
 	char *colon_pos = NULL;
