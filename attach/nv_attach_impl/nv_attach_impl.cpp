@@ -28,12 +28,10 @@
 #include <cstdint>
 #include <cuda.h>
 #include <cuda_runtime.h>
-#include <nvrtc.h>
 #include <dlfcn.h>
 #include <filesystem>
 #include <iterator>
 #include <map>
-#include <algorithm>
 #include <memory>
 #include <mutex>
 #include <set>
@@ -56,56 +54,6 @@
 #include "ptx_pass_config.h"
 using namespace bpftime;
 using namespace attach;
-static nv_attach_impl *g_nv_attach_impl_instance = nullptr;
-namespace {
-template <typename FnPtr>
-FnPtr resolve_symbol(FnPtr &cached, const char *name)
-{
-	if (!cached) {
-		cached = reinterpret_cast<FnPtr>(dlsym(RTLD_NEXT, name));
-		if (!cached) {
-			SPDLOG_ERROR("Failed to resolve symbol {}", name);
-		}
-	}
-	return cached;
-}
-using nvrtc_get_ptx_size_fn = nvrtcResult (*)(nvrtcProgram, size_t *);
-using nvrtc_get_ptx_fn = nvrtcResult (*)(nvrtcProgram, char *);
-using nvrtc_destroy_program_fn = nvrtcResult (*)(nvrtcProgram *);
-static nvrtc_get_ptx_size_fn real_nvrtc_get_ptx_size = nullptr;
-static nvrtc_get_ptx_fn real_nvrtc_get_ptx = nullptr;
-static nvrtc_destroy_program_fn real_nvrtc_destroy_program = nullptr;
-using cu_module_load_data_fn =
-	CUresult (*)(CUmodule *, const void *);
-using cu_module_load_data_ex_fn = CUresult (*)(CUmodule *, const void *,
-					       unsigned int, CUjit_option *,
-					       void **);
-static cu_module_load_data_fn real_cu_module_load_data = nullptr;
-static cu_module_load_data_ex_fn real_cu_module_load_data_ex = nullptr;
-
-static nvrtc_get_ptx_size_fn get_real_nvrtc_get_ptx_size()
-{
-	return resolve_symbol(real_nvrtc_get_ptx_size, "nvrtcGetPTXSize");
-}
-static nvrtc_get_ptx_fn get_real_nvrtc_get_ptx()
-{
-	return resolve_symbol(real_nvrtc_get_ptx, "nvrtcGetPTX");
-}
-static nvrtc_destroy_program_fn get_real_nvrtc_destroy_program()
-{
-	return resolve_symbol(real_nvrtc_destroy_program,
-			      "nvrtcDestroyProgram");
-}
-static cu_module_load_data_fn get_real_cu_module_load_data()
-{
-	return resolve_symbol(real_cu_module_load_data, "cuModuleLoadData");
-}
-static cu_module_load_data_ex_fn get_real_cu_module_load_data_ex()
-{
-	return resolve_symbol(real_cu_module_load_data_ex,
-			      "cuModuleLoadDataEx");
-}
-} // namespace
 static std::vector<std::filesystem::path> split_by_colon(const std::string &str)
 {
 	std::vector<std::filesystem::path> result;
@@ -791,3 +739,80 @@ int nv_attach_impl::run_attach_entry_on_gpu(int attach_id, int run_count,
 	}
 	return 0;
 }
+
+void nv_attach_impl::mirror_cuda_memcpy_to_symbol(
+	const void *symbol, const void *src, size_t count, size_t offset,
+	cudaMemcpyKind kind, cudaStream_t stream, bool async)
+{
+	auto record_itr = symbol_address_to_fatbin.find((void *)symbol);
+	if (record_itr == symbol_address_to_fatbin.end()) {
+		SPDLOG_DEBUG(
+			"In mirror_cuda_memcpy_to_symbol: calling original cudaMemcpyToSymbol");
+		if (async) {
+			cudaMemcpyToSymbolAsync(symbol, src, count, offset,
+						kind, stream);
+		} else {
+			cudaMemcpyToSymbol(symbol, src, count, offset, kind);
+		}
+		return;
+	}
+	auto &record = *record_itr->second;
+	auto var_itr = record.variable_addr_to_symbol.find((void *)symbol);
+	if (var_itr == record.variable_addr_to_symbol.end()) {
+		SPDLOG_DEBUG(
+			"mirror_cuda_memcpy_to_symbol: no variable info for symbol pointer {:x}",
+			(uintptr_t)symbol);
+		return;
+	}
+	auto &var_info = var_itr->second;
+	if (offset >= var_info.size) {
+		SPDLOG_WARN(
+			"mirror_cuda_memcpy_to_symbol: offset {} exceeds size {} for symbol {}",
+			offset, var_info.size, var_info.symbol_name);
+		return;
+	}
+	size_t writable = var_info.size - offset;
+	size_t bytes_to_copy = std::min(count, writable);
+	if (bytes_to_copy == 0)
+		return;
+	if (bytes_to_copy != count) {
+		SPDLOG_WARN(
+			"mirror_cuda_memcpy_to_symbol: truncating copy for symbol {} (requested={}, allowed={})",
+			var_info.symbol_name, count, bytes_to_copy);
+	}
+	CUdeviceptr dst = var_info.ptr + offset;
+	CUstream cu_stream = reinterpret_cast<CUstream>(stream);
+	CUresult status = CUDA_SUCCESS;
+
+	auto copy_device_ptr = [](const void *ptr) -> CUdeviceptr {
+		return static_cast<CUdeviceptr>(
+			reinterpret_cast<uintptr_t>(ptr));
+	};
+
+	switch (kind) {
+	case cudaMemcpyHostToDevice:
+	case cudaMemcpyDefault:
+		status = async ? cuMemcpyHtoDAsync(dst, src, bytes_to_copy,
+						   cu_stream) :
+				 cuMemcpyHtoD(dst, src, bytes_to_copy);
+		break;
+	case cudaMemcpyDeviceToDevice:
+		status = async ? cuMemcpyDtoDAsync(dst, copy_device_ptr(src),
+						   bytes_to_copy, cu_stream) :
+				 cuMemcpyDtoD(dst, copy_device_ptr(src),
+					      bytes_to_copy);
+		break;
+	default:
+		SPDLOG_DEBUG(
+			"mirror_cuda_memcpy_to_symbol: unsupported memcpy kind {} for symbol {}",
+			(int)kind, var_info.symbol_name);
+		return;
+	}
+	if (status != CUDA_SUCCESS) {
+		SPDLOG_WARN(
+			"mirror_cuda_memcpy_to_symbol: failed to copy symbol {} (err={})",
+			var_info.symbol_name, (int)status);
+	}
+}
+
+} // namespace bpftime::attach
