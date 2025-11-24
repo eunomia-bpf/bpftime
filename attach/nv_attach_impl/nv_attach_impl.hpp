@@ -134,18 +134,6 @@ class nv_attach_impl final : public base_attach_impl {
 		hack_fatbin(std::map<std::string, std::string>);
 	std::map<std::string, std::string>
 	extract_ptxs(std::vector<uint8_t> &&);
-	bool initialize_module_trampoline(CUmodule module, bool strict);
-	bool has_active_hook_entries() const;
-	std::string run_pass_pipeline_on_ptx(const std::string &input_ptx);
-	std::optional<std::string> generate_patched_ptx_for_nvrtc(nvrtcProgram program);
-	bool ensure_nvrtc_program_patched(nvrtcProgram program);
-	size_t get_nvrtc_cached_size(nvrtcProgram program);
-	bool copy_nvrtc_cached_ptx(nvrtcProgram program, char *dst);
-	void release_nvrtc_program(nvrtcProgram program);
-	void mirror_cuda_memcpy_to_symbol(const void *symbol, const void *src,
-					  size_t count, size_t offset,
-					  cudaMemcpyKind kind,
-					  cudaStream_t stream, bool async);
 
 	int find_attach_entry_by_program_name(const char *name) const;
 	int run_attach_entry_on_gpu(int attach_id, int run_count = 1,
