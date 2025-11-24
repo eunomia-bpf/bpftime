@@ -237,8 +237,12 @@ cuda_runtime_function__cudaLaunchKernel(const void *func, dim3 grid_dim,
 	SPDLOG_DEBUG("Try access: {}", impl->fatbin_records.size());
 	SPDLOG_DEBUG("grid_dim: {}, {}, {}", grid_dim.x, grid_dim.y,
 		     grid_dim.z);
-	SPDLOG_DEBUG("block_dim: {}, {}, {}", block_dim.x, block_dim.y,
-		     block_dim.z);
+	SPDLOG_DEBUG("block_dim: {}, {}, {}", block_dim.x, block_dim.y, block_dim.z);
+	SPDLOG_DEBUG("impl->shared_mem_ptr: {:x}", (uintptr_t)impl->shared_mem_ptr);
+	SPDLOG_DEBUG("impl->map_basic_info valid: {}", impl->map_basic_info.has_value());
+	if (impl->map_basic_info.has_value()) {
+		SPDLOG_DEBUG("impl->map_basic_info size: {}", impl->map_basic_info->size());
+	}
 	if (auto itr1 = impl->symbol_address_to_fatbin.find((void *)func);
 	    itr1 != impl->symbol_address_to_fatbin.end()) {
 		const auto &fatbin = *itr1->second;

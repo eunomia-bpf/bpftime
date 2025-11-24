@@ -91,33 +91,52 @@ union HelperCallResponse {
 	} get_tid_pgid;
 };
 struct CommSharedMem {
-	int flag1;
-	int flag2;
+	volatile int flag1;
+	volatile int flag2;
 	int occupy_flag;
-	int request_id;
-	long map_id;
+	volatile int request_id;
+	volatile long map_id;
 	HelperCallRequest req;
 	HelperCallResponse resp;
 	uint64_t time_sum[8];
 };
-struct CUDAContext {
-	// Indicate whether cuda watcher thread should stop
-	std::shared_ptr<std::atomic<bool>> cuda_watcher_should_stop =
-		std::make_shared<std::atomic<bool>>(false);
+class CUDAContext {
+    public:
+	// Use a custom deleter for memory allocated with cudaHostAlloc
+	struct CudaHostMemoryDeleter {
+		void operator()(CommSharedMem *ptr) const;
+	};
+	using CommSharedMemPtr =
+		std::unique_ptr<CommSharedMem, CudaHostMemoryDeleter>;
 
-	// Shared memory region for CUDA
-	cuda::CommSharedMem *cuda_shared_mem;
-	// Mapped device pointer
-	uintptr_t cuda_shared_mem_device_pointer;
+	// Constructor and destructor
+	CUDAContext(CommSharedMemPtr &&mem);
+	~CUDAContext();
+	// Delete copy and move constructors and assignment operators
+	CUDAContext(const CUDAContext&) = delete;
+	CUDAContext& operator=(const CUDAContext&) = delete;
+	CUDAContext(CUDAContext&&) = delete;
+	CUDAContext& operator=(CUDAContext&&) = delete;
 
-	CUDAContext(cuda::CommSharedMem *mem);
+	// Public interface
+	CommSharedMem *get_shared_memory() const {
+		return cuda_shared_mem.get();
+	}
 
-	CUDAContext(CUDAContext &&) = default;
-	CUDAContext &operator=(CUDAContext &&) = default;
-	CUDAContext(const CUDAContext &) = delete;
-	CUDAContext &operator=(const CUDAContext &) = delete;
+	void stop() {
+		should_stop.store(true);
+	}
 
-	virtual ~CUDAContext();
+	bool is_running() const {
+		return worker_thread.joinable() && !should_stop.load();
+	}
+
+    private:
+	std::thread worker_thread;
+	CommSharedMemPtr cuda_shared_mem;
+	std::atomic<bool> should_stop;
+
+	void worker_func();
 };
 
 std::optional<std::unique_ptr<cuda::CUDAContext>> create_cuda_context();
