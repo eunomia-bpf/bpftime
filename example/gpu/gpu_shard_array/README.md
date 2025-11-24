@@ -27,7 +27,7 @@ This generates:
 ## Running Steps (Agent/Server Mode)
 1) Start the server (read-only process):
 ```bash
-/root/bpftime_sy03/bpftime/build/tools/cli/bpftime load /root/bpftime_sy03/bpftime/example/gpu/gpu_shard_array/gpu_shard_array
+/bpftime/build/tools/cli/bpftime load /bpftime/example/gpu/gpu_shard_array/gpu_shard_array
 ```
 2) Start the agent's target program (loads CUDA attach, triggers BPF):
 ```bash
