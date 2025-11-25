@@ -17,7 +17,7 @@ cmake --build build --config Debug --target demo_ivfpq_indexing_gpu
 
 ## Result
 
-From the syscall server side
+From the syscall server
 ```
 16:01:39 
 Thread 0: 236
