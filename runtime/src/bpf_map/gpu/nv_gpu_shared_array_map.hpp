@@ -22,6 +22,11 @@ class nv_gpu_shared_array_map_impl {
 	CUipcMemHandle gpu_mem_handle;
 	CUdeviceptr server_gpu_shared_mem;
 	CUcontext owner_cuda_context;
+	CUcontext agent_cuda_context;
+	// Synchronized memcpy implicitly synchronizes with the default stream.
+	// To avoid deadlocks between memcpy with the kernel launched by user,
+	// we need to use a separate stream for async memcpy at the agent side.
+	CUstream agent_stream;
 	pid_devptr_map agent_gpu_shared_mem;
 	uint64_t value_size;
 	uint64_t max_entries;
