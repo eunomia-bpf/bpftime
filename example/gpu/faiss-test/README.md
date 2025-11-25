@@ -5,6 +5,10 @@
 git clone --recursive https://github.com/facebookresearch/faiss
 
 cd faiss
+# NOTE:
+# - Adjust `-DCUDAToolkit_ROOT=/usr/local/cuda-12.6` to match your CUDA installation path and version.
+# - Set `-DCMAKE_CUDA_ARCHITECTURES="61"` to match your GPU architecture:
+#     61 = Pascal, 75 = Turing, 80 = Ampere, 89 = Ada, etc.
 cmake -DCMAKE_BUILD_TYPE=Debug -DFAISS_ENABLE_GPU=ON -DCUDAToolkit_ROOT=/usr/local/cuda-12.6 -DCMAKE_CUDA_ARCHITECTURES="61" -DFAISS_ENABLE_ROCM=OFF -S . -B build -G Ninja
 cmake --build build --config Debug --target demo_ivfpq_indexing_gpu
 
