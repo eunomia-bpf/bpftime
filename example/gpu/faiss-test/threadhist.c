@@ -43,7 +43,11 @@ static int print_stat(struct threadhist_bpf *obj, uint64_t thread_count)
 
 	key = 0;
 	static uint64_t value[1024 * 1024];
-	bpf_map_lookup_elem(fd, &key, &value);
+	err = bpf_map_lookup_elem(fd, &key, &value);
+	if (err) {
+		warn("Failed to lookup map element: %d\n", err);
+		return err;
+	}
 	for (uint64_t i = 0; i < thread_count; i++) {
 		printf("Thread %lu: %lu\n", i, value[i]);
 	}
