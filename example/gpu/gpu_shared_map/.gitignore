@@ -5,4 +5,4 @@
 /vec_add
 /vec_add-new.cpp
 launchlate
-gpu_shard_array
+gpu_shared_map

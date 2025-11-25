@@ -1,9 +1,9 @@
 # GPU Shard Array Map Example
 
-This example demonstrates the behavior of `BPF_MAP_TYPE_GPU_ARRAY_MAP` (a normal, non-per-thread, single-copy shared array) in user space in conjunction with bpftime. This example relies on the agent side for updates, while the server only reads and does not write back to the HOST.
+This example demonstrates the behavior of `BPF_MAP_TYPE_GPU_ARRAY_MAP` (a normal, non-per-thread, single-copy shared array) and `BPF_MAP_TYPE_GPU_HASH_MAP` (a normal, non-per-thread, shared hashmap) in user space in conjunction with bpftime. This example relies on the agent side for updates, while the server only reads and does not write back to the HOST.
 
--   **BPF Program:** `gpu_shard_array.bpf.c` increments `key=0` at the `kretprobe/vectorAdd` hook.
--   **Host Program:** `gpu_shard_array.c` periodically reads and prints `counter[0]`.
+-   **BPF Program:** `gpu_shared_map.bpf.c` increments `key=0` at the `kretprobe/vectorAdd` hook.
+-   **Host Program:** `gpu_shared_map.c` periodically reads and prints `counter[0]` and the per-thread counter `counter_per_thread[tid]`.
 -   **CUDA Program:** `vec_add.cu` runs periodically, triggering the BPF program to update the map.
 
 ## Prerequisites
@@ -16,23 +16,23 @@ This example demonstrates the behavior of `BPF_MAP_TYPE_GPU_ARRAY_MAP` (a normal
 
 ## Build
 ```bash
-cd example/gpu/gpu_shard_array
+cd example/gpu/gpu_shared_map
 make
 ```
 This generates:
--   `gpu_shard_array` (the host program)
+-   `gpu_shared_map` (the host program)
 -   `vec_add` (the CUDA test kernel)
 -   `.output/` (intermediate products and the BPF skeleton)
 
 ## Running Steps (Agent/Server Mode)
 1) Start the server (read-only process):
 ```bash
-/bpftime/build/tools/cli/bpftime load /bpftime/example/gpu/gpu_shard_array/gpu_shard_array
+/bpftime/build/tools/cli/bpftime load /bpftime/example/gpu/gpu_shared_map/gpu_shared_map
 ```
 2) Start the agent's target program (loads CUDA attach, triggers BPF):
 ```bash
 LD_PRELOAD=build/runtime/agent/libbpftime-agent.so \
-  BPFTIME_LOG_OUTPUT=console SPDLOG_LEVEL=debug example/gpu/gpu_shard_array/vec_add
+  BPFTIME_LOG_OUTPUT=console SPDLOG_LEVEL=debug example/gpu/gpu_shared_map/vec_add
 ```
 3) Expected Output:
 -   **Server:** Periodically prints `counter[0]=N`, which should monotonically increase (subject to concurrent overwrites, but the trend is upward).
@@ -52,7 +52,7 @@ LD_PRELOAD=build/runtime/agent/libbpftime-agent.so \
     -   This approach no longer relies on a CPU handshake, reducing latency and overhead. For precise counting, you should aggregate at a higher level or shard keys to reduce conflicts.
 
 ## Example Write Method (Update)
--   **BPF Side** (`gpu_shard_array.bpf.c`):
+-   **BPF Side** (`gpu_shared_map.bpf.c`):
     -   In `kretprobe/vectorAdd`, the program reads `counter[0]`, adds 1, and then uses `BPF_ANY` to overwrite the value (the `memcpy` is executed on the device).
 
 ## Troubleshooting
