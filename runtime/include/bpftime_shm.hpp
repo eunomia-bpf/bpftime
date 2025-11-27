@@ -39,9 +39,10 @@ struct bpf_map_attr {
 
 	// additional fields for bpftime only
 	uint32_t kernel_bpf_map_id = 0;
-	// Changed to 1024*1024 since some GPU programs may launch a kernel with
-	// threads in this number
-	uint64_t gpu_thread_count = 1024 * 1024;
+	// Default maximum GPU "thread" count used when sizing GPU maps.
+	// A smaller default keeps shared memory usage reasonable; users can
+	// override via BPFTIME_MAP_GPU_THREAD_COUNT when needed.
+	uint64_t gpu_thread_count = 1024;
 };
 
 enum class bpf_event_type {

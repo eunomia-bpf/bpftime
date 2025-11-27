@@ -177,6 +177,13 @@ static uint64_t test_func(uint64_t, uint64_t, uint64_t, uint64_t, uint64_t)
 {
 	return 0;
 }
+
+static uint64_t dummy_map_val(uint64_t map_ptr)
+{
+	// For CUDA PTX generation we don't require real host map values.
+	return map_ptr;
+}
+
 std::string compile_ebpf_to_ptx_from_words(
 	const std::vector<uint64_t> &words, const std::string &target_sm,
 	const std::string &func_name,
@@ -202,6 +209,11 @@ std::string compile_ebpf_to_ptx_from_words(
 	vm.register_external_function(505, "get_thread_idx", (void *)test_func);
 	vm.register_external_function(507, "cuda_exit", (void *)test_func);
 	vm.register_external_function(508, "get_grid_dim", (void *)test_func);
+
+	vm.register_external_function(177, "trace_vprintk",
+				      (void *)test_func);
+
+	vm.set_lddw_helpers(nullptr, nullptr, dummy_map_val, nullptr, nullptr);
 
 	vm.load_code(insts, insts_count * sizeof(ebpf_inst));
 	bpftime::llvm_bpf_jit_context ctx(vm);

@@ -65,6 +65,18 @@ int nv_attach_impl_compile(nv_attach_impl_ptx_compiler *ptr, const char *ptx,
 		    err != NVPTXCOMPILE_SUCCESS) {
 			std::cerr << "Unable to compile: " << (int)err
 				  << std::endl;
+			size_t error_size = 0;
+			if (nvPTXCompilerGetErrorLogSize(ptr->compiler,
+							 &error_size) ==
+			    NVPTXCOMPILE_SUCCESS &&
+			    error_size > 0) {
+				std::string log(error_size + 1, '\0');
+				if (nvPTXCompilerGetErrorLog(
+					    ptr->compiler, log.data()) ==
+				    NVPTXCOMPILE_SUCCESS) {
+					ptr->error_log = log;
+				}
+			}
 			return -1;
 		}
 		size_t elf_size;
