@@ -16,6 +16,7 @@ static const char TRAMPOLINE_PTX[] = R"(
 ;
 .visible .const .align 8 .u64 constData;
 .visible .const .align 8 .b8 map_info[10240];
+.visible .global .align 4 .u32 __bpftime_comm_lock;
 .global .align 1 .b8 _$_str[139] = {87, 65, 82, 78, 73, 78, 71, 58, 32, 103, 101, 116, 71, 108, 111, 98, 97, 108, 84, 104, 114, 101, 97, 100, 73, 100, 40, 37, 108, 117, 41, 32, 101, 120, 99, 101, 101, 100, 115, 32, 109, 97, 120, 95, 116, 104, 114, 101, 97, 100, 95, 99, 111, 117, 110, 116, 32, 40, 37, 108, 117, 41, 32, 111, 102, 32, 109, 97, 112, 32, 37, 108, 117, 44, 32, 112, 108, 101, 97, 115, 101, 32, 115, 101, 116, 32, 66, 80, 70, 84, 73, 77, 69, 95, 77, 65, 80, 95, 71, 80, 85, 95, 84, 72, 82, 69, 65, 68, 95, 67, 79, 85, 78, 84, 32, 97, 116, 32, 115, 121, 115, 99, 97, 108, 108, 45, 115, 101, 114, 118, 101, 114, 32, 115, 105, 100, 101, 10, 0};
 .global .align 1 .b8 _$_str1[50] = {67, 97, 108, 108, 105, 110, 103, 32, 98, 112, 102, 95, 112, 101, 114, 102, 95, 101, 118, 101, 110, 116, 95, 111, 117, 116, 112, 117, 116, 32, 111, 110, 32, 117, 110, 115, 117, 112, 112, 111, 114, 116, 101, 100, 32, 109, 97, 112, 33, 0};
 .global .align 1 .b8 _$_str2[45] = {107, 101, 114, 110, 101, 108, 32, 102, 117, 110, 99, 116, 105, 111, 110, 32, 101, 110, 116, 101, 114, 101, 100, 44, 32, 109, 101, 109, 61, 37, 108, 120, 44, 32, 109, 101, 109, 115, 122, 61, 37, 108, 100, 10, 0};
@@ -76,7 +77,7 @@ $L__BB0_1:                              // =>This Inner Loop Header: Depth=1
 	add.s64 	%rd10, %rd1, 4;
 	mov.u32 	%r14, 0;
 	mov.u64 	%rd13, 0;
-	add.s64 	%rd8, %rd1, 8;
+	mov.u64 	%rd8, __bpftime_comm_lock;
 	mov.u32 	%r12, 42;
 	bra.uni 	$L__BB2_1;
 $L__BB2_4:                              //   in Loop: Header=BB2_1 Depth=1
@@ -98,7 +99,7 @@ $L__BB2_1:                              // =>This Loop Header: Depth=1
 	@%p4 bra 	$L__BB2_4;
 $L__BB2_2:                              //   Parent Loop BB2_1 Depth=1
                                         // =>  This Inner Loop Header: Depth=2
-	atom.cas.b32 	%r11, [%rd8], 0, 1;
+	atom.global.cas.b32 	%r11, [%rd8], 0, 1;
 	setp.eq.s32 	%p5, %r11, 1;
 	@%p5 bra 	$L__BB2_2;
 // %bb.3:                               //   in Loop: Header=BB2_1 Depth=1
@@ -117,8 +118,8 @@ $L__BB2_2:                              //   Parent Loop BB2_1 Depth=1
 	membar.sys;                      
 	
 	// end inline asm
-	ld.u64 	%rd13, [%rd1+2147483680];
-	atom.exch.b32 	%r13, [%rd8], 0;
+	ld.u64 	%rd13, [%rd1+33554464];
+	atom.global.exch.b32 	%r13, [%rd8], 0;
 	bra.uni 	$L__BB2_4;
 $L__BB2_5:
 	st.param.b64 	[func_retval0+0], %rd13;
@@ -398,7 +399,7 @@ $L__BB5_13:
 	mov.u32 	%r35, %tid.x;
 	and.b32  	%r6, %r35, 31;
 	add.s64 	%rd69, %rd68, 4;
-	add.s64 	%rd67, %rd68, 8;
+	mov.u64 	%rd67, __bpftime_comm_lock;
 	mov.u32 	%r41, 1;
 	mov.u32 	%r40, 42;
 	bra.uni 	$L__BB5_14;
@@ -422,7 +423,7 @@ $L__BB5_14:                             // =>This Loop Header: Depth=1
 	@%p12 bra 	$L__BB5_17;
 $L__BB5_15:                             //   Parent Loop BB5_14 Depth=1
                                         // =>  This Inner Loop Header: Depth=2
-	atom.cas.b32 	%r39, [%rd67], 0, 1;
+	atom.global.cas.b32 	%r39, [%rd67], 0, 1;
 	setp.eq.s32 	%p13, %r39, 1;
 	@%p13 bra 	$L__BB5_15;
 // %bb.16:                              //   in Loop: Header=BB5_14 Depth=1
@@ -441,8 +442,8 @@ $L__BB5_15:                             //   Parent Loop BB5_14 Depth=1
 	membar.sys;                      
 	
 	// end inline asm
-	ld.u64 	%rd77, [%rd68+2147483680];
-	atom.exch.b32 	%r42, [%rd67], 0;
+	ld.u64 	%rd77, [%rd68+33554464];
+	atom.global.exch.b32 	%r42, [%rd67], 0;
 	bra.uni 	$L__BB5_17;
                                         // -- End function
 }
@@ -709,7 +710,7 @@ $L__BB6_26:
 	mov.u32 	%r76, 0;
 	@%p20 bra 	$L__BB6_30;
 // %bb.28:
-	add.s64 	%rd38, %rd126, 1073741848;
+	add.s64 	%rd38, %rd126, 16777240;
 	and.b64  	%rd40, %rd39, 4294967292;
 	add.s64 	%rd41, %rd64, 3;
 	mov.u64 	%rd138, 0;
@@ -735,7 +736,7 @@ $L__BB6_30:
 // %bb.31:
 	cvt.u64.u32 	%rd122, %r76;
 	add.s64 	%rd123, %rd122, %rd126;
-	add.s64 	%rd140, %rd123, 1073741848;
+	add.s64 	%rd140, %rd123, 16777240;
 	add.s64 	%rd139, %rd64, %rd122;
 $L__BB6_32:                             // =>This Inner Loop Header: Depth=1
 	.pragma "nounroll";
@@ -749,11 +750,11 @@ $L__BB6_32:                             // =>This Inner Loop Header: Depth=1
 $L__BB6_33:
 	mov.u32 	%r78, 0;
 	mov.u64 	%rd142, 0;
-	st.u64 	[%rd126+2147483672], %rd65;
+	st.u64 	[%rd126+33554456], %rd65;
 	mov.u32 	%r62, %tid.x;
 	and.b32  	%r18, %r62, 31;
 	add.s64 	%rd127, %rd126, 4;
-	add.s64 	%rd125, %rd126, 8;
+	mov.u64 	%rd125, __bpftime_comm_lock;
 	mov.u32 	%r68, 2;
 	mov.u32 	%r67, 42;
 	bra.uni 	$L__BB6_34;
@@ -777,7 +778,7 @@ $L__BB6_34:                             // =>This Loop Header: Depth=1
 	@%p27 bra 	$L__BB6_37;
 $L__BB6_35:                             //   Parent Loop BB6_34 Depth=1
                                         // =>  This Inner Loop Header: Depth=2
-	atom.cas.b32 	%r66, [%rd125], 0, 1;
+	atom.global.cas.b32 	%r66, [%rd125], 0, 1;
 	setp.eq.s32 	%p28, %r66, 1;
 	@%p28 bra 	$L__BB6_35;
 // %bb.36:                              //   in Loop: Header=BB6_34 Depth=1
@@ -796,8 +797,8 @@ $L__BB6_35:                             //   Parent Loop BB6_34 Depth=1
 	membar.sys;                      
 	
 	// end inline asm
-	ld.u64 	%rd142, [%rd126+2147483680];
-	atom.exch.b32 	%r69, [%rd125], 0;
+	ld.u64 	%rd142, [%rd126+33554464];
+	atom.global.exch.b32 	%r69, [%rd125], 0;
 	bra.uni 	$L__BB6_37;
 $L__BB6_38:
 	cvt.s64.s32 	%rd145, %rd142;
@@ -881,7 +882,7 @@ $L__BB7_7:
 	mov.u32 	%r15, %tid.x;
 	and.b32  	%r6, %r15, 31;
 	add.s64 	%rd31, %rd30, 4;
-	add.s64 	%rd29, %rd30, 8;
+	mov.u64 	%rd29, __bpftime_comm_lock;
 	mov.u32 	%r21, 3;
 	mov.u32 	%r20, 42;
 	bra.uni 	$L__BB7_8;
@@ -905,7 +906,7 @@ $L__BB7_8:                              // =>This Loop Header: Depth=1
 	@%p9 bra 	$L__BB7_11;
 $L__BB7_9:                              //   Parent Loop BB7_8 Depth=1
                                         // =>  This Inner Loop Header: Depth=2
-	atom.cas.b32 	%r19, [%rd29], 0, 1;
+	atom.global.cas.b32 	%r19, [%rd29], 0, 1;
 	setp.eq.s32 	%p10, %r19, 1;
 	@%p10 bra 	$L__BB7_9;
 // %bb.10:                              //   in Loop: Header=BB7_8 Depth=1
@@ -924,8 +925,8 @@ $L__BB7_9:                              //   Parent Loop BB7_8 Depth=1
 	membar.sys;                      
 	
 	// end inline asm
-	ld.u64 	%rd39, [%rd30+2147483680];
-	atom.exch.b32 	%r22, [%rd29], 0;
+	ld.u64 	%rd39, [%rd30+33554464];
+	atom.global.exch.b32 	%r22, [%rd29], 0;
 	bra.uni 	$L__BB7_11;
 $L__BB7_12:
 	cvt.s64.s32 	%rd33, %rd39;
@@ -978,7 +979,7 @@ $L__BB8_3:
 	add.s64 	%rd21, %rd1, 4;
 	mov.u32 	%r14, 0;
 	mov.u64 	%rd27, 0;
-	add.s64 	%rd19, %rd1, 8;
+	mov.u64 	%rd19, __bpftime_comm_lock;
 	mov.u32 	%r12, 6;
 	mov.u32 	%r11, 42;
 	bra.uni 	$L__BB8_4;
@@ -1002,7 +1003,7 @@ $L__BB8_4:                              // =>This Loop Header: Depth=1
 	@%p6 bra 	$L__BB8_7;
 $L__BB8_5:                              //   Parent Loop BB8_4 Depth=1
                                         // =>  This Inner Loop Header: Depth=2
-	atom.cas.b32 	%r10, [%rd19], 0, 1;
+	atom.global.cas.b32 	%r10, [%rd19], 0, 1;
 	setp.eq.s32 	%p7, %r10, 1;
 	@%p7 bra 	$L__BB8_5;
 // %bb.6:                               //   in Loop: Header=BB8_4 Depth=1
@@ -1022,8 +1023,8 @@ $L__BB8_5:                              //   Parent Loop BB8_4 Depth=1
 	membar.sys;                      
 	
 	// end inline asm
-	ld.u64 	%rd27, [%rd1+2147483680];
-	atom.exch.b32 	%r13, [%rd19], 0;
+	ld.u64 	%rd27, [%rd1+33554464];
+	atom.global.exch.b32 	%r13, [%rd19], 0;
 	bra.uni 	$L__BB8_7;
 $L__BB8_8:
 	cvt.s64.s32 	%rd24, %rd27;
@@ -1051,7 +1052,7 @@ $L__BB8_8:
 	add.s64 	%rd9, %rd8, 4;
 	mov.u32 	%r14, 0;
 	mov.u64 	%rd6, 0;
-	add.s64 	%rd7, %rd8, 8;
+	mov.u64 	%rd7, __bpftime_comm_lock;
 	mov.u32 	%r12, 14;
 	mov.u32 	%r11, 42;
 	mov.u64 	%rd13, %rd6;
@@ -1076,7 +1077,7 @@ $L__BB9_1:                              // =>This Loop Header: Depth=1
 	@%p4 bra 	$L__BB9_4;
 $L__BB9_2:                              //   Parent Loop BB9_1 Depth=1
                                         // =>  This Inner Loop Header: Depth=2
-	atom.cas.b32 	%r10, [%rd7], 0, 1;
+	atom.global.cas.b32 	%r10, [%rd7], 0, 1;
 	setp.eq.s32 	%p5, %r10, 1;
 	@%p5 bra 	$L__BB9_2;
 // %bb.3:                               //   in Loop: Header=BB9_1 Depth=1
@@ -1095,8 +1096,8 @@ $L__BB9_2:                              //   Parent Loop BB9_1 Depth=1
 	membar.sys;                      
 	
 	// end inline asm
-	ld.u64 	%rd13, [%rd8+2147483680];
-	atom.exch.b32 	%r13, [%rd7], 0;
+	ld.u64 	%rd13, [%rd8+33554464];
+	atom.global.exch.b32 	%r13, [%rd7], 0;
 	bra.uni 	$L__BB9_4;
 $L__BB9_5:
 	st.param.b64 	[func_retval0+0], %rd13;
@@ -1308,7 +1309,7 @@ $L__BB11_3:
 	and.b32  	%r1, %r6, 31;
 	add.s64 	%rd20, %rd19, 4;
 	mov.u32 	%r14, 0;
-	add.s64 	%rd18, %rd19, 8;
+	mov.u64 	%rd18, __bpftime_comm_lock;
 	mov.u32 	%r12, 501;
 	mov.u32 	%r11, 42;
 	bra.uni 	$L__BB11_4;
@@ -1332,7 +1333,7 @@ $L__BB11_4:                             // =>This Loop Header: Depth=1
 	@%p6 bra 	$L__BB11_7;
 $L__BB11_5:                             //   Parent Loop BB11_4 Depth=1
                                         // =>  This Inner Loop Header: Depth=2
-	atom.cas.b32 	%r10, [%rd18], 0, 1;
+	atom.global.cas.b32 	%r10, [%rd18], 0, 1;
 	setp.eq.s32 	%p7, %r10, 1;
 	@%p7 bra 	$L__BB11_5;
 // %bb.6:                               //   in Loop: Header=BB11_4 Depth=1
@@ -1352,8 +1353,8 @@ $L__BB11_5:                             //   Parent Loop BB11_4 Depth=1
 	membar.sys;                      
 	
 	// end inline asm
-	ld.u64 	%rd27, [%rd19+2147483680];
-	atom.exch.b32 	%r13, [%rd18], 0;
+	ld.u64 	%rd27, [%rd19+33554464];
+	atom.global.exch.b32 	%r13, [%rd18], 0;
 	bra.uni 	$L__BB11_7;
 $L__BB11_8:
 	cvt.s64.s32 	%rd23, %rd27;
