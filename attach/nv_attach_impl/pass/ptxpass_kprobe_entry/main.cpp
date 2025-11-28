@@ -12,10 +12,11 @@ struct EntryParams {
 	std::string save_strategy = "minimal"; // "minimal" or "full"
 	bool emit_nops_for_alignment = false;
 	int pad_nops = 0;
+	std::string stub_name;
 };
 NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(EntryParams, save_strategy,
 						emit_nops_for_alignment,
-						pad_nops);
+						pad_nops, stub_name);
 
 } // namespace entry_params
 
@@ -31,10 +32,12 @@ static ptxpass::pass_config::PassConfig get_default_config()
 	// - insert_globaltimer: legacy flag to control timestamp injection
 	// - stub_name: CUDA device stub used as hook point; calls to this
 	//   function will be rewritten to the eBPF-generated probe PTX.
-	cfg.parameters = nlohmann::json{
-		{ "insert_globaltimer", true },
-		{ "stub_name", "__bpftime_cuda__kernel_trace" },
-	};
+	entry_params::EntryParams params;
+	params.save_strategy = "minimal";
+	params.emit_nops_for_alignment = false;
+	params.pad_nops = 0;
+	params.stub_name = "__bpftime_cuda__kernel_trace";
+	cfg.parameters = params;
 	cfg.attach_type = 8; // kprobe
 	return cfg;
 }
@@ -106,12 +109,13 @@ extern "C" int process_input(const char *input, int length, char *output)
 	using namespace ptxpass;
 	auto cfg = get_default_config();
 	try {
-		std::string stub_name = "__bpftime_cuda__kernel_trace";
-		if (cfg.parameters.contains("stub_name") &&
-		    cfg.parameters["stub_name"].is_string()) {
-			stub_name = cfg.parameters["stub_name"]
-					    .get<std::string>();
-		}
+		// Decode parameters into a typed struct so extended fields
+		// (like stub_name) remain type-safe.
+		entry_params::EntryParams params =
+			cfg.parameters.get<entry_params::EntryParams>();
+		std::string stub_name = params.stub_name.empty()
+			? "__bpftime_cuda__kernel_trace"
+			: params.stub_name;
 
 		auto runtime_request = pass_runtime_request_from_string(input);
 		if (!validate_input(runtime_request.input.full_ptx,
