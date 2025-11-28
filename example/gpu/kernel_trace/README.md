@@ -86,3 +86,29 @@ Each line corresponds to one GPU thread entering `vectorAdd`, confirming that th
 5. The userspace loader polls that map and prints each event.
 
 This serves as a minimal template for hooking CUDA kernels and running custom eBPF logic on the GPU, which you can extend into more advanced tracepoints or profilers.
+
+## Controlling the PTX pass via JSON (`kprobe_entry.json`)
+
+The PTX rewriting for CUDA kprobe entry is driven by the `kprobe_entry` pass. By default, its configuration is
+compiled into the pass binary, but there is also a JSON configuration:
+
+- Path in this repo: `attach/nv_attach_impl/configs/ptxpass/kprobe_entry.json`
+- Key fields:
+  - `attach_points.includes = ["^kprobe/.*$"]` – match CUDA kprobe attach points.
+  - `attach_type = 8` – CUDA entry attach type.
+  - `parameters.stub_name` – the CUDA stub function name used as a hook point (defaults to `__bpftime_cuda__kernel_trace`).
+
+To make the runtime load pass definitions from JSON instead of the built-in defaults, set:
+
+```bash
+export BPFTIME_PTXPASS_DIR=$PWD/attach/nv_attach_impl/configs/ptxpass
+```
+
+For this demo, the JSON matches the compiled-in defaults, so setting `BPFTIME_PTXPASS_DIR` is optional. You can
+customize the stub-based attach by:
+
+1. Editing `kprobe_entry.json` to change `"stub_name"` to your own device function name.
+2. Updating your CUDA kernel to define and call that stub.
+
+The PTX pass will then look for `call <stub_name>` in the PTX and redirect those calls to the corresponding eBPF
+probe function.
