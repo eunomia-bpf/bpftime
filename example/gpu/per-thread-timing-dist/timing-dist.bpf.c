@@ -73,9 +73,6 @@ static const u64 (*bpf_get_block_idx)(u64 *x, u64 *y, u64 *z) = (void *)503;
 static const u64 (*bpf_get_block_dim)(u64 *x, u64 *y, u64 *z) = (void *)504;
 static const u64 (*bpf_get_thread_idx)(u64 *x, u64 *y, u64 *z) = (void *)505;
 
-// Kernel name is timed_work_kernel(ThreadTime*, int)
-// Mangled name can be found with `nm timed_work_kernel.o`
-// Let's assume it's _Z17timed_work_kerneli
 SEC("kprobe/timed_work_kernel")
 int BPF_KPROBE(timed_work_kernel_enter)
 {
