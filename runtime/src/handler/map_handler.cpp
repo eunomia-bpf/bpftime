@@ -3,6 +3,7 @@
  * Copyright (c) 2022, eunomia-bpf org
  * All rights reserved.
  */
+
 #include "bpf_map/userspace/lru_var_hash_map.hpp"
 #include "bpf_map/userspace/per_cpu_array_map.hpp"
 #include "bpf_map/userspace/per_cpu_hash_map.hpp"
@@ -15,6 +16,7 @@
 #include "bpf_map/gpu/nv_gpu_per_thread_array_map.hpp"
 #include "bpf_map/gpu/nv_gpu_shared_array_map.hpp"
 #include "bpf_map/gpu/nv_gpu_ringbuf_map.hpp"
+#include "bpf_map/gpu_kernel_shared/array_map_kernel_gpu.hpp"
 #endif
 #include "bpf_map/userspace/lpm_trie_map.hpp"
 #include <bpf_map/userspace/perf_event_array_map.hpp>
@@ -230,6 +232,11 @@ const void *bpf_map_handler::map_lookup_elem(const void *key,
 			map_impl_ptr.get());
 		return do_lookup(impl);
 	}
+	case bpf_map_type::BPF_MAP_TYPE_GPU_KERNEL_SHARED_ARRAY_MAP: {
+		auto impl = static_cast<array_map_kernel_gpu_impl *>(
+			map_impl_ptr.get());
+		return do_lookup(impl);
+	}
 
 #endif
 	default:
@@ -370,6 +377,11 @@ long bpf_map_handler::map_update_elem(const void *key, const void *value,
 			map_impl_ptr.get());
 		return do_update(impl);
 	}
+	case bpf_map_type::BPF_MAP_TYPE_GPU_KERNEL_SHARED_ARRAY_MAP: {
+		auto impl = static_cast<array_map_kernel_gpu_impl *>(
+			map_impl_ptr.get());
+		return do_update(impl);
+	}
 #endif
 	case bpf_map_type::BPF_MAP_TYPE_LPM_TRIE: {
 		auto impl =
@@ -497,6 +509,11 @@ int bpf_map_handler::bpf_map_get_next_key(const void *key, void *next_key,
 	}
 	case bpf_map_type::BPF_MAP_TYPE_GPU_RINGBUF_MAP: {
 		auto impl = static_cast<nv_gpu_ringbuf_map_impl *>(
+			map_impl_ptr.get());
+		return do_get_next_key(impl);
+	}
+	case bpf_map_type::BPF_MAP_TYPE_GPU_KERNEL_SHARED_ARRAY_MAP: {
+		auto impl = static_cast<array_map_kernel_gpu_impl *>(
 			map_impl_ptr.get());
 		return do_get_next_key(impl);
 	}
@@ -645,6 +662,11 @@ long bpf_map_handler::map_delete_elem(const void *key, bool from_syscall) const
 			map_impl_ptr.get());
 		return do_delete(impl);
 	}
+	case bpf_map_type::BPF_MAP_TYPE_GPU_KERNEL_SHARED_ARRAY_MAP: {
+		auto impl = static_cast<array_map_kernel_gpu_impl *>(
+			map_impl_ptr.get());
+		return do_delete(impl);
+	}
 #endif
 	case bpf_map_type::BPF_MAP_TYPE_LPM_TRIE: {
 		auto impl =
@@ -764,6 +786,7 @@ int bpf_map_handler::map_init(managed_shared_memory &memory)
 						nr_hashes, hash_algo);
 		return 0;
 	}
+
 #ifdef BPFTIME_BUILD_WITH_LIBBPF
 	case bpf_map_type::BPF_MAP_TYPE_KERNEL_USER_ARRAY: {
 		map_impl_ptr = memory.construct<array_map_kernel_user_impl>(
@@ -817,7 +840,6 @@ int bpf_map_handler::map_init(managed_shared_memory &memory)
 
 	// TODO: Move these CUDA sentences to a more appropriate position
 #if defined(BPFTIME_ENABLE_CUDA_ATTACH)
-
 		static CUcontext context;
 		static CUdevice device;
 	case bpf_map_type::BPF_MAP_TYPE_PERGPUTD_ARRAY_MAP: {
@@ -862,6 +884,22 @@ int bpf_map_handler::map_init(managed_shared_memory &memory)
 		map_impl_ptr = memory.construct<nv_gpu_shared_array_map_impl>(
 			container_name.c_str())(memory, value_size,
 						max_entries);
+		shm_holder.global_shared_memory.set_enable_mock(true);
+		return 0;
+	}
+	case bpf_map_type::BPF_MAP_TYPE_GPU_KERNEL_SHARED_ARRAY_MAP: {
+		shm_holder.global_shared_memory.set_enable_mock(false);
+		if (!device) {
+			cuDeviceGet(&device, 0);
+			cuCtxCreate(&context, 0, device);
+			SPDLOG_INFO(
+				"CUDA context for thread {} has been set to {:x}",
+				gettid(), (uintptr_t)context);
+		}
+		SPDLOG_INFO("Map {} (array_map_kernel_gpu_impl) shared array",
+			    container_name.c_str());
+		map_impl_ptr = memory.construct<array_map_kernel_gpu_impl>(
+			container_name.c_str())(memory, attr.kernel_bpf_map_id);
 		shm_holder.global_shared_memory.set_enable_mock(true);
 		return 0;
 	}
@@ -991,7 +1029,11 @@ void bpf_map_handler::map_free(managed_shared_memory &memory) const
 	case bpf_map_type::BPF_MAP_TYPE_GPU_RINGBUF_MAP:
 		memory.destroy<nv_gpu_ringbuf_map_impl>(container_name.c_str());
 		break;
-
+	case bpf_map_type::BPF_MAP_TYPE_GPU_KERNEL_SHARED_ARRAY_MAP: {
+		memory.destroy<array_map_kernel_gpu_impl>(
+			container_name.c_str());
+		break;
+	}
 #endif
 	default:
 		auto func_ptr = global_map_ops_table[(int)type].map_free;
@@ -1041,6 +1083,12 @@ uint64_t bpf_map_handler::get_gpu_map_max_thread_count() const
 			->get_max_thread_count();
 	}
 
+#ifdef BPFTIME_BUILD_WITH_LIBBPF
+	if (this->type == bpf_map_type::BPF_MAP_TYPE_KERNEL_USER_ARRAY) {
+		return 1;
+	}
+#endif
+
 #endif
 
 	SPDLOG_DEBUG("Not a GPU map!");
@@ -1068,7 +1116,12 @@ void *bpf_map_handler::get_gpu_map_extra_buffer() const
 			       map_impl_ptr.get())
 			->get_gpu_mem_buffer();
 	}
-
+	if (this->type ==
+	    bpf_map_type::BPF_MAP_TYPE_GPU_KERNEL_SHARED_ARRAY_MAP) {
+		return (void *)static_cast<array_map_kernel_gpu_impl *>(
+			       map_impl_ptr.get())
+			->try_initialize_for_agent_and_get_mapped_address();
+	}
 #endif
 
 	SPDLOG_WARN("Not a GPU map!");
