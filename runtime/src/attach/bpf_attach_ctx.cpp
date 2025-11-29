@@ -288,7 +288,7 @@ int bpf_attach_ctx::instantiate_bpf_link_handler_at(
 				"Loaded {} instructions (original) for cuda ebpf program",
 				prog->get_insns().size());
 			nv_attach_private_data.map_basic_info =
-				this->create_map_basic_info(256);
+				this->create_map_basic_info(1024);
 			attach_id =
 				attach_impl->create_attach_with_ebpf_callback(
 					[=](void *mem, size_t mem_size,

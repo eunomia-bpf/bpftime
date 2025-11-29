@@ -121,6 +121,8 @@ enum class bpf_map_type {
 
 	BPF_MAP_TYPE_PERGPUTD_ARRAY_MAP = GPU_MAP_OFFSET + BPF_MAP_TYPE_ARRAY,
 	BPF_MAP_TYPE_GPU_ARRAY_MAP = GPU_MAP_OFFSET + BPF_MAP_TYPE_ARRAY + 1,
+	BPF_MAP_TYPE_GPU_KERNEL_SHARED_ARRAY_MAP =
+		GPU_MAP_OFFSET + BPF_MAP_TYPE_ARRAY + 2,
 	BPF_MAP_TYPE_GPU_RINGBUF_MAP = GPU_MAP_OFFSET + BPF_MAP_TYPE_RINGBUF,
 	BPF_MAP_TYPE_MAX = 2048,
 };
@@ -415,6 +417,8 @@ int bpftime_poll_gpu_ringbuf_map(int mapfd, void *ctx,
 				 void (*)(const void *, uint64_t, void *));
 #endif
 int bpftime_add_memfd_handler(const char *name, int flags);
+int bpftime_translate_shared_map_type_to_kernel_map_type(int ty);
+
 }
 
 #endif // BPFTIME_SHM_CPP_H

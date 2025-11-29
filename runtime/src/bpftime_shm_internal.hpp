@@ -218,6 +218,8 @@ class bpftime_shm {
 
 	int add_memfd_handler(const char *name, int flags);
 
+	int translate_shared_map_type_to_kernel_map_type(int type);
+
 #if BPFTIME_ENABLE_MPK
 	void enable_mpk();
 	void disable_mpk();

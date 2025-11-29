@@ -5,6 +5,7 @@
  */
 #include "bpftime_logger.hpp"
 #include "bpftime_shm.hpp"
+#include <cstdint>
 #ifdef BPFTIME_ENABLE_CUDA_ATTACH
 #include "cuda.h"
 #endif
@@ -66,6 +67,10 @@ void syscall_context::load_config_from_env()
 		SPDLOG_INFO("Using kernel eBPF runtime and maps");
 	} else {
 		run_with_kernel = false;
+	}
+	if (std::getenv("BPFTIME_BYPASS_KPROPBE")) {
+		bypass_kprobe_as_gpu_probe = true;
+		SPDLOG_INFO("Bypassing k[ret]probes");
 	}
 	const char *not_load_pattern = getenv("BPFTIME_NOT_LOAD_PATTERN");
 	if (not_load_pattern != nullptr) {
@@ -209,18 +214,18 @@ ssize_t syscall_context::handle_read(int fd, void *buf, size_t count)
 	}
 	return orig_read_fn(fd, buf, count);
 }
-int syscall_context::create_kernel_bpf_map(int map_fd)
+int syscall_context::create_kernel_bpf_map(int map_fd, int bpftime_map_type)
 {
 	bpf_map_info info = {};
 	uint32_t info_len = sizeof(info);
 	int res = bpf_obj_get_info_by_fd(map_fd, &info, &info_len);
 	if (res < 0) {
-		SPDLOG_ERROR("Failed to get map info for id {}", info.id);
+		SPDLOG_ERROR("Failed to get map info for fd {}", map_fd);
 		return -1;
 	}
 	bpftime::bpf_map_attr attr;
-	// convert type to kernel-user type
-	attr.type = info.type + KERNEL_USER_MAP_OFFSET;
+	attr.type = bpftime_map_type;
+
 	attr.key_size = info.key_size;
 	attr.value_size = info.value_size;
 	attr.max_ents = info.max_entries;
@@ -336,22 +341,44 @@ long syscall_context::handle_sysbpf(int cmd, union bpf_attr *attr, size_t size)
 	switch (cmd) {
 	case BPF_MAP_CREATE: {
 		if (run_with_kernel) {
-			std::string map_info = fmt::format(
-				"Creating kernel map type={}, name={}, key_size={}, value_size={}",
+			uint32_t translated_map_type =
+				bpftime_translate_shared_map_type_to_kernel_map_type(
+					attr->map_type);
+			SPDLOG_INFO(
+				"Creating kernel map type={}, name={}, key_size={}, value_size={}, translated_map_type={}",
 				attr->map_type, attr->map_name, attr->key_size,
-				attr->value_size);
-			SPDLOG_DEBUG("{}", map_info);
+				attr->value_size, translated_map_type);
+			auto new_attr = *attr;
+			new_attr.map_type = translated_map_type;
 			int fd = orig_syscall_fn(__NR_bpf, (long)cmd,
-						 (long)(uintptr_t)attr,
+						 (long)(uintptr_t)&new_attr,
 						 (long)size);
-			SPDLOG_DEBUG("Created kernel map finished, fd={}", fd);
-			return create_kernel_bpf_map(fd);
+			if (fd < 0) {
+				SPDLOG_ERROR(
+					"Unable to create kernel eBPF map: {}",
+					errno);
+			}
+			SPDLOG_INFO("Created kernel map finished, fd={}", fd);
+			uint32_t bpftime_map_type;
+			if (translated_map_type == attr->map_type) {
+				// Marks a kernel-user shared map, the
+				// corresponding bpftime map type should be
+				// added by KERNEL_USER_MAP_OFFSET
+				bpftime_map_type =
+					attr->map_type + KERNEL_USER_MAP_OFFSET;
+
+			} else {
+				// Marks a kernel-gpu shared map, the
+				// corresponding bpftime map type should be the
+				// map type before translating
+				bpftime_map_type = attr->map_type;
+			}
+			return create_kernel_bpf_map(fd, bpftime_map_type);
 		}
-		std::string map_info = fmt::format(
+		SPDLOG_DEBUG(
 			"Creating map type={}, name={}, key_size={}, value_size={}",
 			attr->map_type, attr->map_name, attr->key_size,
 			attr->value_size);
-		SPDLOG_DEBUG("{}", map_info);
 		int id = bpftime_maps_create(
 			-1 /* let the shm alloc fd for us */, attr->map_name,
 			bpftime::bpf_map_attr{
@@ -534,7 +561,7 @@ long syscall_context::handle_sysbpf(int cmd, union bpf_attr *attr, size_t size)
 			-1 /* let the shm alloc fd for us */,
 			(bpf_link_create_args *)&attr->link_create);
 		SPDLOG_DEBUG("Created link {}", id);
-		if (bpftime_is_prog_fd(prog_fd) &&
+		if (id < 0 && bpftime_is_prog_fd(prog_fd) &&
 		    bpftime_is_perf_event_fd(target_fd) &&
 		    attach_type == BPF_PERF_EVENT) {
 			auto cookie = attr->link_create.perf_event.bpf_cookie;
@@ -628,6 +655,15 @@ int syscall_context::handle_perfevent(perf_event_attr *attr, pid_t pid, int cpu,
 				       (uint64_t)flags);
 	try_startup();
 	if ((int)attr->type == determine_uprobe_perf_type()) {
+		if (run_with_kernel) {
+			SPDLOG_INFO(
+				"Calling original perf event open at uprobe creation");
+			return orig_syscall_fn(__NR_perf_event_open,
+					       (uint64_t)(uintptr_t)attr,
+					       (uint64_t)pid, (uint64_t)cpu,
+					       (uint64_t)group_fd,
+					       (uint64_t)flags);
+		}
 		// NO legacy bpf types
 		bool retprobe =
 			attr->config & (1 << determine_uprobe_retprobe_bit());
@@ -645,6 +681,15 @@ int syscall_context::handle_perfevent(perf_event_attr *attr, pid_t pid, int cpu,
 		SPDLOG_DEBUG("Created uprobe {}", id);
 		return id;
 	} else if ((int)attr->type == determine_kprobe_perf_type()) {
+		if (run_with_kernel && !bypass_kprobe_as_gpu_probe) {
+			SPDLOG_INFO(
+				"Calling original perf event open at kprobe creation");
+			return orig_syscall_fn(__NR_perf_event_open,
+					       (uint64_t)(uintptr_t)attr,
+					       (uint64_t)pid, (uint64_t)cpu,
+					       (uint64_t)group_fd,
+					       (uint64_t)flags);
+		}
 		bool is_ret_probe =
 			attr->config & (1 << determine_kprobe_retprobe_bit());
 		size_t ref_ctr_off =
@@ -654,12 +699,40 @@ int syscall_context::handle_perfevent(perf_event_attr *attr, pid_t pid, int cpu,
 		SPDLOG_DEBUG(
 			"Creating kprobe func_name={} addr={} retprobe={} ref_ctr_off={} attr->config={:x}",
 			name, addr, is_ret_probe, ref_ctr_off, attr->config);
-		int id = bpftime_kprobe_create(-1, name, addr, is_ret_probe,
+		int new_fd = -1;
+		if (bypass_kprobe_as_gpu_probe) {
+			auto new_attr = *attr;
+			new_attr.config1 = (uintptr_t)"do_exit";
+			new_attr.config2 = 0;
+			new_fd = orig_syscall_fn(__NR_perf_event_open,
+						 (uint64_t)(uintptr_t)&new_attr,
+						 (uint64_t)pid, (uint64_t)cpu,
+						 (uint64_t)group_fd,
+						 (uint64_t)flags);
+			if (new_fd < 0) {
+				SPDLOG_ERROR(
+					"Unable to bypass kprobe as gpu probe: unable to call perf_event_open: {}",
+					errno);
+				return -1;
+			} else {
+				SPDLOG_INFO(
+					"Bypass kprobe as gpu probe, got perf event fd {}",
+					new_fd);
+			}
+		}
+		int id = bpftime_kprobe_create(new_fd, name, addr, is_ret_probe,
 					       ref_ctr_off);
 		SPDLOG_DEBUG("Created kprobe {}", id);
 		return id;
 	} else if ((int)attr->type ==
 		   (int)bpf_event_type::PERF_TYPE_TRACEPOINT) {
+		if (run_with_kernel) {
+			return orig_syscall_fn(__NR_perf_event_open,
+					       (uint64_t)(uintptr_t)attr,
+					       (uint64_t)pid, (uint64_t)cpu,
+					       (uint64_t)group_fd,
+					       (uint64_t)flags);
+		}
 		SPDLOG_DEBUG("Detected tracepoint perf event creation");
 		int fd = bpftime_tracepoint_create(
 			-1 /* let the shm alloc fd for us */, pid,
@@ -778,6 +851,8 @@ int syscall_context::handle_ioctl(int fd, unsigned long req, unsigned long data)
 	if (req == PERF_EVENT_IOC_ENABLE) {
 		SPDLOG_DEBUG("Enabling perf event {}", fd);
 		if (run_with_kernel && !bpftime_is_perf_event_fd(fd)) {
+			SPDLOG_DEBUG(
+				"Calling original ioctl at PERF_EVENT_IOC_ENABLE");
 			return orig_ioctl_fn(fd, req, data);
 		}
 		res = bpftime_perf_event_enable(fd);
@@ -789,6 +864,8 @@ int syscall_context::handle_ioctl(int fd, unsigned long req, unsigned long data)
 	} else if (req == PERF_EVENT_IOC_DISABLE) {
 		SPDLOG_DEBUG("Disabling perf event {}", fd);
 		if (run_with_kernel && !bpftime_is_perf_event_fd(fd)) {
+			SPDLOG_DEBUG(
+				"Calling original ioctl at PERF_EVENT_IOC_DISABLE");
 			return orig_ioctl_fn(fd, req, data);
 		}
 		res = bpftime_perf_event_disable(fd);
@@ -801,6 +878,8 @@ int syscall_context::handle_ioctl(int fd, unsigned long req, unsigned long data)
 		SPDLOG_DEBUG("Setting bpf for perf event {} and bpf {}", fd,
 			     data);
 		if (run_with_kernel && !bpftime_is_perf_event_fd(fd)) {
+			SPDLOG_DEBUG(
+				"Calling original ioctl at PERF_EVENT_IOC_SET_BPF");
 			return orig_ioctl_fn(fd, req, data);
 		}
 		res = bpftime_attach_perf_to_bpf(fd, data);
@@ -931,9 +1010,11 @@ int syscall_context::handle_dup3(int oldfd, int newfd, int flags)
 int syscall_context::handle_memfd_create(const char *name, int flags)
 {
 	SPDLOG_DEBUG("Calling mocked memfd_create {}, {}", name, flags);
-	if (!enable_mock || run_with_kernel || initializing_cuda ||
-	    !enable_mock_after_initialized)
+	if (!enable_mock || initializing_cuda ||
+	    !enable_mock_after_initialized) {
+		SPDLOG_DEBUG("Calling original dup3");
 		return orig_syscall_fn(__NR_dup3, (long)name, (long)flags);
+	}
 	try_startup();
 	return bpftime_add_memfd_handler(name, flags);
 }
