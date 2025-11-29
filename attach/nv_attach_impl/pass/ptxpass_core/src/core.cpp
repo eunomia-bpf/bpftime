@@ -177,6 +177,7 @@ static uint64_t test_func(uint64_t, uint64_t, uint64_t, uint64_t, uint64_t)
 {
 	return 0;
 }
+
 std::string compile_ebpf_to_ptx_from_words(
 	const std::vector<uint64_t> &words, const std::string &target_sm,
 	const std::string &func_name,
