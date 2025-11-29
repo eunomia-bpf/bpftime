@@ -305,6 +305,13 @@ int bpftime::bpftime_export_shm_to_json(const bpftime_shm &shm,
 			SPDLOG_INFO(
 				"bpf_link_handler found at {}，link {} -> {}",
 				i, h.args.prog_fd, h.args.target_fd);
+		} else if (std::holds_alternative<memfd_handler>(handler)) {
+			auto &h = std::get<memfd_handler>(handler);
+			j[std::to_string(i)] = { { "type", "memfd_handler" },
+						 { "attr",
+						   { { "flags", h.flags },
+						     { "name", h.name } } } };
+
 		} else {
 			SPDLOG_ERROR("Unsupported handler type {}",
 				     handler.index());
