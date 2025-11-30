@@ -8,7 +8,8 @@
 #include <stdlib.h>
 #include <unistd.h>
 #include <stdint.h>
-#include "./.output/gpu_shard_array.skel.h"
+#include "./.output/gpu_shared_map.skel.h"
+#define warn(...) fprintf(stderr, __VA_ARGS__)
 
 static volatile int exiting;
 
@@ -19,24 +20,24 @@ static void sig_handler(int sig)
 
 int main()
 {
-	struct gpu_shard_array_bpf *skel;
+	struct gpu_shared_map_bpf *skel;
 	int err;
 
 	libbpf_set_strict_mode(LIBBPF_STRICT_ALL);
 	signal(SIGINT, sig_handler);
 	signal(SIGTERM, sig_handler);
 
-	skel = gpu_shard_array_bpf__open();
+	skel = gpu_shared_map_bpf__open();
 	if (!skel) {
 		fprintf(stderr, "open skel failed\n");
 		return 1;
 	}
-	err = gpu_shard_array_bpf__load(skel);
+	err = gpu_shared_map_bpf__load(skel);
 	if (err) {
 		fprintf(stderr, "load skel failed\n");
 		goto cleanup;
 	}
-	err = gpu_shard_array_bpf__attach(skel);
+	err = gpu_shared_map_bpf__attach(skel);
 	if (err) {
 		fprintf(stderr, "attach skel failed\n");
 		goto cleanup;
@@ -51,10 +52,34 @@ int main()
 		if (bpf_map_lookup_elem(mapfd, &key, &value) == 0) {
 			printf("counter[0]=%lu\n", (unsigned long)value);
 		}
+		uint32_t *prev_key = NULL;
+		key = 0;
+		int err = 0;
+		int fd = bpf_map__fd(skel->maps.counter_per_thread);
+		while (1) {
+			err = bpf_map_get_next_key(fd, prev_key, &key);
+			if (err) {
+				if (errno == ENOENT) {
+					err = 0;
+					break;
+				}
+				warn("bpf_map_get_next_key failed: %s\n",
+				     strerror(errno));
+				return err;
+			}
+			err = bpf_map_lookup_elem(fd, &key, &value);
+			if (err) {
+				warn("bpf_map_lookup_elem failed: %s\n",
+				     strerror(errno));
+				return err;
+			}
+			printf("	pid=%d     calls: %ld\n", key, value);
+			prev_key = &key;
+		}
 		sleep(1);
 	}
 
 cleanup:
-	gpu_shard_array_bpf__destroy(skel);
+	gpu_shared_map_bpf__destroy(skel);
 	return err != 0;
 }
