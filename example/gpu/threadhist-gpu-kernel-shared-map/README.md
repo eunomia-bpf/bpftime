@@ -24,3 +24,5 @@ value(1)=2
 value(0)=30
 value(1)=3
 ```
+
+syscall-server must be restarted if agent exited, or the next start of agent will fail to call cuMemHostRegister.

@@ -107,7 +107,7 @@ int bpf_attach_ctx::init_attach_ctx_from_handlers(
 
 bpf_attach_ctx::~bpf_attach_ctx()
 {
-	SPDLOG_DEBUG("Destructor: bpf_attach_ctx");
+	SPDLOG_INFO("Destructor: bpf_attach_ctx");
 #ifdef BPFTIME_ENABLE_CUDA_ATTACH
 	cuda_ctx->cuda_watcher_should_stop->store(true);
 #endif

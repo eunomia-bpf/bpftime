@@ -11,3 +11,4 @@ cuda_probe_*.stderr
 micro_bench.log
 .cuda_probe.stderr
 micro_example_result.json
+/cuda_probe_kernel_gpu

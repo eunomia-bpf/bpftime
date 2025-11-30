@@ -7,6 +7,7 @@
 #include "spdlog/spdlog.h"
 #include "array_map_kernel_gpu.hpp"
 #include <cerrno>
+#include <cstdlib>
 #if __linux__
 #include <bpf/libbpf.h>
 #include <bpf/bpf.h>
@@ -186,6 +187,15 @@ array_map_kernel_gpu_impl::~array_map_kernel_gpu_impl()
 	}
 }
 
+static void *registered_host_memory = nullptr;
+
+static void atexit_fn()
+{
+	SPDLOG_INFO("Calling cuMemHostUnregister");
+
+	cuMemHostUnregister(registered_host_memory);
+}
+
 CUdeviceptr
 array_map_kernel_gpu_impl::try_initialize_for_agent_and_get_mapped_address()
 {
@@ -201,6 +211,7 @@ array_map_kernel_gpu_impl::try_initialize_for_agent_and_get_mapped_address()
 			"Initializing array_map_kernel_gpu_impl at pid {}, mmap_ptr = 0x{:x}, mmap_sz = {}",
 			pid, (uintptr_t)mmap_ptr, size);
 		CUdeviceptr ptr = (CUdeviceptr)mmap_ptr;
+		registered_host_memory = mmap_ptr;
 		if (auto err = cuMemHostRegister(mmap_ptr, size,
 						 CU_MEMHOSTREGISTER_PORTABLE);
 		    err != CUDA_SUCCESS) {
@@ -215,6 +226,7 @@ array_map_kernel_gpu_impl::try_initialize_for_agent_and_get_mapped_address()
 			"Mapped GPU memory for kernel-gpu shared array map: {}",
 			(uintptr_t)ptr);
 		agent_gpu_shared_mem[pid] = ptr;
+		atexit(atexit_fn);
 		return ptr;
 	} else {
 		return itr->second;
