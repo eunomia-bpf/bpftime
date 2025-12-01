@@ -4,6 +4,7 @@
 #include "cuda.h"
 #include "linux/bpf.h"
 #include "spdlog/spdlog.h"
+#include <atomic>
 #include <cerrno>
 #include <cstdint>
 #include <stdexcept>
@@ -92,6 +93,8 @@ void *nv_gpu_shared_array_map_impl::elem_lookup(const void *key)
     if (did_switch_ctx) {
         cuCtxSetCurrent(prev_ctx);
     }
+	// Memory barrier: ensure GPU data is visible to CPU
+	std::atomic_thread_fence(std::memory_order_acquire);
     SPDLOG_DEBUG("Copied GPU memory base {:x} offset {} size {} to host",
              base, (uint64_t)key_val * value_size,
 		     value_size);
@@ -141,6 +144,8 @@ long nv_gpu_shared_array_map_impl::elem_update(const void *key,
     if (did_switch_ctx) {
         cuCtxSetCurrent(prev_ctx);
     }
+	// Memory barrier: ensure CPU data is visible to GPU
+	std::atomic_thread_fence(std::memory_order_release);
 	return 0;
 }
 
