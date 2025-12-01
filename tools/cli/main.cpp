@@ -165,19 +165,19 @@ static int inject_by_frida(int pid, const char *inject_path, const char *arg)
 }
 
 static std::tuple<std::string, std::vector<std::string>, std::vector<const char *>>
-extract_path_and_args(const argparse::ArgumentParser &parser)
+build_env_and_args(const argparse::ArgumentParser &parser)
 {
 	std::vector<std::string> items;
 	std::vector<const char *> env_args;
 	try {
 		items = parser.get<std::vector<std::string> >("COMMAND");
 
-		if (parser.is_subcommand_used("load") || parser.is_subcommand_used("start")) {
+		if (true) {
 			if (parser.get<bool>("--no-jit")) {
 				const char *disable_jit_str = "BPFTIME_DISABLE_JIT=true";
 				env_args.push_back(disable_jit_str);
 			}
-			if (parser.get<bool>("--run-wit-kernel")) {
+			if (parser.get<bool>("--run-with-kernel-verifier")) {
 				const char *run_with_kernel_verifier = "BPFTIME_RUN_WITH_KERNEL=true";
 				env_args.push_back(run_with_kernel_verifier);
 			}
@@ -199,11 +199,11 @@ extract_path_and_args(const argparse::ArgumentParser &parser)
 				log_path_string += log_path;
 				env_args.push_back(log_path_string.c_str());
 			}
-			if (parser.get<bool>("--allow-enternal-maps")) {
+			if (parser.get<bool>("--allow-external-maps")) {
 				const char *allow_external_maps = "BPFTIME_ALLOW_EXTERNAL_MAPS=true";
 				env_args.push_back(allow_external_maps);
 			}
-			if (parser.is_used("--memory_size()")) {
+			if (parser.is_used("--memory-size")) {
 				std::string shm_size_str = std::to_string(parser.get<int>("--memory-size"));
 				std::string shm_memory_arg_string("BPFTIME_SHM_MEMORY_MB=");
 				shm_memory_arg_string += shm_size_str;
@@ -278,7 +278,7 @@ int main(int argc, const char **argv)
 		.help("Same as SPDLOG_LEVEL, control the log level dynamically, Available log level include:trace, debug, info, warn, err, critical, off");
 	load_command.add_argument("--bpftime-log-path")
 		.help("Same as BPFTIME_LOG_OUTPUT, control the log output path by setting the BPFTIME_LOG_OUTPUT environment variable.");
-	load_command.add_argument("--allow-enternal-maps")
+	load_command.add_argument("--allow-external-maps")
 		.help("Same as BPFTIME_ALLOW_EXTERNAL_MAPS, allow external(Unsupport) maps load with the bpftime syscall-server library,")
 		.flag();
 	load_command.add_argument("--memory-size")
@@ -302,7 +302,7 @@ int main(int argc, const char **argv)
 	start_command.add_argument("--no-jit")
 		.help("Same as BPFTIME_DISABLE_JIT, disable JIT and use intepreter")
 		.flag()	;
-	start_command.add_argument("--run-wit-kernel-verifier")
+	start_command.add_argument("--run-with-kernel-verifier")
 		.help("Same as BPFTIME_RUN_WITH_KERNEL, load the eBPF application with kernel eBPF loader and kernel verifier.")
 		.flag();
 	start_command.add_argument("--bpftime-not-load-pattern")
@@ -311,7 +311,7 @@ int main(int argc, const char **argv)
 		.help("Same as SPDLOG_LEVEL, control the log level dynamically, Available log level include:trace, debug, info, warn, err, critical, off");
 	start_command.add_argument("--bpftime-log-path")
 		.help("Same as BPFTIME_LOG_OUTPUT, control the log output path by setting the BPFTIME_LOG_OUTPUT environment variable.");
-	start_command.add_argument("--allow-enternal-maps")
+	start_command.add_argument("--allow-external-maps")
 		.help("Same as BPFTIME_ALLOW_EXTERNAL_MAPS, allow external(Unsupport) maps load with the bpftime syscall-server library,")
 		.flag();
 	start_command.add_argument("--memory-size")
@@ -355,7 +355,7 @@ int main(int argc, const char **argv)
 			return 1;
 		}
 		auto [executable_path, extra_args, env_args] =
-			extract_path_and_args(load_command);
+			build_env_and_args(load_command);
 		return run_command(executable_path.c_str(), extra_args,
 				   so_path.c_str(), nullptr, env_args);
 	} else if (program.is_subcommand_used("start")) {
@@ -366,7 +366,7 @@ int main(int argc, const char **argv)
 			return 1;
 		}
 		auto [executable_path, extra_args, env_args] =
-			extract_path_and_args(start_command);
+			build_env_and_args(start_command);
 		if (start_command.get<bool>("enable-syscall-trace")) {
 			auto transformer_path =
 				install_path /
