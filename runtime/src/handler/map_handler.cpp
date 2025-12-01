@@ -18,6 +18,8 @@
 #include "bpf_map/gpu/nv_gpu_ringbuf_map.hpp"
 #include "bpf_map/gpu_kernel_shared/array_map_kernel_gpu.hpp"
 #include "bpf_map/gpu/nv_gpu_shared_hash_map.hpp"
+#include "bpf_map/gpu/nv_gpu_array_host_map.hpp"
+#include "bpf_map/gpu/nv_gpu_shared_array_host_map.hpp"
 #endif
 #include "bpf_map/userspace/lpm_trie_map.hpp"
 #include <bpf_map/userspace/perf_event_array_map.hpp>
@@ -75,10 +77,11 @@ uint32_t bpf_map_handler::get_userspace_value_size() const
 	    (type == bpf_map_type::BPF_MAP_TYPE_PERCPU_HASH)) {
 		result *= sysconf(_SC_NPROCESSORS_ONLN);
 	}
-	if (type == bpf_map_type::BPF_MAP_TYPE_PERGPUTD_ARRAY_MAP) {
+	if (type == bpf_map_type::BPF_MAP_TYPE_PERGPUTD_ARRAY_MAP ||
+	    type == bpf_map_type::BPF_MAP_TYPE_PERGPUTD_ARRAY_HOST_MAP) {
 		result *= this->attr.gpu_thread_count;
 		SPDLOG_DEBUG(
-			"Value size of BPF_MAP_TYPE_PERGPUTD_ARRAY_MAP is {}",
+			"Value size of BPF_MAP_TYPE_PERGPUTD_ARRAY_MAP/HOST is {}",
 			result);
 	}
 	return result;
@@ -244,6 +247,16 @@ const void *bpf_map_handler::map_lookup_elem(const void *key,
 		return do_lookup(impl);
 	}
 
+	case bpf_map_type::BPF_MAP_TYPE_PERGPUTD_ARRAY_HOST_MAP: {
+		auto impl = static_cast<nv_gpu_array_host_map_impl *>(
+			map_impl_ptr.get());
+		return do_lookup(impl);
+	}
+	case bpf_map_type::BPF_MAP_TYPE_GPU_ARRAY_HOST_MAP: {
+		auto impl = static_cast<nv_gpu_shared_array_host_map_impl *>(
+			map_impl_ptr.get());
+		return do_lookup(impl);
+	}
 #endif
 	default:
 		auto func_ptr = global_map_ops_table[(int)type].elem_lookup;
@@ -393,6 +406,16 @@ long bpf_map_handler::map_update_elem(const void *key, const void *value,
 			map_impl_ptr.get());
 		return do_update(impl);
 	}
+	case bpf_map_type::BPF_MAP_TYPE_PERGPUTD_ARRAY_HOST_MAP: {
+		auto impl = static_cast<nv_gpu_array_host_map_impl *>(
+			map_impl_ptr.get());
+		return do_update(impl);
+	}
+	case bpf_map_type::BPF_MAP_TYPE_GPU_ARRAY_HOST_MAP: {
+		auto impl = static_cast<nv_gpu_shared_array_host_map_impl *>(
+			map_impl_ptr.get());
+		return do_update(impl);
+	}
 #endif
 	case bpf_map_type::BPF_MAP_TYPE_LPM_TRIE: {
 		auto impl =
@@ -530,6 +553,16 @@ int bpf_map_handler::bpf_map_get_next_key(const void *key, void *next_key,
 	}
 	case bpf_map_type::BPF_MAP_TYPE_GPU_KERNEL_SHARED_ARRAY_MAP: {
 		auto impl = static_cast<array_map_kernel_gpu_impl *>(
+			map_impl_ptr.get());
+		return do_get_next_key(impl);
+	}
+	case bpf_map_type::BPF_MAP_TYPE_PERGPUTD_ARRAY_HOST_MAP: {
+		auto impl = static_cast<nv_gpu_array_host_map_impl *>(
+			map_impl_ptr.get());
+		return do_get_next_key(impl);
+	}
+	case bpf_map_type::BPF_MAP_TYPE_GPU_ARRAY_HOST_MAP: {
+		auto impl = static_cast<nv_gpu_shared_array_host_map_impl *>(
 			map_impl_ptr.get());
 		return do_get_next_key(impl);
 	}
@@ -685,6 +718,16 @@ long bpf_map_handler::map_delete_elem(const void *key, bool from_syscall) const
 	}
 	case bpf_map_type::BPF_MAP_TYPE_GPU_KERNEL_SHARED_ARRAY_MAP: {
 		auto impl = static_cast<array_map_kernel_gpu_impl *>(
+			map_impl_ptr.get());
+		return do_delete(impl);
+	}
+	case bpf_map_type::BPF_MAP_TYPE_PERGPUTD_ARRAY_HOST_MAP: {
+		auto impl = static_cast<nv_gpu_array_host_map_impl *>(
+			map_impl_ptr.get());
+		return do_delete(impl);
+	}
+	case bpf_map_type::BPF_MAP_TYPE_GPU_ARRAY_HOST_MAP: {
+		auto impl = static_cast<nv_gpu_shared_array_host_map_impl *>(
 			map_impl_ptr.get());
 		return do_delete(impl);
 	}
@@ -976,6 +1019,26 @@ int bpf_map_handler::map_init(managed_shared_memory &memory)
 		shm_holder.global_shared_memory.set_enable_mock(true);
 		return 0;
 	}
+	// HOST versions: use boost::interprocess + cudaHostRegister (for Tegra)
+	case bpf_map_type::BPF_MAP_TYPE_PERGPUTD_ARRAY_HOST_MAP: {
+		SPDLOG_INFO(
+			"Map {} (nv_gpu_array_host_map_impl) has space for thread count {}",
+			container_name.c_str(), attr.gpu_thread_count);
+		map_impl_ptr = memory.construct<nv_gpu_array_host_map_impl>(
+			container_name.c_str())(memory, value_size, max_entries,
+						attr.gpu_thread_count);
+		return 0;
+	}
+	case bpf_map_type::BPF_MAP_TYPE_GPU_ARRAY_HOST_MAP: {
+		SPDLOG_INFO(
+			"Map {} (nv_gpu_shared_array_host_map_impl) shared array",
+			container_name.c_str());
+		map_impl_ptr =
+			memory.construct<nv_gpu_shared_array_host_map_impl>(
+				container_name.c_str())(memory, value_size,
+							max_entries);
+		return 0;
+	}
 #endif
 	case bpf_map_type::BPF_MAP_TYPE_LPM_TRIE: {
 		map_impl_ptr = memory.construct<lpm_trie_map_impl>(
@@ -1086,6 +1149,14 @@ void bpf_map_handler::map_free(managed_shared_memory &memory) const
 			container_name.c_str());
 		break;
 	}
+	case bpf_map_type::BPF_MAP_TYPE_PERGPUTD_ARRAY_HOST_MAP:
+		memory.destroy<nv_gpu_array_host_map_impl>(
+			container_name.c_str());
+		break;
+	case bpf_map_type::BPF_MAP_TYPE_GPU_ARRAY_HOST_MAP:
+		memory.destroy<nv_gpu_shared_array_host_map_impl>(
+			container_name.c_str());
+		break;
 #endif
 	default:
 		auto func_ptr = global_map_ops_table[(int)type].map_free;
@@ -1142,6 +1213,14 @@ uint64_t bpf_map_handler::get_gpu_map_max_thread_count() const
 	}
 #endif
 
+	if (this->type == bpf_map_type::BPF_MAP_TYPE_PERGPUTD_ARRAY_HOST_MAP) {
+		return static_cast<nv_gpu_array_host_map_impl *>(
+			       map_impl_ptr.get())
+			->get_max_thread_count();
+	}
+	if (this->type == bpf_map_type::BPF_MAP_TYPE_GPU_ARRAY_HOST_MAP) {
+		return 1;
+	}
 #endif
 
 	SPDLOG_DEBUG("Not a GPU map!");
@@ -1179,6 +1258,16 @@ void *bpf_map_handler::get_gpu_map_extra_buffer() const
 		return (void *)static_cast<array_map_kernel_gpu_impl *>(
 			       map_impl_ptr.get())
 			->try_initialize_for_agent_and_get_mapped_address();
+	}
+	if (this->type == bpf_map_type::BPF_MAP_TYPE_PERGPUTD_ARRAY_HOST_MAP) {
+		return (void *)static_cast<nv_gpu_array_host_map_impl *>(
+			       map_impl_ptr.get())
+			->get_gpu_mem_buffer();
+	}
+	if (this->type == bpf_map_type::BPF_MAP_TYPE_GPU_ARRAY_HOST_MAP) {
+		return (void *)static_cast<nv_gpu_shared_array_host_map_impl *>(
+			       map_impl_ptr.get())
+			->get_gpu_mem_buffer();
 	}
 #endif
 

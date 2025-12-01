@@ -2,6 +2,7 @@
 #include "bpftime_shm_internal.hpp"
 #include "cuda.h"
 #include "spdlog/spdlog.h"
+#include <atomic>
 #include <cerrno>
 #include <cstring>
 #include <stdexcept>
@@ -46,6 +47,8 @@ nv_gpu_ringbuf_map_impl::try_initialize_for_agent_and_get_mapped_address()
 int nv_gpu_ringbuf_map_impl::drain_data(
 	const std::function<void(const void *, uint64_t)> &fn)
 {
+	// Memory barrier: ensure we see latest GPU writes before reading header
+	std::atomic_thread_fence(std::memory_order_acquire);
 	for (uint64_t i = 0; i < thread_count; i++) {
 		auto header = (ringbuf_header *)(uintptr_t)(data_buffer.data() +
 							    i * entry_size);
