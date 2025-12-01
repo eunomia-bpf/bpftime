@@ -160,7 +160,12 @@ extern "C" void *__bpftime_frida_attach_manager__override_handler()
 	auto arg4 = gum_invocation_context_get_nth_argument(ctx, 4);
 	ufunc_func func = (ufunc_func)ctx->function;
 
+	SPDLOG_DEBUG("Setting current thread gum cpu context");
+	current_thread_gum_cpu_context = ctx->cpu_context;
+
 	hook_entry->run_filter_callback(regs);
+	SPDLOG_DEBUG("Resetting current thread gum cpu context");
+	current_thread_gum_cpu_context.reset();
 	if (hook_entry->is_overrided) {
 		auto value = (uintptr_t)hook_entry->user_ret;
 		SPDLOG_DEBUG("Using override return value: {}", value);
@@ -197,7 +202,14 @@ static void uprobe_listener_on_enter(GumInvocationListener *listener,
 	bpftime::pt_regs regs;
 	ctx = gum_interceptor_get_current_invocation();
 	convert_gum_cpu_context_to_pt_regs(*ctx->cpu_context, regs);
+
+	SPDLOG_DEBUG("Setting current thread gum cpu context");
+	current_thread_gum_cpu_context = ctx->cpu_context;
+
 	hook_entry->iterate_uprobe_callbacks(regs);
+
+	SPDLOG_DEBUG("Resetting current thread gum cpu context");
+	current_thread_gum_cpu_context.reset();
 }
 
 static void uprobe_listener_on_leave(GumInvocationListener *listener,

@@ -1,0 +1,88 @@
+name: Benchmarks
+
+on:
+  workflow_dispatch:
+  push:
+    branches: ["master"]
+  pull_request:
+    branches: ["master"]
+
+# Sets permissions of the GITHUB_TOKEN to allow deployment to GitHub Pages
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Allow only one concurrent deployment for the pages part
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}-${{ github.event_name }}
+  cancel-in-progress: true
+
+jobs:
+  build-and-run:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v3
+        with:
+          submodules: "recursive"
+
+      - name: install deps
+        run: |
+          sudo apt update
+          wget https://apt.llvm.org/llvm.sh && chmod +x llvm.sh && sudo ./llvm.sh 17
+          sudo apt update
+          sudo apt install -y --no-install-recommends \
+            libelf1 libelf-dev zlib1g-dev make cmake git libboost-all-dev \
+            binutils-dev libyaml-cpp-dev ca-certificates clang llvm pkg-config llvm-dev
+
+      - name: install additional dependencies for experiments
+        run: |
+          sudo apt-get install libfuse-dev fuse libfuse3-dev
+
+      - name: install python dependencies
+        run: |
+          sudo apt install -y python3-pip
+          pip3 install -r benchmark/requirements.txt
+
+      - name: verify llvm-17 installation
+        run: llvm-config-17 --version
+
+      - name: clear cmake cache
+        run: rm -rf build
+
+      - name: build benchmarks
+        run: make benchmark
+
+      - name: run micro-benchmarks
+        run: |
+          # run micro-benchmarks
+          python3 benchmark/uprobe/benchmark.py --iter 3
+          # run remove to avoid conflict with the previous run
+          sudo build/tools/bpftimetool/bpftimetool remove
+          python3 benchmark/syscall/benchmark.py
+          sudo build/tools/bpftimetool/bpftimetool remove
+          python3 benchmark/mpk/benchmark.py --iter 3
+
+      - name: Setup Pages
+        uses: actions/configure-pages@v5
+      - name: Build with Jekyll
+        uses: actions/jekyll-build-pages@v1
+        with:
+          source: ./
+          destination: ./_site
+      - name: Upload artifact
+        uses: actions/upload-pages-artifact@v3
+
+  # Deployment job
+  deploy:
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: ubuntu-latest
+    needs: build-and-run
+    if: github.ref == 'refs/heads/master'
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4

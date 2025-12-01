@@ -1,0 +1,68 @@
+name: Build and test PTX pass executables
+
+on:
+  workflow_dispatch:
+  push:
+    branches: ["*"]
+  pull_request:
+    branches: ["master", "main"]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}-${{ github.event_name }}
+  cancel-in-progress: true
+
+jobs:
+  test-ptxpass:
+    runs-on: [self-hosted, Linux, X64, gpu]
+    steps:
+      - name: Configure proxy for China
+        run: |
+          echo "Setting up proxy for China network..."
+          export http_proxy=http://192.168.15.1:2345
+          export https_proxy=http://192.168.15.1:2345
+          export HTTP_PROXY=http://192.168.15.1:2345
+          export HTTPS_PROXY=http://192.168.15.1:2345
+          export no_proxy=localhost,127.0.0.1,192.168.0.0/16
+          echo "http_proxy=http://192.168.15.1:2345" >> $GITHUB_ENV
+          echo "https_proxy=http://192.168.15.1:2345" >> $GITHUB_ENV
+          echo "HTTP_PROXY=http://192.168.15.1:2345" >> $GITHUB_ENV
+          echo "HTTPS_PROXY=http://192.168.15.1:2345" >> $GITHUB_ENV
+          echo "no_proxy=localhost,127.0.0.1,192.168.0.0/16" >> $GITHUB_ENV
+          git config --global --add http.proxy http://192.168.15.1:2345
+          git config --global --add https.proxy http://192.168.15.1:2345
+          
+      - uses: actions/checkout@v2
+        with:
+          submodules: recursive
+
+      - name: Check and install required tools
+        run: |
+          echo "Checking installed tools..."
+          
+          sudo apt-get install -y build-essential llvm-dev llvm-18-dev cmake libboost-all-dev libzstd-dev pkg-config ninja-build
+
+          # Check CUDA
+          nvcc --version || echo "nvcc not found (CUDA compiler)"
+          echo $(which nvcc)
+      - name: Detect LLVM and configure CMake
+        shell: bash
+        run: |
+            cmake -B build -S . \
+              -DCMAKE_BUILD_TYPE=Debug \
+              -DBPFTIME_LLVM_JIT=YES \
+              -DBPFTIME_ENABLE_UNIT_TESTING=YES \
+              -DBPFTIME_ENABLE_CUDA_ATTACH=ON \
+              -DBPFTIME_CUDA_ROOT="/usr/local/cuda-12.6" \
+              -DLLVM_DIR="/usr/lib/llvm-18/lib/cmake/llvm/" \
+              -G Ninja
+          
+      - name: Build PTX pass targets
+        run: |
+          cmake --build build --config Debug --target \
+            ptxpass_kprobe_entry ptxpass_kretprobe ptxpass_kprobe_memcapture bpftime_nv_attach_tests -j$(nproc)
+
+      - name: Run PTX pass unit tests with Catch2
+        shell: bash
+        run: |
+          ./build/attach/nv_attach_impl/test/bpftime_nv_attach_tests
+

@@ -1,0 +1,6 @@
+/cuda_probe
+/.output
+/cuda_bench
+/vec_add
+*.o 
+nvbit_vec_add.so

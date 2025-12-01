@@ -1,8 +1,56 @@
 #include "bpftime_config.hpp"
 #include "spdlog/spdlog.h"
 #include <string_view>
+#include <optional>
+#include <limits>
+#include <type_traits>
 
 using namespace bpftime;
+
+// Helper function to parse and validate numeric environment variables
+template<typename T>
+static std::optional<T> parse_numeric_env(const char* env_name, 
+                                          T min_value = std::numeric_limits<T>::min(),
+                                          T max_value = std::numeric_limits<T>::max())
+{
+	const char* env_str = std::getenv(env_name);
+	if (env_str == nullptr) {
+		return std::nullopt;
+	}
+
+	try {
+		// Parse based on type
+		T value;
+		if constexpr (std::is_same_v<T, int>) {
+			value = std::stoi(env_str);
+		} else if constexpr (std::is_same_v<T, long>) {
+			value = std::stol(env_str);
+		} else if constexpr (std::is_same_v<T, size_t> || std::is_same_v<T, unsigned long>) {
+			value = std::stoul(env_str);
+		} else {
+			// Fallback for other types
+			value = static_cast<T>(std::stoll(env_str));
+		}
+		
+		if (value < min_value) {
+			SPDLOG_WARN("{} value {} is below minimum {}, using minimum",
+			           env_name, value, min_value);
+			return min_value;
+		}
+		
+		if (value > max_value) {
+			SPDLOG_WARN("{} value {} exceeds maximum {}, using maximum",
+			           env_name, value, max_value);
+			return max_value;
+		}
+		
+		SPDLOG_INFO("Setting {} to: {}", env_name, value);
+		return value;
+	} catch (...) {
+		SPDLOG_ERROR("Invalid value for {}: {}", env_name, env_str);
+		return std::nullopt;
+	}
+}
 
 static void process_token(const std::string_view &token, agent_config &config)
 {
@@ -16,7 +64,7 @@ static void process_token(const std::string_view &token, agent_config &config)
 		SPDLOG_INFO("Enabling shm_map helper group");
 		config.enable_shm_maps_helper_group = true;
 	} else {
-		spdlog::warn("Unknown helper group: {}", token);
+		SPDLOG_WARN("Unknown helper group: {}", token);
 	}
 }
 
@@ -63,16 +111,16 @@ agent_config bpftime::construct_agent_config_from_env() noexcept
 		agent_config.allow_non_buildin_map_types = true;
 	}
 
-	const char *shm_memory_size_str = getenv("BPFTIME_SHM_MEMORY_MB");
-	if (shm_memory_size_str != nullptr) {
-		try {
-			agent_config.shm_memory_size =
-				std::stoi(shm_memory_size_str);
-		} catch (...) {
-			SPDLOG_ERROR(
-				"Invalid value for BPFTIME_SHM_MEMORY_SIZE: {}",
-				shm_memory_size_str);
-		}
+	// Parse shared memory size with validation (1MB min, 10GB max)
+	if (auto shm_size = parse_numeric_env<int>("BPFTIME_SHM_MEMORY_MB", 1, 10240)) {
+		agent_config.shm_memory_size = *shm_size;
+	}
+
+	// Parse max FD count with validation
+	if (auto max_fd = parse_numeric_env<size_t>("BPFTIME_MAX_FD_COUNT", 
+	                                             MIN_MAX_FD_COUNT, 
+	                                             MAX_MAX_FD_COUNT)) {
+		agent_config.max_fd_count = *max_fd;
 	}
 
 	const char *vm_name = std::getenv("BPFTIME_VM_NAME");

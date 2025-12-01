@@ -11,8 +11,17 @@ target_include_directories(bpftime-aot-cli PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/../../vm/compat/include
     ../../runtime/include/
     ../../runtime/src/
-    ${LIBBPF_INCLUDE_DIRS})
-target_link_libraries(bpftime-aot-cli PRIVATE spdlog::spdlog argparse bpftime_vm_compat bpftime_llvm_vm runtime ${LIBBPF_LIBRARIES} elf z)
+    ${LIBBPF_INCLUDE_DIRS}
+    ${LLVM_INCLUDE_DIRS}
+)
+if(${BPFTIME_ENABLE_CUDA_ATTACH})
+    include(../../cmake/cuda.cmake)
+    find_cuda()
+    target_link_directories(bpftime-aot-cli PRIVATE ${CUDA_LIBRARY_PATH})
+    target_link_libraries(bpftime-aot-cli PRIVATE -L/usr/lib/llvm-20/lib/ spdlog::spdlog argparse bpftime_vm_compat bpftime_llvm_vm runtime ${LIBBPF_LIBRARIES} elf z ${LLVM_LIBRARIES} ${llvm_libs} ${CUDA_LIBS} bpftime_nv_attach_impl)
+else()
+    target_link_libraries(bpftime-aot-cli PRIVATE -L/usr/lib/llvm-20/lib/ spdlog::spdlog argparse bpftime_vm_compat bpftime_llvm_vm runtime ${LIBBPF_LIBRARIES} elf z ${LLVM_LIBRARIES} ${llvm_libs})
+endif()
 set_property(TARGET bpftime-aot-cli PROPERTY CXX_STANDARD 20)
 
 target_compile_definitions(bpftime-aot-cli PRIVATE _GNU_SOURCE)

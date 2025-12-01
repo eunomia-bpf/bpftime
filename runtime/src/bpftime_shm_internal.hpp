@@ -7,6 +7,7 @@
 #define _BPFTIME_SHM_INTERNAL
 #include "bpf_map/userspace/array_map.hpp"
 #include "bpf_map/userspace/ringbuf_map.hpp"
+#include "bpf_map/userspace/stack_trace_map.hpp"
 #include <boost/interprocess/managed_shared_memory.hpp>
 #include <cstddef>
 #include <functional>
@@ -14,6 +15,16 @@
 #include "bpftime_shm.hpp"
 #include <handler/handler_manager.hpp>
 #include <optional>
+
+#ifdef BPFTIME_ENABLE_CUDA_ATTACH
+namespace bpftime
+{
+namespace cuda
+{
+struct CommSharedMem;
+}
+} // namespace bpftime
+#endif
 
 namespace bpftime
 {
@@ -32,6 +43,8 @@ using alive_agent_pids =
 
 // global bpftime share memory
 class bpftime_shm {
+	std::optional<std::function<void(bool)>> mock_setter;
+
 	bpftime::shm_open_type open_type;
 	// shared memory segment
 	boost::interprocess::managed_shared_memory segment;
@@ -50,6 +63,10 @@ class bpftime_shm {
 
 	// local agent config can be used for test or local process
 	std::optional<struct agent_config> local_agent_config;
+#ifdef BPFTIME_ENABLE_CUDA_ATTACH
+	cuda::CommSharedMem *cuda_comm_shared_mem = nullptr;
+#endif
+
 
 #if BPFTIME_ENABLE_MPK
 	// mpk key for protect shm
@@ -58,6 +75,20 @@ class bpftime_shm {
 #endif
 
     public:
+	shm_open_type get_shm_open_type() const
+	{
+		return open_type;
+	}
+	void set_enable_mock(bool flag)
+	{
+		if (mock_setter.has_value())
+			(*mock_setter)(flag);
+	}
+	// Set a callback to configure whether syscall server should enable mock
+	void set_mock_setter(std::function<void(bool)> &&fn)
+	{
+		mock_setter = fn;
+	}
 	// Get the configuration object
 	const struct agent_config &get_agent_config();
 	// Set the configuration object
@@ -82,9 +113,14 @@ class bpftime_shm {
 	bool is_map_fd(int fd) const;
 	bool is_ringbuf_map_fd(int fd) const;
 	bool is_array_map_fd(int fd) const;
+
 	bool is_shared_perf_event_array_map_fd(int fd) const;
 	bool is_perf_event_handler_fd(int fd) const;
 	bool is_software_perf_event_handler_fd(int fd) const;
+
+	bool is_stack_trace_map_fd(int fd) const;
+	std::optional<stack_trace_map_impl *>
+	try_get_stack_trace_impl(int fd) const;
 
 	int find_minimal_unused_fd() const
 	{
@@ -126,12 +162,23 @@ class bpftime_shm {
 
 	long bpf_delete_elem(int fd, const void *key, bool from_syscall) const;
 
+	// Queue/stack map operations for push/pop/peek helper functions
+	long bpf_map_push_elem(int fd, const void *value, uint64_t flags,
+			       bool from_syscall) const;
+
+	long bpf_map_pop_elem(int fd, void *value, bool from_syscall) const;
+
+	long bpf_map_peek_elem(int fd, void *value, bool from_syscall) const;
+
 	int bpf_map_get_next_key(int fd, const void *key, void *next_key,
 				 bool from_syscall) const;
 
 	// create an uprobe fd
 	int add_uprobe(int fd, int pid, const char *name, uint64_t offset,
 		       bool retprobe, size_t ref_ctr_off);
+	// Create an kprobe
+	int add_kprobe(std::optional<int> fd, const char *func_name,
+		       uint64_t addr, bool retprobe, size_t ref_ctr_off);
 	// create a tracepoint fd
 	int add_tracepoint(int fd, int pid, int32_t tracepoint_id);
 	// create a software perf event fd, typically for a perf event
@@ -169,6 +216,8 @@ class bpftime_shm {
 	void close_fd(int fd);
 	bool is_exist_fake_fd(int fd) const;
 
+	int add_memfd_handler(const char *name, int flags);
+
 #if BPFTIME_ENABLE_MPK
 	void enable_mpk();
 	void disable_mpk();
@@ -189,6 +238,16 @@ class bpftime_shm {
 	{
 		return open_type;
 	}
+#ifdef BPFTIME_ENABLE_CUDA_ATTACH
+	bool register_cuda_host_memory();
+	cuda::CommSharedMem *get_cuda_comm_shared_mem() const
+	{
+		return cuda_comm_shared_mem;
+	}
+	int poll_gpu_ringbuf_map(
+		int mapfd, const std::function<void(const void *, uint64_t)> &);
+#endif
+	~bpftime_shm();
 };
 
 // memory region for maps and prog info

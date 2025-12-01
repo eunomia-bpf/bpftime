@@ -5,6 +5,9 @@
  */
 #include "bpftime_config.hpp"
 #include "bpftime_shm_internal.hpp"
+#if defined(BPFTIME_ENABLE_CUDA_ATTACH)
+#include "cuda.h"
+#endif
 #include "syscall_context.hpp"
 #include <filesystem>
 #include <memory>
@@ -19,26 +22,37 @@
 #include <iomanip>
 #include <sstream>
 #endif
+namespace bpftime
+{
 static bool already_setup = false;
-static bool disable_mock = true;
 using namespace bpftime;
 // Why not use string_view? because parse_uint_from_file requires a c-string
 static const std::string UPROBE_TYPE_FILE_NAME =
 	"/sys/bus/event_source/devices/uprobe/type";
 static const std::string URETPROBE_BIT_FILE_NAME =
 	"/sys/bus/event_source/devices/uprobe/format/retprobe";
+static const std::string KPROBE_TYPE_FILE_NAME =
+	"/sys/bus/event_source/devices/kprobe/type";
+static const std::string KRETPROBE_BIT_FILE_NAME =
+	"/sys/bus/event_source/devices/kprobe/format/retprobe";
 
-void start_up()
+void start_up(syscall_context &ctx)
 {
 	if (already_setup)
 		return;
+	SPDLOG_INFO("Starting syscall server..");
 	already_setup = true;
 	auto agent_config = construct_agent_config_from_env();
-	bpftime_set_logger(agent_config.get_logger_output_path());
+	bpftime_set_logger(std::string(agent_config.get_logger_output_path()));
 	SPDLOG_INFO("Initialize syscall server");
 
 	bpftime_initialize_global_shm(shm_open_type::SHM_REMOVE_AND_CREATE);
-
+	shm_holder.global_shared_memory.set_mock_setter([&](bool flg) {
+		ctx.enable_mock_after_initialized = flg;
+		SPDLOG_INFO(
+			"syscall server: Set enable_mock_after_initialized to {}",
+			ctx.enable_mock_after_initialized);
+	});
 #ifdef ENABLE_BPFTIME_VERIFIER
 	std::vector<int32_t> helper_ids;
 	std::map<int32_t, bpftime::verifier::BpftimeHelperProrotype>
@@ -128,8 +142,26 @@ int determine_uprobe_retprobe_bit()
 	return parse_uint_from_file(URETPROBE_BIT_FILE_NAME.c_str(),
 				    "config:%d\n");
 }
-
-std::optional<std::unique_ptr<mocked_file_provider> >
+int determine_kprobe_perf_type()
+{
+	if (!std::filesystem::exists(KPROBE_TYPE_FILE_NAME)) {
+		SPDLOG_DEBUG("Using mocked kprobe type value {} for file {}",
+			     MOCKED_KPROBE_TYPE_VALUE, KPROBE_TYPE_FILE_NAME);
+		return MOCKED_KPROBE_TYPE_VALUE;
+	}
+	return parse_uint_from_file(KPROBE_TYPE_FILE_NAME.c_str(), "%d\n");
+}
+int determine_kprobe_retprobe_bit()
+{
+	if (!std::filesystem::exists(KRETPROBE_BIT_FILE_NAME)) {
+		SPDLOG_DEBUG("Using mocked uretprobe bit value {} for file {}",
+			     MOCKED_KRETPROBE_BIT, KRETPROBE_BIT_FILE_NAME);
+		return MOCKED_KRETPROBE_BIT;
+	}
+	return parse_uint_from_file(KRETPROBE_BIT_FILE_NAME.c_str(),
+				    "config:%d\n");
+}
+std::optional<std::unique_ptr<mocked_file_provider>>
 create_mocked_file_based_on_full_path(const std::filesystem::path &path)
 {
 	if (path == UPROBE_TYPE_FILE_NAME) {
@@ -164,3 +196,5 @@ resolve_filename_and_fd_to_full_path(int fd, const char *file)
 	}
 	return dir_path / file;
 }
+
+} // namespace bpftime

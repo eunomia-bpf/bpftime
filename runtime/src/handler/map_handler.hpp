@@ -5,8 +5,10 @@
  */
 #ifndef _MAP_HANDLER
 #define _MAP_HANDLER
+
 #include "bpf_map/userspace/array_map.hpp"
 #include "bpf_map/userspace/ringbuf_map.hpp"
+#include "bpf_map/userspace/stack_trace_map.hpp"
 #include "bpftime_shm.hpp"
 #include "spdlog/spdlog.h"
 #include <boost/interprocess/managed_shared_memory.hpp>
@@ -18,6 +20,10 @@
 #include <optional>
 #include <unistd.h>
 #include <bpf_map/shared/perf_event_array_kernel_user.hpp>
+#if defined(BPFTIME_ENABLE_CUDA_ATTACH)
+#include "bpf_map/gpu/nv_gpu_ringbuf_map.hpp"
+#endif
+
 #if __APPLE__
 #include "spinlock_wrapper.hpp"
 #endif
@@ -185,24 +191,57 @@ class bpf_map_handler {
 	// *
 	int bpf_map_get_next_key(const void *key, void *next_key,
 				 bool from_syscall = false) const;
-	void map_free(boost::interprocess::managed_shared_memory &memory);
+	void map_free(boost::interprocess::managed_shared_memory &memory) const;
 	int map_init(boost::interprocess::managed_shared_memory &memory);
-	uint32_t get_value_size() const;
+	uint32_t get_userspace_value_size() const;
 	std::optional<ringbuf_map_impl *> try_get_ringbuf_map_impl() const;
 	std::optional<array_map_impl *> try_get_array_map_impl() const;
 	std::optional<perf_event_array_kernel_user_impl *>
 	try_get_shared_perf_event_array_map_impl() const;
 
+	std::optional<stack_trace_map_impl *>
+	try_get_stack_trace_map_impl() const;
+	pthread_spinlock_t &get_raw_spin_lock() const
+	{
+		return map_lock;
+	}
+
+	// Queue/stack map helper functions for push/pop/peek operations
+	long map_push_elem(const void *value, uint64_t flags,
+			   bool from_syscall = false) const;
+
+	long map_pop_elem(void *value, bool from_syscall = false) const;
+
+	long map_peek_elem(void *value, bool from_syscall = false) const;
+
+#if defined(BPFTIME_ENABLE_CUDA_ATTACH)
+	std::optional<nv_gpu_ringbuf_map_impl *>
+	try_get_nv_gpu_ringbuf_map_impl() const;
+#endif
     private:
 	int id = 0;
-	std::string get_container_name();
+	std::string get_container_name() const;
 	mutable pthread_spinlock_t map_lock;
 	// The underlying data structure of the map
-	general_map_impl_ptr map_impl_ptr;
+	mutable general_map_impl_ptr map_impl_ptr;
 	uint32_t max_entries = 0;
 	[[maybe_unused]] uint64_t flags = 0;
 	uint32_t key_size = 0;
 	uint32_t value_size = 0;
+
+    public:
+	uint32_t get_key_size() const
+	{
+		return key_size;
+	}
+	uint32_t get_value_size() const;
+	uint32_t get_max_entries() const
+	{
+		return max_entries;
+	}
+
+	void *get_gpu_map_extra_buffer() const;
+	uint64_t get_gpu_map_max_thread_count() const;
 };
 
 } // namespace bpftime

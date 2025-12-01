@@ -253,7 +253,7 @@ namespace ubpf
 __attribute__((constructor)) static inline void register_ubpf_vm_factory()
 {
 	register_vm_factory("ubpf", create_ubpf_vm_instance);
-	printf("ubpf register vm factory\n");
+	SPDLOG_DEBUG("ubpf register vm factory\n");
 }
 } // namespace ubpf
 } // namespace bpftime::vm::compat

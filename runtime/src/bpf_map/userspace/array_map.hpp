@@ -30,6 +30,7 @@ class array_map_impl {
 	int map_get_next_key(const void *key, void *next_key);
 
 	void *get_raw_data() const;
+	friend class stack_trace_map_impl;
 };
 
 } // namespace bpftime

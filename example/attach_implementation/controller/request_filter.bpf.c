@@ -21,13 +21,14 @@ static inline int str_startswith(const char *main, const char *pat)
 	return *pat == 0;
 }
 
+SEC("nginx/ngx_http_request_handler")
 int request_filter(struct request_filter_argument *arg)
 {
 	int result = 0;
 	struct request_filter_event *eventp;
 	result = str_startswith(arg->url_to_check, arg->accept_prefix);
 	eventp = bpf_ringbuf_reserve(&events, sizeof(*eventp), 0);
-	bpf_printk("Allocted buffer %lx", (uintptr_t)eventp);
+	// bpf_printk("Allocted buffer %lx", (uintptr_t)eventp);
 	if (eventp) {
 		for (int i = 0; i < 128; i += 1)
 			eventp->url[i] = arg->url_to_check[i];

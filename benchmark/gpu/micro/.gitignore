@@ -1,0 +1,13 @@
+/cuda_probe
+/.output
+/cuda_bench
+/vec_add
+*.o
+nvbit_vec_add.so
+benchmark_*.log
+*.log
+cuda_probe_*.stderr
+*_result.json
+micro_bench.log
+.cuda_probe.stderr
+micro_example_result.json

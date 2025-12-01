@@ -17,6 +17,14 @@ option(BPFTIME_UBPF_JIT "Use uBPF as jit backend." ON)
 option(BPFTIME_WARNINGS_AS_ERRORS "Treat compiler warnings as errors." OFF)
 
 #
+#
+# CUDA options
+#
+
+option(BPFTIME_CUDA_ROOT "Root for CUDA installation" "")
+option(BPFTIME_ENABLE_CUDA_ATTACH "Whether to enable CUDA attach" OFF)
+
+#
 # Unit testing
 #
 # Currently supporting: GoogleTest, Catch2.
@@ -89,9 +97,6 @@ option(BPFTIME_BUILD_STATIC_LIB "Whether to build a single static library for di
 
 # whether to build bpftime with libbpf and other linux headers
 option(BPFTIME_BUILD_WITH_LIBBPF "Whether to build with libbpf and other linux headers" ON)
-
-# whether to enable probe write check
-option(ENABLE_PROBE_WRITE_CHECK "Whether to enable probe write check" OFF)
 
 # whether to enable probe read check
 option(ENABLE_PROBE_READ_CHECK "Whether to enable probe read check" ON)

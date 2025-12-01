@@ -61,6 +61,7 @@ typedef uint64_t (*ebpf_jit_fn)(void *mem, size_t mem_len);
 /**
  * @brief Create a new ebpf VM.
  *
+ * @param[in] vm_name The name of the VM. use "" for default.
  * @return A pointer to the new VM, or NULL on failure.
  */
 struct ebpf_vm *ebpf_create(const char *vm_name);
@@ -71,6 +72,14 @@ struct ebpf_vm *ebpf_create(const char *vm_name);
  * @param[in] vm The VM to free.
  */
 void ebpf_destroy(struct ebpf_vm *vm);
+
+/**
+ * @brief Get the name of the VM.
+ *
+ * @param[in] vm The VM to get the name of.
+ * @return The name of the VM.
+ */
+const char *ebpf_get_vm_name(struct ebpf_vm *vm);
 
 /**
  * @brief Enable / disable bounds_check. Bounds check is enabled by default, but

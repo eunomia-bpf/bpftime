@@ -10,6 +10,7 @@
 #include <boost/interprocess/smart_ptr/unique_ptr.hpp>
 #include <boost/interprocess/containers/string.hpp>
 #include <cstdint>
+#include <functional>
 #if __linux__
 #include <sys/epoll.h>
 #elif __APPLE__
@@ -38,6 +39,10 @@ struct bpf_map_attr {
 
 	// additional fields for bpftime only
 	uint32_t kernel_bpf_map_id = 0;
+	// Default maximum GPU "thread" count used when sizing GPU maps.
+	// A smaller default keeps shared memory usage reasonable; users can
+	// override via BPFTIME_MAP_GPU_THREAD_COUNT when needed.
+	uint64_t gpu_thread_count = 1024;
 };
 
 enum class bpf_event_type {
@@ -51,11 +56,16 @@ enum class bpf_event_type {
 	// custom types
 	BPF_TYPE_UPROBE = 6,
 	BPF_TYPE_URETPROBE = 7,
+	BPF_TYPE_KPROBE = 8,
+	BPF_TYPE_KRETPROBE = 9,
+
 	BPF_TYPE_UPROBE_OVERRIDE = 1008,
 	BPF_TYPE_UREPLACE = 1009,
 };
 
 #define KERNEL_USER_MAP_OFFSET 1000
+
+const int GPU_MAP_OFFSET = 1500;
 
 enum class bpf_map_type {
 	BPF_MAP_TYPE_UNSPEC,
@@ -109,6 +119,9 @@ enum class bpf_map_type {
 	BPF_MAP_TYPE_KERNEL_USER_PERF_EVENT_ARRAY =
 		KERNEL_USER_MAP_OFFSET + BPF_MAP_TYPE_PERF_EVENT_ARRAY,
 
+	BPF_MAP_TYPE_PERGPUTD_ARRAY_MAP = GPU_MAP_OFFSET + BPF_MAP_TYPE_ARRAY,
+	BPF_MAP_TYPE_GPU_ARRAY_MAP = GPU_MAP_OFFSET + BPF_MAP_TYPE_ARRAY + 1,
+	BPF_MAP_TYPE_GPU_RINGBUF_MAP = GPU_MAP_OFFSET + BPF_MAP_TYPE_RINGBUF,
 	BPF_MAP_TYPE_MAX = 2048,
 };
 
@@ -310,11 +323,28 @@ long bpftime_map_update_elem(int fd, const void *key, const void *value,
 // use from bpf syscall to delete the elem
 long bpftime_map_delete_elem(int fd, const void *key);
 
+// use from bpf syscall to lookup and delete the elem (equivalent to pop for
+// queue/stack maps)
+long bpftime_map_lookup_and_delete_elem(int fd, void *value);
+
+// Queue/stack map helper functions for push/pop/peek operations
+long bpftime_map_push_elem(int fd, const void *value, uint64_t flags);
+
+long bpftime_map_pop_elem(int fd, void *value);
+
+long bpftime_map_peek_elem(int fd, void *value);
+
 // create uprobe in the global shared memory
 //
 // @param[fd]: fd is the fd allocated by the kernel. if fd is -1, then the
 // function will allocate a new perf event fd.
 int bpftime_uprobe_create(int fd, int pid, const char *name, uint64_t offset,
+			  bool retprobe, size_t ref_ctr_off);
+// create kprobe in the global shared memory
+//
+// @param[fd]: fd is the fd allocated by the kernel. if fd is -1, then the
+// function will allocate a new perf event fd.
+int bpftime_kprobe_create(int fd, const char *func_name, uint64_t addr,
 			  bool retprobe, size_t ref_ctr_off);
 // create tracepoint in the global shared memory
 //
@@ -380,6 +410,11 @@ int bpftime_add_ureplace_or_override(int fd, int pid, const char *name,
 int bpftime_get_current_thread_cookie(uint64_t *out);
 
 int bpftime_add_custom_perf_event(int type, const char *attach_argument);
+#ifdef BPFTIME_ENABLE_CUDA_ATTACH
+int bpftime_poll_gpu_ringbuf_map(int mapfd, void *ctx,
+				 void (*)(const void *, uint64_t, void *));
+#endif
+int bpftime_add_memfd_handler(const char *name, int flags);
 }
 
 #endif // BPFTIME_SHM_CPP_H

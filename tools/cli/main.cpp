@@ -1,7 +1,5 @@
 #include "bpftime_shm.hpp"
-#include "bpftime_shm_internal.hpp"
-#include "bpftime_config.hpp"
-#include "bpftime_logger.hpp"
+#include <bpftime_shm_internal.hpp>
 #include <cerrno>
 #include <csignal>
 #include <cstdlib>
@@ -18,7 +16,7 @@
 #include <utility>
 #include <tuple>
 #include <sys/wait.h>
-
+#include <spdlog/spdlog.h>
 #ifdef __APPLE__
 #include <crt_externs.h>
 #include <cstdlib>
@@ -164,12 +162,18 @@ static int inject_by_frida(int pid, const char *inject_path, const char *arg)
 	return 0;
 }
 
+<<<<<<< HEAD
 static std::tuple<std::string, std::vector<std::string>, std::vector<const char *>>
 build_env_and_args(const argparse::ArgumentParser &parser)
+=======
+static std::pair<std::string, std::vector<std::string>>
+extract_path_and_args(const argparse::ArgumentParser &parser)
+>>>>>>> upstream/master
 {
 	std::vector<std::string> items;
 	std::vector<const char *> env_args;
 	try {
+<<<<<<< HEAD
 		items = parser.get<std::vector<std::string> >("COMMAND");
 
 		if (true) {
@@ -210,6 +214,9 @@ build_env_and_args(const argparse::ArgumentParser &parser)
 				env_args.push_back(shm_memory_arg_string.c_str());
 			}
 		}
+=======
+		items = parser.get<std::vector<std::string>>("COMMAND");
+>>>>>>> upstream/master
 	} catch (std::logic_error &err) {
 		std::cerr << parser;
 		exit(1);
@@ -229,7 +236,6 @@ static void signal_handler(int sig)
 int main(int argc, const char **argv)
 {
 	const auto agent_config = bpftime::construct_agent_config_from_env();
-	bpftime::bpftime_set_logger(agent_config.get_logger_output_path());
 	signal(SIGINT, signal_handler);
 	signal(SIGTSTP, signal_handler);
 	argparse::ArgumentParser program(argv[0]);
@@ -243,7 +249,7 @@ int main(int argc, const char **argv)
 			.required()
 			.nargs(1);
 	} else {
-		spdlog::warn(
+		SPDLOG_WARN(
 			"Unable to determine home directory. You must specify --install-location");
 		program.add_argument("-i", "--install-location")
 			.help("Installing location of bpftime")
@@ -376,11 +382,12 @@ int main(int argc, const char **argv)
 					      transformer_path.c_str());
 				return 1;
 			}
-
+			// transformer_path += ":/usr/lib/libclient.so";
 			return run_command(executable_path.c_str(), extra_args,
 					   transformer_path.c_str(),
 					   agent_path.c_str(), env_args);
 		} else {
+			// agent_path += ":/usr/lib/libclient.so";
 			return run_command(executable_path.c_str(), extra_args,
 					   agent_path.c_str(), nullptr, env_args);
 		}

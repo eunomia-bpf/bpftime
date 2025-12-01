@@ -11,6 +11,7 @@
 #include <csignal>
 #include <cstddef>
 #include <exception>
+#include <optional>
 #include <signal.h>
 #include <cerrno>
 #include <errno.h>
@@ -145,6 +146,58 @@ long bpftime_map_delete_elem(int fd, const void *key)
 	}
 }
 
+long bpftime_map_lookup_and_delete_elem(int fd, void *value)
+{
+	try {
+		return shm_holder.global_shared_memory.bpf_map_pop_elem(
+			fd, value, true);
+	} catch (std::exception &ex) {
+		SPDLOG_ERROR(
+			"Exception happened when performing map lookup and delete elem: {}",
+			ex.what());
+		return -1;
+	}
+}
+
+long bpftime_map_push_elem(int fd, const void *value, uint64_t flags)
+{
+	try {
+		return shm_holder.global_shared_memory.bpf_map_push_elem(
+			fd, value, flags, true);
+	} catch (std::exception &ex) {
+		SPDLOG_ERROR(
+			"Exception happened when performing map push elem: {}",
+			ex.what());
+		return -1;
+	}
+}
+
+long bpftime_map_pop_elem(int fd, void *value)
+{
+	try {
+		return shm_holder.global_shared_memory.bpf_map_pop_elem(
+			fd, value, true);
+	} catch (std::exception &ex) {
+		SPDLOG_ERROR(
+			"Exception happened when performing map pop elem: {}",
+			ex.what());
+		return -1;
+	}
+}
+
+long bpftime_map_peek_elem(int fd, void *value)
+{
+	try {
+		return shm_holder.global_shared_memory.bpf_map_peek_elem(
+			fd, value, true);
+	} catch (std::exception &ex) {
+		SPDLOG_ERROR(
+			"Exception happened when performing map peek elem: {}",
+			ex.what());
+		return -1;
+	}
+}
+
 int bpftime_map_get_next_key(int fd, const void *key, void *next_key)
 {
 	try {
@@ -165,6 +218,13 @@ int bpftime_uprobe_create(int fd, int pid, const char *name, uint64_t offset,
 		fd, pid, name, offset, retprobe, ref_ctr_off);
 }
 
+int bpftime_kprobe_create(int fd, const char *func_name, uint64_t addr,
+			  bool retprobe, size_t ref_ctr_off)
+{
+	return shm_holder.global_shared_memory.add_kprobe(
+		fd == -1 ? std::optional<int>() : fd, func_name, addr, retprobe,
+		ref_ctr_off);
+}
 int bpftime_tracepoint_create(int fd, int pid, int32_t tp_id)
 {
 	return shm_holder.global_shared_memory.add_tracepoint(fd, pid, tp_id);
@@ -352,6 +412,12 @@ int bpftime_is_epoll_handler(int fd)
 int bpftime_epoll_wait(int fd, struct epoll_event *out_evts, int max_evt,
 		       int timeout)
 {
+	if (timeout < -1) {
+		SPDLOG_ERROR(
+			"bpftime_epoll_wait only accepts timeout=-1 when negative");
+		errno = EINVAL;
+		return -1;
+	}
 	auto &shm = shm_holder.global_shared_memory;
 	if (!shm.is_epoll_fd(fd)) {
 		errno = EINVAL;
@@ -386,9 +452,12 @@ int bpftime_epoll_wait(int fd, struct epoll_event *out_evts, int max_evt,
 		auto now_time = high_resolution_clock::now();
 		auto elasped =
 			duration_cast<milliseconds>(now_time - start_time);
-		if (timeout && elasped.count() > timeout) {
+		if (timeout == 0)
+			return 0;
+		if (timeout > 0 && elasped.count() > timeout) {
 			break;
 		}
+
 		for (const auto &p : epoll_inst.files) {
 			if (std::holds_alternative<software_perf_event_weak_ptr>(
 				    p.file)) {
@@ -612,11 +681,28 @@ int bpftime_poll_from_ringbuf(int rb_fd, void *ctx,
 	auto &shm = shm_holder.global_shared_memory;
 	if (auto ret = shm.try_get_ringbuf_map_impl(rb_fd); ret.has_value()) {
 		auto impl = ret.value();
-		return impl->create_impl_shared_ptr()->fetch_data(
-			[=](void *buf, int sz) { return cb(ctx, buf, sz); });
+		return impl->create_impl_shared_ptr()->fetch_data(cb, ctx);
 	} else {
 		errno = EINVAL;
 		SPDLOG_ERROR("Expected fd {} to be ringbuf map fd ", rb_fd);
 		return -EINVAL;
 	}
+}
+
+#ifdef BPFTIME_ENABLE_CUDA_ATTACH
+int bpftime_poll_gpu_ringbuf_map(int mapfd, void *ctx,
+				 void (*fn)(const void *, uint64_t, void *))
+{
+	auto &shm = shm_holder.global_shared_memory;
+	shm.poll_gpu_ringbuf_map(mapfd, [=](const void *buf, uint64_t size) {
+		fn(buf, size, ctx);
+	});
+	return 0;
+}
+#endif
+
+int bpftime_add_memfd_handler(const char *name, int flags)
+{
+	auto &shm = shm_holder.global_shared_memory;
+	return shm.add_memfd_handler(name, flags);
 }

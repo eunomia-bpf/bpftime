@@ -1,4 +1,4 @@
-[Bb]uild/*
+[Bb]uild*/*
 [Dd]ocs/*
 CMakeCache.*
 CMakeFiles/*
@@ -20,8 +20,9 @@ index.html*
 .vscode/settings.json
 .vscode/runtime.json
 .idea
-
+bpftime-nginx-module.pdf
 example/libffi/test
+nvbit_release_x86_64
 test/man
 test/lib
 test/bin
@@ -51,4 +52,14 @@ third_party/phaole1
 output_metrics.json
 perf.data
 perf.data.old
-build-mpk
+/build-mpk
+/wasm-micro-runtime
+benchmark-logs-error.txt
+
+# Embedded git repositories
+example/attach_implementation/benchmark/luajit_plugin/luajit-local/
+example/attach_implementation/benchmark/wasm-micro-runtime/
+
+build
+target
+

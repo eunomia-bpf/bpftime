@@ -14,8 +14,9 @@ namespace bpftime
 {
 
 fix_size_hash_map_impl::fix_size_hash_map_impl(managed_shared_memory &memory,
-				      size_t num_buckets, size_t key_size,
-				      size_t value_size)
+					       size_t num_buckets,
+					       size_t key_size,
+					       size_t value_size)
 	: map_impl(memory, num_buckets, key_size, value_size),
 	  _key_size(key_size), _value_size(value_size),
 	  _num_buckets(num_buckets)
