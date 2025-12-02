@@ -83,10 +83,15 @@ struct CommSharedMem {
 	uint64_t time_sum[8];
 };
 
+// IPC-based GPU maps (for x86 with CUDA IPC support)
 const int BPF_MAP_TYPE_PERGPUTD_ARRAY_MAP = 1502;
 const int BPF_MAP_TYPE_GPU_ARRAY_MAP = 1503; // non-per-thread, single-copy
 					     // shared array
 const int BPF_MAP_TYPE_GPU_RINGBUF_MAP = 1527;
+
+// HOST-based GPU maps (for Tegra/platforms without CUDA IPC)
+const int BPF_MAP_TYPE_PERGPUTD_ARRAY_HOST_MAP = 1512;
+const int BPF_MAP_TYPE_GPU_ARRAY_HOST_MAP = 1513;
 
 struct MapBasicInfo {
 	bool enabled;
@@ -198,6 +203,7 @@ extern "C" __noinline__ __device__ uint64_t _bpf_helper_ext_0001(
 	auto &req = global_data->req;
 	// CallRequest req;
 	const auto &map_info = ::map_info[map];
+	// IPC-based per-thread array map
 	if (map_info.map_type == BPF_MAP_TYPE_PERGPUTD_ARRAY_MAP) {
 		auto real_key = *(uint32_t *)(uintptr_t)key;
 		auto offset = array_map_offset(real_key, map_info, map);
@@ -211,6 +217,20 @@ extern "C" __noinline__ __device__ uint64_t _bpf_helper_ext_0001(
 		return (uint64_t)(uintptr_t)(base +
 					     (uint64_t)real_key *
 						     map_info.value_size);
+	}
+	// HOST-based per-thread array map (for Tegra)
+	if (map_info.map_type == BPF_MAP_TYPE_PERGPUTD_ARRAY_HOST_MAP) {
+		auto real_key = *(uint32_t *)(uintptr_t)key;
+		auto offset = array_map_offset(real_key, map_info, map);
+		asm("membar.sys;"); // Ensure CPU writes are visible to GPU
+		return (uint64_t)offset;
+	}
+	// HOST-based non-per-thread GPU array map (for Tegra)
+	if (map_info.map_type == BPF_MAP_TYPE_GPU_ARRAY_HOST_MAP) {
+		auto real_key = *(uint32_t *)(uintptr_t)key;
+		auto base = (char *)map_info.extra_buffer;
+		asm("membar.sys;"); // Ensure CPU writes are visible to GPU
+		return (uint64_t)(uintptr_t)(base + (uint64_t)real_key * map_info.value_size);
 	}
 	// printf("helper1 map %ld keysize=%d valuesize=%d\n", map,
 	//        map_info.key_size, map_info.value_size);
@@ -229,6 +249,7 @@ extern "C" __noinline__ __device__ uint64_t _bpf_helper_ext_0002(
 	CommSharedMem *global_data = (CommSharedMem *)constData;
 	auto &req = global_data->req;
 	const auto &map_info = ::map_info[map];
+	// IPC-based per-thread array map
 	if (map_info.map_type == BPF_MAP_TYPE_PERGPUTD_ARRAY_MAP) {
 		auto real_key = *(uint32_t *)(uintptr_t)key;
 		auto offset = array_map_offset(real_key, map_info, map);
@@ -247,6 +268,24 @@ extern "C" __noinline__ __device__ uint64_t _bpf_helper_ext_0002(
 		simple_memcpy(dst, (void *)(uintptr_t)value,
 			      map_info.value_size);
 		asm("membar.sys;                      \n\t");
+		return 0;
+	}
+	// HOST-based per-thread array map (for Tegra)
+	if (map_info.map_type == BPF_MAP_TYPE_PERGPUTD_ARRAY_HOST_MAP) {
+		auto real_key = *(uint32_t *)(uintptr_t)key;
+		auto offset = array_map_offset(real_key, map_info, map);
+		simple_memcpy(offset, (void *)(uintptr_t)value,
+			      map_info.value_size);
+		asm("membar.sys;"); // Ensure GPU writes are visible to CPU
+		return 0;
+	}
+	// HOST-based non-per-thread GPU array map (for Tegra)
+	if (map_info.map_type == BPF_MAP_TYPE_GPU_ARRAY_HOST_MAP) {
+		auto real_key = *(uint32_t *)(uintptr_t)key;
+		auto base = (char *)map_info.extra_buffer;
+		auto dst = (void *)(uintptr_t)(base + (uint64_t)real_key * map_info.value_size);
+		simple_memcpy(dst, (void *)(uintptr_t)value, map_info.value_size);
+		asm("membar.sys;"); // Ensure GPU writes are visible to CPU
 		return 0;
 	}
 	// printf("helper2 map %ld keysize=%d
