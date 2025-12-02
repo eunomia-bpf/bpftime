@@ -157,9 +157,6 @@ class syscall_context {
 	// by pass the verifier to make it work.
 	std::string by_pass_kernel_verifier_pattern;
 
-	// Treat k[ret]probes as gpu probes. This will make all k[ret]probes be bypassed.
-	bool bypass_kprobe_as_gpu_probe = false;
-
 	void load_config_from_env();
 
     public:

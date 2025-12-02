@@ -2,7 +2,7 @@
 
 Terminal 1
 ```
-BPFTIME_BYPASS_KPROPBE=true  BPFTIME_NOT_LOAD_PATTERN=cuda.*  BPFTIME_RUN_WITH_KERNEL=true bpftime load ./threadhist
+BPFTIME_NOT_LOAD_PATTERN=cuda.*  BPFTIME_RUN_WITH_KERNEL=true bpftime load ./threadhist
 ```
 
 Terminal 2

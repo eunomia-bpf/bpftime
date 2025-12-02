@@ -68,10 +68,6 @@ void syscall_context::load_config_from_env()
 	} else {
 		run_with_kernel = false;
 	}
-	if (std::getenv("BPFTIME_BYPASS_KPROPBE")) {
-		bypass_kprobe_as_gpu_probe = true;
-		SPDLOG_INFO("Bypassing k[ret]probes");
-	}
 	const char *not_load_pattern = getenv("BPFTIME_NOT_LOAD_PATTERN");
 	if (not_load_pattern != nullptr) {
 		SPDLOG_INFO("By pass kernel verifier pattern: {}",
@@ -681,26 +677,17 @@ int syscall_context::handle_perfevent(perf_event_attr *attr, pid_t pid, int cpu,
 		SPDLOG_DEBUG("Created uprobe {}", id);
 		return id;
 	} else if ((int)attr->type == determine_kprobe_perf_type()) {
-		if (run_with_kernel && !bypass_kprobe_as_gpu_probe) {
-			SPDLOG_INFO(
-				"Calling original perf event open at kprobe creation");
-			return orig_syscall_fn(__NR_perf_event_open,
-					       (uint64_t)(uintptr_t)attr,
-					       (uint64_t)pid, (uint64_t)cpu,
-					       (uint64_t)group_fd,
-					       (uint64_t)flags);
-		}
 		bool is_ret_probe =
 			attr->config & (1 << determine_kprobe_retprobe_bit());
 		size_t ref_ctr_off =
 			attr->config >> PERF_UPROBE_REF_CTR_OFFSET_SHIFT;
-		const char *name = (const char *)(uintptr_t)attr->config1;
+		std::string name = (const char *)(uintptr_t)attr->config1;
 		uint64_t addr = attr->config2;
 		SPDLOG_DEBUG(
 			"Creating kprobe func_name={} addr={} retprobe={} ref_ctr_off={} attr->config={:x}",
 			name, addr, is_ret_probe, ref_ctr_off, attr->config);
 		int new_fd = -1;
-		if (bypass_kprobe_as_gpu_probe) {
+		if (name.starts_with("cuda_") && run_with_kernel) {
 			auto new_attr = *attr;
 			new_attr.config1 = (uintptr_t)"do_exit";
 			new_attr.config2 = 0;
@@ -719,9 +706,17 @@ int syscall_context::handle_perfevent(perf_event_attr *attr, pid_t pid, int cpu,
 					"Bypass kprobe as gpu probe, got perf event fd {}",
 					new_fd);
 			}
+		} else if (run_with_kernel) {
+			SPDLOG_INFO(
+				"Calling original perf event open at kprobe creation");
+			return orig_syscall_fn(__NR_perf_event_open,
+					       (uint64_t)(uintptr_t)attr,
+					       (uint64_t)pid, (uint64_t)cpu,
+					       (uint64_t)group_fd,
+					       (uint64_t)flags);
 		}
-		int id = bpftime_kprobe_create(new_fd, name, addr, is_ret_probe,
-					       ref_ctr_off);
+		int id = bpftime_kprobe_create(new_fd, name.substr(5).c_str(),
+					       addr, is_ret_probe, ref_ctr_off);
 		SPDLOG_DEBUG("Created kprobe {}", id);
 		return id;
 	} else if ((int)attr->type ==

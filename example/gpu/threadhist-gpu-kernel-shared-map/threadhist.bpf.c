@@ -20,7 +20,7 @@ static const u64 (*bpf_get_block_dim)(u64 *x, u64 *y, u64 *z) = (void *)504;
 static const u64 (*bpf_get_thread_idx)(u64 *x, u64 *y, u64 *z) = (void *)505;
 
 // Run by bpftime
-SEC("kretprobe/_Z9vectorAddPKfS0_Pf")
+SEC("kretprobe/cuda__Z9vectorAddPKfS0_Pf")
 int cuda__retprobe()
 {
 	u32 key = 0;
