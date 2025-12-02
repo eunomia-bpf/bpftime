@@ -485,28 +485,28 @@ _bpf_helper_ext_0508(uint64_t x, uint64_t y, uint64_t z, uint64_t, uint64_t)
 extern "C" __noinline__ __device__ uint64_t
 _bpf_helper_ext_0509(uint64_t, uint64_t, uint64_t, uint64_t, uint64_t)
 {
-  // get sm id
-	uint32_t sm_id;
-	asm volatile("mov.u32 %0, %smid;" : "=r"(sm_id));
-	return (uint64_t)sm_id;
+    // get sm id
+    uint32_t sm_id;
+    asm volatile("mov.u32 %0, %%smid;" : "=r"(sm_id));
+    return (uint64_t)sm_id;
 }
 
 extern "C" __noinline__ __device__ uint64_t
 _bpf_helper_ext_0510(uint64_t, uint64_t, uint64_t, uint64_t, uint64_t)
 {
-  // get warp id
-	uint32_t warp_id;
-	asm volatile("mov.u32 %0, %warpid;" : "=r"(warp_id));
-	return (uint64_t)warp_id;
+    // get warp id
+    uint32_t warp_id;
+    asm volatile("mov.u32 %0, %%warpid;" : "=r"(warp_id));
+    return (uint64_t)warp_id;
 }
 
 extern "C" __noinline__ __device__ uint64_t
 _bpf_helper_ext_0511(uint64_t, uint64_t, uint64_t, uint64_t, uint64_t)
 {
-  // get lane id
-	uint32_t lane_id;
-	asm volatile("mov.u32 %0, %laneid;" : "=r"(lane_id));
-	return (uint64_t)lane_id;
+    // get lane id
+    uint32_t lane_id;
+    asm volatile("mov.u32 %0, %%laneid;" : "=r"(lane_id));
+    return (uint64_t)lane_id;
 }
 
 extern "C" __global__ void bpf_main(void *mem, size_t sz)
