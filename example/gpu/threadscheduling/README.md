@@ -153,14 +153,14 @@ Check how warps are distributed within blocks:
 
 ## Implementation Details
 
-The eBPF probe (`sm_warp_lane.bpf.c`) attaches to the `vectorAdd` CUDA kernel and:
+The eBPF probe (`threadscheduling.bpf.c`) attaches to the `vectorAdd` CUDA kernel and:
 
 1. Reads hardware scheduling registers via helpers 509-511
 2. Records thread-to-hardware mapping in a BPF hash map
 3. Maintains SM and warp histograms for analysis
 4. Outputs debug information for the first thread of each warp
 
-The userspace loader (`sm_warp_lane.c`) periodically:
+The userspace loader (`threadscheduling.c`) periodically:
 
 1. Reads the BPF maps
 2. Computes statistics and histograms
