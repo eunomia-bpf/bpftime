@@ -92,7 +92,7 @@ static void print_sm_histogram(struct threadscheduling_bpf *obj)
 	}
 
 	printf("\n┌─ SM Utilization Histogram ─────────────────────────────────────────┐\n");
-	printf("│                                                                     │\n");
+	printf("│                                                                    │\n");
 
 	// Print histogram bars
 	const int bar_width = 40;
@@ -108,14 +108,14 @@ static void print_sm_histogram(struct threadscheduling_bpf *obj)
 				printf("█");
 			for (int j = bar_len; j < bar_width; j++)
 				printf(" ");
-			printf(" %6" PRIu64 " threads │\n", sm_counts[i]);
+			printf("    %6" PRIu64 " threads │\n", sm_counts[i]);
 		}
 	}
 
-	printf("│                                                                     │\n");
-	printf("│  Total threads: %-8" PRIu64 "  Active SMs: %-3d                       │\n",
+	printf("│                                                                    │\n");
+	printf("│  Total threads: %-8" PRIu64 "  Active SMs: %-3d                          │\n",
 	       total_threads, max_sm + 1);
-	printf("└─────────────────────────────────────────────────────────────────────┘\n");
+	printf("└────────────────────────────────────────────────────────────────────┘\n");
 
 	// Calculate load balance score
 	if (max_sm >= 0 && total_threads > 0) {
@@ -198,7 +198,7 @@ static void print_thread_samples(struct threadscheduling_bpf *obj)
 		if (err)
 			return;
 
-		printf("│  (%3" PRIu64 ",%2" PRIu64 ",%2" PRIu64 ")   │  (%3" PRIu64 ",%2" PRIu64 ",%2" PRIu64 ")   │ %4" PRIu64 " │ %4" PRIu64 " │ %4" PRIu64 " │              │\n",
+		printf("│  (%3" PRIu64 ",%2" PRIu64 ",%2" PRIu64 ")   │  (%3" PRIu64 ",%2" PRIu64 ",%2" PRIu64 ")  │ %4" PRIu64 " │ %4" PRIu64 " │ %4" PRIu64 " │              │\n",
 		       info.block_x, info.block_y, info.block_z,
 		       info.thread_x, info.thread_y, info.thread_z,
 		       info.sm_id, info.warp_id, info.lane_id);
