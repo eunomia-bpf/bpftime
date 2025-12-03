@@ -218,16 +218,6 @@ static void print_thread_samples(struct threadscheduling_bpf *obj)
 	printf("└────────────────┴───────────────┴──────┴──────┴──────┴──────────────┘\n");
 }
 
-static void print_total_calls(struct threadscheduling_bpf *obj)
-{
-	int fd = bpf_map__fd(obj->maps.total_calls);
-	uint32_t key = 0;
-	uint64_t value = 0;
-
-	bpf_map_lookup_elem(fd, &key, &value);
-	printf("\n  Total kernel invocations tracked: %" PRIu64 "\n", value);
-}
-
 static int print_stats(struct threadscheduling_bpf *obj)
 {
 	time_t t;
@@ -247,7 +237,6 @@ static int print_stats(struct threadscheduling_bpf *obj)
 	print_sm_histogram(obj);
 	print_warp_distribution(obj);
 	print_thread_samples(obj);
-	print_total_calls(obj);
 
 	printf("\n  Press Ctrl+C to exit.\n");
 	fflush(stdout);

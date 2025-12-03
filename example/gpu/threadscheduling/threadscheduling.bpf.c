@@ -113,16 +113,6 @@ int cuda__probe_threadscheduling()
 		bpf_map_update_elem(&warp_histogram, &warp_key, &initial, BPF_NOEXIST);
 	}
 
-	// Update total call counter - atomically increment
-	u32 total_key = 0;
-	u64 *total_count = bpf_map_lookup_elem(&total_calls, &total_key);
-	if (total_count) {
-		__sync_fetch_and_add(total_count, 1);
-	} else {
-		u64 initial = 1;
-		bpf_map_update_elem(&total_calls, &total_key, &initial, BPF_NOEXIST);
-	}
-
 	return 0;
 }
 
