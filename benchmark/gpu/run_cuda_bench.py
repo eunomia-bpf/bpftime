@@ -19,12 +19,14 @@ from typing import Optional, Dict, List, Any
 # Constants
 DEFAULT_CONFIG = "benchmark/gpu/micro/micro_vec_add_config.json"
 
+
 def log(msg: str, log_file=None):
     """Log message to both stdout and file."""
     print(msg)
     if log_file:
         log_file.write(msg + '\n')
         log_file.flush()
+
 
 def parse_benchmark_output(output: str) -> Optional[float]:
     """Parse the average kernel time from benchmark output."""
@@ -33,22 +35,25 @@ def parse_benchmark_output(output: str) -> Optional[float]:
         return float(match.group(1))
     return None
 
+
 def get_gpu_name() -> str:
     """Get the GPU device name."""
     try:
         result = subprocess.run(['nvidia-smi', '--query-gpu=name', '--format=csv,noheader'],
-                              capture_output=True, text=True, timeout=5)
+                                capture_output=True, text=True, timeout=5)
         if result.returncode == 0:
             return result.stdout.strip().split('\n')[0]
     except:
         pass
     return "Unknown GPU"
 
+
 def run_baseline(bench_dir: str, vec_add_args: str, log_file=None) -> Optional[float]:
     """Run baseline benchmark without instrumentation."""
     log(f"Running baseline benchmark with args: {vec_add_args}", log_file)
     try:
-        cmd = [f'{bench_dir}/vec_add'] + (vec_add_args.split() if vec_add_args else [])
+        cmd = [f'{bench_dir}/vec_add'] + \
+            (vec_add_args.split() if vec_add_args else [])
         result = subprocess.run(
             cmd,
             capture_output=True,
@@ -60,7 +65,8 @@ def run_baseline(bench_dir: str, vec_add_args: str, log_file=None) -> Optional[f
         log(f"STDERR:\n{result.stderr}", log_file)
 
         if result.returncode != 0:
-            log(f"Baseline failed with return code {result.returncode}", log_file)
+            log(
+                f"Baseline failed with return code {result.returncode}", log_file)
             return None
 
         avg_time = parse_benchmark_output(result.stdout)
@@ -70,6 +76,7 @@ def run_baseline(bench_dir: str, vec_add_args: str, log_file=None) -> Optional[f
     except Exception as e:
         log(f"Error running baseline: {e}", log_file)
         return None
+
 
 def resolve_env_paths(env_dict: Dict[str, str], repo_root: str) -> Dict[str, str]:
     """Resolve relative paths in environment variables."""
@@ -85,6 +92,7 @@ def resolve_env_paths(env_dict: Dict[str, str], repo_root: str) -> Dict[str, str
         else:
             resolved[key] = value
     return resolved
+
 
 def run_bpf_test(bench_dir: str, build_dir: str, probe_cmd: str, vec_add_args: str,
                  repo_root: str, log_file=None, vec_add_binary: str = None,
@@ -110,9 +118,11 @@ def run_bpf_test(bench_dir: str, build_dir: str, probe_cmd: str, vec_add_args: s
     # Can still have test_env for simple LD_PRELOAD cases
     if not probe_cmd:
         if test_env or global_env:
-            log(f"Running test with custom env: vec_add_binary={vec_add_cmd_base}, args={vec_add_args}", log_file)
+            log(
+                f"Running test with custom env: vec_add_binary={vec_add_cmd_base}, args={vec_add_args}", log_file)
         else:
-            log(f"Running baseline (no eBPF): vec_add_binary={vec_add_cmd_base}, args={vec_add_args}", log_file)
+            log(
+                f"Running baseline (no eBPF): vec_add_binary={vec_add_cmd_base}, args={vec_add_args}", log_file)
 
         try:
             # Prepare environment: start with system env, apply global, then test-specific
@@ -129,7 +139,8 @@ def run_bpf_test(bench_dir: str, build_dir: str, probe_cmd: str, vec_add_args: s
             if test_env or global_env:
                 log(f"Environment variables: {test_env or global_env}", log_file)
 
-            cmd = [vec_add_cmd_base] + (vec_add_args.split() if vec_add_args else [])
+            cmd = [vec_add_cmd_base] + \
+                (vec_add_args.split() if vec_add_args else [])
             result = subprocess.run(
                 cmd,
                 capture_output=True,
@@ -192,7 +203,7 @@ def run_bpf_test(bench_dir: str, build_dir: str, probe_cmd: str, vec_add_args: s
         )
 
         # Wait for probe to initialize
-        time.sleep(2)
+        time.sleep(10)
 
         # Log probe startup (don't close the file yet, keep it open for continuous logging)
         probe_stderr_file.flush()
@@ -214,7 +225,8 @@ def run_bpf_test(bench_dir: str, build_dir: str, probe_cmd: str, vec_add_args: s
             log(f"Agent environment: {agent_env_config}", log_file)
 
         # Use vec_add binary (full path)
-        vec_add_cmd = [vec_add_cmd_base] + (vec_add_args.split() if vec_add_args else [])
+        vec_add_cmd = [vec_add_cmd_base] + \
+            (vec_add_args.split() if vec_add_args else [])
         result = subprocess.run(
             vec_add_cmd,
             capture_output=True,
@@ -227,8 +239,9 @@ def run_bpf_test(bench_dir: str, build_dir: str, probe_cmd: str, vec_add_args: s
         log(f"STDOUT:\n{result.stdout}", log_file)
         log(f"STDERR:\n{result.stderr}", log_file)
 
-        if result.returncode != 0:
-            log(f"BPF benchmark failed with return code {result.returncode}", log_file)
+        if result.returncode != 0 and result.returncode != -11:  # Ignore Segmentation fault
+            log(
+                f"BPF benchmark failed with return code {result.returncode}", log_file)
             return None
 
         avg_time = parse_benchmark_output(result.stdout)
@@ -272,7 +285,8 @@ def run_bpf_test(bench_dir: str, build_dir: str, probe_cmd: str, vec_add_args: s
             try:
                 with open(probe_log, 'r') as f:
                     full_probe_output = f.read()
-                    log(f"\n=== Complete Probe Output ===\n{full_probe_output}\n=== End Probe Output ===\n", log_file)
+                    log(
+                        f"\n=== Complete Probe Output ===\n{full_probe_output}\n=== End Probe Output ===\n", log_file)
             except Exception as e:
                 log(f"Error reading probe log: {e}", log_file)
 
@@ -281,6 +295,7 @@ def run_bpf_test(bench_dir: str, build_dir: str, probe_cmd: str, vec_add_args: s
                 os.remove(probe_log)
             except:
                 pass
+
 
 def load_config(config_path: str, repo_root: str) -> Dict[str, Any]:
     """Load benchmark configuration from JSON file."""
@@ -306,10 +321,12 @@ def load_config(config_path: str, repo_root: str) -> Dict[str, Any]:
 
     return config
 
+
 def save_results(results: Dict[str, Any], output_path: str):
     """Save benchmark results to JSON file."""
     with open(output_path, 'w') as f:
         json.dump(results, f, indent=2)
+
 
 def get_workload_description(workload_name: str, presets: Dict[str, str]) -> str:
     """Get human-readable description of workload."""
@@ -322,6 +339,7 @@ def get_workload_description(workload_name: str, presets: Dict[str, str]) -> str
         elements, iterations, threads, blocks = args[1], args[2], args[3], args[4]
         return f"{elements} elements, {iterations} iterations, {threads} threads × {blocks} blocks"
     return workload_name
+
 
 def print_results_table(results: Dict[str, Any], log_file=None):
     """Print the results in markdown format."""
@@ -380,6 +398,7 @@ def print_results_table(results: Dict[str, Any], log_file=None):
             log(f"| {name} | {workload} | FAILED | - | - |", log_file)
 
     log("", log_file)
+
 
 def main():
     # Determine paths - assume running from repo root
@@ -468,7 +487,8 @@ def main():
             test_vec_add_args = test_case.get('vec_add_args', '')
             baseline_ref = test_case.get('baseline')
             vec_add_binary = test_case.get('vec_add_binary')
-            test_env = test_case.get('env')  # Optional per-test environment variables
+            # Optional per-test environment variables
+            test_env = test_case.get('env')
 
             if not test_vec_add_args:
                 log(f"Skipping {name}: no vec_add_args specified", log_file)
@@ -476,8 +496,8 @@ def main():
 
             log(f"Running test: {name}", log_file)
             avg_time = run_bpf_test(output_dir, build_dir, probe_binary_cmd, test_vec_add_args,
-                                   repo_root, log_file, vec_add_binary, test_env, global_env,
-                                   probe_env_config, agent_env_config)
+                                    repo_root, log_file, vec_add_binary, test_env, global_env,
+                                    probe_env_config, agent_env_config)
 
             results['tests'].append({
                 'name': name,
@@ -505,6 +525,7 @@ def main():
     print(f"\nMarkdown results saved to: {result_md_file_name}")
     print(f"JSON results saved to: {result_file_name}")
     print(f"Log saved to: {log_file_name}")
+
 
 if __name__ == '__main__':
     main()

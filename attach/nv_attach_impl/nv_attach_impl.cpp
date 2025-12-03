@@ -354,6 +354,7 @@ nv_attach_impl::nv_attach_impl()
 
 nv_attach_impl::~nv_attach_impl()
 {
+	SPDLOG_INFO("Destructing nv_attach_impl");
 	if (frida_listener)
 		g_object_unref(frida_listener);
 	if (ptx_compiler_dl_handle) {

@@ -731,10 +731,11 @@ bpftime_shm::bpftime_shm(const char *shm_name, shm_open_type type)
 		return;
 	}
 #ifdef BPFTIME_ENABLE_CUDA_ATTACH
-// Move CommSharedMem from the agent’s local memory to shared memory to improve performance.
+	// Move CommSharedMem from the agent’s local memory to shared memory to
+	// improve performance.
 	if (open_type == shm_open_type::SHM_OPEN_ONLY) {
-		auto pair =
-			segment.find<cuda::CommSharedMem>("cuda_comm_shared_mem");
+		auto pair = segment.find<cuda::CommSharedMem>(
+			"cuda_comm_shared_mem");
 		if (pair.first == nullptr) {
 			SPDLOG_ERROR(
 				"CommSharedMem not found in shared memory; did syscall-server initialize CUDA support?");
@@ -743,8 +744,8 @@ bpftime_shm::bpftime_shm(const char *shm_name, shm_open_type type)
 			cuda_comm_shared_mem = pair.first;
 		}
 	} else {
-		auto pair =
-			segment.find<cuda::CommSharedMem>("cuda_comm_shared_mem");
+		auto pair = segment.find<cuda::CommSharedMem>(
+			"cuda_comm_shared_mem");
 		if (pair.first != nullptr) {
 			cuda_comm_shared_mem = pair.first;
 		} else {
@@ -785,7 +786,15 @@ bpftime_shm::bpftime_shm(bpftime::shm_open_type type)
 	SPDLOG_INFO("Global shm constructed. shm_open_type {} for {}",
 		    (int)type, bpftime::get_global_shm_name());
 }
-
+int bpftime_shm::translate_shared_map_type_to_kernel_map_type(int type)
+{
+	if (type ==
+	    (int)bpf_map_type::BPF_MAP_TYPE_GPU_KERNEL_SHARED_ARRAY_MAP) {
+		return (int)bpf_map_type::BPF_MAP_TYPE_ARRAY;
+	} else {
+		return type;
+	}
+}
 int bpftime_shm::add_bpf_map(int fd, const char *name,
 			     bpftime::bpf_map_attr attr)
 {
@@ -958,8 +967,8 @@ bool bpftime_shm::register_cuda_host_memory()
 	std::size_t seg_size = segment.get_size(); // Total bytes in segment
 
 	// 2. Register with CUDA
-    cudaError_t err =
-        cudaHostRegister(base_addr, seg_size, cudaHostRegisterMapped);
+	cudaError_t err =
+		cudaHostRegister(base_addr, seg_size, cudaHostRegisterMapped);
 	if (err != cudaSuccess) {
 		SPDLOG_ERROR("cudaHostRegister() failed: {}",
 			     cudaGetErrorString(err));

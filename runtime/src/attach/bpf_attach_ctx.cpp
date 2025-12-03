@@ -107,7 +107,7 @@ int bpf_attach_ctx::init_attach_ctx_from_handlers(
 
 bpf_attach_ctx::~bpf_attach_ctx()
 {
-	SPDLOG_DEBUG("Destructor: bpf_attach_ctx");
+	SPDLOG_INFO("Destructor: bpf_attach_ctx");
 #ifdef BPFTIME_ENABLE_CUDA_ATTACH
 	cuda_ctx->cuda_watcher_should_stop->store(true);
 #endif
@@ -288,7 +288,7 @@ int bpf_attach_ctx::instantiate_bpf_link_handler_at(
 				"Loaded {} instructions (original) for cuda ebpf program",
 				prog->get_insns().size());
 			nv_attach_private_data.map_basic_info =
-				this->create_map_basic_info(256);
+				this->create_map_basic_info(1024);
 			attach_id =
 				attach_impl->create_attach_with_ebpf_callback(
 					[=](void *mem, size_t mem_size,
