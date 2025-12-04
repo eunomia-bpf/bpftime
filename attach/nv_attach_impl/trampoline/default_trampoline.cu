@@ -83,6 +83,8 @@ struct CommSharedMem {
 	uint64_t time_sum[8];
 };
 
+const int BPF_MAP_TYPE_GPU_HASH_MAP = 1501; // non-per-thread, single-copy
+					    // shared hashmap
 const int BPF_MAP_TYPE_PERGPUTD_ARRAY_MAP = 1502;
 const int BPF_MAP_TYPE_GPU_ARRAY_MAP = 1503; // non-per-thread, single-copy
 					     // shared array
@@ -210,7 +212,9 @@ extern "C" __noinline__ __device__ uint64_t _bpf_helper_ext_0001(
 	    map_info.map_type == BPF_MAP_TYPE_GPU_KERNEL_SHARED_ARRAY_MAP) {
 		auto real_key = *(uint32_t *)(uintptr_t)key;
 		auto base = (char *)map_info.extra_buffer;
-		// printf("real_key=%u, base=%lx, value_size=%lu, mapfd=%d\n",real_key,(uintptr_t)base,(unsigned long)map_info.value_size,(int)map);
+		// printf("real_key=%u, base=%lx, value_size=%lu,
+		// mapfd=%d\n",real_key,(uintptr_t)base,(unsigned
+		// long)map_info.value_size,(int)map);
 		return (uint64_t)(uintptr_t)(base +
 					     (uint64_t)real_key *
 						     map_info.value_size);
@@ -441,6 +445,18 @@ _bpf_helper_ext_0508(uint64_t x, uint64_t y, uint64_t z, uint64_t, uint64_t)
 
 	return 0;
 }
+extern "C" __noinline__ __device__ uint64_t
+_bpf_helper_ext_0509(uint64_t addr, uint64_t, uint64_t, uint64_t, uint64_t)
+{
+	asm volatile("prefetch.global.L2 [%0];" ::"l"(addr));
+	return 0;
+}
+// extern "C" __noinline__ __device__ uint64_t _bpf_helper_ext_0510(
+// 	uint64_t time_to_sleep, uint64_t, uint64_t, uint64_t, uint64_t)
+// {
+// 	asm volatile("nanosleep.u32 %0;" ::"r"((uint32_t)time_to_sleep));
+// 	return 0;
+// }
 
 extern "C" __global__ void bpf_main(void *mem, size_t sz)
 {
