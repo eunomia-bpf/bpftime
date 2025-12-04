@@ -31,7 +31,7 @@ jobs:
           git config --global --add http.proxy http://192.168.15.1:2345
           git config --global --add https.proxy http://192.168.15.1:2345
           
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v4
         with:
           submodules: recursive
 

@@ -83,6 +83,7 @@ struct CommSharedMem {
 	uint64_t time_sum[8];
 };
 
+const int BPF_MAP_TYPE_GPU_HASH_MAP = 1501; // non-per-thread, single-copy shared hashmap
 const int BPF_MAP_TYPE_PERGPUTD_ARRAY_MAP = 1502;
 const int BPF_MAP_TYPE_GPU_ARRAY_MAP = 1503; // non-per-thread, single-copy
 					     // shared array
