@@ -37,6 +37,15 @@ std::string patch_main_from_func_to_entry(std::string);
 std::string wrap_ptx_with_trampoline(std::string input);
 std::string sha256(const void *data, size_t length);
 
+/**
+ * @brief Get the SM architecture string for the current GPU.
+ * First checks BPFTIME_SM_ARCH environment variable, then auto-detects
+ * from the current CUDA device if not set.
+ *
+ * @return std::string SM architecture string (e.g., "sm_86", "sm_120")
+ */
+std::string get_gpu_sm_arch();
+
 } // namespace attach
 } // namespace bpftime
 
