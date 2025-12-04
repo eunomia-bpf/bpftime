@@ -688,6 +688,7 @@ int syscall_context::handle_perfevent(perf_event_attr *attr, pid_t pid, int cpu,
 			name, addr, is_ret_probe, ref_ctr_off, attr->config);
 		int new_fd = -1;
 		std::string new_probe_name = name;
+		// When running with kernel, probe names started with `cuda_` will be treated as cuda probe
 		if (name.starts_with("cuda_") && run_with_kernel) {
 			auto new_attr = *attr;
 			new_attr.config1 = (uintptr_t)"do_exit";
@@ -707,6 +708,7 @@ int syscall_context::handle_perfevent(perf_event_attr *attr, pid_t pid, int cpu,
 					"Bypass kprobe as gpu probe, got perf event fd {}",
 					new_fd);
 			}
+			// Strip the prefix `cuda_`
 			new_probe_name = name.substr(5);
 		} else if (run_with_kernel) {
 			SPDLOG_INFO(
