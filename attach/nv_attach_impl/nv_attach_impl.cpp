@@ -518,10 +518,12 @@ nv_attach_impl::hack_fatbin(std::map<std::string, std::string> all_ptx)
 				}
 			}
 			if (should_add_trampoline) {
+				std::string sm_arch = get_gpu_sm_arch();
 				current_ptx =
 					ptxpass::filter_out_version_headers_ptx(
 						wrap_ptx_with_trampoline(
-							current_ptx));
+							current_ptx),
+						sm_arch);
 			}
 			std::lock_guard<std::mutex> _guard(map_mutex);
 			ptx_out["patched." + file_name] = std::make_tuple(
@@ -602,9 +604,8 @@ int nv_attach_impl::run_attach_entry_on_gpu(int attach_id, int run_count,
 	}
 	SPDLOG_INFO("Running program on GPU");
 
-	// Get SM architecture from environment variable, default to sm_61
-	const char *sm_arch_env = std::getenv("BPFTIME_SM_ARCH");
-	std::string sm_arch = sm_arch_env ? sm_arch_env : "sm_61";
+	// Get SM architecture (auto-detect or from BPFTIME_SM_ARCH env)
+	std::string sm_arch = get_gpu_sm_arch();
 	SPDLOG_INFO("Using SM architecture: {}", sm_arch);
 
 	std::vector<uint64_t> ebpf_words;
@@ -616,7 +617,8 @@ int nv_attach_impl::run_attach_entry_on_gpu(int attach_id, int run_count,
 			ptxpass::compile_ebpf_to_ptx_from_words(
 				ebpf_words, sm_arch.c_str(), "bpf_main", false,
 				false),
-			"bpf_main")));
+			"bpf_main")),
+		sm_arch);
 	{
 		const std::string to_replace = ".func bpf_main";
 

@@ -101,8 +101,7 @@ std::map<std::string, std::vector<uint8_t>> fatbin_record::compile_ptxs(
 	class nv_attach_impl &impl,
 	std::map<std::string, std::tuple<std::string, bool>> patched_ptx)
 {
-	const char *sm_arch_env = std::getenv("BPFTIME_SM_ARCH");
-	std::string sm_arch = sm_arch_env ? sm_arch_env : "sm_61";
+	std::string sm_arch = get_gpu_sm_arch();
 	SPDLOG_INFO("Compiling PTXs with sm_arch {}", sm_arch);
 
 	unsigned major, minor;

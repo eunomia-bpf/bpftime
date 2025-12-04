@@ -1,5 +1,7 @@
 build:
 	$(MAKE) -C micro
+	$(MAKE) -C workload
+
 
 
 # NVBit tool compilation

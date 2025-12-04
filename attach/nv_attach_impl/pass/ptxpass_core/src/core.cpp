@@ -148,11 +148,13 @@ bool validate_ptx_version(const std::string &input,
 
 namespace ptxpass
 {
-std::string filter_out_version_headers_ptx(const std::string &input)
+std::string filter_out_version_headers_ptx(const std::string &input,
+					   const std::string &target_sm)
 {
 	static const std::string FILTERED_OUT_PREFIXES[] = {
 		".version", ".target", ".address_size", "//"
 	};
+
 	std::istringstream iss(input);
 	std::ostringstream oss;
 	std::string line;
@@ -161,10 +163,18 @@ std::string filter_out_version_headers_ptx(const std::string &input)
 		bool skip = false;
 		for (const auto &p : FILTERED_OUT_PREFIXES) {
 			if (line.rfind(p, 0) == 0) {
-				if (seen.contains(p))
+				if (seen.contains(p)) {
 					skip = true;
-				else
+				} else {
 					seen.insert(p);
+					// Replace .target with target_sm if provided
+					if (p == ".target" && !target_sm.empty()) {
+						line = ".target " + target_sm;
+						SPDLOG_INFO(
+							"Replaced .target with {}",
+							target_sm);
+					}
+				}
 				break;
 			}
 		}
