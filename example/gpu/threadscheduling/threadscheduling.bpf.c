@@ -44,14 +44,6 @@ struct {
 	__type(value, u64);
 } warp_histogram SEC(".maps");
 
-// Total call counter
-struct {
-	__uint(type, BPF_MAP_TYPE_HASH);
-	__uint(max_entries, 1);
-	__type(key, u32);
-	__type(value, u64);
-} total_calls SEC(".maps");
-
 // GPU helper function declarations
 static const u64 (*bpf_get_globaltimer)(void) = (void *)502;
 static const u64 (*bpf_get_block_idx)(u64 *x, u64 *y, u64 *z) = (void *)503;
