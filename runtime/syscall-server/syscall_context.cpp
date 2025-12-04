@@ -687,6 +687,7 @@ int syscall_context::handle_perfevent(perf_event_attr *attr, pid_t pid, int cpu,
 			"Creating kprobe func_name={} addr={} retprobe={} ref_ctr_off={} attr->config={:x}",
 			name, addr, is_ret_probe, ref_ctr_off, attr->config);
 		int new_fd = -1;
+		std::string new_probe_name = name;
 		if (name.starts_with("cuda_") && run_with_kernel) {
 			auto new_attr = *attr;
 			new_attr.config1 = (uintptr_t)"do_exit";
@@ -706,6 +707,7 @@ int syscall_context::handle_perfevent(perf_event_attr *attr, pid_t pid, int cpu,
 					"Bypass kprobe as gpu probe, got perf event fd {}",
 					new_fd);
 			}
+			new_probe_name = name.substr(5);
 		} else if (run_with_kernel) {
 			SPDLOG_INFO(
 				"Calling original perf event open at kprobe creation");
@@ -715,7 +717,7 @@ int syscall_context::handle_perfevent(perf_event_attr *attr, pid_t pid, int cpu,
 					       (uint64_t)group_fd,
 					       (uint64_t)flags);
 		}
-		int id = bpftime_kprobe_create(new_fd, name.substr(5).c_str(),
+		int id = bpftime_kprobe_create(new_fd, new_probe_name.c_str(),
 					       addr, is_ret_probe, ref_ctr_off);
 		SPDLOG_DEBUG("Created kprobe {}", id);
 		return id;
