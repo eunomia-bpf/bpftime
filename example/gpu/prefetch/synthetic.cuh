@@ -135,7 +135,6 @@ __global__ void seq_chunk_kernel(const float *input, float *output, size_t N,
 
 	const size_t elems_per_page = 4096 / sizeof(float);
 
-	// ===== 在开头预取固定的几个页 =====
 	// for (int c = 0; c < chunks_per_thread; ++c) {
 	// 	size_t chunk_id = (size_t)tid * chunks_per_thread + c;
 	// 	size_t chunk_start = chunk_id * chunk_elems;
@@ -143,7 +142,6 @@ __global__ void seq_chunk_kernel(const float *input, float *output, size_t N,
 	// 	if (chunk_start >= N)
 	// 		break;
 
-	// 	// 预取该 chunk 开头的 prefetch_pages 个页
 	// 	for (int p = 0; p < prefetch_pages; ++p) {
 	// 		size_t pf_addr = chunk_start + p * elems_per_page;
 	// 		if (pf_addr < N) {
@@ -153,7 +151,6 @@ __global__ void seq_chunk_kernel(const float *input, float *output, size_t N,
 	// 	}
 	// }
 
-	// ===== 实际处理 =====
 	for (int c = 0; c < chunks_per_thread; ++c) {
 		size_t chunk_id = (size_t)tid * chunks_per_thread + c;
 		size_t chunk_start = chunk_id * chunk_elems;
