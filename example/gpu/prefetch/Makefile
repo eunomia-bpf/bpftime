@@ -68,7 +68,7 @@ $(call allow-override,LD,$(CROSS_COMPILE)ld)
 .PHONY: all
 all: $(APPS) prefetch_example
 
-prefetch_example: prefetch_example.cu
+prefetch_example: prefetch_example.cu synthetic.cuh
 	@if command -v nvcc >/dev/null 2>&1; then \
 		nvcc -cudart shared prefetch_example.cu -o prefetch_example -g; \
 	else \

@@ -26,31 +26,7 @@ static void sig_handler(int sig)
 	exiting = true;
 }
 
-static int print_stat(struct prefetch_bpf *obj, uint64_t thread_count)
-{
-	time_t t;
-	struct tm *tm;
-	char ts[16];
-	uint32_t key;
-	int err = 0;
-	int fd = bpf_map__fd(obj->maps.call_count);
 
-	time(&t);
-	tm = localtime(&t);
-	strftime(ts, sizeof(ts), "%H:%M:%S", tm);
-
-	printf("%-9s\n", ts);
-
-	key = 0;
-	static uint64_t value[1024 * 1024];
-	bpf_map_lookup_elem(fd, &key, &value);
-	for (uint64_t i = 0; i < thread_count; i++) {
-		printf("Thread %lu: %lu\n", i, value[i]);
-	}
-
-	fflush(stdout);
-	return err;
-}
 
 int main(int argc, char **argv)
 {
@@ -84,7 +60,7 @@ int main(int argc, char **argv)
 	}
 	while (!exiting) {
 		sleep(1);
-		print_stat(skel, 7);
+		puts("Working...");
 	}
 cleanup:
 	/* Clean up */
