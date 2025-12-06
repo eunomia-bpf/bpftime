@@ -1547,4 +1547,25 @@ $L__BB11_8:
 	ret;
                                         // -- End function
 }
+	// .globl	_bpf_helper_ext_0509    // -- Begin function _bpf_helper_ext_0509
+.visible .func  (.param .b64 func_retval0) _bpf_helper_ext_0509(
+	.param .b64 _bpf_helper_ext_0509_param_0,
+	.param .b64 _bpf_helper_ext_0509_param_1,
+	.param .b64 _bpf_helper_ext_0509_param_2,
+	.param .b64 _bpf_helper_ext_0509_param_3,
+	.param .b64 _bpf_helper_ext_0509_param_4
+)                                       // @_bpf_helper_ext_0509
+{
+	.reg .b64 	%rd<3>;
+
+// %bb.0:
+	ld.param.u64 	%rd1, [_bpf_helper_ext_0509_param_0];
+	// begin inline asm
+	prefetch.global.L2 [%rd1];
+	// end inline asm
+	mov.u64 	%rd2, 0;
+	st.param.b64 	[func_retval0+0], %rd2;
+	ret;
+                                        // -- End function
+}
 )";
