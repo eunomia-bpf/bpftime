@@ -28,10 +28,6 @@
 // C = alpha * A * B + beta * C
 // A: NI x NK, B: NK x NJ, C: NI x NJ
 
-__device__ __forceinline__ void prefetch_l2(const void *ptr)
-{
-	asm volatile("prefetch.global.L2 [%0];" : : "l"(ptr));
-}
 
 __global__ void gemm_kernel(int ni, int nj, int nk, DATA_TYPE alpha,
 					DATA_TYPE beta, DATA_TYPE *a,
