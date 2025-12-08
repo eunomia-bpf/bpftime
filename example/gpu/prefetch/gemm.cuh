@@ -33,7 +33,7 @@ __device__ __forceinline__ void prefetch_l2(const void *ptr)
 	asm volatile("prefetch.global.L2 [%0];" : : "l"(ptr));
 }
 
-__global__ void gemm_kernel_l2_prefetch(int ni, int nj, int nk, DATA_TYPE alpha,
+__global__ void gemm_kernel(int ni, int nj, int nk, DATA_TYPE alpha,
 					DATA_TYPE beta, DATA_TYPE *a,
 					DATA_TYPE *b, DATA_TYPE *c)
 {
