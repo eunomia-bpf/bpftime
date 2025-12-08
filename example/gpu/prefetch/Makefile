@@ -66,7 +66,7 @@ $(call allow-override,CC,$(CROSS_COMPILE)cc)
 $(call allow-override,LD,$(CROSS_COMPILE)ld)
 
 .PHONY: all
-all: $(APPS) prefetch_example
+all: $(APPS) prefetch_example prefetch_gemm
 
 prefetch_example: prefetch_example.cu synthetic.cuh
 	@if command -v nvcc >/dev/null 2>&1; then \
@@ -74,6 +74,14 @@ prefetch_example: prefetch_example.cu synthetic.cuh
 	else \
 		echo "Warning: CUDA not found, skipping prefetch_example build"; \
 	fi
+
+prefetch_gemm: prefetch_gemm.cu synthetic.cuh gemm.cuh
+	@if command -v nvcc >/dev/null 2>&1; then \
+		nvcc -cudart shared prefetch_gemm.cu -o prefetch_gemm -g; \
+	else \
+		echo "Warning: CUDA not found, skipping prefetch_gemm build"; \
+	fi
+
 
 .PHONY: clean
 clean:
