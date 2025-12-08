@@ -3,6 +3,8 @@
 
 #include <cstddef>
 #include <cuda_runtime.h>
+#include <iostream>
+#include <ostream>
 #include <vector>
 #include <stdexcept>
 #include <cstdlib>
@@ -183,6 +185,12 @@ struct RunSeqConfig {
 
 extern "C" void launch_run_seq_kernel(RunSeqConfig *config)
 {
+	std::cout << "config->N=" << config->N
+		  << ", config->chunk_elems=" << config->chunk_elems
+		  << ", config->chunks_per_thread=" << config->chunks_per_thread
+		  << ", config->stride_elems=" << config->stride_elems
+		  << ", config->prefetch_pages=" << config->prefetch_pages
+		  << std::endl;
 	seq_chunk_kernel<<<config->numBlocks, config->blockSize>>>(
 		config->input, config->output, config->N, config->chunk_elems,
 		config->chunks_per_thread, config->stride_elems,

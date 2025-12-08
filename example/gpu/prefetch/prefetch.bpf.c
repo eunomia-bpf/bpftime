@@ -4,7 +4,7 @@
 #include <bpf/bpf_tracing.h>
 
 #define BPF_MAP_TYPE_PERGPUTD_ARRAY_MAP 1502
-
+#define BPF_MAP_TYPE_GPU_ARRAY_MAP 1503
 struct RunSeqConfig {
 	int numBlocks;
 	int blockSize;
@@ -18,7 +18,7 @@ struct RunSeqConfig {
 };
 
 struct {
-	__uint(type, BPF_MAP_TYPE_HASH);
+	__uint(type, BPF_MAP_TYPE_GPU_ARRAY_MAP);
 	__uint(max_entries, 1);
 	__type(key, u32);
 	__type(value, struct RunSeqConfig);
@@ -49,28 +49,33 @@ int cuda__retprobe()
 	u32 key = 0;
 	struct RunSeqConfig *config = bpf_map_lookup_elem(&config_store, &key);
 	if (config) {
+		register u32 *input = config->input;
+		register u32 *output = config->output;
+#define N 4503490560ul
+#define chunk_elems 69632
+#define chunks_per_thread 1
+#define stride_elems 1024
+#define prefetch_pages 4
 		bpf_get_block_idx(&block_idx, &y, &z);
 		bpf_get_block_dim(&block_dim, &y, &z);
 		bpf_get_thread_idx(&thread_idx, &y, &z);
 		u64 tid = block_idx * block_dim + thread_idx;
 		const size_t elems_per_page = 4096 / sizeof(float);
-		for (int c = 0; c < config->chunks_per_thread; ++c) {
-			size_t chunk_id =
-				(size_t)tid * config->chunks_per_thread + c;
-			size_t chunk_start = chunk_id * config->chunk_elems;
+#pragma unroll
+		for (int c = 0; c < chunks_per_thread; ++c) {
+			size_t chunk_id = (size_t)tid * chunks_per_thread + c;
+			size_t chunk_start = chunk_id * chunk_elems;
 
-			if (chunk_start >= config->N)
+			if (chunk_start >= N)
 				break;
 
-			// 预取该 chunk 开头的 prefetch_pages 个页
-			for (int p = 0; p < config->prefetch_pages; ++p) {
+#pragma unroll
+			for (int p = 0; p < prefetch_pages; ++p) {
 				size_t pf_addr =
 					chunk_start + p * elems_per_page;
-				if (pf_addr < config->N) {
-					bpf_prefetch_l2(
-						&config->input[pf_addr]);
-					bpf_prefetch_l2(
-						&config->output[pf_addr]);
+				if (pf_addr < N) {
+					bpf_prefetch_l2(&input[pf_addr]);
+					bpf_prefetch_l2(&output[pf_addr]);
 				}
 			}
 		}
