@@ -11,6 +11,75 @@ Terminal 2:
 ```
 bpftime start ./prefetch_example --kernel=seq_stream --mode=uvm --size_factor=1.5 --stride_bytes=4096 --iterations=5
 ```
+## prefetch_gemn
+
+```
+bpftime start ./prefetch_gemm  --kernel=gemm --mode=uvm --size_factor=1.5 --stride_bytes=4096 --iterations=5
+```
+## benchmark gemm
+
+### 5090
+#### With prefetch (inlined)
+```
+yunwei37@lab:~/mnfe-bpftime-3/example/gpu/prefetch$ ./prefetch_gemm  --kernel=gemm --mode=uvm --size_factor=1.5 --stride_bytes=4096 --iterations=5
+UVM Microbenchmark - Tier 0 Synthetic Kernels
+==============================================
+GPU Memory: 32109 MB
+Size Factor: 1.5 (oversubscription)
+Total Working Set: 48164 MB
+Stride Bytes: 4096 (page-level)
+Kernel: gemm
+Mode: uvm
+Iterations: 5
+
+Initializing weights (34400 MB)...
+  100% complete
+GEMM config: dim=4096, hidden=11008, layers=200, tokens=10
+  Layer size: 172.0 MB, Total weights: 34400.0 MB
+
+Results:
+  Kernel: gemm
+  Mode: uvm
+  Working Set: 48164 MB
+  Bytes Accessed: 344000 MB
+  Median time: 55185.1 ms
+  Min time: 55098 ms
+  Max time: 55229.6 ms
+  Bandwidth: 6.53637 GB/s
+  Results written to: results.csv
+yunwei37@lab:~/mnfe-bpftime-3/example/gpu/prefetch$ 
+```
+#### With prefetch (bpftime)
+
+#### Without prefetch
+```
+yunwei37@lab:~/mnfe-bpftime-3/example/gpu/prefetch$ ./prefetch_gemm  --kernel=gemm --mode=uvm --size_factor=1.5 --stride_bytes=4096 --iterations=5
+UVM Microbenchmark - Tier 0 Synthetic Kernels
+==============================================
+GPU Memory: 32109 MB
+Size Factor: 1.5 (oversubscription)
+Total Working Set: 48164 MB
+Stride Bytes: 4096 (page-level)
+Kernel: gemm
+Mode: uvm
+Iterations: 5
+
+Initializing weights (34400 MB)...
+  100% complete
+GEMM config: dim=4096, hidden=11008, layers=200, tokens=10
+  Layer size: 172.0 MB, Total weights: 34400.0 MB
+
+Results:
+  Kernel: gemm
+  Mode: uvm
+  Working Set: 48164 MB
+  Bytes Accessed: 344000 MB
+  Median time: 45014.4 ms
+  Min time: 45005.2 ms
+  Max time: 45036.3 ms
+  Bandwidth: 8.01322 GB/s
+  Results written to: results.csv
+  ```
 
 ## Benchmark
 ### P40
