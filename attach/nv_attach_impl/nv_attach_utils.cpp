@@ -55,16 +55,32 @@ std::string get_gpu_sm_arch()
 		return sm_arch_env;
 	}
 
-	// Auto-detect from current CUDA device
+	// Auto-detect from CUDA driver
 	CUdevice device;
 	int major = 0, minor = 0;
 
+	// Prefer current context if one exists; otherwise fall back to device 0.
 	CUresult err = cuCtxGetDevice(&device);
 	if (err != CUDA_SUCCESS) {
-		SPDLOG_WARN(
-			"Failed to get current CUDA device ({}), falling back to sm_61",
+		SPDLOG_INFO(
+			"cuCtxGetDevice failed with {}, falling back to device 0 for SM arch detection",
 			(int)err);
-		return "sm_61";
+
+		err = cuInit(0);
+		if (err != CUDA_SUCCESS) {
+			SPDLOG_WARN(
+				"Failed to initialize CUDA driver ({}), falling back to sm_61",
+				(int)err);
+			return "sm_61";
+		}
+
+		err = cuDeviceGet(&device, 0);
+		if (err != CUDA_SUCCESS) {
+			SPDLOG_WARN(
+				"Failed to get CUDA device 0 ({}), falling back to sm_61",
+				(int)err);
+			return "sm_61";
+		}
 	}
 
 	err = cuDeviceGetAttribute(&major,
@@ -90,6 +106,13 @@ std::string get_gpu_sm_arch()
 	std::string sm_arch = "sm_" + std::to_string(major * 10 + minor);
 	SPDLOG_INFO("Auto-detected GPU SM arch: {} (compute capability {}.{})",
 		    sm_arch, major, minor);
+
+	if (setenv("BPFTIME_SM_ARCH", sm_arch.c_str(), 1) != 0) {
+		SPDLOG_WARN(
+			"Failed to set BPFTIME_SM_ARCH environment variable to {}",
+			sm_arch);
+	}
+
 	return sm_arch;
 }
 
