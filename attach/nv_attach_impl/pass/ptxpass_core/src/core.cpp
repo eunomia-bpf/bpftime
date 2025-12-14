@@ -167,13 +167,13 @@ std::string filter_out_version_headers_ptx(const std::string &input,
 					skip = true;
 				} else {
 					seen.insert(p);
-					// Replace .target with target_sm if provided
-					if (p == ".target" && !target_sm.empty()) {
-						line = ".target " + target_sm;
-						SPDLOG_INFO(
-							"Replaced .target with {}",
-							target_sm);
-					}
+					// Remove for conflict of PTX headers info
+					// if (p == ".target" && !target_sm.empty()) {
+					// 	line = ".target " + target_sm;
+					// 	SPDLOG_INFO(
+					// 		"Replaced .target with {}",
+					// 		target_sm);
+					// }
 				}
 				break;
 			}
