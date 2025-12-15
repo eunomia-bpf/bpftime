@@ -443,7 +443,7 @@ nv_attach_impl::~nv_attach_impl()
 				(GumInvocationListener *)frida_listener);
 		}
 
-		static const char *const kReplacedSymbols[] = {
+		static const char *const replaced_symbols[] = {
 			"cudaLaunchKernel",
 			"cudaLaunchKernel_ptsz",
 			"cuGraphAddKernelNode",
@@ -454,8 +454,7 @@ nv_attach_impl::~nv_attach_impl()
 			"cuGraphKernelNodeSetParams_v2",
 		};
 		revert_frida_replaced_exports_if_present(
-			interceptor, kReplacedSymbols,
-			sizeof(kReplacedSymbols) / sizeof(kReplacedSymbols[0]));
+			interceptor, replaced_symbols, std::size(replaced_symbols));
 
 		gum_interceptor_end_transaction(interceptor);
 	}
@@ -469,11 +468,10 @@ nv_attach_impl::~nv_attach_impl()
 	}
 }
 
-void nv_attach_impl::record_patched_kernel_function(const char *kernel_name,
+void nv_attach_impl::record_patched_kernel_function(const std::string &kernel_name,
 						    CUfunction function)
 {
-	if (kernel_name == nullptr || kernel_name[0] == '\0' ||
-	    function == nullptr)
+	if (kernel_name.empty() || function == nullptr)
 		return;
 	std::lock_guard<std::mutex> guard(cuda_symbol_map_mutex);
 	auto itr = patched_kernel_by_name.find(kernel_name);
@@ -486,9 +484,9 @@ void nv_attach_impl::record_patched_kernel_function(const char *kernel_name,
 }
 
 std::optional<CUfunction>
-nv_attach_impl::find_patched_kernel_function(const char *kernel_name) const
+nv_attach_impl::find_patched_kernel_function(const std::string &kernel_name) const
 {
-	if (kernel_name == nullptr || kernel_name[0] == '\0')
+	if (kernel_name.empty())
 		return std::nullopt;
 	std::lock_guard<std::mutex> guard(cuda_symbol_map_mutex);
 	auto itr = patched_kernel_by_name.find(kernel_name);
@@ -498,16 +496,14 @@ nv_attach_impl::find_patched_kernel_function(const char *kernel_name) const
 }
 
 void nv_attach_impl::record_original_cufunction_name(CUfunction function,
-						     const char *kernel_name)
+						     const std::string &kernel_name)
 {
-	if (function == nullptr || kernel_name == nullptr ||
-	    kernel_name[0] == '\0')
+	if (function == nullptr || kernel_name.empty())
 		return;
 	std::lock_guard<std::mutex> guard(cuda_symbol_map_mutex);
 	auto itr = kernel_name_by_cufunction.find(function);
 	if (itr == kernel_name_by_cufunction.end()) {
-		kernel_name_by_cufunction.emplace(function,
-						  std::string(kernel_name));
+		kernel_name_by_cufunction.emplace(function, kernel_name);
 		return;
 	}
 	if (itr->second != kernel_name)
@@ -683,12 +679,10 @@ nv_attach_impl::hack_fatbin(std::map<std::string, std::string> all_ptx)
 				}
 			}
 			if (should_add_trampoline) {
-				std::string sm_arch = get_gpu_sm_arch();
 				current_ptx =
 					ptxpass::filter_out_version_headers_ptx(
 						wrap_ptx_with_trampoline(
-							current_ptx),
-						sm_arch);
+							current_ptx));
 			}
 			std::lock_guard<std::mutex> _guard(map_mutex);
 			ptx_out["patched." + file_name] = std::make_tuple(
@@ -782,8 +776,7 @@ int nv_attach_impl::run_attach_entry_on_gpu(int attach_id, int run_count,
 			ptxpass::compile_ebpf_to_ptx_from_words(
 				ebpf_words, sm_arch.c_str(), "bpf_main", false,
 				false),
-			"bpf_main")),
-		sm_arch);
+			"bpf_main")));
 	{
 		const std::string to_replace = ".func bpf_main";
 

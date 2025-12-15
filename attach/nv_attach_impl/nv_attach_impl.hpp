@@ -144,12 +144,12 @@ class nv_attach_impl final : public base_attach_impl {
 				    int grid_dim_x = 1, int grid_dim_y = 1,
 				    int grid_dim_z = 1, int block_dim_x = 1,
 				    int block_dim_y = 1, int block_dim_z = 1);
-	void record_patched_kernel_function(const char *kernel_name,
+	void record_patched_kernel_function(const std::string &kernel_name,
 					    CUfunction function);
 	std::optional<CUfunction>
-	find_patched_kernel_function(const char *kernel_name) const;
+	find_patched_kernel_function(const std::string &kernel_name) const;
 	void record_original_cufunction_name(CUfunction function,
-					     const char *kernel_name);
+					     const std::string &kernel_name);
 	std::optional<std::string>
 	find_original_kernel_name(CUfunction function) const;
 	std::vector<std::unique_ptr<fatbin_record>> fatbin_records;

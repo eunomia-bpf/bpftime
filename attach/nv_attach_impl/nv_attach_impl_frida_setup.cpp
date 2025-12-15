@@ -57,17 +57,15 @@ G_DEFINE_TYPE_EXTENDED(
 using cu_graph_add_kernel_node_v1_fn_t =
 	CUresult (*)(CUgraphNode *, CUgraph, const CUgraphNode *, size_t,
 		     const CUDA_KERNEL_NODE_PARAMS_v1 *);
-using cu_graph_add_kernel_node_v2_fn_t =
-	CUresult (*)(CUgraphNode *, CUgraph, const CUgraphNode *, size_t,
-		     const CUDA_KERNEL_NODE_PARAMS_v2 *);
+using cu_graph_add_kernel_node_v2_fn_t = decltype(&cuGraphAddKernelNode_v2);
 using cu_graph_exec_kernel_node_set_params_v1_fn_t = CUresult (*)(
 	CUgraphExec, CUgraphNode, const CUDA_KERNEL_NODE_PARAMS_v1 *);
-using cu_graph_exec_kernel_node_set_params_v2_fn_t = CUresult (*)(
-	CUgraphExec, CUgraphNode, const CUDA_KERNEL_NODE_PARAMS_v2 *);
+using cu_graph_exec_kernel_node_set_params_v2_fn_t =
+	decltype(&cuGraphExecKernelNodeSetParams_v2);
 using cu_graph_kernel_node_set_params_v1_fn_t =
 	CUresult (*)(CUgraphNode, const CUDA_KERNEL_NODE_PARAMS_v1 *);
 using cu_graph_kernel_node_set_params_v2_fn_t =
-	CUresult (*)(CUgraphNode, const CUDA_KERNEL_NODE_PARAMS_v2 *);
+	decltype(&cuGraphKernelNodeSetParams_v2);
 
 using cuda_launch_kernel_fn_t = cudaError_t (*)(const void *, dim3, dim3,
 						void **, size_t, cudaStream_t);
@@ -188,12 +186,13 @@ static void example_listener_on_enter(GumInvocationListener *listener,
 		} else {
 			context->impl->symbol_address_to_fatbin[func_addr] =
 				current_fatbin;
-			if (auto itr = current_fatbin->function_addr_to_symbol
-					       .find(func_addr);
-			    itr !=
-			    current_fatbin->function_addr_to_symbol.end())
-				impl.record_patched_kernel_function(
-					symbol_name, itr->second.func);
+				if (auto itr = current_fatbin->function_addr_to_symbol
+						       .find(func_addr);
+				    itr !=
+				    current_fatbin->function_addr_to_symbol.end())
+					impl.record_patched_kernel_function(
+						std::string(symbol_name),
+						itr->second.func);
 			SPDLOG_DEBUG(
 				"Registered kernel function name {} addr {:x}",
 				symbol_name, (uintptr_t)func_addr);
@@ -312,8 +311,7 @@ cuda_runtime_function__cudaLaunchKernel(const void *func, dim3 grid_dim,
 	auto impl =
 		(nv_attach_impl *)gum_invocation_context_get_replacement_data(
 			gum_ctx);
-	if (impl != nullptr && spdlog::should_log(spdlog::level::debug)) {
-		SPDLOG_DEBUG("Try access: {}", impl->fatbin_records.size());
+	if (impl != nullptr) {
 		SPDLOG_DEBUG("grid_dim: {}, {}, {}", grid_dim.x, grid_dim.y,
 			     grid_dim.z);
 		SPDLOG_DEBUG("block_dim: {}, {}, {}", block_dim.x, block_dim.y,
@@ -341,7 +339,7 @@ cuda_graph_maybe_get_kernel_name_from_cufunction(nv_attach_impl &impl,
 		return std::nullopt;
 	if (name == nullptr || name[0] == '\0')
 		return std::nullopt;
-	impl.record_original_cufunction_name(function, name);
+	impl.record_original_cufunction_name(function, std::string(name));
 	return std::string(name);
 }
 
@@ -369,8 +367,7 @@ extern "C" cudaError_t cuda_runtime_function__cudaLaunchKernel_ptsz(
 	auto impl =
 		(nv_attach_impl *)gum_invocation_context_get_replacement_data(
 			gum_ctx);
-	if (impl != nullptr && spdlog::should_log(spdlog::level::debug)) {
-		SPDLOG_DEBUG("Try access: {}", impl->fatbin_records.size());
+	if (impl != nullptr) {
 		SPDLOG_DEBUG("grid_dim: {}, {}, {}", grid_dim.x, grid_dim.y,
 			     grid_dim.z);
 		SPDLOG_DEBUG("block_dim: {}, {}, {}", block_dim.x, block_dim.y,
@@ -395,8 +392,7 @@ cuda_graph_maybe_patch_kernel_node_params_v1(
 	if (!kernel_name) {
 		return params;
 	}
-	auto patched_func =
-		impl.find_patched_kernel_function(kernel_name->c_str());
+	auto patched_func = impl.find_patched_kernel_function(*kernel_name);
 	if (!patched_func) {
 		return params;
 	}
@@ -425,8 +421,7 @@ cuda_graph_maybe_patch_kernel_node_params_v2(
 	if (!kernel_name) {
 		return params;
 	}
-	auto patched_func =
-		impl.find_patched_kernel_function(kernel_name->c_str());
+	auto patched_func = impl.find_patched_kernel_function(*kernel_name);
 	if (!patched_func) {
 		return params;
 	}

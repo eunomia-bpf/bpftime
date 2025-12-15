@@ -148,8 +148,7 @@ bool validate_ptx_version(const std::string &input,
 
 namespace ptxpass
 {
-std::string filter_out_version_headers_ptx(const std::string &input,
-					   const std::string &target_sm)
+std::string filter_out_version_headers_ptx(const std::string &input)
 {
 	static const std::string FILTERED_OUT_PREFIXES[] = {
 		".version", ".target", ".address_size", "//"
@@ -167,13 +166,6 @@ std::string filter_out_version_headers_ptx(const std::string &input,
 					skip = true;
 				} else {
 					seen.insert(p);
-					// Remove for conflict of PTX headers info
-					// if (p == ".target" && !target_sm.empty()) {
-					// 	line = ".target " + target_sm;
-					// 	SPDLOG_INFO(
-					// 		"Replaced .target with {}",
-					// 		target_sm);
-					// }
 				}
 				break;
 			}
