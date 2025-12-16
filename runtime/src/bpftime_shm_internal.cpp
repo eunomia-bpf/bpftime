@@ -950,6 +950,15 @@ bool bpftime_shm::register_cuda_host_memory()
 		return false;
 	}
 
+	const auto prefault_range = [](void *addr, std::size_t size) {
+		constexpr std::size_t kPageSize = 4096;
+		volatile unsigned char sink = 0;
+		auto *p = static_cast<volatile unsigned char *>(addr);
+		for (std::size_t i = 0; i < size; i += kPageSize) {
+			sink ^= p[i];
+		}
+	};
+
 	// Ensure we can map host memory into device address space
 	cudaError_t flag_err = cudaSetDeviceFlags(cudaDeviceMapHost);
 	if (flag_err != cudaSuccess &&
@@ -965,6 +974,7 @@ bool bpftime_shm::register_cuda_host_memory()
 	// 1. Get the base address and size of the Boost.Interprocess segment
 	void *base_addr = segment.get_address(); // Starting address
 	std::size_t seg_size = segment.get_size(); // Total bytes in segment
+	prefault_range(base_addr, seg_size);
 
 	// 2. Register with CUDA
 	cudaError_t err =
