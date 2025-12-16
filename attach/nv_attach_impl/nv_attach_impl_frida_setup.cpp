@@ -354,7 +354,7 @@ cuda_graph_maybe_get_kernel_name_from_cukernel(CUkernel kernel)
 	const char *name = nullptr;
 	if (auto err = cu_kernel_get_name(&name, kernel); err != CUDA_SUCCESS)
 		return std::nullopt;
-	if (name == nullptr || name[0] == '\0')
+	if (name == nullptr)
 		return std::nullopt;
 	return std::string(name);
 }
