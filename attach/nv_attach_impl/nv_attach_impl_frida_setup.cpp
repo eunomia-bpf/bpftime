@@ -66,6 +66,8 @@ using cu_graph_kernel_node_set_params_v1_fn_t =
 	CUresult (*)(CUgraphNode, const CUDA_KERNEL_NODE_PARAMS_v1 *);
 using cu_graph_kernel_node_set_params_v2_fn_t =
 	decltype(&cuGraphKernelNodeSetParams_v2);
+using cuda_memcpy_from_symbol_async_fn_t = decltype(&cudaMemcpyFromSymbolAsync);
+using cuda_memcpy_from_symbol_fn_t = decltype(&cudaMemcpyFromSymbol);
 
 using cuda_launch_kernel_fn_t = cudaError_t (*)(const void *, dim3, dim3,
 						void **, size_t, cudaStream_t);
@@ -186,13 +188,13 @@ static void example_listener_on_enter(GumInvocationListener *listener,
 		} else {
 			context->impl->symbol_address_to_fatbin[func_addr] =
 				current_fatbin;
-				if (auto itr = current_fatbin->function_addr_to_symbol
-						       .find(func_addr);
-				    itr !=
-				    current_fatbin->function_addr_to_symbol.end())
-					impl.record_patched_kernel_function(
-						std::string(symbol_name),
-						itr->second.func);
+			if (auto itr = current_fatbin->function_addr_to_symbol
+					       .find(func_addr);
+			    itr !=
+			    current_fatbin->function_addr_to_symbol.end())
+				impl.record_patched_kernel_function(
+					std::string(symbol_name),
+					itr->second.func);
 			SPDLOG_DEBUG(
 				"Registered kernel function name {} addr {:x}",
 				symbol_name, (uintptr_t)func_addr);
@@ -555,4 +557,138 @@ extern "C" CUresult cuda_driver_function__cuGraphKernelNodeSetParams_v2(
 	auto params_to_use = cuda_graph_maybe_patch_kernel_node_params_v2(
 		*impl, nodeParams, patched_params);
 	return original(hNode, params_to_use);
+}
+
+static cudaError_t
+mirror_cuda_memcpy_from_symbol(nv_attach_impl *impl, bool async, void *dst,
+			       const void *symbol, size_t count, size_t offset,
+			       cudaMemcpyKind kind, cudaStream_t stream = 0)
+{
+	auto record_itr = impl->symbol_address_to_fatbin.find((void *)symbol);
+	if (record_itr == impl->symbol_address_to_fatbin.end()) {
+		SPDLOG_DEBUG(
+			"In mirror_cuda_memcpy_from_symbol: calling original cudaMemcpyFromSymbol");
+		if (async) {
+			auto original = reinterpret_cast<
+				cuda_memcpy_from_symbol_async_fn_t>(
+				impl->original_cuda_memcpy_from_symbol_async);
+			if (!original) {
+				return cudaErrorUnknown;
+			}
+			return original(dst, symbol, count, offset, kind,
+					stream);
+		} else {
+			auto original =
+				reinterpret_cast<cuda_memcpy_from_symbol_fn_t>(
+					impl->original_cuda_memcpy_from_symbol);
+			if (!original) {
+				return cudaErrorUnknown;
+			}
+			return original(dst, symbol, count, offset, kind);
+		}
+		return cudaErrorUnknown;
+	}
+	auto &record = *record_itr->second;
+	auto var_itr = record.variable_addr_to_symbol.find((void *)symbol);
+	if (var_itr == record.variable_addr_to_symbol.end()) {
+		SPDLOG_DEBUG(
+			"mirror_cuda_memcpy_from_symbol: no variable info for symbol pointer {:x}",
+			(uintptr_t)symbol);
+		return cudaErrorUnknown;
+	}
+	auto &var_info = var_itr->second;
+	if (offset >= var_info.size) {
+		SPDLOG_WARN(
+			"mirror_cuda_memcpy_from_symbol: offset {} exceeds size {} for symbol {}",
+			offset, var_info.size, var_info.symbol_name);
+		return cudaErrorUnknown;
+	}
+	size_t writable = var_info.size - offset;
+	size_t bytes_to_copy = std::min(count, writable);
+	if (bytes_to_copy == 0)
+		return cudaErrorUnknown;
+	if (bytes_to_copy != count) {
+		SPDLOG_WARN(
+			"mirror_cuda_memcpy_from_symbol: truncating copy for symbol {} (requested={}, allowed={})",
+			var_info.symbol_name, count, bytes_to_copy);
+	}
+	CUdeviceptr src = var_info.ptr + offset;
+	CUstream cu_stream = reinterpret_cast<CUstream>(stream);
+	CUresult status = CUDA_SUCCESS;
+
+	auto copy_device_ptr = [](const void *ptr) -> CUdeviceptr {
+		return static_cast<CUdeviceptr>(
+			reinterpret_cast<uintptr_t>(ptr));
+	};
+
+	switch (kind) {
+	case cudaMemcpyDeviceToHost:
+	case cudaMemcpyDefault:
+		status = async ? cuMemcpyDtoHAsync(dst, src, bytes_to_copy,
+						   cu_stream) :
+				 cuMemcpyDtoH(dst, src, bytes_to_copy);
+		break;
+	case cudaMemcpyDeviceToDevice:
+		status = async ? cuMemcpyDtoDAsync(copy_device_ptr(dst), src,
+						   bytes_to_copy, cu_stream) :
+				 cuMemcpyDtoD(copy_device_ptr(dst), src,
+					      bytes_to_copy);
+		break;
+	default:
+		SPDLOG_DEBUG(
+			"mirror_cuda_memcpy_from_symbol: unsupported memcpy kind {} for symbol {}",
+			(int)kind, var_info.symbol_name);
+		return cudaErrorUnknown;
+	}
+	if (status != CUDA_SUCCESS) {
+		SPDLOG_WARN(
+			"mirror_cuda_memcpy_from_symbol: failed to copy symbol {} (err={})",
+			var_info.symbol_name, (int)status);
+		return cudaErrorUnknown;
+	}
+	return cudaSuccess;
+}
+
+extern "C" cudaError_t cuda_runtime_function__cudaMemcpyFromSymbol(
+	void *dst, const void *symbol, size_t count, size_t offset = 0,
+	cudaMemcpyKind kind = cudaMemcpyDeviceToHost)
+{
+	auto gum_ctx = gum_interceptor_get_current_invocation();
+	auto impl =
+		(nv_attach_impl *)gum_invocation_context_get_replacement_data(
+			gum_ctx);
+	if (impl == nullptr) {
+		SPDLOG_ERROR(
+			"cudaMemcpyFromSymbol called without nv_attach_impl");
+		return cudaErrorUnknown;
+	} else {
+		SPDLOG_DEBUG(
+			"call cudaMemcpyFromSymbol with args: {:x}, {:x}, {}, {}, {}",
+			(uintptr_t)dst, (uintptr_t)symbol, count, offset,
+			(int)kind);
+	}
+	return mirror_cuda_memcpy_from_symbol(impl, false, dst, symbol, count,
+					      offset, kind);
+}
+
+extern "C" cudaError_t cuda_runtime_function__cudaMemcpyFromSymbolAsync(
+	void *dst, const void *symbol, size_t count, size_t offset,
+	cudaMemcpyKind kind, cudaStream_t stream = 0)
+{
+	auto gum_ctx = gum_interceptor_get_current_invocation();
+	auto impl =
+		(nv_attach_impl *)gum_invocation_context_get_replacement_data(
+			gum_ctx);
+	if (impl == nullptr) {
+		SPDLOG_ERROR(
+			"cudaMemcpyFromSymbol called without nv_attach_impl");
+		return cudaErrorUnknown;
+	} else {
+		SPDLOG_DEBUG(
+			"call cudaMemcpyFromSymbol with args: {:x}, {:x}, {}, {}, {}, {:x}",
+			(uintptr_t)dst, (uintptr_t)symbol, count, offset,
+			(int)kind, (uintptr_t)stream);
+	}
+	return mirror_cuda_memcpy_from_symbol(impl, true, dst, symbol, count,
+					      offset, kind, stream);
 }
