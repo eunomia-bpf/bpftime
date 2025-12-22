@@ -83,10 +83,12 @@ struct CommSharedMem {
 	uint64_t time_sum[8];
 };
 
+const int BPF_MAP_TYPE_GPU_HASH_MAP = 1501; // non-per-thread, single-copy shared hashmap
 const int BPF_MAP_TYPE_PERGPUTD_ARRAY_MAP = 1502;
 const int BPF_MAP_TYPE_GPU_ARRAY_MAP = 1503; // non-per-thread, single-copy
 					     // shared array
 const int BPF_MAP_TYPE_GPU_RINGBUF_MAP = 1527;
+const int BPF_MAP_TYPE_GPU_KERNEL_SHARED_ARRAY_MAP = 1504;
 
 struct MapBasicInfo {
 	bool enabled;
@@ -105,7 +107,7 @@ __device__ __forceinline__ uint64_t read_globaltimer()
 }
 
 __constant__ uintptr_t constData;
-__constant__ MapBasicInfo map_info[256];
+__constant__ MapBasicInfo map_info[1024];
 __device__ int __bpftime_comm_lock = 0;
 extern "C" __device__ void spin_lock(volatile int *lock)
 {
@@ -205,9 +207,11 @@ extern "C" __noinline__ __device__ uint64_t _bpf_helper_ext_0001(
 	}
 	// Fast-path for non-per-thread GPU array map: single shared copy on
 	// device-visible UVA
-	if (map_info.map_type == BPF_MAP_TYPE_GPU_ARRAY_MAP) {
+	if (map_info.map_type == BPF_MAP_TYPE_GPU_ARRAY_MAP ||
+	    map_info.map_type == BPF_MAP_TYPE_GPU_KERNEL_SHARED_ARRAY_MAP) {
 		auto real_key = *(uint32_t *)(uintptr_t)key;
 		auto base = (char *)map_info.extra_buffer;
+		// printf("real_key=%u, base=%lx, value_size=%lu, mapfd=%d\n",real_key,(uintptr_t)base,(unsigned long)map_info.value_size,(int)map);
 		return (uint64_t)(uintptr_t)(base +
 					     (uint64_t)real_key *
 						     map_info.value_size);
@@ -238,7 +242,8 @@ extern "C" __noinline__ __device__ uint64_t _bpf_helper_ext_0002(
 	}
 	// Fast-path for non-per-thread GPU array map: memcpy overwrite, system
 	// fence for visibility
-	if (map_info.map_type == BPF_MAP_TYPE_GPU_ARRAY_MAP) {
+	if (map_info.map_type == BPF_MAP_TYPE_GPU_ARRAY_MAP ||
+	    map_info.map_type == BPF_MAP_TYPE_GPU_KERNEL_SHARED_ARRAY_MAP) {
 		auto real_key = *(uint32_t *)(uintptr_t)key;
 		auto base = (char *)map_info.extra_buffer;
 		auto dst =
@@ -436,6 +441,33 @@ _bpf_helper_ext_0508(uint64_t x, uint64_t y, uint64_t z, uint64_t, uint64_t)
 	*(uint64_t *)(uintptr_t)z = gridDim.z;
 
 	return 0;
+}
+
+extern "C" __noinline__ __device__ uint64_t
+_bpf_helper_ext_0509(uint64_t, uint64_t, uint64_t, uint64_t, uint64_t)
+{
+  // get sm id
+	uint32_t sm_id;
+	asm volatile("mov.u32 %0, %smid;" : "=r"(sm_id));
+	return (uint64_t)sm_id;
+}
+
+extern "C" __noinline__ __device__ uint64_t
+_bpf_helper_ext_0510(uint64_t, uint64_t, uint64_t, uint64_t, uint64_t)
+{
+  // get warp id
+	uint32_t warp_id;
+	asm volatile("mov.u32 %0, %warpid;" : "=r"(warp_id));
+	return (uint64_t)warp_id;
+}
+
+extern "C" __noinline__ __device__ uint64_t
+_bpf_helper_ext_0511(uint64_t, uint64_t, uint64_t, uint64_t, uint64_t)
+{
+  // get lane id
+	uint32_t lane_id;
+	asm volatile("mov.u32 %0, %laneid;" : "=r"(lane_id));
+	return (uint64_t)lane_id;
 }
 
 extern "C" __global__ void bpf_main(void *mem, size_t sz)

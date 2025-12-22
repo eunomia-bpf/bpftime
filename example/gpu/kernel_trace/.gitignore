@@ -1,8 +1,6 @@
-/launchlate
+/kernel_trace
 /.output
 /victim*
 /vec_add.cpp
 /vec_add
 /vec_add-new.cpp
-launchlate
-gpu_shard_array

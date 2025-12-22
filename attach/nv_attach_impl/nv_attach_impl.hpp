@@ -12,11 +12,13 @@
 #include <filesystem>
 #include <map>
 #include <memory>
+#include <mutex>
 #include <nvml.h>
 #include <cuda.h>
 #include <optional>
 #include <set>
 #include <string>
+#include <unordered_map>
 #include <sys/ptrace.h>
 #include <sys/syscall.h>
 #include <sys/wait.h>
@@ -142,6 +144,14 @@ class nv_attach_impl final : public base_attach_impl {
 				    int grid_dim_x = 1, int grid_dim_y = 1,
 				    int grid_dim_z = 1, int block_dim_x = 1,
 				    int block_dim_y = 1, int block_dim_z = 1);
+	void record_patched_kernel_function(const std::string &kernel_name,
+					    CUfunction function);
+	std::optional<CUfunction>
+	find_patched_kernel_function(const std::string &kernel_name) const;
+	void record_original_cufunction_name(CUfunction function,
+					     const std::string &kernel_name);
+	std::optional<std::string>
+	find_original_kernel_name(CUfunction function) const;
 	std::vector<std::unique_ptr<fatbin_record>> fatbin_records;
 	fatbin_record *current_fatbin = nullptr;
 	std::map<void *, fatbin_record *> symbol_address_to_fatbin;
@@ -155,6 +165,19 @@ class nv_attach_impl final : public base_attach_impl {
 	/// SHA256 of PTX -> ELF
 	std::shared_ptr<std::map<std::string, std::vector<uint8_t>>> ptx_pool;
 
+	// Original function pointers for Frida replace hooks (trampolines)
+	// They are set by gum_interceptor_replace(...) and must be used to call
+	// the original implementation (calling the symbol directly will
+	// recurse). Which is used for cudagraph hook.
+	void *original_cuda_launch_kernel = nullptr;
+	void *original_cuda_launch_kernel_ptsz = nullptr;
+	void *original_cu_graph_add_kernel_node_v1 = nullptr;
+	void *original_cu_graph_add_kernel_node_v2 = nullptr;
+	void *original_cu_graph_exec_kernel_node_set_params_v1 = nullptr;
+	void *original_cu_graph_exec_kernel_node_set_params_v2 = nullptr;
+	void *original_cu_graph_kernel_node_set_params_v1 = nullptr;
+	void *original_cu_graph_kernel_node_set_params_v2 = nullptr;
+
     private:
 	void *frida_interceptor;
 	void *frida_listener;
@@ -166,6 +189,9 @@ class nv_attach_impl final : public base_attach_impl {
 		pass_configurations;
 	std::map<std::string, ptxpass::runtime_response::RuntimeResponse>
 		patch_cache;
+	mutable std::mutex cuda_symbol_map_mutex;
+	std::unordered_map<std::string, CUfunction> patched_kernel_by_name;
+	std::unordered_map<CUfunction, std::string> kernel_name_by_cufunction;
 };
 
 std::string add_semicolon_for_variable_lines(std::string input);

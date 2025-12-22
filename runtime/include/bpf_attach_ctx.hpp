@@ -213,6 +213,7 @@ class bpf_attach_ctx {
 	// Start host thread for handling map requests from CUDA
 	void start_cuda_watcher_thread();
 	std::unique_ptr<cuda::CUDAContext> cuda_ctx;
+	std::thread cuda_watcher_thread;
 
 	std::vector<attach::MapBasicInfo>
 	create_map_basic_info(int filled_size);

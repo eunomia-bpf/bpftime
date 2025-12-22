@@ -6,6 +6,7 @@
 #ifndef _SYSCALL_CONTEXT_HPP
 #define _SYSCALL_CONTEXT_HPP
 #include <cassert>
+#include <set>
 #include <unordered_map>
 #if __linux__
 #include "linux/perf_event.h"
@@ -141,7 +142,7 @@ class syscall_context {
 			(uintptr_t)orig_fopen_fn);
 	}
 
-	int create_kernel_bpf_map(int fd);
+	int create_kernel_bpf_map(int fd, int bpftime_map_type);
 	int create_kernel_bpf_prog_in_userspace(int cmd, union bpf_attr *attr,
 						size_t size);
 	// try loading the bpf syscall helpers.
@@ -151,11 +152,6 @@ class syscall_context {
 
 	// enable userspace eBPF runing with kernel eBPF.
 	bool run_with_kernel = false;
-	// pos_cli result
-	// std::string pos_result = "";
-	// std::thread pos_thread{};
-	// std::promise<pos_retval_t> pos_thread_promise{};
-	// std::future<pos_retval_t> pos_thread_future{};
 	// allow programs to by pass the verifier
 	// some extensions are not supported by the verifier, so we need to
 	// by pass the verifier to make it work.

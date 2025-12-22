@@ -169,11 +169,41 @@ cudaError_t cuda_runtime_function__cudaLaunchKernel(const void *func,
 						    void **args,
 						    size_t sharedMem,
 						    cudaStream_t stream);
+cudaError_t cuda_runtime_function__cudaLaunchKernel_ptsz(
+	const void *func, dim3 gridDim, dim3 blockDim, void **args,
+	size_t sharedMem, cudaStream_t stream);
+CUresult cuda_driver_function__cuGraphAddKernelNode_v1(
+	CUgraphNode *phGraphNode, CUgraph hGraph,
+	const CUgraphNode *dependencies, size_t numDependencies,
+	const CUDA_KERNEL_NODE_PARAMS_v1 *nodeParams);
+CUresult cuda_driver_function__cuGraphAddKernelNode_v2(
+	CUgraphNode *phGraphNode, CUgraph hGraph,
+	const CUgraphNode *dependencies, size_t numDependencies,
+	const CUDA_KERNEL_NODE_PARAMS_v2 *nodeParams);
+CUresult cuda_driver_function__cuGraphExecKernelNodeSetParams_v1(
+	CUgraphExec hGraphExec, CUgraphNode hNode,
+	const CUDA_KERNEL_NODE_PARAMS_v1 *nodeParams);
+CUresult cuda_driver_function__cuGraphExecKernelNodeSetParams_v2(
+	CUgraphExec hGraphExec, CUgraphNode hNode,
+	const CUDA_KERNEL_NODE_PARAMS_v2 *nodeParams);
+CUresult cuda_driver_function__cuGraphKernelNodeSetParams_v1(
+	CUgraphNode hNode, const CUDA_KERNEL_NODE_PARAMS_v1 *nodeParams);
+CUresult cuda_driver_function__cuGraphKernelNodeSetParams_v2(
+	CUgraphNode hNode, const CUDA_KERNEL_NODE_PARAMS_v2 *nodeParams);
 }
 
 nv_attach_impl::nv_attach_impl()
 {
 	SPDLOG_INFO("Starting nv_attach_impl");
+	// Ensure CUDA driver library is loaded before we attempt to hook driver
+	// APIs such as cuGraph*.
+	{
+		void *handle = dlopen("libcuda.so.1", RTLD_NOW | RTLD_GLOBAL);
+		if (handle == nullptr) {
+			SPDLOG_DEBUG("dlopen(libcuda.so.1) failed: {}",
+				     dlerror());
+		}
+	}
 	this->module_pool = std::make_shared<
 		std::map<std::string, std::shared_ptr<ptx_in_module>>>();
 	this->ptx_pool =
@@ -218,6 +248,25 @@ nv_attach_impl::nv_attach_impl()
 				(int)func, (int)result);
 			throw std::runtime_error(
 				"Failed to attach to CUDA function");
+		}
+	};
+	auto replace_hook = [&](const char *symbol_name, gpointer replacement,
+				void **original_storage) {
+		void *addr = GSIZE_TO_POINTER(
+			gum_module_find_export_by_name(nullptr, symbol_name));
+		if (addr == nullptr) {
+			SPDLOG_DEBUG(
+				"Skipping replace hook for {} - symbol not found",
+				symbol_name);
+			return;
+		}
+		if (auto err = gum_interceptor_replace(
+			    interceptor, addr, replacement, this,
+			    (gpointer *)original_storage);
+		    err != GUM_REPLACE_OK) {
+			SPDLOG_ERROR("Unable to replace {}: {}", symbol_name,
+				     (int)err);
+			assert(false);
 		}
 	};
 
@@ -276,20 +325,35 @@ nv_attach_impl::nv_attach_impl()
 			      cuda_memcpy_to_symbol_async_addr);
 	}
 	{
-		void *cuda_launch_kernel_addr =
-			GSIZE_TO_POINTER(gum_module_find_export_by_name(
-				nullptr, "cudaLaunchKernel"));
-
-		if (auto err = gum_interceptor_replace(
-			    interceptor, cuda_launch_kernel_addr,
-			    (gpointer)&cuda_runtime_function__cudaLaunchKernel,
-			    this, nullptr);
-		    err != GUM_REPLACE_OK) {
-			SPDLOG_ERROR("Unable to replace cudaLaunchKernel: {}",
-				     (int)err);
-			assert(false);
-		}
+		replace_hook("cudaLaunchKernel",
+			     (gpointer)&cuda_runtime_function__cudaLaunchKernel,
+			     &this->original_cuda_launch_kernel);
 	}
+	replace_hook("cudaLaunchKernel_ptsz",
+		     (gpointer)&cuda_runtime_function__cudaLaunchKernel_ptsz,
+		     &this->original_cuda_launch_kernel_ptsz);
+	replace_hook("cuGraphAddKernelNode",
+		     (gpointer)&cuda_driver_function__cuGraphAddKernelNode_v1,
+		     &this->original_cu_graph_add_kernel_node_v1);
+	replace_hook("cuGraphAddKernelNode_v2",
+		     (gpointer)&cuda_driver_function__cuGraphAddKernelNode_v2,
+		     &this->original_cu_graph_add_kernel_node_v2);
+	replace_hook(
+		"cuGraphExecKernelNodeSetParams",
+		(gpointer)&cuda_driver_function__cuGraphExecKernelNodeSetParams_v1,
+		&this->original_cu_graph_exec_kernel_node_set_params_v1);
+	replace_hook(
+		"cuGraphExecKernelNodeSetParams_v2",
+		(gpointer)&cuda_driver_function__cuGraphExecKernelNodeSetParams_v2,
+		&this->original_cu_graph_exec_kernel_node_set_params_v2);
+	replace_hook(
+		"cuGraphKernelNodeSetParams",
+		(gpointer)&cuda_driver_function__cuGraphKernelNodeSetParams_v1,
+		&this->original_cu_graph_kernel_node_set_params_v1);
+	replace_hook(
+		"cuGraphKernelNodeSetParams_v2",
+		(gpointer)&cuda_driver_function__cuGraphKernelNodeSetParams_v2,
+		&this->original_cu_graph_kernel_node_set_params_v2);
 	gum_interceptor_end_transaction(interceptor);
 
 	static const char *ptx_pass_libraries = DEFAULT_PTX_PASS_EXECUTABLE;
@@ -352,14 +416,112 @@ nv_attach_impl::nv_attach_impl()
 	}
 }
 
+static void
+revert_frida_replaced_exports_if_present(GumInterceptor *interceptor,
+					 const char *const *symbols,
+					 size_t symbol_count)
+{
+	if (interceptor == nullptr || symbols == nullptr || symbol_count == 0)
+		return;
+	for (size_t i = 0; i < symbol_count; i++) {
+		void *addr = GSIZE_TO_POINTER(
+			gum_module_find_export_by_name(nullptr, symbols[i]));
+		if (addr != nullptr)
+			gum_interceptor_revert(interceptor, addr);
+	}
+}
+
 nv_attach_impl::~nv_attach_impl()
 {
-	if (frida_listener)
+	if (frida_interceptor != nullptr) {
+		auto interceptor = (GumInterceptor *)frida_interceptor;
+		gum_interceptor_begin_transaction(interceptor);
+
+		if (frida_listener != nullptr) {
+			gum_interceptor_detach(
+				interceptor,
+				(GumInvocationListener *)frida_listener);
+		}
+
+		static const char *const replaced_symbols[] = {
+			"cudaLaunchKernel",
+			"cudaLaunchKernel_ptsz",
+			"cuGraphAddKernelNode",
+			"cuGraphAddKernelNode_v2",
+			"cuGraphExecKernelNodeSetParams",
+			"cuGraphExecKernelNodeSetParams_v2",
+			"cuGraphKernelNodeSetParams",
+			"cuGraphKernelNodeSetParams_v2",
+		};
+		revert_frida_replaced_exports_if_present(
+			interceptor, replaced_symbols, std::size(replaced_symbols));
+
+		gum_interceptor_end_transaction(interceptor);
+	}
+
+	if (frida_listener) {
 		g_object_unref(frida_listener);
+		frida_listener = nullptr;
+	}
 	if (ptx_compiler_dl_handle) {
 		dlclose(ptx_compiler_dl_handle);
 	}
 }
+
+void nv_attach_impl::record_patched_kernel_function(const std::string &kernel_name,
+						    CUfunction function)
+{
+	if (kernel_name.empty() || function == nullptr)
+		return;
+	std::lock_guard<std::mutex> guard(cuda_symbol_map_mutex);
+	auto itr = patched_kernel_by_name.find(kernel_name);
+	if (itr == patched_kernel_by_name.end()) {
+		patched_kernel_by_name.emplace(kernel_name, function);
+		return;
+	}
+	if (itr->second != function)
+		itr->second = function;
+}
+
+std::optional<CUfunction>
+nv_attach_impl::find_patched_kernel_function(const std::string &kernel_name) const
+{
+	if (kernel_name.empty())
+		return std::nullopt;
+	std::lock_guard<std::mutex> guard(cuda_symbol_map_mutex);
+	auto itr = patched_kernel_by_name.find(kernel_name);
+	if (itr == patched_kernel_by_name.end())
+		return std::nullopt;
+	return itr->second;
+}
+
+void nv_attach_impl::record_original_cufunction_name(CUfunction function,
+						     const std::string &kernel_name)
+{
+	if (function == nullptr || kernel_name.empty())
+		return;
+	std::lock_guard<std::mutex> guard(cuda_symbol_map_mutex);
+	auto itr = kernel_name_by_cufunction.find(function);
+	if (itr == kernel_name_by_cufunction.end()) {
+		kernel_name_by_cufunction.emplace(function, kernel_name);
+		return;
+	}
+	if (itr->second != kernel_name)
+		itr->second = kernel_name;
+}
+
+std::optional<std::string>
+nv_attach_impl::find_original_kernel_name(CUfunction function) const
+{
+	if (function == nullptr)
+		return std::nullopt;
+	std::lock_guard<std::mutex> guard(cuda_symbol_map_mutex);
+	auto itr = kernel_name_by_cufunction.find(function);
+	if (itr == kernel_name_by_cufunction.end())
+		return std::nullopt;
+	return itr->second;
+}
+
 std::map<std::string, std::string>
 nv_attach_impl::extract_ptxs(std::vector<uint8_t> &&data_vec)
 {
@@ -601,9 +763,8 @@ int nv_attach_impl::run_attach_entry_on_gpu(int attach_id, int run_count,
 	}
 	SPDLOG_INFO("Running program on GPU");
 
-	// Get SM architecture from environment variable, default to sm_61
-	const char *sm_arch_env = std::getenv("BPFTIME_SM_ARCH");
-	std::string sm_arch = sm_arch_env ? sm_arch_env : "sm_61";
+	// Get SM architecture (auto-detect or from BPFTIME_SM_ARCH env)
+	std::string sm_arch = get_gpu_sm_arch();
 	SPDLOG_INFO("Using SM architecture: {}", sm_arch);
 
 	std::vector<uint64_t> ebpf_words;

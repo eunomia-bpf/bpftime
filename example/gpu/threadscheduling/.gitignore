@@ -1,0 +1,6 @@
+.output/
+threadscheduling
+vec_add
+*.o
+*.bpf.o
+*.skel.h

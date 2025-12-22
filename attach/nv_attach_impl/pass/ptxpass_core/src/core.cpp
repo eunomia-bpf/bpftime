@@ -153,6 +153,7 @@ std::string filter_out_version_headers_ptx(const std::string &input)
 	static const std::string FILTERED_OUT_PREFIXES[] = {
 		".version", ".target", ".address_size", "//"
 	};
+
 	std::istringstream iss(input);
 	std::ostringstream oss;
 	std::string line;
@@ -161,10 +162,11 @@ std::string filter_out_version_headers_ptx(const std::string &input)
 		bool skip = false;
 		for (const auto &p : FILTERED_OUT_PREFIXES) {
 			if (line.rfind(p, 0) == 0) {
-				if (seen.contains(p))
+				if (seen.contains(p)) {
 					skip = true;
-				else
+				} else {
 					seen.insert(p);
+				}
 				break;
 			}
 		}
@@ -203,6 +205,9 @@ std::string compile_ebpf_to_ptx_from_words(
 	vm.register_external_function(505, "get_thread_idx", (void *)test_func);
 	vm.register_external_function(507, "cuda_exit", (void *)test_func);
 	vm.register_external_function(508, "get_grid_dim", (void *)test_func);
+	vm.register_external_function(509, "get_sm_id", (void *)test_func);
+	vm.register_external_function(510, "get_warp_id", (void *)test_func);
+	vm.register_external_function(511, "get_lane_id", (void *)test_func);
 
 	vm.load_code(insts, insts_count * sizeof(ebpf_inst));
 	bpftime::llvm_bpf_jit_context ctx(vm);
