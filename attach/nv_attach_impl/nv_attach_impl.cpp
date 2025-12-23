@@ -190,6 +190,12 @@ CUresult cuda_driver_function__cuGraphKernelNodeSetParams_v1(
 	CUgraphNode hNode, const CUDA_KERNEL_NODE_PARAMS_v1 *nodeParams);
 CUresult cuda_driver_function__cuGraphKernelNodeSetParams_v2(
 	CUgraphNode hNode, const CUDA_KERNEL_NODE_PARAMS_v2 *nodeParams);
+cudaError_t cuda_runtime_function__cudaMemcpyFromSymbol(
+	void *dst, const void *symbol, size_t count, size_t offset = 0,
+	cudaMemcpyKind kind = cudaMemcpyDeviceToHost);
+cudaError_t cuda_runtime_function__cudaMemcpyFromSymbolAsync(
+	void *dst, const void *symbol, size_t count, size_t offset,
+	cudaMemcpyKind kind, cudaStream_t stream = 0);
 }
 
 nv_attach_impl::nv_attach_impl()
@@ -354,6 +360,13 @@ nv_attach_impl::nv_attach_impl()
 		"cuGraphKernelNodeSetParams_v2",
 		(gpointer)&cuda_driver_function__cuGraphKernelNodeSetParams_v2,
 		&this->original_cu_graph_kernel_node_set_params_v2);
+	replace_hook("cudaMemcpyFromSymbol",
+		     (gpointer)&cuda_runtime_function__cudaMemcpyFromSymbol,
+		     &this->original_cuda_memcpy_from_symbol);
+	replace_hook(
+		"cudaMemcpyFromSymbolAsync",
+		(gpointer)&cuda_runtime_function__cudaMemcpyFromSymbolAsync,
+		&this->original_cuda_memcpy_from_symbol_async);
 	gum_interceptor_end_transaction(interceptor);
 
 	static const char *ptx_pass_libraries = DEFAULT_PTX_PASS_EXECUTABLE;
@@ -454,7 +467,8 @@ nv_attach_impl::~nv_attach_impl()
 			"cuGraphKernelNodeSetParams_v2",
 		};
 		revert_frida_replaced_exports_if_present(
-			interceptor, replaced_symbols, std::size(replaced_symbols));
+			interceptor, replaced_symbols,
+			std::size(replaced_symbols));
 
 		gum_interceptor_end_transaction(interceptor);
 	}
@@ -468,8 +482,8 @@ nv_attach_impl::~nv_attach_impl()
 	}
 }
 
-void nv_attach_impl::record_patched_kernel_function(const std::string &kernel_name,
-						    CUfunction function)
+void nv_attach_impl::record_patched_kernel_function(
+	const std::string &kernel_name, CUfunction function)
 {
 	if (kernel_name.empty() || function == nullptr)
 		return;
@@ -483,8 +497,8 @@ void nv_attach_impl::record_patched_kernel_function(const std::string &kernel_na
 		itr->second = function;
 }
 
-std::optional<CUfunction>
-nv_attach_impl::find_patched_kernel_function(const std::string &kernel_name) const
+std::optional<CUfunction> nv_attach_impl::find_patched_kernel_function(
+	const std::string &kernel_name) const
 {
 	if (kernel_name.empty())
 		return std::nullopt;
@@ -495,8 +509,8 @@ nv_attach_impl::find_patched_kernel_function(const std::string &kernel_name) con
 	return itr->second;
 }
 
-void nv_attach_impl::record_original_cufunction_name(CUfunction function,
-						     const std::string &kernel_name)
+void nv_attach_impl::record_original_cufunction_name(
+	CUfunction function, const std::string &kernel_name)
 {
 	if (function == nullptr || kernel_name.empty())
 		return;

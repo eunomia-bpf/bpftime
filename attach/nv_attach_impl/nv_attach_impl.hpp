@@ -138,6 +138,10 @@ class nv_attach_impl final : public base_attach_impl {
 					  size_t count, size_t offset,
 					  cudaMemcpyKind kind,
 					  cudaStream_t stream, bool async);
+	void mirror_cuda_memcpy_from_symbol(void *dst, const void *symbol,
+					    size_t count, size_t offset,
+					    cudaMemcpyKind kind,
+					    cudaStream_t stream, bool async);
 
 	int find_attach_entry_by_program_name(const char *name) const;
 	int run_attach_entry_on_gpu(int attach_id, int run_count = 1,
@@ -177,6 +181,8 @@ class nv_attach_impl final : public base_attach_impl {
 	void *original_cu_graph_exec_kernel_node_set_params_v2 = nullptr;
 	void *original_cu_graph_kernel_node_set_params_v1 = nullptr;
 	void *original_cu_graph_kernel_node_set_params_v2 = nullptr;
+	void *original_cuda_memcpy_from_symbol = nullptr;
+	void *original_cuda_memcpy_from_symbol_async = nullptr;
 
     private:
 	void *frida_interceptor;
