@@ -45,16 +45,14 @@ jobs:
       - name: Install lcov (Fedora)
         if: ${{matrix.container.name =='fedora'}}
         run: |
-          dnf install -y dnf-plugins-core
-          dnf config-manager --add-repo https://developer.download.nvidia.com/compute/cuda/repos/fedora39/x86_64/cuda-fedora39.repo
-          dnf install -y lcov tree clang-devel || true
-          dnf install -y cuda --skip-broken --nobest || echo "CUDA installation failed, continuing without CUDA"
+          dnf install -y lcov tree
       - name: Build and install runtime (with llvm-jit)
         if: ${{matrix.enable_jit}}
         run: |
           cmake -Bbuild  -DCMAKE_BUILD_TYPE:STRING=RelWithDebInfo \
             -DBPFTIME_LLVM_JIT=1 \
             -DTEST_LCOV=YES \
+            -DBPFTIME_ENABLE_CUDA_ATTACH=OFF \
             -DBUILD_BPFTIME_DAEMON=1 \
             -DCMAKE_CXX_FLAGS="-DDEFAULT_LOGGER_OUTPUT_PATH='\"console\"'" -Dabsl_DIR=~/miniconda3/lib/cmake/absl -DProtobuf_DIR=~/miniconda3/lib/cmake/protobuf -Dutf8_range_DIR=~/miniconda3/lib/cmake/utf8_range
           # mkdir -p build/runtime/pos/include/proto/
@@ -76,6 +74,7 @@ jobs:
           cmake -Bbuild  -DCMAKE_BUILD_TYPE:STRING=RelWithDebInfo \
             -DBPFTIME_LLVM_JIT=0 \
             -DTEST_LCOV=YES \
+            -DBPFTIME_ENABLE_CUDA_ATTACH=OFF \
             -DBUILD_BPFTIME_DAEMON=1 \
             -DCMAKE_CXX_FLAGS="-DDEFAULT_LOGGER_OUTPUT_PATH='\"console\"'" -Dabsl_DIR=~/miniconda3/lib/cmake/absl -DProtobuf_DIR=~/miniconda3/lib/cmake/protobuf -Dutf8_range_DIR=~/miniconda3/lib/cmake/utf8_range
           mkdir -p build/runtime/pos/include/proto/
@@ -348,12 +347,6 @@ jobs:
           ls -lah .
           tar -zxvf gcno_files.tar.gz
           pwd
-      - name: Install CUDA runtime dependencies (Fedora)
-        if: ${{matrix.container.name == 'fedora'}}
-        run: |
-          dnf install -y dnf-plugins-core
-          dnf config-manager --add-repo https://developer.download.nvidia.com/compute/cuda/repos/fedora39/x86_64/cuda-fedora39.repo
-          dnf install -y cuda --skip-broken --nobest || echo "CUDA installation failed, continuing without CUDA"
       - name: Install which(required by funclatency on fedora)
         if: ${{matrix.container.name=='fedora' && matrix.examples.path=='tracing/funclatency'}}
         run: |

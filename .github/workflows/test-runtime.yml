@@ -76,9 +76,7 @@ jobs:
       - name: Install lcov
         if: "matrix.container == 'fedora-39'"
         run: |
-          dnf install -y dnf-plugins-core
-          dnf config-manager --add-repo https://developer.download.nvidia.com/compute/cuda/repos/fedora39/x86_64/cuda-fedora39.repo
-          dnf install -y lcov cuda clang-devel
+          dnf install -y lcov
 
       - name: Build runtime tests (Ubuntu/Fedora)
         if: matrix.container != 'openeuler-2403sp2'
@@ -93,9 +91,9 @@ jobs:
           LLVM_CMAKE_DIR=$([ -n "$LLVM_CONFIG" ] && "$LLVM_CONFIG" --cmakedir 2>/dev/null || true)
           LLVM_LIBDIR=$([ -n "$LLVM_CONFIG" ] && "$LLVM_CONFIG" --libdir 2>/dev/null || true)
           if [ -n "$LLVM_CMAKE_DIR" ]; then
-            cmake -DTEST_LCOV=ON -DBPFTIME_LLVM_JIT=YES -DBPFTIME_ENABLE_UNIT_TESTING=YES -DENABLE_PROBE_WRITE_CHECK=1 -DENABLE_PROBE_READ_CHECK=1 -DCMAKE_BUILD_TYPE=Debug -DLLVM_DIR="$LLVM_CMAKE_DIR" -B build
+            cmake -DTEST_LCOV=ON -DBPFTIME_LLVM_JIT=YES -DBPFTIME_ENABLE_UNIT_TESTING=YES -DBPFTIME_ENABLE_CUDA_ATTACH=OFF -DENABLE_PROBE_WRITE_CHECK=1 -DENABLE_PROBE_READ_CHECK=1 -DCMAKE_BUILD_TYPE=Debug -DLLVM_DIR="$LLVM_CMAKE_DIR" -B build
           else
-            cmake -DTEST_LCOV=ON -DBPFTIME_LLVM_JIT=YES -DBPFTIME_ENABLE_UNIT_TESTING=YES -DENABLE_PROBE_WRITE_CHECK=1 -DENABLE_PROBE_READ_CHECK=1 -DCMAKE_BUILD_TYPE=Debug -B build
+            cmake -DTEST_LCOV=ON -DBPFTIME_LLVM_JIT=YES -DBPFTIME_ENABLE_UNIT_TESTING=YES -DBPFTIME_ENABLE_CUDA_ATTACH=OFF -DENABLE_PROBE_WRITE_CHECK=1 -DENABLE_PROBE_READ_CHECK=1 -DCMAKE_BUILD_TYPE=Debug -B build
           fi
           if [ -n "$LLVM_LIBDIR" ]; then export LD_LIBRARY_PATH="$LLVM_LIBDIR:$LD_LIBRARY_PATH"; fi
           cmake --build build --config Debug --target bpftime_runtime_tests -j$(nproc)
@@ -116,9 +114,9 @@ jobs:
           LLVM_CMAKE_DIR=$([ -n "$LLVM_CONFIG" ] && "$LLVM_CONFIG" --cmakedir 2>/dev/null || true)
           LLVM_LIBDIR=$([ -n "$LLVM_CONFIG" ] && "$LLVM_CONFIG" --libdir 2>/dev/null || true)
           if [ -n "$LLVM_CMAKE_DIR" ]; then
-            cmake -DTEST_LCOV=OFF -DBPFTIME_LLVM_JIT=YES -DBPFTIME_ENABLE_UNIT_TESTING=OFF -DENABLE_PROBE_WRITE_CHECK=1 -DENABLE_PROBE_READ_CHECK=1 -DENABLE_LLVM_SHARED=ON -DBPFTIME_ENABLE_LLVM_PRELOAD=ON -DLLVM_DIR="$LLVM_CMAKE_DIR" -DCMAKE_BUILD_TYPE=Debug -B build
+            cmake -DTEST_LCOV=OFF -DBPFTIME_LLVM_JIT=YES -DBPFTIME_ENABLE_UNIT_TESTING=OFF -DBPFTIME_ENABLE_CUDA_ATTACH=OFF -DENABLE_PROBE_WRITE_CHECK=1 -DENABLE_PROBE_READ_CHECK=1 -DENABLE_LLVM_SHARED=ON -DBPFTIME_ENABLE_LLVM_PRELOAD=ON -DLLVM_DIR="$LLVM_CMAKE_DIR" -DCMAKE_BUILD_TYPE=Debug -B build
           else
-            cmake -DTEST_LCOV=OFF -DBPFTIME_LLVM_JIT=YES -DBPFTIME_ENABLE_UNIT_TESTING=OFF -DENABLE_PROBE_WRITE_CHECK=1 -DENABLE_PROBE_READ_CHECK=1 -DENABLE_LLVM_SHARED=ON -DBPFTIME_ENABLE_LLVM_PRELOAD=ON -DCMAKE_BUILD_TYPE=Debug -B build
+            cmake -DTEST_LCOV=OFF -DBPFTIME_LLVM_JIT=YES -DBPFTIME_ENABLE_UNIT_TESTING=OFF -DBPFTIME_ENABLE_CUDA_ATTACH=OFF -DENABLE_PROBE_WRITE_CHECK=1 -DENABLE_PROBE_READ_CHECK=1 -DENABLE_LLVM_SHARED=ON -DBPFTIME_ENABLE_LLVM_PRELOAD=ON -DCMAKE_BUILD_TYPE=Debug -B build
           fi
           if [ -n "$LLVM_LIBDIR" ]; then export LD_LIBRARY_PATH="$LLVM_LIBDIR:$LD_LIBRARY_PATH"; fi
           cmake --build build --config Debug --target bpftime-agent bpftime-syscall-server libbpf bpftool -j$(nproc)
@@ -212,7 +210,7 @@ jobs:
         if: matrix.container != 'openeuler-2403sp2'
         run: |
           rm -rf build
-          cmake -Bbuild -DTEST_LCOV=ON -DBPFTIME_LLVM_JIT=YES  -DBPFTIME_ENABLE_UNIT_TESTING=YES -DBPFTIME_ENABLE_MPK=YES -DCMAKE_BUILD_TYPE=Debug -DENABLE_PROBE_WRITE_CHECK=1 -DENABLE_PROBE_READ_CHECK=1 -Dabsl_DIR=~/miniconda3/lib/cmake/absl -DProtobuf_DIR=~/miniconda3/lib/cmake/protobuf -Dutf8_range_DIR=~/miniconda3/lib/cmake/utf8_range
+          cmake -Bbuild -DTEST_LCOV=ON -DBPFTIME_LLVM_JIT=YES -DBPFTIME_ENABLE_UNIT_TESTING=YES -DBPFTIME_ENABLE_CUDA_ATTACH=OFF -DBPFTIME_ENABLE_MPK=YES -DCMAKE_BUILD_TYPE=Debug -DENABLE_PROBE_WRITE_CHECK=1 -DENABLE_PROBE_READ_CHECK=1 -Dabsl_DIR=~/miniconda3/lib/cmake/absl -DProtobuf_DIR=~/miniconda3/lib/cmake/protobuf -Dutf8_range_DIR=~/miniconda3/lib/cmake/utf8_range
           mkdir -p build/runtime/pos/include/proto/
           mkdir -p build/runtime/pos/cuda_impl/proto/
           ln -sf /usr/lib/llvm-*/include/clang-c/ /usr/include/ || true
