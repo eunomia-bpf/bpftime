@@ -16,7 +16,11 @@ function(find_cuda)
         set(CUDA_TARGET_ARCH "x86_64-linux")
     endif()
 
-    set(CUDA_LIBRARY_PATH ${BPFTIME_CUDA_ROOT}/targets/${CUDA_TARGET_ARCH}/lib/ ${BPFTIME_CUDA_ROOT}/targets/${CUDA_TARGET_ARCH}/lib/stubs/ ${BPFTIME_CUDA_ROOT}/extras/CUPTI/lib64/ PARENT_SCOPE)
+    set(CUDA_LIBRARY_PATH
+        ${BPFTIME_CUDA_ROOT}/targets/${CUDA_TARGET_ARCH}/lib/
+        ${BPFTIME_CUDA_ROOT}/targets/${CUDA_TARGET_ARCH}/lib/stubs/
+        ${BPFTIME_CUDA_ROOT}/extras/CUPTI/lib64/
+        PARENT_SCOPE)
 
     # Detect CUDA version from version.json or version.txt
     if(EXISTS "${BPFTIME_CUDA_ROOT}/version.json")
@@ -37,8 +41,22 @@ function(find_cuda)
         set(CUDA_VERSION_MINOR ${CMAKE_MATCH_2})
     endif()
 
-    # CUPTI include path should be dynamic based on detected CUDA version
-    set(CUDA_INCLUDE_PATH ${BPFTIME_CUDA_ROOT}/targets/${CUDA_TARGET_ARCH}/include ${BPFTIME_CUDA_ROOT}/cuda-${CUDA_VERSION_MAJOR}.${CUDA_VERSION_MINOR}/extras/CUPTI/include PARENT_SCOPE)
+    # Prefer canonical CUPTI include path; fall back to versioned layout if needed.
+    set(CUDA_CUPTI_INCLUDE_CANDIDATES
+        "${BPFTIME_CUDA_ROOT}/extras/CUPTI/include"
+        "${BPFTIME_CUDA_ROOT}/cuda-${CUDA_VERSION_MAJOR}.${CUDA_VERSION_MINOR}/extras/CUPTI/include")
+    set(CUDA_CUPTI_INCLUDE "")
+    foreach(_cand IN LISTS CUDA_CUPTI_INCLUDE_CANDIDATES)
+        if(EXISTS "${_cand}")
+            set(CUDA_CUPTI_INCLUDE "${_cand}")
+            break()
+        endif()
+    endforeach()
+
+    set(CUDA_INCLUDE_PATH
+        ${BPFTIME_CUDA_ROOT}/targets/${CUDA_TARGET_ARCH}/include
+        ${CUDA_CUPTI_INCLUDE}
+        PARENT_SCOPE)
 
     message(STATUS "Detected CUDA version: ${CUDA_VERSION_MAJOR}.${CUDA_VERSION_MINOR}")
 
@@ -51,12 +69,28 @@ function(find_cuda)
         message(STATUS "CUDA ${CUDA_VERSION_MAJOR}.${CUDA_VERSION_MINOR}: Using cupti (dynamic library)")
     endif()
 
-    # nvptxcompiler_static is only available in CUDA 12.x and earlier
-    if(CUDA_VERSION_MAJOR LESS 13)
-        set(CUDA_LIBS cuda cudart libnvptxcompiler_static.a ${CUDA_CUPTI_LIB} nvrtc PARENT_SCOPE)
-        message(STATUS "CUDA ${CUDA_VERSION_MAJOR}.${CUDA_VERSION_MINOR}: Including nvptxcompiler_static")
+    # nvPTXCompiler API is required by bpftime for PTX compilation.
+    # Prefer the static archive if present, otherwise fall back to shared library.
+    set(NVPTXCOMPILER_LIB "")
+    set(_nvptxcompiler_candidates
+        "${BPFTIME_CUDA_ROOT}/targets/${CUDA_TARGET_ARCH}/lib/libnvptxcompiler_static.a"
+        "${BPFTIME_CUDA_ROOT}/lib64/libnvptxcompiler_static.a"
+        "${BPFTIME_CUDA_ROOT}/targets/${CUDA_TARGET_ARCH}/lib/libnvptxcompiler.so"
+        "${BPFTIME_CUDA_ROOT}/lib64/libnvptxcompiler.so")
+    foreach(_cand IN LISTS _nvptxcompiler_candidates)
+        if(EXISTS "${_cand}")
+            set(NVPTXCOMPILER_LIB "${_cand}")
+            break()
+        endif()
+    endforeach()
+
+    if(NVPTXCOMPILER_LIB)
+        set(CUDA_LIBS cuda cudart ${NVPTXCOMPILER_LIB} ${CUDA_CUPTI_LIB} nvrtc)
+        message(STATUS "CUDA ${CUDA_VERSION_MAJOR}.${CUDA_VERSION_MINOR}: Using nvptxcompiler: ${NVPTXCOMPILER_LIB}")
     else()
-        set(CUDA_LIBS cuda cudart ${CUDA_CUPTI_LIB} nvrtc PARENT_SCOPE)
-        message(STATUS "CUDA ${CUDA_VERSION_MAJOR}.${CUDA_VERSION_MINOR}: Excluding nvptxcompiler_static (not available)")
+        set(CUDA_LIBS cuda cudart ${CUDA_CUPTI_LIB} nvrtc)
+        message(WARNING "CUDA ${CUDA_VERSION_MAJOR}.${CUDA_VERSION_MINOR}: nvptxcompiler library not found; targets using nvPTXCompiler API may fail to link")
     endif()
+
+    set(CUDA_LIBS ${CUDA_LIBS} PARENT_SCOPE)
 endfunction()
