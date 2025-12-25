@@ -1,0 +1,371 @@
+name: Build and run GPU integrated tests (examples)
+
+on:
+  workflow_dispatch:
+  push:
+    branches: ["*"]
+  pull_request:
+    branches: ["master", "main"]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}-${{ github.event_name }}
+  cancel-in-progress: true
+
+env:
+  BPFTIME_VM_NAME: llvm
+
+jobs:
+  build-and-test-gpu-examples:
+    runs-on: [self-hosted, Linux, X64, gpu]
+    strategy:
+      fail-fast: false
+      max-parallel: 1
+      matrix:
+        examples:
+          - path: atomizer
+            executable: ./atomizer
+            victim: ./vec_add
+            expected_str: "Exited _Z9vectorAdd"
+            name: atomizer
+            server_timeout: 15
+            mode: two-process
+          - path: kernel_trace
+            executable: ./kernel_trace
+            victim: ./vec_add
+            expected_str: "total events:"
+            name: kernel_trace
+            server_timeout: 15
+            mode: two-process
+          - path: gpu_shared_map
+            executable: ./gpu_shared_map
+            victim: ./vec_add
+            expected_str: "counter[0]="
+            name: gpu_shared_map
+            server_timeout: 15
+            mode: two-process
+          - path: threadscheduling
+            executable: ./threadscheduling
+            victim: ./vec_add
+            expected_str: "SM Utilization Histogram"
+            name: threadscheduling
+            server_timeout: 15
+            mode: two-process
+          - path: cudagraph
+            executable: ./cuda_probe
+            victim: ./vec_add_graph
+            expected_str: "calls:"
+            name: cudagraph
+            server_timeout: 15
+            mode: two-process
+          - path: threadhist-gpu-kernel-shared-map
+            executable: ./threadhist
+            victim: ./vec_add
+            expected_str: "value(0)="
+            name: threadhist-gpu-kernel-shared-map
+            server_timeout: 15
+            mode: two-process
+          - path: directly_run_on_gpu
+            executable: ./directly_run
+            victim: ""
+            expected_str: "GEMM C[0]="
+            name: directly_run_on_gpu
+            server_timeout: 15
+            mode: direct-run
+          - path: kernelretsnoop
+            executable: ./kernelretsnoop
+            victim: ./vec_add
+            expected_str: "Thread ("
+            name: kernelretsnoop
+            server_timeout: 15
+            mode: two-process
+          - path: threadhist
+            executable: ./threadhist
+            victim: ./vec_add
+            expected_str: "Thread "
+            name: threadhist
+            server_timeout: 15
+            mode: two-process
+          - path: cuda-counter
+            executable: ./cuda_probe
+            victim: ./vec_add
+            expected_str: "calls:"
+            name: cuda-counter
+            server_timeout: 15
+            mode: two-process
+          - path: launchlate
+            executable: ./launchlate
+            victim: ./vec_add
+            expected_str: "Monitoring CUDA kernel launch latency"
+            name: launchlate
+            server_timeout: 15
+            mode: two-process
+          - path: launchlate-kernel-gpu-shared-map
+            executable: ./launchlate
+            victim: ./vec_add
+            expected_str: "Monitoring CUDA kernel launch latency"
+            name: launchlate-kernel-gpu-shared-map
+            server_timeout: 15
+            mode: two-process
+          - path: mem_trace
+            executable: ./mem_trace
+            victim: ./vec_add
+            expected_str: "counter[0]="
+            name: mem_trace
+            server_timeout: 15
+            mode: two-process
+          - path: cutlass
+            executable: ./counter/cutlass_launch_counter
+            victim: ./gemm/cutlass_gemm --shape 1024x1024x1024 --launches 4 --warmup 1 --verify
+            expected_str: "CUTLASS launches:"
+            name: cutlass
+            server_timeout: 15
+            mode: two-process
+            dispatch_only: true
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Detect CUDA root and export env
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Prefer /usr/local/cuda symlink, then versioned installs.
+          for cand in /usr/local/cuda /usr/local/cuda-12.9 /usr/local/cuda-12.8 /usr/local/cuda-12.7 /usr/local/cuda-12.6 /usr/local/cuda-12.5 /usr/local/cuda-12 /usr/local/cuda-11.8; do
+            if [ -d "$cand" ] && [ -x "$cand/bin/nvcc" ]; then
+              echo "BPFTIME_CUDA_ROOT=$cand" >> "$GITHUB_ENV"
+              echo "PATH=$cand/bin:$PATH" >> "$GITHUB_ENV"
+              if [ -d "$cand/lib64" ]; then
+                echo "LD_LIBRARY_PATH=$cand/lib64:${LD_LIBRARY_PATH:-}" >> "$GITHUB_ENV"
+              fi
+              echo "Using CUDA root: $cand"
+              exit 0
+            fi
+          done
+          if command -v nvcc >/dev/null 2>&1; then
+            NVCC_PATH="$(command -v nvcc)"
+            CUDA_FROM_NVCC="$(cd "$(dirname "$NVCC_PATH")/.." && pwd)"
+            echo "BPFTIME_CUDA_ROOT=$CUDA_FROM_NVCC" >> "$GITHUB_ENV"
+            echo "Using CUDA root from nvcc: $CUDA_FROM_NVCC"
+            exit 0
+          fi
+          echo "No CUDA root with nvcc found under /usr/local and nvcc not in PATH."
+          exit 1
+
+      - name: Check required tools
+        shell: bash
+        run: |
+          set -euo pipefail
+          for cmd in cmake ninja clang llvm-config nvcc; do
+            if ! command -v "$cmd" >/dev/null 2>&1; then
+              echo "Missing required tool: $cmd"
+              exit 1
+            fi
+          done
+          nvcc --version
+          nvidia-smi -L
+
+      - name: Build bpftime with CUDA support (LLVM JIT)
+        shell: bash
+        run: |
+          set -euo pipefail
+          cmake -B build -S . \
+            -DCMAKE_BUILD_TYPE=Debug \
+            -DBPFTIME_LLVM_JIT=YES \
+            -DBPFTIME_ENABLE_CUDA_ATTACH=ON \
+            -DBPFTIME_CUDA_ROOT="${BPFTIME_CUDA_ROOT:-/usr/local/cuda}" \
+            -DLLVM_DIR="/usr/lib/llvm-18/lib/cmake/llvm/" \
+            -G Ninja
+          cmake --build build --config Debug --target bpftime-agent bpftime-syscall-server bpftimetool bpftime_text_segment_transformer ptxpass_kprobe_entry ptxpass_kretprobe ptxpass_kprobe_memcapture -j"$(nproc)"
+
+      - name: Build GPU example
+        run: |
+          echo "Building GPU example: ${{matrix.examples.path}}"
+          # Prefer system clang; fallback to clang-18 if needed
+          if ! command -v clang >/dev/null 2>&1 && command -v clang-18 >/dev/null 2>&1; then
+            export CLANG=clang-18
+          fi
+          # Some examples (e.g. CUTLASS) use CUDA_HOME/NVCC directly instead of PATH lookups.
+          export CUDA_HOME="${BPFTIME_CUDA_ROOT:-/usr/local/cuda}"
+          export NVCC="${CUDA_HOME}/bin/nvcc"
+          make -C example/gpu/${{matrix.examples.path}} -j
+
+      - name: Test GPU example (per README two-process)
+        shell: bash
+        run: |
+          set -euo pipefail
+          ROOT_DIR=$(pwd)
+          EXAMPLE_DIR="$ROOT_DIR/example/gpu/${{matrix.examples.path}}"
+          BUILD_DIR="$ROOT_DIR/build"
+          SERVER_SO="$BUILD_DIR/runtime/syscall-server/libbpftime-syscall-server.so"
+          AGENT_SO="$BUILD_DIR/runtime/agent/libbpftime-agent.so"
+          EXE_REL="${{ matrix.examples.executable }}"
+          VICTIM_REL="${{ matrix.examples.victim }}"
+          EXPECTED="${{ matrix.examples.expected_str }}"
+          EXAMPLE_NAME="${{ matrix.examples.name }}"
+          EXAMPLE_MODE="${{ matrix.examples.mode }}"
+          CLIENT_TIMEOUT=60
+          BPFTIMETOOL="$BUILD_DIR/tools/bpftimetool/bpftimetool"
+          export SPDLOG_LEVEL=info
+          export BPFTIME_LOG_LEVEL=INFO
+          export CUDA_LAUNCH_BLOCKING=0
+          export CUDA_MODULE_LOADING=LAZY
+          export BPFTIME_GLOBAL_SHM_NAME="bpftime_maps_shm_${EXAMPLE_NAME}"
+          # GPU per-thread map sizing (some examples are memory-sensitive).
+          GPU_THREAD_COUNT=8192
+          case "$EXAMPLE_NAME" in
+            kernelretsnoop) GPU_THREAD_COUNT=10 ;;       # per README: avoid bad_alloc
+            threadhist) GPU_THREAD_COUNT=524288 ;;       # per README: allow large thread id space
+            kernel_trace) GPU_THREAD_COUNT=4096 ;;       # kernel_trace vec_add launches 32*128=4096 threads
+          esac
+          export BPFTIME_MAP_GPU_THREAD_COUNT="$GPU_THREAD_COUNT"
+          export LD_LIBRARY_PATH="$ROOT_DIR/build/attach/text_segment_transformer:${LD_LIBRARY_PATH:-}"
+          df -h /dev/shm || true
+          # Best-effort cleanup in case a previous job was interrupted.
+          pkill -9 -f "LD_PRELOAD.*libbpftime.*\\.so" || true
+          SERVER_BIN="$(basename "${EXE_REL%% *}")"
+          pkill -9 -f "$SERVER_BIN" || true
+          if [ -n "${VICTIM_REL:-}" ]; then
+            VICTIM_BIN="$(basename "${VICTIM_REL%% *}")"
+            pkill -9 -f "$VICTIM_BIN" || true
+          fi
+          # Remove bpftime shared memory segments and semaphores
+          rm -f /dev/shm/bpftime* || true
+          rm -f /dev/shm/sem.bpftime* || true
+          # ensure previous logs do not interfere
+          rm -f server.log client.log tool.log || true
+          : > server.log
+          : > client.log
+          : > tool.log
+          # tune shared memory size per example (ringbuf-heavy examples need more)
+          # 16MB is often too small once CUDA init + maps are involved.
+          SHM_MB=64
+          case "$EXAMPLE_NAME" in
+            kernelretsnoop) SHM_MB=64 ;;  # ringbuf map needs larger shm
+            kernel_trace) SHM_MB=256 ;;
+            threadhist) SHM_MB=64 ;;
+            threadscheduling) SHM_MB=64 ;;
+            atomizer) SHM_MB=64 ;;
+            directly_run_on_gpu) SHM_MB=64 ;;
+          esac
+          # Guard against small /dev/shm (common in containerized runners).
+          # If /dev/shm is smaller than requested, shared_memory_object::truncate()
+          # will fail with ENOSPC ("No space left on device").
+          AVAIL_MB=$(df --output=avail -m /dev/shm 2>/dev/null | tail -1 | tr -d ' ')
+          if [[ "${AVAIL_MB:-}" =~ ^[0-9]+$ ]] && [ "$AVAIL_MB" -gt 0 ]; then
+            HEADROOM_MB=8
+            MAX_MB=$((AVAIL_MB - HEADROOM_MB))
+            if [ "$MAX_MB" -lt 32 ]; then
+              echo "Not enough /dev/shm available: avail=${AVAIL_MB}MB (need at least 32MB)."
+              df -h /dev/shm || true
+              exit 1
+            fi
+            if [ "$SHM_MB" -gt "$MAX_MB" ]; then
+              echo "Clamping BPFTIME_SHM_MEMORY_MB from $SHM_MB to $MAX_MB due to /dev/shm avail=${AVAIL_MB}MB"
+              SHM_MB="$MAX_MB"
+            fi
+          fi
+          if [ "$EXAMPLE_MODE" = "direct-run" ]; then
+            pushd "$EXAMPLE_DIR" >/dev/null
+            echo "Launching direct-run server with $SERVER_SO: $EXE_REL (BPFTIME_SHM_MEMORY_MB=$SHM_MB)"
+            # Don't preload into the shell itself; only preload into the target binary.
+            BPFTIME_SHM_MEMORY_MB=$SHM_MB BPFTIME_LOG_OUTPUT=console bash -lc "LD_PRELOAD=\"$SERVER_SO\" exec $EXE_REL" > "$ROOT_DIR/server.log" 2>&1 &
+            SERVER_PID=$!
+            popd >/dev/null
+            echo "Server PID: $SERVER_PID"
+            sleep 3
+            if ! kill -0 "$SERVER_PID" 2>/dev/null; then
+              echo "Server crashed early. Showing server.log tail:"; tail -n 200 server.log || true
+              exit 1
+            fi
+            if [ ! -x "$BPFTIMETOOL" ]; then
+              echo "bpftimetool not found at $BPFTIMETOOL"; tail -n 200 server.log || true; exit 1
+            fi
+            echo "Running bpftimetool run-on-cuda (GEMM) ..."
+            set +e
+            timeout -s SIGKILL ${CLIENT_TIMEOUT}s "$BPFTIMETOOL" run-on-cuda cuda__gemm 1 4 4 1 16 16 1 > tool.log 2>&1
+            TOOL_RC=$?
+            set -e
+            sleep 5
+          else
+            pushd "$EXAMPLE_DIR" >/dev/null
+            echo "Launching server with $SERVER_SO: $EXE_REL (BPFTIME_SHM_MEMORY_MB=$SHM_MB)"
+            # Don't preload into the shell itself; only preload into the target binary.
+            BPFTIME_SHM_MEMORY_MB=$SHM_MB BPFTIME_LOG_OUTPUT=console bash -lc "LD_PRELOAD=\"$SERVER_SO\" exec $EXE_REL" > "$ROOT_DIR/server.log" 2>&1 &
+            SERVER_PID=$!
+            popd >/dev/null
+            echo "Server PID: $SERVER_PID"
+            sleep 5
+            if ! kill -0 "$SERVER_PID" 2>/dev/null; then
+              echo "Server crashed early. Showing server.log tail:"; tail -n 200 server.log || true
+              exit 1
+            fi
+            echo "Launching client with $AGENT_SO: $VICTIM_REL"
+            pushd "$EXAMPLE_DIR" >/dev/null
+            set +e
+            # Don't preload into the shell itself; only preload into the target binary.
+            timeout -s SIGKILL ${CLIENT_TIMEOUT}s env BPFTIME_LOG_OUTPUT=console bash -lc "LD_PRELOAD=\"$AGENT_SO\" exec $VICTIM_REL" > "$ROOT_DIR/client.log" 2>&1
+            CLIENT_RC=$?
+            set -e
+            popd >/dev/null
+          fi
+          echo "Checking expected output: $EXPECTED"
+          # treat crashes as failure even if expected string appears
+          if grep -Eiq "(core dumped|Segmentation fault|Aborted)" server.log client.log tool.log; then
+            echo "Detected crash in logs"; tail -n 200 server.log || true; tail -n 200 client.log || true; tail -n 200 tool.log || true; RESULT=1
+          else
+            EXAMPLE_NAME="${{ matrix.examples.name }}"
+            FOUND=1
+            case "$EXAMPLE_NAME" in
+              directly_run_on_gpu)
+                # For GEMM, expect a non-zero fixed-point value after bpftimetool ran.
+                if grep -Eq "GEMM C\\[0\\]=[1-9]" server.log; then
+                  FOUND=0
+                fi
+                ;;
+              cutlass)
+                # Counter prints periodically; require a non-zero count to ensure attachment worked.
+                if grep -Eq "CUTLASS launches: [1-9]" server.log; then
+                  FOUND=0
+                fi
+                ;;
+              cuda-counter)
+                if grep -Fq "calls:" server.log || grep -Fq "C[0] =" client.log || grep -Fq "C[1] =" client.log; then
+                  FOUND=0
+                fi
+                ;;
+              mem_trace)
+                if grep -Fq "counter[0]=" server.log || grep -Fq "mem_traces:" server.log; then
+                  FOUND=0
+                fi
+                ;;
+              *)
+                if grep -Fq "$EXPECTED" server.log client.log; then
+                  FOUND=0
+                fi
+                ;;
+            esac
+            if [ $FOUND -eq 0 ]; then
+              echo "SUCCESS: found README-like output for $EXAMPLE_NAME"
+              RESULT=0
+            else
+              echo "FAILURE: expected output not found for $EXAMPLE_NAME"
+              echo "--- server.log (tail) ---"; tail -n 200 server.log || true
+              echo "--- client.log (tail) ---"; tail -n 200 client.log || true
+              echo "--- tool.log (tail) ---"; tail -n 200 tool.log || true
+              RESULT=1
+            fi
+          fi
+          kill $SERVER_PID 2>/dev/null || true
+          exit $RESULT
+
+      - name: Upload logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: gpu-example-${{ matrix.examples.name }}-logs
+          path: |
+            server.log
+            client.log
+            tool.log

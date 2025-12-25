@@ -816,7 +816,8 @@ int bpf_map_handler::map_init(managed_shared_memory &memory)
 #ifdef BPFTIME_BUILD_WITH_LIBBPF
 	case bpf_map_type::BPF_MAP_TYPE_KERNEL_USER_ARRAY: {
 		map_impl_ptr = memory.construct<array_map_kernel_user_impl>(
-			container_name.c_str())(memory, attr.kernel_bpf_map_id);
+			container_name.c_str())(memory, attr.kernel_bpf_map_id,
+						value_size, max_entries);
 		return 0;
 	}
 	case bpf_map_type::BPF_MAP_TYPE_KERNEL_USER_HASH: {
@@ -947,7 +948,8 @@ int bpf_map_handler::map_init(managed_shared_memory &memory)
 		SPDLOG_INFO("Map {} (array_map_kernel_gpu_impl) shared array",
 			    container_name.c_str());
 		map_impl_ptr = memory.construct<array_map_kernel_gpu_impl>(
-			container_name.c_str())(memory, attr.kernel_bpf_map_id);
+			container_name.c_str())(memory, attr.kernel_bpf_map_id,
+						value_size, max_entries);
 		shm_holder.global_shared_memory.set_enable_mock(true);
 		return 0;
 	}

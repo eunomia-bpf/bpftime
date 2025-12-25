@@ -35,6 +35,12 @@ static size_t bpf_map_mmap_sz(unsigned int value_sz, unsigned int max_entries)
 
 void array_map_kernel_user_impl::init_map_fd()
 {
+	if (mmap_ptr != nullptr) {
+		return;
+	}
+	if (kernel_map_id <= 0) {
+		return;
+	}
 	map_fd = bpf_map_get_fd_by_id(kernel_map_id);
 	if (map_fd < 0) {
 		SPDLOG_ERROR("Failed to get fd for kernel map id {}",
@@ -88,13 +94,30 @@ void array_map_kernel_user_impl::init_map_fd()
 }
 
 array_map_kernel_user_impl::array_map_kernel_user_impl(
-	boost::interprocess::managed_shared_memory &memory, int km_id)
-	: value_data(1, memory.get_segment_manager()), kernel_map_id(km_id)
+	boost::interprocess::managed_shared_memory &memory, int km_id,
+	uint32_t value_size, uint32_t max_entries)
+	: value_data(1, memory.get_segment_manager()),
+	  _value_size(value_size),
+	  _max_entries(max_entries),
+	  kernel_map_id(km_id),
+	  mmap_ptr(nullptr)
 {
+	if (kernel_map_id <= 0) {
+		value_data.resize(static_cast<size_t>(_value_size) *
+				  static_cast<size_t>(_max_entries));
+	}
 }
 
 void *array_map_kernel_user_impl::elem_lookup(const void *key)
 {
+	if (kernel_map_id <= 0) {
+		auto key_val = *(uint32_t *)key;
+		if (key_val >= _max_entries) {
+			errno = ENOENT;
+			return nullptr;
+		}
+		return &value_data[key_val * _value_size];
+	}
 	if (map_fd < 0) {
 		init_map_fd();
 	}
@@ -124,6 +147,16 @@ void *array_map_kernel_user_impl::elem_lookup(const void *key)
 long array_map_kernel_user_impl::elem_update(const void *key, const void *value,
 					     uint64_t flags)
 {
+	if (kernel_map_id <= 0) {
+		auto key_val = *(uint32_t *)key;
+		if (key_val >= _max_entries) {
+			errno = ENOENT;
+			return -1;
+		}
+		std::copy((uint8_t *)value, (uint8_t *)value + _value_size,
+			  &value_data[key_val * _value_size]);
+		return 0;
+	}
 	if (map_fd < 0) {
 		init_map_fd();
 	}
@@ -143,6 +176,15 @@ long array_map_kernel_user_impl::elem_update(const void *key, const void *value,
 
 long array_map_kernel_user_impl::elem_delete(const void *key)
 {
+	if (kernel_map_id <= 0) {
+		auto key_val = *(uint32_t *)key;
+		if (key_val >= _max_entries) {
+			errno = ENOENT;
+			return -1;
+		}
+		memset(&value_data[key_val * _value_size], 0, _value_size);
+		return 0;
+	}
 	if (map_fd < 0) {
 		init_map_fd();
 	}

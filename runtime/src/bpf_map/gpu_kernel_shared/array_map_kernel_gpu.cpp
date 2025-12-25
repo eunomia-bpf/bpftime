@@ -6,6 +6,8 @@
 #include "cuda.h"
 #include "spdlog/spdlog.h"
 #include "array_map_kernel_gpu.hpp"
+#include "bpftime_shm_internal.hpp"
+#include "bpf_attach_ctx.hpp"
 #include <cerrno>
 #include <cstdlib>
 #if __linux__
@@ -36,6 +38,12 @@ static size_t bpf_map_mmap_sz(unsigned int value_sz, unsigned int max_entries)
 
 void array_map_kernel_gpu_impl::init_map_fd()
 {
+	if (mmap_ptr != nullptr) {
+		return;
+	}
+	if (kernel_map_id <= 0) {
+		return;
+	}
 	map_fd = bpf_map_get_fd_by_id(kernel_map_id);
 	if (map_fd < 0) {
 		SPDLOG_ERROR("Failed to get fd for kernel map id {}",
@@ -85,18 +93,35 @@ void array_map_kernel_gpu_impl::init_map_fd()
 }
 
 array_map_kernel_gpu_impl::array_map_kernel_gpu_impl(
-	boost::interprocess::managed_shared_memory &memory, int km_id)
-	: value_data(1, memory.get_segment_manager()), kernel_map_id(km_id)
+	boost::interprocess::managed_shared_memory &memory, int km_id,
+	uint32_t value_size, uint32_t max_entries)
+	: value_data(1, memory.get_segment_manager()),
+	  _value_size(value_size),
+	  _max_entries(max_entries),
+	  kernel_map_id(km_id),
+	  mmap_ptr(nullptr)
 #ifdef BPFTIME_ENABLE_CUDA_ATTACH
 	  ,
 	  agent_gpu_shared_mem(memory.get_segment_manager())
 #endif
 
 {
+	if (kernel_map_id <= 0) {
+		value_data.resize(static_cast<size_t>(_value_size) *
+				  static_cast<size_t>(_max_entries));
+	}
 }
 
 void *array_map_kernel_gpu_impl::elem_lookup(const void *key)
 {
+	if (kernel_map_id <= 0) {
+		auto key_val = *(uint32_t *)key;
+		if (key_val >= _max_entries) {
+			errno = ENOENT;
+			return nullptr;
+		}
+		return &value_data[key_val * _value_size];
+	}
 	if (map_fd < 0) {
 		init_map_fd();
 	}
@@ -126,6 +151,16 @@ void *array_map_kernel_gpu_impl::elem_lookup(const void *key)
 long array_map_kernel_gpu_impl::elem_update(const void *key, const void *value,
 					    uint64_t flags)
 {
+	if (kernel_map_id <= 0) {
+		auto key_val = *(uint32_t *)key;
+		if (key_val >= _max_entries) {
+			errno = ENOENT;
+			return -1;
+		}
+		std::copy((uint8_t *)value, (uint8_t *)value + _value_size,
+			  &value_data[key_val * _value_size]);
+		return 0;
+	}
 	if (map_fd < 0) {
 		init_map_fd();
 	}
@@ -145,6 +180,15 @@ long array_map_kernel_gpu_impl::elem_update(const void *key, const void *value,
 
 long array_map_kernel_gpu_impl::elem_delete(const void *key)
 {
+	if (kernel_map_id <= 0) {
+		auto key_val = *(uint32_t *)key;
+		if (key_val >= _max_entries) {
+			errno = ENOENT;
+			return -1;
+		}
+		memset(&value_data[key_val * _value_size], 0, _value_size);
+		return 0;
+	}
 	if (map_fd < 0) {
 		init_map_fd();
 	}
@@ -199,6 +243,30 @@ static void atexit_fn()
 CUdeviceptr
 array_map_kernel_gpu_impl::try_initialize_for_agent_and_get_mapped_address()
 {
+	if (kernel_map_id <= 0) {
+		int pid = getpid();
+		if (auto itr = agent_gpu_shared_mem.find(pid);
+		    itr != agent_gpu_shared_mem.end()) {
+			return itr->second;
+		}
+		const auto comm_host_base = reinterpret_cast<uintptr_t>(
+			shm_holder.global_shared_memory.get_cuda_comm_shared_mem());
+		const auto comm_device_base =
+			bpftime::cuda::get_cuda_shared_mem_device_pointer();
+		if (comm_host_base == 0 || comm_device_base == 0) {
+			throw std::runtime_error(
+				"CUDA shared memory device pointer not initialized");
+		}
+		const auto host_ptr =
+			reinterpret_cast<uintptr_t>(value_data.data());
+		const auto offset = static_cast<intptr_t>(host_ptr) -
+				    static_cast<intptr_t>(comm_host_base);
+		CUdeviceptr dev_ptr = static_cast<CUdeviceptr>(
+			static_cast<uintptr_t>(
+				static_cast<intptr_t>(comm_device_base) + offset));
+		agent_gpu_shared_mem[pid] = dev_ptr;
+		return dev_ptr;
+	}
 	if (map_fd < 0) {
 		init_map_fd();
 	}
@@ -210,10 +278,11 @@ array_map_kernel_gpu_impl::try_initialize_for_agent_and_get_mapped_address()
 		SPDLOG_INFO(
 			"Initializing array_map_kernel_gpu_impl at pid {}, mmap_ptr = 0x{:x}, mmap_sz = {}",
 			pid, (uintptr_t)mmap_ptr, size);
-		CUdeviceptr ptr = (CUdeviceptr)mmap_ptr;
 		registered_host_memory = mmap_ptr;
-		if (auto err = cuMemHostRegister(mmap_ptr, size,
-						 CU_MEMHOSTREGISTER_PORTABLE);
+		if (auto err = cuMemHostRegister(
+			    mmap_ptr, size,
+			    CU_MEMHOSTREGISTER_PORTABLE |
+				    CU_MEMHOSTREGISTER_DEVICEMAP);
 		    err != CUDA_SUCCESS) {
 			SPDLOG_ERROR(
 				"Unable to register host memory for kernel-gpu-shared map: {}",
@@ -222,12 +291,19 @@ array_map_kernel_gpu_impl::try_initialize_for_agent_and_get_mapped_address()
 			throw std::runtime_error(
 				"Unable to register host memory");
 		}
-		SPDLOG_INFO(
-			"Mapped GPU memory for kernel-gpu shared array map: {}",
-			(uintptr_t)ptr);
-		agent_gpu_shared_mem[pid] = ptr;
+		CUdeviceptr dev_ptr = 0;
+		if (auto err =
+			    cuMemHostGetDevicePointer(&dev_ptr, mmap_ptr, 0);
+		    err != CUDA_SUCCESS) {
+			SPDLOG_ERROR(
+				"cuMemHostGetDevicePointer failed for kernel-gpu-shared map host_ptr={:x}: {}",
+				(uintptr_t)mmap_ptr, (int)err);
+			throw std::runtime_error(
+				"Unable to get device pointer for kernel-gpu-shared map");
+		}
+		agent_gpu_shared_mem[pid] = dev_ptr;
 		atexit(atexit_fn);
-		return ptr;
+		return dev_ptr;
 	} else {
 		return itr->second;
 	}
