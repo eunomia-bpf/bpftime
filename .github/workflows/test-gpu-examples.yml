@@ -166,6 +166,20 @@ jobs:
           nvcc --version
           nvidia-smi -L
 
+      - name: Ensure large /dev/shm
+        shell: bash
+        run: |
+          set -euo pipefail
+          df -h /dev/shm || true
+          if mount | grep -qE " on /dev/shm( |$)"; then
+            if [ "$(id -u)" -eq 0 ]; then
+              mount -o remount,size=2G /dev/shm || mount -o remount,size=1G /dev/shm || true
+            elif command -v sudo >/dev/null 2>&1; then
+              sudo mount -o remount,size=2G /dev/shm || sudo mount -o remount,size=1G /dev/shm || true
+            fi
+          fi
+          df -h /dev/shm || true
+
       - name: Build bpftime with CUDA support (LLVM JIT)
         shell: bash
         run: |
@@ -177,7 +191,7 @@ jobs:
             -DBPFTIME_CUDA_ROOT="${BPFTIME_CUDA_ROOT:-/usr/local/cuda}" \
             -DLLVM_DIR="/usr/lib/llvm-18/lib/cmake/llvm/" \
             -G Ninja
-          cmake --build build --config Debug --target bpftime-agent bpftime-syscall-server bpftimetool bpftime_text_segment_transformer ptxpass_kprobe_entry ptxpass_kretprobe ptxpass_kprobe_memcapture -j"$(nproc)"
+          cmake --build build --config Debug --target bpftime-agent bpftime-syscall-server bpftimetool bpftime_text_segment_transformer nv_attach_impl_ptx_compiler ptxpass_kprobe_entry ptxpass_kretprobe ptxpass_kprobe_memcapture -j"$(nproc)"
 
       - name: Build GPU example
         run: |

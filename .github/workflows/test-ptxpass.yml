@@ -2,10 +2,6 @@ name: Build and test PTX pass executables
 
 on:
   workflow_dispatch:
-  push:
-    branches: ["*"]
-  pull_request:
-    branches: ["master", "main"]
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}-${{ github.event_name }}
@@ -65,4 +61,3 @@ jobs:
         shell: bash
         run: |
           ./build/attach/nv_attach_impl/test/bpftime_nv_attach_tests
-
