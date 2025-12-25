@@ -3,24 +3,11 @@
 #include <unistd.h>
 #include <vector>
 
-__constant__ int d_N;
-
-// Dummy hook stub: when bpftime CUDA attach is enabled, PTX passes
-// will retarget calls to this function to the eBPF-generated probe
-// function for this kernel.
-__device__ __noinline__ void __bpftime_cuda__kernel_trace()
-{
-	// Intentionally left almost empty to keep baseline overhead minimal
-}
-
-__global__ void vectorAdd(const float *A, const float *B, float *C)
+__global__ void vectorAdd(const float *A, const float *B, float *C, int N)
 {
 	int idx = blockIdx.x * blockDim.x + threadIdx.x;
-	// User-visible hook point: this call will be rewritten at PTX level
-	// to invoke the eBPF probe when bpftime is attached.
-	__bpftime_cuda__kernel_trace();
 
-	if (idx < d_N)
+	if (idx < N)
 		C[idx] = A[idx] + B[idx];
 }
 
@@ -34,8 +21,6 @@ int main()
 		h_A[i] = i * 1.0f;
 		h_B[i] = i * 3.0f;
 	}
-	cudaMemcpyToSymbol(d_N, &N, sizeof(N));
-
 	float *d_A = nullptr, *d_B = nullptr, *d_C = nullptr;
 	cudaMalloc(&d_A, bytes);
 	cudaMalloc(&d_B, bytes);
@@ -48,7 +33,7 @@ int main()
 	const int blocks = (N + threads_per_block - 1) / threads_per_block;
 
 	while (true) {
-		vectorAdd<<<blocks, threads_per_block>>>(d_A, d_B, d_C);
+		vectorAdd<<<blocks, threads_per_block>>>(d_A, d_B, d_C, N);
 		cudaDeviceSynchronize();
 		cudaMemcpy(h_C.data(), d_C, sizeof(float) * 2,
 			   cudaMemcpyDeviceToHost);

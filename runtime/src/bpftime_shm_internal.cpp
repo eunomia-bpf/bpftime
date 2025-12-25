@@ -852,13 +852,23 @@ int bpftime_shm::dup_bpf_map(int oldfd, int newfd)
 
 		manager->clear_id_at(newfd, segment);
 	}
-	// Create a new handler with the same parameters
-	return manager->set_handler(
-		newfd,
-		bpftime::bpf_map_handler(newfd, new_name.c_str(), segment,
-					 handler.attr), // Copy construct the
-							// handler
-		segment);
+
+	if (handler.can_share_map_impl()) {
+		bpftime::bpf_map_handler dup_handler(newfd, new_name.c_str(),
+						     segment, handler.attr);
+		dup_handler.share_map_impl_from(handler);
+		handler.inc_map_refcount();
+		return manager->set_handler(newfd, std::move(dup_handler),
+					    segment);
+	}
+
+	// Fallback: create an independent map if the source map doesn't support
+	// sharing (e.g. legacy shm objects).
+	return manager->set_handler(newfd,
+				    bpftime::bpf_map_handler(
+					    newfd, new_name.c_str(), segment,
+					    handler.attr),
+				    segment);
 }
 
 const handler_manager *bpftime_shm::get_manager() const
