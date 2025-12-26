@@ -1,14 +1,7 @@
 name: Build and test verifier
 
 on:
-  push:
-    branches: "master"
-    paths:
-        - "bpftime-verifier/**"
-  pull_request: 
-    branches: "master"
-    paths:
-        - "bpftime-verifier/**"
+  workflow_dispatch:
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}-${{ github.event_name }}
   cancel-in-progress: true

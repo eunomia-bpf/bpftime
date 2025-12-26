@@ -9,6 +9,7 @@
 #include "bpf_map/userspace/per_cpu_hash_map.hpp"
 #include "bpf_map/userspace/stack_trace_map.hpp"
 #include "bpftime_shm_internal.hpp"
+#include <algorithm>
 #include <cstdlib>
 #include <string>
 #if defined(BPFTIME_ENABLE_CUDA_ATTACH)
@@ -727,18 +728,35 @@ int bpf_map_handler::map_init(managed_shared_memory &memory)
 	static CUdevice device;
 #endif
 
+	if (map_impl_ptr.get() != nullptr) {
+		return 0;
+	}
+
+	const auto init_refcnt = [&]() {
+		if (map_refcnt_ptr.get() == nullptr) {
+			map_refcnt_ptr =
+				memory.construct<map_refcount_t>(
+					boost::interprocess::anonymous_instance)(
+					1);
+		} else {
+			map_refcnt_ptr->store(1, std::memory_order_relaxed);
+		}
+	};
+
 	auto container_name = get_container_name();
 	switch (type) {
 	case bpf_map_type::BPF_MAP_TYPE_HASH: {
 		map_impl_ptr =
 			memory.construct<hash_map_impl>(container_name.c_str())(
 				memory, max_entries, key_size, value_size);
+		init_refcnt();
 		return 0;
 	}
 	case bpf_map_type::BPF_MAP_TYPE_ARRAY: {
 		map_impl_ptr = memory.construct<array_map_impl>(
 			container_name.c_str())(memory, value_size,
 						max_entries);
+		init_refcnt();
 		return 0;
 	}
 	case bpf_map_type::BPF_MAP_TYPE_RINGBUF: {
@@ -756,36 +774,42 @@ int bpf_map_handler::map_init(managed_shared_memory &memory)
 		}
 		map_impl_ptr = memory.construct<ringbuf_map_impl>(
 			container_name.c_str())(max_entries, memory);
+		init_refcnt();
 		return 0;
 	}
 	case bpf_map_type::BPF_MAP_TYPE_PERF_EVENT_ARRAY: {
 		map_impl_ptr = memory.construct<perf_event_array_map_impl>(
 			container_name.c_str())(memory, key_size, value_size,
 						max_entries);
+		init_refcnt();
 		return 0;
 	}
 	case bpf_map_type::BPF_MAP_TYPE_PERCPU_ARRAY: {
 		map_impl_ptr = memory.construct<per_cpu_array_map_impl>(
 			container_name.c_str())(memory, value_size,
 						max_entries);
+		init_refcnt();
 		return 0;
 	}
 	case bpf_map_type::BPF_MAP_TYPE_PERCPU_HASH: {
 		map_impl_ptr = memory.construct<per_cpu_hash_map_impl>(
 			container_name.c_str())(memory, key_size, value_size,
 						max_entries);
+		init_refcnt();
 		return 0;
 	}
 	case bpf_map_type::BPF_MAP_TYPE_QUEUE: {
 		map_impl_ptr = memory.construct<queue_map_impl>(
 			container_name.c_str())(memory, value_size,
 						max_entries);
+		init_refcnt();
 		return 0;
 	}
 	case bpf_map_type::BPF_MAP_TYPE_STACK: {
 		map_impl_ptr = memory.construct<stack_map_impl>(
 			container_name.c_str())(memory, value_size,
 						max_entries);
+		init_refcnt();
 		return 0;
 	}
 	case bpf_map_type::BPF_MAP_TYPE_BLOOM_FILTER: {
@@ -810,18 +834,22 @@ int bpf_map_handler::map_init(managed_shared_memory &memory)
 		map_impl_ptr = memory.construct<bloom_filter_map_impl>(
 			container_name.c_str())(memory, value_size, max_entries,
 						nr_hashes, hash_algo);
+		init_refcnt();
 		return 0;
 	}
 
 #ifdef BPFTIME_BUILD_WITH_LIBBPF
 	case bpf_map_type::BPF_MAP_TYPE_KERNEL_USER_ARRAY: {
 		map_impl_ptr = memory.construct<array_map_kernel_user_impl>(
-			container_name.c_str())(memory, attr.kernel_bpf_map_id);
+			container_name.c_str())(memory, attr.kernel_bpf_map_id,
+						value_size, max_entries);
+		init_refcnt();
 		return 0;
 	}
 	case bpf_map_type::BPF_MAP_TYPE_KERNEL_USER_HASH: {
 		map_impl_ptr = memory.construct<hash_map_kernel_user_impl>(
 			container_name.c_str())(memory, attr.kernel_bpf_map_id);
+		init_refcnt();
 		return 0;
 	}
 	case bpf_map_type::BPF_MAP_TYPE_KERNEL_USER_PERCPU_ARRAY: {
@@ -829,6 +857,7 @@ int bpf_map_handler::map_init(managed_shared_memory &memory)
 			memory.construct<percpu_array_map_kernel_user_impl>(
 				container_name.c_str())(memory,
 							attr.kernel_bpf_map_id);
+		init_refcnt();
 		return 0;
 	}
 	case bpf_map_type::BPF_MAP_TYPE_KERNEL_USER_PERF_EVENT_ARRAY: {
@@ -837,30 +866,35 @@ int bpf_map_handler::map_init(managed_shared_memory &memory)
 				container_name.c_str())(
 				memory, 4, 4, sysconf(_SC_NPROCESSORS_ONLN),
 				attr.kernel_bpf_map_id);
+		init_refcnt();
 		return 0;
 	}
 	case bpf_map_type::BPF_MAP_TYPE_PROG_ARRAY: {
 		map_impl_ptr = memory.construct<prog_array_map_impl>(
 			container_name.c_str())(memory, key_size, value_size,
 						max_entries);
+		init_refcnt();
 		return 0;
 	}
 	case bpf_map_type::BPF_MAP_TYPE_STACK_TRACE: {
 		map_impl_ptr = memory.construct<stack_trace_map_impl>(
 			container_name.c_str())(memory, key_size, value_size,
 						max_entries);
+		init_refcnt();
 		return 0;
 	}
 #endif
 	case bpf_map_type::BPF_MAP_TYPE_ARRAY_OF_MAPS: {
 		map_impl_ptr = memory.construct<array_map_of_maps_impl>(
 			container_name.c_str())(memory, max_entries);
+		init_refcnt();
 		return 0;
 	}
 	case bpf_map_type::BPF_MAP_TYPE_LRU_HASH: {
 		map_impl_ptr = memory.construct<lru_var_hash_map_impl>(
 			container_name.c_str())(memory, key_size, value_size,
 						max_entries);
+		init_refcnt();
 		return 0;
 	}
 
@@ -887,6 +921,7 @@ int bpf_map_handler::map_init(managed_shared_memory &memory)
 		map_impl_ptr = memory.construct<nv_gpu_shared_hash_map_impl>(
 			container_name.c_str())(memory, max_entries, key_size,
 						value_size);
+		init_refcnt();
 		shm_holder.global_shared_memory.set_enable_mock(true);
 		return 0;
 	}
@@ -914,6 +949,7 @@ int bpf_map_handler::map_init(managed_shared_memory &memory)
 			memory.construct<nv_gpu_per_thread_array_map_impl>(
 				container_name.c_str())(
 				memory, value_size, max_entries, thread_count);
+		init_refcnt();
 		shm_holder.global_shared_memory.set_enable_mock(true);
 		return 0;
 	}
@@ -932,6 +968,7 @@ int bpf_map_handler::map_init(managed_shared_memory &memory)
 		map_impl_ptr = memory.construct<nv_gpu_shared_array_map_impl>(
 			container_name.c_str())(memory, value_size,
 						max_entries);
+		init_refcnt();
 		shm_holder.global_shared_memory.set_enable_mock(true);
 		return 0;
 	}
@@ -947,7 +984,9 @@ int bpf_map_handler::map_init(managed_shared_memory &memory)
 		SPDLOG_INFO("Map {} (array_map_kernel_gpu_impl) shared array",
 			    container_name.c_str());
 		map_impl_ptr = memory.construct<array_map_kernel_gpu_impl>(
-			container_name.c_str())(memory, attr.kernel_bpf_map_id);
+			container_name.c_str())(memory, attr.kernel_bpf_map_id,
+						value_size, max_entries);
+		init_refcnt();
 		shm_holder.global_shared_memory.set_enable_mock(true);
 		return 0;
 	}
@@ -970,9 +1009,31 @@ int bpf_map_handler::map_init(managed_shared_memory &memory)
 		SPDLOG_INFO(
 			"Map {} (nv_gpu_ringbuf_map_impl) has space for thread count {}",
 			container_name.c_str(), thread_count);
-		map_impl_ptr = memory.construct<nv_gpu_ringbuf_map_impl>(
-			container_name.c_str())(memory, value_size, max_entries,
+		const uint64_t requested_thread_count = thread_count;
+		while (thread_count > 0) {
+			try {
+				map_impl_ptr =
+					memory.construct<nv_gpu_ringbuf_map_impl>(
+						container_name.c_str())(
+						memory, value_size, max_entries,
 						thread_count);
+				break;
+			} catch (const boost::interprocess::bad_alloc &) {
+				if (thread_count <= 1) {
+					shm_holder.global_shared_memory
+						.set_enable_mock(true);
+					throw;
+				}
+				thread_count = std::max<uint64_t>(
+					1, thread_count / 2);
+			}
+		}
+		if (thread_count != requested_thread_count) {
+			SPDLOG_WARN(
+				"Clamped GPU ringbuf thread count from {} to {} due to shared memory pressure; override via BPFTIME_MAP_GPU_THREAD_COUNT",
+				requested_thread_count, thread_count);
+		}
+		init_refcnt();
 		shm_holder.global_shared_memory.set_enable_mock(true);
 		return 0;
 	}
@@ -981,6 +1042,7 @@ int bpf_map_handler::map_init(managed_shared_memory &memory)
 		map_impl_ptr = memory.construct<lpm_trie_map_impl>(
 			container_name.c_str())(memory, key_size, value_size,
 						max_entries);
+		init_refcnt();
 		return 0;
 	}
 	default:
@@ -1004,6 +1066,23 @@ int bpf_map_handler::map_init(managed_shared_memory &memory)
 
 void bpf_map_handler::map_free(managed_shared_memory &memory) const
 {
+	if (map_impl_ptr.get() == nullptr) {
+		return;
+	}
+
+	if (map_refcnt_ptr.get() != nullptr) {
+		auto prev = map_refcnt_ptr->fetch_sub(1,
+						      std::memory_order_acq_rel);
+		if (prev > 1) {
+			map_impl_ptr = nullptr;
+			map_refcnt_ptr = nullptr;
+			return;
+		}
+		memory.destroy_ptr(map_refcnt_ptr.get());
+		map_impl_ptr = nullptr;
+		map_refcnt_ptr = nullptr;
+	}
+
 	auto container_name = get_container_name();
 	switch (type) {
 	case bpf_map_type::BPF_MAP_TYPE_HASH:
@@ -1097,6 +1176,7 @@ void bpf_map_handler::map_free(managed_shared_memory &memory) const
 		}
 	}
 	map_impl_ptr = nullptr;
+	map_refcnt_ptr = nullptr;
 	return;
 }
 std::optional<stack_trace_map_impl *>

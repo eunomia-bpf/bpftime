@@ -35,6 +35,8 @@ static inline T try_get_original_func(const char *name, T &store)
 std::string get_default_trampoline_ptx();
 std::string patch_main_from_func_to_entry(std::string);
 std::string wrap_ptx_with_trampoline(std::string input);
+std::string wrap_ptx_with_trampoline_for_sm(std::string input,
+					    const std::string &sm_arch);
 std::string sha256(const void *data, size_t length);
 
 /**

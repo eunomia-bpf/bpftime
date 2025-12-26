@@ -11,6 +11,7 @@
 #include "syscall_context.hpp"
 #include <filesystem>
 #include <memory>
+#include <mutex>
 #include <spdlog/cfg/env.h>
 #include <spdlog/spdlog.h>
 #include "bpftime_logger.hpp"
@@ -24,7 +25,7 @@
 #endif
 namespace bpftime
 {
-static bool already_setup = false;
+static std::once_flag g_startup_once;
 using namespace bpftime;
 // Why not use string_view? because parse_uint_from_file requires a c-string
 static const std::string UPROBE_TYPE_FILE_NAME =
@@ -38,21 +39,21 @@ static const std::string KRETPROBE_BIT_FILE_NAME =
 
 void start_up(syscall_context &ctx)
 {
-	if (already_setup)
-		return;
-	SPDLOG_INFO("Starting syscall server..");
-	already_setup = true;
-	auto agent_config = construct_agent_config_from_env();
-	bpftime_set_logger(std::string(agent_config.get_logger_output_path()));
-	SPDLOG_INFO("Initialize syscall server");
+	std::call_once(g_startup_once, [&ctx]() {
+		SPDLOG_INFO("Starting syscall server..");
+		auto agent_config = construct_agent_config_from_env();
+		bpftime_set_logger(
+			std::string(agent_config.get_logger_output_path()));
+		SPDLOG_INFO("Initialize syscall server");
 
-	bpftime_initialize_global_shm(shm_open_type::SHM_REMOVE_AND_CREATE);
-	shm_holder.global_shared_memory.set_mock_setter([&](bool flg) {
-		ctx.enable_mock_after_initialized = flg;
-		SPDLOG_INFO(
-			"syscall server: Set enable_mock_after_initialized to {}",
-			ctx.enable_mock_after_initialized);
-	});
+		bpftime_initialize_global_shm(
+			shm_open_type::SHM_REMOVE_AND_CREATE);
+		shm_holder.global_shared_memory.set_mock_setter([&](bool flg) {
+			ctx.enable_mock_after_initialized = flg;
+			SPDLOG_INFO(
+				"syscall server: Set enable_mock_after_initialized to {}",
+				ctx.enable_mock_after_initialized);
+		});
 #ifdef ENABLE_BPFTIME_VERIFIER
 	std::vector<int32_t> helper_ids;
 	std::map<int32_t, bpftime::verifier::BpftimeHelperProrotype>
@@ -84,12 +85,13 @@ void start_up(syscall_context &ctx)
 	SPDLOG_INFO("Enabling {} helpers", helper_ids.size());
 	verifier::set_non_kernel_helpers(non_kernel_helpers);
 #endif
-	bpftime_set_agent_config(std::move(agent_config));
-	// Set a variable to indicate the program that it's controlled by
-	// bpftime
-	setenv("BPFTIME_USED", "1", 0);
-	SPDLOG_DEBUG("Set environment variable BPFTIME_USED");
-	SPDLOG_INFO("bpftime-syscall-server started");
+		bpftime_set_agent_config(std::move(agent_config));
+		// Set a variable to indicate the program that it's controlled by
+		// bpftime
+		setenv("BPFTIME_USED", "1", 0);
+		SPDLOG_DEBUG("Set environment variable BPFTIME_USED");
+		SPDLOG_INFO("bpftime-syscall-server started");
+	});
 }
 
 /*

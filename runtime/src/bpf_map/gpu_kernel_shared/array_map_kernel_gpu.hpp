@@ -36,7 +36,8 @@ class array_map_kernel_gpu_impl {
     public:
 	const static bool should_lock = false;
 	array_map_kernel_gpu_impl(
-		boost::interprocess::managed_shared_memory &memory, int km_id);
+		boost::interprocess::managed_shared_memory &memory, int km_id,
+		uint32_t value_size, uint32_t max_entries);
 	~array_map_kernel_gpu_impl();
 
 	void *elem_lookup(const void *key);

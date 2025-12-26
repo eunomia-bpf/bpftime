@@ -2,10 +2,6 @@ name: Build and run bpftrace test
 
 on:
   workflow_dispatch:
-  push:
-    branches: ["master"]
-  pull_request:
-    branches: ["master"]
 
 env:
   BPFTIME_VM_NAME: llvm

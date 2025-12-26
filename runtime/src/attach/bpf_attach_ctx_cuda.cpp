@@ -134,7 +134,51 @@ void bpf_attach_ctx::start_cuda_watcher_thread()
 							     .map_lookup;
 					auto ptr = bpftime_map_lookup_elem(
 						map_fd, req.key);
-					resp.value = ptr;
+					resp.value = nullptr;
+					if (ptr) {
+						const auto host_ptr =
+							reinterpret_cast<
+								uintptr_t>(ptr);
+						CUmemorytype mem_type =
+							CU_MEMORYTYPE_HOST;
+						bool is_device_ptr = false;
+						if (cuPointerGetAttribute(
+							    &mem_type,
+							    CU_POINTER_ATTRIBUTE_MEMORY_TYPE,
+							    (CUdeviceptr)host_ptr) ==
+						    CUDA_SUCCESS) {
+							is_device_ptr =
+								(mem_type ==
+								 CU_MEMORYTYPE_DEVICE) ||
+								(mem_type ==
+								 CU_MEMORYTYPE_UNIFIED);
+						}
+
+						if (is_device_ptr) {
+							// GPU maps can return a CUDA device pointer directly.
+							resp.value = const_cast<void *>(ptr);
+						} else {
+							const auto comm_host_base =
+								reinterpret_cast<
+									uintptr_t>(
+									ctx->cuda_shared_mem);
+							const auto comm_device_base =
+								ctx->cuda_shared_mem_device_pointer;
+							const auto offset =
+								static_cast<
+									intptr_t>(
+									host_ptr) -
+								static_cast<
+									intptr_t>(
+									comm_host_base);
+							resp.value =
+								reinterpret_cast<void *>(
+									static_cast<uintptr_t>(
+										static_cast<intptr_t>(
+											comm_device_base) +
+										offset));
+						}
+					}
 					SPDLOG_DEBUG(
 						"CUDA: Executing map lookup for {}, key= {:x} result = {:x}",
 						map_fd,
@@ -217,6 +261,8 @@ void bpf_attach_ctx::start_cuda_watcher_thread()
 						    req_id);
 				}
 
+				// Make sure response writes are visible before signaling completion.
+				std::atomic_thread_fence(std::memory_order_seq_cst);
 				ctx->cuda_shared_mem->flag2 = 1;
 				std::atomic_thread_fence(
 					std::memory_order_seq_cst);
@@ -337,6 +383,7 @@ CUDAContext::CUDAContext(cuda::CommSharedMem *mem)
 	}
 	cuda_shared_mem_device_pointer =
 		reinterpret_cast<uintptr_t>(device_ptr);
+	set_cuda_shared_mem_device_pointer(cuda_shared_mem_device_pointer);
 	SPDLOG_INFO("CommSharedMem host {:p} mapped to device {:p}",
 		    (void *)cuda_shared_mem, device_ptr);
 }

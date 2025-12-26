@@ -2,10 +2,6 @@ name: Nginx attach test
 
 on:
   workflow_dispatch:
-  push:
-    branches: ["*"]
-  pull_request:
-    branches: ["master"]
 
 jobs:
   build-and-test:

@@ -37,8 +37,12 @@ function(find_cuda)
         set(CUDA_VERSION_MINOR ${CMAKE_MATCH_2})
     endif()
 
-    # CUPTI include path should be dynamic based on detected CUDA version
-    set(CUDA_INCLUDE_PATH ${BPFTIME_CUDA_ROOT}/targets/${CUDA_TARGET_ARCH}/include ${BPFTIME_CUDA_ROOT}/cuda-${CUDA_VERSION_MAJOR}.${CUDA_VERSION_MINOR}/extras/CUPTI/include PARENT_SCOPE)
+    # Prefer canonical CUPTI include path; fall back to versioned layout if needed.
+    set(_CUDA_CUPTI_INCLUDE "${BPFTIME_CUDA_ROOT}/extras/CUPTI/include")
+    if(NOT EXISTS "${_CUDA_CUPTI_INCLUDE}")
+        set(_CUDA_CUPTI_INCLUDE "${BPFTIME_CUDA_ROOT}/cuda-${CUDA_VERSION_MAJOR}.${CUDA_VERSION_MINOR}/extras/CUPTI/include")
+    endif()
+    set(CUDA_INCLUDE_PATH ${BPFTIME_CUDA_ROOT}/targets/${CUDA_TARGET_ARCH}/include ${_CUDA_CUPTI_INCLUDE} PARENT_SCOPE)
 
     message(STATUS "Detected CUDA version: ${CUDA_VERSION_MAJOR}.${CUDA_VERSION_MINOR}")
 
@@ -51,12 +55,13 @@ function(find_cuda)
         message(STATUS "CUDA ${CUDA_VERSION_MAJOR}.${CUDA_VERSION_MINOR}: Using cupti (dynamic library)")
     endif()
 
-    # nvptxcompiler_static is only available in CUDA 12.x and earlier
-    if(CUDA_VERSION_MAJOR LESS 13)
-        set(CUDA_LIBS cuda cudart libnvptxcompiler_static.a ${CUDA_CUPTI_LIB} nvrtc PARENT_SCOPE)
-        message(STATUS "CUDA ${CUDA_VERSION_MAJOR}.${CUDA_VERSION_MINOR}: Including nvptxcompiler_static")
+    # nvPTXCompiler API is required; prefer static when present.
+    find_library(NVPTXCOMPILER_LIB NAMES nvptxcompiler_static nvptxcompiler
+        PATHS ${BPFTIME_CUDA_ROOT}/targets/${CUDA_TARGET_ARCH}/lib/ ${BPFTIME_CUDA_ROOT}/lib64 NO_DEFAULT_PATH)
+    if(NVPTXCOMPILER_LIB)
+        set(CUDA_LIBS cuda cudart ${NVPTXCOMPILER_LIB} ${CUDA_CUPTI_LIB} nvrtc PARENT_SCOPE)
     else()
+        message(WARNING "nvptxcompiler library not found; targets using nvPTXCompiler API may fail to link")
         set(CUDA_LIBS cuda cudart ${CUDA_CUPTI_LIB} nvrtc PARENT_SCOPE)
-        message(STATUS "CUDA ${CUDA_VERSION_MAJOR}.${CUDA_VERSION_MINOR}: Excluding nvptxcompiler_static (not available)")
     endif()
 endfunction()
