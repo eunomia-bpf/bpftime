@@ -7,8 +7,8 @@
 #include <cstdlib>
 #include <fstream>
 #include <iostream>
-#include <optional>
 #include <ostream>
+#include <optional>
 #include <string>
 #include <sys/wait.h>
 #include <unistd.h>
@@ -25,7 +25,6 @@ static void fill_nvptx_logs(nv_attach_impl_ptx_compiler &state)
 {
 	if (!state.compiler)
 		return;
-
 	size_t error_size = 0;
 	if (nvPTXCompilerGetErrorLogSize(state.compiler, &error_size) ==
 		    NVPTXCOMPILE_SUCCESS &&
@@ -59,40 +58,37 @@ static std::optional<std::string> extract_gpu_name_arg(const char **args,
 		if (strncmp(args[i], prefix, strlen(prefix)) == 0) {
 			return std::string(args[i] + strlen(prefix));
 		}
-		if (strcmp(args[i], "--gpu-name") == 0 && i + 1 < arg_count &&
-		    args[i + 1]) {
-			return std::string(args[i + 1]);
-		}
 	}
 	return std::nullopt;
 }
 
-static std::optional<std::string> extract_gpu_name_from_ptx(const char *ptx)
+static std::string extract_opt_level(const char **args, int arg_count)
 {
-	const char *p = ptx;
-	const char *needle = ".target";
-	while ((p = strstr(p, needle)) != nullptr) {
-		p += strlen(needle);
-		while (*p == ' ' || *p == '\t')
-			p++;
-		// Accept ".target sm_52" and ".target sm_52, ..."
-		const char *start = p;
-		while (*p && *p != ' ' && *p != '\t' && *p != '\n' && *p != '\r' &&
-		       *p != ',')
-			p++;
-		if (p > start)
-			return std::string(start, (size_t)(p - start));
+	for (int i = 0; i < arg_count; i++) {
+		if (!args[i])
+			continue;
+		if (strcmp(args[i], "-O0") == 0 || strcmp(args[i], "-O1") == 0 ||
+		    strcmp(args[i], "-O2") == 0 || strcmp(args[i], "-O3") == 0) {
+			return std::string(args[i]);
+		}
 	}
-	return std::nullopt;
+	return "-O3";
+}
+
+static bool extract_verbose(const char **args, int arg_count)
+{
+	for (int i = 0; i < arg_count; i++) {
+		if (!args[i])
+			continue;
+		if (strcmp(args[i], "--verbose") == 0 || strcmp(args[i], "-v") == 0)
+			return true;
+	}
+	return false;
 }
 
 static std::string rewrite_ptx_target(const char *ptx,
-				      const std::string &gpu_name,
-				      bool &changed,
-				      std::optional<std::string> &old_target)
+				      const std::string &gpu_name)
 {
-	changed = false;
-	old_target.reset();
 	if (!ptx || gpu_name.empty())
 		return {};
 	std::string s(ptx);
@@ -106,93 +102,59 @@ static std::string rewrite_ptx_target(const char *ptx,
 	while (pos < s.size() && s[pos] != ' ' && s[pos] != '\t' &&
 	       s[pos] != '\n' && s[pos] != '\r' && s[pos] != ',')
 		pos++;
-	if (pos <= start)
-		return s;
-	old_target = s.substr(start, pos - start);
-	if (*old_target == gpu_name)
-		return s;
-	s.replace(start, pos - start, gpu_name);
-	changed = true;
+	if (pos > start) {
+		s.replace(start, pos - start, gpu_name);
+	}
 	return s;
 }
 
 static int compile_with_ptxas(nv_attach_impl_ptx_compiler &state,
-			      const char *ptx, const char **args,
-			      int arg_count)
+			      const char *ptx,
+			      const std::string &gpu_name,
+			      const std::string &opt_level,
+			      bool verbose)
 {
 	state.error_log.clear();
 	state.info_log.clear();
 	state.compiled_program.clear();
 
-	auto gpu_name_opt = extract_gpu_name_arg(args, arg_count);
-	if (!gpu_name_opt || gpu_name_opt->empty()) {
-		gpu_name_opt = extract_gpu_name_from_ptx(ptx);
-	}
-	if (!gpu_name_opt || gpu_name_opt->empty()) {
-		state.error_log =
-			"ptxas fallback requires --gpu-name=<sm_xx> option or PTX .target";
-		return -1;
-	}
-
-	bool target_changed = false;
-	std::optional<std::string> old_target;
-	std::string ptx_to_compile =
-		rewrite_ptx_target(ptx, *gpu_name_opt, target_changed, old_target);
-
-	std::string ptxas_path = "/usr/local/cuda/bin/ptxas";
-	if (access(ptxas_path.c_str(), X_OK) != 0) {
-		ptxas_path = "ptxas";
-	}
-
-	char ptx_template[] = "/tmp/bpftime-ptxas-in.XXXXXX";
-	int ptx_fd = mkstemp(ptx_template);
-	if (ptx_fd < 0) {
+	char in_template[] = "/tmp/bpftime-ptxas-in.XXXXXX";
+	int in_fd = mkstemp(in_template);
+	if (in_fd < 0) {
 		state.error_log = "mkstemp failed for PTX input";
 		return -1;
 	}
-	std::string ptx_path = std::string(ptx_template) + ".ptx";
-	rename(ptx_template, ptx_path.c_str());
-	close(ptx_fd);
+	std::string in_path = std::string(in_template) + ".ptx";
+	(void)rename(in_template, in_path.c_str());
+	close(in_fd);
 	{
-		std::ofstream ofs(ptx_path, std::ios::binary);
-		ofs << ptx_to_compile;
+		// Our passes may include a trampoline PTX with a higher .target;
+		// make it match the requested gpu_name to avoid ptxas failures.
+		std::string ptx_rewritten = rewrite_ptx_target(ptx, gpu_name);
+		std::ofstream ofs(in_path, std::ios::binary);
+		ofs << ptx_rewritten;
 	}
 
 	char out_template[] = "/tmp/bpftime-ptxas-out.XXXXXX";
 	int out_fd = mkstemp(out_template);
 	if (out_fd < 0) {
-		unlink(ptx_path.c_str());
+		(void)unlink(in_path.c_str());
 		state.error_log = "mkstemp failed for PTX output";
 		return -1;
 	}
-	close(out_fd);
 	std::string out_path = std::string(out_template) + ".cubin";
-	rename(out_template, out_path.c_str());
+	(void)rename(out_template, out_path.c_str());
+	close(out_fd);
 
-	bool verbose = false;
-	std::string opt_level;
-	for (int i = 0; i < arg_count; i++) {
-		if (!args[i])
-			continue;
-		if (strcmp(args[i], "--verbose") == 0)
-			verbose = true;
-		if (strcmp(args[i], "-O0") == 0 || strcmp(args[i], "-O1") == 0 ||
-		    strcmp(args[i], "-O2") == 0 || strcmp(args[i], "-O3") == 0)
-			opt_level = args[i];
-	}
-	if (opt_level.empty())
-		opt_level = "-O3";
-
-	std::string cmd = ptxas_path + " --gpu-name " + *gpu_name_opt + " " +
-			  opt_level + " ";
-	if (verbose)
-		cmd += "-v ";
-	cmd += "\"" + ptx_path + "\" -o \"" + out_path + "\" 2>&1";
+	const std::string cmd =
+		"ptxas --gpu-name " + gpu_name + " " + opt_level +
+		(verbose ? " -v " : " ") + "\"" + in_path + "\" -o \"" + out_path +
+		"\" 2>&1";
 
 	FILE *fp = popen(cmd.c_str(), "r");
 	if (!fp) {
-		unlink(ptx_path.c_str());
-		unlink(out_path.c_str());
+		(void)unlink(in_path.c_str());
+		(void)unlink(out_path.c_str());
 		state.error_log = "popen failed for ptxas";
 		return -1;
 	}
@@ -203,39 +165,25 @@ static int compile_with_ptxas(nv_attach_impl_ptx_compiler &state,
 	}
 	int rc = pclose(fp);
 	if (WIFEXITED(rc) && WEXITSTATUS(rc) == 0) {
-		state.info_log = "ptxas cmd: " + cmd + "\n" + out;
-		if (target_changed && old_target) {
-			state.info_log += "\nRewrote PTX .target from " +
-					  *old_target + " to " + *gpu_name_opt +
-					  "\n";
-		}
+		state.info_log = out;
 		std::ifstream ifs(out_path, std::ios::binary);
 		state.compiled_program.assign(
 			std::istreambuf_iterator<char>(ifs),
 			std::istreambuf_iterator<char>());
-		unlink(ptx_path.c_str());
-		unlink(out_path.c_str());
+		(void)unlink(in_path.c_str());
+		(void)unlink(out_path.c_str());
 		if (state.compiled_program.empty()) {
-			state.error_log = "ptxas produced empty output: " + cmd;
+			state.error_log = "ptxas produced empty output";
 			return -1;
 		}
 		return 0;
 	}
+	state.error_log = out;
+	(void)unlink(in_path.c_str());
+	(void)unlink(out_path.c_str());
 	if (WIFEXITED(rc) && WEXITSTATUS(rc) == 127) {
-		state.error_log =
-			"ptxas not found (exit 127), falling back to nvPTXCompiler. cmd: " +
-			cmd + "\n" + out;
-		unlink(ptx_path.c_str());
-		unlink(out_path.c_str());
 		return -127;
 	}
-	state.error_log = "ptxas failed. cmd: " + cmd + "\n" + out;
-	if (target_changed && old_target) {
-		state.error_log += "\nRewrote PTX .target from " + *old_target +
-				   " to " + *gpu_name_opt + "\n";
-	}
-	unlink(ptx_path.c_str());
-	unlink(out_path.c_str());
 	return -1;
 }
 
@@ -262,22 +210,18 @@ int nv_attach_impl_compile(nv_attach_impl_ptx_compiler *ptr, const char *ptx,
 	ptr->error_log.clear();
 	ptr->info_log.clear();
 	ptr->compiled_program.clear();
-	if (ptr->compiler) {
-		nvPTXCompilerDestroy(&ptr->compiler);
-		ptr->compiler = nullptr;
-	}
 
-	// Prefer ptxas when available, as nvPTXCompiler can be unreliable for
-	// some PTX variants on older toolkits (e.g. CUDA 12.6).
-	{
-		int ptxas_rc = compile_with_ptxas(*ptr, ptx, args, arg_count);
-		if (ptxas_rc == 0) {
+	// Prefer invoking ptxas directly: nvPTXCompiler can intermittently fail
+	// (e.g., return code 3) on some toolkits/GPUs for PTX generated by our passes.
+	auto gpu_name = extract_gpu_name_arg(args, arg_count);
+	if (gpu_name && !gpu_name->empty()) {
+		const auto opt_level = extract_opt_level(args, arg_count);
+		const auto verbose = extract_verbose(args, arg_count);
+		int rc = compile_with_ptxas(*ptr, ptx, *gpu_name, opt_level, verbose);
+		if (rc == 0) {
 			return 0;
 		}
-		// If ptxas ran and failed, return its error output directly.
-		// Falling back to nvPTXCompiler would usually call ptxas again
-		// and leak errors to stderr.
-		if (ptxas_rc != -127) {
+		if (rc != -127) {
 			return -1;
 		}
 	}
@@ -285,26 +229,17 @@ int nv_attach_impl_compile(nv_attach_impl_ptx_compiler *ptr, const char *ptx,
 	size_t len = strlen(ptx);
 	if (auto err = nvPTXCompilerCreate(&ptr->compiler, len, ptx);
 	    err != nvPTXCompileResult::NVPTXCOMPILE_SUCCESS) {
-		ptr->error_log +=
-			"Unable to create compiler: " + std::to_string((int)err) +
-			"\n";
+		ptr->error_log =
+			"Unable to create compiler: " + std::to_string((int)err) + "\n";
 		fill_nvptx_logs(*ptr);
-		if (ptr->compiler) {
-			nvPTXCompilerDestroy(&ptr->compiler);
-			ptr->compiler = nullptr;
-		}
 		return -1;
 	}
 
 	if (auto err = nvPTXCompilerCompile(ptr->compiler, arg_count, args);
 	    err != NVPTXCOMPILE_SUCCESS) {
-		ptr->error_log +=
+		ptr->error_log =
 			"Unable to compile: " + std::to_string((int)err) + "\n";
 		fill_nvptx_logs(*ptr);
-		if (ptr->compiler) {
-			nvPTXCompilerDestroy(&ptr->compiler);
-			ptr->compiler = nullptr;
-		}
 		return -1;
 	}
 	size_t elf_size = 0;
@@ -313,10 +248,6 @@ int nv_attach_impl_compile(nv_attach_impl_ptx_compiler *ptr, const char *ptx,
 	nvPTXCompilerGetCompiledProgram(ptr->compiler, compiled_program.data());
 	ptr->compiled_program = std::move(compiled_program);
 	fill_nvptx_logs(*ptr);
-	if (ptr->compiler) {
-		nvPTXCompilerDestroy(&ptr->compiler);
-		ptr->compiler = nullptr;
-	}
 
 	return 0;
 }

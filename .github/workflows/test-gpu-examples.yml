@@ -300,16 +300,27 @@ jobs:
               echo "Server crashed early. Showing server.log tail:"; tail -n 200 server.log || true
               exit 1
             fi
-            if [ ! -x "$BPFTIMETOOL" ]; then
-              echo "bpftimetool not found at $BPFTIMETOOL"; tail -n 200 server.log || true; exit 1
-            fi
-            echo "Running bpftimetool run-on-cuda (GEMM) ..."
-            set +e
-            timeout -s SIGKILL ${CLIENT_TIMEOUT}s "$BPFTIMETOOL" run-on-cuda cuda__gemm 1 4 4 1 16 16 1 > tool.log 2>&1
-            TOOL_RC=$?
-            set -e
-            sleep 5
-          else
+	            if [ ! -x "$BPFTIMETOOL" ]; then
+	              echo "bpftimetool not found at $BPFTIMETOOL"; tail -n 200 server.log || true; exit 1
+	            fi
+	            echo "Running bpftimetool run-on-cuda (GEMM) ..."
+	            set +e
+	            TOOL_RC=1
+	            for attempt in $(seq 1 15); do
+	              if ! kill -0 "$SERVER_PID" 2>/dev/null; then
+	                echo "Server crashed during direct-run. Showing server.log tail:"; tail -n 200 server.log || true
+	                break
+	              fi
+	              timeout -s SIGKILL ${CLIENT_TIMEOUT}s "$BPFTIMETOOL" run-on-cuda cuda__gemm 1 4 4 1 16 16 1 > tool.log 2>&1
+	              TOOL_RC=$?
+	              if [ $TOOL_RC -eq 0 ]; then
+	                break
+	              fi
+	              sleep 1
+	            done
+	            set -e
+	            sleep 5
+	          else
             pushd "$EXAMPLE_DIR" >/dev/null
             echo "Launching server with $SERVER_SO: $EXE_REL (BPFTIME_SHM_MEMORY_MB=$SHM_MB)"
             # Don't preload into the shell itself; only preload into the target binary.
