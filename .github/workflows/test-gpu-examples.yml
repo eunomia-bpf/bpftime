@@ -237,16 +237,22 @@ jobs:
           export LD_LIBRARY_PATH="$ROOT_DIR/build/attach/text_segment_transformer:${LD_LIBRARY_PATH:-}"
           df -h /dev/shm || true
           # Best-effort cleanup in case a previous job was interrupted.
-          pkill -9 -f "LD_PRELOAD.*libbpftime.*\\.so" || true
+          # Note: `pkill -f` matches argv only (not environment variables),
+          # so we must kill known binaries explicitly.
+          for proc in atomizer kernel_trace gpu_shared_map threadscheduling cuda_probe threadhist directly_run kernelretsnoop launchlate mem_trace vec_add vec_add_graph cutlass_launch_counter cutlass_gemm; do
+            pkill -9 -x "$proc" 2>/dev/null || true
+          done
           SERVER_BIN="$(basename "${EXE_REL%% *}")"
-          pkill -9 -f "$SERVER_BIN" || true
+          pkill -9 -x "$SERVER_BIN" 2>/dev/null || true
           if [ -n "${VICTIM_REL:-}" ]; then
             VICTIM_BIN="$(basename "${VICTIM_REL%% *}")"
-            pkill -9 -f "$VICTIM_BIN" || true
+            pkill -9 -x "$VICTIM_BIN" 2>/dev/null || true
           fi
           # Remove bpftime shared memory segments and semaphores
           rm -f /dev/shm/bpftime* || true
           rm -f /dev/shm/sem.bpftime* || true
+          # Re-check after cleanup: lingering processes can keep shm pinned.
+          df -h /dev/shm || true
           # ensure previous logs do not interfere
           rm -f server.log client.log tool.log || true
           : > server.log
@@ -273,6 +279,7 @@ jobs:
             if [ "$MAX_MB" -lt 32 ]; then
               echo "Not enough /dev/shm available: avail=${AVAIL_MB}MB (need at least 32MB)."
               df -h /dev/shm || true
+              ls -lh /dev/shm | head -n 200 || true
               exit 1
             fi
             if [ "$SHM_MB" -gt "$MAX_MB" ]; then
@@ -371,7 +378,8 @@ jobs:
               RESULT=1
             fi
           fi
-          kill $SERVER_PID 2>/dev/null || true
+          kill -9 $SERVER_PID 2>/dev/null || true
+          wait $SERVER_PID 2>/dev/null || true
           exit $RESULT
 
       - name: Upload logs
