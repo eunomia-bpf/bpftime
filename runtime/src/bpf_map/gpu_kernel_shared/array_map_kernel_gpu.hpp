@@ -32,7 +32,7 @@ class array_map_kernel_gpu_impl {
 
 	void *mmap_ptr;
 
-	void init_map_fd();
+	bool init_map_fd();
 
     public:
 	const static bool should_lock = false;

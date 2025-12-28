@@ -13,6 +13,8 @@
 #if __linux__
 #include <bpf/libbpf.h>
 #include <bpf/bpf.h>
+#include <sys/mman.h>
+#include <unistd.h>
 #endif
 
 #ifndef roundup
@@ -36,19 +38,19 @@ static size_t bpf_map_mmap_sz(unsigned int value_sz, unsigned int max_entries)
 	return map_sz;
 }
 
-void array_map_kernel_gpu_impl::init_map_fd()
+bool array_map_kernel_gpu_impl::init_map_fd()
 {
-	if (mmap_ptr != nullptr) {
-		return;
-	}
 	if (!has_kernel_map) {
-		return;
+		return false;
+	}
+	if (map_fd >= 0) {
+		return true;
 	}
 	map_fd = bpf_map_get_fd_by_id(kernel_map_id);
 	if (map_fd < 0) {
 		SPDLOG_ERROR("Failed to get fd for kernel map id {}",
 			     kernel_map_id);
-		return;
+		return false;
 	}
 	bpf_map_info info = {};
 	unsigned int info_len = sizeof(info);
@@ -56,6 +58,7 @@ void array_map_kernel_gpu_impl::init_map_fd()
 	if (res < 0) {
 		SPDLOG_ERROR("Failed to get info for kernel map id {}",
 			     kernel_map_id);
+		return true;
 	}
 	_value_size = info.value_size;
 	_max_entries = info.max_entries;
@@ -73,7 +76,8 @@ void array_map_kernel_gpu_impl::init_map_fd()
 	if (mmap_ptr == MAP_FAILED) {
 		SPDLOG_ERROR("Failed to mmap for kernel map id {}, err={}",
 			     kernel_map_id, errno);
-		return;
+		mmap_ptr = nullptr;
+		return true;
 	}
 	// What does this piece of code do?
 	int prot;
@@ -87,9 +91,12 @@ void array_map_kernel_gpu_impl::init_map_fd()
 		SPDLOG_ERROR(
 			"Failed to re-mmap for kernel map id {}, err={}, prot={}",
 			kernel_map_id, errno, prot);
-		return;
+		munmap(mmap_ptr, mmap_sz);
+		mmap_ptr = nullptr;
+		return true;
 	}
 	mmap_ptr = mmaped;
+	return true;
 }
 
 array_map_kernel_gpu_impl::array_map_kernel_gpu_impl(
@@ -123,9 +130,8 @@ void *array_map_kernel_gpu_impl::elem_lookup(const void *key)
 		}
 		return &value_data[key_val * _value_size];
 	}
-	if (map_fd < 0) {
-		init_map_fd();
-	}
+	if (!init_map_fd())
+		return nullptr;
 	SPDLOG_DEBUG("Run lookup of shared array map, key={:x}",
 		     (uintptr_t)key);
 	if (mmap_ptr != nullptr) {
@@ -162,9 +168,8 @@ long array_map_kernel_gpu_impl::elem_update(const void *key, const void *value,
 			  &value_data[key_val * _value_size]);
 		return 0;
 	}
-	if (map_fd < 0) {
-		init_map_fd();
-	}
+	if (!init_map_fd())
+		return -1;
 	if (mmap_ptr != nullptr) {
 		auto key_val = *(uint32_t *)key;
 		if (key_val >= _max_entries) {
@@ -190,9 +195,8 @@ long array_map_kernel_gpu_impl::elem_delete(const void *key)
 		memset(&value_data[key_val * _value_size], 0, _value_size);
 		return 0;
 	}
-	if (map_fd < 0) {
-		init_map_fd();
-	}
+	if (!init_map_fd())
+		return -1;
 	if (mmap_ptr != nullptr) {
 		auto key_val = *(uint32_t *)key;
 		if (key_val >= _max_entries) {
@@ -268,8 +272,9 @@ array_map_kernel_gpu_impl::try_initialize_for_agent_and_get_mapped_address()
 		agent_gpu_shared_mem[pid] = dev_ptr;
 		return dev_ptr;
 	}
-	if (map_fd < 0) {
-		init_map_fd();
+	if (!init_map_fd() || mmap_ptr == nullptr) {
+		throw std::runtime_error(
+			"Kernel map is not mmap-able (required for kernel-gpu-shared map)");
 	}
 	int pid = getpid();
 	if (auto itr = agent_gpu_shared_mem.find(pid);
