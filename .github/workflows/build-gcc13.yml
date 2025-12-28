@@ -1,7 +1,10 @@
 name: Build GCC 13
 
 on:
-  workflow_dispatch:
+  push:
+    branches: [master, main, "ci/**"]
+  pull_request:
+    branches: ["**"]
 
 concurrency:
   group: build-gcc13-${{ github.ref }}

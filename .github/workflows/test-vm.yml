@@ -1,7 +1,14 @@
 name: Build and Test VM
 
 on:
-  workflow_dispatch:
+  push:
+    branches: [ master ]
+    paths:
+        - "vm/**"
+  pull_request:
+    branches: [ master ]
+    paths:
+        - "vm/**"
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}-${{ github.event_name }}
   cancel-in-progress: true
