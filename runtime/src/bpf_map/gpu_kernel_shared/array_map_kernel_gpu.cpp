@@ -41,7 +41,7 @@ void array_map_kernel_gpu_impl::init_map_fd()
 	if (mmap_ptr != nullptr) {
 		return;
 	}
-	if (kernel_map_id <= 0) {
+	if (!has_kernel_map) {
 		return;
 	}
 	map_fd = bpf_map_get_fd_by_id(kernel_map_id);
@@ -99,6 +99,7 @@ array_map_kernel_gpu_impl::array_map_kernel_gpu_impl(
 	  _value_size(value_size),
 	  _max_entries(max_entries),
 	  kernel_map_id(km_id),
+	  has_kernel_map(km_id > 0),
 	  mmap_ptr(nullptr)
 #ifdef BPFTIME_ENABLE_CUDA_ATTACH
 	  ,
@@ -106,7 +107,7 @@ array_map_kernel_gpu_impl::array_map_kernel_gpu_impl(
 #endif
 
 {
-	if (kernel_map_id <= 0) {
+	if (!has_kernel_map) {
 		value_data.resize(static_cast<size_t>(_value_size) *
 				  static_cast<size_t>(_max_entries));
 	}
@@ -114,7 +115,7 @@ array_map_kernel_gpu_impl::array_map_kernel_gpu_impl(
 
 void *array_map_kernel_gpu_impl::elem_lookup(const void *key)
 {
-	if (kernel_map_id <= 0) {
+	if (!has_kernel_map) {
 		auto key_val = *(uint32_t *)key;
 		if (key_val >= _max_entries) {
 			errno = ENOENT;
@@ -151,7 +152,7 @@ void *array_map_kernel_gpu_impl::elem_lookup(const void *key)
 long array_map_kernel_gpu_impl::elem_update(const void *key, const void *value,
 					    uint64_t flags)
 {
-	if (kernel_map_id <= 0) {
+	if (!has_kernel_map) {
 		auto key_val = *(uint32_t *)key;
 		if (key_val >= _max_entries) {
 			errno = ENOENT;
@@ -180,7 +181,7 @@ long array_map_kernel_gpu_impl::elem_update(const void *key, const void *value,
 
 long array_map_kernel_gpu_impl::elem_delete(const void *key)
 {
-	if (kernel_map_id <= 0) {
+	if (!has_kernel_map) {
 		auto key_val = *(uint32_t *)key;
 		if (key_val >= _max_entries) {
 			errno = ENOENT;
@@ -243,7 +244,7 @@ static void atexit_fn()
 CUdeviceptr
 array_map_kernel_gpu_impl::try_initialize_for_agent_and_get_mapped_address()
 {
-	if (kernel_map_id <= 0) {
+	if (!has_kernel_map) {
 		int pid = getpid();
 		if (auto itr = agent_gpu_shared_mem.find(pid);
 		    itr != agent_gpu_shared_mem.end()) {

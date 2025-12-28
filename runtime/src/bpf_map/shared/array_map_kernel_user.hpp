@@ -16,6 +16,7 @@ class array_map_kernel_user_impl {
 	uint32_t _max_entries;
 	int map_fd = -1;
 	int kernel_map_id = -1;
+	bool has_kernel_map = false;
 
 	void *mmap_ptr;
 
