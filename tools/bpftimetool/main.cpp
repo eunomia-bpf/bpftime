@@ -289,49 +289,34 @@ int main(int argc, char *argv[])
 				}
 				return priv_data;
 			});
-			ctx.init_attach_ctx_from_handlers(runtime_config);
-			if (auto impl = ctx.find_nv_attach_impl(); impl) {
-				int id = -1;
-				for (int waited_ms = 0; waited_ms <= 15000;
-				     waited_ms += 200) {
-					id = (*impl)->find_attach_entry_by_program_name(
-						argv[2]);
-					if (id != -1) {
-						break;
-					}
-					std::this_thread::sleep_for(
-						std::chrono::milliseconds(200));
-					ctx.init_attach_ctx_from_handlers(
-						runtime_config);
-				}
-				if (id != -1) {
-					int err = 0;
-					if (has_dims) {
-						err = (*impl)->run_attach_entry_on_gpu(
-							id, run_count, gridX, gridY,
-							gridZ, blockX, blockY,
-							blockZ);
-					} else {
-						err = (*impl)->run_attach_entry_on_gpu(
-							id, run_count);
-					}
-					if (err) {
-						SPDLOG_ERROR(
-							"Unable to run program: {}",
-							err);
-						return 1;
-					} else {
-						return 0;
-					}
-				} else {
-					SPDLOG_ERROR("Unable to find program: {}", id);
-					return 1;
-				}
-			} else {
-				SPDLOG_ERROR("nv_attach_impl not found!");
+		ctx.init_attach_ctx_from_handlers(runtime_config);
+		if (auto impl = ctx.find_nv_attach_impl(); impl) {
+			const int id = (*impl)->find_attach_entry_by_program_name(
+				argv[2]);
+			if (id == -1) {
+				SPDLOG_ERROR("Unable to find program: {}",
+					     argv[2]);
+				return 1;
 			}
+			int err = 0;
+			if (has_dims) {
+				err = (*impl)->run_attach_entry_on_gpu(
+					id, run_count, gridX, gridY, gridZ,
+					blockX, blockY, blockZ);
+			} else {
+				err = (*impl)->run_attach_entry_on_gpu(
+					id, run_count);
+			}
+			if (err) {
+				SPDLOG_ERROR("Unable to run program: {}", err);
+				return 1;
+			}
+			return 0;
+			}
+			SPDLOG_ERROR("nv_attach_impl not found!");
+			return 1;
 		}
-#endif
+	#endif
 	else {
 		cerr << "Invalid subcommand " << cmd << endl;
 		return 1;
