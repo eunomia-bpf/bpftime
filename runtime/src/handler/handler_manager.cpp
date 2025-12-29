@@ -71,7 +71,10 @@ int handler_manager::set_handler(int fd, handler_variant &&handler,
 	SPDLOG_DEBUG("Handler at fd {} set to type {}", fd, handler.index());
 	handlers[fd] = std::move(handler);
 	if (std::holds_alternative<bpf_map_handler>(handlers[fd])) {
-		std::get<bpf_map_handler>(handlers[fd]).map_init(memory);
+		auto &map_handler = std::get<bpf_map_handler>(handlers[fd]);
+		if (!map_handler.has_map_impl()) {
+			map_handler.map_init(memory);
+		}
 	}
 	return fd;
 }
