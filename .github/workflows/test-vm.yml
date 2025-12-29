@@ -1,14 +1,8 @@
 name: Build and Test VM
 
 on:
-  push:
-    branches: [ master ]
-    paths:
-        - "vm/**"
-  pull_request:
-    branches: [ master ]
-    paths:
-        - "vm/**"
+  workflow_dispatch:
+  # TEMP: disable automatic triggers while debugging GPU CI; revert this commit later.
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}-${{ github.event_name }}
   cancel-in-progress: true

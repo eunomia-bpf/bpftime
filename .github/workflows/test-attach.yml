@@ -2,10 +2,7 @@ name: Build and Attach Tests Workflow
 
 on:
   workflow_dispatch:
-  push:
-    branches: ["*"]
-  pull_request:
-    branches: ["master"]
+  # TEMP: disable automatic triggers while debugging GPU CI; revert this commit later.
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}-${{ github.event_name }}

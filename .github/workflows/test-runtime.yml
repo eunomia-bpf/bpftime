@@ -2,10 +2,7 @@ name: Build and test runtime
 
 on:
   workflow_dispatch:
-  push:
-    branches: ["*"]
-  pull_request:
-    branches: ["master", "main"]
+  # TEMP: disable automatic triggers while debugging GPU CI; revert this commit later.
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}-${{ github.event_name }}
   cancel-in-progress: true
