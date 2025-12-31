@@ -2,7 +2,10 @@ name: Nginx attach test
 
 on:
   workflow_dispatch:
-  # TEMP: disable automatic triggers while debugging GPU CI; revert this commit later.
+  push:
+    branches: ["*"]
+  pull_request:
+    branches: ["master"]
 
 jobs:
   build-and-test:

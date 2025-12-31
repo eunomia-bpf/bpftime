@@ -2,7 +2,10 @@ name: Benchmarks
 
 on:
   workflow_dispatch:
-  # TEMP: disable automatic triggers while debugging GPU CI; revert this commit later.
+  push:
+    branches: ["master"]
+  pull_request:
+    branches: ["master"]
 
 # Sets permissions of the GITHUB_TOKEN to allow deployment to GitHub Pages
 permissions:

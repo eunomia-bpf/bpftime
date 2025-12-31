@@ -2,7 +2,10 @@ name: Build and run bpftrace test
 
 on:
   workflow_dispatch:
-  # TEMP: disable automatic triggers while debugging GPU CI; revert this commit later.
+  push:
+    branches: ["master"]
+  pull_request:
+    branches: ["master"]
 
 env:
   BPFTIME_VM_NAME: llvm
