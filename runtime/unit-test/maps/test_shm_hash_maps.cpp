@@ -9,6 +9,7 @@
 #include <boost/interprocess/creation_tags.hpp>
 #include <cstdint>
 #include <linux/bpf.h>
+#include <memory>
 #include <sys/wait.h>
 #include <unistd.h>
 
@@ -89,34 +90,44 @@ TEST_CASE("Test shm hash maps with sub process")
 	struct shm_remove remover(SHM_NAME);
 
 	// The side that creates the mapping
-	managed_shared_memory segment(create_only, SHM_NAME, 1 << 20);
-	// Use default max_fd_count for tests
-	const size_t test_max_fd_count = DEFAULT_MAX_FD_COUNT;
-	auto manager =
-		segment.construct<handler_manager>(HANDLER_NAME)(segment, test_max_fd_count);
+	// Needs enough room for the handler table + multiple map instances.
+	std::unique_ptr<managed_shared_memory> segment;
+	REQUIRE_NOTHROW(segment = std::make_unique<managed_shared_memory>(
+				create_only, SHM_NAME, 8 << 20));
+	auto &segment_ref = *segment;
+	// Only a handful of fds are used in this test; keep max_fd_count small
+	// so the handler table doesn't dominate the (intentionally small) shm.
+	const size_t test_max_fd_count = MIN_MAX_FD_COUNT;
+	handler_manager *manager = nullptr;
+	REQUIRE_NOTHROW(
+		manager = segment_ref.construct<handler_manager>(HANDLER_NAME)(
+			segment_ref, test_max_fd_count));
 	auto &manager_ref = *manager;
 
-	manager_ref.set_handler(1,
-				bpf_map_handler(1, BPF_MAP_TYPE_HASH, 4, 8, 1024,
-						0, "hash1", segment),
-				segment);
-	manager_ref.set_handler(2,
-				bpf_map_handler(2, BPF_MAP_TYPE_HASH, 4, 8, 1024,
-						0, "hash2", segment),
-				segment);
-	manager_ref.set_handler(3,
-				bpf_map_handler(3, BPF_MAP_TYPE_ARRAY, 4, 8, 1024,
-						0, "array1", segment),
-				segment);
+	REQUIRE_NOTHROW(manager_ref.set_handler(
+		1,
+		bpf_map_handler(1, BPF_MAP_TYPE_HASH, 4, 8, 1024, 0, "hash1",
+				segment_ref),
+		segment_ref));
+	REQUIRE_NOTHROW(manager_ref.set_handler(
+		2,
+		bpf_map_handler(2, BPF_MAP_TYPE_HASH, 4, 8, 1024, 0, "hash2",
+				segment_ref),
+		segment_ref));
+	REQUIRE_NOTHROW(manager_ref.set_handler(
+		3,
+		bpf_map_handler(3, BPF_MAP_TYPE_ARRAY, 4, 8, 1024, 0, "array1",
+				segment_ref),
+		segment_ref));
 
 	// test insert
-	test_insert_map(1, manager_ref, segment);
-	test_insert_map(3, manager_ref, segment);
-	test_get_next_element(1, manager_ref, segment);
-	test_get_next_element(3, manager_ref, segment);
+	REQUIRE_NOTHROW(test_insert_map(1, manager_ref, segment_ref));
+	REQUIRE_NOTHROW(test_insert_map(3, manager_ref, segment_ref));
+	REQUIRE_NOTHROW(test_get_next_element(1, manager_ref, segment_ref));
+	REQUIRE_NOTHROW(test_get_next_element(3, manager_ref, segment_ref));
 	// test lookup
-	test_lookup_map(1, manager_ref, segment);
-	test_lookup_map(3, manager_ref, segment);
+	REQUIRE_NOTHROW(test_lookup_map(1, manager_ref, segment_ref));
+	REQUIRE_NOTHROW(test_lookup_map(3, manager_ref, segment_ref));
 	spdlog::info("Starting subprocess");
 	int pid = fork();
 	if (pid == 0) {
@@ -127,7 +138,7 @@ TEST_CASE("Test shm hash maps with sub process")
 		REQUIRE(ret != -1);
 		REQUIRE(WIFEXITED(status));
 		REQUIRE(WEXITSTATUS(status) == 0);
-		REQUIRE(segment.find<handler_manager>(HANDLER_NAME).first ==
+		REQUIRE(segment_ref.find<handler_manager>(HANDLER_NAME).first ==
 			nullptr);
 	}
 }
