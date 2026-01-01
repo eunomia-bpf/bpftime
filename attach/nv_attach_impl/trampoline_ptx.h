@@ -1161,6 +1161,10 @@ $L__BB9_5:
 	cvt.s64.s32 	%rd37, %r17;
 	add.s64 	%rd38, %rd36, %rd37;
 	add.s64 	%rd39, %rd38, %rd35;
+	ld.const.u64 	%rd50, [%rd21+32];
+	setp.ge.u64 	%p0, %rd39, %rd50;
+	@%p0 mov.u64 	%rd62, 1;
+	@%p0 bra 	$L__BB10_14;
 	mul.lo.s64 	%rd40, %rd32, %rd39;
 	ld.const.u64 	%rd41, [%rd21+24];
 	add.s64 	%rd3, %rd41, %rd40;

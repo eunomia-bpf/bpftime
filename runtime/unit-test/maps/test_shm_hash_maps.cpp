@@ -89,24 +89,26 @@ TEST_CASE("Test shm hash maps with sub process")
 	struct shm_remove remover(SHM_NAME);
 
 	// The side that creates the mapping
-	managed_shared_memory segment(create_only, SHM_NAME, 1 << 20);
-	// Use default max_fd_count for tests
-	const size_t test_max_fd_count = DEFAULT_MAX_FD_COUNT;
-	auto manager =
-		segment.construct<handler_manager>(HANDLER_NAME)(segment, test_max_fd_count);
+	// Needs enough room for the handler table + multiple map instances.
+	managed_shared_memory segment(create_only, SHM_NAME, 8 << 20);
+	// Only a handful of fds are used in this test; keep max_fd_count small
+	// so the handler table doesn't dominate the shared memory segment.
+	const size_t test_max_fd_count = MIN_MAX_FD_COUNT;
+	auto manager = segment.construct<handler_manager>(HANDLER_NAME)(
+		segment, test_max_fd_count);
 	auto &manager_ref = *manager;
 
 	manager_ref.set_handler(1,
-				bpf_map_handler(1, BPF_MAP_TYPE_HASH, 4, 8, 1024,
-						0, "hash1", segment),
+				bpf_map_handler(1, BPF_MAP_TYPE_HASH, 4, 8,
+						1024, 0, "hash1", segment),
 				segment);
 	manager_ref.set_handler(2,
-				bpf_map_handler(2, BPF_MAP_TYPE_HASH, 4, 8, 1024,
-						0, "hash2", segment),
+				bpf_map_handler(2, BPF_MAP_TYPE_HASH, 4, 8,
+						1024, 0, "hash2", segment),
 				segment);
 	manager_ref.set_handler(3,
-				bpf_map_handler(3, BPF_MAP_TYPE_ARRAY, 4, 8, 1024,
-						0, "array1", segment),
+				bpf_map_handler(3, BPF_MAP_TYPE_ARRAY, 4, 8,
+						1024, 0, "array1", segment),
 				segment);
 
 	// test insert

@@ -122,6 +122,24 @@ struct CUDAContext {
 
 std::optional<std::unique_ptr<cuda::CUDAContext>> create_cuda_context();
 
+inline std::atomic<uintptr_t> &cuda_shared_mem_device_pointer_storage() noexcept
+{
+	static std::atomic<uintptr_t> value{ 0 };
+	return value;
+}
+
+inline void set_cuda_shared_mem_device_pointer(uintptr_t ptr) noexcept
+{
+	cuda_shared_mem_device_pointer_storage().store(ptr,
+						      std::memory_order_release);
+}
+
+inline uintptr_t get_cuda_shared_mem_device_pointer() noexcept
+{
+	return cuda_shared_mem_device_pointer_storage().load(
+		std::memory_order_acquire);
+}
+
 } // namespace cuda
 #endif
 

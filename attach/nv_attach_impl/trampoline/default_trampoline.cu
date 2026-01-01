@@ -323,6 +323,12 @@ _bpf_helper_ext_0025(uint64_t ctx, uint64_t map, uint64_t flags, uint64_t data,
 {
 	const auto &map_info = ::map_info[map];
 	if (map_info.map_type == BPF_MAP_TYPE_GPU_RINGBUF_MAP) {
+		auto tid = getGlobalThreadId();
+		if (tid >= map_info.max_thread_count) {
+			// Avoid OOB writes if the map was sized for fewer
+			// threads than the current kernel launch.
+			return 1;
+		}
 		// printf("Starting perf output, value size=%d, max entries =
 		// %d\n",
 		//        map_info.value_size, map_info.max_entries);
@@ -330,8 +336,7 @@ _bpf_helper_ext_0025(uint64_t ctx, uint64_t map, uint64_t flags, uint64_t data,
 				  map_info.max_entries * (sizeof(uint64_t) +
 							  map_info.value_size);
 		auto header =
-			(ringbuf_header *)(uintptr_t)(getGlobalThreadId() *
-							      entry_size +
+			(ringbuf_header *)(uintptr_t)(tid * entry_size +
 						      (char *)map_info
 							      .extra_buffer);
 		// printf("header->head=%lu, header->tail=%lu\n", header->head,
