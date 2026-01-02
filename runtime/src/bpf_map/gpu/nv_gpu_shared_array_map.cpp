@@ -4,6 +4,7 @@
 #include "cuda.h"
 #include "linux/bpf.h"
 #include "spdlog/spdlog.h"
+#include <atomic>
 #include <cerrno>
 #include <cstdint>
 #include <stdexcept>
