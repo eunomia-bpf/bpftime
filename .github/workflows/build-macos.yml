@@ -1,0 +1,37 @@
+name: Build macOS
+
+on:
+  push:
+    branches: [master, main, "ci/**"]
+  pull_request:
+    branches: ["**"]
+
+concurrency:
+  group: build-macos-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: macos-latest
+    steps:
+      - name: Checkout repository (with submodules)
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          fetch-depth: 0
+
+      - name: Install dependencies
+        run: |
+          brew install cmake boost
+
+      - name: Configure (CMake with uBPF JIT)
+        run: |
+          cmake -DBPFTIME_BUILD_WITH_LIBBPF=OFF -DBPFTIME_LLVM_JIT=OFF -DBPFTIME_UBPF_JIT=ON -B build .
+
+      - name: Build
+        run: cmake --build build -j$(sysctl -n hw.ncpu)
+
+      - name: List build outputs (first 200 lines)
+        if: always()
+        run: |
+          ls -R build | sed -n '1,200p'
