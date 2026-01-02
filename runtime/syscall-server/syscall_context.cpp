@@ -688,7 +688,8 @@ int syscall_context::handle_perfevent(perf_event_attr *attr, pid_t pid, int cpu,
 			name, addr, is_ret_probe, ref_ctr_off, attr->config);
 		int new_fd = -1;
 		std::string new_probe_name = name;
-		// When running with kernel, probe names started with `cuda_` will be treated as cuda probe
+		// When running with kernel, probe names started with `cuda_`
+		// will be treated as cuda probe
 		if (name.starts_with("cuda_") && run_with_kernel) {
 			auto new_attr = *attr;
 			new_attr.config1 = (uintptr_t)"do_exit";
@@ -995,15 +996,28 @@ int syscall_context::handle_dup3(int oldfd, int newfd, int flags)
 {
 	SPDLOG_DEBUG("Calling mocked dup3 {}, {}", oldfd, newfd);
 	if (!enable_mock || run_with_kernel || initializing_cuda ||
-	    !enable_mock_after_initialized)
+	    !enable_mock_after_initialized) {
+#if __linux__
 		return orig_syscall_fn(__NR_dup3, (long)oldfd, (long)newfd,
 				       (long)flags);
+#else
+		// macOS doesn't have dup3, use dup2 instead
+		errno = ENOSYS;
+		return -1;
+#endif
+	}
 	try_startup();
 	if (bpftime_is_map_fd(oldfd)) {
 		return bpftime_maps_dup(oldfd, newfd);
 	}
+#if __linux__
 	return orig_syscall_fn(__NR_dup3, (long)oldfd, (long)newfd,
 			       (long)flags);
+#else
+	// macOS doesn't have dup3
+	errno = ENOSYS;
+	return -1;
+#endif
 }
 
 int syscall_context::handle_memfd_create(const char *name, int flags)
@@ -1011,8 +1025,15 @@ int syscall_context::handle_memfd_create(const char *name, int flags)
 	SPDLOG_DEBUG("Calling mocked memfd_create {}, {}", name, flags);
 	if (!enable_mock || initializing_cuda ||
 	    !enable_mock_after_initialized) {
-		SPDLOG_DEBUG("Calling original dup3");
-		return orig_syscall_fn(__NR_dup3, (long)name, (long)flags);
+#if __linux__
+		SPDLOG_DEBUG("Calling original memfd_create");
+		return orig_syscall_fn(__NR_memfd_create, (long)name,
+				       (long)flags);
+#else
+		// macOS doesn't have memfd_create, return error
+		errno = ENOSYS;
+		return -1;
+#endif
 	}
 	try_startup();
 	return bpftime_add_memfd_handler(name, flags);

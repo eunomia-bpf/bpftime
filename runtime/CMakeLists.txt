@@ -212,6 +212,11 @@ set_project_warnings(runtime)
 message(DEBUG "Applied compiler warnings. Using standard ${CMAKE_CXX_STANDARD}.")
 
 if(APPLE)
+  # Suppress Boost template warning on macOS (Boost/compiler compatibility issue)
+  target_compile_options(${PROJECT_NAME} PRIVATE -Wno-missing-template-arg-list-after-template-kw)
+endif()
+
+if(APPLE)
   find_library(COCOA_LIBRARY Cocoa)
   find_library(FOUNDATION_LIBRARY Foundation)
   find_library(APPKIT_LIBRARY AppKit)

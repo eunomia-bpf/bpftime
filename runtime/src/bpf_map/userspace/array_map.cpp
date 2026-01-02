@@ -5,7 +5,11 @@
  */
 #include "bpftime_internal.h"
 #include "bpf_map/map_common_def.hpp"
+#ifdef BPFTIME_BUILD_WITH_LIBBPF
 #include "linux/bpf.h"
+#else
+#include "bpf_flags.hpp"
+#endif
 #include <bpf_map/userspace/array_map.hpp>
 #include <cerrno>
 

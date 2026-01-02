@@ -5,7 +5,11 @@
  */
 #include "bpf_attach_ctx.hpp"
 #include "handler/map_handler.hpp"
+#ifdef BPFTIME_BUILD_WITH_LIBBPF
 #include "linux/bpf.h"
+#else
+#include "bpf_flags.hpp"
+#endif
 #include <algorithm>
 #include <stdexcept>
 #include <system_error>
@@ -45,7 +49,9 @@
 #include <setjmp.h>
 #include <signal.h>
 
+#ifndef PATH_MAX
 #define PATH_MAX 4096
+#endif
 
 using namespace std;
 bpftime::bpf_attach_ctx &get_global_attach_ctx();
@@ -139,13 +145,22 @@ static void segv_read_handler(int sig, siginfo_t *siginfo, void *ctx)
 		auto uctx = (ucontext_t *)ctx;
 #if defined(__x86_64__) || defined(_M_X64)
 		auto *ip = (greg_t *)(&uctx->uc_mcontext.gregs[REG_RIP]);
+		status_probe_read = PROBE_STATUS::RUNNING_ERROR;
+		*ip = (greg_t)&jump_point_read;
 #elif defined(__aarch64__) || defined(_M_ARM64)
+#if __APPLE__
+		// macOS ARM64: uc_mcontext is a pointer to __darwin_mcontext64
+		// The PC is at __ss.__pc
+		uctx->uc_mcontext->__ss.__pc = (uintptr_t)&jump_point_read;
+		status_probe_read = PROBE_STATUS::RUNNING_ERROR;
+#else
 		auto *ip = (greg_t *)(&uctx->uc_mcontext.pc);
+		status_probe_read = PROBE_STATUS::RUNNING_ERROR;
+		*ip = (greg_t)&jump_point_read;
+#endif
 #else
 #error "Unsupported architecture"
 #endif
-		status_probe_read = PROBE_STATUS::RUNNING_ERROR;
-		*ip = (greg_t)&jump_point_read;
 	}
 }
 #endif
@@ -197,7 +212,13 @@ int64_t bpftime_probe_read(uint64_t dst, int64_t size, uint64_t ptr, uint64_t,
 	memcpy((void *)dst, (void *)ptr, (size_t)size);
 
 #ifdef ENABLE_PROBE_READ_CHECK
-	__asm__("jump_point_read:");
+#if __APPLE__
+	__asm__(".globl _jump_point_read\n"
+		"_jump_point_read:");
+#else
+	__asm__(".globl jump_point_read\n"
+		"jump_point_read:");
+#endif
 
 	if (status_probe_read == PROBE_STATUS::RUNNING_ERROR) {
 		ret = -EFAULT;
@@ -225,13 +246,22 @@ static void segv_write_handler(int sig, siginfo_t *siginfo, void *ctx)
 		auto uctx = (ucontext_t *)ctx;
 #if defined(__x86_64__) || defined(_M_X64)
 		auto *ip = (greg_t *)(&uctx->uc_mcontext.gregs[REG_RIP]);
+		status_probe_write = PROBE_STATUS::RUNNING_ERROR;
+		*ip = (greg_t)&jump_point_write;
 #elif defined(__aarch64__) || defined(_M_ARM64)
+#if __APPLE__
+		// macOS ARM64: uc_mcontext is a pointer to __darwin_mcontext64
+		// The PC is at __ss.__pc
+		uctx->uc_mcontext->__ss.__pc = (uintptr_t)&jump_point_write;
+		status_probe_write = PROBE_STATUS::RUNNING_ERROR;
+#else
 		auto *ip = (greg_t *)(&uctx->uc_mcontext.pc);
+		status_probe_write = PROBE_STATUS::RUNNING_ERROR;
+		*ip = (greg_t)&jump_point_write;
+#endif
 #else
 #error "Unsupported architecture"
 #endif
-		status_probe_write = PROBE_STATUS::RUNNING_ERROR;
-		*ip = (greg_t)&jump_point_write;
 	}
 }
 #endif
@@ -286,7 +316,13 @@ int64_t bpftime_probe_write_user(uint64_t dst, uint64_t src, int64_t len,
 	memcpy((void *)dst, (void *)src, (size_t)len);
 
 #ifdef ENABLE_PROBE_WRITE_CHECK
-	__asm__("jump_point_write:");
+#if __APPLE__
+	__asm__(".globl _jump_point_write\n"
+		"_jump_point_write:");
+#else
+	__asm__(".globl jump_point_write\n"
+		"jump_point_write:");
+#endif
 
 	if (status_probe_write == PROBE_STATUS::RUNNING_ERROR) {
 		ret = -EFAULT;

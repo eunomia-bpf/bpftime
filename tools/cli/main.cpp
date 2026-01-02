@@ -32,6 +32,18 @@ constexpr const char *SYSCALL_SERVER_LIBRARY =
 	"libbpftime-syscall-server.dylib";
 constexpr const char *AGENT_TRANSFORMER_LIBRARY =
 	"libbpftime-agent-transformer.dylib";
+#if __APPLE__
+// macOS has strchrnul in system headers, but it returns char* instead of const
+// char* We need a const version for our use case
+static inline const char *strchrnul_const(const char *s, int c)
+{
+	while (*s && *s != (char)c) {
+		s++;
+	}
+	return s;
+}
+#define strchrnul strchrnul_const
+#else
 const char *strchrnul(const char *s, int c)
 {
 	while (*s && *s != (char)c) {
@@ -39,6 +51,7 @@ const char *strchrnul(const char *s, int c)
 	}
 	return s;
 }
+#endif
 int execvpe(const char *file, char *const argv[], char *const envp[])
 {
 	for (const char *path = getenv("PATH"); path && *path;
