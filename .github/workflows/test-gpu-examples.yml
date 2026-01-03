@@ -15,7 +15,94 @@ env:
   BPFTIME_VM_NAME: llvm
 
 jobs:
-  build-and-test-gpu-examples:
+  build-bpftime-gpu:
+    runs-on: [self-hosted, Linux, X64, gpu]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Detect CUDA root and export env
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Prefer /usr/local/cuda symlink, then versioned installs.
+          for cand in /usr/local/cuda /usr/local/cuda-12.9 /usr/local/cuda-12.8 /usr/local/cuda-12.7 /usr/local/cuda-12.6 /usr/local/cuda-12.5 /usr/local/cuda-12 /usr/local/cuda-11.8; do
+            if [ -d "$cand" ] && [ -x "$cand/bin/nvcc" ]; then
+              echo "BPFTIME_CUDA_ROOT=$cand" >> "$GITHUB_ENV"
+              echo "PATH=$cand/bin:$PATH" >> "$GITHUB_ENV"
+              if [ -d "$cand/lib64" ]; then
+                echo "LD_LIBRARY_PATH=$cand/lib64:${LD_LIBRARY_PATH:-}" >> "$GITHUB_ENV"
+              fi
+              echo "Using CUDA root: $cand"
+              exit 0
+            fi
+          done
+          if command -v nvcc >/dev/null 2>&1; then
+            NVCC_PATH="$(command -v nvcc)"
+            CUDA_FROM_NVCC="$(cd "$(dirname "$NVCC_PATH")/.." && pwd)"
+            echo "BPFTIME_CUDA_ROOT=$CUDA_FROM_NVCC" >> "$GITHUB_ENV"
+            echo "Using CUDA root from nvcc: $CUDA_FROM_NVCC"
+            exit 0
+          fi
+          echo "No CUDA root with nvcc found under /usr/local and nvcc not in PATH."
+          exit 1
+
+      - name: Check required tools
+        shell: bash
+        run: |
+          set -euo pipefail
+          for cmd in cmake ninja clang llvm-config nvcc; do
+            if ! command -v "$cmd" >/dev/null 2>&1; then
+              echo "Missing required tool: $cmd"
+              exit 1
+            fi
+          done
+          nvcc --version
+          nvidia-smi -L
+
+      - name: Ensure large /dev/shm
+        shell: bash
+        run: |
+          set -euo pipefail
+          df -h /dev/shm || true
+          if mount | grep -qE " on /dev/shm( |$)"; then
+            if [ "$(id -u)" -eq 0 ]; then
+              mount -o remount,size=2G /dev/shm || mount -o remount,size=1G /dev/shm || true
+            elif command -v sudo >/dev/null 2>&1; then
+              sudo mount -o remount,size=2G /dev/shm || sudo mount -o remount,size=1G /dev/shm || true
+            fi
+          fi
+          df -h /dev/shm || true
+
+      - name: Build bpftime with CUDA support (LLVM JIT)
+        shell: bash
+        run: |
+          set -euo pipefail
+          cmake -B build -S . \
+            -DCMAKE_BUILD_TYPE=Debug \
+            -DBPFTIME_LLVM_JIT=YES \
+            -DBPFTIME_ENABLE_CUDA_ATTACH=ON \
+            -DBPFTIME_CUDA_ROOT="${BPFTIME_CUDA_ROOT:-/usr/local/cuda}" \
+            -DLLVM_DIR="/usr/lib/llvm-18/lib/cmake/llvm/" \
+            -G Ninja
+          cmake --build build --config Debug --target bpftime-agent bpftime-syscall-server bpftimetool bpftime_text_segment_transformer nv_attach_impl_ptx_compiler ptxpass_kprobe_entry ptxpass_kretprobe ptxpass_kprobe_memcapture -j"$(nproc)"
+
+      - name: Upload bpftime build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: bpftime-gpu-build
+          if-no-files-found: error
+          retention-days: 7
+          path: |
+            build/runtime/agent/libbpftime-agent.so
+            build/runtime/syscall-server/libbpftime-syscall-server.so
+            build/tools/bpftimetool/bpftimetool
+            build/attach/text_segment_transformer
+            build/attach/nv_attach_impl
+
+  test-gpu-examples:
+    needs: [build-bpftime-gpu]
     runs-on: [self-hosted, Linux, X64, gpu]
     strategy:
       fail-fast: false
@@ -134,6 +221,12 @@ jobs:
         with:
           submodules: recursive
 
+      - name: Download bpftime build artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: bpftime-gpu-build
+          path: .
+
       - name: Detect CUDA root and export env
         shell: bash
         run: |
@@ -187,18 +280,15 @@ jobs:
           fi
           df -h /dev/shm || true
 
-      - name: Build bpftime with CUDA support (LLVM JIT)
+      - name: Verify bpftime build artifact
         shell: bash
         run: |
           set -euo pipefail
-          cmake -B build -S . \
-            -DCMAKE_BUILD_TYPE=Debug \
-            -DBPFTIME_LLVM_JIT=YES \
-            -DBPFTIME_ENABLE_CUDA_ATTACH=ON \
-            -DBPFTIME_CUDA_ROOT="${BPFTIME_CUDA_ROOT:-/usr/local/cuda}" \
-            -DLLVM_DIR="/usr/lib/llvm-18/lib/cmake/llvm/" \
-            -G Ninja
-          cmake --build build --config Debug --target bpftime-agent bpftime-syscall-server bpftimetool bpftime_text_segment_transformer nv_attach_impl_ptx_compiler ptxpass_kprobe_entry ptxpass_kretprobe ptxpass_kprobe_memcapture -j"$(nproc)"
+          test -f build/runtime/agent/libbpftime-agent.so
+          test -f build/runtime/syscall-server/libbpftime-syscall-server.so
+          test -x build/tools/bpftimetool/bpftimetool
+          test -d build/attach/text_segment_transformer
+          test -d build/attach/nv_attach_impl
 
       - name: Build GPU example
         run: |
@@ -226,7 +316,7 @@ jobs:
           EXPECTED="${{ matrix.examples.expected_str }}"
           EXAMPLE_NAME="${{ matrix.examples.name }}"
           EXAMPLE_MODE="${{ matrix.examples.mode }}"
-          CLIENT_TIMEOUT=60
+          CLIENT_TIMEOUT=30
           BPFTIMETOOL="$BUILD_DIR/tools/bpftimetool/bpftimetool"
           export SPDLOG_LEVEL=info
           export BPFTIME_LOG_LEVEL=INFO
