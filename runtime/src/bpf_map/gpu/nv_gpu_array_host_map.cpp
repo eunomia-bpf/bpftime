@@ -27,8 +27,16 @@ nv_gpu_array_host_map_impl::try_initialize_for_agent_and_get_mapped_address()
 				"shared mem addr={:x}",
 				pid, (uintptr_t)data_buffer.data());
 
-			void *gpu_ptr = data_buffer.data();
-			if (gpu_ptr == nullptr) {
+			void *cpu_ptr = data_buffer.data();
+			CUdeviceptr gpu_ptr;
+			auto err =
+				cuMemHostGetDevicePointer(&gpu_ptr, cpu_ptr, 0);
+			if (err != CUDA_SUCCESS) {
+				SPDLOG_ERROR(
+					"Unable to convert cpu ptr to gpu ptr: {}",
+					(int)err);
+			}
+			if (gpu_ptr == 0) {
 				SPDLOG_ERROR(
 					"Failed to convert CPU pointer to GPU pointer for per-GPU-thread array host map");
 				throw std::runtime_error(
