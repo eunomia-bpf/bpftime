@@ -77,7 +77,7 @@ static bool cuda_graph_stream_is_capturing(cudaStream_t stream)
 	cudaStreamCaptureStatus status = cudaStreamCaptureStatusNone;
 	auto err = cudaStreamIsCapturing(stream, &status);
 	if (err != cudaSuccess)
-		return true;
+		return false;
 	return status != cudaStreamCaptureStatusNone;
 }
 
