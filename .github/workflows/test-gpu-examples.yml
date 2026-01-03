@@ -113,6 +113,13 @@ jobs:
             name: mem_trace
             server_timeout: 15
             mode: two-process
+          - path: host_map_test
+            executable: ./host_map_test
+            victim: ./vec_add
+            expected_str: "(call_count)"
+            name: host_map_test
+            server_timeout: 15
+            mode: two-process
           - path: cutlass
             executable: ./counter/cutlass_launch_counter
             victim: ./gemm/cutlass_gemm --shape 1024x1024x1024 --launches 4 --warmup 1 --verify

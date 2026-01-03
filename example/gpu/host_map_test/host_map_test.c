@@ -22,7 +22,7 @@
 
 // Default GPU thread count for PERGPUTD_ARRAY_HOST_MAP
 // This should match the actual number of threads launched
-#define GPU_THREAD_COUNT 1000
+#define GPU_THREAD_COUNT (1<<20)
 
 // Default number of entries for host maps (must match BPF code)
 #ifndef HOST_MAP_MAX_ENTRIES
@@ -87,7 +87,7 @@ static int print_stat(struct host_map_test_bpf *obj)
 	// Note: PERGPUTD_ARRAY returns value_size * thread_count bytes per key
 	int pt_fd = bpf_map__fd(obj->maps.perthread_counter);
 	printf("  [perthread_counter map (PERGPUTD_ARRAY_HOST_MAP)]\n");
-	uint64_t pt_values[GPU_THREAD_COUNT];  // Buffer for all thread values
+	static uint64_t pt_values[GPU_THREAD_COUNT];  // Buffer for all thread values
 	const char *key_names[] = { "call_count", "exec_time_ns", "thread_id" };
 
 	// Use get_next_key to iterate through all keys with data
@@ -131,7 +131,7 @@ static int print_stat(struct host_map_test_bpf *obj)
 	// Print thread_timestamp map (also PERGPUTD_ARRAY_HOST_MAP)
 	int ts_fd = bpf_map__fd(obj->maps.thread_timestamp);
 	printf("  [thread_timestamp map (PERGPUTD_ARRAY_HOST_MAP)]\n");
-	uint64_t ts_values[GPU_THREAD_COUNT];  // Buffer for all thread values
+	static uint64_t ts_values[GPU_THREAD_COUNT];  // Buffer for all thread values
 	memset(ts_values, 0, sizeof(ts_values));
 	uint32_t ts_key = 0;
 	err = bpf_map_lookup_elem(ts_fd, &ts_key, ts_values);

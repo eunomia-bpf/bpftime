@@ -121,8 +121,7 @@ CUdeviceptr nv_gpu_shared_array_host_map_impl::
 
 			// Convert CPU pointer to GPU device pointer using the
 			// pre-registered shared memory mapping
-			void *gpu_ptr =
-				bpftime_cpu_ptr_to_gpu_ptr(data_buffer.data());
+			void *gpu_ptr = data_buffer.data();
 			if (gpu_ptr == nullptr) {
 				SPDLOG_ERROR(
 					"Failed to convert CPU pointer to GPU pointer for shared array host map");
@@ -138,7 +137,8 @@ CUdeviceptr nv_gpu_shared_array_host_map_impl::
 		}
 		return agent_gpu_shared_mem[pid];
 	} else {
-		// Server side: return CPU address (GPU access not needed on server)
+		// Server side: return CPU address (GPU access not needed on
+		// server)
 		return (CUdeviceptr)data_buffer.data();
 	}
 }
