@@ -65,6 +65,7 @@ class bpftime_shm {
 	std::optional<struct agent_config> local_agent_config;
 #ifdef BPFTIME_ENABLE_CUDA_ATTACH
 	cuda::CommSharedMem *cuda_comm_shared_mem = nullptr;
+	bool cuda_host_memory_registered = false;
 #endif
 
 

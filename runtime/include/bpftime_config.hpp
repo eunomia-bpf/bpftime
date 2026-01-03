@@ -5,6 +5,7 @@
 #include <boost/interprocess/interprocess_fwd.hpp>
 #include <boost/interprocess/managed_shared_memory.hpp>
 #include <cstdlib>
+#include <cstdint>
 #include <string>
 #include <variant>
 
@@ -23,6 +24,7 @@
 constexpr size_t DEFAULT_MAX_FD_COUNT = 1024 * 6;
 constexpr size_t MIN_MAX_FD_COUNT = 128;
 constexpr size_t MAX_MAX_FD_COUNT = 1024 * 1024; // 1M max
+constexpr uint64_t DEFAULT_GPU_GDRCOPY_MAX_PER_KEY_BYTES = 4096;
 
 namespace bpftime
 {
@@ -69,6 +71,13 @@ struct agent_config {
 	// for both local and shared memory
 	char logger_output_path[LOG_PATH_MAX_LEN] = DEFAULT_LOGGER_OUTPUT_PATH;
 	char vm_name[VM_NAME_MAX_LEN] = DEFAULT_VM_NAME;
+
+	// Optional: enable GDRCopy for host-side lookup of GPU maps.
+	bool enable_gpu_gdrcopy = false;
+	// If non-zero, GDRCopy is only attempted when per-key copy size <= this threshold.
+	// Set to 0 to disable the threshold (always attempt when enabled).
+	uint64_t gpu_gdrcopy_max_per_key_bytes =
+		DEFAULT_GPU_GDRCOPY_MAX_PER_KEY_BYTES;
 
 	const char *get_logger_output_path() const
 	{
