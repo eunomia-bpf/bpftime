@@ -159,6 +159,11 @@ if(BPFTIME_ENABLE_CUDA_ATTACH)
   add_compile_definitions(BPFTIME_ENABLE_CUDA_ATTACH=1)
 endif()
 
+if(BPFTIME_ENABLE_GDRCOPY)
+  add_compile_definitions(BPFTIME_ENABLE_GDRCOPY=1)
+  message(STATUS "Building with optional GDRCopy support (BPFTIME_ENABLE_GDRCOPY=1)")
+endif()
+
 # argparse
 add_subdirectory(third_party/argparse)
 

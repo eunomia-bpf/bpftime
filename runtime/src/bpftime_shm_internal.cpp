@@ -1000,6 +1000,7 @@ bool bpftime_shm::register_cuda_host_memory()
 
 	SPDLOG_INFO("Registered shared memory with CUDA: addr={} size={}",
 		    base_addr, seg_size);
+	cuda_host_memory_registered = true;
 	return true;
 }
 #endif
@@ -1011,6 +1012,9 @@ bpftime::bpftime_shm::~bpftime_shm()
 
 	void *base_addr = segment.get_address();
 #ifdef BPFTIME_ENABLE_CUDA_ATTACH
+	if (!cuda_host_memory_registered) {
+		return;
+	}
 	cudaError_t err = cudaHostUnregister(base_addr);
 	// Use fprintf here to avoid spdlog de-initialized issues
 	if (err != cudaSuccess) {
