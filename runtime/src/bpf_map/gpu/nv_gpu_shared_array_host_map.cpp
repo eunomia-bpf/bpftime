@@ -122,13 +122,16 @@ CUdeviceptr nv_gpu_shared_array_host_map_impl::
 			// Convert CPU pointer to GPU device pointer using the
 			// pre-registered shared memory mapping
 			void *cpu_ptr = data_buffer.data();
-			CUdeviceptr gpu_ptr;
+			CUdeviceptr gpu_ptr = 0;
 			auto err =
 				cuMemHostGetDevicePointer(&gpu_ptr, cpu_ptr, 0);
 			if (err != CUDA_SUCCESS) {
+				const char *err_str = nullptr;
+				cuGetErrorString(err, &err_str);
 				SPDLOG_ERROR(
-					"Unable to convert cpu ptr to gpu ptr: {}",
-					(int)err);
+					"cuMemHostGetDevicePointer failed for host_ptr={:p}: {} ({})",
+					cpu_ptr, (int)err,
+					err_str ? err_str : "unknown");
 				throw std::runtime_error(
 					"Unable to convert cpu ptr to gpu ptr");
 			}
@@ -143,7 +146,7 @@ CUdeviceptr nv_gpu_shared_array_host_map_impl::
 				"Mapped shared memory for GPU access: cpu={:x}, gpu={:x}",
 				(uintptr_t)data_buffer.data(),
 				(uintptr_t)gpu_ptr);
-			agent_gpu_shared_mem[pid] = (CUdeviceptr)gpu_ptr;
+			agent_gpu_shared_mem[pid] = gpu_ptr;
 		}
 		return agent_gpu_shared_mem[pid];
 	} else {
