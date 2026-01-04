@@ -35,6 +35,8 @@ nv_gpu_array_host_map_impl::try_initialize_for_agent_and_get_mapped_address()
 				SPDLOG_ERROR(
 					"Unable to convert cpu ptr to gpu ptr: {}",
 					(int)err);
+				throw std::runtime_error(
+					"Unable to convert cpu ptr to gpu ptr");
 			}
 			if (gpu_ptr == 0) {
 				SPDLOG_ERROR(

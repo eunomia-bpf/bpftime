@@ -129,6 +129,8 @@ CUdeviceptr nv_gpu_shared_array_host_map_impl::
 				SPDLOG_ERROR(
 					"Unable to convert cpu ptr to gpu ptr: {}",
 					(int)err);
+				throw std::runtime_error(
+					"Unable to convert cpu ptr to gpu ptr");
 			}
 			if (gpu_ptr == 0) {
 				SPDLOG_ERROR(
