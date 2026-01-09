@@ -76,8 +76,11 @@ static bool cuda_graph_stream_is_capturing(cudaStream_t stream)
 {
 	cudaStreamCaptureStatus status = cudaStreamCaptureStatusNone;
 	auto err = cudaStreamIsCapturing(stream, &status);
-	if (err != cudaSuccess)
-		return true;
+	if (err != cudaSuccess) {
+		SPDLOG_WARN("Call to cudaStreamIsCapturing failed: {}",
+			    (int)err);
+		return false;
+	}
 	return status != cudaStreamCaptureStatusNone;
 }
 
@@ -102,6 +105,7 @@ cuda_launch_kernel_common(nv_attach_impl *impl, void *original_fn_ptr,
 		const auto &fatbin = *itr1->second;
 		const auto &handle =
 			fatbin.function_addr_to_symbol.at((void *)func);
+		SPDLOG_DEBUG("Launching kernel..");
 		if (auto err = cuLaunchKernel(
 			    handle.func, grid_dim.x, grid_dim.y, grid_dim.z,
 			    block_dim.x, block_dim.y, block_dim.z, shared_mem,

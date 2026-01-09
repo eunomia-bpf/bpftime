@@ -27,9 +27,18 @@ nv_gpu_array_host_map_impl::try_initialize_for_agent_and_get_mapped_address()
 				"shared mem addr={:x}",
 				pid, (uintptr_t)data_buffer.data());
 
-			void *gpu_ptr =
-				bpftime_cpu_ptr_to_gpu_ptr(data_buffer.data());
-			if (gpu_ptr == nullptr) {
+			void *cpu_ptr = data_buffer.data();
+			CUdeviceptr gpu_ptr;
+			auto err =
+				cuMemHostGetDevicePointer(&gpu_ptr, cpu_ptr, 0);
+			if (err != CUDA_SUCCESS) {
+				SPDLOG_ERROR(
+					"Unable to convert cpu ptr to gpu ptr: {}",
+					(int)err);
+				throw std::runtime_error(
+					"Unable to convert cpu ptr to gpu ptr");
+			}
+			if (gpu_ptr == 0) {
 				SPDLOG_ERROR(
 					"Failed to convert CPU pointer to GPU pointer for per-GPU-thread array host map");
 				throw std::runtime_error(
@@ -53,10 +62,12 @@ nv_gpu_array_host_map_impl::nv_gpu_array_host_map_impl(
 	: data_buffer(memory.get_segment_manager()),
 	  agent_gpu_shared_mem(memory.get_segment_manager()),
 	  value_size(value_size), max_entries(max_entries),
-	  thread_count(thread_count > 0 ? thread_count : 1) // Default to 1 if not specified
+	  thread_count(thread_count > 0 ? thread_count : 1) // Default to 1 if
+							    // not specified
 {
 	entry_size = this->thread_count * value_size;
-	auto total_buffer_size = (uint64_t)value_size * max_entries * this->thread_count;
+	auto total_buffer_size =
+		(uint64_t)value_size * max_entries * this->thread_count;
 	SPDLOG_INFO(
 		"Initializing map type of BPF_MAP_TYPE_PERGPUTD_ARRAY_HOST_MAP (shared mem), "
 		"value_size={}, max_entries={}, thread_count={}, total_buffer_size={}",
@@ -110,7 +121,8 @@ long nv_gpu_array_host_map_impl::elem_delete(const void *key)
 	return -1;
 }
 
-int nv_gpu_array_host_map_impl::map_get_next_key(const void *key, void *next_key)
+int nv_gpu_array_host_map_impl::map_get_next_key(const void *key,
+						 void *next_key)
 {
 	auto &next_key_val = *(uint32_t *)next_key;
 
