@@ -1,16 +1,14 @@
 #include "nv_gpu_gdrcopy.hpp"
 
+#include "nv_gpu_gdrcopy_abi.hpp"
+
 #include "bpftime_shm.hpp"
 #include "spdlog/spdlog.h"
 
 #include <cstddef>
 
-#if __has_include(<gdrapi.h>)
-#include <gdrapi.h>
-#define BPFTIME_HAVE_GDRAPI_H 1
-#endif
-
 #if defined(BPFTIME_ENABLE_GDRCOPY)
+#include <array>
 #include <dlfcn.h>
 #include <mutex>
 #include <type_traits>
@@ -24,48 +22,15 @@ namespace gdrcopy
 {
 namespace
 {
-constexpr const char *kGdrcopyLibraryNames[] = { "libgdrapi.so",
-						"libgdrapi.so.2", nullptr };
+using gdr_t = detail::gdr_t;
+using gdr_mh_t = detail::gdr_mh_t;
+using gdr_info_t = detail::gdr_info_t;
+constexpr uint32_t kGdrPinDefaultFlags = detail::kGdrPinDefaultFlags;
 
-#if defined(BPFTIME_HAVE_GDRAPI_H)
-using gdr_t = ::gdr_t;
-using gdr_mh_t = ::gdr_mh_t;
-using gdr_info_t = ::gdr_info_t;
-constexpr uint32_t kGdrPinDefaultFlags = ::GDR_PIN_FLAG_DEFAULT;
-#else
-// Minimal GDRCopy type declarations to allow dynamic loading via dlopen
-// without requiring the gdrapi.h header at build time.
-struct gdr;
-using gdr_t = gdr *;
-
-struct gdr_mh_s {
-	unsigned long h;
+constexpr std::array<const char *, 2> kGdrcopyLibraryNames = {
+	"libgdrapi.so",
+	"libgdrapi.so.2",
 };
-using gdr_mh_t = gdr_mh_s;
-
-constexpr uint32_t kGdrPinDefaultFlags = 0;
-
-enum gdr_mapping_type {
-	GDR_MAPPING_TYPE_NONE = 0,
-	GDR_MAPPING_TYPE_WC = 1,
-	GDR_MAPPING_TYPE_CACHING = 2,
-	GDR_MAPPING_TYPE_DEVICE = 3,
-	GDR_MAPPING_TYPE_MAX
-};
-
-// Matches the ABI layout of gdrapi.h's gdr_info_t (used by gdr_get_info).
-struct gdr_info {
-	uint64_t va;
-	uint64_t mapped_size;
-	uint32_t page_size;
-	uint64_t tm_cycles;
-	uint32_t cycles_per_ms;
-	unsigned mapped : 1;
-	unsigned wc_mapping : 1;
-	gdr_mapping_type mapping_type;
-};
-using gdr_info_t = gdr_info;
-#endif
 
 // Function table for libgdrapi loaded via dlopen so that
 // binaries can still run on systems without GDRCopy installed.
@@ -100,9 +65,9 @@ bool ensure_gdrcopy_symbols_loaded(gdrcopy_function_table &function_table,
 		return function_table.lib_handle != nullptr;
 	}
 
-	for (int i = 0; kGdrcopyLibraryNames[i] != nullptr; ++i) {
+	for (const char *library_name : kGdrcopyLibraryNames) {
 		function_table.lib_handle =
-			dlopen(kGdrcopyLibraryNames[i], RTLD_LAZY | RTLD_LOCAL);
+			dlopen(library_name, RTLD_LAZY | RTLD_LOCAL);
 		if (function_table.lib_handle) {
 			break;
 		}
