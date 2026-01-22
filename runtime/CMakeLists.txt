@@ -90,6 +90,7 @@ set(sources
 
 if(${BPFTIME_ENABLE_CUDA_ATTACH})
   list(APPEND sources src/attach/bpf_attach_ctx_cuda.cpp)
+  list(APPEND sources src/bpf_map/gpu/nv_gpu_gdrcopy.cpp)
   # IPC-based GPU maps (for x86 with CUDA IPC support)
   list(APPEND sources src/bpf_map/gpu/nv_gpu_per_thread_array_map.cpp)
   list(APPEND sources src/bpf_map/gpu/nv_gpu_shared_array_map.cpp)
@@ -159,8 +160,11 @@ target_link_libraries(${PROJECT_NAME}
   bpftime_vm
   spdlog::spdlog
   bpftime_base_attach_impl
-
 )
+
+if(UNIX AND NOT APPLE)
+  target_link_libraries(${PROJECT_NAME} PUBLIC ${CMAKE_DL_LIBS})
+endif()
 
 
 if(${BPFTIME_ENABLE_CUDA_ATTACH})
@@ -298,4 +302,3 @@ if(${TEST_LCOV})
   target_compile_options(${PROJECT_NAME} PUBLIC -fprofile-arcs -ftest-coverage -fprofile-update=atomic)
   target_link_options(${PROJECT_NAME} PUBLIC -fprofile-arcs)
 endif()
-

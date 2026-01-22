@@ -181,7 +181,7 @@ jobs:
     needs: [build-runtime]
     container:
       image: "manjusakalza/bpftime-base-image:${{matrix.container.image}}"
-      options: " ${{matrix.privilege_options.options}}"
+      options: ${{ matrix.privilege_options.options }}
     strategy:
       fail-fast: false
       matrix:
@@ -201,7 +201,9 @@ jobs:
         privilege_options:
           - options: "--privileged -v /sys/kernel/debug/:/sys/kernel/debug:rw -v /sys/kernel/tracing:/sys/kernel/tracing:rw"
             enable: true
-          - options: ""
+          # GitHub Actions rejects empty `container.options` after matrix expansion.
+          # Use a harmless non-empty default for the unprivileged case.
+          - options: "--init"
             enable: false
         container:
           - image: ubuntu-2204
