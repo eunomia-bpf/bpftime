@@ -295,16 +295,36 @@ jobs:
           set -euo pipefail
           # Depending on download-artifact version/config, contents may be placed under a
           # top-level directory named after the artifact (e.g. ./bpftime-gpu-build/).
-          if [ ! -e build ] && [ -d bpftime-gpu-build/build ]; then
-            mv bpftime-gpu-build/build build
-          elif [ -d bpftime-gpu-build/build ]; then
-            mkdir -p build
-            cp -a bpftime-gpu-build/build/. build/
+          if [ -d build ]; then
+            echo "Found build/ in workspace."
+            exit 0
           fi
-          if [ -d bpftime-gpu-build ] && [ ! -e build ]; then
-            echo "Downloaded artifact but did not find expected build/ directory."
+
+          if [ -d bpftime-gpu-build/build ]; then
+            mv bpftime-gpu-build/build build
+          else
+            # Fallback: search for a known file and infer BUILD_DIR.
+            AGENT_PATH="$(find . -maxdepth 8 -type f -path "*/runtime/agent/libbpftime-agent.so" -print -quit || true)"
+            if [ -n "$AGENT_PATH" ]; then
+              BUILD_DIR="$(cd "$(dirname "$AGENT_PATH")/../.." && pwd)"
+              ln -s "$BUILD_DIR" build
+              echo "Symlinked build -> $BUILD_DIR"
+            fi
+          fi
+
+          if [ ! -e build ]; then
+            echo "Downloaded artifact but could not locate a build/ directory."
             echo "Top-level entries:"; ls -la
-            echo "bpftime-gpu-build entries:"; ls -la bpftime-gpu-build || true
+            if [ -d bpftime-gpu-build ]; then
+              echo "bpftime-gpu-build entries:"; ls -la bpftime-gpu-build || true
+              echo "bpftime-gpu-build tree (depth=4):"; find bpftime-gpu-build -maxdepth 4 -mindepth 1 -print || true
+            fi
+            echo "Search for key files (depth=8):"
+            find . -maxdepth 8 -type f \( \
+              -name 'libbpftime-agent.so' -o \
+              -name 'libbpftime-syscall-server.so' -o \
+              -name 'bpftimetool' \
+            \) -print || true
             exit 1
           fi
 
@@ -426,6 +446,11 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          if [ ! -e build ]; then
+            echo "build/ does not exist after artifact download."
+            ls -la
+            exit 1
+          fi
           missing=0
           for p in \
             build/runtime/agent/libbpftime-agent.so \
