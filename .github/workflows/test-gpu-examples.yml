@@ -48,6 +48,65 @@ jobs:
           echo "No CUDA root with nvcc found under /usr/local and nvcc not in PATH."
           exit 1
 
+      - name: Install build dependencies (apt)
+        shell: bash
+        run: |
+          set -euo pipefail
+          export DEBIAN_FRONTEND=noninteractive
+          if ! command -v apt-get >/dev/null 2>&1; then
+            echo "apt-get not found; please pre-install build dependencies on the self-hosted runner."
+            exit 1
+          fi
+          SUDO=""
+          if [ "$(id -u)" -ne 0 ]; then
+            if command -v sudo >/dev/null 2>&1; then
+              SUDO="sudo"
+            else
+              echo "Not running as root and sudo not available."
+              exit 1
+            fi
+          fi
+          $SUDO apt-get update
+          $SUDO apt-get install -y --no-install-recommends \
+            build-essential ca-certificates curl git pkg-config xz-utils \
+            cmake ninja-build \
+            libboost-all-dev libdw-dev libelf-dev libffi-dev libzstd-dev zlib1g-dev
+
+          # Ensure LLVM >= 15 for vm/llvm-jit (find_package(LLVM)).
+          LLVM_CONFIG_BIN="llvm-config"
+          LLVM_MAJOR=0
+          if command -v "$LLVM_CONFIG_BIN" >/dev/null 2>&1; then
+            LLVM_MAJOR="$("$LLVM_CONFIG_BIN" --version | cut -d. -f1 || echo 0)"
+          fi
+          if [ "${LLVM_MAJOR}" -lt 15 ]; then
+            echo "llvm-config missing or too old (found major=${LLVM_MAJOR}); trying to install a newer LLVM/Clang toolchain..."
+            set +e
+            SELECTED=""
+            for v in 19 18 17 16 15; do
+              $SUDO apt-get install -y --no-install-recommends "llvm-$v" "llvm-$v-dev" "clang-$v" "lld-$v"
+              if [ $? -eq 0 ] && command -v "llvm-config-$v" >/dev/null 2>&1; then
+                SELECTED="$v"
+                break
+              fi
+            done
+            set -e
+            if [ -z "$SELECTED" ]; then
+              echo "Failed to install an LLVM toolchain >= 15 via apt-get."
+              exit 1
+            fi
+            TOOLCHAIN_BIN_DIR="${RUNNER_TEMP:-/tmp}/bpftime-toolchain-bin"
+            mkdir -p "$TOOLCHAIN_BIN_DIR"
+            ln -sf "$(command -v "clang-$SELECTED")" "$TOOLCHAIN_BIN_DIR/clang"
+            if command -v "clang++-$SELECTED" >/dev/null 2>&1; then
+              ln -sf "$(command -v "clang++-$SELECTED")" "$TOOLCHAIN_BIN_DIR/clang++"
+            fi
+            ln -sf "$(command -v "llvm-config-$SELECTED")" "$TOOLCHAIN_BIN_DIR/llvm-config"
+            export PATH="$TOOLCHAIN_BIN_DIR:$PATH"
+            echo "PATH=$TOOLCHAIN_BIN_DIR:$PATH" >> "$GITHUB_ENV"
+          fi
+
+          echo "LLVM_DIR=$(llvm-config --cmakedir)" >> "$GITHUB_ENV"
+
       - name: Check required tools
         shell: bash
         run: |
@@ -58,6 +117,8 @@ jobs:
               exit 1
             fi
           done
+          echo "LLVM_DIR=${LLVM_DIR:-unset}"
+          llvm-config --version
           nvcc --version
           nvidia-smi -L
 
@@ -84,7 +145,7 @@ jobs:
             -DBPFTIME_LLVM_JIT=YES \
             -DBPFTIME_ENABLE_CUDA_ATTACH=ON \
             -DBPFTIME_CUDA_ROOT="${BPFTIME_CUDA_ROOT:-/usr/local/cuda}" \
-            -DLLVM_DIR="/usr/lib/llvm-18/lib/cmake/llvm/" \
+            -DLLVM_DIR="${LLVM_DIR}" \
             -G Ninja
           cmake --build build --config Debug --target bpftime-agent bpftime-syscall-server bpftimetool bpftime_text_segment_transformer nv_attach_impl_ptx_compiler ptxpass_kprobe_entry ptxpass_kretprobe ptxpass_kprobe_memcapture -j"$(nproc)"
 
@@ -253,6 +314,65 @@ jobs:
           echo "No CUDA root with nvcc found under /usr/local and nvcc not in PATH."
           exit 1
 
+      - name: Install test dependencies (apt)
+        shell: bash
+        run: |
+          set -euo pipefail
+          export DEBIAN_FRONTEND=noninteractive
+          if ! command -v apt-get >/dev/null 2>&1; then
+            echo "apt-get not found; please pre-install test dependencies on the self-hosted runner."
+            exit 1
+          fi
+          SUDO=""
+          if [ "$(id -u)" -ne 0 ]; then
+            if command -v sudo >/dev/null 2>&1; then
+              SUDO="sudo"
+            else
+              echo "Not running as root and sudo not available."
+              exit 1
+            fi
+          fi
+          $SUDO apt-get update
+          $SUDO apt-get install -y --no-install-recommends \
+            build-essential ca-certificates curl git pkg-config xz-utils \
+            cmake ninja-build \
+            libboost-all-dev libdw-dev libelf-dev libffi-dev libzstd-dev zlib1g-dev
+
+          # Examples build libbpf/bpftool and compile eBPF with clang.
+          LLVM_CONFIG_BIN="llvm-config"
+          LLVM_MAJOR=0
+          if command -v "$LLVM_CONFIG_BIN" >/dev/null 2>&1; then
+            LLVM_MAJOR="$("$LLVM_CONFIG_BIN" --version | cut -d. -f1 || echo 0)"
+          fi
+          if [ "${LLVM_MAJOR}" -lt 15 ]; then
+            echo "llvm-config missing or too old (found major=${LLVM_MAJOR}); trying to install a newer LLVM/Clang toolchain..."
+            set +e
+            SELECTED=""
+            for v in 19 18 17 16 15; do
+              $SUDO apt-get install -y --no-install-recommends "llvm-$v" "llvm-$v-dev" "clang-$v" "lld-$v"
+              if [ $? -eq 0 ] && command -v "llvm-config-$v" >/dev/null 2>&1; then
+                SELECTED="$v"
+                break
+              fi
+            done
+            set -e
+            if [ -z "$SELECTED" ]; then
+              echo "Failed to install an LLVM toolchain >= 15 via apt-get."
+              exit 1
+            fi
+            TOOLCHAIN_BIN_DIR="${RUNNER_TEMP:-/tmp}/bpftime-toolchain-bin"
+            mkdir -p "$TOOLCHAIN_BIN_DIR"
+            ln -sf "$(command -v "clang-$SELECTED")" "$TOOLCHAIN_BIN_DIR/clang"
+            if command -v "clang++-$SELECTED" >/dev/null 2>&1; then
+              ln -sf "$(command -v "clang++-$SELECTED")" "$TOOLCHAIN_BIN_DIR/clang++"
+            fi
+            ln -sf "$(command -v "llvm-config-$SELECTED")" "$TOOLCHAIN_BIN_DIR/llvm-config"
+            export PATH="$TOOLCHAIN_BIN_DIR:$PATH"
+            echo "PATH=$TOOLCHAIN_BIN_DIR:$PATH" >> "$GITHUB_ENV"
+          fi
+
+          echo "LLVM_DIR=$(llvm-config --cmakedir)" >> "$GITHUB_ENV"
+
       - name: Check required tools
         shell: bash
         run: |
@@ -263,6 +383,8 @@ jobs:
               exit 1
             fi
           done
+          echo "LLVM_DIR=${LLVM_DIR:-unset}"
+          llvm-config --version
           nvcc --version
           nvidia-smi -L
 
