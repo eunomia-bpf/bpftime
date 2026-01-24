@@ -20,11 +20,28 @@ std::string wrap_ptx_with_trampoline(std::string input)
 	return get_default_trampoline_ptx() + input;
 }
 
-static std::string rewrite_ptx_target(std::string ptx,
-				      const std::string &sm_arch)
+std::string rewrite_ptx_target(std::string ptx,
+			       const std::string &sm_arch)
 {
 	if (sm_arch.empty())
 		return ptx;
+
+	// Rewrite .version based on SM arch (sm_120+ needs 8.7, sm_100+ needs 8.5)
+	int sm_num = (sm_arch.size() > 3) ? std::atoi(sm_arch.c_str() + 3) : 0;
+	const char *ptx_ver = (sm_num >= 120) ? "8.7" : (sm_num >= 100) ? "8.5" : nullptr;
+	if (ptx_ver) {
+		auto vpos = ptx.find(".version");
+		if (vpos != std::string::npos) {
+			vpos += 8;
+			while (vpos < ptx.size() && ptx[vpos] == ' ') vpos++;
+			auto vstart = vpos;
+			while (vpos < ptx.size() && ptx[vpos] != '\n' && ptx[vpos] != ' ') vpos++;
+			if (vpos > vstart)
+				ptx.replace(vstart, vpos - vstart, ptx_ver);
+		}
+	}
+
+	// Rewrite .target
 	auto pos = ptx.find(".target");
 	if (pos == std::string::npos)
 		return ptx;

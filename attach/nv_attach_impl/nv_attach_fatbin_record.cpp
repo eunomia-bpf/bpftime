@@ -40,26 +40,7 @@
 	} while (0)
 namespace bpftime::attach
 {
-namespace {
-static std::string rewrite_ptx_target(std::string ptx, const std::string &sm_arch)
-{
-	if (sm_arch.empty())
-		return ptx;
-	auto pos = ptx.find(".target");
-	if (pos == std::string::npos)
-		return ptx;
-	pos += strlen(".target");
-	while (pos < ptx.size() && (ptx[pos] == ' ' || ptx[pos] == '\t'))
-		pos++;
-	auto start = pos;
-	while (pos < ptx.size() && ptx[pos] != ' ' && ptx[pos] != '\t' &&
-	       ptx[pos] != '\n' && ptx[pos] != '\r' && ptx[pos] != ',')
-		pos++;
-	if (pos > start)
-		ptx.replace(start, pos - start, sm_arch);
-	return ptx;
-}
-} // namespace
+using bpftime::attach::rewrite_ptx_target;
 
 fatbin_record::~fatbin_record()
 {
