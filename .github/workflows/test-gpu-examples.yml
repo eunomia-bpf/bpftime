@@ -287,6 +287,26 @@ jobs:
         with:
           name: bpftime-gpu-build
           path: .
+          merge-multiple: true
+
+      - name: Normalize bpftime artifact layout
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Depending on download-artifact version/config, contents may be placed under a
+          # top-level directory named after the artifact (e.g. ./bpftime-gpu-build/).
+          if [ ! -e build ] && [ -d bpftime-gpu-build/build ]; then
+            mv bpftime-gpu-build/build build
+          elif [ -d bpftime-gpu-build/build ]; then
+            mkdir -p build
+            cp -a bpftime-gpu-build/build/. build/
+          fi
+          if [ -d bpftime-gpu-build ] && [ ! -e build ]; then
+            echo "Downloaded artifact but did not find expected build/ directory."
+            echo "Top-level entries:"; ls -la
+            echo "bpftime-gpu-build entries:"; ls -la bpftime-gpu-build || true
+            exit 1
+          fi
 
       - name: Detect CUDA root and export env
         shell: bash
@@ -406,11 +426,24 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          test -f build/runtime/agent/libbpftime-agent.so
-          test -f build/runtime/syscall-server/libbpftime-syscall-server.so
+          missing=0
+          for p in \
+            build/runtime/agent/libbpftime-agent.so \
+            build/runtime/syscall-server/libbpftime-syscall-server.so \
+            build/tools/bpftimetool/bpftimetool \
+            build/attach/text_segment_transformer \
+            build/attach/nv_attach_impl; do
+            if [ ! -e "$p" ]; then
+              echo "Missing from downloaded artifact: $p"
+              missing=1
+            fi
+          done
+          if [ "$missing" -ne 0 ]; then
+            echo "--- build/ (depth=4) ---"
+            find build -maxdepth 4 -mindepth 1 -print || true
+            exit 1
+          fi
           test -x build/tools/bpftimetool/bpftimetool
-          test -d build/attach/text_segment_transformer
-          test -d build/attach/nv_attach_impl
 
       - name: Build GPU example
         run: |
