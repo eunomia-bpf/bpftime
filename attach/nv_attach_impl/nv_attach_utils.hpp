@@ -40,6 +40,12 @@ std::string wrap_ptx_with_trampoline_for_sm(std::string input,
 std::string sha256(const void *data, size_t length);
 
 /**
+ * @brief Rewrite PTX target and version for the given SM architecture.
+ * Automatically upgrades PTX version for newer architectures (sm_100+, sm_120+).
+ */
+std::string rewrite_ptx_target(std::string ptx, const std::string &sm_arch);
+
+/**
  * @brief Get the SM architecture string for the current GPU.
  * First checks BPFTIME_SM_ARCH environment variable, then auto-detects
  * from the current CUDA device if not set.
