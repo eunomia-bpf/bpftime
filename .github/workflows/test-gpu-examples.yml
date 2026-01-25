@@ -304,41 +304,76 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: bpftime-gpu-build
-          path: .
+          path: bpftime-artifact
           merge-multiple: true
+          if-no-artifact-found: error
 
       - name: Normalize bpftime artifact layout
         shell: bash
         run: |
           set -euo pipefail
           # Depending on download-artifact version/config, contents may be placed under a
-          # top-level directory named after the artifact (e.g. ./bpftime-gpu-build/).
+          # top-level directory named after the artifact or have 'build/' stripped.
+          ART_ROOT="bpftime-artifact"
+          if [ ! -d "$ART_ROOT" ]; then
+            echo "Artifact download directory not found: $ART_ROOT"
+            ls -la
+            exit 1
+          fi
+
+          rm -rf build
+
+          if [ -d "$ART_ROOT/build" ]; then
+            mv "$ART_ROOT/build" build
+            exit 0
+          fi
+
+          if [ -d "$ART_ROOT/bpftime-gpu-build/build" ]; then
+            mv "$ART_ROOT/bpftime-gpu-build/build" build
+            exit 0
+          fi
+
+          # If upload-artifact chose 'build/' as the artifact root, downloaded files look like:
+          #   bpftime-artifact/runtime/..., bpftime-artifact/tools/..., bpftime-artifact/attach/...
+          if [ -d "$ART_ROOT/runtime" ] || [ -d "$ART_ROOT/tools" ] || [ -d "$ART_ROOT/attach" ]; then
+            mkdir -p build
+            for d in runtime tools attach; do
+              if [ -d "$ART_ROOT/$d" ]; then
+                mkdir -p "build/$d"
+                cp -a "$ART_ROOT/$d/." "build/$d/"
+              fi
+            done
+          fi
+
           if [ -d build ]; then
             echo "Found build/ in workspace."
             exit 0
           fi
 
-          if [ -d bpftime-gpu-build/build ]; then
-            mv bpftime-gpu-build/build build
-          else
-            # Fallback: search for a known file and infer BUILD_DIR.
-            AGENT_PATH="$(find . -maxdepth 8 -type f -path "*/runtime/agent/libbpftime-agent.so" -print -quit || true)"
-            if [ -n "$AGENT_PATH" ]; then
-              BUILD_DIR="$(cd "$(dirname "$AGENT_PATH")/../.." && pwd)"
-              ln -s "$BUILD_DIR" build
-              echo "Symlinked build -> $BUILD_DIR"
+          # Fallback: search for a known file and infer BUILD_DIR inside artifact root.
+          AGENT_PATH="$(find "$ART_ROOT" -maxdepth 10 -type f -path "*/runtime/agent/libbpftime-agent.so" -print -quit || true)"
+          if [ -n "$AGENT_PATH" ]; then
+            BUILD_DIR="$(cd "$(dirname "$AGENT_PATH")/../.." && pwd)"
+            # If BUILD_DIR ends with /runtime, go one level up.
+            if [ "$(basename "$BUILD_DIR")" = "runtime" ]; then
+              BUILD_DIR="$(cd "$BUILD_DIR/.." && pwd)"
             fi
+            mkdir -p build
+            # Copy runtime/tools/attach from inferred root if present.
+            for d in runtime tools attach; do
+              if [ -d "$BUILD_DIR/$d" ]; then
+                mkdir -p "build/$d"
+                cp -a "$BUILD_DIR/$d/." "build/$d/"
+              fi
+            done
           fi
 
-          if [ ! -e build ]; then
+          if [ ! -d build ]; then
             echo "Downloaded artifact but could not locate a build/ directory."
-            echo "Top-level entries:"; ls -la
-            if [ -d bpftime-gpu-build ]; then
-              echo "bpftime-gpu-build entries:"; ls -la bpftime-gpu-build || true
-              echo "bpftime-gpu-build tree (depth=4):"; find bpftime-gpu-build -maxdepth 4 -mindepth 1 -print || true
-            fi
-            echo "Search for key files (depth=8):"
-            find . -maxdepth 8 -type f \( \
+            echo "Artifact root entries:"; ls -la "$ART_ROOT" || true
+            echo "Artifact tree (depth=4):"; find "$ART_ROOT" -maxdepth 4 -mindepth 1 -print || true
+            echo "Search for key files (depth=10):"
+            find "$ART_ROOT" -maxdepth 10 -type f \( \
               -name 'libbpftime-agent.so' -o \
               -name 'libbpftime-syscall-server.so' -o \
               -name 'bpftimetool' \
