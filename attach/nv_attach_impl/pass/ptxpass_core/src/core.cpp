@@ -96,7 +96,6 @@ std::string get_env(const char *key)
 	return v ? std::string(v) : std::string();
 }
 
-// Validation: basic checks as placeholders
 bool validate_input(const std::string &input, const json &validation)
 {
 	if (validation.is_null())
@@ -146,7 +145,6 @@ bool validate_ptx_version(const std::string &input,
 		if (version_ok.has_value())
 			return;
 		if (line.rfind(".version", 0) == 0) {
-			// parse number
 			std::string v(line.substr(8));
 			try {
 				double have = std::stod(v);
@@ -235,13 +233,11 @@ std::string compile_ebpf_to_ptx_from_words(
 		throw std::runtime_error("Unable to produce PTX from eBPF");
 	}
 	std::string filtered_ptx;
+	filtered_ptx = filter_compiled_ptx_for_ebpf_program(original_ptx);
 	if (add_register_guard_and_filter_version_headers) {
 		filtered_ptx =
 			bpftime::attach::add_register_guard_for_ebpf_ptx_func(
-				filter_compiled_ptx_for_ebpf_program(
-					original_ptx));
-	} else {
-		filtered_ptx = original_ptx;
+				filtered_ptx);
 	}
 	return filtered_ptx;
 }
@@ -265,7 +261,6 @@ std::string filter_compiled_ptx_for_ebpf_program(std::string input)
 	std::string filtered;
 	filtered.reserve(input.size());
 	for_each_line(input, [&](std::string_view line) {
-		// if(line.starts_with)
 		bool skip = false;
 		for (const auto &prefix : FILTERED_OUT_PREFIXES) {
 			if (line.starts_with(prefix)) {

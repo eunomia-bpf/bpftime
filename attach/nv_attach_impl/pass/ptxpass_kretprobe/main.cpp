@@ -40,7 +40,7 @@ patch_retprobe(const std::string &ptx, const std::string &kernel,
 	std::string fname = std::string("__retprobe_func__") + kernel;
 
 	auto func_ptx = ptxpass::compile_ebpf_to_ptx_from_words(
-		ebpf_words, "sm_61", fname, true, false);
+		ebpf_words, "sm_61", fname, false, false);
 	auto body = ptxpass::find_kernel_body(ptx, kernel);
 	if (body.first == std::string::npos) {
 		return { ptx, false };

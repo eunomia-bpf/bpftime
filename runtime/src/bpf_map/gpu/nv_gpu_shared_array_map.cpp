@@ -5,10 +5,14 @@
 #include "cuda.h"
 #include "linux/bpf.h"
 #include "spdlog/spdlog.h"
+#include <algorithm>
 #include <atomic>
 #include <cerrno>
 #include <cstdint>
+#include <cstdlib>
+#include <limits>
 #include <stdexcept>
+#include <vector>
 #include <unistd.h>
 
 using namespace bpftime;
@@ -68,15 +72,20 @@ void *nv_gpu_shared_array_map_impl::elem_lookup(const void *key)
 		return nullptr;
 	}
 	auto base = try_initialize_for_agent_and_get_mapped_address();
+	if (shm_holder.global_shared_memory.get_open_type() ==
+		    shm_open_type::SHM_OPEN_ONLY &&
+	    (base == 0 || agent_cuda_context == nullptr)) {
+		errno = EINVAL;
+		return nullptr;
+	}
 	auto total_buffer_size = (uint64_t)value_size * max_entries;
 	auto copy_offset_bytes = (uint64_t)key_val * value_size;
 	if (bpftime::gpu::gdrcopy::copy_from_device_to_host_with_gdrcopy(
-		    this, "BPF_MAP_TYPE_GPU_ARRAY_MAP", base,
-		    total_buffer_size, copy_offset_bytes, value_buffer.data(),
-		    value_size, value_size)) {
+		    this, "BPF_MAP_TYPE_GPU_ARRAY_MAP", base, total_buffer_size,
+		    copy_offset_bytes, value_buffer.data(), value_size,
+		    value_size)) {
 		return value_buffer.data();
 	}
-
 	CUcontext target_ctx = nullptr;
 	if (shm_holder.global_shared_memory.get_open_type() ==
 	    shm_open_type::SHM_OPEN_ONLY) {
@@ -131,6 +140,12 @@ long nv_gpu_shared_array_map_impl::elem_update(const void *key,
 		return -1;
 	}
 	auto base = try_initialize_for_agent_and_get_mapped_address();
+	if (shm_holder.global_shared_memory.get_open_type() ==
+		    shm_open_type::SHM_OPEN_ONLY &&
+	    (base == 0 || agent_cuda_context == nullptr)) {
+		errno = EINVAL;
+		return -1;
+	}
 	CUcontext target_ctx = nullptr;
 	if (shm_holder.global_shared_memory.get_open_type() ==
 	    shm_open_type::SHM_OPEN_ONLY) {
@@ -235,49 +250,114 @@ nv_gpu_shared_array_map_impl::try_initialize_for_agent_and_get_mapped_address()
 {
 	if (shm_holder.global_shared_memory.get_open_type() ==
 	    shm_open_type::SHM_OPEN_ONLY) {
-		if (agent_cuda_context == nullptr) {
-			cuCtxGetCurrent(&agent_cuda_context);
-			if (agent_cuda_context == nullptr) {
-				SPDLOG_ERROR(
-					"Unable to get CUDA context for agent");
-				throw std::runtime_error(
-					"Unable to get CUDA context for agent");
-			}
-			SPDLOG_DEBUG(
-				"try_initialize_for_agent_and_get_mapped_address with context: {}",
-				(uintptr_t)agent_cuda_context);
-		}
-		if (agent_stream == nullptr) {
-			auto err = cuStreamCreate(&agent_stream,
-						  CU_STREAM_NON_BLOCKING);
-			if (agent_stream == nullptr || err != CUDA_SUCCESS) {
-				SPDLOG_ERROR(
-					"Unable to create CUDA stream for agent");
-				throw std::runtime_error(
-					"Unable to create CUDA stream for agent");
-			}
-			SPDLOG_DEBUG(
-				"try_initialize_for_agent_and_get_mapped_address creates stream: {}",
-				(uintptr_t)agent_stream);
-		}
-
 		int pid = getpid();
 		if (auto itr = agent_gpu_shared_mem.find(pid);
 		    itr == agent_gpu_shared_mem.end()) {
 			SPDLOG_INFO(
 				"Initializing nv_gpu_shared_array_map_impl at pid {}",
 				pid);
-			CUdeviceptr ptr;
-			if (auto err = cuIpcOpenMemHandle(
-				    &ptr, gpu_mem_handle,
-				    CU_IPC_MEM_LAZY_ENABLE_PEER_ACCESS);
-			    err != CUDA_SUCCESS) {
-				SPDLOG_ERROR(
-					"Unable to map CUDA IPC memory for shared array map, error={}",
-					(int)err);
-				throw std::runtime_error(
-					"Unable to map CUDA IPC memory for shared array map!");
+			if (auto err = cuInit(0); err != CUDA_SUCCESS) {
+				SPDLOG_ERROR("cuInit failed: {}", (int)err);
+				errno = EINVAL;
+				return 0;
 			}
+
+			std::vector<int> candidates;
+			if (const char *p = getenv("BPFTIME_CUDA_DEVICE");
+			    p && p[0] != '\0') {
+				errno = 0;
+				char *end = nullptr;
+				long v = strtol(p, &end, 10);
+				if (errno == 0 && end && end[0] == '\0' && v >= 0 &&
+				    v <= std::numeric_limits<int>::max()) {
+					candidates.push_back((int)v);
+				}
+			}
+			int count = 0;
+			if (cuDeviceGetCount(&count) == CUDA_SUCCESS && count > 0) {
+				for (int i = 0; i < count; i++)
+					candidates.push_back(i);
+			} else {
+				candidates.push_back(0);
+			}
+			std::sort(candidates.begin(), candidates.end());
+			candidates.erase(
+				std::unique(candidates.begin(), candidates.end()),
+				candidates.end());
+
+			CUdeviceptr ptr = 0;
+			CUcontext prev_ctx = nullptr;
+			cuCtxGetCurrent(&prev_ctx);
+			if (prev_ctx != nullptr) {
+				auto err2 = cuIpcOpenMemHandle(
+					&ptr, gpu_mem_handle,
+					CU_IPC_MEM_LAZY_ENABLE_PEER_ACCESS);
+				if (err2 == CUDA_SUCCESS) {
+					agent_cuda_context = prev_ctx;
+				} else {
+					ptr = 0;
+				}
+			}
+
+			if (ptr == 0) {
+				for (int d : candidates) {
+					CUdevice dev = 0;
+					if (cuDeviceGet(&dev, d) != CUDA_SUCCESS)
+						continue;
+					CUcontext ctx = nullptr;
+					if (cuDevicePrimaryCtxRetain(&ctx, dev) !=
+						    CUDA_SUCCESS ||
+					    ctx == nullptr)
+						continue;
+					if (cuCtxSetCurrent(ctx) != CUDA_SUCCESS) {
+						cuDevicePrimaryCtxRelease(dev);
+						continue;
+					}
+					auto err2 = cuIpcOpenMemHandle(
+						&ptr, gpu_mem_handle,
+						CU_IPC_MEM_LAZY_ENABLE_PEER_ACCESS);
+					if (err2 == CUDA_SUCCESS && ptr != 0) {
+						agent_cuda_context = ctx;
+						SPDLOG_INFO(
+							"Mapped CUDA IPC handle on device {}",
+							d);
+						break;
+					}
+					ptr = 0;
+					cuDevicePrimaryCtxRelease(dev);
+				}
+			}
+
+			if (prev_ctx != nullptr)
+				cuCtxSetCurrent(prev_ctx);
+
+			if (ptr == 0 || agent_cuda_context == nullptr) {
+				SPDLOG_ERROR(
+					"Unable to map CUDA IPC memory for shared array map on any device");
+				errno = EINVAL;
+				return 0;
+			}
+
+			if (agent_stream == nullptr) {
+				CUcontext tmp_prev = nullptr;
+				cuCtxGetCurrent(&tmp_prev);
+				if (tmp_prev != agent_cuda_context)
+					cuCtxSetCurrent(agent_cuda_context);
+				CUresult err2 = cuStreamCreate(&agent_stream,
+							       CU_STREAM_NON_BLOCKING);
+				if (err2 != CUDA_SUCCESS || agent_stream == nullptr) {
+					SPDLOG_ERROR(
+						"Unable to create CUDA stream for agent: {}",
+						(int)err2);
+					if (tmp_prev != agent_cuda_context)
+						cuCtxSetCurrent(tmp_prev);
+					errno = EINVAL;
+					return 0;
+				}
+				if (tmp_prev != agent_cuda_context)
+					cuCtxSetCurrent(tmp_prev);
+			}
+
 			SPDLOG_INFO(
 				"Mapped GPU memory for shared array map: {}",
 				(uintptr_t)ptr);
