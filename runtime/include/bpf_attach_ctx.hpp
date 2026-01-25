@@ -17,6 +17,7 @@
 #include <memory>
 #include <optional>
 #include <set>
+#include <mutex>
 #include <string_view>
 #include <utility>
 #include <vector>
@@ -34,15 +35,11 @@ namespace bpftime
 #ifdef BPFTIME_ENABLE_CUDA_ATTACH
 namespace cuda
 {
-struct CommSharedMem;
-}
+#ifndef BPFTIME_GPU_HELPER_MAX_BUF
+	// Layout-affecting: keep in sync with `attach/nv_attach_impl/trampoline_ptx.h`.
+#define BPFTIME_GPU_HELPER_MAX_BUF (1 << 20)
 #endif
-
-#ifdef BPFTIME_ENABLE_CUDA_ATTACH
-namespace cuda
-{
-// The old 1<<30 value makes the shared segment too large for Boost IPC.
-static constexpr std::size_t GPU_HELPER_MAX_BUF = 1 << 24;
+static constexpr std::size_t GPU_HELPER_MAX_BUF = BPFTIME_GPU_HELPER_MAX_BUF;
 
 enum class HelperOperation {
 	MAP_LOOKUP = 1,
@@ -101,13 +98,10 @@ struct CommSharedMem {
 	uint64_t time_sum[8];
 };
 struct CUDAContext {
-	// Indicate whether cuda watcher thread should stop
 	std::shared_ptr<std::atomic<bool>> cuda_watcher_should_stop =
 		std::make_shared<std::atomic<bool>>(false);
 
-	// Shared memory region for CUDA
 	cuda::CommSharedMem *cuda_shared_mem;
-	// Mapped device pointer
 	uintptr_t cuda_shared_mem_device_pointer;
 
 	CUDAContext(cuda::CommSharedMem *mem);
@@ -154,7 +148,7 @@ using syscall_hooker_func_t = int64_t (*)(int64_t sys_nr, int64_t arg1,
 					  int64_t arg6);
 
 class bpf_attach_ctx {
-    public:
+public:
 	bpf_attach_ctx();
 	~bpf_attach_ctx();
 
@@ -176,6 +170,7 @@ class bpf_attach_ctx {
 	int destroy_instantiated_attach_link(int link_id);
 	// Destroy all instantiated attach links
 	int destroy_all_attach_links();
+	void reset_instantiated_state();
 	std::optional<attach::base_attach_impl *>
 	get_attach_impl_by_attach_type(int attach_type)
 	{
@@ -187,7 +182,23 @@ class bpf_attach_ctx {
 		}
 	}
 
-    private:
+#ifdef BPFTIME_ENABLE_CUDA_ATTACH
+	std::optional<attach::nv_attach_impl *> find_nv_attach_impl() const;
+#endif
+
+private:
+	mutable std::mutex ctx_mutex;
+	std::uint64_t last_epoch_seq_seen = 0;
+	int destroy_instantiated_attach_link_unlocked(int link_id);
+	int destroy_all_attach_links_unlocked();
+	void reset_instantiated_state_unlocked();
+
+#ifdef BPFTIME_ENABLE_CUDA_ATTACH
+	void start_cuda_watcher_thread();
+	std::unique_ptr<cuda::CUDAContext> cuda_ctx;
+	std::thread cuda_watcher_thread;
+#endif
+
 	constexpr static int CURRENT_ID_OFFSET = 65536;
 	volatile int current_id = CURRENT_ID_OFFSET;
 
@@ -228,17 +239,8 @@ class bpf_attach_ctx {
 		int id, const bpf_perf_event_handler &perf_handler);
 
 #ifdef BPFTIME_ENABLE_CUDA_ATTACH
-	// Start host thread for handling map requests from CUDA
-	void start_cuda_watcher_thread();
-	std::unique_ptr<cuda::CUDAContext> cuda_ctx;
-	std::thread cuda_watcher_thread;
-
 	std::vector<attach::MapBasicInfo>
 	create_map_basic_info(int filled_size);
-	// Lookup nv_attach_impl from stored attach_impls
-    public:
-	std::optional<attach::nv_attach_impl *> find_nv_attach_impl() const;
-
 #endif
 };
 

@@ -1,4 +1,3 @@
-// #include "pos/cuda_impl/utils/fatbin.h"
 #include "cuda.h"
 #include "cuda_runtime_api.h"
 #include "driver_types.h"
@@ -45,7 +44,6 @@ typedef struct _CUDARuntimeFunctionHooker {
 static void cuda_runtime_function_hooker_iface_init(gpointer g_iface,
 						    gpointer iface_data);
 
-// #define EXAMPLE_TYPE_LISTENER (cuda_runtime_function_hooker_iface_init())
 G_DECLARE_FINAL_TYPE(CUDARuntimeFunctionHooker, cuda_runtime_function_hooker,
 		     BPFTIME, NV_ATTACH_IMPL, GObject)
 G_DEFINE_TYPE_EXTENDED(
@@ -89,17 +87,72 @@ cuda_launch_kernel_common(nv_attach_impl *impl, void *original_fn_ptr,
 			  const void *func, dim3 grid_dim, dim3 block_dim,
 			  void **args, size_t shared_mem, cudaStream_t stream)
 {
-	if (impl == nullptr)
-		return cudaErrorUnknown;
 	auto original =
 		reinterpret_cast<cuda_launch_kernel_fn_t>(original_fn_ptr);
 	if (!original) {
 		SPDLOG_ERROR("Original cudaLaunchKernel function is null");
 		return cudaErrorUnknown;
 	}
+	if (impl == nullptr)
+		return original(func, grid_dim, block_dim, args, shared_mem,
+				stream);
+	if (!impl->is_enabled())
+		return original(func, grid_dim, block_dim, args, shared_mem,
+				stream);
 	if (cuda_graph_stream_is_capturing(stream))
 		return original(func, grid_dim, block_dim, args, shared_mem,
 				stream);
+
+	{
+		CUcontext current = nullptr;
+		if (cuCtxGetCurrent(&current) != CUDA_SUCCESS ||
+		    current == nullptr) {
+			cuInit(0);
+			int dev_index = 0;
+			if (const char *p = getenv("BPFTIME_CUDA_DEVICE");
+			    p && p[0] != '\0') {
+				try {
+					dev_index = std::stoi(std::string(p));
+					if (dev_index < 0)
+						dev_index = 0;
+				} catch (...) {
+					dev_index = 0;
+				}
+			}
+			CUdevice dev = 0;
+			if (cuDeviceGet(&dev, dev_index) == CUDA_SUCCESS) {
+				CUcontext ctx = nullptr;
+				if (cuDevicePrimaryCtxRetain(&ctx, dev) ==
+					    CUDA_SUCCESS &&
+				    ctx != nullptr) {
+					cuCtxSetCurrent(ctx);
+				}
+			}
+		}
+	}
+
+	const auto log_cufunc_attrs = [](CUfunction f) {
+		if (f == nullptr)
+			return;
+		int local_bytes = 0;
+		int shared_bytes = 0;
+		int const_bytes = 0;
+		int regs = 0;
+		int max_tpb = 0;
+		cuFuncGetAttribute(&local_bytes,
+				   CU_FUNC_ATTRIBUTE_LOCAL_SIZE_BYTES, f);
+		cuFuncGetAttribute(&shared_bytes,
+				   CU_FUNC_ATTRIBUTE_SHARED_SIZE_BYTES, f);
+		cuFuncGetAttribute(&const_bytes,
+				   CU_FUNC_ATTRIBUTE_CONST_SIZE_BYTES, f);
+		cuFuncGetAttribute(&regs, CU_FUNC_ATTRIBUTE_NUM_REGS, f);
+		cuFuncGetAttribute(&max_tpb,
+				   CU_FUNC_ATTRIBUTE_MAX_THREADS_PER_BLOCK, f);
+		SPDLOG_WARN(
+			"Patched CUfunction attrs: local={}B shared={}B const={}B regs={} max_tpb={}",
+			local_bytes, shared_bytes, const_bytes, regs, max_tpb);
+	};
+
 	if (auto itr1 = impl->symbol_address_to_fatbin.find((void *)func);
 	    itr1 != impl->symbol_address_to_fatbin.end()) {
 		const auto &fatbin = *itr1->second;
@@ -120,10 +173,50 @@ cuda_launch_kernel_common(nv_attach_impl *impl, void *original_fn_ptr,
 				     error_string ? error_string :
 						    "No description");
 			SPDLOG_ERROR("Error code: {}", (int)err);
-			return cudaErrorLaunchFailure;
+			log_cufunc_attrs(handle.func);
+			return original(func, grid_dim, block_dim, args,
+					shared_mem, stream);
 		}
+		impl->record_patched_launch(stream);
 		return cudaSuccess;
 	}
+
+	if (!impl->is_late_bootstrap_done())
+		return original(func, grid_dim, block_dim, args, shared_mem,
+				stream);
+
+	if (auto name = impl->resolve_host_function_symbol((void *)func);
+	    name) {
+		if (auto patched = impl->find_patched_kernel_function(*name);
+		    patched) {
+			SPDLOG_DEBUG(
+				"Late attach launch: resolved {} -> patched CUfunction",
+				name->c_str());
+			if (auto err = cuLaunchKernel(*patched, grid_dim.x,
+						      grid_dim.y, grid_dim.z,
+						      block_dim.x, block_dim.y,
+						      block_dim.z, shared_mem,
+						      stream, args, nullptr);
+			    err != CUDA_SUCCESS) {
+				const char *error_name = nullptr;
+				const char *error_string = nullptr;
+				cuGetErrorName(err, &error_name);
+				cuGetErrorString(err, &error_string);
+				SPDLOG_ERROR(
+					"Unable to launch patched kernel {}: {} ({})",
+					name->c_str(),
+					error_name ? error_name : "UNKNOWN",
+					error_string ? error_string :
+						       "No description");
+				log_cufunc_attrs(*patched);
+				return original(func, grid_dim, block_dim, args,
+						shared_mem, stream);
+			}
+			impl->record_patched_launch(stream);
+			return cudaSuccess;
+		}
+	}
+
 	return original(func, grid_dim, block_dim, args, shared_mem, stream);
 }
 
@@ -142,7 +235,6 @@ static void example_listener_on_enter(GumInvocationListener *listener,
 		fat_elf_header_t *curr_header = (fat_elf_header_t *)data;
 		const char *tail = (const char *)curr_header;
 		while (true) {
-			// #define FATBIN_TEXT_MAGIC 0xBA55ED50
 			if (curr_header->magic == 0xBA55ED50) {
 				SPDLOG_DEBUG(
 					"Got CUBIN section header size = {}, size = {}",
@@ -314,19 +406,22 @@ cuda_runtime_function__cudaLaunchKernel(const void *func, dim3 grid_dim,
 					size_t shared_mem, cudaStream_t stream)
 {
 	auto gum_ctx = gum_interceptor_get_current_invocation();
-	auto impl =
-		(nv_attach_impl *)gum_invocation_context_get_replacement_data(
-			gum_ctx);
+	auto *state = (nv_attach_hook_state *)
+		gum_invocation_context_get_replacement_data(gum_ctx);
+	if (state == nullptr) {
+		state = &nv_attach_get_hook_state();
+	}
+	auto *impl = state->active_impl.load(std::memory_order_acquire);
 	if (impl != nullptr) {
 		SPDLOG_DEBUG("grid_dim: {}, {}, {}", grid_dim.x, grid_dim.y,
 			     grid_dim.z);
 		SPDLOG_DEBUG("block_dim: {}, {}, {}", block_dim.x, block_dim.y,
 			     block_dim.z);
 	}
-	return cuda_launch_kernel_common(impl,
-					 impl->original_cuda_launch_kernel,
-					 func, grid_dim, block_dim, args,
-					 shared_mem, stream);
+	void *original =
+		state->orig_cuda_launch_kernel.load(std::memory_order_acquire);
+	return cuda_launch_kernel_common(impl, original, func, grid_dim,
+					 block_dim, args, shared_mem, stream);
 }
 
 static std::optional<std::string>
@@ -370,19 +465,22 @@ extern "C" cudaError_t cuda_runtime_function__cudaLaunchKernel_ptsz(
 	size_t shared_mem, cudaStream_t stream)
 {
 	auto gum_ctx = gum_interceptor_get_current_invocation();
-	auto impl =
-		(nv_attach_impl *)gum_invocation_context_get_replacement_data(
-			gum_ctx);
+	auto *state = (nv_attach_hook_state *)
+		gum_invocation_context_get_replacement_data(gum_ctx);
+	if (state == nullptr) {
+		state = &nv_attach_get_hook_state();
+	}
+	auto *impl = state->active_impl.load(std::memory_order_acquire);
 	if (impl != nullptr) {
 		SPDLOG_DEBUG("grid_dim: {}, {}, {}", grid_dim.x, grid_dim.y,
 			     grid_dim.z);
 		SPDLOG_DEBUG("block_dim: {}, {}, {}", block_dim.x, block_dim.y,
 			     block_dim.z);
 	}
-	return cuda_launch_kernel_common(impl,
-					 impl->original_cuda_launch_kernel_ptsz,
-					 func, grid_dim, block_dim, args,
-					 shared_mem, stream);
+	void *original = state->orig_cuda_launch_kernel_ptsz.load(
+		std::memory_order_acquire);
+	return cuda_launch_kernel_common(impl, original, func, grid_dim,
+					 block_dim, args, shared_mem, stream);
 }
 
 static const CUDA_KERNEL_NODE_PARAMS_v1 *
@@ -443,15 +541,20 @@ extern "C" CUresult cuda_driver_function__cuGraphAddKernelNode_v1(
 	const CUDA_KERNEL_NODE_PARAMS_v1 *nodeParams)
 {
 	auto gum_ctx = gum_interceptor_get_current_invocation();
-	auto impl =
-		(nv_attach_impl *)gum_invocation_context_get_replacement_data(
-			gum_ctx);
-	if (impl == nullptr)
-		return CUDA_ERROR_UNKNOWN;
+	auto *state = (nv_attach_hook_state *)
+		gum_invocation_context_get_replacement_data(gum_ctx);
+	if (state == nullptr) {
+		state = &nv_attach_get_hook_state();
+	}
+	auto *impl = state->active_impl.load(std::memory_order_acquire);
 	auto original = reinterpret_cast<cu_graph_add_kernel_node_v1_fn_t>(
-		impl->original_cu_graph_add_kernel_node_v1);
+		state->orig_cu_graph_add_kernel_node_v1.load(
+			std::memory_order_acquire));
 	if (!original)
 		return CUDA_ERROR_UNKNOWN;
+	if (impl == nullptr || !impl->is_enabled())
+		return original(phGraphNode, hGraph, dependencies,
+				numDependencies, nodeParams);
 	CUDA_KERNEL_NODE_PARAMS_v1 patched_params;
 	auto params_to_use = cuda_graph_maybe_patch_kernel_node_params_v1(
 		*impl, nodeParams, patched_params);
@@ -465,15 +568,20 @@ extern "C" CUresult cuda_driver_function__cuGraphAddKernelNode_v2(
 	const CUDA_KERNEL_NODE_PARAMS_v2 *nodeParams)
 {
 	auto gum_ctx = gum_interceptor_get_current_invocation();
-	auto impl =
-		(nv_attach_impl *)gum_invocation_context_get_replacement_data(
-			gum_ctx);
-	if (impl == nullptr)
-		return CUDA_ERROR_UNKNOWN;
+	auto *state = (nv_attach_hook_state *)
+		gum_invocation_context_get_replacement_data(gum_ctx);
+	if (state == nullptr) {
+		state = &nv_attach_get_hook_state();
+	}
+	auto *impl = state->active_impl.load(std::memory_order_acquire);
 	auto original = reinterpret_cast<cu_graph_add_kernel_node_v2_fn_t>(
-		impl->original_cu_graph_add_kernel_node_v2);
+		state->orig_cu_graph_add_kernel_node_v2.load(
+			std::memory_order_acquire));
 	if (!original)
 		return CUDA_ERROR_UNKNOWN;
+	if (impl == nullptr || !impl->is_enabled())
+		return original(phGraphNode, hGraph, dependencies,
+				numDependencies, nodeParams);
 	CUDA_KERNEL_NODE_PARAMS_v2 patched_params;
 	auto params_to_use = cuda_graph_maybe_patch_kernel_node_params_v2(
 		*impl, nodeParams, patched_params);
@@ -486,16 +594,20 @@ extern "C" CUresult cuda_driver_function__cuGraphExecKernelNodeSetParams_v1(
 	const CUDA_KERNEL_NODE_PARAMS_v1 *nodeParams)
 {
 	auto gum_ctx = gum_interceptor_get_current_invocation();
-	auto impl =
-		(nv_attach_impl *)gum_invocation_context_get_replacement_data(
-			gum_ctx);
-	if (impl == nullptr)
-		return CUDA_ERROR_UNKNOWN;
+	auto *state = (nv_attach_hook_state *)
+		gum_invocation_context_get_replacement_data(gum_ctx);
+	if (state == nullptr) {
+		state = &nv_attach_get_hook_state();
+	}
+	auto *impl = state->active_impl.load(std::memory_order_acquire);
 	auto original =
 		reinterpret_cast<cu_graph_exec_kernel_node_set_params_v1_fn_t>(
-			impl->original_cu_graph_exec_kernel_node_set_params_v1);
+			state->orig_cu_graph_exec_kernel_node_set_params_v1.load(
+				std::memory_order_acquire));
 	if (!original)
 		return CUDA_ERROR_UNKNOWN;
+	if (impl == nullptr || !impl->is_enabled())
+		return original(hGraphExec, hNode, nodeParams);
 	CUDA_KERNEL_NODE_PARAMS_v1 patched_params;
 	auto params_to_use = cuda_graph_maybe_patch_kernel_node_params_v1(
 		*impl, nodeParams, patched_params);
@@ -507,16 +619,20 @@ extern "C" CUresult cuda_driver_function__cuGraphExecKernelNodeSetParams_v2(
 	const CUDA_KERNEL_NODE_PARAMS_v2 *nodeParams)
 {
 	auto gum_ctx = gum_interceptor_get_current_invocation();
-	auto impl =
-		(nv_attach_impl *)gum_invocation_context_get_replacement_data(
-			gum_ctx);
-	if (impl == nullptr)
-		return CUDA_ERROR_UNKNOWN;
+	auto *state = (nv_attach_hook_state *)
+		gum_invocation_context_get_replacement_data(gum_ctx);
+	if (state == nullptr) {
+		state = &nv_attach_get_hook_state();
+	}
+	auto *impl = state->active_impl.load(std::memory_order_acquire);
 	auto original =
 		reinterpret_cast<cu_graph_exec_kernel_node_set_params_v2_fn_t>(
-			impl->original_cu_graph_exec_kernel_node_set_params_v2);
+			state->orig_cu_graph_exec_kernel_node_set_params_v2.load(
+				std::memory_order_acquire));
 	if (!original)
 		return CUDA_ERROR_UNKNOWN;
+	if (impl == nullptr || !impl->is_enabled())
+		return original(hGraphExec, hNode, nodeParams);
 	CUDA_KERNEL_NODE_PARAMS_v2 patched_params;
 	auto params_to_use = cuda_graph_maybe_patch_kernel_node_params_v2(
 		*impl, nodeParams, patched_params);
@@ -527,16 +643,20 @@ extern "C" CUresult cuda_driver_function__cuGraphKernelNodeSetParams_v1(
 	CUgraphNode hNode, const CUDA_KERNEL_NODE_PARAMS_v1 *nodeParams)
 {
 	auto gum_ctx = gum_interceptor_get_current_invocation();
-	auto impl =
-		(nv_attach_impl *)gum_invocation_context_get_replacement_data(
-			gum_ctx);
-	if (impl == nullptr)
-		return CUDA_ERROR_UNKNOWN;
+	auto *state = (nv_attach_hook_state *)
+		gum_invocation_context_get_replacement_data(gum_ctx);
+	if (state == nullptr) {
+		state = &nv_attach_get_hook_state();
+	}
+	auto *impl = state->active_impl.load(std::memory_order_acquire);
 	auto original =
 		reinterpret_cast<cu_graph_kernel_node_set_params_v1_fn_t>(
-			impl->original_cu_graph_kernel_node_set_params_v1);
+			state->orig_cu_graph_kernel_node_set_params_v1.load(
+				std::memory_order_acquire));
 	if (!original)
 		return CUDA_ERROR_UNKNOWN;
+	if (impl == nullptr || !impl->is_enabled())
+		return original(hNode, nodeParams);
 	CUDA_KERNEL_NODE_PARAMS_v1 patched_params;
 	auto params_to_use = cuda_graph_maybe_patch_kernel_node_params_v1(
 		*impl, nodeParams, patched_params);
@@ -547,48 +667,127 @@ extern "C" CUresult cuda_driver_function__cuGraphKernelNodeSetParams_v2(
 	CUgraphNode hNode, const CUDA_KERNEL_NODE_PARAMS_v2 *nodeParams)
 {
 	auto gum_ctx = gum_interceptor_get_current_invocation();
-	auto impl =
-		(nv_attach_impl *)gum_invocation_context_get_replacement_data(
-			gum_ctx);
-	if (impl == nullptr)
-		return CUDA_ERROR_UNKNOWN;
+	auto *state = (nv_attach_hook_state *)
+		gum_invocation_context_get_replacement_data(gum_ctx);
+	if (state == nullptr) {
+		state = &nv_attach_get_hook_state();
+	}
+	auto *impl = state->active_impl.load(std::memory_order_acquire);
 	auto original =
 		reinterpret_cast<cu_graph_kernel_node_set_params_v2_fn_t>(
-			impl->original_cu_graph_kernel_node_set_params_v2);
+			state->orig_cu_graph_kernel_node_set_params_v2.load(
+				std::memory_order_acquire));
 	if (!original)
 		return CUDA_ERROR_UNKNOWN;
+	if (impl == nullptr || !impl->is_enabled())
+		return original(hNode, nodeParams);
 	CUDA_KERNEL_NODE_PARAMS_v2 patched_params;
 	auto params_to_use = cuda_graph_maybe_patch_kernel_node_params_v2(
 		*impl, nodeParams, patched_params);
 	return original(hNode, params_to_use);
 }
 
-static cudaError_t
-mirror_cuda_memcpy_from_symbol(nv_attach_impl *impl, bool async, void *dst,
-			       const void *symbol, size_t count, size_t offset,
-			       cudaMemcpyKind kind, cudaStream_t stream = 0)
+static cudaError_t mirror_cuda_memcpy_from_symbol(
+	nv_attach_impl *impl, bool async, void *dst, const void *symbol,
+	size_t count, size_t offset, cudaMemcpyKind kind, cudaStream_t stream,
+	cuda_memcpy_from_symbol_fn_t original_sync,
+	cuda_memcpy_from_symbol_async_fn_t original_async)
 {
 	auto record_itr = impl->symbol_address_to_fatbin.find((void *)symbol);
 	if (record_itr == impl->symbol_address_to_fatbin.end()) {
+		impl->bootstrap_existing_fatbins_once();
+		if (auto name =
+			    impl->resolve_host_function_symbol((void *)symbol);
+		    name) {
+			for (const auto &rec_uptr : impl->fatbin_records) {
+				auto *rec = rec_uptr.get();
+				if (rec == nullptr)
+					continue;
+				for (const auto &ptx : rec->ptxs) {
+					CUdeviceptr dptr;
+					size_t sz;
+					auto err = cuModuleGetGlobal(
+						&dptr, &sz, ptx->module_ptr,
+						name->c_str());
+					if (err != CUDA_SUCCESS)
+						continue;
+					if (offset >= sz) {
+						SPDLOG_WARN(
+							"mirror_cuda_memcpy_from_symbol: offset {} exceeds size {} for symbol {}",
+							offset, sz,
+							name->c_str());
+						return cudaErrorUnknown;
+					}
+					size_t writable = sz - offset;
+					size_t bytes_to_copy =
+						std::min(count, writable);
+					if (bytes_to_copy == 0)
+						return cudaErrorUnknown;
+					CUdeviceptr src = dptr + offset;
+					CUstream cu_stream =
+						reinterpret_cast<CUstream>(
+							stream);
+					CUresult status = CUDA_SUCCESS;
+
+					auto copy_device_ptr =
+						[](const void *ptr)
+						-> CUdeviceptr {
+						return static_cast<CUdeviceptr>(
+							reinterpret_cast<
+								uintptr_t>(
+								ptr));
+					};
+					switch (kind) {
+					case cudaMemcpyDeviceToHost:
+					case cudaMemcpyDefault:
+						status =
+							async ? cuMemcpyDtoHAsync(
+									dst,
+									src,
+									bytes_to_copy,
+									cu_stream) :
+								cuMemcpyDtoH(
+									dst,
+									src,
+									bytes_to_copy);
+						break;
+					case cudaMemcpyDeviceToDevice:
+						status =
+							async ? cuMemcpyDtoDAsync(
+									copy_device_ptr(
+										dst),
+									src,
+									bytes_to_copy,
+									cu_stream) :
+								cuMemcpyDtoD(
+									copy_device_ptr(
+										dst),
+									src,
+									bytes_to_copy);
+						break;
+					default:
+						return cudaErrorUnknown;
+					}
+					if (status != CUDA_SUCCESS)
+						return cudaErrorUnknown;
+					return cudaSuccess;
+				}
+			}
+		}
+
 		SPDLOG_DEBUG(
 			"In mirror_cuda_memcpy_from_symbol: calling original cudaMemcpyFromSymbol");
 		if (async) {
-			auto original = reinterpret_cast<
-				cuda_memcpy_from_symbol_async_fn_t>(
-				impl->original_cuda_memcpy_from_symbol_async);
-			if (!original) {
+			if (!original_async) {
 				return cudaErrorUnknown;
 			}
-			return original(dst, symbol, count, offset, kind,
-					stream);
+			return original_async(dst, symbol, count, offset, kind,
+					      stream);
 		} else {
-			auto original =
-				reinterpret_cast<cuda_memcpy_from_symbol_fn_t>(
-					impl->original_cuda_memcpy_from_symbol);
-			if (!original) {
+			if (!original_sync) {
 				return cudaErrorUnknown;
 			}
-			return original(dst, symbol, count, offset, kind);
+			return original_sync(dst, symbol, count, offset, kind);
 		}
 		return cudaErrorUnknown;
 	}
@@ -658,21 +857,30 @@ extern "C" cudaError_t cuda_runtime_function__cudaMemcpyFromSymbol(
 	cudaMemcpyKind kind = cudaMemcpyDeviceToHost)
 {
 	auto gum_ctx = gum_interceptor_get_current_invocation();
-	auto impl =
-		(nv_attach_impl *)gum_invocation_context_get_replacement_data(
-			gum_ctx);
-	if (impl == nullptr) {
-		SPDLOG_ERROR(
-			"cudaMemcpyFromSymbol called without nv_attach_impl");
-		return cudaErrorUnknown;
-	} else {
-		SPDLOG_DEBUG(
-			"call cudaMemcpyFromSymbol with args: {:x}, {:x}, {}, {}, {}",
-			(uintptr_t)dst, (uintptr_t)symbol, count, offset,
-			(int)kind);
+	auto *state = (nv_attach_hook_state *)
+		gum_invocation_context_get_replacement_data(gum_ctx);
+	if (state == nullptr) {
+		state = &nv_attach_get_hook_state();
 	}
+	auto *impl = state->active_impl.load(std::memory_order_acquire);
+	auto original_sync = reinterpret_cast<cuda_memcpy_from_symbol_fn_t>(
+		state->orig_cuda_memcpy_from_symbol.load(
+			std::memory_order_acquire));
+	auto original_async =
+		reinterpret_cast<cuda_memcpy_from_symbol_async_fn_t>(
+			state->orig_cuda_memcpy_from_symbol_async.load(
+				std::memory_order_acquire));
+	if (impl == nullptr || !impl->is_enabled()) {
+		if (!original_sync)
+			return cudaErrorUnknown;
+		return original_sync(dst, symbol, count, offset, kind);
+	}
+	SPDLOG_DEBUG(
+		"call cudaMemcpyFromSymbol with args: {:x}, {:x}, {}, {}, {}",
+		(uintptr_t)dst, (uintptr_t)symbol, count, offset, (int)kind);
 	return mirror_cuda_memcpy_from_symbol(impl, false, dst, symbol, count,
-					      offset, kind);
+					      offset, kind, 0, original_sync,
+					      original_async);
 }
 
 extern "C" cudaError_t cuda_runtime_function__cudaMemcpyFromSymbolAsync(
@@ -680,19 +888,29 @@ extern "C" cudaError_t cuda_runtime_function__cudaMemcpyFromSymbolAsync(
 	cudaMemcpyKind kind, cudaStream_t stream = 0)
 {
 	auto gum_ctx = gum_interceptor_get_current_invocation();
-	auto impl =
-		(nv_attach_impl *)gum_invocation_context_get_replacement_data(
-			gum_ctx);
-	if (impl == nullptr) {
-		SPDLOG_ERROR(
-			"cudaMemcpyFromSymbol called without nv_attach_impl");
-		return cudaErrorUnknown;
-	} else {
-		SPDLOG_DEBUG(
-			"call cudaMemcpyFromSymbol with args: {:x}, {:x}, {}, {}, {}, {:x}",
-			(uintptr_t)dst, (uintptr_t)symbol, count, offset,
-			(int)kind, (uintptr_t)stream);
+	auto *state = (nv_attach_hook_state *)
+		gum_invocation_context_get_replacement_data(gum_ctx);
+	if (state == nullptr) {
+		state = &nv_attach_get_hook_state();
 	}
+	auto *impl = state->active_impl.load(std::memory_order_acquire);
+	auto original_sync = reinterpret_cast<cuda_memcpy_from_symbol_fn_t>(
+		state->orig_cuda_memcpy_from_symbol.load(
+			std::memory_order_acquire));
+	auto original_async =
+		reinterpret_cast<cuda_memcpy_from_symbol_async_fn_t>(
+			state->orig_cuda_memcpy_from_symbol_async.load(
+				std::memory_order_acquire));
+	if (impl == nullptr || !impl->is_enabled()) {
+		if (!original_async)
+			return cudaErrorUnknown;
+		return original_async(dst, symbol, count, offset, kind, stream);
+	}
+	SPDLOG_DEBUG(
+		"call cudaMemcpyFromSymbolAsync with args: {:x}, {:x}, {}, {}, {}, {:x}",
+		(uintptr_t)dst, (uintptr_t)symbol, count, offset, (int)kind,
+		(uintptr_t)stream);
 	return mirror_cuda_memcpy_from_symbol(impl, true, dst, symbol, count,
-					      offset, kind, stream);
+					      offset, kind, stream,
+					      original_sync, original_async);
 }
