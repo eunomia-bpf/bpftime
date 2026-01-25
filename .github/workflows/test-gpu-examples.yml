@@ -30,7 +30,7 @@ jobs:
           for cand in /usr/local/cuda /usr/local/cuda-12.9 /usr/local/cuda-12.8 /usr/local/cuda-12.7 /usr/local/cuda-12.6 /usr/local/cuda-12.5 /usr/local/cuda-12 /usr/local/cuda-11.8; do
             if [ -d "$cand" ] && [ -x "$cand/bin/nvcc" ]; then
               echo "BPFTIME_CUDA_ROOT=$cand" >> "$GITHUB_ENV"
-              echo "PATH=$cand/bin:$PATH" >> "$GITHUB_ENV"
+              echo "$cand/bin" >> "$GITHUB_PATH"
               if [ -d "$cand/lib64" ]; then
                 echo "LD_LIBRARY_PATH=$cand/lib64:${LD_LIBRARY_PATH:-}" >> "$GITHUB_ENV"
               fi
@@ -101,9 +101,26 @@ jobs:
             if command -v "clang++-$SELECTED" >/dev/null 2>&1; then
               ln -sf "$(command -v "clang++-$SELECTED")" "$TOOLCHAIN_BIN_DIR/clang++"
             fi
-            ln -sf "$(command -v "llvm-config-$SELECTED")" "$TOOLCHAIN_BIN_DIR/llvm-config"
-            export PATH="$TOOLCHAIN_BIN_DIR:$PATH"
-            echo "PATH=$TOOLCHAIN_BIN_DIR:$PATH" >> "$GITHUB_ENV"
+              ln -sf "$(command -v "llvm-config-$SELECTED")" "$TOOLCHAIN_BIN_DIR/llvm-config"
+              export PATH="$TOOLCHAIN_BIN_DIR:$PATH"
+              echo "$TOOLCHAIN_BIN_DIR" >> "$GITHUB_PATH"
+          fi
+
+          # Some environments ship llvm-config but not clang. Ensure clang is available.
+          if ! command -v clang >/dev/null 2>&1; then
+            echo "clang not found; attempting to install it..."
+            if [ "${LLVM_MAJOR}" -ge 15 ] && $SUDO apt-get install -y --no-install-recommends "clang-${LLVM_MAJOR}" "lld-${LLVM_MAJOR}"; then
+              TOOLCHAIN_BIN_DIR="${RUNNER_TEMP:-/tmp}/bpftime-toolchain-bin"
+              mkdir -p "$TOOLCHAIN_BIN_DIR"
+              ln -sf "$(command -v "clang-${LLVM_MAJOR}")" "$TOOLCHAIN_BIN_DIR/clang"
+              if command -v "clang++-${LLVM_MAJOR}" >/dev/null 2>&1; then
+                ln -sf "$(command -v "clang++-${LLVM_MAJOR}")" "$TOOLCHAIN_BIN_DIR/clang++"
+              fi
+              export PATH="$TOOLCHAIN_BIN_DIR:$PATH"
+              echo "$TOOLCHAIN_BIN_DIR" >> "$GITHUB_PATH"
+            else
+              $SUDO apt-get install -y --no-install-recommends clang lld
+            fi
           fi
 
           echo "LLVM_DIR=$(llvm-config --cmakedir)" >> "$GITHUB_ENV"
@@ -337,7 +354,7 @@ jobs:
           for cand in /usr/local/cuda /usr/local/cuda-12.9 /usr/local/cuda-12.8 /usr/local/cuda-12.7 /usr/local/cuda-12.6 /usr/local/cuda-12.5 /usr/local/cuda-12 /usr/local/cuda-11.8; do
             if [ -d "$cand" ] && [ -x "$cand/bin/nvcc" ]; then
               echo "BPFTIME_CUDA_ROOT=$cand" >> "$GITHUB_ENV"
-              echo "PATH=$cand/bin:$PATH" >> "$GITHUB_ENV"
+              echo "$cand/bin" >> "$GITHUB_PATH"
               if [ -d "$cand/lib64" ]; then
                 echo "LD_LIBRARY_PATH=$cand/lib64:${LD_LIBRARY_PATH:-}" >> "$GITHUB_ENV"
               fi
@@ -408,9 +425,26 @@ jobs:
             if command -v "clang++-$SELECTED" >/dev/null 2>&1; then
               ln -sf "$(command -v "clang++-$SELECTED")" "$TOOLCHAIN_BIN_DIR/clang++"
             fi
-            ln -sf "$(command -v "llvm-config-$SELECTED")" "$TOOLCHAIN_BIN_DIR/llvm-config"
-            export PATH="$TOOLCHAIN_BIN_DIR:$PATH"
-            echo "PATH=$TOOLCHAIN_BIN_DIR:$PATH" >> "$GITHUB_ENV"
+              ln -sf "$(command -v "llvm-config-$SELECTED")" "$TOOLCHAIN_BIN_DIR/llvm-config"
+              export PATH="$TOOLCHAIN_BIN_DIR:$PATH"
+              echo "$TOOLCHAIN_BIN_DIR" >> "$GITHUB_PATH"
+          fi
+
+          # Some environments ship llvm-config but not clang. Ensure clang is available.
+          if ! command -v clang >/dev/null 2>&1; then
+            echo "clang not found; attempting to install it..."
+            if [ "${LLVM_MAJOR}" -ge 15 ] && $SUDO apt-get install -y --no-install-recommends "clang-${LLVM_MAJOR}" "lld-${LLVM_MAJOR}"; then
+              TOOLCHAIN_BIN_DIR="${RUNNER_TEMP:-/tmp}/bpftime-toolchain-bin"
+              mkdir -p "$TOOLCHAIN_BIN_DIR"
+              ln -sf "$(command -v "clang-${LLVM_MAJOR}")" "$TOOLCHAIN_BIN_DIR/clang"
+              if command -v "clang++-${LLVM_MAJOR}" >/dev/null 2>&1; then
+                ln -sf "$(command -v "clang++-${LLVM_MAJOR}")" "$TOOLCHAIN_BIN_DIR/clang++"
+              fi
+              export PATH="$TOOLCHAIN_BIN_DIR:$PATH"
+              echo "$TOOLCHAIN_BIN_DIR" >> "$GITHUB_PATH"
+            else
+              $SUDO apt-get install -y --no-install-recommends clang lld
+            fi
           fi
 
           echo "LLVM_DIR=$(llvm-config --cmakedir)" >> "$GITHUB_ENV"
