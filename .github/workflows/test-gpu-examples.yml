@@ -649,7 +649,7 @@ jobs:
             SERVER_PID=$!
             popd >/dev/null
             echo "Server PID: $SERVER_PID"
-            sleep 3
+            sleep 15
             if ! kill -0 "$SERVER_PID" 2>/dev/null; then
               echo "Server crashed early. Showing server.log tail:"; tail -n 200 server.log || true
               exit 1
