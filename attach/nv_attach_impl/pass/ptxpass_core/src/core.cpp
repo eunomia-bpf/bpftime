@@ -82,6 +82,7 @@ std::string get_env(const char *key)
 	return v ? std::string(v) : std::string();
 }
 
+// Validation: basic checks as placeholders
 bool validate_input(const std::string &input, const json &validation)
 {
 	if (validation.is_null())
@@ -119,6 +120,7 @@ bool contains_ret_instruction(const std::string &input)
 bool validate_ptx_version(const std::string &input,
 			  const std::string &minVersion)
 {
+	// Expect line like: .version 7.0
 	std::istringstream iss(input);
 	std::string line;
 	double want = 0.0;
@@ -129,6 +131,7 @@ bool validate_ptx_version(const std::string &input,
 	}
 	while (std::getline(iss, line)) {
 		if (line.rfind(".version", 0) == 0) {
+			// parse number
 			std::string v = line.substr(8);
 			try {
 				double have = std::stod(v);
@@ -247,6 +250,7 @@ std::string filter_compiled_ptx_for_ebpf_program(std::string input)
 		R"(.visible .func bpf_main())"
 	};
 	while (std::getline(iss, line)) {
+		// if(line.starts_with)
 		bool skip = false;
 		for (const auto &prefix : FILTERED_OUT_PREFIXES) {
 			if (line.starts_with(prefix)) {

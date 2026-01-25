@@ -80,6 +80,7 @@ void start_up(syscall_context &ctx)
 				     .get_helper_ids()) {
 				helper_ids.push_back(x);
 			}
+			// non_kernel_helpers =
 			for (const auto &[k, v] : get_ufunc_helper_protos()) {
 				non_kernel_helpers[k] = v;
 			}
@@ -89,6 +90,8 @@ void start_up(syscall_context &ctx)
 		verifier::set_non_kernel_helpers(non_kernel_helpers);
 #endif
 		bpftime_set_agent_config(std::move(agent_config));
+		// Set a variable to indicate the program that it's controlled
+		// by bpftime
 		setenv("BPFTIME_USED", "1", 0);
 		SPDLOG_DEBUG("Set environment variable BPFTIME_USED");
 		SPDLOG_INFO("bpftime-syscall-server started");

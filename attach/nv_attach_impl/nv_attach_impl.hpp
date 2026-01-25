@@ -76,9 +76,14 @@ struct CUDARuntimeFunctionHookerContext {
 
 struct nv_attach_entry {
 	std::vector<ebpf_inst> instuctions;
+	// Kernels to be patched for this attach entry
 	std::vector<std::string> kernels;
+	// program name for this attach entry
 	std::string program_name;
-	std::map<std::string, std::string> parameters;
+	// pass-based execution fields
+	std::map<std::string, std::string> parameters; // arbitrary parameters
+						       // for pass
+	// Extra serialized parameters (JSON string) reserved for future use
 	std::optional<std::string> extras;
 	struct pass_cfg_with_exec_path *config;
 };
@@ -115,7 +120,9 @@ struct pass_cfg_with_exec_path {
 };
 
 struct nv_attach_hook_state {
+	// Active impl instance used by global Frida replace hooks.
 	std::atomic<class nv_attach_impl *> active_impl{ nullptr };
+	// Original function pointers captured by gum_interceptor_replace.
 	std::atomic<void *> orig_cuda_launch_kernel{ nullptr };
 	std::atomic<void *> orig_cuda_launch_kernel_ptsz{ nullptr };
 	std::atomic<void *> orig_cu_graph_add_kernel_node_v1{ nullptr };
@@ -127,6 +134,7 @@ struct nv_attach_hook_state {
 	std::atomic<void *> orig_cuda_memcpy_from_symbol{ nullptr };
 	std::atomic<void *> orig_cuda_memcpy_from_symbol_async{ nullptr };
 
+	// Whether Frida replace hooks have been installed in this process.
 	std::atomic<bool> replacements_installed{ false };
 };
 
@@ -134,12 +142,17 @@ nv_attach_hook_state &nv_attach_get_hook_state();
 void nv_attach_set_active_impl(class nv_attach_impl *impl);
 class nv_attach_impl *nv_attach_get_active_impl();
 
+// Attach implementation of syscall trace
+// It provides a callback to receive original syscall calls, and dispatch the
+// concrete stuff to individual callbacks
 class nv_attach_impl final : public base_attach_impl {
 public:
 	int detach_by_id(int id) override;
 	int create_attach_with_ebpf_callback(
 		ebpf_run_callback &&cb, const attach_private_data &private_data,
 		int attach_type) override;
+	// Register CUDA-specific ext helpers required by LLVM-JIT to resolve
+	// symbols like _bpf_helper_ext_0502/_0503 when compiling programs
 	void register_custom_helpers(
 		ebpf_helper_register_callback register_callback) override;
 	nv_attach_impl(const nv_attach_impl &) = delete;
@@ -151,9 +164,9 @@ public:
 	std::map<std::string, std::string>
 	extract_ptxs(std::vector<uint8_t> &&);
 	void mirror_cuda_memcpy_to_symbol(const void *symbol, const void *src,
-					 size_t count, size_t offset,
-					 cudaMemcpyKind kind, cudaStream_t stream,
-					 bool async);
+					  size_t count, size_t offset,
+					  cudaMemcpyKind kind,
+					  cudaStream_t stream, bool async);
 	void mirror_cuda_memcpy_from_symbol(void *dst, const void *symbol,
 					    size_t count, size_t offset,
 					    cudaMemcpyKind kind,
@@ -203,10 +216,16 @@ public:
 	std::optional<std::vector<MapBasicInfo>> map_basic_info;
 	void *ptx_compiler_dl_handle = nullptr;
 	nv_attach_impl_ptx_compiler_handler ptx_compiler;
+	/// SHA256 of ELF -> PTX module
 	std::shared_ptr<std::map<std::string, std::shared_ptr<ptx_in_module>>>
 		module_pool;
+	/// SHA256 of PTX -> ELF
 	std::shared_ptr<std::map<std::string, std::vector<uint8_t>>> ptx_pool;
 
+	// Original function pointers for Frida replace hooks (trampolines)
+	// They are set by gum_interceptor_replace(...) and must be used to call
+	// the original implementation (calling the symbol directly will
+	// recurse). Which is used for cudagraph hook.
 	void *original_cuda_launch_kernel = nullptr;
 	void *original_cuda_launch_kernel_ptsz = nullptr;
 	void *original_cu_graph_add_kernel_node_v1 = nullptr;
@@ -234,6 +253,7 @@ private:
 	std::vector<std::unique_ptr<CUDARuntimeFunctionHookerContext>>
 		hooker_contexts;
 	std::map<int, nv_attach_entry> hook_entries;
+	// discovered pass definitions
 	std::vector<std::unique_ptr<pass_cfg_with_exec_path>>
 		pass_configurations;
 	std::map<std::string, ptxpass::runtime_response::RuntimeResponse>
@@ -250,6 +270,8 @@ private:
 	std::unordered_map<CUfunction, std::string> kernel_name_by_cufunction;
 
 	std::atomic<bool> enabled{ true };
+	// Late bootstrap needs to be repeatable across trace sessions.
+	// Using a heap-allocated once_flag allows resetting it after detach.
 	std::unique_ptr<std::once_flag> late_bootstrap_once =
 		std::make_unique<std::once_flag>();
 	std::atomic<bool> late_bootstrap_started{ false };
@@ -257,7 +279,8 @@ private:
 	std::mutex late_bootstrap_mutex;
 	std::once_flag host_symbol_cache_once;
 	mutable std::mutex host_symbol_cache_mutex;
-
+	// Absolute address sorted list of host function symbols across loaded
+	// modules (best-effort).
 	struct host_symbol_range {
 		std::uintptr_t start = 0;
 		std::uintptr_t end = 0;

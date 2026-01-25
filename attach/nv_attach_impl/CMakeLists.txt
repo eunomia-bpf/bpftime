@@ -1,5 +1,6 @@
 include(../../cmake/cuda.cmake)
 
+# PTX transform passes now live under pass/
 add_subdirectory(pass/ptxpass_core)
 add_subdirectory(pass/ptxpass_kprobe_entry)
 add_subdirectory(pass/ptxpass_kretprobe)
@@ -8,9 +9,16 @@ add_subdirectory(pass/ptxpass_kprobe_memcapture)
 list(APPEND PTX_PASS_EXECUTABLE $<TARGET_FILE:ptxpass_kprobe_entry>)
 list(APPEND PTX_PASS_EXECUTABLE $<TARGET_FILE:ptxpass_kretprobe>)
 list(APPEND PTX_PASS_EXECUTABLE $<TARGET_FILE:ptxpass_kprobe_memcapture>)
+
+message("PTX_PASS_EXECUTABLE=${PTX_PASS_EXECUTABLE}")
+
+
+# Independent PTX compiler
 add_subdirectory(ptx_compiler)
 
 list(APPEND PTX_COMPILER_SHARED_LIB $<TARGET_FILE:nv_attach_impl_ptx_compiler>)
+
+message("PTX_COMPILER_SHARED_LIB=${PTX_COMPILER_SHARED_LIB}")
 
 add_library(
     bpftime_nv_attach_impl STATIC
@@ -58,7 +66,6 @@ get_target_property(LLVMBPF_VM_INCLUDES llvmbpf_vm INCLUDE_DIRECTORIES)
 if(LLVMBPF_VM_INCLUDES)
   target_include_directories(bpftime_nv_attach_impl PRIVATE ${LLVMBPF_VM_INCLUDES})
 endif()
-
 # Create a build-time header file with the PTX pass paths
 # This avoids shell escaping issues with colons and quotes
 file(GENERATE OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/ptx_pass_config.h"

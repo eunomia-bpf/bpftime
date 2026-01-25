@@ -74,6 +74,7 @@ int bpf_attach_ctx::init_attach_ctx_from_handlers(
 	const handler_manager *manager, const agent_config &config)
 {
 	std::lock_guard<std::mutex> lock(ctx_mutex);
+	// Detect shm session switch and rebind.
 	if (auto seq = shm_holder.global_shared_memory.read_stable_epoch_seq();
 	    seq != 0 && seq != last_epoch_seq_seen) {
 		if (last_epoch_seq_seen != 0) {
