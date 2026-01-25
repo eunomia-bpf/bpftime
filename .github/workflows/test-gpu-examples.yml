@@ -539,6 +539,12 @@ jobs:
             find build -maxdepth 4 -mindepth 1 -print || true
             exit 1
           fi
+          if [ -f build/tools/bpftimetool/bpftimetool ] && [ ! -x build/tools/bpftimetool/bpftimetool ]; then
+            echo "bpftimetool exists but is not executable; fixing permissions..."
+            ls -la build/tools/bpftimetool || true
+            chmod +x build/tools/bpftimetool/bpftimetool || true
+            ls -la build/tools/bpftimetool || true
+          fi
           test -x build/tools/bpftimetool/bpftimetool
 
       - name: Build GPU example
