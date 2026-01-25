@@ -70,7 +70,8 @@ jobs:
           $SUDO apt-get install -y --no-install-recommends \
             build-essential ca-certificates curl git pkg-config xz-utils \
             cmake ninja-build \
-            libboost-all-dev libdw-dev libelf-dev libffi-dev libzstd-dev zlib1g-dev
+            libboost-all-dev libdw-dev libedit-dev libelf-dev libffi-dev libssl-dev libzstd-dev zlib1g-dev \
+            libcurl4-openssl-dev
 
           # Ensure LLVM >= 15 for vm/llvm-jit (find_package(LLVM)).
           LLVM_CONFIG_BIN="llvm-config"
@@ -376,7 +377,8 @@ jobs:
           $SUDO apt-get install -y --no-install-recommends \
             build-essential ca-certificates curl git pkg-config xz-utils \
             cmake ninja-build \
-            libboost-all-dev libdw-dev libelf-dev libffi-dev libzstd-dev zlib1g-dev
+            libboost-all-dev libdw-dev libedit-dev libelf-dev libffi-dev libssl-dev libzstd-dev zlib1g-dev \
+            libcurl4-openssl-dev
 
           # Examples build libbpf/bpftool and compile eBPF with clang.
           LLVM_CONFIG_BIN="llvm-config"
