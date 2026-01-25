@@ -93,7 +93,9 @@ static void trace_sigint_handler(int)
 	g_trace_interrupted.store(true, std::memory_order_release);
 	pid_t target = g_trace_target_pid.load(std::memory_order_acquire);
 	if (target > 0) {
-		kill(target, SIGUSR1);
+		// Ask the injected agent to detach early to avoid the target process
+		// continuing to use CUDA IPC allocations after the loader exits.
+		(void)kill(target, SIGUSR1);
 	}
 }
 #endif
@@ -175,17 +177,16 @@ static int spawn_command(const char *path, const std::vector<std::string> &argv,
 	int pid = fork();
 	if (pid == 0) {
 #if __linux__
-			if (drop_to && geteuid() == 0) {
-				auto [uid, gid] = *drop_to;
-				if (setgroups(0, nullptr) != 0) {
-				}
-				if (setgid(gid) != 0) {
-				}
-				if (setuid(uid) != 0) {
-				}
-			}
+		if (drop_to && geteuid() == 0) {
+			auto [uid, gid] = *drop_to;
+			(void)setgroups(0, nullptr);
+			int ignored = 0;
+			ignored = setgid(gid);
+			ignored = setuid(uid);
+			(void)ignored;
+		}
 #else
-			(void)drop_to;
+		(void)drop_to;
 #endif
 		std::string ld_preload_str("LD_PRELOAD=");
 		std::string agent_so_str("AGENT_SO=");
@@ -265,7 +266,7 @@ static bool make_agent_ipc_addr(int pid, sockaddr_un &addr, socklen_t &len)
 	std::string name = "bpftime-agent-" + std::to_string(pid);
 	if (name.size() + 1 > sizeof(addr.sun_path))
 		return false;
-	addr.sun_path[0] = '\0';
+	addr.sun_path[0] = '\0'; // abstract namespace
 	memcpy(addr.sun_path + 1, name.data(), name.size());
 	len = (socklen_t)(offsetof(sockaddr_un, sun_path) + 1 + name.size());
 	return true;
@@ -287,6 +288,7 @@ static bool try_send_agent_ipc(int pid, const std::string &request,
 		::close(fd);
 		return false;
 	}
+	// Best-effort write full request.
 	const char *buf = request.data();
 	size_t left = request.size();
 	while (left > 0) {
@@ -298,7 +300,7 @@ static bool try_send_agent_ipc(int pid, const std::string &request,
 		buf += (size_t)n;
 		left -= (size_t)n;
 	}
-	::shutdown(fd, SHUT_WR);
+	(void)::shutdown(fd, SHUT_WR);
 	if (response_out) {
 		std::string resp;
 		char rbuf[4096];
@@ -401,8 +403,14 @@ static const char *get_global_shm_name_for_cli()
 #if __linux__
 static void try_relax_global_shm_permissions_for_target()
 {
+	// When running `bpftime trace` under sudo, an existing shm segment may have
+	// been created by root with restrictive permissions. The loader is usually
+	// spawned as the target uid/gid, so avoid removing/recreating the shm (which
+	// would break already-injected agents); instead, best-effort relax perms.
+	// /dev/shm is the default backing store for POSIX shm on Linux.
+	// Best-effort: do not fail trace if this can't be adjusted.
 	std::string path = std::string("/dev/shm/") + get_global_shm_name_for_cli();
-	::chmod(path.c_str(), 0666);
+	(void)::chmod(path.c_str(), 0666);
 }
 #endif
 
@@ -465,6 +473,7 @@ static std::string resolve_cuobjdump_path()
 		return std::filesystem::exists(p, ec);
 	};
 
+	// Allow overriding with either an absolute path or a PATH-resolved tool name.
 	if (const char *p = getenv("BPFTIME_CUOBJDUMP"); p && p[0] != '\0') {
 		std::string s(p);
 		if (s.find('/') == std::string::npos)
@@ -489,6 +498,8 @@ static std::string resolve_cuobjdump_path()
 	}
 
 #if __linux__
+	// If CUDA is installed under /usr/local/cuda-* (common on dev machines),
+	// auto-detect it without hardcoding a specific version.
 	{
 		std::error_code ec;
 		const std::filesystem::path usr_local("/usr/local");
@@ -560,11 +571,11 @@ static std::optional<std::filesystem::path> prepare_cuda_late_ptx_dir(
 		return std::nullopt;
 
 	std::filesystem::path dir(dir_c);
-	chmod(dir.c_str(), 0755);
+	(void)chmod(dir.c_str(), 0755);
 	if (geteuid() == 0 && target_uid_gid) {
-		if (chown(dir.c_str(), target_uid_gid->first, target_uid_gid->second) !=
-		    0) {
-		}
+		int ignored = chown(dir.c_str(), target_uid_gid->first,
+				    target_uid_gid->second);
+		(void)ignored;
 	}
 
 	const auto sh_quote = [](const std::string &s) -> std::string {
@@ -629,7 +640,9 @@ static std::optional<std::filesystem::path> prepare_cuda_late_ptx_dir(
 		return true;
 	};
 
+	bool ok = false;
 	for (const auto &cand : read_cmdline_candidates(*exe)) {
+		// Clear any leftover PTX from previous attempts.
 		std::error_code ec;
 		for (const auto &entry :
 		     std::filesystem::directory_iterator(dir, ec)) {
@@ -640,8 +653,10 @@ static std::optional<std::filesystem::path> prepare_cuda_late_ptx_dir(
 				std::filesystem::remove(entry.path(), ec);
 			}
 		}
-		if (!run_extract(cand))
+		ok = run_extract(cand);
+		if (!ok)
 			continue;
+		// Check if we got anything.
 		size_t ptx_count = 0;
 		for (const auto &entry :
 		     std::filesystem::directory_iterator(dir, ec)) {
@@ -659,6 +674,7 @@ static std::optional<std::filesystem::path> prepare_cuda_late_ptx_dir(
 			return dir;
 		}
 	}
+	(void)ok;
 	return std::nullopt;
 #else
 	(void)pid;
@@ -831,10 +847,12 @@ int main(int argc, const char **argv)
 					"text_segment_transformer" /
 					AGENT_TRANSFORMER_LIBRARY,
 				"agent-transformer");
+			// transformer_path += ":/usr/lib/libclient.so";
 			return run_command(executable_path.c_str(), extra_args,
 					   transformer_path.c_str(),
 					   agent_path.c_str());
 		} else {
+			// agent_path += ":/usr/lib/libclient.so";
 			return run_command(executable_path.c_str(), extra_args,
 					   agent_path.c_str(), nullptr);
 		}
@@ -936,6 +954,9 @@ int main(int argc, const char **argv)
 		spdlog::info("trace: loader pid={}", child_pid);
 
 #if __linux__
+		// Ensure Ctrl+C triggers an orderly shutdown: detach agent first, then
+		// stop the loader to avoid CUDA IPC allocations being torn down while
+		// the target still uses them.
 		g_trace_target_pid.store(pid, std::memory_order_release);
 		g_trace_loader_pid.store(child_pid, std::memory_order_release);
 		g_trace_interrupted.store(false, std::memory_order_release);
@@ -945,8 +966,8 @@ int main(int argc, const char **argv)
 		sa.sa_flags = 0;
 		struct sigaction old_int {};
 		struct sigaction old_term {};
-		sigaction(SIGINT, &sa, &old_int);
-		sigaction(SIGTERM, &sa, &old_term);
+		(void)sigaction(SIGINT, &sa, &old_int);
+		(void)sigaction(SIGTERM, &sa, &old_term);
 #endif
 
 		std::string agent_arg = "loader_pid=" + std::to_string(child_pid);
@@ -964,6 +985,8 @@ int main(int argc, const char **argv)
 		int rc = 0;
 		bool agent_attached = false;
 #if __linux__
+		// Prefer IPC refresh if an agent is already present in the target
+		// process; fall back to Frida injection otherwise.
 		std::string req = "refresh " + agent_arg;
 		if (try_send_agent_ipc(pid, req)) {
 			spdlog::info("trace: refreshed existing agent via IPC");
@@ -986,15 +1009,18 @@ int main(int argc, const char **argv)
 			if (w < 0 && errno == EINTR) {
 				if (g_trace_interrupted.load(
 					    std::memory_order_acquire)) {
+					// Orderly Ctrl+C: detach the agent first so
+					// the target stops using loader-owned CUDA
+					// IPC buffers, then stop the loader.
 					if (!stop_requested) {
 						stop_requested = true;
 						if (agent_attached) {
-							try_send_agent_ipc(pid,
-									   "detach");
-							kill(pid, SIGUSR1);
+							(void)try_send_agent_ipc(
+								pid, "detach");
+							(void)kill(pid, SIGUSR1);
 							usleep(200 * 1000);
 						}
-						kill(child_pid, SIGINT);
+						(void)kill(child_pid, SIGINT);
 					}
 					continue;
 				}
@@ -1003,16 +1029,19 @@ int main(int argc, const char **argv)
 			break;
 		}
 
+		// Whether trace exited normally or via Ctrl+C, request agent detach
+		// so the target stops using CUDA IPC resources.
 		if (agent_attached)
-			try_send_agent_ipc(pid, "detach");
+			(void)try_send_agent_ipc(pid, "detach");
 		if (agent_attached) {
-			kill(pid, SIGUSR1);
+			(void)kill(pid, SIGUSR1);
+			// Give detach a moment to run before we drop the loader.
 			usleep(200 * 1000);
 		}
-		sigaction(SIGINT, &old_int, nullptr);
-		sigaction(SIGTERM, &old_term, nullptr);
+		(void)sigaction(SIGINT, &old_int, nullptr);
+		(void)sigaction(SIGTERM, &old_term, nullptr);
 #else
-		waitpid(child_pid, &status, 0);
+		(void)waitpid(child_pid, &status, 0);
 #endif
 		return rc;
 	} else if (program.is_subcommand_used("detach")) {
@@ -1029,7 +1058,7 @@ int main(int argc, const char **argv)
 		bpftime::shm_holder.global_shared_memory
 			.iterate_all_pids_in_alive_agent_set([&](int pid) {
 #if __linux__
-				try_send_agent_ipc(pid, "detach");
+				(void)try_send_agent_ipc(pid, "detach");
 #endif
 				SPDLOG_INFO("Delivering SIGUSR1 to {}", pid);
 				int err = kill(pid, SIGUSR1);

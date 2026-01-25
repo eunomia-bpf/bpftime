@@ -30,7 +30,10 @@ struct CommSharedMem;
 namespace bpftime
 {
 
-// Global tracing session sequence (seqlock): odd=updating, even=stable.
+// Shared-memory global tracing session version.
+// Use epoch_seq as a simple seqlock:
+// - odd  : server is updating/resetting handlers
+// - even : stable; session_id = epoch_seq / 2
 struct bpftime_global_epoch_state {
 	std::uint64_t epoch_seq = 0;
 };
@@ -116,8 +119,16 @@ class bpftime_shm {
 	// Iterate over all pids from the alive agent set
 	void iterate_all_pids_in_alive_agent_set(std::function<void(int)> &&cb);
 
+	// Server-side: clear all existing handlers (maps/progs/links/events) and
+	// reset per-session bookkeeping stored in shm. This is used to allow
+	// repeated "bpftime trace" sessions without recreating the shm object, so
+	// already-injected agents keep the same mapping.
 	void reset_server_state();
+	// Server-side: start a new session (epoch++) and clear handlers. Returns
+	// the new stable epoch_seq (even).
 	std::uint64_t begin_new_session();
+	// Agent/observer: best-effort read a stable epoch_seq (even). Returns 0 if
+	// the epoch object isn't available.
 	std::uint64_t read_stable_epoch_seq(int max_tries = 200) const;
 
 	const handler_variant &get_handler(int fd) const;

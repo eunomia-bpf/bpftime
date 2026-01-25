@@ -9,6 +9,7 @@
 #include "nv_attach_utils.hpp"
 #include "ptx_compiler/ptx_compiler.hpp"
 #include "nv_elf_introspect.hpp"
+// #include "spdlog/common.h"
 #include "spdlog/spdlog.h"
 #include <asm/unistd.h> // For architecture-specific syscall numbers
 #include <boost/asio/io_context.hpp>
@@ -125,6 +126,8 @@ int nv_attach_impl::detach_by_id(int id)
 		SPDLOG_INFO(
 			"nv_attach_impl: last entry detached; disabling CUDA launch replacement");
 		enabled.store(false, std::memory_order_release);
+		// Wait for in-flight patched kernels to complete before the
+		// loader exits and tears down CUDA IPC buffers.
 		wait_for_patched_launch_events(std::chrono::seconds(2));
 		clear_patched_state_for_next_session();
 		reset_late_bootstrap_state_for_next_attach();
@@ -145,6 +148,7 @@ int nv_attach_impl::create_attach_with_ebpf_callback(
 {
 	auto data = dynamic_cast<const nv_attach_private_data &>(private_data);
 
+	// Safely access the variant
 	if (!std::holds_alternative<std::string>(data.code_addr_or_func_name)) {
 		SPDLOG_ERROR(
 			"code_addr_or_func_name does not hold a string value");
@@ -169,7 +173,8 @@ int nv_attach_impl::create_attach_with_ebpf_callback(
 
 		if (matcher.matches(attach_point_name)) {
 			matched = pd.get();
-			break;
+			break; // pass_definitions is sorted deterministically
+			       // by executable
 		}
 	}
 	if (matched) {
@@ -199,6 +204,8 @@ int nv_attach_impl::create_attach_with_ebpf_callback(
 		start_late_bootstrap_async();
 		return id;
 	}
+	// No matched definition: do not create generic entry; require explicit
+	// pass definition to avoid ambiguous instrumentation.
 	SPDLOG_WARN(
 		"No pass definition matched for function {}, attach_type {}. Skipping.",
 		attach_point_name, attach_type);
@@ -243,6 +250,8 @@ cudaError_t cuda_runtime_function__cudaMemcpyFromSymbolAsync(
 nv_attach_impl::nv_attach_impl()
 {
 	SPDLOG_INFO("Starting nv_attach_impl");
+	// Ensure CUDA driver library is loaded before we attempt to hook driver
+	// APIs such as cuGraph*.
 	{
 		void *handle = dlopen("libcuda.so.1", RTLD_NOW | RTLD_GLOBAL);
 		if (handle == nullptr) {
@@ -599,6 +608,10 @@ std::map<std::string, std::string>
 nv_attach_impl::extract_ptxs(std::vector<uint8_t> &&data_vec)
 {
 	std::map<std::string, std::string> all_ptx;
+
+	// Dynamic attach path: prefer externally extracted PTX files to avoid
+	// spawning processes (cuobjdump) inside an already-CUDA-initialized
+	// target, which is fragile and can crash.
 	if (const char *dir = getenv("BPFTIME_CUDA_LATE_PTX_DIR");
 	    dir && dir[0] != '\0') {
 		std::error_code ec;
@@ -659,6 +672,8 @@ nv_attach_impl::extract_ptxs(std::vector<uint8_t> &&data_vec)
 			return std::filesystem::exists(p, ec);
 		};
 
+		// Allow overriding with either an absolute path or a
+		// PATH-resolved tool name.
 		if (const char *p = getenv("BPFTIME_CUOBJDUMP");
 		    p && p[0] != '\0') {
 			std::string s(p);
@@ -686,6 +701,9 @@ nv_attach_impl::extract_ptxs(std::vector<uint8_t> &&data_vec)
 		}
 
 #if __linux__
+		// If CUDA is installed under /usr/local/cuda-* (common on dev
+		// machines), auto-detect it without hardcoding a specific
+		// version.
 		{
 			std::error_code ec;
 			const std::filesystem::path usr_local("/usr/local");
@@ -715,8 +733,12 @@ nv_attach_impl::extract_ptxs(std::vector<uint8_t> &&data_vec)
 		    cuobjdump.c_str(), fatbin_path.c_str());
 
 #if __linux__
+	// Avoid fork() after CUDA initialization. Use posix_spawn instead of
+	// boost::process (fork), otherwise the injected process may crash.
 	{
 		const auto sh_quote = [](const std::string &s) -> std::string {
+			// Wrap in single quotes and escape embedded single
+			// quotes: abc'd -> 'abc'"'"'d'
 			std::string out;
 			out.reserve(s.size() + 8);
 			out.push_back('\'');
@@ -730,6 +752,9 @@ nv_attach_impl::extract_ptxs(std::vector<uint8_t> &&data_vec)
 			return out;
 		};
 
+		// Run via /bin/sh -c "cd <tmp_dir> && <cuobjdump> --extract-ptx
+		// all temp.fatbin" This avoids
+		// posix_spawn_file_actions_addchdir_np (non-portable).
 		std::string cmd;
 		cmd.reserve(256);
 		cmd += "cd -- ";
@@ -790,6 +815,7 @@ nv_attach_impl::extract_ptxs(std::vector<uint8_t> &&data_vec)
 					  fatbin_path.string();
 		SPDLOG_INFO("Calling cuobjdump: {}", cuobjdump_cmd_line);
 
+		// Execute through shell to properly use PATH
 		boost::process::child child(
 			"/bin/sh",
 			boost::process::args({ "-c", cuobjdump_cmd_line }),
@@ -808,6 +834,7 @@ nv_attach_impl::extract_ptxs(std::vector<uint8_t> &&data_vec)
 	     std::filesystem::directory_iterator(working_dir)) {
 		if (entry.is_regular_file() &&
 		    entry.path().string().ends_with(".ptx")) {
+			// Read the PTX into memory
 			std::ifstream ifs(entry.path());
 			std::stringstream buffer;
 			buffer << ifs.rdbuf();
@@ -824,6 +851,9 @@ nv_attach_impl::extract_ptxs(std::vector<uint8_t> &&data_vec)
 std::optional<std::map<std::string, std::tuple<std::string, bool>>>
 nv_attach_impl::hack_fatbin(std::map<std::string, std::string> all_ptx)
 {
+	/**
+	Here we can patch the PTX.
+	*/
 	boost::asio::thread_pool pool(std::thread::hardware_concurrency());
 	std::map<std::string, std::tuple<std::string, bool>> ptx_out;
 	std::mutex map_mutex;
@@ -930,7 +960,9 @@ nv_attach_impl::hack_fatbin(std::map<std::string, std::string> all_ptx)
 								auto json = nlohmann::json::parse(
 									buf.data(),
 									nullptr,
+									/*allow_exceptions=*/
 									true,
+									/*ignore_comments=*/
 									true);
 								using namespace ptxpass::
 									runtime_response;
@@ -1046,6 +1078,8 @@ int nv_attach_impl::run_attach_entry_on_gpu(int attach_id, int run_count,
 	std::vector<ebpf_inst> insts;
 	if (auto itr = hook_entries.find(attach_id);
 	    itr != hook_entries.end()) {
+		// In new flow, directly_run is not supported and should be
+		// represented by a dedicated pass
 		insts = itr->second.instuctions;
 	} else {
 		SPDLOG_ERROR("Invalid attach id {}", attach_id);
@@ -1053,6 +1087,7 @@ int nv_attach_impl::run_attach_entry_on_gpu(int attach_id, int run_count,
 	}
 	SPDLOG_INFO("Running program on GPU");
 
+	// Get SM architecture (auto-detect or from BPFTIME_SM_ARCH env)
 	std::string sm_arch = get_gpu_sm_arch();
 	SPDLOG_INFO("Using SM architecture: {}", sm_arch);
 
@@ -1071,6 +1106,8 @@ int nv_attach_impl::run_attach_entry_on_gpu(int attach_id, int run_count,
 	{
 		const std::string to_replace = ".func bpf_main";
 
+		// Replace ".func bpf_main" to ".visible .entry bpf_main" so it
+		// can be executed
 		auto bpf_main_pos = ptx.find(to_replace);
 		if (bpf_main_pos == ptx.npos) {
 			SPDLOG_ERROR("Cannot find '{}' in generated PTX code",
@@ -1087,6 +1124,7 @@ int nv_attach_impl::run_attach_entry_on_gpu(int attach_id, int run_count,
 		ofs << ptx << std::endl;
 		SPDLOG_DEBUG("Dumped directly run ptx to {}", path);
 	}
+	// Compile to ELF
 	std::vector<char> output_elf;
 	{
 		unsigned int major_ver, minor_ver;
@@ -1132,6 +1170,7 @@ int nv_attach_impl::run_attach_entry_on_gpu(int attach_id, int run_count,
 		SPDLOG_INFO("{}", info_log);
 	}
 	SPDLOG_INFO("Compiled program size: {}", output_elf.size());
+	// Load and run the program
 	{
 		CUdevice cuDevice;
 		CUcontext context;
@@ -1143,6 +1182,7 @@ int nv_attach_impl::run_attach_entry_on_gpu(int attach_id, int run_count,
 		CUDA_SAFE_CALL(cuCtxCreate(&context, 0, cuDevice));
 		CUDA_SAFE_CALL(cuModuleLoadDataEx(&module, output_elf.data(), 0,
 						  0, 0));
+		// fill data into it
 		{
 			CUdeviceptr ptr;
 			size_t bytes;
@@ -1208,6 +1248,8 @@ void nv_attach_impl::mirror_cuda_memcpy_to_symbol(
 	}
 
 	if (!resolved_var) {
+		// Late attach fallback: resolve host symbol name and mirror to
+		// any patched module that exports the same global.
 		auto name = resolve_host_function_symbol((void *)symbol);
 		if (!name)
 			return;
@@ -1346,6 +1388,7 @@ void nv_attach_impl::record_patched_launch_event(CUstream stream)
 void nv_attach_impl::wait_for_patched_launch_events(
 	std::chrono::milliseconds timeout)
 {
+	// Best-effort ensure a context is current for driver event APIs.
 	{
 		CUcontext current = nullptr;
 		if (cuCtxGetCurrent(&current) != CUDA_SUCCESS ||
@@ -1392,6 +1435,7 @@ void nv_attach_impl::wait_for_patched_launch_events(
 		if (std::chrono::steady_clock::now() >= deadline) {
 			std::lock_guard<std::mutex> guard(launch_event_mutex);
 			for (auto &kv : not_ready) {
+				// Keep the most recent event per stream.
 				auto it = pending_launch_events_by_stream.find(
 					kv.first);
 				if (it !=
@@ -1431,6 +1475,8 @@ void nv_attach_impl::wait_for_patched_launch_events(
 
 void nv_attach_impl::clear_patched_state_for_next_session()
 {
+	// Clear session-scoped state so a new trace session can bind to a new
+	// shm/maps layout without stale GPU pointers.
 	std::vector<std::unique_ptr<fatbin_record>> old_records;
 	{
 		std::lock_guard<std::mutex> guard(late_bootstrap_mutex);
@@ -1461,6 +1507,7 @@ void nv_attach_impl::clear_patched_state_for_next_session()
 			pending_launch_events_by_stream.clear();
 		}
 	}
+	// Let old_records destruct (cuModuleUnload) outside locks.
 	old_records.clear();
 }
 
@@ -1518,6 +1565,9 @@ nv_attach_impl::resolve_host_function_symbol(void *addr)
 	if (addr == nullptr)
 		return std::nullopt;
 	const auto normalize_cuda_stub = [](std::string s) -> std::string {
+		// cudaLaunchKernel receives a host-side stub function pointer,
+		// whose exported symbol is often `__device_stub__Z...`. Our
+		// patch map keys are device entry names like `_Z...`.
 		constexpr const char *kStubPrefix = "__device_stub__";
 		if (s.rfind(kStubPrefix, 0) == 0) {
 			s.erase(0, strlen(kStubPrefix));
@@ -1691,10 +1741,14 @@ void nv_attach_impl::bootstrap_existing_fatbins()
 	std::size_t ingested = 0;
 
 	for (const auto &mod : modules) {
+		// CUDA binaries may expose fatbin bytes either directly in
+		// `.nv_fatbin` (raw fatbin header 0xBA55ED50...) or as a list
+		// of wrappers inside `.nvFatBinSegment` (magic 'FbC1').
 		if (auto sec = elf_introspect::find_section_in_memory(
 			    mod, ".nv_fatbin");
 		    sec) {
-			auto sec_addr = sec->first;
+			auto [sec_addr, sec_size] = *sec;
+			(void)sec_size;
 			if (auto bytes = read_fatbin_bytes_from_ptr(sec_addr);
 			    bytes) {
 				auto extracted_ptx =
@@ -1750,6 +1804,9 @@ void nv_attach_impl::bootstrap_existing_fatbins()
 		}
 	}
 
+	// If ELF scanning didn't find any fatbin section but the user provided
+	// an external PTX directory (dynamic attach), still allow patching to
+	// proceed based solely on those PTX files.
 	if (ingested == 0) {
 		auto extracted_ptx = extract_ptxs({});
 		if (!extracted_ptx.empty()) {
@@ -1817,6 +1874,9 @@ void nv_attach_impl::start_late_bootstrap_async()
 		    std::memory_order_acquire)) {
 		return;
 	}
+	// Run bootstrap in the caller thread (typically agent init/refresh),
+	// not inside cudaLaunchKernel. This avoids detached background threads
+	// that can outlive the trace session and crash during teardown.
 	try {
 		ensure_cuda_context_for_current_thread();
 		this->bootstrap_existing_fatbins_once();

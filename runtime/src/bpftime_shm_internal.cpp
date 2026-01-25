@@ -748,6 +748,9 @@ bpftime_shm::bpftime_shm(const char *shm_name, shm_open_type type)
 		} else {
 			cuda_comm_shared_mem = pair.first;
 		}
+		// Register the shared communication memory for CUDA device
+		// mapping. This must happen after we have located the
+		// CommSharedMem in the shared segment.
 		register_cuda_host_memory();
 	} else {
 		auto pair = segment.find<cuda::CommSharedMem>(
@@ -794,6 +797,7 @@ std::uint64_t bpftime_shm::read_stable_epoch_seq(int max_tries) const
 		std::uint64_t a = __atomic_load_n(&epoch_state->epoch_seq,
 						  __ATOMIC_ACQUIRE);
 		if (a & 1U) {
+			// Writer in progress.
 			usleep(1000);
 			continue;
 		}
@@ -813,8 +817,10 @@ std::uint64_t bpftime_shm::begin_new_session()
 		reset_server_state();
 		return 0;
 	}
+	// Mark updating (odd).
 	__atomic_add_fetch(&epoch_state->epoch_seq, 1, __ATOMIC_ACQ_REL);
 	reset_server_state();
+	// Mark stable (even).
 	std::uint64_t seq = __atomic_add_fetch(&epoch_state->epoch_seq, 1,
 					       __ATOMIC_ACQ_REL);
 	return seq;

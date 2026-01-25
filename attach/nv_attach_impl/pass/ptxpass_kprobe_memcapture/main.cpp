@@ -34,7 +34,7 @@ static ptxpass::pass_config::PassConfig get_default_config()
 	cfg.attach_points.excludes = {};
 	cfg.parameters = nlohmann::json::object();
 	cfg.validation = nlohmann::json::object();
-	cfg.attach_type = 8;
+	cfg.attach_type = 8; // kprobe
 	return cfg;
 }
 
@@ -44,6 +44,7 @@ patch_memcapture(const std::string &ptx,
 {
 	static std::regex ld_st_pattern(
 		R"(^\s*(ld|st)\.(const|global|local|param)?\.(((s|u|b)(8|16|32|64))|b128|(f(16|16x2|32|64))) +(.+), *(.+);\s*$)");
+	// no local ebpf_inst dependency here; we will pack words when needed
 
 	std::istringstream iss(ptx);
 	std::ostringstream out_body;

@@ -35,8 +35,11 @@ namespace bpftime
 #ifdef BPFTIME_ENABLE_CUDA_ATTACH
 namespace cuda
 {
+	// The old 1<<30 value makes the shared segment too large for Boost IPC.
 #ifndef BPFTIME_GPU_HELPER_MAX_BUF
-	// Layout-affecting: keep in sync with `attach/nv_attach_impl/trampoline_ptx.h`.
+	// Upper bound for key/value staging buffers used by the GPU->host helper
+	// bridge. This is a layout-affecting constant: if you change it, you must
+	// also regenerate `attach/nv_attach_impl/trampoline_ptx.h`.
 #define BPFTIME_GPU_HELPER_MAX_BUF (1 << 20)
 #endif
 static constexpr std::size_t GPU_HELPER_MAX_BUF = BPFTIME_GPU_HELPER_MAX_BUF;
@@ -98,10 +101,13 @@ struct CommSharedMem {
 	uint64_t time_sum[8];
 };
 struct CUDAContext {
+	// Indicate whether cuda watcher thread should stop
 	std::shared_ptr<std::atomic<bool>> cuda_watcher_should_stop =
 		std::make_shared<std::atomic<bool>>(false);
 
+	// Shared memory region for CUDA
 	cuda::CommSharedMem *cuda_shared_mem;
+	// Mapped device pointer
 	uintptr_t cuda_shared_mem_device_pointer;
 
 	CUDAContext(cuda::CommSharedMem *mem);
@@ -170,6 +176,9 @@ public:
 	int destroy_instantiated_attach_link(int link_id);
 	// Destroy all instantiated attach links
 	int destroy_all_attach_links();
+	// Clear all instantiated state (programs/perf events/link bookkeeping).
+	// Attach implementations stay registered, so the context can be reused
+	// for a new tracing session without destroying the whole object.
 	void reset_instantiated_state();
 	std::optional<attach::base_attach_impl *>
 	get_attach_impl_by_attach_type(int attach_type)
@@ -188,12 +197,15 @@ public:
 
 private:
 	mutable std::mutex ctx_mutex;
+	// Stable shm epoch_seq last seen (even). Used to detect session switch and
+	// rebind GPU resources/maps accordingly.
 	std::uint64_t last_epoch_seq_seen = 0;
 	int destroy_instantiated_attach_link_unlocked(int link_id);
 	int destroy_all_attach_links_unlocked();
 	void reset_instantiated_state_unlocked();
 
 #ifdef BPFTIME_ENABLE_CUDA_ATTACH
+	// Start host thread for handling map requests from CUDA
 	void start_cuda_watcher_thread();
 	std::unique_ptr<cuda::CUDAContext> cuda_ctx;
 	std::thread cuda_watcher_thread;

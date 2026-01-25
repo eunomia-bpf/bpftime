@@ -262,6 +262,7 @@ nv_gpu_shared_array_map_impl::try_initialize_for_agent_and_get_mapped_address()
 				return 0;
 			}
 
+			// Build candidate device indices.
 			std::vector<int> candidates;
 			if (const char *p = getenv("BPFTIME_CUDA_DEVICE");
 			    p && p[0] != '\0') {
@@ -285,6 +286,7 @@ nv_gpu_shared_array_map_impl::try_initialize_for_agent_and_get_mapped_address()
 				std::unique(candidates.begin(), candidates.end()),
 				candidates.end());
 
+			// Try current context first if available.
 			CUdeviceptr ptr = 0;
 			CUcontext prev_ctx = nullptr;
 			cuCtxGetCurrent(&prev_ctx);
@@ -299,6 +301,7 @@ nv_gpu_shared_array_map_impl::try_initialize_for_agent_and_get_mapped_address()
 				}
 			}
 
+			// Otherwise probe devices by temporarily setting their primary ctx.
 			if (ptr == 0) {
 				for (int d : candidates) {
 					CUdevice dev = 0;
@@ -328,6 +331,7 @@ nv_gpu_shared_array_map_impl::try_initialize_for_agent_and_get_mapped_address()
 				}
 			}
 
+			// Restore previous context for this thread.
 			if (prev_ctx != nullptr)
 				cuCtxSetCurrent(prev_ctx);
 
@@ -338,6 +342,7 @@ nv_gpu_shared_array_map_impl::try_initialize_for_agent_and_get_mapped_address()
 				return 0;
 			}
 
+			// Create a private stream in the chosen agent context.
 			if (agent_stream == nullptr) {
 				CUcontext tmp_prev = nullptr;
 				cuCtxGetCurrent(&tmp_prev);

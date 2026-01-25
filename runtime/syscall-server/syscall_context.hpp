@@ -130,6 +130,8 @@ class syscall_context {
 		// unset the LD_PRELOAD env var after syscall context being
 		// initialized
 		unsetenv("LD_PRELOAD");
+		// Keep this log allocation-free. spdlog/fmt may throw in extremely
+		// early init paths (and will print "[*** LOG ERROR ***]").
 		SPDLOG_DEBUG("Resolved original libc function pointers");
 	}
 

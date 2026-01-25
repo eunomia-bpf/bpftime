@@ -57,6 +57,7 @@ find_section_span(std::ifstream &ifs, std::string_view section_name)
 	if (eh.e_shoff == 0 || eh.e_shnum == 0)
 		return std::nullopt;
 
+	// Load section header string table header.
 	Shdr shstr;
 	const std::uint64_t shstr_off =
 		(std::uint64_t)eh.e_shoff +
@@ -235,14 +236,15 @@ find_section_in_memory(const loaded_module &mod, std::string_view section_name)
 	return std::make_pair(addr, (std::size_t)sec->sh_size);
 }
 
-	std::vector<const __fatBinC_Wrapper_t *>
-	scan_fatbin_wrappers(const void *section_addr, std::size_t section_size)
-	{
+std::vector<const __fatBinC_Wrapper_t *>
+scan_fatbin_wrappers(const void *section_addr, std::size_t section_size)
+{
 	std::vector<const __fatBinC_Wrapper_t *> out;
 	if (section_addr == nullptr || section_size < sizeof(__fatBinC_Wrapper_t))
 		return out;
 
-		constexpr std::uint32_t kWrapperMagic = 0x466243b1u;
+	// Magic used by CUDA fatbin wrapper: 'FbC1'
+	constexpr std::uint32_t kWrapperMagic = 0x466243b1u;
 	const auto *base = reinterpret_cast<const std::uint8_t *>(section_addr);
 	for (std::size_t off = 0; off + sizeof(__fatBinC_Wrapper_t) <= section_size;
 	     off += 8) {
