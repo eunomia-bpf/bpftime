@@ -1,3 +1,4 @@
+// #include "pos/cuda_impl/utils/fatbin.h"
 #include "cuda.h"
 #include "cuda_runtime_api.h"
 #include "driver_types.h"
@@ -44,6 +45,7 @@ typedef struct _CUDARuntimeFunctionHooker {
 static void cuda_runtime_function_hooker_iface_init(gpointer g_iface,
 						    gpointer iface_data);
 
+// #define EXAMPLE_TYPE_LISTENER (cuda_runtime_function_hooker_iface_init())
 G_DECLARE_FINAL_TYPE(CUDARuntimeFunctionHooker, cuda_runtime_function_hooker,
 		     BPFTIME, NV_ATTACH_IMPL, GObject)
 G_DEFINE_TYPE_EXTENDED(
@@ -103,6 +105,8 @@ cuda_launch_kernel_common(nv_attach_impl *impl, void *original_fn_ptr,
 		return original(func, grid_dim, block_dim, args, shared_mem,
 				stream);
 
+	// Ensure a CUDA context is current for this thread before calling
+	// driver APIs
 	{
 		CUcontext current = nullptr;
 		if (cuCtxGetCurrent(&current) != CUDA_SUCCESS ||
@@ -174,6 +178,8 @@ cuda_launch_kernel_common(nv_attach_impl *impl, void *original_fn_ptr,
 						    "No description");
 			SPDLOG_ERROR("Error code: {}", (int)err);
 			log_cufunc_attrs(handle.func);
+			// Preserve target semantics: fall back to the original
+			// runtime launch path if patched launch fails.
 			return original(func, grid_dim, block_dim, args,
 					shared_mem, stream);
 		}
@@ -181,10 +187,14 @@ cuda_launch_kernel_common(nv_attach_impl *impl, void *original_fn_ptr,
 		return cudaSuccess;
 	}
 
+	// Late attach: if bootstrap hasn't completed yet, fall back to the
+	// original launch path (bootstrap is kicked off during attach/refresh).
 	if (!impl->is_late_bootstrap_done())
 		return original(func, grid_dim, block_dim, args, shared_mem,
 				stream);
 
+	// Fallback path for late attach: resolve host stub symbol name to
+	// locate the patched CUfunction mapping.
 	if (auto name = impl->resolve_host_function_symbol((void *)func);
 	    name) {
 		if (auto patched = impl->find_patched_kernel_function(*name);
@@ -209,6 +219,9 @@ cuda_launch_kernel_common(nv_attach_impl *impl, void *original_fn_ptr,
 					error_string ? error_string :
 						       "No description");
 				log_cufunc_attrs(*patched);
+				// Preserve target semantics: fall back to
+				// original runtime launch path if patched
+				// launch fails.
 				return original(func, grid_dim, block_dim, args,
 						shared_mem, stream);
 			}
@@ -235,6 +248,7 @@ static void example_listener_on_enter(GumInvocationListener *listener,
 		fat_elf_header_t *curr_header = (fat_elf_header_t *)data;
 		const char *tail = (const char *)curr_header;
 		while (true) {
+			// #define FATBIN_TEXT_MAGIC 0xBA55ED50
 			if (curr_header->magic == 0xBA55ED50) {
 				SPDLOG_DEBUG(
 					"Got CUBIN section header size = {}, size = {}",
@@ -696,6 +710,9 @@ static cudaError_t mirror_cuda_memcpy_from_symbol(
 	auto record_itr = impl->symbol_address_to_fatbin.find((void *)symbol);
 	if (record_itr == impl->symbol_address_to_fatbin.end()) {
 		impl->bootstrap_existing_fatbins_once();
+
+		// Late attach fallback: resolve host symbol name and read from
+		// a patched module global if present.
 		if (auto name =
 			    impl->resolve_host_function_symbol((void *)symbol);
 		    name) {

@@ -9,7 +9,7 @@
 namespace entry_params
 {
 struct EntryParams {
-	std::string save_strategy = "minimal";
+	std::string save_strategy = "minimal"; // "minimal" or "full"
 	bool emit_nops_for_alignment = false;
 	int pad_nops = 0;
 	std::string stub_name;
@@ -28,13 +28,17 @@ static ptxpass::pass_config::PassConfig get_default_config()
 		"Instrument PTX at kprobe entry points, excluding __memcapture";
 	cfg.attach_points.includes = { "^kprobe/.*$" };
 	cfg.attach_points.excludes = { "^kprobe/__memcapture$" };
+	// Parameters:
+	// - insert_globaltimer: legacy flag to control timestamp injection
+	// - stub_name: CUDA device stub used as hook point; calls to this
+	//   function will be rewritten to the eBPF-generated probe PTX.
 	entry_params::EntryParams params;
 	params.save_strategy = "minimal";
 	params.emit_nops_for_alignment = false;
 	params.pad_nops = 0;
 	params.stub_name = "__bpftime_cuda__kernel_trace";
 	cfg.parameters = params;
-	cfg.attach_type = 8;
+	cfg.attach_type = 8; // kprobe
 	return cfg;
 }
 
@@ -105,6 +109,8 @@ extern "C" int process_input(const char *input, int length, char *output)
 	using namespace ptxpass;
 	auto cfg = get_default_config();
 	try {
+		// Decode parameters into a typed struct so extended fields
+		// (like stub_name) remain type-safe.
 		entry_params::EntryParams params =
 			cfg.parameters.get<entry_params::EntryParams>();
 		std::string stub_name = params.stub_name.empty()

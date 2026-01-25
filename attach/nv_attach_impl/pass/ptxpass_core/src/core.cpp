@@ -96,6 +96,7 @@ std::string get_env(const char *key)
 	return v ? std::string(v) : std::string();
 }
 
+// Validation: basic checks as placeholders
 bool validate_input(const std::string &input, const json &validation)
 {
 	if (validation.is_null())

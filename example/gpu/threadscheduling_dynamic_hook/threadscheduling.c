@@ -1,3 +1,6 @@
+// SM/Warp/Lane Mapping - Userspace Loader
+// Displays GPU thread-to-hardware mapping information
+
 #include <signal.h>
 #include <stdio.h>
 #include <time.h>
@@ -55,6 +58,7 @@ static void print_sm_histogram(struct threadscheduling_bpf *obj)
 	uint64_t value;
 	int err;
 
+	// Collect SM data
 	uint64_t sm_counts[MAX_SMS] = {0};
 	uint64_t max_count = 0;
 	uint64_t total_threads = 0;
@@ -90,6 +94,7 @@ static void print_sm_histogram(struct threadscheduling_bpf *obj)
 	printf("\n┌─ SM Utilization Histogram ─────────────────────────────────────────┐\n");
 	printf("│                                                                    │\n");
 
+	// Print histogram bars
 	const int bar_width = 40;
 	for (int i = 0; i <= max_sm; i++) {
 		if (sm_counts[i] > 0) {
@@ -112,6 +117,7 @@ static void print_sm_histogram(struct threadscheduling_bpf *obj)
 	       total_threads, max_sm + 1);
 	printf("└────────────────────────────────────────────────────────────────────┘\n");
 
+	// Calculate load balance score
 	if (max_sm >= 0 && total_threads > 0) {
 		uint64_t ideal_per_sm = total_threads / (max_sm + 1);
 		uint64_t total_deviation = 0;
@@ -222,6 +228,7 @@ static int print_stats(struct threadscheduling_bpf *obj)
 	tm = localtime(&t);
 	strftime(ts, sizeof(ts), "%Y-%m-%d %H:%M:%S", tm);
 
+	// Clear screen for better visualization
 	printf("\033[2J\033[H");
 
 	print_header();
@@ -242,17 +249,21 @@ int main(int argc, char **argv)
 	struct threadscheduling_bpf *skel;
 	int err;
 
+	/* Set up libbpf errors and debug info callback */
 	libbpf_set_print(libbpf_print_fn);
 
+	/* Cleaner handling of Ctrl-C */
 	signal(SIGINT, sig_handler);
 	signal(SIGTERM, sig_handler);
 
+	/* Load and verify BPF application */
 	skel = threadscheduling_bpf__open();
 	if (!skel) {
 		fprintf(stderr, "Failed to open and load BPF skeleton\n");
 		return 1;
 	}
 
+	/* Load & verify BPF programs */
 	err = threadscheduling_bpf__load(skel);
 	if (err) {
 		fprintf(stderr, "Failed to load and verify BPF skeleton\n");
@@ -273,6 +284,7 @@ int main(int argc, char **argv)
 	}
 
 cleanup:
+	/* Clean up */
 	threadscheduling_bpf__destroy(skel);
 
 	return err < 0 ? -err : 0;
