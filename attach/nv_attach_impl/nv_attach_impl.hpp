@@ -5,6 +5,7 @@
 #include "ptx_compiler/ptx_compiler.hpp"
 #include "ptxpass/core.hpp"
 #include <base_attach_impl.hpp>
+#include <chrono>
 #include <cstdint>
 #include <cuda_runtime.h>
 #include <cuda_runtime_api.h>
@@ -26,6 +27,7 @@
 #include <tuple>
 #include <variant>
 #include <vector>
+#include <atomic>
 
 namespace bpftime
 {
@@ -113,6 +115,29 @@ struct pass_cfg_with_exec_path {
 	}
 };
 
+struct nv_attach_hook_state {
+	// Active impl instance used by global Frida replace hooks.
+	std::atomic<class nv_attach_impl *> active_impl{ nullptr };
+	// Original function pointers captured by gum_interceptor_replace.
+	std::atomic<void *> orig_cuda_launch_kernel{ nullptr };
+	std::atomic<void *> orig_cuda_launch_kernel_ptsz{ nullptr };
+	std::atomic<void *> orig_cu_graph_add_kernel_node_v1{ nullptr };
+	std::atomic<void *> orig_cu_graph_add_kernel_node_v2{ nullptr };
+	std::atomic<void *> orig_cu_graph_exec_kernel_node_set_params_v1{ nullptr };
+	std::atomic<void *> orig_cu_graph_exec_kernel_node_set_params_v2{ nullptr };
+	std::atomic<void *> orig_cu_graph_kernel_node_set_params_v1{ nullptr };
+	std::atomic<void *> orig_cu_graph_kernel_node_set_params_v2{ nullptr };
+	std::atomic<void *> orig_cuda_memcpy_from_symbol{ nullptr };
+	std::atomic<void *> orig_cuda_memcpy_from_symbol_async{ nullptr };
+
+	// Whether Frida replace hooks have been installed in this process.
+	std::atomic<bool> replacements_installed{ false };
+};
+
+nv_attach_hook_state &nv_attach_get_hook_state();
+void nv_attach_set_active_impl(class nv_attach_impl *impl);
+class nv_attach_impl *nv_attach_get_active_impl();
+
 // Attach implementation of syscall trace
 // It provides a callback to receive original syscall calls, and dispatch the
 // concrete stuff to individual callbacks
@@ -152,10 +177,27 @@ class nv_attach_impl final : public base_attach_impl {
 					    CUfunction function);
 	std::optional<CUfunction>
 	find_patched_kernel_function(const std::string &kernel_name) const;
+	// Notify nv_attach_impl that a patched kernel launch was enqueued on a
+	// stream. Used to coordinate detach with in-flight patched kernels so we
+	// don't tear down loader-owned CUDA IPC buffers prematurely.
+	void record_patched_launch(cudaStream_t stream);
 	void record_original_cufunction_name(CUfunction function,
 					     const std::string &kernel_name);
 	std::optional<std::string>
 	find_original_kernel_name(CUfunction function) const;
+			// Late attach support: attempt to discover already-loaded CUDA fatbins and
+		// prefill patched kernel mappings.
+		void bootstrap_existing_fatbins_once();
+		void start_late_bootstrap_async();
+		bool is_late_bootstrap_done() const noexcept
+		{
+			return late_bootstrap_done.load(std::memory_order_acquire);
+		}
+		// Resolve host-side kernel stub to symbol name. Uses dladdr first, then a
+		// cached ELF symbol table fallback.
+		std::optional<std::string> resolve_host_function_symbol(void *addr);
+	// Whether nv_attach is currently enabled (can be disabled by detach).
+	bool is_enabled() const noexcept;
 	std::vector<std::unique_ptr<fatbin_record>> fatbin_records;
 	fatbin_record *current_fatbin = nullptr;
 	std::map<void *, fatbin_record *> symbol_address_to_fatbin;
@@ -184,7 +226,17 @@ class nv_attach_impl final : public base_attach_impl {
 	void *original_cuda_memcpy_from_symbol = nullptr;
 	void *original_cuda_memcpy_from_symbol_async = nullptr;
 
-    private:
+	    private:
+		void record_patched_launch_event(CUstream stream);
+		void wait_for_patched_launch_events(std::chrono::milliseconds timeout);
+		void clear_patched_state_for_next_session();
+
+		void bootstrap_existing_fatbins();
+		void reset_late_bootstrap_state_for_next_attach();
+		void build_host_symbol_cache_once();
+		void prefill_patched_kernel_functions_from_loaded_fatbins();
+		std::vector<std::string> collect_all_kernels_to_patch() const;
+
 	void *frida_interceptor;
 	void *frida_listener;
 	std::vector<std::unique_ptr<CUDARuntimeFunctionHookerContext>>
@@ -198,7 +250,33 @@ class nv_attach_impl final : public base_attach_impl {
 	mutable std::mutex cuda_symbol_map_mutex;
 	std::unordered_map<std::string, CUfunction> patched_kernel_by_name;
 	std::unordered_map<CUfunction, std::string> kernel_name_by_cufunction;
-};
+
+			std::atomic<bool> enabled{ true };
+			// Late bootstrap needs to be repeatable across trace sessions.
+			// Using a heap-allocated once_flag allows resetting it after detach.
+			std::unique_ptr<std::once_flag> late_bootstrap_once =
+				std::make_unique<std::once_flag>();
+			std::atomic<bool> late_bootstrap_started{ false };
+			std::atomic<bool> late_bootstrap_done{ false };
+			std::mutex late_bootstrap_mutex;
+			std::once_flag host_symbol_cache_once;
+			mutable std::mutex host_symbol_cache_mutex;
+	// Absolute address sorted list of host function symbols across loaded
+	// modules (best-effort).
+	struct host_symbol_range {
+		std::uintptr_t start = 0;
+		std::uintptr_t end = 0;
+		std::string name;
+	};
+	std::vector<host_symbol_range> host_symbol_ranges;
+
+		mutable std::mutex patched_global_cache_mutex;
+		std::unordered_map<std::string, std::pair<CUdeviceptr, size_t>>
+			patched_global_by_name;
+
+		mutable std::mutex launch_event_mutex;
+		std::unordered_map<CUstream, CUevent> pending_launch_events_by_stream;
+	};
 
 std::string add_semicolon_for_variable_lines(std::string input);
 } // namespace attach

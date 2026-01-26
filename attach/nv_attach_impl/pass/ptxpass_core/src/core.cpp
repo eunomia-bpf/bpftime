@@ -221,13 +221,11 @@ std::string compile_ebpf_to_ptx_from_words(
 		throw std::runtime_error("Unable to produce PTX from eBPF");
 	}
 	std::string filtered_ptx;
+	filtered_ptx = filter_compiled_ptx_for_ebpf_program(original_ptx);
 	if (add_register_guard_and_filter_version_headers) {
 		filtered_ptx =
 			bpftime::attach::add_register_guard_for_ebpf_ptx_func(
-				filter_compiled_ptx_for_ebpf_program(
-					original_ptx));
-	} else {
-		filtered_ptx = original_ptx;
+				filtered_ptx);
 	}
 	return filtered_ptx;
 }

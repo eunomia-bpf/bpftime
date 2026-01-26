@@ -8,7 +8,7 @@
 #include <cassert>
 #include <set>
 #include <unordered_map>
-#if __linux__
+#if defined(__linux__)
 #include "linux/perf_event.h"
 #elif __APPLE__
 #include "bpftime_epoll.h"
@@ -130,16 +130,9 @@ class syscall_context {
 		// unset the LD_PRELOAD env var after syscall context being
 		// initialized
 		unsetenv("LD_PRELOAD");
-		SPDLOG_DEBUG(
-			"Function addrs: {:x} {:x} {:x} {:x} {:x} {:x} {:x} {:x} {:x} {:x} {:x}",
-			(uintptr_t)orig_epoll_wait_fn,
-			(uintptr_t)orig_epoll_ctl_fn,
-			(uintptr_t)orig_epoll_create1_fn,
-			(uintptr_t)orig_ioctl_fn, (uintptr_t)orig_syscall_fn,
-			(uintptr_t)orig_mmap64_fn, (uintptr_t)orig_close_fn,
-			(uintptr_t)orig_munmap_fn, (uintptr_t)orig_mmap_fn,
-			(uintptr_t)orig_openat_fn, (uintptr_t)orig_open_fn,
-			(uintptr_t)orig_fopen_fn);
+		// Keep this log allocation-free. spdlog/fmt may throw in extremely
+		// early init paths (and will print "[*** LOG ERROR ***]").
+		SPDLOG_DEBUG("Resolved original libc function pointers");
 	}
 
 	int create_kernel_bpf_map(int fd, int bpftime_map_type);

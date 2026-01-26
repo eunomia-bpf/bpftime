@@ -9,6 +9,7 @@
 #include "cuda.h"
 #endif
 #include "syscall_context.hpp"
+#include <fcntl.h>
 #include <filesystem>
 #include <memory>
 #include <mutex>
@@ -47,7 +48,8 @@ void start_up(syscall_context &ctx)
 		SPDLOG_INFO("Initialize syscall server");
 
 		bpftime_initialize_global_shm(
-			shm_open_type::SHM_REMOVE_AND_CREATE);
+			shm_open_type::SHM_CREATE_OR_OPEN);
+		shm_holder.global_shared_memory.begin_new_session();
 		shm_holder.global_shared_memory.set_mock_setter([&](bool flg) {
 			ctx.enable_mock_after_initialized = flg;
 			SPDLOG_INFO(
@@ -55,39 +57,41 @@ void start_up(syscall_context &ctx)
 				ctx.enable_mock_after_initialized);
 		});
 #ifdef ENABLE_BPFTIME_VERIFIER
-	std::vector<int32_t> helper_ids;
-	std::map<int32_t, bpftime::verifier::BpftimeHelperProrotype>
-		non_kernel_helpers;
-	if (agent_config.enable_kernel_helper_group) {
-		for (auto x :
-		     bpftime_helper_group::get_kernel_utils_helper_group()
-			     .get_helper_ids()) {
-			helper_ids.push_back(x);
+		std::vector<int32_t> helper_ids;
+		std::map<int32_t, bpftime::verifier::BpftimeHelperProrotype>
+			non_kernel_helpers;
+		if (agent_config.enable_kernel_helper_group) {
+			for (auto x :
+			     bpftime_helper_group::get_kernel_utils_helper_group()
+				     .get_helper_ids()) {
+				helper_ids.push_back(x);
+			}
 		}
-	}
-	if (agent_config.enable_shm_maps_helper_group) {
-		for (auto x : bpftime_helper_group::get_shm_maps_helper_group()
-				      .get_helper_ids()) {
-			helper_ids.push_back(x);
+		if (agent_config.enable_shm_maps_helper_group) {
+			for (auto x :
+			     bpftime_helper_group::get_shm_maps_helper_group()
+				     .get_helper_ids()) {
+				helper_ids.push_back(x);
+			}
 		}
-	}
-	if (agent_config.enable_ufunc_helper_group) {
-		for (auto x : bpftime_helper_group::get_shm_maps_helper_group()
-				      .get_helper_ids()) {
-			helper_ids.push_back(x);
+		if (agent_config.enable_ufunc_helper_group) {
+			for (auto x :
+			     bpftime_helper_group::get_shm_maps_helper_group()
+				     .get_helper_ids()) {
+				helper_ids.push_back(x);
+			}
+			// non_kernel_helpers =
+			for (const auto &[k, v] : get_ufunc_helper_protos()) {
+				non_kernel_helpers[k] = v;
+			}
 		}
-		// non_kernel_helpers =
-		for (const auto &[k, v] : get_ufunc_helper_protos()) {
-			non_kernel_helpers[k] = v;
-		}
-	}
-	verifier::set_available_helpers(helper_ids);
-	SPDLOG_INFO("Enabling {} helpers", helper_ids.size());
-	verifier::set_non_kernel_helpers(non_kernel_helpers);
+		verifier::set_available_helpers(helper_ids);
+		SPDLOG_INFO("Enabling {} helpers", helper_ids.size());
+		verifier::set_non_kernel_helpers(non_kernel_helpers);
 #endif
 		bpftime_set_agent_config(std::move(agent_config));
-		// Set a variable to indicate the program that it's controlled by
-		// bpftime
+		// Set a variable to indicate the program that it's controlled
+		// by bpftime
 		setenv("BPFTIME_USED", "1", 0);
 		SPDLOG_DEBUG("Set environment variable BPFTIME_USED");
 		SPDLOG_INFO("bpftime-syscall-server started");
@@ -174,6 +178,14 @@ create_mocked_file_based_on_full_path(const std::filesystem::path &path)
 		SPDLOG_DEBUG("{} is uretprobe bit file", path.c_str());
 		return std::make_unique<mocked_file_provider>(
 			"config:" + std::to_string(MOCKED_URETPROBE_BIT));
+	} else if (path == KPROBE_TYPE_FILE_NAME) {
+		SPDLOG_DEBUG("{} is kprobe type file", path.c_str());
+		return std::make_unique<mocked_file_provider>(
+			std::to_string(MOCKED_KPROBE_TYPE_VALUE));
+	} else if (path == KRETPROBE_BIT_FILE_NAME) {
+		SPDLOG_DEBUG("{} is kretprobe bit file", path.c_str());
+		return std::make_unique<mocked_file_provider>(
+			"config:" + std::to_string(MOCKED_KRETPROBE_BIT));
 	} else {
 		SPDLOG_DEBUG("Unmocked file path: {}", path.c_str());
 		return {};
@@ -183,6 +195,15 @@ create_mocked_file_based_on_full_path(const std::filesystem::path &path)
 std::optional<std::filesystem::path>
 resolve_filename_and_fd_to_full_path(int fd, const char *file)
 {
+	if (file == nullptr) {
+		return {};
+	}
+	if (file[0] == '/') {
+		return std::filesystem::path(file);
+	}
+	if (fd == AT_FDCWD) {
+		return std::filesystem::path(file);
+	}
 	std::error_code ec;
 	auto dir_path = std::filesystem::read_symlink(
 		"/proc/self/fd/" + std::to_string(fd), ec);
