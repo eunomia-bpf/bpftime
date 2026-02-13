@@ -37,10 +37,10 @@ In another shell, Run the target program with eBPF inside:
 
 ```console
 $ bpftime start ./example/malloc/victim
-Hello malloc!
 malloc called from pid 250215
 continue malloc...
 malloc called from pid 250215
+continue malloc...
 ```
 
 You can also dynamically attach the eBPF program with a running process:

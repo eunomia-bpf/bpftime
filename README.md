@@ -61,10 +61,10 @@ In another shell, Run the target program with eBPF inside:
 
 ```console
 $ bpftime start ./example/malloc/victim
-Hello malloc!
 malloc called from pid 250215
 continue malloc...
 malloc called from pid 250215
+continue malloc...
 ```
 
 You should always run the `load` first then run the `start` command, or the eBPF program will not be attached.
