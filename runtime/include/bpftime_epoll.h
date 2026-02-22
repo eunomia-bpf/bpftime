@@ -14,14 +14,13 @@
 
 #define EPOLLIN 0x001
 #define BPF_OBJ_NAME_LEN 16U
-#define BPF_TAG_SIZE 8
-#define offsetofend(type, member)                                              \
-	(offsetof(type, member) + sizeof(((type *)0)->member))
+#define BPF_TAG_SIZE	8
+#define offsetofend(type, member) (offsetof(type, member) + sizeof(((type *)0)->member))
+
+
 
 #ifndef __NR_bpf
-#define __NR_bpf                                                               \
-	515 // This is a placeholder value. Linux assigns syscall numbers
-	    // dynamically.
+#define __NR_bpf 515 // This is a placeholder value. Linux assigns syscall numbers dynamically.
 #endif
 
 #if __GNUC__ >= 4
@@ -31,75 +30,63 @@
 #endif
 
 #ifndef __NR_perf_event_open
-#define __NR_perf_event_open                                                   \
-	516 // This is a placeholder value. Linux assigns syscall numbers
-	    // dynamically.
+#define __NR_perf_event_open 516 // This is a placeholder value. Linux assigns syscall numbers dynamically.
 #endif
 
-#ifndef __NR_dup3
-#define __NR_dup3 292 // Linux syscall number (not available on macOS)
-#endif
-
-#ifndef __NR_memfd_create
-#define __NR_memfd_create 319 // Linux syscall number (not available on macOS)
-#endif
-
-// Define a placeholder for PERF_EVENT_IOC_ENABLE. macOS doesn't have any
-// equivalent for ioctl
+// Define a placeholder for PERF_EVENT_IOC_ENABLE. macOS doesn't have any equivalent for ioctl 
 #define PERF_EVENT_IOC_ENABLE 0
 // Define a placeholder for PERF_EVENT_IOC_DISABLE
-#define PERF_EVENT_IOC_DISABLE 1
+#define PERF_EVENT_IOC_DISABLE 1 
 // Define a placeholder for PERF_EVENT_IOC_SET_BPF
 #define PERF_EVENT_IOC_SET_BPF 2
 
-/* Valid opcodes to issue to sys_epoll_ctl() */
-// link:
-// https://github.com/torvalds/linux/blob/2ef5971ff345d3c000873725db555085e0131961/include/uapi/linux/eventpoll.h#L26
+/* Valid opcodes to issue to sys_epoll_ctl() */ 
+// link: https://github.com/torvalds/linux/blob/2ef5971ff345d3c000873725db555085e0131961/include/uapi/linux/eventpoll.h#L26
 #define EPOLL_CTL_ADD 1
 
 // https://github.com/torvalds/linux/blob/2ef5971ff345d3c000873725db555085e0131961/include/uapi/linux/bpf.h#L18
-#define BPF_ALU64 0x07 /* alu mode in double word width */
-#define BPF_MOV 0xb0 /* mov reg to reg */
-#define BPF_K                                                                  \
-	0x00 // https://github.com/torvalds/linux/blob/2ef5971ff345d3c000873725db555085e0131961/include/uapi/linux/bpf_common.h#L12
-#define BPF_JMP 0x05
-#define BPF_EXIT 0x90 /* function return */
+#define BPF_ALU64	0x07	/* alu mode in double word width */
+#define BPF_MOV		0xb0	/* mov reg to reg */
+#define		BPF_K		0x00 //https://github.com/torvalds/linux/blob/2ef5971ff345d3c000873725db555085e0131961/include/uapi/linux/bpf_common.h#L12
+#define		BPF_JMP		0x05
+#define BPF_EXIT	0x90	/* function return */
 union epoll_data {
-	void *ptr;
-	int fd;
-	uint32_t u32;
-	uint64_t u64;
-};
+           void     *ptr;
+           int       fd;
+           uint32_t  u32;
+           uint64_t  u64;
+       };
 
-typedef union epoll_data epoll_data_t;
+typedef union epoll_data  epoll_data_t;
 struct epoll_event {
-	uint32_t events; /* Epoll events */
-	epoll_data_t data; /* User data variable */
-};
+           uint32_t      events;  /* Epoll events */
+           epoll_data_t  data;    /* User data variable */
+       };
 typedef uint64_t __u64;
 typedef uint64_t __aligned_u64;
 typedef uint32_t __u32;
 typedef uint16_t __u16;
-typedef uint8_t __u8;
+typedef uint8_t  __u8;
 
-typedef int16_t __s16;
-typedef int32_t __s32;
-typedef int64_t __s64;
+typedef int16_t  __s16;
+typedef int32_t  __s32;
+typedef int64_t  __s64;
 
 typedef off_t off64_t;
 
 struct perf_event_header {
-	__u32 type;
-	__u16 misc;
-	__u16 size;
-};
+        __u32 type;
+        __u16 misc;
+        __u16 size;
+    };
 
 /*
 https://github.com/torvalds/linux/blob/f06ce441457d4abc4d76be7acba26868a2d02b1c/include/uapi/linux/perf_event.h#L571
 */
 struct perf_event_mmap_page {
-	__u32 version; /* version number of this structure */
-	__u32 compat_version; /* lowest version this is compat with */
+
+	__u32	version;		/* version number of this structure */
+	__u32	compat_version;		/* lowest version this is compat with */
 
 	/*
 	 * Bits needed to read the hw events in user-space.
@@ -136,31 +123,22 @@ struct perf_event_mmap_page {
 	 * NOTE: for obvious reason this only works on self-monitoring
 	 *       processes.
 	 */
-	__u32 lock; /* seqlock for synchronization */
-	__u32 index; /* hardware event identifier */
-	__s64 offset; /* add to hardware event value */
-	__u64 time_enabled; /* time event active */
-	__u64 time_running; /* time event on cpu */
+	__u32	lock;			/* seqlock for synchronization */
+	__u32	index;			/* hardware event identifier */
+	__s64	offset;			/* add to hardware event value */
+	__u64	time_enabled;		/* time event active */
+	__u64	time_running;		/* time event on cpu */
 	union {
-		__u64 capabilities;
+		__u64	capabilities;
 		struct {
-			__u64 cap_bit0 : 1, /* Always 0, deprecated, see commit
-					       860f085b74e9 */
-				cap_bit0_is_deprecated : 1, /* Always 1, signals
-							       that bit 0 is
-							       zero */
+			__u64	cap_bit0		: 1, /* Always 0, deprecated, see commit 860f085b74e9 */
+				cap_bit0_is_deprecated	: 1, /* Always 1, signals that bit 0 is zero */
 
-				cap_user_rdpmc : 1, /* The RDPMC instruction can
-						       be used to read counts */
-				cap_user_time : 1, /* The
-						      time_{shift,mult,offset}
-						      fields are used */
-				cap_user_time_zero : 1, /* The time_zero field
-							   is used */
-				cap_user_time_short : 1, /* the
-							    time_{cycle,mask}
-							    fields are used */
-				cap_____res : 58;
+				cap_user_rdpmc		: 1, /* The RDPMC instruction can be used to read counts */
+				cap_user_time		: 1, /* The time_{shift,mult,offset} fields are used */
+				cap_user_time_zero	: 1, /* The time_zero field is used */
+				cap_user_time_short	: 1, /* the time_{cycle,mask} fields are used */
+				cap_____res		: 58;
 		};
 	};
 
@@ -173,7 +151,7 @@ struct perf_event_mmap_page {
 	 *   pmc >>= 64 - width; // signed shift right
 	 *   count += pmc;
 	 */
-	__u16 pmc_width;
+	__u16	pmc_width;
 
 	/*
 	 * If cap_usr_time the below fields can be used to compute the time
@@ -199,9 +177,9 @@ struct perf_event_mmap_page {
 	 *   rem  = count % running;
 	 *   count = quot * enabled + (rem * enabled) / running;
 	 */
-	__u16 time_shift;
-	__u32 time_mult;
-	__u64 time_offset;
+	__u16	time_shift;
+	__u32	time_mult;
+	__u64	time_offset;
 	/*
 	 * If cap_usr_time_zero, the hardware clock (e.g. TSC) can be calculated
 	 * from sample timestamps.
@@ -218,10 +196,10 @@ struct perf_event_mmap_page {
 	 *   timestamp = time_zero + quot * time_mult +
 	 *               ((rem * time_mult) >> time_shift);
 	 */
-	__u64 time_zero;
+	__u64	time_zero;
 
-	__u32 size; /* Header size up to __reserved[] fields. */
-	__u32 __reserved_1;
+	__u32	size;			/* Header size up to __reserved[] fields. */
+	__u32	__reserved_1;
 
 	/*
 	 * If cap_usr_time_short, the hardware clock is less than 64bit wide
@@ -234,14 +212,14 @@ struct perf_event_mmap_page {
 	 *       know about cap_usr_time_short still works under the assumption
 	 *       the counter doesn't wrap.
 	 */
-	__u64 time_cycles;
-	__u64 time_mask;
+	__u64	time_cycles;
+	__u64	time_mask;
 
-	/*
-	 * Hole for extension of the self monitor capabilities
-	 */
+		/*
+		 * Hole for extension of the self monitor capabilities
+		 */
 
-	__u8 __reserved[116 * 8]; /* align to 1k. */
+	__u8	__reserved[116*8];	/* align to 1k. */
 
 	/*
 	 * Control data for the mmap() data buffer.
@@ -259,10 +237,10 @@ struct perf_event_mmap_page {
 	 * data_{offset,size} indicate the location and size of the perf record
 	 * buffer within the mmapped area.
 	 */
-	__u64 data_head; /* head in the data section */
-	__u64 data_tail; /* user-space written tail */
-	__u64 data_offset; /* where the buffer starts */
-	__u64 data_size; /* data buffer size */
+	__u64   data_head;		/* head in the data section */
+	__u64	data_tail;		/* user-space written tail */
+	__u64	data_offset;		/* where the buffer starts */
+	__u64	data_size;		/* data buffer size */
 
 	/*
 	 * AUX area is defined by aux_{offset,size} fields that should be set
@@ -275,11 +253,12 @@ struct perf_event_mmap_page {
 	 * Ring buffer pointers aux_{head,tail} have the same semantics as
 	 * data_{head,tail} and same ordering rules apply.
 	 */
-	__u64 aux_head;
-	__u64 aux_tail;
-	__u64 aux_offset;
-	__u64 aux_size;
+	__u64	aux_head;
+	__u64	aux_tail;
+	__u64	aux_offset;
+	__u64	aux_size;
 };
+
 
 enum perf_event_type {
 
@@ -322,7 +301,7 @@ enum perf_event_type {
 	 * 	struct sample_id		sample_id;
 	 * };
 	 */
-	PERF_RECORD_MMAP = 1,
+	PERF_RECORD_MMAP			= 1,
 
 	/*
 	 * struct {
@@ -332,7 +311,7 @@ enum perf_event_type {
 	 * 	struct sample_id		sample_id;
 	 * };
 	 */
-	PERF_RECORD_LOST = 2,
+	PERF_RECORD_LOST			= 2,
 
 	/*
 	 * struct {
@@ -343,7 +322,7 @@ enum perf_event_type {
 	 * 	struct sample_id		sample_id;
 	 * };
 	 */
-	PERF_RECORD_COMM = 3,
+	PERF_RECORD_COMM			= 3,
 
 	/*
 	 * struct {
@@ -354,7 +333,7 @@ enum perf_event_type {
 	 * 	struct sample_id		sample_id;
 	 * };
 	 */
-	PERF_RECORD_EXIT = 4,
+	PERF_RECORD_EXIT			= 4,
 
 	/*
 	 * struct {
@@ -365,8 +344,8 @@ enum perf_event_type {
 	 * 	struct sample_id		sample_id;
 	 * };
 	 */
-	PERF_RECORD_THROTTLE = 5,
-	PERF_RECORD_UNTHROTTLE = 6,
+	PERF_RECORD_THROTTLE			= 5,
+	PERF_RECORD_UNTHROTTLE			= 6,
 
 	/*
 	 * struct {
@@ -377,7 +356,7 @@ enum perf_event_type {
 	 * 	struct sample_id		sample_id;
 	 * };
 	 */
-	PERF_RECORD_FORK = 7,
+	PERF_RECORD_FORK			= 7,
 
 	/*
 	 * struct {
@@ -388,7 +367,7 @@ enum perf_event_type {
 	 * 	struct sample_id		sample_id;
 	 * };
 	 */
-	PERF_RECORD_READ = 8,
+	PERF_RECORD_READ			= 8,
 
 	/*
 	 * struct {
@@ -435,8 +414,7 @@ enum perf_event_type {
 	 *      } && PERF_SAMPLE_BRANCH_STACK
 	 *
 	 * 	{ u64			abi; # enum perf_sample_regs_abi
-	 * 	  u64			regs[weight(mask)]; } &&
-	 *PERF_SAMPLE_REGS_USER
+	 * 	  u64			regs[weight(mask)]; } && PERF_SAMPLE_REGS_USER
 	 *
 	 * 	{ u64			size;
 	 * 	  char			data[size];
@@ -461,17 +439,17 @@ enum perf_event_type {
 	 *	 }
 	 *	}
 	 *	{ u64			data_src; } && PERF_SAMPLE_DATA_SRC
-	 *	{ u64			transaction; } &&
-	 *PERF_SAMPLE_TRANSACTION { u64			abi; # enum
-	 *perf_sample_regs_abi u64			regs[weight(mask)]; } &&
-	 *PERF_SAMPLE_REGS_INTR { u64			phys_addr;} &&
-	 *PERF_SAMPLE_PHYS_ADDR { u64			size; char
-	 *data[size]; } && PERF_SAMPLE_AUX { u64
-	 *data_page_size;} && PERF_SAMPLE_DATA_PAGE_SIZE { u64
-	 *code_page_size;} && PERF_SAMPLE_CODE_PAGE_SIZE
+	 *	{ u64			transaction; } && PERF_SAMPLE_TRANSACTION
+	 *	{ u64			abi; # enum perf_sample_regs_abi
+	 *	  u64			regs[weight(mask)]; } && PERF_SAMPLE_REGS_INTR
+	 *	{ u64			phys_addr;} && PERF_SAMPLE_PHYS_ADDR
+	 *	{ u64			size;
+	 *	  char			data[size]; } && PERF_SAMPLE_AUX
+	 *	{ u64			data_page_size;} && PERF_SAMPLE_DATA_PAGE_SIZE
+	 *	{ u64			code_page_size;} && PERF_SAMPLE_CODE_PAGE_SIZE
 	 * };
 	 */
-	PERF_RECORD_SAMPLE = 9,
+	PERF_RECORD_SAMPLE			= 9,
 
 	/*
 	 * The MMAP2 records are an augmented version of MMAP, they add
@@ -503,7 +481,7 @@ enum perf_event_type {
 	 * 	struct sample_id		sample_id;
 	 * };
 	 */
-	PERF_RECORD_MMAP2 = 10,
+	PERF_RECORD_MMAP2			= 10,
 
 	/*
 	 * Records that new data landed in the AUX buffer part.
@@ -517,7 +495,7 @@ enum perf_event_type {
 	 * 	struct sample_id		sample_id;
 	 * };
 	 */
-	PERF_RECORD_AUX = 11,
+	PERF_RECORD_AUX				= 11,
 
 	/*
 	 * Indicates that instruction trace has started
@@ -529,7 +507,7 @@ enum perf_event_type {
 	 *	struct sample_id		sample_id;
 	 * };
 	 */
-	PERF_RECORD_ITRACE_START = 12,
+	PERF_RECORD_ITRACE_START		= 12,
 
 	/*
 	 * Records the dropped/lost sample number.
@@ -541,7 +519,7 @@ enum perf_event_type {
 	 *	struct sample_id		sample_id;
 	 * };
 	 */
-	PERF_RECORD_LOST_SAMPLES = 13,
+	PERF_RECORD_LOST_SAMPLES		= 13,
 
 	/*
 	 * Records a context switch in or out (flagged by
@@ -553,7 +531,7 @@ enum perf_event_type {
 	 *	struct sample_id		sample_id;
 	 * };
 	 */
-	PERF_RECORD_SWITCH = 14,
+	PERF_RECORD_SWITCH			= 14,
 
 	/*
 	 * CPU-wide version of PERF_RECORD_SWITCH with next_prev_pid and
@@ -567,7 +545,7 @@ enum perf_event_type {
 	 *	struct sample_id		sample_id;
 	 * };
 	 */
-	PERF_RECORD_SWITCH_CPU_WIDE = 15,
+	PERF_RECORD_SWITCH_CPU_WIDE		= 15,
 
 	/*
 	 * struct {
@@ -579,7 +557,7 @@ enum perf_event_type {
 	 *	struct sample_id		sample_id;
 	 * };
 	 */
-	PERF_RECORD_NAMESPACES = 16,
+	PERF_RECORD_NAMESPACES			= 16,
 
 	/*
 	 * Record ksymbol register/unregister events:
@@ -594,7 +572,7 @@ enum perf_event_type {
 	 *	struct sample_id		sample_id;
 	 * };
 	 */
-	PERF_RECORD_KSYMBOL = 17,
+	PERF_RECORD_KSYMBOL			= 17,
 
 	/*
 	 * Record bpf events:
@@ -613,7 +591,7 @@ enum perf_event_type {
 	 *	struct sample_id		sample_id;
 	 * };
 	 */
-	PERF_RECORD_BPF_EVENT = 18,
+	PERF_RECORD_BPF_EVENT			= 18,
 
 	/*
 	 * struct {
@@ -623,7 +601,7 @@ enum perf_event_type {
 	 *	struct sample_id		sample_id;
 	 * };
 	 */
-	PERF_RECORD_CGROUP = 19,
+	PERF_RECORD_CGROUP			= 19,
 
 	/*
 	 * Records changes to kernel text i.e. self-modified code. 'old_len' is
@@ -641,7 +619,7 @@ enum perf_event_type {
 	 *	struct sample_id		sample_id;
 	 * };
 	 */
-	PERF_RECORD_TEXT_POKE = 20,
+	PERF_RECORD_TEXT_POKE			= 20,
 
 	/*
 	 * Data written to the AUX area by hardware due to aux_output, may need
@@ -656,121 +634,119 @@ enum perf_event_type {
 	 *	struct sample_id		sample_id;
 	 * };
 	 */
-	PERF_RECORD_AUX_OUTPUT_HW_ID = 21,
+	PERF_RECORD_AUX_OUTPUT_HW_ID		= 21,
 
-	PERF_RECORD_MAX, /* non-ABI */
+	PERF_RECORD_MAX,			/* non-ABI */
 
 };
 
 struct perf_event_attr {
-	/*
+/*
 	 * Major type: hardware/software/tracepoint/etc.
 	 */
-	__u32 type;
+	__u32			type;
 
 	/*
 	 * Size of the attr structure, for fwd/bwd compat.
 	 */
-	__u32 size;
+	__u32			size;
 
 	/*
 	 * Type specific configuration information.
 	 */
-	__u64 config;
+	__u64			config;
 
 	union {
-		__u64 sample_period;
-		__u64 sample_freq;
+		__u64		sample_period;
+		__u64		sample_freq;
 	};
 
-	__u64 sample_type;
-	__u64 read_format;
+	__u64			sample_type;
+	__u64			read_format;
 
-	__u64 disabled : 1, /* off by default        */
-		inherit : 1, /* children inherit it   */
-		pinned : 1, /* must always be on PMU */
-		exclusive : 1, /* only group on PMU     */
-		exclude_user : 1, /* don't count user      */
-		exclude_kernel : 1, /* ditto kernel          */
-		exclude_hv : 1, /* ditto hypervisor      */
-		exclude_idle : 1, /* don't count when idle */
-		mmap : 1, /* include mmap data     */
-		comm : 1, /* include comm data     */
-		freq : 1, /* use freq, not period  */
-		inherit_stat : 1, /* per task counts       */
-		enable_on_exec : 1, /* next exec enables     */
-		task : 1, /* trace fork/exit       */
-		watermark : 1, /* wakeup_watermark      */
-		/*
-		 * precise_ip:
-		 *
-		 *  0 - SAMPLE_IP can have arbitrary skid
-		 *  1 - SAMPLE_IP must have constant skid
-		 *  2 - SAMPLE_IP requested to have 0 skid
-		 *  3 - SAMPLE_IP must have 0 skid
-		 *
-		 *  See also PERF_RECORD_MISC_EXACT_IP
-		 */
-		precise_ip : 2, /* skid constraint       */
-		mmap_data : 1, /* non-exec mmap data    */
-		sample_id_all : 1, /* sample_type all events */
+	__u64			disabled       :  1, /* off by default        */
+				inherit	       :  1, /* children inherit it   */
+				pinned	       :  1, /* must always be on PMU */
+				exclusive      :  1, /* only group on PMU     */
+				exclude_user   :  1, /* don't count user      */
+				exclude_kernel :  1, /* ditto kernel          */
+				exclude_hv     :  1, /* ditto hypervisor      */
+				exclude_idle   :  1, /* don't count when idle */
+				mmap           :  1, /* include mmap data     */
+				comm	       :  1, /* include comm data     */
+				freq           :  1, /* use freq, not period  */
+				inherit_stat   :  1, /* per task counts       */
+				enable_on_exec :  1, /* next exec enables     */
+				task           :  1, /* trace fork/exit       */
+				watermark      :  1, /* wakeup_watermark      */
+				/*
+				 * precise_ip:
+				 *
+				 *  0 - SAMPLE_IP can have arbitrary skid
+				 *  1 - SAMPLE_IP must have constant skid
+				 *  2 - SAMPLE_IP requested to have 0 skid
+				 *  3 - SAMPLE_IP must have 0 skid
+				 *
+				 *  See also PERF_RECORD_MISC_EXACT_IP
+				 */
+				precise_ip     :  2, /* skid constraint       */
+				mmap_data      :  1, /* non-exec mmap data    */
+				sample_id_all  :  1, /* sample_type all events */
 
-		exclude_host : 1, /* don't count in host   */
-		exclude_guest : 1, /* don't count in guest  */
+				exclude_host   :  1, /* don't count in host   */
+				exclude_guest  :  1, /* don't count in guest  */
 
-		exclude_callchain_kernel : 1, /* exclude kernel callchains */
-		exclude_callchain_user : 1, /* exclude user callchains */
-		mmap2 : 1, /* include mmap with inode data     */
-		comm_exec : 1, /* flag comm events that are due to an exec */
-		use_clockid : 1, /* use @clockid for time fields */
-		context_switch : 1, /* context switch data */
-		write_backward : 1, /* Write ring buffer from end to beginning
-				     */
-		namespaces : 1, /* include namespaces data */
-		ksymbol : 1, /* include ksymbol events */
-		bpf_event : 1, /* include bpf events */
-		aux_output : 1, /* generate AUX records instead of events */
-		cgroup : 1, /* include cgroup events */
-		text_poke : 1, /* include text poke events */
-		build_id : 1, /* use build id in mmap2 events */
-		inherit_thread : 1, /* children only inherit if cloned with
-				       CLONE_THREAD */
-		remove_on_exec : 1, /* event is removed from task on exec */
-		sigtrap : 1, /* send synchronous SIGTRAP on event */
-		__reserved_1 : 26;
+				exclude_callchain_kernel : 1, /* exclude kernel callchains */
+				exclude_callchain_user   : 1, /* exclude user callchains */
+				mmap2          :  1, /* include mmap with inode data     */
+				comm_exec      :  1, /* flag comm events that are due to an exec */
+				use_clockid    :  1, /* use @clockid for time fields */
+				context_switch :  1, /* context switch data */
+				write_backward :  1, /* Write ring buffer from end to beginning */
+				namespaces     :  1, /* include namespaces data */
+				ksymbol        :  1, /* include ksymbol events */
+				bpf_event      :  1, /* include bpf events */
+				aux_output     :  1, /* generate AUX records instead of events */
+				cgroup         :  1, /* include cgroup events */
+				text_poke      :  1, /* include text poke events */
+				build_id       :  1, /* use build id in mmap2 events */
+				inherit_thread :  1, /* children only inherit if cloned with CLONE_THREAD */
+				remove_on_exec :  1, /* event is removed from task on exec */
+				sigtrap        :  1, /* send synchronous SIGTRAP on event */
+				__reserved_1   : 26;
 
 	union {
-		__u32 wakeup_events; /* wakeup every n events */
-		__u32 wakeup_watermark; /* bytes before wakeup   */
+		__u32		wakeup_events;	  /* wakeup every n events */
+		__u32		wakeup_watermark; /* bytes before wakeup   */
 	};
 
-	__u32 bp_type;
+	__u32			bp_type;
 	union {
-		__u64 bp_addr;
-		__u64 kprobe_func; /* for perf_kprobe */
-		__u64 uprobe_path; /* for perf_uprobe */
-		__u64 config1; /* extension of config */
+		__u64		bp_addr;
+		__u64		kprobe_func; /* for perf_kprobe */
+		__u64		uprobe_path; /* for perf_uprobe */
+		__u64		config1; /* extension of config */
 	};
 	union {
-		__u64 bp_len;
-		__u64 kprobe_addr; /* when kprobe_func == NULL */
-		__u64 probe_offset; /* for perf_[k,u]probe */
-		__u64 config2; /* extension of config1 */
+		__u64		bp_len;
+		__u64		kprobe_addr; /* when kprobe_func == NULL */
+		__u64		probe_offset; /* for perf_[k,u]probe */
+		__u64		config2; /* extension of config1 */
 	};
-	__u64 branch_sample_type; /* enum perf_branch_sample_type */
+	__u64	branch_sample_type; /* enum perf_branch_sample_type */
 
 	/*
 	 * Defines set of user regs to dump on samples.
 	 * See asm/perf_regs.h for details.
 	 */
-	__u64 sample_regs_user;
+	__u64	sample_regs_user;
 
 	/*
 	 * Defines size of the user stack to dump on samples.
 	 */
-	__u32 sample_stack_user;
+	__u32	sample_stack_user;
 
-	__s32 clockid;
+	__s32	clockid;
 	/*
 	 * Defines set of regs to dump for each sample
 	 * state captured on:
@@ -779,16 +755,16 @@ struct perf_event_attr {
 	 *
 	 * See asm/perf_regs.h for details.
 	 */
-	__u64 sample_regs_intr;
+	__u64	sample_regs_intr;
 
 	/*
 	 * Wakeup watermark for AUX area
 	 */
-	__u32 aux_watermark;
-	__u16 sample_max_stack;
-	__u16 __reserved_2;
-	__u32 aux_sample_size;
-	__u32 __reserved_3;
+	__u32	aux_watermark;
+	__u16	sample_max_stack;
+	__u16	__reserved_2;
+	__u32	aux_sample_size;
+	__u32	__reserved_3;
 
 	/*
 	 * User provided data if sigtrap=1, passed back to user via
@@ -796,13 +772,12 @@ struct perf_event_attr {
 	 * Note, siginfo_t::si_perf_data is long-sized, and sig_data will be
 	 * truncated accordingly on 32 bit architectures.
 	 */
-	__u64 sig_data;
+	__u64	sig_data;
 
-	__u64 config3; /* extension of config2 */
+	__u64	config3; /* extension of config2 */
 };
 
-namespace bpftime_epoll
-{
+namespace bpftime_epoll{
 struct bpf_map_info {
 	__u32 type;
 	__u32 id;
@@ -810,7 +785,7 @@ struct bpf_map_info {
 	__u32 value_size;
 	__u32 max_entries;
 	__u32 map_flags;
-	char name[BPF_OBJ_NAME_LEN];
+	char  name[BPF_OBJ_NAME_LEN];
 	__u32 ifindex;
 	__u32 btf_vmlinux_value_type_id;
 	__u64 netns_dev;
@@ -822,236 +797,232 @@ struct bpf_map_info {
 	__u64 map_extra;
 } __attribute__((aligned(8)));
 
-// https://codebrowser.dev/linux/include/linux/bpf.h.html
+//https://codebrowser.dev/linux/include/linux/bpf.h.html
 union bpf_attr {
 	struct { /* anonymous struct used by BPF_MAP_CREATE command */
-		__u32 map_type; /* one of enum bpf_map_type */
-		__u32 key_size; /* size of key in bytes */
-		__u32 value_size; /* size of value in bytes */
-		__u32 max_entries; /* max number of entries in a map */
-		__u32 map_flags; /* BPF_MAP_CREATE related
-				  * flags defined above.
-				  */
-		__u32 inner_map_fd; /* fd pointing to the inner map */
-		__u32 numa_node; /* numa node (effective only if
-				  * BPF_F_NUMA_NODE is set).
-				  */
-		char map_name[BPF_OBJ_NAME_LEN];
-		__u32 map_ifindex; /* ifindex of netdev to create on */
-		__u32 btf_fd; /* fd pointing to a BTF type data */
-		__u32 btf_key_type_id; /* BTF type_id of the key */
-		__u32 btf_value_type_id; /* BTF type_id of the value */
-		__u32 btf_vmlinux_value_type_id; /* BTF type_id of a kernel-
-						  * struct stored as the
-						  * map value
-						  */
-		__u64 map_extra;
+		__u32	map_type;	/* one of enum bpf_map_type */
+		__u32	key_size;	/* size of key in bytes */
+		__u32	value_size;	/* size of value in bytes */
+		__u32	max_entries;	/* max number of entries in a map */
+		__u32	map_flags;	/* BPF_MAP_CREATE related
+					 * flags defined above.
+					 */
+		__u32	inner_map_fd;	/* fd pointing to the inner map */
+		__u32	numa_node;	/* numa node (effective only if
+					 * BPF_F_NUMA_NODE is set).
+					 */
+		char	map_name[BPF_OBJ_NAME_LEN];
+		__u32	map_ifindex;	/* ifindex of netdev to create on */
+		__u32	btf_fd;		/* fd pointing to a BTF type data */
+		__u32	btf_key_type_id;	/* BTF type_id of the key */
+		__u32	btf_value_type_id;	/* BTF type_id of the value */
+		__u32	btf_vmlinux_value_type_id;/* BTF type_id of a kernel-
+						   * struct stored as the
+						   * map value
+						   */
+		__u64	map_extra;
 	};
 	struct { /* anonymous struct used by BPF_MAP_*_ELEM commands */
-		__u32 map_fd;
-		__aligned_u64 key;
+		__u32		map_fd;
+		__aligned_u64	key;
 		union {
 			__aligned_u64 value;
 			__aligned_u64 next_key;
 		};
-		__u64 flags;
+		__u64		flags;
 	};
 	struct { /* struct used by BPF_MAP_*_BATCH commands */
-		__aligned_u64 in_batch; /* start batch,
-					 * NULL to start from beginning
-					 */
-		__aligned_u64 out_batch; /* output: next start batch */
-		__aligned_u64 keys;
-		__aligned_u64 values;
-		__u32 count; /* input/output:
-			      * input: # of key/value
-			      * elements
-			      * output: # of filled elements
-			      */
-		__u32 map_fd;
-		__u64 elem_flags;
-		__u64 flags;
+		__aligned_u64	in_batch;	/* start batch,
+						 * NULL to start from beginning
+						 */
+		__aligned_u64	out_batch;	/* output: next start batch */
+		__aligned_u64	keys;
+		__aligned_u64	values;
+		__u32		count;		/* input/output:
+						 * input: # of key/value
+						 * elements
+						 * output: # of filled elements
+						 */
+		__u32		map_fd;
+		__u64		elem_flags;
+		__u64		flags;
 	} batch;
 	struct { /* anonymous struct used by BPF_PROG_LOAD command */
-		__u32 prog_type; /* one of enum bpf_prog_type */
-		__u32 insn_cnt;
-		__aligned_u64 insns;
-		__aligned_u64 license;
-		__u32 log_level; /* verbosity level of verifier */
-		__u32 log_size; /* size of user buffer */
-		__aligned_u64 log_buf; /* user supplied buffer */
-		__u32 kern_version; /* not used */
-		__u32 prog_flags;
-		char prog_name[BPF_OBJ_NAME_LEN];
-		__u32 prog_ifindex; /* ifindex of netdev to prep for */
+		__u32		prog_type;	/* one of enum bpf_prog_type */
+		__u32		insn_cnt;
+		__aligned_u64	insns;
+		__aligned_u64	license;
+		__u32		log_level;	/* verbosity level of verifier */
+		__u32		log_size;	/* size of user buffer */
+		__aligned_u64	log_buf;	/* user supplied buffer */
+		__u32		kern_version;	/* not used */
+		__u32		prog_flags;
+		char		prog_name[BPF_OBJ_NAME_LEN];
+		__u32		prog_ifindex;	/* ifindex of netdev to prep for */
 		/* For some prog types expected attach type must be known at
 		 * load time to verify attach type specific parts of prog
 		 * (context accesses, allowed helpers, etc).
 		 */
-		__u32 expected_attach_type;
-		__u32 prog_btf_fd; /* fd pointing to BTF type data */
-		__u32 func_info_rec_size; /* userspace bpf_func_info size */
-		__aligned_u64 func_info; /* func info */
-		__u32 func_info_cnt; /* number of bpf_func_info records */
-		__u32 line_info_rec_size; /* userspace bpf_line_info size */
-		__aligned_u64 line_info; /* line info */
-		__u32 line_info_cnt; /* number of bpf_line_info records */
-		__u32 attach_btf_id; /* in-kernel BTF type id to attach to */
+		__u32		expected_attach_type;
+		__u32		prog_btf_fd;	/* fd pointing to BTF type data */
+		__u32		func_info_rec_size;	/* userspace bpf_func_info size */
+		__aligned_u64	func_info;	/* func info */
+		__u32		func_info_cnt;	/* number of bpf_func_info records */
+		__u32		line_info_rec_size;	/* userspace bpf_line_info size */
+		__aligned_u64	line_info;	/* line info */
+		__u32		line_info_cnt;	/* number of bpf_line_info records */
+		__u32		attach_btf_id;	/* in-kernel BTF type id to attach to */
 		union {
 			/* valid prog_fd to attach to bpf prog */
-			__u32 attach_prog_fd;
-			/* or valid module BTF object fd or 0 to attach to
-			 * vmlinux */
-			__u32 attach_btf_obj_fd;
+			__u32		attach_prog_fd;
+			/* or valid module BTF object fd or 0 to attach to vmlinux */
+			__u32		attach_btf_obj_fd;
 		};
-		__u32 : 32; /* pad */
-		__aligned_u64 fd_array; /* array of FDs */
+		__u32		:32;		/* pad */
+		__aligned_u64	fd_array;	/* array of FDs */
 	};
 	struct { /* anonymous struct used by BPF_OBJ_* commands */
-		__aligned_u64 pathname;
-		__u32 bpf_fd;
-		__u32 file_flags;
+		__aligned_u64	pathname;
+		__u32		bpf_fd;
+		__u32		file_flags;
 	};
 	struct { /* anonymous struct used by BPF_PROG_ATTACH/DETACH commands */
-		__u32 target_fd; /* container object to attach to */
-		__u32 attach_bpf_fd; /* eBPF program to attach */
-		__u32 attach_type;
-		__u32 attach_flags;
-		__u32 replace_bpf_fd; /* previously attached eBPF
-				       * program to replace if
-				       * BPF_F_REPLACE is used
-				       */
+		__u32		target_fd;	/* container object to attach to */
+		__u32		attach_bpf_fd;	/* eBPF program to attach */
+		__u32		attach_type;
+		__u32		attach_flags;
+		__u32		replace_bpf_fd;	/* previously attached eBPF
+						 * program to replace if
+						 * BPF_F_REPLACE is used
+						 */
 	};
 	struct { /* anonymous struct used by BPF_PROG_TEST_RUN command */
-		__u32 prog_fd;
-		__u32 retval;
-		__u32 data_size_in; /* input: len of data_in */
-		__u32 data_size_out; /* input/output: len of data_out
-				      *   returns ENOSPC if data_out
-				      *   is too small.
-				      */
-		__aligned_u64 data_in;
-		__aligned_u64 data_out;
-		__u32 repeat;
-		__u32 duration;
-		__u32 ctx_size_in; /* input: len of ctx_in */
-		__u32 ctx_size_out; /* input/output: len of ctx_out
-				     *   returns ENOSPC if ctx_out
-				     *   is too small.
-				     */
-		__aligned_u64 ctx_in;
-		__aligned_u64 ctx_out;
-		__u32 flags;
-		__u32 cpu;
+		__u32		prog_fd;
+		__u32		retval;
+		__u32		data_size_in;	/* input: len of data_in */
+		__u32		data_size_out;	/* input/output: len of data_out
+						 *   returns ENOSPC if data_out
+						 *   is too small.
+						 */
+		__aligned_u64	data_in;
+		__aligned_u64	data_out;
+		__u32		repeat;
+		__u32		duration;
+		__u32		ctx_size_in;	/* input: len of ctx_in */
+		__u32		ctx_size_out;	/* input/output: len of ctx_out
+						 *   returns ENOSPC if ctx_out
+						 *   is too small.
+						 */
+		__aligned_u64	ctx_in;
+		__aligned_u64	ctx_out;
+		__u32		flags;
+		__u32		cpu;
 	} test;
 	struct { /* anonymous struct used by BPF_*_GET_*_ID */
 		union {
-			__u32 start_id;
-			__u32 prog_id;
-			__u32 map_id;
-			__u32 btf_id;
-			__u32 link_id;
+			__u32		start_id;
+			__u32		prog_id;
+			__u32		map_id;
+			__u32		btf_id;
+			__u32		link_id;
 		};
-		__u32 next_id;
-		__u32 open_flags;
+		__u32		next_id;
+		__u32		open_flags;
 	};
 	struct { /* anonymous struct used by BPF_OBJ_GET_INFO_BY_FD */
-		__u32 bpf_fd;
-		__u32 info_len;
-		__aligned_u64 info;
+		__u32		bpf_fd;
+		__u32		info_len;
+		__aligned_u64	info;
 	} info;
 	struct { /* anonymous struct used by BPF_PROG_QUERY command */
-		__u32 target_fd; /* container object to query */
-		__u32 attach_type;
-		__u32 query_flags;
-		__u32 attach_flags;
-		__aligned_u64 prog_ids;
-		__u32 prog_cnt;
+		__u32		target_fd;	/* container object to query */
+		__u32		attach_type;
+		__u32		query_flags;
+		__u32		attach_flags;
+		__aligned_u64	prog_ids;
+		__u32		prog_cnt;
 	} query;
 	struct { /* anonymous struct used by BPF_RAW_TRACEPOINT_OPEN command */
 		__u64 name;
 		__u32 prog_fd;
 	} raw_tracepoint;
 	struct { /* anonymous struct for BPF_BTF_LOAD */
-		__aligned_u64 btf;
-		__aligned_u64 btf_log_buf;
-		__u32 btf_size;
-		__u32 btf_log_size;
-		__u32 btf_log_level;
+		__aligned_u64	btf;
+		__aligned_u64	btf_log_buf;
+		__u32		btf_size;
+		__u32		btf_log_size;
+		__u32		btf_log_level;
 	};
 	struct {
-		__u32 pid; /* input: pid */
-		__u32 fd; /* input: fd */
-		__u32 flags; /* input: flags */
-		__u32 buf_len; /* input/output: buf len */
-		__aligned_u64 buf; /* input/output:
-				    *   tp_name for tracepoint
-				    *   symbol for kprobe
-				    *   filename for uprobe
-				    */
-		__u32 prog_id; /* output: prod_id */
-		__u32 fd_type; /* output: BPF_FD_TYPE_* */
-		__u64 probe_offset; /* output: probe_offset */
-		__u64 probe_addr; /* output: probe_addr */
+		__u32		pid;		/* input: pid */
+		__u32		fd;		/* input: fd */
+		__u32		flags;		/* input: flags */
+		__u32		buf_len;	/* input/output: buf len */
+		__aligned_u64	buf;		/* input/output:
+						 *   tp_name for tracepoint
+						 *   symbol for kprobe
+						 *   filename for uprobe
+						 */
+		__u32		prog_id;	/* output: prod_id */
+		__u32		fd_type;	/* output: BPF_FD_TYPE_* */
+		__u64		probe_offset;	/* output: probe_offset */
+		__u64		probe_addr;	/* output: probe_addr */
 	} task_fd_query;
 	struct { /* struct used by BPF_LINK_CREATE command */
-		__u32 prog_fd; /* eBPF program to attach */
+		__u32		prog_fd;	/* eBPF program to attach */
 		union {
-			__u32 target_fd; /* object to attach to */
-			__u32 target_ifindex; /* target ifindex */
+			__u32		target_fd;	/* object to attach to */
+			__u32		target_ifindex; /* target ifindex */
 		};
-		__u32 attach_type; /* attach type */
-		__u32 flags; /* extra flags */
+		__u32		attach_type;	/* attach type */
+		__u32		flags;		/* extra flags */
 		union {
-			__u32 target_btf_id; /* btf_id of target to attach to */
+			__u32		target_btf_id;	/* btf_id of target to attach to */
 			struct {
-				__aligned_u64 iter_info; /* extra
-							    bpf_iter_link_info
-							  */
-				__u32 iter_info_len; /* iter_info length */
+				__aligned_u64	iter_info;	/* extra bpf_iter_link_info */
+				__u32		iter_info_len;	/* iter_info length */
 			};
 			struct {
 				/* black box user-provided value passed through
 				 * to BPF program at the execution time and
-				 * accessible through bpf_get_attach_cookie()
-				 * BPF helper
+				 * accessible through bpf_get_attach_cookie() BPF helper
 				 */
-				__u64 bpf_cookie;
+				__u64		bpf_cookie;
 			} perf_event;
 		};
 	} link_create;
 	struct { /* struct used by BPF_LINK_UPDATE command */
-		__u32 link_fd; /* link fd */
+		__u32		link_fd;	/* link fd */
 		/* new program fd to update link with */
-		__u32 new_prog_fd;
-		__u32 flags; /* extra flags */
+		__u32		new_prog_fd;
+		__u32		flags;		/* extra flags */
 		/* expected link's program fd; is specified only if
 		 * BPF_F_REPLACE flag is set in flags */
-		__u32 old_prog_fd;
+		__u32		old_prog_fd;
 	} link_update;
 	struct {
-		__u32 link_fd;
+		__u32		link_fd;
 	} link_detach;
 	struct { /* struct used by BPF_ENABLE_STATS command */
-		__u32 type;
+		__u32		type;
 	} enable_stats;
 	struct { /* struct used by BPF_ITER_CREATE command */
-		__u32 link_fd;
-		__u32 flags;
+		__u32		link_fd;
+		__u32		flags;
 	} iter_create;
 	struct { /* struct used by BPF_PROG_BIND_MAP command */
-		__u32 prog_fd;
-		__u32 map_fd;
-		__u32 flags; /* extra flags */
+		__u32		prog_fd;
+		__u32		map_fd;
+		__u32		flags;		/* extra flags */
 	} prog_bind_map;
 } __attribute__((aligned(8)));
 
 struct bpf_insn {
-	__u8 code; /* opcode */
-	__u8 dst_reg : 4; /* dest register */
-	__u8 src_reg : 4; /* source register */
-	__s16 off; /* signed offset */
-	__s32 imm; /* signed immediate constant */
+	__u8	code;		/* opcode */
+	__u8	dst_reg:4;	/* dest register */
+	__u8	src_reg:4;	/* source register */
+	__s16	off;		/* signed offset */
+	__s32	imm;		/* signed immediate constant */
 };
 
 enum {
@@ -1209,36 +1180,38 @@ enum bpf_attach_type {
 
 /* Short form of mov, dst_reg = imm32 */
 
-#define BPF_MOV64_IMM(DST, IMM)                                                \
-	((struct bpf_insn){ .code = BPF_ALU64 | BPF_MOV | BPF_K,               \
-			    .dst_reg = DST,                                    \
-			    .src_reg = 0,                                      \
-			    .off = 0,                                          \
-			    .imm = IMM })
+#define BPF_MOV64_IMM(DST, IMM)					\
+	((struct bpf_insn) {					\
+		.code  = BPF_ALU64 | BPF_MOV | BPF_K,		\
+		.dst_reg = DST,					\
+		.src_reg = 0,					\
+		.off   = 0,					\
+		.imm   = IMM })
 
-#define BPF_EXIT_INSN()                                                        \
-	((struct bpf_insn){ .code = BPF_JMP | BPF_EXIT,                        \
-			    .dst_reg = 0,                                      \
-			    .src_reg = 0,                                      \
-			    .off = 0,                                          \
-			    .imm = 0 })
+#define BPF_EXIT_INSN()						\
+	((struct bpf_insn) {					\
+		.code  = BPF_JMP | BPF_EXIT,			\
+		.dst_reg = 0,					\
+		.src_reg = 0,					\
+		.off   = 0,					\
+		.imm   = 0 })
 
 struct bpf_prog_info {
 	__u32 type;
 	__u32 id;
-	__u8 tag[BPF_TAG_SIZE];
+	__u8  tag[BPF_TAG_SIZE];
 	__u32 jited_prog_len;
 	__u32 xlated_prog_len;
 	__aligned_u64 jited_prog_insns;
 	__aligned_u64 xlated_prog_insns;
-	__u64 load_time; /* ns since boottime */
+	__u64 load_time;	/* ns since boottime */
 	__u32 created_by_uid;
 	__u32 nr_map_ids;
 	__aligned_u64 map_ids;
 	char name[BPF_OBJ_NAME_LEN];
 	__u32 ifindex;
-	__u32 gpl_compatible : 1;
-	__u32 : 31; /* alignment pad */
+	__u32 gpl_compatible:1;
+	__u32 :31; /* alignment pad */
 	__u64 netns_dev;
 	__u64 netns_ino;
 	__u32 nr_jited_ksyms;
@@ -1267,7 +1240,7 @@ struct bpf_prog_info {
 
 static inline __u64 ptr_to_u64(const void *ptr)
 {
-	return (__u64)(unsigned long)ptr;
+	return (__u64) (unsigned long) ptr;
 }
 static inline int sys_bpf(enum bpf_cmd cmd, union bpf_attr *attr,
 			  unsigned int size)
@@ -1279,30 +1252,29 @@ static inline int sys_bpf(enum bpf_cmd cmd, union bpf_attr *attr,
 // from libbpf/btf
 void btf__free(struct btf *btf);
 // from libbpf
-void bpf_object__close(struct bpf_object *object);
+void
+bpf_object__close(struct bpf_object* object); 
 
 LIBBPF_API struct bpf_program *
-bpf_object__next_program(const struct bpf_object *obj,
-			 struct bpf_program *prog);
+bpf_object__next_program(const struct bpf_object *obj, struct bpf_program *prog);
 
-#define bpf_object__for_each_program(pos, obj)                                 \
-	for ((pos) = bpf_object__next_program((obj), NULL); (pos) != NULL;     \
+#define bpf_object__for_each_program(pos, obj)			\
+	for ((pos) = bpf_object__next_program((obj), NULL);	\
+	     (pos) != NULL;					\
 	     (pos) = bpf_object__next_program((obj), (pos)))
 
 struct bpf_program;
 
-LIBBPF_API const struct bpf_insn *
-bpf_program__insns(const struct bpf_program *prog);
+LIBBPF_API const struct bpf_insn *bpf_program__insns(const struct bpf_program *prog);
 LIBBPF_API size_t bpf_program__insn_cnt(const struct bpf_program *prog);
 LIBBPF_API const char *bpf_program__name(const struct bpf_program *prog);
-LIBBPF_API const char *
-bpf_program__section_name(const struct bpf_program *prog);
+LIBBPF_API const char *bpf_program__section_name(const struct bpf_program *prog);
 LIBBPF_API struct bpf_object *bpf_object__open(const char *path);
 
 enum libbpf_print_level {
-	LIBBPF_WARN,
-	LIBBPF_INFO,
-	LIBBPF_DEBUG,
+        LIBBPF_WARN,
+        LIBBPF_INFO,
+        LIBBPF_DEBUG,
 };
 
 // https://github.com/torvalds/linux/blob/2ef5971ff345d3c000873725db555085e0131961/tools/lib/bpf/bpf.h#L503
@@ -1324,5 +1296,5 @@ inline int bpf_obj_get_info_by_fd(int bpf_fd, void *info, __u32 *info_len)
 	// return libbpf_err_errno(err);
 	return 1;
 }
-} // namespace bpftime_epoll
+}
 #endif
