@@ -1,5 +1,6 @@
 #include "nv_attach_utils.hpp"
 #include "trampoline_ptx.h"
+#include <cstring>
 #include <iomanip>
 #include <spdlog/spdlog.h>
 #include <openssl/sha.h>
@@ -10,13 +11,57 @@ namespace bpftime
 {
 namespace attach
 {
-std::string get_defaul_trampoline_ptx()
+std::string get_default_trampoline_ptx()
 {
 	return TRAMPOLINE_PTX;
 }
 std::string wrap_ptx_with_trampoline(std::string input)
 {
-	return get_defaul_trampoline_ptx() + input;
+	return get_default_trampoline_ptx() + input;
+}
+
+std::string rewrite_ptx_target(std::string ptx,
+			       const std::string &sm_arch)
+{
+	if (sm_arch.empty())
+		return ptx;
+
+	// Rewrite .version based on SM arch (sm_120+ needs 8.7, sm_100+ needs 8.5)
+	int sm_num = (sm_arch.size() > 3) ? std::atoi(sm_arch.c_str() + 3) : 0;
+	const char *ptx_ver = (sm_num >= 120) ? "8.7" : (sm_num >= 100) ? "8.5" : nullptr;
+	if (ptx_ver) {
+		auto vpos = ptx.find(".version");
+		if (vpos != std::string::npos) {
+			vpos += 8;
+			while (vpos < ptx.size() && ptx[vpos] == ' ') vpos++;
+			auto vstart = vpos;
+			while (vpos < ptx.size() && ptx[vpos] != '\n' && ptx[vpos] != ' ') vpos++;
+			if (vpos > vstart)
+				ptx.replace(vstart, vpos - vstart, ptx_ver);
+		}
+	}
+
+	// Rewrite .target
+	auto pos = ptx.find(".target");
+	if (pos == std::string::npos)
+		return ptx;
+	pos += strlen(".target");
+	while (pos < ptx.size() && (ptx[pos] == ' ' || ptx[pos] == '\t'))
+		pos++;
+	auto start = pos;
+	while (pos < ptx.size() && ptx[pos] != ' ' && ptx[pos] != '\t' &&
+	       ptx[pos] != '\n' && ptx[pos] != '\r' && ptx[pos] != ',')
+		pos++;
+	if (pos <= start)
+		return ptx;
+	ptx.replace(start, pos - start, sm_arch);
+	return ptx;
+}
+
+std::string wrap_ptx_with_trampoline_for_sm(std::string input,
+					    const std::string &sm_arch)
+{
+	return rewrite_ptx_target(get_default_trampoline_ptx(), sm_arch) + input;
 }
 
 std::string patch_main_from_func_to_entry(std::string result)

@@ -2,9 +2,11 @@
 #include "bpftime_internal.h"
 #include "bpftime_shm.hpp"
 #include "bpftime_shm_internal.hpp"
+#include "nv_gpu_gdrcopy.hpp"
 #include "cuda.h"
 #include "linux/bpf.h"
 #include "spdlog/spdlog.h"
+#include <atomic>
 #include <cerrno>
 #include <cstdint>
 #include <stdexcept>
@@ -87,8 +89,20 @@ void *nv_gpu_per_thread_array_map_impl::elem_lookup(const void *key)
 		errno = ENOENT;
 		return nullptr;
 	}
+	auto base =
+		try_initialize_for_agent_and_get_mapped_address();
+	auto total_buffer_size =
+		(uint64_t)entry_size * max_entries;
+	auto copy_offset_bytes = (uint64_t)key_val * entry_size;
+	if (bpftime::gpu::gdrcopy::copy_from_device_to_host_with_gdrcopy(
+		    this, "BPF_MAP_TYPE_PERGPUTD_ARRAY_MAP", base,
+		    total_buffer_size, copy_offset_bytes, value_buffer.data(),
+		    entry_size, entry_size)) {
+		return value_buffer.data();
+	}
+
 	if (CUresult err = cuMemcpyDtoH(value_buffer.data(),
-					(CUdeviceptr)server_gpu_shared_mem +
+					(CUdeviceptr)base +
 						key_val * entry_size,
 					entry_size);
 	    err != CUDA_SUCCESS) {
@@ -96,8 +110,10 @@ void *nv_gpu_per_thread_array_map_impl::elem_lookup(const void *key)
 			     (int)err);
 		return nullptr;
 	}
+	// Memory barrier: ensure GPU data is visible to CPU
+	std::atomic_thread_fence(std::memory_order_acquire);
 	SPDLOG_DEBUG("Copied GPU memory base {:x} offset {} size {} to host",
-		     server_gpu_shared_mem, key_val * entry_size, entry_size);
+		     base, key_val * entry_size, entry_size);
 	return value_buffer.data();
 }
 
@@ -125,6 +141,8 @@ long nv_gpu_per_thread_array_map_impl::elem_update(const void *key, const void *
 		errno = EINVAL;
 		return -1;
 	}
+	// Memory barrier: ensure CPU data is visible to GPU
+	std::atomic_thread_fence(std::memory_order_release);
 	return 0;
 }
 
@@ -158,10 +176,17 @@ int nv_gpu_per_thread_array_map_impl::map_get_next_key(const void *key, void *ne
 
 nv_gpu_per_thread_array_map_impl::~nv_gpu_per_thread_array_map_impl()
 {
-	if (auto err = cuIpcCloseMemHandle(server_gpu_shared_mem);
-	    err != CUDA_SUCCESS) {
-		SPDLOG_WARN(
-			"Unable to release CUDA IPC handle when destroying nv_gpu_array_map_impl: {}",
-			(int)err);
+	auto total_buffer_size =
+		(uint64_t)entry_size * max_entries;
+	bpftime::gpu::gdrcopy::destroy_gdrcopy_mapping_for_owner(
+		this, "BPF_MAP_TYPE_PERGPUTD_ARRAY_MAP", total_buffer_size);
+	if (shm_holder.global_shared_memory.get_open_type() ==
+	    shm_open_type::SHM_REMOVE_AND_CREATE) {
+		if (auto err = cuMemFree(server_gpu_shared_mem);
+		    err != CUDA_SUCCESS) {
+			SPDLOG_WARN(
+				"Unable to free CUDA memory for nv_gpu_per_thread_array_map_impl: {}",
+				(int)err);
+		}
 	}
 }

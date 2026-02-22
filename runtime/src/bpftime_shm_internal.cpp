@@ -844,7 +844,10 @@ int bpftime_shm::dup_bpf_map(int oldfd, int newfd)
 	// Get the original map handler
 	auto &handler =
 		std::get<bpftime::bpf_map_handler>(manager->get_handler(oldfd));
-	std::string new_name = std::string("dup_") + handler.name.c_str();
+	// A dup(2)'d fd should reference the same underlying map. Keep the same
+	// map name when possible so we can share the same container in shm.
+	std::string shared_name = handler.name.c_str();
+	std::string fallback_name = std::string("dup_") + handler.name.c_str();
 	// Destroy old handler
 	auto &old_handler = manager->get_handler(newfd);
 	if (!std::holds_alternative<unused_handler>(old_handler)) {
@@ -852,13 +855,23 @@ int bpftime_shm::dup_bpf_map(int oldfd, int newfd)
 
 		manager->clear_id_at(newfd, segment);
 	}
-	// Create a new handler with the same parameters
-	return manager->set_handler(
-		newfd,
-		bpftime::bpf_map_handler(newfd, new_name.c_str(), segment,
-					 handler.attr), // Copy construct the
-							// handler
-		segment);
+
+	if (handler.can_share_map_impl()) {
+		bpftime::bpf_map_handler dup_handler(newfd, shared_name.c_str(),
+						     segment, handler.attr);
+		dup_handler.share_map_impl_from(handler);
+		handler.inc_map_refcount();
+		return manager->set_handler(newfd, std::move(dup_handler),
+					    segment);
+	}
+
+	// Fallback: create an independent map if the source map doesn't support
+	// sharing (e.g. legacy shm objects).
+	return manager->set_handler(newfd,
+				    bpftime::bpf_map_handler(
+					    newfd, fallback_name.c_str(),
+					    segment, handler.attr),
+				    segment);
 }
 
 const handler_manager *bpftime_shm::get_manager() const
@@ -987,6 +1000,7 @@ bool bpftime_shm::register_cuda_host_memory()
 
 	SPDLOG_INFO("Registered shared memory with CUDA: addr={} size={}",
 		    base_addr, seg_size);
+	cuda_host_memory_registered = true;
 	return true;
 }
 #endif
@@ -998,6 +1012,9 @@ bpftime::bpftime_shm::~bpftime_shm()
 
 	void *base_addr = segment.get_address();
 #ifdef BPFTIME_ENABLE_CUDA_ATTACH
+	if (!cuda_host_memory_registered) {
+		return;
+	}
 	cudaError_t err = cudaHostUnregister(base_addr);
 	// Use fprintf here to avoid spdlog de-initialized issues
 	if (err != cudaSuccess) {

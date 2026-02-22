@@ -1,9 +1,11 @@
 #include "nv_gpu_shared_array_map.hpp"
 #include "bpftime_shm.hpp"
 #include "bpftime_shm_internal.hpp"
+#include "nv_gpu_gdrcopy.hpp"
 #include "cuda.h"
 #include "linux/bpf.h"
 #include "spdlog/spdlog.h"
+#include <atomic>
 #include <cerrno>
 #include <cstdint>
 #include <stdexcept>
@@ -66,6 +68,15 @@ void *nv_gpu_shared_array_map_impl::elem_lookup(const void *key)
 		return nullptr;
 	}
 	auto base = try_initialize_for_agent_and_get_mapped_address();
+	auto total_buffer_size = (uint64_t)value_size * max_entries;
+	auto copy_offset_bytes = (uint64_t)key_val * value_size;
+	if (bpftime::gpu::gdrcopy::copy_from_device_to_host_with_gdrcopy(
+		    this, "BPF_MAP_TYPE_GPU_ARRAY_MAP", base,
+		    total_buffer_size, copy_offset_bytes, value_buffer.data(),
+		    value_size, value_size)) {
+		return value_buffer.data();
+	}
+
 	CUcontext target_ctx = nullptr;
 	if (shm_holder.global_shared_memory.get_open_type() ==
 	    shm_open_type::SHM_OPEN_ONLY) {
@@ -79,10 +90,10 @@ void *nv_gpu_shared_array_map_impl::elem_lookup(const void *key)
 
 	if (shm_holder.global_shared_memory.get_open_type() ==
 	    shm_open_type::SHM_OPEN_ONLY) {
-		cuMemcpyDtoHAsync_v2(value_buffer.data(),
-				     (CUdeviceptr)base +
-					     (uint64_t)key_val * value_size,
-				     value_size, agent_stream);
+		cuMemcpyDtoHAsync_v2(
+			value_buffer.data(),
+			(CUdeviceptr)base + (uint64_t)key_val * value_size,
+			value_size, agent_stream);
 		err = cuStreamSynchronize(agent_stream);
 	} else {
 		err = cuMemcpyDtoH(value_buffer.data(),
@@ -186,6 +197,9 @@ int nv_gpu_shared_array_map_impl::map_get_next_key(const void *key,
 
 nv_gpu_shared_array_map_impl::~nv_gpu_shared_array_map_impl()
 {
+	auto total_buffer_size = (uint64_t)value_size * max_entries;
+	bpftime::gpu::gdrcopy::destroy_gdrcopy_mapping_for_owner(
+		this, "BPF_MAP_TYPE_GPU_ARRAY_MAP", total_buffer_size);
 	if (shm_holder.global_shared_memory.get_open_type() !=
 	    shm_open_type::SHM_OPEN_ONLY) {
 		// Server side: free device memory

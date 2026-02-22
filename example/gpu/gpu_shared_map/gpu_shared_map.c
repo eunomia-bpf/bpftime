@@ -24,6 +24,7 @@ int main()
 	int err;
 
 	libbpf_set_strict_mode(LIBBPF_STRICT_ALL);
+	setvbuf(stdout, NULL, _IOLBF, 0);
 	signal(SIGINT, sig_handler);
 	signal(SIGTERM, sig_handler);
 

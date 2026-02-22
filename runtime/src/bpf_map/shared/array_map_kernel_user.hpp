@@ -16,15 +16,17 @@ class array_map_kernel_user_impl {
 	uint32_t _max_entries;
 	int map_fd = -1;
 	int kernel_map_id = -1;
+	bool has_kernel_map = false;
 
-	void* mmap_ptr;
+	void *mmap_ptr;
 
-	void init_map_fd();
+	bool init_map_fd();
 
     public:
 	const static bool should_lock = false;
-	array_map_kernel_user_impl(boost::interprocess::managed_shared_memory &memory,
-		       int km_id);
+	array_map_kernel_user_impl(
+		boost::interprocess::managed_shared_memory &memory, int km_id,
+		uint32_t value_size, uint32_t max_entries);
 	~array_map_kernel_user_impl();
 
 	void *elem_lookup(const void *key);

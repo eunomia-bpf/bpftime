@@ -35,7 +35,15 @@ static inline T try_get_original_func(const char *name, T &store)
 std::string get_default_trampoline_ptx();
 std::string patch_main_from_func_to_entry(std::string);
 std::string wrap_ptx_with_trampoline(std::string input);
+std::string wrap_ptx_with_trampoline_for_sm(std::string input,
+					    const std::string &sm_arch);
 std::string sha256(const void *data, size_t length);
+
+/**
+ * @brief Rewrite PTX target and version for the given SM architecture.
+ * Automatically upgrades PTX version for newer architectures (sm_100+, sm_120+).
+ */
+std::string rewrite_ptx_target(std::string ptx, const std::string &sm_arch);
 
 /**
  * @brief Get the SM architecture string for the current GPU.

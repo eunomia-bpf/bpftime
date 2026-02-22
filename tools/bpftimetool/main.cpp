@@ -21,6 +21,7 @@
 #include <time.h>
 #include <iostream>
 #include <chrono>
+#include <thread>
 #include <bpftime_logger.hpp>
 #ifdef BPFTIME_ENABLE_CUDA_ATTACH
 #include <nv_attach_impl.hpp>
@@ -290,35 +291,32 @@ int main(int argc, char *argv[])
 			});
 		ctx.init_attach_ctx_from_handlers(runtime_config);
 		if (auto impl = ctx.find_nv_attach_impl(); impl) {
-            if (auto id =
-                    (*impl)->find_attach_entry_by_program_name(
-                        argv[2]);
-                id != -1) {
-                int err = 0;
-                if (has_dims) {
-                    err = (*impl)->run_attach_entry_on_gpu(
-                        id, run_count, gridX, gridY, gridZ, blockX, blockY, blockZ);
-                } else {
-                    err = (*impl)->run_attach_entry_on_gpu(
-                        id, run_count);
-                }
-                if (err) {
-					SPDLOG_ERROR(
-						"Unable to run program: {}",
-						err);
-					return 1;
-				} else {
-					return 0;
-				}
-			} else {
-				SPDLOG_ERROR("Unable to find program: {}", id);
+			const int id = (*impl)->find_attach_entry_by_program_name(
+				argv[2]);
+			if (id == -1) {
+				SPDLOG_ERROR("Unable to find program: {}",
+					     argv[2]);
 				return 1;
-			};
-		} else {
+			}
+			int err = 0;
+			if (has_dims) {
+				err = (*impl)->run_attach_entry_on_gpu(
+					id, run_count, gridX, gridY, gridZ,
+					blockX, blockY, blockZ);
+			} else {
+				err = (*impl)->run_attach_entry_on_gpu(
+					id, run_count);
+			}
+			if (err) {
+				SPDLOG_ERROR("Unable to run program: {}", err);
+				return 1;
+			}
+			return 0;
+			}
 			SPDLOG_ERROR("nv_attach_impl not found!");
+			return 1;
 		}
-	}
-#endif
+	#endif
 	else {
 		cerr << "Invalid subcommand " << cmd << endl;
 		return 1;

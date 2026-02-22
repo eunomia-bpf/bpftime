@@ -36,6 +36,11 @@ int main(int argc, char **argv)
 	struct mem_trace_bpf *skel;
 	int err;
 
+	// CI redirects stdout/stderr to files; disable buffering so the expected
+	// strings are visible without waiting for process exit.
+	setvbuf(stdout, NULL, _IONBF, 0);
+	setvbuf(stderr, NULL, _IONBF, 0);
+
 	/* Set up libbpf errors and debug info callback */
 	libbpf_set_print(libbpf_print_fn);
 

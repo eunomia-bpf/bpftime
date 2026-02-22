@@ -42,6 +42,17 @@ target_link_libraries(bpftime_nv_attach_impl PUBLIC bpftime_base_attach_impl spd
 
 set_property(TARGET bpftime_nv_attach_impl PROPERTY CXX_STANDARD 20)
 
+# nv_attach_impl includes internal llvmbpf headers that include LLVM headers
+# (e.g. vm/llvm-jit/src/llvm_jit_context.hpp). Make sure LLVM include dirs are
+# available to this target as well.
+if(DEFINED LLVM_INCLUDE_DIRS)
+  target_include_directories(bpftime_nv_attach_impl PRIVATE ${LLVM_INCLUDE_DIRS})
+endif()
+get_target_property(LLVMBPF_VM_INCLUDES llvmbpf_vm INCLUDE_DIRECTORIES)
+if(LLVMBPF_VM_INCLUDES)
+  target_include_directories(bpftime_nv_attach_impl PRIVATE ${LLVMBPF_VM_INCLUDES})
+endif()
+
 # Create a build-time header file with the PTX pass paths
 # This avoids shell escaping issues with colons and quotes
 file(GENERATE OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/ptx_pass_config.h"

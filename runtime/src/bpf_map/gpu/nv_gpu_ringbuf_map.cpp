@@ -2,6 +2,7 @@
 #include "bpftime_shm_internal.hpp"
 #include "cuda.h"
 #include "spdlog/spdlog.h"
+#include <atomic>
 #include <cerrno>
 #include <cstring>
 #include <stdexcept>
@@ -32,10 +33,19 @@ nv_gpu_ringbuf_map_impl::try_initialize_for_agent_and_get_mapped_address()
 			SPDLOG_INFO(
 				"Initializing nv_gpu_ringbuf_map_impl at pid {}",
 				pid);
-			SPDLOG_INFO("Mapped GPU memory for gpu array map: {}",
-				    (uintptr_t)data_buffer.data());
-			agent_gpu_shared_mem[pid] =
-				(CUdeviceptr)data_buffer.data();
+			CUdeviceptr device_ptr = 0;
+			if (auto err = cuMemHostGetDevicePointer(
+				    &device_ptr, (void *)data_buffer.data(), 0);
+			    err != CUDA_SUCCESS) {
+				SPDLOG_ERROR(
+					"Unable to map host ringbuf buffer into device address space, error={}",
+					(int)err);
+				throw std::runtime_error(
+					"Unable to map host ringbuf buffer into device address space");
+			}
+			SPDLOG_INFO("Mapped GPU memory for gpu ringbuf map: {}",
+				    (uintptr_t)device_ptr);
+			agent_gpu_shared_mem[pid] = device_ptr;
 		}
 		return agent_gpu_shared_mem[pid];
 	} else {
@@ -46,6 +56,8 @@ nv_gpu_ringbuf_map_impl::try_initialize_for_agent_and_get_mapped_address()
 int nv_gpu_ringbuf_map_impl::drain_data(
 	const std::function<void(const void *, uint64_t)> &fn)
 {
+	// Memory barrier: ensure we see latest GPU writes before reading header
+	std::atomic_thread_fence(std::memory_order_acquire);
 	for (uint64_t i = 0; i < thread_count; i++) {
 		auto header = (ringbuf_header *)(uintptr_t)(data_buffer.data() +
 							    i * entry_size);

@@ -785,12 +785,14 @@ int nv_attach_impl::run_attach_entry_on_gpu(int attach_id, int run_count,
 	for (const auto &insts : insts) {
 		ebpf_words.push_back(*(uint64_t *)(uintptr_t)&insts);
 	}
-	auto ptx = ptxpass::filter_out_version_headers_ptx(
-		wrap_ptx_with_trampoline(filter_compiled_ptx_for_ebpf_program(
-			ptxpass::compile_ebpf_to_ptx_from_words(
-				ebpf_words, sm_arch.c_str(), "bpf_main", false,
-				false),
-			"bpf_main")));
+		auto ptx = ptxpass::filter_out_version_headers_ptx(
+			wrap_ptx_with_trampoline_for_sm(
+				filter_compiled_ptx_for_ebpf_program(
+					ptxpass::compile_ebpf_to_ptx_from_words(
+						ebpf_words, sm_arch.c_str(),
+						"bpf_main", false, false),
+					"bpf_main"),
+				sm_arch));
 	{
 		const std::string to_replace = ".func bpf_main";
 
