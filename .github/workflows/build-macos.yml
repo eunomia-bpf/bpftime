@@ -22,11 +22,15 @@ jobs:
 
       - name: Install dependencies
         run: |
-          brew install cmake boost
+          brew install cmake boost llvm
 
-      - name: Configure (CMake with uBPF JIT)
+      - name: Configure (CMake with LLVM JIT + uBPF JIT fallback)
         run: |
-          cmake -DBPFTIME_BUILD_WITH_LIBBPF=OFF -DBPFTIME_LLVM_JIT=OFF -DBPFTIME_UBPF_JIT=ON -B build .
+          cmake -DBPFTIME_BUILD_WITH_LIBBPF=OFF \
+            -DBPFTIME_LLVM_JIT=YES \
+            -DLLVM_DIR=$(brew --prefix llvm)/lib/cmake/llvm \
+            -DBPFTIME_UBPF_JIT=ON \
+            -B build .
 
       - name: Build
         run: cmake --build build -j$(sysctl -n hw.ncpu)

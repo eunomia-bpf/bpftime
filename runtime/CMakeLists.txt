@@ -286,7 +286,8 @@ message(DEBUG "Successfully added all dependencies and linked against them.")
 
 set(BPFTIME_RUNTIME_INCLUDE ${CMAKE_CURRENT_SOURCE_DIR}/include ${CMAKE_CURRENT_SOURCE_DIR}/src)
 
-if(BPFTIME_BUILD_WITH_LIBBPF)
+# Object layer needed for libbpf builds or for runtime unit tests (e.g. macOS)
+if(BPFTIME_BUILD_WITH_LIBBPF OR BPFTIME_ENABLE_UNIT_TESTING)
   add_subdirectory(object)
 endif()
 
@@ -296,10 +297,12 @@ add_subdirectory(syscall-server)
 #
 # Unit testing setup
 #
-if(BPFTIME_ENABLE_UNIT_TESTING AND BPFTIME_BUILD_WITH_LIBBPF)
+if(BPFTIME_ENABLE_UNIT_TESTING)
   enable_testing()
   message(STATUS "Build unit tests for the runtime. Tests should always be found in the test folder\n")
-  add_subdirectory(test)
+  if(BPFTIME_BUILD_WITH_LIBBPF)
+    add_subdirectory(test)
+  endif()
   add_subdirectory(unit-test)
 endif()
 
