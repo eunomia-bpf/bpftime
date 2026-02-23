@@ -35,6 +35,19 @@ using boost_shm_string =
 	boost::interprocess::basic_string<char, std::char_traits<char>,
 					  char_allocator>;
 
+// Verification mode for bpftime userspace verifier
+// Controlled via BPFTIME_VERIFIER_LEVEL environment variable
+enum bpftime_verifier_mode {
+	// Userspace verifier failure is treated as a warning (default)
+	// Program loading continues even if verification fails
+	BPFTIME_VERIFIER_WARNING = 0,
+	// Userspace verifier failure is treated as an error
+	// Program loading is rejected if verification fails
+	BPFTIME_VERIFIER_STRICT = 1,
+	// No verification is performed
+	BPFTIME_NO_VERIFY = 2,
+};
+
 // Configuration for the bpftime runtime
 // Initialize the configuration from the environment variables
 struct agent_config {
@@ -46,6 +59,10 @@ struct agent_config {
 	bool enable_kernel_helper_group = true;
 	bool enable_ufunc_helper_group = false;
 	bool enable_shm_maps_helper_group = true;
+
+	// Userspace verifier mode (see bpftime_verifier_mode enum)
+	// Default is BPFTIME_VERIFIER_WARNING: verification failure is a warning
+	bpftime_verifier_mode verifier_mode = BPFTIME_VERIFIER_WARNING;
 
 	// allow non builtin map types
 	// if enabled, when a eBPF application tries to create a map with a
