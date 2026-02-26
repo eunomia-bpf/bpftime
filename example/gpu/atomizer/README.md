@@ -30,11 +30,9 @@ This example leverages bpftime's CUDA attachment implementation to:
 cd bpftime
 
 # Build the main bpftime project first
-cmake -Bbuild -DBPFTIME_ENABLE_CUDA_ATTACH=1 -DBPFTIME_CUDA_ROOT=/usr/local/cuda-12.8 .
-make  -C build -j$(nproc)
+make build-gpu
 
-# Build the example (from the build directory)
-cd ..
+# Build the example
 make -C example/gpu/atomizer
 ```
 
