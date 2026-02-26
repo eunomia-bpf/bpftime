@@ -23,6 +23,12 @@
 #include <cuda_runtime_api.h>
 #include <cuda.h>
 #include <bpf_attach_ctx.hpp>
+namespace bpftime
+{
+// Defined in bpf_attach_ctx_cuda.cpp; stops the CUDA watcher thread.
+// Called from __destruct_shm() before shared memory is unmapped.
+void bpftime_stop_cuda_watcher_thread();
+} // namespace bpftime
 #endif
 #elif __APPLE__
 #include "bpftime_epoll.h"
@@ -79,7 +85,13 @@ static __attribute__((destructor(65535))) void __destruct_shm()
 		bpftime::shm_holder.global_shared_memory
 			.remove_pid_from_alive_agent_set(self_pid);
 	}
-
+#ifdef BPFTIME_ENABLE_CUDA_ATTACH
+	// Stop the CUDA watcher thread before unmapping shared memory to
+	// prevent the thread from accessing freed memory. This is called here
+	// (in addition to the atexit handler) to guarantee ordering regardless
+	// of atexit vs. .fini_array execution sequence.
+	bpftime::bpftime_stop_cuda_watcher_thread();
+#endif
 	bpftime_destroy_global_shm();
 }
 
