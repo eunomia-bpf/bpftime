@@ -376,7 +376,7 @@ uint64_t bpftime_map_lookup_elem_helper(uint64_t map, uint64_t key, uint64_t,
 					uint64_t, uint64_t)
 {
 	return (uint64_t)bpftime::shm_holder.global_shared_memory
-		.bpf_map_lookup_elem(map >> 32, (void *)key, false);
+		.bpf_map_lookup_elem((int)map, (void *)key, false);
 }
 
 uint64_t bpftime_map_update_elem_helper(uint64_t map, uint64_t key,
@@ -385,14 +385,14 @@ uint64_t bpftime_map_update_elem_helper(uint64_t map, uint64_t key,
 {
 	return (uint64_t)
 		bpftime::shm_holder.global_shared_memory.bpf_map_update_elem(
-			map >> 32, (void *)key, (void *)value, flags, false);
+			(int)map, (void *)key, (void *)value, flags, false);
 }
 
 uint64_t bpftime_map_delete_elem_helper(uint64_t map, uint64_t key, uint64_t,
 					uint64_t, uint64_t)
 {
 	return (uint64_t)bpftime::shm_holder.global_shared_memory
-		.bpf_delete_elem(map >> 32, (void *)key, false);
+		.bpf_delete_elem((int)map, (void *)key, false);
 }
 
 uint64_t bpf_probe_read_str(uint64_t buf, uint64_t bufsz, uint64_t ptr,
@@ -489,7 +489,7 @@ uint64_t bpf_perf_event_output(uint64_t ctx, uint64_t map, uint64_t flags,
 		errno = EINVAL;
 		return (uint64_t)(-1);
 	}
-	int fd = map >> 32;
+	int fd = (int)map;
 	// Check map type. userspace perf event array, or shared perf event
 	// array?
 	bpftime::bpf_map_type map_ty;
