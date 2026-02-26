@@ -25,8 +25,12 @@
 #include <boost/interprocess/sync/interprocess_mutex.hpp>
 #include <boost/interprocess/containers/vector.hpp>
 #include <boost/interprocess/allocators/allocator.hpp>
-// Include bpf.h for BPF flags like BPF_ANY, BPF_EXIST, etc.
+// Include bpf flags for BPF_ANY, BPF_EXIST, etc.
+#ifdef BPFTIME_BUILD_WITH_LIBBPF
 #include <bpf/bpf.h>
+#else
+#include "bpf_flags.hpp"
+#endif
 
 // Forward declaration
 namespace bpftime
