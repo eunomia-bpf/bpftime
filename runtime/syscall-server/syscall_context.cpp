@@ -493,9 +493,12 @@ long syscall_context::handle_sysbpf(int cmd, union bpf_attr *attr, size_t size)
 				simple_section_name = "uprobe";
 			}
 #ifdef ENABLE_BPFTIME_VERIFIER
+			auto verifier_mode =
+				bpftime_get_agent_config().verifier_mode;
 			// Only do verification for tracepoint/uprobe/uretprobe
-			if (simple_section_name.has_value()) {
-				SPDLOG_DEBUG("Verying program {}",
+			if (simple_section_name.has_value() &&
+			    verifier_mode != BPFTIME_NO_VERIFY) {
+				SPDLOG_DEBUG("Verifying program {}",
 					     attr->prog_name);
 				auto result = verifier::verify_ebpf_program(
 					(uint64_t *)(uintptr_t)attr->insns,
@@ -525,11 +528,28 @@ long syscall_context::handle_sysbpf(int cmd, union bpf_attr *attr, size_t size)
 						}
 						message << std::endl;
 					}
-					SPDLOG_ERROR(
-						"Failed to verify program: {}",
-						message.str());
-					errno = EINVAL;
-					return -1;
+					if (verifier_mode ==
+					    BPFTIME_VERIFIER_STRICT) {
+						SPDLOG_ERROR(
+							"Failed to verify program `{}`: {}\n"
+							"Hint: Set BPFTIME_VERIFIER_LEVEL=WARNING to treat verification failures as warnings, "
+							"or BPFTIME_VERIFIER_LEVEL=NO_VERIFY to disable verification. "
+							"Alternatively, set BPFTIME_RUN_WITH_KERNEL=1 to use the kernel verifier.",
+							attr->prog_name,
+							message.str());
+						errno = EINVAL;
+						return -1;
+					} else {
+						// WARNING mode: log warning but continue
+						SPDLOG_WARN(
+							"Userspace verifier warning for program `{}`: {}\n"
+							"The program will still be loaded. "
+							"Set BPFTIME_VERIFIER_LEVEL=STRICT to treat this as an error, "
+							"or BPFTIME_VERIFIER_LEVEL=NO_VERIFY to disable verification. "
+							"Alternatively, set BPFTIME_RUN_WITH_KERNEL=1 to use the kernel verifier.",
+							attr->prog_name,
+							message.str());
+					}
 				}
 			}
 #endif
