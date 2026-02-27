@@ -634,9 +634,6 @@ bpftime_shm::bpftime_shm(const char *shm_name, shm_open_type type)
 		// open the shm
 		segment = boost::interprocess::managed_shared_memory(
 			boost::interprocess::open_only, shm_name);
-#ifdef BPFTIME_ENABLE_CUDA_ATTACH
-		register_cuda_host_memory();
-#endif
 		manager = segment.find<bpftime::handler_manager>(
 					 bpftime::DEFAULT_GLOBAL_HANDLER_NAME)
 				  .first;
@@ -653,6 +650,9 @@ bpftime_shm::bpftime_shm(const char *shm_name, shm_open_type type)
 			segment.find<alive_agent_pids>(
 				       bpftime::DEFAULT_ALIVE_AGENT_PIDS_NAME)
 				.first;
+		epoch_state = segment.find<bpftime_global_epoch_state>(
+					     "bpftime_global_epoch_state")
+				      .first;
 		SPDLOG_DEBUG("done: bpftime_shm for client setup");
 	} else if (type == shm_open_type::SHM_CREATE_OR_OPEN) {
 		SPDLOG_DEBUG(
@@ -685,6 +685,9 @@ bpftime_shm::bpftime_shm(const char *shm_name, shm_open_type type)
 			std::less<int>(),
 			alive_agent_pid_set_allocator(
 				segment.get_segment_manager()));
+		epoch_state =
+			segment.find_or_construct<bpftime_global_epoch_state>(
+				"bpftime_global_epoch_state")();
 		SPDLOG_DEBUG("done: bpftime_shm for open_or_create setup");
 	} else if (type == shm_open_type::SHM_REMOVE_AND_CREATE) {
 		SPDLOG_DEBUG(
@@ -723,6 +726,8 @@ bpftime_shm::bpftime_shm(const char *shm_name, shm_open_type type)
 			std::less<int>(),
 			alive_agent_pid_set_allocator(
 				segment.get_segment_manager()));
+		epoch_state = segment.construct<bpftime_global_epoch_state>(
+			"bpftime_global_epoch_state")();
 		SPDLOG_DEBUG("done: bpftime_shm for server setup.");
 	} else if (type == shm_open_type::SHM_NO_CREATE) {
 		// not create any shm
@@ -743,6 +748,10 @@ bpftime_shm::bpftime_shm(const char *shm_name, shm_open_type type)
 		} else {
 			cuda_comm_shared_mem = pair.first;
 		}
+		// Register the shared communication memory for CUDA device
+		// mapping. This must happen after we have located the
+		// CommSharedMem in the shared segment.
+		register_cuda_host_memory();
 	} else {
 		auto pair = segment.find<cuda::CommSharedMem>(
 			"cuda_comm_shared_mem");
@@ -778,6 +787,43 @@ bpftime_shm::bpftime_shm(const char *shm_name, shm_open_type type)
 	}
 	is_mpk_init = true;
 #endif
+}
+
+std::uint64_t bpftime_shm::read_stable_epoch_seq(int max_tries) const
+{
+	if (!epoch_state)
+		return 0;
+	for (int i = 0; i < max_tries; i++) {
+		std::uint64_t a = __atomic_load_n(&epoch_state->epoch_seq,
+						  __ATOMIC_ACQUIRE);
+		if (a & 1U) {
+			// Writer in progress.
+			usleep(1000);
+			continue;
+		}
+		std::uint64_t b = __atomic_load_n(&epoch_state->epoch_seq,
+						  __ATOMIC_ACQUIRE);
+		if (a == b)
+			return a;
+	}
+	return __atomic_load_n(&epoch_state->epoch_seq, __ATOMIC_ACQUIRE) &
+	       ~1ULL;
+}
+
+std::uint64_t bpftime_shm::begin_new_session()
+{
+	if (!epoch_state) {
+		SPDLOG_WARN("begin_new_session: epoch_state missing");
+		reset_server_state();
+		return 0;
+	}
+	// Mark updating (odd).
+	__atomic_add_fetch(&epoch_state->epoch_seq, 1, __ATOMIC_ACQ_REL);
+	reset_server_state();
+	// Mark stable (even).
+	std::uint64_t seq = __atomic_add_fetch(&epoch_state->epoch_seq, 1,
+					       __ATOMIC_ACQ_REL);
+	return seq;
 }
 
 bpftime_shm::bpftime_shm(bpftime::shm_open_type type)
@@ -867,11 +913,11 @@ int bpftime_shm::dup_bpf_map(int oldfd, int newfd)
 
 	// Fallback: create an independent map if the source map doesn't support
 	// sharing (e.g. legacy shm objects).
-	return manager->set_handler(newfd,
-				    bpftime::bpf_map_handler(
-					    newfd, fallback_name.c_str(),
-					    segment, handler.attr),
-				    segment);
+	return manager->set_handler(
+		newfd,
+		bpftime::bpf_map_handler(newfd, fallback_name.c_str(), segment,
+					 handler.attr),
+		segment);
 }
 
 const handler_manager *bpftime_shm::get_manager() const
@@ -1046,6 +1092,17 @@ void bpftime_shm::iterate_all_pids_in_alive_agent_set(
 {
 	for (auto x : *injected_pids) {
 		cb(x);
+	}
+}
+
+void bpftime_shm::reset_server_state()
+{
+	if (manager == nullptr) {
+		return;
+	}
+	manager->clear_all(segment);
+	if (syscall_installed_pids != nullptr) {
+		syscall_installed_pids->clear();
 	}
 }
 #ifdef BPFTIME_ENABLE_CUDA_ATTACH

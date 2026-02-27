@@ -15,6 +15,7 @@
 #include "bpftime_shm.hpp"
 #include <handler/handler_manager.hpp>
 #include <optional>
+#include <cstdint>
 
 #ifdef BPFTIME_ENABLE_CUDA_ATTACH
 namespace bpftime
@@ -28,6 +29,14 @@ struct CommSharedMem;
 
 namespace bpftime
 {
+
+// Shared-memory global tracing session version.
+// Use epoch_seq as a simple seqlock:
+// - odd  : server is updating/resetting handlers
+// - even : stable; session_id = epoch_seq / 2
+struct bpftime_global_epoch_state {
+	std::uint64_t epoch_seq = 0;
+};
 
 using syscall_pid_set_allocator = boost::interprocess::allocator<
 	int, boost::interprocess::managed_shared_memory::segment_manager>;
@@ -60,6 +69,8 @@ class bpftime_shm {
 
 	// Record which pids are injected by agent
 	alive_agent_pids *injected_pids;
+
+	bpftime_global_epoch_state *epoch_state = nullptr;
 
 	// local agent config can be used for test or local process
 	std::optional<struct agent_config> local_agent_config;
@@ -107,6 +118,18 @@ class bpftime_shm {
 	void remove_pid_from_alive_agent_set(int pid);
 	// Iterate over all pids from the alive agent set
 	void iterate_all_pids_in_alive_agent_set(std::function<void(int)> &&cb);
+
+	// Server-side: clear all existing handlers (maps/progs/links/events) and
+	// reset per-session bookkeeping stored in shm. This is used to allow
+	// repeated "bpftime trace" sessions without recreating the shm object, so
+	// already-injected agents keep the same mapping.
+	void reset_server_state();
+	// Server-side: start a new session (epoch++) and clear handlers. Returns
+	// the new stable epoch_seq (even).
+	std::uint64_t begin_new_session();
+	// Agent/observer: best-effort read a stable epoch_seq (even). Returns 0 if
+	// the epoch object isn't available.
+	std::uint64_t read_stable_epoch_seq(int max_tries = 200) const;
 
 	const handler_variant &get_handler(int fd) const;
 	bool is_epoll_fd(int fd) const;

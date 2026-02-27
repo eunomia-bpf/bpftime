@@ -42,7 +42,7 @@ namespace bpftime
 
 static int load_prog_and_helpers(bpftime_prog *prog, const agent_config &config)
 {
-#if __linux__
+#if defined(__linux__)
 	if (config.enable_kernel_helper_group) {
 		bpftime_helper_group::get_kernel_utils_helper_group()
 			.add_helper_group_to_prog(prog);
@@ -73,22 +73,41 @@ int bpf_attach_ctx::init_attach_ctx_from_handlers(const agent_config &config)
 int bpf_attach_ctx::init_attach_ctx_from_handlers(
 	const handler_manager *manager, const agent_config &config)
 {
+	std::lock_guard<std::mutex> lock(ctx_mutex);
+	// Detect shm session switch and rebind.
+	if (auto seq = shm_holder.global_shared_memory.read_stable_epoch_seq();
+	    seq != 0 && seq != last_epoch_seq_seen) {
+		if (last_epoch_seq_seen != 0) {
+			SPDLOG_INFO(
+				"bpftime: shm session changed (epoch_seq {} -> {}), rebinding",
+				(unsigned long long)last_epoch_seq_seen,
+				(unsigned long long)seq);
+		} else {
+			SPDLOG_INFO("bpftime: shm epoch_seq = {}",
+				    (unsigned long long)seq);
+		}
+		destroy_all_attach_links_unlocked();
+		reset_instantiated_state_unlocked();
+		last_epoch_seq_seen = seq;
+	}
+
 	for (int i = 0; i < (int)manager->size(); i++) {
 		if (manager->is_allocated(i)) {
 			std::set<int> stk;
 			if (int err = instantiate_handler_at(manager, i, stk,
 							     config, false);
 			    err < 0) {
-				SPDLOG_INFO("Failed to instantiate handler {}",
-					    i);
+				SPDLOG_DEBUG(
+					"Failed to instantiate handler {}",
+					i);
 				// Unable to instantiate handler may not be an
 				// error. We can continue trying to instantiate
 				// other handlers.
 			}
 		}
 	}
-	SPDLOG_INFO(
-		"Main initializing for handlers done, try to initialize cuda link handles....");
+	SPDLOG_DEBUG(
+		"Main initializing for handlers done; initializing CUDA link handles");
 	/// Initialize nvda links at the last time, because they require
 	/// map_basic_info
 	for (int i = 0; i < (int)manager->size(); i++) {
@@ -97,8 +116,9 @@ int bpf_attach_ctx::init_attach_ctx_from_handlers(
 			if (int err = instantiate_handler_at(manager, i, stk,
 							     config, true);
 			    err < 0) {
-				SPDLOG_INFO("Failed to instantiate handler {}",
-					    i);
+				SPDLOG_DEBUG(
+					"Failed to instantiate handler {}",
+					i);
 			}
 		}
 	}
@@ -429,6 +449,12 @@ int bpf_attach_ctx::instantiate_perf_event_handler_at(
 }
 int bpf_attach_ctx::destroy_instantiated_attach_link(int link_id)
 {
+	std::lock_guard<std::mutex> lock(ctx_mutex);
+	return destroy_instantiated_attach_link_unlocked(link_id);
+}
+
+int bpf_attach_ctx::destroy_instantiated_attach_link_unlocked(int link_id)
+{
 	SPDLOG_DEBUG("Destroy attach link {}", link_id);
 	if (auto itr = instantiated_attach_links.find(link_id);
 	    itr != instantiated_attach_links.end()) {
@@ -454,19 +480,41 @@ int bpf_attach_ctx::destroy_instantiated_attach_link(int link_id)
 }
 int bpf_attach_ctx::destroy_all_attach_links()
 {
+	std::lock_guard<std::mutex> lock(ctx_mutex);
+	return destroy_all_attach_links_unlocked();
+}
+
+int bpf_attach_ctx::destroy_all_attach_links_unlocked()
+{
 	// Avoid modifying along with iterating..
 	std::vector<int> to_detach;
 	for (const auto &[k, _] : instantiated_attach_links)
 		to_detach.push_back(k);
 	for (auto k : to_detach) {
-		SPDLOG_DEBUG("Destrying attach link {}", k);
-		if (int err = destroy_instantiated_attach_link(k); err < 0) {
+		SPDLOG_DEBUG("Destroying attach link {}", k);
+		if (int err = destroy_instantiated_attach_link_unlocked(k);
+		    err < 0) {
 			SPDLOG_ERROR("Unable to destroy attach link {}: {}", k,
 				     err);
 			return err;
 		}
 	}
 	return 0;
+}
+
+void bpf_attach_ctx::reset_instantiated_state()
+{
+	std::lock_guard<std::mutex> lock(ctx_mutex);
+	reset_instantiated_state_unlocked();
+}
+
+void bpf_attach_ctx::reset_instantiated_state_unlocked()
+{
+	instantiated_progs.clear();
+	instantiated_attach_links.clear();
+	instantiated_perf_events.clear();
+	instantiated_handlers.clear();
+	current_id = CURRENT_ID_OFFSET;
 }
 
 } // namespace bpftime
