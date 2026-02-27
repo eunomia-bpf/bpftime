@@ -306,8 +306,7 @@ cmake -Bbuild \
   -DBPFTIME_ENABLE_CUDA_ATTACH=1 \
   -DBPFTIME_CUDA_ROOT=/usr/local/cuda-12.6 \
   -DCMAKE_BUILD_TYPE=Release
-
-make -j$(nproc)
+cmake --build build -j$(nproc)
 ```
 
 ## References

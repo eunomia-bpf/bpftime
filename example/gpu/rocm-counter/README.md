@@ -32,13 +32,11 @@ This example leverages bpftime's CUDA attachment implementation to:
 cd bpftime
 
 # Build the main bpftime project first
-mkdir -p build && cd build
-cmake .. -DBPFTIME_ENABLE_CUDA_ATTACH=1 -DBPFTIME_CUDA_ROOT=/usr/local/cuda-12.6
-make -j$(nproc)
+cmake -Bbuild -DBPFTIME_ENABLE_CUDA_ATTACH=1 -DBPFTIME_CUDA_ROOT=/usr/local/cuda-12.6
+cmake --build build -j$(nproc)
 
-# Build the example (from the build directory)
-cd ..
-make -C example/cuda-counter
+# Build the example
+make -C example/gpu/rocm-counter
 ```
 
 ## Running the Example
@@ -49,7 +47,7 @@ You need to start two processes:
 
 ```bash
 BPFTIME_LOG_OUTPUT=console LD_PRELOAD=build/runtime/syscall-server/libbpftime-syscall-server.so \
-  example/cuda-counter/cuda_probe
+  example/gpu/rocm-counter/rocm_probe
 ```
 
 This process loads the eBPF program and waits for CUDA events.
@@ -60,7 +58,7 @@ In another terminal:
 
 ```bash
 LD_PRELOAD=build/runtime/agent/libbpftime-agent.so \
-  example/cuda-counter/vec_add
+  example/gpu/rocm-counter/vec_add
 ```
 
 This runs the vector addition program with the bpftime agent, which connects to the first process for eBPF execution.

@@ -10,8 +10,8 @@ targets the eBPF-generated probe function instead of the dummy stub.
 
 ```bash
 # from repo root
-cmake -B build -DBPFTIME_ENABLE_CUDA_ATTACH=1 -DBPFTIME_CUDA_ROOT=/usr/local/cuda
-cmake --build build
+cmake -Bbuild -DBPFTIME_ENABLE_CUDA_ATTACH=1 -DBPFTIME_CUDA_ROOT=/usr/local/cuda .
+cmake --build build -j$(nproc)
 
 # build the demo (BPF, userspace loader, sample CUDA program)
 make -C example/gpu/kernel_trace
