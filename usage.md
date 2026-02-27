@@ -40,7 +40,6 @@ $ bpftime start ./example/malloc/victim
 malloc called from pid 250215
 continue malloc...
 malloc called from pid 250215
-continue malloc...
 ```
 
 You can also dynamically attach the eBPF program with a running process:
