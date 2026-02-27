@@ -302,7 +302,11 @@ For helpers requiring host interaction, bpftime uses a shared memory protocol wi
 
 ```bash
 # For NVIDIA CUDA
-make build-gpu
+cmake -Bbuild \
+  -DBPFTIME_ENABLE_CUDA_ATTACH=1 \
+  -DBPFTIME_CUDA_ROOT=/usr/local/cuda-12.6 \
+  -DCMAKE_BUILD_TYPE=Release
+cmake --build build -j$(nproc)
 ```
 
 ## References

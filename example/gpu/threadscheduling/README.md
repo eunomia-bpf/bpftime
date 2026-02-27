@@ -34,7 +34,8 @@ This example uses three GPU eBPF helpers:
 
 ```bash
 # From the bpftime root directory, build with CUDA support
-make build-gpu
+cmake -Bbuild -DBPFTIME_ENABLE_CUDA_ATTACH=1 -DBPFTIME_CUDA_ROOT=/usr/local/cuda .
+cmake --build build -j$(nproc)
 
 # Build this example
 make -C example/gpu/threadscheduling

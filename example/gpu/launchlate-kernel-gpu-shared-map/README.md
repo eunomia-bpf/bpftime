@@ -55,7 +55,8 @@ Your application does GPU inference while streaming data over a 100Gb NIC that s
 cd bpftime
 
 # Build the main bpftime project first
-make build-gpu
+cmake -Bbuild -DBPFTIME_ENABLE_CUDA_ATTACH=1 -DBPFTIME_CUDA_ROOT=/usr/local/cuda .
+cmake --build build -j$(nproc)
 
 # Build the example
 make -C example/gpu/launchlate-kernel-gpu-shared-map
