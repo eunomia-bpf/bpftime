@@ -418,7 +418,7 @@ uint64_t bpf_ktime_get_coarse_ns(uint64_t, uint64_t, uint64_t, uint64_t,
 uint64_t bpf_ringbuf_output(uint64_t rb, uint64_t data, uint64_t size,
 			    uint64_t flags, uint64_t)
 {
-	int fd = (int)(rb >> 32);
+	int fd = (int)rb;
 	if (flags != 0) {
 		spdlog::warn(
 			"Currently only supports ringbuf_output with flags=0");
@@ -436,7 +436,7 @@ uint64_t bpf_ringbuf_output(uint64_t rb, uint64_t data, uint64_t size,
 uint64_t bpf_ringbuf_reserve(uint64_t rb, uint64_t size, uint64_t flags,
 			     uint64_t, uint64_t)
 {
-	int fd = (int)(rb >> 32);
+	int fd = (int)rb;
 	if (flags != 0) {
 		spdlog::warn(
 			"Currently only supports ringbuf_reserve with flags=0");
@@ -535,7 +535,7 @@ uint64_t bpf_perf_event_output(uint64_t ctx, uint64_t map, uint64_t flags,
 uint64_t bpftime_tail_call(uint64_t ctx, uint64_t prog_array, uint64_t index)
 {
 #ifdef BPFTIME_BUILD_WITH_LIBBPF
-	int fd = prog_array >> 32;
+	int fd = (int)prog_array;
 	if (!bpftime_is_prog_array(fd)) {
 		SPDLOG_ERROR("Expected fd {} to be a prog array fd", fd);
 		return -1;
@@ -718,7 +718,7 @@ int64_t bpftime_get_stackid(uint64_t ctx_raw, uint64_t map_raw, uint64_t flags,
 		*result = new_data;
 	}
 	SPDLOG_DEBUG("After skipping, collected {} frames", result->size());
-	int real_map_fd = map_raw >> 32;
+	int real_map_fd = (int)map_raw;
 	auto &map_handler = std::get<bpf_map_handler>(
 		shm_holder.global_shared_memory.get_handler(real_map_fd));
 
