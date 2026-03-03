@@ -12,6 +12,7 @@
 #include "linux/perf_event.h"
 #elif __APPLE__
 #include "bpftime_epoll.h"
+#include "spinlock_wrapper.hpp"
 #endif
 #include <cstddef>
 #include <cstdlib>

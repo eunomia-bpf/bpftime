@@ -20,6 +20,9 @@
 #include <optional>
 #include <pthread.h>
 #include <vector>
+#if __APPLE__
+#include "spinlock_wrapper.hpp"
+#endif
 
 namespace bpftime
 {
