@@ -6,6 +6,7 @@
 #include "nv_attach_impl.hpp"
 #include <boost/asio/post.hpp>
 #include <boost/asio/thread_pool.hpp>
+#include <chrono>
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
@@ -196,11 +197,29 @@ void fatbin_record::try_loading_ptxs(class nv_attach_impl &impl)
 			"shared_mem_ptr is not initialized before loading PTX");
 	}
 	SPDLOG_INFO("Loading & patching current fatbin..");
+	const auto total_start = std::chrono::steady_clock::now();
 
+	const auto patch_start = std::chrono::steady_clock::now();
 	auto patched_ptx = *impl.hack_fatbin(original_ptx);
+	const auto patch_elapsed =
+		std::chrono::duration_cast<std::chrono::milliseconds>(
+			std::chrono::steady_clock::now() - patch_start)
+			.count();
+	SPDLOG_INFO(
+		"GPU attach timing: PTX patch took {} ms for {} PTX files",
+		patch_elapsed, patched_ptx.size());
 
+	const auto compile_start = std::chrono::steady_clock::now();
 	auto compiled_ptx = compile_ptxs(impl, patched_ptx);
+	const auto compile_elapsed =
+		std::chrono::duration_cast<std::chrono::milliseconds>(
+			std::chrono::steady_clock::now() - compile_start)
+			.count();
+	SPDLOG_INFO(
+		"GPU attach timing: PTX compile took {} ms for {} PTX files",
+		compile_elapsed, compiled_ptx.size());
 
+	const auto module_load_start = std::chrono::steady_clock::now();
 	for (const auto &[name, ptx_and_trampoline_flag] : patched_ptx) {
 		const auto &ptx = std::get<0>(ptx_and_trampoline_flag);
 		bool added_trampoline = std::get<1>(ptx_and_trampoline_flag);
@@ -276,6 +295,18 @@ void fatbin_record::try_loading_ptxs(class nv_attach_impl &impl)
 			SPDLOG_INFO("Loaded module: {}", name);
 		}
 	}
+	const auto module_load_elapsed =
+		std::chrono::duration_cast<std::chrono::milliseconds>(
+			std::chrono::steady_clock::now() - module_load_start)
+			.count();
+	const auto total_elapsed =
+		std::chrono::duration_cast<std::chrono::milliseconds>(
+			std::chrono::steady_clock::now() - total_start)
+			.count();
+	SPDLOG_INFO("GPU attach timing: module load took {} ms",
+		    module_load_elapsed);
+	SPDLOG_INFO("GPU attach timing: total fatbin attach took {} ms",
+		    total_elapsed);
 	ptx_loaded = true;
 }
 
