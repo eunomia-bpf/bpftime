@@ -789,9 +789,16 @@ int bpf_map_handler::map_init(managed_shared_memory &memory)
 	auto container_name = get_container_name();
 	switch (type) {
 	case bpf_map_type::BPF_MAP_TYPE_HASH: {
+#ifdef BPFTIME_USE_VAR_HASH_MAP
+		map_impl_ptr =
+			memory.construct<hash_map_impl>(container_name.c_str())(
+				memory, key_size, value_size, max_entries,
+				static_cast<uint32_t>(flags));
+#else
 		map_impl_ptr =
 			memory.construct<hash_map_impl>(container_name.c_str())(
 				memory, max_entries, key_size, value_size);
+#endif
 		init_refcnt();
 		return 0;
 	}
