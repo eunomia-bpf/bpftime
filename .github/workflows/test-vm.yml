@@ -8,6 +8,7 @@ on:
       - "vm/**"
       - "cmake/**"
       - "third_party/**"
+      - "CMakeLists.txt"
       - "Makefile"
       - ".gitmodules"
   pull_request:
@@ -17,6 +18,7 @@ on:
       - "vm/**"
       - "cmake/**"
       - "third_party/**"
+      - "CMakeLists.txt"
       - "Makefile"
       - ".gitmodules"
 concurrency:

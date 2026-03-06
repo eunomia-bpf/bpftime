@@ -6,6 +6,7 @@ on:
     branches: ["master"]
     paths:
       - ".github/workflows/test-tools.yml"
+      - "attach/**"
       - "runtime/**"
       - "tools/**"
       - "vm/**"
@@ -17,6 +18,7 @@ on:
     branches: ["master"]
     paths:
       - ".github/workflows/test-tools.yml"
+      - "attach/**"
       - "runtime/**"
       - "tools/**"
       - "vm/**"

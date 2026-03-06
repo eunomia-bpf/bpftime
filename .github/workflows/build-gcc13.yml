@@ -2,11 +2,12 @@ name: Build GCC 13
 
 on:
   push:
-    branches: [master]
+    branches: [master, "ci/**"]
     paths:
       - ".github/workflows/build-gcc13.yml"
       - "attach/**"
       - "benchmark/**"
+      - "daemon/**"
       - "cmake/**"
       - "runtime/**"
       - "tools/**"
@@ -20,6 +21,7 @@ on:
       - ".github/workflows/build-gcc13.yml"
       - "attach/**"
       - "benchmark/**"
+      - "daemon/**"
       - "cmake/**"
       - "runtime/**"
       - "tools/**"
