@@ -3,8 +3,38 @@ name: Build GCC 13
 on:
   push:
     branches: [master, main, "ci/**"]
+    paths:
+      - ".github/workflows/build-gcc13.yml"
+      - "attach/**"
+      - "benchmark/**"
+      - "bpftime-verifier/**"
+      - "cmake/**"
+      - "daemon/**"
+      - "example/**"
+      - "runtime/**"
+      - "tools/**"
+      - "vm/**"
+      - "third_party/**"
+      - "CMakeLists.txt"
+      - "Makefile"
+      - ".gitmodules"
   pull_request:
-    branches: ["**"]
+    branches: [master, main]
+    paths:
+      - ".github/workflows/build-gcc13.yml"
+      - "attach/**"
+      - "benchmark/**"
+      - "bpftime-verifier/**"
+      - "cmake/**"
+      - "daemon/**"
+      - "example/**"
+      - "runtime/**"
+      - "tools/**"
+      - "vm/**"
+      - "third_party/**"
+      - "CMakeLists.txt"
+      - "Makefile"
+      - ".gitmodules"
 
 concurrency:
   group: build-gcc13-${{ github.ref }}

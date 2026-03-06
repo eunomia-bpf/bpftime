@@ -2,9 +2,37 @@ name: Build and run all integrated tests (examples)
 
 on:
   push:
-    branches: ["*"]
+    branches: ["master", "main", "ci/**"]
+    paths:
+      - ".github/workflows/test-examples.yml"
+      - ".github/script/run_example.py"
+      - "attach/**"
+      - "daemon/**"
+      - "example/**"
+      - "runtime/**"
+      - "tools/**"
+      - "vm/**"
+      - "cmake/**"
+      - "third_party/**"
+      - "CMakeLists.txt"
+      - "Makefile"
+      - ".gitmodules"
   pull_request:
-    branches: ["*"]
+    branches: ["master", "main"]
+    paths:
+      - ".github/workflows/test-examples.yml"
+      - ".github/script/run_example.py"
+      - "attach/**"
+      - "daemon/**"
+      - "example/**"
+      - "runtime/**"
+      - "tools/**"
+      - "vm/**"
+      - "cmake/**"
+      - "third_party/**"
+      - "CMakeLists.txt"
+      - "Makefile"
+      - ".gitmodules"
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}-${{ github.event_name }}
   cancel-in-progress: true

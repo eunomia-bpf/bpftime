@@ -3,9 +3,41 @@ name: Build and push docker image
 on:
   workflow_dispatch:
   push:
-    branches: ["master"]
+    branches: ["master", "main"]
+    paths:
+      - ".github/workflows/docker.yml"
+      - "Dockerfile"
+      - "attach/**"
+      - "benchmark/**"
+      - "bpftime-verifier/**"
+      - "cmake/**"
+      - "daemon/**"
+      - "example/**"
+      - "runtime/**"
+      - "tools/**"
+      - "vm/**"
+      - "third_party/**"
+      - "CMakeLists.txt"
+      - "Makefile"
+      - ".gitmodules"
   pull_request:
-    branches: ["master"]
+    branches: ["master", "main"]
+    paths:
+      - ".github/workflows/docker.yml"
+      - "Dockerfile"
+      - "attach/**"
+      - "benchmark/**"
+      - "bpftime-verifier/**"
+      - "cmake/**"
+      - "daemon/**"
+      - "example/**"
+      - "runtime/**"
+      - "tools/**"
+      - "vm/**"
+      - "third_party/**"
+      - "CMakeLists.txt"
+      - "Makefile"
+      - ".gitmodules"
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}-${{ github.event_name }}
   cancel-in-progress: true

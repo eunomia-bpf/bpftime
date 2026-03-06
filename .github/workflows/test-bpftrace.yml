@@ -3,9 +3,37 @@ name: Build and run bpftrace test
 on:
   workflow_dispatch:
   push:
-    branches: ["master"]
+    branches: ["master", "main", "ci/**"]
+    paths:
+      - ".github/workflows/test-bpftrace.yml"
+      - "attach/**"
+      - "daemon/**"
+      - "example/malloc/**"
+      - "example/tracing/bpftrace/**"
+      - "runtime/**"
+      - "tools/**"
+      - "vm/**"
+      - "cmake/**"
+      - "third_party/**"
+      - "CMakeLists.txt"
+      - "Makefile"
+      - ".gitmodules"
   pull_request:
-    branches: ["master"]
+    branches: ["master", "main"]
+    paths:
+      - ".github/workflows/test-bpftrace.yml"
+      - "attach/**"
+      - "daemon/**"
+      - "example/malloc/**"
+      - "example/tracing/bpftrace/**"
+      - "runtime/**"
+      - "tools/**"
+      - "vm/**"
+      - "cmake/**"
+      - "third_party/**"
+      - "CMakeLists.txt"
+      - "Makefile"
+      - ".gitmodules"
 
 env:
   BPFTIME_VM_NAME: llvm

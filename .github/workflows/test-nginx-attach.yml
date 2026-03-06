@@ -3,9 +3,35 @@ name: Nginx attach test
 on:
   workflow_dispatch:
   push:
-    branches: ["*"]
+    branches: ["master", "main", "ci/**"]
+    paths:
+      - ".github/workflows/test-nginx-attach.yml"
+      - ".github/script/run_nginx_attach_example.py"
+      - "attach/**"
+      - "example/attach_implementation/**"
+      - "runtime/**"
+      - "tools/**"
+      - "vm/**"
+      - "cmake/**"
+      - "third_party/**"
+      - "CMakeLists.txt"
+      - "Makefile"
+      - ".gitmodules"
   pull_request:
-    branches: ["master"]
+    branches: ["master", "main"]
+    paths:
+      - ".github/workflows/test-nginx-attach.yml"
+      - ".github/script/run_nginx_attach_example.py"
+      - "attach/**"
+      - "example/attach_implementation/**"
+      - "runtime/**"
+      - "tools/**"
+      - "vm/**"
+      - "cmake/**"
+      - "third_party/**"
+      - "CMakeLists.txt"
+      - "Makefile"
+      - ".gitmodules"
 
 jobs:
   build-and-test:

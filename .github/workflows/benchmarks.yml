@@ -4,8 +4,32 @@ on:
   workflow_dispatch:
   push:
     branches: ["master"]
+    paths:
+      - ".github/workflows/benchmarks.yml"
+      - "benchmark/**"
+      - "attach/**"
+      - "runtime/**"
+      - "tools/**"
+      - "vm/**"
+      - "cmake/**"
+      - "third_party/**"
+      - "CMakeLists.txt"
+      - "Makefile"
+      - ".gitmodules"
   pull_request:
     branches: ["master"]
+    paths:
+      - ".github/workflows/benchmarks.yml"
+      - "benchmark/**"
+      - "attach/**"
+      - "runtime/**"
+      - "tools/**"
+      - "vm/**"
+      - "cmake/**"
+      - "third_party/**"
+      - "CMakeLists.txt"
+      - "Makefile"
+      - ".gitmodules"
 
 # Sets permissions of the GITHUB_TOKEN to allow deployment to GitHub Pages
 permissions:

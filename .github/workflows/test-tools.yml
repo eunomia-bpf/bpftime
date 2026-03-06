@@ -1,10 +1,35 @@
 name: Build and test bpftime tools
 
 on:
+  workflow_dispatch:
   push:
-    branches: ["master"]
+    branches: ["master", "main", "ci/**"]
+    paths:
+      - ".github/workflows/test-tools.yml"
+      - "attach/**"
+      - "daemon/**"
+      - "runtime/**"
+      - "tools/**"
+      - "vm/**"
+      - "cmake/**"
+      - "third_party/**"
+      - "CMakeLists.txt"
+      - "Makefile"
+      - ".gitmodules"
   pull_request:
-    branches: ["master"]
+    branches: ["master", "main"]
+    paths:
+      - ".github/workflows/test-tools.yml"
+      - "attach/**"
+      - "daemon/**"
+      - "runtime/**"
+      - "tools/**"
+      - "vm/**"
+      - "cmake/**"
+      - "third_party/**"
+      - "CMakeLists.txt"
+      - "Makefile"
+      - ".gitmodules"
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}-${{ github.event_name }}
   cancel-in-progress: true
