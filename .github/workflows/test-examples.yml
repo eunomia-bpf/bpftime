@@ -2,12 +2,11 @@ name: Build and run all integrated tests (examples)
 
 on:
   push:
-    branches: ["master", "main", "ci/**"]
+    branches: ["master"]
     paths:
       - ".github/workflows/test-examples.yml"
       - ".github/script/run_example.py"
       - "attach/**"
-      - "daemon/**"
       - "example/**"
       - "runtime/**"
       - "tools/**"
@@ -15,15 +14,13 @@ on:
       - "cmake/**"
       - "third_party/**"
       - "CMakeLists.txt"
-      - "Makefile"
       - ".gitmodules"
   pull_request:
-    branches: ["master", "main"]
+    branches: ["master"]
     paths:
       - ".github/workflows/test-examples.yml"
       - ".github/script/run_example.py"
       - "attach/**"
-      - "daemon/**"
       - "example/**"
       - "runtime/**"
       - "tools/**"
@@ -31,7 +28,6 @@ on:
       - "cmake/**"
       - "third_party/**"
       - "CMakeLists.txt"
-      - "Makefile"
       - ".gitmodules"
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}-${{ github.event_name }}
@@ -81,7 +77,7 @@ jobs:
             -DBPFTIME_LLVM_JIT=1 \
             -DTEST_LCOV=YES \
             -DBPFTIME_ENABLE_CUDA_ATTACH=OFF \
-            -DBUILD_BPFTIME_DAEMON=1 \
+            -DBUILD_BPFTIME_DAEMON=OFF \
             -DCMAKE_CXX_FLAGS="-DDEFAULT_LOGGER_OUTPUT_PATH='\"console\"'" -Dabsl_DIR=~/miniconda3/lib/cmake/absl -DProtobuf_DIR=~/miniconda3/lib/cmake/protobuf -Dutf8_range_DIR=~/miniconda3/lib/cmake/utf8_range
           # mkdir -p build/runtime/pos/include/proto/
           # mkdir -p build/runtime/pos/cuda_impl/proto/
@@ -103,7 +99,7 @@ jobs:
             -DBPFTIME_LLVM_JIT=0 \
             -DTEST_LCOV=YES \
             -DBPFTIME_ENABLE_CUDA_ATTACH=OFF \
-            -DBUILD_BPFTIME_DAEMON=1 \
+            -DBUILD_BPFTIME_DAEMON=OFF \
             -DCMAKE_CXX_FLAGS="-DDEFAULT_LOGGER_OUTPUT_PATH='\"console\"'" -Dabsl_DIR=~/miniconda3/lib/cmake/absl -DProtobuf_DIR=~/miniconda3/lib/cmake/protobuf -Dutf8_range_DIR=~/miniconda3/lib/cmake/utf8_range
           mkdir -p build/runtime/pos/include/proto/
           mkdir -p build/runtime/pos/cuda_impl/proto/

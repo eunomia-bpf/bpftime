@@ -2,23 +2,21 @@ name: Build and Test VM
 
 on:
   push:
-    branches: [master, main, "ci/**"]
+    branches: [master]
     paths:
       - ".github/workflows/test-vm.yml"
       - "vm/**"
       - "cmake/**"
       - "third_party/**"
-      - "CMakeLists.txt"
       - "Makefile"
       - ".gitmodules"
   pull_request:
-    branches: [master, main]
+    branches: [master]
     paths:
       - ".github/workflows/test-vm.yml"
       - "vm/**"
       - "cmake/**"
       - "third_party/**"
-      - "CMakeLists.txt"
       - "Makefile"
       - ".gitmodules"
 concurrency:
