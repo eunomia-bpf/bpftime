@@ -32,7 +32,7 @@ This example leverages bpftime's CUDA attachment implementation to:
 cd bpftime
 
 # Build the main bpftime project first
-cmake -Bbuild -DBPFTIME_ENABLE_CUDA_ATTACH=1 -DBPFTIME_CUDA_ROOT=/usr/local/cuda-12.6
+cmake -Bbuild -DBPFTIME_ENABLE_CUDA_ATTACH=1 -DBPFTIME_ROCM_ROOT=/opt/rocm-6.4.1
 cmake --build build -j$(nproc)
 
 # Build the example
