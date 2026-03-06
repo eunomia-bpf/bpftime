@@ -2,8 +2,7 @@
 #include "frida_uprobe_attach_impl.hpp"
 #include "frida_attach_entry.hpp"
 #include <dlfcn.h>
-#include <iomanip>
-#include <sstream>
+#include <spdlog/fmt/fmt.h>
 #include <spdlog/spdlog.h>
 #include <frida_register_conversion.hpp>
 using namespace bpftime::attach;
@@ -14,6 +13,8 @@ extern "C" void *__bpftime_frida_attach_manager__override_handler();
 
 namespace
 {
+
+namespace fmt_lib = spdlog::fmt_lib;
 
 const char *attach_type_to_string(int attach_type)
 {
@@ -54,21 +55,22 @@ std::string describe_attach_target(void *function)
 		return "symbol=<unresolved>";
 	}
 
-	std::ostringstream oss;
+	std::string rendered;
 	if (info.dli_fname != nullptr) {
-		oss << "module=" << info.dli_fname;
+		rendered = fmt_lib::format("module={}", info.dli_fname);
 	}
 	if (info.dli_sname != nullptr) {
-		if (oss.tellp() > 0) {
-			oss << ", ";
-		}
-		oss << "symbol=" << info.dli_sname;
+		auto symbol = fmt_lib::format("symbol={}", info.dli_sname);
 		if (info.dli_saddr != nullptr) {
 			auto offset = (uintptr_t)function - (uintptr_t)info.dli_saddr;
-			oss << "+0x" << std::hex << offset;
+			symbol = fmt_lib::format("{}+0x{:x}", symbol, offset);
+		}
+		if (!rendered.empty()) {
+			rendered = fmt_lib::format("{}, {}", rendered, symbol);
+		} else {
+			rendered = symbol;
 		}
 	}
-	auto rendered = oss.str();
 	if (rendered.empty()) {
 		return "symbol=<unresolved>";
 	}
@@ -78,32 +80,30 @@ std::string describe_attach_target(void *function)
 std::string format_target_bytes(void *function, size_t byte_count = 8)
 {
 	auto *bytes = reinterpret_cast<const uint8_t *>(function);
-	std::ostringstream oss;
-	oss << std::hex << std::setfill('0');
+	std::string rendered;
+	rendered.reserve(byte_count * 3);
 	for (size_t i = 0; i < byte_count; i++) {
 		if (i != 0) {
-			oss << ' ';
+			rendered += ' ';
 		}
-		oss << std::setw(2) << static_cast<unsigned int>(bytes[i]);
+		rendered += fmt_lib::format(
+			"{:02x}", static_cast<unsigned int>(bytes[i]));
 	}
-	return oss.str();
+	return rendered;
 }
 
 std::string build_frida_attach_failure_message(const char *operation,
 					       void *function, int attach_type,
 					       int err)
 {
-	std::ostringstream oss;
-	oss << operation << " failed for attach_type="
-	    << attach_type_to_string(attach_type) << " at function 0x" << std::hex
-	    << (uintptr_t)function << std::dec << " (err=" << err << ", "
-	    << gum_attach_return_to_string(err) << ", "
-	    << describe_attach_target(function) << ", first_bytes="
-	    << format_target_bytes(function)
-	    << "). Frida may reject very short functions or unsupported "
-	       "signatures; try compiling the target with -O0, adding "
-	       "__attribute__((noinline)), or attaching to a larger wrapper.";
-	return oss.str();
+	return fmt_lib::format(
+		"{} failed for attach_type={} at function 0x{:x} (err={}, {}, {}, first_bytes={}). "
+		"Frida may reject very short functions or unsupported signatures; "
+		"try compiling the target with -O0, adding __attribute__((noinline)), "
+		"or attaching to a larger wrapper.",
+		operation, attach_type_to_string(attach_type),
+		(uintptr_t)function, err, gum_attach_return_to_string(err),
+		describe_attach_target(function), format_target_bytes(function));
 }
 
 } // namespace
