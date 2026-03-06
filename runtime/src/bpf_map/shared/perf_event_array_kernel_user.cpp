@@ -30,6 +30,10 @@
 #include <iterator>
 
 static int create_transporter_prog(int user_ringbuf_fd, int kernel_perf_fd);
+// Ubuntu 22.04's linux/bpf.h can lag behind libbpf and miss the
+// BPF_MAP_TYPE_USER_RINGBUF enumerator even though libbpf supports it.
+static constexpr enum bpf_map_type USER_RINGBUF_MAP_TYPE_COMPAT =
+	static_cast<enum bpf_map_type>(31);
 
 // kernel perf event array map id -> user_ring_buffer* for the current process
 using user_ringbuf_map =
@@ -101,8 +105,9 @@ perf_event_array_kernel_user_impl::perf_event_array_kernel_user_impl(
 	// Create corresponding user ringbuffer
 	LIBBPF_OPTS(bpf_map_create_opts, user_rb_opts);
 	std::string name = "ku_perf_id_" + std::to_string(kernel_perf_id);
-	int user_rb_fd = bpf_map_create(BPF_MAP_TYPE_USER_RINGBUF, name.c_str(),
-					0, 0, 1024 * 1024, &user_rb_opts);
+	int user_rb_fd = bpf_map_create(USER_RINGBUF_MAP_TYPE_COMPAT,
+					name.c_str(), 0, 0, 1024 * 1024,
+					&user_rb_opts);
 	if (user_rb_fd < 0) {
 		SPDLOG_ERROR(
 			"Failed to create user ringbuffer for shared perf event array id {}, err={}",
