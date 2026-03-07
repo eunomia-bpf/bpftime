@@ -4,11 +4,11 @@
 #include <cstdio>
 #include <cstdlib>
 #include <iostream>
-#include <ostream>
-#include <sstream>
+#include <optional>
 #include <stdexcept>
 #include <string>
 #include <set>
+#include <string_view>
 #include <llvmbpf.hpp>
 #include <llvm_jit_context.hpp>
 
@@ -18,6 +18,21 @@ using nlohmann::json;
 
 namespace ptxpass
 {
+
+template <typename Fn>
+static void for_each_line(std::string_view input, Fn &&fn)
+{
+	size_t start = 0;
+	while (start < input.size()) {
+		const auto end = input.find('\n', start);
+		if (end == std::string_view::npos) {
+			fn(input.substr(start));
+			break;
+		}
+		fn(input.substr(start, end - start));
+		start = end + 1;
+	}
+}
 
 static std::vector<std::regex>
 compile_regex_list(const std::vector<std::string> &patterns)
@@ -57,12 +72,11 @@ bool AttachPointMatcher::matches(const std::string &attachPoint) const
 
 std::string read_all_from_stdin()
 {
-	std::ostringstream oss;
-	oss << std::cin.rdbuf();
+	std::string input(std::istreambuf_iterator<char>(std::cin), {});
 	if (!std::cin.good() && !std::cin.eof()) {
 		throw std::runtime_error("Failed to read from stdin");
 	}
-	return oss.str();
+	return input;
 }
 
 bool is_whitespace_only(const std::string &s)
@@ -121,27 +135,28 @@ bool validate_ptx_version(const std::string &input,
 			  const std::string &minVersion)
 {
 	// Expect line like: .version 7.0
-	std::istringstream iss(input);
-	std::string line;
 	double want = 0.0;
 	try {
 		want = std::stod(minVersion);
 	} catch (...) {
 		return true;
 	}
-	while (std::getline(iss, line)) {
+	std::optional<bool> version_ok;
+	for_each_line(input, [&](std::string_view line) {
+		if (version_ok.has_value())
+			return;
 		if (line.rfind(".version", 0) == 0) {
 			// parse number
-			std::string v = line.substr(8);
+			std::string v(line.substr(8));
 			try {
 				double have = std::stod(v);
-				return have >= want;
+				version_ok = have >= want;
 			} catch (...) {
-				return true;
+				version_ok = true;
 			}
 		}
-	}
-	return true;
+	});
+	return version_ok.value_or(true);
 }
 
 } // namespace ptxpass
@@ -154,11 +169,10 @@ std::string filter_out_version_headers_ptx(const std::string &input)
 		".version", ".target", ".address_size", "//"
 	};
 
-	std::istringstream iss(input);
-	std::ostringstream oss;
-	std::string line;
 	std::set<std::string> seen;
-	while (std::getline(iss, line)) {
+	std::string filtered;
+	filtered.reserve(input.size());
+	for_each_line(input, [&](std::string_view line) {
 		bool skip = false;
 		for (const auto &p : FILTERED_OUT_PREFIXES) {
 			if (line.rfind(p, 0) == 0) {
@@ -171,9 +185,9 @@ std::string filter_out_version_headers_ptx(const std::string &input)
 			}
 		}
 		if (!skip)
-			oss << line << '\n';
-	}
-	return oss.str();
+			filtered.append(line).push_back('\n');
+	});
+	return filtered;
 }
 static uint64_t test_func(uint64_t, uint64_t, uint64_t, uint64_t, uint64_t)
 {
@@ -233,9 +247,6 @@ std::string compile_ebpf_to_ptx_from_words(
 }
 std::string filter_compiled_ptx_for_ebpf_program(std::string input)
 {
-	std::istringstream iss(input);
-	std::ostringstream oss;
-	std::string line;
 	static const std::string FILTERED_OUT_PREFIXES[] = {
 		".version", ".target", ".address_size", "//"
 	};
@@ -251,7 +262,9 @@ std::string filter_compiled_ptx_for_ebpf_program(std::string input)
 ))",
 		R"(.visible .func bpf_main())"
 	};
-	while (std::getline(iss, line)) {
+	std::string filtered;
+	filtered.reserve(input.size());
+	for_each_line(input, [&](std::string_view line) {
 		// if(line.starts_with)
 		bool skip = false;
 		for (const auto &prefix : FILTERED_OUT_PREFIXES) {
@@ -261,9 +274,9 @@ std::string filter_compiled_ptx_for_ebpf_program(std::string input)
 			}
 		}
 		if (!skip)
-			oss << line << std::endl;
-	}
-	auto result = oss.str();
+			filtered.append(line).push_back('\n');
+	});
+	auto result = std::move(filtered);
 	for (const auto &sec : FILTERED_OUT_SECTION) {
 		if (auto pos = result.find(sec); pos != result.npos) {
 			result = result.replace(pos, sec.size(), "");
@@ -309,7 +322,7 @@ std::pair<size_t, size_t> find_kernel_body(const std::string &ptx,
 void log_transform_stats(const char *pass_name, int matched, size_t bytes_in,
 			 size_t bytes_out)
 {
-	std::cerr << "[ptxpass] " << pass_name << ": matched=" << matched
-		  << ", in=" << bytes_in << ", out=" << bytes_out << "\n";
+	SPDLOG_INFO("[ptxpass] {}: matched={}, in={}, out={}", pass_name,
+		    matched, bytes_in, bytes_out);
 }
 } // namespace ptxpass
