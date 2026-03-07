@@ -17,6 +17,7 @@
 #include <tuple>
 #include <sys/wait.h>
 #include <spdlog/spdlog.h>
+#include <spdlog/cfg/env.h>
 #ifdef __APPLE__
 #include <crt_externs.h>
 #include <cstdlib>
@@ -185,6 +186,7 @@ static void signal_handler(int sig)
 
 int main(int argc, const char **argv)
 {
+	spdlog::cfg::load_env_levels();
 	const auto agent_config = bpftime::construct_agent_config_from_env();
 	signal(SIGINT, signal_handler);
 	signal(SIGTSTP, signal_handler);
