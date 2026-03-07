@@ -98,5 +98,8 @@ int main(int argc, char **argv)
 	err = argp_parse(&argp, argc, argv, 0, NULL, NULL);
 	if (err)
 		return err;
+	if (env.verbose && spdlog::get_level() > spdlog::level::debug) {
+		spdlog::set_level(spdlog::level::debug);
+	}
 	return start_daemon(env);
 }
