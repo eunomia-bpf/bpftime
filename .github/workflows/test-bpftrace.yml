@@ -4,8 +4,30 @@ on:
   workflow_dispatch:
   push:
     branches: ["master"]
+    paths:
+      - ".github/workflows/test-bpftrace.yml"
+      - "attach/**"
+      - "example/malloc/**"
+      - "example/tracing/bpftrace/**"
+      - "runtime/**"
+      - "vm/**"
+      - "cmake/**"
+      - "third_party/**"
+      - "CMakeLists.txt"
+      - ".gitmodules"
   pull_request:
     branches: ["master"]
+    paths:
+      - ".github/workflows/test-bpftrace.yml"
+      - "attach/**"
+      - "example/malloc/**"
+      - "example/tracing/bpftrace/**"
+      - "runtime/**"
+      - "vm/**"
+      - "cmake/**"
+      - "third_party/**"
+      - "CMakeLists.txt"
+      - ".gitmodules"
 
 env:
   BPFTIME_VM_NAME: llvm
@@ -70,11 +92,12 @@ jobs:
           echo "Building bpftime with CMake"
           cmake -Bbuild -DCMAKE_BUILD_TYPE:STRING=RelWithDebInfo \
             -DBPFTIME_LLVM_JIT=1 \
-            -DBUILD_BPFTIME_DAEMON=1 \
+            -DBUILD_BPFTIME_DAEMON=OFF \
             -DBUILD_AGENT=1 \
+            -DBPFTIME_ENABLE_CUDA_ATTACH=OFF \
             -DTEST_LCOV=YES \
             -DCMAKE_CXX_FLAGS="-DDEFAULT_LOGGER_OUTPUT_PATH='\"console\"'"
-          cmake --build build --config RelWithDebInfo -j$(nproc)
+          cmake --build build --config RelWithDebInfo --target bpftime-agent bpftime-syscall-server bpftime_text_segment_transformer -j$(nproc)
 
           echo "Checking built libraries:"
           ls -la build/runtime/agent/
@@ -395,11 +418,12 @@ jobs:
           echo "Building bpftime with CMake"
           cmake -Bbuild -DCMAKE_BUILD_TYPE:STRING=RelWithDebInfo \
             -DBPFTIME_LLVM_JIT=1 \
-            -DBUILD_BPFTIME_DAEMON=1 \
+            -DBUILD_BPFTIME_DAEMON=OFF \
             -DBUILD_AGENT=1 \
+            -DBPFTIME_ENABLE_CUDA_ATTACH=OFF \
             -DTEST_LCOV=YES \
             -DCMAKE_CXX_FLAGS="-DDEFAULT_LOGGER_OUTPUT_PATH='\"console\"'"
-          cmake --build build --config RelWithDebInfo -j$(nproc)
+          cmake --build build --config RelWithDebInfo --target bpftime-agent bpftime-syscall-server bpftime_text_segment_transformer -j$(nproc)
 
           echo "Checking built libraries:"
           ls -la build/runtime/agent/
