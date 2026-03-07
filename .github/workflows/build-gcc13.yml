@@ -2,9 +2,33 @@ name: Build GCC 13
 
 on:
   push:
-    branches: [master, main, "ci/**"]
+    branches: [master, "ci/**"]
+    paths:
+      - ".github/workflows/build-gcc13.yml"
+      - "attach/**"
+      - "benchmark/**"
+      - "daemon/**"
+      - "cmake/**"
+      - "runtime/**"
+      - "tools/**"
+      - "vm/**"
+      - "third_party/**"
+      - "CMakeLists.txt"
+      - ".gitmodules"
   pull_request:
-    branches: ["**"]
+    branches: [master]
+    paths:
+      - ".github/workflows/build-gcc13.yml"
+      - "attach/**"
+      - "benchmark/**"
+      - "daemon/**"
+      - "cmake/**"
+      - "runtime/**"
+      - "tools/**"
+      - "vm/**"
+      - "third_party/**"
+      - "CMakeLists.txt"
+      - ".gitmodules"
 
 concurrency:
   group: build-gcc13-${{ github.ref }}
