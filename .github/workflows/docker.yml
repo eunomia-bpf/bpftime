@@ -4,8 +4,34 @@ on:
   workflow_dispatch:
   push:
     branches: ["master"]
+    paths:
+      - ".github/workflows/docker.yml"
+      - "Dockerfile"
+      - "attach/**"
+      - "benchmark/**"
+      - "cmake/**"
+      - "daemon/**"
+      - "runtime/**"
+      - "tools/**"
+      - "vm/**"
+      - "third_party/**"
+      - "CMakeLists.txt"
+      - ".gitmodules"
   pull_request:
     branches: ["master"]
+    paths:
+      - ".github/workflows/docker.yml"
+      - "Dockerfile"
+      - "attach/**"
+      - "benchmark/**"
+      - "cmake/**"
+      - "daemon/**"
+      - "runtime/**"
+      - "tools/**"
+      - "vm/**"
+      - "third_party/**"
+      - "CMakeLists.txt"
+      - ".gitmodules"
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}-${{ github.event_name }}
   cancel-in-progress: true

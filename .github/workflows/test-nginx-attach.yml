@@ -3,9 +3,31 @@ name: Nginx attach test
 on:
   workflow_dispatch:
   push:
-    branches: ["*"]
+    branches: ["master"]
+    paths:
+      - ".github/workflows/test-nginx-attach.yml"
+      - ".github/script/run_nginx_attach_example.py"
+      - "attach/**"
+      - "example/attach_implementation/**"
+      - "runtime/**"
+      - "vm/**"
+      - "cmake/**"
+      - "third_party/**"
+      - "CMakeLists.txt"
+      - ".gitmodules"
   pull_request:
     branches: ["master"]
+    paths:
+      - ".github/workflows/test-nginx-attach.yml"
+      - ".github/script/run_nginx_attach_example.py"
+      - "attach/**"
+      - "example/attach_implementation/**"
+      - "runtime/**"
+      - "vm/**"
+      - "cmake/**"
+      - "third_party/**"
+      - "CMakeLists.txt"
+      - ".gitmodules"
 
 jobs:
   build-and-test:
@@ -23,7 +45,7 @@ jobs:
           submodules: "recursive"
       - name: Build
         run: |
-          cmake -DBPFTIME_LLVM_JIT=0 -DCMAKE_BUILD_TYPE:STRING=Release -DBUILD_ATTACH_IMPL_EXAMPLE=YES -DBPFTIME_LLVM_JIT=YES -DLLVM_DIR=/usr/lib/llvm-15/cmake -B build -S .
+          cmake -DCMAKE_BUILD_TYPE:STRING=Release -DBUILD_ATTACH_IMPL_EXAMPLE=YES -DBPFTIME_LLVM_JIT=YES -DBUILD_BPFTIME_DAEMON=OFF -DLLVM_DIR=/usr/lib/llvm-15/cmake -B build -S .
           cmake --build build --config Release --target attach_impl_example_nginx -j$(nproc)
       - name: Display version of nginx
         run: |
