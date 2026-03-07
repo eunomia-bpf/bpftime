@@ -30,6 +30,7 @@
 #include <cuda_runtime.h>
 #include <dlfcn.h>
 #include <filesystem>
+#include <algorithm>
 #include <iterator>
 #include <map>
 #include <memory>
@@ -78,6 +79,91 @@ static std::vector<std::filesystem::path> split_by_colon(const std::string &str)
 	} while (false)
 
 extern GType cuda_runtime_function_hooker_get_type();
+
+namespace
+{
+
+bool is_executable_file(const std::filesystem::path &path)
+{
+	std::error_code ec;
+	return !path.empty() && std::filesystem::is_regular_file(path, ec) &&
+	       access(path.c_str(), X_OK) == 0;
+}
+
+void add_unique_path(std::vector<std::filesystem::path> &paths,
+		     const std::filesystem::path &path)
+{
+	if (path.empty())
+		return;
+	if (std::find(paths.begin(), paths.end(), path) == paths.end())
+		paths.push_back(path);
+}
+
+void add_cuda_root_candidate(std::vector<std::filesystem::path> &paths,
+			     const std::string &tool_name,
+			     const std::string &root)
+{
+	if (!root.empty())
+		add_unique_path(paths,
+				std::filesystem::path(root) / "bin" / tool_name);
+}
+
+void add_common_cuda_root_candidates(std::vector<std::filesystem::path> &paths,
+				     const std::string &tool_name)
+{
+	add_unique_path(paths,
+			std::filesystem::path("/usr/local/cuda/bin") /
+				tool_name);
+
+	std::error_code ec;
+	std::vector<std::filesystem::path> versioned_cuda_roots;
+	for (const auto &entry :
+	     std::filesystem::directory_iterator("/usr/local", ec)) {
+		if (ec)
+			break;
+		if (!entry.is_directory(ec) || ec)
+			continue;
+		auto dir_name = entry.path().filename().string();
+		if (dir_name.rfind("cuda-", 0) == 0)
+			versioned_cuda_roots.push_back(entry.path());
+	}
+	std::sort(versioned_cuda_roots.begin(), versioned_cuda_roots.end());
+	for (const auto &root : versioned_cuda_roots)
+		add_unique_path(paths, root / "bin" / tool_name);
+}
+
+} // namespace
+
+std::optional<std::filesystem::path>
+bpftime::attach::resolve_cuda_tool_path(const std::string &tool_name)
+{
+	std::vector<std::filesystem::path> candidates;
+
+	add_cuda_root_candidate(candidates, tool_name,
+				ptxpass::get_env("BPFTIME_CUDA_ROOT"));
+	add_cuda_root_candidate(candidates, tool_name,
+				ptxpass::get_env("CUDA_HOME"));
+	add_cuda_root_candidate(candidates, tool_name,
+				ptxpass::get_env("CUDA_PATH"));
+	for (const auto &path_dir : split_by_colon(ptxpass::get_env("PATH"))) {
+		add_unique_path(candidates, path_dir / tool_name);
+	}
+	add_common_cuda_root_candidates(candidates, tool_name);
+
+	for (const auto &candidate : candidates) {
+		if (is_executable_file(candidate))
+			return candidate;
+	}
+	return std::nullopt;
+}
+
+std::string bpftime::attach::cuda_tool_resolution_help(
+	const std::string &tool_name)
+{
+	return "Set BPFTIME_CUDA_ROOT/CUDA_HOME/CUDA_PATH to your CUDA root "
+	       "or add " +
+	       tool_name + " to PATH.";
+}
 
 int nv_attach_impl::detach_by_id(int id)
 {
@@ -541,8 +627,17 @@ nv_attach_impl::extract_ptxs(std::vector<uint8_t> &&data_vec)
 {
 	std::map<std::string, std::string> all_ptx;
 	char tmp_dir[] = "/tmp/bpftime-fatbin-work.XXXXXX";
-	mkdtemp(tmp_dir);
+	if (mkdtemp(tmp_dir) == nullptr) {
+		SPDLOG_ERROR("Failed to create temporary directory for fatbin extraction");
+		return {};
+	}
 	auto working_dir = std::filesystem::path(tmp_dir);
+	auto cleanup_tmp_dir = [&working_dir]() {
+		if (!spdlog::should_log(spdlog::level::debug)) {
+			SPDLOG_INFO("Remove extracted files..");
+			std::filesystem::remove_all(working_dir);
+		}
+	};
 	auto fatbin_path = working_dir / "temp.fatbin";
 	{
 		std::ofstream ofs(fatbin_path, std::ios::binary);
@@ -551,25 +646,67 @@ nv_attach_impl::extract_ptxs(std::vector<uint8_t> &&data_vec)
 			    fatbin_path.c_str());
 	}
 	SPDLOG_INFO("Extracting PTX in the fatbin...");
-	boost::asio::io_context ctx;
 	boost::process::ipstream stream;
 	boost::process::environment env = boost::this_process::environment();
 	env["LD_PRELOAD"] = "";
+	auto cuobjdump_path = resolve_cuda_tool_path("cuobjdump");
+	if (!cuobjdump_path.has_value()) {
+		SPDLOG_ERROR(
+			"Cannot extract PTX because CUDA tool 'cuobjdump' was not found. {} GPU attach will be skipped for this fatbin.",
+			cuda_tool_resolution_help("cuobjdump"));
+		cleanup_tmp_dir();
+		return {};
+	}
 
-	// Build command line - use shell to properly search PATH
-	auto cuobjdump_cmd_line = std::string("cuobjdump --extract-ptx all ") +
-				  fatbin_path.string();
-	SPDLOG_INFO("Calling cuobjdump: {}", cuobjdump_cmd_line);
+	SPDLOG_INFO("Calling cuobjdump: {} --extract-ptx all {}",
+		    cuobjdump_path->string(), fatbin_path.string());
 
-	// Execute through shell to properly use PATH
-	boost::process::child child(
-		"/bin/sh", boost::process::args({ "-c", cuobjdump_cmd_line }),
-		boost::process::std_out > stream, boost::process::env(env),
-		boost::process::start_dir = tmp_dir);
+	std::ostringstream cuobjdump_output;
+	auto stderr_path = working_dir / "cuobjdump.stderr.log";
+	try {
+		boost::process::child child(
+			cuobjdump_path->string(),
+			boost::process::args(
+				{ "--extract-ptx", "all", fatbin_path.string() }),
+			boost::process::std_out > stream,
+			boost::process::std_err > stderr_path.string(),
+			boost::process::env(env),
+			boost::process::start_dir = tmp_dir);
 
-	std::string line;
-	while (std::getline(stream, line)) {
-		SPDLOG_DEBUG("cuobjdump output: {}", line);
+		std::string line;
+		while (std::getline(stream, line)) {
+			cuobjdump_output << line << '\n';
+			SPDLOG_DEBUG("cuobjdump output: {}", line);
+		}
+		child.wait();
+		if (child.exit_code() != 0) {
+			SPDLOG_ERROR(
+				"cuobjdump exited with code {} while extracting PTX from {}. {} GPU attach will be skipped for this fatbin.",
+				child.exit_code(), fatbin_path.string(),
+				cuda_tool_resolution_help("cuobjdump"));
+			std::ifstream stderr_stream(stderr_path);
+			if (stderr_stream.good()) {
+				std::ostringstream stderr_output;
+				stderr_output << stderr_stream.rdbuf();
+				if (!stderr_output.str().empty()) {
+					SPDLOG_ERROR("cuobjdump stderr:\n{}",
+						     stderr_output.str());
+				}
+			}
+			if (!cuobjdump_output.str().empty()) {
+				SPDLOG_ERROR("cuobjdump output:\n{}",
+					     cuobjdump_output.str());
+			}
+			cleanup_tmp_dir();
+			return {};
+		}
+	} catch (const boost::process::process_error &err) {
+		SPDLOG_ERROR(
+			"Failed to launch CUDA tool '{}': {}. {} GPU attach will be skipped for this fatbin.",
+			cuobjdump_path->string(), err.what(),
+			cuda_tool_resolution_help("cuobjdump"));
+		cleanup_tmp_dir();
+		return {};
 	}
 	for (const auto &entry :
 	     std::filesystem::directory_iterator(working_dir)) {
@@ -582,10 +719,7 @@ nv_attach_impl::extract_ptxs(std::vector<uint8_t> &&data_vec)
 			all_ptx[entry.path().filename()] = buffer.str();
 		}
 	}
-	if (!spdlog::should_log(spdlog::level::debug)) {
-		SPDLOG_INFO("Remove extracted files..");
-		std::filesystem::remove_all(working_dir);
-	}
+	cleanup_tmp_dir();
 	SPDLOG_INFO("Got {} PTX files", all_ptx.size());
 	return all_ptx;
 }
@@ -706,7 +840,10 @@ nv_attach_impl::hack_fatbin(std::map<std::string, std::string> all_ptx)
 	pool.join();
 	if (spdlog::should_log(spdlog::level::debug)) {
 		char tmp_dir[] = "/tmp/bpftime-fatbin-work.XXXXXX";
-		mkdtemp(tmp_dir);
+		if (mkdtemp(tmp_dir) == nullptr) {
+			SPDLOG_WARN("Failed to create temporary directory for patched PTX dump");
+			return ptx_out;
+		}
 		auto working_dir = std::filesystem::path(tmp_dir);
 
 		SPDLOG_DEBUG("Writing patched PTX to {}", working_dir.c_str());

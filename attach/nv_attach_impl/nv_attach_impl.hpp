@@ -37,6 +37,9 @@ using process_input_fn = int (*)(const char *input, int length, char *output);
 
 std::string filter_compiled_ptx_for_ebpf_program(std::string input,
 						 std::string);
+std::optional<std::filesystem::path>
+resolve_cuda_tool_path(const std::string &tool_name);
+std::string cuda_tool_resolution_help(const std::string &tool_name);
 
 constexpr int ATTACH_CUDA_PROBE = 8;
 constexpr int ATTACH_CUDA_RETPROBE = 9;
