@@ -1,6 +1,8 @@
 #include "frida_internal_attach_entry.hpp"
 #include "frida_uprobe_attach_impl.hpp"
 #include "frida_attach_entry.hpp"
+#include <dlfcn.h>
+#include <spdlog/fmt/fmt.h>
 #include <spdlog/spdlog.h>
 #include <frida_register_conversion.hpp>
 using namespace bpftime::attach;
@@ -8,6 +10,103 @@ GType uprobe_listener_get_type();
 
 extern "C" uint64_t __bpftime_frida_attach_manager__replace_handler();
 extern "C" void *__bpftime_frida_attach_manager__override_handler();
+
+namespace
+{
+
+namespace fmt_lib = spdlog::fmt_lib;
+
+const char *attach_type_to_string(int attach_type)
+{
+	switch (attach_type) {
+	case ATTACH_UPROBE:
+		return "uprobe";
+	case ATTACH_URETPROBE:
+		return "uretprobe";
+	case ATTACH_UPROBE_OVERRIDE:
+		return "uprobe_override";
+	default:
+		return "unknown";
+	}
+}
+
+const char *gum_attach_return_to_string(int err)
+{
+	switch ((GumAttachReturn)err) {
+	case GUM_ATTACH_OK:
+		return "GUM_ATTACH_OK";
+	case GUM_ATTACH_WRONG_SIGNATURE:
+		return "GUM_ATTACH_WRONG_SIGNATURE";
+	case GUM_ATTACH_ALREADY_ATTACHED:
+		return "GUM_ATTACH_ALREADY_ATTACHED";
+	case GUM_ATTACH_POLICY_VIOLATION:
+		return "GUM_ATTACH_POLICY_VIOLATION";
+	case GUM_ATTACH_WRONG_TYPE:
+		return "GUM_ATTACH_WRONG_TYPE";
+	default:
+		return "GUM_ATTACH_UNKNOWN";
+	}
+}
+
+std::string describe_attach_target(void *function)
+{
+	Dl_info info {};
+	if (dladdr(function, &info) == 0) {
+		return "symbol=<unresolved>";
+	}
+
+	std::string rendered;
+	if (info.dli_fname != nullptr) {
+		rendered = fmt_lib::format("module={}", info.dli_fname);
+	}
+	if (info.dli_sname != nullptr) {
+		auto symbol = fmt_lib::format("symbol={}", info.dli_sname);
+		if (info.dli_saddr != nullptr) {
+			auto offset = (uintptr_t)function - (uintptr_t)info.dli_saddr;
+			symbol = fmt_lib::format("{}+0x{:x}", symbol, offset);
+		}
+		if (!rendered.empty()) {
+			rendered = fmt_lib::format("{}, {}", rendered, symbol);
+		} else {
+			rendered = symbol;
+		}
+	}
+	if (rendered.empty()) {
+		return "symbol=<unresolved>";
+	}
+	return rendered;
+}
+
+std::string format_target_bytes(void *function, size_t byte_count = 8)
+{
+	auto *bytes = reinterpret_cast<const uint8_t *>(function);
+	std::string rendered;
+	rendered.reserve(byte_count * 3);
+	for (size_t i = 0; i < byte_count; i++) {
+		if (i != 0) {
+			rendered += ' ';
+		}
+		rendered += fmt_lib::format(
+			"{:02x}", static_cast<unsigned int>(bytes[i]));
+	}
+	return rendered;
+}
+
+std::string build_frida_attach_failure_message(const char *operation,
+					       void *function, int attach_type,
+					       int err)
+{
+	return fmt_lib::format(
+		"{} failed for attach_type={} at function 0x{:x} (err={}, {}, {}, first_bytes={}). "
+		"Frida may reject very short functions or unsupported signatures; "
+		"try compiling the target with -O0, adding __attribute__((noinline)), "
+		"or attaching to a larger wrapper.",
+		operation, attach_type_to_string(attach_type),
+		(uintptr_t)function, err, gum_attach_return_to_string(err),
+		describe_attach_target(function), format_target_bytes(function));
+}
+
+} // namespace
 
 frida_internal_attach_entry::frida_internal_attach_entry(
 	void *function, int basic_attach_type, GumInterceptor *interceptor)
@@ -36,11 +135,11 @@ frida_internal_attach_entry::frida_internal_attach_entry(
 			    interceptor, function,
 			    frida_gum_invocation_listener, this);
 		    err < 0) {
-			SPDLOG_ERROR(
-				"Failed to execute frida gum_interceptor_attach for function {:x}",
-				(uintptr_t)function);
-			throw std::runtime_error(
-				"Failed to attach uprobe/uretprpbe");
+			auto message = build_frida_attach_failure_message(
+				"gum_interceptor_attach", function,
+				basic_attach_type, err);
+			SPDLOG_ERROR("{}", message);
+			throw std::runtime_error(message);
 		}
 	} else if (basic_attach_type == ATTACH_UPROBE_OVERRIDE) {
 		if (int err = gum_interceptor_replace(
@@ -48,10 +147,11 @@ frida_internal_attach_entry::frida_internal_attach_entry(
 			    (void *)__bpftime_frida_attach_manager__override_handler,
 			    this, nullptr);
 		    err < 0) {
-			SPDLOG_ERROR(
-				"Failed to execute frida replace for function {:x}, when attaching filter, err={}",
-				(uintptr_t)function, err);
-			throw std::runtime_error("Failed to attach filter");
+			auto message = build_frida_attach_failure_message(
+				"gum_interceptor_replace", function,
+				basic_attach_type, err);
+			SPDLOG_ERROR("{}", message);
+			throw std::runtime_error(message);
 		}
 		override_return_callback = override_return_set_callback(
 			[&](uint64_t ctx, uint64_t v) {

@@ -19,6 +19,7 @@ target_link_libraries(bpftime_frida_uprobe_attach_impl PRIVATE ${FRIDA_GUM_INSTA
 set(TEST_SOURCES
     test/test_uprobe_uretprobe.cpp
     test/test_function_address_resolve.cpp
+    test/test_attach_failure_diagnostics.cpp
     test/test_filter_attach_with_override.cpp
     test/test_replace_attach_with_override.cpp
     test/test_attach_with_unified_interface.cpp
