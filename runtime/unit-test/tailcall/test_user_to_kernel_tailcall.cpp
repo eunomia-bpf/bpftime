@@ -98,8 +98,8 @@ TEST_CASE("Test tail calling from userspace to kernel")
 		BPF_MOV64_REG(1, 10),
 		// r1 += -0x40
 		BPF_ALU64_IMM(BPF_ADD, 1, -0x40),
-		// r2 = map_ptr
-		BPF_LD_IMM64_RAW_FULL(2, 0, 0, 0, 0, PROG_ARRAY_MAP_FD),
+		// r2 = raw prog array handle encoded with the current low-32-bit fd representation
+		BPF_LD_IMM64_RAW_FULL(2, 0, 0, 0, PROG_ARRAY_MAP_FD, 0),
 		// r3 = 0
 		BPF_MOV64_IMM(3, 0),
 		// call 0x0c
