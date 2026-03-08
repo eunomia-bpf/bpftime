@@ -399,21 +399,21 @@ uint64_t bpftime_map_push_elem_helper(uint64_t map, uint64_t value,
 				      uint64_t flags, uint64_t, uint64_t)
 {
 	return (uint64_t)bpftime::shm_holder.global_shared_memory
-		.bpf_map_push_elem(map >> 32, (void *)value, flags, false);
+		.bpf_map_push_elem((int)map, (void *)value, flags, false);
 }
 
 uint64_t bpftime_map_pop_elem_helper(uint64_t map, uint64_t value, uint64_t,
 				     uint64_t, uint64_t)
 {
 	return (uint64_t)bpftime::shm_holder.global_shared_memory
-		.bpf_map_pop_elem(map >> 32, (void *)value, false);
+		.bpf_map_pop_elem((int)map, (void *)value, false);
 }
 
 uint64_t bpftime_map_peek_elem_helper(uint64_t map, uint64_t value, uint64_t,
 				      uint64_t, uint64_t)
 {
 	return (uint64_t)bpftime::shm_holder.global_shared_memory
-		.bpf_map_peek_elem(map >> 32, (void *)value, false);
+		.bpf_map_peek_elem((int)map, (void *)value, false);
 }
 
 uint64_t bpf_probe_read_str(uint64_t buf, uint64_t bufsz, uint64_t ptr,
