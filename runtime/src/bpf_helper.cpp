@@ -38,12 +38,16 @@
 
 #include "platform_utils.hpp"
 #include "spdlog/spdlog.h"
+#include <cstdlib>
+#include <fcntl.h>
 #include <map>
 #include <stdio.h>
 #include <stdarg.h>
 #include <cstring>
 #include <cstdlib>
 #include <mutex>
+#include <sys/stat.h>
+#include <sys/types.h>
 #include <time.h>
 #include <unistd.h>
 #include <ctime>
@@ -129,6 +133,38 @@ inline void probe_read_ahead_invalidate()
 }
 } // namespace
 #endif
+
+namespace {
+
+constexpr const char *TRACEPIPE_PATH_ENV = "TRACEPIPE_PATH";
+
+int try_open_tracepipe()
+{
+	const char *tracepipe_path = std::getenv(TRACEPIPE_PATH_ENV);
+	if (tracepipe_path == nullptr || tracepipe_path[0] == '\0') {
+		return -1;
+	}
+
+	if (mkfifo(tracepipe_path, 0666) == -1 && errno != EEXIST) {
+		SPDLOG_DEBUG("bpftime_trace_printk mkfifo({}) failed: {}",
+			     tracepipe_path, strerror(errno));
+		return -1;
+	}
+
+	int open_flags = O_WRONLY | O_NONBLOCK;
+#ifdef O_CLOEXEC
+	open_flags |= O_CLOEXEC;
+#endif
+	int fd = open(tracepipe_path, open_flags);
+	if (fd == -1) {
+		SPDLOG_DEBUG("bpftime_trace_printk open({}) failed: {}",
+			     tracepipe_path, strerror(errno));
+	}
+	return fd;
+}
+
+} // namespace
+
 extern "C" {
 
 #if __linux__ && \
@@ -152,8 +188,32 @@ uint64_t bpftime_trace_printk(uint64_t fmt, uint64_t fmt_size, ...)
 	va_list args;
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wformat-nonliteral"
+#pragma GCC diagnostic ignored "-Wvarargs"
 	va_start(args, fmt_size);
-	long ret = vprintf(fmt_str, args);
+	long ret = -1;
+	bool wrote_to_tracepipe = false;
+	if (int tracepipe_fd = try_open_tracepipe(); tracepipe_fd != -1) {
+		va_list tracepipe_args;
+		va_copy(tracepipe_args, args);
+		ret = vdprintf(tracepipe_fd, fmt_str, tracepipe_args);
+		int saved_errno = errno;
+		va_end(tracepipe_args);
+		close(tracepipe_fd);
+		if (ret >= 0) {
+			wrote_to_tracepipe = true;
+		}
+		if (!wrote_to_tracepipe) {
+			errno = saved_errno;
+			SPDLOG_DEBUG(
+				"bpftime_trace_printk write to tracepipe failed: {}",
+				strerror(errno));
+		}
+	}
+
+	if (!wrote_to_tracepipe) {
+		ret = vprintf(fmt_str, args);
+	}
+	(void)ret;
 #pragma GCC diagnostic pop
 	va_end(args);
 	return 0;
