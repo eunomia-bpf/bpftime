@@ -194,43 +194,52 @@ static int inject_by_frida(int pid, const char *inject_path, const char *arg)
 static std::tuple<std::string, std::vector<std::string>,
 		  std::vector<std::string>>
 build_command_launch_args(const argparse::ArgumentParser &parser,
+			  bool include_runtime_env_options,
 			  bool include_kernel_loader_options)
 {
 	std::vector<std::string> items;
 	std::vector<std::string> env_args;
 	try {
 		items = parser.get<std::vector<std::string>>("COMMAND");
-		if (parser.get<bool>("--no-jit")) {
-			env_args.emplace_back("BPFTIME_DISABLE_JIT=true");
-		}
-		if (include_kernel_loader_options &&
-		    parser.get<bool>("--run-with-kernel-verifier")) {
-			env_args.emplace_back("BPFTIME_RUN_WITH_KERNEL=true");
-		}
-		if (include_kernel_loader_options &&
-		    parser.is_used("--bpftime-not-load-pattern")) {
-			env_args.emplace_back("BPFTIME_NOT_LOAD_PATTERN=" +
-					      parser.get<std::string>(
-						      "--bpftime-not-load-pattern"));
-		}
-		if (parser.is_used("--spdlog-level")) {
-			env_args.emplace_back("SPDLOG_LEVEL=" +
-					      parser.get<std::string>(
-						      "--spdlog-level"));
-		}
-		if (parser.is_used("--bpftime-log-output")) {
-			env_args.emplace_back("BPFTIME_LOG_OUTPUT=" +
-					      parser.get<std::string>(
-						      "--bpftime-log-output"));
-		}
-		if (parser.get<bool>("--allow-external-maps")) {
-			env_args.emplace_back(
-				"BPFTIME_ALLOW_EXTERNAL_MAPS=true");
-		}
-		if (parser.is_used("--memory-size")) {
-			env_args.emplace_back("BPFTIME_SHM_MEMORY_MB=" +
-					      std::to_string(parser.get<int>(
-						      "--memory-size")));
+		if (include_runtime_env_options) {
+			if (parser.get<bool>("--no-jit")) {
+				env_args.emplace_back(
+					"BPFTIME_DISABLE_JIT=true");
+			}
+			if (include_kernel_loader_options &&
+			    parser.get<bool>("--run-with-kernel-verifier")) {
+				env_args.emplace_back(
+					"BPFTIME_RUN_WITH_KERNEL=true");
+			}
+			if (include_kernel_loader_options &&
+			    parser.is_used("--bpftime-not-load-pattern")) {
+				env_args.emplace_back(
+					"BPFTIME_NOT_LOAD_PATTERN=" +
+					parser.get<std::string>(
+						"--bpftime-not-load-pattern"));
+			}
+			if (parser.is_used("--spdlog-level")) {
+				env_args.emplace_back(
+					"SPDLOG_LEVEL=" +
+					parser.get<std::string>(
+						"--spdlog-level"));
+			}
+			if (parser.is_used("--bpftime-log-output")) {
+				env_args.emplace_back(
+					"BPFTIME_LOG_OUTPUT=" +
+					parser.get<std::string>(
+						"--bpftime-log-output"));
+			}
+			if (parser.get<bool>("--allow-external-maps")) {
+				env_args.emplace_back(
+					"BPFTIME_ALLOW_EXTERNAL_MAPS=true");
+			}
+			if (parser.is_used("--memory-size")) {
+				env_args.emplace_back(
+					"BPFTIME_SHM_MEMORY_MB=" +
+					std::to_string(parser.get<int>(
+						"--memory-size")));
+			}
 		}
 	} catch (std::logic_error &err) {
 		std::cerr << parser;
@@ -241,8 +250,8 @@ build_command_launch_args(const argparse::ArgumentParser &parser,
 	return { executable, items, env_args };
 }
 
-static void add_common_runtime_env_cli_options(
-	argparse::ArgumentParser &command)
+static void
+add_common_runtime_env_cli_options(argparse::ArgumentParser &command)
 {
 	command.add_argument("--no-jit")
 		.help("Same as BPFTIME_DISABLE_JIT, disable JIT and use interpreter")
@@ -332,7 +341,6 @@ int main(int argc, const char **argv)
 		.nargs(argparse::nargs_pattern::at_least_one)
 		.remaining()
 		.help("Command to run");
-	add_common_runtime_env_cli_options(start_command);
 
 	argparse::ArgumentParser attach_command("attach");
 
@@ -372,7 +380,7 @@ int main(int argc, const char **argv)
 			return 1;
 		}
 		auto [executable_path, extra_args, env_args] =
-			build_command_launch_args(load_command, true);
+			build_command_launch_args(load_command, true, true);
 		return run_command(executable_path.c_str(), extra_args,
 				   so_path.c_str(), nullptr, env_args);
 	} else if (program.is_subcommand_used("start")) {
@@ -383,7 +391,7 @@ int main(int argc, const char **argv)
 			return 1;
 		}
 		auto [executable_path, extra_args, env_args] =
-			build_command_launch_args(start_command, false);
+			build_command_launch_args(start_command, false, false);
 		if (start_command.get<bool>("enable-syscall-trace")) {
 			auto transformer_path =
 				install_path /
@@ -400,7 +408,8 @@ int main(int argc, const char **argv)
 		} else {
 			// agent_path += ":/usr/lib/libclient.so";
 			return run_command(executable_path.c_str(), extra_args,
-					   agent_path.c_str(), nullptr, env_args);
+					   agent_path.c_str(), nullptr,
+					   env_args);
 		}
 	} else if (program.is_subcommand_used("attach")) {
 		auto agent_path = install_path / AGENT_LIBRARY;
