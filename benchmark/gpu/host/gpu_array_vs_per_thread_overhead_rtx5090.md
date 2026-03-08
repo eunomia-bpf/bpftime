@@ -21,14 +21,14 @@ This comparison does not directly isolate the runtime path named `shared_array_m
 
 | thread_count | effective bytes/key | gpu_array update ns/op | per_thread update ns/op | update ratio | gpu_array lookup ns/op | per_thread lookup ns/op | lookup ratio |
 | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| 32 | 256 | 3832.6 | 3818.4 | 0.996x | 4896.4 | 4834.7 | 0.987x |
-| 128 | 1024 | 3874.0 | 3881.2 | 1.002x | 4885.2 | 4891.6 | 1.001x |
-| 256 | 2048 | 3920.1 | 3930.6 | 1.003x | 5069.9 | 5071.1 | 1.000x |
-| 1024 | 8192 | 4313.3 | 4314.9 | 1.000x | 6070.1 | 5932.9 | 0.977x |
+| 32 | 256 | 3835.9 | 3832.8 | 0.999x | 4865.1 | 4835.0 | 0.994x |
+| 128 | 1024 | 3855.5 | 3851.5 | 0.999x | 4905.0 | 4866.6 | 0.992x |
+| 256 | 2048 | 3903.6 | 3911.0 | 1.002x | 5044.1 | 5084.2 | 1.008x |
+| 1024 | 8192 | 4325.8 | 4327.6 | 1.000x | 5843.0 | 5896.6 | 1.009x |
 
 ## Interpretation
 
-- On this RTX 5090 host, the PERGPUTD host-side update path is effectively on par with the plain GPU array map when normalized to the same per-key bytes.
+- On `NVIDIA GeForce RTX 5090`, the PERGPUTD host-side update path is effectively on par with the plain GPU array map when normalized to the same per-key bytes.
 - Lookup remains within a similarly narrow band across all tested thread counts.
 - This benchmark only measures host-side `update`/`lookup` cost. It does not cover in-kernel helper cost or GPU-side contention.
 

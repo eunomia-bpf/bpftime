@@ -111,6 +111,10 @@ def build_markdown(args: argparse.Namespace) -> str:
 
     gpu_name = detect_gpu_name()
     gdrdrv_available = Path("/dev/gdrdrv").exists()
+    if gpu_name == "Unknown NVIDIA GPU":
+        interpretation_prefix = "On this host"
+    else:
+        interpretation_prefix = f"On `{gpu_name}`"
 
     lines = [
         "# GPU Array vs Per-Thread GPU Array Host-Side Overhead",
@@ -131,12 +135,28 @@ def build_markdown(args: argparse.Namespace) -> str:
         f"Per-thread value size: `{args.value_size}` bytes",
         f"GDRCopy driver available: `{'yes' if gdrdrv_available else 'no'}`",
         "",
-        "Because `/dev/gdrdrv` is unavailable on this machine, these numbers represent the fallback `cuMemcpyDtoH` path.",
+    ]
+    if gdrdrv_available:
+        lines.extend(
+            [
+                "Because `/dev/gdrdrv` is available on this machine, these numbers may include the GDRCopy-accelerated path when the runtime chooses it.",
+            ]
+        )
+    else:
+        lines.extend(
+            [
+                "Because `/dev/gdrdrv` is unavailable on this machine, these numbers represent the fallback `cuMemcpyDtoH` path.",
+            ]
+        )
+
+    lines.extend(
+        [
         "This comparison does not directly isolate the runtime path named `shared_array_map`.",
         "",
         "| thread_count | effective bytes/key | gpu_array update ns/op | per_thread update ns/op | update ratio | gpu_array lookup ns/op | per_thread lookup ns/op | lookup ratio |",
         "| ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |",
-    ]
+        ]
+    )
 
     for thread_count in SCENARIOS:
         effective_bytes = args.value_size * thread_count
@@ -182,7 +202,7 @@ def build_markdown(args: argparse.Namespace) -> str:
             "",
             "## Interpretation",
             "",
-            "- On this RTX 5090 host, the PERGPUTD host-side update path is effectively on par with the plain GPU array map when normalized to the same per-key bytes.",
+            f"- {interpretation_prefix}, the PERGPUTD host-side update path is effectively on par with the plain GPU array map when normalized to the same per-key bytes.",
             "- Lookup remains within a similarly narrow band across all tested thread counts.",
             "- This benchmark only measures host-side `update`/`lookup` cost. It does not cover in-kernel helper cost or GPU-side contention.",
             "",
