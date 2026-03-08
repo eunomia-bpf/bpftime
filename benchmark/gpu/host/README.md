@@ -68,3 +68,33 @@ Benchmarks `BPF_MAP_TYPE_PERGPUTD_ARRAY_MAP` (per-key bytes = `value_size * thre
 Notes:
 
 - If GDRCopy isn’t available at runtime (missing `libgdrapi.so` or `/dev/gdrdrv`), bpftime automatically falls back to `cuMemcpyDtoH` and performance will match baseline.
+
+## Measuring shared_array_map overhead for issue #472
+
+Issue #472 asks for the overhead of the server-side GPU `shared_array_map` update path. In the current codebase, the closest directly measurable host-side path is:
+
+- `gpu_per_thread_array_map_host_perf` for `BPF_MAP_TYPE_PERGPUTD_ARRAY_MAP`
+
+To make the overhead meaningful, compare it against `gpu_array_map_host_perf` while keeping the effective bytes per key constant:
+
+- plain GPU array map: `value_size = per_thread_value_size * thread_count`
+- PERGPUTD array map: `value_size = per_thread_value_size`
+
+The repository now includes a reproducible measurement script:
+
+```bash
+python3 benchmark/gpu/host/measure_shared_array_map_overhead.py \
+  --build-dir build \
+  --output benchmark/gpu/host/shared_array_map_overhead_rtx5090.md
+```
+
+That script:
+
+- runs a fixed matrix of thread counts (`32`, `128`, `256`, `1024`)
+- compares update and lookup cost at equal per-key bytes
+- assigns a unique `BPFTIME_GLOBAL_SHM_NAME` per run so repeated measurements do not collide
+- emits a markdown report ready to check into the repo
+
+An example report generated on an RTX 5090 is checked in at:
+
+- `benchmark/gpu/host/shared_array_map_overhead_rtx5090.md`
