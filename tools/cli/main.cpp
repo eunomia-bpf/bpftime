@@ -8,6 +8,8 @@
 #include <frida-core.h>
 #include <argparse/argparse.hpp>
 #include <filesystem>
+#include <fcntl.h>
+#include <iostream>
 #include <stdexcept>
 #include <string_view>
 #include <unistd.h>
@@ -15,6 +17,7 @@
 #include <string>
 #include <utility>
 #include <tuple>
+#include <sys/stat.h>
 #include <sys/wait.h>
 #include <spdlog/spdlog.h>
 #include <spdlog/cfg/env.h>
@@ -68,6 +71,8 @@ constexpr const char *AGENT_TRANSFORMER_LIBRARY =
 #endif
 
 static int subprocess_pid = 0;
+constexpr const char *TRACE_PIPE_ENV = "TRACEPIPE_PATH";
+constexpr const char *TRACE_PIPE_FILENAME = "tracepipe";
 
 static bool str_starts_with(const char *main, const char *pat)
 {
@@ -188,6 +193,59 @@ static int inject_by_frida(int pid, const char *inject_path, const char *arg)
 	frida_injector_close_sync(injector, nullptr, nullptr);
 	frida_unref(injector);
 	frida_deinit();
+	return 0;
+}
+
+static std::filesystem::path
+get_trace_pipe_path(const std::filesystem::path &install_path)
+{
+	return install_path / TRACE_PIPE_FILENAME;
+}
+
+static int read_trace_pipe(const std::filesystem::path &trace_pipe_path)
+{
+	if (mkfifo(trace_pipe_path.c_str(), 0666) == -1 && errno != EEXIST) {
+		spdlog::error("Failed to create trace pipe {}: {}",
+			      trace_pipe_path.string(), strerror(errno));
+		return 1;
+	}
+
+	while (true) {
+		int fd = open(trace_pipe_path.c_str(), O_RDONLY);
+		if (fd == -1) {
+			if (errno == EINTR) {
+				continue;
+			}
+			spdlog::error("Failed to open trace pipe {}: {}",
+				      trace_pipe_path.string(),
+				      strerror(errno));
+			return 1;
+		}
+
+		while (true) {
+			char data[4096];
+			ssize_t ret = read(fd, data, sizeof(data));
+			if (ret > 0) {
+				std::cout.write(data, ret);
+				std::cout.flush();
+				continue;
+			}
+			if (ret == 0) {
+				break;
+			}
+			if (errno == EINTR) {
+				continue;
+			}
+			spdlog::error("Failed to read trace pipe {}: {}",
+				      trace_pipe_path.string(),
+				      strerror(errno));
+			close(fd);
+			return 1;
+		}
+
+		close(fd);
+	}
+
 	return 0;
 }
 
@@ -337,6 +395,9 @@ int main(int argc, const char **argv)
 	start_command.add_argument("-s", "--enable-syscall-trace")
 		.help("Whether to enable syscall trace")
 		.flag();
+	start_command.add_argument("-p", "--print-to-trace-pipe")
+		.help("Same as TRACEPIPE_PATH, send bpf_printk output to the bpftime trace pipe.")
+		.flag();
 	start_command.add_argument("COMMAND")
 		.nargs(argparse::nargs_pattern::at_least_one)
 		.remaining()
@@ -357,10 +418,17 @@ int main(int argc, const char **argv)
 		.add_epilog(
 			"For more information and options, please see https://eunomia.dev/bpftime");
 
+	argparse::ArgumentParser trace_command("trace");
+	trace_command
+		.add_description("Read bpf_printk output from the bpftime trace pipe")
+		.add_epilog(
+			"For more information and options, please see https://eunomia.dev/bpftime");
+
 	program.add_subparser(load_command);
 	program.add_subparser(start_command);
 	program.add_subparser(attach_command);
 	program.add_subparser(detach_command);
+	program.add_subparser(trace_command);
 	try {
 		program.parse_args(argc, argv);
 	} catch (const std::exception &err) {
@@ -392,10 +460,13 @@ int main(int argc, const char **argv)
 		}
 		auto [executable_path, extra_args, env_args] =
 			build_command_launch_args(start_command, false, false);
+		if (start_command.get<bool>("print-to-trace-pipe")) {
+			env_args.emplace_back(std::string(TRACE_PIPE_ENV) + "=" +
+					      get_trace_pipe_path(install_path).string());
+		}
 		if (start_command.get<bool>("enable-syscall-trace")) {
 			auto transformer_path =
-				install_path /
-				"libbpftime-agent-transformer.so";
+				install_path / AGENT_TRANSFORMER_LIBRARY;
 			if (!std::filesystem::exists(transformer_path)) {
 				spdlog::error("Library not found: {}",
 					      transformer_path.c_str());
@@ -421,8 +492,7 @@ int main(int argc, const char **argv)
 		auto pid = attach_command.get<int>("PID");
 		if (attach_command.get<bool>("enable-syscall-trace")) {
 			auto transformer_path =
-				install_path /
-				"libbpftime-agent-transformer.so";
+				install_path / AGENT_TRANSFORMER_LIBRARY;
 			if (!std::filesystem::exists(transformer_path)) {
 				spdlog::error("Library not found: {}",
 					      transformer_path.c_str());
@@ -458,6 +528,8 @@ int main(int argc, const char **argv)
 		if (!sended) {
 			SPDLOG_INFO("No process was signaled.");
 		}
+	} else if (program.is_subcommand_used("trace")) {
+		return read_trace_pipe(get_trace_pipe_path(install_path));
 	}
 	return 0;
 }
