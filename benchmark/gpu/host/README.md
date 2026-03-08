@@ -68,3 +68,39 @@ Benchmarks `BPF_MAP_TYPE_PERGPUTD_ARRAY_MAP` (per-key bytes = `value_size * thre
 Notes:
 
 - If GDRCopy isn’t available at runtime (missing `libgdrapi.so` or `/dev/gdrdrv`), bpftime automatically falls back to `cuMemcpyDtoH` and performance will match baseline.
+
+## Comparing GPU array and per-thread GPU array host overhead
+
+The repository includes a reproducible host-side comparison between:
+
+- `gpu_array_map_host_perf` for `BPF_MAP_TYPE_GPU_ARRAY_MAP`
+- `gpu_per_thread_array_map_host_perf` for `BPF_MAP_TYPE_PERGPUTD_ARRAY_MAP`
+
+This is useful for understanding the relative `update`/`lookup` cost of the
+two host-side map implementations when normalized to equal effective bytes per
+key. It does not directly isolate the runtime path named `shared_array_map`.
+
+To keep the comparison meaningful, the two benchmarks are run with the same
+effective bytes per key:
+
+- plain GPU array map: `value_size = per_thread_value_size * thread_count`
+- PERGPUTD array map: `value_size = per_thread_value_size`
+
+The repository now includes a reproducible measurement script:
+
+```bash
+python3 benchmark/gpu/host/measure_gpu_array_vs_per_thread_overhead.py \
+  --build-dir build \
+  --output benchmark/gpu/host/gpu_array_vs_per_thread_overhead_rtx5090.md
+```
+
+That script:
+
+- runs a fixed matrix of thread counts (`32`, `128`, `256`, `1024`)
+- compares update and lookup cost at equal per-key bytes
+- assigns a unique `BPFTIME_GLOBAL_SHM_NAME` per run so repeated measurements do not collide
+- emits a markdown report ready to check into the repo
+
+An example report generated on an RTX 5090 is checked in at:
+
+- `benchmark/gpu/host/gpu_array_vs_per_thread_overhead_rtx5090.md`
