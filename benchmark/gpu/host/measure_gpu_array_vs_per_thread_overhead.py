@@ -25,8 +25,8 @@ ITERS = 50000
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description=(
-            "Measure host-side shared_array_map (PERGPUTD array map) overhead "
-            "relative to GPU array map at equal per-key bytes."
+            "Measure host-side GPU array map versus PERGPUTD array map "
+            "overhead at equal effective per-key bytes."
         )
     )
     parser.add_argument(
@@ -113,9 +113,9 @@ def build_markdown(args: argparse.Namespace) -> str:
     gdrdrv_available = Path("/dev/gdrdrv").exists()
 
     lines = [
-        "# Shared Array Map Host-Side Overhead",
+        "# GPU Array vs Per-Thread GPU Array Host-Side Overhead",
         "",
-        "This file quantifies issue #472 by comparing:",
+        "This file compares two host-side map benchmarks:",
         "",
         "- `gpu_array_map_host_perf`: `BPF_MAP_TYPE_GPU_ARRAY_MAP`",
         "- `gpu_per_thread_array_map_host_perf`: `BPF_MAP_TYPE_PERGPUTD_ARRAY_MAP`",
@@ -132,6 +132,7 @@ def build_markdown(args: argparse.Namespace) -> str:
         f"GDRCopy driver available: `{'yes' if gdrdrv_available else 'no'}`",
         "",
         "Because `/dev/gdrdrv` is unavailable on this machine, these numbers represent the fallback `cuMemcpyDtoH` path.",
+        "This comparison does not directly isolate the runtime path named `shared_array_map`.",
         "",
         "| thread_count | effective bytes/key | gpu_array update ns/op | per_thread update ns/op | update ratio | gpu_array lookup ns/op | per_thread lookup ns/op | lookup ratio |",
         "| ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |",
@@ -181,7 +182,7 @@ def build_markdown(args: argparse.Namespace) -> str:
             "",
             "## Interpretation",
             "",
-            "- On this RTX 5090 host, the PERGPUTD/shared-array-map host-side update path is effectively on par with the plain GPU array map when normalized to the same per-key bytes.",
+            "- On this RTX 5090 host, the PERGPUTD host-side update path is effectively on par with the plain GPU array map when normalized to the same per-key bytes.",
             "- Lookup remains within a similarly narrow band across all tested thread counts.",
             "- This benchmark only measures host-side `update`/`lookup` cost. It does not cover in-kernel helper cost or GPU-side contention.",
             "",
@@ -202,9 +203,9 @@ def build_markdown(args: argparse.Namespace) -> str:
             "Generate this report:",
             "",
             "```bash",
-            "python3 benchmark/gpu/host/measure_shared_array_map_overhead.py \\",
+            "python3 benchmark/gpu/host/measure_gpu_array_vs_per_thread_overhead.py \\",
             "  --build-dir build \\",
-            "  --output benchmark/gpu/host/shared_array_map_overhead_rtx5090.md",
+            "  --output benchmark/gpu/host/gpu_array_vs_per_thread_overhead_rtx5090.md",
             "```",
             "",
         ]
