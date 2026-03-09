@@ -43,7 +43,7 @@ set(TEST_SOURCES
     test_get_stack.cpp
     test_tracepoint_id.cpp
     test_config.cpp
-    test_shm_allocation_failure.cpp
+test_shm_allocation_failure.cpp
     test_software_perf_event.cpp
     test_software_perf_event_cache.cpp
     test_ringbuf_tail_wrap.cpp
@@ -51,6 +51,7 @@ set(TEST_SOURCES
     test_unregistered_helper.cpp
     test_xdp_adjust_head.cpp
     test_synthetic_kallsyms.cpp
+    test_tracepipe.cpp
 
     attach_with_ebpf/test_attach_uprobe_with_ebpf_trap.cpp
     attach_with_ebpf/test_helpers.cpp
