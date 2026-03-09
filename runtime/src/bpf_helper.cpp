@@ -209,25 +209,24 @@ uint64_t bpftime_trace_printk(uint64_t fmt, uint64_t fmt_size, ...)
 	#pragma GCC diagnostic ignored "-Wvarargs"
 	va_start(args, fmt_size);
 	long ret = -1;
-	va_list format_args;
-	va_copy(format_args, args);
-	int message_len = vsnprintf(nullptr, 0, fmt_str, format_args);
-	va_end(format_args);
-
-	std::string message;
-	if (message_len >= 0) {
-		std::vector<char> message_buffer(static_cast<size_t>(message_len) + 1);
-		va_copy(format_args, args);
-		(void)vsnprintf(message_buffer.data(), message_buffer.size(),
-				fmt_str, format_args);
-		va_end(format_args);
-		message.assign(message_buffer.data(), static_cast<size_t>(message_len));
-	}
 	bool wrote_to_tracepipe = false;
-	if (message_len >= 0) {
-		if (int tracepipe_fd = try_open_tracepipe(); tracepipe_fd != -1) {
-			ret = write_tracepipe_message(tracepipe_fd, message.data(),
-						      message.size());
+	if (int tracepipe_fd = try_open_tracepipe(); tracepipe_fd != -1) {
+		va_list format_args;
+		va_copy(format_args, args);
+		int message_len = vsnprintf(nullptr, 0, fmt_str, format_args);
+		va_end(format_args);
+		if (message_len >= 0) {
+			std::vector<char> message_buffer(
+				static_cast<size_t>(message_len) + 1);
+			va_copy(format_args, args);
+			(void)vsnprintf(message_buffer.data(),
+					message_buffer.size(), fmt_str,
+					format_args);
+			va_end(format_args);
+			ret = write_tracepipe_message(tracepipe_fd,
+						      message_buffer.data(),
+						      static_cast<size_t>(
+							      message_len));
 			int saved_errno = errno;
 			close(tracepipe_fd);
 			if (ret == message_len) {
@@ -239,16 +238,13 @@ uint64_t bpftime_trace_printk(uint64_t fmt, uint64_t fmt_size, ...)
 					"bpftime_trace_printk write to tracepipe failed: {}",
 					strerror(errno));
 			}
+		} else {
+			close(tracepipe_fd);
 		}
 	}
 
 	if (!wrote_to_tracepipe) {
-		if (message_len >= 0) {
-			ret = static_cast<long>(
-				fwrite(message.data(), 1, message.size(), stdout));
-		} else {
-			ret = vprintf(fmt_str, args);
-		}
+		ret = vprintf(fmt_str, args);
 		int saved_errno = errno;
 		if (ret < 0) {
 			errno = saved_errno;
