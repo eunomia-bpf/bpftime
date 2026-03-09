@@ -87,7 +87,8 @@ constexpr const char *AGENT_TRANSFORMER_LIBRARY =
 #error "Unsupported Platform"
 #endif
 
-static int subprocess_pid = 0;
+static volatile sig_atomic_t stop_requested = 0;
+static volatile sig_atomic_t subprocess_pid = 0;
 constexpr const char *TRACE_PIPE_ENV = "TRACEPIPE_PATH";
 constexpr const char *TRACE_PIPE_FILENAME = "tracepipe";
 
@@ -179,7 +180,18 @@ static int run_command(const char *path, const std::vector<std::string> &argv,
 	} else {
 		subprocess_pid = pid;
 		int status;
-		if (int cid = waitpid(pid, &status, 0); cid > 0) {
+		while (true) {
+			int cid = waitpid(pid, &status, 0);
+			if (cid == -1 && errno == EINTR) {
+				continue;
+			}
+			if (cid == -1) {
+				subprocess_pid = 0;
+				spdlog::error("waitpid({}) failed: {}", pid,
+					      strerror(errno));
+				return 1;
+			}
+			subprocess_pid = 0;
 			if (WIFEXITED(status)) {
 				int exit_code = WEXITSTATUS(status);
 				if (exit_code != 0) {
@@ -196,6 +208,7 @@ static int run_command(const char *path, const std::vector<std::string> &argv,
 					      signal_code);
 				return 128 + signal_code;
 			}
+			break;
 		}
 	}
 	return 1;
@@ -308,20 +321,63 @@ get_trace_pipe_path(const std::filesystem::path &install_path)
 	return install_path / TRACE_PIPE_FILENAME;
 }
 
-// Rootless bpf_printk output rendezvous: the agent writes to this FIFO and the
-// CLI drains it. Keep the path stable across readers so writers can reuse it.
-static int read_trace_pipe(const std::filesystem::path &trace_pipe_path)
+static bool ensure_trace_pipe_fifo(const std::filesystem::path &trace_pipe_path)
 {
-	if (mkfifo(trace_pipe_path.c_str(), 0666) == -1 && errno != EEXIST) {
+	struct stat st = {};
+	if (lstat(trace_pipe_path.c_str(), &st) == 0) {
+		if (!S_ISFIFO(st.st_mode)) {
+			spdlog::error("Trace pipe path {} exists but is not a FIFO",
+				      trace_pipe_path.string());
+			return false;
+		}
+		return true;
+	}
+
+	if (errno != ENOENT) {
+		spdlog::error("Failed to inspect trace pipe {}: {}",
+			      trace_pipe_path.string(), strerror(errno));
+		return false;
+	}
+
+	if (mkfifo(trace_pipe_path.c_str(), 0666) == 0) {
+		return true;
+	}
+
+	if (errno != EEXIST) {
 		spdlog::error("Failed to create trace pipe {}: {}",
 			      trace_pipe_path.string(), strerror(errno));
+		return false;
+	}
+
+	if (lstat(trace_pipe_path.c_str(), &st) == 0) {
+		if (S_ISFIFO(st.st_mode)) {
+			return true;
+		}
+		spdlog::error("Trace pipe path {} was replaced with a non-FIFO entry",
+			      trace_pipe_path.string());
+		return false;
+	}
+
+	spdlog::error("Failed to inspect trace pipe {} after EEXIST: {}",
+		      trace_pipe_path.string(), strerror(errno));
+	return false;
+}
+
+static int read_trace_pipe(const std::filesystem::path &trace_pipe_path)
+{
+	if (!ensure_trace_pipe_fifo(trace_pipe_path)) {
 		return 1;
 	}
 
-	while (true) {
+	// Keep the FIFO as a stable rendezvous point. Writers may continue to
+	// reuse the same path after the current reader exits.
+	while (!stop_requested) {
 		int fd = open(trace_pipe_path.c_str(), O_RDONLY);
 		if (fd == -1) {
 			if (errno == EINTR) {
+				if (stop_requested) {
+					return 0;
+				}
 				continue;
 			}
 			spdlog::error("Failed to open trace pipe {}: {}",
@@ -330,7 +386,7 @@ static int read_trace_pipe(const std::filesystem::path &trace_pipe_path)
 			return 1;
 		}
 
-		while (true) {
+		while (!stop_requested) {
 			char data[4096];
 			ssize_t ret = read(fd, data, sizeof(data));
 			if (ret > 0) {
@@ -342,6 +398,10 @@ static int read_trace_pipe(const std::filesystem::path &trace_pipe_path)
 				break;
 			}
 			if (errno == EINTR) {
+				if (stop_requested) {
+					close(fd);
+					return 0;
+				}
 				continue;
 			}
 			spdlog::error("Failed to read trace pipe {}: {}",
@@ -929,9 +989,24 @@ static void add_kernel_loader_cli_options(argparse::ArgumentParser &command)
 
 static void signal_handler(int sig)
 {
+	stop_requested = 1;
 	if (subprocess_pid) {
-		kill(subprocess_pid, sig);
+		kill(static_cast<pid_t>(subprocess_pid), sig);
 	}
+}
+
+static bool install_signal_handler(int sig)
+{
+	struct sigaction sa = {};
+	sa.sa_handler = signal_handler;
+	sigemptyset(&sa.sa_mask);
+	sa.sa_flags = 0;
+	if (sigaction(sig, &sa, nullptr) == -1) {
+		spdlog::error("Failed to install signal handler for {}: {}", sig,
+			      strerror(errno));
+		return false;
+	}
+	return true;
 }
 
 int main(int argc, const char **argv)
@@ -944,10 +1019,13 @@ int main(int argc, const char **argv)
 					    DEFAULT_LOGGER_OUTPUT_PATH :
 					    logger_target);
 	spdlog::cfg::load_env_levels();
-	const auto runtime_config = bpftime::construct_runtime_config_from_env();
+const auto runtime_config = bpftime::construct_runtime_config_from_env();
 	(void)runtime_config;
-	signal(SIGINT, signal_handler);
-	signal(SIGTSTP, signal_handler);
+	if (!install_signal_handler(SIGINT) ||
+	    !install_signal_handler(SIGTERM) ||
+	    !install_signal_handler(SIGTSTP)) {
+		return 1;
+	}
 	argparse::ArgumentParser program(argv[0]);
 
 	if (auto home_env = getenv("HOME"); home_env) {
