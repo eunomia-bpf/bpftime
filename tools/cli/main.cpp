@@ -8,6 +8,8 @@
 #include <frida-core.h>
 #include <argparse/argparse.hpp>
 #include <filesystem>
+#include <fcntl.h>
+#include <iostream>
 #include <stdexcept>
 #include <string_view>
 #include <unistd.h>
@@ -15,6 +17,7 @@
 #include <string>
 #include <utility>
 #include <tuple>
+#include <sys/stat.h>
 #include <sys/wait.h>
 #include <spdlog/spdlog.h>
 #include <spdlog/cfg/env.h>
@@ -67,7 +70,10 @@ constexpr const char *AGENT_TRANSFORMER_LIBRARY =
 #error "Unsupported Platform"
 #endif
 
-static int subprocess_pid = 0;
+static volatile sig_atomic_t stop_requested = 0;
+static volatile sig_atomic_t subprocess_pid = 0;
+constexpr const char *TRACE_PIPE_ENV = "TRACEPIPE_PATH";
+constexpr const char *TRACE_PIPE_FILENAME = "tracepipe";
 
 static bool str_starts_with(const char *main, const char *pat)
 {
@@ -146,7 +152,18 @@ static int run_command(const char *path, const std::vector<std::string> &argv,
 	} else {
 		subprocess_pid = pid;
 		int status;
-		if (int cid = waitpid(pid, &status, 0); cid > 0) {
+		while (true) {
+			int cid = waitpid(pid, &status, 0);
+			if (cid == -1 && errno == EINTR) {
+				continue;
+			}
+			if (cid == -1) {
+				subprocess_pid = 0;
+				spdlog::error("waitpid({}) failed: {}", pid,
+					      strerror(errno));
+				return 1;
+			}
+			subprocess_pid = 0;
 			if (WIFEXITED(status)) {
 				int exit_code = WEXITSTATUS(status);
 				if (exit_code != 0) {
@@ -163,6 +180,7 @@ static int run_command(const char *path, const std::vector<std::string> &argv,
 					      signal_code);
 				return 128 + signal_code;
 			}
+			break;
 		}
 	}
 	return 1;
@@ -188,6 +206,108 @@ static int inject_by_frida(int pid, const char *inject_path, const char *arg)
 	frida_injector_close_sync(injector, nullptr, nullptr);
 	frida_unref(injector);
 	frida_deinit();
+	return 0;
+}
+
+static std::filesystem::path
+get_trace_pipe_path(const std::filesystem::path &install_path)
+{
+	return install_path / TRACE_PIPE_FILENAME;
+}
+
+static bool ensure_trace_pipe_fifo(const std::filesystem::path &trace_pipe_path)
+{
+	struct stat st = {};
+	if (lstat(trace_pipe_path.c_str(), &st) == 0) {
+		if (!S_ISFIFO(st.st_mode)) {
+			spdlog::error("Trace pipe path {} exists but is not a FIFO",
+				      trace_pipe_path.string());
+			return false;
+		}
+		return true;
+	}
+
+	if (errno != ENOENT) {
+		spdlog::error("Failed to inspect trace pipe {}: {}",
+			      trace_pipe_path.string(), strerror(errno));
+		return false;
+	}
+
+	if (mkfifo(trace_pipe_path.c_str(), 0666) == 0) {
+		return true;
+	}
+
+	if (errno != EEXIST) {
+		spdlog::error("Failed to create trace pipe {}: {}",
+			      trace_pipe_path.string(), strerror(errno));
+		return false;
+	}
+
+	if (lstat(trace_pipe_path.c_str(), &st) == 0) {
+		if (S_ISFIFO(st.st_mode)) {
+			return true;
+		}
+		spdlog::error("Trace pipe path {} was replaced with a non-FIFO entry",
+			      trace_pipe_path.string());
+		return false;
+	}
+
+	spdlog::error("Failed to inspect trace pipe {} after EEXIST: {}",
+		      trace_pipe_path.string(), strerror(errno));
+	return false;
+}
+
+static int read_trace_pipe(const std::filesystem::path &trace_pipe_path)
+{
+	if (!ensure_trace_pipe_fifo(trace_pipe_path)) {
+		return 1;
+	}
+
+	// Keep the FIFO as a stable rendezvous point. Writers may continue to
+	// reuse the same path after the current reader exits.
+	while (!stop_requested) {
+		int fd = open(trace_pipe_path.c_str(), O_RDONLY);
+		if (fd == -1) {
+			if (errno == EINTR) {
+				if (stop_requested) {
+					return 0;
+				}
+				continue;
+			}
+			spdlog::error("Failed to open trace pipe {}: {}",
+				      trace_pipe_path.string(),
+				      strerror(errno));
+			return 1;
+		}
+
+		while (!stop_requested) {
+			char data[4096];
+			ssize_t ret = read(fd, data, sizeof(data));
+			if (ret > 0) {
+				std::cout.write(data, ret);
+				std::cout.flush();
+				continue;
+			}
+			if (ret == 0) {
+				break;
+			}
+			if (errno == EINTR) {
+				if (stop_requested) {
+					close(fd);
+					return 0;
+				}
+				continue;
+			}
+			spdlog::error("Failed to read trace pipe {}: {}",
+				      trace_pipe_path.string(),
+				      strerror(errno));
+			close(fd);
+			return 1;
+		}
+
+		close(fd);
+	}
+
 	return 0;
 }
 
@@ -280,16 +400,34 @@ static void add_kernel_loader_cli_options(argparse::ArgumentParser &command)
 
 static void signal_handler(int sig)
 {
+	stop_requested = 1;
 	if (subprocess_pid) {
-		kill(subprocess_pid, sig);
+		kill(static_cast<pid_t>(subprocess_pid), sig);
 	}
+}
+
+static bool install_signal_handler(int sig)
+{
+	struct sigaction sa = {};
+	sa.sa_handler = signal_handler;
+	sigemptyset(&sa.sa_mask);
+	sa.sa_flags = 0;
+	if (sigaction(sig, &sa, nullptr) == -1) {
+		spdlog::error("Failed to install signal handler for {}: {}", sig,
+			      strerror(errno));
+		return false;
+	}
+	return true;
 }
 
 int main(int argc, const char **argv)
 {
 	spdlog::cfg::load_env_levels();
-	signal(SIGINT, signal_handler);
-	signal(SIGTSTP, signal_handler);
+	if (!install_signal_handler(SIGINT) ||
+	    !install_signal_handler(SIGTERM) ||
+	    !install_signal_handler(SIGTSTP)) {
+		return 1;
+	}
 	argparse::ArgumentParser program(argv[0]);
 
 	if (auto home_env = getenv("HOME"); home_env) {
@@ -337,6 +475,9 @@ int main(int argc, const char **argv)
 	start_command.add_argument("-s", "--enable-syscall-trace")
 		.help("Whether to enable syscall trace")
 		.flag();
+	start_command.add_argument("-p", "--print-to-trace-pipe")
+		.help("Same as TRACEPIPE_PATH, send bpf_printk output to the bpftime trace pipe.")
+		.flag();
 	start_command.add_argument("COMMAND")
 		.nargs(argparse::nargs_pattern::at_least_one)
 		.remaining()
@@ -357,10 +498,17 @@ int main(int argc, const char **argv)
 		.add_epilog(
 			"For more information and options, please see https://eunomia.dev/bpftime");
 
+	argparse::ArgumentParser trace_command("trace");
+	trace_command
+		.add_description("Read bpf_printk output from the bpftime trace pipe")
+		.add_epilog(
+			"For more information and options, please see https://eunomia.dev/bpftime");
+
 	program.add_subparser(load_command);
 	program.add_subparser(start_command);
 	program.add_subparser(attach_command);
 	program.add_subparser(detach_command);
+	program.add_subparser(trace_command);
 	try {
 		program.parse_args(argc, argv);
 	} catch (const std::exception &err) {
@@ -392,10 +540,13 @@ int main(int argc, const char **argv)
 		}
 		auto [executable_path, extra_args, env_args] =
 			build_command_launch_args(start_command, false, false);
+		if (start_command.get<bool>("print-to-trace-pipe")) {
+			env_args.emplace_back(std::string(TRACE_PIPE_ENV) + "=" +
+					      get_trace_pipe_path(install_path).string());
+		}
 		if (start_command.get<bool>("enable-syscall-trace")) {
 			auto transformer_path =
-				install_path /
-				"libbpftime-agent-transformer.so";
+				install_path / AGENT_TRANSFORMER_LIBRARY;
 			if (!std::filesystem::exists(transformer_path)) {
 				spdlog::error("Library not found: {}",
 					      transformer_path.c_str());
@@ -421,8 +572,7 @@ int main(int argc, const char **argv)
 		auto pid = attach_command.get<int>("PID");
 		if (attach_command.get<bool>("enable-syscall-trace")) {
 			auto transformer_path =
-				install_path /
-				"libbpftime-agent-transformer.so";
+				install_path / AGENT_TRANSFORMER_LIBRARY;
 			if (!std::filesystem::exists(transformer_path)) {
 				spdlog::error("Library not found: {}",
 					      transformer_path.c_str());
@@ -458,6 +608,8 @@ int main(int argc, const char **argv)
 		if (!sended) {
 			SPDLOG_INFO("No process was signaled.");
 		}
+	} else if (program.is_subcommand_used("trace")) {
+		return read_trace_pipe(get_trace_pipe_path(install_path));
 	}
 	return 0;
 }
