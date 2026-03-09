@@ -11,8 +11,8 @@
 #include <system_error>
 #if __APPLE__
 #include <cstdint>
-#include <pthread.h>
 #endif
+#include <pthread.h>
 #ifdef BPFTIME_BUILD_WITH_LIBBPF
 #include "bpf/bpf.h"
 #include "bpf/libbpf_common.h"
@@ -37,6 +37,7 @@
 #include <unistd.h>
 #include <ctime>
 #include <filesystem>
+#include <string>
 #include "bpftime.hpp"
 #include "bpftime_shm.hpp"
 #include "bpftime_internal.h"
@@ -65,6 +66,110 @@ namespace {
 
 constexpr const char *TRACEPIPE_PATH_ENV = "TRACEPIPE_PATH";
 
+bool ensure_tracepipe_fifo(const char *tracepipe_path)
+{
+	struct stat st = {};
+	if (lstat(tracepipe_path, &st) == 0) {
+		if (!S_ISFIFO(st.st_mode)) {
+			SPDLOG_DEBUG(
+				"bpftime_trace_printk path {} exists but is not a FIFO",
+				tracepipe_path);
+			return false;
+		}
+		return true;
+	}
+
+	if (errno != ENOENT) {
+		SPDLOG_DEBUG("bpftime_trace_printk lstat({}) failed: {}",
+			     tracepipe_path, strerror(errno));
+		return false;
+	}
+
+	if (mkfifo(tracepipe_path, 0666) == 0) {
+		return true;
+	}
+
+	if (errno != EEXIST) {
+		SPDLOG_DEBUG("bpftime_trace_printk mkfifo({}) failed: {}",
+			     tracepipe_path, strerror(errno));
+		return false;
+	}
+
+	if (lstat(tracepipe_path, &st) == 0) {
+		if (S_ISFIFO(st.st_mode)) {
+			return true;
+		}
+		SPDLOG_DEBUG(
+			"bpftime_trace_printk path {} was replaced with a non-FIFO entry",
+			tracepipe_path);
+		return false;
+	}
+
+	SPDLOG_DEBUG("bpftime_trace_printk lstat({}) after EEXIST failed: {}",
+		     tracepipe_path, strerror(errno));
+	return false;
+}
+
+ssize_t write_tracepipe_message(int fd, const char *data, size_t size)
+{
+	if (size == 0) {
+		return 0;
+	}
+
+	sigset_t sigpipe_mask;
+	sigemptyset(&sigpipe_mask);
+	sigaddset(&sigpipe_mask, SIGPIPE);
+
+	sigset_t old_mask;
+	int mask_ret = pthread_sigmask(SIG_BLOCK, &sigpipe_mask, &old_mask);
+	if (mask_ret != 0) {
+		errno = mask_ret;
+		SPDLOG_DEBUG(
+			"bpftime_trace_printk failed to block SIGPIPE before writing: {}",
+			strerror(errno));
+		return -1;
+	}
+
+	bool sigpipe_pending_before = false;
+	sigset_t pending_signals;
+	if (sigpending(&pending_signals) == 0) {
+		sigpipe_pending_before =
+			sigismember(&pending_signals, SIGPIPE) == 1;
+	}
+
+	size_t total_written = 0;
+	while (total_written < size) {
+		ssize_t ret = write(fd, data + total_written,
+				    size - total_written);
+		if (ret > 0) {
+			total_written += static_cast<size_t>(ret);
+			continue;
+		}
+		if (ret == -1 && errno == EINTR) {
+			continue;
+		}
+
+		int saved_errno = errno;
+		if (saved_errno == EPIPE && !sigpipe_pending_before &&
+		    sigpending(&pending_signals) == 0 &&
+		    sigismember(&pending_signals, SIGPIPE) == 1) {
+			int signo = 0;
+			(void)sigwait(&sigpipe_mask, &signo);
+		}
+		(void)pthread_sigmask(SIG_SETMASK, &old_mask, nullptr);
+		errno = saved_errno;
+		return -1;
+	}
+
+	int restore_ret = pthread_sigmask(SIG_SETMASK, &old_mask, nullptr);
+	if (restore_ret != 0) {
+		SPDLOG_DEBUG(
+			"bpftime_trace_printk failed to restore signal mask after writing: {}",
+			strerror(restore_ret));
+	}
+	return static_cast<ssize_t>(total_written);
+}
+
 int try_open_tracepipe()
 {
 	const char *tracepipe_path = std::getenv(TRACEPIPE_PATH_ENV);
@@ -72,9 +177,7 @@ int try_open_tracepipe()
 		return -1;
 	}
 
-	if (mkfifo(tracepipe_path, 0666) == -1 && errno != EEXIST) {
-		SPDLOG_DEBUG("bpftime_trace_printk mkfifo({}) failed: {}",
-			     tracepipe_path, strerror(errno));
+	if (!ensure_tracepipe_fifo(tracepipe_path)) {
 		return -1;
 	}
 
@@ -102,31 +205,54 @@ uint64_t bpftime_trace_printk(uint64_t fmt, uint64_t fmt_size, ...)
 	const char *fmt_str = (const char *)fmt;
 	va_list args;
 #pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wformat-nonliteral"
-#pragma GCC diagnostic ignored "-Wvarargs"
+	#pragma GCC diagnostic ignored "-Wformat-nonliteral"
+	#pragma GCC diagnostic ignored "-Wvarargs"
 	va_start(args, fmt_size);
 	long ret = -1;
+	va_list format_args;
+	va_copy(format_args, args);
+	int message_len = vsnprintf(nullptr, 0, fmt_str, format_args);
+	va_end(format_args);
+
+	std::string message;
+	if (message_len >= 0) {
+		std::vector<char> message_buffer(static_cast<size_t>(message_len) + 1);
+		va_copy(format_args, args);
+		(void)vsnprintf(message_buffer.data(), message_buffer.size(),
+				fmt_str, format_args);
+		va_end(format_args);
+		message.assign(message_buffer.data(), static_cast<size_t>(message_len));
+	}
 	bool wrote_to_tracepipe = false;
-	if (int tracepipe_fd = try_open_tracepipe(); tracepipe_fd != -1) {
-		va_list tracepipe_args;
-		va_copy(tracepipe_args, args);
-		ret = vdprintf(tracepipe_fd, fmt_str, tracepipe_args);
-		int saved_errno = errno;
-		va_end(tracepipe_args);
-		close(tracepipe_fd);
-		if (ret >= 0) {
-			wrote_to_tracepipe = true;
-		}
-		if (!wrote_to_tracepipe) {
-			errno = saved_errno;
-			SPDLOG_DEBUG(
-				"bpftime_trace_printk write to tracepipe failed: {}",
-				strerror(errno));
+	if (message_len >= 0) {
+		if (int tracepipe_fd = try_open_tracepipe(); tracepipe_fd != -1) {
+			ret = write_tracepipe_message(tracepipe_fd, message.data(),
+						      message.size());
+			int saved_errno = errno;
+			close(tracepipe_fd);
+			if (ret == message_len) {
+				wrote_to_tracepipe = true;
+			}
+			if (!wrote_to_tracepipe) {
+				errno = saved_errno;
+				SPDLOG_DEBUG(
+					"bpftime_trace_printk write to tracepipe failed: {}",
+					strerror(errno));
+			}
 		}
 	}
 
 	if (!wrote_to_tracepipe) {
-		ret = vprintf(fmt_str, args);
+		if (message_len >= 0) {
+			ret = static_cast<long>(
+				fwrite(message.data(), 1, message.size(), stdout));
+		} else {
+			ret = vprintf(fmt_str, args);
+		}
+		int saved_errno = errno;
+		if (ret < 0) {
+			errno = saved_errno;
+		}
 	}
 	(void)ret;
 #pragma GCC diagnostic pop
