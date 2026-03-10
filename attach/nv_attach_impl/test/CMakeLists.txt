@@ -1,5 +1,6 @@
 set(TEST_SOURCES
     nv_attach_impl_tests.cpp
+    test_cuda_tool_resolution.cpp
     test_register_guard.cpp
     test_ptxpass.cpp
     # test_kernel_finder.cpp
