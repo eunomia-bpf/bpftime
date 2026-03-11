@@ -345,7 +345,14 @@ void cuda_module_destroyer(CUmodule ptr)
 
 std::optional<std::unique_ptr<cuda::CUDAContext>> create_cuda_context()
 {
-	SPDLOG_INFO("Initializing CUDA shared memory");
+	return create_cuda_context_for_device(0);
+}
+
+std::optional<std::unique_ptr<cuda::CUDAContext>>
+create_cuda_context_for_device(int device_ordinal)
+{
+	SPDLOG_INFO("Initializing CUDA shared memory for device {}",
+		    device_ordinal);
 	auto *cuda_shared_mem =
 		shm_holder.global_shared_memory.get_cuda_comm_shared_mem();
 	if (!cuda_shared_mem) {
@@ -353,20 +360,25 @@ std::optional<std::unique_ptr<cuda::CUDAContext>> create_cuda_context()
 			"CUDA shared communication memory not initialized in shared segment");
 		return std::nullopt;
 	}
-	memset(cuda_shared_mem, 0, sizeof(*cuda_shared_mem));
+	if (device_ordinal == 0) {
+		memset(cuda_shared_mem, 0, sizeof(*cuda_shared_mem));
+	}
 
 	auto cuda_ctx = std::make_optional(
-		std::make_unique<cuda::CUDAContext>(cuda_shared_mem));
+		std::make_unique<cuda::CUDAContext>(cuda_shared_mem,
+						    device_ordinal));
 
-	SPDLOG_INFO("CUDA context created");
+	SPDLOG_INFO("CUDA context created for device {}", device_ordinal);
 	return cuda_ctx;
 }
+
 CUDAContext::~CUDAContext()
 {
-	SPDLOG_INFO("Destructing CUDAContext");
+	SPDLOG_INFO("Destructing CUDAContext for device {}", device_ordinal);
 }
-CUDAContext::CUDAContext(cuda::CommSharedMem *mem)
-	: cuda_shared_mem(mem), cuda_shared_mem_device_pointer(0)
+CUDAContext::CUDAContext(cuda::CommSharedMem *mem, int dev_ordinal)
+	: cuda_shared_mem(mem), cuda_shared_mem_device_pointer(0),
+	  device_ordinal(dev_ordinal)
 
 {
 	// Move CommSharedMem from the agent’s local memory to shared memory to
@@ -376,17 +388,75 @@ CUDAContext::CUDAContext(cuda::CommSharedMem *mem)
 					    (void *)cuda_shared_mem, 0);
 	if (err != cudaSuccess) {
 		SPDLOG_ERROR(
-			"cudaHostGetDevicePointer failed for CommSharedMem: {}",
-			cudaGetErrorString(err));
+			"cudaHostGetDevicePointer failed for CommSharedMem (device {}): {}",
+			device_ordinal, cudaGetErrorString(err));
 		throw std::runtime_error(
 			"Unable to get device pointer for CommSharedMem");
 	}
 	cuda_shared_mem_device_pointer =
 		reinterpret_cast<uintptr_t>(device_ptr);
 	set_cuda_shared_mem_device_pointer(cuda_shared_mem_device_pointer);
-	SPDLOG_INFO("CommSharedMem host {:p} mapped to device {:p}",
-		    (void *)cuda_shared_mem, device_ptr);
+	SPDLOG_INFO(
+		"CommSharedMem host {:p} mapped to device {:p} (device {})",
+		(void *)cuda_shared_mem, device_ptr, device_ordinal);
 }
 
 } // namespace cuda
+
+void bpf_attach_ctx::init_multi_gpu_contexts()
+{
+	auto nv_impl = find_nv_attach_impl();
+	if (!nv_impl.has_value())
+		return;
+
+	auto &dev_manager = (*nv_impl)->get_device_manager();
+	int device_count = dev_manager.device_count();
+
+	if (device_count <= 1) {
+		SPDLOG_INFO(
+			"Single GPU detected, multi-GPU context initialization skipped");
+		// Set device 0’s shared_mem_device_ptr from the primary context
+		if (device_count == 1 && cuda_ctx) {
+			dev_manager.get_device(0).shared_mem_device_ptr =
+				cuda_ctx->cuda_shared_mem_device_pointer;
+		}
+		return;
+	}
+
+	SPDLOG_INFO("Initializing multi-GPU contexts for {} devices",
+		    device_count);
+
+	// Set device 0’s pointer from the already-created primary context
+	if (cuda_ctx) {
+		dev_manager.get_device(0).shared_mem_device_ptr =
+			cuda_ctx->cuda_shared_mem_device_pointer;
+	}
+
+	// For additional devices, the CommSharedMem is in UVA (unified virtual
+	// addressing) host memory registered with cudaHostRegister, so it is
+	// accessible from all devices. We just need to record the device
+	// pointer for each.
+	for (int i = 1; i < device_count; i++) {
+		SPDLOG_INFO("Setting up shared mem pointer for device {}", i);
+		// The UVA device pointer is the same for all devices when using
+		// cudaHostGetDevicePointer on registered host memory
+		dev_manager.get_device(i).shared_mem_device_ptr =
+			cuda_ctx->cuda_shared_mem_device_pointer;
+	}
+}
+
+cuda::CUDAContext *
+bpf_attach_ctx::get_cuda_context_for_device(int device_ordinal)
+{
+	if (device_ordinal == 0 && cuda_ctx) {
+		return cuda_ctx.get();
+	}
+	auto it = cuda_device_contexts.find(device_ordinal);
+	if (it != cuda_device_contexts.end()) {
+		return it->second.get();
+	}
+	// Fallback to primary context
+	return cuda_ctx.get();
+}
+
 } // namespace bpftime

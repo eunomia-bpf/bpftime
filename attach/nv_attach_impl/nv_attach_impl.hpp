@@ -23,6 +23,7 @@
 #include <sys/syscall.h>
 #include <sys/wait.h>
 #include "nv_attach_fatbin_record.hpp"
+#include "nv_gpu_device_manager.hpp"
 #include <tuple>
 #include <variant>
 #include <vector>
@@ -147,15 +148,28 @@ class nv_attach_impl final : public base_attach_impl {
 	int run_attach_entry_on_gpu(int attach_id, int run_count = 1,
 				    int grid_dim_x = 1, int grid_dim_y = 1,
 				    int grid_dim_z = 1, int block_dim_x = 1,
-				    int block_dim_y = 1, int block_dim_z = 1);
+				    int block_dim_y = 1, int block_dim_z = 1,
+				    int device_ordinal = -1);
 	void record_patched_kernel_function(const std::string &kernel_name,
-					    CUfunction function);
+					    CUfunction function,
+					    int device_ordinal = -1);
 	std::optional<CUfunction>
-	find_patched_kernel_function(const std::string &kernel_name) const;
+	find_patched_kernel_function(const std::string &kernel_name,
+				     int device_ordinal = -1) const;
 	void record_original_cufunction_name(CUfunction function,
 					     const std::string &kernel_name);
 	std::optional<std::string>
 	find_original_kernel_name(CUfunction function) const;
+
+	/// GPU device manager for multi-GPU support
+	gpu_device_manager &get_device_manager() { return device_manager_; }
+	const gpu_device_manager &get_device_manager() const
+	{
+		return device_manager_;
+	}
+
+	/// Get the current device ordinal from CUDA context, or 0 as fallback
+	int get_current_device_ordinal() const;
 	std::vector<std::unique_ptr<fatbin_record>> fatbin_records;
 	fatbin_record *current_fatbin = nullptr;
 	std::map<void *, fatbin_record *> symbol_address_to_fatbin;
@@ -195,8 +209,13 @@ class nv_attach_impl final : public base_attach_impl {
 		pass_configurations;
 	std::map<std::string, ptxpass::runtime_response::RuntimeResponse>
 		patch_cache;
+	gpu_device_manager device_manager_;
 	mutable std::mutex cuda_symbol_map_mutex;
-	std::unordered_map<std::string, CUfunction> patched_kernel_by_name;
+	// Per-device patched kernel maps: device_ordinal -> (name -> CUfunction)
+	std::map<int, std::unordered_map<std::string, CUfunction>>
+		patched_kernel_by_device_;
+	// CUfunction -> kernel_name (CUfunction handles are unique across
+	// devices)
 	std::unordered_map<CUfunction, std::string> kernel_name_by_cufunction;
 };
 

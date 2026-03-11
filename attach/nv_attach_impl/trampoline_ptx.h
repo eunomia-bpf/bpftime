@@ -15,6 +15,7 @@ static const char TRAMPOLINE_PTX[] = R"(
 )
 ;
 .visible .const .align 8 .u64 constData;
+.visible .const .align 4 .u32 deviceOrdinal;
 .visible .const .align 8 .b8 map_info[40960];
 .visible .global .align 4 .u32 __bpftime_comm_lock;
 .global .align 1 .b8 _$_str[139] = {87, 65, 82, 78, 73, 78, 71, 58, 32, 103, 101, 116, 71, 108, 111, 98, 97, 108, 84, 104, 114, 101, 97, 100, 73, 100, 40, 37, 108, 117, 41, 32, 101, 120, 99, 101, 101, 100, 115, 32, 109, 97, 120, 95, 116, 104, 114, 101, 97, 100, 95, 99, 111, 117, 110, 116, 32, 40, 37, 108, 117, 41, 32, 111, 102, 32, 109, 97, 112, 32, 37, 108, 117, 44, 32, 112, 108, 101, 97, 115, 101, 32, 115, 101, 116, 32, 66, 80, 70, 84, 73, 77, 69, 95, 77, 65, 80, 95, 71, 80, 85, 95, 84, 72, 82, 69, 65, 68, 95, 67, 79, 85, 78, 84, 32, 97, 116, 32, 115, 121, 115, 99, 97, 108, 108, 45, 115, 101, 114, 118, 101, 114, 32, 115, 105, 100, 101, 10, 0};
@@ -1870,6 +1871,25 @@ $L__BB11_8:
 	// begin inline asm
 	mov.u32 %r1, %laneid;
 	// end inline asm
+	cvt.u64.u32 	%rd1, %r1;
+	st.param.b64 	[func_retval0+0], %rd1;
+	ret;
+                                        // -- End function
+}
+	// .globl	_bpf_helper_ext_0512    // -- Begin function _bpf_helper_ext_0512
+.visible .func  (.param .b64 func_retval0) _bpf_helper_ext_0512(
+	.param .b64 _bpf_helper_ext_0512_param_0,
+	.param .b64 _bpf_helper_ext_0512_param_1,
+	.param .b64 _bpf_helper_ext_0512_param_2,
+	.param .b64 _bpf_helper_ext_0512_param_3,
+	.param .b64 _bpf_helper_ext_0512_param_4
+)                                       // @_bpf_helper_ext_0512
+{
+	.reg .b32 	%r<2>;
+	.reg .b64 	%rd<2>;
+
+// %bb.0:
+	ld.const.u32 	%r1, [deviceOrdinal];
 	cvt.u64.u32 	%rd1, %r1;
 	st.param.b64 	[func_retval0+0], %rd1;
 	ret;
