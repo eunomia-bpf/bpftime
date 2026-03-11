@@ -919,7 +919,11 @@ int nv_attach_impl::run_attach_entry_on_gpu(int attach_id, int run_count,
 			CUDA_SAFE_CALL(cuDeviceGet(&cuDevice, device_ordinal));
 		}
 
+#if CUDA_VERSION >= 13000
 		CUDA_SAFE_CALL(cuCtxCreate(&context, NULL, 0, cuDevice));
+#else
+		CUDA_SAFE_CALL(cuCtxCreate(&context, 0, cuDevice));
+#endif
 		CUDA_SAFE_CALL(cuModuleLoadDataEx(&module, output_elf.data(), 0,
 						  0, 0));
 		// fill data into it
