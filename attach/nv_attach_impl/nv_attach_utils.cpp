@@ -161,5 +161,56 @@ std::string get_gpu_sm_arch()
 	return sm_arch;
 }
 
+std::string get_gpu_sm_arch_for_device(int device_ordinal)
+{
+	// If env var is set, use it for all devices (backward compat)
+	const char *sm_arch_env = std::getenv("BPFTIME_SM_ARCH");
+	if (sm_arch_env && sm_arch_env[0] != '\0') {
+		return sm_arch_env;
+	}
+
+	CUdevice device;
+	CUresult err = cuInit(0);
+	if (err != CUDA_SUCCESS) {
+		SPDLOG_WARN(
+			"Failed to initialize CUDA driver ({}), falling back to sm_61",
+			(int)err);
+		return "sm_61";
+	}
+
+	err = cuDeviceGet(&device, device_ordinal);
+	if (err != CUDA_SUCCESS) {
+		SPDLOG_WARN(
+			"Failed to get CUDA device {} ({}), falling back to sm_61",
+			device_ordinal, (int)err);
+		return "sm_61";
+	}
+
+	int major = 0, minor = 0;
+	err = cuDeviceGetAttribute(
+		&major, CU_DEVICE_ATTRIBUTE_COMPUTE_CAPABILITY_MAJOR, device);
+	if (err != CUDA_SUCCESS) {
+		SPDLOG_WARN(
+			"Failed to get compute capability major for device {} ({})",
+			device_ordinal, (int)err);
+		return "sm_61";
+	}
+
+	err = cuDeviceGetAttribute(
+		&minor, CU_DEVICE_ATTRIBUTE_COMPUTE_CAPABILITY_MINOR, device);
+	if (err != CUDA_SUCCESS) {
+		SPDLOG_WARN(
+			"Failed to get compute capability minor for device {} ({})",
+			device_ordinal, (int)err);
+		return "sm_61";
+	}
+
+	std::string sm_arch = "sm_" + std::to_string(major * 10 + minor);
+	SPDLOG_INFO(
+		"GPU device {} SM arch: {} (compute capability {}.{})",
+		device_ordinal, sm_arch, major, minor);
+	return sm_arch;
+}
+
 } // namespace attach
 } // namespace bpftime

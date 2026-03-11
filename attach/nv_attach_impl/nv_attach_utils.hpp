@@ -54,6 +54,14 @@ std::string rewrite_ptx_target(std::string ptx, const std::string &sm_arch);
  */
 std::string get_gpu_sm_arch();
 
+/**
+ * @brief Get the SM architecture string for a specific GPU device.
+ *
+ * @param device_ordinal The CUDA device ordinal (0, 1, 2, ...)
+ * @return std::string SM architecture string (e.g., "sm_86", "sm_120")
+ */
+std::string get_gpu_sm_arch_for_device(int device_ordinal);
+
 } // namespace attach
 } // namespace bpftime
 

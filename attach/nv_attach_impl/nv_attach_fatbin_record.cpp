@@ -102,9 +102,9 @@ bool fatbin_record::find_and_fill_function_info(void *ptr,
 
 std::map<std::string, std::vector<uint8_t>> fatbin_record::compile_ptxs(
 	class nv_attach_impl &impl,
-	std::map<std::string, std::tuple<std::string, bool>> patched_ptx)
+	std::map<std::string, std::tuple<std::string, bool>> patched_ptx,
+	const std::string &sm_arch)
 {
-	std::string sm_arch = get_gpu_sm_arch();
 	SPDLOG_INFO("Compiling PTXs with sm_arch {}", sm_arch);
 
 	unsigned major, minor;
@@ -189,32 +189,64 @@ std::map<std::string, std::vector<uint8_t>> fatbin_record::compile_ptxs(
 }
 void fatbin_record::try_loading_ptxs(class nv_attach_impl &impl)
 {
-	if (ptx_loaded)
+	// Determine current device ordinal
+	int dev_ordinal = impl.get_current_device_ordinal();
+	std::string sm_arch;
+	if (impl.get_device_manager().device_count() > 0) {
+		sm_arch = impl.get_device_manager()
+				  .get_device(dev_ordinal)
+				  .sm_arch;
+	} else {
+		sm_arch = get_gpu_sm_arch();
+	}
+	try_loading_ptxs_for_device(impl, dev_ordinal, sm_arch);
+}
+
+void fatbin_record::try_loading_ptxs_for_device(class nv_attach_impl &impl,
+						 int device_ordinal,
+						 const std::string &sm_arch)
+{
+	// Skip if already loaded for this device
+	if (devices_loaded.count(device_ordinal) > 0)
 		return;
 	if (impl.shared_mem_ptr == 0) {
 		throw std::runtime_error(
 			"shared_mem_ptr is not initialized before loading PTX");
 	}
-	SPDLOG_INFO("Loading & patching current fatbin..");
+	SPDLOG_INFO(
+		"Loading & patching current fatbin for device {} (sm_arch {})..",
+		device_ordinal, sm_arch);
 
 	auto patched_ptx = *impl.hack_fatbin(original_ptx);
 
-	auto compiled_ptx = compile_ptxs(impl, patched_ptx);
+	auto compiled_ptx = compile_ptxs(impl, patched_ptx, sm_arch);
+
+	// Use per-device module pool if available
+	auto &dev_manager = impl.get_device_manager();
+	auto effective_module_pool =
+		(dev_manager.device_count() > device_ordinal) ?
+			dev_manager.get_device(device_ordinal).module_pool :
+			module_pool;
 
 	for (const auto &[name, ptx_and_trampoline_flag] : patched_ptx) {
 		const auto &ptx = std::get<0>(ptx_and_trampoline_flag);
 		bool added_trampoline = std::get<1>(ptx_and_trampoline_flag);
 		const auto &compiled_elf = compiled_ptx.at(name);
+		// Include device ordinal in cache key so different devices get
+		// separate modules
 		auto sha256_string =
-			sha256(compiled_elf.data(), compiled_elf.size());
-		if (auto itr = module_pool->find(sha256_string);
-		    itr != module_pool->end()) {
-			SPDLOG_INFO("Module {} found in cache", name);
+			sha256(compiled_elf.data(), compiled_elf.size()) +
+			":dev" + std::to_string(device_ordinal);
+		if (auto itr = effective_module_pool->find(sha256_string);
+		    itr != effective_module_pool->end()) {
+			SPDLOG_INFO("Module {} found in cache (device {})",
+				    name, device_ordinal);
 			ptxs.push_back(itr->second);
 		} else {
 			CUmodule module;
-			SPDLOG_INFO("Loading module: {}, not found in cache",
-				    name);
+			SPDLOG_INFO(
+				"Loading module: {} for device {}, not found in cache",
+				name, device_ordinal);
 			char error_buf[8192] = { 0 }, info_buf[8192] = { 0 };
 			CUjit_option options[] = {
 				CU_JIT_INFO_LOG_BUFFER,
@@ -230,52 +262,81 @@ void fatbin_record::try_loading_ptxs(class nv_attach_impl &impl)
 				    &module, compiled_elf.data(),
 				    std::size(options), options, option_values);
 			    err != CUDA_SUCCESS) {
-				SPDLOG_ERROR("Unable to compile module {}: {}",
-					     name, (int)err);
+				SPDLOG_ERROR(
+					"Unable to compile module {} on device {}: {}",
+					name, device_ordinal, (int)err);
 				SPDLOG_ERROR("Info: {}", info_buf);
 				SPDLOG_ERROR("Error: {}", error_buf);
 				throw std::runtime_error(
 					"Unable to compile module");
 			}
 			if (added_trampoline) {
+				// Determine the shared_mem_ptr to use for this
+				// device
+				uintptr_t device_shared_mem_ptr =
+					impl.shared_mem_ptr;
+				if (dev_manager.device_count() >
+				    device_ordinal) {
+					auto &dev_info =
+						dev_manager.get_device(
+							device_ordinal);
+					if (dev_info.shared_mem_device_ptr !=
+					    0) {
+						device_shared_mem_ptr =
+							dev_info.shared_mem_device_ptr;
+					}
+				}
+
 				CUdeviceptr const_data_ptr, map_basic_info_ptr;
 				size_t const_data_size, map_basic_info_size;
 				SPDLOG_INFO(
-					"Copying trampoline data to device");
+					"Copying trampoline data to device {}",
+					device_ordinal);
 				CUDA_DRIVER_CHECK_EXCEPTION(
 					cuModuleGetGlobal(&const_data_ptr,
 							  &const_data_size,
 							  module, "constData"),
 					"Unable to get pointer of constData");
 				SPDLOG_INFO(
-			"constData symbol device_ptr={:x} size={} shared_mem_ptr={:x}",
-			(uintptr_t)const_data_ptr, const_data_size,
-			(uintptr_t)impl.shared_mem_ptr);
-		CUDA_DRIVER_CHECK_EXCEPTION(
+					"constData symbol device_ptr={:x} size={} shared_mem_ptr={:x} (device {})",
+					(uintptr_t)const_data_ptr,
+					const_data_size,
+					(uintptr_t)device_shared_mem_ptr,
+					device_ordinal);
+				CUDA_DRIVER_CHECK_EXCEPTION(
 					cuModuleGetGlobal(&map_basic_info_ptr,
 							  &map_basic_info_size,
 							  module, "map_info"),
 					"Unable to get pointer of map_info");
-				SPDLOG_INFO("map_info symbol device_ptr={:x} size={}",
-			    (uintptr_t)map_basic_info_ptr, map_basic_info_size);
-		CUDA_DRIVER_CHECK_EXCEPTION(
+				SPDLOG_INFO(
+					"map_info symbol device_ptr={:x} size={}",
+					(uintptr_t)map_basic_info_ptr,
+					map_basic_info_size);
+				CUDA_DRIVER_CHECK_EXCEPTION(
 					cuMemcpyHtoD(const_data_ptr,
-						     &impl.shared_mem_ptr,
+						     &device_shared_mem_ptr,
 						     const_data_size),
 					"Unable to copy constData pointer to device");
 				CUDA_DRIVER_CHECK_EXCEPTION(
-					cuMemcpyHtoD(map_basic_info_ptr,
-						     impl.map_basic_info->data(),
-						     map_basic_info_size),
-					"Unable to copy constData pointer to device");
-				SPDLOG_INFO("Trampoline data copied");
+					cuMemcpyHtoD(
+						map_basic_info_ptr,
+						impl.map_basic_info->data(),
+						map_basic_info_size),
+					"Unable to copy map_info to device");
+				SPDLOG_INFO(
+					"Trampoline data copied for device {}",
+					device_ordinal);
 			}
-			auto ptr = std::make_shared<ptx_in_module>(module);
-			module_pool->insert(std::make_pair(sha256_string, ptr));
+			auto ptr = std::make_shared<ptx_in_module>(
+				module, device_ordinal);
+			effective_module_pool->insert(
+				std::make_pair(sha256_string, ptr));
 			ptxs.push_back(ptr);
-			SPDLOG_INFO("Loaded module: {}", name);
+			SPDLOG_INFO("Loaded module: {} on device {}", name,
+				    device_ordinal);
 		}
 	}
+	devices_loaded.insert(device_ordinal);
 	ptx_loaded = true;
 }
 

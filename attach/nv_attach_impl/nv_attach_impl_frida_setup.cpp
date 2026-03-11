@@ -195,10 +195,15 @@ static void example_listener_on_enter(GumInvocationListener *listener,
 			if (auto itr = current_fatbin->function_addr_to_symbol
 					       .find(func_addr);
 			    itr !=
-			    current_fatbin->function_addr_to_symbol.end())
+			    current_fatbin->function_addr_to_symbol.end()) {
+				// Record with current device ordinal for
+				// multi-GPU awareness
+				int dev_ord =
+					impl.get_current_device_ordinal();
 				impl.record_patched_kernel_function(
 					std::string(symbol_name),
-					itr->second.func);
+					itr->second.func, dev_ord);
+			}
 			SPDLOG_DEBUG(
 				"Registered kernel function name {} addr {:x}",
 				symbol_name, (uintptr_t)func_addr);

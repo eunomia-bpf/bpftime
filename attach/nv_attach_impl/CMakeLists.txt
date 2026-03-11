@@ -28,6 +28,7 @@ add_library(
     nv_attach_impl_patcher.cpp
     nv_attach_utils.cpp
     nv_attach_fatbin_record.cpp
+    nv_gpu_device_manager.cpp
 )
 
 add_dependencies(bpftime_nv_attach_impl bpftime_base_attach_impl spdlog::spdlog FridaGum  llvmbpf_vm bpftime_vm_compat ptxpass_core)
