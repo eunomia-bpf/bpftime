@@ -932,12 +932,35 @@ int nv_attach_impl::run_attach_entry_on_gpu(int attach_id, int run_count,
 			size_t bytes;
 			CUDA_SAFE_CALL(cuModuleGetGlobal(&ptr, &bytes, module,
 							 "constData"));
+			// Use per-device shared_mem_ptr if available
+			uintptr_t device_shared_mem_ptr = this->shared_mem_ptr;
+			if (device_manager_.device_count() > 0 &&
+			    device_ordinal < device_manager_.device_count()) {
+				auto &dev_info =
+					device_manager_.get_device(
+						device_ordinal);
+				if (dev_info.shared_mem_device_ptr != 0) {
+					device_shared_mem_ptr =
+						dev_info.shared_mem_device_ptr;
+				}
+			}
 			CUDA_SAFE_CALL(
-				cuMemcpyHtoD(ptr, &this->shared_mem_ptr,
-					     sizeof(this->shared_mem_ptr)));
+				cuMemcpyHtoD(ptr, &device_shared_mem_ptr,
+					     sizeof(device_shared_mem_ptr)));
 			SPDLOG_INFO(
-				"shared_mem_ptr copied: device ptr {:x}, device size {}",
-				(uintptr_t)ptr, bytes);
+				"shared_mem_ptr copied: device ptr {:x}, device size {} (device {})",
+				(uintptr_t)ptr, bytes, device_ordinal);
+			// Set per-module device ordinal
+			CUdeviceptr dev_ord_ptr;
+			size_t dev_ord_size;
+			if (cuModuleGetGlobal(&dev_ord_ptr, &dev_ord_size,
+					      module,
+					      "deviceOrdinal") ==
+			    CUDA_SUCCESS) {
+				uint32_t ord = (uint32_t)device_ordinal;
+				CUDA_SAFE_CALL(cuMemcpyHtoD(
+					dev_ord_ptr, &ord, sizeof(ord)));
+			}
 		}
 		{
 			CUdeviceptr ptr;

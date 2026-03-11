@@ -112,6 +112,7 @@ __device__ __forceinline__ uint64_t read_globaltimer()
 }
 
 __constant__ uintptr_t constData;
+__constant__ uint32_t deviceOrdinal;
 __constant__ MapBasicInfo map_info[1024];
 __device__ int __bpftime_comm_lock = 0;
 extern "C" __device__ void spin_lock(volatile int *lock)
@@ -512,6 +513,13 @@ _bpf_helper_ext_0511(uint64_t, uint64_t, uint64_t, uint64_t, uint64_t)
     uint32_t lane_id;
     asm volatile("mov.u32 %0, %%laneid;" : "=r"(lane_id));
     return (uint64_t)lane_id;
+}
+
+extern "C" __noinline__ __device__ uint64_t
+_bpf_helper_ext_0512(uint64_t, uint64_t, uint64_t, uint64_t, uint64_t)
+{
+    // get device ordinal (set per-module during loading)
+    return (uint64_t)deviceOrdinal;
 }
 
 extern "C" __global__ void bpf_main(void *mem, size_t sz)

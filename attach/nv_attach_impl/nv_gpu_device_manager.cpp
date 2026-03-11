@@ -116,7 +116,7 @@ std::set<std::string> gpu_device_manager::get_unique_sm_archs() const
 
 int gpu_device_manager::device_count() const
 {
-	return count_;
+	return (int)devices_.size();
 }
 
 gpu_device_info &gpu_device_manager::get_default_device()

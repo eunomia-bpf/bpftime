@@ -22,10 +22,11 @@
 // --- Maps ---
 
 // Per-block entry timestamps (transient, cleared after each kretprobe)
+// Key is (device_ordinal << 20 | block_id) to avoid cross-GPU collisions
 struct {
 	__uint(type, BPF_MAP_TYPE_HASH);
-	__uint(max_entries, 8192);
-	__type(key, u32);    // block_id
+	__uint(max_entries, 65536);
+	__type(key, u32);    // (device_ordinal << 20) | block_id
 	__type(value, u64);  // globaltimer value at entry
 } start_ts SEC(".maps");
 
@@ -59,19 +60,18 @@ struct {
 	__type(value, u64);
 } duration_stats SEC(".maps");
 
-// Per-GPU block stats: key = gridDim.x (unique per GPU due to imbalanced workload)
-// Each GPU launches a different number of blocks, so gridDim.x identifies the GPU.
+// Per-GPU block stats: key = device_ordinal (set per-module by bpftime)
 struct {
 	__uint(type, BPF_MAP_TYPE_HASH);
 	__uint(max_entries, 16);
-	__type(key, u32);    // gridDim.x
+	__type(key, u32);    // device ordinal
 	__type(value, u64);  // sum of block durations (ns)
 } per_gpu_time SEC(".maps");
 
 struct {
 	__uint(type, BPF_MAP_TYPE_HASH);
 	__uint(max_entries, 16);
-	__type(key, u32);    // gridDim.x
+	__type(key, u32);    // device ordinal
 	__type(value, u64);  // block count
 } per_gpu_count SEC(".maps");
 
@@ -81,6 +81,7 @@ static const u64 (*bpf_get_block_idx)(u64 *x, u64 *y, u64 *z) = (void *)503;
 static const u64 (*bpf_get_block_dim)(u64 *x, u64 *y, u64 *z) = (void *)504;
 static const u64 (*bpf_get_thread_idx)(u64 *x, u64 *y, u64 *z) = (void *)505;
 static const u64 (*bpf_get_grid_dim)(u64 *x, u64 *y, u64 *z) = (void *)508;
+static const u64 (*bpf_get_device_ordinal)(void) = (void *)512;
 
 // Classify latency into histogram bucket
 static __always_inline u32 latency_bucket(u64 ns)
@@ -103,13 +104,15 @@ int cuda__vec_add_entry()
 {
 	u64 bx, by, bz;
 	bpf_get_block_idx(&bx, &by, &bz);
-	u32 block_id = (u32)bx;
+	u32 dev_ord = (u32)bpf_get_device_ordinal();
+	// Compound key: device_ordinal << 20 | block_id (supports up to 1M blocks)
+	u32 ts_key = (dev_ord << 20) | ((u32)bx & 0xFFFFF);
 
 	u64 ts = bpf_get_globaltimer();
-	bpf_map_update_elem(&start_ts, &block_id, &ts, BPF_ANY);
+	bpf_map_update_elem(&start_ts, &ts_key, &ts, BPF_ANY);
 
 	// Block 0 increments the global invocation counter
-	if (block_id == 0) {
+	if ((u32)bx == 0) {
 		u32 key = 0;
 		u64 one = 1;
 		u64 *cnt = bpf_map_lookup_elem(&invoke_count, &key);
@@ -133,14 +136,15 @@ int cuda__vec_add_exit()
 {
 	u64 bx, by, bz;
 	bpf_get_block_idx(&bx, &by, &bz);
-	u32 block_id = (u32)bx;
+	u32 dev_ord = (u32)bpf_get_device_ordinal();
+	u32 ts_key = (dev_ord << 20) | ((u32)bx & 0xFFFFF);
 
-	u64 *tsp = bpf_map_lookup_elem(&start_ts, &block_id);
+	u64 *tsp = bpf_map_lookup_elem(&start_ts, &ts_key);
 	if (!tsp)
 		return 0;
 
 	u64 delta = bpf_get_globaltimer() - *tsp;
-	bpf_map_delete_elem(&start_ts, &block_id);
+	bpf_map_delete_elem(&start_ts, &ts_key);
 
 	// Update latency histogram
 	u32 bucket = latency_bucket(delta);
@@ -198,25 +202,20 @@ int cuda__vec_add_exit()
 				    BPF_NOEXIST);
 	}
 
-	// Per-GPU stats: gridDim.x uniquely identifies each GPU
-	// (each gets a different workload size -> different block count)
-	u64 gx, gy, gz;
-	bpf_get_grid_dim(&gx, &gy, &gz);
-	u32 grid_size = (u32)gx;
-
-	u64 *gtime = bpf_map_lookup_elem(&per_gpu_time, &grid_size);
+	// Per-GPU stats: use device ordinal (set per-module by bpftime)
+	u64 *gtime = bpf_map_lookup_elem(&per_gpu_time, &dev_ord);
 	if (gtime) {
 		__atomic_add_fetch(gtime, delta, __ATOMIC_SEQ_CST);
 	} else {
-		bpf_map_update_elem(&per_gpu_time, &grid_size, &delta,
+		bpf_map_update_elem(&per_gpu_time, &dev_ord, &delta,
 				    BPF_NOEXIST);
 	}
 
-	u64 *gcnt = bpf_map_lookup_elem(&per_gpu_count, &grid_size);
+	u64 *gcnt = bpf_map_lookup_elem(&per_gpu_count, &dev_ord);
 	if (gcnt) {
 		__atomic_add_fetch(gcnt, 1, __ATOMIC_SEQ_CST);
 	} else {
-		bpf_map_update_elem(&per_gpu_count, &grid_size, &one,
+		bpf_map_update_elem(&per_gpu_count, &dev_ord, &one,
 				    BPF_NOEXIST);
 	}
 

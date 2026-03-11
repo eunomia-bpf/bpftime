@@ -19,7 +19,7 @@ Traditional GPU profiling tools (Nsight, nvprof) require:
 | Black-box binary monitoring | Limited | **Yes — `bpftime load ./any_cuda_binary`** |
 | Custom programmable probes | No | **Yes — arbitrary eBPF logic on GPU** |
 | Cross-GPU unified maps | No | **Yes — all GPUs share maps via UVA** |
-| Per-GPU discrimination from GPU side | Manual setup | **Automatic via gridDim.x** |
+| Per-GPU discrimination from GPU side | Manual setup | **Automatic via device ordinal (helper 512)** |
 | Production-safe always-on monitoring | No (heavy overhead) | **Yes (lightweight probes)** |
 | Dynamic attach/detach | No | **Yes** |
 
@@ -54,7 +54,7 @@ into all GPU kernels at runtime.
 │  ┌──────────────────────────────────────────────┐   │
 │  │ kprobe/kretprobe on vectorAdd                │   │
 │  │ • Per-block globaltimer measurement          │   │
-│  │ • Per-GPU stats via gridDim.x identification │   │
+│  │ • Per-GPU stats via device ordinal (helper 512)│   │
 │  │ • Cross-GPU latency histogram (7 buckets)    │   │
 │  │ • All GPUs → same shared maps (UVA)          │   │
 │  └──────────────────────────────────────────────┘   │
@@ -69,11 +69,11 @@ into all GPU kernels at runtime.
 
 ### Per-GPU Identification from Inside the GPU
 
-The eBPF probe uses `gridDim.x` (PTX register `%nctaid.x`, helper ID 508) to
-identify which GPU each block belongs to. Since the imbalanced workload assigns
-different numbers of blocks to each GPU, `gridDim.x` serves as a natural
-per-GPU identifier — purely from GPU-internal data, without any host
-coordination.
+Each GPU receives its own patched CUmodule with a unique `deviceOrdinal`
+constant set during loading. The eBPF probe reads this via
+`bpf_get_device_ordinal()` (helper ID 512), providing reliable per-GPU
+identification that works regardless of workload distribution — no host
+coordination needed.
 
 ## Files
 
@@ -131,11 +131,11 @@ bpftime start ./multi_gpu_probe
 ╠══════════════════════════════════════════════════════════════════╣
 ║  Block Duration:  min=1203    ns  avg=8421      ns  max=45621 ns║
 ╠══════════════════════════════════════════════════════════════════╣
-║  Per-GPU Block Timing (by grid size):                          ║
-║  Grid  2048 │ avg     8421 ns │   2048 blks │ ##........  25%  ║
-║  Grid  4096 │ avg     8502 ns │   4096 blks │ #####.....  50%  ║
-║  Grid  6144 │ avg     8388 ns │   6144 blks │ #######...  75%  ║
-║  Grid  8192 │ avg     8450 ns │   8192 blks │ ########## 100%  ║
+║  Per-GPU Block Timing (by device ordinal):                      ║
+║  GPU      0 │ avg     8421 ns │   2048 blks │ ##........  25%  ║
+║  GPU      1 │ avg     8502 ns │   4096 blks │ #####.....  50%  ║
+║  GPU      2 │ avg     8388 ns │   6144 blks │ #######...  75%  ║
+║  GPU      3 │ avg     8450 ns │   8192 blks │ ########## 100%  ║
 ╠══════════════════════════════════════════════════════════════════╣
 ║  Latency Histogram (per-block distribution):                    ║
 ║        <1us │######                        │ 2041              ║
@@ -152,7 +152,8 @@ bpftime start ./multi_gpu_probe
 ```
 
 The **Per-GPU Block Timing** section shows each GPU's average block execution
-time, identified by grid size (`gridDim.x`). This data comes entirely from
-GPU-internal eBPF measurements — no host-side timing involved. All GPUs
-contribute to the same shared eBPF maps via UVA, making cross-GPU comparison
-automatic.
+time, identified by device ordinal. Each GPU's CUmodule has a unique
+`deviceOrdinal` constant set by bpftime during loading, which the eBPF probe
+reads via `bpf_get_device_ordinal()` (helper 512). This works reliably
+regardless of workload distribution. All GPUs contribute to the same shared
+eBPF maps via UVA, making cross-GPU comparison automatic.

@@ -317,6 +317,23 @@ void fatbin_record::try_loading_ptxs_for_device(class nv_attach_impl &impl,
 						     &device_shared_mem_ptr,
 						     const_data_size),
 					"Unable to copy constData pointer to device");
+				// Set per-module device ordinal
+				CUdeviceptr dev_ord_ptr;
+				size_t dev_ord_size;
+				if (cuModuleGetGlobal(&dev_ord_ptr,
+						      &dev_ord_size, module,
+						      "deviceOrdinal") ==
+				    CUDA_SUCCESS) {
+					uint32_t ord =
+						(uint32_t)device_ordinal;
+					CUDA_DRIVER_CHECK_EXCEPTION(
+						cuMemcpyHtoD(dev_ord_ptr, &ord,
+							     sizeof(ord)),
+						"Unable to copy deviceOrdinal to device");
+					SPDLOG_INFO(
+						"deviceOrdinal={} set for module on device {}",
+						ord, device_ordinal);
+				}
 				CUDA_DRIVER_CHECK_EXCEPTION(
 					cuMemcpyHtoD(
 						map_basic_info_ptr,

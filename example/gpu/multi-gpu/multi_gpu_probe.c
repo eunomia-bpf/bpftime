@@ -28,7 +28,7 @@
 #define warn(...) fprintf(stderr, __VA_ARGS__)
 
 struct gpu_stat {
-	uint32_t grid_size;
+	uint32_t gpu_id;
 	uint64_t time_sum;
 	uint64_t block_count;
 	double avg_ns;
@@ -130,7 +130,7 @@ static void print_dashboard(struct multi_gpu_probe_bpf *obj)
 			uint64_t gtime = 0, gcnt = 0;
 			bpf_map_lookup_elem(fd_gpu_time, &cur_key, &gtime);
 			bpf_map_lookup_elem(fd_gpu_count, &cur_key, &gcnt);
-			gpu_info[num_gpus].grid_size = cur_key;
+			gpu_info[num_gpus].gpu_id = cur_key;
 			gpu_info[num_gpus].time_sum = gtime;
 			gpu_info[num_gpus].block_count = gcnt;
 			gpu_info[num_gpus].avg_ns =
@@ -142,11 +142,11 @@ static void print_dashboard(struct multi_gpu_probe_bpf *obj)
 					      &cur_key) == 0);
 	}
 
-	// Sort by grid_size (ascending = GPU order)
+	// Sort by gpu_id (ascending = GPU order)
 	for (int i = 0; i < num_gpus - 1; i++) {
 		for (int j = 0; j < num_gpus - i - 1; j++) {
-			if (gpu_info[j].grid_size >
-			    gpu_info[j + 1].grid_size) {
+			if (gpu_info[j].gpu_id >
+			    gpu_info[j + 1].gpu_id) {
 				struct gpu_stat tmp = gpu_info[j];
 				gpu_info[j] = gpu_info[j + 1];
 				gpu_info[j + 1] = tmp;
@@ -157,8 +157,8 @@ static void print_dashboard(struct multi_gpu_probe_bpf *obj)
 	if (num_gpus > 0) {
 		printf("╠══════════════════════════════════════════════════"
 		       "════════════════╣\n");
-		printf("║  Per-GPU Block Timing (by grid "
-		       "size):                          ║\n");
+		printf("║  Per-GPU Block Timing (by device "
+		       "ordinal):                      ║\n");
 
 		double max_avg = 0;
 		for (int i = 0; i < num_gpus; i++) {
@@ -176,9 +176,9 @@ static void print_dashboard(struct multi_gpu_probe_bpf *obj)
 				bar[j] = (j < bar_len) ? '#' : '.';
 			bar[10] = '\0';
 
-			printf("║  Grid %5u │ avg %8.0f ns │ "
+			printf("║  GPU  %5u │ avg %8.0f ns │ "
 			       "%6" PRIu64 " blks │ %s %5.1f%%  ║\n",
-			       gpu_info[i].grid_size, gpu_info[i].avg_ns,
+			       gpu_info[i].gpu_id, gpu_info[i].avg_ns,
 			       gpu_info[i].block_count, bar, pct);
 		}
 	}
