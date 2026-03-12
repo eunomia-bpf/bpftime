@@ -5,11 +5,15 @@
  */
 #include "bpftime_logger.hpp"
 #include "bpftime_shm.hpp"
+#ifdef ENABLE_BPFTIME_VERIFIER
+#include <bpftime-verifier.hpp>
+#endif
 #include <cstdint>
 #ifdef BPFTIME_ENABLE_CUDA_ATTACH
 #include "cuda.h"
 #endif
 #include "spdlog/cfg/env.h"
+#include "spdlog/fmt/fmt.h"
 #include <cstdio>
 #include <ebpf-vm.h>
 #include "syscall_context.hpp"
@@ -29,6 +33,7 @@
 #include "spdlog/spdlog.h"
 #include <cerrno>
 #include <cstdlib>
+#include <iterator>
 #include "syscall_server_utils.hpp"
 #include <optional>
 #include <sys/mman.h>
@@ -58,6 +63,27 @@ using namespace bpftime;
 #if __APPLE__
 using namespace bpftime_epoll;
 #endif
+
+namespace fmt_lib = spdlog::fmt_lib;
+
+namespace {
+std::string format_verifier_program_dump(const uint64_t *instructions,
+					 size_t instruction_count)
+{
+	fmt_lib::memory_buffer buffer;
+	for (size_t i = 0; i < instruction_count; i++) {
+		uint64_t inst = instructions[i];
+		fmt_lib::format_to(std::back_inserter(buffer), "{:03}: ", i);
+		for (int j = 0; j < 8; j++) {
+			fmt_lib::format_to(std::back_inserter(buffer), "{:02X} ",
+					   inst & 0xff);
+			inst >>= 8;
+		}
+		fmt_lib::format_to(std::back_inserter(buffer), "\n");
+	}
+	return fmt_lib::to_string(buffer);
+}
+} // namespace
 
 void syscall_context::load_config_from_env()
 {
@@ -505,29 +531,13 @@ long syscall_context::handle_sysbpf(int cmd, union bpf_attr *attr, size_t size)
 					(size_t)attr->insn_cnt,
 					simple_section_name.value());
 				if (result.has_value()) {
-					std::ostringstream message;
-					message << *result;
-					// Print the program by bytes
-					for (size_t i = 0; i < attr->insn_cnt;
-					     i++) {
-						uint64_t inst =
-							((uint64_t *)(uintptr_t)
-								 attr->insns)[i];
-						message << std::setw(3)
-							<< std::setfill('0')
-							<< i << ": ";
-						for (int j = 0; j < 8; j++) {
-							message << std::hex
-								<< std::uppercase
-								<< std::setw(2)
-								<< std::setfill(
-									   '0')
-								<< (inst & 0xff)
-								<< " ";
-							inst >>= 8;
-						}
-						message << std::endl;
-					}
+					auto message = fmt_lib::format(
+						"{}{}",
+						*result,
+						format_verifier_program_dump(
+							(uint64_t *)(uintptr_t)
+								attr->insns,
+							(size_t)attr->insn_cnt));
 					if (verifier_mode ==
 					    BPFTIME_VERIFIER_STRICT) {
 						SPDLOG_ERROR(
@@ -536,7 +546,7 @@ long syscall_context::handle_sysbpf(int cmd, union bpf_attr *attr, size_t size)
 							"or BPFTIME_VERIFIER_LEVEL=NO_VERIFY to disable verification. "
 							"Alternatively, set BPFTIME_RUN_WITH_KERNEL=1 to use the kernel verifier.",
 							attr->prog_name,
-							message.str());
+							message);
 						errno = EINVAL;
 						return -1;
 					} else {
@@ -548,7 +558,7 @@ long syscall_context::handle_sysbpf(int cmd, union bpf_attr *attr, size_t size)
 							"or BPFTIME_VERIFIER_LEVEL=NO_VERIFY to disable verification. "
 							"Alternatively, set BPFTIME_RUN_WITH_KERNEL=1 to use the kernel verifier.",
 							attr->prog_name,
-							message.str());
+							message);
 					}
 				}
 			}
