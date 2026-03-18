@@ -1,7 +1,6 @@
 // Minimal core utilities for PTX pass executables
 #pragma once
 
-#include <cstddef>
 #include <cstdint>
 #include <filesystem>
 #include <iostream>
@@ -67,8 +66,7 @@ enum ExitCode {
 	UnknownError = 70,
 };
 
-// Runtime request metadata. PTX is passed out-of-band through the process_input
-// ABI and is intentionally excluded from JSON serialization.
+// Runtime I/O (JSON over stdin/stdout)
 namespace runtime_input
 {
 struct RuntimeInput {
@@ -81,7 +79,7 @@ NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(RuntimeInput, to_patch_kernel,
 						ebpf_communication_data_symbol);
 } // namespace runtime_input
 
-// JSON stdout payload. output_ptx is emitted only for modified PTX.
+// JSON stdout payload
 namespace runtime_response
 {
 struct RuntimeResponse {
@@ -166,8 +164,7 @@ inline void from_json(const nlohmann::json &j, RuntimeRequest &request)
 } // namespace runtime_request
 
 // Validation helpers
-bool validate_input(const std::string &input,
-		    const nlohmann::json &validation);
+bool validate_input(const std::string &input, const nlohmann::json &validation);
 bool contains_entry_function(const std::string &input);
 bool contains_ret_instruction(const std::string &input);
 bool validate_ptx_version(const std::string &input,
