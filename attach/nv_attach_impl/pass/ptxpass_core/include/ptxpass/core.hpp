@@ -1,11 +1,13 @@
 // Minimal core utilities for PTX pass executables
 #pragma once
 
+#include <cstddef>
 #include <cstdint>
 #include <filesystem>
 #include <iostream>
 #include <regex>
 #include <string>
+#include <string_view>
 #include <vector>
 #include "json.hpp"
 #include <fstream>
@@ -65,29 +67,40 @@ enum ExitCode {
 	UnknownError = 70,
 };
 
-// Runtime I/O (JSON over stdin/stdout)
+// Runtime request metadata. PTX is passed out-of-band through the process_input
+// ABI and is intentionally excluded from JSON serialization.
 namespace runtime_input
 {
 struct RuntimeInput {
-	std::string full_ptx;
 	std::string to_patch_kernel;
 	std::string global_ebpf_map_info_symbol = "map_info";
 	std::string ebpf_communication_data_symbol = "constData";
 };
-NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(RuntimeInput, full_ptx,
-						to_patch_kernel,
+NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(RuntimeInput, to_patch_kernel,
 						global_ebpf_map_info_symbol,
 						ebpf_communication_data_symbol);
 } // namespace runtime_input
 
-// JSON stdout payload
+// JSON stdout payload. output_ptx is emitted only for modified PTX.
 namespace runtime_response
 {
 struct RuntimeResponse {
 	std::string output_ptx;
-	bool modified;
+	bool modified = false;
 };
-NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE(RuntimeResponse, output_ptx, modified);
+inline void to_json(nlohmann::json &j, const RuntimeResponse &response)
+{
+	j = nlohmann::json { { "modified", response.modified } };
+	if (response.modified) {
+		j["output_ptx"] = response.output_ptx;
+	}
+}
+
+inline void from_json(const nlohmann::json &j, RuntimeResponse &response)
+{
+	response.modified = j.value("modified", false);
+	response.output_ptx = j.value("output_ptx", std::string {});
+}
 } // namespace runtime_response
 
 struct EbpfInstructionPair {
@@ -109,6 +122,7 @@ struct EbpfInstructionPair {
 namespace runtime_request
 {
 struct RuntimeRequest {
+	std::string full_ptx;
 	runtime_input::RuntimeInput input;
 	std::vector<EbpfInstructionPair> ebpf_instructions;
 	std::vector<uint64_t> get_uint64_ebpf_instructions() const
@@ -126,17 +140,40 @@ struct RuntimeRequest {
 		}
 	}
 };
-NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE(RuntimeRequest, input, ebpf_instructions);
+
+inline void to_json(nlohmann::json &j, const RuntimeRequest &request)
+{
+	j = nlohmann::json { { "input", request.input },
+			     { "ebpf_instructions",
+			       request.ebpf_instructions } };
+}
+
+inline void from_json(const nlohmann::json &j, RuntimeRequest &request)
+{
+	request.input = j.at("input").get<runtime_input::RuntimeInput>();
+	request.ebpf_instructions =
+		j.value("ebpf_instructions",
+			std::vector<EbpfInstructionPair> {});
+	if (auto it = j.find("input");
+	    it != j.end() && it->is_object() &&
+	    it->contains("full_ptx")) {
+		request.full_ptx =
+			(*it).value("full_ptx", std::string {});
+	} else {
+		request.full_ptx.clear();
+	}
+}
 } // namespace runtime_request
 
 // Validation helpers
-bool validate_input(const std::string &input, const nlohmann::json &validation);
-bool contains_entry_function(const std::string &input);
-bool contains_ret_instruction(const std::string &input);
-bool validate_ptx_version(const std::string &input,
-			  const std::string &minVersion);
-bool ptx_may_contain_target_kernel(const std::string &ptx,
-				   const std::string &kernel);
+bool validate_input(std::string_view input,
+		    const nlohmann::json &validation);
+bool contains_entry_function(std::string_view input);
+bool contains_ret_instruction(std::string_view input);
+bool validate_ptx_version(std::string_view input,
+			  std::string_view minVersion);
+bool ptx_may_contain_target_kernel(std::string_view ptx,
+				   std::string_view kernel);
 
 // Shared utilities for PTX passes (refactored from legacy code)
 // Filter out duplicate/irrelevant PTX headers
@@ -154,19 +191,21 @@ std::string filter_compiled_ptx_for_ebpf_program(std::string input);
 // Find kernel body range [begin, end) for a given kernel name using .visible
 // .entry and brace depth Returns pair(begin,end); if not found, returns
 // {std::string::npos, std::string::npos}
-std::pair<size_t, size_t> find_kernel_body(const std::string &ptx,
-					   const std::string &kernel);
+std::pair<size_t, size_t> find_kernel_body(std::string_view ptx,
+					   std::string_view kernel);
 
 // Emit simple stats to stderr (pass name, matched count, in/out sizes)
 void log_transform_stats(const char *pass_name, int matched, size_t bytes_in,
 			 size_t bytes_out);
 
-static inline void emit_runtime_response_and_print(const std::string &str)
+static inline void emit_runtime_response_and_print(const std::string &str,
+						   bool modified = true)
 {
 	using namespace runtime_response;
 	RuntimeResponse output;
 	nlohmann::json output_json;
 	output.output_ptx = str;
+	output.modified = modified;
 	to_json(output_json, output);
 	std::cout << output_json.dump();
 }
@@ -194,12 +233,31 @@ load_pass_config_from_file(const std::filesystem::path &path)
 }
 
 static inline runtime_request::RuntimeRequest
-pass_runtime_request_from_string(const std::string &str)
+pass_runtime_request_from_string(std::string_view str)
 {
 	runtime_request::RuntimeRequest runtime_request;
-	auto input_json = nlohmann::json::parse(str);
+	auto input_json = nlohmann::json::parse(str.begin(), str.end());
 	runtime_request::from_json(input_json, runtime_request);
 	return runtime_request;
+}
+
+static inline std::string_view
+runtime_request_ptx_view(const runtime_request::RuntimeRequest &request,
+			 const char *ptx_text, size_t ptx_len)
+{
+	if (ptx_text != nullptr) {
+		return std::string_view(ptx_text, ptx_len);
+	}
+	return request.full_ptx;
+}
+
+static inline void
+populate_runtime_request_ptx(runtime_request::RuntimeRequest &request,
+			     const char *ptx_text, size_t ptx_len)
+{
+	if (ptx_text != nullptr) {
+		request.full_ptx.assign(ptx_text, ptx_len);
+	}
 }
 } // namespace ptxpass
 

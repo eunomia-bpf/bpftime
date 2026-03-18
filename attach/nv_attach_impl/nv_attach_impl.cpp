@@ -622,6 +622,44 @@ nv_attach_impl::extract_ptxs(std::vector<uint8_t> &&data_vec)
 	SPDLOG_INFO("Got {} PTX files", all_ptx.size());
 	return all_ptx;
 }
+
+static std::string build_patch_cache_key(
+	const bpftime::attach::pass_cfg_with_exec_path &pass_config,
+	std::string_view ptx, std::string_view kernel,
+	const std::vector<uint64_t> &ebpf_inst_words,
+	std::string_view global_map_symbol,
+	std::string_view communication_symbol)
+{
+	const void *ebpf_data = ebpf_inst_words.empty()
+		? static_cast<const void *>("")
+		: static_cast<const void *>(ebpf_inst_words.data());
+	const auto ebpf_size = ebpf_inst_words.size() * sizeof(uint64_t);
+
+	std::string key;
+	key.reserve(pass_config.pass_config.name.size() + kernel.size() +
+		    global_map_symbol.size() + communication_symbol.size() +
+		    160);
+	key += pass_config.pass_config.name;
+	key.push_back(':');
+	key += sha256(ptx.data(), ptx.size());
+	key.push_back(':');
+	key += kernel;
+	key.push_back(':');
+	key += sha256(ebpf_data, ebpf_size);
+	key.push_back(':');
+	key += global_map_symbol;
+	key.push_back(':');
+	key += communication_symbol;
+	return key;
+}
+
+static size_t estimate_pass_output_buffer_size(std::string_view current_ptx)
+{
+	// Unmodified responses are tiny, but modified PTX is returned as JSON and
+	// can grow due to escaping plus injected probe text.
+	return std::max<size_t>(4 << 20, current_ptx.size() * 4 + (1 << 20));
+}
+
 std::optional<std::map<std::string, std::tuple<std::string, bool>>>
 nv_attach_impl::hack_fatbin(std::map<std::string, std::string> all_ptx)
 {
@@ -648,19 +686,9 @@ nv_attach_impl::hack_fatbin(std::map<std::string, std::string> all_ptx)
 							.data() +
 						hook_entry.instuctions.size());
 				for (const auto &kernel : kernels) {
-					// Mirror the pass-level fast-path so we do
-					// not pay JSON serialization and hashing
-					// overhead for unrelated PTX blobs.
-					if (!ptxpass::
-						    ptx_may_contain_target_kernel(
-							    current_ptx,
-							    kernel)) {
-						continue;
-					}
 					ptxpass::runtime_request::RuntimeRequest
 						req;
 					auto &ri = req.input;
-					ri.full_ptx = current_ptx;
 					ri.to_patch_kernel = kernel;
 					ri.global_ebpf_map_info_symbol =
 						"map_info";
@@ -672,36 +700,43 @@ nv_attach_impl::hack_fatbin(std::map<std::string, std::string> all_ptx)
 					nlohmann::json in;
 					ptxpass::runtime_request::to_json(in,
 									  req);
-					auto input_json = in.dump();
-					SPDLOG_DEBUG("Input: {}", input_json);
-					auto sha256_string =
-						sha256(input_json.data(),
-						       input_json.size());
+					auto meta_json = in.dump();
+					SPDLOG_DEBUG("Input metadata: {}",
+						     meta_json);
+					auto cache_key = build_patch_cache_key(
+						*hook_entry.config, current_ptx,
+						kernel, ebpf_inst_words,
+						ri.global_ebpf_map_info_symbol,
+						ri.ebpf_communication_data_symbol);
 
 					ptxpass::runtime_response::RuntimeResponse
 						resp;
 
 					cache_mutex.lock();
 					if (auto itr = this->patch_cache.find(
-						    sha256_string);
+						    cache_key);
 					    itr != this->patch_cache.end()) {
 						SPDLOG_INFO(
 							"Patching request {} found in cache",
-							sha256_string);
+							cache_key);
 						resp = itr->second;
 						cache_mutex.unlock();
 					} else {
 						cache_mutex.unlock();
 						SPDLOG_INFO(
 							"Patching request {} not found in cache, patching..",
-							sha256_string);
-						std::vector<char> buf(1 << 30);
+							cache_key);
+						std::vector<char> buf(
+							estimate_pass_output_buffer_size(
+								current_ptx));
 						int err =
 							hook_entry.config->process_input(
-								input_json
-									.c_str(),
-								buf.size(),
-								buf.data());
+								current_ptx.data(),
+								current_ptx.size(),
+								meta_json.c_str(),
+								meta_json.size(),
+								buf.data(),
+								buf.size());
 
 						if (err ==
 						    ptxpass::ExitCode::Success) {
@@ -722,12 +757,22 @@ nv_attach_impl::hack_fatbin(std::map<std::string, std::string> all_ptx)
 						std::lock_guard<std::mutex>
 							_cache_guard(
 								cache_mutex);
-						patch_cache[sha256_string] =
+						patch_cache[cache_key] =
 							resp;
 					}
-					current_ptx = resp.output_ptx;
-					ptx_modified =
-						ptx_modified || resp.modified;
+					if (resp.modified) {
+						if (resp.output_ptx.empty()) {
+							SPDLOG_ERROR(
+								"Pass {} returned modified=true with empty PTX for kernel {}",
+								hook_entry.config
+									->pass_config
+									.name,
+								kernel);
+							return;
+						}
+						current_ptx = resp.output_ptx;
+						ptx_modified = true;
+					}
 				}
 			}
 			if (ptx_modified) {

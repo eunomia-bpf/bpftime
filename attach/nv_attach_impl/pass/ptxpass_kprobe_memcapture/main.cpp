@@ -163,35 +163,44 @@ extern "C" void print_config(int length, char *out)
 	snprintf(out, length, "%s", output_json.dump().c_str());
 }
 
-extern "C" int process_input(const char *input, int length, char *output)
+extern "C" int process_input(const char *ptx_text, size_t ptx_len,
+			     const char *meta_json, int meta_len,
+			     char *output, int output_len)
 {
 	using namespace ptxpass;
 	try {
 		auto cfg = get_default_config();
 		auto matcher = AttachPointMatcher(cfg.attach_points);
+		if (meta_json == nullptr) {
+			throw std::runtime_error("Metadata JSON is missing");
+		}
 
-		auto runtime_request = pass_runtime_request_from_string(input);
+		auto runtime_request = pass_runtime_request_from_string(
+			std::string_view(meta_json, meta_len));
+		auto ptx_view = runtime_request_ptx_view(runtime_request,
+							 ptx_text, ptx_len);
+		if (ptx_text == nullptr && runtime_request.full_ptx.empty()) {
+			throw std::runtime_error("PTX input is missing");
+		}
 		if (!ptx_may_contain_target_kernel(
-			    runtime_request.input.full_ptx,
-			    runtime_request.input.to_patch_kernel)) {
-			snprintf(output, length, "%s",
-				 emit_runtime_response_and_return(
-					 runtime_request.input.full_ptx,
-					 false)
+			    ptx_view, runtime_request.input.to_patch_kernel)) {
+			snprintf(output, output_len, "%s",
+				 emit_runtime_response_and_return("",
+								  false)
 					 .c_str());
 			return ExitCode::Success;
 		}
 
-		if (!validate_input(runtime_request.input.full_ptx,
-				    cfg.validation)) {
+		if (!validate_input(ptx_view, cfg.validation)) {
 			return ExitCode::TransformFailed;
 		}
+		populate_runtime_request_ptx(runtime_request, ptx_text, ptx_len);
 		auto [out, modified] = patch_memcapture(
-			runtime_request.input.full_ptx,
+			runtime_request.full_ptx,
 			runtime_request.get_uint64_ebpf_instructions());
-		snprintf(
-			output, length, "%s",
-			emit_runtime_response_and_return(out, modified).c_str());
+		snprintf(output, output_len, "%s",
+			 emit_runtime_response_and_return(out, modified)
+				 .c_str());
 		return ExitCode::Success;
 	} catch (const std::runtime_error &e) {
 		std::cerr << e.what() << "\n";

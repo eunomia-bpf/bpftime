@@ -5,6 +5,7 @@
 #include "ptx_compiler/ptx_compiler.hpp"
 #include "ptxpass/core.hpp"
 #include <base_attach_impl.hpp>
+#include <cstddef>
 #include <cstdint>
 #include <cuda_runtime.h>
 #include <cuda_runtime_api.h>
@@ -34,7 +35,9 @@ namespace attach
 {
 
 using print_config_fn = void (*)(int length, char *out);
-using process_input_fn = int (*)(const char *input, int length, char *output);
+using process_input_fn = int (*)(const char *ptx_text, size_t ptx_len,
+				 const char *meta_json, int meta_len,
+				 char *output, int output_len);
 
 std::string filter_compiled_ptx_for_ebpf_program(std::string input,
 						 std::string);
