@@ -135,6 +135,8 @@ bool contains_entry_function(const std::string &input);
 bool contains_ret_instruction(const std::string &input);
 bool validate_ptx_version(const std::string &input,
 			  const std::string &minVersion);
+bool ptx_may_contain_target_kernel(const std::string &ptx,
+				   const std::string &kernel);
 
 // Shared utilities for PTX passes (refactored from legacy code)
 // Filter out duplicate/irrelevant PTX headers

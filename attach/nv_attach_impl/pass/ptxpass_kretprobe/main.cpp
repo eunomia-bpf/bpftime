@@ -72,6 +72,16 @@ extern "C" int process_input(const char *input, int length, char *output)
 		auto matcher = AttachPointMatcher(cfg.attach_points);
 
 		auto runtime_request = pass_runtime_request_from_string(input);
+		if (!ptx_may_contain_target_kernel(
+			    runtime_request.input.full_ptx,
+			    runtime_request.input.to_patch_kernel)) {
+			snprintf(output, length, "%s",
+				 emit_runtime_response_and_return(
+					 runtime_request.input.full_ptx,
+					 false)
+					 .c_str());
+			return ExitCode::Success;
+		}
 		if (!validate_input(runtime_request.input.full_ptx,
 				    cfg.validation))
 			return ExitCode::TransformFailed;

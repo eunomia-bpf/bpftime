@@ -154,6 +154,15 @@ TEST_CASE("validate_ptx_version checks PTX version", "[ptxpass_core]")
 	REQUIRE(validate_ptx_version(ptx_v6, "6.0"));
 }
 
+TEST_CASE("ptx_may_contain_target_kernel fast-path detects target names",
+	  "[ptxpass_core]")
+{
+	REQUIRE(ptx_may_contain_target_kernel(KERNEL_WITH_BODY, "foo"));
+	REQUIRE_FALSE(
+		ptx_may_contain_target_kernel(KERNEL_WITH_BODY, "nonexistent"));
+	REQUIRE(ptx_may_contain_target_kernel(KERNEL_WITH_BODY, ""));
+}
+
 TEST_CASE("validate_input checks input against validation rules",
 	  "[ptxpass_core]")
 {
