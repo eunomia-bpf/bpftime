@@ -102,6 +102,7 @@ TEST_CASE("parse_runtime_request parses full request with ebpf_instructions",
 		})";
 		auto request = pass_runtime_request_from_string(json_request);
 		REQUIRE(request.input.to_patch_kernel == "foo");
+		REQUIRE(request.full_ptx.empty());
 		REQUIRE(request.ebpf_instructions.size() == 3);
 		REQUIRE(request.ebpf_instructions[0].to_uint64() == 100);
 		REQUIRE(request.ebpf_instructions[1].to_uint64() == 200);
@@ -110,6 +111,20 @@ TEST_CASE("parse_runtime_request parses full request with ebpf_instructions",
 		nlohmann::json emitted;
 		runtime_request::to_json(emitted, request);
 		REQUIRE(emitted.dump().find("full_ptx") == std::string::npos);
+	}
+
+	SECTION("Legacy request with embedded PTX still parses")
+	{
+		std::string json_request = R"({
+			"input":{
+  "full_ptx": ".version 7.0\n",
+  "to_patch_kernel": "foo"
+},
+  "ebpf_instructions": []
+		})";
+		auto request = pass_runtime_request_from_string(json_request);
+		REQUIRE(request.full_ptx == ".version 7.0\n");
+		REQUIRE(request.input.to_patch_kernel == "foo");
 	}
 }
 
@@ -126,10 +141,9 @@ TEST_CASE("emit_runtime_output produces JSON output", "[ptxpass_core]")
 	REQUIRE(output.find("\"output_ptx\"") != std::string::npos);
 	REQUIRE(output.find("test_ptx_output") != std::string::npos);
 
-	std::string unmodified =
-		emit_runtime_response_and_return("test_ptx_output", false);
+	std::string unmodified = emit_runtime_response_and_return("", false);
 	REQUIRE(unmodified.find("\"modified\":false") != std::string::npos);
-	REQUIRE(unmodified.find("test_ptx_output") == std::string::npos);
+	REQUIRE(unmodified.find("output_ptx") == std::string::npos);
 }
 
 TEST_CASE("contains_entry_function detects .visible .entry", "[ptxpass_core]")
@@ -157,6 +171,15 @@ TEST_CASE("validate_ptx_version checks PTX version", "[ptxpass_core]")
 	REQUIRE(validate_ptx_version(ptx_v7, "7.0"));
 	REQUIRE_FALSE(validate_ptx_version(ptx_v6, "7.0"));
 	REQUIRE(validate_ptx_version(ptx_v6, "6.0"));
+}
+
+TEST_CASE("ptx_may_contain_target_kernel fast-path detects target names",
+	  "[ptxpass_core]")
+{
+	REQUIRE(ptx_may_contain_target_kernel(KERNEL_WITH_BODY, "foo"));
+	REQUIRE_FALSE(
+		ptx_may_contain_target_kernel(KERNEL_WITH_BODY, "nonexistent"));
+	REQUIRE(ptx_may_contain_target_kernel(KERNEL_WITH_BODY, ""));
 }
 
 TEST_CASE("validate_input checks input against validation rules",
@@ -359,12 +382,21 @@ TEST_CASE("End-to-end JSON workflow with empty eBPF",
   "input":{"to_patch_kernel": "test"},
   "ebpf_instructions": []
 })";
+	const std::string raw_ptx =
+		".version 7.0\n.target sm_60\n.visible .entry test() {\n  ret;\n}";
 
 	SECTION("parse_runtime_request handles minimal JSON")
 	{
 		auto request = pass_runtime_request_from_string(json_input);
+		REQUIRE(request.full_ptx.empty());
 		REQUIRE(request.input.to_patch_kernel == "test");
 		REQUIRE(request.ebpf_instructions.empty());
+
+		REQUIRE(runtime_request_ptx_view(request, raw_ptx.data(),
+						 raw_ptx.size()) == raw_ptx);
+		populate_runtime_request_ptx(request, raw_ptx.data(),
+					     raw_ptx.size());
+		REQUIRE(request.full_ptx == raw_ptx);
 	}
 
 	SECTION("validation passes for minimal valid PTX")

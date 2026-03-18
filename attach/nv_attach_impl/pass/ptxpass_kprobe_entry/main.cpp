@@ -118,14 +118,31 @@ extern "C" int process_input(const char *ptx_text, size_t ptx_len,
 		std::string stub_name = params.stub_name.empty()
 			? "__bpftime_cuda__kernel_trace"
 			: params.stub_name;
+		if (meta_json == nullptr) {
+			throw std::runtime_error("Metadata JSON is missing");
+		}
+
 		auto runtime_request = pass_runtime_request_from_string(
 			std::string(meta_json, meta_len));
-		std::string full_ptx(ptx_text, ptx_len);
-		if (!validate_input(full_ptx, cfg.validation)) {
+		auto ptx_view = runtime_request_ptx_view(runtime_request,
+							 ptx_text, ptx_len);
+		if (ptx_text == nullptr && runtime_request.full_ptx.empty()) {
+			throw std::runtime_error("PTX input is missing");
+		}
+		if (!ptx_may_contain_target_kernel(
+			    ptx_view, runtime_request.input.to_patch_kernel)) {
+			snprintf(output, output_len, "%s",
+				 emit_runtime_response_and_return("",
+								  false)
+					 .c_str());
+			return ExitCode::Success;
+		}
+		if (!validate_input(std::string(ptx_view), cfg.validation)) {
 			return ExitCode::TransformFailed;
 		}
+		populate_runtime_request_ptx(runtime_request, ptx_text, ptx_len);
 		auto [out, modified] = patch_entry(
-			full_ptx,
+			runtime_request.full_ptx,
 			runtime_request.input.to_patch_kernel,
 			runtime_request.get_uint64_ebpf_instructions(),
 			stub_name);
