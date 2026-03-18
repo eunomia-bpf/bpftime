@@ -41,22 +41,17 @@ bash example/gpu/cuda-counter/run_nv_ptx_passes.sh
   - To drive the pass order and subset via JSON configuration, set the `BPFTIME_PTXPASS_DIR` environment variable to a directory containing `*.json` configuration files. The log should print "Discovered <N> pass definitions from <dir>".
   - If the log shows "Discovered 0 pass definitions...", the system will use a fallback process (which can still complete the injection and repackaging). Check the run logs to confirm that `hack_fatbin` has been executed.
 
-### Pass Host ABI And Metadata JSON
+### Pass Standalone Executable & Configuration (JSON-only I/O)
 - **Path:** `attach/nv_attach_impl/pass/ptxpass_*`
-  - The shared-library entry point is:
-
-    ```cpp
-    int process_input(const char *ptx_text, size_t ptx_len,
-                      const char *meta_json, int meta_len,
-                      char *output, int output_len);
-    ```
-
-  - `ptx_text`/`ptx_len` carries the raw PTX blob directly and is not JSON-encoded.
-  - `meta_json` contains only small request metadata:
-    - `to_patch_kernel`
-    - `global_ebpf_map_info_symbol` (defaults to `map_info`)
-    - `ebpf_communication_data_symbol` (defaults to `constData`)
-    - `ebpf_instructions`
-  - The JSON response always includes `modified`; `output_ptx` is included only when the pass actually rewrites PTX.
-  - Legacy callers that still embed `input.full_ptx` in the metadata JSON can still be parsed by the shared core helpers, but the framework no longer emits that format.
-- **Default JSON configurations** are located at: `attach/nv_attach_impl/configs/ptxpass/*.json` (these can be copied to a custom directory and specified via `BPFTIME_PTXPASS_DIR`). 
+  - All passes communicate via JSON-structured data through stdin/stdout (plain text PTX is no longer accepted):
+    - **Input (stdin):**
+      - `full_ptx`: string, the complete PTX to be processed.
+      - `to_patch_kernel`: string, the name of the target kernel (optional).
+      - `global_ebpf_map_info_symbol`: string, defaults to `map_info`.
+      - `ebpf_communication_data_symbol`: string, defaults to `constData`.
+      - Other pass-specific fields (e.g., `source_symbol`, `copy_bytes`, `align_bytes` for memcapture).
+    - **Output (stdout):**
+      - `output_ptx`: string, the transformed PTX (an empty string or omitted field indicates no modifications).
+  - The `PTX_ATTACH_POINT` environment variable is passed to specify the current attachment point being processed.
+  - **Note:** Stdin only accepts JSON. Non-JSON input will cause the program to error out and exit immediately.
+- **Default JSON configurations** are located at: `attach/nv_attach_impl/configs/ptxpass/*.json` (these can be copied to a custom directory and specified via `BPFTIME_PTXPASS_DIR`).

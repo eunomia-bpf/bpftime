@@ -678,14 +678,14 @@ nv_attach_impl::hack_fatbin(std::map<std::string, std::string> all_ptx)
 			bool ptx_modified = false;
 			for (const auto &[_, hook_entry] : this->hook_entries) {
 				const auto &kernels = hook_entry.kernels;
-				std::vector<uint64_t> ebpf_inst_words;
-				ebpf_inst_words.assign(
-					(uint64_t *)(uintptr_t)hook_entry.instuctions
-						.data(),
-					(uint64_t *)(uintptr_t)hook_entry.instuctions
-							.data() +
-						hook_entry.instuctions.size());
 				for (const auto &kernel : kernels) {
+					std::vector<uint64_t> ebpf_inst_words;
+					ebpf_inst_words.assign(
+						(uint64_t *)(uintptr_t)hook_entry.instuctions
+							.data(),
+						(uint64_t *)(uintptr_t)hook_entry.instuctions
+								.data() +
+							hook_entry.instuctions.size());
 					ptxpass::runtime_request::RuntimeRequest
 						req;
 					auto &ri = req.input;
