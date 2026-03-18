@@ -5,7 +5,6 @@
 #include "ptx_compiler/ptx_compiler.hpp"
 #include "ptxpass/core.hpp"
 #include <base_attach_impl.hpp>
-#include <cstddef>
 #include <cstdint>
 #include <cuda_runtime.h>
 #include <cuda_runtime_api.h>

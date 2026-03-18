@@ -625,10 +625,10 @@ nv_attach_impl::extract_ptxs(std::vector<uint8_t> &&data_vec)
 
 static std::string build_patch_cache_key(
 	const bpftime::attach::pass_cfg_with_exec_path &pass_config,
-	std::string_view ptx, std::string_view kernel,
+	const std::string &ptx, const std::string &kernel,
 	const std::vector<uint64_t> &ebpf_inst_words,
-	std::string_view global_map_symbol,
-	std::string_view communication_symbol)
+	const std::string &global_map_symbol,
+	const std::string &communication_symbol)
 {
 	const void *ebpf_data = ebpf_inst_words.empty()
 		? static_cast<const void *>("")
@@ -653,13 +653,6 @@ static std::string build_patch_cache_key(
 	return key;
 }
 
-static size_t estimate_pass_output_buffer_size(std::string_view current_ptx)
-{
-	// Unmodified responses are tiny, but modified PTX is returned as JSON and
-	// can grow due to escaping plus injected probe text.
-	return std::max<size_t>(4 << 20, current_ptx.size() * 4 + (1 << 20));
-}
-
 std::optional<std::map<std::string, std::tuple<std::string, bool>>>
 nv_attach_impl::hack_fatbin(std::map<std::string, std::string> all_ptx)
 {
@@ -674,7 +667,7 @@ nv_attach_impl::hack_fatbin(std::map<std::string, std::string> all_ptx)
 		boost::asio::post(pool, [this, original_ptx, file_name, &map_mutex, &ptx_out, &cache_mutex]() -> void {
 			auto current_ptx = original_ptx;
 			SPDLOG_INFO("Patching PTX: {}", file_name);
-			bool ptx_modified = false;
+			bool should_add_trampoline = false;
 			for (const auto &[_, hook_entry] : this->hook_entries) {
 				const auto &kernels = hook_entry.kernels;
 				for (const auto &kernel : kernels) {
@@ -704,8 +697,7 @@ nv_attach_impl::hack_fatbin(std::map<std::string, std::string> all_ptx)
 					ptxpass::runtime_request::to_json(in,
 									  req);
 					auto meta_json = in.dump();
-					SPDLOG_DEBUG("Input metadata: {}",
-						     meta_json);
+					SPDLOG_DEBUG("Input: {}", meta_json);
 					auto cache_key = build_patch_cache_key(
 						*hook_entry.config, current_ptx,
 						kernel, ebpf_inst_words,
@@ -729,9 +721,7 @@ nv_attach_impl::hack_fatbin(std::map<std::string, std::string> all_ptx)
 						SPDLOG_INFO(
 							"Patching request {} not found in cache, patching..",
 							cache_key);
-						std::vector<char> buf(
-							estimate_pass_output_buffer_size(
-								current_ptx));
+						std::vector<char> buf(1 << 30);
 						int err =
 							hook_entry.config->process_input(
 								current_ptx.data(),
@@ -764,29 +754,22 @@ nv_attach_impl::hack_fatbin(std::map<std::string, std::string> all_ptx)
 							resp;
 					}
 					if (resp.modified) {
-						if (resp.output_ptx.empty()) {
-							SPDLOG_ERROR(
-								"Pass {} returned modified=true with empty PTX for kernel {}",
-								hook_entry.config
-									->pass_config
-									.name,
-								kernel);
-							return;
-						}
 						current_ptx = resp.output_ptx;
-						ptx_modified = true;
 					}
+					should_add_trampoline =
+						should_add_trampoline ||
+						resp.modified;
 				}
 			}
-			if (ptx_modified) {
+			if (should_add_trampoline) {
 				current_ptx =
 					ptxpass::filter_out_version_headers_ptx(
 						wrap_ptx_with_trampoline(
 							current_ptx));
 			}
 			std::lock_guard<std::mutex> _guard(map_mutex);
-			ptx_out["patched." + file_name] =
-				std::make_tuple(current_ptx, ptx_modified);
+			ptx_out["patched." + file_name] = std::make_tuple(
+				current_ptx, should_add_trampoline);
 		});
 	}
 	pool.join();

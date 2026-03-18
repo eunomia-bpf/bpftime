@@ -144,14 +144,6 @@ bool validate_ptx_version(const std::string &input,
 	return true;
 }
 
-bool ptx_may_contain_target_kernel(std::string_view ptx,
-				   std::string_view kernel)
-{
-	if (kernel.empty())
-		return true;
-	return ptx.find(kernel) != std::string::npos;
-}
-
 } // namespace ptxpass
 
 namespace ptxpass
