@@ -170,6 +170,8 @@ class nv_attach_impl final : public base_attach_impl {
 
 	/// Get the current device ordinal from CUDA context, or 0 as fallback
 	int get_current_device_ordinal() const;
+	std::mutex &get_module_pool_mutex() { return module_pool_mutex_; }
+	std::mutex &get_ptx_pool_mutex() { return ptx_pool_mutex_; }
 	std::vector<std::unique_ptr<fatbin_record>> fatbin_records;
 	fatbin_record *current_fatbin = nullptr;
 	std::map<void *, fatbin_record *> symbol_address_to_fatbin;
@@ -211,6 +213,8 @@ class nv_attach_impl final : public base_attach_impl {
 		patch_cache;
 	gpu_device_manager device_manager_;
 	mutable std::mutex cuda_symbol_map_mutex;
+	mutable std::mutex module_pool_mutex_;
+	mutable std::mutex ptx_pool_mutex_;
 	// Per-device patched kernel maps: device_ordinal -> (name -> CUfunction)
 	std::map<int, std::unordered_map<std::string, CUfunction>>
 		patched_kernel_by_device_;

@@ -4,6 +4,7 @@
 #include "driver_types.h"
 #include "spdlog/spdlog.h"
 #include "vector_types.h"
+#include <chrono>
 #include <algorithm>
 #include <cassert>
 #include <cstddef>
@@ -135,6 +136,7 @@ static void example_listener_on_enter(GumInvocationListener *listener,
 		GUM_IC_GET_FUNC_DATA(ic, CUDARuntimeFunctionHookerContext *);
 	if (context->to_function == AttachedToFunction::RegisterFatbin) {
 		SPDLOG_DEBUG("Entering __cudaRegisterFatBinary..");
+		const auto extract_start = std::chrono::steady_clock::now();
 
 		auto header = (__fatBinC_Wrapper_t *)
 			gum_invocation_context_get_nth_argument(gum_ctx, 0);
@@ -161,6 +163,13 @@ static void example_listener_on_enter(GumInvocationListener *listener,
 		SPDLOG_INFO("Finally size = {}", data_vec.size());
 		auto extracted_ptx =
 			context->impl->extract_ptxs(std::move(data_vec));
+		const auto extract_elapsed =
+			std::chrono::duration_cast<std::chrono::milliseconds>(
+				std::chrono::steady_clock::now() - extract_start)
+				.count();
+		SPDLOG_INFO(
+			"GPU attach timing: fatbin extract took {} ms and yielded {} PTX files",
+			extract_elapsed, extracted_ptx.size());
 		SPDLOG_INFO("Patching PTXs");
 		auto fatbin_record = std::make_unique<struct fatbin_record>();
 		fatbin_record->original_ptx = extracted_ptx;
@@ -186,8 +195,8 @@ static void example_listener_on_enter(GumInvocationListener *listener,
 		if (auto ok = current_fatbin->find_and_fill_function_info(
 			    func_addr, symbol_name);
 		    !ok) {
-			SPDLOG_WARN(
-				"Unable to find_and_fill function info of symbol named {}, the PTX may not be compiled due to not modifying by nv_attach_impl",
+			SPDLOG_DEBUG(
+				"Function symbol {} is not present in a patched module; keeping the original CUDA registration",
 				symbol_name);
 		} else {
 			context->impl->symbol_address_to_fatbin[func_addr] =
@@ -226,8 +235,8 @@ static void example_listener_on_enter(GumInvocationListener *listener,
 		if (bool ok = current_fatbin->find_and_fill_variable_info(
 			    var_addr, symbol_name);
 		    !ok) {
-			SPDLOG_WARN(
-				"Unable to find_and_fill variable info of symbol names {}, the PTX may not be compiled due to not modifying by nv_attach_impl",
+			SPDLOG_DEBUG(
+				"Variable symbol {} is not present in a patched module; keeping the original CUDA registration",
 				symbol_name);
 		} else {
 			context->impl->symbol_address_to_fatbin[var_addr] =

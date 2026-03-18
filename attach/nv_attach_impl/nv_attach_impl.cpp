@@ -633,10 +633,11 @@ nv_attach_impl::hack_fatbin(std::map<std::string, std::string> all_ptx)
 	std::mutex map_mutex;
 	std::mutex cache_mutex;
 	for (auto &[file_name, original_ptx] : all_ptx) {
-		boost::asio::post(pool, [this, original_ptx, file_name, &map_mutex, &ptx_out, &cache_mutex]() -> void {
+		boost::asio::post(pool, [this, original_ptx, file_name, &map_mutex,
+					 &ptx_out, &cache_mutex]() -> void {
 			auto current_ptx = original_ptx;
 			SPDLOG_INFO("Patching PTX: {}", file_name);
-			bool should_add_trampoline = false;
+			bool ptx_modified = false;
 			for (const auto &[_, hook_entry] : this->hook_entries) {
 				const auto &kernels = hook_entry.kernels;
 				for (const auto &kernel : kernels) {
@@ -720,20 +721,19 @@ nv_attach_impl::hack_fatbin(std::map<std::string, std::string> all_ptx)
 							resp;
 					}
 					current_ptx = resp.output_ptx;
-					should_add_trampoline =
-						should_add_trampoline ||
-						resp.modified;
+					ptx_modified =
+						ptx_modified || resp.modified;
 				}
 			}
-			if (should_add_trampoline) {
+			if (ptx_modified) {
 				current_ptx =
 					ptxpass::filter_out_version_headers_ptx(
 						wrap_ptx_with_trampoline(
 							current_ptx));
 			}
 			std::lock_guard<std::mutex> _guard(map_mutex);
-			ptx_out["patched." + file_name] = std::make_tuple(
-				current_ptx, should_add_trampoline);
+			ptx_out["patched." + file_name] =
+				std::make_tuple(current_ptx, ptx_modified);
 		});
 	}
 	pool.join();
