@@ -83,7 +83,7 @@ std::string get_env(const char *key)
 }
 
 // Validation: basic checks as placeholders
-bool validate_input(std::string_view input, const json &validation)
+bool validate_input(const std::string &input, const json &validation)
 {
 	if (validation.is_null())
 		return true;
@@ -106,25 +106,26 @@ bool validate_input(std::string_view input, const json &validation)
 	return true;
 }
 
-bool contains_entry_function(std::string_view input)
+bool contains_entry_function(const std::string &input)
 {
 	return input.find(".visible .entry") != std::string::npos;
 }
 
-bool contains_ret_instruction(std::string_view input)
+bool contains_ret_instruction(const std::string &input)
 {
 	return input.find("\n    ret;") != std::string::npos ||
 	       input.find("\n\tret;") != std::string::npos;
 }
 
-bool validate_ptx_version(std::string_view input, std::string_view minVersion)
+bool validate_ptx_version(const std::string &input,
+			  const std::string &minVersion)
 {
 	// Expect line like: .version 7.0
-	std::istringstream iss { std::string(input) };
+	std::istringstream iss(input);
 	std::string line;
 	double want = 0.0;
 	try {
-		want = std::stod(std::string(minVersion));
+		want = std::stod(minVersion);
 	} catch (...) {
 		return true;
 	}
@@ -282,29 +283,25 @@ std::string filter_compiled_ptx_for_ebpf_program(std::string input)
 
 	return result;
 }
-std::pair<size_t, size_t> find_kernel_body(std::string_view ptx,
-					   std::string_view kernel)
+std::pair<size_t, size_t> find_kernel_body(const std::string &ptx,
+					   const std::string &kernel)
 {
-	std::string ptx_owned(ptx);
 	static std::regex kernel_entry(
 		R"((\.visible\s+)?\.entry\s+(\w+)\s*\(([^)]*)\))");
 	std::smatch m;
-	std::string::const_iterator search_start(ptx_owned.cbegin());
-	while (std::regex_search(search_start, ptx_owned.cend(), m,
-				 kernel_entry)) {
-		if (m[2].str() == kernel) {
-			size_t begin =
-				(size_t)(m[0].first - ptx_owned.cbegin());
+	std::string::const_iterator search_start(ptx.cbegin());
+	while (std::regex_search(search_start, ptx.cend(), m, kernel_entry)) {
+		if (m[2] == kernel) {
+			size_t begin = (size_t)(m[0].first - ptx.cbegin());
 			size_t end = begin;
 			std::vector<char> st;
 			do {
-				while (end < ptx_owned.size() &&
-				       ptx_owned[end] != '{' &&
-				       ptx_owned[end] != '}')
+				while (end < ptx.size() && ptx[end] != '{' &&
+				       ptx[end] != '}')
 					end++;
-				if (end >= ptx_owned.size())
+				if (end >= ptx.size())
 					break;
-				if (ptx_owned[end] == '{')
+				if (ptx[end] == '{')
 					st.push_back('{');
 				else
 					st.pop_back();

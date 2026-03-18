@@ -77,7 +77,7 @@ extern "C" int process_input(const char *ptx_text, size_t ptx_len,
 		}
 
 		auto runtime_request = pass_runtime_request_from_string(
-			std::string_view(meta_json, meta_len));
+			std::string(meta_json, meta_len));
 		auto ptx_view = runtime_request_ptx_view(runtime_request,
 							 ptx_text, ptx_len);
 		if (ptx_text == nullptr && runtime_request.full_ptx.empty()) {
@@ -91,7 +91,7 @@ extern "C" int process_input(const char *ptx_text, size_t ptx_len,
 					 .c_str());
 			return ExitCode::Success;
 		}
-		if (!validate_input(ptx_view, cfg.validation))
+		if (!validate_input(std::string(ptx_view), cfg.validation))
 			return ExitCode::TransformFailed;
 		populate_runtime_request_ptx(runtime_request, ptx_text, ptx_len);
 		auto [out, modified] = patch_retprobe(

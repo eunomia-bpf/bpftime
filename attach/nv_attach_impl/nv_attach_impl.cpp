@@ -671,8 +671,7 @@ nv_attach_impl::hack_fatbin(std::map<std::string, std::string> all_ptx)
 	std::mutex map_mutex;
 	std::mutex cache_mutex;
 	for (auto &[file_name, original_ptx] : all_ptx) {
-		boost::asio::post(pool, [this, original_ptx, file_name, &map_mutex,
-					 &ptx_out, &cache_mutex]() -> void {
+		boost::asio::post(pool, [this, original_ptx, file_name, &map_mutex, &ptx_out, &cache_mutex]() -> void {
 			auto current_ptx = original_ptx;
 			SPDLOG_INFO("Patching PTX: {}", file_name);
 			bool ptx_modified = false;
@@ -681,11 +680,15 @@ nv_attach_impl::hack_fatbin(std::map<std::string, std::string> all_ptx)
 				for (const auto &kernel : kernels) {
 					std::vector<uint64_t> ebpf_inst_words;
 					ebpf_inst_words.assign(
-						(uint64_t *)(uintptr_t)hook_entry.instuctions
-							.data(),
-						(uint64_t *)(uintptr_t)hook_entry.instuctions
+						(uint64_t *)(uintptr_t)hook_entry
+							.instuctions.data(),
+						(uint64_t *)(uintptr_t)hook_entry
+								.instuctions
 								.data() +
-							hook_entry.instuctions.size());
+							hook_entry.instuctions
+								.size()
+
+					);
 					ptxpass::runtime_request::RuntimeRequest
 						req;
 					auto &ri = req.input;

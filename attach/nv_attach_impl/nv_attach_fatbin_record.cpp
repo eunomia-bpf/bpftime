@@ -298,8 +298,8 @@ void fatbin_record::try_loading_ptxs_for_device(class nv_attach_impl &impl,
 	auto &dev_manager = impl.get_device_manager();
 	auto effective_module_pool =
 		(dev_manager.device_count() > device_ordinal) ?
-				dev_manager.get_device(device_ordinal).module_pool :
-				module_pool;
+			dev_manager.get_device(device_ordinal).module_pool :
+			module_pool;
 
 	const auto module_load_start = std::chrono::steady_clock::now();
 	for (const auto &[name, ptx_and_trampoline_flag] : modified_ptx) {

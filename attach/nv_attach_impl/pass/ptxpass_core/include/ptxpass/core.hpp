@@ -166,12 +166,12 @@ inline void from_json(const nlohmann::json &j, RuntimeRequest &request)
 } // namespace runtime_request
 
 // Validation helpers
-bool validate_input(std::string_view input,
+bool validate_input(const std::string &input,
 		    const nlohmann::json &validation);
-bool contains_entry_function(std::string_view input);
-bool contains_ret_instruction(std::string_view input);
-bool validate_ptx_version(std::string_view input,
-			  std::string_view minVersion);
+bool contains_entry_function(const std::string &input);
+bool contains_ret_instruction(const std::string &input);
+bool validate_ptx_version(const std::string &input,
+			  const std::string &minVersion);
 bool ptx_may_contain_target_kernel(std::string_view ptx,
 				   std::string_view kernel);
 
@@ -191,8 +191,8 @@ std::string filter_compiled_ptx_for_ebpf_program(std::string input);
 // Find kernel body range [begin, end) for a given kernel name using .visible
 // .entry and brace depth Returns pair(begin,end); if not found, returns
 // {std::string::npos, std::string::npos}
-std::pair<size_t, size_t> find_kernel_body(std::string_view ptx,
-					   std::string_view kernel);
+std::pair<size_t, size_t> find_kernel_body(const std::string &ptx,
+					   const std::string &kernel);
 
 // Emit simple stats to stderr (pass name, matched count, in/out sizes)
 void log_transform_stats(const char *pass_name, int matched, size_t bytes_in,
@@ -233,10 +233,10 @@ load_pass_config_from_file(const std::filesystem::path &path)
 }
 
 static inline runtime_request::RuntimeRequest
-pass_runtime_request_from_string(std::string_view str)
+pass_runtime_request_from_string(const std::string &str)
 {
 	runtime_request::RuntimeRequest runtime_request;
-	auto input_json = nlohmann::json::parse(str.begin(), str.end());
+	auto input_json = nlohmann::json::parse(str);
 	runtime_request::from_json(input_json, runtime_request);
 	return runtime_request;
 }
