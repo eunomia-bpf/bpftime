@@ -110,7 +110,8 @@ TEST_CASE("parse_runtime_request parses full request with ebpf_instructions",
 
 		nlohmann::json emitted;
 		runtime_request::to_json(emitted, request);
-		REQUIRE(emitted.dump().find("full_ptx") == std::string::npos);
+		REQUIRE(emitted["full_ptx"].get<std::string>().empty());
+		REQUIRE_FALSE(emitted["input"].contains("full_ptx"));
 	}
 
 	SECTION("Legacy request with embedded PTX still parses")
@@ -137,13 +138,16 @@ TEST_CASE("emit_runtime_output produces JSON output", "[ptxpass_core]")
 
 	std::cout.rdbuf(old_cout);
 
-	std::string output = oss.str();
-	REQUIRE(output.find("\"output_ptx\"") != std::string::npos);
-	REQUIRE(output.find("test_ptx_output") != std::string::npos);
+	auto output = nlohmann::json::parse(oss.str());
+	REQUIRE(output["output_ptx"].get<std::string>() ==
+		"test_ptx_output");
+	REQUIRE(output["modified"].get<bool>());
 
-	std::string unmodified = emit_runtime_response_and_return("", false);
-	REQUIRE(unmodified.find("\"modified\":false") != std::string::npos);
-	REQUIRE(unmodified.find("output_ptx") == std::string::npos);
+	auto unmodified =
+		nlohmann::json::parse(emit_runtime_response_and_return("",
+								 false));
+	REQUIRE_FALSE(unmodified["modified"].get<bool>());
+	REQUIRE(unmodified["output_ptx"].get<std::string>().empty());
 }
 
 TEST_CASE("contains_entry_function detects .visible .entry", "[ptxpass_core]")
@@ -171,15 +175,6 @@ TEST_CASE("validate_ptx_version checks PTX version", "[ptxpass_core]")
 	REQUIRE(validate_ptx_version(ptx_v7, "7.0"));
 	REQUIRE_FALSE(validate_ptx_version(ptx_v6, "7.0"));
 	REQUIRE(validate_ptx_version(ptx_v6, "6.0"));
-}
-
-TEST_CASE("ptx_may_contain_target_kernel fast-path detects target names",
-	  "[ptxpass_core]")
-{
-	REQUIRE(ptx_may_contain_target_kernel(KERNEL_WITH_BODY, "foo"));
-	REQUIRE_FALSE(
-		ptx_may_contain_target_kernel(KERNEL_WITH_BODY, "nonexistent"));
-	REQUIRE(ptx_may_contain_target_kernel(KERNEL_WITH_BODY, ""));
 }
 
 TEST_CASE("validate_input checks input against validation rules",
@@ -392,10 +387,7 @@ TEST_CASE("End-to-end JSON workflow with empty eBPF",
 		REQUIRE(request.input.to_patch_kernel == "test");
 		REQUIRE(request.ebpf_instructions.empty());
 
-		REQUIRE(runtime_request_ptx_view(request, raw_ptx.data(),
-						 raw_ptx.size()) == raw_ptx);
-		populate_runtime_request_ptx(request, raw_ptx.data(),
-					     raw_ptx.size());
+		request.full_ptx.assign(raw_ptx.data(), raw_ptx.size());
 		REQUIRE(request.full_ptx == raw_ptx);
 	}
 

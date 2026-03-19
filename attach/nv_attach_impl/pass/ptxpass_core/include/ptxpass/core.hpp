@@ -6,7 +6,6 @@
 #include <iostream>
 #include <regex>
 #include <string>
-#include <string_view>
 #include <vector>
 #include "json.hpp"
 #include <fstream>
@@ -86,19 +85,8 @@ struct RuntimeResponse {
 	std::string output_ptx;
 	bool modified = false;
 };
-inline void to_json(nlohmann::json &j, const RuntimeResponse &response)
-{
-	j = nlohmann::json { { "modified", response.modified } };
-	if (response.modified) {
-		j["output_ptx"] = response.output_ptx;
-	}
-}
-
-inline void from_json(const nlohmann::json &j, RuntimeResponse &response)
-{
-	response.modified = j.value("modified", false);
-	response.output_ptx = j.value("output_ptx", std::string {});
-}
+NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(RuntimeResponse, output_ptx,
+						modified);
 } // namespace runtime_response
 
 struct EbpfInstructionPair {
@@ -138,29 +126,8 @@ struct RuntimeRequest {
 		}
 	}
 };
-
-inline void to_json(nlohmann::json &j, const RuntimeRequest &request)
-{
-	j = nlohmann::json { { "input", request.input },
-			     { "ebpf_instructions",
-			       request.ebpf_instructions } };
-}
-
-inline void from_json(const nlohmann::json &j, RuntimeRequest &request)
-{
-	request.input = j.at("input").get<runtime_input::RuntimeInput>();
-	request.ebpf_instructions =
-		j.value("ebpf_instructions",
-			std::vector<EbpfInstructionPair> {});
-	if (auto it = j.find("input");
-	    it != j.end() && it->is_object() &&
-	    it->contains("full_ptx")) {
-		request.full_ptx =
-			(*it).value("full_ptx", std::string {});
-	} else {
-		request.full_ptx.clear();
-	}
-}
+NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(RuntimeRequest, full_ptx,
+						input, ebpf_instructions);
 } // namespace runtime_request
 
 // Validation helpers
@@ -169,8 +136,6 @@ bool contains_entry_function(const std::string &input);
 bool contains_ret_instruction(const std::string &input);
 bool validate_ptx_version(const std::string &input,
 			  const std::string &minVersion);
-bool ptx_may_contain_target_kernel(std::string_view ptx,
-				   std::string_view kernel);
 
 // Shared utilities for PTX passes (refactored from legacy code)
 // Filter out duplicate/irrelevant PTX headers
@@ -195,20 +160,8 @@ std::pair<size_t, size_t> find_kernel_body(const std::string &ptx,
 void log_transform_stats(const char *pass_name, int matched, size_t bytes_in,
 			 size_t bytes_out);
 
-static inline void emit_runtime_response_and_print(const std::string &str,
-						   bool modified = true)
-{
-	using namespace runtime_response;
-	RuntimeResponse output;
-	nlohmann::json output_json;
-	output.output_ptx = str;
-	output.modified = modified;
-	to_json(output_json, output);
-	std::cout << output_json.dump();
-}
-
 static inline std::string
-emit_runtime_response_and_return(const std::string &str, bool modified)
+emit_runtime_response_and_return(const std::string &str, bool modified = true)
 {
 	using namespace runtime_response;
 	RuntimeResponse output;
@@ -217,6 +170,12 @@ emit_runtime_response_and_return(const std::string &str, bool modified)
 	output.modified = modified;
 	to_json(output_json, output);
 	return output_json.dump();
+}
+
+static inline void emit_runtime_response_and_print(const std::string &str,
+						   bool modified = true)
+{
+	std::cout << emit_runtime_response_and_return(str, modified);
 }
 
 static inline pass_config::PassConfig
@@ -235,26 +194,14 @@ pass_runtime_request_from_string(const std::string &str)
 	runtime_request::RuntimeRequest runtime_request;
 	auto input_json = nlohmann::json::parse(str);
 	runtime_request::from_json(input_json, runtime_request);
+	if (runtime_request.full_ptx.empty()) {
+		if (auto it = input_json.find("input");
+		    it != input_json.end() && it->is_object()) {
+			runtime_request.full_ptx =
+				it->value("full_ptx", std::string {});
+		}
+	}
 	return runtime_request;
-}
-
-static inline std::string_view
-runtime_request_ptx_view(const runtime_request::RuntimeRequest &request,
-			 const char *ptx_text, size_t ptx_len)
-{
-	if (ptx_text != nullptr) {
-		return std::string_view(ptx_text, ptx_len);
-	}
-	return request.full_ptx;
-}
-
-static inline void
-populate_runtime_request_ptx(runtime_request::RuntimeRequest &request,
-			     const char *ptx_text, size_t ptx_len)
-{
-	if (ptx_text != nullptr) {
-		request.full_ptx.assign(ptx_text, ptx_len);
-	}
 }
 } // namespace ptxpass
 

@@ -4,6 +4,7 @@
 #include <exception>
 #include <iostream>
 #include <string>
+#include <string_view>
 #include <vector>
 #include <regex>
 #include <sstream>
@@ -177,13 +178,15 @@ extern "C" int process_input(const char *ptx_text, size_t ptx_len,
 
 		auto runtime_request = pass_runtime_request_from_string(
 			std::string(meta_json, meta_len));
-		auto ptx_view = runtime_request_ptx_view(runtime_request,
-							 ptx_text, ptx_len);
+		std::string_view ptx_view = ptx_text != nullptr
+			? std::string_view(ptx_text, ptx_len)
+			: std::string_view(runtime_request.full_ptx);
 		if (ptx_text == nullptr && runtime_request.full_ptx.empty()) {
 			throw std::runtime_error("PTX input is missing");
 		}
-		if (!ptx_may_contain_target_kernel(
-			    ptx_view, runtime_request.input.to_patch_kernel)) {
+		if (!runtime_request.input.to_patch_kernel.empty() &&
+		    ptx_view.find(runtime_request.input.to_patch_kernel) ==
+			    std::string_view::npos) {
 			snprintf(output, output_len, "%s",
 				 emit_runtime_response_and_return("",
 								  false)
@@ -194,7 +197,9 @@ extern "C" int process_input(const char *ptx_text, size_t ptx_len,
 		if (!validate_input(std::string(ptx_view), cfg.validation)) {
 			return ExitCode::TransformFailed;
 		}
-		populate_runtime_request_ptx(runtime_request, ptx_text, ptx_len);
+		if (ptx_text != nullptr) {
+			runtime_request.full_ptx.assign(ptx_text, ptx_len);
+		}
 		auto [out, modified] = patch_memcapture(
 			runtime_request.full_ptx,
 			runtime_request.get_uint64_ebpf_instructions());

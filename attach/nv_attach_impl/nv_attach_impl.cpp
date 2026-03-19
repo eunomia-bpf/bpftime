@@ -623,43 +623,6 @@ nv_attach_impl::extract_ptxs(std::vector<uint8_t> &&data_vec)
 	return all_ptx;
 }
 
-static std::string build_patch_cache_key(
-	const bpftime::attach::pass_cfg_with_exec_path &pass_config,
-	std::string_view ptx, std::string_view kernel,
-	const std::vector<uint64_t> &ebpf_inst_words,
-	std::string_view global_map_symbol,
-	std::string_view communication_symbol)
-{
-	const void *ebpf_data = ebpf_inst_words.empty()
-		? static_cast<const void *>("")
-		: static_cast<const void *>(ebpf_inst_words.data());
-	const auto ebpf_size = ebpf_inst_words.size() * sizeof(uint64_t);
-
-	std::string key;
-	key.reserve(pass_config.pass_config.name.size() + kernel.size() +
-		    global_map_symbol.size() + communication_symbol.size() +
-		    160);
-	key += pass_config.pass_config.name;
-	key.push_back(':');
-	key += sha256(ptx.data(), ptx.size());
-	key.push_back(':');
-	key += kernel;
-	key.push_back(':');
-	key += sha256(ebpf_data, ebpf_size);
-	key.push_back(':');
-	key += global_map_symbol;
-	key.push_back(':');
-	key += communication_symbol;
-	return key;
-}
-
-static size_t estimate_pass_output_buffer_size(std::string_view current_ptx)
-{
-	// Unmodified responses are tiny, but modified PTX is returned as JSON and
-	// can grow due to escaping plus injected probe text.
-	return std::max<size_t>(4 << 20, current_ptx.size() * 4 + (1 << 20));
-}
-
 std::optional<std::map<std::string, std::tuple<std::string, bool>>>
 nv_attach_impl::hack_fatbin(std::map<std::string, std::string> all_ptx)
 {
@@ -706,11 +669,15 @@ nv_attach_impl::hack_fatbin(std::map<std::string, std::string> all_ptx)
 					auto meta_json = in.dump();
 					SPDLOG_DEBUG("Input metadata: {}",
 						     meta_json);
-					auto cache_key = build_patch_cache_key(
-						*hook_entry.config, current_ptx,
-						kernel, ebpf_inst_words,
-						ri.global_ebpf_map_info_symbol,
-						ri.ebpf_communication_data_symbol);
+					std::string cache_key =
+						hook_entry.config
+							->pass_config.name;
+					cache_key.push_back(':');
+					cache_key += sha256(current_ptx.data(),
+							    current_ptx.size());
+					cache_key.push_back(':');
+					cache_key += sha256(meta_json.data(),
+							    meta_json.size());
 
 					ptxpass::runtime_response::RuntimeResponse
 						resp;
@@ -729,9 +696,16 @@ nv_attach_impl::hack_fatbin(std::map<std::string, std::string> all_ptx)
 						SPDLOG_INFO(
 							"Patching request {} not found in cache, patching..",
 							cache_key);
+						size_t output_buffer_size =
+							current_ptx.size() * 4 +
+							(1 << 20);
+						if (output_buffer_size <
+						    (4 << 20)) {
+							output_buffer_size =
+								4 << 20;
+						}
 						std::vector<char> buf(
-							estimate_pass_output_buffer_size(
-								current_ptx));
+							output_buffer_size);
 						int err =
 							hook_entry.config->process_input(
 								current_ptx.data(),
