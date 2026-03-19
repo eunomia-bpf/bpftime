@@ -69,13 +69,11 @@ enum ExitCode {
 namespace runtime_input
 {
 struct RuntimeInput {
-	std::string full_ptx;
 	std::string to_patch_kernel;
 	std::string global_ebpf_map_info_symbol = "map_info";
 	std::string ebpf_communication_data_symbol = "constData";
 };
-NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(RuntimeInput, full_ptx,
-						to_patch_kernel,
+NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(RuntimeInput, to_patch_kernel,
 						global_ebpf_map_info_symbol,
 						ebpf_communication_data_symbol);
 } // namespace runtime_input
@@ -85,9 +83,10 @@ namespace runtime_response
 {
 struct RuntimeResponse {
 	std::string output_ptx;
-	bool modified;
+	bool modified = false;
 };
-NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE(RuntimeResponse, output_ptx, modified);
+NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(RuntimeResponse, output_ptx,
+						modified);
 } // namespace runtime_response
 
 struct EbpfInstructionPair {
@@ -109,6 +108,7 @@ struct EbpfInstructionPair {
 namespace runtime_request
 {
 struct RuntimeRequest {
+	std::string full_ptx;
 	runtime_input::RuntimeInput input;
 	std::vector<EbpfInstructionPair> ebpf_instructions;
 	std::vector<uint64_t> get_uint64_ebpf_instructions() const
@@ -126,7 +126,8 @@ struct RuntimeRequest {
 		}
 	}
 };
-NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE(RuntimeRequest, input, ebpf_instructions);
+NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(RuntimeRequest, full_ptx,
+						input, ebpf_instructions);
 } // namespace runtime_request
 
 // Validation helpers
@@ -159,18 +160,8 @@ std::pair<size_t, size_t> find_kernel_body(const std::string &ptx,
 void log_transform_stats(const char *pass_name, int matched, size_t bytes_in,
 			 size_t bytes_out);
 
-static inline void emit_runtime_response_and_print(const std::string &str)
-{
-	using namespace runtime_response;
-	RuntimeResponse output;
-	nlohmann::json output_json;
-	output.output_ptx = str;
-	to_json(output_json, output);
-	std::cout << output_json.dump();
-}
-
 static inline std::string
-emit_runtime_response_and_return(const std::string &str, bool modified)
+emit_runtime_response_and_return(const std::string &str, bool modified = true)
 {
 	using namespace runtime_response;
 	RuntimeResponse output;
@@ -179,6 +170,12 @@ emit_runtime_response_and_return(const std::string &str, bool modified)
 	output.modified = modified;
 	to_json(output_json, output);
 	return output_json.dump();
+}
+
+static inline void emit_runtime_response_and_print(const std::string &str,
+						   bool modified = true)
+{
+	std::cout << emit_runtime_response_and_return(str, modified);
 }
 
 static inline pass_config::PassConfig
@@ -197,6 +194,13 @@ pass_runtime_request_from_string(const std::string &str)
 	runtime_request::RuntimeRequest runtime_request;
 	auto input_json = nlohmann::json::parse(str);
 	runtime_request::from_json(input_json, runtime_request);
+	if (runtime_request.full_ptx.empty()) {
+		if (auto it = input_json.find("input");
+		    it != input_json.end() && it->is_object()) {
+			runtime_request.full_ptx =
+				it->value("full_ptx", std::string {});
+		}
+	}
 	return runtime_request;
 }
 } // namespace ptxpass

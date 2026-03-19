@@ -5,6 +5,7 @@
 #include "ptx_compiler/ptx_compiler.hpp"
 #include "ptxpass/core.hpp"
 #include <base_attach_impl.hpp>
+#include <cstddef>
 #include <cstdint>
 #include <cuda_runtime.h>
 #include <cuda_runtime_api.h>
@@ -34,7 +35,9 @@ namespace attach
 {
 
 using print_config_fn = void (*)(int length, char *out);
-using process_input_fn = int (*)(const char *input, int length, char *output);
+using process_input_fn = int (*)(const char *ptx_text, size_t ptx_len,
+				 const char *meta_json, int meta_len,
+				 char *output, int output_len);
 
 std::string filter_compiled_ptx_for_ebpf_program(std::string input,
 						 std::string);
@@ -170,6 +173,8 @@ class nv_attach_impl final : public base_attach_impl {
 
 	/// Get the current device ordinal from CUDA context, or 0 as fallback
 	int get_current_device_ordinal() const;
+	std::mutex &get_module_pool_mutex() { return module_pool_mutex_; }
+	std::mutex &get_ptx_pool_mutex() { return ptx_pool_mutex_; }
 	std::vector<std::unique_ptr<fatbin_record>> fatbin_records;
 	fatbin_record *current_fatbin = nullptr;
 	std::map<void *, fatbin_record *> symbol_address_to_fatbin;
@@ -211,6 +216,8 @@ class nv_attach_impl final : public base_attach_impl {
 		patch_cache;
 	gpu_device_manager device_manager_;
 	mutable std::mutex cuda_symbol_map_mutex;
+	mutable std::mutex module_pool_mutex_;
+	mutable std::mutex ptx_pool_mutex_;
 	// Per-device patched kernel maps: device_ordinal -> (name -> CUfunction)
 	std::map<int, std::unordered_map<std::string, CUfunction>>
 		patched_kernel_by_device_;

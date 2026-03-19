@@ -7,6 +7,7 @@
 #include <exception>
 #include <iostream>
 #include <string>
+#include <string_view>
 
 namespace retprobe_params
 {
@@ -64,24 +65,47 @@ extern "C" void print_config(int length, char *out)
 	snprintf(out, length, "%s", output_json.dump().c_str());
 }
 
-extern "C" int process_input(const char *input, int length, char *output)
+extern "C" int process_input(const char *ptx_text, size_t ptx_len,
+			     const char *meta_json, int meta_len,
+			     char *output, int output_len)
 {
 	using namespace ptxpass;
 	try {
 		auto cfg = get_default_config();
 		auto matcher = AttachPointMatcher(cfg.attach_points);
+		if (meta_json == nullptr) {
+			throw std::runtime_error("Metadata JSON is missing");
+		}
 
-		auto runtime_request = pass_runtime_request_from_string(input);
-		if (!validate_input(runtime_request.input.full_ptx,
-				    cfg.validation))
+		auto runtime_request = pass_runtime_request_from_string(
+			std::string(meta_json, meta_len));
+		std::string_view ptx_view = ptx_text != nullptr
+			? std::string_view(ptx_text, ptx_len)
+			: std::string_view(runtime_request.full_ptx);
+		if (ptx_text == nullptr && runtime_request.full_ptx.empty()) {
+			throw std::runtime_error("PTX input is missing");
+		}
+		if (!runtime_request.input.to_patch_kernel.empty() &&
+		    ptx_view.find(runtime_request.input.to_patch_kernel) ==
+			    std::string_view::npos) {
+			snprintf(output, output_len, "%s",
+				 emit_runtime_response_and_return("",
+								  false)
+					 .c_str());
+			return ExitCode::Success;
+		}
+		if (!validate_input(std::string(ptx_view), cfg.validation))
 			return ExitCode::TransformFailed;
+		if (ptx_text != nullptr) {
+			runtime_request.full_ptx.assign(ptx_text, ptx_len);
+		}
 		auto [out, modified] = patch_retprobe(
-			runtime_request.input.full_ptx,
+			runtime_request.full_ptx,
 			runtime_request.input.to_patch_kernel,
 			runtime_request.get_uint64_ebpf_instructions());
-		snprintf(
-			output, length, "%s",
-			emit_runtime_response_and_return(out, modified).c_str());
+		snprintf(output, output_len, "%s",
+			 emit_runtime_response_and_return(out, modified)
+				 .c_str());
 		return ExitCode::Success;
 	} catch (const std::runtime_error &e) {
 		std::cerr << e.what() << "\n";

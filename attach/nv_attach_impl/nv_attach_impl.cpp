@@ -654,7 +654,6 @@ nv_attach_impl::hack_fatbin(std::map<std::string, std::string> all_ptx)
 					ptxpass::runtime_request::RuntimeRequest
 						req;
 					auto &ri = req.input;
-					ri.full_ptx = current_ptx;
 					ri.to_patch_kernel = kernel;
 					ri.global_ebpf_map_info_symbol =
 						"map_info";
@@ -668,9 +667,17 @@ nv_attach_impl::hack_fatbin(std::map<std::string, std::string> all_ptx)
 									  req);
 					auto input_json = in.dump();
 					SPDLOG_DEBUG("Input: {}", input_json);
-					auto sha256_string =
-						sha256(input_json.data(),
-						       input_json.size());
+					std::string sha256_string =
+						hook_entry.config
+							->pass_config.name;
+					sha256_string.push_back(':');
+					sha256_string += sha256(
+						current_ptx.data(),
+						current_ptx.size());
+					sha256_string.push_back(':');
+					sha256_string += sha256(
+						input_json.data(),
+						input_json.size());
 
 					ptxpass::runtime_response::RuntimeResponse
 						resp;
@@ -689,13 +696,24 @@ nv_attach_impl::hack_fatbin(std::map<std::string, std::string> all_ptx)
 						SPDLOG_INFO(
 							"Patching request {} not found in cache, patching..",
 							sha256_string);
-						std::vector<char> buf(1 << 30);
+						size_t output_buffer_size =
+							current_ptx.size() * 4 +
+							(1 << 20);
+						if (output_buffer_size <
+						    (4 << 20)) {
+							output_buffer_size =
+								4 << 20;
+						}
+						std::vector<char> buf(
+							output_buffer_size);
 						int err =
 							hook_entry.config->process_input(
-								input_json
-									.c_str(),
-								buf.size(),
-								buf.data());
+								current_ptx.data(),
+								current_ptx.size(),
+								input_json.c_str(),
+								input_json.size(),
+								buf.data(),
+								buf.size());
 
 						if (err ==
 						    ptxpass::ExitCode::Success) {
@@ -719,10 +737,10 @@ nv_attach_impl::hack_fatbin(std::map<std::string, std::string> all_ptx)
 						patch_cache[sha256_string] =
 							resp;
 					}
-					current_ptx = resp.output_ptx;
-					should_add_trampoline =
-						should_add_trampoline ||
-						resp.modified;
+					if (resp.modified) {
+						current_ptx = resp.output_ptx;
+						should_add_trampoline = true;
+					}
 				}
 			}
 			if (should_add_trampoline) {

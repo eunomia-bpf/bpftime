@@ -4,6 +4,7 @@
 #include "cuda.h"
 #include <map>
 #include <memory>
+#include <mutex>
 #include <set>
 #include <string>
 #include <vector>
@@ -56,6 +57,7 @@ struct fatbin_record {
 	bool find_and_fill_function_info(void *ptr, const char *symbol_name);
 
     private:
+	mutable std::mutex load_mutex;
 	std::map<std::string, std::vector<uint8_t>>
 	compile_ptxs(class nv_attach_impl &impl,
 		     std::map<std::string, std::tuple<std::string, bool>>,
