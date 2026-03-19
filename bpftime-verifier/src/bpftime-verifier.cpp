@@ -1,5 +1,7 @@
 #include "asm_syntax.hpp"
 #include "config.hpp"
+#include "gpu_platform.hpp"
+#include "gpu_verifier.hpp"
 #include "helpers.hpp"
 #include <ebpf_base.h>
 #include <iostream>
@@ -38,6 +40,16 @@ std::optional<std::string> verify_ebpf_program(const uint64_t *raw_inst,
 					       size_t num_inst,
 					       const std::string &section_name)
 {
+	if (bpftime::is_gpu_section(section_name)) {
+		gpu::GpuVerifierConfig gpu_config;
+		const auto result = gpu::verify_gpu_program(
+			raw_inst, num_inst, section_name, gpu_config);
+		if (result.passed) {
+			return {};
+		}
+		return result.error_message;
+	}
+
 	raw_program prog;
 	prog.filename = "BPFTIME_VERIFIER";
 	prog.section = section_name;
@@ -47,14 +59,14 @@ std::optional<std::string> verify_ebpf_program(const uint64_t *raw_inst,
 		memcpy(&inst, &raw_inst[i], sizeof(inst));
 		prog.prog.push_back(inst);
 	}
+	const ebpf_platform_t *platform = &bpftime_platform_spec;
 	prog.info = {
-		.platform = &bpftime_platform_spec,
+		.platform = platform,
 		.map_descriptors = get_all_map_descriptors(),
-		.type = bpftime_platform_spec.get_program_type(section_name,
-							       ""),
+		.type = platform->get_program_type(section_name, ""),
 	};
 	global_program_info = prog.info;
-	std::vector<std::vector<std::string> > notes;
+	std::vector<std::vector<std::string>> notes;
 	auto unmarshal_result = unmarshal(prog, notes);
 	if (std::holds_alternative<std::string>(unmarshal_result)) {
 		return std::get<std::string>(unmarshal_result);

@@ -1,0 +1,12 @@
+| Program | LOC | Safety Property | Expected | Result | Time (μs) |
+| --- | --- | --- | --- | --- | --- |
+| varying_branch | 31 | Varying branch condition | REJECT | REJECT | 49 |
+| prohibited_helper | 27 | Prohibited helper (membar) | REJECT | REJECT | 94 |
+| varying_atomic | 30 | Varying atomic address | REJECT | REJECT | 45 |
+| varying_map_key | 24 | Varying map key | REJECT | REJECT | 71 |
+| resource_exceeded | 92 | Helper/resource budget exceeded | REJECT | REJECT | 313 |
+| safe_counter | 31 | None (safe) | PASS | PASS | 36 |
+| safe_block_idx_branch | 26 | None (safe block-uniform branch) | PASS | PASS | 52 |
+| cuda-counter (entry) | 74 | None (real example) | PASS | PASS | 73 |
+| cuda-counter (return) | 74 | None (real example) | PASS | PASS | 93 |
+| directly_run_on_gpu (entry) | 128 | None (real example) | PASS | PASS | 159 |

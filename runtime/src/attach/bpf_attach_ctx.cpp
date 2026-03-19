@@ -59,6 +59,14 @@ static int load_prog_and_helpers(bpftime_prog *prog, const agent_config &config)
 	return prog->bpftime_prog_load(config.jit_enabled);
 }
 
+static bool should_abort_attach_init(int err, const agent_config &config,
+				     bool handle_nv_attach_impl)
+{
+	return handle_nv_attach_impl &&
+	       config.verifier_mode == BPFTIME_VERIFIER_STRICT &&
+	       err == -EINVAL;
+}
+
 int bpf_attach_ctx::init_attach_ctx_from_handlers(const agent_config &config)
 {
 	const handler_manager *manager =
@@ -79,6 +87,13 @@ int bpf_attach_ctx::init_attach_ctx_from_handlers(
 			if (int err = instantiate_handler_at(manager, i, stk,
 							     config, false);
 			    err < 0) {
+				if (should_abort_attach_init(err, config,
+							    false)) {
+					SPDLOG_ERROR(
+						"Failed to instantiate handler {} with fatal error {}",
+						i, err);
+					return err;
+				}
 				SPDLOG_INFO("Failed to instantiate handler {}",
 					    i);
 				// Unable to instantiate handler may not be an
@@ -97,6 +112,13 @@ int bpf_attach_ctx::init_attach_ctx_from_handlers(
 			if (int err = instantiate_handler_at(manager, i, stk,
 							     config, true);
 			    err < 0) {
+				if (should_abort_attach_init(err, config,
+							    true)) {
+					SPDLOG_ERROR(
+						"Failed to instantiate CUDA handler {} with fatal error {}",
+						i, err);
+					return err;
+				}
 				SPDLOG_INFO("Failed to instantiate handler {}",
 					    i);
 			}
