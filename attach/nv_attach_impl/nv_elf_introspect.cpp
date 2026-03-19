@@ -97,7 +97,8 @@ find_section_span(std::ifstream &ifs, std::string_view section_name)
 
 template <typename Ehdr, typename Shdr, typename Sym>
 std::vector<symbol_range>
-read_function_symbols_impl(std::ifstream &ifs, std::uintptr_t base)
+read_symbols_impl(std::ifstream &ifs, std::uintptr_t base,
+		  unsigned char symbol_type)
 {
 	std::vector<symbol_range> out;
 
@@ -146,7 +147,7 @@ read_function_symbols_impl(std::ifstream &ifs, std::uintptr_t base)
 				break;
 
 			const unsigned char type = ELF64_ST_TYPE(sym.st_info);
-			if (type != STT_FUNC)
+			if (type != symbol_type)
 				continue;
 			if (sym.st_value == 0)
 				continue;
@@ -179,6 +180,34 @@ std::string normalize_module_path(std::string path)
 	if (!path.empty())
 		return path;
 	return read_self_exe_path();
+}
+
+std::vector<symbol_range> read_symbols_from_module(const loaded_module &mod,
+						   unsigned char symbol_type)
+{
+	std::vector<symbol_range> out;
+	const std::string path = normalize_module_path(mod.path);
+	if (path.empty())
+		return out;
+	std::ifstream ifs(path, std::ios::binary);
+	if (!ifs.is_open())
+		return out;
+
+	unsigned char ident[EI_NIDENT];
+	if (!read_exact(ifs, 0, ident, sizeof(ident)))
+		return out;
+	if (memcmp(ident, ELFMAG, SELFMAG) != 0)
+		return out;
+
+	if (ident[EI_CLASS] == ELFCLASS64) {
+		return read_symbols_impl<Elf64_Ehdr, Elf64_Shdr, Elf64_Sym>(
+			ifs, mod.base_addr, symbol_type);
+	}
+	if (ident[EI_CLASS] == ELFCLASS32) {
+		return read_symbols_impl<Elf32_Ehdr, Elf32_Shdr, Elf32_Sym>(
+			ifs, mod.base_addr, symbol_type);
+	}
+	return out;
 }
 
 } // namespace
@@ -260,29 +289,12 @@ scan_fatbin_wrappers(const void *section_addr, std::size_t section_size)
 
 std::vector<symbol_range> read_function_symbols(const loaded_module &mod)
 {
-	std::vector<symbol_range> out;
-	const std::string path = normalize_module_path(mod.path);
-	if (path.empty())
-		return out;
-	std::ifstream ifs(path, std::ios::binary);
-	if (!ifs.is_open())
-		return out;
+	return read_symbols_from_module(mod, STT_FUNC);
+}
 
-	unsigned char ident[EI_NIDENT];
-	if (!read_exact(ifs, 0, ident, sizeof(ident)))
-		return out;
-	if (memcmp(ident, ELFMAG, SELFMAG) != 0)
-		return out;
-
-	if (ident[EI_CLASS] == ELFCLASS64) {
-		return read_function_symbols_impl<Elf64_Ehdr, Elf64_Shdr, Elf64_Sym>(
-			ifs, mod.base_addr);
-	}
-	if (ident[EI_CLASS] == ELFCLASS32) {
-		return read_function_symbols_impl<Elf32_Ehdr, Elf32_Shdr, Elf32_Sym>(
-			ifs, mod.base_addr);
-	}
-	return out;
+std::vector<symbol_range> read_object_symbols(const loaded_module &mod)
+{
+	return read_symbols_from_module(mod, STT_OBJECT);
 }
 
 } // namespace bpftime::attach::elf_introspect

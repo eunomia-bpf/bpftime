@@ -1331,6 +1331,7 @@ void nv_attach_impl::mirror_cuda_memcpy_to_symbol(
 	bootstrap_existing_fatbins_once();
 
 	std::optional<variable_info> resolved_var;
+	std::optional<std::string> resolved_symbol_name;
 
 	if (auto record_itr = symbol_address_to_fatbin.find((void *)symbol);
 	    record_itr != symbol_address_to_fatbin.end()) {
@@ -1339,22 +1340,35 @@ void nv_attach_impl::mirror_cuda_memcpy_to_symbol(
 			record.variable_addr_to_symbol.find((void *)symbol);
 		if (var_itr != record.variable_addr_to_symbol.end()) {
 			resolved_var = var_itr->second;
+			resolved_symbol_name = var_itr->second.symbol_name;
 		}
+	}
+
+	if (!resolved_symbol_name) {
+		resolved_symbol_name = resolve_host_variable_symbol((void *)symbol);
+		if (!resolved_symbol_name) {
+			resolved_symbol_name =
+				resolve_host_function_symbol((void *)symbol);
+		}
+	}
+
+	if (resolved_symbol_name) {
+		cache_symbol_write(*resolved_symbol_name, src, count, offset,
+				   kind);
 	}
 
 	if (!resolved_var) {
 		// Late attach fallback: resolve host symbol name and mirror to
 		// any patched module that exports the same global.
-		auto name = resolve_host_function_symbol((void *)symbol);
-		if (!name)
+		if (!resolved_symbol_name)
 			return;
 		{
 			std::lock_guard<std::mutex> guard(
 				patched_global_cache_mutex);
-			auto it = patched_global_by_name.find(*name);
+			auto it = patched_global_by_name.find(*resolved_symbol_name);
 			if (it != patched_global_by_name.end()) {
 				resolved_var = variable_info{
-					.symbol_name = *name,
+					.symbol_name = *resolved_symbol_name,
 					.ptr = it->second.first,
 					.size = it->second.second,
 					.ptx = nullptr,
@@ -1371,19 +1385,19 @@ void nv_attach_impl::mirror_cuda_memcpy_to_symbol(
 					size_t sz;
 					auto err = cuModuleGetGlobal(
 						&dptr, &sz, ptx->module_ptr,
-						name->c_str());
+						resolved_symbol_name->c_str());
 					if (err == CUDA_SUCCESS) {
 						{
 							std::lock_guard<
 								std::mutex>
 								guard(patched_global_cache_mutex);
-							patched_global_by_name[*name] =
-								std::make_pair(
-									dptr,
-									sz);
+							patched_global_by_name[*resolved_symbol_name] =
+								std::make_pair(dptr,
+										       sz);
 						}
 						resolved_var = variable_info{
-							.symbol_name = *name,
+							.symbol_name =
+								*resolved_symbol_name,
 							.ptr = dptr,
 							.size = sz,
 							.ptx = nullptr,
@@ -1448,6 +1462,100 @@ void nv_attach_impl::mirror_cuda_memcpy_to_symbol(
 		SPDLOG_WARN(
 			"mirror_cuda_memcpy_to_symbol: failed to copy symbol {} (err={})",
 			var_info.symbol_name, (int)status);
+	} else {
+		SPDLOG_DEBUG(
+			"mirror_cuda_memcpy_to_symbol: copied {} byte(s) to patched symbol {}",
+			bytes_to_copy, var_info.symbol_name);
+	}
+}
+
+void nv_attach_impl::cache_symbol_write(const std::string &symbol_name,
+					const void *src, size_t count,
+					size_t offset, cudaMemcpyKind kind)
+{
+	if (symbol_name.empty() || src == nullptr || count == 0)
+		return;
+
+	std::vector<uint8_t> host_bytes(count);
+	switch (kind) {
+	case cudaMemcpyHostToDevice:
+	case cudaMemcpyDefault:
+		std::memcpy(host_bytes.data(), src, count);
+		break;
+	case cudaMemcpyDeviceToDevice: {
+		auto device_src = static_cast<CUdeviceptr>(
+			reinterpret_cast<uintptr_t>(src));
+		if (auto status = cuMemcpyDtoH(host_bytes.data(), device_src,
+					       count);
+		    status != CUDA_SUCCESS) {
+			SPDLOG_DEBUG(
+				"cache_symbol_write: failed to snapshot device source for symbol {} (err={})",
+				symbol_name, (int)status);
+			return;
+		}
+		break;
+	}
+	default:
+		SPDLOG_DEBUG(
+			"cache_symbol_write: unsupported memcpy kind {} for symbol {}",
+			(int)kind, symbol_name);
+		return;
+	}
+
+	std::lock_guard<std::mutex> guard(cached_symbol_state_mutex);
+	auto &state = cached_symbol_state_by_name[symbol_name];
+	const size_t required_size = offset + count;
+	if (state.size() < required_size)
+		state.resize(required_size);
+	std::memcpy(state.data() + offset, host_bytes.data(), count);
+	SPDLOG_DEBUG(
+		"cache_symbol_write: stored {} byte(s) for symbol {} at offset {}",
+		count, symbol_name, offset);
+}
+
+void nv_attach_impl::replay_cached_symbol_writes_to_module(CUmodule module)
+{
+	if (module == nullptr)
+		return;
+
+	std::vector<std::pair<std::string, std::vector<uint8_t>>> snapshot;
+	{
+		std::lock_guard<std::mutex> guard(cached_symbol_state_mutex);
+		snapshot.reserve(cached_symbol_state_by_name.size());
+		for (const auto &[name, state] : cached_symbol_state_by_name) {
+			snapshot.emplace_back(name, state);
+		}
+	}
+
+	for (const auto &[symbol_name, state] : snapshot) {
+		if (state.empty())
+			continue;
+		CUdeviceptr dptr = 0;
+		size_t symbol_size = 0;
+		if (auto err = cuModuleGetGlobal(&dptr, &symbol_size, module,
+						 symbol_name.c_str());
+		    err != CUDA_SUCCESS) {
+			continue;
+		}
+		{
+			std::lock_guard<std::mutex> guard(
+				patched_global_cache_mutex);
+			patched_global_by_name[symbol_name] =
+				std::make_pair(dptr, symbol_size);
+		}
+		const size_t limit = std::min(symbol_size, state.size());
+		if (limit == 0)
+			continue;
+		if (auto status = cuMemcpyHtoD(dptr, state.data(), limit);
+		    status != CUDA_SUCCESS) {
+			SPDLOG_WARN(
+				"replay_cached_symbol_writes_to_module: failed to replay symbol {} (err={})",
+				symbol_name, (int)status);
+			continue;
+		}
+		SPDLOG_DEBUG(
+			"replay_cached_symbol_writes_to_module: replayed {} byte(s) of cached state for symbol {}",
+			limit, symbol_name);
 	}
 }
 
@@ -1586,6 +1694,11 @@ void nv_attach_impl::clear_patched_state_for_next_session()
 		}
 		{
 			std::lock_guard<std::mutex> g(
+				cached_symbol_state_mutex);
+			cached_symbol_state_by_name.clear();
+		}
+		{
+			std::lock_guard<std::mutex> g(
 				patched_global_cache_mutex);
 			patched_global_by_name.clear();
 		}
@@ -1630,14 +1743,25 @@ void nv_attach_impl::build_host_symbol_cache_once()
 	std::call_once(host_symbol_cache_once, [&]() {
 		std::lock_guard<std::mutex> guard(host_symbol_cache_mutex);
 		host_symbol_ranges.clear();
+		host_variable_ranges.clear();
 
 		auto modules = elf_introspect::list_loaded_modules();
 		for (const auto &mod : modules) {
-			auto syms = elf_introspect::read_function_symbols(mod);
-			for (auto &sym : syms) {
+			auto function_syms =
+				elf_introspect::read_function_symbols(mod);
+			for (auto &sym : function_syms) {
 				if (sym.name.empty() || sym.start == 0)
 					continue;
 				host_symbol_ranges.push_back(host_symbol_range{
+					.start = sym.start,
+					.end = sym.end,
+					.name = std::move(sym.name) });
+			}
+			auto object_syms = elf_introspect::read_object_symbols(mod);
+			for (auto &sym : object_syms) {
+				if (sym.name.empty() || sym.start == 0)
+					continue;
+				host_variable_ranges.push_back(host_symbol_range{
 					.start = sym.start,
 					.end = sym.end,
 					.name = std::move(sym.name) });
@@ -1647,12 +1771,41 @@ void nv_attach_impl::build_host_symbol_cache_once()
 			  [](const auto &a, const auto &b) {
 				  return a.start < b.start;
 			  });
-		if (!host_symbol_ranges.empty()) {
-			SPDLOG_INFO("nv_attach_impl: cached {} host symbols",
-				    host_symbol_ranges.size());
+		std::sort(host_variable_ranges.begin(), host_variable_ranges.end(),
+			  [](const auto &a, const auto &b) {
+				  return a.start < b.start;
+			  });
+		if (!host_symbol_ranges.empty() ||
+		    !host_variable_ranges.empty()) {
+			SPDLOG_INFO(
+				"nv_attach_impl: cached {} host function symbols and {} host variable symbols",
+				host_symbol_ranges.size(),
+				host_variable_ranges.size());
 		}
 	});
 }
+
+namespace
+{
+std::string normalize_cuda_variable_symbol(std::string_view symbol)
+{
+	if (symbol.size() <= 3 || symbol.rfind("_ZL", 0) != 0)
+		return std::string(symbol);
+
+	// __cudaRegisterVar uses the source spelling for TU-local globals
+	// like `d_N`, while the host ELF symbol is `_ZL3d_N`.
+	size_t pos = 3;
+	size_t len = 0;
+	while (pos < symbol.size() && symbol[pos] >= '0' &&
+	       symbol[pos] <= '9') {
+		len = len * 10 + static_cast<size_t>(symbol[pos] - '0');
+		pos++;
+	}
+	if (pos == 3 || pos + len > symbol.size())
+		return std::string(symbol);
+	return std::string(symbol.substr(pos, len));
+}
+} // namespace
 
 std::optional<std::string>
 nv_attach_impl::resolve_host_function_symbol(void *addr)
@@ -1682,7 +1835,6 @@ nv_attach_impl::resolve_host_function_symbol(void *addr)
 	std::lock_guard<std::mutex> guard(host_symbol_cache_mutex);
 	if (host_symbol_ranges.empty())
 		return std::nullopt;
-
 	const std::uintptr_t needle = (std::uintptr_t)addr;
 	auto it = std::upper_bound(
 		host_symbol_ranges.begin(), host_symbol_ranges.end(), needle,
@@ -1695,6 +1847,28 @@ nv_attach_impl::resolve_host_function_symbol(void *addr)
 			return std::nullopt;
 	}
 	return normalize_cuda_stub(it->name);
+}
+
+std::optional<std::string>
+nv_attach_impl::resolve_host_variable_symbol(void *addr)
+{
+	if (addr == nullptr)
+		return std::nullopt;
+	build_host_symbol_cache_once();
+	std::lock_guard<std::mutex> guard(host_symbol_cache_mutex);
+	const std::uintptr_t needle = (std::uintptr_t)addr;
+	if (host_variable_ranges.empty())
+		return std::nullopt;
+	auto it = std::upper_bound(
+		host_variable_ranges.begin(), host_variable_ranges.end(),
+		needle,
+		[](std::uintptr_t v, const auto &p) { return v < p.start; });
+	if (it == host_variable_ranges.begin())
+		return std::nullopt;
+	--it;
+	if (it->end > it->start && needle >= it->end)
+		return std::nullopt;
+	return normalize_cuda_variable_symbol(it->name);
 }
 
 void nv_attach_impl::prefill_patched_kernel_functions_from_loaded_fatbins()

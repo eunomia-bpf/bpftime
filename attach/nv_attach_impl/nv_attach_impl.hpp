@@ -208,7 +208,9 @@ public:
 		return late_bootstrap_done.load(std::memory_order_acquire);
 	}
 	std::optional<std::string> resolve_host_function_symbol(void *addr);
+	std::optional<std::string> resolve_host_variable_symbol(void *addr);
 	bool is_enabled() const noexcept;
+	void replay_cached_symbol_writes_to_module(CUmodule module);
 	std::vector<std::unique_ptr<fatbin_record>> fatbin_records;
 	fatbin_record *current_fatbin = nullptr;
 	std::map<void *, fatbin_record *> symbol_address_to_fatbin;
@@ -245,6 +247,9 @@ private:
 	void bootstrap_existing_fatbins();
 	void reset_late_bootstrap_state_for_next_attach();
 	void build_host_symbol_cache_once();
+	void cache_symbol_write(const std::string &symbol_name, const void *src,
+			       size_t count, size_t offset,
+			       cudaMemcpyKind kind);
 	void prefill_patched_kernel_functions_from_loaded_fatbins();
 	std::vector<std::string> collect_all_kernels_to_patch() const;
 
@@ -287,6 +292,13 @@ private:
 		std::string name;
 	};
 	std::vector<host_symbol_range> host_symbol_ranges;
+	std::vector<host_symbol_range> host_variable_ranges;
+
+	mutable std::mutex cached_symbol_state_mutex;
+	// TODO: Scope this cache per device if patched constants ever need to
+	// diverge across devices.
+	std::unordered_map<std::string, std::vector<uint8_t>>
+		cached_symbol_state_by_name;
 
 	mutable std::mutex patched_global_cache_mutex;
 	std::unordered_map<std::string, std::pair<CUdeviceptr, size_t>>

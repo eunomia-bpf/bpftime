@@ -30,5 +30,6 @@ std::vector<const __fatBinC_Wrapper_t *>
 scan_fatbin_wrappers(const void *section_addr, std::size_t section_size);
 
 std::vector<symbol_range> read_function_symbols(const loaded_module &mod);
+std::vector<symbol_range> read_object_symbols(const loaded_module &mod);
 
 } // namespace bpftime::attach::elf_introspect

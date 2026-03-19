@@ -385,6 +385,12 @@ static void example_listener_on_enter(GumInvocationListener *listener,
 				gum_invocation_context_get_nth_argument(gum_ctx,
 									5);
 		}
+		SPDLOG_DEBUG(
+			"Intercepted {} symbol={:x} count={} offset={} kind={} stream={:x}",
+			async ? "cudaMemcpyToSymbolAsync" :
+				"cudaMemcpyToSymbol",
+			(uintptr_t)symbol, count, offset, (int)kind,
+			(uintptr_t)stream);
 		context->impl->mirror_cuda_memcpy_to_symbol(
 			symbol, src, count, offset, kind, stream, async);
 	}
@@ -727,9 +733,11 @@ static cudaError_t mirror_cuda_memcpy_from_symbol(
 
 		// Late attach fallback: resolve host symbol name and read from
 		// a patched module global if present.
-		if (auto name =
-			    impl->resolve_host_function_symbol((void *)symbol);
-		    name) {
+		auto name = impl->resolve_host_variable_symbol((void *)symbol);
+		if (!name) {
+			name = impl->resolve_host_function_symbol((void *)symbol);
+		}
+		if (name) {
 			for (const auto &rec_uptr : impl->fatbin_records) {
 				auto *rec = rec_uptr.get();
 				if (rec == nullptr)
