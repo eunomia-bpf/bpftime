@@ -102,24 +102,3 @@ Relevant logs from this run:
 3. The same unsafe program is rejected by the GPU verifier in `STRICT` mode for the intended SIMT-specific reason: non-warp-uniform control flow.
 
 This is the core safety claim for RQ4: the GPU verifier catches a class of unsafe programs that would otherwise reach the live CUDA attach path.
-
-## Current Runtime Bug
-
-The strict rejection path is not fail-closed yet.
-
-After rejecting the unsafe program, the runtime still continues far enough to hit:
-
-```text
-Failed to instantiate handler 19
-what():  shared_mem_ptr is not initialized before loading PTX
-```
-
-The client exits with `134` (`Aborted`). That does **not** invalidate the safety result, because the unsafe program was already rejected before injection, but it is an important runtime bug:
-
-- intended behavior: stop cleanly after strict verifier rejection
-- current behavior: reject, then continue into later CUDA attach code and abort
-
-For a paper/demo write-up, the right interpretation is:
-
-- verifier behavior: correct
-- runtime error handling after verifier rejection: currently incorrect

@@ -30,6 +30,7 @@ static ebpf_verifier_options_t verifier_options = {
 	.print_line_info = true,
 	.allow_division_by_zero = false,
 	.setup_constraints = false,
+	.dump_btf_types_json = false,
 };
 
 namespace bpftime

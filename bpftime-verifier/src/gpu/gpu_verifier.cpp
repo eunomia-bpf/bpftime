@@ -32,6 +32,7 @@ ebpf_verifier_options_t gpu_verifier_options = {
 	.print_line_info = true,
 	.allow_division_by_zero = false,
 	.setup_constraints = false,
+	.dump_btf_types_json = false,
 };
 
 constexpr std::array<int32_t, 6> PREVAIL_STANDARD_HELPERS = {
@@ -486,7 +487,7 @@ GpuVerifyResult verify_gpu_program(const ebpf_inst *instructions,
 
 	const auto simt_start = Clock::now();
 	const auto uniformity =
-		analyze_uniformity(instructions, num_instructions);
+		analyze_uniformity(instructions, num_instructions, maps);
 	result.final_reg_uniformity = final_uniformity(uniformity);
 	if (!uniformity.success) {
 		result.error_message = uniformity.error_message;

@@ -146,6 +146,13 @@ void reset_verifier_state(std::initializer_list<int32_t> helpers = {},
 	set_map_descriptors(maps);
 }
 
+UniformityAnalysisResult
+analyze_program_uniformity(const std::vector<ebpf_inst> &program,
+			   const std::map<int, BpftimeMapDescriptor> &maps = {})
+{
+	return analyze_uniformity(program.data(), program.size(), maps);
+}
+
 BpftimeHelperProrotype make_helper_prototype(
 	const char *name, bpftime_return_type_t return_type,
 	std::initializer_list<bpftime_argument_type_t> argument_types)
@@ -372,8 +379,7 @@ TEST_CASE("G5 helper metadata drives GPU SIMT behavior", "[gpu][stress][g5]")
 			make_exit(),
 		};
 
-		const auto result =
-			analyze_uniformity(program.data(), program.size());
+		const auto result = analyze_program_uniformity(program);
 		REQUIRE(result.success);
 		REQUIRE(result.states.size() == program.size());
 		REQUIRE(result.states[1].regs[0] == Uniformity::VARYING);
@@ -394,8 +400,7 @@ TEST_CASE("G5 helper metadata drives GPU SIMT behavior", "[gpu][stress][g5]")
 			make_exit(),
 		};
 
-		const auto uniformity =
-			analyze_uniformity(program.data(), program.size());
+		const auto uniformity = analyze_program_uniformity(program);
 		REQUIRE(uniformity.success);
 
 		const auto safety = check_simt_safety(
@@ -424,8 +429,7 @@ TEST_CASE("G5 helper metadata drives GPU SIMT behavior", "[gpu][stress][g5]")
 			make_exit(),
 		};
 
-		const auto result =
-			analyze_uniformity(program.data(), program.size());
+		const auto result = analyze_program_uniformity(program);
 		REQUIRE(result.success);
 		REQUIRE(result.states[3].regs[0] == Uniformity::UNIFORM);
 	}
@@ -444,8 +448,7 @@ TEST_CASE("Dead code is excluded from SIMT safety checks",
 		};
 
 		reset_verifier_state({ 506 });
-		const auto uniformity =
-			analyze_uniformity(program.data(), program.size());
+		const auto uniformity = analyze_program_uniformity(program);
 		REQUIRE(uniformity.success);
 		REQUIRE(uniformity.reachable.size() == program.size());
 		REQUIRE(uniformity.reachable[0]);
@@ -473,8 +476,7 @@ TEST_CASE("Dead code is excluded from SIMT safety checks",
 		};
 
 		reset_verifier_state({ 505 });
-		const auto uniformity =
-			analyze_uniformity(program.data(), program.size());
+		const auto uniformity = analyze_program_uniformity(program);
 		REQUIRE(uniformity.success);
 		REQUIRE(uniformity.reachable.size() == program.size());
 		REQUIRE(uniformity.reachable[0]);
@@ -509,8 +511,7 @@ TEST_CASE(
 			make_ldxdw(2, 1, 0),   make_exit(),
 		};
 
-		const auto result =
-			analyze_uniformity(program.data(), program.size());
+		const auto result = analyze_program_uniformity(program);
 		REQUIRE(result.success);
 		REQUIRE(query_stack_uniformity(result.states[2], -8, 8) ==
 			Uniformity::VARYING);
@@ -526,8 +527,7 @@ TEST_CASE(
 			make_ldxdw(2, 1, 0),   make_exit(),
 		};
 
-		const auto result =
-			analyze_uniformity(program.data(), program.size());
+		const auto result = analyze_program_uniformity(program);
 		REQUIRE(result.success);
 		REQUIRE(query_stack_uniformity(result.states[2], -8, 8) ==
 			Uniformity::UNIFORM);
@@ -543,8 +543,7 @@ TEST_CASE(
 			make_call(505),	       make_exit(),
 		};
 
-		const auto result =
-			analyze_uniformity(program.data(), program.size());
+		const auto result = analyze_program_uniformity(program);
 		REQUIRE(result.success);
 		REQUIRE(query_stack_uniformity(result.states[5], -8, 8) ==
 			Uniformity::VARYING);
@@ -562,8 +561,7 @@ TEST_CASE(
 			make_exit(),
 		};
 
-		const auto result =
-			analyze_uniformity(program.data(), program.size());
+		const auto result = analyze_program_uniformity(program);
 		REQUIRE(result.success);
 		REQUIRE(query_stack_uniformity(result.states[7], -8, 8) ==
 			Uniformity::VARYING);
@@ -583,8 +581,7 @@ TEST_CASE(
 			make_call(503),	       make_exit(),
 		};
 
-		const auto result =
-			analyze_uniformity(program.data(), program.size());
+		const auto result = analyze_program_uniformity(program);
 		REQUIRE(result.success);
 		REQUIRE(query_stack_uniformity(result.states[5], -8, 8) ==
 			Uniformity::UNIFORM);
@@ -601,8 +598,7 @@ TEST_CASE(
 			make_exit(),
 		};
 
-		const auto result =
-			analyze_uniformity(program.data(), program.size());
+		const auto result = analyze_program_uniformity(program);
 		REQUIRE(result.success);
 		REQUIRE(query_stack_uniformity(result.states[5], -8, 8) ==
 			Uniformity::UNIFORM);
@@ -619,8 +615,7 @@ TEST_CASE(
 			make_mov64_imm(0, 1),  make_exit(),
 		};
 
-		const auto uniformity =
-			analyze_uniformity(program.data(), program.size());
+		const auto uniformity = analyze_program_uniformity(program);
 		REQUIRE(uniformity.success);
 
 		const auto safety = check_simt_safety(
@@ -668,8 +663,8 @@ TEST_CASE("G3 full-width key tracking covers map_lookup and map_update",
 		const auto program =
 			make_map_lookup_program_with_split_key(true);
 
-		const auto result =
-			analyze_uniformity(program.data(), program.size());
+		const auto result = analyze_program_uniformity(
+			program, make_test_map_descriptors(4));
 		REQUIRE(result.success);
 		REQUIRE(result.states.back().regs[0] == Uniformity::VARYING);
 	}
@@ -680,8 +675,8 @@ TEST_CASE("G3 full-width key tracking covers map_lookup and map_update",
 		const auto program =
 			make_map_lookup_program_with_split_key(false);
 
-		const auto result =
-			analyze_uniformity(program.data(), program.size());
+		const auto result = analyze_program_uniformity(
+			program, make_test_map_descriptors(4));
 		REQUIRE(result.success);
 		REQUIRE(result.states.back().regs[0] == Uniformity::UNIFORM);
 	}
@@ -691,8 +686,8 @@ TEST_CASE("G3 full-width key tracking covers map_lookup and map_update",
 		reset_verifier_state({ 1, 511 }, make_test_map_descriptors(4));
 		const auto program = make_map_lookup_value_load_program(true);
 
-		const auto result =
-			analyze_uniformity(program.data(), program.size());
+		const auto result = analyze_program_uniformity(
+			program, make_test_map_descriptors(4));
 		REQUIRE(result.success);
 		REQUIRE(result.states[program.size() - 1].regs[6] ==
 			Uniformity::VARYING);
@@ -703,8 +698,8 @@ TEST_CASE("G3 full-width key tracking covers map_lookup and map_update",
 		reset_verifier_state({ 1 }, make_test_map_descriptors(4));
 		const auto program = make_map_lookup_value_load_program(false);
 
-		const auto result =
-			analyze_uniformity(program.data(), program.size());
+		const auto result = analyze_program_uniformity(
+			program, make_test_map_descriptors(4));
 		REQUIRE(result.success);
 		REQUIRE(result.states[program.size() - 1].regs[6] ==
 			Uniformity::UNIFORM);
@@ -742,8 +737,7 @@ TEST_CASE("G3 full-width key tracking covers map_lookup and map_update",
 		const auto program =
 			make_map_update_program_with_split_key(true);
 
-		const auto uniformity =
-			analyze_uniformity(program.data(), program.size());
+		const auto uniformity = analyze_program_uniformity(program);
 		REQUIRE(uniformity.success);
 
 		const auto safety = check_simt_safety(
@@ -900,8 +894,7 @@ TEST_CASE("G2 context loads are uniform only for the unmodified context base",
 		};
 
 		reset_verifier_state();
-		const auto result =
-			analyze_uniformity(program.data(), program.size());
+		const auto result = analyze_program_uniformity(program);
 		REQUIRE(result.success);
 		REQUIRE(result.states[1].regs[0] == Uniformity::UNIFORM);
 	}
@@ -916,8 +909,7 @@ TEST_CASE("G2 context loads are uniform only for the unmodified context base",
 		};
 
 		reset_verifier_state();
-		const auto result =
-			analyze_uniformity(program.data(), program.size());
+		const auto result = analyze_program_uniformity(program);
 		REQUIRE(result.success);
 		REQUIRE(result.states[3].regs[0] == Uniformity::VARYING);
 	}

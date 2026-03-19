@@ -348,11 +348,6 @@ size_t contiguous_stack_region_width(const UniformityState &state,
 	return width;
 }
 
-std::map<int, BpftimeMapDescriptor> effective_map_descriptors()
-{
-	return bpftime::verifier::get_map_descriptors();
-}
-
 size_t key_access_width(const UniformityState &state,
 			const std::map<int, BpftimeMapDescriptor> &maps,
 			std::optional<int32_t> map_fd, uint8_t key_reg)
@@ -698,7 +693,8 @@ size_t infer_pointer_access_width(const UniformityState &state, uint8_t reg)
 }
 
 UniformityAnalysisResult analyze_uniformity(const ebpf_inst *instructions,
-					      size_t num_instructions)
+					      size_t num_instructions,
+					      const std::map<int, BpftimeMapDescriptor> &maps)
 {
 	UniformityAnalysisResult result;
 	result.states.resize(num_instructions);
@@ -716,7 +712,6 @@ UniformityAnalysisResult analyze_uniformity(const ebpf_inst *instructions,
 	std::vector<bool> has_state(num_instructions, false);
 	std::vector<bool> queued(num_instructions, false);
 	std::deque<size_t> worklist;
-	const auto maps = effective_map_descriptors();
 
 	result.states[0] = make_entry_state();
 	has_state[0] = true;

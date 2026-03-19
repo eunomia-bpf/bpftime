@@ -1,5 +1,7 @@
 #pragma once
 
+#include "bpftime-verifier.hpp"
+
 #include <array>
 #include <cstddef>
 #include <cstdint>
@@ -68,6 +70,7 @@ Uniformity query_pointer_uniformity(const UniformityState &state, uint8_t reg,
 size_t infer_pointer_access_width(const UniformityState &state, uint8_t reg);
 
 UniformityAnalysisResult analyze_uniformity(const ebpf_inst *instructions,
-					      size_t num_instructions);
+					      size_t num_instructions,
+					      const std::map<int, BpftimeMapDescriptor> &maps);
 
 } // namespace bpftime::verifier::gpu

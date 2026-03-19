@@ -90,6 +90,14 @@ void reset_verifier_state(std::initializer_list<int32_t> helpers = {})
 	set_map_descriptors(std::map<int, BpftimeMapDescriptor>{});
 }
 
+template <size_t N>
+UniformityAnalysisResult
+analyze_program_uniformity(const std::array<ebpf_inst, N> &program)
+{
+	static const std::map<int, BpftimeMapDescriptor> no_maps;
+	return analyze_uniformity(program.data(), program.size(), no_maps);
+}
+
 } // namespace
 
 TEST_CASE("Uniformity analysis classifies constants and GPU helpers",
@@ -103,8 +111,7 @@ TEST_CASE("Uniformity analysis classifies constants and GPU helpers",
 			make_exit(),
 		};
 
-		const auto result =
-			analyze_uniformity(program.data(), program.size());
+		const auto result = analyze_program_uniformity(program);
 		REQUIRE(result.success);
 		REQUIRE(result.states.size() == program.size());
 		REQUIRE(result.states[1].regs[0] == Uniformity::UNIFORM);
@@ -118,8 +125,7 @@ TEST_CASE("Uniformity analysis classifies constants and GPU helpers",
 			make_exit(),
 		};
 
-		const auto result =
-			analyze_uniformity(program.data(), program.size());
+		const auto result = analyze_program_uniformity(program);
 		REQUIRE(result.success);
 		REQUIRE(result.states[1].regs[0] == Uniformity::VARYING);
 	}
@@ -132,8 +138,7 @@ TEST_CASE("Uniformity analysis classifies constants and GPU helpers",
 			make_exit(),
 		};
 
-		const auto result =
-			analyze_uniformity(program.data(), program.size());
+		const auto result = analyze_program_uniformity(program);
 		REQUIRE(result.success);
 		REQUIRE(result.states[1].regs[0] == Uniformity::UNIFORM);
 	}
@@ -152,8 +157,7 @@ TEST_CASE("SIMT safety enforces uniform branches and helper restrictions",
 			make_exit(),
 		};
 
-		const auto uniformity =
-			analyze_uniformity(program.data(), program.size());
+		const auto uniformity = analyze_program_uniformity(program);
 		REQUIRE(uniformity.success);
 
 		const auto safety = check_simt_safety(
@@ -172,8 +176,7 @@ TEST_CASE("SIMT safety enforces uniform branches and helper restrictions",
 			make_exit(),
 		};
 
-		const auto uniformity =
-			analyze_uniformity(program.data(), program.size());
+		const auto uniformity = analyze_program_uniformity(program);
 		REQUIRE(uniformity.success);
 
 		const auto safety = check_simt_safety(
@@ -193,8 +196,7 @@ TEST_CASE("SIMT safety enforces uniform branches and helper restrictions",
 			make_exit(),
 		};
 
-		const auto uniformity =
-			analyze_uniformity(program.data(), program.size());
+		const auto uniformity = analyze_program_uniformity(program);
 		REQUIRE(uniformity.success);
 
 		const auto safety = check_simt_safety(
