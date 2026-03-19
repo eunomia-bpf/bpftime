@@ -622,7 +622,6 @@ nv_attach_impl::extract_ptxs(std::vector<uint8_t> &&data_vec)
 	SPDLOG_INFO("Got {} PTX files", all_ptx.size());
 	return all_ptx;
 }
-
 std::optional<std::map<std::string, std::tuple<std::string, bool>>>
 nv_attach_impl::hack_fatbin(std::map<std::string, std::string> all_ptx)
 {
@@ -637,7 +636,7 @@ nv_attach_impl::hack_fatbin(std::map<std::string, std::string> all_ptx)
 		boost::asio::post(pool, [this, original_ptx, file_name, &map_mutex, &ptx_out, &cache_mutex]() -> void {
 			auto current_ptx = original_ptx;
 			SPDLOG_INFO("Patching PTX: {}", file_name);
-			bool ptx_modified = false;
+			bool should_add_trampoline = false;
 			for (const auto &[_, hook_entry] : this->hook_entries) {
 				const auto &kernels = hook_entry.kernels;
 				for (const auto &kernel : kernels) {
@@ -666,36 +665,37 @@ nv_attach_impl::hack_fatbin(std::map<std::string, std::string> all_ptx)
 					nlohmann::json in;
 					ptxpass::runtime_request::to_json(in,
 									  req);
-					auto meta_json = in.dump();
-					SPDLOG_DEBUG("Input metadata: {}",
-						     meta_json);
-					std::string cache_key =
+					auto input_json = in.dump();
+					SPDLOG_DEBUG("Input: {}", input_json);
+					std::string sha256_string =
 						hook_entry.config
 							->pass_config.name;
-					cache_key.push_back(':');
-					cache_key += sha256(current_ptx.data(),
-							    current_ptx.size());
-					cache_key.push_back(':');
-					cache_key += sha256(meta_json.data(),
-							    meta_json.size());
+					sha256_string.push_back(':');
+					sha256_string += sha256(
+						current_ptx.data(),
+						current_ptx.size());
+					sha256_string.push_back(':');
+					sha256_string += sha256(
+						input_json.data(),
+						input_json.size());
 
 					ptxpass::runtime_response::RuntimeResponse
 						resp;
 
 					cache_mutex.lock();
 					if (auto itr = this->patch_cache.find(
-						    cache_key);
+						    sha256_string);
 					    itr != this->patch_cache.end()) {
 						SPDLOG_INFO(
 							"Patching request {} found in cache",
-							cache_key);
+							sha256_string);
 						resp = itr->second;
 						cache_mutex.unlock();
 					} else {
 						cache_mutex.unlock();
 						SPDLOG_INFO(
 							"Patching request {} not found in cache, patching..",
-							cache_key);
+							sha256_string);
 						size_t output_buffer_size =
 							current_ptx.size() * 4 +
 							(1 << 20);
@@ -710,8 +710,8 @@ nv_attach_impl::hack_fatbin(std::map<std::string, std::string> all_ptx)
 							hook_entry.config->process_input(
 								current_ptx.data(),
 								current_ptx.size(),
-								meta_json.c_str(),
-								meta_json.size(),
+								input_json.c_str(),
+								input_json.size(),
 								buf.data(),
 								buf.size());
 
@@ -734,33 +734,24 @@ nv_attach_impl::hack_fatbin(std::map<std::string, std::string> all_ptx)
 						std::lock_guard<std::mutex>
 							_cache_guard(
 								cache_mutex);
-						patch_cache[cache_key] =
+						patch_cache[sha256_string] =
 							resp;
 					}
 					if (resp.modified) {
-						if (resp.output_ptx.empty()) {
-							SPDLOG_ERROR(
-								"Pass {} returned modified=true with empty PTX for kernel {}",
-								hook_entry.config
-									->pass_config
-									.name,
-								kernel);
-							return;
-						}
 						current_ptx = resp.output_ptx;
-						ptx_modified = true;
+						should_add_trampoline = true;
 					}
 				}
 			}
-			if (ptx_modified) {
+			if (should_add_trampoline) {
 				current_ptx =
 					ptxpass::filter_out_version_headers_ptx(
 						wrap_ptx_with_trampoline(
 							current_ptx));
 			}
 			std::lock_guard<std::mutex> _guard(map_mutex);
-			ptx_out["patched." + file_name] =
-				std::make_tuple(current_ptx, ptx_modified);
+			ptx_out["patched." + file_name] = std::make_tuple(
+				current_ptx, should_add_trampoline);
 		});
 	}
 	pool.join();
