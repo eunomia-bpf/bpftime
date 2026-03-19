@@ -167,7 +167,7 @@ static void example_listener_on_enter(GumInvocationListener *listener,
 			std::chrono::duration_cast<std::chrono::milliseconds>(
 				std::chrono::steady_clock::now() - extract_start)
 				.count();
-		SPDLOG_INFO(
+		SPDLOG_DEBUG(
 			"GPU attach timing: fatbin extract took {} ms and yielded {} PTX files",
 			extract_elapsed, extracted_ptx.size());
 		SPDLOG_INFO("Patching PTXs");

@@ -466,7 +466,7 @@ void fatbin_record::try_loading_ptxs_for_device(class nv_attach_impl &impl,
 	SPDLOG_INFO(
 		"GPU attach timing: module load took {} ms for {} PTX files",
 		module_load_elapsed, modified_ptx.size());
-	SPDLOG_INFO("GPU attach timing: total fatbin attach took {} ms",
+	SPDLOG_DEBUG("GPU attach timing: total fatbin attach took {} ms",
 		    total_elapsed);
 	devices_loaded.insert(device_ordinal);
 	ptx_loaded = true;
