@@ -869,8 +869,8 @@ static void signal_handler(int sig)
 int main(int argc, const char **argv)
 {
 	spdlog::cfg::load_env_levels();
-	const auto agent_config = bpftime::construct_agent_config_from_env();
-	(void)agent_config;
+	const auto runtime_config = bpftime::construct_runtime_config_from_env();
+	(void)runtime_config;
 	signal(SIGINT, signal_handler);
 	signal(SIGTSTP, signal_handler);
 	argparse::ArgumentParser program(argv[0]);

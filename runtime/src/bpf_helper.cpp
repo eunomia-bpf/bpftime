@@ -594,8 +594,8 @@ uint64_t bpftime_tail_call(uint64_t ctx, uint64_t prog_array, uint64_t index)
 		const auto &handler = std::get<bpftime::bpf_prog_handler>(
 			bpftime::shm_holder.global_shared_memory.get_handler(
 				to_call_fd));
-		bpftime::agent_config config =
-			bpftime::bpftime_get_agent_config();
+		bpftime::runtime_config config =
+			bpftime::bpftime_get_runtime_config();
 		bpftime::bpftime_prog prog(handler.insns.data(),
 					   handler.insns.size(),
 					   handler.name.c_str());

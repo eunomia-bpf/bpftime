@@ -28,7 +28,7 @@ class bpftime_prog {
 	}
 	bpftime_prog(const ebpf_inst *insn, size_t insn_cnt, const char *name);
 	bpftime_prog(const ebpf_inst *insn, size_t insn_cnt, const char *name,
-		     agent_config config);
+		     runtime_config config);
 	~bpftime_prog();
 
 	// load the programs to userspace vm or compile the jit program

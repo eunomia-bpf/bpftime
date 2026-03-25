@@ -1116,7 +1116,7 @@ int bpf_map_handler::map_init(managed_shared_memory &memory)
 		return 0;
 	}
 	default:
-		if (bpftime_get_agent_config().allow_non_buildin_map_types) {
+		if (bpftime_get_runtime_config().allow_non_buildin_map_types) {
 			SPDLOG_INFO("non-builtin map type: {}", (int)type);
 			map_impl_ptr = nullptr;
 			auto func_ptr =

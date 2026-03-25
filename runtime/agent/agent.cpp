@@ -609,7 +609,7 @@ static int refresh_attach_session(const gchar *data)
 	ctx_holder.ctx.reset_instantiated_state();
 
 	int res =
-		ctx_holder.ctx.init_attach_ctx_from_handlers(bpftime_get_agent_config());
+		ctx_holder.ctx.init_attach_ctx_from_handlers(bpftime_get_runtime_config());
 	if (res != 0) {
 		SPDLOG_ERROR(
 			"agent_control: init_attach_ctx_from_handlers failed: {}",
@@ -652,7 +652,7 @@ static int refresh_attach_session(const gchar *data)
 					std::chrono::milliseconds(auto_refresh_ms));
 				try {
 					ctx_holder.ctx.init_attach_ctx_from_handlers(
-						bpftime_get_agent_config());
+						bpftime_get_runtime_config());
 				} catch (const std::exception &ex) {
 					SPDLOG_DEBUG(
 						"Auto-refresh: init_attach_ctx_from_handlers failed: {}",
@@ -827,7 +827,7 @@ extern "C" void bpftime_agent_main(const gchar *data, gboolean *stay_resident)
 				init_fail();
 				return;
 			}
-			auto &runtime_config = bpftime_get_agent_config();
+			auto &runtime_config = bpftime_get_runtime_config();
 			bpftime_set_logger(std::string(
 				runtime_config.get_logger_output_path()));
 			apply_injected_kv_overrides(data);
@@ -983,7 +983,7 @@ extern "C" void bpftime_agent_main(const gchar *data, gboolean *stay_resident)
 							try {
 								ctx_holder.ctx
 									.init_attach_ctx_from_handlers(
-										bpftime_get_agent_config());
+										bpftime_get_runtime_config());
 							} catch (const std::exception &ex) {
 								SPDLOG_DEBUG(
 									"Auto-refresh: init_attach_ctx_from_handlers failed: {}",

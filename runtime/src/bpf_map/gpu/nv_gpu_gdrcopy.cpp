@@ -147,7 +147,7 @@ std::mutex &get_mapping_state_mutex()
 
 bool gdrcopy_enabled_for_per_key_bytes(uint64_t per_key_bytes)
 {
-	const auto &config = bpftime::bpftime_get_agent_config();
+	const auto &config = bpftime::bpftime_get_runtime_config();
 	if (!config.enable_gpu_gdrcopy) {
 		return false;
 	}
