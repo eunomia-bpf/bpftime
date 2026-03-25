@@ -165,7 +165,7 @@ extern "C" void bpftime_agent_main(const gchar *data, gboolean *stay_resident)
 			     ex.what());
 		return;
 	}
-	auto &runtime_config = bpftime_get_agent_config();
+	auto &runtime_config = bpftime_get_runtime_config();
 	bpftime_set_logger(
 		std::string(runtime_config.get_logger_output_path()));
 	// Only agents injected through frida could be detached

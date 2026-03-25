@@ -83,7 +83,7 @@ syscall_context::syscall_context()
 	init_original_functions();
 	// FIXME: merge this into the runtime config
 	load_config_from_env();
-	auto runtime_config = bpftime::construct_agent_config_from_env();
+	auto runtime_config = bpftime::construct_runtime_config_from_env();
 	pthread_spin_init(&this->mocked_file_lock, 0);
 	SPDLOG_INFO("Init bpftime syscall mocking..");
 	SPDLOG_INFO("The log will be written to: {}",
@@ -494,7 +494,7 @@ long syscall_context::handle_sysbpf(int cmd, union bpf_attr *attr, size_t size)
 			}
 #ifdef ENABLE_BPFTIME_VERIFIER
 			auto verifier_mode =
-				bpftime_get_agent_config().verifier_mode;
+				bpftime_get_runtime_config().verifier_mode;
 			// Only do verification for tracepoint/uprobe/uretprobe
 			if (simple_section_name.has_value() &&
 			    verifier_mode != BPFTIME_NO_VERIFY) {

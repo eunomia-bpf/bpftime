@@ -50,7 +50,7 @@ enum bpftime_verifier_mode {
 
 // Configuration for the bpftime runtime
 // Initialize the configuration from the environment variables
-struct agent_config {
+struct runtime_config {
 	bool debug = false;
 	// Enable JIT?
 	bool jit_enabled = true;
@@ -84,7 +84,7 @@ struct agent_config {
 	// It can be a file path or "console".
 	// If it is "console", the logger will output to stderr
 
-	// Here it is a variant, since this object (agent_config) will be used
+	// Here it is a variant, since this object (runtime_config) will be used
 	// for both local and shared memory
 	char logger_output_path[LOG_PATH_MAX_LEN] = DEFAULT_LOGGER_OUTPUT_PATH;
 	char vm_name[VM_NAME_MAX_LEN] = DEFAULT_VM_NAME;
@@ -116,7 +116,7 @@ struct agent_config {
 
 // Get the bpftime configuration from the environment variables
 // If the shared memory is not int, this should be called first
-agent_config construct_agent_config_from_env() noexcept;
+runtime_config construct_runtime_config_from_env() noexcept;
 
 } // namespace bpftime
 

@@ -105,7 +105,7 @@ TEST_CASE("Test tail calling from userspace to kernel")
 		// call 0x0c
 		BPF_EMIT_CALL(0x0c), BPF_EXIT_INSN()
 	};
-	bpftime::agent_config config;
+	bpftime::runtime_config config;
 	config.set_vm_name("llvm");
 	bpftime_prog prog((const ebpf_inst *)user_insn, std::size(user_insn),
 			  "user_prog",std::move(config));

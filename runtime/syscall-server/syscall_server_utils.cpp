@@ -41,9 +41,9 @@ void start_up(syscall_context &ctx)
 {
 	std::call_once(g_startup_once, [&ctx]() {
 		SPDLOG_INFO("Starting syscall server..");
-		auto agent_config = construct_agent_config_from_env();
+		auto runtime_config = construct_runtime_config_from_env();
 		bpftime_set_logger(
-			std::string(agent_config.get_logger_output_path()));
+			std::string(runtime_config.get_logger_output_path()));
 		SPDLOG_INFO("Initialize syscall server");
 
 		bpftime_initialize_global_shm(
@@ -58,20 +58,20 @@ void start_up(syscall_context &ctx)
 	std::vector<int32_t> helper_ids;
 	std::map<int32_t, bpftime::verifier::BpftimeHelperProrotype>
 		non_kernel_helpers;
-	if (agent_config.enable_kernel_helper_group) {
+	if (runtime_config.enable_kernel_helper_group) {
 		for (auto x :
 		     bpftime_helper_group::get_kernel_utils_helper_group()
 			     .get_helper_ids()) {
 			helper_ids.push_back(x);
 		}
 	}
-	if (agent_config.enable_shm_maps_helper_group) {
+	if (runtime_config.enable_shm_maps_helper_group) {
 		for (auto x : bpftime_helper_group::get_shm_maps_helper_group()
 				      .get_helper_ids()) {
 			helper_ids.push_back(x);
 		}
 	}
-	if (agent_config.enable_ufunc_helper_group) {
+	if (runtime_config.enable_ufunc_helper_group) {
 		for (auto x : bpftime_helper_group::get_shm_maps_helper_group()
 				      .get_helper_ids()) {
 			helper_ids.push_back(x);
@@ -85,7 +85,7 @@ void start_up(syscall_context &ctx)
 	SPDLOG_INFO("Enabling {} helpers", helper_ids.size());
 	verifier::set_non_kernel_helpers(non_kernel_helpers);
 #endif
-		bpftime_set_agent_config(std::move(agent_config));
+		bpftime_set_runtime_config(std::move(runtime_config));
 		// Set a variable to indicate the program that it's controlled by
 		// bpftime
 		setenv("BPFTIME_USED", "1", 0);

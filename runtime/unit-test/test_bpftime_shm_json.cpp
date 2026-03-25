@@ -102,6 +102,6 @@ TEST_CASE("Test bpftime shm json import/export")
 		REQUIRE(shm2.is_map_fd(9));
 
 		bpftime::bpf_attach_ctx ctx;
-		ctx.init_attach_ctx_from_handlers(bpftime_get_agent_config());
+		ctx.init_attach_ctx_from_handlers(bpftime_get_runtime_config());
 	}
 }
