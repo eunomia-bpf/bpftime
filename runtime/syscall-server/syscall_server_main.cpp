@@ -21,6 +21,7 @@
 #include <unistd.h>
 #include <spdlog/cfg/env.h>
 #include <cstdarg>
+#include <sched.h>
 
 // Helper function for safe logging with pointer parameters
 inline const char* safe_ptr_str(const char* ptr) {
@@ -51,13 +52,24 @@ union syscall_server_ctx_union {
 	}
 };
 static syscall_server_ctx_union context;
+// 0 = uninitialized, 1 = in progress, 2 = done
 static int ctx_initialized = 0;
+static __thread int tls_initializing = 0;
 static void initialize_ctx()
 {
+	if (tls_initializing)
+		return;
 	int expected = 0;
 	if (__atomic_compare_exchange_n(&ctx_initialized, &expected, 1, false,
 					__ATOMIC_SEQ_CST, __ATOMIC_SEQ_CST)) {
+		tls_initializing = 1;
 		new (&context.ctx) syscall_context;
+		tls_initializing = 0;
+		__atomic_store_n(&ctx_initialized, 2, __ATOMIC_RELEASE);
+	} else {
+		while (__atomic_load_n(&ctx_initialized, __ATOMIC_ACQUIRE) != 2) {
+			sched_yield();
+		}
 	}
 }
 template <typename F, typename... Args>
