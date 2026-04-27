@@ -50,6 +50,18 @@ Your application does GPU inference while streaming data over a 100Gb NIC that s
 
 ## Building the Example
 
+`launchlate` depends on `libelf` to read the target CUDA binary's ELF symbol
+table and auto-resolve the host-side `cudaLaunchKernel` wrapper symbol. In
+practice this means you need the `libelf` development package installed so both
+`launchlate` and the bundled `libbpf` build can find `libelf.h` and link with
+`-lelf`.
+
+For example, on Debian/Ubuntu:
+
+```bash
+sudo apt-get install libelf-dev
+```
+
 ```bash
 # Navigate to the bpftime root directory
 cd bpftime
@@ -69,10 +81,13 @@ You need to start two processes:
 ### 1. Launch the eBPF Program (Server)
 
 ```bash
-BPFTIME_LOG_OUTPUT=console LD_PRELOAD=build/runtime/syscall-server/libbpftime-syscall-server.so  example/gpu/launchlate/launchlate
+BPFTIME_LOG_OUTPUT=console LD_PRELOAD=build/runtime/syscall-server/libbpftime-syscall-server.so  example/gpu/launchlate/launchlate example/gpu/launchlate/vec_add
 ```
 
-This process loads the eBPF program and waits for CUDA events.
+This process loads the eBPF program and waits for CUDA events. It reads the
+target binary's ELF symbol table and auto-resolves the defined
+`cudaLaunchKernel` wrapper symbol instead of relying on a hardcoded mangled
+name. If no argument is provided, it defaults to `./vec_add`.
 
 ### 2. Run the CUDA Application (Client)
 
