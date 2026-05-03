@@ -4,7 +4,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <clocale>
-#include <iostream>
+#include <spdlog/spdlog.h>
 #include <string>
 #include <vector>
 
@@ -50,8 +50,8 @@ int nv_attach_impl_compile(nv_attach_impl_ptx_compiler *ptr, const char *ptx,
 	const size_t len = strlen(ptx);
 	if (auto err = nvPTXCompilerCreate(&ptr->compiler, len, ptx);
 	    err != NVPTXCOMPILE_SUCCESS) {
-		std::cerr << "Unable to create compiler: " << (int)err
-			  << std::endl;
+		SPDLOG_ERROR("Unable to create compiler: {}",
+			     static_cast<int>(err));
 		size_t error_size = 0;
 		if (ptr->compiler &&
 		    nvPTXCompilerGetErrorLogSize(ptr->compiler, &error_size) ==
@@ -73,7 +73,7 @@ int nv_attach_impl_compile(nv_attach_impl_ptx_compiler *ptr, const char *ptx,
 
 	if (auto err = nvPTXCompilerCompile(ptr->compiler, arg_count, args);
 	    err != NVPTXCOMPILE_SUCCESS) {
-		std::cerr << "Unable to compile: " << (int)err << std::endl;
+		SPDLOG_ERROR("Unable to compile: {}", static_cast<int>(err));
 		size_t error_size = 0;
 		if (nvPTXCompilerGetErrorLogSize(ptr->compiler, &error_size) ==
 			    NVPTXCOMPILE_SUCCESS &&

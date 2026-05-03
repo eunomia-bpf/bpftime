@@ -4,6 +4,7 @@
  * All rights reserved.
  */
 #include "bpftime_config.hpp"
+#include "bpftime_helper_group.hpp"
 #include "bpftime_shm_internal.hpp"
 #if defined(BPFTIME_ENABLE_CUDA_ATTACH)
 #include "cuda.h"
