@@ -47,6 +47,12 @@ jobs:
           submodules: true
           fetch-depth: 0
 
+      - name: Initialize bpftool submodules (libbpf)
+        shell: bash
+        run: |
+          set -euo pipefail
+          git submodule update --init --recursive third_party/bpftool
+
       - name: Detect CUDA root and export env
         shell: bash
         run: |

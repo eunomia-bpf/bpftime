@@ -54,6 +54,10 @@ jobs:
           submodules: true
           fetch-depth: 0
 
+      - name: Initialize bpftool submodules (libbpf)
+        run: |
+          git submodule update --init --recursive third_party/bpftool
+
       - name: Check and install required tools
         run: |
           echo "Checking installed tools..."
