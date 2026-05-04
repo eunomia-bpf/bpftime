@@ -41,7 +41,7 @@ jobs:
       - name: Checkout repository (with submodules)
         uses: actions/checkout@v4
         with:
-          submodules: recursive
+          submodules: true
           fetch-depth: 0
 
       - name: Install GCC 13 and dependencies
