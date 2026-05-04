@@ -187,6 +187,15 @@ int nv_attach_impl::create_attach_with_ebpf_callback(
 		entry.config = matched;
 
 		hook_entries[id] = std::move(entry);
+		// Late bootstrap may have already patched/loaded modules for earlier
+		// hooks (e.g. kprobe). If a new hook is added afterwards (e.g.
+		// kretprobe), we must rerun bootstrap so the new pass is applied to
+		// existing fatbins as well.
+		if (late_bootstrap_done.load(std::memory_order_acquire)) {
+			SPDLOG_INFO(
+				"nv_attach_impl: new hook added after bootstrap; rerunning late bootstrap");
+			reset_late_bootstrap_state_for_next_attach();
+		}
 		this->map_basic_info = data.map_basic_info;
 		if (data.comm_shared_mem == 0) {
 			SPDLOG_ERROR(
