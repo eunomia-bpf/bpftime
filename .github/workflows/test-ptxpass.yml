@@ -58,6 +58,7 @@ jobs:
         run: |
           echo "Checking installed tools..."
           
+          sudo apt-get update
           sudo apt-get install -y build-essential llvm-dev llvm-18-dev cmake libboost-all-dev libzstd-dev pkg-config ninja-build
 
           # Check CUDA
