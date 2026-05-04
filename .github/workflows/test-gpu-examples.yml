@@ -51,6 +51,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          rm -rf third_party/bpftool/libbpf
           git submodule update --init --recursive third_party/bpftool
 
       - name: Detect CUDA root and export env

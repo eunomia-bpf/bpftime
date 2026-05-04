@@ -56,6 +56,7 @@ jobs:
 
       - name: Initialize bpftool submodules (libbpf)
         run: |
+          rm -rf third_party/bpftool/libbpf
           git submodule update --init --recursive third_party/bpftool
 
       - name: Check and install required tools
