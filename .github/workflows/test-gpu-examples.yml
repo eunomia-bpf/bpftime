@@ -340,6 +340,13 @@ jobs:
           submodules: true
           fetch-depth: 0
 
+      - name: Initialize bpftool submodules (libbpf)
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf third_party/bpftool/libbpf
+          git submodule update --init --recursive third_party/bpftool
+
       - name: Download bpftime build artifact
         uses: actions/download-artifact@v4
         with:
