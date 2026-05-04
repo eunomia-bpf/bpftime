@@ -50,10 +50,14 @@ patch_retprobe(const std::string &ptx, const std::string &kernel,
 	// PTX kernels can terminate with either 'ret;' or 'exit;'. Some
 	// variants are predicated, e.g. '@%p1 exit;'. Keep the predicate (if
 	// any) so the injected call matches the original control-flow.
-	static std::regex retpat(R"((\s*)(@[^\s]+\s+)?((?:ret|exit);))");
+	// Also handle labels on the same line, e.g. '$L0: ret;'. In that case,
+	// keep the label on the injected call so branches still land at the
+	// epilogue.
+	static std::regex retpat(
+		R"((\s*)((?:[\w$\.]+:\s*)?)(@[^\s]+\s+)?((?:ret|exit);))");
 	section = std::regex_replace(section, retpat,
-				     std::string("$1$2call ") + fname +
-					     ";\n$1$2$3");
+				     std::string("$1$2$3call ") + fname +
+					     ";\n$1$3$4");
 	out.replace(body.first, body.second - body.first, section);
 	out = func_ptx + "\n" + out;
 	ptxpass::log_transform_stats("kretprobe", 1, ptx.size(), out.size());
