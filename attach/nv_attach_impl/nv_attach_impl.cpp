@@ -69,23 +69,35 @@ using namespace attach;
 
 namespace bpftime::attach
 {
-static nv_attach_hook_state g_nv_attach_hook_state{};
+namespace
+{
+struct nv_attach_hook_state_holder {
+	std::mutex mutex;
+	std::optional<nv_attach_hook_state> state;
+};
+
+static nv_attach_hook_state_holder g_nv_attach_hook_state_holder{};
+} // namespace
 
 nv_attach_hook_state &nv_attach_get_hook_state()
 {
-	return g_nv_attach_hook_state;
+	std::lock_guard<std::mutex> guard(g_nv_attach_hook_state_holder.mutex);
+	if (!g_nv_attach_hook_state_holder.state.has_value()) {
+		g_nv_attach_hook_state_holder.state.emplace();
+	}
+	return *g_nv_attach_hook_state_holder.state;
 }
 
 void nv_attach_set_active_impl(nv_attach_impl *impl)
 {
-	g_nv_attach_hook_state.active_impl.store(impl,
-						 std::memory_order_release);
+	auto &state = nv_attach_get_hook_state();
+	state.active_impl.store(impl, std::memory_order_release);
 }
 
 nv_attach_impl *nv_attach_get_active_impl()
 {
-	return g_nv_attach_hook_state.active_impl.load(
-		std::memory_order_acquire);
+	auto &state = nv_attach_get_hook_state();
+	return state.active_impl.load(std::memory_order_acquire);
 }
 } // namespace bpftime::attach
 
@@ -296,7 +308,7 @@ nv_attach_impl::nv_attach_impl()
 	this->frida_listener = listener;
 
 	auto &hook_state = nv_attach_get_hook_state();
-	hook_state.replacements_installed.store(true,
+	hook_state.replacements_installed.store(false,
 						std::memory_order_release);
 
 	gum_interceptor_begin_transaction(interceptor);
@@ -482,6 +494,9 @@ nv_attach_impl::nv_attach_impl()
 	this->original_cuda_memcpy_from_symbol_async =
 		hook_state.orig_cuda_memcpy_from_symbol_async.load(
 			std::memory_order_acquire);
+
+	hook_state.replacements_installed.store(true,
+						std::memory_order_release);
 
 	static const char *ptx_pass_libraries = DEFAULT_PTX_PASS_EXECUTABLE;
 	std::vector<std::filesystem::path> pass_libraries;
