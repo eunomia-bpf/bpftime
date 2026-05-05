@@ -72,6 +72,7 @@ namespace bpftime::attach
 namespace
 {
 struct nv_attach_hook_state_holder {
+	std::once_flag init_once;
 	std::mutex mutex;
 	std::optional<nv_attach_hook_state> state;
 };
@@ -81,10 +82,11 @@ static nv_attach_hook_state_holder g_nv_attach_hook_state_holder{};
 
 nv_attach_hook_state &nv_attach_get_hook_state()
 {
-	std::lock_guard<std::mutex> guard(g_nv_attach_hook_state_holder.mutex);
-	if (!g_nv_attach_hook_state_holder.state.has_value()) {
+	std::call_once(g_nv_attach_hook_state_holder.init_once, []() {
+		std::lock_guard<std::mutex> guard(
+			g_nv_attach_hook_state_holder.mutex);
 		g_nv_attach_hook_state_holder.state.emplace();
-	}
+	});
 	return *g_nv_attach_hook_state_holder.state;
 }
 
