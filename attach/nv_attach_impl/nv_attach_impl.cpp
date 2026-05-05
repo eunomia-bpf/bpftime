@@ -230,6 +230,11 @@ cudaError_t cuda_runtime_function__cudaLaunchKernel(const void *func,
 cudaError_t cuda_runtime_function__cudaLaunchKernel_ptsz(
 	const void *func, dim3 gridDim, dim3 blockDim, void **args,
 	size_t sharedMem, cudaStream_t stream);
+CUresult cuda_driver_function__cuLaunchKernel(
+	CUfunction f, unsigned int gridDimX, unsigned int gridDimY,
+	unsigned int gridDimZ, unsigned int blockDimX, unsigned int blockDimY,
+	unsigned int blockDimZ, unsigned int sharedMemBytes, CUstream hStream,
+	void **kernelParams, void **extra);
 CUresult cuda_driver_function__cuGraphAddKernelNode_v1(
 	CUgraphNode *phGraphNode, CUgraph hGraph,
 	const CUgraphNode *dependencies, size_t numDependencies,
@@ -406,6 +411,9 @@ nv_attach_impl::nv_attach_impl()
 		"cudaLaunchKernel_ptsz",
 		(gpointer)&cuda_runtime_function__cudaLaunchKernel_ptsz,
 		hook_state.orig_cuda_launch_kernel_ptsz);
+	replace_hook_once("cuLaunchKernel",
+			  (gpointer)&cuda_driver_function__cuLaunchKernel,
+			  hook_state.orig_cu_launch_kernel);
 	replace_hook_once(
 		"cuGraphAddKernelNode",
 		(gpointer)&cuda_driver_function__cuGraphAddKernelNode_v1,
@@ -446,6 +454,9 @@ nv_attach_impl::nv_attach_impl()
 			std::memory_order_acquire);
 	this->original_cuda_launch_kernel_ptsz =
 		hook_state.orig_cuda_launch_kernel_ptsz.load(
+			std::memory_order_acquire);
+	this->original_cu_launch_kernel =
+		hook_state.orig_cu_launch_kernel.load(
 			std::memory_order_acquire);
 	this->original_cu_graph_add_kernel_node_v1 =
 		hook_state.orig_cu_graph_add_kernel_node_v1.load(

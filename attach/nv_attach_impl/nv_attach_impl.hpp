@@ -121,6 +121,7 @@ struct nv_attach_hook_state {
 	// Original function pointers captured by gum_interceptor_replace.
 	std::atomic<void *> orig_cuda_launch_kernel{ nullptr };
 	std::atomic<void *> orig_cuda_launch_kernel_ptsz{ nullptr };
+	std::atomic<void *> orig_cu_launch_kernel{ nullptr };
 	std::atomic<void *> orig_cu_graph_add_kernel_node_v1{ nullptr };
 	std::atomic<void *> orig_cu_graph_add_kernel_node_v2{ nullptr };
 	std::atomic<void *> orig_cu_graph_exec_kernel_node_set_params_v1{ nullptr };
@@ -217,6 +218,7 @@ class nv_attach_impl final : public base_attach_impl {
 	// recurse). Which is used for cudagraph hook.
 	void *original_cuda_launch_kernel = nullptr;
 	void *original_cuda_launch_kernel_ptsz = nullptr;
+	void *original_cu_launch_kernel = nullptr;
 	void *original_cu_graph_add_kernel_node_v1 = nullptr;
 	void *original_cu_graph_add_kernel_node_v2 = nullptr;
 	void *original_cu_graph_exec_kernel_node_set_params_v1 = nullptr;

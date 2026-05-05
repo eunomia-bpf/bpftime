@@ -71,6 +71,11 @@ using cuda_memcpy_from_symbol_fn_t = decltype(&cudaMemcpyFromSymbol);
 
 using cuda_launch_kernel_fn_t = cudaError_t (*)(const void *, dim3, dim3,
 						void **, size_t, cudaStream_t);
+using cu_launch_kernel_fn_t = CUresult (*)(CUfunction, unsigned int,
+					   unsigned int, unsigned int,
+					   unsigned int, unsigned int,
+					   unsigned int, unsigned int, CUstream,
+					   void **, void **);
 
 static bool cuda_graph_stream_is_capturing(cudaStream_t stream)
 {
@@ -472,6 +477,67 @@ cuda_graph_maybe_get_kernel_name_from_cukernel(CUkernel kernel)
 	if (name == nullptr)
 		return std::nullopt;
 	return std::string(name);
+}
+
+static CUresult cu_launch_kernel_common(
+	nv_attach_impl *impl, void *original_fn_ptr, CUfunction func,
+	unsigned int grid_dim_x, unsigned int grid_dim_y, unsigned int grid_dim_z,
+	unsigned int block_dim_x, unsigned int block_dim_y,
+	unsigned int block_dim_z, unsigned int shared_mem_bytes, CUstream stream,
+	void **kernel_params, void **extra)
+{
+	auto original = reinterpret_cast<cu_launch_kernel_fn_t>(original_fn_ptr);
+	if (!original) {
+		SPDLOG_ERROR("Original cuLaunchKernel function is null");
+		return CUDA_ERROR_UNKNOWN;
+	}
+	if (impl == nullptr)
+		return original(func, grid_dim_x, grid_dim_y, grid_dim_z,
+				block_dim_x, block_dim_y, block_dim_z,
+				shared_mem_bytes, stream, kernel_params, extra);
+	if (!impl->is_enabled())
+		return original(func, grid_dim_x, grid_dim_y, grid_dim_z,
+				block_dim_x, block_dim_y, block_dim_z,
+				shared_mem_bytes, stream, kernel_params, extra);
+	if (!impl->is_late_bootstrap_done())
+		return original(func, grid_dim_x, grid_dim_y, grid_dim_z,
+				block_dim_x, block_dim_y, block_dim_z,
+				shared_mem_bytes, stream, kernel_params, extra);
+
+	auto kernel_name = cuda_graph_maybe_get_kernel_name_from_cufunction(
+		*impl, func);
+	if (kernel_name) {
+		if (auto patched = impl->find_patched_kernel_function(*kernel_name);
+		    patched) {
+			func = *patched;
+			impl->record_patched_launch(
+				reinterpret_cast<cudaStream_t>(stream));
+		}
+	}
+	return original(func, grid_dim_x, grid_dim_y, grid_dim_z, block_dim_x,
+			block_dim_y, block_dim_z, shared_mem_bytes, stream,
+			kernel_params, extra);
+}
+
+extern "C" CUresult cuda_driver_function__cuLaunchKernel(
+	CUfunction func, unsigned int gridDimX, unsigned int gridDimY,
+	unsigned int gridDimZ, unsigned int blockDimX, unsigned int blockDimY,
+	unsigned int blockDimZ, unsigned int sharedMemBytes, CUstream hStream,
+	void **kernelParams, void **extra)
+{
+	auto gum_ctx = gum_interceptor_get_current_invocation();
+	auto *state = (nv_attach_hook_state *)
+		gum_invocation_context_get_replacement_data(gum_ctx);
+	if (state == nullptr) {
+		state = &nv_attach_get_hook_state();
+	}
+	auto *impl = state->active_impl.load(std::memory_order_acquire);
+	void *original =
+		state->orig_cu_launch_kernel.load(std::memory_order_acquire);
+	return cu_launch_kernel_common(impl, original, func, gridDimX, gridDimY,
+				       gridDimZ, blockDimX, blockDimY, blockDimZ,
+				       sharedMemBytes, hStream, kernelParams,
+				       extra);
 }
 
 extern "C" cudaError_t cuda_runtime_function__cudaLaunchKernel_ptsz(
