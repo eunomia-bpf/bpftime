@@ -259,7 +259,7 @@ jobs:
           - path: threadscheduling_dynamic_hook
             executable: ./threadscheduling
             victim: ./vec_add 4 64
-            expected_str: "SM Utilization Histogram"
+            expected_str: "mapping probe started"
             name: threadscheduling_dynamic_hook
             server_timeout: 20
             mode: dynamic-attach
