@@ -736,7 +736,10 @@ jobs:
             fi
             pushd "$EXAMPLE_DIR" >/dev/null
             echo "Launching target (no preload): $VICTIM_REL"
-            bash -lc "exec $VICTIM_REL" > "$ROOT_DIR/client.log" 2>&1 &
+            # Some CI environments restrict ptrace/Frida injection unless the
+            # target explicitly allows it (e.g., yama ptrace_scope=1). The
+            # dynamic_hook victim can opt-in via BPFTIME_ALLOW_PTRACE.
+            env BPFTIME_ALLOW_PTRACE=1 bash -lc "exec $VICTIM_REL" > "$ROOT_DIR/client.log" 2>&1 &
             VICTIM_PID=$!
             popd >/dev/null
             echo "Victim PID: $VICTIM_PID"
@@ -745,18 +748,9 @@ jobs:
               echo "Victim crashed early. Showing client.log tail:"; tail -n 200 client.log || true
               exit 1
             fi
-            SUDO=""
-            if [ "$(id -u)" -ne 0 ]; then
-              if command -v sudo >/dev/null 2>&1; then
-                SUDO="sudo"
-              else
-                echo "Not running as root and sudo not available (required for dynamic attach)."
-                exit 1
-              fi
-            fi
             pushd "$EXAMPLE_DIR" >/dev/null
             echo "Launching bpftime trace (late attach): $EXE_REL (target pid=$VICTIM_PID)"
-            $SUDO env BPFTIME_SHM_MEMORY_MB=$SHM_MB BPFTIME_LOG_OUTPUT=console \
+            env BPFTIME_SHM_MEMORY_MB=$SHM_MB BPFTIME_LOG_OUTPUT=console \
               "$BPFTIME_CLI" trace --pid "$VICTIM_PID" --auto-refresh-ms 500 \
               $EXE_REL > "$ROOT_DIR/server.log" 2>&1 &
             SERVER_PID=$!

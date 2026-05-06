@@ -8,6 +8,10 @@
 #include <cuda_runtime.h>
 #include <unistd.h>
 #include <vector>
+#ifdef __linux__
+#include <sys/prctl.h>
+#include <linux/prctl.h>
+#endif
 // A simple vector addition kernel
 // This kernel is instrumented by bpftime to collect sm/warp/lane mapping
 __global__
@@ -19,8 +23,21 @@ void vectorAdd(const float *A, const float *B, float *C, int N)
 	}
 }
 
+static void maybe_allow_ptrace_for_dynamic_attach()
+{
+#ifdef __linux__
+	const char *env = getenv("BPFTIME_ALLOW_PTRACE");
+	if (env == nullptr || env[0] == '\0')
+		return;
+	if (prctl(PR_SET_PTRACER, PR_SET_PTRACER_ANY) != 0) {
+		perror("prctl(PR_SET_PTRACER)");
+	}
+#endif
+}
+
 int main(int argc, char *argv[])
 {
+	maybe_allow_ptrace_for_dynamic_attach();
 	// Configuration - can be adjusted to test different thread distributions
 	int num_blocks = 4;      // Number of blocks
 	int threads_per_block = 64;  // Threads per block (should be multiple of 32 for warp alignment)
