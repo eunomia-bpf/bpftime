@@ -601,7 +601,14 @@ jobs:
             chmod +x build/tools/bpftimetool/bpftimetool || true
             ls -la build/tools/bpftimetool || true
           fi
+          if [ -f build/tools/cli/bpftime ] && [ ! -x build/tools/cli/bpftime ]; then
+            echo "bpftime exists but is not executable; fixing permissions..."
+            ls -la build/tools/cli || true
+            chmod +x build/tools/cli/bpftime || true
+            ls -la build/tools/cli || true
+          fi
           test -x build/tools/bpftimetool/bpftimetool
+          test -x build/tools/cli/bpftime
 
       - name: Build GPU example
         run: |
