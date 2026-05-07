@@ -112,6 +112,11 @@ sudo BPFTIME_LOG_OUTPUT=console ./build/tools/cli/bpftime trace --pidof vec_add 
 Notes:
 - Requires `BPFTIME_ENABLE_CUDA_ATTACH=1` build.
 - Requires privileges for process injection (typically `sudo`).
+- Some environments enforce ptrace restrictions (e.g., yama `ptrace_scope=1`).
+  `vec_add` can opt-in by setting `BPFTIME_ALLOW_PTRACE=1`, which calls
+  `prctl(PR_SET_PTRACER, PR_SET_PTRACER_ANY)` to allow injection. This makes the
+  target ptraceable by **any** process; only enable it in CI or otherwise
+  isolated environments.
 - `bpftime trace` will run the loader as the target process `uid/gid` (even if `bpftime` itself runs under `sudo`), to avoid shared-memory permission issues.
 - For dynamic attach, `bpftime trace` will run `cuobjdump --extract-ptx all /proc/<pid>/exe` before injection and pass that PTX directory to the injected agent (so the agent doesn't need to spawn `cuobjdump` inside the target process).
   - If `cuobjdump` isn't in `PATH`, set `BPFTIME_CUOBJDUMP=/path/to/cuobjdump` or `BPFTIME_CUDA_ROOT=/usr/local/cuda-XX.Y`.

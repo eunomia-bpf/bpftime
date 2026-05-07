@@ -6,7 +6,6 @@
 #include "linux/bpf.h"
 #include "spdlog/spdlog.h"
 #include <algorithm>
-#include <atomic>
 #include <cerrno>
 #include <cstdint>
 #include <cstdlib>
@@ -198,7 +197,7 @@ int nv_gpu_shared_array_map_impl::map_get_next_key(const void *key,
 	} else {
 		auto key_val = *(uint32_t *)key;
 		if (key_val >= max_entries) {
-			next_key = 0;
+			next_key_val = 0;
 			return 0;
 		}
 		if (key_val + 1 == max_entries) {
