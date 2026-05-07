@@ -432,7 +432,8 @@ static const char *get_global_shm_name_for_cli()
 }
 
 #if __linux__
-static void try_relax_global_shm_permissions_for_target()
+static void try_relax_global_shm_permissions_for_target(uid_t target_uid,
+							gid_t target_gid)
 {
 	// When running `bpftime trace` under sudo, an existing shm segment may have
 	// been created by root with restrictive permissions. The loader is usually
@@ -441,7 +442,40 @@ static void try_relax_global_shm_permissions_for_target()
 	// /dev/shm is the default backing store for POSIX shm on Linux.
 	// Best-effort: do not fail trace if this can't be adjusted.
 	std::string path = std::string("/dev/shm/") + get_global_shm_name_for_cli();
-	(void)::chmod(path.c_str(), 0666);
+	struct stat st {};
+	if (::stat(path.c_str(), &st) != 0) {
+		if (errno != ENOENT) {
+			spdlog::warn(
+				"trace: unable to stat shared memory {}: {}",
+				path, strerror(errno));
+		}
+		return;
+	}
+	bool ok = true;
+	if (st.st_uid != target_uid || st.st_gid != target_gid) {
+		if (::chown(path.c_str(), target_uid, target_gid) != 0) {
+			spdlog::warn(
+				"trace: unable to chown shared memory {} to uid={}, gid={}: {}",
+				path, (unsigned long)target_uid,
+				(unsigned long)target_gid, strerror(errno));
+			ok = false;
+		}
+	}
+	const mode_t desired_mode = (mode_t)(S_IRUSR | S_IWUSR);
+	if (((mode_t)st.st_mode & 0777) != desired_mode) {
+		if (::chmod(path.c_str(), desired_mode) != 0) {
+			spdlog::warn(
+				"trace: unable to chmod shared memory {} to {:o}: {}",
+				path, (unsigned int)desired_mode,
+				strerror(errno));
+			ok = false;
+		}
+	}
+	if (ok) {
+		spdlog::info(
+			"trace: adjusted shared memory ownership/permissions: {}",
+			path);
+	}
 }
 #endif
 
@@ -1034,7 +1068,8 @@ int main(int argc, const char **argv)
 					"trace: will run loader as target uid={}, gid={}",
 					(unsigned long)ug->first,
 					(unsigned long)ug->second);
-				try_relax_global_shm_permissions_for_target();
+				try_relax_global_shm_permissions_for_target(
+					ug->first, ug->second);
 			} else {
 				spdlog::warn(
 					"trace: unable to resolve target uid/gid; loader will run as root (may break shm permissions)");
