@@ -389,4 +389,12 @@ CUDAContext::CUDAContext(cuda::CommSharedMem *mem)
 }
 
 } // namespace cuda
+
+// Exposed so that __destruct_shm() can stop the watcher thread before
+// unmapping shared memory, regardless of atexit/fini_array ordering.
+void bpftime_stop_cuda_watcher_thread()
+{
+	stop_cuda_watcher_thread_at_exit();
+}
+
 } // namespace bpftime
