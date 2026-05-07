@@ -106,17 +106,17 @@ nv_attach_impl *nv_attach_get_active_impl()
 static std::vector<std::filesystem::path> split_by_colon(const std::string &str)
 {
 	std::vector<std::filesystem::path> result;
-
-	char *buffer = new char[str.length() + 1];
-	strcpy(buffer, str.c_str());
-
-	char *token = strtok(buffer, ":");
-	while (token != nullptr) {
-		result.push_back(token);
-		token = strtok(nullptr, ":");
+	std::string_view sv(str);
+	size_t pos = 0;
+	while (pos <= sv.size()) {
+		size_t end = sv.find(':', pos);
+		if (end == std::string_view::npos)
+			end = sv.size();
+		auto item = sv.substr(pos, end - pos);
+		if (!item.empty())
+			result.emplace_back(std::string(item));
+		pos = end + 1;
 	}
-
-	delete[] buffer;
 	return result;
 }
 #define CUDA_DRIVER_CHECK_NO_EXCEPTION(expr, message)                          \
@@ -1882,17 +1882,24 @@ void nv_attach_impl::bootstrap_existing_fatbins_once()
 	if (!late_bootstrap_once) {
 		late_bootstrap_once = std::make_unique<std::once_flag>();
 	}
-	std::call_once(*late_bootstrap_once, [&]() {
-		try {
+	bool ok = false;
+	try {
+		// If the bootstrap lambda throws, std::call_once will allow a
+		// subsequent retry. Do not swallow exceptions inside the lambda.
+		std::call_once(*late_bootstrap_once, [&]() {
 			ensure_cuda_context_for_current_thread();
 			build_host_symbol_cache_once();
 			bootstrap_existing_fatbins();
-		} catch (const std::exception &ex) {
-			SPDLOG_WARN("nv_attach_impl: late bootstrap failed: {}",
-				    ex.what());
-		}
-	});
-	late_bootstrap_done.store(true, std::memory_order_release);
+		});
+		ok = true;
+	} catch (const std::exception &ex) {
+		SPDLOG_WARN("nv_attach_impl: late bootstrap failed: {}", ex.what());
+	} catch (...) {
+		SPDLOG_WARN("nv_attach_impl: late bootstrap failed");
+	}
+	if (ok) {
+		late_bootstrap_done.store(true, std::memory_order_release);
+	}
 }
 
 void nv_attach_impl::reset_late_bootstrap_state_for_next_attach()
