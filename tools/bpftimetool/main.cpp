@@ -289,7 +289,14 @@ int main(int argc, char *argv[])
 				}
 				return priv_data;
 			});
-		ctx.init_attach_ctx_from_handlers(runtime_config);
+		const int init_err =
+			ctx.init_attach_ctx_from_handlers(runtime_config);
+		if (init_err < 0) {
+			SPDLOG_ERROR(
+				"Unable to initialize attach context: {}",
+				init_err);
+			return 1;
+		}
 		if (auto impl = ctx.find_nv_attach_impl(); impl) {
 			const int id = (*impl)->find_attach_entry_by_program_name(
 				argv[2]);

@@ -1,0 +1,50 @@
+[
+  {
+    "size": 16,
+    "total_time_us": 18.107,
+    "prevail_time_us": 0.0,
+    "simt_time_us": 17.172
+  },
+  {
+    "size": 32,
+    "total_time_us": 28.989,
+    "prevail_time_us": 0.0,
+    "simt_time_us": 28.09
+  },
+  {
+    "size": 64,
+    "total_time_us": 49.397,
+    "prevail_time_us": 0.0,
+    "simt_time_us": 48.546
+  },
+  {
+    "size": 128,
+    "total_time_us": 89.059,
+    "prevail_time_us": 0.0,
+    "simt_time_us": 87.999
+  },
+  {
+    "size": 256,
+    "total_time_us": 174.248,
+    "prevail_time_us": 0.0,
+    "simt_time_us": 173.165
+  },
+  {
+    "size": 512,
+    "total_time_us": 345.887,
+    "prevail_time_us": 0.0,
+    "simt_time_us": 344.748
+  },
+  {
+    "size": 1024,
+    "total_time_us": 639.467,
+    "prevail_time_us": 0.0,
+    "simt_time_us": 638.407
+  },
+  {
+    "size": 2048,
+    "total_time_us": 1284.763,
+    "prevail_time_us": 0.0,
+    "simt_time_us": 1283.665
+  }
+]

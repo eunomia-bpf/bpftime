@@ -10,6 +10,9 @@
 #include "ptx_compiler/ptx_compiler.hpp"
 // #include "spdlog/common.h"
 #include "spdlog/spdlog.h"
+#ifdef ENABLE_BPFTIME_VERIFIER
+#include <gpu_verifier.hpp>
+#endif
 #include <asm/unistd.h> // For architecture-specific syscall numbers
 #include <boost/asio/io_context.hpp>
 #include <boost/asio/post.hpp>
@@ -21,6 +24,7 @@
 #include <boost/process/pipe.hpp>
 #include <boost/process/start_dir.hpp>
 #include <chrono>
+#include <cerrno>
 #include <cstdlib>
 #include <cstring>
 #include <fstream>
@@ -40,6 +44,7 @@
 #include <stdexcept>
 #include <string>
 #include <sstream>
+#include <string_view>
 #include <sys/ptrace.h>
 #include <sys/wait.h>
 #include <sys/user.h>
@@ -50,6 +55,7 @@
 #include <variant>
 #include <vector>
 #include <boost/asio.hpp>
+#include <chrono>
 #include "ptxpass/core.hpp"
 #include "ptx_pass_config.h"
 using namespace bpftime;
@@ -70,6 +76,175 @@ static std::vector<std::filesystem::path> split_by_colon(const std::string &str)
 	delete[] buffer;
 	return result;
 }
+
+#ifdef ENABLE_BPFTIME_VERIFIER
+static bpftime::verifier::gpu::GpuVerifierConfig
+build_gpu_verifier_config(
+	const std::vector<bpftime::attach::MapBasicInfo> &map_basic_info)
+{
+	bpftime::verifier::gpu::GpuVerifierConfig config;
+	for (size_t fd = 0; fd < map_basic_info.size(); ++fd) {
+		const auto &map = map_basic_info[fd];
+		if (!map.enabled) {
+			continue;
+		}
+		config.map_descriptors.emplace(
+			static_cast<int>(fd),
+			bpftime::verifier::BpftimeMapDescriptor{
+				.original_fd = static_cast<int>(fd),
+				.type = static_cast<uint32_t>(map.map_type),
+				.key_size =
+					static_cast<unsigned int>(map.key_size),
+				.value_size =
+					static_cast<unsigned int>(map.value_size),
+				.max_entries = static_cast<unsigned int>(
+					map.max_entries),
+				.inner_map_fd = static_cast<unsigned int>(-1),
+			});
+	}
+	return config;
+}
+
+static bpftime::verifier::BpftimeHelperProrotype make_gpu_helper_prototype(
+	const char *name, bpftime::verifier::bpftime_return_type_t return_type,
+	std::initializer_list<bpftime::verifier::bpftime_argument_type_t>
+		argument_types)
+{
+	bpftime::verifier::BpftimeHelperProrotype prototype{};
+	prototype.name = name;
+	prototype.return_type = return_type;
+	for (size_t i = 0; i < 5; ++i) {
+		prototype.argument_type[i] =
+			bpftime::verifier::EBPF_ARGUMENT_TYPE_DONTCARE;
+	}
+
+	size_t index = 0;
+	for (const auto argument_type : argument_types) {
+		prototype.argument_type[index++] = argument_type;
+	}
+	return prototype;
+}
+
+static void configure_gpu_verifier_helpers()
+{
+	static const std::vector<int32_t> available_helpers = {
+		1,   2,   3,   6,   14,  25,  501, 502, 503,
+		504, 505, 506, 507, 508, 509, 510, 511,
+	};
+
+	static const std::map<int32_t, bpftime::verifier::BpftimeHelperProrotype>
+		gpu_non_kernel_helpers = {
+			{ 501,
+			  make_gpu_helper_prototype(
+				  "ebpf_puts",
+				  bpftime::verifier::
+					  EBPF_RETURN_TYPE_INTEGER,
+				  { bpftime::verifier::
+					    EBPF_ARGUMENT_TYPE_ANYTHING }) },
+			{ 502,
+			  make_gpu_helper_prototype(
+				  "bpf_get_globaltimer",
+				  bpftime::verifier::
+					  EBPF_RETURN_TYPE_INTEGER,
+				  {}) },
+			{ 503,
+			  make_gpu_helper_prototype(
+				  "bpf_get_block_idx",
+				  bpftime::verifier::
+					  EBPF_RETURN_TYPE_INTEGER,
+				  {
+					  bpftime::verifier::
+						  EBPF_ARGUMENT_TYPE_ANYTHING,
+					  bpftime::verifier::
+						  EBPF_ARGUMENT_TYPE_ANYTHING,
+					  bpftime::verifier::
+						  EBPF_ARGUMENT_TYPE_ANYTHING,
+				  }) },
+			{ 504,
+			  make_gpu_helper_prototype(
+				  "bpf_get_block_dim",
+				  bpftime::verifier::
+					  EBPF_RETURN_TYPE_INTEGER,
+				  {
+					  bpftime::verifier::
+						  EBPF_ARGUMENT_TYPE_ANYTHING,
+					  bpftime::verifier::
+						  EBPF_ARGUMENT_TYPE_ANYTHING,
+					  bpftime::verifier::
+						  EBPF_ARGUMENT_TYPE_ANYTHING,
+				  }) },
+			{ 505,
+			  make_gpu_helper_prototype(
+				  "bpf_get_thread_idx",
+				  bpftime::verifier::
+					  EBPF_RETURN_TYPE_INTEGER,
+				  {
+					  bpftime::verifier::
+						  EBPF_ARGUMENT_TYPE_ANYTHING,
+					  bpftime::verifier::
+						  EBPF_ARGUMENT_TYPE_ANYTHING,
+					  bpftime::verifier::
+						  EBPF_ARGUMENT_TYPE_ANYTHING,
+				  }) },
+			{ 506,
+			  make_gpu_helper_prototype(
+				  "bpf_gpu_membar",
+				  bpftime::verifier::
+					  EBPF_RETURN_TYPE_INTEGER,
+				  {}) },
+			{ 507,
+			  make_gpu_helper_prototype(
+				  "bpf_cuda_exit",
+				  bpftime::verifier::
+					  EBPF_RETURN_TYPE_INTEGER_OR_NO_RETURN_IF_SUCCEED,
+				  {}) },
+			{ 508,
+			  make_gpu_helper_prototype(
+				  "bpf_get_grid_dim",
+				  bpftime::verifier::
+					  EBPF_RETURN_TYPE_INTEGER,
+				  {
+					  bpftime::verifier::
+						  EBPF_ARGUMENT_TYPE_ANYTHING,
+					  bpftime::verifier::
+						  EBPF_ARGUMENT_TYPE_ANYTHING,
+					  bpftime::verifier::
+						  EBPF_ARGUMENT_TYPE_ANYTHING,
+				  }) },
+			{ 509,
+			  make_gpu_helper_prototype(
+				  "bpf_get_sm_id",
+				  bpftime::verifier::
+					  EBPF_RETURN_TYPE_INTEGER,
+				  {}) },
+			{ 510,
+			  make_gpu_helper_prototype(
+				  "bpf_get_warp_id",
+				  bpftime::verifier::
+					  EBPF_RETURN_TYPE_INTEGER,
+				  {}) },
+			{ 511,
+			  make_gpu_helper_prototype(
+				  "bpf_get_lane_id",
+				  bpftime::verifier::
+					  EBPF_RETURN_TYPE_INTEGER,
+				  {}) },
+		};
+
+	bpftime::verifier::set_available_helpers(available_helpers);
+	bpftime::verifier::set_non_kernel_helpers(gpu_non_kernel_helpers);
+}
+
+static std::string_view get_gpu_verifier_level()
+{
+	if (const char *level = std::getenv("BPFTIME_VERIFIER_LEVEL");
+	    level != nullptr) {
+		return level;
+	}
+	return {};
+}
+#endif
+
 #define CUDA_DRIVER_CHECK_NO_EXCEPTION(expr, message)                          \
 	do {                                                                   \
 		if (auto err = expr; err != CUDA_SUCCESS) {                    \
@@ -126,6 +301,47 @@ int nv_attach_impl::create_attach_with_ebpf_callback(
 		}
 	}
 	if (matched) {
+#ifdef ENABLE_BPFTIME_VERIFIER
+		const auto section_name =
+			data.program_name.empty() ? attach_point_name :
+						    data.program_name;
+		const auto verifier_level = get_gpu_verifier_level();
+		if (verifier_level != "NO_VERIFY") {
+			configure_gpu_verifier_helpers();
+			const auto verify_begin =
+				std::chrono::steady_clock::now();
+			auto verify_result =
+				bpftime::verifier::gpu::verify_gpu_program(
+					data.instructions.data(),
+					data.instructions.size(), section_name,
+					build_gpu_verifier_config(
+						data.map_basic_info));
+			const auto verify_elapsed_ms =
+				std::chrono::duration<double, std::milli>(
+					std::chrono::steady_clock::now() -
+					verify_begin)
+					.count();
+			SPDLOG_INFO(
+				"GPU verifier elapsed for {}: {:.3f} ms",
+				section_name, verify_elapsed_ms);
+			if (!verify_result.passed) {
+				SPDLOG_ERROR(
+					"GPU eBPF verification failed for {}: {}",
+					section_name,
+					verify_result.error_message);
+				if (verifier_level == "STRICT") {
+					return -EINVAL;
+				}
+				SPDLOG_WARN(
+					"Continuing despite GPU verification failure for {} (set BPFTIME_VERIFIER_LEVEL=STRICT to reject)",
+					section_name);
+			}
+		} else {
+			SPDLOG_INFO(
+				"Skipping GPU eBPF verification for {} because BPFTIME_VERIFIER_LEVEL=NO_VERIFY",
+				section_name);
+		}
+#endif
 		auto id = this->allocate_id();
 		nv_attach_entry entry;
 		entry.instuctions = data.instructions;

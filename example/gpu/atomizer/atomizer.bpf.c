@@ -35,43 +35,55 @@ int cuda__probe()
 	bpf_get_block_idx(&x, &y, &z);
 	u64 gx, gy, gz;
 	bpf_get_grid_dim(&gx, &gy, &gz);
-	
+
 	u64 block_num = gx * gy * gz;
 	u64 block_id = z * gy * gx + y * gx + x;
 
-	int partition_num = 0;
-	int partition_index = 0;
-	
+	u64 partition_num = 0;
+	u64 partition_index = 0;
+
 	u64 *partition_num_ptr = bpf_map_lookup_elem(&partition_num_map, &key);
 	if (partition_num_ptr) {
 		partition_num = *partition_num_ptr;
-		bpf_printk("partition_num is %u for block %lu\n", partition_num, block_id);
+		bpf_printk("partition_num is %lu for block %lu\n",
+			   partition_num, block_id);
 	} else {
-		bpf_printk("partition_num_ptr is null for block %lu\n", block_id);
+		bpf_printk("partition_num_ptr is null for block %lu\n",
+			   block_id);
 		return 0;
 	}
 
-	u64 *partition_idx_ptr = bpf_map_lookup_elem(&partition_index_map, &key);
+	u64 *partition_idx_ptr =
+		bpf_map_lookup_elem(&partition_index_map, &key);
 	if (partition_idx_ptr) {
 		partition_index = *partition_idx_ptr;
-		bpf_printk("partition_index is %u for block %lu\n", partition_index, block_id);
+		bpf_printk("partition_index is %lu for block %lu\n",
+			   partition_index, block_id);
 	} else {
-		bpf_printk("partition_idx_ptr is null for block %lu\n", block_id);
+		bpf_printk("partition_idx_ptr is null for block %lu\n",
+			   block_id);
+		return 0;
+	}
+
+	if (partition_num == 0) {
+		bpf_printk("partition_num is zero for block %lu\n", block_id);
 		return 0;
 	}
 
 	u64 L = (block_num * partition_index) / partition_num;
 	u64 H = (block_num * (partition_index + 1)) / partition_num;
 
-	if (block_id < L || block_id >= H)
-	{
-		bpf_printk("Exited _Z9vectorAddPKfS0_Pf block_id=%lu, L=%lu, H=%lu\n", block_id, L, H);
+	if (block_id < L || block_id >= H) {
+		bpf_printk(
+			"Exited _Z9vectorAddPKfS0_Pf block_id=%lu, L=%lu, H=%lu\n",
+			block_id, L, H);
 		bpf_cuda_exit();
 		// never reach here
 		return 0;
 	}
 
-	bpf_printk("Enter _Z9vectorAddPKfS0_Pf block_id=%lu, L=%lu, H=%lu\n", block_id, L, H);
+	bpf_printk("Enter _Z9vectorAddPKfS0_Pf block_id=%lu, L=%lu, H=%lu\n",
+		   block_id, L, H);
 
 	return 0;
 }

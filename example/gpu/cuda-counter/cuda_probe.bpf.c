@@ -38,7 +38,7 @@ int cuda__probe()
 {
 	u32 pid = bpf_get_current_pid_tgid() >> 32;
 	u64 ts = bpf_get_globaltimer();
-	u64 x, y, z;
+	u64 x = 0, y = 0, z = 0;
 	bpf_get_block_idx(&x, &y, &z);
 	// Store entry timestamp
 	bpf_map_update_elem(&start_ts, &x, &ts, BPF_ANY);
@@ -60,7 +60,7 @@ int cuda__probe()
 SEC("kretprobe/_Z9vectorAddPKfS0_Pf")
 int cuda__retprobe()
 {
-	u64 x, y, z;
+	u64 x = 0, y = 0, z = 0;
 	bpf_get_block_idx(&x, &y, &z);
 	u32 pid = bpf_get_current_pid_tgid() >> 32;
 	u64 *tsp = bpf_map_lookup_elem(&start_ts, &x);
@@ -72,8 +72,8 @@ int cuda__retprobe()
 		// Update total time
 		u64 *total = bpf_map_lookup_elem(&total_time_ns, &pid);
 		if (total) {
-			*total += delta;
-			bpf_map_update_elem(&total_time_ns, &pid, total,
+			u64 new_total = *total + delta;
+			bpf_map_update_elem(&total_time_ns, &pid, &new_total,
 					    BPF_EXIST);
 		} else {
 			bpf_map_update_elem(&total_time_ns, &pid, &delta,
