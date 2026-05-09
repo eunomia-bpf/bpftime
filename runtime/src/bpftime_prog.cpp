@@ -109,7 +109,7 @@ bpftime_prog::bpftime_prog(const struct ebpf_inst *insn, size_t insn_cnt,
 {
 	SPDLOG_DEBUG("Creating bpftime_prog with name {}", name);
 	insns.assign(insn, insn + insn_cnt);
-	const char *vm_name = bpftime::bpftime_get_agent_config().get_vm_name();
+	const char *vm_name = bpftime::bpftime_get_runtime_config().get_vm_name();
 	std::string vm_name_str = (std::string)vm_name;
 
 	if (vm_name_str == "llvm") {
@@ -128,15 +128,15 @@ bpftime_prog::bpftime_prog(const struct ebpf_inst *insn, size_t insn_cnt,
 }
 
 bpftime_prog::bpftime_prog(const struct ebpf_inst *insn, size_t insn_cnt,
-			   const char *name, agent_config config)
+			   const char *name, runtime_config config)
 	: name(name)
 {
 	// BPFtime_prog relies on the global shared memory being properly
 	// initialized to function.
 	SPDLOG_DEBUG("Creating bpftime_prog with name {}", name);
 	insns.assign(insn, insn + insn_cnt);
-	bpftime::bpftime_set_agent_config(std::move(config));
-	const char *vm_name = bpftime::bpftime_get_agent_config().get_vm_name();
+	bpftime::bpftime_set_runtime_config(std::move(config));
+	const char *vm_name = bpftime::bpftime_get_runtime_config().get_vm_name();
 	std::string vm_name_str = (std::string)vm_name;
 
 	if (vm_name_str == "llvm") {
