@@ -806,8 +806,7 @@ std::uint64_t bpftime_shm::read_stable_epoch_seq(int max_tries) const
 		if (a == b)
 			return a;
 	}
-	return __atomic_load_n(&epoch_state->epoch_seq, __ATOMIC_ACQUIRE) &
-	       ~1ULL;
+	return 0;
 }
 
 std::uint64_t bpftime_shm::begin_new_session()
