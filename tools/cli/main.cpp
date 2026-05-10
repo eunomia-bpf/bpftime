@@ -93,12 +93,6 @@ static std::atomic<pid_t> g_trace_loader_pid{ -1 };
 static void trace_sigint_handler(int)
 {
 	g_trace_interrupted.store(true, std::memory_order_release);
-	pid_t target = g_trace_target_pid.load(std::memory_order_acquire);
-	if (target > 0) {
-		// Ask the injected agent to detach early to avoid the target process
-		// continuing to use CUDA IPC allocations after the loader exits.
-		(void)kill(target, SIGUSR1);
-	}
 }
 #endif
 
@@ -210,11 +204,24 @@ static int spawn_command(const char *path, const std::vector<std::string> &argv,
 #if __linux__
 		if (drop_to && geteuid() == 0) {
 			auto [uid, gid] = *drop_to;
-			(void)setgroups(0, nullptr);
-			int ignored = 0;
-			ignored = setgid(gid);
-			ignored = setuid(uid);
-			(void)ignored;
+			if (setgroups(0, nullptr) != 0) {
+				spdlog::error(
+					"trace: setgroups() failed: {}",
+					strerror(errno));
+				_exit(1);
+			}
+			if (setgid(gid) != 0) {
+				spdlog::error("trace: setgid({}) failed: {}",
+					      (unsigned long)gid,
+					      strerror(errno));
+				_exit(1);
+			}
+			if (setuid(uid) != 0) {
+				spdlog::error("trace: setuid({}) failed: {}",
+					      (unsigned long)uid,
+					      strerror(errno));
+				_exit(1);
+			}
 		}
 #else
 		(void)drop_to;
@@ -345,6 +352,11 @@ static bool try_send_agent_ipc(int pid, const std::string &request,
 	}
 	::close(fd);
 	return true;
+}
+
+static bool ipc_response_is_ok(const std::string &resp)
+{
+	return resp.rfind("ok", 0) == 0;
 }
 #endif
 
@@ -643,42 +655,8 @@ static std::optional<std::filesystem::path> prepare_cuda_late_ptx_dir(
 		(void)ignored;
 	}
 
-	const auto sh_quote = [](const std::string &s) -> std::string {
-		std::string out;
-		out.reserve(s.size() + 8);
-		out.push_back('\'');
-		for (char c : s) {
-			if (c == '\'')
-				out += "'\"'\"'";
-			else
-				out.push_back(c);
-		}
-		out.push_back('\'');
-		return out;
-	};
-
 	const auto cuobjdump = resolve_cuobjdump_path();
 	auto run_extract = [&](const std::filesystem::path &target_exe) -> bool {
-		std::string cmd;
-		cmd.reserve(512);
-		cmd += "cd -- ";
-		cmd += sh_quote(dir.string());
-		cmd += " && ";
-		cmd += "LD_PRELOAD= ";
-		cmd += sh_quote(cuobjdump);
-		cmd += " --extract-ptx all ";
-		cmd += sh_quote(target_exe.string());
-
-		std::vector<std::string> arg_strs;
-		arg_strs.emplace_back("sh");
-		arg_strs.emplace_back("-c");
-		arg_strs.emplace_back(std::move(cmd));
-		std::vector<char *> argv;
-		argv.reserve(arg_strs.size() + 1);
-		for (auto &s : arg_strs)
-			argv.push_back(s.data());
-		argv.push_back(nullptr);
-
 		std::vector<std::string> env_strs;
 		for (char **p = ::environ; p && *p; ++p) {
 			if (strncmp(*p, "LD_PRELOAD=", 11) == 0)
@@ -692,10 +670,25 @@ static std::optional<std::filesystem::path> prepare_cuda_late_ptx_dir(
 			envp.push_back(s.data());
 		envp.push_back(nullptr);
 
-		pid_t child_pid = -1;
-		int rc = posix_spawnp(&child_pid, "/bin/sh", nullptr, nullptr,
-				      argv.data(), envp.data());
-		if (rc != 0)
+		std::vector<std::string> arg_strs;
+		arg_strs.emplace_back(cuobjdump);
+		arg_strs.emplace_back("--extract-ptx");
+		arg_strs.emplace_back("all");
+		arg_strs.emplace_back(target_exe.string());
+		std::vector<char *> argv;
+		argv.reserve(arg_strs.size() + 1);
+		for (auto &s : arg_strs)
+			argv.push_back(s.data());
+		argv.push_back(nullptr);
+
+		pid_t child_pid = fork();
+		if (child_pid == 0) {
+			if (chdir(dir.c_str()) != 0)
+				_exit(127);
+			execvpe(argv[0], argv.data(), envp.data());
+			_exit(errno == ENOENT ? 127 : 126);
+		}
+		if (child_pid < 0)
 			return false;
 		int status = 0;
 		if (waitpid(child_pid, &status, 0) < 0)
@@ -740,6 +733,10 @@ static std::optional<std::filesystem::path> prepare_cuda_late_ptx_dir(
 		}
 	}
 	(void)ok;
+	{
+		std::error_code ec;
+		std::filesystem::remove_all(dir, ec);
+	}
 	return std::nullopt;
 #else
 	(void)pid;
@@ -1079,6 +1076,17 @@ int main(int argc, const char **argv)
 
 		auto refresh_ms = trace_command.get<int>("auto-refresh-ms");
 		auto late_ptx_dir = prepare_cuda_late_ptx_dir(pid, drop_to);
+		struct late_ptx_dir_guard {
+			std::optional<std::filesystem::path> dir;
+			~late_ptx_dir_guard()
+			{
+				if (!dir)
+					return;
+				std::error_code ec;
+				std::filesystem::remove_all(*dir, ec);
+			}
+		};
+		late_ptx_dir_guard late_ptx_cleanup{ late_ptx_dir };
 		auto agent_path = resolve_library_path_or_exit(
 			install_path, AGENT_LIBRARY,
 			std::filesystem::path("runtime") / "agent" /
@@ -1140,7 +1148,9 @@ int main(int argc, const char **argv)
 		// Prefer IPC refresh if an agent is already present in the target
 		// process; fall back to Frida injection otherwise.
 		std::string req = "refresh " + agent_arg;
-		if (try_send_agent_ipc(pid, req)) {
+		std::string refresh_resp;
+		if (try_send_agent_ipc(pid, req, &refresh_resp) &&
+		    ipc_response_is_ok(refresh_resp)) {
 			spdlog::info("trace: refreshed existing agent via IPC");
 			agent_attached = true;
 		} else
@@ -1167,10 +1177,21 @@ int main(int argc, const char **argv)
 					if (!stop_requested) {
 						stop_requested = true;
 						if (agent_attached) {
-							(void)try_send_agent_ipc(
-								pid, "detach");
-							(void)kill(pid, SIGUSR1);
-							usleep(200 * 1000);
+							std::string detach_resp;
+							bool detached =
+								try_send_agent_ipc(
+									pid,
+									"detach",
+									&detach_resp) &&
+								ipc_response_is_ok(
+									detach_resp);
+							if (!detached) {
+								(void)kill(
+									pid,
+									SIGUSR1);
+								usleep(200 *
+								       1000);
+							}
 						}
 						(void)kill(child_pid, SIGINT);
 					}
@@ -1183,12 +1204,17 @@ int main(int argc, const char **argv)
 
 		// Whether trace exited normally or via Ctrl+C, request agent detach
 		// so the target stops using CUDA IPC resources.
-		if (agent_attached)
-			(void)try_send_agent_ipc(pid, "detach");
 		if (agent_attached) {
-			(void)kill(pid, SIGUSR1);
-			// Give detach a moment to run before we drop the loader.
-			usleep(200 * 1000);
+			std::string detach_resp;
+			bool detached =
+				try_send_agent_ipc(pid, "detach", &detach_resp) &&
+				ipc_response_is_ok(detach_resp);
+			if (!detached) {
+				(void)kill(pid, SIGUSR1);
+				// Give detach a moment to run before we drop the
+				// loader.
+				usleep(200 * 1000);
+			}
 		}
 		(void)sigaction(SIGINT, &old_int, nullptr);
 		(void)sigaction(SIGTERM, &old_term, nullptr);
