@@ -10,9 +10,7 @@
 #include "handler/link_handler.hpp"
 #include "handler/map_handler.hpp"
 #include "handler/prog_handler.hpp"
-#include <chrono>
 #include <cstring>
-#include <iterator>
 #include <string>
 #include <unistd.h>
 #include <cerrno>
@@ -32,7 +30,6 @@
 #include <variant>
 #include <sys/resource.h>
 #ifdef BPFTIME_ENABLE_CUDA_ATTACH
-#include "nv_attach_impl.hpp"
 #include <cuda.h>
 #include "nv_attach_private_data.hpp"
 #endif
@@ -74,77 +71,98 @@ int bpf_attach_ctx::init_attach_ctx_from_handlers(
 	const handler_manager *manager, const agent_config &config)
 {
 	std::lock_guard<std::mutex> lock(ctx_mutex);
-	// Detect shm session switch and rebind.
-	if (auto seq = shm_holder.global_shared_memory.read_stable_epoch_seq();
-	    seq != 0 && seq != last_epoch_seq_seen) {
-		if (last_epoch_seq_seen != 0) {
-			SPDLOG_INFO(
-				"bpftime: shm session changed (epoch_seq {} -> {}), rebinding",
-				(unsigned long long)last_epoch_seq_seen,
-				(unsigned long long)seq);
-		} else {
-			SPDLOG_INFO("bpftime: shm epoch_seq = {}",
-				    (unsigned long long)seq);
+	for (int attempt = 0; attempt < 3; attempt++) {
+		// Detect shm session switch and rebind.
+		if (auto seq = shm_holder.global_shared_memory
+				       .read_stable_epoch_seq();
+		    seq != 0 && seq != last_epoch_seq_seen) {
+			if (last_epoch_seq_seen != 0) {
+				SPDLOG_INFO(
+					"bpftime: shm session changed (epoch_seq {} -> {}), rebinding",
+					(unsigned long long)last_epoch_seq_seen,
+					(unsigned long long)seq);
+			} else {
+				SPDLOG_INFO("bpftime: shm epoch_seq = {}",
+					    (unsigned long long)seq);
+			}
+			destroy_all_attach_links_unlocked();
+			reset_instantiated_state_unlocked();
+			last_epoch_seq_seen = seq;
 		}
+		const std::uint64_t epoch_before = last_epoch_seq_seen;
+		for (int i = 0; i < (int)manager->size(); i++) {
+			if (manager->is_allocated(i)) {
+				std::set<int> stk;
+				if (int err = instantiate_handler_at(
+					    manager, i, stk, config, false);
+				    err < 0) {
+					SPDLOG_DEBUG(
+						"Failed to instantiate handler {}",
+						i);
+					// Unable to instantiate handler may not be an
+					// error. We can continue trying to instantiate
+					// other handlers.
+				}
+			}
+		}
+		SPDLOG_DEBUG(
+			"Main initializing for handlers done; initializing CUDA link handles");
+		/// Initialize nvda links at the last time, because they require
+		/// map_basic_info
+		for (int i = 0; i < (int)manager->size(); i++) {
+			if (manager->is_allocated(i)) {
+				std::set<int> stk;
+				if (int err = instantiate_handler_at(
+					    manager, i, stk, config, true);
+				    err < 0) {
+					SPDLOG_DEBUG(
+						"Failed to instantiate handler {}",
+						i);
+				}
+			}
+		}
+		const std::uint64_t epoch_after =
+			shm_holder.global_shared_memory.read_stable_epoch_seq();
+		if (epoch_after == 0 || epoch_after == epoch_before ||
+		    epoch_after == last_epoch_seq_seen) {
+			return 0;
+		}
+		SPDLOG_INFO(
+			"bpftime: shm epoch_seq changed during handler scan ({} -> {}), retrying",
+			(unsigned long long)epoch_before,
+			(unsigned long long)epoch_after);
 		destroy_all_attach_links_unlocked();
 		reset_instantiated_state_unlocked();
-		last_epoch_seq_seen = seq;
+		last_epoch_seq_seen = epoch_after;
 	}
-
-	for (int i = 0; i < (int)manager->size(); i++) {
-		if (manager->is_allocated(i)) {
-			std::set<int> stk;
-			if (int err = instantiate_handler_at(manager, i, stk,
-							     config, false);
-			    err < 0) {
-				SPDLOG_DEBUG(
-					"Failed to instantiate handler {}",
-					i);
-				// Unable to instantiate handler may not be an
-				// error. We can continue trying to instantiate
-				// other handlers.
-			}
-		}
-	}
-	SPDLOG_DEBUG(
-		"Main initializing for handlers done; initializing CUDA link handles");
-	/// Initialize nvda links at the last time, because they require
-	/// map_basic_info
-	for (int i = 0; i < (int)manager->size(); i++) {
-		if (manager->is_allocated(i)) {
-			std::set<int> stk;
-			if (int err = instantiate_handler_at(manager, i, stk,
-							     config, true);
-			    err < 0) {
-				SPDLOG_DEBUG(
-					"Failed to instantiate handler {}",
-					i);
-			}
-		}
-	}
-	return 0;
+	return -EAGAIN;
 }
 
 bpf_attach_ctx::~bpf_attach_ctx()
 {
 	SPDLOG_INFO("Destructor: bpf_attach_ctx");
 #ifdef BPFTIME_ENABLE_CUDA_ATTACH
-	cuda_ctx->cuda_watcher_should_stop->store(true);
-	if (cuda_watcher_thread.joinable())
-		cuda_watcher_thread.join();
+	if (cuda_ctx) {
+		cuda_ctx->cuda_watcher_should_stop->store(true);
+		if (cuda_watcher_thread.joinable())
+			cuda_watcher_thread.join();
+	}
 #endif
 }
 
 // create a probe context
 bpf_attach_ctx::bpf_attach_ctx()
-#ifdef BPFTIME_ENABLE_CUDA_ATTACH
-	: cuda_ctx(*cuda::create_cuda_context())
-#endif
 {
 	current_id = CURRENT_ID_OFFSET;
 	SPDLOG_INFO("bpf_attach_ctx constructed");
 #ifdef BPFTIME_ENABLE_CUDA_ATTACH
-	start_cuda_watcher_thread();
+	if (auto ctx = cuda::create_cuda_context(); ctx) {
+		cuda_ctx = std::move(*ctx);
+		start_cuda_watcher_thread();
+	} else {
+		SPDLOG_WARN(
+			"CUDA shared communication memory not available; CUDA attach will be disabled for this process");
+	}
 #endif
 }
 
@@ -295,6 +313,12 @@ int bpf_attach_ctx::instantiate_bpf_link_handler_at(
 		SPDLOG_INFO(
 			"Instantiating bpf link {} and the corresponding program {} is cuda program",
 			id, prog->prog_name());
+		if (!cuda_ctx) {
+			SPDLOG_WARN(
+				"CUDA context is not initialized; skipping CUDA attach for link {}",
+				id);
+			return -ENODEV;
+		}
 		if (handle_nv_attach_impl) {
 			SPDLOG_INFO(
 				"Handling link to CUDA program: {}, recording it..",
