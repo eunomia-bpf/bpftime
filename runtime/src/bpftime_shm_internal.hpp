@@ -30,6 +30,9 @@ struct CommSharedMem;
 namespace bpftime
 {
 
+static constexpr std::uint64_t BPFTIME_EPOCH_SEQ_UNSTABLE = UINT64_MAX;
+static constexpr std::uint64_t BPFTIME_EPOCH_SEQ_MISSING = UINT64_MAX - 1;
+
 // Shared-memory global tracing session version.
 // Use epoch_seq as a simple seqlock:
 // - odd  : server is updating/resetting handlers

@@ -793,7 +793,7 @@ bpftime_shm::bpftime_shm(const char *shm_name, shm_open_type type)
 std::uint64_t bpftime_shm::read_stable_epoch_seq(int max_tries) const
 {
 	if (!epoch_state)
-		return 0;
+		return BPFTIME_EPOCH_SEQ_MISSING;
 	for (int i = 0; i < max_tries; i++) {
 		std::uint64_t a = __atomic_load_n(&epoch_state->epoch_seq,
 						  __ATOMIC_ACQUIRE);
@@ -807,7 +807,7 @@ std::uint64_t bpftime_shm::read_stable_epoch_seq(int max_tries) const
 		if (a == b)
 			return a;
 	}
-	return UINT64_MAX;
+	return BPFTIME_EPOCH_SEQ_UNSTABLE;
 }
 
 std::uint64_t bpftime_shm::begin_new_session()

@@ -73,14 +73,19 @@ int bpf_attach_ctx::init_attach_ctx_from_handlers(
 	std::lock_guard<std::mutex> lock(ctx_mutex);
 	for (int attempt = 0; attempt < 3; attempt++) {
 		auto seq = shm_holder.global_shared_memory.read_stable_epoch_seq();
-		if (seq == UINT64_MAX) {
+		if (seq == BPFTIME_EPOCH_SEQ_MISSING) {
+			SPDLOG_WARN(
+				"bpftime: shm epoch state missing; session tracking is disabled");
+			seq = 0;
+		}
+		if (seq == BPFTIME_EPOCH_SEQ_UNSTABLE) {
 			SPDLOG_INFO(
 				"bpftime: shm epoch_seq is unstable before handler scan; retrying");
 			usleep(50 * 1000);
 			continue;
 		}
 		// Detect shm session switch and rebind.
-		if (seq != 0 && seq != last_epoch_seq_seen) {
+		if (seq != last_epoch_seq_seen) {
 			if (last_epoch_seq_seen != 0) {
 				SPDLOG_INFO(
 					"bpftime: shm session changed (epoch_seq {} -> {}), rebinding",
@@ -128,7 +133,10 @@ int bpf_attach_ctx::init_attach_ctx_from_handlers(
 		}
 		const std::uint64_t epoch_after =
 			shm_holder.global_shared_memory.read_stable_epoch_seq();
-		if (epoch_after == UINT64_MAX) {
+		if (epoch_after == BPFTIME_EPOCH_SEQ_MISSING) {
+			return 0;
+		}
+		if (epoch_after == BPFTIME_EPOCH_SEQ_UNSTABLE) {
 			SPDLOG_INFO(
 				"bpftime: shm epoch_seq is unstable after handler scan; retrying");
 			destroy_all_attach_links_unlocked();

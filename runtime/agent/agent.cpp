@@ -103,8 +103,8 @@ bpf_attach_ctx &get_global_attach_ctx()
 }
 
 static void apply_injected_kv_overrides(const gchar *data);
-static bool refresh_attach_session(const gchar *data);
-static bool perform_detach();
+static int refresh_attach_session(const gchar *data);
+static int perform_detach();
 
 extern "C" __attribute__((visibility("default"))) void
 bpftime_agent_control(const gchar *data)
@@ -296,29 +296,48 @@ static void start_agent_ipc_server_once()
 				trim(req);
 				if (req.rfind("refresh ", 0) == 0) {
 					std::string arg = req.substr(strlen("refresh "));
-					bool ok = refresh_attach_session(arg.c_str());
-					if (ok) {
+					int rc = refresh_attach_session(arg.c_str());
+					if (rc == 0) {
 						(void)::send(cfd, "ok\n", 3,
 							     MSG_NOSIGNAL);
 					} else {
-						(void)::send(cfd, "err refresh\n",
-							     12, MSG_NOSIGNAL);
+						std::string out =
+							"err refresh " +
+							std::to_string(rc) +
+							"\n";
+						(void)::send(cfd, out.data(),
+							     out.size(),
+							     MSG_NOSIGNAL);
 					}
 				} else if (req == "detach") {
-					bool ok = perform_detach();
-					if (ok) {
+					int rc = perform_detach();
+					if (rc == 0) {
 						(void)::send(cfd, "ok\n", 3,
 							     MSG_NOSIGNAL);
 					} else {
-						(void)::send(cfd, "err detach\n",
-							     11, MSG_NOSIGNAL);
+						std::string out =
+							"err detach " +
+							std::to_string(rc) +
+							"\n";
+						(void)::send(cfd, out.data(),
+							     out.size(),
+							     MSG_NOSIGNAL);
 					}
 				} else if (req == "status") {
 					uint64_t epoch =
 						shm_holder.global_shared_memory
 							.read_stable_epoch_seq();
-					std::string out =
-						"epoch_seq=" + std::to_string(epoch) + "\n";
+					std::string out;
+					if (epoch == BPFTIME_EPOCH_SEQ_MISSING) {
+						out = "epoch_seq=missing\n";
+					} else if (epoch ==
+						   BPFTIME_EPOCH_SEQ_UNSTABLE) {
+						out = "epoch_seq=unstable\n";
+					} else {
+						out = "epoch_seq=" +
+						      std::to_string(epoch) +
+						      "\n";
+					}
 					(void)::send(cfd, out.data(), out.size(),
 						     MSG_NOSIGNAL);
 				} else {
@@ -343,12 +362,12 @@ static void start_agent_ipc_server_once()
 #endif
 }
 
-static bool perform_detach()
+static int perform_detach()
 {
 	std::lock_guard<std::mutex> detach_guard(detach_mutex);
 	if (!global_ctx_constructed.load(std::memory_order_acquire)) {
 		__atomic_store_n(&initialized, 0, __ATOMIC_SEQ_CST);
-		return true;
+		return 0;
 	}
 	SPDLOG_INFO("Detaching..");
 
@@ -372,7 +391,7 @@ static bool perform_detach()
 	ctx_holder.ctx.reset_instantiated_state();
 	SPDLOG_DEBUG("Detaching done");
 	bpftime_logger_flush();
-	return detach_err >= 0;
+	return detach_err < 0 ? detach_err : 0;
 }
 
 static void stop_auto_refresh_at_exit()
@@ -567,15 +586,15 @@ static bool parse_force_reinit(const gchar *data)
 	return false;
 }
 
-static bool refresh_attach_session(const gchar *data)
+static int refresh_attach_session(const gchar *data)
 {
 	if (__atomic_load_n(&initialized, __ATOMIC_SEQ_CST) != 1) {
 		SPDLOG_WARN("agent_control: agent not initialized");
-		return false;
+		return -EINVAL;
 	}
 	if (!global_ctx_constructed.load(std::memory_order_acquire)) {
 		SPDLOG_WARN("agent_control: global ctx not constructed");
-		return false;
+		return -EINVAL;
 	}
 
 	std::lock_guard<std::mutex> guard(detach_mutex);
@@ -595,7 +614,7 @@ static bool refresh_attach_session(const gchar *data)
 		SPDLOG_ERROR(
 			"agent_control: init_attach_ctx_from_handlers failed: {}",
 			res);
-		return false;
+		return res < 0 ? res : -EINVAL;
 	}
 
 	int auto_refresh_ms = parse_auto_refresh_ms(data);
@@ -646,7 +665,7 @@ static bool refresh_attach_session(const gchar *data)
 
 	SPDLOG_INFO("Attach successfully");
 	start_agent_ipc_server_once();
-	return true;
+	return 0;
 }
 
 static void apply_injected_kv_overrides(const gchar *data)

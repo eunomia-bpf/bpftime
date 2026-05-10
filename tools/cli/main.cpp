@@ -1193,6 +1193,13 @@ int main(int argc, const char **argv)
 									&detach_resp) &&
 								ipc_response_is_ok(
 									detach_resp);
+							if (!detached &&
+							    !detach_resp
+								     .empty()) {
+								spdlog::warn(
+									"trace: agent IPC detach failed: {}",
+									detach_resp);
+							}
 							if (!detached) {
 								(void)kill(
 									pid,
@@ -1217,6 +1224,11 @@ int main(int argc, const char **argv)
 			bool detached =
 				try_send_agent_ipc(pid, "detach", &detach_resp) &&
 				ipc_response_is_ok(detach_resp);
+			if (!detached && !detach_resp.empty()) {
+				spdlog::warn(
+					"trace: agent IPC detach failed: {}",
+					detach_resp);
+			}
 			if (!detached) {
 				(void)kill(pid, SIGUSR1);
 				// Give detach a moment to run before we drop the
