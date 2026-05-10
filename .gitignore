@@ -1,5 +1,9 @@
 [Bb]uild*/*
 [Dd]ocs/*
+!docs/reviews/
+!docs/reviews/**
+!Docs/reviews/
+!Docs/reviews/**
 CMakeCache.*
 CMakeFiles/*
 [Tt]esting/*
