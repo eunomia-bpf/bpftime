@@ -266,7 +266,7 @@ static int spawn_command(const char *path, const std::vector<std::string> &argv,
 		argv_arr.push_back(nullptr);
 		execvpe(path, (char *const *)argv_arr.data(),
 			(char *const *)env_arr.data());
-		std::exit(127);
+		_exit(127);
 	}
 	subprocess_pid = pid;
 	return pid;
@@ -648,11 +648,18 @@ static std::optional<std::filesystem::path> prepare_cuda_late_ptx_dir(
 		return std::nullopt;
 
 	std::filesystem::path dir(dir_c);
-	(void)chmod(dir.c_str(), 0755);
+	if (chmod(dir.c_str(), 0700) != 0) {
+		std::error_code ec;
+		std::filesystem::remove_all(dir, ec);
+		return std::nullopt;
+	}
 	if (geteuid() == 0 && target_uid_gid) {
-		int ignored = chown(dir.c_str(), target_uid_gid->first,
-				    target_uid_gid->second);
-		(void)ignored;
+		if (chown(dir.c_str(), target_uid_gid->first,
+			  target_uid_gid->second) != 0) {
+			std::error_code ec;
+			std::filesystem::remove_all(dir, ec);
+			return std::nullopt;
+		}
 	}
 
 	const auto cuobjdump = resolve_cuobjdump_path();
@@ -683,6 +690,7 @@ static std::optional<std::filesystem::path> prepare_cuda_late_ptx_dir(
 
 		pid_t child_pid = fork();
 		if (child_pid == 0) {
+			(void)umask(077);
 			if (chdir(dir.c_str()) != 0)
 				_exit(127);
 			execvpe(argv[0], argv.data(), envp.data());

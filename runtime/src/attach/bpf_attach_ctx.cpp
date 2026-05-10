@@ -123,8 +123,14 @@ int bpf_attach_ctx::init_attach_ctx_from_handlers(
 		}
 		const std::uint64_t epoch_after =
 			shm_holder.global_shared_memory.read_stable_epoch_seq();
-		if (epoch_after == 0 || epoch_after == epoch_before ||
-		    epoch_after == last_epoch_seq_seen) {
+		if (epoch_after == 0) {
+			SPDLOG_INFO(
+				"bpftime: shm epoch_seq is unstable after handler scan; retrying");
+			destroy_all_attach_links_unlocked();
+			reset_instantiated_state_unlocked();
+			continue;
+		}
+		if (epoch_after == epoch_before || epoch_after == last_epoch_seq_seen) {
 			return 0;
 		}
 		SPDLOG_INFO(

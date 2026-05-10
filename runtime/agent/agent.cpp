@@ -104,7 +104,7 @@ bpf_attach_ctx &get_global_attach_ctx()
 
 static void apply_injected_kv_overrides(const gchar *data);
 static bool refresh_attach_session(const gchar *data);
-static void perform_detach();
+static bool perform_detach();
 
 extern "C" __attribute__((visibility("default"))) void
 bpftime_agent_control(const gchar *data)
@@ -305,8 +305,14 @@ static void start_agent_ipc_server_once()
 							     12, MSG_NOSIGNAL);
 					}
 				} else if (req == "detach") {
-					perform_detach();
-					(void)::send(cfd, "ok\n", 3, MSG_NOSIGNAL);
+					bool ok = perform_detach();
+					if (ok) {
+						(void)::send(cfd, "ok\n", 3,
+							     MSG_NOSIGNAL);
+					} else {
+						(void)::send(cfd, "err detach\n",
+							     11, MSG_NOSIGNAL);
+					}
 				} else if (req == "status") {
 					uint64_t epoch =
 						shm_holder.global_shared_memory
@@ -337,12 +343,12 @@ static void start_agent_ipc_server_once()
 #endif
 }
 
-static void perform_detach()
+static bool perform_detach()
 {
 	std::lock_guard<std::mutex> detach_guard(detach_mutex);
 	if (!global_ctx_constructed.load(std::memory_order_acquire)) {
 		__atomic_store_n(&initialized, 0, __ATOMIC_SEQ_CST);
-		return;
+		return true;
 	}
 	SPDLOG_INFO("Detaching..");
 
@@ -366,6 +372,7 @@ static void perform_detach()
 	ctx_holder.ctx.reset_instantiated_state();
 	SPDLOG_DEBUG("Detaching done");
 	bpftime_logger_flush();
+	return detach_err >= 0;
 }
 
 static void stop_auto_refresh_at_exit()
