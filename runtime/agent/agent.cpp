@@ -5,8 +5,6 @@
 #include "frida_uprobe_attach_impl.hpp"
 
 #include "spdlog/common.h"
-#include "spdlog/sinks/stdout_color_sinks.h"
-#include "spdlog/sinks/stdout_sinks.h"
 #include "bpftime_logger.hpp"
 #include <chrono>
 #include <csignal>
@@ -22,7 +20,6 @@
 #include <mutex>
 #include <pthread.h>
 #include <random>
-#include <stdexcept>
 #include <string_view>
 #include <thread>
 #include <unistd.h>
@@ -271,12 +268,13 @@ static void start_agent_ipc_server_once()
 				struct ucred cred {};
 				socklen_t clen = sizeof(cred);
 				if (getsockopt(cfd, SOL_SOCKET, SO_PEERCRED, &cred,
-					       &clen) == 0) {
-					if (cred.uid != 0 &&
-					    (uid_t)cred.uid != geteuid()) {
-						::close(cfd);
-						continue;
-					}
+					       &clen) != 0) {
+					::close(cfd);
+					continue;
+				}
+				if (cred.uid != 0 && (uid_t)cred.uid != geteuid()) {
+					::close(cfd);
+					continue;
 				}
 				std::string req;
 				char buf[4096];
@@ -298,8 +296,14 @@ static void start_agent_ipc_server_once()
 				trim(req);
 				if (req.rfind("refresh ", 0) == 0) {
 					std::string arg = req.substr(strlen("refresh "));
-					(void)refresh_attach_session(arg.c_str());
-					(void)::send(cfd, "ok\n", 3, MSG_NOSIGNAL);
+					bool ok = refresh_attach_session(arg.c_str());
+					if (ok) {
+						(void)::send(cfd, "ok\n", 3,
+							     MSG_NOSIGNAL);
+					} else {
+						(void)::send(cfd, "err refresh\n",
+							     12, MSG_NOSIGNAL);
+					}
 				} else if (req == "detach") {
 					perform_detach();
 					(void)::send(cfd, "ok\n", 3, MSG_NOSIGNAL);
