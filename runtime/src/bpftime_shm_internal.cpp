@@ -14,6 +14,7 @@
 #include "spdlog/spdlog.h"
 #include <bpftime_shm_internal.hpp>
 #include <cerrno>
+#include <cstdint>
 #include <cstdio>
 #include <memory>
 #if __linux__
@@ -806,7 +807,7 @@ std::uint64_t bpftime_shm::read_stable_epoch_seq(int max_tries) const
 		if (a == b)
 			return a;
 	}
-	return 0;
+	return UINT64_MAX;
 }
 
 std::uint64_t bpftime_shm::begin_new_session()

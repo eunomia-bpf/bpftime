@@ -127,8 +127,9 @@ class bpftime_shm {
 	// Server-side: start a new session (epoch++) and clear handlers. Returns
 	// the new stable epoch_seq (even).
 	std::uint64_t begin_new_session();
-	// Agent/observer: best-effort read a stable epoch_seq (even). Returns 0 if
-	// the epoch object isn't available.
+	// Agent/observer: best-effort read a stable epoch_seq (even).
+	// Returns 0 if the epoch object isn't available.
+	// Returns UINT64_MAX if the epoch couldn't be stabilized within max_tries.
 	std::uint64_t read_stable_epoch_seq(int max_tries = 200) const;
 
 	const handler_variant &get_handler(int fd) const;
