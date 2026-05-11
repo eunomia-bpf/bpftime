@@ -44,7 +44,22 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          submodules: recursive
+          submodules: true
+          fetch-depth: 0
+
+      - name: Initialize bpftool submodules (libbpf)
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf third_party/bpftool/libbpf
+          git submodule update --init --recursive third_party/bpftool
+
+      - name: Initialize ubpf submodules (bpf_conformance)
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf third_party/ubpf/external/bpf_conformance
+          git submodule update --init --recursive third_party/ubpf
 
       - name: Detect CUDA root and export env
         shell: bash
@@ -189,7 +204,7 @@ jobs:
             -DBPFTIME_CUDA_ROOT="${BPFTIME_CUDA_ROOT:-/usr/local/cuda}" \
             -DLLVM_DIR="${LLVM_DIR}" \
             -G Ninja
-          cmake --build build --config Debug --target bpftime-agent bpftime-syscall-server bpftimetool bpftime_text_segment_transformer nv_attach_impl_ptx_compiler ptxpass_kprobe_entry ptxpass_kretprobe ptxpass_kprobe_memcapture -j"$(nproc)"
+          cmake --build build --config Debug --target bpftime-agent bpftime-syscall-server bpftime-cli-cpp bpftimetool bpftime_text_segment_transformer nv_attach_impl_ptx_compiler ptxpass_kprobe_entry ptxpass_kretprobe ptxpass_kprobe_memcapture -j"$(nproc)"
 
       - name: Upload bpftime build artifact
         uses: actions/upload-artifact@v4
@@ -200,6 +215,7 @@ jobs:
           path: |
             build/runtime/agent/libbpftime-agent.so
             build/runtime/syscall-server/libbpftime-syscall-server.so
+            build/tools/cli/bpftime
             build/tools/bpftimetool/bpftimetool
             build/attach/text_segment_transformer
             build/attach/nv_attach_impl
@@ -240,6 +256,13 @@ jobs:
             name: threadscheduling
             server_timeout: 15
             mode: two-process
+          - path: threadscheduling_dynamic_hook
+            executable: ./threadscheduling
+            victim: ./vec_add 4 64
+            expected_str: "mapping probe started"
+            name: threadscheduling_dynamic_hook
+            server_timeout: 20
+            mode: dynamic-attach
           - path: cudagraph
             executable: ./cuda_probe
             victim: ./vec_add_graph
@@ -322,7 +345,15 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          submodules: recursive
+          submodules: true
+          fetch-depth: 0
+
+      - name: Initialize bpftool submodules (libbpf)
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf third_party/bpftool/libbpf
+          git submodule update --init --recursive third_party/bpftool
 
       - name: Download bpftime build artifact
         uses: actions/download-artifact@v4
@@ -550,6 +581,7 @@ jobs:
           for p in \
             build/runtime/agent/libbpftime-agent.so \
             build/runtime/syscall-server/libbpftime-syscall-server.so \
+            build/tools/cli/bpftime \
             build/tools/bpftimetool/bpftimetool \
             build/attach/text_segment_transformer \
             build/attach/nv_attach_impl; do
@@ -569,7 +601,14 @@ jobs:
             chmod +x build/tools/bpftimetool/bpftimetool || true
             ls -la build/tools/bpftimetool || true
           fi
+          if [ -f build/tools/cli/bpftime ] && [ ! -x build/tools/cli/bpftime ]; then
+            echo "bpftime exists but is not executable; fixing permissions..."
+            ls -la build/tools/cli || true
+            chmod +x build/tools/cli/bpftime || true
+            ls -la build/tools/cli || true
+          fi
           test -x build/tools/bpftimetool/bpftimetool
+          test -x build/tools/cli/bpftime
 
       - name: Build GPU example
         run: |
@@ -598,6 +637,7 @@ jobs:
           EXAMPLE_NAME="${{ matrix.examples.name }}"
           EXAMPLE_MODE="${{ matrix.examples.mode }}"
           CLIENT_TIMEOUT=30
+          BPFTIME_CLI="$BUILD_DIR/tools/cli/bpftime"
           BPFTIMETOOL="$BUILD_DIR/tools/bpftimetool/bpftimetool"
           export SPDLOG_LEVEL=info
           export BPFTIME_LOG_LEVEL=INFO
@@ -687,6 +727,45 @@ jobs:
             TOOL_RC=$?
             set -e
             sleep 5
+          elif [ "$EXAMPLE_MODE" = "dynamic-attach" ]; then
+            if [ ! -x "$BPFTIME_CLI" ]; then
+              echo "bpftime CLI not found at $BPFTIME_CLI"
+              echo "--- build/tools/cli (ls) ---"
+              ls -la "$BUILD_DIR/tools/cli" || true
+              exit 1
+            fi
+            pushd "$EXAMPLE_DIR" >/dev/null
+            echo "Launching target (no preload): $VICTIM_REL"
+            # Some CI environments restrict ptrace/Frida injection unless the
+            # target explicitly allows it (e.g., yama ptrace_scope=1). The
+            # dynamic_hook victim can opt-in via BPFTIME_ALLOW_PTRACE.
+            env BPFTIME_ALLOW_PTRACE=1 bash -lc "exec $VICTIM_REL" > "$ROOT_DIR/client.log" 2>&1 &
+            VICTIM_PID=$!
+            popd >/dev/null
+            echo "Victim PID: $VICTIM_PID"
+            sleep 5
+            if ! kill -0 "$VICTIM_PID" 2>/dev/null; then
+              echo "Victim crashed early. Showing client.log tail:"; tail -n 200 client.log || true
+              exit 1
+            fi
+            pushd "$EXAMPLE_DIR" >/dev/null
+            echo "Launching bpftime trace (late attach): $EXE_REL (target pid=$VICTIM_PID)"
+            env BPFTIME_SHM_MEMORY_MB=$SHM_MB BPFTIME_LOG_OUTPUT=console \
+              "$BPFTIME_CLI" trace --pid "$VICTIM_PID" --auto-refresh-ms 500 \
+              $EXE_REL > "$ROOT_DIR/server.log" 2>&1 &
+            SERVER_PID=$!
+            popd >/dev/null
+            echo "Trace PID: $SERVER_PID"
+            sleep 15
+            if kill -0 "$SERVER_PID" 2>/dev/null; then
+              # Let trace handle detach/cleanup.
+              kill -INT "$SERVER_PID" 2>/dev/null || true
+              sleep 2
+              kill -9 "$SERVER_PID" 2>/dev/null || true
+              wait "$SERVER_PID" 2>/dev/null || true
+            fi
+            kill -9 "$VICTIM_PID" 2>/dev/null || true
+            wait "$VICTIM_PID" 2>/dev/null || true
           else
             pushd "$EXAMPLE_DIR" >/dev/null
             echo "Launching server with $SERVER_SO: $EXE_REL (BPFTIME_SHM_MEMORY_MB=$SHM_MB)"
@@ -756,8 +835,10 @@ jobs:
               RESULT=1
             fi
           fi
-          kill -9 $SERVER_PID 2>/dev/null || true
-          wait $SERVER_PID 2>/dev/null || true
+          if [ -n "${SERVER_PID:-}" ]; then
+            kill -9 $SERVER_PID 2>/dev/null || true
+            wait $SERVER_PID 2>/dev/null || true
+          fi
           exit $RESULT
 
       - name: Upload logs

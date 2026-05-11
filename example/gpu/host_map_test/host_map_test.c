@@ -16,13 +16,28 @@
 #include <stdlib.h>
 #include <string.h>
 #include <inttypes.h>
+#include <errno.h>
 #include "./.output/host_map_test.skel.h"
 
 #define warn(...) fprintf(stderr, __VA_ARGS__)
 
-// Default GPU thread count for PERGPUTD_ARRAY_HOST_MAP
-// This should match the actual number of threads launched
-#define GPU_THREAD_COUNT (1<<20)
+// Default GPU thread count for PERGPUTD_ARRAY_HOST_MAP.
+// Keep this consistent with bpftime's runtime default (bpftime_shm.hpp).
+#define GPU_THREAD_COUNT_DEFAULT 1024
+
+static uint64_t get_gpu_thread_count(void)
+{
+	const char *env = getenv("BPFTIME_MAP_GPU_THREAD_COUNT");
+	if (env && env[0] != '\0') {
+		char *end = NULL;
+		errno = 0;
+		unsigned long long v = strtoull(env, &end, 10);
+		if (errno == 0 && end && *end == '\0' && v > 0) {
+			return (uint64_t)v;
+		}
+	}
+	return GPU_THREAD_COUNT_DEFAULT;
+}
 
 // Default number of entries for host maps (must match BPF code)
 #ifndef HOST_MAP_MAX_ENTRIES
@@ -49,6 +64,22 @@ static int print_stat(struct host_map_test_bpf *obj)
 	char ts[16];
 	int err = 0;
 	uint64_t value;
+	static uint64_t gpu_thread_count = 0;
+	static size_t perthread_value_bytes = 0;
+	static uint64_t *pt_values = NULL;
+	static uint64_t *ts_values = NULL;
+	if (gpu_thread_count == 0) {
+		gpu_thread_count = get_gpu_thread_count();
+		perthread_value_bytes =
+			(size_t)gpu_thread_count * sizeof(uint64_t);
+		pt_values = calloc((size_t)gpu_thread_count, sizeof(uint64_t));
+		ts_values = calloc((size_t)gpu_thread_count, sizeof(uint64_t));
+		if (!pt_values || !ts_values) {
+			warn("Failed to allocate per-thread buffers (thread_count=%" PRIu64 ")\n",
+			     gpu_thread_count);
+			return -1;
+		}
+	}
 
 	time(&t);
 	tm = localtime(&t);
@@ -87,7 +118,6 @@ static int print_stat(struct host_map_test_bpf *obj)
 	// Note: PERGPUTD_ARRAY returns value_size * thread_count bytes per key
 	int pt_fd = bpf_map__fd(obj->maps.perthread_counter);
 	printf("  [perthread_counter map (PERGPUTD_ARRAY_HOST_MAP)]\n");
-	static uint64_t pt_values[GPU_THREAD_COUNT];  // Buffer for all thread values
 	const char *key_names[] = { "call_count", "exec_time_ns", "thread_id" };
 
 	// Use get_next_key to iterate through all keys with data
@@ -102,13 +132,13 @@ static int print_stat(struct host_map_test_bpf *obj)
 			warn("bpf_map_get_next_key failed: %s\n", strerror(errno));
 			break;
 		}
-		memset(pt_values, 0, sizeof(pt_values));
+		memset(pt_values, 0, perthread_value_bytes);
 		err = bpf_map_lookup_elem(pt_fd, &pt_key, pt_values);
 		if (err == 0) {
 			// Sum all thread values
 			uint64_t total = 0;
 			int active_count = 0;
-			for (int t = 0; t < GPU_THREAD_COUNT; t++) {
+			for (uint64_t t = 0; t < gpu_thread_count; t++) {
 				if (pt_values[t] != 0) {
 					total += pt_values[t];
 					active_count++;
@@ -131,14 +161,13 @@ static int print_stat(struct host_map_test_bpf *obj)
 	// Print thread_timestamp map (also PERGPUTD_ARRAY_HOST_MAP)
 	int ts_fd = bpf_map__fd(obj->maps.thread_timestamp);
 	printf("  [thread_timestamp map (PERGPUTD_ARRAY_HOST_MAP)]\n");
-	static uint64_t ts_values[GPU_THREAD_COUNT];  // Buffer for all thread values
-	memset(ts_values, 0, sizeof(ts_values));
+	memset(ts_values, 0, perthread_value_bytes);
 	uint32_t ts_key = 0;
 	err = bpf_map_lookup_elem(ts_fd, &ts_key, ts_values);
 	if (err == 0) {
 		// Count how many threads have non-zero timestamps
 		int active_count = 0;
-		for (int t = 0; t < GPU_THREAD_COUNT; t++) {
+		for (uint64_t t = 0; t < gpu_thread_count; t++) {
 			if (ts_values[t] != 0) {
 				active_count++;
 			}
