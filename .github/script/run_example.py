@@ -2,10 +2,12 @@ import sys
 import asyncio
 import typing
 import signal
+import os
 
 SERVER_TIMEOUT = 30
 AGENT_TIMEOUT = 30
 SERVER_START_SIGNAL = "bpftime-syscall-server started"
+CLEANUP_TIMEOUT = 10
 
 
 async def handle_stdout(
@@ -40,6 +42,30 @@ async def handle_stdout(
             break
 
 
+async def terminate_process(proc: asyncio.subprocess.Process, name: str):
+    if proc is None:
+        return
+    if proc.returncode is not None:
+        return
+    try:
+        proc.send_signal(signal.SIGINT)
+    except ProcessLookupError:
+        return
+    try:
+        await asyncio.wait_for(proc.wait(), CLEANUP_TIMEOUT)
+        return
+    except asyncio.TimeoutError:
+        print(f"{name}: did not exit after SIGINT; sending SIGKILL")
+    try:
+        proc.kill()
+    except ProcessLookupError:
+        return
+    try:
+        await asyncio.wait_for(proc.wait(), CLEANUP_TIMEOUT)
+    except asyncio.TimeoutError:
+        print(f"{name}: still did not exit after SIGKILL")
+
+
 async def main():
     (
         executable,
@@ -48,6 +74,10 @@ async def main():
         bpftime_cli,
         syscall_trace,
     ) = sys.argv[1:]
+    server = None
+    agent = None
+    server_out = None
+    agent_out = None
     try:
         bashreadline_patch = "readline" in executable
         should_exit = asyncio.Event()
@@ -77,6 +107,8 @@ async def main():
         print("Server started!")
 
         # Start the agent
+        agent_env = dict(os.environ)
+        agent_env["SPDLOG_LEVEL"] = "debug"
         agent = await asyncio.subprocess.create_subprocess_exec(
             *(
                 " ".join(
@@ -86,7 +118,7 @@ async def main():
             ),
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.STDOUT,
-            env={"SPDLOG_LEVEL": "debug"},
+            env=agent_env,
         )
         agent_out = asyncio.create_task(
             handle_stdout(agent.stdout, should_exit, "AGENT", [(expected_str_signal, expected_str)], True)
@@ -98,12 +130,10 @@ async def main():
     finally:
         should_exit.set()
         try:
-            server.send_signal(signal.SIGINT)
-            agent.send_signal(signal.SIGINT)
-            await asyncio.gather(server_out, agent_out)
-            # for task in asyncio.all_tasks():
-            #     task.cancel()
-            await asyncio.gather(server.communicate(), agent.communicate())
+            if server_out is not None and agent_out is not None:
+                await asyncio.gather(server_out, agent_out)
+            await terminate_process(agent, "AGENT")
+            await terminate_process(server, "SERVER")
         except Exception as ex:
             print(ex) 
 
