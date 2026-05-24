@@ -783,7 +783,12 @@ nv_attach_impl::extract_ptxs(std::vector<uint8_t> &&data_vec)
 	auto cleanup_tmp_dir = [&working_dir]() {
 		if (!spdlog::should_log(spdlog::level::debug)) {
 			SPDLOG_INFO("Remove extracted files..");
-			std::filesystem::remove_all(working_dir);
+			std::error_code ec;
+			std::filesystem::remove_all(working_dir, ec);
+			if (ec) {
+				SPDLOG_WARN("Failed to remove temporary directory {}: {}",
+					    working_dir.c_str(), ec.message());
+			}
 		}
 	};
 	auto fatbin_path = working_dir / "temp.fatbin";
