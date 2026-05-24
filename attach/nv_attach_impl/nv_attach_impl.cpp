@@ -139,123 +139,68 @@ bool is_executable_file(const std::filesystem::path &path)
 	       access(path.c_str(), X_OK) == 0;
 }
 
-void add_unique_path(std::vector<std::filesystem::path> &paths,
-		     const std::filesystem::path &path)
-{
-	if (path.empty())
-		return;
-	if (std::find(paths.begin(), paths.end(), path) == paths.end())
-		paths.push_back(path);
-}
+} // namespace
 
-void add_cuda_root_candidate(std::vector<std::filesystem::path> &paths,
-			     const std::string &tool_name,
-			     const std::string &root)
+// Resolve the cuobjdump executable used to extract PTX from fatbins. Order:
+// explicit BPFTIME_CUOBJDUMP override, configured CUDA roots, PATH, then common
+// /usr/local/cuda* installs. Returns nullopt when nothing is found.
+std::optional<std::filesystem::path>
+bpftime::attach::resolve_cuobjdump_path()
 {
-	if (!root.empty())
-		add_unique_path(paths,
-				std::filesystem::path(root) / "bin" / tool_name);
-}
+	// Explicit override: an absolute/relative path is honored only when it
+	// points at an executable; a bare name is trusted and resolved via PATH.
+	if (auto value = ptxpass::get_env("BPFTIME_CUOBJDUMP"); !value.empty()) {
+		if (value.find('/') == std::string::npos)
+			return std::filesystem::path(value);
+		if (std::filesystem::path p(value); is_executable_file(p))
+			return p;
+		SPDLOG_WARN("BPFTIME_CUOBJDUMP={} is not an executable file; "
+			    "ignoring override",
+			    value);
+	}
 
-void add_common_cuda_root_candidates(std::vector<std::filesystem::path> &paths,
-				     const std::string &tool_name)
-{
-	add_unique_path(paths,
-			std::filesystem::path("/usr/local/cuda/bin") /
-				tool_name);
+	// Configured CUDA roots, then PATH.
+	for (const char *root_env :
+	     { "BPFTIME_CUDA_ROOT", "CUDA_HOME", "CUDA_PATH",
+	       "LLVMBPF_CUDA_PATH", "CUDAToolkit_ROOT" }) {
+		auto root = ptxpass::get_env(root_env);
+		if (root.empty())
+			continue;
+		if (auto p = std::filesystem::path(root) / "bin" / "cuobjdump";
+		    is_executable_file(p))
+			return p;
+	}
+	for (const auto &dir : split_by_colon(ptxpass::get_env("PATH"))) {
+		if (auto p = dir / "cuobjdump"; is_executable_file(p))
+			return p;
+	}
 
+	// Common /usr/local/cuda* installs, scanned last.
+	if (auto p = std::filesystem::path("/usr/local/cuda/bin/cuobjdump");
+	    is_executable_file(p))
+		return p;
 	std::error_code ec;
-	std::vector<std::filesystem::path> versioned_cuda_roots;
+	std::vector<std::filesystem::path> versioned_roots;
 	for (const auto &entry :
 	     std::filesystem::directory_iterator("/usr/local", ec)) {
 		if (ec)
 			break;
-		if (!entry.is_directory(ec) || ec)
-			continue;
-		auto dir_name = entry.path().filename().string();
-		if (dir_name.rfind("cuda-", 0) == 0)
-			versioned_cuda_roots.push_back(entry.path());
+		if (entry.is_directory(ec) && !ec &&
+		    entry.path().filename().string().rfind("cuda-", 0) == 0)
+			versioned_roots.push_back(entry.path());
 	}
-	std::sort(versioned_cuda_roots.begin(), versioned_cuda_roots.end());
-	for (const auto &root : versioned_cuda_roots)
-		add_unique_path(paths, root / "bin" / tool_name);
-}
-
-// Per-tool override env var, e.g. cuobjdump -> BPFTIME_CUOBJDUMP.
-std::string tool_override_env_var(const std::string &tool_name)
-{
-	std::string name = "BPFTIME_";
-	for (char c : tool_name)
-		name.push_back((c >= 'a' && c <= 'z') ? char(c - 'a' + 'A') : c);
-	return name;
-}
-
-// Honor an explicit BPFTIME_<TOOL> override before any auto-discovery.
-// A bare tool name (no '/') is trusted and resolved via PATH at exec time;
-// an explicit path is honored only when it points at an executable.
-std::optional<std::filesystem::path>
-resolve_tool_override(const std::string &tool_name)
-{
-	auto var = tool_override_env_var(tool_name);
-	auto value = ptxpass::get_env(var.c_str());
-	if (value.empty())
-		return std::nullopt;
-	if (value.find('/') == std::string::npos)
-		return std::filesystem::path(value);
-	std::filesystem::path p(value);
-	if (is_executable_file(p))
-		return p;
-	SPDLOG_WARN("{}={} is not an executable file; ignoring override", var,
-		    value);
-	return std::nullopt;
-}
-
-} // namespace
-
-std::optional<std::filesystem::path>
-bpftime::attach::resolve_cuda_tool_path(const std::string &tool_name)
-{
-	// Explicit per-tool override (e.g. BPFTIME_CUOBJDUMP) wins over any
-	// auto-discovery, matching the documented/CLI behavior.
-	if (auto overridden = resolve_tool_override(tool_name))
-		return overridden;
-
-	// Cheap candidates first: configured CUDA roots and PATH. Keep the
-	// full set of root env vars the previous cuobjdump resolver honored
-	// so existing setups keep working.
-	std::vector<std::filesystem::path> candidates;
-	for (const char *root_env :
-	     { "BPFTIME_CUDA_ROOT", "CUDA_HOME", "CUDA_PATH",
-	       "LLVMBPF_CUDA_PATH", "CUDAToolkit_ROOT" }) {
-		add_cuda_root_candidate(candidates, tool_name,
-					ptxpass::get_env(root_env));
-	}
-	for (const auto &path_dir : split_by_colon(ptxpass::get_env("PATH"))) {
-		add_unique_path(candidates, path_dir / tool_name);
-	}
-	for (const auto &candidate : candidates) {
-		if (is_executable_file(candidate))
-			return candidate;
-	}
-
-	// Only scan common /usr/local/cuda* installs if nothing matched
-	// above; this directory scan can run once per fatbin, so avoid it
-	// whenever an earlier candidate already resolved the tool.
-	std::vector<std::filesystem::path> common_candidates;
-	add_common_cuda_root_candidates(common_candidates, tool_name);
-	for (const auto &candidate : common_candidates) {
-		if (is_executable_file(candidate))
-			return candidate;
+	std::sort(versioned_roots.begin(), versioned_roots.end());
+	for (const auto &root : versioned_roots) {
+		if (auto p = root / "bin" / "cuobjdump"; is_executable_file(p))
+			return p;
 	}
 	return std::nullopt;
 }
 
-std::string bpftime::attach::cuda_tool_resolution_help(
-	const std::string &tool_name)
+std::string bpftime::attach::cuobjdump_resolution_help()
 {
 	return "Set BPFTIME_CUDA_ROOT/CUDA_HOME/CUDA_PATH to your CUDA root "
-	       "or add " +
-	       tool_name + " to PATH.";
+	       "or add cuobjdump to PATH.";
 }
 
 int nv_attach_impl::detach_by_id(int id)
@@ -847,11 +792,11 @@ nv_attach_impl::extract_ptxs(std::vector<uint8_t> &&data_vec)
 	}
 	SPDLOG_INFO("Extracting PTX in the fatbin...");
 
-	auto cuobjdump_path = resolve_cuda_tool_path("cuobjdump");
+	auto cuobjdump_path = resolve_cuobjdump_path();
 	if (!cuobjdump_path.has_value()) {
 		SPDLOG_ERROR(
 			"Cannot extract PTX because CUDA tool 'cuobjdump' was not found. {} GPU attach will be skipped for this fatbin.",
-			cuda_tool_resolution_help("cuobjdump"));
+			cuobjdump_resolution_help());
 		cleanup_tmp_dir();
 		return all_ptx;
 	}
@@ -931,7 +876,7 @@ nv_attach_impl::extract_ptxs(std::vector<uint8_t> &&data_vec)
 		if (!WIFEXITED(status) || WEXITSTATUS(status) != 0) {
 			SPDLOG_ERROR(
 				"cuobjdump failed: status={}. {} GPU attach will be skipped for this fatbin.",
-				status, cuda_tool_resolution_help("cuobjdump"));
+				status, cuobjdump_resolution_help());
 			cleanup_tmp_dir();
 			return all_ptx;
 		}
