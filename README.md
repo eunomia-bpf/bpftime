@@ -17,7 +17,7 @@
 
 bpftime is not `userspace eBPF VM`, it's a userspace runtime framework includes everything to run eBPF in userspace: `loader`, `verifier`, `helpers`, `maps`, `ufunc` and multiple `events` such as Observability, Network, Policy or Access Control. It has multiple VM backend options support. For eBPF VM only, please see [llvmbpf](https://github.com/eunomia-bpf/llvmbpf).
 
-> ⚠️ **Note**: `bpftime` is currently under active development and refactoring towards v2. It may contain bugs or unstable API. Please use it with caution. For more details, check our [roadmap](#roadmap). We'd love to hear your feedback and suggestions! Feel free to open an issue or [Contact us](#contact-and-citations).
+> 💬 We'd love to hear your feedback and suggestions! Feel free to open an issue or [Contact us](#contact-and-citations).
 
 ## Why bpftime? What's the design Goal?
 
