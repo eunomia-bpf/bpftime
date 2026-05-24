@@ -181,13 +181,47 @@ void add_common_cuda_root_candidates(std::vector<std::filesystem::path> &paths,
 		add_unique_path(paths, root / "bin" / tool_name);
 }
 
+// Per-tool override env var, e.g. cuobjdump -> BPFTIME_CUOBJDUMP.
+std::string tool_override_env_var(const std::string &tool_name)
+{
+	std::string name = "BPFTIME_";
+	for (char c : tool_name)
+		name.push_back((c >= 'a' && c <= 'z') ? char(c - 'a' + 'A') : c);
+	return name;
+}
+
+// Honor an explicit BPFTIME_<TOOL> override before any auto-discovery.
+// A bare tool name (no '/') is trusted and resolved via PATH at exec time;
+// an explicit path is honored only when it points at an executable.
+std::optional<std::filesystem::path>
+resolve_tool_override(const std::string &tool_name)
+{
+	auto var = tool_override_env_var(tool_name);
+	auto value = ptxpass::get_env(var.c_str());
+	if (value.empty())
+		return std::nullopt;
+	if (value.find('/') == std::string::npos)
+		return std::filesystem::path(value);
+	std::filesystem::path p(value);
+	if (is_executable_file(p))
+		return p;
+	SPDLOG_WARN("{}={} is not an executable file; ignoring override", var,
+		    value);
+	return std::nullopt;
+}
+
 } // namespace
 
 std::optional<std::filesystem::path>
 bpftime::attach::resolve_cuda_tool_path(const std::string &tool_name)
 {
-	std::vector<std::filesystem::path> candidates;
+	// Explicit per-tool override (e.g. BPFTIME_CUOBJDUMP) wins over any
+	// auto-discovery, matching the documented/CLI behavior.
+	if (auto overridden = resolve_tool_override(tool_name))
+		return overridden;
 
+	// Cheap candidates first: configured CUDA roots and PATH.
+	std::vector<std::filesystem::path> candidates;
 	add_cuda_root_candidate(candidates, tool_name,
 				ptxpass::get_env("BPFTIME_CUDA_ROOT"));
 	add_cuda_root_candidate(candidates, tool_name,
@@ -197,9 +231,17 @@ bpftime::attach::resolve_cuda_tool_path(const std::string &tool_name)
 	for (const auto &path_dir : split_by_colon(ptxpass::get_env("PATH"))) {
 		add_unique_path(candidates, path_dir / tool_name);
 	}
-	add_common_cuda_root_candidates(candidates, tool_name);
-
 	for (const auto &candidate : candidates) {
+		if (is_executable_file(candidate))
+			return candidate;
+	}
+
+	// Only scan common /usr/local/cuda* installs if nothing matched
+	// above; this directory scan can run once per fatbin, so avoid it
+	// whenever an earlier candidate already resolved the tool.
+	std::vector<std::filesystem::path> common_candidates;
+	add_common_cuda_root_candidates(common_candidates, tool_name);
+	for (const auto &candidate : common_candidates) {
 		if (is_executable_file(candidate))
 			return candidate;
 	}
@@ -783,11 +825,14 @@ nv_attach_impl::extract_ptxs(std::vector<uint8_t> &&data_vec)
 	auto cleanup_tmp_dir = [&working_dir]() {
 		if (!spdlog::should_log(spdlog::level::debug)) {
 			SPDLOG_INFO("Remove extracted files..");
+			// Never throw from cleanup: it runs on error paths too,
+			// and a transient FS failure here must not abort attach.
 			std::error_code ec;
 			std::filesystem::remove_all(working_dir, ec);
 			if (ec) {
-				SPDLOG_WARN("Failed to remove temporary directory {}: {}",
-					    working_dir.c_str(), ec.message());
+				SPDLOG_WARN(
+					"Failed to remove temporary directory {}: {}",
+					working_dir.c_str(), ec.message());
 			}
 		}
 	};
