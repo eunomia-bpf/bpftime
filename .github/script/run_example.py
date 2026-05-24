@@ -130,8 +130,9 @@ async def main():
     finally:
         should_exit.set()
         try:
-            if server_out is not None and agent_out is not None:
-                await asyncio.gather(server_out, agent_out)
+            out_tasks = [task for task in (server_out, agent_out) if task is not None]
+            if out_tasks:
+                await asyncio.gather(*out_tasks)
             await terminate_process(agent, "AGENT")
             await terminate_process(server, "SERVER")
         except Exception as ex:
