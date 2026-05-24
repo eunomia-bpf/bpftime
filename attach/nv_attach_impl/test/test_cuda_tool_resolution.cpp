@@ -101,6 +101,8 @@ TEST_CASE("resolve_cuda_tool_path prefers BPFTIME_CUDA_ROOT",
 					 preferred_root.path().c_str());
 	scoped_env_var cuda_home("CUDA_HOME", fallback_root.path().c_str());
 	scoped_env_var cuda_path("CUDA_PATH", nullptr);
+	scoped_env_var llvmbpf_cuda_path("LLVMBPF_CUDA_PATH", nullptr);
+	scoped_env_var cudatoolkit_root("CUDAToolkit_ROOT", nullptr);
 	scoped_env_var path("PATH", "");
 
 	auto resolved = resolve_cuda_tool_path("cuobjdump");
@@ -117,6 +119,8 @@ TEST_CASE("resolve_cuda_tool_path falls back to PATH", "[nv_attach_impl]")
 	scoped_env_var bpftime_cuda_root("BPFTIME_CUDA_ROOT", nullptr);
 	scoped_env_var cuda_home("CUDA_HOME", nullptr);
 	scoped_env_var cuda_path("CUDA_PATH", nullptr);
+	scoped_env_var llvmbpf_cuda_path("LLVMBPF_CUDA_PATH", nullptr);
+	scoped_env_var cudatoolkit_root("CUDAToolkit_ROOT", nullptr);
 	scoped_env_var path("PATH", (path_root.path() / "bin").c_str());
 
 	auto resolved = resolve_cuda_tool_path("cuobjdump");
@@ -131,10 +135,51 @@ TEST_CASE("resolve_cuda_tool_path returns empty for missing tools",
 	scoped_env_var bpftime_cuda_root("BPFTIME_CUDA_ROOT", nullptr);
 	scoped_env_var cuda_home("CUDA_HOME", nullptr);
 	scoped_env_var cuda_path("CUDA_PATH", nullptr);
+	scoped_env_var llvmbpf_cuda_path("LLVMBPF_CUDA_PATH", nullptr);
+	scoped_env_var cudatoolkit_root("CUDAToolkit_ROOT", nullptr);
 	scoped_env_var path("PATH", "");
 
 	auto resolved = resolve_cuda_tool_path("bpftime-missing-cuda-tool");
 	REQUIRE_FALSE(resolved.has_value());
+}
+
+TEST_CASE("resolve_cuda_tool_path honors LLVMBPF_CUDA_PATH and "
+	  "CUDAToolkit_ROOT",
+	  "[nv_attach_impl]")
+{
+	scoped_env_var cuobjdump_override("BPFTIME_CUOBJDUMP", nullptr);
+	scoped_env_var bpftime_cuda_root("BPFTIME_CUDA_ROOT", nullptr);
+	scoped_env_var cuda_home("CUDA_HOME", nullptr);
+	scoped_env_var cuda_path("CUDA_PATH", nullptr);
+	scoped_env_var path("PATH", "");
+
+	SECTION("LLVMBPF_CUDA_PATH")
+	{
+		scoped_temp_dir root;
+		auto expected = create_executable_tool(root.path(), "cuobjdump");
+		scoped_env_var llvmbpf_cuda_path("LLVMBPF_CUDA_PATH",
+						 root.path().c_str());
+		scoped_env_var cudatoolkit_root("CUDAToolkit_ROOT", nullptr);
+
+		auto resolved = resolve_cuda_tool_path("cuobjdump");
+		REQUIRE(resolved.has_value());
+		REQUIRE(resolved->lexically_normal() ==
+			expected.lexically_normal());
+	}
+
+	SECTION("CUDAToolkit_ROOT")
+	{
+		scoped_temp_dir root;
+		auto expected = create_executable_tool(root.path(), "cuobjdump");
+		scoped_env_var llvmbpf_cuda_path("LLVMBPF_CUDA_PATH", nullptr);
+		scoped_env_var cudatoolkit_root("CUDAToolkit_ROOT",
+						root.path().c_str());
+
+		auto resolved = resolve_cuda_tool_path("cuobjdump");
+		REQUIRE(resolved.has_value());
+		REQUIRE(resolved->lexically_normal() ==
+			expected.lexically_normal());
+	}
 }
 
 TEST_CASE("resolve_cuda_tool_path honors BPFTIME_CUOBJDUMP override",

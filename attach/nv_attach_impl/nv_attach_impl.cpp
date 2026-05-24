@@ -220,14 +220,16 @@ bpftime::attach::resolve_cuda_tool_path(const std::string &tool_name)
 	if (auto overridden = resolve_tool_override(tool_name))
 		return overridden;
 
-	// Cheap candidates first: configured CUDA roots and PATH.
+	// Cheap candidates first: configured CUDA roots and PATH. Keep the
+	// full set of root env vars the previous cuobjdump resolver honored
+	// so existing setups keep working.
 	std::vector<std::filesystem::path> candidates;
-	add_cuda_root_candidate(candidates, tool_name,
-				ptxpass::get_env("BPFTIME_CUDA_ROOT"));
-	add_cuda_root_candidate(candidates, tool_name,
-				ptxpass::get_env("CUDA_HOME"));
-	add_cuda_root_candidate(candidates, tool_name,
-				ptxpass::get_env("CUDA_PATH"));
+	for (const char *root_env :
+	     { "BPFTIME_CUDA_ROOT", "CUDA_HOME", "CUDA_PATH",
+	       "LLVMBPF_CUDA_PATH", "CUDAToolkit_ROOT" }) {
+		add_cuda_root_candidate(candidates, tool_name,
+					ptxpass::get_env(root_env));
+	}
 	for (const auto &path_dir : split_by_colon(ptxpass::get_env("PATH"))) {
 		add_unique_path(candidates, path_dir / tool_name);
 	}
