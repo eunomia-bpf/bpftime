@@ -46,14 +46,14 @@ static ptxpass::pass_config::PassConfig get_default_config()
 static std::pair<std::string, bool>
 patch_entry(const std::string &ptx, const std::string &kernel,
 	    const std::vector<uint64_t> &ebpf_words,
-	    const std::string &stub_name)
+	    const std::string &stub_name, bool add_register_guard)
 {
 	if (ebpf_words.empty()) {
 		return { ptx, false };
 	}
 	std::string fname = std::string("__probe_func__") + kernel;
 	auto func_ptx = ptxpass::compile_ebpf_to_ptx_from_words(
-		ebpf_words, "sm_61", fname, true, false);
+		ebpf_words, "sm_61", fname, add_register_guard, false);
 	std::string out = ptx;
 
 	bool patched_stub_calls = false;
@@ -122,6 +122,7 @@ extern "C" int process_input(const char *ptx_text, size_t ptx_len,
 		if (meta_json == nullptr) {
 			throw std::runtime_error("Metadata JSON is missing");
 		}
+		bool add_register_guard = params.save_strategy == "full";
 
 		auto runtime_request = pass_runtime_request_from_string(
 			std::string(meta_json, meta_len));
@@ -150,7 +151,7 @@ extern "C" int process_input(const char *ptx_text, size_t ptx_len,
 			runtime_request.full_ptx,
 			runtime_request.input.to_patch_kernel,
 			runtime_request.get_uint64_ebpf_instructions(),
-			stub_name);
+			stub_name, add_register_guard);
 		snprintf(output, output_len, "%s",
 			 emit_runtime_response_and_return(out, modified)
 				 .c_str());

@@ -1,11 +1,8 @@
-#include "bpftime_prog.hpp"
 #include "bpftime_shm_internal.hpp"
 #include "cuda_runtime_api.h"
 #include "driver_types.h"
 #include "nv_attach_impl.hpp"
-#include <array>
 #include <bpf_attach_ctx.hpp>
-#include "demo_ptx_prog.hpp"
 #include <memory>
 #include <optional>
 #include <cstdlib>
@@ -107,6 +104,8 @@ bpf_attach_ctx::find_nv_attach_impl() const
 }
 void bpf_attach_ctx::start_cuda_watcher_thread()
 {
+	if (!cuda_ctx)
+		return;
 	if (cuda_watcher_thread.joinable())
 		return;
 	auto flag = cuda_ctx->cuda_watcher_should_stop;

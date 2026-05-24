@@ -1,12 +1,13 @@
 #include "nv_attach_utils.hpp"
 #include "trampoline_ptx.h"
 #include <cstring>
-#include <iomanip>
+#include <iterator>
 #include <spdlog/spdlog.h>
+#include <spdlog/fmt/fmt.h>
 #include <openssl/sha.h>
-#include <sstream>
 #include <cstdlib>
 #include <cuda.h>
+namespace fmt_lib = spdlog::fmt_lib;
 namespace bpftime
 {
 namespace attach
@@ -82,12 +83,12 @@ std::string sha256(const void *data, size_t length)
 	unsigned char hash[SHA256_DIGEST_LENGTH];
 	SHA256((unsigned char *)data, length, hash);
 
-	std::stringstream ss;
+	fmt_lib::memory_buffer buffer;
 	for (int i = 0; i < SHA256_DIGEST_LENGTH; i++) {
-		ss << std::hex << std::setw(2) << std::setfill('0')
-		   << (int)hash[i];
+		fmt_lib::format_to(std::back_inserter(buffer), "{:02x}",
+				   hash[i]);
 	}
-	return ss.str();
+	return fmt_lib::to_string(buffer);
 }
 
 std::string get_gpu_sm_arch()
