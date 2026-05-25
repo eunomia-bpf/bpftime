@@ -514,6 +514,45 @@ _bpf_helper_ext_0511(uint64_t, uint64_t, uint64_t, uint64_t, uint64_t)
     return (uint64_t)lane_id;
 }
 
+// Helper 512: Read PTX register value from context
+// ctx: pointer to register context buffer (from BB kprobe)
+// idx: register index (0, 1, 2, ...)
+// Context layout:
+//   [0]: register count (u64)
+//   [8]: register 0 value (u64)
+//   [16]: register 1 value (u64)
+//   ...
+extern "C" __noinline__ __device__ uint64_t
+_bpf_helper_ext_0512(uint64_t idx, uint64_t ctx, uint64_t, uint64_t, uint64_t)
+{
+    if (ctx == 0) {
+        return 0; // No context provided
+    }
+    
+    uint64_t *context = (uint64_t *)(uintptr_t)ctx;
+    uint64_t reg_count = context[0];
+    
+    if (idx >= reg_count) {
+        return 0; // Index out of bounds
+    }
+    
+    // Register values start at offset 1 (after count)
+    return context[1 + idx];
+}
+
+// Helper 513: Get register count from context
+// ctx: pointer to register context buffer
+extern "C" __noinline__ __device__ uint64_t
+_bpf_helper_ext_0513(uint64_t ctx, uint64_t, uint64_t, uint64_t, uint64_t)
+{
+    if (ctx == 0) {
+        return 0;
+    }
+    
+    uint64_t *context = (uint64_t *)(uintptr_t)ctx;
+    return context[0];
+}
+
 extern "C" __global__ void bpf_main(void *mem, size_t sz)
 {
 	printf("kernel function entered, mem=%lx, memsz=%ld\n", (uintptr_t)mem,
