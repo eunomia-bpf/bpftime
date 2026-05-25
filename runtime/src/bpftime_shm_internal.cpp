@@ -107,99 +107,73 @@ void bpftime_shm::set_syscall_trace_setup(int pid, bool whether)
 	}
 }
 
-uint32_t bpftime_shm::bpf_map_value_size(int fd) const
-{
-	if (!is_map_fd(fd)) {
-		errno = ENOENT;
-		return 0;
-	}
-	auto &handler =
-		std::get<bpftime::bpf_map_handler>(manager->get_handler(fd));
-	return handler.get_userspace_value_size();
-}
-
-const void *bpftime_shm::bpf_map_lookup_elem(int fd, const void *key,
-					     bool from_syscall) const
+const bpf_map_handler *bpftime_shm::try_get_map_handler(int fd) const
 {
 	if (!is_map_fd(fd)) {
 		errno = ENOENT;
 		return nullptr;
 	}
-	auto &handler =
-		std::get<bpftime::bpf_map_handler>(manager->get_handler(fd));
-	return handler.map_lookup_elem(key, from_syscall);
+	return &std::get<bpftime::bpf_map_handler>(manager->get_handler(fd));
+}
+
+uint32_t bpftime_shm::bpf_map_value_size(int fd) const
+{
+	auto *handler = try_get_map_handler(fd);
+	return handler ? handler->get_userspace_value_size() : 0;
+}
+
+const void *bpftime_shm::bpf_map_lookup_elem(int fd, const void *key,
+					     bool from_syscall) const
+{
+	auto *handler = try_get_map_handler(fd);
+	return handler ? handler->map_lookup_elem(key, from_syscall) : nullptr;
 }
 
 long bpftime_shm::bpf_map_update_elem(int fd, const void *key,
 				      const void *value, uint64_t flags,
 				      bool from_syscall) const
 {
-	if (!is_map_fd(fd)) {
-		errno = ENOENT;
-		return -1;
-	}
-	auto &handler =
-		std::get<bpftime::bpf_map_handler>(manager->get_handler(fd));
-	return handler.map_update_elem(key, value, flags, from_syscall);
+	auto *handler = try_get_map_handler(fd);
+	return handler ? handler->map_update_elem(key, value, flags,
+						  from_syscall) :
+			 -1;
 }
 
 long bpftime_shm::bpf_delete_elem(int fd, const void *key,
 				  bool from_syscall) const
 {
-	if (!is_map_fd(fd)) {
-		errno = ENOENT;
-		return -1;
-	}
-	auto &handler =
-		std::get<bpftime::bpf_map_handler>(manager->get_handler(fd));
-	return handler.map_delete_elem(key, from_syscall);
+	auto *handler = try_get_map_handler(fd);
+	return handler ? handler->map_delete_elem(key, from_syscall) : -1;
 }
 
 long bpftime_shm::bpf_map_push_elem(int fd, const void *value, uint64_t flags,
 				    bool from_syscall) const
 {
-	if (!is_map_fd(fd)) {
-		errno = ENOENT;
-		return -1;
-	}
-	auto &handler =
-		std::get<bpftime::bpf_map_handler>(manager->get_handler(fd));
-	return handler.map_push_elem(value, flags, from_syscall);
+	auto *handler = try_get_map_handler(fd);
+	return handler ? handler->map_push_elem(value, flags, from_syscall) : -1;
 }
 
 long bpftime_shm::bpf_map_pop_elem(int fd, void *value, bool from_syscall) const
 {
-	if (!is_map_fd(fd)) {
-		errno = ENOENT;
-		return -1;
-	}
-	auto &handler =
-		std::get<bpftime::bpf_map_handler>(manager->get_handler(fd));
-	return handler.map_pop_elem(value, from_syscall);
+	auto *handler = try_get_map_handler(fd);
+	return handler ? handler->map_pop_elem(value, from_syscall) : -1;
 }
 
 long bpftime_shm::bpf_map_peek_elem(int fd, void *value,
 				    bool from_syscall) const
 {
-	if (!is_map_fd(fd)) {
-		errno = ENOENT;
-		return -1;
-	}
-	auto &handler =
-		std::get<bpftime::bpf_map_handler>(manager->get_handler(fd));
-	return handler.map_peek_elem(value, from_syscall);
+	auto *handler = try_get_map_handler(fd);
+	return handler ? handler->map_peek_elem(value, from_syscall) : -1;
 }
 
 int bpftime_shm::bpf_map_get_next_key(int fd, const void *key, void *next_key,
 				      bool from_syscall) const
 {
-	if (!is_map_fd(fd)) {
-		errno = ENOENT;
-		return -1;
-	}
-	auto &handler =
-		std::get<bpftime::bpf_map_handler>(manager->get_handler(fd));
-	return handler.bpf_map_get_next_key(key, next_key, from_syscall);
+	auto *handler = try_get_map_handler(fd);
+	return handler ?
+		       handler->bpf_map_get_next_key(key, next_key,
+						     from_syscall) :
+		       -1;
 }
 
 int bpftime_shm::add_kprobe(std::optional<int> fd, const char *func_name,
