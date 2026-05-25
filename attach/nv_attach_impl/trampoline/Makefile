@@ -1,4 +1,5 @@
-CLANG ?= clang++-17
+CLANG ?= clang++
+LLC ?= llc
 CUDA_LIBS ?= -L/usr/local/cuda/lib64/ -lcudart -pthread
 PTX_TARGET_ARCH ?= sm_61
 CLANG_FLAGS ?= -U__FLOAT128__ -U__SIZEOF_FLOAT128__
@@ -14,8 +15,11 @@ all: ../trampoline_ptx.h test
 	@echo ')";' >> $@
 	@echo "Generated $@"
 
-default_trampoline-cuda-nvptx64-nvidia-cuda-$(PTX_TARGET_ARCH).s: default_trampoline.cu
-	$(CLANG) -S $< -Wall --cuda-gpu-arch=$(PTX_TARGET_ARCH) -O2 $(CLANG_FLAGS) $(CUDA_LIBS)
+default_trampoline-cuda-nvptx64-nvidia-cuda-$(PTX_TARGET_ARCH).s: default_trampoline.ll
+	$(LLC) -march=nvptx64 -mcpu=$(PTX_TARGET_ARCH) -o $@ $<
+
+default_trampoline.ll: default_trampoline.cu
+	$(CLANG) --cuda-device-only -emit-llvm -S $< -Wall --cuda-gpu-arch=$(PTX_TARGET_ARCH) -O2 $(CUDA_LIBS) -o $@
 
 # compile it to exec for test
 test: default_trampoline.cu
