@@ -50,6 +50,10 @@ extern "C" void bpftime_destroy_global_shm()
 	if (global_shm_initialized) {
 		// SPDLOG_INFO("Global shm destructed");
 		shm_holder.global_shared_memory.~bpftime_shm();
+		// Make this idempotent: clear the flag so a later explicit call
+		// or the __destruct_shm static destructor does not destroy the
+		// already-destroyed object a second time.
+		global_shm_initialized = false;
 		// Why not spdlog? because global variables that spdlog used
 		// were already destroyed..
 #ifdef DEBUG
