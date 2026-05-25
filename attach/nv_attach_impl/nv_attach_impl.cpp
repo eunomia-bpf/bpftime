@@ -21,6 +21,8 @@
 #include <boost/process/io.hpp>
 #include <boost/process/pipe.hpp>
 #include <boost/process/start_dir.hpp>
+#include <algorithm>
+#include <cctype>
 #include <chrono>
 #include <cstdlib>
 #include <cstring>
@@ -128,6 +130,14 @@ static std::vector<std::filesystem::path> split_by_colon(const std::string &str)
 
 extern GType cuda_runtime_function_hooker_get_type();
 
+static uint64_t bpftime_nv_helper_stub(uint64_t, uint64_t, uint64_t, uint64_t,
+				       uint64_t)
+{
+	// CUDA helpers are consumed by transformed GPU code paths.
+	// Keep a stub on host side so helper IDs can still be registered.
+	return 0;
+}
+
 int nv_attach_impl::detach_by_id(int id)
 {
 	auto itr = hook_entries.find(id);
@@ -154,6 +164,24 @@ int nv_attach_impl::detach_by_id(int id)
 void nv_attach_impl::register_custom_helpers(
 	ebpf_helper_register_callback register_callback)
 {
+	register_callback(501, "bpf_puts", (void *)bpftime_nv_helper_stub);
+	register_callback(502, "bpf_get_global_timer",
+			  (void *)bpftime_nv_helper_stub);
+	register_callback(503, "bpf_get_block_idx",
+			  (void *)bpftime_nv_helper_stub);
+	register_callback(504, "bpf_get_block_dim",
+			  (void *)bpftime_nv_helper_stub);
+	register_callback(505, "bpf_get_thread_idx",
+			  (void *)bpftime_nv_helper_stub);
+	register_callback(507, "bpf_cuda_exit", (void *)bpftime_nv_helper_stub);
+	register_callback(508, "bpf_get_grid_dim",
+			  (void *)bpftime_nv_helper_stub);
+	register_callback(509, "bpf_get_sm_id", (void *)bpftime_nv_helper_stub);
+	register_callback(510, "bpf_get_warp_id", (void *)bpftime_nv_helper_stub);
+	register_callback(511, "bpf_get_lane_id", (void *)bpftime_nv_helper_stub);
+	register_callback(512, "bpf_get_ptx_reg", (void *)bpftime_nv_helper_stub);
+	register_callback(513, "bpf_get_reg_count",
+			  (void *)bpftime_nv_helper_stub);
 }
 
 int nv_attach_impl::create_attach_with_ebpf_callback(
@@ -612,6 +640,28 @@ std::optional<CUfunction> nv_attach_impl::find_patched_kernel_function(
 	if (itr == patched_kernel_by_name.end())
 		return std::nullopt;
 	return itr->second;
+}
+
+std::optional<CUfunction> nv_attach_impl::find_single_patched_kernel_function()
+	const
+{
+	std::lock_guard<std::mutex> guard(cuda_symbol_map_mutex);
+	if (patched_kernel_by_name.empty())
+		return std::nullopt;
+	CUfunction only = nullptr;
+	for (const auto &[_, func] : patched_kernel_by_name) {
+		if (func == nullptr)
+			continue;
+		if (only == nullptr) {
+			only = func;
+			continue;
+		}
+		if (only != func)
+			return std::nullopt;
+	}
+	if (only == nullptr)
+		return std::nullopt;
+	return only;
 }
 
 void nv_attach_impl::record_original_cufunction_name(
@@ -1641,11 +1691,44 @@ nv_attach_impl::resolve_host_function_symbol(void *addr)
 
 void nv_attach_impl::prefill_patched_kernel_functions_from_loaded_fatbins()
 {
+	auto derive_bb_tracepoint_entry =
+		[](const std::string &kernel_name) -> std::optional<std::string> {
+			constexpr const char *kBbMarker = "__BB";
+			auto bb_pos = kernel_name.find(kBbMarker);
+			if (bb_pos == std::string::npos || bb_pos == 0)
+				return std::nullopt;
+			auto suffix_pos = kernel_name.find("__", bb_pos + 4);
+			if (suffix_pos == std::string::npos ||
+			    suffix_pos <= bb_pos + 4)
+				return std::nullopt;
+			auto bb_id = kernel_name.substr(bb_pos + 4,
+						       suffix_pos - (bb_pos + 4));
+			if (bb_id.empty() ||
+			    !std::all_of(bb_id.begin(), bb_id.end(),
+					 [](unsigned char c) {
+						 return std::isdigit(c) != 0;
+					 }))
+				return std::nullopt;
+			auto base_kernel = kernel_name.substr(0, bb_pos);
+			if (base_kernel.empty())
+				return std::nullopt;
+			return base_kernel + "__bb_kprobe_BB" + bb_id + "_regs";
+		};
+	auto derive_base_kernel_name =
+		[](const std::string &kernel_name) -> std::optional<std::string> {
+			auto bb_pos = kernel_name.find("__BB");
+			if (bb_pos == std::string::npos || bb_pos == 0)
+				return std::nullopt;
+			return kernel_name.substr(0, bb_pos);
+		};
+
 	auto kernels = collect_all_kernels_to_patch();
 	if (kernels.empty())
 		return;
 	if (fatbin_records.empty())
 		return;
+
+	std::size_t mapped = 0;
 
 	for (const auto &rec_uptr : fatbin_records) {
 		auto *rec = rec_uptr.get();
@@ -1656,15 +1739,48 @@ void nv_attach_impl::prefill_patched_kernel_functions_from_loaded_fatbins()
 				CUfunction func = nullptr;
 				auto err = cuModuleGetFunction(
 					&func, ptx->module_ptr, kernel.c_str());
+				if (err == CUDA_ERROR_NOT_FOUND) {
+					if (auto base_kernel =
+						    derive_base_kernel_name(kernel);
+					    base_kernel) {
+						err = cuModuleGetFunction(
+							&func, ptx->module_ptr,
+							base_kernel->c_str());
+						if (err == CUDA_SUCCESS &&
+						    func != nullptr) {
+							record_patched_kernel_function(
+								*base_kernel,
+								func);
+						}
+					}
+				}
+				if (err == CUDA_ERROR_NOT_FOUND) {
+					if (auto patched_entry =
+						    derive_bb_tracepoint_entry(kernel);
+					    patched_entry) {
+						err = cuModuleGetFunction(
+							&func, ptx->module_ptr,
+							patched_entry->c_str());
+						if (err == CUDA_SUCCESS &&
+						    func != nullptr) {
+							record_patched_kernel_function(
+								*patched_entry,
+								func);
+						}
+					}
+				}
 				if (err == CUDA_SUCCESS && func != nullptr) {
 					record_patched_kernel_function(kernel,
 								       func);
 					record_original_cufunction_name(func,
 									kernel);
+					mapped++;
 				}
 			}
 		}
 	}
+	SPDLOG_INFO("nv_attach_impl: prefilled {} patched kernel mapping(s)",
+		    mapped);
 }
 
 namespace

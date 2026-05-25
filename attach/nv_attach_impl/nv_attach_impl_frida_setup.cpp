@@ -235,6 +235,23 @@ cuda_launch_kernel_common(nv_attach_impl *impl, void *original_fn_ptr,
 		}
 	}
 
+	if (auto single = impl->find_single_patched_kernel_function(); single) {
+		SPDLOG_DEBUG(
+			"Late attach launch: using single patched CUfunction fallback");
+		if (auto err = cuLaunchKernel(*single, grid_dim.x, grid_dim.y,
+					      grid_dim.z, block_dim.x,
+					      block_dim.y, block_dim.z,
+					      shared_mem, stream, args,
+					      nullptr);
+		    err == CUDA_SUCCESS) {
+			impl->record_patched_launch(stream);
+			return cudaSuccess;
+		}
+		SPDLOG_DEBUG("Late attach launch: single patched fallback failed");
+	} else {
+		SPDLOG_DEBUG("Late attach launch: no single patched CUfunction");
+	}
+
 	return original(func, grid_dim, block_dim, args, shared_mem, stream);
 }
 
@@ -513,6 +530,11 @@ static CUresult cu_launch_kernel_common(
 			impl->record_patched_launch(
 				reinterpret_cast<cudaStream_t>(stream));
 		}
+	}
+	if (auto single = impl->find_single_patched_kernel_function(); single) {
+		SPDLOG_DEBUG("cuLaunchKernel fallback: using single patched CUfunction");
+		func = *single;
+		impl->record_patched_launch(reinterpret_cast<cudaStream_t>(stream));
 	}
 	return original(func, grid_dim_x, grid_dim_y, grid_dim_z, block_dim_x,
 			block_dim_y, block_dim_z, shared_mem_bytes, stream,

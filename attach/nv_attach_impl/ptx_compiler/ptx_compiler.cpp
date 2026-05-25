@@ -4,9 +4,62 @@
 #include <cstdlib>
 #include <cstring>
 #include <clocale>
+#include <cctype>
 #include <spdlog/spdlog.h>
 #include <string>
 #include <vector>
+
+namespace {
+std::string rewrite_ptx_version(std::string ptx, const std::string &version)
+{
+	auto pos = ptx.find(".version");
+	if (pos == std::string::npos)
+		return ptx;
+
+	pos += strlen(".version");
+	while (pos < ptx.size() &&
+	       std::isspace(static_cast<unsigned char>(ptx[pos]))) {
+		pos++;
+	}
+
+	auto start = pos;
+	while (pos < ptx.size() &&
+	       (std::isdigit(static_cast<unsigned char>(ptx[pos])) ||
+		ptx[pos] == '.')) {
+		pos++;
+	}
+
+	if (start == pos)
+		return ptx;
+
+	ptx.replace(start, pos - start, version);
+	return ptx;
+}
+
+bool try_extract_supported_ptx_version(const std::string &error_log,
+					       std::string &version)
+{
+	const char *patterns[] = { "current version is '",
+				   "current version is \"" };
+	for (const char *pattern : patterns) {
+		auto pos = error_log.find(pattern);
+		if (pos == std::string::npos)
+			continue;
+		pos += strlen(pattern);
+		auto end = pos;
+		while (end < error_log.size() &&
+		       (std::isdigit(static_cast<unsigned char>(error_log[end])) ||
+			error_log[end] == '.')) {
+			end++;
+		}
+		if (end > pos) {
+			version = error_log.substr(pos, end - pos);
+			return true;
+		}
+	}
+	return false;
+}
+} // namespace
 
 struct nv_attach_impl_ptx_compiler {
 	nvPTXCompilerHandle compiler = nullptr;
@@ -47,11 +100,9 @@ int nv_attach_impl_compile(nv_attach_impl_ptx_compiler *ptr, const char *ptx,
 	if (ptr->compiler)
 		nvPTXCompilerDestroy(&ptr->compiler);
 
-	const size_t len = strlen(ptx);
-	if (auto err = nvPTXCompilerCreate(&ptr->compiler, len, ptx);
-	    err != NVPTXCOMPILE_SUCCESS) {
-		SPDLOG_ERROR("Unable to create compiler: {}",
-			     static_cast<int>(err));
+	std::string ptx_text = ptx;
+
+	auto load_error_log = [&]() {
 		size_t error_size = 0;
 		if (ptr->compiler &&
 		    nvPTXCompilerGetErrorLogSize(ptr->compiler, &error_size) ==
@@ -68,27 +119,67 @@ int nv_attach_impl_compile(nv_attach_impl_ptx_compiler *ptr, const char *ptx,
 				free(error_log);
 			}
 		}
+	};
+
+	auto create_compiler = [&](const std::string &source) -> bool {
+		if (ptr->compiler)
+			nvPTXCompilerDestroy(&ptr->compiler);
+		ptr->compiler = nullptr;
+
+		if (auto err = nvPTXCompilerCreate(&ptr->compiler, source.size(),
+					      source.c_str());
+		    err != NVPTXCOMPILE_SUCCESS) {
+			SPDLOG_ERROR("Unable to create compiler: {}",
+				     static_cast<int>(err));
+			load_error_log();
+			return false;
+		}
+		return true;
+	};
+
+	auto compile_with_retry = [&]() -> bool {
+		auto err = nvPTXCompilerCompile(ptr->compiler, arg_count, args);
+		if (err == NVPTXCOMPILE_SUCCESS)
+			return true;
+
+		SPDLOG_ERROR("Unable to compile: {}", static_cast<int>(err));
+		load_error_log();
+
+		std::string supported_version;
+		if (!try_extract_supported_ptx_version(ptr->error_log,
+						      supported_version)) {
+			return false;
+		}
+
+		auto rewritten_ptx =
+			rewrite_ptx_version(ptx_text, supported_version);
+		if (rewritten_ptx == ptx_text)
+			return false;
+
+		SPDLOG_WARN(
+			"Retrying PTX compile with downgraded .version {} from compiler diagnostics",
+			supported_version);
+		ptx_text = std::move(rewritten_ptx);
+		ptr->error_log.clear();
+
+		if (!create_compiler(ptx_text))
+			return false;
+
+		err = nvPTXCompilerCompile(ptr->compiler, arg_count, args);
+		if (err == NVPTXCOMPILE_SUCCESS)
+			return true;
+
+		SPDLOG_ERROR("Unable to compile after PTX version rewrite: {}",
+			     static_cast<int>(err));
+		load_error_log();
+		return false;
+	};
+
+	if (!create_compiler(ptx_text)) {
 		return -1;
 	}
 
-	if (auto err = nvPTXCompilerCompile(ptr->compiler, arg_count, args);
-	    err != NVPTXCOMPILE_SUCCESS) {
-		SPDLOG_ERROR("Unable to compile: {}", static_cast<int>(err));
-		size_t error_size = 0;
-		if (nvPTXCompilerGetErrorLogSize(ptr->compiler, &error_size) ==
-			    NVPTXCOMPILE_SUCCESS &&
-		    error_size > 0) {
-			auto *error_log = (char *)malloc(error_size + 1);
-			if (error_log) {
-				error_log[0] = '\0';
-				if (nvPTXCompilerGetErrorLog(ptr->compiler,
-							     error_log) ==
-				    NVPTXCOMPILE_SUCCESS) {
-					ptr->error_log = error_log;
-				}
-				free(error_log);
-			}
-		}
+	if (!compile_with_retry()) {
 		return -1;
 	}
 
