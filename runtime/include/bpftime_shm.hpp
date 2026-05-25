@@ -240,6 +240,12 @@ int bpftime_export_global_shm_to_json(const char *filename);
 // import a hander to global shared memory from json string
 int bpftime_import_shm_handler_from_json(int fd, const char *json_string);
 
+// Mirrors the kernel's `enum bpf_attach_type` value for BPF_PERF_EVENT.
+// Defined here (rather than pulling in <linux/bpf.h>) so the value has a single
+// source usable from the cross-platform shm/handler code, which also builds on
+// non-Linux targets.
+constexpr __u32 BPFTIME_BPF_PERF_EVENT_ATTACH_TYPE = 41;
+
 /* struct used by BPF_LINK_CREATE command */
 struct bpf_link_create_args {
 	union {
