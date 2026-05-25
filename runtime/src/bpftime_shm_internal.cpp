@@ -573,13 +573,31 @@ int bpftime_shm::add_bpf_prog(int fd, const ebpf_inst *insn, size_t insn_cnt,
 // add a bpf link fd
 int bpftime_shm::add_bpf_link(int fd, struct bpf_link_create_args *args)
 {
+	if (!args) {
+		errno = EINVAL;
+		return -1;
+	}
+	// Validate before allocating an fd so error paths don't leak the fd that
+	// open_fake_fd() would otherwise create.
+	if (!is_prog_fd(args->prog_fd)) {
+		errno = EBADF;
+		return -1;
+	}
+	// For perf-event links (uprobe/kprobe/tracepoint) the target must be a
+	// valid perf-event handler fd, matching the kernel's BPF_LINK_CREATE
+	// validation. Without this a stale/non-perf target_fd would be silently
+	// accepted.
+	if (args->attach_type == BPFTIME_BPF_PERF_EVENT_ATTACH_TYPE &&
+	    !is_perf_event_handler_fd(args->target_fd)) {
+		SPDLOG_ERROR(
+			"add_bpf_link: target_fd {} is not a perf-event handler for BPF_PERF_EVENT link",
+			args->target_fd);
+		errno = EBADF;
+		return -1;
+	}
 	if (fd < 0) {
 		// if fd is negative, we need to create a new fd for allocating
 		fd = open_fake_fd();
-	}
-	if (!is_prog_fd(args->prog_fd) || !args) {
-		errno = EBADF;
-		return -1;
 	}
 	return manager->set_handler(fd, bpftime::bpf_link_handler(*args),
 				    segment);
