@@ -70,6 +70,14 @@ extern "C" void bpftime_remove_global_shm()
 
 static __attribute__((destructor(65535))) void __destruct_shm()
 {
+	// If the global shm was never successfully initialized (e.g. a process
+	// that links the runtime but never created/opened shm, or whose
+	// bpftime_shm constructor threw on the expected "shm not ready yet"
+	// path), the object is uninitialized — touching it (get_open_type /
+	// remove_pid_from_alive_agent_set) would read garbage and can crash on
+	// exit. Bail out before any access.
+	if (!global_shm_initialized)
+		return;
 	// This usually indicates that the living shared memory object is used
 	// by an agent instance
 	if (bpftime::shm_holder.global_shared_memory.get_open_type() ==
@@ -402,7 +410,7 @@ int bpftime_shm::add_ringbuf_to_epoll(int ringbuf_fd, int epoll_fd,
 		std::get<bpf_map_handler>(manager->get_handler(ringbuf_fd));
 
 	auto ringbuf_map_impl = map_inst.try_get_ringbuf_map_impl();
-	if (ringbuf_map_impl.has_value(); auto val = ringbuf_map_impl.value()) {
+	if (auto val = ringbuf_map_impl.value_or(nullptr)) {
 		epoll_inst.files.emplace_back(val->create_impl_weak_ptr(),
 					      extra_data);
 		SPDLOG_DEBUG("Ringbuf {} added to epoll {}", ringbuf_fd,
