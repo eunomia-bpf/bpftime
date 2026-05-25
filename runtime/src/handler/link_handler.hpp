@@ -20,7 +20,8 @@ struct bpf_link_handler {
 	std::optional<uint64_t> attach_cookie;
 	bpf_link_handler(struct bpf_link_create_args args)
 		: args(args), prog_id(args.prog_fd),
-		  attach_target_id(args.target_fd)
+		  attach_target_id(args.target_fd),
+		  attach_cookie(args.perf_event.bpf_cookie)
 	{
 	}
 	bpf_link_handler(int prog_id, int attach_target_id)
