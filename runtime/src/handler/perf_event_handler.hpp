@@ -98,10 +98,12 @@ struct software_perf_event_shard {
 	int pid;
 	int64_t tid;
 	uint64_t generation;
+	uint64_t buffer_generation;
 	software_perf_event_buffer buffer;
 
 	software_perf_event_shard(
-		int pid, int64_t tid, uint64_t generation, int pagesize,
+		int pid, int64_t tid, uint64_t generation,
+		uint64_t buffer_generation, int pagesize,
 		software_perf_event_buffer::segment_manager *manager,
 		size_t buffer_size);
 };
@@ -120,9 +122,11 @@ struct software_perf_event_data {
 	// Field `sample_type` of perf_event_attr
 	int32_t sample_type;
 	int pagesize;
+	uint64_t event_generation;
+	uint64_t producer_buffer_generation = 1;
 	software_perf_event_buffer consumer_buffer;
 	mutable pthread_spinlock_t shard_lock;
-	uint64_t next_generation = 1;
+	uint64_t next_shard_generation = 1;
 	software_perf_event_shard_list producer_shards;
 	software_perf_event_data(
 		int cpu, int64_t config, int32_t sample_type,
@@ -138,6 +142,7 @@ struct software_perf_event_data {
     private:
 	software_perf_event_shard &get_current_thread_shard();
 	void drain_producer_shards();
+	void reclaim_inactive_producer_shards_locked();
 };
 
 using software_perf_event_shared_ptr = boost::interprocess::managed_shared_ptr<

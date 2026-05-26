@@ -5,6 +5,7 @@
 #include <atomic>
 #include <boost/interprocess/managed_shared_memory.hpp>
 #include <cstring>
+#include <string>
 #include <thread>
 #include <unistd.h>
 #include <vector>
@@ -34,12 +35,13 @@ void copy_from_perf_ring(uint8_t *base, size_t ring_size, uint64_t offset,
 TEST_CASE("Software perf event buffers shard concurrent producers by thread",
 	  "[perf_event][software_perf_event]")
 {
-	const char *shared_memory_name = "SoftwarePerfEventShardTestShm";
+	const std::string shared_memory_name =
+		"SoftwarePerfEventShardTestShm-" + std::to_string(getpid());
 	const size_t shared_memory_size = 16 * 1024 * 1024;
-	shm_remove remover((std::string(shared_memory_name)));
+	shm_remove remover{ std::string(shared_memory_name) };
 
 	boost::interprocess::managed_shared_memory shm(
-		boost::interprocess::create_only, shared_memory_name,
+		boost::interprocess::create_only, shared_memory_name.c_str(),
 		shared_memory_size);
 
 	auto *perf = shm.construct<bpftime::software_perf_event_data>(
@@ -81,6 +83,7 @@ TEST_CASE("Software perf event buffers shard concurrent producers by thread",
 	REQUIRE_FALSE(output_failed.load(std::memory_order_acquire));
 
 	REQUIRE(perf->has_data());
+	REQUIRE(perf->producer_shards.empty());
 
 	auto *header = (perf_event_mmap_page *)raw_buffer;
 	auto *base = (uint8_t *)raw_buffer + getpagesize();
@@ -122,4 +125,60 @@ TEST_CASE("Software perf event buffers shard concurrent producers by thread",
 	for (int count : seen) {
 		REQUIRE(count == 1);
 	}
+}
+
+TEST_CASE("Software perf event producer shards rotate after mmap resize",
+	  "[perf_event][software_perf_event]")
+{
+	const std::string shared_memory_name =
+		"SoftwarePerfEventResizeTestShm-" + std::to_string(getpid());
+	const size_t shared_memory_size = 16 * 1024 * 1024;
+	shm_remove remover{ std::string(shared_memory_name) };
+
+	boost::interprocess::managed_shared_memory shm(
+		boost::interprocess::create_only, shared_memory_name.c_str(),
+		shared_memory_size);
+
+	auto *perf = shm.construct<bpftime::software_perf_event_data>(
+		"perf")(0, 0, 0, shm);
+	REQUIRE(perf != nullptr);
+
+	event_payload dropped_before_mmap{ 0, 0 };
+	REQUIRE(perf->output_data(&dropped_before_mmap,
+				  sizeof(dropped_before_mmap)) == 0);
+	REQUIRE_FALSE(perf->has_data());
+
+	const size_t ring_size = 64 * 1024;
+	void *raw_buffer = perf->ensure_mmap_buffer(getpagesize() + ring_size);
+	REQUIRE(raw_buffer != nullptr);
+
+	event_payload payload{ 1, 7 };
+	REQUIRE(perf->output_data(&payload, sizeof(payload)) == 0);
+	REQUIRE(perf->has_data());
+
+	auto *header = (perf_event_mmap_page *)raw_buffer;
+	auto *base = (uint8_t *)raw_buffer + getpagesize();
+	uint64_t tail = header->data_tail;
+	uint64_t head = header->data_head;
+	REQUIRE(head > tail);
+
+	perf_event_header record_header;
+	copy_from_perf_ring(base, ring_size, tail, &record_header,
+			    sizeof(record_header));
+	REQUIRE(record_header.type == PERF_RECORD_SAMPLE);
+	REQUIRE(record_header.size ==
+		sizeof(bpftime::perf_sample_raw) + sizeof(event_payload));
+
+	std::vector<uint8_t> record(record_header.size);
+	copy_from_perf_ring(base, ring_size, tail, record.data(),
+			    record.size());
+	auto *sample = (const bpftime::perf_sample_raw *)record.data();
+	REQUIRE(sample->size == sizeof(event_payload));
+
+	event_payload actual;
+	memcpy(&actual, record.data() + sizeof(bpftime::perf_sample_raw),
+	       sizeof(actual));
+	REQUIRE(actual.producer == payload.producer);
+	REQUIRE(actual.sequence == payload.sequence);
+	REQUIRE(tail + record_header.size == head);
 }

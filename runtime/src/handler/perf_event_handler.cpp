@@ -17,6 +17,8 @@
 #include <boost/interprocess/allocators/allocator.hpp>
 #include <unistd.h>
 #include <spdlog/fmt/bin_to_hex.h>
+#include <atomic>
+#include <cerrno>
 #include <unordered_map>
 #include <variant>
 #if __linux__
@@ -91,8 +93,39 @@ int64_t current_thread_id()
 #endif
 }
 
+uint64_t next_software_perf_event_generation()
+{
+	static std::atomic<uint64_t> next_generation{ 1 };
+	uint64_t generation =
+		next_generation.fetch_add(1, std::memory_order_relaxed);
+	return ((uint64_t)(uint32_t)getpid() << 32) ^ generation;
+}
+
+bool is_thread_alive(int pid, int64_t tid)
+{
+#if __linux__
+	if (syscall(SYS_tgkill, pid, (pid_t)tid, 0) == 0) {
+		return true;
+	}
+	return errno == EPERM;
+#else
+	(void)pid;
+	(void)tid;
+	return true;
+#endif
+}
+
+struct software_perf_event_shard_cache_entry {
+	uint64_t event_generation;
+	uint64_t buffer_generation;
+	uint64_t shard_generation;
+	software_perf_event_shard *shard;
+};
+
+constexpr size_t max_software_perf_event_shard_cache_entries = 64;
+
 thread_local std::unordered_map<const software_perf_event_data *,
-				software_perf_event_shard *>
+				software_perf_event_shard_cache_entry>
 	software_perf_event_shard_cache;
 } // namespace
 
@@ -255,13 +288,16 @@ bool software_perf_event_buffer::append_record(const void *record,
 	uint64_t data_head = smp_load_acquire_u64(&header.data_head);
 	uint64_t data_tail = smp_load_acquire_u64(&header.data_tail);
 	uint8_t *base_addr = (uint8_t *)mmap_buffer.data() + pagesize;
-	int64_t available_size =
-		(int64_t)mmap_size() - (int64_t)(data_head - data_tail);
-	if (available_size == 0) {
-		available_size = mmap_size();
+	const uint64_t used_size = data_head - data_tail;
+	if (data_head < data_tail || used_size >= mmap_size()) {
+		SPDLOG_DEBUG(
+			"Dropping perf record with invalid ring state: head {}, tail {}, ring size {}",
+			data_head, data_tail, mmap_size());
+		return false;
 	}
+	const size_t available_size = mmap_size() - used_size;
 	// Keep one byte empty so head == tail only represents an empty buffer.
-	if (available_size <= (int64_t)record_size) {
+	if (available_size <= record_size) {
 		SPDLOG_DEBUG(
 			"Dropping perf record with size {}, available_size {}",
 			record_size, available_size);
@@ -364,10 +400,11 @@ bool software_perf_event_buffer::copy_next_record_to(
 }
 
 software_perf_event_shard::software_perf_event_shard(
-	int pid, int64_t tid, uint64_t generation, int pagesize,
-	software_perf_event_buffer::segment_manager *manager,
+	int pid, int64_t tid, uint64_t generation, uint64_t buffer_generation,
+	int pagesize, software_perf_event_buffer::segment_manager *manager,
 	size_t buffer_size)
-	: pid(pid), tid(tid), generation(generation), buffer(pagesize, manager)
+	: pid(pid), tid(tid), generation(generation),
+	  buffer_generation(buffer_generation), buffer(pagesize, manager)
 {
 	buffer.ensure_mmap_buffer(buffer_size);
 }
@@ -377,6 +414,7 @@ software_perf_event_data::software_perf_event_data(
 	boost::interprocess::managed_shared_memory &memory)
 	: cpu(cpu), config(config), sample_type(sample_type),
 	  pagesize(getpagesize()),
+	  event_generation(next_software_perf_event_generation()),
 	  consumer_buffer(pagesize, memory.get_segment_manager()),
 	  producer_shards(memory.get_segment_manager())
 {
@@ -392,26 +430,55 @@ software_perf_event_shard &software_perf_event_data::get_current_thread_shard()
 {
 	const int pid = getpid();
 	const int64_t tid = current_thread_id();
+	uint64_t current_buffer_generation =
+		READ_ONCE_U64(producer_buffer_generation);
 	if (auto itr = software_perf_event_shard_cache.find(this);
-	    itr != software_perf_event_shard_cache.end() &&
-	    itr->second->pid == pid && itr->second->tid == tid) {
-		return *itr->second;
+	    itr != software_perf_event_shard_cache.end()) {
+		auto &entry = itr->second;
+		if (entry.event_generation != event_generation ||
+		    entry.buffer_generation != current_buffer_generation) {
+			software_perf_event_shard_cache.erase(itr);
+		} else if (entry.shard->pid == pid && entry.shard->tid == tid &&
+			   entry.shard->generation == entry.shard_generation &&
+			   entry.shard->buffer_generation ==
+				   current_buffer_generation) {
+			return *entry.shard;
+		} else {
+			software_perf_event_shard_cache.erase(itr);
+		}
 	}
 
 	spin_lock_guard guard(shard_lock);
+	current_buffer_generation = READ_ONCE_U64(producer_buffer_generation);
+	reclaim_inactive_producer_shards_locked();
 	for (auto &shard : producer_shards) {
-		if (shard.pid == pid && shard.tid == tid) {
-			software_perf_event_shard_cache[this] = &shard;
+		if (shard.pid == pid && shard.tid == tid &&
+		    shard.buffer_generation == current_buffer_generation) {
+			if (software_perf_event_shard_cache.size() >=
+			    max_software_perf_event_shard_cache_entries) {
+				software_perf_event_shard_cache.clear();
+			}
+			software_perf_event_shard_cache[this] = {
+				event_generation, current_buffer_generation,
+				shard.generation, &shard
+			};
 			return shard;
 		}
 	}
 
 	auto *manager = producer_shards.get_allocator().get_segment_manager();
-	producer_shards.emplace_back(pid, tid, next_generation++, pagesize,
+	producer_shards.emplace_back(pid, tid, next_shard_generation++,
+				     current_buffer_generation, pagesize,
 				     manager,
 				     consumer_buffer.mmap_buffer.size());
 	auto &shard = producer_shards.back();
-	software_perf_event_shard_cache[this] = &shard;
+	if (software_perf_event_shard_cache.size() >=
+	    max_software_perf_event_shard_cache_entries) {
+		software_perf_event_shard_cache.clear();
+	}
+	software_perf_event_shard_cache[this] = { event_generation,
+						  current_buffer_generation,
+						  shard.generation, &shard };
 	return shard;
 }
 
@@ -420,6 +487,21 @@ void software_perf_event_data::drain_producer_shards()
 	spin_lock_guard guard(shard_lock);
 	for (auto &shard : producer_shards) {
 		while (shard.buffer.copy_next_record_to(consumer_buffer)) {
+		}
+	}
+	reclaim_inactive_producer_shards_locked();
+}
+
+void software_perf_event_data::reclaim_inactive_producer_shards_locked()
+{
+	for (auto itr = producer_shards.begin();
+	     itr != producer_shards.end();) {
+		auto &shard = *itr;
+		if (!shard.buffer.has_data() &&
+		    !is_thread_alive(shard.pid, shard.tid)) {
+			itr = producer_shards.erase(itr);
+		} else {
+			++itr;
 		}
 	}
 }
@@ -448,15 +530,15 @@ perf_event_mmap_page &software_perf_event_data::get_header_ref()
 
 void *software_perf_event_data::ensure_mmap_buffer(size_t buffer_size)
 {
+	spin_lock_guard guard(shard_lock);
+	const size_t old_buffer_size = consumer_buffer.mmap_buffer.size();
 	void *result = consumer_buffer.ensure_mmap_buffer(buffer_size);
 	if (result == nullptr) {
 		return nullptr;
 	}
-	spin_lock_guard guard(shard_lock);
-	for (auto &shard : producer_shards) {
-		if (shard.buffer.ensure_mmap_buffer(buffer_size) == nullptr) {
-			return nullptr;
-		}
+	if (consumer_buffer.mmap_buffer.size() != old_buffer_size) {
+		WRITE_ONCE_U64(producer_buffer_generation,
+			       producer_buffer_generation + 1);
 	}
 	return result;
 }
