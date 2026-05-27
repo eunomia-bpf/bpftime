@@ -594,8 +594,7 @@ long syscall_context::handle_sysbpf(int cmd, union bpf_attr *attr, size_t size)
 			SPDLOG_DEBUG(
 				"Attaching perf event {} to prog {}, with bpf cookie {:x}",
 				target_fd, prog_fd, cookie);
-			bpftime_attach_perf_to_bpf_with_cookie(target_fd,
-							       prog_fd, cookie);
+				id = bpftime_attach_perf_to_bpf_with_cookie(target_fd, prog_fd, cookie);
 		}
 		return id;
 	}
