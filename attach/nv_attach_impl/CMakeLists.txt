@@ -44,6 +44,7 @@ add_dependencies(
     ptxpass_kprobe_entry
     ptxpass_kretprobe
     ptxpass_kprobe_memcapture
+    ptxpass_bb_tracepoint
     nv_attach_impl_ptx_compiler
 )
 set(NV_ATTACH_IMPL_INCLUDE ${CMAKE_CURRENT_SOURCE_DIR} )

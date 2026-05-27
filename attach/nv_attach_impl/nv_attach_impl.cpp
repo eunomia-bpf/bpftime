@@ -130,14 +130,6 @@ static std::vector<std::filesystem::path> split_by_colon(const std::string &str)
 
 extern GType cuda_runtime_function_hooker_get_type();
 
-static uint64_t bpftime_nv_helper_stub(uint64_t, uint64_t, uint64_t, uint64_t,
-				       uint64_t)
-{
-	// CUDA helpers are consumed by transformed GPU code paths.
-	// Keep a stub on host side so helper IDs can still be registered.
-	return 0;
-}
-
 int nv_attach_impl::detach_by_id(int id)
 {
 	auto itr = hook_entries.find(id);
@@ -164,24 +156,6 @@ int nv_attach_impl::detach_by_id(int id)
 void nv_attach_impl::register_custom_helpers(
 	ebpf_helper_register_callback register_callback)
 {
-	register_callback(501, "bpf_puts", (void *)bpftime_nv_helper_stub);
-	register_callback(502, "bpf_get_global_timer",
-			  (void *)bpftime_nv_helper_stub);
-	register_callback(503, "bpf_get_block_idx",
-			  (void *)bpftime_nv_helper_stub);
-	register_callback(504, "bpf_get_block_dim",
-			  (void *)bpftime_nv_helper_stub);
-	register_callback(505, "bpf_get_thread_idx",
-			  (void *)bpftime_nv_helper_stub);
-	register_callback(507, "bpf_cuda_exit", (void *)bpftime_nv_helper_stub);
-	register_callback(508, "bpf_get_grid_dim",
-			  (void *)bpftime_nv_helper_stub);
-	register_callback(509, "bpf_get_sm_id", (void *)bpftime_nv_helper_stub);
-	register_callback(510, "bpf_get_warp_id", (void *)bpftime_nv_helper_stub);
-	register_callback(511, "bpf_get_lane_id", (void *)bpftime_nv_helper_stub);
-	register_callback(512, "bpf_get_ptx_reg", (void *)bpftime_nv_helper_stub);
-	register_callback(513, "bpf_get_reg_count",
-			  (void *)bpftime_nv_helper_stub);
 }
 
 int nv_attach_impl::create_attach_with_ebpf_callback(
