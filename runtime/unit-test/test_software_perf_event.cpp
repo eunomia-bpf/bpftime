@@ -83,6 +83,9 @@ TEST_CASE("Software perf event buffers shard concurrent producers by thread",
 	REQUIRE_FALSE(output_failed.load(std::memory_order_acquire));
 
 	REQUIRE(perf->has_data());
+	for (int i = 0; i < 64; i++) {
+		REQUIRE(perf->has_data());
+	}
 	REQUIRE(perf->producer_shards.empty());
 
 	auto *header = (perf_event_mmap_page *)raw_buffer;

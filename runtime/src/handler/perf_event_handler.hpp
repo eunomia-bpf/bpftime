@@ -91,7 +91,12 @@ struct software_perf_event_buffer {
 
     private:
 	bool append_record(const void *record, size_t record_size);
-	void copy_from_ring(uint64_t offset, void *dst, size_t size) const;
+	bool append_record_parts(const void *first, size_t first_size,
+				 const void *second, size_t second_size);
+	bool append_sample(const perf_sample_raw &header, const void *payload,
+			   size_t payload_size);
+	void write_wrapped(uint64_t offset, const void *src, size_t size);
+	void read_wrapped(uint64_t offset, void *dst, size_t size) const;
 };
 
 struct software_perf_event_shard {
@@ -127,6 +132,7 @@ struct software_perf_event_data {
 	software_perf_event_buffer consumer_buffer;
 	mutable pthread_spinlock_t shard_lock;
 	uint64_t next_shard_generation = 1;
+	uint64_t drains_since_reclaim = 0;
 	software_perf_event_shard_list producer_shards;
 	software_perf_event_data(
 		int cpu, int64_t config, int32_t sample_type,
@@ -142,6 +148,7 @@ struct software_perf_event_data {
     private:
 	software_perf_event_shard &get_current_thread_shard();
 	void drain_producer_shards();
+	void maybe_reclaim_inactive_producer_shards_locked();
 	void reclaim_inactive_producer_shards_locked();
 };
 

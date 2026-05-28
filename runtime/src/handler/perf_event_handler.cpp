@@ -19,6 +19,7 @@
 #include <spdlog/fmt/bin_to_hex.h>
 #include <atomic>
 #include <cerrno>
+#include <limits>
 #include <unordered_map>
 #include <variant>
 #if __linux__
@@ -123,6 +124,8 @@ struct software_perf_event_shard_cache_entry {
 };
 
 constexpr size_t max_software_perf_event_shard_cache_entries = 64;
+constexpr uint64_t software_perf_event_reclaim_drain_interval = 64;
+constexpr size_t software_perf_event_reclaim_shard_threshold = 64;
 
 thread_local std::unordered_map<const software_perf_event_data *,
 				software_perf_event_shard_cache_entry>
@@ -231,7 +234,7 @@ bpf_perf_event_handler::bpf_perf_event_handler(
 software_perf_event_buffer::software_perf_event_buffer(int pagesize,
 						       segment_manager *manager)
 	: pagesize(pagesize), mmap_buffer(pagesize, manager),
-	  copy_buffer(pagesize, manager)
+	  copy_buffer(manager)
 {
 	perf_event_mmap_page &perf_header = get_header_ref();
 	perf_header.data_offset = pagesize;
@@ -281,13 +284,24 @@ size_t software_perf_event_buffer::mmap_size() const
 bool software_perf_event_buffer::append_record(const void *record,
 					       size_t record_size)
 {
+	return append_record_parts(record, record_size, nullptr, 0);
+}
+
+bool software_perf_event_buffer::append_record_parts(const void *first,
+						     size_t first_size,
+						     const void *second,
+						     size_t second_size)
+{
+	if (second_size > std::numeric_limits<size_t>::max() - first_size) {
+		return false;
+	}
+	const size_t record_size = first_size + second_size;
 	if (mmap_size() == 0 || record_size > mmap_size()) {
 		return false;
 	}
 	auto &header = get_header_ref();
 	uint64_t data_head = smp_load_acquire_u64(&header.data_head);
 	uint64_t data_tail = smp_load_acquire_u64(&header.data_tail);
-	uint8_t *base_addr = (uint8_t *)mmap_buffer.data() + pagesize;
 	const uint64_t used_size = data_head - data_tail;
 	if (data_head < data_tail || used_size >= mmap_size()) {
 		SPDLOG_DEBUG(
@@ -304,54 +318,69 @@ bool software_perf_event_buffer::append_record(const void *record,
 		return false;
 	}
 
-	uint8_t *copy_start_1 = base_addr + (data_head & (mmap_size() - 1));
-	if (record_size + copy_start_1 <= base_addr + mmap_size()) {
-		memcpy(copy_start_1, record, record_size);
-	} else {
-		size_t len_first = base_addr + mmap_size() - copy_start_1;
-		size_t len_second = record_size - len_first;
-		memcpy(copy_start_1, record, len_first);
-		memcpy(base_addr, (const uint8_t *)record + len_first,
-		       len_second);
+	write_wrapped(data_head, first, first_size);
+	if (second_size > 0) {
+		write_wrapped(data_head + first_size, second, second_size);
 	}
 	uint64_t new_head = data_head + record_size;
 	smp_store_release_u64(&header.data_head, new_head);
 	SPDLOG_DEBUG(
 		"Perf record of size {} outputed at head {}; new_head={} addr={:x}; available_size={}",
 		record_size, data_head, new_head,
-		(uintptr_t)(base_addr + data_head), available_size);
+		(uintptr_t)((uint8_t *)mmap_buffer.data() + pagesize +
+			    (data_head & (mmap_size() - 1))),
+		available_size);
 	return true;
+}
+
+bool software_perf_event_buffer::append_sample(const perf_sample_raw &header,
+					       const void *payload,
+					       size_t payload_size)
+{
+	return append_record_parts(&header, sizeof(header), payload,
+				   payload_size);
 }
 
 int software_perf_event_buffer::output_data(const void *buf, size_t size)
 {
 	SPDLOG_DEBUG("Handling perf event output data with size {}", size);
-	perf_sample_raw head;
-	head.header.type = PERF_RECORD_SAMPLE;
-	head.header.size = sizeof(head) + size;
-	head.header.misc = 0;
-	head.size = size;
+	perf_sample_raw header;
+	header.header.type = PERF_RECORD_SAMPLE;
+	header.header.size = sizeof(header) + size;
+	header.header.misc = 0;
+	header.size = size;
 
-	auto copy_size = head.header.size;
-	if (copy_buffer.size() != copy_size)
-		copy_buffer.resize(copy_size);
-	memcpy(copy_buffer.data(), &head, sizeof(head));
-	memcpy((uint8_t *)(copy_buffer.data()) + sizeof(head), buf, size);
-	append_record(copy_buffer.data(), copy_size);
+	append_sample(header, buf, size);
 	return 0;
 }
 
-void software_perf_event_buffer::copy_from_ring(uint64_t offset, void *dst,
-						size_t size) const
+void software_perf_event_buffer::write_wrapped(uint64_t offset, const void *src,
+					       size_t size)
 {
 	uint8_t *base_addr = (uint8_t *)mmap_buffer.data() + pagesize;
-	uint8_t *copy_start_1 = base_addr + (offset & (mmap_size() - 1));
-	if (size + copy_start_1 <= base_addr + mmap_size()) {
-		memcpy(dst, copy_start_1, size);
+	uint8_t *copy_start = base_addr + (offset & (mmap_size() - 1));
+	if (size + copy_start <= base_addr + mmap_size()) {
+		memcpy(copy_start, src, size);
 	} else {
-		size_t len_first = base_addr + mmap_size() - copy_start_1;
+		size_t len_first = base_addr + mmap_size() - copy_start;
 		size_t len_second = size - len_first;
-		memcpy(dst, copy_start_1, len_first);
+		memcpy(copy_start, src, len_first);
+		memcpy(base_addr, (const uint8_t *)src + len_first, len_second);
+	}
+}
+
+void software_perf_event_buffer::read_wrapped(uint64_t offset, void *dst,
+					      size_t size) const
+{
+	const uint8_t *base_addr =
+		(const uint8_t *)mmap_buffer.data() + pagesize;
+	const uint8_t *copy_start = base_addr + (offset & (mmap_size() - 1));
+	if (size + copy_start <= base_addr + mmap_size()) {
+		memcpy(dst, copy_start, size);
+	} else {
+		size_t len_first = base_addr + mmap_size() - copy_start;
+		size_t len_second = size - len_first;
+		memcpy(dst, copy_start, len_first);
 		memcpy((uint8_t *)dst + len_first, base_addr, len_second);
 	}
 }
@@ -376,7 +405,7 @@ bool software_perf_event_buffer::copy_next_record_to(
 	}
 
 	perf_event_header record_header;
-	copy_from_ring(data_tail, &record_header, sizeof(record_header));
+	read_wrapped(data_tail, &record_header, sizeof(record_header));
 	if (record_header.size < sizeof(record_header) ||
 	    record_header.size > mmap_size()) {
 		SPDLOG_ERROR("Invalid perf record size {}, dropping shard data",
@@ -390,7 +419,7 @@ bool software_perf_event_buffer::copy_next_record_to(
 
 	if (copy_buffer.size() != record_header.size)
 		copy_buffer.resize(record_header.size);
-	copy_from_ring(data_tail, copy_buffer.data(), record_header.size);
+	read_wrapped(data_tail, copy_buffer.data(), record_header.size);
 	if (!dst.append_record(copy_buffer.data(), record_header.size)) {
 		return false;
 	}
@@ -450,7 +479,10 @@ software_perf_event_shard &software_perf_event_data::get_current_thread_shard()
 
 	spin_lock_guard guard(shard_lock);
 	current_buffer_generation = READ_ONCE_U64(producer_buffer_generation);
-	reclaim_inactive_producer_shards_locked();
+	if (producer_shards.size() >=
+	    software_perf_event_reclaim_shard_threshold) {
+		reclaim_inactive_producer_shards_locked();
+	}
 	for (auto &shard : producer_shards) {
 		if (shard.pid == pid && shard.tid == tid &&
 		    shard.buffer_generation == current_buffer_generation) {
@@ -489,7 +521,22 @@ void software_perf_event_data::drain_producer_shards()
 		while (shard.buffer.copy_next_record_to(consumer_buffer)) {
 		}
 	}
-	reclaim_inactive_producer_shards_locked();
+	maybe_reclaim_inactive_producer_shards_locked();
+}
+
+void software_perf_event_data::maybe_reclaim_inactive_producer_shards_locked()
+{
+	if (producer_shards.empty()) {
+		drains_since_reclaim = 0;
+		return;
+	}
+	if (++drains_since_reclaim >=
+		    software_perf_event_reclaim_drain_interval ||
+	    producer_shards.size() >=
+		    software_perf_event_reclaim_shard_threshold) {
+		drains_since_reclaim = 0;
+		reclaim_inactive_producer_shards_locked();
+	}
 }
 
 void software_perf_event_data::reclaim_inactive_producer_shards_locked()
