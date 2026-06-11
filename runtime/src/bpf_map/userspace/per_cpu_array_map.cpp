@@ -4,7 +4,11 @@
  * All rights reserved.
  */
 #include "bpf_map/map_common_def.hpp"
+#ifdef BPFTIME_BUILD_WITH_LIBBPF
 #include "linux/bpf.h"
+#else
+#include "bpf_flags.hpp"
+#endif
 #include "spdlog/spdlog.h"
 #include <algorithm>
 #include <bpf_map/userspace/per_cpu_array_map.hpp>

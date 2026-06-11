@@ -12,15 +12,14 @@ add_library(bpftime-syscall-server SHARED
 
 # Force link VM compat libraries so constructor-based factory registration is retained
 # Ensure VM compat libraries are linked (once) via the runtime library instead of duplicating at server
+# Linker options are handled conditionally below for macOS vs Linux
 if(${BPFTIME_UBPF_JIT})
   add_dependencies(bpftime-syscall-server bpftime_ubpf_vm)
-  target_link_options(bpftime-syscall-server PUBLIC "-Wl,--whole-archive" "$<TARGET_FILE:bpftime_ubpf_vm>" "-Wl,--no-whole-archive")
   target_link_libraries(bpftime-syscall-server PUBLIC bpftime_ubpf_vm)
 endif()
 
 if(${BPFTIME_LLVM_JIT})
   add_dependencies(bpftime-syscall-server bpftime_llvm_vm llvmbpf_vm)
-  target_link_options(bpftime-syscall-server PUBLIC "-Wl,--whole-archive" "$<TARGET_FILE:bpftime_llvm_vm>" "-Wl,--no-whole-archive")
   target_link_libraries(bpftime-syscall-server PUBLIC bpftime_llvm_vm)
 endif()
 
@@ -52,6 +51,26 @@ target_include_directories(bpftime-syscall-server
 endif()
 
 set_target_properties(bpftime-syscall-server PROPERTIES CXX_STANDARD 20 LINK_DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/syscall-server.version)
+
+if(APPLE)
+  # Suppress Boost template warning on macOS (Boost/compiler compatibility issue)
+  target_compile_options(bpftime-syscall-server PRIVATE -Wno-missing-template-arg-list-after-template-kw)
+  # Fix linker options for macOS
+  if(${BPFTIME_UBPF_JIT})
+    target_link_options(bpftime-syscall-server PUBLIC "-Wl,-force_load,$<TARGET_FILE:bpftime_ubpf_vm>")
+  endif()
+  if(${BPFTIME_LLVM_JIT})
+    target_link_options(bpftime-syscall-server PUBLIC "-Wl,-force_load,$<TARGET_FILE:bpftime_llvm_vm>")
+  endif()
+else()
+  # Linux linker options
+  if(${BPFTIME_UBPF_JIT})
+    target_link_options(bpftime-syscall-server PUBLIC "-Wl,--whole-archive" "$<TARGET_FILE:bpftime_ubpf_vm>" "-Wl,--no-whole-archive")
+  endif()
+  if(${BPFTIME_LLVM_JIT})
+    target_link_options(bpftime-syscall-server PUBLIC "-Wl,--whole-archive" "$<TARGET_FILE:bpftime_llvm_vm>" "-Wl,--no-whole-archive")
+  endif()
+endif()
 
 if(UNIX AND NOT APPLE)
 target_link_options(bpftime-syscall-server PRIVATE -Wl,--version-script=${CMAKE_CURRENT_SOURCE_DIR}/syscall-server.version)

@@ -1,6 +1,12 @@
 add_executable(bpftimetool
   main.cpp
 )
+
+if(APPLE)
+  # Suppress Boost template warning on macOS (Boost/compiler compatibility issue)
+  target_compile_options(bpftimetool PRIVATE -Wno-missing-template-arg-list-after-template-kw)
+endif()
+
 if(${BPFTIME_ENABLE_CUDA_ATTACH})
   include(../../cmake/cuda.cmake)
   find_cuda()

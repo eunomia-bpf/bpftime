@@ -14,6 +14,9 @@
 #include <memory>
 #include <cstdint>
 #include <pthread.h>
+#if __APPLE__
+#include "spinlock_wrapper.hpp"
+#endif
 
 namespace bpftime
 {

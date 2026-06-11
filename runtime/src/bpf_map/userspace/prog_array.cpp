@@ -12,6 +12,7 @@
 #include <asm/unistd.h>
 #elif __APPLE__
 #include "bpftime_epoll.h"
+#include "bpf_flags.hpp"
 #endif
 #include "spdlog/spdlog.h"
 #include <bpf_map/userspace/prog_array.hpp>
@@ -24,7 +25,6 @@
 #define offsetofend(TYPE, FIELD)                                               \
 	(offsetof(TYPE, FIELD) + sizeof(((TYPE *)0)->FIELD))
 #endif
-
 
 #if __linux__
 
