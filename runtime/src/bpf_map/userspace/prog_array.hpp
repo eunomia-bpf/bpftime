@@ -17,9 +17,8 @@ using i32_vec_allocator = boost::interprocess::allocator<
 using i32_vec = boost::interprocess::vector<int32_t, i32_vec_allocator>;
 class prog_array_map_impl {
     private:
-	// accept fd, but store id
-	// maps might be shared among processes, fd are process independent, but
-	// ids are shared
+	// Kernel programs are stored by id; bpftime programs use encoded fake
+	// fds because their handlers live in bpftime shared memory.
 	i32_vec data;
 
     public:
