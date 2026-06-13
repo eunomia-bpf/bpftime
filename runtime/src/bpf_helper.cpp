@@ -555,7 +555,6 @@ uint64_t bpf_perf_event_output(uint64_t ctx, uint64_t map, uint64_t flags,
 
 uint64_t bpftime_tail_call(uint64_t ctx, uint64_t prog_array, uint64_t index)
 {
-#ifdef BPFTIME_BUILD_WITH_LIBBPF
 	int fd = (int)prog_array;
 	if (!bpftime_is_prog_array(fd)) {
 		SPDLOG_ERROR("Expected fd {} to be a prog array fd", fd);
@@ -571,6 +570,78 @@ uint64_t bpftime_tail_call(uint64_t ctx, uint64_t prog_array, uint64_t index)
 	}
 	int to_call_fd = *to_call_id_ptr;
 	SPDLOG_DEBUG("tail call helper: calling prog fd {}", to_call_fd);
+
+	if (bpftime_is_prog_fd(to_call_fd)) {
+		constexpr uint32_t MAX_TAIL_CALL_CNT = 32;
+		static thread_local uint32_t tail_call_depth = 0;
+		if (tail_call_depth >= MAX_TAIL_CALL_CNT) {
+			SPDLOG_ERROR("tail call depth limit exceeded");
+			return -1;
+		}
+		struct tail_call_depth_guard {
+			uint32_t &depth;
+			explicit tail_call_depth_guard(uint32_t &depth)
+				: depth(depth)
+			{
+				depth++;
+			}
+			~tail_call_depth_guard()
+			{
+				depth--;
+			}
+		} guard(tail_call_depth);
+
+		const auto &handler = std::get<bpftime::bpf_prog_handler>(
+			bpftime::shm_holder.global_shared_memory.get_handler(
+				to_call_fd));
+		bpftime::agent_config config =
+			bpftime::bpftime_get_agent_config();
+		bpftime::bpftime_prog prog(handler.insns.data(),
+					   handler.insns.size(),
+					   handler.name.c_str());
+
+		if (config.enable_kernel_helper_group &&
+		    bpftime::bpftime_helper_group::get_kernel_utils_helper_group()
+				    .add_helper_group_to_prog(&prog) < 0) {
+			return -1;
+		}
+		if (config.enable_ufunc_helper_group &&
+		    bpftime::bpftime_helper_group::get_ufunc_helper_group()
+				    .add_helper_group_to_prog(&prog) < 0) {
+			return -1;
+		}
+		if (config.enable_shm_maps_helper_group &&
+		    bpftime::bpftime_helper_group::get_shm_maps_helper_group()
+				    .add_helper_group_to_prog(&prog) < 0) {
+			return -1;
+		}
+		if (prog.bpftime_prog_load(false) < 0) {
+			SPDLOG_ERROR(
+				"Failed to load userspace tail call target fd {}",
+				to_call_fd);
+			return -1;
+		}
+
+		char context[64];
+		if (ctx) {
+			memcpy(context, (const void *)(uintptr_t)ctx,
+			       sizeof(context));
+		} else {
+			memset(context, 0, sizeof(context));
+		}
+		uint64_t retval = 0;
+		int err = prog.bpftime_prog_exec(context, sizeof(context),
+						 &retval);
+		if (err < 0) {
+			SPDLOG_ERROR(
+				"Failed to execute userspace tail call target fd {}",
+				to_call_fd);
+			return -1;
+		}
+		return retval;
+	}
+
+#if __linux__ && defined(BPFTIME_BUILD_WITH_LIBBPF)
 	char context[64];
 	if (ctx) {
 		memcpy(context, (const void *)(uintptr_t)ctx, 64);
@@ -591,7 +662,9 @@ uint64_t bpftime_tail_call(uint64_t ctx, uint64_t prog_array, uint64_t index)
 	close(to_call_fd);
 	return run_opts.retval;
 #else
-	SPDLOG_ERROR("tail_call is not supported in this build");
+	SPDLOG_ERROR(
+		"tail_call to kernel program fd {} requires libbpf support",
+		to_call_fd);
 	return -ENOTSUP;
 #endif
 }

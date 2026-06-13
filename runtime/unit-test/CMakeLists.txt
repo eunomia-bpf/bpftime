@@ -42,6 +42,7 @@ set(TEST_SOURCES
     attach_with_ebpf/test_attach_replace.cpp
 
     tailcall/test_user_to_kernel_tailcall.cpp
+    tailcall/test_user_to_user_tailcall.cpp
 
 )
 if(${BPFTIME_ENABLE_CUDA_ATTACH})
