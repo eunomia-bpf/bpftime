@@ -139,9 +139,13 @@ class bpftime_shm {
 	bool is_epoll_fd(int fd) const;
 
 	bool is_map_fd(int fd) const;
+
+private:
 	// Returns the map handler for `fd`, or nullptr (with errno=ENOENT) if
 	// `fd` is not a map fd. Shared by the bpf_map_* accessors below.
 	const bpf_map_handler *try_get_map_handler(int fd) const;
+
+public:
 	bool is_ringbuf_map_fd(int fd) const;
 	bool is_array_map_fd(int fd) const;
 
