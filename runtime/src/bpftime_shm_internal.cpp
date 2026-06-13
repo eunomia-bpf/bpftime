@@ -50,6 +50,10 @@ extern "C" void bpftime_destroy_global_shm()
 	if (global_shm_initialized) {
 		// SPDLOG_INFO("Global shm destructed");
 		shm_holder.global_shared_memory.~bpftime_shm();
+		// Make this idempotent: clear the flag so a later explicit call
+		// or the __destruct_shm static destructor does not destroy the
+		// already-destroyed object a second time.
+		global_shm_initialized = false;
 		// Why not spdlog? because global variables that spdlog used
 		// were already destroyed..
 #ifdef DEBUG
@@ -70,6 +74,14 @@ extern "C" void bpftime_remove_global_shm()
 
 static __attribute__((destructor(65535))) void __destruct_shm()
 {
+	// If the global shm was never successfully initialized (e.g. a process
+	// that links the runtime but never created/opened shm, or whose
+	// bpftime_shm constructor threw on the expected "shm not ready yet"
+	// path), the object is uninitialized — touching it (get_open_type /
+	// remove_pid_from_alive_agent_set) would read garbage and can crash on
+	// exit. Bail out before any access.
+	if (!global_shm_initialized)
+		return;
 	// This usually indicates that the living shared memory object is used
 	// by an agent instance
 	if (bpftime::shm_holder.global_shared_memory.get_open_type() ==
@@ -107,99 +119,73 @@ void bpftime_shm::set_syscall_trace_setup(int pid, bool whether)
 	}
 }
 
-uint32_t bpftime_shm::bpf_map_value_size(int fd) const
-{
-	if (!is_map_fd(fd)) {
-		errno = ENOENT;
-		return 0;
-	}
-	auto &handler =
-		std::get<bpftime::bpf_map_handler>(manager->get_handler(fd));
-	return handler.get_userspace_value_size();
-}
-
-const void *bpftime_shm::bpf_map_lookup_elem(int fd, const void *key,
-					     bool from_syscall) const
+const bpf_map_handler *bpftime_shm::try_get_map_handler(int fd) const
 {
 	if (!is_map_fd(fd)) {
 		errno = ENOENT;
 		return nullptr;
 	}
-	auto &handler =
-		std::get<bpftime::bpf_map_handler>(manager->get_handler(fd));
-	return handler.map_lookup_elem(key, from_syscall);
+	return &std::get<bpftime::bpf_map_handler>(manager->get_handler(fd));
+}
+
+uint32_t bpftime_shm::bpf_map_value_size(int fd) const
+{
+	auto *handler = try_get_map_handler(fd);
+	return handler ? handler->get_userspace_value_size() : 0;
+}
+
+const void *bpftime_shm::bpf_map_lookup_elem(int fd, const void *key,
+					     bool from_syscall) const
+{
+	auto *handler = try_get_map_handler(fd);
+	return handler ? handler->map_lookup_elem(key, from_syscall) : nullptr;
 }
 
 long bpftime_shm::bpf_map_update_elem(int fd, const void *key,
 				      const void *value, uint64_t flags,
 				      bool from_syscall) const
 {
-	if (!is_map_fd(fd)) {
-		errno = ENOENT;
-		return -1;
-	}
-	auto &handler =
-		std::get<bpftime::bpf_map_handler>(manager->get_handler(fd));
-	return handler.map_update_elem(key, value, flags, from_syscall);
+	auto *handler = try_get_map_handler(fd);
+	return handler ? handler->map_update_elem(key, value, flags,
+						  from_syscall) :
+			 -1;
 }
 
 long bpftime_shm::bpf_delete_elem(int fd, const void *key,
 				  bool from_syscall) const
 {
-	if (!is_map_fd(fd)) {
-		errno = ENOENT;
-		return -1;
-	}
-	auto &handler =
-		std::get<bpftime::bpf_map_handler>(manager->get_handler(fd));
-	return handler.map_delete_elem(key, from_syscall);
+	auto *handler = try_get_map_handler(fd);
+	return handler ? handler->map_delete_elem(key, from_syscall) : -1;
 }
 
 long bpftime_shm::bpf_map_push_elem(int fd, const void *value, uint64_t flags,
 				    bool from_syscall) const
 {
-	if (!is_map_fd(fd)) {
-		errno = ENOENT;
-		return -1;
-	}
-	auto &handler =
-		std::get<bpftime::bpf_map_handler>(manager->get_handler(fd));
-	return handler.map_push_elem(value, flags, from_syscall);
+	auto *handler = try_get_map_handler(fd);
+	return handler ? handler->map_push_elem(value, flags, from_syscall) : -1;
 }
 
 long bpftime_shm::bpf_map_pop_elem(int fd, void *value, bool from_syscall) const
 {
-	if (!is_map_fd(fd)) {
-		errno = ENOENT;
-		return -1;
-	}
-	auto &handler =
-		std::get<bpftime::bpf_map_handler>(manager->get_handler(fd));
-	return handler.map_pop_elem(value, from_syscall);
+	auto *handler = try_get_map_handler(fd);
+	return handler ? handler->map_pop_elem(value, from_syscall) : -1;
 }
 
 long bpftime_shm::bpf_map_peek_elem(int fd, void *value,
 				    bool from_syscall) const
 {
-	if (!is_map_fd(fd)) {
-		errno = ENOENT;
-		return -1;
-	}
-	auto &handler =
-		std::get<bpftime::bpf_map_handler>(manager->get_handler(fd));
-	return handler.map_peek_elem(value, from_syscall);
+	auto *handler = try_get_map_handler(fd);
+	return handler ? handler->map_peek_elem(value, from_syscall) : -1;
 }
 
 int bpftime_shm::bpf_map_get_next_key(int fd, const void *key, void *next_key,
 				      bool from_syscall) const
 {
-	if (!is_map_fd(fd)) {
-		errno = ENOENT;
-		return -1;
-	}
-	auto &handler =
-		std::get<bpftime::bpf_map_handler>(manager->get_handler(fd));
-	return handler.bpf_map_get_next_key(key, next_key, from_syscall);
+	auto *handler = try_get_map_handler(fd);
+	return handler ?
+		       handler->bpf_map_get_next_key(key, next_key,
+						     from_syscall) :
+		       -1;
 }
 
 int bpftime_shm::add_kprobe(std::optional<int> fd, const char *func_name,
@@ -401,7 +387,7 @@ int bpftime_shm::add_ringbuf_to_epoll(int ringbuf_fd, int epoll_fd,
 		std::get<bpf_map_handler>(manager->get_handler(ringbuf_fd));
 
 	auto ringbuf_map_impl = map_inst.try_get_ringbuf_map_impl();
-	if (ringbuf_map_impl.has_value(); auto val = ringbuf_map_impl.value()) {
+	if (auto val = ringbuf_map_impl.value_or(nullptr)) {
 		epoll_inst.files.emplace_back(val->create_impl_weak_ptr(),
 					      extra_data);
 		SPDLOG_DEBUG("Ringbuf {} added to epoll {}", ringbuf_fd,
@@ -572,13 +558,31 @@ int bpftime_shm::add_bpf_prog(int fd, const ebpf_inst *insn, size_t insn_cnt,
 // add a bpf link fd
 int bpftime_shm::add_bpf_link(int fd, struct bpf_link_create_args *args)
 {
+	if (!args) {
+		errno = EINVAL;
+		return -1;
+	}
+	// Validate before allocating an fd so error paths don't leak the fd that
+	// open_fake_fd() would otherwise create.
+	if (!is_prog_fd(args->prog_fd)) {
+		errno = EBADF;
+		return -1;
+	}
+	// For perf-event links (uprobe/kprobe/tracepoint) the target must be a
+	// valid perf-event handler fd, matching the kernel's BPF_LINK_CREATE
+	// validation. Without this a stale/non-perf target_fd would be silently
+	// accepted.
+	if (args->attach_type == BPFTIME_BPF_PERF_EVENT_ATTACH_TYPE &&
+	    !is_perf_event_handler_fd(args->target_fd)) {
+		SPDLOG_ERROR(
+			"add_bpf_link: target_fd {} is not a perf-event handler for BPF_PERF_EVENT link",
+			args->target_fd);
+		errno = EBADF;
+		return -1;
+	}
 	if (fd < 0) {
 		// if fd is negative, we need to create a new fd for allocating
 		fd = open_fake_fd();
-	}
-	if (!is_prog_fd(args->prog_fd) || !args) {
-		errno = EBADF;
-		return -1;
 	}
 	return manager->set_handler(fd, bpftime::bpf_link_handler(*args),
 				    segment);
