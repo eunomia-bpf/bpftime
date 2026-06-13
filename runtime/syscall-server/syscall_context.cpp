@@ -623,7 +623,8 @@ long syscall_context::handle_sysbpf(int cmd, union bpf_attr *attr, size_t size)
 						       &map_attr, &map_name,
 						       &map_type);
 			if (res < 0) {
-				errno = res;
+				// bpftime_map_get_info already set errno (ENOENT);
+				// don't overwrite it with the -1 return value.
 				return -1;
 			}
 			auto ptr = (bpf_map_info *)((uintptr_t)attr->info.info);
@@ -964,7 +965,7 @@ int syscall_context::handle_epoll_wait(int epfd, epoll_event *evt,
 {
 	if (!enable_mock || run_with_kernel || initializing_cuda ||
 	    !enable_mock_after_initialized)
-		orig_epoll_wait_fn(epfd, evt, maxevents, timeout);
+		return orig_epoll_wait_fn(epfd, evt, maxevents, timeout);
 	try_startup();
 	if (bpftime_is_epoll_handler(epfd)) {
 		return bpftime_epoll_wait(epfd, evt, maxevents, timeout);
@@ -976,7 +977,7 @@ int syscall_context::handle_munmap(void *addr, size_t size)
 {
 	if (!enable_mock || run_with_kernel || initializing_cuda ||
 	    !enable_mock_after_initialized)
-		orig_munmap_fn(addr, size);
+		return orig_munmap_fn(addr, size);
 	try_startup();
 	if (auto itr = mocked_mmap_values.find((uintptr_t)addr);
 	    itr != mocked_mmap_values.end()) {
