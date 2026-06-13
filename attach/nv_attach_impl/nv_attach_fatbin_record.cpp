@@ -6,6 +6,7 @@
 #include "nv_attach_impl.hpp"
 #include <boost/asio/post.hpp>
 #include <boost/asio/thread_pool.hpp>
+#include <chrono>
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
@@ -102,9 +103,14 @@ bool fatbin_record::find_and_fill_function_info(void *ptr,
 
 std::map<std::string, std::vector<uint8_t>> fatbin_record::compile_ptxs(
 	class nv_attach_impl &impl,
-	std::map<std::string, std::tuple<std::string, bool>> patched_ptx)
+	std::map<std::string, std::tuple<std::string, bool>> patched_ptx,
+	const std::string &sm_arch)
 {
-	std::string sm_arch = get_gpu_sm_arch();
+	if (patched_ptx.empty()) {
+		SPDLOG_INFO("No modified PTX files to compile for sm_arch {}",
+			    sm_arch);
+		return {};
+	}
 	SPDLOG_INFO("Compiling PTXs with sm_arch {}", sm_arch);
 
 	unsigned major, minor;
@@ -122,21 +128,34 @@ std::map<std::string, std::vector<uint8_t>> fatbin_record::compile_ptxs(
 			boost::asio::post(
 				pool,
 				[&handler, ptx, name, &compiled_ptx, &map_lock, this,
-				 sm_arch]() -> void {
+				 &impl, sm_arch]() -> void {
 					const auto ptx_fixed =
 						rewrite_ptx_target(ptx, sm_arch);
 					auto sha256_string =
 						sha256(ptx_fixed.data(), ptx_fixed.size());
-					if (auto itr =
-						    this->ptx_pool->find(sha256_string);
-					    itr != this->ptx_pool->end()) {
+					std::vector<uint8_t> compiled_program;
+					{
+						std::lock_guard<std::mutex>
+							pool_guard(
+								impl.get_ptx_pool_mutex());
+						if (auto itr = this->ptx_pool->find(
+							    sha256_string);
+						    itr != this->ptx_pool->end()) {
+							compiled_program =
+								itr->second;
+						}
+					}
+					if (!compiled_program.empty()) {
 						SPDLOG_INFO(
-						"PTX {} ({}) found in cache",
-						name, sha256_string);
-					std::lock_guard<std::mutex> _guard(
-						map_lock);
-					compiled_ptx[name] = itr->second;
-				} else {
+							"PTX {} ({}) found in cache",
+							name, sha256_string);
+						std::lock_guard<std::mutex>
+							_guard(map_lock);
+						compiled_ptx[name] =
+							std::move(compiled_program);
+						return;
+					}
+
 					SPDLOG_INFO(
 						"Start compiling {}, not found in cache",
 						name);
@@ -145,19 +164,19 @@ std::map<std::string, std::vector<uint8_t>> fatbin_record::compile_ptxs(
 						throw std::runtime_error(
 							"Unable to create nv_attach_impl_ptx_compiler");
 					}
-						std::string gpu_name =
-							"--gpu-name=" + sm_arch;
-							const char *compile_options[] = {
-								gpu_name.c_str(), "--verbose",
-								"-O3"
-							};
-						if (auto err = handler.compile(
-							    compiler, ptx_fixed.c_str(),
-							    compile_options,
-							    std::size(compile_options));
-						    err != 0) {
-							SPDLOG_ERROR(
-								"Unable to compile: {}, error = {}",
+					std::string gpu_name =
+						"--gpu-name=" + sm_arch;
+					const char *compile_options[] = {
+						gpu_name.c_str(), "--verbose",
+						"-O3"
+					};
+					if (auto err = handler.compile(
+						    compiler, ptx_fixed.c_str(),
+						    compile_options,
+						    std::size(compile_options));
+					    err != 0) {
+						SPDLOG_ERROR(
+							"Unable to compile: {}, error = {}",
 							err,
 							handler.get_error_log(
 								compiler));
@@ -169,19 +188,39 @@ std::map<std::string, std::vector<uint8_t>> fatbin_record::compile_ptxs(
 						handler.get_info_log(compiler));
 					uint8_t *data;
 					size_t size;
-					handler.get_compiled_program(
-						compiler, &data, &size);
-					std::vector<uint8_t> compiled_program(
-						data, data + size);
+					handler.get_compiled_program(compiler, &data,
+								    &size);
+					compiled_program.assign(data, data + size);
 					handler.destroy(compiler);
-					std::lock_guard<std::mutex> _guard(
-						map_lock);
-					compiled_ptx[name] = compiled_program;
-					this->ptx_pool->insert(std::make_pair(
-						sha256_string,
-						compiled_program));
-					SPDLOG_INFO("Compile of {} done", name);
-				}
+					bool cache_hit_during_compile = false;
+					{
+						std::lock_guard<std::mutex>
+							pool_guard(
+								impl.get_ptx_pool_mutex());
+						if (auto itr = this->ptx_pool->find(
+							    sha256_string);
+						    itr != this->ptx_pool->end()) {
+							cache_hit_during_compile = true;
+							compiled_program =
+								itr->second;
+						} else {
+							this->ptx_pool->emplace(
+								sha256_string,
+								compiled_program);
+						}
+					}
+					{
+						std::lock_guard<std::mutex>
+							_guard(map_lock);
+						compiled_ptx[name] = compiled_program;
+					}
+					if (cache_hit_during_compile) {
+						SPDLOG_INFO(
+							"PTX {} ({}) was cached while compiling",
+							name, sha256_string);
+					} else {
+						SPDLOG_INFO("Compile of {} done", name);
+					}
 			});
 	}
 	pool.join();
@@ -189,32 +228,107 @@ std::map<std::string, std::vector<uint8_t>> fatbin_record::compile_ptxs(
 }
 void fatbin_record::try_loading_ptxs(class nv_attach_impl &impl)
 {
-	if (ptx_loaded)
+	// Determine current device ordinal
+	int dev_ordinal = impl.get_current_device_ordinal();
+	std::string sm_arch;
+	if (impl.get_device_manager().device_count() > 0) {
+		sm_arch = impl.get_device_manager()
+				  .get_device(dev_ordinal)
+				  .sm_arch;
+	} else {
+		sm_arch = get_gpu_sm_arch();
+	}
+	try_loading_ptxs_for_device(impl, dev_ordinal, sm_arch);
+}
+
+void fatbin_record::try_loading_ptxs_for_device(class nv_attach_impl &impl,
+						 int device_ordinal,
+						 const std::string &sm_arch)
+{
+	std::lock_guard<std::mutex> load_guard(load_mutex);
+	// Skip if already loaded for this device
+	if (devices_loaded.count(device_ordinal) > 0)
 		return;
 	if (impl.shared_mem_ptr == 0) {
 		throw std::runtime_error(
 			"shared_mem_ptr is not initialized before loading PTX");
 	}
-	SPDLOG_INFO("Loading & patching current fatbin..");
+	SPDLOG_INFO(
+		"Loading & patching current fatbin for device {} (sm_arch {})..",
+		device_ordinal, sm_arch);
+	const auto total_start = std::chrono::steady_clock::now();
 
+	const auto patch_start = std::chrono::steady_clock::now();
 	auto patched_ptx = *impl.hack_fatbin(original_ptx);
+	std::map<std::string, std::tuple<std::string, bool>> modified_ptx;
+	for (const auto &[name, ptx_and_modified_flag] : patched_ptx) {
+		if (std::get<1>(ptx_and_modified_flag)) {
+			modified_ptx.emplace(name, ptx_and_modified_flag);
+		}
+	}
+	all_ptx_not_modified = modified_ptx.empty();
+	const auto patch_elapsed =
+		std::chrono::duration_cast<std::chrono::milliseconds>(
+			std::chrono::steady_clock::now() - patch_start)
+			.count();
+	SPDLOG_INFO(
+		"GPU attach timing: PTX patch took {} ms for {} PTX files ({} modified)",
+		patch_elapsed, patched_ptx.size(), modified_ptx.size());
+	if (!modified_ptx.empty() && modified_ptx.size() != patched_ptx.size()) {
+		SPDLOG_INFO(
+			"Skipping PTX compile/load for {} unmodified PTX files on device {}",
+			patched_ptx.size() - modified_ptx.size(), device_ordinal);
+	} else if (all_ptx_not_modified) {
+		SPDLOG_INFO(
+			"No PTX files were modified by the pass pipeline for device {}. Using original CUDA fatbin registration as-is.",
+			device_ordinal);
+	}
 
-	auto compiled_ptx = compile_ptxs(impl, patched_ptx);
+	const auto compile_start = std::chrono::steady_clock::now();
+	auto compiled_ptx = compile_ptxs(impl, modified_ptx, sm_arch);
+	const auto compile_elapsed =
+		std::chrono::duration_cast<std::chrono::milliseconds>(
+			std::chrono::steady_clock::now() - compile_start)
+			.count();
+	SPDLOG_INFO(
+		"GPU attach timing: PTX compile took {} ms for {} PTX files",
+		compile_elapsed, modified_ptx.size());
 
-	for (const auto &[name, ptx_and_trampoline_flag] : patched_ptx) {
+	// Use per-device module pool if available
+	auto &dev_manager = impl.get_device_manager();
+	auto effective_module_pool =
+		(dev_manager.device_count() > device_ordinal) ?
+			dev_manager.get_device(device_ordinal).module_pool :
+			module_pool;
+
+	const auto module_load_start = std::chrono::steady_clock::now();
+	for (const auto &[name, ptx_and_trampoline_flag] : modified_ptx) {
 		const auto &ptx = std::get<0>(ptx_and_trampoline_flag);
 		bool added_trampoline = std::get<1>(ptx_and_trampoline_flag);
 		const auto &compiled_elf = compiled_ptx.at(name);
+		// Include device ordinal in cache key so different devices get
+		// separate modules
 		auto sha256_string =
-			sha256(compiled_elf.data(), compiled_elf.size());
-		if (auto itr = module_pool->find(sha256_string);
-		    itr != module_pool->end()) {
-			SPDLOG_INFO("Module {} found in cache", name);
-			ptxs.push_back(itr->second);
+			sha256(compiled_elf.data(), compiled_elf.size()) +
+			":dev" + std::to_string(device_ordinal);
+		std::shared_ptr<ptx_in_module> cached_module;
+		{
+			std::lock_guard<std::mutex> module_pool_guard(
+				impl.get_module_pool_mutex());
+			if (auto itr = effective_module_pool->find(sha256_string);
+			    itr != effective_module_pool->end()) {
+				cached_module = itr->second;
+			}
+		}
+		if (cached_module) {
+			SPDLOG_INFO("Module {} found in cache (device {})",
+				    name, device_ordinal);
+			ptxs.push_back(cached_module);
 		} else {
 			CUmodule module;
-			SPDLOG_INFO("Loading module: {}, not found in cache",
-				    name);
+			SPDLOG_INFO(
+				"Loading module: {} for device {}, not found in cache",
+				name, device_ordinal);
 			char error_buf[8192] = { 0 }, info_buf[8192] = { 0 };
 			CUjit_option options[] = {
 				CU_JIT_INFO_LOG_BUFFER,
@@ -230,52 +344,131 @@ void fatbin_record::try_loading_ptxs(class nv_attach_impl &impl)
 				    &module, compiled_elf.data(),
 				    std::size(options), options, option_values);
 			    err != CUDA_SUCCESS) {
-				SPDLOG_ERROR("Unable to compile module {}: {}",
-					     name, (int)err);
+				SPDLOG_ERROR(
+					"Unable to compile module {} on device {}: {}",
+					name, device_ordinal, (int)err);
 				SPDLOG_ERROR("Info: {}", info_buf);
 				SPDLOG_ERROR("Error: {}", error_buf);
 				throw std::runtime_error(
 					"Unable to compile module");
 			}
 			if (added_trampoline) {
+				// Determine the shared_mem_ptr to use for this
+				// device
+				uintptr_t device_shared_mem_ptr =
+					impl.shared_mem_ptr;
+				if (dev_manager.device_count() >
+				    device_ordinal) {
+					auto &dev_info =
+						dev_manager.get_device(
+							device_ordinal);
+					if (dev_info.shared_mem_device_ptr !=
+					    0) {
+						device_shared_mem_ptr =
+							dev_info.shared_mem_device_ptr;
+					}
+				}
+
 				CUdeviceptr const_data_ptr, map_basic_info_ptr;
 				size_t const_data_size, map_basic_info_size;
 				SPDLOG_INFO(
-					"Copying trampoline data to device");
+					"Copying trampoline data to device {}",
+					device_ordinal);
 				CUDA_DRIVER_CHECK_EXCEPTION(
 					cuModuleGetGlobal(&const_data_ptr,
 							  &const_data_size,
 							  module, "constData"),
 					"Unable to get pointer of constData");
 				SPDLOG_INFO(
-			"constData symbol device_ptr={:x} size={} shared_mem_ptr={:x}",
-			(uintptr_t)const_data_ptr, const_data_size,
-			(uintptr_t)impl.shared_mem_ptr);
-		CUDA_DRIVER_CHECK_EXCEPTION(
+					"constData symbol device_ptr={:x} size={} shared_mem_ptr={:x} (device {})",
+					(uintptr_t)const_data_ptr,
+					const_data_size,
+					(uintptr_t)device_shared_mem_ptr,
+					device_ordinal);
+				CUDA_DRIVER_CHECK_EXCEPTION(
 					cuModuleGetGlobal(&map_basic_info_ptr,
 							  &map_basic_info_size,
 							  module, "map_info"),
 					"Unable to get pointer of map_info");
-				SPDLOG_INFO("map_info symbol device_ptr={:x} size={}",
-			    (uintptr_t)map_basic_info_ptr, map_basic_info_size);
-		CUDA_DRIVER_CHECK_EXCEPTION(
+				SPDLOG_INFO(
+					"map_info symbol device_ptr={:x} size={}",
+					(uintptr_t)map_basic_info_ptr,
+					map_basic_info_size);
+				CUDA_DRIVER_CHECK_EXCEPTION(
 					cuMemcpyHtoD(const_data_ptr,
-						     &impl.shared_mem_ptr,
+						     &device_shared_mem_ptr,
 						     const_data_size),
 					"Unable to copy constData pointer to device");
+				// Set per-module device ordinal
+				CUdeviceptr dev_ord_ptr;
+				size_t dev_ord_size;
+				if (cuModuleGetGlobal(&dev_ord_ptr,
+						      &dev_ord_size, module,
+						      "deviceOrdinal") ==
+				    CUDA_SUCCESS) {
+					uint32_t ord =
+						(uint32_t)device_ordinal;
+					CUDA_DRIVER_CHECK_EXCEPTION(
+						cuMemcpyHtoD(dev_ord_ptr, &ord,
+							     sizeof(ord)),
+						"Unable to copy deviceOrdinal to device");
+					SPDLOG_INFO(
+						"deviceOrdinal={} set for module on device {}",
+						ord, device_ordinal);
+				}
 				CUDA_DRIVER_CHECK_EXCEPTION(
-					cuMemcpyHtoD(map_basic_info_ptr,
-						     impl.map_basic_info->data(),
-						     map_basic_info_size),
-					"Unable to copy constData pointer to device");
-				SPDLOG_INFO("Trampoline data copied");
+					cuMemcpyHtoD(
+						map_basic_info_ptr,
+						impl.map_basic_info->data(),
+						map_basic_info_size),
+					"Unable to copy map_info to device");
+				SPDLOG_INFO(
+					"Trampoline data copied for device {}",
+					device_ordinal);
 			}
-			auto ptr = std::make_shared<ptx_in_module>(module);
-			module_pool->insert(std::make_pair(sha256_string, ptr));
-			ptxs.push_back(ptr);
-			SPDLOG_INFO("Loaded module: {}", name);
+			auto ptr = std::make_shared<ptx_in_module>(
+				module, device_ordinal);
+			{
+				std::lock_guard<std::mutex> module_pool_guard(
+					impl.get_module_pool_mutex());
+				if (auto itr = effective_module_pool->find(
+					    sha256_string);
+				    itr != effective_module_pool->end()) {
+					cached_module = itr->second;
+				} else {
+					effective_module_pool->emplace(
+						sha256_string, ptr);
+				}
+			}
+			if (cached_module) {
+				CUDA_DRIVER_CHECK_NO_EXCEPTION(
+					cuModuleUnload(module),
+					"Unable to unload duplicate module");
+				ptxs.push_back(cached_module);
+				SPDLOG_INFO(
+					"Module {} was cached while loading (device {})",
+					name, device_ordinal);
+			} else {
+				ptxs.push_back(ptr);
+				SPDLOG_INFO("Loaded module: {} on device {}",
+					    name, device_ordinal);
+			}
 		}
 	}
+	const auto module_load_elapsed =
+		std::chrono::duration_cast<std::chrono::milliseconds>(
+			std::chrono::steady_clock::now() - module_load_start)
+			.count();
+	const auto total_elapsed =
+		std::chrono::duration_cast<std::chrono::milliseconds>(
+			std::chrono::steady_clock::now() - total_start)
+			.count();
+	SPDLOG_INFO(
+		"GPU attach timing: module load took {} ms for {} PTX files",
+		module_load_elapsed, modified_ptx.size());
+	SPDLOG_DEBUG("GPU attach timing: total fatbin attach took {} ms",
+		    total_elapsed);
+	devices_loaded.insert(device_ordinal);
 	ptx_loaded = true;
 }
 

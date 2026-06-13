@@ -4,6 +4,7 @@
 #include "driver_types.h"
 #include "spdlog/spdlog.h"
 #include "vector_types.h"
+#include <chrono>
 #include <algorithm>
 #include <cassert>
 #include <cstddef>
@@ -246,6 +247,7 @@ static void example_listener_on_enter(GumInvocationListener *listener,
 		GUM_IC_GET_FUNC_DATA(ic, CUDARuntimeFunctionHookerContext *);
 	if (context->to_function == AttachedToFunction::RegisterFatbin) {
 		SPDLOG_DEBUG("Entering __cudaRegisterFatBinary..");
+		const auto extract_start = std::chrono::steady_clock::now();
 
 		auto header = (__fatBinC_Wrapper_t *)
 			gum_invocation_context_get_nth_argument(gum_ctx, 0);
@@ -272,6 +274,13 @@ static void example_listener_on_enter(GumInvocationListener *listener,
 		SPDLOG_INFO("Finally size = {}", data_vec.size());
 		auto extracted_ptx =
 			context->impl->extract_ptxs(std::move(data_vec));
+		const auto extract_elapsed =
+			std::chrono::duration_cast<std::chrono::milliseconds>(
+				std::chrono::steady_clock::now() - extract_start)
+				.count();
+		SPDLOG_DEBUG(
+			"GPU attach timing: fatbin extract took {} ms and yielded {} PTX files",
+			extract_elapsed, extracted_ptx.size());
 		SPDLOG_INFO("Patching PTXs");
 		auto fatbin_record = std::make_unique<struct fatbin_record>();
 		fatbin_record->original_ptx = extracted_ptx;
@@ -306,10 +315,15 @@ static void example_listener_on_enter(GumInvocationListener *listener,
 			if (auto itr = current_fatbin->function_addr_to_symbol
 					       .find(func_addr);
 			    itr !=
-			    current_fatbin->function_addr_to_symbol.end())
+			    current_fatbin->function_addr_to_symbol.end()) {
+				// Record with current device ordinal for
+				// multi-GPU awareness
+				int dev_ord =
+					impl.get_current_device_ordinal();
 				impl.record_patched_kernel_function(
 					std::string(symbol_name),
-					itr->second.func);
+					itr->second.func, dev_ord);
+			}
 			SPDLOG_DEBUG(
 				"Registered kernel function name {} addr {:x}",
 				symbol_name, (uintptr_t)func_addr);

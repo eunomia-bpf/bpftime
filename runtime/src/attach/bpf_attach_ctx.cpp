@@ -115,6 +115,10 @@ int bpf_attach_ctx::init_attach_ctx_from_handlers(
 				}
 			}
 		}
+#ifdef BPFTIME_ENABLE_CUDA_ATTACH
+		// Initialize multi-GPU contexts before CUDA link handles
+		init_multi_gpu_contexts();
+#endif
 		SPDLOG_DEBUG(
 			"Main initializing for handlers done; initializing CUDA link handles");
 		/// Initialize nvda links at the last time, because they require

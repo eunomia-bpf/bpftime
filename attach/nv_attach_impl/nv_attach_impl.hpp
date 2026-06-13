@@ -5,6 +5,7 @@
 #include "ptx_compiler/ptx_compiler.hpp"
 #include "ptxpass/core.hpp"
 #include <base_attach_impl.hpp>
+#include <cstddef>
 #include <chrono>
 #include <cstdint>
 #include <cuda_runtime.h>
@@ -24,6 +25,7 @@
 #include <sys/syscall.h>
 #include <sys/wait.h>
 #include "nv_attach_fatbin_record.hpp"
+#include "nv_gpu_device_manager.hpp"
 #include <tuple>
 #include <variant>
 #include <vector>
@@ -35,7 +37,9 @@ namespace attach
 {
 
 using print_config_fn = void (*)(int length, char *out);
-using process_input_fn = int (*)(const char *input, int length, char *output);
+using process_input_fn = int (*)(const char *ptx_text, size_t ptx_len,
+				 const char *meta_json, int meta_len,
+				 char *output, int output_len);
 
 std::string filter_compiled_ptx_for_ebpf_program(std::string input,
 						 std::string);
@@ -173,11 +177,14 @@ class nv_attach_impl final : public base_attach_impl {
 	int run_attach_entry_on_gpu(int attach_id, int run_count = 1,
 				    int grid_dim_x = 1, int grid_dim_y = 1,
 				    int grid_dim_z = 1, int block_dim_x = 1,
-				    int block_dim_y = 1, int block_dim_z = 1);
+				    int block_dim_y = 1, int block_dim_z = 1,
+				    int device_ordinal = -1);
 	void record_patched_kernel_function(const std::string &kernel_name,
-					    CUfunction function);
+					    CUfunction function,
+					    int device_ordinal = -1);
 	std::optional<CUfunction>
-	find_patched_kernel_function(const std::string &kernel_name) const;
+	find_patched_kernel_function(const std::string &kernel_name,
+				     int device_ordinal = -1) const;
 	// Notify nv_attach_impl that a patched kernel launch was enqueued on a
 	// stream. Used to coordinate detach with in-flight patched kernels so we
 	// don't tear down loader-owned CUDA IPC buffers prematurely.
@@ -186,17 +193,30 @@ class nv_attach_impl final : public base_attach_impl {
 					     const std::string &kernel_name);
 	std::optional<std::string>
 	find_original_kernel_name(CUfunction function) const;
-			// Late attach support: attempt to discover already-loaded CUDA fatbins and
-		// prefill patched kernel mappings.
-		void bootstrap_existing_fatbins_once();
-		void start_late_bootstrap_async();
-		bool is_late_bootstrap_done() const noexcept
-		{
-			return late_bootstrap_done.load(std::memory_order_acquire);
-		}
-		// Resolve host-side kernel stub to symbol name. Uses dladdr first, then a
-		// cached ELF symbol table fallback.
-		std::optional<std::string> resolve_host_function_symbol(void *addr);
+
+	/// GPU device manager for multi-GPU support
+	gpu_device_manager &get_device_manager() { return device_manager_; }
+	const gpu_device_manager &get_device_manager() const
+	{
+		return device_manager_;
+	}
+
+	/// Get the current device ordinal from CUDA context, or 0 as fallback
+	int get_current_device_ordinal() const;
+	std::mutex &get_module_pool_mutex() { return module_pool_mutex_; }
+	std::mutex &get_ptx_pool_mutex() { return ptx_pool_mutex_; }
+
+	// Late attach support: attempt to discover already-loaded CUDA fatbins
+	// and prefill patched kernel mappings.
+	void bootstrap_existing_fatbins_once();
+	void start_late_bootstrap_async();
+	bool is_late_bootstrap_done() const noexcept
+	{
+		return late_bootstrap_done.load(std::memory_order_acquire);
+	}
+	// Resolve host-side kernel stub to symbol name. Uses dladdr first, then
+	// a cached ELF symbol table fallback.
+	std::optional<std::string> resolve_host_function_symbol(void *addr);
 	// Whether nv_attach is currently enabled (can be disabled by detach).
 	bool is_enabled() const noexcept;
 	std::vector<std::unique_ptr<fatbin_record>> fatbin_records;
@@ -249,8 +269,15 @@ class nv_attach_impl final : public base_attach_impl {
 		pass_configurations;
 	std::map<std::string, ptxpass::runtime_response::RuntimeResponse>
 		patch_cache;
+	gpu_device_manager device_manager_;
 	mutable std::mutex cuda_symbol_map_mutex;
-	std::unordered_map<std::string, CUfunction> patched_kernel_by_name;
+	mutable std::mutex module_pool_mutex_;
+	mutable std::mutex ptx_pool_mutex_;
+	// Per-device patched kernel maps: device_ordinal -> (name -> CUfunction)
+	std::map<int, std::unordered_map<std::string, CUfunction>>
+		patched_kernel_by_device_;
+	// CUfunction -> kernel_name (CUfunction handles are unique across
+	// devices)
 	std::unordered_map<CUfunction, std::string> kernel_name_by_cufunction;
 
 			std::atomic<bool> enabled{ true };

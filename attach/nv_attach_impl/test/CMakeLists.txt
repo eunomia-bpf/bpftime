@@ -2,6 +2,7 @@ set(TEST_SOURCES
     nv_attach_impl_tests.cpp
     test_register_guard.cpp
     test_ptxpass.cpp
+    test_gpu_device_manager.cpp
     # test_kernel_finder.cpp
 )
 add_executable(bpftime_nv_attach_tests ${TEST_SOURCES})

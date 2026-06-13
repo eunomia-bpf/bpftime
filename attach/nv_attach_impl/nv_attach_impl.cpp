@@ -287,6 +287,12 @@ nv_attach_impl::nv_attach_impl()
 				     dlerror());
 		}
 	}
+
+	// Initialize multi-GPU device manager
+	device_manager_.initialize();
+	SPDLOG_INFO("GPU device manager initialized with {} device(s)",
+		    device_manager_.device_count());
+
 	this->module_pool = std::make_shared<
 		std::map<std::string, std::shared_ptr<ptx_in_module>>>();
 	this->ptx_pool =
@@ -587,15 +593,36 @@ nv_attach_impl::~nv_attach_impl()
 	}
 }
 
+int nv_attach_impl::get_current_device_ordinal() const
+{
+	CUdevice device;
+	if (cuCtxGetDevice(&device) == CUDA_SUCCESS) {
+		for (const auto &info : device_manager_.devices()) {
+			if (info.cu_device == device) {
+				return info.device_ordinal;
+			}
+		}
+	}
+	return 0; // fallback to device 0
+}
+
 void nv_attach_impl::record_patched_kernel_function(
-	const std::string &kernel_name, CUfunction function)
+	const std::string &kernel_name, CUfunction function,
+	int device_ordinal)
 {
 	if (kernel_name.empty() || function == nullptr)
 		return;
+	if (device_ordinal < 0) {
+		device_ordinal = get_current_device_ordinal();
+	}
 	std::lock_guard<std::mutex> guard(cuda_symbol_map_mutex);
-	auto itr = patched_kernel_by_name.find(kernel_name);
-	if (itr == patched_kernel_by_name.end()) {
-		patched_kernel_by_name.emplace(kernel_name, function);
+	auto &device_map = patched_kernel_by_device_[device_ordinal];
+	auto itr = device_map.find(kernel_name);
+	if (itr == device_map.end()) {
+		device_map.emplace(kernel_name, function);
+		SPDLOG_DEBUG(
+			"Recorded patched kernel {} on device {}", kernel_name,
+			device_ordinal);
 		return;
 	}
 	if (itr->second != function)
@@ -603,13 +630,19 @@ void nv_attach_impl::record_patched_kernel_function(
 }
 
 std::optional<CUfunction> nv_attach_impl::find_patched_kernel_function(
-	const std::string &kernel_name) const
+	const std::string &kernel_name, int device_ordinal) const
 {
 	if (kernel_name.empty())
 		return std::nullopt;
+	if (device_ordinal < 0) {
+		device_ordinal = get_current_device_ordinal();
+	}
 	std::lock_guard<std::mutex> guard(cuda_symbol_map_mutex);
-	auto itr = patched_kernel_by_name.find(kernel_name);
-	if (itr == patched_kernel_by_name.end())
+	auto dev_itr = patched_kernel_by_device_.find(device_ordinal);
+	if (dev_itr == patched_kernel_by_device_.end())
+		return std::nullopt;
+	auto itr = dev_itr->second.find(kernel_name);
+	if (itr == dev_itr->second.end())
 		return std::nullopt;
 	return itr->second;
 }
@@ -917,7 +950,6 @@ nv_attach_impl::hack_fatbin(std::map<std::string, std::string> all_ptx)
 					ptxpass::runtime_request::RuntimeRequest
 						req;
 					auto &ri = req.input;
-					ri.full_ptx = current_ptx;
 					ri.to_patch_kernel = kernel;
 					ri.global_ebpf_map_info_symbol =
 						"map_info";
@@ -931,9 +963,17 @@ nv_attach_impl::hack_fatbin(std::map<std::string, std::string> all_ptx)
 									  req);
 					auto input_json = in.dump();
 					SPDLOG_DEBUG("Input: {}", input_json);
-					auto sha256_string =
-						sha256(input_json.data(),
-						       input_json.size());
+					std::string sha256_string =
+						hook_entry.config
+							->pass_config.name;
+					sha256_string.push_back(':');
+					sha256_string += sha256(
+						current_ptx.data(),
+						current_ptx.size());
+					sha256_string.push_back(':');
+					sha256_string += sha256(
+						input_json.data(),
+						input_json.size());
 
 					ptxpass::runtime_response::RuntimeResponse
 						resp;
@@ -976,14 +1016,24 @@ nv_attach_impl::hack_fatbin(std::map<std::string, std::string> all_ptx)
 											int>::
 											max() :
 										(int)buf_bytes;
+								// 6-arg pass entry (#560): PTX is
+								// passed separately from the meta
+								// JSON to avoid embedding the full
+								// PTX in the request payload.
 								int err =
 									hook_entry
 										.config
 										->process_input(
+											current_ptx
+												.data(),
+											current_ptx
+												.size(),
 											input_json
 												.c_str(),
-											len,
-											buf.data());
+											(int)input_json
+												.size(),
+											buf.data(),
+											len);
 								if (err !=
 								    ptxpass::ExitCode::
 									    Success) {
@@ -1029,10 +1079,10 @@ nv_attach_impl::hack_fatbin(std::map<std::string, std::string> all_ptx)
 						patch_cache[sha256_string] =
 							resp;
 					}
-					current_ptx = resp.output_ptx;
-					should_add_trampoline =
-						should_add_trampoline ||
-						resp.modified;
+					if (resp.modified) {
+						current_ptx = resp.output_ptx;
+						should_add_trampoline = true;
+					}
 				}
 			}
 			if (should_add_trampoline) {
@@ -1100,7 +1150,8 @@ int nv_attach_impl::find_attach_entry_by_program_name(const char *name) const
 int nv_attach_impl::run_attach_entry_on_gpu(int attach_id, int run_count,
 					    int grid_dim_x, int grid_dim_y,
 					    int grid_dim_z, int block_dim_x,
-					    int block_dim_y, int block_dim_z)
+					    int block_dim_y, int block_dim_z,
+					    int device_ordinal)
 {
 	if (this->shared_mem_ptr == 0) {
 		SPDLOG_ERROR(
@@ -1124,9 +1175,20 @@ int nv_attach_impl::run_attach_entry_on_gpu(int attach_id, int run_count,
 	}
 	SPDLOG_INFO("Running program on GPU");
 
-	// Get SM architecture (auto-detect or from BPFTIME_SM_ARCH env)
-	std::string sm_arch = get_gpu_sm_arch();
-	SPDLOG_INFO("Using SM architecture: {}", sm_arch);
+	// Resolve device ordinal: -1 means use current context or default
+	if (device_ordinal < 0) {
+		device_ordinal = get_current_device_ordinal();
+	}
+
+	// Get SM architecture for the target device
+	std::string sm_arch;
+	if (device_manager_.device_count() > 0) {
+		sm_arch = device_manager_.get_device(device_ordinal).sm_arch;
+	} else {
+		sm_arch = get_gpu_sm_arch();
+	}
+	SPDLOG_INFO("Using SM architecture: {} (device {})", sm_arch,
+		    device_ordinal);
 
 	std::vector<uint64_t> ebpf_words;
 	for (const auto &insts : insts) {
@@ -1214,9 +1276,18 @@ int nv_attach_impl::run_attach_entry_on_gpu(int attach_id, int run_count,
 		CUmodule module;
 		CUfunction kernel;
 		CUDA_SAFE_CALL(cuInit(0));
-		CUDA_SAFE_CALL(cuDeviceGet(&cuDevice, 0));
+		if (device_manager_.device_count() > 0) {
+			cuDevice = device_manager_.get_device(device_ordinal)
+					   .cu_device;
+		} else {
+			CUDA_SAFE_CALL(cuDeviceGet(&cuDevice, device_ordinal));
+		}
 
+#if CUDA_VERSION >= 13000
+		CUDA_SAFE_CALL(cuCtxCreate(&context, NULL, 0, cuDevice));
+#else
 		CUDA_SAFE_CALL(cuCtxCreate(&context, 0, cuDevice));
+#endif
 		CUDA_SAFE_CALL(cuModuleLoadDataEx(&module, output_elf.data(), 0,
 						  0, 0));
 		// fill data into it
@@ -1225,12 +1296,35 @@ int nv_attach_impl::run_attach_entry_on_gpu(int attach_id, int run_count,
 			size_t bytes;
 			CUDA_SAFE_CALL(cuModuleGetGlobal(&ptr, &bytes, module,
 							 "constData"));
+			// Use per-device shared_mem_ptr if available
+			uintptr_t device_shared_mem_ptr = this->shared_mem_ptr;
+			if (device_manager_.device_count() > 0 &&
+			    device_ordinal < device_manager_.device_count()) {
+				auto &dev_info =
+					device_manager_.get_device(
+						device_ordinal);
+				if (dev_info.shared_mem_device_ptr != 0) {
+					device_shared_mem_ptr =
+						dev_info.shared_mem_device_ptr;
+				}
+			}
 			CUDA_SAFE_CALL(
-				cuMemcpyHtoD(ptr, &this->shared_mem_ptr,
-					     sizeof(this->shared_mem_ptr)));
+				cuMemcpyHtoD(ptr, &device_shared_mem_ptr,
+					     sizeof(device_shared_mem_ptr)));
 			SPDLOG_INFO(
-				"shared_mem_ptr copied: device ptr {:x}, device size {}",
-				(uintptr_t)ptr, bytes);
+				"shared_mem_ptr copied: device ptr {:x}, device size {} (device {})",
+				(uintptr_t)ptr, bytes, device_ordinal);
+			// Set per-module device ordinal
+			CUdeviceptr dev_ord_ptr;
+			size_t dev_ord_size;
+			if (cuModuleGetGlobal(&dev_ord_ptr, &dev_ord_size,
+					      module,
+					      "deviceOrdinal") ==
+			    CUDA_SUCCESS) {
+				uint32_t ord = (uint32_t)device_ordinal;
+				CUDA_SAFE_CALL(cuMemcpyHtoD(
+					dev_ord_ptr, &ord, sizeof(ord)));
+			}
 		}
 		{
 			CUdeviceptr ptr;
@@ -1523,7 +1617,7 @@ void nv_attach_impl::clear_patched_state_for_next_session()
 		patch_cache.clear();
 		{
 			std::lock_guard<std::mutex> g(cuda_symbol_map_mutex);
-			patched_kernel_by_name.clear();
+			patched_kernel_by_device_.clear();
 			kernel_name_by_cufunction.clear();
 		}
 		{

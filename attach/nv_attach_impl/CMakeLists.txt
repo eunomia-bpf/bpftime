@@ -28,6 +28,7 @@ add_library(
     nv_attach_impl_patcher.cpp
     nv_attach_utils.cpp
     nv_attach_fatbin_record.cpp
+    nv_gpu_device_manager.cpp
     nv_elf_introspect.cpp
 )
 
