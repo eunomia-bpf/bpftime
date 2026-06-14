@@ -8,11 +8,10 @@
 #include <cstddef>
 #include <cstdint>
 #include <optional>
-#include <ostream>
 #include <regex>
 #include <set>
-#include <sstream>
 #include <string>
+#include <string_view>
 #include <vector>
 #include <fstream>
 using namespace bpftime;
@@ -21,32 +20,45 @@ using namespace attach;
 namespace bpftime::attach
 {
 
+namespace {
+template <typename Fn>
+void for_each_line(std::string_view input, Fn &&fn)
+{
+	size_t start = 0;
+	while (start < input.size()) {
+		const auto end = input.find('\n', start);
+		if (end == std::string_view::npos) {
+			fn(input.substr(start));
+			break;
+		}
+		fn(input.substr(start, end - start));
+		start = end + 1;
+	}
+}
+} // namespace
+
 std::string add_semicolon_for_variable_lines(std::string input)
 {
-	std::istringstream iss(input);
-	std::string line;
-	std::ostringstream oss;
-	while (std::getline(iss, line)) {
-		while (!line.empty() && line.ends_with("\n"))
-			line.pop_back();
-		oss << line;
+	std::string result;
+	result.reserve(input.size() + 8);
+	for_each_line(input, [&](std::string_view line) {
+		result.append(line);
 		if ((line.starts_with(".align") ||
 		     line.starts_with(".global")) &&
 		    !line.ends_with(";") && line.ends_with("}")) {
-			oss << ";";
+			result.push_back(';');
 			SPDLOG_DEBUG("Patching line: {}", line);
 		}
-		oss << std::endl;
-	}
-	return oss.str();
+		result.push_back('\n');
+	});
+	return result;
 }
 
 std::string filter_compiled_ptx_for_ebpf_program(std::string input,
 						 std::string new_func_name)
 {
-	std::istringstream iss(input);
-	std::ostringstream oss;
-	std::string line;
+	std::string filtered;
+	filtered.reserve(input.size());
 	static const std::string FILTERED_OUT_PREFIXES[] = {
 		".version", ".target", ".address_size", "//"
 	};
@@ -62,7 +74,7 @@ std::string filter_compiled_ptx_for_ebpf_program(std::string input,
 ))",
 		R"(.visible .func bpf_main())"
 	};
-	while (std::getline(iss, line)) {
+	for_each_line(input, [&](std::string_view line) {
 		// if(line.starts_with)
 		bool skip = false;
 		for (const auto &prefix : FILTERED_OUT_PREFIXES) {
@@ -72,9 +84,9 @@ std::string filter_compiled_ptx_for_ebpf_program(std::string input,
 			}
 		}
 		if (!skip)
-			oss << line << std::endl;
-	}
-	auto result = oss.str();
+			filtered.append(line).push_back('\n');
+	});
+	auto result = std::move(filtered);
 	for (const auto &sec : FILTERED_OUT_SECTION) {
 		if (auto pos = result.find(sec); pos != result.npos) {
 			result = result.replace(pos, sec.size(), "");

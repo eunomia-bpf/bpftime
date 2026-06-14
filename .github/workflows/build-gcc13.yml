@@ -41,8 +41,18 @@ jobs:
       - name: Checkout repository (with submodules)
         uses: actions/checkout@v4
         with:
-          submodules: recursive
+          submodules: true
           fetch-depth: 0
+
+      - name: Initialize bpftool submodules (libbpf)
+        run: |
+          rm -rf third_party/bpftool/libbpf
+          git submodule update --init --recursive third_party/bpftool
+
+      - name: Initialize ubpf submodules (bpf_conformance)
+        run: |
+          rm -rf third_party/ubpf/external/bpf_conformance
+          git submodule update --init --recursive third_party/ubpf
 
       - name: Install GCC 13 and dependencies
         run: |
@@ -66,6 +76,30 @@ jobs:
 
       - name: Build
         run: cmake --build build -j$(nproc)
+
+      - name: Configure daemon build and tests
+        env:
+          CC: gcc-13
+          CXX: g++-13
+        run: |
+          cmake -S . -B build-daemon \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_C_COMPILER=gcc-13 \
+            -DCMAKE_CXX_COMPILER=g++-13 \
+            -DBPFTIME_LLVM_JIT=OFF \
+            -DBPFTIME_BUILD_WITH_LIBBPF=ON \
+            -DBUILD_BPFTIME_DAEMON=ON \
+            -DBPFTIME_ENABLE_UNIT_TESTING=ON \
+            -DENABLE_EBPF_VERIFIER=OFF
+
+      - name: Build daemon targets
+        run: cmake --build build-daemon -j$(nproc) --target bpftime_daemon bpftime_daemon_tests
+
+      - name: Smoke test daemon CLI
+        run: ./build-daemon/daemon/bpftime_daemon --help >/dev/null
+
+      - name: Run daemon tests
+        run: ./build-daemon/daemon/test/bpftime_daemon_tests
 
       - name: List build outputs (first 200 lines)
         if: always()
