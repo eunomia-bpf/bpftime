@@ -270,7 +270,6 @@ int bpftime_shm::add_software_perf_event(int fd, int cpu, int32_t sample_type,
 				    bpftime::bpf_perf_event_handler(
 					    cpu, sample_type, config, segment),
 				    segment);
-	return fd;
 }
 
 int bpftime_shm::attach_perf_to_bpf(int perf_fd, int bpf_fd,
