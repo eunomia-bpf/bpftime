@@ -745,6 +745,11 @@ bpftime_shm::bpftime_shm(const char *shm_name, shm_open_type type)
 	if (open_type == shm_open_type::SHM_OPEN_ONLY) {
 		auto pair = segment.find<cuda::CommSharedMem>(
 			"cuda_comm_shared_mem");
+		for (int i = 0; pair.first == nullptr && i < 100; i++) {
+			usleep(10000);
+			pair = segment.find<cuda::CommSharedMem>(
+				"cuda_comm_shared_mem");
+		}
 		if (pair.first == nullptr) {
 			SPDLOG_ERROR(
 				"CommSharedMem not found in shared memory; did syscall-server initialize CUDA support?");
@@ -755,7 +760,8 @@ bpftime_shm::bpftime_shm(const char *shm_name, shm_open_type type)
 		// Register the shared communication memory for CUDA device
 		// mapping. This must happen after we have located the
 		// CommSharedMem in the shared segment.
-		register_cuda_host_memory();
+		if (cuda_comm_shared_mem != nullptr)
+			register_cuda_host_memory();
 	} else {
 		auto pair = segment.find<cuda::CommSharedMem>(
 			"cuda_comm_shared_mem");

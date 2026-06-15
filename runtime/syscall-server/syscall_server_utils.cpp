@@ -50,6 +50,9 @@ void start_up(syscall_context &ctx)
 
 		bpftime_initialize_global_shm(
 			shm_open_type::SHM_CREATE_OR_OPEN);
+#if defined(BPFTIME_ENABLE_CUDA_ATTACH)
+		ctx.initialize_cuda();
+#endif
 		shm_holder.global_shared_memory.begin_new_session();
 		shm_holder.global_shared_memory.set_mock_setter([&](bool flg) {
 			ctx.enable_mock_after_initialized = flg;

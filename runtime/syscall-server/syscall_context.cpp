@@ -115,9 +115,20 @@ syscall_context::syscall_context()
 	SPDLOG_INFO("The log will be written to: {}",
 		    runtime_config.get_logger_output_path());
 	spdlog::cfg::load_env_levels();
+}
+
 #ifdef BPFTIME_ENABLE_CUDA_ATTACH
+void syscall_context::initialize_cuda()
+{
 	SPDLOG_INFO("Initializing CUDA at syscall-server side");
-	initializing_cuda = true;
+	initializing_cuda.store(true, std::memory_order_release);
+	struct cuda_init_guard {
+		std::atomic<bool> &flag;
+		~cuda_init_guard()
+		{
+			flag.store(false, std::memory_order_release);
+		}
+	} guard{ initializing_cuda };
 	if (auto err = cuInit(0); err != CUDA_SUCCESS) {
 		SPDLOG_ERROR(
 			"Unable to initialize CUDA from syscall server side: {}",
@@ -126,9 +137,8 @@ syscall_context::syscall_context()
 			"Unable to initialize CUDA from syscall server side");
 	}
 	SPDLOG_INFO("CUDA initialized at syscall server side");
-	initializing_cuda = false;
-#endif
 }
+#endif
 
 void syscall_context::try_startup()
 {
@@ -139,7 +149,9 @@ void syscall_context::try_startup()
 
 int syscall_context::handle_close(int fd)
 {
-	if (!enable_mock || initializing_cuda || !enable_mock_after_initialized)
+	if (!enable_mock ||
+	    initializing_cuda.load(std::memory_order_acquire) ||
+	    !enable_mock_after_initialized)
 		return orig_close_fn(fd);
 	SPDLOG_DEBUG("Calling mocked close");
 	try_startup();
@@ -159,7 +171,9 @@ int syscall_context::handle_close(int fd)
 int syscall_context::handle_openat(int fd, const char *file, int oflag,
 				   unsigned short mode)
 {
-	if (!enable_mock || initializing_cuda || !enable_mock_after_initialized)
+	if (!enable_mock ||
+	    initializing_cuda.load(std::memory_order_acquire) ||
+	    !enable_mock_after_initialized)
 		return orig_openat_fn(fd, file, oflag, mode);
 	try_startup();
 	auto path = resolve_filename_and_fd_to_full_path(fd, file);
@@ -186,7 +200,9 @@ int syscall_context::handle_openat(int fd, const char *file, int oflag,
 int syscall_context::handle_open(const char *file, int oflag,
 				 unsigned short mode)
 {
-	if (!enable_mock || initializing_cuda || !enable_mock_after_initialized)
+	if (!enable_mock ||
+	    initializing_cuda.load(std::memory_order_acquire) ||
+	    !enable_mock_after_initialized)
 		return orig_open_fn(file, oflag, mode);
 	SPDLOG_DEBUG("Calling mocked open");
 	try_startup();
@@ -207,7 +223,9 @@ int syscall_context::handle_open(const char *file, int oflag,
 
 ssize_t syscall_context::handle_read(int fd, void *buf, size_t count)
 {
-	if (!enable_mock || initializing_cuda || !enable_mock_after_initialized)
+	if (!enable_mock ||
+	    initializing_cuda.load(std::memory_order_acquire) ||
+	    !enable_mock_after_initialized)
 		return orig_read_fn(fd, buf, count);
 	SPDLOG_DEBUG("Calling mocked read");
 	try_startup();
@@ -354,7 +372,9 @@ int syscall_context::create_kernel_bpf_prog_in_userspace(int cmd,
 
 long syscall_context::handle_sysbpf(int cmd, union bpf_attr *attr, size_t size)
 {
-	if (!enable_mock || initializing_cuda || !enable_mock_after_initialized)
+	if (!enable_mock ||
+	    initializing_cuda.load(std::memory_order_acquire) ||
+	    !enable_mock_after_initialized)
 		return orig_syscall_fn(__NR_bpf, (long)cmd,
 				       (long)(uintptr_t)attr, (long)size);
 	try_startup();
@@ -674,7 +694,9 @@ long syscall_context::handle_sysbpf(int cmd, union bpf_attr *attr, size_t size)
 int syscall_context::handle_perfevent(perf_event_attr *attr, pid_t pid, int cpu,
 				      int group_fd, unsigned long flags)
 {
-	if (!enable_mock || initializing_cuda || !enable_mock_after_initialized)
+	if (!enable_mock ||
+	    initializing_cuda.load(std::memory_order_acquire) ||
+	    !enable_mock_after_initialized)
 		return orig_syscall_fn(__NR_perf_event_open,
 				       (uint64_t)(uintptr_t)attr, (uint64_t)pid,
 				       (uint64_t)cpu, (uint64_t)group_fd,
@@ -803,7 +825,8 @@ int syscall_context::handle_perfevent(perf_event_attr *attr, pid_t pid, int cpu,
 void *syscall_context::handle_mmap(void *addr, size_t length, int prot,
 				   int flags, int fd, off64_t offset)
 {
-	if (!enable_mock || run_with_kernel || initializing_cuda ||
+	if (!enable_mock || run_with_kernel ||
+	    initializing_cuda.load(std::memory_order_acquire) ||
 	    !enable_mock_after_initialized)
 		return orig_mmap_fn(addr, length, prot, flags, fd, offset);
 	try_startup();
@@ -814,7 +837,8 @@ void *syscall_context::handle_mmap(void *addr, size_t length, int prot,
 void *syscall_context::handle_mmap64(void *addr, size_t length, int prot,
 				     int flags, int fd, off64_t offset)
 {
-	if (!enable_mock || run_with_kernel || initializing_cuda)
+	if (!enable_mock || run_with_kernel ||
+	    initializing_cuda.load(std::memory_order_acquire))
 		return orig_mmap64_fn(addr, length, prot, flags, fd, offset);
 	try_startup();
 	SPDLOG_DEBUG("Calling mocked mmap64");
@@ -867,11 +891,12 @@ void *syscall_context::handle_mmap64(void *addr, size_t length, int prot,
 
 int syscall_context::handle_ioctl(int fd, unsigned long req, unsigned long data)
 {
-	if (!enable_mock || initializing_cuda ||
-	    !enable_mock_after_initialized) {
+	bool cuda_initializing =
+		initializing_cuda.load(std::memory_order_acquire);
+	if (!enable_mock || cuda_initializing || !enable_mock_after_initialized) {
 		SPDLOG_DEBUG(
 			"Calling original ioctl, enable_lock={}, initializing_cuda={}",
-			enable_mock, initializing_cuda);
+			enable_mock, cuda_initializing);
 		return orig_ioctl_fn(fd, req, data);
 	}
 	SPDLOG_DEBUG("Calling mocked ioctl..");
@@ -924,7 +949,8 @@ int syscall_context::handle_ioctl(int fd, unsigned long req, unsigned long data)
 
 int syscall_context::handle_epoll_create1(int flags)
 {
-	if (!enable_mock || run_with_kernel || initializing_cuda ||
+	if (!enable_mock || run_with_kernel ||
+	    initializing_cuda.load(std::memory_order_acquire) ||
 	    !enable_mock_after_initialized)
 		return orig_epoll_create1_fn(flags);
 	try_startup();
@@ -963,7 +989,8 @@ int syscall_context::handle_epoll_ctl(int epfd, int op, int fd,
 int syscall_context::handle_epoll_wait(int epfd, epoll_event *evt,
 				       int maxevents, int timeout)
 {
-	if (!enable_mock || run_with_kernel || initializing_cuda ||
+	if (!enable_mock || run_with_kernel ||
+	    initializing_cuda.load(std::memory_order_acquire) ||
 	    !enable_mock_after_initialized)
 		return orig_epoll_wait_fn(epfd, evt, maxevents, timeout);
 	try_startup();
@@ -975,7 +1002,8 @@ int syscall_context::handle_epoll_wait(int epfd, epoll_event *evt,
 
 int syscall_context::handle_munmap(void *addr, size_t size)
 {
-	if (!enable_mock || run_with_kernel || initializing_cuda ||
+	if (!enable_mock || run_with_kernel ||
+	    initializing_cuda.load(std::memory_order_acquire) ||
 	    !enable_mock_after_initialized)
 		return orig_munmap_fn(addr, size);
 	try_startup();
@@ -992,7 +1020,9 @@ int syscall_context::handle_munmap(void *addr, size_t size)
 
 FILE *syscall_context::handle_fopen(const char *pathname, const char *flags)
 {
-	if (!enable_mock || initializing_cuda || !enable_mock_after_initialized)
+	if (!enable_mock ||
+	    initializing_cuda.load(std::memory_order_acquire) ||
+	    !enable_mock_after_initialized)
 		return orig_fopen_fn(pathname, flags);
 	SPDLOG_DEBUG("Calling mocked fopen");
 	try_startup();
@@ -1024,7 +1054,8 @@ FILE *syscall_context::handle_fopen(const char *pathname, const char *flags)
 int syscall_context::handle_dup3(int oldfd, int newfd, int flags)
 {
 	SPDLOG_DEBUG("Calling mocked dup3 {}, {}", oldfd, newfd);
-	if (!enable_mock || run_with_kernel || initializing_cuda ||
+	if (!enable_mock || run_with_kernel ||
+	    initializing_cuda.load(std::memory_order_acquire) ||
 	    !enable_mock_after_initialized)
 		return orig_syscall_fn(__NR_dup3, (long)oldfd, (long)newfd,
 				       (long)flags);
@@ -1039,7 +1070,8 @@ int syscall_context::handle_dup3(int oldfd, int newfd, int flags)
 int syscall_context::handle_memfd_create(const char *name, int flags)
 {
 	SPDLOG_DEBUG("Calling mocked memfd_create {}, {}", name, flags);
-	if (!enable_mock || initializing_cuda ||
+	if (!enable_mock ||
+	    initializing_cuda.load(std::memory_order_acquire) ||
 	    !enable_mock_after_initialized) {
 		SPDLOG_DEBUG("Calling original dup3");
 		return orig_syscall_fn(__NR_dup3, (long)name, (long)flags);
