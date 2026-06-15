@@ -6,6 +6,10 @@ add_subdirectory(pass/ptxpass_kprobe_entry)
 add_subdirectory(pass/ptxpass_kretprobe)
 add_subdirectory(pass/ptxpass_kprobe_memcapture)
 
+add_executable(bpftime_ptxpass_runner pass/ptxpass_runner.cpp)
+target_link_libraries(bpftime_ptxpass_runner PRIVATE ${CMAKE_DL_LIBS})
+set_property(TARGET bpftime_ptxpass_runner PROPERTY CXX_STANDARD 20)
+
 list(APPEND PTX_PASS_EXECUTABLE $<TARGET_FILE:ptxpass_kprobe_entry>)
 list(APPEND PTX_PASS_EXECUTABLE $<TARGET_FILE:ptxpass_kretprobe>)
 list(APPEND PTX_PASS_EXECUTABLE $<TARGET_FILE:ptxpass_kprobe_memcapture>)
@@ -42,6 +46,7 @@ add_dependencies(
     ptxpass_kprobe_entry
     ptxpass_kretprobe
     ptxpass_kprobe_memcapture
+    bpftime_ptxpass_runner
     nv_attach_impl_ptx_compiler
 )
 set(NV_ATTACH_IMPL_INCLUDE ${CMAKE_CURRENT_SOURCE_DIR} )
@@ -69,7 +74,7 @@ endif()
 # Create a build-time header file with the PTX pass paths
 # This avoids shell escaping issues with colons and quotes
 file(GENERATE OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/ptx_pass_config.h"
-     CONTENT "#pragma once\nstatic constexpr const char *DEFAULT_PTX_PASS_EXECUTABLE = \"$<JOIN:${PTX_PASS_EXECUTABLE},:>\";static constexpr const char* DEFAULT_PTX_COMPILER_SHARED_LIB=\"$<JOIN:${PTX_COMPILER_SHARED_LIB},:>\";\n")
+     CONTENT "#pragma once\nstatic constexpr const char *DEFAULT_PTX_PASS_EXECUTABLE = \"$<JOIN:${PTX_PASS_EXECUTABLE},:>\";static constexpr const char *DEFAULT_PTX_PASS_RUNNER_EXECUTABLE = \"$<TARGET_FILE:bpftime_ptxpass_runner>\";static constexpr const char* DEFAULT_PTX_COMPILER_SHARED_LIB=\"$<JOIN:${PTX_COMPILER_SHARED_LIB},:>\";\n")
 
 
 target_link_options(bpftime_nv_attach_impl PUBLIC "-Wl,--whole-archive" "$<TARGET_FILE:bpftime_nv_attach_impl>" "-Wl,--no-whole-archive")
