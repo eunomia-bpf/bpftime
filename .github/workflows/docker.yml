@@ -4,6 +4,7 @@ on:
   workflow_dispatch:
   push:
     branches: ["master"]
+    tags: ["v*"]
     paths:
       - ".github/workflows/docker.yml"
       - "Dockerfile"
@@ -35,6 +36,11 @@ on:
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}-${{ github.event_name }}
   cancel-in-progress: true
+
+permissions:
+  contents: read
+  packages: write
+
 jobs:
   build-and-push-image:
     runs-on: ubuntu-latest
@@ -58,11 +64,23 @@ jobs:
           registry: ghcr.io
           username: ${{ github.repository_owner }}
           password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Docker metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/${{ github.repository_owner }}/bpftime
+          tags: |
+            type=raw,value=latest,enable={{is_default_branch}}
+            type=ref,event=tag
+            type=semver,pattern={{version}}
+            type=sha,format=long
       - name: build docker
         run: |
           docker build .
 
       - name: Build image and push to GitHub Container Registry
+        id: docker_build
         uses: docker/build-push-action@v2
         if: "github.repository_owner == 'eunomia-bpf' && !startsWith(github.ref, 'refs/pull/')"
         with:
@@ -71,8 +89,8 @@ jobs:
           file: Dockerfile
           platforms: linux/amd64
           # Note: tags has to be all lower-case
-          tags: |
-            ghcr.io/${{ github.repository_owner }}/bpftime:latest
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
           push: true
 
       - name: Image digest
