@@ -1,4 +1,6 @@
+#ifdef __clang__
 #include <__clang_cuda_builtin_vars.h>
+#endif
 #include <atomic>
 #include <chrono>
 #include <csignal>
@@ -6,7 +8,9 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#ifndef __CUDA_ARCH__
 #include <cuda_runtime.h>
+#endif
 #include <iostream>
 #include <iterator>
 #include <ostream>
@@ -114,6 +118,15 @@ __device__ __forceinline__ uint64_t read_globaltimer()
 __constant__ uintptr_t constData;
 __constant__ MapBasicInfo map_info[1024];
 __device__ int __bpftime_comm_lock = 0;
+__device__ volatile uint64_t __bpftime_helper_keepalive = 0;
+
+__device__ __forceinline__ void bpftime_keep_args5(uint64_t a, uint64_t b,
+						 uint64_t c, uint64_t d,
+						 uint64_t e)
+{
+	asm volatile("" : : "l"(a), "l"(b), "l"(c), "l"(d), "l"(e)
+		     : "memory");
+}
 extern "C" __device__ void spin_lock(volatile int *lock)
 {
 	while (atomicCAS((int *)lock, 0, 1) == 1) {
@@ -386,8 +399,8 @@ _bpf_helper_ext_0025(uint64_t ctx, uint64_t map, uint64_t flags, uint64_t data,
 			return 2;
 		}
 		header->dirty = 1;
-		auto tail_to_put =
-			__atomic_fetch_add(&header->tail, 1, __ATOMIC_SEQ_CST);
+		auto tail_to_put = atomicAdd(
+			reinterpret_cast<unsigned long long *>(&header->tail), 1ULL);
 		auto real_tail = tail_to_put % map_info.max_entries;
 		// printf("real tail=%lu\n", real_tail);
 		auto buffer =
@@ -429,14 +442,18 @@ _bpf_helper_ext_0501(uint64_t data, uint64_t, uint64_t, uint64_t, uint64_t)
 }
 
 extern "C" __noinline__ __device__ uint64_t
-_bpf_helper_ext_0502(uint64_t, uint64_t, uint64_t, uint64_t, uint64_t)
+_bpf_helper_ext_0502(uint64_t a, uint64_t b, uint64_t c, uint64_t d,
+			     uint64_t e)
 {
+	bpftime_keep_args5(a, b, c, d, e);
 	return read_globaltimer();
 }
 
 extern "C" __noinline__ __device__ uint64_t
-_bpf_helper_ext_0503(uint64_t x, uint64_t y, uint64_t z, uint64_t, uint64_t)
+_bpf_helper_ext_0503(uint64_t x, uint64_t y, uint64_t z, uint64_t a,
+			     uint64_t b)
 {
+	bpftime_keep_args5(x, y, z, a, b);
 	// get block idx
 	*(uint64_t *)(uintptr_t)x = blockIdx.x;
 	*(uint64_t *)(uintptr_t)y = blockIdx.y;
@@ -445,8 +462,10 @@ _bpf_helper_ext_0503(uint64_t x, uint64_t y, uint64_t z, uint64_t, uint64_t)
 	return 0;
 }
 extern "C" __noinline__ __device__ uint64_t
-_bpf_helper_ext_0504(uint64_t x, uint64_t y, uint64_t z, uint64_t, uint64_t)
+_bpf_helper_ext_0504(uint64_t x, uint64_t y, uint64_t z, uint64_t a,
+			     uint64_t b)
 {
+	bpftime_keep_args5(x, y, z, a, b);
 	// get block dim
 	*(uint64_t *)(uintptr_t)x = blockDim.x;
 	*(uint64_t *)(uintptr_t)y = blockDim.y;
@@ -455,8 +474,10 @@ _bpf_helper_ext_0504(uint64_t x, uint64_t y, uint64_t z, uint64_t, uint64_t)
 	return 0;
 }
 extern "C" __noinline__ __device__ uint64_t
-_bpf_helper_ext_0505(uint64_t x, uint64_t y, uint64_t z, uint64_t, uint64_t)
+_bpf_helper_ext_0505(uint64_t x, uint64_t y, uint64_t z, uint64_t a,
+			     uint64_t b)
 {
+	bpftime_keep_args5(x, y, z, a, b);
 	// get threadIdx
 	*(uint64_t *)(uintptr_t)x = threadIdx.x;
 	*(uint64_t *)(uintptr_t)y = threadIdx.y;
@@ -465,20 +486,26 @@ _bpf_helper_ext_0505(uint64_t x, uint64_t y, uint64_t z, uint64_t, uint64_t)
 	return 0;
 }
 extern "C" __noinline__ __device__ uint64_t
-_bpf_helper_ext_0506(uint64_t, uint64_t, uint64_t, uint64_t, uint64_t)
+_bpf_helper_ext_0506(uint64_t a, uint64_t b, uint64_t c, uint64_t d,
+			     uint64_t e)
 {
+	bpftime_keep_args5(a, b, c, d, e);
 	asm("membar.sys;                      \n\t");
 	return 0;
 }
 extern "C" __noinline__ __device__ uint64_t
-_bpf_helper_ext_0507(uint64_t, uint64_t, uint64_t, uint64_t, uint64_t)
+_bpf_helper_ext_0507(uint64_t a, uint64_t b, uint64_t c, uint64_t d,
+			     uint64_t e)
 {
+	bpftime_keep_args5(a, b, c, d, e);
 	asm("exit;                      \n\t");
 	return 0;
 }
 extern "C" __noinline__ __device__ uint64_t
-_bpf_helper_ext_0508(uint64_t x, uint64_t y, uint64_t z, uint64_t, uint64_t)
+_bpf_helper_ext_0508(uint64_t x, uint64_t y, uint64_t z, uint64_t a,
+			     uint64_t b)
 {
+	bpftime_keep_args5(x, y, z, a, b);
 	// get grid dim
 	*(uint64_t *)(uintptr_t)x = gridDim.x;
 	*(uint64_t *)(uintptr_t)y = gridDim.y;
@@ -488,8 +515,10 @@ _bpf_helper_ext_0508(uint64_t x, uint64_t y, uint64_t z, uint64_t, uint64_t)
 }
 
 extern "C" __noinline__ __device__ uint64_t
-_bpf_helper_ext_0509(uint64_t, uint64_t, uint64_t, uint64_t, uint64_t)
+_bpf_helper_ext_0509(uint64_t a, uint64_t b, uint64_t c, uint64_t d,
+			     uint64_t e)
 {
+	bpftime_keep_args5(a, b, c, d, e);
     // get sm id
     uint32_t sm_id;
     asm volatile("mov.u32 %0, %%smid;" : "=r"(sm_id));
@@ -497,8 +526,10 @@ _bpf_helper_ext_0509(uint64_t, uint64_t, uint64_t, uint64_t, uint64_t)
 }
 
 extern "C" __noinline__ __device__ uint64_t
-_bpf_helper_ext_0510(uint64_t, uint64_t, uint64_t, uint64_t, uint64_t)
+_bpf_helper_ext_0510(uint64_t a, uint64_t b, uint64_t c, uint64_t d,
+			     uint64_t e)
 {
+	bpftime_keep_args5(a, b, c, d, e);
     // get warp id
     uint32_t warp_id;
     asm volatile("mov.u32 %0, %%warpid;" : "=r"(warp_id));
@@ -506,12 +537,57 @@ _bpf_helper_ext_0510(uint64_t, uint64_t, uint64_t, uint64_t, uint64_t)
 }
 
 extern "C" __noinline__ __device__ uint64_t
-_bpf_helper_ext_0511(uint64_t, uint64_t, uint64_t, uint64_t, uint64_t)
+_bpf_helper_ext_0511(uint64_t a, uint64_t b, uint64_t c, uint64_t d,
+			     uint64_t e)
 {
+	bpftime_keep_args5(a, b, c, d, e);
     // get lane id
     uint32_t lane_id;
     asm volatile("mov.u32 %0, %%laneid;" : "=r"(lane_id));
     return (uint64_t)lane_id;
+}
+
+// Helper 512: Read PTX register value from context
+// ctx: pointer to register context buffer (from BB kprobe)
+// idx: register index (0, 1, 2, ...)
+// Context layout:
+//   [0]: register count (u64)
+//   [8]: register 0 value (u64)
+//   [16]: register 1 value (u64)
+//   ...
+extern "C" __noinline__ __device__ uint64_t
+_bpf_helper_ext_0512(uint64_t idx, uint64_t ctx, uint64_t a, uint64_t b,
+			     uint64_t c)
+{
+	bpftime_keep_args5(idx, ctx, a, b, c);
+    if (ctx == 0) {
+        return 0; // No context provided
+    }
+    
+    uint64_t *context = (uint64_t *)(uintptr_t)ctx;
+    uint64_t reg_count = context[0];
+    
+    if (idx >= reg_count) {
+        return 0; // Index out of bounds
+    }
+    
+    // Register values start at offset 1 (after count)
+    return context[1 + idx];
+}
+
+// Helper 513: Get register count from context
+// ctx: pointer to register context buffer
+extern "C" __noinline__ __device__ uint64_t
+_bpf_helper_ext_0513(uint64_t ctx, uint64_t a, uint64_t b, uint64_t c,
+			     uint64_t d)
+{
+	bpftime_keep_args5(ctx, a, b, c, d);
+    if (ctx == 0) {
+        return 0;
+    }
+    
+    uint64_t *context = (uint64_t *)(uintptr_t)ctx;
+    return context[0];
 }
 
 extern "C" __global__ void bpf_main(void *mem, size_t sz)
@@ -521,6 +597,11 @@ extern "C" __global__ void bpf_main(void *mem, size_t sz)
 	char buf[16] = "aaa";
 	printf("setup function, const data=%lx\n", constData);
 	auto result = _bpf_helper_ext_0001(1ull << 32, (uintptr_t)buf, 0, 0, 0);
+	auto keep_reg =
+		_bpf_helper_ext_0512(0, (uint64_t)(uintptr_t)mem, 0, 0, 0);
+	auto keep_cnt =
+		_bpf_helper_ext_0513((uint64_t)(uintptr_t)mem, 0, 0, 0, 0);
+	__bpftime_helper_keepalive = keep_reg + keep_cnt;
 	_bpf_helper_ext_0002(1ull << 32, (uintptr_t)buf, (uintptr_t)buf, 0, 0);
 	_bpf_helper_ext_0003(1ull << 32, (uintptr_t)buf, 0, 0, 0);
 	const char msg[] = "Message from bpf: %d, %lx";
