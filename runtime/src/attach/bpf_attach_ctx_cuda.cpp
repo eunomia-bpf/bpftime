@@ -7,6 +7,7 @@
 #include <optional>
 #include <cstdlib>
 #include <mutex>
+#include <system_error>
 #include <thread>
 #include <spdlog/spdlog.h>
 #include "cuda.h"
@@ -279,6 +280,38 @@ void bpf_attach_ctx::start_cuda_watcher_thread()
 		std::lock_guard<std::mutex> guard(g_cuda_watcher_mutex);
 		g_cuda_watcher_thread = &cuda_watcher_thread;
 		g_cuda_watcher_stop_flag = flag;
+	}
+}
+
+void bpf_attach_ctx::stop_cuda_watcher_thread()
+{
+	if (!cuda_ctx)
+		return;
+	auto flag = cuda_ctx->cuda_watcher_should_stop;
+	if (flag)
+		flag->store(true, std::memory_order_release);
+	{
+		std::lock_guard<std::mutex> guard(g_cuda_watcher_mutex);
+		if (g_cuda_watcher_thread == &cuda_watcher_thread) {
+			g_cuda_watcher_thread = nullptr;
+			g_cuda_watcher_stop_flag.reset();
+		}
+	}
+	if (cuda_watcher_thread.joinable()) {
+		try {
+			cuda_watcher_thread.join();
+		} catch (const std::system_error &ex) {
+			SPDLOG_WARN("Failed to join CUDA watcher thread: {}",
+				    ex.what());
+			try {
+				if (cuda_watcher_thread.joinable())
+					cuda_watcher_thread.detach();
+			} catch (const std::system_error &detach_ex) {
+				SPDLOG_WARN(
+					"Failed to detach CUDA watcher thread after join failure: {}",
+					detach_ex.what());
+			}
+		}
 	}
 }
 std::vector<attach::MapBasicInfo>
