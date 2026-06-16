@@ -155,11 +155,11 @@ class syscall_context {
 
     public:
 	// enable mock the syscall behavior in userspace
-	bool enable_mock = true;
+	std::atomic<bool> enable_mock{ true };
 	// Initializing CUDA
 	std::atomic<bool> initializing_cuda{ false };
 	// Whether enable mock after syscall server has been initialized
-	bool enable_mock_after_initialized = true;
+	std::atomic<bool> enable_mock_after_initialized{ true };
 	syscall_context();
 	virtual ~syscall_context()
 	{

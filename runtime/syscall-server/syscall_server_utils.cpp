@@ -55,10 +55,11 @@ void start_up(syscall_context &ctx)
 #endif
 		shm_holder.global_shared_memory.begin_new_session();
 		shm_holder.global_shared_memory.set_mock_setter([&](bool flg) {
-			ctx.enable_mock_after_initialized = flg;
+			ctx.enable_mock_after_initialized.store(
+				flg, std::memory_order_relaxed);
 			SPDLOG_INFO(
 				"syscall server: Set enable_mock_after_initialized to {}",
-				ctx.enable_mock_after_initialized);
+				flg);
 		});
 #ifdef ENABLE_BPFTIME_VERIFIER
 		std::vector<int32_t> helper_ids;
