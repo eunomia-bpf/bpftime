@@ -596,8 +596,11 @@ long syscall_context::handle_sysbpf(int cmd, union bpf_attr *attr, size_t size)
 		auto prog_fd = attr->link_create.prog_fd;
 		auto target_fd = attr->link_create.target_fd;
 		auto attach_type = attr->link_create.attach_type;
+		int target_fd_for_log = target_fd == static_cast<uint32_t>(-1) ?
+						-1 :
+						static_cast<int>(target_fd);
 		SPDLOG_DEBUG("Creating link {} -> {}, attach type {}", prog_fd,
-			     target_fd, attach_type);
+			     target_fd_for_log, attach_type);
 		if (run_with_kernel && !bpftime_is_perf_event_fd(target_fd)) {
 			return orig_syscall_fn(__NR_bpf, (long)cmd,
 					       (long)(uintptr_t)attr,

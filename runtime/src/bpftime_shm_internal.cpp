@@ -574,9 +574,20 @@ int bpftime_shm::add_bpf_link(int fd, struct bpf_link_create_args *args)
 	// accepted.
 	if (args->attach_type == BPFTIME_BPF_PERF_EVENT_ATTACH_TYPE &&
 	    !is_perf_event_handler_fd(args->target_fd)) {
-		SPDLOG_ERROR(
-			"add_bpf_link: target_fd {} is not a perf-event handler for BPF_PERF_EVENT link",
-			args->target_fd);
+		int target_fd_for_log =
+			args->target_fd == static_cast<uint32_t>(-1) ?
+				-1 :
+				static_cast<int>(args->target_fd);
+		// libbpf probes perf-link support with target_fd=-1 and expects
+		// EBADF, so don't report that expected probe as an error.
+		if (args->target_fd == static_cast<uint32_t>(-1)) {
+			SPDLOG_DEBUG(
+				"add_bpf_link: rejecting expected libbpf perf-link probe with target_fd -1");
+		} else {
+			SPDLOG_ERROR(
+				"add_bpf_link: target_fd {} is not a perf-event handler for BPF_PERF_EVENT link",
+				target_fd_for_log);
+		}
 		errno = EBADF;
 		return -1;
 	}

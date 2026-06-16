@@ -233,6 +233,13 @@ cuda_launch_kernel_common(nv_attach_impl *impl, void *original_fn_ptr,
 			impl->record_patched_launch(stream);
 			return cudaSuccess;
 		}
+		SPDLOG_DEBUG(
+			"Late attach launch: resolved {} but no patched CUfunction is registered",
+			name->c_str());
+	} else {
+		SPDLOG_DEBUG(
+			"Late attach launch: unable to resolve host function {:x}",
+			(uintptr_t)func);
 	}
 
 	return original(func, grid_dim, block_dim, args, shared_mem, stream);
