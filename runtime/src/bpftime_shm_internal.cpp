@@ -873,6 +873,12 @@ int bpftime_shm::add_bpf_map(int fd, const char *name,
 	if (!manager) {
 		return -1;
 	}
+	if ((std::size_t)fd >= manager->size()) {
+		SPDLOG_ERROR("Cannot create map fd {}: max fd count is {}", fd,
+			     manager->size());
+		errno = EMFILE;
+		return -1;
+	}
 #ifdef ENABLE_BPFTIME_VERIFIER
 	auto helpers = verifier::get_map_descriptors();
 	helpers[fd] = verifier::BpftimeMapDescriptor{
@@ -906,6 +912,12 @@ int bpftime_shm::dup_bpf_map(int oldfd, int newfd)
 		newfd = open_fake_fd();
 	}
 	if (!manager) {
+		return -1;
+	}
+	if ((std::size_t)newfd >= manager->size()) {
+		SPDLOG_ERROR("Cannot dup map to fd {}: max fd count is {}",
+			     newfd, manager->size());
+		errno = EMFILE;
 		return -1;
 	}
 

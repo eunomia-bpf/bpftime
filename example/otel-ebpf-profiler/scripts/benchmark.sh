@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
-# Produce a small local CSV comparing the malloc/free workload with and without
-# bpftime. Set RUN_FULL_OTEL=1 to include the upstream OTel collector profiler.
+# Produce a small local CSV for the malloc/free workload. The bpftime cases use
+# daemon mirror mode: the Go loaders attach through the kernel, and bpftime
+# mirrors the handlers into the target process. Set RUN_KERNEL_COMPARE=1 to add
+# native-kernel loader cases. Set RUN_FULL_OTEL=1 to include the upstream OTel
+# collector profiler cases.
 
 set -euo pipefail
 
@@ -74,7 +77,7 @@ run_minimal_loader() {
 		tail -n 80 "${LOG_DIR}/minimal-loader-${run}.log" >&2 || true
 		die "minimal loader exited early"
 	fi
-	record_time minimal-cilium-loader "${run}" sudo env \
+	record_time daemon-mirror-minimal-cilium-loader "${run}" sudo env \
 		BPFTIME_GLOBAL_SHM_NAME="${BPFTIME_GLOBAL_SHM_NAME}" \
 		LD_PRELOAD="${BPFTIME_AGENT}" \
 		VICTIM_ITERATIONS="${ITERATIONS}" \
@@ -88,7 +91,36 @@ run_minimal_loader() {
 	cleanup_shm
 }
 
-run_full_otel() {
+set_otel_probe_env() {
+	local libc
+	libc="$(find_libc)"
+	export OTEL_EBPF_PROFILER_MALLOC_PROBE="${OTEL_EBPF_PROFILER_MALLOC_PROBE:-uprobe:${libc}:malloc}"
+	export OTEL_EBPF_PROFILER_FREE_PROBE="${OTEL_EBPF_PROFILER_FREE_PROBE:-uprobe:${libc}:free}"
+}
+
+run_kernel_minimal_loader() {
+	local run="$1"
+	sudo env \
+		"${EXAMPLE_DIR}/otel_malloc_free" \
+		-object "${EXAMPLE_DIR}/malloc_free.bpf.o" \
+		-duration "${TRACER_DURATION:-120s}" \
+		-interval "${TRACER_INTERVAL:-30s}" >"${LOG_DIR}/kernel-minimal-loader-${run}.log" 2>&1 &
+	TRACER_PID=$!
+	sleep "${TRACER_STARTUP_DELAY:-2}"
+	if ! kill -0 "${TRACER_PID}" 2>/dev/null; then
+		tail -n 80 "${LOG_DIR}/kernel-minimal-loader-${run}.log" >&2 || true
+		die "kernel minimal loader exited early"
+	fi
+	record_time kernel-minimal-cilium-loader "${run}" sudo env \
+		VICTIM_ITERATIONS="${ITERATIONS}" \
+		VICTIM_SLEEP_US=0 \
+		VICTIM_PRINT_EVERY=0 \
+		"${EXAMPLE_DIR}/victim"
+	stop_pid "${TRACER_PID:-}"
+	TRACER_PID=
+}
+
+run_daemon_mirror_full_otel() {
 	local run="$1"
 	local otel_dir="${OTEL_EBPF_PROFILER_DIR:-${EXAMPLE_DIR}/.otel-ebpf-profiler}"
 	local otelcol="${OTEL_COLLECTOR_BIN:-${otel_dir}/otelcol-ebpf-profiler}"
@@ -96,10 +128,7 @@ run_full_otel() {
 	need_file "${otelcol}" "otelcol-ebpf-profiler"
 	need_file "${config}" "collector config"
 
-	local libc
-	libc="$(find_libc)"
-	export OTEL_EBPF_PROFILER_MALLOC_PROBE="${OTEL_EBPF_PROFILER_MALLOC_PROBE:-uprobe:${libc}:malloc}"
-	export OTEL_EBPF_PROFILER_FREE_PROBE="${OTEL_EBPF_PROFILER_FREE_PROBE:-uprobe:${libc}:free}"
+	set_otel_probe_env
 	BPFTIME_GLOBAL_SHM_NAME="bpftime_maps_shm_otel_bench_full_${run}_$$"
 	export BPFTIME_GLOBAL_SHM_NAME
 
@@ -117,19 +146,58 @@ run_full_otel() {
 		tail -n 120 "${LOG_DIR}/otelcol-${run}.log" >&2 || true
 		die "otelcol-ebpf-profiler exited early"
 	fi
-	record_time full-otel-collector "${run}" sudo env \
+	record_time daemon-mirror-full-otel-collector "${run}" sudo env \
 		BPFTIME_GLOBAL_SHM_NAME="${BPFTIME_GLOBAL_SHM_NAME}" \
 		LD_PRELOAD="${BPFTIME_AGENT}" \
 		VICTIM_ITERATIONS="${ITERATIONS}" \
 		VICTIM_SLEEP_US=0 \
 		VICTIM_PRINT_EVERY=0 \
 		"${EXAMPLE_DIR}/victim"
+	if ! kill -0 "${OTELCOL_PID}" 2>/dev/null; then
+		tail -n 120 "${LOG_DIR}/otelcol-${run}.log" >&2 || true
+		die "otelcol-ebpf-profiler exited during daemon mirror run"
+	fi
 	sleep "${OTEL_FLUSH_DELAY:-6}"
 	stop_pid "${OTELCOL_PID:-}"
 	stop_pid "${BPFTIME_DAEMON_PID:-}"
 	OTELCOL_PID=
 	BPFTIME_DAEMON_PID=
 	cleanup_shm
+}
+
+run_kernel_full_otel() {
+	local run="$1"
+	local otel_dir="${OTEL_EBPF_PROFILER_DIR:-${EXAMPLE_DIR}/.otel-ebpf-profiler}"
+	local otelcol="${OTEL_COLLECTOR_BIN:-${otel_dir}/otelcol-ebpf-profiler}"
+	local config="${OTEL_COLLECTOR_CONFIG:-${EXAMPLE_DIR}/config/otelcol-malloc-free.yaml}"
+	need_file "${otelcol}" "otelcol-ebpf-profiler"
+	need_file "${config}" "collector config"
+	set_otel_probe_env
+
+	sudo env \
+		OTEL_EBPF_PROFILER_MALLOC_PROBE="${OTEL_EBPF_PROFILER_MALLOC_PROBE}" \
+		OTEL_EBPF_PROFILER_FREE_PROBE="${OTEL_EBPF_PROFILER_FREE_PROBE}" \
+		"${otelcol}" \
+		--feature-gates=+service.profilesSupport \
+		--config "${config}" >"${LOG_DIR}/kernel-otelcol-${run}.log" 2>&1 &
+	OTELCOL_PID=$!
+	sleep "${OTEL_COLLECTOR_STARTUP_DELAY:-5}"
+	if ! kill -0 "${OTELCOL_PID}" 2>/dev/null; then
+		tail -n 120 "${LOG_DIR}/kernel-otelcol-${run}.log" >&2 || true
+		die "kernel otelcol-ebpf-profiler exited early"
+	fi
+	record_time kernel-full-otel-collector "${run}" sudo env \
+		VICTIM_ITERATIONS="${ITERATIONS}" \
+		VICTIM_SLEEP_US=0 \
+		VICTIM_PRINT_EVERY=0 \
+		"${EXAMPLE_DIR}/victim"
+	if ! kill -0 "${OTELCOL_PID}" 2>/dev/null; then
+		tail -n 120 "${LOG_DIR}/kernel-otelcol-${run}.log" >&2 || true
+		die "kernel otelcol-ebpf-profiler exited during workload"
+	fi
+	sleep "${OTEL_FLUSH_DELAY:-6}"
+	stop_pid "${OTELCOL_PID:-}"
+	OTELCOL_PID=
 }
 
 cleanup() {
@@ -144,8 +212,14 @@ for run in $(seq 1 "${REPEATS}"); do
 	run_baseline "${run}"
 	run_agent_only "${run}"
 	run_minimal_loader "${run}"
+	if [[ "${RUN_KERNEL_COMPARE:-0}" == "1" ]]; then
+		run_kernel_minimal_loader "${run}"
+	fi
 	if [[ "${RUN_FULL_OTEL:-0}" == "1" ]]; then
-		run_full_otel "${run}"
+		run_daemon_mirror_full_otel "${run}"
+		if [[ "${RUN_KERNEL_COMPARE:-0}" == "1" ]]; then
+			run_kernel_full_otel "${run}"
+		fi
 	fi
 done
 

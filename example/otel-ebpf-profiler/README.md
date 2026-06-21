@@ -1,17 +1,23 @@
 # OpenTelemetry eBPF profiler malloc/free uprobes
 
-This example has two paths:
+This example has two paths plus a native-kernel comparison mode:
 
-- **Full OpenTelemetry profiler path**: fetch and run the upstream
+- **OpenTelemetry profiler daemon mirror path**: fetch and run the upstream
   `opentelemetry-ebpf-profiler` collector receiver, configured with
-  `probe_links` for libc `malloc` and `free`.
+  `probe_links` for libc `malloc` and `free`, while bpftime mirrors the
+  kernel-created handlers into the target process.
 - **Minimal cilium/ebpf smoke path**: build the small local loader in this
   directory to exercise the same cilium `link.OpenExecutable(...).Uprobe(...)`
   attach shape and bpftime perf-event link cookie handling.
+- **Native-kernel comparison path**: run the same minimal loader or upstream
+  OTel collector without bpftime to get a kernel reference.
 
-The full path is the primary one. bpftime's daemon handles BPF syscalls from the
-OTel profiler process, while the target process runs with `libbpftime-agent.so`
-preloaded.
+The upstream OTel binaries are statically linked Go programs that issue raw
+syscalls, so `LD_PRELOAD=libbpftime-syscall-server.so` does not intercept their
+BPF syscalls. This example therefore uses daemon mirror mode for upstream OTel:
+the OTel collector still attaches through the kernel, and bpftime mirrors those
+handlers for an agent-preloaded target process. The collector's exported profiles
+come from the upstream OTel kernel pipeline.
 
 ## Build bpftime and the local workload
 
@@ -45,7 +51,7 @@ OTEL_EBPF_PROFILER_BUILD_TARGETS="otelcol-ebpf-profiler ebpf-profiler" \
 The upstream project currently requires Go 1.25 for native builds. The script
 sets `GOTOOLCHAIN=auto` unless you override it.
 
-## Run the full OTel profiler on bpftime
+## Run the OTel profiler daemon mirror path
 
 After building `otelcol-ebpf-profiler`, run:
 
@@ -61,6 +67,15 @@ The script:
    `config/otelcol-malloc-free.yaml`,
 4. runs the local `victim` with `libbpftime-agent.so` preloaded,
 5. writes collector, daemon, and workload logs under `.run-logs/`.
+
+This validates bpftime compatibility with the upstream OTel loader shape,
+including cilium perf-event backed uprobes and BPF link cookies. It is not a
+pure syscall-server run of the static Go OTel collector.
+
+The script defaults `BPFTIME_MAX_FD_COUNT=65536` for the daemon because daemon
+mirror mode reuses kernel object IDs as bpftime shared-memory IDs, and those IDs
+can exceed bpftime's smaller default on long-running hosts. Override it in the
+environment if you need a different table size.
 
 The collector config uses the real OTel profiling receiver:
 
@@ -103,8 +118,9 @@ cilium's `BPF_LINK_CREATE` path for perf-event backed uprobes.
 
 ## How stacks are collected
 
-The local minimal loader only counts calls. The full OTel profiler collects
-stacks. Its generic probe enters `support/ebpf/generic_probe.ebpf.c`, calls
+The local minimal loader only counts calls. The upstream OTel profiler collects
+stacks in its native kernel pipeline. Its generic probe enters
+`support/ebpf/generic_probe.ebpf.c`, calls
 `collect_trace(ctx, TRACE_PROBE, pid, tid, ts, 0)`, and then the normal OTel
 unwinding pipeline runs:
 
@@ -114,8 +130,10 @@ unwinding pipeline runs:
 - tail-call the native and interpreter unwinders,
 - report profiles through the OTel profiles pipeline.
 
-That is why the full path uses the upstream OTel binary instead of copying only
-one BPF program into this example.
+That is why the daemon mirror path uses the upstream OTel binary instead of
+copying only one BPF program into this example. The current upstream static Go
+collector does not consume trace ringbuf data produced by bpftime's userspace
+execution path.
 
 ## Minimal cilium/ebpf smoke test
 
@@ -158,8 +176,19 @@ time for:
 
 - `baseline`: victim under `sudo`, no bpftime agent,
 - `bpftime-agent`: victim with the bpftime agent connected to an empty daemon,
-- `minimal-cilium-loader`: victim with the local malloc/free cilium loader
-  attached through bpftime.
+- `daemon-mirror-minimal-cilium-loader`: local malloc/free cilium loader attached
+  through the kernel and mirrored into bpftime.
+
+To add a native-kernel minimal-loader reference:
+
+```sh
+RUN_KERNEL_COMPARE=1 ITERATIONS=200000 REPEATS=3 \
+  example/otel-ebpf-profiler/scripts/benchmark.sh
+```
+
+This adds:
+
+- `kernel-minimal-cilium-loader`: same local loader and victim without bpftime.
 
 To include the full upstream OTel collector profiler in the benchmark:
 
@@ -168,6 +197,15 @@ RUN_FULL_OTEL=1 ITERATIONS=200000 REPEATS=3 \
   example/otel-ebpf-profiler/scripts/benchmark.sh
 ```
 
-Use longer runs for stable numbers. The full OTel path measures the real stack
-collection and reporting pipeline, while the minimal loader isolates bpftime's
-uprobe attach and execution overhead.
+With both flags enabled, the benchmark also includes:
+
+- `daemon-mirror-full-otel-collector`: upstream OTel collector attached through
+  the kernel while bpftime mirrors handlers into the target process,
+- `kernel-full-otel-collector`: upstream OTel collector without bpftime.
+
+Use longer runs for stable numbers. Do not interpret the daemon mirror full-OTel
+case as pure bpftime stack-collection overhead; the upstream static Go collector
+cannot be intercepted by `LD_PRELOAD`, and its exported profiles come from the
+kernel OTel pipeline. The minimal daemon mirror case is a focused regression for
+bpftime uprobe attach/execution semantics, while the `kernel-*` cases provide
+native-kernel references.

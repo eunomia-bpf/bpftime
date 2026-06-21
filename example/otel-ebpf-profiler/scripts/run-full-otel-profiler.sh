@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
 # Run the real OpenTelemetry eBPF profiler collector receiver with malloc/free
-# probe_links, using bpftime for the target process.
+# probe_links, while bpftime daemon mirrors the kernel-created handlers for the
+# target process. The upstream Go collector is statically linked and uses raw
+# syscalls, so this is daemon mirror compatibility mode rather than syscall-
+# server pure userspace mode.
 
 set -euo pipefail
 

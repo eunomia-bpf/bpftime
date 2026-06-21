@@ -3,9 +3,18 @@
 namespace bpftime
 {
 #if defined(__x86_64__) || defined(_M_X64)
+namespace
+{
+constexpr uint64_t X86_64_USER_CS = 0x33;
+constexpr uint64_t X86_64_USER_DS = 0x2b;
+constexpr uint64_t X86_64_EFLAGS_IF = 0x200;
+constexpr uint64_t X86_64_NO_SYSCALL = static_cast<uint64_t>(-1);
+} // namespace
+
 void convert_gum_cpu_context_to_pt_regs(const ::_GumX64CpuContext &context,
 					pt_regs &regs)
 {
+	regs = {};
 	regs.ip = context.rip;
 	regs.r15 = context.r15;
 	regs.r14 = context.r14;
@@ -23,6 +32,10 @@ void convert_gum_cpu_context_to_pt_regs(const ::_GumX64CpuContext &context,
 	regs.dx = context.rdx;
 	regs.cx = context.rcx;
 	regs.ax = context.rax;
+	regs.orig_ax = X86_64_NO_SYSCALL;
+	regs.cs = X86_64_USER_CS;
+	regs.flags = X86_64_EFLAGS_IF;
+	regs.ss = X86_64_USER_DS;
 }
 
 void convert_pt_regs_to_gum_cpu_context(const pt_regs &regs,

@@ -100,6 +100,7 @@ start_bpftime_daemon() {
 	sudo env \
 		BPFTIME_GLOBAL_SHM_NAME="${BPFTIME_GLOBAL_SHM_NAME}" \
 		BPFTIME_SHM_MEMORY_MB="${BPFTIME_SHM_MEMORY_MB:-256}" \
+		BPFTIME_MAX_FD_COUNT="${BPFTIME_MAX_FD_COUNT:-65536}" \
 		SPDLOG_LEVEL="${SPDLOG_LEVEL:-info}" \
 		"${daemon}" -v >"${log_file}" 2>&1 &
 	BPFTIME_DAEMON_PID=$!

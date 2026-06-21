@@ -22,6 +22,7 @@
 #include <spdlog/spdlog.h>
 #include <stdexcept>
 #include "bpftime_vm_compat.hpp"
+#include "platform_utils.hpp"
 #include <cstdio>
 
 #define NVPTXCOMPILER_SAFE_CALL(x)                                             \
@@ -236,6 +237,7 @@ int bpftime_prog::bpftime_prog_exec(void *memory, size_t memory_size,
 	}
 	uint64_t val = 0;
 	int res = 0;
+	bpftime_bpf_cpu_guard cpu_guard;
 	// set share memory read and write able
 	bpftime_protect_disable();
 	SPDLOG_DEBUG(
