@@ -1,5 +1,3 @@
 /.otel-ebpf-profiler/
 /.run-logs/
-/malloc_free.bpf.o
-/otel_malloc_free
 /victim

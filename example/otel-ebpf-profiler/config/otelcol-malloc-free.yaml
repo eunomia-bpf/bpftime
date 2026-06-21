@@ -1,7 +1,7 @@
-# Local collector configuration for a daemon mirror compatibility smoke test
-# with the upstream OpenTelemetry eBPF profiler and libc malloc/free probes.
+# Local collector configuration for the upstream OpenTelemetry eBPF profiler
+# with libc malloc/free probes.
 # The upstream collector attaches through the kernel and exports profiles from
-# the native kernel OTel pipeline; this file is not used by the benchmark.
+# the native kernel OTel pipeline.
 #
 # The scripts set these environment variables before launching the collector:
 #   OTEL_EBPF_PROFILER_MALLOC_PROBE=uprobe:/path/to/libc.so.6:malloc
