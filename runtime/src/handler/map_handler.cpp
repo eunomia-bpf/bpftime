@@ -214,7 +214,8 @@ const void *bpf_map_handler::map_lookup_elem(const void *key,
 	case bpf_map_type::BPF_MAP_TYPE_KERNEL_USER_PROG_ARRAY: {
 		auto impl = static_cast<prog_array_kernel_user_impl *>(
 			map_impl_ptr.get());
-		return do_lookup(impl);
+		return from_syscall ? do_lookup_userspace(impl) :
+				      do_lookup(impl);
 	}
 	case bpf_map_type::BPF_MAP_TYPE_KERNEL_USER_LRU_HASH:
 	case bpf_map_type::BPF_MAP_TYPE_KERNEL_USER_LPM_TRIE: {

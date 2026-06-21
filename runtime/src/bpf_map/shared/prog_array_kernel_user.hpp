@@ -26,6 +26,7 @@ class prog_array_kernel_user_impl {
 	~prog_array_kernel_user_impl();
 
 	void *elem_lookup(const void *key);
+	void *elem_lookup_userspace(const void *key);
 
 	long elem_update(const void *key, const void *value, uint64_t flags);
 

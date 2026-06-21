@@ -129,6 +129,28 @@ void *prog_array_kernel_user_impl::elem_lookup(const void *key)
 #endif
 }
 
+void *prog_array_kernel_user_impl::elem_lookup_userspace(const void *key)
+{
+#if __linux__
+	if (!init_map_fd()) {
+		return nullptr;
+	}
+	int32_t k = *(int32_t *)key;
+	if (k < 0 || static_cast<uint32_t>(k) >= _max_entries) {
+		errno = EINVAL;
+		return nullptr;
+	}
+	uint32_t prog_id = 0;
+	if (bpf_map_lookup_elem(map_fd, key, &prog_id) < 0) {
+		return nullptr;
+	}
+	current_thread_lookup_val = static_cast<int32_t>(prog_id);
+	return &current_thread_lookup_val;
+#else
+	return nullptr;
+#endif
+}
+
 long prog_array_kernel_user_impl::elem_update(const void *key,
 					      const void *value, uint64_t flags)
 {
