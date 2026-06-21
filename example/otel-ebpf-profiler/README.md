@@ -9,8 +9,8 @@ This example has two paths plus a native-kernel comparison mode:
 - **Minimal cilium/ebpf smoke path**: build the small local loader in this
   directory to exercise the same cilium `link.OpenExecutable(...).Uprobe(...)`
   attach shape and bpftime perf-event link cookie handling.
-- **Native-kernel comparison path**: run the same minimal loader or upstream
-  OTel collector without bpftime to get a kernel reference.
+- **Native-kernel comparison path**: run the same minimal loader without
+  bpftime to get a kernel reference.
 
 The upstream OTel binaries are statically linked Go programs that issue raw
 syscalls, so `LD_PRELOAD=libbpftime-syscall-server.so` does not intercept their
@@ -162,7 +162,7 @@ The local tracer prints per-pid `malloc` and `free` counts. It distinguishes
 the two probes with `bpf_get_attach_cookie()`, which is a focused regression
 test for bpftime's cilium perf-event link cookie support.
 
-## Performance comparison
+## Minimal performance comparison
 
 For a quick local comparison:
 
@@ -190,22 +190,9 @@ This adds:
 
 - `kernel-minimal-cilium-loader`: same local loader and victim without bpftime.
 
-To include the full upstream OTel collector profiler in the benchmark:
-
-```sh
-RUN_FULL_OTEL=1 ITERATIONS=200000 REPEATS=3 \
-  example/otel-ebpf-profiler/scripts/benchmark.sh
-```
-
-With both flags enabled, the benchmark also includes:
-
-- `daemon-mirror-full-otel-collector`: upstream OTel collector attached through
-  the kernel while bpftime mirrors handlers into the target process,
-- `kernel-full-otel-collector`: upstream OTel collector without bpftime.
-
-Use longer runs for stable numbers. Do not interpret the daemon mirror full-OTel
-case as pure bpftime stack-collection overhead; the upstream static Go collector
-cannot be intercepted by `LD_PRELOAD`, and its exported profiles come from the
-kernel OTel pipeline. The minimal daemon mirror case is a focused regression for
-bpftime uprobe attach/execution semantics, while the `kernel-*` cases provide
-native-kernel references.
+Use longer runs for stable numbers. The benchmark intentionally does not include
+the upstream OTel collector because that collector is a static Go binary that
+attaches through the kernel and exports profiles from the native kernel OTel
+pipeline. The benchmark is only a focused regression for bpftime uprobe
+attach/execution semantics; `run-full-otel-profiler.sh` is the compatibility
+smoke test for the complete upstream OTel profiler workflow.
