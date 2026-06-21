@@ -265,9 +265,10 @@ int bpftime_driver::bpftime_attach_perf_to_bpf_server(
 {
 	int perf_id = check_and_get_pid_fd(server_pid, perf_fd);
 	if (perf_id < 0) {
-		SPDLOG_ERROR("perf fd {} for pid {} not exists", perf_fd,
-			     server_pid);
-		return -1;
+		SPDLOG_DEBUG(
+			"Ignoring kernel-owned perf fd {} for pid {} when mirroring perf attach",
+			perf_fd, server_pid);
+		return 0;
 	}
 	if (bpftime_is_prog_fd(kernel_bpf_id)) {
 		SPDLOG_INFO("bpf {} already exists in shm", kernel_bpf_id);
@@ -321,8 +322,8 @@ int bpftime_driver::bpftime_perf_event_enable_server(int server_pid, int fd)
 {
 	int fd_id = check_and_get_pid_fd(server_pid, fd);
 	if (fd_id < 0) {
-		SPDLOG_WARN("Unrecorded uprobe fd: {} for pid {}", fd,
-			    server_pid);
+		SPDLOG_DEBUG("Ignoring kernel-owned perf fd {} for pid {}", fd,
+			     server_pid);
 		return 0;
 	}
 	int res = bpftime_perf_event_enable(fd_id);
@@ -340,8 +341,9 @@ int bpftime_driver::bpftime_perf_event_disable_server(int server_pid, int fd)
 {
 	int fd_id = check_and_get_pid_fd(server_pid, fd);
 	if (fd_id < 0) {
-		SPDLOG_ERROR("fd {} for pid {} not exists", fd, server_pid);
-		return -1;
+		SPDLOG_DEBUG("Ignoring kernel-owned perf fd {} for pid {}", fd,
+			     server_pid);
+		return 0;
 	}
 	int res = bpftime_perf_event_disable(fd_id);
 	if (res < 0) {

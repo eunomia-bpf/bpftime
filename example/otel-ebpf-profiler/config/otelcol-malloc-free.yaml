@@ -1,0 +1,32 @@
+# Local collector configuration for running the upstream OpenTelemetry eBPF
+# profiler against libc malloc/free probes through bpftime.
+#
+# The scripts set these environment variables before launching the collector:
+#   OTEL_EBPF_PROFILER_MALLOC_PROBE=uprobe:/path/to/libc.so.6:malloc
+#   OTEL_EBPF_PROFILER_FREE_PROBE=uprobe:/path/to/libc.so.6:free
+receivers:
+  profiling:
+    samples_per_second: 20
+    reporter_interval: 5s
+    reporter_jitter: 0
+    monitor_interval: 5s
+    probabilistic_interval: 1m
+    probabilistic_threshold: 100
+    off_cpu_threshold: 0
+    tracers: all
+    probe_links:
+      - ${env:OTEL_EBPF_PROFILER_MALLOC_PROBE}
+      - ${env:OTEL_EBPF_PROFILER_FREE_PROBE}
+
+exporters:
+  debug:
+    verbosity: detailed
+
+service:
+  telemetry:
+    logs:
+      level: info
+  pipelines:
+    profiles:
+      receivers: [profiling]
+      exporters: [debug]

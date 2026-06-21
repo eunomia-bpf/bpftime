@@ -20,11 +20,20 @@ CLANG_BPF_SYS_INCLUDES ?= $(shell $(CLANG) -v -E - </dev/null 2>&1 \
 BPF_OBJ := malloc_free.bpf.o
 TRACER := otel_malloc_free
 
-.PHONY: all tracer clean
+.PHONY: all tracer upstream-otel otel-full-run benchmark clean
 
 all: $(BPF_OBJ) victim
 
 tracer: $(TRACER)
+
+upstream-otel:
+	scripts/build-upstream-otel.sh
+
+otel-full-run: victim
+	scripts/run-full-otel-profiler.sh
+
+benchmark: tracer victim
+	scripts/benchmark.sh
 
 $(BPF_OBJ): bpf/malloc_free.bpf.c $(VMLINUX)
 	$(CLANG) -g -O2 -target bpf -D__TARGET_ARCH_$(ARCH) \
