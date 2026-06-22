@@ -18,8 +18,20 @@ if(${BPFTIME_ENABLE_CUDA_ATTACH})
     include(../../cmake/cuda.cmake)
     find_cuda()
     target_link_directories(bpftime-aot-cli PRIVATE ${CUDA_LIBRARY_PATH})
+    # Use --whole-archive to include all symbols from bpftime_llvm_vm
+    # This ensures the constructor function register_llvm_vm_factory() is linked
+    target_link_options(bpftime-aot-cli PRIVATE 
+        "-Wl,--whole-archive" 
+        "$<TARGET_FILE:bpftime_llvm_vm>" 
+        "-Wl,--no-whole-archive")
     target_link_libraries(bpftime-aot-cli PRIVATE -L/usr/lib/llvm-20/lib/ spdlog::spdlog argparse bpftime_vm_compat bpftime_llvm_vm runtime ${LIBBPF_LIBRARIES} elf z ${LLVM_LIBRARIES} ${llvm_libs} ${CUDA_LIBS} bpftime_nv_attach_impl)
 else()
+    # Use --whole-archive to include all symbols from bpftime_llvm_vm
+    # This ensures the constructor function register_llvm_vm_factory() is linked
+    target_link_options(bpftime-aot-cli PRIVATE 
+        "-Wl,--whole-archive" 
+        "$<TARGET_FILE:bpftime_llvm_vm>" 
+        "-Wl,--no-whole-archive")
     target_link_libraries(bpftime-aot-cli PRIVATE -L/usr/lib/llvm-20/lib/ spdlog::spdlog argparse bpftime_vm_compat bpftime_llvm_vm runtime ${LIBBPF_LIBRARIES} elf z ${LLVM_LIBRARIES} ${llvm_libs})
 endif()
 set_property(TARGET bpftime-aot-cli PROPERTY CXX_STANDARD 20)
