@@ -175,8 +175,20 @@ int main(int argc, char *argv[])
 			     << endl;
 			return 1;
 		}
-		bpftime_initialize_global_shm(shm_open_type::SHM_OPEN_ONLY);
 		auto filename = std::string(argv[2]);
+
+		// Check if output file is the current shared memory device
+		std::string shm_name = bpftime::get_global_shm_name();
+		std::string shm_path = "/dev/shm/" + shm_name;
+		if (filename == shm_path) {
+			cerr << "Error: Output file cannot be the shared memory device file." << endl
+			     << "Hint: export outputs to JSON file, not to shared memory itself." << endl
+			     << "Current shared memory: " << shm_path << endl
+			     << "Example: " << argv[0] << " export /tmp/output.json" << endl;
+			return 1;
+		}		
+
+		bpftime_initialize_global_shm(shm_open_type::SHM_OPEN_ONLY);
 		return bpftime_export_global_shm_to_json(filename.c_str());
 	} else if (cmd == "import") {
 		if (argc != 3) {
