@@ -23,6 +23,7 @@
 #include <chrono>
 #include <thread>
 #include <bpftime_logger.hpp>
+#include <boost/interprocess/exceptions.hpp>
 #ifdef BPFTIME_ENABLE_CUDA_ATTACH
 #include <nv_attach_impl.hpp>
 #include <nv_attach_private_data.hpp>
@@ -81,40 +82,54 @@ int bpftime_run_ebpf_program(int id, const std::string &data_in_file,
 		cerr << "Unable to read data in file" << endl;
 		return 1;
 	}
-	bpftime_initialize_global_shm(shm_open_type::SHM_OPEN_ONLY);
-	const handler_manager *manager =
-		shm_holder.global_shared_memory.get_manager();
-	size_t handler_size = manager->size();
-	if ((size_t)id >= handler_size || id < 0) {
-		cerr << "Invalid id " << id << " not exist" << endl;
-		return 1;
-	}
-	if (std::holds_alternative<bpf_prog_handler>(
-		    manager->get_handler(id))) {
-		const auto &prog =
-			std::get<bpf_prog_handler>(manager->get_handler(id));
-		auto new_prog =
-			bpftime_prog(prog.insns.data(), prog.insns.size(),
-				     prog.name.c_str());
-		bpftime::bpftime_helper_group::get_kernel_utils_helper_group()
-			.add_helper_group_to_prog(&new_prog);
-		bpftime::bpftime_helper_group::get_shm_maps_helper_group()
-			.add_helper_group_to_prog(&new_prog);
-		if (run_type == "JIT") {
-			new_prog.bpftime_prog_load(true);
-		} else if (run_type == "AOT") {
-			if (prog.aot_insns.size() == 0) {
-				cerr << "AOT instructions not found" << endl;
-				return 1;
-			}
-			new_prog.load_aot_object(std::vector<uint8_t>(
-				prog.aot_insns.begin(), prog.aot_insns.end()));
-		} else if (run_type == "INTERPRET") {
-			new_prog.bpftime_prog_load(false);
+	try {
+		bpftime_initialize_global_shm(shm_open_type::SHM_OPEN_ONLY);
+		const handler_manager *manager =
+			shm_holder.global_shared_memory.get_manager();
+		size_t handler_size = manager->size();
+		if ((size_t)id >= handler_size || id < 0) {
+			cerr << "Invalid id " << id << " not exist" << endl;
+			return 1;
 		}
-		return run_ebpf_and_measure(new_prog, data_in, repeat_N);
-	} else {
-		cerr << "Invalid id " << id << " not a bpf program" << endl;
+		if (std::holds_alternative<bpf_prog_handler>(
+			    manager->get_handler(id))) {
+			const auto &prog =
+				std::get<bpf_prog_handler>(manager->get_handler(id));
+			auto new_prog =
+				bpftime_prog(prog.insns.data(), prog.insns.size(),
+					     prog.name.c_str());
+			bpftime::bpftime_helper_group::get_kernel_utils_helper_group()
+				.add_helper_group_to_prog(&new_prog);
+			bpftime::bpftime_helper_group::get_shm_maps_helper_group()
+				.add_helper_group_to_prog(&new_prog);
+			if (run_type == "JIT") {
+				new_prog.bpftime_prog_load(true);
+			} else if (run_type == "AOT") {
+				if (prog.aot_insns.size() == 0) {
+					cerr << "AOT instructions not found" << endl;
+					return 1;
+				}
+				new_prog.load_aot_object(std::vector<uint8_t>(
+					prog.aot_insns.begin(), prog.aot_insns.end()));
+			} else if (run_type == "INTERPRET") {
+				new_prog.bpftime_prog_load(false);
+			}
+			return run_ebpf_and_measure(new_prog, data_in, repeat_N);
+		} else {
+			cerr << "Invalid id " << id << " not a bpf program" << endl;
+			return 1;
+		}
+	} catch (const boost::interprocess::interprocess_exception &e) {
+		cerr << "Error: Failed to access shared memory: " << e.what() << endl
+		     << "Hint: Shared memory may not exist, be corrupted, or permission denied." << endl;
+		std::string shm_name = bpftime::get_global_shm_name();
+		std::string shm_path = "/dev/shm/" + shm_name;
+		cerr << "Current shared memory: " << shm_path << endl;
+		if (std::string(e.what()).find("Permission denied") != std::string::npos) {
+			cerr << "Try running with sudo or check if the shared memory was created by root." << endl;
+		} else {
+			cerr << "Hint: Shared memory does not exist. Please ensure bpftime server is running." << endl;
+		}
 		return 1;
 	}
 	return 0;
@@ -186,10 +201,25 @@ int main(int argc, char *argv[])
 			     << "Current shared memory: " << shm_path << endl
 			     << "Example: " << argv[0] << " export /tmp/output.json" << endl;
 			return 1;
-		}		
+		}
 
-		bpftime_initialize_global_shm(shm_open_type::SHM_OPEN_ONLY);
-		return bpftime_export_global_shm_to_json(filename.c_str());
+		try {
+			bpftime_initialize_global_shm(shm_open_type::SHM_OPEN_ONLY);
+			return bpftime_export_global_shm_to_json(filename.c_str());
+		} catch (const boost::interprocess::interprocess_exception &e) {
+			cerr << "Error: Failed to access shared memory: " << e.what() << endl
+			     << "Hint: Shared memory may not exist, be corrupted, or permission denied." << endl
+			     << "Current shared memory: " << shm_path << endl;
+			if (std::string(e.what()).find("Permission denied") != std::string::npos) {
+				cerr << "Try running with sudo or check if the shared memory was created by root." << endl;
+			} else {
+				cerr << "Try:" << endl
+				     << "  1. Remove corrupted shared memory: rm -f " << shm_path << endl
+				     << "  2. Restart bpftime server: bpftime load <your_ebpf_program>" << endl
+				     << "  3. Or use: " << argv[0] << " remove" << endl;
+			}
+			return 1;
+		}
 	} else if (cmd == "import") {
 		if (argc != 3) {
 			cerr << "Usage: " << argv[0] << " import <filename>"
@@ -276,56 +306,69 @@ int main(int argc, char *argv[])
             blockY = atoi(argv[8]);
             blockZ = atoi(argv[9]);
         }
-		bpftime_initialize_global_shm(shm_open_type::SHM_OPEN_ONLY);
-		auto &runtime_config = bpftime_get_agent_config();
-		bpftime_set_logger(
-			std::string(runtime_config.get_logger_output_path()));
-		bpf_attach_ctx ctx;
-		ctx.register_attach_impl(
-			{ bpftime::attach::ATTACH_CUDA_PROBE,
-			  bpftime::attach::ATTACH_CUDA_RETPROBE },
-			std::make_unique<attach::nv_attach_impl>(),
-			[](const std::string_view &sv, int &err) {
-				std::unique_ptr<
-					bpftime::attach::attach_private_data>
-					priv_data = std::make_unique<
-						bpftime::attach::
-							nv_attach_private_data>();
-				if (int e = priv_data->initialize_from_string(
-					    sv);
-				    e < 0) {
-					err = e;
-					return std::unique_ptr<
-						bpftime::attach::
-							attach_private_data>();
+		try {
+			bpftime_initialize_global_shm(shm_open_type::SHM_OPEN_ONLY);
+			auto &runtime_config = bpftime_get_agent_config();
+			bpftime_set_logger(
+				std::string(runtime_config.get_logger_output_path()));
+			bpf_attach_ctx ctx;
+			ctx.register_attach_impl(
+				{ bpftime::attach::ATTACH_CUDA_PROBE,
+				  bpftime::attach::ATTACH_CUDA_RETPROBE },
+				std::make_unique<attach::nv_attach_impl>(),
+				[](const std::string_view &sv, int &err) {
+					std::unique_ptr<
+						bpftime::attach::attach_private_data>
+						priv_data = std::make_unique<
+							bpftime::attach::
+								nv_attach_private_data>();
+					if (int e = priv_data->initialize_from_string(
+						    sv);
+					    e < 0) {
+						err = e;
+						return std::unique_ptr<
+							bpftime::attach::
+								attach_private_data>();
+					}
+					return priv_data;
+				});
+			ctx.init_attach_ctx_from_handlers(runtime_config);
+			if (auto impl = ctx.find_nv_attach_impl(); impl) {
+				const int id = (*impl)->find_attach_entry_by_program_name(
+					argv[2]);
+				if (id == -1) {
+					SPDLOG_ERROR("Unable to find program: {}",
+						     argv[2]);
+					return 1;
 				}
-				return priv_data;
-			});
-		ctx.init_attach_ctx_from_handlers(runtime_config);
-		if (auto impl = ctx.find_nv_attach_impl(); impl) {
-			const int id = (*impl)->find_attach_entry_by_program_name(
-				argv[2]);
-			if (id == -1) {
-				SPDLOG_ERROR("Unable to find program: {}",
-					     argv[2]);
-				return 1;
-			}
-			int err = 0;
-			if (has_dims) {
-				err = (*impl)->run_attach_entry_on_gpu(
-					id, run_count, gridX, gridY, gridZ,
-					blockX, blockY, blockZ);
-			} else {
-				err = (*impl)->run_attach_entry_on_gpu(
-					id, run_count);
-			}
-			if (err) {
-				SPDLOG_ERROR("Unable to run program: {}", err);
-				return 1;
-			}
-			return 0;
+				int err = 0;
+				if (has_dims) {
+					err = (*impl)->run_attach_entry_on_gpu(
+						id, run_count, gridX, gridY, gridZ,
+						blockX, blockY, blockZ);
+				} else {
+					err = (*impl)->run_attach_entry_on_gpu(
+						id, run_count);
+				}
+				if (err) {
+					SPDLOG_ERROR("Unable to run program: {}", err);
+					return 1;
+				}
+				return 0;
 			}
 			SPDLOG_ERROR("nv_attach_impl not found!");
+			return 1;
+		} catch (const boost::interprocess::interprocess_exception &e) {
+			cerr << "Error: Failed to access shared memory: " << e.what() << endl
+			     << "Hint: Shared memory may not exist, be corrupted, or permission denied." << endl;
+			std::string shm_name = bpftime::get_global_shm_name();
+			std::string shm_path = "/dev/shm/" + shm_name;
+			cerr << "Current shared memory: " << shm_path << endl;
+			if (std::string(e.what()).find("Permission denied") != std::string::npos) {
+				cerr << "Try running with sudo or check if the shared memory was created by root." << endl;
+			} else {
+				cerr << "Hint: Shared memory does not exist. Please ensure bpftime server is running." << endl;
+			}
 			return 1;
 		}
 	#endif
