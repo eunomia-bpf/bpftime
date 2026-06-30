@@ -27,14 +27,14 @@ using uint64_vec = boost::interprocess::vector<uint64_t, uint64_vec_allocator>;
 template <class T>
 static inline T ensure_on_current_cpu(std::function<T(int cpu)> func)
 {
-	return func(my_sched_getcpu());
+	return func(bpftime_get_current_cpu());
 }
 
 template <class T>
 static inline T ensure_on_certain_cpu(int cpu, std::function<T()> func)
 {
 	static thread_local int currcpu = -1;
-	if (currcpu == my_sched_getcpu()) {
+	if (currcpu == bpftime_get_current_cpu()) {
 		return func(currcpu);
 	}
 	cpu_set_t orig, set;

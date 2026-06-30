@@ -59,6 +59,12 @@ int handler_manager::set_handler_at_empty_slot(handler_variant &&handler,
 int handler_manager::set_handler(int fd, handler_variant &&handler,
 				 managed_shared_memory &memory)
 {
+	if (fd < 0 || (std::size_t)fd >= handlers.size()) {
+		SPDLOG_ERROR("set_handler failed for fd {} out of range [0, {})",
+			     fd, handlers.size());
+		errno = EMFILE;
+		return -EMFILE;
+	}
 	if (is_allocated(fd)) {
 		SPDLOG_ERROR("set_handler failed for fd {} aleady exists", fd);
 		return -EEXIST;

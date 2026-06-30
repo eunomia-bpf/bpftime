@@ -76,6 +76,7 @@ static std::thread agent_ipc_thread;
 static int detach_pipe_fds[2] = { -1, -1 };
 static std::atomic<bool> detach_thread_started{ false };
 static std::mutex detach_mutex;
+static std::once_flag detach_at_exit_once;
 static std::atomic<bool> global_ctx_constructed{ false };
 
 union bpf_attach_ctx_holder {
@@ -394,6 +395,13 @@ static int perform_detach()
 	return detach_err < 0 ? detach_err : 0;
 }
 
+static void register_detach_at_exit_once()
+{
+	std::call_once(detach_at_exit_once, []() {
+		std::atexit([]() { (void)perform_detach(); });
+	});
+}
+
 static void stop_auto_refresh_at_exit()
 {
 	auto_refresh_epoch.fetch_add(1, std::memory_order_acq_rel);
@@ -665,6 +673,7 @@ static int refresh_attach_session(const gchar *data)
 
 	SPDLOG_INFO("Attach successfully");
 	start_agent_ipc_server_once();
+	register_detach_at_exit_once();
 	return 0;
 }
 
@@ -995,6 +1004,7 @@ extern "C" void bpftime_agent_main(const gchar *data, gboolean *stay_resident)
 			}
 
 			SPDLOG_INFO("Attach successfully");
+			register_detach_at_exit_once();
 		} catch (const std::exception &ex) {
 			fprintf(stderr,
 				"bpftime-agent: bpftime_agent_main failed: %s\n",

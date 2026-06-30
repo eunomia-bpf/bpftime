@@ -12,6 +12,7 @@
 #include <sys/time.h>
 #include <time.h>
 #include <linux/perf_event.h>
+#include <optional>
 #include <spdlog/spdlog.h>
 #include "handle_bpf_event.hpp"
 #include "../bpf_tracer_event.h"
@@ -98,13 +99,12 @@ int bpf_event_handler::handle_open_events(const struct event *e)
 
 int bpf_event_handler::handle_exec_and_exit(const struct event *e)
 {
-
 	if (e->exec_data.exit_event == false) {
 		SPDLOG_INFO("EXEC {:<6} {:<16} {}", e->pid, e->comm,
-			     e->exec_data.filename);
+			    e->exec_data.filename);
 	} else {
 		SPDLOG_INFO("EXIT {:<6} {:<16} {}", e->pid, e->comm,
-			     e->exec_data.exit_code);
+			    e->exec_data.exit_code);
 	}
 	return 0;
 }
@@ -216,7 +216,7 @@ static const char *get_bpf_map_type_string(bpftime::bpf_map_type type)
 int bpf_event_handler::handle_close_event(const struct event *e)
 {
 	SPDLOG_INFO("CLOSE    {:<6} {:<16} fd:{}", e->pid, e->comm,
-		     e->close_data.fd);
+		    e->close_data.fd);
 	if (config.is_driving_bpftime) {
 		driver.bpftime_close_server(e->pid, e->close_data.fd);
 	}
@@ -235,7 +235,7 @@ int bpf_event_handler::handle_bpf_event(const struct event *e)
 	}
 
 	SPDLOG_INFO("BPF      {:<6} {:<16} cmd:{:<16} ret:{}", e->pid, e->comm,
-		     cmd_str, e->bpf_data.ret);
+		    cmd_str, e->bpf_data.ret);
 
 	switch (e->bpf_data.bpf_cmd) {
 	case BPF_MAP_CREATE:
@@ -249,13 +249,20 @@ int bpf_event_handler::handle_bpf_event(const struct event *e)
 	case BPF_LINK_CREATE: {
 		int prog_fd = e->bpf_data.attr.link_create.prog_fd;
 		int perf = e->bpf_data.attr.link_create.target_fd;
+		std::optional<uint64_t> cookie;
+		if (e->bpf_data.attr.link_create.attach_type ==
+		    BPF_PERF_EVENT) {
+			cookie = e->bpf_data.attr.link_create.perf_event
+					 .bpf_cookie;
+		}
 		/* code */
-		SPDLOG_INFO("   BPF_LINK_CREATE prog_fd:{} target_fd:{}",
-			     prog_fd, perf);
+		SPDLOG_INFO(
+			"   BPF_LINK_CREATE prog_fd:{} target_fd:{} cookie:{}",
+			prog_fd, perf, cookie.has_value());
 		if (config.is_driving_bpftime) {
 			if (int err =
 				    driver.bpftime_attach_perf_to_bpf_fd_server(
-					    e->pid, perf, prog_fd);
+					    e->pid, perf, prog_fd, cookie);
 			    err < 0) {
 				SPDLOG_WARN(
 					"Unable to attach perf {} to bpf prog {}, err={}",
@@ -274,8 +281,8 @@ int bpf_event_handler::handle_bpf_event(const struct event *e)
 	case BPF_BTF_LOAD:
 		/* code */
 		SPDLOG_INFO("   BPF_BTF_LOAD btf_id:{} btf_log_level:{}",
-			     e->bpf_data.attr.btf_id,
-			     e->bpf_data.attr.btf_log_level);
+			    e->bpf_data.attr.btf_id,
+			    e->bpf_data.attr.btf_log_level);
 		break;
 	default:
 		break;
@@ -295,14 +302,14 @@ int bpf_event_handler::handle_perf_event_open(const struct event *e)
 	SPDLOG_DEBUG("handle_perf_event");
 	const char *type_id_str = "UNKNOWN TYPE";
 	unsigned int perf_type = e->perf_event_data.attr.type;
-	if (perf_type < (sizeof(perf_type_id_strings) /
-					   sizeof(perf_type_id_strings[0]))) {
+	if (perf_type <
+	    (sizeof(perf_type_id_strings) / sizeof(perf_type_id_strings[0]))) {
 		type_id_str = perf_type_id_strings[perf_type];
 	}
 
 	/* print output */
 	SPDLOG_INFO("PERF     {:<6} {:<16} type:{:<16} ret:{}\n", e->pid,
-		     e->comm, type_id_str, e->perf_event_data.ret);
+		    e->comm, type_id_str, e->perf_event_data.ret);
 
 	if (config.is_driving_bpftime) {
 		if (e->perf_event_data.ret >= 0) {
@@ -334,7 +341,7 @@ int bpf_event_handler::handle_perf_event_open(const struct event *e)
 					retprobe, ref_ctr_off);
 			} else {
 				SPDLOG_WARN("Unsupported perf event type: {}",
-					     perf_type);
+					    perf_type);
 			}
 		} else {
 			SPDLOG_DEBUG(
@@ -373,7 +380,7 @@ int bpf_event_handler::handle_ioctl(const struct event *e)
 	int req = e->ioctl_data.req;
 	int data = e->ioctl_data.data;
 	SPDLOG_INFO("IOCTL    {:<6} {:<16} fd:{} req:{} data:{}", e->pid,
-		     e->comm, fd, req, data);
+		    e->comm, fd, req, data);
 	if (req == PERF_EVENT_IOC_ENABLE) {
 		SPDLOG_INFO("Enabling perf event {}", fd);
 		if (config.is_driving_bpftime) {
@@ -387,9 +394,8 @@ int bpf_event_handler::handle_ioctl(const struct event *e)
 									fd);
 		}
 	} else if (req == PERF_EVENT_IOC_SET_BPF) {
-		SPDLOG_INFO(
-			"Setting bpf for perf event {} and bpf {} (id: {})", fd,
-			data, e->ioctl_data.bpf_prog_id);
+		SPDLOG_INFO("Setting bpf for perf event {} and bpf {} (id: {})",
+			    fd, data, e->ioctl_data.bpf_prog_id);
 		if (config.is_driving_bpftime) {
 			return driver.bpftime_attach_perf_to_bpf_server(
 				e->pid, fd, e->ioctl_data.bpf_prog_id);

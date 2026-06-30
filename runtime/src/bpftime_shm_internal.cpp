@@ -484,7 +484,9 @@ bool bpftime_shm::is_prog_array_map_fd(int fd) const
 	if (!is_map_fd(fd))
 		return false;
 	auto &map_impl = std::get<bpf_map_handler>(manager->get_handler(fd));
-	return map_impl.type == bpf_map_type::BPF_MAP_TYPE_PROG_ARRAY;
+	return map_impl.type == bpf_map_type::BPF_MAP_TYPE_PROG_ARRAY ||
+	       map_impl.type ==
+		       bpf_map_type::BPF_MAP_TYPE_KERNEL_USER_PROG_ARRAY;
 }
 std::optional<ringbuf_map_impl *>
 bpftime_shm::try_get_ringbuf_map_impl(int fd) const
@@ -871,6 +873,12 @@ int bpftime_shm::add_bpf_map(int fd, const char *name,
 	if (!manager) {
 		return -1;
 	}
+	if ((std::size_t)fd >= manager->size()) {
+		SPDLOG_ERROR("Cannot create map fd {}: max fd count is {}", fd,
+			     manager->size());
+		errno = EMFILE;
+		return -1;
+	}
 #ifdef ENABLE_BPFTIME_VERIFIER
 	auto helpers = verifier::get_map_descriptors();
 	helpers[fd] = verifier::BpftimeMapDescriptor{
@@ -904,6 +912,12 @@ int bpftime_shm::dup_bpf_map(int oldfd, int newfd)
 		newfd = open_fake_fd();
 	}
 	if (!manager) {
+		return -1;
+	}
+	if ((std::size_t)newfd >= manager->size()) {
+		SPDLOG_ERROR("Cannot dup map to fd {}: max fd count is {}",
+			     newfd, manager->size());
+		errno = EMFILE;
 		return -1;
 	}
 

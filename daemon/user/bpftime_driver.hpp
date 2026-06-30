@@ -9,6 +9,7 @@
 #include "daemon_config.hpp"
 #include <ebpf-vm.h>
 #include <map>
+#include <optional>
 
 extern "C" {
 struct bpf_prog_info;
@@ -53,10 +54,12 @@ class bpftime_driver {
 	// the function will allocate a new perf event fd.
 	int bpftime_maps_create_server(int kernel_id);
 
-	int bpftime_attach_perf_to_bpf_server(int server_pid, int perf_fd,
-					      int kernel_bpf_id);
-	int bpftime_attach_perf_to_bpf_fd_server(int server_pid, int perf_fd,
-						 int bpf_prog_fd);
+	int bpftime_attach_perf_to_bpf_server(
+		int server_pid, int perf_fd, int kernel_bpf_id,
+		std::optional<uint64_t> cookie = std::nullopt);
+	int bpftime_attach_perf_to_bpf_fd_server(
+		int server_pid, int perf_fd, int bpf_prog_fd,
+		std::optional<uint64_t> cookie = std::nullopt);
 
 	// create uprobe in the global shared memory
 	//

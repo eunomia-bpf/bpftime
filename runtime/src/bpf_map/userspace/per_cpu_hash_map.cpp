@@ -47,7 +47,7 @@ per_cpu_hash_map_impl::per_cpu_hash_map_impl(
 
 void *per_cpu_hash_map_impl::elem_lookup(const void *key)
 {
-	int cpu = my_sched_getcpu();
+	int cpu = bpftime_get_current_cpu();
 	SPDLOG_DEBUG("Run per cpu hash lookup at cpu {}", cpu);
 	if (key == nullptr) {
 		errno = ENOENT;
@@ -70,7 +70,7 @@ long per_cpu_hash_map_impl::elem_update(const void *key, const void *value,
 {
 	if (!check_update_flags(flags))
 		return -1;
-	int cpu = my_sched_getcpu();
+	int cpu = bpftime_get_current_cpu();
 	SPDLOG_DEBUG("Per cpu update, key {}, value {}", (const char *)key,
 		     *(long *)value);
 
@@ -95,7 +95,7 @@ long per_cpu_hash_map_impl::elem_update(const void *key, const void *value,
 
 long per_cpu_hash_map_impl::elem_delete(const void *key)
 {
-	int cpu = my_sched_getcpu();
+	int cpu = bpftime_get_current_cpu();
 	SPDLOG_DEBUG("Run per cpu hash delete at cpu {}", cpu);
 	bytes_vec &key_vec = this->key_templates[cpu];
 	key_vec.assign((uint8_t *)key, (uint8_t *)key + key_size);
