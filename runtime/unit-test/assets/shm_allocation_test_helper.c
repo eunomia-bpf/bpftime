@@ -4,7 +4,7 @@
  * All rights reserved.
  */
 #include <errno.h>
-#include <linux/bpf.h>
+#include <fcntl.h>
 #include <linux/perf_event.h>
 #include <stdio.h>
 #include <string.h>
@@ -14,15 +14,14 @@
 
 static int trigger_startup(void)
 {
-	union bpf_attr attr;
-	memset(&attr, 0, sizeof(attr));
-	attr.map_type = BPF_MAP_TYPE_HASH;
-	attr.key_size = sizeof(int);
-	attr.value_size = sizeof(int);
-	attr.max_entries = 1;
-	memcpy(attr.map_name, "allocation_test", sizeof("allocation_test"));
-
-	(void)syscall(__NR_bpf, BPF_MAP_CREATE, &attr, sizeof(attr));
+	/* open() is intentionally not wrapped by handle_exceptions(), so this
+	 * verifies that try_startup() itself converts bad_alloc into exit(1).
+	 */
+	int fd = open("/dev/null", O_RDONLY, 0);
+	if (fd < 0) {
+		return 101;
+	}
+	close(fd);
 	return 100;
 }
 
@@ -42,7 +41,8 @@ static int trigger_perf_mmap(void)
 	}
 
 	size_t length = (size_t)getpagesize() + 8 * 1024 * 1024;
-	errno = 0;
+	/* The interposer must not leak the caller's stale errno on failure. */
+	errno = E2BIG;
 	void *buffer = mmap(NULL, length, PROT_READ | PROT_WRITE,
 			    MAP_SHARED, fd, 0);
 	if (buffer != MAP_FAILED || errno != ENOMEM) {
