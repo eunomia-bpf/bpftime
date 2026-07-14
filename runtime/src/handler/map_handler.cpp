@@ -784,16 +784,14 @@ int bpf_map_handler::map_init(managed_shared_memory &memory)
 	switch (type) {
 	case bpf_map_type::BPF_MAP_TYPE_HASH: {
 #ifdef BPFTIME_USE_VAR_HASH_MAP
-		map_impl_ptr =
-			memory.construct<hash_map_impl>(
-				boost::interprocess::anonymous_instance)(
-				memory, key_size, value_size, max_entries,
-				static_cast<uint32_t>(flags));
+		map_impl_ptr = memory.construct<hash_map_impl>(
+			boost::interprocess::anonymous_instance)(
+			memory, key_size, value_size, max_entries,
+			static_cast<uint32_t>(flags));
 #else
-		map_impl_ptr =
-			memory.construct<hash_map_impl>(
-				boost::interprocess::anonymous_instance)(
-				memory, max_entries, key_size, value_size);
+		map_impl_ptr = memory.construct<hash_map_impl>(
+			boost::interprocess::anonymous_instance)(
+			memory, max_entries, key_size, value_size);
 #endif
 		init_refcnt();
 		return 0;
@@ -820,7 +818,7 @@ int bpf_map_handler::map_init(managed_shared_memory &memory)
 		}
 		map_impl_ptr = memory.construct<ringbuf_map_impl>(
 			boost::interprocess::anonymous_instance)(max_entries,
-							      memory);
+								 memory);
 		init_refcnt();
 		return 0;
 	}
@@ -889,7 +887,8 @@ int bpf_map_handler::map_init(managed_shared_memory &memory)
 	case bpf_map_type::BPF_MAP_TYPE_KERNEL_USER_ARRAY: {
 		map_impl_ptr = memory.construct<array_map_kernel_user_impl>(
 			boost::interprocess::anonymous_instance)(
-			memory, attr.kernel_bpf_map_id, value_size, max_entries);
+			memory, attr.kernel_bpf_map_id, value_size,
+			max_entries);
 		init_refcnt();
 		return 0;
 	}
@@ -935,7 +934,7 @@ int bpf_map_handler::map_init(managed_shared_memory &memory)
 	case bpf_map_type::BPF_MAP_TYPE_ARRAY_OF_MAPS: {
 		map_impl_ptr = memory.construct<array_map_of_maps_impl>(
 			boost::interprocess::anonymous_instance)(memory,
-							      max_entries);
+								 max_entries);
 		init_refcnt();
 		return 0;
 	}
@@ -1034,7 +1033,8 @@ int bpf_map_handler::map_init(managed_shared_memory &memory)
 			    name.c_str());
 		map_impl_ptr = memory.construct<array_map_kernel_gpu_impl>(
 			boost::interprocess::anonymous_instance)(
-			memory, attr.kernel_bpf_map_id, value_size, max_entries);
+			memory, attr.kernel_bpf_map_id, value_size,
+			max_entries);
 		init_refcnt();
 		shm_holder.global_shared_memory.set_enable_mock(true);
 		return 0;
@@ -1061,11 +1061,11 @@ int bpf_map_handler::map_init(managed_shared_memory &memory)
 		const uint64_t requested_thread_count = thread_count;
 		while (thread_count > 0) {
 			try {
-				map_impl_ptr =
-					memory.construct<nv_gpu_ringbuf_map_impl>(
-						boost::interprocess::anonymous_instance)(
-						memory, value_size, max_entries,
-						thread_count);
+				map_impl_ptr = memory.construct<
+					nv_gpu_ringbuf_map_impl>(
+					boost::interprocess::anonymous_instance)(
+					memory, value_size, max_entries,
+					thread_count);
 				break;
 			} catch (const boost::interprocess::bad_alloc &) {
 				if (thread_count <= 1) {
@@ -1200,8 +1200,8 @@ void bpf_map_handler::map_free(managed_shared_memory &memory) const
 			static_cast<percpu_array_map_kernel_user_impl *>(impl));
 		break;
 	case bpf_map_type::BPF_MAP_TYPE_KERNEL_USER_PERF_EVENT_ARRAY:
-		memory.destroy_ptr(static_cast<
-				   perf_event_array_kernel_user_impl *>(impl));
+		memory.destroy_ptr(
+			static_cast<perf_event_array_kernel_user_impl *>(impl));
 		break;
 	case bpf_map_type::BPF_MAP_TYPE_PROG_ARRAY:
 		memory.destroy_ptr(static_cast<prog_array_map_impl *>(impl));
@@ -1230,10 +1230,12 @@ void bpf_map_handler::map_free(managed_shared_memory &memory) const
 			static_cast<nv_gpu_shared_array_map_impl *>(impl));
 		break;
 	case bpf_map_type::BPF_MAP_TYPE_GPU_RINGBUF_MAP:
-		memory.destroy_ptr(static_cast<nv_gpu_ringbuf_map_impl *>(impl));
+		memory.destroy_ptr(
+			static_cast<nv_gpu_ringbuf_map_impl *>(impl));
 		break;
 	case bpf_map_type::BPF_MAP_TYPE_GPU_KERNEL_SHARED_ARRAY_MAP: {
-		memory.destroy_ptr(static_cast<array_map_kernel_gpu_impl *>(impl));
+		memory.destroy_ptr(
+			static_cast<array_map_kernel_gpu_impl *>(impl));
 		break;
 	}
 	case bpf_map_type::BPF_MAP_TYPE_PERGPUTD_ARRAY_HOST_MAP:
