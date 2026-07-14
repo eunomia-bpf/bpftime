@@ -10,11 +10,24 @@
 #include <boost/interprocess/creation_tags.hpp>
 #include <cstdint>
 #include <linux/bpf.h>
+#include <string>
 #include <sys/wait.h>
 #include <unistd.h>
 
 static const char *SHM_NAME = "my_shm_maps_test";
 static const char *HANDLER_NAME = "my_handler";
+
+struct named_shm_remove {
+	explicit named_shm_remove(const char *name) : name(name)
+	{
+		boost::interprocess::shared_memory_object::remove(name);
+	}
+	~named_shm_remove()
+	{
+		boost::interprocess::shared_memory_object::remove(name);
+	}
+	const char *name;
+};
 
 using namespace boost::interprocess;
 using namespace bpftime;
@@ -140,7 +153,7 @@ TEST_CASE("Hash maps with colliding public names remain independent",
 {
 	static const char *collision_shm_name =
 		"bpftime_map_name_collision_test";
-	struct shm_remove remover(collision_shm_name);
+	named_shm_remove remover(collision_shm_name);
 	managed_shared_memory segment(create_only, collision_shm_name, 8 << 20);
 	auto *manager = segment.construct<handler_manager>(
 		HANDLER_NAME)(segment, MIN_MAX_FD_COUNT);
@@ -215,5 +228,4 @@ TEST_CASE("Hash maps with colliding public names remain independent",
 	REQUIRE(segment.get_num_named_objects() == named_objects_before_maps);
 	REQUIRE(segment.get_free_memory() == free_memory_before_maps);
 	segment.destroy_ptr(manager);
-	shared_memory_object::remove(collision_shm_name);
 }
