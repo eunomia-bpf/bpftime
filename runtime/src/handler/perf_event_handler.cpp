@@ -9,7 +9,6 @@
 #include "bpftime_epoll.h"
 #endif
 #include "spdlog/spdlog.h"
-#include <boost/container/throw_exception.hpp>
 #include <boost/interprocess/detail/segment_manager_helper.hpp>
 #include <boost/interprocess/smart_ptr/shared_ptr.hpp>
 #include <cstring>
@@ -284,9 +283,7 @@ void *software_perf_event_buffer::ensure_mmap_buffer(size_t buffer_size)
 		};
 		try {
 			mmap_buffer.resize(buffer_size);
-		} catch (const boost::interprocess::bad_alloc &e) {
-			return report_allocation_failure(e);
-		} catch (const boost::container::length_error_t &e) {
+		} catch (const std::exception &e) {
 			return report_allocation_failure(e);
 		}
 		// Update data size in the mmap header

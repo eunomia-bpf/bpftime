@@ -5,7 +5,6 @@
  */
 #include "bpftime_logger.hpp"
 #include "bpftime_shm.hpp"
-#include <boost/container/throw_exception.hpp>
 #include <boost/interprocess/exceptions.hpp>
 #ifdef ENABLE_BPFTIME_VERIFIER
 #include <bpftime-verifier.hpp>
@@ -161,8 +160,6 @@ void syscall_context::try_startup()
 	try {
 		start_up(*this);
 	} catch (const boost::interprocess::bad_alloc &e) {
-		exit_for_startup_allocation_failure(e);
-	} catch (const boost::container::length_error_t &e) {
 		exit_for_startup_allocation_failure(e);
 	}
 	enable_mock.store(true, std::memory_order_relaxed);
@@ -903,6 +900,9 @@ void *syscall_context::handle_mmap64(void *addr, size_t length, int prot,
 		    ptr != nullptr) {
 			mocked_mmap_values.insert((uintptr_t)ptr);
 			return ptr;
+		}
+		if (errno == 0) {
+			errno = ENOMEM;
 		}
 		return MAP_FAILED;
 	}
