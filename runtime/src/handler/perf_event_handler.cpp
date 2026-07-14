@@ -9,6 +9,7 @@
 #include "bpftime_epoll.h"
 #endif
 #include "spdlog/spdlog.h"
+#include <boost/container/throw_exception.hpp>
 #include <boost/interprocess/detail/segment_manager_helper.hpp>
 #include <boost/interprocess/smart_ptr/shared_ptr.hpp>
 #include <cstring>
@@ -19,6 +20,7 @@
 #include <spdlog/fmt/bin_to_hex.h>
 #include <atomic>
 #include <cerrno>
+#include <exception>
 #include <limits>
 #include <unordered_map>
 #include <variant>
@@ -262,16 +264,33 @@ bool software_perf_event_buffer::has_data() const
 
 void *software_perf_event_buffer::ensure_mmap_buffer(size_t buffer_size)
 {
+	const size_t page_size = static_cast<size_t>(pagesize);
 	if (buffer_size > mmap_buffer.size()) {
-		SPDLOG_DEBUG("Expanding mmap buffer size to {}", buffer_size);
-		mmap_buffer.resize(buffer_size);
-		// Update data size in the mmap header
-		get_header_ref().data_size = buffer_size - pagesize;
-		if (popcnt(buffer_size - pagesize) != 1) {
+		if (buffer_size < page_size ||
+		    popcnt(buffer_size - page_size) != 1) {
 			SPDLOG_ERROR(
 				"Data size of a perf event buffer must be power of 2");
+			errno = EINVAL;
 			return nullptr;
 		}
+		SPDLOG_DEBUG("Expanding mmap buffer size to {}", buffer_size);
+		auto report_allocation_failure = [&](const std::exception
+							     &error) {
+			SPDLOG_ERROR(
+				"Unable to allocate {}-byte perf buffer: {}",
+				buffer_size, error.what());
+			errno = ENOMEM;
+			return nullptr;
+		};
+		try {
+			mmap_buffer.resize(buffer_size);
+		} catch (const boost::interprocess::bad_alloc &e) {
+			return report_allocation_failure(e);
+		} catch (const boost::container::length_error_t &e) {
+			return report_allocation_failure(e);
+		}
+		// Update data size in the mmap header
+		get_header_ref().data_size = buffer_size - page_size;
 	}
 	return mmap_buffer.data();
 }

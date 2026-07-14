@@ -9,8 +9,11 @@
 #else
 #include <asm/unistd_64.h>
 #endif
+#include <boost/container/throw_exception.hpp>
 #include <boost/interprocess/exceptions.hpp>
+#include <cerrno>
 #include <cstdio>
+#include <exception>
 #if __linux__
 #include "linux/bpf.h"
 #include <asm-generic/errno-base.h>
@@ -22,6 +25,8 @@
 #include <spdlog/cfg/env.h>
 #include <cstdarg>
 #include <sched.h>
+#include <sys/mman.h>
+#include <type_traits>
 
 // Helper function for safe logging with pointer parameters
 inline const char* safe_ptr_str(const char* ptr) {
@@ -76,16 +81,26 @@ template <typename F, typename... Args>
 auto handle_exceptions(F &&f, Args &&...args) noexcept
 	-> decltype(f(std::forward<Args>(args)...))
 {
+	using result_type = decltype(f(std::forward<Args>(args)...));
+	auto report_allocation_failure = [](const std::exception &error)
+		-> result_type {
+		SPDLOG_ERROR("Shared memory allocation failed: {}", error.what());
+		SPDLOG_ERROR(
+			"Returning ENOMEM; consider increasing BPFTIME_SHM_MEMORY_MB");
+		errno = ENOMEM;
+		if constexpr (std::is_pointer_v<result_type>) {
+			return MAP_FAILED;
+		} else {
+			return static_cast<result_type>(-1);
+		}
+	};
 	try {
 		return f(std::forward<Args>(args)...);
 	} catch (const boost::interprocess::bad_alloc &e) {
-		SPDLOG_ERROR("Boost interprocess bad_alloc: {}", e.what());
-		SPDLOG_ERROR("Consider increasing the shared memory size by "
-			     "setting the BPFTIME_SHM_MEMORY_MB env var.");
-		std::exit(1);
-		// Terminate the program after logging the exception
+		return report_allocation_failure(e);
+	} catch (const boost::container::length_error_t &e) {
+		return report_allocation_failure(e);
 	}
-	// More exceptions can be added here
 }
 
 extern "C" int epoll_wait(int epfd, epoll_event *evt, int maxevents,
