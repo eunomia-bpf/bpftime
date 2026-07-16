@@ -682,7 +682,10 @@ uint64_t bpftime_get_attach_cookie(uint64_t ctx, uint64_t, uint64_t, uint64_t,
 	}
 }
 
-uint64_t bpftime_get_func_ip(uint64_t, uint64_t, uint64_t, uint64_t, uint64_t);
+uint64_t bpftime_get_func_ip(uint64_t, uint64_t, uint64_t, uint64_t, uint64_t)
+{
+	return bpftime::attach::current_thread_attach_func_ip;
+}
 
 uint64_t bpftime_get_smp_processor_id()
 {

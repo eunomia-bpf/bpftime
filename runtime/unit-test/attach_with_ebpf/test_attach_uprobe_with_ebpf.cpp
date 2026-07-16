@@ -30,18 +30,20 @@ TEST_CASE("Test probing internal functions")
 		bpftime_object_open(ebpf_prog_path),
 		bpftime_object_close);
 	REQUIRE(obj.get() != nullptr);
-	attach::frida_attach_impl man;
 	SECTION("Test probing internal functions")
 	{
-		auto uprobe_prog =
-			create_bpftime_prog("my_function_uprobe", obj.get());
+		auto uretprobe_prog =
+			create_bpftime_prog("my_function_uretprobe", obj.get());
 		uint64_t ret = 1;
 		pt_regs regs{};
-		REQUIRE(uprobe_prog->bpftime_prog_exec(&regs, sizeof(regs),
-						       &ret) >= 0);
+		REQUIRE(uretprobe_prog->bpftime_prog_exec(&regs, sizeof(regs),
+							  &ret) >= 0);
 		REQUIRE(ret == 0);
 		const auto expected_func_ip = reinterpret_cast<uintptr_t>(
 			__bpftime_test_uprobe_with_ebpf__my_function);
+		attach::frida_attach_impl man;
+		auto uprobe_prog =
+			create_bpftime_prog("my_function_uprobe", obj.get());
 		auto uprobe_hook_func = [=](const pt_regs &regs) {
 			uint64_t ret;
 			REQUIRE(uprobe_prog->bpftime_prog_exec((void *)&regs,
@@ -58,8 +60,6 @@ TEST_CASE("Test probing internal functions")
 			uprobe_hook_func);
 		REQUIRE(id2 >= 0);
 
-		auto uretprobe_prog =
-			create_bpftime_prog("my_function_uretprobe", obj.get());
 		int id3 = man.create_uretprobe_at(
 			(void *)__bpftime_test_uprobe_with_ebpf__my_function,
 			[=](const pt_regs &regs) {
@@ -75,10 +75,15 @@ TEST_CASE("Test probing internal functions")
 		REQUIRE(man.detach_by_id(id1) >= 0);
 		REQUIRE(man.detach_by_id(id2) >= 0);
 		REQUIRE(man.detach_by_id(id3) >= 0);
+		ret = 1;
+		REQUIRE(uretprobe_prog->bpftime_prog_exec(&regs, sizeof(regs),
+							  &ret) >= 0);
+		REQUIRE(ret == 0);
 	}
 
 	SECTION("Test probing libc functions")
 	{
+		attach::frida_attach_impl man;
 		auto strdup_addr = attach::find_function_addr_by_name("strdup");
 		REQUIRE(strdup_addr != nullptr);
 		auto uprobe_prog =
