@@ -682,6 +682,11 @@ uint64_t bpftime_get_attach_cookie(uint64_t ctx, uint64_t, uint64_t, uint64_t,
 	}
 }
 
+uint64_t bpftime_get_func_ip(uint64_t, uint64_t, uint64_t, uint64_t, uint64_t)
+{
+	return bpftime::attach::current_thread_attach_func_ip;
+}
+
 uint64_t bpftime_get_smp_processor_id()
 {
 	int cpu = my_sched_getcpu();
@@ -1323,7 +1328,11 @@ bpftime_helper_group::get_kernel_utils_helper_group()
 		    bpftime_helper_info{
 			    .index = BPF_FUNC_get_attach_cookie,
 			    .name = "bpf_get_attach_cookie",
-			    .fn = (void *)bpftime_get_attach_cookie } } }
+			    .fn = (void *)bpftime_get_attach_cookie } },
+		  { BPF_FUNC_get_func_ip,
+		    bpftime_helper_info{ .index = BPF_FUNC_get_func_ip,
+					 .name = "bpf_get_func_ip",
+					 .fn = (void *)bpftime_get_func_ip } } }
 
 	};
 
