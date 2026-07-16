@@ -35,11 +35,19 @@ TEST_CASE("Test probing internal functions")
 	{
 		auto uprobe_prog =
 			create_bpftime_prog("my_function_uprobe", obj.get());
+		uint64_t ret = 1;
+		pt_regs regs{};
+		REQUIRE(uprobe_prog->bpftime_prog_exec(&regs, sizeof(regs),
+						       &ret) >= 0);
+		REQUIRE(ret == 0);
+		const auto expected_func_ip = reinterpret_cast<uintptr_t>(
+			__bpftime_test_uprobe_with_ebpf__my_function);
 		auto uprobe_hook_func = [=](const pt_regs &regs) {
 			uint64_t ret;
 			REQUIRE(uprobe_prog->bpftime_prog_exec((void *)&regs,
 							       sizeof(regs),
 							       &ret) >= 0);
+			REQUIRE(ret == expected_func_ip);
 		};
 		int id1 = man.create_uprobe_at(
 			(void *)__bpftime_test_uprobe_with_ebpf__my_function,
@@ -52,8 +60,6 @@ TEST_CASE("Test probing internal functions")
 
 		auto uretprobe_prog =
 			create_bpftime_prog("my_function_uretprobe", obj.get());
-		// The only thing we could test is that if the ebpf program runs
-		// successfully..
 		int id3 = man.create_uretprobe_at(
 			(void *)__bpftime_test_uprobe_with_ebpf__my_function,
 			[=](const pt_regs &regs) {
@@ -61,6 +67,7 @@ TEST_CASE("Test probing internal functions")
 				REQUIRE(uretprobe_prog->bpftime_prog_exec(
 						(void *)&regs, sizeof(regs),
 						&ret) >= 0);
+				REQUIRE(ret == expected_func_ip);
 			});
 		REQUIRE(id3 >= 0);
 		REQUIRE(__bpftime_test_uprobe_with_ebpf__my_function(
