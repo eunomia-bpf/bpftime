@@ -154,7 +154,8 @@ static int process_bpf_prog_load_events(union bpf_attr *attr)
 	unsigned int prog_type;
 	void *insns;
 	union bpf_attr new_attr = { 0 };
-	bpf_probe_read(&new_attr, sizeof(new_attr), attr);
+	long attr_read_result =
+		bpf_probe_read_user(&new_attr, sizeof(new_attr), attr);
 
 	insn_cnt = BPF_CORE_READ_USER(attr, insn_cnt);
 	prog_type = BPF_CORE_READ_USER(attr, prog_type);
@@ -188,7 +189,8 @@ static int process_bpf_prog_load_events(union bpf_attr *attr)
 		bpf_ringbuf_submit(event, 0);
 	}
 
-	if (should_modify_program(insn_cnt, prog_type)) {
+	if (attr_read_result == 0 &&
+	    should_modify_program(insn_cnt, prog_type)) {
 		struct bpf_insn trival_prog_insns[] = {
 			BPF_MOV64_IMM(BPF_REG_0, 0),
 			BPF_EXIT_INSN(),
