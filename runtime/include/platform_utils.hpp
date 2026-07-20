@@ -27,5 +27,19 @@
     #error "Unsupported platform"
 #endif
 
-int my_sched_getcpu(); 
+int my_sched_getcpu();
+
+namespace bpftime
+{
+int bpftime_get_current_cpu();
+
+class bpftime_bpf_cpu_guard {
+    public:
+	bpftime_bpf_cpu_guard();
+	~bpftime_bpf_cpu_guard();
+	bpftime_bpf_cpu_guard(const bpftime_bpf_cpu_guard &) = delete;
+	bpftime_bpf_cpu_guard &
+	operator=(const bpftime_bpf_cpu_guard &) = delete;
+};
+} // namespace bpftime
 #endif

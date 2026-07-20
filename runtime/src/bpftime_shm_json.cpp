@@ -181,10 +181,17 @@ static int import_shm_handler_from_json(bpftime_shm &shm, json value, int fd)
 	} else if (handler_type == "bpf_link_handler") {
 		unsigned int prog_fd = value["attr"]["prog_fd"];
 		unsigned int target_fd = value["attr"]["target_fd"];
+		unsigned int attach_type = value["attr"].value(
+			"attach_type", BPFTIME_BPF_PERF_EVENT_ATTACH_TYPE);
 		bpf_link_create_args args = {
 			.prog_fd = prog_fd,
 			.target_fd = target_fd,
+			.attach_type = attach_type,
 		};
+		if (value["attr"].contains("attach_cookie")) {
+			args.perf_event.bpf_cookie =
+				value["attr"]["attach_cookie"];
+		}
 		shm.add_bpf_link(fd, &args);
 	} else {
 		SPDLOG_ERROR("Unsupported handler type {}", handler_type);
@@ -302,10 +309,15 @@ int bpftime::bpftime_export_shm_to_json(const bpftime_shm &shm,
 				{ "type", "bpf_link_handler" },
 				{ "attr",
 				  { { "prog_fd", h.prog_id },
-				    { "target_fd", h.attach_target_id } } }
+				    { "target_fd", h.attach_target_id },
+				    { "attach_type", h.args.attach_type } } }
 			};
+			if (h.attach_cookie) {
+				j[std::to_string(i)]["attr"]["attach_cookie"] =
+					*h.attach_cookie;
+			}
 			SPDLOG_INFO(
-				"bpf_link_handler found at {}，link {} -> {}",
+				"bpf_link_handler found at {}, link {} -> {}",
 				i, h.args.prog_fd, h.args.target_fd);
 		} else if (std::holds_alternative<memfd_handler>(handler)) {
 			auto &h = std::get<memfd_handler>(handler);
