@@ -302,7 +302,7 @@ long bloom_filter_map_impl::elem_update(const void *key, const void *value,
 		return -1;
 	}
 
-	if (flags != BPF_ANY) {
+	if (flags != 0 /* BPF_ANY */) {
 		SPDLOG_ERROR(
 			"Bloom filter update failed: invalid flags ({}), only BPF_ANY supported",
 			flags);
@@ -342,7 +342,7 @@ long bloom_filter_map_impl::map_push_elem(const void *value, uint64_t flags)
 		return -1;
 	}
 
-	if (flags != BPF_ANY) {
+	if (flags != 0 /* BPF_ANY */) {
 		SPDLOG_ERROR(
 			"Bloom filter map_push_elem failed: invalid flags ({}), only BPF_ANY supported",
 			flags);

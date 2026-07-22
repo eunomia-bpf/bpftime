@@ -24,7 +24,9 @@
 #include "linux/perf_event.h"
 #include <linux/bpf.h>
 #include <sys/epoll.h>
+#ifdef BPFTIME_BUILD_WITH_LIBBPF
 #include <bpf/bpf.h>
+#endif
 #include <linux/perf_event.h>
 #include <linux/filter.h>
 #elif __APPLE__
@@ -258,7 +260,7 @@ int syscall_context::create_kernel_bpf_map(int map_fd, int bpftime_map_type)
 {
 	bpf_map_info info = {};
 	uint32_t info_len = sizeof(info);
-	int res = bpf_obj_get_info_by_fd(map_fd, &info, &info_len);
+	int res = get_bpf_obj_info_by_fd(map_fd, &info, &info_len);
 	if (res < 0) {
 		SPDLOG_ERROR("Failed to get map info for fd {}", map_fd);
 		return -1;
@@ -290,6 +292,29 @@ int syscall_context::create_kernel_bpf_map(int map_fd, int bpftime_map_type)
 	}
 	SPDLOG_INFO("create map in kernel id {}", info.id);
 	return map_fd;
+}
+
+int syscall_context::get_bpf_obj_info_by_fd(int fd, void *info,
+					     uint32_t *info_len)
+{
+#ifdef BPFTIME_BUILD_WITH_LIBBPF
+	return bpf_obj_get_info_by_fd(fd, info, info_len);
+#elif defined(__linux__)
+	union bpf_attr attr = {};
+	attr.info.bpf_fd = fd;
+	attr.info.info_len = *info_len;
+	attr.info.info = reinterpret_cast<uintptr_t>(info);
+	const size_t attr_size =
+		offsetof(union bpf_attr, info) + sizeof(attr.info);
+	int result = orig_syscall_fn(__NR_bpf, BPF_OBJ_GET_INFO_BY_FD,
+				     &attr, attr_size);
+	if (result == 0)
+		*info_len = attr.info.info_len;
+	return result;
+#else
+	errno = ENOTSUP;
+	return -1;
+#endif
 }
 
 int syscall_context::create_kernel_bpf_prog_in_userspace(int cmd,
@@ -339,7 +364,7 @@ int syscall_context::create_kernel_bpf_prog_in_userspace(int cmd,
 			if (inst.src_reg == 1 || inst.src_reg == 2) {
 				bpf_map_info info = {};
 				uint32_t info_len = sizeof(info);
-				int res = bpf_obj_get_info_by_fd(
+				int res = get_bpf_obj_info_by_fd(
 					inst.imm, &info, &info_len);
 				if (res < 0) {
 					SPDLOG_ERROR(
