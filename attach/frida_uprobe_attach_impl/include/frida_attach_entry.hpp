@@ -24,6 +24,20 @@ class frida_attach_entry {
 	template <int callback_index>
 	void run_callback(const pt_regs &regs) const
 	{
+		struct func_ip_scope {
+			uintptr_t previous;
+			~func_ip_scope()
+			{
+				current_thread_attach_func_ip = previous;
+			}
+		} scope{ current_thread_attach_func_ip };
+		if constexpr (callback_index == ATTACH_UPROBE_INDEX ||
+			      callback_index == ATTACH_URETPROBE_INDEX)
+			current_thread_attach_func_ip =
+				reinterpret_cast<uintptr_t>(function);
+		else
+			current_thread_attach_func_ip = 0;
+
 		if (std::holds_alternative<callback_variant>(callback)) {
 			SPDLOG_DEBUG(
 				"Run filter callback with original callback");
