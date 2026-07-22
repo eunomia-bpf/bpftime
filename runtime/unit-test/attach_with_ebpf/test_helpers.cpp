@@ -28,7 +28,7 @@ static void dump_type(void *ctx, const char *fmt, va_list args)
 
 TEST_CASE("Test helpers")
 {
-	bpftime::agent_config config;
+	bpftime::runtime_config config;
 	config.set_vm_name("llvm");
 	const char *obj_path = NULL;
 

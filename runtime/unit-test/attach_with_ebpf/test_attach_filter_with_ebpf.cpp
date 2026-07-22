@@ -36,7 +36,7 @@ static const char *ebpf_prog_path = TOSTRING(EBPF_PROGRAM_PATH_FILTER);
 
 TEST_CASE("Test attaching filter program with ebpf, and reverting")
 {
-	bpftime::agent_config config;
+	bpftime::runtime_config config;
 	config.set_vm_name("llvm");
 	REQUIRE(__bpftime_attach_filter_with_ebpf__my_function("hello aaa", 'c',
 							       182) == 182);

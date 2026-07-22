@@ -37,7 +37,7 @@ extern "C" uint64_t bpftime_set_retval(uint64_t value);
 namespace bpftime
 {
 
-static int load_prog_and_helpers(bpftime_prog *prog, const agent_config &config)
+static int load_prog_and_helpers(bpftime_prog *prog, const runtime_config &config)
 {
 #if defined(__linux__)
 	if (config.enable_kernel_helper_group) {
@@ -56,7 +56,7 @@ static int load_prog_and_helpers(bpftime_prog *prog, const agent_config &config)
 	return prog->bpftime_prog_load(config.jit_enabled);
 }
 
-int bpf_attach_ctx::init_attach_ctx_from_handlers(const agent_config &config)
+int bpf_attach_ctx::init_attach_ctx_from_handlers(const runtime_config &config)
 {
 	const handler_manager *manager =
 		shm_holder.global_shared_memory.get_manager();
@@ -68,7 +68,7 @@ int bpf_attach_ctx::init_attach_ctx_from_handlers(const agent_config &config)
 
 // create a attach context and progs from handlers
 int bpf_attach_ctx::init_attach_ctx_from_handlers(
-	const handler_manager *manager, const agent_config &config)
+	const handler_manager *manager, const runtime_config &config)
 {
 	std::lock_guard<std::mutex> lock(ctx_mutex);
 	for (int attempt = 0; attempt < 3; attempt++) {
@@ -186,7 +186,7 @@ bpf_attach_ctx::bpf_attach_ctx()
 
 int bpf_attach_ctx::instantiate_handler_at(const handler_manager *manager,
 					   int id, std::set<int> &stk,
-					   const agent_config &config,
+					   const runtime_config &config,
 					   bool handle_nv_attach_impl)
 {
 	SPDLOG_DEBUG("Instantiating handler at {}", id);
@@ -283,7 +283,7 @@ void bpf_attach_ctx::register_attach_impl(
 }
 int bpf_attach_ctx::instantiate_prog_handler_at(int id,
 						const bpf_prog_handler &handler,
-						const agent_config &config)
+						const runtime_config &config)
 {
 	const ebpf_inst *insns = handler.insns.data();
 	size_t cnt = handler.insns.size();
