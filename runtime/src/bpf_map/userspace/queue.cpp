@@ -79,7 +79,7 @@ long queue_map_impl::elem_update(const void *key, const void *value,
 	bool full = is_full();
 
 	if (full) {
-		if (flags == BPF_EXIST) {
+		if (flags == 2 /* BPF_EXIST */) {
 			SPDLOG_TRACE(
 				"Queue elem_update (BPF_EXIST): queue full, removing oldest element");
 			head = next_index(head);
@@ -133,7 +133,7 @@ long queue_map_impl::map_push_elem(const void *value, uint64_t flags)
 		return -1;
 	}
 
-	if (flags != 0 && flags != BPF_ANY && flags != BPF_EXIST) {
+	if (flags != 0 /* BPF_ANY */ && flags != 2 /* BPF_EXIST */) {
 		SPDLOG_ERROR("Queue map_push_elem failed: invalid flags ({})",
 			     flags);
 		errno = EINVAL;
@@ -143,7 +143,7 @@ long queue_map_impl::map_push_elem(const void *value, uint64_t flags)
 	bool full = is_full();
 
 	if (full) {
-		if (flags == BPF_EXIST) {
+		if (flags == 2 /* BPF_EXIST */) {
 			SPDLOG_TRACE(
 				"Queue map_push_elem (BPF_EXIST): queue full, removing oldest element");
 			head = next_index(head);

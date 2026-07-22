@@ -24,7 +24,7 @@ if(${BPFTIME_ENABLE_CUDA_ATTACH})
         "-Wl,--whole-archive" 
         "$<TARGET_FILE:bpftime_llvm_vm>" 
         "-Wl,--no-whole-archive")
-    target_link_libraries(bpftime-aot-cli PRIVATE -L/usr/lib/llvm-20/lib/ spdlog::spdlog argparse bpftime_vm_compat bpftime_llvm_vm runtime ${LIBBPF_LIBRARIES} elf z ${LLVM_LIBRARIES} ${llvm_libs} ${CUDA_LIBS} bpftime_nv_attach_impl)
+    target_link_libraries(bpftime-aot-cli PRIVATE spdlog::spdlog argparse bpftime_vm_compat bpftime_llvm_vm runtime ${LIBBPF_LIBRARIES} elf z ${LLVM_LIBRARIES} ${llvm_libs} ${CUDA_LIBS} bpftime_nv_attach_impl)
 else()
     # Use --whole-archive to include all symbols from bpftime_llvm_vm
     # This ensures the constructor function register_llvm_vm_factory() is linked
@@ -32,11 +32,13 @@ else()
         "-Wl,--whole-archive" 
         "$<TARGET_FILE:bpftime_llvm_vm>" 
         "-Wl,--no-whole-archive")
-    target_link_libraries(bpftime-aot-cli PRIVATE -L/usr/lib/llvm-20/lib/ spdlog::spdlog argparse bpftime_vm_compat bpftime_llvm_vm runtime ${LIBBPF_LIBRARIES} elf z ${LLVM_LIBRARIES} ${llvm_libs})
+    target_link_libraries(bpftime-aot-cli PRIVATE spdlog::spdlog argparse bpftime_vm_compat bpftime_llvm_vm runtime ${LIBBPF_LIBRARIES} elf z ${LLVM_LIBRARIES} ${llvm_libs})
 endif()
 set_property(TARGET bpftime-aot-cli PROPERTY CXX_STANDARD 20)
 
 target_compile_definitions(bpftime-aot-cli PRIVATE _GNU_SOURCE)
+
+target_link_directories(bpftime-aot-cli PRIVATE ${LLVM_LIBRARY_DIRS})
 
 add_dependencies(bpftime-aot-cli spdlog::spdlog argparse bpftime_vm_compat bpftime_llvm_vm libbpf)
 

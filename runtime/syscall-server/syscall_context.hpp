@@ -139,6 +139,7 @@ class syscall_context {
 	int create_kernel_bpf_map(int fd, int bpftime_map_type);
 	int create_kernel_bpf_prog_in_userspace(int cmd, union bpf_attr *attr,
 						size_t size);
+	int get_bpf_obj_info_by_fd(int fd, void *info, uint32_t *info_len);
 	// try loading the bpf syscall helpers.
 	// if the syscall original function is not prepared, it will cause a
 	// segfault.

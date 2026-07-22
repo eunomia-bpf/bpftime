@@ -77,6 +77,24 @@ jobs:
       - name: Build
         run: cmake --build build -j$(nproc)
 
+      - name: Configure without libbpf
+        env:
+          CC: gcc-13
+          CXX: g++-13
+        run: |
+          cmake -S . -B build-no-libbpf \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_C_COMPILER=gcc-13 \
+            -DCMAKE_CXX_COMPILER=g++-13 \
+            -DBPFTIME_LLVM_JIT=ON \
+            -DBPFTIME_BUILD_WITH_LIBBPF=OFF \
+            -DBUILD_BPFTIME_DAEMON=OFF \
+            -DBPFTIME_ENABLE_UNIT_TESTING=OFF \
+            -DENABLE_EBPF_VERIFIER=OFF
+
+      - name: Build without libbpf
+        run: cmake --build build-no-libbpf -j$(nproc)
+
       - name: Configure daemon build and tests
         env:
           CC: gcc-13
