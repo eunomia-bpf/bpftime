@@ -148,3 +148,13 @@ The architecture prioritizes performance (bypassing kernel), compatibility (same
 
 Do not create a root `docs/` directory or commit pull-request review artifacts.
 Keep repository maintenance and design constraints in this file.
+
+## Injected and Preloaded Code
+
+Changes under `runtime/syscall-server/`, `runtime/agent/`, or
+`attach/text_segment_transformer/` must follow
+[`docs/design/preload-shim-safety.md`](docs/design/preload-shim-safety.md).
+Internal bpftime failures must not terminate the host, cross a C ABI boundary as
+C++ exceptions, replace a recoverable host operation with a bpftime-only
+failure, or write to stdout or stderr unless console logging was explicitly
+selected.
