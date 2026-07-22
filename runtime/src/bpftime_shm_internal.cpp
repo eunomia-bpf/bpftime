@@ -15,7 +15,6 @@
 #include <bpftime_shm_internal.hpp>
 #include <cerrno>
 #include <cstdint>
-#include <cstdio>
 #include <memory>
 #if __linux__
 #include <sys/epoll.h>
@@ -54,12 +53,6 @@ extern "C" void bpftime_destroy_global_shm()
 		// or the __destruct_shm static destructor does not destroy the
 		// already-destroyed object a second time.
 		global_shm_initialized = false;
-		// Why not spdlog? because global variables that spdlog used
-		// were already destroyed..
-#ifdef DEBUG
-		fprintf(stderr, "INFO [%d]: Global shm destructed\n",
-			(int)getpid());
-#endif
 	}
 }
 
@@ -1082,20 +1075,11 @@ bpftime::bpftime_shm::~bpftime_shm()
 		return;
 	}
 	cudaError_t err = cudaHostUnregister(base_addr);
-	// Use fprintf here to avoid spdlog de-initialized issues
 	if (err != cudaSuccess) {
-		// Suppress noisy teardown errors which are benign during
-		// shutdown
-		if (err == cudaErrorCudartUnloading ||
-		    err == cudaErrorInvalidValue ||
-		    err == cudaErrorInsufficientDriver) {
-			return;
-		}
-		fprintf(stderr, "cudaHostUnregister() failed: %s\n",
-			cudaGetErrorString(err));
+		// Teardown is best effort. The logger may already be destroyed,
+		// and a preload library must not write into the host stderr.
 		return;
 	}
-	fprintf(stderr, "bpftime_shm: Unregistered host memory from CUDA\n");
 #endif
 }
 

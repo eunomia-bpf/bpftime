@@ -64,14 +64,24 @@ uint64_t bpftime_set_retval(uint64_t retval);
 uint64_t bpftime_trace_printk(uint64_t fmt, uint64_t fmt_size, ...)
 {
 	const char *fmt_str = (const char *)fmt;
+	if (fmt_str == nullptr || fmt_size == 0)
+		return 0;
+
+	char buffer[4096];
 	va_list args;
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wformat-nonliteral"
 #pragma GCC diagnostic ignored "-Wvarargs"
 	va_start(args, fmt_str);
-	long ret = vprintf(fmt_str, args);
+	int ret = vsnprintf(buffer, sizeof(buffer), fmt_str, args);
 #pragma GCC diagnostic pop
 	va_end(args);
+	if (ret >= 0) {
+		try {
+			SPDLOG_INFO("bpf_trace_printk: {}", buffer);
+		} catch (...) {
+		}
+	}
 	return 0;
 }
 

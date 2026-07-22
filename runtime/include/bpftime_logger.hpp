@@ -1,12 +1,11 @@
 #include <string>
 #include "spdlog/spdlog.h"
 #include "spdlog/cfg/env.h"
+#include "spdlog/sinks/null_sink.h"
 #include "spdlog/sinks/rotating_file_sink.h"
 #include "spdlog/sinks/stdout_color_sinks.h"
 #include <cstdlib>
-#include <iostream>
-#include <filesystem>
-#include <fstream>
+#include <memory>
 
 namespace bpftime
 {
@@ -14,13 +13,13 @@ namespace bpftime
 inline std::string expand_user_path(const std::string &input_path)
 {
 	if (input_path.empty()) {
-		return "console";
+		return {};
 	}
 
 	if (input_path[0] == '~') {
 		const char *homeDir = getenv("HOME");
 		if (!homeDir) {
-			return "console";
+			return {};
 		}
 
 		if (input_path.size() == 1 || input_path[1] == '/') {
@@ -29,7 +28,7 @@ inline std::string expand_user_path(const std::string &input_path)
 				homeDir + input_path.substr(1);
 			return expandedPath;
 		} else {
-			return "console"; // Unsupported path format
+			return {}; // Unsupported path format
 		}
 	}
 
@@ -37,37 +36,74 @@ inline std::string expand_user_path(const std::string &input_path)
 	return input_path;
 }
 
+inline void bpftime_set_quiet_logger() noexcept
+{
+	try {
+		auto sink = std::make_shared<spdlog::sinks::null_sink_mt>();
+		auto logger =
+			std::make_shared<spdlog::logger>("bpftime_quiet", sink);
+		logger->set_level(spdlog::level::off);
+		logger->set_error_handler([](const std::string &) {});
+		spdlog::set_default_logger(std::move(logger));
+	} catch (...) {
+		if (auto *logger = spdlog::default_logger_raw();
+		    logger != nullptr)
+			logger->set_level(spdlog::level::off);
+	}
+}
+
 inline void bpftime_set_logger(const std::string &target) noexcept
 {
-	std::string logger_target = expand_user_path(target);
-	spdlog::drop_all();
-	if (logger_target == "console") {
-		// Set logger to stderr
-		auto logger = spdlog::stderr_color_mt("stderr");
-		logger->set_pattern("[%Y-%m-%d %H:%M:%S][%^%l%$][%t] %v");
-		logger->flush_on(spdlog::level::info);
-		spdlog::set_default_logger(logger);
-	} else {
-		// Set logger to file, with rotation 5MB and 3 files
-		auto max_size = 1048576 * 5;
-		auto max_files = 3;
-		auto logger = spdlog::rotating_logger_mt(
-			"bpftime_logger", logger_target, max_size, max_files);
-		logger->set_pattern("[%Y-%m-%d %H:%M:%S][%^%l%$][%t] %v");
-		logger->flush_on(spdlog::level::info);
-		spdlog::set_default_logger(logger);
-	}
+	try {
+		std::string logger_target = expand_user_path(target);
+		if (logger_target.empty()) {
+			bpftime_set_quiet_logger();
+			return;
+		}
 
-	// Load log level from environment
-	spdlog::cfg::load_env_levels();
+		std::shared_ptr<spdlog::sinks::sink> sink;
+		if (logger_target == "console") {
+			// Console logging is opt-in and writes to stderr.
+			sink = std::make_shared<
+				spdlog::sinks::stderr_color_sink_mt>();
+		} else {
+			// Set logger to file, with rotation 5MB and 3 files.
+			constexpr size_t max_size = 1048576 * 5;
+			constexpr size_t max_files = 3;
+			sink = std::make_shared<
+				spdlog::sinks::rotating_file_sink_mt>(
+				logger_target, max_size, max_files);
+		}
+		auto logger = std::make_shared<spdlog::logger>("bpftime_logger",
+							       sink);
+		// spdlog's default error handler writes sink errors directly to
+		// stderr. Injected code must keep logger failures silent.
+		logger->set_error_handler([](const std::string &) {});
+		logger->set_pattern("[%Y-%m-%d %H:%M:%S][%^%l%$][%t] %v");
+		logger->flush_on(spdlog::level::info);
+		spdlog::drop("bpftime_logger");
+		spdlog::register_logger(logger);
+		spdlog::set_default_logger(std::move(logger));
+
+		// Load log level from environment.
+		spdlog::cfg::load_env_levels();
+	} catch (...) {
+		// A preload logger must not fall back to the host stderr or
+		// terminate the host when a file sink cannot be created.
+		bpftime_set_quiet_logger();
+	}
 }
 
 /*
     Flush the logger.
 */
-inline void bpftime_logger_flush()
+inline void bpftime_logger_flush() noexcept
 {
-	spdlog::default_logger()->flush();
+	try {
+		if (auto logger = spdlog::default_logger(); logger != nullptr)
+			logger->flush();
+	} catch (...) {
+	}
 }
 
 } // namespace bpftime

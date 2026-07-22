@@ -56,12 +56,17 @@ if(UNIX AND NOT APPLE)
     add_executable(bpftime-shm-allocation-test-helper
         assets/shm_allocation_test_helper.c)
     set_property(TARGET bpftime-shm-allocation-test-helper PROPERTY C_STANDARD 99)
+    set_property(TARGET bpftime-shm-allocation-test-helper PROPERTY ENABLE_EXPORTS ON)
+    target_link_libraries(bpftime-shm-allocation-test-helper PRIVATE
+        ${CMAKE_DL_LIBS})
     add_dependencies(bpftime_runtime_tests
         bpftime-syscall-server
+        bpftime-agent
+        bpftime_text_segment_transformer
         bpftime-shm-allocation-test-helper)
     file(GENERATE
         OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/shm_allocation_test_paths.hpp"
-        CONTENT "#define BPFTIME_SHM_ALLOCATION_TEST_HELPER \"$<TARGET_FILE:bpftime-shm-allocation-test-helper>\"\n#define BPFTIME_SYSCALL_SERVER_LIBRARY \"$<TARGET_FILE:bpftime-syscall-server>\"\n")
+        CONTENT "#define BPFTIME_SHM_ALLOCATION_TEST_HELPER \"$<TARGET_FILE:bpftime-shm-allocation-test-helper>\"\n#define BPFTIME_SYSCALL_SERVER_LIBRARY \"$<TARGET_FILE:bpftime-syscall-server>\"\n#define BPFTIME_AGENT_LIBRARY \"$<TARGET_FILE:bpftime-agent>\"\n#define BPFTIME_TRANSFORMER_LIBRARY \"$<TARGET_FILE:bpftime_text_segment_transformer>\"\n")
     target_include_directories(bpftime_runtime_tests PRIVATE
         "${CMAKE_CURRENT_BINARY_DIR}")
 endif()

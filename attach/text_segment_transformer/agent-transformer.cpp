@@ -1,14 +1,10 @@
-#include "spdlog/cfg/env.h"
-#include "spdlog/sinks/stdout_color_sinks.h"
-#include "spdlog/sinks/stdout_sinks.h"
+#include "bpftime_logger.hpp"
 #include "spdlog/spdlog.h"
 #include <cstdlib>
 #include <dlfcn.h>
 #include <frida-gum.h>
 #include "text_segment_transformer.hpp"
-#include <spdlog/cfg/env.h>
 #include <string>
-#include <frida-gum.h>
 
 using main_func_t = int (*)(int, char **, char **);
 using shm_destroy_func_t = void (*)(void);
@@ -20,6 +16,13 @@ static shm_destroy_func_t shm_destroy_func = nullptr;
 // __libc_start_main was called, it will be set to false
 static bool injected_with_frida = true;
 extern "C" void bpftime_agent_main(const gchar *data, gboolean *stay_resident);
+
+static void configure_transformer_logger() noexcept
+{
+	const char *target = std::getenv("BPFTIME_LOG_OUTPUT");
+	bpftime::bpftime_set_logger(
+		target != nullptr ? target : "~/.bpftime/runtime.log");
+}
 
 extern "C" int bpftime_hooked_main(int argc, char **argv, char **envp)
 {
@@ -36,7 +39,7 @@ extern "C" int __libc_start_main(int (*main)(int, char **, char **), int argc,
 				 void *stack_end)
 {
 	injected_with_frida = false;
-	SPDLOG_INFO("Entering bpftime syscal transformer agent");
+	configure_transformer_logger();
 	orig_main_func = main;
 	using this_func_t = decltype(&__libc_start_main);
 	this_func_t orig = (this_func_t)dlsym(RTLD_NEXT, "__libc_start_main");
@@ -45,17 +48,16 @@ extern "C" int __libc_start_main(int (*main)(int, char **, char **), int argc,
 		    stack_end);
 }
 
-extern "C" void bpftime_agent_main(const gchar *data, gboolean *stay_resident)
+static void bpftime_agent_main_impl(const gchar *data, gboolean *stay_resident)
 {
-	auto logger = spdlog::stderr_color_mt("stderr");
-	spdlog::set_default_logger(logger);
-	spdlog::cfg::load_env_levels();
+	configure_transformer_logger();
 	/* We don't want to our library to be unloaded after we return. */
-	*stay_resident = TRUE;
+	if (stay_resident != nullptr)
+		*stay_resident = TRUE;
 
 	const char *agent_so = getenv("AGENT_SO");
 	if (agent_so == nullptr) {
-		if (std::string(data) != "") {
+		if (data != nullptr && data[0] != '\0') {
 			SPDLOG_INFO("Using agent path from frida data..");
 			agent_so = data;
 		} else {
@@ -71,12 +73,14 @@ extern "C" void bpftime_agent_main(const gchar *data, gboolean *stay_resident)
 	}
 	SPDLOG_DEBUG("Using agent {}", agent_so);
 	cs_arch_register_x86();
-	bpftime::setup_syscall_tracer();
+	if (!bpftime::setup_syscall_tracer())
+		return;
 	SPDLOG_DEBUG("Loading dynamic library..");
-	auto next_handle = dlmopen(LM_ID_NEWLM, agent_so, RTLD_NOW | RTLD_LOCAL);
+	auto next_handle =
+		dlmopen(LM_ID_NEWLM, agent_so, RTLD_NOW | RTLD_LOCAL);
 	if (next_handle == nullptr) {
 		SPDLOG_ERROR("Failed to open agent: {}", dlerror());
-		exit(1);
+		return;
 	}
 	// Set the flag `injected_with_frida` for agent
 	bool *injected_with_frida__agent =
@@ -84,8 +88,9 @@ extern "C" void bpftime_agent_main(const gchar *data, gboolean *stay_resident)
 	if (!injected_with_frida__agent) {
 		SPDLOG_WARN(
 			"Agent does not expose a symbol named injected_with_frida, so we can't let agent know whether it was loaded using frida");
+	} else {
+		*injected_with_frida__agent = injected_with_frida;
 	}
-	*injected_with_frida__agent = injected_with_frida;
 	auto entry_func = (void (*)(syscall_hooker_func_t *))dlsym(
 		next_handle, "_bpftime__setup_syscall_trace_callback");
 
@@ -99,4 +104,18 @@ extern "C" void bpftime_agent_main(const gchar *data, gboolean *stay_resident)
 	entry_func(&orig_syscall_hooker_func);
 	bpftime::set_call_hook(orig_syscall_hooker_func);
 	SPDLOG_DEBUG("Transformer exiting, syscall trace is usable now");
+}
+
+extern "C" void bpftime_agent_main(const gchar *data, gboolean *stay_resident)
+{
+	try {
+		bpftime_agent_main_impl(data, stay_resident);
+	} catch (const std::exception &error) {
+		try {
+			SPDLOG_ERROR("Failed to initialize transformer: {}",
+				     error.what());
+		} catch (...) {
+		}
+	} catch (...) {
+	}
 }
