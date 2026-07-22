@@ -61,11 +61,6 @@ bpftime_map_ops global_map_ops_table[(int)bpf_map_type::BPF_MAP_TYPE_MAX] = {
 	{ 0 }
 };
 
-std::string bpf_map_handler::get_container_name() const
-{
-	return "ebpf_map_fd_" + std::string(name.c_str());
-}
-
 uint32_t bpf_map_handler::get_value_size() const
 {
 	return value_size;
@@ -786,26 +781,25 @@ int bpf_map_handler::map_init(managed_shared_memory &memory)
 		}
 	};
 
-	auto container_name = get_container_name();
 	switch (type) {
 	case bpf_map_type::BPF_MAP_TYPE_HASH: {
 #ifdef BPFTIME_USE_VAR_HASH_MAP
-		map_impl_ptr =
-			memory.construct<hash_map_impl>(container_name.c_str())(
-				memory, key_size, value_size, max_entries,
-				static_cast<uint32_t>(flags));
+		map_impl_ptr = memory.construct<hash_map_impl>(
+			boost::interprocess::anonymous_instance)(
+			memory, key_size, value_size, max_entries,
+			static_cast<uint32_t>(flags));
 #else
-		map_impl_ptr =
-			memory.construct<hash_map_impl>(container_name.c_str())(
-				memory, max_entries, key_size, value_size);
+		map_impl_ptr = memory.construct<hash_map_impl>(
+			boost::interprocess::anonymous_instance)(
+			memory, max_entries, key_size, value_size);
 #endif
 		init_refcnt();
 		return 0;
 	}
 	case bpf_map_type::BPF_MAP_TYPE_ARRAY: {
 		map_impl_ptr = memory.construct<array_map_impl>(
-			container_name.c_str())(memory, value_size,
-						max_entries);
+			boost::interprocess::anonymous_instance)(
+			memory, value_size, max_entries);
 		init_refcnt();
 		return 0;
 	}
@@ -823,42 +817,43 @@ int bpf_map_handler::map_init(managed_shared_memory &memory)
 			return -1;
 		}
 		map_impl_ptr = memory.construct<ringbuf_map_impl>(
-			container_name.c_str())(max_entries, memory);
+			boost::interprocess::anonymous_instance)(max_entries,
+								 memory);
 		init_refcnt();
 		return 0;
 	}
 	case bpf_map_type::BPF_MAP_TYPE_PERF_EVENT_ARRAY: {
 		map_impl_ptr = memory.construct<perf_event_array_map_impl>(
-			container_name.c_str())(memory, key_size, value_size,
-						max_entries);
+			boost::interprocess::anonymous_instance)(
+			memory, key_size, value_size, max_entries);
 		init_refcnt();
 		return 0;
 	}
 	case bpf_map_type::BPF_MAP_TYPE_PERCPU_ARRAY: {
 		map_impl_ptr = memory.construct<per_cpu_array_map_impl>(
-			container_name.c_str())(memory, value_size,
-						max_entries);
+			boost::interprocess::anonymous_instance)(
+			memory, value_size, max_entries);
 		init_refcnt();
 		return 0;
 	}
 	case bpf_map_type::BPF_MAP_TYPE_PERCPU_HASH: {
 		map_impl_ptr = memory.construct<per_cpu_hash_map_impl>(
-			container_name.c_str())(memory, key_size, value_size,
-						max_entries);
+			boost::interprocess::anonymous_instance)(
+			memory, key_size, value_size, max_entries);
 		init_refcnt();
 		return 0;
 	}
 	case bpf_map_type::BPF_MAP_TYPE_QUEUE: {
 		map_impl_ptr = memory.construct<queue_map_impl>(
-			container_name.c_str())(memory, value_size,
-						max_entries);
+			boost::interprocess::anonymous_instance)(
+			memory, value_size, max_entries);
 		init_refcnt();
 		return 0;
 	}
 	case bpf_map_type::BPF_MAP_TYPE_STACK: {
 		map_impl_ptr = memory.construct<stack_map_impl>(
-			container_name.c_str())(memory, value_size,
-						max_entries);
+			boost::interprocess::anonymous_instance)(
+			memory, value_size, max_entries);
 		init_refcnt();
 		return 0;
 	}
@@ -882,8 +877,8 @@ int bpf_map_handler::map_init(managed_shared_memory &memory)
 		BloomHashAlgorithm hash_algo = BloomHashAlgorithm::JHASH;
 
 		map_impl_ptr = memory.construct<bloom_filter_map_impl>(
-			container_name.c_str())(memory, value_size, max_entries,
-						nr_hashes, hash_algo);
+			boost::interprocess::anonymous_instance)(
+			memory, value_size, max_entries, nr_hashes, hash_algo);
 		init_refcnt();
 		return 0;
 	}
@@ -891,29 +886,31 @@ int bpf_map_handler::map_init(managed_shared_memory &memory)
 #ifdef BPFTIME_BUILD_WITH_LIBBPF
 	case bpf_map_type::BPF_MAP_TYPE_KERNEL_USER_ARRAY: {
 		map_impl_ptr = memory.construct<array_map_kernel_user_impl>(
-			container_name.c_str())(memory, attr.kernel_bpf_map_id,
-						value_size, max_entries);
+			boost::interprocess::anonymous_instance)(
+			memory, attr.kernel_bpf_map_id, value_size,
+			max_entries);
 		init_refcnt();
 		return 0;
 	}
 	case bpf_map_type::BPF_MAP_TYPE_KERNEL_USER_HASH: {
 		map_impl_ptr = memory.construct<hash_map_kernel_user_impl>(
-			container_name.c_str())(memory, attr.kernel_bpf_map_id);
+			boost::interprocess::anonymous_instance)(
+			memory, attr.kernel_bpf_map_id);
 		init_refcnt();
 		return 0;
 	}
 	case bpf_map_type::BPF_MAP_TYPE_KERNEL_USER_PERCPU_ARRAY: {
 		map_impl_ptr =
 			memory.construct<percpu_array_map_kernel_user_impl>(
-				container_name.c_str())(memory,
-							attr.kernel_bpf_map_id);
+				boost::interprocess::anonymous_instance)(
+				memory, attr.kernel_bpf_map_id);
 		init_refcnt();
 		return 0;
 	}
 	case bpf_map_type::BPF_MAP_TYPE_KERNEL_USER_PERF_EVENT_ARRAY: {
 		map_impl_ptr =
 			memory.construct<perf_event_array_kernel_user_impl>(
-				container_name.c_str())(
+				boost::interprocess::anonymous_instance)(
 				memory, 4, 4, sysconf(_SC_NPROCESSORS_ONLN),
 				attr.kernel_bpf_map_id);
 		init_refcnt();
@@ -921,29 +918,30 @@ int bpf_map_handler::map_init(managed_shared_memory &memory)
 	}
 	case bpf_map_type::BPF_MAP_TYPE_PROG_ARRAY: {
 		map_impl_ptr = memory.construct<prog_array_map_impl>(
-			container_name.c_str())(memory, key_size, value_size,
-						max_entries);
+			boost::interprocess::anonymous_instance)(
+			memory, key_size, value_size, max_entries);
 		init_refcnt();
 		return 0;
 	}
 	case bpf_map_type::BPF_MAP_TYPE_STACK_TRACE: {
 		map_impl_ptr = memory.construct<stack_trace_map_impl>(
-			container_name.c_str())(memory, key_size, value_size,
-						max_entries);
+			boost::interprocess::anonymous_instance)(
+			memory, key_size, value_size, max_entries);
 		init_refcnt();
 		return 0;
 	}
 #endif
 	case bpf_map_type::BPF_MAP_TYPE_ARRAY_OF_MAPS: {
 		map_impl_ptr = memory.construct<array_map_of_maps_impl>(
-			container_name.c_str())(memory, max_entries);
+			boost::interprocess::anonymous_instance)(memory,
+								 max_entries);
 		init_refcnt();
 		return 0;
 	}
 	case bpf_map_type::BPF_MAP_TYPE_LRU_HASH: {
 		map_impl_ptr = memory.construct<lru_var_hash_map_impl>(
-			container_name.c_str())(memory, key_size, value_size,
-						max_entries);
+			boost::interprocess::anonymous_instance)(
+			memory, key_size, value_size, max_entries);
 		init_refcnt();
 		return 0;
 	}
@@ -967,10 +965,10 @@ int bpf_map_handler::map_init(managed_shared_memory &memory)
 		}
 		SPDLOG_INFO(
 			"Map {} (nv_gpu_shared_hash_map_impl) shared hashmap",
-			container_name.c_str());
+			name.c_str());
 		map_impl_ptr = memory.construct<nv_gpu_shared_hash_map_impl>(
-			container_name.c_str())(memory, max_entries, key_size,
-						value_size);
+			boost::interprocess::anonymous_instance)(
+			memory, max_entries, key_size, value_size);
 		init_refcnt();
 		shm_holder.global_shared_memory.set_enable_mock(true);
 		return 0;
@@ -994,10 +992,10 @@ int bpf_map_handler::map_init(managed_shared_memory &memory)
 		auto thread_count = get_thread_count(attr);
 		SPDLOG_INFO(
 			"Map {} (nv_gpu_per_thread_array_map_impl) has space for thread count {}",
-			container_name.c_str(), thread_count);
+			name.c_str(), thread_count);
 		map_impl_ptr =
 			memory.construct<nv_gpu_per_thread_array_map_impl>(
-				container_name.c_str())(
+				boost::interprocess::anonymous_instance)(
 				memory, value_size, max_entries, thread_count);
 		init_refcnt();
 		shm_holder.global_shared_memory.set_enable_mock(true);
@@ -1014,10 +1012,10 @@ int bpf_map_handler::map_init(managed_shared_memory &memory)
 		}
 		SPDLOG_INFO(
 			"Map {} (nv_gpu_shared_array_map_impl) shared array",
-			container_name.c_str());
+			name.c_str());
 		map_impl_ptr = memory.construct<nv_gpu_shared_array_map_impl>(
-			container_name.c_str())(memory, value_size,
-						max_entries);
+			boost::interprocess::anonymous_instance)(
+			memory, value_size, max_entries);
 		init_refcnt();
 		shm_holder.global_shared_memory.set_enable_mock(true);
 		return 0;
@@ -1032,10 +1030,11 @@ int bpf_map_handler::map_init(managed_shared_memory &memory)
 				gettid(), (uintptr_t)context);
 		}
 		SPDLOG_INFO("Map {} (array_map_kernel_gpu_impl) shared array",
-			    container_name.c_str());
+			    name.c_str());
 		map_impl_ptr = memory.construct<array_map_kernel_gpu_impl>(
-			container_name.c_str())(memory, attr.kernel_bpf_map_id,
-						value_size, max_entries);
+			boost::interprocess::anonymous_instance)(
+			memory, attr.kernel_bpf_map_id, value_size,
+			max_entries);
 		init_refcnt();
 		shm_holder.global_shared_memory.set_enable_mock(true);
 		return 0;
@@ -1058,15 +1057,15 @@ int bpf_map_handler::map_init(managed_shared_memory &memory)
 		auto thread_count = get_thread_count(attr);
 		SPDLOG_INFO(
 			"Map {} (nv_gpu_ringbuf_map_impl) has space for thread count {}",
-			container_name.c_str(), thread_count);
+			name.c_str(), thread_count);
 		const uint64_t requested_thread_count = thread_count;
 		while (thread_count > 0) {
 			try {
-				map_impl_ptr =
-					memory.construct<nv_gpu_ringbuf_map_impl>(
-						container_name.c_str())(
-						memory, value_size, max_entries,
-						thread_count);
+				map_impl_ptr = memory.construct<
+					nv_gpu_ringbuf_map_impl>(
+					boost::interprocess::anonymous_instance)(
+					memory, value_size, max_entries,
+					thread_count);
 				break;
 			} catch (const boost::interprocess::bad_alloc &) {
 				if (thread_count <= 1) {
@@ -1091,27 +1090,29 @@ int bpf_map_handler::map_init(managed_shared_memory &memory)
 	case bpf_map_type::BPF_MAP_TYPE_PERGPUTD_ARRAY_HOST_MAP: {
 		SPDLOG_INFO(
 			"Map {} (nv_gpu_array_host_map_impl) has space for thread count {}",
-			container_name.c_str(), attr.gpu_thread_count);
+			name.c_str(), attr.gpu_thread_count);
 		map_impl_ptr = memory.construct<nv_gpu_array_host_map_impl>(
-			container_name.c_str())(memory, value_size, max_entries,
-						attr.gpu_thread_count);
+			boost::interprocess::anonymous_instance)(
+			memory, value_size, max_entries, attr.gpu_thread_count);
+		init_refcnt();
 		return 0;
 	}
 	case bpf_map_type::BPF_MAP_TYPE_GPU_ARRAY_HOST_MAP: {
 		SPDLOG_INFO(
 			"Map {} (nv_gpu_shared_array_host_map_impl) shared array",
-			container_name.c_str());
+			name.c_str());
 		map_impl_ptr =
 			memory.construct<nv_gpu_shared_array_host_map_impl>(
-				container_name.c_str())(memory, value_size,
-							max_entries);
+				boost::interprocess::anonymous_instance)(
+				memory, value_size, max_entries);
+		init_refcnt();
 		return 0;
 	}
 #endif
 	case bpf_map_type::BPF_MAP_TYPE_LPM_TRIE: {
 		map_impl_ptr = memory.construct<lpm_trie_map_impl>(
-			container_name.c_str())(memory, key_size, value_size,
-						max_entries);
+			boost::interprocess::anonymous_instance)(
+			memory, key_size, value_size, max_entries);
 		init_refcnt();
 		return 0;
 	}
@@ -1139,6 +1140,7 @@ void bpf_map_handler::map_free(managed_shared_memory &memory) const
 	if (map_impl_ptr.get() == nullptr) {
 		return;
 	}
+	void *impl = map_impl_ptr.get();
 
 	if (map_refcnt_ptr.get() != nullptr) {
 		auto prev = map_refcnt_ptr->fetch_sub(1,
@@ -1149,99 +1151,100 @@ void bpf_map_handler::map_free(managed_shared_memory &memory) const
 			return;
 		}
 		memory.destroy_ptr(map_refcnt_ptr.get());
-		map_impl_ptr = nullptr;
 		map_refcnt_ptr = nullptr;
 	}
 
-	auto container_name = get_container_name();
 	switch (type) {
 	case bpf_map_type::BPF_MAP_TYPE_HASH:
-		memory.destroy<hash_map_impl>(container_name.c_str());
+		memory.destroy_ptr(static_cast<hash_map_impl *>(impl));
 		break;
 	case bpf_map_type::BPF_MAP_TYPE_ARRAY:
-		memory.destroy<array_map_impl>(container_name.c_str());
+		memory.destroy_ptr(static_cast<array_map_impl *>(impl));
 		break;
 	case bpf_map_type::BPF_MAP_TYPE_RINGBUF:
-		memory.destroy<ringbuf_map_impl>(container_name.c_str());
+		memory.destroy_ptr(static_cast<ringbuf_map_impl *>(impl));
 		break;
 	case bpf_map_type::BPF_MAP_TYPE_PERF_EVENT_ARRAY:
-		memory.destroy<perf_event_array_map_impl>(
-			container_name.c_str());
+		memory.destroy_ptr(
+			static_cast<perf_event_array_map_impl *>(impl));
 		break;
 	case bpf_map_type::BPF_MAP_TYPE_PERCPU_ARRAY:
-		memory.destroy<per_cpu_array_map_impl>(container_name.c_str());
+		memory.destroy_ptr(static_cast<per_cpu_array_map_impl *>(impl));
 		break;
 	case bpf_map_type::BPF_MAP_TYPE_PERCPU_HASH:
-		memory.destroy<per_cpu_hash_map_impl>(container_name.c_str());
-		break;
-	case bpf_map_type::BPF_MAP_TYPE_STACK_TRACE:
-		memory.destroy<stack_trace_map_impl>(container_name.c_str());
+		memory.destroy_ptr(static_cast<per_cpu_hash_map_impl *>(impl));
 		break;
 	case bpf_map_type::BPF_MAP_TYPE_QUEUE:
-		memory.destroy<queue_map_impl>(container_name.c_str());
+		memory.destroy_ptr(static_cast<queue_map_impl *>(impl));
 		break;
 	case bpf_map_type::BPF_MAP_TYPE_STACK:
-		memory.destroy<stack_map_impl>(container_name.c_str());
+		memory.destroy_ptr(static_cast<stack_map_impl *>(impl));
 		break;
 	case bpf_map_type::BPF_MAP_TYPE_BLOOM_FILTER:
-		memory.destroy<bloom_filter_map_impl>(container_name.c_str());
+		memory.destroy_ptr(static_cast<bloom_filter_map_impl *>(impl));
 		break;
 #ifdef BPFTIME_BUILD_WITH_LIBBPF
+	case bpf_map_type::BPF_MAP_TYPE_STACK_TRACE:
+		memory.destroy_ptr(static_cast<stack_trace_map_impl *>(impl));
+		break;
 	case bpf_map_type::BPF_MAP_TYPE_KERNEL_USER_ARRAY:
-		memory.destroy<array_map_kernel_user_impl>(
-			container_name.c_str());
+		memory.destroy_ptr(
+			static_cast<array_map_kernel_user_impl *>(impl));
 		break;
 	case bpf_map_type::BPF_MAP_TYPE_KERNEL_USER_HASH:
-		memory.destroy<hash_map_kernel_user_impl>(
-			container_name.c_str());
+		memory.destroy_ptr(
+			static_cast<hash_map_kernel_user_impl *>(impl));
 		break;
 	case bpf_map_type::BPF_MAP_TYPE_KERNEL_USER_PERCPU_ARRAY:
-		memory.destroy<percpu_array_map_kernel_user_impl>(
-			container_name.c_str());
+		memory.destroy_ptr(
+			static_cast<percpu_array_map_kernel_user_impl *>(impl));
 		break;
 	case bpf_map_type::BPF_MAP_TYPE_KERNEL_USER_PERF_EVENT_ARRAY:
-		memory.destroy<perf_event_array_kernel_user_impl>(
-			container_name.c_str());
+		memory.destroy_ptr(
+			static_cast<perf_event_array_kernel_user_impl *>(impl));
 		break;
 	case bpf_map_type::BPF_MAP_TYPE_PROG_ARRAY:
-		memory.destroy<prog_array_map_impl>(container_name.c_str());
+		memory.destroy_ptr(static_cast<prog_array_map_impl *>(impl));
+		break;
+#endif
+	case bpf_map_type::BPF_MAP_TYPE_ARRAY_OF_MAPS:
+		memory.destroy_ptr(static_cast<array_map_of_maps_impl *>(impl));
 		break;
 	case bpf_map_type::BPF_MAP_TYPE_LRU_HASH:
-		memory.destroy<lru_var_hash_map_impl>(container_name.c_str());
+		memory.destroy_ptr(static_cast<lru_var_hash_map_impl *>(impl));
 		break;
 	case bpf_map_type::BPF_MAP_TYPE_LPM_TRIE:
-		memory.destroy<lpm_trie_map_impl>(container_name.c_str());
+		memory.destroy_ptr(static_cast<lpm_trie_map_impl *>(impl));
 		break;
-
-#endif
 #if defined(BPFTIME_ENABLE_CUDA_ATTACH)
 	case bpf_map_type::BPF_MAP_TYPE_GPU_HASH_MAP:
-		memory.destroy<nv_gpu_shared_hash_map_impl>(
-			container_name.c_str());
+		memory.destroy_ptr(
+			static_cast<nv_gpu_shared_hash_map_impl *>(impl));
 		break;
 	case bpf_map_type::BPF_MAP_TYPE_PERGPUTD_ARRAY_MAP:
-		memory.destroy<nv_gpu_per_thread_array_map_impl>(
-			container_name.c_str());
+		memory.destroy_ptr(
+			static_cast<nv_gpu_per_thread_array_map_impl *>(impl));
 		break;
 	case bpf_map_type::BPF_MAP_TYPE_GPU_ARRAY_MAP:
-		memory.destroy<nv_gpu_shared_array_map_impl>(
-			container_name.c_str());
+		memory.destroy_ptr(
+			static_cast<nv_gpu_shared_array_map_impl *>(impl));
 		break;
 	case bpf_map_type::BPF_MAP_TYPE_GPU_RINGBUF_MAP:
-		memory.destroy<nv_gpu_ringbuf_map_impl>(container_name.c_str());
+		memory.destroy_ptr(
+			static_cast<nv_gpu_ringbuf_map_impl *>(impl));
 		break;
 	case bpf_map_type::BPF_MAP_TYPE_GPU_KERNEL_SHARED_ARRAY_MAP: {
-		memory.destroy<array_map_kernel_gpu_impl>(
-			container_name.c_str());
+		memory.destroy_ptr(
+			static_cast<array_map_kernel_gpu_impl *>(impl));
 		break;
 	}
 	case bpf_map_type::BPF_MAP_TYPE_PERGPUTD_ARRAY_HOST_MAP:
-		memory.destroy<nv_gpu_array_host_map_impl>(
-			container_name.c_str());
+		memory.destroy_ptr(
+			static_cast<nv_gpu_array_host_map_impl *>(impl));
 		break;
 	case bpf_map_type::BPF_MAP_TYPE_GPU_ARRAY_HOST_MAP:
-		memory.destroy<nv_gpu_shared_array_host_map_impl>(
-			container_name.c_str());
+		memory.destroy_ptr(
+			static_cast<nv_gpu_shared_array_host_map_impl *>(impl));
 		break;
 #endif
 	default:
