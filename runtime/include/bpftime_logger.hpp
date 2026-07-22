@@ -43,6 +43,7 @@ inline void bpftime_set_quiet_logger() noexcept
 		auto logger =
 			std::make_shared<spdlog::logger>("bpftime_quiet", sink);
 		logger->set_level(spdlog::level::off);
+		logger->set_error_handler([](const std::string &) {});
 		spdlog::set_default_logger(std::move(logger));
 	} catch (...) {
 		if (auto *logger = spdlog::default_logger_raw();
@@ -75,6 +76,9 @@ inline void bpftime_set_logger(const std::string &target) noexcept
 		}
 		auto logger = std::make_shared<spdlog::logger>("bpftime_logger",
 							       sink);
+		// spdlog's default error handler writes sink errors directly to
+		// stderr. Injected code must keep logger failures silent.
+		logger->set_error_handler([](const std::string &) {});
 		logger->set_pattern("[%Y-%m-%d %H:%M:%S][%^%l%$][%t] %v");
 		logger->flush_on(spdlog::level::info);
 		spdlog::drop("bpftime_logger");

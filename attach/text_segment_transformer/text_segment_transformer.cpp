@@ -14,7 +14,7 @@
 #include <cstdint>
 #include <unistd.h>
 #include <string>
-#include <cinttypes>
+#include <stdexcept>
 #include "text_segment_transformer.hpp"
 #include <frida-gum.h>
 /*
@@ -117,6 +117,36 @@ extern "C" int64_t syscall_hooker_cxx(int64_t sys_nr, int64_t arg1,
 	}
 }
 
+struct segment_protection_guard {
+	uint8_t *code;
+	size_t len;
+	int perm;
+	bool active = true;
+
+	bool restore() noexcept
+	{
+		if (!active)
+			return true;
+		if (mprotect(code, len, perm) != 0)
+			return false;
+		active = false;
+		return true;
+	}
+
+	~segment_protection_guard()
+	{
+		(void)restore();
+	}
+};
+
+struct capstone_handle_guard {
+	csh handle;
+	~capstone_handle_guard()
+	{
+		cs_close(&handle);
+	}
+};
+
 static bool rewrite_segment(uint8_t *code, size_t len, int perm)
 {
 	// Set the pages to be writable
@@ -127,14 +157,20 @@ static bool rewrite_segment(uint8_t *code, size_t len, int perm)
 			(uintptr_t)code);
 		return false;
 	}
+	segment_protection_guard protection{ code, len, perm };
+#if defined(BPFTIME_PRELOAD_TEST_HOOKS)
+	if (getenv("BPFTIME_TEST_TRANSFORMER_FAIL_AFTER_MPROTECT") != nullptr)
+		throw std::runtime_error(
+			"transformer test failure after mprotect");
+#endif
 	csh cs_handle;
 	cs_err ret = cs_open(CS_ARCH_X86, CS_MODE_64, &cs_handle);
 	if (ret != CS_ERR_OK) {
 		SPDLOG_ERROR("Failed to open capstone instance: {}, {}",
 			     (int)ret, cs_strerror(ret));
-		(void)mprotect(code, len, perm);
 		return false;
 	}
+	capstone_handle_guard capstone{ cs_handle };
 	const uint8_t *curr_code = code;
 	size_t size = len;
 	uint64_t curr_addr = (uint64_t)(uintptr_t)curr_code;
@@ -159,8 +195,7 @@ static bool rewrite_segment(uint8_t *code, size_t len, int perm)
 			}
 		}
 	}
-	cs_close(&cs_handle);
-	if (int err = mprotect(code, len, perm); err < 0) {
+	if (!protection.restore()) {
 		SPDLOG_ERROR(
 			"Failed to change the protect status of the rewriting page {:x}",
 			(uintptr_t)code);
@@ -168,6 +203,21 @@ static bool rewrite_segment(uint8_t *code, size_t len, int perm)
 	}
 	return true;
 }
+
+#if defined(BPFTIME_PRELOAD_TEST_HOOKS)
+extern "C" int bpftime_test_rewrite_segment(void *code, size_t len,
+					    int perm) noexcept
+{
+	try {
+		return rewrite_segment(static_cast<uint8_t *>(code), len,
+				       perm) ?
+			       0 :
+			       1;
+	} catch (...) {
+		return 2;
+	}
+}
+#endif
 
 struct MapEntry {
 	uint64_t begin, end;

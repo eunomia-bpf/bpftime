@@ -102,24 +102,47 @@ static bool initialize_ctx() noexcept
 		tls_initializing = 0;
 		__atomic_store_n(&ctx_initialized, 2, __ATOMIC_RELEASE);
 	} else {
-		// Another thread is initializing bpftime. Do not block the host;
-		// this call can safely use the original operation.
+		// Another thread is initializing bpftime. Do not block the
+		// host; this call can safely use the original operation.
 		return __atomic_load_n(&ctx_initialized, __ATOMIC_ACQUIRE) == 2;
 	}
 	return true;
 }
 
-template <typename Fn, typename Result, typename... Args>
-Result call_original(const char *name, Result failure, Args... args) noexcept
+#if defined(BPFTIME_PRELOAD_TEST_HOOKS)
+extern "C" void bpftime_test_enable_syscall_mocking()
 {
-	int saved_errno = errno;
+	if (!initialize_ctx())
+		return;
+	context->enable_mock.store(true, std::memory_order_relaxed);
+	context->enable_mock_after_initialized.store(true,
+						     std::memory_order_relaxed);
+}
+#endif
+
+template <typename Fn, typename Result, typename... Args>
+Result call_original(const char *name, Result failure, int caller_errno,
+		     Args... args) noexcept
+{
 	auto fn = reinterpret_cast<Fn>(dlsym(RTLD_NEXT, name));
 	if (fn == nullptr) {
 		errno = ENOSYS;
 		return failure;
 	}
-	errno = saved_errno;
-	return fn(args...);
+	errno = caller_errno;
+	Result result = fn(args...);
+	if (result != failure)
+		errno = caller_errno;
+	return result;
+}
+
+template <typename Result, typename Failure>
+Result preserve_errno_on_success(Result result, Failure failure,
+				 int caller_errno) noexcept
+{
+	if (result != static_cast<Result>(failure))
+		errno = caller_errno;
+	return result;
 }
 
 template <typename F, typename Fallback>
@@ -146,133 +169,179 @@ auto handle_exceptions(F &&f, Fallback &&fallback) noexcept -> decltype(f())
 extern "C" int epoll_wait(int epfd, epoll_event *evt, int maxevents,
 			  int timeout)
 {
+	const int caller_errno = errno;
 	using fn_t = int (*)(int, epoll_event *, int, int);
 	if (!initialize_ctx())
-		return call_original<fn_t>("epoll_wait", -1, epfd, evt,
-					   maxevents, timeout);
+		return call_original<fn_t>("epoll_wait", -1, caller_errno, epfd,
+					   evt, maxevents, timeout);
 	safe_spdlog_debug("epoll_wait {}", epfd);
-	return handle_exceptions(
-		[&]() {
-			return context->handle_epoll_wait(epfd, evt, maxevents,
-							  timeout);
-		},
-		[&]() {
-			return call_original<fn_t>("epoll_wait", -1, epfd, evt,
-						   maxevents, timeout);
-		});
+	return preserve_errno_on_success(
+		handle_exceptions(
+			[&]() {
+				return context->handle_epoll_wait(
+					epfd, evt, maxevents, timeout);
+			},
+			[&]() {
+				return call_original<fn_t>("epoll_wait", -1,
+							   caller_errno, epfd,
+							   evt, maxevents,
+							   timeout);
+			}),
+		-1, caller_errno);
 }
 
 extern "C" int epoll_ctl(int epfd, int op, int fd, epoll_event *evt)
 {
+	const int caller_errno = errno;
 	using fn_t = int (*)(int, int, int, epoll_event *);
 	if (!initialize_ctx())
-		return call_original<fn_t>("epoll_ctl", -1, epfd, op, fd, evt);
+		return call_original<fn_t>("epoll_ctl", -1, caller_errno, epfd,
+					   op, fd, evt);
 	safe_spdlog_debug("epoll_ctl {} {} {} {}", epfd, op, fd,
 			  (uintptr_t)evt);
-	return handle_exceptions(
-		[&]() { return context->handle_epoll_ctl(epfd, op, fd, evt); },
-		[&]() {
-			return call_original<fn_t>("epoll_ctl", -1, epfd, op,
-						   fd, evt);
-		});
+	return preserve_errno_on_success(
+		handle_exceptions(
+			[&]() {
+				return context->handle_epoll_ctl(epfd, op, fd,
+								 evt);
+			},
+			[&]() {
+				return call_original<fn_t>("epoll_ctl", -1,
+							   caller_errno, epfd,
+							   op, fd, evt);
+			}),
+		-1, caller_errno);
 }
 
 extern "C" int epoll_create1(int flags)
 {
+	const int caller_errno = errno;
 	using fn_t = int (*)(int);
 	if (!initialize_ctx())
-		return call_original<fn_t>("epoll_create1", -1, flags);
+		return call_original<fn_t>("epoll_create1", -1, caller_errno,
+					   flags);
 	safe_spdlog_debug("epoll_create1 {}", flags);
-	return handle_exceptions(
-		[&]() { return context->handle_epoll_create1(flags); },
-		[&]() {
-			return call_original<fn_t>("epoll_create1", -1, flags);
-		});
+	return preserve_errno_on_success(
+		handle_exceptions(
+			[&]() { return context->handle_epoll_create1(flags); },
+			[&]() {
+				return call_original<fn_t>("epoll_create1", -1,
+							   caller_errno, flags);
+			}),
+		-1, caller_errno);
 }
 
 extern "C" int ioctl(int fd, unsigned long req, ...)
 {
+	const int caller_errno = errno;
 	using fn_t = int (*)(int, unsigned long, ...);
 	va_list args;
 	va_start(args, req);
 	unsigned long arg3 = va_arg(args, long);
 	va_end(args);
 	if (!initialize_ctx())
-		return call_original<fn_t>("ioctl", -1, fd, req, arg3);
+		return call_original<fn_t>("ioctl", -1, caller_errno, fd, req,
+					   arg3);
 	safe_spdlog_debug("ioctl {} {} {}", fd, req, arg3);
-	return handle_exceptions(
-		[&]() { return context->handle_ioctl(fd, req, arg3); },
-		[&]() {
-			return call_original<fn_t>("ioctl", -1, fd, req, arg3);
-		});
+	return preserve_errno_on_success(
+		handle_exceptions(
+			[&]() { return context->handle_ioctl(fd, req, arg3); },
+			[&]() {
+				return call_original<fn_t>("ioctl", -1,
+							   caller_errno, fd,
+							   req, arg3);
+			}),
+		-1, caller_errno);
 }
 
 extern "C" void *mmap64(void *addr, size_t length, int prot, int flags, int fd,
 			off64_t offset)
 {
+	const int caller_errno = errno;
 	using fn_t = void *(*)(void *, size_t, int, int, int, off64_t);
 	if (!initialize_ctx())
-		return call_original<fn_t>("mmap64", MAP_FAILED, addr, length,
-					   prot, flags, fd, offset);
+		return call_original<fn_t>("mmap64", MAP_FAILED, caller_errno,
+					   addr, length, prot, flags, fd,
+					   offset);
 	safe_spdlog_debug("mmap64 {:x}", (uintptr_t)addr);
-	return handle_exceptions(
-		[&]() {
-			return context->handle_mmap64(addr, length, prot, flags,
-						      fd, offset);
-		},
-		[&]() {
-			return call_original<fn_t>("mmap64", MAP_FAILED, addr,
-						   length, prot, flags, fd,
-						   offset);
-		});
+	return preserve_errno_on_success(
+		handle_exceptions(
+			[&]() {
+				return context->handle_mmap64(
+					addr, length, prot, flags, fd, offset);
+			},
+			[&]() {
+				return call_original<fn_t>("mmap64", MAP_FAILED,
+							   caller_errno, addr,
+							   length, prot, flags,
+							   fd, offset);
+			}),
+		MAP_FAILED, caller_errno);
 }
 
 extern "C" void *mmap(void *addr, size_t length, int prot, int flags, int fd,
 		      off_t offset)
 {
+	const int caller_errno = errno;
 	using fn_t = void *(*)(void *, size_t, int, int, int, off_t);
 	if (!initialize_ctx())
-		return call_original<fn_t>("mmap", MAP_FAILED, addr, length,
-					   prot, flags, fd, offset);
+		return call_original<fn_t>("mmap", MAP_FAILED, caller_errno,
+					   addr, length, prot, flags, fd,
+					   offset);
 	safe_spdlog_debug("mmap {:x}", (uintptr_t)addr);
-	return handle_exceptions(
-		[&]() {
-			return context->handle_mmap(addr, length, prot, flags,
-						    fd, offset);
-		},
-		[&]() {
-			return call_original<fn_t>("mmap", MAP_FAILED, addr,
-						   length, prot, flags, fd,
-						   offset);
-		});
+	return preserve_errno_on_success(
+		handle_exceptions(
+			[&]() {
+				return context->handle_mmap(addr, length, prot,
+							    flags, fd, offset);
+			},
+			[&]() {
+				return call_original<fn_t>("mmap", MAP_FAILED,
+							   caller_errno, addr,
+							   length, prot, flags,
+							   fd, offset);
+			}),
+		MAP_FAILED, caller_errno);
 }
 
 extern "C" int munmap(void *addr, size_t size)
 {
+	const int caller_errno = errno;
 	using fn_t = int (*)(void *, size_t);
 	if (!initialize_ctx())
-		return call_original<fn_t>("munmap", -1, addr, size);
+		return call_original<fn_t>("munmap", -1, caller_errno, addr,
+					   size);
 	safe_spdlog_debug("munmap {:x} {}", (uintptr_t)addr, size);
-	return handle_exceptions(
-		[&]() { return context->handle_munmap(addr, size); },
-		[&]() {
-			return call_original<fn_t>("munmap", -1, addr, size);
-		});
+	return preserve_errno_on_success(
+		handle_exceptions(
+			[&]() { return context->handle_munmap(addr, size); },
+			[&]() {
+				return call_original<fn_t>(
+					"munmap", -1, caller_errno, addr, size);
+			}),
+		-1, caller_errno);
 }
 
 extern "C" int close(int fd)
 {
+	const int caller_errno = errno;
 	using fn_t = int (*)(int);
 	if (!initialize_ctx())
-		return call_original<fn_t>("close", -1, fd);
+		return call_original<fn_t>("close", -1, caller_errno, fd);
 	safe_spdlog_debug("Closing fd {}", fd);
-	return handle_exceptions(
-		[&]() { return context->handle_close(fd); },
-		[&]() { return call_original<fn_t>("close", -1, fd); });
+	return preserve_errno_on_success(
+		handle_exceptions([&]() { return context->handle_close(fd); },
+				  [&]() {
+					  return call_original<fn_t>(
+						  "close", -1, caller_errno,
+						  fd);
+				  }),
+		-1, caller_errno);
 }
 
 extern "C" int openat(int fd, const char *file, int oflag, ...)
 {
+	const int caller_errno = errno;
 	using fn_t = int (*)(int, const char *, int, ...);
 	unsigned short mode = 0;
 	bool needs_mode = (oflag & O_CREAT) != 0;
@@ -286,18 +355,26 @@ extern "C" int openat(int fd, const char *file, int oflag, ...)
 		va_end(args);
 	}
 	if (!initialize_ctx())
-		return call_original<fn_t>("openat", -1, fd, file, oflag, mode);
+		return call_original<fn_t>("openat", -1, caller_errno, fd, file,
+					   oflag, mode);
 	safe_spdlog_debug("openat {} {} {} {}", fd, safe_ptr_str(file), oflag,
 			  mode);
-	return handle_exceptions(
-		[&]() { return context->handle_openat(fd, file, oflag, mode); },
-		[&]() {
-			return call_original<fn_t>("openat", -1, fd, file,
-						   oflag, mode);
-		});
+	return preserve_errno_on_success(
+		handle_exceptions(
+			[&]() {
+				return context->handle_openat(fd, file, oflag,
+							      mode);
+			},
+			[&]() {
+				return call_original<fn_t>("openat", -1,
+							   caller_errno, fd,
+							   file, oflag, mode);
+			}),
+		-1, caller_errno);
 }
 extern "C" int open(const char *file, int oflag, ...)
 {
+	const int caller_errno = errno;
 	using fn_t = int (*)(const char *, int, ...);
 	unsigned short mode = 0;
 	bool needs_mode = (oflag & O_CREAT) != 0;
@@ -311,82 +388,109 @@ extern "C" int open(const char *file, int oflag, ...)
 		va_end(args);
 	}
 	if (!initialize_ctx())
-		return call_original<fn_t>("open", -1, file, oflag, mode);
+		return call_original<fn_t>("open", -1, caller_errno, file,
+					   oflag, mode);
 	safe_spdlog_debug("open {} {} {}", safe_ptr_str(file), oflag, mode);
-	return handle_exceptions(
-		[&]() { return context->handle_open(file, oflag, mode); },
-		[&]() {
-			return call_original<fn_t>("open", -1, file, oflag,
-						   mode);
-		});
+	return preserve_errno_on_success(
+		handle_exceptions(
+			[&]() {
+				return context->handle_open(file, oflag, mode);
+			},
+			[&]() {
+				return call_original<fn_t>("open", -1,
+							   caller_errno, file,
+							   oflag, mode);
+			}),
+		-1, caller_errno);
 }
 extern "C" ssize_t read(int fd, void *buf, size_t count)
 {
+	const int caller_errno = errno;
 	using fn_t = ssize_t (*)(int, void *, size_t);
 	if (!initialize_ctx())
-		return call_original<fn_t>("read", static_cast<ssize_t>(-1), fd,
-					   buf, count);
-	return handle_exceptions(
-		[&]() { return context->handle_read(fd, buf, count); },
-		[&]() {
-			return call_original<fn_t>("read",
-						   static_cast<ssize_t>(-1), fd,
-						   buf, count);
-		});
+		return call_original<fn_t>("read", static_cast<ssize_t>(-1),
+					   caller_errno, fd, buf, count);
+	return preserve_errno_on_success(
+		handle_exceptions(
+			[&]() { return context->handle_read(fd, buf, count); },
+			[&]() {
+				return call_original<fn_t>(
+					"read", static_cast<ssize_t>(-1),
+					caller_errno, fd, buf, count);
+			}),
+		static_cast<ssize_t>(-1), caller_errno);
 }
 
 extern "C" FILE *fopen(const char *pathname, const char *flags)
 {
+	const int caller_errno = errno;
 	using fn_t = FILE *(*)(const char *, const char *);
 	if (!initialize_ctx())
-		return call_original<fn_t>(
-			"fopen", static_cast<FILE *>(nullptr), pathname, flags);
+		return call_original<fn_t>("fopen",
+					   static_cast<FILE *>(nullptr),
+					   caller_errno, pathname, flags);
 	safe_spdlog_debug("fopen {} {}", safe_ptr_str(pathname),
 			  safe_ptr_str(flags));
-	return handle_exceptions(
-		[&]() { return context->handle_fopen(pathname, flags); },
-		[&]() {
-			return call_original<fn_t>("fopen",
-						   static_cast<FILE *>(nullptr),
-						   pathname, flags);
-		});
+	return preserve_errno_on_success(
+		handle_exceptions(
+			[&]() {
+				return context->handle_fopen(pathname, flags);
+			},
+			[&]() {
+				return call_original<fn_t>(
+					"fopen", static_cast<FILE *>(nullptr),
+					caller_errno, pathname, flags);
+			}),
+		static_cast<FILE *>(nullptr), caller_errno);
 }
 extern "C" FILE *fopen64(const char *pathname, const char *flags)
 {
+	const int caller_errno = errno;
 	using fn_t = FILE *(*)(const char *, const char *);
 	if (!initialize_ctx())
 		return call_original<fn_t>("fopen64",
 					   static_cast<FILE *>(nullptr),
-					   pathname, flags);
+					   caller_errno, pathname, flags);
 	safe_spdlog_debug("fopen64 {} {}", safe_ptr_str(pathname),
 			  safe_ptr_str(flags));
-	return handle_exceptions(
-		[&]() { return context->handle_fopen(pathname, flags); },
-		[&]() {
-			return call_original<fn_t>("fopen64",
-						   static_cast<FILE *>(nullptr),
-						   pathname, flags);
-		});
+	return preserve_errno_on_success(
+		handle_exceptions(
+			[&]() {
+				return context->handle_fopen(pathname, flags);
+			},
+			[&]() {
+				return call_original<fn_t>(
+					"fopen64", static_cast<FILE *>(nullptr),
+					caller_errno, pathname, flags);
+			}),
+		static_cast<FILE *>(nullptr), caller_errno);
 }
 extern "C" FILE *_IO_new_fopen(const char *pathname, const char *flags)
 {
+	const int caller_errno = errno;
 	using fn_t = FILE *(*)(const char *, const char *);
 	if (!initialize_ctx())
-		return call_original<fn_t>(
-			"fopen", static_cast<FILE *>(nullptr), pathname, flags);
+		return call_original<fn_t>("fopen",
+					   static_cast<FILE *>(nullptr),
+					   caller_errno, pathname, flags);
 	safe_spdlog_debug("_IO_new_fopen {} {}", safe_ptr_str(pathname),
 			  safe_ptr_str(flags));
-	return handle_exceptions(
-		[&]() { return context->handle_fopen(pathname, flags); },
-		[&]() {
-			return call_original<fn_t>("fopen",
-						   static_cast<FILE *>(nullptr),
-						   pathname, flags);
-		});
+	return preserve_errno_on_success(
+		handle_exceptions(
+			[&]() {
+				return context->handle_fopen(pathname, flags);
+			},
+			[&]() {
+				return call_original<fn_t>(
+					"fopen", static_cast<FILE *>(nullptr),
+					caller_errno, pathname, flags);
+			}),
+		static_cast<FILE *>(nullptr), caller_errno);
 }
 #if __linux__
 extern "C" long syscall(long sysno, ...)
 {
+	const int caller_errno = errno;
 	using fn_t = long (*)(long, ...);
 	// glibc directly reads the arguments without considering
 	// the underlying argument number. So did us
@@ -400,74 +504,88 @@ extern "C" long syscall(long sysno, ...)
 	long arg6 = va_arg(args, long);
 	va_end(args);
 	if (!initialize_ctx())
-		return call_original<fn_t>("syscall", -1L, sysno, arg1, arg2,
-					   arg3, arg4, arg5, arg6);
+		return call_original<fn_t>("syscall", -1L, caller_errno, sysno,
+					   arg1, arg2, arg3, arg4, arg5, arg6);
 	if (sysno == __NR_bpf) {
 		safe_spdlog_debug("SYS_BPF {} {} {} {} {} {}", arg1, arg2, arg3,
 				  arg4, arg5, arg6);
 		int cmd = (int)arg1;
 		auto attr = (union bpf_attr *)(uintptr_t)arg2;
 		auto size = (size_t)arg3;
-		return handle_exceptions(
-			[&]() {
-				return context->handle_sysbpf(cmd, attr, size);
-			},
-			[&]() {
-				return call_original<fn_t>("syscall", -1L,
-							   sysno, arg1, arg2,
-							   arg3, arg4, arg5,
-							   arg6);
-			});
+		return preserve_errno_on_success(
+			handle_exceptions(
+				[&]() {
+					return context->handle_sysbpf(cmd, attr,
+								      size);
+				},
+				[&]() {
+					return call_original<fn_t>(
+						"syscall", -1L, caller_errno,
+						sysno, arg1, arg2, arg3, arg4,
+						arg5, arg6);
+				}),
+			-1L, caller_errno);
 	} else if (sysno == __NR_perf_event_open) {
 		safe_spdlog_debug("SYS_PERF_EVENT_OPEN {} {} {} {} {} {}", arg1,
 				  arg2, arg3, arg4, arg5, arg6);
-		return handle_exceptions(
-			[&]() {
-				return context->handle_perfevent(
-					(perf_event_attr *)(uintptr_t)arg1,
-					(pid_t)arg2, (int)arg3, (int)arg4,
-					(unsigned long)arg5);
-			},
-			[&]() {
-				return call_original<fn_t>("syscall", -1L,
-							   sysno, arg1, arg2,
-							   arg3, arg4, arg5,
-							   arg6);
-			});
+		return preserve_errno_on_success(
+			handle_exceptions(
+				[&]() {
+					return context->handle_perfevent(
+						(perf_event_attr *)(uintptr_t)
+							arg1,
+						(pid_t)arg2, (int)arg3,
+						(int)arg4, (unsigned long)arg5);
+				},
+				[&]() {
+					return call_original<fn_t>(
+						"syscall", -1L, caller_errno,
+						sysno, arg1, arg2, arg3, arg4,
+						arg5, arg6);
+				}),
+			-1L, caller_errno);
 	} else if (sysno == __NR_ioctl) {
 		safe_spdlog_debug("SYS_IOCTL {} {} {} {} {} {}", arg1, arg2,
 				  arg3, arg4, arg5, arg6);
 	} else if (sysno == __NR_dup3) {
 		safe_spdlog_debug("SYS_DUP3 oldfd={} newfd={} flags={}", arg1,
 				  arg2, arg3);
-		return handle_exceptions(
-			[&]() {
-				return context->handle_dup3(
-					(int)arg1, (int)arg2, (int)arg3);
-			},
-			[&]() {
-				return call_original<fn_t>("syscall", -1L,
-							   sysno, arg1, arg2,
-							   arg3, arg4, arg5,
-							   arg6);
-			});
+		return preserve_errno_on_success(
+			handle_exceptions(
+				[&]() {
+					return context->handle_dup3((int)arg1,
+								    (int)arg2,
+								    (int)arg3);
+				},
+				[&]() {
+					return call_original<fn_t>(
+						"syscall", -1L, caller_errno,
+						sysno, arg1, arg2, arg3, arg4,
+						arg5, arg6);
+				}),
+			-1L, caller_errno);
 	} else if (sysno == __NR_memfd_create) {
 		safe_spdlog_debug("SYS_MEMFD_CREATE name={} flags={}",
 				  safe_ptr_str((const char *)arg1), arg2);
-		return handle_exceptions(
-			[&]() {
-				return context->handle_memfd_create(
-					(const char *)arg1, (int)arg2);
-			},
-			[&]() {
-				return call_original<fn_t>("syscall", -1L,
-							   sysno, arg1, arg2,
-							   arg3, arg4, arg5,
-							   arg6);
-			});
+		return preserve_errno_on_success(
+			handle_exceptions(
+				[&]() {
+					return context->handle_memfd_create(
+						(const char *)arg1, (int)arg2);
+				},
+				[&]() {
+					return call_original<fn_t>(
+						"syscall", -1L, caller_errno,
+						sysno, arg1, arg2, arg3, arg4,
+						arg5, arg6);
+				}),
+			-1L, caller_errno);
 	}
-	return context->orig_syscall_fn(sysno, arg1, arg2, arg3, arg4, arg5,
-					arg6);
+	errno = caller_errno;
+	return preserve_errno_on_success(
+		context->orig_syscall_fn(sysno, arg1, arg2, arg3, arg4, arg5,
+					 arg6),
+		-1L, caller_errno);
 }
 #endif
 

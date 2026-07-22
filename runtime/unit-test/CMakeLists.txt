@@ -56,6 +56,9 @@ if(UNIX AND NOT APPLE)
     add_executable(bpftime-shm-allocation-test-helper
         assets/shm_allocation_test_helper.c)
     set_property(TARGET bpftime-shm-allocation-test-helper PROPERTY C_STANDARD 99)
+    set_property(TARGET bpftime-shm-allocation-test-helper PROPERTY ENABLE_EXPORTS ON)
+    target_link_libraries(bpftime-shm-allocation-test-helper PRIVATE
+        ${CMAKE_DL_LIBS})
     add_dependencies(bpftime_runtime_tests
         bpftime-syscall-server
         bpftime-agent

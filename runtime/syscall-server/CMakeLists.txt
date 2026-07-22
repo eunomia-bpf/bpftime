@@ -33,6 +33,11 @@ target_link_libraries(bpftime-syscall-server PUBLIC
 
 add_dependencies(bpftime-syscall-server spdlog::spdlog)
 
+if(BPFTIME_ENABLE_UNIT_TESTING)
+    target_compile_definitions(bpftime-syscall-server
+        PRIVATE BPFTIME_PRELOAD_TEST_HOOKS=1)
+endif()
+
 if(${BPFTIME_BUILD_WITH_LIBBPF})
 
 target_include_directories(bpftime-syscall-server

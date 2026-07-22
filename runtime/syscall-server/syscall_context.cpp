@@ -216,7 +216,7 @@ int syscall_context::handle_openat(int fd, const char *file, int oflag,
 		int fake_fd = mkstemp(filename_buf);
 		if (fake_fd < 0) {
 			SPDLOG_WARN("Unable to create mock fd: {}", errno);
-			return orig_open_fn(file, oflag, mode);
+			return orig_openat_fn(fd, file, oflag, mode);
 		}
 		this->mocked_files.emplace(fake_fd, std::move(*mocker));
 		SPDLOG_DEBUG("Created mocked file with fd {}", fake_fd);
@@ -933,8 +933,6 @@ void *syscall_context::handle_mmap64(void *addr, size_t length, int prot,
 	SPDLOG_DEBUG(
 		"Calling original mmap64: addr={}, length={}, prot={}, flags={}, fd={}, offset={}",
 		addr, length, prot, flags, fd, offset);
-	auto ptr = orig_mmap64_fn(addr, length, prot | PROT_WRITE,
-				  flags | MAP_ANONYMOUS, -1, 0);
 	return orig_mmap64_fn(addr, length, prot, flags, fd, offset);
 }
 

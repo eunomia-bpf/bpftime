@@ -27,7 +27,10 @@ struct helper_result {
 helper_result run_preloaded_helper(const char *mode, const char *library,
 				   const char *memory_mb = nullptr,
 				   const char *max_fd_count = nullptr,
-				   const char *agent_so = nullptr)
+				   const char *agent_so = nullptr,
+				   const char *log_output = nullptr,
+				   bool transformer_fault = false,
+				   bool fail_mkstemp = false)
 {
 	const std::string shm_name = "bpftime-shm-allocation-test-" +
 				     std::string(mode) + "-" +
@@ -48,6 +51,9 @@ helper_result run_preloaded_helper(const char *mode, const char *library,
 		if (unsetenv("BPFTIME_LOG_OUTPUT") != 0 ||
 		    unsetenv("BPFTIME_SHM_MEMORY_MB") != 0 ||
 		    unsetenv("BPFTIME_MAX_FD_COUNT") != 0 ||
+		    unsetenv("BPFTIME_TEST_TRANSFORMER_FAIL_AFTER_MPROTECT") !=
+			    0 ||
+		    unsetenv("BPFTIME_TEST_FAIL_MKSTEMP") != 0 ||
 		    setenv("HOME", "/proc/bpftime-unwritable-home", 1) != 0 ||
 		    setenv("BPFTIME_GLOBAL_SHM_NAME", shm_name.c_str(), 1) !=
 			    0 ||
@@ -59,6 +65,16 @@ helper_result run_preloaded_helper(const char *mode, const char *library,
 			_exit(126);
 		if (max_fd_count != nullptr &&
 		    setenv("BPFTIME_MAX_FD_COUNT", max_fd_count, 1) != 0)
+			_exit(126);
+		if (log_output != nullptr &&
+		    setenv("BPFTIME_LOG_OUTPUT", log_output, 1) != 0)
+			_exit(126);
+		if (transformer_fault &&
+		    setenv("BPFTIME_TEST_TRANSFORMER_FAIL_AFTER_MPROTECT", "1",
+			   1) != 0)
+			_exit(126);
+		if (fail_mkstemp &&
+		    setenv("BPFTIME_TEST_FAIL_MKSTEMP", "1", 1) != 0)
 			_exit(126);
 		if (agent_so != nullptr) {
 			if (setenv("AGENT_SO", agent_so, 1) != 0)
@@ -108,6 +124,43 @@ TEST_CASE("Syscall server fails open when startup shared memory is too small",
 	REQUIRE(result.output.empty());
 }
 
+TEST_CASE("Syscall server keeps logger sink failures off host stdio",
+	  "[allocation][syscall_server][logging]")
+{
+	auto result =
+		run_preloaded_helper("startup", BPFTIME_SYSCALL_SERVER_LIBRARY,
+				     "64", "1048576", nullptr, "/dev/full");
+	REQUIRE(WIFEXITED(result.status));
+	REQUIRE(WEXITSTATUS(result.status) == 100);
+	REQUIRE(result.output.empty());
+}
+
+TEST_CASE("Syscall server calls the original mmap exactly once",
+	  "[preload][syscall_server]")
+{
+	auto result = run_preloaded_helper("mmap-passthrough",
+					   BPFTIME_SYSCALL_SERVER_LIBRARY);
+	REQUIRE(WIFEXITED(result.status));
+	if (WEXITSTATUS(result.status) == 77)
+		SKIP("MAP_FIXED_NOREPLACE is unavailable");
+	REQUIRE(WEXITSTATUS(result.status) == 0);
+	REQUIRE(result.output.empty());
+}
+
+TEST_CASE("Syscall server preserves relative openat fallback semantics",
+	  "[preload][syscall_server]")
+{
+	auto result =
+		run_preloaded_helper("openat-relative",
+				     BPFTIME_SYSCALL_SERVER_LIBRARY, nullptr,
+				     nullptr, nullptr, nullptr, false, true);
+	REQUIRE(WIFEXITED(result.status));
+	if (WEXITSTATUS(result.status) == 77)
+		SKIP("The kernel uprobe type path is unavailable");
+	REQUIRE(WEXITSTATUS(result.status) == 0);
+	REQUIRE(result.output.empty());
+}
+
 TEST_CASE("Syscall server perf mmap reports shared memory exhaustion",
 	  "[allocation][syscall_server]")
 {
@@ -132,10 +185,9 @@ TEST_CASE("Agent initialization failure preserves host exit and stdio",
 TEST_CASE("Transformer setup failure preserves host exit and stdio",
 	  "[preload][transformer]")
 {
-	auto result =
-		run_preloaded_helper("passthrough", BPFTIME_TRANSFORMER_LIBRARY,
-				     nullptr, nullptr,
-				     "/nonexistent/bpftime-agent.so");
+	auto result = run_preloaded_helper(
+		"passthrough", BPFTIME_TRANSFORMER_LIBRARY, nullptr, nullptr,
+		"/nonexistent/bpftime-agent.so", nullptr, true);
 	REQUIRE(WIFEXITED(result.status));
 	REQUIRE(WEXITSTATUS(result.status) == 23);
 	REQUIRE(result.output == "host stdout\nhost stderr\n");

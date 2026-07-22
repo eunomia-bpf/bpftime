@@ -17,6 +17,11 @@ target_include_directories(bpftime_text_segment_transformer
     ${CMAKE_SOURCE_DIR}/runtime/include
 )
 
+if(BPFTIME_ENABLE_UNIT_TESTING)
+    target_compile_definitions(bpftime_text_segment_transformer
+        PRIVATE BPFTIME_PRELOAD_TEST_HOOKS=1)
+endif()
+
 if (${TEST_LCOV}) 
     target_compile_options(bpftime_text_segment_transformer PRIVATE -fprofile-arcs -ftest-coverage -fprofile-update=atomic)
     target_link_options(bpftime_text_segment_transformer PRIVATE -fprofile-arcs)
