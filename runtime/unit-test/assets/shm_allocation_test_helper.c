@@ -14,9 +14,7 @@
 
 static int trigger_startup(void)
 {
-	/* open() is intentionally not wrapped by handle_exceptions(), so this
-	 * verifies that try_startup() itself converts bad_alloc into exit(1).
-	 */
+	/* Trigger lazy interposer initialization through a normal host call. */
 	int fd = open("/dev/null", O_RDONLY, 0);
 	if (fd < 0) {
 		return 101;
@@ -43,13 +41,25 @@ static int trigger_perf_mmap(void)
 	size_t length = (size_t)getpagesize() + 8 * 1024 * 1024;
 	/* The interposer must not leak the caller's stale errno on failure. */
 	errno = E2BIG;
-	void *buffer = mmap(NULL, length, PROT_READ | PROT_WRITE,
-			    MAP_SHARED, fd, 0);
+	void *buffer =
+		mmap(NULL, length, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
 	if (buffer != MAP_FAILED || errno != ENOMEM) {
 		fprintf(stderr, "mmap=%p errno=%d\n", buffer, errno);
 		return 3;
 	}
 	return 0;
+}
+
+static int passthrough_stdio(void)
+{
+	static const char stdout_message[] = "host stdout\n";
+	static const char stderr_message[] = "host stderr\n";
+	if (write(STDOUT_FILENO, stdout_message, sizeof(stdout_message) - 1) !=
+		    (ssize_t)(sizeof(stdout_message) - 1) ||
+	    write(STDERR_FILENO, stderr_message, sizeof(stderr_message) - 1) !=
+		    (ssize_t)(sizeof(stderr_message) - 1))
+		return 24;
+	return 23;
 }
 
 int main(int argc, char **argv)
@@ -62,6 +72,9 @@ int main(int argc, char **argv)
 	}
 	if (strcmp(argv[1], "perf-mmap") == 0) {
 		return trigger_perf_mmap();
+	}
+	if (strcmp(argv[1], "passthrough") == 0) {
+		return passthrough_stdio();
 	}
 	return 64;
 }

@@ -5,7 +5,6 @@
  */
 #ifndef _SYSCALL_CONTEXT_HPP
 #define _SYSCALL_CONTEXT_HPP
-#include <cassert>
 #include <set>
 #include <unordered_map>
 #if defined(__linux__)
@@ -22,6 +21,7 @@
 #include <pthread.h>
 #include <atomic>
 #include <future>
+#include <stdexcept>
 #include <thread>
 // #include "pos/include/common.h"
 // #include "pos/include/utils/command_caller.h"
@@ -92,47 +92,42 @@ class syscall_context {
 	pthread_spinlock_t mocked_file_lock;
 	std::unordered_map<int, std::unique_ptr<mocked_file_provider>>
 		mocked_files;
+	template <typename Fn> static Fn resolve_original(const char *name)
+	{
+		auto fn = reinterpret_cast<Fn>(dlsym(RTLD_NEXT, name));
+		if (fn == nullptr)
+			throw std::runtime_error(
+				std::string("Unable to resolve ") + name);
+		return fn;
+	}
 	void init_original_functions()
 	{
 		orig_epoll_wait_fn =
-			(epoll_wait_fn)dlsym(RTLD_NEXT, "epoll_wait");
-		assert(orig_epoll_wait_fn != nullptr);
-		orig_epoll_ctl_fn = (epoll_ctl_fn)dlsym(RTLD_NEXT, "epoll_ctl");
-		assert(orig_epoll_ctl_fn != nullptr);
+			resolve_original<epoll_wait_fn>("epoll_wait");
+		orig_epoll_ctl_fn = resolve_original<epoll_ctl_fn>("epoll_ctl");
 		orig_epoll_create1_fn =
-			(epoll_craete1_fn)dlsym(RTLD_NEXT, "epoll_create1");
-		assert(orig_epoll_create1_fn != nullptr);
-		orig_ioctl_fn = (ioctl_fn)dlsym(RTLD_NEXT, "ioctl");
-		assert(orig_ioctl_fn != nullptr);
-		orig_syscall_fn = (syscall_fn)dlsym(RTLD_NEXT, "syscall");
-		assert(orig_syscall_fn != nullptr);
-		// orig_mmap64_fn = (mmap64_fn)dlsym(RTLD_NEXT, "mmap64");
-		// assert(orig_mmap64_fn != nullptr);
-		orig_close_fn = (close_fn)dlsym(RTLD_NEXT, "close");
-		assert(orig_close_fn != nullptr);
-		orig_munmap_fn = (munmap_fn)dlsym(RTLD_NEXT, "munmap");
-		assert(orig_munmap_fn != nullptr);
+			resolve_original<epoll_craete1_fn>("epoll_create1");
+		orig_ioctl_fn = resolve_original<ioctl_fn>("ioctl");
+		orig_syscall_fn = resolve_original<syscall_fn>("syscall");
+		orig_close_fn = resolve_original<close_fn>("close");
+		orig_munmap_fn = resolve_original<munmap_fn>("munmap");
 		orig_mmap64_fn = orig_mmap_fn =
-			(mmap_fn)dlsym(RTLD_NEXT, "mmap");
-		assert(orig_mmap_fn != nullptr);
-		assert(orig_mmap64_fn != nullptr);
-		orig_openat_fn = (openat_fn)dlsym(RTLD_NEXT, "openat");
-		assert(orig_openat_fn != nullptr);
-		orig_open_fn = (open_fn)dlsym(RTLD_NEXT, "open");
-		assert(orig_open_fn != nullptr);
-		orig_read_fn = (read_fn)dlsym(RTLD_NEXT, "read");
-		assert(orig_read_fn != nullptr);
-		orig_fopen_fn = (fopen_fn)dlsym(RTLD_NEXT, "fopen");
+			resolve_original<mmap_fn>("mmap");
+		orig_openat_fn = resolve_original<openat_fn>("openat");
+		orig_open_fn = resolve_original<open_fn>("open");
+		orig_read_fn = resolve_original<read_fn>("read");
+		orig_fopen_fn =
+			reinterpret_cast<fopen_fn>(dlsym(RTLD_NEXT, "fopen"));
 		if (orig_fopen_fn == nullptr)
-			orig_fopen_fn = (fopen_fn)dlsym(RTLD_NEXT, "fopen64");
-		assert(orig_fopen_fn != nullptr);
+			orig_fopen_fn = resolve_original<fopen_fn>("fopen64");
 
 		// To avoid polluting other child processes,
 		// unset the LD_PRELOAD env var after syscall context being
 		// initialized
 		unsetenv("LD_PRELOAD");
-		// Keep this log allocation-free. spdlog/fmt may throw in extremely
-		// early init paths (and will print "[*** LOG ERROR ***]").
+		// Keep this log allocation-free. spdlog/fmt may throw in
+		// extremely early init paths (and will print "[*** LOG ERROR
+		// ***]").
 		SPDLOG_DEBUG("Resolved original libc function pointers");
 	}
 
@@ -142,7 +137,7 @@ class syscall_context {
 	// try loading the bpf syscall helpers.
 	// if the syscall original function is not prepared, it will cause a
 	// segfault.
-	void try_startup();
+	bool try_startup() noexcept;
 
 	// enable userspace eBPF runing with kernel eBPF.
 	bool run_with_kernel = false;
@@ -160,6 +155,12 @@ class syscall_context {
 	std::atomic<bool> initializing_cuda{ false };
 	// Whether enable mock after syscall server has been initialized
 	std::atomic<bool> enable_mock_after_initialized{ true };
+	void disable_mocking() noexcept
+	{
+		enable_mock.store(false, std::memory_order_relaxed);
+		enable_mock_after_initialized.store(false,
+						    std::memory_order_relaxed);
+	}
 	syscall_context();
 	virtual ~syscall_context()
 	{

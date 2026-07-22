@@ -14,6 +14,7 @@ target_include_directories(bpftime_text_segment_transformer
     PRIVATE
     ${FRIDA_GUM_INSTALL_DIR}
     ${SPDLOG_INCLUDE}
+    ${CMAKE_SOURCE_DIR}/runtime/include
 )
 
 if (${TEST_LCOV}) 
