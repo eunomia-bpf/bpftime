@@ -1,9 +1,5 @@
 [Bb]uild*/*
 [Dd]ocs/*
-!docs/reviews/
-!docs/reviews/**
-!Docs/reviews/
-!Docs/reviews/**
 CMakeCache.*
 CMakeFiles/*
 [Tt]esting/*
@@ -66,4 +62,3 @@ example/attach_implementation/benchmark/wasm-micro-runtime/
 
 build
 target
-
