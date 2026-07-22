@@ -195,6 +195,15 @@ void bpftime_object_close(bpftime_object *obj)
 	return;
 }
 
+static int libbpf_print_fn(enum libbpf_print_level level, const char *format,
+			   va_list args)
+{
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wformat-nonliteral"
+	return vfprintf(stderr, format, args);
+#pragma clang diagnostic pop
+}
+
 // The execution unit or bpf function.
 class bpftime_prog;
 // find the program by section name
