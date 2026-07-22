@@ -760,6 +760,40 @@ extern "C" void **__cudaRegisterFatBinary(void *fatbin)
 extern "C" void bpftime_agent_main(const gchar *data, gboolean *stay_resident)
 {
 	configure_agent_logger();
+	bool owns_initialization = false;
+	bool shm_initialized = false;
+	bool recorded_alive_pid = false;
+	bool ctx_constructed = false;
+	auto init_fail = [&]() noexcept {
+		if (!owns_initialization)
+			return;
+		if (ctx_constructed) {
+			try {
+				ctx_holder.destroy();
+			} catch (...) {
+			}
+			ctx_constructed = false;
+		}
+		global_ctx_constructed.store(false,
+					     std::memory_order_release);
+		if (recorded_alive_pid) {
+			try {
+				shm_holder.global_shared_memory
+					.remove_pid_from_alive_agent_set(getpid());
+			} catch (...) {
+			}
+			recorded_alive_pid = false;
+		}
+		if (shm_initialized) {
+			try {
+				bpftime_destroy_global_shm();
+			} catch (...) {
+			}
+			shm_initialized = false;
+		}
+		__atomic_store_n(&initialized, 0, __ATOMIC_SEQ_CST);
+		owns_initialization = false;
+	};
 	try {
 #ifdef __linux__
 			// If an agent IPC server is already present in this process,
@@ -782,24 +816,6 @@ extern "C" void bpftime_agent_main(const gchar *data, gboolean *stay_resident)
 			}
 
 			bool force_reinit = parse_force_reinit(data);
-			bool recorded_alive_pid = false;
-			bool ctx_constructed = false;
-			auto init_fail = [&]() {
-				if (ctx_constructed) {
-					ctx_holder.destroy();
-					ctx_constructed = false;
-				}
-				global_ctx_constructed.store(false,
-							     std::memory_order_release);
-				if (recorded_alive_pid) {
-					shm_holder.global_shared_memory
-						.remove_pid_from_alive_agent_set(
-							getpid());
-					recorded_alive_pid = false;
-				}
-				__atomic_store_n(&initialized, 0,
-						 __ATOMIC_SEQ_CST);
-			};
 			{
 				int expected = 0;
 				if (!__atomic_compare_exchange_n(
@@ -819,6 +835,7 @@ extern "C" void bpftime_agent_main(const gchar *data, gboolean *stay_resident)
 						*stay_resident = TRUE;
 					return;
 				}
+				owns_initialization = true;
 			}
 
 			SPDLOG_DEBUG("Entered bpftime_agent_main");
@@ -853,6 +870,7 @@ extern "C" void bpftime_agent_main(const gchar *data, gboolean *stay_resident)
 				init_fail();
 				return;
 			}
+			shm_initialized = true;
 			auto &runtime_config = bpftime_get_agent_config();
 			bpftime_set_logger(std::string(
 				runtime_config.get_logger_output_path()));
@@ -960,6 +978,8 @@ extern "C" void bpftime_agent_main(const gchar *data, gboolean *stay_resident)
 				init_fail();
 				return;
 			}
+			owns_initialization = false;
+			shm_initialized = false;
 
 			// Start IPC control plane for repeat attach/refresh (used by
 			// `bpftime trace`).
@@ -1028,14 +1048,14 @@ extern "C" void bpftime_agent_main(const gchar *data, gboolean *stay_resident)
 					     ex.what());
 			} catch (...) {
 			}
-			__atomic_store_n(&initialized, 0, __ATOMIC_SEQ_CST);
-	} catch (...) {
+			init_fail();
+		} catch (...) {
 			try {
 				SPDLOG_ERROR(
 					"bpftime_agent_main failed with an unknown error");
 			} catch (...) {
 			}
-			__atomic_store_n(&initialized, 0, __ATOMIC_SEQ_CST);
+			init_fail();
 		}
 }
 
