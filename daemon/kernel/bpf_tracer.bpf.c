@@ -135,14 +135,14 @@ struct {
 	__type(value, struct bpf_args_t);
 } bpf_param_start SEC(".maps");
 
-static bool should_modify_program(union bpf_attr *new_attr)
+static bool should_modify_program(unsigned int insn_cnt, unsigned int prog_type)
 {
-	if (new_attr->insn_cnt < 2 || !enable_replace_prog) {
+	if (insn_cnt < 2 || !enable_replace_prog) {
 		return false;
 	}
 	// Only target BPF_PROG_TYPE_KPROBE and BPF_PROG_TYPE_TRACEPOINT
-	if (new_attr->prog_type != BPF_PROG_TYPE_KPROBE &&
-	    new_attr->prog_type != BPF_PROG_TYPE_TRACEPOINT) {
+	if (prog_type != BPF_PROG_TYPE_KPROBE &&
+	    prog_type != BPF_PROG_TYPE_TRACEPOINT) {
 		return false;
 	}
 	return true;
@@ -151,11 +151,14 @@ static bool should_modify_program(union bpf_attr *new_attr)
 static int process_bpf_prog_load_events(union bpf_attr *attr)
 {
 	unsigned int insn_cnt;
+	unsigned int prog_type;
 	void *insns;
 	union bpf_attr new_attr = { 0 };
-	bpf_probe_read(&new_attr, sizeof(new_attr), attr);
+	long attr_read_result =
+		bpf_probe_read_user(&new_attr, sizeof(new_attr), attr);
 
 	insn_cnt = BPF_CORE_READ_USER(attr, insn_cnt);
+	prog_type = BPF_CORE_READ_USER(attr, prog_type);
 	insns = (void *)BPF_CORE_READ_USER(attr, insns);
 	bpf_printk("insns: %p cnt %d\n", insns, insn_cnt);
 
@@ -177,8 +180,7 @@ static int process_bpf_prog_load_events(union bpf_attr *attr)
 		}
 		event->type = BPF_PROG_LOAD_EVENT;
 		event->bpf_loaded_prog.insn_cnt = insn_cnt;
-		event->bpf_loaded_prog.type =
-			BPF_CORE_READ_USER(attr, prog_type);
+		event->bpf_loaded_prog.type = prog_type;
 		event->bpf_loaded_prog.insns_ptr = (u64)insns;
 		// copy name of the program
 		*((__uint128_t *)&event->bpf_loaded_prog.prog_name) =
@@ -187,7 +189,8 @@ static int process_bpf_prog_load_events(union bpf_attr *attr)
 		bpf_ringbuf_submit(event, 0);
 	}
 
-	if (should_modify_program(&new_attr)) {
+	if (attr_read_result == 0 &&
+	    should_modify_program(insn_cnt, prog_type)) {
 		struct bpf_insn trival_prog_insns[] = {
 			BPF_MOV64_IMM(BPF_REG_0, 0),
 			BPF_EXIT_INSN(),

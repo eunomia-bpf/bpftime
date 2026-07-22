@@ -4,6 +4,7 @@
 #include "common_def.hpp"
 #include <atomic>
 #include <boost/interprocess/managed_shared_memory.hpp>
+#include <cerrno>
 #include <cstring>
 #include <string>
 #include <thread>
@@ -184,4 +185,27 @@ TEST_CASE("Software perf event producer shards rotate after mmap resize",
 	REQUIRE(actual.producer == payload.producer);
 	REQUIRE(actual.sequence == payload.sequence);
 	REQUIRE(tail + record_header.size == head);
+}
+
+TEST_CASE("Software perf event mmap reports shared memory exhaustion",
+	  "[perf_event][software_perf_event]")
+{
+	const std::string shared_memory_name =
+		"SoftwarePerfEventExhaustionTestShm-" +
+		std::to_string(getpid());
+	const size_t shared_memory_size = 1024 * 1024;
+	shm_remove remover{ std::string(shared_memory_name) };
+
+	boost::interprocess::managed_shared_memory shm(
+		boost::interprocess::create_only, shared_memory_name.c_str(),
+		shared_memory_size);
+
+	auto *perf = shm.construct<bpftime::software_perf_event_data>(
+		"perf")(0, 0, 0, shm);
+	REQUIRE(perf != nullptr);
+
+	const size_t ring_size = 2 * 1024 * 1024;
+	errno = 0;
+	REQUIRE(perf->ensure_mmap_buffer(getpagesize() + ring_size) == nullptr);
+	REQUIRE(errno == ENOMEM);
 }
