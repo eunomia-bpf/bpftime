@@ -318,12 +318,12 @@ uint64_t bpftime_ktime_get_coarse_ns(uint64_t, uint64_t, uint64_t, uint64_t,
 uint64_t bpftime_ktime_get_boot_ns(uint64_t, uint64_t, uint64_t, uint64_t,
 				   uint64_t)
 {
-	timespec spec;
+	timespec spec{};
 #ifdef CLOCK_BOOTTIME
-	clock_gettime(CLOCK_BOOTTIME, &spec);
-#else
-	clock_gettime(CLOCK_MONOTONIC, &spec);
+	if (clock_gettime(CLOCK_BOOTTIME, &spec) == 0)
+		return spec.tv_sec * (uint64_t)1000000000 + spec.tv_nsec;
 #endif
+	clock_gettime(CLOCK_MONOTONIC, &spec);
 	return spec.tv_sec * (uint64_t)1000000000 + spec.tv_nsec;
 }
 
