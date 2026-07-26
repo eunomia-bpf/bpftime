@@ -315,6 +315,18 @@ uint64_t bpftime_ktime_get_coarse_ns(uint64_t, uint64_t, uint64_t, uint64_t,
 	return spec.tv_sec * (uint64_t)1000000000 + spec.tv_nsec;
 }
 
+uint64_t bpftime_ktime_get_boot_ns(uint64_t, uint64_t, uint64_t, uint64_t,
+				   uint64_t)
+{
+	timespec spec;
+#ifdef CLOCK_BOOTTIME
+	clock_gettime(CLOCK_BOOTTIME, &spec);
+#else
+	clock_gettime(CLOCK_MONOTONIC, &spec);
+#endif
+	return spec.tv_sec * (uint64_t)1000000000 + spec.tv_nsec;
+}
+
 uint64_t bpftime_get_current_pid_tgid(uint64_t, uint64_t, uint64_t, uint64_t,
 				      uint64_t)
 {
@@ -1213,6 +1225,12 @@ bpftime_helper_group::get_kernel_utils_helper_group()
 			    .index = BPF_FUNC_ktime_get_ns,
 			    .name = "bpf_ktime_get_ns",
 			    .fn = (void *)bpftime_ktime_get_ns,
+		    } },
+		  { BPF_FUNC_ktime_get_boot_ns,
+		    bpftime_helper_info{
+			    .index = BPF_FUNC_ktime_get_boot_ns,
+			    .name = "bpf_ktime_get_boot_ns",
+			    .fn = (void *)bpftime_ktime_get_boot_ns,
 		    } },
 		  { BPF_FUNC_trace_printk,
 		    bpftime_helper_info{
