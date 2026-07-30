@@ -36,7 +36,7 @@ endif()
 
 if(${BPFTIME_ENABLE_CUDA_ATTACH})
   add_dependencies(bpftime-agent bpftime_llvm_vm llvmbpf_vm bpftime_vm)
-  target_link_options(bpftime-agent PUBLIC "-Wl,--whole-archive" "$<TARGET_FILE:bpftime_nv_attach_impl>" "$<TARGET_FILE:bpftime_llvm_vm>" "$<TARGET_FILE:bpftime_vm>" "$<TARGET_FILE:llvmbpf_vm>" "-Wl,--no-whole-archive")
+  target_link_options(bpftime-agent PUBLIC "-Wl,--whole-archive" "$<TARGET_FILE:bpftime_nv_attach_impl>" "$<TARGET_FILE:bpftime_vm>" "$<TARGET_FILE:llvmbpf_vm>" "-Wl,--no-whole-archive")
   target_link_libraries(bpftime-agent PUBLIC bpftime_nv_attach_impl)
   target_include_directories(bpftime-agent PUBLIC ${NV_ATTACH_IMPL_INCLUDE})
   set(EXTRA_LINK_LIBS bpftime_llvm_vm
