@@ -90,6 +90,7 @@ jobs:
             -DBPFTIME_BUILD_WITH_LIBBPF=OFF \
             -DBUILD_BPFTIME_DAEMON=OFF \
             -DBPFTIME_ENABLE_UNIT_TESTING=OFF \
+            -DBPFTIME_ENABLE_LTO=YES \
             -DENABLE_EBPF_VERIFIER=OFF
 
       - name: Build without libbpf
