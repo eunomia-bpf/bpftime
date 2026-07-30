@@ -6,6 +6,7 @@
 #include <boost/interprocess/managed_shared_memory.hpp>
 #include <cerrno>
 #include <cstring>
+#include <limits>
 #include <string>
 #include <thread>
 #include <unistd.h>
@@ -142,6 +143,21 @@ TEST_CASE("Software perf event buffers shard concurrent producers by thread",
 	for (int count : seen) {
 		REQUIRE(count == 1);
 	}
+
+	constexpr size_t max_payload_size =
+		std::numeric_limits<uint16_t>::max() -
+		sizeof(bpftime::perf_sample_raw) - (sizeof(uint64_t) - 1);
+	std::vector<uint8_t> boundary_payload(max_payload_size + 1);
+	const uint64_t head_before_boundary = header->data_head;
+	REQUIRE(perf->output_data(boundary_payload.data(), max_payload_size) ==
+		0);
+	REQUIRE(perf->has_data());
+	REQUIRE(header->data_head - head_before_boundary ==
+		aligned_perf_record_size(max_payload_size));
+	errno = 0;
+	REQUIRE(perf->output_data(boundary_payload.data(),
+				  boundary_payload.size()) == -1);
+	REQUIRE(errno == E2BIG);
 }
 
 TEST_CASE("Software perf event records wrap on aligned boundaries after resize",
