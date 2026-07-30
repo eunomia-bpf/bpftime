@@ -306,12 +306,16 @@ bool software_perf_event_buffer::append_record(const void *record,
 bool software_perf_event_buffer::append_record_parts(const void *first,
 						     size_t first_size,
 						     const void *second,
-						     size_t second_size)
+						     size_t second_size,
+						     size_t padding_size)
 {
-	if (second_size > std::numeric_limits<size_t>::max() - first_size) {
+	if (second_size > std::numeric_limits<size_t>::max() - first_size ||
+	    padding_size > sizeof(uint64_t) ||
+	    padding_size > std::numeric_limits<size_t>::max() - first_size -
+				   second_size) {
 		return false;
 	}
-	const size_t record_size = first_size + second_size;
+	const size_t record_size = first_size + second_size + padding_size;
 	if (mmap_size() == 0 || record_size > mmap_size()) {
 		return false;
 	}
@@ -338,6 +342,11 @@ bool software_perf_event_buffer::append_record_parts(const void *first,
 	if (second_size > 0) {
 		write_wrapped(data_head + first_size, second, second_size);
 	}
+	if (padding_size > 0) {
+		const uint64_t padding = 0;
+		write_wrapped(data_head + first_size + second_size, &padding,
+			      padding_size);
+	}
 	uint64_t new_head = data_head + record_size;
 	smp_store_release_u64(&header.data_head, new_head);
 	SPDLOG_DEBUG(
@@ -353,18 +362,32 @@ bool software_perf_event_buffer::append_sample(const perf_sample_raw &header,
 					       const void *payload,
 					       size_t payload_size)
 {
+	const size_t data_size = sizeof(header) + payload_size;
+	if (header.header.size < data_size) {
+		return false;
+	}
 	return append_record_parts(&header, sizeof(header), payload,
-				   payload_size);
+				   payload_size,
+				   header.header.size - data_size);
 }
 
 int software_perf_event_buffer::output_data(const void *buf, size_t size)
 {
 	SPDLOG_DEBUG("Handling perf event output data with size {}", size);
+	constexpr size_t alignment = sizeof(uint64_t);
+	if (size > std::numeric_limits<uint16_t>::max() -
+			   sizeof(perf_sample_raw) - (alignment - 1)) {
+		errno = E2BIG;
+		return -1;
+	}
+	const size_t record_size =
+		(sizeof(perf_sample_raw) + size + alignment - 1) &
+		~(alignment - 1);
 	perf_sample_raw header;
 	header.header.type = PERF_RECORD_SAMPLE;
-	header.header.size = sizeof(header) + size;
+	header.header.size = record_size;
 	header.header.misc = 0;
-	header.size = size;
+	header.size = record_size - sizeof(header);
 
 	append_sample(header, buf, size);
 	return 0;
