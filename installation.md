@@ -175,6 +175,9 @@ cmake -Bbuild -DCMAKE_BUILD_TYPE:STRING=RelWithDebInfo -DBPFTIME_BUILD_WITH_LIBB
 cmake --build build --config RelWithDebInfo  --target install -j$(JOBS)
 ```
 
+This configuration retains the LLVM JIT runtime but skips the libbpf-dependent
+`bpftime-aot` and `bpftime-vm` command-line tools.
+
 ### Compile with CUDA/GPU attach support
 
 To enable CUDA attach support, set `BPFTIME_ENABLE_CUDA_ATTACH=1` and specify the CUDA installation path:

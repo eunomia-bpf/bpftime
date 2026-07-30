@@ -38,8 +38,6 @@ set_property(TARGET bpftime-aot-cli PROPERTY CXX_STANDARD 20)
 
 target_compile_definitions(bpftime-aot-cli PRIVATE _GNU_SOURCE)
 
-target_link_directories(bpftime-aot-cli PRIVATE ${LLVM_LIBRARY_DIRS})
-
 add_dependencies(bpftime-aot-cli spdlog::spdlog argparse bpftime_vm_compat bpftime_llvm_vm libbpf)
 
 install(TARGETS bpftime-aot-cli CONFIGURATIONS Release Debug RelWithDebInfo DESTINATION ~/.bpftime)

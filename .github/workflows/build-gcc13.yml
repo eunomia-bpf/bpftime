@@ -89,6 +89,7 @@ jobs:
             -DBPFTIME_LLVM_JIT=ON \
             -DBPFTIME_UBPF_JIT=OFF \
             -DBPFTIME_BUILD_WITH_LIBBPF=OFF \
+            -DBPFTIME_BUILD_KERNEL_BPF=OFF \
             -DBUILD_BPFTIME_DAEMON=OFF \
             -DBPFTIME_ENABLE_UNIT_TESTING=OFF \
             -DBPFTIME_ENABLE_LTO=YES \
@@ -96,8 +97,15 @@ jobs:
 
       - name: Build without libbpf
         run: |
-          cmake --build build-no-libbpf -j$(nproc)
+          cmake --build build-no-libbpf --target install -j$(nproc)
           readelf -Ws build-no-libbpf/runtime/agent/libbpftime-agent.so | grep register_llvm_vm_factory
+
+      - name: Verify dual VM factory linkage
+        run: |
+          cmake -S . -B build-no-libbpf -DBPFTIME_UBPF_JIT=ON
+          cmake --build build-no-libbpf --target bpftime-agent -j$(nproc)
+          readelf -Ws build-no-libbpf/runtime/agent/libbpftime-agent.so | grep register_llvm_vm_factory
+          readelf -Ws build-no-libbpf/runtime/agent/libbpftime-agent.so | grep create_ubpf_vm_instance
 
       - name: Configure daemon build and tests
         env:
