@@ -4,10 +4,8 @@
  * All rights reserved.
  */
 
-#if __linux__ && defined(BPFTIME_BUILD_WITH_LIBBPF)
-#include "bpf/bpf.h"
+#if __linux__
 #include "linux/bpf.h"
-#include <bpf/libbpf.h>
 #include <gnu/lib-names.h>
 #include <asm/unistd.h>
 #elif __APPLE__
@@ -25,7 +23,7 @@
 	(offsetof(TYPE, FIELD) + sizeof(((TYPE *)0)->FIELD))
 #endif
 
-#if __linux__ && defined(BPFTIME_BUILD_WITH_LIBBPF)
+#if __linux__
 
 // syscall() function was hooked by syscall server, direct call to it will lead
 // to a result provided by bpftime. So if we want to get things from kernel, we
@@ -135,7 +133,6 @@ void *prog_array_map_impl::elem_lookup(const void *key)
 		current_thread_lookup_val = fd;
 		return &current_thread_lookup_val;
 	}
-#ifdef BPFTIME_BUILD_WITH_LIBBPF
 	int fd = my_bpf_prog_get_fd_by_id(value);
 	if (fd < 0) {
 		SPDLOG_ERROR("Unable to retrieve prog fd of id {}", value);
@@ -145,10 +142,6 @@ void *prog_array_map_impl::elem_lookup(const void *key)
 	SPDLOG_DEBUG("prog array: fd of prog id {} is {}", value, fd);
 	current_thread_lookup_val = fd;
 	return &current_thread_lookup_val;
-#else
-	errno = ENOENT;
-	return nullptr;
-#endif
 }
 
 long prog_array_map_impl::elem_update(const void *key, const void *value,
@@ -166,7 +159,6 @@ long prog_array_map_impl::elem_update(const void *key, const void *value,
 			     k, v);
 		return 0;
 	}
-#ifdef BPFTIME_BUILD_WITH_LIBBPF
 	struct bpf_prog_info info = {};
 	uint32_t len = sizeof(info);
 	int err = my_bpf_obj_get_info_by_fd(v, &info, &len);
@@ -180,10 +172,6 @@ long prog_array_map_impl::elem_update(const void *key, const void *value,
 	SPDLOG_DEBUG("prog array: update slot {} to prog fd {}, id {}", k, v,
 		     info.id);
 	return 0;
-#else
-	errno = EINVAL;
-	return -1;
-#endif
 }
 
 #endif
