@@ -144,7 +144,7 @@ TEST_CASE("Software perf event buffers shard concurrent producers by thread",
 	}
 }
 
-TEST_CASE("Software perf event producer shards rotate after mmap resize",
+TEST_CASE("Software perf event records wrap on aligned boundaries after resize",
 	  "[perf_event][software_perf_event]")
 {
 	const std::string shared_memory_name =
@@ -165,40 +165,38 @@ TEST_CASE("Software perf event producer shards rotate after mmap resize",
 				  sizeof(dropped_before_mmap)) == 0);
 	REQUIRE_FALSE(perf->has_data());
 
-	const size_t ring_size = 64 * 1024;
+	const size_t ring_size = 64;
 	void *raw_buffer = perf->ensure_mmap_buffer(getpagesize() + ring_size);
 	REQUIRE(raw_buffer != nullptr);
 
-	event_payload payload{ 1, 7 };
-	REQUIRE(perf->output_data(&payload, sizeof(payload)) == 0);
-	REQUIRE(perf->has_data());
-
 	auto *header = (perf_event_mmap_page *)raw_buffer;
 	auto *base = (uint8_t *)raw_buffer + getpagesize();
-	uint64_t tail = header->data_tail;
-	uint64_t head = header->data_head;
-	REQUIRE(head > tail);
+	for (int sequence = 0; sequence < 4; sequence++) {
+		event_payload payload{ 1, sequence };
+		REQUIRE(perf->output_data(&payload, sizeof(payload)) == 0);
+		REQUIRE(perf->has_data());
 
-	perf_event_header record_header;
-	copy_from_perf_ring(base, ring_size, tail, &record_header,
-			    sizeof(record_header));
-	REQUIRE(record_header.type == PERF_RECORD_SAMPLE);
-	REQUIRE(record_header.size ==
-		aligned_perf_record_size(sizeof(event_payload)));
+		const uint64_t tail = header->data_tail;
+		const uint64_t head = header->data_head;
+		REQUIRE((tail & (ring_size - 1)) + sizeof(perf_event_header) <=
+			ring_size);
 
-	std::vector<uint8_t> record(record_header.size);
-	copy_from_perf_ring(base, ring_size, tail, record.data(),
-			    record.size());
-	auto *sample = (const bpftime::perf_sample_raw *)record.data();
-	REQUIRE(sample->size ==
-		record_header.size - sizeof(bpftime::perf_sample_raw));
+		perf_event_header record_header;
+		copy_from_perf_ring(base, ring_size, tail, &record_header,
+				    sizeof(record_header));
+		REQUIRE(record_header.type == PERF_RECORD_SAMPLE);
+		REQUIRE(record_header.size ==
+			aligned_perf_record_size(sizeof(event_payload)));
 
-	event_payload actual;
-	memcpy(&actual, record.data() + sizeof(bpftime::perf_sample_raw),
-	       sizeof(actual));
-	REQUIRE(actual.producer == payload.producer);
-	REQUIRE(actual.sequence == payload.sequence);
-	REQUIRE(tail + record_header.size == head);
+		event_payload actual;
+		copy_from_perf_ring(base, ring_size,
+				    tail + sizeof(bpftime::perf_sample_raw),
+				    &actual, sizeof(actual));
+		REQUIRE(actual.producer == payload.producer);
+		REQUIRE(actual.sequence == payload.sequence);
+		REQUIRE(tail + record_header.size == head);
+		header->data_tail = head;
+	}
 }
 
 TEST_CASE("Software perf event mmap reports shared memory exhaustion",
