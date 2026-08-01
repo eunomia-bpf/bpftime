@@ -219,20 +219,19 @@ extern "C" int epoll_create1(int flags)
 		flags);
 }
 
-extern "C" int ioctl(int fd, unsigned long req, ...)
+extern "C" int bpftime_ioctl(int fd, unsigned long req, uintptr_t arg3) noexcept
+	__asm__("ioctl");
+
+extern "C" int bpftime_ioctl(int fd, unsigned long req, uintptr_t arg3) noexcept
 {
 	const int caller_errno = errno;
-	using fn_t = int (*)(int, unsigned long, ...);
-	va_list args;
-	va_start(args, req);
-	void *arg3 = va_arg(args, void *);
-	va_end(args);
+	using fn_t = int (*)(int, unsigned long, uintptr_t);
 	return interpose<fn_t>(
 		"ioctl", -1, caller_errno,
 		[&]() {
 			safe_spdlog_debug("ioctl {} {} {}", fd, req, arg3);
 			return context->handle_ioctl(
-				fd, req, reinterpret_cast<unsigned long>(arg3));
+				fd, req, static_cast<unsigned long>(arg3));
 		},
 		fd, req, arg3);
 }

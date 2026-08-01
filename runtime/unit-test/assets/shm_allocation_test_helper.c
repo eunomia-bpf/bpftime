@@ -11,6 +11,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/ioctl.h>
 #include <sys/mman.h>
 #include <sys/syscall.h>
 #include <unistd.h>
@@ -116,6 +117,21 @@ static int trigger_openat_relative(void)
 	return 0;
 }
 
+static int trigger_ioctl_passthrough(void)
+{
+	errno = 0;
+	if (ioctl(-1, _IO(0xfb, 0x7f)) != -1 || errno != EBADF)
+		return 45;
+	int fds[2];
+	int nonblocking = 1;
+	if (pipe(fds) != 0 || ioctl(fds[0], FIONBIO, &nonblocking) != 0)
+		return 46;
+	int flags = fcntl(fds[0], F_GETFL);
+	close(fds[0]);
+	close(fds[1]);
+	return flags >= 0 && (flags & O_NONBLOCK) != 0 ? 0 : 47;
+}
+
 static int mapping_is_read_exec(void *address)
 {
 	FILE *maps = fopen("/proc/self/maps", "r");
@@ -198,6 +214,9 @@ int main(int argc, char **argv)
 	}
 	if (strcmp(argv[1], "openat-relative") == 0) {
 		return trigger_openat_relative();
+	}
+	if (strcmp(argv[1], "ioctl-passthrough") == 0) {
+		return trigger_ioctl_passthrough();
 	}
 	if (strcmp(argv[1], "passthrough") == 0) {
 		return passthrough_stdio();

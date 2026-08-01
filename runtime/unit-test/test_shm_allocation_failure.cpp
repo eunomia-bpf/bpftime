@@ -158,6 +158,16 @@ TEST_CASE("Syscall server preserves relative openat fallback semantics",
 	REQUIRE(result.output.empty());
 }
 
+TEST_CASE("Syscall server preserves two- and three-argument ioctl calls",
+	  "[preload][syscall_server]")
+{
+	auto result = run_preloaded_helper("ioctl-passthrough",
+					   BPFTIME_SYSCALL_SERVER_LIBRARY);
+	REQUIRE(WIFEXITED(result.status));
+	REQUIRE(WEXITSTATUS(result.status) == 0);
+	REQUIRE(result.output.empty());
+}
+
 TEST_CASE("Syscall server perf mmap reports shared memory exhaustion",
 	  "[allocation][syscall_server]")
 {
