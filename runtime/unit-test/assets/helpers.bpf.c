@@ -19,5 +19,5 @@ int print_and_add1(struct data *d, int sz) {
 	bpf_printk("print_and_add1: %d\n", sz);
 	if (!bpf_ktime_get_boot_ns())
 		return 0;
- 	return 23;
+	return 23;
 }
