@@ -641,7 +641,7 @@ bpftime_shm::bpftime_shm(const char *shm_name, shm_open_type type)
 	: open_type(type)
 {
 	// Get the config from env because the shared memory is not initialized
-	auto config = construct_agent_config_from_env();
+	auto config = construct_runtime_config_from_env();
 	size_t memory_size = config.shm_memory_size;
 	size_t max_fd_count = config.max_fd_count;
 	if (type == shm_open_type::SHM_OPEN_ONLY) {
@@ -656,8 +656,8 @@ bpftime_shm::bpftime_shm(const char *shm_name, shm_open_type type)
 			segment.find<syscall_pid_set>(
 				       DEFAULT_SYSCALL_PID_SET_NAME)
 				.first;
-		agent_config =
-			segment.find<struct agent_config>(
+		runtime_config =
+			segment.find<struct runtime_config>(
 				       bpftime::DEFAULT_AGENT_CONFIG_NAME)
 				.first;
 
@@ -692,7 +692,7 @@ bpftime_shm::bpftime_shm(const char *shm_name, shm_open_type type)
 		SPDLOG_DEBUG(
 			"done: bpftime_shm for server setup: syscall_pid_set");
 
-		agent_config = segment.find_or_construct<struct agent_config>(
+		runtime_config = segment.find_or_construct<struct runtime_config>(
 			bpftime::DEFAULT_AGENT_CONFIG_NAME)(config);
 
 		injected_pids = segment.find_or_construct<alive_agent_pids>(
@@ -731,10 +731,10 @@ bpftime_shm::bpftime_shm(const char *shm_name, shm_open_type type)
 		SPDLOG_DEBUG(
 			"done: bpftime_shm for server setup: syscall_pid_set");
 
-		agent_config = segment.construct<struct agent_config>(
+		runtime_config = segment.construct<struct runtime_config>(
 			bpftime::DEFAULT_AGENT_CONFIG_NAME)(config);
 		SPDLOG_DEBUG(
-			"done: bpftime_shm for server setup: agent_config");
+			"done: bpftime_shm for server setup: runtime_config");
 
 		injected_pids = segment.construct<alive_agent_pids>(
 			bpftime::DEFAULT_ALIVE_AGENT_PIDS_NAME)(
@@ -790,7 +790,7 @@ bpftime_shm::bpftime_shm(const char *shm_name, shm_open_type type)
 		}
 	}
 #endif
-	// local_agent_config.emplace(segment);
+	// local_runtime_config.emplace(segment);
 
 #if BPFTIME_ENABLE_MPK
 	// init mpk key
@@ -965,36 +965,36 @@ bool bpftime_shm::is_software_perf_event_handler_fd(int fd) const
 
 // local agent config can be used for test or local process
 
-void bpftime_shm::set_agent_config(struct agent_config &&config)
+void bpftime_shm::set_runtime_config(struct runtime_config &&config)
 {
-	if (agent_config == nullptr) {
+	if (runtime_config == nullptr) {
 		SPDLOG_INFO(
-			"global agent_config is nullptr, set current process config");
-		local_agent_config.emplace(std::move(config));
+			"global runtime_config is nullptr, set current process config");
+		local_runtime_config.emplace(std::move(config));
 		return;
 	}
 
-	agent_config->~agent_config();
-	std::construct_at(agent_config, std::move(config));
+	runtime_config->~runtime_config();
+	std::construct_at(runtime_config, std::move(config));
 }
 
-const struct agent_config &bpftime_shm::get_agent_config()
+const struct runtime_config &bpftime_shm::get_runtime_config()
 {
-	if (agent_config == nullptr) {
+	if (runtime_config == nullptr) {
 		SPDLOG_DEBUG("use current process config");
-		return *local_agent_config;
+		return *local_runtime_config;
 	}
-	return *agent_config;
+	return *runtime_config;
 }
 
-const bpftime::agent_config &bpftime_get_agent_config()
+const bpftime::runtime_config &bpftime_get_runtime_config()
 {
-	return shm_holder.global_shared_memory.get_agent_config();
+	return shm_holder.global_shared_memory.get_runtime_config();
 }
 
-void bpftime_set_agent_config(bpftime::agent_config &&cfg)
+void bpftime_set_runtime_config(bpftime::runtime_config &&cfg)
 {
-	shm_holder.global_shared_memory.set_agent_config(std::move(cfg));
+	shm_holder.global_shared_memory.set_runtime_config(std::move(cfg));
 }
 
 std::optional<void *>

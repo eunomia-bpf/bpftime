@@ -21,11 +21,11 @@ static const char *ebpf_prog_path = TOSTRING(EBPF_PROGRAM_PATH_UPROBE);
 
 TEST_CASE("Test probing internal functions")
 {
-	bpftime::agent_config config;
+	bpftime::runtime_config config;
 	config.set_vm_name("llvm");
 	REQUIRE(__bpftime_test_uprobe_with_ebpf__my_function(1, "hello aaa",
 							     'c') == 35);
-	bpftime::shm_holder.global_shared_memory.set_agent_config(std::move(config));
+	bpftime::shm_holder.global_shared_memory.set_runtime_config(std::move(config));
 	std::unique_ptr<bpftime_object, decltype(&bpftime_object_close)> obj(
 		bpftime_object_open(ebpf_prog_path),
 		bpftime_object_close);

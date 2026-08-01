@@ -230,8 +230,8 @@ int main(int argc, char *argv[])
 		}
 		bpftime_initialize_global_shm(
 			shm_open_type::SHM_CREATE_OR_OPEN);
-		auto agent_config = bpftime::construct_agent_config_from_env();
-		bpftime_set_agent_config(std::move(agent_config));
+		auto runtime_config = bpftime::construct_runtime_config_from_env();
+		bpftime_set_runtime_config(std::move(runtime_config));
 		auto filename = std::string(argv[2]);
 		return bpftime_import_global_shm_from_json(filename.c_str());
 	} else if (cmd == "remove") {
@@ -308,7 +308,7 @@ int main(int argc, char *argv[])
         }
 		try {
 			bpftime_initialize_global_shm(shm_open_type::SHM_OPEN_ONLY);
-			auto &runtime_config = bpftime_get_agent_config();
+			auto &runtime_config = bpftime_get_runtime_config();
 			bpftime_set_logger(
 				std::string(runtime_config.get_logger_output_path()));
 			bpf_attach_ctx ctx;

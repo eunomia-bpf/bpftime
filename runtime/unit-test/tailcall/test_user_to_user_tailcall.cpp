@@ -52,7 +52,7 @@ TEST_CASE("Test tail calling from userspace to userspace")
 		BPF_EXIT_INSN(),
 	};
 
-	bpftime::agent_config config;
+	bpftime::runtime_config config;
 	config.set_vm_name("llvm");
 	bpftime_prog prog((const ebpf_inst *)caller_insn,
 			  sizeof(caller_insn) / sizeof(caller_insn[0]),

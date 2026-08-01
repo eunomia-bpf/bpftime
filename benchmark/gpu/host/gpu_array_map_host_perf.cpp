@@ -116,10 +116,10 @@ int main(int argc, char **argv)
 	bpftime_initialize_global_shm(
 		bpftime::shm_open_type::SHM_REMOVE_AND_CREATE);
 
-	auto config = bpftime::bpftime_get_agent_config();
+	auto config = bpftime::bpftime_get_runtime_config();
 	config.enable_gpu_gdrcopy = opt.enable_gdrcopy;
 	config.gpu_gdrcopy_max_per_key_bytes = opt.gdrcopy_max_per_key_bytes;
-	bpftime::bpftime_set_agent_config(std::move(config));
+	bpftime::bpftime_set_runtime_config(std::move(config));
 
 	bpftime::bpf_map_attr attr{};
 	attr.type =
