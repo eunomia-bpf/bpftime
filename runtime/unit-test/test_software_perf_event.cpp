@@ -114,14 +114,10 @@ TEST_CASE("Software perf event buffers shard concurrent producers by thread",
 		REQUIRE(record_header.size ==
 			aligned_perf_record_size(sizeof(event_payload)));
 
-		std::vector<uint8_t> record(record_header.size);
-		copy_from_perf_ring(base, ring_size, tail, record.data(),
-				    record.size());
-
 		event_payload payload;
-		memcpy(&payload,
-		       record.data() + sizeof(bpftime::perf_sample_raw),
-		       sizeof(payload));
+		copy_from_perf_ring(base, ring_size,
+				    tail + sizeof(bpftime::perf_sample_raw),
+				    &payload, sizeof(payload));
 		REQUIRE(payload.producer >= 0);
 		REQUIRE(payload.producer < producer_count);
 		REQUIRE(payload.sequence >= 0);
