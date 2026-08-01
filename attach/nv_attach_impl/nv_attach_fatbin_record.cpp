@@ -214,7 +214,8 @@ std::map<std::string, std::vector<uint8_t>> fatbin_record::compile_ptxs(
 
 	std::map<std::string, std::vector<uint8_t>> compiled_ptx;
 	const auto &handler = impl.ptx_compiler;
-	boost::asio::thread_pool pool(std::thread::hardware_concurrency());
+	boost::asio::thread_pool pool(
+		std::max(1u, std::thread::hardware_concurrency()));
 	std::mutex map_lock;
 	std::vector<std::future<void>> compile_tasks;
 	for (const auto &[name, ptx_and_trampoline_flag] : patched_ptx) {

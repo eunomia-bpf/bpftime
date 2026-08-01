@@ -1657,8 +1657,11 @@ void nv_attach_impl::clear_patched_state_for_next_session()
 					device.module_pool->clear();
 			}
 		}
-		if (ptx_pool)
-			ptx_pool->clear();
+		{
+			std::lock_guard<std::mutex> g(ptx_pool_mutex_);
+			if (ptx_pool)
+				ptx_pool->clear();
+		}
 		{
 			std::lock_guard<std::mutex> g(launch_event_mutex);
 			for (auto &kv : pending_launch_events_by_stream) {
