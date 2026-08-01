@@ -5,7 +5,6 @@
 #include "ptx_compiler/ptx_compiler.hpp"
 #include "ptxpass/core.hpp"
 #include <base_attach_impl.hpp>
-#include <cstddef>
 #include <chrono>
 #include <cstdint>
 #include <cuda_runtime.h>
@@ -37,9 +36,7 @@ namespace attach
 {
 
 using print_config_fn = void (*)(int length, char *out);
-using process_input_fn = int (*)(const char *ptx_text, size_t ptx_len,
-				 const char *meta_json, int meta_len,
-				 char *output, int output_len);
+using process_input_fn = int (*)(const char *input, int length, char *output);
 
 std::string filter_compiled_ptx_for_ebpf_program(std::string input,
 						 std::string);
@@ -198,7 +195,10 @@ class nv_attach_impl final : public base_attach_impl {
 	find_original_kernel_name(CUfunction function) const;
 
 	/// GPU device manager for multi-GPU support
-	gpu_device_manager &get_device_manager() { return device_manager_; }
+	gpu_device_manager &get_device_manager()
+	{
+		return device_manager_;
+	}
 	const gpu_device_manager &get_device_manager() const
 	{
 		return device_manager_;
@@ -206,8 +206,14 @@ class nv_attach_impl final : public base_attach_impl {
 
 	/// Get the current device ordinal from CUDA context, or 0 as fallback
 	int get_current_device_ordinal() const;
-	std::mutex &get_module_pool_mutex() { return module_pool_mutex_; }
-	std::mutex &get_ptx_pool_mutex() { return ptx_pool_mutex_; }
+	std::mutex &get_module_pool_mutex()
+	{
+		return module_pool_mutex_;
+	}
+	std::mutex &get_ptx_pool_mutex()
+	{
+		return ptx_pool_mutex_;
+	}
 
 	// Late attach support: attempt to discover already-loaded CUDA fatbins
 	// and prefill patched kernel mappings.
@@ -276,7 +282,8 @@ class nv_attach_impl final : public base_attach_impl {
 	mutable std::mutex cuda_symbol_map_mutex;
 	mutable std::mutex module_pool_mutex_;
 	mutable std::mutex ptx_pool_mutex_;
-	// Per-device patched kernel maps: device_ordinal -> (name -> CUfunction)
+	// Per-device patched kernel maps: device_ordinal -> (name ->
+	// CUfunction)
 	std::map<int, std::unordered_map<std::string, CUfunction>>
 		patched_kernel_by_device_;
 	// CUfunction -> kernel_name (CUfunction handles are unique across

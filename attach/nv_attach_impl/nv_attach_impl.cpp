@@ -607,8 +607,7 @@ int nv_attach_impl::get_current_device_ordinal() const
 }
 
 void nv_attach_impl::record_patched_kernel_function(
-	const std::string &kernel_name, CUfunction function,
-	int device_ordinal)
+	const std::string &kernel_name, CUfunction function, int device_ordinal)
 {
 	if (kernel_name.empty() || function == nullptr)
 		return;
@@ -620,17 +619,17 @@ void nv_attach_impl::record_patched_kernel_function(
 	auto itr = device_map.find(kernel_name);
 	if (itr == device_map.end()) {
 		device_map.emplace(kernel_name, function);
-		SPDLOG_DEBUG(
-			"Recorded patched kernel {} on device {}", kernel_name,
-			device_ordinal);
+		SPDLOG_DEBUG("Recorded patched kernel {} on device {}",
+			     kernel_name, device_ordinal);
 		return;
 	}
 	if (itr->second != function)
 		itr->second = function;
 }
 
-std::optional<CUfunction> nv_attach_impl::find_patched_kernel_function(
-	const std::string &kernel_name, int device_ordinal) const
+std::optional<CUfunction>
+nv_attach_impl::find_patched_kernel_function(const std::string &kernel_name,
+					     int device_ordinal) const
 {
 	if (kernel_name.empty())
 		return std::nullopt;
@@ -995,6 +994,7 @@ nv_attach_impl::hack_fatbin(std::map<std::string, std::string> all_ptx)
 					ptxpass::runtime_request::RuntimeRequest
 						req;
 					auto &ri = req.input;
+					ri.full_ptx = current_ptx;
 					ri.to_patch_kernel = kernel;
 					ri.global_ebpf_map_info_symbol =
 						"map_info";
@@ -1008,17 +1008,9 @@ nv_attach_impl::hack_fatbin(std::map<std::string, std::string> all_ptx)
 									  req);
 					auto input_json = in.dump();
 					SPDLOG_DEBUG("Input: {}", input_json);
-					std::string sha256_string =
-						hook_entry.config
-							->pass_config.name;
-					sha256_string.push_back(':');
-					sha256_string += sha256(
-						current_ptx.data(),
-						current_ptx.size());
-					sha256_string.push_back(':');
-					sha256_string += sha256(
-						input_json.data(),
-						input_json.size());
+					auto sha256_string =
+						sha256(input_json.data(),
+						       input_json.size());
 
 					ptxpass::runtime_response::RuntimeResponse
 						resp;
@@ -1061,24 +1053,14 @@ nv_attach_impl::hack_fatbin(std::map<std::string, std::string> all_ptx)
 											int>::
 											max() :
 										(int)buf_bytes;
-								// 6-arg pass entry (#560): PTX is
-								// passed separately from the meta
-								// JSON to avoid embedding the full
-								// PTX in the request payload.
 								int err =
 									hook_entry
 										.config
 										->process_input(
-											current_ptx
-												.data(),
-											current_ptx
-												.size(),
 											input_json
 												.c_str(),
-											(int)input_json
-												.size(),
-											buf.data(),
-											len);
+											len,
+											buf.data());
 								if (err !=
 								    ptxpass::ExitCode::
 									    Success) {
@@ -1124,10 +1106,10 @@ nv_attach_impl::hack_fatbin(std::map<std::string, std::string> all_ptx)
 						patch_cache[sha256_string] =
 							resp;
 					}
-					if (resp.modified) {
-						current_ptx = resp.output_ptx;
-						should_add_trampoline = true;
-					}
+					current_ptx = resp.output_ptx;
+					should_add_trampoline =
+						should_add_trampoline ||
+						resp.modified;
 				}
 			}
 			if (should_add_trampoline) {
@@ -1347,21 +1329,8 @@ int nv_attach_impl::run_attach_entry_on_gpu(int attach_id, int run_count,
 			size_t bytes;
 			CUDA_SAFE_CALL(cuModuleGetGlobal(&ptr, &bytes, module,
 							 "constData"));
-			// Use per-device shared_mem_ptr if available
-			uintptr_t device_shared_mem_ptr = this->shared_mem_ptr;
-			if (device_manager_.device_count() > 0 &&
-			    device_ordinal < device_manager_.device_count()) {
-				auto &dev_info =
-					device_manager_.get_device(
-						device_ordinal);
-				if (dev_info.shared_mem_device_ptr != 0) {
-					device_shared_mem_ptr =
-						dev_info.shared_mem_device_ptr;
-				}
-			}
-			CUDA_SAFE_CALL(
-				cuMemcpyHtoD(ptr, &device_shared_mem_ptr,
-					     sizeof(device_shared_mem_ptr)));
+			CUDA_SAFE_CALL(cuMemcpyHtoD(ptr, &shared_mem_ptr,
+						    sizeof(shared_mem_ptr)));
 			SPDLOG_INFO(
 				"shared_mem_ptr copied: device ptr {:x}, device size {} (device {})",
 				(uintptr_t)ptr, bytes, device_ordinal);
@@ -1369,12 +1338,11 @@ int nv_attach_impl::run_attach_entry_on_gpu(int attach_id, int run_count,
 			CUdeviceptr dev_ord_ptr;
 			size_t dev_ord_size;
 			if (cuModuleGetGlobal(&dev_ord_ptr, &dev_ord_size,
-					      module,
-					      "deviceOrdinal") ==
+					      module, "deviceOrdinal") ==
 			    CUDA_SUCCESS) {
 				uint32_t ord = (uint32_t)device_ordinal;
-				CUDA_SAFE_CALL(cuMemcpyHtoD(
-					dev_ord_ptr, &ord, sizeof(ord)));
+				CUDA_SAFE_CALL(cuMemcpyHtoD(dev_ord_ptr, &ord,
+							    sizeof(ord)));
 			}
 		}
 		{
@@ -1422,13 +1390,11 @@ void nv_attach_impl::mirror_cuda_memcpy_to_symbol(
 	if (auto record_itr = symbol_address_to_fatbin.find((void *)symbol);
 	    record_itr != symbol_address_to_fatbin.end()) {
 		auto &record = *record_itr->second;
+		const int device_ordinal = get_current_device_ordinal();
 		record.ensure_variable_info(*this, (void *)symbol,
-					    get_current_device_ordinal());
-		auto var_itr = record.variable_addr_to_symbol.find(
-			{ get_current_device_ordinal(), (void *)symbol });
-		if (var_itr != record.variable_addr_to_symbol.end()) {
-			resolved_var = var_itr->second;
-		}
+					    device_ordinal);
+		resolved_var = record.find_variable_info((void *)symbol,
+							 device_ordinal);
 	}
 
 	if (!resolved_var) {

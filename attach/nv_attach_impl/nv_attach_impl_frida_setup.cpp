@@ -4,7 +4,6 @@
 #include "driver_types.h"
 #include "spdlog/spdlog.h"
 #include "vector_types.h"
-#include <chrono>
 #include <algorithm>
 #include <cassert>
 #include <cstddef>
@@ -166,18 +165,12 @@ cuda_launch_kernel_common(nv_attach_impl *impl, void *original_fn_ptr,
 	if (auto itr1 = impl->symbol_address_to_fatbin.find((void *)func);
 	    itr1 != impl->symbol_address_to_fatbin.end()) {
 		const auto &fatbin = *itr1->second;
-		auto handle =
-			std::find_if(fatbin.function_addr_to_symbol.begin(),
-				     fatbin.function_addr_to_symbol.end(),
-				     [func](const auto &entry) {
-					     return entry.first.second ==
-						    (void *)func;
-				     });
-		if (handle == fatbin.function_addr_to_symbol.end())
+		auto handle = fatbin.find_function_info((void *)func);
+		if (!handle)
 			return original(func, grid_dim, block_dim, args,
 					shared_mem, stream);
 		auto patched = impl->ensure_patched_kernel_function(
-			handle->second.symbol_name);
+			handle->symbol_name);
 		if (!patched)
 			return original(func, grid_dim, block_dim, args,
 					shared_mem, stream);
@@ -267,7 +260,6 @@ static void example_listener_on_enter(GumInvocationListener *listener,
 		GUM_IC_GET_FUNC_DATA(ic, CUDARuntimeFunctionHookerContext *);
 	if (context->to_function == AttachedToFunction::RegisterFatbin) {
 		SPDLOG_DEBUG("Entering __cudaRegisterFatBinary..");
-		const auto extract_start = std::chrono::steady_clock::now();
 
 		auto header = (__fatBinC_Wrapper_t *)
 			gum_invocation_context_get_nth_argument(gum_ctx, 0);
@@ -294,13 +286,6 @@ static void example_listener_on_enter(GumInvocationListener *listener,
 		SPDLOG_INFO("Finally size = {}", data_vec.size());
 		auto extracted_ptx =
 			context->impl->extract_ptxs(std::move(data_vec));
-		const auto extract_elapsed =
-			std::chrono::duration_cast<std::chrono::milliseconds>(
-				std::chrono::steady_clock::now() - extract_start)
-				.count();
-		SPDLOG_DEBUG(
-			"GPU attach timing: fatbin extract took {} ms and yielded {} PTX files",
-			extract_elapsed, extracted_ptx.size());
 		SPDLOG_INFO("Patching PTXs");
 		auto fatbin_record = std::make_unique<struct fatbin_record>();
 		fatbin_record->original_ptx = extracted_ptx;
@@ -334,13 +319,11 @@ static void example_listener_on_enter(GumInvocationListener *listener,
 			context->impl->symbol_address_to_fatbin[func_addr] =
 				current_fatbin;
 			int dev_ord = impl.get_current_device_ordinal();
-			if (auto itr = current_fatbin->function_addr_to_symbol
-					       .find({ dev_ord, func_addr });
-			    itr !=
-			    current_fatbin->function_addr_to_symbol.end()) {
+			if (auto info = current_fatbin->find_function_info(
+				    func_addr, dev_ord)) {
 				impl.record_patched_kernel_function(
-					std::string(symbol_name),
-					itr->second.func, dev_ord);
+					std::string(symbol_name), info->func,
+					dev_ord);
 			}
 			SPDLOG_DEBUG(
 				"Registered kernel function name {} addr {:x}",
@@ -910,33 +893,32 @@ static cudaError_t mirror_cuda_memcpy_from_symbol(
 		return cudaErrorUnknown;
 	}
 	auto &record = *record_itr->second;
-	record.ensure_variable_info(*impl, (void *)symbol,
-				    impl->get_current_device_ordinal());
-	auto var_itr = record.variable_addr_to_symbol.find(
-		{ impl->get_current_device_ordinal(), (void *)symbol });
-	if (var_itr == record.variable_addr_to_symbol.end()) {
+	const int device_ordinal = impl->get_current_device_ordinal();
+	record.ensure_variable_info(*impl, (void *)symbol, device_ordinal);
+	auto var_info =
+		record.find_variable_info((void *)symbol, device_ordinal);
+	if (!var_info) {
 		SPDLOG_DEBUG(
 			"mirror_cuda_memcpy_from_symbol: no variable info for symbol pointer {:x}",
 			(uintptr_t)symbol);
 		return cudaErrorUnknown;
 	}
-	auto &var_info = var_itr->second;
-	if (offset >= var_info.size) {
+	if (offset >= var_info->size) {
 		SPDLOG_WARN(
 			"mirror_cuda_memcpy_from_symbol: offset {} exceeds size {} for symbol {}",
-			offset, var_info.size, var_info.symbol_name);
+			offset, var_info->size, var_info->symbol_name);
 		return cudaErrorUnknown;
 	}
-	size_t writable = var_info.size - offset;
+	size_t writable = var_info->size - offset;
 	size_t bytes_to_copy = std::min(count, writable);
 	if (bytes_to_copy == 0)
 		return cudaErrorUnknown;
 	if (bytes_to_copy != count) {
 		SPDLOG_WARN(
 			"mirror_cuda_memcpy_from_symbol: truncating copy for symbol {} (requested={}, allowed={})",
-			var_info.symbol_name, count, bytes_to_copy);
+			var_info->symbol_name, count, bytes_to_copy);
 	}
-	CUdeviceptr src = var_info.ptr + offset;
+	CUdeviceptr src = var_info->ptr + offset;
 	CUstream cu_stream = reinterpret_cast<CUstream>(stream);
 	CUresult status = CUDA_SUCCESS;
 
@@ -961,13 +943,13 @@ static cudaError_t mirror_cuda_memcpy_from_symbol(
 	default:
 		SPDLOG_DEBUG(
 			"mirror_cuda_memcpy_from_symbol: unsupported memcpy kind {} for symbol {}",
-			(int)kind, var_info.symbol_name);
+			(int)kind, var_info->symbol_name);
 		return cudaErrorUnknown;
 	}
 	if (status != CUDA_SUCCESS) {
 		SPDLOG_WARN(
 			"mirror_cuda_memcpy_from_symbol: failed to copy symbol {} (err={})",
-			var_info.symbol_name, (int)status);
+			var_info->symbol_name, (int)status);
 		return cudaErrorUnknown;
 	}
 	return cudaSuccess;

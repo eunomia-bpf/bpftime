@@ -518,8 +518,8 @@ _bpf_helper_ext_0511(uint64_t, uint64_t, uint64_t, uint64_t, uint64_t)
 extern "C" __noinline__ __device__ uint64_t
 _bpf_helper_ext_0512(uint64_t, uint64_t, uint64_t, uint64_t, uint64_t)
 {
-    // get device ordinal (set per-module during loading)
-    return (uint64_t)deviceOrdinal;
+	// get device ordinal (set per-module during loading)
+	return (uint64_t)deviceOrdinal;
 }
 
 extern "C" __global__ void bpf_main(void *mem, size_t sz)

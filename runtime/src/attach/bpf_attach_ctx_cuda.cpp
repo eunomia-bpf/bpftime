@@ -393,7 +393,6 @@ std::optional<std::unique_ptr<cuda::CUDAContext>> create_cuda_context()
 	SPDLOG_INFO("CUDA context created");
 	return cuda_ctx;
 }
-
 CUDAContext::~CUDAContext()
 {
 	SPDLOG_INFO("Destructing CUDAContext");
@@ -422,51 +421,4 @@ CUDAContext::CUDAContext(cuda::CommSharedMem *mem)
 }
 
 } // namespace cuda
-
-void bpf_attach_ctx::init_multi_gpu_contexts()
-{
-	auto nv_impl = find_nv_attach_impl();
-	if (!nv_impl.has_value())
-		return;
-
-	auto &dev_manager = (*nv_impl)->get_device_manager();
-	int device_count = dev_manager.device_count();
-
-	if (device_count <= 1) {
-		SPDLOG_INFO(
-			"Single GPU detected, multi-GPU context initialization skipped");
-		// Set device 0’s shared_mem_device_ptr from the primary context
-		if (device_count == 1 && cuda_ctx) {
-			dev_manager.get_device(0).shared_mem_device_ptr =
-				cuda_ctx->cuda_shared_mem_device_pointer;
-		}
-		return;
-	}
-	if (!cuda_ctx) {
-		SPDLOG_WARN("Primary CUDA context is not initialized");
-		return;
-	}
-
-	SPDLOG_INFO("Initializing multi-GPU contexts for {} devices",
-		    device_count);
-
-	// Set device 0’s pointer from the already-created primary context
-	if (cuda_ctx) {
-		dev_manager.get_device(0).shared_mem_device_ptr =
-			cuda_ctx->cuda_shared_mem_device_pointer;
-	}
-
-	// For additional devices, the CommSharedMem is in UVA (unified virtual
-	// addressing) host memory registered with cudaHostRegister, so it is
-	// accessible from all devices. We just need to record the device
-	// pointer for each.
-	for (int i = 1; i < device_count; i++) {
-		SPDLOG_INFO("Setting up shared mem pointer for device {}", i);
-		// The UVA device pointer is the same for all devices when using
-		// cudaHostGetDevicePointer on registered host memory
-		dev_manager.get_device(i).shared_mem_device_ptr =
-			cuda_ctx->cuda_shared_mem_device_pointer;
-	}
-}
-
 } // namespace bpftime

@@ -22,31 +22,13 @@ TEST_CASE("gpu_device_manager initialization")
 		REQUIRE(manager.device_count() >= 0);
 	}
 
-	SECTION("devices vector size matches device_count")
-	{
-		REQUIRE((int)manager.devices().size() == manager.device_count());
-	}
-
 	if (manager.device_count() > 0) {
 		SECTION("device 0 should have valid SM arch")
 		{
-			auto &dev = manager.get_default_device();
+			auto &dev = manager.get_device(0);
 			REQUIRE(dev.device_ordinal == 0);
 			REQUIRE(dev.sm_arch.substr(0, 3) == "sm_");
 			REQUIRE(dev.module_pool != nullptr);
-		}
-
-		SECTION("get_unique_sm_archs should be non-empty")
-		{
-			auto archs = manager.get_unique_sm_archs();
-			REQUIRE(!archs.empty());
-		}
-
-		SECTION("get_current_device should return a valid device")
-		{
-			auto &dev = manager.get_current_device();
-			REQUIRE(dev.device_ordinal >= 0);
-			REQUIRE(dev.device_ordinal < manager.device_count());
 		}
 
 		SECTION("out of range ordinal should throw")
@@ -68,8 +50,8 @@ TEST_CASE("gpu_device_manager initialization")
 					REQUIRE(dev.sm_arch.substr(0, 3) ==
 						"sm_");
 					REQUIRE(dev.module_pool != nullptr);
-					SPDLOG_INFO("Device {}: sm_arch={}",
-						    i, dev.sm_arch);
+					SPDLOG_INFO("Device {}: sm_arch={}", i,
+						    dev.sm_arch);
 				}
 			}
 
