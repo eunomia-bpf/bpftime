@@ -4,6 +4,7 @@
 #include <cstdlib>
 #include <spdlog/spdlog.h>
 #include <stdexcept>
+#include <vector>
 
 using namespace bpftime;
 using namespace attach;
@@ -100,4 +101,14 @@ TEST_CASE("PTX compiler failures propagate to the caller")
 
 	REQUIRE_THROWS_AS(record.try_loading_ptxs_for_device(impl, 0, "sm_60"),
 			  std::runtime_error);
+}
+
+TEST_CASE("device ordinal helper compiles to PTX")
+{
+	const std::vector<uint64_t> program = { 0x0000020000000085ULL,
+						0x0000000000000095ULL };
+	const auto ptx = ptxpass::compile_ebpf_to_ptx_from_words(
+		program, "sm_60", "__probe__", true, false);
+
+	REQUIRE(ptx.find("_bpf_helper_ext_0512") != std::string::npos);
 }
