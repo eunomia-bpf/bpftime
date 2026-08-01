@@ -18,6 +18,7 @@
 #include <limits>
 #include <memory>
 #include <mutex>
+#include <optional>
 #include <pthread.h>
 #include <random>
 #include <string_view>
@@ -51,7 +52,12 @@ using main_func_t = int (*)(int, char **, char **);
 
 static main_func_t orig_main_func = nullptr;
 
-static int initialized = 0;
+enum agent_state : int {
+	AGENT_UNINITIALIZED = 0,
+	AGENT_INITIALIZING = 1,
+	AGENT_READY = 2,
+};
+static int initialized = AGENT_UNINITIALIZED;
 
 using agent_control_fn_t = void (*)(const gchar *);
 
@@ -77,6 +83,42 @@ static int detach_pipe_fds[2] = { -1, -1 };
 static std::atomic<bool> detach_thread_started{ false };
 static std::mutex detach_mutex;
 static std::atomic<bool> global_ctx_constructed{ false };
+
+struct injected_env_guard {
+	static std::optional<std::string> capture(const char *name)
+	{
+		if (const char *data = getenv(name); data != nullptr)
+			return data;
+		return std::nullopt;
+	}
+	static void restore(const char *name,
+			    const std::optional<std::string> &saved) noexcept
+	{
+		if (saved)
+			(void)setenv(name, saved->c_str(), 1);
+		else
+			(void)unsetenv(name);
+	}
+
+	std::optional<std::string> late_ptx_dir =
+		capture("BPFTIME_CUDA_LATE_PTX_DIR");
+	std::optional<std::string> disable_cuobjdump =
+		capture("BPFTIME_CUDA_DISABLE_CUOBJDUMP");
+	bool committed = false;
+
+	~injected_env_guard()
+	{
+		if (!committed) {
+			restore("BPFTIME_CUDA_LATE_PTX_DIR", late_ptx_dir);
+			restore("BPFTIME_CUDA_DISABLE_CUOBJDUMP",
+				disable_cuobjdump);
+		}
+	}
+	void commit() noexcept
+	{
+		committed = true;
+	}
+};
 
 union bpf_attach_ctx_holder {
 	bpf_attach_ctx ctx;
@@ -278,16 +320,22 @@ static void start_agent_ipc_server_once()
 					usleep(10 * 1000);
 					continue;
 				}
+				struct client_fd_guard {
+					int fd;
+					~client_fd_guard()
+					{
+						::close(fd);
+					}
+				} guard{ cfd };
 				// Basic auth: allow same uid or root.
 				struct ucred cred {};
 				socklen_t clen = sizeof(cred);
-				if (getsockopt(cfd, SOL_SOCKET, SO_PEERCRED, &cred,
-					       &clen) != 0) {
-					::close(cfd);
+				if (getsockopt(cfd, SOL_SOCKET, SO_PEERCRED,
+					       &cred, &clen) != 0) {
 					continue;
 				}
-				if (cred.uid != 0 && (uid_t)cred.uid != geteuid()) {
-					::close(cfd);
+				if (cred.uid != 0 &&
+				    (uid_t)cred.uid != geteuid()) {
 					continue;
 				}
 				std::string req;
@@ -357,11 +405,16 @@ static void start_agent_ipc_server_once()
 				} else {
 					(void)::send(cfd, "unknown\n", 8, MSG_NOSIGNAL);
 				}
-				::close(cfd);
+			}
+		};
+		auto safe_run_server = [run_server]() noexcept {
+			try {
+				run_server();
+			} catch (...) {
 			}
 		};
 		try {
-			agent_ipc_thread = std::thread(run_server);
+			agent_ipc_thread = std::thread(safe_run_server);
 		} catch (...) {
 			agent_ipc_stop.store(true, std::memory_order_release);
 			::close(agent_ipc_fd);
@@ -388,7 +441,8 @@ static int perform_detach()
 {
 	std::lock_guard<std::mutex> detach_guard(detach_mutex);
 	if (!global_ctx_constructed.load(std::memory_order_acquire)) {
-		__atomic_store_n(&initialized, 0, __ATOMIC_SEQ_CST);
+		__atomic_store_n(&initialized, AGENT_UNINITIALIZED,
+				 __ATOMIC_RELEASE);
 		return 0;
 	}
 	SPDLOG_INFO("Detaching..");
@@ -416,12 +470,68 @@ static int perform_detach()
 	return detach_err < 0 ? detach_err : 0;
 }
 
-static void stop_auto_refresh_at_exit()
+static void stop_auto_refresh_at_exit() noexcept
 {
 	auto_refresh_epoch.fetch_add(1, std::memory_order_acq_rel);
-	std::lock_guard<std::mutex> guard(auto_refresh_thread_mutex);
-	if (auto_refresh_thread.joinable())
-		auto_refresh_thread.join();
+	try {
+		std::lock_guard<std::mutex> guard(auto_refresh_thread_mutex);
+		if (auto_refresh_thread.joinable())
+			auto_refresh_thread.join();
+	} catch (...) {
+	}
+}
+
+static void auto_refresh_worker(int refresh_ms, uint64_t epoch) noexcept
+{
+	try {
+		for (;;) {
+			if (auto_refresh_epoch.load(
+				    std::memory_order_acquire) != epoch)
+				return;
+#if __linux__
+			pid_t loader_pid = auto_refresh_loader_pid.load(
+				std::memory_order_acquire);
+			if (loader_pid > 0 && ::kill(loader_pid, 0) != 0 &&
+			    errno == ESRCH) {
+				SPDLOG_INFO(
+					"Auto-refresh: loader pid {} is gone; stopping",
+					(int)loader_pid);
+				return;
+			}
+#endif
+			std::this_thread::sleep_for(
+				std::chrono::milliseconds(refresh_ms));
+			if (auto_refresh_epoch.load(
+				    std::memory_order_acquire) != epoch)
+				return;
+			ctx_holder.ctx.init_attach_ctx_from_handlers(
+				bpftime_get_agent_config());
+		}
+	} catch (...) {
+	}
+}
+
+static void start_auto_refresh(int refresh_ms, pid_t loader_pid) noexcept
+{
+	if (refresh_ms <= 0)
+		return;
+	try {
+		auto_refresh_loader_pid.store(loader_pid,
+					      std::memory_order_release);
+		SPDLOG_INFO(
+			"Starting auto-refresh thread ({} ms, loader_pid={})",
+			refresh_ms, (int)loader_pid);
+		uint64_t epoch = auto_refresh_epoch.fetch_add(
+					 1, std::memory_order_acq_rel) +
+				 1;
+		std::lock_guard<std::mutex> guard(auto_refresh_thread_mutex);
+		if (auto_refresh_thread.joinable())
+			auto_refresh_thread.join();
+		auto_refresh_thread =
+			std::thread(auto_refresh_worker, refresh_ms, epoch);
+		(void)std::atexit(stop_auto_refresh_at_exit);
+	} catch (...) {
+	}
 }
 
 static bool ensure_detach_worker_started() noexcept
@@ -456,7 +566,8 @@ static bool ensure_detach_worker_started() noexcept
 					return;
 				}
 				if (__atomic_load_n(&initialized,
-						    __ATOMIC_SEQ_CST) != 1) {
+						    __ATOMIC_ACQUIRE) !=
+				    AGENT_READY) {
 					continue;
 				}
 				try {
@@ -623,7 +734,7 @@ static bool parse_force_reinit(const gchar *data)
 
 static int refresh_attach_session(const gchar *data)
 {
-	if (__atomic_load_n(&initialized, __ATOMIC_SEQ_CST) != 1) {
+	if (__atomic_load_n(&initialized, __ATOMIC_ACQUIRE) != AGENT_READY) {
 		SPDLOG_WARN("agent_control: agent not initialized");
 		return -EINVAL;
 	}
@@ -633,6 +744,7 @@ static int refresh_attach_session(const gchar *data)
 	}
 
 	std::lock_guard<std::mutex> guard(detach_mutex);
+	injected_env_guard env_guard;
 	apply_injected_kv_overrides(data);
 	auto_refresh_epoch.fetch_add(1, std::memory_order_acq_rel);
 	{
@@ -651,52 +763,11 @@ static int refresh_attach_session(const gchar *data)
 			res);
 		return res < 0 ? res : -EINVAL;
 	}
+	env_guard.commit();
 
 	int auto_refresh_ms = parse_auto_refresh_ms(data);
 	pid_t loader_pid = parse_loader_pid(data);
-	if (auto_refresh_ms > 0) {
-		auto_refresh_loader_pid.store(loader_pid,
-					      std::memory_order_release);
-		SPDLOG_INFO("Starting auto-refresh thread ({} ms, loader_pid={})",
-			    auto_refresh_ms, (int)loader_pid);
-		uint64_t epoch =
-			auto_refresh_epoch.fetch_add(1, std::memory_order_acq_rel) + 1;
-		std::lock_guard<std::mutex> tguard(auto_refresh_thread_mutex);
-		if (auto_refresh_thread.joinable())
-			auto_refresh_thread.join();
-		auto_refresh_thread = std::thread([auto_refresh_ms, epoch]() {
-			for (;;) {
-				if (auto_refresh_epoch.load(
-					    std::memory_order_acquire) != epoch) {
-					return;
-				}
-#if __linux__
-				pid_t lp = auto_refresh_loader_pid.load(
-					std::memory_order_acquire);
-				if (lp > 0) {
-					if (::kill(lp, 0) != 0 &&
-					    errno == ESRCH) {
-						SPDLOG_INFO(
-							"Auto-refresh: loader pid {} is gone; stopping",
-							(int)lp);
-						return;
-					}
-				}
-#endif
-				std::this_thread::sleep_for(
-					std::chrono::milliseconds(auto_refresh_ms));
-				try {
-					ctx_holder.ctx.init_attach_ctx_from_handlers(
-						bpftime_get_agent_config());
-				} catch (const std::exception &ex) {
-					SPDLOG_DEBUG(
-						"Auto-refresh: init_attach_ctx_from_handlers failed: {}",
-						ex.what());
-				}
-			}
-		});
-		std::atexit(stop_auto_refresh_at_exit);
-	}
+	start_auto_refresh(auto_refresh_ms, loader_pid);
 
 	SPDLOG_INFO("Attach successfully");
 	start_agent_ipc_server_once();
@@ -785,9 +856,11 @@ extern "C" void bpftime_agent_main(const gchar *data, gboolean *stay_resident)
 	bool shm_initialized = false;
 	bool recorded_alive_pid = false;
 	bool ctx_constructed = false;
+	std::unique_ptr<injected_env_guard> env_guard;
 	auto init_fail = [&]() noexcept {
 		if (!owns_initialization)
 			return;
+		env_guard.reset();
 		if (ctx_constructed) {
 			try {
 				ctx_holder.destroy();
@@ -812,7 +885,8 @@ extern "C" void bpftime_agent_main(const gchar *data, gboolean *stay_resident)
 			}
 			shm_initialized = false;
 		}
-		__atomic_store_n(&initialized, 0, __ATOMIC_SEQ_CST);
+		__atomic_store_n(&initialized, AGENT_UNINITIALIZED,
+				 __ATOMIC_RELEASE);
 		owns_initialization = false;
 	};
 	try {
@@ -838,11 +912,17 @@ extern "C" void bpftime_agent_main(const gchar *data, gboolean *stay_resident)
 
 			bool force_reinit = parse_force_reinit(data);
 			{
-				int expected = 0;
+				int expected = AGENT_UNINITIALIZED;
 				if (!__atomic_compare_exchange_n(
-					    &initialized, &expected, 1, false,
-					    __ATOMIC_SEQ_CST,
-					    __ATOMIC_SEQ_CST)) {
+					    &initialized, &expected,
+					    AGENT_INITIALIZING, false,
+					    __ATOMIC_ACQ_REL,
+					    __ATOMIC_ACQUIRE)) {
+					if (expected == AGENT_INITIALIZING) {
+						SPDLOG_INFO(
+							"Agent initialization already in progress");
+						return;
+					}
 					if (!force_reinit) {
 						SPDLOG_INFO(
 							"Agent already initialized, skipping re-initializing..");
@@ -889,6 +969,7 @@ extern "C" void bpftime_agent_main(const gchar *data, gboolean *stay_resident)
 			auto &runtime_config = bpftime_get_agent_config();
 			bpftime_set_logger(std::string(
 				runtime_config.get_logger_output_path()));
+			env_guard = std::make_unique<injected_env_guard>();
 			apply_injected_kv_overrides(data);
 			// Only agents injected through frida could be detached.
 			if (injected_with_frida) {
@@ -988,6 +1069,10 @@ extern "C" void bpftime_agent_main(const gchar *data, gboolean *stay_resident)
 			 * return. */
 			if (stay_resident != nullptr)
 				*stay_resident = TRUE;
+			env_guard->commit();
+			env_guard.reset();
+			__atomic_store_n(&initialized, AGENT_READY,
+					 __ATOMIC_RELEASE);
 			owns_initialization = false;
 			shm_initialized = false;
 
@@ -997,59 +1082,7 @@ extern "C" void bpftime_agent_main(const gchar *data, gboolean *stay_resident)
 
 			int auto_refresh_ms = parse_auto_refresh_ms(data);
 			pid_t loader_pid = parse_loader_pid(data);
-			if (auto_refresh_ms > 0) {
-				auto_refresh_loader_pid.store(
-					loader_pid,
-					std::memory_order_release);
-				SPDLOG_INFO(
-					"Starting auto-refresh thread ({} ms, loader_pid={})",
-					auto_refresh_ms, (int)loader_pid);
-				uint64_t epoch =
-					auto_refresh_epoch.fetch_add(
-						1, std::memory_order_acq_rel) +
-					1;
-				std::lock_guard<std::mutex> guard(
-					auto_refresh_thread_mutex);
-				if (auto_refresh_thread.joinable())
-					auto_refresh_thread.join();
-				auto_refresh_thread = std::thread(
-					[auto_refresh_ms, epoch]() {
-						for (;;) {
-							if (auto_refresh_epoch.load(
-								    std::memory_order_acquire) !=
-							    epoch) {
-								return;
-							}
-#if __linux__
-							pid_t lp =
-								auto_refresh_loader_pid.load(
-									std::memory_order_acquire);
-							if (lp > 0) {
-								if (::kill(lp, 0) != 0 &&
-								    errno == ESRCH) {
-									SPDLOG_INFO(
-										"Auto-refresh: loader pid {} is gone; stopping",
-										(int)lp);
-									return;
-								}
-							}
-#endif
-							std::this_thread::sleep_for(
-								std::chrono::milliseconds(
-									auto_refresh_ms));
-							try {
-								ctx_holder.ctx
-									.init_attach_ctx_from_handlers(
-										bpftime_get_agent_config());
-							} catch (const std::exception &ex) {
-								SPDLOG_DEBUG(
-									"Auto-refresh: init_attach_ctx_from_handlers failed: {}",
-									ex.what());
-							}
-						}
-					});
-				std::atexit(stop_auto_refresh_at_exit);
-			}
+			start_auto_refresh(auto_refresh_ms, loader_pid);
 			SPDLOG_INFO("Attach successfully");
 		} catch (const std::exception &ex) {
 			try {

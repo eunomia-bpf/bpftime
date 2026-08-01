@@ -256,6 +256,18 @@ static bool setup_syscall_tracer_impl()
 			     errno, strerror(errno));
 		return false;
 	}
+	struct page_zero_guard {
+		bool active = true;
+		~page_zero_guard()
+		{
+			if (active)
+				(void)munmap(nullptr, 0x1000);
+		}
+		void keep() noexcept
+		{
+			active = false;
+		}
+	} page_zero;
 	for (int i = 0; i < NR_syscalls; i++)
 		*((char *)(uintptr_t)(i)) = 0x90;
 
@@ -273,7 +285,6 @@ static bool setup_syscall_tracer_impl()
 	if (mprotect(0, 0x1000, PROT_EXEC) < 0) {
 		SPDLOG_ERROR("Failed to set execute only of 0-started page: {}",
 			     errno);
-		(void)munmap(nullptr, 0x1000);
 		return false;
 	}
 
@@ -281,7 +292,6 @@ static bool setup_syscall_tracer_impl()
 	std::vector<MapEntry> entries;
 	std::ifstream ifs("/proc/self/maps");
 	if (!ifs.is_open()) {
-		(void)munmap(nullptr, 0x1000);
 		SPDLOG_ERROR("Failed to open /proc/self/maps");
 		return false;
 	}
@@ -313,6 +323,7 @@ static bool setup_syscall_tracer_impl()
 			continue;
 		SPDLOG_DEBUG("Rewriting segment from {:x} to {:x}", map.begin,
 			     map.end);
+		page_zero.keep();
 		if (!rewrite_segment((uint8_t *)(uintptr_t)map.begin,
 				     map.end - map.begin, map.get_perm()))
 			return false;

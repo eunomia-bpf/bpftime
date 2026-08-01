@@ -130,6 +130,9 @@ syscall_context::syscall_context()
 	SPDLOG_INFO("The log will be written to: {}",
 		    runtime_config.get_logger_output_path());
 	spdlog::cfg::load_env_levels();
+	// Commit only after every throwing initialization step succeeds so a
+	// failed preload attempt leaves the host environment unchanged.
+	(void)unsetenv("LD_PRELOAD");
 }
 
 #ifdef BPFTIME_ENABLE_CUDA_ATTACH

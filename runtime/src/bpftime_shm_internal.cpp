@@ -1074,12 +1074,7 @@ bpftime::bpftime_shm::~bpftime_shm()
 	if (!cuda_host_memory_registered) {
 		return;
 	}
-	cudaError_t err = cudaHostUnregister(base_addr);
-	if (err != cudaSuccess) {
-		// Teardown is best effort. The logger may already be destroyed,
-		// and a preload library must not write into the host stderr.
-		return;
-	}
+	(void)cudaHostUnregister(base_addr);
 #endif
 }
 

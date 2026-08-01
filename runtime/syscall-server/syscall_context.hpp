@@ -121,10 +121,6 @@ class syscall_context {
 		if (orig_fopen_fn == nullptr)
 			orig_fopen_fn = resolve_original<fopen_fn>("fopen64");
 
-		// To avoid polluting other child processes,
-		// unset the LD_PRELOAD env var after syscall context being
-		// initialized
-		unsetenv("LD_PRELOAD");
 		// Keep this log allocation-free. spdlog/fmt may throw in
 		// extremely early init paths (and will print "[*** LOG ERROR
 		// ***]").
