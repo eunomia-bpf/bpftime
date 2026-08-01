@@ -109,8 +109,10 @@ struct CUDAContext {
 	cuda::CommSharedMem *cuda_shared_mem;
 	// Mapped device pointer
 	uintptr_t cuda_shared_mem_device_pointer;
+	// Shared-memory lifecycle generation that owns cuda_shared_mem.
+	std::uint64_t shm_generation;
 
-	CUDAContext(cuda::CommSharedMem *mem);
+	CUDAContext(cuda::CommSharedMem *mem, std::uint64_t generation);
 
 	CUDAContext(CUDAContext &&) = default;
 	CUDAContext &operator=(CUDAContext &&) = default;

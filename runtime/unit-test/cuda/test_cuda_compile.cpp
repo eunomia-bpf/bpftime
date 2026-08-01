@@ -100,19 +100,20 @@ TEST_CASE("CUDA watcher follows attach-context and shm lifetimes")
 
 	bpftime_initialize_global_shm(shm_open_type::SHM_REMOVE_AND_CREATE);
 	bool request_handled = false;
+	auto stale = std::unique_ptr<bpf_attach_ctx>();
 	{
 		auto first = std::make_unique<bpf_attach_ctx>();
-		auto second = std::make_unique<bpf_attach_ctx>();
+		stale = std::make_unique<bpf_attach_ctx>();
 		first.reset();
 		request_handled = send_request();
 		bpftime_destroy_global_shm();
-		second.reset();
 	}
 
 	bpftime_initialize_global_shm(shm_open_type::SHM_REMOVE_AND_CREATE);
 	bool restart_handled = false;
 	{
 		auto restarted = std::make_unique<bpf_attach_ctx>();
+		stale.reset();
 		restart_handled = send_request();
 	}
 	bpftime_destroy_global_shm();

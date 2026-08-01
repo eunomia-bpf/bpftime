@@ -138,7 +138,8 @@ void bpf_attach_ctx::start_cuda_watcher_thread()
 		return;
 	if (cuda_watcher_generation == g_cuda_watcher_generation)
 		return;
-	if (g_cuda_shm_unmapping)
+	if (g_cuda_shm_unmapping ||
+	    cuda_ctx->shm_generation != g_cuda_watcher_generation)
 		return;
 	std::call_once(g_cuda_watcher_atexit_once,
 		       []() { std::atexit(stop_cuda_watcher_thread_at_exit); });
@@ -411,7 +412,8 @@ std::optional<std::unique_ptr<cuda::CUDAContext>> create_cuda_context()
 		memset(cuda_shared_mem, 0, sizeof(*cuda_shared_mem));
 
 	auto cuda_ctx = std::make_optional(
-		std::make_unique<cuda::CUDAContext>(cuda_shared_mem));
+		std::make_unique<cuda::CUDAContext>(cuda_shared_mem,
+						    g_cuda_watcher_generation));
 
 	SPDLOG_INFO("CUDA context created");
 	return cuda_ctx;
@@ -420,8 +422,9 @@ CUDAContext::~CUDAContext()
 {
 	SPDLOG_INFO("Destructing CUDAContext");
 }
-CUDAContext::CUDAContext(cuda::CommSharedMem *mem)
-	: cuda_shared_mem(mem), cuda_shared_mem_device_pointer(0)
+CUDAContext::CUDAContext(cuda::CommSharedMem *mem, std::uint64_t generation)
+	: cuda_shared_mem(mem), cuda_shared_mem_device_pointer(0),
+	  shm_generation(generation)
 
 {
 	// Move CommSharedMem from the agent’s local memory to shared memory to
