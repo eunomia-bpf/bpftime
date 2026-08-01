@@ -81,6 +81,15 @@ constexpr size_t kMaxPtxPassProcessOutputBytes = 64U << 20;
 
 using file_ptr = std::unique_ptr<FILE, int (*)(FILE *)>;
 
+struct fd_guard {
+	int value;
+	~fd_guard()
+	{
+		if (value >= 0)
+			close(value);
+	}
+};
+
 static std::string read_file(FILE *file)
 {
 	rewind(file);
@@ -114,6 +123,16 @@ run_ptxpass_runner(const std::string &mode,
 		return std::nullopt;
 	}
 	rewind(input.get());
+	fd_guard input_fd{ fcntl(fileno(input.get()), F_DUPFD_CLOEXEC, 4) };
+	fd_guard result_fd{ fcntl(fileno(result.get()), F_DUPFD_CLOEXEC, 4) };
+	fd_guard diagnostics_fd{ fcntl(fileno(diagnostics.get()),
+				       F_DUPFD_CLOEXEC, 4) };
+	if (input_fd.value < 0 || result_fd.value < 0 ||
+	    diagnostics_fd.value < 0) {
+		SPDLOG_ERROR("Unable to duplicate PTX pass runner fds: {}",
+			     strerror(errno));
+		return std::nullopt;
+	}
 
 	posix_spawn_file_actions_t file_actions;
 	int spawn_rc = posix_spawn_file_actions_init(&file_actions);
@@ -131,10 +150,10 @@ run_ptxpass_runner(const std::string &mode,
 		}
 	} file_actions_cleanup{ &file_actions };
 	const std::pair<int, int> redirects[] = {
-		{ fileno(input.get()), STDIN_FILENO },
-		{ fileno(diagnostics.get()), STDOUT_FILENO },
-		{ fileno(diagnostics.get()), STDERR_FILENO },
-		{ fileno(result.get()), 3 },
+		{ input_fd.value, STDIN_FILENO },
+		{ diagnostics_fd.value, STDOUT_FILENO },
+		{ diagnostics_fd.value, STDERR_FILENO },
+		{ result_fd.value, 3 },
 	};
 	for (const auto &[source, target] : redirects) {
 		int rc = posix_spawn_file_actions_adddup2(&file_actions, source,
