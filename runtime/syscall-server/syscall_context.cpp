@@ -861,7 +861,7 @@ int syscall_context::handle_perfevent(perf_event_attr *attr, pid_t pid, int cpu,
 }
 
 void *syscall_context::handle_mmap(void *addr, size_t length, int prot,
-				   int flags, int fd, off64_t offset)
+				   int flags, int fd, off_t offset)
 {
 	if (!enable_mock.load(std::memory_order_relaxed) || run_with_kernel ||
 	    initializing_cuda.load(std::memory_order_acquire) ||

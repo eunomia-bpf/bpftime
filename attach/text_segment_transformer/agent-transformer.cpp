@@ -58,7 +58,7 @@ static void bpftime_agent_main_impl(const gchar *data, gboolean *stay_resident)
 			agent_so = data;
 		} else {
 			SPDLOG_ERROR(
-				"Please set AGENT_SO to the bpftime-agent when use this tranformer");
+				"Please set AGENT_SO to the bpftime-agent when use this transformer");
 			return;
 		}
 	}
