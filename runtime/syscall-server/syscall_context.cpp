@@ -304,8 +304,7 @@ int syscall_context::get_bpf_obj_info_by_fd(int fd, void *info,
 	attr.info.bpf_fd = fd;
 	attr.info.info_len = *info_len;
 	attr.info.info = reinterpret_cast<uintptr_t>(info);
-	const size_t attr_size =
-		offsetof(union bpf_attr, info) + sizeof(attr.info);
+	const size_t attr_size = sizeof(attr.info);
 	int result = orig_syscall_fn(__NR_bpf, BPF_OBJ_GET_INFO_BY_FD,
 				     &attr, attr_size);
 	if (result == 0)
