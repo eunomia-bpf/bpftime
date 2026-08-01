@@ -774,12 +774,12 @@ extern "C" void bpftime_agent_main(const gchar *data, gboolean *stay_resident)
 			}
 			ctx_constructed = false;
 		}
-		global_ctx_constructed.store(false,
-					     std::memory_order_release);
+		global_ctx_constructed.store(false, std::memory_order_release);
 		if (recorded_alive_pid) {
 			try {
 				shm_holder.global_shared_memory
-					.remove_pid_from_alive_agent_set(getpid());
+					.remove_pid_from_alive_agent_set(
+						getpid());
 			} catch (...) {
 			}
 			recorded_alive_pid = false;
@@ -1058,14 +1058,15 @@ extern "C" int64_t syscall_callback(int64_t sys_nr, int64_t arg1, int64_t arg2,
 				    int64_t arg6)
 {
 	try {
-		return bpftime::attach::global_syscall_trace_attach_impl.value()
+		return bpftime::attach::global_syscall_trace_attach_impl
+			.value()
 			->dispatch_syscall(sys_nr, arg1, arg2, arg3, arg4, arg5,
-					  arg6);
+					   arg6);
 	} catch (...) {
-		return orig_hooker != nullptr
-			       ? orig_hooker(sys_nr, arg1, arg2, arg3, arg4, arg5,
-					     arg6)
-			       : -ENOSYS;
+		return orig_hooker != nullptr ?
+			       orig_hooker(sys_nr, arg1, arg2, arg3, arg4, arg5,
+					   arg6) :
+			       -ENOSYS;
 	}
 }
 
