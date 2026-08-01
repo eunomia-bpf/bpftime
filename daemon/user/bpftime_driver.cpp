@@ -57,7 +57,7 @@ static int get_bpf_obj_id_from_pid_fd(bpf_tracer_bpf *obj, int pid, int fd)
 				       &data, sizeof(data), 0);
 	if (res < 0) {
 		SPDLOG_ERROR("Failed to lookup bpf fd map for pid {} fd {}",
-			     pid, fd);
+			      pid, fd);
 		return -1;
 	}
 	// if (data.type != BPF_FD_TYPE_MAP) {
@@ -83,7 +83,7 @@ static int relocate_bpf_prog_insns(std::vector<ebpf_inst> &insns,
 		return -1;
 	}
 	SPDLOG_DEBUG("relocate bpf prog insns for id {}, cnt {}", id,
-		     insn_data.code_len);
+		      insn_data.code_len);
 	// resize the insns
 	insns.resize(insn_data.code_len);
 	const ebpf_inst *orignal_insns = (const ebpf_inst *)insn_data.code;
@@ -127,7 +127,7 @@ int bpftime_driver::check_and_create_prog_related_maps(
 	bpf_prog_info new_info = {};
 
 	SPDLOG_INFO("find {} related maps for prog fd {}", info->nr_map_ids,
-		    fd);
+		     fd);
 	map_ids.resize(info->nr_map_ids);
 	new_info.nr_map_ids = info->nr_map_ids;
 	new_info.map_ids = (unsigned long long)(uintptr_t)map_ids.data();
@@ -160,7 +160,7 @@ int bpftime_driver::bpftime_progs_create_server(int kernel_id, int server_pid)
 	int fd = bpf_prog_get_fd_by_id(kernel_id);
 	if (fd < 0) {
 		SPDLOG_ERROR("Failed to get prog fd by prog id {}, err={}",
-			     kernel_id, errno);
+			      kernel_id, errno);
 		return -1;
 	}
 	SPDLOG_DEBUG("get prog fd {} for id {}", fd, kernel_id);
@@ -180,7 +180,7 @@ int bpftime_driver::bpftime_progs_create_server(int kernel_id, int server_pid)
 	res = relocate_bpf_prog_insns(buffer, object, kernel_id, server_pid);
 	if (res < 0) {
 		SPDLOG_ERROR("Failed to relocate prog insns for id {}",
-			     kernel_id);
+			      kernel_id);
 		return -1;
 	}
 	res = bpftime_progs_create(kernel_id, buffer.data(), buffer.size(),
@@ -194,7 +194,7 @@ int bpftime_driver::bpftime_progs_create_server(int kernel_id, int server_pid)
 	res = check_and_create_prog_related_maps(fd, &info);
 	if (res < 0) {
 		SPDLOG_ERROR("Failed to create related maps for prog {}",
-			     kernel_id);
+			      kernel_id);
 		return -1;
 	}
 	close(fd);
@@ -251,8 +251,9 @@ int bpftime_driver::bpftime_attach_perf_to_bpf_fd_server(
 	int prog_id =
 		get_bpf_obj_id_from_pid_fd(object, server_pid, bpf_prog_fd);
 	if (prog_id < 0) {
-		SPDLOG_ERROR("Failed to lookup bpf prog id from bpf prog fd {}",
-			     bpf_prog_fd);
+		SPDLOG_ERROR(
+			"Failed to lookup bpf prog id from bpf prog fd {}",
+			bpf_prog_fd);
 		return -1;
 	}
 	return bpftime_attach_perf_to_bpf_server(server_pid, perf_fd, prog_id,
@@ -265,10 +266,9 @@ int bpftime_driver::bpftime_attach_perf_to_bpf_server(
 {
 	int perf_id = check_and_get_pid_fd(server_pid, perf_fd);
 	if (perf_id < 0) {
-		SPDLOG_DEBUG(
-			"Ignoring kernel-owned perf fd {} for pid {} when mirroring perf attach",
-			perf_fd, server_pid);
-		return 0;
+		SPDLOG_ERROR("perf fd {} for pid {} not exists", perf_fd,
+			      server_pid);
+		return -1;
 	}
 	if (bpftime_is_prog_fd(kernel_bpf_id)) {
 		SPDLOG_INFO("bpf {} already exists in shm", kernel_bpf_id);
@@ -290,8 +290,8 @@ int bpftime_driver::bpftime_attach_perf_to_bpf_server(
 		SPDLOG_ERROR("Failed to attach perf to bpf");
 		return -1;
 	}
-	SPDLOG_INFO("attach perf {} to bpf {}, for pid {}, cookie {}", perf_id,
-		    kernel_bpf_id, server_pid, cookie.has_value());
+	SPDLOG_INFO("attach perf {} to bpf {}, for pid {}", perf_id,
+		     kernel_bpf_id, server_pid);
 	return 0;
 }
 
@@ -322,7 +322,7 @@ int bpftime_driver::bpftime_perf_event_enable_server(int server_pid, int fd)
 {
 	int fd_id = check_and_get_pid_fd(server_pid, fd);
 	if (fd_id < 0) {
-		SPDLOG_DEBUG("Ignoring kernel-owned perf fd {} for pid {}", fd,
+		SPDLOG_WARN("Unrecorded uprobe fd: {} for pid {}", fd,
 			     server_pid);
 		return 0;
 	}
@@ -332,7 +332,7 @@ int bpftime_driver::bpftime_perf_event_enable_server(int server_pid, int fd)
 		return -1;
 	}
 	SPDLOG_INFO("enable perf event {} for pid {} fd {}", fd_id, server_pid,
-		    fd);
+		     fd);
 	return 0;
 }
 
@@ -341,17 +341,16 @@ int bpftime_driver::bpftime_perf_event_disable_server(int server_pid, int fd)
 {
 	int fd_id = check_and_get_pid_fd(server_pid, fd);
 	if (fd_id < 0) {
-		SPDLOG_DEBUG("Ignoring kernel-owned perf fd {} for pid {}", fd,
-			     server_pid);
-		return 0;
+		SPDLOG_ERROR("fd {} for pid {} not exists", fd, server_pid);
+		return -1;
 	}
 	int res = bpftime_perf_event_disable(fd_id);
 	if (res < 0) {
 		SPDLOG_ERROR("Failed to disable perf event");
 		return -1;
 	}
-	SPDLOG_INFO("disable perf event {} for pid {} fd {}", fd_id, server_pid,
-		    fd);
+	SPDLOG_INFO("disable perf event {} for pid {} fd {}", fd_id,
+		     server_pid, fd);
 	return 0;
 }
 

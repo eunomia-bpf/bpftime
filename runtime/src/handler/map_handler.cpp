@@ -39,7 +39,6 @@
 #include <bpf_map/shared/hash_map_kernel_user.hpp>
 #include <bpf_map/shared/percpu_array_map_kernel_user.hpp>
 #include <bpf_map/shared/perf_event_array_kernel_user.hpp>
-#include <bpf_map/shared/prog_array_kernel_user.hpp>
 #endif
 #include <bpf_map/userspace/prog_array.hpp>
 #include <bpf_map/userspace/map_in_maps.hpp>
@@ -206,18 +205,6 @@ const void *bpf_map_handler::map_lookup_elem(const void *key,
 			map_impl_ptr.get());
 		return do_lookup(impl);
 	}
-	case bpf_map_type::BPF_MAP_TYPE_KERNEL_USER_PROG_ARRAY: {
-		auto impl = static_cast<prog_array_kernel_user_impl *>(
-			map_impl_ptr.get());
-		return from_syscall ? do_lookup_userspace(impl) :
-				      do_lookup(impl);
-	}
-	case bpf_map_type::BPF_MAP_TYPE_KERNEL_USER_LRU_HASH:
-	case bpf_map_type::BPF_MAP_TYPE_KERNEL_USER_LPM_TRIE: {
-		auto impl = static_cast<hash_map_kernel_user_impl *>(
-			map_impl_ptr.get());
-		return do_lookup(impl);
-	}
 	case bpf_map_type::BPF_MAP_TYPE_PROG_ARRAY: {
 		auto impl =
 			static_cast<prog_array_map_impl *>(map_impl_ptr.get());
@@ -366,17 +353,6 @@ long bpf_map_handler::map_update_elem(const void *key, const void *value,
 	}
 	case bpf_map_type::BPF_MAP_TYPE_KERNEL_USER_PERF_EVENT_ARRAY: {
 		auto impl = static_cast<perf_event_array_kernel_user_impl *>(
-			map_impl_ptr.get());
-		return do_update(impl);
-	}
-	case bpf_map_type::BPF_MAP_TYPE_KERNEL_USER_PROG_ARRAY: {
-		auto impl = static_cast<prog_array_kernel_user_impl *>(
-			map_impl_ptr.get());
-		return do_update(impl);
-	}
-	case bpf_map_type::BPF_MAP_TYPE_KERNEL_USER_LRU_HASH:
-	case bpf_map_type::BPF_MAP_TYPE_KERNEL_USER_LPM_TRIE: {
-		auto impl = static_cast<hash_map_kernel_user_impl *>(
 			map_impl_ptr.get());
 		return do_update(impl);
 	}
@@ -531,17 +507,6 @@ int bpf_map_handler::bpf_map_get_next_key(const void *key, void *next_key,
 	}
 	case bpf_map_type::BPF_MAP_TYPE_KERNEL_USER_PERF_EVENT_ARRAY: {
 		auto impl = static_cast<perf_event_array_kernel_user_impl *>(
-			map_impl_ptr.get());
-		return do_get_next_key(impl);
-	}
-	case bpf_map_type::BPF_MAP_TYPE_KERNEL_USER_PROG_ARRAY: {
-		auto impl = static_cast<prog_array_kernel_user_impl *>(
-			map_impl_ptr.get());
-		return do_get_next_key(impl);
-	}
-	case bpf_map_type::BPF_MAP_TYPE_KERNEL_USER_LRU_HASH:
-	case bpf_map_type::BPF_MAP_TYPE_KERNEL_USER_LPM_TRIE: {
-		auto impl = static_cast<hash_map_kernel_user_impl *>(
 			map_impl_ptr.get());
 		return do_get_next_key(impl);
 	}
@@ -703,17 +668,6 @@ long bpf_map_handler::map_delete_elem(const void *key, bool from_syscall) const
 	}
 	case bpf_map_type::BPF_MAP_TYPE_KERNEL_USER_PERF_EVENT_ARRAY: {
 		auto impl = static_cast<perf_event_array_kernel_user_impl *>(
-			map_impl_ptr.get());
-		return do_delete(impl);
-	}
-	case bpf_map_type::BPF_MAP_TYPE_KERNEL_USER_PROG_ARRAY: {
-		auto impl = static_cast<prog_array_kernel_user_impl *>(
-			map_impl_ptr.get());
-		return do_delete(impl);
-	}
-	case bpf_map_type::BPF_MAP_TYPE_KERNEL_USER_LRU_HASH:
-	case bpf_map_type::BPF_MAP_TYPE_KERNEL_USER_LPM_TRIE: {
-		auto impl = static_cast<hash_map_kernel_user_impl *>(
 			map_impl_ptr.get());
 		return do_delete(impl);
 	}
@@ -959,21 +913,6 @@ int bpf_map_handler::map_init(managed_shared_memory &memory)
 				boost::interprocess::anonymous_instance)(
 				memory, 4, 4, sysconf(_SC_NPROCESSORS_ONLN),
 				attr.kernel_bpf_map_id);
-		init_refcnt();
-		return 0;
-	}
-	case bpf_map_type::BPF_MAP_TYPE_KERNEL_USER_PROG_ARRAY: {
-		map_impl_ptr =
-			memory.construct<prog_array_kernel_user_impl>(
-				container_name.c_str())(memory,
-							attr.kernel_bpf_map_id);
-		init_refcnt();
-		return 0;
-	}
-	case bpf_map_type::BPF_MAP_TYPE_KERNEL_USER_LRU_HASH:
-	case bpf_map_type::BPF_MAP_TYPE_KERNEL_USER_LPM_TRIE: {
-		map_impl_ptr = memory.construct<hash_map_kernel_user_impl>(
-			container_name.c_str())(memory, attr.kernel_bpf_map_id);
 		init_refcnt();
 		return 0;
 	}
@@ -1263,15 +1202,6 @@ void bpf_map_handler::map_free(managed_shared_memory &memory) const
 	case bpf_map_type::BPF_MAP_TYPE_KERNEL_USER_PERF_EVENT_ARRAY:
 		memory.destroy_ptr(
 			static_cast<perf_event_array_kernel_user_impl *>(impl));
-		break;
-	case bpf_map_type::BPF_MAP_TYPE_KERNEL_USER_PROG_ARRAY:
-		memory.destroy<prog_array_kernel_user_impl>(
-			container_name.c_str());
-		break;
-	case bpf_map_type::BPF_MAP_TYPE_KERNEL_USER_LRU_HASH:
-	case bpf_map_type::BPF_MAP_TYPE_KERNEL_USER_LPM_TRIE:
-		memory.destroy<hash_map_kernel_user_impl>(
-			container_name.c_str());
 		break;
 	case bpf_map_type::BPF_MAP_TYPE_PROG_ARRAY:
 		memory.destroy_ptr(static_cast<prog_array_map_impl *>(impl));
