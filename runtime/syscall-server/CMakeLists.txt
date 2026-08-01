@@ -33,21 +33,17 @@ target_link_libraries(bpftime-syscall-server PUBLIC
 
 add_dependencies(bpftime-syscall-server spdlog::spdlog)
 
-if(${BPFTIME_BUILD_WITH_LIBBPF})
-
 target_include_directories(bpftime-syscall-server
     PUBLIC
     "../include"
     "../../vm"
-    "../../third_party/libbpf/include"
     "../../third_party/libbpf/include/uapi"
     ${SPDLOG_INCLUDE}
 )
-else()
-target_include_directories(bpftime-syscall-server
-    PUBLIC
-    "../../vm"
-    ${SPDLOG_INCLUDE}
+
+if(${BPFTIME_BUILD_WITH_LIBBPF})
+target_include_directories(bpftime-syscall-server PUBLIC
+    "../../third_party/libbpf/include"
 )
 endif()
 
