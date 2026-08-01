@@ -7,7 +7,6 @@
 #include <optional>
 #include <cstdlib>
 #include <mutex>
-#include <system_error>
 #include <thread>
 #include <spdlog/spdlog.h>
 #include "cuda.h"
@@ -128,9 +127,8 @@ void bpf_attach_ctx::start_cuda_watcher_thread()
 		return;
 	if (g_cuda_watcher_thread != nullptr)
 		return;
-	std::call_once(g_cuda_watcher_atexit_once, []() {
-		std::atexit(stop_cuda_watcher_thread_at_exit);
-	});
+	std::call_once(g_cuda_watcher_atexit_once,
+		       []() { std::atexit(stop_cuda_watcher_thread_at_exit); });
 	auto flag = cuda_ctx->cuda_watcher_should_stop;
 	cuda_watcher_thread = std::thread([flag, this]() {
 		auto *ctx = cuda_ctx.get();
