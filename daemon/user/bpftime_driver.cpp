@@ -244,9 +244,9 @@ int bpftime_driver::bpftime_maps_create_server(int kernel_id)
 	return kernel_id;
 }
 
-int bpftime_driver::bpftime_attach_perf_to_bpf_fd_server(int server_pid,
-							 int perf_fd,
-							 int bpf_prog_fd)
+int bpftime_driver::bpftime_attach_perf_to_bpf_fd_server(
+	int server_pid, int perf_fd, int bpf_prog_fd,
+	std::optional<uint64_t> cookie)
 {
 	int prog_id =
 		get_bpf_obj_id_from_pid_fd(object, server_pid, bpf_prog_fd);
@@ -256,12 +256,13 @@ int bpftime_driver::bpftime_attach_perf_to_bpf_fd_server(int server_pid,
 			bpf_prog_fd);
 		return -1;
 	}
-	return bpftime_attach_perf_to_bpf_server(server_pid, perf_fd, prog_id);
+	return bpftime_attach_perf_to_bpf_server(server_pid, perf_fd, prog_id,
+						 cookie);
 }
 
-int bpftime_driver::bpftime_attach_perf_to_bpf_server(int server_pid,
-						      int perf_fd,
-						      int kernel_bpf_id)
+int bpftime_driver::bpftime_attach_perf_to_bpf_server(
+	int server_pid, int perf_fd, int kernel_bpf_id,
+	std::optional<uint64_t> cookie)
 {
 	int perf_id = check_and_get_pid_fd(server_pid, perf_fd);
 	if (perf_id < 0) {
@@ -282,7 +283,9 @@ int bpftime_driver::bpftime_attach_perf_to_bpf_server(int server_pid,
 		}
 	}
 
-	int res = bpftime_attach_perf_to_bpf(perf_id, kernel_bpf_id);
+	int res = cookie ? bpftime_attach_perf_to_bpf_with_cookie(
+				   perf_id, kernel_bpf_id, *cookie) :
+			   bpftime_attach_perf_to_bpf(perf_id, kernel_bpf_id);
 	if (res < 0) {
 		SPDLOG_ERROR("Failed to attach perf to bpf");
 		return -1;
