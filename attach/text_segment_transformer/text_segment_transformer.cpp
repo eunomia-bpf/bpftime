@@ -9,13 +9,12 @@
 #include <dlfcn.h>
 #include <fcntl.h>
 #include <fstream>
-#include <memory>
 #include <sys/mman.h>
 #include <vector>
 #include <cstdint>
 #include <unistd.h>
 #include <string>
-#include <stdexcept>
+#include <cinttypes>
 #include "text_segment_transformer.hpp"
 #include <frida-gum.h>
 /*
@@ -110,46 +109,10 @@ extern "C" int64_t syscall_hooker_cxx(int64_t sys_nr, int64_t arg1,
 				      int64_t arg2, int64_t arg3, int64_t arg4,
 				      int64_t arg5, int64_t arg6)
 {
-	try {
-		return call_hook(sys_nr, arg1, arg2, arg3, arg4, arg5, arg6);
-	} catch (...) {
-		return call_orig_syscall(sys_nr, arg1, arg2, arg3, arg4, arg5,
-					 arg6);
-	}
+	return call_hook(sys_nr, arg1, arg2, arg3, arg4, arg5, arg6);
 }
 
-struct segment_protection_guard {
-	uint8_t *code;
-	size_t len;
-	int perm;
-	bool active = true;
-
-	bool restore() noexcept
-	{
-		if (!active)
-			return true;
-		if (mprotect(code, len, perm) != 0)
-			return false;
-		active = false;
-		return true;
-	}
-
-	~segment_protection_guard()
-	{
-		(void)restore();
-	}
-};
-
-struct capstone_handle_guard {
-	csh handle;
-	~capstone_handle_guard()
-	{
-		cs_close(&handle);
-	}
-};
-
-static bool rewrite_segment(uint8_t *code, size_t len, int perm,
-			    bool &any_syscall_rewritten)
+static inline void rewrite_segment(uint8_t *code, size_t len, int perm)
 {
 	// Set the pages to be writable
 	if (int err = mprotect(code, len, PROT_READ | PROT_WRITE | PROT_EXEC);
@@ -157,76 +120,48 @@ static bool rewrite_segment(uint8_t *code, size_t len, int perm,
 		SPDLOG_ERROR(
 			"Failed to change the protect status of the rewriting page {:x}",
 			(uintptr_t)code);
-		return false;
+		exit(1);
 	}
-	segment_protection_guard protection{ code, len, perm };
-#if defined(BPFTIME_PRELOAD_TEST_HOOKS)
-	if (getenv("BPFTIME_TEST_TRANSFORMER_FAIL_AFTER_MPROTECT") != nullptr)
-		throw std::runtime_error(
-			"transformer test failure after mprotect");
-#endif
 	csh cs_handle;
-	cs_err ret = cs_open(CS_ARCH_X86, CS_MODE_64, &cs_handle);
+	cs_err ret;
+	ret = cs_open(CS_ARCH_X86, CS_MODE_64, &cs_handle);
 	if (ret != CS_ERR_OK) {
 		SPDLOG_ERROR("Failed to open capstone instance: {}, {}",
-			     (int)ret, cs_strerror(ret));
-		return false;
+			      (int)ret, cs_strerror(ret));
+		exit(1);
 	}
-	capstone_handle_guard capstone{ cs_handle };
 	const uint8_t *curr_code = code;
 	size_t size = len;
 	uint64_t curr_addr = (uint64_t)(uintptr_t)curr_code;
-	auto insn_deleter = [](cs_insn *insn) { cs_free(insn, 1); };
-	std::unique_ptr<cs_insn, decltype(insn_deleter)> curr_insn(
-		cs_malloc(cs_handle), insn_deleter);
-	if (!curr_insn) {
-		SPDLOG_ERROR("Failed to allocate capstone instruction cache");
-		return false;
-	}
+	cs_insn curr_insn;
+	memset(&curr_insn, 0, sizeof(curr_insn));
 	while (curr_addr < (uintptr_t)code + len) {
 		auto ok = cs_disasm_iter(cs_handle, &curr_code, &size,
-					 &curr_addr, curr_insn.get());
+					 &curr_addr, &curr_insn);
 		if (!ok) {
 			break;
 		}
 		auto insn_name =
-			std::string(cs_insn_name(cs_handle, curr_insn->id));
+			std::string(cs_insn_name(cs_handle, curr_insn.id));
 		if (insn_name == "syscall" || insn_name == "sysenter") {
-			if (curr_insn->address != (uintptr_t)&syscall_addr) {
-				uint8_t *curr_pos = (uint8_t *)(uintptr_t)
-							    curr_insn->address;
+			if (curr_insn.address != (uintptr_t)&syscall_addr) {
+				uint8_t *curr_pos =
+					(uint8_t *)(uintptr_t)curr_insn.address;
 				SPDLOG_TRACE("Rewrite syscall insn at {}",
-					     (void *)curr_pos);
+					      (void *)curr_pos);
 				curr_pos[0] = 0xff;
 				curr_pos[1] = 0xd0;
-				any_syscall_rewritten = true;
 			}
 		}
 	}
-	if (!protection.restore()) {
+	cs_close(&cs_handle);
+	if (int err = mprotect(code, len, perm); err < 0) {
 		SPDLOG_ERROR(
 			"Failed to change the protect status of the rewriting page {:x}",
 			(uintptr_t)code);
-		return false;
-	}
-	return true;
-}
-
-#if defined(BPFTIME_PRELOAD_TEST_HOOKS)
-extern "C" int bpftime_test_rewrite_segment(void *code, size_t len,
-					    int perm) noexcept
-{
-	try {
-		bool any_syscall_rewritten = false;
-		return rewrite_segment(static_cast<uint8_t *>(code), len, perm,
-				       any_syscall_rewritten) ?
-			       0 :
-			       1;
-	} catch (...) {
-		return 2;
+		exit(1);
 	}
 }
-#endif
 
 struct MapEntry {
 	uint64_t begin, end;
@@ -252,32 +187,43 @@ syscall_hooker_func_t get_call_hook()
 }
 void set_call_hook(syscall_hooker_func_t hook)
 {
-	call_hook = hook != nullptr ? hook : &call_orig_syscall;
+	call_hook = hook;
 }
 
-static bool setup_syscall_tracer_impl()
+void setup_syscall_tracer()
 {
+	// Setup page mappings
+
 	if (auto mmap_addr =
 		    mmap(0x0, 0x1000, PROT_EXEC | PROT_READ | PROT_WRITE,
 			 MAP_PRIVATE | MAP_FIXED | MAP_ANONYMOUS, -1, 0);
 	    mmap_addr == MAP_FAILED) {
 		SPDLOG_ERROR("Failed to perform mmap: errno={}, message={}",
-			     errno, strerror(errno));
-		return false;
+			      errno, strerror(errno));
+		exit(1);
 	}
-	bool any_syscall_rewritten = false;
-	struct page_zero_guard {
-		const bool &any_syscall_rewritten;
-		~page_zero_guard()
-		{
-			if (!any_syscall_rewritten)
-				(void)munmap(nullptr, 0x1000);
-		}
-	} page_zero{ any_syscall_rewritten };
-	for (int i = 0; i < NR_syscalls; i++)
+	// Setup jumpings
+	for (int i = 0; i < NR_syscalls; i++) {
+		// 0x90; nop
 		*((char *)(uintptr_t)(i)) = 0x90;
+	}
+	// Jump to the syscall handler function after the nop-s
+	/*
+	50
+	push %rax;
 
-	std::vector<uint8_t> codes{ 0x50, 0x48, 0xb8 };
+	48 b8 88 77 66 55 44 33 22 11
+	movabs $0x1122334455667788, %rax; // The constant is the address
+	of syscall_hooker_asm
+
+	ff e0
+	jmp *%rax;
+
+	*/
+	std::vector<uint8_t> codes;
+	codes.push_back(0x50);
+	codes.push_back(0x48);
+	codes.push_back(0xb8);
 	for (int i = 0; i < 8; i++) {
 		codes.push_back(
 			(uint8_t)((((uint64_t)(uintptr_t)syscall_hooker_asm) >>
@@ -287,20 +233,21 @@ static bool setup_syscall_tracer_impl()
 	codes.push_back(0xff);
 	codes.push_back(0xe0);
 	std::copy(codes.begin(), codes.end(),
-		  (uint8_t *)(uintptr_t)NR_syscalls);
-	if (mprotect(0, 0x1000, PROT_EXEC) < 0) {
-		SPDLOG_ERROR("Failed to set execute only of 0-started page: {}",
-			     errno);
-		return false;
+		  (uint8_t *)(uintptr_t)(0 + NR_syscalls));
+	// Set the page to execute-only. Keep normal behavior of
+	// dereferencing null-pointers
+	if (int err = mprotect(0, 0x1000, PROT_EXEC); err < 0) {
+		SPDLOG_ERROR(
+			"Failed to set execute only of 0-started page: {}",
+			errno);
+		exit(1);
 	}
 
 	SPDLOG_INFO("Page zero setted up..");
+	// Scan for /proc/self/maps
+
 	std::vector<MapEntry> entries;
 	std::ifstream ifs("/proc/self/maps");
-	if (!ifs.is_open()) {
-		SPDLOG_ERROR("Failed to open /proc/self/maps");
-		return false;
-	}
 	while (ifs) {
 		std::string line;
 		std::getline(ifs, line);
@@ -317,35 +264,26 @@ static bool setup_syscall_tracer_impl()
 		if (cnt == 6) {
 			std::string buf = path_buf;
 			free(path_buf);
-			if (buf == "[stack]" || buf == "[vsyscall]")
+			if (buf == "[stack]" || buf == "[vsyscall]") {
 				continue;
+			}
 		}
+
 		entries.push_back(curr);
 	}
-
 	SPDLOG_INFO("Rewriting executable segments..");
+	// Hack the executable mappings
 	for (const auto &map : entries) {
-		if (map.x != 'x' || map.begin == 0)
-			continue;
-		SPDLOG_DEBUG("Rewriting segment from {:x} to {:x}", map.begin,
-			     map.end);
-		if (!rewrite_segment((uint8_t *)(uintptr_t)map.begin,
-				     map.end - map.begin, map.get_perm(),
-				     any_syscall_rewritten))
-			return false;
-	}
-	return true;
-}
-
-bool setup_syscall_tracer() noexcept
-{
-	// Until setup completes, transformed syscalls still delegate to the
-	// original syscall instruction.
-	call_hook = &call_orig_syscall;
-	try {
-		return setup_syscall_tracer_impl();
-	} catch (...) {
-		return false;
+		if (map.x == 'x') {
+			if (map.begin == 0) {
+				// Skip pages that we mapped
+				continue;
+			}
+			SPDLOG_DEBUG("Rewriting segment from {:x} to {:x}",
+				      map.begin, map.end);
+			rewrite_segment((uint8_t *)(uintptr_t)(map.begin),
+					map.end - map.begin, map.get_perm());
+		}
 	}
 }
 
