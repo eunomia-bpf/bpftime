@@ -332,7 +332,12 @@ int main(int argc, char *argv[])
 					}
 					return priv_data;
 				});
-			ctx.init_attach_ctx_from_handlers(runtime_config);
+			if (ctx.init_attach_ctx_from_handlers(runtime_config) ==
+			    -EINVAL) {
+				SPDLOG_ERROR(
+					"GPU verifier rejected the program");
+				return 1;
+			}
 			if (auto impl = ctx.find_nv_attach_impl(); impl) {
 				const int id = (*impl)->find_attach_entry_by_program_name(
 					argv[2]);

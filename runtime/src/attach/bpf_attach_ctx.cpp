@@ -125,6 +125,14 @@ int bpf_attach_ctx::init_attach_ctx_from_handlers(
 				if (int err = instantiate_handler_at(
 					    manager, i, stk, config, true);
 				    err < 0) {
+					if (config.verifier_mode ==
+						    BPFTIME_VERIFIER_STRICT &&
+					    err == -EINVAL) {
+						SPDLOG_ERROR(
+							"GPU verifier rejected handler {}",
+							i);
+						return err;
+					}
 					SPDLOG_DEBUG(
 						"Failed to instantiate handler {}",
 						i);
