@@ -312,6 +312,28 @@ TEST_CASE("Per-thread map values are lane-varying", "[gpu][uniformity]")
 	REQUIRE_FALSE(safety.passed);
 }
 
+TEST_CASE("Unknown map identity is conservatively lane-varying",
+	  "[gpu][uniformity]")
+{
+	const std::map<int, BpftimeMapDescriptor> maps = {
+		{ 1, make_map(1, 1502) },
+	};
+	const std::array<ebpf_inst, 12> program = {
+		make_lddw_map(1, 1),	  {},
+		make_stxdw(10, 1, -16),	  make_ldxdw(1, 10, -16),
+		make_stdw_imm(10, -8, 0), make_mov64_reg(2, 10),
+		make_add64_imm(2, -8),	  make_call(1),
+		make_jeq_imm(0, 0, 2),	  make_ldxdw(3, 0, 0),
+		make_jeq_imm(3, 0, 0),	  make_exit(),
+	};
+	const auto result =
+		analyze_uniformity(program.data(), program.size(), maps);
+	REQUIRE(result.success);
+	REQUIRE(result.states[8].pointers[0].offset_uniformity ==
+		Uniformity::VARYING);
+	REQUIRE(result.states[10].regs[3] == Uniformity::VARYING);
+}
+
 TEST_CASE("Shared map writes require lane-uniform values", "[gpu][simt]")
 {
 	const std::map<int, BpftimeMapDescriptor> maps = {
@@ -351,6 +373,34 @@ TEST_CASE("Shared map writes require lane-uniform values", "[gpu][simt]")
 			make_add64_imm(2, -8),
 			make_mov64_reg(3, 10),
 			make_add64_imm(3, -16),
+			make_mov64_imm(4, 0),
+			make_call(2),
+			make_exit(),
+		};
+		const auto uniformity = analyze_uniformity(
+			program.data(), program.size(), maps);
+		const auto safety = check_simt_safety(
+			program.data(), program.size(), uniformity, maps);
+		INFO(safety.summary());
+		REQUIRE_FALSE(safety.passed);
+		REQUIRE(safety.summary().find("Shared Map Value Uniformity") !=
+			std::string::npos);
+	}
+
+	SECTION("map update after map pointer spill")
+	{
+		const std::array<ebpf_inst, 14> program = {
+			make_call(511),
+			make_stxdw(10, 0, -24),
+			make_lddw_map(1, 1),
+			{},
+			make_stxdw(10, 1, -16),
+			make_ldxdw(1, 10, -16),
+			make_stdw_imm(10, -8, 0),
+			make_mov64_reg(2, 10),
+			make_add64_imm(2, -8),
+			make_mov64_reg(3, 10),
+			make_add64_imm(3, -24),
 			make_mov64_imm(4, 0),
 			make_call(2),
 			make_exit(),
@@ -507,6 +557,16 @@ TEST_CASE("GPU verifier integrates SIMT phases with optional PREVAIL",
 		REQUIRE(result.passed);
 	}
 
+	SECTION("empty programs fail")
+	{
+		reset_verifier_state();
+		const ebpf_inst sentinel{};
+		const auto result =
+			verify_gpu_program(&sentinel, 0, "cuda__empty");
+		REQUIRE_FALSE(result.passed);
+		REQUIRE(result.error_message == "empty instruction stream");
+	}
+
 	SECTION("unsafe varying branch fails")
 	{
 		reset_verifier_state({ 505 });
@@ -572,6 +632,28 @@ TEST_CASE("GPU verifier integrates SIMT phases with optional PREVAIL",
 		};
 		const auto result = verify_gpu_program(
 			program.data(), program.size(), "cuda__cpu_helper");
+		REQUIRE_FALSE(result.passed);
+	}
+
+	SECTION("ambient prototypes cannot replace fixed GPU policy")
+	{
+		BpftimeHelperProrotype ambient_override{};
+		ambient_override.name = "ambient_override";
+		ambient_override.return_type =
+			bpftime::verifier::EBPF_RETURN_TYPE_INTEGER;
+		for (auto &argument_type : ambient_override.argument_type) {
+			argument_type =
+				bpftime::verifier::EBPF_ARGUMENT_TYPE_DONTCARE;
+		}
+		set_available_helpers({ 1 });
+		set_non_kernel_helpers({ { 1, ambient_override } });
+		const std::array<ebpf_inst, 2> program = {
+			make_call(1),
+			make_exit(),
+		};
+		const auto result = verify_gpu_program(
+			program.data(), program.size(), "cuda__prototype");
+		reset_verifier_state();
 		REQUIRE_FALSE(result.passed);
 	}
 }

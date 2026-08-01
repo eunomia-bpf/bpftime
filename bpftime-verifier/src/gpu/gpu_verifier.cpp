@@ -115,7 +115,7 @@ make_prevail_gpu_helper_override(int32_t helper_id)
 std::map<int32_t, bpftime::verifier::BpftimeHelperProrotype>
 make_prevail_gpu_helper_overrides()
 {
-	auto helpers = get_non_kernel_helper_overrides();
+	std::map<int32_t, bpftime::verifier::BpftimeHelperProrotype> helpers;
 	for (const auto helper_id : PREVAIL_GPU_HELPERS) {
 		helpers[helper_id] =
 			make_prevail_gpu_helper_override(helper_id);
@@ -411,12 +411,12 @@ static GpuVerifyResult verify_gpu_instructions(
 			elapsed_us<Clock>(total_start, Clock::now());
 		return result;
 	};
-	if (instructions == nullptr) {
-		result.error_message = "null instruction stream";
+	if (num_instructions == 0) {
+		result.error_message = "empty instruction stream";
 		return finish();
 	}
-	if (num_instructions == 0) {
-		result.passed = true;
+	if (instructions == nullptr) {
+		result.error_message = "null instruction stream";
 		return finish();
 	}
 

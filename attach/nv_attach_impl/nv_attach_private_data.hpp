@@ -11,6 +11,16 @@ namespace bpftime
 {
 namespace attach
 {
+inline constexpr int GPU_VERIFIER_REJECTED = -4096;
+
+inline constexpr bool
+should_propagate_gpu_verifier_error(bpftime_verifier_mode mode,
+				    int error) noexcept
+{
+	return mode == BPFTIME_VERIFIER_STRICT &&
+	       error == GPU_VERIFIER_REJECTED;
+}
+
 struct nv_attach_private_data final : public attach_private_data {
 	std::variant<uintptr_t, std::string> code_addr_or_func_name;
 	// Names of kernels to be patched when multi-stream is used

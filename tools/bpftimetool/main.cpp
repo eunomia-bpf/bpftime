@@ -333,7 +333,7 @@ int main(int argc, char *argv[])
 					return priv_data;
 				});
 			if (ctx.init_attach_ctx_from_handlers(runtime_config) ==
-			    -EINVAL) {
+			    attach::GPU_VERIFIER_REJECTED) {
 				SPDLOG_ERROR(
 					"GPU verifier rejected the program");
 				return 1;

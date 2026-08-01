@@ -246,7 +246,7 @@ int nv_attach_impl::create_attach_with_ebpf_callback(
 						"GPU eBPF verification failed for {}: {}",
 						section_name,
 						result.error_message);
-					return -EINVAL;
+					return GPU_VERIFIER_REJECTED;
 				}
 				SPDLOG_WARN(
 					"GPU eBPF verification failed for {}: {}; continuing",

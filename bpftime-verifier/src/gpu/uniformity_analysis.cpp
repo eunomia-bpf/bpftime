@@ -361,15 +361,16 @@ void clear_register(UniformityState &state, uint8_t reg)
 	state.map_fds[reg].reset();
 }
 
-bool is_per_thread_map(const UniformityState &state,
-		       const std::map<int, BpftimeMapDescriptor> &maps)
+bool map_lookup_may_be_per_thread(
+	const UniformityState &state,
+	const std::map<int, BpftimeMapDescriptor> &maps)
 {
 	if (!state.map_fds[1].has_value()) {
-		return false;
+		return true;
 	}
 	const auto it = maps.find(*state.map_fds[1]);
-	return it != maps.end() &&
-	       (it->second.type == 1502 || it->second.type == 1512);
+	return it == maps.end() || it->second.type == 1502 ||
+	       it->second.type == 1512;
 }
 
 Uniformity
@@ -573,7 +574,8 @@ UniformityState transfer(const ebpf_inst *instructions, size_t count, size_t pc,
 		output.pointers[0] = {};
 
 		if (helper.behavior == GpuHelperBehavior::MAP_LOOKUP) {
-			const bool per_thread = is_per_thread_map(input, maps);
+			const bool per_thread =
+				map_lookup_may_be_per_thread(input, maps);
 			output.pointers[0] = PointerProvenance{
 				.region = PointerRegion::MAP_VALUE,
 				.constant_offset = 0,

@@ -50,9 +50,20 @@ bool is_atomic(const ebpf_inst &instruction)
 	       (instruction.opcode & 0xe0) == 0xc0;
 }
 
-bool is_shared_gpu_map(uint32_t type)
+bool is_per_thread_gpu_map(uint32_t type)
 {
-	return type == 1501 || type == 1503 || type == 1504 || type == 1513;
+	return type == 1502 || type == 1512;
+}
+
+bool map_update_may_target_shared_map(
+	const UniformityState &state,
+	const std::map<int, BpftimeMapDescriptor> &maps)
+{
+	if (!state.map_fds[1].has_value()) {
+		return true;
+	}
+	const auto map = maps.find(*state.map_fds[1]);
+	return map == maps.end() || !is_per_thread_gpu_map(map->second.type);
 }
 
 void add_error(SimtSafetyResult &result, size_t pc, const char *check_name,
@@ -238,16 +249,11 @@ check_simt_safety(const ebpf_inst *instructions, size_t num_instructions,
 		}
 
 		if (helper.behavior == GpuHelperBehavior::MAP_UPDATE &&
-		    state.map_fds[1].has_value()) {
-			const auto map = maps.find(*state.map_fds[1]);
-			if (map != maps.end() &&
-			    is_shared_gpu_map(map->second.type) &&
-			    value_uniformity(state, maps, state.map_fds[1],
-					     3) != Uniformity::UNIFORM) {
-				add_error(
-					result, pc, MAP_VALUE_CHECK,
-					"shared map update value is lane-varying");
-			}
+		    map_update_may_target_shared_map(state, maps) &&
+		    value_uniformity(state, maps, state.map_fds[1], 3) !=
+			    Uniformity::UNIFORM) {
+			add_error(result, pc, MAP_VALUE_CHECK,
+				  "shared map update value is lane-varying");
 		}
 	}
 
