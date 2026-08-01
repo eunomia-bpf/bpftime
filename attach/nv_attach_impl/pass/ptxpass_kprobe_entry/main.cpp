@@ -51,8 +51,6 @@ patch_entry(const std::string &ptx, const std::string &kernel,
 		return { ptx, false };
 	}
 	std::string fname = std::string("__probe_func__") + kernel;
-	auto func_ptx = ptxpass::compile_ebpf_to_ptx_from_words(
-		ebpf_words, "sm_61", fname, add_register_guard, false);
 	std::string out = ptx;
 
 	bool patched_stub_calls = false;
@@ -74,6 +72,8 @@ patch_entry(const std::string &ptx, const std::string &kernel,
 	}
 
 	if (patched_stub_calls) {
+		auto func_ptx = ptxpass::compile_ebpf_to_ptx_from_words(
+			ebpf_words, "sm_61", fname, add_register_guard, false);
 		out = func_ptx + "\n" + out;
 		ptxpass::log_transform_stats("kprobe_entry_stub", 1,
 					     ptx.size(), out.size());
@@ -86,6 +86,8 @@ patch_entry(const std::string &ptx, const std::string &kernel,
 	size_t brace = out.find('{', body.first);
 	if (brace == std::string::npos)
 		return { ptx, false };
+	auto func_ptx = ptxpass::compile_ebpf_to_ptx_from_words(
+		ebpf_words, "sm_61", fname, add_register_guard, false);
 	size_t insertPos = brace + 1;
 	if (insertPos < out.size() && out[insertPos] == '\n')
 		insertPos++;
