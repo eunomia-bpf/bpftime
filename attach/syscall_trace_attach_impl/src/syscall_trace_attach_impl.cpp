@@ -50,16 +50,24 @@ int64_t syscall_trace_attach_impl::dispatch_syscall(int64_t sys_nr,
 		ctx.args[4] = arg5;
 		ctx.args[5] = arg6;
 		for (auto prog : sys_enter_callbacks[sys_nr]) {
-			auto ctx_copy = ctx;
-			uint64_t ret;
-			int err = prog->cb(&ctx_copy, sizeof(ctx_copy), &ret);
-			SPDLOG_DEBUG("ret {}, err {}", ret, err);
+			try {
+				auto ctx_copy = ctx;
+				uint64_t ret;
+				int err = prog->cb(&ctx_copy, sizeof(ctx_copy),
+						   &ret);
+				SPDLOG_DEBUG("ret {}, err {}", ret, err);
+			} catch (...) {
+			}
 		}
 		for (auto prog : global_enter_callbacks) {
-			auto ctx_copy = ctx;
-			uint64_t ret;
-			int err = prog->cb(&ctx_copy, sizeof(ctx_copy), &ret);
-			SPDLOG_DEBUG("ret {}, err {}", ret, err);
+			try {
+				auto ctx_copy = ctx;
+				uint64_t ret;
+				int err = prog->cb(&ctx_copy, sizeof(ctx_copy),
+						   &ret);
+				SPDLOG_DEBUG("ret {}, err {}", ret, err);
+			} catch (...) {
+			}
 		}
 	}
 	curr_thread_override_return_callback.reset();
@@ -81,16 +89,24 @@ int64_t syscall_trace_attach_impl::dispatch_syscall(int64_t sys_nr,
 		ctx.id = sys_nr;
 		ctx.ret = ret;
 		for (auto prog : sys_exit_callbacks[sys_nr]) {
-			auto ctx_copy = ctx;
-			uint64_t ret;
-			int err = prog->cb(&ctx_copy, sizeof(ctx_copy), &ret);
-			SPDLOG_DEBUG("ret {}, err {}", ret, err);
+			try {
+				auto ctx_copy = ctx;
+				uint64_t ret;
+				int err = prog->cb(&ctx_copy, sizeof(ctx_copy),
+						   &ret);
+				SPDLOG_DEBUG("ret {}, err {}", ret, err);
+			} catch (...) {
+			}
 		}
 		for (const auto prog : global_exit_callbacks) {
-			auto ctx_copy = ctx;
-			uint64_t ret;
-			int err = prog->cb(&ctx_copy, sizeof(ctx_copy), &ret);
-			SPDLOG_DEBUG("ret {}, err {}", ret, err);
+			try {
+				auto ctx_copy = ctx;
+				uint64_t ret;
+				int err = prog->cb(&ctx_copy, sizeof(ctx_copy),
+						   &ret);
+				SPDLOG_DEBUG("ret {}, err {}", ret, err);
+			} catch (...) {
+			}
 		}
 	}
 	curr_thread_override_return_callback.reset();
