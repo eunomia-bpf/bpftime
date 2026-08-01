@@ -21,6 +21,11 @@ static void configure_transformer_logger() noexcept
 		target != nullptr ? target : "~/.bpftime/runtime.log");
 }
 
+static void disable_syscall_tracer_at_exit() noexcept
+{
+	bpftime::set_call_hook(nullptr);
+}
+
 extern "C" int bpftime_hooked_main(int argc, char **argv, char **envp)
 {
 	int stay_resident = 0;
@@ -93,6 +98,10 @@ static void bpftime_agent_main_impl(const gchar *data, gboolean *stay_resident)
 	syscall_hooker_func_t orig_syscall_hooker_func =
 		bpftime::get_call_hook();
 	entry_func(&orig_syscall_hooker_func);
+	if (std::atexit(disable_syscall_tracer_at_exit) != 0) {
+		bpftime::set_call_hook(nullptr);
+		return;
+	}
 	bpftime::set_call_hook(orig_syscall_hooker_func);
 	SPDLOG_DEBUG("Transformer exiting, syscall trace is usable now");
 }
