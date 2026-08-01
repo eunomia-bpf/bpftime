@@ -125,6 +125,7 @@ int bpf_attach_ctx::init_attach_ctx_from_handlers(
 				if (int err = instantiate_handler_at(
 					    manager, i, stk, config, true);
 				    err < 0) {
+#ifdef BPFTIME_ENABLE_CUDA_ATTACH
 					if (attach::should_propagate_gpu_verifier_error(
 						    config.verifier_mode, err)) {
 						SPDLOG_ERROR(
@@ -132,6 +133,7 @@ int bpf_attach_ctx::init_attach_ctx_from_handlers(
 							i);
 						return err;
 					}
+#endif
 					SPDLOG_DEBUG(
 						"Failed to instantiate handler {}",
 						i);

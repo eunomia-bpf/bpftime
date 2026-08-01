@@ -221,6 +221,8 @@ PointerProvenance join_pointer(const PointerProvenance &lhs,
 		lhs.offset_uniformity, rhs.offset_uniformity);
 	result.pointee_uniformity = bpftime::verifier::gpu::join_uniformity(
 		lhs.pointee_uniformity, rhs.pointee_uniformity);
+	result.may_target_shared_map =
+		lhs.may_target_shared_map || rhs.may_target_shared_map;
 
 	if (lhs.constant_offset.has_value() &&
 	    rhs.constant_offset.has_value() &&
@@ -371,6 +373,18 @@ bool map_lookup_may_be_per_thread(
 	const auto it = maps.find(*state.map_fds[1]);
 	return it == maps.end() || it->second.type == 1502 ||
 	       it->second.type == 1512;
+}
+
+bool map_lookup_may_target_shared_map(
+	const UniformityState &state,
+	const std::map<int, BpftimeMapDescriptor> &maps)
+{
+	if (!state.map_fds[1].has_value()) {
+		return true;
+	}
+	const auto it = maps.find(*state.map_fds[1]);
+	return it == maps.end() ||
+	       (it->second.type != 1502 && it->second.type != 1512);
 }
 
 Uniformity
@@ -585,6 +599,9 @@ UniformityState transfer(const ebpf_inst *instructions, size_t count, size_t pc,
 				.pointee_uniformity =
 					per_thread ? Uniformity::VARYING :
 						     return_uniformity,
+				.may_target_shared_map =
+					map_lookup_may_target_shared_map(input,
+									 maps),
 			};
 		}
 

@@ -414,6 +414,27 @@ TEST_CASE("Shared map writes require lane-uniform values", "[gpu][simt]")
 		REQUIRE(safety.summary().find("Shared Map Value Uniformity") !=
 			std::string::npos);
 	}
+
+	SECTION("direct store after map pointer spill")
+	{
+		const std::array<ebpf_inst, 14> program = {
+			make_call(511),		  make_stxdw(10, 0, -24),
+			make_lddw_map(1, 1),	  {},
+			make_stxdw(10, 1, -16),	  make_ldxdw(1, 10, -16),
+			make_stdw_imm(10, -8, 0), make_mov64_reg(2, 10),
+			make_add64_imm(2, -8),	  make_call(1),
+			make_jeq_imm(0, 0, 2),	  make_ldxdw(3, 10, -24),
+			make_stxdw(0, 3, 0),	  make_exit(),
+		};
+		const auto uniformity = analyze_uniformity(
+			program.data(), program.size(), maps);
+		const auto safety = check_simt_safety(
+			program.data(), program.size(), uniformity, maps);
+		INFO(safety.summary());
+		REQUIRE_FALSE(safety.passed);
+		REQUIRE(safety.summary().find("Shared Map Value Uniformity") !=
+			std::string::npos);
+	}
 }
 
 TEST_CASE("Atomic fetch results are lane-varying", "[gpu][uniformity]")

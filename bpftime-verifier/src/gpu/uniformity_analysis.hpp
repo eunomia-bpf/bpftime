@@ -33,6 +33,7 @@ struct PointerProvenance {
 	std::optional<int32_t> constant_offset{};
 	Uniformity offset_uniformity = Uniformity::UNKNOWN;
 	Uniformity pointee_uniformity = Uniformity::UNKNOWN;
+	bool may_target_shared_map = false;
 
 	bool operator==(const PointerProvenance &) const = default;
 };

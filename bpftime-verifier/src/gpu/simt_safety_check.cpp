@@ -210,8 +210,7 @@ check_simt_safety(const ebpf_inst *instructions, size_t num_instructions,
 		    !is_atomic(instruction) &&
 		    state.pointers[instruction.dst].region ==
 			    PointerRegion::MAP_VALUE &&
-		    state.pointers[instruction.dst].offset_uniformity ==
-			    Uniformity::UNIFORM &&
+		    state.pointers[instruction.dst].may_target_shared_map &&
 		    state.regs[instruction.src] != Uniformity::UNIFORM) {
 			add_error(result, pc, MAP_VALUE_CHECK,
 				  "shared map store value is lane-varying");
