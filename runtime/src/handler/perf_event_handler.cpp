@@ -377,7 +377,7 @@ int software_perf_event_buffer::output_data(const void *buf, size_t size)
 	header.size = record_size - sizeof(header);
 
 	append_record_parts(&header, sizeof(header), buf, size,
-			    record_size - sizeof(header) - size);
+			    header.size - size);
 	return 0;
 }
 
