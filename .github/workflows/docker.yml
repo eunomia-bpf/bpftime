@@ -53,11 +53,6 @@ jobs:
         with:
           submodules: "recursive"
 
-      # setup Docker buld action
-      - name: Set up Docker Buildx
-        id: buildx
-        uses: docker/setup-buildx-action@v4
-
       - name: build docker
         run: docker build .
 
