@@ -147,7 +147,8 @@ struct capstone_handle_guard {
 	}
 };
 
-static bool rewrite_segment(uint8_t *code, size_t len, int perm)
+static bool rewrite_segment(uint8_t *code, size_t len, int perm,
+			    bool &any_syscall_rewritten)
 {
 	// Set the pages to be writable
 	if (int err = mprotect(code, len, PROT_READ | PROT_WRITE | PROT_EXEC);
@@ -192,6 +193,7 @@ static bool rewrite_segment(uint8_t *code, size_t len, int perm)
 					     (void *)curr_pos);
 				curr_pos[0] = 0xff;
 				curr_pos[1] = 0xd0;
+				any_syscall_rewritten = true;
 			}
 		}
 	}
@@ -209,8 +211,9 @@ extern "C" int bpftime_test_rewrite_segment(void *code, size_t len,
 					    int perm) noexcept
 {
 	try {
-		return rewrite_segment(static_cast<uint8_t *>(code), len,
-				       perm) ?
+		bool any_syscall_rewritten = false;
+		return rewrite_segment(static_cast<uint8_t *>(code), len, perm,
+				       any_syscall_rewritten) ?
 			       0 :
 			       1;
 	} catch (...) {
@@ -256,18 +259,15 @@ static bool setup_syscall_tracer_impl()
 			     errno, strerror(errno));
 		return false;
 	}
+	bool any_syscall_rewritten = false;
 	struct page_zero_guard {
-		bool active = true;
+		const bool &any_syscall_rewritten;
 		~page_zero_guard()
 		{
-			if (active)
+			if (!any_syscall_rewritten)
 				(void)munmap(nullptr, 0x1000);
 		}
-		void keep() noexcept
-		{
-			active = false;
-		}
-	} page_zero;
+	} page_zero{ any_syscall_rewritten };
 	for (int i = 0; i < NR_syscalls; i++)
 		*((char *)(uintptr_t)(i)) = 0x90;
 
@@ -323,9 +323,9 @@ static bool setup_syscall_tracer_impl()
 			continue;
 		SPDLOG_DEBUG("Rewriting segment from {:x} to {:x}", map.begin,
 			     map.end);
-		page_zero.keep();
 		if (!rewrite_segment((uint8_t *)(uintptr_t)map.begin,
-				     map.end - map.begin, map.get_perm()))
+				     map.end - map.begin, map.get_perm(),
+				     any_syscall_rewritten))
 			return false;
 	}
 	return true;
