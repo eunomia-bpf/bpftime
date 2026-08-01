@@ -12,7 +12,6 @@
 // #include "spdlog/common.h"
 #include "spdlog/spdlog.h"
 #include <asm/unistd.h> // For architecture-specific syscall numbers
-#include <boost/asio/io_context.hpp>
 #include <boost/asio/post.hpp>
 #include <boost/asio/thread_pool.hpp>
 #include <boost/process.hpp>
@@ -46,23 +45,20 @@
 #include <sys/wait.h>
 #include <sys/user.h>
 #include <sys/uio.h>
-#if __linux__
 #include <spawn.h>
-#endif
 #include <link.h>
 #include <tuple>
 #include <unistd.h>
 #include <variant>
 #include <vector>
 #include <atomic>
+#include <cerrno>
 #include <optional>
 #include <thread>
 #include "ptxpass/core.hpp"
 #include "ptx_pass_config.h"
 
-#if __linux__
 extern "C" char **environ;
-#endif
 
 using namespace bpftime;
 using namespace attach;
@@ -78,6 +74,181 @@ struct nv_attach_hook_state_holder {
 };
 
 static nv_attach_hook_state_holder g_nv_attach_hook_state_holder{};
+constexpr size_t kPtxPassConfigOutputBytes = 10U << 20;
+constexpr size_t kInitialPtxPassProcessOutputBytes = 1U << 20;
+constexpr size_t kMaxPtxPassProcessOutputBytes = 64U << 20;
+
+static std::optional<std::string>
+run_ptxpass_runner(const std::string &mode,
+		   const std::filesystem::path &pass_library,
+		   const std::string *stdin_payload, size_t output_bytes)
+{
+	const char *configured_runner = getenv("BPFTIME_PTXPASS_RUNNER");
+	const bool using_configured_runner =
+		configured_runner && configured_runner[0] != '\0';
+	std::filesystem::path runner_path =
+		using_configured_runner ? configured_runner :
+					  DEFAULT_PTX_PASS_RUNNER_EXECUTABLE;
+	char tmp_dir_template[] = "/tmp/bpftime-ptxpass-runner.XXXXXX";
+	char *tmp_dir_c = mkdtemp(tmp_dir_template);
+	if (tmp_dir_c == nullptr) {
+		SPDLOG_ERROR("mkdtemp failed for PTX pass runner: {}",
+			     strerror(errno));
+		return std::nullopt;
+	}
+	struct tmp_dir_guard {
+		std::filesystem::path path;
+		~tmp_dir_guard()
+		{
+			std::error_code ec;
+			std::filesystem::remove_all(path, ec);
+		}
+	} guard{ std::filesystem::path(tmp_dir_c) };
+
+	auto stdin_path = guard.path / "stdin.json";
+	auto stdout_path = guard.path / "stdout.json";
+	auto stderr_path = guard.path / "stderr.log";
+	{
+		std::ofstream ofs(stdin_path);
+		if (stdin_payload != nullptr)
+			ofs << *stdin_payload;
+		ofs.close();
+		if (!ofs) {
+			SPDLOG_ERROR("Unable to write PTX pass runner input {}",
+				     stdin_path.c_str());
+			return std::nullopt;
+		}
+	}
+
+	if (!using_configured_runner &&
+	    access(runner_path.c_str(), X_OK) != 0 && errno == EACCES) {
+		std::error_code ec;
+		std::filesystem::permissions(runner_path,
+					     std::filesystem::perms::owner_exec,
+					     std::filesystem::perm_options::add,
+					     ec);
+		if (ec) {
+			SPDLOG_WARN(
+				"Unable to add execute permission to PTX pass runner {}: {}",
+				runner_path.c_str(), ec.message());
+		}
+	}
+	posix_spawn_file_actions_t file_actions;
+	int spawn_rc = posix_spawn_file_actions_init(&file_actions);
+	if (spawn_rc != 0) {
+		SPDLOG_ERROR(
+			"posix_spawn_file_actions_init failed for PTX pass runner: {}",
+			strerror(spawn_rc));
+		return std::nullopt;
+	}
+	struct file_actions_guard {
+		posix_spawn_file_actions_t *actions;
+		~file_actions_guard()
+		{
+			posix_spawn_file_actions_destroy(actions);
+		}
+	} file_actions_cleanup{ &file_actions };
+	const std::tuple<int, std::filesystem::path, int, mode_t> redirects[] = {
+		{ STDIN_FILENO, stdin_path, O_RDONLY, 0 },
+		{ STDOUT_FILENO, stdout_path, O_WRONLY | O_CREAT | O_TRUNC,
+		  0600 },
+		{ STDERR_FILENO, stderr_path, O_WRONLY | O_CREAT | O_TRUNC,
+		  0600 },
+	};
+	for (const auto &[fd, path, flags, mode] : redirects) {
+		int rc = posix_spawn_file_actions_addopen(
+			&file_actions, fd, path.c_str(), flags, mode);
+		if (rc != 0) {
+			SPDLOG_ERROR(
+				"Unable to prepare PTX pass runner fd {} redirection to {}: {}",
+				fd, path.c_str(), strerror(rc));
+			return std::nullopt;
+		}
+	}
+#if defined(__GLIBC__) && defined(__GLIBC_PREREQ)
+#if __GLIBC_PREREQ(2, 34)
+	int closefrom_rc =
+		posix_spawn_file_actions_addclosefrom_np(&file_actions, 3);
+	if (closefrom_rc != 0) {
+		SPDLOG_ERROR(
+			"Unable to prepare PTX pass runner closefrom action: {}",
+			strerror(closefrom_rc));
+		return std::nullopt;
+	}
+#endif
+#endif
+
+	std::vector<std::string> arg_strs = { runner_path.string(), mode,
+					      pass_library.string(),
+					      "--output-bytes",
+					      std::to_string(output_bytes) };
+	std::vector<char *> argv;
+	argv.reserve(arg_strs.size() + 1);
+	for (auto &arg : arg_strs)
+		argv.push_back(arg.data());
+	argv.push_back(nullptr);
+
+	std::vector<std::string> env_strs;
+	for (char **p = ::environ; p && *p; ++p) {
+		if (strncmp(*p, "LD_PRELOAD=", 11) == 0 ||
+		    strncmp(*p, "LD_AUDIT=", 9) == 0)
+			continue;
+		env_strs.emplace_back(*p);
+	}
+	env_strs.emplace_back("LD_PRELOAD=");
+	env_strs.emplace_back("LD_AUDIT=");
+	std::vector<char *> envp;
+	envp.reserve(env_strs.size() + 1);
+	for (auto &env : env_strs)
+		envp.push_back(env.data());
+	envp.push_back(nullptr);
+
+	pid_t child_pid = -1;
+	spawn_rc = posix_spawnp(&child_pid, runner_path.c_str(), &file_actions,
+				nullptr, argv.data(), envp.data());
+	if (spawn_rc != 0) {
+		SPDLOG_ERROR("Unable to spawn PTX pass runner {} for {}: {}",
+			     runner_path.c_str(), pass_library.c_str(),
+			     strerror(spawn_rc));
+		return std::nullopt;
+	}
+	int status = 0;
+	pid_t waited_pid = -1;
+	do {
+		waited_pid = waitpid(child_pid, &status, 0);
+	} while (waited_pid < 0 && errno == EINTR);
+	if (waited_pid < 0) {
+		SPDLOG_ERROR("waitpid failed for PTX pass runner {}: {}",
+			     runner_path.c_str(), strerror(errno));
+		return std::nullopt;
+	}
+	if (!WIFEXITED(status) || WEXITSTATUS(status) != 0) {
+		std::ifstream efs(stderr_path);
+		std::string err((std::istreambuf_iterator<char>(efs)),
+				std::istreambuf_iterator<char>());
+		std::string reason;
+		if (WIFSIGNALED(status))
+			reason = "signal " + std::to_string(WTERMSIG(status));
+		else if (WIFEXITED(status))
+			reason = "exit code " +
+				 std::to_string(WEXITSTATUS(status));
+		else
+			reason = "wait status " + std::to_string(status);
+		SPDLOG_ERROR("PTX pass runner {} failed for {} with {}: {}",
+			     runner_path.c_str(), pass_library.c_str(), reason,
+			     err);
+		return std::nullopt;
+	}
+
+	std::ifstream ifs(stdout_path);
+	if (!ifs.is_open()) {
+		SPDLOG_ERROR("Unable to read PTX pass runner output {}",
+			     stdout_path.c_str());
+		return std::nullopt;
+	}
+	return std::string(std::istreambuf_iterator<char>(ifs),
+			   std::istreambuf_iterator<char>());
+}
 } // namespace
 
 nv_attach_hook_state &nv_attach_get_hook_state()
@@ -178,7 +349,7 @@ int nv_attach_impl::create_attach_with_ebpf_callback(
 	} else {
 		attach_point_name = func_name;
 	}
-	struct pass_cfg_with_exec_path *matched = nullptr;
+	const struct pass_cfg_with_library_path *matched = nullptr;
 	for (const auto &pd : this->pass_configurations) {
 		if (pd->pass_config.attach_type != attach_type)
 			continue;
@@ -223,7 +394,7 @@ int nv_attach_impl::create_attach_with_ebpf_callback(
 				    (uintptr_t)this->shared_mem_ptr);
 		}
 		SPDLOG_INFO("Recorded pass {} for func {}",
-			    matched->executable_path.c_str(), func_name);
+			    matched->library_path.c_str(), func_name);
 		start_late_bootstrap_async();
 		return id;
 	}
@@ -517,41 +688,26 @@ nv_attach_impl::nv_attach_impl()
 	}
 	auto paths = split_by_colon(ptx_pass_libraries);
 	for (const auto &path : paths) {
-		SPDLOG_INFO("Found path: {}, executing..", path.c_str());
-		void *handle = dlmopen(LM_ID_NEWLM, path.c_str(),
-				       RTLD_NOW | RTLD_LOCAL);
-		if (!handle) {
-			SPDLOG_ERROR(
-				"Unable to load dynamic library of pass {}: {}",
-				path.c_str(), dlerror());
-			continue;
-		}
-		auto print_config =
-			(print_config_fn)dlsym(handle, "print_config");
-		if (!print_config) {
-			SPDLOG_ERROR("Symbol print_config not found in {}",
-				     path.c_str());
-			continue;
-		}
-		auto process_input =
-			(process_input_fn)dlsym(handle, "process_input");
-		if (!process_input) {
-			SPDLOG_ERROR("Symbol process_input not found in {}",
-				     path.c_str());
-			continue;
-		}
+		SPDLOG_INFO("Found path: {}, loading config..", path.c_str());
 		ptxpass::pass_config::PassConfig config;
-		std::vector<char> buf(10 << 20);
-		print_config(buf.size(), buf.data());
+		auto output = run_ptxpass_runner("--config", path, nullptr,
+						 kPtxPassConfigOutputBytes);
+		if (!output)
+			continue;
 
-		auto json = nlohmann::json::parse(buf.data());
-		ptxpass::pass_config::from_json(json, config);
-		SPDLOG_INFO("Retrived config of {}", path.c_str());
-		SPDLOG_DEBUG("Config {}", json.dump(4));
-		this->pass_configurations.emplace_back(
-			std::make_unique<pass_cfg_with_exec_path>(
-				path, config, print_config, process_input,
-				handle));
+		try {
+			auto json = nlohmann::json::parse(*output);
+			ptxpass::pass_config::from_json(json, config);
+			SPDLOG_INFO("Retrieved config of {}", path.c_str());
+			SPDLOG_DEBUG("Config {}", json.dump(4));
+			this->pass_configurations.emplace_back(
+				std::make_unique<pass_cfg_with_library_path>(
+					path, config));
+		} catch (const std::exception &e) {
+			SPDLOG_ERROR(
+				"Unable to parse PTX pass config from {}: {}",
+				path.c_str(), e.what());
+		}
 	}
 	{
 		this->ptx_compiler = *load_nv_attach_impl_ptx_compiler(
@@ -954,48 +1110,25 @@ nv_attach_impl::hack_fatbin(std::map<std::string, std::string> all_ptx)
 							sha256_string);
 						bool parsed = false;
 						std::string last_parse_error;
-						constexpr size_t kMinBufBytes =
-							1U << 20; // 1 MiB
-						constexpr size_t kMaxBufBytes =
-							64U << 20; // 64 MiB
-						for (size_t buf_bytes =
-							     kMinBufBytes;
-						     buf_bytes <= kMaxBufBytes;
-						     buf_bytes <<= 1) {
+						size_t output_bytes =
+							kInitialPtxPassProcessOutputBytes;
+						while (true) {
+							auto output = run_ptxpass_runner(
+								"--process",
+								hook_entry
+									.config
+									->library_path,
+								&input_json,
+								output_bytes);
+							if (!output) {
+								SPDLOG_ERROR(
+									"PTX pass runner failed while patching kernel {}",
+									kernel);
+								return;
+							}
 							try {
-								std::vector<char> buf(
-									buf_bytes);
-								buf.back() =
-									'\0';
-								const int len =
-									(buf_bytes >
-									 (size_t)std::numeric_limits<
-										 int>::
-										 max()) ?
-										std::numeric_limits<
-											int>::
-											max() :
-										(int)buf_bytes;
-								int err =
-									hook_entry
-										.config
-										->process_input(
-											input_json
-												.c_str(),
-											len,
-											buf.data());
-								if (err !=
-								    ptxpass::ExitCode::
-									    Success) {
-									SPDLOG_ERROR(
-										"Unable to run pass on kernel {}: {}",
-										kernel,
-										(int)err);
-									return;
-								}
-
 								auto json = nlohmann::json::parse(
-									buf.data(),
+									*output,
 									nullptr,
 									/*allow_exceptions=*/
 									true,
@@ -1013,13 +1146,35 @@ nv_attach_impl::hack_fatbin(std::map<std::string, std::string> all_ptx)
 								last_parse_error =
 									e.what();
 							}
+							bool output_may_be_truncated =
+								output->size() +
+									1 >=
+								output_bytes;
+							if (!output_may_be_truncated ||
+							    output_bytes >=
+								    kMaxPtxPassProcessOutputBytes)
+								break;
+							size_t next_output_bytes =
+								output_bytes *
+								2;
+							if (next_output_bytes >
+							    kMaxPtxPassProcessOutputBytes)
+								next_output_bytes =
+									kMaxPtxPassProcessOutputBytes;
+							if (next_output_bytes ==
+							    output_bytes)
+								break;
+							output_bytes =
+								next_output_bytes;
+							SPDLOG_WARN(
+								"PTX pass output for kernel {} may be truncated; retrying with {} bytes",
+								kernel,
+								output_bytes);
 						}
 						if (!parsed) {
 							SPDLOG_ERROR(
-								"Unable to parse PTX pass output for kernel {} (max {} MiB), last error: {}",
+								"Unable to parse PTX pass output for kernel {}, last error: {}",
 								kernel,
-								(kMaxBufBytes >>
-								 20),
 								last_parse_error);
 							return;
 						}
