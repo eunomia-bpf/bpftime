@@ -20,6 +20,7 @@
 #include <spdlog/spdlog.h>
 #include <unordered_set>
 #include <pthread.h>
+#include <atomic>
 #include <future>
 #include <thread>
 // #include "pos/include/common.h"
@@ -154,11 +155,11 @@ class syscall_context {
 
     public:
 	// enable mock the syscall behavior in userspace
-	bool enable_mock = true;
+	std::atomic<bool> enable_mock{ true };
 	// Initializing CUDA
-	bool initializing_cuda = false;
+	std::atomic<bool> initializing_cuda{ false };
 	// Whether enable mock after syscall server has been initialized
-	bool enable_mock_after_initialized = true;
+	std::atomic<bool> enable_mock_after_initialized{ true };
 	syscall_context();
 	virtual ~syscall_context()
 	{
@@ -191,6 +192,7 @@ class syscall_context {
 	int handle_memfd_create(const char *name, int flags);
 
 #if defined(BPFTIME_ENABLE_CUDA_ATTACH)
+	void initialize_cuda();
 	int poll_gpu_ringbuf_map(int mapfd, void *ctx,
 
 				 void (*)(const void *, uint64_t, void *));
