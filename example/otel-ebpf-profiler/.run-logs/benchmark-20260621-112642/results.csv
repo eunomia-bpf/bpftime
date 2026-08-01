@@ -1,5 +1,0 @@
-case,run,elapsed_seconds,user_seconds,sys_seconds,max_rss_kb
-baseline,1,0.00,0.00,0.00,7240
-bpftime-agent,1,0.51,0.04,0.45,590484
-Command terminated by signal 11
-minimal-cilium-loader,1,0.57,0.04,0.42,614008

@@ -195,16 +195,6 @@ void fatbin_record::try_loading_ptxs(class nv_attach_impl &impl)
 		throw std::runtime_error(
 			"shared_mem_ptr is not initialized before loading PTX");
 	}
-	if (original_ptx.empty() && !fatbin_data.empty()) {
-		SPDLOG_INFO("Extracting deferred PTX from current fatbin..");
-		original_ptx = impl.extract_ptxs(std::move(fatbin_data));
-		fatbin_data.clear();
-	}
-	if (original_ptx.empty()) {
-		SPDLOG_DEBUG("No PTX found in current fatbin");
-		ptx_loaded = true;
-		return;
-	}
 	SPDLOG_INFO("Loading & patching current fatbin..");
 
 	auto patched_ptx = *impl.hack_fatbin(original_ptx);

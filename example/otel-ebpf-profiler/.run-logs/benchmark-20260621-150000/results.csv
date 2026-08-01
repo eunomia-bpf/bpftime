@@ -1,5 +1,0 @@
-case,run,elapsed_seconds,user_seconds,sys_seconds,max_rss_kb
-baseline,1,0.00,0.00,0.00,7048
-bpftime-agent,1,0.54,0.05,0.47,607864
-daemon-mirror-minimal-cilium-loader,1,0.51,0.06,0.43,631944
-kernel-minimal-cilium-loader,1,0.01,0.00,0.01,7232

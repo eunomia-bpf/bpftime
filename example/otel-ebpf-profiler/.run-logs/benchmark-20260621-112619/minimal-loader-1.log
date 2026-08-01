@@ -1,1 +1,0 @@
-load BPF spec: open malloc_free.bpf.o: no such file or directory

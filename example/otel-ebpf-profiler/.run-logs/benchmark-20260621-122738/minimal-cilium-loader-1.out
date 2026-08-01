@@ -1,3 +1,0 @@
-[2026-06-21 12:27:43.102] [info] [bpftime_shm_internal.cpp:1069] Registered shared memory with CUDA: addr=0x77feb73ff000 size=268435456
-[2026-06-21 12:27:43.102] [info] [bpftime_shm_internal.cpp:854] Global shm constructed. shm_open_type 1 for bpftime_maps_shm_otel_bench_minimal_1_1176105
-[2026-06-21 12:27:43.102] [info] [bpftime_shm_internal.cpp:44] Global shm initialized

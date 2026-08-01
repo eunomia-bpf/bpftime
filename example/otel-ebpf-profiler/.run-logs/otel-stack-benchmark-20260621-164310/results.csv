@@ -1,3 +1,0 @@
-case,run,elapsed_seconds,user_seconds,sys_seconds,max_rss_kb
-baseline,1,0.00,0.00,0.00,7224
-otel-kernel-stack-collector,1,0.01,0.00,0.01,7064

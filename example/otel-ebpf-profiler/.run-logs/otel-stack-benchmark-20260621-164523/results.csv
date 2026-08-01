@@ -1,4 +1,0 @@
-case,run,elapsed_seconds,user_seconds,sys_seconds,max_rss_kb,iterations,iterations_per_second
-baseline,1,5.56,5.55,0.00,7064,886390784,159422802.877698
-otel-kernel-stack-collector,1,6.00,0.55,5.44,7056,1921024,320170.666667
-otel-daemon-mirror-stack-collector,1,6.04,5.54,0.48,616432,885407744,146590686.092715

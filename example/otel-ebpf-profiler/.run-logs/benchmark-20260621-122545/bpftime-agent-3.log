@@ -1,5 +1,0 @@
-[2026-06-21 12:26:24.659] [info] [bpf_tracer.cpp:215] /a exists
-[2026-06-21 12:26:24.660] [info] [bpftime_config.cpp:47] Setting BPFTIME_SHM_MEMORY_MB to: 256
-[2026-06-21 12:26:24.714] [info] [bpftime_shm_internal.cpp:854] Global shm constructed. shm_open_type 0 for bpftime_maps_shm_otel_bench_agent_3_1173912
-[2026-06-21 12:26:24.714] [info] [bpftime_shm_internal.cpp:44] Global shm initialized
-[2026-06-21 12:26:24.714] [info] [bpftime_config.cpp:47] Setting BPFTIME_SHM_MEMORY_MB to: 256
