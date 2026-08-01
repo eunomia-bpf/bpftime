@@ -320,16 +320,20 @@ bool is_gpu_section(std::string_view section_name)
 
 std::optional<EbpfMapType> try_get_gpu_map_type(uint32_t platform_specific_type)
 {
-	if (platform_specific_type == 1501) {
+	switch (platform_specific_type) {
+	case 1501:
 		return g_ebpf_platform_linux.get_map_type(BPF_MAP_TYPE_HASH);
-	}
-	if (platform_specific_type >= 1502 && platform_specific_type <= 1513) {
+	case 1502:
+	case 1503:
+	case 1504:
+	case 1512:
+	case 1513:
 		return g_ebpf_platform_linux.get_map_type(BPF_MAP_TYPE_ARRAY);
-	}
-	if (platform_specific_type == 1527) {
+	case 1527:
 		return g_ebpf_platform_linux.get_map_type(BPF_MAP_TYPE_RINGBUF);
+	default:
+		return std::nullopt;
 	}
-	return std::nullopt;
 }
 
 const GpuHelperPrototype *find_gpu_helper_prototype(int32_t helper_id)

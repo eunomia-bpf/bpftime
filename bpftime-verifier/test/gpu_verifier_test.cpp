@@ -2,6 +2,7 @@
 #include <catch2/catch_message.hpp>
 #include <catch2/catch_test_macros.hpp>
 #include <ebpf_vm_isa.hpp>
+#include <gpu_platform.hpp>
 #include <gpu_verifier.hpp>
 #include <resource_budget.hpp>
 #include <simt_safety_check.hpp>
@@ -108,6 +109,15 @@ analyze_program_uniformity(const std::array<ebpf_inst, N> &program)
 }
 
 } // namespace
+
+TEST_CASE("GPU platform accepts only supported map types", "[gpu][platform]")
+{
+	for (const uint32_t type :
+	     { 1501, 1502, 1503, 1504, 1512, 1513, 1527 }) {
+		REQUIRE(try_get_gpu_map_type(type).has_value());
+	}
+	REQUIRE_FALSE(try_get_gpu_map_type(1505).has_value());
+}
 
 TEST_CASE("Uniformity analysis classifies constants and GPU helpers",
 	  "[gpu][uniformity]")
