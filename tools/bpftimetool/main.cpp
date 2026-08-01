@@ -371,6 +371,7 @@ int main(int argc, char *argv[])
 			}
 			return 1;
 		}
+	}
 	#endif
 	else {
 		cerr << "Invalid subcommand " << cmd << endl;
