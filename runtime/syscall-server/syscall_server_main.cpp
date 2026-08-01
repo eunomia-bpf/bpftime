@@ -225,7 +225,7 @@ extern "C" int bpftime_ioctl(int fd, unsigned long req, uintptr_t arg3) noexcept
 extern "C" int bpftime_ioctl(int fd, unsigned long req, uintptr_t arg3) noexcept
 {
 	const int caller_errno = errno;
-	using fn_t = int (*)(int, unsigned long, uintptr_t);
+	using fn_t = int (*)(int, unsigned long, ...);
 	return interpose<fn_t>(
 		"ioctl", -1, caller_errno,
 		[&]() {

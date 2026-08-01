@@ -65,7 +65,7 @@ class syscall_context {
 	using close_fn = int (*)(int);
 	using mmap64_fn = void *(*)(void *, size_t, int, int, int, off64_t);
 	using mmap_fn = void *(*)(void *, size_t, int, int, int, off_t);
-	using ioctl_fn = int (*)(int fd, unsigned long req, unsigned long);
+	using ioctl_fn = int (*)(int fd, unsigned long req, ...);
 	using epoll_craete1_fn = int (*)(int);
 	using epoll_ctl_fn = int (*)(int, int, int, struct epoll_event *);
 	using epoll_wait_fn = int (*)(int, struct epoll_event *, int, int);
@@ -111,8 +111,17 @@ class syscall_context {
 		orig_syscall_fn = resolve_original<syscall_fn>("syscall");
 		orig_close_fn = resolve_original<close_fn>("close");
 		orig_munmap_fn = resolve_original<munmap_fn>("munmap");
-		orig_mmap64_fn = orig_mmap_fn =
-			resolve_original<mmap_fn>("mmap");
+		orig_mmap_fn = resolve_original<mmap_fn>("mmap");
+		orig_mmap64_fn =
+			reinterpret_cast<mmap64_fn>(dlsym(RTLD_NEXT, "mmap64"));
+		if (orig_mmap64_fn == nullptr) {
+			if constexpr (sizeof(off_t) == sizeof(off64_t))
+				orig_mmap64_fn = reinterpret_cast<mmap64_fn>(
+					orig_mmap_fn);
+			else
+				throw std::runtime_error(
+					"Unable to resolve mmap64");
+		}
 		orig_openat_fn = resolve_original<openat_fn>("openat");
 		orig_open_fn = resolve_original<open_fn>("open");
 		orig_read_fn = resolve_original<read_fn>("read");

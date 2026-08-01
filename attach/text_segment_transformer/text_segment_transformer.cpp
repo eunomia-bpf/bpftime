@@ -9,6 +9,7 @@
 #include <dlfcn.h>
 #include <fcntl.h>
 #include <fstream>
+#include <memory>
 #include <sys/mman.h>
 #include <vector>
 #include <cstdint>
@@ -175,20 +176,25 @@ static bool rewrite_segment(uint8_t *code, size_t len, int perm,
 	const uint8_t *curr_code = code;
 	size_t size = len;
 	uint64_t curr_addr = (uint64_t)(uintptr_t)curr_code;
-	cs_insn curr_insn;
-	memset(&curr_insn, 0, sizeof(curr_insn));
+	auto insn_deleter = [](cs_insn *insn) { cs_free(insn, 1); };
+	std::unique_ptr<cs_insn, decltype(insn_deleter)> curr_insn(
+		cs_malloc(cs_handle), insn_deleter);
+	if (!curr_insn) {
+		SPDLOG_ERROR("Failed to allocate capstone instruction cache");
+		return false;
+	}
 	while (curr_addr < (uintptr_t)code + len) {
 		auto ok = cs_disasm_iter(cs_handle, &curr_code, &size,
-					 &curr_addr, &curr_insn);
+					 &curr_addr, curr_insn.get());
 		if (!ok) {
 			break;
 		}
 		auto insn_name =
-			std::string(cs_insn_name(cs_handle, curr_insn.id));
+			std::string(cs_insn_name(cs_handle, curr_insn->id));
 		if (insn_name == "syscall" || insn_name == "sysenter") {
-			if (curr_insn.address != (uintptr_t)&syscall_addr) {
-				uint8_t *curr_pos =
-					(uint8_t *)(uintptr_t)curr_insn.address;
+			if (curr_insn->address != (uintptr_t)&syscall_addr) {
+				uint8_t *curr_pos = (uint8_t *)(uintptr_t)
+							    curr_insn->address;
 				SPDLOG_TRACE("Rewrite syscall insn at {}",
 					     (void *)curr_pos);
 				curr_pos[0] = 0xff;
