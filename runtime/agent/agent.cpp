@@ -839,12 +839,6 @@ extern "C" void bpftime_agent_main(const gchar *data, gboolean *stay_resident)
 			}
 
 			SPDLOG_DEBUG("Entered bpftime_agent_main");
-			SPDLOG_DEBUG("Registering signal handler");
-
-			srand(std::random_device()());
-			// We use SIGUSR1 to indicate the detaching.
-			ensure_detach_worker_started();
-			signal(SIGUSR1, sig_handler_sigusr1_detach);
 
 			// SHM can race with the loader process; retry a bit to avoid
 			// flakiness in "spawn loader then inject agent" workflows.
@@ -969,6 +963,11 @@ extern "C" void bpftime_agent_main(const gchar *data, gboolean *stay_resident)
 				init_fail();
 				return;
 			}
+			SPDLOG_DEBUG("Registering signal handler");
+			srand(std::random_device()());
+			// We use SIGUSR1 to indicate the detaching.
+			ensure_detach_worker_started();
+			signal(SIGUSR1, sig_handler_sigusr1_detach);
 			owns_initialization = false;
 			shm_initialized = false;
 
