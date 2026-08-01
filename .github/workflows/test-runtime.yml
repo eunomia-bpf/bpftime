@@ -122,6 +122,31 @@ jobs:
         run: |
           export BPFTIME_VM_NAME=llvm
           ./build/runtime/unit-test/bpftime_runtime_tests
+      - name: Test runtime environment options (Ubuntu)
+        if: matrix.container == 'ubuntu-2204'
+        run: |
+          set -euo pipefail
+          BPFTIME_LOG_OUTPUT=console \
+          BPFTIME_RUN_WITH_KERNEL=true \
+          BPFTIME_NOT_LOAD_PATTERN='.*' \
+          LD_PRELOAD="$PWD/build/runtime/syscall-server/libbpftime-syscall-server.so" \
+            /bin/cat /dev/null 2>&1 | tee runtime-options.log
+          grep -F "Using kernel eBPF runtime and maps" runtime-options.log
+          grep -F "By pass kernel verifier pattern: .*" runtime-options.log
+      - name: Build static runtime archive (Ubuntu)
+        if: matrix.container == 'ubuntu-2204'
+        run: |
+          set -e
+          LLVM_CONFIG=$(command -v llvm-config-18 || command -v llvm-config-17 || command -v llvm-config-16 || command -v llvm-config-15 || command -v llvm-config)
+          cmake -S . -B build-static \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DLLVM_DIR="$($LLVM_CONFIG --cmakedir)" \
+            -DBPFTIME_BUILD_STATIC_LIB=ON \
+            -DBPFTIME_ENABLE_CUDA_ATTACH=OFF \
+            -DBUILD_BPFTIME_DAEMON=OFF \
+            -DBPFTIME_ENABLE_UNIT_TESTING=OFF
+          cmake --build build-static --target bpftime_static_target -j$(nproc)
+          test -s build-static/libbpftime.a
       - name: Build runtime libs for example (openEuler)
         if: matrix.container == 'openeuler-2403sp2'
         run: |

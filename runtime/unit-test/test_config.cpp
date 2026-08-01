@@ -2,6 +2,7 @@
 #include <bpftime_config.hpp>
 #include "./common_def.hpp"
 #include <boost/interprocess/interprocess_fwd.hpp>
+#include <optional>
 using namespace bpftime;
 using namespace boost::interprocess;
 static const char *SHM_NAME = "_BPFTIME_CONFIG_TEST";
@@ -20,4 +21,23 @@ TEST_CASE("Test bpftime agent_config")
 	REQUIRE(cfg.get_logger_output_path() == test_string);
 	cfg.set_logger_output_path(test_string_2.c_str());
 	REQUIRE(cfg.get_logger_output_path() == test_string_2);
+}
+
+TEST_CASE("Allow external maps from the environment")
+{
+	const char *old_value = getenv("BPFTIME_ALLOW_EXTERNAL_MAPS");
+	const auto saved_value = old_value == nullptr ?
+					 std::nullopt :
+					 std::optional<std::string>(old_value);
+
+	REQUIRE(setenv("BPFTIME_ALLOW_EXTERNAL_MAPS", "1", 1) == 0);
+	const auto cfg = construct_agent_config_from_env();
+	const int restore_result =
+		saved_value.has_value() ?
+			setenv("BPFTIME_ALLOW_EXTERNAL_MAPS",
+			       saved_value->c_str(), 1) :
+			unsetenv("BPFTIME_ALLOW_EXTERNAL_MAPS");
+
+	REQUIRE(restore_result == 0);
+	REQUIRE(cfg.allow_non_buildin_map_types);
 }
