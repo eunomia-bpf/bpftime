@@ -107,13 +107,12 @@ TEST_CASE("Software perf event buffers shard concurrent producers by thread",
 	std::vector<int> seen(producer_count * events_per_producer, 0);
 	int record_count = 0;
 	while (tail < head) {
-		bpftime::perf_sample_raw sample;
-		copy_from_perf_ring(base, ring_size, tail, &sample,
-				    sizeof(sample));
-		REQUIRE(sample.header.type == PERF_RECORD_SAMPLE);
-		REQUIRE(sample.header.size ==
+		perf_event_header record_header;
+		copy_from_perf_ring(base, ring_size, tail, &record_header,
+				    sizeof(record_header));
+		REQUIRE(record_header.type == PERF_RECORD_SAMPLE);
+		REQUIRE(record_header.size ==
 			aligned_perf_record_size(sizeof(event_payload)));
-		REQUIRE(sample.size == sizeof(event_payload));
 
 		event_payload payload;
 		copy_from_perf_ring(base, ring_size,
@@ -126,7 +125,7 @@ TEST_CASE("Software perf event buffers shard concurrent producers by thread",
 		seen[payload.producer * events_per_producer +
 		     payload.sequence]++;
 		record_count++;
-		tail += sample.header.size;
+		tail += record_header.size;
 	}
 
 	REQUIRE(record_count == producer_count * events_per_producer);
@@ -187,13 +186,12 @@ TEST_CASE("Software perf event records wrap on aligned boundaries after resize",
 		REQUIRE((tail & (ring_size - 1)) + sizeof(perf_event_header) <=
 			ring_size);
 
-		bpftime::perf_sample_raw sample;
-		copy_from_perf_ring(base, ring_size, tail, &sample,
-				    sizeof(sample));
-		REQUIRE(sample.header.type == PERF_RECORD_SAMPLE);
-		REQUIRE(sample.header.size ==
+		perf_event_header record_header;
+		copy_from_perf_ring(base, ring_size, tail, &record_header,
+				    sizeof(record_header));
+		REQUIRE(record_header.type == PERF_RECORD_SAMPLE);
+		REQUIRE(record_header.size ==
 			aligned_perf_record_size(sizeof(event_payload)));
-		REQUIRE(sample.size == sizeof(event_payload));
 
 		event_payload actual;
 		copy_from_perf_ring(base, ring_size,
@@ -201,7 +199,7 @@ TEST_CASE("Software perf event records wrap on aligned boundaries after resize",
 				    &actual, sizeof(actual));
 		REQUIRE(actual.producer == payload.producer);
 		REQUIRE(actual.sequence == payload.sequence);
-		REQUIRE(tail + sample.header.size == head);
+		REQUIRE(tail + record_header.size == head);
 		header->data_tail = head;
 	}
 }
