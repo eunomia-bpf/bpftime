@@ -164,12 +164,14 @@ cuda_launch_kernel_common(nv_attach_impl *impl, void *original_fn_ptr,
 
 	if (auto itr1 = impl->symbol_address_to_fatbin.find((void *)func);
 	    itr1 != impl->symbol_address_to_fatbin.end()) {
-		const auto &fatbin = *itr1->second;
-		const auto &handle =
-			fatbin.function_addr_to_symbol.at((void *)func);
+		auto &fatbin = *itr1->second;
+		auto handle = fatbin.find_function_info(*impl, (void *)func);
+		if (!handle)
+			return original(func, grid_dim, block_dim, args,
+					shared_mem, stream);
 		SPDLOG_DEBUG("Launching kernel..");
 		if (auto err = cuLaunchKernel(
-			    handle.func, grid_dim.x, grid_dim.y, grid_dim.z,
+			    handle->func, grid_dim.x, grid_dim.y, grid_dim.z,
 			    block_dim.x, block_dim.y, block_dim.z, shared_mem,
 			    stream, args, nullptr);
 		    err != CUDA_SUCCESS) {
@@ -182,7 +184,7 @@ cuda_launch_kernel_common(nv_attach_impl *impl, void *original_fn_ptr,
 				     error_string ? error_string :
 						    "No description");
 			SPDLOG_ERROR("Error code: {}", (int)err);
-			log_cufunc_attrs(handle.func);
+			log_cufunc_attrs(handle->func);
 			// Preserve target semantics: fall back to the original
 			// runtime launch path if patched launch fails.
 			return original(func, grid_dim, block_dim, args,
@@ -292,9 +294,7 @@ static void example_listener_on_enter(GumInvocationListener *listener,
 	} else if (context->to_function ==
 		   AttachedToFunction::RegisterFunction) {
 		SPDLOG_DEBUG("Entering __cudaRegisterFunction..");
-		auto &impl = *context->impl;
 		auto current_fatbin = context->impl->current_fatbin;
-		current_fatbin->try_loading_ptxs(*context->impl);
 
 		auto func_addr =
 			gum_invocation_context_get_nth_argument(gum_ctx, 1);
@@ -310,13 +310,6 @@ static void example_listener_on_enter(GumInvocationListener *listener,
 		} else {
 			context->impl->symbol_address_to_fatbin[func_addr] =
 				current_fatbin;
-			if (auto itr = current_fatbin->function_addr_to_symbol
-					       .find(func_addr);
-			    itr !=
-			    current_fatbin->function_addr_to_symbol.end())
-				impl.record_patched_kernel_function(
-					std::string(symbol_name),
-					itr->second.func);
 			SPDLOG_DEBUG(
 				"Registered kernel function name {} addr {:x}",
 				symbol_name, (uintptr_t)func_addr);
@@ -326,7 +319,6 @@ static void example_listener_on_enter(GumInvocationListener *listener,
 		   AttachedToFunction::RegisterVariable) {
 		SPDLOG_DEBUG("Entering __cudaRegisterVar");
 		auto current_fatbin = context->impl->current_fatbin;
-		current_fatbin->try_loading_ptxs(*context->impl);
 		auto fatbin_handle =
 			gum_invocation_context_get_nth_argument(gum_ctx, 0);
 		auto var_addr =
@@ -780,91 +772,25 @@ static cudaError_t mirror_cuda_memcpy_from_symbol(
 	cuda_memcpy_from_symbol_fn_t original_sync,
 	cuda_memcpy_from_symbol_async_fn_t original_async)
 {
+	std::optional<variable_info> resolved_var;
 	auto record_itr = impl->symbol_address_to_fatbin.find((void *)symbol);
-	if (record_itr == impl->symbol_address_to_fatbin.end()) {
+	if (record_itr != impl->symbol_address_to_fatbin.end()) {
+		resolved_var = record_itr->second->find_variable_info(
+			*impl, (void *)symbol);
+	} else {
 		impl->bootstrap_existing_fatbins_once();
-
-		// Late attach fallback: resolve host symbol name and read from
-		// a patched module global if present.
 		if (auto name =
 			    impl->resolve_host_function_symbol((void *)symbol);
 		    name) {
 			for (const auto &rec_uptr : impl->fatbin_records) {
-				auto *rec = rec_uptr.get();
-				if (rec == nullptr)
-					continue;
-				for (const auto &ptx : rec->ptxs) {
-					CUdeviceptr dptr;
-					size_t sz;
-					auto err = cuModuleGetGlobal(
-						&dptr, &sz, ptx->module_ptr,
-						name->c_str());
-					if (err != CUDA_SUCCESS)
-						continue;
-					if (offset >= sz) {
-						SPDLOG_WARN(
-							"mirror_cuda_memcpy_from_symbol: offset {} exceeds size {} for symbol {}",
-							offset, sz,
-							name->c_str());
-						return cudaErrorUnknown;
-					}
-					size_t writable = sz - offset;
-					size_t bytes_to_copy =
-						std::min(count, writable);
-					if (bytes_to_copy == 0)
-						return cudaErrorUnknown;
-					CUdeviceptr src = dptr + offset;
-					CUstream cu_stream =
-						reinterpret_cast<CUstream>(
-							stream);
-					CUresult status = CUDA_SUCCESS;
-
-					auto copy_device_ptr =
-						[](const void *ptr)
-						-> CUdeviceptr {
-						return static_cast<CUdeviceptr>(
-							reinterpret_cast<
-								uintptr_t>(
-								ptr));
-					};
-					switch (kind) {
-					case cudaMemcpyDeviceToHost:
-					case cudaMemcpyDefault:
-						status =
-							async ? cuMemcpyDtoHAsync(
-									dst,
-									src,
-									bytes_to_copy,
-									cu_stream) :
-								cuMemcpyDtoH(
-									dst,
-									src,
-									bytes_to_copy);
-						break;
-					case cudaMemcpyDeviceToDevice:
-						status =
-							async ? cuMemcpyDtoDAsync(
-									copy_device_ptr(
-										dst),
-									src,
-									bytes_to_copy,
-									cu_stream) :
-								cuMemcpyDtoD(
-									copy_device_ptr(
-										dst),
-									src,
-									bytes_to_copy);
-						break;
-					default:
-						return cudaErrorUnknown;
-					}
-					if (status != CUDA_SUCCESS)
-						return cudaErrorUnknown;
-					return cudaSuccess;
-				}
+				resolved_var =
+					rec_uptr->find_variable_info(*impl, *name);
+				if (resolved_var)
+					break;
 			}
 		}
-
+	}
+	if (!resolved_var) {
 		SPDLOG_DEBUG(
 			"In mirror_cuda_memcpy_from_symbol: calling original cudaMemcpyFromSymbol");
 		if (async) {
@@ -881,15 +807,7 @@ static cudaError_t mirror_cuda_memcpy_from_symbol(
 		}
 		return cudaErrorUnknown;
 	}
-	auto &record = *record_itr->second;
-	auto var_itr = record.variable_addr_to_symbol.find((void *)symbol);
-	if (var_itr == record.variable_addr_to_symbol.end()) {
-		SPDLOG_DEBUG(
-			"mirror_cuda_memcpy_from_symbol: no variable info for symbol pointer {:x}",
-			(uintptr_t)symbol);
-		return cudaErrorUnknown;
-	}
-	auto &var_info = var_itr->second;
+	auto &var_info = *resolved_var;
 	if (offset >= var_info.size) {
 		SPDLOG_WARN(
 			"mirror_cuda_memcpy_from_symbol: offset {} exceeds size {} for symbol {}",

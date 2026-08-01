@@ -177,7 +177,7 @@ class nv_attach_impl final : public base_attach_impl {
 	void record_patched_kernel_function(const std::string &kernel_name,
 					    CUfunction function);
 	std::optional<CUfunction>
-	find_patched_kernel_function(const std::string &kernel_name) const;
+	find_patched_kernel_function(const std::string &kernel_name);
 	// Notify nv_attach_impl that a patched kernel launch was enqueued on a
 	// stream. Used to coordinate detach with in-flight patched kernels so we
 	// don't tear down loader-owned CUDA IPC buffers prematurely.
@@ -206,11 +206,14 @@ class nv_attach_impl final : public base_attach_impl {
 	std::optional<std::vector<MapBasicInfo>> map_basic_info;
 	void *ptx_compiler_dl_handle = nullptr;
 	nv_attach_impl_ptx_compiler_handler ptx_compiler;
-	/// SHA256 of ELF -> PTX module
-	std::shared_ptr<std::map<std::string, std::shared_ptr<ptx_in_module>>>
+	/// CUDA context + SHA256 of ELF -> PTX module
+	std::shared_ptr<std::map<fatbin_record::module_key,
+				 std::shared_ptr<ptx_in_module>>>
 		module_pool;
 	/// SHA256 of PTX -> ELF
 	std::shared_ptr<std::map<std::string, std::vector<uint8_t>>> ptx_pool;
+	std::mutex module_cache_mutex;
+	std::mutex ptx_cache_mutex;
 
 	// Original function pointers for Frida replace hooks (trampolines)
 	// They are set by gum_interceptor_replace(...) and must be used to call
@@ -236,8 +239,6 @@ class nv_attach_impl final : public base_attach_impl {
 		void bootstrap_existing_fatbins();
 		void reset_late_bootstrap_state_for_next_attach();
 		void build_host_symbol_cache_once();
-		void prefill_patched_kernel_functions_from_loaded_fatbins();
-		std::vector<std::string> collect_all_kernels_to_patch() const;
 
 	void *frida_interceptor;
 	void *frida_listener;
@@ -249,8 +250,10 @@ class nv_attach_impl final : public base_attach_impl {
 		pass_configurations;
 	std::map<std::string, ptxpass::runtime_response::RuntimeResponse>
 		patch_cache;
+	std::mutex patch_cache_mutex;
 	mutable std::mutex cuda_symbol_map_mutex;
-	std::unordered_map<std::string, CUfunction> patched_kernel_by_name;
+	std::map<std::pair<CUcontext, std::string>, CUfunction>
+		patched_kernel_by_context;
 	std::unordered_map<CUfunction, std::string> kernel_name_by_cufunction;
 
 			std::atomic<bool> enabled{ true };
@@ -273,8 +276,9 @@ class nv_attach_impl final : public base_attach_impl {
 	std::vector<host_symbol_range> host_symbol_ranges;
 
 		mutable std::mutex patched_global_cache_mutex;
-		std::unordered_map<std::string, std::pair<CUdeviceptr, size_t>>
-			patched_global_by_name;
+		std::map<std::pair<CUcontext, std::string>,
+			 std::pair<CUdeviceptr, size_t>>
+			patched_global_by_context;
 
 		mutable std::mutex launch_event_mutex;
 		std::unordered_map<CUstream, CUevent> pending_launch_events_by_stream;

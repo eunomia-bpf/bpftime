@@ -11,6 +11,7 @@
 #include "nv_elf_introspect.hpp"
 // #include "spdlog/common.h"
 #include "spdlog/spdlog.h"
+#include <algorithm>
 #include <asm/unistd.h> // For architecture-specific syscall numbers
 #include <boost/asio/io_context.hpp>
 #include <boost/asio/post.hpp>
@@ -35,8 +36,6 @@
 #include <map>
 #include <memory>
 #include <mutex>
-#include <set>
-#include <regex>
 #include <sstream>
 #include <stdexcept>
 #include <string>
@@ -288,7 +287,8 @@ nv_attach_impl::nv_attach_impl()
 		}
 	}
 	this->module_pool = std::make_shared<
-		std::map<std::string, std::shared_ptr<ptx_in_module>>>();
+		std::map<fatbin_record::module_key,
+			 std::shared_ptr<ptx_in_module>>>();
 	this->ptx_pool =
 		std::make_shared<std::map<std::string, std::vector<uint8_t>>>();
 
@@ -592,26 +592,37 @@ void nv_attach_impl::record_patched_kernel_function(
 {
 	if (kernel_name.empty() || function == nullptr)
 		return;
-	std::lock_guard<std::mutex> guard(cuda_symbol_map_mutex);
-	auto itr = patched_kernel_by_name.find(kernel_name);
-	if (itr == patched_kernel_by_name.end()) {
-		patched_kernel_by_name.emplace(kernel_name, function);
+	CUcontext context = nullptr;
+	if (cuCtxGetCurrent(&context) != CUDA_SUCCESS || context == nullptr)
 		return;
-	}
-	if (itr->second != function)
-		itr->second = function;
+	std::lock_guard<std::mutex> guard(cuda_symbol_map_mutex);
+	patched_kernel_by_context[{ context, kernel_name }] = function;
 }
 
 std::optional<CUfunction> nv_attach_impl::find_patched_kernel_function(
-	const std::string &kernel_name) const
+	const std::string &kernel_name)
 {
 	if (kernel_name.empty())
 		return std::nullopt;
-	std::lock_guard<std::mutex> guard(cuda_symbol_map_mutex);
-	auto itr = patched_kernel_by_name.find(kernel_name);
-	if (itr == patched_kernel_by_name.end())
+	CUcontext context = nullptr;
+	if (cuCtxGetCurrent(&context) != CUDA_SUCCESS || context == nullptr)
 		return std::nullopt;
-	return itr->second;
+	{
+		std::lock_guard<std::mutex> guard(cuda_symbol_map_mutex);
+		if (auto itr = patched_kernel_by_context.find(
+			    { context, kernel_name });
+		    itr != patched_kernel_by_context.end())
+			return itr->second;
+	}
+	for (const auto &record : fatbin_records) {
+		if (auto info = record->find_function_info(*this, kernel_name);
+		    info) {
+			record_patched_kernel_function(kernel_name, info->func);
+			record_original_cufunction_name(info->func, kernel_name);
+			return info->func;
+		}
+	}
+	return std::nullopt;
 }
 
 void nv_attach_impl::record_original_cufunction_name(
@@ -891,12 +902,12 @@ nv_attach_impl::hack_fatbin(std::map<std::string, std::string> all_ptx)
 	/**
 	Here we can patch the PTX.
 	*/
-	boost::asio::thread_pool pool(std::thread::hardware_concurrency());
+	boost::asio::thread_pool pool(
+		std::max(1u, std::thread::hardware_concurrency()));
 	std::map<std::string, std::tuple<std::string, bool>> ptx_out;
 	std::mutex map_mutex;
-	std::mutex cache_mutex;
 	for (auto &[file_name, original_ptx] : all_ptx) {
-		boost::asio::post(pool, [this, original_ptx, file_name, &map_mutex, &ptx_out, &cache_mutex]() -> void {
+		boost::asio::post(pool, [this, original_ptx, file_name, &map_mutex, &ptx_out]() -> void {
 			auto current_ptx = original_ptx;
 			SPDLOG_INFO("Patching PTX: {}", file_name);
 			bool should_add_trampoline = false;
@@ -938,17 +949,22 @@ nv_attach_impl::hack_fatbin(std::map<std::string, std::string> all_ptx)
 					ptxpass::runtime_response::RuntimeResponse
 						resp;
 
-					cache_mutex.lock();
-					if (auto itr = this->patch_cache.find(
-						    sha256_string);
-					    itr != this->patch_cache.end()) {
+					bool cache_hit = false;
+					{
+						std::lock_guard<std::mutex> guard(
+							patch_cache_mutex);
+						if (auto itr = patch_cache.find(
+							    sha256_string);
+						    itr != patch_cache.end()) {
+							resp = itr->second;
+							cache_hit = true;
+						}
+					}
+					if (cache_hit) {
 						SPDLOG_INFO(
 							"Patching request {} found in cache",
 							sha256_string);
-						resp = itr->second;
-						cache_mutex.unlock();
 					} else {
-						cache_mutex.unlock();
 						SPDLOG_INFO(
 							"Patching request {} not found in cache, patching..",
 							sha256_string);
@@ -1025,7 +1041,7 @@ nv_attach_impl::hack_fatbin(std::map<std::string, std::string> all_ptx)
 						}
 						std::lock_guard<std::mutex>
 							_cache_guard(
-								cache_mutex);
+								patch_cache_mutex);
 						patch_cache[sha256_string] =
 							resp;
 					}
@@ -1273,15 +1289,14 @@ void nv_attach_impl::mirror_cuda_memcpy_to_symbol(
 	bootstrap_existing_fatbins_once();
 
 	std::optional<variable_info> resolved_var;
+	CUcontext context = nullptr;
+	if (cuCtxGetCurrent(&context) != CUDA_SUCCESS || context == nullptr)
+		return;
 
 	if (auto record_itr = symbol_address_to_fatbin.find((void *)symbol);
 	    record_itr != symbol_address_to_fatbin.end()) {
 		auto &record = *record_itr->second;
-		auto var_itr =
-			record.variable_addr_to_symbol.find((void *)symbol);
-		if (var_itr != record.variable_addr_to_symbol.end()) {
-			resolved_var = var_itr->second;
-		}
+		resolved_var = record.find_variable_info(*this, (void *)symbol);
 	}
 
 	if (!resolved_var) {
@@ -1293,8 +1308,9 @@ void nv_attach_impl::mirror_cuda_memcpy_to_symbol(
 		{
 			std::lock_guard<std::mutex> guard(
 				patched_global_cache_mutex);
-			auto it = patched_global_by_name.find(*name);
-			if (it != patched_global_by_name.end()) {
+			auto it = patched_global_by_context.find(
+				{ context, *name });
+			if (it != patched_global_by_context.end()) {
 				resolved_var = variable_info{
 					.symbol_name = *name,
 					.ptr = it->second.first,
@@ -1308,33 +1324,15 @@ void nv_attach_impl::mirror_cuda_memcpy_to_symbol(
 				auto *rec = rec_uptr.get();
 				if (rec == nullptr)
 					continue;
-				for (const auto &ptx : rec->ptxs) {
-					CUdeviceptr dptr;
-					size_t sz;
-					auto err = cuModuleGetGlobal(
-						&dptr, &sz, ptx->module_ptr,
-						name->c_str());
-					if (err == CUDA_SUCCESS) {
-						{
-							std::lock_guard<
-								std::mutex>
-								guard(patched_global_cache_mutex);
-							patched_global_by_name[*name] =
-								std::make_pair(
-									dptr,
-									sz);
-						}
-						resolved_var = variable_info{
-							.symbol_name = *name,
-							.ptr = dptr,
-							.size = sz,
-							.ptx = nullptr,
-						};
-						break;
-					}
-				}
-				if (resolved_var)
+				resolved_var = rec->find_variable_info(*this, *name);
+				if (resolved_var) {
+					std::lock_guard<std::mutex> guard(
+						patched_global_cache_mutex);
+					patched_global_by_context[{ context, *name }] =
+						{ resolved_var->ptr,
+						  resolved_var->size };
 					break;
+				}
 			}
 		}
 	}
@@ -1520,21 +1518,30 @@ void nv_attach_impl::clear_patched_state_for_next_session()
 		old_records.swap(fatbin_records);
 		current_fatbin = nullptr;
 		symbol_address_to_fatbin.clear();
-		patch_cache.clear();
+		{
+			std::lock_guard<std::mutex> g(patch_cache_mutex);
+			patch_cache.clear();
+		}
 		{
 			std::lock_guard<std::mutex> g(cuda_symbol_map_mutex);
-			patched_kernel_by_name.clear();
+			patched_kernel_by_context.clear();
 			kernel_name_by_cufunction.clear();
 		}
 		{
 			std::lock_guard<std::mutex> g(
 				patched_global_cache_mutex);
-			patched_global_by_name.clear();
+			patched_global_by_context.clear();
 		}
-		if (module_pool)
-			module_pool->clear();
-		if (ptx_pool)
-			ptx_pool->clear();
+		{
+			std::lock_guard<std::mutex> g(module_cache_mutex);
+			if (module_pool)
+				module_pool->clear();
+		}
+		{
+			std::lock_guard<std::mutex> g(ptx_cache_mutex);
+			if (ptx_pool)
+				ptx_pool->clear();
+		}
 		{
 			std::lock_guard<std::mutex> g(launch_event_mutex);
 			for (auto &kv : pending_launch_events_by_stream) {
@@ -1551,37 +1558,6 @@ void nv_attach_impl::clear_patched_state_for_next_session()
 bool nv_attach_impl::is_enabled() const noexcept
 {
 	return enabled.load(std::memory_order_acquire);
-}
-
-std::vector<std::string> nv_attach_impl::collect_all_kernels_to_patch() const
-{
-	std::vector<std::string> kernels;
-	for (const auto &[_, entry] : hook_entries) {
-		for (const auto &k : entry.kernels) {
-			kernels.push_back(k);
-		}
-	}
-	std::sort(kernels.begin(), kernels.end());
-	kernels.erase(std::unique(kernels.begin(), kernels.end()),
-		      kernels.end());
-	return kernels;
-}
-
-static std::vector<std::string>
-collect_ptx_entry_functions(const std::map<std::string, std::string> &all_ptx)
-{
-	static const std::regex kernel_entry(
-		R"((?:\.visible\s+)?\.entry\s+([A-Za-z_.$][A-Za-z0-9_.$]*)\s*\()");
-	std::set<std::string> entries;
-	for (const auto &[_, ptx] : all_ptx) {
-		for (std::sregex_iterator it(ptx.begin(), ptx.end(),
-					     kernel_entry),
-		     end;
-		     it != end; ++it) {
-			entries.insert((*it)[1].str());
-		}
-	}
-	return std::vector<std::string>(entries.begin(), entries.end());
 }
 
 void nv_attach_impl::build_host_symbol_cache_once()
@@ -1654,39 +1630,6 @@ nv_attach_impl::resolve_host_function_symbol(void *addr)
 			return std::nullopt;
 	}
 	return normalize_cuda_stub(it->name);
-}
-
-void nv_attach_impl::prefill_patched_kernel_functions_from_loaded_fatbins()
-{
-	if (fatbin_records.empty())
-		return;
-
-	for (const auto &rec_uptr : fatbin_records) {
-		auto *rec = rec_uptr.get();
-		if (rec == nullptr)
-			continue;
-		auto kernels = collect_ptx_entry_functions(rec->original_ptx);
-		if (kernels.empty())
-			kernels = collect_all_kernels_to_patch();
-		if (kernels.empty())
-			continue;
-		for (const auto &ptx : rec->ptxs) {
-			for (const auto &kernel : kernels) {
-				CUfunction func = nullptr;
-				auto err = cuModuleGetFunction(
-					&func, ptx->module_ptr, kernel.c_str());
-				if (err == CUDA_SUCCESS && func != nullptr) {
-					record_patched_kernel_function(kernel,
-								       func);
-					record_original_cufunction_name(func,
-									kernel);
-					SPDLOG_DEBUG(
-						"Prefilled patched CUDA kernel {}",
-						kernel);
-				}
-			}
-		}
-	}
 }
 
 namespace
@@ -1819,7 +1762,6 @@ void nv_attach_impl::bootstrap_existing_fatbins()
 						std::move(extracted_ptx);
 					rec->module_pool = module_pool;
 					rec->ptx_pool = ptx_pool;
-					rec->try_loading_ptxs(*this);
 					fatbin_records.emplace_back(
 						std::move(rec));
 					ingested++;
@@ -1856,7 +1798,6 @@ void nv_attach_impl::bootstrap_existing_fatbins()
 				rec->original_ptx = std::move(extracted_ptx);
 				rec->module_pool = module_pool;
 				rec->ptx_pool = ptx_pool;
-				rec->try_loading_ptxs(*this);
 				fatbin_records.emplace_back(std::move(rec));
 				ingested++;
 			}
@@ -1873,7 +1814,6 @@ void nv_attach_impl::bootstrap_existing_fatbins()
 			rec->original_ptx = std::move(extracted_ptx);
 			rec->module_pool = module_pool;
 			rec->ptx_pool = ptx_pool;
-			rec->try_loading_ptxs(*this);
 			fatbin_records.emplace_back(std::move(rec));
 			ingested++;
 			SPDLOG_INFO(
@@ -1884,7 +1824,6 @@ void nv_attach_impl::bootstrap_existing_fatbins()
 	SPDLOG_INFO(
 		"nv_attach_impl: late attach bootstrap ingested {} fatbin(s)",
 		ingested);
-	prefill_patched_kernel_functions_from_loaded_fatbins();
 }
 
 void nv_attach_impl::bootstrap_existing_fatbins_once()

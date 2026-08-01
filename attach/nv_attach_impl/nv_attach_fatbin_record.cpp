@@ -15,6 +15,8 @@
 #include <stdexcept>
 #include <ptx_pass_config.h>
 #include "ptx_compiler/ptx_compiler.hpp"
+#include <algorithm>
+#include <exception>
 #include <utility>
 #define CUDA_DRIVER_CHECK_NO_EXCEPTION(expr, message)                          \
 	do {                                                                   \
@@ -47,57 +49,122 @@ fatbin_record::~fatbin_record()
 }
 ptx_in_module::~ptx_in_module()
 {
+	CUcontext current = nullptr;
+	const bool switch_context =
+		context != nullptr &&
+		(cuCtxGetCurrent(&current) != CUDA_SUCCESS || current != context);
+	bool pushed = false;
+	if (switch_context) {
+		if (cuCtxPushCurrent(context) == CUDA_SUCCESS)
+			pushed = true;
+		else
+			SPDLOG_ERROR(
+				"Unable to switch context before unloading module");
+	}
 	CUDA_DRIVER_CHECK_NO_EXCEPTION(cuModuleUnload(this->module_ptr),
 				       "Unable to unload module");
+	if (pushed) {
+		CUcontext popped = nullptr;
+		CUDA_DRIVER_CHECK_NO_EXCEPTION(
+			cuCtxPopCurrent(&popped),
+			"Unable to restore CUDA context after unloading module");
+	}
 }
 
 bool fatbin_record::find_and_fill_variable_info(void *ptr,
 						const char *symbol_name)
 {
-	for (const auto &ptx : ptxs) {
-		CUdeviceptr dptr;
-		size_t size;
-		auto err = cuModuleGetGlobal(&dptr, &size, ptx->module_ptr,
-					     symbol_name);
-		if (err == CUDA_SUCCESS) {
-			variable_addr_to_symbol[ptr] =
-				variable_info{ .symbol_name =
-						       std::string(symbol_name),
-					       .ptr = dptr,
-					       .size = size,
-					       .ptx = ptx.get() };
-			return true;
-		} else if (err == CUDA_ERROR_NOT_FOUND) {
-			continue;
-		} else {
-			SPDLOG_ERROR("Unable to lookup symbol: {}", (int)err);
-			return false;
-		}
-	}
-	return false;
+	if (ptr == nullptr || symbol_name == nullptr)
+		return false;
+	variable_addr_to_symbol[ptr] = symbol_name;
+	return true;
 }
 bool fatbin_record::find_and_fill_function_info(void *ptr,
 						const char *symbol_name)
 {
-	for (const auto &ptx : ptxs) {
-		CUfunction func;
-		auto err = cuModuleGetFunction(&func, ptx->module_ptr,
-					       symbol_name);
-		if (err == CUDA_SUCCESS) {
-			function_addr_to_symbol[ptr] =
-				kernel_info{ .symbol_name =
-						     std::string(symbol_name),
-					     .func = func,
-					     .ptx = ptx.get() };
-			return true;
-		} else if (err == CUDA_ERROR_NOT_FOUND) {
-			continue;
-		} else {
-			SPDLOG_ERROR("Unable to lookup function: {}", (int)err);
-			return false;
+	if (ptr == nullptr || symbol_name == nullptr)
+		return false;
+	function_addr_to_symbol[ptr] = symbol_name;
+	return true;
+}
+
+std::optional<variable_info>
+fatbin_record::find_variable_info(nv_attach_impl &impl, void *ptr)
+{
+	auto itr = variable_addr_to_symbol.find(ptr);
+	if (itr == variable_addr_to_symbol.end())
+		return std::nullopt;
+	return find_variable_info(impl, itr->second);
+}
+
+std::optional<variable_info>
+fatbin_record::find_variable_info(nv_attach_impl &impl,
+				  const std::string &name)
+{
+	try {
+		try_loading_ptxs(impl);
+	} catch (const std::exception &ex) {
+		SPDLOG_ERROR("Unable to load PTX while resolving {}: {}", name,
+			     ex.what());
+		return std::nullopt;
+	}
+	CUcontext context = nullptr;
+	if (cuCtxGetCurrent(&context) != CUDA_SUCCESS || context == nullptr)
+		return std::nullopt;
+	std::lock_guard<std::mutex> guard(load_mutex);
+	for (const auto &ptx : ptxs_by_context.at(context)) {
+		CUdeviceptr ptr = 0;
+		size_t size = 0;
+		auto err = cuModuleGetGlobal(&ptr, &size, ptx->module_ptr,
+					     name.c_str());
+		if (err == CUDA_SUCCESS)
+			return variable_info{ name, ptr, size, ptx.get() };
+		if (err != CUDA_ERROR_NOT_FOUND) {
+			SPDLOG_ERROR("Unable to lookup symbol {}: {}", name,
+				     (int)err);
+			return std::nullopt;
 		}
 	}
-	return false;
+	return std::nullopt;
+}
+
+std::optional<kernel_info>
+fatbin_record::find_function_info(nv_attach_impl &impl, void *ptr)
+{
+	auto itr = function_addr_to_symbol.find(ptr);
+	if (itr == function_addr_to_symbol.end())
+		return std::nullopt;
+	return find_function_info(impl, itr->second);
+}
+
+std::optional<kernel_info>
+fatbin_record::find_function_info(nv_attach_impl &impl,
+				  const std::string &name)
+{
+	try {
+		try_loading_ptxs(impl);
+	} catch (const std::exception &ex) {
+		SPDLOG_ERROR("Unable to load PTX while resolving {}: {}", name,
+			     ex.what());
+		return std::nullopt;
+	}
+	CUcontext context = nullptr;
+	if (cuCtxGetCurrent(&context) != CUDA_SUCCESS || context == nullptr)
+		return std::nullopt;
+	std::lock_guard<std::mutex> guard(load_mutex);
+	for (const auto &ptx : ptxs_by_context.at(context)) {
+		CUfunction function = nullptr;
+		auto err = cuModuleGetFunction(&function, ptx->module_ptr,
+					       name.c_str());
+		if (err == CUDA_SUCCESS)
+			return kernel_info{ name, function, ptx.get() };
+		if (err != CUDA_ERROR_NOT_FOUND) {
+			SPDLOG_ERROR("Unable to lookup function {}: {}", name,
+				     (int)err);
+			return std::nullopt;
+		}
+	}
+	return std::nullopt;
 }
 
 std::map<std::string, std::vector<uint8_t>> fatbin_record::compile_ptxs(
@@ -114,82 +181,90 @@ std::map<std::string, std::vector<uint8_t>> fatbin_record::compile_ptxs(
 
 	std::map<std::string, std::vector<uint8_t>> compiled_ptx;
 	const auto &handler = impl.ptx_compiler;
-	boost::asio::thread_pool pool(std::thread::hardware_concurrency());
+	boost::asio::thread_pool pool(
+		std::max(1u, std::thread::hardware_concurrency()));
 	std::mutex map_lock;
+	std::exception_ptr error;
 	for (const auto &[name, ptx_and_trampoline_flag] : patched_ptx) {
 		const auto &ptx = std::get<0>(ptx_and_trampoline_flag);
 
-			boost::asio::post(
-				pool,
-				[&handler, ptx, name, &compiled_ptx, &map_lock, this,
-				 sm_arch]() -> void {
-					const auto ptx_fixed =
-						rewrite_ptx_target(ptx, sm_arch);
-					auto sha256_string =
-						sha256(ptx_fixed.data(), ptx_fixed.size());
-					if (auto itr =
-						    this->ptx_pool->find(sha256_string);
-					    itr != this->ptx_pool->end()) {
-						SPDLOG_INFO(
-						"PTX {} ({}) found in cache",
-						name, sha256_string);
-					std::lock_guard<std::mutex> _guard(
-						map_lock);
-					compiled_ptx[name] = itr->second;
-				} else {
+		boost::asio::post(pool, [&, ptx, name, sm_arch]() {
+			try {
+				const auto ptx_fixed =
+					rewrite_ptx_target(ptx, sm_arch);
+				const auto sha256_string = sha256(
+					ptx_fixed.data(), ptx_fixed.size());
+				std::vector<uint8_t> compiled_program;
+				{
+					std::lock_guard<std::mutex> guard(
+						impl.ptx_cache_mutex);
+					if (auto itr = ptx_pool->find(sha256_string);
+					    itr != ptx_pool->end())
+						compiled_program = itr->second;
+				}
+				if (compiled_program.empty()) {
 					SPDLOG_INFO(
 						"Start compiling {}, not found in cache",
 						name);
-					auto compiler = handler.create();
-					if (!compiler) {
+					std::unique_ptr<nv_attach_impl_ptx_compiler,
+							decltype(handler.destroy)>
+						compiler(handler.create(),
+							 handler.destroy);
+					if (!compiler)
 						throw std::runtime_error(
 							"Unable to create nv_attach_impl_ptx_compiler");
-					}
-						std::string gpu_name =
-							"--gpu-name=" + sm_arch;
-							const char *compile_options[] = {
-								gpu_name.c_str(), "--verbose",
-								"-O3"
-							};
-						if (auto err = handler.compile(
-							    compiler, ptx_fixed.c_str(),
-							    compile_options,
-							    std::size(compile_options));
-						    err != 0) {
-							SPDLOG_ERROR(
-								"Unable to compile: {}, error = {}",
-							err,
-							handler.get_error_log(
-								compiler));
+					std::string gpu_name = "--gpu-name=" + sm_arch;
+					const char *compile_options[] = {
+						gpu_name.c_str(), "--verbose", "-O3"
+					};
+					if (auto err = handler.compile(
+						    compiler.get(), ptx_fixed.c_str(),
+						    compile_options,
+						    std::size(compile_options));
+					    err != 0) {
+						SPDLOG_ERROR(
+							"Unable to compile: {}, error = {}",
+							err, handler.get_error_log(
+								     compiler.get()));
 						throw std::runtime_error(
 							"Unable to compile");
 					}
-					SPDLOG_DEBUG(
-						"Info: {}",
-						handler.get_info_log(compiler));
 					uint8_t *data;
 					size_t size;
 					handler.get_compiled_program(
-						compiler, &data, &size);
-					std::vector<uint8_t> compiled_program(
-						data, data + size);
-					handler.destroy(compiler);
-					std::lock_guard<std::mutex> _guard(
-						map_lock);
-					compiled_ptx[name] = compiled_program;
-					this->ptx_pool->insert(std::make_pair(
-						sha256_string,
-						compiled_program));
-					SPDLOG_INFO("Compile of {} done", name);
+						compiler.get(), &data, &size);
+					compiled_program.assign(data, data + size);
+					std::lock_guard<std::mutex> guard(
+						impl.ptx_cache_mutex);
+					const auto [itr, inserted] = ptx_pool->emplace(
+						sha256_string, compiled_program);
+					if (!inserted)
+						compiled_program = itr->second;
+				} else {
+					SPDLOG_INFO("PTX {} ({}) found in cache", name,
+						    sha256_string);
 				}
-			});
+				std::lock_guard<std::mutex> guard(map_lock);
+				compiled_ptx[name] = std::move(compiled_program);
+			} catch (...) {
+				std::lock_guard<std::mutex> guard(map_lock);
+				if (!error)
+					error = std::current_exception();
+			}
+		});
 	}
 	pool.join();
+	if (error)
+		std::rethrow_exception(error);
 	return compiled_ptx;
 }
 void fatbin_record::try_loading_ptxs(class nv_attach_impl &impl)
 {
-	if (ptx_loaded)
+	CUcontext context = nullptr;
+	if (cuCtxGetCurrent(&context) != CUDA_SUCCESS || context == nullptr)
+		throw std::runtime_error("No current CUDA context");
+	std::lock_guard<std::mutex> load_guard(load_mutex);
+	if (ptxs_by_context.contains(context))
 		return;
 	if (impl.shared_mem_ptr == 0) {
 		throw std::runtime_error(
@@ -197,20 +272,29 @@ void fatbin_record::try_loading_ptxs(class nv_attach_impl &impl)
 	}
 	SPDLOG_INFO("Loading & patching current fatbin..");
 
-	auto patched_ptx = *impl.hack_fatbin(original_ptx);
+	auto patched_ptx_result = impl.hack_fatbin(original_ptx);
+	if (!patched_ptx_result)
+		throw std::runtime_error("Unable to patch fatbin PTX");
+	auto &patched_ptx = *patched_ptx_result;
 
 	auto compiled_ptx = compile_ptxs(impl, patched_ptx);
 
+	std::vector<std::shared_ptr<ptx_in_module>> context_ptxs;
 	for (const auto &[name, ptx_and_trampoline_flag] : patched_ptx) {
-		const auto &ptx = std::get<0>(ptx_and_trampoline_flag);
 		bool added_trampoline = std::get<1>(ptx_and_trampoline_flag);
 		const auto &compiled_elf = compiled_ptx.at(name);
-		auto sha256_string =
-			sha256(compiled_elf.data(), compiled_elf.size());
-		if (auto itr = module_pool->find(sha256_string);
-		    itr != module_pool->end()) {
+		module_key key{ context, sha256(compiled_elf.data(),
+					       compiled_elf.size()) };
+		std::shared_ptr<ptx_in_module> cached;
+		{
+			std::lock_guard<std::mutex> guard(impl.module_cache_mutex);
+			if (auto itr = module_pool->find(key);
+			    itr != module_pool->end())
+				cached = itr->second;
+		}
+		if (cached) {
 			SPDLOG_INFO("Module {} found in cache", name);
-			ptxs.push_back(itr->second);
+			context_ptxs.push_back(std::move(cached));
 		} else {
 			CUmodule module;
 			SPDLOG_INFO("Loading module: {}, not found in cache",
@@ -237,6 +321,8 @@ void fatbin_record::try_loading_ptxs(class nv_attach_impl &impl)
 				throw std::runtime_error(
 					"Unable to compile module");
 			}
+			auto ptr =
+				std::make_shared<ptx_in_module>(module, context);
 			if (added_trampoline) {
 				CUdeviceptr const_data_ptr, map_basic_info_ptr;
 				size_t const_data_size, map_basic_info_size;
@@ -270,13 +356,19 @@ void fatbin_record::try_loading_ptxs(class nv_attach_impl &impl)
 					"Unable to copy constData pointer to device");
 				SPDLOG_INFO("Trampoline data copied");
 			}
-			auto ptr = std::make_shared<ptx_in_module>(module);
-			module_pool->insert(std::make_pair(sha256_string, ptr));
-			ptxs.push_back(ptr);
+			{
+				std::lock_guard<std::mutex> guard(
+					impl.module_cache_mutex);
+				const auto [itr, inserted] =
+					module_pool->emplace(key, ptr);
+				if (!inserted)
+					ptr = itr->second;
+			}
+			context_ptxs.push_back(std::move(ptr));
 			SPDLOG_INFO("Loaded module: {}", name);
 		}
 	}
-	ptx_loaded = true;
+	ptxs_by_context.emplace(context, std::move(context_ptxs));
 }
 
 } // namespace bpftime::attach
