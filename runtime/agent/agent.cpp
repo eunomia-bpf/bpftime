@@ -504,8 +504,18 @@ static void auto_refresh_worker(int refresh_ms, uint64_t epoch) noexcept
 			if (auto_refresh_epoch.load(
 				    std::memory_order_acquire) != epoch)
 				return;
-			ctx_holder.ctx.init_attach_ctx_from_handlers(
-				bpftime_get_agent_config());
+			try {
+				ctx_holder.ctx.init_attach_ctx_from_handlers(
+					bpftime_get_agent_config());
+			} catch (const std::exception &ex) {
+				try {
+					SPDLOG_DEBUG(
+						"Auto-refresh: init_attach_ctx_from_handlers failed: {}",
+						ex.what());
+				} catch (...) {
+				}
+			} catch (...) {
+			}
 		}
 	} catch (...) {
 	}
