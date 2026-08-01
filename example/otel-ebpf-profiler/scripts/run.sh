@@ -86,7 +86,7 @@ if [[ "$(grep -c 'Created uprobe/uretprobe perf event handler' "${LOG_DIR}/daemo
 	echo "bpftime did not create both profiler uprobe handlers" >&2
 	exit 1
 fi
-if [[ "$(grep -c 'attach perf [0-9].* to bpf' "${LOG_DIR}/daemon.log")" -lt 2 ]]; then
+if [[ "$(grep -c 'attach perf [0-9].* to bpf [0-9].*, for pid' "${LOG_DIR}/daemon.log")" -lt 2 ]]; then
 	echo "bpftime did not attach both profiler uprobes" >&2
 	exit 1
 fi
