@@ -7,6 +7,7 @@
 #include <bpf/bpf.h>
 #include <linux/bpf.h>
 #include <cstdio>
+#include <cstring>
 #include <errno.h>
 #include <sys/time.h>
 #include <time.h>
@@ -33,8 +34,10 @@ static int parse_uint_from_file(const char *file, const char *fmt)
 
 	f = fopen(file, "re");
 	if (!f) {
-		err = -errno;
-		fprintf(stderr, "failed to open '%s\n", file);
+		const int saved_errno = errno;
+		err = -saved_errno;
+		SPDLOG_ERROR("failed to open '{}': {}", file,
+			     std::strerror(saved_errno));
 		exit(1);
 	}
 #pragma GCC diagnostic push
@@ -42,9 +45,18 @@ static int parse_uint_from_file(const char *file, const char *fmt)
 	err = fscanf(f, fmt, &ret);
 #pragma GCC diagnostic pop
 	if (err != 1) {
+		const int saved_errno = errno;
 		err = err == EOF ? -EIO : -errno;
-		fprintf(stderr, "failed to parse '%s'\n", file);
 		fclose(f);
+		if (err == -EIO) {
+			SPDLOG_ERROR("failed to parse '{}': unexpected EOF",
+				     file);
+		} else if (saved_errno != 0) {
+			SPDLOG_ERROR("failed to parse '{}': {}", file,
+				     std::strerror(saved_errno));
+		} else {
+			SPDLOG_ERROR("failed to parse '{}'", file);
+		}
 		exit(1);
 	}
 	fclose(f);

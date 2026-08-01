@@ -10,8 +10,7 @@ This example shows how `bpftime` instruments kernels executed through CUDA Graph
 From the `bpftime/` repository root, build bpftime with CUDA attach enabled:
 
 ```bash
-export BPFTIME_CUDA_ROOT=/usr/local/cuda
-cmake -B build -DBPFTIME_ENABLE_CUDA_ATTACH=1 -DBPFTIME_CUDA_ROOT=$BPFTIME_CUDA_ROOT .
+cmake -Bbuild -DBPFTIME_ENABLE_CUDA_ATTACH=1 -DBPFTIME_CUDA_ROOT=/usr/local/cuda .
 cmake --build build -j"$(nproc)"
 ```
 

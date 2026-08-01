@@ -41,6 +41,16 @@ You may use `bpf_override_return` to change the control flow of the program.
 
 See [documents/available-features.md](https://github.com/eunomia-bpf/bpftime/tree/master/documents/avaliable-features.md) for more details.
 
+## How examples are executed (preload vs dynamic attach)
+
+Most examples support (or can be adapted to) two execution modes:
+
+- **Preload at process start** (legacy but simple): run the loader with `bpftime-server` preloaded, and run the target with `bpftime-agent` preloaded (via `LD_PRELOAD` or `bpftime start`). This is the most deterministic mode and works without process injection.
+
+- **Dynamic attach / late attach**: start the target normally, then inject `bpftime-agent` into the already running process (via `bpftime attach` / `bpftime trace`). This is useful when you cannot restart the target, or when you want to attach probes after the process has initialized.
+
+For GPU dynamic attach, `bpftime trace` may extract PTX from the target executable (e.g. via `cuobjdump --extract-ptx`) before injection and pass the extracted PTX directory to the injected agent, so the agent does not need to spawn `cuobjdump` inside the target process.
+
 ## Tracing the system
 
 ### Tracing userspace functions with uprobe
@@ -100,6 +110,7 @@ The [example/gpu](https://github.com/eunomia-bpf/bpftime/tree/master/example/gpu
 - [`kernelretsnoop`](https://github.com/eunomia-bpf/bpftime/tree/master/example/gpu/kernelretsnoop): Per-thread exit timestamp tracer for CUDA kernels
 - [`threadhist`](https://github.com/eunomia-bpf/bpftime/tree/master/example/gpu/threadhist): Thread execution count histogram
 - [`launchlate`](https://github.com/eunomia-bpf/bpftime/tree/master/example/gpu/launchlate): Kernel launch latency profiler
+- [`threadscheduling_dynamic_hook`](https://github.com/eunomia-bpf/bpftime/tree/master/example/gpu/threadscheduling_dynamic_hook): Dynamic-attach-friendly variant that demonstrates late attach with `bpftime trace`
 - [`mem_trace`](https://github.com/eunomia-bpf/bpftime/tree/master/example/gpu/mem_trace): Memory access pattern tracing
 - [`directly_run_on_gpu`](https://github.com/eunomia-bpf/bpftime/tree/master/example/gpu/directly_run_on_gpu): Run eBPF programs directly on GPU
 - [`rocm-counter`](https://github.com/eunomia-bpf/bpftime/tree/master/example/gpu/rocm-counter): AMD ROCm GPU kernel tracing

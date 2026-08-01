@@ -5,15 +5,19 @@
 #include <time.h>
 #include <stdint.h>
 #include <sys/resource.h>
+#include <fcntl.h>
 #include <bpf/libbpf.h>
 #include <bpf/bpf.h>
 #include <unistd.h>
 #include <stdlib.h>
 #include <errno.h>
 #include <string.h>
+#include <gelf.h>
 #include "./.output/launchlate.skel.h"
 #include <inttypes.h>
 #define warn(...) fprintf(stderr, __VA_ARGS__)
+
+#define DEFAULT_UPROBE_SYMBOL_HINT "cudaLaunchKernel"
 
 static int libbpf_print_fn(enum libbpf_print_level level, const char *format,
 			   va_list args)
@@ -26,6 +30,96 @@ static volatile bool exiting = false;
 static void sig_handler(int sig)
 {
 	exiting = true;
+}
+
+static Elf *open_elf(const char *path, int *fd_close)
+{
+	int fd;
+	Elf *e;
+
+	if (elf_version(EV_CURRENT) == EV_NONE) {
+		warn("elf init failed\n");
+		return NULL;
+	}
+
+	fd = open(path, O_RDONLY);
+	if (fd < 0) {
+		warn("Could not open %s: %s\n", path, strerror(errno));
+		return NULL;
+	}
+
+	e = elf_begin(fd, ELF_C_READ, NULL);
+	if (!e) {
+		warn("elf_begin failed for %s: %s\n", path, elf_errmsg(-1));
+		close(fd);
+		return NULL;
+	}
+
+	if (elf_kind(e) != ELF_K_ELF) {
+		warn("%s is not an ELF file\n", path);
+		elf_end(e);
+		close(fd);
+		return NULL;
+	}
+
+	*fd_close = fd;
+	return e;
+}
+
+static void close_elf(Elf *e, int fd_close)
+{
+	if (e)
+		elf_end(e);
+	if (fd_close >= 0)
+		close(fd_close);
+}
+
+static char *find_defined_symbol_containing(const char *path, const char *needle)
+{
+	Elf *e = NULL;
+	Elf_Scn *scn = NULL;
+	Elf_Data *data = NULL;
+	GElf_Shdr shdr;
+	GElf_Sym sym;
+	int fd = -1;
+
+	e = open_elf(path, &fd);
+	if (!e)
+		return NULL;
+
+	while ((scn = elf_nextscn(e, scn))) {
+		if (!gelf_getshdr(scn, &shdr))
+			continue;
+		if (!(shdr.sh_type == SHT_SYMTAB || shdr.sh_type == SHT_DYNSYM))
+			continue;
+
+		data = NULL;
+		while ((data = elf_getdata(scn, data))) {
+			int i;
+
+			for (i = 0; gelf_getsym(data, i, &sym); i++) {
+				const char *name;
+
+				if (sym.st_shndx == SHN_UNDEF)
+					continue;
+				if (GELF_ST_TYPE(sym.st_info) != STT_FUNC)
+					continue;
+
+				name = elf_strptr(e, shdr.sh_link, sym.st_name);
+				if (!name)
+					continue;
+				if (!strstr(name, needle))
+					continue;
+
+				name = strdup(name);
+				close_elf(e, fd);
+				return (char *)name;
+			}
+		}
+	}
+
+	close_elf(e, fd);
+	return NULL;
 }
 
 static int print_histogram(struct launchlate_bpf *obj)
@@ -108,33 +202,21 @@ int main(int argc, char **argv)
 	struct timespec ts_mono, ts_real;
 	int64_t offset_ns;
 	uint32_t key = 0;
-	const char *uprobe_spec = "./vec_add:_Z16cudaLaunchKernelIcE9cudaErrorPT_4dim3S3_PPvmP11CUstream_st";
-	char *binary_path = NULL;
+	const char *binary_path = "./vec_add";
 	char *func_name = NULL;
-	char *colon_pos = NULL;
 
-	/* Parse command line arguments */
-	if (argc > 1) {
-		uprobe_spec = argv[1];
-	}
+	if (argc > 1)
+		binary_path = argv[1];
 
-	/* Parse binary_path:func_name format */
-	binary_path = strdup(uprobe_spec);
-	if (!binary_path) {
-		fprintf(stderr, "Failed to allocate memory\n");
+	func_name = find_defined_symbol_containing(binary_path,
+						   DEFAULT_UPROBE_SYMBOL_HINT);
+	if (!func_name) {
+		fprintf(stderr,
+			"Failed to find a defined symbol containing '%s' in %s\n",
+			DEFAULT_UPROBE_SYMBOL_HINT, binary_path);
 		return 1;
 	}
 
-	colon_pos = strchr(binary_path, ':');
-	if (colon_pos) {
-		*colon_pos = '\0';
-		func_name = colon_pos + 1;
-	} else {
-		fprintf(stderr, "Invalid uprobe format. Expected: binary_path:func_name\n");
-		free(binary_path);
-		return 1;
-	}
-	
 	/* Set up libbpf errors and debug info callback */
 	libbpf_set_print(libbpf_print_fn);
 
@@ -146,6 +228,7 @@ int main(int argc, char **argv)
 	skel = launchlate_bpf__open();
 	if (!skel) {
 		fprintf(stderr, "Failed to open and load BPF skeleton\n");
+		free(func_name);
 		return 1;
 	}
 
@@ -181,7 +264,8 @@ int main(int argc, char **argv)
 		goto cleanup;
 	}
 
-	printf("Attaching uprobe: binary_path='%s', func_name='%s'\n", binary_path, func_name);
+	printf("Attaching uprobe: binary_path='%s', func_name='%s' (auto-resolved from ELF)\n",
+	       binary_path, func_name);
 
 	/* Manually attach uprobe with configurable name */
 	LIBBPF_OPTS(bpf_uprobe_opts, uprobe_opts,
@@ -195,7 +279,6 @@ int main(int argc, char **argv)
 		err = -errno;
 		fprintf(stderr, "Failed to attach uprobe to '%s:%s': %s\n",
 			binary_path, func_name, strerror(errno));
-		free(binary_path);
 		goto cleanup;
 	}
 
@@ -203,7 +286,6 @@ int main(int argc, char **argv)
 	err = launchlate_bpf__attach(skel);
 	if (err) {
 		fprintf(stderr, "Failed to attach BPF kprobe\n");
-		free(binary_path);
 		goto cleanup;
 	}
 
@@ -215,8 +297,8 @@ int main(int argc, char **argv)
 		print_histogram(skel);
 	}
 
-	free(binary_path);
 cleanup:
+	free(func_name);
 	/* Clean up */
 	launchlate_bpf__destroy(skel);
 

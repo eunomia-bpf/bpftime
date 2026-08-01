@@ -11,8 +11,8 @@ This example demonstrates the behavior of `BPF_MAP_TYPE_GPU_ARRAY_MAP` (a normal
 -   A working CUDA environment (`nvcc`, `libcudart`) is available, and a GPU is accessible.
 -   Repository submodules `third_party/libbpf` and `third_party/bpftool` are available (the example's Makefile will automatically build the bootstrap bpftool and a static libbpf).
 -   Recommended: bpftime has been built at the top level (with CUDA attach enabled):
-    -   `cmake -B build -S . -DBPFTIME_ENABLE_CUDA_ATTACH=ON -DBPFTIME_CUDA_ROOT=/usr/local/cuda`
-    -   `cmake --build build -j`
+    -   `cmake -Bbuild -DBPFTIME_ENABLE_CUDA_ATTACH=1 -DBPFTIME_CUDA_ROOT=/usr/local/cuda .`
+    -   `cmake --build build -j$(nproc)`
 
 ## Build
 ```bash

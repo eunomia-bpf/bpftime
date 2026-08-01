@@ -80,10 +80,11 @@ else()
     ${FRIDA_UPROBE_ATTACH_IMPL_INCLUDE}
 
   )
-  target_link_libraries(bpftime-agent
-    ${FRIDA_GUM_INSTALL_DIR}/libfrida-gum.a
-    runtime
-    -lpthread
+	target_link_libraries(bpftime-agent
+		PUBLIC
+		${FRIDA_GUM_INSTALL_DIR}/libfrida-gum.a
+		runtime
+		-lpthread
     -lm
     -ldl
     spdlog::spdlog

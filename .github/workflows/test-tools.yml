@@ -1,10 +1,31 @@
 name: Build and test bpftime tools
 
 on:
+  workflow_dispatch:
   push:
     branches: ["master"]
+    paths:
+      - ".github/workflows/test-tools.yml"
+      - "attach/**"
+      - "runtime/**"
+      - "tools/**"
+      - "vm/**"
+      - "cmake/**"
+      - "third_party/**"
+      - "CMakeLists.txt"
+      - ".gitmodules"
   pull_request:
     branches: ["master"]
+    paths:
+      - ".github/workflows/test-tools.yml"
+      - "attach/**"
+      - "runtime/**"
+      - "tools/**"
+      - "vm/**"
+      - "cmake/**"
+      - "third_party/**"
+      - "CMakeLists.txt"
+      - ".gitmodules"
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}-${{ github.event_name }}
   cancel-in-progress: true
@@ -24,9 +45,15 @@ jobs:
         with:
           submodules: "recursive"
 
-      - name: Build and install everything
+      - name: Configure tool build
         run: |
-          make release-with-llvm-jit -j
+          cmake -Bbuild -DCMAKE_BUILD_TYPE:STRING=RelWithDebInfo \
+            -DBPFTIME_LLVM_JIT=1 \
+            -DBUILD_BPFTIME_DAEMON=OFF \
+            -DBPFTIME_ENABLE_CUDA_ATTACH=OFF
+      - name: Build tool targets
+        run: |
+          cmake --build build --config RelWithDebInfo --target bpftime-cli-cpp bpftime-aot-cli bpftimetool -j$(nproc)
     # TODO: add test for the tools
     # - name: Run the test scripts
     #   run: |
