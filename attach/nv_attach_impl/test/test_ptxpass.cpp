@@ -267,7 +267,8 @@ static int run_missing_kernel_pass(const char *path)
 	request.set_ebpf_instructions({ UINT64_MAX });
 	nlohmann::json input = request;
 	char output[4096] = {};
-	if (process_input(input.dump().c_str(), sizeof(output), output) !=
+	const int output_size = static_cast<int>(sizeof(output));
+	if (process_input(input.dump().c_str(), output_size, output) !=
 	    ptxpass::ExitCode::Success)
 		_exit(4);
 	auto response =
