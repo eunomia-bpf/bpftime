@@ -266,7 +266,7 @@ static void start_agent_ipc_server_once()
 		}
 		agent_ipc_fd = fd;
 		agent_ipc_stop.store(false, std::memory_order_release);
-		agent_ipc_thread = std::thread([]() {
+		auto run_server = []() {
 			for (;;) {
 				if (agent_ipc_stop.load(std::memory_order_acquire))
 					return;
@@ -359,7 +359,15 @@ static void start_agent_ipc_server_once()
 				}
 				::close(cfd);
 			}
-		});
+		};
+		try {
+			agent_ipc_thread = std::thread(run_server);
+		} catch (...) {
+			agent_ipc_stop.store(true, std::memory_order_release);
+			::close(agent_ipc_fd);
+			agent_ipc_fd = -1;
+			return;
+		}
 		std::atexit([]() {
 			agent_ipc_stop.store(true, std::memory_order_release);
 			if (agent_ipc_fd >= 0) {
@@ -968,6 +976,17 @@ extern "C" void bpftime_agent_main(const gchar *data, gboolean *stay_resident)
 				return;
 			}
 			srand(std::random_device()());
+			SPDLOG_DEBUG("Registering signal handler");
+			// We use SIGUSR1 to indicate the detaching.
+			if (ensure_detach_worker_started())
+				signal(SIGUSR1, sig_handler_sigusr1_detach);
+			setenv("BPFTIME_USED", "1", 0);
+			/* We don't want our library to be unloaded after we
+			 * return. */
+			if (stay_resident != nullptr)
+				*stay_resident = TRUE;
+			owns_initialization = false;
+			shm_initialized = false;
 
 			// Start IPC control plane for repeat attach/refresh (used by
 			// `bpftime trace`).
@@ -1028,20 +1047,6 @@ extern "C" void bpftime_agent_main(const gchar *data, gboolean *stay_resident)
 					});
 				std::atexit(stop_auto_refresh_at_exit);
 			}
-
-			SPDLOG_DEBUG("Registering signal handler");
-			// We use SIGUSR1 to indicate the detaching.
-			if (ensure_detach_worker_started())
-				signal(SIGUSR1, sig_handler_sigusr1_detach);
-			setenv("BPFTIME_USED", "1", 0);
-			SPDLOG_DEBUG("Set environment variable BPFTIME_USED");
-			/* We don't want our library to be unloaded after we
-			 * return. */
-			if (stay_resident != nullptr)
-				*stay_resident = TRUE;
-			owns_initialization = false;
-			shm_initialized = false;
-
 			SPDLOG_INFO("Attach successfully");
 		} catch (const std::exception &ex) {
 			try {
