@@ -209,7 +209,7 @@ private:
 	void start_cuda_watcher_thread();
 	void stop_cuda_watcher_thread();
 	std::unique_ptr<cuda::CUDAContext> cuda_ctx;
-	std::thread cuda_watcher_thread;
+	std::uint64_t cuda_watcher_generation = 0;
 #endif
 
 	constexpr static int CURRENT_ID_OFFSET = 65536;
