@@ -8,7 +8,21 @@ add_subdirectory(pass/ptxpass_kprobe_memcapture)
 
 add_executable(bpftime_ptxpass_runner pass/ptxpass_runner.cpp)
 target_link_libraries(bpftime_ptxpass_runner PRIVATE ${CMAKE_DL_LIBS})
-set_property(TARGET bpftime_ptxpass_runner PROPERTY CXX_STANDARD 20)
+
+if(BPFTIME_ENABLE_UNIT_TESTING)
+  enable_testing()
+  add_library(ptxpass_runner_test_pass SHARED pass/ptxpass_runner_test_pass.cpp)
+  add_test(
+    NAME ptxpass-runner-config
+    COMMAND sh -c
+      "\"$1\" --config \"$2\" 1024 3>&1 >/dev/null | grep -Fqx '{\"mode\":\"config\"}'"
+      _ $<TARGET_FILE:bpftime_ptxpass_runner> $<TARGET_FILE:ptxpass_runner_test_pass>)
+  add_test(
+    NAME ptxpass-runner-process
+    COMMAND sh -c
+      "printf input | \"$1\" --process \"$2\" 1024 3>&1 >/dev/null | grep -Fqx '{\"input\":\"input\"}'"
+      _ $<TARGET_FILE:bpftime_ptxpass_runner> $<TARGET_FILE:ptxpass_runner_test_pass>)
+endif()
 
 list(APPEND PTX_PASS_EXECUTABLE $<TARGET_FILE:ptxpass_kprobe_entry>)
 list(APPEND PTX_PASS_EXECUTABLE $<TARGET_FILE:ptxpass_kretprobe>)

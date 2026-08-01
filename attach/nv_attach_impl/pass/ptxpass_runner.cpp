@@ -2,7 +2,6 @@
 #include <charconv>
 #include <cstring>
 #include <dlfcn.h>
-#include <cstdio>
 #include <iostream>
 #include <iterator>
 #include <limits>
@@ -17,15 +16,13 @@ using process_input_fn = int (*)(const char *input, int length, char *output);
 
 namespace
 {
-constexpr size_t kDefaultConfigOutputBytes = 256U << 10;
-constexpr size_t kDefaultProcessOutputBytes = 1U << 20;
 constexpr size_t kMaxOutputBytes = 64U << 20;
+constexpr int kResultFd = STDERR_FILENO + 1;
 
 void usage(const char *argv0)
 {
-	std::cerr
-		<< "Usage: " << argv0
-		<< " (--config|--process) <pass-library> [--output-bytes N]\n";
+	std::cerr << "Usage: " << argv0
+		  << " (--config|--process) <pass-library> <output-bytes>\n";
 }
 
 bool parse_size(const char *text, size_t &out)
@@ -52,13 +49,13 @@ size_t nul_terminated_length(const std::vector<char> &buffer)
 void close_inherited_fds()
 {
 #if defined(SYS_close_range)
-	if (syscall(SYS_close_range, STDERR_FILENO + 1, ~0U, 0) == 0)
+	if (syscall(SYS_close_range, kResultFd + 1, ~0U, 0) == 0)
 		return;
 #endif
 	long max_fd = sysconf(_SC_OPEN_MAX);
 	if (max_fd < 0 || max_fd > std::numeric_limits<int>::max())
 		max_fd = 1024;
-	for (int fd = STDERR_FILENO + 1; fd < max_fd; fd++)
+	for (int fd = kResultFd + 1; fd < max_fd; fd++)
 		close(fd);
 }
 
@@ -82,7 +79,7 @@ bool write_all(int fd, const char *data, size_t length)
 
 int main(int argc, char **argv)
 {
-	if (argc < 3) {
+	if (argc != 4) {
 		usage(argv[0]);
 		return 64;
 	}
@@ -93,31 +90,14 @@ int main(int argc, char **argv)
 		usage(argv[0]);
 		return 64;
 	}
-	size_t output_bytes = kDefaultProcessOutputBytes;
-	if (mode == "--config")
-		output_bytes = kDefaultConfigOutputBytes;
-	if (argc != 3 &&
-	    (argc != 5 || std::strcmp(argv[3], "--output-bytes") != 0)) {
-		usage(argv[0]);
-		return 64;
-	}
-	if (argc == 5 &&
-	    (!parse_size(argv[4], output_bytes) || output_bytes == 0 ||
-	     output_bytes > kMaxOutputBytes)) {
-		std::cerr << "Invalid --output-bytes value\n";
+	size_t output_bytes = 0;
+	if (!parse_size(argv[3], output_bytes) || output_bytes == 0 ||
+	    output_bytes > kMaxOutputBytes) {
+		std::cerr << "Invalid output size\n";
 		return 64;
 	}
 	close_inherited_fds();
 
-	fflush(stdout);
-	int saved_stdout = dup(STDOUT_FILENO);
-	if (saved_stdout == -1 || dup2(STDERR_FILENO, STDOUT_FILENO) == -1) {
-		std::cerr << "Unable to redirect pass stdout: "
-			  << std::strerror(errno) << "\n";
-		if (saved_stdout != -1)
-			close(saved_stdout);
-		return 70;
-	}
 	std::unique_ptr<void, int (*)(void *)> handle(
 		dlopen(library_path, RTLD_NOW | RTLD_LOCAL), dlclose);
 	if (!handle) {
@@ -153,17 +133,12 @@ int main(int argc, char **argv)
 	handle.reset();
 	if (rc != 0)
 		return rc;
-	std::cout.flush();
-	std::clog.flush();
-	std::cerr.flush();
-	fflush(stdout);
-	if (!write_all(saved_stdout, output.data(),
+	if (!write_all(kResultFd, output.data(),
 		       nul_terminated_length(output))) {
 		std::cerr << "Unable to write PTX pass output: "
 			  << std::strerror(errno) << "\n";
-		close(saved_stdout);
 		return 70;
 	}
-	close(saved_stdout);
+	close(kResultFd);
 	_exit(0);
 }

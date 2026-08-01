@@ -77,16 +77,16 @@ struct nv_attach_entry {
 						       // for pass
 	// Extra serialized parameters (JSON string) reserved for future use
 	std::optional<std::string> extras;
-	const struct pass_cfg_with_library_path *config;
+	const struct pass_cfg_with_exec_path *config;
 };
 
-struct pass_cfg_with_library_path {
-	std::filesystem::path library_path;
+struct pass_cfg_with_exec_path {
+	std::filesystem::path executable_path;
 	ptxpass::pass_config::PassConfig pass_config;
 
-	pass_cfg_with_library_path(std::filesystem::path path,
-				   ptxpass::pass_config::PassConfig config)
-		: library_path(path), pass_config(config)
+	pass_cfg_with_exec_path(std::filesystem::path path,
+				ptxpass::pass_config::PassConfig config)
+		: executable_path(path), pass_config(config)
 	{
 	}
 };
@@ -221,7 +221,7 @@ class nv_attach_impl final : public base_attach_impl {
 		hooker_contexts;
 	std::map<int, nv_attach_entry> hook_entries;
 	// discovered pass definitions
-	std::vector<std::unique_ptr<pass_cfg_with_library_path>>
+	std::vector<std::unique_ptr<pass_cfg_with_exec_path>>
 		pass_configurations;
 	std::map<std::string, ptxpass::runtime_response::RuntimeResponse>
 		patch_cache;

@@ -21,6 +21,7 @@
 #include <boost/process/pipe.hpp>
 #include <boost/process/start_dir.hpp>
 #include <chrono>
+#include <cstdio>
 #include <cstdlib>
 #include <cstring>
 #include <fstream>
@@ -78,61 +79,42 @@ constexpr size_t kPtxPassConfigOutputBytes = 10U << 20;
 constexpr size_t kInitialPtxPassProcessOutputBytes = 1U << 20;
 constexpr size_t kMaxPtxPassProcessOutputBytes = 64U << 20;
 
+using file_ptr = std::unique_ptr<FILE, int (*)(FILE *)>;
+
+static std::string read_file(FILE *file)
+{
+	rewind(file);
+	std::string output;
+	char buffer[4096];
+	while (size_t count = fread(buffer, 1, sizeof(buffer), file))
+		output.append(buffer, count);
+	return output;
+}
+
 static std::optional<std::string>
 run_ptxpass_runner(const std::string &mode,
 		   const std::filesystem::path &pass_library,
 		   const std::string *stdin_payload, size_t output_bytes)
 {
-	const char *configured_runner = getenv("BPFTIME_PTXPASS_RUNNER");
-	const bool using_configured_runner =
-		configured_runner && configured_runner[0] != '\0';
-	std::filesystem::path runner_path =
-		using_configured_runner ? configured_runner :
-					  DEFAULT_PTX_PASS_RUNNER_EXECUTABLE;
-	char tmp_dir_template[] = "/tmp/bpftime-ptxpass-runner.XXXXXX";
-	char *tmp_dir_c = mkdtemp(tmp_dir_template);
-	if (tmp_dir_c == nullptr) {
-		SPDLOG_ERROR("mkdtemp failed for PTX pass runner: {}",
+	const std::filesystem::path runner_path =
+		DEFAULT_PTX_PASS_RUNNER_EXECUTABLE;
+	file_ptr input(tmpfile(), fclose);
+	file_ptr result(tmpfile(), fclose);
+	file_ptr diagnostics(tmpfile(), fclose);
+	if (!input || !result || !diagnostics) {
+		SPDLOG_ERROR("Unable to create PTX pass runner files: {}",
 			     strerror(errno));
 		return std::nullopt;
 	}
-	struct tmp_dir_guard {
-		std::filesystem::path path;
-		~tmp_dir_guard()
-		{
-			std::error_code ec;
-			std::filesystem::remove_all(path, ec);
-		}
-	} guard{ std::filesystem::path(tmp_dir_c) };
-
-	auto stdin_path = guard.path / "stdin.json";
-	auto stdout_path = guard.path / "stdout.json";
-	auto stderr_path = guard.path / "stderr.log";
-	{
-		std::ofstream ofs(stdin_path);
-		if (stdin_payload != nullptr)
-			ofs << *stdin_payload;
-		ofs.close();
-		if (!ofs) {
-			SPDLOG_ERROR("Unable to write PTX pass runner input {}",
-				     stdin_path.c_str());
-			return std::nullopt;
-		}
+	if (stdin_payload != nullptr &&
+	    fwrite(stdin_payload->data(), 1, stdin_payload->size(),
+		   input.get()) != stdin_payload->size()) {
+		SPDLOG_ERROR("Unable to write PTX pass runner input: {}",
+			     strerror(errno));
+		return std::nullopt;
 	}
+	rewind(input.get());
 
-	if (!using_configured_runner &&
-	    access(runner_path.c_str(), X_OK) != 0 && errno == EACCES) {
-		std::error_code ec;
-		std::filesystem::permissions(runner_path,
-					     std::filesystem::perms::owner_exec,
-					     std::filesystem::perm_options::add,
-					     ec);
-		if (ec) {
-			SPDLOG_WARN(
-				"Unable to add execute permission to PTX pass runner {}: {}",
-				runner_path.c_str(), ec.message());
-		}
-	}
 	posix_spawn_file_actions_t file_actions;
 	int spawn_rc = posix_spawn_file_actions_init(&file_actions);
 	if (spawn_rc != 0) {
@@ -148,39 +130,25 @@ run_ptxpass_runner(const std::string &mode,
 			posix_spawn_file_actions_destroy(actions);
 		}
 	} file_actions_cleanup{ &file_actions };
-	const std::tuple<int, std::filesystem::path, int, mode_t> redirects[] = {
-		{ STDIN_FILENO, stdin_path, O_RDONLY, 0 },
-		{ STDOUT_FILENO, stdout_path, O_WRONLY | O_CREAT | O_TRUNC,
-		  0600 },
-		{ STDERR_FILENO, stderr_path, O_WRONLY | O_CREAT | O_TRUNC,
-		  0600 },
+	const std::pair<int, int> redirects[] = {
+		{ fileno(input.get()), STDIN_FILENO },
+		{ fileno(diagnostics.get()), STDOUT_FILENO },
+		{ fileno(diagnostics.get()), STDERR_FILENO },
+		{ fileno(result.get()), 3 },
 	};
-	for (const auto &[fd, path, flags, mode] : redirects) {
-		int rc = posix_spawn_file_actions_addopen(
-			&file_actions, fd, path.c_str(), flags, mode);
+	for (const auto &[source, target] : redirects) {
+		int rc = posix_spawn_file_actions_adddup2(&file_actions, source,
+							  target);
 		if (rc != 0) {
 			SPDLOG_ERROR(
-				"Unable to prepare PTX pass runner fd {} redirection to {}: {}",
-				fd, path.c_str(), strerror(rc));
+				"Unable to prepare PTX pass runner fd {}: {}",
+				target, strerror(rc));
 			return std::nullopt;
 		}
 	}
-#if defined(__GLIBC__) && defined(__GLIBC_PREREQ)
-#if __GLIBC_PREREQ(2, 34)
-	int closefrom_rc =
-		posix_spawn_file_actions_addclosefrom_np(&file_actions, 3);
-	if (closefrom_rc != 0) {
-		SPDLOG_ERROR(
-			"Unable to prepare PTX pass runner closefrom action: {}",
-			strerror(closefrom_rc));
-		return std::nullopt;
-	}
-#endif
-#endif
 
 	std::vector<std::string> arg_strs = { runner_path.string(), mode,
 					      pass_library.string(),
-					      "--output-bytes",
 					      std::to_string(output_bytes) };
 	std::vector<char *> argv;
 	argv.reserve(arg_strs.size() + 1);
@@ -204,8 +172,8 @@ run_ptxpass_runner(const std::string &mode,
 	envp.push_back(nullptr);
 
 	pid_t child_pid = -1;
-	spawn_rc = posix_spawnp(&child_pid, runner_path.c_str(), &file_actions,
-				nullptr, argv.data(), envp.data());
+	spawn_rc = posix_spawn(&child_pid, runner_path.c_str(), &file_actions,
+			       nullptr, argv.data(), envp.data());
 	if (spawn_rc != 0) {
 		SPDLOG_ERROR("Unable to spawn PTX pass runner {} for {}: {}",
 			     runner_path.c_str(), pass_library.c_str(),
@@ -223,9 +191,6 @@ run_ptxpass_runner(const std::string &mode,
 		return std::nullopt;
 	}
 	if (!WIFEXITED(status) || WEXITSTATUS(status) != 0) {
-		std::ifstream efs(stderr_path);
-		std::string err((std::istreambuf_iterator<char>(efs)),
-				std::istreambuf_iterator<char>());
 		std::string reason;
 		if (WIFSIGNALED(status))
 			reason = "signal " + std::to_string(WTERMSIG(status));
@@ -236,18 +201,10 @@ run_ptxpass_runner(const std::string &mode,
 			reason = "wait status " + std::to_string(status);
 		SPDLOG_ERROR("PTX pass runner {} failed for {} with {}: {}",
 			     runner_path.c_str(), pass_library.c_str(), reason,
-			     err);
+			     read_file(diagnostics.get()));
 		return std::nullopt;
 	}
-
-	std::ifstream ifs(stdout_path);
-	if (!ifs.is_open()) {
-		SPDLOG_ERROR("Unable to read PTX pass runner output {}",
-			     stdout_path.c_str());
-		return std::nullopt;
-	}
-	return std::string(std::istreambuf_iterator<char>(ifs),
-			   std::istreambuf_iterator<char>());
+	return read_file(result.get());
 }
 } // namespace
 
@@ -349,7 +306,7 @@ int nv_attach_impl::create_attach_with_ebpf_callback(
 	} else {
 		attach_point_name = func_name;
 	}
-	const struct pass_cfg_with_library_path *matched = nullptr;
+	struct pass_cfg_with_exec_path *matched = nullptr;
 	for (const auto &pd : this->pass_configurations) {
 		if (pd->pass_config.attach_type != attach_type)
 			continue;
@@ -394,7 +351,7 @@ int nv_attach_impl::create_attach_with_ebpf_callback(
 				    (uintptr_t)this->shared_mem_ptr);
 		}
 		SPDLOG_INFO("Recorded pass {} for func {}",
-			    matched->library_path.c_str(), func_name);
+			    matched->executable_path.c_str(), func_name);
 		start_late_bootstrap_async();
 		return id;
 	}
@@ -701,7 +658,7 @@ nv_attach_impl::nv_attach_impl()
 			SPDLOG_INFO("Retrieved config of {}", path.c_str());
 			SPDLOG_DEBUG("Config {}", json.dump(4));
 			this->pass_configurations.emplace_back(
-				std::make_unique<pass_cfg_with_library_path>(
+				std::make_unique<pass_cfg_with_exec_path>(
 					path, config));
 		} catch (const std::exception &e) {
 			SPDLOG_ERROR(
@@ -1117,7 +1074,7 @@ nv_attach_impl::hack_fatbin(std::map<std::string, std::string> all_ptx)
 								"--process",
 								hook_entry
 									.config
-									->library_path,
+									->executable_path,
 								&input_json,
 								output_bytes);
 							if (!output) {
