@@ -5,6 +5,7 @@
  */
 #include "bpftime_logger.hpp"
 #include "bpftime_shm.hpp"
+#include <boost/interprocess/exceptions.hpp>
 #ifdef ENABLE_BPFTIME_VERIFIER
 #include <bpftime-verifier.hpp>
 #endif
@@ -33,6 +34,7 @@
 #include "spdlog/spdlog.h"
 #include <cerrno>
 #include <cstdlib>
+#include <exception>
 #include <iterator>
 #include "syscall_server_utils.hpp"
 #include <optional>
@@ -67,6 +69,18 @@ using namespace bpftime_epoll;
 namespace fmt_lib = spdlog::fmt_lib;
 
 namespace {
+[[noreturn]] void
+exit_for_startup_allocation_failure(const std::exception &error)
+{
+	auto config = bpftime::construct_agent_config_from_env();
+	SPDLOG_CRITICAL(
+		"Unable to initialize bpftime shared memory ({} MiB, {} fd slots): {}",
+		config.shm_memory_size, config.max_fd_count, error.what());
+	SPDLOG_CRITICAL(
+		"Increase BPFTIME_SHM_MEMORY_MB or decrease BPFTIME_MAX_FD_COUNT");
+	std::exit(EXIT_FAILURE);
+}
+
 std::string format_verifier_program_dump(const uint64_t *instructions,
 					 size_t instruction_count)
 {
@@ -143,7 +157,11 @@ void syscall_context::initialize_cuda()
 void syscall_context::try_startup()
 {
 	enable_mock.store(false, std::memory_order_relaxed);
-	start_up(*this);
+	try {
+		start_up(*this);
+	} catch (const boost::interprocess::bad_alloc &e) {
+		exit_for_startup_allocation_failure(e);
+	}
 	enable_mock.store(true, std::memory_order_relaxed);
 }
 
@@ -877,12 +895,17 @@ void *syscall_context::handle_mmap64(void *addr, size_t length, int prot,
 	} else if (fd != -1 && bpftime_is_software_perf_event(fd)) {
 		SPDLOG_DEBUG(
 			"Entering mocked mmap64: software perf event handler");
+		errno = 0;
 		if (auto ptr = bpftime_get_software_perf_event_raw_buffer(
 			    fd, length);
 		    ptr != nullptr) {
 			mocked_mmap_values.insert((uintptr_t)ptr);
 			return ptr;
 		}
+		if (errno == 0) {
+			errno = ENOMEM;
+		}
+		return MAP_FAILED;
 	}
 	SPDLOG_DEBUG(
 		"Calling original mmap64: addr={}, length={}, prot={}, flags={}, fd={}, offset={}",
