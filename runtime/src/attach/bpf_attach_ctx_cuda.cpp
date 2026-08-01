@@ -74,23 +74,36 @@ std::mutex g_cuda_watcher_mutex;
 std::thread *g_cuda_watcher_thread = nullptr;
 std::shared_ptr<std::atomic<bool>> g_cuda_watcher_stop_flag;
 
-void stop_cuda_watcher_thread_at_exit()
+bool stop_registered_cuda_watcher() noexcept
 {
-	std::thread *thread_to_join = nullptr;
-	std::shared_ptr<std::atomic<bool>> flag_to_set;
-	{
+	try {
 		std::lock_guard<std::mutex> guard(g_cuda_watcher_mutex);
-		thread_to_join = g_cuda_watcher_thread;
-		flag_to_set = g_cuda_watcher_stop_flag;
+		if (g_cuda_watcher_thread == nullptr)
+			return true;
+		if (!g_cuda_watcher_stop_flag)
+			return false;
+		g_cuda_watcher_stop_flag->store(true,
+						std::memory_order_release);
+		if (g_cuda_watcher_thread->joinable())
+			g_cuda_watcher_thread->join();
 		g_cuda_watcher_thread = nullptr;
 		g_cuda_watcher_stop_flag.reset();
+		return true;
+	} catch (...) {
+		return false;
 	}
-	if (flag_to_set)
-		flag_to_set->store(true, std::memory_order_release);
-	if (thread_to_join != nullptr && thread_to_join->joinable())
-		thread_to_join->join();
+}
+
+void stop_cuda_watcher_thread_at_exit()
+{
+	(void)stop_registered_cuda_watcher();
 }
 } // namespace
+
+bool stop_cuda_watcher_before_shm_unmap() noexcept
+{
+	return stop_registered_cuda_watcher();
+}
 
 std::optional<attach::nv_attach_impl *>
 bpf_attach_ctx::find_nv_attach_impl() const
