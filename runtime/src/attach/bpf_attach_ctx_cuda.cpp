@@ -74,12 +74,15 @@ std::mutex g_cuda_watcher_mutex;
 std::thread *g_cuda_watcher_thread = nullptr;
 std::shared_ptr<std::atomic<bool>> g_cuda_watcher_stop_flag;
 
-bool stop_registered_cuda_watcher() noexcept
+bool stop_registered_cuda_watcher(std::thread *expected = nullptr) noexcept
 {
 	try {
 		std::lock_guard<std::mutex> guard(g_cuda_watcher_mutex);
-		if (g_cuda_watcher_thread == nullptr)
-			return true;
+		if (g_cuda_watcher_thread == nullptr) {
+			return expected == nullptr || !expected->joinable();
+		}
+		if (expected != nullptr && g_cuda_watcher_thread != expected)
+			return false;
 		if (!g_cuda_watcher_stop_flag)
 			return false;
 		g_cuda_watcher_stop_flag->store(true,
@@ -118,10 +121,16 @@ bpf_attach_ctx::find_nv_attach_impl() const
 }
 void bpf_attach_ctx::start_cuda_watcher_thread()
 {
+	std::lock_guard<std::mutex> guard(g_cuda_watcher_mutex);
 	if (!cuda_ctx)
 		return;
 	if (cuda_watcher_thread.joinable())
 		return;
+	if (g_cuda_watcher_thread != nullptr)
+		return;
+	std::call_once(g_cuda_watcher_atexit_once, []() {
+		std::atexit(stop_cuda_watcher_thread_at_exit);
+	});
 	auto flag = cuda_ctx->cuda_watcher_should_stop;
 	cuda_watcher_thread = std::thread([flag, this]() {
 		auto *ctx = cuda_ctx.get();
@@ -286,46 +295,13 @@ void bpf_attach_ctx::start_cuda_watcher_thread()
 		SPDLOG_INFO("Exiting CUDA watcher thread");
 	});
 
-	std::call_once(g_cuda_watcher_atexit_once, []() {
-		std::atexit(stop_cuda_watcher_thread_at_exit);
-	});
-	{
-		std::lock_guard<std::mutex> guard(g_cuda_watcher_mutex);
-		g_cuda_watcher_thread = &cuda_watcher_thread;
-		g_cuda_watcher_stop_flag = flag;
-	}
+	g_cuda_watcher_thread = &cuda_watcher_thread;
+	g_cuda_watcher_stop_flag = flag;
 }
 
 void bpf_attach_ctx::stop_cuda_watcher_thread()
 {
-	if (!cuda_ctx)
-		return;
-	auto flag = cuda_ctx->cuda_watcher_should_stop;
-	if (flag)
-		flag->store(true, std::memory_order_release);
-	{
-		std::lock_guard<std::mutex> guard(g_cuda_watcher_mutex);
-		if (g_cuda_watcher_thread == &cuda_watcher_thread) {
-			g_cuda_watcher_thread = nullptr;
-			g_cuda_watcher_stop_flag.reset();
-		}
-	}
-	if (cuda_watcher_thread.joinable()) {
-		try {
-			cuda_watcher_thread.join();
-		} catch (const std::system_error &ex) {
-			SPDLOG_WARN("Failed to join CUDA watcher thread: {}",
-				    ex.what());
-			try {
-				if (cuda_watcher_thread.joinable())
-					cuda_watcher_thread.detach();
-			} catch (const std::system_error &detach_ex) {
-				SPDLOG_WARN(
-					"Failed to detach CUDA watcher thread after join failure: {}",
-					detach_ex.what());
-			}
-		}
-	}
+	(void)stop_registered_cuda_watcher(&cuda_watcher_thread);
 }
 std::vector<attach::MapBasicInfo>
 bpf_attach_ctx::create_map_basic_info(int filled_size)
