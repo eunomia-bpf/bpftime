@@ -60,9 +60,7 @@ jobs:
     name: Build and push Docker image
     runs-on: ubuntu-latest
     needs: build-image
-    if: |
-      github.event_name != 'pull_request' &&
-      github.repository_owner == 'eunomia-bpf'
+    if: "github.event_name != 'pull_request' && github.repository_owner == 'eunomia-bpf'"
     permissions:
       contents: read
       packages: write
