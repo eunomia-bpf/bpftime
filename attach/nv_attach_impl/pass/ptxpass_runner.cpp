@@ -80,24 +80,19 @@ int main(int argc, char **argv)
 	std::vector<char> output(output_bytes, '\0');
 	const int output_len = static_cast<int>(output.size());
 	int rc = 0;
+	auto print_config = reinterpret_cast<print_config_fn>(
+		dlsym(handle, "print_config"));
+	auto process_input = reinterpret_cast<process_input_fn>(
+		dlsym(handle, "process_input"));
+	if (!print_config || !process_input) {
+		std::cerr << "Required PTX pass symbols not found in "
+			  << library_path << "\n";
+		return 66;
+	}
 
 	if (std::strcmp(argv[1], "--config") == 0) {
-		auto print_config = reinterpret_cast<print_config_fn>(
-			dlsym(handle, "print_config"));
-		if (!print_config) {
-			std::cerr << "Symbol print_config not found in "
-				  << library_path << "\n";
-			return 66;
-		}
 		print_config(output_len, output.data());
 	} else {
-		auto process_input = reinterpret_cast<process_input_fn>(
-			dlsym(handle, "process_input"));
-		if (!process_input) {
-			std::cerr << "Symbol process_input not found in "
-				  << library_path << "\n";
-			return 66;
-		}
 		std::string input{ std::istreambuf_iterator<char>(std::cin),
 				   std::istreambuf_iterator<char>() };
 		rc = process_input(input.c_str(), output_len, output.data());

@@ -16,9 +16,11 @@ extern "C" void print_config(int length, char *output)
 	snprintf(output, length, R"({"mode":"config"})");
 }
 
+#ifndef PTXPASS_CONFIG_ONLY
 extern "C" int process_input(const char *input, int length, char *output)
 {
 	puts("process noise");
 	snprintf(output, length, R"({"input":"%s"})", input);
 	return 0;
 }
+#endif

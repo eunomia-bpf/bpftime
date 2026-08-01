@@ -227,6 +227,14 @@ run_ptxpass_runner(const std::string &mode,
 }
 } // namespace
 
+std::optional<std::string> run_ptxpass_runner_for_test(
+	const std::string &mode, const std::filesystem::path &pass_library,
+	const std::string *stdin_payload, size_t output_bytes)
+{
+	return run_ptxpass_runner(mode, pass_library, stdin_payload,
+				  output_bytes);
+}
+
 nv_attach_hook_state &nv_attach_get_hook_state()
 {
 	std::call_once(g_nv_attach_hook_state_holder.init_once, []() {

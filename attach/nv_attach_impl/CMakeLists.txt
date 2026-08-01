@@ -12,6 +12,8 @@ target_link_libraries(bpftime_ptxpass_runner PRIVATE ${CMAKE_DL_LIBS})
 if(BPFTIME_ENABLE_UNIT_TESTING)
   enable_testing()
   add_library(ptxpass_runner_test_pass SHARED pass/ptxpass_runner_test_pass.cpp)
+  add_library(ptxpass_runner_config_only_test_pass SHARED pass/ptxpass_runner_test_pass.cpp)
+  target_compile_definitions(ptxpass_runner_config_only_test_pass PRIVATE PTXPASS_CONFIG_ONLY)
   add_test(
     NAME ptxpass-runner-config
     COMMAND sh -c
@@ -22,6 +24,11 @@ if(BPFTIME_ENABLE_UNIT_TESTING)
     COMMAND sh -c
       "printf input | \"$1\" --process \"$2\" 1024 3>&1 >/dev/null | grep -Fqx '{\"input\":\"input\"}'"
       _ $<TARGET_FILE:bpftime_ptxpass_runner> $<TARGET_FILE:ptxpass_runner_test_pass>)
+  add_test(
+    NAME ptxpass-runner-reject-incomplete-pass
+    COMMAND sh -c
+      "\"$1\" --config \"$2\" 1024 3>/dev/null >/dev/null 2>&1; test $? -eq 66"
+      _ $<TARGET_FILE:bpftime_ptxpass_runner> $<TARGET_FILE:ptxpass_runner_config_only_test_pass>)
 endif()
 
 list(APPEND PTX_PASS_EXECUTABLE $<TARGET_FILE:ptxpass_kprobe_entry>)
