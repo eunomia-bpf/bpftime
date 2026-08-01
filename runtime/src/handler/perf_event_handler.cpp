@@ -310,7 +310,6 @@ bool software_perf_event_buffer::append_record_parts(const void *first,
 						     size_t padding_size)
 {
 	if (second_size > std::numeric_limits<size_t>::max() - first_size ||
-	    padding_size > sizeof(uint64_t) ||
 	    padding_size > std::numeric_limits<size_t>::max() - first_size -
 				   second_size) {
 		return false;
@@ -341,11 +340,6 @@ bool software_perf_event_buffer::append_record_parts(const void *first,
 	write_wrapped(data_head, first, first_size);
 	if (second_size > 0) {
 		write_wrapped(data_head + first_size, second, second_size);
-	}
-	if (padding_size > 0) {
-		const uint64_t padding = 0;
-		write_wrapped(data_head + first_size + second_size, &padding,
-			      padding_size);
 	}
 	uint64_t new_head = data_head + record_size;
 	smp_store_release_u64(&header.data_head, new_head);
