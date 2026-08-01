@@ -4,6 +4,7 @@
 #include "nv_attach_utils.hpp"
 #include "spdlog/spdlog.h"
 #include "nv_attach_impl.hpp"
+#include <algorithm>
 #include <boost/asio/post.hpp>
 #include <boost/asio/thread_pool.hpp>
 #include <chrono>
@@ -53,15 +54,16 @@ ptx_in_module::~ptx_in_module()
 }
 
 bool fatbin_record::find_and_fill_variable_info(void *ptr,
-						const char *symbol_name)
+						const char *symbol_name,
+						int device_ordinal)
 {
-	for (const auto &ptx : ptxs) {
+	for (const auto &ptx : get_ptxs_for_device(device_ordinal)) {
 		CUdeviceptr dptr;
 		size_t size;
 		auto err = cuModuleGetGlobal(&dptr, &size, ptx->module_ptr,
 					     symbol_name);
 		if (err == CUDA_SUCCESS) {
-			variable_addr_to_symbol[ptr] =
+			variable_addr_to_symbol[{ device_ordinal, ptr }] =
 				variable_info{ .symbol_name =
 						       std::string(symbol_name),
 					       .ptr = dptr,
@@ -77,15 +79,44 @@ bool fatbin_record::find_and_fill_variable_info(void *ptr,
 	}
 	return false;
 }
-bool fatbin_record::find_and_fill_function_info(void *ptr,
-						const char *symbol_name)
+
+bool fatbin_record::ensure_variable_info(class nv_attach_impl &impl, void *ptr,
+					 int device_ordinal)
 {
-	for (const auto &ptx : ptxs) {
+	if (variable_addr_to_symbol.contains({ device_ordinal, ptr }))
+		return true;
+	auto existing = std::find_if(
+		variable_addr_to_symbol.begin(), variable_addr_to_symbol.end(),
+		[ptr](const auto &entry) { return entry.first.second == ptr; });
+	if (existing == variable_addr_to_symbol.end())
+		return false;
+
+	std::string sm_arch = impl.get_device_manager().device_count() > 0 ?
+				      impl.get_device_manager()
+					      .get_device(device_ordinal)
+					      .sm_arch :
+				      get_gpu_sm_arch();
+	try {
+		try_loading_ptxs_for_device(impl, device_ordinal, sm_arch);
+	} catch (const std::exception &ex) {
+		SPDLOG_ERROR("Unable to load PTX for device {}: {}",
+			     device_ordinal, ex.what());
+		return false;
+	}
+	return find_and_fill_variable_info(
+		ptr, existing->second.symbol_name.c_str(), device_ordinal);
+}
+
+bool fatbin_record::find_and_fill_function_info(void *ptr,
+						const char *symbol_name,
+						int device_ordinal)
+{
+	for (const auto &ptx : get_ptxs_for_device(device_ordinal)) {
 		CUfunction func;
 		auto err = cuModuleGetFunction(&func, ptx->module_ptr,
 					       symbol_name);
 		if (err == CUDA_SUCCESS) {
-			function_addr_to_symbol[ptr] =
+			function_addr_to_symbol[{ device_ordinal, ptr }] =
 				kernel_info{ .symbol_name =
 						     std::string(symbol_name),
 					     .func = func,
@@ -99,6 +130,18 @@ bool fatbin_record::find_and_fill_function_info(void *ptr,
 		}
 	}
 	return false;
+}
+
+std::vector<std::shared_ptr<ptx_in_module>>
+fatbin_record::get_ptxs_for_device(int device_ordinal) const
+{
+	std::lock_guard<std::mutex> load_guard(load_mutex);
+	std::vector<std::shared_ptr<ptx_in_module>> result;
+	for (const auto &ptx : ptxs) {
+		if (ptx->device_ordinal == device_ordinal)
+			result.push_back(ptx);
+	}
+	return result;
 }
 
 std::map<std::string, std::vector<uint8_t>> fatbin_record::compile_ptxs(
@@ -266,7 +309,7 @@ void fatbin_record::try_loading_ptxs_for_device(class nv_attach_impl &impl,
 			modified_ptx.emplace(name, ptx_and_modified_flag);
 		}
 	}
-	all_ptx_not_modified = modified_ptx.empty();
+	const bool all_ptx_not_modified = modified_ptx.empty();
 	const auto patch_elapsed =
 		std::chrono::duration_cast<std::chrono::milliseconds>(
 			std::chrono::steady_clock::now() - patch_start)
@@ -469,7 +512,6 @@ void fatbin_record::try_loading_ptxs_for_device(class nv_attach_impl &impl,
 	SPDLOG_DEBUG("GPU attach timing: total fatbin attach took {} ms",
 		    total_elapsed);
 	devices_loaded.insert(device_ordinal);
-	ptx_loaded = true;
 }
 
 } // namespace bpftime::attach

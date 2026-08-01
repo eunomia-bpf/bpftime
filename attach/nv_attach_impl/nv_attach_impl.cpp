@@ -647,6 +647,51 @@ std::optional<CUfunction> nv_attach_impl::find_patched_kernel_function(
 	return itr->second;
 }
 
+std::optional<CUfunction>
+nv_attach_impl::ensure_patched_kernel_function(const std::string &kernel_name,
+					       int device_ordinal)
+{
+	if (device_ordinal < 0)
+		device_ordinal = get_current_device_ordinal();
+	if (device_manager_.device_count() > 0 &&
+	    (device_ordinal < 0 ||
+	     device_ordinal >= device_manager_.device_count()))
+		return std::nullopt;
+	if (auto existing =
+		    find_patched_kernel_function(kernel_name, device_ordinal);
+	    existing)
+		return existing;
+
+	std::string sm_arch =
+		device_manager_.device_count() > 0 ?
+			device_manager_.get_device(device_ordinal).sm_arch :
+			get_gpu_sm_arch();
+	for (const auto &record : fatbin_records) {
+		try {
+			record->try_loading_ptxs_for_device(
+				*this, device_ordinal, sm_arch);
+		} catch (const std::exception &ex) {
+			SPDLOG_ERROR("Unable to load PTX for device {}: {}",
+				     device_ordinal, ex.what());
+			return std::nullopt;
+		}
+		for (const auto &ptx :
+		     record->get_ptxs_for_device(device_ordinal)) {
+			CUfunction function = nullptr;
+			if (cuModuleGetFunction(&function, ptx->module_ptr,
+						kernel_name.c_str()) ==
+			    CUDA_SUCCESS) {
+				record_patched_kernel_function(
+					kernel_name, function, device_ordinal);
+				record_original_cufunction_name(function,
+								kernel_name);
+				return function;
+			}
+		}
+	}
+	return std::nullopt;
+}
+
 void nv_attach_impl::record_original_cufunction_name(
 	CUfunction function, const std::string &kernel_name)
 {
@@ -1179,6 +1224,12 @@ int nv_attach_impl::run_attach_entry_on_gpu(int attach_id, int run_count,
 	if (device_ordinal < 0) {
 		device_ordinal = get_current_device_ordinal();
 	}
+	if (device_manager_.device_count() > 0 &&
+	    (device_ordinal < 0 ||
+	     device_ordinal >= device_manager_.device_count())) {
+		SPDLOG_ERROR("Invalid device ordinal: {}", device_ordinal);
+		return -1;
+	}
 
 	// Get SM architecture for the target device
 	std::string sm_arch;
@@ -1371,8 +1422,10 @@ void nv_attach_impl::mirror_cuda_memcpy_to_symbol(
 	if (auto record_itr = symbol_address_to_fatbin.find((void *)symbol);
 	    record_itr != symbol_address_to_fatbin.end()) {
 		auto &record = *record_itr->second;
-		auto var_itr =
-			record.variable_addr_to_symbol.find((void *)symbol);
+		record.ensure_variable_info(*this, (void *)symbol,
+					    get_current_device_ordinal());
+		auto var_itr = record.variable_addr_to_symbol.find(
+			{ get_current_device_ordinal(), (void *)symbol });
 		if (var_itr != record.variable_addr_to_symbol.end()) {
 			resolved_var = var_itr->second;
 		}
@@ -1387,8 +1440,10 @@ void nv_attach_impl::mirror_cuda_memcpy_to_symbol(
 		{
 			std::lock_guard<std::mutex> guard(
 				patched_global_cache_mutex);
-			auto it = patched_global_by_name.find(*name);
-			if (it != patched_global_by_name.end()) {
+			auto &device_cache = patched_global_by_device
+				[get_current_device_ordinal()];
+			auto it = device_cache.find(*name);
+			if (it != device_cache.end()) {
 				resolved_var = variable_info{
 					.symbol_name = *name,
 					.ptr = it->second.first,
@@ -1402,7 +1457,8 @@ void nv_attach_impl::mirror_cuda_memcpy_to_symbol(
 				auto *rec = rec_uptr.get();
 				if (rec == nullptr)
 					continue;
-				for (const auto &ptx : rec->ptxs) {
+				for (const auto &ptx : rec->get_ptxs_for_device(
+					     get_current_device_ordinal())) {
 					CUdeviceptr dptr;
 					size_t sz;
 					auto err = cuModuleGetGlobal(
@@ -1413,8 +1469,9 @@ void nv_attach_impl::mirror_cuda_memcpy_to_symbol(
 							std::lock_guard<
 								std::mutex>
 								guard(patched_global_cache_mutex);
-							patched_global_by_name[*name] =
-								std::make_pair(
+							patched_global_by_device
+								[get_current_device_ordinal()]
+								[*name] = std::make_pair(
 									dptr,
 									sz);
 						}
@@ -1623,7 +1680,7 @@ void nv_attach_impl::clear_patched_state_for_next_session()
 		{
 			std::lock_guard<std::mutex> g(
 				patched_global_cache_mutex);
-			patched_global_by_name.clear();
+			patched_global_by_device.clear();
 		}
 		if (module_pool)
 			module_pool->clear();
@@ -1764,7 +1821,8 @@ void nv_attach_impl::prefill_patched_kernel_functions_from_loaded_fatbins()
 			kernels = collect_all_kernels_to_patch();
 		if (kernels.empty())
 			continue;
-		for (const auto &ptx : rec->ptxs) {
+		for (const auto &ptx :
+		     rec->get_ptxs_for_device(get_current_device_ordinal())) {
 			for (const auto &kernel : kernels) {
 				CUfunction func = nullptr;
 				auto err = cuModuleGetFunction(

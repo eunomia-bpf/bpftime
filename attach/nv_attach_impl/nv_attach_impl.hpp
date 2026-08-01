@@ -185,6 +185,9 @@ class nv_attach_impl final : public base_attach_impl {
 	std::optional<CUfunction>
 	find_patched_kernel_function(const std::string &kernel_name,
 				     int device_ordinal = -1) const;
+	std::optional<CUfunction>
+	ensure_patched_kernel_function(const std::string &kernel_name,
+				       int device_ordinal = -1);
 	// Notify nv_attach_impl that a patched kernel launch was enqueued on a
 	// stream. Used to coordinate detach with in-flight patched kernels so we
 	// don't tear down loader-owned CUDA IPC buffers prematurely.
@@ -300,8 +303,9 @@ class nv_attach_impl final : public base_attach_impl {
 	std::vector<host_symbol_range> host_symbol_ranges;
 
 		mutable std::mutex patched_global_cache_mutex;
-		std::unordered_map<std::string, std::pair<CUdeviceptr, size_t>>
-			patched_global_by_name;
+		std::map<int, std::unordered_map<std::string,
+						 std::pair<CUdeviceptr, size_t>>>
+			patched_global_by_device;
 
 		mutable std::mutex launch_event_mutex;
 		std::unordered_map<CUstream, CUevent> pending_launch_events_by_stream;

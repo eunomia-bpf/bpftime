@@ -1,7 +1,9 @@
 #include "catch2/catch_test_macros.hpp"
 #include "nv_gpu_device_manager.hpp"
 #include <cuda.h>
+#include <cstdlib>
 #include <spdlog/spdlog.h>
+#include <stdexcept>
 
 using namespace bpftime;
 using namespace attach;
@@ -12,6 +14,7 @@ TEST_CASE("gpu_device_manager initialization")
 	cuInit(0);
 
 	gpu_device_manager manager;
+	manager.initialize();
 	manager.initialize();
 
 	SECTION("device_count should be non-negative")

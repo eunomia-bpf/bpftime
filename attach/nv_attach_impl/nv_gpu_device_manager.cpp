@@ -10,6 +10,8 @@ namespace attach
 
 void gpu_device_manager::initialize()
 {
+	devices_.clear();
+	count_ = 0;
 	CUresult err = cuInit(0);
 	if (err != CUDA_SUCCESS) {
 		SPDLOG_WARN(

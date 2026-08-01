@@ -166,11 +166,24 @@ cuda_launch_kernel_common(nv_attach_impl *impl, void *original_fn_ptr,
 	if (auto itr1 = impl->symbol_address_to_fatbin.find((void *)func);
 	    itr1 != impl->symbol_address_to_fatbin.end()) {
 		const auto &fatbin = *itr1->second;
-		const auto &handle =
-			fatbin.function_addr_to_symbol.at((void *)func);
+		auto handle =
+			std::find_if(fatbin.function_addr_to_symbol.begin(),
+				     fatbin.function_addr_to_symbol.end(),
+				     [func](const auto &entry) {
+					     return entry.first.second ==
+						    (void *)func;
+				     });
+		if (handle == fatbin.function_addr_to_symbol.end())
+			return original(func, grid_dim, block_dim, args,
+					shared_mem, stream);
+		auto patched = impl->ensure_patched_kernel_function(
+			handle->second.symbol_name);
+		if (!patched)
+			return original(func, grid_dim, block_dim, args,
+					shared_mem, stream);
 		SPDLOG_DEBUG("Launching kernel..");
 		if (auto err = cuLaunchKernel(
-			    handle.func, grid_dim.x, grid_dim.y, grid_dim.z,
+			    *patched, grid_dim.x, grid_dim.y, grid_dim.z,
 			    block_dim.x, block_dim.y, block_dim.z, shared_mem,
 			    stream, args, nullptr);
 		    err != CUDA_SUCCESS) {
@@ -183,7 +196,7 @@ cuda_launch_kernel_common(nv_attach_impl *impl, void *original_fn_ptr,
 				     error_string ? error_string :
 						    "No description");
 			SPDLOG_ERROR("Error code: {}", (int)err);
-			log_cufunc_attrs(handle.func);
+			log_cufunc_attrs(*patched);
 			// Preserve target semantics: fall back to the original
 			// runtime launch path if patched launch fails.
 			return original(func, grid_dim, block_dim, args,
@@ -203,7 +216,7 @@ cuda_launch_kernel_common(nv_attach_impl *impl, void *original_fn_ptr,
 	// locate the patched CUfunction mapping.
 	if (auto name = impl->resolve_host_function_symbol((void *)func);
 	    name) {
-		if (auto patched = impl->find_patched_kernel_function(*name);
+		if (auto patched = impl->ensure_patched_kernel_function(*name);
 		    patched) {
 			SPDLOG_DEBUG(
 				"Late attach launch: resolved {} -> patched CUfunction",
@@ -311,7 +324,8 @@ static void example_listener_on_enter(GumInvocationListener *listener,
 			(const char *)gum_invocation_context_get_nth_argument(
 				gum_ctx, 3);
 		if (auto ok = current_fatbin->find_and_fill_function_info(
-			    func_addr, symbol_name);
+			    func_addr, symbol_name,
+			    impl.get_current_device_ordinal());
 		    !ok) {
 			SPDLOG_WARN(
 				"Unable to find_and_fill function info of symbol named {}, the PTX may not be compiled due to not modifying by nv_attach_impl",
@@ -319,14 +333,11 @@ static void example_listener_on_enter(GumInvocationListener *listener,
 		} else {
 			context->impl->symbol_address_to_fatbin[func_addr] =
 				current_fatbin;
+			int dev_ord = impl.get_current_device_ordinal();
 			if (auto itr = current_fatbin->function_addr_to_symbol
-					       .find(func_addr);
+					       .find({ dev_ord, func_addr });
 			    itr !=
 			    current_fatbin->function_addr_to_symbol.end()) {
-				// Record with current device ordinal for
-				// multi-GPU awareness
-				int dev_ord =
-					impl.get_current_device_ordinal();
 				impl.record_patched_kernel_function(
 					std::string(symbol_name),
 					itr->second.func, dev_ord);
@@ -351,7 +362,8 @@ static void example_listener_on_enter(GumInvocationListener *listener,
 		SPDLOG_DEBUG("Registering variable named {}", symbol_name);
 
 		if (bool ok = current_fatbin->find_and_fill_variable_info(
-			    var_addr, symbol_name);
+			    var_addr, symbol_name,
+			    context->impl->get_current_device_ordinal());
 		    !ok) {
 			SPDLOG_WARN(
 				"Unable to find_and_fill variable info of symbol names {}, the PTX may not be compiled due to not modifying by nv_attach_impl",
@@ -528,7 +540,8 @@ static CUresult cu_launch_kernel_common(
 	auto kernel_name = cuda_graph_maybe_get_kernel_name_from_cufunction(
 		*impl, func);
 	if (kernel_name) {
-		if (auto patched = impl->find_patched_kernel_function(*kernel_name);
+		if (auto patched =
+			    impl->ensure_patched_kernel_function(*kernel_name);
 		    patched) {
 			func = *patched;
 			impl->record_patched_launch(
@@ -597,7 +610,7 @@ cuda_graph_maybe_patch_kernel_node_params_v1(
 	if (!kernel_name) {
 		return params;
 	}
-	auto patched_func = impl.find_patched_kernel_function(*kernel_name);
+	auto patched_func = impl.ensure_patched_kernel_function(*kernel_name);
 	if (!patched_func) {
 		return params;
 	}
@@ -626,7 +639,7 @@ cuda_graph_maybe_patch_kernel_node_params_v2(
 	if (!kernel_name) {
 		return params;
 	}
-	auto patched_func = impl.find_patched_kernel_function(*kernel_name);
+	auto patched_func = impl.ensure_patched_kernel_function(*kernel_name);
 	if (!patched_func) {
 		return params;
 	}
@@ -807,7 +820,8 @@ static cudaError_t mirror_cuda_memcpy_from_symbol(
 				auto *rec = rec_uptr.get();
 				if (rec == nullptr)
 					continue;
-				for (const auto &ptx : rec->ptxs) {
+				for (const auto &ptx : rec->get_ptxs_for_device(
+					     impl->get_current_device_ordinal())) {
 					CUdeviceptr dptr;
 					size_t sz;
 					auto err = cuModuleGetGlobal(
@@ -896,7 +910,10 @@ static cudaError_t mirror_cuda_memcpy_from_symbol(
 		return cudaErrorUnknown;
 	}
 	auto &record = *record_itr->second;
-	auto var_itr = record.variable_addr_to_symbol.find((void *)symbol);
+	record.ensure_variable_info(*impl, (void *)symbol,
+				    impl->get_current_device_ordinal());
+	auto var_itr = record.variable_addr_to_symbol.find(
+		{ impl->get_current_device_ordinal(), (void *)symbol });
 	if (var_itr == record.variable_addr_to_symbol.end()) {
 		SPDLOG_DEBUG(
 			"mirror_cuda_memcpy_from_symbol: no variable info for symbol pointer {:x}",

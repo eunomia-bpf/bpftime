@@ -109,10 +109,8 @@ struct CUDAContext {
 	cuda::CommSharedMem *cuda_shared_mem;
 	// Mapped device pointer
 	uintptr_t cuda_shared_mem_device_pointer;
-	// Device ordinal this context belongs to
-	int device_ordinal;
 
-	CUDAContext(cuda::CommSharedMem *mem, int device_ordinal = 0);
+	CUDAContext(cuda::CommSharedMem *mem);
 
 	CUDAContext(CUDAContext &&) = default;
 	CUDAContext &operator=(CUDAContext &&) = default;
@@ -122,11 +120,7 @@ struct CUDAContext {
 	virtual ~CUDAContext();
 };
 
-/// Create CUDA context for device 0 (backward compat)
 std::optional<std::unique_ptr<cuda::CUDAContext>> create_cuda_context();
-/// Create CUDA context for a specific device
-std::optional<std::unique_ptr<cuda::CUDAContext>>
-create_cuda_context_for_device(int device_ordinal);
 
 inline std::atomic<uintptr_t> &cuda_shared_mem_device_pointer_storage() noexcept
 {
@@ -199,9 +193,6 @@ public:
 
 #ifdef BPFTIME_ENABLE_CUDA_ATTACH
 	std::optional<attach::nv_attach_impl *> find_nv_attach_impl() const;
-	/// Get the CUDAContext for a specific device, or nullptr if not
-	/// available
-	cuda::CUDAContext *get_cuda_context_for_device(int device_ordinal);
 #endif
 
 private:
@@ -217,10 +208,7 @@ private:
 	// Start host thread for handling map requests from CUDA
 	void start_cuda_watcher_thread();
 	void stop_cuda_watcher_thread();
-	/// Primary CUDA context (device 0, backward compat)
 	std::unique_ptr<cuda::CUDAContext> cuda_ctx;
-	/// Per-device CUDA contexts for multi-GPU support
-	std::map<int, std::unique_ptr<cuda::CUDAContext>> cuda_device_contexts;
 	std::thread cuda_watcher_thread;
 	/// Initialize CUDA contexts for all available devices
 	void init_multi_gpu_contexts();

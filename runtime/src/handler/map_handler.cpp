@@ -950,7 +950,7 @@ int bpf_map_handler::map_init(managed_shared_memory &memory)
 #if defined(BPFTIME_ENABLE_CUDA_ATTACH)
 	case bpf_map_type::BPF_MAP_TYPE_GPU_HASH_MAP: {
 		shm_holder.global_shared_memory.set_enable_mock(false);
-		if (!device) {
+		if (!context) {
 			cuDeviceGet(&device, 0);
 #if CUDA_VERSION >= 13000
 			// CUDA 13.0+ uses 4-parameter cuCtxCreate_v4
@@ -975,7 +975,7 @@ int bpf_map_handler::map_init(managed_shared_memory &memory)
 	}
 	case bpf_map_type::BPF_MAP_TYPE_PERGPUTD_ARRAY_MAP: {
 		shm_holder.global_shared_memory.set_enable_mock(false);
-		if (!device) {
+		if (!context) {
 			cuDeviceGet(&device, 0);
 #if CUDA_VERSION >= 13000
 			// CUDA 13.0+ uses 4-parameter cuCtxCreate_v4
@@ -1003,7 +1003,7 @@ int bpf_map_handler::map_init(managed_shared_memory &memory)
 	}
 	case bpf_map_type::BPF_MAP_TYPE_GPU_ARRAY_MAP: {
 		shm_holder.global_shared_memory.set_enable_mock(false);
-		if (!device) {
+		if (!context) {
 			cuDeviceGet(&device, 0);
 #if CUDA_VERSION >= 13000
 			cuCtxCreate(&context, nullptr, 0, device);
@@ -1026,7 +1026,7 @@ int bpf_map_handler::map_init(managed_shared_memory &memory)
 	}
 	case bpf_map_type::BPF_MAP_TYPE_GPU_KERNEL_SHARED_ARRAY_MAP: {
 		shm_holder.global_shared_memory.set_enable_mock(false);
-		if (!device) {
+		if (!context) {
 			cuDeviceGet(&device, 0);
 #if CUDA_VERSION >= 13000
 			cuCtxCreate(&context, nullptr, 0, device);
@@ -1049,7 +1049,7 @@ int bpf_map_handler::map_init(managed_shared_memory &memory)
 	}
 	case bpf_map_type::BPF_MAP_TYPE_GPU_RINGBUF_MAP: {
 		shm_holder.global_shared_memory.set_enable_mock(false);
-		if (!device) {
+		if (!context) {
 			cuDeviceGet(&device, 0);
 #if CUDA_VERSION >= 13000
 			// CUDA 13.0+ uses 4-parameter cuCtxCreate_v4

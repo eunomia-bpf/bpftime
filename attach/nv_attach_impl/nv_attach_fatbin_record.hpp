@@ -38,11 +38,9 @@ struct fatbin_record {
 		module_pool;
 	std::shared_ptr<std::map<std::string, std::vector<uint8_t>>> ptx_pool;
 	std::vector<std::shared_ptr<ptx_in_module>> ptxs;
-	std::map<void *, variable_info> variable_addr_to_symbol;
-	std::map<void *, kernel_info> function_addr_to_symbol;
+	std::map<std::pair<int, void *>, variable_info> variable_addr_to_symbol;
+	std::map<std::pair<int, void *>, kernel_info> function_addr_to_symbol;
 	std::map<std::string, std::string> original_ptx;
-	bool all_ptx_not_modified = true;
-	bool ptx_loaded = false;
 	/// Track which devices have had their modules loaded
 	std::set<int> devices_loaded;
 
@@ -52,9 +50,15 @@ struct fatbin_record {
 	void try_loading_ptxs_for_device(class nv_attach_impl &impl,
 					  int device_ordinal,
 					  const std::string &sm_arch);
+	std::vector<std::shared_ptr<ptx_in_module>>
+	get_ptxs_for_device(int device_ordinal) const;
 	virtual ~fatbin_record();
-	bool find_and_fill_variable_info(void *ptr, const char *symbol_name);
-	bool find_and_fill_function_info(void *ptr, const char *symbol_name);
+	bool find_and_fill_variable_info(void *ptr, const char *symbol_name,
+					 int device_ordinal);
+	bool ensure_variable_info(class nv_attach_impl &impl, void *ptr,
+				  int device_ordinal);
+	bool find_and_fill_function_info(void *ptr, const char *symbol_name,
+					 int device_ordinal);
 
     private:
 	mutable std::mutex load_mutex;
