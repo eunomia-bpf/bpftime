@@ -1,0 +1,14 @@
+[2026-06-21 14:04:35.520] [info] [bpf_tracer.cpp:215] /a exists
+[2026-06-21 14:04:35.520] [info] [bpftime_config.cpp:47] Setting BPFTIME_SHM_MEMORY_MB to: 256
+[2026-06-21 14:04:35.572] [info] [bpftime_shm_internal.cpp:854] Global shm constructed. shm_open_type 0 for bpftime_maps_shm_otel_bench_minimal_1_1275097
+[2026-06-21 14:04:35.572] [info] [bpftime_shm_internal.cpp:44] Global shm initialized
+[2026-06-21 14:04:35.572] [info] [bpftime_config.cpp:47] Setting BPFTIME_SHM_MEMORY_MB to: 256
+[2026-06-21 14:04:38.110] [info] [handle_bpf_event.cpp:311] PERF     1275181 otel_malloc_fre  type:PERF_TYPE_UPROBE ret:3
+
+[2026-06-21 14:04:38.111] [info] [perf_event_handler.cpp:177] Created uprobe/uretprobe perf event handler, module name /lib/x86_64-linux-gnu/libc.so.6, offset ad670
+[2026-06-21 14:04:38.111] [info] [bpftime_driver.cpp:316] create uprobe 0 for pid 1275181 fd 3
+[2026-06-21 14:04:38.111] [info] [handle_bpf_event.cpp:237] BPF      1275181 otel_malloc_fre  cmd:BPF_LINK_CREATE  ret:9
+[2026-06-21 14:04:38.111] [info] [handle_bpf_event.cpp:259]    BPF_LINK_CREATE prog_fd:8 target_fd:3 cookie:true
+[2026-06-21 14:04:38.111] [info] [bpftime_driver.cpp:192] create prog 5901, fd 46 in shm success
+[2026-06-21 14:04:38.111] [info] [bpftime_driver.cpp:129] find 1 related maps for prog fd 46
+bpftime_daemon: /usr/include/boost/container/vector.hpp:1734: boost::container::vector<T, Allocator, Options>::const_reference boost::container::vector<T, Allocator, Options>::operator[](size_type) const [with T = std::variant<bpftime::unused_handler, bpftime::bpf_map_handler, bpftime::bpf_link_handler, bpftime::bpf_prog_handler, bpftime::bpf_perf_event_handler, bpftime::epoll_handler, bpftime::memfd_handler>; A = boost::interprocess::allocator<std::variant<bpftime::unused_handler, bpftime::bpf_map_handler, bpftime::bpf_link_handler, bpftime::bpf_prog_handler, bpftime::bpf_perf_event_handler, bpftime::epoll_handler, bpftime::memfd_handler>, boost::interprocess::segment_manager<char, boost::interprocess::rbtree_best_fit<boost::interprocess::mutex_family>, boost::interprocess::iset_index> >; Options = void; const_reference = const std::variant<bpftime::unused_handler, bpftime::bpf_map_handler, bpftime::bpf_link_handler, bpftime::bpf_prog_handler, bpftime::bpf_perf_event_handler, bpftime::epoll_handler, bpftime::memfd_handler>&; size_type = long unsigned int]: Assertion `this->m_holder.m_size > n' failed.

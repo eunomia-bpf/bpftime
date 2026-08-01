@@ -1,0 +1,74 @@
+[2026-06-21 12:28:27.876] [info] [bpf_tracer.cpp:215] /a exists
+[2026-06-21 12:28:27.877] [info] [bpftime_config.cpp:47] Setting BPFTIME_SHM_MEMORY_MB to: 256
+[2026-06-21 12:28:27.928] [info] [bpftime_shm_internal.cpp:854] Global shm constructed. shm_open_type 0 for bpftime_maps_shm_otel_bench_full_2_1176105
+[2026-06-21 12:28:27.928] [info] [bpftime_shm_internal.cpp:44] Global shm initialized
+[2026-06-21 12:28:27.928] [info] [bpftime_config.cpp:47] Setting BPFTIME_SHM_MEMORY_MB to: 256
+[2026-06-21 12:28:29.924] [info] [handle_bpf_event.cpp:382] IOCTL    1176846 otelcol-ebpf-pr  fd:20 req:-2146950137 data:29190072
+[2026-06-21 12:28:29.924] [info] [handle_bpf_event.cpp:382] IOCTL    1176846 otelcol-ebpf-pr  fd:20 req:1074013192 data:67
+[2026-06-21 12:28:29.924] [info] [handle_bpf_event.cpp:397] Setting bpf for perf event 20 and bpf 67 (id: 5277)
+[2026-06-21 12:28:29.924] [info] [handle_bpf_event.cpp:382] IOCTL    1176846 otelcol-ebpf-pr  fd:49 req:-2146950137 data:29190072
+[2026-06-21 12:28:29.924] [info] [handle_bpf_event.cpp:382] IOCTL    1176846 otelcol-ebpf-pr  fd:49 req:1074013192 data:67
+[2026-06-21 12:28:29.924] [info] [handle_bpf_event.cpp:397] Setting bpf for perf event 49 and bpf 67 (id: 5277)
+[2026-06-21 12:28:29.924] [info] [handle_bpf_event.cpp:382] IOCTL    1176846 otelcol-ebpf-pr  fd:8 req:-2146950137 data:29190072
+[2026-06-21 12:28:29.924] [info] [handle_bpf_event.cpp:382] IOCTL    1176846 otelcol-ebpf-pr  fd:8 req:1074013192 data:67
+[2026-06-21 12:28:29.924] [info] [handle_bpf_event.cpp:397] Setting bpf for perf event 8 and bpf 67 (id: 5277)
+[2026-06-21 12:28:29.924] [info] [handle_bpf_event.cpp:382] IOCTL    1176846 otelcol-ebpf-pr  fd:9 req:-2146950137 data:29190072
+[2026-06-21 12:28:29.924] [info] [handle_bpf_event.cpp:382] IOCTL    1176846 otelcol-ebpf-pr  fd:9 req:1074013192 data:67
+[2026-06-21 12:28:29.924] [info] [handle_bpf_event.cpp:397] Setting bpf for perf event 9 and bpf 67 (id: 5277)
+[2026-06-21 12:28:29.924] [info] [handle_bpf_event.cpp:382] IOCTL    1176846 otelcol-ebpf-pr  fd:10 req:-2146950137 data:29190072
+[2026-06-21 12:28:29.924] [info] [handle_bpf_event.cpp:382] IOCTL    1176846 otelcol-ebpf-pr  fd:10 req:1074013192 data:67
+[2026-06-21 12:28:29.924] [info] [handle_bpf_event.cpp:397] Setting bpf for perf event 10 and bpf 67 (id: 5277)
+[2026-06-21 12:28:29.939] [info] [handle_bpf_event.cpp:311] PERF     1176846 otelcol-ebpf-pr  type:PERF_TYPE_UPROBE ret:100
+
+[2026-06-21 12:28:29.939] [info] [perf_event_handler.cpp:177] Created uprobe/uretprobe perf event handler, module name /lib/x86_64-linux-gnu/libc.so.6, offset ad670
+[2026-06-21 12:28:29.939] [info] [bpftime_driver.cpp:316] create uprobe 0 for pid 1176846 fd 100
+[2026-06-21 12:28:29.939] [info] [handle_bpf_event.cpp:237] BPF      1176846 otelcol-ebpf-pr  cmd:BPF_LINK_CREATE  ret:101
+[2026-06-21 12:28:29.939] [info] [handle_bpf_event.cpp:259]    BPF_LINK_CREATE prog_fd:80 target_fd:100 cookie:true
+[2026-06-21 12:28:29.939] [info] [bpftime_driver.cpp:192] create prog 5290, fd 46 in shm success
+[2026-06-21 12:28:29.939] [info] [bpftime_driver.cpp:129] find 11 related maps for prog fd 46
+[2026-06-21 12:28:29.939] [info] [bpftime_driver.cpp:243] create map in kernel id 3955
+[2026-06-21 12:28:29.939] [info] [bpftime_driver.cpp:243] create map in kernel id 3922
+[2026-06-21 12:28:29.939] [info] [bpftime_driver.cpp:243] create map in kernel id 3949
+[2026-06-21 12:28:29.939] [info] [bpftime_driver.cpp:243] create map in kernel id 3928
+[2026-06-21 12:28:29.939] [info] [bpftime_driver.cpp:243] create map in kernel id 3914
+[2026-06-21 12:28:29.939] [info] [bpftime_driver.cpp:243] create map in kernel id 3962
+[2026-06-21 12:28:29.939] [info] [bpftime_driver.cpp:243] create map in kernel id 3937
+[2026-06-21 12:28:29.939] [info] [bpftime_driver.cpp:243] create map in kernel id 3931
+[2026-06-21 12:28:29.939] [info] [bpftime_driver.cpp:243] create map in kernel id 3950
+[2026-06-21 12:28:29.939] [info] [bpftime_driver.cpp:243] create map in kernel id 3959
+[2026-06-21 12:28:29.950] [info] [bpftime_driver.cpp:243] create map in kernel id 3942
+[2026-06-21 12:28:29.950] [info] [bpftime_driver.cpp:293] attach perf 0 to bpf 5290, for pid 1176846, cookie true
+[2026-06-21 12:28:29.950] [info] [handle_bpf_event.cpp:311] PERF     1176846 otelcol-ebpf-pr  type:PERF_TYPE_UPROBE ret:102
+
+[2026-06-21 12:28:29.950] [info] [perf_event_handler.cpp:177] Created uprobe/uretprobe perf event handler, module name /lib/x86_64-linux-gnu/libc.so.6, offset add50
+[2026-06-21 12:28:29.950] [info] [bpftime_driver.cpp:316] create uprobe 1 for pid 1176846 fd 102
+[2026-06-21 12:28:29.950] [info] [handle_bpf_event.cpp:237] BPF      1176846 otelcol-ebpf-pr  cmd:BPF_LINK_CREATE  ret:103
+[2026-06-21 12:28:29.950] [info] [handle_bpf_event.cpp:259]    BPF_LINK_CREATE prog_fd:80 target_fd:102 cookie:true
+[2026-06-21 12:28:29.950] [info] [bpftime_driver.cpp:274] bpf 5290 already exists in shm
+[2026-06-21 12:28:29.950] [info] [bpftime_driver.cpp:293] attach perf 1 to bpf 5290, for pid 1176846, cookie true
+[2026-06-21 12:28:29.950] [info] [handle_bpf_event.cpp:382] IOCTL    1176846 otelcol-ebpf-pr  fd:20 req:9216 data:0
+[2026-06-21 12:28:29.950] [info] [handle_bpf_event.cpp:385] Enabling perf event 20
+[2026-06-21 12:28:29.950] [info] [handle_bpf_event.cpp:382] IOCTL    1176846 otelcol-ebpf-pr  fd:49 req:9216 data:0
+[2026-06-21 12:28:29.950] [info] [handle_bpf_event.cpp:385] Enabling perf event 49
+[2026-06-21 12:28:29.950] [info] [handle_bpf_event.cpp:382] IOCTL    1176846 otelcol-ebpf-pr  fd:8 req:9216 data:0
+[2026-06-21 12:28:29.950] [info] [handle_bpf_event.cpp:385] Enabling perf event 8
+[2026-06-21 12:28:29.950] [info] [handle_bpf_event.cpp:382] IOCTL    1176846 otelcol-ebpf-pr  fd:9 req:9216 data:0
+[2026-06-21 12:28:29.950] [info] [handle_bpf_event.cpp:385] Enabling perf event 9
+[2026-06-21 12:28:29.950] [info] [handle_bpf_event.cpp:382] IOCTL    1176846 otelcol-ebpf-pr  fd:10 req:9216 data:0
+[2026-06-21 12:28:29.950] [info] [handle_bpf_event.cpp:385] Enabling perf event 10
+[2026-06-21 12:28:29.950] [info] [handle_bpf_event.cpp:237] BPF      1176846 otelcol-ebpf-pr  cmd:BPF_LINK_CREATE  ret:105
+[2026-06-21 12:28:29.950] [info] [handle_bpf_event.cpp:259]    BPF_LINK_CREATE prog_fd:66 target_fd:104 cookie:true
+[2026-06-21 12:28:40.436] [info] [handle_bpf_event.cpp:382] IOCTL    1176846 otelcol-ebpf-pr  fd:20 req:9217 data:0
+[2026-06-21 12:28:40.437] [info] [handle_bpf_event.cpp:391] Disabling perf event 20
+[2026-06-21 12:28:40.437] [info] [handle_bpf_event.cpp:382] IOCTL    1176846 otelcol-ebpf-pr  fd:49 req:9217 data:0
+[2026-06-21 12:28:40.437] [info] [handle_bpf_event.cpp:391] Disabling perf event 49
+[2026-06-21 12:28:40.437] [info] [handle_bpf_event.cpp:382] IOCTL    1176846 otelcol-ebpf-pr  fd:8 req:9217 data:0
+[2026-06-21 12:28:40.437] [info] [handle_bpf_event.cpp:391] Disabling perf event 8
+[2026-06-21 12:28:40.437] [info] [handle_bpf_event.cpp:382] IOCTL    1176846 otelcol-ebpf-pr  fd:9 req:9217 data:0
+[2026-06-21 12:28:40.437] [info] [handle_bpf_event.cpp:391] Disabling perf event 9
+[2026-06-21 12:28:40.437] [info] [handle_bpf_event.cpp:382] IOCTL    1176846 otelcol-ebpf-pr  fd:10 req:9217 data:0
+[2026-06-21 12:28:40.437] [info] [handle_bpf_event.cpp:391] Disabling perf event 10
+[2026-06-21 12:28:40.458] [info] [handle_bpf_event.cpp:218] CLOSE    1176846 otelcol-ebpf-pr  fd:100
+[2026-06-21 12:28:40.458] [info] [bpftime_driver.cpp:367] close id 0 for pid 1176846 fd 100
+[2026-06-21 12:28:40.554] [info] [handle_bpf_event.cpp:218] CLOSE    1176846 otelcol-ebpf-pr  fd:102
+[2026-06-21 12:28:40.554] [info] [bpftime_driver.cpp:367] close id 1 for pid 1176846 fd 102

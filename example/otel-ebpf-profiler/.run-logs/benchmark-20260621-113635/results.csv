@@ -1,0 +1,5 @@
+case,run,elapsed_seconds,user_seconds,sys_seconds,max_rss_kb
+baseline,1,0.00,0.00,0.00,7252
+bpftime-agent,1,0.51,0.04,0.45,591004
+minimal-cilium-loader,1,0.52,0.06,0.43,613844
+full-otel-collector,1,0.56,0.05,0.48,599000

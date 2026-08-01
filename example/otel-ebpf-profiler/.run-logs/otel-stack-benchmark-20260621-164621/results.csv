@@ -1,0 +1,10 @@
+case,run,elapsed_seconds,user_seconds,sys_seconds,max_rss_kb,iterations,iterations_per_second
+baseline,1,9.24,9.23,0.00,7196,1486098432,160833163.636364
+otel-kernel-stack-collector,1,10.00,0.93,9.06,7044,3035136,303513.600000
+otel-daemon-mirror-stack-collector,1,9.62,9.15,0.51,616732,1512996864,157276181.288981
+baseline,2,9.96,9.95,0.00,7028,1605689344,161213789.558233
+otel-kernel-stack-collector,2,10.00,0.80,9.19,7240,2854912,285491.200000
+otel-daemon-mirror-stack-collector,2,9.72,9.29,0.50,616540,1499656192,154285616.460905
+baseline,3,9.98,9.97,0.00,7248,1582166016,158533668.937876
+otel-kernel-stack-collector,3,9.99,0.87,9.11,7120,2969600,297257.257257
+otel-daemon-mirror-stack-collector,3,10.05,9.57,0.50,616484,1541423104,153375433.233831

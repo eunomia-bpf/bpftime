@@ -1,0 +1,101 @@
+[2026-06-21 11:34:30.780] [info] [bpf_tracer.cpp:215] /a exists
+[2026-06-21 11:34:30.780] [info] [bpftime_config.cpp:47] Setting BPFTIME_SHM_MEMORY_MB to: 256
+[2026-06-21 11:34:30.835] [info] [bpftime_shm_internal.cpp:854] Global shm constructed. shm_open_type 0 for bpftime_maps_shm_otel_full_1095481
+[2026-06-21 11:34:30.835] [info] [bpftime_shm_internal.cpp:44] Global shm initialized
+[2026-06-21 11:34:30.835] [info] [bpftime_config.cpp:47] Setting BPFTIME_SHM_MEMORY_MB to: 256
+[2026-06-21 11:34:32.832] [info] [handle_bpf_event.cpp:382] IOCTL    1095521 otelcol-ebpf-pr  fd:20 req:-2146950137 data:36014008
+[2026-06-21 11:34:32.832] [info] [handle_bpf_event.cpp:382] IOCTL    1095521 otelcol-ebpf-pr  fd:20 req:1074013192 data:67
+[2026-06-21 11:34:32.832] [info] [handle_bpf_event.cpp:397] Setting bpf for perf event 20 and bpf 67 (id: 2588)
+[2026-06-21 11:34:32.832] [error] [bpftime_driver.cpp:268] perf fd 20 for pid 1095521 not exists
+[2026-06-21 11:34:32.832] [error] [bpf_tracer.cpp:286] error polling perf buffer: Operation not permitted
+[2026-06-21 11:34:32.832] [info] [handle_bpf_event.cpp:382] IOCTL    1095521 otelcol-ebpf-pr  fd:22 req:-2146950137 data:36014008
+[2026-06-21 11:34:32.832] [info] [handle_bpf_event.cpp:382] IOCTL    1095521 otelcol-ebpf-pr  fd:22 req:1074013192 data:67
+[2026-06-21 11:34:32.832] [info] [handle_bpf_event.cpp:397] Setting bpf for perf event 22 and bpf 67 (id: 2588)
+[2026-06-21 11:34:32.832] [error] [bpftime_driver.cpp:268] perf fd 22 for pid 1095521 not exists
+[2026-06-21 11:34:32.832] [error] [bpf_tracer.cpp:286] error polling perf buffer: Operation not permitted
+[2026-06-21 11:34:32.832] [info] [handle_bpf_event.cpp:382] IOCTL    1095521 otelcol-ebpf-pr  fd:8 req:-2146950137 data:36014008
+[2026-06-21 11:34:32.832] [info] [handle_bpf_event.cpp:382] IOCTL    1095521 otelcol-ebpf-pr  fd:8 req:1074013192 data:67
+[2026-06-21 11:34:32.832] [info] [handle_bpf_event.cpp:397] Setting bpf for perf event 8 and bpf 67 (id: 2588)
+[2026-06-21 11:34:32.832] [error] [bpftime_driver.cpp:268] perf fd 8 for pid 1095521 not exists
+[2026-06-21 11:34:32.832] [error] [bpf_tracer.cpp:286] error polling perf buffer: Operation not permitted
+[2026-06-21 11:34:32.833] [info] [handle_bpf_event.cpp:382] IOCTL    1095521 otelcol-ebpf-pr  fd:9 req:-2146950137 data:36014008
+[2026-06-21 11:34:32.833] [info] [handle_bpf_event.cpp:382] IOCTL    1095521 otelcol-ebpf-pr  fd:9 req:1074013192 data:67
+[2026-06-21 11:34:32.833] [info] [handle_bpf_event.cpp:397] Setting bpf for perf event 9 and bpf 67 (id: 2588)
+[2026-06-21 11:34:32.833] [error] [bpftime_driver.cpp:268] perf fd 9 for pid 1095521 not exists
+[2026-06-21 11:34:32.833] [error] [bpf_tracer.cpp:286] error polling perf buffer: Operation not permitted
+[2026-06-21 11:34:32.833] [info] [handle_bpf_event.cpp:382] IOCTL    1095521 otelcol-ebpf-pr  fd:10 req:-2146950137 data:36014008
+[2026-06-21 11:34:32.833] [info] [handle_bpf_event.cpp:382] IOCTL    1095521 otelcol-ebpf-pr  fd:10 req:1074013192 data:67
+[2026-06-21 11:34:32.833] [info] [handle_bpf_event.cpp:397] Setting bpf for perf event 10 and bpf 67 (id: 2588)
+[2026-06-21 11:34:32.833] [error] [bpftime_driver.cpp:268] perf fd 10 for pid 1095521 not exists
+[2026-06-21 11:34:32.833] [error] [bpf_tracer.cpp:286] error polling perf buffer: Operation not permitted
+[2026-06-21 11:34:32.848] [info] [handle_bpf_event.cpp:311] PERF     1095521 otelcol-ebpf-pr  type:PERF_TYPE_UPROBE ret:100
+
+[2026-06-21 11:34:32.848] [info] [perf_event_handler.cpp:177] Created uprobe/uretprobe perf event handler, module name /lib/x86_64-linux-gnu/libc.so.6, offset ad670
+[2026-06-21 11:34:32.848] [info] [bpftime_driver.cpp:315] create uprobe 0 for pid 1095521 fd 100
+[2026-06-21 11:34:32.848] [info] [handle_bpf_event.cpp:237] BPF      1095521 otelcol-ebpf-pr  cmd:BPF_LINK_CREATE  ret:101
+[2026-06-21 11:34:32.848] [info] [handle_bpf_event.cpp:259]    BPF_LINK_CREATE prog_fd:80 target_fd:100 cookie:true
+[2026-06-21 11:34:32.848] [info] [bpftime_driver.cpp:192] create prog 2601, fd 46 in shm success
+[2026-06-21 11:34:32.848] [info] [bpftime_driver.cpp:129] find 11 related maps for prog fd 46
+[2026-06-21 11:34:32.848] [info] [bpftime_driver.cpp:243] create map in kernel id 933
+[2026-06-21 11:34:32.848] [info] [bpftime_driver.cpp:243] create map in kernel id 962
+[2026-06-21 11:34:32.848] [info] [bpftime_driver.cpp:243] create map in kernel id 968
+[2026-06-21 11:34:32.848] [info] [bpftime_driver.cpp:243] create map in kernel id 942
+[2026-06-21 11:34:32.848] [info] [bpftime_driver.cpp:243] create map in kernel id 967
+[2026-06-21 11:34:32.848] [info] [bpftime_driver.cpp:243] create map in kernel id 957
+[2026-06-21 11:34:32.848] [info] [bpftime_driver.cpp:243] create map in kernel id 930
+[2026-06-21 11:34:32.848] [info] [bpftime_driver.cpp:243] create map in kernel id 935
+[2026-06-21 11:34:32.848] [info] [bpftime_driver.cpp:243] create map in kernel id 966
+[2026-06-21 11:34:32.848] [info] [bpftime_driver.cpp:243] create map in kernel id 975
+[2026-06-21 11:34:32.858] [info] [bpftime_driver.cpp:243] create map in kernel id 958
+[2026-06-21 11:34:32.858] [info] [bpftime_driver.cpp:292] attach perf 0 to bpf 2601, for pid 1095521, cookie true
+[2026-06-21 11:34:32.858] [info] [handle_bpf_event.cpp:311] PERF     1095521 otelcol-ebpf-pr  type:PERF_TYPE_UPROBE ret:102
+
+[2026-06-21 11:34:32.858] [info] [perf_event_handler.cpp:177] Created uprobe/uretprobe perf event handler, module name /lib/x86_64-linux-gnu/libc.so.6, offset add50
+[2026-06-21 11:34:32.858] [info] [bpftime_driver.cpp:315] create uprobe 1 for pid 1095521 fd 102
+[2026-06-21 11:34:32.858] [info] [handle_bpf_event.cpp:237] BPF      1095521 otelcol-ebpf-pr  cmd:BPF_LINK_CREATE  ret:103
+[2026-06-21 11:34:32.858] [info] [handle_bpf_event.cpp:259]    BPF_LINK_CREATE prog_fd:80 target_fd:102 cookie:true
+[2026-06-21 11:34:32.858] [info] [bpftime_driver.cpp:273] bpf 2601 already exists in shm
+[2026-06-21 11:34:32.858] [info] [bpftime_driver.cpp:292] attach perf 1 to bpf 2601, for pid 1095521, cookie true
+[2026-06-21 11:34:32.858] [info] [handle_bpf_event.cpp:382] IOCTL    1095521 otelcol-ebpf-pr  fd:20 req:9216 data:0
+[2026-06-21 11:34:32.858] [info] [handle_bpf_event.cpp:385] Enabling perf event 20
+[2026-06-21 11:34:32.858] [warning] [bpftime_driver.cpp:324] Unrecorded uprobe fd: 20 for pid 1095521
+[2026-06-21 11:34:32.858] [info] [handle_bpf_event.cpp:382] IOCTL    1095521 otelcol-ebpf-pr  fd:22 req:9216 data:0
+[2026-06-21 11:34:32.858] [info] [handle_bpf_event.cpp:385] Enabling perf event 22
+[2026-06-21 11:34:32.858] [warning] [bpftime_driver.cpp:324] Unrecorded uprobe fd: 22 for pid 1095521
+[2026-06-21 11:34:32.858] [info] [handle_bpf_event.cpp:382] IOCTL    1095521 otelcol-ebpf-pr  fd:8 req:9216 data:0
+[2026-06-21 11:34:32.858] [info] [handle_bpf_event.cpp:385] Enabling perf event 8
+[2026-06-21 11:34:32.858] [warning] [bpftime_driver.cpp:324] Unrecorded uprobe fd: 8 for pid 1095521
+[2026-06-21 11:34:32.858] [info] [handle_bpf_event.cpp:382] IOCTL    1095521 otelcol-ebpf-pr  fd:9 req:9216 data:0
+[2026-06-21 11:34:32.858] [info] [handle_bpf_event.cpp:385] Enabling perf event 9
+[2026-06-21 11:34:32.858] [warning] [bpftime_driver.cpp:324] Unrecorded uprobe fd: 9 for pid 1095521
+[2026-06-21 11:34:32.858] [info] [handle_bpf_event.cpp:382] IOCTL    1095521 otelcol-ebpf-pr  fd:10 req:9216 data:0
+[2026-06-21 11:34:32.858] [info] [handle_bpf_event.cpp:385] Enabling perf event 10
+[2026-06-21 11:34:32.858] [warning] [bpftime_driver.cpp:324] Unrecorded uprobe fd: 10 for pid 1095521
+[2026-06-21 11:34:32.858] [info] [handle_bpf_event.cpp:237] BPF      1095521 otelcol-ebpf-pr  cmd:BPF_LINK_CREATE  ret:105
+[2026-06-21 11:34:32.858] [info] [handle_bpf_event.cpp:259]    BPF_LINK_CREATE prog_fd:66 target_fd:104 cookie:true
+[2026-06-21 11:34:32.858] [error] [bpftime_driver.cpp:268] perf fd 104 for pid 1095521 not exists
+[2026-06-21 11:34:32.858] [warning] [handle_bpf_event.cpp:267] Unable to attach perf 104 to bpf prog 66, err=-1
+[2026-06-21 11:34:48.416] [info] [handle_bpf_event.cpp:382] IOCTL    1095521 otelcol-ebpf-pr  fd:20 req:9217 data:0
+[2026-06-21 11:34:48.416] [info] [handle_bpf_event.cpp:391] Disabling perf event 20
+[2026-06-21 11:34:48.416] [error] [bpftime_driver.cpp:343] fd 20 for pid 1095521 not exists
+[2026-06-21 11:34:48.416] [error] [bpf_tracer.cpp:286] error polling perf buffer: Operation not permitted
+[2026-06-21 11:34:48.416] [info] [handle_bpf_event.cpp:382] IOCTL    1095521 otelcol-ebpf-pr  fd:22 req:9217 data:0
+[2026-06-21 11:34:48.416] [info] [handle_bpf_event.cpp:391] Disabling perf event 22
+[2026-06-21 11:34:48.416] [error] [bpftime_driver.cpp:343] fd 22 for pid 1095521 not exists
+[2026-06-21 11:34:48.416] [error] [bpf_tracer.cpp:286] error polling perf buffer: Operation not permitted
+[2026-06-21 11:34:48.417] [info] [handle_bpf_event.cpp:382] IOCTL    1095521 otelcol-ebpf-pr  fd:8 req:9217 data:0
+[2026-06-21 11:34:48.417] [info] [handle_bpf_event.cpp:391] Disabling perf event 8
+[2026-06-21 11:34:48.417] [error] [bpftime_driver.cpp:343] fd 8 for pid 1095521 not exists
+[2026-06-21 11:34:48.417] [error] [bpf_tracer.cpp:286] error polling perf buffer: Operation not permitted
+[2026-06-21 11:34:48.417] [info] [handle_bpf_event.cpp:382] IOCTL    1095521 otelcol-ebpf-pr  fd:9 req:9217 data:0
+[2026-06-21 11:34:48.417] [info] [handle_bpf_event.cpp:391] Disabling perf event 9
+[2026-06-21 11:34:48.417] [error] [bpftime_driver.cpp:343] fd 9 for pid 1095521 not exists
+[2026-06-21 11:34:48.417] [error] [bpf_tracer.cpp:286] error polling perf buffer: Operation not permitted
+[2026-06-21 11:34:48.417] [info] [handle_bpf_event.cpp:382] IOCTL    1095521 otelcol-ebpf-pr  fd:10 req:9217 data:0
+[2026-06-21 11:34:48.417] [info] [handle_bpf_event.cpp:391] Disabling perf event 10
+[2026-06-21 11:34:48.417] [error] [bpftime_driver.cpp:343] fd 10 for pid 1095521 not exists
+[2026-06-21 11:34:48.417] [error] [bpf_tracer.cpp:286] error polling perf buffer: Operation not permitted
+[2026-06-21 11:34:48.446] [info] [handle_bpf_event.cpp:218] CLOSE    1095521 otelcol-ebpf-pr  fd:100
+[2026-06-21 11:34:48.446] [info] [bpftime_driver.cpp:365] close id 0 for pid 1095521 fd 100
+[2026-06-21 11:34:48.550] [info] [handle_bpf_event.cpp:218] CLOSE    1095521 otelcol-ebpf-pr  fd:102
+[2026-06-21 11:34:48.550] [info] [bpftime_driver.cpp:365] close id 1 for pid 1095521 fd 102

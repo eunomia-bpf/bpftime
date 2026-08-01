@@ -36,6 +36,7 @@ struct fatbin_record {
 	std::vector<std::shared_ptr<ptx_in_module>> ptxs;
 	std::map<void *, variable_info> variable_addr_to_symbol;
 	std::map<void *, kernel_info> function_addr_to_symbol;
+	std::vector<uint8_t> fatbin_data;
 	std::map<std::string, std::string> original_ptx;
 	bool all_ptx_not_modified = true;
 	bool ptx_loaded = false;

@@ -1,0 +1,516 @@
+[2026-06-21 13:49:34.407] [info] [bpf_tracer.cpp:215] /a exists
+[2026-06-21 13:49:34.407] [info] [bpftime_config.cpp:47] Setting BPFTIME_SHM_MEMORY_MB to: 256
+[2026-06-21 13:49:34.407] [debug] [bpftime_shm_internal.cpp:710] start: bpftime_shm for server setup for memory size 256
+[2026-06-21 13:49:34.407] [debug] [bpftime_shm_internal.cpp:715] done: bpftime_shm for server setup: remove installed segment
+[2026-06-21 13:49:34.456] [debug] [bpftime_shm_internal.cpp:721] done: bpftime_shm for server setup: segment
+[2026-06-21 13:49:34.457] [debug] [bpftime_shm_internal.cpp:726] done: bpftime_shm for server setup: manager
+[2026-06-21 13:49:34.457] [debug] [bpftime_shm_internal.cpp:733] done: bpftime_shm for server setup: syscall_pid_set
+[2026-06-21 13:49:34.457] [debug] [bpftime_shm_internal.cpp:738] done: bpftime_shm for server setup: agent_config
+[2026-06-21 13:49:34.457] [debug] [bpftime_shm_internal.cpp:748] done: bpftime_shm for server setup.
+[2026-06-21 13:49:34.458] [debug] [bpftime_shm_internal.cpp:789] Constructed CommSharedMem in shared memory at 0x7b548ccfc7d8
+[2026-06-21 13:49:34.458] [info] [bpftime_shm_internal.cpp:854] Global shm constructed. shm_open_type 0 for bpftime_maps_shm_otel_bench_full_1_1236542
+[2026-06-21 13:49:34.458] [info] [bpftime_shm_internal.cpp:44] Global shm initialized
+[2026-06-21 13:49:34.458] [info] [bpftime_config.cpp:47] Setting BPFTIME_SHM_MEMORY_MB to: 256
+[2026-06-21 13:49:34.458] [debug] [bpf_tracer.cpp:80] libbpf: object 'bpf_tracer_bpf': failed (-95) to create BPF token from '/sys/fs/bpf', skipping optional step...
+[2026-06-21 13:49:34.468] [debug] [bpf_tracer.cpp:80] libbpf: loaded kernel BTF from '/sys/kernel/btf/vmlinux'
+[2026-06-21 13:49:34.468] [debug] [bpf_tracer.cpp:80] libbpf: sec 'kprobe/security_bpf_map': found 2 CO-RE relocations
+[2026-06-21 13:49:34.468] [debug] [bpf_tracer.cpp:80] libbpf: CO-RE relocating [120] struct pt_regs: found target candidate [185] struct pt_regs in [vmlinux]
+[2026-06-21 13:49:34.469] [debug] [bpf_tracer.cpp:80] libbpf: prog 'security_bpf_map_enter': relo #0: <byte_off> [120] struct pt_regs.di (0:14 @ offset 112)
+[2026-06-21 13:49:34.469] [debug] [bpf_tracer.cpp:80] libbpf: prog 'security_bpf_map_enter': relo #0: matching candidate #0 <byte_off> [185] struct pt_regs.di (0:14 @ offset 112)
+[2026-06-21 13:49:34.469] [debug] [bpf_tracer.cpp:80] libbpf: prog 'security_bpf_map_enter': relo #0: patched insn #0 (LDX/ST/STX) off 112 -> 112
+[2026-06-21 13:49:34.469] [debug] [bpf_tracer.cpp:80] libbpf: CO-RE relocating [123] struct bpf_map: found target candidate [2126] struct bpf_map in [vmlinux]
+[2026-06-21 13:49:34.470] [debug] [bpf_tracer.cpp:80] libbpf: prog 'security_bpf_map_enter': relo #1: <byte_off> [123] struct bpf_map.id (0:9 @ offset 52)
+[2026-06-21 13:49:34.470] [debug] [bpf_tracer.cpp:80] libbpf: prog 'security_bpf_map_enter': relo #1: matching candidate #0 <byte_off> [2126] struct bpf_map.id (0:9 @ offset 52)
+[2026-06-21 13:49:34.470] [debug] [bpf_tracer.cpp:80] libbpf: prog 'security_bpf_map_enter': relo #1: patched insn #3 (ALU/ALU64) imm 52 -> 52
+[2026-06-21 13:49:34.470] [debug] [bpf_tracer.cpp:80] libbpf: sec 'kprobe/bpf_prog_kallsyms_add': found 3 CO-RE relocations
+[2026-06-21 13:49:34.470] [debug] [bpf_tracer.cpp:80] libbpf: prog 'bpf_prog_kallsyms_add_enter': relo #0: <byte_off> [120] struct pt_regs.di (0:14 @ offset 112)
+[2026-06-21 13:49:34.470] [debug] [bpf_tracer.cpp:80] libbpf: prog 'bpf_prog_kallsyms_add_enter': relo #0: matching candidate #0 <byte_off> [185] struct pt_regs.di (0:14 @ offset 112)
+[2026-06-21 13:49:34.470] [debug] [bpf_tracer.cpp:80] libbpf: prog 'bpf_prog_kallsyms_add_enter': relo #0: patched insn #0 (LDX/ST/STX) off 112 -> 112
+[2026-06-21 13:49:34.470] [debug] [bpf_tracer.cpp:80] libbpf: CO-RE relocating [185] struct bpf_prog: found target candidate [2042] struct bpf_prog in [vmlinux]
+[2026-06-21 13:49:34.470] [debug] [bpf_tracer.cpp:80] libbpf: prog 'bpf_prog_kallsyms_add_enter': relo #1: <byte_off> [185] struct bpf_prog.aux (0:23 @ offset 56)
+[2026-06-21 13:49:34.470] [debug] [bpf_tracer.cpp:80] libbpf: prog 'bpf_prog_kallsyms_add_enter': relo #1: matching candidate #0 <byte_off> [2042] struct bpf_prog.aux (0:24 @ offset 56)
+[2026-06-21 13:49:34.470] [debug] [bpf_tracer.cpp:80] libbpf: prog 'bpf_prog_kallsyms_add_enter': relo #1: patched insn #3 (ALU/ALU64) imm 56 -> 56
+[2026-06-21 13:49:34.470] [debug] [bpf_tracer.cpp:80] libbpf: CO-RE relocating [209] struct bpf_prog_aux: found target candidate [2173] struct bpf_prog_aux in [vmlinux]
+[2026-06-21 13:49:34.471] [debug] [bpf_tracer.cpp:80] libbpf: prog 'bpf_prog_kallsyms_add_enter': relo #2: <byte_off> [209] struct bpf_prog_aux.id (0:7 @ offset 32)
+[2026-06-21 13:49:34.471] [debug] [bpf_tracer.cpp:80] libbpf: prog 'bpf_prog_kallsyms_add_enter': relo #2: matching candidate #0 <byte_off> [2173] struct bpf_prog_aux.id (0:7 @ offset 32)
+[2026-06-21 13:49:34.471] [debug] [bpf_tracer.cpp:80] libbpf: prog 'bpf_prog_kallsyms_add_enter': relo #2: patched insn #10 (ALU/ALU64) imm 32 -> 32
+[2026-06-21 13:49:34.471] [debug] [bpf_tracer.cpp:80] libbpf: sec 'tracepoint/syscalls/sys_enter_open': found 2 CO-RE relocations
+[2026-06-21 13:49:34.471] [debug] [bpf_tracer.cpp:80] libbpf: sec 'tracepoint/syscalls/sys_enter_openat': found 2 CO-RE relocations
+[2026-06-21 13:49:34.471] [debug] [bpf_tracer.cpp:80] libbpf: sec 'tracepoint/syscalls/sys_exit_open': found 1 CO-RE relocations
+[2026-06-21 13:49:34.471] [debug] [bpf_tracer.cpp:80] libbpf: sec 'tracepoint/syscalls/sys_exit_openat': found 1 CO-RE relocations
+[2026-06-21 13:49:34.471] [debug] [bpf_tracer.cpp:80] libbpf: sec 'tracepoint/syscalls/sys_enter_bpf': found 21 CO-RE relocations
+[2026-06-21 13:49:34.471] [debug] [bpf_tracer.cpp:80] libbpf: CO-RE relocating [244] struct trace_event_raw_sys_enter: found target candidate [12041] struct trace_event_raw_sys_enter in [vmlinux]
+[2026-06-21 13:49:34.472] [debug] [bpf_tracer.cpp:80] libbpf: prog 'tracepoint__syscalls__sys_enter_bpf': relo #0: <byte_off> [244] struct trace_event_raw_sys_enter.args[0] (0:2:0 @ offset 16)
+[2026-06-21 13:49:34.472] [debug] [bpf_tracer.cpp:80] libbpf: prog 'tracepoint__syscalls__sys_enter_bpf': relo #0: matching candidate #0 <byte_off> [12041] struct trace_event_raw_sys_enter.args[0] (0:2:0 @ offset 16)
+[2026-06-21 13:49:34.472] [debug] [bpf_tracer.cpp:80] libbpf: prog 'tracepoint__syscalls__sys_enter_bpf': relo #0: patched insn #47 (LDX/ST/STX) off 16 -> 16
+[2026-06-21 13:49:34.472] [debug] [bpf_tracer.cpp:80] libbpf: prog 'tracepoint__syscalls__sys_enter_bpf': relo #1: <byte_off> [244] struct trace_event_raw_sys_enter.args[1] (0:2:1 @ offset 24)
+[2026-06-21 13:49:34.472] [debug] [bpf_tracer.cpp:80] libbpf: prog 'tracepoint__syscalls__sys_enter_bpf': relo #1: matching candidate #0 <byte_off> [12041] struct trace_event_raw_sys_enter.args[1] (0:2:1 @ offset 24)
+[2026-06-21 13:49:34.472] [debug] [bpf_tracer.cpp:80] libbpf: prog 'tracepoint__syscalls__sys_enter_bpf': relo #1: patched insn #49 (LDX/ST/STX) off 24 -> 24
+[2026-06-21 13:49:34.472] [debug] [bpf_tracer.cpp:80] libbpf: prog 'tracepoint__syscalls__sys_enter_bpf': relo #2: <byte_off> [244] struct trace_event_raw_sys_enter.args[2] (0:2:2 @ offset 32)
+[2026-06-21 13:49:34.472] [debug] [bpf_tracer.cpp:80] libbpf: prog 'tracepoint__syscalls__sys_enter_bpf': relo #2: matching candidate #0 <byte_off> [12041] struct trace_event_raw_sys_enter.args[2] (0:2:2 @ offset 32)
+[2026-06-21 13:49:34.472] [debug] [bpf_tracer.cpp:80] libbpf: prog 'tracepoint__syscalls__sys_enter_bpf': relo #2: patched insn #54 (LDX/ST/STX) off 32 -> 32
+[2026-06-21 13:49:34.472] [debug] [bpf_tracer.cpp:80] libbpf: prog 'tracepoint__syscalls__sys_enter_bpf': relo #3: <byte_off> [244] struct trace_event_raw_sys_enter.args[1] (0:2:1 @ offset 24)
+[2026-06-21 13:49:34.472] [debug] [bpf_tracer.cpp:80] libbpf: prog 'tracepoint__syscalls__sys_enter_bpf': relo #3: matching candidate #0 <byte_off> [12041] struct trace_event_raw_sys_enter.args[1] (0:2:1 @ offset 24)
+[2026-06-21 13:49:34.472] [debug] [bpf_tracer.cpp:80] libbpf: prog 'tracepoint__syscalls__sys_enter_bpf': relo #3: patched insn #66 (LDX/ST/STX) off 24 -> 24
+[2026-06-21 13:49:34.472] [debug] [bpf_tracer.cpp:80] libbpf: prog 'tracepoint__syscalls__sys_enter_bpf': relo #4: <byte_off> [244] struct trace_event_raw_sys_enter.args[0] (0:2:0 @ offset 16)
+[2026-06-21 13:49:34.472] [debug] [bpf_tracer.cpp:80] libbpf: prog 'tracepoint__syscalls__sys_enter_bpf': relo #4: matching candidate #0 <byte_off> [12041] struct trace_event_raw_sys_enter.args[0] (0:2:0 @ offset 16)
+[2026-06-21 13:49:34.472] [debug] [bpf_tracer.cpp:80] libbpf: prog 'tracepoint__syscalls__sys_enter_bpf': relo #4: patched insn #68 (LDX/ST/STX) off 16 -> 16
+[2026-06-21 13:49:34.472] [debug] [bpf_tracer.cpp:80] libbpf: CO-RE relocating [21] union bpf_attr: found target candidate [2006] union bpf_attr in [vmlinux]
+[2026-06-21 13:49:34.472] [debug] [bpf_tracer.cpp:80] libbpf: prog 'tracepoint__syscalls__sys_enter_bpf': relo #5: <byte_off> [21] union bpf_attr.insn_cnt (0:3:1 @ offset 4)
+[2026-06-21 13:49:34.472] [debug] [bpf_tracer.cpp:80] libbpf: prog 'tracepoint__syscalls__sys_enter_bpf': relo #5: matching candidate #0 <byte_off> [2006] union bpf_attr.insn_cnt (0:3:1 @ offset 4)
+[2026-06-21 13:49:34.472] [debug] [bpf_tracer.cpp:80] libbpf: prog 'tracepoint__syscalls__sys_enter_bpf': relo #5: patched insn #96 (ALU/ALU64) imm 4 -> 4
+[2026-06-21 13:49:34.472] [debug] [bpf_tracer.cpp:80] libbpf: prog 'tracepoint__syscalls__sys_enter_bpf': relo #6: <byte_off> [21] union bpf_attr.insns (0:3:2 @ offset 8)
+[2026-06-21 13:49:34.472] [debug] [bpf_tracer.cpp:80] libbpf: prog 'tracepoint__syscalls__sys_enter_bpf': relo #6: matching candidate #0 <byte_off> [2006] union bpf_attr.insns (0:3:2 @ offset 8)
+[2026-06-21 13:49:34.472] [debug] [bpf_tracer.cpp:80] libbpf: prog 'tracepoint__syscalls__sys_enter_bpf': relo #6: patched insn #103 (ALU/ALU64) imm 8 -> 8
+[2026-06-21 13:49:34.472] [debug] [bpf_tracer.cpp:80] libbpf: prog 'tracepoint__syscalls__sys_enter_bpf': relo #7: <byte_off> [21] union bpf_attr.prog_type (0:3:0 @ offset 0)
+[2026-06-21 13:49:34.472] [debug] [bpf_tracer.cpp:80] libbpf: prog 'tracepoint__syscalls__sys_enter_bpf': relo #7: matching candidate #0 <byte_off> [2006] union bpf_attr.prog_type (0:3:0 @ offset 0)
+[2026-06-21 13:49:34.472] [debug] [bpf_tracer.cpp:80] libbpf: prog 'tracepoint__syscalls__sys_enter_bpf': relo #7: patched insn #162 (ALU/ALU64) imm 0 -> 0
+[2026-06-21 13:49:34.472] [debug] [bpf_tracer.cpp:80] libbpf: prog 'tracepoint__syscalls__sys_enter_bpf': relo #8: <byte_off> [21] union bpf_attr.prog_name (0:3:9 @ offset 48)
+[2026-06-21 13:49:34.472] [debug] [bpf_tracer.cpp:80] libbpf: prog 'tracepoint__syscalls__sys_enter_bpf': relo #8: matching candidate #0 <byte_off> [2006] union bpf_attr.prog_name (0:3:9 @ offset 48)
+[2026-06-21 13:49:34.472] [debug] [bpf_tracer.cpp:80] libbpf: prog 'tracepoint__syscalls__sys_enter_bpf': relo #8: patched insn #172 (ALU/ALU64) imm 48 -> 48
+[2026-06-21 13:49:34.472] [debug] [bpf_tracer.cpp:80] libbpf: prog 'tracepoint__syscalls__sys_enter_bpf': relo #9: <byte_off> [21] union bpf_attr.prog_name (0:3:9 @ offset 48)
+[2026-06-21 13:49:34.472] [debug] [bpf_tracer.cpp:80] libbpf: prog 'tracepoint__syscalls__sys_enter_bpf': relo #9: matching candidate #0 <byte_off> [2006] union bpf_attr.prog_name (0:3:9 @ offset 48)
+[2026-06-21 13:49:34.472] [debug] [bpf_tracer.cpp:80] libbpf: prog 'tracepoint__syscalls__sys_enter_bpf': relo #9: patched insn #177 (LDX/ST/STX) off 48 -> 48
+[2026-06-21 13:49:34.472] [debug] [bpf_tracer.cpp:80] libbpf: prog 'tracepoint__syscalls__sys_enter_bpf': relo #10: <byte_off> [21] union bpf_attr.insn_cnt (0:3:1 @ offset 4)
+[2026-06-21 13:49:34.472] [debug] [bpf_tracer.cpp:80] libbpf: prog 'tracepoint__syscalls__sys_enter_bpf': relo #10: matching candidate #0 <byte_off> [2006] union bpf_attr.insn_cnt (0:3:1 @ offset 4)
+[2026-06-21 13:49:34.472] [debug] [bpf_tracer.cpp:80] libbpf: prog 'tracepoint__syscalls__sys_enter_bpf': relo #10: patched insn #186 (LDX/ST/STX) off 4 -> 4
+[2026-06-21 13:49:34.472] [debug] [bpf_tracer.cpp:80] libbpf: prog 'tracepoint__syscalls__sys_enter_bpf': relo #11: <byte_off> [21] union bpf_attr.prog_type (0:3:0 @ offset 0)
+[2026-06-21 13:49:34.472] [debug] [bpf_tracer.cpp:80] libbpf: prog 'tracepoint__syscalls__sys_enter_bpf': relo #11: matching candidate #0 <byte_off> [2006] union bpf_attr.prog_type (0:3:0 @ offset 0)
+[2026-06-21 13:49:34.472] [debug] [bpf_tracer.cpp:80] libbpf: prog 'tracepoint__syscalls__sys_enter_bpf': relo #11: patched insn #195 (LDX/ST/STX) off 0 -> 0
+[2026-06-21 13:49:34.472] [debug] [bpf_tracer.cpp:80] libbpf: prog 'tracepoint__syscalls__sys_enter_bpf': relo #12: <byte_off> [21] union bpf_attr.prog_type (0:3:0 @ offset 0)
+[2026-06-21 13:49:34.472] [debug] [bpf_tracer.cpp:80] libbpf: prog 'tracepoint__syscalls__sys_enter_bpf': relo #12: matching candidate #0 <byte_off> [2006] union bpf_attr.prog_type (0:3:0 @ offset 0)
+[2026-06-21 13:49:34.472] [debug] [bpf_tracer.cpp:80] libbpf: prog 'tracepoint__syscalls__sys_enter_bpf': relo #12: patched insn #197 (LDX/ST/STX) off 0 -> 0
+[2026-06-21 13:49:34.472] [debug] [bpf_tracer.cpp:80] libbpf: prog 'tracepoint__syscalls__sys_enter_bpf': relo #13: <byte_off> [21] union bpf_attr.insn_cnt (0:3:1 @ offset 4)
+[2026-06-21 13:49:34.472] [debug] [bpf_tracer.cpp:80] libbpf: prog 'tracepoint__syscalls__sys_enter_bpf': relo #13: matching candidate #0 <byte_off> [2006] union bpf_attr.insn_cnt (0:3:1 @ offset 4)
+[2026-06-21 13:49:34.472] [debug] [bpf_tracer.cpp:80] libbpf: prog 'tracepoint__syscalls__sys_enter_bpf': relo #13: patched insn #204 (LDX/ST/STX) off 4 -> 4
+[2026-06-21 13:49:34.472] [debug] [bpf_tracer.cpp:80] libbpf: prog 'tracepoint__syscalls__sys_enter_bpf': relo #14: <byte_off> [21] union bpf_attr.func_info_rec_size (0:3:13 @ offset 76)
+[2026-06-21 13:49:34.472] [debug] [bpf_tracer.cpp:80] libbpf: prog 'tracepoint__syscalls__sys_enter_bpf': relo #14: matching candidate #0 <byte_off> [2006] union bpf_attr.func_info_rec_size (0:3:13 @ offset 76)
+[2026-06-21 13:49:34.472] [debug] [bpf_tracer.cpp:80] libbpf: prog 'tracepoint__syscalls__sys_enter_bpf': relo #14: patched insn #208 (LDX/ST/STX) off 76 -> 76
+[2026-06-21 13:49:34.472] [debug] [bpf_tracer.cpp:80] libbpf: prog 'tracepoint__syscalls__sys_enter_bpf': relo #15: <byte_off> [21] union bpf_attr.func_info (0:3:14 @ offset 80)
+[2026-06-21 13:49:34.472] [debug] [bpf_tracer.cpp:80] libbpf: prog 'tracepoint__syscalls__sys_enter_bpf': relo #15: matching candidate #0 <byte_off> [2006] union bpf_attr.func_info (0:3:14 @ offset 80)
+[2026-06-21 13:49:34.472] [debug] [bpf_tracer.cpp:80] libbpf: prog 'tracepoint__syscalls__sys_enter_bpf': relo #15: patched insn #209 (LDX/ST/STX) off 80 -> 80
+[2026-06-21 13:49:34.473] [debug] [bpf_tracer.cpp:80] libbpf: prog 'tracepoint__syscalls__sys_enter_bpf': relo #16: <byte_off> [21] union bpf_attr.func_info_cnt (0:3:15 @ offset 88)
+[2026-06-21 13:49:34.473] [debug] [bpf_tracer.cpp:80] libbpf: prog 'tracepoint__syscalls__sys_enter_bpf': relo #16: matching candidate #0 <byte_off> [2006] union bpf_attr.func_info_cnt (0:3:15 @ offset 88)
+[2026-06-21 13:49:34.473] [debug] [bpf_tracer.cpp:80] libbpf: prog 'tracepoint__syscalls__sys_enter_bpf': relo #16: patched insn #210 (LDX/ST/STX) off 88 -> 88
+[2026-06-21 13:49:34.473] [debug] [bpf_tracer.cpp:80] libbpf: prog 'tracepoint__syscalls__sys_enter_bpf': relo #17: <byte_off> [21] union bpf_attr.line_info_rec_size (0:3:16 @ offset 92)
+[2026-06-21 13:49:34.473] [debug] [bpf_tracer.cpp:80] libbpf: prog 'tracepoint__syscalls__sys_enter_bpf': relo #17: matching candidate #0 <byte_off> [2006] union bpf_attr.line_info_rec_size (0:3:16 @ offset 92)
+[2026-06-21 13:49:34.473] [debug] [bpf_tracer.cpp:80] libbpf: prog 'tracepoint__syscalls__sys_enter_bpf': relo #17: patched insn #211 (LDX/ST/STX) off 92 -> 92
+[2026-06-21 13:49:34.473] [debug] [bpf_tracer.cpp:80] libbpf: prog 'tracepoint__syscalls__sys_enter_bpf': relo #18: <byte_off> [21] union bpf_attr.line_info (0:3:17 @ offset 96)
+[2026-06-21 13:49:34.473] [debug] [bpf_tracer.cpp:80] libbpf: prog 'tracepoint__syscalls__sys_enter_bpf': relo #18: matching candidate #0 <byte_off> [2006] union bpf_attr.line_info (0:3:17 @ offset 96)
+[2026-06-21 13:49:34.473] [debug] [bpf_tracer.cpp:80] libbpf: prog 'tracepoint__syscalls__sys_enter_bpf': relo #18: patched insn #212 (LDX/ST/STX) off 96 -> 96
+[2026-06-21 13:49:34.473] [debug] [bpf_tracer.cpp:80] libbpf: prog 'tracepoint__syscalls__sys_enter_bpf': relo #19: <byte_off> [21] union bpf_attr.line_info_cnt (0:3:18 @ offset 104)
+[2026-06-21 13:49:34.473] [debug] [bpf_tracer.cpp:80] libbpf: prog 'tracepoint__syscalls__sys_enter_bpf': relo #19: matching candidate #0 <byte_off> [2006] union bpf_attr.line_info_cnt (0:3:18 @ offset 104)
+[2026-06-21 13:49:34.473] [debug] [bpf_tracer.cpp:80] libbpf: prog 'tracepoint__syscalls__sys_enter_bpf': relo #19: patched insn #213 (LDX/ST/STX) off 104 -> 104
+[2026-06-21 13:49:34.473] [debug] [bpf_tracer.cpp:80] libbpf: prog 'tracepoint__syscalls__sys_enter_bpf': relo #20: <byte_off> [21] union bpf_attr.insn_cnt (0:3:1 @ offset 4)
+[2026-06-21 13:49:34.473] [debug] [bpf_tracer.cpp:80] libbpf: prog 'tracepoint__syscalls__sys_enter_bpf': relo #20: matching candidate #0 <byte_off> [2006] union bpf_attr.insn_cnt (0:3:1 @ offset 4)
+[2026-06-21 13:49:34.473] [debug] [bpf_tracer.cpp:80] libbpf: prog 'tracepoint__syscalls__sys_enter_bpf': relo #20: patched insn #227 (LDX/ST/STX) off 4 -> 4
+[2026-06-21 13:49:34.473] [debug] [bpf_tracer.cpp:80] libbpf: sec 'tracepoint/syscalls/sys_exit_bpf': found 1 CO-RE relocations
+[2026-06-21 13:49:34.473] [debug] [bpf_tracer.cpp:80] libbpf: CO-RE relocating [254] struct trace_event_raw_sys_exit: found target candidate [12042] struct trace_event_raw_sys_exit in [vmlinux]
+[2026-06-21 13:49:34.473] [debug] [bpf_tracer.cpp:80] libbpf: prog 'tracepoint__syscalls__sys_exit_bpf': relo #0: <byte_off> [254] struct trace_event_raw_sys_exit.ret (0:2 @ offset 16)
+[2026-06-21 13:49:34.473] [debug] [bpf_tracer.cpp:80] libbpf: prog 'tracepoint__syscalls__sys_exit_bpf': relo #0: matching candidate #0 <byte_off> [12042] struct trace_event_raw_sys_exit.ret (0:2 @ offset 16)
+[2026-06-21 13:49:34.473] [debug] [bpf_tracer.cpp:80] libbpf: prog 'tracepoint__syscalls__sys_exit_bpf': relo #0: patched insn #28 (LDX/ST/STX) off 16 -> 16
+[2026-06-21 13:49:34.473] [debug] [bpf_tracer.cpp:80] libbpf: sec 'tracepoint/syscalls/sys_enter_perf_event_open': found 14 CO-RE relocations
+[2026-06-21 13:49:34.473] [debug] [bpf_tracer.cpp:80] libbpf: prog 'tracepoint__syscalls__sys_enter_perf_event_open': relo #0: <byte_off> [244] struct trace_event_raw_sys_enter.args[0] (0:2:0 @ offset 16)
+[2026-06-21 13:49:34.473] [debug] [bpf_tracer.cpp:80] libbpf: prog 'tracepoint__syscalls__sys_enter_perf_event_open': relo #0: matching candidate #0 <byte_off> [12041] struct trace_event_raw_sys_enter.args[0] (0:2:0 @ offset 16)
+[2026-06-21 13:49:34.473] [debug] [bpf_tracer.cpp:80] libbpf: prog 'tracepoint__syscalls__sys_enter_perf_event_open': relo #0: patched insn #74 (LDX/ST/STX) off 16 -> 16
+[2026-06-21 13:49:34.473] [debug] [bpf_tracer.cpp:80] libbpf: prog 'tracepoint__syscalls__sys_enter_perf_event_open': relo #1: <byte_off> [244] struct trace_event_raw_sys_enter.args[1] (0:2:1 @ offset 24)
+[2026-06-21 13:49:34.473] [debug] [bpf_tracer.cpp:80] libbpf: prog 'tracepoint__syscalls__sys_enter_perf_event_open': relo #1: matching candidate #0 <byte_off> [12041] struct trace_event_raw_sys_enter.args[1] (0:2:1 @ offset 24)
+[2026-06-21 13:49:34.473] [debug] [bpf_tracer.cpp:80] libbpf: prog 'tracepoint__syscalls__sys_enter_perf_event_open': relo #1: patched insn #80 (LDX/ST/STX) off 24 -> 24
+[2026-06-21 13:49:34.473] [debug] [bpf_tracer.cpp:80] libbpf: prog 'tracepoint__syscalls__sys_enter_perf_event_open': relo #2: <byte_off> [244] struct trace_event_raw_sys_enter.args[2] (0:2:2 @ offset 32)
+[2026-06-21 13:49:34.473] [debug] [bpf_tracer.cpp:80] libbpf: prog 'tracepoint__syscalls__sys_enter_perf_event_open': relo #2: matching candidate #0 <byte_off> [12041] struct trace_event_raw_sys_enter.args[2] (0:2:2 @ offset 32)
+[2026-06-21 13:49:34.473] [debug] [bpf_tracer.cpp:80] libbpf: prog 'tracepoint__syscalls__sys_enter_perf_event_open': relo #2: patched insn #82 (LDX/ST/STX) off 32 -> 32
+[2026-06-21 13:49:34.473] [debug] [bpf_tracer.cpp:80] libbpf: prog 'tracepoint__syscalls__sys_enter_perf_event_open': relo #3: <byte_off> [244] struct trace_event_raw_sys_enter.args[0] (0:2:0 @ offset 16)
+[2026-06-21 13:49:34.473] [debug] [bpf_tracer.cpp:80] libbpf: prog 'tracepoint__syscalls__sys_enter_perf_event_open': relo #3: matching candidate #0 <byte_off> [12041] struct trace_event_raw_sys_enter.args[0] (0:2:0 @ offset 16)
+[2026-06-21 13:49:34.473] [debug] [bpf_tracer.cpp:80] libbpf: prog 'tracepoint__syscalls__sys_enter_perf_event_open': relo #3: patched insn #84 (LDX/ST/STX) off 16 -> 16
+[2026-06-21 13:49:34.473] [debug] [bpf_tracer.cpp:80] libbpf: CO-RE relocating [58] struct perf_event_attr: found target candidate [1837] struct perf_event_attr in [vmlinux]
+[2026-06-21 13:49:34.474] [debug] [bpf_tracer.cpp:80] libbpf: prog 'tracepoint__syscalls__sys_enter_perf_event_open': relo #4: <byte_off> [58] struct perf_event_attr.uprobe_path (0:46:2 @ offset 56)
+[2026-06-21 13:49:34.474] [debug] [bpf_tracer.cpp:80] libbpf: prog 'tracepoint__syscalls__sys_enter_perf_event_open': relo #4: matching candidate #0 <byte_off> [1837] struct perf_event_attr.uprobe_path (0:46:2 @ offset 56)
+[2026-06-21 13:49:34.474] [debug] [bpf_tracer.cpp:80] libbpf: prog 'tracepoint__syscalls__sys_enter_perf_event_open': relo #4: patched insn #86 (LDX/ST/STX) off 56 -> 56
+[2026-06-21 13:49:34.474] [debug] [bpf_tracer.cpp:80] libbpf: prog 'tracepoint__syscalls__sys_enter_perf_event_open': relo #5: <byte_off> [58] struct perf_event_attr.uprobe_path (0:46:2 @ offset 56)
+[2026-06-21 13:49:34.474] [debug] [bpf_tracer.cpp:80] libbpf: prog 'tracepoint__syscalls__sys_enter_perf_event_open': relo #5: matching candidate #0 <byte_off> [1837] struct perf_event_attr.uprobe_path (0:46:2 @ offset 56)
+[2026-06-21 13:49:34.474] [debug] [bpf_tracer.cpp:80] libbpf: prog 'tracepoint__syscalls__sys_enter_perf_event_open': relo #5: patched insn #88 (LDX/ST/STX) off 56 -> 56
+[2026-06-21 13:49:34.474] [debug] [bpf_tracer.cpp:80] libbpf: prog 'tracepoint__syscalls__sys_enter_perf_event_open': relo #6: <byte_off> [58] struct perf_event_attr.probe_offset (0:47:2 @ offset 64)
+[2026-06-21 13:49:34.474] [debug] [bpf_tracer.cpp:80] libbpf: prog 'tracepoint__syscalls__sys_enter_perf_event_open': relo #6: matching candidate #0 <byte_off> [1837] struct perf_event_attr.probe_offset (0:47:2 @ offset 64)
+[2026-06-21 13:49:34.474] [debug] [bpf_tracer.cpp:80] libbpf: prog 'tracepoint__syscalls__sys_enter_perf_event_open': relo #6: patched insn #94 (LDX/ST/STX) off 64 -> 64
+[2026-06-21 13:49:34.474] [debug] [bpf_tracer.cpp:80] libbpf: prog 'tracepoint__syscalls__sys_enter_perf_event_open': relo #7: <byte_off> [244] struct trace_event_raw_sys_enter.args[0] (0:2:0 @ offset 16)
+[2026-06-21 13:49:34.474] [debug] [bpf_tracer.cpp:80] libbpf: prog 'tracepoint__syscalls__sys_enter_perf_event_open': relo #7: matching candidate #0 <byte_off> [12041] struct trace_event_raw_sys_enter.args[0] (0:2:0 @ offset 16)
+[2026-06-21 13:49:34.474] [debug] [bpf_tracer.cpp:80] libbpf: prog 'tracepoint__syscalls__sys_enter_perf_event_open': relo #7: patched insn #103 (LDX/ST/STX) off 16 -> 16
+[2026-06-21 13:49:34.474] [debug] [bpf_tracer.cpp:80] libbpf: prog 'tracepoint__syscalls__sys_enter_perf_event_open': relo #8: <byte_off> [58] struct perf_event_attr.type (0:0 @ offset 0)
+[2026-06-21 13:49:34.474] [debug] [bpf_tracer.cpp:80] libbpf: prog 'tracepoint__syscalls__sys_enter_perf_event_open': relo #8: matching candidate #0 <byte_off> [1837] struct perf_event_attr.type (0:0 @ offset 0)
+[2026-06-21 13:49:34.474] [debug] [bpf_tracer.cpp:80] libbpf: prog 'tracepoint__syscalls__sys_enter_perf_event_open': relo #8: patched insn #112 (LDX/ST/STX) off 0 -> 0
+[2026-06-21 13:49:34.474] [debug] [bpf_tracer.cpp:80] libbpf: prog 'tracepoint__syscalls__sys_enter_perf_event_open': relo #9: <byte_off> [58] struct perf_event_attr.probe_offset (0:47:2 @ offset 64)
+[2026-06-21 13:49:34.474] [debug] [bpf_tracer.cpp:80] libbpf: prog 'tracepoint__syscalls__sys_enter_perf_event_open': relo #9: matching candidate #0 <byte_off> [1837] struct perf_event_attr.probe_offset (0:47:2 @ offset 64)
+[2026-06-21 13:49:34.474] [debug] [bpf_tracer.cpp:80] libbpf: prog 'tracepoint__syscalls__sys_enter_perf_event_open': relo #9: patched insn #124 (LDX/ST/STX) off 64 -> 64
+[2026-06-21 13:49:34.474] [debug] [bpf_tracer.cpp:80] libbpf: prog 'tracepoint__syscalls__sys_enter_perf_event_open': relo #10: <byte_off> [58] struct perf_event_attr.probe_offset (0:47:2 @ offset 64)
+[2026-06-21 13:49:34.474] [debug] [bpf_tracer.cpp:80] libbpf: prog 'tracepoint__syscalls__sys_enter_perf_event_open': relo #10: matching candidate #0 <byte_off> [1837] struct perf_event_attr.probe_offset (0:47:2 @ offset 64)
+[2026-06-21 13:49:34.474] [debug] [bpf_tracer.cpp:80] libbpf: prog 'tracepoint__syscalls__sys_enter_perf_event_open': relo #10: patched insn #154 (LDX/ST/STX) off 64 -> 64
+[2026-06-21 13:49:34.474] [debug] [bpf_tracer.cpp:80] libbpf: prog 'tracepoint__syscalls__sys_enter_perf_event_open': relo #11: <byte_off> [58] struct perf_event_attr.probe_offset (0:47:2 @ offset 64)
+[2026-06-21 13:49:34.474] [debug] [bpf_tracer.cpp:80] libbpf: prog 'tracepoint__syscalls__sys_enter_perf_event_open': relo #11: matching candidate #0 <byte_off> [1837] struct perf_event_attr.probe_offset (0:47:2 @ offset 64)
+[2026-06-21 13:49:34.474] [debug] [bpf_tracer.cpp:80] libbpf: prog 'tracepoint__syscalls__sys_enter_perf_event_open': relo #11: patched insn #156 (LDX/ST/STX) off 64 -> 64
+[2026-06-21 13:49:34.474] [debug] [bpf_tracer.cpp:80] libbpf: prog 'tracepoint__syscalls__sys_enter_perf_event_open': relo #12: <byte_off> [58] struct perf_event_attr.uprobe_path (0:46:2 @ offset 56)
+[2026-06-21 13:49:34.474] [debug] [bpf_tracer.cpp:80] libbpf: prog 'tracepoint__syscalls__sys_enter_perf_event_open': relo #12: matching candidate #0 <byte_off> [1837] struct perf_event_attr.uprobe_path (0:46:2 @ offset 56)
+[2026-06-21 13:49:34.474] [debug] [bpf_tracer.cpp:80] libbpf: prog 'tracepoint__syscalls__sys_enter_perf_event_open': relo #12: patched insn #157 (LDX/ST/STX) off 56 -> 56
+[2026-06-21 13:49:34.474] [debug] [bpf_tracer.cpp:80] libbpf: prog 'tracepoint__syscalls__sys_enter_perf_event_open': relo #13: <byte_off> [58] struct perf_event_attr.uprobe_path (0:46:2 @ offset 56)
+[2026-06-21 13:49:34.474] [debug] [bpf_tracer.cpp:80] libbpf: prog 'tracepoint__syscalls__sys_enter_perf_event_open': relo #13: matching candidate #0 <byte_off> [1837] struct perf_event_attr.uprobe_path (0:46:2 @ offset 56)
+[2026-06-21 13:49:34.474] [debug] [bpf_tracer.cpp:80] libbpf: prog 'tracepoint__syscalls__sys_enter_perf_event_open': relo #13: patched insn #176 (LDX/ST/STX) off 56 -> 56
+[2026-06-21 13:49:34.474] [debug] [bpf_tracer.cpp:80] libbpf: sec 'tracepoint/syscalls/sys_exit_perf_event_open': found 3 CO-RE relocations
+[2026-06-21 13:49:34.474] [debug] [bpf_tracer.cpp:80] libbpf: prog 'tracepoint__syscalls__sys_exit_perf_event_open': relo #0: <byte_off> [254] struct trace_event_raw_sys_exit.ret (0:2 @ offset 16)
+[2026-06-21 13:49:34.474] [debug] [bpf_tracer.cpp:80] libbpf: prog 'tracepoint__syscalls__sys_exit_perf_event_open': relo #0: matching candidate #0 <byte_off> [12042] struct trace_event_raw_sys_exit.ret (0:2 @ offset 16)
+[2026-06-21 13:49:34.474] [debug] [bpf_tracer.cpp:80] libbpf: prog 'tracepoint__syscalls__sys_exit_perf_event_open': relo #0: patched insn #33 (LDX/ST/STX) off 16 -> 16
+[2026-06-21 13:49:34.474] [debug] [bpf_tracer.cpp:80] libbpf: prog 'tracepoint__syscalls__sys_exit_perf_event_open': relo #1: <byte_off> [254] struct trace_event_raw_sys_exit.ret (0:2 @ offset 16)
+[2026-06-21 13:49:34.474] [debug] [bpf_tracer.cpp:80] libbpf: prog 'tracepoint__syscalls__sys_exit_perf_event_open': relo #1: matching candidate #0 <byte_off> [12042] struct trace_event_raw_sys_exit.ret (0:2 @ offset 16)
+[2026-06-21 13:49:34.474] [debug] [bpf_tracer.cpp:80] libbpf: prog 'tracepoint__syscalls__sys_exit_perf_event_open': relo #1: patched insn #75 (LDX/ST/STX) off 16 -> 16
+[2026-06-21 13:49:34.474] [debug] [bpf_tracer.cpp:80] libbpf: prog 'tracepoint__syscalls__sys_exit_perf_event_open': relo #2: <byte_off> [58] struct perf_event_attr.probe_offset (0:47:2 @ offset 64)
+[2026-06-21 13:49:34.474] [debug] [bpf_tracer.cpp:80] libbpf: prog 'tracepoint__syscalls__sys_exit_perf_event_open': relo #2: matching candidate #0 <byte_off> [1837] struct perf_event_attr.probe_offset (0:47:2 @ offset 64)
+[2026-06-21 13:49:34.474] [debug] [bpf_tracer.cpp:80] libbpf: prog 'tracepoint__syscalls__sys_exit_perf_event_open': relo #2: patched insn #96 (ALU/ALU64) imm 64 -> 64
+[2026-06-21 13:49:34.474] [debug] [bpf_tracer.cpp:80] libbpf: sec 'tracepoint/syscalls/sys_enter_close': found 1 CO-RE relocations
+[2026-06-21 13:49:34.474] [debug] [bpf_tracer.cpp:80] libbpf: prog 'tracepoint__syscalls__sys_enter_close': relo #0: <byte_off> [244] struct trace_event_raw_sys_enter.args[0] (0:2:0 @ offset 16)
+[2026-06-21 13:49:34.474] [debug] [bpf_tracer.cpp:80] libbpf: prog 'tracepoint__syscalls__sys_enter_close': relo #0: matching candidate #0 <byte_off> [12041] struct trace_event_raw_sys_enter.args[0] (0:2:0 @ offset 16)
+[2026-06-21 13:49:34.474] [debug] [bpf_tracer.cpp:80] libbpf: prog 'tracepoint__syscalls__sys_enter_close': relo #0: patched insn #20 (LDX/ST/STX) off 16 -> 16
+[2026-06-21 13:49:34.474] [debug] [bpf_tracer.cpp:80] libbpf: sec 'tracepoint/syscalls/sys_enter_ioctl': found 3 CO-RE relocations
+[2026-06-21 13:49:34.474] [debug] [bpf_tracer.cpp:80] libbpf: prog 'tracepoint__syscalls__sys_enter_ioctl': relo #0: <byte_off> [244] struct trace_event_raw_sys_enter.args[0] (0:2:0 @ offset 16)
+[2026-06-21 13:49:34.474] [debug] [bpf_tracer.cpp:80] libbpf: prog 'tracepoint__syscalls__sys_enter_ioctl': relo #0: matching candidate #0 <byte_off> [12041] struct trace_event_raw_sys_enter.args[0] (0:2:0 @ offset 16)
+[2026-06-21 13:49:34.474] [debug] [bpf_tracer.cpp:80] libbpf: prog 'tracepoint__syscalls__sys_enter_ioctl': relo #0: patched insn #20 (LDX/ST/STX) off 16 -> 16
+[2026-06-21 13:49:34.474] [debug] [bpf_tracer.cpp:80] libbpf: prog 'tracepoint__syscalls__sys_enter_ioctl': relo #1: <byte_off> [244] struct trace_event_raw_sys_enter.args[1] (0:2:1 @ offset 24)
+[2026-06-21 13:49:34.474] [debug] [bpf_tracer.cpp:80] libbpf: prog 'tracepoint__syscalls__sys_enter_ioctl': relo #1: matching candidate #0 <byte_off> [12041] struct trace_event_raw_sys_enter.args[1] (0:2:1 @ offset 24)
+[2026-06-21 13:49:34.474] [debug] [bpf_tracer.cpp:80] libbpf: prog 'tracepoint__syscalls__sys_enter_ioctl': relo #1: patched insn #40 (LDX/ST/STX) off 24 -> 24
+[2026-06-21 13:49:34.474] [debug] [bpf_tracer.cpp:80] libbpf: prog 'tracepoint__syscalls__sys_enter_ioctl': relo #2: <byte_off> [244] struct trace_event_raw_sys_enter.args[2] (0:2:2 @ offset 32)
+[2026-06-21 13:49:34.474] [debug] [bpf_tracer.cpp:80] libbpf: prog 'tracepoint__syscalls__sys_enter_ioctl': relo #2: matching candidate #0 <byte_off> [12041] struct trace_event_raw_sys_enter.args[2] (0:2:2 @ offset 32)
+[2026-06-21 13:49:34.474] [debug] [bpf_tracer.cpp:80] libbpf: prog 'tracepoint__syscalls__sys_enter_ioctl': relo #2: patched insn #44 (LDX/ST/STX) off 32 -> 32
+[2026-06-21 13:49:34.474] [debug] [bpf_tracer.cpp:80] libbpf: sec 'tracepoint/syscalls/sys_exit_ioctl': found 1 CO-RE relocations
+[2026-06-21 13:49:34.474] [debug] [bpf_tracer.cpp:80] libbpf: prog 'tracepoint__syscalls__sys_exit_ioctl': relo #0: <byte_off> [254] struct trace_event_raw_sys_exit.ret (0:2 @ offset 16)
+[2026-06-21 13:49:34.474] [debug] [bpf_tracer.cpp:80] libbpf: prog 'tracepoint__syscalls__sys_exit_ioctl': relo #0: matching candidate #0 <byte_off> [12042] struct trace_event_raw_sys_exit.ret (0:2 @ offset 16)
+[2026-06-21 13:49:34.474] [debug] [bpf_tracer.cpp:80] libbpf: prog 'tracepoint__syscalls__sys_exit_ioctl': relo #0: patched insn #51 (LDX/ST/STX) off 16 -> 16
+[2026-06-21 13:49:34.474] [debug] [bpf_tracer.cpp:80] libbpf: sec 'tp/sched/sched_process_exec': found 3 CO-RE relocations
+[2026-06-21 13:49:34.475] [debug] [bpf_tracer.cpp:80] libbpf: map 'open_param_start': created successfully, fd=3
+[2026-06-21 13:49:34.475] [debug] [bpf_tracer.cpp:80] libbpf: map 'bpf_param_start': created successfully, fd=4
+[2026-06-21 13:49:34.476] [debug] [bpf_tracer.cpp:80] libbpf: map 'perf_event_open_param_start': created successfully, fd=5
+[2026-06-21 13:49:34.476] [debug] [bpf_tracer.cpp:80] libbpf: map 'bpf_fd_map': created successfully, fd=6
+[2026-06-21 13:49:34.476] [debug] [bpf_tracer.cpp:80] libbpf: map 'ioctl_param_start': created successfully, fd=7
+[2026-06-21 13:49:34.477] [debug] [bpf_tracer.cpp:80] libbpf: map 'exec_start': created successfully, fd=8
+[2026-06-21 13:49:34.477] [debug] [bpf_tracer.cpp:80] libbpf: map 'rb': created successfully, fd=9
+[2026-06-21 13:49:34.478] [debug] [bpf_tracer.cpp:80] libbpf: map 'bpf_map_new_fd_args_map': created successfully, fd=10
+[2026-06-21 13:49:34.515] [debug] [bpf_tracer.cpp:80] libbpf: map 'bpf_prog_insns_map': created successfully, fd=11
+[2026-06-21 13:49:34.516] [debug] [bpf_tracer.cpp:80] libbpf: map 'bpf_progs_new_fd_args_map': created successfully, fd=12
+[2026-06-21 13:49:34.516] [debug] [bpf_tracer.cpp:80] libbpf: map 'whitelist_hook_addr': created successfully, fd=13
+[2026-06-21 13:49:34.516] [debug] [bpf_tracer.cpp:80] libbpf: map 'bpf_trac.rodata': created successfully, fd=14
+[2026-06-21 13:49:34.516] [debug] [bpf_tracer.cpp:80] libbpf: map 'bpf_trac.bss': created successfully, fd=15
+[2026-06-21 13:49:34.516] [debug] [bpf_tracer.cpp:80] libbpf: map '.rodata.cst16': created successfully, fd=16
+[2026-06-21 13:49:34.516] [debug] [bpf_tracer.cpp:80] libbpf: prog 'tracepoint__syscalls__sys_enter_open': skipped loading
+[2026-06-21 13:49:34.516] [debug] [bpf_tracer.cpp:80] libbpf: prog 'tracepoint__syscalls__sys_enter_openat': skipped loading
+[2026-06-21 13:49:34.516] [debug] [bpf_tracer.cpp:80] libbpf: prog 'tracepoint__syscalls__sys_exit_open': skipped loading
+[2026-06-21 13:49:34.516] [debug] [bpf_tracer.cpp:80] libbpf: prog 'tracepoint__syscalls__sys_exit_openat': skipped loading
+[2026-06-21 13:49:34.517] [debug] [bpf_tracer.cpp:80] libbpf: prog 'handle_exec': skipped loading
+[2026-06-21 13:49:34.517] [debug] [bpf_tracer.cpp:80] libbpf: prog 'handle_exit': skipped loading
+[2026-06-21 13:49:36.470] [debug] [handle_bpf_event.cpp:409] handle_event
+[2026-06-21 13:49:36.470] [debug] [handle_bpf_event.cpp:414] Received event with type 3
+[2026-06-21 13:49:36.470] [info] [handle_bpf_event.cpp:382] IOCTL    1236734 otelcol-ebpf-pr  fd:37 req:-2146950137 data:36472760
+[2026-06-21 13:49:36.470] [debug] [handle_bpf_event.cpp:409] handle_event
+[2026-06-21 13:49:36.470] [debug] [handle_bpf_event.cpp:414] Received event with type 3
+[2026-06-21 13:49:36.470] [info] [handle_bpf_event.cpp:382] IOCTL    1236734 otelcol-ebpf-pr  fd:37 req:1074013192 data:67
+[2026-06-21 13:49:36.470] [info] [handle_bpf_event.cpp:397] Setting bpf for perf event 37 and bpf 67 (id: 5637)
+[2026-06-21 13:49:36.470] [debug] [bpftime_driver.cpp:268] Ignoring kernel-owned perf fd 37 for pid 1236734 when mirroring perf attach
+[2026-06-21 13:49:36.470] [debug] [handle_bpf_event.cpp:409] handle_event
+[2026-06-21 13:49:36.470] [debug] [handle_bpf_event.cpp:414] Received event with type 3
+[2026-06-21 13:49:36.470] [info] [handle_bpf_event.cpp:382] IOCTL    1236734 otelcol-ebpf-pr  fd:50 req:-2146950137 data:36472760
+[2026-06-21 13:49:36.470] [debug] [handle_bpf_event.cpp:409] handle_event
+[2026-06-21 13:49:36.470] [debug] [handle_bpf_event.cpp:414] Received event with type 3
+[2026-06-21 13:49:36.470] [info] [handle_bpf_event.cpp:382] IOCTL    1236734 otelcol-ebpf-pr  fd:50 req:1074013192 data:67
+[2026-06-21 13:49:36.470] [info] [handle_bpf_event.cpp:397] Setting bpf for perf event 50 and bpf 67 (id: 5637)
+[2026-06-21 13:49:36.470] [debug] [bpftime_driver.cpp:268] Ignoring kernel-owned perf fd 50 for pid 1236734 when mirroring perf attach
+[2026-06-21 13:49:36.471] [debug] [handle_bpf_event.cpp:409] handle_event
+[2026-06-21 13:49:36.471] [debug] [handle_bpf_event.cpp:414] Received event with type 3
+[2026-06-21 13:49:36.471] [info] [handle_bpf_event.cpp:382] IOCTL    1236734 otelcol-ebpf-pr  fd:8 req:-2146950137 data:36472760
+[2026-06-21 13:49:36.471] [debug] [handle_bpf_event.cpp:409] handle_event
+[2026-06-21 13:49:36.471] [debug] [handle_bpf_event.cpp:414] Received event with type 3
+[2026-06-21 13:49:36.471] [info] [handle_bpf_event.cpp:382] IOCTL    1236734 otelcol-ebpf-pr  fd:8 req:1074013192 data:67
+[2026-06-21 13:49:36.471] [info] [handle_bpf_event.cpp:397] Setting bpf for perf event 8 and bpf 67 (id: 5637)
+[2026-06-21 13:49:36.471] [debug] [bpftime_driver.cpp:268] Ignoring kernel-owned perf fd 8 for pid 1236734 when mirroring perf attach
+[2026-06-21 13:49:36.471] [debug] [handle_bpf_event.cpp:409] handle_event
+[2026-06-21 13:49:36.471] [debug] [handle_bpf_event.cpp:414] Received event with type 3
+[2026-06-21 13:49:36.471] [info] [handle_bpf_event.cpp:382] IOCTL    1236734 otelcol-ebpf-pr  fd:9 req:-2146950137 data:36472760
+[2026-06-21 13:49:36.471] [debug] [handle_bpf_event.cpp:409] handle_event
+[2026-06-21 13:49:36.471] [debug] [handle_bpf_event.cpp:414] Received event with type 3
+[2026-06-21 13:49:36.471] [info] [handle_bpf_event.cpp:382] IOCTL    1236734 otelcol-ebpf-pr  fd:9 req:1074013192 data:67
+[2026-06-21 13:49:36.471] [info] [handle_bpf_event.cpp:397] Setting bpf for perf event 9 and bpf 67 (id: 5637)
+[2026-06-21 13:49:36.471] [debug] [bpftime_driver.cpp:268] Ignoring kernel-owned perf fd 9 for pid 1236734 when mirroring perf attach
+[2026-06-21 13:49:36.471] [debug] [handle_bpf_event.cpp:409] handle_event
+[2026-06-21 13:49:36.471] [debug] [handle_bpf_event.cpp:414] Received event with type 3
+[2026-06-21 13:49:36.471] [info] [handle_bpf_event.cpp:382] IOCTL    1236734 otelcol-ebpf-pr  fd:10 req:-2146950137 data:36472760
+[2026-06-21 13:49:36.471] [debug] [handle_bpf_event.cpp:409] handle_event
+[2026-06-21 13:49:36.471] [debug] [handle_bpf_event.cpp:414] Received event with type 3
+[2026-06-21 13:49:36.471] [info] [handle_bpf_event.cpp:382] IOCTL    1236734 otelcol-ebpf-pr  fd:10 req:1074013192 data:67
+[2026-06-21 13:49:36.471] [info] [handle_bpf_event.cpp:397] Setting bpf for perf event 10 and bpf 67 (id: 5637)
+[2026-06-21 13:49:36.471] [debug] [bpftime_driver.cpp:268] Ignoring kernel-owned perf fd 10 for pid 1236734 when mirroring perf attach
+[2026-06-21 13:49:36.480] [debug] [handle_bpf_event.cpp:409] handle_event
+[2026-06-21 13:49:36.480] [debug] [handle_bpf_event.cpp:414] Received event with type 4
+[2026-06-21 13:49:36.480] [debug] [handle_bpf_event.cpp:302] handle_perf_event
+[2026-06-21 13:49:36.480] [info] [handle_bpf_event.cpp:311] PERF     1236734 otelcol-ebpf-pr  type:PERF_TYPE_UPROBE ret:100
+
+[2026-06-21 13:49:36.480] [debug] [handle_bpf_event.cpp:316] Handling perf event creating with perf type 9
+[2026-06-21 13:49:36.480] [debug] [handle_bpf_event.cpp:325] retprobe false
+[2026-06-21 13:49:36.480] [debug] [handle_bpf_event.cpp:333] Creating uprobe name /lib/x86_64-linux-gnu/libc.so.6 offset 710256 ref_ctr_off 0 attr->config=0
+[2026-06-21 13:49:36.480] [debug] [bpftime_driver.cpp:25] find minimal unused id 0
+[2026-06-21 13:49:36.480] [debug] [bpftime_shm_internal.cpp:212] Set fd 0 to uprobe, pid=-1, name=/lib/x86_64-linux-gnu/libc.so.6, offset=710256
+[2026-06-21 13:49:36.480] [info] [perf_event_handler.cpp:177] Created uprobe/uretprobe perf event handler, module name /lib/x86_64-linux-gnu/libc.so.6, offset ad670
+[2026-06-21 13:49:36.480] [debug] [handler_manager.cpp:71] Handler at fd 0 set to type 4
+[2026-06-21 13:49:36.480] [info] [bpftime_driver.cpp:316] create uprobe 0 for pid 1236734 fd 100
+[2026-06-21 13:49:36.480] [debug] [handle_bpf_event.cpp:409] handle_event
+[2026-06-21 13:49:36.480] [debug] [handle_bpf_event.cpp:414] Received event with type 2
+[2026-06-21 13:49:36.480] [info] [handle_bpf_event.cpp:237] BPF      1236734 otelcol-ebpf-pr  cmd:BPF_LINK_CREATE  ret:101
+[2026-06-21 13:49:36.480] [info] [handle_bpf_event.cpp:259]    BPF_LINK_CREATE prog_fd:80 target_fd:100 cookie:true
+[2026-06-21 13:49:36.480] [debug] [bpftime_driver.cpp:166] get prog fd 46 for id 5650
+[2026-06-21 13:49:36.480] [debug] [bpftime_driver.cpp:85] relocate bpf prog insns for id 5650, cnt 733
+[2026-06-21 13:49:36.480] [debug] [bpftime_driver.cpp:111] relocate bpf prog insns for id 5650 in 1, call imm 14
+[2026-06-21 13:49:36.480] [debug] [bpftime_driver.cpp:111] relocate bpf prog insns for id 5650 in 11, call imm 5
+[2026-06-21 13:49:36.480] [debug] [bpftime_driver.cpp:103] relocate bpf prog insns for id 5650 in 13, lddw imm 25 to map id 5816
+[2026-06-21 13:49:36.480] [debug] [bpftime_driver.cpp:103] relocate bpf prog insns for id 5650 in 17, lddw imm 17 to map id 5800
+[2026-06-21 13:49:36.480] [debug] [bpftime_driver.cpp:111] relocate bpf prog insns for id 5650 in 20, call imm 6
+[2026-06-21 13:49:36.480] [debug] [bpftime_driver.cpp:103] relocate bpf prog insns for id 5650 in 25, lddw imm 43 to map id 5837
+[2026-06-21 13:49:36.480] [debug] [bpftime_driver.cpp:111] relocate bpf prog insns for id 5650 in 27, call imm 1
+[2026-06-21 13:49:36.480] [debug] [bpftime_driver.cpp:111] relocate bpf prog insns for id 5650 in 87, call imm 16
+[2026-06-21 13:49:36.480] [debug] [bpftime_driver.cpp:103] relocate bpf prog insns for id 5650 in 96, lddw imm 39 to map id 5829
+[2026-06-21 13:49:36.480] [debug] [bpftime_driver.cpp:111] relocate bpf prog insns for id 5650 in 98, call imm 1
+[2026-06-21 13:49:36.480] [debug] [bpftime_driver.cpp:111] relocate bpf prog insns for id 5650 in 108, call imm 67
+[2026-06-21 13:49:36.480] [debug] [bpftime_driver.cpp:111] relocate bpf prog insns for id 5650 in 115, call imm 35
+[2026-06-21 13:49:36.480] [debug] [bpftime_driver.cpp:103] relocate bpf prog insns for id 5650 in 116, lddw imm 25 to map id 5816
+[2026-06-21 13:49:36.480] [debug] [bpftime_driver.cpp:111] relocate bpf prog insns for id 5650 in 124, call imm 113
+[2026-06-21 13:49:36.480] [debug] [bpftime_driver.cpp:103] relocate bpf prog insns for id 5650 in 126, lddw imm 25 to map id 5816
+[2026-06-21 13:49:36.480] [debug] [bpftime_driver.cpp:111] relocate bpf prog insns for id 5650 in 135, call imm 113
+[2026-06-21 13:49:36.480] [debug] [bpftime_driver.cpp:103] relocate bpf prog insns for id 5650 in 141, lddw imm 39 to map id 5829
+[2026-06-21 13:49:36.480] [debug] [bpftime_driver.cpp:111] relocate bpf prog insns for id 5650 in 143, call imm 1
+[2026-06-21 13:49:36.480] [debug] [bpftime_driver.cpp:103] relocate bpf prog insns for id 5650 in 156, lddw imm 43 to map id 5837
+[2026-06-21 13:49:36.480] [debug] [bpftime_driver.cpp:111] relocate bpf prog insns for id 5650 in 158, call imm 1
+[2026-06-21 13:49:36.480] [debug] [bpftime_driver.cpp:103] relocate bpf prog insns for id 5650 in 170, lddw imm 39 to map id 5829
+[2026-06-21 13:49:36.480] [debug] [bpftime_driver.cpp:111] relocate bpf prog insns for id 5650 in 172, call imm 1
+[2026-06-21 13:49:36.480] [debug] [bpftime_driver.cpp:103] relocate bpf prog insns for id 5650 in 182, lddw imm 32 to map id 5821
+[2026-06-21 13:49:36.480] [debug] [bpftime_driver.cpp:111] relocate bpf prog insns for id 5650 in 185, call imm 12
+[2026-06-21 13:49:36.480] [debug] [bpftime_driver.cpp:103] relocate bpf prog insns for id 5650 in 188, lddw imm 25 to map id 5816
+[2026-06-21 13:49:36.480] [debug] [bpftime_driver.cpp:103] relocate bpf prog insns for id 5650 in 192, lddw imm 17 to map id 5800
+[2026-06-21 13:49:36.480] [debug] [bpftime_driver.cpp:111] relocate bpf prog insns for id 5650 in 196, call imm 6
+[2026-06-21 13:49:36.480] [debug] [bpftime_driver.cpp:103] relocate bpf prog insns for id 5650 in 232, lddw imm 19 to map id 5801
+[2026-06-21 13:49:36.480] [debug] [bpftime_driver.cpp:111] relocate bpf prog insns for id 5650 in 234, call imm 1
+[2026-06-21 13:49:36.480] [debug] [bpftime_driver.cpp:103] relocate bpf prog insns for id 5650 in 237, lddw imm 25 to map id 5816
+[2026-06-21 13:49:36.480] [debug] [bpftime_driver.cpp:103] relocate bpf prog insns for id 5650 in 244, lddw imm 17 to map id 5800
+[2026-06-21 13:49:36.480] [debug] [bpftime_driver.cpp:111] relocate bpf prog insns for id 5650 in 247, call imm 6
+[2026-06-21 13:49:36.480] [debug] [bpftime_driver.cpp:103] relocate bpf prog insns for id 5650 in 254, lddw imm 17 to map id 5800
+[2026-06-21 13:49:36.480] [debug] [bpftime_driver.cpp:111] relocate bpf prog insns for id 5650 in 257, call imm 6
+[2026-06-21 13:49:36.480] [debug] [bpftime_driver.cpp:103] relocate bpf prog insns for id 5650 in 262, lddw imm 25 to map id 5816
+[2026-06-21 13:49:36.480] [debug] [bpftime_driver.cpp:103] relocate bpf prog insns for id 5650 in 267, lddw imm 17 to map id 5800
+[2026-06-21 13:49:36.480] [debug] [bpftime_driver.cpp:111] relocate bpf prog insns for id 5650 in 270, call imm 6
+[2026-06-21 13:49:36.480] [debug] [bpftime_driver.cpp:103] relocate bpf prog insns for id 5650 in 272, lddw imm 25 to map id 5816
+[2026-06-21 13:49:36.480] [debug] [bpftime_driver.cpp:103] relocate bpf prog insns for id 5650 in 277, lddw imm 17 to map id 5800
+[2026-06-21 13:49:36.480] [debug] [bpftime_driver.cpp:111] relocate bpf prog insns for id 5650 in 280, call imm 6
+[2026-06-21 13:49:36.480] [debug] [bpftime_driver.cpp:103] relocate bpf prog insns for id 5650 in 286, lddw imm 17 to map id 5800
+[2026-06-21 13:49:36.480] [debug] [bpftime_driver.cpp:111] relocate bpf prog insns for id 5650 in 289, call imm 6
+[2026-06-21 13:49:36.480] [debug] [bpftime_driver.cpp:103] relocate bpf prog insns for id 5650 in 294, lddw imm 25 to map id 5816
+[2026-06-21 13:49:36.480] [debug] [bpftime_driver.cpp:103] relocate bpf prog insns for id 5650 in 298, lddw imm 17 to map id 5800
+[2026-06-21 13:49:36.480] [debug] [bpftime_driver.cpp:111] relocate bpf prog insns for id 5650 in 302, call imm 6
+[2026-06-21 13:49:36.480] [debug] [bpftime_driver.cpp:103] relocate bpf prog insns for id 5650 in 307, lddw imm 25 to map id 5816
+[2026-06-21 13:49:36.480] [debug] [bpftime_driver.cpp:103] relocate bpf prog insns for id 5650 in 312, lddw imm 17 to map id 5800
+[2026-06-21 13:49:36.480] [debug] [bpftime_driver.cpp:111] relocate bpf prog insns for id 5650 in 315, call imm 6
+[2026-06-21 13:49:36.480] [debug] [bpftime_driver.cpp:103] relocate bpf prog insns for id 5650 in 323, lddw imm 36 to map id 5826
+[2026-06-21 13:49:36.480] [debug] [bpftime_driver.cpp:111] relocate bpf prog insns for id 5650 in 325, call imm 1
+[2026-06-21 13:49:36.480] [debug] [bpftime_driver.cpp:111] relocate bpf prog insns for id 5650 in 327, call imm 5
+[2026-06-21 13:49:36.480] [debug] [bpftime_driver.cpp:103] relocate bpf prog insns for id 5650 in 341, lddw imm 25 to map id 5816
+[2026-06-21 13:49:36.480] [debug] [bpftime_driver.cpp:103] relocate bpf prog insns for id 5650 in 346, lddw imm 17 to map id 5800
+[2026-06-21 13:49:36.480] [debug] [bpftime_driver.cpp:103] relocate bpf prog insns for id 5650 in 356, lddw imm 25 to map id 5816
+[2026-06-21 13:49:36.480] [debug] [bpftime_driver.cpp:103] relocate bpf prog insns for id 5650 in 360, lddw imm 17 to map id 5800
+[2026-06-21 13:49:36.480] [debug] [bpftime_driver.cpp:111] relocate bpf prog insns for id 5650 in 364, call imm 6
+[2026-06-21 13:49:36.480] [debug] [bpftime_driver.cpp:103] relocate bpf prog insns for id 5650 in 410, lddw imm 25 to map id 5816
+[2026-06-21 13:49:36.480] [debug] [bpftime_driver.cpp:103] relocate bpf prog insns for id 5650 in 417, lddw imm 17 to map id 5800
+[2026-06-21 13:49:36.480] [debug] [bpftime_driver.cpp:111] relocate bpf prog insns for id 5650 in 420, call imm 6
+[2026-06-21 13:49:36.480] [debug] [bpftime_driver.cpp:103] relocate bpf prog insns for id 5650 in 430, lddw imm 36 to map id 5826
+[2026-06-21 13:49:36.480] [debug] [bpftime_driver.cpp:111] relocate bpf prog insns for id 5650 in 433, call imm 2
+[2026-06-21 13:49:36.480] [debug] [bpftime_driver.cpp:103] relocate bpf prog insns for id 5650 in 438, lddw imm 25 to map id 5816
+[2026-06-21 13:49:36.480] [debug] [bpftime_driver.cpp:103] relocate bpf prog insns for id 5650 in 443, lddw imm 17 to map id 5800
+[2026-06-21 13:49:36.480] [debug] [bpftime_driver.cpp:111] relocate bpf prog insns for id 5650 in 447, call imm 6
+[2026-06-21 13:49:36.480] [debug] [bpftime_driver.cpp:103] relocate bpf prog insns for id 5650 in 452, lddw imm 39 to map id 5829
+[2026-06-21 13:49:36.480] [debug] [bpftime_driver.cpp:111] relocate bpf prog insns for id 5650 in 454, call imm 1
+[2026-06-21 13:49:36.480] [debug] [bpftime_driver.cpp:103] relocate bpf prog insns for id 5650 in 472, lddw imm 19 to map id 5801
+[2026-06-21 13:49:36.480] [debug] [bpftime_driver.cpp:111] relocate bpf prog insns for id 5650 in 474, call imm 1
+[2026-06-21 13:49:36.480] [debug] [bpftime_driver.cpp:103] relocate bpf prog insns for id 5650 in 476, lddw imm 25 to map id 5816
+[2026-06-21 13:49:36.480] [debug] [bpftime_driver.cpp:103] relocate bpf prog insns for id 5650 in 480, lddw imm 17 to map id 5800
+[2026-06-21 13:49:36.480] [debug] [bpftime_driver.cpp:111] relocate bpf prog insns for id 5650 in 484, call imm 6
+[2026-06-21 13:49:36.480] [debug] [bpftime_driver.cpp:103] relocate bpf prog insns for id 5650 in 495, lddw imm 33 to map id 5824
+[2026-06-21 13:49:36.480] [debug] [bpftime_driver.cpp:111] relocate bpf prog insns for id 5650 in 498, call imm 2
+[2026-06-21 13:49:36.480] [debug] [bpftime_driver.cpp:103] relocate bpf prog insns for id 5650 in 503, lddw imm 25 to map id 5816
+[2026-06-21 13:49:36.480] [debug] [bpftime_driver.cpp:103] relocate bpf prog insns for id 5650 in 508, lddw imm 17 to map id 5800
+[2026-06-21 13:49:36.480] [debug] [bpftime_driver.cpp:111] relocate bpf prog insns for id 5650 in 513, call imm 6
+[2026-06-21 13:49:36.480] [debug] [bpftime_driver.cpp:103] relocate bpf prog insns for id 5650 in 518, lddw imm 39 to map id 5829
+[2026-06-21 13:49:36.480] [debug] [bpftime_driver.cpp:111] relocate bpf prog insns for id 5650 in 520, call imm 1
+[2026-06-21 13:49:36.480] [debug] [bpftime_driver.cpp:103] relocate bpf prog insns for id 5650 in 537, lddw imm 25 to map id 5816
+[2026-06-21 13:49:36.480] [debug] [bpftime_driver.cpp:103] relocate bpf prog insns for id 5650 in 541, lddw imm 17 to map id 5800
+[2026-06-21 13:49:36.480] [debug] [bpftime_driver.cpp:111] relocate bpf prog insns for id 5650 in 546, call imm 6
+[2026-06-21 13:49:36.480] [debug] [bpftime_driver.cpp:103] relocate bpf prog insns for id 5650 in 552, lddw imm 17 to map id 5800
+[2026-06-21 13:49:36.480] [debug] [bpftime_driver.cpp:111] relocate bpf prog insns for id 5650 in 555, call imm 6
+[2026-06-21 13:49:36.480] [debug] [bpftime_driver.cpp:103] relocate bpf prog insns for id 5650 in 564, lddw imm 48 to map id 5841
+[2026-06-21 13:49:36.480] [debug] [bpftime_driver.cpp:111] relocate bpf prog insns for id 5650 in 566, call imm 1
+[2026-06-21 13:49:36.480] [debug] [bpftime_driver.cpp:103] relocate bpf prog insns for id 5650 in 578, lddw imm 25 to map id 5816
+[2026-06-21 13:49:36.480] [debug] [bpftime_driver.cpp:103] relocate bpf prog insns for id 5650 in 583, lddw imm 17 to map id 5800
+[2026-06-21 13:49:36.480] [debug] [bpftime_driver.cpp:111] relocate bpf prog insns for id 5650 in 586, call imm 6
+[2026-06-21 13:49:36.480] [debug] [bpftime_driver.cpp:103] relocate bpf prog insns for id 5650 in 597, lddw imm 39 to map id 5829
+[2026-06-21 13:49:36.480] [debug] [bpftime_driver.cpp:111] relocate bpf prog insns for id 5650 in 599, call imm 1
+[2026-06-21 13:49:36.480] [debug] [bpftime_driver.cpp:103] relocate bpf prog insns for id 5650 in 606, lddw imm 25 to map id 5816
+[2026-06-21 13:49:36.480] [debug] [bpftime_driver.cpp:103] relocate bpf prog insns for id 5650 in 616, lddw imm 45 to map id 5838
+[2026-06-21 13:49:36.480] [debug] [bpftime_driver.cpp:111] relocate bpf prog insns for id 5650 in 618, call imm 1
+[2026-06-21 13:49:36.480] [debug] [bpftime_driver.cpp:103] relocate bpf prog insns for id 5650 in 620, lddw imm 25 to map id 5816
+[2026-06-21 13:49:36.480] [debug] [bpftime_driver.cpp:103] relocate bpf prog insns for id 5650 in 624, lddw imm 17 to map id 5800
+[2026-06-21 13:49:36.480] [debug] [bpftime_driver.cpp:111] relocate bpf prog insns for id 5650 in 628, call imm 6
+[2026-06-21 13:49:36.480] [debug] [bpftime_driver.cpp:103] relocate bpf prog insns for id 5650 in 633, lddw imm 39 to map id 5829
+[2026-06-21 13:49:36.480] [debug] [bpftime_driver.cpp:111] relocate bpf prog insns for id 5650 in 635, call imm 1
+[2026-06-21 13:49:36.480] [debug] [bpftime_driver.cpp:103] relocate bpf prog insns for id 5650 in 642, lddw imm 45 to map id 5838
+[2026-06-21 13:49:36.480] [debug] [bpftime_driver.cpp:111] relocate bpf prog insns for id 5650 in 645, call imm 2
+[2026-06-21 13:49:36.480] [debug] [bpftime_driver.cpp:103] relocate bpf prog insns for id 5650 in 653, lddw imm 39 to map id 5829
+[2026-06-21 13:49:36.480] [debug] [bpftime_driver.cpp:111] relocate bpf prog insns for id 5650 in 655, call imm 1
+[2026-06-21 13:49:36.480] [debug] [bpftime_driver.cpp:103] relocate bpf prog insns for id 5650 in 666, lddw imm 12 to map id 5794
+[2026-06-21 13:49:36.480] [debug] [bpftime_driver.cpp:111] relocate bpf prog insns for id 5650 in 671, call imm 25
+[2026-06-21 13:49:36.480] [debug] [bpftime_driver.cpp:103] relocate bpf prog insns for id 5650 in 675, lddw imm 25 to map id 5816
+[2026-06-21 13:49:36.480] [debug] [bpftime_driver.cpp:103] relocate bpf prog insns for id 5650 in 679, lddw imm 17 to map id 5800
+[2026-06-21 13:49:36.480] [debug] [bpftime_driver.cpp:111] relocate bpf prog insns for id 5650 in 684, call imm 6
+[2026-06-21 13:49:36.480] [debug] [bpftime_driver.cpp:103] relocate bpf prog insns for id 5650 in 686, lddw imm 25 to map id 5816
+[2026-06-21 13:49:36.480] [debug] [bpftime_driver.cpp:103] relocate bpf prog insns for id 5650 in 691, lddw imm 25 to map id 5816
+[2026-06-21 13:49:36.480] [debug] [bpftime_driver.cpp:103] relocate bpf prog insns for id 5650 in 696, lddw imm 17 to map id 5800
+[2026-06-21 13:49:36.480] [debug] [bpftime_driver.cpp:111] relocate bpf prog insns for id 5650 in 699, call imm 6
+[2026-06-21 13:49:36.480] [debug] [bpftime_driver.cpp:103] relocate bpf prog insns for id 5650 in 701, lddw imm 25 to map id 5816
+[2026-06-21 13:49:36.480] [debug] [bpftime_driver.cpp:103] relocate bpf prog insns for id 5650 in 705, lddw imm 17 to map id 5800
+[2026-06-21 13:49:36.480] [debug] [bpftime_driver.cpp:111] relocate bpf prog insns for id 5650 in 708, call imm 6
+[2026-06-21 13:49:36.480] [debug] [bpftime_driver.cpp:103] relocate bpf prog insns for id 5650 in 711, lddw imm 25 to map id 5816
+[2026-06-21 13:49:36.480] [debug] [bpftime_driver.cpp:103] relocate bpf prog insns for id 5650 in 717, lddw imm 17 to map id 5800
+[2026-06-21 13:49:36.480] [debug] [bpftime_driver.cpp:111] relocate bpf prog insns for id 5650 in 720, call imm 6
+[2026-06-21 13:49:36.480] [debug] [bpftime_driver.cpp:103] relocate bpf prog insns for id 5650 in 722, lddw imm 25 to map id 5816
+[2026-06-21 13:49:36.480] [debug] [bpftime_driver.cpp:103] relocate bpf prog insns for id 5650 in 727, lddw imm 17 to map id 5800
+[2026-06-21 13:49:36.480] [debug] [bpftime_driver.cpp:111] relocate bpf prog insns for id 5650 in 730, call imm 6
+[2026-06-21 13:49:36.480] [debug] [bpftime_shm_internal.cpp:550] Set handler fd 5650 to bpf_prog_handler, name kprobe__generic, prog_type 2, insn_cnt 733
+[2026-06-21 13:49:36.480] [debug] [handler_manager.cpp:71] Handler at fd 5650 set to type 3
+[2026-06-21 13:49:36.480] [info] [bpftime_driver.cpp:192] create prog 5650, fd 46 in shm success
+[2026-06-21 13:49:36.480] [info] [bpftime_driver.cpp:129] find 11 related maps for prog fd 46
+[2026-06-21 13:49:36.480] [debug] [map_handler.hpp:94] Create map with type 1002
+[2026-06-21 13:49:36.480] [debug] [handler_manager.cpp:71] Handler at fd 5816 set to type 1
+[2026-06-21 13:49:36.480] [info] [bpftime_driver.cpp:243] create map in kernel id 5816
+[2026-06-21 13:49:36.480] [debug] [map_handler.hpp:94] Create map with type 1002
+[2026-06-21 13:49:36.480] [debug] [handler_manager.cpp:71] Handler at fd 5800 set to type 1
+[2026-06-21 13:49:36.480] [info] [bpftime_driver.cpp:243] create map in kernel id 5800
+[2026-06-21 13:49:36.480] [debug] [map_handler.hpp:94] Create map with type 1006
+[2026-06-21 13:49:36.480] [debug] [handler_manager.cpp:71] Handler at fd 5837 set to type 1
+[2026-06-21 13:49:36.480] [info] [bpftime_driver.cpp:243] create map in kernel id 5837
+[2026-06-21 13:49:36.480] [debug] [map_handler.hpp:94] Create map with type 1006
+[2026-06-21 13:49:36.480] [debug] [handler_manager.cpp:71] Handler at fd 5829 set to type 1
+[2026-06-21 13:49:36.480] [info] [bpftime_driver.cpp:243] create map in kernel id 5829
+[2026-06-21 13:49:36.480] [debug] [map_handler.hpp:94] Create map with type 1003
+[2026-06-21 13:49:36.480] [debug] [handler_manager.cpp:71] Handler at fd 5821 set to type 1
+[2026-06-21 13:49:36.480] [info] [bpftime_driver.cpp:243] create map in kernel id 5821
+[2026-06-21 13:49:36.480] [debug] [map_handler.hpp:94] Create map with type 1011
+[2026-06-21 13:49:36.480] [debug] [handler_manager.cpp:71] Handler at fd 5801 set to type 1
+[2026-06-21 13:49:36.480] [info] [bpftime_driver.cpp:243] create map in kernel id 5801
+[2026-06-21 13:49:36.480] [debug] [map_handler.hpp:94] Create map with type 1009
+[2026-06-21 13:49:36.480] [debug] [handler_manager.cpp:71] Handler at fd 5826 set to type 1
+[2026-06-21 13:49:36.480] [info] [bpftime_driver.cpp:243] create map in kernel id 5826
+[2026-06-21 13:49:36.480] [debug] [map_handler.hpp:94] Create map with type 1001
+[2026-06-21 13:49:36.480] [debug] [handler_manager.cpp:71] Handler at fd 5824 set to type 1
+[2026-06-21 13:49:36.480] [info] [bpftime_driver.cpp:243] create map in kernel id 5824
+[2026-06-21 13:49:36.480] [debug] [map_handler.hpp:94] Create map with type 1001
+[2026-06-21 13:49:36.480] [debug] [handler_manager.cpp:71] Handler at fd 5841 set to type 1
+[2026-06-21 13:49:36.480] [info] [bpftime_driver.cpp:243] create map in kernel id 5841
+[2026-06-21 13:49:36.480] [debug] [map_handler.hpp:94] Create map with type 1001
+[2026-06-21 13:49:36.480] [debug] [handler_manager.cpp:71] Handler at fd 5838 set to type 1
+[2026-06-21 13:49:36.480] [info] [bpftime_driver.cpp:243] create map in kernel id 5838
+[2026-06-21 13:49:36.480] [debug] [map_handler.hpp:94] Create map with type 1004
+[2026-06-21 13:49:36.480] [debug] [handler_manager.cpp:71] Handler at fd 5794 set to type 1
+[2026-06-21 13:49:36.480] [debug] [perf_event_array_kernel_user.cpp:128] Initialized perf_event_array_kernel_user_impl, kernel perf id 5794, user ringbuffer id 5849, user ringbuffer map type 31
+[2026-06-21 13:49:36.491] [debug] [perf_event_array_kernel_user.cpp:514] Loading transporter program with 106 insns
+[2026-06-21 13:49:36.491] [debug] [perf_event_array_kernel_user.cpp:157] Attached transporter ebpf program
+[2026-06-21 13:49:36.491] [info] [bpftime_driver.cpp:243] create map in kernel id 5794
+[2026-06-21 13:49:36.491] [debug] [bpftime_shm_internal.cpp:289] Try attaching prog fd 5650 to perf fd 0, with cookie = true
+[2026-06-21 13:49:36.491] [debug] [bpftime_shm_internal.cpp:292] With cookie: 0
+[2026-06-21 13:49:36.491] [debug] [handler_manager.cpp:71] Handler at fd 46 set to type 2
+[2026-06-21 13:49:36.491] [info] [bpftime_driver.cpp:293] attach perf 0 to bpf 5650, for pid 1236734, cookie true
+[2026-06-21 13:49:36.491] [debug] [handle_bpf_event.cpp:409] handle_event
+[2026-06-21 13:49:36.491] [debug] [handle_bpf_event.cpp:414] Received event with type 4
+[2026-06-21 13:49:36.491] [debug] [handle_bpf_event.cpp:302] handle_perf_event
+[2026-06-21 13:49:36.491] [info] [handle_bpf_event.cpp:311] PERF     1236734 otelcol-ebpf-pr  type:PERF_TYPE_UPROBE ret:102
+
+[2026-06-21 13:49:36.491] [debug] [handle_bpf_event.cpp:316] Handling perf event creating with perf type 9
+[2026-06-21 13:49:36.491] [debug] [handle_bpf_event.cpp:325] retprobe false
+[2026-06-21 13:49:36.491] [debug] [handle_bpf_event.cpp:333] Creating uprobe name /lib/x86_64-linux-gnu/libc.so.6 offset 712016 ref_ctr_off 0 attr->config=0
+[2026-06-21 13:49:36.491] [debug] [bpftime_driver.cpp:25] find minimal unused id 1
+[2026-06-21 13:49:36.491] [debug] [bpftime_shm_internal.cpp:212] Set fd 1 to uprobe, pid=-1, name=/lib/x86_64-linux-gnu/libc.so.6, offset=712016
+[2026-06-21 13:49:36.491] [info] [perf_event_handler.cpp:177] Created uprobe/uretprobe perf event handler, module name /lib/x86_64-linux-gnu/libc.so.6, offset add50
+[2026-06-21 13:49:36.491] [debug] [handler_manager.cpp:71] Handler at fd 1 set to type 4
+[2026-06-21 13:49:36.491] [info] [bpftime_driver.cpp:316] create uprobe 1 for pid 1236734 fd 102
+[2026-06-21 13:49:36.491] [debug] [handle_bpf_event.cpp:409] handle_event
+[2026-06-21 13:49:36.491] [debug] [handle_bpf_event.cpp:414] Received event with type 2
+[2026-06-21 13:49:36.491] [info] [handle_bpf_event.cpp:237] BPF      1236734 otelcol-ebpf-pr  cmd:BPF_LINK_CREATE  ret:103
+[2026-06-21 13:49:36.491] [info] [handle_bpf_event.cpp:259]    BPF_LINK_CREATE prog_fd:80 target_fd:102 cookie:true
+[2026-06-21 13:49:36.491] [info] [bpftime_driver.cpp:274] bpf 5650 already exists in shm
+[2026-06-21 13:49:36.491] [debug] [bpftime_shm_internal.cpp:289] Try attaching prog fd 5650 to perf fd 1, with cookie = true
+[2026-06-21 13:49:36.491] [debug] [bpftime_shm_internal.cpp:292] With cookie: 0
+[2026-06-21 13:49:36.491] [debug] [handler_manager.cpp:71] Handler at fd 63 set to type 2
+[2026-06-21 13:49:36.491] [info] [bpftime_driver.cpp:293] attach perf 1 to bpf 5650, for pid 1236734, cookie true
+[2026-06-21 13:49:36.491] [debug] [handle_bpf_event.cpp:409] handle_event
+[2026-06-21 13:49:36.491] [debug] [handle_bpf_event.cpp:414] Received event with type 3
+[2026-06-21 13:49:36.491] [info] [handle_bpf_event.cpp:382] IOCTL    1236734 otelcol-ebpf-pr  fd:37 req:9216 data:0
+[2026-06-21 13:49:36.491] [info] [handle_bpf_event.cpp:385] Enabling perf event 37
+[2026-06-21 13:49:36.491] [debug] [bpftime_driver.cpp:325] Ignoring kernel-owned perf fd 37 for pid 1236734
+[2026-06-21 13:49:36.491] [debug] [handle_bpf_event.cpp:409] handle_event
+[2026-06-21 13:49:36.491] [debug] [handle_bpf_event.cpp:414] Received event with type 3
+[2026-06-21 13:49:36.491] [info] [handle_bpf_event.cpp:382] IOCTL    1236734 otelcol-ebpf-pr  fd:50 req:9216 data:0
+[2026-06-21 13:49:36.491] [info] [handle_bpf_event.cpp:385] Enabling perf event 50
+[2026-06-21 13:49:36.491] [debug] [bpftime_driver.cpp:325] Ignoring kernel-owned perf fd 50 for pid 1236734
+[2026-06-21 13:49:36.491] [debug] [handle_bpf_event.cpp:409] handle_event
+[2026-06-21 13:49:36.491] [debug] [handle_bpf_event.cpp:414] Received event with type 3
+[2026-06-21 13:49:36.491] [info] [handle_bpf_event.cpp:382] IOCTL    1236734 otelcol-ebpf-pr  fd:8 req:9216 data:0
+[2026-06-21 13:49:36.491] [info] [handle_bpf_event.cpp:385] Enabling perf event 8
+[2026-06-21 13:49:36.491] [debug] [bpftime_driver.cpp:325] Ignoring kernel-owned perf fd 8 for pid 1236734
+[2026-06-21 13:49:36.491] [debug] [handle_bpf_event.cpp:409] handle_event
+[2026-06-21 13:49:36.491] [debug] [handle_bpf_event.cpp:414] Received event with type 3
+[2026-06-21 13:49:36.491] [info] [handle_bpf_event.cpp:382] IOCTL    1236734 otelcol-ebpf-pr  fd:9 req:9216 data:0
+[2026-06-21 13:49:36.491] [info] [handle_bpf_event.cpp:385] Enabling perf event 9
+[2026-06-21 13:49:36.491] [debug] [bpftime_driver.cpp:325] Ignoring kernel-owned perf fd 9 for pid 1236734
+[2026-06-21 13:49:36.491] [debug] [handle_bpf_event.cpp:409] handle_event
+[2026-06-21 13:49:36.491] [debug] [handle_bpf_event.cpp:414] Received event with type 3
+[2026-06-21 13:49:36.491] [info] [handle_bpf_event.cpp:382] IOCTL    1236734 otelcol-ebpf-pr  fd:10 req:9216 data:0
+[2026-06-21 13:49:36.491] [info] [handle_bpf_event.cpp:385] Enabling perf event 10
+[2026-06-21 13:49:36.491] [debug] [bpftime_driver.cpp:325] Ignoring kernel-owned perf fd 10 for pid 1236734
+[2026-06-21 13:49:36.491] [debug] [handle_bpf_event.cpp:409] handle_event
+[2026-06-21 13:49:36.491] [debug] [handle_bpf_event.cpp:414] Received event with type 2
+[2026-06-21 13:49:36.491] [info] [handle_bpf_event.cpp:237] BPF      1236734 otelcol-ebpf-pr  cmd:BPF_LINK_CREATE  ret:105
+[2026-06-21 13:49:36.491] [info] [handle_bpf_event.cpp:259]    BPF_LINK_CREATE prog_fd:66 target_fd:104 cookie:true
+[2026-06-21 13:49:36.491] [debug] [bpftime_driver.cpp:268] Ignoring kernel-owned perf fd 104 for pid 1236734 when mirroring perf attach
+[2026-06-21 13:49:46.938] [debug] [handle_bpf_event.cpp:409] handle_event
+[2026-06-21 13:49:46.938] [debug] [handle_bpf_event.cpp:414] Received event with type 3
+[2026-06-21 13:49:46.938] [info] [handle_bpf_event.cpp:382] IOCTL    1236734 otelcol-ebpf-pr  fd:37 req:9217 data:0
+[2026-06-21 13:49:46.938] [info] [handle_bpf_event.cpp:391] Disabling perf event 37
+[2026-06-21 13:49:46.938] [debug] [bpftime_driver.cpp:344] Ignoring kernel-owned perf fd 37 for pid 1236734
+[2026-06-21 13:49:46.938] [debug] [handle_bpf_event.cpp:409] handle_event
+[2026-06-21 13:49:46.938] [debug] [handle_bpf_event.cpp:414] Received event with type 3
+[2026-06-21 13:49:46.938] [info] [handle_bpf_event.cpp:382] IOCTL    1236734 otelcol-ebpf-pr  fd:50 req:9217 data:0
+[2026-06-21 13:49:46.938] [info] [handle_bpf_event.cpp:391] Disabling perf event 50
+[2026-06-21 13:49:46.938] [debug] [bpftime_driver.cpp:344] Ignoring kernel-owned perf fd 50 for pid 1236734
+[2026-06-21 13:49:46.938] [debug] [handle_bpf_event.cpp:409] handle_event
+[2026-06-21 13:49:46.938] [debug] [handle_bpf_event.cpp:414] Received event with type 3
+[2026-06-21 13:49:46.938] [info] [handle_bpf_event.cpp:382] IOCTL    1236734 otelcol-ebpf-pr  fd:8 req:9217 data:0
+[2026-06-21 13:49:46.938] [info] [handle_bpf_event.cpp:391] Disabling perf event 8
+[2026-06-21 13:49:46.938] [debug] [bpftime_driver.cpp:344] Ignoring kernel-owned perf fd 8 for pid 1236734
+[2026-06-21 13:49:46.938] [debug] [handle_bpf_event.cpp:409] handle_event
+[2026-06-21 13:49:46.938] [debug] [handle_bpf_event.cpp:414] Received event with type 3
+[2026-06-21 13:49:46.938] [info] [handle_bpf_event.cpp:382] IOCTL    1236734 otelcol-ebpf-pr  fd:9 req:9217 data:0
+[2026-06-21 13:49:46.938] [info] [handle_bpf_event.cpp:391] Disabling perf event 9
+[2026-06-21 13:49:46.938] [debug] [bpftime_driver.cpp:344] Ignoring kernel-owned perf fd 9 for pid 1236734
+[2026-06-21 13:49:46.938] [debug] [handle_bpf_event.cpp:409] handle_event
+[2026-06-21 13:49:46.938] [debug] [handle_bpf_event.cpp:414] Received event with type 3
+[2026-06-21 13:49:46.938] [info] [handle_bpf_event.cpp:382] IOCTL    1236734 otelcol-ebpf-pr  fd:10 req:9217 data:0
+[2026-06-21 13:49:46.938] [info] [handle_bpf_event.cpp:391] Disabling perf event 10
+[2026-06-21 13:49:46.938] [debug] [bpftime_driver.cpp:344] Ignoring kernel-owned perf fd 10 for pid 1236734
+[2026-06-21 13:49:46.980] [debug] [handle_bpf_event.cpp:409] handle_event
+[2026-06-21 13:49:46.980] [debug] [handle_bpf_event.cpp:414] Received event with type 1
+[2026-06-21 13:49:46.980] [info] [handle_bpf_event.cpp:218] CLOSE    1236734 otelcol-ebpf-pr  fd:100
+[2026-06-21 13:49:46.980] [debug] [handler_manager.cpp:100] Destroying perf event handler 0
+[2026-06-21 13:49:46.980] [debug] [handler_manager.cpp:107] Remove link handler with id 46, prog id 5650, due to the removal of perf event 0
+[2026-06-21 13:49:46.980] [info] [bpftime_driver.cpp:367] close id 0 for pid 1236734 fd 100
+[2026-06-21 13:49:47.075] [debug] [handle_bpf_event.cpp:409] handle_event
+[2026-06-21 13:49:47.075] [debug] [handle_bpf_event.cpp:414] Received event with type 1
+[2026-06-21 13:49:47.075] [info] [handle_bpf_event.cpp:218] CLOSE    1236734 otelcol-ebpf-pr  fd:102
+[2026-06-21 13:49:47.075] [debug] [handler_manager.cpp:100] Destroying perf event handler 1
+[2026-06-21 13:49:47.075] [debug] [handler_manager.cpp:107] Remove link handler with id 63, prog id 5650, due to the removal of perf event 1
+[2026-06-21 13:49:47.075] [info] [bpftime_driver.cpp:367] close id 1 for pid 1236734 fd 102

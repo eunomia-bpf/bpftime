@@ -903,6 +903,10 @@ nv_attach_impl::hack_fatbin(std::map<std::string, std::string> all_ptx)
 			for (const auto &[_, hook_entry] : this->hook_entries) {
 				const auto &kernels = hook_entry.kernels;
 				for (const auto &kernel : kernels) {
+					if (current_ptx.find(kernel) ==
+					    std::string::npos) {
+						continue;
+					}
 					std::vector<uint64_t> ebpf_inst_words;
 					ebpf_inst_words.assign(
 						(uint64_t *)(uintptr_t)hook_entry
@@ -1040,6 +1044,9 @@ nv_attach_impl::hack_fatbin(std::map<std::string, std::string> all_ptx)
 					ptxpass::filter_out_version_headers_ptx(
 						wrap_ptx_with_trampoline(
 							current_ptx));
+			}
+			if (!should_add_trampoline) {
+				return;
 			}
 			std::lock_guard<std::mutex> _guard(map_mutex);
 			ptx_out["patched." + file_name] = std::make_tuple(
@@ -1567,6 +1574,19 @@ std::vector<std::string> nv_attach_impl::collect_all_kernels_to_patch() const
 	return kernels;
 }
 
+bool nv_attach_impl::should_patch_kernel(const char *name) const
+{
+	if (name == nullptr || name[0] == '\0')
+		return false;
+	for (const auto &[_, entry] : hook_entries) {
+		for (const auto &kernel : entry.kernels) {
+			if (kernel == name)
+				return true;
+		}
+	}
+	return false;
+}
+
 static std::vector<std::string>
 collect_ptx_entry_functions(const std::map<std::string, std::string> &all_ptx)
 {
@@ -1582,6 +1602,20 @@ collect_ptx_entry_functions(const std::map<std::string, std::string> &all_ptx)
 		}
 	}
 	return std::vector<std::string>(entries.begin(), entries.end());
+}
+
+static std::string normalize_cuda_stub_symbol(std::string s)
+{
+	// cudaLaunchKernel receives a host-side stub function pointer, whose
+	// exported symbol is often `__device_stub__Z...`. Our patch map keys
+	// are device entry names like `_Z...`.
+	constexpr const char *kStubPrefix = "__device_stub__";
+	if (s.rfind(kStubPrefix, 0) == 0) {
+		s.erase(0, strlen(kStubPrefix));
+		if (!s.empty() && s[0] != '_')
+			s.insert(s.begin(), '_');
+	}
+	return s;
 }
 
 void nv_attach_impl::build_host_symbol_cache_once()
@@ -1618,23 +1652,11 @@ nv_attach_impl::resolve_host_function_symbol(void *addr)
 {
 	if (addr == nullptr)
 		return std::nullopt;
-	const auto normalize_cuda_stub = [](std::string s) -> std::string {
-		// cudaLaunchKernel receives a host-side stub function pointer,
-		// whose exported symbol is often `__device_stub__Z...`. Our
-		// patch map keys are device entry names like `_Z...`.
-		constexpr const char *kStubPrefix = "__device_stub__";
-		if (s.rfind(kStubPrefix, 0) == 0) {
-			s.erase(0, strlen(kStubPrefix));
-			if (!s.empty() && s[0] != '_')
-				s.insert(s.begin(), '_');
-		}
-		return s;
-	};
 
 	Dl_info info{};
 	if (dladdr(addr, &info) != 0 && info.dli_sname != nullptr &&
 	    info.dli_sname[0] != '\0') {
-		return normalize_cuda_stub(std::string(info.dli_sname));
+		return normalize_cuda_stub_symbol(std::string(info.dli_sname));
 	}
 
 	build_host_symbol_cache_once();
@@ -1653,7 +1675,7 @@ nv_attach_impl::resolve_host_function_symbol(void *addr)
 		if (needle >= it->end)
 			return std::nullopt;
 	}
-	return normalize_cuda_stub(it->name);
+	return normalize_cuda_stub_symbol(it->name);
 }
 
 void nv_attach_impl::prefill_patched_kernel_functions_from_loaded_fatbins()
@@ -1729,6 +1751,18 @@ static void ensure_cuda_context_for_current_thread()
 	cuCtxSetCurrent(ctx);
 }
 
+static bool cuda_late_bootstrap_disabled()
+{
+	const char *disabled = getenv("BPFTIME_CUDA_DISABLE_LATE_BOOTSTRAP");
+	return disabled != nullptr && disabled[0] == '1';
+}
+
+static bool cuda_targeted_late_bootstrap_enabled()
+{
+	const char *enabled = getenv("BPFTIME_CUDA_TARGETED_LATE_BOOTSTRAP");
+	return enabled != nullptr && enabled[0] == '1';
+}
+
 static bool is_mapped_address(const void *p)
 {
 #if __linux__
@@ -1798,8 +1832,31 @@ void nv_attach_impl::bootstrap_existing_fatbins()
 	SPDLOG_INFO("nv_attach_impl: late attach bootstrap scanning fatbins..");
 	auto modules = elf_introspect::list_loaded_modules();
 	std::size_t ingested = 0;
+	const bool targeted = cuda_targeted_late_bootstrap_enabled();
 
 	for (const auto &mod : modules) {
+		std::size_t module_ingested = 0;
+		if (targeted) {
+			bool module_has_target = false;
+			auto syms = elf_introspect::read_function_symbols(mod);
+			for (const auto &sym : syms) {
+				if (should_patch_kernel(
+					    normalize_cuda_stub_symbol(sym.name)
+						    .c_str())) {
+					module_has_target = true;
+					break;
+				}
+			}
+			if (!module_has_target) {
+				SPDLOG_DEBUG(
+					"nv_attach_impl: targeted late bootstrap skipping {}",
+					mod.path.c_str());
+				continue;
+			}
+			SPDLOG_INFO(
+				"nv_attach_impl: targeted late bootstrap scanning {}",
+				mod.path.c_str());
+		}
 		// CUDA binaries may expose fatbin bytes either directly in
 		// `.nv_fatbin` (raw fatbin header 0xBA55ED50...) or as a list
 		// of wrappers inside `.nvFatBinSegment` (magic 'FbC1').
@@ -1823,11 +1880,19 @@ void nv_attach_impl::bootstrap_existing_fatbins()
 					fatbin_records.emplace_back(
 						std::move(rec));
 					ingested++;
+					module_ingested++;
 					SPDLOG_INFO(
 						"nv_attach_impl: ingested fatbin from .nv_fatbin in {}",
 						mod.path.c_str());
 				}
-			}
+				}
+		}
+
+		if (targeted && module_ingested > 0) {
+			SPDLOG_INFO(
+				"nv_attach_impl: targeted late bootstrap skipping .nvFatBinSegment in {} after .nv_fatbin ingestion",
+				mod.path.c_str());
+			continue;
 		}
 
 		if (auto sec = elf_introspect::find_section_in_memory(
@@ -1859,6 +1924,7 @@ void nv_attach_impl::bootstrap_existing_fatbins()
 				rec->try_loading_ptxs(*this);
 				fatbin_records.emplace_back(std::move(rec));
 				ingested++;
+				module_ingested++;
 			}
 		}
 	}
@@ -1889,6 +1955,8 @@ void nv_attach_impl::bootstrap_existing_fatbins()
 
 void nv_attach_impl::bootstrap_existing_fatbins_once()
 {
+	if (cuda_late_bootstrap_disabled())
+		return;
 	if (!is_enabled())
 		return;
 	if (shared_mem_ptr == 0)
@@ -1934,6 +2002,8 @@ void nv_attach_impl::reset_late_bootstrap_state_for_next_attach()
 
 void nv_attach_impl::start_late_bootstrap_async()
 {
+	if (cuda_late_bootstrap_disabled())
+		return;
 	bool expected = false;
 	if (!late_bootstrap_started.compare_exchange_strong(
 		    expected, true, std::memory_order_acq_rel,

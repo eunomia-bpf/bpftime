@@ -1,0 +1,2921 @@
+2026-06-21T13:43:36.819-0700	info	otelconftelemetry/tracer.go:47	Internal trace telemetry disabled	{"resource": {"service.instance.id": "480257ca-87f2-4b16-94a8-4e4a8532cdbb", "service.name": "otelcol-ebpf-profiler", "service.version": "dev"}}
+2026-06-21T13:43:36.819-0700	info	builders/builders.go:28	Development component. May change in the future.	{"resource": {"service.instance.id": "480257ca-87f2-4b16-94a8-4e4a8532cdbb", "service.name": "otelcol-ebpf-profiler", "service.version": "dev"}, "otelcol.component.id": "profiling", "otelcol.component.kind": "receiver", "otelcol.signal": "profiles"}
+2026-06-21T13:43:36.822-0700	info	service@v0.154.0/service.go:241	Starting otelcol-ebpf-profiler...	{"resource": {"service.instance.id": "480257ca-87f2-4b16-94a8-4e4a8532cdbb", "service.name": "otelcol-ebpf-profiler", "service.version": "dev"}, "Version": "dev", "NumCPU": 24}
+2026-06-21T13:43:36.822-0700	info	extensions/extensions.go:41	Starting extensions...	{"resource": {"service.instance.id": "480257ca-87f2-4b16-94a8-4e4a8532cdbb", "service.name": "otelcol-ebpf-profiler", "service.version": "dev"}}
+2026-06-21T13:43:36.822-0700	info	Interpreter tracers: perl,php,python,hotspot,ruby,v8,dotnet,luajit,go,labels,beam	{"resource": {"service.instance.id": "480257ca-87f2-4b16-94a8-4e4a8532cdbb", "service.name": "otelcol-ebpf-profiler", "service.version": "dev"}, "otelcol.component.id": "profiling", "otelcol.component.kind": "receiver", "otelcol.signal": "profiles"}
+2026-06-21T13:43:37.041-0700	info	Found offsets: task stack 0x20, pt_regs 0x3f48, tpbase 0x25a8	{"resource": {"service.instance.id": "480257ca-87f2-4b16-94a8-4e4a8532cdbb", "service.name": "otelcol-ebpf-profiler", "service.version": "dev"}, "otelcol.component.id": "profiling", "otelcol.component.kind": "receiver", "otelcol.signal": "profiles"}
+2026-06-21T13:43:37.067-0700	info	Skip pinning eBPF map to share OTel span/trace IDs	{"resource": {"service.instance.id": "480257ca-87f2-4b16-94a8-4e4a8532cdbb", "service.name": "otelcol-ebpf-profiler", "service.version": "dev"}, "otelcol.component.id": "profiling", "otelcol.component.kind": "receiver", "otelcol.signal": "profiles"}
+2026-06-21T13:43:37.887-0700	info	Supports LPM trie eBPF map batch operations	{"resource": {"service.instance.id": "480257ca-87f2-4b16-94a8-4e4a8532cdbb", "service.name": "otelcol-ebpf-profiler", "service.version": "dev"}, "otelcol.component.id": "profiling", "otelcol.component.kind": "receiver", "otelcol.signal": "profiles"}
+2026-06-21T13:43:37.888-0700	info	eBPF tracer loaded	{"resource": {"service.instance.id": "480257ca-87f2-4b16-94a8-4e4a8532cdbb", "service.name": "otelcol-ebpf-profiler", "service.version": "dev"}, "otelcol.component.id": "profiling", "otelcol.component.kind": "receiver", "otelcol.signal": "profiles"}
+2026-06-21T13:43:37.889-0700	info	Attached tracer program	{"resource": {"service.instance.id": "480257ca-87f2-4b16-94a8-4e4a8532cdbb", "service.name": "otelcol-ebpf-profiler", "service.version": "dev"}, "otelcol.component.id": "profiling", "otelcol.component.kind": "receiver", "otelcol.signal": "profiles"}
+2026-06-21T13:43:37.906-0700	info	Attached probes	{"resource": {"service.instance.id": "480257ca-87f2-4b16-94a8-4e4a8532cdbb", "service.name": "otelcol-ebpf-profiler", "service.version": "dev"}, "otelcol.component.id": "profiling", "otelcol.component.kind": "receiver", "otelcol.signal": "profiles"}
+2026-06-21T13:43:37.908-0700	info	Attached sched monitor	{"resource": {"service.instance.id": "480257ca-87f2-4b16-94a8-4e4a8532cdbb", "service.name": "otelcol-ebpf-profiler", "service.version": "dev"}, "otelcol.component.id": "profiling", "otelcol.component.kind": "receiver", "otelcol.signal": "profiles"}
+2026-06-21T13:43:37.920-0700	info	service@v0.154.0/service.go:264	Everything is ready. Begin running and processing data.	{"resource": {"service.instance.id": "480257ca-87f2-4b16-94a8-4e4a8532cdbb", "service.name": "otelcol-ebpf-profiler", "service.version": "dev"}}
+2026-06-21T13:43:46.824-0700	info	Profiles	{"resource": {"service.instance.id": "480257ca-87f2-4b16-94a8-4e4a8532cdbb", "service.name": "otelcol-ebpf-profiler", "service.version": "dev"}, "otelcol.component.id": "debug", "otelcol.component.kind": "exporter", "otelcol.signal": "profiles", "resource profiles": 7, "sample records": 189}
+2026-06-21T13:43:46.825-0700	info	Mapping #0
+    Memory start: 0
+    Memory limit: 0
+    File offset: 0
+    File name: 0
+    Attributes: []
+Mapping #1
+    Memory start: 163840
+    Memory limit: 1769472
+    File offset: 163840
+    File name: 3
+    Attributes: [1]
+Mapping #2
+    Memory start: 4096
+    Memory limit: 8192
+    File offset: 4096
+    File name: 6
+    Attributes: [3]
+Mapping #3
+    Memory start: 14532608
+    Memory limit: 21663744
+    File offset: 14528512
+    File name: 13
+    Attributes: [7 8]
+Mapping #4
+    Memory start: 7925760
+    Memory limit: 214024192
+    File offset: 7925760
+    File name: 15
+    Attributes: [12]
+Mapping #5
+    Memory start: 14893056
+    Memory limit: 53129216
+    File offset: 10698752
+    File name: 16
+    Attributes: [16 17]
+Mapping #6
+    Memory start: 667648
+    Memory limit: 2093056
+    File offset: 667648
+    File name: 37
+    Attributes: [22]
+Mapping #7
+    Memory start: 4325376
+    Memory limit: 7352320
+    File offset: 131072
+    File name: 57
+    Attributes: [29]
+Mapping #8
+    Memory start: 16384
+    Memory limit: 102400
+    File offset: 16384
+    File name: 58
+    Attributes: [35]
+Location #0
+    Mapping index: 0
+    Address: 0
+    Attributes: []
+Location #1
+    Mapping index: 1
+    Address: 710256
+    Attributes: [2]
+Location #2
+    Mapping index: 2
+    Address: 4612
+    Attributes: [2]
+Location #3
+    Mapping index: 1
+    Address: 172489
+    Attributes: [2]
+Location #4
+    Mapping index: 1
+    Address: 172682
+    Attributes: [2]
+Location #5
+    Mapping index: 2
+    Address: 4756
+    Attributes: [2]
+Location #6
+    Mapping index: 1
+    Address: 712016
+    Attributes: [2]
+Location #7
+    Mapping index: 2
+    Address: 4595
+    Attributes: [2]
+Location #8
+    Mapping index: 1
+    Address: 710260
+    Attributes: [2]
+Location #9
+    Mapping index: 3
+    Address: 17128614
+    Attributes: [2]
+Location #10
+    Mapping index: 3
+    Address: 17162316
+    Attributes: [2]
+Location #11
+    Mapping index: 3
+    Address: 17128201
+    Attributes: [2]
+Location #12
+    Mapping index: 3
+    Address: 17162628
+    Attributes: [2]
+Location #13
+    Mapping index: 3
+    Address: 17124740
+    Attributes: [2]
+Location #14
+    Mapping index: 3
+    Address: 17035412
+    Attributes: [2]
+Location #15
+    Mapping index: 3
+    Address: 17034239
+    Attributes: [2]
+Location #16
+    Mapping index: 3
+    Address: 17030501
+    Attributes: [2]
+Location #17
+    Mapping index: 3
+    Address: 16919567
+    Attributes: [2]
+Location #18
+    Mapping index: 3
+    Address: 15518371
+    Attributes: [2]
+Location #19
+    Mapping index: 3
+    Address: 15968003
+    Attributes: [2]
+Location #20
+    Mapping index: 3
+    Address: 15905384
+    Attributes: [2]
+Location #21
+    Mapping index: 3
+    Address: 16317066
+    Attributes: [2]
+Location #22
+    Mapping index: 3
+    Address: 15858770
+    Attributes: [2]
+Location #23
+    Mapping index: 3
+    Address: 16637480
+    Attributes: [2]
+Location #24
+    Mapping index: 3
+    Address: 21388591
+    Attributes: [2]
+Location #25
+    Mapping index: 3
+    Address: 16319364
+    Attributes: [2]
+Location #26
+    Mapping index: 3
+    Address: 14536356
+    Attributes: [2]
+Location #27
+    Mapping index: 3
+    Address: 17165758
+    Attributes: [2]
+Location #28
+    Mapping index: 3
+    Address: 17162091
+    Attributes: [2]
+Location #29
+    Mapping index: 3
+    Address: 20676165
+    Attributes: [2]
+Location #30
+    Mapping index: 3
+    Address: 20676348
+    Attributes: [2]
+Location #31
+    Mapping index: 3
+    Address: 17127365
+    Attributes: [2]
+Location #32
+    Mapping index: 3
+    Address: 20667914
+    Attributes: [2]
+Location #33
+    Mapping index: 3
+    Address: 17038817
+    Attributes: [2]
+Location #34
+    Mapping index: 3
+    Address: 20667396
+    Attributes: [2]
+Location #35
+    Mapping index: 3
+    Address: 17038915
+    Attributes: [2]
+Location #36
+    Mapping index: 3
+    Address: 20676592
+    Attributes: [2]
+Location #37
+    Mapping index: 3
+    Address: 20665452
+    Attributes: [2]
+Location #38
+    Mapping index: 3
+    Address: 20667335
+    Attributes: [2]
+Location #39
+    Mapping index: 3
+    Address: 17035839
+    Attributes: [2]
+Location #40
+    Mapping index: 3
+    Address: 20679663
+    Attributes: [2]
+Location #41
+    Mapping index: 3
+    Address: 17128412
+    Attributes: [2]
+Location #42
+    Mapping index: 3
+    Address: 17130598
+    Attributes: [2]
+Location #43
+    Mapping index: 3
+    Address: 17162482
+    Attributes: [2]
+Location #44
+    Mapping index: 3
+    Address: 20667372
+    Attributes: [2]
+Location #45
+    Mapping index: 3
+    Address: 17035797
+    Attributes: [2]
+Location #46
+    Mapping index: 3
+    Address: 17139739
+    Attributes: [2]
+Location #47
+    Mapping index: 3
+    Address: 17146316
+    Attributes: [2]
+Location #48
+    Mapping index: 3
+    Address: 17162456
+    Attributes: [2]
+Location #49
+    Mapping index: 3
+    Address: 17038486
+    Attributes: [2]
+Location #50
+    Mapping index: 3
+    Address: 17038588
+    Attributes: [2]
+Location #51
+    Mapping index: 3
+    Address: 17143749
+    Attributes: [2]
+Location #52
+    Mapping index: 3
+    Address: 17122511
+    Attributes: [2]
+Location #53
+    Mapping index: 3
+    Address: 17144056
+    Attributes: [2]
+Location #54
+    Mapping index: 3
+    Address: 17144326
+    Attributes: [2]
+Location #55
+    Mapping index: 3
+    Address: 17022337
+    Attributes: [2]
+Location #56
+    Mapping index: 3
+    Address: 17037126
+    Attributes: [2]
+Location #57
+    Mapping index: 3
+    Address: 17143734
+    Attributes: [2]
+Location #58
+    Mapping index: 3
+    Address: 17150325
+    Attributes: [2]
+Location #59
+    Mapping index: 3
+    Address: 17143760
+    Attributes: [2]
+Location #60
+    Mapping index: 3
+    Address: 17036367
+    Attributes: [2]
+Location #61
+    Mapping index: 3
+    Address: 17144337
+    Attributes: [2]
+Location #62
+    Mapping index: 3
+    Address: 17127284
+    Attributes: [2]
+Location #63
+    Mapping index: 3
+    Address: 17144311
+    Attributes: [2]
+Location #64
+    Mapping index: 3
+    Address: 17161713
+    Attributes: [2]
+Location #65
+    Mapping index: 3
+    Address: 17042257
+    Attributes: [2]
+Location #66
+    Mapping index: 3
+    Address: 17144742
+    Attributes: [2]
+Location #67
+    Mapping index: 3
+    Address: 17042081
+    Attributes: [2]
+Location #68
+    Mapping index: 3
+    Address: 17124863
+    Attributes: [2]
+Location #69
+    Mapping index: 3
+    Address: 17145610
+    Attributes: [2]
+Location #70
+    Mapping index: 3
+    Address: 17042424
+    Attributes: [2]
+Location #71
+    Mapping index: 3
+    Address: 17036285
+    Attributes: [2]
+Location #72
+    Mapping index: 3
+    Address: 17041974
+    Attributes: [2]
+Location #73
+    Mapping index: 4
+    Address: 181256445
+    Attributes: [2]
+Location #74
+    Mapping index: 4
+    Address: 181327821
+    Attributes: [2]
+Location #75
+    Mapping index: 4
+    Address: 181090943
+    Attributes: [2]
+Location #76
+    Mapping index: 4
+    Address: 173355690
+    Attributes: [2]
+Location #77
+    Mapping index: 4
+    Address: 173517285
+    Attributes: [2]
+Location #78
+    Mapping index: 4
+    Address: 148867165
+    Attributes: [2]
+Location #79
+    Mapping index: 4
+    Address: 176398003
+    Attributes: [2]
+Location #80
+    Mapping index: 4
+    Address: 213968242
+    Attributes: [2]
+Location #81
+    Mapping index: 5
+    Address: 17451738
+    Attributes: [2]
+Location #82
+    Mapping index: 0
+    Address: 0
+    Line #0
+        Function index: 1
+        Line: 0
+        Column: 0
+    Attributes: [18]
+Location #83
+    Mapping index: 0
+    Address: 0
+    Line #0
+        Function index: 2
+        Line: 0
+        Column: 0
+    Attributes: [18]
+Location #84
+    Mapping index: 0
+    Address: 0
+    Line #0
+        Function index: 3
+        Line: 0
+        Column: 0
+    Attributes: [18]
+Location #85
+    Mapping index: 0
+    Address: 0
+    Line #0
+        Function index: 4
+        Line: 0
+        Column: 0
+    Attributes: [18]
+Location #86
+    Mapping index: 0
+    Address: 0
+    Line #0
+        Function index: 5
+        Line: 0
+        Column: 0
+    Attributes: [18]
+Location #87
+    Mapping index: 0
+    Address: 0
+    Line #0
+        Function index: 6
+        Line: 0
+        Column: 0
+    Attributes: [18]
+Location #88
+    Mapping index: 0
+    Address: 0
+    Line #0
+        Function index: 7
+        Line: 0
+        Column: 0
+    Attributes: [18]
+Location #89
+    Mapping index: 0
+    Address: 0
+    Line #0
+        Function index: 8
+        Line: 0
+        Column: 0
+    Attributes: [18]
+Location #90
+    Mapping index: 0
+    Address: 0
+    Line #0
+        Function index: 9
+        Line: 0
+        Column: 0
+    Attributes: [18]
+Location #91
+    Mapping index: 0
+    Address: 0
+    Line #0
+        Function index: 10
+        Line: 0
+        Column: 0
+    Attributes: [18]
+Location #92
+    Mapping index: 0
+    Address: 0
+    Line #0
+        Function index: 11
+        Line: 0
+        Column: 0
+    Attributes: [18]
+Location #93
+    Mapping index: 0
+    Address: 0
+    Line #0
+        Function index: 12
+        Line: 0
+        Column: 0
+    Attributes: [18]
+Location #94
+    Mapping index: 0
+    Address: 0
+    Line #0
+        Function index: 13
+        Line: 0
+        Column: 0
+    Attributes: [18]
+Location #95
+    Mapping index: 0
+    Address: 0
+    Line #0
+        Function index: 14
+        Line: 0
+        Column: 0
+    Attributes: [18]
+Location #96
+    Mapping index: 0
+    Address: 0
+    Line #0
+        Function index: 15
+        Line: 0
+        Column: 0
+    Attributes: [18]
+Location #97
+    Mapping index: 5
+    Address: 20424196
+    Attributes: [2]
+Location #98
+    Mapping index: 5
+    Address: 20428857
+    Attributes: [2]
+Location #99
+    Mapping index: 5
+    Address: 20635384
+    Attributes: [2]
+Location #100
+    Mapping index: 5
+    Address: 20636338
+    Attributes: [2]
+Location #101
+    Mapping index: 5
+    Address: 15266858
+    Attributes: [2]
+Location #102
+    Mapping index: 5
+    Address: 15267424
+    Attributes: [2]
+Location #103
+    Mapping index: 5
+    Address: 16024100
+    Attributes: [2]
+Location #104
+    Mapping index: 5
+    Address: 15292437
+    Attributes: [2]
+Location #105
+    Mapping index: 5
+    Address: 16703983
+    Attributes: [2]
+Location #106
+    Mapping index: 5
+    Address: 16023210
+    Attributes: [2]
+Location #107
+    Mapping index: 5
+    Address: 15258461
+    Attributes: [2]
+Location #108
+    Mapping index: 6
+    Address: 801283
+    Attributes: [2]
+Location #109
+    Mapping index: 5
+    Address: 16774738
+    Attributes: [2]
+Location #110
+    Mapping index: 5
+    Address: 16807233
+    Attributes: [2]
+Location #111
+    Mapping index: 0
+    Address: 0
+    Line #0
+        Function index: 16
+        Line: 0
+        Column: 0
+    Attributes: [18]
+Location #112
+    Mapping index: 0
+    Address: 0
+    Line #0
+        Function index: 17
+        Line: 0
+        Column: 0
+    Attributes: [18]
+Location #113
+    Mapping index: 0
+    Address: 0
+    Line #0
+        Function index: 18
+        Line: 0
+        Column: 0
+    Attributes: [18]
+Location #114
+    Mapping index: 0
+    Address: 39212020
+    Attributes: [2]
+Location #115
+    Mapping index: 0
+    Address: 39217301
+    Attributes: [2]
+Location #116
+    Mapping index: 5
+    Address: 17453205
+    Attributes: [2]
+Location #117
+    Mapping index: 5
+    Address: 15277965
+    Attributes: [2]
+Location #118
+    Mapping index: 5
+    Address: 15278362
+    Attributes: [2]
+Location #119
+    Mapping index: 0
+    Address: 39180249
+    Attributes: [2]
+Location #120
+    Mapping index: 0
+    Address: 39209799
+    Attributes: [2]
+Location #121
+    Mapping index: 5
+    Address: 16807262
+    Attributes: [2]
+Location #122
+    Mapping index: 5
+    Address: 15278094
+    Attributes: [2]
+Location #123
+    Mapping index: 5
+    Address: 15279576
+    Attributes: [2]
+Location #124
+    Mapping index: 0
+    Address: 39178944
+    Attributes: [2]
+Location #125
+    Mapping index: 0
+    Address: 39211699
+    Attributes: [2]
+Location #126
+    Mapping index: 0
+    Address: 0
+    Line #0
+        Function index: 19
+        Line: 0
+        Column: 0
+    Attributes: [18]
+Location #127
+    Mapping index: 5
+    Address: 30413459
+    Attributes: [2]
+Location #128
+    Mapping index: 5
+    Address: 30440121
+    Attributes: [2]
+Location #129
+    Mapping index: 5
+    Address: 17941117
+    Attributes: [2]
+Location #130
+    Mapping index: 5
+    Address: 16783157
+    Attributes: [2]
+Location #131
+    Mapping index: 5
+    Address: 16807137
+    Attributes: [2]
+Location #132
+    Mapping index: 5
+    Address: 26042770
+    Attributes: [2]
+Location #133
+    Mapping index: 5
+    Address: 26043049
+    Attributes: [2]
+Location #134
+    Mapping index: 5
+    Address: 21654282
+    Attributes: [2]
+Location #135
+    Mapping index: 5
+    Address: 21213953
+    Attributes: [2]
+Location #136
+    Mapping index: 5
+    Address: 21353940
+    Attributes: [2]
+Location #137
+    Mapping index: 5
+    Address: 21367623
+    Attributes: [2]
+Location #138
+    Mapping index: 5
+    Address: 30173616
+    Attributes: [2]
+Location #139
+    Mapping index: 5
+    Address: 15497783
+    Attributes: [2]
+Location #140
+    Mapping index: 0
+    Address: 39205710
+    Attributes: [2]
+Location #141
+    Mapping index: 5
+    Address: 17451703
+    Attributes: [2]
+Location #142
+    Mapping index: 0
+    Address: 39035138
+    Attributes: [2]
+Location #143
+    Mapping index: 0
+    Address: 39182021
+    Attributes: [2]
+Location #144
+    Mapping index: 5
+    Address: 16807595
+    Attributes: [2]
+Location #145
+    Mapping index: 0
+    Address: 39045890
+    Attributes: [2]
+Location #146
+    Mapping index: 0
+    Address: 39211996
+    Attributes: [2]
+Location #147
+    Mapping index: 5
+    Address: 17453526
+    Attributes: [2]
+Location #148
+    Mapping index: 5
+    Address: 17439480
+    Attributes: [2]
+Location #149
+    Mapping index: 0
+    Address: 0
+    Line #0
+        Function index: 20
+        Line: 0
+        Column: 0
+    Attributes: [18]
+Location #150
+    Mapping index: 5
+    Address: 16784124
+    Attributes: [2]
+Location #151
+    Mapping index: 5
+    Address: 16806789
+    Attributes: [2]
+Location #152
+    Mapping index: 0
+    Address: 45252089
+    Attributes: [2]
+Location #153
+    Mapping index: 0
+    Address: 45256993
+    Attributes: [2]
+Location #154
+    Mapping index: 0
+    Address: 45306360
+    Attributes: [2]
+Location #155
+    Mapping index: 0
+    Address: 45312831
+    Attributes: [2]
+Location #156
+    Mapping index: 5
+    Address: 19660682
+    Attributes: [2]
+Location #157
+    Mapping index: 5
+    Address: 19919552
+    Attributes: [2]
+Location #158
+    Mapping index: 5
+    Address: 19920478
+    Attributes: [2]
+Location #159
+    Mapping index: 0
+    Address: 36980119
+    Attributes: [2]
+Location #160
+    Mapping index: 5
+    Address: 16935283
+    Attributes: [2]
+Location #161
+    Mapping index: 1
+    Address: 641699
+    Attributes: [2]
+Location #162
+    Mapping index: 1
+    Address: 1219691
+    Attributes: [2]
+Location #163
+    Mapping index: 0
+    Address: 39075137
+    Attributes: [2]
+Location #164
+    Mapping index: 5
+    Address: 17458030
+    Attributes: [2]
+Location #165
+    Mapping index: 5
+    Address: 16806903
+    Attributes: [2]
+Location #166
+    Mapping index: 0
+    Address: 43787368
+    Attributes: [2]
+Location #167
+    Mapping index: 0
+    Address: 42999157
+    Attributes: [2]
+Location #168
+    Mapping index: 0
+    Address: 42981109
+    Attributes: [2]
+Location #169
+    Mapping index: 0
+    Address: 43009780
+    Attributes: [2]
+Location #170
+    Mapping index: 5
+    Address: 23258168
+    Attributes: [2]
+Location #171
+    Mapping index: 5
+    Address: 23260088
+    Attributes: [2]
+Location #172
+    Mapping index: 0
+    Address: 43973292
+    Attributes: [2]
+Location #173
+    Mapping index: 5
+    Address: 23223314
+    Attributes: [2]
+Location #174
+    Mapping index: 5
+    Address: 23692131
+    Attributes: [2]
+Location #175
+    Mapping index: 5
+    Address: 19473619
+    Attributes: [2]
+Location #176
+    Mapping index: 0
+    Address: 0
+    Line #0
+        Function index: 21
+        Line: 0
+        Column: 0
+    Attributes: [18]
+Location #177
+    Mapping index: 0
+    Address: 0
+    Line #0
+        Function index: 22
+        Line: 0
+        Column: 0
+    Attributes: [18]
+Location #178
+    Mapping index: 0
+    Address: 0
+    Attributes: [18]
+Location #179
+    Mapping index: 0
+    Address: 0
+    Line #0
+        Function index: 23
+        Line: 0
+        Column: 0
+    Attributes: [18]
+Location #180
+    Mapping index: 5
+    Address: 20423650
+    Attributes: [2]
+Location #181
+    Mapping index: 5
+    Address: 20427421
+    Attributes: [2]
+Location #182
+    Mapping index: 5
+    Address: 20428609
+    Attributes: [2]
+Location #183
+    Mapping index: 5
+    Address: 24368411
+    Attributes: [2]
+Location #184
+    Mapping index: 5
+    Address: 24369939
+    Attributes: [2]
+Location #185
+    Mapping index: 5
+    Address: 24368961
+    Attributes: [2]
+Location #186
+    Mapping index: 5
+    Address: 24370492
+    Attributes: [2]
+Location #187
+    Mapping index: 5
+    Address: 18995569
+    Attributes: [2]
+Location #188
+    Mapping index: 5
+    Address: 15983390
+    Attributes: [2]
+Location #189
+    Mapping index: 0
+    Address: 0
+    Line #0
+        Function index: 24
+        Line: 0
+        Column: 0
+    Attributes: [18]
+Location #190
+    Mapping index: 5
+    Address: 17453478
+    Attributes: [2]
+Location #191
+    Mapping index: 5
+    Address: 16935319
+    Attributes: [2]
+Location #192
+    Mapping index: 5
+    Address: 16782865
+    Attributes: [2]
+Location #193
+    Mapping index: 5
+    Address: 16808054
+    Attributes: [2]
+Location #194
+    Mapping index: 5
+    Address: 24462991
+    Attributes: [2]
+Location #195
+    Mapping index: 5
+    Address: 24464264
+    Attributes: [2]
+Location #196
+    Mapping index: 5
+    Address: 24287218
+    Attributes: [2]
+Location #197
+    Mapping index: 0
+    Address: 0
+    Line #0
+        Function index: 25
+        Line: 0
+        Column: 0
+    Attributes: [18]
+Location #198
+    Mapping index: 0
+    Address: 39180170
+    Attributes: [2]
+Location #199
+    Mapping index: 5
+    Address: 16806959
+    Attributes: [2]
+Location #200
+    Mapping index: 5
+    Address: 15958467
+    Attributes: [2]
+Location #201
+    Mapping index: 5
+    Address: 21252985
+    Attributes: [2]
+Location #202
+    Mapping index: 5
+    Address: 30440156
+    Attributes: [2]
+Location #203
+    Mapping index: 5
+    Address: 19300400
+    Attributes: [2]
+Location #204
+    Mapping index: 5
+    Address: 19687610
+    Attributes: [2]
+Location #205
+    Mapping index: 5
+    Address: 27000620
+    Attributes: [2]
+Location #206
+    Mapping index: 5
+    Address: 20653022
+    Attributes: [2]
+Location #207
+    Mapping index: 5
+    Address: 25613199
+    Attributes: [2]
+Location #208
+    Mapping index: 0
+    Address: 0
+    Line #0
+        Function index: 26
+        Line: 0
+        Column: 0
+    Attributes: [18]
+Location #209
+    Mapping index: 5
+    Address: 21126826
+    Attributes: [2]
+Location #210
+    Mapping index: 5
+    Address: 21756632
+    Attributes: [2]
+Location #211
+    Mapping index: 5
+    Address: 20920256
+    Attributes: [2]
+Location #212
+    Mapping index: 5
+    Address: 21807325
+    Attributes: [2]
+Location #213
+    Mapping index: 5
+    Address: 21900398
+    Attributes: [2]
+Location #214
+    Mapping index: 5
+    Address: 21223921
+    Attributes: [2]
+Location #215
+    Mapping index: 5
+    Address: 21347289
+    Attributes: [2]
+Location #216
+    Mapping index: 5
+    Address: 21354168
+    Attributes: [2]
+Location #217
+    Mapping index: 5
+    Address: 16806747
+    Attributes: [2]
+Location #218
+    Mapping index: 0
+    Address: 0
+    Line #0
+        Function index: 27
+        Line: 0
+        Column: 0
+    Attributes: [18]
+Location #219
+    Mapping index: 5
+    Address: 17438498
+    Attributes: [2]
+Location #220
+    Mapping index: 5
+    Address: 17453923
+    Attributes: [2]
+Location #221
+    Mapping index: 0
+    Address: 43787893
+    Attributes: [2]
+Location #222
+    Mapping index: 0
+    Address: 42981079
+    Attributes: [2]
+Location #223
+    Mapping index: 0
+    Address: 39180335
+    Attributes: [2]
+Location #224
+    Mapping index: 5
+    Address: 15957408
+    Attributes: [2]
+Location #225
+    Mapping index: 5
+    Address: 21756501
+    Attributes: [2]
+Location #226
+    Mapping index: 5
+    Address: 17453606
+    Attributes: [2]
+Location #227
+    Mapping index: 5
+    Address: 16807108
+    Attributes: [2]
+Location #228
+    Mapping index: 5
+    Address: 22505276
+    Attributes: [2]
+Location #229
+    Mapping index: 5
+    Address: 22516348
+    Attributes: [2]
+Location #230
+    Mapping index: 5
+    Address: 19480344
+    Attributes: [2]
+Location #231
+    Mapping index: 5
+    Address: 20427604
+    Attributes: [2]
+Location #232
+    Mapping index: 5
+    Address: 24137666
+    Attributes: [2]
+Location #233
+    Mapping index: 5
+    Address: 25643165
+    Attributes: [2]
+Location #234
+    Mapping index: 5
+    Address: 23624076
+    Attributes: [2]
+Location #235
+    Mapping index: 5
+    Address: 25667457
+    Attributes: [2]
+Location #236
+    Mapping index: 0
+    Address: 0
+    Line #0
+        Function index: 28
+        Line: 0
+        Column: 0
+    Attributes: [18]
+Location #237
+    Mapping index: 5
+    Address: 17443698
+    Attributes: [2]
+Location #238
+    Mapping index: 5
+    Address: 17451675
+    Attributes: [2]
+Location #239
+    Mapping index: 0
+    Address: 42981121
+    Attributes: [2]
+Location #240
+    Mapping index: 5
+    Address: 17439069
+    Attributes: [2]
+Location #241
+    Mapping index: 5
+    Address: 21403880
+    Attributes: [2]
+Location #242
+    Mapping index: 5
+    Address: 19920676
+    Attributes: [2]
+Location #243
+    Mapping index: 1
+    Address: 717979
+    Attributes: [2]
+Location #244
+    Mapping index: 5
+    Address: 21693662
+    Attributes: [2]
+Location #245
+    Mapping index: 5
+    Address: 21253046
+    Attributes: [2]
+Location #246
+    Mapping index: 5
+    Address: 16807890
+    Attributes: [2]
+Location #247
+    Mapping index: 5
+    Address: 24463839
+    Attributes: [2]
+Location #248
+    Mapping index: 5
+    Address: 26036974
+    Attributes: [2]
+Location #249
+    Mapping index: 5
+    Address: 19443033
+    Attributes: [2]
+Location #250
+    Mapping index: 0
+    Address: 0
+    Line #0
+        Function index: 29
+        Line: 0
+        Column: 0
+    Attributes: [18]
+Location #251
+    Mapping index: 0
+    Address: 0
+    Line #0
+        Function index: 30
+        Line: 0
+        Column: 0
+    Attributes: [18]
+Location #252
+    Mapping index: 5
+    Address: 26099229
+    Attributes: [2]
+Location #253
+    Mapping index: 5
+    Address: 26116691
+    Attributes: [2]
+Location #254
+    Mapping index: 5
+    Address: 26117456
+    Attributes: [2]
+Location #255
+    Mapping index: 0
+    Address: 47458610
+    Attributes: [2]
+Location #256
+    Mapping index: 0
+    Address: 45255135
+    Attributes: [2]
+Location #257
+    Mapping index: 0
+    Address: 45200979
+    Attributes: [2]
+Location #258
+    Mapping index: 0
+    Address: 45202145
+    Attributes: [2]
+Location #259
+    Mapping index: 5
+    Address: 19922691
+    Attributes: [2]
+Location #260
+    Mapping index: 5
+    Address: 20643023
+    Attributes: [2]
+Location #261
+    Mapping index: 5
+    Address: 25611902
+    Attributes: [2]
+Location #262
+    Mapping index: 5
+    Address: 16807508
+    Attributes: [2]
+Location #263
+    Mapping index: 5
+    Address: 16807996
+    Attributes: [2]
+Location #264
+    Mapping index: 5
+    Address: 16807196
+    Attributes: [2]
+Location #265
+    Mapping index: 5
+    Address: 16783012
+    Attributes: [2]
+Location #266
+    Mapping index: 5
+    Address: 23258054
+    Attributes: [2]
+Location #267
+    Mapping index: 5
+    Address: 22504447
+    Attributes: [2]
+Location #268
+    Mapping index: 5
+    Address: 22508320
+    Attributes: [2]
+Location #269
+    Mapping index: 5
+    Address: 16808504
+    Attributes: [2]
+Location #270
+    Mapping index: 5
+    Address: 16396664
+    Attributes: [2]
+Location #271
+    Mapping index: 0
+    Address: 39178682
+    Attributes: [2]
+Location #272
+    Mapping index: 0
+    Address: 39180283
+    Attributes: [2]
+Location #273
+    Mapping index: 0
+    Address: 43788027
+    Attributes: [2]
+Location #274
+    Mapping index: 0
+    Address: 42998094
+    Attributes: [2]
+Location #275
+    Mapping index: 5
+    Address: 18907917
+    Attributes: [2]
+Location #276
+    Mapping index: 5
+    Address: 26037066
+    Attributes: [2]
+Location #277
+    Mapping index: 5
+    Address: 22504551
+    Attributes: [2]
+Location #278
+    Mapping index: 5
+    Address: 22505376
+    Attributes: [2]
+Location #279
+    Mapping index: 5
+    Address: 18907798
+    Attributes: [2]
+Location #280
+    Mapping index: 7
+    Address: 6277774
+    Attributes: [2]
+Location #281
+    Mapping index: 7
+    Address: 6816542
+    Attributes: [2]
+Location #282
+    Mapping index: 7
+    Address: 7020831
+    Attributes: [2]
+Location #283
+    Mapping index: 7
+    Address: 7017398
+    Attributes: [2]
+Location #284
+    Mapping index: 7
+    Address: 7064880
+    Attributes: [2]
+Location #285
+    Mapping index: 7
+    Address: 7063884
+    Attributes: [2]
+Location #286
+    Mapping index: 7
+    Address: 6650628
+    Attributes: [2]
+Location #287
+    Mapping index: 7
+    Address: 6277851
+    Attributes: [2]
+Location #288
+    Mapping index: 7
+    Address: 5802078
+    Attributes: [2]
+Location #289
+    Mapping index: 7
+    Address: 5612535
+    Attributes: [2]
+Location #290
+    Mapping index: 7
+    Address: 5745181
+    Attributes: [2]
+Location #291
+    Mapping index: 7
+    Address: 5901072
+    Attributes: [2]
+Location #292
+    Mapping index: 7
+    Address: 6411500
+    Attributes: [2]
+Location #293
+    Mapping index: 7
+    Address: 7066440
+    Attributes: [2]
+Location #294
+    Mapping index: 7
+    Address: 7017340
+    Attributes: [2]
+Location #295
+    Mapping index: 7
+    Address: 5902110
+    Attributes: [2]
+Location #296
+    Mapping index: 7
+    Address: 6411546
+    Attributes: [2]
+Location #297
+    Mapping index: 7
+    Address: 7025826
+    Attributes: [2]
+Location #298
+    Mapping index: 7
+    Address: 7020688
+    Attributes: [2]
+Location #299
+    Mapping index: 7
+    Address: 5838689
+    Attributes: [2]
+Location #300
+    Mapping index: 7
+    Address: 5902332
+    Attributes: [2]
+Location #301
+    Mapping index: 7
+    Address: 6277885
+    Attributes: [2]
+Location #302
+    Mapping index: 7
+    Address: 6287679
+    Attributes: [2]
+Location #303
+    Mapping index: 7
+    Address: 6988554
+    Attributes: [2]
+Location #304
+    Mapping index: 7
+    Address: 7025477
+    Attributes: [2]
+Location #305
+    Mapping index: 7
+    Address: 6988726
+    Attributes: [2]
+Location #306
+    Mapping index: 7
+    Address: 5894882
+    Attributes: [2]
+Location #307
+    Mapping index: 7
+    Address: 5744551
+    Attributes: [2]
+Location #308
+    Mapping index: 7
+    Address: 5744461
+    Attributes: [2]
+Location #309
+    Mapping index: 8
+    Address: 86450
+    Attributes: [2]
+Location #310
+    Mapping index: 8
+    Address: 75309
+    Attributes: [2]
+Location #311
+    Mapping index: 8
+    Address: 37295
+    Attributes: [2]
+Location #312
+    Mapping index: 8
+    Address: 64072
+    Attributes: [2]
+Location #313
+    Mapping index: 8
+    Address: 19809
+    Attributes: [2]
+Location #314
+    Mapping index: 8
+    Address: 20276
+    Attributes: [2]
+Function #0
+    Name: 0
+    System name: 0
+    Filename: 0
+    Start line: 0
+Function #1
+    Name: 17
+    System name: 0
+    Filename: 0
+    Start line: 0
+Function #2
+    Name: 18
+    System name: 0
+    Filename: 19
+    Start line: 0
+Function #3
+    Name: 20
+    System name: 0
+    Filename: 19
+    Start line: 0
+Function #4
+    Name: 21
+    System name: 0
+    Filename: 0
+    Start line: 0
+Function #5
+    Name: 22
+    System name: 0
+    Filename: 19
+    Start line: 0
+Function #6
+    Name: 23
+    System name: 0
+    Filename: 24
+    Start line: 0
+Function #7
+    Name: 25
+    System name: 0
+    Filename: 24
+    Start line: 0
+Function #8
+    Name: 26
+    System name: 0
+    Filename: 24
+    Start line: 0
+Function #9
+    Name: 27
+    System name: 0
+    Filename: 28
+    Start line: 0
+Function #10
+    Name: 29
+    System name: 0
+    Filename: 28
+    Start line: 0
+Function #11
+    Name: 30
+    System name: 0
+    Filename: 28
+    Start line: 0
+Function #12
+    Name: 31
+    System name: 0
+    Filename: 32
+    Start line: 0
+Function #13
+    Name: 33
+    System name: 0
+    Filename: 34
+    Start line: 0
+Function #14
+    Name: 35
+    System name: 0
+    Filename: 0
+    Start line: 0
+Function #15
+    Name: 36
+    System name: 0
+    Filename: 0
+    Start line: 0
+Function #16
+    Name: 38
+    System name: 0
+    Filename: 39
+    Start line: 0
+Function #17
+    Name: 40
+    System name: 0
+    Filename: 41
+    Start line: 0
+Function #18
+    Name: 42
+    System name: 0
+    Filename: 41
+    Start line: 0
+Function #19
+    Name: 43
+    System name: 0
+    Filename: 19
+    Start line: 0
+Function #20
+    Name: 44
+    System name: 0
+    Filename: 19
+    Start line: 0
+Function #21
+    Name: 45
+    System name: 0
+    Filename: 0
+    Start line: 0
+Function #22
+    Name: 33
+    System name: 0
+    Filename: 46
+    Start line: 0
+Function #23
+    Name: 47
+    System name: 0
+    Filename: 0
+    Start line: 0
+Function #24
+    Name: 48
+    System name: 0
+    Filename: 32
+    Start line: 0
+Function #25
+    Name: 49
+    System name: 0
+    Filename: 50
+    Start line: 0
+Function #26
+    Name: 51
+    System name: 0
+    Filename: 0
+    Start line: 0
+Function #27
+    Name: 52
+    System name: 0
+    Filename: 53
+    Start line: 0
+Function #28
+    Name: 54
+    System name: 0
+    Filename: 39
+    Start line: 0
+Function #29
+    Name: 55
+    System name: 0
+    Filename: 19
+    Start line: 0
+Function #30
+    Name: 56
+    System name: 0
+    Filename: 19
+    Start line: 0
+Attribute table:
+     -> Key: Int(9)
+     -> Value: Str(18)
+     -> unit: Int(0)
+Link table:
+     -> Trace ID: Str()
+     -> Span ID: Str()
+String table:
+    
+    events
+    count
+    libc.so.6
+    process.executable.build_id.htlhash
+    profile.frame.type
+    victim
+    thread.name
+    thread.id
+    cpu.logical_number
+    cpu
+    nanoseconds
+    samples
+    agentsight
+    process.executable.build_id.gnu
+    codex
+    node
+    V8::UnknownFrame
+    #updateContext
+    node:internal/url
+    URL
+    V8::ConstructFrame
+    pathToFileURL
+    finalizeResolution
+    node:internal/modules/esm/resolve
+    moduleResolve
+    defaultResolve
+    #cachedDefaultResolve
+    node:internal/modules/esm/loader
+    resolve
+    getModuleJobForImport
+    _link
+    node:internal/modules/esm/module_job
+    <anonymous>
+    <unknown>
+    V8::StubFrame
+    V8::EntryFrame
+    libstdc++.so.6.0.35
+    getPackageScopeConfig
+    node:internal/modules/package_json_reader
+    getFileProtocolModuleFormat
+    node:internal/modules/esm/get_format
+    defaultGetFormatWithoutErrors
+    parse
+    set search
+    V8::BuiltinExitFrame
+    file:///home/fishclaw/.nvm/versions/node/v22.22.0/lib/node_modules/openclaw/dist/ansi-zQGMgESZ.js
+    V8::InternalFrame
+    run
+    realpathSync
+    node:fs
+    V8::ExitFrame
+    getOptions
+    node:internal/fs/utils
+    deserializePackageJSON
+    getPathFromURLPosix
+    fileURLToPath
+    python3.12
+    dash
+ResourceProfiles #0
+Resource SchemaURL: https://opentelemetry.io/schemas/1.37.0
+Resource attributes:
+     -> process.pid: Int(1228403)
+     -> process.executable.path: Str(/home/yunwei37/workspace/gpu/bpftime/example/otel-ebpf-profiler/victim)
+     -> process.executable.name: Str(victim)
+ScopeProfiles #0
+ScopeProfiles SchemaURL: https://opentelemetry.io/schemas/1.37.0
+InstrumentationScope go.opentelemetry.io/ebpf-profiler v0.0.0
+Profile #0
+    Profile ID     : 
+    Start time     : 2026-06-21 20:43:41.823007893 +0000 UTC
+    DurationNano   : 5000535829
+    Dropped attributes count: 0
+    Sample #0
+        Values: []
+        Attributes:
+             -> thread.name: victim
+             -> thread.id: %!s(int64=1228403)
+             -> cpu.logical_number: %!s(int64=1)
+    Sample #1
+        Values: []
+        Attributes:
+             -> thread.name: victim
+             -> thread.id: %!s(int64=1228403)
+             -> cpu.logical_number: %!s(int64=1)
+ResourceProfiles #1
+Resource SchemaURL: https://opentelemetry.io/schemas/1.37.0
+Resource attributes:
+     -> process.pid: Int(2711)
+     -> process.executable.path: Str(/home/yunwei37/.cargo/bin/agentsight)
+     -> process.executable.name: Str(agentsight)
+ScopeProfiles #0
+ScopeProfiles SchemaURL: https://opentelemetry.io/schemas/1.37.0
+InstrumentationScope go.opentelemetry.io/ebpf-profiler v0.0.0
+Profile #0
+    Profile ID     : 
+    Start time     : 2026-06-21 20:43:41.823007893 +0000 UTC
+    DurationNano   : 5000535829
+    Dropped attributes count: 0
+    Sample #0
+        Values: []
+        Attributes:
+             -> thread.name: agentsight
+             -> thread.id: %!s(int64=2711)
+             -> cpu.logical_number: %!s(int64=4)
+Profile #1
+    Profile ID     : 
+    Start time     : 2026-06-21 20:43:41.823007893 +0000 UTC
+    DurationNano   : 5000535829
+    Dropped attributes count: 0
+    Sample #0
+        Values: []
+        Attributes:
+             -> thread.name: agentsight
+             -> thread.id: %!s(int64=2711)
+             -> cpu.logical_number: %!s(int64=4)
+    Sample #1
+        Values: []
+        Attributes:
+             -> thread.name: agentsight
+             -> thread.id: %!s(int64=2711)
+             -> cpu.logical_number: %!s(int64=4)
+    Sample #2
+        Values: []
+        Attributes:
+             -> thread.name: agentsight
+             -> thread.id: %!s(int64=2711)
+             -> cpu.logical_number: %!s(int64=4)
+    Sample #3
+        Values: []
+        Attributes:
+             -> thread.name: agentsight
+             -> thread.id: %!s(int64=2711)
+             -> cpu.logical_number: %!s(int64=4)
+    Sample #4
+        Values: []
+        Attributes:
+             -> thread.name: agentsight
+             -> thread.id: %!s(int64=2711)
+             -> cpu.logical_number: %!s(int64=4)
+    Sample #5
+        Values: []
+        Attributes:
+             -> thread.name: agentsight
+             -> thread.id: %!s(int64=2711)
+             -> cpu.logical_number: %!s(int64=4)
+    Sample #6
+        Values: []
+        Attributes:
+             -> thread.name: agentsight
+             -> thread.id: %!s(int64=2711)
+             -> cpu.logical_number: %!s(int64=4)
+    Sample #7
+        Values: []
+        Attributes:
+             -> thread.name: agentsight
+             -> thread.id: %!s(int64=2711)
+             -> cpu.logical_number: %!s(int64=4)
+    Sample #8
+        Values: []
+        Attributes:
+             -> thread.name: agentsight
+             -> thread.id: %!s(int64=2711)
+             -> cpu.logical_number: %!s(int64=4)
+    Sample #9
+        Values: []
+        Attributes:
+             -> thread.name: agentsight
+             -> thread.id: %!s(int64=2711)
+             -> cpu.logical_number: %!s(int64=4)
+    Sample #10
+        Values: []
+        Attributes:
+             -> thread.name: agentsight
+             -> thread.id: %!s(int64=2711)
+             -> cpu.logical_number: %!s(int64=4)
+    Sample #11
+        Values: []
+        Attributes:
+             -> thread.name: agentsight
+             -> thread.id: %!s(int64=2711)
+             -> cpu.logical_number: %!s(int64=4)
+    Sample #12
+        Values: []
+        Attributes:
+             -> thread.name: agentsight
+             -> thread.id: %!s(int64=2711)
+             -> cpu.logical_number: %!s(int64=4)
+    Sample #13
+        Values: []
+        Attributes:
+             -> thread.name: agentsight
+             -> thread.id: %!s(int64=2711)
+             -> cpu.logical_number: %!s(int64=4)
+    Sample #14
+        Values: []
+        Attributes:
+             -> thread.name: agentsight
+             -> thread.id: %!s(int64=2711)
+             -> cpu.logical_number: %!s(int64=4)
+    Sample #15
+        Values: []
+        Attributes:
+             -> thread.name: agentsight
+             -> thread.id: %!s(int64=2711)
+             -> cpu.logical_number: %!s(int64=4)
+    Sample #16
+        Values: []
+        Attributes:
+             -> thread.name: agentsight
+             -> thread.id: %!s(int64=2711)
+             -> cpu.logical_number: %!s(int64=4)
+    Sample #17
+        Values: []
+        Attributes:
+             -> thread.name: agentsight
+             -> thread.id: %!s(int64=2711)
+             -> cpu.logical_number: %!s(int64=4)
+    Sample #18
+        Values: []
+        Attributes:
+             -> thread.name: agentsight
+             -> thread.id: %!s(int64=2711)
+             -> cpu.logical_number: %!s(int64=4)
+    Sample #19
+        Values: []
+        Attributes:
+             -> thread.name: agentsight
+             -> thread.id: %!s(int64=2711)
+             -> cpu.logical_number: %!s(int64=4)
+    Sample #20
+        Values: []
+        Attributes:
+             -> thread.name: agentsight
+             -> thread.id: %!s(int64=2711)
+             -> cpu.logical_number: %!s(int64=4)
+    Sample #21
+        Values: []
+        Attributes:
+             -> thread.name: agentsight
+             -> thread.id: %!s(int64=2711)
+             -> cpu.logical_number: %!s(int64=4)
+    Sample #22
+        Values: []
+        Attributes:
+             -> thread.name: agentsight
+             -> thread.id: %!s(int64=2711)
+             -> cpu.logical_number: %!s(int64=4)
+    Sample #23
+        Values: []
+        Attributes:
+             -> thread.name: agentsight
+             -> thread.id: %!s(int64=2711)
+             -> cpu.logical_number: %!s(int64=4)
+    Sample #24
+        Values: []
+        Attributes:
+             -> thread.name: agentsight
+             -> thread.id: %!s(int64=2711)
+             -> cpu.logical_number: %!s(int64=4)
+    Sample #25
+        Values: []
+        Attributes:
+             -> thread.name: agentsight
+             -> thread.id: %!s(int64=2711)
+             -> cpu.logical_number: %!s(int64=4)
+    Sample #26
+        Values: []
+        Attributes:
+             -> thread.name: agentsight
+             -> thread.id: %!s(int64=2711)
+             -> cpu.logical_number: %!s(int64=4)
+    Sample #27
+        Values: []
+        Attributes:
+             -> thread.name: agentsight
+             -> thread.id: %!s(int64=2711)
+             -> cpu.logical_number: %!s(int64=4)
+    Sample #28
+        Values: []
+        Attributes:
+             -> thread.name: agentsight
+             -> thread.id: %!s(int64=2711)
+             -> cpu.logical_number: %!s(int64=4)
+    Sample #29
+        Values: []
+        Attributes:
+             -> thread.name: agentsight
+             -> thread.id: %!s(int64=2711)
+             -> cpu.logical_number: %!s(int64=4)
+    Sample #30
+        Values: []
+        Attributes:
+             -> thread.name: agentsight
+             -> thread.id: %!s(int64=2711)
+             -> cpu.logical_number: %!s(int64=4)
+    Sample #31
+        Values: []
+        Attributes:
+             -> thread.name: agentsight
+             -> thread.id: %!s(int64=2711)
+             -> cpu.logical_number: %!s(int64=4)
+    Sample #32
+        Values: []
+        Attributes:
+             -> thread.name: agentsight
+             -> thread.id: %!s(int64=2711)
+             -> cpu.logical_number: %!s(int64=4)
+    Sample #33
+        Values: []
+        Attributes:
+             -> thread.name: agentsight
+             -> thread.id: %!s(int64=2711)
+             -> cpu.logical_number: %!s(int64=4)
+    Sample #34
+        Values: []
+        Attributes:
+             -> thread.name: agentsight
+             -> thread.id: %!s(int64=2711)
+             -> cpu.logical_number: %!s(int64=4)
+    Sample #35
+        Values: []
+        Attributes:
+             -> thread.name: agentsight
+             -> thread.id: %!s(int64=2711)
+             -> cpu.logical_number: %!s(int64=4)
+    Sample #36
+        Values: []
+        Attributes:
+             -> thread.name: agentsight
+             -> thread.id: %!s(int64=2711)
+             -> cpu.logical_number: %!s(int64=4)
+    Sample #37
+        Values: []
+        Attributes:
+             -> thread.name: agentsight
+             -> thread.id: %!s(int64=2711)
+             -> cpu.logical_number: %!s(int64=4)
+    Sample #38
+        Values: []
+        Attributes:
+             -> thread.name: agentsight
+             -> thread.id: %!s(int64=2711)
+             -> cpu.logical_number: %!s(int64=4)
+    Sample #39
+        Values: []
+        Attributes:
+             -> thread.name: agentsight
+             -> thread.id: %!s(int64=2711)
+             -> cpu.logical_number: %!s(int64=4)
+    Sample #40
+        Values: []
+        Attributes:
+             -> thread.name: agentsight
+             -> thread.id: %!s(int64=2711)
+             -> cpu.logical_number: %!s(int64=4)
+    Sample #41
+        Values: []
+        Attributes:
+             -> thread.name: agentsight
+             -> thread.id: %!s(int64=2711)
+             -> cpu.logical_number: %!s(int64=4)
+    Sample #42
+        Values: []
+        Attributes:
+             -> thread.name: agentsight
+             -> thread.id: %!s(int64=2711)
+             -> cpu.logical_number: %!s(int64=4)
+    Sample #43
+        Values: []
+        Attributes:
+             -> thread.name: agentsight
+             -> thread.id: %!s(int64=2711)
+             -> cpu.logical_number: %!s(int64=4)
+    Sample #44
+        Values: []
+        Attributes:
+             -> thread.name: agentsight
+             -> thread.id: %!s(int64=2711)
+             -> cpu.logical_number: %!s(int64=4)
+    Sample #45
+        Values: []
+        Attributes:
+             -> thread.name: agentsight
+             -> thread.id: %!s(int64=2711)
+             -> cpu.logical_number: %!s(int64=4)
+    Sample #46
+        Values: []
+        Attributes:
+             -> thread.name: agentsight
+             -> thread.id: %!s(int64=2711)
+             -> cpu.logical_number: %!s(int64=4)
+    Sample #47
+        Values: []
+        Attributes:
+             -> thread.name: agentsight
+             -> thread.id: %!s(int64=2711)
+             -> cpu.logical_number: %!s(int64=4)
+    Sample #48
+        Values: []
+        Attributes:
+             -> thread.name: agentsight
+             -> thread.id: %!s(int64=2711)
+             -> cpu.logical_number: %!s(int64=4)
+    Sample #49
+        Values: []
+        Attributes:
+             -> thread.name: agentsight
+             -> thread.id: %!s(int64=2711)
+             -> cpu.logical_number: %!s(int64=4)
+    Sample #50
+        Values: []
+        Attributes:
+             -> thread.name: agentsight
+             -> thread.id: %!s(int64=2711)
+             -> cpu.logical_number: %!s(int64=4)
+    Sample #51
+        Values: []
+        Attributes:
+             -> thread.name: agentsight
+             -> thread.id: %!s(int64=2711)
+             -> cpu.logical_number: %!s(int64=4)
+    Sample #52
+        Values: []
+        Attributes:
+             -> thread.name: agentsight
+             -> thread.id: %!s(int64=2711)
+             -> cpu.logical_number: %!s(int64=4)
+    Sample #53
+        Values: []
+        Attributes:
+             -> thread.name: agentsight
+             -> thread.id: %!s(int64=2711)
+             -> cpu.logical_number: %!s(int64=4)
+    Sample #54
+        Values: []
+        Attributes:
+             -> thread.name: agentsight
+             -> thread.id: %!s(int64=2711)
+             -> cpu.logical_number: %!s(int64=4)
+    Sample #55
+        Values: []
+        Attributes:
+             -> thread.name: agentsight
+             -> thread.id: %!s(int64=2711)
+             -> cpu.logical_number: %!s(int64=4)
+    Sample #56
+        Values: []
+        Attributes:
+             -> thread.name: agentsight
+             -> thread.id: %!s(int64=2711)
+             -> cpu.logical_number: %!s(int64=4)
+    Sample #57
+        Values: []
+        Attributes:
+             -> thread.name: agentsight
+             -> thread.id: %!s(int64=2711)
+             -> cpu.logical_number: %!s(int64=4)
+    Sample #58
+        Values: []
+        Attributes:
+             -> thread.name: agentsight
+             -> thread.id: %!s(int64=2711)
+             -> cpu.logical_number: %!s(int64=4)
+    Sample #59
+        Values: []
+        Attributes:
+             -> thread.name: agentsight
+             -> thread.id: %!s(int64=2711)
+             -> cpu.logical_number: %!s(int64=4)
+    Sample #60
+        Values: []
+        Attributes:
+             -> thread.name: agentsight
+             -> thread.id: %!s(int64=2711)
+             -> cpu.logical_number: %!s(int64=4)
+    Sample #61
+        Values: []
+        Attributes:
+             -> thread.name: agentsight
+             -> thread.id: %!s(int64=2711)
+             -> cpu.logical_number: %!s(int64=4)
+    Sample #62
+        Values: []
+        Attributes:
+             -> thread.name: agentsight
+             -> thread.id: %!s(int64=2711)
+             -> cpu.logical_number: %!s(int64=4)
+    Sample #63
+        Values: []
+        Attributes:
+             -> thread.name: agentsight
+             -> thread.id: %!s(int64=2711)
+             -> cpu.logical_number: %!s(int64=4)
+    Sample #64
+        Values: []
+        Attributes:
+             -> thread.name: agentsight
+             -> thread.id: %!s(int64=2711)
+             -> cpu.logical_number: %!s(int64=4)
+    Sample #65
+        Values: []
+        Attributes:
+             -> thread.name: agentsight
+             -> thread.id: %!s(int64=2711)
+             -> cpu.logical_number: %!s(int64=4)
+    Sample #66
+        Values: []
+        Attributes:
+             -> thread.name: agentsight
+             -> thread.id: %!s(int64=2711)
+             -> cpu.logical_number: %!s(int64=4)
+    Sample #67
+        Values: []
+        Attributes:
+             -> thread.name: agentsight
+             -> thread.id: %!s(int64=2711)
+             -> cpu.logical_number: %!s(int64=4)
+    Sample #68
+        Values: []
+        Attributes:
+             -> thread.name: agentsight
+             -> thread.id: %!s(int64=2711)
+             -> cpu.logical_number: %!s(int64=4)
+    Sample #69
+        Values: []
+        Attributes:
+             -> thread.name: agentsight
+             -> thread.id: %!s(int64=2711)
+             -> cpu.logical_number: %!s(int64=4)
+    Sample #70
+        Values: []
+        Attributes:
+             -> thread.name: agentsight
+             -> thread.id: %!s(int64=2711)
+             -> cpu.logical_number: %!s(int64=4)
+    Sample #71
+        Values: []
+        Attributes:
+             -> thread.name: agentsight
+             -> thread.id: %!s(int64=2711)
+             -> cpu.logical_number: %!s(int64=4)
+    Sample #72
+        Values: []
+        Attributes:
+             -> thread.name: agentsight
+             -> thread.id: %!s(int64=2711)
+             -> cpu.logical_number: %!s(int64=4)
+    Sample #73
+        Values: []
+        Attributes:
+             -> thread.name: agentsight
+             -> thread.id: %!s(int64=2711)
+             -> cpu.logical_number: %!s(int64=4)
+    Sample #74
+        Values: []
+        Attributes:
+             -> thread.name: agentsight
+             -> thread.id: %!s(int64=2711)
+             -> cpu.logical_number: %!s(int64=4)
+    Sample #75
+        Values: []
+        Attributes:
+             -> thread.name: agentsight
+             -> thread.id: %!s(int64=2711)
+             -> cpu.logical_number: %!s(int64=4)
+ResourceProfiles #2
+Resource SchemaURL: https://opentelemetry.io/schemas/1.37.0
+Resource attributes:
+     -> process.pid: Int(6917)
+     -> process.executable.path: Str(/home/yunwei37/.nvm/versions/node/v22.22.0/lib/node_modules/@openai/codex/node_modules/@openai/codex-linux-x64/vendor/x86_64-unknown-linux-musl/bin/codex)
+     -> process.executable.name: Str(codex)
+ScopeProfiles #0
+ScopeProfiles SchemaURL: https://opentelemetry.io/schemas/1.37.0
+InstrumentationScope go.opentelemetry.io/ebpf-profiler v0.0.0
+Profile #0
+    Profile ID     : 
+    Start time     : 2026-06-21 20:43:41.823007893 +0000 UTC
+    DurationNano   : 5000535829
+    Dropped attributes count: 0
+    Sample #0
+        Values: []
+        Attributes:
+             -> thread.name: sqlx-sqlite-wor
+             -> thread.id: %!s(int64=1217380)
+             -> cpu.logical_number: %!s(int64=6)
+ResourceProfiles #3
+Resource SchemaURL: https://opentelemetry.io/schemas/1.37.0
+Resource attributes:
+     -> process.pid: Int(1228434)
+     -> process.executable.path: Str(/home/fishclaw/.nvm/versions/node/v22.22.0/bin/node)
+     -> process.executable.name: Str(node)
+ScopeProfiles #0
+ScopeProfiles SchemaURL: https://opentelemetry.io/schemas/1.37.0
+InstrumentationScope go.opentelemetry.io/ebpf-profiler v0.0.0
+Profile #0
+    Profile ID     : 
+    Start time     : 2026-06-21 20:43:41.823007893 +0000 UTC
+    DurationNano   : 5000535829
+    Dropped attributes count: 0
+    Sample #0
+        Values: []
+        Attributes:
+             -> thread.name: node
+             -> thread.id: %!s(int64=1228434)
+             -> cpu.logical_number: %!s(int64=2)
+    Sample #1
+        Values: []
+        Attributes:
+             -> thread.name: node
+             -> thread.id: %!s(int64=1228434)
+             -> cpu.logical_number: %!s(int64=2)
+    Sample #2
+        Values: []
+        Attributes:
+             -> thread.name: node
+             -> thread.id: %!s(int64=1228434)
+             -> cpu.logical_number: %!s(int64=2)
+    Sample #3
+        Values: []
+        Attributes:
+             -> thread.name: node
+             -> thread.id: %!s(int64=1228434)
+             -> cpu.logical_number: %!s(int64=2)
+    Sample #4
+        Values: []
+        Attributes:
+             -> thread.name: node
+             -> thread.id: %!s(int64=1228434)
+             -> cpu.logical_number: %!s(int64=2)
+    Sample #5
+        Values: []
+        Attributes:
+             -> thread.name: node
+             -> thread.id: %!s(int64=1228434)
+             -> cpu.logical_number: %!s(int64=2)
+    Sample #6
+        Values: []
+        Attributes:
+             -> thread.name: node
+             -> thread.id: %!s(int64=1228434)
+             -> cpu.logical_number: %!s(int64=2)
+    Sample #7
+        Values: []
+        Attributes:
+             -> thread.name: node
+             -> thread.id: %!s(int64=1228434)
+             -> cpu.logical_number: %!s(int64=2)
+    Sample #8
+        Values: []
+        Attributes:
+             -> thread.name: node
+             -> thread.id: %!s(int64=1228434)
+             -> cpu.logical_number: %!s(int64=2)
+    Sample #9
+        Values: []
+        Attributes:
+             -> thread.name: node
+             -> thread.id: %!s(int64=1228434)
+             -> cpu.logical_number: %!s(int64=2)
+    Sample #10
+        Values: []
+        Attributes:
+             -> thread.name: node
+             -> thread.id: %!s(int64=1228434)
+             -> cpu.logical_number: %!s(int64=2)
+    Sample #11
+        Values: []
+        Attributes:
+             -> thread.name: node
+             -> thread.id: %!s(int64=1228434)
+             -> cpu.logical_number: %!s(int64=2)
+    Sample #12
+        Values: []
+        Attributes:
+             -> thread.name: node
+             -> thread.id: %!s(int64=1228434)
+             -> cpu.logical_number: %!s(int64=2)
+    Sample #13
+        Values: []
+        Attributes:
+             -> thread.name: node
+             -> thread.id: %!s(int64=1228434)
+             -> cpu.logical_number: %!s(int64=2)
+    Sample #14
+        Values: []
+        Attributes:
+             -> thread.name: node
+             -> thread.id: %!s(int64=1228434)
+             -> cpu.logical_number: %!s(int64=2)
+    Sample #15
+        Values: []
+        Attributes:
+             -> thread.name: node
+             -> thread.id: %!s(int64=1228434)
+             -> cpu.logical_number: %!s(int64=2)
+    Sample #16
+        Values: []
+        Attributes:
+             -> thread.name: node
+             -> thread.id: %!s(int64=1228437)
+             -> cpu.logical_number: %!s(int64=14)
+    Sample #17
+        Values: []
+        Attributes:
+             -> thread.name: node
+             -> thread.id: %!s(int64=1228434)
+             -> cpu.logical_number: %!s(int64=2)
+    Sample #18
+        Values: []
+        Attributes:
+             -> thread.name: node
+             -> thread.id: %!s(int64=1228434)
+             -> cpu.logical_number: %!s(int64=2)
+    Sample #19
+        Values: []
+        Attributes:
+             -> thread.name: node
+             -> thread.id: %!s(int64=1228434)
+             -> cpu.logical_number: %!s(int64=2)
+    Sample #20
+        Values: []
+        Attributes:
+             -> thread.name: node
+             -> thread.id: %!s(int64=1228438)
+             -> cpu.logical_number: %!s(int64=11)
+    Sample #21
+        Values: []
+        Attributes:
+             -> thread.name: node
+             -> thread.id: %!s(int64=1228434)
+             -> cpu.logical_number: %!s(int64=2)
+    Sample #22
+        Values: []
+        Attributes:
+             -> thread.name: node
+             -> thread.id: %!s(int64=1228434)
+             -> cpu.logical_number: %!s(int64=2)
+    Sample #23
+        Values: []
+        Attributes:
+             -> thread.name: node
+             -> thread.id: %!s(int64=1228434)
+             -> cpu.logical_number: %!s(int64=2)
+    Sample #24
+        Values: []
+        Attributes:
+             -> thread.name: node
+             -> thread.id: %!s(int64=1228434)
+             -> cpu.logical_number: %!s(int64=2)
+    Sample #25
+        Values: []
+        Attributes:
+             -> thread.name: node
+             -> thread.id: %!s(int64=1228434)
+             -> cpu.logical_number: %!s(int64=2)
+    Sample #26
+        Values: []
+        Attributes:
+             -> thread.name: node
+             -> thread.id: %!s(int64=1228434)
+             -> cpu.logical_number: %!s(int64=2)
+    Sample #27
+        Values: []
+        Attributes:
+             -> thread.name: node
+             -> thread.id: %!s(int64=1228434)
+             -> cpu.logical_number: %!s(int64=2)
+    Sample #28
+        Values: []
+        Attributes:
+             -> thread.name: node
+             -> thread.id: %!s(int64=1228434)
+             -> cpu.logical_number: %!s(int64=2)
+    Sample #29
+        Values: []
+        Attributes:
+             -> thread.name: node
+             -> thread.id: %!s(int64=1228434)
+             -> cpu.logical_number: %!s(int64=2)
+    Sample #30
+        Values: []
+        Attributes:
+             -> thread.name: node
+             -> thread.id: %!s(int64=1228434)
+             -> cpu.logical_number: %!s(int64=2)
+    Sample #31
+        Values: []
+        Attributes:
+             -> thread.name: node
+             -> thread.id: %!s(int64=1228434)
+             -> cpu.logical_number: %!s(int64=2)
+    Sample #32
+        Values: []
+        Attributes:
+             -> thread.name: node
+             -> thread.id: %!s(int64=1228434)
+             -> cpu.logical_number: %!s(int64=2)
+    Sample #33
+        Values: []
+        Attributes:
+             -> thread.name: node
+             -> thread.id: %!s(int64=1228434)
+             -> cpu.logical_number: %!s(int64=2)
+    Sample #34
+        Values: []
+        Attributes:
+             -> thread.name: node
+             -> thread.id: %!s(int64=1228434)
+             -> cpu.logical_number: %!s(int64=2)
+    Sample #35
+        Values: []
+        Attributes:
+             -> thread.name: node
+             -> thread.id: %!s(int64=1228434)
+             -> cpu.logical_number: %!s(int64=2)
+    Sample #36
+        Values: []
+        Attributes:
+             -> thread.name: node
+             -> thread.id: %!s(int64=1228434)
+             -> cpu.logical_number: %!s(int64=2)
+    Sample #37
+        Values: []
+        Attributes:
+             -> thread.name: node
+             -> thread.id: %!s(int64=1228434)
+             -> cpu.logical_number: %!s(int64=2)
+    Sample #38
+        Values: []
+        Attributes:
+             -> thread.name: node
+             -> thread.id: %!s(int64=1228434)
+             -> cpu.logical_number: %!s(int64=2)
+    Sample #39
+        Values: []
+        Attributes:
+             -> thread.name: node
+             -> thread.id: %!s(int64=1228434)
+             -> cpu.logical_number: %!s(int64=2)
+    Sample #40
+        Values: []
+        Attributes:
+             -> thread.name: node
+             -> thread.id: %!s(int64=1228434)
+             -> cpu.logical_number: %!s(int64=2)
+    Sample #41
+        Values: []
+        Attributes:
+             -> thread.name: node
+             -> thread.id: %!s(int64=1228434)
+             -> cpu.logical_number: %!s(int64=2)
+    Sample #42
+        Values: []
+        Attributes:
+             -> thread.name: node
+             -> thread.id: %!s(int64=1228434)
+             -> cpu.logical_number: %!s(int64=2)
+    Sample #43
+        Values: []
+        Attributes:
+             -> thread.name: node
+             -> thread.id: %!s(int64=1228434)
+             -> cpu.logical_number: %!s(int64=2)
+    Sample #44
+        Values: []
+        Attributes:
+             -> thread.name: node
+             -> thread.id: %!s(int64=1228434)
+             -> cpu.logical_number: %!s(int64=2)
+    Sample #45
+        Values: []
+        Attributes:
+             -> thread.name: node
+             -> thread.id: %!s(int64=1228434)
+             -> cpu.logical_number: %!s(int64=2)
+    Sample #46
+        Values: []
+        Attributes:
+             -> thread.name: node
+             -> thread.id: %!s(int64=1228434)
+             -> cpu.logical_number: %!s(int64=2)
+    Sample #47
+        Values: []
+        Attributes:
+             -> thread.name: node
+             -> thread.id: %!s(int64=1228434)
+             -> cpu.logical_number: %!s(int64=2)
+    Sample #48
+        Values: []
+        Attributes:
+             -> thread.name: node
+             -> thread.id: %!s(int64=1228434)
+             -> cpu.logical_number: %!s(int64=2)
+    Sample #49
+        Values: []
+        Attributes:
+             -> thread.name: node
+             -> thread.id: %!s(int64=1228437)
+             -> cpu.logical_number: %!s(int64=14)
+    Sample #50
+        Values: []
+        Attributes:
+             -> thread.name: node
+             -> thread.id: %!s(int64=1228434)
+             -> cpu.logical_number: %!s(int64=2)
+    Sample #51
+        Values: []
+        Attributes:
+             -> thread.name: node
+             -> thread.id: %!s(int64=1228434)
+             -> cpu.logical_number: %!s(int64=2)
+    Sample #52
+        Values: []
+        Attributes:
+             -> thread.name: node
+             -> thread.id: %!s(int64=1228434)
+             -> cpu.logical_number: %!s(int64=2)
+    Sample #53
+        Values: []
+        Attributes:
+             -> thread.name: node
+             -> thread.id: %!s(int64=1228434)
+             -> cpu.logical_number: %!s(int64=2)
+    Sample #54
+        Values: []
+        Attributes:
+             -> thread.name: node
+             -> thread.id: %!s(int64=1228434)
+             -> cpu.logical_number: %!s(int64=2)
+    Sample #55
+        Values: []
+        Attributes:
+             -> thread.name: node
+             -> thread.id: %!s(int64=1228434)
+             -> cpu.logical_number: %!s(int64=2)
+    Sample #56
+        Values: []
+        Attributes:
+             -> thread.name: node
+             -> thread.id: %!s(int64=1228434)
+             -> cpu.logical_number: %!s(int64=2)
+    Sample #57
+        Values: []
+        Attributes:
+             -> thread.name: node
+             -> thread.id: %!s(int64=1228434)
+             -> cpu.logical_number: %!s(int64=2)
+    Sample #58
+        Values: []
+        Attributes:
+             -> thread.name: node
+             -> thread.id: %!s(int64=1228434)
+             -> cpu.logical_number: %!s(int64=2)
+    Sample #59
+        Values: []
+        Attributes:
+             -> thread.name: node
+             -> thread.id: %!s(int64=1228434)
+             -> cpu.logical_number: %!s(int64=2)
+    Sample #60
+        Values: []
+        Attributes:
+             -> thread.name: node
+             -> thread.id: %!s(int64=1228434)
+             -> cpu.logical_number: %!s(int64=2)
+    Sample #61
+        Values: []
+        Attributes:
+             -> thread.name: node
+             -> thread.id: %!s(int64=1228437)
+             -> cpu.logical_number: %!s(int64=14)
+    Sample #62
+        Values: []
+        Attributes:
+             -> thread.name: node
+             -> thread.id: %!s(int64=1228434)
+             -> cpu.logical_number: %!s(int64=2)
+    Sample #63
+        Values: []
+        Attributes:
+             -> thread.name: node
+             -> thread.id: %!s(int64=1228434)
+             -> cpu.logical_number: %!s(int64=2)
+    Sample #64
+        Values: []
+        Attributes:
+             -> thread.name: node
+             -> thread.id: %!s(int64=1228434)
+             -> cpu.logical_number: %!s(int64=2)
+    Sample #65
+        Values: []
+        Attributes:
+             -> thread.name: node
+             -> thread.id: %!s(int64=1228437)
+             -> cpu.logical_number: %!s(int64=14)
+    Sample #66
+        Values: []
+        Attributes:
+             -> thread.name: node
+             -> thread.id: %!s(int64=1228434)
+             -> cpu.logical_number: %!s(int64=2)
+    Sample #67
+        Values: []
+        Attributes:
+             -> thread.name: node
+             -> thread.id: %!s(int64=1228434)
+             -> cpu.logical_number: %!s(int64=2)
+    Sample #68
+        Values: []
+        Attributes:
+             -> thread.name: node
+             -> thread.id: %!s(int64=1228434)
+             -> cpu.logical_number: %!s(int64=2)
+    Sample #69
+        Values: []
+        Attributes:
+             -> thread.name: node
+             -> thread.id: %!s(int64=1228434)
+             -> cpu.logical_number: %!s(int64=2)
+    Sample #70
+        Values: []
+        Attributes:
+             -> thread.name: node
+             -> thread.id: %!s(int64=1228434)
+             -> cpu.logical_number: %!s(int64=2)
+    Sample #71
+        Values: []
+        Attributes:
+             -> thread.name: node
+             -> thread.id: %!s(int64=1228434)
+             -> cpu.logical_number: %!s(int64=2)
+    Sample #72
+        Values: []
+        Attributes:
+             -> thread.name: node
+             -> thread.id: %!s(int64=1228434)
+             -> cpu.logical_number: %!s(int64=2)
+    Sample #73
+        Values: []
+        Attributes:
+             -> thread.name: node
+             -> thread.id: %!s(int64=1228434)
+             -> cpu.logical_number: %!s(int64=2)
+    Sample #74
+        Values: []
+        Attributes:
+             -> thread.name: node
+             -> thread.id: %!s(int64=1228434)
+             -> cpu.logical_number: %!s(int64=2)
+    Sample #75
+        Values: []
+        Attributes:
+             -> thread.name: node
+             -> thread.id: %!s(int64=1228434)
+             -> cpu.logical_number: %!s(int64=2)
+    Sample #76
+        Values: []
+        Attributes:
+             -> thread.name: node
+             -> thread.id: %!s(int64=1228434)
+             -> cpu.logical_number: %!s(int64=2)
+    Sample #77
+        Values: []
+        Attributes:
+             -> thread.name: node
+             -> thread.id: %!s(int64=1228434)
+             -> cpu.logical_number: %!s(int64=2)
+    Sample #78
+        Values: []
+        Attributes:
+             -> thread.name: node
+             -> thread.id: %!s(int64=1228434)
+             -> cpu.logical_number: %!s(int64=2)
+    Sample #79
+        Values: []
+        Attributes:
+             -> thread.name: node
+             -> thread.id: %!s(int64=1228434)
+             -> cpu.logical_number: %!s(int64=2)
+    Sample #80
+        Values: []
+        Attributes:
+             -> thread.name: node
+             -> thread.id: %!s(int64=1228434)
+             -> cpu.logical_number: %!s(int64=2)
+    Sample #81
+        Values: []
+        Attributes:
+             -> thread.name: node
+             -> thread.id: %!s(int64=1228434)
+             -> cpu.logical_number: %!s(int64=2)
+    Sample #82
+        Values: []
+        Attributes:
+             -> thread.name: node
+             -> thread.id: %!s(int64=1228439)
+             -> cpu.logical_number: %!s(int64=23)
+    Sample #83
+        Values: []
+        Attributes:
+             -> thread.name: node
+             -> thread.id: %!s(int64=1228434)
+             -> cpu.logical_number: %!s(int64=2)
+    Sample #84
+        Values: []
+        Attributes:
+             -> thread.name: node
+             -> thread.id: %!s(int64=1228434)
+             -> cpu.logical_number: %!s(int64=2)
+    Sample #85
+        Values: []
+        Attributes:
+             -> thread.name: node
+             -> thread.id: %!s(int64=1228434)
+             -> cpu.logical_number: %!s(int64=2)
+    Sample #86
+        Values: []
+        Attributes:
+             -> thread.name: node
+             -> thread.id: %!s(int64=1228434)
+             -> cpu.logical_number: %!s(int64=2)
+    Sample #87
+        Values: []
+        Attributes:
+             -> thread.name: node
+             -> thread.id: %!s(int64=1228434)
+             -> cpu.logical_number: %!s(int64=2)
+    Sample #88
+        Values: []
+        Attributes:
+             -> thread.name: node
+             -> thread.id: %!s(int64=1228434)
+             -> cpu.logical_number: %!s(int64=2)
+    Sample #89
+        Values: []
+        Attributes:
+             -> thread.name: node
+             -> thread.id: %!s(int64=1228434)
+             -> cpu.logical_number: %!s(int64=2)
+ResourceProfiles #4
+Resource SchemaURL: https://opentelemetry.io/schemas/1.37.0
+Resource attributes:
+     -> process.pid: Int(1228444)
+     -> process.executable.path: Str(/usr/bin/python3.12)
+     -> process.executable.name: Str(python3.12)
+ScopeProfiles #0
+ScopeProfiles SchemaURL: https://opentelemetry.io/schemas/1.37.0
+InstrumentationScope go.opentelemetry.io/ebpf-profiler v0.0.0
+Profile #0
+    Profile ID     : 
+    Start time     : 2026-06-21 20:43:41.823007893 +0000 UTC
+    DurationNano   : 5000535829
+    Dropped attributes count: 0
+    Sample #0
+        Values: []
+        Attributes:
+             -> thread.name: python3
+             -> thread.id: %!s(int64=1228444)
+             -> cpu.logical_number: %!s(int64=7)
+    Sample #1
+        Values: []
+        Attributes:
+             -> thread.name: python3
+             -> thread.id: %!s(int64=1228444)
+             -> cpu.logical_number: %!s(int64=7)
+ResourceProfiles #5
+Resource SchemaURL: https://opentelemetry.io/schemas/1.37.0
+Resource attributes:
+     -> process.pid: Int(1228450)
+     -> process.executable.path: Str(/usr/bin/python3.12)
+     -> process.executable.name: Str(python3.12)
+ScopeProfiles #0
+ScopeProfiles SchemaURL: https://opentelemetry.io/schemas/1.37.0
+InstrumentationScope go.opentelemetry.io/ebpf-profiler v0.0.0
+Profile #0
+    Profile ID     : 
+    Start time     : 2026-06-21 20:43:41.823007893 +0000 UTC
+    DurationNano   : 5000535829
+    Dropped attributes count: 0
+    Sample #0
+        Values: []
+        Attributes:
+             -> thread.name: python3
+             -> thread.id: %!s(int64=1228450)
+             -> cpu.logical_number: %!s(int64=5)
+    Sample #1
+        Values: []
+        Attributes:
+             -> thread.name: python3
+             -> thread.id: %!s(int64=1228450)
+             -> cpu.logical_number: %!s(int64=5)
+    Sample #2
+        Values: []
+        Attributes:
+             -> thread.name: python3
+             -> thread.id: %!s(int64=1228450)
+             -> cpu.logical_number: %!s(int64=5)
+    Sample #3
+        Values: []
+        Attributes:
+             -> thread.name: python3
+             -> thread.id: %!s(int64=1228450)
+             -> cpu.logical_number: %!s(int64=5)
+    Sample #4
+        Values: []
+        Attributes:
+             -> thread.name: python3
+             -> thread.id: %!s(int64=1228450)
+             -> cpu.logical_number: %!s(int64=5)
+    Sample #5
+        Values: []
+        Attributes:
+             -> thread.name: python3
+             -> thread.id: %!s(int64=1228450)
+             -> cpu.logical_number: %!s(int64=5)
+    Sample #6
+        Values: []
+        Attributes:
+             -> thread.name: python3
+             -> thread.id: %!s(int64=1228450)
+             -> cpu.logical_number: %!s(int64=5)
+    Sample #7
+        Values: []
+        Attributes:
+             -> thread.name: python3
+             -> thread.id: %!s(int64=1228450)
+             -> cpu.logical_number: %!s(int64=5)
+    Sample #8
+        Values: []
+        Attributes:
+             -> thread.name: python3
+             -> thread.id: %!s(int64=1228450)
+             -> cpu.logical_number: %!s(int64=5)
+    Sample #9
+        Values: []
+        Attributes:
+             -> thread.name: python3
+             -> thread.id: %!s(int64=1228450)
+             -> cpu.logical_number: %!s(int64=5)
+    Sample #10
+        Values: []
+        Attributes:
+             -> thread.name: python3
+             -> thread.id: %!s(int64=1228450)
+             -> cpu.logical_number: %!s(int64=5)
+    Sample #11
+        Values: []
+        Attributes:
+             -> thread.name: python3
+             -> thread.id: %!s(int64=1228450)
+             -> cpu.logical_number: %!s(int64=5)
+    Sample #12
+        Values: []
+        Attributes:
+             -> thread.name: python3
+             -> thread.id: %!s(int64=1228450)
+             -> cpu.logical_number: %!s(int64=5)
+    Sample #13
+        Values: []
+        Attributes:
+             -> thread.name: python3
+             -> thread.id: %!s(int64=1228450)
+             -> cpu.logical_number: %!s(int64=5)
+    Sample #14
+        Values: []
+        Attributes:
+             -> thread.name: python3
+             -> thread.id: %!s(int64=1228450)
+             -> cpu.logical_number: %!s(int64=5)
+    Sample #15
+        Values: []
+        Attributes:
+             -> thread.name: python3
+             -> thread.id: %!s(int64=1228450)
+             -> cpu.logical_number: %!s(int64=5)
+ResourceProfiles #6
+Resource SchemaURL: https://opentelemetry.io/schemas/1.37.0
+Resource attributes:
+     -> process.pid: Int(1228449)
+     -> process.executable.path: Str(/usr/bin/dash)
+     -> process.executable.name: Str(dash)
+ScopeProfiles #0
+ScopeProfiles SchemaURL: https://opentelemetry.io/schemas/1.37.0
+InstrumentationScope go.opentelemetry.io/ebpf-profiler v0.0.0
+Profile #0
+    Profile ID     : 
+    Start time     : 2026-06-21 20:43:41.823007893 +0000 UTC
+    DurationNano   : 5000535829
+    Dropped attributes count: 0
+    Sample #0
+        Values: []
+        Attributes:
+             -> thread.name: sh
+             -> thread.id: %!s(int64=1228449)
+             -> cpu.logical_number: %!s(int64=18)
+	{"resource": {"service.instance.id": "480257ca-87f2-4b16-94a8-4e4a8532cdbb", "service.name": "otelcol-ebpf-profiler", "service.version": "dev"}, "otelcol.component.id": "debug", "otelcol.component.kind": "exporter", "otelcol.signal": "profiles"}
+panic: runtime error: index out of range [0] with length 0
+
+goroutine 135 [running]:
+go.opentelemetry.io/ebpf-profiler/libpf.EbpfFrame.Flags(...)
+	/tmp/opentelemetry-ebpf-profiler/libpf/trace.go:173
+go.opentelemetry.io/ebpf-profiler/processmanager.(*ProcessManager).HandleTrace(0xc0003340f0, 0xc00196aa88)
+	/tmp/opentelemetry-ebpf-profiler/processmanager/manager.go:353 +0xa54
+go.opentelemetry.io/ebpf-profiler/tracer.(*Tracer).HandleTrace(0xc0015821c0, 0xc00196aa88)
+	/tmp/opentelemetry-ebpf-profiler/tracer/tracer.go:1341 +0x25
+go.opentelemetry.io/ebpf-profiler/internal/controller.(*Controller).startTraceHandling.func1()
+	/tmp/opentelemetry-ebpf-profiler/internal/controller/controller.go:204 +0x106
+created by go.opentelemetry.io/ebpf-profiler/internal/controller.(*Controller).startTraceHandling in goroutine 1
+	/tmp/opentelemetry-ebpf-profiler/internal/controller/controller.go:198 +0x10a

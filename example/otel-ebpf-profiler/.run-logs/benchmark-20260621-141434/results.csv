@@ -1,0 +1,7 @@
+case,run,elapsed_seconds,user_seconds,sys_seconds,max_rss_kb
+baseline,1,0.00,0.00,0.00,7064
+bpftime-agent,1,0.54,0.06,0.46,607916
+daemon-mirror-minimal-cilium-loader,1,0.55,0.08,0.44,631888
+kernel-minimal-cilium-loader,1,0.03,0.00,0.02,7060
+daemon-mirror-full-otel-collector,1,0.53,0.06,0.44,616480
+kernel-full-otel-collector,1,0.07,0.00,0.06,7088

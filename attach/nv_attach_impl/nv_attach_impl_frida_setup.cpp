@@ -20,6 +20,12 @@
 using namespace bpftime;
 using namespace attach;
 
+static bool env_flag_enabled(const char *name)
+{
+	const char *value = getenv(name);
+	return value != nullptr && value[0] == '1';
+}
+
 #define CUDA_DRIVER_CHECK_EXCEPTION(expr, message)                             \
 	do {                                                                   \
 		if (auto err = expr; err != CUDA_SUCCESS) {                    \
@@ -277,11 +283,16 @@ static void example_listener_on_enter(GumInvocationListener *listener,
 		};
 		std::vector<uint8_t> data_vec((uint8_t *)data, (uint8_t *)tail);
 		SPDLOG_INFO("Finally size = {}", data_vec.size());
-		auto extracted_ptx =
-			context->impl->extract_ptxs(std::move(data_vec));
-		SPDLOG_INFO("Patching PTXs");
 		auto fatbin_record = std::make_unique<struct fatbin_record>();
-		fatbin_record->original_ptx = extracted_ptx;
+		if (env_flag_enabled("BPFTIME_CUDA_DEFER_PTX_EXTRACTION")) {
+			fatbin_record->fatbin_data = std::move(data_vec);
+			SPDLOG_DEBUG(
+				"Deferred PTX extraction for current fatbin");
+		} else {
+			auto extracted_ptx = context->impl->extract_ptxs(
+				std::move(data_vec));
+			fatbin_record->original_ptx = extracted_ptx;
+		}
 		fatbin_record->module_pool = context->impl->module_pool;
 		fatbin_record->ptx_pool = context->impl->ptx_pool;
 
@@ -294,13 +305,20 @@ static void example_listener_on_enter(GumInvocationListener *listener,
 		SPDLOG_DEBUG("Entering __cudaRegisterFunction..");
 		auto &impl = *context->impl;
 		auto current_fatbin = context->impl->current_fatbin;
-		current_fatbin->try_loading_ptxs(*context->impl);
-
 		auto func_addr =
 			gum_invocation_context_get_nth_argument(gum_ctx, 1);
 		auto symbol_name =
 			(const char *)gum_invocation_context_get_nth_argument(
 				gum_ctx, 3);
+		if (current_fatbin == nullptr ||
+		    !impl.should_patch_kernel(symbol_name)) {
+			SPDLOG_DEBUG(
+				"Skipping PTX load for non-target CUDA function {}",
+				symbol_name ? symbol_name : "<null>");
+			return;
+		}
+		current_fatbin->try_loading_ptxs(*context->impl);
+
 		if (auto ok = current_fatbin->find_and_fill_function_info(
 			    func_addr, symbol_name);
 		    !ok) {
@@ -326,7 +344,11 @@ static void example_listener_on_enter(GumInvocationListener *listener,
 		   AttachedToFunction::RegisterVariable) {
 		SPDLOG_DEBUG("Entering __cudaRegisterVar");
 		auto current_fatbin = context->impl->current_fatbin;
-		current_fatbin->try_loading_ptxs(*context->impl);
+		if (current_fatbin == nullptr || !current_fatbin->ptx_loaded) {
+			SPDLOG_DEBUG(
+				"Skipping CUDA variable registration before target PTX load");
+			return;
+		}
 		auto fatbin_handle =
 			gum_invocation_context_get_nth_argument(gum_ctx, 0);
 		auto var_addr =
@@ -516,9 +538,28 @@ static CUresult cu_launch_kernel_common(
 	if (kernel_name) {
 		if (auto patched = impl->find_patched_kernel_function(*kernel_name);
 		    patched) {
-			func = *patched;
-			impl->record_patched_launch(
-				reinterpret_cast<cudaStream_t>(stream));
+			auto err =
+				original(*patched, grid_dim_x, grid_dim_y,
+					 grid_dim_z, block_dim_x, block_dim_y,
+					 block_dim_z, shared_mem_bytes, stream,
+					 kernel_params, extra);
+			if (err == CUDA_SUCCESS) {
+				impl->record_patched_launch(
+					reinterpret_cast<cudaStream_t>(stream));
+				return CUDA_SUCCESS;
+			}
+			const char *error_name = nullptr;
+			const char *error_string = nullptr;
+			cuGetErrorName(err, &error_name);
+			cuGetErrorString(err, &error_string);
+			SPDLOG_ERROR(
+				"Unable to launch patched CUfunction {}: {} ({})",
+				kernel_name->c_str(),
+				error_name ? error_name : "UNKNOWN",
+				error_string ? error_string : "No description");
+			SPDLOG_WARN(
+				"Falling back to original CUfunction for {}",
+				kernel_name->c_str());
 		}
 	}
 	return original(func, grid_dim_x, grid_dim_y, grid_dim_z, block_dim_x,
