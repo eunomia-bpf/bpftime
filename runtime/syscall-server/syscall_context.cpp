@@ -313,7 +313,7 @@ int syscall_context::create_kernel_bpf_map(int map_fd, int bpftime_map_type)
 }
 
 int syscall_context::get_bpf_obj_info_by_fd(int fd, void *info,
-					     uint32_t *info_len)
+					    uint32_t *info_len)
 {
 #ifdef BPFTIME_BUILD_WITH_LIBBPF
 	return bpf_obj_get_info_by_fd(fd, info, info_len);
@@ -323,8 +323,8 @@ int syscall_context::get_bpf_obj_info_by_fd(int fd, void *info,
 	attr.info.info_len = *info_len;
 	attr.info.info = reinterpret_cast<uintptr_t>(info);
 	const size_t attr_size = sizeof(attr.info);
-	int result = orig_syscall_fn(__NR_bpf, BPF_OBJ_GET_INFO_BY_FD,
-				     &attr, attr_size);
+	int result = orig_syscall_fn(__NR_bpf, BPF_OBJ_GET_INFO_BY_FD, &attr,
+				     attr_size);
 	if (result == 0)
 		*info_len = attr.info.info_len;
 	return result;
