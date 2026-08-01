@@ -306,12 +306,15 @@ bool software_perf_event_buffer::append_record(const void *record,
 bool software_perf_event_buffer::append_record_parts(const void *first,
 						     size_t first_size,
 						     const void *second,
-						     size_t second_size)
+						     size_t second_size,
+						     size_t padding_size)
 {
-	if (second_size > std::numeric_limits<size_t>::max() - first_size) {
+	if (second_size > std::numeric_limits<size_t>::max() - first_size ||
+	    padding_size > std::numeric_limits<size_t>::max() - first_size -
+				   second_size) {
 		return false;
 	}
-	const size_t record_size = first_size + second_size;
+	const size_t record_size = first_size + second_size + padding_size;
 	if (mmap_size() == 0 || record_size > mmap_size()) {
 		return false;
 	}
@@ -349,24 +352,26 @@ bool software_perf_event_buffer::append_record_parts(const void *first,
 	return true;
 }
 
-bool software_perf_event_buffer::append_sample(const perf_sample_raw &header,
-					       const void *payload,
-					       size_t payload_size)
-{
-	return append_record_parts(&header, sizeof(header), payload,
-				   payload_size);
-}
-
 int software_perf_event_buffer::output_data(const void *buf, size_t size)
 {
 	SPDLOG_DEBUG("Handling perf event output data with size {}", size);
+	constexpr size_t alignment = sizeof(uint64_t);
+	if (size > std::numeric_limits<uint16_t>::max() -
+			   sizeof(perf_sample_raw) - (alignment - 1)) {
+		errno = E2BIG;
+		return -1;
+	}
+	const size_t record_size =
+		(sizeof(perf_sample_raw) + size + alignment - 1) &
+		~(alignment - 1);
 	perf_sample_raw header;
 	header.header.type = PERF_RECORD_SAMPLE;
-	header.header.size = sizeof(header) + size;
+	header.header.size = record_size;
 	header.header.misc = 0;
-	header.size = size;
+	header.size = record_size - sizeof(header);
 
-	append_sample(header, buf, size);
+	append_record_parts(&header, sizeof(header), buf, size,
+			    header.size - size);
 	return 0;
 }
 
