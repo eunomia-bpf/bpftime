@@ -416,43 +416,53 @@ static void stop_auto_refresh_at_exit()
 		auto_refresh_thread.join();
 }
 
-static void ensure_detach_worker_started()
+static bool ensure_detach_worker_started() noexcept
 {
 	bool expected = false;
 	if (!detach_thread_started.compare_exchange_strong(
 		    expected, true, std::memory_order_acq_rel,
 		    std::memory_order_acquire)) {
-		return;
+		return true;
 	}
 	int fds[2];
 #ifdef __linux__
 	if (pipe2(fds, O_CLOEXEC) != 0) {
-		SPDLOG_WARN("pipe2 failed, detach by SIGUSR1 will be disabled");
 		detach_thread_started.store(false, std::memory_order_release);
-		return;
+		return false;
 	}
 #else
 	if (pipe(fds) != 0) {
-		SPDLOG_WARN("pipe failed, detach by SIGUSR1 will be disabled");
 		detach_thread_started.store(false, std::memory_order_release);
-		return;
+		return false;
 	}
 #endif
 	detach_pipe_fds[0] = fds[0];
 	detach_pipe_fds[1] = fds[1];
-	std::thread([]() {
-		for (;;) {
-			uint8_t buf[16];
-			ssize_t n = read(detach_pipe_fds[0], buf, sizeof(buf));
-			if (n <= 0) {
-				return;
+	try {
+		std::thread([]() {
+			for (;;) {
+				uint8_t buf[16];
+				ssize_t n = read(detach_pipe_fds[0], buf,
+						 sizeof(buf));
+				if (n <= 0) {
+					return;
+				}
+				if (__atomic_load_n(&initialized,
+						    __ATOMIC_SEQ_CST) != 1) {
+					continue;
+				}
+				perform_detach();
 			}
-			if (__atomic_load_n(&initialized, __ATOMIC_SEQ_CST) != 1) {
-				continue;
-			}
-			perform_detach();
-		}
-	}).detach();
+		}).detach();
+	} catch (...) {
+		::close(detach_pipe_fds[0]);
+		::close(detach_pipe_fds[1]);
+		detach_pipe_fds[0] = -1;
+		detach_pipe_fds[1] = -1;
+		detach_thread_started.store(false, std::memory_order_release);
+		return false;
+	}
+	return true;
 }
 
 syscall_hooker_func_t orig_hooker;
@@ -949,12 +959,6 @@ extern "C" void bpftime_agent_main(const gchar *data, gboolean *stay_resident)
 				});
 #endif
 			SPDLOG_INFO("Initializing agent..");
-			/* We don't want our library to be unloaded after we return. */
-			if (stay_resident != nullptr)
-				*stay_resident = TRUE;
-
-			setenv("BPFTIME_USED", "1", 0);
-			SPDLOG_DEBUG("Set environment variable BPFTIME_USED");
 			int res = ctx_holder.ctx.init_attach_ctx_from_handlers(
 				runtime_config);
 			if (res != 0) {
@@ -963,13 +967,7 @@ extern "C" void bpftime_agent_main(const gchar *data, gboolean *stay_resident)
 				init_fail();
 				return;
 			}
-			SPDLOG_DEBUG("Registering signal handler");
 			srand(std::random_device()());
-			// We use SIGUSR1 to indicate the detaching.
-			ensure_detach_worker_started();
-			signal(SIGUSR1, sig_handler_sigusr1_detach);
-			owns_initialization = false;
-			shm_initialized = false;
 
 			// Start IPC control plane for repeat attach/refresh (used by
 			// `bpftime trace`).
@@ -1030,6 +1028,19 @@ extern "C" void bpftime_agent_main(const gchar *data, gboolean *stay_resident)
 					});
 				std::atexit(stop_auto_refresh_at_exit);
 			}
+
+			SPDLOG_DEBUG("Registering signal handler");
+			// We use SIGUSR1 to indicate the detaching.
+			if (ensure_detach_worker_started())
+				signal(SIGUSR1, sig_handler_sigusr1_detach);
+			setenv("BPFTIME_USED", "1", 0);
+			SPDLOG_DEBUG("Set environment variable BPFTIME_USED");
+			/* We don't want our library to be unloaded after we
+			 * return. */
+			if (stay_resident != nullptr)
+				*stay_resident = TRUE;
+			owns_initialization = false;
+			shm_initialized = false;
 
 			SPDLOG_INFO("Attach successfully");
 		} catch (const std::exception &ex) {
