@@ -225,13 +225,14 @@ extern "C" int ioctl(int fd, unsigned long req, ...)
 	using fn_t = int (*)(int, unsigned long, ...);
 	va_list args;
 	va_start(args, req);
-	unsigned long arg3 = va_arg(args, long);
+	void *arg3 = va_arg(args, void *);
 	va_end(args);
 	return interpose<fn_t>(
 		"ioctl", -1, caller_errno,
 		[&]() {
 			safe_spdlog_debug("ioctl {} {} {}", fd, req, arg3);
-			return context->handle_ioctl(fd, req, arg3);
+			return context->handle_ioctl(
+				fd, req, reinterpret_cast<unsigned long>(arg3));
 		},
 		fd, req, arg3);
 }
