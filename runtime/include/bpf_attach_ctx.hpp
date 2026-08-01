@@ -160,9 +160,9 @@ public:
 
 	// create bpf_attach_ctx from handler_manager in shared memory
 	int init_attach_ctx_from_handlers(const handler_manager *manager,
-					  const agent_config &config);
+					  const runtime_config &config);
 	// create bpf_attach_ctx from handler_manager in global_shared_memory
-	int init_attach_ctx_from_handlers(const agent_config &config);
+	int init_attach_ctx_from_handlers(const runtime_config &config);
 	// Register an attach implementation. Attach manager will take its
 	// ownership. The third argument is a function that initializes a
 	// corresponding attach private data with the given string.
@@ -241,10 +241,10 @@ private:
 
 	int instantiate_handler_at(const handler_manager *manager, int id,
 				   std::set<int> &stk,
-				   const agent_config &config,
+				   const runtime_config &config,
 				   bool handle_nv_attach_impl);
 	int instantiate_prog_handler_at(int id, const bpf_prog_handler &handler,
-					const agent_config &config);
+					const runtime_config &config);
 	int instantiate_bpf_link_handler_at(int id,
 					    const bpf_link_handler &handler,
 					    bool handle_nv_attach_impl);

@@ -381,8 +381,8 @@ bpftime_driver::bpftime_driver(daemon_config cfg, struct bpf_tracer_bpf *obj)
 	config = cfg;
 	object = obj;
 	bpftime_initialize_global_shm(shm_open_type::SHM_REMOVE_AND_CREATE);
-	auto config = construct_agent_config_from_env();
-	bpftime_set_agent_config(std::move(config));
+	auto config = construct_runtime_config_from_env();
+	bpftime_set_runtime_config(std::move(config));
 }
 
 bpftime_driver::~bpftime_driver()
