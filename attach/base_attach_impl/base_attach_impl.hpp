@@ -17,6 +17,8 @@ using override_return_set_callback = std::function<void(uint64_t, uint64_t)>;
 // Use inline thread_local to ensure ODR
 inline thread_local std::optional<override_return_set_callback>
 	curr_thread_override_return_callback;
+// Function address exposed while an attach callback is running.
+inline thread_local uintptr_t current_thread_attach_func_ip = 0;
 
 // A wrapper function for an entry function of an ebpf program
 using ebpf_run_callback = std::function<int(void *memory, size_t memory_size,

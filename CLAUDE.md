@@ -143,3 +143,8 @@ The codebase is organized into distinct components that interact through well-de
 4. **Performance**: Consider shared memory overhead, prefer batch operations
 
 The architecture prioritizes performance (bypassing kernel), compatibility (same APIs as kernel eBPF), and extensibility (modular design for new features).
+
+## Repository Documentation
+
+Do not create a root `docs/` directory or commit pull-request review artifacts.
+Keep repository maintenance and design constraints in this file.

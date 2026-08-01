@@ -225,6 +225,8 @@ Sometimes larger maps may need more memory, you can set the memory size for shar
 BPFTIME_SHM_MEMORY_MB=1024 LD_PRELOAD=~/.bpftime/libbpftime-syscall-server.so example/malloc/malloc
 ```
 
+The shared memory also contains the handler table. Its capacity can be set with `BPFTIME_MAX_FD_COUNT` (the default is 6144), and larger values require more shared memory before any maps or perf buffers are allocated. If startup reports insufficient shared memory, increase `BPFTIME_SHM_MEMORY_MB` or reduce `BPFTIME_MAX_FD_COUNT`. Allocation failures while creating a perf buffer are reported to the caller as `ENOMEM`.
+
 ## Verifier
 
 Since the primary goal of bpftime is to stay aligned with kernel eBPF, it is recommended to use the kernel's eBPF verifier to ensure program safety.
