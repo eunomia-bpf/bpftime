@@ -96,8 +96,8 @@ find_section_span(std::ifstream &ifs, std::string_view section_name)
 }
 
 template <typename Ehdr, typename Shdr, typename Sym>
-std::vector<symbol_range>
-read_function_symbols_impl(std::ifstream &ifs, std::uintptr_t base)
+std::vector<symbol_range> read_symbols_impl(std::ifstream &ifs,
+					    std::uintptr_t base)
 {
 	std::vector<symbol_range> out;
 
@@ -146,7 +146,7 @@ read_function_symbols_impl(std::ifstream &ifs, std::uintptr_t base)
 				break;
 
 			const unsigned char type = ELF64_ST_TYPE(sym.st_info);
-			if (type != STT_FUNC)
+			if (type != STT_FUNC && type != STT_OBJECT)
 				continue;
 			if (sym.st_value == 0)
 				continue;
@@ -258,7 +258,7 @@ scan_fatbin_wrappers(const void *section_addr, std::size_t section_size)
 	return out;
 }
 
-std::vector<symbol_range> read_function_symbols(const loaded_module &mod)
+std::vector<symbol_range> read_symbols(const loaded_module &mod)
 {
 	std::vector<symbol_range> out;
 	const std::string path = normalize_module_path(mod.path);
@@ -275,11 +275,11 @@ std::vector<symbol_range> read_function_symbols(const loaded_module &mod)
 		return out;
 
 	if (ident[EI_CLASS] == ELFCLASS64) {
-		return read_function_symbols_impl<Elf64_Ehdr, Elf64_Shdr, Elf64_Sym>(
+		return read_symbols_impl<Elf64_Ehdr, Elf64_Shdr, Elf64_Sym>(
 			ifs, mod.base_addr);
 	}
 	if (ident[EI_CLASS] == ELFCLASS32) {
-		return read_function_symbols_impl<Elf32_Ehdr, Elf32_Shdr, Elf32_Sym>(
+		return read_symbols_impl<Elf32_Ehdr, Elf32_Shdr, Elf32_Sym>(
 			ifs, mod.base_addr);
 	}
 	return out;

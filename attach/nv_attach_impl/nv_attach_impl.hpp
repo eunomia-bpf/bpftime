@@ -128,6 +128,8 @@ struct nv_attach_hook_state {
 	std::atomic<void *> orig_cu_graph_exec_kernel_node_set_params_v2{ nullptr };
 	std::atomic<void *> orig_cu_graph_kernel_node_set_params_v1{ nullptr };
 	std::atomic<void *> orig_cu_graph_kernel_node_set_params_v2{ nullptr };
+	std::atomic<void *> orig_cu_graph_launch{ nullptr };
+	std::atomic<void *> orig_cu_graph_launch_ptsz{ nullptr };
 	std::atomic<void *> orig_cuda_memcpy_from_symbol{ nullptr };
 	std::atomic<void *> orig_cuda_memcpy_from_symbol_async{ nullptr };
 
@@ -281,7 +283,8 @@ class nv_attach_impl final : public base_attach_impl {
 			patched_global_by_context;
 
 		mutable std::mutex launch_event_mutex;
-		std::unordered_map<CUstream, CUevent> pending_launch_events_by_stream;
+		std::map<std::pair<CUcontext, CUstream>, CUevent>
+			pending_launch_events;
 	};
 
 std::string add_semicolon_for_variable_lines(std::string input);

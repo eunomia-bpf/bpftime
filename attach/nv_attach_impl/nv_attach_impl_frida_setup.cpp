@@ -66,6 +66,7 @@ using cu_graph_kernel_node_set_params_v1_fn_t =
 	CUresult (*)(CUgraphNode, const CUDA_KERNEL_NODE_PARAMS_v1 *);
 using cu_graph_kernel_node_set_params_v2_fn_t =
 	decltype(&cuGraphKernelNodeSetParams_v2);
+using cu_graph_launch_fn_t = CUresult (*)(CUgraphExec, CUstream);
 using cuda_memcpy_from_symbol_async_fn_t = decltype(&cudaMemcpyFromSymbolAsync);
 using cuda_memcpy_from_symbol_fn_t = decltype(&cudaMemcpyFromSymbol);
 
@@ -76,6 +77,16 @@ using cu_launch_kernel_fn_t = CUresult (*)(CUfunction, unsigned int,
 					   unsigned int, unsigned int,
 					   unsigned int, unsigned int, CUstream,
 					   void **, void **);
+
+struct cuda_memcpy_to_symbol_invocation {
+	const void *symbol;
+	const void *src;
+	size_t count;
+	size_t offset;
+	cudaMemcpyKind kind;
+	cudaStream_t stream;
+	bool async;
+};
 
 static bool cuda_graph_stream_is_capturing(cudaStream_t stream)
 {
@@ -375,8 +386,11 @@ static void example_listener_on_enter(GumInvocationListener *listener,
 				gum_invocation_context_get_nth_argument(gum_ctx,
 									5);
 		}
-		context->impl->mirror_cuda_memcpy_to_symbol(
-			symbol, src, count, offset, kind, stream, async);
+		auto *invocation = GUM_IC_GET_INVOCATION_DATA(
+			gum_ctx, cuda_memcpy_to_symbol_invocation);
+		*invocation = {
+			symbol, src, count, offset, kind, stream, async
+		};
 	}
 }
 
@@ -397,6 +411,23 @@ static void example_listener_on_leave(GumInvocationListener *listener,
 	} else if (context->to_function ==
 		   AttachedToFunction::RegisterFatbinEnd) {
 		SPDLOG_DEBUG("Leaving __cudaRegisterFatBinaryEnd..");
+	} else if (context->to_function ==
+			   AttachedToFunction::CudaMemcpyToSymbol ||
+		   context->to_function ==
+			   AttachedToFunction::CudaMemcpyToSymbolAsync) {
+		auto result =
+			static_cast<cudaError_t>(reinterpret_cast<uintptr_t>(
+				gum_invocation_context_get_return_value(
+					gum_ctx)));
+		if (result == cudaSuccess) {
+			auto *invocation = GUM_IC_GET_INVOCATION_DATA(
+				gum_ctx, cuda_memcpy_to_symbol_invocation);
+			context->impl->mirror_cuda_memcpy_to_symbol(
+				invocation->symbol, invocation->src,
+				invocation->count, invocation->offset,
+				invocation->kind, invocation->stream,
+				invocation->async);
+		}
 	}
 }
 
@@ -503,19 +534,23 @@ static CUresult cu_launch_kernel_common(
 				block_dim_x, block_dim_y, block_dim_z,
 				shared_mem_bytes, stream, kernel_params, extra);
 
+	bool patched_launch = false;
 	auto kernel_name = cuda_graph_maybe_get_kernel_name_from_cufunction(
 		*impl, func);
 	if (kernel_name) {
 		if (auto patched = impl->find_patched_kernel_function(*kernel_name);
 		    patched) {
 			func = *patched;
-			impl->record_patched_launch(
-				reinterpret_cast<cudaStream_t>(stream));
+			patched_launch = true;
 		}
 	}
-	return original(func, grid_dim_x, grid_dim_y, grid_dim_z, block_dim_x,
-			block_dim_y, block_dim_z, shared_mem_bytes, stream,
-			kernel_params, extra);
+	auto result = original(func, grid_dim_x, grid_dim_y, grid_dim_z,
+			       block_dim_x, block_dim_y, block_dim_z,
+			       shared_mem_bytes, stream, kernel_params, extra);
+	if (result == CUDA_SUCCESS && patched_launch)
+		impl->record_patched_launch(
+			reinterpret_cast<cudaStream_t>(stream));
+	return result;
 }
 
 extern "C" CUresult cuda_driver_function__cuLaunchKernel(
@@ -537,6 +572,50 @@ extern "C" CUresult cuda_driver_function__cuLaunchKernel(
 				       gridDimZ, blockDimX, blockDimY, blockDimZ,
 				       sharedMemBytes, hStream, kernelParams,
 				       extra);
+}
+
+static CUresult cu_graph_launch_common(nv_attach_impl *impl,
+				       void *original_fn_ptr,
+				       CUgraphExec graph_exec, CUstream stream)
+{
+	auto original = reinterpret_cast<cu_graph_launch_fn_t>(original_fn_ptr);
+	if (!original)
+		return CUDA_ERROR_UNKNOWN;
+	auto result = original(graph_exec, stream);
+	if (result == CUDA_SUCCESS && impl != nullptr && impl->is_enabled())
+		impl->record_patched_launch(
+			reinterpret_cast<cudaStream_t>(stream));
+	return result;
+}
+
+extern "C" CUresult cuda_driver_function__cuGraphLaunch(CUgraphExec graph_exec,
+							CUstream stream)
+{
+	auto gum_ctx = gum_interceptor_get_current_invocation();
+	auto *state = (nv_attach_hook_state *)
+		gum_invocation_context_get_replacement_data(gum_ctx);
+	if (state == nullptr)
+		state = &nv_attach_get_hook_state();
+	return cu_graph_launch_common(
+		state->active_impl.load(std::memory_order_acquire),
+		state->orig_cu_graph_launch.load(std::memory_order_acquire),
+		graph_exec, stream);
+}
+
+extern "C" CUresult
+cuda_driver_function__cuGraphLaunch_ptsz(CUgraphExec graph_exec,
+					 CUstream stream)
+{
+	auto gum_ctx = gum_interceptor_get_current_invocation();
+	auto *state = (nv_attach_hook_state *)
+		gum_invocation_context_get_replacement_data(gum_ctx);
+	if (state == nullptr)
+		state = &nv_attach_get_hook_state();
+	return cu_graph_launch_common(
+		state->active_impl.load(std::memory_order_acquire),
+		state->orig_cu_graph_launch_ptsz.load(
+			std::memory_order_acquire),
+		graph_exec, stream);
 }
 
 extern "C" cudaError_t cuda_runtime_function__cudaLaunchKernel_ptsz(

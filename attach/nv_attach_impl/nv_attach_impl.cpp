@@ -266,6 +266,10 @@ CUresult cuda_driver_function__cuGraphKernelNodeSetParams_v1(
 	CUgraphNode hNode, const CUDA_KERNEL_NODE_PARAMS_v1 *nodeParams);
 CUresult cuda_driver_function__cuGraphKernelNodeSetParams_v2(
 	CUgraphNode hNode, const CUDA_KERNEL_NODE_PARAMS_v2 *nodeParams);
+CUresult cuda_driver_function__cuGraphLaunch(CUgraphExec graph_exec,
+					     CUstream stream);
+CUresult cuda_driver_function__cuGraphLaunch_ptsz(CUgraphExec graph_exec,
+						  CUstream stream);
 cudaError_t cuda_runtime_function__cudaMemcpyFromSymbol(
 	void *dst, const void *symbol, size_t count, size_t offset = 0,
 	cudaMemcpyKind kind = cudaMemcpyDeviceToHost);
@@ -452,6 +456,12 @@ nv_attach_impl::nv_attach_impl()
 		"cuGraphKernelNodeSetParams_v2",
 		(gpointer)&cuda_driver_function__cuGraphKernelNodeSetParams_v2,
 		hook_state.orig_cu_graph_kernel_node_set_params_v2);
+	replace_hook_once("cuGraphLaunch",
+			  (gpointer)&cuda_driver_function__cuGraphLaunch,
+			  hook_state.orig_cu_graph_launch);
+	replace_hook_once("cuGraphLaunch_ptsz",
+			  (gpointer)&cuda_driver_function__cuGraphLaunch_ptsz,
+			  hook_state.orig_cu_graph_launch_ptsz);
 	replace_hook_once(
 		"cudaMemcpyFromSymbol",
 		(gpointer)&cuda_runtime_function__cudaMemcpyFromSymbol,
@@ -1396,8 +1406,59 @@ void nv_attach_impl::record_patched_launch(cudaStream_t stream)
 	record_patched_launch_event(reinterpret_cast<CUstream>(stream));
 }
 
+namespace
+{
+class scoped_cuda_context final {
+    public:
+	explicit scoped_cuda_context(CUcontext context)
+	{
+		CUcontext current = nullptr;
+		if (context == nullptr ||
+		    cuCtxGetCurrent(&current) != CUDA_SUCCESS)
+			return;
+		if (current == context) {
+			active = true;
+			return;
+		}
+		if (cuCtxPushCurrent(context) == CUDA_SUCCESS) {
+			active = true;
+			pushed = true;
+		}
+	}
+
+	~scoped_cuda_context()
+	{
+		if (pushed) {
+			CUcontext popped = nullptr;
+			cuCtxPopCurrent(&popped);
+		}
+	}
+
+	explicit operator bool() const
+	{
+		return active;
+	}
+
+    private:
+	bool active = false;
+	bool pushed = false;
+};
+
+void destroy_cuda_event(CUcontext context, CUevent event)
+{
+	if (event == nullptr)
+		return;
+	scoped_cuda_context guard(context);
+	if (guard)
+		cuEventDestroy(event);
+}
+} // namespace
+
 void nv_attach_impl::record_patched_launch_event(CUstream stream)
 {
+	CUcontext context = nullptr;
+	if (cuCtxGetCurrent(&context) != CUDA_SUCCESS || context == nullptr)
+		return;
 	CUevent ev = nullptr;
 	if (cuEventCreate(&ev, CU_EVENT_DISABLE_TIMING) != CUDA_SUCCESS ||
 	    ev == nullptr) {
@@ -1409,13 +1470,14 @@ void nv_attach_impl::record_patched_launch_event(CUstream stream)
 	}
 	{
 		std::lock_guard<std::mutex> guard(launch_event_mutex);
-		auto it = pending_launch_events_by_stream.find(stream);
-		if (it != pending_launch_events_by_stream.end()) {
+		auto key = std::make_pair(context, stream);
+		auto it = pending_launch_events.find(key);
+		if (it != pending_launch_events.end()) {
 			if (it->second)
 				cuEventDestroy(it->second);
 			it->second = ev;
 		} else {
-			pending_launch_events_by_stream.emplace(stream, ev);
+			pending_launch_events.emplace(key, ev);
 		}
 	}
 }
@@ -1423,44 +1485,48 @@ void nv_attach_impl::record_patched_launch_event(CUstream stream)
 void nv_attach_impl::wait_for_patched_launch_events(
 	std::chrono::milliseconds timeout)
 {
-	// Best-effort ensure a context is current for driver event APIs.
-	{
-		CUcontext current = nullptr;
-		if (cuCtxGetCurrent(&current) != CUDA_SUCCESS ||
-		    current == nullptr) {
-			cuInit(0);
-			CUdevice dev = 0;
-			if (cuDeviceGet(&dev, 0) == CUDA_SUCCESS) {
-				cuDevicePrimaryCtxRetain(&current, dev);
-				if (current)
-					cuCtxSetCurrent(current);
-			}
-		}
-	}
-	auto deadline = std::chrono::steady_clock::now() + timeout;
-	for (;;) {
-		std::vector<std::pair<CUstream, CUevent>> batch;
+	using event_entry = std::pair<std::pair<CUcontext, CUstream>, CUevent>;
+	auto requeue = [this](const std::vector<event_entry> &events) {
+		std::vector<event_entry> superseded;
 		{
 			std::lock_guard<std::mutex> guard(launch_event_mutex);
-			batch.reserve(pending_launch_events_by_stream.size());
-			for (auto &kv : pending_launch_events_by_stream)
-				batch.emplace_back(kv.first, kv.second);
-			pending_launch_events_by_stream.clear();
+			for (const auto &entry : events) {
+				if (!pending_launch_events.emplace(entry).second)
+					superseded.push_back(entry);
+			}
+		}
+		for (const auto &entry : superseded)
+			destroy_cuda_event(entry.first.first, entry.second);
+	};
+	auto deadline = std::chrono::steady_clock::now() + timeout;
+	for (;;) {
+		std::vector<event_entry> batch;
+		{
+			std::lock_guard<std::mutex> guard(launch_event_mutex);
+			batch.reserve(pending_launch_events.size());
+			for (auto &entry : pending_launch_events)
+				batch.emplace_back(entry.first, entry.second);
+			pending_launch_events.clear();
 		}
 		if (batch.empty())
 			return;
-		std::vector<std::pair<CUstream, CUevent>> not_ready;
+		std::vector<event_entry> not_ready;
 		not_ready.reserve(batch.size());
-		for (auto &kv : batch) {
-			CUstream stream = kv.first;
-			CUevent ev = kv.second;
+		for (const auto &entry : batch) {
+			CUcontext context = entry.first.first;
+			CUevent ev = entry.second;
 			if (ev == nullptr)
 				continue;
+			scoped_cuda_context guard(context);
+			if (!guard) {
+				not_ready.push_back(entry);
+				continue;
+			}
 			CUresult st = cuEventQuery(ev);
 			if (st == CUDA_SUCCESS) {
 				cuEventDestroy(ev);
 			} else if (st == CUDA_ERROR_NOT_READY) {
-				not_ready.emplace_back(stream, ev);
+				not_ready.push_back(entry);
 			} else {
 				cuEventDestroy(ev);
 			}
@@ -1468,42 +1534,13 @@ void nv_attach_impl::wait_for_patched_launch_events(
 		if (not_ready.empty())
 			return;
 		if (std::chrono::steady_clock::now() >= deadline) {
-			std::lock_guard<std::mutex> guard(launch_event_mutex);
-			for (auto &kv : not_ready) {
-				// Keep the most recent event per stream.
-				auto it = pending_launch_events_by_stream.find(
-					kv.first);
-				if (it !=
-				    pending_launch_events_by_stream.end()) {
-					if (it->second)
-						cuEventDestroy(it->second);
-					it->second = kv.second;
-				} else {
-					pending_launch_events_by_stream.emplace(
-						kv.first, kv.second);
-				}
-			}
+			requeue(not_ready);
 			SPDLOG_WARN(
 				"nv_attach_impl: detach timeout waiting for {} patched kernel event(s)",
 				not_ready.size());
 			return;
 		}
-		{
-			std::lock_guard<std::mutex> guard(launch_event_mutex);
-			for (auto &kv : not_ready) {
-				auto it = pending_launch_events_by_stream.find(
-					kv.first);
-				if (it !=
-				    pending_launch_events_by_stream.end()) {
-					if (it->second)
-						cuEventDestroy(it->second);
-					it->second = kv.second;
-				} else {
-					pending_launch_events_by_stream.emplace(
-						kv.first, kv.second);
-				}
-			}
-		}
+		requeue(not_ready);
 		std::this_thread::sleep_for(std::chrono::milliseconds(5));
 	}
 }
@@ -1513,6 +1550,8 @@ void nv_attach_impl::clear_patched_state_for_next_session()
 	// Clear session-scoped state so a new trace session can bind to a new
 	// shm/maps layout without stale GPU pointers.
 	std::vector<std::unique_ptr<fatbin_record>> old_records;
+	std::vector<std::pair<std::pair<CUcontext, CUstream>, CUevent>>
+		old_launch_events;
 	{
 		std::lock_guard<std::mutex> guard(late_bootstrap_mutex);
 		old_records.swap(fatbin_records);
@@ -1544,13 +1583,14 @@ void nv_attach_impl::clear_patched_state_for_next_session()
 		}
 		{
 			std::lock_guard<std::mutex> g(launch_event_mutex);
-			for (auto &kv : pending_launch_events_by_stream) {
-				if (kv.second)
-					cuEventDestroy(kv.second);
-			}
-			pending_launch_events_by_stream.clear();
+			for (const auto &entry : pending_launch_events)
+				old_launch_events.emplace_back(entry.first,
+							       entry.second);
+			pending_launch_events.clear();
 		}
 	}
+	for (const auto &entry : old_launch_events)
+		destroy_cuda_event(entry.first.first, entry.second);
 	// Let old_records destruct (cuModuleUnload) outside locks.
 	old_records.clear();
 }
@@ -1568,7 +1608,7 @@ void nv_attach_impl::build_host_symbol_cache_once()
 
 		auto modules = elf_introspect::list_loaded_modules();
 		for (const auto &mod : modules) {
-			auto syms = elf_introspect::read_function_symbols(mod);
+			auto syms = elf_introspect::read_symbols(mod);
 			for (auto &sym : syms) {
 				if (sym.name.empty() || sym.start == 0)
 					continue;
@@ -1603,6 +1643,20 @@ nv_attach_impl::resolve_host_function_symbol(void *addr)
 			s.erase(0, strlen(kStubPrefix));
 			if (!s.empty() && s[0] != '_')
 				s.insert(s.begin(), '_');
+		}
+		// nvcc registers file-local device variables by their source
+		// name, while ELF exposes the host placeholder as
+		// `_ZL<len><name>`.
+		if (s.rfind("_ZL", 0) == 0) {
+			size_t pos = 3;
+			size_t name_length = 0;
+			while (pos < s.size() && s[pos] >= '0' &&
+			       s[pos] <= '9') {
+				name_length = name_length * 10 + (s[pos] - '0');
+				pos++;
+			}
+			if (name_length != 0 && pos + name_length == s.size())
+				return s.substr(pos, name_length);
 		}
 		return s;
 	};

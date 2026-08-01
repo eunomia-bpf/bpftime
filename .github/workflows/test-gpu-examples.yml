@@ -796,6 +796,11 @@ jobs:
             EXAMPLE_NAME="${{ matrix.examples.name }}"
             FOUND=1
             case "$EXAMPLE_NAME" in
+              atomizer)
+                if grep -Fq "$EXPECTED" server.log client.log && grep -Fq "Validated all visible GPUs" client.log; then
+                  FOUND=0
+                fi
+                ;;
               directly_run_on_gpu)
                 # For GEMM, expect a non-zero fixed-point value after bpftimetool ran.
                 if grep -Eq "GEMM C\\[0\\]=[1-9]" server.log; then
