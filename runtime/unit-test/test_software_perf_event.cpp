@@ -177,6 +177,8 @@ TEST_CASE("Software perf event records wrap on aligned boundaries after resize",
 
 	auto *header = (perf_event_mmap_page *)raw_buffer;
 	auto *base = (uint8_t *)raw_buffer + getpagesize();
+	// Without 8-byte record alignment, the fourth 20-byte record would
+	// start at offset 60 and split its 8-byte perf_event_header.
 	for (int sequence = 0; sequence < 4; sequence++) {
 		event_payload payload{ 1, sequence };
 		REQUIRE(perf->output_data(&payload, sizeof(payload)) == 0);
