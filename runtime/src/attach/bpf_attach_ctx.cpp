@@ -312,7 +312,7 @@ int bpf_attach_ctx::instantiate_prog_handler_at(int id,
 	return 0;
 }
 int bpf_attach_ctx::instantiate_bpf_link_handler_at(
-	int id, const bpf_link_handler &handler, const agent_config &config,
+	int id, const bpf_link_handler &handler, const runtime_config &config,
 	bool handle_nv_attach_impl)
 {
 	SPDLOG_DEBUG(
