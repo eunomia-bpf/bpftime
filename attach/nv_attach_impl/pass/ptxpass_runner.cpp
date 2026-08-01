@@ -61,6 +61,23 @@ void close_inherited_fds()
 	for (int fd = STDERR_FILENO + 1; fd < max_fd; fd++)
 		close(fd);
 }
+
+bool write_all(int fd, const char *data, size_t length)
+{
+	while (length > 0) {
+		ssize_t written = write(fd, data, length);
+		if (written <= 0) {
+			if (written < 0 && errno == EINTR)
+				continue;
+			if (written == 0)
+				errno = EIO;
+			return false;
+		}
+		data += written;
+		length -= static_cast<size_t>(written);
+	}
+	return true;
+}
 } // namespace
 
 int main(int argc, char **argv)
@@ -101,23 +118,6 @@ int main(int argc, char **argv)
 			close(saved_stdout);
 		return 70;
 	}
-	auto restore_stdout = [&]() -> bool {
-		std::cout.flush();
-		std::clog.flush();
-		std::cerr.flush();
-		fflush(stdout);
-		if (dup2(saved_stdout, STDOUT_FILENO) == -1) {
-			std::cerr << "Unable to restore stdout: "
-				  << std::strerror(errno) << "\n";
-			close(saved_stdout);
-			saved_stdout = -1;
-			return false;
-		}
-		close(saved_stdout);
-		saved_stdout = -1;
-		return true;
-	};
-
 	std::unique_ptr<void, int (*)(void *)> handle(
 		dlopen(library_path, RTLD_NOW | RTLD_LOCAL), dlclose);
 	if (!handle) {
@@ -128,6 +128,7 @@ int main(int argc, char **argv)
 
 	std::vector<char> output(output_bytes, '\0');
 	const int output_len = static_cast<int>(output.size());
+	int rc = 0;
 
 	if (mode == "--config") {
 		auto print_config = reinterpret_cast<print_config_fn>(
@@ -138,27 +139,31 @@ int main(int argc, char **argv)
 			return 66;
 		}
 		print_config(output_len, output.data());
-		handle.reset();
-		if (!restore_stdout())
-			return 70;
-		std::cout.write(output.data(), nul_terminated_length(output));
-		return 0;
+	} else {
+		auto process_input = reinterpret_cast<process_input_fn>(
+			dlsym(handle.get(), "process_input"));
+		if (!process_input) {
+			std::cerr << "Symbol process_input not found in "
+				  << library_path << "\n";
+			return 66;
+		}
+		std::string input = read_stdin();
+		rc = process_input(input.c_str(), output_len, output.data());
 	}
-
-	auto process_input = reinterpret_cast<process_input_fn>(
-		dlsym(handle.get(), "process_input"));
-	if (!process_input) {
-		std::cerr << "Symbol process_input not found in "
-			  << library_path << "\n";
-		return 66;
-	}
-	std::string input = read_stdin();
-	int rc = process_input(input.c_str(), output_len, output.data());
 	handle.reset();
-	if (!restore_stdout())
-		return 70;
 	if (rc != 0)
 		return rc;
-	std::cout.write(output.data(), nul_terminated_length(output));
-	return 0;
+	std::cout.flush();
+	std::clog.flush();
+	std::cerr.flush();
+	fflush(stdout);
+	if (!write_all(saved_stdout, output.data(),
+		       nul_terminated_length(output))) {
+		std::cerr << "Unable to write PTX pass output: "
+			  << std::strerror(errno) << "\n";
+		close(saved_stdout);
+		return 70;
+	}
+	close(saved_stdout);
+	_exit(0);
 }
