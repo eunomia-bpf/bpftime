@@ -246,124 +246,87 @@ void set_call_hook(syscall_hooker_func_t hook)
 	call_hook = hook != nullptr ? hook : &call_orig_syscall;
 }
 
+static bool setup_syscall_tracer_impl()
+{
+	if (auto mmap_addr =
+		    mmap(0x0, 0x1000, PROT_EXEC | PROT_READ | PROT_WRITE,
+			 MAP_PRIVATE | MAP_FIXED | MAP_ANONYMOUS, -1, 0);
+	    mmap_addr == MAP_FAILED) {
+		SPDLOG_ERROR("Failed to perform mmap: errno={}, message={}",
+			     errno, strerror(errno));
+		return false;
+	}
+	for (int i = 0; i < NR_syscalls; i++)
+		*((char *)(uintptr_t)(i)) = 0x90;
+
+	std::vector<uint8_t> codes{ 0x50, 0x48, 0xb8 };
+	for (int i = 0; i < 8; i++) {
+		codes.push_back(
+			(uint8_t)((((uint64_t)(uintptr_t)syscall_hooker_asm) >>
+				   (8 * i)) &
+				  0xff));
+	}
+	codes.push_back(0xff);
+	codes.push_back(0xe0);
+	std::copy(codes.begin(), codes.end(),
+		  (uint8_t *)(uintptr_t)NR_syscalls);
+	if (mprotect(0, 0x1000, PROT_EXEC) < 0) {
+		SPDLOG_ERROR("Failed to set execute only of 0-started page: {}",
+			     errno);
+		(void)munmap(nullptr, 0x1000);
+		return false;
+	}
+
+	SPDLOG_INFO("Page zero setted up..");
+	std::vector<MapEntry> entries;
+	std::ifstream ifs("/proc/self/maps");
+	while (ifs) {
+		std::string line;
+		std::getline(ifs, line);
+
+		MapEntry curr;
+		char *path_buf;
+		int cnt = sscanf(line.c_str(),
+				 "%" SCNx64 "-%" SCNx64
+				 " %c%c%c%*c %*x %*x:%*x %*d %ms",
+				 &curr.begin, &curr.end, &curr.r, &curr.w,
+				 &curr.x, &path_buf);
+		if (cnt < 5)
+			continue;
+		if (cnt == 6) {
+			std::string buf = path_buf;
+			free(path_buf);
+			if (buf == "[stack]" || buf == "[vsyscall]")
+				continue;
+		}
+		entries.push_back(curr);
+	}
+
+	SPDLOG_INFO("Rewriting executable segments..");
+	bool success = true;
+	for (const auto &map : entries) {
+		if (map.x != 'x' || map.begin == 0)
+			continue;
+		SPDLOG_DEBUG("Rewriting segment from {:x} to {:x}", map.begin,
+			     map.end);
+		success =
+			rewrite_segment((uint8_t *)(uintptr_t)map.begin,
+					map.end - map.begin, map.get_perm()) &&
+			success;
+	}
+	return success;
+}
+
 bool setup_syscall_tracer() noexcept
 {
 	// Until setup completes, transformed syscalls still delegate to the
 	// original syscall instruction.
 	call_hook = &call_orig_syscall;
 	try {
-		// Setup page mappings
-
-		if (auto mmap_addr = mmap(
-			    0x0, 0x1000, PROT_EXEC | PROT_READ | PROT_WRITE,
-			    MAP_PRIVATE | MAP_FIXED | MAP_ANONYMOUS, -1, 0);
-		    mmap_addr == MAP_FAILED) {
-			SPDLOG_ERROR(
-				"Failed to perform mmap: errno={}, message={}",
-				errno, strerror(errno));
-			return false;
-		}
-		// Setup jumpings
-		for (int i = 0; i < NR_syscalls; i++) {
-			// 0x90; nop
-			*((char *)(uintptr_t)(i)) = 0x90;
-		}
-		// Jump to the syscall handler function after the nop-s
-		/*
-		50
-		push %rax;
-
-		48 b8 88 77 66 55 44 33 22 11
-		movabs $0x1122334455667788, %rax; // The constant is the address
-		of syscall_hooker_asm
-
-		ff e0
-		jmp *%rax;
-
-		*/
-		std::vector<uint8_t> codes;
-		codes.push_back(0x50);
-		codes.push_back(0x48);
-		codes.push_back(0xb8);
-		for (int i = 0; i < 8; i++) {
-			codes.push_back(
-				(uint8_t)((((uint64_t)(uintptr_t)
-						    syscall_hooker_asm) >>
-					   (8 * i)) &
-					  0xff));
-		}
-		codes.push_back(0xff);
-		codes.push_back(0xe0);
-		std::copy(codes.begin(), codes.end(),
-			  (uint8_t *)(uintptr_t)(0 + NR_syscalls));
-		// Set the page to execute-only. Keep normal behavior of
-		// dereferencing null-pointers
-		if (int err = mprotect(0, 0x1000, PROT_EXEC); err < 0) {
-			SPDLOG_ERROR(
-				"Failed to set execute only of 0-started page: {}",
-				errno);
-			(void)munmap(nullptr, 0x1000);
-			return false;
-		}
-
-		SPDLOG_INFO("Page zero setted up..");
-		// Scan for /proc/self/maps
-
-		std::vector<MapEntry> entries;
-		std::ifstream ifs("/proc/self/maps");
-		while (ifs) {
-			std::string line;
-			std::getline(ifs, line);
-
-			MapEntry curr;
-			char *path_buf;
-			int cnt = sscanf(line.c_str(),
-					 "%" SCNx64 "-%" SCNx64
-					 " %c%c%c%*c %*x %*x:%*x %*d %ms",
-					 &curr.begin, &curr.end, &curr.r,
-					 &curr.w, &curr.x, &path_buf);
-			if (cnt < 5)
-				continue;
-			if (cnt == 6) {
-				std::string buf = path_buf;
-				free(path_buf);
-				if (buf == "[stack]" || buf == "[vsyscall]") {
-					continue;
-				}
-			}
-
-			entries.push_back(curr);
-		}
-		SPDLOG_INFO("Rewriting executable segments..");
-		// Hack the executable mappings
-		bool success = true;
-		for (const auto &map : entries) {
-			if (map.x == 'x') {
-				if (map.begin == 0) {
-					// Skip pages that we mapped
-					continue;
-				}
-				SPDLOG_DEBUG(
-					"Rewriting segment from {:x} to {:x}",
-					map.begin, map.end);
-				success =
-					rewrite_segment(
-						(uint8_t *)(uintptr_t)(map.begin),
-						map.end - map.begin,
-						map.get_perm()) &&
-					success;
-			}
-		}
-		return success;
-	} catch (const std::exception &error) {
-		try {
-			SPDLOG_ERROR("Failed to set up syscall transformer: {}",
-				     error.what());
-		} catch (...) {
-		}
+		return setup_syscall_tracer_impl();
 	} catch (...) {
+		return false;
 	}
-	return false;
 }
 
 } // namespace bpftime
