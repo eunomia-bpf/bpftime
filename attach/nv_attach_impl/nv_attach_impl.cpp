@@ -1086,9 +1086,11 @@ nv_attach_impl::hack_fatbin(std::map<std::string, std::string> all_ptx)
 							sha256_string);
 						bool parsed = false;
 						std::string last_parse_error;
-						size_t output_bytes =
-							kInitialPtxPassProcessOutputBytes;
-						while (true) {
+						for (size_t output_bytes =
+							     kInitialPtxPassProcessOutputBytes;
+						     output_bytes <=
+						     kMaxPtxPassProcessOutputBytes;
+						     output_bytes <<= 1) {
 							auto output = run_ptxpass_runner(
 								"--process",
 								hook_entry
@@ -1122,30 +1124,16 @@ nv_attach_impl::hack_fatbin(std::map<std::string, std::string> all_ptx)
 								last_parse_error =
 									e.what();
 							}
-							bool output_may_be_truncated =
-								output->size() +
-									1 >=
-								output_bytes;
-							if (!output_may_be_truncated ||
-							    output_bytes >=
+							if (output->size() + 1 <
+								    output_bytes ||
+							    output_bytes ==
 								    kMaxPtxPassProcessOutputBytes)
 								break;
-							size_t next_output_bytes =
-								output_bytes *
-								2;
-							if (next_output_bytes >
-							    kMaxPtxPassProcessOutputBytes)
-								next_output_bytes =
-									kMaxPtxPassProcessOutputBytes;
-							if (next_output_bytes ==
-							    output_bytes)
-								break;
-							output_bytes =
-								next_output_bytes;
 							SPDLOG_WARN(
 								"PTX pass output for kernel {} may be truncated; retrying with {} bytes",
 								kernel,
-								output_bytes);
+								output_bytes *
+									2);
 						}
 						if (!parsed) {
 							SPDLOG_ERROR(
