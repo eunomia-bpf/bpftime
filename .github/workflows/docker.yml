@@ -59,8 +59,7 @@ jobs:
         uses: docker/setup-buildx-action@v4
 
       - name: build docker
-        run: |
-          docker build .
+        run: docker build .
 
   build-and-push-image:
     name: Build and push Docker image
@@ -80,9 +79,7 @@ jobs:
         with:
           submodules: "recursive"
 
-      # setup Docker buld action
       - name: Set up Docker Buildx
-        id: buildx
         uses: docker/setup-buildx-action@v4
 
       - name: Login to Github Packages
