@@ -82,6 +82,16 @@ ebpf_inst make_stdw_imm(uint8_t dst_reg, int16_t off, int32_t imm)
 	return insn;
 }
 
+ebpf_inst make_stxdw(uint8_t dst_reg, uint8_t src_reg, int16_t off = 0)
+{
+	ebpf_inst insn{};
+	insn.opcode = INST_CLS_STX | INST_SIZE_DW | (INST_MEM << 5);
+	insn.dst = dst_reg;
+	insn.src = src_reg;
+	insn.offset = off;
+	return insn;
+}
+
 ebpf_inst make_lddw_map(uint8_t dst_reg, int32_t fd)
 {
 	ebpf_inst insn{};
@@ -250,6 +260,20 @@ TEST_CASE("Uniformity analysis classifies constants and GPU helpers",
 		REQUIRE(result.success);
 		REQUIRE(result.states[1].regs[0] == Uniformity::VARYING);
 	}
+
+	SECTION("map update and delete returns are VARYING")
+	{
+		for (const int32_t helper : { 2, 3 }) {
+			const std::array<ebpf_inst, 2> program = {
+				make_call(helper),
+				make_exit(),
+			};
+			const auto result = analyze_program_uniformity(program);
+			REQUIRE(result.success);
+			REQUIRE(result.states[1].regs[0] ==
+				Uniformity::VARYING);
+		}
+	}
 }
 
 TEST_CASE("Per-thread map values are lane-varying", "[gpu][uniformity]")
@@ -275,6 +299,60 @@ TEST_CASE("Per-thread map values are lane-varying", "[gpu][uniformity]")
 	const auto safety =
 		check_simt_safety(program.data(), program.size(), result, maps);
 	REQUIRE_FALSE(safety.passed);
+}
+
+TEST_CASE("Shared map writes require lane-uniform values", "[gpu][simt]")
+{
+	const std::map<int, BpftimeMapDescriptor> maps = {
+		{ 1, make_map(1, 1503) },
+	};
+
+	SECTION("direct store")
+	{
+		const std::array<ebpf_inst, 14> program = {
+			make_lddw_map(1, 1),	  {},
+			make_stdw_imm(10, -8, 0), make_mov64_reg(2, 10),
+			make_add64_imm(2, -8),	  make_call(1),
+			make_jeq_imm(0, 0, 6),	  make_mov64_reg(6, 0),
+			make_call(511),		  make_stxdw(6, 0),
+			make_ldxdw(3, 6, 0),	  make_jeq_imm(3, 0, 1),
+			make_mov64_imm(0, 0),	  make_exit(),
+		};
+		const auto uniformity = analyze_uniformity(
+			program.data(), program.size(), maps);
+		const auto safety = check_simt_safety(
+			program.data(), program.size(), uniformity, maps);
+		INFO(safety.summary());
+		REQUIRE_FALSE(safety.passed);
+		REQUIRE(safety.summary().find("Shared Map Value Uniformity") !=
+			std::string::npos);
+	}
+
+	SECTION("map update")
+	{
+		const std::array<ebpf_inst, 12> program = {
+			make_call(511),
+			make_stxdw(10, 0, -16),
+			make_lddw_map(1, 1),
+			{},
+			make_stdw_imm(10, -8, 0),
+			make_mov64_reg(2, 10),
+			make_add64_imm(2, -8),
+			make_mov64_reg(3, 10),
+			make_add64_imm(3, -16),
+			make_mov64_imm(4, 0),
+			make_call(2),
+			make_exit(),
+		};
+		const auto uniformity = analyze_uniformity(
+			program.data(), program.size(), maps);
+		const auto safety = check_simt_safety(
+			program.data(), program.size(), uniformity, maps);
+		INFO(safety.summary());
+		REQUIRE_FALSE(safety.passed);
+		REQUIRE(safety.summary().find("Shared Map Value Uniformity") !=
+			std::string::npos);
+	}
 }
 
 TEST_CASE("Atomic fetch results are lane-varying", "[gpu][uniformity]")

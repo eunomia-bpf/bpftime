@@ -21,6 +21,7 @@ constexpr const char *BRANCH_CHECK = "Warp-Uniform Branch Conditions";
 constexpr const char *PROHIBITED_HELPER_CHECK = "Prohibited Helpers";
 constexpr const char *ATOMIC_CHECK = "Atomic Operations on Uniform Addresses";
 constexpr const char *MAP_KEY_CHECK = "Map Update Key Uniformity";
+constexpr const char *MAP_VALUE_CHECK = "Shared Map Value Uniformity";
 
 bool is_lddw_continuation(const ebpf_inst *instructions, size_t pc)
 {
@@ -47,6 +48,11 @@ bool is_atomic(const ebpf_inst &instruction)
 {
 	return (instruction.opcode & INST_CLS_MASK) == INST_CLS_STX &&
 	       (instruction.opcode & 0xe0) == 0xc0;
+}
+
+bool is_shared_gpu_map(uint32_t type)
+{
+	return type == 1501 || type == 1503 || type == 1504 || type == 1513;
 }
 
 void add_error(SimtSafetyResult &result, size_t pc, const char *check_name,
@@ -96,6 +102,24 @@ Uniformity key_uniformity(const UniformityState &state,
 	}
 	return bpftime::verifier::gpu::query_pointer_uniformity(state, key_reg,
 								key_size);
+}
+
+Uniformity value_uniformity(const UniformityState &state,
+			    const std::map<int, BpftimeMapDescriptor> &maps,
+			    std::optional<int32_t> map_fd, uint8_t value_reg)
+{
+	size_t value_size = 0;
+	if (map_fd.has_value()) {
+		if (auto it = maps.find(*map_fd); it != maps.end()) {
+			value_size = it->second.value_size;
+		}
+	}
+	if (value_size == 0) {
+		value_size = bpftime::verifier::gpu::infer_pointer_access_width(
+			state, value_reg);
+	}
+	return bpftime::verifier::gpu::query_pointer_uniformity(
+		state, value_reg, value_size);
 }
 
 } // namespace
@@ -171,6 +195,17 @@ check_simt_safety(const ebpf_inst *instructions, size_t num_instructions,
 				  "atomic target address is not warp-uniform");
 		}
 
+		if ((instruction.opcode & INST_CLS_MASK) == INST_CLS_STX &&
+		    !is_atomic(instruction) &&
+		    state.pointers[instruction.dst].region ==
+			    PointerRegion::MAP_VALUE &&
+		    state.pointers[instruction.dst].offset_uniformity ==
+			    Uniformity::UNIFORM &&
+		    state.regs[instruction.src] != Uniformity::UNIFORM) {
+			add_error(result, pc, MAP_VALUE_CHECK,
+				  "shared map store value is lane-varying");
+		}
+
 		if (!is_call(instruction)) {
 			continue;
 		}
@@ -200,6 +235,19 @@ check_simt_safety(const ebpf_inst *instructions, size_t num_instructions,
 		    state.regs[4] != Uniformity::UNIFORM) {
 			add_error(result, pc, MAP_KEY_CHECK,
 				  "map update flags are lane-varying");
+		}
+
+		if (helper.behavior == GpuHelperBehavior::MAP_UPDATE &&
+		    state.map_fds[1].has_value()) {
+			const auto map = maps.find(*state.map_fds[1]);
+			if (map != maps.end() &&
+			    is_shared_gpu_map(map->second.type) &&
+			    value_uniformity(state, maps, state.map_fds[1],
+					     3) != Uniformity::UNIFORM) {
+				add_error(
+					result, pc, MAP_VALUE_CHECK,
+					"shared map update value is lane-varying");
+			}
 		}
 	}
 

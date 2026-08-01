@@ -240,15 +240,17 @@ int nv_attach_impl::create_attach_with_ebpf_callback(
 				    section_name,
 				    result.total_time_us / 1000.0);
 			if (!result.passed) {
-				SPDLOG_ERROR(
-					"GPU eBPF verification failed for {}: {}",
-					section_name, result.error_message);
 				if (data.verifier_mode ==
-				    BPFTIME_VERIFIER_STRICT)
+				    BPFTIME_VERIFIER_STRICT) {
+					SPDLOG_ERROR(
+						"GPU eBPF verification failed for {}: {}",
+						section_name,
+						result.error_message);
 					return -EINVAL;
+				}
 				SPDLOG_WARN(
-					"Continuing despite GPU verification failure for {}",
-					section_name);
+					"GPU eBPF verification failed for {}: {}; continuing",
+					section_name, result.error_message);
 			}
 		} else {
 			SPDLOG_INFO("Skipping GPU eBPF verification for {}",

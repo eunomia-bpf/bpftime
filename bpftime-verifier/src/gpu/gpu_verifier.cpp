@@ -344,7 +344,6 @@ class ScopedPrevailGpuRegistration {
 struct PrevailAttemptResult {
 	bool passed = false;
 	std::string message;
-	ebpf_verifier_stats_t stats{};
 };
 
 template <typename Clock>
@@ -361,7 +360,7 @@ run_prevail(const ebpf_inst *instructions, size_t num_instructions,
 	    const std::map<int, bpftime::verifier::BpftimeMapDescriptor> &maps)
 {
 	PrevailAttemptResult result;
-	result.stats = ebpf_verifier_stats_t{};
+	ebpf_verifier_stats_t stats{};
 
 	try {
 		ScopedPrevailGpuRegistration scoped_registration(maps);
@@ -383,7 +382,7 @@ run_prevail(const ebpf_inst *instructions, size_t num_instructions,
 		result.passed = ebpf_verify_program(
 			prevail_message,
 			std::get<InstructionSeq>(unmarshal_result),
-			program.info, &gpu_verifier_options, &result.stats);
+			program.info, &gpu_verifier_options, &stats);
 		if (!result.passed) {
 			result.message = prevail_message.str();
 		}
