@@ -12,6 +12,7 @@
 #include <cstring>
 #include <cstdio>
 #include <dlfcn.h>
+#include <future>
 #include <iterator>
 #include <stdexcept>
 #include <ptx_pass_config.h>
@@ -215,11 +216,11 @@ std::map<std::string, std::vector<uint8_t>> fatbin_record::compile_ptxs(
 	const auto &handler = impl.ptx_compiler;
 	boost::asio::thread_pool pool(std::thread::hardware_concurrency());
 	std::mutex map_lock;
+	std::vector<std::future<void>> compile_tasks;
 	for (const auto &[name, ptx_and_trampoline_flag] : patched_ptx) {
 		const auto &ptx = std::get<0>(ptx_and_trampoline_flag);
 
-		boost::asio::post(
-			pool,
+		std::packaged_task<void()> compile_task(
 			[&handler, ptx, name, &compiled_ptx, &map_lock, this,
 			 &impl, sm_arch]() -> void {
 				const auto ptx_fixed =
@@ -269,6 +270,7 @@ std::map<std::string, std::vector<uint8_t>> fatbin_record::compile_ptxs(
 						err,
 						handler.get_error_log(
 							compiler));
+					handler.destroy(compiler);
 					throw std::runtime_error(
 						"Unable to compile");
 				}
@@ -308,8 +310,12 @@ std::map<std::string, std::vector<uint8_t>> fatbin_record::compile_ptxs(
 					SPDLOG_INFO("Compile of {} done", name);
 				}
 			});
+		compile_tasks.push_back(compile_task.get_future());
+		boost::asio::post(pool, std::move(compile_task));
 	}
 	pool.join();
+	for (auto &task : compile_tasks)
+		task.get();
 	return compiled_ptx;
 }
 void fatbin_record::try_loading_ptxs(class nv_attach_impl &impl)

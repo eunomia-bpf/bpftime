@@ -1648,8 +1648,15 @@ void nv_attach_impl::clear_patched_state_for_next_session()
 				patched_global_cache_mutex);
 			patched_global_by_device.clear();
 		}
-		if (module_pool)
-			module_pool->clear();
+		{
+			std::lock_guard<std::mutex> g(module_pool_mutex_);
+			if (module_pool)
+				module_pool->clear();
+			for (const auto &device : device_manager_.devices()) {
+				if (device.module_pool)
+					device.module_pool->clear();
+			}
+		}
 		if (ptx_pool)
 			ptx_pool->clear();
 		{

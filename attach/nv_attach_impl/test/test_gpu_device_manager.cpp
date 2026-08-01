@@ -1,5 +1,5 @@
 #include "catch2/catch_test_macros.hpp"
-#include "nv_gpu_device_manager.hpp"
+#include "nv_attach_impl.hpp"
 #include <cuda.h>
 #include <cstdlib>
 #include <spdlog/spdlog.h>
@@ -82,4 +82,22 @@ TEST_CASE("gpu_device_manager with BPFTIME_SM_ARCH override")
 
 	// Clean up
 	unsetenv("BPFTIME_SM_ARCH");
+}
+
+TEST_CASE("PTX compiler failures propagate to the caller")
+{
+	nv_attach_impl impl;
+	impl.shared_mem_ptr = 1;
+	impl.ptx_compiler.create = []() -> nv_attach_impl_ptx_compiler * {
+		return nullptr;
+	};
+
+	fatbin_record record;
+	record.module_pool = impl.module_pool;
+	record.ptx_pool = impl.ptx_pool;
+	record.original_ptx.emplace(
+		"test.ptx", ".version 5.0\n.target sm_60\n.address_size 64\n");
+
+	REQUIRE_THROWS_AS(record.try_loading_ptxs_for_device(impl, 0, "sm_60"),
+			  std::runtime_error);
 }
