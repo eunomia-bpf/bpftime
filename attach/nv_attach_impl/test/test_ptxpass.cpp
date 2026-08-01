@@ -1,6 +1,8 @@
 #include "catch2/catch_test_macros.hpp"
 #include "ptxpass/core.hpp"
+#ifdef BPFTIME_TEST_PTXPASS_RUNNER
 #include "ptxpass_runner_test_config.hpp"
+#endif
 #include <array>
 #include <fcntl.h>
 #include <filesystem>
@@ -16,12 +18,14 @@
 #include <unistd.h>
 #include <vector>
 
+#ifdef BPFTIME_TEST_PTXPASS_RUNNER
 namespace bpftime::attach
 {
 std::optional<std::string>
 run_ptxpass_runner_for_test(const std::string &, const std::filesystem::path &,
 			    const std::string *, size_t);
 }
+#endif
 
 using namespace ptxpass;
 
@@ -425,6 +429,7 @@ TEST_CASE("compile_ebpf_to_ptx_from_words handles exit instruction",
 	REQUIRE(target_count <= 1);
 }
 
+#ifdef BPFTIME_TEST_PTXPASS_RUNNER
 TEST_CASE("PTX pass runner client handles closed standard descriptors",
 	  "[ptxpass_runner]")
 {
@@ -464,3 +469,4 @@ TEST_CASE("PTX pass runner client handles closed standard descriptors",
 	REQUIRE(config == R"({"mode":"config"})");
 	REQUIRE(process == R"({"input":"input"})");
 }
+#endif

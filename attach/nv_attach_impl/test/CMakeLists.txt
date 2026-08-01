@@ -27,9 +27,12 @@ if(${ENABLE_EBPF_VERIFIER} AND NOT TARGET Catch2)
 endif()
 
 add_dependencies(bpftime_nv_attach_tests Catch2 bpftime_nv_attach_impl ptxpass_core spdlog::spdlog)
-add_dependencies(bpftime_nv_attach_tests ptxpass_runner_test_pass)
-file(GENERATE OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/ptxpass_runner_test_config.hpp"
-    CONTENT "#pragma once\n#define PTXPASS_RUNNER_TEST_PASS R\"($<TARGET_FILE:ptxpass_runner_test_pass>)\"\n")
+if(BPFTIME_ENABLE_UNIT_TESTING)
+    add_dependencies(bpftime_nv_attach_tests ptxpass_runner_test_pass ptxpass_runner_config_only_test_pass)
+    target_compile_definitions(bpftime_nv_attach_tests PRIVATE BPFTIME_TEST_PTXPASS_RUNNER)
+    file(GENERATE OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/ptxpass_runner_test_config.hpp"
+        CONTENT "#pragma once\n#define PTXPASS_RUNNER_TEST_PASS R\"($<TARGET_FILE:ptxpass_runner_test_pass>)\"\n")
+endif()
 if(${TEST_LCOV})
     target_link_options(bpftime_nv_attach_tests PRIVATE -lgcov)
     target_link_libraries(bpftime_nv_attach_tests PRIVATE Catch2::Catch2WithMain bpftime_nv_attach_impl ptxpass_core spdlog::spdlog gcov cuda)
