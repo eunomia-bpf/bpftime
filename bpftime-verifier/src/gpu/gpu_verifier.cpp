@@ -312,10 +312,8 @@ class ScopedPrevailGpuRegistration {
 			  get_non_kernel_helper_overrides()),
 		  previous_maps_(bpftime::verifier::get_map_descriptors())
 	{
-		std::set<int32_t> helpers(bpftime::usable_helpers.begin(),
-					  bpftime::usable_helpers.end());
-		helpers.insert(PREVAIL_STANDARD_HELPERS.begin(),
-			       PREVAIL_STANDARD_HELPERS.end());
+		std::set<int32_t> helpers(PREVAIL_STANDARD_HELPERS.begin(),
+					  PREVAIL_STANDARD_HELPERS.end());
 		helpers.insert(PREVAIL_GPU_HELPERS.begin(),
 			       PREVAIL_GPU_HELPERS.end());
 		bpftime::verifier::set_available_helpers(

@@ -328,13 +328,12 @@ GpuHelperPrototype get_gpu_helper_effects(int32_t helper_id)
 			prototype.argument_type[3],
 			prototype.argument_type[4],
 		},
-		.return_uniformity = GpuHelperUniformity::UNIFORM,
+		.return_uniformity = GpuHelperUniformity::VARYING,
 		.semantic_argument_types = SEM_NONE,
 		.effect_class = GpuHelperEffectClass::NONE,
 		.behavior = GpuHelperBehavior::GENERIC,
 	};
 	if (helper_id >= 501) {
-		helper.return_uniformity = GpuHelperUniformity::VARYING;
 		helper.semantic_argument_types = CONSERVATIVE_UNKNOWN_GPU_OUT;
 	}
 	return helper;

@@ -261,6 +261,17 @@ TEST_CASE("Uniformity analysis classifies constants and GPU helpers",
 		REQUIRE(result.states[1].regs[0] == Uniformity::VARYING);
 	}
 
+	SECTION("unmodeled helper returns are VARYING")
+	{
+		const std::array<ebpf_inst, 2> program = {
+			make_call(7),
+			make_exit(),
+		};
+		const auto result = analyze_program_uniformity(program);
+		REQUIRE(result.success);
+		REQUIRE(result.states[1].regs[0] == Uniformity::VARYING);
+	}
+
 	SECTION("map update and delete returns are VARYING")
 	{
 		for (const int32_t helper : { 2, 3 }) {
@@ -550,5 +561,17 @@ TEST_CASE("GPU verifier integrates SIMT phases with optional PREVAIL",
 		INFO(result.error_message);
 		REQUIRE_FALSE(result.passed);
 		REQUIRE_FALSE(result.error_message.empty());
+	}
+
+	SECTION("CPU helper registration does not widen the GPU allow-list")
+	{
+		reset_verifier_state({ 7 });
+		const std::array<ebpf_inst, 2> program = {
+			make_call(7),
+			make_exit(),
+		};
+		const auto result = verify_gpu_program(
+			program.data(), program.size(), "cuda__cpu_helper");
+		REQUIRE_FALSE(result.passed);
 	}
 }
