@@ -374,7 +374,7 @@ int software_perf_event_buffer::output_data(const void *buf, size_t size)
 	header.header.type = PERF_RECORD_SAMPLE;
 	header.header.size = record_size;
 	header.header.misc = 0;
-	header.size = size;
+	header.size = record_size - sizeof(header);
 
 	append_record_parts(&header, sizeof(header), buf, size,
 			    record_size - sizeof(header) - size);
