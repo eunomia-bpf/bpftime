@@ -281,7 +281,7 @@ The following standard eBPF helpers work on GPU with special optimizations:
 - **`bpf_map_lookup_elem()`** (1): Fast path for GPU array maps, fallback to host for others
 - **`bpf_map_update_elem()`** (2): Fast path for GPU array maps, fallback to host for others
 - **`bpf_map_delete_elem()`** (3): Host call via shared memory
-- **`bpf_trace_printk()`** (6): Formatted output to the configured logger
+- **`bpf_trace_printk()`** (6): Formatted output to host console
 - **`bpf_get_current_pid_tgid()`** (14): Returns host process PID/TID
 - **`bpf_perf_event_output()`** (25): Optimized for GPU ringbuf maps
 

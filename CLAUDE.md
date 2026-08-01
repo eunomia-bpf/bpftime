@@ -148,21 +148,3 @@ The architecture prioritizes performance (bypassing kernel), compatibility (same
 
 Do not create a root `docs/` directory or commit pull-request review artifacts.
 Keep repository maintenance and design constraints in this file.
-
-## Injected and Preloaded Code
-
-Code under `runtime/syscall-server/`, `runtime/agent/`, and
-`attach/text_segment_transformer/` runs inside a process bpftime does not own.
-Preserve these invariants:
-
-- Internal failures must not terminate the host or let C++ exceptions cross an
-  exported C/interposition boundary.
-- Recoverable initialization and interception failures must fail open to the
-  original host operation with its original arguments, return behavior, and
-  `errno` semantics.
-- Injected code must not write to stdout or stderr. Console logging is allowed
-  only when the user explicitly selects it with
-  `BPFTIME_LOG_OUTPUT=console`; logger failures must become silent.
-- Partial text transformation must keep syscalls delegated to the original
-  instruction until the agent callback is fully installed, and every failure
-  path must restore page permissions.
