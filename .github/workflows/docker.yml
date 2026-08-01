@@ -62,9 +62,7 @@ jobs:
     needs: build-image
     if: |
       github.event_name != 'pull_request' &&
-      github.repository_owner == 'eunomia-bpf' &&
-      !contains(github.event.head_commit.message, '[skip ci]') &&
-      !contains(github.event.head_commit.message, '[ci skip]')
+      github.repository_owner == 'eunomia-bpf'
     permissions:
       contents: read
       packages: write
@@ -105,7 +103,6 @@ jobs:
           platforms: linux/amd64
           # Note: tags has to be all lower-case
           tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
           push: true
 
       - name: Image digest
