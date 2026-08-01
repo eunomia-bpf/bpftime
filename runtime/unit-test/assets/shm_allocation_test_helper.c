@@ -103,11 +103,6 @@ static int trigger_openat_relative(void)
 		open("/sys/bus/event_source/devices", O_RDONLY | O_DIRECTORY);
 	if (dirfd < 0)
 		return 77;
-	void (*enable_mocking)(void) = (void (*)(void))dlsym(
-		RTLD_DEFAULT, "bpftime_test_enable_syscall_mocking");
-	if (enable_mocking == NULL)
-		return 43;
-	enable_mocking();
 	int fd = openat(dirfd, "uprobe/type", O_RDONLY);
 	if (fd < 0)
 		return 40;

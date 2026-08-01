@@ -9,7 +9,6 @@
 #include "shm_allocation_test_paths.hpp"
 
 #include <boost/interprocess/shared_memory_object.hpp>
-#include <array>
 #include <cerrno>
 #include <cstdlib>
 #include <string>
@@ -89,13 +88,11 @@ helper_result run_preloaded_helper(const char *mode, const char *library,
 
 	close(output_pipe[1]);
 	std::string output;
-	std::array<char, 4096> buffer;
+	char buffer[4096];
 	for (;;) {
-		ssize_t count =
-			read(output_pipe[0], buffer.data(), buffer.size());
+		ssize_t count = read(output_pipe[0], buffer, sizeof(buffer));
 		if (count > 0) {
-			output.append(buffer.data(),
-				      static_cast<size_t>(count));
+			output.append(buffer, static_cast<size_t>(count));
 			continue;
 		}
 		if (count == -1 && errno == EINTR)

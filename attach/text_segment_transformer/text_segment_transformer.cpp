@@ -303,18 +303,16 @@ static bool setup_syscall_tracer_impl()
 	}
 
 	SPDLOG_INFO("Rewriting executable segments..");
-	bool success = true;
 	for (const auto &map : entries) {
 		if (map.x != 'x' || map.begin == 0)
 			continue;
 		SPDLOG_DEBUG("Rewriting segment from {:x} to {:x}", map.begin,
 			     map.end);
-		success =
-			rewrite_segment((uint8_t *)(uintptr_t)map.begin,
-					map.end - map.begin, map.get_perm()) &&
-			success;
+		if (!rewrite_segment((uint8_t *)(uintptr_t)map.begin,
+				     map.end - map.begin, map.get_perm()))
+			return false;
 	}
-	return success;
+	return true;
 }
 
 bool setup_syscall_tracer() noexcept

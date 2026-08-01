@@ -78,7 +78,7 @@ uint64_t bpftime_trace_printk(uint64_t fmt, uint64_t fmt_size, ...)
 	va_end(args);
 	if (ret >= 0) {
 		try {
-			SPDLOG_INFO("bpf_trace_printk: {}", buffer);
+			SPDLOG_INFO("{}", buffer);
 		} catch (...) {
 		}
 	}

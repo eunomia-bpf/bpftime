@@ -109,17 +109,6 @@ static bool initialize_ctx() noexcept
 	return true;
 }
 
-#if defined(BPFTIME_PRELOAD_TEST_HOOKS)
-extern "C" void bpftime_test_enable_syscall_mocking()
-{
-	if (!initialize_ctx())
-		return;
-	context->enable_mock.store(true, std::memory_order_relaxed);
-	context->enable_mock_after_initialized.store(true,
-						     std::memory_order_relaxed);
-}
-#endif
-
 template <typename Fn, typename Result, typename... Args>
 Result call_original(const char *name, Result failure, int caller_errno,
 		     Args... args) noexcept

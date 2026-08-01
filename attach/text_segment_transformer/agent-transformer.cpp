@@ -4,13 +4,10 @@
 #include <dlfcn.h>
 #include <frida-gum.h>
 #include "text_segment_transformer.hpp"
-#include <string>
 
 using main_func_t = int (*)(int, char **, char **);
-using shm_destroy_func_t = void (*)(void);
 
 static main_func_t orig_main_func = nullptr;
-static shm_destroy_func_t shm_destroy_func = nullptr;
 
 // Whether syscall server was injected using frida. Defaults to true. If
 // __libc_start_main was called, it will be set to false
@@ -39,7 +36,6 @@ extern "C" int __libc_start_main(int (*main)(int, char **, char **), int argc,
 				 void *stack_end)
 {
 	injected_with_frida = false;
-	configure_transformer_logger();
 	orig_main_func = main;
 	using this_func_t = decltype(&__libc_start_main);
 	this_func_t orig = (this_func_t)dlsym(RTLD_NEXT, "__libc_start_main");
@@ -65,11 +61,6 @@ static void bpftime_agent_main_impl(const gchar *data, gboolean *stay_resident)
 				"Please set AGENT_SO to the bpftime-agent when use this tranformer");
 			return;
 		}
-	}
-	if (!agent_so) {
-		SPDLOG_CRITICAL(
-			"Please set AGENT_SO to the bpftime-agent when use this tranformer");
-		return;
 	}
 	SPDLOG_DEBUG("Using agent {}", agent_so);
 	cs_arch_register_x86();

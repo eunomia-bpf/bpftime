@@ -961,20 +961,11 @@ extern "C" void bpftime_agent_main(const gchar *data, gboolean *stay_resident)
 
 			setenv("BPFTIME_USED", "1", 0);
 			SPDLOG_DEBUG("Set environment variable BPFTIME_USED");
-			try {
-				int res = ctx_holder.ctx
-						  .init_attach_ctx_from_handlers(
-							  runtime_config);
-				if (res != 0) {
-					SPDLOG_INFO(
-						"Failed to initialize attach context, exiting..");
-					init_fail();
-					return;
-				}
-			} catch (const std::exception &ex) {
-				SPDLOG_ERROR(
-					"Unable to instantiate handlers: {}",
-					ex.what());
+			int res = ctx_holder.ctx.init_attach_ctx_from_handlers(
+				runtime_config);
+			if (res != 0) {
+				SPDLOG_INFO(
+					"Failed to initialize attach context, exiting..");
 				init_fail();
 				return;
 			}
@@ -1085,9 +1076,8 @@ _bpftime__setup_syscall_trace_callback(syscall_hooker_func_t *hooker)
 		return;
 	try {
 		orig_hooker = *hooker;
-		gboolean val = FALSE;
-		bpftime_agent_main("", &val);
-		if (val == FALSE)
+		bpftime_agent_main("", nullptr);
+		if (!global_ctx_constructed.load(std::memory_order_acquire))
 			return;
 		*hooker = &syscall_callback;
 		try {
