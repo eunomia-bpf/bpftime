@@ -459,7 +459,10 @@ static bool ensure_detach_worker_started() noexcept
 						    __ATOMIC_SEQ_CST) != 1) {
 					continue;
 				}
-				perform_detach();
+				try {
+					(void)perform_detach();
+				} catch (...) {
+				}
 			}
 		}).detach();
 	} catch (...) {

@@ -280,6 +280,11 @@ static bool setup_syscall_tracer_impl()
 	SPDLOG_INFO("Page zero setted up..");
 	std::vector<MapEntry> entries;
 	std::ifstream ifs("/proc/self/maps");
+	if (!ifs.is_open()) {
+		(void)munmap(nullptr, 0x1000);
+		SPDLOG_ERROR("Failed to open /proc/self/maps");
+		return false;
+	}
 	while (ifs) {
 		std::string line;
 		std::getline(ifs, line);
