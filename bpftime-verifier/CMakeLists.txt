@@ -3,7 +3,6 @@ add_library(bpftime-verifier STATIC
     src/platform-impl.cpp
     src/gpu/gpu_platform.cpp
     src/gpu/gpu_verifier.cpp
-    src/gpu/resource_budget.cpp
     src/gpu/simt_safety_check.cpp
     src/gpu/uniformity_analysis.cpp
 )
@@ -16,8 +15,8 @@ set_property(TARGET bpftime-verifier PROPERTY CXX_STANDARD 20)
 target_include_directories(bpftime-verifier
     PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/ebpf-verifier/src
     ${CMAKE_CURRENT_SOURCE_DIR}/include
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/gpu
     ${LIBBPF_INCLUDE_DIRS}
+    PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src/gpu
 )
 
 target_link_libraries(bpftime-verifier PUBLIC ebpfverifier ${LIBBPF_LIBRARIES} z elf)
@@ -54,6 +53,9 @@ else ()
     target_link_libraries(bpftime_gpu_verifier_tests PRIVATE bpftime-verifier Catch2::Catch2WithMain)
 endif()
 target_include_directories(bpftime_verifier_tests PRIVATE ${BPFTIME_VERIFIER_INCLUDE})
-target_include_directories(bpftime_gpu_verifier_tests PRIVATE ${BPFTIME_VERIFIER_INCLUDE})
+target_include_directories(bpftime_gpu_verifier_tests PRIVATE
+    ${BPFTIME_VERIFIER_INCLUDE}
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/gpu
+)
 add_test(NAME bpftime_verifier_tests COMMAND bpftime_verifier_tests)
 add_test(NAME bpftime_gpu_verifier_tests COMMAND bpftime_gpu_verifier_tests)

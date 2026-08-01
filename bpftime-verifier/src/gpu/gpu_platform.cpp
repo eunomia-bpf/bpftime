@@ -7,9 +7,7 @@
 
 #include <linux/bpf.h>
 
-#include <algorithm>
 #include <array>
-#include <cstring>
 #include <map>
 #include <stdexcept>
 #include <string>
@@ -22,6 +20,8 @@ using bpftime::GpuHelperBehavior;
 using bpftime::GpuHelperEffectClass;
 using bpftime::GpuHelperPrototype;
 using bpftime::GpuHelperUniformity;
+
+constexpr ebpf_context_descriptor_t GPU_NO_CONTEXT = { 0, -1, -1, -1 };
 
 constexpr std::array<ebpf_argument_type_t, 5> ARGS_NONE = {
 	EBPF_ARGUMENT_TYPE_DONTCARE, EBPF_ARGUMENT_TYPE_DONTCARE,
@@ -138,10 +138,11 @@ const std::map<int32_t, GpuHelperPrototype> &helper_table()
 				  GpuHelperUniformity::UNIFORM) },
 		{ 25, make_helper("perf_event_output", EBPF_RETURN_TYPE_INTEGER,
 				  GPU_PERF_EVENT_OUTPUT_ARGS,
-				  GpuHelperUniformity::UNIFORM) },
+				  GpuHelperUniformity::VARYING) },
 		{ 501,
 		  make_helper("ebpf_puts", EBPF_RETURN_TYPE_INTEGER,
-			      GPU_PUTS_ARGS, GpuHelperUniformity::UNIFORM) },
+			      GPU_PUTS_ARGS, GpuHelperUniformity::UNIFORM,
+			      SEM_NONE, GpuHelperEffectClass::PROHIBITED) },
 		{ 502,
 		  make_helper("bpf_get_globaltimer", EBPF_RETURN_TYPE_INTEGER,
 			      ARGS_NONE, GpuHelperUniformity::UNIFORM) },
@@ -160,7 +161,7 @@ const std::map<int32_t, GpuHelperPrototype> &helper_table()
 		{ 506,
 		  make_helper("bpf_gpu_membar", EBPF_RETURN_TYPE_INTEGER,
 			      ARGS_NONE, GpuHelperUniformity::UNIFORM, SEM_NONE,
-			      GpuHelperEffectClass::PROHIBITED_SYNC) },
+			      GpuHelperEffectClass::PROHIBITED) },
 		{ 507,
 		  make_helper("bpf_cuda_exit",
 			      EBPF_RETURN_TYPE_INTEGER_OR_NO_RETURN_IF_SUCCEED,
@@ -197,28 +198,15 @@ EbpfHelperPrototype to_prevail_prototype(const GpuHelperPrototype &helper)
 	return prototype;
 }
 
-struct bpf_load_map_def {
-	uint32_t type;
-	uint32_t key_size;
-	uint32_t value_size;
-	uint32_t max_entries;
-	uint32_t map_flags;
-	uint32_t inner_map_idx;
-	uint32_t numa_node;
-};
-
 EbpfProgramType gpu_get_program_type(const std::string &section,
-				     const std::string &path)
+				     const std::string &)
 {
-	if (section.starts_with("kprobe/") ||
-	    section.starts_with("kretprobe/") ||
-	    section.starts_with("uprobe") ||
-	    section.starts_with("uretprobe/")) {
-		return g_ebpf_platform_linux.get_program_type(section, path);
-	}
 	if (bpftime::is_gpu_section(section)) {
-		return g_ebpf_platform_linux.get_program_type("kprobe/__gpu__",
-							      path);
+		auto type = g_ebpf_platform_linux.get_program_type(
+			"kprobe/__gpu__", "");
+		type.name = "bpftime_gpu";
+		type.context_descriptor = &GPU_NO_CONTEXT;
+		return type;
 	}
 	throw std::runtime_error("Unsupported GPU section: " + section);
 }
@@ -245,39 +233,6 @@ bool gpu_is_helper_usable(int32_t helper_id)
 	return bpftime::usable_helpers.contains(helper_id);
 }
 
-void gpu_parse_maps_section(std::vector<EbpfMapDescriptor> &descriptors,
-			    const char *data, size_t map_def_size,
-			    int map_count, const ebpf_platform_t *,
-			    ebpf_verifier_options_t options)
-{
-	std::vector<bpf_load_map_def> normalized;
-	std::vector<uint32_t> original_types;
-	normalized.reserve(map_count);
-	original_types.reserve(map_count);
-
-	for (int i = 0; i < map_count; ++i) {
-		bpf_load_map_def def{};
-		memcpy(&def, data + i * map_def_size,
-		       std::min(map_def_size, sizeof(def)));
-		original_types.push_back(def.type);
-		if (auto mapped = bpftime::try_get_gpu_map_type(def.type)) {
-			def.type = mapped->platform_specific_type;
-		}
-		normalized.push_back(def);
-	}
-
-	const size_t before = descriptors.size();
-	g_ebpf_platform_linux.parse_maps_section(
-		descriptors, reinterpret_cast<const char *>(normalized.data()),
-		sizeof(bpf_load_map_def), map_count, &g_ebpf_platform_linux,
-		options);
-
-	for (int i = 0; i < map_count; ++i) {
-		descriptors[before + static_cast<size_t>(i)].type =
-			original_types[static_cast<size_t>(i)];
-	}
-}
-
 EbpfMapDescriptor &gpu_get_map_descriptor(int fd)
 {
 	for (auto &descriptor : global_program_info->map_descriptors) {
@@ -298,6 +253,11 @@ EbpfMapType gpu_get_map_type(uint32_t platform_specific_type)
 		    bpftime::try_get_gpu_map_type(platform_specific_type)) {
 		return *mapped;
 	}
+	if (platform_specific_type >= 1500 && platform_specific_type < 1600) {
+		throw std::runtime_error(
+			"Unsupported GPU map type: " +
+			std::to_string(platform_specific_type));
+	}
 	return g_ebpf_platform_linux.get_map_type(platform_specific_type);
 }
 
@@ -314,7 +274,6 @@ namespace bpftime
 bool is_gpu_section(std::string_view section_name)
 {
 	return section_name.find("cuda__") != std::string_view::npos ||
-	       section_name.find("rocm__") != std::string_view::npos ||
 	       section_name.find("__memcapture") != std::string_view::npos;
 }
 
@@ -385,8 +344,8 @@ ebpf_platform_t gpu_platform_spec{
 	.get_program_type = &gpu_get_program_type,
 	.get_helper_prototype = &gpu_get_helper_prototype,
 	.is_helper_usable = &gpu_is_helper_usable,
-	.map_record_size = sizeof(bpf_load_map_def),
-	.parse_maps_section = &gpu_parse_maps_section,
+	.map_record_size = g_ebpf_platform_linux.map_record_size,
+	.parse_maps_section = g_ebpf_platform_linux.parse_maps_section,
 	.get_map_descriptor = &gpu_get_map_descriptor,
 	.get_map_type = &gpu_get_map_type,
 	.resolve_inner_map_references = &gpu_resolve_inner_map_references,

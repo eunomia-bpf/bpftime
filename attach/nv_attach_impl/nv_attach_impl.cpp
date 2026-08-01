@@ -226,13 +226,10 @@ int nv_attach_impl::create_attach_with_ebpf_callback(
 	}
 	if (matched) {
 #ifdef ENABLE_BPFTIME_VERIFIER
-		const char *level_env = std::getenv("BPFTIME_VERIFIER_LEVEL");
-		const std::string_view verifier_level =
-			level_env == nullptr ? "" : level_env;
 		const auto section_name = data.program_name.empty() ?
 						  attach_point_name :
 						  data.program_name;
-		if (verifier_level != "NO_VERIFY") {
+		if (data.verifier_mode != BPFTIME_NO_VERIFY) {
 			const auto result =
 				bpftime::verifier::gpu::verify_gpu_program(
 					data.instructions.data(),
@@ -246,7 +243,8 @@ int nv_attach_impl::create_attach_with_ebpf_callback(
 				SPDLOG_ERROR(
 					"GPU eBPF verification failed for {}: {}",
 					section_name, result.error_message);
-				if (verifier_level == "STRICT")
+				if (data.verifier_mode ==
+				    BPFTIME_VERIFIER_STRICT)
 					return -EINVAL;
 				SPDLOG_WARN(
 					"Continuing despite GPU verification failure for {}",

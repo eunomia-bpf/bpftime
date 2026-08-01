@@ -23,7 +23,7 @@ enum class GpuHelperArgumentSemantics {
 
 enum class GpuHelperEffectClass {
 	NONE,
-	PROHIBITED_SYNC,
+	PROHIBITED,
 };
 
 enum class GpuHelperBehavior {

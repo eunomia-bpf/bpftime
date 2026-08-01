@@ -5,7 +5,6 @@
 #include "ebpf_vm_isa.hpp"
 #include "gpu_platform.hpp"
 #include "platform-impl.hpp"
-#include "resource_budget.hpp"
 #include "simt_safety_check.hpp"
 #include "spec_type_descriptors.hpp"
 #include "uniformity_analysis.hpp"
@@ -26,7 +25,7 @@ namespace
 ebpf_verifier_options_t gpu_verifier_options = {
 	.check_termination = true,
 	.assume_assertions = false,
-	.print_invariants = true,
+	.print_invariants = false,
 	.print_failures = true,
 	.no_simplify = true,
 	.mock_map_fds = false,
@@ -96,10 +95,18 @@ make_prevail_gpu_helper_override(int32_t helper_id)
 	}
 
 	for (size_t i = 0; i < 5; ++i) {
-		prototype.argument_type[i] =
-			i < arity ?
-				bpftime::verifier::EBPF_ARGUMENT_TYPE_ANYTHING :
+		if (i >= arity) {
+			prototype.argument_type[i] =
 				bpftime::verifier::EBPF_ARGUMENT_TYPE_DONTCARE;
+		} else if (helper_id == 501) {
+			prototype.argument_type[i] = static_cast<
+				bpftime::verifier::bpftime_argument_type_t>(
+				static_cast<int>(
+					helper->prevail_argument_types[i]));
+		} else {
+			prototype.argument_type[i] =
+				bpftime::verifier::EBPF_ARGUMENT_TYPE_ANYTHING;
+		}
 	}
 
 	return prototype;
@@ -417,6 +424,15 @@ static GpuVerifyResult verify_gpu_instructions(
 	}
 
 	const auto maps = effective_map_descriptors(map_descriptors);
+	for (const auto &[fd, map] : maps) {
+		(void)fd;
+		if (map.type >= 1500 && map.type < 1600 &&
+		    !bpftime::try_get_gpu_map_type(map.type).has_value()) {
+			result.error_message = "unsupported GPU map type " +
+					       std::to_string(map.type);
+			return finish();
+		}
+	}
 	const auto prevail =
 		run_prevail(instructions, num_instructions, section_name,
 			    to_prevail_map_descriptors(maps), maps);
@@ -435,14 +451,6 @@ static GpuVerifyResult verify_gpu_instructions(
 					    uniformity, maps);
 	if (!simt.passed) {
 		result.error_message = simt.summary();
-		return finish();
-	}
-
-	const auto budget = get_default_budget(section_name);
-	const auto budget_result = check_resource_budget(
-		instructions, num_instructions, budget, &prevail.stats);
-	if (!budget_result.passed) {
-		result.error_message = budget_result.error_message;
 		return finish();
 	}
 

@@ -24,6 +24,8 @@ using bpftime::verifier::gpu::UniformityAnalysisResult;
 using bpftime::verifier::gpu::UniformityState;
 
 constexpr int STACK_SIZE = 512;
+constexpr int32_t ATOMIC_FETCH = 0x01;
+constexpr int32_t ATOMIC_CMPXCHG = 0xf1;
 
 bool is_lddw(const ebpf_inst &instruction)
 {
@@ -43,6 +45,12 @@ bool is_exit(const ebpf_inst &instruction)
 bool is_call(const ebpf_inst &instruction)
 {
 	return instruction.opcode == INST_OP_CALL;
+}
+
+bool is_atomic(const ebpf_inst &instruction)
+{
+	return (instruction.opcode & INST_CLS_MASK) == INST_CLS_STX &&
+	       (instruction.opcode & 0xe0) == 0xc0;
 }
 
 bool is_unconditional_jump(const ebpf_inst &instruction)
@@ -127,14 +135,6 @@ bool in_stack_bounds(int32_t offset, size_t width)
 	       offset + static_cast<int32_t>(width) - 1 <= -1;
 }
 
-bool is_unmodified_context_pointer(const PointerProvenance &pointer)
-{
-	return pointer.region == PointerRegion::CONTEXT &&
-	       pointer.offset_uniformity == Uniformity::UNIFORM &&
-	       pointer.constant_offset.has_value() &&
-	       *pointer.constant_offset == 0;
-}
-
 size_t stack_index(int32_t relative_offset)
 {
 	return static_cast<size_t>(STACK_SIZE + relative_offset);
@@ -150,13 +150,6 @@ Uniformity helper_uniformity(GpuHelperUniformity helper_uniformity)
 UniformityState make_entry_state()
 {
 	UniformityState state;
-	state.regs[1] = Uniformity::UNIFORM;
-	state.pointers[1] = PointerProvenance{
-		.region = PointerRegion::CONTEXT,
-		.constant_offset = 0,
-		.offset_uniformity = Uniformity::UNIFORM,
-		.pointee_uniformity = Uniformity::UNIFORM,
-	};
 	state.regs[10] = Uniformity::UNIFORM;
 	state.pointers[10] = PointerProvenance{
 		.region = PointerRegion::STACK,
@@ -368,6 +361,17 @@ void clear_register(UniformityState &state, uint8_t reg)
 	state.map_fds[reg].reset();
 }
 
+bool is_per_thread_map(const UniformityState &state,
+		       const std::map<int, BpftimeMapDescriptor> &maps)
+{
+	if (!state.map_fds[1].has_value()) {
+		return false;
+	}
+	const auto it = maps.find(*state.map_fds[1]);
+	return it != maps.end() &&
+	       (it->second.type == 1502 || it->second.type == 1512);
+}
+
 Uniformity
 helper_return_uniformity(const GpuHelperPrototype &helper,
 			 const UniformityState &state,
@@ -492,6 +496,15 @@ UniformityState transfer(const ebpf_inst *instructions, size_t count, size_t pc,
 					input.pointers[src];
 			}
 		}
+		if (is_atomic(instruction)) {
+			if (instruction.imm == ATOMIC_CMPXCHG) {
+				clear_register(output, 0);
+				output.regs[0] = Uniformity::VARYING;
+			} else if ((instruction.imm & ATOMIC_FETCH) != 0) {
+				clear_register(output, src);
+				output.regs[src] = Uniformity::VARYING;
+			}
+		}
 		return output;
 	}
 
@@ -523,12 +536,6 @@ UniformityState transfer(const ebpf_inst *instructions, size_t count, size_t pc,
 					output.pointers[dst] = it->second;
 				}
 			}
-			return output;
-		}
-
-		if (is_unmodified_context_pointer(base_pointer)) {
-			output.regs[dst] = Uniformity::UNIFORM;
-			output.pointers[dst] = {};
 			return output;
 		}
 
@@ -566,11 +573,16 @@ UniformityState transfer(const ebpf_inst *instructions, size_t count, size_t pc,
 		output.pointers[0] = {};
 
 		if (helper.behavior == GpuHelperBehavior::MAP_LOOKUP) {
+			const bool per_thread = is_per_thread_map(input, maps);
 			output.pointers[0] = PointerProvenance{
 				.region = PointerRegion::MAP_VALUE,
 				.constant_offset = 0,
-				.offset_uniformity = Uniformity::UNIFORM,
-				.pointee_uniformity = return_uniformity,
+				.offset_uniformity =
+					per_thread ? Uniformity::VARYING :
+						     Uniformity::UNIFORM,
+				.pointee_uniformity =
+					per_thread ? Uniformity::VARYING :
+						     return_uniformity,
 			};
 		}
 

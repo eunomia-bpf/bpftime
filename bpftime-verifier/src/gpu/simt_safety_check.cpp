@@ -178,7 +178,7 @@ check_simt_safety(const ebpf_inst *instructions, size_t num_instructions,
 		const auto helper =
 			bpftime::get_gpu_helper_effects(instruction.imm);
 		if (helper.effect_class ==
-		    bpftime::GpuHelperEffectClass::PROHIBITED_SYNC) {
+		    bpftime::GpuHelperEffectClass::PROHIBITED) {
 			++result.prohibited_helper_count;
 			add_error(result, pc, PROHIBITED_HELPER_CHECK,
 				  std::string("helper ") + helper.name +

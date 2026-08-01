@@ -4,7 +4,6 @@
 #include <ebpf_vm_isa.hpp>
 #include <gpu_platform.hpp>
 #include <gpu_verifier.hpp>
-#include <resource_budget.hpp>
 #include <simt_safety_check.hpp>
 #include <uniformity_analysis.hpp>
 
@@ -66,6 +65,33 @@ ebpf_inst make_atomic_add(uint8_t dst_reg, uint8_t src_reg)
 	return insn;
 }
 
+ebpf_inst make_atomic(uint8_t dst_reg, uint8_t src_reg, int32_t operation)
+{
+	auto insn = make_atomic_add(dst_reg, src_reg);
+	insn.imm = operation;
+	return insn;
+}
+
+ebpf_inst make_stdw_imm(uint8_t dst_reg, int16_t off, int32_t imm)
+{
+	ebpf_inst insn{};
+	insn.opcode = INST_CLS_ST | INST_SIZE_DW | (INST_MEM << 5);
+	insn.dst = dst_reg;
+	insn.offset = off;
+	insn.imm = imm;
+	return insn;
+}
+
+ebpf_inst make_lddw_map(uint8_t dst_reg, int32_t fd)
+{
+	ebpf_inst insn{};
+	insn.opcode = INST_OP_LDDW_IMM;
+	insn.dst = dst_reg;
+	insn.src = 1;
+	insn.imm = fd;
+	return insn;
+}
+
 ebpf_inst make_jeq_imm(uint8_t dst_reg, int32_t imm, int16_t off)
 {
 	ebpf_inst insn{};
@@ -108,6 +134,18 @@ analyze_program_uniformity(const std::array<ebpf_inst, N> &program)
 	return analyze_uniformity(program.data(), program.size(), no_maps);
 }
 
+BpftimeMapDescriptor make_map(int fd, uint32_t type)
+{
+	return BpftimeMapDescriptor{
+		.original_fd = fd,
+		.type = type,
+		.key_size = 4,
+		.value_size = 8,
+		.max_entries = 16,
+		.inner_map_fd = static_cast<unsigned int>(-1),
+	};
+}
+
 } // namespace
 
 TEST_CASE("GPU platform accepts only supported map types", "[gpu][platform]")
@@ -117,6 +155,46 @@ TEST_CASE("GPU platform accepts only supported map types", "[gpu][platform]")
 		REQUIRE(try_get_gpu_map_type(type).has_value());
 	}
 	REQUIRE_FALSE(try_get_gpu_map_type(1505).has_value());
+
+	const std::array<ebpf_inst, 2> program = {
+		make_mov64_imm(0, 0),
+		make_exit(),
+	};
+	const std::map<int, BpftimeMapDescriptor> maps = {
+		{ 1, make_map(1, 1505) },
+	};
+	REQUIRE_FALSE(verify_gpu_program(program.data(), program.size(),
+					 "cuda__unknown_map", maps)
+			      .passed);
+}
+
+TEST_CASE("GPU verifier matches the no-context execution ABI", "[gpu][prevail]")
+{
+	SECTION("R1 context reads are rejected")
+	{
+		const std::array<ebpf_inst, 2> program = {
+			make_ldxdw(0, 1, 0),
+			make_exit(),
+		};
+		REQUIRE_FALSE(verify_gpu_program(program.data(), program.size(),
+						 "cuda__no_context")
+				      .passed);
+	}
+
+	SECTION("unbounded puts helper is rejected")
+	{
+		const std::array<ebpf_inst, 5> program = {
+			make_stdw_imm(10, -8, 0),
+			make_mov64_reg(1, 10),
+			make_add64_imm(1, -8),
+			make_call(501),
+			make_exit(),
+		};
+		const auto result = verify_gpu_program(
+			program.data(), program.size(), "cuda__puts");
+		REQUIRE_FALSE(result.passed);
+		REQUIRE_FALSE(result.error_message.empty());
+	}
 }
 
 TEST_CASE("Uniformity analysis classifies constants and GPU helpers",
@@ -160,6 +238,67 @@ TEST_CASE("Uniformity analysis classifies constants and GPU helpers",
 		const auto result = analyze_program_uniformity(program);
 		REQUIRE(result.success);
 		REQUIRE(result.states[1].regs[0] == Uniformity::UNIFORM);
+	}
+
+	SECTION("perf event output return is VARYING")
+	{
+		const std::array<ebpf_inst, 2> program = {
+			make_call(25),
+			make_exit(),
+		};
+		const auto result = analyze_program_uniformity(program);
+		REQUIRE(result.success);
+		REQUIRE(result.states[1].regs[0] == Uniformity::VARYING);
+	}
+}
+
+TEST_CASE("Per-thread map values are lane-varying", "[gpu][uniformity]")
+{
+	const std::map<int, BpftimeMapDescriptor> maps = {
+		{ 1, make_map(1, 1502) },
+	};
+	const std::array<ebpf_inst, 10> program = {
+		make_lddw_map(1, 1),	  {},
+		make_stdw_imm(10, -8, 0), make_mov64_reg(2, 10),
+		make_add64_imm(2, -8),	  make_call(1),
+		make_jeq_imm(0, 0, 2),	  make_ldxdw(3, 0, 0),
+		make_jeq_imm(3, 0, 0),	  make_exit(),
+	};
+	const auto result =
+		analyze_uniformity(program.data(), program.size(), maps);
+	REQUIRE(result.success);
+	REQUIRE(result.states[6].regs[0] == Uniformity::UNIFORM);
+	REQUIRE(result.states[6].pointers[0].offset_uniformity ==
+		Uniformity::VARYING);
+	REQUIRE(result.states[8].regs[3] == Uniformity::VARYING);
+
+	const auto safety =
+		check_simt_safety(program.data(), program.size(), result, maps);
+	REQUIRE_FALSE(safety.passed);
+}
+
+TEST_CASE("Atomic fetch results are lane-varying", "[gpu][uniformity]")
+{
+	SECTION("fetch updates the source register")
+	{
+		const std::array<ebpf_inst, 5> program = {
+			make_mov64_reg(1, 10), make_add64_imm(1, -8),
+			make_mov64_imm(2, 1),  make_atomic(1, 2, 0x01),
+			make_exit(),
+		};
+		const auto result = analyze_program_uniformity(program);
+		REQUIRE(result.states[4].regs[2] == Uniformity::VARYING);
+	}
+
+	SECTION("cmpxchg updates R0")
+	{
+		const std::array<ebpf_inst, 6> program = {
+			make_mov64_reg(1, 10),	 make_add64_imm(1, -8),
+			make_mov64_imm(0, 0),	 make_mov64_imm(2, 1),
+			make_atomic(1, 2, 0xf1), make_exit(),
+		};
+		const auto result = analyze_program_uniformity(program);
+		REQUIRE(result.states[5].regs[0] == Uniformity::VARYING);
 	}
 }
 
@@ -259,53 +398,6 @@ TEST_CASE("SIMT safety enforces uniform branches and helper restrictions",
 		INFO(safety.summary());
 		REQUIRE_FALSE(safety.passed);
 		REQUIRE(safety.varying_map_key_count == 1);
-	}
-}
-
-TEST_CASE("Resource budget tracks instruction limits", "[gpu][budget]")
-{
-	reset_verifier_state();
-
-	SECTION("within budget passes")
-	{
-		const std::array<ebpf_inst, 2> program = {
-			make_mov64_imm(0, 1),
-			make_exit(),
-		};
-		const GpuResourceBudget budget{
-			.max_instructions = 2,
-			.max_helper_calls = 1,
-			.max_memory_ops = 0,
-			.max_map_lookups = 0,
-			.max_map_updates = 0,
-		};
-
-		const auto result = check_resource_budget(
-			program.data(), program.size(), budget);
-		REQUIRE(result.passed);
-		REQUIRE(result.instruction_count == program.size());
-	}
-
-	SECTION("exceeding instruction count fails")
-	{
-		const std::array<ebpf_inst, 3> program = {
-			make_mov64_imm(0, 1),
-			make_mov64_imm(0, 2),
-			make_exit(),
-		};
-		const GpuResourceBudget budget{
-			.max_instructions = 2,
-			.max_helper_calls = 0,
-			.max_memory_ops = 0,
-			.max_map_lookups = 0,
-			.max_map_updates = 0,
-		};
-
-		const auto result = check_resource_budget(
-			program.data(), program.size(), budget);
-		REQUIRE_FALSE(result.passed);
-		REQUIRE(result.error_message.find("instruction count") !=
-			std::string::npos);
 	}
 }
 

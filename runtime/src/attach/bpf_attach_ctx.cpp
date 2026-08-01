@@ -248,7 +248,7 @@ int bpf_attach_ctx::instantiate_handler_at(const handler_manager *manager,
 			return err;
 		}
 		if (int err = instantiate_bpf_link_handler_at(
-			    id, link_handler, handle_nv_attach_impl);
+			    id, link_handler, config, handle_nv_attach_impl);
 		    err < 0) {
 			SPDLOG_DEBUG(
 				"Unable to instantiate bpf link handler {}: {}",
@@ -312,7 +312,8 @@ int bpf_attach_ctx::instantiate_prog_handler_at(int id,
 	return 0;
 }
 int bpf_attach_ctx::instantiate_bpf_link_handler_at(
-	int id, const bpf_link_handler &handler, bool handle_nv_attach_impl)
+	int id, const bpf_link_handler &handler, const agent_config &config,
+	bool handle_nv_attach_impl)
 {
 	SPDLOG_DEBUG(
 		"Instantiating link handler: prog {} -> perf event {}, cookie {}",
@@ -353,6 +354,8 @@ int bpf_attach_ctx::instantiate_bpf_link_handler_at(
 				dynamic_cast<attach::nv_attach_private_data &>(
 					*priv_data);
 			nv_attach_private_data.program_name = prog->prog_name();
+			nv_attach_private_data.verifier_mode =
+				config.verifier_mode;
 			nv_attach_private_data.comm_shared_mem =
 				this->cuda_ctx->cuda_shared_mem_device_pointer;
 			nv_attach_private_data.instructions = prog->get_insns();

@@ -24,7 +24,6 @@ enum class Uniformity {
 enum class PointerRegion {
 	UNKNOWN = 0,
 	STACK,
-	CONTEXT,
 	MAP_VALUE,
 	OTHER,
 };

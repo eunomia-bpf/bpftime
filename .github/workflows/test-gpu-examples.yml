@@ -7,6 +7,7 @@ on:
     paths:
       - ".github/workflows/test-gpu-examples.yml"
       - "attach/**"
+      - "bpftime-verifier/**"
       - "benchmark/gpu/**"
       - "example/gpu/**"
       - "runtime/**"
@@ -21,6 +22,7 @@ on:
     paths:
       - ".github/workflows/test-gpu-examples.yml"
       - "attach/**"
+      - "bpftime-verifier/**"
       - "benchmark/gpu/**"
       - "example/gpu/**"
       - "runtime/**"
@@ -201,6 +203,7 @@ jobs:
             -DCMAKE_BUILD_TYPE=Debug \
             -DBPFTIME_LLVM_JIT=YES \
             -DBPFTIME_ENABLE_CUDA_ATTACH=ON \
+            -DENABLE_EBPF_VERIFIER=YES \
             -DBPFTIME_CUDA_ROOT="${BPFTIME_CUDA_ROOT:-/usr/local/cuda}" \
             -DLLVM_DIR="${LLVM_DIR}" \
             -G Ninja
