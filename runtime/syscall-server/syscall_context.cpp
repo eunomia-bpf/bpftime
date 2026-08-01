@@ -72,7 +72,7 @@ namespace {
 [[noreturn]] void
 exit_for_startup_allocation_failure(const std::exception &error)
 {
-	auto config = bpftime::construct_agent_config_from_env();
+	auto config = bpftime::construct_runtime_config_from_env();
 	SPDLOG_CRITICAL(
 		"Unable to initialize bpftime shared memory ({} MiB, {} fd slots): {}",
 		config.shm_memory_size, config.max_fd_count, error.what());
