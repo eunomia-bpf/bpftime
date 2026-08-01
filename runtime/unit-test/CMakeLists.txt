@@ -55,9 +55,13 @@ add_executable(bpftime_runtime_tests ${TEST_SOURCES})
 if(UNIX AND NOT APPLE)
     add_executable(bpftime-shm-allocation-test-helper
         assets/shm_allocation_test_helper.c)
+    add_executable(bpftime-runtime-options-test-helper
+        assets/runtime_options_test_helper.c)
     set_property(TARGET bpftime-shm-allocation-test-helper PROPERTY C_STANDARD 99)
+    set_property(TARGET bpftime-runtime-options-test-helper PROPERTY C_STANDARD 99)
     add_dependencies(bpftime_runtime_tests
         bpftime-syscall-server
+        bpftime-runtime-options-test-helper
         bpftime-shm-allocation-test-helper)
     file(GENERATE
         OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/shm_allocation_test_paths.hpp"
