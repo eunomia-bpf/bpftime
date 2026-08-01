@@ -113,8 +113,7 @@ TEST_CASE("Software perf event buffers shard concurrent producers by thread",
 		REQUIRE(sample.header.type == PERF_RECORD_SAMPLE);
 		REQUIRE(sample.header.size ==
 			aligned_perf_record_size(sizeof(event_payload)));
-		REQUIRE(sample.size ==
-			sample.header.size - sizeof(bpftime::perf_sample_raw));
+		REQUIRE(sample.size == sizeof(event_payload));
 
 		event_payload payload;
 		copy_from_perf_ring(base, ring_size,
