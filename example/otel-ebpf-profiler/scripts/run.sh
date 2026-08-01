@@ -73,12 +73,21 @@ timeout "${RUN_SECONDS}" "${VICTIM}" >"${LOG_DIR}/victim.log" 2>&1 ||
 	[[ "$?" -eq 124 ]]
 sleep 5
 
-if [[ "$(grep -c 'BPF_LINK_CREATE' "${LOG_DIR}/daemon.log")" -lt 2 ]]; then
+if ! kill -0 "${DAEMON_PID}" 2>/dev/null ||
+	! kill -0 "${COLLECTOR_PID}" 2>/dev/null; then
+	echo "daemon or collector exited during the run" >&2
+	exit 1
+fi
+if [[ "$(grep -c 'cmd:BPF_LINK_CREATE' "${LOG_DIR}/daemon.log")" -lt 2 ]]; then
 	echo "bpftime did not mirror both profiler links" >&2
 	exit 1
 fi
 if [[ "$(grep -c 'Created uprobe/uretprobe perf event handler' "${LOG_DIR}/daemon.log")" -lt 2 ]]; then
 	echo "bpftime did not create both profiler uprobe handlers" >&2
+	exit 1
+fi
+if [[ "$(grep -c 'attach perf [0-9].* to bpf' "${LOG_DIR}/daemon.log")" -lt 2 ]]; then
+	echo "bpftime did not attach both profiler uprobes" >&2
 	exit 1
 fi
 if ! grep -q 'Profiles' "${LOG_DIR}/collector.log" ||
