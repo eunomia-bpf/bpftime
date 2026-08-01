@@ -358,19 +358,6 @@ bool software_perf_event_buffer::append_record_parts(const void *first,
 	return true;
 }
 
-bool software_perf_event_buffer::append_sample(const perf_sample_raw &header,
-					       const void *payload,
-					       size_t payload_size)
-{
-	const size_t data_size = sizeof(header) + payload_size;
-	if (header.header.size < data_size) {
-		return false;
-	}
-	return append_record_parts(&header, sizeof(header), payload,
-				   payload_size,
-				   header.header.size - data_size);
-}
-
 int software_perf_event_buffer::output_data(const void *buf, size_t size)
 {
 	SPDLOG_DEBUG("Handling perf event output data with size {}", size);
@@ -389,7 +376,8 @@ int software_perf_event_buffer::output_data(const void *buf, size_t size)
 	header.header.misc = 0;
 	header.size = record_size - sizeof(header);
 
-	append_sample(header, buf, size);
+	append_record_parts(&header, sizeof(header), buf, size,
+			    header.size - size);
 	return 0;
 }
 

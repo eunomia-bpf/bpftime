@@ -94,8 +94,6 @@ struct software_perf_event_buffer {
 	bool append_record_parts(const void *first, size_t first_size,
 				 const void *second, size_t second_size,
 				 size_t padding_size = 0);
-	bool append_sample(const perf_sample_raw &header, const void *payload,
-			   size_t payload_size);
 	void write_wrapped(uint64_t offset, const void *src, size_t size);
 	void read_wrapped(uint64_t offset, void *dst, size_t size) const;
 };
