@@ -483,9 +483,6 @@ void fatbin_record::try_loading_ptxs_for_device(class nv_attach_impl &impl,
 				}
 			}
 			if (cached_module) {
-				CUDA_DRIVER_CHECK_NO_EXCEPTION(
-					cuModuleUnload(module),
-					"Unable to unload duplicate module");
 				ptxs.push_back(cached_module);
 				SPDLOG_INFO(
 					"Module {} was cached while loading (device {})",
