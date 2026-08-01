@@ -152,7 +152,7 @@ static void configure_agent_logger() noexcept
 {
 	bpftime_set_quiet_logger();
 	try {
-		auto config = construct_agent_config_from_env();
+		auto config = construct_runtime_config_from_env();
 		bpftime_set_logger(config.get_logger_output_path());
 	} catch (...) {
 		bpftime_set_quiet_logger();
@@ -506,7 +506,7 @@ static void auto_refresh_worker(int refresh_ms, uint64_t epoch) noexcept
 				return;
 			try {
 				ctx_holder.ctx.init_attach_ctx_from_handlers(
-					bpftime_get_agent_config());
+					bpftime_get_runtime_config());
 			} catch (const std::exception &ex) {
 				try {
 					SPDLOG_DEBUG(
@@ -766,7 +766,7 @@ static int refresh_attach_session(const gchar *data)
 	ctx_holder.ctx.reset_instantiated_state();
 
 	int res =
-		ctx_holder.ctx.init_attach_ctx_from_handlers(bpftime_get_agent_config());
+		ctx_holder.ctx.init_attach_ctx_from_handlers(bpftime_get_runtime_config());
 	if (res != 0) {
 		SPDLOG_ERROR(
 			"agent_control: init_attach_ctx_from_handlers failed: {}",
@@ -976,7 +976,7 @@ extern "C" void bpftime_agent_main(const gchar *data, gboolean *stay_resident)
 				return;
 			}
 			shm_initialized = true;
-			auto &runtime_config = bpftime_get_agent_config();
+			auto &runtime_config = bpftime_get_runtime_config();
 			bpftime_set_logger(std::string(
 				runtime_config.get_logger_output_path()));
 			env_guard = std::make_unique<injected_env_guard>();
