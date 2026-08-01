@@ -216,6 +216,7 @@ private:
 #ifdef BPFTIME_ENABLE_CUDA_ATTACH
 	// Start host thread for handling map requests from CUDA
 	void start_cuda_watcher_thread();
+	void stop_cuda_watcher_thread();
 	/// Primary CUDA context (device 0, backward compat)
 	std::unique_ptr<cuda::CUDAContext> cuda_ctx;
 	/// Per-device CUDA contexts for multi-GPU support

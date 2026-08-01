@@ -13,7 +13,7 @@
 #elif __APPLE__
 #include "bpftime_epoll.h"
 #endif
-#include "spdlog/spdlog.h"
+#include "bpftime_shm.hpp"
 #include <bpf_map/userspace/prog_array.hpp>
 #include <cerrno>
 #include <spdlog/spdlog.h>
@@ -24,7 +24,6 @@
 #define offsetofend(TYPE, FIELD)                                               \
 	(offsetof(TYPE, FIELD) + sizeof(((TYPE *)0)->FIELD))
 #endif
-
 
 #if __linux__
 
@@ -80,13 +79,32 @@ int my_bpf_prog_get_fd_by_id(__u32 id)
 
 namespace bpftime
 {
-static thread_local uint32_t current_thread_lookup_val = 0;
+namespace
+{
+constexpr int32_t INVALID_ENTRY = -1;
+
+constexpr bool is_userspace_prog_fd_entry(int32_t value)
+{
+	return value < INVALID_ENTRY;
+}
+
+constexpr int32_t encode_userspace_prog_fd(int fd)
+{
+	return -fd - 2;
+}
+
+constexpr int decode_userspace_prog_fd(int32_t value)
+{
+	return -value - 2;
+}
+} // namespace
+
+static thread_local int32_t current_thread_lookup_val = 0;
 
 prog_array_map_impl::prog_array_map_impl(
 	boost::interprocess::managed_shared_memory &memory, uint32_t key_size,
 	uint32_t value_size, uint32_t max_entries)
-	// Default value of fd map is -1
-	: data(max_entries, -1, memory.get_segment_manager())
+	: data(max_entries, INVALID_ENTRY, memory.get_segment_manager())
 {
 	if (key_size != 4 || value_size != 4) {
 		throw std::runtime_error(
@@ -103,11 +121,27 @@ void *prog_array_map_impl::elem_lookup(const void *key)
 		errno = EINVAL;
 		return nullptr;
 	}
-	int fd = my_bpf_prog_get_fd_by_id(data[k]);
-	if (fd < 0) {
-		SPDLOG_ERROR("Unable to retrive prog fd of id {}", data[k]);
+	int32_t value = data[k];
+	if (value == INVALID_ENTRY) {
+		errno = ENOENT;
+		return nullptr;
 	}
-	SPDLOG_DEBUG("prog array: fd of prog id {} is {}", data[k], fd);
+	if (is_userspace_prog_fd_entry(value)) {
+		int fd = decode_userspace_prog_fd(value);
+		if (!bpftime_is_prog_fd(fd)) {
+			errno = ENOENT;
+			return nullptr;
+		}
+		current_thread_lookup_val = fd;
+		return &current_thread_lookup_val;
+	}
+	int fd = my_bpf_prog_get_fd_by_id(value);
+	if (fd < 0) {
+		SPDLOG_ERROR("Unable to retrieve prog fd of id {}", value);
+		errno = ENOENT;
+		return nullptr;
+	}
+	SPDLOG_DEBUG("prog array: fd of prog id {} is {}", value, fd);
 	current_thread_lookup_val = fd;
 	return &current_thread_lookup_val;
 }
@@ -121,6 +155,12 @@ long prog_array_map_impl::elem_update(const void *key, const void *value,
 		return -1;
 	}
 	int32_t v = *(int32_t *)value;
+	if (bpftime_is_prog_fd(v)) {
+		data[k] = encode_userspace_prog_fd(v);
+		SPDLOG_DEBUG("prog array: update slot {} to bpftime prog fd {}",
+			     k, v);
+		return 0;
+	}
 	struct bpf_prog_info info = {};
 	uint32_t len = sizeof(info);
 	int err = my_bpf_obj_get_info_by_fd(v, &info, &len);
@@ -145,7 +185,7 @@ long prog_array_map_impl::elem_delete(const void *key)
 		errno = EINVAL;
 		return -1;
 	}
-	data[k] = -1;
+	data[k] = INVALID_ENTRY;
 	return 0;
 }
 
