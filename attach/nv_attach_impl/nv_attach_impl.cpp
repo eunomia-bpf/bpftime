@@ -99,8 +99,9 @@ static std::string read_file(FILE *file)
 		output.append(buffer, count);
 	return output;
 }
+} // namespace
 
-static std::optional<std::string>
+std::optional<std::string>
 run_ptxpass_runner(const std::string &mode,
 		   const std::filesystem::path &pass_library,
 		   const std::string *stdin_payload, size_t output_bytes)
@@ -202,12 +203,13 @@ run_ptxpass_runner(const std::string &mode,
 	do {
 		waited_pid = waitpid(child_pid, &status, 0);
 	} while (waited_pid < 0 && errno == EINTR);
-	if (waited_pid < 0) {
+	if (waited_pid < 0 && errno != ECHILD) {
 		SPDLOG_ERROR("waitpid failed for PTX pass runner {}: {}",
 			     runner_path.c_str(), strerror(errno));
 		return std::nullopt;
 	}
-	if (!WIFEXITED(status) || WEXITSTATUS(status) != 0) {
+	if (waited_pid >= 0 &&
+	    (!WIFEXITED(status) || WEXITSTATUS(status) != 0)) {
 		std::string reason;
 		if (WIFSIGNALED(status))
 			reason = "signal " + std::to_string(WTERMSIG(status));
@@ -221,16 +223,15 @@ run_ptxpass_runner(const std::string &mode,
 			     read_file(diagnostics.get()));
 		return std::nullopt;
 	}
-	return read_file(result.get());
-}
-} // namespace
-
-std::optional<std::string> run_ptxpass_runner_for_test(
-	const std::string &mode, const std::filesystem::path &pass_library,
-	const std::string *stdin_payload, size_t output_bytes)
-{
-	return run_ptxpass_runner(mode, pass_library, stdin_payload,
-				  output_bytes);
+	auto output = read_file(result.get());
+	if (waited_pid < 0 && output.empty()) {
+		SPDLOG_ERROR(
+			"PTX pass runner {} for {} produced no result after its status was reaped: {}",
+			runner_path.c_str(), pass_library.c_str(),
+			read_file(diagnostics.get()));
+		return std::nullopt;
+	}
+	return output;
 }
 
 nv_attach_hook_state &nv_attach_get_hook_state()

@@ -2,6 +2,7 @@
 
 __attribute__((constructor)) static void on_load()
 {
+	setvbuf(stdout, nullptr, _IONBF, 0);
 	puts("constructor noise");
 }
 

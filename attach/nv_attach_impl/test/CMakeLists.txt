@@ -42,5 +42,10 @@ endif()
 target_include_directories(bpftime_nv_attach_tests PRIVATE ${CMAKE_CURRENT_BINARY_DIR} ${CMAKE_SOURCE_DIR}/runtime/ ${NV_ATTACH_IMPL_INCLUDE} ${CMAKE_SOURCE_DIR}/attach/nv_attach_impl/pass/ptxpass_core/include ${Catch2_INCLUDE} ${SPDLOG_INCLUDE})
 
 add_test(NAME bpftime_nv_attach_tests COMMAND bpftime_nv_attach_tests)
+if(BPFTIME_ENABLE_UNIT_TESTING)
+    add_test(NAME ptxpass-runner-ignored-sigchld
+        COMMAND sh -c "trap '' CHLD; \"$1\" '[ptxpass_runner]'"
+        _ $<TARGET_FILE:bpftime_nv_attach_tests>)
+endif()
 
 set_property(TARGET bpftime_nv_attach_tests PROPERTY CXX_STANDARD 20)

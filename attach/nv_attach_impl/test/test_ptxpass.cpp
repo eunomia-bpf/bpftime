@@ -21,9 +21,9 @@
 #ifdef BPFTIME_TEST_PTXPASS_RUNNER
 namespace bpftime::attach
 {
-std::optional<std::string>
-run_ptxpass_runner_for_test(const std::string &, const std::filesystem::path &,
-			    const std::string *, size_t);
+std::optional<std::string> run_ptxpass_runner(const std::string &,
+					      const std::filesystem::path &,
+					      const std::string *, size_t);
 }
 #endif
 
@@ -460,11 +460,11 @@ TEST_CASE("PTX pass runner client handles closed standard descriptors",
 		standard_fd_guard guard;
 
 		const std::filesystem::path pass = PTXPASS_RUNNER_TEST_PASS;
-		config = bpftime::attach::run_ptxpass_runner_for_test(
-			"--config", pass, nullptr, 1024);
+		config = bpftime::attach::run_ptxpass_runner("--config", pass,
+							     nullptr, 1024);
 		const std::string input = "input";
-		process = bpftime::attach::run_ptxpass_runner_for_test(
-			"--process", pass, &input, 1024);
+		process = bpftime::attach::run_ptxpass_runner("--process", pass,
+							      &input, 1024);
 	}
 
 	REQUIRE(config == R"({"mode":"config"})");
