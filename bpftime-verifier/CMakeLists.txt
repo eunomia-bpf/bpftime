@@ -6,8 +6,6 @@ add_library(bpftime-verifier STATIC
     src/gpu/simt_safety_check.cpp
     src/gpu/uniformity_analysis.cpp
 )
-set(FETCHCONTENT_SOURCE_DIR_CATCH2
-    ${CMAKE_CURRENT_SOURCE_DIR}/../third_party/Catch2)
 add_subdirectory(ebpf-verifier)
 
 set_property(TARGET bpftime-verifier PROPERTY CXX_STANDARD 20)
@@ -30,6 +28,19 @@ set(TEST_SOURCES
     test/map.cpp
     test/non_kernel_helper.cpp
 )
+
+if(NOT TARGET Catch2)
+    message(STATUS "Adding Catch2 by FetchContent at bpftime-verifier")
+    Include(FetchContent)
+
+    FetchContent_Declare(
+        Catch2
+        GIT_REPOSITORY https://github.com/catchorg/Catch2.git
+        GIT_TAG v3.0.1
+    )
+
+    FetchContent_MakeAvailable(Catch2)
+endif()
 
 option(TEST_LCOV "option for lcov" OFF)
 add_executable(bpftime_verifier_tests ${TEST_SOURCES})

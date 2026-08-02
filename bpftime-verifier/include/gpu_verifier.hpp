@@ -11,7 +11,6 @@ namespace bpftime::verifier::gpu
 struct GpuVerifyResult {
 	bool passed = false;
 	std::string error_message;
-	double total_time_us = 0.0;
 };
 
 GpuVerifyResult verify_gpu_program(

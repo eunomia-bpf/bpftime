@@ -11,7 +11,6 @@
 
 #include <algorithm>
 #include <array>
-#include <chrono>
 #include <cstring>
 #include <exception>
 #include <limits>
@@ -344,13 +343,6 @@ struct PrevailAttemptResult {
 	std::string message;
 };
 
-template <typename Clock>
-double elapsed_us(typename Clock::time_point start,
-		  typename Clock::time_point end)
-{
-	return std::chrono::duration<double, std::micro>(end - start).count();
-}
-
 PrevailAttemptResult
 run_prevail(const ebpf_inst *instructions, size_t num_instructions,
 	    const std::string &section_name,
@@ -402,22 +394,14 @@ static GpuVerifyResult verify_gpu_instructions(
 	const std::string &section_name,
 	const std::map<int, BpftimeMapDescriptor> &map_descriptors)
 {
-	using Clock = std::chrono::steady_clock;
-	const auto total_start = Clock::now();
-
 	GpuVerifyResult result;
-	auto finish = [&]() {
-		result.total_time_us =
-			elapsed_us<Clock>(total_start, Clock::now());
-		return result;
-	};
 	if (num_instructions == 0) {
 		result.error_message = "empty instruction stream";
-		return finish();
+		return result;
 	}
 	if (instructions == nullptr) {
 		result.error_message = "null instruction stream";
-		return finish();
+		return result;
 	}
 
 	const auto maps = effective_map_descriptors(map_descriptors);
@@ -427,7 +411,7 @@ static GpuVerifyResult verify_gpu_instructions(
 		    !bpftime::try_get_gpu_map_type(map.type).has_value()) {
 			result.error_message = "unsupported GPU map type " +
 					       std::to_string(map.type);
-			return finish();
+			return result;
 		}
 	}
 	const auto prevail =
@@ -435,24 +419,24 @@ static GpuVerifyResult verify_gpu_instructions(
 			    to_prevail_map_descriptors(maps), maps);
 	if (!prevail.passed) {
 		result.error_message = prevail.message;
-		return finish();
+		return result;
 	}
 	const auto uniformity =
 		analyze_uniformity(instructions, num_instructions, maps);
 	if (!uniformity.success) {
 		result.error_message = uniformity.error_message;
-		return finish();
+		return result;
 	}
 
 	const auto simt = check_simt_safety(instructions, num_instructions,
 					    uniformity, maps);
 	if (!simt.passed) {
 		result.error_message = simt.summary();
-		return finish();
+		return result;
 	}
 
 	result.passed = true;
-	return finish();
+	return result;
 }
 
 GpuVerifyResult

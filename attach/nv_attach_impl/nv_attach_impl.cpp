@@ -236,9 +236,6 @@ int nv_attach_impl::create_attach_with_ebpf_callback(
 					data.instructions.size(), section_name,
 					build_gpu_verifier_map_descriptors(
 						data.map_basic_info));
-			SPDLOG_INFO("GPU verifier elapsed for {}: {:.3f} ms",
-				    section_name,
-				    result.total_time_us / 1000.0);
 			if (!result.passed) {
 				if (data.verifier_mode ==
 				    BPFTIME_VERIFIER_STRICT) {
