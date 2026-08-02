@@ -82,7 +82,7 @@ if [[ "$(grep -c 'cmd:BPF_LINK_CREATE' "${LOG_DIR}/daemon.log")" -lt 2 ]]; then
 	echo "bpftime did not mirror both profiler links" >&2
 	exit 1
 fi
-if [[ "$(grep -c 'Created uprobe/uretprobe perf event handler' "${LOG_DIR}/daemon.log")" -lt 2 ]]; then
+if [[ "$(grep -F -c "Created uprobe/uretprobe perf event handler, module name ${LIBC}," "${LOG_DIR}/daemon.log")" -lt 2 ]]; then
 	echo "bpftime did not create both profiler uprobe handlers" >&2
 	exit 1
 fi

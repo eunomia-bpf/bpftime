@@ -36,7 +36,7 @@ The upstream build currently requires Go 1.25 and LLVM 17.
 From this directory, point the example at the upstream binary:
 
 ```sh
-make
+cc -O2 -g -Wall -Wextra victim-src/victim.c -o victim
 sudo env \
   OTEL_COLLECTOR_BIN=/path/to/opentelemetry-ebpf-profiler/otelcol-ebpf-profiler \
   ./scripts/run.sh
