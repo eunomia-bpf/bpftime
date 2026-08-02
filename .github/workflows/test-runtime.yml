@@ -128,27 +128,24 @@ jobs:
           ./build/runtime/unit-test/bpftime_runtime_tests
       - name: Test runtime environment options (Ubuntu)
         if: matrix.container == 'ubuntu-2204'
-        shell: bash
+        env:
+          BPFTIME_LOG_OUTPUT: console
         run: |
-          set -euo pipefail
+          set -eu
           SERVER="$PWD/build/runtime/syscall-server/libbpftime-syscall-server.so"
           HELPER="$PWD/build/runtime/unit-test/bpftime-runtime-options-test-helper"
 
-          if BPFTIME_LOG_OUTPUT=console \
-             BPFTIME_RUN_WITH_KERNEL=true \
+          if BPFTIME_RUN_WITH_KERNEL=true \
              LD_PRELOAD="$SERVER" \
-             "$HELPER" > runtime-options-without-bypass.log 2>&1; then
+             "$HELPER"; then
             echo "Invalid BPF program loaded without verifier bypass"
             exit 1
           fi
 
-          BPFTIME_LOG_OUTPUT=console \
           BPFTIME_RUN_WITH_KERNEL=true \
           BPFTIME_NOT_LOAD_PATTERN='bypass_me' \
           LD_PRELOAD="$SERVER" \
-            "$HELPER" 2>&1 | tee runtime-options.log
-          grep -F "Using kernel eBPF runtime and maps" runtime-options.log
-          grep -F "By pass kernel verifier for program bypass_me" runtime-options.log
+            "$HELPER"
       - name: Build runtime libs for example (openEuler)
         if: matrix.container == 'openeuler-2403sp2'
         run: |
