@@ -231,6 +231,7 @@ jobs:
           - path: atomizer
             executable: ./atomizer
             victim: ./vec_add
+            client_env: BPFTIME_EXPECT_PATCHED=1
             expected_str: "Exited _Z9vectorAdd"
             name: atomizer
             server_timeout: 15
@@ -783,7 +784,7 @@ jobs:
             pushd "$EXAMPLE_DIR" >/dev/null
             set +e
             # Don't preload into the shell itself; only preload into the target binary.
-            timeout -s SIGKILL ${CLIENT_TIMEOUT}s env BPFTIME_LOG_OUTPUT=console bash -lc "LD_PRELOAD=\"$AGENT_SO\" exec $VICTIM_REL" > "$ROOT_DIR/client.log" 2>&1
+            timeout -s SIGKILL ${CLIENT_TIMEOUT}s env ${{ matrix.examples.client_env || '' }} BPFTIME_LOG_OUTPUT=console bash -lc "LD_PRELOAD=\"$AGENT_SO\" exec $VICTIM_REL" > "$ROOT_DIR/client.log" 2>&1
             CLIENT_RC=$?
             set -e
             popd >/dev/null

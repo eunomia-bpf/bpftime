@@ -30,6 +30,7 @@
 #include <cstdint>
 #include <cuda.h>
 #include <cuda_runtime.h>
+#include <fatbinary_section.h>
 #include <dlfcn.h>
 #include <filesystem>
 #include <iterator>
@@ -266,10 +267,6 @@ CUresult cuda_driver_function__cuGraphKernelNodeSetParams_v1(
 	CUgraphNode hNode, const CUDA_KERNEL_NODE_PARAMS_v1 *nodeParams);
 CUresult cuda_driver_function__cuGraphKernelNodeSetParams_v2(
 	CUgraphNode hNode, const CUDA_KERNEL_NODE_PARAMS_v2 *nodeParams);
-CUresult cuda_driver_function__cuGraphLaunch(CUgraphExec graph_exec,
-					     CUstream stream);
-CUresult cuda_driver_function__cuGraphLaunch_ptsz(CUgraphExec graph_exec,
-						  CUstream stream);
 cudaError_t cuda_runtime_function__cudaMemcpyFromSymbol(
 	void *dst, const void *symbol, size_t count, size_t offset = 0,
 	cudaMemcpyKind kind = cudaMemcpyDeviceToHost);
@@ -456,12 +453,6 @@ nv_attach_impl::nv_attach_impl()
 		"cuGraphKernelNodeSetParams_v2",
 		(gpointer)&cuda_driver_function__cuGraphKernelNodeSetParams_v2,
 		hook_state.orig_cu_graph_kernel_node_set_params_v2);
-	replace_hook_once("cuGraphLaunch",
-			  (gpointer)&cuda_driver_function__cuGraphLaunch,
-			  hook_state.orig_cu_graph_launch);
-	replace_hook_once("cuGraphLaunch_ptsz",
-			  (gpointer)&cuda_driver_function__cuGraphLaunch_ptsz,
-			  hook_state.orig_cu_graph_launch_ptsz);
 	replace_hook_once(
 		"cudaMemcpyFromSymbol",
 		(gpointer)&cuda_runtime_function__cudaMemcpyFromSymbol,
@@ -624,15 +615,45 @@ std::optional<CUfunction> nv_attach_impl::find_patched_kernel_function(
 		    itr != patched_kernel_by_context.end())
 			return itr->second;
 	}
+	std::lock_guard<std::mutex> records_guard(late_bootstrap_mutex);
+	std::optional<CUfunction> resolved;
 	for (const auto &record : fatbin_records) {
 		if (auto info = record->find_function_info(*this, kernel_name);
 		    info) {
-			record_patched_kernel_function(kernel_name, info->func);
-			record_original_cufunction_name(info->func, kernel_name);
-			return info->func;
+			if (resolved) {
+				SPDLOG_WARN(
+					"Ambiguous late-attach kernel {}; using original launch",
+					kernel_name);
+				return std::nullopt;
+			}
+			resolved = info->func;
 		}
 	}
-	return std::nullopt;
+	if (!resolved)
+		return std::nullopt;
+	record_patched_kernel_function(kernel_name, *resolved);
+	record_original_cufunction_name(*resolved, kernel_name);
+	return resolved;
+}
+
+std::optional<variable_info>
+nv_attach_impl::find_patched_global(const std::string &symbol_name)
+{
+	std::lock_guard<std::mutex> records_guard(late_bootstrap_mutex);
+	std::optional<variable_info> resolved;
+	for (const auto &record : fatbin_records) {
+		auto info = record->find_variable_info(*this, symbol_name);
+		if (!info)
+			continue;
+		if (resolved) {
+			SPDLOG_WARN(
+				"Ambiguous late-attach global {}; skipping mirror",
+				symbol_name);
+			return std::nullopt;
+		}
+		resolved = std::move(info);
+	}
+	return resolved;
 }
 
 void nv_attach_impl::record_original_cufunction_name(
@@ -1330,19 +1351,13 @@ void nv_attach_impl::mirror_cuda_memcpy_to_symbol(
 			}
 		}
 		if (!resolved_var) {
-			for (const auto &rec_uptr : fatbin_records) {
-				auto *rec = rec_uptr.get();
-				if (rec == nullptr)
-					continue;
-				resolved_var = rec->find_variable_info(*this, *name);
-				if (resolved_var) {
-					std::lock_guard<std::mutex> guard(
-						patched_global_cache_mutex);
-					patched_global_by_context[{ context, *name }] =
-						{ resolved_var->ptr,
-						  resolved_var->size };
-					break;
-				}
+			resolved_var = find_patched_global(*name);
+			if (resolved_var) {
+				std::lock_guard<std::mutex> guard(
+					patched_global_cache_mutex);
+				patched_global_by_context[{ context, *name }] = {
+					resolved_var->ptr, resolved_var->size
+				};
 			}
 		}
 	}
@@ -1797,31 +1812,48 @@ void nv_attach_impl::bootstrap_existing_fatbins()
 	std::size_t ingested = 0;
 
 	for (const auto &mod : modules) {
+		bool has_regular_wrapper = false;
+		if (auto sec = elf_introspect::find_section_in_memory(
+			    mod, ".nvFatBinSegment");
+		    sec) {
+			auto [addr, size] = *sec;
+			for (const auto *wrapper :
+			     elf_introspect::scan_fatbin_wrappers(addr, size)) {
+				if (wrapper != nullptr &&
+				    wrapper->version == FATBINC_VERSION) {
+					has_regular_wrapper = true;
+					break;
+				}
+			}
+		}
 		// CUDA binaries may expose fatbin bytes either directly in
 		// `.nv_fatbin` (raw fatbin header 0xBA55ED50...) or as a list
 		// of wrappers inside `.nvFatBinSegment` (magic 'FbC1').
-		if (auto sec = elf_introspect::find_section_in_memory(
-			    mod, ".nv_fatbin");
-		    sec) {
-			auto [sec_addr, sec_size] = *sec;
-			(void)sec_size;
-			if (auto bytes = read_fatbin_bytes_from_ptr(sec_addr);
-			    bytes) {
-				auto extracted_ptx =
-					extract_ptxs(std::move(*bytes));
-				if (!extracted_ptx.empty()) {
-					auto rec =
-						std::make_unique<fatbin_record>();
-					rec->original_ptx =
-						std::move(extracted_ptx);
-					rec->module_pool = module_pool;
-					rec->ptx_pool = ptx_pool;
-					fatbin_records.emplace_back(
-						std::move(rec));
-					ingested++;
-					SPDLOG_INFO(
-						"nv_attach_impl: ingested fatbin from .nv_fatbin in {}",
-						mod.path.c_str());
+		if (!has_regular_wrapper) {
+			if (auto sec = elf_introspect::find_section_in_memory(
+				    mod, ".nv_fatbin");
+			    sec) {
+				auto [sec_addr, sec_size] = *sec;
+				(void)sec_size;
+				if (auto bytes = read_fatbin_bytes_from_ptr(
+					    sec_addr);
+				    bytes) {
+					auto extracted_ptx =
+						extract_ptxs(std::move(*bytes));
+					if (!extracted_ptx.empty()) {
+						auto rec = std::make_unique<
+							fatbin_record>();
+						rec->original_ptx = std::move(
+							extracted_ptx);
+						rec->module_pool = module_pool;
+						rec->ptx_pool = ptx_pool;
+						fatbin_records.emplace_back(
+							std::move(rec));
+						ingested++;
+						SPDLOG_INFO(
+							"nv_attach_impl: ingested fatbin from .nv_fatbin in {}",
+							mod.path.c_str());
+					}
 				}
 			}
 		}
@@ -1838,7 +1870,7 @@ void nv_attach_impl::bootstrap_existing_fatbins()
 					wrappers.size(), mod.path.c_str());
 			}
 			for (const auto *w : wrappers) {
-				if (w == nullptr)
+				if (w == nullptr || w->version != FATBINC_VERSION)
 					continue;
 				auto bytes = read_fatbin_bytes_from_wrapper(*w);
 				if (!bytes)

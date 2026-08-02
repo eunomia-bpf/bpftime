@@ -40,6 +40,7 @@ __global__ void vectorAdd(const float *A, const float *B, float *C)
 
 int main()
 {
+    const bool expect_patched = getenv("BPFTIME_EXPECT_PATCHED") != nullptr;
     int device_count = 0;
     CUDA_CHECK(cudaGetDeviceCount(&device_count));
     if (device_count == 0)
@@ -83,7 +84,9 @@ int main()
             std::cout << "GPU " << device << ": C[1] = " << h_C[1]
                       << ", C[7] = " << h_C[7]
                       << " (expected 0 or 3, 21)" << std::endl;
-            if ((h_C[1] != 0 && h_C[1] != 3) || h_C[7] != 21)
+            if ((expect_patched ? h_C[1] != 0
+                                : (h_C[1] != 0 && h_C[1] != 3)) ||
+                h_C[7] != 21)
                 return 1;
         }
         std::cout << "Validated all visible GPUs" << std::endl;

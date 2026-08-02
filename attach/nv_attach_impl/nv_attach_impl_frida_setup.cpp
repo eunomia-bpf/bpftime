@@ -66,7 +66,6 @@ using cu_graph_kernel_node_set_params_v1_fn_t =
 	CUresult (*)(CUgraphNode, const CUDA_KERNEL_NODE_PARAMS_v1 *);
 using cu_graph_kernel_node_set_params_v2_fn_t =
 	decltype(&cuGraphKernelNodeSetParams_v2);
-using cu_graph_launch_fn_t = CUresult (*)(CUgraphExec, CUstream);
 using cuda_memcpy_from_symbol_async_fn_t = decltype(&cudaMemcpyFromSymbolAsync);
 using cuda_memcpy_from_symbol_fn_t = decltype(&cudaMemcpyFromSymbol);
 
@@ -574,50 +573,6 @@ extern "C" CUresult cuda_driver_function__cuLaunchKernel(
 				       extra);
 }
 
-static CUresult cu_graph_launch_common(nv_attach_impl *impl,
-				       void *original_fn_ptr,
-				       CUgraphExec graph_exec, CUstream stream)
-{
-	auto original = reinterpret_cast<cu_graph_launch_fn_t>(original_fn_ptr);
-	if (!original)
-		return CUDA_ERROR_UNKNOWN;
-	auto result = original(graph_exec, stream);
-	if (result == CUDA_SUCCESS && impl != nullptr && impl->is_enabled())
-		impl->record_patched_launch(
-			reinterpret_cast<cudaStream_t>(stream));
-	return result;
-}
-
-extern "C" CUresult cuda_driver_function__cuGraphLaunch(CUgraphExec graph_exec,
-							CUstream stream)
-{
-	auto gum_ctx = gum_interceptor_get_current_invocation();
-	auto *state = (nv_attach_hook_state *)
-		gum_invocation_context_get_replacement_data(gum_ctx);
-	if (state == nullptr)
-		state = &nv_attach_get_hook_state();
-	return cu_graph_launch_common(
-		state->active_impl.load(std::memory_order_acquire),
-		state->orig_cu_graph_launch.load(std::memory_order_acquire),
-		graph_exec, stream);
-}
-
-extern "C" CUresult
-cuda_driver_function__cuGraphLaunch_ptsz(CUgraphExec graph_exec,
-					 CUstream stream)
-{
-	auto gum_ctx = gum_interceptor_get_current_invocation();
-	auto *state = (nv_attach_hook_state *)
-		gum_invocation_context_get_replacement_data(gum_ctx);
-	if (state == nullptr)
-		state = &nv_attach_get_hook_state();
-	return cu_graph_launch_common(
-		state->active_impl.load(std::memory_order_acquire),
-		state->orig_cu_graph_launch_ptsz.load(
-			std::memory_order_acquire),
-		graph_exec, stream);
-}
-
 extern "C" cudaError_t cuda_runtime_function__cudaLaunchKernel_ptsz(
 	const void *func, dim3 grid_dim, dim3 block_dim, void **args,
 	size_t shared_mem, cudaStream_t stream)
@@ -861,12 +816,7 @@ static cudaError_t mirror_cuda_memcpy_from_symbol(
 		if (auto name =
 			    impl->resolve_host_function_symbol((void *)symbol);
 		    name) {
-			for (const auto &rec_uptr : impl->fatbin_records) {
-				resolved_var =
-					rec_uptr->find_variable_info(*impl, *name);
-				if (resolved_var)
-					break;
-			}
+			resolved_var = impl->find_patched_global(*name);
 		}
 	}
 	if (!resolved_var) {

@@ -128,8 +128,6 @@ struct nv_attach_hook_state {
 	std::atomic<void *> orig_cu_graph_exec_kernel_node_set_params_v2{ nullptr };
 	std::atomic<void *> orig_cu_graph_kernel_node_set_params_v1{ nullptr };
 	std::atomic<void *> orig_cu_graph_kernel_node_set_params_v2{ nullptr };
-	std::atomic<void *> orig_cu_graph_launch{ nullptr };
-	std::atomic<void *> orig_cu_graph_launch_ptsz{ nullptr };
 	std::atomic<void *> orig_cuda_memcpy_from_symbol{ nullptr };
 	std::atomic<void *> orig_cuda_memcpy_from_symbol_async{ nullptr };
 
@@ -180,6 +178,8 @@ class nv_attach_impl final : public base_attach_impl {
 					    CUfunction function);
 	std::optional<CUfunction>
 	find_patched_kernel_function(const std::string &kernel_name);
+	std::optional<variable_info>
+	find_patched_global(const std::string &symbol_name);
 	// Notify nv_attach_impl that a patched kernel launch was enqueued on a
 	// stream. Used to coordinate detach with in-flight patched kernels so we
 	// don't tear down loader-owned CUDA IPC buffers prematurely.
@@ -208,7 +208,7 @@ class nv_attach_impl final : public base_attach_impl {
 	std::optional<std::vector<MapBasicInfo>> map_basic_info;
 	void *ptx_compiler_dl_handle = nullptr;
 	nv_attach_impl_ptx_compiler_handler ptx_compiler;
-	/// CUDA context + SHA256 of ELF -> PTX module
+	/// CUDA context + fatbin identity + SHA256 of ELF -> PTX module
 	std::shared_ptr<std::map<fatbin_record::module_key,
 				 std::shared_ptr<ptx_in_module>>>
 		module_pool;

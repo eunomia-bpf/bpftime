@@ -7,6 +7,7 @@
 #include <mutex>
 #include <optional>
 #include <string>
+#include <tuple>
 #include <vector>
 namespace bpftime
 {
@@ -34,7 +35,8 @@ struct kernel_info {
 	ptx_in_module *ptx;
 };
 struct fatbin_record {
-	using module_key = std::pair<CUcontext, std::string>;
+	using module_key =
+		std::tuple<CUcontext, const fatbin_record *, std::string>;
 	std::shared_ptr<std::map<module_key, std::shared_ptr<ptx_in_module>>>
 		module_pool;
 	std::shared_ptr<std::map<std::string, std::vector<uint8_t>>> ptx_pool;

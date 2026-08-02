@@ -148,6 +148,8 @@ std::vector<symbol_range> read_symbols_impl(std::ifstream &ifs,
 			const unsigned char type = ELF64_ST_TYPE(sym.st_info);
 			if (type != STT_FUNC && type != STT_OBJECT)
 				continue;
+			if (type == STT_OBJECT && sym.st_size == 0)
+				continue;
 			if (sym.st_value == 0)
 				continue;
 			const char *name = "";
