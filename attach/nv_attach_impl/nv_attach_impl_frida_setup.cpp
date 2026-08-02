@@ -117,18 +117,20 @@ cuda_launch_kernel_common(nv_attach_impl *impl, void *original_fn_ptr,
 		return original(func, grid_dim, block_dim, args, shared_mem,
 				stream);
 	auto state_guard = impl->lock_patched_state();
+	const auto call_original = [&]() {
+		state_guard.unlock();
+		return original(func, grid_dim, block_dim, args, shared_mem,
+				stream);
+	};
 	if (!impl->is_enabled())
-		return original(func, grid_dim, block_dim, args, shared_mem,
-				stream);
+		return call_original();
 	if (cuda_graph_stream_is_capturing(stream))
-		return original(func, grid_dim, block_dim, args, shared_mem,
-				stream);
+		return call_original();
 	auto launch_patched = reinterpret_cast<cu_launch_kernel_fn_t>(
 		nv_attach_get_hook_state().orig_cu_launch_kernel.load(
 			std::memory_order_acquire));
 	if (!launch_patched)
-		return original(func, grid_dim, block_dim, args, shared_mem,
-				stream);
+		return call_original();
 
 	// Ensure a CUDA context is current for this thread before calling
 	// driver APIs
@@ -187,8 +189,7 @@ cuda_launch_kernel_common(nv_attach_impl *impl, void *original_fn_ptr,
 		auto &fatbin = *itr1->second;
 		auto handle = fatbin.find_function_info(*impl, (void *)func);
 		if (!handle)
-			return original(func, grid_dim, block_dim, args,
-					shared_mem, stream);
+			return call_original();
 		SPDLOG_DEBUG("Launching kernel..");
 		if (auto err = launch_patched(
 			    handle->func, grid_dim.x, grid_dim.y, grid_dim.z,
@@ -207,8 +208,7 @@ cuda_launch_kernel_common(nv_attach_impl *impl, void *original_fn_ptr,
 			log_cufunc_attrs(handle->func);
 			// Preserve target semantics: fall back to the original
 			// runtime launch path if patched launch fails.
-			return original(func, grid_dim, block_dim, args,
-					shared_mem, stream);
+			return call_original();
 		}
 		impl->record_patched_launch(stream);
 		return cudaSuccess;
@@ -217,8 +217,7 @@ cuda_launch_kernel_common(nv_attach_impl *impl, void *original_fn_ptr,
 	// Late attach: if bootstrap hasn't completed yet, fall back to the
 	// original launch path (bootstrap is kicked off during attach/refresh).
 	if (!impl->is_late_bootstrap_done())
-		return original(func, grid_dim, block_dim, args, shared_mem,
-				stream);
+		return call_original();
 
 	// Fallback path for late attach: resolve host stub symbol name to
 	// locate the patched CUfunction mapping.
@@ -249,8 +248,7 @@ cuda_launch_kernel_common(nv_attach_impl *impl, void *original_fn_ptr,
 				// Preserve target semantics: fall back to
 				// original runtime launch path if patched
 				// launch fails.
-				return original(func, grid_dim, block_dim, args,
-						shared_mem, stream);
+				return call_original();
 			}
 			impl->record_patched_launch(stream);
 			return cudaSuccess;
@@ -264,7 +262,7 @@ cuda_launch_kernel_common(nv_attach_impl *impl, void *original_fn_ptr,
 			(uintptr_t)func);
 	}
 
-	return original(func, grid_dim, block_dim, args, shared_mem, stream);
+	return call_original();
 }
 
 static void example_listener_on_enter(GumInvocationListener *listener,
