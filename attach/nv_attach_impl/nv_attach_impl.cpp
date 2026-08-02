@@ -307,9 +307,6 @@ nv_attach_impl::nv_attach_impl()
 				     dlerror());
 		}
 	}
-	this->module_pool = std::make_shared<
-		std::map<fatbin_record::module_key,
-			 std::shared_ptr<ptx_in_module>>>();
 	this->ptx_pool =
 		std::make_shared<std::map<std::string, std::vector<uint8_t>>>();
 
@@ -646,7 +643,7 @@ std::optional<CUfunction> nv_attach_impl::find_patched_kernel_function(
 					kernel_name);
 				return std::nullopt;
 			}
-			resolved = info->func;
+			resolved = *info;
 		}
 	}
 	if (!resolved)
@@ -1381,7 +1378,6 @@ void nv_attach_impl::mirror_cuda_memcpy_to_symbol(
 					.symbol_name = *name,
 					.ptr = it->second.first,
 					.size = it->second.second,
-					.ptx = nullptr,
 				};
 			}
 		}
@@ -1620,11 +1616,6 @@ void nv_attach_impl::clear_patched_state_for_next_session()
 			std::lock_guard<std::mutex> g(
 				patched_global_cache_mutex);
 			patched_global_by_context.clear();
-		}
-		{
-			std::lock_guard<std::mutex> g(module_cache_mutex);
-			if (module_pool)
-				module_pool->clear();
 		}
 		{
 			std::lock_guard<std::mutex> g(ptx_cache_mutex);
@@ -1880,7 +1871,6 @@ void nv_attach_impl::bootstrap_existing_fatbins()
 							fatbin_record>();
 						rec->original_ptx = std::move(
 							extracted_ptx);
-						rec->module_pool = module_pool;
 						rec->ptx_pool = ptx_pool;
 						fatbin_records.emplace_back(
 							std::move(rec));
@@ -1917,7 +1907,6 @@ void nv_attach_impl::bootstrap_existing_fatbins()
 
 				auto rec = std::make_unique<fatbin_record>();
 				rec->original_ptx = std::move(extracted_ptx);
-				rec->module_pool = module_pool;
 				rec->ptx_pool = ptx_pool;
 				fatbin_records.emplace_back(std::move(rec));
 				ingested++;
@@ -1933,7 +1922,6 @@ void nv_attach_impl::bootstrap_existing_fatbins()
 		if (!extracted_ptx.empty()) {
 			auto rec = std::make_unique<fatbin_record>();
 			rec->original_ptx = std::move(extracted_ptx);
-			rec->module_pool = module_pool;
 			rec->ptx_pool = ptx_pool;
 			fatbin_records.emplace_back(std::move(rec));
 			ingested++;

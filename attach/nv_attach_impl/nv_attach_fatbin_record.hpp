@@ -7,7 +7,6 @@
 #include <mutex>
 #include <optional>
 #include <string>
-#include <tuple>
 #include <vector>
 namespace bpftime
 {
@@ -26,19 +25,8 @@ struct variable_info {
 	std::string symbol_name;
 	CUdeviceptr ptr;
 	size_t size;
-	ptx_in_module *ptx;
-};
-
-struct kernel_info {
-	std::string symbol_name;
-	CUfunction func;
-	ptx_in_module *ptx;
 };
 struct fatbin_record {
-	using module_key =
-		std::tuple<CUcontext, const fatbin_record *, std::string>;
-	std::shared_ptr<std::map<module_key, std::shared_ptr<ptx_in_module>>>
-		module_pool;
 	std::shared_ptr<std::map<std::string, std::vector<uint8_t>>> ptx_pool;
 	std::map<void *, std::string> variable_addr_to_symbol;
 	std::map<void *, std::string> function_addr_to_symbol;
@@ -46,16 +34,14 @@ struct fatbin_record {
 	bool all_ptx_not_modified = true;
 	void try_loading_ptxs(class nv_attach_impl &);
 	virtual ~fatbin_record();
-	bool find_and_fill_variable_info(void *ptr, const char *symbol_name);
-	bool find_and_fill_function_info(void *ptr, const char *symbol_name);
 	std::optional<variable_info>
 	find_variable_info(class nv_attach_impl &, void *ptr);
 	std::optional<variable_info>
 	find_variable_info(class nv_attach_impl &, const std::string &name);
-	std::optional<kernel_info>
-	find_function_info(class nv_attach_impl &, void *ptr);
-	std::optional<kernel_info>
-	find_function_info(class nv_attach_impl &, const std::string &name);
+	std::optional<CUfunction> find_function_info(class nv_attach_impl &,
+						     void *ptr);
+	std::optional<CUfunction> find_function_info(class nv_attach_impl &,
+						     const std::string &name);
 
     private:
 	std::map<CUcontext, std::vector<std::shared_ptr<ptx_in_module>>>

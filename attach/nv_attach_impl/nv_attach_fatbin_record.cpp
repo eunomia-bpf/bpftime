@@ -73,23 +73,6 @@ ptx_in_module::~ptx_in_module()
 	}
 }
 
-bool fatbin_record::find_and_fill_variable_info(void *ptr,
-						const char *symbol_name)
-{
-	if (ptr == nullptr || symbol_name == nullptr)
-		return false;
-	variable_addr_to_symbol[ptr] = symbol_name;
-	return true;
-}
-bool fatbin_record::find_and_fill_function_info(void *ptr,
-						const char *symbol_name)
-{
-	if (ptr == nullptr || symbol_name == nullptr)
-		return false;
-	function_addr_to_symbol[ptr] = symbol_name;
-	return true;
-}
-
 std::optional<variable_info>
 fatbin_record::find_variable_info(nv_attach_impl &impl, void *ptr)
 {
@@ -120,7 +103,7 @@ fatbin_record::find_variable_info(nv_attach_impl &impl,
 		auto err = cuModuleGetGlobal(&ptr, &size, ptx->module_ptr,
 					     name.c_str());
 		if (err == CUDA_SUCCESS)
-			return variable_info{ name, ptr, size, ptx.get() };
+			return variable_info{ name, ptr, size };
 		if (err != CUDA_ERROR_NOT_FOUND) {
 			SPDLOG_ERROR("Unable to lookup symbol {}: {}", name,
 				     (int)err);
@@ -130,7 +113,7 @@ fatbin_record::find_variable_info(nv_attach_impl &impl,
 	return std::nullopt;
 }
 
-std::optional<kernel_info>
+std::optional<CUfunction>
 fatbin_record::find_function_info(nv_attach_impl &impl, void *ptr)
 {
 	auto itr = function_addr_to_symbol.find(ptr);
@@ -139,9 +122,8 @@ fatbin_record::find_function_info(nv_attach_impl &impl, void *ptr)
 	return find_function_info(impl, itr->second);
 }
 
-std::optional<kernel_info>
-fatbin_record::find_function_info(nv_attach_impl &impl,
-				  const std::string &name)
+std::optional<CUfunction>
+fatbin_record::find_function_info(nv_attach_impl &impl, const std::string &name)
 {
 	try {
 		try_loading_ptxs(impl);
@@ -159,7 +141,7 @@ fatbin_record::find_function_info(nv_attach_impl &impl,
 		auto err = cuModuleGetFunction(&function, ptx->module_ptr,
 					       name.c_str());
 		if (err == CUDA_SUCCESS)
-			return kernel_info{ name, function, ptx.get() };
+			return function;
 		if (err != CUDA_ERROR_NOT_FOUND) {
 			SPDLOG_ERROR("Unable to lookup function {}: {}", name,
 				     (int)err);
@@ -282,18 +264,16 @@ void fatbin_record::try_loading_ptxs(class nv_attach_impl &impl)
 	auto compiled_ptx = compile_ptxs(impl, patched_ptx);
 
 	std::vector<std::shared_ptr<ptx_in_module>> context_ptxs;
+	std::map<std::string, std::shared_ptr<ptx_in_module>> loaded_modules;
 	for (const auto &[name, ptx_and_trampoline_flag] : patched_ptx) {
 		bool added_trampoline = std::get<1>(ptx_and_trampoline_flag);
 		const auto &compiled_elf = compiled_ptx.at(name);
-		module_key key{ context, this, sha256(compiled_elf.data(),
-						     compiled_elf.size()) };
+		const auto key =
+			sha256(compiled_elf.data(), compiled_elf.size());
 		std::shared_ptr<ptx_in_module> cached;
-		{
-			std::lock_guard<std::mutex> guard(impl.module_cache_mutex);
-			if (auto itr = module_pool->find(key);
-			    itr != module_pool->end())
-				cached = itr->second;
-		}
+		if (auto itr = loaded_modules.find(key);
+		    itr != loaded_modules.end())
+			cached = itr->second;
 		if (cached) {
 			SPDLOG_INFO("Module {} found in cache", name);
 			if (std::find(context_ptxs.begin(), context_ptxs.end(),
@@ -360,14 +340,7 @@ void fatbin_record::try_loading_ptxs(class nv_attach_impl &impl)
 					"Unable to copy constData pointer to device");
 				SPDLOG_INFO("Trampoline data copied");
 			}
-			{
-				std::lock_guard<std::mutex> guard(
-					impl.module_cache_mutex);
-				const auto [itr, inserted] =
-					module_pool->emplace(key, ptr);
-				if (!inserted)
-					ptr = itr->second;
-			}
+			loaded_modules.emplace(key, ptr);
 			context_ptxs.push_back(std::move(ptr));
 			SPDLOG_INFO("Loaded module: {}", name);
 		}

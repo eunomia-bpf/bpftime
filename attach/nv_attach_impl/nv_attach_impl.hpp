@@ -213,13 +213,8 @@ class nv_attach_impl final : public base_attach_impl {
 	std::optional<std::vector<MapBasicInfo>> map_basic_info;
 	void *ptx_compiler_dl_handle = nullptr;
 	nv_attach_impl_ptx_compiler_handler ptx_compiler;
-	/// CUDA context + fatbin identity + SHA256 of ELF -> PTX module
-	std::shared_ptr<std::map<fatbin_record::module_key,
-				 std::shared_ptr<ptx_in_module>>>
-		module_pool;
 	/// SHA256 of PTX -> ELF
 	std::shared_ptr<std::map<std::string, std::vector<uint8_t>>> ptx_pool;
-	std::mutex module_cache_mutex;
 	std::mutex ptx_cache_mutex;
 
 	// Original function pointers for Frida replace hooks (trampolines)

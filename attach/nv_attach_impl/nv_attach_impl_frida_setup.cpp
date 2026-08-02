@@ -192,7 +192,7 @@ cuda_launch_kernel_common(nv_attach_impl *impl, void *original_fn_ptr,
 			return call_original();
 		SPDLOG_DEBUG("Launching kernel..");
 		if (auto err = launch_patched(
-			    handle->func, grid_dim.x, grid_dim.y, grid_dim.z,
+			    *handle, grid_dim.x, grid_dim.y, grid_dim.z,
 			    block_dim.x, block_dim.y, block_dim.z, shared_mem,
 			    stream, args, nullptr);
 		    err != CUDA_SUCCESS) {
@@ -205,7 +205,7 @@ cuda_launch_kernel_common(nv_attach_impl *impl, void *original_fn_ptr,
 				     error_string ? error_string :
 						    "No description");
 			SPDLOG_ERROR("Error code: {}", (int)err);
-			log_cufunc_attrs(handle->func);
+			log_cufunc_attrs(*handle);
 			// Preserve target semantics: fall back to the original
 			// runtime launch path if patched launch fails.
 			return call_original();
@@ -302,7 +302,6 @@ static void example_listener_on_enter(GumInvocationListener *listener,
 		SPDLOG_INFO("Patching PTXs");
 		auto fatbin_record = std::make_unique<struct fatbin_record>();
 		fatbin_record->original_ptx = extracted_ptx;
-		fatbin_record->module_pool = context->impl->module_pool;
 		fatbin_record->ptx_pool = context->impl->ptx_pool;
 
 		context->impl->current_fatbin = fatbin_record.get();
@@ -319,13 +318,13 @@ static void example_listener_on_enter(GumInvocationListener *listener,
 		auto symbol_name =
 			(const char *)gum_invocation_context_get_nth_argument(
 				gum_ctx, 3);
-		if (auto ok = current_fatbin->find_and_fill_function_info(
-			    func_addr, symbol_name);
-		    !ok) {
+		if (func_addr == nullptr || symbol_name == nullptr) {
 			SPDLOG_WARN(
-				"Unable to find_and_fill function info of symbol named {}, the PTX may not be compiled due to not modifying by nv_attach_impl",
+				"Unable to register function info for symbol {}",
 				symbol_name);
 		} else {
+			current_fatbin->function_addr_to_symbol[func_addr] =
+				symbol_name;
 			context->impl->symbol_address_to_fatbin[func_addr] =
 				current_fatbin;
 			SPDLOG_DEBUG(
@@ -337,8 +336,6 @@ static void example_listener_on_enter(GumInvocationListener *listener,
 		   AttachedToFunction::RegisterVariable) {
 		SPDLOG_DEBUG("Entering __cudaRegisterVar");
 		auto current_fatbin = context->impl->current_fatbin;
-		auto fatbin_handle =
-			gum_invocation_context_get_nth_argument(gum_ctx, 0);
 		auto var_addr =
 			gum_invocation_context_get_nth_argument(gum_ctx, 1);
 		auto symbol_name =
@@ -346,13 +343,13 @@ static void example_listener_on_enter(GumInvocationListener *listener,
 				gum_ctx, 3);
 		SPDLOG_DEBUG("Registering variable named {}", symbol_name);
 
-		if (bool ok = current_fatbin->find_and_fill_variable_info(
-			    var_addr, symbol_name);
-		    !ok) {
+		if (var_addr == nullptr || symbol_name == nullptr) {
 			SPDLOG_WARN(
-				"Unable to find_and_fill variable info of symbol names {}, the PTX may not be compiled due to not modifying by nv_attach_impl",
+				"Unable to register variable info for symbol {}",
 				symbol_name);
 		} else {
+			current_fatbin->variable_addr_to_symbol[var_addr] =
+				symbol_name;
 			context->impl->symbol_address_to_fatbin[var_addr] =
 				current_fatbin;
 			SPDLOG_DEBUG("Registered variable name {} addr {:x}",
