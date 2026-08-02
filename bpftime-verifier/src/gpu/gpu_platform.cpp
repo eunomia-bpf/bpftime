@@ -86,15 +86,6 @@ constexpr std::array<GpuHelperArgumentSemantics, 5> GPU_TRIPLE_U64_OUT = {
 	GpuHelperArgumentSemantics::NONE,
 };
 
-constexpr std::array<GpuHelperArgumentSemantics, 5>
-	CONSERVATIVE_UNKNOWN_GPU_OUT = {
-		GpuHelperArgumentSemantics::CONSERVATIVE_PTR_OUT,
-		GpuHelperArgumentSemantics::CONSERVATIVE_PTR_OUT,
-		GpuHelperArgumentSemantics::CONSERVATIVE_PTR_OUT,
-		GpuHelperArgumentSemantics::CONSERVATIVE_PTR_OUT,
-		GpuHelperArgumentSemantics::CONSERVATIVE_PTR_OUT,
-	};
-
 GpuHelperPrototype
 make_helper(const char *name, ebpf_return_type_t return_type,
 	    std::array<ebpf_argument_type_t, 5> prevail_argument_types,
@@ -333,9 +324,6 @@ GpuHelperPrototype get_gpu_helper_effects(int32_t helper_id)
 		.effect_class = GpuHelperEffectClass::NONE,
 		.behavior = GpuHelperBehavior::GENERIC,
 	};
-	if (helper_id >= 501) {
-		helper.semantic_argument_types = CONSERVATIVE_UNKNOWN_GPU_OUT;
-	}
 	return helper;
 }
 

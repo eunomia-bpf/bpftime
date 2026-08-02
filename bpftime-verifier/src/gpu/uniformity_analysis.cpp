@@ -610,9 +610,7 @@ UniformityState transfer(const ebpf_inst *instructions, size_t count, size_t pc,
 			const auto semantics =
 				helper.semantic_argument_types[i];
 			if (semantics !=
-				    GpuHelperArgumentSemantics::PTR_TO_U64_OUT &&
-			    semantics != GpuHelperArgumentSemantics::
-						 CONSERVATIVE_PTR_OUT) {
+			    GpuHelperArgumentSemantics::PTR_TO_U64_OUT) {
 				continue;
 			}
 			const uint8_t arg_reg = static_cast<uint8_t>(i + 1);
@@ -626,11 +624,7 @@ UniformityState transfer(const ebpf_inst *instructions, size_t count, size_t pc,
 				output, *pointer.constant_offset, 8);
 			write_stack_uniformity(
 				output, *pointer.constant_offset, 8,
-				semantics == GpuHelperArgumentSemantics::
-							CONSERVATIVE_PTR_OUT ?
-					Uniformity::VARYING :
-					helper_uniformity(
-						helper.return_uniformity));
+				helper_uniformity(helper.return_uniformity));
 		}
 
 		return output;

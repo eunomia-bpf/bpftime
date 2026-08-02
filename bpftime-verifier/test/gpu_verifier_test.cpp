@@ -545,10 +545,37 @@ TEST_CASE("SIMT safety enforces uniform branches and helper restrictions",
 
 	SECTION("lane-varying map key is rejected")
 	{
-		reset_verifier_state({ 2, 505 });
-		const std::array<ebpf_inst, 5> program = {
-			make_call(505),	      make_mov64_reg(2, 0),
-			make_mov64_imm(4, 0), make_call(2),
+		for (const int32_t helper : { 1, 2, 3 }) {
+			reset_verifier_state({ helper, 505 });
+			const std::array<ebpf_inst, 5> program = {
+				make_call(505),	      make_mov64_reg(2, 0),
+				make_mov64_imm(4, 0), make_call(helper),
+				make_exit(),
+			};
+
+			const auto uniformity =
+				analyze_program_uniformity(program);
+			const auto safety = check_simt_safety(
+				program.data(), program.size(), uniformity);
+			INFO(safety.summary());
+			REQUIRE_FALSE(safety.passed);
+			REQUIRE(safety.varying_map_key_count == 1);
+		}
+	}
+
+	SECTION("lane-varying trace payload is rejected")
+	{
+		reset_verifier_state({ 6, 511 });
+		const std::array<ebpf_inst, 10> program = {
+			make_stdw_imm(10, -8, 0),
+			make_mov64_reg(1, 10),
+			make_add64_imm(1, -8),
+			make_mov64_imm(2, 8),
+			make_call(511),
+			make_mov64_reg(3, 0),
+			make_mov64_imm(4, 0),
+			make_mov64_imm(5, 0),
+			make_call(6),
 			make_exit(),
 		};
 
@@ -557,7 +584,9 @@ TEST_CASE("SIMT safety enforces uniform branches and helper restrictions",
 			program.data(), program.size(), uniformity);
 		INFO(safety.summary());
 		REQUIRE_FALSE(safety.passed);
-		REQUIRE(safety.varying_map_key_count == 1);
+		REQUIRE(safety.summary().find(
+				"Host Bridge Payload Uniformity") !=
+			std::string::npos);
 	}
 }
 

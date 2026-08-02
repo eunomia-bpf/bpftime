@@ -111,7 +111,7 @@ jobs:
           $SUDO apt-get install -y --no-install-recommends \
             build-essential ca-certificates curl git pkg-config xz-utils \
             cmake ninja-build \
-            libboost-all-dev libdw-dev libedit-dev libelf-dev libffi-dev libssl-dev libzstd-dev zlib1g-dev \
+            libboost-all-dev libdw-dev libedit-dev libelf-dev libffi-dev libssl-dev libyaml-cpp-dev libzstd-dev zlib1g-dev \
             libcurl4-openssl-dev
 
           # Ensure LLVM >= 15 for vm/llvm-jit (find_package(LLVM)).

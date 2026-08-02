@@ -18,7 +18,6 @@ enum class GpuHelperUniformity {
 enum class GpuHelperArgumentSemantics {
 	NONE,
 	PTR_TO_U64_OUT,
-	CONSERVATIVE_PTR_OUT,
 };
 
 enum class GpuHelperEffectClass {

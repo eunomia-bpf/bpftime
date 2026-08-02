@@ -20,8 +20,9 @@ using bpftime::verifier::gpu::UniformityState;
 constexpr const char *BRANCH_CHECK = "Warp-Uniform Branch Conditions";
 constexpr const char *PROHIBITED_HELPER_CHECK = "Prohibited Helpers";
 constexpr const char *ATOMIC_CHECK = "Atomic Operations on Uniform Addresses";
-constexpr const char *MAP_KEY_CHECK = "Map Update Key Uniformity";
+constexpr const char *MAP_KEY_CHECK = "Map Helper Key Uniformity";
 constexpr const char *MAP_VALUE_CHECK = "Shared Map Value Uniformity";
+constexpr const char *HOST_BRIDGE_CHECK = "Host Bridge Payload Uniformity";
 
 bool is_lddw_continuation(const ebpf_inst *instructions, size_t pc)
 {
@@ -230,7 +231,8 @@ check_simt_safety(const ebpf_inst *instructions, size_t num_instructions,
 					  " is prohibited in SIMT mode");
 		}
 
-		if (helper.behavior == GpuHelperBehavior::MAP_UPDATE ||
+		if (helper.behavior == GpuHelperBehavior::MAP_LOOKUP ||
+		    helper.behavior == GpuHelperBehavior::MAP_UPDATE ||
 		    helper.behavior == GpuHelperBehavior::MAP_DELETE) {
 			const Uniformity key = key_uniformity(
 				state, maps, state.map_fds[1], 2);
@@ -253,6 +255,17 @@ check_simt_safety(const ebpf_inst *instructions, size_t num_instructions,
 			    Uniformity::UNIFORM) {
 			add_error(result, pc, MAP_VALUE_CHECK,
 				  "shared map update value is lane-varying");
+		}
+
+		if (instruction.imm == 6 &&
+		    (key_uniformity(state, maps, std::nullopt, 1) !=
+			     Uniformity::UNIFORM ||
+		     state.regs[2] != Uniformity::UNIFORM ||
+		     state.regs[3] != Uniformity::UNIFORM ||
+		     state.regs[4] != Uniformity::UNIFORM ||
+		     state.regs[5] != Uniformity::UNIFORM)) {
+			add_error(result, pc, HOST_BRIDGE_CHECK,
+				  "trace_printk payload is lane-varying");
 		}
 	}
 
