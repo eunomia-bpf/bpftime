@@ -7,6 +7,7 @@ on:
     paths:
       - ".github/workflows/test-ptxpass.yml"
       - "attach/nv_attach_impl/**"
+      - "bpftime-verifier/**"
       - "runtime/**"
       - "vm/**"
       - "cmake/**"
@@ -18,6 +19,7 @@ on:
     paths:
       - ".github/workflows/test-ptxpass.yml"
       - "attach/nv_attach_impl/**"
+      - "bpftime-verifier/**"
       - "runtime/**"
       - "vm/**"
       - "cmake/**"
@@ -48,6 +50,9 @@ jobs:
           rm -rf third_party/ubpf/external/bpf_conformance
           git submodule update --init --recursive third_party/ubpf
 
+      - name: Initialize verifier submodules
+        run: git submodule update --init --recursive bpftime-verifier/ebpf-verifier
+
       - name: Check and install required tools
         run: |
           echo "Checking installed tools..."
@@ -67,6 +72,7 @@ jobs:
               -DBPFTIME_ENABLE_UNIT_TESTING=YES \
               -DBPFTIME_ENABLE_CUDA_ATTACH=ON \
               -DENABLE_EBPF_VERIFIER=YES \
+              -DFETCHCONTENT_SOURCE_DIR_CATCH2="${GITHUB_WORKSPACE}/third_party/Catch2" \
               -DBPFTIME_CUDA_ROOT="/usr/local/cuda-12.6" \
               -DLLVM_DIR="/usr/lib/llvm-18/lib/cmake/llvm/" \
               -G Ninja
