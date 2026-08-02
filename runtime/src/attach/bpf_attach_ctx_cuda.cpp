@@ -396,9 +396,8 @@ std::optional<std::unique_ptr<cuda::CUDAContext>> create_cuda_context()
 	if (!g_cuda_watcher_thread.joinable())
 		memset(cuda_shared_mem, 0, sizeof(*cuda_shared_mem));
 
-	auto cuda_ctx = std::make_optional(
-		std::make_unique<cuda::CUDAContext>(cuda_shared_mem,
-						    g_cuda_watcher_generation));
+	auto cuda_ctx = std::make_optional(std::make_unique<cuda::CUDAContext>(
+		cuda_shared_mem, g_cuda_watcher_generation));
 
 	SPDLOG_INFO("CUDA context created");
 	return cuda_ctx;
