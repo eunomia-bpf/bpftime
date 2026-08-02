@@ -14,7 +14,6 @@ target_include_directories(bpftime-verifier
     PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/ebpf-verifier/src
     ${CMAKE_CURRENT_SOURCE_DIR}/include
     ${LIBBPF_INCLUDE_DIRS}
-    PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src/gpu
 )
 
 target_link_libraries(bpftime-verifier PUBLIC ebpfverifier ${LIBBPF_LIBRARIES} z elf)

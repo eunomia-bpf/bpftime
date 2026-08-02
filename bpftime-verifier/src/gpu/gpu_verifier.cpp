@@ -22,7 +22,7 @@ namespace
 
 ebpf_verifier_options_t gpu_verifier_options = {
 	.check_termination = true,
-	.assume_assertions = false,
+	.assume_assertions = true,
 	.print_invariants = false,
 	.print_failures = true,
 	.no_simplify = true,

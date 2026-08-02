@@ -216,10 +216,10 @@ Uniformity load_stack_uniformity(const UniformityState &state, int32_t offset,
 PointerProvenance join_pointer(const PointerProvenance &lhs,
 			       const PointerProvenance &rhs)
 {
-	if (lhs.region == PointerRegion::UNKNOWN) {
+	if (lhs.region == PointerRegion::NONE) {
 		return rhs;
 	}
-	if (rhs.region == PointerRegion::UNKNOWN) {
+	if (rhs.region == PointerRegion::NONE) {
 		return lhs;
 	}
 
@@ -271,7 +271,7 @@ bool merge_state(UniformityState &target, const UniformityState &source)
 			continue;
 		}
 		const auto joined = join_pointer(pointer, it->second);
-		if (joined.region != PointerRegion::UNKNOWN) {
+		if (joined.region != PointerRegion::NONE) {
 			merged_slots[offset] = joined;
 		}
 	}
@@ -451,7 +451,7 @@ UniformityState transfer(const ebpf_inst *instructions, size_t count, size_t pc,
 			input.regs[dst], input.regs[src]);
 		output.map_fds[dst].reset();
 		if (is_add_sub(instruction) &&
-		    input.pointers[dst].region != PointerRegion::UNKNOWN) {
+		    input.pointers[dst].region != PointerRegion::NONE) {
 			output.pointers[dst] = input.pointers[dst];
 			output.pointers[dst].constant_offset.reset();
 			output.pointers[dst].offset_uniformity =
@@ -470,7 +470,7 @@ UniformityState transfer(const ebpf_inst *instructions, size_t count, size_t pc,
 		output.regs[dst] = input.regs[dst];
 		output.map_fds[dst].reset();
 		if (is_add_sub(instruction) &&
-		    input.pointers[dst].region != PointerRegion::UNKNOWN) {
+		    input.pointers[dst].region != PointerRegion::NONE) {
 			output.pointers[dst] = input.pointers[dst];
 			if (output.pointers[dst].constant_offset.has_value()) {
 				const int64_t delta =
@@ -521,9 +521,8 @@ UniformityState transfer(const ebpf_inst *instructions, size_t count, size_t pc,
 								width);
 				write_stack_uniformity(output, *offset, width,
 						       input.regs[src]);
-				if (width == 8 &&
-				    input.pointers[src].region !=
-					    PointerRegion::UNKNOWN) {
+				if (width == 8 && input.pointers[src].region !=
+							  PointerRegion::NONE) {
 					output.stack_pointer_slots[*offset] =
 						input.pointers[src];
 				}
@@ -639,9 +638,14 @@ UniformityState transfer(const ebpf_inst *instructions, size_t count, size_t pc,
 			}
 			const uint8_t arg_reg = static_cast<uint8_t>(i + 1);
 			const auto &pointer = input.pointers[arg_reg];
-			if (pointer.region != PointerRegion::STACK ||
-			    !pointer.constant_offset.has_value() ||
+			if (pointer.region != PointerRegion::STACK &&
+			    pointer.region != PointerRegion::UNKNOWN) {
+				continue;
+			}
+			if (!pointer.constant_offset.has_value() ||
 			    pointer.offset_uniformity != Uniformity::UNIFORM) {
+				output.stack_pointer_slots.clear();
+				output.stack_bytes.fill(Uniformity::VARYING);
 				continue;
 			}
 			erase_overlapping_pointer_slots(
@@ -698,6 +702,9 @@ Uniformity query_pointer_uniformity(const UniformityState &state, uint8_t reg,
 	}
 
 	const auto &pointer = state.pointers[reg];
+	if (pointer.region == PointerRegion::NONE) {
+		return state.regs[reg];
+	}
 	if (pointer.region == PointerRegion::STACK) {
 		if (pointer.offset_uniformity == Uniformity::VARYING) {
 			return Uniformity::VARYING;
@@ -709,9 +716,11 @@ Uniformity query_pointer_uniformity(const UniformityState &state, uint8_t reg,
 					      width);
 	}
 
-	if (pointer.region != PointerRegion::UNKNOWN &&
-	    pointer.offset_uniformity == Uniformity::VARYING) {
+	if (pointer.offset_uniformity == Uniformity::VARYING) {
 		return Uniformity::VARYING;
+	}
+	if (pointer.region == PointerRegion::UNKNOWN) {
+		return Uniformity::UNKNOWN;
 	}
 
 	return state.regs[reg];

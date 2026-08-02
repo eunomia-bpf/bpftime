@@ -22,13 +22,14 @@ enum class Uniformity {
 };
 
 enum class PointerRegion {
-	UNKNOWN = 0,
+	NONE = 0,
+	UNKNOWN,
 	STACK,
 	MAP_VALUE,
 };
 
 struct PointerProvenance {
-	PointerRegion region = PointerRegion::UNKNOWN;
+	PointerRegion region = PointerRegion::NONE;
 	std::optional<int32_t> constant_offset{};
 	Uniformity offset_uniformity = Uniformity::UNKNOWN;
 	Uniformity pointee_uniformity = Uniformity::UNKNOWN;

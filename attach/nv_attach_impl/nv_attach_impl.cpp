@@ -230,19 +230,12 @@ int nv_attach_impl::create_attach_with_ebpf_callback(
 						  attach_point_name :
 						  data.program_name;
 		if (data.verifier_mode != BPFTIME_NO_VERIFY) {
-			std::optional<std::string> error;
-			try {
-				error = bpftime::verifier::gpu::verify_gpu_program(
+			const auto error =
+				bpftime::verifier::gpu::verify_gpu_program(
 					data.instructions.data(),
 					data.instructions.size(), section_name,
 					build_gpu_verifier_map_descriptors(
 						data.map_basic_info));
-			} catch (const std::exception &ex) {
-				error = "GPU verifier exception: " +
-					std::string(ex.what());
-			} catch (...) {
-				error = "unknown GPU verifier exception";
-			}
 			if (error) {
 				if (data.verifier_mode ==
 				    BPFTIME_VERIFIER_STRICT) {

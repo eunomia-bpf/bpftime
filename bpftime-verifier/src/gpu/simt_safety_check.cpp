@@ -85,8 +85,11 @@ bool address_is_uniform(const UniformityState &state, uint8_t reg)
 	}
 
 	const auto &pointer = state.pointers[reg];
-	if (pointer.region == PointerRegion::UNKNOWN) {
+	if (pointer.region == PointerRegion::NONE) {
 		return true;
+	}
+	if (pointer.region == PointerRegion::UNKNOWN) {
+		return false;
 	}
 	if (pointer.offset_uniformity != Uniformity::UNIFORM) {
 		return false;
@@ -105,10 +108,11 @@ bool scalar_value_is_uniform(const UniformityState &state, uint8_t reg)
 	}
 
 	const auto &pointer = state.pointers[reg];
-	if (pointer.region == PointerRegion::UNKNOWN) {
+	if (pointer.region == PointerRegion::NONE) {
 		return true;
 	}
-	return pointer.region != PointerRegion::STACK &&
+	return pointer.region != PointerRegion::UNKNOWN &&
+	       pointer.region != PointerRegion::STACK &&
 	       pointer.offset_uniformity == Uniformity::UNIFORM;
 }
 
@@ -219,8 +223,6 @@ check_simt_safety(const ebpf_inst *instructions, size_t num_instructions,
 
 		if ((instruction.opcode & INST_CLS_MASK) == INST_CLS_STX &&
 		    !is_atomic(instruction) &&
-		    state.pointers[instruction.dst].region ==
-			    PointerRegion::MAP_VALUE &&
 		    state.pointers[instruction.dst].may_target_shared_map &&
 		    state.regs[instruction.src] != Uniformity::UNIFORM) {
 			add_error(result, pc, MAP_VALUE_CHECK,
@@ -233,6 +235,19 @@ check_simt_safety(const ebpf_inst *instructions, size_t num_instructions,
 
 		const auto helper =
 			bpftime::get_gpu_helper_effects(instruction.imm);
+		for (size_t i = 0; i < helper.semantic_argument_types.size();
+		     ++i) {
+			if (helper.semantic_argument_types[i] ==
+				    bpftime::GpuHelperArgumentSemantics::
+					    PTR_TO_U64_OUT &&
+			    state.pointers[i + 1].may_target_shared_map &&
+			    helper.return_uniformity ==
+				    bpftime::GpuHelperUniformity::VARYING) {
+				add_error(
+					result, pc, MAP_VALUE_CHECK,
+					"shared map helper output is lane-varying");
+			}
+		}
 		if (helper.effect_class ==
 		    bpftime::GpuHelperEffectClass::PROHIBITED) {
 			add_error(result, pc, PROHIBITED_HELPER_CHECK,

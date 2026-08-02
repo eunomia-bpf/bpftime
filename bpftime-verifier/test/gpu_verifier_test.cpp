@@ -58,6 +58,12 @@ ebpf_inst make_add64_reg(uint8_t dst_reg, uint8_t src_reg)
 				dst_reg, src_reg);
 }
 
+ebpf_inst make_and64_imm(uint8_t dst_reg, int32_t imm)
+{
+	return make_instruction(INST_CLS_ALU64 | INST_SRC_IMM | INST_ALU_OP_AND,
+				dst_reg, 0, 0, imm);
+}
+
 ebpf_inst make_sub64_imm(uint8_t dst_reg, int32_t imm)
 {
 	return make_instruction(INST_CLS_ALU64 | INST_SRC_IMM | INST_ALU_OP_SUB,
@@ -67,12 +73,6 @@ ebpf_inst make_sub64_imm(uint8_t dst_reg, int32_t imm)
 ebpf_inst make_call(int32_t helper_id)
 {
 	return make_instruction(INST_OP_CALL, 0, 0, 0, helper_id);
-}
-
-ebpf_inst make_atomic_add(uint8_t dst_reg, uint8_t src_reg)
-{
-	return make_instruction(INST_CLS_STX | INST_SIZE_DW | (INST_XADD << 5),
-				dst_reg, src_reg);
 }
 
 ebpf_inst make_atomic(uint8_t dst_reg, uint8_t src_reg, int32_t operation)
@@ -102,6 +102,11 @@ ebpf_inst make_jeq_imm(uint8_t dst_reg, int32_t imm, int16_t off)
 {
 	return make_instruction(INST_CLS_JMP | INST_SRC_IMM | 0x10, dst_reg, 0,
 				off, imm);
+}
+
+ebpf_inst make_ja(int16_t off)
+{
+	return make_instruction(INST_OP_JA, 0, 0, off);
 }
 
 ebpf_inst make_ldxdw(uint8_t dst_reg, uint8_t src_reg, int16_t off)
@@ -312,7 +317,7 @@ TEST_CASE("Unknown map identity is conservatively lane-varying",
 	  "[gpu][uniformity]")
 {
 	const std::map<int, BpftimeMapDescriptor> maps = {
-		{ 1, make_map(1, 1502) },
+		{ 1, make_map(1, 1503) },
 	};
 	const std::array<ebpf_inst, 12> program = {
 		make_lddw_map(1, 1),	  {},
@@ -383,34 +388,6 @@ TEST_CASE("Shared map writes require lane-uniform values", "[gpu][simt]")
 			std::string::npos);
 	}
 
-	SECTION("map update after map pointer spill")
-	{
-		const std::array<ebpf_inst, 14> program = {
-			make_call(511),
-			make_stxdw(10, 0, -24),
-			make_lddw_map(1, 1),
-			{},
-			make_stxdw(10, 1, -16),
-			make_ldxdw(1, 10, -16),
-			make_stdw_imm(10, -8, 0),
-			make_mov64_reg(2, 10),
-			make_add64_imm(2, -8),
-			make_mov64_reg(3, 10),
-			make_add64_imm(3, -24),
-			make_mov64_imm(4, 0),
-			make_call(2),
-			make_exit(),
-		};
-		const auto uniformity = analyze_uniformity(
-			program.data(), program.size(), maps);
-		const auto safety = check_simt_safety(
-			program.data(), program.size(), uniformity, maps);
-		INFO(safety.summary());
-		REQUIRE_FALSE(safety.passed);
-		REQUIRE(safety.summary().find("Shared Map Value Uniformity") !=
-			std::string::npos);
-	}
-
 	SECTION("direct store after map pointer spill")
 	{
 		const std::array<ebpf_inst, 14> program = {
@@ -431,6 +408,63 @@ TEST_CASE("Shared map writes require lane-uniform values", "[gpu][simt]")
 		REQUIRE(safety.summary().find("Shared Map Value Uniformity") !=
 			std::string::npos);
 	}
+}
+
+TEST_CASE("Pointer joins retain shared-map provenance", "[gpu][simt]")
+{
+	const std::map<int, BpftimeMapDescriptor> maps = {
+		{ 1, make_map(1, 1501) },
+		{ 2, make_map(2, 1502) },
+	};
+	const std::array<ebpf_inst, 36> program = {
+		make_lddw_map(1, 1),
+		{},
+		make_stdw_imm(10, -8, 0),
+		make_mov64_reg(2, 10),
+		make_add64_imm(2, -8),
+		make_call(1),
+		make_jeq_imm(0, 0, 27),
+		make_mov64_reg(7, 0),
+		make_lddw_map(1, 2),
+		{},
+		make_mov64_reg(2, 10),
+		make_add64_imm(2, -8),
+		make_call(1),
+		make_jeq_imm(0, 0, 20),
+		make_mov64_reg(8, 0),
+		make_call(502),
+		make_jeq_imm(0, 0, 13),
+		make_call(502),
+		make_jeq_imm(0, 0, 8),
+		make_mov64_reg(6, 8),
+		make_mov64_reg(0, 0),
+		make_mov64_reg(0, 0),
+		make_mov64_reg(0, 0),
+		make_mov64_reg(0, 0),
+		make_mov64_reg(0, 0),
+		make_ja(6),
+		make_mov64_reg(0, 0),
+		make_mov64_reg(6, 10),
+		make_add64_imm(6, -16),
+		make_ja(2),
+		make_mov64_reg(6, 7),
+		make_ja(0),
+		make_call(511),
+		make_stxdw(6, 0),
+		make_mov64_imm(0, 0),
+		make_exit(),
+	};
+
+	const auto uniformity =
+		analyze_uniformity(program.data(), program.size(), maps);
+	REQUIRE(uniformity.success);
+	REQUIRE(uniformity.states[33].pointers[6].may_target_shared_map);
+	const auto safety = check_simt_safety(program.data(), program.size(),
+					      uniformity, maps);
+	INFO(safety.summary());
+	REQUIRE_FALSE(safety.passed);
+	REQUIRE(safety.summary().find("Shared Map Value Uniformity") !=
+		std::string::npos);
 }
 
 TEST_CASE("Atomic fetch results are lane-varying", "[gpu][uniformity]")
@@ -523,7 +557,7 @@ TEST_CASE("SIMT safety enforces uniform branches and helper restrictions",
 		const std::array<ebpf_inst, 4> program = {
 			make_call(505),
 			make_mov64_reg(1, 0),
-			make_atomic_add(1, 0),
+			make_atomic(1, 0, 0),
 			make_exit(),
 		};
 
@@ -555,12 +589,12 @@ TEST_CASE("SIMT safety enforces uniform branches and helper restrictions",
 	SECTION("lane-varying trace payload is rejected")
 	{
 		const std::array<ebpf_inst, 10> program = {
+			make_call(511),
+			make_mov64_reg(3, 0),
 			make_stdw_imm(10, -8, 0),
 			make_mov64_reg(1, 10),
 			make_add64_imm(1, -8),
 			make_mov64_imm(2, 8),
-			make_call(511),
-			make_mov64_reg(3, 0),
 			make_mov64_imm(4, 0),
 			make_mov64_imm(5, 0),
 			make_call(6),
@@ -715,6 +749,96 @@ TEST_CASE("GPU verifier integrates SIMT phases with optional PREVAIL",
 			program.data(), program.size(), "cuda__integration");
 		INFO(result.value_or(""));
 		REQUIRE(result);
+	}
+
+	SECTION("variable stack out-params taint every reachable byte")
+	{
+		const std::array<ebpf_inst, 16> program = {
+			make_stdw_imm(10, -8, 0), make_call(511),
+			make_mov64_reg(4, 0),	  make_and64_imm(4, 7),
+			make_mov64_reg(1, 10),	  make_add64_imm(1, -15),
+			make_add64_reg(1, 4),	  make_mov64_reg(2, 10),
+			make_add64_imm(2, -24),	  make_mov64_reg(3, 10),
+			make_add64_imm(3, -32),	  make_call(505),
+			make_ldxdw(0, 10, -8),	  make_jeq_imm(0, 0, 1),
+			make_mov64_imm(0, 0),	  make_exit(),
+		};
+
+		const auto result = verify_gpu_program(
+			program.data(), program.size(), "cuda__integration");
+		INFO(result.value_or(""));
+		REQUIRE(result);
+		REQUIRE(result->find("Warp-Uniform Branch Conditions") !=
+			std::string::npos);
+	}
+
+	SECTION("lane-varying helper outputs cannot target shared maps")
+	{
+		const std::map<int, BpftimeMapDescriptor> maps = {
+			{ 1, make_map(1, 1501) },
+		};
+		const std::array<ebpf_inst, 15> program = {
+			make_lddw_map(1, 1),
+			{},
+			make_stdw_imm(10, -8, 0),
+			make_mov64_reg(2, 10),
+			make_add64_imm(2, -8),
+			make_call(1),
+			make_jeq_imm(0, 0, 6),
+			make_mov64_reg(1, 0),
+			make_mov64_reg(2, 10),
+			make_add64_imm(2, -16),
+			make_mov64_reg(3, 10),
+			make_add64_imm(3, -24),
+			make_call(505),
+			make_mov64_imm(0, 0),
+			make_exit(),
+		};
+
+		const auto result =
+			verify_gpu_program(program.data(), program.size(),
+					   "cuda__integration", maps);
+		INFO(result.value_or(""));
+		REQUIRE(result);
+		REQUIRE(result->find("Shared Map Value Uniformity") !=
+			std::string::npos);
+	}
+
+	SECTION("invalid out-param pointers preserve PREVAIL diagnostics")
+	{
+		const std::array<ebpf_inst, 5> program = {
+			make_mov64_imm(1, 0), make_mov64_imm(2, 0),
+			make_mov64_imm(3, 0), make_call(505),
+			make_exit(),
+		};
+
+		const auto result = verify_gpu_program(
+			program.data(), program.size(), "cuda__integration");
+		INFO(result.value_or(""));
+		REQUIRE(result);
+		REQUIRE(result->find("bad optional access") ==
+			std::string::npos);
+	}
+
+	SECTION("jumps cross helper shadow preludes")
+	{
+		const std::array<ebpf_inst, 10> program = {
+			make_mov64_reg(1, 10),
+			make_add64_imm(1, -8),
+			make_mov64_reg(2, 10),
+			make_add64_imm(2, -16),
+			make_mov64_reg(3, 10),
+			make_add64_imm(3, -24),
+			make_ja(1),
+			make_call(503),
+			make_call(503),
+			make_exit(),
+		};
+
+		const auto result = verify_gpu_program(
+			program.data(), program.size(), "cuda__integration");
+		INFO(result.value_or(""));
+		REQUIRE_FALSE(result);
 	}
 
 	SECTION("PREVAIL failures reject GPU programs before SIMT")
