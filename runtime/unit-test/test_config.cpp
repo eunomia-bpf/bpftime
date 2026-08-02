@@ -29,7 +29,7 @@ TEST_CASE("Allow external maps from the environment")
 	const std::string saved_value = was_set ? old_value : "";
 
 	REQUIRE(setenv("BPFTIME_ALLOW_EXTERNAL_MAPS", "1", 1) == 0);
-	const auto cfg = construct_agent_config_from_env();
+	const auto cfg = construct_runtime_config_from_env();
 	const int restore_result =
 		was_set ? setenv("BPFTIME_ALLOW_EXTERNAL_MAPS",
 				 saved_value.c_str(), 1) :
