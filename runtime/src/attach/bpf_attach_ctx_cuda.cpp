@@ -149,10 +149,10 @@ void bpf_attach_ctx::start_cuda_watcher_thread()
 		return;
 	}
 	auto flag = cuda_ctx->cuda_watcher_should_stop;
-	auto ctx = std::make_shared<cuda_watcher_context>(cuda_watcher_context{
+	auto ctx = std::make_unique<cuda_watcher_context>(cuda_watcher_context{
 		cuda_ctx->cuda_shared_mem,
 		cuda_ctx->cuda_shared_mem_device_pointer });
-	g_cuda_watcher_thread = std::thread([flag, ctx]() {
+	g_cuda_watcher_thread = std::thread([flag, ctx = std::move(ctx)]() {
 		while (!flag->load()) {
 			if (ctx->cuda_shared_mem->flag1 == 1) {
 				ctx->cuda_shared_mem->flag1 = 0;
