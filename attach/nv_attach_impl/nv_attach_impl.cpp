@@ -230,24 +230,23 @@ int nv_attach_impl::create_attach_with_ebpf_callback(
 						  attach_point_name :
 						  data.program_name;
 		if (data.verifier_mode != BPFTIME_NO_VERIFY) {
-			const auto result =
+			const auto error =
 				bpftime::verifier::gpu::verify_gpu_program(
 					data.instructions.data(),
 					data.instructions.size(), section_name,
 					build_gpu_verifier_map_descriptors(
 						data.map_basic_info));
-			if (!result.passed) {
+			if (error) {
 				if (data.verifier_mode ==
 				    BPFTIME_VERIFIER_STRICT) {
 					SPDLOG_ERROR(
 						"GPU eBPF verification failed for {}: {}",
-						section_name,
-						result.error_message);
+						section_name, *error);
 					return GPU_VERIFIER_REJECTED;
 				}
 				SPDLOG_WARN(
 					"GPU eBPF verification failed for {}: {}; continuing",
-					section_name, result.error_message);
+					section_name, *error);
 			}
 		} else {
 			SPDLOG_INFO("Skipping GPU eBPF verification for {}",

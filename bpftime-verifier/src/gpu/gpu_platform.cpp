@@ -215,24 +215,17 @@ EbpfProgramType gpu_get_program_type(const std::string &section,
 
 EbpfHelperPrototype gpu_get_helper_prototype(int32_t helper_id)
 {
-	if (!bpftime::usable_helpers.contains(helper_id)) {
-		throw std::runtime_error("Unusable helper: " +
-					 std::to_string(helper_id));
-	}
-	if (auto it = bpftime::non_kernel_helpers.find(helper_id);
-	    it != bpftime::non_kernel_helpers.end()) {
-		return it->second;
-	}
 	if (const auto *helper =
 		    bpftime::find_gpu_helper_prototype(helper_id)) {
 		return to_prevail_prototype(*helper);
 	}
-	return get_helper_prototype_linux(helper_id);
+	throw std::runtime_error("Unusable GPU helper: " +
+				 std::to_string(helper_id));
 }
 
 bool gpu_is_helper_usable(int32_t helper_id)
 {
-	return bpftime::usable_helpers.contains(helper_id);
+	return bpftime::find_gpu_helper_prototype(helper_id) != nullptr;
 }
 
 EbpfMapDescriptor &gpu_get_map_descriptor(int fd)
@@ -241,10 +234,6 @@ EbpfMapDescriptor &gpu_get_map_descriptor(int fd)
 		if (descriptor.original_fd == fd) {
 			return descriptor;
 		}
-	}
-	if (auto it = bpftime::map_descriptors.find(fd);
-	    it != bpftime::map_descriptors.end()) {
-		return it->second;
 	}
 	throw std::runtime_error("Invalid map fd: " + std::to_string(fd));
 }

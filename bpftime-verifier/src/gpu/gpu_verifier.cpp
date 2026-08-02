@@ -14,7 +14,6 @@
 #include <cstring>
 #include <exception>
 #include <limits>
-#include <set>
 #include <sstream>
 #include <variant>
 
@@ -34,93 +33,6 @@ ebpf_verifier_options_t gpu_verifier_options = {
 	.setup_constraints = false,
 	.dump_btf_types_json = false,
 };
-
-constexpr std::array<int32_t, 6> PREVAIL_STANDARD_HELPERS = {
-	1, 2, 3, 6, 14, 25,
-};
-
-constexpr std::array<int32_t, 11> PREVAIL_GPU_HELPERS = {
-	501, 502, 503, 504, 505, 506, 507, 508, 509, 510, 511,
-};
-
-bpftime::verifier::BpftimeHelperProrotype
-to_bpftime_helper_prototype(const EbpfHelperPrototype &prototype)
-{
-	bpftime::verifier::BpftimeHelperProrotype result{};
-	result.name = prototype.name;
-	result.return_type =
-		static_cast<bpftime::verifier::bpftime_return_type_t>(
-			static_cast<int>(prototype.return_type));
-	for (size_t i = 0; i < 5; ++i) {
-		result.argument_type[i] =
-			static_cast<bpftime::verifier::bpftime_argument_type_t>(
-				static_cast<int>(prototype.argument_type[i]));
-	}
-	return result;
-}
-
-std::map<int32_t, bpftime::verifier::BpftimeHelperProrotype>
-get_non_kernel_helper_overrides()
-{
-	std::map<int32_t, bpftime::verifier::BpftimeHelperProrotype> helpers;
-	for (const auto &[helper_id, prototype] : bpftime::non_kernel_helpers) {
-		helpers.emplace(helper_id,
-				to_bpftime_helper_prototype(prototype));
-	}
-	return helpers;
-}
-
-bpftime::verifier::BpftimeHelperProrotype
-make_prevail_gpu_helper_override(int32_t helper_id)
-{
-	const auto *helper = bpftime::find_gpu_helper_prototype(helper_id);
-	if (helper == nullptr) {
-		throw std::runtime_error("Missing GPU helper prototype: " +
-					 std::to_string(helper_id));
-	}
-
-	bpftime::verifier::BpftimeHelperProrotype prototype{};
-	prototype.name = helper->name;
-	prototype.return_type =
-		static_cast<bpftime::verifier::bpftime_return_type_t>(
-			static_cast<int>(helper->return_type));
-
-	size_t arity = 0;
-	for (; arity < helper->prevail_argument_types.size(); ++arity) {
-		if (helper->prevail_argument_types[arity] ==
-		    EBPF_ARGUMENT_TYPE_DONTCARE) {
-			break;
-		}
-	}
-
-	for (size_t i = 0; i < 5; ++i) {
-		if (i >= arity) {
-			prototype.argument_type[i] =
-				bpftime::verifier::EBPF_ARGUMENT_TYPE_DONTCARE;
-		} else if (helper_id == 501) {
-			prototype.argument_type[i] = static_cast<
-				bpftime::verifier::bpftime_argument_type_t>(
-				static_cast<int>(
-					helper->prevail_argument_types[i]));
-		} else {
-			prototype.argument_type[i] =
-				bpftime::verifier::EBPF_ARGUMENT_TYPE_ANYTHING;
-		}
-	}
-
-	return prototype;
-}
-
-std::map<int32_t, bpftime::verifier::BpftimeHelperProrotype>
-make_prevail_gpu_helper_overrides()
-{
-	std::map<int32_t, bpftime::verifier::BpftimeHelperProrotype> helpers;
-	for (const auto helper_id : PREVAIL_GPU_HELPERS) {
-		helpers[helper_id] =
-			make_prevail_gpu_helper_override(helper_id);
-	}
-	return helpers;
-}
 
 bool is_call(const ebpf_inst &instruction)
 {
@@ -272,17 +184,6 @@ std::vector<EbpfMapDescriptor> to_prevail_map_descriptors(
 	return descriptors;
 }
 
-std::map<int, bpftime::verifier::BpftimeMapDescriptor>
-effective_map_descriptors(
-	const std::map<int, bpftime::verifier::BpftimeMapDescriptor>
-		&map_descriptors)
-{
-	if (!map_descriptors.empty()) {
-		return map_descriptors;
-	}
-	return bpftime::verifier::get_map_descriptors();
-}
-
 raw_program make_raw_program(const ebpf_inst *instructions, size_t count,
 			     const std::string &section_name,
 			     const std::vector<EbpfMapDescriptor> &maps)
@@ -300,60 +201,14 @@ raw_program make_raw_program(const ebpf_inst *instructions, size_t count,
 	return program;
 }
 
-class ScopedPrevailGpuRegistration {
-    public:
-	explicit ScopedPrevailGpuRegistration(
-		const std::map<int, bpftime::verifier::BpftimeMapDescriptor>
-			&maps)
-		: previous_available_helpers_(bpftime::usable_helpers.begin(),
-					      bpftime::usable_helpers.end()),
-		  previous_non_kernel_helpers_(
-			  get_non_kernel_helper_overrides()),
-		  previous_maps_(bpftime::verifier::get_map_descriptors())
-	{
-		std::set<int32_t> helpers(PREVAIL_STANDARD_HELPERS.begin(),
-					  PREVAIL_STANDARD_HELPERS.end());
-		helpers.insert(PREVAIL_GPU_HELPERS.begin(),
-			       PREVAIL_GPU_HELPERS.end());
-		bpftime::verifier::set_available_helpers(
-			std::vector<int32_t>(helpers.begin(), helpers.end()));
-		bpftime::verifier::set_non_kernel_helpers(
-			make_prevail_gpu_helper_overrides());
-		bpftime::verifier::set_map_descriptors(maps);
-	}
-
-	~ScopedPrevailGpuRegistration()
-	{
-		bpftime::verifier::set_available_helpers(
-			previous_available_helpers_);
-		bpftime::verifier::set_non_kernel_helpers(
-			previous_non_kernel_helpers_);
-		bpftime::verifier::set_map_descriptors(previous_maps_);
-	}
-
-    private:
-	std::vector<int32_t> previous_available_helpers_;
-	std::map<int32_t, bpftime::verifier::BpftimeHelperProrotype>
-		previous_non_kernel_helpers_;
-	std::map<int, bpftime::verifier::BpftimeMapDescriptor> previous_maps_;
-};
-
-struct PrevailAttemptResult {
-	bool passed = false;
-	std::string message;
-};
-
-PrevailAttemptResult
+std::optional<std::string>
 run_prevail(const ebpf_inst *instructions, size_t num_instructions,
 	    const std::string &section_name,
-	    const std::vector<EbpfMapDescriptor> &prevail_maps,
-	    const std::map<int, bpftime::verifier::BpftimeMapDescriptor> &maps)
+	    const std::vector<EbpfMapDescriptor> &prevail_maps)
 {
-	PrevailAttemptResult result;
 	ebpf_verifier_stats_t stats{};
 
 	try {
-		ScopedPrevailGpuRegistration scoped_registration(maps);
 		const auto prevail_instructions = build_prevail_shadow_program(
 			instructions, num_instructions);
 		auto program = make_raw_program(prevail_instructions.data(),
@@ -363,25 +218,22 @@ run_prevail(const ebpf_inst *instructions, size_t num_instructions,
 		std::vector<std::vector<std::string>> notes;
 		auto unmarshal_result = unmarshal(program, notes);
 		if (std::holds_alternative<std::string>(unmarshal_result)) {
-			result.message =
-				std::get<std::string>(unmarshal_result);
-			return result;
+			return std::get<std::string>(unmarshal_result);
 		}
 
 		std::ostringstream prevail_message;
-		result.passed = ebpf_verify_program(
-			prevail_message,
-			std::get<InstructionSeq>(unmarshal_result),
-			program.info, &gpu_verifier_options, &stats);
-		if (!result.passed) {
-			result.message = prevail_message.str();
+		if (!ebpf_verify_program(
+			    prevail_message,
+			    std::get<InstructionSeq>(unmarshal_result),
+			    program.info, &gpu_verifier_options, &stats)) {
+			return prevail_message.str();
 		}
 	} catch (const std::exception &ex) {
-		result.message = ex.what();
+		return ex.what();
 	} catch (...) {
-		result.message = "unknown PREVAIL exception";
+		return "unknown PREVAIL exception";
 	}
-	return result;
+	return std::nullopt;
 }
 
 } // namespace
@@ -389,57 +241,48 @@ run_prevail(const ebpf_inst *instructions, size_t num_instructions,
 namespace bpftime::verifier::gpu
 {
 
-static GpuVerifyResult verify_gpu_instructions(
+static std::optional<std::string> verify_gpu_instructions(
 	const ebpf_inst *instructions, size_t num_instructions,
 	const std::string &section_name,
 	const std::map<int, BpftimeMapDescriptor> &map_descriptors)
 {
-	GpuVerifyResult result;
 	if (num_instructions == 0) {
-		result.error_message = "empty instruction stream";
-		return result;
+		return "empty instruction stream";
 	}
 	if (instructions == nullptr) {
-		result.error_message = "null instruction stream";
-		return result;
+		return "null instruction stream";
 	}
 
-	const auto maps = effective_map_descriptors(map_descriptors);
+	const auto &maps = map_descriptors;
 	for (const auto &[fd, map] : maps) {
 		(void)fd;
 		if (map.type >= 1500 && map.type < 1600 &&
 		    !bpftime::try_get_gpu_map_type(map.type).has_value()) {
-			result.error_message = "unsupported GPU map type " +
-					       std::to_string(map.type);
-			return result;
+			return "unsupported GPU map type " +
+			       std::to_string(map.type);
 		}
 	}
-	const auto prevail =
-		run_prevail(instructions, num_instructions, section_name,
-			    to_prevail_map_descriptors(maps), maps);
-	if (!prevail.passed) {
-		result.error_message = prevail.message;
-		return result;
+	if (auto error =
+		    run_prevail(instructions, num_instructions, section_name,
+				to_prevail_map_descriptors(maps))) {
+		return error;
 	}
 	const auto uniformity =
 		analyze_uniformity(instructions, num_instructions, maps);
 	if (!uniformity.success) {
-		result.error_message = uniformity.error_message;
-		return result;
+		return uniformity.error_message;
 	}
 
 	const auto simt = check_simt_safety(instructions, num_instructions,
 					    uniformity, maps);
 	if (!simt.passed) {
-		result.error_message = simt.summary();
-		return result;
+		return simt.summary();
 	}
 
-	result.passed = true;
-	return result;
+	return std::nullopt;
 }
 
-GpuVerifyResult
+std::optional<std::string>
 verify_gpu_program(const void *raw_instructions, size_t num_instructions,
 		   const std::string &section_name,
 		   const std::map<int, BpftimeMapDescriptor> &map_descriptors)

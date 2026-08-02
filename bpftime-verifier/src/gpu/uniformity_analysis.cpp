@@ -751,14 +751,6 @@ analyze_uniformity(const ebpf_inst *instructions, size_t num_instructions,
 				 result.states[pc], maps);
 		for (const auto succ :
 		     successors(instructions, num_instructions, pc)) {
-			if (succ >= num_instructions) {
-				std::ostringstream error;
-				error << "jump target out of bounds at instruction "
-				      << pc;
-				result.error_message = error.str();
-				return result;
-			}
-
 			bool changed = false;
 			if (!has_state[succ]) {
 				result.states[succ] = out;

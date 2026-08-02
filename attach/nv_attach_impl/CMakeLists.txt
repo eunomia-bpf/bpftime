@@ -56,9 +56,8 @@ target_link_libraries(bpftime_nv_attach_impl PUBLIC bpftime_base_attach_impl spd
 set_property(TARGET bpftime_nv_attach_impl PROPERTY CXX_STANDARD 20)
 
 if(${ENABLE_EBPF_VERIFIER})
-  target_link_libraries(bpftime_nv_attach_impl PUBLIC bpftime-verifier)
-  add_dependencies(bpftime_nv_attach_impl bpftime-verifier)
-  target_compile_definitions(bpftime_nv_attach_impl PRIVATE ENABLE_EBPF_VERIFIER ENABLE_BPFTIME_VERIFIER)
+  target_link_libraries(bpftime_nv_attach_impl PRIVATE bpftime-verifier)
+  target_compile_definitions(bpftime_nv_attach_impl PRIVATE ENABLE_BPFTIME_VERIFIER)
 endif()
 
 # nv_attach_impl includes internal llvmbpf headers that include LLVM headers

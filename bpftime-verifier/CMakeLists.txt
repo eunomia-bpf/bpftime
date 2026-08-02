@@ -52,7 +52,6 @@ if (${TEST_LCOV})
 endif()
 
 add_dependencies(bpftime_verifier_tests bpftime-verifier)
-add_dependencies(bpftime_gpu_verifier_tests bpftime-verifier)
 
 if (${TEST_LCOV}) 
     target_link_options(bpftime_verifier_tests PRIVATE -lgcov)

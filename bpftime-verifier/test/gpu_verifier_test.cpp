@@ -9,7 +9,6 @@
 
 #include <array>
 #include <cstdint>
-#include <initializer_list>
 #include <map>
 #include <string>
 #include <vector>
@@ -21,119 +20,86 @@ using namespace bpftime::verifier::gpu;
 namespace
 {
 
-ebpf_inst make_mov64_imm(uint8_t dst_reg, int32_t imm)
+ebpf_inst make_instruction(uint8_t opcode, uint8_t dst_reg = 0,
+			   uint8_t src_reg = 0, int16_t offset = 0,
+			   int32_t imm = 0)
 {
 	ebpf_inst insn{};
-	insn.opcode = INST_CLS_ALU64 | INST_SRC_IMM | INST_ALU_OP_MOV;
+	insn.opcode = opcode;
 	insn.dst = dst_reg;
+	insn.src = src_reg;
+	insn.offset = offset;
 	insn.imm = imm;
 	return insn;
+}
+
+ebpf_inst make_mov64_imm(uint8_t dst_reg, int32_t imm)
+{
+	return make_instruction(INST_CLS_ALU64 | INST_SRC_IMM | INST_ALU_OP_MOV,
+				dst_reg, 0, 0, imm);
 }
 
 ebpf_inst make_mov64_reg(uint8_t dst_reg, uint8_t src_reg)
 {
-	ebpf_inst insn{};
-	insn.opcode = INST_CLS_ALU64 | INST_SRC_REG | INST_ALU_OP_MOV;
-	insn.dst = dst_reg;
-	insn.src = src_reg;
-	return insn;
+	return make_instruction(INST_CLS_ALU64 | INST_SRC_REG | INST_ALU_OP_MOV,
+				dst_reg, src_reg);
 }
 
 ebpf_inst make_add64_imm(uint8_t dst_reg, int32_t imm)
 {
-	ebpf_inst insn{};
-	insn.opcode = INST_CLS_ALU64 | INST_SRC_IMM | INST_ALU_OP_ADD;
-	insn.dst = dst_reg;
-	insn.imm = imm;
-	return insn;
+	return make_instruction(INST_CLS_ALU64 | INST_SRC_IMM | INST_ALU_OP_ADD,
+				dst_reg, 0, 0, imm);
 }
 
 ebpf_inst make_call(int32_t helper_id)
 {
-	ebpf_inst insn{};
-	insn.opcode = INST_OP_CALL;
-	insn.imm = helper_id;
-	return insn;
+	return make_instruction(INST_OP_CALL, 0, 0, 0, helper_id);
 }
 
 ebpf_inst make_atomic_add(uint8_t dst_reg, uint8_t src_reg)
 {
-	ebpf_inst insn{};
-	insn.opcode = INST_CLS_STX | INST_SIZE_DW | (INST_XADD << 5);
-	insn.dst = dst_reg;
-	insn.src = src_reg;
-	return insn;
+	return make_instruction(INST_CLS_STX | INST_SIZE_DW | (INST_XADD << 5),
+				dst_reg, src_reg);
 }
 
 ebpf_inst make_atomic(uint8_t dst_reg, uint8_t src_reg, int32_t operation)
 {
-	auto insn = make_atomic_add(dst_reg, src_reg);
-	insn.imm = operation;
-	return insn;
+	return make_instruction(INST_CLS_STX | INST_SIZE_DW | (INST_XADD << 5),
+				dst_reg, src_reg, 0, operation);
 }
 
 ebpf_inst make_stdw_imm(uint8_t dst_reg, int16_t off, int32_t imm)
 {
-	ebpf_inst insn{};
-	insn.opcode = INST_CLS_ST | INST_SIZE_DW | (INST_MEM << 5);
-	insn.dst = dst_reg;
-	insn.offset = off;
-	insn.imm = imm;
-	return insn;
+	return make_instruction(INST_CLS_ST | INST_SIZE_DW | (INST_MEM << 5),
+				dst_reg, 0, off, imm);
 }
 
 ebpf_inst make_stxdw(uint8_t dst_reg, uint8_t src_reg, int16_t off = 0)
 {
-	ebpf_inst insn{};
-	insn.opcode = INST_CLS_STX | INST_SIZE_DW | (INST_MEM << 5);
-	insn.dst = dst_reg;
-	insn.src = src_reg;
-	insn.offset = off;
-	return insn;
+	return make_instruction(INST_CLS_STX | INST_SIZE_DW | (INST_MEM << 5),
+				dst_reg, src_reg, off);
 }
 
 ebpf_inst make_lddw_map(uint8_t dst_reg, int32_t fd)
 {
-	ebpf_inst insn{};
-	insn.opcode = INST_OP_LDDW_IMM;
-	insn.dst = dst_reg;
-	insn.src = 1;
-	insn.imm = fd;
-	return insn;
+	return make_instruction(INST_OP_LDDW_IMM, dst_reg, 1, 0, fd);
 }
 
 ebpf_inst make_jeq_imm(uint8_t dst_reg, int32_t imm, int16_t off)
 {
-	ebpf_inst insn{};
-	insn.opcode = INST_CLS_JMP | INST_SRC_IMM | 0x10;
-	insn.dst = dst_reg;
-	insn.offset = off;
-	insn.imm = imm;
-	return insn;
+	return make_instruction(INST_CLS_JMP | INST_SRC_IMM | 0x10, dst_reg, 0,
+				off, imm);
 }
 
 ebpf_inst make_ldxdw(uint8_t dst_reg, uint8_t src_reg, int16_t off)
 {
-	ebpf_inst insn{};
-	insn.opcode = INST_CLS_LDX | INST_SIZE_DW | (INST_MEM << 5);
-	insn.dst = dst_reg;
-	insn.src = src_reg;
-	insn.offset = off;
-	return insn;
+	return make_instruction(INST_CLS_LDX | INST_SIZE_DW | (INST_MEM << 5),
+				dst_reg, src_reg, off);
 }
 
 ebpf_inst make_exit()
 {
-	ebpf_inst insn{};
-	insn.opcode = INST_OP_EXIT;
-	return insn;
-}
-
-void reset_verifier_state(std::initializer_list<int32_t> helpers = {})
-{
-	set_available_helpers(std::vector<int32_t>(helpers));
-	set_non_kernel_helpers(std::map<int32_t, BpftimeHelperProrotype>{});
-	set_map_descriptors(std::map<int, BpftimeMapDescriptor>{});
+	return make_instruction(INST_OP_EXIT);
 }
 
 template <size_t N>
@@ -173,9 +139,8 @@ TEST_CASE("GPU platform accepts only supported map types", "[gpu][platform]")
 	const std::map<int, BpftimeMapDescriptor> maps = {
 		{ 1, make_map(1, 1505) },
 	};
-	REQUIRE_FALSE(verify_gpu_program(program.data(), program.size(),
-					 "cuda__unknown_map", maps)
-			      .passed);
+	REQUIRE(verify_gpu_program(program.data(), program.size(),
+				   "cuda__unknown_map", maps));
 }
 
 TEST_CASE("GPU verifier matches the no-context execution ABI", "[gpu][prevail]")
@@ -186,9 +151,8 @@ TEST_CASE("GPU verifier matches the no-context execution ABI", "[gpu][prevail]")
 			make_ldxdw(0, 1, 0),
 			make_exit(),
 		};
-		REQUIRE_FALSE(verify_gpu_program(program.data(), program.size(),
-						 "cuda__no_context")
-				      .passed);
+		REQUIRE(verify_gpu_program(program.data(), program.size(),
+					   "cuda__no_context"));
 	}
 
 	SECTION("unbounded puts helper is rejected")
@@ -202,8 +166,8 @@ TEST_CASE("GPU verifier matches the no-context execution ABI", "[gpu][prevail]")
 		};
 		const auto result = verify_gpu_program(
 			program.data(), program.size(), "cuda__puts");
-		REQUIRE_FALSE(result.passed);
-		REQUIRE_FALSE(result.error_message.empty());
+		REQUIRE(result);
+		REQUIRE_FALSE(result->empty());
 	}
 }
 
@@ -212,7 +176,6 @@ TEST_CASE("Uniformity analysis classifies constants and GPU helpers",
 {
 	SECTION("constant is UNIFORM")
 	{
-		reset_verifier_state();
 		const std::array<ebpf_inst, 2> program = {
 			make_mov64_imm(0, 7),
 			make_exit(),
@@ -226,7 +189,6 @@ TEST_CASE("Uniformity analysis classifies constants and GPU helpers",
 
 	SECTION("thread_idx helper 505 makes R0 VARYING")
 	{
-		reset_verifier_state({ 505 });
 		const std::array<ebpf_inst, 2> program = {
 			make_call(505),
 			make_exit(),
@@ -239,7 +201,6 @@ TEST_CASE("Uniformity analysis classifies constants and GPU helpers",
 
 	SECTION("block_idx helper 503 is UNIFORM")
 	{
-		reset_verifier_state({ 503 });
 		const std::array<ebpf_inst, 2> program = {
 			make_call(503),
 			make_exit(),
@@ -456,7 +417,6 @@ TEST_CASE("SIMT safety enforces uniform branches and helper restrictions",
 {
 	SECTION("uniform branch passes")
 	{
-		reset_verifier_state();
 		const std::array<ebpf_inst, 4> program = {
 			make_mov64_imm(0, 1),
 			make_jeq_imm(0, 1, 1),
@@ -475,7 +435,6 @@ TEST_CASE("SIMT safety enforces uniform branches and helper restrictions",
 
 	SECTION("varying branch from thread_idx is rejected")
 	{
-		reset_verifier_state({ 505 });
 		const std::array<ebpf_inst, 4> program = {
 			make_call(505),
 			make_jeq_imm(0, 0, 1),
@@ -497,7 +456,6 @@ TEST_CASE("SIMT safety enforces uniform branches and helper restrictions",
 
 	SECTION("prohibited helper 506 is rejected")
 	{
-		reset_verifier_state({ 506 });
 		const std::array<ebpf_inst, 2> program = {
 			make_call(506),
 			make_exit(),
@@ -516,7 +474,6 @@ TEST_CASE("SIMT safety enforces uniform branches and helper restrictions",
 
 	SECTION("lane-varying atomic address is rejected")
 	{
-		reset_verifier_state({ 505 });
 		const std::array<ebpf_inst, 4> program = {
 			make_call(505),
 			make_mov64_reg(1, 0),
@@ -529,13 +486,11 @@ TEST_CASE("SIMT safety enforces uniform branches and helper restrictions",
 			program.data(), program.size(), uniformity);
 		INFO(safety.summary());
 		REQUIRE_FALSE(safety.passed);
-		REQUIRE(safety.varying_atomic_count == 1);
 	}
 
 	SECTION("lane-varying map key is rejected")
 	{
 		for (const int32_t helper : { 1, 2, 3 }) {
-			reset_verifier_state({ helper, 505 });
 			const std::array<ebpf_inst, 5> program = {
 				make_call(505),	      make_mov64_reg(2, 0),
 				make_mov64_imm(4, 0), make_call(helper),
@@ -548,13 +503,11 @@ TEST_CASE("SIMT safety enforces uniform branches and helper restrictions",
 				program.data(), program.size(), uniformity);
 			INFO(safety.summary());
 			REQUIRE_FALSE(safety.passed);
-			REQUIRE(safety.varying_map_key_count == 1);
 		}
 	}
 
 	SECTION("lane-varying trace payload is rejected")
 	{
-		reset_verifier_state({ 6, 511 });
 		const std::array<ebpf_inst, 10> program = {
 			make_stdw_imm(10, -8, 0),
 			make_mov64_reg(1, 10),
@@ -580,7 +533,6 @@ TEST_CASE("SIMT safety enforces uniform branches and helper restrictions",
 
 	SECTION("lane-local pointer payloads are rejected")
 	{
-		reset_verifier_state({ 2, 6 });
 		const std::array<ebpf_inst, 7> map_program = {
 			make_stdw_imm(10, -8, 0),
 			make_mov64_reg(2, 10),
@@ -632,7 +584,6 @@ TEST_CASE("GPU verifier integrates SIMT phases with optional PREVAIL",
 {
 	SECTION("simple safe program passes")
 	{
-		reset_verifier_state();
 		const std::array<ebpf_inst, 2> program = {
 			make_mov64_imm(0, 0),
 			make_exit(),
@@ -640,23 +591,21 @@ TEST_CASE("GPU verifier integrates SIMT phases with optional PREVAIL",
 
 		const auto result = verify_gpu_program(
 			program.data(), program.size(), "cuda__integration");
-		INFO(result.error_message);
-		REQUIRE(result.passed);
+		INFO(result.value_or(""));
+		REQUIRE_FALSE(result);
 	}
 
 	SECTION("empty programs fail")
 	{
-		reset_verifier_state();
 		const ebpf_inst sentinel{};
 		const auto result =
 			verify_gpu_program(&sentinel, 0, "cuda__empty");
-		REQUIRE_FALSE(result.passed);
-		REQUIRE(result.error_message == "empty instruction stream");
+		REQUIRE(result);
+		REQUIRE(*result == "empty instruction stream");
 	}
 
 	SECTION("unsafe varying branch fails")
 	{
-		reset_verifier_state({ 505 });
 		const std::array<ebpf_inst, 13> program = {
 			make_mov64_reg(1, 10), make_add64_imm(1, -8),
 			make_mov64_reg(2, 10), make_add64_imm(2, -16),
@@ -669,16 +618,14 @@ TEST_CASE("GPU verifier integrates SIMT phases with optional PREVAIL",
 
 		const auto result = verify_gpu_program(
 			program.data(), program.size(), "cuda__integration");
-		INFO(result.error_message);
-		REQUIRE_FALSE(result.passed);
-		REQUIRE(result.error_message.find(
-				"Warp-Uniform Branch Conditions") !=
+		INFO(result.value_or(""));
+		REQUIRE(result);
+		REQUIRE(result->find("Warp-Uniform Branch Conditions") !=
 			std::string::npos);
 	}
 
 	SECTION("default GPU verifier runs PREVAIL for helper out-params")
 	{
-		reset_verifier_state({ 503 });
 		const std::array<ebpf_inst, 11> program = {
 			make_mov64_reg(1, 10), make_add64_imm(1, -8),
 			make_mov64_reg(2, 10), make_add64_imm(2, -16),
@@ -690,13 +637,12 @@ TEST_CASE("GPU verifier integrates SIMT phases with optional PREVAIL",
 
 		const auto result = verify_gpu_program(
 			program.data(), program.size(), "cuda__integration");
-		INFO(result.error_message);
-		REQUIRE(result.passed);
+		INFO(result.value_or(""));
+		REQUIRE_FALSE(result);
 	}
 
 	SECTION("PREVAIL failures reject GPU programs before SIMT")
 	{
-		reset_verifier_state();
 		const std::array<ebpf_inst, 3> program = {
 			make_mov64_imm(1, 0),
 			make_ldxdw(0, 1, 0),
@@ -705,21 +651,22 @@ TEST_CASE("GPU verifier integrates SIMT phases with optional PREVAIL",
 
 		const auto result = verify_gpu_program(
 			program.data(), program.size(), "cuda__integration");
-		INFO(result.error_message);
-		REQUIRE_FALSE(result.passed);
-		REQUIRE_FALSE(result.error_message.empty());
+		INFO(result.value_or(""));
+		REQUIRE(result);
+		REQUIRE_FALSE(result->empty());
 	}
 
 	SECTION("CPU helper registration does not widen the GPU allow-list")
 	{
-		reset_verifier_state({ 7 });
+		set_available_helpers({ 7 });
 		const std::array<ebpf_inst, 2> program = {
 			make_call(7),
 			make_exit(),
 		};
 		const auto result = verify_gpu_program(
 			program.data(), program.size(), "cuda__cpu_helper");
-		REQUIRE_FALSE(result.passed);
+		set_available_helpers({});
+		REQUIRE(result);
 	}
 
 	SECTION("ambient prototypes cannot replace fixed GPU policy")
@@ -740,7 +687,8 @@ TEST_CASE("GPU verifier integrates SIMT phases with optional PREVAIL",
 		};
 		const auto result = verify_gpu_program(
 			program.data(), program.size(), "cuda__prototype");
-		reset_verifier_state();
-		REQUIRE_FALSE(result.passed);
+		set_available_helpers({});
+		set_non_kernel_helpers({});
+		REQUIRE(result);
 	}
 }

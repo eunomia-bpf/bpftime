@@ -4,7 +4,6 @@
 #include "uniformity_analysis.hpp"
 
 #include <cstddef>
-#include <cstdint>
 #include <map>
 #include <string>
 #include <vector>
@@ -22,10 +21,6 @@ struct SimtSafetyError {
 
 struct SimtSafetyResult {
 	bool passed = true;
-	uint32_t varying_branch_count = 0;
-	uint32_t prohibited_helper_count = 0;
-	uint32_t varying_atomic_count = 0;
-	uint32_t varying_map_key_count = 0;
 	std::vector<SimtSafetyError> errors;
 
 	std::string summary() const;

@@ -126,9 +126,9 @@ int bpf_attach_ctx::init_attach_ctx_from_handlers(
 					    manager, i, stk, config, true);
 				    err < 0) {
 #ifdef BPFTIME_ENABLE_CUDA_ATTACH
-					if (attach::should_propagate_gpu_verifier_error(
-						    config.verifier_mode,
-						    err)) {
+					if (config.verifier_mode ==
+						    BPFTIME_VERIFIER_STRICT &&
+					    err == attach::GPU_VERIFIER_REJECTED) {
 						SPDLOG_ERROR(
 							"GPU verifier rejected handler {}",
 							i);

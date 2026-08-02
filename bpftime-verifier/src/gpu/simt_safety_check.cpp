@@ -182,9 +182,7 @@ check_simt_safety(const ebpf_inst *instructions, size_t num_instructions,
 		return result;
 	}
 
-	const auto maps = map_descriptors.empty() ?
-				  bpftime::verifier::get_map_descriptors() :
-				  map_descriptors;
+	const auto &maps = map_descriptors;
 
 	for (size_t pc = 0; pc < num_instructions; ++pc) {
 		if (pc >= uniformity.states.size() ||
@@ -208,7 +206,6 @@ check_simt_safety(const ebpf_inst *instructions, size_t num_instructions,
 					Uniformity::UNIFORM;
 			if (left != Uniformity::UNIFORM ||
 			    right != Uniformity::UNIFORM) {
-				++result.varying_branch_count;
 				add_error(result, pc, BRANCH_CHECK,
 					  "branch predicate is lane-varying");
 			}
@@ -216,7 +213,6 @@ check_simt_safety(const ebpf_inst *instructions, size_t num_instructions,
 
 		if (is_atomic(instruction) &&
 		    !address_is_uniform(state, instruction.dst)) {
-			++result.varying_atomic_count;
 			add_error(result, pc, ATOMIC_CHECK,
 				  "atomic target address is not warp-uniform");
 		}
@@ -239,7 +235,6 @@ check_simt_safety(const ebpf_inst *instructions, size_t num_instructions,
 			bpftime::get_gpu_helper_effects(instruction.imm);
 		if (helper.effect_class ==
 		    bpftime::GpuHelperEffectClass::PROHIBITED) {
-			++result.prohibited_helper_count;
 			add_error(result, pc, PROHIBITED_HELPER_CHECK,
 				  std::string("helper ") + helper.name +
 					  " is prohibited in SIMT mode");
@@ -251,7 +246,6 @@ check_simt_safety(const ebpf_inst *instructions, size_t num_instructions,
 			const Uniformity key = key_uniformity(
 				state, maps, state.map_fds[1], 2);
 			if (key != Uniformity::UNIFORM) {
-				++result.varying_map_key_count;
 				add_error(result, pc, MAP_KEY_CHECK,
 					  "map key bytes are lane-varying");
 			}
