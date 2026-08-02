@@ -130,6 +130,7 @@ extern GType cuda_runtime_function_hooker_get_type();
 
 int nv_attach_impl::detach_by_id(int id)
 {
+	std::unique_lock<std::shared_mutex> state_guard(patched_state_mutex);
 	bool last_entry = false;
 	{
 		std::lock_guard<std::mutex> guard(hook_entries_mutex);
@@ -140,10 +141,9 @@ int nv_attach_impl::detach_by_id(int id)
 		}
 		hook_entries.erase(itr);
 		last_entry = hook_entries.empty();
-		if (last_entry)
-			enabled.store(false, std::memory_order_release);
 	}
 	if (last_entry) {
+		enabled.store(false, std::memory_order_release);
 		SPDLOG_INFO(
 			"nv_attach_impl: last entry detached; disabling CUDA launch replacement");
 		// Wait for in-flight patched kernels to complete before the
@@ -198,6 +198,8 @@ int nv_attach_impl::create_attach_with_ebpf_callback(
 		}
 	}
 	if (matched) {
+		std::unique_lock<std::shared_mutex> state_guard(
+			patched_state_mutex);
 		auto id = this->allocate_id();
 		nv_attach_entry entry;
 		entry.instuctions = data.instructions;
@@ -1336,6 +1338,7 @@ void nv_attach_impl::mirror_cuda_memcpy_to_symbol(
 	const void *symbol, const void *src, size_t count, size_t offset,
 	cudaMemcpyKind kind, cudaStream_t stream, bool async)
 {
+	auto state_guard = lock_patched_state();
 	if (!is_enabled())
 		return;
 	bootstrap_existing_fatbins_once();

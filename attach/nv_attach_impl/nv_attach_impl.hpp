@@ -18,6 +18,7 @@
 #include <cuda.h>
 #include <optional>
 #include <set>
+#include <shared_mutex>
 #include <string>
 #include <unordered_map>
 #include <sys/ptrace.h>
@@ -201,6 +202,10 @@ class nv_attach_impl final : public base_attach_impl {
 		std::optional<std::string> resolve_host_function_symbol(void *addr);
 	// Whether nv_attach is currently enabled (can be disabled by detach).
 	bool is_enabled() const noexcept;
+	std::shared_lock<std::shared_mutex> lock_patched_state() const
+	{
+		return std::shared_lock(patched_state_mutex);
+	}
 	std::vector<std::unique_ptr<fatbin_record>> fatbin_records;
 	fatbin_record *current_fatbin = nullptr;
 	std::map<void *, fatbin_record *> symbol_address_to_fatbin;
@@ -246,6 +251,7 @@ class nv_attach_impl final : public base_attach_impl {
 	void *frida_listener;
 	std::vector<std::unique_ptr<CUDARuntimeFunctionHookerContext>>
 		hooker_contexts;
+	mutable std::shared_mutex patched_state_mutex;
 	mutable std::mutex hook_entries_mutex;
 	std::map<int, nv_attach_entry> hook_entries;
 	// discovered pass definitions

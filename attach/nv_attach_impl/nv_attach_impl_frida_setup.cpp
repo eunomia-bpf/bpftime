@@ -113,6 +113,7 @@ cuda_launch_kernel_common(nv_attach_impl *impl, void *original_fn_ptr,
 	if (impl == nullptr)
 		return original(func, grid_dim, block_dim, args, shared_mem,
 				stream);
+	auto state_guard = impl->lock_patched_state();
 	if (!impl->is_enabled())
 		return original(func, grid_dim, block_dim, args, shared_mem,
 				stream);
@@ -524,6 +525,7 @@ static CUresult cu_launch_kernel_common(
 		return original(func, grid_dim_x, grid_dim_y, grid_dim_z,
 				block_dim_x, block_dim_y, block_dim_z,
 				shared_mem_bytes, stream, kernel_params, extra);
+	auto state_guard = impl->lock_patched_state();
 	if (!impl->is_enabled())
 		return original(func, grid_dim_x, grid_dim_y, grid_dim_z,
 				block_dim_x, block_dim_y, block_dim_z,
@@ -806,6 +808,21 @@ static cudaError_t mirror_cuda_memcpy_from_symbol(
 	cuda_memcpy_from_symbol_fn_t original_sync,
 	cuda_memcpy_from_symbol_async_fn_t original_async)
 {
+	const auto call_original = [&]() {
+		if (async) {
+			if (!original_async)
+				return cudaErrorUnknown;
+			return original_async(dst, symbol, count, offset, kind,
+					      stream);
+		}
+		if (!original_sync)
+			return cudaErrorUnknown;
+		return original_sync(dst, symbol, count, offset, kind);
+	};
+	auto state_guard = impl->lock_patched_state();
+	if (!impl->is_enabled())
+		return call_original();
+
 	std::optional<variable_info> resolved_var;
 	auto record_itr = impl->symbol_address_to_fatbin.find((void *)symbol);
 	if (record_itr != impl->symbol_address_to_fatbin.end()) {
@@ -822,19 +839,7 @@ static cudaError_t mirror_cuda_memcpy_from_symbol(
 	if (!resolved_var) {
 		SPDLOG_DEBUG(
 			"In mirror_cuda_memcpy_from_symbol: calling original cudaMemcpyFromSymbol");
-		if (async) {
-			if (!original_async) {
-				return cudaErrorUnknown;
-			}
-			return original_async(dst, symbol, count, offset, kind,
-					      stream);
-		} else {
-			if (!original_sync) {
-				return cudaErrorUnknown;
-			}
-			return original_sync(dst, symbol, count, offset, kind);
-		}
-		return cudaErrorUnknown;
+		return call_original();
 	}
 	auto &var_info = *resolved_var;
 	if (offset >= var_info.size) {
