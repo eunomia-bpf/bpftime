@@ -24,6 +24,7 @@
 #if __linux__
 #include "linux/perf_event.h"
 #include <linux/bpf.h>
+#include <asm/unistd.h>
 #include <sys/epoll.h>
 #ifdef BPFTIME_BUILD_WITH_LIBBPF
 #include <bpf/bpf.h>
@@ -300,7 +301,7 @@ int syscall_context::create_kernel_bpf_map(int map_fd, int bpftime_map_type)
 	bpf_map_info info = {};
 	uint32_t info_len = sizeof(info);
 	int res = get_bpf_obj_info_by_fd(map_fd, &info, &info_len,
-				 orig_syscall_fn);
+					 orig_syscall_fn);
 	if (res < 0) {
 		SPDLOG_ERROR("Failed to get map info for fd {}", map_fd);
 		return -1;
@@ -381,9 +382,10 @@ int syscall_context::create_kernel_bpf_prog_in_userspace(int cmd,
 			if (inst.src_reg == 1 || inst.src_reg == 2) {
 				bpf_map_info info = {};
 				uint32_t info_len = sizeof(info);
-				int res = get_bpf_obj_info_by_fd(
-					inst.imm, &info, &info_len,
-					orig_syscall_fn);
+				int res =
+					get_bpf_obj_info_by_fd(inst.imm, &info,
+							       &info_len,
+							       orig_syscall_fn);
 				if (res < 0) {
 					SPDLOG_ERROR(
 						"Failed to get map info for id {}",

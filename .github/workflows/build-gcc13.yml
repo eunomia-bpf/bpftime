@@ -87,8 +87,10 @@ jobs:
             -DBPFTIME_BUILD_WITH_LIBBPF=OFF \
             -DBPFTIME_ENABLE_UNIT_TESTING=OFF
           cmake --build build-no-libbpf --target install -j$(nproc)
-          readelf -Ws build-no-libbpf/runtime/agent/libbpftime-agent.so | grep -q register_llvm_vm_factory
-          readelf -Ws build-no-libbpf/runtime/agent/libbpftime-agent.so | grep -q create_ubpf_vm_instance
+          readelf -Ws build-no-libbpf/runtime/agent/libbpftime-agent.so | grep register_llvm_vm_factory
+          readelf -Ws build-no-libbpf/runtime/agent/libbpftime-agent.so | grep create_ubpf_vm_instance
+          readelf -Ws build-no-libbpf/runtime/syscall-server/libbpftime-syscall-server.so | grep register_llvm_vm_factory
+          readelf -Ws build-no-libbpf/runtime/syscall-server/libbpftime-syscall-server.so | grep create_ubpf_vm_instance
 
       - name: Configure daemon build and tests
         env:
