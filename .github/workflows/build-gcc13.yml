@@ -84,7 +84,6 @@ jobs:
         run: |
           cmake -S . -B build-no-libbpf \
             -DCMAKE_BUILD_TYPE=Release \
-            -DCMAKE_INSTALL_PREFIX=$PWD/build-no-libbpf/install \
             -DBPFTIME_BUILD_WITH_LIBBPF=OFF \
             -DBPFTIME_ENABLE_UNIT_TESTING=OFF
           cmake --build build-no-libbpf --target install -j$(nproc)
