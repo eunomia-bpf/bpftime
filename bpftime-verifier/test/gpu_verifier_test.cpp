@@ -261,17 +261,6 @@ TEST_CASE("Uniformity analysis classifies constants and GPU helpers",
 		REQUIRE(result.states[1].regs[0] == Uniformity::VARYING);
 	}
 
-	SECTION("unmodeled helper returns are VARYING")
-	{
-		const std::array<ebpf_inst, 2> program = {
-			make_call(7),
-			make_exit(),
-		};
-		const auto result = analyze_program_uniformity(program);
-		REQUIRE(result.success);
-		REQUIRE(result.states[1].regs[0] == Uniformity::VARYING);
-	}
-
 	SECTION("map update and delete returns are VARYING")
 	{
 		for (const int32_t helper : { 2, 3 }) {

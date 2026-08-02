@@ -53,6 +53,14 @@ constexpr std::array<ebpf_argument_type_t, 5> MAP_DELETE_ARGS = {
 	EBPF_ARGUMENT_TYPE_DONTCARE,
 };
 
+constexpr std::array<ebpf_argument_type_t, 5> TRACE_PRINTK_ARGS = {
+	EBPF_ARGUMENT_TYPE_PTR_TO_READABLE_MEM,
+	EBPF_ARGUMENT_TYPE_CONST_SIZE,
+	EBPF_ARGUMENT_TYPE_DONTCARE,
+	EBPF_ARGUMENT_TYPE_DONTCARE,
+	EBPF_ARGUMENT_TYPE_DONTCARE,
+};
+
 constexpr std::array<ebpf_argument_type_t, 5> GPU_PUTS_ARGS = {
 	EBPF_ARGUMENT_TYPE_PTR_TO_READABLE_MEM,
 	EBPF_ARGUMENT_TYPE_DONTCARE,
@@ -124,6 +132,9 @@ const std::map<int32_t, GpuHelperPrototype> &helper_table()
 			      MAP_DELETE_ARGS, GpuHelperUniformity::VARYING,
 			      SEM_NONE, GpuHelperEffectClass::NONE,
 			      GpuHelperBehavior::MAP_DELETE) },
+		{ 6, make_helper("trace_printk", EBPF_RETURN_TYPE_INTEGER,
+				 TRACE_PRINTK_ARGS,
+				 GpuHelperUniformity::VARYING) },
 		{ 14, make_helper("bpf_get_current_pid_tgid",
 				  EBPF_RETURN_TYPE_INTEGER, ARGS_NONE,
 				  GpuHelperUniformity::UNIFORM) },
@@ -300,31 +311,8 @@ GpuHelperPrototype get_gpu_helper_effects(int32_t helper_id)
 	if (const auto *helper = find_gpu_helper_prototype(helper_id)) {
 		return *helper;
 	}
-
-	EbpfHelperPrototype prototype{};
-	if (auto it = non_kernel_helpers.find(helper_id);
-	    it != non_kernel_helpers.end()) {
-		prototype = it->second;
-	} else {
-		prototype = get_helper_prototype_linux(helper_id);
-	}
-
-	GpuHelperPrototype helper{
-		.name = prototype.name,
-		.return_type = prototype.return_type,
-		.prevail_argument_types = {
-			prototype.argument_type[0],
-			prototype.argument_type[1],
-			prototype.argument_type[2],
-			prototype.argument_type[3],
-			prototype.argument_type[4],
-		},
-		.return_uniformity = GpuHelperUniformity::VARYING,
-		.semantic_argument_types = SEM_NONE,
-		.effect_class = GpuHelperEffectClass::NONE,
-		.behavior = GpuHelperBehavior::GENERIC,
-	};
-	return helper;
+	throw std::runtime_error("Missing GPU helper effects: " +
+				 std::to_string(helper_id));
 }
 
 ebpf_platform_t gpu_platform_spec{
