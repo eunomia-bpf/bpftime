@@ -47,7 +47,6 @@
 #include <sys/user.h>
 #include <sys/uio.h>
 #include <spawn.h>
-#include <link.h>
 #include <tuple>
 #include <unistd.h>
 #include <variant>
