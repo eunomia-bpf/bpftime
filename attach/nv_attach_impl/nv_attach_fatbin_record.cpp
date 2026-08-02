@@ -12,6 +12,7 @@
 #include <cstdio>
 #include <dlfcn.h>
 #include <iterator>
+#include <set>
 #include <stdexcept>
 #include <ptx_pass_config.h>
 #include "ptx_compiler/ptx_compiler.hpp"
@@ -264,21 +265,15 @@ void fatbin_record::try_loading_ptxs(class nv_attach_impl &impl)
 	auto compiled_ptx = compile_ptxs(impl, patched_ptx);
 
 	std::vector<std::shared_ptr<ptx_in_module>> context_ptxs;
-	std::map<std::string, std::shared_ptr<ptx_in_module>> loaded_modules;
+	std::set<std::string> loaded_modules;
 	for (const auto &[name, ptx_and_trampoline_flag] : patched_ptx) {
 		bool added_trampoline = std::get<1>(ptx_and_trampoline_flag);
 		const auto &compiled_elf = compiled_ptx.at(name);
 		const auto key =
 			sha256(compiled_elf.data(), compiled_elf.size());
-		std::shared_ptr<ptx_in_module> cached;
-		if (auto itr = loaded_modules.find(key);
-		    itr != loaded_modules.end())
-			cached = itr->second;
-		if (cached) {
+		if (loaded_modules.contains(key)) {
 			SPDLOG_INFO("Module {} found in cache", name);
-			if (std::find(context_ptxs.begin(), context_ptxs.end(),
-				      cached) == context_ptxs.end())
-				context_ptxs.push_back(std::move(cached));
+			continue;
 		} else {
 			CUmodule module;
 			SPDLOG_INFO("Loading module: {}, not found in cache",
@@ -340,7 +335,7 @@ void fatbin_record::try_loading_ptxs(class nv_attach_impl &impl)
 					"Unable to copy constData pointer to device");
 				SPDLOG_INFO("Trampoline data copied");
 			}
-			loaded_modules.emplace(key, ptr);
+			loaded_modules.emplace(key);
 			context_ptxs.push_back(std::move(ptr));
 			SPDLOG_INFO("Loaded module: {}", name);
 		}
