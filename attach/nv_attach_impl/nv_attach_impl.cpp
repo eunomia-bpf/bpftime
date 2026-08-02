@@ -182,8 +182,6 @@ run_ptxpass_runner(const std::string &mode,
 			continue;
 		env_strs.emplace_back(*p);
 	}
-	env_strs.emplace_back("LD_PRELOAD=");
-	env_strs.emplace_back("LD_AUDIT=");
 	std::vector<char *> envp;
 	envp.reserve(env_strs.size() + 1);
 	for (auto &env : env_strs)

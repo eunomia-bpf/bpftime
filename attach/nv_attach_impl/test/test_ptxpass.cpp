@@ -310,7 +310,8 @@ TEST_CASE("compile_ebpf_to_ptx_from_words compiles eBPF to PTX",
 	REQUIRE(ptx.find("ret") != std::string::npos);
 }
 
-TEST_CASE("log_transform_stats emits stats through spdlog", "[ptxpass_core]")
+TEST_CASE("log_transform_stats emits stats through spdlog",
+	  "[ptxpass_core]")
 {
 	std::ostringstream oss;
 	auto old_logger = spdlog::default_logger();
