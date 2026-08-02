@@ -68,7 +68,7 @@ class bpftime_shm {
 	syscall_pid_set *syscall_installed_pids = nullptr;
 
 	// Configuration for the agent. e.g, which helpers are enabled
-	struct bpftime::agent_config *agent_config = nullptr;
+	struct bpftime::runtime_config *runtime_config = nullptr;
 
 	// Record which pids are injected by agent
 	alive_agent_pids *injected_pids;
@@ -76,7 +76,7 @@ class bpftime_shm {
 	bpftime_global_epoch_state *epoch_state = nullptr;
 
 	// local agent config can be used for test or local process
-	std::optional<struct agent_config> local_agent_config;
+	std::optional<struct runtime_config> local_runtime_config;
 #ifdef BPFTIME_ENABLE_CUDA_ATTACH
 	cuda::CommSharedMem *cuda_comm_shared_mem = nullptr;
 	bool cuda_host_memory_registered = false;
@@ -105,9 +105,9 @@ class bpftime_shm {
 		mock_setter = fn;
 	}
 	// Get the configuration object
-	const struct agent_config &get_agent_config();
+	const struct runtime_config &get_runtime_config();
 	// Set the configuration object
-	void set_agent_config(struct agent_config &&config);
+	void set_runtime_config(struct runtime_config &&config);
 	// Check whether a certain pid was already equipped with syscall tracer
 	// Using a set stored in the shared memory
 	bool check_syscall_trace_setup(int pid);
