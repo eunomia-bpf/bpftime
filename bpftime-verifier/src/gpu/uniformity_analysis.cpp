@@ -195,6 +195,27 @@ void write_stack_uniformity(UniformityState &state, int32_t offset,
 	}
 }
 
+void invalidate_stack_uniformity(UniformityState &state)
+{
+	state.stack_pointer_slots.clear();
+	state.stack_bytes.fill(Uniformity::VARYING);
+}
+
+std::optional<int32_t> resolved_stack_offset(const PointerProvenance &pointer,
+					     int16_t instruction_offset,
+					     size_t width)
+{
+	if (pointer.region != PointerRegion::STACK ||
+	    !pointer.constant_offset.has_value() ||
+	    pointer.offset_uniformity != Uniformity::UNIFORM) {
+		return std::nullopt;
+	}
+	const auto offset = add_constant_offset(*pointer.constant_offset,
+						instruction_offset);
+	return offset && in_stack_bounds(*offset, width) ? offset :
+							   std::nullopt;
+}
+
 Uniformity load_stack_uniformity(const UniformityState &state, int32_t offset,
 				 size_t width)
 {
@@ -491,17 +512,14 @@ UniformityState transfer(const ebpf_inst *instructions, size_t count, size_t pc,
 	if ((instruction.opcode & INST_CLS_MASK) == INST_CLS_ST) {
 		const size_t width = access_width(instruction.opcode);
 		const auto &base_pointer = input.pointers[dst];
-		if (base_pointer.region == PointerRegion::STACK &&
-		    base_pointer.constant_offset.has_value() &&
-		    base_pointer.offset_uniformity == Uniformity::UNIFORM) {
-			if (const auto offset = add_constant_offset(
-				    *base_pointer.constant_offset,
-				    instruction.offset)) {
-				erase_overlapping_pointer_slots(output, *offset,
-								width);
-				write_stack_uniformity(output, *offset, width,
-						       Uniformity::UNIFORM);
-			}
+		if (const auto offset = resolved_stack_offset(
+			    base_pointer, instruction.offset, width)) {
+			erase_overlapping_pointer_slots(output, *offset, width);
+			write_stack_uniformity(output, *offset, width,
+					       Uniformity::UNIFORM);
+		} else if (base_pointer.region == PointerRegion::STACK ||
+			   base_pointer.region == PointerRegion::UNKNOWN) {
+			invalidate_stack_uniformity(output);
 		}
 		return output;
 	}
@@ -509,26 +527,21 @@ UniformityState transfer(const ebpf_inst *instructions, size_t count, size_t pc,
 	if ((instruction.opcode & INST_CLS_MASK) == INST_CLS_STX) {
 		const size_t width = access_width(instruction.opcode);
 		const auto &base_pointer = input.pointers[dst];
-		if (base_pointer.region == PointerRegion::STACK &&
-		    base_pointer.constant_offset.has_value() &&
-		    base_pointer.offset_uniformity == Uniformity::UNIFORM) {
-			if (const auto offset = add_constant_offset(
-				    *base_pointer.constant_offset,
-				    instruction.offset)) {
-				erase_overlapping_pointer_slots(output, *offset,
-								width);
-				write_stack_uniformity(
-					output, *offset, width,
-					is_atomic(instruction) ?
-						Uniformity::VARYING :
-						input.regs[src]);
-				if (!is_atomic(instruction) && width == 8 &&
-				    input.pointers[src].region !=
-					    PointerRegion::NONE) {
-					output.stack_pointer_slots[*offset] =
-						input.pointers[src];
-				}
+		if (const auto offset = resolved_stack_offset(
+			    base_pointer, instruction.offset, width)) {
+			erase_overlapping_pointer_slots(output, *offset, width);
+			write_stack_uniformity(output, *offset, width,
+					       is_atomic(instruction) ?
+						       Uniformity::VARYING :
+						       input.regs[src]);
+			if (!is_atomic(instruction) && width == 8 &&
+			    input.pointers[src].region != PointerRegion::NONE) {
+				output.stack_pointer_slots[*offset] =
+					input.pointers[src];
 			}
+		} else if (base_pointer.region == PointerRegion::STACK ||
+			   base_pointer.region == PointerRegion::UNKNOWN) {
+			invalidate_stack_uniformity(output);
 		}
 		if (is_atomic(instruction)) {
 			if (instruction.imm == ATOMIC_CMPXCHG) {
@@ -646,8 +659,7 @@ UniformityState transfer(const ebpf_inst *instructions, size_t count, size_t pc,
 			}
 			if (!pointer.constant_offset.has_value() ||
 			    pointer.offset_uniformity != Uniformity::UNIFORM) {
-				output.stack_pointer_slots.clear();
-				output.stack_bytes.fill(Uniformity::VARYING);
+				invalidate_stack_uniformity(output);
 				continue;
 			}
 			erase_overlapping_pointer_slots(

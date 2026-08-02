@@ -313,6 +313,36 @@ TEST_CASE("Uniformity analysis handles extreme stack widths and offsets",
 	REQUIRE(memory_result.states[3].regs[0] == Uniformity::UNKNOWN);
 }
 
+TEST_CASE("Variable stack stores invalidate possible targets",
+	  "[gpu][uniformity]")
+{
+	const std::array<ebpf_inst, 13> program = {
+		make_stdw_imm(10, -8, 0),
+		make_stdw_imm(10, -16, 0),
+		make_call(511),
+		make_and64_imm(0, 8),
+		make_mov64_reg(1, 10),
+		make_add64_imm(1, -16),
+		make_add64_reg(1, 0),
+		make_mov64_imm(2, 1),
+		make_stxdw(1, 2),
+		make_ldxdw(2, 10, -8),
+		make_jeq_imm(2, 0, 1),
+		make_mov64_imm(0, 0),
+		make_exit(),
+	};
+	const auto result = analyze_program_uniformity(program);
+	REQUIRE(result.success);
+	REQUIRE(result.states[10].regs[2] == Uniformity::VARYING);
+
+	const auto verified = verify_gpu_program(program.data(), program.size(),
+						 "cuda__variable_stack_store");
+	INFO(verified.value_or(""));
+	REQUIRE(verified);
+	REQUIRE(verified->find("Warp-Uniform Branch Conditions") !=
+		std::string::npos);
+}
+
 TEST_CASE("Unknown map identity is conservatively lane-varying",
 	  "[gpu][uniformity]")
 {

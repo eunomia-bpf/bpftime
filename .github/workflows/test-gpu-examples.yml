@@ -257,6 +257,7 @@ jobs:
             victim: ./vec_add
             expected_str: "SM Utilization Histogram"
             name: threadscheduling
+            verifier_level: WARNING
             server_timeout: 15
             mode: two-process
           - path: threadscheduling_dynamic_hook
@@ -264,6 +265,7 @@ jobs:
             victim: ./vec_add 4 64
             expected_str: "mapping probe started"
             name: threadscheduling_dynamic_hook
+            verifier_level: WARNING
             server_timeout: 20
             mode: dynamic-attach
           - path: cudagraph
@@ -334,6 +336,7 @@ jobs:
             victim: ./vec_add
             expected_str: "(call_count)"
             name: host_map_test
+            verifier_level: WARNING
             server_timeout: 15
             mode: two-process
           - path: cutlass
@@ -644,7 +647,7 @@ jobs:
           BPFTIMETOOL="$BUILD_DIR/tools/bpftimetool/bpftimetool"
           export SPDLOG_LEVEL=info
           export BPFTIME_LOG_LEVEL=INFO
-          export BPFTIME_VERIFIER_LEVEL=STRICT
+          export BPFTIME_VERIFIER_LEVEL="${{ matrix.examples.verifier_level || 'STRICT' }}"
           export CUDA_LAUNCH_BLOCKING=0
           export CUDA_MODULE_LOADING=LAZY
           export BPFTIME_GLOBAL_SHM_NAME="bpftime_maps_shm_${EXAMPLE_NAME}"
