@@ -69,15 +69,6 @@ constexpr std::array<ebpf_argument_type_t, 5> GPU_PUTS_ARGS = {
 	EBPF_ARGUMENT_TYPE_DONTCARE,
 };
 
-// GPU helper out-parameters do not carry explicit size registers, so keep the
-// PREVAIL-facing signature conservative here and recover the write semantics
-// from semantic_argument_types during the SIMT passes.
-constexpr std::array<ebpf_argument_type_t, 5> GPU_TRIPLE_OUT_ARGS = {
-	EBPF_ARGUMENT_TYPE_ANYTHING, EBPF_ARGUMENT_TYPE_ANYTHING,
-	EBPF_ARGUMENT_TYPE_ANYTHING, EBPF_ARGUMENT_TYPE_DONTCARE,
-	EBPF_ARGUMENT_TYPE_DONTCARE,
-};
-
 constexpr std::array<ebpf_argument_type_t, 5> GPU_PERF_EVENT_OUTPUT_ARGS = {
 	EBPF_ARGUMENT_TYPE_ANYTHING,
 	EBPF_ARGUMENT_TYPE_PTR_TO_MAP,
@@ -150,15 +141,15 @@ const std::map<int32_t, GpuHelperPrototype> &helper_table()
 			      ARGS_NONE, GpuHelperUniformity::UNIFORM) },
 		{ 503,
 		  make_helper("bpf_get_block_idx", EBPF_RETURN_TYPE_INTEGER,
-			      GPU_TRIPLE_OUT_ARGS, GpuHelperUniformity::UNIFORM,
+			      ARGS_NONE, GpuHelperUniformity::UNIFORM,
 			      GPU_TRIPLE_U64_OUT) },
 		{ 504,
 		  make_helper("bpf_get_block_dim", EBPF_RETURN_TYPE_INTEGER,
-			      GPU_TRIPLE_OUT_ARGS, GpuHelperUniformity::UNIFORM,
+			      ARGS_NONE, GpuHelperUniformity::UNIFORM,
 			      GPU_TRIPLE_U64_OUT) },
 		{ 505,
 		  make_helper("bpf_get_thread_idx", EBPF_RETURN_TYPE_INTEGER,
-			      GPU_TRIPLE_OUT_ARGS, GpuHelperUniformity::VARYING,
+			      ARGS_NONE, GpuHelperUniformity::VARYING,
 			      GPU_TRIPLE_U64_OUT) },
 		{ 506,
 		  make_helper("bpf_gpu_membar", EBPF_RETURN_TYPE_INTEGER,
@@ -168,10 +159,9 @@ const std::map<int32_t, GpuHelperPrototype> &helper_table()
 		  make_helper("bpf_cuda_exit",
 			      EBPF_RETURN_TYPE_INTEGER_OR_NO_RETURN_IF_SUCCEED,
 			      ARGS_NONE, GpuHelperUniformity::UNIFORM) },
-		{ 508,
-		  make_helper("bpf_get_grid_dim", EBPF_RETURN_TYPE_INTEGER,
-			      GPU_TRIPLE_OUT_ARGS, GpuHelperUniformity::UNIFORM,
-			      GPU_TRIPLE_U64_OUT) },
+		{ 508, make_helper("bpf_get_grid_dim", EBPF_RETURN_TYPE_INTEGER,
+				   ARGS_NONE, GpuHelperUniformity::UNIFORM,
+				   GPU_TRIPLE_U64_OUT) },
 		{ 509, make_helper("bpf_get_sm_id", EBPF_RETURN_TYPE_INTEGER,
 				   ARGS_NONE, GpuHelperUniformity::VARYING) },
 		{ 510, make_helper("bpf_get_warp_id", EBPF_RETURN_TYPE_INTEGER,

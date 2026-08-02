@@ -52,6 +52,12 @@ ebpf_inst make_add64_imm(uint8_t dst_reg, int32_t imm)
 				dst_reg, 0, 0, imm);
 }
 
+ebpf_inst make_add64_reg(uint8_t dst_reg, uint8_t src_reg)
+{
+	return make_instruction(INST_CLS_ALU64 | INST_SRC_REG | INST_ALU_OP_ADD,
+				dst_reg, src_reg);
+}
+
 ebpf_inst make_sub64_imm(uint8_t dst_reg, int32_t imm)
 {
 	return make_instruction(INST_CLS_ALU64 | INST_SRC_IMM | INST_ALU_OP_SUB,
@@ -691,6 +697,24 @@ TEST_CASE("GPU verifier integrates SIMT phases with optional PREVAIL",
 			program.data(), program.size(), "cuda__integration");
 		INFO(result.value_or(""));
 		REQUIRE_FALSE(result);
+	}
+
+	SECTION("helper out-params remain unconstrained")
+	{
+		const std::array<ebpf_inst, 13> program = {
+			make_mov64_reg(1, 10), make_add64_imm(1, -8),
+			make_mov64_reg(2, 10), make_add64_imm(2, -16),
+			make_mov64_reg(3, 10), make_add64_imm(3, -24),
+			make_call(505),	       make_ldxdw(4, 10, -8),
+			make_mov64_reg(6, 10), make_add64_reg(6, 4),
+			make_ldxdw(5, 6, -8),  make_mov64_imm(0, 0),
+			make_exit(),
+		};
+
+		const auto result = verify_gpu_program(
+			program.data(), program.size(), "cuda__integration");
+		INFO(result.value_or(""));
+		REQUIRE(result);
 	}
 
 	SECTION("PREVAIL failures reject GPU programs before SIMT")

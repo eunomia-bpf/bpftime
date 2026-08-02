@@ -48,27 +48,59 @@ bool is_jump_with_offset(const ebpf_inst &instruction)
 	       instruction.opcode != INST_OP_EXIT;
 }
 
-size_t prevail_outparam_store_count(int32_t helper_id)
+bool has_prevail_outparams(int32_t helper_id)
 {
 	const auto *helper = bpftime::find_gpu_helper_prototype(helper_id);
 	if (helper == nullptr) {
-		return 0;
+		return false;
 	}
 
-	return static_cast<size_t>(std::count(
-		helper->semantic_argument_types.begin(),
-		helper->semantic_argument_types.end(),
-		bpftime::GpuHelperArgumentSemantics::PTR_TO_U64_OUT));
+	return std::find(helper->semantic_argument_types.begin(),
+			 helper->semantic_argument_types.end(),
+			 bpftime::GpuHelperArgumentSemantics::PTR_TO_U64_OUT) !=
+	       helper->semantic_argument_types.end();
 }
 
-ebpf_inst make_stdw_imm(uint8_t dst_reg, int16_t offset, int32_t imm)
+ebpf_inst make_mov64_imm(uint8_t dst_reg, int32_t imm)
 {
 	ebpf_inst instruction{};
-	instruction.opcode = INST_CLS_ST | (INST_MEM << 5) | INST_SIZE_DW;
+	instruction.opcode = INST_CLS_ALU64 | INST_SRC_IMM | INST_ALU_OP_MOV;
 	instruction.dst = dst_reg;
-	instruction.offset = offset;
 	instruction.imm = imm;
 	return instruction;
+}
+
+void model_prevail_outparams(InstructionSeq &instructions)
+{
+	for (auto &labeled_instruction : instructions) {
+		auto *call =
+			std::get_if<Call>(&std::get<1>(labeled_instruction));
+		if (call == nullptr) {
+			continue;
+		}
+
+		const auto *helper =
+			bpftime::find_gpu_helper_prototype(call->func);
+		if (helper == nullptr) {
+			continue;
+		}
+
+		for (size_t i = 0; i < helper->semantic_argument_types.size();
+		     ++i) {
+			if (helper->semantic_argument_types[i] !=
+			    bpftime::GpuHelperArgumentSemantics::PTR_TO_U64_OUT) {
+				continue;
+			}
+
+			const Reg outparam{ static_cast<uint8_t>(i + 1) };
+			call->pairs.push_back({
+				ArgPair::Kind::PTR_TO_WRITABLE_MEM,
+				outparam,
+				Reg{ 0 },
+				false,
+			});
+		}
+	}
 }
 
 std::vector<ebpf_inst>
@@ -83,7 +115,7 @@ build_prevail_shadow_program(const ebpf_inst *instructions,
 			continue;
 		}
 		prelude_counts[pc] =
-			prevail_outparam_store_count(instructions[pc].imm);
+			has_prevail_outparams(instructions[pc].imm) ? 1 : 0;
 		total_inserted_instructions += prelude_counts[pc];
 	}
 
@@ -108,23 +140,11 @@ build_prevail_shadow_program(const ebpf_inst *instructions,
 
 	for (size_t pc = 0; pc < num_instructions; ++pc) {
 		if (prelude_counts[pc] > 0) {
-			const auto *helper = bpftime::find_gpu_helper_prototype(
-				instructions[pc].imm);
-			if (helper == nullptr) {
-				throw std::runtime_error(
-					"Missing GPU helper prototype: " +
-					std::to_string(instructions[pc].imm));
-			}
-			for (size_t i = 0;
-			     i < helper->semantic_argument_types.size(); ++i) {
-				if (helper->semantic_argument_types[i] !=
-				    bpftime::GpuHelperArgumentSemantics::
-					    PTR_TO_U64_OUT) {
-					continue;
-				}
-				shadow_program.push_back(make_stdw_imm(
-					static_cast<uint8_t>(i + 1), 0, 0));
-			}
+			// The helper overwrites R0, so it is safe to use R0 as
+			// the shared size register for PREVAIL's
+			// writable-memory model.
+			shadow_program.push_back(
+				make_mov64_imm(0, sizeof(uint64_t)));
 		}
 
 		ebpf_inst instruction = instructions[pc];
@@ -221,11 +241,14 @@ run_prevail(const ebpf_inst *instructions, size_t num_instructions,
 			return std::get<std::string>(unmarshal_result);
 		}
 
+		auto instruction_sequence =
+			std::get<InstructionSeq>(std::move(unmarshal_result));
+		model_prevail_outparams(instruction_sequence);
+
 		std::ostringstream prevail_message;
-		if (!ebpf_verify_program(
-			    prevail_message,
-			    std::get<InstructionSeq>(unmarshal_result),
-			    program.info, &gpu_verifier_options, &stats)) {
+		if (!ebpf_verify_program(prevail_message, instruction_sequence,
+					 program.info, &gpu_verifier_options,
+					 &stats)) {
 			return prevail_message.str();
 		}
 	} catch (const std::exception &ex) {
