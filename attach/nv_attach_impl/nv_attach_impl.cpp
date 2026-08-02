@@ -130,7 +130,11 @@ extern GType cuda_runtime_function_hooker_get_type();
 
 int nv_attach_impl::detach_by_id(int id)
 {
+	std::lock_guard<std::mutex> writer_guard(patched_state_writer_mutex);
+	const bool was_enabled = is_enabled();
+	enabled.store(false, std::memory_order_release);
 	std::unique_lock<std::shared_mutex> state_guard(patched_state_mutex);
+	enabled.store(was_enabled, std::memory_order_release);
 	bool last_entry = false;
 	{
 		std::lock_guard<std::mutex> guard(hook_entries_mutex);
@@ -198,8 +202,13 @@ int nv_attach_impl::create_attach_with_ebpf_callback(
 		}
 	}
 	if (matched) {
+		std::lock_guard<std::mutex> writer_guard(
+			patched_state_writer_mutex);
+		const bool was_enabled = is_enabled();
+		enabled.store(false, std::memory_order_release);
 		std::unique_lock<std::shared_mutex> state_guard(
 			patched_state_mutex);
+		enabled.store(was_enabled, std::memory_order_release);
 		auto id = this->allocate_id();
 		nv_attach_entry entry;
 		entry.instuctions = data.instructions;
@@ -1338,6 +1347,8 @@ void nv_attach_impl::mirror_cuda_memcpy_to_symbol(
 	const void *symbol, const void *src, size_t count, size_t offset,
 	cudaMemcpyKind kind, cudaStream_t stream, bool async)
 {
+	if (!is_enabled())
+		return;
 	auto state_guard = lock_patched_state();
 	if (!is_enabled())
 		return;

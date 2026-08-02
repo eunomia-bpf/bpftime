@@ -113,11 +113,20 @@ cuda_launch_kernel_common(nv_attach_impl *impl, void *original_fn_ptr,
 	if (impl == nullptr)
 		return original(func, grid_dim, block_dim, args, shared_mem,
 				stream);
+	if (!impl->is_enabled())
+		return original(func, grid_dim, block_dim, args, shared_mem,
+				stream);
 	auto state_guard = impl->lock_patched_state();
 	if (!impl->is_enabled())
 		return original(func, grid_dim, block_dim, args, shared_mem,
 				stream);
 	if (cuda_graph_stream_is_capturing(stream))
+		return original(func, grid_dim, block_dim, args, shared_mem,
+				stream);
+	auto launch_patched = reinterpret_cast<cu_launch_kernel_fn_t>(
+		nv_attach_get_hook_state().orig_cu_launch_kernel.load(
+			std::memory_order_acquire));
+	if (!launch_patched)
 		return original(func, grid_dim, block_dim, args, shared_mem,
 				stream);
 
@@ -181,7 +190,7 @@ cuda_launch_kernel_common(nv_attach_impl *impl, void *original_fn_ptr,
 			return original(func, grid_dim, block_dim, args,
 					shared_mem, stream);
 		SPDLOG_DEBUG("Launching kernel..");
-		if (auto err = cuLaunchKernel(
+		if (auto err = launch_patched(
 			    handle->func, grid_dim.x, grid_dim.y, grid_dim.z,
 			    block_dim.x, block_dim.y, block_dim.z, shared_mem,
 			    stream, args, nullptr);
@@ -220,7 +229,7 @@ cuda_launch_kernel_common(nv_attach_impl *impl, void *original_fn_ptr,
 			SPDLOG_DEBUG(
 				"Late attach launch: resolved {} -> patched CUfunction",
 				name->c_str());
-			if (auto err = cuLaunchKernel(*patched, grid_dim.x,
+			if (auto err = launch_patched(*patched, grid_dim.x,
 						      grid_dim.y, grid_dim.z,
 						      block_dim.x, block_dim.y,
 						      block_dim.z, shared_mem,
@@ -525,6 +534,10 @@ static CUresult cu_launch_kernel_common(
 		return original(func, grid_dim_x, grid_dim_y, grid_dim_z,
 				block_dim_x, block_dim_y, block_dim_z,
 				shared_mem_bytes, stream, kernel_params, extra);
+	if (!impl->is_enabled())
+		return original(func, grid_dim_x, grid_dim_y, grid_dim_z,
+				block_dim_x, block_dim_y, block_dim_z,
+				shared_mem_bytes, stream, kernel_params, extra);
 	auto state_guard = impl->lock_patched_state();
 	if (!impl->is_enabled())
 		return original(func, grid_dim_x, grid_dim_y, grid_dim_z,
@@ -819,6 +832,8 @@ static cudaError_t mirror_cuda_memcpy_from_symbol(
 			return cudaErrorUnknown;
 		return original_sync(dst, symbol, count, offset, kind);
 	};
+	if (!impl->is_enabled())
+		return call_original();
 	auto state_guard = impl->lock_patched_state();
 	if (!impl->is_enabled())
 		return call_original();

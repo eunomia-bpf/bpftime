@@ -251,6 +251,7 @@ class nv_attach_impl final : public base_attach_impl {
 	void *frida_listener;
 	std::vector<std::unique_ptr<CUDARuntimeFunctionHookerContext>>
 		hooker_contexts;
+	mutable std::mutex patched_state_writer_mutex;
 	mutable std::shared_mutex patched_state_mutex;
 	mutable std::mutex hook_entries_mutex;
 	std::map<int, nv_attach_entry> hook_entries;
