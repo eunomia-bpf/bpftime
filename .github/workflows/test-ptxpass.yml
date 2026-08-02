@@ -58,7 +58,7 @@ jobs:
           echo "Checking installed tools..."
           
           sudo apt-get update
-          sudo apt-get install -y build-essential llvm-dev llvm-18-dev cmake libboost-all-dev libzstd-dev libyaml-cpp-dev pkg-config ninja-build
+          sudo apt-get install -y build-essential llvm-dev llvm-18-dev cmake libboost-all-dev libelf-dev libzstd-dev libyaml-cpp-dev pkg-config ninja-build
 
           # Check CUDA
           nvcc --version || echo "nvcc not found (CUDA compiler)"
