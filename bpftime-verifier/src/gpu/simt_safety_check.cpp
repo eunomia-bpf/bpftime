@@ -98,6 +98,20 @@ bool address_is_uniform(const UniformityState &state, uint8_t reg)
 	return true;
 }
 
+bool scalar_value_is_uniform(const UniformityState &state, uint8_t reg)
+{
+	if (state.regs[reg] != Uniformity::UNIFORM) {
+		return false;
+	}
+
+	const auto &pointer = state.pointers[reg];
+	if (pointer.region == PointerRegion::UNKNOWN) {
+		return true;
+	}
+	return pointer.region != PointerRegion::STACK &&
+	       pointer.offset_uniformity == Uniformity::UNIFORM;
+}
+
 Uniformity key_uniformity(const UniformityState &state,
 			  const std::map<int, BpftimeMapDescriptor> &maps,
 			  std::optional<int32_t> map_fd, uint8_t key_reg)
@@ -244,7 +258,7 @@ check_simt_safety(const ebpf_inst *instructions, size_t num_instructions,
 		}
 
 		if (helper.behavior == GpuHelperBehavior::MAP_UPDATE &&
-		    state.regs[4] != Uniformity::UNIFORM) {
+		    !scalar_value_is_uniform(state, 4)) {
 			add_error(result, pc, MAP_KEY_CHECK,
 				  "map update flags are lane-varying");
 		}
@@ -260,10 +274,10 @@ check_simt_safety(const ebpf_inst *instructions, size_t num_instructions,
 		if (instruction.imm == 6 &&
 		    (key_uniformity(state, maps, std::nullopt, 1) !=
 			     Uniformity::UNIFORM ||
-		     state.regs[2] != Uniformity::UNIFORM ||
-		     state.regs[3] != Uniformity::UNIFORM ||
-		     state.regs[4] != Uniformity::UNIFORM ||
-		     state.regs[5] != Uniformity::UNIFORM)) {
+		     !scalar_value_is_uniform(state, 2) ||
+		     !scalar_value_is_uniform(state, 3) ||
+		     !scalar_value_is_uniform(state, 4) ||
+		     !scalar_value_is_uniform(state, 5))) {
 			add_error(result, pc, HOST_BRIDGE_CHECK,
 				  "trace_printk payload is lane-varying");
 		}

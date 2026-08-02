@@ -56,12 +56,12 @@ jobs:
           rm -rf third_party/bpftool/libbpf
           git submodule update --init --recursive third_party/bpftool
 
-      - name: Initialize ubpf submodules (bpf_conformance)
+      - name: Initialize nested submodules
         shell: bash
         run: |
           set -euo pipefail
           rm -rf third_party/ubpf/external/bpf_conformance
-          git submodule update --init --recursive third_party/ubpf
+          git submodule update --init --recursive third_party/ubpf bpftime-verifier/ebpf-verifier
 
       - name: Detect CUDA root and export env
         shell: bash

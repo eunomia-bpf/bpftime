@@ -588,6 +588,54 @@ TEST_CASE("SIMT safety enforces uniform branches and helper restrictions",
 				"Host Bridge Payload Uniformity") !=
 			std::string::npos);
 	}
+
+	SECTION("lane-local pointer payloads are rejected")
+	{
+		reset_verifier_state({ 2, 6 });
+		const std::array<ebpf_inst, 7> map_program = {
+			make_stdw_imm(10, -8, 0),
+			make_mov64_reg(2, 10),
+			make_add64_imm(2, -8),
+			make_mov64_reg(3, 2),
+			make_mov64_reg(4, 10),
+			make_call(2),
+			make_exit(),
+		};
+
+		const auto map_uniformity =
+			analyze_program_uniformity(map_program);
+		const auto map_safety = check_simt_safety(
+			map_program.data(), map_program.size(), map_uniformity);
+		INFO(map_safety.summary());
+		REQUIRE_FALSE(map_safety.passed);
+		REQUIRE(map_safety.summary().find(
+				"map update flags are lane-varying") !=
+			std::string::npos);
+
+		const std::array<ebpf_inst, 9> trace_program = {
+			make_stdw_imm(10, -8, 0),
+			make_mov64_reg(1, 10),
+			make_add64_imm(1, -8),
+			make_mov64_imm(2, 8),
+			make_mov64_reg(3, 10),
+			make_mov64_imm(4, 0),
+			make_mov64_imm(5, 0),
+			make_call(6),
+			make_exit(),
+		};
+
+		const auto trace_uniformity =
+			analyze_program_uniformity(trace_program);
+		const auto trace_safety =
+			check_simt_safety(trace_program.data(),
+					  trace_program.size(),
+					  trace_uniformity);
+		INFO(trace_safety.summary());
+		REQUIRE_FALSE(trace_safety.passed);
+		REQUIRE(trace_safety.summary().find(
+				"Host Bridge Payload Uniformity") !=
+			std::string::npos);
+	}
 }
 
 TEST_CASE("GPU verifier integrates SIMT phases with optional PREVAIL",

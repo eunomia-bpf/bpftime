@@ -25,7 +25,6 @@ enum class PointerRegion {
 	UNKNOWN = 0,
 	STACK,
 	MAP_VALUE,
-	OTHER,
 };
 
 struct PointerProvenance {
