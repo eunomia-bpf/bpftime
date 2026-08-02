@@ -76,11 +76,6 @@ std::size_t g_cuda_watcher_users = 0;
 std::uint64_t g_cuda_watcher_generation = 1;
 bool g_cuda_shm_unmapping = false;
 
-struct cuda_watcher_context {
-	cuda::CommSharedMem *cuda_shared_mem;
-	uintptr_t cuda_shared_mem_device_pointer;
-};
-
 bool stop_global_cuda_watcher_locked() noexcept
 {
 	try {
@@ -96,13 +91,6 @@ bool stop_global_cuda_watcher_locked() noexcept
 	}
 }
 
-void stop_cuda_watcher_thread_at_exit()
-{
-	std::lock_guard<std::mutex> guard(g_cuda_watcher_mutex);
-	g_cuda_shm_unmapping = true;
-	g_cuda_watcher_users = 0;
-	(void)stop_global_cuda_watcher_locked();
-}
 } // namespace
 
 bool stop_cuda_watcher_before_shm_unmap() noexcept
@@ -141,24 +129,27 @@ void bpf_attach_ctx::start_cuda_watcher_thread()
 	if (g_cuda_shm_unmapping ||
 	    cuda_ctx->shm_generation != g_cuda_watcher_generation)
 		return;
-	std::call_once(g_cuda_watcher_atexit_once,
-		       []() { std::atexit(stop_cuda_watcher_thread_at_exit); });
+	std::call_once(g_cuda_watcher_atexit_once, []() {
+		std::atexit(
+			[]() { (void)stop_cuda_watcher_before_shm_unmap(); });
+	});
 	if (g_cuda_watcher_thread.joinable()) {
 		g_cuda_watcher_users++;
 		cuda_watcher_generation = g_cuda_watcher_generation;
 		return;
 	}
 	auto flag = cuda_ctx->cuda_watcher_should_stop;
-	auto ctx = std::make_unique<cuda_watcher_context>(cuda_watcher_context{
-		cuda_ctx->cuda_shared_mem,
-		cuda_ctx->cuda_shared_mem_device_pointer });
-	g_cuda_watcher_thread = std::thread([flag, ctx = std::move(ctx)]() {
+	auto *shared_mem = cuda_ctx->cuda_shared_mem;
+	auto shared_mem_device_pointer =
+		cuda_ctx->cuda_shared_mem_device_pointer;
+	g_cuda_watcher_thread = std::thread([flag, shared_mem,
+					     shared_mem_device_pointer]() {
 		while (!flag->load()) {
-			if (ctx->cuda_shared_mem->flag1 == 1) {
-				ctx->cuda_shared_mem->flag1 = 0;
-				auto req_id = ctx->cuda_shared_mem->request_id;
+			if (shared_mem->flag1 == 1) {
+				shared_mem->flag1 = 0;
+				auto req_id = shared_mem->request_id;
 
-				auto map_ptr = ctx->cuda_shared_mem->map_id;
+				auto map_ptr = shared_mem->map_id;
 				auto map_fd = map_ptr;
 				SPDLOG_DEBUG(
 					"CUDA Received call request id {}, map_ptr = {}, map_fd = {}",
@@ -168,10 +159,9 @@ void bpf_attach_ctx::start_cuda_watcher_thread()
 				if (req_id ==
 				    (int)cuda::HelperOperation::MAP_LOOKUP) {
 					const auto &req =
-						ctx->cuda_shared_mem->req
-							.map_lookup;
-					auto &resp = ctx->cuda_shared_mem->resp
-							     .map_lookup;
+						shared_mem->req.map_lookup;
+					auto &resp =
+						shared_mem->resp.map_lookup;
 					auto ptr = bpftime_map_lookup_elem(
 						map_fd, req.key);
 					resp.value = nullptr;
@@ -201,9 +191,9 @@ void bpf_attach_ctx::start_cuda_watcher_thread()
 							const auto comm_host_base =
 								reinterpret_cast<
 									uintptr_t>(
-									ctx->cuda_shared_mem);
+									shared_mem);
 							const auto comm_device_base =
-								ctx->cuda_shared_mem_device_pointer;
+								shared_mem_device_pointer;
 							const auto offset =
 								static_cast<
 									intptr_t>(
@@ -230,10 +220,9 @@ void bpf_attach_ctx::start_cuda_watcher_thread()
 					   (int)cuda::HelperOperation::
 						   MAP_UPDATE) {
 					const auto &req =
-						ctx->cuda_shared_mem->req
-							.map_update;
-					auto &resp = ctx->cuda_shared_mem->resp
-							     .map_update;
+						shared_mem->req.map_update;
+					auto &resp =
+						shared_mem->resp.map_update;
 					resp.result = bpftime_map_update_elem(
 						map_fd, req.key, req.value,
 						req.flags);
@@ -244,10 +233,9 @@ void bpf_attach_ctx::start_cuda_watcher_thread()
 					   (int)cuda::HelperOperation::
 						   MAP_DELETE) {
 					const auto &req =
-						ctx->cuda_shared_mem->req
-							.map_delete;
-					auto &resp = ctx->cuda_shared_mem->resp
-							     .map_delete;
+						shared_mem->req.map_delete;
+					auto &resp =
+						shared_mem->resp.map_delete;
 
 					resp.result = bpftime_map_delete_elem(
 						map_fd, req.key);
@@ -258,10 +246,9 @@ void bpf_attach_ctx::start_cuda_watcher_thread()
 					   (int)cuda::HelperOperation::
 						   TRACE_PRINTK) {
 					const auto &req =
-						ctx->cuda_shared_mem->req
-							.trace_printk;
-					auto &resp = ctx->cuda_shared_mem->resp
-							     .trace_printk;
+						shared_mem->req.trace_printk;
+					auto &resp =
+						shared_mem->resp.trace_printk;
 
 					resp.result = bpftime_trace_printk(
 						(uintptr_t)req.fmt,
@@ -274,8 +261,8 @@ void bpf_attach_ctx::start_cuda_watcher_thread()
 				} else if (req_id ==
 					   (int)cuda::HelperOperation::
 						   GET_CURRENT_PID_TGID) {
-					auto &resp = ctx->cuda_shared_mem->resp
-							     .get_tid_pgid;
+					auto &resp =
+						shared_mem->resp.get_tid_pgid;
 					static int tgid = getpid();
 					static thread_local int tid = -1;
 					if (tid == -1) {
@@ -288,10 +275,8 @@ void bpf_attach_ctx::start_cuda_watcher_thread()
 						(((uint64_t)tgid) << 32) | tid;
 				} else if (req_id ==
 					   (int)cuda::HelperOperation::PUTS) {
-					const auto &req =
-						ctx->cuda_shared_mem->req.puts;
-					auto &resp =
-						ctx->cuda_shared_mem->resp.puts;
+					const auto &req = shared_mem->req.puts;
+					auto &resp = shared_mem->resp.puts;
 					SPDLOG_INFO("eBPF: {}", req.data);
 					resp.result = 0;
 				}
@@ -303,7 +288,7 @@ void bpf_attach_ctx::start_cuda_watcher_thread()
 
 				// Make sure response writes are visible before signaling completion.
 				std::atomic_thread_fence(std::memory_order_seq_cst);
-				ctx->cuda_shared_mem->flag2 = 1;
+				shared_mem->flag2 = 1;
 				std::atomic_thread_fence(
 					std::memory_order_seq_cst);
 			}

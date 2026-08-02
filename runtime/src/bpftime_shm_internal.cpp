@@ -28,7 +28,7 @@ namespace bpftime
 {
 bool stop_cuda_watcher_before_shm_unmap() noexcept;
 void allow_cuda_watcher_after_shm_map() noexcept;
-}
+} // namespace bpftime
 #endif
 #elif __APPLE__
 #include "bpftime_epoll.h"
