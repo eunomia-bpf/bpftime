@@ -8,7 +8,6 @@ namespace
 {
 
 using bpftime::GpuHelperBehavior;
-using bpftime::GpuHelperEffectClass;
 using bpftime::verifier::BpftimeMapDescriptor;
 using bpftime::verifier::gpu::PointerRegion;
 using bpftime::verifier::gpu::SimtSafetyError;

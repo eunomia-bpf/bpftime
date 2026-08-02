@@ -490,6 +490,18 @@ TEST_CASE("Atomic fetch results are lane-varying", "[gpu][uniformity]")
 		const auto result = analyze_program_uniformity(program);
 		REQUIRE(result.states[5].regs[0] == Uniformity::VARYING);
 	}
+
+	SECTION("stack atomics retain prior lane variation")
+	{
+		const std::array<ebpf_inst, 8> program = {
+			make_call(511),	       make_stxdw(10, 0, -8),
+			make_mov64_reg(1, 10), make_add64_imm(1, -8),
+			make_mov64_imm(2, 1),  make_atomic(1, 2, 0),
+			make_ldxdw(0, 10, -8), make_exit(),
+		};
+		const auto result = analyze_program_uniformity(program);
+		REQUIRE(result.states[7].regs[0] == Uniformity::VARYING);
+	}
 }
 
 TEST_CASE("SIMT safety enforces uniform branches and helper restrictions",
@@ -816,6 +828,8 @@ TEST_CASE("GPU verifier integrates SIMT phases with optional PREVAIL",
 			program.data(), program.size(), "cuda__integration");
 		INFO(result.value_or(""));
 		REQUIRE(result);
+		REQUIRE(result->find("r1.type in {stack, packet, shared}") !=
+			std::string::npos);
 		REQUIRE(result->find("bad optional access") ==
 			std::string::npos);
 	}

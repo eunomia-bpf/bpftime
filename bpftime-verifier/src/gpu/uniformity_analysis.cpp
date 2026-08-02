@@ -4,10 +4,8 @@
 #include "gpu_platform.hpp"
 
 #include <algorithm>
-#include <cstring>
 #include <deque>
 #include <limits>
-#include <sstream>
 #include <string>
 
 namespace
@@ -519,10 +517,14 @@ UniformityState transfer(const ebpf_inst *instructions, size_t count, size_t pc,
 				    instruction.offset)) {
 				erase_overlapping_pointer_slots(output, *offset,
 								width);
-				write_stack_uniformity(output, *offset, width,
-						       input.regs[src]);
-				if (width == 8 && input.pointers[src].region !=
-							  PointerRegion::NONE) {
+				write_stack_uniformity(
+					output, *offset, width,
+					is_atomic(instruction) ?
+						Uniformity::VARYING :
+						input.regs[src]);
+				if (!is_atomic(instruction) && width == 8 &&
+				    input.pointers[src].region !=
+					    PointerRegion::NONE) {
 					output.stack_pointer_slots[*offset] =
 						input.pointers[src];
 				}
