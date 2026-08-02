@@ -9,6 +9,7 @@
 
 #include <array>
 #include <cstdint>
+#include <limits>
 #include <map>
 #include <string>
 #include <vector>
@@ -48,6 +49,12 @@ ebpf_inst make_mov64_reg(uint8_t dst_reg, uint8_t src_reg)
 ebpf_inst make_add64_imm(uint8_t dst_reg, int32_t imm)
 {
 	return make_instruction(INST_CLS_ALU64 | INST_SRC_IMM | INST_ALU_OP_ADD,
+				dst_reg, 0, 0, imm);
+}
+
+ebpf_inst make_sub64_imm(uint8_t dst_reg, int32_t imm)
+{
+	return make_instruction(INST_CLS_ALU64 | INST_SRC_IMM | INST_ALU_OP_SUB,
 				dst_reg, 0, 0, imm);
 }
 
@@ -260,6 +267,39 @@ TEST_CASE("Per-thread map values are lane-varying", "[gpu][uniformity]")
 	const auto safety =
 		check_simt_safety(program.data(), program.size(), result, maps);
 	REQUIRE_FALSE(safety.passed);
+}
+
+TEST_CASE("Uniformity analysis handles extreme stack widths and offsets",
+	  "[gpu][uniformity]")
+{
+	UniformityState state;
+	state.stack_bytes.fill(Uniformity::UNIFORM);
+	for (const size_t width :
+	     { size_t{ 513 },
+	       static_cast<size_t>(std::numeric_limits<unsigned int>::max()) }) {
+		REQUIRE(query_stack_uniformity(state, -512, width) ==
+			Uniformity::UNKNOWN);
+	}
+
+	const std::array<ebpf_inst, 3> program = {
+		make_mov64_reg(1, 10),
+		make_sub64_imm(1, std::numeric_limits<int32_t>::min()),
+		make_exit(),
+	};
+	const auto result = analyze_program_uniformity(program);
+	REQUIRE(result.success);
+	REQUIRE(result.states[2].pointers[1].region == PointerRegion::STACK);
+	REQUIRE_FALSE(result.states[2].pointers[1].constant_offset);
+
+	const std::array<ebpf_inst, 4> memory_program = {
+		make_mov64_reg(1, 10),
+		make_add64_imm(1, std::numeric_limits<int32_t>::max()),
+		make_ldxdw(0, 1, std::numeric_limits<int16_t>::max()),
+		make_exit(),
+	};
+	const auto memory_result = analyze_program_uniformity(memory_program);
+	REQUIRE(memory_result.success);
+	REQUIRE(memory_result.states[3].regs[0] == Uniformity::UNKNOWN);
 }
 
 TEST_CASE("Unknown map identity is conservatively lane-varying",
@@ -602,6 +642,18 @@ TEST_CASE("GPU verifier integrates SIMT phases with optional PREVAIL",
 			verify_gpu_program(&sentinel, 0, "cuda__empty");
 		REQUIRE(result);
 		REQUIRE(*result == "empty instruction stream");
+	}
+
+	SECTION("impossible instruction counts return an error")
+	{
+		const ebpf_inst sentinel{};
+		const auto result =
+			verify_gpu_program(&sentinel,
+					   std::numeric_limits<size_t>::max(),
+					   "cuda__oversized");
+		REQUIRE(result);
+		REQUIRE(*result ==
+			"instruction count exceeds verifier capacity");
 	}
 
 	SECTION("unsafe varying branch fails")

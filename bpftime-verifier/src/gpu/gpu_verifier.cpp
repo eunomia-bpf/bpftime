@@ -288,19 +288,33 @@ verify_gpu_program(const void *raw_instructions, size_t num_instructions,
 		   const std::map<int, BpftimeMapDescriptor> &map_descriptors)
 {
 	static_assert(sizeof(ebpf_inst) == sizeof(uint64_t));
-	if (raw_instructions == nullptr) {
-		return verify_gpu_instructions(nullptr, num_instructions,
+	try {
+		if (raw_instructions == nullptr) {
+			return verify_gpu_instructions(nullptr,
+						       num_instructions,
+						       section_name,
+						       map_descriptors);
+		}
+		std::vector<ebpf_inst> instructions;
+		if (num_instructions > instructions.max_size()) {
+			return "instruction count exceeds verifier capacity";
+		}
+		instructions.resize(num_instructions);
+		const auto *bytes =
+			static_cast<const std::byte *>(raw_instructions);
+		for (size_t i = 0; i < num_instructions; ++i) {
+			std::memcpy(&instructions[i],
+				    bytes + i * sizeof(ebpf_inst),
+				    sizeof(ebpf_inst));
+		}
+		return verify_gpu_instructions(instructions.data(),
+					       instructions.size(),
 					       section_name, map_descriptors);
+	} catch (const std::exception &ex) {
+		return "GPU verifier exception: " + std::string(ex.what());
+	} catch (...) {
+		return "unknown GPU verifier exception";
 	}
-
-	const auto *bytes = static_cast<const std::byte *>(raw_instructions);
-	std::vector<ebpf_inst> instructions(num_instructions);
-	for (size_t i = 0; i < num_instructions; ++i) {
-		std::memcpy(&instructions[i], bytes + i * sizeof(ebpf_inst),
-			    sizeof(ebpf_inst));
-	}
-	return verify_gpu_instructions(instructions.data(), instructions.size(),
-				       section_name, map_descriptors);
 }
 
 } // namespace bpftime::verifier::gpu

@@ -6,6 +6,7 @@
 #include <algorithm>
 #include <cstring>
 #include <deque>
+#include <limits>
 #include <sstream>
 #include <string>
 
@@ -128,11 +129,18 @@ size_t access_width(uint8_t opcode)
 
 bool in_stack_bounds(int32_t offset, size_t width)
 {
-	if (width == 0) {
-		return false;
+	return width > 0 && offset >= -STACK_SIZE && offset <= -1 &&
+	       width <= static_cast<size_t>(-offset);
+}
+
+std::optional<int32_t> add_constant_offset(int32_t offset, int64_t delta)
+{
+	const int64_t result = static_cast<int64_t>(offset) + delta;
+	if (result < std::numeric_limits<int32_t>::min() ||
+	    result > std::numeric_limits<int32_t>::max()) {
+		return std::nullopt;
 	}
-	return offset >= -STACK_SIZE && offset <= -1 &&
-	       offset + static_cast<int32_t>(width) - 1 <= -1;
+	return static_cast<int32_t>(result);
 }
 
 size_t stack_index(int32_t relative_offset)
@@ -164,9 +172,10 @@ void erase_overlapping_pointer_slots(UniformityState &state, int32_t offset,
 {
 	for (auto it = state.stack_pointer_slots.begin();
 	     it != state.stack_pointer_slots.end();) {
-		const int32_t slot_offset = it->first;
+		const int64_t slot_offset = it->first;
 		const bool overlaps =
-			slot_offset < offset + static_cast<int32_t>(width) &&
+			slot_offset < static_cast<int64_t>(offset) +
+					      static_cast<int64_t>(width) &&
 			offset < slot_offset + 8;
 		if (overlaps) {
 			it = state.stack_pointer_slots.erase(it);
@@ -464,14 +473,16 @@ UniformityState transfer(const ebpf_inst *instructions, size_t count, size_t pc,
 		    input.pointers[dst].region != PointerRegion::UNKNOWN) {
 			output.pointers[dst] = input.pointers[dst];
 			if (output.pointers[dst].constant_offset.has_value()) {
-				const int32_t delta =
+				const int64_t delta =
 					(instruction.opcode &
 					 INST_ALU_OP_MASK) == INST_ALU_OP_SUB ?
-						-instruction.imm :
+						-static_cast<int64_t>(
+							instruction.imm) :
 						instruction.imm;
-				output.pointers[dst].constant_offset =
-					*output.pointers[dst].constant_offset +
-					delta;
+				output.pointers[dst]
+					.constant_offset = add_constant_offset(
+					*output.pointers[dst].constant_offset,
+					delta);
 			}
 		} else {
 			output.pointers[dst] = {};
@@ -485,11 +496,14 @@ UniformityState transfer(const ebpf_inst *instructions, size_t count, size_t pc,
 		if (base_pointer.region == PointerRegion::STACK &&
 		    base_pointer.constant_offset.has_value() &&
 		    base_pointer.offset_uniformity == Uniformity::UNIFORM) {
-			const int32_t offset = *base_pointer.constant_offset +
-					       instruction.offset;
-			erase_overlapping_pointer_slots(output, offset, width);
-			write_stack_uniformity(output, offset, width,
-					       Uniformity::UNIFORM);
+			if (const auto offset = add_constant_offset(
+				    *base_pointer.constant_offset,
+				    instruction.offset)) {
+				erase_overlapping_pointer_slots(output, *offset,
+								width);
+				write_stack_uniformity(output, *offset, width,
+						       Uniformity::UNIFORM);
+			}
 		}
 		return output;
 	}
@@ -500,15 +514,19 @@ UniformityState transfer(const ebpf_inst *instructions, size_t count, size_t pc,
 		if (base_pointer.region == PointerRegion::STACK &&
 		    base_pointer.constant_offset.has_value() &&
 		    base_pointer.offset_uniformity == Uniformity::UNIFORM) {
-			const int32_t offset = *base_pointer.constant_offset +
-					       instruction.offset;
-			erase_overlapping_pointer_slots(output, offset, width);
-			write_stack_uniformity(output, offset, width,
-					       input.regs[src]);
-			if (width == 8 && input.pointers[src].region !=
-						  PointerRegion::UNKNOWN) {
-				output.stack_pointer_slots[offset] =
-					input.pointers[src];
+			if (const auto offset = add_constant_offset(
+				    *base_pointer.constant_offset,
+				    instruction.offset)) {
+				erase_overlapping_pointer_slots(output, *offset,
+								width);
+				write_stack_uniformity(output, *offset, width,
+						       input.regs[src]);
+				if (width == 8 &&
+				    input.pointers[src].region !=
+					    PointerRegion::UNKNOWN) {
+					output.stack_pointer_slots[*offset] =
+						input.pointers[src];
+				}
 			}
 		}
 		if (is_atomic(instruction)) {
@@ -539,14 +557,20 @@ UniformityState transfer(const ebpf_inst *instructions, size_t count, size_t pc,
 				output.pointers[dst] = {};
 				return output;
 			}
-			const int32_t offset = *base_pointer.constant_offset +
-					       instruction.offset;
+			const auto offset = add_constant_offset(
+				*base_pointer.constant_offset,
+				instruction.offset);
+			if (!offset) {
+				output.regs[dst] = Uniformity::UNKNOWN;
+				output.pointers[dst] = {};
+				return output;
+			}
 			output.regs[dst] =
-				load_stack_uniformity(input, offset, width);
+				load_stack_uniformity(input, *offset, width);
 			output.pointers[dst] = {};
 			if (width == 8) {
 				if (auto it = input.stack_pointer_slots.find(
-					    offset);
+					    *offset);
 				    it != input.stack_pointer_slots.end()) {
 					output.pointers[dst] = it->second;
 				}

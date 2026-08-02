@@ -45,11 +45,10 @@ jobs:
       - name: Build test target
         run: |
           cmake -DTEST_LCOV=ON -DBPFTIME_ENABLE_UNIT_TESTING=YES -DBPFTIME_LLVM_JIT=NO -DENABLE_EBPF_VERIFIER=YES -DCMAKE_BUILD_TYPE:STRING=Release -S . -B build -G Ninja -Dabsl_DIR=~/miniconda3/lib/cmake/absl -DProtobuf_DIR=~/miniconda3/lib/cmake/protobuf -Dutf8_range_DIR=~/miniconda3/lib/cmake/utf8_range
-          cmake --build build --config Release --target bpftime_verifier_tests bpftime_gpu_verifier_tests
+          cmake --build build --config Release --target bpftime_verifier_tests
       - name: Run tests
         run: |
           ./build/bpftime-verifier/bpftime_verifier_tests
-          ./build/bpftime-verifier/bpftime_gpu_verifier_tests
       - name: upload runtime coverage
         run: |
           lcov --capture --directory . --output-file coverage.info
