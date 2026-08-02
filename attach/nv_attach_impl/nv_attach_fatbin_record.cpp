@@ -114,27 +114,20 @@ fatbin_record::find_variable_info(nv_attach_impl &impl,
 	if (cuCtxGetCurrent(&context) != CUDA_SUCCESS || context == nullptr)
 		return std::nullopt;
 	std::lock_guard<std::mutex> guard(load_mutex);
-	std::optional<variable_info> result;
 	for (const auto &ptx : ptxs_by_context.at(context)) {
 		CUdeviceptr ptr = 0;
 		size_t size = 0;
 		auto err = cuModuleGetGlobal(&ptr, &size, ptx->module_ptr,
 					     name.c_str());
-		if (err == CUDA_SUCCESS) {
-			if (result) {
-				SPDLOG_WARN("Ambiguous patched global {}", name);
-				return std::nullopt;
-			}
-			result = variable_info{ name, ptr, size, ptx.get() };
-			continue;
-		}
+		if (err == CUDA_SUCCESS)
+			return variable_info{ name, ptr, size, ptx.get() };
 		if (err != CUDA_ERROR_NOT_FOUND) {
 			SPDLOG_ERROR("Unable to lookup symbol {}: {}", name,
 				     (int)err);
 			return std::nullopt;
 		}
 	}
-	return result;
+	return std::nullopt;
 }
 
 std::optional<kernel_info>
@@ -161,26 +154,19 @@ fatbin_record::find_function_info(nv_attach_impl &impl,
 	if (cuCtxGetCurrent(&context) != CUDA_SUCCESS || context == nullptr)
 		return std::nullopt;
 	std::lock_guard<std::mutex> guard(load_mutex);
-	std::optional<kernel_info> result;
 	for (const auto &ptx : ptxs_by_context.at(context)) {
 		CUfunction function = nullptr;
 		auto err = cuModuleGetFunction(&function, ptx->module_ptr,
 					       name.c_str());
-		if (err == CUDA_SUCCESS) {
-			if (result) {
-				SPDLOG_WARN("Ambiguous patched kernel {}", name);
-				return std::nullopt;
-			}
-			result = kernel_info{ name, function, ptx.get() };
-			continue;
-		}
+		if (err == CUDA_SUCCESS)
+			return kernel_info{ name, function, ptx.get() };
 		if (err != CUDA_ERROR_NOT_FOUND) {
 			SPDLOG_ERROR("Unable to lookup function {}: {}", name,
 				     (int)err);
 			return std::nullopt;
 		}
 	}
-	return result;
+	return std::nullopt;
 }
 
 std::map<std::string, std::vector<uint8_t>> fatbin_record::compile_ptxs(
@@ -310,7 +296,9 @@ void fatbin_record::try_loading_ptxs(class nv_attach_impl &impl)
 		}
 		if (cached) {
 			SPDLOG_INFO("Module {} found in cache", name);
-			context_ptxs.push_back(std::move(cached));
+			if (std::find(context_ptxs.begin(), context_ptxs.end(),
+				      cached) == context_ptxs.end())
+				context_ptxs.push_back(std::move(cached));
 		} else {
 			CUmodule module;
 			SPDLOG_INFO("Loading module: {}, not found in cache",

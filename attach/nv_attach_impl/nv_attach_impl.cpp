@@ -1023,14 +1023,17 @@ nv_attach_impl::hack_fatbin(std::map<std::string, std::string> all_ptx)
 											int>::
 											max() :
 										(int)buf_bytes;
-								int err =
-									hook_entry
-										.config
-										->process_input(
+								int err;
+								{
+									std::lock_guard<std::mutex>
+										pass_guard(
+											patch_cache_mutex);
+									err = hook_entry.config->process_input(
 											input_json
 												.c_str(),
 											len,
 											buf.data());
+								}
 								if (err !=
 								    ptxpass::ExitCode::
 									    Success) {
