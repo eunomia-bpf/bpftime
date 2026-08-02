@@ -130,16 +130,22 @@ extern GType cuda_runtime_function_hooker_get_type();
 
 int nv_attach_impl::detach_by_id(int id)
 {
-	auto itr = hook_entries.find(id);
-	if (itr == hook_entries.end()) {
-		SPDLOG_WARN("nv_attach_impl: detach unknown id {}", id);
-		return -ENOENT;
+	bool last_entry = false;
+	{
+		std::lock_guard<std::mutex> guard(hook_entries_mutex);
+		auto itr = hook_entries.find(id);
+		if (itr == hook_entries.end()) {
+			SPDLOG_WARN("nv_attach_impl: detach unknown id {}", id);
+			return -ENOENT;
+		}
+		hook_entries.erase(itr);
+		last_entry = hook_entries.empty();
+		if (last_entry)
+			enabled.store(false, std::memory_order_release);
 	}
-	hook_entries.erase(itr);
-	if (hook_entries.empty()) {
+	if (last_entry) {
 		SPDLOG_INFO(
 			"nv_attach_impl: last entry detached; disabling CUDA launch replacement");
-		enabled.store(false, std::memory_order_release);
 		// Wait for in-flight patched kernels to complete before the
 		// loader exits and tears down CUDA IPC buffers.
 		wait_for_patched_launch_events(std::chrono::seconds(2));
@@ -192,7 +198,6 @@ int nv_attach_impl::create_attach_with_ebpf_callback(
 		}
 	}
 	if (matched) {
-		enabled.store(true, std::memory_order_release);
 		auto id = this->allocate_id();
 		nv_attach_entry entry;
 		entry.instuctions = data.instructions;
@@ -200,7 +205,11 @@ int nv_attach_impl::create_attach_with_ebpf_callback(
 		entry.program_name = data.program_name;
 		entry.config = matched;
 
-		hook_entries[id] = std::move(entry);
+		{
+			std::lock_guard<std::mutex> guard(hook_entries_mutex);
+			hook_entries[id] = std::move(entry);
+			enabled.store(true, std::memory_order_release);
+		}
 		// Late bootstrap may have already patched/loaded modules for earlier
 		// hooks (e.g. kprobe). If a new hook is added afterwards (e.g.
 		// kretprobe), we must rerun bootstrap so the new pass is applied to
@@ -937,12 +946,18 @@ nv_attach_impl::hack_fatbin(std::map<std::string, std::string> all_ptx)
 		std::max(1u, std::thread::hardware_concurrency()));
 	std::map<std::string, std::tuple<std::string, bool>> ptx_out;
 	std::mutex map_mutex;
+	std::vector<nv_attach_entry> entries;
+	{
+		std::lock_guard<std::mutex> guard(hook_entries_mutex);
+		for (const auto &[_, entry] : hook_entries)
+			entries.push_back(entry);
+	}
 	for (auto &[file_name, original_ptx] : all_ptx) {
-		boost::asio::post(pool, [this, original_ptx, file_name, &map_mutex, &ptx_out]() -> void {
+		boost::asio::post(pool, [this, original_ptx, file_name, &map_mutex, &ptx_out, &entries]() -> void {
 			auto current_ptx = original_ptx;
 			SPDLOG_INFO("Patching PTX: {}", file_name);
 			bool should_add_trampoline = false;
-			for (const auto &[_, hook_entry] : this->hook_entries) {
+			for (const auto &hook_entry : entries) {
 				const auto &kernels = hook_entry.kernels;
 				for (const auto &kernel : kernels) {
 					std::vector<uint64_t> ebpf_inst_words;
@@ -1121,6 +1136,7 @@ namespace bpftime::attach
 
 int nv_attach_impl::find_attach_entry_by_program_name(const char *name) const
 {
+	std::lock_guard<std::mutex> guard(hook_entries_mutex);
 	for (const auto &entry : this->hook_entries) {
 		if (entry.second.program_name == name)
 			return entry.first;
@@ -1163,14 +1179,16 @@ int nv_attach_impl::run_attach_entry_on_gpu(int attach_id, int run_count,
 		return -1;
 	}
 	std::vector<ebpf_inst> insts;
-	if (auto itr = hook_entries.find(attach_id);
-	    itr != hook_entries.end()) {
+	{
+		std::lock_guard<std::mutex> guard(hook_entries_mutex);
+		auto itr = hook_entries.find(attach_id);
+		if (itr == hook_entries.end()) {
+			SPDLOG_ERROR("Invalid attach id {}", attach_id);
+			return -1;
+		}
 		// In new flow, directly_run is not supported and should be
 		// represented by a dedicated pass
 		insts = itr->second.instuctions;
-	} else {
-		SPDLOG_ERROR("Invalid attach id {}", attach_id);
-		return -1;
 	}
 	SPDLOG_INFO("Running program on GPU");
 
@@ -1923,9 +1941,6 @@ void nv_attach_impl::bootstrap_existing_fatbins_once()
 		return;
 	if (!map_basic_info.has_value() || map_basic_info->empty())
 		return;
-	if (hook_entries.empty())
-		return;
-
 	std::lock_guard<std::mutex> guard(late_bootstrap_mutex);
 	if (late_bootstrap_done.load(std::memory_order_acquire))
 		return;
