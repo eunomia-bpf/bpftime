@@ -1,9 +1,5 @@
-CLANG ?= clang++
-LLC ?= llc
 NVCC ?= nvcc
-CUDA_LIBS ?= -L/usr/local/cuda/lib64/ -lcudart -pthread
 PTX_TARGET_ARCH ?= sm_75
-CLANG_FLAGS ?= -U__FLOAT128__ -U__SIZEOF_FLOAT128__
 
 .PHONY: all clean
 
@@ -29,7 +25,5 @@ test: default_trampoline.cu
 
 clean:
 	rm -f default_trampoline.ptx
-	rm -f default_trampoline.ll
-	rm -f default_trampoline-cuda-nvptx64-nvidia-cuda-$(PTX_TARGET_ARCH).s
 	rm -f ../trampoline_ptx.h 
 	rm -f test

@@ -3,9 +3,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstdlib>
-#include <cstring>
 #include <clocale>
-#include <cctype>
 #include <spdlog/spdlog.h>
 #include <string>
 #include <vector>
@@ -107,23 +105,20 @@ int nv_attach_impl_compile(nv_attach_impl_ptx_compiler *ptr, const char *ptx,
 		SPDLOG_ERROR("Unable to compile: {}", static_cast<int>(err));
 		load_error_log();
 
-		std::string supported_version;
-		if (auto detected = ptx_version::supported_version_from_error_log(
-			    ptr->error_log);
-		    detected) {
-			supported_version = *detected;
-		} else {
+		auto supported_version =
+			ptx_version::supported_version_from_error_log(
+				ptr->error_log);
+		if (!supported_version)
 			return false;
-		}
 
 		auto rewritten_ptx =
-			ptx_version::rewrite(ptx_text, supported_version);
+			ptx_version::rewrite(ptx_text, *supported_version);
 		if (rewritten_ptx == ptx_text)
 			return false;
 
 		SPDLOG_WARN(
 			"Retrying PTX compile with downgraded .version {} from compiler diagnostics",
-			supported_version);
+			*supported_version);
 		ptx_text = std::move(rewritten_ptx);
 		ptr->error_log.clear();
 

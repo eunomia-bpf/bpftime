@@ -7,21 +7,7 @@
 #include <iostream>
 #include <string>
 #include <regex>
-#include <set>
 #include <sstream>
-
-namespace bb_kprobe_params
-{
-struct BBKprobeParams {
-	bool emit_nops_for_alignment = false;
-	int pad_nops = 0;
-	bool auto_inject_labels = true;  // Automatically inject labels for unlabeled BBs
-};
-NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(BBKprobeParams,
-						emit_nops_for_alignment,
-						pad_nops,
-						auto_inject_labels);
-} // namespace bb_kprobe_params
 
 static ptxpass::pass_config::PassConfig get_default_config()
 {
@@ -43,13 +29,6 @@ static ptxpass::pass_config::PassConfig get_default_config()
 		"^kprobe/[a-zA-Z0-9_$@.]*__BB[0-9]+(__[a-zA-Z0-9_]+)*$"  // Sequential BB numbering
 	};
 	cfg.attach_points.excludes = {};
-	
-	// Default parameters
-	bb_kprobe_params::BBKprobeParams default_params;
-	nlohmann::json params_json;
-	to_json(params_json, default_params);
-	cfg.parameters = params_json;
-	
 	cfg.attach_type = 8; // kprobe type (same as kprobe_entry)
 	return cfg;
 }
@@ -238,8 +217,6 @@ find_all_basic_blocks(const std::string &kernel_section)
 	
 	// Track pending standalone BB label (label on its own line)
 	std::string pending_bb_label;
-	size_t pending_label_line_num = 0;
-	size_t pending_label_char_pos = 0;
 	
 	// First pass: collect all BBs
 	std::vector<std::tuple<int, BBInfo>> temp_bbs;
@@ -250,8 +227,6 @@ find_all_basic_blocks(const std::string &kernel_section)
 		if (!standalone_label.empty()) {
 			// Remember this label for the next instruction
 			pending_bb_label = standalone_label;
-			pending_label_line_num = line_num;
-			pending_label_char_pos = char_pos;
 			char_pos += line.length() + 1;
 			line_num++;
 			continue;

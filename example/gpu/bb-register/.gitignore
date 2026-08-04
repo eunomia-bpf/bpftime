@@ -1,3 +1,4 @@
 /bb_register_probe
 /bb_register_kernel
 /.output
+/bb_register_kernel_asm

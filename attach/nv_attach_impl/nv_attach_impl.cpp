@@ -23,7 +23,6 @@
 #include <boost/process/pipe.hpp>
 #include <boost/process/start_dir.hpp>
 #include <algorithm>
-#include <cctype>
 #include <chrono>
 #include <cstdlib>
 #include <cstring>
@@ -1726,36 +1725,15 @@ void nv_attach_impl::prefill_patched_kernel_functions_from_loaded_fatbins()
 	if (fatbin_records.empty())
 		return;
 
-	auto derive_bb_tracepoint_entry =
+	// Attach specs may name a basic-block probe (`<kernel>__BB<n>[__reg...]`)
+	// while the module only exports the base kernel entry.
+	auto strip_bb_suffix =
 		[](const std::string &kernel_name) -> std::optional<std::string> {
-			constexpr const char *kBbMarker = "__BB";
-			auto bb_pos = kernel_name.find(kBbMarker);
-			if (bb_pos == std::string::npos || bb_pos == 0)
-				return std::nullopt;
-			auto suffix_pos = kernel_name.find("__", bb_pos + 4);
-			if (suffix_pos == std::string::npos ||
-			    suffix_pos <= bb_pos + 4)
-				return std::nullopt;
-			auto bb_id = kernel_name.substr(bb_pos + 4,
-						       suffix_pos - (bb_pos + 4));
-			if (bb_id.empty() ||
-			    !std::all_of(bb_id.begin(), bb_id.end(),
-					 [](unsigned char c) {
-						 return std::isdigit(c) != 0;
-					 }))
-				return std::nullopt;
-			auto base_kernel = kernel_name.substr(0, bb_pos);
-			if (base_kernel.empty())
-				return std::nullopt;
-			return base_kernel + "__bb_kprobe_BB" + bb_id + "_regs";
-		};
-	auto derive_base_kernel_name =
-		[](const std::string &kernel_name) -> std::optional<std::string> {
-			auto bb_pos = kernel_name.find("__BB");
-			if (bb_pos == std::string::npos || bb_pos == 0)
-				return std::nullopt;
-			return kernel_name.substr(0, bb_pos);
-		};
+		auto bb_pos = kernel_name.find("__BB");
+		if (bb_pos == std::string::npos || bb_pos == 0)
+			return std::nullopt;
+		return kernel_name.substr(0, bb_pos);
+	};
 
 	std::size_t mapped = 0;
 
@@ -1771,48 +1749,25 @@ void nv_attach_impl::prefill_patched_kernel_functions_from_loaded_fatbins()
 		for (const auto &ptx : rec->ptxs) {
 			for (const auto &kernel : kernels) {
 				CUfunction func = nullptr;
+				auto entry = kernel;
 				auto err = cuModuleGetFunction(
-					&func, ptx->module_ptr, kernel.c_str());
+					&func, ptx->module_ptr, entry.c_str());
 				if (err == CUDA_ERROR_NOT_FOUND) {
-					if (auto base_kernel =
-						    derive_base_kernel_name(kernel);
-					    base_kernel) {
-						err = cuModuleGetFunction(
-							&func, ptx->module_ptr,
-							base_kernel->c_str());
-						if (err == CUDA_SUCCESS &&
-						    func != nullptr) {
-							record_patched_kernel_function(
-								*base_kernel,
-								func);
-						}
-					}
+					auto base = strip_bb_suffix(kernel);
+					if (!base)
+						continue;
+					entry = std::move(*base);
+					err = cuModuleGetFunction(&func,
+								  ptx->module_ptr,
+								  entry.c_str());
 				}
-				if (err == CUDA_ERROR_NOT_FOUND) {
-					if (auto patched_entry =
-						    derive_bb_tracepoint_entry(kernel);
-					    patched_entry) {
-						err = cuModuleGetFunction(
-							&func, ptx->module_ptr,
-							patched_entry->c_str());
-						if (err == CUDA_SUCCESS &&
-						    func != nullptr) {
-							record_patched_kernel_function(
-								*patched_entry,
-								func);
-						}
-					}
-				}
-				if (err == CUDA_SUCCESS && func != nullptr) {
-					record_patched_kernel_function(kernel,
-								       func);
-					record_original_cufunction_name(func,
-									kernel);
-					SPDLOG_DEBUG(
-						"Prefilled patched CUDA kernel {}",
-						kernel);
-					mapped++;
-				}
+				if (err != CUDA_SUCCESS || func == nullptr)
+					continue;
+				record_patched_kernel_function(entry, func);
+				record_original_cufunction_name(func, entry);
+				SPDLOG_DEBUG("Prefilled patched CUDA kernel {}",
+					     entry);
+				mapped++;
 			}
 		}
 	}
