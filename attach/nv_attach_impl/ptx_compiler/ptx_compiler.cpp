@@ -1,4 +1,5 @@
 #include "nvPTXCompiler.h"
+#include "../ptx_version_utils.hpp"
 #include <cstddef>
 #include <cstdint>
 #include <cstdlib>
@@ -9,57 +10,7 @@
 #include <string>
 #include <vector>
 
-namespace {
-std::string rewrite_ptx_version(std::string ptx, const std::string &version)
-{
-	auto pos = ptx.find(".version");
-	if (pos == std::string::npos)
-		return ptx;
-
-	pos += strlen(".version");
-	while (pos < ptx.size() &&
-	       std::isspace(static_cast<unsigned char>(ptx[pos]))) {
-		pos++;
-	}
-
-	auto start = pos;
-	while (pos < ptx.size() &&
-	       (std::isdigit(static_cast<unsigned char>(ptx[pos])) ||
-		ptx[pos] == '.')) {
-		pos++;
-	}
-
-	if (start == pos)
-		return ptx;
-
-	ptx.replace(start, pos - start, version);
-	return ptx;
-}
-
-bool try_extract_supported_ptx_version(const std::string &error_log,
-					       std::string &version)
-{
-	const char *patterns[] = { "current version is '",
-				   "current version is \"" };
-	for (const char *pattern : patterns) {
-		auto pos = error_log.find(pattern);
-		if (pos == std::string::npos)
-			continue;
-		pos += strlen(pattern);
-		auto end = pos;
-		while (end < error_log.size() &&
-		       (std::isdigit(static_cast<unsigned char>(error_log[end])) ||
-			error_log[end] == '.')) {
-			end++;
-		}
-		if (end > pos) {
-			version = error_log.substr(pos, end - pos);
-			return true;
-		}
-	}
-	return false;
-}
-} // namespace
+namespace ptx_version = bpftime::attach::ptx_version;
 
 struct nv_attach_impl_ptx_compiler {
 	nvPTXCompilerHandle compiler = nullptr;
@@ -101,6 +52,17 @@ int nv_attach_impl_compile(nv_attach_impl_ptx_compiler *ptr, const char *ptx,
 		nvPTXCompilerDestroy(&ptr->compiler);
 
 	std::string ptx_text = ptx;
+
+	// Generated PTX may declare a newer ISA than this nvPTXCompiler
+	// accepts; normalize up-front instead of relying on the retry path.
+	{
+		unsigned int major_ver = 0, minor_ver = 0;
+		if (nvPTXCompilerGetVersion(&major_ver, &minor_ver) ==
+		    NVPTXCOMPILE_SUCCESS) {
+			ptx_text = ptx_version::clamp_to(std::move(ptx_text),
+							 major_ver, minor_ver);
+		}
+	}
 
 	auto load_error_log = [&]() {
 		size_t error_size = 0;
@@ -146,13 +108,16 @@ int nv_attach_impl_compile(nv_attach_impl_ptx_compiler *ptr, const char *ptx,
 		load_error_log();
 
 		std::string supported_version;
-		if (!try_extract_supported_ptx_version(ptr->error_log,
-						      supported_version)) {
+		if (auto detected = ptx_version::supported_version_from_error_log(
+			    ptr->error_log);
+		    detected) {
+			supported_version = *detected;
+		} else {
 			return false;
 		}
 
 		auto rewritten_ptx =
-			rewrite_ptx_version(ptx_text, supported_version);
+			ptx_version::rewrite(ptx_text, supported_version);
 		if (rewritten_ptx == ptx_text)
 			return false;
 

@@ -9,10 +9,14 @@ CLANG_FLAGS ?= -U__FLOAT128__ -U__SIZEOF_FLOAT128__
 
 all: ../trampoline_ptx.h test
 
+# The trampoline PTX is concatenated with application PTX before being handed to
+# ptxas, so nvcc's generic string literal symbols ($str, $str$1, ...) and debug
+# line directives must be namespaced/stripped to avoid duplicate definitions.
 ../trampoline_ptx.h: default_trampoline.ptx
 	@echo "Generating trampoline_ptx.h..."
 	@echo 'static const char TRAMPOLINE_PTX[] = R"(' > $@
-	@grep -vE '^[[:space:]]*\\.file|^[[:space:]]*\\.loc' $< >> $@
+	@grep -vE '^[[:space:]]*\.(file|loc)[[:space:]]' $< \
+		| sed 's/\$$str/\$$__bpftime_tramp_str/g' >> $@
 	@echo ')";' >> $@
 	@echo "Generated $@"
 

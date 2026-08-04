@@ -8,6 +8,7 @@
 #include "nv_attach_private_data.hpp"
 #include "nv_attach_utils.hpp"
 #include "ptx_compiler/ptx_compiler.hpp"
+#include "ptx_version_utils.hpp"
 #include "nv_elf_introspect.hpp"
 // #include "spdlog/common.h"
 #include "spdlog/spdlog.h"
@@ -1192,29 +1193,68 @@ int nv_attach_impl::run_attach_entry_on_gpu(int attach_id, int run_count,
 		NVPTXCOMPILER_SAFE_CALL(
 			nvPTXCompilerGetVersion(&major_ver, &minor_ver));
 		SPDLOG_INFO("PTX compiler version {}.{}", major_ver, minor_ver);
-		nvPTXCompilerHandle compiler = nullptr;
-		NVPTXCOMPILER_SAFE_CALL(nvPTXCompilerCreate(
-			&compiler, (size_t)ptx.size(), ptx.c_str()));
+		// The bundled trampoline and the generated program may declare
+		// a newer PTX ISA than this nvPTXCompiler accepts.
+		ptx = ptx_version::clamp_to(std::move(ptx), major_ver,
+					    minor_ver);
+
 		std::string gpu_name_opt = "--gpu-name=" + sm_arch;
 		const char *compile_options[] = { gpu_name_opt.c_str(),
 						  "--verbose" };
+		nvPTXCompilerHandle compiler = nullptr;
+		NVPTXCOMPILER_SAFE_CALL(nvPTXCompilerCreate(
+			&compiler, (size_t)ptx.size(), ptx.c_str()));
+
+		auto read_error_log = [&]() -> std::string {
+			size_t error_size = 0;
+			if (nvPTXCompilerGetErrorLogSize(compiler,
+							 &error_size) !=
+				    NVPTXCOMPILE_SUCCESS ||
+			    error_size == 0)
+				return {};
+			std::string error_log(error_size + 1, '\0');
+			if (nvPTXCompilerGetErrorLog(compiler,
+						     error_log.data()) !=
+			    NVPTXCOMPILE_SUCCESS)
+				return {};
+			return error_log;
+		};
+
 		auto status = nvPTXCompilerCompile(
 			compiler, std::size(compile_options), compile_options);
 		if (status != NVPTXCOMPILE_SUCCESS) {
-			size_t error_size;
-
-			NVPTXCOMPILER_SAFE_CALL(nvPTXCompilerGetErrorLogSize(
-				compiler, &error_size));
-
-			if (error_size != 0) {
-				std::string error_log(error_size + 1, '\0');
-				NVPTXCOMPILER_SAFE_CALL(
-					nvPTXCompilerGetErrorLog(
-						compiler, error_log.data()));
-				SPDLOG_ERROR("Unable to compile: {}",
-					     error_log);
+			auto error_log = read_error_log();
+			SPDLOG_ERROR("Unable to compile: {}", error_log);
+			auto supported =
+				ptx_version::supported_version_from_error_log(
+					error_log);
+			if (!supported) {
+				nvPTXCompilerDestroy(&compiler);
+				return -1;
 			}
-			return -1;
+			auto rewritten = ptx_version::rewrite(ptx, *supported);
+			if (rewritten == ptx) {
+				nvPTXCompilerDestroy(&compiler);
+				return -1;
+			}
+			SPDLOG_WARN(
+				"Retrying PTX compile with downgraded .version {} from compiler diagnostics",
+				*supported);
+			ptx = std::move(rewritten);
+			nvPTXCompilerDestroy(&compiler);
+			compiler = nullptr;
+			NVPTXCOMPILER_SAFE_CALL(nvPTXCompilerCreate(
+				&compiler, (size_t)ptx.size(), ptx.c_str()));
+			status = nvPTXCompilerCompile(compiler,
+						      std::size(compile_options),
+						      compile_options);
+			if (status != NVPTXCOMPILE_SUCCESS) {
+				SPDLOG_ERROR(
+					"Unable to compile after PTX version rewrite: {}",
+					read_error_log());
+				nvPTXCompilerDestroy(&compiler);
+				return -1;
+			}
 		}
 		size_t compiled_size;
 		NVPTXCOMPILER_SAFE_CALL(nvPTXCompilerGetCompiledProgramSize(
@@ -1229,6 +1269,7 @@ int nv_attach_impl::run_attach_entry_on_gpu(int attach_id, int run_count,
 		NVPTXCOMPILER_SAFE_CALL(
 			nvPTXCompilerGetInfoLog(compiler, info_log.data()));
 		SPDLOG_INFO("{}", info_log);
+		nvPTXCompilerDestroy(&compiler);
 	}
 	SPDLOG_INFO("Compiled program size: {}", output_elf.size());
 	// Load and run the program
