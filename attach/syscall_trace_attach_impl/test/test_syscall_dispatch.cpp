@@ -182,7 +182,7 @@ TEST_CASE("Test syscall dispatch - multiple")
 	REQUIRE(invoke_cnt == 0);
 }
 
-TEST_CASE("A failing exit callback does not repeat the original syscall")
+TEST_CASE("A failing exit callback is contained")
 {
 	syscall_trace_attach_private_data data;
 	data.sys_nr = 11;
@@ -195,7 +195,16 @@ TEST_CASE("A failing exit callback does not repeat the original syscall")
 					"test callback failure");
 			},
 			data, ATTACH_SYSCALL_TRACE) >= 0);
+	int later_callback_count = 0;
+	data.sys_nr = -1;
+	REQUIRE(attacher.create_attach_with_ebpf_callback(
+			[&](const void *, size_t, uint64_t *) -> int {
+				return ++later_callback_count;
+			},
+			data, ATTACH_SYSCALL_TRACE) >= 0);
 	syscall_call_count = 0;
 	REQUIRE(attacher.dispatch_syscall(11, 0, 0, 0, 0, 0, 0) == 1);
 	REQUIRE(syscall_call_count == 1);
+	REQUIRE(later_callback_count == 1);
+	REQUIRE(!curr_thread_override_return_callback.has_value());
 }
