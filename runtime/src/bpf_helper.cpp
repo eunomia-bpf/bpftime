@@ -851,7 +851,7 @@ int64_t bpftime_get_stack(uint64_t ctx_raw, uint64_t buf, uint64_t size,
 			"bpftime_get_stack only supports collect user stack!");
 		return -ENOTSUP;
 	}
-	if (!(flags & BPF_F_USER_BUILD_ID)) {
+	if (flags & BPF_F_USER_BUILD_ID) {
 		SPDLOG_ERROR("bpftime_get_stack doesn't support buildid!");
 		return -ENOTSUP;
 	}
