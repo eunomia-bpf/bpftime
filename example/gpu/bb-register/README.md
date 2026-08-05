@@ -4,7 +4,7 @@ This example shows a minimal setup for basic-block tracepoints with register cap
 
 It demonstrates:
 
-- Using a BB attach point: `kprobe/bb_reg_kernel__BB0__r2__r5`
+- Using a BB attach point: `kprobe/bb_reg_kernel__BB0__r2__r8`
 - Capturing PTX registers via `bpf_get_ptx_reg()`
 - Reading captured values from a BPF map in userspace
 - A simple `0xdeadbeef` data path in kernel code to make values easy to reason about
