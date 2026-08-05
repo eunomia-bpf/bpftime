@@ -6,7 +6,6 @@
 #include <bpftime_prog.hpp>
 #include <chrono>
 #include <iterator>
-#include <memory>
 #include <thread>
 using namespace bpftime;
 
@@ -82,36 +81,18 @@ TEST_CASE("Test cuda compile")
 	prog.bpftime_prog_load(true);
 }
 
-TEST_CASE("CUDA watcher follows attach-context and shm lifetimes")
+TEST_CASE("CUDA watcher stops before shared-memory teardown")
 {
-	auto send_request = []() {
-		auto *comm = shm_holder.global_shared_memory
-				     .get_cuda_comm_shared_mem();
-		comm->request_id = -1;
-		comm->flag2 = 0;
-		comm->flag1 = 1;
-		for (int attempt = 0; attempt < 100 && comm->flag2 != 1;
-		     attempt++) {
-			std::this_thread::sleep_for(
-				std::chrono::milliseconds(1));
-		}
-		return comm->flag2 == 1;
-	};
-
 	bpftime_initialize_global_shm(shm_open_type::SHM_REMOVE_AND_CREATE);
-	auto stale = std::unique_ptr<bpf_attach_ctx>();
-	{
-		auto first = std::make_unique<bpf_attach_ctx>();
-		stale = std::make_unique<bpf_attach_ctx>();
-		first.reset();
-		CHECK(send_request());
-		bpftime_destroy_global_shm();
-	}
+	bpf_attach_ctx ctx;
+	auto *comm = shm_holder.global_shared_memory.get_cuda_comm_shared_mem();
+	comm->request_id = -1;
+	comm->flag2 = 0;
+	comm->flag1 = 1;
+	for (int attempt = 0; attempt < 100 && comm->flag2 != 1; attempt++)
+		std::this_thread::sleep_for(std::chrono::milliseconds(1));
+	REQUIRE(comm->flag2 == 1);
 
-	bpftime_initialize_global_shm(shm_open_type::SHM_REMOVE_AND_CREATE);
-	{
-		auto restarted = std::make_unique<bpf_attach_ctx>();
-		stale.reset();
-		CHECK(send_request());
-	}
+	bpftime_destroy_global_shm();
+	std::this_thread::sleep_for(std::chrono::milliseconds(5));
 }

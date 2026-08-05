@@ -7,6 +7,7 @@
 #include <optional>
 #include <cstdlib>
 #include <mutex>
+#include <system_error>
 #include <thread>
 #include <spdlog/spdlog.h>
 #include "cuda.h"
@@ -70,42 +71,30 @@ namespace
 {
 std::once_flag g_cuda_watcher_atexit_once;
 std::mutex g_cuda_watcher_mutex;
-std::thread g_cuda_watcher_thread;
+std::thread *g_cuda_watcher_thread = nullptr;
 std::shared_ptr<std::atomic<bool>> g_cuda_watcher_stop_flag;
-std::size_t g_cuda_watcher_users = 0;
-std::uint64_t g_cuda_watcher_generation = 1;
-bool g_cuda_shm_unmapping = false;
 
-bool stop_global_cuda_watcher_locked() noexcept
+void stop_cuda_watcher_thread_at_exit()
 {
-	try {
-		if (g_cuda_watcher_stop_flag)
-			g_cuda_watcher_stop_flag->store(
-				true, std::memory_order_release);
-		if (g_cuda_watcher_thread.joinable())
-			g_cuda_watcher_thread.join();
+	std::thread *thread_to_join = nullptr;
+	std::shared_ptr<std::atomic<bool>> flag_to_set;
+	{
+		std::lock_guard<std::mutex> guard(g_cuda_watcher_mutex);
+		thread_to_join = g_cuda_watcher_thread;
+		flag_to_set = g_cuda_watcher_stop_flag;
+		g_cuda_watcher_thread = nullptr;
 		g_cuda_watcher_stop_flag.reset();
-		return true;
-	} catch (...) {
-		return false;
 	}
+	if (flag_to_set)
+		flag_to_set->store(true, std::memory_order_release);
+	if (thread_to_join != nullptr && thread_to_join->joinable())
+		thread_to_join->join();
 }
-
 } // namespace
 
-bool stop_cuda_watcher_before_shm_unmap() noexcept
+void stop_cuda_watcher_before_shm_unmap()
 {
-	std::lock_guard<std::mutex> guard(g_cuda_watcher_mutex);
-	g_cuda_shm_unmapping = true;
-	g_cuda_watcher_users = 0;
-	g_cuda_watcher_generation++;
-	return stop_global_cuda_watcher_locked();
-}
-
-void allow_cuda_watcher_after_shm_map() noexcept
-{
-	std::lock_guard<std::mutex> guard(g_cuda_watcher_mutex);
-	g_cuda_shm_unmapping = false;
+	stop_cuda_watcher_thread_at_exit();
 }
 
 std::optional<attach::nv_attach_impl *>
@@ -121,35 +110,20 @@ bpf_attach_ctx::find_nv_attach_impl() const
 }
 void bpf_attach_ctx::start_cuda_watcher_thread()
 {
-	std::lock_guard<std::mutex> guard(g_cuda_watcher_mutex);
 	if (!cuda_ctx)
 		return;
-	if (cuda_watcher_generation == g_cuda_watcher_generation)
+	if (cuda_watcher_thread.joinable())
 		return;
-	if (g_cuda_shm_unmapping ||
-	    cuda_ctx->shm_generation != g_cuda_watcher_generation)
-		return;
-	std::call_once(g_cuda_watcher_atexit_once, []() {
-		std::atexit(
-			[]() { (void)stop_cuda_watcher_before_shm_unmap(); });
-	});
-	if (g_cuda_watcher_thread.joinable()) {
-		g_cuda_watcher_users++;
-		cuda_watcher_generation = g_cuda_watcher_generation;
-		return;
-	}
 	auto flag = cuda_ctx->cuda_watcher_should_stop;
-	auto *shared_mem = cuda_ctx->cuda_shared_mem;
-	auto shared_mem_device_pointer =
-		cuda_ctx->cuda_shared_mem_device_pointer;
-	g_cuda_watcher_thread = std::thread([flag, shared_mem,
-					     shared_mem_device_pointer]() {
-		while (!flag->load()) {
-			if (shared_mem->flag1 == 1) {
-				shared_mem->flag1 = 0;
-				auto req_id = shared_mem->request_id;
+	cuda_watcher_thread = std::thread([flag, this]() {
+		auto *ctx = cuda_ctx.get();
 
-				auto map_ptr = shared_mem->map_id;
+		while (!flag->load()) {
+			if (ctx != nullptr && ctx->cuda_shared_mem->flag1 == 1) {
+				ctx->cuda_shared_mem->flag1 = 0;
+				auto req_id = ctx->cuda_shared_mem->request_id;
+
+				auto map_ptr = ctx->cuda_shared_mem->map_id;
 				auto map_fd = map_ptr;
 				SPDLOG_DEBUG(
 					"CUDA Received call request id {}, map_ptr = {}, map_fd = {}",
@@ -159,9 +133,10 @@ void bpf_attach_ctx::start_cuda_watcher_thread()
 				if (req_id ==
 				    (int)cuda::HelperOperation::MAP_LOOKUP) {
 					const auto &req =
-						shared_mem->req.map_lookup;
-					auto &resp =
-						shared_mem->resp.map_lookup;
+						ctx->cuda_shared_mem->req
+							.map_lookup;
+					auto &resp = ctx->cuda_shared_mem->resp
+							     .map_lookup;
 					auto ptr = bpftime_map_lookup_elem(
 						map_fd, req.key);
 					resp.value = nullptr;
@@ -191,9 +166,9 @@ void bpf_attach_ctx::start_cuda_watcher_thread()
 							const auto comm_host_base =
 								reinterpret_cast<
 									uintptr_t>(
-									shared_mem);
+									ctx->cuda_shared_mem);
 							const auto comm_device_base =
-								shared_mem_device_pointer;
+								ctx->cuda_shared_mem_device_pointer;
 							const auto offset =
 								static_cast<
 									intptr_t>(
@@ -220,9 +195,10 @@ void bpf_attach_ctx::start_cuda_watcher_thread()
 					   (int)cuda::HelperOperation::
 						   MAP_UPDATE) {
 					const auto &req =
-						shared_mem->req.map_update;
-					auto &resp =
-						shared_mem->resp.map_update;
+						ctx->cuda_shared_mem->req
+							.map_update;
+					auto &resp = ctx->cuda_shared_mem->resp
+							     .map_update;
 					resp.result = bpftime_map_update_elem(
 						map_fd, req.key, req.value,
 						req.flags);
@@ -233,9 +209,10 @@ void bpf_attach_ctx::start_cuda_watcher_thread()
 					   (int)cuda::HelperOperation::
 						   MAP_DELETE) {
 					const auto &req =
-						shared_mem->req.map_delete;
-					auto &resp =
-						shared_mem->resp.map_delete;
+						ctx->cuda_shared_mem->req
+							.map_delete;
+					auto &resp = ctx->cuda_shared_mem->resp
+							     .map_delete;
 
 					resp.result = bpftime_map_delete_elem(
 						map_fd, req.key);
@@ -246,9 +223,10 @@ void bpf_attach_ctx::start_cuda_watcher_thread()
 					   (int)cuda::HelperOperation::
 						   TRACE_PRINTK) {
 					const auto &req =
-						shared_mem->req.trace_printk;
-					auto &resp =
-						shared_mem->resp.trace_printk;
+						ctx->cuda_shared_mem->req
+							.trace_printk;
+					auto &resp = ctx->cuda_shared_mem->resp
+							     .trace_printk;
 
 					resp.result = bpftime_trace_printk(
 						(uintptr_t)req.fmt,
@@ -261,8 +239,8 @@ void bpf_attach_ctx::start_cuda_watcher_thread()
 				} else if (req_id ==
 					   (int)cuda::HelperOperation::
 						   GET_CURRENT_PID_TGID) {
-					auto &resp =
-						shared_mem->resp.get_tid_pgid;
+					auto &resp = ctx->cuda_shared_mem->resp
+							     .get_tid_pgid;
 					static int tgid = getpid();
 					static thread_local int tid = -1;
 					if (tid == -1) {
@@ -275,8 +253,10 @@ void bpf_attach_ctx::start_cuda_watcher_thread()
 						(((uint64_t)tgid) << 32) | tid;
 				} else if (req_id ==
 					   (int)cuda::HelperOperation::PUTS) {
-					const auto &req = shared_mem->req.puts;
-					auto &resp = shared_mem->resp.puts;
+					const auto &req =
+						ctx->cuda_shared_mem->req.puts;
+					auto &resp =
+						ctx->cuda_shared_mem->resp.puts;
 					SPDLOG_INFO("eBPF: {}", req.data);
 					resp.result = 0;
 				}
@@ -288,7 +268,7 @@ void bpf_attach_ctx::start_cuda_watcher_thread()
 
 				// Make sure response writes are visible before signaling completion.
 				std::atomic_thread_fence(std::memory_order_seq_cst);
-				shared_mem->flag2 = 1;
+				ctx->cuda_shared_mem->flag2 = 1;
 				std::atomic_thread_fence(
 					std::memory_order_seq_cst);
 			}
@@ -298,26 +278,46 @@ void bpf_attach_ctx::start_cuda_watcher_thread()
 		SPDLOG_INFO("Exiting CUDA watcher thread");
 	});
 
-	g_cuda_watcher_stop_flag = flag;
-	g_cuda_watcher_users = 1;
-	cuda_watcher_generation = g_cuda_watcher_generation;
+	std::call_once(g_cuda_watcher_atexit_once, []() {
+		std::atexit(stop_cuda_watcher_thread_at_exit);
+	});
+	{
+		std::lock_guard<std::mutex> guard(g_cuda_watcher_mutex);
+		g_cuda_watcher_thread = &cuda_watcher_thread;
+		g_cuda_watcher_stop_flag = flag;
+	}
 }
 
 void bpf_attach_ctx::stop_cuda_watcher_thread()
 {
-	std::lock_guard<std::mutex> guard(g_cuda_watcher_mutex);
-	if (cuda_watcher_generation == 0)
+	if (!cuda_ctx)
 		return;
-	if (cuda_watcher_generation != g_cuda_watcher_generation) {
-		cuda_watcher_generation = 0;
-		return;
+	auto flag = cuda_ctx->cuda_watcher_should_stop;
+	if (flag)
+		flag->store(true, std::memory_order_release);
+	{
+		std::lock_guard<std::mutex> guard(g_cuda_watcher_mutex);
+		if (g_cuda_watcher_thread == &cuda_watcher_thread) {
+			g_cuda_watcher_thread = nullptr;
+			g_cuda_watcher_stop_flag.reset();
+		}
 	}
-	cuda_watcher_generation = 0;
-	if (g_cuda_watcher_users == 0)
-		return;
-	g_cuda_watcher_users--;
-	if (g_cuda_watcher_users == 0)
-		(void)stop_global_cuda_watcher_locked();
+	if (cuda_watcher_thread.joinable()) {
+		try {
+			cuda_watcher_thread.join();
+		} catch (const std::system_error &ex) {
+			SPDLOG_WARN("Failed to join CUDA watcher thread: {}",
+				    ex.what());
+			try {
+				if (cuda_watcher_thread.joinable())
+					cuda_watcher_thread.detach();
+			} catch (const std::system_error &detach_ex) {
+				SPDLOG_WARN(
+					"Failed to detach CUDA watcher thread after join failure: {}",
+					detach_ex.what());
+			}
+		}
+	}
 }
 std::vector<attach::MapBasicInfo>
 bpf_attach_ctx::create_map_basic_info(int filled_size)
@@ -382,9 +382,6 @@ void cuda_module_destroyer(CUmodule ptr)
 
 std::optional<std::unique_ptr<cuda::CUDAContext>> create_cuda_context()
 {
-	std::lock_guard<std::mutex> guard(g_cuda_watcher_mutex);
-	if (g_cuda_shm_unmapping)
-		return std::nullopt;
 	SPDLOG_INFO("Initializing CUDA shared memory");
 	auto *cuda_shared_mem =
 		shm_holder.global_shared_memory.get_cuda_comm_shared_mem();
@@ -393,11 +390,10 @@ std::optional<std::unique_ptr<cuda::CUDAContext>> create_cuda_context()
 			"CUDA shared communication memory not initialized in shared segment");
 		return std::nullopt;
 	}
-	if (!g_cuda_watcher_thread.joinable())
-		memset(cuda_shared_mem, 0, sizeof(*cuda_shared_mem));
+	memset(cuda_shared_mem, 0, sizeof(*cuda_shared_mem));
 
-	auto cuda_ctx = std::make_optional(std::make_unique<cuda::CUDAContext>(
-		cuda_shared_mem, g_cuda_watcher_generation));
+	auto cuda_ctx = std::make_optional(
+		std::make_unique<cuda::CUDAContext>(cuda_shared_mem));
 
 	SPDLOG_INFO("CUDA context created");
 	return cuda_ctx;
@@ -406,9 +402,8 @@ CUDAContext::~CUDAContext()
 {
 	SPDLOG_INFO("Destructing CUDAContext");
 }
-CUDAContext::CUDAContext(cuda::CommSharedMem *mem, std::uint64_t generation)
-	: cuda_shared_mem(mem), cuda_shared_mem_device_pointer(0),
-	  shm_generation(generation)
+CUDAContext::CUDAContext(cuda::CommSharedMem *mem)
+	: cuda_shared_mem(mem), cuda_shared_mem_device_pointer(0)
 
 {
 	// Move CommSharedMem from the agent’s local memory to shared memory to

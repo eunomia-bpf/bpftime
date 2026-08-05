@@ -109,10 +109,8 @@ struct CUDAContext {
 	cuda::CommSharedMem *cuda_shared_mem;
 	// Mapped device pointer
 	uintptr_t cuda_shared_mem_device_pointer;
-	// Shared-memory lifecycle generation that owns cuda_shared_mem.
-	std::uint64_t shm_generation;
 
-	CUDAContext(cuda::CommSharedMem *mem, std::uint64_t generation);
+	CUDAContext(cuda::CommSharedMem *mem);
 
 	CUDAContext(CUDAContext &&) = default;
 	CUDAContext &operator=(CUDAContext &&) = default;
@@ -211,7 +209,7 @@ private:
 	void start_cuda_watcher_thread();
 	void stop_cuda_watcher_thread();
 	std::unique_ptr<cuda::CUDAContext> cuda_ctx;
-	std::uint64_t cuda_watcher_generation = 0;
+	std::thread cuda_watcher_thread;
 #endif
 
 	constexpr static int CURRENT_ID_OFFSET = 65536;

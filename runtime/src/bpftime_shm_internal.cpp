@@ -26,8 +26,7 @@
 #include <bpf_attach_ctx.hpp>
 namespace bpftime
 {
-bool stop_cuda_watcher_before_shm_unmap() noexcept;
-void allow_cuda_watcher_after_shm_map() noexcept;
+void stop_cuda_watcher_before_shm_unmap();
 } // namespace bpftime
 #endif
 #elif __APPLE__
@@ -46,9 +45,6 @@ extern "C" void bpftime_initialize_global_shm(bpftime::shm_open_type type)
 	// call the constructor
 	new (&shm_holder.global_shared_memory) bpftime_shm(type);
 	global_shm_initialized = true;
-#ifdef BPFTIME_ENABLE_CUDA_ATTACH
-	allow_cuda_watcher_after_shm_map();
-#endif
 	SPDLOG_INFO("Global shm initialized");
 }
 
@@ -57,8 +53,7 @@ extern "C" void bpftime_destroy_global_shm()
 	using namespace bpftime;
 	if (global_shm_initialized) {
 #ifdef BPFTIME_ENABLE_CUDA_ATTACH
-		if (!stop_cuda_watcher_before_shm_unmap())
-			return;
+		stop_cuda_watcher_before_shm_unmap();
 #endif
 		// SPDLOG_INFO("Global shm destructed");
 		shm_holder.global_shared_memory.~bpftime_shm();
