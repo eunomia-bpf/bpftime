@@ -347,6 +347,7 @@ jobs:
             victim: ./gemm/cutlass_gemm --shape 1024x1024x1024 --launches 4 --warmup 1 --verify
             expected_str: "CUTLASS launches:"
             name: cutlass
+            verifier_level: WARNING
             server_timeout: 15
             mode: two-process
             dispatch_only: true
