@@ -51,7 +51,9 @@ jobs:
           git submodule update --init --recursive third_party/ubpf
 
       - name: Initialize verifier submodules
-        run: git submodule update --init --recursive bpftime-verifier/ebpf-verifier
+        run: |
+          rm -rf bpftime-verifier/ebpf-verifier/external/bpf_conformance
+          git submodule update --init --recursive bpftime-verifier/ebpf-verifier
 
       - name: Check and install required tools
         run: |
