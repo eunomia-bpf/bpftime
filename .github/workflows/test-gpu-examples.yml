@@ -274,6 +274,7 @@ jobs:
             victim: ./vec_add_graph
             expected_str: "calls:"
             name: cudagraph
+            verifier_level: WARNING
             server_timeout: 15
             mode: two-process
           - path: threadhist-gpu-kernel-shared-map
@@ -288,6 +289,7 @@ jobs:
             victim: ""
             expected_str: "GEMM C[0]="
             name: directly_run_on_gpu
+            verifier_level: WARNING
             server_timeout: 15
             mode: direct-run
           - path: kernelretsnoop
