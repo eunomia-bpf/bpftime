@@ -24,7 +24,6 @@
 #include <boost/interprocess/sync/interprocess_mutex.hpp>
 #include <boost/interprocess/containers/vector.hpp>
 #include <boost/interprocess/allocators/allocator.hpp>
-#include <bpf/bpf.h>
 #include <cstdint>
 
 namespace bpftime
