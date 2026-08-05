@@ -31,6 +31,7 @@ set(TEST_SOURCES
 
     test_bpftime_shm_json.cpp
     test_probe.cpp
+    test_get_stack.cpp
     test_config.cpp
     test_shm_allocation_failure.cpp
     test_software_perf_event.cpp
