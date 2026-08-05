@@ -72,7 +72,7 @@ static void register_ufunc_for_print_and_add(bpf_attach_ctx *probe_ctx)
 __attribute__((optnone)) TEST_CASE("Test attach replace with ebpf")
 {
 	int res = 1;
-	bpftime::agent_config config;
+	bpftime::runtime_config config;
 	config.set_vm_name("llvm");
 	// test for no attach
 	res = _bpftime_test_attach_replace__my_function(1, "hello aaa", 'c');

@@ -12,6 +12,7 @@
 #include <sys/time.h>
 #include <time.h>
 #include <linux/perf_event.h>
+#include <optional>
 #include <spdlog/spdlog.h>
 #include "handle_bpf_event.hpp"
 #include "../bpf_tracer_event.h"
@@ -249,13 +250,19 @@ int bpf_event_handler::handle_bpf_event(const struct event *e)
 	case BPF_LINK_CREATE: {
 		int prog_fd = e->bpf_data.attr.link_create.prog_fd;
 		int perf = e->bpf_data.attr.link_create.target_fd;
+		std::optional<uint64_t> cookie;
+		if (e->bpf_data.attr.link_create.attach_type ==
+		    BPF_PERF_EVENT) {
+			cookie = e->bpf_data.attr.link_create.perf_event
+					 .bpf_cookie;
+		}
 		/* code */
 		SPDLOG_INFO("   BPF_LINK_CREATE prog_fd:{} target_fd:{}",
 			     prog_fd, perf);
 		if (config.is_driving_bpftime) {
 			if (int err =
 				    driver.bpftime_attach_perf_to_bpf_fd_server(
-					    e->pid, perf, prog_fd);
+					    e->pid, perf, prog_fd, cookie);
 			    err < 0) {
 				SPDLOG_WARN(
 					"Unable to attach perf {} to bpf prog {}, err={}",
