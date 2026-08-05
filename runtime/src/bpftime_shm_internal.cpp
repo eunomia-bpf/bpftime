@@ -24,6 +24,10 @@
 #include <cuda_runtime_api.h>
 #include <cuda.h>
 #include <bpf_attach_ctx.hpp>
+namespace bpftime
+{
+void stop_cuda_watcher_before_shm_unmap();
+} // namespace bpftime
 #endif
 #elif __APPLE__
 #include "bpftime_epoll.h"
@@ -48,6 +52,9 @@ extern "C" void bpftime_destroy_global_shm()
 {
 	using namespace bpftime;
 	if (global_shm_initialized) {
+#ifdef BPFTIME_ENABLE_CUDA_ATTACH
+		stop_cuda_watcher_before_shm_unmap();
+#endif
 		// SPDLOG_INFO("Global shm destructed");
 		shm_holder.global_shared_memory.~bpftime_shm();
 		// Make this idempotent: clear the flag so a later explicit call

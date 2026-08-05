@@ -92,6 +92,11 @@ void stop_cuda_watcher_thread_at_exit()
 }
 } // namespace
 
+void stop_cuda_watcher_before_shm_unmap()
+{
+	stop_cuda_watcher_thread_at_exit();
+}
+
 std::optional<attach::nv_attach_impl *>
 bpf_attach_ctx::find_nv_attach_impl() const
 {
