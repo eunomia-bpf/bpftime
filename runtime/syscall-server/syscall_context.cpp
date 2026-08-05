@@ -24,8 +24,11 @@
 #if __linux__
 #include "linux/perf_event.h"
 #include <linux/bpf.h>
+#include <asm/unistd.h>
 #include <sys/epoll.h>
+#ifdef BPFTIME_BUILD_WITH_LIBBPF
 #include <bpf/bpf.h>
+#endif
 #include <linux/perf_event.h>
 #include <linux/filter.h>
 #elif __APPLE__
@@ -72,13 +75,34 @@ namespace {
 [[noreturn]] void
 exit_for_startup_allocation_failure(const std::exception &error)
 {
-	auto config = bpftime::construct_agent_config_from_env();
+	auto config = bpftime::construct_runtime_config_from_env();
 	SPDLOG_CRITICAL(
 		"Unable to initialize bpftime shared memory ({} MiB, {} fd slots): {}",
 		config.shm_memory_size, config.max_fd_count, error.what());
 	SPDLOG_CRITICAL(
 		"Increase BPFTIME_SHM_MEMORY_MB or decrease BPFTIME_MAX_FD_COUNT");
 	std::exit(EXIT_FAILURE);
+}
+
+int get_bpf_obj_info_by_fd(int fd, void *info, uint32_t *info_len,
+			   long (*syscall_fn)(long, ...))
+{
+#ifdef BPFTIME_BUILD_WITH_LIBBPF
+	return bpf_obj_get_info_by_fd(fd, info, info_len);
+#elif defined(__linux__)
+	union bpf_attr attr = {};
+	attr.info.bpf_fd = fd;
+	attr.info.info_len = *info_len;
+	attr.info.info = reinterpret_cast<uintptr_t>(info);
+	int result = syscall_fn(__NR_bpf, BPF_OBJ_GET_INFO_BY_FD, &attr,
+				sizeof(attr.info));
+	if (result == 0)
+		*info_len = attr.info.info_len;
+	return result;
+#else
+	errno = ENOTSUP;
+	return -1;
+#endif
 }
 
 std::string format_verifier_program_dump(const uint64_t *instructions,
@@ -123,7 +147,7 @@ syscall_context::syscall_context()
 	init_original_functions();
 	// FIXME: merge this into the runtime config
 	load_config_from_env();
-	auto runtime_config = bpftime::construct_agent_config_from_env();
+	auto runtime_config = bpftime::construct_runtime_config_from_env();
 	pthread_spin_init(&this->mocked_file_lock, 0);
 	SPDLOG_INFO("Init bpftime syscall mocking..");
 	SPDLOG_INFO("The log will be written to: {}",
@@ -276,7 +300,8 @@ int syscall_context::create_kernel_bpf_map(int map_fd, int bpftime_map_type)
 {
 	bpf_map_info info = {};
 	uint32_t info_len = sizeof(info);
-	int res = bpf_obj_get_info_by_fd(map_fd, &info, &info_len);
+	int res = get_bpf_obj_info_by_fd(map_fd, &info, &info_len,
+					 orig_syscall_fn);
 	if (res < 0) {
 		SPDLOG_ERROR("Failed to get map info for fd {}", map_fd);
 		return -1;
@@ -357,8 +382,10 @@ int syscall_context::create_kernel_bpf_prog_in_userspace(int cmd,
 			if (inst.src_reg == 1 || inst.src_reg == 2) {
 				bpf_map_info info = {};
 				uint32_t info_len = sizeof(info);
-				int res = bpf_obj_get_info_by_fd(
-					inst.imm, &info, &info_len);
+				int res =
+					get_bpf_obj_info_by_fd(inst.imm, &info,
+							       &info_len,
+							       orig_syscall_fn);
 				if (res < 0) {
 					SPDLOG_ERROR(
 						"Failed to get map info for id {}",
@@ -558,7 +585,7 @@ long syscall_context::handle_sysbpf(int cmd, union bpf_attr *attr, size_t size)
 			}
 #ifdef ENABLE_BPFTIME_VERIFIER
 			auto verifier_mode =
-				bpftime_get_agent_config().verifier_mode;
+				bpftime_get_runtime_config().verifier_mode;
 			// Only do verification for tracepoint/uprobe/uretprobe
 			if (simple_section_name.has_value() &&
 			    verifier_mode != BPFTIME_NO_VERIFY) {

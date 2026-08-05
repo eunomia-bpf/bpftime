@@ -62,6 +62,7 @@ Attach uprobe, uretprobe or all syscall tracepoints(currently x86 only) eBPF pro
 - [`sslsniff`](https://github.com/eunomia-bpf/bpftime/tree/master/example/tracing/sslsniff): Trace and print all SSL/TLS connections and raw traffic data.
 - [`funclatency`](https://github.com/eunomia-bpf/bpftime/tree/master/example/tracing/funclatency): Measure function latency distribution.
 - [`goroutine`](https://github.com/eunomia-bpf/bpftime/tree/master/example/tracing/goroutine): Trace Go runtime goroutine operations.
+- [`otel-ebpf-profiler`](https://github.com/eunomia-bpf/bpftime/tree/master/example/otel-ebpf-profiler): Check OpenTelemetry eBPF profiler link compatibility in daemon mirror mode.
 
 ### tracing all syscalls with tracepoints
 
