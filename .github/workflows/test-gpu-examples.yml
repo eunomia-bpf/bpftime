@@ -243,6 +243,7 @@ jobs:
             victim: ./vec_add
             expected_str: "total events:"
             name: kernel_trace
+            verifier_level: WARNING
             server_timeout: 15
             mode: two-process
           - path: gpu_shared_map
