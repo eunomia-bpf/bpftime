@@ -634,7 +634,7 @@ std::optional<CUfunction> nv_attach_impl::find_patched_kernel_function(
 	}
 	std::lock_guard<std::mutex> records_guard(late_bootstrap_mutex);
 	std::optional<CUfunction> resolved;
-	for (const auto &record : fatbin_records) {
+	for (auto *record : active_fatbin_records()) {
 		if (auto info = record->find_function_info(*this, kernel_name);
 		    info) {
 			if (resolved) {
@@ -658,7 +658,7 @@ nv_attach_impl::find_patched_global(const std::string &symbol_name)
 {
 	std::lock_guard<std::mutex> records_guard(late_bootstrap_mutex);
 	std::optional<variable_info> resolved;
-	for (const auto &record : fatbin_records) {
+	for (auto *record : active_fatbin_records()) {
 		auto info = record->find_variable_info(*this, symbol_name);
 		if (!info)
 			continue;
@@ -669,6 +669,17 @@ nv_attach_impl::find_patched_global(const std::string &symbol_name)
 			return std::nullopt;
 		}
 		resolved = std::move(info);
+	}
+	if (resolved) {
+		CUcontext context = nullptr;
+		if (cuCtxGetCurrent(&context) == CUDA_SUCCESS &&
+		    context != nullptr) {
+			std::lock_guard<std::mutex> guard(
+				patched_global_cache_mutex);
+			patched_global_by_context[{ context, symbol_name }] = {
+				resolved->ptr, resolved->size
+			};
+		}
 	}
 	return resolved;
 }
@@ -1383,13 +1394,6 @@ void nv_attach_impl::mirror_cuda_memcpy_to_symbol(
 		}
 		if (!resolved_var) {
 			resolved_var = find_patched_global(*name);
-			if (resolved_var) {
-				std::lock_guard<std::mutex> guard(
-					patched_global_cache_mutex);
-				patched_global_by_context[{ context, *name }] = {
-					resolved_var->ptr, resolved_var->size
-				};
-			}
 		}
 	}
 
@@ -1601,6 +1605,7 @@ void nv_attach_impl::clear_patched_state_for_next_session()
 	{
 		std::lock_guard<std::mutex> guard(late_bootstrap_mutex);
 		old_records.swap(fatbin_records);
+		late_bootstrap_generation = 0;
 		current_fatbin = nullptr;
 		symbol_address_to_fatbin.clear();
 		{
@@ -1829,13 +1834,68 @@ read_fatbin_bytes_from_wrapper(const __fatBinC_Wrapper_t &wrapper)
 {
 	return read_fatbin_bytes_from_ptr(wrapper.data);
 }
+
+static std::string
+fingerprint_ptx_set(const std::map<std::string, std::string> &ptxs)
+{
+	std::vector<std::string> digests;
+	digests.reserve(ptxs.size());
+	for (const auto &[file_name, ptx] : ptxs) {
+		(void)file_name;
+		digests.emplace_back(sha256(ptx.data(), ptx.size()));
+	}
+	std::sort(digests.begin(), digests.end());
+	std::string combined;
+	combined.reserve(digests.size() * 64);
+	for (const auto &digest : digests)
+		combined += digest;
+	return sha256(combined.data(), combined.size());
+}
 } // namespace
+
+std::vector<fatbin_record *> nv_attach_impl::active_fatbin_records()
+{
+	std::map<std::string, std::size_t> bootstrap_fingerprints;
+	if (late_bootstrap_generation != 0) {
+		for (const auto &record : fatbin_records) {
+			if (record->late_bootstrap_generation ==
+			    late_bootstrap_generation) {
+				bootstrap_fingerprints[fingerprint_ptx_set(
+					record->original_ptx)]++;
+			}
+		}
+	}
+
+	std::vector<fatbin_record *> active;
+	active.reserve(fatbin_records.size());
+	for (const auto &record : fatbin_records) {
+		if (record->late_bootstrap_generation != 0 &&
+		    record->late_bootstrap_generation !=
+			    late_bootstrap_generation) {
+			continue;
+		}
+		if (record->late_bootstrap_generation == 0) {
+			auto fingerprint =
+				fingerprint_ptx_set(record->original_ptx);
+			if (auto it = bootstrap_fingerprints.find(fingerprint);
+			    it != bootstrap_fingerprints.end() &&
+			    it->second != 0) {
+				it->second--;
+				continue;
+			}
+		}
+		active.emplace_back(record.get());
+	}
+	return active;
+}
 
 void nv_attach_impl::bootstrap_existing_fatbins()
 {
 	SPDLOG_INFO("nv_attach_impl: late attach bootstrap scanning fatbins..");
 	auto modules = elf_introspect::list_loaded_modules();
 	std::size_t ingested = 0;
+	const std::size_t generation = late_bootstrap_generation + 1;
+	std::vector<std::unique_ptr<fatbin_record>> new_records;
 
 	for (const auto &mod : modules) {
 		bool has_regular_wrapper = false;
@@ -1869,10 +1929,12 @@ void nv_attach_impl::bootstrap_existing_fatbins()
 					if (!extracted_ptx.empty()) {
 						auto rec = std::make_unique<
 							fatbin_record>();
+						rec->late_bootstrap_generation =
+							generation;
 						rec->original_ptx = std::move(
 							extracted_ptx);
 						rec->ptx_pool = ptx_pool;
-						fatbin_records.emplace_back(
+						new_records.emplace_back(
 							std::move(rec));
 						ingested++;
 						SPDLOG_INFO(
@@ -1906,9 +1968,10 @@ void nv_attach_impl::bootstrap_existing_fatbins()
 					continue;
 
 				auto rec = std::make_unique<fatbin_record>();
+				rec->late_bootstrap_generation = generation;
 				rec->original_ptx = std::move(extracted_ptx);
 				rec->ptx_pool = ptx_pool;
-				fatbin_records.emplace_back(std::move(rec));
+				new_records.emplace_back(std::move(rec));
 				ingested++;
 			}
 		}
@@ -1921,13 +1984,31 @@ void nv_attach_impl::bootstrap_existing_fatbins()
 		auto extracted_ptx = extract_ptxs({});
 		if (!extracted_ptx.empty()) {
 			auto rec = std::make_unique<fatbin_record>();
+			rec->late_bootstrap_generation = generation;
 			rec->original_ptx = std::move(extracted_ptx);
 			rec->ptx_pool = ptx_pool;
-			fatbin_records.emplace_back(std::move(rec));
+			new_records.emplace_back(std::move(rec));
 			ingested++;
 			SPDLOG_INFO(
 				"nv_attach_impl: ingested fatbin via external PTX directory fallback");
 		}
+	}
+	if (ingested != 0) {
+		fatbin_records.reserve(fatbin_records.size() +
+				       new_records.size());
+		for (auto &record : new_records)
+			fatbin_records.emplace_back(std::move(record));
+		{
+			std::lock_guard<std::mutex> guard(
+				cuda_symbol_map_mutex);
+			patched_kernel_by_context.clear();
+		}
+		{
+			std::lock_guard<std::mutex> guard(
+				patched_global_cache_mutex);
+			patched_global_by_context.clear();
+		}
+		late_bootstrap_generation = generation;
 	}
 
 	SPDLOG_INFO(

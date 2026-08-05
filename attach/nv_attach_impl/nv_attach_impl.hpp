@@ -207,6 +207,7 @@ class nv_attach_impl final : public base_attach_impl {
 		return std::shared_lock(patched_state_mutex);
 	}
 	std::vector<std::unique_ptr<fatbin_record>> fatbin_records;
+	std::size_t late_bootstrap_generation = 0;
 	fatbin_record *current_fatbin = nullptr;
 	std::map<void *, fatbin_record *> symbol_address_to_fatbin;
 	uintptr_t shared_mem_ptr;
@@ -239,6 +240,7 @@ class nv_attach_impl final : public base_attach_impl {
 		void clear_patched_state_for_next_session();
 
 		void bootstrap_existing_fatbins();
+		std::vector<fatbin_record *> active_fatbin_records();
 		void reset_late_bootstrap_state_for_next_attach();
 		void build_host_symbol_cache_once();
 

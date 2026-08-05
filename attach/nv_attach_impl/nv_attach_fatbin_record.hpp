@@ -28,6 +28,10 @@ struct variable_info {
 };
 struct fatbin_record {
 	std::shared_ptr<std::map<std::string, std::vector<uint8_t>>> ptx_pool;
+	// Zero for records observed through CUDA registration hooks. Non-zero
+	// late-bootstrap generations let reruns supersede, but safely retain,
+	// modules that may still have in-flight launches.
+	std::size_t late_bootstrap_generation = 0;
 	std::map<void *, std::string> variable_addr_to_symbol;
 	std::map<void *, std::string> function_addr_to_symbol;
 	std::map<std::string, std::string> original_ptx;
