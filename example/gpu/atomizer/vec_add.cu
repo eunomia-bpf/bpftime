@@ -9,6 +9,15 @@
 #include <unistd.h>
 #include <vector>
 
+#define CUDA_CHECK(call)                                                       \
+    do {                                                                       \
+        if (auto error = (call); error != cudaSuccess) {                       \
+            std::cerr << #call << " failed: " << cudaGetErrorString(error)     \
+                      << '\n';                                                 \
+            return 1;                                                          \
+        }                                                                      \
+    } while (false)
+
 /*
 nvcc -x cu -cuda vectorAdd.cu -o vectorAdd.cpp
 python filter_hashtag.py
@@ -31,9 +40,13 @@ __global__ void vectorAdd(const float *A, const float *B, float *C)
 
 int main()
 {
-    // Set vector size in constant memory
+    const bool expect_patched = getenv("BPFTIME_EXPECT_PATCHED") != nullptr;
+    int device_count = 0;
+    CUDA_CHECK(cudaGetDeviceCount(&device_count));
+    if (device_count == 0)
+        return 1;
+
     const int h_N = BLOCK_SIZE;
-    cudaMemcpyToSymbol(d_N, &h_N, sizeof(h_N));
     size_t bytes = h_N * sizeof(float);
     
     // Allocate and initialize host memory using vectors
@@ -45,39 +58,40 @@ int main()
         h_B[i] = float(2 * i);
     }
 
-    // Allocate Device memory
-    float *d_A, *d_B, *d_C;
-    cudaMalloc(&d_A, bytes);
-    cudaMalloc(&d_B, bytes);
-    cudaMalloc(&d_C, bytes);
-
-    // Copy to device
-    cudaMemcpy(d_A, h_A.data(), bytes, cudaMemcpyHostToDevice);
-    cudaMemcpy(d_B, h_B.data(), bytes, cudaMemcpyHostToDevice);
+    std::vector<float *> d_A(device_count), d_B(device_count), d_C(device_count);
+    for (int device = 0; device < device_count; device++) {
+        CUDA_CHECK(cudaSetDevice(device));
+        CUDA_CHECK(cudaMalloc(&d_A[device], bytes));
+        CUDA_CHECK(cudaMalloc(&d_B[device], bytes));
+        CUDA_CHECK(cudaMalloc(&d_C[device], bytes));
+        CUDA_CHECK(cudaMemcpy(d_A[device], h_A.data(), bytes,
+                              cudaMemcpyHostToDevice));
+        CUDA_CHECK(cudaMemcpy(d_B[device], h_B.data(), bytes,
+                              cudaMemcpyHostToDevice));
+    }
 
     // Run the kernel in an infinite loop
     while (true) {
-        // Zero output array
-        cudaMemset(d_C, 0, bytes);
-        
-        // Launch kernel
-        vectorAdd<<<BLOCK_SIZE, 1>>>(d_A, d_B, d_C);
-        cudaDeviceSynchronize();
-        // Copy result back to host
-        cudaMemcpy(h_C.data(), d_C, bytes, cudaMemcpyDeviceToHost);
-        
-        // Print first element as a check
-        std::cout << "C[1] = " << h_C[1] << " (expected 0)\n";
-        std::cout << "C[7] = " << h_C[7] << " (expected 21)\n";
-        
+        for (int device = 0; device < device_count; device++) {
+            CUDA_CHECK(cudaSetDevice(device));
+            CUDA_CHECK(cudaMemcpyToSymbol(d_N, &h_N, sizeof(h_N)));
+            CUDA_CHECK(cudaMemset(d_C[device], 0, bytes));
+            vectorAdd<<<BLOCK_SIZE, 1>>>(d_A[device], d_B[device], d_C[device]);
+            CUDA_CHECK(cudaGetLastError());
+            CUDA_CHECK(cudaDeviceSynchronize());
+            CUDA_CHECK(cudaMemcpy(h_C.data(), d_C[device], bytes,
+                                  cudaMemcpyDeviceToHost));
+            std::cout << "GPU " << device << ": C[1] = " << h_C[1]
+                      << ", C[7] = " << h_C[7]
+                      << " (expected 0 or 3, 21)" << std::endl;
+            if ((expect_patched ? h_C[1] != 0
+                                : (h_C[1] != 0 && h_C[1] != 3)) ||
+                h_C[7] != 21)
+                return 1;
+        }
+        std::cout << "Validated all visible GPUs" << std::endl;
         // Sleep for 1 second
         sleep(1);
     }
 
-    // Note: This code will never reach cleanup due to infinite loop
-    cudaFree(d_A);
-    cudaFree(d_B);
-    cudaFree(d_C);
-
-    return 0;
 }
