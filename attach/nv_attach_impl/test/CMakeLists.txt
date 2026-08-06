@@ -26,7 +26,13 @@ if(${ENABLE_EBPF_VERIFIER} AND NOT TARGET Catch2)
     # if not enable verifier, we will use the catch2 from submodule
 endif()
 
-add_dependencies(bpftime_nv_attach_tests Catch2 bpftime_nv_attach_impl ptxpass_core spdlog::spdlog)
+add_dependencies(bpftime_nv_attach_tests Catch2 bpftime_nv_attach_impl
+    ptxpass_core ptxpass_kprobe_entry ptxpass_kretprobe spdlog::spdlog)
+file(GENERATE OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/ptxpass_test_paths.hpp"
+    CONTENT "#define BPFTIME_KPROBE_ENTRY_PASS \"$<TARGET_FILE:ptxpass_kprobe_entry>\"\n#define BPFTIME_KRETPROBE_PASS \"$<TARGET_FILE:ptxpass_kretprobe>\"\n")
+target_include_directories(bpftime_nv_attach_tests PRIVATE
+    "${CMAKE_CURRENT_BINARY_DIR}")
+target_link_libraries(bpftime_nv_attach_tests PRIVATE ${CMAKE_DL_LIBS})
 if(${TEST_LCOV})
     target_link_options(bpftime_nv_attach_tests PRIVATE -lgcov)
     target_link_libraries(bpftime_nv_attach_tests PRIVATE Catch2::Catch2WithMain bpftime_nv_attach_impl ptxpass_core spdlog::spdlog gcov cuda)
