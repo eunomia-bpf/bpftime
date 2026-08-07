@@ -247,6 +247,7 @@ private:
 					const runtime_config &config);
 	int instantiate_bpf_link_handler_at(int id,
 					    const bpf_link_handler &handler,
+					    const runtime_config &config,
 					    bool handle_nv_attach_impl);
 	int instantiate_perf_event_handler_at(
 		int id, const bpf_perf_event_handler &perf_handler);

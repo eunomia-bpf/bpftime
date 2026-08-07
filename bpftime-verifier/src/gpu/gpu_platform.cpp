@@ -1,0 +1,308 @@
+#include "gpu_platform.hpp"
+
+#include "crab_verifier.hpp"
+#include "linux/linux_platform.hpp"
+#include "platform-impl.hpp"
+#include "spec_type_descriptors.hpp"
+
+#include <linux/bpf.h>
+
+#include <array>
+#include <map>
+#include <stdexcept>
+#include <string>
+
+namespace
+{
+
+using bpftime::GpuHelperArgumentSemantics;
+using bpftime::GpuHelperBehavior;
+using bpftime::GpuHelperEffectClass;
+using bpftime::GpuHelperPrototype;
+using bpftime::GpuHelperUniformity;
+
+constexpr ebpf_context_descriptor_t GPU_NO_CONTEXT = { 0, -1, -1, -1 };
+
+constexpr std::array<ebpf_argument_type_t, 5> ARGS_NONE = {
+	EBPF_ARGUMENT_TYPE_DONTCARE, EBPF_ARGUMENT_TYPE_DONTCARE,
+	EBPF_ARGUMENT_TYPE_DONTCARE, EBPF_ARGUMENT_TYPE_DONTCARE,
+	EBPF_ARGUMENT_TYPE_DONTCARE,
+};
+
+constexpr std::array<GpuHelperArgumentSemantics, 5> SEM_NONE = {
+	GpuHelperArgumentSemantics::NONE, GpuHelperArgumentSemantics::NONE,
+	GpuHelperArgumentSemantics::NONE, GpuHelperArgumentSemantics::NONE,
+	GpuHelperArgumentSemantics::NONE,
+};
+
+constexpr std::array<ebpf_argument_type_t, 5> MAP_LOOKUP_ARGS = {
+	EBPF_ARGUMENT_TYPE_PTR_TO_MAP, EBPF_ARGUMENT_TYPE_PTR_TO_MAP_KEY,
+	EBPF_ARGUMENT_TYPE_DONTCARE,   EBPF_ARGUMENT_TYPE_DONTCARE,
+	EBPF_ARGUMENT_TYPE_DONTCARE,
+};
+
+constexpr std::array<ebpf_argument_type_t, 5> MAP_UPDATE_ARGS = {
+	EBPF_ARGUMENT_TYPE_PTR_TO_MAP,	     EBPF_ARGUMENT_TYPE_PTR_TO_MAP_KEY,
+	EBPF_ARGUMENT_TYPE_PTR_TO_MAP_VALUE, EBPF_ARGUMENT_TYPE_ANYTHING,
+	EBPF_ARGUMENT_TYPE_DONTCARE,
+};
+
+constexpr std::array<ebpf_argument_type_t, 5> MAP_DELETE_ARGS = {
+	EBPF_ARGUMENT_TYPE_PTR_TO_MAP, EBPF_ARGUMENT_TYPE_PTR_TO_MAP_KEY,
+	EBPF_ARGUMENT_TYPE_DONTCARE,   EBPF_ARGUMENT_TYPE_DONTCARE,
+	EBPF_ARGUMENT_TYPE_DONTCARE,
+};
+
+constexpr std::array<ebpf_argument_type_t, 5> TRACE_PRINTK_ARGS = {
+	EBPF_ARGUMENT_TYPE_PTR_TO_READABLE_MEM,
+	EBPF_ARGUMENT_TYPE_CONST_SIZE,
+	EBPF_ARGUMENT_TYPE_DONTCARE,
+	EBPF_ARGUMENT_TYPE_DONTCARE,
+	EBPF_ARGUMENT_TYPE_DONTCARE,
+};
+
+constexpr std::array<ebpf_argument_type_t, 5> GPU_PUTS_ARGS = {
+	EBPF_ARGUMENT_TYPE_PTR_TO_READABLE_MEM,
+	EBPF_ARGUMENT_TYPE_DONTCARE,
+	EBPF_ARGUMENT_TYPE_DONTCARE,
+	EBPF_ARGUMENT_TYPE_DONTCARE,
+	EBPF_ARGUMENT_TYPE_DONTCARE,
+};
+
+constexpr std::array<ebpf_argument_type_t, 5> GPU_PERF_EVENT_OUTPUT_ARGS = {
+	EBPF_ARGUMENT_TYPE_ANYTHING,
+	EBPF_ARGUMENT_TYPE_PTR_TO_MAP,
+	EBPF_ARGUMENT_TYPE_ANYTHING,
+	EBPF_ARGUMENT_TYPE_PTR_TO_READABLE_MEM,
+	EBPF_ARGUMENT_TYPE_CONST_SIZE_OR_ZERO,
+};
+
+constexpr std::array<GpuHelperArgumentSemantics, 5> GPU_TRIPLE_U64_OUT = {
+	GpuHelperArgumentSemantics::PTR_TO_U64_OUT,
+	GpuHelperArgumentSemantics::PTR_TO_U64_OUT,
+	GpuHelperArgumentSemantics::PTR_TO_U64_OUT,
+	GpuHelperArgumentSemantics::NONE,
+	GpuHelperArgumentSemantics::NONE,
+};
+
+GpuHelperPrototype
+make_helper(const char *name, ebpf_return_type_t return_type,
+	    std::array<ebpf_argument_type_t, 5> prevail_argument_types,
+	    GpuHelperUniformity return_uniformity,
+	    std::array<GpuHelperArgumentSemantics, 5> semantic_argument_types =
+		    SEM_NONE,
+	    GpuHelperEffectClass effect_class = GpuHelperEffectClass::NONE,
+	    GpuHelperBehavior behavior = GpuHelperBehavior::GENERIC)
+{
+	return GpuHelperPrototype{
+		.name = name,
+		.return_type = return_type,
+		.prevail_argument_types = prevail_argument_types,
+		.return_uniformity = return_uniformity,
+		.semantic_argument_types = semantic_argument_types,
+		.effect_class = effect_class,
+		.behavior = behavior,
+	};
+}
+
+const std::map<int32_t, GpuHelperPrototype> &helper_table()
+{
+	static const std::map<int32_t, GpuHelperPrototype> table = {
+		{ 1, make_helper("bpf_map_lookup_elem",
+				 EBPF_RETURN_TYPE_PTR_TO_MAP_VALUE_OR_NULL,
+				 MAP_LOOKUP_ARGS, GpuHelperUniformity::UNIFORM,
+				 SEM_NONE, GpuHelperEffectClass::NONE,
+				 GpuHelperBehavior::MAP_LOOKUP) },
+		{ 2,
+		  make_helper("bpf_map_update_elem", EBPF_RETURN_TYPE_INTEGER,
+			      MAP_UPDATE_ARGS, GpuHelperUniformity::VARYING,
+			      SEM_NONE, GpuHelperEffectClass::NONE,
+			      GpuHelperBehavior::MAP_UPDATE) },
+		{ 3,
+		  make_helper("bpf_map_delete_elem", EBPF_RETURN_TYPE_INTEGER,
+			      MAP_DELETE_ARGS, GpuHelperUniformity::VARYING,
+			      SEM_NONE, GpuHelperEffectClass::NONE,
+			      GpuHelperBehavior::MAP_DELETE) },
+		{ 6, make_helper("trace_printk", EBPF_RETURN_TYPE_INTEGER,
+				 TRACE_PRINTK_ARGS,
+				 GpuHelperUniformity::VARYING) },
+		{ 14, make_helper("bpf_get_current_pid_tgid",
+				  EBPF_RETURN_TYPE_INTEGER, ARGS_NONE,
+				  GpuHelperUniformity::UNIFORM) },
+		{ 25, make_helper("perf_event_output", EBPF_RETURN_TYPE_INTEGER,
+				  GPU_PERF_EVENT_OUTPUT_ARGS,
+				  GpuHelperUniformity::VARYING) },
+		{ 501,
+		  make_helper("ebpf_puts", EBPF_RETURN_TYPE_INTEGER,
+			      GPU_PUTS_ARGS, GpuHelperUniformity::UNIFORM,
+			      SEM_NONE, GpuHelperEffectClass::PROHIBITED) },
+		{ 502,
+		  make_helper("bpf_get_globaltimer", EBPF_RETURN_TYPE_INTEGER,
+			      ARGS_NONE, GpuHelperUniformity::UNIFORM) },
+		{ 503,
+		  make_helper("bpf_get_block_idx", EBPF_RETURN_TYPE_INTEGER,
+			      ARGS_NONE, GpuHelperUniformity::UNIFORM,
+			      GPU_TRIPLE_U64_OUT) },
+		{ 504,
+		  make_helper("bpf_get_block_dim", EBPF_RETURN_TYPE_INTEGER,
+			      ARGS_NONE, GpuHelperUniformity::UNIFORM,
+			      GPU_TRIPLE_U64_OUT) },
+		{ 505,
+		  make_helper("bpf_get_thread_idx", EBPF_RETURN_TYPE_INTEGER,
+			      ARGS_NONE, GpuHelperUniformity::VARYING,
+			      GPU_TRIPLE_U64_OUT) },
+		{ 506,
+		  make_helper("bpf_gpu_membar", EBPF_RETURN_TYPE_INTEGER,
+			      ARGS_NONE, GpuHelperUniformity::UNIFORM, SEM_NONE,
+			      GpuHelperEffectClass::PROHIBITED) },
+		{ 507,
+		  make_helper("bpf_cuda_exit",
+			      EBPF_RETURN_TYPE_INTEGER_OR_NO_RETURN_IF_SUCCEED,
+			      ARGS_NONE, GpuHelperUniformity::UNIFORM) },
+		{ 508, make_helper("bpf_get_grid_dim", EBPF_RETURN_TYPE_INTEGER,
+				   ARGS_NONE, GpuHelperUniformity::UNIFORM,
+				   GPU_TRIPLE_U64_OUT) },
+		{ 509, make_helper("bpf_get_sm_id", EBPF_RETURN_TYPE_INTEGER,
+				   ARGS_NONE, GpuHelperUniformity::VARYING) },
+		{ 510, make_helper("bpf_get_warp_id", EBPF_RETURN_TYPE_INTEGER,
+				   ARGS_NONE, GpuHelperUniformity::UNIFORM) },
+		{ 511, make_helper("bpf_get_lane_id", EBPF_RETURN_TYPE_INTEGER,
+				   ARGS_NONE, GpuHelperUniformity::VARYING) },
+	};
+	return table;
+}
+
+EbpfHelperPrototype to_prevail_prototype(const GpuHelperPrototype &helper)
+{
+	EbpfHelperPrototype prototype{
+		.name = helper.name,
+		.return_type = helper.return_type,
+		.argument_type = {
+			helper.prevail_argument_types[0],
+			helper.prevail_argument_types[1],
+			helper.prevail_argument_types[2],
+			helper.prevail_argument_types[3],
+			helper.prevail_argument_types[4],
+		},
+		.reallocate_packet = false,
+		.context_descriptor = nullptr,
+	};
+	return prototype;
+}
+
+EbpfProgramType gpu_get_program_type(const std::string &section,
+				     const std::string &)
+{
+	if (bpftime::is_gpu_section(section)) {
+		auto type = g_ebpf_platform_linux.get_program_type(
+			"kprobe/__gpu__", "");
+		type.name = "bpftime_gpu";
+		type.context_descriptor = &GPU_NO_CONTEXT;
+		return type;
+	}
+	throw std::runtime_error("Unsupported GPU section: " + section);
+}
+
+EbpfHelperPrototype gpu_get_helper_prototype(int32_t helper_id)
+{
+	if (const auto *helper =
+		    bpftime::find_gpu_helper_prototype(helper_id)) {
+		return to_prevail_prototype(*helper);
+	}
+	throw std::runtime_error("Unusable GPU helper: " +
+				 std::to_string(helper_id));
+}
+
+bool gpu_is_helper_usable(int32_t helper_id)
+{
+	return bpftime::find_gpu_helper_prototype(helper_id) != nullptr;
+}
+
+EbpfMapDescriptor &gpu_get_map_descriptor(int fd)
+{
+	for (auto &descriptor : global_program_info->map_descriptors) {
+		if (descriptor.original_fd == fd) {
+			return descriptor;
+		}
+	}
+	throw std::runtime_error("Invalid map fd: " + std::to_string(fd));
+}
+
+EbpfMapType gpu_get_map_type(uint32_t platform_specific_type)
+{
+	if (auto mapped =
+		    bpftime::try_get_gpu_map_type(platform_specific_type)) {
+		return *mapped;
+	}
+	if (platform_specific_type >= 1500 && platform_specific_type < 1600) {
+		throw std::runtime_error(
+			"Unsupported GPU map type: " +
+			std::to_string(platform_specific_type));
+	}
+	return g_ebpf_platform_linux.get_map_type(platform_specific_type);
+}
+
+void gpu_resolve_inner_map_references(std::vector<EbpfMapDescriptor> &maps)
+{
+	g_ebpf_platform_linux.resolve_inner_map_references(maps);
+}
+
+} // namespace
+
+namespace bpftime
+{
+
+bool is_gpu_section(std::string_view section_name)
+{
+	return section_name.find("cuda__") != std::string_view::npos ||
+	       section_name.find("__memcapture") != std::string_view::npos;
+}
+
+std::optional<EbpfMapType> try_get_gpu_map_type(uint32_t platform_specific_type)
+{
+	switch (platform_specific_type) {
+	case 1501:
+		return g_ebpf_platform_linux.get_map_type(BPF_MAP_TYPE_HASH);
+	case 1502:
+	case 1503:
+	case 1504:
+	case 1512:
+	case 1513:
+		return g_ebpf_platform_linux.get_map_type(BPF_MAP_TYPE_ARRAY);
+	case 1527:
+		return g_ebpf_platform_linux.get_map_type(BPF_MAP_TYPE_RINGBUF);
+	default:
+		return std::nullopt;
+	}
+}
+
+const GpuHelperPrototype *find_gpu_helper_prototype(int32_t helper_id)
+{
+	const auto &helpers = helper_table();
+	if (auto it = helpers.find(helper_id); it != helpers.end()) {
+		return &it->second;
+	}
+	return nullptr;
+}
+
+GpuHelperPrototype get_gpu_helper_effects(int32_t helper_id)
+{
+	if (const auto *helper = find_gpu_helper_prototype(helper_id)) {
+		return *helper;
+	}
+	throw std::runtime_error("Missing GPU helper effects: " +
+				 std::to_string(helper_id));
+}
+
+ebpf_platform_t gpu_platform_spec{
+	.get_program_type = &gpu_get_program_type,
+	.get_helper_prototype = &gpu_get_helper_prototype,
+	.is_helper_usable = &gpu_is_helper_usable,
+	.map_record_size = g_ebpf_platform_linux.map_record_size,
+	.parse_maps_section = g_ebpf_platform_linux.parse_maps_section,
+	.get_map_descriptor = &gpu_get_map_descriptor,
+	.get_map_type = &gpu_get_map_type,
+	.resolve_inner_map_references = &gpu_resolve_inner_map_references,
+};
+
+} // namespace bpftime
