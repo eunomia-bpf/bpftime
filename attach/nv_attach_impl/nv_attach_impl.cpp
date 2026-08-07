@@ -8,6 +8,7 @@
 #include "nv_attach_private_data.hpp"
 #include "nv_attach_utils.hpp"
 #include "ptx_compiler/ptx_compiler.hpp"
+#include "ptx_version_utils.hpp"
 #include "nv_elf_introspect.hpp"
 // #include "spdlog/common.h"
 #include "spdlog/spdlog.h"
@@ -21,6 +22,7 @@
 #include <boost/process/io.hpp>
 #include <boost/process/pipe.hpp>
 #include <boost/process/start_dir.hpp>
+#include <algorithm>
 #include <chrono>
 #include <cstdlib>
 #include <cstring>
@@ -614,6 +616,28 @@ std::optional<CUfunction> nv_attach_impl::find_patched_kernel_function(
 	return itr->second;
 }
 
+std::optional<CUfunction> nv_attach_impl::find_single_patched_kernel_function()
+	const
+{
+	std::lock_guard<std::mutex> guard(cuda_symbol_map_mutex);
+	if (patched_kernel_by_name.empty())
+		return std::nullopt;
+	CUfunction only = nullptr;
+	for (const auto &[_, func] : patched_kernel_by_name) {
+		if (func == nullptr)
+			continue;
+		if (only == nullptr) {
+			only = func;
+			continue;
+		}
+		if (only != func)
+			return std::nullopt;
+	}
+	if (only == nullptr)
+		return std::nullopt;
+	return only;
+}
+
 void nv_attach_impl::record_original_cufunction_name(
 	CUfunction function, const std::string &kernel_name)
 {
@@ -1168,29 +1192,68 @@ int nv_attach_impl::run_attach_entry_on_gpu(int attach_id, int run_count,
 		NVPTXCOMPILER_SAFE_CALL(
 			nvPTXCompilerGetVersion(&major_ver, &minor_ver));
 		SPDLOG_INFO("PTX compiler version {}.{}", major_ver, minor_ver);
-		nvPTXCompilerHandle compiler = nullptr;
-		NVPTXCOMPILER_SAFE_CALL(nvPTXCompilerCreate(
-			&compiler, (size_t)ptx.size(), ptx.c_str()));
+		// The bundled trampoline and the generated program may declare
+		// a newer PTX ISA than this nvPTXCompiler accepts.
+		ptx = ptx_version::clamp_to(std::move(ptx), major_ver,
+					    minor_ver);
+
 		std::string gpu_name_opt = "--gpu-name=" + sm_arch;
 		const char *compile_options[] = { gpu_name_opt.c_str(),
 						  "--verbose" };
+		nvPTXCompilerHandle compiler = nullptr;
+		NVPTXCOMPILER_SAFE_CALL(nvPTXCompilerCreate(
+			&compiler, (size_t)ptx.size(), ptx.c_str()));
+
+		auto read_error_log = [&]() -> std::string {
+			size_t error_size = 0;
+			if (nvPTXCompilerGetErrorLogSize(compiler,
+							 &error_size) !=
+				    NVPTXCOMPILE_SUCCESS ||
+			    error_size == 0)
+				return {};
+			std::string error_log(error_size + 1, '\0');
+			if (nvPTXCompilerGetErrorLog(compiler,
+						     error_log.data()) !=
+			    NVPTXCOMPILE_SUCCESS)
+				return {};
+			return error_log;
+		};
+
 		auto status = nvPTXCompilerCompile(
 			compiler, std::size(compile_options), compile_options);
 		if (status != NVPTXCOMPILE_SUCCESS) {
-			size_t error_size;
-
-			NVPTXCOMPILER_SAFE_CALL(nvPTXCompilerGetErrorLogSize(
-				compiler, &error_size));
-
-			if (error_size != 0) {
-				std::string error_log(error_size + 1, '\0');
-				NVPTXCOMPILER_SAFE_CALL(
-					nvPTXCompilerGetErrorLog(
-						compiler, error_log.data()));
-				SPDLOG_ERROR("Unable to compile: {}",
-					     error_log);
+			auto error_log = read_error_log();
+			SPDLOG_ERROR("Unable to compile: {}", error_log);
+			auto supported =
+				ptx_version::supported_version_from_error_log(
+					error_log);
+			if (!supported) {
+				nvPTXCompilerDestroy(&compiler);
+				return -1;
 			}
-			return -1;
+			auto rewritten = ptx_version::rewrite(ptx, *supported);
+			if (rewritten == ptx) {
+				nvPTXCompilerDestroy(&compiler);
+				return -1;
+			}
+			SPDLOG_WARN(
+				"Retrying PTX compile with downgraded .version {} from compiler diagnostics",
+				*supported);
+			ptx = std::move(rewritten);
+			nvPTXCompilerDestroy(&compiler);
+			compiler = nullptr;
+			NVPTXCOMPILER_SAFE_CALL(nvPTXCompilerCreate(
+				&compiler, (size_t)ptx.size(), ptx.c_str()));
+			status = nvPTXCompilerCompile(compiler,
+						      std::size(compile_options),
+						      compile_options);
+			if (status != NVPTXCOMPILE_SUCCESS) {
+				SPDLOG_ERROR(
+					"Unable to compile after PTX version rewrite: {}",
+					read_error_log());
+				nvPTXCompilerDestroy(&compiler);
+				return -1;
+			}
 		}
 		size_t compiled_size;
 		NVPTXCOMPILER_SAFE_CALL(nvPTXCompilerGetCompiledProgramSize(
@@ -1205,6 +1268,7 @@ int nv_attach_impl::run_attach_entry_on_gpu(int attach_id, int run_count,
 		NVPTXCOMPILER_SAFE_CALL(
 			nvPTXCompilerGetInfoLog(compiler, info_log.data()));
 		SPDLOG_INFO("{}", info_log);
+		nvPTXCompilerDestroy(&compiler);
 	}
 	SPDLOG_INFO("Compiled program size: {}", output_elf.size());
 	// Load and run the program
@@ -1661,6 +1725,18 @@ void nv_attach_impl::prefill_patched_kernel_functions_from_loaded_fatbins()
 	if (fatbin_records.empty())
 		return;
 
+	// Attach specs may name a basic-block probe (`<kernel>__BB<n>[__reg...]`)
+	// while the module only exports the base kernel entry.
+	auto strip_bb_suffix =
+		[](const std::string &kernel_name) -> std::optional<std::string> {
+		auto bb_pos = kernel_name.find("__BB");
+		if (bb_pos == std::string::npos || bb_pos == 0)
+			return std::nullopt;
+		return kernel_name.substr(0, bb_pos);
+	};
+
+	std::size_t mapped = 0;
+
 	for (const auto &rec_uptr : fatbin_records) {
 		auto *rec = rec_uptr.get();
 		if (rec == nullptr)
@@ -1673,20 +1749,30 @@ void nv_attach_impl::prefill_patched_kernel_functions_from_loaded_fatbins()
 		for (const auto &ptx : rec->ptxs) {
 			for (const auto &kernel : kernels) {
 				CUfunction func = nullptr;
+				auto entry = kernel;
 				auto err = cuModuleGetFunction(
-					&func, ptx->module_ptr, kernel.c_str());
-				if (err == CUDA_SUCCESS && func != nullptr) {
-					record_patched_kernel_function(kernel,
-								       func);
-					record_original_cufunction_name(func,
-									kernel);
-					SPDLOG_DEBUG(
-						"Prefilled patched CUDA kernel {}",
-						kernel);
+					&func, ptx->module_ptr, entry.c_str());
+				if (err == CUDA_ERROR_NOT_FOUND) {
+					auto base = strip_bb_suffix(kernel);
+					if (!base)
+						continue;
+					entry = std::move(*base);
+					err = cuModuleGetFunction(&func,
+								  ptx->module_ptr,
+								  entry.c_str());
 				}
+				if (err != CUDA_SUCCESS || func == nullptr)
+					continue;
+				record_patched_kernel_function(entry, func);
+				record_original_cufunction_name(func, entry);
+				SPDLOG_DEBUG("Prefilled patched CUDA kernel {}",
+					     entry);
+				mapped++;
 			}
 		}
 	}
+	SPDLOG_INFO("nv_attach_impl: prefilled {} patched kernel mapping(s)",
+		    mapped);
 }
 
 namespace
