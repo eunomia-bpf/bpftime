@@ -11,6 +11,8 @@
 #include <boost/interprocess/shared_memory_object.hpp>
 #include <cerrno>
 #include <cstdlib>
+#include <fstream>
+#include <iterator>
 #include <string>
 #include <sys/wait.h>
 #include <unistd.h>
@@ -143,6 +145,26 @@ TEST_CASE("Global log level cannot enable default host stdio",
 	REQUIRE(WIFEXITED(result.status));
 	REQUIRE(WEXITSTATUS(result.status) == 1);
 	REQUIRE(result.output.empty());
+}
+
+TEST_CASE("File logger is installed before syscall startup",
+	  "[allocation][syscall_server][logging]")
+{
+	const std::string log_path = "/tmp/bpftime-syscall-startup-" +
+				     std::to_string(getpid()) + ".log";
+	unlink(log_path.c_str());
+	auto result = run_allocation_helper("perf-mmap", "4", "128",
+				    log_path.c_str());
+	std::ifstream log(log_path);
+	std::string contents{ std::istreambuf_iterator<char>(log), {} };
+	unlink(log_path.c_str());
+
+	REQUIRE(WIFEXITED(result.status));
+	REQUIRE(WEXITSTATUS(result.status) == 0);
+	REQUIRE(result.output.empty());
+	REQUIRE(contents.find("Starting syscall server") != std::string::npos);
+	REQUIRE(contents.find("bpftime-syscall-server started") !=
+		std::string::npos);
 }
 
 TEST_CASE("Syscall server preserves the console logger level name",
