@@ -144,7 +144,8 @@ void syscall_context::load_config_from_env()
 
 syscall_context::syscall_context()
 {
-	bpftime_set_logger(std::string{});
+	if (auto *logger = spdlog::default_logger_raw(); logger != nullptr)
+		logger->set_level(spdlog::level::off);
 	init_original_functions();
 	// FIXME: merge this into the runtime config
 	load_config_from_env();

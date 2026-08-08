@@ -25,7 +25,8 @@ struct helper_result {
 
 helper_result run_allocation_helper(const char *mode, const char *memory_mb,
 				    const char *max_fd_count,
-				    const char *log_output)
+				    const char *log_output,
+				    const char *log_level = nullptr)
 {
 	const std::string shm_name = "bpftime-shm-allocation-test-" +
 				     std::string(mode) + "-" +
@@ -44,6 +45,7 @@ helper_result run_allocation_helper(const char *mode, const char *memory_mb,
 		}
 		close(output_pipe[1]);
 		if (unsetenv("BPFTIME_LOG_OUTPUT") != 0 ||
+		    unsetenv("SPDLOG_LEVEL") != 0 ||
 		    unsetenv("BPFTIME_SHM_MEMORY_MB") != 0 ||
 		    unsetenv("BPFTIME_MAX_FD_COUNT") != 0 ||
 		    setenv("HOME", "/proc/bpftime-unwritable-home", 1) != 0 ||
@@ -61,6 +63,9 @@ helper_result run_allocation_helper(const char *mode, const char *memory_mb,
 			_exit(126);
 		if (log_output != nullptr &&
 		    setenv("BPFTIME_LOG_OUTPUT", log_output, 1) != 0)
+			_exit(126);
+		if (log_level != nullptr &&
+		    setenv("SPDLOG_LEVEL", log_level, 1) != 0)
 			_exit(126);
 		execl(BPFTIME_SHM_ALLOCATION_TEST_HELPER,
 		      BPFTIME_SHM_ALLOCATION_TEST_HELPER, mode, nullptr);
@@ -124,6 +129,16 @@ TEST_CASE("Syscall server keeps default logging off host stdio",
 {
 	auto result =
 		run_allocation_helper("startup", "64", "1048576", nullptr);
+	REQUIRE(WIFEXITED(result.status));
+	REQUIRE(WEXITSTATUS(result.status) == 1);
+	REQUIRE(result.output.empty());
+}
+
+TEST_CASE("Syscall server preserves the console logger level name",
+	  "[allocation][syscall_server][logging]")
+{
+	auto result = run_allocation_helper("startup", "64", "1048576",
+					    "console", "stderr=off");
 	REQUIRE(WIFEXITED(result.status));
 	REQUIRE(WEXITSTATUS(result.status) == 1);
 	REQUIRE(result.output.empty());

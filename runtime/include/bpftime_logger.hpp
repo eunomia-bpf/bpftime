@@ -1,7 +1,6 @@
 #include <string>
 #include "spdlog/spdlog.h"
 #include "spdlog/cfg/env.h"
-#include "spdlog/sinks/null_sink.h"
 #include "spdlog/sinks/rotating_file_sink.h"
 #include "spdlog/sinks/stdout_color_sinks.h"
 #include <cstdlib>
@@ -38,25 +37,15 @@ inline std::string expand_user_path(const std::string &input_path)
 
 inline void bpftime_set_logger(const std::string &target) noexcept
 {
-	auto set_quiet_logger = []() noexcept {
-		try {
-			auto sink =
-				std::make_shared<spdlog::sinks::null_sink_mt>();
-			auto logger = std::make_shared<spdlog::logger>(
-				"bpftime_quiet", sink);
+	auto silence_logger = []() noexcept {
+		if (auto *logger = spdlog::default_logger_raw();
+		    logger != nullptr)
 			logger->set_level(spdlog::level::off);
-			logger->set_error_handler([](const std::string &) {});
-			spdlog::set_default_logger(std::move(logger));
-		} catch (...) {
-			if (auto *logger = spdlog::default_logger_raw();
-			    logger != nullptr)
-				logger->set_level(spdlog::level::off);
-		}
 	};
 	try {
 		std::string logger_target = expand_user_path(target);
 		if (logger_target.empty()) {
-			set_quiet_logger();
+			silence_logger();
 			return;
 		}
 
@@ -73,8 +62,10 @@ inline void bpftime_set_logger(const std::string &target) noexcept
 				spdlog::sinks::rotating_file_sink_mt>(
 				logger_target, max_size, max_files);
 		}
-		auto logger = std::make_shared<spdlog::logger>("bpftime_logger",
-							       std::move(sink));
+		auto logger = std::make_shared<spdlog::logger>(
+			logger_target == "console" ? "stderr" :
+						     "bpftime_logger",
+			std::move(sink));
 		std::weak_ptr<spdlog::logger> weak_logger = logger;
 		logger->set_error_handler([weak_logger](const std::string &) {
 			if (auto failed_logger = weak_logger.lock())
@@ -86,7 +77,7 @@ inline void bpftime_set_logger(const std::string &target) noexcept
 
 		spdlog::cfg::load_env_levels();
 	} catch (...) {
-		set_quiet_logger();
+		silence_logger();
 	}
 }
 
