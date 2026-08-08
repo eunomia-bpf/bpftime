@@ -1,6 +1,7 @@
 #include <string>
 #include "spdlog/spdlog.h"
 #include "spdlog/cfg/env.h"
+#include "spdlog/sinks/null_sink.h"
 #include "spdlog/sinks/rotating_file_sink.h"
 #include "spdlog/sinks/stdout_color_sinks.h"
 #include <cstdlib>
@@ -38,16 +39,27 @@ inline std::string expand_user_path(const std::string &input_path)
 inline void bpftime_set_logger(const std::string &target) noexcept
 {
 	auto silence_logger = []() noexcept {
-		if (auto *logger = spdlog::default_logger_raw();
-		    logger != nullptr)
+		try {
+			auto sink =
+				std::make_shared<spdlog::sinks::null_sink_mt>();
+			auto logger = std::make_shared<spdlog::logger>(
+				"bpftime_quiet", std::move(sink));
 			logger->set_level(spdlog::level::off);
+			spdlog::set_default_logger(std::move(logger));
+		} catch (...) {
+			try {
+				if (auto *logger = spdlog::default_logger_raw();
+				    logger != nullptr)
+					logger->set_level(spdlog::level::off);
+			} catch (...) {
+			}
+		}
 	};
+	silence_logger();
 	try {
 		std::string logger_target = expand_user_path(target);
-		if (logger_target.empty()) {
-			silence_logger();
+		if (logger_target.empty())
 			return;
-		}
 
 		std::shared_ptr<spdlog::sinks::sink> sink;
 		if (logger_target == "console") {
@@ -87,7 +99,8 @@ inline void bpftime_set_logger(const std::string &target) noexcept
 inline void bpftime_logger_flush() noexcept
 {
 	try {
-		if (auto logger = spdlog::default_logger(); logger != nullptr)
+		if (auto logger = spdlog::default_logger();
+		    logger != nullptr && logger->level() != spdlog::level::off)
 			logger->flush();
 	} catch (...) {
 	}

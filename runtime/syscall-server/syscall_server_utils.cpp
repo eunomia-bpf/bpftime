@@ -14,9 +14,7 @@
 #include <filesystem>
 #include <memory>
 #include <mutex>
-#include <spdlog/cfg/env.h>
 #include <spdlog/spdlog.h>
-#include "bpftime_logger.hpp"
 #include <bpftime_shm.hpp>
 #include <string>
 #include <system_error>
@@ -42,10 +40,8 @@ static const std::string KRETPROBE_BIT_FILE_NAME =
 void start_up(syscall_context &ctx)
 {
 	std::call_once(g_startup_once, [&ctx]() {
-		auto runtime_config = construct_runtime_config_from_env();
-		bpftime_set_logger(
-			std::string(runtime_config.get_logger_output_path()));
 		SPDLOG_INFO("Starting syscall server..");
+		auto runtime_config = construct_runtime_config_from_env();
 		SPDLOG_INFO("Initialize syscall server");
 
 		bpftime_initialize_global_shm(

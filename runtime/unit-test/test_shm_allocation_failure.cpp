@@ -104,6 +104,7 @@ TEST_CASE("Syscall server exits cleanly when startup shared memory is too small"
 		run_allocation_helper("startup", "64", "1048576", "console");
 	REQUIRE(WIFEXITED(result.status));
 	REQUIRE(WEXITSTATUS(result.status) == 1);
+	REQUIRE_FALSE(result.output.empty());
 }
 
 TEST_CASE("Syscall server perf mmap reports shared memory exhaustion",
@@ -129,6 +130,16 @@ TEST_CASE("Syscall server keeps default logging off host stdio",
 {
 	auto result =
 		run_allocation_helper("startup", "64", "1048576", nullptr);
+	REQUIRE(WIFEXITED(result.status));
+	REQUIRE(WEXITSTATUS(result.status) == 1);
+	REQUIRE(result.output.empty());
+}
+
+TEST_CASE("Global log level cannot enable default host stdio",
+	  "[allocation][syscall_server][logging]")
+{
+	auto result = run_allocation_helper("startup", "64", "1048576", nullptr,
+					    "info");
 	REQUIRE(WIFEXITED(result.status));
 	REQUIRE(WEXITSTATUS(result.status) == 1);
 	REQUIRE(result.output.empty());
