@@ -144,6 +144,7 @@ void syscall_context::load_config_from_env()
 
 syscall_context::syscall_context()
 {
+	bpftime_set_logger(std::string{});
 	init_original_functions();
 	// FIXME: merge this into the runtime config
 	load_config_from_env();
