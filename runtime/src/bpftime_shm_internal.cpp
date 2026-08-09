@@ -1063,8 +1063,9 @@ bool bpftime_shm::register_cuda_host_memory()
 	prefault_range(base_addr, seg_size);
 
 	// 2. Register with CUDA
-	cudaError_t err =
-		cudaHostRegister(base_addr, seg_size, cudaHostRegisterMapped);
+	cudaError_t err = cudaHostRegister(
+		base_addr, seg_size,
+		cudaHostRegisterMapped | cudaHostRegisterPortable);
 	if (err != cudaSuccess) {
 		SPDLOG_ERROR("cudaHostRegister() failed: {}",
 			     cudaGetErrorString(err));
