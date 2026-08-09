@@ -76,6 +76,98 @@ TEST_CASE("add_bpf_link rejects unsupported attach types")
 	REQUIRE_FALSE(shm.is_exist_fake_fd(7));
 }
 
+TEST_CASE("add_bpf_link rejects malformed uprobe_multi args")
+{
+	bpftime_shm shm("BPFTIME_TEST_SHM_MALFORMED_UPROBE_MULTI_LINK",
+			shm_open_type::SHM_REMOVE_AND_CREATE);
+	REQUIRE(shm.add_bpf_prog(
+			4, (const ebpf_inst *)bpf_add_mem_64_bit_minimal, 4,
+			"test_prog", BPF_PROG_TYPE_SOCKET_FILTER) >= 0);
+	const char path[] = "./victim";
+	unsigned long offsets[] = { 0x123 };
+
+	auto make_args = [&]() {
+		bpf_link_create_args args{};
+		args.prog_fd = 4;
+		args.attach_type = bpftime::BPF_TRACE_UPROBE_MULTI;
+		args.uprobe_multi.path = (uintptr_t)path;
+		args.uprobe_multi.offsets = (uintptr_t)offsets;
+		args.uprobe_multi.cnt = 1;
+		return args;
+	};
+
+	auto args = make_args();
+	args.uprobe_multi.cnt = 0;
+	errno = 0;
+	REQUIRE(shm.add_bpf_link(7, &args) == -1);
+	REQUIRE(errno == EINVAL);
+
+	args = make_args();
+	args.uprobe_multi.path = 0;
+	errno = 0;
+	REQUIRE(shm.add_bpf_link(7, &args) == -1);
+	REQUIRE(errno == EINVAL);
+
+	args = make_args();
+	args.uprobe_multi.offsets = 0;
+	errno = 0;
+	REQUIRE(shm.add_bpf_link(7, &args) == -1);
+	REQUIRE(errno == EINVAL);
+
+	args = make_args();
+	args.uprobe_multi.flags = bpftime::BPF_F_UPROBE_MULTI_RETURN << 1;
+	errno = 0;
+	REQUIRE(shm.add_bpf_link(7, &args) == -1);
+	REQUIRE(errno == EINVAL);
+	REQUIRE_FALSE(shm.is_exist_fake_fd(7));
+}
+
+TEST_CASE("Test uprobe_multi link shm json import/export")
+{
+	bpftime_shm shm("BPFTIME_TEST_SHM_JSON_UPROBE_MULTI",
+			shm_open_type::SHM_REMOVE_AND_CREATE);
+	REQUIRE(shm.add_bpf_prog(
+			4, (const ebpf_inst *)bpf_add_mem_64_bit_minimal, 4,
+			"test_prog", BPF_PROG_TYPE_SOCKET_FILTER) >= 0);
+	const char path[] = "./victim";
+	unsigned long offsets[] = { 0x123, 0x456 };
+	unsigned long ref_ctr_offsets[] = { 0, 0 };
+	uint64_t cookies[] = { 7, 0 };
+	bpf_link_create_args args{};
+	args.prog_fd = 4;
+	args.attach_type = bpftime::BPF_TRACE_UPROBE_MULTI;
+	args.uprobe_multi.path = (uintptr_t)path;
+	args.uprobe_multi.offsets = (uintptr_t)offsets;
+	args.uprobe_multi.ref_ctr_offsets = (uintptr_t)ref_ctr_offsets;
+	args.uprobe_multi.cookies = (uintptr_t)cookies;
+	args.uprobe_multi.cnt = 2;
+	args.uprobe_multi.flags = bpftime::BPF_F_UPROBE_MULTI_RETURN;
+	args.uprobe_multi.pid = 123;
+	REQUIRE(shm.add_bpf_link(7, &args) >= 0);
+
+	const char *filename = "/tmp/bpftime_test_shm_json_uprobe_multi.json";
+	REQUIRE(bpftime_export_shm_to_json(shm, filename) == 0);
+
+	bpftime_shm shm2("BPFTIME_TEST_SHM_JSON_UPROBE_MULTI_IMPORT",
+			 shm_open_type::SHM_REMOVE_AND_CREATE);
+	REQUIRE(bpftime_import_shm_from_json(shm2, filename) == 0);
+	REQUIRE(shm2.is_exist_fake_fd(7));
+
+	const auto &handler = shm2.get_handler(7);
+	REQUIRE(std::holds_alternative<bpf_link_handler>(handler));
+	const auto &link = std::get<bpf_link_handler>(handler);
+	REQUIRE(link.link_attach_type == bpftime::BPF_TRACE_UPROBE_MULTI);
+	const auto &data = std::get<uprobe_multi_link_data>(link.data);
+	REQUIRE(std::string(data.path.c_str()) == path);
+	REQUIRE(data.flags == bpftime::BPF_F_UPROBE_MULTI_RETURN);
+	REQUIRE(data.pid == 123);
+	REQUIRE(data.entries.size() == 2);
+	REQUIRE(data.entries[0].offset == offsets[0]);
+	REQUIRE(data.entries[0].cookie == cookies[0]);
+	REQUIRE(data.entries[1].offset == offsets[1]);
+	REQUIRE_FALSE(data.entries[1].cookie.has_value());
+}
+
 TEST_CASE("Test bpftime shm json import/export")
 {
 	bpftime_shm shm(SHM_NAME, shm_open_type::SHM_REMOVE_AND_CREATE);

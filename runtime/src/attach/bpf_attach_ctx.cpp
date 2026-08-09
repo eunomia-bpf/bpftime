@@ -288,7 +288,7 @@ int bpf_attach_ctx::instantiate_handler_at(const handler_manager *manager,
 			    ret.has_value()) {
 				instantiated_attach_links[id] = ret.value();
 			} else {
-				SPDLOG_ERROR(
+				SPDLOG_DEBUG(
 					"Unable to instantiate link handler {}",
 					id);
 				return -EINVAL;

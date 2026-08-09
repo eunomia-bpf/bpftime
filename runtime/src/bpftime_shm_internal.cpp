@@ -583,6 +583,24 @@ int bpftime_shm::add_bpf_link(int fd, struct bpf_link_create_args *args)
 		errno = EOPNOTSUPP;
 		return -1;
 	}
+	if (args->attach_type == bpftime::BPF_TRACE_UPROBE_MULTI) {
+		const auto &opts = args->uprobe_multi;
+		if (args->flags != 0 ||
+		    (opts.flags & ~bpftime::BPF_F_UPROBE_MULTI_RETURN) != 0) {
+			SPDLOG_DEBUG(
+				"add_bpf_link: unsupported uprobe_multi flags {}, link flags {}",
+				opts.flags, args->flags);
+			errno = EINVAL;
+			return -1;
+		}
+		if (opts.cnt == 0 || opts.path == 0 || opts.offsets == 0) {
+			SPDLOG_DEBUG(
+				"add_bpf_link: invalid uprobe_multi args path={}, offsets={}, cnt={}",
+				opts.path, opts.offsets, opts.cnt);
+			errno = EINVAL;
+			return -1;
+		}
+	}
 	// For perf-event links (uprobe/kprobe/tracepoint) the target must be a
 	// valid perf-event handler fd, matching the kernel's BPF_LINK_CREATE
 	// validation. Without this a stale/non-perf target_fd would be silently
