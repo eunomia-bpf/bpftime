@@ -57,6 +57,11 @@ int main(int argc, char **argv)
 	struct kernel_trace_bpf *skel = NULL;
 	int err = 0;
 
+	// CI runs redirect stdout/stderr to files; force flushing so expected
+	// strings (e.g., "total events:") are visible without waiting for exit.
+	setvbuf(stdout, NULL, _IONBF, 0);
+	setvbuf(stderr, NULL, _IONBF, 0);
+
 	libbpf_set_print(libbpf_print_fn);
 	signal(SIGINT, sig_handler);
 	signal(SIGTERM, sig_handler);

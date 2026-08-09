@@ -29,7 +29,6 @@ endif()
 
 if(${BPFTIME_LLVM_JIT})
   add_dependencies(bpftime-agent bpftime_llvm_vm llvmbpf_vm)
-  target_link_options(bpftime-agent PUBLIC "-Wl,--whole-archive" "$<TARGET_FILE:bpftime_llvm_vm>" "-Wl,--no-whole-archive")
   target_link_libraries(bpftime-agent PUBLIC bpftime_llvm_vm)
   # Statically embed the compat_llvm constructor TU to guarantee VM factory registration in LD_PRELOAD context
   target_sources(bpftime-agent PRIVATE $<TARGET_OBJECTS:bpftime_llvm_vm_obj>)
@@ -80,10 +79,11 @@ else()
     ${FRIDA_UPROBE_ATTACH_IMPL_INCLUDE}
 
   )
-  target_link_libraries(bpftime-agent
-    ${FRIDA_GUM_INSTALL_DIR}/libfrida-gum.a
-    runtime
-    -lpthread
+	target_link_libraries(bpftime-agent
+		PUBLIC
+		${FRIDA_GUM_INSTALL_DIR}/libfrida-gum.a
+		runtime
+		-lpthread
     -lm
     -ldl
     spdlog::spdlog

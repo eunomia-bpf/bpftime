@@ -15,6 +15,7 @@
 #include "bpftime_shm.hpp"
 #include <handler/handler_manager.hpp>
 #include <optional>
+#include <cstdint>
 
 #ifdef BPFTIME_ENABLE_CUDA_ATTACH
 namespace bpftime
@@ -28,6 +29,17 @@ struct CommSharedMem;
 
 namespace bpftime
 {
+
+static constexpr std::uint64_t BPFTIME_EPOCH_SEQ_UNSTABLE = UINT64_MAX;
+static constexpr std::uint64_t BPFTIME_EPOCH_SEQ_MISSING = UINT64_MAX - 1;
+
+// Shared-memory global tracing session version.
+// Use epoch_seq as a simple seqlock:
+// - odd  : server is updating/resetting handlers
+// - even : stable; session_id = epoch_seq / 2
+struct bpftime_global_epoch_state {
+	std::uint64_t epoch_seq = 0;
+};
 
 using syscall_pid_set_allocator = boost::interprocess::allocator<
 	int, boost::interprocess::managed_shared_memory::segment_manager>;
@@ -56,15 +68,18 @@ class bpftime_shm {
 	syscall_pid_set *syscall_installed_pids = nullptr;
 
 	// Configuration for the agent. e.g, which helpers are enabled
-	struct bpftime::agent_config *agent_config = nullptr;
+	struct bpftime::runtime_config *runtime_config = nullptr;
 
 	// Record which pids are injected by agent
 	alive_agent_pids *injected_pids;
 
+	bpftime_global_epoch_state *epoch_state = nullptr;
+
 	// local agent config can be used for test or local process
-	std::optional<struct agent_config> local_agent_config;
+	std::optional<struct runtime_config> local_runtime_config;
 #ifdef BPFTIME_ENABLE_CUDA_ATTACH
 	cuda::CommSharedMem *cuda_comm_shared_mem = nullptr;
+	bool cuda_host_memory_registered = false;
 #endif
 
 
@@ -90,9 +105,9 @@ class bpftime_shm {
 		mock_setter = fn;
 	}
 	// Get the configuration object
-	const struct agent_config &get_agent_config();
+	const struct runtime_config &get_runtime_config();
 	// Set the configuration object
-	void set_agent_config(struct agent_config &&config);
+	void set_runtime_config(struct runtime_config &&config);
 	// Check whether a certain pid was already equipped with syscall tracer
 	// Using a set stored in the shared memory
 	bool check_syscall_trace_setup(int pid);
@@ -107,10 +122,30 @@ class bpftime_shm {
 	// Iterate over all pids from the alive agent set
 	void iterate_all_pids_in_alive_agent_set(std::function<void(int)> &&cb);
 
+	// Server-side: clear all existing handlers (maps/progs/links/events) and
+	// reset per-session bookkeeping stored in shm. This is used to allow
+	// repeated "bpftime trace" sessions without recreating the shm object, so
+	// already-injected agents keep the same mapping.
+	void reset_server_state();
+	// Server-side: start a new session (epoch++) and clear handlers. Returns
+	// the new stable epoch_seq (even).
+	std::uint64_t begin_new_session();
+	// Agent/observer: best-effort read a stable epoch_seq (even).
+	// Returns 0 if the epoch object isn't available.
+	// Returns UINT64_MAX if the epoch couldn't be stabilized within max_tries.
+	std::uint64_t read_stable_epoch_seq(int max_tries = 200) const;
+
 	const handler_variant &get_handler(int fd) const;
 	bool is_epoll_fd(int fd) const;
 
 	bool is_map_fd(int fd) const;
+
+private:
+	// Returns the map handler for `fd`, or nullptr (with errno=ENOENT) if
+	// `fd` is not a map fd. Shared by the bpf_map_* accessors below.
+	const bpf_map_handler *try_get_map_handler(int fd) const;
+
+public:
 	bool is_ringbuf_map_fd(int fd) const;
 	bool is_array_map_fd(int fd) const;
 

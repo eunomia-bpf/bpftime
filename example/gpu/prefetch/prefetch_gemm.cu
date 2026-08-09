@@ -22,7 +22,7 @@ void print_usage(const char *prog)
 	std::cout
 		<< "Usage: " << prog << " [options]\n"
 		<< "Options:\n"
-		<< "  --kernel=<name>        Kernel: seq_stream, rand_stream, pointer_chase (default: seq_stream)\n"
+		<< "  --kernel=<name>        Kernel: seq_stream, seq_uvm_prefetch, rand_stream, pointer_chase, gemm (default: seq_stream)\n"
 		<< "  --mode=<mode>          Mode: device, uvm, uvm_prefetch, uvm_advise_read, \n"
 		<< "                         uvm_advise_pref_gpu, uvm_advise_pref_cpu,\n"
 		<< "                         uvm_advise_access (default: uvm)\n"
@@ -108,9 +108,8 @@ const KernelEntry g_kernels[] = {
 	// Tier 0: Synthetic kernels
 	{ "seq_stream", "Sequential streaming with light compute",
 	  run_seq_stream },
-	{ "seq_device_prefetch",
-	  "Sequential with GPU-side PTX prefetch.global.L2",
-	  run_seq_device_prefetch },
+	{ "seq_uvm_prefetch", "Sequential with GPU-side PTX prefetch.global.L2",
+	  run_seq_uvm_prefetch },
 	{ "rand_stream", "Random access pattern with index indirection",
 	  run_rand_stream },
 	{ "pointer_chase", "Pointer chasing for TLB/cache stress",

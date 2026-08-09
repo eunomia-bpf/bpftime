@@ -133,25 +133,8 @@ __global__ void seq_chunk_kernel(const float *input, float *output, size_t N,
 				 size_t chunk_elems, int chunks_per_thread,
 				 size_t stride_elems, int prefetch_pages)
 {
+	(void)prefetch_pages;
 	int tid = blockIdx.x * blockDim.x + threadIdx.x;
-
-	const size_t elems_per_page = 4096 / sizeof(float);
-
-	// for (int c = 0; c < chunks_per_thread; ++c) {
-	// 	size_t chunk_id = (size_t)tid * chunks_per_thread + c;
-	// 	size_t chunk_start = chunk_id * chunk_elems;
-
-	// 	if (chunk_start >= N)
-	// 		break;
-
-	// 	for (int p = 0; p < prefetch_pages; ++p) {
-	// 		size_t pf_addr = chunk_start + p * elems_per_page;
-	// 		if (pf_addr < N) {
-	// 			prefetch_l2(&input[pf_addr]);
-	// 			prefetch_l2(&output[pf_addr]);
-	// 		}
-	// 	}
-	// }
 
 	for (int c = 0; c < chunks_per_thread; ++c) {
 		size_t chunk_id = (size_t)tid * chunks_per_thread + c;
@@ -308,7 +291,8 @@ __global__ void seq_prefetch_kernel(const float *input, float *output, size_t N,
 
 	const size_t elems_per_page = 4096 / sizeof(float); // 1024 floats per
 							    // page
-	const size_t prefetch_stride = 128 / sizeof(float); // 每128字节预取一次
+	const size_t prefetch_stride = 128 / sizeof(float); // Prefetch every
+							    // 128 bytes
 							    // (cache line size)
 
 	for (int c = 0; c < chunks_per_thread; ++c) {
@@ -326,8 +310,8 @@ __global__ void seq_prefetch_kernel(const float *input, float *output, size_t N,
 		// Process page by page
 		for (size_t page_idx = 0; page_idx < pages_in_chunk;
 		     ++page_idx) {
-// Step 1: Loop prefetch - 预取前 prefetch_distance_pages 页
-// 按照 stride 在每一页内进行多点预取，覆盖整页
+			// Step 1: prefetch prefetch_distance_pages pages ahead.
+			// Prefetch multiple cache-line positions in each page.
 #pragma unroll 4
 			for (int pf_offset = 1;
 			     pf_offset <= prefetch_distance_pages;
@@ -342,8 +326,6 @@ __global__ void seq_prefetch_kernel(const float *input, float *output, size_t N,
 							    elems_per_page,
 						    chunk_end);
 
-					// 按照 stride 在这一页内循环预取多个点
-					// 这样可以触发整页的预取，而不只是页的开头
 					for (size_t pf_elem =
 						     prefetch_page_start;
 					     pf_elem < prefetch_page_end;
@@ -375,11 +357,10 @@ __global__ void seq_prefetch_kernel(const float *input, float *output, size_t N,
 		}
 	}
 }
-inline void run_seq_device_prefetch(size_t total_working_set,
-				    const std::string &mode,
-				    size_t stride_bytes, int iterations,
-				    std::vector<float> &runtimes,
-				    KernelResult &result)
+inline void run_seq_uvm_prefetch(size_t total_working_set,
+				 const std::string &mode, size_t stride_bytes,
+				 int iterations, std::vector<float> &runtimes,
+				 KernelResult &result)
 {
 	// Split: input (50%) + output (50%)
 	size_t array_bytes = total_working_set / 2;
@@ -389,7 +370,7 @@ inline void run_seq_device_prefetch(size_t total_working_set,
 	// This kernel is designed for UVM modes only
 	if (mode == "device") {
 		throw std::runtime_error(
-			"seq_device_prefetch is designed for UVM modes, not device mode");
+			"seq_uvm_prefetch is designed for UVM modes, not device mode");
 	}
 
 	float *input, *output;
@@ -462,7 +443,6 @@ __global__ void rand_chunk_kernel(const float *input, float *output, size_t N,
 				  size_t stride_elems, unsigned int base_seed)
 {
 	int tid = blockIdx.x * blockDim.x + threadIdx.x;
-	int T = gridDim.x * blockDim.x;
 
 	unsigned int seed = base_seed ^ tid;
 	size_t elems_per_page = 4096 / sizeof(float);
@@ -618,7 +598,6 @@ __global__ void init_chunks_kernel(Node *nodes, size_t nodes_per_chunk,
 
 	for (size_t i = tid; i < total_nodes; i += stride) {
 		size_t chunk_id = i / nodes_per_chunk;
-		size_t offset = i % nodes_per_chunk;
 
 		// Generate next pointer within the same chunk (chunk-local
 		// chain)
@@ -637,7 +616,6 @@ __global__ void pointer_chunk_kernel(const Node *nodes, float *output,
 				     int chunks_per_thread, int chase_steps)
 {
 	int tid = blockIdx.x * blockDim.x + threadIdx.x;
-	int T = gridDim.x * blockDim.x;
 
 	// Each thread processes chunks_per_thread chunks
 	for (int c = 0; c < chunks_per_thread; ++c) {

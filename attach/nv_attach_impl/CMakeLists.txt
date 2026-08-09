@@ -28,9 +28,22 @@ add_library(
     nv_attach_impl_patcher.cpp
     nv_attach_utils.cpp
     nv_attach_fatbin_record.cpp
+    nv_elf_introspect.cpp
 )
 
-add_dependencies(bpftime_nv_attach_impl bpftime_base_attach_impl spdlog::spdlog FridaGum  llvmbpf_vm bpftime_vm_compat ptxpass_core)
+add_dependencies(
+    bpftime_nv_attach_impl
+    bpftime_base_attach_impl
+    spdlog::spdlog
+    FridaGum
+    llvmbpf_vm
+    bpftime_vm_compat
+    ptxpass_core
+    ptxpass_kprobe_entry
+    ptxpass_kretprobe
+    ptxpass_kprobe_memcapture
+    nv_attach_impl_ptx_compiler
+)
 set(NV_ATTACH_IMPL_INCLUDE ${CMAKE_CURRENT_SOURCE_DIR} )
 find_cuda()
 
@@ -41,6 +54,17 @@ target_link_directories(bpftime_nv_attach_impl PUBLIC ${CUDA_LIBRARY_PATH} )
 target_link_libraries(bpftime_nv_attach_impl PUBLIC bpftime_base_attach_impl spdlog::spdlog ${CUDA_LIBS} PRIVATE  ${FRIDA_GUM_INSTALL_DIR}/libfrida-gum.a PUBLIC llvmbpf_vm bpftime_vm_compat ptxpass_core)
 
 set_property(TARGET bpftime_nv_attach_impl PROPERTY CXX_STANDARD 20)
+
+# nv_attach_impl includes internal llvmbpf headers that include LLVM headers
+# (e.g. vm/llvm-jit/src/llvm_jit_context.hpp). Make sure LLVM include dirs are
+# available to this target as well.
+if(DEFINED LLVM_INCLUDE_DIRS)
+  target_include_directories(bpftime_nv_attach_impl PRIVATE ${LLVM_INCLUDE_DIRS})
+endif()
+get_target_property(LLVMBPF_VM_INCLUDES llvmbpf_vm INCLUDE_DIRECTORIES)
+if(LLVMBPF_VM_INCLUDES)
+  target_include_directories(bpftime_nv_attach_impl PRIVATE ${LLVMBPF_VM_INCLUDES})
+endif()
 
 # Create a build-time header file with the PTX pass paths
 # This avoids shell escaping issues with colons and quotes

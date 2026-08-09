@@ -86,7 +86,7 @@ prefetch_gemm: prefetch_gemm.cu synthetic.cuh gemm.cuh
 .PHONY: clean
 clean:
 	$(call msg,CLEAN)
-	$(Q)rm -rf $(OUTPUT) $(APPS) vec_add
+	$(Q)rm -rf $(OUTPUT) $(APPS) prefetch_example prefetch_gemm results.csv
 
 $(OUTPUT) $(OUTPUT)/libbpf $(BPFTOOL_OUTPUT):
 	$(call msg,MKDIR,$@)

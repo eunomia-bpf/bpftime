@@ -139,9 +139,7 @@ bool validate_ptx_version(const std::string &input,
 // Shared utilities for PTX passes (refactored from legacy code)
 // Filter out duplicate/irrelevant PTX headers
 // (version/target/address_size/comments)
-// If target_sm is provided, replaces the .target directive with the specified SM
-std::string filter_out_version_headers_ptx(const std::string &input,
-					   const std::string &target_sm = "");
+std::string filter_out_version_headers_ptx(const std::string &input);
 
 // Compile eBPF (64-bit words encoding) to PTX function text (optionally target
 // SM)

@@ -28,32 +28,30 @@
 // C = alpha * A * B + beta * C
 // A: NI x NK, B: NK x NJ, C: NI x NJ
 
-
 __global__ void gemm_kernel(int ni, int nj, int nk, DATA_TYPE alpha,
-					DATA_TYPE beta, DATA_TYPE *a,
-					DATA_TYPE *b, DATA_TYPE *c)
+			    DATA_TYPE beta, DATA_TYPE *a, DATA_TYPE *b,
+			    DATA_TYPE *c)
 {
 	int j = blockIdx.x * blockDim.x + threadIdx.x;
 	int i = blockIdx.y * blockDim.y + threadIdx.y;
 
-	// ========== 在 kernel 开头进行 L2 预取 ==========
+	// Prefetch the working set into L2 at the start of the kernel.
 	if ((i < ni) && (j < nj)) {
-// 预取 A 矩阵第 i 行的数据到 L2 缓存
+		// Prefetch row i of A into L2.
 #pragma unroll 4
 		for (int k = 0; k < nk; k += 8) {
 			prefetch_l2(&a[i * nk + k]);
 		}
 
-// 预取 B 矩阵第 j 列的数据到 L2 缓存
+		// Prefetch column j of B into L2.
 #pragma unroll 4
 		for (int k = 0; k < nk; k += 8) {
 			prefetch_l2(&b[k * nj + j]);
 		}
 
-		// 预取 C 矩阵对应位置
+		// Prefetch the corresponding C element.
 		prefetch_l2(&c[i * nj + j]);
 	}
-	// ================================================
 
 	if ((i < ni) && (j < nj)) {
 		DATA_TYPE c_val = c[i * nj + j] * beta;
@@ -77,36 +75,38 @@ inline void run_gemm(size_t total_working_set, const std::string &mode,
 	(void)stride_bytes;
 
 	// =========================================================================
-	// LLM-style 权重复用设计（类似 LLaMA-7B）
-	// - 固定合理的层大小（~180MB/层），通过层数控制总工作量
-	// - 多个 token 遍历所有层，产生 temporal locality
+	// LLM-style weight reuse design.
+	// - Keep each layer at a fixed practical size (~180 MB/layer).
+	// - Scale total work by changing the layer count.
+	// - Traverse all layers for multiple tokens to create temporal
+	// locality.
 	// =========================================================================
 
-	// 类似 LLaMA-7B 的参数: dim=4096, hidden=11008, 32 layers
-	// 每层权重: 4096 * 11008 * 4 bytes ≈ 180MB
+	// LLaMA-7B-like dimensions: dim=4096, hidden=11008.
+	// Per-layer weights: 4096 * 11008 * 4 bytes, about 180 MB.
 	const int dim = 4096;
 	const int hidden = 11008;
 	size_t layer_size = (size_t)dim * hidden * sizeof(DATA_TYPE); // ~180MB
 								      // per
 								      // layer
 
-	// 根据 total_working_set 计算层数（而不是放大单层）
+	// Scale the number of layers instead of increasing a single layer.
 	int num_layers = total_working_set / layer_size;
 	if (num_layers < 1)
 		num_layers = 1;
 	if (num_layers > 200)
-		num_layers = 200; // 合理上限，避免太多层
+		num_layers = 200; // Keep runtime bounded.
 
 	size_t weights_size = (size_t)num_layers * layer_size;
 
-	// 分配权重 buffer（主要内存）
+	// Allocate the weight buffer, which is the dominant memory footprint.
 	DATA_TYPE *weights;
 	if (mode == "device") {
 		CUDA_CHECK(cudaMalloc(&weights, weights_size));
 		CUDA_CHECK(cudaMemset(weights, 0, weights_size));
 	} else {
 		CUDA_CHECK(cudaMallocManaged(&weights, weights_size));
-		// CPU 初始化（确保页面在 CPU）
+		// Initialize on the CPU so UVM pages start resident on the CPU.
 		size_t total_elements = (size_t)num_layers * dim * hidden;
 		size_t report_interval = total_elements / 20; // 5% increments
 		if (report_interval == 0)
@@ -130,7 +130,7 @@ inline void run_gemm(size_t total_working_set, const std::string &mode,
 		fprintf(stderr, "  100%% complete\n");
 	}
 
-	// 分配 activation buffer（很小，不是内存压力来源）
+	// Activation buffers are small and not the source of memory pressure.
 	DATA_TYPE *x, *out;
 	size_t x_size = dim * sizeof(DATA_TYPE);
 	size_t out_size = hidden * sizeof(DATA_TYPE);
@@ -164,11 +164,11 @@ inline void run_gemm(size_t total_working_set, const std::string &mode,
 	}
 
 	// Launch configuration for GEMV: W[dim x hidden] @ x[dim] ->
-	// out[hidden] 实际上是 (1 x dim) @ (dim x hidden) = (1 x hidden)
+	// out[hidden], effectively (1 x dim) @ (dim x hidden).
 	dim3 block(256);
 	dim3 grid((hidden + block.x - 1) / block.x);
 
-	// 多个 token 遍历所有层（模拟推理多个 token）
+	// Traverse all layers for multiple tokens.
 	int num_tokens = 10;
 
 	fprintf(stderr,
@@ -187,16 +187,16 @@ inline void run_gemm(size_t total_working_set, const std::string &mode,
 				// hidden) ni=1, nj=hidden, nk=dim
 				gemm_kernel<<<grid, block>>>(
 					1, hidden, dim, 1.0f, 0.0f, x, W, out);
-				// 不 sync，继续下一层
+				// Continue to the next layer without
+				// synchronizing.
 			}
 		}
 	};
 
 	time_kernel(launch, /*warmup=*/2, iterations, runtimes, result);
 
-	// bytes_accessed: 每个 token 访问所有层权重 + activation
-	// 权重: num_layers * dim * hidden * sizeof(float)
-	// activation: dim + hidden (很小，忽略不计)
+	// bytes_accessed includes all layer weights per token. Activations are
+	// small enough to ignore for this memory-pressure benchmark.
 	result.bytes_accessed = (size_t)num_tokens * num_layers * dim * hidden *
 				sizeof(DATA_TYPE);
 

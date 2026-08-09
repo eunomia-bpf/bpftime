@@ -9,6 +9,8 @@
 #if __linux__
 #include <bpf/libbpf.h>
 #include <bpf/bpf.h>
+#include <sys/mman.h>
+#include <unistd.h>
 #endif
 
 #ifndef roundup
@@ -33,13 +35,19 @@ static size_t bpf_map_mmap_sz(unsigned int value_sz, unsigned int max_entries)
 }
 
 
-void array_map_kernel_user_impl::init_map_fd()
+bool array_map_kernel_user_impl::init_map_fd()
 {
+	if (!has_kernel_map) {
+		return false;
+	}
+	if (map_fd >= 0) {
+		return true;
+	}
 	map_fd = bpf_map_get_fd_by_id(kernel_map_id);
 	if (map_fd < 0) {
 		SPDLOG_ERROR("Failed to get fd for kernel map id {}",
 			      kernel_map_id);
-		return;
+		return false;
 	}
 	bpf_map_info info = {};
 	unsigned int info_len = sizeof(info);
@@ -47,6 +55,7 @@ void array_map_kernel_user_impl::init_map_fd()
 	if (res < 0) {
 		SPDLOG_ERROR("Failed to get info for kernel map id {}",
 			      kernel_map_id);
+		return true;
 	}
 	_value_size = info.value_size;
 	_max_entries = info.max_entries;
@@ -68,7 +77,8 @@ void array_map_kernel_user_impl::init_map_fd()
 	if (mmap_ptr == MAP_FAILED) {
 		SPDLOG_ERROR("Failed to mmap for kernel map id {}, err={}",
 			      kernel_map_id, errno);
-		return;
+		mmap_ptr = nullptr;
+		return true;
 	}
 	// What does this piece of code do?
 	int prot;
@@ -82,22 +92,42 @@ void array_map_kernel_user_impl::init_map_fd()
 		SPDLOG_ERROR(
 			"Failed to re-mmap for kernel map id {}, err={}, prot={}",
 			kernel_map_id, errno, prot);
-		return;
+		munmap(mmap_ptr, mmap_sz);
+		mmap_ptr = nullptr;
+		return true;
 	}
 	mmap_ptr = mmaped;
+	return true;
 }
 
 array_map_kernel_user_impl::array_map_kernel_user_impl(
-	boost::interprocess::managed_shared_memory &memory, int km_id)
-	: value_data(1, memory.get_segment_manager()), kernel_map_id(km_id)
+	boost::interprocess::managed_shared_memory &memory, int km_id,
+	uint32_t value_size, uint32_t max_entries)
+	: value_data(1, memory.get_segment_manager()),
+	  _value_size(value_size),
+	  _max_entries(max_entries),
+	  kernel_map_id(km_id),
+	  has_kernel_map(km_id > 0),
+	  mmap_ptr(nullptr)
 {
+	if (!has_kernel_map) {
+		value_data.resize(static_cast<size_t>(_value_size) *
+				  static_cast<size_t>(_max_entries));
+	}
 }
 
 void *array_map_kernel_user_impl::elem_lookup(const void *key)
 {
-	if (map_fd < 0) {
-		init_map_fd();
+	if (!has_kernel_map) {
+		auto key_val = *(uint32_t *)key;
+		if (key_val >= _max_entries) {
+			errno = ENOENT;
+			return nullptr;
+		}
+		return &value_data[key_val * _value_size];
 	}
+	if (!init_map_fd())
+		return nullptr;
 	SPDLOG_DEBUG("Run lookup of shared array map, key={:x}",
 		      (uintptr_t)key);
 	if (mmap_ptr != nullptr) {
@@ -124,9 +154,18 @@ void *array_map_kernel_user_impl::elem_lookup(const void *key)
 long array_map_kernel_user_impl::elem_update(const void *key, const void *value,
 					     uint64_t flags)
 {
-	if (map_fd < 0) {
-		init_map_fd();
+	if (!has_kernel_map) {
+		auto key_val = *(uint32_t *)key;
+		if (key_val >= _max_entries) {
+			errno = ENOENT;
+			return -1;
+		}
+		std::copy((uint8_t *)value, (uint8_t *)value + _value_size,
+			  &value_data[key_val * _value_size]);
+		return 0;
 	}
+	if (!init_map_fd())
+		return -1;
 	if (mmap_ptr != nullptr) {
 		auto key_val = *(uint32_t *)key;
 		if (key_val >= _max_entries) {
@@ -143,9 +182,17 @@ long array_map_kernel_user_impl::elem_update(const void *key, const void *value,
 
 long array_map_kernel_user_impl::elem_delete(const void *key)
 {
-	if (map_fd < 0) {
-		init_map_fd();
+	if (!has_kernel_map) {
+		auto key_val = *(uint32_t *)key;
+		if (key_val >= _max_entries) {
+			errno = ENOENT;
+			return -1;
+		}
+		memset(&value_data[key_val * _value_size], 0, _value_size);
+		return 0;
 	}
+	if (!init_map_fd())
+		return -1;
 	if (mmap_ptr != nullptr) {
 		auto key_val = *(uint32_t *)key;
 		if (key_val >= _max_entries) {
