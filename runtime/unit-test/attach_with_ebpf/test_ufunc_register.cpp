@@ -59,7 +59,7 @@ static int test_register_ufunc()
 
 TEST_CASE("Test ufunc register")
 {
-	bpftime::agent_config config;
+	bpftime::runtime_config config;
 	config.set_vm_name("llvm");
 	const char *obj_path = NULL;
 	uint64_t return_val;

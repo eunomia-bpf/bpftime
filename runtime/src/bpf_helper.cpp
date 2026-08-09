@@ -62,7 +62,8 @@ __attribute__((weak)) bpftime::bpf_attach_ctx &get_global_attach_ctx()
 		"Calling mocked get_global_attach_ctx, this is not expected");
 }
 
-namespace {
+namespace
+{
 
 constexpr const char *TRACEPIPE_PATH_ENV = "TRACEPIPE_PATH";
 
@@ -139,8 +140,8 @@ ssize_t write_tracepipe_message(int fd, const char *data, size_t size)
 
 	size_t total_written = 0;
 	while (total_written < size) {
-		ssize_t ret = write(fd, data + total_written,
-				    size - total_written);
+		ssize_t ret =
+			write(fd, data + total_written, size - total_written);
 		if (ret > 0) {
 			total_written += static_cast<size_t>(ret);
 			continue;
@@ -205,8 +206,8 @@ uint64_t bpftime_trace_printk(uint64_t fmt, uint64_t fmt_size, ...)
 	const char *fmt_str = (const char *)fmt;
 	va_list args;
 #pragma GCC diagnostic push
-	#pragma GCC diagnostic ignored "-Wformat-nonliteral"
-	#pragma GCC diagnostic ignored "-Wvarargs"
+#pragma GCC diagnostic ignored "-Wformat-nonliteral"
+#pragma GCC diagnostic ignored "-Wvarargs"
 	va_start(args, fmt_size);
 	long ret = -1;
 	bool wrote_to_tracepipe = false;
@@ -223,10 +224,9 @@ uint64_t bpftime_trace_printk(uint64_t fmt, uint64_t fmt_size, ...)
 					message_buffer.size(), fmt_str,
 					format_args);
 			va_end(format_args);
-			ret = write_tracepipe_message(tracepipe_fd,
-						      message_buffer.data(),
-						      static_cast<size_t>(
-							      message_len));
+			ret = write_tracepipe_message(
+				tracepipe_fd, message_buffer.data(),
+				static_cast<size_t>(message_len));
 			int saved_errno = errno;
 			close(tracepipe_fd);
 			if (ret == message_len) {
@@ -496,6 +496,18 @@ uint64_t bpftime_ktime_get_coarse_ns(uint64_t, uint64_t, uint64_t, uint64_t,
 	return spec.tv_sec * (uint64_t)1000000000 + spec.tv_nsec;
 }
 
+uint64_t bpftime_ktime_get_boot_ns(uint64_t, uint64_t, uint64_t, uint64_t,
+				   uint64_t)
+{
+	timespec spec{};
+#ifdef CLOCK_BOOTTIME
+	if (clock_gettime(CLOCK_BOOTTIME, &spec) == 0)
+		return spec.tv_sec * (uint64_t)1000000000 + spec.tv_nsec;
+#endif
+	clock_gettime(CLOCK_MONOTONIC, &spec);
+	return spec.tv_sec * (uint64_t)1000000000 + spec.tv_nsec;
+}
+
 uint64_t bpftime_get_current_pid_tgid(uint64_t, uint64_t, uint64_t, uint64_t,
 				      uint64_t)
 {
@@ -736,7 +748,6 @@ uint64_t bpf_perf_event_output(uint64_t ctx, uint64_t map, uint64_t flags,
 
 uint64_t bpftime_tail_call(uint64_t ctx, uint64_t prog_array, uint64_t index)
 {
-#ifdef BPFTIME_BUILD_WITH_LIBBPF
 	int fd = (int)prog_array;
 	if (!bpftime_is_prog_array(fd)) {
 		SPDLOG_ERROR("Expected fd {} to be a prog array fd", fd);
@@ -752,6 +763,78 @@ uint64_t bpftime_tail_call(uint64_t ctx, uint64_t prog_array, uint64_t index)
 	}
 	int to_call_fd = *to_call_id_ptr;
 	SPDLOG_DEBUG("tail call helper: calling prog fd {}", to_call_fd);
+
+	if (bpftime_is_prog_fd(to_call_fd)) {
+		constexpr uint32_t MAX_TAIL_CALL_CNT = 32;
+		static thread_local uint32_t tail_call_depth = 0;
+		if (tail_call_depth >= MAX_TAIL_CALL_CNT) {
+			SPDLOG_ERROR("tail call depth limit exceeded");
+			return -1;
+		}
+		struct tail_call_depth_guard {
+			uint32_t &depth;
+			explicit tail_call_depth_guard(uint32_t &depth)
+				: depth(depth)
+			{
+				depth++;
+			}
+			~tail_call_depth_guard()
+			{
+				depth--;
+			}
+		} guard(tail_call_depth);
+
+		const auto &handler = std::get<bpftime::bpf_prog_handler>(
+			bpftime::shm_holder.global_shared_memory.get_handler(
+				to_call_fd));
+		bpftime::runtime_config config =
+			bpftime::bpftime_get_runtime_config();
+		bpftime::bpftime_prog prog(handler.insns.data(),
+					   handler.insns.size(),
+					   handler.name.c_str());
+
+		if (config.enable_kernel_helper_group &&
+		    bpftime::bpftime_helper_group::get_kernel_utils_helper_group()
+				    .add_helper_group_to_prog(&prog) < 0) {
+			return -1;
+		}
+		if (config.enable_ufunc_helper_group &&
+		    bpftime::bpftime_helper_group::get_ufunc_helper_group()
+				    .add_helper_group_to_prog(&prog) < 0) {
+			return -1;
+		}
+		if (config.enable_shm_maps_helper_group &&
+		    bpftime::bpftime_helper_group::get_shm_maps_helper_group()
+				    .add_helper_group_to_prog(&prog) < 0) {
+			return -1;
+		}
+		if (prog.bpftime_prog_load(false) < 0) {
+			SPDLOG_ERROR(
+				"Failed to load userspace tail call target fd {}",
+				to_call_fd);
+			return -1;
+		}
+
+		char context[64];
+		if (ctx) {
+			memcpy(context, (const void *)(uintptr_t)ctx,
+			       sizeof(context));
+		} else {
+			memset(context, 0, sizeof(context));
+		}
+		uint64_t retval = 0;
+		int err = prog.bpftime_prog_exec(context, sizeof(context),
+						 &retval);
+		if (err < 0) {
+			SPDLOG_ERROR(
+				"Failed to execute userspace tail call target fd {}",
+				to_call_fd);
+			return -1;
+		}
+		return retval;
+	}
+
+#if __linux__ && defined(BPFTIME_BUILD_WITH_LIBBPF)
 	char context[64];
 	if (ctx) {
 		memcpy(context, (const void *)(uintptr_t)ctx, 64);
@@ -772,7 +855,9 @@ uint64_t bpftime_tail_call(uint64_t ctx, uint64_t prog_array, uint64_t index)
 	close(to_call_fd);
 	return run_opts.retval;
 #else
-	SPDLOG_ERROR("tail_call is not supported in this build");
+	SPDLOG_ERROR(
+		"tail_call to kernel program fd {} requires libbpf support",
+		to_call_fd);
 	return -ENOTSUP;
 #endif
 }
@@ -788,6 +873,11 @@ uint64_t bpftime_get_attach_cookie(uint64_t ctx, uint64_t, uint64_t, uint64_t,
 		SPDLOG_DEBUG("Cookie doesn't exist");
 		return 0;
 	}
+}
+
+uint64_t bpftime_get_func_ip(uint64_t, uint64_t, uint64_t, uint64_t, uint64_t)
+{
+	return bpftime::attach::current_thread_attach_func_ip;
 }
 
 uint64_t bpftime_get_smp_processor_id()
@@ -942,7 +1032,7 @@ int64_t bpftime_get_stack(uint64_t ctx_raw, uint64_t buf, uint64_t size,
 			"bpftime_get_stack only supports collect user stack!");
 		return -ENOTSUP;
 	}
-	if (!(flags & BPF_F_USER_BUILD_ID)) {
+	if (flags & BPF_F_USER_BUILD_ID) {
 		SPDLOG_ERROR("bpftime_get_stack doesn't support buildid!");
 		return -ENOTSUP;
 	}
@@ -1317,6 +1407,12 @@ bpftime_helper_group::get_kernel_utils_helper_group()
 			    .name = "bpf_ktime_get_ns",
 			    .fn = (void *)bpftime_ktime_get_ns,
 		    } },
+		  { BPF_FUNC_ktime_get_boot_ns,
+		    bpftime_helper_info{
+			    .index = BPF_FUNC_ktime_get_boot_ns,
+			    .name = "bpf_ktime_get_boot_ns",
+			    .fn = (void *)bpftime_ktime_get_boot_ns,
+		    } },
 		  { BPF_FUNC_trace_printk,
 		    bpftime_helper_info{
 			    .index = BPF_FUNC_trace_printk,
@@ -1431,7 +1527,11 @@ bpftime_helper_group::get_kernel_utils_helper_group()
 		    bpftime_helper_info{
 			    .index = BPF_FUNC_get_attach_cookie,
 			    .name = "bpf_get_attach_cookie",
-			    .fn = (void *)bpftime_get_attach_cookie } } }
+			    .fn = (void *)bpftime_get_attach_cookie } },
+		  { BPF_FUNC_get_func_ip,
+		    bpftime_helper_info{ .index = BPF_FUNC_get_func_ip,
+					 .name = "bpf_get_func_ip",
+					 .fn = (void *)bpftime_get_func_ip } } }
 
 	};
 

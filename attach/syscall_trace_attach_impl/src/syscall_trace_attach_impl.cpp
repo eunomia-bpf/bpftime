@@ -37,6 +37,20 @@ int64_t syscall_trace_attach_impl::dispatch_syscall(int64_t sys_nr,
 			user_ret = v;
 			user_ret_ctx = ctx;
 		});
+	auto run_callbacks = [](const auto &callbacks,
+				const auto &ctx) noexcept {
+		for (auto prog : callbacks) {
+			try {
+				auto ctx_copy = ctx;
+				uint64_t callback_ret = 0;
+				int err = prog->cb(&ctx_copy, sizeof(ctx_copy),
+						   &callback_ret);
+				SPDLOG_DEBUG("ret {}, err {}", callback_ret,
+					     err);
+			} catch (...) {
+			}
+		}
+	};
 
 	if (!sys_enter_callbacks[sys_nr].empty() ||
 	    !global_enter_callbacks.empty()) {
@@ -49,18 +63,8 @@ int64_t syscall_trace_attach_impl::dispatch_syscall(int64_t sys_nr,
 		ctx.args[3] = arg4;
 		ctx.args[4] = arg5;
 		ctx.args[5] = arg6;
-		for (auto prog : sys_enter_callbacks[sys_nr]) {
-			auto ctx_copy = ctx;
-			uint64_t ret;
-			int err = prog->cb(&ctx_copy, sizeof(ctx_copy), &ret);
-			SPDLOG_DEBUG("ret {}, err {}", ret, err);
-		}
-		for (auto prog : global_enter_callbacks) {
-			auto ctx_copy = ctx;
-			uint64_t ret;
-			int err = prog->cb(&ctx_copy, sizeof(ctx_copy), &ret);
-			SPDLOG_DEBUG("ret {}, err {}", ret, err);
-		}
+		run_callbacks(sys_enter_callbacks[sys_nr], ctx);
+		run_callbacks(global_enter_callbacks, ctx);
 	}
 	curr_thread_override_return_callback.reset();
 	if (is_overrided) {
@@ -80,18 +84,8 @@ int64_t syscall_trace_attach_impl::dispatch_syscall(int64_t sys_nr,
 		memset(&ctx, 0, sizeof(ctx));
 		ctx.id = sys_nr;
 		ctx.ret = ret;
-		for (auto prog : sys_exit_callbacks[sys_nr]) {
-			auto ctx_copy = ctx;
-			uint64_t ret;
-			int err = prog->cb(&ctx_copy, sizeof(ctx_copy), &ret);
-			SPDLOG_DEBUG("ret {}, err {}", ret, err);
-		}
-		for (const auto prog : global_exit_callbacks) {
-			auto ctx_copy = ctx;
-			uint64_t ret;
-			int err = prog->cb(&ctx_copy, sizeof(ctx_copy), &ret);
-			SPDLOG_DEBUG("ret {}, err {}", ret, err);
-		}
+		run_callbacks(sys_exit_callbacks[sys_nr], ctx);
+		run_callbacks(global_exit_callbacks, ctx);
 	}
 	curr_thread_override_return_callback.reset();
 	if (is_overrided) {

@@ -17,6 +17,7 @@
 #include <memory>
 #include <optional>
 #include <set>
+#include <mutex>
 #include <string_view>
 #include <utility>
 #include <vector>
@@ -34,15 +35,14 @@ namespace bpftime
 #ifdef BPFTIME_ENABLE_CUDA_ATTACH
 namespace cuda
 {
-struct CommSharedMem;
-}
+	// The old 1<<30 value makes the shared segment too large for Boost IPC.
+#ifndef BPFTIME_GPU_HELPER_MAX_BUF
+	// Upper bound for key/value staging buffers used by the GPU->host helper
+	// bridge. This is a layout-affecting constant: if you change it, you must
+	// also regenerate `attach/nv_attach_impl/trampoline_ptx.h`.
+#define BPFTIME_GPU_HELPER_MAX_BUF (1 << 20)
 #endif
-
-#ifdef BPFTIME_ENABLE_CUDA_ATTACH
-namespace cuda
-{
-// The old 1<<30 value makes the shared segment too large for Boost IPC.
-static constexpr std::size_t GPU_HELPER_MAX_BUF = 1 << 24;
+static constexpr std::size_t GPU_HELPER_MAX_BUF = BPFTIME_GPU_HELPER_MAX_BUF;
 
 enum class HelperOperation {
 	MAP_LOOKUP = 1,
@@ -154,15 +154,15 @@ using syscall_hooker_func_t = int64_t (*)(int64_t sys_nr, int64_t arg1,
 					  int64_t arg6);
 
 class bpf_attach_ctx {
-    public:
+public:
 	bpf_attach_ctx();
 	~bpf_attach_ctx();
 
 	// create bpf_attach_ctx from handler_manager in shared memory
 	int init_attach_ctx_from_handlers(const handler_manager *manager,
-					  const agent_config &config);
+					  const runtime_config &config);
 	// create bpf_attach_ctx from handler_manager in global_shared_memory
-	int init_attach_ctx_from_handlers(const agent_config &config);
+	int init_attach_ctx_from_handlers(const runtime_config &config);
 	// Register an attach implementation. Attach manager will take its
 	// ownership. The third argument is a function that initializes a
 	// corresponding attach private data with the given string.
@@ -176,6 +176,10 @@ class bpf_attach_ctx {
 	int destroy_instantiated_attach_link(int link_id);
 	// Destroy all instantiated attach links
 	int destroy_all_attach_links();
+	// Clear all instantiated state (programs/perf events/link bookkeeping).
+	// Attach implementations stay registered, so the context can be reused
+	// for a new tracing session without destroying the whole object.
+	void reset_instantiated_state();
 	std::optional<attach::base_attach_impl *>
 	get_attach_impl_by_attach_type(int attach_type)
 	{
@@ -187,7 +191,27 @@ class bpf_attach_ctx {
 		}
 	}
 
-    private:
+#ifdef BPFTIME_ENABLE_CUDA_ATTACH
+	std::optional<attach::nv_attach_impl *> find_nv_attach_impl() const;
+#endif
+
+private:
+	mutable std::mutex ctx_mutex;
+	// Stable shm epoch_seq last seen (even). Used to detect session switch and
+	// rebind GPU resources/maps accordingly.
+	std::uint64_t last_epoch_seq_seen = 0;
+	int destroy_instantiated_attach_link_unlocked(int link_id);
+	int destroy_all_attach_links_unlocked();
+	void reset_instantiated_state_unlocked();
+
+#ifdef BPFTIME_ENABLE_CUDA_ATTACH
+	// Start host thread for handling map requests from CUDA
+	void start_cuda_watcher_thread();
+	void stop_cuda_watcher_thread();
+	std::unique_ptr<cuda::CUDAContext> cuda_ctx;
+	std::thread cuda_watcher_thread;
+#endif
+
 	constexpr static int CURRENT_ID_OFFSET = 65536;
 	volatile int current_id = CURRENT_ID_OFFSET;
 
@@ -217,10 +241,10 @@ class bpf_attach_ctx {
 
 	int instantiate_handler_at(const handler_manager *manager, int id,
 				   std::set<int> &stk,
-				   const agent_config &config,
+				   const runtime_config &config,
 				   bool handle_nv_attach_impl);
 	int instantiate_prog_handler_at(int id, const bpf_prog_handler &handler,
-					const agent_config &config);
+					const runtime_config &config);
 	int instantiate_bpf_link_handler_at(int id,
 					    const bpf_link_handler &handler,
 					    bool handle_nv_attach_impl);
@@ -228,17 +252,8 @@ class bpf_attach_ctx {
 		int id, const bpf_perf_event_handler &perf_handler);
 
 #ifdef BPFTIME_ENABLE_CUDA_ATTACH
-	// Start host thread for handling map requests from CUDA
-	void start_cuda_watcher_thread();
-	std::unique_ptr<cuda::CUDAContext> cuda_ctx;
-	std::thread cuda_watcher_thread;
-
 	std::vector<attach::MapBasicInfo>
 	create_map_basic_info(int filled_size);
-	// Lookup nv_attach_impl from stored attach_impls
-    public:
-	std::optional<attach::nv_attach_impl *> find_nv_attach_impl() const;
-
 #endif
 };
 

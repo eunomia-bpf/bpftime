@@ -129,6 +129,12 @@ The GPU support is built on the `nv_attach_impl` system (`attach/nv_attach_impl/
 
 We demostarate GPU eBPF capabilities through several example, bcc style tools:
 
+### Dynamic attach / late attach
+
+Most GPU examples in this directory are documented in a two-process, preload-at-start mode (syscall-server in the loader, agent in the target). For dynamic attach, see:
+
+- **[`threadscheduling_dynamic_hook`](https://github.com/eunomia-bpf/bpftime/tree/master/example/gpu/threadscheduling_dynamic_hook)**: a dynamic-hook-friendly variant that supports running the target without preload and attaching later via `bpftime trace`.
+
 ### [kernelretsnoop](https://github.com/eunomia-bpf/bpftime/tree/master/example/gpu/kernelretsnoop) - Per-Thread Exit Timestamp Tracer
 
 Attaches to CUDA kernel exits and records the exact nanosecond timestamp when each GPU thread completes execution. This reveals thread divergence, memory access patterns, and warp scheduling issues that are invisible to traditional profilers.

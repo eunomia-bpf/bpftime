@@ -18,15 +18,17 @@
 
 extern "C" uint64_t bpftime_trace_printk(uint64_t fmt, uint64_t fmt_size, ...);
 
-namespace {
+namespace
+{
 
 constexpr const char *TRACEPIPE_PATH_ENV = "TRACEPIPE_PATH";
 
 class scoped_env_var {
-      public:
+    public:
 	scoped_env_var(const char *key, const char *value) : key_(key)
 	{
-		if (const char *old_value = std::getenv(key); old_value != nullptr) {
+		if (const char *old_value = std::getenv(key);
+		    old_value != nullptr) {
 			had_old_value_ = true;
 			old_value_ = old_value;
 		}
@@ -38,8 +40,9 @@ class scoped_env_var {
 					std::strerror(errno));
 			}
 		} else if (unsetenv(key) != 0) {
-			throw std::runtime_error(std::string("unsetenv failed: ") +
-						 std::strerror(errno));
+			throw std::runtime_error(
+				std::string("unsetenv failed: ") +
+				std::strerror(errno));
 		}
 	}
 
@@ -52,20 +55,19 @@ class scoped_env_var {
 		}
 	}
 
-      private:
+    private:
 	std::string key_;
 	bool had_old_value_ = false;
 	std::string old_value_;
 };
 
 class scoped_temp_dir {
-      public:
+    public:
 	scoped_temp_dir()
 	{
-		auto temp_template =
-			(std::filesystem::temp_directory_path() /
-			 "bpftime-tracepipe-XXXXXX")
-				.string();
+		auto temp_template = (std::filesystem::temp_directory_path() /
+				      "bpftime-tracepipe-XXXXXX")
+					     .string();
 		std::vector<char> buffer(temp_template.begin(),
 					 temp_template.end());
 		buffer.push_back('\0');
@@ -89,19 +91,18 @@ class scoped_temp_dir {
 		return path_;
 	}
 
-      private:
+    private:
 	std::filesystem::path path_;
 };
 
 class stdout_capture {
-      public:
+    public:
 	stdout_capture()
 	{
 		int pipe_fds[2];
 		if (pipe(pipe_fds) != 0) {
-			throw std::runtime_error(
-				std::string("pipe failed: ") +
-				std::strerror(errno));
+			throw std::runtime_error(std::string("pipe failed: ") +
+						 std::strerror(errno));
 		}
 		read_fd_ = pipe_fds[0];
 		fflush(stdout);
@@ -109,17 +110,15 @@ class stdout_capture {
 		if (saved_stdout_ == -1) {
 			close(pipe_fds[0]);
 			close(pipe_fds[1]);
-			throw std::runtime_error(
-				std::string("dup failed: ") +
-				std::strerror(errno));
+			throw std::runtime_error(std::string("dup failed: ") +
+						 std::strerror(errno));
 		}
 		if (dup2(pipe_fds[1], STDOUT_FILENO) == -1) {
 			close(pipe_fds[0]);
 			close(pipe_fds[1]);
 			close(saved_stdout_);
-			throw std::runtime_error(
-				std::string("dup2 failed: ") +
-				std::strerror(errno));
+			throw std::runtime_error(std::string("dup2 failed: ") +
+						 std::strerror(errno));
 		}
 		close(pipe_fds[1]);
 	}
@@ -153,7 +152,7 @@ class stdout_capture {
 		return output;
 	}
 
-      private:
+    private:
 	void restore_stdout()
 	{
 		if (saved_stdout_ == -1) {
@@ -219,7 +218,8 @@ std::string read_fifo_output(int fd, int timeout_ms)
 
 } // namespace
 
-TEST_CASE("bpftime_trace_printk falls back to stdout when TRACEPIPE_PATH is unset")
+TEST_CASE(
+	"bpftime_trace_printk falls back to stdout when TRACEPIPE_PATH is unset")
 {
 	scoped_env_var tracepipe_env(TRACEPIPE_PATH_ENV, nullptr);
 
@@ -242,7 +242,7 @@ TEST_CASE("bpftime_trace_printk writes to tracepipe when a reader is present")
 	REQUIRE(reader_fd != -1);
 
 	scoped_env_var tracepipe_env(TRACEPIPE_PATH_ENV,
-					 tracepipe_path.c_str());
+				     tracepipe_path.c_str());
 	auto stdout_output = capture_stdout([]() {
 		bpftime_trace_printk(
 			reinterpret_cast<uint64_t>("fifo path %s %d\n"), 0,
@@ -256,12 +256,13 @@ TEST_CASE("bpftime_trace_printk writes to tracepipe when a reader is present")
 	REQUIRE(fifo_output == "fifo path ok 42\n");
 }
 
-TEST_CASE("bpftime_trace_printk does not block without a reader and falls back to stdout")
+TEST_CASE(
+	"bpftime_trace_printk does not block without a reader and falls back to stdout")
 {
 	scoped_temp_dir temp_dir;
 	auto tracepipe_path = temp_dir.path() / "tracepipe";
 	scoped_env_var tracepipe_env(TRACEPIPE_PATH_ENV,
-					 tracepipe_path.c_str());
+				     tracepipe_path.c_str());
 
 	auto start = std::chrono::steady_clock::now();
 	auto output = capture_stdout([]() {
@@ -279,18 +280,19 @@ TEST_CASE("bpftime_trace_printk does not block without a reader and falls back t
 	REQUIRE(output == "stdout without reader\n");
 }
 
-TEST_CASE("bpftime_trace_printk ignores TRACEPIPE_PATH entries that are not FIFOs")
+TEST_CASE(
+	"bpftime_trace_printk ignores TRACEPIPE_PATH entries that are not FIFOs")
 {
 	scoped_temp_dir temp_dir;
 	auto tracepipe_path = temp_dir.path() / "tracepipe";
 
-	int regular_file_fd =
-		open(tracepipe_path.c_str(), O_CREAT | O_WRONLY | O_TRUNC, 0644);
+	int regular_file_fd = open(tracepipe_path.c_str(),
+				   O_CREAT | O_WRONLY | O_TRUNC, 0644);
 	REQUIRE(regular_file_fd != -1);
 	close(regular_file_fd);
 
 	scoped_env_var tracepipe_env(TRACEPIPE_PATH_ENV,
-					 tracepipe_path.c_str());
+				     tracepipe_path.c_str());
 	auto output = capture_stdout([]() {
 		bpftime_trace_printk(
 			reinterpret_cast<uint64_t>("regular file fallback\n"),

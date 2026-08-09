@@ -33,30 +33,26 @@ jobs:
   test-ptxpass:
     runs-on: [self-hosted, Linux, X64, gpu]
     steps:
-      - name: Configure proxy for China
-        run: |
-          echo "Setting up proxy for China network..."
-          export http_proxy=http://192.168.15.1:2345
-          export https_proxy=http://192.168.15.1:2345
-          export HTTP_PROXY=http://192.168.15.1:2345
-          export HTTPS_PROXY=http://192.168.15.1:2345
-          export no_proxy=localhost,127.0.0.1,192.168.0.0/16
-          echo "http_proxy=http://192.168.15.1:2345" >> $GITHUB_ENV
-          echo "https_proxy=http://192.168.15.1:2345" >> $GITHUB_ENV
-          echo "HTTP_PROXY=http://192.168.15.1:2345" >> $GITHUB_ENV
-          echo "HTTPS_PROXY=http://192.168.15.1:2345" >> $GITHUB_ENV
-          echo "no_proxy=localhost,127.0.0.1,192.168.0.0/16" >> $GITHUB_ENV
-          git config --global --add http.proxy http://192.168.15.1:2345
-          git config --global --add https.proxy http://192.168.15.1:2345
-          
       - uses: actions/checkout@v4
         with:
-          submodules: recursive
+          submodules: true
+          fetch-depth: 0
+
+      - name: Initialize bpftool submodules (libbpf)
+        run: |
+          rm -rf third_party/bpftool/libbpf
+          git submodule update --init --recursive third_party/bpftool
+
+      - name: Initialize ubpf submodules (bpf_conformance)
+        run: |
+          rm -rf third_party/ubpf/external/bpf_conformance
+          git submodule update --init --recursive third_party/ubpf
 
       - name: Check and install required tools
         run: |
           echo "Checking installed tools..."
           
+          sudo apt-get update
           sudo apt-get install -y build-essential llvm-dev llvm-18-dev cmake libboost-all-dev libzstd-dev pkg-config ninja-build
 
           # Check CUDA
