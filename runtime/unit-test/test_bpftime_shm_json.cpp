@@ -14,6 +14,7 @@
 #include "common_def.hpp"
 #include "catch2/internal/catch_run_context.hpp"
 #include <algorithm>
+#include <cerrno>
 #include <random>
 #include <linux/bpf.h>
 #include "bpf_attach_ctx.hpp"
@@ -56,6 +57,24 @@ const unsigned char bpf_add_mem_64_bit_minimal[] =
 	"\x0f\x20\x00\x00\x00\x00\x00\x00"
 	"\x95\x00\x00\x00\x00\x00\x00\x00"
 	"";
+
+TEST_CASE("add_bpf_link rejects unsupported attach types")
+{
+	bpftime_shm shm("BPFTIME_TEST_SHM_UNSUPPORTED_LINK",
+			shm_open_type::SHM_REMOVE_AND_CREATE);
+	REQUIRE(shm.add_bpf_prog(
+			4, (const ebpf_inst *)bpf_add_mem_64_bit_minimal, 4,
+			"test_prog", BPF_PROG_TYPE_SOCKET_FILTER) >= 0);
+	REQUIRE(shm.is_prog_fd(4));
+
+	bpf_link_create_args args = { .prog_fd = 4,
+				      .target_fd = 5,
+				      .attach_type = BPF_TRACE_FENTRY };
+	errno = 0;
+	REQUIRE(shm.add_bpf_link(7, &args) == -1);
+	REQUIRE(errno == EOPNOTSUPP);
+	REQUIRE_FALSE(shm.is_exist_fake_fd(7));
+}
 
 TEST_CASE("Test bpftime shm json import/export")
 {

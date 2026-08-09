@@ -576,6 +576,13 @@ int bpftime_shm::add_bpf_link(int fd, struct bpf_link_create_args *args)
 		errno = EBADF;
 		return -1;
 	}
+	if (args->attach_type != BPFTIME_BPF_PERF_EVENT_ATTACH_TYPE &&
+	    args->attach_type != bpftime::BPF_TRACE_UPROBE_MULTI) {
+		SPDLOG_DEBUG("add_bpf_link: unsupported attach type {}",
+			     args->attach_type);
+		errno = EOPNOTSUPP;
+		return -1;
+	}
 	// For perf-event links (uprobe/kprobe/tracepoint) the target must be a
 	// valid perf-event handler fd, matching the kernel's BPF_LINK_CREATE
 	// validation. Without this a stale/non-perf target_fd would be silently

@@ -182,10 +182,26 @@ bpf_attach_ctx::bpf_attach_ctx()
 		       bool handle_nv_attach_impl)
 		-> std::optional<instantiated_link_record> {
 		// Need to instantiate the corresponding perf event first
+		if (manager == nullptr || link.target_id < 0 ||
+		    static_cast<std::size_t>(link.target_id) >=
+			    manager->size()) {
+			SPDLOG_DEBUG(
+				"BPF_PERF_EVENT link {} targets invalid handler {}",
+				id, link.target_id);
+			return {};
+		}
+		const auto &target_handler =
+			manager->get_handler(link.target_id);
+		if (!std::holds_alternative<bpf_perf_event_handler>(
+			    target_handler)) {
+			SPDLOG_DEBUG(
+				"BPF_PERF_EVENT link {} target {} has handler type {}, not perf event",
+				id, link.target_id, target_handler.index());
+			return {};
+		}
 		if (int err = instantiate_perf_event_handler_at(
 			    link.target_id,
-			    (std::get<bpf_perf_event_handler>(
-				    manager->get_handler(link.target_id))));
+			    std::get<bpf_perf_event_handler>(target_handler));
 		    err < 0) {
 			SPDLOG_ERROR(
 				"Unable to instantiate perf event handler {} when instantiating link handler {}: {}",
@@ -438,8 +454,15 @@ bpf_attach_ctx::instantiate_perf_event_bpf_link_handler_at(
 		id, handler.prog_id, handler.target_id);
 	auto prog = instantiated_progs.at(handler.prog_id).get();
 	// For perf event link, there should be an instantiated target
-	auto &[priv_data, attach_type] =
-		instantiated_perf_events[handler.target_id];
+	auto event_itr = instantiated_perf_events.find(handler.target_id);
+	if (event_itr == instantiated_perf_events.end() ||
+	    event_itr->second.first == nullptr) {
+		SPDLOG_DEBUG(
+			"Perf event target {} is not backed by attach private data",
+			handler.target_id);
+		return {};
+	}
+	auto &[priv_data, attach_type] = event_itr->second;
 	SPDLOG_DEBUG("Attach private data is {}, attach type is {}",
 		     priv_data->to_string(), attach_type);
 	attach::base_attach_impl *attach_impl;
