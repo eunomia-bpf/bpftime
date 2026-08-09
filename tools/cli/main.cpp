@@ -815,6 +815,10 @@ extract_path_and_args(const argparse::ArgumentParser &parser,
 				env_args.emplace_back(
 					"BPFTIME_ALLOW_EXTERNAL_MAPS=true");
 			}
+			if (parser.get<bool>("--fuzzy-backtracer")) {
+				env_args.emplace_back(
+					"BPFTIME_FRIDA_FUZZY_BACKTRACER=true");
+			}
 			if (parser.is_used("--memory-size")) {
 				env_args.emplace_back(
 					"BPFTIME_SHM_MEMORY_MB=" +
@@ -843,6 +847,9 @@ add_common_runtime_env_cli_options(argparse::ArgumentParser &command)
 		.help("Same as BPFTIME_LOG_OUTPUT, control the log output destination, for example 'console' or a file path.");
 	command.add_argument("--allow-external-maps")
 		.help("Same as BPFTIME_ALLOW_EXTERNAL_MAPS, allow loading unsupported external maps with the bpftime syscall-server library.")
+		.flag();
+	command.add_argument("--fuzzy-backtracer")
+		.help("Use Frida's fuzzy backtracer for user stack collection; accurate unwinding remains the default.")
 		.flag();
 	command.add_argument("--memory-size")
 		.help("Same as BPFTIME_SHM_MEMORY_MB, set the shared memory size for bpftime maps in MB.")
