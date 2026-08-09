@@ -1,4 +1,5 @@
-if(${ENABLE_EBPF_VERIFIER})
+if(${ENABLE_EBPF_VERIFIER} AND NOT TARGET Catch2)
+    message(STATUS "Adding Catch2 by FetchContent from runtime/unit-test")
     Include(FetchContent)
     FetchContent_Declare(
         Catch2
@@ -17,8 +18,24 @@ set(TEST_SOURCES
     maps/test_per_cpu_hash.cpp
     maps/test_shm_hash_maps.cpp
     maps/test_external_map_ops.cpp
+    maps/test_bpftime_hash_map.cpp
+    maps/kernel_unit_tests.cpp
+    maps/test_stack_trace_map.cpp
+    maps/test_queue_map.cpp
+    maps/test_stack_map.cpp
+    maps/test_bloom_filter_map.cpp
+    maps/test_lpm_trie_map.cpp
+
+    maps/test_lru_var_hash_map.cpp
+    maps/test_lru_hash_map.cpp
 
     test_bpftime_shm_json.cpp
+    test_probe.cpp
+    test_get_stack.cpp
+    test_config.cpp
+    test_shm_allocation_failure.cpp
+    test_software_perf_event.cpp
+
     attach_with_ebpf/test_attach_filter_with_ebpf.cpp
     attach_with_ebpf/test_attach_uprobe_with_ebpf.cpp
     attach_with_ebpf/test_helpers.cpp
@@ -27,12 +44,55 @@ set(TEST_SOURCES
     attach_with_ebpf/test_attach_replace.cpp
 
     tailcall/test_user_to_kernel_tailcall.cpp
-)
+    tailcall/test_user_to_user_tailcall.cpp
 
+)
+if(${BPFTIME_ENABLE_CUDA_ATTACH})
+    list(APPEND TEST_SOURCES cuda/test_cuda_compile.cpp)
+endif()
+option(TEST_LCOV "option for lcov" OFF)
 add_executable(bpftime_runtime_tests ${TEST_SOURCES})
+
+if(UNIX AND NOT APPLE)
+    add_executable(bpftime-shm-allocation-test-helper
+        assets/shm_allocation_test_helper.c)
+    add_executable(bpftime-runtime-options-test-helper
+        assets/runtime_options_test_helper.c)
+    set_property(TARGET bpftime-shm-allocation-test-helper PROPERTY C_STANDARD 99)
+    set_property(TARGET bpftime-runtime-options-test-helper PROPERTY C_STANDARD 99)
+    add_dependencies(bpftime_runtime_tests
+        bpftime-syscall-server
+        bpftime-runtime-options-test-helper
+        bpftime-shm-allocation-test-helper)
+    file(GENERATE
+        OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/shm_allocation_test_paths.hpp"
+        CONTENT "#define BPFTIME_SHM_ALLOCATION_TEST_HELPER \"$<TARGET_FILE:bpftime-shm-allocation-test-helper>\"\n#define BPFTIME_SYSCALL_SERVER_LIBRARY \"$<TARGET_FILE:bpftime-syscall-server>\"\n")
+    target_include_directories(bpftime_runtime_tests PRIVATE
+        "${CMAKE_CURRENT_BINARY_DIR}")
+endif()
+
+if(${TEST_LCOV})
+    target_compile_options(bpftime_runtime_tests PRIVATE -fprofile-arcs -ftest-coverage -fprofile-update=atomic)
+endif()
+
 set_property(TARGET bpftime_runtime_tests PROPERTY CXX_STANDARD 20)
 add_dependencies(bpftime_runtime_tests runtime bpftime-object bpftime_frida_uprobe_attach_impl)
-target_link_libraries(bpftime_runtime_tests PRIVATE runtime bpftime-object Catch2::Catch2WithMain bpftime_frida_uprobe_attach_impl)
+
+if(${BPFTIME_ENABLE_CUDA_ATTACH})
+    include(../../cmake/cuda.cmake)
+    find_cuda()
+    target_include_directories(bpftime_runtime_tests PRIVATE ${CUDA_INCLUDE_PATH})
+    target_link_directories(bpftime_runtime_tests PRIVATE ${CUDA_LIBRARY_PATH})
+
+endif()
+
+if(${TEST_LCOV})
+    target_link_options(bpftime_runtime_tests PRIVATE -lgcov)
+    target_link_libraries(bpftime_runtime_tests PRIVATE runtime bpftime-object Catch2::Catch2WithMain bpftime_frida_uprobe_attach_impl gcov ${CUDA_LIBS})
+else()
+    target_link_libraries(bpftime_runtime_tests PRIVATE runtime bpftime-object Catch2::Catch2WithMain bpftime_frida_uprobe_attach_impl ${CUDA_LIBS})
+endif()
+
 target_include_directories(bpftime_runtime_tests PRIVATE ${BPFTIME_RUNTIME_INCLUDE} ${BPFTIME_OBJECT_INCLUDE_DIRS} ${Catch2_INCLUDE} ${Boost_INCLUDE} ${FRIDA_UPROBE_ATTACH_IMPL_INCLUDE})
 add_test(NAME bpftime_runtime_tests COMMAND bpftime_runtime_tests)
 

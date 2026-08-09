@@ -1,8 +1,0 @@
--- asm
-ldxw r0, [r1]
-le32 r0
-exit
--- mem
-44 33 22 11
--- result
-0x11223344

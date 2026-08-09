@@ -1,5 +1,0 @@
--- asm
-mov r11, 1
-exit
--- error
-Failed to load code: invalid destination register at PC 0

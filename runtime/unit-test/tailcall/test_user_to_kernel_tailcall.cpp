@@ -10,7 +10,8 @@
 #include <bpf/libbpf.h>
 #include <bpf/bpf.h>
 #include <bpf_map/userspace/prog_array.hpp>
-#include "../common_def.hpp"
+#include <unit-test/common_def.hpp>
+#include "bpftime_shm_internal.hpp"
 using namespace bpftime;
 
 static const char *SHM_NAME = "BPFTIME_PROG_ARRAY_AND_TAIL_CALL_TEST_SHM";
@@ -65,9 +66,10 @@ TEST_CASE("Test tail calling from userspace to kernel")
 	REQUIRE(prog_fd >= 0);
 	SPDLOG_INFO("Kernel program fd: {}", prog_fd);
 
-	shm_remove remover(SHM_NAME);
+	bpftime::shm_remove remover(SHM_NAME);
 	bpftime_initialize_global_shm(
 		bpftime::shm_open_type::SHM_REMOVE_AND_CREATE);
+	
 	REQUIRE(bpftime_maps_create(PROG_ARRAY_MAP_FD, "prog_array",
 				    bpftime::bpf_map_attr{
 					    .type = (int)bpftime::bpf_map_type::
@@ -96,15 +98,17 @@ TEST_CASE("Test tail calling from userspace to kernel")
 		BPF_MOV64_REG(1, 10),
 		// r1 += -0x40
 		BPF_ALU64_IMM(BPF_ADD, 1, -0x40),
-		// r2 = map_ptr
-		BPF_LD_IMM64_RAW_FULL(2, 0, 0, 0, 0, PROG_ARRAY_MAP_FD),
+		// r2 = raw prog array handle encoded with the current low-32-bit fd representation
+		BPF_LD_IMM64_RAW_FULL(2, 0, 0, 0, PROG_ARRAY_MAP_FD, 0),
 		// r3 = 0
 		BPF_MOV64_IMM(3, 0),
 		// call 0x0c
 		BPF_EMIT_CALL(0x0c), BPF_EXIT_INSN()
 	};
+	bpftime::runtime_config config;
+	config.set_vm_name("llvm");
 	bpftime_prog prog((const ebpf_inst *)user_insn, std::size(user_insn),
-			  "user_prog");
+			  "user_prog",std::move(config));
 	REQUIRE(bpftime_helper_group::get_kernel_utils_helper_group()
 			.add_helper_group_to_prog(&prog) == 0);
 	REQUIRE(prog.bpftime_prog_load(false) == 0);

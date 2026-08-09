@@ -5,9 +5,9 @@
  */
 #include "spdlog/spdlog.h"
 #include <bpf_map/userspace/perf_event_array_map.hpp>
-#include <cassert>
 #include <cerrno>
 #include <spdlog/spdlog.h>
+#include <stdexcept>
 
 namespace bpftime
 {
@@ -20,7 +20,8 @@ perf_event_array_map_impl::perf_event_array_map_impl(
 	if (key_size != 4 || value_size != 4) {
 		SPDLOG_ERROR(
 			"Key size and value size of perf_event_array must be 4");
-		assert(false);
+		throw std::runtime_error(
+			"Key size and value size of perf_event_array must be 4");
 	}
 }
 
@@ -58,8 +59,7 @@ long perf_event_array_map_impl::elem_delete(const void *key)
 	return 0;
 }
 
-int perf_event_array_map_impl::map_get_next_key(const void *key,
-						    void *next_key)
+int perf_event_array_map_impl::map_get_next_key(const void *key, void *next_key)
 {
 	int32_t *out = (int32_t *)next_key;
 	if (key == nullptr) {

@@ -3,10 +3,28 @@ name: Build and Attach Tests Workflow
 on:
   workflow_dispatch:
   push:
-    branches: "*"
-  pull_request: 
-    branches: "master"
-    
+    branches: ["master"]
+    paths:
+      - ".github/workflows/test-attach.yml"
+      - "attach/**"
+      - "runtime/**"
+      - "vm/**"
+      - "cmake/**"
+      - "third_party/**"
+      - "CMakeLists.txt"
+      - ".gitmodules"
+  pull_request:
+    branches: ["master"]
+    paths:
+      - ".github/workflows/test-attach.yml"
+      - "attach/**"
+      - "runtime/**"
+      - "vm/**"
+      - "cmake/**"
+      - "third_party/**"
+      - "CMakeLists.txt"
+      - ".gitmodules"
+
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}-${{ github.event_name }}
   cancel-in-progress: true
@@ -25,25 +43,85 @@ jobs:
     steps:
       - uses: actions/checkout@v2
         with:
-          submodules: 'recursive'
-          
+          submodules: "recursive"
+      - name: Setup conda
+        uses: conda-incubator/setup-miniconda@v3
+        with:
+          channels: conda-forge,bioconda
+          channel-priority: strict
+          miniforge-version: latest
+      - name: Install absl and protobuf
+        run: conda install libabseil libprotobuf
+      - name: Install dependencies
+        if: "matrix.container == 'ubuntu-2204'"
+        run: |
+          apt-get update -y && apt-get install -y lcov libzstd-dev libboost-all-dev gpg
+      - name: Install lcov
+        if: "matrix.container == 'fedora-39'"
+        run: |
+          dnf install -y lcov
+
       - name: Build for frida uprobe attach tests
         run: |
-          cmake -B build
+          cmake -DCMAKE_BUILD_TYPE:STRING=Debug -DTEST_LCOV=ON -DBUILD_BPFTIME_DAEMON=OFF -B build -Dabsl_DIR=~/miniconda3/lib/cmake/absl -DProtobuf_DIR=~/miniconda3/lib/cmake/protobuf -Dutf8_range_DIR=~/miniconda3/lib/cmake/utf8_range
           cmake --build build --config Debug --target bpftime_frida_uprobe_attach_tests -j$(nproc)
-          
       - name: Run frida uprobe attach tests
         run: |
-          ./build/attach/frida_uprobe_attach_impl/bpftime_frida_uprobe_attach_tests
-
+          ./build/attach/frida_uprobe_attach_impl/bpftime_frida_uprobe_attach_tests  "~Test with backtrace"
+      - name: Generate frida uprobe attach test coverage (Fedora)
+        if: "matrix.container == 'fedora-39'"
+        run: |
+          lcov --capture --directory . --output-file coverage-uprobe.info
+          lcov --remove coverage-uprobe.info '/usr/*' --output-file coverage-uprobe.info
+          lcov --list coverage-uprobe.info
+      - name: Generate frida uprobe attach test coverage (Ubuntu)
+        if: "matrix.container == 'ubuntu-2204'"
+        run: |
+          lcov --capture --directory . --output-file coverage-uprobe.info --gcov-tool $(which gcov-12)
+          lcov --remove coverage-uprobe.info '/usr/*' --output-file coverage-uprobe.info
+          lcov --list coverage-uprobe.info
+      - name: Upload uprobe coverage
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-uprobe-${{matrix.container}}
+          include-hidden-files: false
+          path: |
+            ./coverage-uprobe.info
       - name: Remove the build
         run: rm -rf build
 
       - name: Build syscall trace uprobe attach tests
         run: |
-          cmake -B build
+          cmake -DTEST_LCOV=ON -DBUILD_BPFTIME_DAEMON=OFF -B build -Dabsl_DIR=~/miniconda3/lib/cmake/absl -DProtobuf_DIR=~/miniconda3/lib/cmake/protobuf -Dutf8_range_DIR=~/miniconda3/lib/cmake/utf8_range
           cmake --build build --config Debug --target bpftime_syscall_trace_attach_tests -j$(nproc)
-          
+
       - name: Run syscall trace uprobe attach tests
         run: |
           ./build/attach/syscall_trace_attach_impl/bpftime_syscall_trace_attach_tests
+      - name: Generate syscall trace uprobe attach coverage (Ubuntu)
+        if: "matrix.container == 'ubuntu-2204'"
+        run: |
+          lcov --capture --directory . --output-file coverage-syscall-trace.info --gcov-tool $(which gcov-12)
+          lcov --remove coverage-syscall-trace.info '/usr/*' --output-file coverage-syscall-trace.info
+          lcov --list coverage-syscall-trace.info
+      - name: Generate syscall trace uprobe attach coverage (Fedora)
+        if: "matrix.container == 'fedora-39'"
+        run: |
+          lcov --capture --directory . --output-file coverage-syscall-trace.info
+          lcov --remove coverage-syscall-trace.info '/usr/*' --output-file coverage-syscall-trace.info
+          lcov --list coverage-syscall-trace.info
+      - name: Upload uprobe coverage
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-syscall-trace-${{matrix.container}}
+          include-hidden-files: false
+          path: |
+            ./coverage-syscall-trace.info
+      - uses: codecov/codecov-action@v4
+        if: github.repository == 'eunomia-bpf/bpftime' && github.event_name == 'push' && github.ref == 'refs/heads/main'
+        with:
+          fail_ci_if_error: true # optional (default = false)
+          files: ./coverage-syscall-trace.info, ./coverage-uprobe.info # optional
+          flags: attach tests (uprobe & syscall trace)
+          token: ${{ secrets.CODECOV_TOKEN }} # required
+          verbose: true # optional (default = false)

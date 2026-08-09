@@ -45,6 +45,10 @@ endif()
 find_package(Boost REQUIRED)
 
 # Find all headers and implementation files
+if(NOT DEFINED ARCH)
+  set(ARCH ${CMAKE_SYSTEM_PROCESSOR})
+endif()
+
 message(STATUS "Building for architecture: ${ARCH}")
 
 set(sources
@@ -56,25 +60,50 @@ set(sources
   src/handler/prog_handler.cpp
   src/handler/epoll_handler.cpp
   src/handler/link_handler.cpp
+  src/handler/memfd_handler.cpp
   
   src/bpftime_shm.cpp
   src/bpftime_shm_internal.cpp
   src/bpftime_shm_json.cpp
   src/bpftime_prog.cpp
+  src/bpftime_config.cpp
   src/ufunc.cpp
   src/bpf_helper.cpp
+  src/platform_utils.cpp
 
   src/bpf_map/userspace/array_map.cpp
-  src/bpf_map/userspace/hash_map.cpp
+  src/bpf_map/userspace/fix_hash_map.cpp
+  src/bpf_map/userspace/var_hash_map.cpp
   src/bpf_map/userspace/ringbuf_map.cpp
   src/bpf_map/userspace/perf_event_array_map.cpp
   src/bpf_map/userspace/per_cpu_array_map.cpp
   src/bpf_map/userspace/per_cpu_hash_map.cpp
   src/bpf_map/userspace/prog_array.cpp
+  src/bpf_map/userspace/stack_trace_map.cpp
+  src/bpf_map/userspace/lru_var_hash_map.cpp
+
+  src/bpf_map/userspace/queue.cpp
+  src/bpf_map/userspace/stack.cpp
+  src/bpf_map/userspace/bloom_filter.cpp
+  src/bpf_map/userspace/lpm_trie_map.cpp
   extension/extension_helper.cpp
 )
 
-if(BPFTIME_BUILD_KERNEL_BPF)
+if(${BPFTIME_ENABLE_CUDA_ATTACH})
+  list(APPEND sources src/attach/bpf_attach_ctx_cuda.cpp)
+  list(APPEND sources src/bpf_map/gpu/nv_gpu_gdrcopy.cpp)
+  # IPC-based GPU maps (for x86 with CUDA IPC support)
+  list(APPEND sources src/bpf_map/gpu/nv_gpu_per_thread_array_map.cpp)
+  list(APPEND sources src/bpf_map/gpu/nv_gpu_shared_array_map.cpp)
+  list(APPEND sources src/bpf_map/gpu/nv_gpu_ringbuf_map.cpp)
+  list(APPEND sources src/bpf_map/gpu_kernel_shared/array_map_kernel_gpu.cpp)
+  list(APPEND sources src/bpf_map/gpu/nv_gpu_shared_hash_map.cpp)
+  # HOST-based GPU maps (for Tegra/platforms without CUDA IPC)
+  list(APPEND sources src/bpf_map/gpu/nv_gpu_array_host_map.cpp)
+  list(APPEND sources src/bpf_map/gpu/nv_gpu_shared_array_host_map.cpp)
+endif()
+
+if(UNIX AND NOT APPLE AND BPFTIME_BUILD_WITH_LIBBPF)
   list(APPEND sources
     src/bpf_map/shared/array_map_kernel_user.cpp
     src/bpf_map/shared/hash_map_kernel_user.cpp
@@ -83,25 +112,25 @@ if(BPFTIME_BUILD_KERNEL_BPF)
   )
 endif()
 
-
 set(headers
   include/
 )
 message(INFO " Headers: ${headers}")
-
 message(INFO " Found the following sources: ${sources}")
 
-if(CMAKE_BUILD_TYPE STREQUAL "Debug")
-  add_definitions(-DSPDLOG_ACTIVE_LEVEL=SPDLOG_LEVEL_DEBUG)
-else()
-  add_definitions(-DSPDLOG_ACTIVE_LEVEL=SPDLOG_LEVEL_INFO)
-endif()
+# Keep constructor-based self-registration; do not add centralized registry
 
 add_library(
   ${PROJECT_NAME}
   ${sources}
 )
 set_property(TARGET ${PROJECT_NAME} PROPERTY CXX_STANDARD 20)
+if(${BPFTIME_LLVM_JIT})
+  target_compile_definitions(${PROJECT_NAME} PUBLIC BPFTIME_LLVM_JIT=1)
+endif()
+if(${BPFTIME_UBPF_JIT})
+  target_compile_definitions(${PROJECT_NAME} PUBLIC BPFTIME_UBPF_JIT=1)
+endif()
 add_custom_command(
   OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/syscall_id_list.h
   COMMAND /bin/bash ${CMAKE_CURRENT_SOURCE_DIR}/generate_syscall_id_table.sh "${CMAKE_CURRENT_BINARY_DIR}/syscall_id_list.h"
@@ -112,6 +141,9 @@ add_custom_target(
   DEPENDS ${CMAKE_CURRENT_BINARY_DIR}/syscall_id_list.h
 )
 
+message(INFO " Found the following boost include dirs : ${Boost_INCLUDE_DIRS}")
+
+
 target_include_directories(${PROJECT_NAME}
   PUBLIC
   ${CMAKE_CURRENT_SOURCE_DIR}/../vm/include
@@ -119,16 +151,40 @@ target_include_directories(${PROJECT_NAME}
   ${CMAKE_CURRENT_SOURCE_DIR}/../runtime
   ${CMAKE_CURRENT_BINARY_DIR}
   ${CMAKE_CURRENT_SOURCE_DIR}/../third_party
+  ${CMAKE_CURRENT_SOURCE_DIR}
   ${SPDLOG_INCLUDE}
+  ${Boost_INCLUDE_DIRS}
 )
 
 target_link_libraries(${PROJECT_NAME}
   PUBLIC
-  vm-bpf
+  bpftime_vm
   spdlog::spdlog
   bpftime_base_attach_impl
 )
-add_dependencies(${PROJECT_NAME} vm-bpf FridaGum spdlog::spdlog libbpf bpftime_base_attach_impl)
+
+if(UNIX AND NOT APPLE)
+  target_link_libraries(${PROJECT_NAME} PUBLIC ${CMAKE_DL_LIBS})
+endif()
+
+
+if(${BPFTIME_ENABLE_CUDA_ATTACH})
+  include(../cmake/cuda.cmake)
+  find_cuda()
+  message(STATUS "runtime CUDA libs= ${CUDA_LIBS}")
+  target_include_directories(${PROJECT_NAME} PUBLIC ${CUDA_INCLUDE_PATH} ${NV_ATTACH_IMPL_INCLUDE})
+  target_link_directories(${PROJECT_NAME} PUBLIC ${CUDA_LIBRARY_PATH})
+  target_link_libraries(${PROJECT_NAME} PUBLIC ${CUDA_LIBS} bpftime_nv_attach_impl cuda)
+  target_compile_definitions(${PROJECT_NAME} PUBLIC BPFTIME_ENABLE_CUDA_ATTACH=1)
+  add_dependencies(${PROJECT_NAME} bpftime_vm_compat llvmbpf_vm bpftime_nv_attach_impl)
+  target_link_libraries(${PROJECT_NAME} PUBLIC bpftime_vm_compat llvmbpf_vm bpftime_nv_attach_impl)
+  target_include_directories(${PROJECT_NAME} PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/../vm/llvm-jit/include)
+endif()
+if(${BPFTIME_BUILD_WITH_LIBBPF})
+  add_dependencies(${PROJECT_NAME} bpftime_vm FridaGum spdlog::spdlog libbpf bpftime_base_attach_impl)
+else()
+  add_dependencies(${PROJECT_NAME} bpftime_vm FridaGum spdlog::spdlog bpftime_base_attach_impl)
+endif()
 
 if(BPFTIME_ENABLE_IOURING_EXT)
   target_link_libraries(${PROJECT_NAME}
@@ -164,43 +220,86 @@ set_project_warnings(runtime)
 
 message(DEBUG "Applied compiler warnings. Using standard ${CMAKE_CXX_STANDARD}.")
 
-target_link_libraries(${PROJECT_NAME}
-  PUBLIC
-  ${LIBBPF_LIBRARIES}
-  ${FRIDA_GUM_INSTALL_DIR}/libfrida-gum.a
-  -lpthread
-  -lm
-  -ldl
-  -lz
-  -lelf
-  bpftime_base_attach_impl
-)
+if(APPLE)
+  find_library(COCOA_LIBRARY Cocoa)
+  find_library(FOUNDATION_LIBRARY Foundation)
+  find_library(APPKIT_LIBRARY AppKit)
+  find_library(COREF_LIBRARY CoreFoundation)
+  find_library(RESOLV_LIBRARY resolv)
+  mark_as_advanced(COCOA_LIBRARY FOUNDATION_LIBRARY APPKIT_LIBRARY COREF_LIBRARY RESOLV_LIBRARY)
+  set(EXTRA_LIBS ${COCOA_LIBRARY} ${FOUNDATION_LIBRARY} ${APPKIT_LIBRARY} ${COREF_LIBRARY} ${RESOLV_LIBRARY})
+endif()
 
-target_include_directories(${PROJECT_NAME} PUBLIC
-  ${LIBBPF_INCLUDE_DIRS}/uapi
-  ${LIBBPF_INCLUDE_DIRS}
-  ${FRIDA_GUM_INSTALL_DIR}
-  $<INSTALL_INTERFACE:runtime>
-  $<INSTALL_INTERFACE:runtime/src>
-  $<INSTALL_INTERFACE:include>
-  $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
-  $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src>
-)
+if(${BPFTIME_BUILD_WITH_LIBBPF})
+  target_link_libraries(${PROJECT_NAME}
+    PUBLIC
+    ${LIBBPF_LIBRARIES}
+    ${FRIDA_GUM_INSTALL_DIR}/libfrida-gum.a
+    -lpthread
+    -lm
+    -ldl
+    -lz
+    -lelf
+    bpftime_base_attach_impl
+    ${EXTRA_LIBS}
+  )
+else()
+  target_link_libraries(${PROJECT_NAME}
+    PUBLIC
+    ${FRIDA_GUM_INSTALL_DIR}/libfrida-gum.a
+    -lpthread
+    -lm
+    -ldl
+    -lz
+    bpftime_base_attach_impl
+    ${EXTRA_LIBS}
+  )
+endif()
+
+if(BPFTIME_BUILD_WITH_LIBBPF)
+  target_include_directories(${PROJECT_NAME} PUBLIC
+    ${LIBBPF_INCLUDE_DIRS}/uapi
+    ${LIBBPF_INCLUDE_DIRS}
+    ${FRIDA_GUM_INSTALL_DIR}
+    $<INSTALL_INTERFACE:runtime>
+    $<INSTALL_INTERFACE:runtime/src>
+    $<INSTALL_INTERFACE:include>
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src>
+  )
+else()
+  target_include_directories(${PROJECT_NAME} PUBLIC
+    ${FRIDA_GUM_INSTALL_DIR}
+    $<INSTALL_INTERFACE:runtime>
+    $<INSTALL_INTERFACE:runtime/src>
+    $<INSTALL_INTERFACE:include>
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src>
+  )
+endif()
 
 message(DEBUG "Successfully added all dependencies and linked against them.")
 
 set(BPFTIME_RUNTIME_INCLUDE ${CMAKE_CURRENT_SOURCE_DIR}/include ${CMAKE_CURRENT_SOURCE_DIR}/src)
 
-add_subdirectory(object)
+if(BPFTIME_BUILD_WITH_LIBBPF)
+  add_subdirectory(object)
+endif()
+
 add_subdirectory(agent)
 add_subdirectory(syscall-server)
 
 #
 # Unit testing setup
 #
-if(BPFTIME_ENABLE_UNIT_TESTING)
+if(BPFTIME_ENABLE_UNIT_TESTING AND BPFTIME_BUILD_WITH_LIBBPF)
   enable_testing()
-  message(STATUS "Build unit tests for the project. Tests should always be found in the test folder\n")
+  message(STATUS "Build unit tests for the runtime. Tests should always be found in the test folder\n")
   add_subdirectory(test)
   add_subdirectory(unit-test)
+endif()
+
+if(${TEST_LCOV})
+  target_compile_options(${PROJECT_NAME} PUBLIC -fprofile-arcs -ftest-coverage -fprofile-update=atomic)
+  target_link_options(${PROJECT_NAME} PUBLIC -fprofile-arcs)
 endif()

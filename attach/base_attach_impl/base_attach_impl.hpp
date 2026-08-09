@@ -1,10 +1,12 @@
 #ifndef _BPFTIME_BASE_ATTACH_IMPL_HPP
 #define _BPFTIME_BASE_ATTACH_IMPL_HPP
 
+#include "spdlog/spdlog.h"
 #include <cstdint>
 #include <functional>
 #include <optional>
 #include "attach_private_data.hpp"
+#include <stdexcept>
 namespace bpftime
 {
 namespace attach
@@ -15,6 +17,8 @@ using override_return_set_callback = std::function<void(uint64_t, uint64_t)>;
 // Use inline thread_local to ensure ODR
 inline thread_local std::optional<override_return_set_callback>
 	curr_thread_override_return_callback;
+// Function address exposed while an attach callback is running.
+inline thread_local uintptr_t current_thread_attach_func_ip = 0;
 
 // A wrapper function for an entry function of an ebpf program
 using ebpf_run_callback = std::function<int(void *memory, size_t memory_size,
@@ -51,6 +55,15 @@ class base_attach_impl {
 	{
 	}
 
+	/// Call some features provide by specified attach implementation.
+	virtual void *call_attach_specific_function(const std::string &name,
+						    void *data)
+	{
+		SPDLOG_WARN(
+			"Not implemented yet: call_attach_specific_function");
+		return nullptr;
+	}
+
 	virtual ~base_attach_impl(){};
 
     private:
@@ -71,7 +84,8 @@ inline uint64_t bpftime_set_retval(uint64_t value)
 	} else {
 		spdlog::error(
 			"Called bpftime_set_retval, but no retval callback was set");
-		assert(false);
+		throw std::invalid_argument(
+			"Called bpftime_set_retval, but no retval callback was set");
 	}
 	return 0;
 }
@@ -87,7 +101,8 @@ inline uint64_t bpftime_override_return(uint64_t ctx, uint64_t value)
 	} else {
 		spdlog::error(
 			"Called bpftime_override_return, but no retval callback was set");
-		assert(false);
+		throw std::invalid_argument(
+			"Called bpftime_override_return, but no retval callback was set");
 	}
 	return 0;
 }

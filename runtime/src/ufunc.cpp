@@ -3,6 +3,7 @@
  * Copyright (c) 2022, eunomia-bpf org
  * All rights reserved.
  */
+#include "bpftime_ufunc.hpp"
 #include <cstdint>
 #include <cstring>
 #include "bpftime_internal.h"
@@ -29,8 +30,10 @@ ebpf_resovle_ufunc_func(struct bpftime_ufunc_ctx *ufunc_ctx, uint64_t func_id)
 extern "C" int64_t __ebpf_call_find_ufunc_id(const char *func_name)
 {
 	struct bpftime_ufunc_ctx *ufunc_ctx = &global_ufunc_ctx;
-	assert(func_name && ufunc_ctx &&
-	       "Did you forget to load ebpf program?");
+	if (!func_name || !ufunc_ctx) {
+		SPDLOG_ERROR("Invalid func_name or ufunc_ctx");
+		return -1;
+	}
 	struct ebpf_ufunc_func_info *func_list = ufunc_ctx->ufunc_funcs;
 	for (size_t i = 0; i < ufunc_ctx->ufunc_func_cnt; i++) {
 		if (strcmp(func_list[i].name, func_name) == 0) {
@@ -70,7 +73,11 @@ int bpftime_ufunc_resolve_from_info(ebpf_ufunc_func_info func_info,
 
 extern "C" uint64_t __ebpf_call_ufunc_dispatcher(uint64_t id, uint64_t arg_list)
 {
-	assert(id < MAX_UFUNC_FUNCS);
+	if (id >= MAX_UFUNC_FUNCS) {
+		SPDLOG_ERROR("ufunc id {} is too large, max {}", id,
+			     MAX_UFUNC_FUNCS);
+		return -1;
+	}
 	struct ebpf_ufunc_func_info *func_info =
 		ebpf_resovle_ufunc_func(&global_ufunc_ctx, id);
 	if (!func_info || !func_info->func) {
@@ -82,7 +89,10 @@ extern "C" uint64_t __ebpf_call_ufunc_dispatcher(uint64_t id, uint64_t arg_list)
 		SPDLOG_ERROR("func {} is already attached", func_info->name);
 		return 0;
 	}
-	assert((size_t)func_info->num_args <= MAX_ARGS_COUNT);
+	if ((size_t)func_info->num_args > MAX_ARGS_COUNT) {
+		SPDLOG_ERROR("Too many arguments for func id {}", id);
+		return (uint64_t)-1;
+	}
 
 	// Prepare arguments
 	struct arg_list *raw_args = (struct arg_list *)arg_list;

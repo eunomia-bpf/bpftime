@@ -10,8 +10,9 @@
 #include <cinttypes>
 #include <boost/interprocess/managed_shared_memory.hpp>
 #include <boost/interprocess/containers/vector.hpp>
+#include <cstdint>
 #include <functional>
-#include <sched.h>
+#include "platform_utils.hpp"
 
 namespace bpftime
 {
@@ -19,31 +20,21 @@ namespace bpftime
 using bytes_vec_allocator = boost::interprocess::allocator<
 	uint8_t, boost::interprocess::managed_shared_memory::segment_manager>;
 using bytes_vec = boost::interprocess::vector<uint8_t, bytes_vec_allocator>;
+using uint64_vec_allocator = boost::interprocess::allocator<
+	uint64_t, boost::interprocess::managed_shared_memory::segment_manager>;
+using uint64_vec = boost::interprocess::vector<uint64_t, uint64_vec_allocator>;
 
 template <class T>
 static inline T ensure_on_current_cpu(std::function<T(int cpu)> func)
 {
-	static thread_local int currcpu = -1;
-	if (currcpu == sched_getcpu()) {
-		return func(currcpu);
-	}
-	cpu_set_t orig, set;
-	CPU_ZERO(&orig);
-	CPU_ZERO(&set);
-	sched_getaffinity(0, sizeof(orig), &orig);
-	currcpu = sched_getcpu();
-	CPU_SET(currcpu, &set);
-	sched_setaffinity(0, sizeof(set), &set);
-	T ret = func(currcpu);
-	sched_setaffinity(0, sizeof(orig), &orig);
-	return ret;
+	return func(my_sched_getcpu());
 }
 
 template <class T>
 static inline T ensure_on_certain_cpu(int cpu, std::function<T()> func)
 {
 	static thread_local int currcpu = -1;
-	if (currcpu == sched_getcpu()) {
+	if (currcpu == my_sched_getcpu()) {
 		return func(currcpu);
 	}
 	cpu_set_t orig, set;
@@ -79,6 +70,32 @@ struct bytes_vec_hasher {
 		for (auto x : vec)
 			hash_combine(seed, x);
 		return seed;
+	}
+};
+
+struct uint32_hasher {
+	size_t operator()(uint32_t const &data) const
+	{
+		return data;
+	}
+};
+
+static inline bool check_update_flags(uint64_t flags)
+{
+	// Allow custom bpftime ops in the high 32 bits; validate only low 32
+	// bits
+	uint64_t base_flags = flags & 0xFFFFFFFFULL;
+	if (base_flags != 0 /*BPF_ANY*/ && base_flags != 1 /*BPF_NOEXIST*/ &&
+	    base_flags != 2 /*BPF_EXIST*/) {
+		errno = EINVAL;
+		return false;
+	}
+	return true;
+}
+struct int_hasher {
+	size_t operator()(int const &data) const
+	{
+		return data;
 	}
 };
 } // namespace bpftime

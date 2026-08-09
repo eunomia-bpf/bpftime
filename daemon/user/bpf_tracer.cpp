@@ -6,6 +6,7 @@
 #include "spdlog/common.h"
 #include <argp.h>
 #include <cstddef>
+#include <cstdarg>
 #include <filesystem>
 #include <fstream>
 #include <signal.h>
@@ -27,6 +28,7 @@
 #include <spdlog/spdlog.h>
 #include <map>
 #include <spdlog/cfg/env.h>
+#include <chrono>
 
 #define NSEC_PER_SEC 1000000000ULL
 
@@ -35,15 +37,53 @@ using namespace bpftime;
 static volatile sig_atomic_t exiting = 0;
 static bool verbose = false;
 
+static std::string format_variadic_message(const char *format, va_list args)
+{
+	va_list args_copy;
+	va_copy(args_copy, args);
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wformat-nonliteral"
+	const int size = vsnprintf(nullptr, 0, format, args_copy);
+#pragma GCC diagnostic pop
+	va_end(args_copy);
+	if (size <= 0)
+		return {};
+	std::string message(static_cast<size_t>(size) + 1, '\0');
+	va_copy(args_copy, args);
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wformat-nonliteral"
+	vsnprintf(message.data(), message.size(), format, args_copy);
+#pragma GCC diagnostic pop
+	va_end(args_copy);
+	message.resize(static_cast<size_t>(size));
+	while (!message.empty() &&
+	       (message.back() == '\n' || message.back() == '\r')) {
+		message.pop_back();
+	}
+	return message;
+}
+
 static int libbpf_print_fn(enum libbpf_print_level level, const char *format,
 			   va_list args)
 {
 	if (level == LIBBPF_DEBUG && !verbose)
 		return 0;
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wformat-nonliteral"
-	return vfprintf(stderr, format, args);
-#pragma GCC diagnostic pop
+	auto message = format_variadic_message(format, args);
+	switch (level) {
+	case LIBBPF_WARN:
+		SPDLOG_WARN("{}", message);
+		break;
+	case LIBBPF_INFO:
+		SPDLOG_INFO("{}", message);
+		break;
+	case LIBBPF_DEBUG:
+		SPDLOG_DEBUG("{}", message);
+		break;
+	default:
+		SPDLOG_ERROR("{}", message);
+		break;
+	}
+	return static_cast<int>(message.size());
 }
 
 static void sig_int(int signo)
@@ -58,6 +98,14 @@ static int handle_event_rb(void *ctx, void *data, size_t data_sz)
 	assert(handler != NULL);
 	return handler->handle_event(e);
 }
+
+// Function to get current time in nanoseconds using std::chrono
+long long get_current_time_ns() {
+    auto now = std::chrono::steady_clock::now();
+    auto ns = std::chrono::time_point_cast<std::chrono::nanoseconds>(now);
+    return ns.time_since_epoch().count();
+}
+
 
 static int process_exec_maps(bpf_event_handler *handler, bpf_tracer_bpf *obj,
 			     daemon_config &env)
@@ -84,19 +132,12 @@ static int process_exec_maps(bpf_event_handler *handler, bpf_tracer_bpf *obj,
 		if (res != 0) {
 			continue;
 		}
-		struct timespec ts;
+		
 		long long current_nanoseconds;
 		long start_time_ms;
-		// CLOCK_MONOTONIC ensures the time won't go back due to NTP
-		// adjustments CLOCK_REALTIME could be used if you want the real
-		// current time
-		if (clock_gettime(CLOCK_MONOTONIC, &ts) == 0) {
-			// calculates total nanoseconds
-			current_nanoseconds =
-				ts.tv_sec * 1000000000LL + ts.tv_nsec;
-		} else {
-			return 0;
-		}
+		// Get current time in nanoseconds
+    	current_nanoseconds = get_current_time_ns();
+
 		start_time_ms =
 			(current_nanoseconds - e.exec_data.time_ns) / 1000000;
 		if (start_time_ms < env.duration_ms) {
@@ -136,8 +177,7 @@ int bpftime::start_daemon(struct daemon_config env)
 	libbpf_set_print(libbpf_print_fn);
 
 	if (signal(SIGINT, sig_int) == SIG_ERR) {
-		fprintf(stderr, "can't set signal handler: %s\n",
-			strerror(errno));
+		SPDLOG_ERROR("can't set signal handler: {}", strerror(errno));
 		err = 1;
 		return err;
 	}
@@ -145,7 +185,7 @@ int bpftime::start_daemon(struct daemon_config env)
 	obj = bpf_tracer_bpf__open();
 	if (!obj) {
 		err = -1;
-		fprintf(stderr, "failed to open BPF object\n");
+		SPDLOG_ERROR("failed to open BPF object");
 		return err;
 	}
 
@@ -205,7 +245,7 @@ int bpftime::start_daemon(struct daemon_config env)
 
 	err = bpf_tracer_bpf__load(obj);
 	if (err) {
-		fprintf(stderr, "failed to load BPF object: %d\n", err);
+		SPDLOG_ERROR("failed to load BPF object: {}", err);
 		goto cleanup;
 	}
 	if (env.whitelist_enabled()) {
@@ -226,7 +266,7 @@ int bpftime::start_daemon(struct daemon_config env)
 	}
 	err = bpf_tracer_bpf__attach(obj);
 	if (err) {
-		fprintf(stderr, "failed to attach BPF programs\n");
+		SPDLOG_ERROR("failed to attach BPF programs");
 		goto cleanup;
 	}
 
@@ -235,7 +275,7 @@ int bpftime::start_daemon(struct daemon_config env)
 			      &handler, NULL);
 	if (!rb) {
 		err = -1;
-		fprintf(stderr, "Failed to create ring buffer\n");
+		SPDLOG_ERROR("Failed to create ring buffer");
 		goto cleanup;
 	}
 

@@ -2,3 +2,16 @@
 /nginx.pid
 /error-log.txt
 /access-log.txt
+/logs
+/fastcgi_temp
+/proxy_temp
+/scgi_temp
+/uwsgi_temp
+/client_body_temp
+/benchmark/benchlog.txt
+libfilter_impl.so
+.nfs*
+filter_impl.o
+*.o
+*.so
+benchmark_results_*.json

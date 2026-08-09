@@ -7,15 +7,20 @@
 #define _PERF_EVENT_HANDLER
 #include "spdlog/spdlog.h"
 #include <boost/interprocess/managed_shared_memory.hpp>
+#include <boost/interprocess/containers/list.hpp>
 #include <boost/interprocess/containers/string.hpp>
 #include <boost/interprocess/containers/vector.hpp>
 #include <cstddef>
+#include <cstdint>
 #include <optional>
 #include <boost/interprocess/allocators/allocator.hpp>
 #include <boost/interprocess/smart_ptr/shared_ptr.hpp>
 #include <boost/interprocess/smart_ptr/weak_ptr.hpp>
+#if __linux__
 #include "linux/perf_event.h"
+#endif
 #include "bpftime_shm.hpp"
+#include <pthread.h>
 #include <variant>
 
 namespace bpftime
@@ -63,29 +68,87 @@ at the head, if the remaining buffer space at the tail is not enough
 - Add data_head with the corresponding size. modular with buf_len
 */
 
-struct software_perf_event_data {
+struct software_perf_event_buffer {
+	using segment_manager =
+		boost::interprocess::managed_shared_memory::segment_manager;
 	using bytes_vec_allocator = boost::interprocess::allocator<
 		uint8_t,
 		boost::interprocess::managed_shared_memory::segment_manager>;
 	using bytes_vec =
 		boost::interprocess::vector<uint8_t, bytes_vec_allocator>;
-	int cpu;
-	// Field `config` of perf_event_attr
-	int64_t config;
-	// Field `sample_type` of perf_event_attr
-	int32_t sample_type;
 	int pagesize;
 	bytes_vec mmap_buffer;
 	bytes_vec copy_buffer;
-	software_perf_event_data(
-		int cpu, int64_t config, int32_t sample_type,
-		boost::interprocess::managed_shared_memory &memory);
+
+	software_perf_event_buffer(int pagesize, segment_manager *manager);
 	void *ensure_mmap_buffer(size_t buffer_size);
 	perf_event_mmap_page &get_header_ref();
 	const perf_event_mmap_page &get_header_ref_const() const;
 	int output_data(const void *buf, size_t size);
 	size_t mmap_size() const;
 	bool has_data() const;
+	bool copy_next_record_to(software_perf_event_buffer &dst);
+
+    private:
+	bool append_record(const void *record, size_t record_size);
+	bool append_record_parts(const void *first, size_t first_size,
+				 const void *second, size_t second_size,
+				 size_t padding_size = 0);
+	void write_wrapped(uint64_t offset, const void *src, size_t size);
+	void read_wrapped(uint64_t offset, void *dst, size_t size) const;
+};
+
+struct software_perf_event_shard {
+	int pid;
+	int64_t tid;
+	uint64_t generation;
+	uint64_t buffer_generation;
+	software_perf_event_buffer buffer;
+
+	software_perf_event_shard(
+		int pid, int64_t tid, uint64_t generation,
+		uint64_t buffer_generation, int pagesize,
+		software_perf_event_buffer::segment_manager *manager,
+		size_t buffer_size);
+};
+
+using software_perf_event_shard_allocator = boost::interprocess::allocator<
+	software_perf_event_shard,
+	boost::interprocess::managed_shared_memory::segment_manager>;
+using software_perf_event_shard_list =
+	boost::interprocess::list<software_perf_event_shard,
+				  software_perf_event_shard_allocator>;
+
+struct software_perf_event_data {
+	int cpu;
+	// Field `config` of perf_event_attr
+	int64_t config;
+	// Field `sample_type` of perf_event_attr
+	int32_t sample_type;
+	int pagesize;
+	uint64_t event_generation;
+	uint64_t producer_buffer_generation = 1;
+	software_perf_event_buffer consumer_buffer;
+	mutable pthread_spinlock_t shard_lock;
+	uint64_t next_shard_generation = 1;
+	uint64_t drains_since_reclaim = 0;
+	software_perf_event_shard_list producer_shards;
+	software_perf_event_data(
+		int cpu, int64_t config, int32_t sample_type,
+		boost::interprocess::managed_shared_memory &memory);
+	~software_perf_event_data();
+	void *ensure_mmap_buffer(size_t buffer_size);
+	perf_event_mmap_page &get_header_ref();
+	const perf_event_mmap_page &get_header_ref_const() const;
+	int output_data(const void *buf, size_t size);
+	size_t mmap_size() const;
+	bool has_data();
+
+    private:
+	software_perf_event_shard &get_current_thread_shard();
+	void drain_producer_shards();
+	void maybe_reclaim_inactive_producer_shards_locked();
+	void reclaim_inactive_producer_shards_locked();
 };
 
 using software_perf_event_shared_ptr = boost::interprocess::managed_shared_ptr<
@@ -101,6 +164,12 @@ struct uprobe_perf_event_data {
 	size_t ref_ctr_off;
 	boost_shm_string _module_name;
 };
+
+struct kprobe_perf_event_data {
+	boost_shm_string func_name;
+	uint64_t addr;
+	size_t ref_ctr_off;
+};
 struct tracepoint_perf_event_data {
 	int pid;
 	// Tracepoint id at /sys/kernel/tracing/events/syscalls/*/id, used to
@@ -114,7 +183,8 @@ struct custom_perf_event_data {
 
 using perf_event_data_variant =
 	std::variant<uprobe_perf_event_data, tracepoint_perf_event_data,
-		     software_perf_event_shared_ptr, custom_perf_event_data>;
+		     software_perf_event_shared_ptr, custom_perf_event_data,
+		     kprobe_perf_event_data>;
 
 // perf event handler
 struct bpf_perf_event_handler {
@@ -149,11 +219,15 @@ struct bpf_perf_event_handler {
 			       boost::interprocess::managed_shared_memory &mem,
 			       bool default_enabled = false);
 
-	// create uprobe/uretprobe with new perf event attr
+	// create uprobe/uretprobe  with new perf event attr
 	bpf_perf_event_handler(bool is_retprobe, uint64_t offset, int pid,
 			       const char *module_name, size_t ref_ctr_off,
 			       boost::interprocess::managed_shared_memory &mem);
 
+	// create kprobe/kretprobe
+	bpf_perf_event_handler(bool is_retprobe, uint64_t addr,
+			       const char *func_name, size_t ref_ctr_off,
+			       boost::interprocess::managed_shared_memory &mem);
 	// create tracepoint
 	bpf_perf_event_handler(int pid, int32_t tracepoint_id,
 			       boost::interprocess::managed_shared_memory &mem);

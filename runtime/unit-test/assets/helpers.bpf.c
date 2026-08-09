@@ -13,8 +13,11 @@ struct data {
 	int b;
 } __attribute__((__packed__));
 
+SEC("uprobe")
 int print_and_add1(struct data *d, int sz) {
 	bpf_printk("print_and_add1\n");
 	bpf_printk("print_and_add1: %d\n", sz);
- 	return 23;
+	if (!bpf_ktime_get_boot_ns())
+		return 0;
+	return 23;
 }

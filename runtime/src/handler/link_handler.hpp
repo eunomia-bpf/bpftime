@@ -18,7 +18,7 @@
 
 namespace bpftime
 {
-constexpr static int BPF_PERF_EVENT = 41;
+constexpr static int BPF_PERF_EVENT = BPFTIME_BPF_PERF_EVENT_ATTACH_TYPE;
 constexpr static int BPF_TRACE_UPROBE_MULTI = 48;
 constexpr static int BPF_F_UPROBE_MULTI_RETURN = 1;
 struct perf_event_link_data {

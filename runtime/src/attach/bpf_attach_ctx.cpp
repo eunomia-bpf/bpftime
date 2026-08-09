@@ -6,10 +6,11 @@
 #include "attach_private_data.hpp"
 #include "base_attach_impl.hpp"
 #include "bpftime_shm.hpp"
+
 #include "handler/link_handler.hpp"
+#include "handler/map_handler.hpp"
 #include "handler/prog_handler.hpp"
-#include <optional>
-#include <ostream>
+#include <cstring>
 #include <string>
 #include <unistd.h>
 #include <cerrno>
@@ -25,22 +26,26 @@
 #include <handler/perf_event_handler.hpp>
 #include <bpftime_helper_group.hpp>
 #include <handler/handler_manager.hpp>
-#include <tuple>
 #include <utility>
 #include <variant>
 #include <sys/resource.h>
-#include "spdlog/fmt/ostr.h"
-
+#ifdef BPFTIME_ENABLE_CUDA_ATTACH
+#include <cuda.h>
+#include "nv_attach_private_data.hpp"
+#endif
 extern "C" uint64_t bpftime_set_retval(uint64_t value);
 namespace bpftime
 {
 
-static int load_prog_and_helpers(bpftime_prog *prog, const agent_config &config)
+static int load_prog_and_helpers(bpftime_prog *prog,
+				 const runtime_config &config)
 {
+#if defined(__linux__)
 	if (config.enable_kernel_helper_group) {
 		bpftime_helper_group::get_kernel_utils_helper_group()
 			.add_helper_group_to_prog(prog);
 	}
+#endif
 	if (config.enable_ufunc_helper_group) {
 		bpftime_helper_group::get_ufunc_helper_group()
 			.add_helper_group_to_prog(prog);
@@ -52,7 +57,7 @@ static int load_prog_and_helpers(bpftime_prog *prog, const agent_config &config)
 	return prog->bpftime_prog_load(config.jit_enabled);
 }
 
-int bpf_attach_ctx::init_attach_ctx_from_handlers(const agent_config &config)
+int bpf_attach_ctx::init_attach_ctx_from_handlers(const runtime_config &config)
 {
 	const handler_manager *manager =
 		shm_holder.global_shared_memory.get_manager();
@@ -64,37 +69,117 @@ int bpf_attach_ctx::init_attach_ctx_from_handlers(const agent_config &config)
 
 // create a attach context and progs from handlers
 int bpf_attach_ctx::init_attach_ctx_from_handlers(
-	const handler_manager *manager, const agent_config &config)
+	const handler_manager *manager, const runtime_config &config)
 {
-	for (int i = 0; i < (int)manager->size(); i++) {
-		if (manager->is_allocated(i)) {
-			std::set<int> stk;
-			if (int err = instantiate_handler_at(manager, i, stk,
-							     config);
-			    err < 0) {
-				SPDLOG_ERROR("Failed to instantiate handler {}",
-					     i);
-				return err;
+	std::lock_guard<std::mutex> lock(ctx_mutex);
+	for (int attempt = 0; attempt < 3; attempt++) {
+		auto seq =
+			shm_holder.global_shared_memory.read_stable_epoch_seq();
+		if (seq == BPFTIME_EPOCH_SEQ_MISSING) {
+			SPDLOG_WARN(
+				"bpftime: shm epoch state missing; session tracking is disabled");
+			seq = 0;
+		}
+		if (seq == BPFTIME_EPOCH_SEQ_UNSTABLE) {
+			SPDLOG_INFO(
+				"bpftime: shm epoch_seq is unstable before handler scan; retrying");
+			usleep(50 * 1000);
+			continue;
+		}
+		// Detect shm session switch and rebind.
+		if (seq != last_epoch_seq_seen) {
+			if (last_epoch_seq_seen != 0) {
+				SPDLOG_INFO(
+					"bpftime: shm session changed (epoch_seq {} -> {}), rebinding",
+					(unsigned long long)last_epoch_seq_seen,
+					(unsigned long long)seq);
+			} else {
+				SPDLOG_INFO("bpftime: shm epoch_seq = {}",
+					    (unsigned long long)seq);
+			}
+			destroy_all_attach_links_unlocked();
+			reset_instantiated_state_unlocked();
+			last_epoch_seq_seen = seq;
+		}
+		const std::uint64_t epoch_before = last_epoch_seq_seen;
+		for (int i = 0; i < (int)manager->size(); i++) {
+			if (manager->is_allocated(i)) {
+				std::set<int> stk;
+				if (int err = instantiate_handler_at(
+					    manager, i, stk, config, false);
+				    err < 0) {
+					SPDLOG_DEBUG(
+						"Failed to instantiate handler {}",
+						i);
+					// Unable to instantiate handler may not
+					// be an error. We can continue trying
+					// to instantiate other handlers.
+				}
 			}
 		}
+		SPDLOG_DEBUG(
+			"Main initializing for handlers done; initializing CUDA link handles");
+		/// Initialize nvda links at the last time, because they require
+		/// map_basic_info
+		for (int i = 0; i < (int)manager->size(); i++) {
+			if (manager->is_allocated(i)) {
+				std::set<int> stk;
+				if (int err = instantiate_handler_at(
+					    manager, i, stk, config, true);
+				    err < 0) {
+					SPDLOG_DEBUG(
+						"Failed to instantiate handler {}",
+						i);
+				}
+			}
+		}
+		const std::uint64_t epoch_after =
+			shm_holder.global_shared_memory.read_stable_epoch_seq();
+		if (epoch_after == BPFTIME_EPOCH_SEQ_MISSING) {
+			return 0;
+		}
+		if (epoch_after == BPFTIME_EPOCH_SEQ_UNSTABLE) {
+			SPDLOG_INFO(
+				"bpftime: shm epoch_seq is unstable after handler scan; retrying");
+			destroy_all_attach_links_unlocked();
+			reset_instantiated_state_unlocked();
+			usleep(50 * 1000);
+			continue;
+		}
+		if (epoch_after == epoch_before ||
+		    epoch_after == last_epoch_seq_seen) {
+			return 0;
+		}
+		SPDLOG_INFO(
+			"bpftime: shm epoch_seq changed during handler scan ({} -> {}), retrying",
+			(unsigned long long)epoch_before,
+			(unsigned long long)epoch_after);
+		destroy_all_attach_links_unlocked();
+		reset_instantiated_state_unlocked();
+		last_epoch_seq_seen = epoch_after;
 	}
-	return 0;
+	return -EAGAIN;
 }
 
 bpf_attach_ctx::~bpf_attach_ctx()
 {
-	SPDLOG_DEBUG("Destructor: bpf_attach_ctx");
+	SPDLOG_INFO("Destructor: bpf_attach_ctx");
+#ifdef BPFTIME_ENABLE_CUDA_ATTACH
+	if (cuda_ctx) {
+		stop_cuda_watcher_thread();
+	}
+#endif
 }
 
 // create a probe context
-bpf_attach_ctx::bpf_attach_ctx(void)
-
+bpf_attach_ctx::bpf_attach_ctx()
 {
 	current_id = CURRENT_ID_OFFSET;
 	// Register handlers for different link attach type
 	link_attach_handlers[BPF_PERF_EVENT] =
 		[this](const bpf_link_handler &link, int id,
-		       const handler_manager *manager)
+		       const handler_manager *manager,
+		       bool handle_nv_attach_impl)
 		-> std::optional<instantiated_link_record> {
 		// Need to instantiate the corresponding perf event first
 		if (int err = instantiate_perf_event_handler_at(
@@ -109,20 +194,31 @@ bpf_attach_ctx::bpf_attach_ctx(void)
 		}
 		// For normal perf events, we instantiate by calling
 		// instantiate_perf_event_bpf_link_handler_at
-		return instantiate_perf_event_bpf_link_handler_at(id, link,
-								  manager);
+		return instantiate_perf_event_bpf_link_handler_at(
+			id, link, manager, handle_nv_attach_impl);
 	};
 	link_attach_handlers[BPF_TRACE_UPROBE_MULTI] =
 		[this](const bpf_link_handler &link, int id,
-		       const handler_manager *manager)
-		-> std::optional<instantiated_link_record> {
+		       const handler_manager *,
+		       bool) -> std::optional<instantiated_link_record> {
 		return this->instantiate_uprobe_multi_handler_at(id, link);
 	};
+	SPDLOG_INFO("bpf_attach_ctx constructed");
+#ifdef BPFTIME_ENABLE_CUDA_ATTACH
+	if (auto ctx = cuda::create_cuda_context(); ctx) {
+		cuda_ctx = std::move(*ctx);
+		start_cuda_watcher_thread();
+	} else {
+		SPDLOG_WARN(
+			"CUDA shared communication memory not available; CUDA attach will be disabled for this process");
+	}
+#endif
 }
 
 int bpf_attach_ctx::instantiate_handler_at(const handler_manager *manager,
 					   int id, std::set<int> &stk,
-					   const agent_config &config)
+					   const runtime_config &config,
+					   bool handle_nv_attach_impl)
 {
 	SPDLOG_DEBUG("Instantiating handler at {}", id);
 	if (instantiated_handlers.contains(id)) {
@@ -158,7 +254,8 @@ int bpf_attach_ctx::instantiate_handler_at(const handler_manager *manager,
 		auto &link_handler = std::get<bpf_link_handler>(handler);
 		// Instantiate program of the current bpf link
 		if (int err = instantiate_handler_at(
-			    manager, link_handler.prog_id, stk, config);
+			    manager, link_handler.prog_id, stk, config,
+			    handle_nv_attach_impl);
 		    err < 0) {
 			SPDLOG_ERROR(
 				"Unable to instantiate prog handler {} when instantiating link handler {}: {}",
@@ -170,9 +267,10 @@ int bpf_attach_ctx::instantiate_handler_at(const handler_manager *manager,
 		if (auto itr = link_attach_handlers.find(
 			    link_handler.link_attach_type);
 		    itr != link_attach_handlers.end()) {
-			if (auto ret = itr->second(link_handler, id, manager);
+			if (auto ret = itr->second(link_handler, id, manager,
+						   handle_nv_attach_impl);
 			    ret.has_value()) {
-				instantiated_attach_ids[id] = ret.value();
+				instantiated_attach_links[id] = ret.value();
 			} else {
 				SPDLOG_ERROR(
 					"Unable to instantiate link handler {}",
@@ -191,6 +289,7 @@ int bpf_attach_ctx::instantiate_handler_at(const handler_manager *manager,
 		SPDLOG_DEBUG("Instantiating type {}", handler.index());
 	}
 	stk.erase(id);
+
 	instantiated_handlers.insert(id);
 	SPDLOG_DEBUG("Instantiating done: {}", id);
 	return 0;
@@ -223,7 +322,7 @@ void bpf_attach_ctx::register_attach_impl(
 }
 int bpf_attach_ctx::instantiate_prog_handler_at(int id,
 						const bpf_prog_handler &handler,
-						const agent_config &config)
+						const runtime_config &config)
 {
 	const ebpf_inst *insns = handler.insns.data();
 	size_t cnt = handler.insns.size();
@@ -240,6 +339,7 @@ int bpf_attach_ctx::instantiate_prog_handler_at(int id,
 	for (const auto &item : helpers) {
 		prog->bpftime_prog_register_raw_helper(item.second);
 	}
+	instantiated_handlers.insert(id);
 	return 0;
 }
 std::optional<instantiated_link_record>
@@ -281,11 +381,18 @@ bpf_attach_ctx::instantiate_uprobe_multi_handler_at(
 
 		} else {
 			SPDLOG_ERROR(
-				"Trying to instantiate uprobe multi (entry hook), but uretprobe is not registered");
+				"Trying to instantiate uprobe multi (entry hook), but uprobe is not registered");
 			return {};
 		}
 	}
 	instantiated_link_record native_ids;
+	auto rollback_native_ids = [&]() {
+		for (const auto &[native_id, impl] : native_ids) {
+			if (native_id >= 0 && impl != nullptr) {
+				(void)impl->detach_by_id(native_id);
+			}
+		}
+	};
 	for (const auto &entry : link_data.entries) {
 		std::string arg_str = link_data.path.c_str();
 		arg_str += ":";
@@ -296,6 +403,7 @@ bpf_attach_ctx::instantiate_uprobe_multi_handler_at(
 			SPDLOG_ERROR(
 				"Failed to create uprobe/uretprobe private data for arg string {}, err={}, uprobe multi link {}",
 				arg_str, err, id);
+			rollback_native_ids();
 			return {};
 		}
 		auto cookie = entry.cookie;
@@ -308,14 +416,23 @@ bpf_attach_ctx::instantiate_uprobe_multi_handler_at(
 				return err;
 			},
 			*priv_data, attach_type);
+		if (attach_id < 0) {
+			SPDLOG_ERROR(
+				"Unable to instantiate uprobe_multi link handler {} for {}: {}",
+				id, arg_str, attach_id);
+			rollback_native_ids();
+			return {};
+		}
 		native_ids.emplace_back(attach_id, attach_impl);
 	}
 	return native_ids;
 }
 std::optional<instantiated_link_record>
 bpf_attach_ctx::instantiate_perf_event_bpf_link_handler_at(
-	int id, const bpf_link_handler &handler, const handler_manager *manager)
+	int id, const bpf_link_handler &handler, const handler_manager *manager,
+	bool handle_nv_attach_impl)
 {
+	(void)manager;
 	SPDLOG_DEBUG(
 		"Instantiating bpf link handler of type perf event at id {}, prog {}, target {}",
 		id, handler.prog_id, handler.target_id);
@@ -323,9 +440,10 @@ bpf_attach_ctx::instantiate_perf_event_bpf_link_handler_at(
 	// For perf event link, there should be an instantiated target
 	auto &[priv_data, attach_type] =
 		instantiated_perf_events[handler.target_id];
-	SPDLOG_DEBUG("Attach private data is {}, attach type is ",
+	SPDLOG_DEBUG("Attach private data is {}, attach type is {}",
 		     priv_data->to_string(), attach_type);
 	attach::base_attach_impl *attach_impl;
+	// Find what kind of attach type it is
 	if (auto itr = attach_impls.find(attach_type);
 	    itr != attach_impls.end()) {
 		attach_impl = itr->second.first;
@@ -338,22 +456,79 @@ bpf_attach_ctx::instantiate_perf_event_bpf_link_handler_at(
 	if (cookie.has_value()) {
 		SPDLOG_DEBUG("Attach cookie is {}", cookie.value());
 	}
-	int attach_id = attach_impl->create_attach_with_ebpf_callback(
-		[=](void *mem, size_t mem_size, uint64_t *ret) -> int {
-			current_thread_bpf_cookie = cookie;
-			int err = prog->bpftime_prog_exec((void *)mem, mem_size,
-							  ret);
-			return err;
-		},
-		*priv_data, attach_type);
+	SPDLOG_DEBUG(
+		"Instantiating bpf link {}, bpftime_prog->prog_name() = {}", id,
+		prog->prog_name());
+	int attach_id;
+#ifdef BPFTIME_ENABLE_CUDA_ATTACH
+	if (prog->is_cuda()) {
+		SPDLOG_INFO(
+			"Instantiating bpf link {} and the corresponding program {} is cuda program",
+			id, prog->prog_name());
+		if (!cuda_ctx) {
+			SPDLOG_WARN(
+				"CUDA context is not initialized; skipping CUDA attach for link {}",
+				id);
+			return {};
+		}
+		if (handle_nv_attach_impl) {
+			SPDLOG_INFO(
+				"Handling link to CUDA program: {}, recording it..",
+				id);
+			auto &nv_attach_private_data =
+				dynamic_cast<attach::nv_attach_private_data &>(
+					*priv_data);
+			nv_attach_private_data.program_name = prog->prog_name();
+			nv_attach_private_data.comm_shared_mem =
+				this->cuda_ctx->cuda_shared_mem_device_pointer;
+			nv_attach_private_data.instructions = prog->get_insns();
+			SPDLOG_INFO(
+				"Loaded {} instructions (original) for cuda ebpf program",
+				prog->get_insns().size());
+			nv_attach_private_data.map_basic_info =
+				this->create_map_basic_info(1024);
+			attach_id =
+				attach_impl->create_attach_with_ebpf_callback(
+					[=](void *mem, size_t mem_size,
+					    uint64_t *ret) -> int { return 0; },
+					*priv_data, attach_type);
+		} else {
+			SPDLOG_INFO(
+				"Skipping nv attach handler {} since we are not handling nv handles",
+				id);
+			return std::nullopt;
+		}
+	} else
+#endif
+	{
+#ifdef BPFTIME_ENABLE_CUDA_ATTACH
+		if (auto p = dynamic_cast<attach::nv_attach_private_data *>(
+			    priv_data.get());
+		    p) {
+			SPDLOG_ERROR(
+				"A CUDA attach must be used with a CUDA program (program with name starts with `cuda__`), not {}",
+				prog->prog_name());
+			return {};
+		}
+#endif
+		attach_id = attach_impl->create_attach_with_ebpf_callback(
+			[=](void *mem, size_t mem_size, uint64_t *ret) -> int {
+				current_thread_bpf_cookie = cookie;
+				int err = prog->bpftime_prog_exec(
+					(void *)mem, mem_size, ret);
+				return err;
+			},
+			*priv_data, attach_type);
+	}
 	if (attach_id < 0) {
-		SPDLOG_ERROR(
-			"Unable to instantiate bpf link handler {} (sub perf id {}): {}",
-			id, handler.target_id, attach_id);
+		// Since the agent might be attach to a unrelated
+		// process Using LD_PRELOAD, it's not an error here.
+		SPDLOG_DEBUG("Unable to instantiate bpf link handler {}: {}",
+			     id, attach_id);
 		return {};
 	}
-	return std::optional<instantiated_link_record>(
-		{ std::make_pair(attach_id, attach_impl) });
+	return instantiated_link_record{ std::make_pair(attach_id,
+							attach_impl) };
 }
 
 int bpf_attach_ctx::instantiate_perf_event_handler_at(
@@ -409,6 +584,23 @@ int bpf_attach_ctx::instantiate_perf_event_handler_at(
 				id, tracepoint_data.tracepoint_id, err);
 			return err;
 		}
+	} else if (perf_handler.type == (int)bpf_event_type::BPF_TYPE_KPROBE ||
+		   perf_handler.type ==
+			   (int)bpf_event_type::BPF_TYPE_KRETPROBE) {
+		auto &kprobe_data =
+			std::get<kprobe_perf_event_data>(perf_handler.data);
+		int err = 0;
+		priv_data =
+			private_data_gen(kprobe_data.func_name.c_str(), err);
+		if (err < 0) {
+			SPDLOG_ERROR(
+				"Unable to parse private data of kprobe/kretprobe {}, func name {}, err = {}",
+				id, kprobe_data.func_name, err);
+			return err;
+		}
+		SPDLOG_DEBUG(
+			"Created kprobe/kretprobe private data at id {}, string value {}",
+			id, priv_data->to_string());
 	} else {
 		auto &custom_data =
 			std::get<custom_perf_event_data>(perf_handler.data);
@@ -424,6 +616,7 @@ int bpf_attach_ctx::instantiate_perf_event_handler_at(
 		}
 	}
 	SPDLOG_DEBUG("Instantiated perf event handler {}", id);
+	instantiated_handlers.insert(id);
 	instantiated_perf_events[id] =
 		std::make_pair(std::move(priv_data), (int)perf_handler.type);
 
@@ -431,10 +624,22 @@ int bpf_attach_ctx::instantiate_perf_event_handler_at(
 }
 int bpf_attach_ctx::destroy_instantiated_attach_link(int link_id)
 {
+	std::lock_guard<std::mutex> lock(ctx_mutex);
+	return destroy_instantiated_attach_link_unlocked(link_id);
+}
+
+int bpf_attach_ctx::destroy_instantiated_attach_link_unlocked(int link_id)
+{
 	SPDLOG_DEBUG("Destroy attach link {}", link_id);
-	if (auto itr = instantiated_attach_ids.find(link_id);
-	    itr != instantiated_attach_ids.end()) {
+	if (auto itr = instantiated_attach_links.find(link_id);
+	    itr != instantiated_attach_links.end()) {
 		for (const auto &[attach_id, impl] : itr->second) {
+			if (impl == nullptr) {
+				SPDLOG_INFO(
+					"Detach: Ignore attach with empty impl: {}",
+					link_id);
+				continue;
+			}
 			SPDLOG_DEBUG("Destroy sub attach {}", attach_id);
 			if (int err = impl->detach_by_id(attach_id); err < 0) {
 				SPDLOG_ERROR(
@@ -443,7 +648,7 @@ int bpf_attach_ctx::destroy_instantiated_attach_link(int link_id)
 				return err;
 			}
 		}
-		instantiated_attach_ids.erase(itr);
+		instantiated_attach_links.erase(itr);
 		return 0;
 	} else {
 		SPDLOG_ERROR("Unable to find instantiated attach link id {}",
@@ -451,4 +656,43 @@ int bpf_attach_ctx::destroy_instantiated_attach_link(int link_id)
 		return -ENOENT;
 	}
 }
+int bpf_attach_ctx::destroy_all_attach_links()
+{
+	std::lock_guard<std::mutex> lock(ctx_mutex);
+	return destroy_all_attach_links_unlocked();
+}
+
+int bpf_attach_ctx::destroy_all_attach_links_unlocked()
+{
+	// Avoid modifying along with iterating..
+	std::vector<int> to_detach;
+	for (const auto &[k, _] : instantiated_attach_links)
+		to_detach.push_back(k);
+	for (auto k : to_detach) {
+		SPDLOG_DEBUG("Destroying attach link {}", k);
+		if (int err = destroy_instantiated_attach_link_unlocked(k);
+		    err < 0) {
+			SPDLOG_ERROR("Unable to destroy attach link {}: {}", k,
+				     err);
+			return err;
+		}
+	}
+	return 0;
+}
+
+void bpf_attach_ctx::reset_instantiated_state()
+{
+	std::lock_guard<std::mutex> lock(ctx_mutex);
+	reset_instantiated_state_unlocked();
+}
+
+void bpf_attach_ctx::reset_instantiated_state_unlocked()
+{
+	instantiated_progs.clear();
+	instantiated_attach_links.clear();
+	instantiated_perf_events.clear();
+	instantiated_handlers.clear();
+	current_id = CURRENT_ID_OFFSET;
+}
+
 } // namespace bpftime

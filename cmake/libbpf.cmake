@@ -1,14 +1,15 @@
 #
 # Setup libbpf
 #
-set(LIBBPF_DIR ${CMAKE_CURRENT_SOURCE_DIR}/third_party/libbpf/)
+set(LIBBPF_DIR ${CMAKE_CURRENT_LIST_DIR}/../third_party/libbpf/)
 include(ExternalProject)
 ExternalProject_Add(libbpf
   PREFIX libbpf
   SOURCE_DIR ${LIBBPF_DIR}/src
   CONFIGURE_COMMAND "mkdir" "-p" "${CMAKE_CURRENT_BINARY_DIR}/libbpf/libbpf"
-  BUILD_COMMAND "INCLUDEDIR=" "LIBDIR=" "UAPIDIR=" "OBJDIR=${CMAKE_CURRENT_BINARY_DIR}/libbpf/libbpf" "DESTDIR=${CMAKE_CURRENT_BINARY_DIR}/libbpf" "make" "CFLAGS=-g -O2 -Werror -Wall -std=gnu89 -fPIC -fvisibility=hidden -DSHARED -DCUSTOM_DEFINE=1" "-j" "install"
+  BUILD_COMMAND "INCLUDEDIR=" "LIBDIR=" "UAPIDIR=" "OBJDIR=${CMAKE_CURRENT_BINARY_DIR}/libbpf/libbpf" "DESTDIR=${CMAKE_CURRENT_BINARY_DIR}/libbpf" "make" "CFLAGS=-g -O2 -std=gnu89 -fPIC -fvisibility=hidden -DSHARED -DCUSTOM_DEFINE=1" "-j" "install"
   BUILD_IN_SOURCE TRUE
+  BUILD_ALWAYS TRUE
   INSTALL_COMMAND ""
   STEP_TARGETS build
   BUILD_BYPRODUCTS ${CMAKE_CURRENT_BINARY_DIR}/libbpf/libbpf.a
@@ -19,7 +20,6 @@ ExternalProject_Add(libbpf
 set(LIBBPF_INCLUDE_DIRS ${CMAKE_CURRENT_BINARY_DIR}/libbpf/)
 set(LIBBPF_LIBRARIES ${CMAKE_CURRENT_BINARY_DIR}/libbpf/libbpf.a)
 
-set(header_output_list)
 
 function(copy_header SRC_DIR TARGET_DIR)
   file(GLOB_RECURSE FILES RELATIVE "${SRC_DIR}" "${SRC_DIR}/*")
@@ -66,14 +66,18 @@ endforeach()
 
 add_dependencies(copy_headers libbpf)
 
+add_custom_target(libbpf_with_headers)
+
+add_dependencies(libbpf_with_headers libbpf copy_headers)
+
 # # Setup bpftool
-set(BPFTOOL_DIR ${CMAKE_CURRENT_SOURCE_DIR}/third_party/bpftool)
+set(BPFTOOL_DIR ${CMAKE_CURRENT_LIST_DIR}/../third_party/bpftool)
 set(BPFTOOL_INSTALL_DIR ${CMAKE_CURRENT_BINARY_DIR}/bpftool)
 ExternalProject_Add(bpftool
   PREFIX bpftool
   SOURCE_DIR ${BPFTOOL_DIR}/src
   CONFIGURE_COMMAND "mkdir" "-p" "${BPFTOOL_INSTALL_DIR}"
-  BUILD_COMMAND "make" "EXTRA_CFLAGS=-g -O2 -Wall -Werror " "-j"
+  BUILD_COMMAND "make" "EXTRA_CFLAGS=-g -O2 " "-j"
   INSTALL_COMMAND "cp" "${BPFTOOL_DIR}/src/bpftool" "${BPFTOOL_INSTALL_DIR}/bpftool"
   BUILD_IN_SOURCE TRUE
   BUILD_BYPRODUCTS ${BPFTOOL_DIR}/src/bpftool

@@ -7,13 +7,22 @@ option(BPFTIME_BUILD_EXECUTABLE "Build the project as an executable, rather than
 #
 # library options
 #
-option(BPFTIME_LLVM_JIT "Use LLVM as jit backend." OFF)
+option(BPFTIME_LLVM_JIT "Use LLVM as jit backend." ON)
+option(BPFTIME_UBPF_JIT "Use uBPF as jit backend." ON)
 
 #
 # Compiler options
 #
 
 option(BPFTIME_WARNINGS_AS_ERRORS "Treat compiler warnings as errors." OFF)
+
+#
+#
+# CUDA options
+#
+
+option(BPFTIME_CUDA_ROOT "Root for CUDA installation" "")
+option(BPFTIME_ENABLE_CUDA_ATTACH "Whether to enable CUDA attach" OFF)
 
 #
 # Unit testing
@@ -82,3 +91,14 @@ option(BUILD_BPFTIME_DAEMON "Whether to build the bpftime daemon" ON)
 
 # whether to build with shared bpf_map
 option(BPFTIME_BUILD_KERNEL_BPF "Whether to build with bpf share maps" ON)
+
+# whether to build single static library
+option(BPFTIME_BUILD_STATIC_LIB "Whether to build a single static library for different archive files" OFF)
+
+# whether to build bpftime with libbpf and other linux headers
+option(BPFTIME_BUILD_WITH_LIBBPF "Whether to build with libbpf and other linux headers" ON)
+
+# whether to enable probe read check
+option(ENABLE_PROBE_READ_CHECK "Whether to enable probe read check" ON)
+# whether to enable probe write check
+option(ENABLE_PROBE_WRITE_CHECK "Whether to enable probe write check" ON)

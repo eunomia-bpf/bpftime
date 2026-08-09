@@ -1,0 +1,12 @@
+# Build artifacts
+.output/
+*.o
+*.skel.h
+
+# Executables
+file_access_monitor
+file_access_target
+
+# Temp files
+*.tmp
+*~

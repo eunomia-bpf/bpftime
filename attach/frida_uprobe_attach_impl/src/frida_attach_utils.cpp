@@ -3,9 +3,15 @@
 #include <filesystem>
 #include <spdlog/spdlog.h>
 #include <frida-gum.h>
+#include <unistd.h>
+#if __APPLE__
+#include <libproc.h>
+#endif
 static std::string get_executable_path()
 {
 	char exec_path[PATH_MAX] = { 0 };
+
+#if __linux__
 	ssize_t len =
 		readlink("/proc/self/exe", exec_path, sizeof(exec_path) - 1);
 	if (len != -1) {
@@ -14,6 +20,14 @@ static std::string get_executable_path()
 	} else {
 		SPDLOG_ERROR("Error retrieving executable path: {}", errno);
 	}
+#elif __APPLE__
+	pid_t pid = getpid();
+	if (proc_pidpath(pid, exec_path, sizeof(exec_path)) > 0) {
+		SPDLOG_INFO("Executable path: {}", exec_path);
+	} else {
+		SPDLOG_ERROR("Error retrieving executable path: {}", errno);
+	}
+#endif
 	return exec_path;
 }
 namespace bpftime
@@ -28,22 +42,29 @@ resolve_function_addr_by_module_offset(const std::string_view &module_name,
 	void *module_base_addr = nullptr;
 	SPDLOG_DEBUG("Resolving module base addr, module name {}, exec_path {}",
 		     module_name, exec_path);
-	if (std::filesystem::equivalent(module_name, exec_path)) {
+	std::error_code ec;
+	const bool is_main_executable =
+		module_name.empty() ||
+		std::filesystem::equivalent(
+			std::filesystem::path(std::string(module_name)),
+			std::filesystem::path(exec_path), ec);
+	if (is_main_executable) {
 		SPDLOG_DEBUG(
 			"module name {} is equivalent to exec path {}, using empty string to resolve module base addr",
 			module_name, exec_path);
 		module_base_addr = get_module_base_addr("");
 	} else {
-			SPDLOG_DEBUG(
+		SPDLOG_DEBUG(
 			"module name {} is *not* equivalent to exec path {}, using module name to resolve module base addr",
 			module_name, exec_path);
 		module_base_addr =
 			get_module_base_addr(std::string(module_name).c_str());
 	}
 	if (!module_base_addr) {
-		SPDLOG_ERROR(
-			"Failed to find module base address for {}, cwd = {}",
-			module_name, std::filesystem::current_path().c_str());
+		// It's not a bug, it might be attach to a unrelated process
+		// when using the LD_PRELOAD
+		SPDLOG_INFO("Failed to find module base address for {}",
+			    module_name);
 		return nullptr;
 	}
 
@@ -81,7 +102,8 @@ int from_cb_idx_to_attach_type(int idx)
 	case ATTACH_URETPROBE_INDEX:
 		return ATTACH_URETPROBE;
 	default:
-		assert(false && "Unreachable!");
+		SPDLOG_ERROR("Unreachable branch reached!");
+		return -1;
 	}
 	return 0;
 }

@@ -10,8 +10,16 @@
 #include <boost/interprocess/smart_ptr/unique_ptr.hpp>
 #include <boost/interprocess/containers/string.hpp>
 #include <cstdint>
-#include <ebpf-vm.h>
+#include <functional>
+#if __linux__
 #include <sys/epoll.h>
+#elif __APPLE__
+#include "bpftime_epoll.h"
+#endif
+
+extern "C" {
+struct ebpf_inst;
+}
 
 namespace bpftime
 {
@@ -31,6 +39,10 @@ struct bpf_map_attr {
 
 	// additional fields for bpftime only
 	uint32_t kernel_bpf_map_id = 0;
+	// Default maximum GPU "thread" count used when sizing GPU maps.
+	// A smaller default keeps shared memory usage reasonable; users can
+	// override via BPFTIME_MAP_GPU_THREAD_COUNT when needed.
+	uint64_t gpu_thread_count = 1024;
 };
 
 enum class bpf_event_type {
@@ -44,11 +56,16 @@ enum class bpf_event_type {
 	// custom types
 	BPF_TYPE_UPROBE = 6,
 	BPF_TYPE_URETPROBE = 7,
+	BPF_TYPE_KPROBE = 8,
+	BPF_TYPE_KRETPROBE = 9,
+
 	BPF_TYPE_UPROBE_OVERRIDE = 1008,
 	BPF_TYPE_UREPLACE = 1009,
 };
 
 #define KERNEL_USER_MAP_OFFSET 1000
+
+const int GPU_MAP_OFFSET = 1500;
 
 enum class bpf_map_type {
 	BPF_MAP_TYPE_UNSPEC,
@@ -102,6 +119,21 @@ enum class bpf_map_type {
 	BPF_MAP_TYPE_KERNEL_USER_PERF_EVENT_ARRAY =
 		KERNEL_USER_MAP_OFFSET + BPF_MAP_TYPE_PERF_EVENT_ARRAY,
 
+	BPF_MAP_TYPE_GPU_HASH_MAP = GPU_MAP_OFFSET + BPF_MAP_TYPE_HASH,
+	// GPU maps using cuMemAlloc + CUDA IPC (for x86 with IPC support)
+	BPF_MAP_TYPE_PERGPUTD_ARRAY_MAP = GPU_MAP_OFFSET + BPF_MAP_TYPE_ARRAY,
+	BPF_MAP_TYPE_GPU_ARRAY_MAP = GPU_MAP_OFFSET + BPF_MAP_TYPE_ARRAY + 1,
+	BPF_MAP_TYPE_GPU_KERNEL_SHARED_ARRAY_MAP =
+		GPU_MAP_OFFSET + BPF_MAP_TYPE_ARRAY + 2,
+	BPF_MAP_TYPE_GPU_RINGBUF_MAP = GPU_MAP_OFFSET + BPF_MAP_TYPE_RINGBUF,
+
+	// GPU maps using boost::interprocess + cudaHostRegister (for
+	// Tegra/platforms without IPC)
+	BPF_MAP_TYPE_PERGPUTD_ARRAY_HOST_MAP =
+		GPU_MAP_OFFSET + BPF_MAP_TYPE_ARRAY + 10,
+	BPF_MAP_TYPE_GPU_ARRAY_HOST_MAP =
+		GPU_MAP_OFFSET + BPF_MAP_TYPE_ARRAY + 11,
+
 	BPF_MAP_TYPE_MAX = 2048,
 };
 
@@ -149,9 +181,14 @@ enum class bpf_prog_type {
 };
 
 extern const shm_open_type global_shm_open_type;
-const bpftime::agent_config &set_agent_config_from_env();
-const bpftime::agent_config &bpftime_get_agent_config();
-void bpftime_set_agent_config(bpftime::agent_config &cfg);
+
+// Get the runtime config in the shared memory.
+// The shared memory should be initialized before calling this function.
+// This should be called by the agent side instead of the server side.
+const bpftime::runtime_config &bpftime_get_runtime_config();
+
+// Set the runtime config in the shared memory.
+void bpftime_set_runtime_config(struct bpftime::runtime_config &&cfg);
 
 // Map ops for register external map types and operations
 //
@@ -206,7 +243,13 @@ int bpftime_export_global_shm_to_json(const char *filename);
 // import a hander to global shared memory from json string
 int bpftime_import_shm_handler_from_json(int fd, const char *json_string);
 
-/* struct type of kernel bpf_attr::link_create */
+// Mirrors the kernel's `enum bpf_attach_type` value for BPF_PERF_EVENT.
+// Defined here (rather than pulling in <linux/bpf.h>) so the value has a single
+// source usable from the cross-platform shm/handler code, which also builds on
+// non-Linux targets.
+constexpr __u32 BPFTIME_BPF_PERF_EVENT_ATTACH_TYPE = 41;
+
+/* struct used by BPF_LINK_CREATE command */
 struct bpf_link_create_args {
 	union {
 		__u32 prog_fd; /* eBPF program to attach */
@@ -296,7 +339,13 @@ int bpftime_progs_create(int fd, const ebpf_inst *insn, size_t insn_cnt,
 // @param[fd]: fd is the fd allocated by the kernel. if fd is -1, then the
 // function will allocate a new perf event fd.
 int bpftime_maps_create(int fd, const char *name, bpftime::bpf_map_attr attr);
-
+// duplicate a bpf map in the global shared memory
+//
+// @param[oldfd]: the fd of the map to be duplicated
+// @param[newfd]: the fd of the new map
+//
+// @return: the fd of the new map
+int bpftime_maps_dup(int oldfd, int newfd);
 // get the bpf map info from the global shared memory
 int bpftime_map_get_info(int fd, bpftime::bpf_map_attr *out_attr,
 			 const char **out_name, bpftime::bpf_map_type *type);
@@ -314,11 +363,28 @@ long bpftime_map_update_elem(int fd, const void *key, const void *value,
 // use from bpf syscall to delete the elem
 long bpftime_map_delete_elem(int fd, const void *key);
 
+// use from bpf syscall to lookup and delete the elem (equivalent to pop for
+// queue/stack maps)
+long bpftime_map_lookup_and_delete_elem(int fd, void *value);
+
+// Queue/stack map helper functions for push/pop/peek operations
+long bpftime_map_push_elem(int fd, const void *value, uint64_t flags);
+
+long bpftime_map_pop_elem(int fd, void *value);
+
+long bpftime_map_peek_elem(int fd, void *value);
+
 // create uprobe in the global shared memory
 //
 // @param[fd]: fd is the fd allocated by the kernel. if fd is -1, then the
 // function will allocate a new perf event fd.
 int bpftime_uprobe_create(int fd, int pid, const char *name, uint64_t offset,
+			  bool retprobe, size_t ref_ctr_off);
+// create kprobe in the global shared memory
+//
+// @param[fd]: fd is the fd allocated by the kernel. if fd is -1, then the
+// function will allocate a new perf event fd.
+int bpftime_kprobe_create(int fd, const char *func_name, uint64_t addr,
 			  bool retprobe, size_t ref_ctr_off);
 // create tracepoint in the global shared memory
 //
@@ -332,19 +398,26 @@ int bpftime_perf_event_enable(int fd);
 // disable the perf event
 int bpftime_perf_event_disable(int fd);
 
+// find the minimal unused fd in shared memory
+// Which is a available handler for bpf related object
 int bpftime_find_minimal_unused_fd();
 
 int bpftime_attach_perf_to_bpf(int perf_fd, int bpf_fd);
 int bpftime_attach_perf_to_bpf_with_cookie(int perf_fd, int bpf_fd,
 					   uint64_t cookie);
+
 int bpftime_add_ringbuf_fd_to_epoll(int ringbuf_fd, int epoll_fd,
 				    epoll_data_t extra_data);
+
 int bpftime_add_software_perf_event_fd_to_epoll(int swpe_fd, int epoll_fd,
 						epoll_data_t extra_data);
 
 int bpftime_epoll_create();
 void *bpftime_get_ringbuf_consumer_page(int ringbuf_fd);
 void *bpftime_get_ringbuf_producer_page(int ringbuf_fd);
+
+int bpftime_poll_from_ringbuf(int rb_fd, void *ctx,
+			      int (*cb)(void *, void *, size_t));
 
 int bpftime_is_ringbuf_map(int fd);
 int bpftime_is_array_map(int fd);
@@ -368,16 +441,21 @@ int bpftime_add_software_perf_event(int cpu, int32_t sample_type,
 int bpftime_is_software_perf_event(int fd);
 void *bpftime_get_software_perf_event_raw_buffer(int fd, size_t expected_size);
 int bpftime_perf_event_output(int fd, const void *buf, size_t sz);
+#if __linux__ && BPFTIME_BUILD_WITH_LIBBPF
 int bpftime_shared_perf_event_output(int map_fd, const void *buf, size_t sz);
+#endif
 int bpftime_add_ureplace_or_override(int fd, int pid, const char *name,
 				     uint64_t offset, bool is_replace);
 
 int bpftime_get_current_thread_cookie(uint64_t *out);
 
 int bpftime_add_custom_perf_event(int type, const char *attach_argument);
-
-int bpftime_poll_from_ringbuf(int rb_fd, void *ctx,
-			      int (*cb)(void *, void *, size_t));
+#ifdef BPFTIME_ENABLE_CUDA_ATTACH
+int bpftime_poll_gpu_ringbuf_map(int mapfd, void *ctx,
+				 void (*)(const void *, uint64_t, void *));
+#endif
+int bpftime_add_memfd_handler(const char *name, int flags);
+int bpftime_translate_shared_map_type_to_kernel_map_type(int ty);
 }
 
 #endif // BPFTIME_SHM_CPP_H

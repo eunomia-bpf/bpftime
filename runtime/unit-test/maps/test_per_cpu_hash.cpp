@@ -38,7 +38,7 @@ TEST_CASE("Test basic operations of hash map")
 
 	SECTION("Test writing from helpers, and read from userspace")
 	{
-		per_cpu_hash_map_impl map(mem, 4, 8);
+		per_cpu_hash_map_impl map(mem, 4, 8, 1 << 20);
 		for (uint32_t j = 0; j < ncpu; j++) {
 			ensure_on_certain_cpu<void>(j, [&]() {
 				for (uint32_t i = 0; i < 100; i++) {
@@ -64,7 +64,7 @@ TEST_CASE("Test basic operations of hash map")
 
 	SECTION("Test writing from userspace, and reading & updating from helpers")
 	{
-		per_cpu_hash_map_impl map(mem, 4, 8);
+		per_cpu_hash_map_impl map(mem, 4, 8, 1 << 20);
 		std::vector<uint64_t> buf(ncpu);
 		for (uint32_t j = 0; j < ncpu; j++) {
 			buf[j] = j;

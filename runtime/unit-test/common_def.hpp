@@ -1,5 +1,6 @@
 #ifndef _COMMON_DEF_HPP
 #define _COMMON_DEF_HPP
+#include "bpftime_config.hpp"
 #include <string>
 #include <boost/interprocess/shared_memory_object.hpp>
 struct shm_remove {

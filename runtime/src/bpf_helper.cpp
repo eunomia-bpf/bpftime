@@ -3,15 +3,27 @@
  * Copyright (c) 2022, eunomia-bpf org
  * All rights reserved.
  */
+#include "bpf_attach_ctx.hpp"
+#include "handler/map_handler.hpp"
+#include "linux/bpf.h"
+#include <algorithm>
+#include <stdexcept>
+#include <system_error>
+#if __APPLE__
+#include <cstdint>
+#include <pthread.h>
+#endif
+#ifdef BPFTIME_BUILD_WITH_LIBBPF
 #include "bpf/bpf.h"
 #include "bpf/libbpf_common.h"
+#endif
 #include "bpftime_helper_group.hpp"
-#include <cassert>
 #include <cerrno>
-#include <sched.h>
 #ifdef ENABLE_BPFTIME_VERIFIER
 #include "bpftime-verifier.hpp"
 #endif
+
+#include "platform_utils.hpp"
 #include "spdlog/spdlog.h"
 #include <map>
 #include <stdio.h>
@@ -24,18 +36,27 @@
 #include "bpftime.hpp"
 #include "bpftime_shm.hpp"
 #include "bpftime_internal.h"
+#include "extension/userspace_xdp.h"
 #include <spdlog/spdlog.h>
 #include <vector>
 #include <bpftime_shm_internal.hpp>
+#include <chrono>
+#include <thread>
+#include <setjmp.h>
+#include <signal.h>
 
 #define PATH_MAX 4096
 
 using namespace std;
-
+bpftime::bpf_attach_ctx &get_global_attach_ctx();
+__attribute__((weak)) bpftime::bpf_attach_ctx &get_global_attach_ctx()
+{
+	SPDLOG_WARN(
+		"Calling mocked get_global_attach_ctx, this is not expected");
+	throw std::runtime_error(
+		"Calling mocked get_global_attach_ctx, this is not expected");
+}
 extern "C" {
-
-
-
 
 uint64_t bpftime_override_return(uint64_t ctx, uint64_t value);
 uint64_t bpftime_set_retval(uint64_t retval);
@@ -59,20 +80,222 @@ long bpftime_strncmp(const char *s1, uint64_t s1_sz, const char *s2)
 	return strncmp(s1, s2, s1_sz);
 }
 
-uint64_t bpftime_probe_read(uint64_t dst, uint64_t size, uint64_t ptr, uint64_t,
-			    uint64_t)
+#if defined(ENABLE_PROBE_WRITE_CHECK) || defined(ENABLE_PROBE_READ_CHECK)
+
+/*
+status instruction for probe_read and probe_write
+*/
+enum class PROBE_STATUS {
+	NOT_RUNNING = -1,
+	RUNNING_NO_ERROR = 0,
+	RUNNING_ERROR = 1
+};
+
+/*
+origin handler exist flag for probe_read and probe_write
+*/
+enum class ORIGIN_HANDLER_EXIST_FLAG {
+	NOT_CHECKED = -1,
+	NOT_EXIST = 0,
+	EXIST = 1
+};
+
+#endif
+
+#ifdef ENABLE_PROBE_READ_CHECK
+extern "C" void jump_point_read();
+thread_local static PROBE_STATUS status_probe_read = PROBE_STATUS::NOT_RUNNING;
+
+thread_local static ORIGIN_HANDLER_EXIST_FLAG exist_read =
+	ORIGIN_HANDLER_EXIST_FLAG::NOT_CHECKED;
+
+thread_local static void (*origin_segv_read_handler)(int, siginfo_t *,
+						     void *) = nullptr;
+#endif
+#ifdef ENABLE_PROBE_WRITE_CHECK
+
+extern "C" void jump_point_write();
+thread_local static PROBE_STATUS status_probe_write = PROBE_STATUS::NOT_RUNNING;
+thread_local static ORIGIN_HANDLER_EXIST_FLAG exist_write =
+	ORIGIN_HANDLER_EXIST_FLAG::NOT_CHECKED;
+
+thread_local static void (*origin_segv_write_handler)(int, siginfo_t *,
+						      void *) = nullptr;
+#endif
+
+#ifdef ENABLE_PROBE_READ_CHECK
+static void segv_read_handler(int sig, siginfo_t *siginfo, void *ctx)
 {
-	memcpy((void *)(uintptr_t)dst, (void *)(uintptr_t)ptr,
-	       (size_t)(uint32_t)(size));
-	return 0;
+	if (status_probe_read == PROBE_STATUS::NOT_RUNNING) {
+		if (origin_segv_read_handler != nullptr) {
+			origin_segv_read_handler(sig, siginfo, ctx);
+		} else {
+			SPDLOG_ERROR("no origin handler for probe_read");
+			throw std::runtime_error(
+				"segv_handler for probe_read called");
+		}
+	} else if (status_probe_read == PROBE_STATUS::RUNNING_NO_ERROR) {
+		// set status to error
+		auto uctx = (ucontext_t *)ctx;
+#if defined(__x86_64__) || defined(_M_X64)
+		auto *ip = (greg_t *)(&uctx->uc_mcontext.gregs[REG_RIP]);
+#elif defined(__aarch64__) || defined(_M_ARM64)
+		auto *ip = (greg_t *)(&uctx->uc_mcontext.pc);
+#else
+#error "Unsupported architecture"
+#endif
+		status_probe_read = PROBE_STATUS::RUNNING_ERROR;
+		*ip = (greg_t)&jump_point_read;
+	}
+}
+#endif
+
+int64_t bpftime_probe_read(uint64_t dst, int64_t size, uint64_t ptr, uint64_t,
+			   uint64_t)
+{
+	if (unlikely(size < 0)) {
+		SPDLOG_ERROR("Invalid size: {}", size);
+		return -EFAULT;
+	}
+	int64_t ret = 0;
+
+#ifdef ENABLE_PROBE_READ_CHECK
+	status_probe_read = PROBE_STATUS::RUNNING_NO_ERROR;
+
+	struct sigaction sa, original_sa;
+	// set up the signal handler
+	if (exist_read == ORIGIN_HANDLER_EXIST_FLAG::NOT_CHECKED) {
+		int err = sigaction(SIGSEGV, nullptr, &original_sa);
+		if (err) {
+			SPDLOG_ERROR("Failed to get signal handler: {}", errno);
+			return -EFAULT;
+		}
+		if (original_sa.sa_sigaction == nullptr) {
+			exist_read = ORIGIN_HANDLER_EXIST_FLAG::NOT_EXIST;
+		} else {
+			exist_read = ORIGIN_HANDLER_EXIST_FLAG::EXIST;
+			origin_segv_read_handler = original_sa.sa_sigaction;
+		}
+	}
+
+	if (original_sa.sa_sigaction != segv_read_handler) {
+		sa.sa_flags = SA_SIGINFO;
+		int err = 0;
+		err = sigemptyset(&sa.sa_mask);
+		if (err) {
+			SPDLOG_ERROR("Failed to set signal handler: {}", errno);
+			return -EFAULT;
+		}
+		sa.sa_sigaction = segv_read_handler;
+		err = sigaction(SIGSEGV, &sa, nullptr);
+		if (err) {
+			SPDLOG_ERROR("Failed to set signal handler: {}", errno);
+			return -EFAULT;
+		}
+	}
+#endif
+	memcpy((void *)dst, (void *)ptr, (size_t)size);
+
+#ifdef ENABLE_PROBE_READ_CHECK
+	__asm__("jump_point_read:");
+
+	if (status_probe_read == PROBE_STATUS::RUNNING_ERROR) {
+		ret = -EFAULT;
+	}
+
+	status_probe_read = PROBE_STATUS::NOT_RUNNING;
+#endif
+	return ret;
 }
 
-uint64_t bpftime_probe_write_user(uint64_t dst, uint64_t src, uint64_t len,
-				  uint64_t, uint64_t)
+#ifdef ENABLE_PROBE_WRITE_CHECK
+static void segv_write_handler(int sig, siginfo_t *siginfo, void *ctx)
 {
-	memcpy((void *)(uintptr_t)dst, (void *)(uintptr_t)src,
-	       (size_t)(uint32_t)(len));
-	return 0;
+	SPDLOG_TRACE("segv_handler for probe_write called");
+	if (status_probe_write == PROBE_STATUS::NOT_RUNNING) {
+		if (origin_segv_write_handler) {
+			origin_segv_write_handler(sig, siginfo, ctx);
+		} else {
+			SPDLOG_ERROR("no origin handler for probe_write");
+			throw std::runtime_error(
+				"segv_handler for probe_write called");
+		}
+	} else if (status_probe_write == PROBE_STATUS::RUNNING_NO_ERROR) {
+		// set status to error
+		auto uctx = (ucontext_t *)ctx;
+#if defined(__x86_64__) || defined(_M_X64)
+		auto *ip = (greg_t *)(&uctx->uc_mcontext.gregs[REG_RIP]);
+#elif defined(__aarch64__) || defined(_M_ARM64)
+		auto *ip = (greg_t *)(&uctx->uc_mcontext.pc);
+#else
+#error "Unsupported architecture"
+#endif
+		status_probe_write = PROBE_STATUS::RUNNING_ERROR;
+		*ip = (greg_t)&jump_point_write;
+	}
+}
+#endif
+
+int64_t bpftime_probe_write_user(uint64_t dst, uint64_t src, int64_t len,
+				 uint64_t, uint64_t)
+{
+	if (unlikely(len < 0)) {
+		SPDLOG_ERROR("Invalid len: {}", len);
+		return -EFAULT;
+	}
+	int64_t ret = 0;
+
+#ifdef ENABLE_PROBE_WRITE_CHECK
+	status_probe_write = PROBE_STATUS::RUNNING_NO_ERROR;
+
+	struct sigaction sa, original_sa;
+	// set up the signal handler
+	if (exist_write == ORIGIN_HANDLER_EXIST_FLAG::NOT_CHECKED) {
+		int err = sigaction(SIGSEGV, nullptr, &original_sa);
+		if (err) {
+			SPDLOG_ERROR("Failed to get signal handler: {}", errno);
+			return -EFAULT;
+		}
+
+		if (original_sa.sa_sigaction == nullptr) {
+			exist_write = ORIGIN_HANDLER_EXIST_FLAG::NOT_EXIST;
+		} else {
+			exist_write = ORIGIN_HANDLER_EXIST_FLAG::EXIST;
+			origin_segv_write_handler = original_sa.sa_sigaction;
+		}
+	}
+
+	if (original_sa.sa_sigaction != segv_write_handler) {
+		sa.sa_flags = SA_SIGINFO;
+		int err = 0;
+		err = sigemptyset(&sa.sa_mask);
+		if (err) {
+			SPDLOG_ERROR("Failed to set signal handler: {}", errno);
+			return -EFAULT;
+		}
+
+		sa.sa_sigaction = segv_write_handler;
+		err = sigaction(SIGSEGV, &sa, nullptr);
+		if (err) {
+			SPDLOG_ERROR("Failed to set signal handler: {}", errno);
+			return -EFAULT;
+		}
+	}
+#endif
+
+	memcpy((void *)dst, (void *)src, (size_t)len);
+
+#ifdef ENABLE_PROBE_WRITE_CHECK
+	__asm__("jump_point_write:");
+
+	if (status_probe_write == PROBE_STATUS::RUNNING_ERROR) {
+		ret = -EFAULT;
+	}
+
+	status_probe_write = PROBE_STATUS::NOT_RUNNING;
+
+#endif
+	return ret;
 }
 
 uint64_t bpftime_get_prandom_u32()
@@ -84,7 +307,23 @@ uint64_t bpftime_ktime_get_coarse_ns(uint64_t, uint64_t, uint64_t, uint64_t,
 				     uint64_t)
 {
 	timespec spec;
+#ifdef __APPLE__
+	clock_gettime(CLOCK_MONOTONIC, &spec); // or CLOCK_MONOTONIC_RAW
+#else
 	clock_gettime(CLOCK_MONOTONIC_COARSE, &spec);
+#endif
+	return spec.tv_sec * (uint64_t)1000000000 + spec.tv_nsec;
+}
+
+uint64_t bpftime_ktime_get_boot_ns(uint64_t, uint64_t, uint64_t, uint64_t,
+				   uint64_t)
+{
+	timespec spec{};
+#ifdef CLOCK_BOOTTIME
+	if (clock_gettime(CLOCK_BOOTTIME, &spec) == 0)
+		return spec.tv_sec * (uint64_t)1000000000 + spec.tv_nsec;
+#endif
+	clock_gettime(CLOCK_MONOTONIC, &spec);
 	return spec.tv_sec * (uint64_t)1000000000 + spec.tv_nsec;
 }
 
@@ -92,9 +331,19 @@ uint64_t bpftime_get_current_pid_tgid(uint64_t, uint64_t, uint64_t, uint64_t,
 				      uint64_t)
 {
 	static int tgid = getpid();
+#if __linux__
 	static thread_local int tid = -1;
-	if (tid == -1)
+	if (tid == -1) {
 		tid = gettid();
+	}
+#elif __APPLE__
+	static thread_local uint64_t tid = UINT64_MAX; // cannot use int because
+						       // pthread_threadid_np
+						       // expects only uint64_t
+	if (tid == UINT64_MAX) {
+		pthread_threadid_np(NULL, &tid);
+	}
+#endif
 	return ((uint64_t)tgid << 32) | tid;
 }
 
@@ -107,9 +356,9 @@ uint64_t bpf_get_current_uid_gid(uint64_t, uint64_t, uint64_t, uint64_t,
 
 uint64_t bpftime_ktime_get_ns(uint64_t, uint64_t, uint64_t, uint64_t, uint64_t)
 {
-	timespec spec;
-	clock_gettime(CLOCK_MONOTONIC, &spec);
-	return spec.tv_sec * (uint64_t)1000000000 + spec.tv_nsec;
+	auto now = std::chrono::steady_clock::now();
+	auto ns = std::chrono::time_point_cast<std::chrono::nanoseconds>(now);
+	return ns.time_since_epoch().count();
 }
 
 uint64_t bpftime_get_current_comm(uint64_t buf, uint64_t size, uint64_t,
@@ -117,7 +366,7 @@ uint64_t bpftime_get_current_comm(uint64_t buf, uint64_t size, uint64_t,
 {
 	static std::string filename_buf;
 
-	if (filename_buf.empty()) {
+	if (unlikely(filename_buf.empty())) {
 		char strbuf[PATH_MAX];
 
 		auto len = readlink("/proc/self/exe", strbuf,
@@ -139,7 +388,7 @@ uint64_t bpftime_map_lookup_elem_helper(uint64_t map, uint64_t key, uint64_t,
 					uint64_t, uint64_t)
 {
 	return (uint64_t)bpftime::shm_holder.global_shared_memory
-		.bpf_map_lookup_elem(map >> 32, (void *)key, false);
+		.bpf_map_lookup_elem((int)map, (void *)key, false);
 }
 
 uint64_t bpftime_map_update_elem_helper(uint64_t map, uint64_t key,
@@ -148,14 +397,35 @@ uint64_t bpftime_map_update_elem_helper(uint64_t map, uint64_t key,
 {
 	return (uint64_t)
 		bpftime::shm_holder.global_shared_memory.bpf_map_update_elem(
-			map >> 32, (void *)key, (void *)value, flags, false);
+			(int)map, (void *)key, (void *)value, flags, false);
 }
 
 uint64_t bpftime_map_delete_elem_helper(uint64_t map, uint64_t key, uint64_t,
 					uint64_t, uint64_t)
 {
 	return (uint64_t)bpftime::shm_holder.global_shared_memory
-		.bpf_delete_elem(map >> 32, (void *)key, false);
+		.bpf_delete_elem((int)map, (void *)key, false);
+}
+
+uint64_t bpftime_map_push_elem_helper(uint64_t map, uint64_t value,
+				      uint64_t flags, uint64_t, uint64_t)
+{
+	return (uint64_t)bpftime::shm_holder.global_shared_memory
+		.bpf_map_push_elem((int)map, (void *)value, flags, false);
+}
+
+uint64_t bpftime_map_pop_elem_helper(uint64_t map, uint64_t value, uint64_t,
+				     uint64_t, uint64_t)
+{
+	return (uint64_t)bpftime::shm_holder.global_shared_memory
+		.bpf_map_pop_elem((int)map, (void *)value, false);
+}
+
+uint64_t bpftime_map_peek_elem_helper(uint64_t map, uint64_t value, uint64_t,
+				      uint64_t, uint64_t)
+{
+	return (uint64_t)bpftime::shm_holder.global_shared_memory
+		.bpf_map_peek_elem((int)map, (void *)value, false);
 }
 
 uint64_t bpf_probe_read_str(uint64_t buf, uint64_t bufsz, uint64_t ptr,
@@ -166,27 +436,24 @@ uint64_t bpf_probe_read_str(uint64_t buf, uint64_t bufsz, uint64_t ptr,
 	return 0;
 }
 
-uint64_t bpf_get_stack(uint64_t, uint64_t buf, uint64_t sz, uint64_t, uint64_t)
-{
-	// TODO: implement this
-	memset((void *)(uintptr_t)buf, 0, sz);
-	return sz;
-}
-
 uint64_t bpf_ktime_get_coarse_ns(uint64_t, uint64_t, uint64_t, uint64_t,
 				 uint64_t)
 {
 	struct timespec ts;
+#if __APPLE__
+	clock_gettime(CLOCK_MONOTONIC, &ts); // or CLOCK_MONOTONIC_RAW
+#else
 	clock_gettime(CLOCK_MONOTONIC_COARSE, &ts);
+#endif
 	return (uint64_t)ts.tv_sec * 1000000000 + ts.tv_nsec;
 }
 
 uint64_t bpf_ringbuf_output(uint64_t rb, uint64_t data, uint64_t size,
 			    uint64_t flags, uint64_t)
 {
-	int fd = (int)(rb >> 32);
+	int fd = (int)rb;
 	if (flags != 0) {
-		spdlog::warn(
+		SPDLOG_WARN(
 			"Currently only supports ringbuf_output with flags=0");
 	}
 	auto buf = bpftime_ringbuf_reserve(fd, size);
@@ -202,9 +469,9 @@ uint64_t bpf_ringbuf_output(uint64_t rb, uint64_t data, uint64_t size,
 uint64_t bpf_ringbuf_reserve(uint64_t rb, uint64_t size, uint64_t flags,
 			     uint64_t, uint64_t)
 {
-	int fd = (int)(rb >> 32);
+	int fd = (int)rb;
 	if (flags != 0) {
-		spdlog::warn(
+		SPDLOG_WARN(
 			"Currently only supports ringbuf_reserve with flags=0");
 	}
 	return (uint64_t)(uintptr_t)bpftime_ringbuf_reserve(fd, size);
@@ -216,19 +483,20 @@ uint64_t bpf_ringbuf_submit(uint64_t data, uint64_t flags, uint64_t, uint64_t,
 	int32_t *ptr = (int32_t *)(uintptr_t)data;
 	int fd = ptr[-1];
 	if (flags != 0) {
-		spdlog::warn(
+		SPDLOG_WARN(
 			"Currently only supports ringbuf_submit with flags=0");
 	}
 	bpftime_ringbuf_submit(fd, (void *)(uintptr_t)data, false);
 	return 0;
 }
+
 uint64_t bpf_ringbuf_discard(uint64_t data, uint64_t flags, uint64_t, uint64_t,
 			     uint64_t)
 {
 	int32_t *ptr = (int32_t *)(uintptr_t)data;
 	int fd = ptr[-1];
 	if (flags != 0) {
-		spdlog::warn(
+		SPDLOG_WARN(
 			"Currently only supports ringbuf_submit with flags=0");
 	}
 	bpftime_ringbuf_submit(fd, (void *)(uintptr_t)data, true);
@@ -238,8 +506,12 @@ uint64_t bpf_ringbuf_discard(uint64_t data, uint64_t flags, uint64_t, uint64_t,
 uint64_t bpf_perf_event_output(uint64_t ctx, uint64_t map, uint64_t flags,
 			       uint64_t data, uint64_t size)
 {
-	int32_t current_cpu = sched_getcpu();
-	assert(current_cpu != -1);
+	int32_t current_cpu = my_sched_getcpu();
+	if (unlikely(current_cpu == -1)) {
+		SPDLOG_ERROR(
+			"Unable to get current cpu when running perf event output");
+		return (uint64_t)-1;
+	}
 	cpu_set_t mask, orig;
 	CPU_ZERO(&mask);
 	CPU_SET(current_cpu, &mask);
@@ -250,7 +522,7 @@ uint64_t bpf_perf_event_output(uint64_t ctx, uint64_t map, uint64_t flags,
 		errno = EINVAL;
 		return (uint64_t)(-1);
 	}
-	int fd = map >> 32;
+	int fd = (int)map;
 	// Check map type. userspace perf event array, or shared perf event
 	// array?
 	bpftime::bpf_map_type map_ty;
@@ -275,12 +547,15 @@ uint64_t bpf_perf_event_output(uint64_t ctx, uint64_t map, uint64_t flags,
 		ret = bpftime_perf_event_output(perf_handler_fd,
 						(const void *)(uintptr_t)data,
 						(size_t)size);
-	} else if (map_ty ==
-		   bpftime::bpf_map_type::
-			   BPF_MAP_TYPE_KERNEL_USER_PERF_EVENT_ARRAY) {
+	}
+#if __linux__ && BPFTIME_BUILD_WITH_LIBBPF
+	else if (map_ty == bpftime::bpf_map_type::
+				   BPF_MAP_TYPE_KERNEL_USER_PERF_EVENT_ARRAY) {
 		ret = bpftime_shared_perf_event_output(
 			fd, (const void *)(uintptr_t)data, (size_t)size);
-	} else {
+	}
+#endif
+	else {
 		SPDLOG_ERROR(
 			"Attempting to run perf_output on a non-perf array map");
 		ret = -1;
@@ -292,7 +567,7 @@ uint64_t bpf_perf_event_output(uint64_t ctx, uint64_t map, uint64_t flags,
 
 uint64_t bpftime_tail_call(uint64_t ctx, uint64_t prog_array, uint64_t index)
 {
-	int fd = prog_array >> 32;
+	int fd = (int)prog_array;
 	if (!bpftime_is_prog_array(fd)) {
 		SPDLOG_ERROR("Expected fd {} to be a prog array fd", fd);
 		return -1;
@@ -307,6 +582,78 @@ uint64_t bpftime_tail_call(uint64_t ctx, uint64_t prog_array, uint64_t index)
 	}
 	int to_call_fd = *to_call_id_ptr;
 	SPDLOG_DEBUG("tail call helper: calling prog fd {}", to_call_fd);
+
+	if (bpftime_is_prog_fd(to_call_fd)) {
+		constexpr uint32_t MAX_TAIL_CALL_CNT = 32;
+		static thread_local uint32_t tail_call_depth = 0;
+		if (tail_call_depth >= MAX_TAIL_CALL_CNT) {
+			SPDLOG_ERROR("tail call depth limit exceeded");
+			return -1;
+		}
+		struct tail_call_depth_guard {
+			uint32_t &depth;
+			explicit tail_call_depth_guard(uint32_t &depth)
+				: depth(depth)
+			{
+				depth++;
+			}
+			~tail_call_depth_guard()
+			{
+				depth--;
+			}
+		} guard(tail_call_depth);
+
+		const auto &handler = std::get<bpftime::bpf_prog_handler>(
+			bpftime::shm_holder.global_shared_memory.get_handler(
+				to_call_fd));
+		bpftime::runtime_config config =
+			bpftime::bpftime_get_runtime_config();
+		bpftime::bpftime_prog prog(handler.insns.data(),
+					   handler.insns.size(),
+					   handler.name.c_str());
+
+		if (config.enable_kernel_helper_group &&
+		    bpftime::bpftime_helper_group::get_kernel_utils_helper_group()
+				    .add_helper_group_to_prog(&prog) < 0) {
+			return -1;
+		}
+		if (config.enable_ufunc_helper_group &&
+		    bpftime::bpftime_helper_group::get_ufunc_helper_group()
+				    .add_helper_group_to_prog(&prog) < 0) {
+			return -1;
+		}
+		if (config.enable_shm_maps_helper_group &&
+		    bpftime::bpftime_helper_group::get_shm_maps_helper_group()
+				    .add_helper_group_to_prog(&prog) < 0) {
+			return -1;
+		}
+		if (prog.bpftime_prog_load(false) < 0) {
+			SPDLOG_ERROR(
+				"Failed to load userspace tail call target fd {}",
+				to_call_fd);
+			return -1;
+		}
+
+		char context[64];
+		if (ctx) {
+			memcpy(context, (const void *)(uintptr_t)ctx,
+			       sizeof(context));
+		} else {
+			memset(context, 0, sizeof(context));
+		}
+		uint64_t retval = 0;
+		int err = prog.bpftime_prog_exec(context, sizeof(context),
+						 &retval);
+		if (err < 0) {
+			SPDLOG_ERROR(
+				"Failed to execute userspace tail call target fd {}",
+				to_call_fd);
+			return -1;
+		}
+		return retval;
+	}
+
+#if __linux__ && defined(BPFTIME_BUILD_WITH_LIBBPF)
 	char context[64];
 	if (ctx) {
 		memcpy(context, (const void *)(uintptr_t)ctx, 64);
@@ -326,7 +673,14 @@ uint64_t bpftime_tail_call(uint64_t ctx, uint64_t prog_array, uint64_t index)
 	}
 	close(to_call_fd);
 	return run_opts.retval;
+#else
+	SPDLOG_ERROR(
+		"tail_call to kernel program fd {} requires libbpf support",
+		to_call_fd);
+	return -ENOTSUP;
+#endif
 }
+
 uint64_t bpftime_get_attach_cookie(uint64_t ctx, uint64_t, uint64_t, uint64_t,
 				   uint64_t)
 {
@@ -339,6 +693,205 @@ uint64_t bpftime_get_attach_cookie(uint64_t ctx, uint64_t, uint64_t, uint64_t,
 		return 0;
 	}
 }
+
+uint64_t bpftime_get_func_ip(uint64_t, uint64_t, uint64_t, uint64_t, uint64_t)
+{
+	return bpftime::attach::current_thread_attach_func_ip;
+}
+
+uint64_t bpftime_get_smp_processor_id()
+{
+	int cpu = my_sched_getcpu();
+	if (cpu == -1) {
+		SPDLOG_ERROR("sched_getcpu error");
+		return 0; // unlikely
+	}
+	return (uint64_t)cpu;
+}
+
+// From https://github.com/microsoft/ebpf-for-windows
+int64_t bpftime_csum_diff(const void *from, int from_size, const void *to,
+			  int to_size, int seed)
+{
+	int csum_diff = -EINVAL;
+
+	if ((from_size % 4 != 0) || (to_size % 4 != 0)) {
+		// size of buffers should be a multiple of 4.
+		goto Exit;
+	}
+
+	csum_diff = seed;
+	if (to != NULL) {
+		for (int i = 0; i < to_size / 2; i++) {
+			csum_diff += (uint16_t)(*((uint16_t *)to + i));
+		}
+	}
+	if (from != NULL) {
+		for (int i = 0; i < from_size / 2; i++) {
+			csum_diff += (uint16_t)(~*((uint16_t *)from + i));
+		}
+	}
+
+	// Adding 16-bit unsigned integers or their one's complement will
+	// produce a positive 32-bit integer, unless the length of the buffers
+	// is so long, that the signed 32 bit output overflows and produces a
+	// negative result.
+	if (csum_diff < 0) {
+		csum_diff = -EINVAL;
+	}
+Exit:
+	return csum_diff;
+}
+
+#define ETH_HLEN 14 /* Total octets in header.	 */
+
+long bpftime_xdp_adjust_head(struct xdp_md_userspace *xdp, int offset)
+{
+	// We don't use xdp meta data
+	uint64_t data = xdp->data + offset;
+	if (unlikely(data > xdp->data_end - ETH_HLEN) || data > xdp->buffer_end)
+		return -EINVAL;
+	if (data < xdp->buffer_start) {
+		// move the data so the buffer can place the new header
+		memmove(reinterpret_cast<void *>(xdp->buffer_start +
+						 (xdp->buffer_start - data)),
+			reinterpret_cast<void *>(xdp->data),
+			xdp->data_end - xdp->data);
+		data = xdp->buffer_start;
+	}
+	xdp->data = data;
+	return 0;
+}
+
+long bpftime_xdp_adjust_tail(struct xdp_md_userspace *xdp_md, int delta)
+{
+	// We don't use xdp meta data
+	uint64_t data = xdp_md->data_end + delta;
+	if (data < xdp_md->data || data < xdp_md->buffer_start ||
+	    data > xdp_md->buffer_end) {
+		return -EINVAL;
+	}
+	xdp_md->data_end = data;
+	return 0;
+}
+
+long bpftime_xdp_load_bytes(struct xdp_md_userspace *xdp_md, __u32 offset,
+			    void *buf, __u32 len)
+{
+	// We don't support fragmented packets
+	uint64_t data = xdp_md->data + offset;
+	if (data + len > xdp_md->data_end) {
+		return -EINVAL;
+	}
+	memcpy(buf, reinterpret_cast<void *>(data), len);
+	return 0;
+}
+using namespace bpftime;
+
+int64_t bpftime_get_stackid(uint64_t ctx_raw, uint64_t map_raw, uint64_t flags,
+			    uint64_t, uint64_t)
+{
+	if (!(flags & BPF_F_USER_STACK)) {
+		SPDLOG_ERROR(
+			"bpftime_get_stackid only supports collect user stack!");
+		return -ENOTSUP;
+	}
+
+	const int ATTACH_UPROBE = 6;
+
+	auto &attach_ctx = get_global_attach_ctx();
+	auto attach_impl =
+		attach_ctx.get_attach_impl_by_attach_type(ATTACH_UPROBE);
+	if (!attach_impl.has_value()) {
+		SPDLOG_ERROR(
+			"Unable to get stack id: frida_uprobe_attach_impl not registered");
+		return -ENOTSUP;
+	}
+	auto raw_ptr = (*attach_impl)
+			       ->call_attach_specific_function("generate_stack",
+							       nullptr);
+	if (raw_ptr == nullptr) {
+		SPDLOG_ERROR("Unable to get stack trace");
+		return -ENOENT;
+	}
+	std::unique_ptr<std::vector<uint64_t>> result(
+		(std::vector<uint64_t> *)raw_ptr);
+
+	auto frames_to_skip = flags & BPF_F_SKIP_FIELD_MASK;
+	SPDLOG_DEBUG("Skipping {} frames", frames_to_skip);
+	if (frames_to_skip >= result->size()) {
+		result->resize(0);
+	} else {
+		std::vector<uint64_t> new_data;
+		new_data.resize(result->size() - frames_to_skip);
+		std::copy(result->begin() + frames_to_skip, result->end(),
+			  new_data.begin());
+		*result = new_data;
+	}
+	SPDLOG_DEBUG("After skipping, collected {} frames", result->size());
+	int real_map_fd = (int)map_raw;
+	auto &map_handler = std::get<bpf_map_handler>(
+		shm_holder.global_shared_memory.get_handler(real_map_fd));
+
+	bpftime_lock_guard guard(map_handler.get_raw_spin_lock());
+	auto impl = *shm_holder.global_shared_memory.try_get_stack_trace_impl(
+		real_map_fd);
+	int ret = impl->fill_stack_trace(*result, flags & BPF_F_REUSE_STACKID,
+					 flags & BPF_F_FAST_STACK_CMP);
+
+	SPDLOG_DEBUG("Got stackid {}", ret);
+	return (uint32_t)ret;
+}
+
+int64_t bpftime_get_stack(uint64_t ctx_raw, uint64_t buf, uint64_t size,
+			  uint64_t flags, uint64_t)
+{
+	if (!(flags & BPF_F_USER_STACK)) {
+		SPDLOG_ERROR(
+			"bpftime_get_stack only supports collect user stack!");
+		return -ENOTSUP;
+	}
+	if (flags & BPF_F_USER_BUILD_ID) {
+		SPDLOG_ERROR("bpftime_get_stack doesn't support buildid!");
+		return -ENOTSUP;
+	}
+	const int ATTACH_UPROBE = 6;
+
+	auto &attach_ctx = get_global_attach_ctx();
+	auto attach_impl =
+		attach_ctx.get_attach_impl_by_attach_type(ATTACH_UPROBE);
+	if (!attach_impl.has_value()) {
+		SPDLOG_ERROR(
+			"Unable to get stack id: frida_uprobe_attach_impl not registered");
+		return -ENOTSUP;
+	}
+	auto raw_ptr = (*attach_impl)
+			       ->call_attach_specific_function("generate_stack",
+							       nullptr);
+	if (raw_ptr == nullptr) {
+		SPDLOG_ERROR("Unable to get stack trace");
+		return -ENOENT;
+	}
+	std::unique_ptr<std::vector<uint64_t>> result(
+		(std::vector<uint64_t> *)raw_ptr);
+
+	auto frames_to_skip = flags & BPF_F_SKIP_FIELD_MASK;
+	SPDLOG_DEBUG("Skipping {} frames", frames_to_skip);
+	if (frames_to_skip >= result->size()) {
+		result->resize(0);
+	} else {
+		std::vector<uint64_t> new_data;
+		new_data.resize(result->size() - frames_to_skip);
+		std::copy(result->begin() + frames_to_skip, result->end(),
+			  new_data.begin());
+		*result = new_data;
+	}
+	auto size_to_copy = std::min(result->size(), (uintptr_t)size);
+	SPDLOG_DEBUG("Copied {} bytes of stack", size_to_copy);
+	memcpy((void *)(uintptr_t)buf, result->data(), size_to_copy);
+	return 0;
+}
+
 } // extern "C"
 
 namespace bpftime
@@ -612,179 +1165,238 @@ std::vector<int32_t> bpftime_helper_group::get_helper_ids() const
 	return result;
 }
 
-const bpftime_helper_group shm_maps_group = { {
-	{ BPF_FUNC_map_lookup_elem,
-	  bpftime_helper_info{
-		  .index = BPF_FUNC_map_lookup_elem,
-		  .name = "bpf_map_lookup_elem",
-		  .fn = (void *)bpftime_map_lookup_elem_helper,
-	  } },
-	{ BPF_FUNC_map_update_elem,
-	  bpftime_helper_info{
-		  .index = BPF_FUNC_map_update_elem,
-		  .name = "bpf_map_update_elem",
-		  .fn = (void *)bpftime_map_update_elem_helper,
-	  } },
-	{ BPF_FUNC_map_delete_elem,
-	  bpftime_helper_info{
-		  .index = BPF_FUNC_map_delete_elem,
-		  .name = "bpf_map_delete_elem",
-		  .fn = (void *)bpftime_map_delete_elem_helper,
-	  } },
-} };
-
-extern const bpftime_helper_group extesion_group;
-
-const bpftime_helper_group kernel_helper_group = {
-	{ { BPF_FUNC_probe_read,
-	    bpftime_helper_info{
-		    .index = BPF_FUNC_probe_read,
-		    .name = "bpf_probe_read",
-		    .fn = (void *)bpftime_probe_read,
-	    } },
-	  { BPF_FUNC_probe_read_kernel,
-	    bpftime_helper_info{
-		    .index = BPF_FUNC_probe_read_kernel,
-		    .name = "bpf_probe_read_kernel",
-		    .fn = (void *)bpftime_probe_read,
-	    } },
-	  { BPF_FUNC_probe_read_user,
-	    bpftime_helper_info{
-		    .index = BPF_FUNC_probe_read_user,
-		    .name = "bpf_probe_read_user",
-		    .fn = (void *)bpftime_probe_read,
-	    } },
-	  { BPF_FUNC_ktime_get_ns,
-	    bpftime_helper_info{
-		    .index = BPF_FUNC_ktime_get_ns,
-		    .name = "bpf_ktime_get_ns",
-		    .fn = (void *)bpftime_ktime_get_ns,
-	    } },
-	  { BPF_FUNC_trace_printk,
-	    bpftime_helper_info{
-		    .index = BPF_FUNC_trace_printk,
-		    .name = "bpf_trace_printk",
-		    .fn = (void *)bpftime_trace_printk,
-	    } },
-	  { BPF_FUNC_get_prandom_u32,
-	    bpftime_helper_info{
-		    .index = BPF_FUNC_get_prandom_u32,
-		    .name = "bpf_get_prandom_u32",
-		    .fn = (void *)bpftime_get_prandom_u32,
-	    } },
-	  { BPF_FUNC_get_current_pid_tgid,
-	    bpftime_helper_info{
-		    .index = BPF_FUNC_get_current_pid_tgid,
-		    .name = "bpf_get_current_pid_tgid",
-		    .fn = (void *)bpftime_get_current_pid_tgid,
-	    } },
-	  { BPF_FUNC_get_current_uid_gid,
-	    bpftime_helper_info{ .index = BPF_FUNC_get_current_uid_gid,
-				 .name = "bpf_get_current_uid_gid",
-				 .fn = (void *)bpf_get_current_uid_gid } },
-	  { BPF_FUNC_get_current_comm,
-	    bpftime_helper_info{
-		    .index = BPF_FUNC_get_current_comm,
-		    .name = "bpf_get_current_comm",
-		    .fn = (void *)bpftime_get_current_comm,
-	    } },
-	  { BPF_FUNC_override_return,
-	    bpftime_helper_info{
-		    .index = BPF_FUNC_override_return,
-		    .name = "bpf_override_return",
-		    .fn = (void *)bpftime_override_return,
-	    } },
-	  { BPF_FUNC_strncmp,
-	    bpftime_helper_info{
-		    .index = BPF_FUNC_strncmp,
-		    .name = "bpf_strncmp",
-		    .fn = (void *)bpftime_strncmp,
-	    } },
-	  { BPF_FUNC_probe_write_user,
-	    bpftime_helper_info{
-		    .index = BPF_FUNC_probe_write_user,
-		    .name = "bpf_probe_write_user",
-		    .fn = (void *)bpftime_probe_write_user,
-	    } },
-	  { BPF_FUNC_set_retval,
-	    bpftime_helper_info{
-		    .index = BPF_FUNC_set_retval,
-		    .name = "bpf_set_retval",
-		    .fn = (void *)bpftime_set_retval,
-	    } },
-	  { BPF_FUNC_probe_read_user_str,
-	    bpftime_helper_info{
-		    .index = BPF_FUNC_probe_read_user_str,
-		    .name = "bpf_probe_read_str",
-		    .fn = (void *)bpf_probe_read_str,
-	    } },
-	  { BPF_FUNC_probe_read_str,
-	    bpftime_helper_info{
-		    .index = BPF_FUNC_probe_read_str,
-		    .name = "bpf_probe_str",
-		    .fn = (void *)bpf_probe_read_str,
-	    } },
-	  { BPF_FUNC_get_stack,
-	    bpftime_helper_info{ .index = BPF_FUNC_get_stack,
-				 .name = "bpf_get_stack",
-				 .fn = (void *)bpf_get_stack } },
-	  { BPF_FUNC_ktime_get_coarse_ns,
-	    bpftime_helper_info{ .index = BPF_FUNC_ktime_get_coarse_ns,
-				 .name = "bpf_ktime_get_coarse_ns",
-				 .fn = (void *)bpf_ktime_get_coarse_ns } },
-
-	  { BPF_FUNC_ringbuf_reserve,
-	    bpftime_helper_info{
-		    .index = BPF_FUNC_ringbuf_reserve,
-		    .name = "bpf_ringbuf_reserve",
-		    .fn = (void *)bpf_ringbuf_reserve,
-	    } },
-	  { BPF_FUNC_ringbuf_submit,
-	    bpftime_helper_info{
-		    .index = BPF_FUNC_ringbuf_submit,
-		    .name = "bpf_ringbuf_submit",
-		    .fn = (void *)bpf_ringbuf_submit,
-	    } },
-	  { BPF_FUNC_ringbuf_discard,
-	    bpftime_helper_info{
-		    .index = BPF_FUNC_ringbuf_discard,
-		    .name = "bpf_ringbuf_discard",
-		    .fn = (void *)bpf_ringbuf_discard,
-	    } },
-	  { BPF_FUNC_perf_event_output,
-	    bpftime_helper_info{ .index = BPF_FUNC_perf_event_output,
-				 .name = "bpf_perf_event_output",
-				 .fn = (void *)bpf_perf_event_output } },
-	  { BPF_FUNC_ringbuf_output,
-	    bpftime_helper_info{ .index = BPF_FUNC_ringbuf_output,
-				 .name = "bpf_ringbuf_output",
-				 .fn = (void *)bpf_ringbuf_output } },
-	  { BPF_FUNC_tail_call,
-	    bpftime_helper_info{ .index = BPF_FUNC_tail_call,
-				 .name = "bpf_tail_call",
-				 .fn = (void *)bpftime_tail_call } },
-	  { BPF_FUNC_get_attach_cookie,
-	    bpftime_helper_info{ .index = BPF_FUNC_get_attach_cookie,
-				 .name = "bpf_get_attach_cookie",
-				 .fn = (void *)bpftime_get_attach_cookie } } }
-
-};
-
 // Utility function to get the UFUNC helper group
 const bpftime_helper_group &bpftime_helper_group::get_ufunc_helper_group()
 {
-	return extesion_group;
+	const bpftime_helper_group &get_extension_helper_group();
+
+	return get_extension_helper_group();
 }
 
 // Utility function to get the kernel utilities helper group
 const bpftime_helper_group &
 bpftime_helper_group::get_kernel_utils_helper_group()
 {
+	static const bpftime_helper_group kernel_helper_group = {
+		{ { BPF_FUNC_probe_read,
+		    bpftime_helper_info{
+			    .index = BPF_FUNC_probe_read,
+			    .name = "bpf_probe_read",
+			    .fn = (void *)bpftime_probe_read,
+		    } },
+		  { BPF_FUNC_get_smp_processor_id,
+		    bpftime_helper_info{
+			    .index = BPF_FUNC_get_smp_processor_id,
+			    .name = "bpf_get_smp_processor_id",
+			    .fn = (void *)bpftime_get_smp_processor_id,
+		    } },
+		  { BPF_FUNC_csum_diff,
+		    bpftime_helper_info{
+			    .index = BPF_FUNC_csum_diff,
+			    .name = "bpf_csum_diff",
+			    .fn = (void *)bpftime_csum_diff,
+		    } },
+		  { BPF_FUNC_xdp_adjust_head,
+		    bpftime_helper_info{
+			    .index = BPF_FUNC_xdp_adjust_head,
+			    .name = "bpf_xdp_adjust_head",
+			    .fn = (void *)bpftime_xdp_adjust_head,
+		    } },
+		  { BPF_FUNC_xdp_adjust_tail,
+		    bpftime_helper_info{
+			    .index = BPF_FUNC_xdp_adjust_tail,
+			    .name = "bpf_xdp_adjust_tail",
+			    .fn = (void *)bpftime_xdp_adjust_tail,
+		    } },
+		  { BPF_FUNC_probe_read_kernel,
+		    bpftime_helper_info{
+			    .index = BPF_FUNC_probe_read_kernel,
+			    .name = "bpf_probe_read_kernel",
+			    .fn = (void *)bpftime_probe_read,
+		    } },
+		  { BPF_FUNC_probe_read_user,
+		    bpftime_helper_info{
+			    .index = BPF_FUNC_probe_read_user,
+			    .name = "bpf_probe_read_user",
+			    .fn = (void *)bpftime_probe_read,
+		    } },
+		  { BPF_FUNC_ktime_get_ns,
+		    bpftime_helper_info{
+			    .index = BPF_FUNC_ktime_get_ns,
+			    .name = "bpf_ktime_get_ns",
+			    .fn = (void *)bpftime_ktime_get_ns,
+		    } },
+		  { BPF_FUNC_ktime_get_boot_ns,
+		    bpftime_helper_info{
+			    .index = BPF_FUNC_ktime_get_boot_ns,
+			    .name = "bpf_ktime_get_boot_ns",
+			    .fn = (void *)bpftime_ktime_get_boot_ns,
+		    } },
+		  { BPF_FUNC_trace_printk,
+		    bpftime_helper_info{
+			    .index = BPF_FUNC_trace_printk,
+			    .name = "bpf_trace_printk",
+			    .fn = (void *)bpftime_trace_printk,
+		    } },
+		  { BPF_FUNC_get_prandom_u32,
+		    bpftime_helper_info{
+			    .index = BPF_FUNC_get_prandom_u32,
+			    .name = "bpf_get_prandom_u32",
+			    .fn = (void *)bpftime_get_prandom_u32,
+		    } },
+		  { BPF_FUNC_get_current_pid_tgid,
+		    bpftime_helper_info{
+			    .index = BPF_FUNC_get_current_pid_tgid,
+			    .name = "bpf_get_current_pid_tgid",
+			    .fn = (void *)bpftime_get_current_pid_tgid,
+		    } },
+		  { BPF_FUNC_get_current_uid_gid,
+		    bpftime_helper_info{
+			    .index = BPF_FUNC_get_current_uid_gid,
+			    .name = "bpf_get_current_uid_gid",
+			    .fn = (void *)bpf_get_current_uid_gid } },
+		  { BPF_FUNC_get_current_comm,
+		    bpftime_helper_info{
+			    .index = BPF_FUNC_get_current_comm,
+			    .name = "bpf_get_current_comm",
+			    .fn = (void *)bpftime_get_current_comm,
+		    } },
+		  { BPF_FUNC_override_return,
+		    bpftime_helper_info{
+			    .index = BPF_FUNC_override_return,
+			    .name = "bpf_override_return",
+			    .fn = (void *)bpftime_override_return,
+		    } },
+		  { BPF_FUNC_strncmp,
+		    bpftime_helper_info{
+			    .index = BPF_FUNC_strncmp,
+			    .name = "bpf_strncmp",
+			    .fn = (void *)bpftime_strncmp,
+		    } },
+		  { BPF_FUNC_probe_write_user,
+		    bpftime_helper_info{
+			    .index = BPF_FUNC_probe_write_user,
+			    .name = "bpf_probe_write_user",
+			    .fn = (void *)bpftime_probe_write_user,
+		    } },
+		  { BPF_FUNC_set_retval,
+		    bpftime_helper_info{
+			    .index = BPF_FUNC_set_retval,
+			    .name = "bpf_set_retval",
+			    .fn = (void *)bpftime_set_retval,
+		    } },
+		  { BPF_FUNC_probe_read_user_str,
+		    bpftime_helper_info{
+			    .index = BPF_FUNC_probe_read_user_str,
+			    .name = "bpf_probe_read_str",
+			    .fn = (void *)bpf_probe_read_str,
+		    } },
+		  { BPF_FUNC_probe_read_str,
+		    bpftime_helper_info{
+			    .index = BPF_FUNC_probe_read_str,
+			    .name = "bpf_probe_str",
+			    .fn = (void *)bpf_probe_read_str,
+		    } },
+		  { BPF_FUNC_get_stack,
+		    bpftime_helper_info{ .index = BPF_FUNC_get_stack,
+					 .name = "bpf_get_stack",
+					 .fn = (void *)bpftime_get_stack } },
+		  { BPF_FUNC_get_stackid,
+		    bpftime_helper_info{ .index = BPF_FUNC_get_stackid,
+					 .name = "bpf_get_stackid",
+					 .fn = (void *)bpftime_get_stackid } },
+
+		  { BPF_FUNC_ktime_get_coarse_ns,
+		    bpftime_helper_info{
+			    .index = BPF_FUNC_ktime_get_coarse_ns,
+			    .name = "bpf_ktime_get_coarse_ns",
+			    .fn = (void *)bpf_ktime_get_coarse_ns } },
+
+		  { BPF_FUNC_ringbuf_reserve,
+		    bpftime_helper_info{
+			    .index = BPF_FUNC_ringbuf_reserve,
+			    .name = "bpf_ringbuf_reserve",
+			    .fn = (void *)bpf_ringbuf_reserve,
+		    } },
+		  { BPF_FUNC_ringbuf_submit,
+		    bpftime_helper_info{
+			    .index = BPF_FUNC_ringbuf_submit,
+			    .name = "bpf_ringbuf_submit",
+			    .fn = (void *)bpf_ringbuf_submit,
+		    } },
+		  { BPF_FUNC_ringbuf_discard,
+		    bpftime_helper_info{
+			    .index = BPF_FUNC_ringbuf_discard,
+			    .name = "bpf_ringbuf_discard",
+			    .fn = (void *)bpf_ringbuf_discard,
+		    } },
+		  { BPF_FUNC_perf_event_output,
+		    bpftime_helper_info{ .index = BPF_FUNC_perf_event_output,
+					 .name = "bpf_perf_event_output",
+					 .fn = (void *)bpf_perf_event_output } },
+		  { BPF_FUNC_ringbuf_output,
+		    bpftime_helper_info{ .index = BPF_FUNC_ringbuf_output,
+					 .name = "bpf_ringbuf_output",
+					 .fn = (void *)bpf_ringbuf_output } },
+		  { BPF_FUNC_tail_call,
+		    bpftime_helper_info{ .index = BPF_FUNC_tail_call,
+					 .name = "bpf_tail_call",
+					 .fn = (void *)bpftime_tail_call } },
+		  { BPF_FUNC_get_attach_cookie,
+		    bpftime_helper_info{
+			    .index = BPF_FUNC_get_attach_cookie,
+			    .name = "bpf_get_attach_cookie",
+			    .fn = (void *)bpftime_get_attach_cookie } },
+		  { BPF_FUNC_get_func_ip,
+		    bpftime_helper_info{ .index = BPF_FUNC_get_func_ip,
+					 .name = "bpf_get_func_ip",
+					 .fn = (void *)bpftime_get_func_ip } } }
+
+	};
+
 	return kernel_helper_group;
 }
-
 const bpftime_helper_group &bpftime_helper_group::get_shm_maps_helper_group()
 {
+	static const bpftime_helper_group shm_maps_group = { {
+		{ BPF_FUNC_map_lookup_elem,
+		  bpftime_helper_info{
+			  .index = BPF_FUNC_map_lookup_elem,
+			  .name = "bpf_map_lookup_elem",
+			  .fn = (void *)bpftime_map_lookup_elem_helper,
+		  } },
+		{ BPF_FUNC_map_update_elem,
+		  bpftime_helper_info{
+			  .index = BPF_FUNC_map_update_elem,
+			  .name = "bpf_map_update_elem",
+			  .fn = (void *)bpftime_map_update_elem_helper,
+		  } },
+		{ BPF_FUNC_map_delete_elem,
+		  bpftime_helper_info{
+			  .index = BPF_FUNC_map_delete_elem,
+			  .name = "bpf_map_delete_elem",
+			  .fn = (void *)bpftime_map_delete_elem_helper,
+		  } },
+		{ BPF_FUNC_map_push_elem,
+		  bpftime_helper_info{
+			  .index = BPF_FUNC_map_push_elem,
+			  .name = "bpf_map_push_elem",
+			  .fn = (void *)bpftime_map_push_elem_helper,
+		  } },
+		{ BPF_FUNC_map_pop_elem,
+		  bpftime_helper_info{
+			  .index = BPF_FUNC_map_pop_elem,
+			  .name = "bpf_map_pop_elem",
+			  .fn = (void *)bpftime_map_pop_elem_helper,
+		  } },
+		{ BPF_FUNC_map_peek_elem,
+		  bpftime_helper_info{
+			  .index = BPF_FUNC_map_peek_elem,
+			  .name = "bpf_map_peek_elem",
+			  .fn = (void *)bpftime_map_peek_elem_helper,
+		  } },
+	} };
+
 	return shm_maps_group;
 }
 

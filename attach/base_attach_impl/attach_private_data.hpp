@@ -22,12 +22,13 @@ struct attach_private_data {
 		SPDLOG_ERROR(
 			"Not implemented: attach_private_data::initialize_from_string");
 		throw std::runtime_error(
-			"attach_private_data::initialize_from_string");
+			"Not implemented: attach_private_data::initialize_from_string");
 	}
-	virtual std::string to_string()
+	virtual std::string to_string() const
 	{
-		return "<Not implemented yet>";
-	}
+		SPDLOG_ERROR("Not implemented: attach_private_data::to_string");
+		throw std::runtime_error("attach_private_data::to_string");
+	};
 };
 } // namespace attach
 } // namespace bpftime

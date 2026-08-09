@@ -10,6 +10,7 @@
 #include "frida_attach_utils.hpp"
 #include "frida_uprobe_attach_impl.hpp"
 #include "handler/handler_manager.hpp"
+#include "bpftime_config.hpp"
 #include "handler/link_handler.hpp"
 #include "spdlog/spdlog.h"
 #include <cstdlib>
@@ -32,7 +33,8 @@ static const char *HANDLER_NAME = "my_handler";
 static const char *SHM_NAME = "my_shm_attach_test";
 
 // This is the original function to hook.
-extern "C" __attribute__((__noinline__, noinline, optnone)) int
+// optnone attribute may be needed to prevent LTO from optimizing the function
+extern "C" __attribute__((__noinline__, noinline)) int
 _bpftime_test_shm_progs_attach_my_function(int parm1, const char *str, char c)
 {
 	asm("");
@@ -41,7 +43,7 @@ _bpftime_test_shm_progs_attach_my_function(int parm1, const char *str, char c)
 	return ret;
 }
 
-extern "C" __attribute__((__noinline__, noinline, optnone)) int
+extern "C" __attribute__((__noinline__, noinline)) int
 _bpftime_test_shm_progs_attach_my_uprobe_function(int parm1, const char *str,
 						  char c)
 {
@@ -172,7 +174,7 @@ static void handle_sub_process()
 			return priv_data;
 		});
 	register_ufunc_for_print_and_add(&ctx);
-	agent_config config;
+	runtime_config config;
 	config.enable_ufunc_helper_group = true;
 	REQUIRE(ctx.init_attach_ctx_from_handlers(manager, config) == 0);
 
@@ -193,21 +195,24 @@ static void handle_sub_process()
 
 __attribute__((optnone)) TEST_CASE("Test shm progs attach")
 {
+	bpftime::runtime_config config;
+	config.set_vm_name("llvm");
 	spdlog::set_level(spdlog::level::debug);
 	SPDLOG_INFO("parent process start");
 	bpftime::shm_remove remover(SHM_NAME);
 
 	// The side that creates the mapping
-	managed_shared_memory segment(create_only, SHM_NAME, 1 << 22);
-	auto manager =
-		segment.construct<handler_manager>(HANDLER_NAME)(segment);
+	managed_shared_memory segment(create_only, SHM_NAME, 1 << 20);
+	const size_t test_max_fd_count = MIN_MAX_FD_COUNT;
+	auto manager = segment.construct<handler_manager>(
+		HANDLER_NAME)(segment, test_max_fd_count);
 	auto &manager_ref = *manager;
 
 	// open the object file
-	bpftime_object *obj = bpftime_object_open(obj_path);
+	bpftime_object *obj = bpftime_object_open(obj_path, std::move(config));
 	REQUIRE(obj != nullptr);
 	bpftime_prog *prog = bpftime_object__next_program(obj, NULL);
-
+	REQUIRE(prog != nullptr);
 	// init the attach ctx
 	bpf_attach_ctx ctx;
 	ctx.register_attach_impl(
@@ -228,7 +233,6 @@ __attribute__((optnone)) TEST_CASE("Test shm progs attach")
 	int replace_link_id = attach_replace(manager_ref, segment, prog, ctx);
 	int uprobe_link_id = attach_uprobe(manager_ref, segment, prog, ctx);
 
-	agent_config config;
 	config.enable_ufunc_helper_group = true;
 	ctx.init_attach_ctx_from_handlers(manager, config);
 

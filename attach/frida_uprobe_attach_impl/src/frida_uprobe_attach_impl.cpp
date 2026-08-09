@@ -10,15 +10,23 @@
 #include "spdlog/spdlog.h"
 #include <algorithm>
 #include <cerrno>
+#include <cstdio>
+#include <filesystem>
+#include <fstream>
 #include <memory>
+#include <string>
 #include <typeinfo>
 #include <utility>
 #include <unistd.h>
 #include "frida_internal_attach_entry.hpp"
 #include "frida_attach_entry.hpp"
 #include <variant>
+#include <vector>
 
 using namespace bpftime::attach;
+
+thread_local std::optional<void *>
+	bpftime::attach::current_thread_gum_cpu_context;
 
 frida_attach_impl::~frida_attach_impl()
 {
@@ -39,6 +47,10 @@ int frida_attach_impl::attach_at_with_ebpf_callback(void *func_addr,
 int frida_attach_impl::attach_at(void *func_addr,
 				 frida_attach_entry_callback &&cb)
 {
+	if (func_addr == nullptr) {
+		SPDLOG_ERROR("Unable to attach uprobes to address 0");
+		return -EINVAL;
+	}
 	auto itr = internal_attaches.find(func_addr);
 	int current_attach_type;
 	if (std::holds_alternative<callback_variant>(cb)) {
@@ -62,7 +74,8 @@ int frida_attach_impl::attach_at(void *func_addr,
 			     (uintptr_t)func_addr);
 	} else if (itr->second->has_override()) {
 		SPDLOG_ERROR(
-			"Function {} was already attached with replace or filter, cannot attach anything else");
+			"Function {} was already attached with replace or filter, cannot attach anything else",
+			(uintptr_t)func_addr);
 		return -EEXIST;
 	}
 
@@ -162,10 +175,58 @@ int frida_attach_impl::create_attach_with_ebpf_callback(
 	ebpf_run_callback &&cb, const attach_private_data &private_data,
 	int attach_type)
 {
+	SPDLOG_DEBUG("Attaching with private_data type {}",
+		     typeid(private_data).name());
 	try {
 		auto &sub = dynamic_cast<const frida_attach_private_data &>(
 			private_data);
-
+		SPDLOG_DEBUG(
+			"Attaching with ebpf callback, private data offset={:x}, module name={}",
+			sub.addr, sub.module_name);
+		// Check if module path exists in the current process's map
+		// Only check if the module_name is not empty. If it's empty, it
+		// means we won't rely on module_name
+		if (!sub.module_name.empty()) {
+			bool ok = false;
+			std::ifstream ifs("/proc/self/maps");
+			std::string line;
+			while (ifs) {
+				std::getline(ifs, line);
+				SPDLOG_DEBUG("Checking map line {}", line);
+				char *module_path;
+				if (sscanf(line.c_str(), "%*s%*s%*s%*s%*s%ms",
+					   &module_path) == 1) {
+					std::string curr_module(module_path);
+					free(module_path);
+					SPDLOG_DEBUG("Checking {}",
+						     curr_module);
+					if (std::filesystem::exists(
+						    curr_module)) {
+						bool matched = std::filesystem::
+							equivalent(
+								sub.module_name,
+								curr_module);
+						SPDLOG_DEBUG(
+							"Checked {}, matched={}",
+							curr_module, matched);
+						if (matched) {
+							ok = true;
+							break;
+						}
+					} else {
+						SPDLOG_DEBUG(
+							"{} doesn't exist, skipped",
+							curr_module);
+					}
+				}
+			}
+			if (!ok) {
+				SPDLOG_INFO(
+					"Unable to attach: module name {} doesn't exist in current process's memory maps",
+					sub.module_name);
+				return -EINVAL;
+			}
+		}
 		ebpf_callback_args args{ .ebpf_cb = cb,
 					 .attach_type = attach_type };
 		if (attach_type == ATTACH_UPROBE ||
@@ -227,4 +288,45 @@ void frida_attach_impl::register_custom_helpers(
 			  (void *)bpftime_get_func_ret);
 	register_callback(BPF_FUNC_get_retval, "bpf_get_retval",
 			  (void *)bpftime_get_retval);
+}
+
+void *frida_attach_impl::call_attach_specific_function(const std::string &name,
+						       void *data)
+{
+	SPDLOG_DEBUG("Calling frida attach impl specified feature: {}", name);
+	if (name == "generate_stack") {
+		if (!current_thread_gum_cpu_context.has_value()) {
+			SPDLOG_ERROR("There is no frida hook running");
+			return nullptr;
+		}
+		SPDLOG_DEBUG("Getting stack trace...");
+
+		struct {
+			guint len;
+			GumReturnAddress items[127];
+		} array;
+		array.len = 0;
+		auto tracer = gum_backtracer_make_accurate();
+		gum_backtracer_generate(
+			tracer,
+			(GumCpuContext *)*current_thread_gum_cpu_context,
+			(GumReturnAddressArray *)&array);
+		if (array.len == 0) {
+			SPDLOG_ERROR("Unable to get stack trace");
+			g_object_unref(tracer);
+			return nullptr;
+		}
+		auto result = new std::vector<uint64_t>;
+		for (guint i = 0; i < array.len; i++) {
+			auto frame_addr = array.items[i];
+			result->push_back((uint64_t)(uintptr_t)frame_addr);
+		}
+		SPDLOG_DEBUG("Got {} stack traces", result->size());
+		g_object_unref(tracer);
+		return result;
+
+	} else {
+		SPDLOG_ERROR("Invalid frida attach impl feature: {}", name);
+		return nullptr;
+	}
 }

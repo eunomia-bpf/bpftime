@@ -1,0 +1,4 @@
+fsync_write 
+temp.txt
+*.o
+redis/

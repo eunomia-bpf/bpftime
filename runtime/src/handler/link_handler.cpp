@@ -29,6 +29,10 @@ bpf_link_handler::bpf_link_handler(struct bpf_link_create_args args,
 		uprobe_multi_entry_vector entries(uprobe_multi_entry_allocator(
 			mem.get_segment_manager()));
 		for (size_t i = 0; i < opts.cnt; i++) {
+			const auto cookie = opts.cookies != 0 ?
+						    ((uint64_t *)(uintptr_t)
+							     opts.cookies)[i] :
+						    0;
 			entries.push_back(uprobe_multi_entry{
 				.offset = ((unsigned long *)(uintptr_t)
 						   opts.offsets)[i],
@@ -37,12 +41,10 @@ bpf_link_handler::bpf_link_handler(struct bpf_link_create_args args,
 						((unsigned long *)(uintptr_t)opts
 							 .ref_ctr_offsets)[i] :
 						0,
-				.cookie = (opts.cookies == 0 ||
-					   ((uint64_t *)(uintptr_t)
-						    opts.cookies)[i] == 0) ?
-						  0 :
-						  ((uint64_t *)(uintptr_t)
-							   opts.cookies)[i] });
+				.cookie = cookie != 0 ?
+						  std::optional<uint64_t>{
+							  cookie } :
+						  std::nullopt });
 		}
 		data = uprobe_multi_link_data{
 			.path = boost_shm_string(
@@ -53,7 +55,7 @@ bpf_link_handler::bpf_link_handler(struct bpf_link_create_args args,
 			.pid = static_cast<int>(opts.pid)
 		};
 	} else {
-		SPDLOG_ERROR("Unsupport bpf_link attach type: {}",
+		SPDLOG_ERROR("Unsupported bpf_link attach type: {}",
 			     link_attach_type);
 		throw std::runtime_error("Unsupported bpf_link attach type");
 	}

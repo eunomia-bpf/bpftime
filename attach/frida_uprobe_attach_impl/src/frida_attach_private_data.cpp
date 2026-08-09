@@ -28,13 +28,14 @@ int frida_attach_private_data::initialize_from_string(const std::string_view &sv
 		addr = (uintptr_t)resolve_function_addr_by_module_offset(
 			module_part, std::stoul(offset_part));
 		SPDLOG_DEBUG("Resolved address: {:x} from string {}", addr, sv);
+		this->module_name = module_part;
 	}
 
 	return 0;
 }
 
-std::string frida_attach_private_data::to_string()
+std::string frida_attach_private_data::to_string() const
 {
 	return std::string("<Frida attach private data addr=") +
-	       std::to_string(addr);
+	       std::to_string(static_cast<uintptr_t>(addr)) + ">";
 }

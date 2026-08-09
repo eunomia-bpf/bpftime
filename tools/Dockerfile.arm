@@ -1,0 +1,50 @@
+FROM --platform=linux/arm64 ubuntu:22.04
+
+# Prevent interactive prompts during package installation
+ENV DEBIAN_FRONTEND=noninteractive
+
+# Install build dependencies for bpftime (based on Dockerfile.ubuntu)
+RUN apt-get update && apt-get install -y \
+    g++-aarch64-linux-gnu \
+    gcc-aarch64-linux-gnu \
+    make \
+    libyaml-cpp-dev \
+    wget \
+    pkg-config \
+    zlib1g-dev \
+    clang \
+    llvm-15-dev \
+    gcc-12 \
+    g++-12 \
+    libelf-dev \
+    python3-pytest \
+    systemtap-sdt-dev \
+    llvm \
+    git \
+    qemu-user \
+    cmake \
+    binutils-dev \
+    libboost1.74-all-dev \
+    python3 \
+    gcc \
+    && rm -rf /var/lib/apt/lists/*
+
+# Set LLVM and compiler versions for ARM64 build
+# Using default gcc/g++ to avoid segmentation fault with gcc-12 on ARM64
+ENV LLVM_ROOT=/usr/lib/llvm-15
+ENV CC=gcc
+ENV CXX=g++
+ENV ARCH=arm64
+
+# Set working directory
+WORKDIR /bpftime
+
+# Copy the project
+COPY . .
+
+# Initialize git submodules
+RUN git config --global --add safe.directory /bpftime && \
+    git submodule update --init --recursive || true
+
+# Build command - use release mode with parallel compilation
+CMD ["sh", "-c", "JOBS=$(nproc) make release -j$JOBS"]

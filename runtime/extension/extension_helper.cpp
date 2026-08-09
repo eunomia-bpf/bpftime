@@ -1,5 +1,4 @@
 #include "bpftime_helper_group.hpp"
-#include <cassert>
 #include <cerrno>
 #include <sched.h>
 #ifdef ENABLE_BPFTIME_VERIFIER
@@ -20,7 +19,7 @@
 #include <spdlog/spdlog.h>
 #include <vector>
 
-#ifdef BPFTIME_ENABLE_IOURING_EXT
+#if defined(BPFTIME_ENABLE_IOURING_EXT) && __linux__
 #include "liburing.h"
 #endif
 
@@ -47,8 +46,12 @@ uint64_t bpftime_path_join(const char *filename1, const char *filename2,
 
 namespace bpftime
 {
-#ifdef BPFTIME_ENABLE_IOURING_EXT
+/*
+io_uring are only available in linux atm
+so adding linux guards to the following code
+*/
 
+#if defined(BPFTIME_ENABLE_IOURING_EXT) && __linux__
 static int submit_io_uring_write(struct io_uring *ring, int fd, char *buf,
 				 size_t size)
 {
@@ -127,66 +130,69 @@ uint64_t bpftime_io_uring_submit(void)
 	return io_uring_submit(&ring);
 }
 #endif
-
-extern const bpftime_helper_group extesion_group = { {
-	{ UFUNC_HELPER_ID_FIND_ID,
-	  bpftime_helper_info{
-		  .index = UFUNC_HELPER_ID_FIND_ID,
-		  .name = "__ebpf_call_find_ufunc_id",
-		  .fn = (void *)__ebpf_call_find_ufunc_id,
-	  } },
-	{ UFUNC_HELPER_ID_DISPATCHER,
-	  bpftime_helper_info{
-		  .index = UFUNC_HELPER_ID_DISPATCHER,
-		  .name = "__ebpf_call_ufunc_dispatcher",
-		  .fn = (void *)__ebpf_call_ufunc_dispatcher,
-	  } },
+const bpftime_helper_group &get_extension_helper_group()
+{
+	static const bpftime_helper_group extension_group = { {
+		{ UFUNC_HELPER_ID_FIND_ID,
+		  bpftime_helper_info{
+			  .index = UFUNC_HELPER_ID_FIND_ID,
+			  .name = "__ebpf_call_find_ufunc_id",
+			  .fn = (void *)__ebpf_call_find_ufunc_id,
+		  } },
+		{ UFUNC_HELPER_ID_DISPATCHER,
+		  bpftime_helper_info{
+			  .index = UFUNC_HELPER_ID_DISPATCHER,
+			  .name = "__ebpf_call_ufunc_dispatcher",
+			  .fn = (void *)__ebpf_call_ufunc_dispatcher,
+		  } },
 #if BPFTIME_ENABLE_FS_HELPER
-	{ EXTENDED_HELPER_GET_ABS_PATH_ID,
-	  bpftime_helper_info{
-		  .index = EXTENDED_HELPER_GET_ABS_PATH_ID,
-		  .name = "bpftime_get_abs_path",
-		  .fn = (void *)bpftime_get_abs_path,
-	  } },
-	{ EXTENDED_HELPER_PATH_JOIN_ID,
-	  bpftime_helper_info{
-		  .index = EXTENDED_HELPER_PATH_JOIN_ID,
-		  .name = "bpftime_path_join",
-		  .fn = (void *)bpftime_path_join,
-	  } },
+		{ EXTENDED_HELPER_GET_ABS_PATH_ID,
+		  bpftime_helper_info{
+			  .index = EXTENDED_HELPER_GET_ABS_PATH_ID,
+			  .name = "bpftime_get_abs_path",
+			  .fn = (void *)bpftime_get_abs_path,
+		  } },
+		{ EXTENDED_HELPER_PATH_JOIN_ID,
+		  bpftime_helper_info{
+			  .index = EXTENDED_HELPER_PATH_JOIN_ID,
+			  .name = "bpftime_path_join",
+			  .fn = (void *)bpftime_path_join,
+		  } },
 #endif
-#ifdef BPFTIME_ENABLE_IOURING_EXT
-	{ EXTENDED_HELPER_IOURING_INIT,
+#if defined (BPFTIME_ENABLE_IOURING_EXT) && __linux__
+	{ EXTENDED_UFUNC_IOURING_INIT,
 	  bpftime_helper_info{
-		  .index = EXTENDED_HELPER_IOURING_INIT,
+		  .index = EXTENDED_UFUNC_IOURING_INIT,
 		  .name = "io_uring_init",
 		  .fn = (void *)io_uring_init_global,
 	  } },
-	{ EXTENDED_HELPER_IOURING_SUBMIT_WRITE,
+	{ EXTENDED_UFUNC_IOURING_SUBMIT_WRITE,
 	  bpftime_helper_info{
-		  .index = EXTENDED_HELPER_IOURING_SUBMIT_WRITE,
+		  .index = EXTENDED_UFUNC_IOURING_SUBMIT_WRITE,
 		  .name = "io_uring_submit_write",
 		  .fn = (void *)bpftime_io_uring_submit_write,
 	  } },
-	{ EXTENDED_HELPER_IOURING_SUBMIT_FSYNC,
+	{ EXTENDED_UFUNC_IOURING_SUBMIT_FSYNC,
 	  bpftime_helper_info{
-		  .index = EXTENDED_HELPER_IOURING_SUBMIT_FSYNC,
+		  .index = EXTENDED_UFUNC_IOURING_SUBMIT_FSYNC,
 		  .name = "io_uring_submit_fsync",
 		  .fn = (void *)bpftime_io_uring_submit_fsync,
 	  } },
-	{ EXTENDED_HELPER_IOURING_WAIT_AND_SEEN,
+	{ EXTENDED_UFUNC_IOURING_WAIT_AND_SEEN,
 	  bpftime_helper_info{
-		  .index = EXTENDED_HELPER_IOURING_WAIT_AND_SEEN,
+		  .index = EXTENDED_UFUNC_IOURING_WAIT_AND_SEEN,
 		  .name = "io_uring_wait_and_seen",
 		  .fn = (void *)bpftime_io_uring_wait_and_seen,
 	  } },
-	{ EXTENDED_HELPER_IOURING_SUBMIT,
+	{ EXTENDED_UFUNC_IOURING_SUBMIT,
 	  bpftime_helper_info{
-		  .index = EXTENDED_HELPER_IOURING_SUBMIT,
+		  .index = EXTENDED_UFUNC_IOURING_SUBMIT,
 		  .name = "io_uring_submit",
 		  .fn = (void *)bpftime_io_uring_submit,
 	  } },
 #endif
-} };
+	} };
+	return extension_group;
+}
 
 } // namespace bpftime

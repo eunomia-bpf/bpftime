@@ -1,0 +1,12 @@
+{
+    "1": {
+        "type": "bpf_prog_handler",
+        "name": "example_prog",
+        "attr": {
+            "insns": "abcd1234ef567890",
+            "type": 1,
+            "cnt": 1,
+            "attach_fds": [2, 3]
+        }
+    }
+}

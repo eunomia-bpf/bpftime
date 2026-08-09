@@ -4,7 +4,11 @@
  * All rights reserved.
  */
 #include <handler/epoll_handler.hpp>
+#if __linux__
 #include <sys/epoll.h>
+#elif __APPLE__
+#include "bpftime_epoll.h"
+#endif
 namespace bpftime
 {
 epoll_handler::epoll_handler(boost::interprocess::managed_shared_memory &memory)

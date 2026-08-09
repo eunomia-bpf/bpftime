@@ -49,15 +49,16 @@ TEST_CASE("Test basic operations of external hash map ops")
 {
 	struct bpftime::shm_remove remover(SHM_NAME);
 	// The side that creates the mapping
-	managed_shared_memory segment(create_only, SHM_NAME, 1 << 22);
-	auto manager =
-		segment.construct<handler_manager>(HANDLER_NAME)(segment);
+	managed_shared_memory segment(create_only, SHM_NAME, 1 << 20);
+	const size_t test_max_fd_count = MIN_MAX_FD_COUNT;
+	auto manager = segment.construct<handler_manager>(
+		HANDLER_NAME)(segment, test_max_fd_count);
 	auto &manager_ref = *manager;
 
 	// update the ops to use the external map
-	bpftime::agent_config agent_config;
-	agent_config.allow_non_buildin_map_types = true;
-	bpftime_set_agent_config(agent_config);
+	bpftime::runtime_config runtime_config;
+	runtime_config.allow_non_buildin_map_types = true;
+	bpftime_set_runtime_config(std::move(runtime_config));
 
 	cpp_map.clear();
 

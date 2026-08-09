@@ -2,9 +2,25 @@ name: Build and Test VM
 
 on:
   push:
-    branches: [ master ]
+    branches: [master]
+    paths:
+      - ".github/workflows/test-vm.yml"
+      - "vm/**"
+      - "cmake/**"
+      - "third_party/**"
+      - "CMakeLists.txt"
+      - "Makefile"
+      - ".gitmodules"
   pull_request:
-    branches: [ master ]
+    branches: [master]
+    paths:
+      - ".github/workflows/test-vm.yml"
+      - "vm/**"
+      - "cmake/**"
+      - "third_party/**"
+      - "CMakeLists.txt"
+      - "Makefile"
+      - ".gitmodules"
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}-${{ github.event_name }}
   cancel-in-progress: true
@@ -22,7 +38,7 @@ jobs:
     steps:
 
     - name: cache dependencies
-      uses: actions/cache@v2
+      uses: actions/cache@v4
       id: cache
       with:
         path: ${{ github.workspace }}/${{ env.INSTALL_LOCATION }}
@@ -36,11 +52,3 @@ jobs:
         python-version: '3.8'
     - name: build
       run: make build-vm
-    - name: run tests x86
-      shell: bash
-      run: |
-        python3.8 -m venv vm/test
-        source vm/test/bin/activate
-        pip install -r vm/test/requirements.txt
-        # make build # or build-arm32 build-arm64
-        make -C vm test-vm -j

@@ -1,4 +1,8 @@
+#if __linux__
 #include <linux/bpf.h>
+#elif __APPLE__
+#include "bpftime_epoll.h"
+#endif
 #include <string>
 #include <list>
 #include <memory>
@@ -7,12 +11,17 @@
 #include <spdlog/spdlog.h>
 using namespace std;
 using namespace bpftime;
+#if __APPLE__
+using namespace bpftime_epoll;
+#endif
 
+#ifdef BPFTIME_BUILD_WITH_LIBBPF
 extern "C" {
 #include <bpf/libbpf.h>
 #include <bpf/btf.h>
 #include <bpf/bpf.h>
 }
+#endif
 
 namespace bpftime
 {
@@ -21,6 +30,7 @@ namespace bpftime
 class bpftime_object {
     public:
 	bpftime_object(std::string_view path);
+	bpftime_object(std::string_view path, runtime_config cfg);
 	~bpftime_object() = default;
 	string obj_path;
 	std::unique_ptr<struct bpf_object, decltype(&bpf_object__close)> obj;
@@ -29,6 +39,7 @@ class bpftime_object {
 	std::list<std::unique_ptr<bpftime_prog> > progs;
 
 	void create_programs();
+	void create_programs(runtime_config cfg);
 	bpftime_prog *find_program_by_name(std::string_view name) const;
 	bpftime_prog *find_program_by_secname(std::string_view name) const;
 	bpftime_prog *next_program(bpftime_prog *prog) const;
@@ -62,17 +73,41 @@ void bpftime_object::create_programs()
 		if (!prog) {
 			continue;
 		}
+		SPDLOG_INFO("create_programs: found program {}",
+			   bpf_program__name(prog));
 		struct ebpf_inst *insns =
 			(struct ebpf_inst *)bpf_program__insns(prog);
 		size_t cnt = bpf_program__insn_cnt(prog);
 		const char *name = bpf_program__name(prog);
 		if (!insns || !name) {
 			SPDLOG_ERROR("Failed to get insns or name for prog {}",
-				      name || "<NULL>");
+				     name || "<NULL>");
 			continue;
 		}
 		progs.emplace_back(
 			std::make_unique<bpftime_prog>(insns, cnt, name));
+	}
+}
+
+void bpftime_object::create_programs(runtime_config cfg)
+{
+	bpf_program *prog;
+	bpf_object__for_each_program(prog, obj.get())
+	{
+		if (!prog) {
+			continue;
+		}
+		struct ebpf_inst *insns =
+			(struct ebpf_inst *)bpf_program__insns(prog);
+		size_t cnt = bpf_program__insn_cnt(prog);
+		const char *name = bpf_program__name(prog);
+		if (!insns || !name) {
+			SPDLOG_ERROR("Failed to get insns or name for prog {}",
+				     name || "<NULL>");
+			continue;
+		}
+		progs.emplace_back(std::make_unique<bpftime_prog>(
+			insns, cnt, name, std::move(cfg)));
 	}
 }
 
@@ -81,7 +116,7 @@ bpftime_object::find_program_by_secname(std::string_view name) const
 {
 	const char *sec_name;
 	struct bpf_program *prog = NULL;
-	struct bpftime_prog *time_prog = progs.front().get();
+	bpftime_prog *time_prog = progs.front().get();
 	// iterate through the bpftime_prog from prog and bpf_program
 	bpf_object__for_each_program(prog, obj.get())
 	{
@@ -124,15 +159,34 @@ bpftime_object::bpftime_object(std::string_view path)
 	create_programs();
 }
 
-// open the object elf file and load it into the context
-struct bpftime_object *bpftime_object_open(const char *obj_path)
+bpftime_object::bpftime_object(std::string_view path, runtime_config cfg)
+	: obj_path(path), obj(nullptr, bpf_object__close),
+	  host_btf(nullptr, btf__free)
 {
-	struct bpftime_object *obj = new bpftime_object(obj_path);
+	bpf_object *obj_ptr = bpf_object__open(obj_path.data());
+	if (!obj_ptr) {
+		SPDLOG_ERROR("Failed to open object file {}", obj_path);
+		return;
+	}
+	obj.reset(obj_ptr);
+	create_programs(std::move(cfg));
+}
+
+// open the object elf file and load it into the context
+bpftime_object *bpftime_object_open(const char *obj_path)
+{
+	bpftime_object *obj = new bpftime_object(obj_path);
+	return obj;
+}
+
+bpftime_object *bpftime_object_open(const char *obj_path, runtime_config cfg)
+{
+	bpftime_object *obj = new bpftime_object(obj_path, std::move(cfg));
 	return obj;
 }
 
 // close and free the object
-void bpftime_object_close(struct bpftime_object *obj)
+void bpftime_object_close(bpftime_object *obj)
 {
 	if (!obj) {
 		return;
@@ -151,11 +205,10 @@ static int libbpf_print_fn(enum libbpf_print_level level, const char *format,
 }
 
 // The execution unit or bpf function.
-struct bpftime_prog;
+class bpftime_prog;
 // find the program by section name
-struct bpftime_prog *
-bpftime_object_find_program_by_name(struct bpftime_object *obj,
-				    const char *name)
+bpftime_prog *bpftime_object_find_program_by_name(bpftime_object *obj,
+							const char *name)
 {
 	if (!obj || !name) {
 		return NULL;
@@ -163,9 +216,8 @@ bpftime_object_find_program_by_name(struct bpftime_object *obj,
 	return obj->find_program_by_name(name);
 }
 
-struct bpftime_prog *
-bpftime_object_find_program_by_secname(struct bpftime_object *obj,
-				       const char *secname)
+bpftime_prog *bpftime_object_find_program_by_secname(bpftime_object *obj,
+							   const char *secname)
 {
 	if (!obj || !secname) {
 		return NULL;
@@ -173,9 +225,8 @@ bpftime_object_find_program_by_secname(struct bpftime_object *obj,
 	return obj->find_program_by_secname(secname);
 }
 
-struct bpftime_prog *
-bpftime_object__next_program(const struct bpftime_object *obj,
-			     struct bpftime_prog *prog)
+bpftime_prog *bpftime_object__next_program(const bpftime_object *obj,
+						 class bpftime_prog *prog)
 {
 	if (!obj) {
 		return NULL;

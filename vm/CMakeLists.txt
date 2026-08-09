@@ -1,5 +1,4 @@
-cmake_minimum_required(VERSION 3.15)
-
+cmake_minimum_required(VERSION 3.16)
 #
 # Project details
 #
@@ -9,58 +8,45 @@ project(
   LANGUAGES C CXX
 )
 
-#
-# Set project options
-#
-include(${CMAKE_CURRENT_SOURCE_DIR}/../cmake/StandardSettings.cmake)
-include(${CMAKE_CURRENT_SOURCE_DIR}/../cmake/CompilerWarnings.cmake)
+if(NOT DEFINED BPFTIME_LLVM_JIT)
+  set(BPFTIME_LLVM_JIT ON CACHE BOOL "Use LLVM as jit backend.")
+endif()
+
+if(NOT DEFINED BPFTIME_UBPF_JIT)
+  set(BPFTIME_UBPF_JIT ON CACHE BOOL "Use uBPF as jit backend.")
+endif()
+
 
 if(NOT CMAKE_BUILD_TYPE)
   set(CMAKE_BUILD_TYPE "Debug")
 endif()
 
 if(NOT DEFINED SPDLOG_INCLUDE)
-  message(INFO "Adding spdlo seperately..")
+  message(STATUS "Adding spdlog seperately..")
   # spdlog
   add_subdirectory(../third_party/spdlog ${CMAKE_CURRENT_BINARY_DIR}/spdlog)
-
-  # set spdlog level
-  if(CMAKE_BUILD_TYPE STREQUAL "Debug")
-    add_definitions(-DSPDLOG_ACTIVE_LEVEL=SPDLOG_LEVEL_DEBUG)
-  else()
-    add_definitions(-DSPDLOG_ACTIVE_LEVEL=SPDLOG_LEVEL_INFO)
-  endif()
-
-  set(SPDLOG_INCLUDE ${CMAKE_CURRENT_SOURCE_DIR}/third_party/spdlog/include)
+  set(SPDLOG_INCLUDE ${CMAKE_CURRENT_SOURCE_DIR}/../third_party/spdlog/include)
 endif()
 
-message(STATUS "Started CMake for ${PROJECT_NAME} v${PROJECT_VERSION}...\n")
-
-if(BPFTIME_LLVM_JIT)
-  message(STATUS "Using llvm-jit")
-  add_subdirectory(llvm-jit)
-else()
-  message(STATUS "Not using llvm-jit")
-  add_subdirectory(simple-jit)
+if(${BPFTIME_BUILD_STANDALONE_VM})
+  include(../cmake/libbpf.cmake)
+  add_subdirectory(../third_party/argparse ${CMAKE_CURRENT_BINARY_DIR}/argparse)
 endif()
 
-set_project_warnings(vm-bpf)
-
-# set the -static flag for static linking
-if(NOT BPFTIME_ENABLE_ASAN)
-  # set the -static flag for static linking
-  # set_target_properties(${test_name}_Tests PROPERTIES LINK_FLAGS "-static")
-  # need on qemu-user
+if(${BPFTIME_LLVM_JIT})
+  set(BPFTIME_BPF_RUNTIME_NAME "bpftime_llvm_vm")
 endif()
 
-message(STATUS "Added all header and implementation files.\n")
+if(${BPFTIME_UBPF_JIT})
+  set(BPFTIME_BPF_RUNTIME_NAME "bpftime_ubpf_vm")
+endif()
 
-message(DEBUG "Successfully added all dependencies and linked against them.")
+if(NOT BPFTIME_BPF_RUNTIME_NAME)
+  message(WARNING "No built-in VMs has been enabled.")
+endif()
 
-#
-# Set the build/user include directories
-#
-message(STATUS "Finished setting up include directories.")
+add_subdirectory(compat)
+add_subdirectory(vm-core)
 
 #
 # Unit testing setup
@@ -75,8 +61,4 @@ set(test_sources
 if(BPFTIME_ENABLE_UNIT_TESTING)
   enable_testing()
   message(STATUS "Build unit tests for the project. Tests should always be found in the test folder\n")
-  add_subdirectory(test)
 endif()
-
-add_subdirectory(test-runner)
-

@@ -1,0 +1,8 @@
+function(find_rocm)
+    if(NOT BPFTIME_ROCM_ROOT)
+        message(FATAL_ERROR "To use ROCm attach, set BPFTIME_ROCM_ROOT to the root of ROCm installation, such as /opt/rocm-6.4.1/")
+    endif()
+    set(ROCM_LIBRARY_PATH ${BPFTIME_ROCM_ROOT}/lib PARENT_SCOPE)
+    set(ROCM_INCLUDE_PATH ${BPFTIME_ROCM_ROOT}/include PARENT_SCOPE)
+    set(ROCM_LIBS rocm-core PARENT_SCOPE)
+endfunction()

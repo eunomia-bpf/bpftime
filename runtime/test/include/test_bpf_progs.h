@@ -66,7 +66,7 @@ int mul_test() {
 	int c = a * b;
 	return c;
 }
-in 64 bit: using clang -target bpf -c mul.bpf.c -o mul.bpf.o to compile
+in 64 bit: using clang -Xlinker --export-dynamic -target bpf -c mul.bpf.c -o mul.bpf.o to compile
 */
 const unsigned char bpf_mul_64_bit[] = {
 	0xb7, 0x01, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x63, 0x1a, 0xfc, 0xff,
@@ -80,7 +80,7 @@ const unsigned char bpf_mul_64_bit[] = {
 
 /*
 a * b / 2 for 32 bit
-clang -O2 -target bpf -m32 -c example/bpf/mul.bpf.c -o prog.o
+clang -Xlinker --export-dynamic -O2 -target bpf -m32 -c example/bpf/mul.bpf.c -o prog.o
 */
 const unsigned char bpf_mul_optimized[] = { 0xb7, 0x00, 0x00, 0x00, 0x02, 0x00,
 					    0x00, 0x00, 0x95, 0x00, 0x00, 0x00,

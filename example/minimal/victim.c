@@ -2,6 +2,8 @@
 #include <stdlib.h>
 #include <unistd.h>
 
+int open(const char *pathname);
+
 int target_func() {
     int res = open("/dev/null");
     printf("target_func\n");

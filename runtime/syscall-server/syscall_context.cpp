@@ -3,26 +3,125 @@
  * Copyright (c) 2022, eunomia-bpf org
  * All rights reserved.
  */
-#include "syscall_context.hpp"
+#include "bpftime_logger.hpp"
 #include "bpftime_shm.hpp"
-#include "handler/perf_event_handler.hpp"
+#include <boost/interprocess/exceptions.hpp>
+#ifdef ENABLE_BPFTIME_VERIFIER
+#include <bpftime-verifier.hpp>
+#endif
+#include <cstdint>
+#ifdef BPFTIME_ENABLE_CUDA_ATTACH
+#include "cuda.h"
+#endif
+#include "spdlog/fmt/fmt.h"
+#include <cstdio>
+#include <ebpf-vm.h>
+#include "syscall_context.hpp"
+#include "handler/map_handler.hpp"
+#include <cstring>
+#include <fcntl.h>
+#if __linux__
 #include "linux/perf_event.h"
+#include <linux/bpf.h>
+#include <asm/unistd.h>
+#include <sys/epoll.h>
+#ifdef BPFTIME_BUILD_WITH_LIBBPF
+#include <bpf/bpf.h>
+#endif
+#include <linux/perf_event.h>
+#include <linux/filter.h>
+#elif __APPLE__
+#include "bpftime_epoll.h"
+#endif
 #include "spdlog/spdlog.h"
 #include <cerrno>
 #include <cstdlib>
-#include <linux/bpf.h>
+#include <exception>
+#include <iterator>
 #include "syscall_server_utils.hpp"
 #include <optional>
-#include <sys/epoll.h>
 #include <sys/mman.h>
 #include <unistd.h>
-#include <bpf/bpf.h>
 #include <regex>
-#include <linux/bpf.h>
-#include <linux/perf_event.h>
-#include <linux/filter.h>
+
+// In build option without libbpf, there might be no BPF_EXIT_INSN
+#ifndef BPF_EXIT_INSN
+#define BPF_EXIT_INSN()                                                        \
+	((struct bpf_insn){ .code = BPF_JMP | BPF_EXIT,                        \
+			    .dst_reg = 0,                                      \
+			    .src_reg = 0,                                      \
+			    .off = 0,                                          \
+			    .imm = 0 })
+#endif
+
+#ifndef BPF_MOV64_IMM
+#define BPF_MOV64_IMM(DST, IMM)                                                \
+	((struct bpf_insn){ .code = BPF_ALU64 | BPF_MOV | BPF_K,               \
+			    .dst_reg = DST,                                    \
+			    .src_reg = 0,                                      \
+			    .off = 0,                                          \
+			    .imm = IMM })
+#endif
 
 using namespace bpftime;
+#if __APPLE__
+using namespace bpftime_epoll;
+#endif
+
+namespace fmt_lib = spdlog::fmt_lib;
+
+namespace
+{
+[[noreturn]] void
+exit_for_startup_allocation_failure(const std::exception &error)
+{
+	auto config = bpftime::construct_runtime_config_from_env();
+	SPDLOG_CRITICAL(
+		"Unable to initialize bpftime shared memory ({} MiB, {} fd slots): {}",
+		config.shm_memory_size, config.max_fd_count, error.what());
+	SPDLOG_CRITICAL(
+		"Increase BPFTIME_SHM_MEMORY_MB or decrease BPFTIME_MAX_FD_COUNT");
+	std::exit(EXIT_FAILURE);
+}
+
+int get_bpf_obj_info_by_fd(int fd, void *info, uint32_t *info_len,
+			   long (*syscall_fn)(long, ...))
+{
+#ifdef BPFTIME_BUILD_WITH_LIBBPF
+	return bpf_obj_get_info_by_fd(fd, info, info_len);
+#elif defined(__linux__)
+	union bpf_attr attr = {};
+	attr.info.bpf_fd = fd;
+	attr.info.info_len = *info_len;
+	attr.info.info = reinterpret_cast<uintptr_t>(info);
+	int result = syscall_fn(__NR_bpf, BPF_OBJ_GET_INFO_BY_FD, &attr,
+				sizeof(attr.info));
+	if (result == 0)
+		*info_len = attr.info.info_len;
+	return result;
+#else
+	errno = ENOTSUP;
+	return -1;
+#endif
+}
+
+std::string format_verifier_program_dump(const uint64_t *instructions,
+					 size_t instruction_count)
+{
+	fmt_lib::memory_buffer buffer;
+	for (size_t i = 0; i < instruction_count; i++) {
+		uint64_t inst = instructions[i];
+		fmt_lib::format_to(std::back_inserter(buffer), "{:03}: ", i);
+		for (int j = 0; j < 8; j++) {
+			fmt_lib::format_to(std::back_inserter(buffer),
+					   "{:02X} ", inst & 0xff);
+			inst >>= 8;
+		}
+		fmt_lib::format_to(std::back_inserter(buffer), "\n");
+	}
+	return fmt_lib::to_string(buffer);
+}
+} // namespace
 
 void syscall_context::load_config_from_env()
 {
@@ -43,34 +142,179 @@ void syscall_context::load_config_from_env()
 	}
 }
 
+syscall_context::syscall_context()
+{
+	init_original_functions();
+	enable_mock.store(false, std::memory_order_relaxed);
+	const char *logger_target = getenv("BPFTIME_LOG_OUTPUT");
+	bpftime_set_logger(logger_target == nullptr ?
+				   DEFAULT_LOGGER_OUTPUT_PATH :
+				   logger_target);
+	SPDLOG_DEBUG("Resolved original libc function pointers");
+	// FIXME: merge this into the runtime config
+	load_config_from_env();
+	auto runtime_config = bpftime::construct_runtime_config_from_env();
+	pthread_spin_init(&this->mocked_file_lock, 0);
+	SPDLOG_INFO("Init bpftime syscall mocking..");
+	SPDLOG_INFO("The log will be written to: {}",
+		    runtime_config.get_logger_output_path());
+	enable_mock.store(true, std::memory_order_relaxed);
+}
+
+#ifdef BPFTIME_ENABLE_CUDA_ATTACH
+void syscall_context::initialize_cuda()
+{
+	SPDLOG_INFO("Initializing CUDA at syscall-server side");
+	initializing_cuda.store(true, std::memory_order_release);
+	struct cuda_init_guard {
+		std::atomic<bool> &flag;
+		~cuda_init_guard()
+		{
+			flag.store(false, std::memory_order_release);
+		}
+	} guard{ initializing_cuda };
+	if (auto err = cuInit(0); err != CUDA_SUCCESS) {
+		SPDLOG_ERROR(
+			"Unable to initialize CUDA from syscall server side: {}",
+			(int)err);
+		throw std::runtime_error(
+			"Unable to initialize CUDA from syscall server side");
+	}
+	SPDLOG_INFO("CUDA initialized at syscall server side");
+}
+#endif
+
 void syscall_context::try_startup()
 {
-	enable_mock = false;
-	start_up();
-	enable_mock = true;
+	enable_mock.store(false, std::memory_order_relaxed);
+	try {
+		start_up(*this);
+	} catch (const boost::interprocess::bad_alloc &e) {
+		exit_for_startup_allocation_failure(e);
+	}
+	enable_mock.store(true, std::memory_order_relaxed);
 }
 
 int syscall_context::handle_close(int fd)
 {
-	if (!enable_mock)
+	if (!enable_mock.load(std::memory_order_relaxed) ||
+	    initializing_cuda.load(std::memory_order_acquire) ||
+	    !enable_mock_after_initialized.load(std::memory_order_relaxed))
 		return orig_close_fn(fd);
+	SPDLOG_DEBUG("Calling mocked close");
 	try_startup();
+	{
+		bpftime_lock_guard _guard(this->mocked_file_lock);
+		if (auto itr = this->mocked_files.find(fd);
+		    itr != this->mocked_files.end()) {
+			SPDLOG_DEBUG("Removing mocked file fd {}", fd);
+			this->mocked_files.erase(itr);
+			return 0;
+		}
+	}
 	bpftime_close(fd);
 	return orig_close_fn(fd);
 }
 
-int syscall_context::create_kernel_bpf_map(int map_fd)
+int syscall_context::handle_openat(int fd, const char *file, int oflag,
+				   unsigned short mode)
+{
+	if (!enable_mock.load(std::memory_order_relaxed) ||
+	    initializing_cuda.load(std::memory_order_acquire) ||
+	    !enable_mock_after_initialized.load(std::memory_order_relaxed))
+		return orig_openat_fn(fd, file, oflag, mode);
+	try_startup();
+	auto path = resolve_filename_and_fd_to_full_path(fd, file);
+	if (!path) {
+		SPDLOG_WARN("Failed to resolve fd={}/file=`{}`", fd, file);
+		return orig_openat_fn(fd, file, oflag, mode);
+	}
+	if (auto mocker = create_mocked_file_based_on_full_path(*path);
+	    mocker) {
+		bpftime_lock_guard _guard(this->mocked_file_lock);
+		char filename_buf[] = "/tmp/bpftime-mock.XXXXXX";
+		int fake_fd = mkstemp(filename_buf);
+		if (fake_fd < 0) {
+			SPDLOG_WARN("Unable to create mock fd: {}", errno);
+			return orig_open_fn(file, oflag, mode);
+		}
+		this->mocked_files.emplace(fake_fd, std::move(*mocker));
+		SPDLOG_DEBUG("Created mocked file with fd {}", fake_fd);
+		return fake_fd;
+	}
+	return orig_openat_fn(fd, file, oflag, mode);
+}
+
+int syscall_context::handle_open(const char *file, int oflag,
+				 unsigned short mode)
+{
+	if (!enable_mock.load(std::memory_order_relaxed) ||
+	    initializing_cuda.load(std::memory_order_acquire) ||
+	    !enable_mock_after_initialized.load(std::memory_order_relaxed))
+		return orig_open_fn(file, oflag, mode);
+	SPDLOG_DEBUG("Calling mocked open");
+	try_startup();
+	if (auto mocker = create_mocked_file_based_on_full_path(file); mocker) {
+		bpftime_lock_guard _guard(this->mocked_file_lock);
+		char filename_buf[] = "/tmp/bpftime-mock.XXXXXX";
+		int fake_fd = mkstemp(filename_buf);
+		if (fake_fd < 0) {
+			SPDLOG_WARN("Unable to create mock fd: {}", errno);
+			return orig_open_fn(file, oflag, mode);
+		}
+		this->mocked_files.emplace(fake_fd, std::move(*mocker));
+		SPDLOG_DEBUG("Created mocked file with fd {}", fake_fd);
+		return fake_fd;
+	}
+	return orig_open_fn(file, oflag, mode);
+}
+
+ssize_t syscall_context::handle_read(int fd, void *buf, size_t count)
+{
+	if (!enable_mock.load(std::memory_order_relaxed) ||
+	    initializing_cuda.load(std::memory_order_acquire) ||
+	    !enable_mock_after_initialized.load(std::memory_order_relaxed))
+		return orig_read_fn(fd, buf, count);
+	SPDLOG_DEBUG("Calling mocked read");
+	try_startup();
+	{
+		bpftime_lock_guard _guard(this->mocked_file_lock);
+		if (auto itr = this->mocked_files.find(fd);
+		    itr != this->mocked_files.end()) {
+			SPDLOG_DEBUG("Mock read fd={}, buf={:x}, count={}", fd,
+				     (uintptr_t)buf, count);
+			auto &mock_file = itr->second;
+			bpftime_lock_guard _access_guard(
+				mock_file->access_lock);
+			auto can_read_bytes =
+				std::min(count, mock_file->buf.size() -
+							mock_file->cursor);
+			SPDLOG_DEBUG("Reading {} bytes", can_read_bytes);
+			if (can_read_bytes == 0)
+				return can_read_bytes;
+			memcpy(buf, &mock_file->buf[mock_file->cursor],
+			       can_read_bytes);
+			mock_file->cursor += can_read_bytes;
+			SPDLOG_DEBUG("Copied {} bytes", can_read_bytes);
+
+			return can_read_bytes;
+		}
+	}
+	return orig_read_fn(fd, buf, count);
+}
+int syscall_context::create_kernel_bpf_map(int map_fd, int bpftime_map_type)
 {
 	bpf_map_info info = {};
 	uint32_t info_len = sizeof(info);
-	int res = bpf_obj_get_info_by_fd(map_fd, &info, &info_len);
+	int res = get_bpf_obj_info_by_fd(map_fd, &info, &info_len,
+					 orig_syscall_fn);
 	if (res < 0) {
-		SPDLOG_ERROR("Failed to get map info for id {}", info.id);
+		SPDLOG_ERROR("Failed to get map info for fd {}", map_fd);
 		return -1;
 	}
 	bpftime::bpf_map_attr attr;
-	// convert type to kernel-user type
-	attr.type = info.type + KERNEL_USER_MAP_OFFSET;
+	attr.type = bpftime_map_type;
+
 	attr.key_size = info.key_size;
 	attr.value_size = info.value_size;
 	attr.max_ents = info.max_entries;
@@ -144,8 +388,10 @@ int syscall_context::create_kernel_bpf_prog_in_userspace(int cmd,
 			if (inst.src_reg == 1 || inst.src_reg == 2) {
 				bpf_map_info info = {};
 				uint32_t info_len = sizeof(info);
-				int res = bpf_obj_get_info_by_fd(
-					inst.imm, &info, &info_len);
+				int res =
+					get_bpf_obj_info_by_fd(inst.imm, &info,
+							       &info_len,
+							       orig_syscall_fn);
 				if (res < 0) {
 					SPDLOG_ERROR(
 						"Failed to get map info for id {}",
@@ -177,7 +423,9 @@ int syscall_context::create_kernel_bpf_prog_in_userspace(int cmd,
 
 long syscall_context::handle_sysbpf(int cmd, union bpf_attr *attr, size_t size)
 {
-	if (!enable_mock)
+	if (!enable_mock.load(std::memory_order_relaxed) ||
+	    initializing_cuda.load(std::memory_order_acquire) ||
+	    !enable_mock_after_initialized.load(std::memory_order_relaxed))
 		return orig_syscall_fn(__NR_bpf, (long)cmd,
 				       (long)(uintptr_t)attr, (long)size);
 	try_startup();
@@ -186,14 +434,44 @@ long syscall_context::handle_sysbpf(int cmd, union bpf_attr *attr, size_t size)
 	switch (cmd) {
 	case BPF_MAP_CREATE: {
 		if (run_with_kernel) {
-			SPDLOG_DEBUG("Creating kernel map");
+			uint32_t translated_map_type =
+				bpftime_translate_shared_map_type_to_kernel_map_type(
+					attr->map_type);
+			SPDLOG_INFO(
+				"Creating kernel map type={}, name={}, key_size={}, value_size={}, translated_map_type={}",
+				attr->map_type, attr->map_name, attr->key_size,
+				attr->value_size, translated_map_type);
+			auto new_attr = *attr;
+			new_attr.map_type = translated_map_type;
 			int fd = orig_syscall_fn(__NR_bpf, (long)cmd,
-						 (long)(uintptr_t)attr,
+						 (long)(uintptr_t)&new_attr,
 						 (long)size);
-			SPDLOG_DEBUG("Created kernel map {}", fd);
-			return create_kernel_bpf_map(fd);
+			if (fd < 0) {
+				SPDLOG_ERROR(
+					"Unable to create kernel eBPF map: {}",
+					errno);
+			}
+			SPDLOG_INFO("Created kernel map finished, fd={}", fd);
+			uint32_t bpftime_map_type;
+			if (translated_map_type == attr->map_type) {
+				// Marks a kernel-user shared map, the
+				// corresponding bpftime map type should be
+				// added by KERNEL_USER_MAP_OFFSET
+				bpftime_map_type =
+					attr->map_type + KERNEL_USER_MAP_OFFSET;
+
+			} else {
+				// Marks a kernel-gpu shared map, the
+				// corresponding bpftime map type should be the
+				// map type before translating
+				bpftime_map_type = attr->map_type;
+			}
+			return create_kernel_bpf_map(fd, bpftime_map_type);
 		}
-		SPDLOG_DEBUG("Creating map");
+		SPDLOG_DEBUG(
+			"Creating map type={}, name={}, key_size={}, value_size={}",
+			attr->map_type, attr->map_name, attr->key_size,
+			attr->value_size);
 		int id = bpftime_maps_create(
 			-1 /* let the shm alloc fd for us */, attr->map_name,
 			bpftime::bpf_map_attr{
@@ -216,12 +494,14 @@ long syscall_context::handle_sysbpf(int cmd, union bpf_attr *attr, size_t size)
 		return id;
 	}
 	case BPF_MAP_LOOKUP_ELEM: {
-		SPDLOG_DEBUG("Looking up map {}", attr->map_fd);
+		SPDLOG_DEBUG("Looking up map {}, key={:x}", attr->map_fd,
+			     (uintptr_t)attr->key);
 		if (run_with_kernel) {
 			return orig_syscall_fn(__NR_bpf, (long)cmd,
 					       (long)(uintptr_t)attr,
 					       (long)size);
 		}
+
 		// Note that bpftime_map_lookup_elem is adapted as a bpf helper,
 		// meaning that it will *return* the address of the matched
 		// value. But here the syscall has a different interface. Here
@@ -239,7 +519,9 @@ long syscall_context::handle_sysbpf(int cmd, union bpf_attr *attr, size_t size)
 		return 0;
 	}
 	case BPF_MAP_UPDATE_ELEM: {
-		SPDLOG_DEBUG("Updating map");
+		SPDLOG_DEBUG("Updating map {}, key={:x}, value={:x}, flags={}",
+			     attr->map_fd, (uintptr_t)attr->key,
+			     (uintptr_t)attr->value, attr->flags);
 		if (run_with_kernel) {
 			return orig_syscall_fn(__NR_bpf, (long)cmd,
 					       (long)(uintptr_t)attr,
@@ -251,7 +533,8 @@ long syscall_context::handle_sysbpf(int cmd, union bpf_attr *attr, size_t size)
 			(uint64_t)attr->flags);
 	}
 	case BPF_MAP_DELETE_ELEM: {
-		SPDLOG_DEBUG("Deleting map");
+		SPDLOG_DEBUG("Deleting map {}, key={:x}", attr->map_fd,
+			     (uintptr_t)attr->key);
 		if (run_with_kernel) {
 			return orig_syscall_fn(__NR_bpf, (long)cmd,
 					       (long)(uintptr_t)attr,
@@ -260,8 +543,21 @@ long syscall_context::handle_sysbpf(int cmd, union bpf_attr *attr, size_t size)
 		return bpftime_map_delete_elem(
 			attr->map_fd, (const void *)(uintptr_t)attr->key);
 	}
+	case BPF_MAP_LOOKUP_AND_DELETE_ELEM: {
+		SPDLOG_DEBUG("Lookup and delete map {}, value={:x}",
+			     attr->map_fd, (uintptr_t)attr->value);
+		if (run_with_kernel) {
+			return orig_syscall_fn(__NR_bpf, (long)cmd,
+					       (long)(uintptr_t)attr,
+					       (long)size);
+		}
+		// For queue/stack maps, this is equivalent to pop operation
+		return bpftime_map_lookup_and_delete_elem(
+			attr->map_fd, (void *)(uintptr_t)attr->value);
+	}
 	case BPF_MAP_GET_NEXT_KEY: {
-		SPDLOG_DEBUG("Getting next key");
+		SPDLOG_DEBUG("Getting next key for map {}, key={:x}",
+			     attr->map_fd, (uintptr_t)attr->key);
 		if (run_with_kernel) {
 			return orig_syscall_fn(__NR_bpf, (long)cmd,
 					       (long)(uintptr_t)attr,
@@ -294,43 +590,47 @@ long syscall_context::handle_sysbpf(int cmd, union bpf_attr *attr, size_t size)
 				simple_section_name = "uprobe";
 			}
 #ifdef ENABLE_BPFTIME_VERIFIER
+			auto verifier_mode =
+				bpftime_get_runtime_config().verifier_mode;
 			// Only do verification for tracepoint/uprobe/uretprobe
-			if (simple_section_name.has_value()) {
-				SPDLOG_DEBUG("Verying program {}",
+			if (simple_section_name.has_value() &&
+			    verifier_mode != BPFTIME_NO_VERIFY) {
+				SPDLOG_DEBUG("Verifying program {}",
 					     attr->prog_name);
 				auto result = verifier::verify_ebpf_program(
 					(uint64_t *)(uintptr_t)attr->insns,
 					(size_t)attr->insn_cnt,
 					simple_section_name.value());
 				if (result.has_value()) {
-					std::ostringstream message;
-					message << *result;
-					// Print the program by bytes
-					for (size_t i = 0; i < attr->insn_cnt;
-					     i++) {
-						uint64_t inst =
-							((uint64_t *)(uintptr_t)
-								 attr->insns)[i];
-						message << std::setw(3)
-							<< std::setfill('0')
-							<< i << ": ";
-						for (int j = 0; j < 8; j++) {
-							message << std::hex
-								<< std::uppercase
-								<< std::setw(2)
-								<< std::setfill(
-									   '0')
-								<< (inst & 0xff)
-								<< " ";
-							inst >>= 8;
-						}
-						message << std::endl;
+					auto message = fmt_lib::format(
+						"{}{}", *result,
+						format_verifier_program_dump(
+							(uint64_t *)(uintptr_t)
+								attr->insns,
+							(size_t)attr->insn_cnt));
+					if (verifier_mode ==
+					    BPFTIME_VERIFIER_STRICT) {
+						SPDLOG_ERROR(
+							"Failed to verify program `{}`: {}\n"
+							"Hint: Set BPFTIME_VERIFIER_LEVEL=WARNING to treat verification failures as warnings, "
+							"or BPFTIME_VERIFIER_LEVEL=NO_VERIFY to disable verification. "
+							"Alternatively, set BPFTIME_RUN_WITH_KERNEL=1 to use the kernel verifier.",
+							attr->prog_name,
+							message);
+						errno = EINVAL;
+						return -1;
+					} else {
+						// WARNING mode: log warning but
+						// continue
+						SPDLOG_WARN(
+							"Userspace verifier warning for program `{}`: {}\n"
+							"The program will still be loaded. "
+							"Set BPFTIME_VERIFIER_LEVEL=STRICT to treat this as an error, "
+							"or BPFTIME_VERIFIER_LEVEL=NO_VERIFY to disable verification. "
+							"Alternatively, set BPFTIME_RUN_WITH_KERNEL=1 to use the kernel verifier.",
+							attr->prog_name,
+							message);
 					}
-					SPDLOG_ERROR(
-						"Failed to verify program: {}",
-						message.str());
-					errno = EINVAL;
-					return -1;
 				}
 			}
 #endif
@@ -347,8 +647,11 @@ long syscall_context::handle_sysbpf(int cmd, union bpf_attr *attr, size_t size)
 		auto prog_fd = attr->link_create.prog_fd;
 		auto target_fd = attr->link_create.target_fd;
 		auto attach_type = attr->link_create.attach_type;
+		int target_fd_for_log = target_fd == static_cast<uint32_t>(-1) ?
+						-1 :
+						static_cast<int>(target_fd);
 		SPDLOG_DEBUG("Creating link {} -> {}, attach type {}", prog_fd,
-			     target_fd, attach_type);
+			     target_fd_for_log, attach_type);
 		if (run_with_kernel && !bpftime_is_perf_event_fd(target_fd)) {
 			return orig_syscall_fn(__NR_bpf, (long)cmd,
 					       (long)(uintptr_t)attr,
@@ -366,6 +669,16 @@ long syscall_context::handle_sysbpf(int cmd, union bpf_attr *attr, size_t size)
 			-1 /* let the shm alloc fd for us */,
 			(bpf_link_create_args *)&attr->link_create);
 		SPDLOG_DEBUG("syscall-server: Created link {}", id);
+		if (id < 0 && bpftime_is_prog_fd(prog_fd) &&
+		    bpftime_is_perf_event_fd(target_fd) &&
+		    attach_type == BPF_PERF_EVENT) {
+			auto cookie = attr->link_create.perf_event.bpf_cookie;
+			SPDLOG_DEBUG(
+				"Attaching perf event {} to prog {}, with bpf cookie {:x}",
+				target_fd, prog_fd, cookie);
+			id = bpftime_attach_perf_to_bpf_with_cookie(
+				target_fd, prog_fd, cookie);
+		}
 		return id;
 	}
 	case BPF_MAP_FREEZE: {
@@ -393,7 +706,9 @@ long syscall_context::handle_sysbpf(int cmd, union bpf_attr *attr, size_t size)
 						       &map_attr, &map_name,
 						       &map_type);
 			if (res < 0) {
-				errno = res;
+				// bpftime_map_get_info already set errno
+				// (ENOENT); don't overwrite it with the -1
+				// return value.
 				return -1;
 			}
 			auto ptr = (bpf_map_info *)((uintptr_t)attr->info.info);
@@ -440,17 +755,27 @@ long syscall_context::handle_sysbpf(int cmd, union bpf_attr *attr, size_t size)
 	};
 	return 0;
 }
-
 int syscall_context::handle_perfevent(perf_event_attr *attr, pid_t pid, int cpu,
 				      int group_fd, unsigned long flags)
 {
-	if (!enable_mock)
+	if (!enable_mock.load(std::memory_order_relaxed) ||
+	    initializing_cuda.load(std::memory_order_acquire) ||
+	    !enable_mock_after_initialized.load(std::memory_order_relaxed))
 		return orig_syscall_fn(__NR_perf_event_open,
 				       (uint64_t)(uintptr_t)attr, (uint64_t)pid,
 				       (uint64_t)cpu, (uint64_t)group_fd,
 				       (uint64_t)flags);
 	try_startup();
 	if ((int)attr->type == determine_uprobe_perf_type()) {
+		if (run_with_kernel) {
+			SPDLOG_INFO(
+				"Calling original perf event open at uprobe creation");
+			return orig_syscall_fn(__NR_perf_event_open,
+					       (uint64_t)(uintptr_t)attr,
+					       (uint64_t)pid, (uint64_t)cpu,
+					       (uint64_t)group_fd,
+					       (uint64_t)flags);
+		}
 		// NO legacy bpf types
 		bool retprobe =
 			attr->config & (1 << determine_uprobe_retprobe_bit());
@@ -467,8 +792,63 @@ int syscall_context::handle_perfevent(perf_event_attr *attr, pid_t pid, int cpu,
 		// std::cout << "Created uprobe " << id << std::endl;
 		SPDLOG_DEBUG("Created uprobe {}", id);
 		return id;
+	} else if ((int)attr->type == determine_kprobe_perf_type()) {
+		bool is_ret_probe =
+			attr->config & (1 << determine_kprobe_retprobe_bit());
+		size_t ref_ctr_off =
+			attr->config >> PERF_UPROBE_REF_CTR_OFFSET_SHIFT;
+		std::string name = (const char *)(uintptr_t)attr->config1;
+		uint64_t addr = attr->config2;
+		SPDLOG_DEBUG(
+			"Creating kprobe func_name={} addr={} retprobe={} ref_ctr_off={} attr->config={:x}",
+			name, addr, is_ret_probe, ref_ctr_off, attr->config);
+		int new_fd = -1;
+		std::string new_probe_name = name;
+		// When running with kernel, probe names started with `cuda_`
+		// will be treated as cuda probe
+		if (name.starts_with("cuda_") && run_with_kernel) {
+			auto new_attr = *attr;
+			new_attr.config1 = (uintptr_t) "do_exit";
+			new_attr.config2 = 0;
+			new_fd = orig_syscall_fn(__NR_perf_event_open,
+						 (uint64_t)(uintptr_t)&new_attr,
+						 (uint64_t)pid, (uint64_t)cpu,
+						 (uint64_t)group_fd,
+						 (uint64_t)flags);
+			if (new_fd < 0) {
+				SPDLOG_ERROR(
+					"Unable to bypass kprobe as gpu probe: unable to call perf_event_open: {}",
+					errno);
+				return -1;
+			} else {
+				SPDLOG_INFO(
+					"Bypass kprobe as gpu probe, got perf event fd {}",
+					new_fd);
+			}
+			// Strip the prefix `cuda_`
+			new_probe_name = name.substr(5);
+		} else if (run_with_kernel) {
+			SPDLOG_INFO(
+				"Calling original perf event open at kprobe creation");
+			return orig_syscall_fn(__NR_perf_event_open,
+					       (uint64_t)(uintptr_t)attr,
+					       (uint64_t)pid, (uint64_t)cpu,
+					       (uint64_t)group_fd,
+					       (uint64_t)flags);
+		}
+		int id = bpftime_kprobe_create(new_fd, new_probe_name.c_str(),
+					       addr, is_ret_probe, ref_ctr_off);
+		SPDLOG_DEBUG("Created kprobe {}", id);
+		return id;
 	} else if ((int)attr->type ==
 		   (int)bpf_event_type::PERF_TYPE_TRACEPOINT) {
+		if (run_with_kernel) {
+			return orig_syscall_fn(__NR_perf_event_open,
+					       (uint64_t)(uintptr_t)attr,
+					       (uint64_t)pid, (uint64_t)cpu,
+					       (uint64_t)group_fd,
+					       (uint64_t)flags);
+		}
 		SPDLOG_DEBUG("Detected tracepoint perf event creation");
 		int fd = bpftime_tracepoint_create(
 			-1 /* let the shm alloc fd for us */, pid,
@@ -510,7 +890,9 @@ int syscall_context::handle_perfevent(perf_event_attr *attr, pid_t pid, int cpu,
 void *syscall_context::handle_mmap(void *addr, size_t length, int prot,
 				   int flags, int fd, off64_t offset)
 {
-	if (!enable_mock || run_with_kernel)
+	if (!enable_mock.load(std::memory_order_relaxed) || run_with_kernel ||
+	    initializing_cuda.load(std::memory_order_acquire) ||
+	    !enable_mock_after_initialized.load(std::memory_order_relaxed))
 		return orig_mmap_fn(addr, length, prot, flags, fd, offset);
 	try_startup();
 	SPDLOG_DEBUG("Called normal mmap");
@@ -520,7 +902,8 @@ void *syscall_context::handle_mmap(void *addr, size_t length, int prot,
 void *syscall_context::handle_mmap64(void *addr, size_t length, int prot,
 				     int flags, int fd, off64_t offset)
 {
-	if (!enable_mock || run_with_kernel)
+	if (!enable_mock.load(std::memory_order_relaxed) || run_with_kernel ||
+	    initializing_cuda.load(std::memory_order_acquire))
 		return orig_mmap64_fn(addr, length, prot, flags, fd, offset);
 	try_startup();
 	SPDLOG_DEBUG("Calling mocked mmap64");
@@ -556,12 +939,17 @@ void *syscall_context::handle_mmap64(void *addr, size_t length, int prot,
 	} else if (fd != -1 && bpftime_is_software_perf_event(fd)) {
 		SPDLOG_DEBUG(
 			"Entering mocked mmap64: software perf event handler");
+		errno = 0;
 		if (auto ptr = bpftime_get_software_perf_event_raw_buffer(
 			    fd, length);
 		    ptr != nullptr) {
 			mocked_mmap_values.insert((uintptr_t)ptr);
 			return ptr;
 		}
+		if (errno == 0) {
+			errno = ENOMEM;
+		}
+		return MAP_FAILED;
 	}
 	SPDLOG_DEBUG(
 		"Calling original mmap64: addr={}, length={}, prot={}, flags={}, fd={}, offset={}",
@@ -571,54 +959,71 @@ void *syscall_context::handle_mmap64(void *addr, size_t length, int prot,
 	return orig_mmap64_fn(addr, length, prot, flags, fd, offset);
 }
 
-int syscall_context::handle_ioctl(int fd, unsigned long req, int data)
+int syscall_context::handle_ioctl(int fd, unsigned long req, unsigned long data)
 {
-	if (!enable_mock)
+	bool cuda_initializing =
+		initializing_cuda.load(std::memory_order_acquire);
+	bool mock_enabled = enable_mock.load(std::memory_order_relaxed);
+	if (!mock_enabled || cuda_initializing ||
+	    !enable_mock_after_initialized.load(std::memory_order_relaxed)) {
+		SPDLOG_DEBUG(
+			"Calling original ioctl, enable_lock={}, initializing_cuda={}",
+			mock_enabled, cuda_initializing);
 		return orig_ioctl_fn(fd, req, data);
+	}
+	SPDLOG_DEBUG("Calling mocked ioctl..");
 	try_startup();
 	int res;
 	if (req == PERF_EVENT_IOC_ENABLE) {
 		SPDLOG_DEBUG("Enabling perf event {}", fd);
 		if (run_with_kernel && !bpftime_is_perf_event_fd(fd)) {
+			SPDLOG_DEBUG(
+				"Calling original ioctl at PERF_EVENT_IOC_ENABLE");
 			return orig_ioctl_fn(fd, req, data);
 		}
 		res = bpftime_perf_event_enable(fd);
 		if (res >= 0)
 			return res;
-		spdlog::warn(
+		SPDLOG_WARN(
 			"Failed to call mocked ioctl PERF_EVENT_IOC_ENABLE: {}",
 			res);
 	} else if (req == PERF_EVENT_IOC_DISABLE) {
 		SPDLOG_DEBUG("Disabling perf event {}", fd);
 		if (run_with_kernel && !bpftime_is_perf_event_fd(fd)) {
+			SPDLOG_DEBUG(
+				"Calling original ioctl at PERF_EVENT_IOC_DISABLE");
 			return orig_ioctl_fn(fd, req, data);
 		}
 		res = bpftime_perf_event_disable(fd);
 		if (res >= 0)
 			return res;
-		spdlog::warn(
+		SPDLOG_WARN(
 			"Failed to call mocked ioctl PERF_EVENT_IOC_DISABLE: {}",
 			res);
 	} else if (req == PERF_EVENT_IOC_SET_BPF) {
 		SPDLOG_DEBUG("Setting bpf for perf event {} and bpf {}", fd,
 			     data);
 		if (run_with_kernel && !bpftime_is_perf_event_fd(fd)) {
+			SPDLOG_DEBUG(
+				"Calling original ioctl at PERF_EVENT_IOC_SET_BPF");
 			return orig_ioctl_fn(fd, req, data);
 		}
 		res = bpftime_attach_perf_to_bpf(fd, data);
 		if (res >= 0)
 			return res;
-		spdlog::warn(
+		SPDLOG_WARN(
 			"Failed to call mocked ioctl PERF_EVENT_IOC_SET_BPF: {}",
 			res);
 	}
-	spdlog::warn("Calling original ioctl: {} {} {}", fd, req, data);
+	SPDLOG_WARN("Calling original ioctl: {} {} {}", fd, req, data);
 	return orig_ioctl_fn(fd, req, data);
 }
 
 int syscall_context::handle_epoll_create1(int flags)
 {
-	if (!enable_mock || run_with_kernel)
+	if (!enable_mock.load(std::memory_order_relaxed) || run_with_kernel ||
+	    initializing_cuda.load(std::memory_order_acquire) ||
+	    !enable_mock_after_initialized.load(std::memory_order_relaxed))
 		return orig_epoll_create1_fn(flags);
 	try_startup();
 	return bpftime_epoll_create();
@@ -627,7 +1032,8 @@ int syscall_context::handle_epoll_create1(int flags)
 int syscall_context::handle_epoll_ctl(int epfd, int op, int fd,
 				      epoll_event *evt)
 {
-	if (!enable_mock || run_with_kernel)
+	if (!enable_mock.load(std::memory_order_relaxed) || run_with_kernel ||
+	    !enable_mock_after_initialized.load(std::memory_order_relaxed))
 		return orig_epoll_ctl_fn(epfd, op, fd, evt);
 	try_startup();
 	if (op == EPOLL_CTL_ADD) {
@@ -644,7 +1050,7 @@ int syscall_context::handle_epoll_ctl(int epfd, int op, int fd,
 				return err;
 
 		} else {
-			spdlog::warn(
+			SPDLOG_WARN(
 				"Unsupported map fd for mocked epoll_ctl: {}, call the original one..",
 				fd);
 		}
@@ -656,20 +1062,23 @@ int syscall_context::handle_epoll_ctl(int epfd, int op, int fd,
 int syscall_context::handle_epoll_wait(int epfd, epoll_event *evt,
 				       int maxevents, int timeout)
 {
-	if (!enable_mock || run_with_kernel)
-		orig_epoll_wait_fn(epfd, evt, maxevents, timeout);
+	if (!enable_mock.load(std::memory_order_relaxed) || run_with_kernel ||
+	    initializing_cuda.load(std::memory_order_acquire) ||
+	    !enable_mock_after_initialized.load(std::memory_order_relaxed))
+		return orig_epoll_wait_fn(epfd, evt, maxevents, timeout);
 	try_startup();
 	if (bpftime_is_epoll_handler(epfd)) {
-		int ret = bpftime_epoll_wait(epfd, evt, maxevents, timeout);
-		return ret;
+		return bpftime_epoll_wait(epfd, evt, maxevents, timeout);
 	}
 	return orig_epoll_wait_fn(epfd, evt, maxevents, timeout);
 }
 
 int syscall_context::handle_munmap(void *addr, size_t size)
 {
-	if (!enable_mock || run_with_kernel)
-		orig_munmap_fn(addr, size);
+	if (!enable_mock.load(std::memory_order_relaxed) || run_with_kernel ||
+	    initializing_cuda.load(std::memory_order_acquire) ||
+	    !enable_mock_after_initialized.load(std::memory_order_relaxed))
+		return orig_munmap_fn(addr, size);
 	try_startup();
 	if (auto itr = mocked_mmap_values.find((uintptr_t)addr);
 	    itr != mocked_mmap_values.end()) {
@@ -681,3 +1090,75 @@ int syscall_context::handle_munmap(void *addr, size_t size)
 		return orig_munmap_fn(addr, size);
 	}
 }
+
+FILE *syscall_context::handle_fopen(const char *pathname, const char *flags)
+{
+	if (!enable_mock.load(std::memory_order_relaxed) ||
+	    initializing_cuda.load(std::memory_order_acquire) ||
+	    !enable_mock_after_initialized.load(std::memory_order_relaxed))
+		return orig_fopen_fn(pathname, flags);
+	SPDLOG_DEBUG("Calling mocked fopen");
+	try_startup();
+	if (auto mocker = create_mocked_file_based_on_full_path(pathname);
+	    mocker) {
+		bpftime_lock_guard _guard(this->mocked_file_lock);
+		char filename_buf[] = "/tmp/bpftime-mock.XXXXXX";
+		int fake_fd = mkstemp(filename_buf);
+		if (fake_fd < 0) {
+			SPDLOG_WARN("Unable to create mock fd: {}", errno);
+			return orig_fopen_fn(pathname, flags);
+		}
+		auto itr =
+			this->mocked_files.emplace(fake_fd, std::move(*mocker))
+				.first;
+		FILE *replacement_fp = fopen(filename_buf, "r");
+
+		itr->second->replacement_file = replacement_fp;
+		auto size_written = write(fake_fd, itr->second->buf.c_str(),
+					  itr->second->buf.size());
+		SPDLOG_DEBUG(
+			"Created fake fd {}, replacement fp {:x}, written {} bytes",
+			fake_fd, (uintptr_t)replacement_fp, size_written);
+		return replacement_fp;
+	}
+	return orig_fopen_fn(pathname, flags);
+}
+
+int syscall_context::handle_dup3(int oldfd, int newfd, int flags)
+{
+	SPDLOG_DEBUG("Calling mocked dup3 {}, {}", oldfd, newfd);
+	if (!enable_mock.load(std::memory_order_relaxed) || run_with_kernel ||
+	    initializing_cuda.load(std::memory_order_acquire) ||
+	    !enable_mock_after_initialized.load(std::memory_order_relaxed))
+		return orig_syscall_fn(__NR_dup3, (long)oldfd, (long)newfd,
+				       (long)flags);
+	try_startup();
+	if (bpftime_is_map_fd(oldfd)) {
+		return bpftime_maps_dup(oldfd, newfd);
+	}
+	return orig_syscall_fn(__NR_dup3, (long)oldfd, (long)newfd,
+			       (long)flags);
+}
+
+int syscall_context::handle_memfd_create(const char *name, int flags)
+{
+	SPDLOG_DEBUG("Calling mocked memfd_create {}, {}", name, flags);
+	if (!enable_mock.load(std::memory_order_relaxed) ||
+	    initializing_cuda.load(std::memory_order_acquire) ||
+	    !enable_mock_after_initialized.load(std::memory_order_relaxed)) {
+		SPDLOG_DEBUG("Calling original dup3");
+		return orig_syscall_fn(__NR_dup3, (long)name, (long)flags);
+	}
+	try_startup();
+	return bpftime_add_memfd_handler(name, flags);
+}
+
+#if defined(BPFTIME_ENABLE_CUDA_ATTACH)
+int syscall_context::poll_gpu_ringbuf_map(int mapfd, void *ctx,
+
+					  void (*fn)(const void *, uint64_t,
+						     void *))
+{
+	return bpftime_poll_gpu_ringbuf_map(mapfd, ctx, fn);
+}
+#endif

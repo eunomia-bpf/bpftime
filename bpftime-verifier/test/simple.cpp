@@ -8,7 +8,7 @@ using namespace bpftime;
 using namespace verifier;
 /*
 a * b / 2 for 32 bit
-clang -O2 -target bpf -m32 -c example/bpf/mul.bpf.c -o prog.o
+clang -Xlinker --export-dynamic -O2 -target bpf -m32 -c example/bpf/mul.bpf.c -o prog.o
 */
 static const unsigned char bpf_mul_optimized[] = { 0xb7, 0x00, 0x00, 0x00,
 						   0x02, 0x00, 0x00, 0x00,

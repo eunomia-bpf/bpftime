@@ -27,7 +27,7 @@ int main()
 	struct mem m = { __LINE__ };
 	uint64_t res = 0;
 	// using ubpf jit for x86_64 and arm64
-	struct ebpf_vm *vm = ebpf_create();
+	struct ebpf_vm *vm = ebpf_create("llvm");
 
 	ebpf_toggle_bounds_check(vm, false);
 

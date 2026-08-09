@@ -10,14 +10,54 @@
 #include "spdlog/spdlog.h"
 #include <csignal>
 #include <cstddef>
+#include <exception>
+#include <optional>
 #include <signal.h>
 #include <cerrno>
 #include <errno.h>
 #include <bpftime_shm_internal.hpp>
+#if __linux__
 #include <sys/epoll.h>
+#elif __APPLE__
+#include "bpftime_epoll.h"
+#endif
 #include <thread>
 #include <chrono>
 #include <variant>
+
+#ifdef __APPLE__
+// Custom implementation for sigtimedwait
+int sigtimedwait(const sigset_t *set, siginfo_t *info,
+		 const struct timespec *timeout)
+{
+	struct timespec start, now;
+	clock_gettime(CLOCK_REALTIME, &start);
+	int sig;
+
+	while (true) {
+		// Try to wait for a signal
+		if (sigwait(set, &sig) == 0) {
+			if (info != nullptr) {
+				memset(info, 0, sizeof(*info));
+				info->si_signo = sig;
+			}
+			return sig;
+		}
+
+		// Check if the timeout has expired
+		clock_gettime(CLOCK_REALTIME, &now);
+		if ((now.tv_sec - start.tv_sec) > timeout->tv_sec ||
+		    ((now.tv_sec - start.tv_sec) == timeout->tv_sec &&
+		     (now.tv_nsec - start.tv_nsec) > timeout->tv_nsec)) {
+			errno = EAGAIN;
+			return -1;
+		}
+
+		// Sleep for a short time before retrying
+		usleep(1000); // Sleep for 1ms before retrying
+	}
+}
+#endif
 
 using namespace bpftime;
 
@@ -43,6 +83,17 @@ int bpftime_maps_create(int fd, const char *name, bpftime::bpf_map_attr attr)
 	return shm_holder.global_shared_memory.add_bpf_map(fd, name, attr);
 }
 
+int bpftime_translate_shared_map_type_to_kernel_map_type(int ty)
+{
+	return shm_holder.global_shared_memory
+		.translate_shared_map_type_to_kernel_map_type(ty);
+}
+
+int bpftime_maps_dup(int oldfd, int newfd)
+{
+	return shm_holder.global_shared_memory.dup_bpf_map(oldfd, newfd);
+}
+
 uint32_t bpftime_map_value_size_from_syscall(int fd)
 {
 	return shm_holder.global_shared_memory.bpf_map_value_size(fd);
@@ -50,32 +101,120 @@ uint32_t bpftime_map_value_size_from_syscall(int fd)
 
 int bpftime_helper_map_get_next_key(int fd, const void *key, void *next_key)
 {
-	return shm_holder.global_shared_memory.bpf_map_get_next_key(
-		fd, key, next_key, false);
+	try {
+		return shm_holder.global_shared_memory.bpf_map_get_next_key(
+			fd, key, next_key, false);
+	} catch (std::exception &ex) {
+		SPDLOG_ERROR(
+			"Exception happened when performing map get next key (from helper): {}",
+			ex.what());
+		return -1;
+	}
 }
 
 const void *bpftime_map_lookup_elem(int fd, const void *key)
 {
-	return shm_holder.global_shared_memory.bpf_map_lookup_elem(fd, key,
-								   true);
+	try {
+		return shm_holder.global_shared_memory.bpf_map_lookup_elem(
+			fd, key, true);
+	} catch (std::exception &ex) {
+		SPDLOG_ERROR(
+			"Exception happened when performing map lookup elem: {}",
+			ex.what());
+		return nullptr;
+	}
 }
 
 long bpftime_map_update_elem(int fd, const void *key, const void *value,
 			     uint64_t flags)
 {
-	return shm_holder.global_shared_memory.bpf_map_update_elem(
-		fd, key, value, flags, true);
+	try {
+		return shm_holder.global_shared_memory.bpf_map_update_elem(
+			fd, key, value, flags, true);
+	} catch (std::exception &ex) {
+		SPDLOG_ERROR(
+			"Exception happened when performing map update: {}",
+			ex.what());
+		return -1;
+	}
 }
 
 long bpftime_map_delete_elem(int fd, const void *key)
 {
-	return shm_holder.global_shared_memory.bpf_delete_elem(fd, key, true);
+	try {
+		return shm_holder.global_shared_memory.bpf_delete_elem(fd, key,
+								       true);
+	} catch (std::exception &ex) {
+		SPDLOG_ERROR(
+			"Exception happened when performing map delete elem: {}",
+			ex.what());
+		return -1;
+	}
+}
+
+long bpftime_map_lookup_and_delete_elem(int fd, void *value)
+{
+	try {
+		return shm_holder.global_shared_memory.bpf_map_pop_elem(
+			fd, value, true);
+	} catch (std::exception &ex) {
+		SPDLOG_ERROR(
+			"Exception happened when performing map lookup and delete elem: {}",
+			ex.what());
+		return -1;
+	}
+}
+
+long bpftime_map_push_elem(int fd, const void *value, uint64_t flags)
+{
+	try {
+		return shm_holder.global_shared_memory.bpf_map_push_elem(
+			fd, value, flags, true);
+	} catch (std::exception &ex) {
+		SPDLOG_ERROR(
+			"Exception happened when performing map push elem: {}",
+			ex.what());
+		return -1;
+	}
+}
+
+long bpftime_map_pop_elem(int fd, void *value)
+{
+	try {
+		return shm_holder.global_shared_memory.bpf_map_pop_elem(
+			fd, value, true);
+	} catch (std::exception &ex) {
+		SPDLOG_ERROR(
+			"Exception happened when performing map pop elem: {}",
+			ex.what());
+		return -1;
+	}
+}
+
+long bpftime_map_peek_elem(int fd, void *value)
+{
+	try {
+		return shm_holder.global_shared_memory.bpf_map_peek_elem(
+			fd, value, true);
+	} catch (std::exception &ex) {
+		SPDLOG_ERROR(
+			"Exception happened when performing map peek elem: {}",
+			ex.what());
+		return -1;
+	}
 }
 
 int bpftime_map_get_next_key(int fd, const void *key, void *next_key)
 {
-	return shm_holder.global_shared_memory.bpf_map_get_next_key(
-		fd, key, next_key, true);
+	try {
+		return shm_holder.global_shared_memory.bpf_map_get_next_key(
+			fd, key, next_key, true);
+	} catch (std::exception &ex) {
+		SPDLOG_ERROR(
+			"Exception happened when performing map get next key: {}",
+			ex.what());
+		return -1;
+	}
 }
 
 int bpftime_uprobe_create(int fd, int pid, const char *name, uint64_t offset,
@@ -85,6 +224,13 @@ int bpftime_uprobe_create(int fd, int pid, const char *name, uint64_t offset,
 		fd, pid, name, offset, retprobe, ref_ctr_off);
 }
 
+int bpftime_kprobe_create(int fd, const char *func_name, uint64_t addr,
+			  bool retprobe, size_t ref_ctr_off)
+{
+	return shm_holder.global_shared_memory.add_kprobe(
+		fd == -1 ? std::optional<int>() : fd, func_name, addr, retprobe,
+		ref_ctr_off);
+}
 int bpftime_tracepoint_create(int fd, int pid, int32_t tp_id)
 {
 	return shm_holder.global_shared_memory.add_tracepoint(fd, pid, tp_id);
@@ -272,6 +418,12 @@ int bpftime_is_epoll_handler(int fd)
 int bpftime_epoll_wait(int fd, struct epoll_event *out_evts, int max_evt,
 		       int timeout)
 {
+	if (timeout < -1) {
+		SPDLOG_ERROR(
+			"bpftime_epoll_wait only accepts timeout=-1 when negative");
+		errno = EINVAL;
+		return -1;
+	}
 	auto &shm = shm_holder.global_shared_memory;
 	if (!shm.is_epoll_fd(fd)) {
 		errno = EINVAL;
@@ -289,7 +441,7 @@ int bpftime_epoll_wait(int fd, struct epoll_event *out_evts, int max_evt,
 	sigaddset(&to_block, SIGINT);
 	sigaddset(&to_block, SIGTERM);
 
-	// Block the develivery of some signals, so we would be able to catch
+	// Block the delivery of some signals, so we would be able to catch
 	// them when sleeping
 	if (int err = sigprocmask(SIG_BLOCK, &to_block, &orig_sigset);
 	    err == -1) {
@@ -306,9 +458,12 @@ int bpftime_epoll_wait(int fd, struct epoll_event *out_evts, int max_evt,
 		auto now_time = high_resolution_clock::now();
 		auto elasped =
 			duration_cast<milliseconds>(now_time - start_time);
-		if (timeout && elasped.count() > timeout) {
+		if (timeout == 0)
+			return 0;
+		if (timeout > 0 && elasped.count() > timeout) {
 			break;
 		}
+
 		for (const auto &p : epoll_inst.files) {
 			if (std::holds_alternative<software_perf_event_weak_ptr>(
 				    p.file)) {
@@ -444,6 +599,7 @@ int bpftime_perf_event_output(int fd, const void *buf, size_t sz)
 	}
 }
 
+#if __linux__ && BPFTIME_BUILD_WITH_LIBBPF
 int bpftime_shared_perf_event_output(int map_fd, const void *buf, size_t sz)
 {
 	SPDLOG_DEBUG("Output data into shared perf event array fd {}", map_fd);
@@ -471,6 +627,7 @@ int bpftime_shared_perf_event_output(int map_fd, const void *buf, size_t sz)
 		return -1;
 	}
 }
+#endif
 
 int bpftime_is_prog_array(int fd)
 {
@@ -491,13 +648,13 @@ extern "C" uint64_t map_ptr_by_fd(uint32_t fd)
 		return INVALID_MAP_PTR;
 	}
 	// Use a convenient way to represent a pointer
-	return ((uint64_t)fd << 32) | 0xffffffff;
+	return fd;
 }
 
 extern "C" uint64_t map_val(uint64_t map_ptr)
 {
 	SPDLOG_DEBUG("Call map_val with map_ptr={:x}", map_ptr);
-	int fd = (int)(map_ptr >> 32);
+	int fd = (int)map_ptr;
 	if (!shm_holder.global_shared_memory.get_manager() ||
 	    !shm_holder.global_shared_memory.is_map_fd(fd)) {
 		SPDLOG_ERROR("Expected fd {} to be a map fd (map_val call)",
@@ -518,66 +675,6 @@ extern "C" uint64_t map_val(uint64_t map_ptr)
 	return (uint64_t)handler.map_lookup_elem(key.data());
 }
 
-static void process_token(const std::string_view &token, agent_config &config)
-{
-	if (token == "ufunc") {
-		SPDLOG_INFO("Enabling ufunc helper group");
-		config.enable_ufunc_helper_group = true;
-	} else if (token == "kernel") {
-		SPDLOG_INFO("Enabling kernel helper group");
-		config.enable_kernel_helper_group = true;
-	} else if (token == "shm_map") {
-		SPDLOG_INFO("Enabling shm_map helper group");
-		config.enable_shm_maps_helper_group = true;
-	} else {
-		spdlog::warn("Unknown helper group: {}", token);
-	}
-}
-
-static void process_helper_sv(const std::string_view &str, const char delimiter,
-			      agent_config &config)
-{
-	std::string::size_type start = 0;
-	std::string::size_type end = str.find(delimiter);
-
-	while (end != std::string::npos) {
-		process_token(str.substr(start, end - start), config);
-		start = end + 1;
-		end = str.find(delimiter, start);
-	}
-
-	// Handle the last token, if any
-	if (start < str.size()) {
-		process_token(str.substr(start), config);
-	}
-}
-
-const bpftime::agent_config &bpftime::set_agent_config_from_env()
-{
-	bpftime::agent_config agent_config;
-	if (const char *custom_helpers = getenv("BPFTIME_HELPER_GROUPS");
-	    custom_helpers != nullptr) {
-		agent_config.enable_kernel_helper_group =
-			agent_config.enable_ufunc_helper_group =
-				agent_config.enable_shm_maps_helper_group =
-					false;
-		auto helpers_sv = std::string_view(custom_helpers);
-		process_helper_sv(helpers_sv, ',', agent_config);
-	} else {
-		SPDLOG_INFO(
-			"Enabling helper groups ufunc, kernel, shm_map by default");
-		agent_config.enable_kernel_helper_group =
-			agent_config.enable_shm_maps_helper_group =
-				agent_config.enable_ufunc_helper_group = true;
-	}
-	const char *use_jit = getenv("BPFTIME_USE_JIT");
-	agent_config.jit_enabled = use_jit != nullptr;
-	agent_config.allow_non_buildin_map_types =
-		getenv("BPFTIME_ALLOW_EXTERNAL_MAPS") != nullptr;
-	bpftime_set_agent_config(agent_config);
-	return bpftime_get_agent_config();
-}
-
 int bpftime_add_custom_perf_event(int type, const char *attach_argument)
 {
 	return shm_holder.global_shared_memory.add_custom_perf_event(
@@ -590,11 +687,28 @@ int bpftime_poll_from_ringbuf(int rb_fd, void *ctx,
 	auto &shm = shm_holder.global_shared_memory;
 	if (auto ret = shm.try_get_ringbuf_map_impl(rb_fd); ret.has_value()) {
 		auto impl = ret.value();
-		return impl->create_impl_shared_ptr()->fetch_data(
-			[=](void *buf, int sz) { return cb(ctx, buf, sz); });
+		return impl->create_impl_shared_ptr()->fetch_data(cb, ctx);
 	} else {
 		errno = EINVAL;
 		SPDLOG_ERROR("Expected fd {} to be ringbuf map fd ", rb_fd);
 		return -EINVAL;
 	}
+}
+
+#ifdef BPFTIME_ENABLE_CUDA_ATTACH
+int bpftime_poll_gpu_ringbuf_map(int mapfd, void *ctx,
+				 void (*fn)(const void *, uint64_t, void *))
+{
+	auto &shm = shm_holder.global_shared_memory;
+	shm.poll_gpu_ringbuf_map(mapfd, [=](const void *buf, uint64_t size) {
+		fn(buf, size, ctx);
+	});
+	return 0;
+}
+#endif
+
+int bpftime_add_memfd_handler(const char *name, int flags)
+{
+	auto &shm = shm_holder.global_shared_memory;
+	return shm.add_memfd_handler(name, flags);
 }

@@ -12,9 +12,9 @@ set(PLACEHOLDER_INPUT ${CMAKE_CURRENT_SOURCE_DIR}/assets/placeholder)
 set(PLACEHOLDER_OUTPUT placeholder.c)
 
 add_custom_command(
-  OUTPUT placeholder.c
-  COMMAND embedfile placeholder ${PLACEHOLDER_INPUT} ${PLACEHOLDER_OUTPUT}
-  DEPENDS ${PLACEHOLDER_INPUT})
+    OUTPUT placeholder.c
+    COMMAND embedfile placeholder ${PLACEHOLDER_INPUT} ${PLACEHOLDER_OUTPUT}
+    DEPENDS ${PLACEHOLDER_INPUT})
 
 add_library(libbpftime_daemon STATIC
     user/bpf_tracer.cpp
@@ -43,6 +43,7 @@ target_include_directories(libbpftime_daemon PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/../third_party/libbpf/include
     ${CMAKE_CURRENT_SOURCE_DIR}/../third_party/libbpf/include/uapi
 )
+
 target_link_libraries(libbpftime_daemon PRIVATE
     ${LIBBPF_LIBRARIES}
     elf
@@ -52,13 +53,26 @@ target_link_libraries(libbpftime_daemon PRIVATE
     PUBLIC
     rt
 )
+
+if(${BPFTIME_ENABLE_CUDA_ATTACH})
+    include(../cmake/cuda.cmake)
+    find_cuda()
+    target_link_directories(libbpftime_daemon PUBLIC ${CUDA_LIBRARY_PATH})
+    target_link_libraries(libbpftime_daemon PRIVATE ${CUDA_LIBS})
+endif()
+
 set_property(TARGET libbpftime_daemon PROPERTY CXX_STANDARD 20)
 
 add_dependencies(bpftime_daemon libbpftime_daemon)
-target_link_libraries(bpftime_daemon PRIVATE libbpftime_daemon)
+target_link_libraries(bpftime_daemon PRIVATE libbpftime_daemon spdlog::spdlog)
 
 install(TARGETS bpftime_daemon CONFIGURATIONS Release Debug RelWithDebInfo DESTINATION ~/.bpftime)
 
 if(BPFTIME_ENABLE_UNIT_TESTING)
     add_subdirectory(test)
+endif()
+
+if(${TEST_LCOV})
+    target_compile_options(bpftime_daemon PUBLIC -fprofile-arcs -ftest-coverage -fprofile-update=atomic)
+    target_link_options(bpftime_daemon PUBLIC -fprofile-arcs)
 endif()

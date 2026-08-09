@@ -9,6 +9,7 @@
 #include "libbpf/include/linux/filter.h"
 #include <linux/bpf_common.h>
 #include <linux/perf_event.h>
+#include <asm/unistd.h> 
 #include <sys/ioctl.h>
 #include <bpf/libbpf.h>
 #include <bpf/bpf.h>
@@ -24,12 +25,16 @@
 #include "spdlog/fmt/bin_to_hex.h"
 #include <boost/interprocess/sync/interprocess_mutex.hpp>
 #include <bpf_map/shared/perf_event_array_kernel_user.hpp>
-#include <cassert>
 #include <cerrno>
 #include <cstring>
 #include <iterator>
 
 static int create_transporter_prog(int user_ringbuf_fd, int kernel_perf_fd);
+// Ubuntu 22.04's linux/bpf.h can lag behind libbpf and miss the
+// BPF_MAP_TYPE_USER_RINGBUF enumerator even though libbpf supports it.
+#ifndef BPF_MAP_TYPE_USER_RINGBUF
+#define BPF_MAP_TYPE_USER_RINGBUF 31
+#endif
 
 // kernel perf event array map id -> user_ring_buffer* for the current process
 using user_ringbuf_map =
@@ -95,13 +100,15 @@ perf_event_array_kernel_user_impl::perf_event_array_kernel_user_impl(
 	if (key_size != 4 || value_size != 4) {
 		SPDLOG_ERROR(
 			"Key size and value size of perf_event_array must be 4");
-		assert(false);
+		throw std::runtime_error(
+			"Key size and value size of perf_event_array must be 4");
 	}
 	// Create corresponding user ringbuffer
 	LIBBPF_OPTS(bpf_map_create_opts, user_rb_opts);
 	std::string name = "ku_perf_id_" + std::to_string(kernel_perf_id);
-	int user_rb_fd = bpf_map_create(BPF_MAP_TYPE_USER_RINGBUF, name.c_str(),
-					0, 0, 1024 * 1024, &user_rb_opts);
+	int user_rb_fd = bpf_map_create(static_cast<enum bpf_map_type>(BPF_MAP_TYPE_USER_RINGBUF),
+					name.c_str(), 0, 0, 1024 * 1024,
+					&user_rb_opts);
 	if (user_rb_fd < 0) {
 		SPDLOG_ERROR(
 			"Failed to create user ringbuffer for shared perf event array id {}, err={}",
@@ -128,17 +135,23 @@ perf_event_array_kernel_user_impl::perf_event_array_kernel_user_impl(
 	int &bpf_fd = this->transporter_prog_fd;
 	bpf_fd = create_transporter_prog(user_rb_fd, kernel_perf_fd);
 
-	assert(bpf_fd >= 0);
+	if (bpf_fd < 0) {
+		SPDLOG_ERROR(
+			"Unable to create transporter kernel ebpf program for shared perf event");
+		throw std::runtime_error(
+			"Unable to create transporter kernel ebpf program for shared perf event");
+	}
 	int err;
 	err = ioctl(pfd, PERF_EVENT_IOC_SET_BPF, bpf_fd);
 	if (err < 0) {
 		SPDLOG_ERROR("Failed to run PERF_EVENT_IOC_SET_BPF: {}", err);
-		assert(false);
+		throw std::runtime_error(
+			"Failed to run PERF_EVENT_IOC_SET_BPF");
 	}
 	err = ioctl(pfd, PERF_EVENT_IOC_ENABLE, 0);
 	if (err < 0) {
 		SPDLOG_ERROR("Failed to run PERF_EVENT_IOC_ENABLE: {}", err);
-		assert(false);
+		throw std::runtime_error("Failed to run PERF_EVENT_IOC_ENABLE");
 	}
 
 	SPDLOG_DEBUG("Attached transporter ebpf program");
@@ -248,8 +261,10 @@ user_ringbuffer_wrapper::user_ringbuffer_wrapper(int user_rb_id)
 	}
 
 	rb = user_ring_buffer__new(user_rb_fd, &opts);
-	assert(rb &&
-	       "Failed to initialize user ringbuffer! This SHOULD NOT Happen.");
+	if (!rb) {
+		throw std::runtime_error(
+			"Failed to initialize user ringbuffer! This SHOULD NOT Happen.");
+	}
 	SPDLOG_DEBUG("User ringbuffer wrapper created, fd={}, id={}",
 		     user_rb_fd, user_rb_id);
 }
