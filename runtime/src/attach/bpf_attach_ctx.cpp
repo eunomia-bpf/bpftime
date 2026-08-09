@@ -463,8 +463,7 @@ bpf_attach_ctx::instantiate_perf_event_bpf_link_handler_at(
 		return {};
 	}
 	auto &[priv_data, attach_type] = event_itr->second;
-	SPDLOG_DEBUG("Attach private data is {}, attach type is {}",
-		     priv_data->to_string(), attach_type);
+	SPDLOG_DEBUG("Attach type is {}", attach_type);
 	attach::base_attach_impl *attach_impl;
 	// Find what kind of attach type it is
 	if (auto itr = attach_impls.find(attach_type);

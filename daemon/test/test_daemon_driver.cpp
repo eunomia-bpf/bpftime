@@ -40,8 +40,13 @@ TEST_CASE("Daemon driver preserves perf-link cookies")
 	for (std::size_t i = 0; i < manager->size(); i++) {
 		if (auto *link = std::get_if<bpftime::bpf_link_handler>(
 			    &manager->get_handler(i));
-		    link != nullptr && link->attach_cookie == cookie) {
-			found = true;
+		    link != nullptr) {
+			if (auto *data =
+				    std::get_if<bpftime::perf_event_link_data>(
+					    &link->data);
+			    data != nullptr && data->attach_cookie == cookie) {
+				found = true;
+			}
 		}
 	}
 	REQUIRE(found);
