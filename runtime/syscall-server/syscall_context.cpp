@@ -13,7 +13,6 @@
 #ifdef BPFTIME_ENABLE_CUDA_ATTACH
 #include "cuda.h"
 #endif
-#include "spdlog/cfg/env.h"
 #include "spdlog/fmt/fmt.h"
 #include <cstdio>
 #include <ebpf-vm.h>
@@ -145,6 +144,11 @@ void syscall_context::load_config_from_env()
 syscall_context::syscall_context()
 {
 	init_original_functions();
+	enable_mock.store(false, std::memory_order_relaxed);
+	const char *logger_target = getenv("BPFTIME_LOG_OUTPUT");
+	bpftime_set_logger(logger_target == nullptr ? DEFAULT_LOGGER_OUTPUT_PATH :
+						     logger_target);
+	SPDLOG_DEBUG("Resolved original libc function pointers");
 	// FIXME: merge this into the runtime config
 	load_config_from_env();
 	auto runtime_config = bpftime::construct_runtime_config_from_env();
@@ -152,7 +156,7 @@ syscall_context::syscall_context()
 	SPDLOG_INFO("Init bpftime syscall mocking..");
 	SPDLOG_INFO("The log will be written to: {}",
 		    runtime_config.get_logger_output_path());
-	spdlog::cfg::load_env_levels();
+	enable_mock.store(true, std::memory_order_relaxed);
 }
 
 #ifdef BPFTIME_ENABLE_CUDA_ATTACH
