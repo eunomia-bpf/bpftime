@@ -18,7 +18,7 @@ INCLUDES := -I$(OUTPUT) -I../../../third_party/libbpf/include/uapi -I$(dir $(VML
 CFLAGS := -g -Wall
 ALL_LDFLAGS := $(LDFLAGS) $(EXTRA_LDFLAGS)
 
-APPS = gpu_shard_array
+APPS = gpu_shared_map
 
 .PHONY: all clean
 all: $(APPS) vec_add

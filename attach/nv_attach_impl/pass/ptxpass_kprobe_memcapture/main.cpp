@@ -43,7 +43,7 @@ patch_memcapture(const std::string &ptx,
 		 const std::vector<uint64_t> &ebpf_words)
 {
 	static std::regex ld_st_pattern(
-		R"(^\s*(ld|st)\.(const|global|local|param)?\.(((s|u|b)(8|16|32|64))|\.b128|(\.f(16|16x2|32|64))) +(.+), *(.+);\s*$)");
+		R"(^\s*(ld|st)\.(const|global|local|param)?\.(((s|u|b)(8|16|32|64))|b128|(f(16|16x2|32|64))) +(.+), *(.+);\s*$)");
 	// no local ebpf_inst dependency here; we will pack words when needed
 
 	std::istringstream iss(ptx);
@@ -139,7 +139,7 @@ patch_memcapture(const std::string &ptx,
 				packed_words + insts_local.size());
 			auto func_ptx = ptxpass::compile_ebpf_to_ptx_from_words(
 				packed, "sm_61",
-				"__memcapture__" + std::to_string(count), true,
+				"__memcapture__" + std::to_string(count), false,
 				false);
 			auto func_name = std::string("__memcapture__") +
 					 std::to_string(count);

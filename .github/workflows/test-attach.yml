@@ -3,9 +3,27 @@ name: Build and Attach Tests Workflow
 on:
   workflow_dispatch:
   push:
-    branches: ["*"]
+    branches: ["master"]
+    paths:
+      - ".github/workflows/test-attach.yml"
+      - "attach/**"
+      - "runtime/**"
+      - "vm/**"
+      - "cmake/**"
+      - "third_party/**"
+      - "CMakeLists.txt"
+      - ".gitmodules"
   pull_request:
     branches: ["master"]
+    paths:
+      - ".github/workflows/test-attach.yml"
+      - "attach/**"
+      - "runtime/**"
+      - "vm/**"
+      - "cmake/**"
+      - "third_party/**"
+      - "CMakeLists.txt"
+      - ".gitmodules"
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}-${{ github.event_name }}
@@ -45,7 +63,7 @@ jobs:
 
       - name: Build for frida uprobe attach tests
         run: |
-          cmake -DCMAKE_BUILD_TYPE:STRING=Debug -DTEST_LCOV=ON -B build -Dabsl_DIR=~/miniconda3/lib/cmake/absl -DProtobuf_DIR=~/miniconda3/lib/cmake/protobuf -Dutf8_range_DIR=~/miniconda3/lib/cmake/utf8_range
+          cmake -DCMAKE_BUILD_TYPE:STRING=Debug -DTEST_LCOV=ON -DBUILD_BPFTIME_DAEMON=OFF -B build -Dabsl_DIR=~/miniconda3/lib/cmake/absl -DProtobuf_DIR=~/miniconda3/lib/cmake/protobuf -Dutf8_range_DIR=~/miniconda3/lib/cmake/utf8_range
           cmake --build build --config Debug --target bpftime_frida_uprobe_attach_tests -j$(nproc)
       - name: Run frida uprobe attach tests
         run: |
@@ -74,7 +92,7 @@ jobs:
 
       - name: Build syscall trace uprobe attach tests
         run: |
-          cmake -DTEST_LCOV=ON -B build -Dabsl_DIR=~/miniconda3/lib/cmake/absl -DProtobuf_DIR=~/miniconda3/lib/cmake/protobuf -Dutf8_range_DIR=~/miniconda3/lib/cmake/utf8_range
+          cmake -DTEST_LCOV=ON -DBUILD_BPFTIME_DAEMON=OFF -B build -Dabsl_DIR=~/miniconda3/lib/cmake/absl -DProtobuf_DIR=~/miniconda3/lib/cmake/protobuf -Dutf8_range_DIR=~/miniconda3/lib/cmake/utf8_range
           cmake --build build --config Debug --target bpftime_syscall_trace_attach_tests -j$(nproc)
 
       - name: Run syscall trace uprobe attach tests

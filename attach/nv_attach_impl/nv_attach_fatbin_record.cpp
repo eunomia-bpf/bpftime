@@ -8,6 +8,7 @@
 #include <boost/asio/thread_pool.hpp>
 #include <cstddef>
 #include <cstdint>
+#include <cstring>
 #include <cstdio>
 #include <dlfcn.h>
 #include <iterator>
@@ -39,6 +40,8 @@
 	} while (0)
 namespace bpftime::attach
 {
+using bpftime::attach::rewrite_ptx_target;
+
 fatbin_record::~fatbin_record()
 {
 }
@@ -101,8 +104,7 @@ std::map<std::string, std::vector<uint8_t>> fatbin_record::compile_ptxs(
 	class nv_attach_impl &impl,
 	std::map<std::string, std::tuple<std::string, bool>> patched_ptx)
 {
-	const char *sm_arch_env = std::getenv("BPFTIME_SM_ARCH");
-	std::string sm_arch = sm_arch_env ? sm_arch_env : "sm_61";
+	std::string sm_arch = get_gpu_sm_arch();
 	SPDLOG_INFO("Compiling PTXs with sm_arch {}", sm_arch);
 
 	unsigned major, minor;
@@ -117,16 +119,18 @@ std::map<std::string, std::vector<uint8_t>> fatbin_record::compile_ptxs(
 	for (const auto &[name, ptx_and_trampoline_flag] : patched_ptx) {
 		const auto &ptx = std::get<0>(ptx_and_trampoline_flag);
 
-		boost::asio::post(
-			pool,
-			[&handler, ptx, name, &compiled_ptx, &map_lock, this,
-			 sm_arch]() -> void {
-				auto sha256_string =
-					sha256(ptx.data(), ptx.size());
-				if (auto itr =
-					    this->ptx_pool->find(sha256_string);
-				    itr != this->ptx_pool->end()) {
-					SPDLOG_INFO(
+			boost::asio::post(
+				pool,
+				[&handler, ptx, name, &compiled_ptx, &map_lock, this,
+				 sm_arch]() -> void {
+					const auto ptx_fixed =
+						rewrite_ptx_target(ptx, sm_arch);
+					auto sha256_string =
+						sha256(ptx_fixed.data(), ptx_fixed.size());
+					if (auto itr =
+						    this->ptx_pool->find(sha256_string);
+					    itr != this->ptx_pool->end()) {
+						SPDLOG_INFO(
 						"PTX {} ({}) found in cache",
 						name, sha256_string);
 					std::lock_guard<std::mutex> _guard(
@@ -141,19 +145,19 @@ std::map<std::string, std::vector<uint8_t>> fatbin_record::compile_ptxs(
 						throw std::runtime_error(
 							"Unable to create nv_attach_impl_ptx_compiler");
 					}
-					std::string gpu_name =
-						"--gpu-name=" + sm_arch;
-					const char *compile_options[] = {
-						gpu_name.c_str(), "--verbose",
-						"-O3"
-					};
-					if (auto err = handler.compile(
-						    compiler, ptx.c_str(),
-						    compile_options,
-						    std::size(compile_options));
-					    err != 0) {
-						SPDLOG_ERROR(
-							"Unable to compile: {}, error = {}",
+						std::string gpu_name =
+							"--gpu-name=" + sm_arch;
+							const char *compile_options[] = {
+								gpu_name.c_str(), "--verbose",
+								"-O3"
+							};
+						if (auto err = handler.compile(
+							    compiler, ptx_fixed.c_str(),
+							    compile_options,
+							    std::size(compile_options));
+						    err != 0) {
+							SPDLOG_ERROR(
+								"Unable to compile: {}, error = {}",
 							err,
 							handler.get_error_log(
 								compiler));
@@ -263,7 +267,7 @@ void fatbin_record::try_loading_ptxs(class nv_attach_impl &impl)
 					cuMemcpyHtoD(map_basic_info_ptr,
 						     impl.map_basic_info->data(),
 						     map_basic_info_size),
-					"Unable to copy map_info pointer to device");
+					"Unable to copy constData pointer to device");
 				SPDLOG_INFO("Trampoline data copied");
 			}
 			auto ptr = std::make_shared<ptx_in_module>(module);

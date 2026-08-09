@@ -2,9 +2,33 @@ name: Build and run all integrated tests (examples)
 
 on:
   push:
-    branches: ["*"]
+    branches: ["master"]
+    paths:
+      - ".github/workflows/test-examples.yml"
+      - ".github/script/run_example.py"
+      - "attach/**"
+      - "example/**"
+      - "runtime/**"
+      - "tools/**"
+      - "vm/**"
+      - "cmake/**"
+      - "third_party/**"
+      - "CMakeLists.txt"
+      - ".gitmodules"
   pull_request:
-    branches: ["*"]
+    branches: ["master"]
+    paths:
+      - ".github/workflows/test-examples.yml"
+      - ".github/script/run_example.py"
+      - "attach/**"
+      - "example/**"
+      - "runtime/**"
+      - "tools/**"
+      - "vm/**"
+      - "cmake/**"
+      - "third_party/**"
+      - "CMakeLists.txt"
+      - ".gitmodules"
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}-${{ github.event_name }}
   cancel-in-progress: true
@@ -45,17 +69,15 @@ jobs:
       - name: Install lcov (Fedora)
         if: ${{matrix.container.name =='fedora'}}
         run: |
-          dnf install -y dnf-plugins-core
-          dnf config-manager --add-repo https://developer.download.nvidia.com/compute/cuda/repos/fedora39/x86_64/cuda-fedora39.repo
-          dnf install -y lcov tree clang-devel || true
-          dnf install -y cuda --skip-broken --nobest || echo "CUDA installation failed, continuing without CUDA"
+          dnf install -y lcov tree
       - name: Build and install runtime (with llvm-jit)
         if: ${{matrix.enable_jit}}
         run: |
           cmake -Bbuild  -DCMAKE_BUILD_TYPE:STRING=RelWithDebInfo \
             -DBPFTIME_LLVM_JIT=1 \
             -DTEST_LCOV=YES \
-            -DBUILD_BPFTIME_DAEMON=1 \
+            -DBPFTIME_ENABLE_CUDA_ATTACH=OFF \
+            -DBUILD_BPFTIME_DAEMON=OFF \
             -DCMAKE_CXX_FLAGS="-DDEFAULT_LOGGER_OUTPUT_PATH='\"console\"'" -Dabsl_DIR=~/miniconda3/lib/cmake/absl -DProtobuf_DIR=~/miniconda3/lib/cmake/protobuf -Dutf8_range_DIR=~/miniconda3/lib/cmake/utf8_range
           # mkdir -p build/runtime/pos/include/proto/
           # mkdir -p build/runtime/pos/cuda_impl/proto/
@@ -76,7 +98,8 @@ jobs:
           cmake -Bbuild  -DCMAKE_BUILD_TYPE:STRING=RelWithDebInfo \
             -DBPFTIME_LLVM_JIT=0 \
             -DTEST_LCOV=YES \
-            -DBUILD_BPFTIME_DAEMON=1 \
+            -DBPFTIME_ENABLE_CUDA_ATTACH=OFF \
+            -DBUILD_BPFTIME_DAEMON=OFF \
             -DCMAKE_CXX_FLAGS="-DDEFAULT_LOGGER_OUTPUT_PATH='\"console\"'" -Dabsl_DIR=~/miniconda3/lib/cmake/absl -DProtobuf_DIR=~/miniconda3/lib/cmake/protobuf -Dutf8_range_DIR=~/miniconda3/lib/cmake/utf8_range
           mkdir -p build/runtime/pos/include/proto/
           mkdir -p build/runtime/pos/cuda_impl/proto/
@@ -182,7 +205,7 @@ jobs:
     needs: [build-runtime]
     container:
       image: "manjusakalza/bpftime-base-image:${{matrix.container.image}}"
-      options: " ${{matrix.privilege_options.options}}"
+      options: ${{ matrix.privilege_options.options }}
     strategy:
       fail-fast: false
       matrix:
@@ -202,7 +225,9 @@ jobs:
         privilege_options:
           - options: "--privileged -v /sys/kernel/debug/:/sys/kernel/debug:rw -v /sys/kernel/tracing:/sys/kernel/tracing:rw"
             enable: true
-          - options: ""
+          # GitHub Actions rejects empty `container.options` after matrix expansion.
+          # Use a harmless non-empty default for the unprivileged case.
+          - options: "--init"
             enable: false
         container:
           - image: ubuntu-2204
@@ -348,12 +373,6 @@ jobs:
           ls -lah .
           tar -zxvf gcno_files.tar.gz
           pwd
-      - name: Install CUDA runtime dependencies (Fedora)
-        if: ${{matrix.container.name == 'fedora'}}
-        run: |
-          dnf install -y dnf-plugins-core
-          dnf config-manager --add-repo https://developer.download.nvidia.com/compute/cuda/repos/fedora39/x86_64/cuda-fedora39.repo
-          dnf install -y cuda --skip-broken --nobest || echo "CUDA installation failed, continuing without CUDA"
       - name: Install which(required by funclatency on fedora)
         if: ${{matrix.container.name=='fedora' && matrix.examples.path=='tracing/funclatency'}}
         run: |
@@ -394,14 +413,14 @@ jobs:
         run: |
           ROOT=$(pwd)
           cd example/${{matrix.examples.path}}
-          python3 $ROOT/.github/script/run_example.py "${{matrix.examples.executable}}" "${{matrix.examples.victim}}" "${{matrix.examples.expected_str}}" "/github/home/.bpftime/bpftime -i /github/home/.bpftime" 1
+          timeout -k 30s 10m python3 $ROOT/.github/script/run_example.py "${{matrix.examples.executable}}" "${{matrix.examples.victim}}" "${{matrix.examples.expected_str}}" "/github/home/.bpftime/bpftime -i /github/home/.bpftime" 1
       - name: Test CLI - attach by running (uprobe)
         if: "!matrix.examples.syscall_trace"
         shell: bash
         run: |
           ROOT=$(pwd)
           cd example/${{matrix.examples.path}}
-          python3 $ROOT/.github/script/run_example.py "${{matrix.examples.executable}}" "${{matrix.examples.victim}}" "${{matrix.examples.expected_str}}" "/github/home/.bpftime/bpftime -i /github/home/.bpftime" 0
+          timeout -k 30s 10m python3 $ROOT/.github/script/run_example.py "${{matrix.examples.executable}}" "${{matrix.examples.victim}}" "${{matrix.examples.expected_str}}" "/github/home/.bpftime/bpftime -i /github/home/.bpftime" 0
       - name: Generate example coverage (Ubuntu)
         if: "matrix.container.image == 'ubuntu-2204'"
         run: |

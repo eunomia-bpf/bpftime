@@ -2,13 +2,23 @@ name: Build and test verifier
 
 on:
   push:
-    branches: "master"
+    branches: [master]
     paths:
-        - "bpftime-verifier/**"
-  pull_request: 
-    branches: "master"
+      - ".github/workflows/test-verifier.yml"
+      - "bpftime-verifier/**"
+      - "cmake/**"
+      - "third_party/**"
+      - "CMakeLists.txt"
+      - ".gitmodules"
+  pull_request:
+    branches: [master]
     paths:
-        - "bpftime-verifier/**"
+      - ".github/workflows/test-verifier.yml"
+      - "bpftime-verifier/**"
+      - "cmake/**"
+      - "third_party/**"
+      - "CMakeLists.txt"
+      - ".gitmodules"
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}-${{ github.event_name }}
   cancel-in-progress: true

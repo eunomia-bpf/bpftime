@@ -6,8 +6,9 @@
 #ifndef _SYSCALL_CONTEXT_HPP
 #define _SYSCALL_CONTEXT_HPP
 #include <cassert>
+#include <set>
 #include <unordered_map>
-#if __linux__
+#if defined(__linux__)
 #include "linux/perf_event.h"
 #elif __APPLE__
 #include "bpftime_epoll.h"
@@ -19,6 +20,7 @@
 #include <spdlog/spdlog.h>
 #include <unordered_set>
 #include <pthread.h>
+#include <atomic>
 #include <future>
 #include <thread>
 // #include "pos/include/common.h"
@@ -129,19 +131,12 @@ class syscall_context {
 		// unset the LD_PRELOAD env var after syscall context being
 		// initialized
 		unsetenv("LD_PRELOAD");
-		SPDLOG_DEBUG(
-			"Function addrs: {:x} {:x} {:x} {:x} {:x} {:x} {:x} {:x} {:x} {:x} {:x}",
-			(uintptr_t)orig_epoll_wait_fn,
-			(uintptr_t)orig_epoll_ctl_fn,
-			(uintptr_t)orig_epoll_create1_fn,
-			(uintptr_t)orig_ioctl_fn, (uintptr_t)orig_syscall_fn,
-			(uintptr_t)orig_mmap64_fn, (uintptr_t)orig_close_fn,
-			(uintptr_t)orig_munmap_fn, (uintptr_t)orig_mmap_fn,
-			(uintptr_t)orig_openat_fn, (uintptr_t)orig_open_fn,
-			(uintptr_t)orig_fopen_fn);
+		// Keep this log allocation-free. spdlog/fmt may throw in extremely
+		// early init paths (and will print "[*** LOG ERROR ***]").
+		SPDLOG_DEBUG("Resolved original libc function pointers");
 	}
 
-	int create_kernel_bpf_map(int fd);
+	int create_kernel_bpf_map(int fd, int bpftime_map_type);
 	int create_kernel_bpf_prog_in_userspace(int cmd, union bpf_attr *attr,
 						size_t size);
 	// try loading the bpf syscall helpers.
@@ -151,11 +146,6 @@ class syscall_context {
 
 	// enable userspace eBPF runing with kernel eBPF.
 	bool run_with_kernel = false;
-	// pos_cli result
-	// std::string pos_result = "";
-	// std::thread pos_thread{};
-	// std::promise<pos_retval_t> pos_thread_promise{};
-	// std::future<pos_retval_t> pos_thread_future{};
 	// allow programs to by pass the verifier
 	// some extensions are not supported by the verifier, so we need to
 	// by pass the verifier to make it work.
@@ -165,11 +155,11 @@ class syscall_context {
 
     public:
 	// enable mock the syscall behavior in userspace
-	bool enable_mock = true;
+	std::atomic<bool> enable_mock{ true };
 	// Initializing CUDA
-	bool initializing_cuda = false;
+	std::atomic<bool> initializing_cuda{ false };
 	// Whether enable mock after syscall server has been initialized
-	bool enable_mock_after_initialized = true;
+	std::atomic<bool> enable_mock_after_initialized{ true };
 	syscall_context();
 	virtual ~syscall_context()
 	{
@@ -202,6 +192,7 @@ class syscall_context {
 	int handle_memfd_create(const char *name, int flags);
 
 #if defined(BPFTIME_ENABLE_CUDA_ATTACH)
+	void initialize_cuda();
 	int poll_gpu_ringbuf_map(int mapfd, void *ctx,
 
 				 void (*)(const void *, uint64_t, void *));

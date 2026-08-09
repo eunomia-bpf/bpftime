@@ -9,16 +9,9 @@ namespace bpftime
 
 using namespace boost::interprocess;
 
-// A fixed size hash map that is used in the eBPF runtime.
-// with open addressing and linear probing.
-class bpftime_hash_map {
-    private:
-	inline size_t get_elem_offset(size_t index) const
-	{
-		return index * (4 + _key_size + _value_size);
-	}
-
-	inline bool is_prime(size_t n) const
+class bpftime_hasher{
+private:
+	static inline bool is_prime(size_t n)
 	{
 		if (n <= 1)
 			return false;
@@ -35,12 +28,32 @@ class bpftime_hash_map {
 		return true;
 	}
 
-	inline size_t next_prime(size_t n) const
+public:
+	static inline size_t next_prime(size_t n)
 	{
 		while (!is_prime(n)) {
 			++n;
 		}
 		return n;
+	}
+
+	static size_t hash_func(const void *key, size_t key_size)
+	{
+		size_t hash = 0;
+		for (size_t i = 0; i < key_size; i++) {
+			hash = hash * 31 + ((uint8_t *)key)[i];
+		}
+		return hash;
+	}
+};
+
+// A fixed size hash map that is used in the eBPF runtime.
+// with open addressing and linear probing.
+class bpftime_hash_map {
+    private:
+	inline size_t get_elem_offset(size_t index) const
+	{
+		return index * (4 + _key_size + _value_size);
 	}
 
 	size_t _key_size;
@@ -63,7 +76,7 @@ class bpftime_hash_map {
 			 size_t key_size, size_t value_size)
 		: _key_size(key_size), _value_size(value_size),
 		  // Use nearest prime  number
-		  _num_buckets(next_prime(num_buckets)),
+		  _num_buckets(bpftime_hasher::next_prime(num_buckets)),
 		  // Use the original bucket count
 		  _max_element_count(num_buckets),
 		  // Initialize count to 0
@@ -71,15 +84,6 @@ class bpftime_hash_map {
 	{
 		data_buffer.resize(_num_buckets * (4 + key_size + value_size),
 				   0);
-	}
-
-	size_t hash_func(const void *key)
-	{
-		size_t hash = 0;
-		for (size_t i = 0; i < _key_size; i++) {
-			hash = hash * 31 + ((uint8_t *)key)[i];
-		}
-		return hash;
 	}
 
 	inline bool is_empty(size_t index) const
@@ -122,7 +126,7 @@ class bpftime_hash_map {
 
 	void *elem_lookup(const void *key)
 	{
-		size_t index = hash_func(key) % _num_buckets;
+		size_t index = bpftime_hasher::hash_func(key, _key_size) % _num_buckets;
 		size_t start_index = index;
 		do {
 			if (is_empty(index)) {
@@ -138,7 +142,7 @@ class bpftime_hash_map {
 
 	bool elem_update(const void *key, const void *value)
 	{
-		size_t index = hash_func(key) % _num_buckets;
+		size_t index = bpftime_hasher::hash_func(key, _key_size) % _num_buckets;
 		size_t start_index = index;
 
 		// Iterate over the hash map using linear probing
@@ -177,7 +181,7 @@ class bpftime_hash_map {
 
 	bool elem_delete(const void *key)
 	{
-		size_t index = hash_func(key) % _num_buckets;
+		size_t index = bpftime_hasher::hash_func(key, _key_size) % _num_buckets;
 		size_t start_index = index;
 		do {
 			if (is_empty(index)) {

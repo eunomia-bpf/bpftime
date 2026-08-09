@@ -83,6 +83,12 @@ int bpftime_maps_create(int fd, const char *name, bpftime::bpf_map_attr attr)
 	return shm_holder.global_shared_memory.add_bpf_map(fd, name, attr);
 }
 
+int bpftime_translate_shared_map_type_to_kernel_map_type(int ty)
+{
+	return shm_holder.global_shared_memory
+		.translate_shared_map_type_to_kernel_map_type(ty);
+}
+
 int bpftime_maps_dup(int oldfd, int newfd)
 {
 	return shm_holder.global_shared_memory.dup_bpf_map(oldfd, newfd);
@@ -642,13 +648,13 @@ extern "C" uint64_t map_ptr_by_fd(uint32_t fd)
 		return INVALID_MAP_PTR;
 	}
 	// Use a convenient way to represent a pointer
-	return ((uint64_t)fd << 32) | 0xffffffff;
+	return fd;
 }
 
 extern "C" uint64_t map_val(uint64_t map_ptr)
 {
 	SPDLOG_DEBUG("Call map_val with map_ptr={:x}", map_ptr);
-	int fd = (int)(map_ptr >> 32);
+	int fd = (int)map_ptr;
 	if (!shm_holder.global_shared_memory.get_manager() ||
 	    !shm_holder.global_shared_memory.is_map_fd(fd)) {
 		SPDLOG_ERROR("Expected fd {} to be a map fd (map_val call)",

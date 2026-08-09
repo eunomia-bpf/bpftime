@@ -130,7 +130,9 @@ static int import_shm_handler_from_json(bpftime_shm &shm, json value, int fd)
 	} else if (handler_type == "bpf_perf_event_handler") {
 		int type = value["attr"]["type"];
 		int pid = value["attr"]["pid"];
-		int tracepoint_id = value["attr"]["tracepoint_id"];
+		int tracepoint_id = 0;
+		if ((bpf_event_type)type == bpf_event_type::PERF_TYPE_TRACEPOINT)
+			tracepoint_id = value["attr"]["tracepoint_id"];		
 		switch ((bpf_event_type)type) {
 		case bpf_event_type::BPF_TYPE_UPROBE: {
 			int ref_ctr_off = value["attr"]["ref_ctr_off"];
@@ -305,6 +307,13 @@ int bpftime::bpftime_export_shm_to_json(const bpftime_shm &shm,
 			SPDLOG_INFO(
 				"bpf_link_handler found at {}，link {} -> {}",
 				i, h.args.prog_fd, h.args.target_fd);
+		} else if (std::holds_alternative<memfd_handler>(handler)) {
+			auto &h = std::get<memfd_handler>(handler);
+			j[std::to_string(i)] = { { "type", "memfd_handler" },
+						 { "attr",
+						   { { "flags", h.flags },
+						     { "name", h.name } } } };
+
 		} else {
 			SPDLOG_ERROR("Unsupported handler type {}",
 				     handler.index());

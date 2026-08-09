@@ -10,7 +10,7 @@ all: vec_add matrixMul simpleCUBLAS
 
 vec_add: vec_add.cu
 	@if command -v $(NVCC) >/dev/null 2>&1; then \
-		$(NVCC) $(NVCC_FLAGS) -O3 vec_add.cu -o vec_add; \
+		$(NVCC) $(NVCC_FLAGS) -O3 vec_add.cu -g -o vec_add; \
 	else \
 		echo "Warning: CUDA not found, skipping vec_add build"; \
 	fi

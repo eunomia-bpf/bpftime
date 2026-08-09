@@ -1,7 +1,11 @@
 #include "catch2/catch_test_macros.hpp"
 #include "ptxpass/core.hpp"
+#include <memory>
 #include <fstream>
 #include <iostream>
+#include <spdlog/logger.h>
+#include <spdlog/sinks/ostream_sink.h>
+#include <spdlog/spdlog.h>
 #include <sstream>
 #include <string>
 #include <vector>
@@ -289,14 +293,19 @@ TEST_CASE("compile_ebpf_to_ptx_from_words compiles eBPF to PTX",
 	REQUIRE(ptx.find("ret") != std::string::npos);
 }
 
-TEST_CASE("log_transform_stats outputs stats to stderr", "[ptxpass_core]")
+TEST_CASE("log_transform_stats emits stats through spdlog",
+	  "[ptxpass_core]")
 {
 	std::ostringstream oss;
-	std::streambuf *old_cerr = std::cerr.rdbuf(oss.rdbuf());
+	auto old_logger = spdlog::default_logger();
+	auto sink = std::make_shared<spdlog::sinks::ostream_sink_mt>(oss);
+	auto logger = std::make_shared<spdlog::logger>("ptxpass_test", sink);
+	logger->set_level(spdlog::level::info);
+	spdlog::set_default_logger(logger);
 
 	log_transform_stats("test_pass", 5, 1024, 2048);
-
-	std::cerr.rdbuf(old_cerr);
+	logger->flush();
+	spdlog::set_default_logger(old_logger);
 
 	std::string output = oss.str();
 	REQUIRE(output.find("test_pass") != std::string::npos);

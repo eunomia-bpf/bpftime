@@ -18,9 +18,12 @@ g++ vectorAdd-new.cpp -Wall -L /usr/local/cuda-12.6/lib64 -lcudart -o vectorAdd
 
 __constant__ int d_N;
 
+__device__ int counter;
+
 __global__ void test_kernel_2()
 {
 	printf("qwq\n");
+	counter++;
 }
 
 // A simple vector addition kernel
@@ -36,7 +39,9 @@ int main()
 {
 	// Set vector size in constant memory
 	const int h_N = 1 << 20; // 1M elements
+	int i = 233;
 	cudaMemcpyToSymbol(d_N, &h_N, sizeof(h_N));
+	cudaMemcpyToSymbol(counter, &i, sizeof(i));
 
 	size_t bytes = h_N * sizeof(float);
 
@@ -67,6 +72,11 @@ int main()
 		// Zero output array
 		cudaMemset(d_C, 0, bytes);
 		test_kernel_2<<<1, 1>>>();
+		i++;
+		int h_counter = 0;
+		cudaMemcpyFromSymbol(&h_counter, counter, sizeof(h_counter));
+		std::cout << "counter = " << h_counter << " (expected " << i
+			  << ")\n";
 		// Launch kernel
 		vectorAdd<<<1, 10>>>(d_A, d_B, d_C);
 		cudaDeviceSynchronize();

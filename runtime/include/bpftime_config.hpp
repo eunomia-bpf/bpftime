@@ -5,6 +5,7 @@
 #include <boost/interprocess/interprocess_fwd.hpp>
 #include <boost/interprocess/managed_shared_memory.hpp>
 #include <cstdlib>
+#include <cstdint>
 #include <string>
 #include <variant>
 
@@ -23,6 +24,7 @@
 constexpr size_t DEFAULT_MAX_FD_COUNT = 1024 * 6;
 constexpr size_t MIN_MAX_FD_COUNT = 128;
 constexpr size_t MAX_MAX_FD_COUNT = 1024 * 1024; // 1M max
+constexpr uint64_t DEFAULT_GPU_GDRCOPY_MAX_PER_KEY_BYTES = 4096;
 
 namespace bpftime
 {
@@ -33,9 +35,22 @@ using boost_shm_string =
 	boost::interprocess::basic_string<char, std::char_traits<char>,
 					  char_allocator>;
 
+// Verification mode for bpftime userspace verifier
+// Controlled via BPFTIME_VERIFIER_LEVEL environment variable
+enum bpftime_verifier_mode {
+	// Userspace verifier failure is treated as a warning (default)
+	// Program loading continues even if verification fails
+	BPFTIME_VERIFIER_WARNING = 0,
+	// Userspace verifier failure is treated as an error
+	// Program loading is rejected if verification fails
+	BPFTIME_VERIFIER_STRICT = 1,
+	// No verification is performed
+	BPFTIME_NO_VERIFY = 2,
+};
+
 // Configuration for the bpftime runtime
 // Initialize the configuration from the environment variables
-struct agent_config {
+struct runtime_config {
 	bool debug = false;
 	// Enable JIT?
 	bool jit_enabled = true;
@@ -44,6 +59,10 @@ struct agent_config {
 	bool enable_kernel_helper_group = true;
 	bool enable_ufunc_helper_group = false;
 	bool enable_shm_maps_helper_group = true;
+
+	// Userspace verifier mode (see bpftime_verifier_mode enum)
+	// Default is BPFTIME_VERIFIER_WARNING: verification failure is a warning
+	bpftime_verifier_mode verifier_mode = BPFTIME_VERIFIER_WARNING;
 
 	// allow non builtin map types
 	// if enabled, when a eBPF application tries to create a map with a
@@ -65,10 +84,17 @@ struct agent_config {
 	// It can be a file path or "console".
 	// If it is "console", the logger will output to stderr
 
-	// Here it is a variant, since this object (agent_config) will be used
+	// Here it is a variant, since this object (runtime_config) will be used
 	// for both local and shared memory
 	char logger_output_path[LOG_PATH_MAX_LEN] = DEFAULT_LOGGER_OUTPUT_PATH;
 	char vm_name[VM_NAME_MAX_LEN] = DEFAULT_VM_NAME;
+
+	// Optional: enable GDRCopy for host-side lookup of GPU maps.
+	bool enable_gpu_gdrcopy = false;
+	// If non-zero, GDRCopy is only attempted when per-key copy size <= this threshold.
+	// Set to 0 to disable the threshold (always attempt when enabled).
+	uint64_t gpu_gdrcopy_max_per_key_bytes =
+		DEFAULT_GPU_GDRCOPY_MAX_PER_KEY_BYTES;
 
 	const char *get_logger_output_path() const
 	{
@@ -90,7 +116,7 @@ struct agent_config {
 
 // Get the bpftime configuration from the environment variables
 // If the shared memory is not int, this should be called first
-agent_config construct_agent_config_from_env() noexcept;
+runtime_config construct_runtime_config_from_env() noexcept;
 
 } // namespace bpftime
 

@@ -2,13 +2,25 @@ name: Build and Test VM
 
 on:
   push:
-    branches: [ master ]
+    branches: [master]
     paths:
-        - "vm/**"
+      - ".github/workflows/test-vm.yml"
+      - "vm/**"
+      - "cmake/**"
+      - "third_party/**"
+      - "CMakeLists.txt"
+      - "Makefile"
+      - ".gitmodules"
   pull_request:
-    branches: [ master ]
+    branches: [master]
     paths:
-        - "vm/**"
+      - ".github/workflows/test-vm.yml"
+      - "vm/**"
+      - "cmake/**"
+      - "third_party/**"
+      - "CMakeLists.txt"
+      - "Makefile"
+      - ".gitmodules"
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}-${{ github.event_name }}
   cancel-in-progress: true

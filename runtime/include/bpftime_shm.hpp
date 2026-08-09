@@ -39,9 +39,10 @@ struct bpf_map_attr {
 
 	// additional fields for bpftime only
 	uint32_t kernel_bpf_map_id = 0;
-	// Changed to 1024*1024 since some GPU programs may launch a kernel with
-	// threads in this number
-	uint64_t gpu_thread_count = 1024 * 1024;
+	// Default maximum GPU "thread" count used when sizing GPU maps.
+	// A smaller default keeps shared memory usage reasonable; users can
+	// override via BPFTIME_MAP_GPU_THREAD_COUNT when needed.
+	uint64_t gpu_thread_count = 1024;
 };
 
 enum class bpf_event_type {
@@ -118,9 +119,18 @@ enum class bpf_map_type {
 	BPF_MAP_TYPE_KERNEL_USER_PERF_EVENT_ARRAY =
 		KERNEL_USER_MAP_OFFSET + BPF_MAP_TYPE_PERF_EVENT_ARRAY,
 
+	BPF_MAP_TYPE_GPU_HASH_MAP = GPU_MAP_OFFSET + BPF_MAP_TYPE_HASH,
+	// GPU maps using cuMemAlloc + CUDA IPC (for x86 with IPC support)
 	BPF_MAP_TYPE_PERGPUTD_ARRAY_MAP = GPU_MAP_OFFSET + BPF_MAP_TYPE_ARRAY,
 	BPF_MAP_TYPE_GPU_ARRAY_MAP = GPU_MAP_OFFSET + BPF_MAP_TYPE_ARRAY + 1,
+	BPF_MAP_TYPE_GPU_KERNEL_SHARED_ARRAY_MAP =
+		GPU_MAP_OFFSET + BPF_MAP_TYPE_ARRAY + 2,
 	BPF_MAP_TYPE_GPU_RINGBUF_MAP = GPU_MAP_OFFSET + BPF_MAP_TYPE_RINGBUF,
+
+	// GPU maps using boost::interprocess + cudaHostRegister (for Tegra/platforms without IPC)
+	BPF_MAP_TYPE_PERGPUTD_ARRAY_HOST_MAP = GPU_MAP_OFFSET + BPF_MAP_TYPE_ARRAY + 10,
+	BPF_MAP_TYPE_GPU_ARRAY_HOST_MAP = GPU_MAP_OFFSET + BPF_MAP_TYPE_ARRAY + 11,
+
 	BPF_MAP_TYPE_MAX = 2048,
 };
 
@@ -172,10 +182,10 @@ extern const shm_open_type global_shm_open_type;
 // Get the runtime config in the shared memory.
 // The shared memory should be initialized before calling this function.
 // This should be called by the agent side instead of the server side.
-const bpftime::agent_config &bpftime_get_agent_config();
+const bpftime::runtime_config &bpftime_get_runtime_config();
 
 // Set the runtime config in the shared memory.
-void bpftime_set_agent_config(struct bpftime::agent_config &&cfg);
+void bpftime_set_runtime_config(struct bpftime::runtime_config &&cfg);
 
 // Map ops for register external map types and operations
 //
@@ -229,6 +239,12 @@ int bpftime_import_global_shm_from_json(const char *filename);
 int bpftime_export_global_shm_to_json(const char *filename);
 // import a hander to global shared memory from json string
 int bpftime_import_shm_handler_from_json(int fd, const char *json_string);
+
+// Mirrors the kernel's `enum bpf_attach_type` value for BPF_PERF_EVENT.
+// Defined here (rather than pulling in <linux/bpf.h>) so the value has a single
+// source usable from the cross-platform shm/handler code, which also builds on
+// non-Linux targets.
+constexpr __u32 BPFTIME_BPF_PERF_EVENT_ATTACH_TYPE = 41;
 
 /* struct used by BPF_LINK_CREATE command */
 struct bpf_link_create_args {
@@ -414,6 +430,8 @@ int bpftime_poll_gpu_ringbuf_map(int mapfd, void *ctx,
 				 void (*)(const void *, uint64_t, void *));
 #endif
 int bpftime_add_memfd_handler(const char *name, int flags);
+int bpftime_translate_shared_map_type_to_kernel_map_type(int ty);
+
 }
 
 #endif // BPFTIME_SHM_CPP_H

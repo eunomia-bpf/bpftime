@@ -6,11 +6,12 @@
 #include <argp.h>
 #include <cstdint>
 #include <cstdlib>
-#include <iostream>
-#include <ostream>
+#include <errno.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <spdlog/cfg/env.h>
+#include <spdlog/spdlog.h>
 #include "daemon.hpp"
 using namespace bpftime;
 
@@ -46,7 +47,7 @@ static error_t parse_arg(int key, char *arg, struct argp_state *state)
 		errno = 0;
 		pid = strtol(arg, NULL, 10);
 		if (errno || pid <= 0) {
-			fprintf(stderr, "Invalid PID: %s\n", arg);
+			SPDLOG_ERROR("Invalid PID: {}", arg);
 			argp_usage(state);
 		}
 		env.pid = pid;
@@ -55,7 +56,7 @@ static error_t parse_arg(int key, char *arg, struct argp_state *state)
 		errno = 0;
 		uid = strtol(arg, NULL, 10);
 		if (errno || uid < 0 || uid >= -1) {
-			fprintf(stderr, "Invalid UID %s\n", arg);
+			SPDLOG_ERROR("Invalid UID: {}", arg);
 			argp_usage(state);
 		}
 		env.uid = uid;
@@ -64,16 +65,15 @@ static error_t parse_arg(int key, char *arg, struct argp_state *state)
 		errno = 0;
 		addr = strtoul(arg, nullptr, 0);
 		if (errno) {
-			std::cerr << "Invalid function address: " << arg
-				  << std::endl;
+			SPDLOG_ERROR("Invalid function address: {}", arg);
 			argp_usage(state);
 		}
 		env.whitelist_uprobes.insert(addr);
 		break;
 	case ARGP_KEY_ARG:
 		if (pos_args++) {
-			fprintf(stderr,
-				"Unrecognized positional argument: %s\n", arg);
+			SPDLOG_ERROR("Unrecognized positional argument: {}",
+				     arg);
 			argp_usage(state);
 		}
 		errno = 0;
@@ -94,8 +94,12 @@ int main(int argc, char **argv)
 	int err;
 	// use current path as default path
 	strncpy(env.new_uprobe_path, argv[0], PATH_LENTH);
+	spdlog::cfg::load_env_levels();
 	err = argp_parse(&argp, argc, argv, 0, NULL, NULL);
 	if (err)
 		return err;
+	if (env.verbose && spdlog::get_level() > spdlog::level::debug) {
+		spdlog::set_level(spdlog::level::debug);
+	}
 	return start_daemon(env);
 }

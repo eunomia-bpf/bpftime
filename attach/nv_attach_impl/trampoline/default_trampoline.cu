@@ -18,7 +18,7 @@
 /* clang++-17 -S ./default_trampoline.cu -Wall --cuda-gpu-arch=sm_60 -O2
  * -L/usr/local/cuda/lib64/ -lcudart*/
 // The old 1<<30 value makes the shared segment too large for Boost IPC.
-static constexpr int GPU_HELPER_MAX_BUF = 1 << 25;
+static constexpr int GPU_HELPER_MAX_BUF = 1 << 20;
 
 enum class HelperOperation {
 	MAP_LOOKUP = 1,
@@ -83,10 +83,17 @@ struct CommSharedMem {
 	uint64_t time_sum[8];
 };
 
+const int BPF_MAP_TYPE_GPU_HASH_MAP = 1501; // non-per-thread, single-copy shared hashmap
+// IPC-based GPU maps (for x86 with CUDA IPC support)
 const int BPF_MAP_TYPE_PERGPUTD_ARRAY_MAP = 1502;
 const int BPF_MAP_TYPE_GPU_ARRAY_MAP = 1503; // non-per-thread, single-copy
 					     // shared array
 const int BPF_MAP_TYPE_GPU_RINGBUF_MAP = 1527;
+const int BPF_MAP_TYPE_GPU_KERNEL_SHARED_ARRAY_MAP = 1504;
+
+// HOST-based GPU maps (for Tegra/platforms without CUDA IPC)
+const int BPF_MAP_TYPE_PERGPUTD_ARRAY_HOST_MAP = 1512;
+const int BPF_MAP_TYPE_GPU_ARRAY_HOST_MAP = 1513;
 
 struct MapBasicInfo {
 	bool enabled;
@@ -105,7 +112,7 @@ __device__ __forceinline__ uint64_t read_globaltimer()
 }
 
 __constant__ uintptr_t constData;
-__constant__ MapBasicInfo map_info[256];
+__constant__ MapBasicInfo map_info[1024];
 __device__ int __bpftime_comm_lock = 0;
 extern "C" __device__ void spin_lock(volatile int *lock)
 {
@@ -199,6 +206,7 @@ extern "C" __noinline__ __device__ uint64_t _bpf_helper_ext_0001(
 	auto &req = global_data->req;
 	// CallRequest req;
 	const auto &map_info = ::map_info[map];
+	// IPC-based per-thread array map
 	if (map_info.map_type == BPF_MAP_TYPE_PERGPUTD_ARRAY_MAP) {
 		auto real_key = *(uint32_t *)(uintptr_t)key;
 		auto offset = array_map_offset(real_key, map_info, map);
@@ -206,12 +214,28 @@ extern "C" __noinline__ __device__ uint64_t _bpf_helper_ext_0001(
 	}
 	// Fast-path for non-per-thread GPU array map: single shared copy on
 	// device-visible UVA
-	if (map_info.map_type == BPF_MAP_TYPE_GPU_ARRAY_MAP) {
+	if (map_info.map_type == BPF_MAP_TYPE_GPU_ARRAY_MAP ||
+	    map_info.map_type == BPF_MAP_TYPE_GPU_KERNEL_SHARED_ARRAY_MAP) {
 		auto real_key = *(uint32_t *)(uintptr_t)key;
 		auto base = (char *)map_info.extra_buffer;
+		// printf("real_key=%u, base=%lx, value_size=%lu, mapfd=%d\n",real_key,(uintptr_t)base,(unsigned long)map_info.value_size,(int)map);
 		return (uint64_t)(uintptr_t)(base +
 					     (uint64_t)real_key *
 						     map_info.value_size);
+	}
+	// HOST-based per-thread array map (for Tegra)
+	if (map_info.map_type == BPF_MAP_TYPE_PERGPUTD_ARRAY_HOST_MAP) {
+		auto real_key = *(uint32_t *)(uintptr_t)key;
+		auto offset = array_map_offset(real_key, map_info, map);
+		asm("membar.sys;"); // Ensure CPU writes are visible to GPU
+		return (uint64_t)offset;
+	}
+	// HOST-based non-per-thread GPU array map (for Tegra)
+	if (map_info.map_type == BPF_MAP_TYPE_GPU_ARRAY_HOST_MAP) {
+		auto real_key = *(uint32_t *)(uintptr_t)key;
+		auto base = (char *)map_info.extra_buffer;
+		asm("membar.sys;"); // Ensure CPU writes are visible to GPU
+		return (uint64_t)(uintptr_t)(base + (uint64_t)real_key * map_info.value_size);
 	}
 	// printf("helper1 map %ld keysize=%d valuesize=%d\n", map,
 	//        map_info.key_size, map_info.value_size);
@@ -230,6 +254,7 @@ extern "C" __noinline__ __device__ uint64_t _bpf_helper_ext_0002(
 	CommSharedMem *global_data = (CommSharedMem *)constData;
 	auto &req = global_data->req;
 	const auto &map_info = ::map_info[map];
+	// IPC-based per-thread array map
 	if (map_info.map_type == BPF_MAP_TYPE_PERGPUTD_ARRAY_MAP) {
 		auto real_key = *(uint32_t *)(uintptr_t)key;
 		auto offset = array_map_offset(real_key, map_info, map);
@@ -239,7 +264,8 @@ extern "C" __noinline__ __device__ uint64_t _bpf_helper_ext_0002(
 	}
 	// Fast-path for non-per-thread GPU array map: memcpy overwrite, system
 	// fence for visibility
-	if (map_info.map_type == BPF_MAP_TYPE_GPU_ARRAY_MAP) {
+	if (map_info.map_type == BPF_MAP_TYPE_GPU_ARRAY_MAP ||
+	    map_info.map_type == BPF_MAP_TYPE_GPU_KERNEL_SHARED_ARRAY_MAP) {
 		auto real_key = *(uint32_t *)(uintptr_t)key;
 		auto base = (char *)map_info.extra_buffer;
 		auto dst =
@@ -248,6 +274,24 @@ extern "C" __noinline__ __device__ uint64_t _bpf_helper_ext_0002(
 		simple_memcpy(dst, (void *)(uintptr_t)value,
 			      map_info.value_size);
 		asm("membar.sys;                      \n\t");
+		return 0;
+	}
+	// HOST-based per-thread array map (for Tegra)
+	if (map_info.map_type == BPF_MAP_TYPE_PERGPUTD_ARRAY_HOST_MAP) {
+		auto real_key = *(uint32_t *)(uintptr_t)key;
+		auto offset = array_map_offset(real_key, map_info, map);
+		simple_memcpy(offset, (void *)(uintptr_t)value,
+			      map_info.value_size);
+		asm("membar.sys;"); // Ensure GPU writes are visible to CPU
+		return 0;
+	}
+	// HOST-based non-per-thread GPU array map (for Tegra)
+	if (map_info.map_type == BPF_MAP_TYPE_GPU_ARRAY_HOST_MAP) {
+		auto real_key = *(uint32_t *)(uintptr_t)key;
+		auto base = (char *)map_info.extra_buffer;
+		auto dst = (void *)(uintptr_t)(base + (uint64_t)real_key * map_info.value_size);
+		simple_memcpy(dst, (void *)(uintptr_t)value, map_info.value_size);
+		asm("membar.sys;"); // Ensure GPU writes are visible to CPU
 		return 0;
 	}
 	// printf("helper2 map %ld keysize=%d
@@ -319,6 +363,12 @@ _bpf_helper_ext_0025(uint64_t ctx, uint64_t map, uint64_t flags, uint64_t data,
 {
 	const auto &map_info = ::map_info[map];
 	if (map_info.map_type == BPF_MAP_TYPE_GPU_RINGBUF_MAP) {
+		auto tid = getGlobalThreadId();
+		if (tid >= map_info.max_thread_count) {
+			// Avoid OOB writes if the map was sized for fewer
+			// threads than the current kernel launch.
+			return 1;
+		}
 		// printf("Starting perf output, value size=%d, max entries =
 		// %d\n",
 		//        map_info.value_size, map_info.max_entries);
@@ -326,8 +376,7 @@ _bpf_helper_ext_0025(uint64_t ctx, uint64_t map, uint64_t flags, uint64_t data,
 				  map_info.max_entries * (sizeof(uint64_t) +
 							  map_info.value_size);
 		auto header =
-			(ringbuf_header *)(uintptr_t)(getGlobalThreadId() *
-							      entry_size +
+			(ringbuf_header *)(uintptr_t)(tid * entry_size +
 						      (char *)map_info
 							      .extra_buffer);
 		// printf("header->head=%lu, header->tail=%lu\n", header->head,
@@ -437,6 +486,33 @@ _bpf_helper_ext_0508(uint64_t x, uint64_t y, uint64_t z, uint64_t, uint64_t)
 	*(uint64_t *)(uintptr_t)z = gridDim.z;
 
 	return 0;
+}
+
+extern "C" __noinline__ __device__ uint64_t
+_bpf_helper_ext_0509(uint64_t, uint64_t, uint64_t, uint64_t, uint64_t)
+{
+    // get sm id
+    uint32_t sm_id;
+    asm volatile("mov.u32 %0, %%smid;" : "=r"(sm_id));
+    return (uint64_t)sm_id;
+}
+
+extern "C" __noinline__ __device__ uint64_t
+_bpf_helper_ext_0510(uint64_t, uint64_t, uint64_t, uint64_t, uint64_t)
+{
+    // get warp id
+    uint32_t warp_id;
+    asm volatile("mov.u32 %0, %%warpid;" : "=r"(warp_id));
+    return (uint64_t)warp_id;
+}
+
+extern "C" __noinline__ __device__ uint64_t
+_bpf_helper_ext_0511(uint64_t, uint64_t, uint64_t, uint64_t, uint64_t)
+{
+    // get lane id
+    uint32_t lane_id;
+    asm volatile("mov.u32 %0, %%laneid;" : "=r"(lane_id));
+    return (uint64_t)lane_id;
 }
 
 extern "C" __global__ void bpf_main(void *mem, size_t sz)
