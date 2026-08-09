@@ -55,11 +55,10 @@ inline void bpftime_set_logger(const std::string &target) noexcept
 			}
 		}
 	};
-	silence_logger();
 	try {
 		std::string logger_target = expand_user_path(target);
 		if (logger_target.empty())
-			return;
+			return silence_logger();
 
 		std::shared_ptr<spdlog::sinks::sink> sink;
 		if (logger_target == "console") {
