@@ -135,7 +135,7 @@ extern "C" __device__ HelperCallResponse make_helper_call(long map_id,
 		if (lane_is_active && lane_id == active_lane) {
 			spin_lock(&__bpftime_comm_lock);
 
-			int val = 42;
+			int val;
 			g_data->request_id = req_id;
 			g_data->map_id = map_id;
 
@@ -150,8 +150,8 @@ extern "C" __device__ HelperCallResponse make_helper_call(long map_id,
 					"@p0 bra spin_wait;               \n\t"
 					"st.global.u32 [%2], 0;           \n\t"
 					"membar.sys;                      \n\t"
-					:
-					: "r"(val), "l"(&g_data->flag1),
+					: "=r"(val)
+					: "l"(&g_data->flag1),
 					"l"(&g_data->flag2)
 					: "memory");
 

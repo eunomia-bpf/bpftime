@@ -127,11 +127,9 @@ void CUDAContext::worker_func()
 		// use volatile to ensure that each time reads from memory
 		volatile int flag1_value = cuda_shared_mem->flag1;
 		if (flag1_value == 1) {
-			cuda_shared_mem->flag1 = 0;
-#ifdef __aarch64__
 			std::atomic_thread_fence(
-				std::memory_order_acquire); // arm is weak memory order
-#endif
+				std::memory_order_acquire);
+			cuda_shared_mem->flag1 = 0;
 			auto req_id = cuda_shared_mem->request_id;
 
 			auto map_ptr = cuda_shared_mem->map_id;
@@ -205,8 +203,8 @@ void CUDAContext::worker_func()
 				SPDLOG_WARN("Unknown request id {}", req_id);
 			}
 
-			cuda_shared_mem->flag2 = 1;
 			std::atomic_thread_fence(std::memory_order_seq_cst);
+			cuda_shared_mem->flag2 = 1;
 		}
 		std::this_thread::sleep_for(std::chrono::milliseconds(1));
 	}
@@ -228,7 +226,7 @@ std::optional<std::unique_ptr<CUDAContext>> create_cuda_context()
 
 	CommSharedMem *ptr = nullptr;
 	auto err = cudaHostAlloc((void **)&ptr, sizeof(CommSharedMem),
-				 cudaHostAllocDefault);
+				 cudaHostAllocPortable);
 	if (err != cudaSuccess) {
 		SPDLOG_ERROR("cudaHostAlloc failed: {} ({})",
 			     cudaGetErrorName(err), cudaGetErrorString(err));

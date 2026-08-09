@@ -78,7 +78,6 @@ $L__BB0_1:                              // =>This Inner Loop Header: Depth=1
 	mov.b32 	%r14, 0;
 	mov.u64 	%rd13, 0;
 	mov.u64 	%rd8, __bpftime_comm_lock;
-	mov.b32 	%r12, 42;
 	bra.uni 	$L__BB2_1;
 $L__BB2_4:                              //   in Loop: Header=BB2_1 Depth=1
 	bar.warp.sync 	%r3;
@@ -400,7 +399,6 @@ $L__BB5_13:
 	add.s64 	%rd68, %rd67, 4;
 	mov.u64 	%rd66, __bpftime_comm_lock;
 	mov.b32 	%r41, 1;
-	mov.b32 	%r40, 42;
 	bra.uni 	$L__BB5_14;
 $L__BB5_17:                             //   in Loop: Header=BB5_14 Depth=1
 	bar.warp.sync 	%r9;
@@ -751,7 +749,6 @@ $L__BB6_33:
 	add.s64 	%rd123, %rd122, 4;
 	mov.u64 	%rd121, __bpftime_comm_lock;
 	mov.b32 	%r68, 2;
-	mov.b32 	%r67, 42;
 	bra.uni 	$L__BB6_34;
 $L__BB6_37:                             //   in Loop: Header=BB6_34 Depth=1
 	bar.warp.sync 	%r24;
@@ -878,7 +875,6 @@ $L__BB7_7:
 	add.s64 	%rd30, %rd29, 4;
 	mov.u64 	%rd28, __bpftime_comm_lock;
 	mov.b32 	%r21, 3;
-	mov.b32 	%r20, 42;
 	bra.uni 	$L__BB7_8;
 $L__BB7_11:                             //   in Loop: Header=BB7_8 Depth=1
 	bar.warp.sync 	%r9;
@@ -1002,7 +998,6 @@ $L__BB8_7:
 	mov.u64 	%rd42, 0;
 	mov.u64 	%rd30, __bpftime_comm_lock;
 	mov.b32 	%r12, 6;
-	mov.b32 	%r11, 42;
 	bra.uni 	$L__BB8_8;
 $L__BB8_11:                             //   in Loop: Header=BB8_8 Depth=1
 	bar.warp.sync 	%r3;
@@ -1075,7 +1070,6 @@ $L__BB8_12:
 	mov.u64 	%rd6, 0;
 	mov.u64 	%rd7, __bpftime_comm_lock;
 	mov.b32 	%r12, 14;
-	mov.b32 	%r11, 42;
 	mov.u64 	%rd13, %rd6;
 	bra.uni 	$L__BB9_1;
 $L__BB9_4:                              //   in Loop: Header=BB9_1 Depth=1
@@ -1332,7 +1326,6 @@ $L__BB11_3:
 	mov.b32 	%r14, 0;
 	mov.u64 	%rd18, __bpftime_comm_lock;
 	mov.b32 	%r12, 501;
-	mov.b32 	%r11, 42;
 	bra.uni 	$L__BB11_4;
 $L__BB11_7:                             //   in Loop: Header=BB11_4 Depth=1
 	bar.warp.sync 	%r3;
