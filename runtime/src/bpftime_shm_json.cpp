@@ -195,10 +195,21 @@ static int import_shm_handler_from_json(bpftime_shm &shm, json value, int fd)
 			shm.perf_event_enable(fd);
 		}
 	} else if (handler_type == "bpf_link_handler") {
-		unsigned int prog_fd = value["attr"]["prog_fd"];
-		unsigned int target_id = value["attr"]["target_id"];
+		const auto &attr = value["attr"];
+		unsigned int prog_fd = attr["prog_fd"];
+		unsigned int target_id;
+		if (attr.contains("target_id")) {
+			target_id = attr["target_id"];
+		} else if (attr.contains("target_fd")) {
+			target_id = attr["target_fd"];
+		} else {
+			SPDLOG_ERROR("bpf_link_handler json missing target fd");
+			return -EINVAL;
+		}
 		unsigned int link_attach_type =
-			value["attr"]["link_attach_type"];
+			attr.contains("link_attach_type") ?
+				attr["link_attach_type"].get<unsigned int>() :
+				bpftime::BPF_PERF_EVENT;
 		if (link_attach_type == BPF_PERF_EVENT) {
 			bpf_link_create_args args = {
 				.prog_fd = prog_fd,
@@ -362,6 +373,7 @@ int bpftime::bpftime_export_shm_to_json(const bpftime_shm &shm,
 		} else if (std::holds_alternative<bpf_link_handler>(handler)) {
 			auto &h = std::get<bpf_link_handler>(handler);
 			json attr = { { "prog_fd", h.prog_id },
+				      { "target_fd", h.target_id },
 				      { "target_id", h.target_id },
 				      { "link_attach_type",
 					h.link_attach_type } };
