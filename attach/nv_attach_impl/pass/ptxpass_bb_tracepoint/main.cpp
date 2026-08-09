@@ -2,6 +2,8 @@
 #include "ptxpass/core.hpp"
 #include <cstdio>
 #include <cstring>
+#include <map>
+#include <tuple>
 #include <vector>
 #include <exception>
 #include <iostream>
@@ -507,31 +509,6 @@ patch_bb_kprobe(const std::string &ptx, const std::string &kernel,
 		return { ptx, false };
 	}
 	
-	// Print BB map for debugging
-	std::cerr << "Basic block map for kernel " << kernel << ":\n";
-	for (const auto &[num, info] : bb_map) {
-		if (info.has_explicit_label) {
-			std::cerr << "  BB" << num << " -> line " << info.line_number 
-			          << ": " << info.ptx_label << "\n";
-		} else {
-			// Trim line content for display
-			std::string trimmed = info.line_content;
-			if (trimmed.length() > 60) {
-				trimmed = trimmed.substr(0, 57) + "...";
-			}
-			std::cerr << "  BB" << num << " -> line " << info.line_number 
-			          << ": " << trimmed << "\n";
-		}
-	}
-
-    if (!registers.empty()) {
-		std::cerr << "Registers to capture: ";
-		for (const auto &r : registers) {
-			std::cerr << "%" << r << " ";
-		}
-		std::cerr << "\n";
-	}
-	
 	// Check if requested BB number exists
 	if (bb_map.find(bb_num) == bb_map.end()) {
 		std::cerr << "Basic block BB" << bb_num << " not found in kernel " 
@@ -559,7 +536,7 @@ patch_bb_kprobe(const std::string &ptx, const std::string &kernel,
 	// Use with_arguments=false when no registers (simple probe call)
 	bool needs_args = !registers.empty();
 	auto func_ptx = ptxpass::compile_ebpf_to_ptx_from_words(
-		ebpf_words, "sm_86", fname, true, needs_args);
+		ebpf_words, "sm_61", fname, true, needs_args);
 
 	// Find the insertion point based on line number and position
 	size_t insert_pos;

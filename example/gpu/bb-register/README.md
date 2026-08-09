@@ -4,7 +4,7 @@ This example shows a minimal setup for basic-block tracepoints with register cap
 
 It demonstrates:
 
-- Using a BB attach point: `kprobe/bb_reg_kernel__BB0__r2__r8`
+- Using a BB attach point: `kprobe/bb_reg_kernel__BB4__r2__rd8`
 - Capturing PTX registers via `bpf_get_ptx_reg()`
 - Reading captured values from a BPF map in userspace
 - A simple `0xdeadbeef` data path in kernel code to make values easy to reason about
@@ -53,15 +53,15 @@ BPFTIME_LOG_OUTPUT=console LD_PRELOAD=build/runtime/agent/libbpftime-agent.so \
 
 ## Expected Output
 
-The loader prints sampled register values from BB0 every second, for lane 0 only.
+The loader prints sampled register values from BB4 every second, for lane 0 only.
 
 Typical output looks like:
 
 ```text
-hits=12 r2=0xdeadbeef r5=0xdeadbef0 expected_r2(tid0)=0xdeadbeef expected_r5(tid0)=0xdeadbef0
+hits=12 r2=0xdeadbeef rd8=0xdeadbef0 expected_r2(tid0)=0xdeadbeef expected_rd8(tid0)=0xdeadbef0
 ```
 
-`r2` and `r5` are captured in the order declared in the section suffix (`__r2__r5`).
+`r2` and `rd8` are captured in the order declared in the section suffix (`__r2__rd8`).
 
 ## Notes
 

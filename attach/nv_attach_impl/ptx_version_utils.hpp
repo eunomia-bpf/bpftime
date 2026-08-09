@@ -1,5 +1,5 @@
-#ifndef _BPFTIME_PTX_VERSION_UTILS_HPP
-#define _BPFTIME_PTX_VERSION_UTILS_HPP
+#ifndef BPFTIME_PTX_VERSION_UTILS_HPP
+#define BPFTIME_PTX_VERSION_UTILS_HPP
 
 // Header-only so it can be shared between nv_attach_impl and the standalone
 // nv_attach_impl_ptx_compiler shared library, which do not link together.
