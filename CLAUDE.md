@@ -144,6 +144,22 @@ The codebase is organized into distinct components that interact through well-de
 
 The architecture prioritizes performance (bypassing kernel), compatibility (same APIs as kernel eBPF), and extensibility (modular design for new features).
 
+## Injected Agent Host-Process Contract
+
+Code loaded into a third-party process through `LD_PRELOAD` or runtime injection
+must remain a guest of that process:
+
+- Do not call `exit`, `_exit`, `abort`, `terminate`, or otherwise end the host
+  because bpftime initialization, configuration, allocation, or execution fails.
+  Return or record the error and disable only the affected bpftime operation.
+- Do not write to, close, redirect, or flush the host's stdin, stdout, or stderr
+  unless the user explicitly selected that behavior. Route diagnostics and
+  `bpf_trace_printk` output through an explicitly configured bpftime sink.
+- Do not replace host signal behavior without restoring or correctly chaining
+  the previous handler.
+- Add regression coverage for failure paths and for the default absence of host
+  termination and stdio side effects.
+
 ## Repository Documentation
 
 Do not create a root `docs/` directory or commit pull-request review artifacts.
