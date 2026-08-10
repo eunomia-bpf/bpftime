@@ -28,6 +28,16 @@ set(TEST_SOURCES
     test/test_back_trace.cpp
 )
 option(TEST_LCOV "option for lcov" OFF)
+add_library(bpftime_frida_stripped_backtrace_fixture SHARED
+    test/stripped_back_trace_fixture.cpp)
+target_compile_options(bpftime_frida_stripped_backtrace_fixture PRIVATE
+    -O2
+    -g0
+    -fno-exceptions
+    -fomit-frame-pointer
+    -fno-asynchronous-unwind-tables
+    -fno-unwind-tables
+    -fno-optimize-sibling-calls)
 add_executable(bpftime_frida_uprobe_attach_tests ${TEST_SOURCES})
 
 if (${TEST_LCOV}) 
@@ -50,9 +60,9 @@ endif()
 add_dependencies(bpftime_frida_uprobe_attach_tests Catch2 bpftime_frida_uprobe_attach_impl spdlog::spdlog)
 if (${TEST_LCOV}) 
     target_link_options(bpftime_frida_uprobe_attach_tests PRIVATE -lgcov)
-    target_link_libraries(bpftime_frida_uprobe_attach_tests PRIVATE Catch2::Catch2WithMain bpftime_frida_uprobe_attach_impl spdlog::spdlog gcov)
+    target_link_libraries(bpftime_frida_uprobe_attach_tests PRIVATE Catch2::Catch2WithMain bpftime_frida_uprobe_attach_impl bpftime_frida_stripped_backtrace_fixture spdlog::spdlog gcov)
 else ()
-    target_link_libraries(bpftime_frida_uprobe_attach_tests PRIVATE Catch2::Catch2WithMain bpftime_frida_uprobe_attach_impl spdlog::spdlog)
+    target_link_libraries(bpftime_frida_uprobe_attach_tests PRIVATE Catch2::Catch2WithMain bpftime_frida_uprobe_attach_impl bpftime_frida_stripped_backtrace_fixture spdlog::spdlog)
 endif()
 target_include_directories(bpftime_frida_uprobe_attach_tests PRIVATE ${FRIDA_UPROBE_ATTACH_IMPL_INCLUDE} ${Catch2_INCLUDE} ${SPDLOG_INCLUDE})
 

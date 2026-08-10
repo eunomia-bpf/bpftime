@@ -872,7 +872,8 @@ extern "C" void bpftime_agent_main(const gchar *data, gboolean *stay_resident)
 			ctx_holder.ctx.register_attach_impl(
 				{ ATTACH_UPROBE, ATTACH_URETPROBE,
 				  ATTACH_UPROBE_OVERRIDE, ATTACH_UREPLACE },
-				std::make_unique<attach::frida_attach_impl>(),
+				std::make_unique<attach::frida_attach_impl>(
+					runtime_config.enable_frida_fuzzy_backtracer),
 				[](const std::string_view &sv, int &err) {
 					std::unique_ptr<attach_private_data>
 						priv_data =
