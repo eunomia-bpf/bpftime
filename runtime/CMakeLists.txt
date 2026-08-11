@@ -13,7 +13,7 @@ set(CMAKE_C_STANDARD_REQUIRED ON)
 #
 project(
   "runtime"
-  VERSION 0.1.0
+  VERSION 0.9.0
   LANGUAGES C CXX
 )
 
