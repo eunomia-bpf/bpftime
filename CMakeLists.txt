@@ -18,7 +18,7 @@ add_definitions(-DLLVM_DISABLE_ABI_BREAKING_CHECKS_ENFORCING=1)
 #
 project(
   "bpftime"
-  VERSION 0.1.0
+  VERSION 0.9.0
   LANGUAGES C CXX
 )
 
@@ -64,7 +64,7 @@ function(bpftime_add_libs_component_command target_path)
     if(CMAKE_AR_NAME STREQUAL "ar")
       list(APPEND CMDS
         COMMAND ${CMAKE_COMMAND} -E make_directory objs/${target_name}
-        COMMAND ${CMAKE_COMMAND} -E env bash ${CMAKE_SOURCE_DIR}/cmake/extract_and_rename.sh ${target_path} ${CMAKE_BINARY_DIR}/objs/${target_name}
+        COMMAND bash ${CMAKE_SOURCE_DIR}/cmake/extract_and_rename.sh $<TARGET_FILE:${target}> objs/${target}
       )
       set(BPFTIME_STATIC_LLVM_LIB_AR_CMDS ${BPFTIME_STATIC_LLVM_LIB_AR_CMDS} ${CMDS} PARENT_SCOPE)
     else()
@@ -73,7 +73,7 @@ function(bpftime_add_libs_component_command target_path)
   else()
     list(APPEND CMDS
       COMMAND ${CMAKE_COMMAND} -E make_directory objs/${target_name}
-      COMMAND ${CMAKE_COMMAND} -E env bash ${CMAKE_SOURCE_DIR}/cmake/extract_and_rename.sh ${target_path} ${CMAKE_BINARY_DIR}/objs/${target_name}
+      COMMAND bash ${CMAKE_SOURCE_DIR}/cmake/extract_and_rename.sh ${target_path} ${CMAKE_BINARY_DIR}/objs/${target_name}
     )
     set(BPFTIME_STATIC_LLVM_LIB_AR_CMDS ${BPFTIME_STATIC_LLVM_LIB_AR_CMDS} ${CMDS} PARENT_SCOPE)
   endif()
