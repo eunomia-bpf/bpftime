@@ -71,18 +71,6 @@ using namespace bpftime_epoll;
 namespace fmt_lib = spdlog::fmt_lib;
 
 namespace {
-[[noreturn]] void
-exit_for_startup_allocation_failure(const std::exception &error)
-{
-	auto config = bpftime::construct_runtime_config_from_env();
-	SPDLOG_CRITICAL(
-		"Unable to initialize bpftime shared memory ({} MiB, {} fd slots): {}",
-		config.shm_memory_size, config.max_fd_count, error.what());
-	SPDLOG_CRITICAL(
-		"Increase BPFTIME_SHM_MEMORY_MB or decrease BPFTIME_MAX_FD_COUNT");
-	std::exit(EXIT_FAILURE);
-}
-
 int get_bpf_obj_info_by_fd(int fd, void *info, uint32_t *info_len,
 			   long (*syscall_fn)(long, ...))
 {
@@ -185,12 +173,14 @@ void syscall_context::initialize_cuda()
 void syscall_context::try_startup()
 {
 	enable_mock.store(false, std::memory_order_relaxed);
-	try {
-		start_up(*this);
-	} catch (const boost::interprocess::bad_alloc &e) {
-		exit_for_startup_allocation_failure(e);
-	}
-	enable_mock.store(true, std::memory_order_relaxed);
+	struct enable_mock_guard {
+		std::atomic<bool> &enable_mock;
+		~enable_mock_guard()
+		{
+			enable_mock.store(true, std::memory_order_relaxed);
+		}
+	} guard{ enable_mock };
+	start_up(*this);
 }
 
 int syscall_context::handle_close(int fd)

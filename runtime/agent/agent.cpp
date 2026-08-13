@@ -111,7 +111,10 @@ bpftime_agent_control(const gchar *data)
 {
 	// External control entrypoint used to avoid loading multiple agent copies
 	// into the same target process (Frida typically loads via /proc/self/fd/*).
-	(void)refresh_attach_session(data);
+	try {
+		(void)refresh_attach_session(data);
+	} catch (...) {
+	}
 }
 
 static void start_agent_ipc_server_once();
@@ -720,17 +723,15 @@ extern "C" void **__cudaRegisterFatBinary(void *fatbin)
 	try {
 		auto orig = try_get_original_func("__cudaRegisterFatBinary",
 						 original___cudaRegisterFatBinary);
+		if (orig == nullptr)
+			return nullptr;
 		// We have to register llvmbpf manually, since this function
 		// (__cudaRegisterFatBinary) might be called before llvm is registered
 		bpftime::vm::compat::llvm::register_llvm_vm_factory();
 		return orig(fatbin);
-	} catch (const std::exception &ex) {
-		fprintf(stderr,
-			"bpftime-agent: __cudaRegisterFatBinary wrapper failed: %s\n",
-			ex.what());
 	} catch (...) {
-		fprintf(stderr,
-			"bpftime-agent: __cudaRegisterFatBinary wrapper failed: unknown error\n");
+		if (original___cudaRegisterFatBinary != nullptr)
+			return original___cudaRegisterFatBinary(fatbin);
 	}
 	return nullptr;
 }
@@ -996,14 +997,9 @@ extern "C" void bpftime_agent_main(const gchar *data, gboolean *stay_resident)
 			}
 
 			SPDLOG_INFO("Attach successfully");
-		} catch (const std::exception &ex) {
-			fprintf(stderr,
-				"bpftime-agent: bpftime_agent_main failed: %s\n",
-				ex.what());
+		} catch (const std::exception &) {
 			__atomic_store_n(&initialized, 0, __ATOMIC_SEQ_CST);
 	} catch (...) {
-			fprintf(stderr,
-				"bpftime-agent: bpftime_agent_main failed: unknown error\n");
 			__atomic_store_n(&initialized, 0, __ATOMIC_SEQ_CST);
 		}
 }
@@ -1015,17 +1011,31 @@ extern "C" int64_t syscall_callback(int64_t sys_nr, int64_t arg1, int64_t arg2,
 				    int64_t arg3, int64_t arg4, int64_t arg5,
 				    int64_t arg6)
 {
-	return bpftime::attach::global_syscall_trace_attach_impl.value()
-		->dispatch_syscall(sys_nr, arg1, arg2, arg3, arg4, arg5, arg6);
+	try {
+		auto impl = bpftime::attach::global_syscall_trace_attach_impl;
+		if (impl.has_value() && impl.value() != nullptr) {
+			return impl.value()->dispatch_syscall(
+				sys_nr, arg1, arg2, arg3, arg4, arg5, arg6);
+		}
+	} catch (...) {
+	}
+	if (orig_hooker != nullptr)
+		return orig_hooker(sys_nr, arg1, arg2, arg3, arg4, arg5, arg6);
+	return -ENOSYS;
 }
 
 extern "C" void
 _bpftime__setup_syscall_trace_callback(syscall_hooker_func_t *hooker)
 {
+	if (hooker == nullptr)
+		return;
 	orig_hooker = *hooker;
 	*hooker = &syscall_callback;
-	gboolean val;
-	bpftime_agent_main("", &val);
-	SPDLOG_INFO("Agent syscall trace setup exiting..");
+	gboolean val = FALSE;
+	try {
+		bpftime_agent_main("", &val);
+		SPDLOG_INFO("Agent syscall trace setup exiting..");
+	} catch (...) {
+	}
 }
 #endif

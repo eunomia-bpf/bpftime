@@ -99,13 +99,13 @@ helper_result run_allocation_helper(const char *mode, const char *memory_mb,
 }
 } // namespace
 
-TEST_CASE("Syscall server exits cleanly when startup shared memory is too small",
+TEST_CASE("Syscall server falls back when startup shared memory is too small",
 	  "[allocation][syscall_server]")
 {
 	auto result =
 		run_allocation_helper("startup", "64", "1048576", "console");
 	REQUIRE(WIFEXITED(result.status));
-	REQUIRE(WEXITSTATUS(result.status) == 1);
+	REQUIRE(WEXITSTATUS(result.status) == 100);
 	REQUIRE_FALSE(result.output.empty());
 }
 
@@ -123,7 +123,7 @@ TEST_CASE("Syscall server keeps logger sink failures off host stdio",
 	auto result =
 		run_allocation_helper("startup", "64", "1048576", "/dev/full");
 	REQUIRE(WIFEXITED(result.status));
-	REQUIRE(WEXITSTATUS(result.status) == 1);
+	REQUIRE(WEXITSTATUS(result.status) == 100);
 	REQUIRE(result.output.empty());
 }
 
@@ -133,7 +133,7 @@ TEST_CASE("Syscall server keeps default logging off host stdio",
 	auto result =
 		run_allocation_helper("startup", "64", "1048576", nullptr);
 	REQUIRE(WIFEXITED(result.status));
-	REQUIRE(WEXITSTATUS(result.status) == 1);
+	REQUIRE(WEXITSTATUS(result.status) == 100);
 	REQUIRE(result.output.empty());
 }
 
@@ -143,7 +143,7 @@ TEST_CASE("Global log level cannot enable default host stdio",
 	auto result = run_allocation_helper("startup", "64", "1048576", nullptr,
 					    "info");
 	REQUIRE(WIFEXITED(result.status));
-	REQUIRE(WEXITSTATUS(result.status) == 1);
+	REQUIRE(WEXITSTATUS(result.status) == 100);
 	REQUIRE(result.output.empty());
 }
 
@@ -154,7 +154,7 @@ TEST_CASE("File logger is installed before syscall startup",
 				     std::to_string(getpid()) + ".log";
 	unlink(log_path.c_str());
 	auto result = run_allocation_helper("perf-mmap", "4", "128",
-				    log_path.c_str());
+					    log_path.c_str());
 	std::ifstream log(log_path);
 	std::string contents{ std::istreambuf_iterator<char>(log), {} };
 	unlink(log_path.c_str());
@@ -173,7 +173,7 @@ TEST_CASE("Syscall server preserves the console logger level name",
 	auto result = run_allocation_helper("startup", "64", "1048576",
 					    "console", "stderr=off");
 	REQUIRE(WIFEXITED(result.status));
-	REQUIRE(WEXITSTATUS(result.status) == 1);
+	REQUIRE(WEXITSTATUS(result.status) == 100);
 	REQUIRE(result.output.empty());
 }
 #endif

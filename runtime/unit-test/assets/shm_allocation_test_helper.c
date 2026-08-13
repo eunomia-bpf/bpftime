@@ -14,14 +14,24 @@
 
 static int trigger_startup(void)
 {
-	/* open() is intentionally not wrapped by handle_exceptions(), so this
-	 * verifies that try_startup() itself converts bad_alloc into exit(1).
+	/* The interposer should fall back to the host libc path when bpftime
+	 * startup cannot allocate its shared memory.
 	 */
 	int fd = open("/dev/null", O_RDONLY, 0);
 	if (fd < 0) {
 		return 101;
 	}
+	char byte;
+	if (read(fd, &byte, 0) != 0) {
+		close(fd);
+		return 102;
+	}
 	close(fd);
+	FILE *file = fopen("/dev/null", "r");
+	if (file == NULL) {
+		return 103;
+	}
+	fclose(file);
 	return 100;
 }
 
@@ -43,8 +53,8 @@ static int trigger_perf_mmap(void)
 	size_t length = (size_t)getpagesize() + 8 * 1024 * 1024;
 	/* The interposer must not leak the caller's stale errno on failure. */
 	errno = E2BIG;
-	void *buffer = mmap(NULL, length, PROT_READ | PROT_WRITE,
-			    MAP_SHARED, fd, 0);
+	void *buffer =
+		mmap(NULL, length, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
 	if (buffer != MAP_FAILED || errno != ENOMEM) {
 		fprintf(stderr, "mmap=%p errno=%d\n", buffer, errno);
 		return 3;
