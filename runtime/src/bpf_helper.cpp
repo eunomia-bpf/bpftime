@@ -129,9 +129,12 @@ static bool probe_write_memory(void *dst, const void *src, size_t size)
 	if (size == 0)
 		return true;
 #if __APPLE__
-	return mach_vm_copy(mach_task_self(), (mach_vm_address_t)src,
-			    (mach_vm_size_t)size,
-			    (mach_vm_address_t)dst) == KERN_SUCCESS;
+	mach_vm_size_t copied = 0;
+	return mach_vm_read_overwrite(mach_task_self(), (mach_vm_address_t)src,
+				      (mach_vm_size_t)size,
+				      (mach_vm_address_t)dst,
+				      &copied) == KERN_SUCCESS &&
+	       copied == size;
 #elif __linux__
 	struct iovec local = { const_cast<void *>(src), size };
 	struct iovec remote = { dst, size };
