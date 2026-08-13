@@ -1,5 +1,6 @@
 #include "catch2/catch_test_macros.hpp"
 #include "spdlog/spdlog.h"
+#include <cerrno>
 #include <csetjmp>
 #include <cstdlib>
 #include <cstring>
@@ -27,6 +28,8 @@ uint64_t bpftime_probe_read(uint64_t dst, uint64_t size, uint64_t ptr, uint64_t,
 			    uint64_t);
 uint64_t bpftime_probe_write_user(uint64_t dst, uint64_t src, uint64_t len,
 				  uint64_t, uint64_t);
+int64_t bpf_probe_read_str(uint64_t dst, uint64_t size, uint64_t src,
+			   uint64_t, uint64_t);
 }
 
 TEST_CASE("Test bpftime_probe_read") // test for bpftime_probe_read
@@ -68,6 +71,27 @@ TEST_CASE("Test repeated valid probe memory access")
 						(uint64_t)src, size, 0, 0) == 0);
 		REQUIRE(std::memcmp(write_dst, src, size) == 0);
 	}
+}
+
+TEST_CASE("Test bpf_probe_read_str")
+{
+	char destination[8] = {};
+	const char source[] = "text";
+
+	REQUIRE(bpf_probe_read_str((uint64_t)destination, sizeof(destination),
+				   (uint64_t)source, 0, 0) == sizeof(source));
+	REQUIRE(std::strcmp(destination, source) == 0);
+
+	std::memset(destination, 'x', sizeof(destination));
+	REQUIRE(bpf_probe_read_str((uint64_t)destination, 3, (uint64_t)source,
+				   0, 0) == 3);
+	REQUIRE(std::strcmp(destination, "te") == 0);
+	REQUIRE(bpf_probe_read_str((uint64_t)destination, 0, (uint64_t)source,
+				   0, 0) == -EINVAL);
+	REQUIRE(bpf_probe_read_str((uint64_t)destination, sizeof(destination), 0,
+				   0, 0) == -EFAULT);
+	REQUIRE(bpf_probe_read_str(0, sizeof(destination), (uint64_t)source, 0,
+				   0) == -EFAULT);
 }
 
 TEST_CASE("Test SIGSEGV handler chaining across threads")

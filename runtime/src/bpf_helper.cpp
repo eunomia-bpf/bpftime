@@ -389,12 +389,52 @@ uint64_t bpftime_map_peek_elem_helper(uint64_t map, uint64_t value, uint64_t,
 		.bpf_map_peek_elem((int)map, (void *)value, false);
 }
 
-uint64_t bpf_probe_read_str(uint64_t buf, uint64_t bufsz, uint64_t ptr,
-			    uint64_t, uint64_t)
+#ifdef ENABLE_PROBE_READ_CHECK
+extern "C" void jump_point_read_str();
+#endif
+
+int64_t bpf_probe_read_str(uint64_t buf, uint64_t bufsz, uint64_t ptr,
+			   uint64_t, uint64_t)
 {
-	strncpy((char *)(uintptr_t)buf, (const char *)(uintptr_t)ptr,
-		(size_t)bufsz);
-	return 0;
+	if (bufsz == 0)
+		return -EINVAL;
+
+	int64_t ret = -EFAULT;
+#ifdef ENABLE_PROBE_READ_CHECK
+	if (probe_access_begin() != 0)
+		return -EFAULT;
+	probe_access_faulted = 0;
+	probe_access_recovery_ip = (uintptr_t)&jump_point_read_str;
+	__asm__ volatile("" ::: "memory");
+#endif
+
+	auto dst = (char *)(uintptr_t)buf;
+	auto src = (const char *)(uintptr_t)ptr;
+	for (size_t i = 0; i < (size_t)bufsz; i++) {
+		char value = src[i];
+		if (value == '\0') {
+			dst[i] = '\0';
+			ret = (int64_t)i + 1;
+			break;
+		}
+		if (i == (size_t)bufsz - 1) {
+			dst[i] = '\0';
+			ret = (int64_t)bufsz;
+			break;
+		}
+		dst[i] = value;
+	}
+
+#ifdef ENABLE_PROBE_READ_CHECK
+	__asm__ volatile("jump_point_read_str:");
+	__asm__ volatile("" ::: "memory");
+	probe_access_recovery_ip = 0;
+	if (probe_access_faulted)
+		ret = -EFAULT;
+	probe_access_faulted = 0;
+	probe_access_end();
+#endif
+	return ret;
 }
 
 uint64_t bpf_ktime_get_coarse_ns(uint64_t, uint64_t, uint64_t, uint64_t,
