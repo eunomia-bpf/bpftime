@@ -5,7 +5,6 @@
  */
 #ifndef _SYSCALL_CONTEXT_HPP
 #define _SYSCALL_CONTEXT_HPP
-#include <cassert>
 #include <set>
 #include <unordered_map>
 #if defined(__linux__)
@@ -22,6 +21,8 @@
 #include <pthread.h>
 #include <atomic>
 #include <future>
+#include <stdexcept>
+#include <string>
 #include <thread>
 // #include "pos/include/common.h"
 // #include "pos/include/utils/command_caller.h"
@@ -94,38 +95,36 @@ class syscall_context {
 		mocked_files;
 	void init_original_functions()
 	{
+		auto require_symbol = [](const char *name) {
+			void *symbol = dlsym(RTLD_NEXT, name);
+			if (symbol == nullptr)
+				throw std::runtime_error(
+					std::string(
+						"Unable to resolve original ") +
+					name);
+			return symbol;
+		};
+
 		orig_epoll_wait_fn =
-			(epoll_wait_fn)dlsym(RTLD_NEXT, "epoll_wait");
-		assert(orig_epoll_wait_fn != nullptr);
-		orig_epoll_ctl_fn = (epoll_ctl_fn)dlsym(RTLD_NEXT, "epoll_ctl");
-		assert(orig_epoll_ctl_fn != nullptr);
+			(epoll_wait_fn)require_symbol("epoll_wait");
+		orig_epoll_ctl_fn = (epoll_ctl_fn)require_symbol("epoll_ctl");
 		orig_epoll_create1_fn =
-			(epoll_craete1_fn)dlsym(RTLD_NEXT, "epoll_create1");
-		assert(orig_epoll_create1_fn != nullptr);
-		orig_ioctl_fn = (ioctl_fn)dlsym(RTLD_NEXT, "ioctl");
-		assert(orig_ioctl_fn != nullptr);
-		orig_syscall_fn = (syscall_fn)dlsym(RTLD_NEXT, "syscall");
-		assert(orig_syscall_fn != nullptr);
-		// orig_mmap64_fn = (mmap64_fn)dlsym(RTLD_NEXT, "mmap64");
-		// assert(orig_mmap64_fn != nullptr);
-		orig_close_fn = (close_fn)dlsym(RTLD_NEXT, "close");
-		assert(orig_close_fn != nullptr);
-		orig_munmap_fn = (munmap_fn)dlsym(RTLD_NEXT, "munmap");
-		assert(orig_munmap_fn != nullptr);
-		orig_mmap64_fn = orig_mmap_fn =
-			(mmap_fn)dlsym(RTLD_NEXT, "mmap");
-		assert(orig_mmap_fn != nullptr);
-		assert(orig_mmap64_fn != nullptr);
-		orig_openat_fn = (openat_fn)dlsym(RTLD_NEXT, "openat");
-		assert(orig_openat_fn != nullptr);
-		orig_open_fn = (open_fn)dlsym(RTLD_NEXT, "open");
-		assert(orig_open_fn != nullptr);
-		orig_read_fn = (read_fn)dlsym(RTLD_NEXT, "read");
-		assert(orig_read_fn != nullptr);
+			(epoll_craete1_fn)require_symbol("epoll_create1");
+		orig_ioctl_fn = (ioctl_fn)require_symbol("ioctl");
+		orig_syscall_fn = (syscall_fn)require_symbol("syscall");
+		orig_close_fn = (close_fn)require_symbol("close");
+		orig_munmap_fn = (munmap_fn)require_symbol("munmap");
+		orig_mmap_fn = (mmap_fn)require_symbol("mmap");
+		orig_mmap64_fn = (mmap64_fn)orig_mmap_fn;
+		orig_openat_fn = (openat_fn)require_symbol("openat");
+		orig_open_fn = (open_fn)require_symbol("open");
+		orig_read_fn = (read_fn)require_symbol("read");
 		orig_fopen_fn = (fopen_fn)dlsym(RTLD_NEXT, "fopen");
 		if (orig_fopen_fn == nullptr)
 			orig_fopen_fn = (fopen_fn)dlsym(RTLD_NEXT, "fopen64");
-		assert(orig_fopen_fn != nullptr);
+		if (orig_fopen_fn == nullptr)
+			throw std::runtime_error(
+				"Unable to resolve original fopen");
 
 		// To avoid polluting other child processes,
 		// unset the LD_PRELOAD env var after syscall context being
