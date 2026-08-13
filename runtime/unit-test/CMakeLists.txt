@@ -53,6 +53,14 @@ endif()
 option(TEST_LCOV "option for lcov" OFF)
 add_executable(bpftime_runtime_tests ${TEST_SOURCES})
 
+if(ENABLE_PROBE_READ_CHECK)
+    target_compile_definitions(bpftime_runtime_tests PRIVATE ENABLE_PROBE_READ_CHECK=1)
+endif()
+
+if(ENABLE_PROBE_WRITE_CHECK)
+    target_compile_definitions(bpftime_runtime_tests PRIVATE ENABLE_PROBE_WRITE_CHECK=1)
+endif()
+
 if(UNIX AND NOT APPLE)
     add_executable(bpftime-shm-allocation-test-helper
         assets/shm_allocation_test_helper.c)
