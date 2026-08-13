@@ -424,6 +424,10 @@ static int perform_detach()
 	// destroying the whole attach context (which may block inside driver
 	// teardown while kernels are still running).
 	ctx_holder.ctx.reset_instantiated_state();
+	if (detach_err >= 0) {
+		shm_holder.global_shared_memory.remove_pid_from_alive_agent_set(
+			getpid());
+	}
 	SPDLOG_DEBUG("Detaching done");
 	bpftime_logger_flush();
 	return detach_err < 0 ? detach_err : 0;
@@ -678,6 +682,13 @@ static int refresh_attach_session(const gchar *data)
 			res);
 		return res < 0 ? res : -EINVAL;
 	}
+	if (!shm_holder.global_shared_memory.add_pid_into_alive_agent_set(
+		    getpid())) {
+		SPDLOG_ERROR("agent_control: unable to record alive agent pid");
+		(void)ctx_holder.ctx.destroy_all_attach_links();
+		ctx_holder.ctx.reset_instantiated_state();
+		return -EAGAIN;
+	}
 
 	int auto_refresh_ms = parse_auto_refresh_ms(data);
 	pid_t loader_pid = parse_loader_pid(data);
@@ -890,14 +901,19 @@ extern "C" void bpftime_agent_main(const gchar *data, gboolean *stay_resident)
 			// flakiness in "spawn loader then inject agent" workflows.
 			std::string last_err;
 			bool shm_ok = false;
+			std::unique_ptr<shm_lifecycle_lock> shm_lock;
 			for (int attempt = 0; attempt < 60; attempt++) {
 				try {
+					shm_lock =
+						std::make_unique<shm_lifecycle_lock>(
+							get_global_shm_name());
 					bpftime_initialize_global_shm(
 						shm_open_type::SHM_OPEN_ONLY);
 					shm_ok = true;
 					break;
 				} catch (const std::exception &ex) {
 					last_err = ex.what();
+					shm_lock.reset();
 					std::this_thread::sleep_for(
 						std::chrono::milliseconds(
 							50));
@@ -914,13 +930,6 @@ extern "C" void bpftime_agent_main(const gchar *data, gboolean *stay_resident)
 			bpftime_set_logger(std::string(
 				runtime_config.get_logger_output_path()));
 			apply_injected_kv_overrides(data);
-			// Only agents injected through frida could be detached.
-			if (injected_with_frida) {
-				// Record the pid
-				shm_holder.global_shared_memory
-					.add_pid_into_alive_agent_set(getpid());
-				recorded_alive_pid = true;
-			}
 			ctx_holder.init();
 			ctx_constructed = true;
 			global_ctx_constructed.store(
@@ -1074,6 +1083,14 @@ extern "C" void bpftime_agent_main(const gchar *data, gboolean *stay_resident)
 				std::atexit(stop_auto_refresh_at_exit);
 			}
 
+			if (!shm_holder.global_shared_memory
+				     .add_pid_into_alive_agent_set(getpid())) {
+				SPDLOG_ERROR("Unable to record alive agent pid");
+				init_fail();
+				return;
+			}
+			recorded_alive_pid = true;
+			shm_lock.reset();
 			try {
 				SPDLOG_DEBUG("Registering signal handler");
 			} catch (...) {
