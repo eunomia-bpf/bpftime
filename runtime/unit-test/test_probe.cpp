@@ -3,8 +3,23 @@
 #include <csetjmp>
 #include <cstdlib>
 #include <cstring>
+#include <sys/resource.h>
+#include <sys/wait.h>
+#include <thread>
 #include <unistd.h>
 #include <signal.h>
+
+static volatile sig_atomic_t forwarded_sigsegv = 0;
+
+static void count_sigsegv(int)
+{
+	forwarded_sigsegv = forwarded_sigsegv + 1;
+}
+
+static void count_replaced_sigsegv(int)
+{
+	forwarded_sigsegv = forwarded_sigsegv + 2;
+}
 
 extern "C" {
 
@@ -34,6 +49,95 @@ TEST_CASE("Test bpftime_probe_read") // test for bpftime_probe_read
 	ret = bpftime_probe_read((uint64_t)(nullptr), size, (uint64_t)(nullptr),
 				 0, 0);
 	REQUIRE(ret == -EFAULT);
+}
+
+TEST_CASE("Test repeated valid probe memory access")
+{
+	int src[4] = { 1, 2, 3, 4 };
+	int read_dst[4] = { 0 };
+	int write_dst[4] = { 0 };
+	uint64_t size = sizeof(src);
+
+	for (size_t i = 0; i < 4; i++) {
+		std::memset(read_dst, 0, sizeof(read_dst));
+		std::memset(write_dst, 0, sizeof(write_dst));
+		REQUIRE(bpftime_probe_read((uint64_t)read_dst, size,
+					   (uint64_t)src, 0, 0) == 0);
+		REQUIRE(std::memcmp(read_dst, src, size) == 0);
+		REQUIRE(bpftime_probe_write_user((uint64_t)write_dst,
+						(uint64_t)src, size, 0, 0) == 0);
+		REQUIRE(std::memcmp(write_dst, src, size) == 0);
+	}
+}
+
+TEST_CASE("Test SIGSEGV handler chaining across threads")
+{
+	pid_t child = fork();
+	REQUIRE(child >= 0);
+	if (child == 0) {
+		struct rlimit no_core = { 0, 0 };
+		struct sigaction application_handler = {};
+		setrlimit(RLIMIT_CORE, &no_core);
+		application_handler.sa_handler = count_sigsegv;
+		sigemptyset(&application_handler.sa_mask);
+		if (sigaction(SIGSEGV, &application_handler, nullptr) != 0)
+			_exit(2);
+
+		int src = 1;
+		int dst = 0;
+		if (bpftime_probe_read((uint64_t)&dst, sizeof(dst),
+				       (uint64_t)&src, 0, 0) != 0 ||
+		    dst != src)
+			_exit(3);
+		int raise_result = -1;
+		std::thread worker([&raise_result]() {
+			raise_result = raise(SIGSEGV);
+		});
+		worker.join();
+		_exit(raise_result == 0 && forwarded_sigsegv == 1 ? 0 : 4);
+	}
+
+	int status = 0;
+	REQUIRE(waitpid(child, &status, 0) == child);
+	REQUIRE(WIFEXITED(status));
+	REQUIRE(WEXITSTATUS(status) == 0);
+}
+
+TEST_CASE("Test probe access refreshes replaced SIGSEGV handler")
+{
+	pid_t child = fork();
+	REQUIRE(child >= 0);
+	if (child == 0) {
+		struct rlimit no_core = { 0, 0 };
+		struct sigaction application_handler = {};
+		setrlimit(RLIMIT_CORE, &no_core);
+		application_handler.sa_handler = count_sigsegv;
+		sigemptyset(&application_handler.sa_mask);
+		if (sigaction(SIGSEGV, &application_handler, nullptr) != 0)
+			_exit(2);
+
+		int src = 1;
+		int dst = 0;
+		if (bpftime_probe_read((uint64_t)&dst, sizeof(dst),
+				       (uint64_t)&src, 0, 0) != 0 ||
+		    dst != src)
+			_exit(3);
+
+		application_handler.sa_handler = count_replaced_sigsegv;
+		if (sigaction(SIGSEGV, &application_handler, nullptr) != 0)
+			_exit(4);
+		if (bpftime_probe_read((uint64_t)&dst, sizeof(dst),
+				       (uint64_t)&src, 0, 0) != 0)
+			_exit(5);
+
+		int raise_result = raise(SIGSEGV);
+		_exit(raise_result == 0 && forwarded_sigsegv == 2 ? 0 : 6);
+	}
+
+	int status = 0;
+	REQUIRE(waitpid(child, &status, 0) == child);
+	REQUIRE(WIFEXITED(status));
+	REQUIRE(WEXITSTATUS(status) == 0);
 }
 
 TEST_CASE("Test bpftime_probe_write_user") // test for bpftime_probe_write_user
@@ -91,24 +195,31 @@ TEST_CASE("Test Probe read/write size valid or not ")
 }
 
 
-TEST_CASE("Test origin handler is null")
+TEST_CASE("Test default SIGSEGV handler is preserved")
 {
-	struct sigaction original_sa, sa;
-	int dst[4] = { 0 };
-	int src[4] = { 1, 2, 3, 4 };
-	sa.sa_flags = SA_SIGINFO;
-	sigemptyset(&sa.sa_mask);
-	sa.sa_sigaction = nullptr;
-	if (sigaction(SIGSEGV, &sa, nullptr) < 0) {
-		REQUIRE(false);
+	pid_t child = fork();
+	REQUIRE(child >= 0);
+	if (child == 0) {
+		struct sigaction default_action = {};
+		default_action.sa_handler = SIG_DFL;
+		sigemptyset(&default_action.sa_mask);
+		if (sigaction(SIGSEGV, &default_action, nullptr) != 0)
+			_exit(2);
+
+		int dst = 0;
+		int src = 1;
+		if (bpftime_probe_read((uint64_t)&dst, sizeof(dst),
+				       (uint64_t)&src, 0, 0) != 0)
+			_exit(3);
+
+		struct sigaction current_action = {};
+		if (sigaction(SIGSEGV, nullptr, &current_action) != 0)
+			_exit(4);
+		_exit(current_action.sa_handler == SIG_DFL ? 0 : 5);
 	}
-	uint64_t size = sizeof(src);
 
-	int ret = bpftime_probe_read((uint64_t)(dst), size, (uint64_t)(src), 0,
-				     0);
-	REQUIRE(ret == 0);
-
-	sigaction(SIGSEGV, nullptr, &original_sa);
-	auto handler = original_sa.sa_sigaction;
-	REQUIRE(handler != nullptr);
+	int status = 0;
+	REQUIRE(waitpid(child, &status, 0) == child);
+	REQUIRE(WIFEXITED(status));
+	REQUIRE(WEXITSTATUS(status) == 0);
 }

@@ -44,6 +44,7 @@
 #include <thread>
 #include <setjmp.h>
 #include <signal.h>
+#include <mutex>
 
 #define PATH_MAX 4096
 
@@ -81,61 +82,35 @@ long bpftime_strncmp(const char *s1, uint64_t s1_sz, const char *s2)
 }
 
 #if defined(ENABLE_PROBE_WRITE_CHECK) || defined(ENABLE_PROBE_READ_CHECK)
+static std::mutex probe_access_mutex;
+static struct sigaction previous_sigsegv_action {};
+static size_t probe_access_users = 0;
+thread_local static size_t probe_access_depth = 0;
+thread_local static volatile sig_atomic_t probe_access_faulted = 0;
+thread_local static volatile uintptr_t probe_access_recovery_ip = 0;
 
-/*
-status instruction for probe_read and probe_write
-*/
-enum class PROBE_STATUS {
-	NOT_RUNNING = -1,
-	RUNNING_NO_ERROR = 0,
-	RUNNING_ERROR = 1
-};
-
-/*
-origin handler exist flag for probe_read and probe_write
-*/
-enum class ORIGIN_HANDLER_EXIST_FLAG {
-	NOT_CHECKED = -1,
-	NOT_EXIST = 0,
-	EXIST = 1
-};
-
-#endif
-
-#ifdef ENABLE_PROBE_READ_CHECK
-extern "C" void jump_point_read();
-thread_local static PROBE_STATUS status_probe_read = PROBE_STATUS::NOT_RUNNING;
-
-thread_local static ORIGIN_HANDLER_EXIST_FLAG exist_read =
-	ORIGIN_HANDLER_EXIST_FLAG::NOT_CHECKED;
-
-thread_local static void (*origin_segv_read_handler)(int, siginfo_t *,
-						     void *) = nullptr;
-#endif
-#ifdef ENABLE_PROBE_WRITE_CHECK
-
-extern "C" void jump_point_write();
-thread_local static PROBE_STATUS status_probe_write = PROBE_STATUS::NOT_RUNNING;
-thread_local static ORIGIN_HANDLER_EXIST_FLAG exist_write =
-	ORIGIN_HANDLER_EXIST_FLAG::NOT_CHECKED;
-
-thread_local static void (*origin_segv_write_handler)(int, siginfo_t *,
-						      void *) = nullptr;
-#endif
-
-#ifdef ENABLE_PROBE_READ_CHECK
-static void segv_read_handler(int sig, siginfo_t *siginfo, void *ctx)
+static void forward_sigsegv(int sig, siginfo_t *siginfo, void *ctx)
 {
-	if (status_probe_read == PROBE_STATUS::NOT_RUNNING) {
-		if (origin_segv_read_handler != nullptr) {
-			origin_segv_read_handler(sig, siginfo, ctx);
-		} else {
-			SPDLOG_ERROR("no origin handler for probe_read");
-			throw std::runtime_error(
-				"segv_handler for probe_read called");
-		}
-	} else if (status_probe_read == PROBE_STATUS::RUNNING_NO_ERROR) {
-		// set status to error
+	if (previous_sigsegv_action.sa_handler == SIG_IGN)
+		return;
+
+	if (previous_sigsegv_action.sa_handler == SIG_DFL) {
+		sigaction(sig, &previous_sigsegv_action, nullptr);
+		raise(sig);
+		return;
+	}
+
+	if (previous_sigsegv_action.sa_flags & SA_SIGINFO) {
+		previous_sigsegv_action.sa_sigaction(sig, siginfo, ctx);
+	} else {
+		previous_sigsegv_action.sa_handler(sig);
+	}
+}
+
+static void probe_sigsegv_handler(int sig, siginfo_t *siginfo, void *ctx)
+{
+	if (probe_access_recovery_ip != 0 &&
+	    (siginfo == nullptr || siginfo->si_code > 0)) {
 		auto uctx = (ucontext_t *)ctx;
 #if defined(__x86_64__) || defined(_M_X64)
 		auto *ip = (greg_t *)(&uctx->uc_mcontext.gregs[REG_RIP]);
@@ -144,10 +119,79 @@ static void segv_read_handler(int sig, siginfo_t *siginfo, void *ctx)
 #else
 #error "Unsupported architecture"
 #endif
-		status_probe_read = PROBE_STATUS::RUNNING_ERROR;
-		*ip = (greg_t)&jump_point_read;
+		probe_access_faulted = 1;
+		*ip = (greg_t)probe_access_recovery_ip;
+		return;
+	}
+
+	forward_sigsegv(sig, siginfo, ctx);
+}
+
+static bool is_probe_sigsegv_handler(const struct sigaction &action)
+{
+	return (action.sa_flags & SA_SIGINFO) &&
+	       action.sa_sigaction == probe_sigsegv_handler;
+}
+
+static int probe_access_begin()
+{
+	if (probe_access_depth > 0) {
+		probe_access_depth++;
+		return 0;
+	}
+
+	std::lock_guard guard(probe_access_mutex);
+	if (probe_access_users == 0) {
+		struct sigaction current_action {};
+		if (sigaction(SIGSEGV, nullptr, &current_action) != 0) {
+			SPDLOG_ERROR("Failed to get SIGSEGV handler: {}", errno);
+			return -errno;
+		}
+
+		if (!is_probe_sigsegv_handler(current_action)) {
+			previous_sigsegv_action = current_action;
+			struct sigaction probe_action = current_action;
+			probe_action.sa_flags |= SA_SIGINFO;
+			probe_action.sa_flags &= ~SA_RESETHAND;
+			probe_action.sa_sigaction = probe_sigsegv_handler;
+			if (sigaction(SIGSEGV, &probe_action, nullptr) != 0) {
+				SPDLOG_ERROR("Failed to set SIGSEGV handler: {}",
+					     errno);
+				return -errno;
+			}
+		}
+	}
+
+	probe_access_users++;
+	probe_access_depth = 1;
+	return 0;
+}
+
+static void probe_access_end()
+{
+	if (probe_access_depth == 0)
+		return;
+	if (--probe_access_depth > 0)
+		return;
+
+	std::lock_guard guard(probe_access_mutex);
+	if (--probe_access_users > 0)
+		return;
+
+	struct sigaction current_action {};
+	if (sigaction(SIGSEGV, nullptr, &current_action) != 0) {
+		SPDLOG_ERROR("Failed to get SIGSEGV handler: {}", errno);
+		return;
+	}
+	if (is_probe_sigsegv_handler(current_action) &&
+	    sigaction(SIGSEGV, &previous_sigsegv_action, nullptr) != 0) {
+		SPDLOG_ERROR("Failed to restore SIGSEGV handler: {}", errno);
 	}
 }
+#endif
+
+#ifdef ENABLE_PROBE_READ_CHECK
+extern "C" void jump_point_read();
 #endif
 
 int64_t bpftime_probe_read(uint64_t dst, int64_t size, uint64_t ptr, uint64_t,
@@ -160,80 +204,28 @@ int64_t bpftime_probe_read(uint64_t dst, int64_t size, uint64_t ptr, uint64_t,
 	int64_t ret = 0;
 
 #ifdef ENABLE_PROBE_READ_CHECK
-	status_probe_read = PROBE_STATUS::RUNNING_NO_ERROR;
-
-	struct sigaction sa, original_sa;
-	// set up the signal handler
-	if (exist_read == ORIGIN_HANDLER_EXIST_FLAG::NOT_CHECKED) {
-		int err = sigaction(SIGSEGV, nullptr, &original_sa);
-		if (err) {
-			SPDLOG_ERROR("Failed to get signal handler: {}", errno);
-			return -EFAULT;
-		}
-		if (original_sa.sa_sigaction == nullptr) {
-			exist_read = ORIGIN_HANDLER_EXIST_FLAG::NOT_EXIST;
-		} else {
-			exist_read = ORIGIN_HANDLER_EXIST_FLAG::EXIST;
-			origin_segv_read_handler = original_sa.sa_sigaction;
-		}
-	}
-
-	if (original_sa.sa_sigaction != segv_read_handler) {
-		sa.sa_flags = SA_SIGINFO;
-		int err = 0;
-		err = sigemptyset(&sa.sa_mask);
-		if (err) {
-			SPDLOG_ERROR("Failed to set signal handler: {}", errno);
-			return -EFAULT;
-		}
-		sa.sa_sigaction = segv_read_handler;
-		err = sigaction(SIGSEGV, &sa, nullptr);
-		if (err) {
-			SPDLOG_ERROR("Failed to set signal handler: {}", errno);
-			return -EFAULT;
-		}
-	}
+	if (probe_access_begin() != 0)
+		return -EFAULT;
+	probe_access_faulted = 0;
+	probe_access_recovery_ip = (uintptr_t)&jump_point_read;
+	__asm__ volatile("" ::: "memory");
 #endif
 	memcpy((void *)dst, (void *)ptr, (size_t)size);
 
 #ifdef ENABLE_PROBE_READ_CHECK
-	__asm__("jump_point_read:");
-
-	if (status_probe_read == PROBE_STATUS::RUNNING_ERROR) {
+	__asm__ volatile("jump_point_read:");
+	__asm__ volatile("" ::: "memory");
+	probe_access_recovery_ip = 0;
+	if (probe_access_faulted)
 		ret = -EFAULT;
-	}
-
-	status_probe_read = PROBE_STATUS::NOT_RUNNING;
+	probe_access_faulted = 0;
+	probe_access_end();
 #endif
 	return ret;
 }
 
 #ifdef ENABLE_PROBE_WRITE_CHECK
-static void segv_write_handler(int sig, siginfo_t *siginfo, void *ctx)
-{
-	SPDLOG_TRACE("segv_handler for probe_write called");
-	if (status_probe_write == PROBE_STATUS::NOT_RUNNING) {
-		if (origin_segv_write_handler) {
-			origin_segv_write_handler(sig, siginfo, ctx);
-		} else {
-			SPDLOG_ERROR("no origin handler for probe_write");
-			throw std::runtime_error(
-				"segv_handler for probe_write called");
-		}
-	} else if (status_probe_write == PROBE_STATUS::RUNNING_NO_ERROR) {
-		// set status to error
-		auto uctx = (ucontext_t *)ctx;
-#if defined(__x86_64__) || defined(_M_X64)
-		auto *ip = (greg_t *)(&uctx->uc_mcontext.gregs[REG_RIP]);
-#elif defined(__aarch64__) || defined(_M_ARM64)
-		auto *ip = (greg_t *)(&uctx->uc_mcontext.pc);
-#else
-#error "Unsupported architecture"
-#endif
-		status_probe_write = PROBE_STATUS::RUNNING_ERROR;
-		*ip = (greg_t)&jump_point_write;
-	}
-}
+extern "C" void jump_point_write();
 #endif
 
 int64_t bpftime_probe_write_user(uint64_t dst, uint64_t src, int64_t len,
@@ -246,54 +238,23 @@ int64_t bpftime_probe_write_user(uint64_t dst, uint64_t src, int64_t len,
 	int64_t ret = 0;
 
 #ifdef ENABLE_PROBE_WRITE_CHECK
-	status_probe_write = PROBE_STATUS::RUNNING_NO_ERROR;
-
-	struct sigaction sa, original_sa;
-	// set up the signal handler
-	if (exist_write == ORIGIN_HANDLER_EXIST_FLAG::NOT_CHECKED) {
-		int err = sigaction(SIGSEGV, nullptr, &original_sa);
-		if (err) {
-			SPDLOG_ERROR("Failed to get signal handler: {}", errno);
-			return -EFAULT;
-		}
-
-		if (original_sa.sa_sigaction == nullptr) {
-			exist_write = ORIGIN_HANDLER_EXIST_FLAG::NOT_EXIST;
-		} else {
-			exist_write = ORIGIN_HANDLER_EXIST_FLAG::EXIST;
-			origin_segv_write_handler = original_sa.sa_sigaction;
-		}
-	}
-
-	if (original_sa.sa_sigaction != segv_write_handler) {
-		sa.sa_flags = SA_SIGINFO;
-		int err = 0;
-		err = sigemptyset(&sa.sa_mask);
-		if (err) {
-			SPDLOG_ERROR("Failed to set signal handler: {}", errno);
-			return -EFAULT;
-		}
-
-		sa.sa_sigaction = segv_write_handler;
-		err = sigaction(SIGSEGV, &sa, nullptr);
-		if (err) {
-			SPDLOG_ERROR("Failed to set signal handler: {}", errno);
-			return -EFAULT;
-		}
-	}
+	if (probe_access_begin() != 0)
+		return -EFAULT;
+	probe_access_faulted = 0;
+	probe_access_recovery_ip = (uintptr_t)&jump_point_write;
+	__asm__ volatile("" ::: "memory");
 #endif
 
 	memcpy((void *)dst, (void *)src, (size_t)len);
 
 #ifdef ENABLE_PROBE_WRITE_CHECK
-	__asm__("jump_point_write:");
-
-	if (status_probe_write == PROBE_STATUS::RUNNING_ERROR) {
+	__asm__ volatile("jump_point_write:");
+	__asm__ volatile("" ::: "memory");
+	probe_access_recovery_ip = 0;
+	if (probe_access_faulted)
 		ret = -EFAULT;
-	}
-
-	status_probe_write = PROBE_STATUS::NOT_RUNNING;
-
+	probe_access_faulted = 0;
+	probe_access_end();
 #endif
 	return ret;
 }
