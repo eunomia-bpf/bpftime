@@ -763,16 +763,26 @@ extern "C" void bpftime_agent_main(const gchar *data, gboolean *stay_resident)
 	bool force_reinit = false;
 	bool recorded_alive_pid = false;
 	bool ctx_constructed = false;
-	auto init_fail = [&]() {
-		reset_syscall_trace_global();
+	auto init_fail = [&]() noexcept {
+		try {
+			reset_syscall_trace_global();
+		} catch (...) {
+		}
 		if (ctx_constructed) {
-			ctx_holder.destroy();
+			try {
+				ctx_holder.destroy();
+			} catch (...) {
+			}
 			ctx_constructed = false;
 		}
 		global_ctx_constructed.store(false, std::memory_order_release);
 		if (recorded_alive_pid) {
-			shm_holder.global_shared_memory
-				.remove_pid_from_alive_agent_set(getpid());
+			try {
+				shm_holder.global_shared_memory
+					.remove_pid_from_alive_agent_set(
+						getpid());
+			} catch (...) {
+			}
 			recorded_alive_pid = false;
 		}
 		__atomic_store_n(&initialized, 0, __ATOMIC_SEQ_CST);
@@ -818,12 +828,6 @@ extern "C" void bpftime_agent_main(const gchar *data, gboolean *stay_resident)
 			}
 
 			SPDLOG_DEBUG("Entered bpftime_agent_main");
-			SPDLOG_DEBUG("Registering signal handler");
-
-			srand(std::random_device()());
-			// We use SIGUSR1 to indicate the detaching.
-			ensure_detach_worker_started();
-			signal(SIGUSR1, sig_handler_sigusr1_detach);
 
 			// SHM can race with the loader process; retry a bit to avoid
 			// flakiness in "spawn loader then inject agent" workflows.
@@ -849,6 +853,11 @@ extern "C" void bpftime_agent_main(const gchar *data, gboolean *stay_resident)
 				init_fail();
 				return;
 			}
+			SPDLOG_DEBUG("Registering signal handler");
+			srand(std::random_device()());
+			// We use SIGUSR1 to indicate the detaching.
+			ensure_detach_worker_started();
+			signal(SIGUSR1, sig_handler_sigusr1_detach);
 			auto &runtime_config = bpftime_get_runtime_config();
 			bpftime_set_logger(std::string(
 				runtime_config.get_logger_output_path()));

@@ -1059,24 +1059,30 @@ int syscall_context::handle_epoll_wait(int epfd, epoll_event *evt,
 
 int syscall_context::handle_munmap(void *addr, size_t size)
 {
+	auto handle_mocked_munmap = [&]() {
+		if (auto itr = mocked_mmap_values.find((uintptr_t)addr);
+		    itr != mocked_mmap_values.end()) {
+			try {
+				SPDLOG_DEBUG(
+					"Handling munmap of mocked addr: {:x}, size {}",
+					(uintptr_t)addr, size);
+			} catch (...) {
+			}
+			mocked_mmap_values.erase(itr);
+			return true;
+		}
+		return false;
+	};
+	if (handle_mocked_munmap())
+		return 0;
 	if (!enable_mock.load(std::memory_order_relaxed) || run_with_kernel ||
 	    initializing_cuda.load(std::memory_order_acquire) ||
 	    !enable_mock_after_initialized.load(std::memory_order_relaxed))
 		return orig_munmap_fn(addr, size);
 	try_startup();
-	if (auto itr = mocked_mmap_values.find((uintptr_t)addr);
-	    itr != mocked_mmap_values.end()) {
-		try {
-			SPDLOG_DEBUG(
-				"Handling munmap of mocked addr: {:x}, size {}",
-				(uintptr_t)addr, size);
-		} catch (...) {
-		}
-		mocked_mmap_values.erase(itr);
+	if (handle_mocked_munmap())
 		return 0;
-	} else {
-		return orig_munmap_fn(addr, size);
-	}
+	return orig_munmap_fn(addr, size);
 }
 
 FILE *syscall_context::handle_fopen(const char *pathname, const char *flags)
