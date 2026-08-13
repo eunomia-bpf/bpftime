@@ -5,6 +5,7 @@
 #include "frida_uprobe_attach_impl.hpp"
 
 #include "spdlog/common.h"
+#include "bpftime_config.hpp"
 #include "bpftime_logger.hpp"
 #include <chrono>
 #include <csignal>
@@ -106,11 +107,31 @@ static void apply_injected_kv_overrides(const gchar *data);
 static int refresh_attach_session(const gchar *data);
 static int perform_detach();
 
+static void install_agent_bootstrap_logger() noexcept
+{
+	if (__atomic_load_n(&initialized, __ATOMIC_SEQ_CST) == 1)
+		return;
+	const char *logger_target = getenv("BPFTIME_LOG_OUTPUT");
+	bpftime_set_logger(logger_target == nullptr ? DEFAULT_LOGGER_OUTPUT_PATH :
+						     logger_target);
+}
+
+static void reset_syscall_trace_global() noexcept
+{
+#if __linux__ && BPFTIME_BUILD_WITH_LIBBPF
+	try {
+		bpftime::attach::global_syscall_trace_attach_impl.reset();
+	} catch (...) {
+	}
+#endif
+}
+
 extern "C" __attribute__((visibility("default"))) void
 bpftime_agent_control(const gchar *data)
 {
 	// External control entrypoint used to avoid loading multiple agent copies
 	// into the same target process (Frida typically loads via /proc/self/fd/*).
+	install_agent_bootstrap_logger();
 	try {
 		(void)refresh_attach_session(data);
 	} catch (...) {
@@ -738,6 +759,7 @@ extern "C" void **__cudaRegisterFatBinary(void *fatbin)
 #endif
 extern "C" void bpftime_agent_main(const gchar *data, gboolean *stay_resident)
 {
+	install_agent_bootstrap_logger();
 	try {
 #ifdef __linux__
 			// If an agent IPC server is already present in this process,
@@ -761,6 +783,7 @@ extern "C" void bpftime_agent_main(const gchar *data, gboolean *stay_resident)
 			bool recorded_alive_pid = false;
 			bool ctx_constructed = false;
 			auto init_fail = [&]() {
+				reset_syscall_trace_global();
 				if (ctx_constructed) {
 					ctx_holder.destroy();
 					ctx_constructed = false;
@@ -849,7 +872,7 @@ extern "C" void bpftime_agent_main(const gchar *data, gboolean *stay_resident)
 				std::make_unique<syscall_trace_attach_impl>();
 			syscall_trace_impl->set_original_syscall_function(
 				orig_hooker);
-			syscall_trace_impl->set_to_global();
+			auto *syscall_trace_impl_ptr = syscall_trace_impl.get();
 			ctx_holder.ctx.register_attach_impl(
 				{ ATTACH_SYSCALL_TRACE },
 				std::move(syscall_trace_impl),
@@ -911,6 +934,9 @@ extern "C" void bpftime_agent_main(const gchar *data, gboolean *stay_resident)
 					}
 					return priv_data;
 				});
+#endif
+#if __linux__ && BPFTIME_BUILD_WITH_LIBBPF
+			syscall_trace_impl_ptr->set_to_global();
 #endif
 			SPDLOG_INFO("Initializing agent..");
 			/* We don't want our library to be unloaded after we return. */
@@ -998,8 +1024,10 @@ extern "C" void bpftime_agent_main(const gchar *data, gboolean *stay_resident)
 
 			SPDLOG_INFO("Attach successfully");
 		} catch (const std::exception &) {
+			reset_syscall_trace_global();
 			__atomic_store_n(&initialized, 0, __ATOMIC_SEQ_CST);
 	} catch (...) {
+			reset_syscall_trace_global();
 			__atomic_store_n(&initialized, 0, __ATOMIC_SEQ_CST);
 		}
 }

@@ -97,6 +97,59 @@ helper_result run_allocation_helper(const char *mode, const char *memory_mb,
 	boost::interprocess::shared_memory_object::remove(shm_name.c_str());
 	return { status, std::move(output) };
 }
+
+helper_result run_agent_preload_without_shm()
+{
+	const std::string shm_name = "bpftime-agent-missing-shm-test-" +
+				     std::to_string(getpid());
+	boost::interprocess::shared_memory_object::remove(shm_name.c_str());
+	int output_pipe[2];
+	REQUIRE(pipe(output_pipe) == 0);
+
+	pid_t pid = fork();
+	REQUIRE(pid >= 0);
+	if (pid == 0) {
+		close(output_pipe[0]);
+		if (dup2(output_pipe[1], STDOUT_FILENO) == -1 ||
+		    dup2(output_pipe[1], STDERR_FILENO) == -1) {
+			_exit(125);
+		}
+		close(output_pipe[1]);
+		if (unsetenv("BPFTIME_LOG_OUTPUT") != 0 ||
+		    unsetenv("SPDLOG_LEVEL") != 0 ||
+		    setenv("HOME", "/proc/bpftime-unwritable-home", 1) != 0 ||
+		    setenv("BPFTIME_GLOBAL_SHM_NAME", shm_name.c_str(), 1) !=
+			    0 ||
+		    setenv("LD_PRELOAD", BPFTIME_AGENT_LIBRARY, 1) != 0) {
+			_exit(126);
+		}
+		execl("/bin/true", "true", nullptr);
+		_exit(127);
+	}
+
+	close(output_pipe[1]);
+	std::string output;
+	char buffer[4096];
+	for (;;) {
+		ssize_t count = read(output_pipe[0], buffer, sizeof(buffer));
+		if (count > 0) {
+			output.append(buffer, static_cast<size_t>(count));
+			continue;
+		}
+		if (count == -1 && errno == EINTR)
+			continue;
+		REQUIRE(count == 0);
+		break;
+	}
+	close(output_pipe[0]);
+
+	int status = 0;
+	while (waitpid(pid, &status, 0) == -1) {
+		REQUIRE(errno == EINTR);
+	}
+	boost::interprocess::shared_memory_object::remove(shm_name.c_str());
+	return { status, std::move(output) };
+}
 } // namespace
 
 TEST_CASE("Syscall server falls back when startup shared memory is too small",
@@ -174,6 +227,15 @@ TEST_CASE("Syscall server preserves the console logger level name",
 					    "console", "stderr=off");
 	REQUIRE(WIFEXITED(result.status));
 	REQUIRE(WEXITSTATUS(result.status) == 100);
+	REQUIRE(result.output.empty());
+}
+
+TEST_CASE("Agent preload keeps missing shared memory off host stdio",
+	  "[allocation][agent][logging]")
+{
+	auto result = run_agent_preload_without_shm();
+	REQUIRE(WIFEXITED(result.status));
+	REQUIRE(WEXITSTATUS(result.status) == 0);
 	REQUIRE(result.output.empty());
 }
 #endif
