@@ -123,7 +123,7 @@ int64_t bpftime_probe_read(uint64_t dst, int64_t size, uint64_t ptr, uint64_t,
 #endif
 }
 
-#ifdef ENABLE_PROBE_WRITE_CHECK
+#if defined(ENABLE_PROBE_WRITE_CHECK) || defined(ENABLE_PROBE_READ_CHECK)
 static bool probe_write_memory(void *dst, const void *src, size_t size)
 {
 	if (size == 0)
@@ -293,12 +293,81 @@ uint64_t bpftime_map_peek_elem_helper(uint64_t map, uint64_t value, uint64_t,
 		.bpf_map_peek_elem((int)map, (void *)value, false);
 }
 
-uint64_t bpf_probe_read_str(uint64_t buf, uint64_t bufsz, uint64_t ptr,
-			    uint64_t, uint64_t)
+#ifdef ENABLE_PROBE_READ_CHECK
+static size_t probe_page_remaining(const void *address)
 {
-	strncpy((char *)(uintptr_t)buf, (const char *)(uintptr_t)ptr,
-		(size_t)bufsz);
-	return 0;
+	static const size_t page_size = []() {
+		long result = sysconf(_SC_PAGESIZE);
+		return result > 0 ? (size_t)result : (size_t)4096;
+	}();
+	return page_size - ((uintptr_t)address % page_size);
+}
+
+static void clear_probe_memory(void *dst, size_t size)
+{
+	static const char zeros[256] = {};
+	auto output = (char *)dst;
+	while (size > 0) {
+		size_t chunk_size = std::min(size, sizeof(zeros));
+		if (!probe_write_memory(output, zeros, chunk_size))
+			return;
+		output += chunk_size;
+		size -= chunk_size;
+	}
+}
+#endif
+
+int64_t bpf_probe_read_str(uint64_t buf, uint64_t bufsz, uint64_t ptr, uint64_t,
+			   uint64_t)
+{
+	if (bufsz == 0)
+		return 0;
+
+	auto dst = (char *)(uintptr_t)buf;
+	auto src = (const char *)(uintptr_t)ptr;
+#ifndef ENABLE_PROBE_READ_CHECK
+	for (size_t i = 0; i < (size_t)bufsz; i++) {
+		if (src[i] == '\0') {
+			dst[i] = '\0';
+			return (int64_t)i + 1;
+		}
+		if (i == (size_t)bufsz - 1) {
+			dst[i] = '\0';
+			return (int64_t)bufsz;
+		}
+		dst[i] = src[i];
+	}
+	return (int64_t)bufsz;
+#else
+	char scratch[256];
+	size_t copied = 0;
+	while (copied < (size_t)bufsz) {
+		size_t chunk_size =
+			std::min(sizeof(scratch), (size_t)bufsz - copied);
+		chunk_size = std::min(chunk_size,
+				      probe_page_remaining(src + copied));
+		if (!probe_read_memory(scratch, src + copied, chunk_size)) {
+			clear_probe_memory(dst, (size_t)bufsz);
+			return -EFAULT;
+		}
+
+		auto terminator = (char *)memchr(scratch, '\0', chunk_size);
+		bool complete = terminator != nullptr;
+		if (complete) {
+			chunk_size = (size_t)(terminator - scratch) + 1;
+		} else if (chunk_size == (size_t)bufsz - copied) {
+			scratch[chunk_size - 1] = '\0';
+			complete = true;
+		}
+
+		if (!probe_write_memory(dst + copied, scratch, chunk_size))
+			return -EFAULT;
+		copied += chunk_size;
+		if (complete)
+			return (int64_t)copied;
+	}
+	return (int64_t)copied;
+#endif
 }
 
 uint64_t bpf_ktime_get_coarse_ns(uint64_t, uint64_t, uint64_t, uint64_t,
