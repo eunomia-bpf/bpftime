@@ -123,7 +123,9 @@ helper_result run_agent_preload_without_shm()
 		    setenv("LD_PRELOAD", BPFTIME_AGENT_LIBRARY, 1) != 0) {
 			_exit(126);
 		}
-		execl("/bin/true", "true", nullptr);
+		execl(BPFTIME_SHM_ALLOCATION_TEST_HELPER,
+		      BPFTIME_SHM_ALLOCATION_TEST_HELPER, "check-sigusr1",
+		      nullptr);
 		_exit(127);
 	}
 
@@ -247,7 +249,7 @@ TEST_CASE("Agent preload keeps missing shared memory off host stdio",
 {
 	auto result = run_agent_preload_without_shm();
 	REQUIRE(WIFEXITED(result.status));
-	REQUIRE(WEXITSTATUS(result.status) == 0);
+	REQUIRE(WEXITSTATUS(result.status) == 100);
 	REQUIRE(result.output.empty());
 }
 #endif

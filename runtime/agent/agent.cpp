@@ -426,43 +426,70 @@ static void stop_auto_refresh_at_exit()
 		auto_refresh_thread.join();
 }
 
-static void ensure_detach_worker_started()
+static bool ensure_detach_worker_started() noexcept
 {
 	bool expected = false;
 	if (!detach_thread_started.compare_exchange_strong(
 		    expected, true, std::memory_order_acq_rel,
 		    std::memory_order_acquire)) {
-		return;
+		return true;
 	}
-	int fds[2];
-#ifdef __linux__
-	if (pipe2(fds, O_CLOEXEC) != 0) {
-		SPDLOG_WARN("pipe2 failed, detach by SIGUSR1 will be disabled");
-		detach_thread_started.store(false, std::memory_order_release);
-		return;
-	}
-#else
-	if (pipe(fds) != 0) {
-		SPDLOG_WARN("pipe failed, detach by SIGUSR1 will be disabled");
-		detach_thread_started.store(false, std::memory_order_release);
-		return;
-	}
-#endif
-	detach_pipe_fds[0] = fds[0];
-	detach_pipe_fds[1] = fds[1];
-	std::thread([]() {
-		for (;;) {
-			uint8_t buf[16];
-			ssize_t n = read(detach_pipe_fds[0], buf, sizeof(buf));
-			if (n <= 0) {
-				return;
+	int fds[2] = { -1, -1 };
+	auto clear_fds = [&]() {
+		for (int &fd : fds) {
+			if (fd >= 0) {
+				::close(fd);
+				fd = -1;
 			}
-			if (__atomic_load_n(&initialized, __ATOMIC_SEQ_CST) != 1) {
-				continue;
-			}
-			perform_detach();
 		}
-	}).detach();
+		for (int &fd : detach_pipe_fds) {
+			if (fd >= 0) {
+				::close(fd);
+				fd = -1;
+			}
+		}
+		detach_thread_started.store(false, std::memory_order_release);
+	};
+	try {
+#ifdef __linux__
+		if (pipe2(fds, O_CLOEXEC) != 0) {
+			SPDLOG_WARN(
+				"pipe2 failed, detach by SIGUSR1 will be disabled");
+			clear_fds();
+			return false;
+		}
+#else
+		if (pipe(fds) != 0) {
+			SPDLOG_WARN(
+				"pipe failed, detach by SIGUSR1 will be disabled");
+			clear_fds();
+			return false;
+		}
+#endif
+		detach_pipe_fds[0] = fds[0];
+		detach_pipe_fds[1] = fds[1];
+		fds[0] = -1;
+		fds[1] = -1;
+		std::thread([]() {
+			for (;;) {
+				uint8_t buf[16];
+				ssize_t n =
+					read(detach_pipe_fds[0], buf, sizeof(buf));
+				if (n <= 0) {
+					return;
+				}
+				if (__atomic_load_n(&initialized,
+						    __ATOMIC_SEQ_CST) != 1) {
+					continue;
+				}
+				perform_detach();
+			}
+		}).detach();
+		return true;
+	} catch (...) {
+		clear_fds();
+		return false;
+	}
 }
 
 syscall_hooker_func_t orig_hooker;
@@ -763,9 +790,20 @@ extern "C" void bpftime_agent_main(const gchar *data, gboolean *stay_resident)
 	bool force_reinit = false;
 	bool recorded_alive_pid = false;
 	bool ctx_constructed = false;
+	bool claimed_initialization = false;
 	auto init_fail = [&]() noexcept {
+		if (!claimed_initialization)
+			return;
 		try {
 			reset_syscall_trace_global();
+		} catch (...) {
+		}
+		try {
+			auto_refresh_epoch.fetch_add(1, std::memory_order_acq_rel);
+			std::lock_guard<std::mutex> guard(
+				auto_refresh_thread_mutex);
+			if (auto_refresh_thread.joinable())
+				auto_refresh_thread.join();
 		} catch (...) {
 		}
 		if (ctx_constructed) {
@@ -825,6 +863,7 @@ extern "C" void bpftime_agent_main(const gchar *data, gboolean *stay_resident)
 					*stay_resident = TRUE;
 					return;
 				}
+				claimed_initialization = true;
 			}
 
 			SPDLOG_DEBUG("Entered bpftime_agent_main");
@@ -853,11 +892,6 @@ extern "C" void bpftime_agent_main(const gchar *data, gboolean *stay_resident)
 				init_fail();
 				return;
 			}
-			SPDLOG_DEBUG("Registering signal handler");
-			srand(std::random_device()());
-			// We use SIGUSR1 to indicate the detaching.
-			ensure_detach_worker_started();
-			signal(SIGUSR1, sig_handler_sigusr1_detach);
 			auto &runtime_config = bpftime_get_runtime_config();
 			bpftime_set_logger(std::string(
 				runtime_config.get_logger_output_path()));
@@ -946,11 +980,7 @@ extern "C" void bpftime_agent_main(const gchar *data, gboolean *stay_resident)
 			syscall_trace_impl_ptr->set_to_global();
 #endif
 			SPDLOG_INFO("Initializing agent..");
-			/* We don't want our library to be unloaded after we return. */
-			*stay_resident = TRUE;
 
-			setenv("BPFTIME_USED", "1", 0);
-			SPDLOG_DEBUG("Set environment variable BPFTIME_USED");
 			try {
 				int res = ctx_holder.ctx
 						  .init_attach_ctx_from_handlers(
@@ -968,6 +998,7 @@ extern "C" void bpftime_agent_main(const gchar *data, gboolean *stay_resident)
 				init_fail();
 				return;
 			}
+			srand(std::random_device()());
 
 			// Start IPC control plane for repeat attach/refresh (used by
 			// `bpftime trace`).
@@ -1029,7 +1060,24 @@ extern "C" void bpftime_agent_main(const gchar *data, gboolean *stay_resident)
 				std::atexit(stop_auto_refresh_at_exit);
 			}
 
-			SPDLOG_INFO("Attach successfully");
+			try {
+				SPDLOG_DEBUG("Registering signal handler");
+			} catch (...) {
+			}
+			// We use SIGUSR1 to indicate the detaching.
+			if (ensure_detach_worker_started())
+				signal(SIGUSR1, sig_handler_sigusr1_detach);
+			/* We don't want our library to be unloaded after we return. */
+			*stay_resident = TRUE;
+			setenv("BPFTIME_USED", "1", 0);
+			try {
+				SPDLOG_DEBUG("Set environment variable BPFTIME_USED");
+			} catch (...) {
+			}
+			try {
+				SPDLOG_INFO("Attach successfully");
+			} catch (...) {
+			}
 		} catch (const std::exception &) {
 			init_fail();
 		} catch (...) {

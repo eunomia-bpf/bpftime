@@ -6,6 +6,7 @@
 #include <errno.h>
 #include <fcntl.h>
 #include <linux/perf_event.h>
+#include <signal.h>
 #include <stdio.h>
 #include <string.h>
 #include <sys/mman.h>
@@ -67,6 +68,15 @@ static int trigger_perf_mmap(void)
 	return 0;
 }
 
+static int check_sigusr1_default(void)
+{
+	struct sigaction action;
+	if (sigaction(SIGUSR1, NULL, &action) != 0) {
+		return 105;
+	}
+	return action.sa_handler == SIG_DFL ? 100 : 106;
+}
+
 int main(int argc, char **argv)
 {
 	if (argc != 2) {
@@ -77,6 +87,9 @@ int main(int argc, char **argv)
 	}
 	if (strcmp(argv[1], "perf-mmap") == 0) {
 		return trigger_perf_mmap();
+	}
+	if (strcmp(argv[1], "check-sigusr1") == 0) {
+		return check_sigusr1_default();
 	}
 	return 64;
 }
