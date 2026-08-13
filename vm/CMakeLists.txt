@@ -4,7 +4,7 @@ cmake_minimum_required(VERSION 3.16)
 #
 project(
   "vm-bpf"
-  VERSION 0.1.0
+  VERSION 0.9.0
   LANGUAGES C CXX
 )
 
