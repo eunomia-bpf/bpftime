@@ -256,6 +256,29 @@ auto handle_exceptions(F &&f, Fallback &&fallback) noexcept -> decltype(f())
 	}
 }
 
+template <typename F, typename Fallback>
+auto call_with_context(F &&f, Fallback &&fallback) noexcept
+	-> decltype(fallback())
+{
+	if (!initialize_ctx())
+		return fallback();
+	return handle_exceptions(std::forward<F>(f),
+				 std::forward<Fallback>(fallback));
+}
+
+template <typename F, typename Fallback, typename... Args>
+auto call_with_context_debug(spdlog::format_string_t<Args...> fmt, F &&f,
+			     Fallback &&fallback, Args &&...args) noexcept
+	-> decltype(fallback())
+{
+	return call_with_context(
+		[&]() {
+			safe_spdlog_debug(fmt, std::forward<Args>(args)...);
+			return f();
+		},
+		std::forward<Fallback>(fallback));
+}
+
 extern "C" int epoll_wait(int epfd, epoll_event *evt, int maxevents,
 			  int timeout)
 {
@@ -263,15 +286,11 @@ extern "C" int epoll_wait(int epfd, epoll_event *evt, int maxevents,
 		return call_next_symbol(next_epoll_wait_symbol, "epoll_wait",
 					-1, epfd, evt, maxevents, timeout);
 	};
-	if (!initialize_ctx())
-		return call_original();
-	safe_spdlog_debug("epoll_wait {}", epfd);
-	return handle_exceptions(
-		[&]() {
-			return context->handle_epoll_wait(epfd, evt, maxevents,
-							  timeout);
-		},
-		call_original);
+	return call_with_context_debug(
+		"epoll_wait {}",
+		[&]() { return context->handle_epoll_wait(epfd, evt, maxevents,
+							  timeout); },
+		call_original, epfd);
 }
 
 extern "C" int epoll_ctl(int epfd, int op, int fd, epoll_event *evt)
@@ -280,13 +299,10 @@ extern "C" int epoll_ctl(int epfd, int op, int fd, epoll_event *evt)
 		return call_next_symbol(next_epoll_ctl_symbol, "epoll_ctl",
 					-1, epfd, op, fd, evt);
 	};
-	if (!initialize_ctx())
-		return call_original();
-	safe_spdlog_debug("epoll_ctl {} {} {} {}", epfd, op, fd,
-			  (uintptr_t)evt);
-	return handle_exceptions(
+	return call_with_context_debug(
+		"epoll_ctl {} {} {} {}",
 		[&]() { return context->handle_epoll_ctl(epfd, op, fd, evt); },
-		call_original);
+		call_original, epfd, op, fd, (uintptr_t)evt);
 }
 
 extern "C" int epoll_create1(int flags)
@@ -295,12 +311,10 @@ extern "C" int epoll_create1(int flags)
 		return call_next_symbol(next_epoll_create1_symbol,
 					"epoll_create1", -1, flags);
 	};
-	if (!initialize_ctx())
-		return call_original();
-	safe_spdlog_debug("epoll_create1 {}", flags);
-	return handle_exceptions(
+	return call_with_context_debug(
+		"epoll_create1 {}",
 		[&]() { return context->handle_epoll_create1(flags); },
-		call_original);
+		call_original, flags);
 }
 
 extern "C" int ioctl(int fd, unsigned long req, ...)
@@ -313,12 +327,10 @@ extern "C" int ioctl(int fd, unsigned long req, ...)
 		return call_next_symbol(next_ioctl_symbol, "ioctl", -1, fd,
 					req, arg3);
 	};
-	if (!initialize_ctx())
-		return call_original();
-	safe_spdlog_debug("ioctl {} {} {}", fd, req, arg3);
-	return handle_exceptions(
+	return call_with_context_debug(
+		"ioctl {} {} {}",
 		[&]() { return context->handle_ioctl(fd, req, arg3); },
-		call_original);
+		call_original, fd, req, arg3);
 }
 
 extern "C" void *mmap64(void *addr, size_t length, int prot, int flags, int fd,
@@ -327,15 +339,11 @@ extern "C" void *mmap64(void *addr, size_t length, int prot, int flags, int fd,
 	auto call_original = [&]() {
 		return fallback_mmap64(addr, length, prot, flags, fd, offset);
 	};
-	if (!initialize_ctx())
-		return call_original();
-	safe_spdlog_debug("mmap64 {:x}", (uintptr_t)addr);
-	return handle_exceptions(
-		[&]() {
-			return context->handle_mmap64(addr, length, prot, flags,
-						      fd, offset);
-		},
-		call_original);
+	return call_with_context_debug(
+		"mmap64 {:x}",
+		[&]() { return context->handle_mmap64(addr, length, prot, flags,
+						      fd, offset); },
+		call_original, (uintptr_t)addr);
 }
 
 extern "C" void *mmap(void *addr, size_t length, int prot, int flags, int fd,
@@ -346,15 +354,11 @@ extern "C" void *mmap(void *addr, size_t length, int prot, int flags, int fd,
 					addr, length, prot, flags, fd,
 					offset);
 	};
-	if (!initialize_ctx())
-		return call_original();
-	safe_spdlog_debug("mmap {:x}", (uintptr_t)addr);
-	return handle_exceptions(
-		[&]() {
-			return context->handle_mmap(addr, length, prot, flags,
-						    fd, offset);
-		},
-		call_original);
+	return call_with_context_debug(
+		"mmap {:x}",
+		[&]() { return context->handle_mmap(addr, length, prot, flags,
+						    fd, offset); },
+		call_original, (uintptr_t)addr);
 }
 
 extern "C" int munmap(void *addr, size_t size)
@@ -363,12 +367,10 @@ extern "C" int munmap(void *addr, size_t size)
 		return call_next_symbol(next_munmap_symbol, "munmap", -1,
 					addr, size);
 	};
-	if (!initialize_ctx())
-		return call_original();
-	safe_spdlog_debug("munmap {:x} {}", (uintptr_t)addr, size);
-	return handle_exceptions(
+	return call_with_context_debug(
+		"munmap {:x} {}",
 		[&]() { return context->handle_munmap(addr, size); },
-		call_original);
+		call_original, (uintptr_t)addr, size);
 }
 
 extern "C" int close(int fd)
@@ -376,11 +378,10 @@ extern "C" int close(int fd)
 	auto call_original = [&]() {
 		return call_next_symbol(next_close_symbol, "close", -1, fd);
 	};
-	if (!initialize_ctx())
-		return call_original();
-	safe_spdlog_debug("Closing fd {}", fd);
-	return handle_exceptions([&]() { return context->handle_close(fd); },
-				 call_original);
+	return call_with_context_debug(
+		"Closing fd {}",
+		[&]() { return context->handle_close(fd); },
+		call_original, fd);
 }
 
 extern "C" int openat(int fd, const char *file, int oflag, ...)
@@ -392,19 +393,14 @@ extern "C" int openat(int fd, const char *file, int oflag, ...)
 	if (has_mode)
 		mode = va_arg(args, mode_t);
 	va_end(args);
-	if (!initialize_ctx())
-		return fallback_openat(fd, file, oflag, mode, has_mode);
 	auto call_original = [&]() {
 		return fallback_openat(fd, file, oflag, mode, has_mode);
 	};
-	safe_spdlog_debug("openat {} {} {} {}", fd, safe_ptr_str(file), oflag,
-			  mode);
-	return handle_exceptions(
-		[&]() {
-			return context->handle_openat(fd, file, oflag,
-						      (unsigned short)mode);
-		},
-		call_original);
+	return call_with_context_debug(
+		"openat {} {} {} {}",
+		[&]() { return context->handle_openat(fd, file, oflag,
+						      (unsigned short)mode); },
+		call_original, fd, safe_ptr_str(file), oflag, mode);
 }
 extern "C" int open(const char *file, int oflag, ...)
 {
@@ -415,18 +411,14 @@ extern "C" int open(const char *file, int oflag, ...)
 	if (has_mode)
 		mode = va_arg(args, mode_t);
 	va_end(args);
-	if (!initialize_ctx())
-		return fallback_open(file, oflag, mode, has_mode);
 	auto call_original = [&]() {
 		return fallback_open(file, oflag, mode, has_mode);
 	};
-	safe_spdlog_debug("open {} {} {}", safe_ptr_str(file), oflag, mode);
-	return handle_exceptions(
-		[&]() {
-			return context->handle_open(file, oflag,
-						    (unsigned short)mode);
-		},
-		call_original);
+	return call_with_context_debug(
+		"open {} {} {}",
+		[&]() { return context->handle_open(file, oflag,
+						    (unsigned short)mode); },
+		call_original, safe_ptr_str(file), oflag, mode);
 }
 extern "C" ssize_t read(int fd, void *buf, size_t count)
 {
@@ -434,9 +426,7 @@ extern "C" ssize_t read(int fd, void *buf, size_t count)
 		return call_next_symbol(next_read_symbol, "read", (ssize_t)-1,
 					fd, buf, count);
 	};
-	if (!initialize_ctx())
-		return call_original();
-	return handle_exceptions(
+	return call_with_context(
 		[&]() { return context->handle_read(fd, buf, count); },
 		call_original);
 }
@@ -447,13 +437,10 @@ extern "C" FILE *fopen(const char *pathname, const char *flags)
 		return call_next_symbol(next_fopen_symbol, "fopen",
 					(FILE *)nullptr, pathname, flags);
 	};
-	if (!initialize_ctx())
-		return call_original();
-	safe_spdlog_debug("fopen {} {}", safe_ptr_str(pathname),
-			  safe_ptr_str(flags));
-	return handle_exceptions(
+	return call_with_context_debug(
+		"fopen {} {}",
 		[&]() { return context->handle_fopen(pathname, flags); },
-		call_original);
+		call_original, safe_ptr_str(pathname), safe_ptr_str(flags));
 }
 extern "C" FILE *fopen64(const char *pathname, const char *flags)
 {
@@ -461,13 +448,10 @@ extern "C" FILE *fopen64(const char *pathname, const char *flags)
 		return call_next_symbol(next_fopen64_symbol, "fopen64",
 					(FILE *)nullptr, pathname, flags);
 	};
-	if (!initialize_ctx())
-		return call_original();
-	safe_spdlog_debug("fopen64 {} {}", safe_ptr_str(pathname),
-			  safe_ptr_str(flags));
-	return handle_exceptions(
+	return call_with_context_debug(
+		"fopen64 {} {}",
 		[&]() { return context->handle_fopen(pathname, flags); },
-		call_original);
+		call_original, safe_ptr_str(pathname), safe_ptr_str(flags));
 }
 extern "C" FILE *_IO_new_fopen(const char *pathname, const char *flags)
 {
@@ -475,13 +459,10 @@ extern "C" FILE *_IO_new_fopen(const char *pathname, const char *flags)
 		return call_next_symbol(next_fopen_symbol, "fopen",
 					(FILE *)nullptr, pathname, flags);
 	};
-	if (!initialize_ctx())
-		return call_original();
-	safe_spdlog_debug("_IO_new_fopen {} {}", safe_ptr_str(pathname),
-			  safe_ptr_str(flags));
-	return handle_exceptions(
+	return call_with_context_debug(
+		"_IO_new_fopen {} {}",
 		[&]() { return context->handle_fopen(pathname, flags); },
-		call_original);
+		call_original, safe_ptr_str(pathname), safe_ptr_str(flags));
 }
 #if __linux__
 extern "C" long syscall(long sysno, ...)
