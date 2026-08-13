@@ -10,6 +10,7 @@
 #include "cuda.h"
 #endif
 #include "syscall_context.hpp"
+#include <exception>
 #include <fcntl.h>
 #include <filesystem>
 #include <memory>
@@ -26,6 +27,7 @@
 namespace bpftime
 {
 static std::once_flag g_startup_once;
+static std::exception_ptr g_startup_exception;
 using namespace bpftime;
 // Why not use string_view? because parse_uint_from_file requires a c-string
 static const std::string UPROBE_TYPE_FILE_NAME =
@@ -40,63 +42,72 @@ static const std::string KRETPROBE_BIT_FILE_NAME =
 void start_up(syscall_context &ctx)
 {
 	std::call_once(g_startup_once, [&ctx]() {
-		SPDLOG_INFO("Starting syscall server..");
-		auto runtime_config = construct_runtime_config_from_env();
-		SPDLOG_INFO("Initialize syscall server");
+		try {
+			SPDLOG_INFO("Starting syscall server..");
+			auto runtime_config = construct_runtime_config_from_env();
+			SPDLOG_INFO("Initialize syscall server");
 
-		bpftime_initialize_global_shm(
-			shm_open_type::SHM_CREATE_OR_OPEN);
+			bpftime_initialize_global_shm(
+				shm_open_type::SHM_CREATE_OR_OPEN);
 #if defined(BPFTIME_ENABLE_CUDA_ATTACH)
-		ctx.initialize_cuda();
+			ctx.initialize_cuda();
 #endif
-		shm_holder.global_shared_memory.begin_new_session();
-		shm_holder.global_shared_memory.set_mock_setter([&](bool flg) {
-			ctx.enable_mock_after_initialized.store(
-				flg, std::memory_order_relaxed);
-			SPDLOG_INFO(
-				"syscall server: Set enable_mock_after_initialized to {}",
-				flg);
-		});
+			shm_holder.global_shared_memory.begin_new_session();
+			shm_holder.global_shared_memory.set_mock_setter(
+				[&](bool flg) {
+					ctx.enable_mock_after_initialized.store(
+						flg, std::memory_order_relaxed);
+					SPDLOG_INFO(
+						"syscall server: Set enable_mock_after_initialized to {}",
+						flg);
+				});
 #ifdef ENABLE_BPFTIME_VERIFIER
-		std::vector<int32_t> helper_ids;
-		std::map<int32_t, bpftime::verifier::BpftimeHelperProrotype>
-			non_kernel_helpers;
-		if (runtime_config.enable_kernel_helper_group) {
-			for (auto x :
-			     bpftime_helper_group::get_kernel_utils_helper_group()
-				     .get_helper_ids()) {
-				helper_ids.push_back(x);
+			std::vector<int32_t> helper_ids;
+			std::map<int32_t,
+				 bpftime::verifier::BpftimeHelperProrotype>
+				non_kernel_helpers;
+			if (runtime_config.enable_kernel_helper_group) {
+				for (auto x : bpftime_helper_group::
+					     get_kernel_utils_helper_group()
+						     .get_helper_ids()) {
+					helper_ids.push_back(x);
+				}
 			}
-		}
-		if (runtime_config.enable_shm_maps_helper_group) {
-			for (auto x :
-			     bpftime_helper_group::get_shm_maps_helper_group()
-				     .get_helper_ids()) {
-				helper_ids.push_back(x);
+			if (runtime_config.enable_shm_maps_helper_group) {
+				for (auto x : bpftime_helper_group::
+					     get_shm_maps_helper_group()
+						     .get_helper_ids()) {
+					helper_ids.push_back(x);
+				}
 			}
-		}
-		if (runtime_config.enable_ufunc_helper_group) {
-			for (auto x :
-			     bpftime_helper_group::get_shm_maps_helper_group()
-				     .get_helper_ids()) {
-				helper_ids.push_back(x);
+			if (runtime_config.enable_ufunc_helper_group) {
+				for (auto x : bpftime_helper_group::
+					     get_shm_maps_helper_group()
+						     .get_helper_ids()) {
+					helper_ids.push_back(x);
+				}
+				// non_kernel_helpers =
+				for (const auto &[k, v] :
+				     get_ufunc_helper_protos()) {
+					non_kernel_helpers[k] = v;
+				}
 			}
-			// non_kernel_helpers =
-			for (const auto &[k, v] : get_ufunc_helper_protos()) {
-				non_kernel_helpers[k] = v;
-			}
-		}
-		verifier::set_available_helpers(helper_ids);
-		SPDLOG_INFO("Enabling {} helpers", helper_ids.size());
-		verifier::set_non_kernel_helpers(non_kernel_helpers);
+			verifier::set_available_helpers(helper_ids);
+			SPDLOG_INFO("Enabling {} helpers", helper_ids.size());
+			verifier::set_non_kernel_helpers(non_kernel_helpers);
 #endif
-		bpftime_set_runtime_config(std::move(runtime_config));
-		// Set a variable to indicate the program that it's controlled
-		// by bpftime
-		setenv("BPFTIME_USED", "1", 0);
-		SPDLOG_DEBUG("Set environment variable BPFTIME_USED");
-		SPDLOG_INFO("bpftime-syscall-server started");
+			bpftime_set_runtime_config(std::move(runtime_config));
+			// Set a variable to indicate the program that it's
+			// controlled by bpftime
+			setenv("BPFTIME_USED", "1", 0);
+			SPDLOG_DEBUG("Set environment variable BPFTIME_USED");
+			SPDLOG_INFO("bpftime-syscall-server started");
+		} catch (...) {
+			g_startup_exception = std::current_exception();
+		}
 	});
+	if (g_startup_exception)
+		std::rethrow_exception(g_startup_exception);
 }
 
 /*

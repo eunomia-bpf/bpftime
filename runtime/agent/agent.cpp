@@ -760,6 +760,23 @@ extern "C" void **__cudaRegisterFatBinary(void *fatbin)
 extern "C" void bpftime_agent_main(const gchar *data, gboolean *stay_resident)
 {
 	install_agent_bootstrap_logger();
+	bool force_reinit = false;
+	bool recorded_alive_pid = false;
+	bool ctx_constructed = false;
+	auto init_fail = [&]() {
+		reset_syscall_trace_global();
+		if (ctx_constructed) {
+			ctx_holder.destroy();
+			ctx_constructed = false;
+		}
+		global_ctx_constructed.store(false, std::memory_order_release);
+		if (recorded_alive_pid) {
+			shm_holder.global_shared_memory
+				.remove_pid_from_alive_agent_set(getpid());
+			recorded_alive_pid = false;
+		}
+		__atomic_store_n(&initialized, 0, __ATOMIC_SEQ_CST);
+	};
 	try {
 #ifdef __linux__
 			// If an agent IPC server is already present in this process,
@@ -779,26 +796,7 @@ extern "C" void bpftime_agent_main(const gchar *data, gboolean *stay_resident)
 				return;
 			}
 
-			bool force_reinit = parse_force_reinit(data);
-			bool recorded_alive_pid = false;
-			bool ctx_constructed = false;
-			auto init_fail = [&]() {
-				reset_syscall_trace_global();
-				if (ctx_constructed) {
-					ctx_holder.destroy();
-					ctx_constructed = false;
-				}
-				global_ctx_constructed.store(false,
-							     std::memory_order_release);
-				if (recorded_alive_pid) {
-					shm_holder.global_shared_memory
-						.remove_pid_from_alive_agent_set(
-							getpid());
-					recorded_alive_pid = false;
-				}
-				__atomic_store_n(&initialized, 0,
-						 __ATOMIC_SEQ_CST);
-			};
+			force_reinit = parse_force_reinit(data);
 			{
 				int expected = 0;
 				if (!__atomic_compare_exchange_n(
@@ -1024,11 +1022,9 @@ extern "C" void bpftime_agent_main(const gchar *data, gboolean *stay_resident)
 
 			SPDLOG_INFO("Attach successfully");
 		} catch (const std::exception &) {
-			reset_syscall_trace_global();
-			__atomic_store_n(&initialized, 0, __ATOMIC_SEQ_CST);
-	} catch (...) {
-			reset_syscall_trace_global();
-			__atomic_store_n(&initialized, 0, __ATOMIC_SEQ_CST);
+			init_fail();
+		} catch (...) {
+			init_fail();
 		}
 }
 
