@@ -52,7 +52,12 @@ using main_func_t = int (*)(int, char **, char **);
 
 static main_func_t orig_main_func = nullptr;
 
-static int initialized = 0;
+enum agent_init_state {
+	AGENT_UNINITIALIZED = 0,
+	AGENT_INITIALIZING = 1,
+	AGENT_READY = 2,
+};
+static int initialized = AGENT_UNINITIALIZED;
 
 using agent_control_fn_t = void (*)(const gchar *);
 
@@ -109,7 +114,8 @@ static int perform_detach();
 
 static void install_agent_bootstrap_logger() noexcept
 {
-	if (__atomic_load_n(&initialized, __ATOMIC_SEQ_CST) == 1)
+	if (__atomic_load_n(&initialized, __ATOMIC_SEQ_CST) !=
+	    AGENT_UNINITIALIZED)
 		return;
 	const char *logger_target = getenv("BPFTIME_LOG_OUTPUT");
 	bpftime_set_logger(logger_target == nullptr ? DEFAULT_LOGGER_OUTPUT_PATH :
@@ -401,7 +407,8 @@ static int perform_detach()
 {
 	std::lock_guard<std::mutex> detach_guard(detach_mutex);
 	if (!global_ctx_constructed.load(std::memory_order_acquire)) {
-		__atomic_store_n(&initialized, 0, __ATOMIC_SEQ_CST);
+		__atomic_store_n(&initialized, AGENT_UNINITIALIZED,
+				 __ATOMIC_SEQ_CST);
 		return 0;
 	}
 	SPDLOG_INFO("Detaching..");
@@ -494,7 +501,8 @@ static bool ensure_detach_worker_started() noexcept
 					return;
 				}
 				if (__atomic_load_n(&initialized,
-						    __ATOMIC_SEQ_CST) != 1) {
+						    __ATOMIC_SEQ_CST) !=
+				    AGENT_READY) {
 					continue;
 				}
 				perform_detach();
@@ -654,7 +662,7 @@ static bool parse_force_reinit(const gchar *data)
 
 static int refresh_attach_session(const gchar *data)
 {
-	if (__atomic_load_n(&initialized, __ATOMIC_SEQ_CST) != 1) {
+	if (__atomic_load_n(&initialized, __ATOMIC_SEQ_CST) != AGENT_READY) {
 		SPDLOG_WARN("agent_control: agent not initialized");
 		return -EINVAL;
 	}
@@ -852,7 +860,8 @@ extern "C" void bpftime_agent_main(const gchar *data, gboolean *stay_resident)
 			}
 			recorded_alive_pid = false;
 		}
-		__atomic_store_n(&initialized, 0, __ATOMIC_SEQ_CST);
+		__atomic_store_n(&initialized, AGENT_UNINITIALIZED,
+				 __ATOMIC_SEQ_CST);
 	};
 	try {
 #ifdef __linux__
@@ -875,11 +884,16 @@ extern "C" void bpftime_agent_main(const gchar *data, gboolean *stay_resident)
 
 			force_reinit = parse_force_reinit(data);
 			{
-				int expected = 0;
+				int expected = AGENT_UNINITIALIZED;
 				if (!__atomic_compare_exchange_n(
-					    &initialized, &expected, 1, false,
+					    &initialized, &expected,
+					    AGENT_INITIALIZING, false,
 					    __ATOMIC_SEQ_CST,
 					    __ATOMIC_SEQ_CST)) {
+					if (expected != AGENT_READY) {
+						*stay_resident = FALSE;
+						return;
+					}
 					if (!force_reinit) {
 						SPDLOG_INFO(
 							"Agent already initialized, skipping re-initializing..");
@@ -1107,6 +1121,8 @@ extern "C" void bpftime_agent_main(const gchar *data, gboolean *stay_resident)
 			/* We don't want our library to be unloaded after we return. */
 			*stay_resident = TRUE;
 			setenv("BPFTIME_USED", "1", 0);
+			__atomic_store_n(&initialized, AGENT_READY,
+					 __ATOMIC_SEQ_CST);
 			try {
 				SPDLOG_DEBUG("Set environment variable BPFTIME_USED");
 			} catch (...) {

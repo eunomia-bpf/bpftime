@@ -72,18 +72,6 @@ using namespace bpftime_epoll;
 namespace fmt_lib = spdlog::fmt_lib;
 
 namespace {
-[[noreturn]] void
-exit_for_startup_allocation_failure(const std::exception &error)
-{
-	auto config = bpftime::construct_runtime_config_from_env();
-	SPDLOG_CRITICAL(
-		"Unable to initialize bpftime shared memory ({} MiB, {} fd slots): {}",
-		config.shm_memory_size, config.max_fd_count, error.what());
-	SPDLOG_CRITICAL(
-		"Increase BPFTIME_SHM_MEMORY_MB or decrease BPFTIME_MAX_FD_COUNT");
-	std::exit(EXIT_FAILURE);
-}
-
 void set_mock_fd_cloexec(int fd)
 {
 	int flags = fcntl(fd, F_GETFD);
