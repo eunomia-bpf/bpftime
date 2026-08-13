@@ -180,7 +180,13 @@ void syscall_context::try_startup()
 			enable_mock.store(true, std::memory_order_relaxed);
 		}
 	} guard{ enable_mock };
-	start_up(*this);
+	try {
+		start_up(*this);
+	} catch (...) {
+		enable_mock_after_initialized.store(false,
+						    std::memory_order_relaxed);
+		throw;
+	}
 }
 
 int syscall_context::handle_close(int fd)
@@ -880,7 +886,8 @@ void *syscall_context::handle_mmap64(void *addr, size_t length, int prot,
 				     int flags, int fd, off64_t offset)
 {
 	if (!enable_mock.load(std::memory_order_relaxed) || run_with_kernel ||
-	    initializing_cuda.load(std::memory_order_acquire))
+	    initializing_cuda.load(std::memory_order_acquire) ||
+	    !enable_mock_after_initialized.load(std::memory_order_relaxed))
 		return orig_mmap64_fn(addr, length, prot, flags, fd, offset);
 	try_startup();
 	SPDLOG_DEBUG("Calling mocked mmap64");
@@ -1059,8 +1066,12 @@ int syscall_context::handle_munmap(void *addr, size_t size)
 	try_startup();
 	if (auto itr = mocked_mmap_values.find((uintptr_t)addr);
 	    itr != mocked_mmap_values.end()) {
-		SPDLOG_DEBUG("Handling munmap of mocked addr: {:x}, size {}",
-			     (uintptr_t)addr, size);
+		try {
+			SPDLOG_DEBUG(
+				"Handling munmap of mocked addr: {:x}, size {}",
+				(uintptr_t)addr, size);
+		} catch (...) {
+		}
 		mocked_mmap_values.erase(itr);
 		return 0;
 	} else {

@@ -17,7 +17,7 @@ static int trigger_startup(void)
 	/* The interposer should fall back to the host libc path when bpftime
 	 * startup cannot allocate its shared memory.
 	 */
-	int fd = open("/dev/null", O_RDONLY, 0);
+	int fd = open("/dev/null", O_RDONLY);
 	if (fd < 0) {
 		return 101;
 	}

@@ -150,6 +150,17 @@ helper_result run_agent_preload_without_shm()
 	boost::interprocess::shared_memory_object::remove(shm_name.c_str());
 	return { status, std::move(output) };
 }
+
+size_t count_occurrences(const std::string &text, const std::string &needle)
+{
+	size_t count = 0;
+	size_t pos = 0;
+	while ((pos = text.find(needle, pos)) != std::string::npos) {
+		count++;
+		pos += needle.size();
+	}
+	return count;
+}
 } // namespace
 
 TEST_CASE("Syscall server falls back when startup shared memory is too small",
@@ -160,6 +171,7 @@ TEST_CASE("Syscall server falls back when startup shared memory is too small",
 	REQUIRE(WIFEXITED(result.status));
 	REQUIRE(WEXITSTATUS(result.status) == 100);
 	REQUIRE_FALSE(result.output.empty());
+	REQUIRE(count_occurrences(result.output, "Starting syscall server") == 1);
 }
 
 TEST_CASE("Syscall server perf mmap reports shared memory exhaustion",

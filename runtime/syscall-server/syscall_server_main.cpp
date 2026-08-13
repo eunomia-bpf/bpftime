@@ -20,6 +20,7 @@
 #include <cstring>
 #include <exception>
 #include <fcntl.h>
+#include <atomic>
 #include <spdlog/spdlog.h>
 #include <unistd.h>
 #include <spdlog/cfg/env.h>
@@ -45,10 +46,13 @@ inline const char *safe_ptr_str(const char *ptr)
 // called by spdlog itself)
 template <typename... Args>
 inline void safe_spdlog_debug(spdlog::format_string_t<Args...> fmt,
-			      Args &&...args)
+			      Args &&...args) noexcept
 {
 	if (spdlog::default_logger_raw()) {
-		spdlog::debug(fmt, std::forward<Args>(args)...);
+		try {
+			spdlog::debug(fmt, std::forward<Args>(args)...);
+		} catch (...) {
+		}
 	}
 }
 
@@ -84,6 +88,26 @@ using open_fn = int (*)(const char *, int, ...);
 using read_fn = ssize_t (*)(int, void *, size_t);
 using fopen_fn = FILE *(*)(const char *, const char *);
 
+template <typename Fn> struct cached_next_symbol {
+	std::atomic<Fn> value{ nullptr };
+	std::atomic<bool> initialized{ false };
+};
+
+static cached_next_symbol<raw_syscall_fn> next_syscall_symbol;
+static cached_next_symbol<close_fn> next_close_symbol;
+static cached_next_symbol<mmap64_fn> next_mmap64_symbol;
+static cached_next_symbol<mmap_fn> next_mmap_symbol;
+static cached_next_symbol<ioctl_fn> next_ioctl_symbol;
+static cached_next_symbol<epoll_create1_fn> next_epoll_create1_symbol;
+static cached_next_symbol<epoll_ctl_fn> next_epoll_ctl_symbol;
+static cached_next_symbol<epoll_wait_fn> next_epoll_wait_symbol;
+static cached_next_symbol<munmap_fn> next_munmap_symbol;
+static cached_next_symbol<openat_fn> next_openat_symbol;
+static cached_next_symbol<open_fn> next_open_symbol;
+static cached_next_symbol<read_fn> next_read_symbol;
+static cached_next_symbol<fopen_fn> next_fopen_symbol;
+static cached_next_symbol<fopen_fn> next_fopen64_symbol;
+
 static bool open_flags_have_mode(int flags) noexcept
 {
 	if ((flags & O_CREAT) != 0)
@@ -95,11 +119,25 @@ static bool open_flags_have_mode(int flags) noexcept
 	return false;
 }
 
+template <typename Fn>
+static Fn resolve_cached_next_symbol(cached_next_symbol<Fn> &symbol,
+				     const char *name) noexcept
+{
+	if (!symbol.initialized.load(std::memory_order_acquire)) {
+		auto fn = resolve_next_symbol<Fn>(name);
+		symbol.value.store(fn, std::memory_order_release);
+		symbol.initialized.store(true, std::memory_order_release);
+		return fn;
+	}
+	return symbol.value.load(std::memory_order_acquire);
+}
+
 template <typename Fn, typename Ret, typename... Args>
-static Ret call_next_symbol(const char *name, Ret failure,
+static Ret call_next_symbol(cached_next_symbol<Fn> &symbol, const char *name,
+			    Ret failure,
 			    Args... args) noexcept
 {
-	auto fn = resolve_next_symbol<Fn>(name);
+	auto fn = resolve_cached_next_symbol(symbol, name);
 	if (!fn) {
 		errno = ENOSYS;
 		return failure;
@@ -110,17 +148,17 @@ static Ret call_next_symbol(const char *name, Ret failure,
 static void *fallback_mmap64(void *addr, size_t length, int prot, int flags,
 			     int fd, off64_t offset) noexcept
 {
-	auto fn64 = resolve_next_symbol<mmap64_fn>("mmap64");
+	auto fn64 = resolve_cached_next_symbol(next_mmap64_symbol, "mmap64");
 	if (fn64)
 		return fn64(addr, length, prot, flags, fd, offset);
-	return call_next_symbol<mmap_fn>("mmap", MAP_FAILED, addr, length, prot,
-					 flags, fd, (off_t)offset);
+	return call_next_symbol(next_mmap_symbol, "mmap", MAP_FAILED, addr,
+				length, prot, flags, fd, (off_t)offset);
 }
 
 static int fallback_openat(int fd, const char *file, int oflag, mode_t mode,
 			   bool has_mode) noexcept
 {
-	auto fn = resolve_next_symbol<openat_fn>("openat");
+	auto fn = resolve_cached_next_symbol(next_openat_symbol, "openat");
 	if (!fn) {
 		errno = ENOSYS;
 		return -1;
@@ -131,7 +169,7 @@ static int fallback_openat(int fd, const char *file, int oflag, mode_t mode,
 static int fallback_open(const char *file, int oflag, mode_t mode,
 			 bool has_mode) noexcept
 {
-	auto fn = resolve_next_symbol<open_fn>("open");
+	auto fn = resolve_cached_next_symbol(next_open_symbol, "open");
 	if (!fn) {
 		errno = ENOSYS;
 		return -1;
@@ -142,7 +180,7 @@ static int fallback_open(const char *file, int oflag, mode_t mode,
 static long fallback_syscall(long sysno, long arg1, long arg2, long arg3,
 			     long arg4, long arg5, long arg6) noexcept
 {
-	auto fn = resolve_next_symbol<raw_syscall_fn>("syscall");
+	auto fn = resolve_cached_next_symbol(next_syscall_symbol, "syscall");
 	if (!fn) {
 		errno = ENOSYS;
 		return -1;
@@ -222,8 +260,8 @@ extern "C" int epoll_wait(int epfd, epoll_event *evt, int maxevents,
 			  int timeout)
 {
 	auto call_original = [&]() {
-		return call_next_symbol<epoll_wait_fn>(
-			"epoll_wait", -1, epfd, evt, maxevents, timeout);
+		return call_next_symbol(next_epoll_wait_symbol, "epoll_wait",
+					-1, epfd, evt, maxevents, timeout);
 	};
 	if (!initialize_ctx())
 		return call_original();
@@ -239,8 +277,8 @@ extern "C" int epoll_wait(int epfd, epoll_event *evt, int maxevents,
 extern "C" int epoll_ctl(int epfd, int op, int fd, epoll_event *evt)
 {
 	auto call_original = [&]() {
-		return call_next_symbol<epoll_ctl_fn>("epoll_ctl", -1, epfd,
-						      op, fd, evt);
+		return call_next_symbol(next_epoll_ctl_symbol, "epoll_ctl",
+					-1, epfd, op, fd, evt);
 	};
 	if (!initialize_ctx())
 		return call_original();
@@ -254,8 +292,8 @@ extern "C" int epoll_ctl(int epfd, int op, int fd, epoll_event *evt)
 extern "C" int epoll_create1(int flags)
 {
 	auto call_original = [&]() {
-		return call_next_symbol<epoll_create1_fn>("epoll_create1", -1,
-							  flags);
+		return call_next_symbol(next_epoll_create1_symbol,
+					"epoll_create1", -1, flags);
 	};
 	if (!initialize_ctx())
 		return call_original();
@@ -272,7 +310,8 @@ extern "C" int ioctl(int fd, unsigned long req, ...)
 	unsigned long arg3 = va_arg(args, long);
 	va_end(args);
 	auto call_original = [&]() {
-		return call_next_symbol<ioctl_fn>("ioctl", -1, fd, req, arg3);
+		return call_next_symbol(next_ioctl_symbol, "ioctl", -1, fd,
+					req, arg3);
 	};
 	if (!initialize_ctx())
 		return call_original();
@@ -303,9 +342,9 @@ extern "C" void *mmap(void *addr, size_t length, int prot, int flags, int fd,
 		      off_t offset)
 {
 	auto call_original = [&]() {
-		return call_next_symbol<mmap_fn>("mmap", MAP_FAILED, addr,
-						 length, prot, flags, fd,
-						 offset);
+		return call_next_symbol(next_mmap_symbol, "mmap", MAP_FAILED,
+					addr, length, prot, flags, fd,
+					offset);
 	};
 	if (!initialize_ctx())
 		return call_original();
@@ -321,7 +360,8 @@ extern "C" void *mmap(void *addr, size_t length, int prot, int flags, int fd,
 extern "C" int munmap(void *addr, size_t size)
 {
 	auto call_original = [&]() {
-		return call_next_symbol<munmap_fn>("munmap", -1, addr, size);
+		return call_next_symbol(next_munmap_symbol, "munmap", -1,
+					addr, size);
 	};
 	if (!initialize_ctx())
 		return call_original();
@@ -334,7 +374,7 @@ extern "C" int munmap(void *addr, size_t size)
 extern "C" int close(int fd)
 {
 	auto call_original = [&]() {
-		return call_next_symbol<close_fn>("close", -1, fd);
+		return call_next_symbol(next_close_symbol, "close", -1, fd);
 	};
 	if (!initialize_ctx())
 		return call_original();
@@ -391,8 +431,8 @@ extern "C" int open(const char *file, int oflag, ...)
 extern "C" ssize_t read(int fd, void *buf, size_t count)
 {
 	auto call_original = [&]() {
-		return call_next_symbol<read_fn>("read", (ssize_t)-1, fd, buf,
-						 count);
+		return call_next_symbol(next_read_symbol, "read", (ssize_t)-1,
+					fd, buf, count);
 	};
 	if (!initialize_ctx())
 		return call_original();
@@ -404,8 +444,8 @@ extern "C" ssize_t read(int fd, void *buf, size_t count)
 extern "C" FILE *fopen(const char *pathname, const char *flags)
 {
 	auto call_original = [&]() {
-		return call_next_symbol<fopen_fn>("fopen", (FILE *)nullptr,
-						  pathname, flags);
+		return call_next_symbol(next_fopen_symbol, "fopen",
+					(FILE *)nullptr, pathname, flags);
 	};
 	if (!initialize_ctx())
 		return call_original();
@@ -418,8 +458,8 @@ extern "C" FILE *fopen(const char *pathname, const char *flags)
 extern "C" FILE *fopen64(const char *pathname, const char *flags)
 {
 	auto call_original = [&]() {
-		return call_next_symbol<fopen_fn>("fopen64", (FILE *)nullptr,
-						  pathname, flags);
+		return call_next_symbol(next_fopen64_symbol, "fopen64",
+					(FILE *)nullptr, pathname, flags);
 	};
 	if (!initialize_ctx())
 		return call_original();
@@ -432,9 +472,8 @@ extern "C" FILE *fopen64(const char *pathname, const char *flags)
 extern "C" FILE *_IO_new_fopen(const char *pathname, const char *flags)
 {
 	auto call_original = [&]() {
-		return call_next_symbol<fopen_fn>("_IO_new_fopen",
-						  (FILE *)nullptr, pathname,
-						  flags);
+		return call_next_symbol(next_fopen_symbol, "fopen",
+					(FILE *)nullptr, pathname, flags);
 	};
 	if (!initialize_ctx())
 		return call_original();
