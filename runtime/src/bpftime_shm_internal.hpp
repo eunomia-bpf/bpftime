@@ -109,7 +109,6 @@ class bpftime_shm {
 	bool cuda_host_memory_registered = false;
 #endif
 
-
 #if BPFTIME_ENABLE_MPK
 	// mpk key for protect shm
 	bool is_mpk_init = false;
@@ -159,17 +158,18 @@ class bpftime_shm {
 		bool iterate_all_pids_in_alive_syscall_server_set(
 			std::function<void(int)> &&cb);
 
-	// Server-side: clear all existing handlers (maps/progs/links/events) and
-	// reset per-session bookkeeping stored in shm. This is used to allow
-	// repeated "bpftime trace" sessions without recreating the shm object, so
-	// already-injected agents keep the same mapping.
+	// Server-side: clear all existing handlers (maps/progs/links/events)
+	// and reset per-session bookkeeping stored in shm. This is used to
+	// allow repeated "bpftime trace" sessions without recreating the shm
+	// object, so already-injected agents keep the same mapping.
 	void reset_server_state();
-	// Server-side: start a new session (epoch++) and clear handlers. Returns
-	// the new stable epoch_seq (even).
+	// Server-side: start a new session (epoch++) and clear handlers.
+	// Returns the new stable epoch_seq (even).
 	std::uint64_t begin_new_session();
 	// Agent/observer: best-effort read a stable epoch_seq (even).
 	// Returns 0 if the epoch object isn't available.
-	// Returns UINT64_MAX if the epoch couldn't be stabilized within max_tries.
+	// Returns UINT64_MAX if the epoch couldn't be stabilized within
+	// max_tries.
 	std::uint64_t read_stable_epoch_seq(int max_tries = 200) const;
 
 	const handler_variant &get_handler(int fd) const;
@@ -177,12 +177,12 @@ class bpftime_shm {
 
 	bool is_map_fd(int fd) const;
 
-private:
+    private:
 	// Returns the map handler for `fd`, or nullptr (with errno=ENOENT) if
 	// `fd` is not a map fd. Shared by the bpf_map_* accessors below.
 	const bpf_map_handler *try_get_map_handler(int fd) const;
 
-public:
+    public:
 	bool is_ringbuf_map_fd(int fd) const;
 	bool is_array_map_fd(int fd) const;
 

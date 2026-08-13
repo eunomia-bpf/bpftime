@@ -75,7 +75,8 @@ int frida_attach_impl::attach_at(void *func_addr,
 			     (uintptr_t)func_addr);
 	} else if (itr->second->has_override()) {
 		SPDLOG_ERROR(
-			"Function {} was already attached with replace or filter, cannot attach anything else");
+			"Function {} was already attached with replace or filter, cannot attach anything else",
+			(uintptr_t)func_addr);
 		return -EEXIST;
 	}
 
@@ -290,7 +291,7 @@ void frida_attach_impl::register_custom_helpers(
 			  (void *)bpftime_get_retval);
 }
 
-void *frida_attach_impl::call_attach_specific_function(const std::string& name,
+void *frida_attach_impl::call_attach_specific_function(const std::string &name,
 						       void *data)
 {
 	SPDLOG_DEBUG("Calling frida attach impl specified feature: {}", name);

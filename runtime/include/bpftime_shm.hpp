@@ -127,9 +127,12 @@ enum class bpf_map_type {
 		GPU_MAP_OFFSET + BPF_MAP_TYPE_ARRAY + 2,
 	BPF_MAP_TYPE_GPU_RINGBUF_MAP = GPU_MAP_OFFSET + BPF_MAP_TYPE_RINGBUF,
 
-	// GPU maps using boost::interprocess + cudaHostRegister (for Tegra/platforms without IPC)
-	BPF_MAP_TYPE_PERGPUTD_ARRAY_HOST_MAP = GPU_MAP_OFFSET + BPF_MAP_TYPE_ARRAY + 10,
-	BPF_MAP_TYPE_GPU_ARRAY_HOST_MAP = GPU_MAP_OFFSET + BPF_MAP_TYPE_ARRAY + 11,
+	// GPU maps using boost::interprocess + cudaHostRegister (for
+	// Tegra/platforms without IPC)
+	BPF_MAP_TYPE_PERGPUTD_ARRAY_HOST_MAP =
+		GPU_MAP_OFFSET + BPF_MAP_TYPE_ARRAY + 10,
+	BPF_MAP_TYPE_GPU_ARRAY_HOST_MAP =
+		GPU_MAP_OFFSET + BPF_MAP_TYPE_ARRAY + 11,
 
 	BPF_MAP_TYPE_MAX = 2048,
 };
@@ -254,7 +257,7 @@ struct bpf_link_create_args {
 		__u32 map_fd; /* struct_ops to attach */
 	};
 	union {
-		__u32 target_fd; /* object to attach to */
+		__u32 target_fd; /* target object to attach to or ... */
 		__u32 target_ifindex; /* target ifindex */
 	};
 	__u32 attach_type; /* attach type */
@@ -294,9 +297,31 @@ struct bpf_link_create_args {
 			__s32 priority;
 			__u32 flags;
 		} netfilter;
+		struct {
+			union {
+				__u32 relative_fd;
+				__u32 relative_id;
+			};
+			__u64 expected_revision;
+		} tcx;
+		struct {
+			__aligned_u64 path;
+			__aligned_u64 offsets;
+			__aligned_u64 ref_ctr_offsets;
+			__aligned_u64 cookies;
+			__u32 cnt;
+			__u32 flags;
+			__u32 pid;
+		} uprobe_multi;
+		struct {
+			union {
+				__u32 relative_fd;
+				__u32 relative_id;
+			};
+			__u64 expected_revision;
+		} netkit;
 	};
 };
-
 // create a bpf link in the global shared memory
 //
 // @param[fd]: fd is the fd allocated by the kernel. if fd is -1, then the
@@ -432,7 +457,6 @@ int bpftime_poll_gpu_ringbuf_map(int mapfd, void *ctx,
 #endif
 int bpftime_add_memfd_handler(const char *name, int flags);
 int bpftime_translate_shared_map_type_to_kernel_map_type(int ty);
-
 }
 
 #endif // BPFTIME_SHM_CPP_H

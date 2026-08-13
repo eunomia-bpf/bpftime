@@ -108,8 +108,8 @@ TEST_CASE("Test shm hash maps with sub process")
 	// Only a handful of fds are used in this test; keep max_fd_count small
 	// so the handler table doesn't dominate the shared memory segment.
 	const size_t test_max_fd_count = MIN_MAX_FD_COUNT;
-	auto manager = segment.construct<handler_manager>(HANDLER_NAME)(
-		segment, test_max_fd_count);
+	auto manager = segment.construct<handler_manager>(
+		HANDLER_NAME)(segment, test_max_fd_count);
 	auto &manager_ref = *manager;
 
 	manager_ref.set_handler(1,

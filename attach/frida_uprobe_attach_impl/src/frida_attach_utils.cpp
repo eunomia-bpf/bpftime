@@ -40,9 +40,23 @@ resolve_function_addr_by_module_offset(const std::string_view &module_name,
 {
 	auto exec_path = get_executable_path();
 	void *module_base_addr = nullptr;
-	if (std::filesystem::equivalent(module_name, exec_path)) {
+	SPDLOG_DEBUG("Resolving module base addr, module name {}, exec_path {}",
+		     module_name, exec_path);
+	std::error_code ec;
+	const bool is_main_executable =
+		module_name.empty() ||
+		std::filesystem::equivalent(
+			std::filesystem::path(std::string(module_name)),
+			std::filesystem::path(exec_path), ec);
+	if (is_main_executable) {
+		SPDLOG_DEBUG(
+			"module name {} is equivalent to exec path {}, using empty string to resolve module base addr",
+			module_name, exec_path);
 		module_base_addr = get_module_base_addr("");
 	} else {
+		SPDLOG_DEBUG(
+			"module name {} is *not* equivalent to exec path {}, using module name to resolve module base addr",
+			module_name, exec_path);
 		module_base_addr =
 			get_module_base_addr(std::string(module_name).c_str());
 	}

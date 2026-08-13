@@ -33,3 +33,9 @@ int frida_attach_private_data::initialize_from_string(const std::string_view &sv
 
 	return 0;
 }
+
+std::string frida_attach_private_data::to_string() const
+{
+	return std::string("<Frida attach private data addr=") +
+	       std::to_string(static_cast<uintptr_t>(addr)) + ">";
+}

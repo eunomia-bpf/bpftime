@@ -135,7 +135,7 @@ jobs:
 
           # Special handling groups no longer needed; all examples build local libbpf now
           GLOBAL_LIBBPF_EXAMPLES=""
-          LOCAL_LIBBPF_EXAMPLES="bpf_features/bloom_filter_demo minimal malloc tracing/opensnoop tracing/sslsniff bpf_features/tailcall_minimal minimal/usdt_minimal bpf_features/get_stack_id_example bpf_features/lpm_trie_demo bpf_features/queue_demo xdp-counter"
+          LOCAL_LIBBPF_EXAMPLES="bpf_features/bloom_filter_demo minimal malloc tracing/opensnoop tracing/sslsniff bpf_features/tailcall_minimal minimal/usdt_minimal bpf_features/get_stack_id_example bpf_features/lpm_trie_demo bpf_features/queue_demo xdp-counter uprobe_multi"
 
           # Build examples that use global libbpf first (need build/libbpf/libbpf.a)
           for example_name in $GLOBAL_LIBBPF_EXAMPLES; do
@@ -316,6 +316,12 @@ jobs:
             syscall_trace: false
             expected_str: "bpf:"
             name: usdt_minimal
+          - path: uprobe_multi
+            executable: ./uprobe_multi
+            victim: ./victim
+            syscall_trace: false
+            expected_str: "Uretprobe triggered:"
+            name: uprobe_multi
           - path: bpf_features/get_stack_id_example
             executable: ./get_stack_id_example
             victim: ./victim
@@ -346,7 +352,6 @@ jobs:
             syscall_trace: false
             expected_str: "Starting to pop events from stack"
             name: stack_demo
-
     steps:
       - uses: actions/checkout@v2
         with:

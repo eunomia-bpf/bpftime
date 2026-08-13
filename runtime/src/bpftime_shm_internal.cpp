@@ -306,7 +306,8 @@ long bpftime_shm::bpf_map_push_elem(int fd, const void *value, uint64_t flags,
 				    bool from_syscall) const
 {
 	auto *handler = try_get_map_handler(fd);
-	return handler ? handler->map_push_elem(value, flags, from_syscall) : -1;
+	return handler ? handler->map_push_elem(value, flags, from_syscall) :
+			 -1;
 }
 
 long bpftime_shm::bpf_map_pop_elem(int fd, void *value, bool from_syscall) const
@@ -326,10 +327,9 @@ int bpftime_shm::bpf_map_get_next_key(int fd, const void *key, void *next_key,
 				      bool from_syscall) const
 {
 	auto *handler = try_get_map_handler(fd);
-	return handler ?
-		       handler->bpf_map_get_next_key(key, next_key,
-						     from_syscall) :
-		       -1;
+	return handler ? handler->bpf_map_get_next_key(key, next_key,
+						       from_syscall) :
+			 -1;
 }
 
 int bpftime_shm::add_kprobe(std::optional<int> fd, const char *func_name,
@@ -446,7 +446,8 @@ int bpftime_shm::add_bpf_prog_attach_target(int perf_fd, int bpf_fd,
 		SPDLOG_ERROR("Unable to find an available id: {}", next_id);
 		return -ENOSPC;
 	}
-	manager->set_handler(next_id, bpf_link_handler(bpf_fd, perf_fd, cookie),
+	manager->set_handler(next_id,
+			     bpf_link_handler(bpf_fd, perf_fd, cookie, segment),
 			     segment);
 	return next_id;
 }
@@ -706,11 +707,36 @@ int bpftime_shm::add_bpf_link(int fd, struct bpf_link_create_args *args)
 		errno = EINVAL;
 		return -1;
 	}
-	// Validate before allocating an fd so error paths don't leak the fd that
-	// open_fake_fd() would otherwise create.
+	// Validate before allocating an fd so error paths don't leak the fd
+	// that open_fake_fd() would otherwise create.
 	if (!is_prog_fd(args->prog_fd)) {
 		errno = EBADF;
 		return -1;
+	}
+	if (args->attach_type != BPFTIME_BPF_PERF_EVENT_ATTACH_TYPE &&
+	    args->attach_type != bpftime::BPF_TRACE_UPROBE_MULTI) {
+		SPDLOG_DEBUG("add_bpf_link: unsupported attach type {}",
+			     args->attach_type);
+		errno = EOPNOTSUPP;
+		return -1;
+	}
+	if (args->attach_type == bpftime::BPF_TRACE_UPROBE_MULTI) {
+		const auto &opts = args->uprobe_multi;
+		if (args->flags != 0 ||
+		    (opts.flags & ~bpftime::BPF_F_UPROBE_MULTI_RETURN) != 0) {
+			SPDLOG_DEBUG(
+				"add_bpf_link: unsupported uprobe_multi flags {}, link flags {}",
+				opts.flags, args->flags);
+			errno = EINVAL;
+			return -1;
+		}
+		if (opts.cnt == 0 || opts.path == 0 || opts.offsets == 0) {
+			SPDLOG_DEBUG(
+				"add_bpf_link: invalid uprobe_multi args path={}, offsets={}, cnt={}",
+				opts.path, opts.offsets, opts.cnt);
+			errno = EINVAL;
+			return -1;
+		}
 	}
 	// For perf-event links (uprobe/kprobe/tracepoint) the target must be a
 	// valid perf-event handler fd, matching the kernel's BPF_LINK_CREATE
@@ -739,8 +765,9 @@ int bpftime_shm::add_bpf_link(int fd, struct bpf_link_create_args *args)
 		// if fd is negative, we need to create a new fd for allocating
 		fd = open_fake_fd();
 	}
-	return manager->set_handler(fd, bpftime::bpf_link_handler(*args),
-				    segment);
+	int result = manager->set_handler(
+		fd, bpftime::bpf_link_handler(*args, segment), segment);
+	return result;
 }
 
 void bpftime_shm::close_fd(int fd)
@@ -757,7 +784,7 @@ void bpftime_shm::enable_mpk()
 		return;
 	}
 	if (pkey_set(pkey, PKEY_DISABLE_WRITE) == -1) {
-		SPDLOG_ERROR("pkey_set read only failed");
+		SPDLOG_WARN("pkey_set read only failed");
 	}
 }
 
@@ -850,8 +877,9 @@ bpftime_shm::bpftime_shm(const char *shm_name, shm_open_type type)
 		SPDLOG_DEBUG(
 			"done: bpftime_shm for server setup: syscall_pid_set");
 
-		runtime_config = segment.find_or_construct<struct runtime_config>(
-			bpftime::DEFAULT_AGENT_CONFIG_NAME)(config);
+		runtime_config =
+			segment.find_or_construct<struct runtime_config>(
+				bpftime::DEFAULT_AGENT_CONFIG_NAME)(config);
 
 		injected_pids = segment.find_or_construct<alive_agent_pids>(
 			bpftime::DEFAULT_ALIVE_AGENT_PIDS_NAME)(

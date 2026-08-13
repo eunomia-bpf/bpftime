@@ -6,9 +6,11 @@
 #include "bpftime_shm.hpp"
 #include <ebpf-vm.h>
 #include "handler/epoll_handler.hpp"
+#include "handler/link_handler.hpp"
 #include "handler/perf_event_handler.hpp"
 #include "spdlog/spdlog.h"
 #include <bpftime_shm_internal.hpp>
+#include <cerrno>
 #include <cstdio>
 #if __linux__
 #include <sys/epoll.h>
@@ -92,6 +94,20 @@ bpf_perf_event_handler_attr_to_json(const bpf_perf_event_handler &handler)
 	}
 
 	return j;
+}
+
+static json uprobe_multi_link_data_to_json(const uprobe_multi_link_data &data)
+{
+	json entries = json::array();
+	for (const auto &entry : data.entries) {
+		entries.push_back({ { "offset", entry.offset },
+				    { "ref_ctr_offset", entry.ref_ctr_offset },
+				    { "cookie", entry.cookie.value_or(0) } });
+	}
+	return { { "path", std::string(data.path.c_str()) },
+		 { "flags", data.flags },
+		 { "pid", data.pid },
+		 { "entries", entries } };
 }
 
 extern "C" int bpftime_import_global_shm_from_json(const char *filename)
@@ -179,13 +195,71 @@ static int import_shm_handler_from_json(bpftime_shm &shm, json value, int fd)
 			shm.perf_event_enable(fd);
 		}
 	} else if (handler_type == "bpf_link_handler") {
-		unsigned int prog_fd = value["attr"]["prog_fd"];
-		unsigned int target_fd = value["attr"]["target_fd"];
-		bpf_link_create_args args = {
-			.prog_fd = prog_fd,
-			.target_fd = target_fd,
-		};
-		shm.add_bpf_link(fd, &args);
+		const auto &attr = value["attr"];
+		unsigned int prog_fd = attr["prog_fd"];
+		unsigned int target_id;
+		if (attr.contains("target_id")) {
+			target_id = attr["target_id"];
+		} else if (attr.contains("target_fd")) {
+			target_id = attr["target_fd"];
+		} else {
+			SPDLOG_ERROR("bpf_link_handler json missing target fd");
+			return -EINVAL;
+		}
+		unsigned int link_attach_type =
+			attr.contains("link_attach_type") ?
+				attr["link_attach_type"].get<unsigned int>() :
+				bpftime::BPF_PERF_EVENT;
+		if (link_attach_type == BPF_PERF_EVENT) {
+			bpf_link_create_args args = {
+				.prog_fd = prog_fd,
+				.target_fd = target_id,
+				.attach_type = link_attach_type
+			};
+			shm.add_bpf_link(fd, &args);
+		} else if (link_attach_type == BPF_TRACE_UPROBE_MULTI) {
+			const auto &uprobe_multi =
+				value["attr"]["uprobe_multi"];
+			std::string path = uprobe_multi["path"];
+			std::vector<unsigned long> offsets;
+			std::vector<unsigned long> ref_ctr_offsets;
+			std::vector<uint64_t> cookies;
+			for (const auto &entry : uprobe_multi["entries"]) {
+				offsets.push_back(static_cast<unsigned long>(
+					entry["offset"].get<uint64_t>()));
+				ref_ctr_offsets.push_back(
+					static_cast<unsigned long>(
+						entry["ref_ctr_offset"]
+							.get<uint64_t>()));
+				cookies.push_back(
+					entry["cookie"].get<uint64_t>());
+			}
+			if (offsets.empty()) {
+				SPDLOG_ERROR(
+					"uprobe_multi link import requires at least one entry");
+				return -EINVAL;
+			}
+			bpf_link_create_args args{};
+			args.prog_fd = prog_fd;
+			args.target_fd = target_id;
+			args.attach_type = link_attach_type;
+			args.uprobe_multi.path = (uintptr_t)path.c_str();
+			args.uprobe_multi.offsets = (uintptr_t)offsets.data();
+			args.uprobe_multi.ref_ctr_offsets =
+				(uintptr_t)ref_ctr_offsets.data();
+			args.uprobe_multi.cookies = (uintptr_t)cookies.data();
+			args.uprobe_multi.cnt = offsets.size();
+			args.uprobe_multi.flags = uprobe_multi["flags"];
+			args.uprobe_multi.pid = uprobe_multi["pid"];
+			if (shm.add_bpf_link(fd, &args) < 0) {
+				return -errno;
+			}
+		} else {
+			SPDLOG_ERROR(
+				"Unsupported bpf_link attach type {} in json",
+				link_attach_type);
+			return -ENOTSUP;
+		}
 	} else {
 		SPDLOG_ERROR("Unsupported handler type {}", handler_type);
 		return -1;
@@ -298,12 +372,29 @@ int bpftime::bpftime_export_shm_to_json(const bpftime_shm &shm,
 			SPDLOG_INFO("epoll_handler found at {}", i);
 		} else if (std::holds_alternative<bpf_link_handler>(handler)) {
 			auto &h = std::get<bpf_link_handler>(handler);
-			j[std::to_string(i)] = {
-				{ "type", "bpf_link_handler" },
-				{ "attr",
-				  { { "prog_fd", h.prog_id },
-				    { "target_fd", h.attach_target_id } } }
-			};
+			json attr = { { "prog_fd", h.prog_id },
+				      { "target_fd", h.target_id },
+				      { "target_id", h.target_id },
+				      { "link_attach_type",
+					h.link_attach_type } };
+			if (h.link_attach_type ==
+			    bpftime::BPF_TRACE_UPROBE_MULTI) {
+				attr["uprobe_multi"] =
+					uprobe_multi_link_data_to_json(
+						std::get<uprobe_multi_link_data>(
+							h.data));
+			} else if (h.link_attach_type !=
+				   bpftime::BPF_PERF_EVENT) {
+				SPDLOG_ERROR(
+					"Unsupported bpf_link attach type {} in json export",
+					h.link_attach_type);
+				return -ENOTSUP;
+			}
+			// json attach_target_ids;
+			// for (auto x : h.attach_target_ids)
+			// 	attach_target_ids.push_back(x);
+			j[std::to_string(i)] = { { "type", "bpf_link_handler" },
+						 { "attr", attr } };
 			SPDLOG_INFO(
 				"bpf_link_handler found at {}，link {} -> {}",
 				i, h.args.prog_fd, h.args.target_fd);

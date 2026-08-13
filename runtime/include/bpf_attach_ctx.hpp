@@ -19,6 +19,7 @@
 #include <set>
 #include <mutex>
 #include <string_view>
+#include <thread>
 #include <utility>
 #include <vector>
 
@@ -35,11 +36,11 @@ namespace bpftime
 #ifdef BPFTIME_ENABLE_CUDA_ATTACH
 namespace cuda
 {
-	// The old 1<<30 value makes the shared segment too large for Boost IPC.
+// The old 1<<30 value makes the shared segment too large for Boost IPC.
 #ifndef BPFTIME_GPU_HELPER_MAX_BUF
-	// Upper bound for key/value staging buffers used by the GPU->host helper
-	// bridge. This is a layout-affecting constant: if you change it, you must
-	// also regenerate `attach/nv_attach_impl/trampoline_ptx.h`.
+// Upper bound for key/value staging buffers used by the GPU->host helper
+// bridge. This is a layout-affecting constant: if you change it, you must
+// also regenerate `attach/nv_attach_impl/trampoline_ptx.h`.
 #define BPFTIME_GPU_HELPER_MAX_BUF (1 << 20)
 #endif
 static constexpr std::size_t GPU_HELPER_MAX_BUF = BPFTIME_GPU_HELPER_MAX_BUF;
@@ -130,8 +131,8 @@ inline std::atomic<uintptr_t> &cuda_shared_mem_device_pointer_storage() noexcept
 
 inline void set_cuda_shared_mem_device_pointer(uintptr_t ptr) noexcept
 {
-	cuda_shared_mem_device_pointer_storage().store(ptr,
-						      std::memory_order_release);
+	cuda_shared_mem_device_pointer_storage().store(
+		ptr, std::memory_order_release);
 }
 
 inline uintptr_t get_cuda_shared_mem_device_pointer() noexcept
@@ -153,8 +154,24 @@ using syscall_hooker_func_t = int64_t (*)(int64_t sys_nr, int64_t arg1,
 					  int64_t arg4, int64_t arg5,
 					  int64_t arg6);
 
+/**
+ * @brief Represent a series of native attach entries instantiated by a certain
+ * bpf link
+ *
+ */
+using instantiated_link_record =
+	std::vector<std::pair<int, attach::base_attach_impl *>>;
+/**
+ * @brief Callback type for create a private data instance for a certain attach
+ * type
+ *
+ */
+using private_data_creator =
+	std::function<std::unique_ptr<attach::attach_private_data>(
+		const std::string_view &, int &)>;
+
 class bpf_attach_ctx {
-public:
+    public:
 	bpf_attach_ctx();
 	~bpf_attach_ctx();
 
@@ -195,10 +212,10 @@ public:
 	std::optional<attach::nv_attach_impl *> find_nv_attach_impl() const;
 #endif
 
-private:
+    private:
 	mutable std::mutex ctx_mutex;
-	// Stable shm epoch_seq last seen (even). Used to detect session switch and
-	// rebind GPU resources/maps accordingly.
+	// Stable shm epoch_seq last seen (even). Used to detect session switch
+	// and rebind GPU resources/maps accordingly.
 	std::uint64_t last_epoch_seq_seen = 0;
 	int destroy_instantiated_attach_link_unlocked(int link_id);
 	int destroy_all_attach_links_unlocked();
@@ -220,18 +237,15 @@ private:
 
 	// handler_id -> instantiated programs
 	std::map<int, std::unique_ptr<bpftime_prog>> instantiated_progs;
-	// handler_id -> (instantiated attaches id, attach_impl*)
-	std::map<int, std::pair<int, attach::base_attach_impl *>>
-		instantiated_attach_links;
+	// handler_id -> native attach ids and attach impls owned by this link
+	std::map<int, instantiated_link_record> instantiated_attach_links;
 	// handler_id -> instantiated attach private data & attach type
 	std::map<int,
 		 std::pair<std::unique_ptr<attach::attach_private_data>, int>>
 		instantiated_perf_events;
 	// attach_type -> attach impl
-	std::map<int, std::pair<attach::base_attach_impl *,
-				std::function<std::unique_ptr<
-					attach::attach_private_data>(
-					const std::string_view &, int &)>>>
+	std::map<int,
+		 std::pair<attach::base_attach_impl *, private_data_creator>>
 		attach_impls;
 	// Holds the ownership of all attach impls
 	std::vector<std::unique_ptr<attach::base_attach_impl>>
@@ -239,15 +253,28 @@ private:
 	// Record which handlers were already instantiated
 	std::set<int> instantiated_handlers;
 
+	// Handlers for different link attach type
+	std::map<int, std::function<std::optional<instantiated_link_record>(
+			      const bpf_link_handler &link, int id,
+			      const handler_manager *man,
+			      bool handle_nv_attach_impl)>>
+		link_attach_handlers;
+
 	int instantiate_handler_at(const handler_manager *manager, int id,
 				   std::set<int> &stk,
 				   const runtime_config &config,
 				   bool handle_nv_attach_impl);
 	int instantiate_prog_handler_at(int id, const bpf_prog_handler &handler,
 					const runtime_config &config);
-	int instantiate_bpf_link_handler_at(int id,
-					    const bpf_link_handler &handler,
-					    bool handle_nv_attach_impl);
+
+	std::optional<instantiated_link_record>
+	instantiate_perf_event_bpf_link_handler_at(
+		int id, const bpf_link_handler &handler,
+		const handler_manager *manager, bool handle_nv_attach_impl);
+
+	std::optional<instantiated_link_record>
+	instantiate_uprobe_multi_handler_at(int id,
+					    const bpf_link_handler &handler);
 	int instantiate_perf_event_handler_at(
 		int id, const bpf_perf_event_handler &perf_handler);
 
