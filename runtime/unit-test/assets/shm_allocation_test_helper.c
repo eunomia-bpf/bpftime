@@ -27,6 +27,11 @@ static int trigger_startup(void)
 		return 102;
 	}
 	close(fd);
+	fd = syscall(__NR_memfd_create, "bpftime-shm-allocation-test", 0);
+	if (fd < 0) {
+		return 104;
+	}
+	close(fd);
 	FILE *file = fopen("/dev/null", "r");
 	if (file == NULL) {
 		return 103;

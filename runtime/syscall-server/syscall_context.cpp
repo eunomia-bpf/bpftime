@@ -1134,8 +1134,9 @@ int syscall_context::handle_memfd_create(const char *name, int flags)
 	if (!enable_mock.load(std::memory_order_relaxed) ||
 	    initializing_cuda.load(std::memory_order_acquire) ||
 	    !enable_mock_after_initialized.load(std::memory_order_relaxed)) {
-		SPDLOG_DEBUG("Calling original dup3");
-		return orig_syscall_fn(__NR_dup3, (long)name, (long)flags);
+		SPDLOG_DEBUG("Calling original memfd_create");
+		return orig_syscall_fn(__NR_memfd_create, (long)name,
+				       (long)flags);
 	}
 	try_startup();
 	return bpftime_add_memfd_handler(name, flags);
