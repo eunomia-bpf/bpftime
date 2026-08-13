@@ -4,6 +4,7 @@
 #include <csetjmp>
 #include <cstdlib>
 #include <cstring>
+#include <sys/mman.h>
 #include <sys/resource.h>
 #include <sys/wait.h>
 #include <thread>
@@ -87,11 +88,32 @@ TEST_CASE("Test bpf_probe_read_str")
 				   0, 0) == 3);
 	REQUIRE(std::strcmp(destination, "te") == 0);
 	REQUIRE(bpf_probe_read_str((uint64_t)destination, 0, (uint64_t)source,
-				   0, 0) == -EINVAL);
+				   0, 0) == 0);
+#ifdef ENABLE_PROBE_READ_CHECK
+	std::memset(destination, 'x', sizeof(destination));
 	REQUIRE(bpf_probe_read_str((uint64_t)destination, sizeof(destination), 0,
 				   0, 0) == -EFAULT);
+	REQUIRE(destination[0] == '\0');
 	REQUIRE(bpf_probe_read_str(0, sizeof(destination), (uint64_t)source, 0,
 				   0) == -EFAULT);
+
+	long page_size = sysconf(_SC_PAGESIZE);
+	REQUIRE(page_size > 0);
+	auto pages = (char *)mmap(nullptr, (size_t)page_size * 2,
+				  PROT_READ | PROT_WRITE,
+				  MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+	REQUIRE(pages != MAP_FAILED);
+	pages[page_size - 2] = 'a';
+	pages[page_size - 1] = 'b';
+	REQUIRE(mprotect(pages + page_size, (size_t)page_size, PROT_NONE) == 0);
+	std::memset(destination, 'x', sizeof(destination));
+	REQUIRE(bpf_probe_read_str((uint64_t)destination, sizeof(destination),
+				   (uint64_t)(pages + page_size - 2), 0,
+				   0) == -EFAULT);
+	for (char value : destination)
+		REQUIRE(value == '\0');
+	REQUIRE(munmap(pages, (size_t)page_size * 2) == 0);
+#endif
 }
 
 TEST_CASE("Test SIGSEGV handler chaining across threads")

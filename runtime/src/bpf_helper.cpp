@@ -391,13 +391,14 @@ uint64_t bpftime_map_peek_elem_helper(uint64_t map, uint64_t value, uint64_t,
 
 #ifdef ENABLE_PROBE_READ_CHECK
 extern "C" void jump_point_read_str();
+extern "C" void jump_point_read_str_clear();
 #endif
 
 int64_t bpf_probe_read_str(uint64_t buf, uint64_t bufsz, uint64_t ptr,
 			   uint64_t, uint64_t)
 {
 	if (bufsz == 0)
-		return -EINVAL;
+		return 0;
 
 	int64_t ret = -EFAULT;
 #ifdef ENABLE_PROBE_READ_CHECK
@@ -428,9 +429,17 @@ int64_t bpf_probe_read_str(uint64_t buf, uint64_t bufsz, uint64_t ptr,
 #ifdef ENABLE_PROBE_READ_CHECK
 	__asm__ volatile("jump_point_read_str:");
 	__asm__ volatile("" ::: "memory");
-	probe_access_recovery_ip = 0;
-	if (probe_access_faulted)
+	if (probe_access_faulted) {
 		ret = -EFAULT;
+		probe_access_faulted = 0;
+		probe_access_recovery_ip =
+			(uintptr_t)&jump_point_read_str_clear;
+		__asm__ volatile("" ::: "memory");
+		memset(dst, 0, (size_t)bufsz);
+		__asm__ volatile("jump_point_read_str_clear:");
+		__asm__ volatile("" ::: "memory");
+	}
+	probe_access_recovery_ip = 0;
 	probe_access_faulted = 0;
 	probe_access_end();
 #endif
