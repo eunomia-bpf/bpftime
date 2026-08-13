@@ -41,6 +41,7 @@
 #include "syscall_server_utils.hpp"
 #include <optional>
 #include <sys/mman.h>
+#include <string>
 #include <unistd.h>
 #include <regex>
 
@@ -81,6 +82,69 @@ exit_for_startup_allocation_failure(const std::exception &error)
 	SPDLOG_CRITICAL(
 		"Increase BPFTIME_SHM_MEMORY_MB or decrease BPFTIME_MAX_FD_COUNT");
 	std::exit(EXIT_FAILURE);
+}
+
+void set_mock_fd_cloexec(int fd)
+{
+	int flags = fcntl(fd, F_GETFD);
+	if (flags < 0) {
+		return;
+	}
+	(void)fcntl(fd, F_SETFD, flags | FD_CLOEXEC);
+}
+
+int create_unlinked_mock_fd(bool close_on_exec)
+{
+	char filename_buf[] = "/tmp/bpftime-mock.XXXXXX";
+#if defined(__linux__)
+	int fd = close_on_exec ? mkostemp(filename_buf, O_CLOEXEC) :
+				 mkstemp(filename_buf);
+#else
+	int fd = mkstemp(filename_buf);
+#endif
+	if (fd < 0) {
+		return fd;
+	}
+#if !defined(__linux__)
+	if (close_on_exec) {
+		set_mock_fd_cloexec(fd);
+	}
+#else
+	(void)close_on_exec;
+#endif
+	if (unlink(filename_buf) != 0) {
+		int err = errno;
+		SPDLOG_WARN("Unable to unlink mock file {}: {}", filename_buf,
+			    err);
+	}
+	return fd;
+}
+
+bool fopen_flags_request_cloexec(const char *flags)
+{
+	return flags != nullptr && strchr(flags, 'e') != nullptr;
+}
+
+bool write_all_to_fd(int fd, const std::string &buf)
+{
+	const char *data = buf.data();
+	size_t bytes_left = buf.size();
+	while (bytes_left > 0) {
+		ssize_t written = write(fd, data, bytes_left);
+		if (written < 0) {
+			if (errno == EINTR) {
+				continue;
+			}
+			return false;
+		}
+		if (written == 0) {
+			errno = ENOSPC;
+			return false;
+		}
+		data += written;
+		bytes_left -= written;
+	}
+	return true;
 }
 
 int get_bpf_obj_info_by_fd(int fd, void *info, uint32_t *info_len,
@@ -207,7 +271,7 @@ int syscall_context::handle_close(int fd)
 		    itr != this->mocked_files.end()) {
 			SPDLOG_DEBUG("Removing mocked file fd {}", fd);
 			this->mocked_files.erase(itr);
-			return 0;
+			return orig_close_fn(fd);
 		}
 	}
 	bpftime_close(fd);
@@ -230,11 +294,11 @@ int syscall_context::handle_openat(int fd, const char *file, int oflag,
 	if (auto mocker = create_mocked_file_based_on_full_path(*path);
 	    mocker) {
 		bpftime_lock_guard _guard(this->mocked_file_lock);
-		char filename_buf[] = "/tmp/bpftime-mock.XXXXXX";
-		int fake_fd = mkstemp(filename_buf);
+		int fake_fd = create_unlinked_mock_fd(
+			(oflag & O_CLOEXEC) != 0);
 		if (fake_fd < 0) {
 			SPDLOG_WARN("Unable to create mock fd: {}", errno);
-			return orig_open_fn(file, oflag, mode);
+			return orig_openat_fn(fd, file, oflag, mode);
 		}
 		this->mocked_files.emplace(fake_fd, std::move(*mocker));
 		SPDLOG_DEBUG("Created mocked file with fd {}", fake_fd);
@@ -254,8 +318,8 @@ int syscall_context::handle_open(const char *file, int oflag,
 	try_startup();
 	if (auto mocker = create_mocked_file_based_on_full_path(file); mocker) {
 		bpftime_lock_guard _guard(this->mocked_file_lock);
-		char filename_buf[] = "/tmp/bpftime-mock.XXXXXX";
-		int fake_fd = mkstemp(filename_buf);
+		int fake_fd = create_unlinked_mock_fd(
+			(oflag & O_CLOEXEC) != 0);
 		if (fake_fd < 0) {
 			SPDLOG_WARN("Unable to create mock fd: {}", errno);
 			return orig_open_fn(file, oflag, mode);
@@ -1089,23 +1153,38 @@ FILE *syscall_context::handle_fopen(const char *pathname, const char *flags)
 	if (auto mocker = create_mocked_file_based_on_full_path(pathname);
 	    mocker) {
 		bpftime_lock_guard _guard(this->mocked_file_lock);
-		char filename_buf[] = "/tmp/bpftime-mock.XXXXXX";
-		int fake_fd = mkstemp(filename_buf);
+		int fake_fd = create_unlinked_mock_fd(
+			fopen_flags_request_cloexec(flags));
 		if (fake_fd < 0) {
 			SPDLOG_WARN("Unable to create mock fd: {}", errno);
 			return orig_fopen_fn(pathname, flags);
 		}
-		auto itr =
-			this->mocked_files.emplace(fake_fd, std::move(*mocker))
-				.first;
-		FILE *replacement_fp = fopen(filename_buf, "r");
+		int err = 0;
+		if (!write_all_to_fd(fake_fd, (*mocker)->buf)) {
+			err = errno;
+			orig_close_fn(fake_fd);
+			errno = err;
+			return orig_fopen_fn(pathname, flags);
+		}
+		if (lseek(fake_fd, 0, SEEK_SET) < 0) {
+			err = errno;
+			SPDLOG_WARN("Unable to rewind mock fd {}: {}", fake_fd,
+				    err);
+			orig_close_fn(fake_fd);
+			errno = err;
+			return orig_fopen_fn(pathname, flags);
+		}
+		FILE *replacement_fp = fdopen(fake_fd, "r");
+		if (replacement_fp == nullptr) {
+			err = errno;
+			orig_close_fn(fake_fd);
+			errno = err;
+			return orig_fopen_fn(pathname, flags);
+		}
 
-		itr->second->replacement_file = replacement_fp;
-		auto size_written = write(fake_fd, itr->second->buf.c_str(),
-					  itr->second->buf.size());
 		SPDLOG_DEBUG(
 			"Created fake fd {}, replacement fp {:x}, written {} bytes",
-			fake_fd, (uintptr_t)replacement_fp, size_written);
+			fake_fd, (uintptr_t)replacement_fp, (*mocker)->buf.size());
 		return replacement_fp;
 	}
 	return orig_fopen_fn(pathname, flags);

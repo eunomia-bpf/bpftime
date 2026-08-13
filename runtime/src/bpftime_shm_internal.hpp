@@ -9,6 +9,7 @@
 #include "bpf_map/userspace/ringbuf_map.hpp"
 #include "bpf_map/userspace/stack_trace_map.hpp"
 #include <boost/interprocess/managed_shared_memory.hpp>
+#include <boost/interprocess/sync/interprocess_mutex.hpp>
 #include <cstddef>
 #include <functional>
 #include <boost/interprocess/containers/set.hpp>
@@ -29,6 +30,18 @@ struct CommSharedMem;
 
 namespace bpftime
 {
+
+class shm_lifecycle_lock {
+    public:
+	explicit shm_lifecycle_lock(const char *shm_name) noexcept;
+	~shm_lifecycle_lock();
+
+	shm_lifecycle_lock(const shm_lifecycle_lock &) = delete;
+	shm_lifecycle_lock &operator=(const shm_lifecycle_lock &) = delete;
+
+    private:
+	int lock_fd = -1;
+};
 
 static constexpr std::uint64_t BPFTIME_EPOCH_SEQ_UNSTABLE = UINT64_MAX;
 static constexpr std::uint64_t BPFTIME_EPOCH_SEQ_MISSING = UINT64_MAX - 1;
@@ -53,6 +66,14 @@ using alive_agent_pids =
 	boost::interprocess::set<int, std::less<int>,
 				 alive_agent_pid_set_allocator>;
 
+using alive_syscall_server_pid_set_allocator =
+	boost::interprocess::allocator<
+		int, boost::interprocess::managed_shared_memory::segment_manager>;
+
+using alive_syscall_server_pid_set =
+	boost::interprocess::set<int, std::less<int>,
+				 alive_syscall_server_pid_set_allocator>;
+
 // global bpftime share memory
 class bpftime_shm {
 	std::optional<std::function<void(bool)>> mock_setter;
@@ -72,6 +93,12 @@ class bpftime_shm {
 
 	// Record which pids are injected by agent
 	alive_agent_pids *injected_pids;
+
+	// Record which pids own or use the syscall-server side of this shm.
+	alive_syscall_server_pid_set *alive_syscall_server_pids = nullptr;
+
+	// Guards pid bookkeeping sets stored in shared memory.
+	boost::interprocess::interprocess_mutex *pid_set_lock = nullptr;
 
 	bpftime_global_epoch_state *epoch_state = nullptr;
 
@@ -115,12 +142,22 @@ class bpftime_shm {
 	// Using a set stored in the shared memory
 	void set_syscall_trace_setup(int pid, bool whether);
 
-	// Add a pid into alive agent set
-	void add_pid_into_alive_agent_set(int pid);
-	// Remove a pid from alive agent set
-	void remove_pid_from_alive_agent_set(int pid);
-	// Iterate over all pids from the alive agent set
-	void iterate_all_pids_in_alive_agent_set(std::function<void(int)> &&cb);
+		// Add a pid into alive agent set
+		bool add_pid_into_alive_agent_set(int pid);
+		// Remove a pid from alive agent set
+		bool remove_pid_from_alive_agent_set(int pid);
+		// Iterate over all pids from the alive agent set. Returns false when
+		// the snapshot could not be read safely.
+		bool iterate_all_pids_in_alive_agent_set(
+			std::function<void(int)> &&cb);
+		// Add a pid into alive syscall-server set
+		bool add_pid_into_alive_syscall_server_set(int pid);
+		// Remove a pid from alive syscall-server set
+		bool remove_pid_from_alive_syscall_server_set(int pid);
+		// Iterate over all pids from the alive syscall-server set. Returns
+		// false when the snapshot could not be read safely.
+		bool iterate_all_pids_in_alive_syscall_server_set(
+			std::function<void(int)> &&cb);
 
 	// Server-side: clear all existing handlers (maps/progs/links/events) and
 	// reset per-session bookkeeping stored in shm. This is used to allow
