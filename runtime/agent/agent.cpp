@@ -1065,8 +1065,11 @@ extern "C" void bpftime_agent_main(const gchar *data, gboolean *stay_resident)
 			} catch (...) {
 			}
 			// We use SIGUSR1 to indicate the detaching.
-			if (ensure_detach_worker_started())
-				signal(SIGUSR1, sig_handler_sigusr1_detach);
+			if (!ensure_detach_worker_started()) {
+				init_fail();
+				return;
+			}
+			signal(SIGUSR1, sig_handler_sigusr1_detach);
 			/* We don't want our library to be unloaded after we return. */
 			*stay_resident = TRUE;
 			setenv("BPFTIME_USED", "1", 0);
