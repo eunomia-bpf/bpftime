@@ -1,8 +1,6 @@
 #include "catch2/catch_test_macros.hpp"
 #include "spdlog/spdlog.h"
 #include <cerrno>
-#include <csetjmp>
-#include <cstdlib>
 #include <cstring>
 #include <sys/mman.h>
 #include <sys/resource.h>
@@ -25,12 +23,12 @@ static void count_replaced_sigsegv(int)
 
 extern "C" {
 
-uint64_t bpftime_probe_read(uint64_t dst, uint64_t size, uint64_t ptr, uint64_t,
-			    uint64_t);
-uint64_t bpftime_probe_write_user(uint64_t dst, uint64_t src, uint64_t len,
-				  uint64_t, uint64_t);
-int64_t bpf_probe_read_str(uint64_t dst, uint64_t size, uint64_t src,
-			   uint64_t, uint64_t);
+int64_t bpftime_probe_read(uint64_t dst, int64_t size, uint64_t ptr, uint64_t,
+			   uint64_t);
+int64_t bpftime_probe_write_user(uint64_t dst, uint64_t src, int64_t len,
+				 uint64_t, uint64_t);
+int64_t bpf_probe_read_str(uint64_t dst, uint64_t size, uint64_t src, uint64_t,
+			   uint64_t);
 }
 
 TEST_CASE("Test bpftime_probe_read") // test for bpftime_probe_read
@@ -45,14 +43,15 @@ TEST_CASE("Test bpftime_probe_read") // test for bpftime_probe_read
 	for (size_t i = 0; i < len; i++) {
 		REQUIRE(dst[i] == src[i]);
 	}
+#ifdef ENABLE_PROBE_READ_CHECK
 	ret = bpftime_probe_read((uint64_t)dst, size, (uint64_t)(nullptr), 0,
 				 0);
 	REQUIRE(ret == -EFAULT);
 
-	ret = 0;
 	ret = bpftime_probe_read((uint64_t)(nullptr), size, (uint64_t)(nullptr),
 				 0, 0);
 	REQUIRE(ret == -EFAULT);
+#endif
 }
 
 TEST_CASE("Test repeated valid probe memory access")
@@ -69,7 +68,8 @@ TEST_CASE("Test repeated valid probe memory access")
 					   (uint64_t)src, 0, 0) == 0);
 		REQUIRE(std::memcmp(read_dst, src, size) == 0);
 		REQUIRE(bpftime_probe_write_user((uint64_t)write_dst,
-						(uint64_t)src, size, 0, 0) == 0);
+						 (uint64_t)src, size, 0,
+						 0) == 0);
 		REQUIRE(std::memcmp(write_dst, src, size) == 0);
 	}
 }
@@ -91,8 +91,8 @@ TEST_CASE("Test bpf_probe_read_str")
 				   0, 0) == 0);
 #ifdef ENABLE_PROBE_READ_CHECK
 	std::memset(destination, 'x', sizeof(destination));
-	REQUIRE(bpf_probe_read_str((uint64_t)destination, sizeof(destination), 0,
-				   0, 0) == -EFAULT);
+	REQUIRE(bpf_probe_read_str((uint64_t)destination, sizeof(destination),
+				   0, 0, 0) == -EFAULT);
 	REQUIRE(destination[0] == '\0');
 	REQUIRE(bpf_probe_read_str(0, sizeof(destination), (uint64_t)source, 0,
 				   0) == -EFAULT);
@@ -104,8 +104,14 @@ TEST_CASE("Test bpf_probe_read_str")
 				  MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
 	REQUIRE(pages != MAP_FAILED);
 	pages[page_size - 2] = 'a';
-	pages[page_size - 1] = 'b';
+	pages[page_size - 1] = '\0';
 	REQUIRE(mprotect(pages + page_size, (size_t)page_size, PROT_NONE) == 0);
+	REQUIRE(bpf_probe_read_str((uint64_t)destination, sizeof(destination),
+				   (uint64_t)(pages + page_size - 2), 0,
+				   0) == 2);
+	REQUIRE(std::strcmp(destination, "a") == 0);
+
+	pages[page_size - 1] = 'b';
 	std::memset(destination, 'x', sizeof(destination));
 	REQUIRE(bpf_probe_read_str((uint64_t)destination, sizeof(destination),
 				   (uint64_t)(pages + page_size - 2), 0,
@@ -116,7 +122,7 @@ TEST_CASE("Test bpf_probe_read_str")
 #endif
 }
 
-TEST_CASE("Test SIGSEGV handler chaining across threads")
+TEST_CASE("Test probe access preserves application SIGSEGV handlers")
 {
 	pid_t child = fork();
 	REQUIRE(child >= 0);
@@ -136,48 +142,21 @@ TEST_CASE("Test SIGSEGV handler chaining across threads")
 		    dst != src)
 			_exit(3);
 		int raise_result = -1;
-		std::thread worker([&raise_result]() {
-			raise_result = raise(SIGSEGV);
-		});
+		std::thread worker(
+			[&raise_result]() { raise_result = raise(SIGSEGV); });
 		worker.join();
-		_exit(raise_result == 0 && forwarded_sigsegv == 1 ? 0 : 4);
-	}
-
-	int status = 0;
-	REQUIRE(waitpid(child, &status, 0) == child);
-	REQUIRE(WIFEXITED(status));
-	REQUIRE(WEXITSTATUS(status) == 0);
-}
-
-TEST_CASE("Test probe access refreshes replaced SIGSEGV handler")
-{
-	pid_t child = fork();
-	REQUIRE(child >= 0);
-	if (child == 0) {
-		struct rlimit no_core = { 0, 0 };
-		struct sigaction application_handler = {};
-		setrlimit(RLIMIT_CORE, &no_core);
-		application_handler.sa_handler = count_sigsegv;
-		sigemptyset(&application_handler.sa_mask);
-		if (sigaction(SIGSEGV, &application_handler, nullptr) != 0)
-			_exit(2);
-
-		int src = 1;
-		int dst = 0;
-		if (bpftime_probe_read((uint64_t)&dst, sizeof(dst),
-				       (uint64_t)&src, 0, 0) != 0 ||
-		    dst != src)
-			_exit(3);
+		if (raise_result != 0 || forwarded_sigsegv != 1)
+			_exit(4);
 
 		application_handler.sa_handler = count_replaced_sigsegv;
 		if (sigaction(SIGSEGV, &application_handler, nullptr) != 0)
-			_exit(4);
+			_exit(5);
 		if (bpftime_probe_read((uint64_t)&dst, sizeof(dst),
 				       (uint64_t)&src, 0, 0) != 0)
-			_exit(5);
+			_exit(6);
 
-		int raise_result = raise(SIGSEGV);
-		_exit(raise_result == 0 && forwarded_sigsegv == 2 ? 0 : 6);
+		raise_result = raise(SIGSEGV);
+		_exit(raise_result == 0 && forwarded_sigsegv == 3 ? 0 : 7);
 	}
 
 	int status = 0;
@@ -239,7 +218,6 @@ TEST_CASE("Test Probe read/write size valid or not ")
 		REQUIRE(dst[i] == src[i]);
 	}
 }
-
 
 TEST_CASE("Test default SIGSEGV handler is preserved")
 {

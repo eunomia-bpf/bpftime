@@ -11,7 +11,12 @@
 #include <system_error>
 #if __APPLE__
 #include <cstdint>
+#include <mach/mach.h>
+#include <mach/mach_vm.h>
 #include <pthread.h>
+#elif __linux__
+#include <sys/syscall.h>
+#include <sys/uio.h>
 #endif
 #ifdef BPFTIME_BUILD_WITH_LIBBPF
 #include "bpf/bpf.h"
@@ -42,9 +47,6 @@
 #include <bpftime_shm_internal.hpp>
 #include <chrono>
 #include <thread>
-#include <setjmp.h>
-#include <signal.h>
-#include <mutex>
 
 #define PATH_MAX 4096
 
@@ -81,117 +83,27 @@ long bpftime_strncmp(const char *s1, uint64_t s1_sz, const char *s2)
 	return strncmp(s1, s2, s1_sz);
 }
 
-#if defined(ENABLE_PROBE_WRITE_CHECK) || defined(ENABLE_PROBE_READ_CHECK)
-static std::mutex probe_access_mutex;
-static struct sigaction previous_sigsegv_action {};
-static size_t probe_access_users = 0;
-thread_local static size_t probe_access_depth = 0;
-thread_local static volatile sig_atomic_t probe_access_faulted = 0;
-thread_local static volatile uintptr_t probe_access_recovery_ip = 0;
-
-static void forward_sigsegv(int sig, siginfo_t *siginfo, void *ctx)
-{
-	if (previous_sigsegv_action.sa_handler == SIG_IGN)
-		return;
-
-	if (previous_sigsegv_action.sa_handler == SIG_DFL) {
-		sigaction(sig, &previous_sigsegv_action, nullptr);
-		raise(sig);
-		return;
-	}
-
-	if (previous_sigsegv_action.sa_flags & SA_SIGINFO) {
-		previous_sigsegv_action.sa_sigaction(sig, siginfo, ctx);
-	} else {
-		previous_sigsegv_action.sa_handler(sig);
-	}
-}
-
-static void probe_sigsegv_handler(int sig, siginfo_t *siginfo, void *ctx)
-{
-	if (probe_access_recovery_ip != 0 &&
-	    (siginfo == nullptr || siginfo->si_code > 0)) {
-		auto uctx = (ucontext_t *)ctx;
-#if defined(__x86_64__) || defined(_M_X64)
-		auto *ip = (greg_t *)(&uctx->uc_mcontext.gregs[REG_RIP]);
-#elif defined(__aarch64__) || defined(_M_ARM64)
-		auto *ip = (greg_t *)(&uctx->uc_mcontext.pc);
-#else
-#error "Unsupported architecture"
-#endif
-		probe_access_faulted = 1;
-		*ip = (greg_t)probe_access_recovery_ip;
-		return;
-	}
-
-	forward_sigsegv(sig, siginfo, ctx);
-}
-
-static bool is_probe_sigsegv_handler(const struct sigaction &action)
-{
-	return (action.sa_flags & SA_SIGINFO) &&
-	       action.sa_sigaction == probe_sigsegv_handler;
-}
-
-static int probe_access_begin()
-{
-	if (probe_access_depth > 0) {
-		probe_access_depth++;
-		return 0;
-	}
-
-	std::lock_guard guard(probe_access_mutex);
-	if (probe_access_users == 0) {
-		struct sigaction current_action {};
-		if (sigaction(SIGSEGV, nullptr, &current_action) != 0) {
-			SPDLOG_ERROR("Failed to get SIGSEGV handler: {}", errno);
-			return -errno;
-		}
-
-		if (!is_probe_sigsegv_handler(current_action)) {
-			previous_sigsegv_action = current_action;
-			struct sigaction probe_action = current_action;
-			probe_action.sa_flags |= SA_SIGINFO;
-			probe_action.sa_flags &= ~SA_RESETHAND;
-			probe_action.sa_sigaction = probe_sigsegv_handler;
-			if (sigaction(SIGSEGV, &probe_action, nullptr) != 0) {
-				SPDLOG_ERROR("Failed to set SIGSEGV handler: {}",
-					     errno);
-				return -errno;
-			}
-		}
-	}
-
-	probe_access_users++;
-	probe_access_depth = 1;
-	return 0;
-}
-
-static void probe_access_end()
-{
-	if (probe_access_depth == 0)
-		return;
-	if (--probe_access_depth > 0)
-		return;
-
-	std::lock_guard guard(probe_access_mutex);
-	if (--probe_access_users > 0)
-		return;
-
-	struct sigaction current_action {};
-	if (sigaction(SIGSEGV, nullptr, &current_action) != 0) {
-		SPDLOG_ERROR("Failed to get SIGSEGV handler: {}", errno);
-		return;
-	}
-	if (is_probe_sigsegv_handler(current_action) &&
-	    sigaction(SIGSEGV, &previous_sigsegv_action, nullptr) != 0) {
-		SPDLOG_ERROR("Failed to restore SIGSEGV handler: {}", errno);
-	}
-}
-#endif
-
 #ifdef ENABLE_PROBE_READ_CHECK
-extern "C" void jump_point_read();
+static bool probe_read_memory(void *dst, const void *src, size_t size)
+{
+	if (size == 0)
+		return true;
+#if __APPLE__
+	mach_vm_size_t copied = 0;
+	return mach_vm_read_overwrite(mach_task_self(), (mach_vm_address_t)src,
+				      (mach_vm_size_t)size,
+				      (mach_vm_address_t)dst,
+				      &copied) == KERN_SUCCESS &&
+	       copied == size;
+#elif __linux__
+	struct iovec local = { dst, size };
+	struct iovec remote = { const_cast<void *>(src), size };
+	return syscall(SYS_process_vm_readv, getpid(), &local, 1, &remote, 1,
+		       0) == (ssize_t)size;
+#else
+#error "Probe memory checks are unsupported on this platform"
+#endif
+}
 #endif
 
 int64_t bpftime_probe_read(uint64_t dst, int64_t size, uint64_t ptr, uint64_t,
@@ -201,31 +113,34 @@ int64_t bpftime_probe_read(uint64_t dst, int64_t size, uint64_t ptr, uint64_t,
 		SPDLOG_ERROR("Invalid size: {}", size);
 		return -EFAULT;
 	}
-	int64_t ret = 0;
-
 #ifdef ENABLE_PROBE_READ_CHECK
-	if (probe_access_begin() != 0)
-		return -EFAULT;
-	probe_access_faulted = 0;
-	probe_access_recovery_ip = (uintptr_t)&jump_point_read;
-	__asm__ volatile("" ::: "memory");
-#endif
+	return probe_read_memory((void *)dst, (void *)ptr, (size_t)size) ?
+		       0 :
+		       -EFAULT;
+#else
 	memcpy((void *)dst, (void *)ptr, (size_t)size);
-
-#ifdef ENABLE_PROBE_READ_CHECK
-	__asm__ volatile("jump_point_read:");
-	__asm__ volatile("" ::: "memory");
-	probe_access_recovery_ip = 0;
-	if (probe_access_faulted)
-		ret = -EFAULT;
-	probe_access_faulted = 0;
-	probe_access_end();
+	return 0;
 #endif
-	return ret;
 }
 
-#ifdef ENABLE_PROBE_WRITE_CHECK
-extern "C" void jump_point_write();
+#if defined(ENABLE_PROBE_WRITE_CHECK) || defined(ENABLE_PROBE_READ_CHECK)
+static bool probe_write_memory(void *dst, const void *src, size_t size)
+{
+	if (size == 0)
+		return true;
+#if __APPLE__
+	return mach_vm_copy(mach_task_self(), (mach_vm_address_t)src,
+			    (mach_vm_size_t)size,
+			    (mach_vm_address_t)dst) == KERN_SUCCESS;
+#elif __linux__
+	struct iovec local = { const_cast<void *>(src), size };
+	struct iovec remote = { dst, size };
+	return syscall(SYS_process_vm_writev, getpid(), &local, 1, &remote, 1,
+		       0) == (ssize_t)size;
+#else
+#error "Probe memory checks are unsupported on this platform"
+#endif
+}
 #endif
 
 int64_t bpftime_probe_write_user(uint64_t dst, uint64_t src, int64_t len,
@@ -235,28 +150,14 @@ int64_t bpftime_probe_write_user(uint64_t dst, uint64_t src, int64_t len,
 		SPDLOG_ERROR("Invalid len: {}", len);
 		return -EFAULT;
 	}
-	int64_t ret = 0;
-
 #ifdef ENABLE_PROBE_WRITE_CHECK
-	if (probe_access_begin() != 0)
-		return -EFAULT;
-	probe_access_faulted = 0;
-	probe_access_recovery_ip = (uintptr_t)&jump_point_write;
-	__asm__ volatile("" ::: "memory");
-#endif
-
+	return probe_write_memory((void *)dst, (void *)src, (size_t)len) ?
+		       0 :
+		       -EFAULT;
+#else
 	memcpy((void *)dst, (void *)src, (size_t)len);
-
-#ifdef ENABLE_PROBE_WRITE_CHECK
-	__asm__ volatile("jump_point_write:");
-	__asm__ volatile("" ::: "memory");
-	probe_access_recovery_ip = 0;
-	if (probe_access_faulted)
-		ret = -EFAULT;
-	probe_access_faulted = 0;
-	probe_access_end();
+	return 0;
 #endif
-	return ret;
 }
 
 uint64_t bpftime_get_prandom_u32()
@@ -390,60 +291,80 @@ uint64_t bpftime_map_peek_elem_helper(uint64_t map, uint64_t value, uint64_t,
 }
 
 #ifdef ENABLE_PROBE_READ_CHECK
-extern "C" void jump_point_read_str();
-extern "C" void jump_point_read_str_clear();
+static size_t probe_page_remaining(const void *address)
+{
+	static const size_t page_size = []() {
+		long result = sysconf(_SC_PAGESIZE);
+		return result > 0 ? (size_t)result : (size_t)4096;
+	}();
+	return page_size - ((uintptr_t)address % page_size);
+}
+
+static void clear_probe_memory(void *dst, size_t size)
+{
+	static const char zeros[256] = {};
+	auto output = (char *)dst;
+	while (size > 0) {
+		size_t chunk_size = std::min(size, sizeof(zeros));
+		if (!probe_write_memory(output, zeros, chunk_size))
+			return;
+		output += chunk_size;
+		size -= chunk_size;
+	}
+}
 #endif
 
-int64_t bpf_probe_read_str(uint64_t buf, uint64_t bufsz, uint64_t ptr,
-			   uint64_t, uint64_t)
+int64_t bpf_probe_read_str(uint64_t buf, uint64_t bufsz, uint64_t ptr, uint64_t,
+			   uint64_t)
 {
 	if (bufsz == 0)
 		return 0;
 
-	int64_t ret = -EFAULT;
-#ifdef ENABLE_PROBE_READ_CHECK
-	if (probe_access_begin() != 0)
-		return -EFAULT;
-	probe_access_faulted = 0;
-	probe_access_recovery_ip = (uintptr_t)&jump_point_read_str;
-	__asm__ volatile("" ::: "memory");
-#endif
-
 	auto dst = (char *)(uintptr_t)buf;
 	auto src = (const char *)(uintptr_t)ptr;
+#ifndef ENABLE_PROBE_READ_CHECK
 	for (size_t i = 0; i < (size_t)bufsz; i++) {
-		char value = src[i];
-		if (value == '\0') {
+		if (src[i] == '\0') {
 			dst[i] = '\0';
-			ret = (int64_t)i + 1;
-			break;
+			return (int64_t)i + 1;
 		}
 		if (i == (size_t)bufsz - 1) {
 			dst[i] = '\0';
-			ret = (int64_t)bufsz;
-			break;
+			return (int64_t)bufsz;
 		}
-		dst[i] = value;
+		dst[i] = src[i];
 	}
+	return (int64_t)bufsz;
+#else
+	char scratch[256];
+	size_t copied = 0;
+	while (copied < (size_t)bufsz) {
+		size_t chunk_size =
+			std::min(sizeof(scratch), (size_t)bufsz - copied);
+		chunk_size = std::min(chunk_size,
+				      probe_page_remaining(src + copied));
+		if (!probe_read_memory(scratch, src + copied, chunk_size)) {
+			clear_probe_memory(dst, (size_t)bufsz);
+			return -EFAULT;
+		}
 
-#ifdef ENABLE_PROBE_READ_CHECK
-	__asm__ volatile("jump_point_read_str:");
-	__asm__ volatile("" ::: "memory");
-	if (probe_access_faulted) {
-		ret = -EFAULT;
-		probe_access_faulted = 0;
-		probe_access_recovery_ip =
-			(uintptr_t)&jump_point_read_str_clear;
-		__asm__ volatile("" ::: "memory");
-		memset(dst, 0, (size_t)bufsz);
-		__asm__ volatile("jump_point_read_str_clear:");
-		__asm__ volatile("" ::: "memory");
+		auto terminator = (char *)memchr(scratch, '\0', chunk_size);
+		bool complete = terminator != nullptr;
+		if (complete) {
+			chunk_size = (size_t)(terminator - scratch) + 1;
+		} else if (chunk_size == (size_t)bufsz - copied) {
+			scratch[chunk_size - 1] = '\0';
+			complete = true;
+		}
+
+		if (!probe_write_memory(dst + copied, scratch, chunk_size))
+			return -EFAULT;
+		copied += chunk_size;
+		if (complete)
+			return (int64_t)copied;
 	}
-	probe_access_recovery_ip = 0;
-	probe_access_faulted = 0;
-	probe_access_end();
+	return (int64_t)copied;
 #endif
-	return ret;
 }
 
 uint64_t bpf_ktime_get_coarse_ns(uint64_t, uint64_t, uint64_t, uint64_t,
