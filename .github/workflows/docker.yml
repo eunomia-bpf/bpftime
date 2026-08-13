@@ -60,7 +60,10 @@ jobs:
     name: Build and push Docker image
     runs-on: ubuntu-latest
     needs: build-image
-    if: "github.event_name != 'pull_request' && github.repository_owner == 'eunomia-bpf'"
+    if: "github.event_name != 'pull_request' && github.repository_owner == 'eunomia-bpf' && (github.event_name != 'workflow_dispatch' || github.ref == 'refs/heads/master')"
+    outputs:
+      release_tag: ${{ steps.release-version.outputs.tag }}
+      release_version: ${{ steps.release-version.outputs.version }}
     permissions:
       contents: read
       packages: write
@@ -69,6 +72,32 @@ jobs:
         uses: actions/checkout@v6
         with:
           submodules: "recursive"
+
+      - name: Resolve workflow-dispatch release version
+        id: release-version
+        if: "github.event_name == 'workflow_dispatch'"
+        run: |
+          git fetch --tags --force
+
+          version=$(sed -n 's/^[[:space:]]*VERSION[[:space:]]\+\([0-9]\+\.[0-9]\+\.[0-9]\+\).*/\1/p' CMakeLists.txt | head -n1)
+          if [ -z "$version" ]; then
+            echo "Unable to resolve project version from CMakeLists.txt" >&2
+            exit 1
+          fi
+
+          major=${version%%.*}
+          rest=${version#*.}
+          minor=${rest%%.*}
+          patch=${rest##*.}
+          tag="v${major}.${minor}.${patch}"
+
+          while git rev-parse -q --verify "refs/tags/$tag" >/dev/null; do
+            patch=$((patch + 1))
+            tag="v${major}.${minor}.${patch}"
+          done
+
+          echo "version=${tag#v}" >> "$GITHUB_OUTPUT"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v4
@@ -89,6 +118,8 @@ jobs:
             type=raw,value=latest,enable={{is_default_branch}}
             type=ref,event=tag
             type=semver,pattern={{version}}
+            type=raw,value=${{ steps.release-version.outputs.tag }},enable=${{ steps.release-version.outputs.tag != '' }}
+            type=raw,value=${{ steps.release-version.outputs.version }},enable=${{ steps.release-version.outputs.version != '' }}
             type=sha,format=long
 
       - name: Build image and push to GitHub Container Registry
@@ -105,3 +136,39 @@ jobs:
 
       - name: Image digest
         run: echo ${{ steps.docker_build.outputs.digest }}
+
+  publish-github-release:
+    name: Publish GitHub Release
+    runs-on: ubuntu-latest
+    needs: build-and-push-image
+    if: "github.repository_owner == 'eunomia-bpf' && ((github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')) || (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/master'))"
+    permissions:
+      contents: write
+    steps:
+      - name: Create GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG_NAME: ${{ needs.build-and-push-image.outputs.release_tag || github.ref_name }}
+        run: |
+          if [ -z "$TAG_NAME" ]; then
+            echo "Release tag was not resolved" >&2
+            exit 1
+          fi
+
+          if gh release view "$TAG_NAME" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "Release $TAG_NAME already exists"
+            exit 0
+          fi
+
+          release_args=(
+            --repo "$GITHUB_REPOSITORY" \
+            --generate-notes \
+            --latest
+          )
+          if [ "$GITHUB_EVENT_NAME" = "workflow_dispatch" ]; then
+            release_args+=(--target "$GITHUB_SHA")
+          else
+            release_args+=(--verify-tag)
+          fi
+
+          gh release create "$TAG_NAME" "${release_args[@]}"
