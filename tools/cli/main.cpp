@@ -8,6 +8,8 @@
 #include <frida-core.h>
 #include <argparse/argparse.hpp>
 #include <filesystem>
+#include <fcntl.h>
+#include <iostream>
 #include <stdexcept>
 #include <string_view>
 #include <unistd.h>
@@ -16,6 +18,7 @@
 #include <utility>
 #include <tuple>
 #include <algorithm>
+#include <sys/stat.h>
 #include <sys/wait.h>
 #include <spdlog/spdlog.h>
 #include <spdlog/cfg/env.h>
@@ -32,7 +35,6 @@
 #include <sys/socket.h>
 #include <sys/un.h>
 #include <sys/uio.h>
-#include <sys/stat.h>
 #endif
 #ifdef __APPLE__
 #include <crt_externs.h>
@@ -83,7 +85,10 @@ constexpr const char *AGENT_TRANSFORMER_LIBRARY =
 #error "Unsupported Platform"
 #endif
 
-static int subprocess_pid = 0;
+static volatile sig_atomic_t stop_requested = 0;
+static volatile sig_atomic_t subprocess_pid = 0;
+constexpr const char *TRACE_PIPE_ENV = "TRACEPIPE_PATH";
+constexpr const char *TRACE_PIPE_FILENAME = "tracepipe";
 
 static std::atomic<bool> g_trace_interrupted{ false };
 static std::atomic<pid_t> g_trace_target_pid{ -1 };
@@ -173,7 +178,18 @@ static int run_command(const char *path, const std::vector<std::string> &argv,
 	} else {
 		subprocess_pid = pid;
 		int status;
-		if (int cid = waitpid(pid, &status, 0); cid > 0) {
+		while (true) {
+			int cid = waitpid(pid, &status, 0);
+			if (cid == -1 && errno == EINTR) {
+				continue;
+			}
+			if (cid == -1) {
+				subprocess_pid = 0;
+				spdlog::error("waitpid({}) failed: {}", pid,
+					      strerror(errno));
+				return 1;
+			}
+			subprocess_pid = 0;
 			if (WIFEXITED(status)) {
 				int exit_code = WEXITSTATUS(status);
 				if (exit_code != 0) {
@@ -190,6 +206,7 @@ static int run_command(const char *path, const std::vector<std::string> &argv,
 					      signal_code);
 				return 128 + signal_code;
 			}
+			break;
 		}
 	}
 	return 1;
@@ -205,9 +222,8 @@ static int spawn_command(const char *path, const std::vector<std::string> &argv,
 		if (drop_to && geteuid() == 0) {
 			auto [uid, gid] = *drop_to;
 			if (setgroups(0, nullptr) != 0) {
-				spdlog::error(
-					"trace: setgroups() failed: {}",
-					strerror(errno));
+				spdlog::error("trace: setgroups() failed: {}",
+					      strerror(errno));
 				_exit(1);
 			}
 			if (setgid(gid) != 0) {
@@ -296,6 +312,110 @@ static int inject_by_frida(int pid, const char *inject_path, const char *arg)
 	return 0;
 }
 
+static std::filesystem::path
+get_trace_pipe_path(const std::filesystem::path &install_path)
+{
+	return install_path / TRACE_PIPE_FILENAME;
+}
+
+static bool ensure_trace_pipe_fifo(const std::filesystem::path &trace_pipe_path)
+{
+	struct stat st = {};
+	if (lstat(trace_pipe_path.c_str(), &st) == 0) {
+		if (!S_ISFIFO(st.st_mode)) {
+			spdlog::error(
+				"Trace pipe path {} exists but is not a FIFO",
+				trace_pipe_path.string());
+			return false;
+		}
+		return true;
+	}
+
+	if (errno != ENOENT) {
+		spdlog::error("Failed to inspect trace pipe {}: {}",
+			      trace_pipe_path.string(), strerror(errno));
+		return false;
+	}
+
+	if (mkfifo(trace_pipe_path.c_str(), 0666) == 0) {
+		return true;
+	}
+
+	if (errno != EEXIST) {
+		spdlog::error("Failed to create trace pipe {}: {}",
+			      trace_pipe_path.string(), strerror(errno));
+		return false;
+	}
+
+	if (lstat(trace_pipe_path.c_str(), &st) == 0) {
+		if (S_ISFIFO(st.st_mode)) {
+			return true;
+		}
+		spdlog::error(
+			"Trace pipe path {} was replaced with a non-FIFO entry",
+			trace_pipe_path.string());
+		return false;
+	}
+
+	spdlog::error("Failed to inspect trace pipe {} after EEXIST: {}",
+		      trace_pipe_path.string(), strerror(errno));
+	return false;
+}
+
+static int read_trace_pipe(const std::filesystem::path &trace_pipe_path)
+{
+	if (!ensure_trace_pipe_fifo(trace_pipe_path)) {
+		return 1;
+	}
+
+	// Keep the FIFO as a stable rendezvous point. Writers may continue to
+	// reuse the same path after the current reader exits.
+	while (!stop_requested) {
+		int fd = open(trace_pipe_path.c_str(), O_RDONLY);
+		if (fd == -1) {
+			if (errno == EINTR) {
+				if (stop_requested) {
+					return 0;
+				}
+				continue;
+			}
+			spdlog::error("Failed to open trace pipe {}: {}",
+				      trace_pipe_path.string(),
+				      strerror(errno));
+			return 1;
+		}
+
+		while (!stop_requested) {
+			char data[4096];
+			ssize_t ret = read(fd, data, sizeof(data));
+			if (ret > 0) {
+				std::cout.write(data, ret);
+				std::cout.flush();
+				continue;
+			}
+			if (ret == 0) {
+				break;
+			}
+			if (errno == EINTR) {
+				if (stop_requested) {
+					close(fd);
+					return 0;
+				}
+				continue;
+			}
+			spdlog::error("Failed to read trace pipe {}: {}",
+				      trace_pipe_path.string(),
+				      strerror(errno));
+			close(fd);
+			return 1;
+		}
+
+		close(fd);
+	}
+
+	return 0;
+}
+
 #if __linux__
 static bool make_agent_ipc_addr(int pid, sockaddr_un &addr, socklen_t &len)
 {
@@ -316,7 +436,7 @@ static bool try_send_agent_ipc(int pid, const std::string &request,
 	int fd = ::socket(AF_UNIX, SOCK_STREAM | SOCK_CLOEXEC, 0);
 	if (fd < 0)
 		return false;
-	sockaddr_un addr {};
+	sockaddr_un addr{};
 	socklen_t len = 0;
 	if (!make_agent_ipc_addr(pid, addr, len)) {
 		::close(fd);
@@ -447,13 +567,15 @@ static const char *get_global_shm_name_for_cli()
 static void try_relax_global_shm_permissions_for_target(uid_t target_uid,
 							gid_t target_gid)
 {
-	// When running `bpftime trace` under sudo, an existing shm segment may have
-	// been created by root with restrictive permissions. The loader is usually
-	// spawned as the target uid/gid, so avoid removing/recreating the shm (which
-	// would break already-injected agents); instead, best-effort relax perms.
-	// /dev/shm is the default backing store for POSIX shm on Linux.
-	// Best-effort: do not fail trace if this can't be adjusted.
-	std::string path = std::string("/dev/shm/") + get_global_shm_name_for_cli();
+	// When running `bpftime trace` under sudo, an existing shm segment may
+	// have been created by root with restrictive permissions. The loader is
+	// usually spawned as the target uid/gid, so avoid removing/recreating
+	// the shm (which would break already-injected agents); instead,
+	// best-effort relax perms. /dev/shm is the default backing store for
+	// POSIX shm on Linux. Best-effort: do not fail trace if this can't be
+	// adjusted.
+	std::string path =
+		std::string("/dev/shm/") + get_global_shm_name_for_cli();
 	struct stat st {};
 	if (::stat(path.c_str(), &st) != 0) {
 		if (errno != ENOENT) {
@@ -494,7 +616,7 @@ static void try_relax_global_shm_permissions_for_target(uid_t target_uid,
 static std::optional<std::filesystem::path> current_exe_path()
 {
 #if __linux__
-	std::array<char, 4096> buf {};
+	std::array<char, 4096> buf{};
 	ssize_t n = readlink("/proc/self/exe", buf.data(), buf.size() - 1);
 	if (n <= 0)
 		return std::nullopt;
@@ -531,7 +653,7 @@ static std::optional<std::filesystem::path> find_build_root_from_exe()
 static std::optional<std::filesystem::path> readlink_path(const std::string &p)
 {
 #if __linux__
-	std::array<char, 4096> buf {};
+	std::array<char, 4096> buf{};
 	ssize_t n = readlink(p.c_str(), buf.data(), buf.size() - 1);
 	if (n <= 0)
 		return std::nullopt;
@@ -550,7 +672,8 @@ static std::string resolve_cuobjdump_path()
 		return std::filesystem::exists(p, ec);
 	};
 
-	// Allow overriding with either an absolute path or a PATH-resolved tool name.
+	// Allow overriding with either an absolute path or a PATH-resolved tool
+	// name.
 	if (const char *p = getenv("BPFTIME_CUOBJDUMP"); p && p[0] != '\0') {
 		std::string s(p);
 		if (s.find('/') == std::string::npos)
@@ -559,24 +682,26 @@ static std::string resolve_cuobjdump_path()
 			return s;
 	}
 
-	const auto try_root = [&](const char *env) -> std::optional<std::string> {
+	const auto try_root =
+		[&](const char *env) -> std::optional<std::string> {
 		if (const char *p = getenv(env); p && p[0] != '\0') {
-			auto cand = std::filesystem::path(p) / "bin" / "cuobjdump";
+			auto cand =
+				std::filesystem::path(p) / "bin" / "cuobjdump";
 			if (exists(cand))
 				return cand.string();
 		}
 		return std::nullopt;
 	};
 
-	for (const char *env : {"BPFTIME_CUDA_ROOT", "CUDA_HOME", "CUDA_PATH",
-				"LLVMBPF_CUDA_PATH", "CUDAToolkit_ROOT"}) {
+	for (const char *env : { "BPFTIME_CUDA_ROOT", "CUDA_HOME", "CUDA_PATH",
+				 "LLVMBPF_CUDA_PATH", "CUDAToolkit_ROOT" }) {
 		if (auto p = try_root(env))
 			return *p;
 	}
 
 #if __linux__
-	// If CUDA is installed under /usr/local/cuda-* (common on dev machines),
-	// auto-detect it without hardcoding a specific version.
+	// If CUDA is installed under /usr/local/cuda-* (common on dev
+	// machines), auto-detect it without hardcoding a specific version.
 	{
 		std::error_code ec;
 		const std::filesystem::path usr_local("/usr/local");
@@ -599,8 +724,9 @@ static std::string resolve_cuobjdump_path()
 	return "cuobjdump";
 }
 
-static std::optional<std::filesystem::path> prepare_cuda_late_ptx_dir(
-	int pid, std::optional<std::pair<uid_t, gid_t>> target_uid_gid)
+static std::optional<std::filesystem::path>
+prepare_cuda_late_ptx_dir(int pid,
+			  std::optional<std::pair<uid_t, gid_t>> target_uid_gid)
 {
 #if __linux__
 	auto exe = readlink_path("/proc/" + std::to_string(pid) + "/exe");
@@ -663,7 +789,8 @@ static std::optional<std::filesystem::path> prepare_cuda_late_ptx_dir(
 	}
 
 	const auto cuobjdump = resolve_cuobjdump_path();
-	auto run_extract = [&](const std::filesystem::path &target_exe) -> bool {
+	auto run_extract =
+		[&](const std::filesystem::path &target_exe) -> bool {
 		std::vector<std::string> env_strs;
 		for (char **p = ::environ; p && *p; ++p) {
 			if (strncmp(*p, "LD_PRELOAD=", 11) == 0)
@@ -734,9 +861,8 @@ static std::optional<std::filesystem::path> prepare_cuda_late_ptx_dir(
 				ptx_count++;
 		}
 		if (ptx_count > 0) {
-			spdlog::info(
-				"trace: extracted {} PTX file(s) to {}",
-				ptx_count, dir.string());
+			spdlog::info("trace: extracted {} PTX file(s) to {}",
+				     ptx_count, dir.string());
 			return dir;
 		}
 	}
@@ -753,10 +879,11 @@ static std::optional<std::filesystem::path> prepare_cuda_late_ptx_dir(
 #endif
 }
 
-static std::filesystem::path resolve_library_path_or_exit(
-	const std::filesystem::path &install_path,
-	const std::filesystem::path &install_relative,
-	const std::filesystem::path &build_relative, const char *what)
+static std::filesystem::path
+resolve_library_path_or_exit(const std::filesystem::path &install_path,
+			     const std::filesystem::path &install_relative,
+			     const std::filesystem::path &build_relative,
+			     const char *what)
 {
 	if (auto build_root = find_build_root_from_exe(); build_root) {
 		auto b = *build_root / build_relative;
@@ -773,7 +900,8 @@ static std::filesystem::path resolve_library_path_or_exit(
 	std::exit(1);
 }
 
-static std::tuple<std::string, std::vector<std::string>, std::vector<std::string>>
+static std::tuple<std::string, std::vector<std::string>,
+		  std::vector<std::string>>
 extract_path_and_args(const argparse::ArgumentParser &parser,
 		      bool include_runtime_env_options,
 		      bool include_kernel_loader_options)
@@ -868,18 +996,37 @@ static void add_kernel_loader_cli_options(argparse::ArgumentParser &command)
 
 static void signal_handler(int sig)
 {
+	stop_requested = 1;
 	if (subprocess_pid) {
-		kill(subprocess_pid, sig);
+		kill(static_cast<pid_t>(subprocess_pid), sig);
 	}
+}
+
+static bool install_signal_handler(int sig)
+{
+	struct sigaction sa = {};
+	sa.sa_handler = signal_handler;
+	sigemptyset(&sa.sa_mask);
+	sa.sa_flags = 0;
+	if (sigaction(sig, &sa, nullptr) == -1) {
+		spdlog::error("Failed to install signal handler for {}: {}",
+			      sig, strerror(errno));
+		return false;
+	}
+	return true;
 }
 
 int main(int argc, const char **argv)
 {
 	spdlog::cfg::load_env_levels();
-	const auto runtime_config = bpftime::construct_runtime_config_from_env();
+	const auto runtime_config =
+		bpftime::construct_runtime_config_from_env();
 	(void)runtime_config;
-	signal(SIGINT, signal_handler);
-	signal(SIGTSTP, signal_handler);
+	if (!install_signal_handler(SIGINT) ||
+	    !install_signal_handler(SIGTERM) ||
+	    !install_signal_handler(SIGTSTP)) {
+		return 1;
+	}
 	argparse::ArgumentParser program(argv[0]);
 
 	if (auto home_env = getenv("HOME"); home_env) {
@@ -927,6 +1074,9 @@ int main(int argc, const char **argv)
 	start_command.add_argument("-s", "--enable-syscall-trace")
 		.help("Whether to enable syscall trace")
 		.flag();
+	start_command.add_argument("-p", "--print-to-trace-pipe")
+		.help("Same as TRACEPIPE_PATH, send bpf_printk output to the bpftime trace pipe.")
+		.flag();
 	start_command.add_argument("COMMAND")
 		.nargs(argparse::nargs_pattern::at_least_one)
 		.remaining()
@@ -949,7 +1099,7 @@ int main(int argc, const char **argv)
 
 	argparse::ArgumentParser trace_command("trace");
 	trace_command.add_description(
-		"Run a loader with bpftime-server injected, then attach bpftime-agent to a running process");
+		"With no arguments, read bpf_printk output from the bpftime trace pipe. With a target and command, run a loader with bpftime-server injected, then attach bpftime-agent to a running process");
 	trace_command.add_argument("--pid")
 		.help("Target PID to attach bpftime-agent")
 		.default_value(-1)
@@ -962,7 +1112,7 @@ int main(int argc, const char **argv)
 		.default_value(500)
 		.scan<'i', int>();
 	trace_command.add_argument("COMMAND")
-		.nargs(argparse::nargs_pattern::at_least_one)
+		.nargs(argparse::nargs_pattern::any)
 		.remaining()
 		.help("Loader command to run (will be injected with bpftime-server)");
 
@@ -1001,6 +1151,11 @@ int main(int argc, const char **argv)
 			"agent");
 		auto [executable_path, extra_args, env_args] =
 			extract_path_and_args(start_command, false, false);
+		if (start_command.get<bool>("print-to-trace-pipe")) {
+			env_args.emplace_back(
+				std::string(TRACE_PIPE_ENV) + "=" +
+				get_trace_pipe_path(install_path).string());
+		}
 		if (start_command.get<bool>("enable-syscall-trace")) {
 			auto transformer_path = resolve_library_path_or_exit(
 				install_path, AGENT_TRANSFORMER_LIBRARY,
@@ -1040,6 +1195,20 @@ int main(int argc, const char **argv)
 	} else if (program.is_subcommand_used("trace")) {
 		auto pid = trace_command.get<int>("pid");
 		auto pidof_name = trace_command.get<std::string>("pidof");
+		auto trace_command_items =
+			trace_command
+				.present<std::vector<std::string>>("COMMAND")
+				.value_or(std::vector<std::string>{});
+		if (trace_command_items.empty() && pid <= 0 &&
+		    pidof_name.empty()) {
+			return read_trace_pipe(
+				get_trace_pipe_path(install_path));
+		}
+		if (trace_command_items.empty()) {
+			spdlog::error(
+				"trace: loader command is required when --pid or --pidof is specified");
+			return 1;
+		}
 		if (pid > 0 && !pidof_name.empty()) {
 			spdlog::error(
 				"trace: --pid and --pidof are mutually exclusive");
@@ -1119,9 +1288,9 @@ int main(int argc, const char **argv)
 		auto [executable_path, extra_args, env_args] =
 			extract_path_and_args(trace_command, false, false);
 		(void)env_args;
-		int child_pid = spawn_command(executable_path.c_str(), extra_args,
-					      server_path.c_str(), nullptr,
-					      drop_to);
+		int child_pid =
+			spawn_command(executable_path.c_str(), extra_args,
+				      server_path.c_str(), nullptr, drop_to);
 		if (child_pid <= 0) {
 			spdlog::error("Failed to spawn loader process");
 			return 1;
@@ -1129,9 +1298,9 @@ int main(int argc, const char **argv)
 		spdlog::info("trace: loader pid={}", child_pid);
 
 #if __linux__
-		// Ensure Ctrl+C triggers an orderly shutdown: detach agent first, then
-		// stop the loader to avoid CUDA IPC allocations being torn down while
-		// the target still uses them.
+		// Ensure Ctrl+C triggers an orderly shutdown: detach agent
+		// first, then stop the loader to avoid CUDA IPC allocations
+		// being torn down while the target still uses them.
 		g_trace_target_pid.store(pid, std::memory_order_release);
 		g_trace_loader_pid.store(child_pid, std::memory_order_release);
 		g_trace_interrupted.store(false, std::memory_order_release);
@@ -1145,14 +1314,16 @@ int main(int argc, const char **argv)
 		(void)sigaction(SIGTERM, &sa, &old_term);
 #endif
 
-		std::string agent_arg = "loader_pid=" + std::to_string(child_pid);
+		std::string agent_arg =
+			"loader_pid=" + std::to_string(child_pid);
 		agent_arg += ";force_reinit=1";
 		if (refresh_ms > 0) {
-			agent_arg +=
-				";auto_refresh_ms=" + std::to_string(refresh_ms);
+			agent_arg += ";auto_refresh_ms=" +
+				     std::to_string(refresh_ms);
 		}
 		if (late_ptx_dir) {
-			agent_arg += ";cuda_late_ptx_dir=" + late_ptx_dir->string();
+			agent_arg +=
+				";cuda_late_ptx_dir=" + late_ptx_dir->string();
 		} else {
 			agent_arg += ";cuda_disable_cuobjdump=1";
 		}
@@ -1160,8 +1331,8 @@ int main(int argc, const char **argv)
 		int rc = 0;
 		bool agent_attached = false;
 #if __linux__
-		// Prefer IPC refresh if an agent is already present in the target
-		// process; fall back to Frida injection otherwise.
+		// Prefer IPC refresh if an agent is already present in the
+		// target process; fall back to Frida injection otherwise.
 		std::string req = "refresh " + agent_arg;
 		std::string refresh_resp;
 		if (try_send_agent_ipc(pid, req, &refresh_resp) &&
@@ -1186,9 +1357,10 @@ int main(int argc, const char **argv)
 			if (w < 0 && errno == EINTR) {
 				if (g_trace_interrupted.load(
 					    std::memory_order_acquire)) {
-					// Orderly Ctrl+C: detach the agent first so
-					// the target stops using loader-owned CUDA
-					// IPC buffers, then stop the loader.
+					// Orderly Ctrl+C: detach the agent
+					// first so the target stops using
+					// loader-owned CUDA IPC buffers, then
+					// stop the loader.
 					if (!stop_requested) {
 						stop_requested = true;
 						if (agent_attached) {
@@ -1224,13 +1396,13 @@ int main(int argc, const char **argv)
 			break;
 		}
 
-		// Whether trace exited normally or via Ctrl+C, request agent detach
-		// so the target stops using CUDA IPC resources.
+		// Whether trace exited normally or via Ctrl+C, request agent
+		// detach so the target stops using CUDA IPC resources.
 		if (agent_attached) {
 			std::string detach_resp;
-			bool detached =
-				try_send_agent_ipc(pid, "detach", &detach_resp) &&
-				ipc_response_is_ok(detach_resp);
+			bool detached = try_send_agent_ipc(pid, "detach",
+							   &detach_resp) &&
+					ipc_response_is_ok(detach_resp);
 			if (!detached && !detach_resp.empty()) {
 				spdlog::warn(
 					"trace: agent IPC detach failed: {}",
@@ -1238,8 +1410,8 @@ int main(int argc, const char **argv)
 			}
 			if (!detached) {
 				(void)kill(pid, SIGUSR1);
-				// Give detach a moment to run before we drop the
-				// loader.
+				// Give detach a moment to run before we drop
+				// the loader.
 				usleep(200 * 1000);
 			}
 		}
