@@ -276,7 +276,8 @@ static void start_agent_ipc_server_once()
 		}
 		agent_ipc_fd = fd;
 		agent_ipc_stop.store(false, std::memory_order_release);
-		agent_ipc_thread = std::thread([]() {
+		try {
+			agent_ipc_thread = std::thread([]() {
 			for (;;) {
 				if (agent_ipc_stop.load(std::memory_order_acquire))
 					return;
@@ -369,7 +370,13 @@ static void start_agent_ipc_server_once()
 				}
 				::close(cfd);
 			}
-		});
+			});
+		} catch (...) {
+			agent_ipc_stop.store(true, std::memory_order_release);
+			::close(fd);
+			agent_ipc_fd = -1;
+			return;
+		}
 		std::atexit([]() {
 			agent_ipc_stop.store(true, std::memory_order_release);
 			if (agent_ipc_fd >= 0) {
@@ -379,7 +386,11 @@ static void start_agent_ipc_server_once()
 			if (agent_ipc_thread.joinable())
 				agent_ipc_thread.detach();
 		});
-		SPDLOG_INFO("agent ipc: listening (abstract) for pid {}", (int)getpid());
+		try {
+			SPDLOG_INFO("agent ipc: listening (abstract) for pid {}",
+				    (int)getpid());
+		} catch (...) {
+		}
 	});
 #else
 	(void)0;
@@ -806,6 +817,13 @@ extern "C" void bpftime_agent_main(const gchar *data, gboolean *stay_resident)
 				auto_refresh_thread.join();
 		} catch (...) {
 		}
+		for (int &fd : detach_pipe_fds) {
+			if (fd >= 0) {
+				::close(fd);
+				fd = -1;
+			}
+		}
+		detach_thread_started.store(false, std::memory_order_release);
 		if (ctx_constructed) {
 			try {
 				ctx_holder.destroy();
@@ -1000,10 +1018,6 @@ extern "C" void bpftime_agent_main(const gchar *data, gboolean *stay_resident)
 			}
 			srand(std::random_device()());
 
-			// Start IPC control plane for repeat attach/refresh (used by
-			// `bpftime trace`).
-			start_agent_ipc_server_once();
-
 			int auto_refresh_ms = parse_auto_refresh_ms(data);
 			pid_t loader_pid = parse_loader_pid(data);
 			if (auto_refresh_ms > 0) {
@@ -1069,6 +1083,9 @@ extern "C" void bpftime_agent_main(const gchar *data, gboolean *stay_resident)
 				init_fail();
 				return;
 			}
+			// Start IPC control plane for repeat attach/refresh (used by
+			// `bpftime trace`).
+			start_agent_ipc_server_once();
 			signal(SIGUSR1, sig_handler_sigusr1_detach);
 			/* We don't want our library to be unloaded after we return. */
 			*stay_resident = TRUE;
