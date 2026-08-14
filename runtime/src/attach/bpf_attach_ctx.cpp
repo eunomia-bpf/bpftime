@@ -37,7 +37,7 @@ extern "C" uint64_t bpftime_set_retval(uint64_t value);
 namespace bpftime
 {
 
-static int load_prog_and_helpers(bpftime_prog *prog, const runtime_config &config)
+int load_prog_and_helpers(bpftime_prog *prog, const runtime_config &config)
 {
 #if defined(__linux__)
 	if (config.enable_kernel_helper_group) {
@@ -182,6 +182,13 @@ bpf_attach_ctx::bpf_attach_ctx()
 			"CUDA shared communication memory not available; CUDA attach will be disabled for this process");
 	}
 #endif
+}
+
+bpftime_prog *bpf_attach_ctx::find_instantiated_prog(int handler_id) const
+{
+	auto program = instantiated_progs.find(handler_id);
+	return program == instantiated_progs.end() ? nullptr :
+						    program->second.get();
 }
 
 int bpf_attach_ctx::instantiate_handler_at(const handler_manager *manager,

@@ -80,6 +80,7 @@ int frida_attach_impl::attach_at(void *func_addr,
 	}
 
 	auto &inner_attach = itr->second;
+	inner_attach->ensure_listener(current_attach_type);
 	int used_id = this->allocate_id();
 	frida_attach_entry ent(used_id, std::move(cb), func_addr);
 	int result = ent.self_id;

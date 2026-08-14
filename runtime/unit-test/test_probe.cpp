@@ -124,6 +124,11 @@ TEST_CASE("Test bpf_probe_read_str")
 
 TEST_CASE("Test probe access preserves application SIGSEGV handlers")
 {
+	int parent_src = 1;
+	int parent_dst = 0;
+	REQUIRE(bpftime_probe_read((uint64_t)&parent_dst, sizeof(parent_dst),
+				   (uint64_t)&parent_src, 0, 0) == 0);
+
 	pid_t child = fork();
 	REQUIRE(child >= 0);
 	if (child == 0) {

@@ -15,6 +15,7 @@
 #include <mach/mach_vm.h>
 #include <pthread.h>
 #elif __linux__
+#include <pthread.h>
 #include <sys/syscall.h>
 #include <sys/uio.h>
 #endif
@@ -61,6 +62,13 @@ __attribute__((weak)) bpftime::bpf_attach_ctx &get_global_attach_ctx()
 }
 extern "C" {
 
+#if __linux__ && \
+	(defined(ENABLE_PROBE_READ_CHECK) || defined(ENABLE_PROBE_WRITE_CHECK))
+static pid_t probe_access_pid = getpid();
+static const int probe_access_atfork_status = pthread_atfork(
+	nullptr, nullptr, [] { probe_access_pid = getpid(); });
+#endif
+
 uint64_t bpftime_override_return(uint64_t ctx, uint64_t value);
 uint64_t bpftime_set_retval(uint64_t retval);
 
@@ -98,8 +106,9 @@ static bool probe_read_memory(void *dst, const void *src, size_t size)
 #elif __linux__
 	struct iovec local = { dst, size };
 	struct iovec remote = { const_cast<void *>(src), size };
-	return syscall(SYS_process_vm_readv, getpid(), &local, 1, &remote, 1,
-		       0) == (ssize_t)size;
+	return syscall(SYS_process_vm_readv,
+		       probe_access_atfork_status == 0 ? probe_access_pid : getpid(),
+		       &local, 1, &remote, 1, 0) == (ssize_t)size;
 #else
 #error "Probe memory checks are unsupported on this platform"
 #endif
@@ -138,8 +147,9 @@ static bool probe_write_memory(void *dst, const void *src, size_t size)
 #elif __linux__
 	struct iovec local = { const_cast<void *>(src), size };
 	struct iovec remote = { dst, size };
-	return syscall(SYS_process_vm_writev, getpid(), &local, 1, &remote, 1,
-		       0) == (ssize_t)size;
+	return syscall(SYS_process_vm_writev,
+		       probe_access_atfork_status == 0 ? probe_access_pid : getpid(),
+		       &local, 1, &remote, 1, 0) == (ssize_t)size;
 #else
 #error "Probe memory checks are unsupported on this platform"
 #endif
@@ -199,7 +209,7 @@ uint64_t bpftime_get_current_pid_tgid(uint64_t, uint64_t, uint64_t, uint64_t,
 #if __linux__
 	static thread_local int tid = -1;
 	if (tid == -1) {
-		tid = gettid();
+		tid = static_cast<int>(syscall(SYS_gettid));
 	}
 #elif __APPLE__
 	static thread_local uint64_t tid = UINT64_MAX; // cannot use int because
@@ -537,35 +547,24 @@ uint64_t bpftime_tail_call(uint64_t ctx, uint64_t prog_array, uint64_t index)
 			}
 		} guard(tail_call_depth);
 
-		const auto &handler = std::get<bpftime::bpf_prog_handler>(
-			bpftime::shm_holder.global_shared_memory.get_handler(
-				to_call_fd));
-		bpftime::runtime_config config =
-			bpftime::bpftime_get_runtime_config();
-		bpftime::bpftime_prog prog(handler.insns.data(),
-					   handler.insns.size(),
-					   handler.name.c_str());
-
-		if (config.enable_kernel_helper_group &&
-		    bpftime::bpftime_helper_group::get_kernel_utils_helper_group()
-				    .add_helper_group_to_prog(&prog) < 0) {
-			return -1;
-		}
-		if (config.enable_ufunc_helper_group &&
-		    bpftime::bpftime_helper_group::get_ufunc_helper_group()
-				    .add_helper_group_to_prog(&prog) < 0) {
-			return -1;
-		}
-		if (config.enable_shm_maps_helper_group &&
-		    bpftime::bpftime_helper_group::get_shm_maps_helper_group()
-				    .add_helper_group_to_prog(&prog) < 0) {
-			return -1;
-		}
-		if (prog.bpftime_prog_load(false) < 0) {
-			SPDLOG_ERROR(
-				"Failed to load userspace tail call target fd {}",
+		bpftime::bpftime_prog *prog = nullptr;
+		try {
+			prog = get_global_attach_ctx().find_instantiated_prog(
 				to_call_fd);
-			return -1;
+		} catch (const std::exception &) {
+		}
+		std::optional<bpftime::bpftime_prog> fallback;
+		if (prog == nullptr) {
+			const auto &handler = std::get<bpftime::bpf_prog_handler>(
+				bpftime::shm_holder.global_shared_memory.get_handler(
+					to_call_fd));
+			fallback.emplace(handler.insns.data(), handler.insns.size(),
+					 handler.name.c_str());
+			prog = &*fallback;
+			if (bpftime::load_prog_and_helpers(
+				    prog,
+				    bpftime::bpftime_get_runtime_config()) < 0)
+				return -1;
 		}
 
 		char context[64];
@@ -576,15 +575,16 @@ uint64_t bpftime_tail_call(uint64_t ctx, uint64_t prog_array, uint64_t index)
 			memset(context, 0, sizeof(context));
 		}
 		uint64_t retval = 0;
-		int err = prog.bpftime_prog_exec(context, sizeof(context),
-						 &retval);
+		int err = prog->bpftime_prog_exec(context, sizeof(context),
+						  &retval);
 		if (err < 0) {
 			SPDLOG_ERROR(
 				"Failed to execute userspace tail call target fd {}",
 				to_call_fd);
 			return -1;
 		}
-		return retval;
+		bpftime::current_thread_tail_call_ret = retval;
+		return 0;
 	}
 
 #if __linux__ && defined(BPFTIME_BUILD_WITH_LIBBPF)
@@ -606,7 +606,8 @@ uint64_t bpftime_tail_call(uint64_t ctx, uint64_t prog_array, uint64_t index)
 		return -1;
 	}
 	close(to_call_fd);
-	return run_opts.retval;
+	bpftime::current_thread_tail_call_ret = run_opts.retval;
+	return 0;
 #else
 	SPDLOG_ERROR(
 		"tail_call to kernel program fd {} requires libbpf support",
