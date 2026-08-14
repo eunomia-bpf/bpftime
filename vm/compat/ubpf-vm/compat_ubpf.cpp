@@ -54,8 +54,11 @@ int bpftime_ubpf_vm::register_external_function(size_t index,
 	// Allocate one more id
 	size_t next_id = next_helper_id++;
 	helper_id_map[index] = next_id;
-	return ubpf_register(ubpf_vm, next_id, name.c_str(),
-			     (external_function_t)fn);
+	int err = ubpf_register(ubpf_vm, next_id, name.c_str(),
+				(external_function_t)fn);
+	if (!err && name == "bpf_tail_call")
+		err = ubpf_set_unwind_function_index(ubpf_vm, next_id);
+	return err;
 }
 
 int bpftime_ubpf_vm::load_code(const void *code, size_t code_len)
