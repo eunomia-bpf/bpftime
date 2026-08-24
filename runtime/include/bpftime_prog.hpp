@@ -15,6 +15,7 @@ namespace bpftime
 {
 
 extern thread_local std::optional<uint64_t> current_thread_bpf_cookie;
+extern thread_local std::optional<uint64_t> current_thread_tail_call_ret;
 #ifdef BPFTIME_ENABLE_CUDA_ATTACH
 std::optional<std::vector<char>> compile_ptx_to_elf(const std::string &ptx_code,
 						    const char *cpu_target);

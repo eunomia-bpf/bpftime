@@ -18,6 +18,7 @@ If you find any bugs or suggestions, please feel free to open an issue, thanks!
     - [Controlling the Log Path](#controlling-the-log-path)
     - [Allow external maps](#allow-external-maps)
     - [Set memory size for shared memory maps](#set-memory-size-for-shared-memory-maps)
+    - [Use fuzzy stack unwinding](#use-fuzzy-stack-unwinding)
   - [Verifier](#verifier)
 
 ## Uprobe and uretprobe
@@ -225,6 +226,20 @@ BPFTIME_SHM_MEMORY_MB=1024 LD_PRELOAD=~/.bpftime/libbpftime-syscall-server.so ex
 ```
 
 The shared memory also contains the handler table. Its capacity can be set with `BPFTIME_MAX_FD_COUNT` (the default is 6144), and larger values require more shared memory before any maps or perf buffers are allocated. If startup reports insufficient shared memory, increase `BPFTIME_SHM_MEMORY_MB` or reduce `BPFTIME_MAX_FD_COUNT`. Allocation failures while creating a perf buffer are reported to the caller as `ENOMEM`.
+
+### Use fuzzy stack unwinding
+
+User stack collection uses Frida's accurate backtracer by default. For stripped
+binaries where accurate unwinding cannot recover enough frames, select the fuzzy
+backtracer when starting the loader:
+
+```sh
+bpftime load --fuzzy-backtracer bpftrace simple.bt
+```
+
+The equivalent environment variable is `BPFTIME_FRIDA_FUZZY_BACKTRACER=true`.
+It affects user stack collection after the agent attaches; omit it to keep the
+default accurate unwinding behavior.
 
 ## Verifier
 

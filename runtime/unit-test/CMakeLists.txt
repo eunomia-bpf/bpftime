@@ -31,6 +31,7 @@ set(TEST_SOURCES
 
     test_bpftime_shm_json.cpp
     test_probe.cpp
+    test_get_stack.cpp
     test_config.cpp
     test_shm_allocation_failure.cpp
     test_software_perf_event.cpp
@@ -52,16 +53,29 @@ endif()
 option(TEST_LCOV "option for lcov" OFF)
 add_executable(bpftime_runtime_tests ${TEST_SOURCES})
 
+if(ENABLE_PROBE_READ_CHECK)
+    target_compile_definitions(bpftime_runtime_tests PRIVATE ENABLE_PROBE_READ_CHECK=1)
+endif()
+
+if(ENABLE_PROBE_WRITE_CHECK)
+    target_compile_definitions(bpftime_runtime_tests PRIVATE ENABLE_PROBE_WRITE_CHECK=1)
+endif()
+
 if(UNIX AND NOT APPLE)
     add_executable(bpftime-shm-allocation-test-helper
         assets/shm_allocation_test_helper.c)
+    add_executable(bpftime-runtime-options-test-helper
+        assets/runtime_options_test_helper.c)
     set_property(TARGET bpftime-shm-allocation-test-helper PROPERTY C_STANDARD 99)
+    set_property(TARGET bpftime-runtime-options-test-helper PROPERTY C_STANDARD 99)
     add_dependencies(bpftime_runtime_tests
+        bpftime-agent
         bpftime-syscall-server
+        bpftime-runtime-options-test-helper
         bpftime-shm-allocation-test-helper)
     file(GENERATE
         OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/shm_allocation_test_paths.hpp"
-        CONTENT "#define BPFTIME_SHM_ALLOCATION_TEST_HELPER \"$<TARGET_FILE:bpftime-shm-allocation-test-helper>\"\n#define BPFTIME_SYSCALL_SERVER_LIBRARY \"$<TARGET_FILE:bpftime-syscall-server>\"\n")
+        CONTENT "#define BPFTIME_SHM_ALLOCATION_TEST_HELPER \"$<TARGET_FILE:bpftime-shm-allocation-test-helper>\"\n#define BPFTIME_SYSCALL_SERVER_LIBRARY \"$<TARGET_FILE:bpftime-syscall-server>\"\n#define BPFTIME_AGENT_LIBRARY \"$<TARGET_FILE:bpftime-agent>\"\n")
     target_include_directories(bpftime_runtime_tests PRIVATE
         "${CMAKE_CURRENT_BINARY_DIR}")
 endif()

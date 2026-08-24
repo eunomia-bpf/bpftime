@@ -13,7 +13,6 @@
 #ifdef BPFTIME_ENABLE_CUDA_ATTACH
 #include "cuda.h"
 #endif
-#include "spdlog/cfg/env.h"
 #include "spdlog/fmt/fmt.h"
 #include <cstdio>
 #include <ebpf-vm.h>
@@ -42,6 +41,7 @@
 #include "syscall_server_utils.hpp"
 #include <optional>
 #include <sys/mman.h>
+#include <string>
 #include <unistd.h>
 #include <regex>
 
@@ -72,16 +72,67 @@ using namespace bpftime_epoll;
 namespace fmt_lib = spdlog::fmt_lib;
 
 namespace {
-[[noreturn]] void
-exit_for_startup_allocation_failure(const std::exception &error)
+void set_mock_fd_cloexec(int fd)
 {
-	auto config = bpftime::construct_runtime_config_from_env();
-	SPDLOG_CRITICAL(
-		"Unable to initialize bpftime shared memory ({} MiB, {} fd slots): {}",
-		config.shm_memory_size, config.max_fd_count, error.what());
-	SPDLOG_CRITICAL(
-		"Increase BPFTIME_SHM_MEMORY_MB or decrease BPFTIME_MAX_FD_COUNT");
-	std::exit(EXIT_FAILURE);
+	int flags = fcntl(fd, F_GETFD);
+	if (flags < 0) {
+		return;
+	}
+	(void)fcntl(fd, F_SETFD, flags | FD_CLOEXEC);
+}
+
+int create_unlinked_mock_fd(bool close_on_exec)
+{
+	char filename_buf[] = "/tmp/bpftime-mock.XXXXXX";
+#if defined(__linux__)
+	int fd = close_on_exec ? mkostemp(filename_buf, O_CLOEXEC) :
+				 mkstemp(filename_buf);
+#else
+	int fd = mkstemp(filename_buf);
+#endif
+	if (fd < 0) {
+		return fd;
+	}
+#if !defined(__linux__)
+	if (close_on_exec) {
+		set_mock_fd_cloexec(fd);
+	}
+#else
+	(void)close_on_exec;
+#endif
+	if (unlink(filename_buf) != 0) {
+		int err = errno;
+		SPDLOG_WARN("Unable to unlink mock file {}: {}", filename_buf,
+			    err);
+	}
+	return fd;
+}
+
+bool fopen_flags_request_cloexec(const char *flags)
+{
+	return flags != nullptr && strchr(flags, 'e') != nullptr;
+}
+
+bool write_all_to_fd(int fd, const std::string &buf)
+{
+	const char *data = buf.data();
+	size_t bytes_left = buf.size();
+	while (bytes_left > 0) {
+		ssize_t written = write(fd, data, bytes_left);
+		if (written < 0) {
+			if (errno == EINTR) {
+				continue;
+			}
+			return false;
+		}
+		if (written == 0) {
+			errno = ENOSPC;
+			return false;
+		}
+		data += written;
+		bytes_left -= written;
+	}
+	return true;
 }
 
 int get_bpf_obj_info_by_fd(int fd, void *info, uint32_t *info_len,
@@ -145,6 +196,11 @@ void syscall_context::load_config_from_env()
 syscall_context::syscall_context()
 {
 	init_original_functions();
+	enable_mock.store(false, std::memory_order_relaxed);
+	const char *logger_target = getenv("BPFTIME_LOG_OUTPUT");
+	bpftime_set_logger(logger_target == nullptr ? DEFAULT_LOGGER_OUTPUT_PATH :
+						     logger_target);
+	SPDLOG_DEBUG("Resolved original libc function pointers");
 	// FIXME: merge this into the runtime config
 	load_config_from_env();
 	auto runtime_config = bpftime::construct_runtime_config_from_env();
@@ -152,7 +208,7 @@ syscall_context::syscall_context()
 	SPDLOG_INFO("Init bpftime syscall mocking..");
 	SPDLOG_INFO("The log will be written to: {}",
 		    runtime_config.get_logger_output_path());
-	spdlog::cfg::load_env_levels();
+	enable_mock.store(true, std::memory_order_relaxed);
 }
 
 #ifdef BPFTIME_ENABLE_CUDA_ATTACH
@@ -181,12 +237,20 @@ void syscall_context::initialize_cuda()
 void syscall_context::try_startup()
 {
 	enable_mock.store(false, std::memory_order_relaxed);
+	struct enable_mock_guard {
+		std::atomic<bool> &enable_mock;
+		~enable_mock_guard()
+		{
+			enable_mock.store(true, std::memory_order_relaxed);
+		}
+	} guard{ enable_mock };
 	try {
 		start_up(*this);
-	} catch (const boost::interprocess::bad_alloc &e) {
-		exit_for_startup_allocation_failure(e);
+	} catch (...) {
+		enable_mock_after_initialized.store(false,
+						    std::memory_order_relaxed);
+		throw;
 	}
-	enable_mock.store(true, std::memory_order_relaxed);
 }
 
 int syscall_context::handle_close(int fd)
@@ -203,7 +267,7 @@ int syscall_context::handle_close(int fd)
 		    itr != this->mocked_files.end()) {
 			SPDLOG_DEBUG("Removing mocked file fd {}", fd);
 			this->mocked_files.erase(itr);
-			return 0;
+			return orig_close_fn(fd);
 		}
 	}
 	bpftime_close(fd);
@@ -226,11 +290,11 @@ int syscall_context::handle_openat(int fd, const char *file, int oflag,
 	if (auto mocker = create_mocked_file_based_on_full_path(*path);
 	    mocker) {
 		bpftime_lock_guard _guard(this->mocked_file_lock);
-		char filename_buf[] = "/tmp/bpftime-mock.XXXXXX";
-		int fake_fd = mkstemp(filename_buf);
+		int fake_fd = create_unlinked_mock_fd(
+			(oflag & O_CLOEXEC) != 0);
 		if (fake_fd < 0) {
 			SPDLOG_WARN("Unable to create mock fd: {}", errno);
-			return orig_open_fn(file, oflag, mode);
+			return orig_openat_fn(fd, file, oflag, mode);
 		}
 		this->mocked_files.emplace(fake_fd, std::move(*mocker));
 		SPDLOG_DEBUG("Created mocked file with fd {}", fake_fd);
@@ -250,8 +314,8 @@ int syscall_context::handle_open(const char *file, int oflag,
 	try_startup();
 	if (auto mocker = create_mocked_file_based_on_full_path(file); mocker) {
 		bpftime_lock_guard _guard(this->mocked_file_lock);
-		char filename_buf[] = "/tmp/bpftime-mock.XXXXXX";
-		int fake_fd = mkstemp(filename_buf);
+		int fake_fd = create_unlinked_mock_fd(
+			(oflag & O_CLOEXEC) != 0);
 		if (fake_fd < 0) {
 			SPDLOG_WARN("Unable to create mock fd: {}", errno);
 			return orig_open_fn(file, oflag, mode);
@@ -886,7 +950,8 @@ void *syscall_context::handle_mmap64(void *addr, size_t length, int prot,
 				     int flags, int fd, off64_t offset)
 {
 	if (!enable_mock.load(std::memory_order_relaxed) || run_with_kernel ||
-	    initializing_cuda.load(std::memory_order_acquire))
+	    initializing_cuda.load(std::memory_order_acquire) ||
+	    !enable_mock_after_initialized.load(std::memory_order_relaxed))
 		return orig_mmap64_fn(addr, length, prot, flags, fd, offset);
 	try_startup();
 	SPDLOG_DEBUG("Calling mocked mmap64");
@@ -1058,20 +1123,30 @@ int syscall_context::handle_epoll_wait(int epfd, epoll_event *evt,
 
 int syscall_context::handle_munmap(void *addr, size_t size)
 {
+	auto handle_mocked_munmap = [&]() {
+		if (auto itr = mocked_mmap_values.find((uintptr_t)addr);
+		    itr != mocked_mmap_values.end()) {
+			try {
+				SPDLOG_DEBUG(
+					"Handling munmap of mocked addr: {:x}, size {}",
+					(uintptr_t)addr, size);
+			} catch (...) {
+			}
+			mocked_mmap_values.erase(itr);
+			return true;
+		}
+		return false;
+	};
+	if (handle_mocked_munmap())
+		return 0;
 	if (!enable_mock.load(std::memory_order_relaxed) || run_with_kernel ||
 	    initializing_cuda.load(std::memory_order_acquire) ||
 	    !enable_mock_after_initialized.load(std::memory_order_relaxed))
 		return orig_munmap_fn(addr, size);
 	try_startup();
-	if (auto itr = mocked_mmap_values.find((uintptr_t)addr);
-	    itr != mocked_mmap_values.end()) {
-		SPDLOG_DEBUG("Handling munmap of mocked addr: {:x}, size {}",
-			     (uintptr_t)addr, size);
-		mocked_mmap_values.erase(itr);
+	if (handle_mocked_munmap())
 		return 0;
-	} else {
-		return orig_munmap_fn(addr, size);
-	}
+	return orig_munmap_fn(addr, size);
 }
 
 FILE *syscall_context::handle_fopen(const char *pathname, const char *flags)
@@ -1085,23 +1160,38 @@ FILE *syscall_context::handle_fopen(const char *pathname, const char *flags)
 	if (auto mocker = create_mocked_file_based_on_full_path(pathname);
 	    mocker) {
 		bpftime_lock_guard _guard(this->mocked_file_lock);
-		char filename_buf[] = "/tmp/bpftime-mock.XXXXXX";
-		int fake_fd = mkstemp(filename_buf);
+		int fake_fd = create_unlinked_mock_fd(
+			fopen_flags_request_cloexec(flags));
 		if (fake_fd < 0) {
 			SPDLOG_WARN("Unable to create mock fd: {}", errno);
 			return orig_fopen_fn(pathname, flags);
 		}
-		auto itr =
-			this->mocked_files.emplace(fake_fd, std::move(*mocker))
-				.first;
-		FILE *replacement_fp = fopen(filename_buf, "r");
+		int err = 0;
+		if (!write_all_to_fd(fake_fd, (*mocker)->buf)) {
+			err = errno;
+			orig_close_fn(fake_fd);
+			errno = err;
+			return orig_fopen_fn(pathname, flags);
+		}
+		if (lseek(fake_fd, 0, SEEK_SET) < 0) {
+			err = errno;
+			SPDLOG_WARN("Unable to rewind mock fd {}: {}", fake_fd,
+				    err);
+			orig_close_fn(fake_fd);
+			errno = err;
+			return orig_fopen_fn(pathname, flags);
+		}
+		FILE *replacement_fp = fdopen(fake_fd, "r");
+		if (replacement_fp == nullptr) {
+			err = errno;
+			orig_close_fn(fake_fd);
+			errno = err;
+			return orig_fopen_fn(pathname, flags);
+		}
 
-		itr->second->replacement_file = replacement_fp;
-		auto size_written = write(fake_fd, itr->second->buf.c_str(),
-					  itr->second->buf.size());
 		SPDLOG_DEBUG(
 			"Created fake fd {}, replacement fp {:x}, written {} bytes",
-			fake_fd, (uintptr_t)replacement_fp, size_written);
+			fake_fd, (uintptr_t)replacement_fp, (*mocker)->buf.size());
 		return replacement_fp;
 	}
 	return orig_fopen_fn(pathname, flags);
@@ -1129,8 +1219,9 @@ int syscall_context::handle_memfd_create(const char *name, int flags)
 	if (!enable_mock.load(std::memory_order_relaxed) ||
 	    initializing_cuda.load(std::memory_order_acquire) ||
 	    !enable_mock_after_initialized.load(std::memory_order_relaxed)) {
-		SPDLOG_DEBUG("Calling original dup3");
-		return orig_syscall_fn(__NR_dup3, (long)name, (long)flags);
+		SPDLOG_DEBUG("Calling original memfd_create");
+		return orig_syscall_fn(__NR_memfd_create, (long)name,
+				       (long)flags);
 	}
 	try_startup();
 	return bpftime_add_memfd_handler(name, flags);

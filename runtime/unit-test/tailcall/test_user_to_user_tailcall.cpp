@@ -52,12 +52,9 @@ TEST_CASE("Test tail calling from userspace to userspace")
 		BPF_EXIT_INSN(),
 	};
 
-	bpftime::runtime_config config;
-	config.set_vm_name("llvm");
 	bpftime_prog prog((const ebpf_inst *)caller_insn,
 			  sizeof(caller_insn) / sizeof(caller_insn[0]),
-			  "tail_call_caller",
-			  std::move(config));
+			  "tail_call_caller");
 	REQUIRE(bpftime_helper_group::get_kernel_utils_helper_group()
 			.add_helper_group_to_prog(&prog) == 0);
 	REQUIRE(prog.bpftime_prog_load(false) == 0);

@@ -18,7 +18,7 @@ add_definitions(-DLLVM_DISABLE_ABI_BREAKING_CHECKS_ENFORCING=1)
 #
 project(
   "bpftime"
-  VERSION 0.1.0
+  VERSION 0.9.0
   LANGUAGES C CXX
 )
 
