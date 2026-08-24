@@ -11,7 +11,13 @@
 #include <system_error>
 #if __APPLE__
 #include <cstdint>
+#include <mach/mach.h>
+#include <mach/mach_vm.h>
 #include <pthread.h>
+#elif __linux__
+#include <pthread.h>
+#include <sys/syscall.h>
+#include <sys/uio.h>
 #endif
 #ifdef BPFTIME_BUILD_WITH_LIBBPF
 #include "bpf/bpf.h"
@@ -42,8 +48,6 @@
 #include <bpftime_shm_internal.hpp>
 #include <chrono>
 #include <thread>
-#include <setjmp.h>
-#include <signal.h>
 
 #define PATH_MAX 4096
 
@@ -57,6 +61,13 @@ __attribute__((weak)) bpftime::bpf_attach_ctx &get_global_attach_ctx()
 		"Calling mocked get_global_attach_ctx, this is not expected");
 }
 extern "C" {
+
+#if __linux__ && \
+	(defined(ENABLE_PROBE_READ_CHECK) || defined(ENABLE_PROBE_WRITE_CHECK))
+static pid_t probe_access_pid = getpid();
+static const int probe_access_atfork_status = pthread_atfork(
+	nullptr, nullptr, [] { probe_access_pid = getpid(); });
+#endif
 
 uint64_t bpftime_override_return(uint64_t ctx, uint64_t value);
 uint64_t bpftime_set_retval(uint64_t retval);
@@ -80,73 +91,27 @@ long bpftime_strncmp(const char *s1, uint64_t s1_sz, const char *s2)
 	return strncmp(s1, s2, s1_sz);
 }
 
-#if defined(ENABLE_PROBE_WRITE_CHECK) || defined(ENABLE_PROBE_READ_CHECK)
-
-/*
-status instruction for probe_read and probe_write
-*/
-enum class PROBE_STATUS {
-	NOT_RUNNING = -1,
-	RUNNING_NO_ERROR = 0,
-	RUNNING_ERROR = 1
-};
-
-/*
-origin handler exist flag for probe_read and probe_write
-*/
-enum class ORIGIN_HANDLER_EXIST_FLAG {
-	NOT_CHECKED = -1,
-	NOT_EXIST = 0,
-	EXIST = 1
-};
-
-#endif
-
 #ifdef ENABLE_PROBE_READ_CHECK
-extern "C" void jump_point_read();
-thread_local static PROBE_STATUS status_probe_read = PROBE_STATUS::NOT_RUNNING;
-
-thread_local static ORIGIN_HANDLER_EXIST_FLAG exist_read =
-	ORIGIN_HANDLER_EXIST_FLAG::NOT_CHECKED;
-
-thread_local static void (*origin_segv_read_handler)(int, siginfo_t *,
-						     void *) = nullptr;
-#endif
-#ifdef ENABLE_PROBE_WRITE_CHECK
-
-extern "C" void jump_point_write();
-thread_local static PROBE_STATUS status_probe_write = PROBE_STATUS::NOT_RUNNING;
-thread_local static ORIGIN_HANDLER_EXIST_FLAG exist_write =
-	ORIGIN_HANDLER_EXIST_FLAG::NOT_CHECKED;
-
-thread_local static void (*origin_segv_write_handler)(int, siginfo_t *,
-						      void *) = nullptr;
-#endif
-
-#ifdef ENABLE_PROBE_READ_CHECK
-static void segv_read_handler(int sig, siginfo_t *siginfo, void *ctx)
+static bool probe_read_memory(void *dst, const void *src, size_t size)
 {
-	if (status_probe_read == PROBE_STATUS::NOT_RUNNING) {
-		if (origin_segv_read_handler != nullptr) {
-			origin_segv_read_handler(sig, siginfo, ctx);
-		} else {
-			SPDLOG_ERROR("no origin handler for probe_read");
-			throw std::runtime_error(
-				"segv_handler for probe_read called");
-		}
-	} else if (status_probe_read == PROBE_STATUS::RUNNING_NO_ERROR) {
-		// set status to error
-		auto uctx = (ucontext_t *)ctx;
-#if defined(__x86_64__) || defined(_M_X64)
-		auto *ip = (greg_t *)(&uctx->uc_mcontext.gregs[REG_RIP]);
-#elif defined(__aarch64__) || defined(_M_ARM64)
-		auto *ip = (greg_t *)(&uctx->uc_mcontext.pc);
+	if (size == 0)
+		return true;
+#if __APPLE__
+	mach_vm_size_t copied = 0;
+	return mach_vm_read_overwrite(mach_task_self(), (mach_vm_address_t)src,
+				      (mach_vm_size_t)size,
+				      (mach_vm_address_t)dst,
+				      &copied) == KERN_SUCCESS &&
+	       copied == size;
+#elif __linux__
+	struct iovec local = { dst, size };
+	struct iovec remote = { const_cast<void *>(src), size };
+	return syscall(SYS_process_vm_readv,
+		       probe_access_atfork_status == 0 ? probe_access_pid : getpid(),
+		       &local, 1, &remote, 1, 0) == (ssize_t)size;
 #else
-#error "Unsupported architecture"
+#error "Probe memory checks are unsupported on this platform"
 #endif
-		status_probe_read = PROBE_STATUS::RUNNING_ERROR;
-		*ip = (greg_t)&jump_point_read;
-	}
 }
 #endif
 
@@ -157,82 +122,37 @@ int64_t bpftime_probe_read(uint64_t dst, int64_t size, uint64_t ptr, uint64_t,
 		SPDLOG_ERROR("Invalid size: {}", size);
 		return -EFAULT;
 	}
-	int64_t ret = 0;
-
 #ifdef ENABLE_PROBE_READ_CHECK
-	status_probe_read = PROBE_STATUS::RUNNING_NO_ERROR;
-
-	struct sigaction sa, original_sa;
-	// set up the signal handler
-	if (exist_read == ORIGIN_HANDLER_EXIST_FLAG::NOT_CHECKED) {
-		int err = sigaction(SIGSEGV, nullptr, &original_sa);
-		if (err) {
-			SPDLOG_ERROR("Failed to get signal handler: {}", errno);
-			return -EFAULT;
-		}
-		if (original_sa.sa_sigaction == nullptr) {
-			exist_read = ORIGIN_HANDLER_EXIST_FLAG::NOT_EXIST;
-		} else {
-			exist_read = ORIGIN_HANDLER_EXIST_FLAG::EXIST;
-			origin_segv_read_handler = original_sa.sa_sigaction;
-		}
-	}
-
-	if (original_sa.sa_sigaction != segv_read_handler) {
-		sa.sa_flags = SA_SIGINFO;
-		int err = 0;
-		err = sigemptyset(&sa.sa_mask);
-		if (err) {
-			SPDLOG_ERROR("Failed to set signal handler: {}", errno);
-			return -EFAULT;
-		}
-		sa.sa_sigaction = segv_read_handler;
-		err = sigaction(SIGSEGV, &sa, nullptr);
-		if (err) {
-			SPDLOG_ERROR("Failed to set signal handler: {}", errno);
-			return -EFAULT;
-		}
-	}
-#endif
+	return probe_read_memory((void *)dst, (void *)ptr, (size_t)size) ?
+		       0 :
+		       -EFAULT;
+#else
 	memcpy((void *)dst, (void *)ptr, (size_t)size);
-
-#ifdef ENABLE_PROBE_READ_CHECK
-	__asm__("jump_point_read:");
-
-	if (status_probe_read == PROBE_STATUS::RUNNING_ERROR) {
-		ret = -EFAULT;
-	}
-
-	status_probe_read = PROBE_STATUS::NOT_RUNNING;
+	return 0;
 #endif
-	return ret;
 }
 
-#ifdef ENABLE_PROBE_WRITE_CHECK
-static void segv_write_handler(int sig, siginfo_t *siginfo, void *ctx)
+#if defined(ENABLE_PROBE_WRITE_CHECK) || defined(ENABLE_PROBE_READ_CHECK)
+static bool probe_write_memory(void *dst, const void *src, size_t size)
 {
-	SPDLOG_TRACE("segv_handler for probe_write called");
-	if (status_probe_write == PROBE_STATUS::NOT_RUNNING) {
-		if (origin_segv_write_handler) {
-			origin_segv_write_handler(sig, siginfo, ctx);
-		} else {
-			SPDLOG_ERROR("no origin handler for probe_write");
-			throw std::runtime_error(
-				"segv_handler for probe_write called");
-		}
-	} else if (status_probe_write == PROBE_STATUS::RUNNING_NO_ERROR) {
-		// set status to error
-		auto uctx = (ucontext_t *)ctx;
-#if defined(__x86_64__) || defined(_M_X64)
-		auto *ip = (greg_t *)(&uctx->uc_mcontext.gregs[REG_RIP]);
-#elif defined(__aarch64__) || defined(_M_ARM64)
-		auto *ip = (greg_t *)(&uctx->uc_mcontext.pc);
+	if (size == 0)
+		return true;
+#if __APPLE__
+	mach_vm_size_t copied = 0;
+	return mach_vm_read_overwrite(mach_task_self(), (mach_vm_address_t)src,
+				      (mach_vm_size_t)size,
+				      (mach_vm_address_t)dst,
+				      &copied) == KERN_SUCCESS &&
+	       copied == size;
+#elif __linux__
+	struct iovec local = { const_cast<void *>(src), size };
+	struct iovec remote = { dst, size };
+	return syscall(SYS_process_vm_writev,
+		       probe_access_atfork_status == 0 ? probe_access_pid : getpid(),
+		       &local, 1, &remote, 1, 0) == (ssize_t)size;
 #else
-#error "Unsupported architecture"
+#error "Probe memory checks are unsupported on this platform"
 #endif
-		status_probe_write = PROBE_STATUS::RUNNING_ERROR;
-		*ip = (greg_t)&jump_point_write;
-	}
 }
 #endif
 
@@ -243,59 +163,14 @@ int64_t bpftime_probe_write_user(uint64_t dst, uint64_t src, int64_t len,
 		SPDLOG_ERROR("Invalid len: {}", len);
 		return -EFAULT;
 	}
-	int64_t ret = 0;
-
 #ifdef ENABLE_PROBE_WRITE_CHECK
-	status_probe_write = PROBE_STATUS::RUNNING_NO_ERROR;
-
-	struct sigaction sa, original_sa;
-	// set up the signal handler
-	if (exist_write == ORIGIN_HANDLER_EXIST_FLAG::NOT_CHECKED) {
-		int err = sigaction(SIGSEGV, nullptr, &original_sa);
-		if (err) {
-			SPDLOG_ERROR("Failed to get signal handler: {}", errno);
-			return -EFAULT;
-		}
-
-		if (original_sa.sa_sigaction == nullptr) {
-			exist_write = ORIGIN_HANDLER_EXIST_FLAG::NOT_EXIST;
-		} else {
-			exist_write = ORIGIN_HANDLER_EXIST_FLAG::EXIST;
-			origin_segv_write_handler = original_sa.sa_sigaction;
-		}
-	}
-
-	if (original_sa.sa_sigaction != segv_write_handler) {
-		sa.sa_flags = SA_SIGINFO;
-		int err = 0;
-		err = sigemptyset(&sa.sa_mask);
-		if (err) {
-			SPDLOG_ERROR("Failed to set signal handler: {}", errno);
-			return -EFAULT;
-		}
-
-		sa.sa_sigaction = segv_write_handler;
-		err = sigaction(SIGSEGV, &sa, nullptr);
-		if (err) {
-			SPDLOG_ERROR("Failed to set signal handler: {}", errno);
-			return -EFAULT;
-		}
-	}
-#endif
-
+	return probe_write_memory((void *)dst, (void *)src, (size_t)len) ?
+		       0 :
+		       -EFAULT;
+#else
 	memcpy((void *)dst, (void *)src, (size_t)len);
-
-#ifdef ENABLE_PROBE_WRITE_CHECK
-	__asm__("jump_point_write:");
-
-	if (status_probe_write == PROBE_STATUS::RUNNING_ERROR) {
-		ret = -EFAULT;
-	}
-
-	status_probe_write = PROBE_STATUS::NOT_RUNNING;
-
+	return 0;
 #endif
-	return ret;
 }
 
 uint64_t bpftime_get_prandom_u32()
@@ -334,7 +209,7 @@ uint64_t bpftime_get_current_pid_tgid(uint64_t, uint64_t, uint64_t, uint64_t,
 #if __linux__
 	static thread_local int tid = -1;
 	if (tid == -1) {
-		tid = gettid();
+		tid = static_cast<int>(syscall(SYS_gettid));
 	}
 #elif __APPLE__
 	static thread_local uint64_t tid = UINT64_MAX; // cannot use int because
@@ -428,12 +303,81 @@ uint64_t bpftime_map_peek_elem_helper(uint64_t map, uint64_t value, uint64_t,
 		.bpf_map_peek_elem((int)map, (void *)value, false);
 }
 
-uint64_t bpf_probe_read_str(uint64_t buf, uint64_t bufsz, uint64_t ptr,
-			    uint64_t, uint64_t)
+#ifdef ENABLE_PROBE_READ_CHECK
+static size_t probe_page_remaining(const void *address)
 {
-	strncpy((char *)(uintptr_t)buf, (const char *)(uintptr_t)ptr,
-		(size_t)bufsz);
-	return 0;
+	static const size_t page_size = []() {
+		long result = sysconf(_SC_PAGESIZE);
+		return result > 0 ? (size_t)result : (size_t)4096;
+	}();
+	return page_size - ((uintptr_t)address % page_size);
+}
+
+static void clear_probe_memory(void *dst, size_t size)
+{
+	static const char zeros[256] = {};
+	auto output = (char *)dst;
+	while (size > 0) {
+		size_t chunk_size = std::min(size, sizeof(zeros));
+		if (!probe_write_memory(output, zeros, chunk_size))
+			return;
+		output += chunk_size;
+		size -= chunk_size;
+	}
+}
+#endif
+
+int64_t bpf_probe_read_str(uint64_t buf, uint64_t bufsz, uint64_t ptr, uint64_t,
+			   uint64_t)
+{
+	if (bufsz == 0)
+		return 0;
+
+	auto dst = (char *)(uintptr_t)buf;
+	auto src = (const char *)(uintptr_t)ptr;
+#ifndef ENABLE_PROBE_READ_CHECK
+	for (size_t i = 0; i < (size_t)bufsz; i++) {
+		if (src[i] == '\0') {
+			dst[i] = '\0';
+			return (int64_t)i + 1;
+		}
+		if (i == (size_t)bufsz - 1) {
+			dst[i] = '\0';
+			return (int64_t)bufsz;
+		}
+		dst[i] = src[i];
+	}
+	return (int64_t)bufsz;
+#else
+	char scratch[256];
+	size_t copied = 0;
+	while (copied < (size_t)bufsz) {
+		size_t chunk_size =
+			std::min(sizeof(scratch), (size_t)bufsz - copied);
+		chunk_size = std::min(chunk_size,
+				      probe_page_remaining(src + copied));
+		if (!probe_read_memory(scratch, src + copied, chunk_size)) {
+			clear_probe_memory(dst, (size_t)bufsz);
+			return -EFAULT;
+		}
+
+		auto terminator = (char *)memchr(scratch, '\0', chunk_size);
+		bool complete = terminator != nullptr;
+		if (complete) {
+			chunk_size = (size_t)(terminator - scratch) + 1;
+		} else if (chunk_size == (size_t)bufsz - copied) {
+			scratch[chunk_size - 1] = '\0';
+			complete = true;
+		}
+
+		if (!probe_write_memory(dst + copied, scratch, chunk_size))
+			return -EFAULT;
+		copied += chunk_size;
+		if (complete)
+			return (int64_t)copied;
+	}
+	return (int64_t)copied;
+#endif
 }
 
 uint64_t bpf_ktime_get_coarse_ns(uint64_t, uint64_t, uint64_t, uint64_t,
@@ -603,35 +547,24 @@ uint64_t bpftime_tail_call(uint64_t ctx, uint64_t prog_array, uint64_t index)
 			}
 		} guard(tail_call_depth);
 
-		const auto &handler = std::get<bpftime::bpf_prog_handler>(
-			bpftime::shm_holder.global_shared_memory.get_handler(
-				to_call_fd));
-		bpftime::runtime_config config =
-			bpftime::bpftime_get_runtime_config();
-		bpftime::bpftime_prog prog(handler.insns.data(),
-					   handler.insns.size(),
-					   handler.name.c_str());
-
-		if (config.enable_kernel_helper_group &&
-		    bpftime::bpftime_helper_group::get_kernel_utils_helper_group()
-				    .add_helper_group_to_prog(&prog) < 0) {
-			return -1;
-		}
-		if (config.enable_ufunc_helper_group &&
-		    bpftime::bpftime_helper_group::get_ufunc_helper_group()
-				    .add_helper_group_to_prog(&prog) < 0) {
-			return -1;
-		}
-		if (config.enable_shm_maps_helper_group &&
-		    bpftime::bpftime_helper_group::get_shm_maps_helper_group()
-				    .add_helper_group_to_prog(&prog) < 0) {
-			return -1;
-		}
-		if (prog.bpftime_prog_load(false) < 0) {
-			SPDLOG_ERROR(
-				"Failed to load userspace tail call target fd {}",
+		bpftime::bpftime_prog *prog = nullptr;
+		try {
+			prog = get_global_attach_ctx().find_instantiated_prog(
 				to_call_fd);
-			return -1;
+		} catch (const std::exception &) {
+		}
+		std::optional<bpftime::bpftime_prog> fallback;
+		if (prog == nullptr) {
+			const auto &handler = std::get<bpftime::bpf_prog_handler>(
+				bpftime::shm_holder.global_shared_memory.get_handler(
+					to_call_fd));
+			fallback.emplace(handler.insns.data(), handler.insns.size(),
+					 handler.name.c_str());
+			prog = &*fallback;
+			if (bpftime::load_prog_and_helpers(
+				    prog,
+				    bpftime::bpftime_get_runtime_config()) < 0)
+				return -1;
 		}
 
 		char context[64];
@@ -642,15 +575,16 @@ uint64_t bpftime_tail_call(uint64_t ctx, uint64_t prog_array, uint64_t index)
 			memset(context, 0, sizeof(context));
 		}
 		uint64_t retval = 0;
-		int err = prog.bpftime_prog_exec(context, sizeof(context),
-						 &retval);
+		int err = prog->bpftime_prog_exec(context, sizeof(context),
+						  &retval);
 		if (err < 0) {
 			SPDLOG_ERROR(
 				"Failed to execute userspace tail call target fd {}",
 				to_call_fd);
 			return -1;
 		}
-		return retval;
+		bpftime::current_thread_tail_call_ret = retval;
+		return 0;
 	}
 
 #if __linux__ && defined(BPFTIME_BUILD_WITH_LIBBPF)
@@ -672,7 +606,8 @@ uint64_t bpftime_tail_call(uint64_t ctx, uint64_t prog_array, uint64_t index)
 		return -1;
 	}
 	close(to_call_fd);
-	return run_opts.retval;
+	bpftime::current_thread_tail_call_ret = run_opts.retval;
+	return 0;
 #else
 	SPDLOG_ERROR(
 		"tail_call to kernel program fd {} requires libbpf support",
@@ -851,7 +786,7 @@ int64_t bpftime_get_stack(uint64_t ctx_raw, uint64_t buf, uint64_t size,
 			"bpftime_get_stack only supports collect user stack!");
 		return -ENOTSUP;
 	}
-	if (!(flags & BPF_F_USER_BUILD_ID)) {
+	if (flags & BPF_F_USER_BUILD_ID) {
 		SPDLOG_ERROR("bpftime_get_stack doesn't support buildid!");
 		return -ENOTSUP;
 	}

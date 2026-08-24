@@ -381,12 +381,8 @@ jobs:
 
           if [ -d "$ART_ROOT/build" ]; then
             mv "$ART_ROOT/build" build
-            exit 0
-          fi
-
-          if [ -d "$ART_ROOT/bpftime-gpu-build/build" ]; then
+          elif [ -d "$ART_ROOT/bpftime-gpu-build/build" ]; then
             mv "$ART_ROOT/bpftime-gpu-build/build" build
-            exit 0
           fi
 
           # If upload-artifact chose 'build/' as the artifact root, downloaded files look like:
@@ -400,6 +396,15 @@ jobs:
               fi
             done
           fi
+
+          # Directory inputs can also be extracted without the leading attach/
+          # component. Put those directories back where the GPU tests expect them.
+          for d in text_segment_transformer nv_attach_impl; do
+            if [ -d "$ART_ROOT/$d" ]; then
+              mkdir -p "build/attach/$d"
+              cp -a "$ART_ROOT/$d/." "build/attach/$d/"
+            fi
+          done
 
           if [ -d build ]; then
             echo "Found build/ in workspace."

@@ -70,6 +70,10 @@ struct runtime_config {
 	// rejected
 	bool allow_non_buildin_map_types = false;
 
+	// Use Frida's fuzzy backtracer for user stack collection. Accurate
+	// unwinding remains the default.
+	bool enable_frida_fuzzy_backtracer = false;
+
 	// memory size will determine the maximum size of the shared memory
 	// available for the eBPF programs and maps
 	// The value is in MB

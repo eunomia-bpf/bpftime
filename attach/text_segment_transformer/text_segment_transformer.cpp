@@ -61,6 +61,18 @@ static syscall_hooker_func_t call_hook = &call_orig_syscall;
 		"cmp $15, %rax\n\t" // Special handing for rt_sigreturn, they
 				    // don't need to be traced
 		"je handle_sigreturn\n\t"
+		// clone and clone3 return TWICE. The child resumes at the `ret`
+		// of call_orig_syscall, but on its own fresh stack, where no
+		// return address was ever pushed -- it pops whatever the thread
+		// stack happens to hold and jumps there. They therefore cannot
+		// be traced through the C hook at all; send them down the
+		// untraced path, after seeding the child stack so that the
+		// child's `ret` lands where the replaced `syscall` instruction
+		// would have continued.
+		"cmp $56, %rax\n\t" // SYS_clone
+		"je handle_clone\n\t"
+		"cmp $435, %rax\n\t" // SYS_clone3
+		"je handle_clone3\n\t"
 		"movq (%rsp), %rcx\n\t"
 		"pushq %rbp\n\t"
 		"movq %rsp, %rbp\n\t"
@@ -97,7 +109,35 @@ static syscall_hooker_func_t call_hook = &call_orig_syscall;
 		// "addq $8, %rsp\n\t"
 		"syscall_addr:\n\t"
 		"syscall\n\t"
-		"ret\n\t");
+		"ret\n\t"
+		// Reached only by an explicit jump from the dispatcher, never
+		// by fall-through: call_orig_syscall above must continue
+		// straight into `syscall`. Registers are still in syscall ABI
+		// order and the application's return address is at (%rsp),
+		// because only the pushed syscall number has been popped.
+		// %rcx and %r11 are free scratch: the `syscall` destroys both.
+		"handle_clone:\n\t"
+		"testq %rsi, %rsi\n\t" // no child stack: fork-like, the child
+					// keeps the parent's stack layout and
+					// the ordinary `ret` is already correct
+		"jz handle_sigreturn\n\t"
+		"movq (%rsp), %r11\n\t" // application return address
+		"subq $8, %rsi\n\t"
+		"movq %r11, (%rsi)\n\t" // the child pops this in `ret`
+		"jmp handle_sigreturn\n\t"
+		"handle_clone3:\n\t"
+		"movq 40(%rdi), %rcx\n\t" // clone_args.stack
+		"testq %rcx, %rcx\n\t"
+		"jz handle_sigreturn\n\t"
+		"cmpq $8, 48(%rdi)\n\t" // clone_args.stack_size
+		"jb handle_sigreturn\n\t"
+		"addq 48(%rdi), %rcx\n\t" // top of the child stack
+		"movq (%rsp), %r11\n\t"
+		"subq $8, %rcx\n\t"
+		"movq %r11, (%rcx)\n\t"
+		"subq $8, 48(%rdi)\n\t" // the kernel starts the child one
+					 // slot lower, on the seeded address
+		"jmp handle_sigreturn\n\t");
 }
 #elif defined(__aarch64__)
 // TODO: implement syscall trace trampoline

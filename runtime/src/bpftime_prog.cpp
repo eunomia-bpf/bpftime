@@ -102,6 +102,7 @@ std::optional<std::vector<char>> compile_ptx_to_elf(const std::string &ptx_code,
 }
 #endif
 thread_local std::optional<uint64_t> current_thread_bpf_cookie;
+thread_local std::optional<uint64_t> current_thread_tail_call_ret;
 
 bpftime_prog::bpftime_prog(const struct ebpf_inst *insn, size_t insn_cnt,
 			   const char *name)
@@ -253,7 +254,8 @@ int bpftime_prog::bpftime_prog_exec(void *memory, size_t memory_size,
 			SPDLOG_ERROR("ebpf_exec returned error: {}", res);
 		}
 	}
-	*return_val = val;
+	*return_val = current_thread_tail_call_ret.value_or(val);
+	current_thread_tail_call_ret.reset();
 	// set share memory read only
 	bpftime_protect_enable();
 	return res;

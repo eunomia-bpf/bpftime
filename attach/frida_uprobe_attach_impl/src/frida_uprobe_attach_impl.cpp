@@ -33,7 +33,8 @@ frida_attach_impl::~frida_attach_impl()
 	gum_object_unref((GumInterceptor *)interceptor);
 }
 
-frida_attach_impl::frida_attach_impl()
+frida_attach_impl::frida_attach_impl(bool use_fuzzy_backtracer)
+	: use_fuzzy_backtracer(use_fuzzy_backtracer)
 {
 	SPDLOG_DEBUG("Initializing frida attach manager");
 	gum_init_embedded();
@@ -79,6 +80,7 @@ int frida_attach_impl::attach_at(void *func_addr,
 	}
 
 	auto &inner_attach = itr->second;
+	inner_attach->ensure_listener(current_attach_type);
 	int used_id = this->allocate_id();
 	frida_attach_entry ent(used_id, std::move(cb), func_addr);
 	int result = ent.self_id;
@@ -305,7 +307,9 @@ void *frida_attach_impl::call_attach_specific_function(const std::string& name,
 			GumReturnAddress items[127];
 		} array;
 		array.len = 0;
-		auto tracer = gum_backtracer_make_accurate();
+		auto tracer = use_fuzzy_backtracer ?
+				      gum_backtracer_make_fuzzy() :
+				      gum_backtracer_make_accurate();
 		gum_backtracer_generate(
 			tracer,
 			(GumCpuContext *)*current_thread_gum_cpu_context,
