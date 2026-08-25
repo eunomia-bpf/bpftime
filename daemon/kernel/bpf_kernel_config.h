@@ -27,12 +27,12 @@ const volatile bool submit_bpf_events = 0;
 
 static __always_inline bool filter_target(void)
 {
-	u64 pid = bpf_get_current_pid_tgid() & 0xffffffff;
-	if (target_pid && pid != target_pid) {
+	u32 tgid = bpf_get_current_pid_tgid() >> 32;
+	if (target_pid && tgid != target_pid) {
 		// filter target pid
 		return false;
 	}
-	if (current_pid && pid == current_pid) {
+	if (current_pid && tgid == current_pid) {
 		// avoid breaking current process
 		return false;
 	}
