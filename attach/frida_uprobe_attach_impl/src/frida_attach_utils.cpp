@@ -1,8 +1,15 @@
 #include "frida_attach_utils.hpp"
 #include "frida_uprobe_attach_impl.hpp"
+#include <cstdio>
 #include <filesystem>
+#include <fstream>
+#include <optional>
 #include <spdlog/spdlog.h>
 #include <frida-gum.h>
+#include <sys/stat.h>
+#if __linux__
+#include <sys/sysmacros.h>
+#endif
 #include <unistd.h>
 #if __APPLE__
 #include <libproc.h>
@@ -34,6 +41,72 @@ namespace bpftime
 {
 namespace attach
 {
+namespace
+{
+std::string unescape_proc_path(std::string path)
+{
+	std::string result;
+	result.reserve(path.size());
+	for (size_t i = 0; i < path.size(); i++) {
+		if (path[i] == '\\' && i + 3 < path.size() &&
+		    path[i + 1] >= '0' && path[i + 1] <= '7' &&
+		    path[i + 2] >= '0' && path[i + 2] <= '7' &&
+		    path[i + 3] >= '0' && path[i + 3] <= '7') {
+			result.push_back((char)((path[i + 1] - '0') * 64 +
+					        (path[i + 2] - '0') * 8 +
+					        path[i + 3] - '0'));
+			i += 3;
+		} else {
+			result.push_back(path[i]);
+		}
+	}
+	return result;
+}
+} // namespace
+
+std::optional<std::string>
+resolve_mapped_module_path(const std::string_view &module_name)
+{
+#if __linux__
+	std::string name(module_name);
+	unsigned pid = 0;
+	unsigned long long wanted_start = 0, wanted_end = 0;
+	int consumed = 0;
+	if (sscanf(name.c_str(), "/proc/%u/map_files/%llx-%llx%n", &pid,
+		   &wanted_start, &wanted_end, &consumed) != 3 ||
+	    consumed != static_cast<int>(name.size()))
+		return name;
+	if ((pid_t)pid != getpid() || wanted_start >= wanted_end)
+		return {};
+
+	std::ifstream maps("/proc/self/maps");
+	std::string line;
+	while (std::getline(maps, line)) {
+		unsigned long long start, end, offset, inode;
+		unsigned dev_major, dev_minor;
+		char permissions[5] = {};
+		int path_offset = 0;
+		if (sscanf(line.c_str(),
+			   "%llx-%llx %4s %llx %x:%x %llu %n", &start, &end,
+			   permissions, &offset, &dev_major, &dev_minor, &inode,
+			   &path_offset) != 7 ||
+		    end <= wanted_start || start >= wanted_end)
+			continue;
+		std::string path = unescape_proc_path(line.substr(path_offset));
+		struct stat st = {};
+		if (path.empty() || path.front() != '/' ||
+		    path.ends_with(" (deleted)") || stat(path.c_str(), &st) != 0 ||
+		    (inode != 0 && st.st_ino != inode) ||
+		    major(st.st_dev) != dev_major || minor(st.st_dev) != dev_minor)
+			return {};
+		return path;
+	}
+	return {};
+#else
+	return std::string(module_name);
+#endif
+}
+
 void *
 resolve_function_addr_by_module_offset(const std::string_view &module_name,
 				       uintptr_t func_offset)
