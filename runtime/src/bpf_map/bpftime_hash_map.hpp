@@ -51,9 +51,9 @@ public:
 // with open addressing and linear probing.
 class bpftime_hash_map {
     private:
-	static constexpr uint32_t bucket_empty = 0;
-	static constexpr uint32_t bucket_filled = 1;
-	static constexpr uint32_t bucket_deleted = 2;
+	static constexpr uint32_t BUCKET_EMPTY = 0;
+	static constexpr uint32_t BUCKET_FILLED = 1;
+	static constexpr uint32_t BUCKET_DELETED = 2;
 
 	inline size_t get_elem_offset(size_t index) const
 	{
@@ -98,25 +98,25 @@ class bpftime_hash_map {
 
 	inline bool is_empty(size_t index) const
 	{
-		return get_bucket_state(index) != bucket_filled;
+		return get_bucket_state(index) != BUCKET_FILLED;
 	}
 
 	inline void set_empty(size_t index)
 	{
 		*(uint32_t *)(uintptr_t)&data_buffer[get_elem_offset(index)] =
-			bucket_empty;
+			BUCKET_EMPTY;
 	}
 
 	inline void set_filled(size_t index)
 	{
 		*(uint32_t *)(uintptr_t)&data_buffer[get_elem_offset(index)] =
-			bucket_filled;
+			BUCKET_FILLED;
 	}
 
 	inline void set_deleted(size_t index)
 	{
 		*(uint32_t *)(uintptr_t)&data_buffer[get_elem_offset(index)] =
-			bucket_deleted;
+			BUCKET_DELETED;
 	}
 
 	inline void *get_key(size_t index)
@@ -145,10 +145,10 @@ class bpftime_hash_map {
 		size_t start_index = index;
 		do {
 			const auto state = get_bucket_state(index);
-			if (state == bucket_empty) {
+			if (state == BUCKET_EMPTY) {
 				return nullptr;
 			}
-			if (state == bucket_filled &&
+			if (state == BUCKET_FILLED &&
 			    std::memcmp(get_key(index), key, _key_size) == 0) {
 				return get_value(index);
 			}
@@ -166,7 +166,7 @@ class bpftime_hash_map {
 		// Iterate over the hash map using linear probing
 		do {
 			const auto state = get_bucket_state(index);
-			if (state == bucket_empty) {
+			if (state == BUCKET_EMPTY) {
 				// If the current bucket is empty, insert the
 				// new element
 				if (_count >= _max_element_count) {
@@ -183,7 +183,7 @@ class bpftime_hash_map {
 				_count++; // Increase the count for the new
 					  // element
 				return true;
-			} else if (state == bucket_deleted) {
+			} else if (state == BUCKET_DELETED) {
 				if (first_deleted == _num_buckets)
 					first_deleted = index;
 			} else if (std::memcmp(get_key(index), key,
@@ -218,10 +218,10 @@ class bpftime_hash_map {
 		size_t start_index = index;
 		do {
 			const auto state = get_bucket_state(index);
-			if (state == bucket_empty) {
+			if (state == BUCKET_EMPTY) {
 				return false; // Key not found
 			}
-			if (state == bucket_filled &&
+			if (state == BUCKET_FILLED &&
 			    std::memcmp(get_key(index), key, _key_size) == 0) {
 				set_deleted(index);
 				// Decrease count if deleting an element
