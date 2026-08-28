@@ -547,10 +547,24 @@ int bpftime_shm::add_ringbuf_to_epoll(int ringbuf_fd, int epoll_fd,
 int bpftime_shm::epoll_create()
 {
 	int fd = open_fake_fd();
+	if (fd < 0)
+		return fd;
+	if (epoll_create_at(fd) < 0) {
+		int saved_errno = errno;
+		close(fd);
+		errno = saved_errno;
+		return -1;
+	}
+	return fd;
+}
+
+int bpftime_shm::epoll_create_at(int fd)
+{
 	if (manager->is_allocated(fd)) {
 		SPDLOG_ERROR(
 			"Creating epoll instance, but fd {} is already occupied",
 			fd);
+		errno = EEXIST;
 		return -1;
 	}
 	fd = manager->set_handler(fd, bpftime::epoll_handler(segment), segment);

@@ -389,6 +389,7 @@ int bpftime_add_software_perf_event_fd_to_epoll(int swpe_fd, int epoll_fd,
 						epoll_data_t extra_data);
 
 int bpftime_epoll_create();
+int bpftime_epoll_create_at(int fd);
 void *bpftime_get_ringbuf_consumer_page(int ringbuf_fd);
 void *bpftime_get_ringbuf_producer_page(int ringbuf_fd);
 
@@ -414,6 +415,8 @@ int bpftime_epoll_wait(int fd, struct epoll_event *out_evts, int max_evt,
 
 int bpftime_add_software_perf_event(int cpu, int32_t sample_type,
 				    int64_t config);
+int bpftime_add_software_perf_event_at(int fd, int cpu, int32_t sample_type,
+				       int64_t config);
 int bpftime_is_software_perf_event(int fd);
 void *bpftime_get_software_perf_event_raw_buffer(int fd, size_t expected_size);
 int bpftime_perf_event_output(int fd, const void *buf, size_t sz);

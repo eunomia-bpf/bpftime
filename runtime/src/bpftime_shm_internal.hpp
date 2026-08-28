@@ -283,6 +283,7 @@ public:
 					     epoll_data_t extra_data);
 
 	int epoll_create();
+	int epoll_create_at(int fd);
 	// remove a fake fd from the manager.
 	// The fake fd should be closed by the caller.
 	void close_fd(int fd);

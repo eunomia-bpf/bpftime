@@ -279,6 +279,11 @@ int bpftime_epoll_create()
 	return shm_holder.global_shared_memory.epoll_create();
 }
 
+int bpftime_epoll_create_at(int fd)
+{
+	return shm_holder.global_shared_memory.epoll_create_at(fd);
+}
+
 void bpftime_close(int fd)
 {
 	shm_holder.global_shared_memory.close_fd(fd);
@@ -547,6 +552,13 @@ int bpftime_add_software_perf_event(int cpu, int32_t sample_type,
 {
 	auto &shm = shm_holder.global_shared_memory;
 	return shm.add_software_perf_event(cpu, sample_type, config);
+}
+
+int bpftime_add_software_perf_event_at(int fd, int cpu, int32_t sample_type,
+				       int64_t config)
+{
+	auto &shm = shm_holder.global_shared_memory;
+	return shm.add_software_perf_event(fd, cpu, sample_type, config);
 }
 
 int bpftime_add_ureplace_or_override(int fd, int pid, const char *name,

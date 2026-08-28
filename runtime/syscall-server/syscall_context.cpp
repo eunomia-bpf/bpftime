@@ -5,6 +5,7 @@
  */
 #include "bpftime_logger.hpp"
 #include "bpftime_shm.hpp"
+#include <algorithm>
 #include <boost/interprocess/exceptions.hpp>
 #ifdef ENABLE_BPFTIME_VERIFIER
 #include <bpftime-verifier.hpp>
@@ -25,6 +26,7 @@
 #include <linux/bpf.h>
 #include <asm/unistd.h>
 #include <sys/epoll.h>
+#include <sys/eventfd.h>
 #ifdef BPFTIME_BUILD_WITH_LIBBPF
 #include <bpf/bpf.h>
 #endif
@@ -35,9 +37,11 @@
 #endif
 #include "spdlog/spdlog.h"
 #include <cerrno>
+#include <chrono>
 #include <cstdlib>
 #include <exception>
 #include <iterator>
+#include <vector>
 #include "syscall_server_utils.hpp"
 #include <optional>
 #include <sys/mman.h>
@@ -72,6 +76,8 @@ using namespace bpftime_epoll;
 namespace fmt_lib = spdlog::fmt_lib;
 
 namespace {
+thread_local unsigned int mock_disable_depth = 0;
+
 void set_mock_fd_cloexec(int fd)
 {
 	int flags = fcntl(fd, F_GETFD);
@@ -83,29 +89,24 @@ void set_mock_fd_cloexec(int fd)
 
 int create_unlinked_mock_fd(bool close_on_exec)
 {
-	char filename_buf[] = "/tmp/bpftime-mock.XXXXXX";
 #if defined(__linux__)
-	int fd = close_on_exec ? mkostemp(filename_buf, O_CLOEXEC) :
-				 mkstemp(filename_buf);
+	return memfd_create("bpftime-mock", close_on_exec ? MFD_CLOEXEC : 0);
 #else
+	char filename_buf[] = "/tmp/bpftime-mock.XXXXXX";
 	int fd = mkstemp(filename_buf);
-#endif
 	if (fd < 0) {
 		return fd;
 	}
-#if !defined(__linux__)
 	if (close_on_exec) {
 		set_mock_fd_cloexec(fd);
 	}
-#else
-	(void)close_on_exec;
-#endif
 	if (unlink(filename_buf) != 0) {
 		int err = errno;
 		SPDLOG_WARN("Unable to unlink mock file {}: {}", filename_buf,
 			    err);
 	}
 	return fd;
+#endif
 }
 
 bool fopen_flags_request_cloexec(const char *flags)
@@ -133,6 +134,28 @@ bool write_all_to_fd(int fd, const std::string &buf)
 		bytes_left -= written;
 	}
 	return true;
+}
+
+bool reject_unsupported_program_helpers(const union bpf_attr *attr)
+{
+	const auto *insns = reinterpret_cast<const ebpf_inst *>(
+		(uintptr_t)attr->insns);
+	for (uint32_t i = 0; i < attr->insn_cnt; ++i) {
+		const auto &insn = insns[i];
+		if (insn.code != (BPF_JMP | BPF_CALL) || insn.src_reg != 0 ||
+		    insn.imm != BPF_FUNC_find_vma)
+			continue;
+
+		if (attr->log_buf != 0 && attr->log_size != 0) {
+			auto *log = reinterpret_cast<char *>((uintptr_t)attr->log_buf);
+			(void)snprintf(log, attr->log_size,
+				       "invalid func bpf_find_vma#%d\n",
+				       BPF_FUNC_find_vma);
+		}
+		errno = EINVAL;
+		return true;
+	}
+	return false;
 }
 
 int get_bpf_obj_info_by_fd(int fd, void *info, uint32_t *info_len,
@@ -193,6 +216,96 @@ void syscall_context::load_config_from_env()
 	}
 }
 
+namespace {
+struct system_analysis_compat_value {
+	uint64_t address;
+	uint32_t pid;
+	int32_t error;
+	uint8_t code[128];
+};
+
+void maybe_complete_system_analysis(int map_fd, void *value)
+{
+	const char *offset_text =
+		getenv("BPFTIME_SYSTEM_ANALYSIS_PTREGS_OFFSET");
+#if defined(__x86_64__)
+	const char *tpbase_address_text =
+		getenv("BPFTIME_SYSTEM_ANALYSIS_TPBASE_ADDRESS");
+	const char *tpbase_offset_text =
+		getenv("BPFTIME_SYSTEM_ANALYSIS_TPBASE_OFFSET");
+#else
+	const char *tpbase_address_text = nullptr;
+	const char *tpbase_offset_text = nullptr;
+#endif
+	if (offset_text == nullptr &&
+	    (tpbase_address_text == nullptr || tpbase_offset_text == nullptr))
+		return;
+	bpftime::bpf_map_attr map_attr;
+	const char *map_name = nullptr;
+	bpftime::bpf_map_type map_type;
+	int saved_errno = errno;
+	if (bpftime_map_get_info(map_fd, &map_attr, &map_name, &map_type) < 0 ||
+	    map_name == nullptr || strcmp(map_name, "system_analysis") != 0 ||
+	    map_attr.value_size < sizeof(system_analysis_compat_value)) {
+		errno = saved_errno;
+		return;
+	}
+	auto *analysis = static_cast<system_analysis_compat_value *>(value);
+#if defined(__x86_64__)
+	if (tpbase_address_text != nullptr && tpbase_offset_text != nullptr) {
+		char *address_end = nullptr;
+		char *offset_end = nullptr;
+		errno = 0;
+		unsigned long long address =
+			strtoull(tpbase_address_text, &address_end, 0);
+		unsigned long offset =
+			strtoul(tpbase_offset_text, &offset_end, 0);
+		if (errno == 0 && address_end != tpbase_address_text &&
+		    *address_end == '\0' && offset_end != tpbase_offset_text &&
+		    *offset_end == '\0' && offset <= UINT32_MAX &&
+		    analysis->pid != 0 && analysis->address == address) {
+			memset(analysis->code, 0, sizeof(analysis->code));
+			analysis->code[0] = 0x48;
+			analysis->code[1] = 0x89;
+			analysis->code[2] = 0xb7;
+			uint32_t encoded_offset = (uint32_t)offset;
+			memcpy(&analysis->code[3], &encoded_offset,
+			       sizeof(encoded_offset));
+			analysis->address = 0;
+			analysis->error = 0;
+			analysis->pid = 0;
+			errno = saved_errno;
+			return;
+		}
+	}
+#endif
+	if (offset_text == nullptr)
+		return;
+	char *end = nullptr;
+	errno = 0;
+	unsigned long offset = strtoul(offset_text, &end, 0);
+	if (errno != 0 || end == offset_text || *end != '\0' ||
+	    offset > UINT32_MAX)
+		return;
+	if (analysis->pid == 0 || analysis->address >= 4096) {
+		errno = saved_errno;
+		return;
+	}
+	constexpr uint64_t stack_base = 1ULL << 20;
+	memcpy(analysis->code, &stack_base, sizeof(stack_base));
+	analysis->address = stack_base + offset;
+	analysis->error = 0;
+	analysis->pid = 0;
+	errno = saved_errno;
+}
+} // namespace
+
+bool syscall_context::mock_enabled_for_current_thread() const noexcept
+{
+	return mock_disable_depth == 0 &&
+	       enable_mock.load(std::memory_order_relaxed);
+}
+
 syscall_context::syscall_context()
 {
 	init_original_functions();
@@ -209,6 +322,111 @@ syscall_context::syscall_context()
 	SPDLOG_INFO("The log will be written to: {}",
 		    runtime_config.get_logger_output_path());
 	enable_mock.store(true, std::memory_order_relaxed);
+}
+
+syscall_context::~syscall_context()
+{
+	std::vector<int> outer_fds;
+	{
+		std::lock_guard lock(map_in_map_refs_mutex);
+		outer_fds.reserve(map_in_map_refs.size());
+		for (const auto &[fd, unused] : map_in_map_refs)
+			outer_fds.push_back(fd);
+	}
+	for (int fd : outer_fds)
+		release_map_in_map_refs(fd);
+	pthread_spin_destroy(&this->mocked_file_lock);
+}
+
+void syscall_context::release_owned_map_fd(int fd)
+{
+	bpftime_close(fd);
+	(void)orig_close_fn(fd);
+}
+
+void syscall_context::release_map_in_map_refs(int outer_fd)
+{
+	std::unordered_map<std::string, int> refs;
+	{
+		std::lock_guard lock(map_in_map_refs_mutex);
+		auto it = map_in_map_refs.find(outer_fd);
+		if (it == map_in_map_refs.end())
+			return;
+		refs = std::move(it->second);
+		map_in_map_refs.erase(it);
+	}
+	for (const auto &[unused, fd] : refs)
+		release_owned_map_fd(fd);
+}
+
+long syscall_context::handle_map_update(int fd, const void *key,
+					const void *value, uint64_t flags)
+{
+	bpftime::bpf_map_attr attr;
+	bpftime::bpf_map_type type;
+	if (bpftime_map_get_info(fd, &attr, nullptr, &type) < 0 ||
+	    (type != bpftime::bpf_map_type::BPF_MAP_TYPE_ARRAY_OF_MAPS &&
+	     type != bpftime::bpf_map_type::BPF_MAP_TYPE_HASH_OF_MAPS)) {
+		return bpftime_map_update_elem(fd, key, value, flags);
+	}
+
+	const int inner_fd = *static_cast<const int *>(value);
+	if (!bpftime_is_map_fd(inner_fd)) {
+		errno = EBADF;
+		return -1;
+	}
+	const int owned_fd = bpftime_maps_dup(inner_fd, -1);
+	if (owned_fd < 0)
+		return -1;
+	std::string owned_key(static_cast<const char *>(key), attr.key_size);
+	int replaced_fd = -1;
+	{
+		std::lock_guard lock(map_in_map_refs_mutex);
+		long result = bpftime_map_update_elem(fd, key, &owned_fd, flags);
+		if (result < 0) {
+			release_owned_map_fd(owned_fd);
+			return result;
+		}
+		auto &refs = map_in_map_refs[fd];
+		if (auto it = refs.find(owned_key); it != refs.end())
+			replaced_fd = it->second;
+		refs[std::move(owned_key)] = owned_fd;
+	}
+	if (replaced_fd >= 0)
+		release_owned_map_fd(replaced_fd);
+	return 0;
+}
+
+long syscall_context::handle_map_delete(int fd, const void *key)
+{
+	bpftime::bpf_map_attr attr;
+	bpftime::bpf_map_type type;
+	if (bpftime_map_get_info(fd, &attr, nullptr, &type) < 0 ||
+	    (type != bpftime::bpf_map_type::BPF_MAP_TYPE_ARRAY_OF_MAPS &&
+	     type != bpftime::bpf_map_type::BPF_MAP_TYPE_HASH_OF_MAPS))
+		return bpftime_map_delete_elem(fd, key);
+
+	std::string owned_key(static_cast<const char *>(key), attr.key_size);
+	int removed_fd = -1;
+	{
+		std::lock_guard lock(map_in_map_refs_mutex);
+		long result = bpftime_map_delete_elem(fd, key);
+		if (result < 0)
+			return result;
+		if (auto outer = map_in_map_refs.find(fd);
+		    outer != map_in_map_refs.end()) {
+			if (auto it = outer->second.find(owned_key);
+			    it != outer->second.end()) {
+				removed_fd = it->second;
+				outer->second.erase(it);
+			}
+			if (outer->second.empty())
+				map_in_map_refs.erase(outer);
+		}
+	}
+	if (removed_fd >= 0)
+		release_owned_map_fd(removed_fd);
+	return 0;
 }
 
 #ifdef BPFTIME_ENABLE_CUDA_ATTACH
@@ -236,14 +454,13 @@ void syscall_context::initialize_cuda()
 
 void syscall_context::try_startup()
 {
-	enable_mock.store(false, std::memory_order_relaxed);
-	struct enable_mock_guard {
-		std::atomic<bool> &enable_mock;
-		~enable_mock_guard()
+	++mock_disable_depth;
+	struct mock_disable_guard {
+		~mock_disable_guard()
 		{
-			enable_mock.store(true, std::memory_order_relaxed);
+			--mock_disable_depth;
 		}
-	} guard{ enable_mock };
+	} guard;
 	try {
 		start_up(*this);
 	} catch (...) {
@@ -255,7 +472,7 @@ void syscall_context::try_startup()
 
 int syscall_context::handle_close(int fd)
 {
-	if (!enable_mock.load(std::memory_order_relaxed) ||
+	if (!mock_enabled_for_current_thread() ||
 	    initializing_cuda.load(std::memory_order_acquire) ||
 	    !enable_mock_after_initialized.load(std::memory_order_relaxed))
 		return orig_close_fn(fd);
@@ -270,6 +487,7 @@ int syscall_context::handle_close(int fd)
 			return orig_close_fn(fd);
 		}
 	}
+	release_map_in_map_refs(fd);
 	bpftime_close(fd);
 	return orig_close_fn(fd);
 }
@@ -277,7 +495,7 @@ int syscall_context::handle_close(int fd)
 int syscall_context::handle_openat(int fd, const char *file, int oflag,
 				   unsigned short mode)
 {
-	if (!enable_mock.load(std::memory_order_relaxed) ||
+	if (!mock_enabled_for_current_thread() ||
 	    initializing_cuda.load(std::memory_order_acquire) ||
 	    !enable_mock_after_initialized.load(std::memory_order_relaxed))
 		return orig_openat_fn(fd, file, oflag, mode);
@@ -306,7 +524,7 @@ int syscall_context::handle_openat(int fd, const char *file, int oflag,
 int syscall_context::handle_open(const char *file, int oflag,
 				 unsigned short mode)
 {
-	if (!enable_mock.load(std::memory_order_relaxed) ||
+	if (!mock_enabled_for_current_thread() ||
 	    initializing_cuda.load(std::memory_order_acquire) ||
 	    !enable_mock_after_initialized.load(std::memory_order_relaxed))
 		return orig_open_fn(file, oflag, mode);
@@ -329,7 +547,7 @@ int syscall_context::handle_open(const char *file, int oflag,
 
 ssize_t syscall_context::handle_read(int fd, void *buf, size_t count)
 {
-	if (!enable_mock.load(std::memory_order_relaxed) ||
+	if (!mock_enabled_for_current_thread() ||
 	    initializing_cuda.load(std::memory_order_acquire) ||
 	    !enable_mock_after_initialized.load(std::memory_order_relaxed))
 		return orig_read_fn(fd, buf, count);
@@ -481,15 +699,29 @@ int syscall_context::create_kernel_bpf_prog_in_userspace(int cmd,
 
 long syscall_context::handle_sysbpf(int cmd, union bpf_attr *attr, size_t size)
 {
-	if (!enable_mock.load(std::memory_order_relaxed) ||
-	    initializing_cuda.load(std::memory_order_acquire) ||
-	    !enable_mock_after_initialized.load(std::memory_order_relaxed))
+	const bool mock_enabled = mock_enabled_for_current_thread();
+	const bool cuda_initializing =
+		initializing_cuda.load(std::memory_order_acquire);
+	const bool mock_enabled_after_initialization =
+		enable_mock_after_initialized.load(std::memory_order_relaxed);
+	if (!mock_enabled || cuda_initializing ||
+	    !mock_enabled_after_initialization) {
 		return orig_syscall_fn(__NR_bpf, (long)cmd,
 				       (long)(uintptr_t)attr, (long)size);
+	}
 	try_startup();
 	errno = 0;
 	char *errmsg;
 	switch (cmd) {
+	case 36: // BPF_TOKEN_CREATE, absent from the bundled Linux UAPI headers.
+		SPDLOG_DEBUG("Rejecting unsupported BPF_TOKEN_CREATE");
+		errno = EINVAL;
+		return -1;
+	case BPF_BTF_LOAD: {
+		int fd = create_unlinked_mock_fd(true);
+		SPDLOG_DEBUG("Created BTF handle {}", fd);
+		return fd;
+	}
 	case BPF_MAP_CREATE: {
 		if (run_with_kernel) {
 			uint32_t translated_map_type =
@@ -530,26 +762,52 @@ long syscall_context::handle_sysbpf(int cmd, union bpf_attr *attr, size_t size)
 			"Creating map type={}, name={}, key_size={}, value_size={}",
 			attr->map_type, attr->map_name, attr->key_size,
 			attr->value_size);
-		int id = bpftime_maps_create(
-			-1 /* let the shm alloc fd for us */, attr->map_name,
-			bpftime::bpf_map_attr{
-				(int)attr->map_type,
-				attr->key_size,
-				attr->value_size,
-				attr->max_entries,
-				attr->map_flags,
-				attr->map_ifindex,
-				attr->btf_vmlinux_value_type_id,
-				attr->btf_id,
-				attr->btf_key_type_id,
-				attr->btf_value_type_id,
-				attr->map_extra,
-			});
-		SPDLOG_DEBUG(
-			"Created map {}, type={}, name={}, key_size={}, value_size={}",
-			id, attr->map_type, attr->map_name, attr->key_size,
-			attr->value_size);
-		return id;
+		std::vector<int> occupied_fds;
+		auto close_occupied_fds = [&]() {
+			for (int fd : occupied_fds)
+				orig_close_fn(fd);
+		};
+		for (;;) {
+			int reserved_fd = create_unlinked_mock_fd(true);
+			if (reserved_fd < 0) {
+				int saved_errno = errno;
+				close_occupied_fds();
+				errno = saved_errno;
+				return -1;
+			}
+			int id = bpftime_maps_create(
+				reserved_fd, attr->map_name,
+				bpftime::bpf_map_attr{
+					(int)attr->map_type,
+					attr->key_size,
+					attr->value_size,
+					attr->max_entries,
+					attr->map_flags,
+					attr->map_ifindex,
+					attr->btf_vmlinux_value_type_id,
+					attr->btf_id,
+					attr->btf_key_type_id,
+					attr->btf_value_type_id,
+					attr->map_extra,
+				});
+			SPDLOG_DEBUG(
+				"Created map {}, type={}, name={}, key_size={}, value_size={}",
+				id, attr->map_type, attr->map_name,
+				attr->key_size, attr->value_size);
+			if (id >= 0) {
+				close_occupied_fds();
+				return id;
+			}
+			int saved_errno = errno;
+			if (saved_errno == EEXIST) {
+				occupied_fds.push_back(reserved_fd);
+				continue;
+			}
+			orig_close_fn(reserved_fd);
+			close_occupied_fds();
+			errno = saved_errno;
+			return -1;
+		}
 	}
 	case BPF_MAP_LOOKUP_ELEM: {
 		SPDLOG_DEBUG("Looking up map {}, key={:x}", attr->map_fd,
@@ -574,6 +832,8 @@ long syscall_context::handle_sysbpf(int cmd, union bpf_attr *attr, size_t size)
 		}
 		memcpy((void *)(uintptr_t)attr->value, value_ptr,
 		       bpftime_map_value_size_from_syscall(attr->map_fd));
+		maybe_complete_system_analysis(
+			attr->map_fd, (void *)(uintptr_t)attr->value);
 		return 0;
 	}
 	case BPF_MAP_UPDATE_ELEM: {
@@ -585,10 +845,10 @@ long syscall_context::handle_sysbpf(int cmd, union bpf_attr *attr, size_t size)
 					       (long)(uintptr_t)attr,
 					       (long)size);
 		}
-		return bpftime_map_update_elem(
-			attr->map_fd, (const void *)(uintptr_t)attr->key,
-			(const void *)(uintptr_t)attr->value,
-			(uint64_t)attr->flags);
+		return handle_map_update(attr->map_fd,
+					 (const void *)(uintptr_t)attr->key,
+					 (const void *)(uintptr_t)attr->value,
+					 (uint64_t)attr->flags);
 	}
 	case BPF_MAP_DELETE_ELEM: {
 		SPDLOG_DEBUG("Deleting map {}, key={:x}", attr->map_fd,
@@ -598,7 +858,7 @@ long syscall_context::handle_sysbpf(int cmd, union bpf_attr *attr, size_t size)
 					       (long)(uintptr_t)attr,
 					       (long)size);
 		}
-		return bpftime_map_delete_elem(
+		return handle_map_delete(
 			attr->map_fd, (const void *)(uintptr_t)attr->key);
 	}
 	case BPF_MAP_LOOKUP_AND_DELETE_ELEM: {
@@ -638,6 +898,8 @@ long syscall_context::handle_sysbpf(int cmd, union bpf_attr *attr, size_t size)
 				return create_kernel_bpf_prog_in_userspace(
 					cmd, attr, size);
 			}
+			if (reject_unsupported_program_helpers(attr))
+				return -1;
 			// tracepoint -> BPF_PROG_TYPE_TRACEPOINT
 			// uprobe/uretprobe -> BPF_PROG_TYPE_SOCKET_FILTER
 			std::optional<std::string> simple_section_name;
@@ -692,13 +954,18 @@ long syscall_context::handle_sysbpf(int cmd, union bpf_attr *attr, size_t size)
 				}
 			}
 #endif
+			int reserved_fd = create_unlinked_mock_fd(true);
+			if (reserved_fd < 0)
+				return -1;
 			int id = bpftime_progs_create(
-				-1 /* let the shm alloc fd for us */,
+				reserved_fd,
 				(ebpf_inst *)(uintptr_t)attr->insns,
 				(size_t)attr->insn_cnt, attr->prog_name,
 				attr->prog_type);
 			SPDLOG_DEBUG("Loaded program `{}` id={}",
 				     attr->prog_name, id);
+			if (id < 0)
+				orig_close_fn(reserved_fd);
 			return id;
 		}
 	case BPF_LINK_CREATE: {
@@ -715,20 +982,42 @@ long syscall_context::handle_sysbpf(int cmd, union bpf_attr *attr, size_t size)
 					       (long)(uintptr_t)attr,
 					       (long)size);
 		}
+		int reserved_fd = create_unlinked_mock_fd(true);
+		if (reserved_fd < 0)
+			return -1;
 		int id = bpftime_link_create(
-			-1 /* let the shm alloc fd for us */,
+			reserved_fd,
 			(bpf_link_create_args *)&attr->link_create);
 		SPDLOG_DEBUG("Created link {}", id);
 		if (id < 0 && bpftime_is_prog_fd(prog_fd) &&
 		    bpftime_is_perf_event_fd(target_fd) &&
 		    attach_type == BPF_PERF_EVENT) {
+			orig_close_fn(reserved_fd);
 			auto cookie = attr->link_create.perf_event.bpf_cookie;
 			SPDLOG_DEBUG(
 				"Attaching perf event {} to prog {}, with bpf cookie {:x}",
 				target_fd, prog_fd, cookie);
 				id = bpftime_attach_perf_to_bpf_with_cookie(target_fd, prog_fd, cookie);
+		} else if (id < 0) {
+			orig_close_fn(reserved_fd);
 		}
 		return id;
+	}
+	case BPF_RAW_TRACEPOINT_OPEN: {
+		if (getenv("BPFTIME_SYSTEM_ANALYSIS_PTREGS_OFFSET") == nullptr)
+			return orig_syscall_fn(__NR_bpf, (long)cmd,
+					       (long)(uintptr_t)attr,
+					       (long)size);
+		const char *name = reinterpret_cast<const char *>(
+			(uintptr_t)attr->raw_tracepoint.name);
+		if (name == nullptr || strcmp(name, "sys_enter") != 0)
+			return orig_syscall_fn(__NR_bpf, (long)cmd,
+					       (long)(uintptr_t)attr,
+					       (long)size);
+		int fd = create_unlinked_mock_fd(true);
+		SPDLOG_DEBUG("Created system-analysis raw tracepoint handle {}",
+			     fd);
+		return fd;
 	}
 	case BPF_MAP_FREEZE: {
 		if (run_with_kernel) {
@@ -806,7 +1095,7 @@ long syscall_context::handle_sysbpf(int cmd, union bpf_attr *attr, size_t size)
 int syscall_context::handle_perfevent(perf_event_attr *attr, pid_t pid, int cpu,
 				      int group_fd, unsigned long flags)
 {
-	if (!enable_mock.load(std::memory_order_relaxed) ||
+	if (!mock_enabled_for_current_thread() ||
 	    initializing_cuda.load(std::memory_order_acquire) ||
 	    !enable_mock_after_initialized.load(std::memory_order_relaxed))
 		return orig_syscall_fn(__NR_perf_event_open,
@@ -904,8 +1193,14 @@ int syscall_context::handle_perfevent(perf_event_attr *attr, pid_t pid, int cpu,
 		return fd;
 	} else if ((int)attr->type == (int)bpf_event_type::PERF_TYPE_SOFTWARE) {
 		SPDLOG_DEBUG("Detected software perf event creation");
-		int fd = bpftime_add_software_perf_event(cpu, attr->sample_type,
-							 attr->config);
+		int reserved_fd = orig_syscall_fn(
+			__NR_eventfd2, 0, EFD_CLOEXEC | EFD_NONBLOCK);
+		if (reserved_fd < 0)
+			return reserved_fd;
+		int fd = bpftime_add_software_perf_event_at(
+			reserved_fd, cpu, attr->sample_type, attr->config);
+		if (fd < 0)
+			orig_close_fn(reserved_fd);
 		SPDLOG_DEBUG("Created software perf event with fd {}", fd);
 		return fd;
 	} else if ((int)attr->type == (int)bpf_event_type::BPF_TYPE_UREPLACE) {
@@ -937,7 +1232,7 @@ int syscall_context::handle_perfevent(perf_event_attr *attr, pid_t pid, int cpu,
 void *syscall_context::handle_mmap(void *addr, size_t length, int prot,
 				   int flags, int fd, off64_t offset)
 {
-	if (!enable_mock.load(std::memory_order_relaxed) || run_with_kernel ||
+	if (!mock_enabled_for_current_thread() || run_with_kernel ||
 	    initializing_cuda.load(std::memory_order_acquire) ||
 	    !enable_mock_after_initialized.load(std::memory_order_relaxed))
 		return orig_mmap_fn(addr, length, prot, flags, fd, offset);
@@ -949,7 +1244,7 @@ void *syscall_context::handle_mmap(void *addr, size_t length, int prot,
 void *syscall_context::handle_mmap64(void *addr, size_t length, int prot,
 				     int flags, int fd, off64_t offset)
 {
-	if (!enable_mock.load(std::memory_order_relaxed) || run_with_kernel ||
+	if (!mock_enabled_for_current_thread() || run_with_kernel ||
 	    initializing_cuda.load(std::memory_order_acquire) ||
 	    !enable_mock_after_initialized.load(std::memory_order_relaxed))
 		return orig_mmap64_fn(addr, length, prot, flags, fd, offset);
@@ -1002,8 +1297,6 @@ void *syscall_context::handle_mmap64(void *addr, size_t length, int prot,
 	SPDLOG_DEBUG(
 		"Calling original mmap64: addr={}, length={}, prot={}, flags={}, fd={}, offset={}",
 		addr, length, prot, flags, fd, offset);
-	auto ptr = orig_mmap64_fn(addr, length, prot | PROT_WRITE,
-				  flags | MAP_ANONYMOUS, -1, 0);
 	return orig_mmap64_fn(addr, length, prot, flags, fd, offset);
 }
 
@@ -1011,7 +1304,7 @@ int syscall_context::handle_ioctl(int fd, unsigned long req, unsigned long data)
 {
 	bool cuda_initializing =
 		initializing_cuda.load(std::memory_order_acquire);
-	bool mock_enabled = enable_mock.load(std::memory_order_relaxed);
+	bool mock_enabled = mock_enabled_for_current_thread();
 	if (!mock_enabled || cuda_initializing ||
 	    !enable_mock_after_initialized.load(std::memory_order_relaxed)) {
 		SPDLOG_DEBUG(
@@ -1062,6 +1355,14 @@ int syscall_context::handle_ioctl(int fd, unsigned long req, unsigned long data)
 		SPDLOG_WARN(
 			"Failed to call mocked ioctl PERF_EVENT_IOC_SET_BPF: {}",
 			res);
+	} else if (req == PERF_EVENT_IOC_ID &&
+		   bpftime_is_software_perf_event(fd)) {
+		if (data == 0) {
+			errno = EFAULT;
+			return -1;
+		}
+		*reinterpret_cast<uint64_t *>(data) = static_cast<uint64_t>(fd);
+		return 0;
 	}
 	SPDLOG_WARN("Calling original ioctl: {} {} {}", fd, req, data);
 	return orig_ioctl_fn(fd, req, data);
@@ -1069,18 +1370,27 @@ int syscall_context::handle_ioctl(int fd, unsigned long req, unsigned long data)
 
 int syscall_context::handle_epoll_create1(int flags)
 {
-	if (!enable_mock.load(std::memory_order_relaxed) || run_with_kernel ||
+	if (!mock_enabled_for_current_thread() || run_with_kernel ||
 	    initializing_cuda.load(std::memory_order_acquire) ||
 	    !enable_mock_after_initialized.load(std::memory_order_relaxed))
 		return orig_epoll_create1_fn(flags);
 	try_startup();
-	return bpftime_epoll_create();
+	int fd = orig_epoll_create1_fn(flags);
+	if (fd < 0)
+		return fd;
+	if (bpftime_epoll_create_at(fd) < 0) {
+		int saved_errno = errno;
+		orig_close_fn(fd);
+		errno = saved_errno;
+		return -1;
+	}
+	return fd;
 }
 
 int syscall_context::handle_epoll_ctl(int epfd, int op, int fd,
 				      epoll_event *evt)
 {
-	if (!enable_mock.load(std::memory_order_relaxed) || run_with_kernel ||
+	if (!mock_enabled_for_current_thread() || run_with_kernel ||
 	    !enable_mock_after_initialized.load(std::memory_order_relaxed))
 		return orig_epoll_ctl_fn(epfd, op, fd, evt);
 	try_startup();
@@ -1110,13 +1420,35 @@ int syscall_context::handle_epoll_ctl(int epfd, int op, int fd,
 int syscall_context::handle_epoll_wait(int epfd, epoll_event *evt,
 				       int maxevents, int timeout)
 {
-	if (!enable_mock.load(std::memory_order_relaxed) || run_with_kernel ||
+	if (!mock_enabled_for_current_thread() || run_with_kernel ||
 	    initializing_cuda.load(std::memory_order_acquire) ||
 	    !enable_mock_after_initialized.load(std::memory_order_relaxed))
 		return orig_epoll_wait_fn(epfd, evt, maxevents, timeout);
 	try_startup();
 	if (bpftime_is_epoll_handler(epfd)) {
-		return bpftime_epoll_wait(epfd, evt, maxevents, timeout);
+		using namespace std::chrono;
+		auto start = steady_clock::now();
+		for (;;) {
+			int kernel_result =
+				orig_epoll_wait_fn(epfd, evt, maxevents, 0);
+			if (kernel_result != 0)
+				return kernel_result;
+			if (timeout == 0)
+				return 0;
+			int userspace_timeout = 1;
+			if (timeout > 0) {
+				auto elapsed = duration_cast<milliseconds>(
+					steady_clock::now() - start);
+				int remaining = timeout - (int)elapsed.count();
+				if (remaining <= 0)
+					return 0;
+				userspace_timeout = std::min(remaining, 1);
+			}
+			int userspace_result = bpftime_epoll_wait(
+				epfd, evt, maxevents, userspace_timeout);
+			if (userspace_result != 0)
+				return userspace_result;
+		}
 	}
 	return orig_epoll_wait_fn(epfd, evt, maxevents, timeout);
 }
@@ -1139,7 +1471,7 @@ int syscall_context::handle_munmap(void *addr, size_t size)
 	};
 	if (handle_mocked_munmap())
 		return 0;
-	if (!enable_mock.load(std::memory_order_relaxed) || run_with_kernel ||
+	if (!mock_enabled_for_current_thread() || run_with_kernel ||
 	    initializing_cuda.load(std::memory_order_acquire) ||
 	    !enable_mock_after_initialized.load(std::memory_order_relaxed))
 		return orig_munmap_fn(addr, size);
@@ -1151,7 +1483,7 @@ int syscall_context::handle_munmap(void *addr, size_t size)
 
 FILE *syscall_context::handle_fopen(const char *pathname, const char *flags)
 {
-	if (!enable_mock.load(std::memory_order_relaxed) ||
+	if (!mock_enabled_for_current_thread() ||
 	    initializing_cuda.load(std::memory_order_acquire) ||
 	    !enable_mock_after_initialized.load(std::memory_order_relaxed))
 		return orig_fopen_fn(pathname, flags);
@@ -1200,7 +1532,7 @@ FILE *syscall_context::handle_fopen(const char *pathname, const char *flags)
 int syscall_context::handle_dup3(int oldfd, int newfd, int flags)
 {
 	SPDLOG_DEBUG("Calling mocked dup3 {}, {}", oldfd, newfd);
-	if (!enable_mock.load(std::memory_order_relaxed) || run_with_kernel ||
+	if (!mock_enabled_for_current_thread() || run_with_kernel ||
 	    initializing_cuda.load(std::memory_order_acquire) ||
 	    !enable_mock_after_initialized.load(std::memory_order_relaxed))
 		return orig_syscall_fn(__NR_dup3, (long)oldfd, (long)newfd,
@@ -1213,10 +1545,36 @@ int syscall_context::handle_dup3(int oldfd, int newfd, int flags)
 			       (long)flags);
 }
 
+long syscall_context::handle_fcntl(int fd, int cmd, unsigned long arg)
+{
+	if (!mock_enabled_for_current_thread() ||
+	    initializing_cuda.load(std::memory_order_acquire) ||
+	    !enable_mock_after_initialized.load(std::memory_order_relaxed) ||
+	    (cmd != F_DUPFD && cmd != F_DUPFD_CLOEXEC) ||
+	    !bpftime_is_map_fd(fd)) {
+		return orig_syscall_fn(__NR_fcntl, fd, cmd, arg);
+	}
+	try_startup();
+	for (;;) {
+		int newfd = (int)orig_syscall_fn(__NR_fcntl, fd, cmd, arg);
+		if (newfd < 0)
+			return newfd;
+		if (bpftime_maps_dup(fd, newfd) >= 0)
+			return newfd;
+		int saved_errno = errno;
+		orig_close_fn(newfd);
+		if (saved_errno != EEXIST || newfd == INT_MAX) {
+			errno = saved_errno;
+			return -1;
+		}
+		arg = static_cast<unsigned long>(newfd + 1);
+	}
+}
+
 int syscall_context::handle_memfd_create(const char *name, int flags)
 {
 	SPDLOG_DEBUG("Calling mocked memfd_create {}, {}", name, flags);
-	if (!enable_mock.load(std::memory_order_relaxed) ||
+	if (!mock_enabled_for_current_thread() ||
 	    initializing_cuda.load(std::memory_order_acquire) ||
 	    !enable_mock_after_initialized.load(std::memory_order_relaxed)) {
 		SPDLOG_DEBUG("Calling original memfd_create");

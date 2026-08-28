@@ -21,6 +21,7 @@
 #include <pthread.h>
 #include <atomic>
 #include <future>
+#include <mutex>
 #include <stdexcept>
 #include <string>
 #include <thread>
@@ -93,6 +94,9 @@ class syscall_context {
 	pthread_spinlock_t mocked_file_lock;
 	std::unordered_map<int, std::unique_ptr<mocked_file_provider>>
 		mocked_files;
+	std::mutex map_in_map_refs_mutex;
+	std::unordered_map<int, std::unordered_map<std::string, int>>
+		map_in_map_refs;
 	void init_original_functions()
 	{
 		auto require_symbol = [](const char *name) {
@@ -139,6 +143,7 @@ class syscall_context {
 	// if the syscall original function is not prepared, it will cause a
 	// segfault.
 	void try_startup();
+	bool mock_enabled_for_current_thread() const noexcept;
 
 	// enable userspace eBPF runing with kernel eBPF.
 	bool run_with_kernel = false;
@@ -148,6 +153,11 @@ class syscall_context {
 	std::string by_pass_kernel_verifier_pattern;
 
 	void load_config_from_env();
+	long handle_map_update(int fd, const void *key, const void *value,
+			       uint64_t flags);
+	long handle_map_delete(int fd, const void *key);
+	void release_map_in_map_refs(int outer_fd);
+	void release_owned_map_fd(int fd);
 
     public:
 	// enable mock the syscall behavior in userspace
@@ -157,10 +167,7 @@ class syscall_context {
 	// Whether enable mock after syscall server has been initialized
 	std::atomic<bool> enable_mock_after_initialized{ true };
 	syscall_context();
-	virtual ~syscall_context()
-	{
-		pthread_spin_destroy(&this->mocked_file_lock);
-	}
+	virtual ~syscall_context();
 	syscall_fn orig_syscall_fn = nullptr;
 
 	// handle syscall
@@ -185,6 +192,7 @@ class syscall_context {
 	ssize_t handle_read(int fd, void *buf, size_t count);
 	FILE *handle_fopen(const char *pathname, const char *flags);
 	int handle_dup3(int oldfd, int newfd, int flags);
+	long handle_fcntl(int fd, int cmd, unsigned long arg);
 	int handle_memfd_create(const char *name, int flags);
 
 #if defined(BPFTIME_ENABLE_CUDA_ATTACH)
