@@ -102,7 +102,7 @@ if(${BPFTIME_ENABLE_CUDA_ATTACH})
   list(APPEND sources src/bpf_map/gpu/nv_gpu_shared_array_host_map.cpp)
 endif()
 
-if(UNIX AND NOT APPLE AND BPFTIME_BUILD_WITH_LIBBPF)
+if(UNIX AND NOT APPLE AND BPFTIME_BUILD_WITH_LIBBPF AND NOT BPFTIME_TARGET_QNX)
   list(APPEND sources
     src/bpf_map/shared/array_map_kernel_user.cpp
     src/bpf_map/shared/hash_map_kernel_user.cpp
@@ -130,15 +130,19 @@ endif()
 if(${BPFTIME_UBPF_JIT})
   target_compile_definitions(${PROJECT_NAME} PUBLIC BPFTIME_UBPF_JIT=1)
 endif()
-add_custom_command(
-  OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/syscall_id_list.h
-  COMMAND /bin/bash ${CMAKE_CURRENT_SOURCE_DIR}/generate_syscall_id_table.sh "${CMAKE_CURRENT_BINARY_DIR}/syscall_id_list.h"
-  USES_TERMINAL
-)
-add_custom_target(
-  syscall_id_table
-  DEPENDS ${CMAKE_CURRENT_BINARY_DIR}/syscall_id_list.h
-)
+# Syscall id table generation requires Linux headers + host bash cpp.
+# Skip on QNX (syscall_trace_attach_impl is not built for QNX phase-1).
+if(NOT BPFTIME_TARGET_QNX)
+  add_custom_command(
+    OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/syscall_id_list.h
+    COMMAND /bin/bash ${CMAKE_CURRENT_SOURCE_DIR}/generate_syscall_id_table.sh "${CMAKE_CURRENT_BINARY_DIR}/syscall_id_list.h"
+    USES_TERMINAL
+  )
+  add_custom_target(
+    syscall_id_table
+    DEPENDS ${CMAKE_CURRENT_BINARY_DIR}/syscall_id_list.h
+  )
+endif()
 
 message(INFO " Found the following boost include dirs : ${Boost_INCLUDE_DIRS}")
 
@@ -286,7 +290,11 @@ if(BPFTIME_BUILD_WITH_LIBBPF)
 endif()
 
 add_subdirectory(agent)
-add_subdirectory(syscall-server)
+
+# syscall-server simulates Linux bpf()/perf_event_open — not part of QNX phase-1
+if(NOT BPFTIME_TARGET_QNX)
+  add_subdirectory(syscall-server)
+endif()
 
 #
 # Unit testing setup

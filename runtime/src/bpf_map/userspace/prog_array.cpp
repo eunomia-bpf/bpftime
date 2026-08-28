@@ -10,7 +10,7 @@
 #include <bpf/libbpf.h>
 #include <gnu/lib-names.h>
 #include <asm/unistd.h>
-#elif __APPLE__
+#elif defined(__APPLE__) || defined(__QNX__) || defined(BPFTIME_TARGET_QNX)
 #include "bpftime_epoll.h"
 #endif
 #include "spdlog/spdlog.h"

@@ -19,7 +19,9 @@
 #include <cstdint>
 #include <map>
 #include <memory>
+#if !defined(__QNX__) && !defined(BPFTIME_TARGET_QNX)
 #include <syscall_table.hpp>
+#endif
 #include <bpf_attach_ctx.hpp>
 #include <bpftime_shm_internal.hpp>
 #include <bpftime_prog.hpp>

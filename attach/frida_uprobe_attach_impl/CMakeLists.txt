@@ -16,6 +16,10 @@ target_include_directories(bpftime_frida_uprobe_attach_impl PRIVATE ${SPDLOG_INC
 
 target_link_libraries(bpftime_frida_uprobe_attach_impl PRIVATE ${FRIDA_GUM_INSTALL_DIR}/libfrida-gum.a PUBLIC bpftime_base_attach_impl spdlog::spdlog dl)
 
+option(TEST_LCOV "option for lcov" OFF)
+
+# Unit tests require Catch2 and a host-runnable binary; skip on QNX cross-builds
+if(NOT BPFTIME_TARGET_QNX)
 set(TEST_SOURCES
     test/test_uprobe_uretprobe.cpp
     test/test_function_address_resolve.cpp
@@ -26,7 +30,6 @@ set(TEST_SOURCES
     test/test_base_attach_impl.cpp
     test/test_back_trace.cpp
 )
-option(TEST_LCOV "option for lcov" OFF)
 add_executable(bpftime_frida_uprobe_attach_tests ${TEST_SOURCES})
 
 if (${TEST_LCOV}) 
@@ -58,3 +61,6 @@ target_include_directories(bpftime_frida_uprobe_attach_tests PRIVATE ${FRIDA_UPR
 add_test(NAME bpftime_frida_uprobe_attach_tests COMMAND bpftime_frida_uprobe_attach_tests)
 
 set_property(TARGET bpftime_frida_uprobe_attach_tests bpftime_frida_uprobe_attach_impl PROPERTY CXX_STANDARD 20)
+else()
+set_property(TARGET bpftime_frida_uprobe_attach_impl PROPERTY CXX_STANDARD 20)
+endif()

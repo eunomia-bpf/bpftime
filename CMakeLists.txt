@@ -7,7 +7,10 @@ endif()
 set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -fno-omit-frame-pointer")
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fno-omit-frame-pointer")
 set(CMAKE_LINKER_FLAGS "${CMAKE_LINKER_FLAGS} -fno-omit-frame-pointer")
-set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -lncurses")
+# ncurses is unavailable on typical QNX SDP installs; skip for QNX builds
+if(NOT BPFTIME_TARGET_QNX AND NOT CMAKE_SYSTEM_NAME STREQUAL "QNX")
+  set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -lncurses")
+endif()
 add_definitions(-DLLVM_DISABLE_ABI_BREAKING_CHECKS_ENFORCING=1)
 
 # set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -stdlib=libc++")
@@ -125,8 +128,12 @@ if(${BPFTIME_BUILD_WITH_LIBBPF})
   include(cmake/libbpf.cmake)
 endif()
 
-# install frida
-include(cmake/frida.cmake)
+# Frida: official prebuilt for Linux/macOS; QNX requires a local build
+if(BPFTIME_TARGET_QNX OR CMAKE_SYSTEM_NAME STREQUAL "QNX")
+  include(cmake/frida-qnx.cmake)
+else()
+  include(cmake/frida.cmake)
+endif()
 
 set(CMAKE_POSITION_INDEPENDENT_CODE YES)
 
@@ -250,9 +257,8 @@ if(${BUILD_ATTACH_IMPL_EXAMPLE})
   add_subdirectory(example/attach_implementation)
 endif()
 
-# benchmark that requires bpftime libraries
-if(${BPFTIME_BUILD_WITH_LIBBPF})
-  # Currently benchmark is using libbpf
+# benchmark that requires bpftime libraries (Linux + libbpf only)
+if(${BPFTIME_BUILD_WITH_LIBBPF} AND NOT BPFTIME_TARGET_QNX)
   add_subdirectory(benchmark)
 endif()
 
@@ -260,7 +266,10 @@ set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>DLL")
 
 set(DEST_DIR "$ENV{HOME}/.bpftime")
 
-if(${BPFTIME_BUILD_WITH_LIBBPF})
+if(BPFTIME_TARGET_QNX)
+  # Phase-1 QNX: agent + CLI only (no syscall-server / text transformer)
+  install(TARGETS bpftime-agent CONFIGURATIONS Release Debug RelWithDebInfo DESTINATION ${DEST_DIR})
+elseif(${BPFTIME_BUILD_WITH_LIBBPF})
   install(TARGETS bpftime-agent bpftime_text_segment_transformer bpftime-syscall-server CONFIGURATIONS Release Debug RelWithDebInfo DESTINATION ${DEST_DIR})
 else()
   install(TARGETS bpftime-agent bpftime-syscall-server CONFIGURATIONS Release Debug RelWithDebInfo DESTINATION ${DEST_DIR})

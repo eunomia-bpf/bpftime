@@ -6,6 +6,9 @@
 #include <unistd.h>
 #if __APPLE__
 #include <libproc.h>
+#elif defined(__QNX__) || defined(BPFTIME_TARGET_QNX)
+#include <fcntl.h>
+#include <limits.h>
 #endif
 static std::string get_executable_path()
 {
@@ -19,6 +22,23 @@ static std::string get_executable_path()
 		SPDLOG_INFO("Executable path: {}", exec_path);
 	} else {
 		SPDLOG_ERROR("Error retrieving executable path: {}", errno);
+	}
+#elif defined(__QNX__) || defined(BPFTIME_TARGET_QNX)
+	// QNX Neutrino exposes the process image via /proc/<pid>/exefile
+	char link_path[64];
+	snprintf(link_path, sizeof(link_path), "/proc/%d/exefile", getpid());
+	int fd = open(link_path, O_RDONLY);
+	if (fd >= 0) {
+		ssize_t n = read(fd, exec_path, sizeof(exec_path) - 1);
+		close(fd);
+		if (n > 0) {
+			exec_path[n] = '\0';
+			SPDLOG_INFO("Executable path: {}", exec_path);
+		} else {
+			SPDLOG_ERROR("Error reading {}: {}", link_path, errno);
+		}
+	} else {
+		SPDLOG_ERROR("Error opening {}: {}", link_path, errno);
 	}
 #elif __APPLE__
 	pid_t pid = getpid();

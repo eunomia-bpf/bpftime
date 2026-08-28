@@ -10,7 +10,7 @@
 #include <unordered_map>
 #if __linux__
 #include "linux/perf_event.h"
-#elif __APPLE__
+#elif defined(__APPLE__) || defined(__QNX__) || defined(BPFTIME_TARGET_QNX)
 #include "bpftime_epoll.h"
 #endif
 #include <cstddef>
@@ -25,7 +25,7 @@
 // #include "pos/include/common.h"
 // #include "pos/include/utils/command_caller.h"
 // #include "pos/cli/cli.h"
-#if __APPLE__
+#if defined(__APPLE__) || defined(__QNX__) || defined(BPFTIME_TARGET_QNX)
 using namespace bpftime_epoll;
 #endif
 

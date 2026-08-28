@@ -5,11 +5,15 @@
  */
 #include "bpf_attach_ctx.hpp"
 #include "handler/map_handler.hpp"
+#if __linux__
 #include "linux/bpf.h"
+#elif defined(__APPLE__) || defined(__QNX__) || defined(BPFTIME_TARGET_QNX)
+#include "bpftime_epoll.h"
+#endif
 #include <algorithm>
 #include <stdexcept>
 #include <system_error>
-#if __APPLE__
+#if defined(__APPLE__) || defined(__QNX__) || defined(BPFTIME_TARGET_QNX)
 #include <cstdint>
 #include <pthread.h>
 #endif
@@ -307,7 +311,7 @@ uint64_t bpftime_ktime_get_coarse_ns(uint64_t, uint64_t, uint64_t, uint64_t,
 				     uint64_t)
 {
 	timespec spec;
-#ifdef __APPLE__
+#if defined(__APPLE__) || defined(__QNX__) || defined(BPFTIME_TARGET_QNX)
 	clock_gettime(CLOCK_MONOTONIC, &spec); // or CLOCK_MONOTONIC_RAW
 #else
 	clock_gettime(CLOCK_MONOTONIC_COARSE, &spec);
@@ -323,6 +327,11 @@ uint64_t bpftime_get_current_pid_tgid(uint64_t, uint64_t, uint64_t, uint64_t,
 	static thread_local int tid = -1;
 	if (tid == -1) {
 		tid = gettid();
+	}
+#elif defined(__QNX__) || defined(BPFTIME_TARGET_QNX)
+	static thread_local int tid = -1;
+	if (tid == -1) {
+		tid = (int)pthread_self();
 	}
 #elif __APPLE__
 	static thread_local uint64_t tid = UINT64_MAX; // cannot use int because
@@ -428,7 +437,7 @@ uint64_t bpf_ktime_get_coarse_ns(uint64_t, uint64_t, uint64_t, uint64_t,
 				 uint64_t)
 {
 	struct timespec ts;
-#if __APPLE__
+#if defined(__APPLE__) || defined(__QNX__) || defined(BPFTIME_TARGET_QNX)
 	clock_gettime(CLOCK_MONOTONIC, &ts); // or CLOCK_MONOTONIC_RAW
 #else
 	clock_gettime(CLOCK_MONOTONIC_COARSE, &ts);

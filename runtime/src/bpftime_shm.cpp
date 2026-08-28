@@ -18,14 +18,14 @@
 #include <bpftime_shm_internal.hpp>
 #if __linux__
 #include <sys/epoll.h>
-#elif __APPLE__
+#elif defined(__APPLE__) || defined(__QNX__) || defined(BPFTIME_TARGET_QNX)
 #include "bpftime_epoll.h"
 #endif
 #include <thread>
 #include <chrono>
 #include <variant>
 
-#ifdef __APPLE__
+#if defined(__APPLE__) || defined(__QNX__) || defined(BPFTIME_TARGET_QNX)
 // Custom implementation for sigtimedwait
 int sigtimedwait(const sigset_t *set, siginfo_t *info,
 		 const struct timespec *timeout)

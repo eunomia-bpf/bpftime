@@ -11,7 +11,7 @@ endif()
 
 set_target_properties(bpftime-agent PROPERTIES CXX_STANDARD 20 LINK_DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/agent.version)
 
-if(UNIX AND NOT APPLE)
+if(UNIX AND NOT APPLE AND NOT BPFTIME_TARGET_QNX)
   target_link_options(bpftime-agent PRIVATE -Wl,--version-script=${CMAKE_CURRENT_SOURCE_DIR}/agent.version)
 endif()
 
@@ -23,13 +23,17 @@ endif()
 # Force link VM compat libraries so constructor-based factory registration is retained
 if(${BPFTIME_UBPF_JIT})
   add_dependencies(bpftime-agent bpftime_ubpf_vm)
-  target_link_options(bpftime-agent PUBLIC "-Wl,--whole-archive" "$<TARGET_FILE:bpftime_ubpf_vm>" "-Wl,--no-whole-archive")
+  if(NOT BPFTIME_TARGET_QNX)
+    target_link_options(bpftime-agent PUBLIC "-Wl,--whole-archive" "$<TARGET_FILE:bpftime_ubpf_vm>" "-Wl,--no-whole-archive")
+  endif()
   target_link_libraries(bpftime-agent PUBLIC bpftime_ubpf_vm)
 endif()
 
 if(${BPFTIME_LLVM_JIT})
   add_dependencies(bpftime-agent bpftime_llvm_vm llvmbpf_vm)
-  target_link_options(bpftime-agent PUBLIC "-Wl,--whole-archive" "$<TARGET_FILE:bpftime_llvm_vm>" "-Wl,--no-whole-archive")
+  if(NOT BPFTIME_TARGET_QNX)
+    target_link_options(bpftime-agent PUBLIC "-Wl,--whole-archive" "$<TARGET_FILE:bpftime_llvm_vm>" "-Wl,--no-whole-archive")
+  endif()
   target_link_libraries(bpftime-agent PUBLIC bpftime_llvm_vm)
   # Statically embed the compat_llvm constructor TU to guarantee VM factory registration in LD_PRELOAD context
   target_sources(bpftime-agent PRIVATE $<TARGET_OBJECTS:bpftime_llvm_vm_obj>)
@@ -91,4 +95,6 @@ else()
     ${EXTRA_LINK_LIBS}
   )
 endif()
-target_link_options(bpftime-agent PUBLIC "-Wl,-export-dynamic")
+if(NOT BPFTIME_TARGET_QNX)
+  target_link_options(bpftime-agent PUBLIC "-Wl,-export-dynamic")
+endif()
