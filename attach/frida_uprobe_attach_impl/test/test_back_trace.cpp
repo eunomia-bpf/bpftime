@@ -14,6 +14,28 @@ using namespace attach;
 extern "C" uint64_t __bpftime_test_stripped_back_trace__func1(uint64_t x);
 extern "C" uint64_t __bpftime_test_stripped_back_trace__func5(uint64_t x);
 
+#if defined(__linux__) && defined(__x86_64__)
+asm(".pushsection .text\n"
+    ".balign 8\n"
+    ".global __bpftime_test_short_back_trace__marker\n"
+    ".type __bpftime_test_short_back_trace__marker,@function\n"
+    "__bpftime_test_short_back_trace__marker:\n"
+    "ret\n"
+    ".balign 8\n"
+    ".size __bpftime_test_short_back_trace__marker,"
+    ".-__bpftime_test_short_back_trace__marker\n"
+    ".popsection\n");
+extern "C" void __bpftime_test_short_back_trace__marker();
+
+extern "C" __attribute__((__noinline__)) uint64_t
+__bpftime_test_short_back_trace__caller(uint64_t value)
+{
+	__bpftime_test_short_back_trace__marker();
+	asm volatile("");
+	return value + 1;
+}
+#endif
+
 extern "C" __attribute__((__noinline__)) uint64_t
 __bpftime_test_attach_with_back_trace__func5(uint64_t x)
 {
@@ -127,3 +149,40 @@ TEST_CASE("Fuzzy backtracer recovers a call chain without unwind metadata")
 	REQUIRE(fixture_frames[1] >= 3);
 	REQUIRE(fixture_frames[1] > fixture_frames[0]);
 }
+
+#if defined(__linux__) && defined(__x86_64__)
+TEST_CASE("Short uprobe exposes a context for stack capture")
+{
+	auto *marker = reinterpret_cast<const uint8_t *>(
+		&__bpftime_test_short_back_trace__marker);
+	REQUIRE(reinterpret_cast<uintptr_t>(marker) % alignof(uint64_t) == 0);
+	REQUIRE(*marker == 0xc3);
+
+	frida_attach_impl impl(false);
+	bool invoked = false;
+	bool found_caller = false;
+	impl.create_uprobe_at(
+		(void *)&__bpftime_test_short_back_trace__marker,
+		[&](const pt_regs &) {
+			invoked = true;
+			auto *stack = static_cast<std::vector<uint64_t> *>(
+				impl.call_attach_specific_function(
+					"generate_stack", nullptr));
+			REQUIRE(stack != nullptr);
+			REQUIRE_FALSE(stack->empty());
+			for (const auto address : *stack) {
+				GumDebugSymbolDetails details;
+				if (gum_symbol_details_from_address(
+					    (GumReturnAddress)address, &details) &&
+				    std::string(details.symbol_name).find(
+					    "__bpftime_test_short_back_trace__caller") !=
+					    std::string::npos)
+					found_caller = true;
+			}
+			delete stack;
+		});
+	REQUIRE(__bpftime_test_short_back_trace__caller(41) == 42);
+	REQUIRE(invoked);
+	REQUIRE(found_caller);
+}
+#endif

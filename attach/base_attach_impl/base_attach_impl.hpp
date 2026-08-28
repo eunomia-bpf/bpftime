@@ -21,11 +21,13 @@ inline thread_local std::optional<override_return_set_callback>
 inline thread_local uintptr_t current_thread_attach_func_ip = 0;
 
 inline thread_local unsigned current_thread_attach_callback_depth = 0;
+inline thread_local bool current_thread_attach_callbacks_suppressed = false;
 
 class attach_callback_scope {
     public:
 	attach_callback_scope()
-		: active(current_thread_attach_callback_depth == 0)
+		: active(!current_thread_attach_callbacks_suppressed &&
+			 current_thread_attach_callback_depth == 0)
 	{
 		if (active)
 			current_thread_attach_callback_depth++;
@@ -39,6 +41,22 @@ class attach_callback_scope {
 
     private:
 	bool active;
+};
+
+class attach_callback_suppression_scope {
+    public:
+	attach_callback_suppression_scope()
+		: previous(current_thread_attach_callbacks_suppressed)
+	{
+		current_thread_attach_callbacks_suppressed = true;
+	}
+	~attach_callback_suppression_scope()
+	{
+		current_thread_attach_callbacks_suppressed = previous;
+	}
+
+    private:
+	bool previous;
 };
 
 // A wrapper function for an entry function of an ebpf program

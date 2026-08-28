@@ -406,6 +406,7 @@ static void start_agent_ipc_server_once()
 static int perform_detach()
 {
 	std::lock_guard<std::mutex> detach_guard(detach_mutex);
+	attach_callback_suppression_scope suppress_callbacks;
 	if (!global_ctx_constructed.load(std::memory_order_acquire)) {
 		__atomic_store_n(&initialized, AGENT_UNINITIALIZED,
 				 __ATOMIC_SEQ_CST);
@@ -539,13 +540,24 @@ static void bpftime_agent_main_impl(const gchar *data,
 				    gboolean *stay_resident);
 extern "C" void bpftime_agent_main(const gchar *data, gboolean *stay_resident);
 
-extern "C" int bpftime_hooked_main(int argc, char **argv, char **envp)
+static void detach_agent_at_process_exit()
+{
+	(void)perform_detach();
+}
+
+static void initialize_preloaded_agent()
 {
 	int stay_resident = 0;
 	injected_with_frida = false;
 	bpftime_agent_main_impl("", &stay_resident);
-	int ret = orig_main_func(argc, argv, envp);
-	return ret;
+	if (std::atexit(detach_agent_at_process_exit) != 0)
+		SPDLOG_WARN("Unable to register bpftime process-exit cleanup");
+}
+
+extern "C" int bpftime_hooked_main(int argc, char **argv, char **envp)
+{
+	initialize_preloaded_agent();
+	return orig_main_func(argc, argv, envp);
 }
 
 extern "C" int __libc_start_main(int (*main)(int, char **, char **), int argc,
@@ -692,6 +704,7 @@ static int refresh_attach_session(const gchar *data)
 	}
 
 	std::lock_guard<std::mutex> guard(detach_mutex);
+	attach_callback_suppression_scope suppress_callbacks;
 	apply_injected_kv_overrides(data);
 	auto_refresh_epoch.fetch_add(1, std::memory_order_acq_rel);
 	{
@@ -731,6 +744,7 @@ static int refresh_attach_session(const gchar *data)
 		if (auto_refresh_thread.joinable())
 			auto_refresh_thread.join();
 		auto_refresh_thread = std::thread([auto_refresh_ms, epoch]() {
+			attach_callback_suppression_scope suppress_callbacks;
 			for (;;) {
 				if (auto_refresh_epoch.load(
 					    std::memory_order_acquire) != epoch) {
@@ -1045,6 +1059,7 @@ static void bpftime_agent_main_impl(const gchar *data,
 			SPDLOG_INFO("Initializing agent..");
 
 			try {
+				attach_callback_suppression_scope suppress_callbacks;
 				int res = ctx_holder.ctx
 						  .init_attach_ctx_from_handlers(
 							  runtime_config);
@@ -1085,6 +1100,8 @@ static void bpftime_agent_main_impl(const gchar *data,
 					auto_refresh_thread.join();
 				auto_refresh_thread = std::thread(
 					[auto_refresh_ms, epoch]() {
+						attach_callback_suppression_scope
+							suppress_callbacks;
 						for (;;) {
 							if (auto_refresh_epoch.load(
 								    std::memory_order_acquire) !=

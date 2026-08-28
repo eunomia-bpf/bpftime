@@ -1,7 +1,13 @@
 #include "frida_internal_attach_entry.hpp"
 #include "frida_uprobe_attach_impl.hpp"
 #include "frida_attach_entry.hpp"
+#include <atomic>
+#include <cerrno>
+#include <cstring>
 #include <dlfcn.h>
+#include <exception>
+#include <sys/mman.h>
+#include <unistd.h>
 #include <spdlog/fmt/fmt.h>
 #include <spdlog/spdlog.h>
 #include <frida_register_conversion.hpp>
@@ -9,6 +15,7 @@ using namespace bpftime::attach;
 
 extern "C" uint64_t __bpftime_frida_attach_manager__replace_handler();
 extern "C" void *__bpftime_frida_attach_manager__override_handler();
+extern "C" void __bpftime_frida_attach_manager__short_uprobe_common();
 
 static void uprobe_listener_on_enter(GumInvocationContext *context,
 				     gpointer user_data);
@@ -110,11 +117,131 @@ std::string build_frida_attach_failure_message(const char *operation,
 		describe_attach_target(function), format_target_bytes(function));
 }
 
+bool is_empty_x86_64_function(void *function)
+{
+#if defined(__linux__) && defined(__x86_64__)
+	return *reinterpret_cast<const uint8_t *>(function) == 0xc3;
+#else
+	return false;
+#endif
+}
+
+void *make_short_uprobe_stub(frida_internal_attach_entry *entry)
+{
+#if defined(__linux__) && defined(__x86_64__)
+	const long page_size = sysconf(_SC_PAGESIZE);
+	if (page_size <= 0)
+		return nullptr;
+	auto *stub = static_cast<uint8_t *>(
+		mmap(nullptr, static_cast<size_t>(page_size),
+		     PROT_READ | PROT_WRITE,
+		     MAP_PRIVATE | MAP_ANONYMOUS | MAP_32BIT, -1, 0));
+	if (stub == MAP_FAILED)
+		return nullptr;
+
+	// endbr64; movabs entry, %rax; push %rax; movabs common, %rax;
+	// jmp *%rax. Both indirect branch targets start with endbr64.
+	const uint8_t code[] = { 0xf3, 0x0f, 0x1e, 0xfa, 0x48, 0xb8, 0, 0, 0,
+				 0,    0,    0,    0,    0,    0x50, 0x48, 0xb8, 0,
+				 0,    0,    0,    0,    0,    0,    0,    0xff, 0xe0 };
+	std::memcpy(stub, code, sizeof(code));
+	const uint64_t entry_addr = reinterpret_cast<uint64_t>(entry);
+	const uint64_t common_addr = reinterpret_cast<uint64_t>(
+		__bpftime_frida_attach_manager__short_uprobe_common);
+	std::memcpy(stub + 6, &entry_addr, sizeof(entry_addr));
+	std::memcpy(stub + 17, &common_addr, sizeof(common_addr));
+	__builtin___clear_cache(reinterpret_cast<char *>(stub),
+			      reinterpret_cast<char *>(stub + sizeof(code)));
+	if (mprotect(stub, static_cast<size_t>(page_size),
+		     PROT_READ | PROT_EXEC) != 0) {
+		munmap(stub, static_cast<size_t>(page_size));
+		return nullptr;
+	}
+	return stub;
+#else
+	return nullptr;
+#endif
+}
+
+bool install_short_uprobe_patch(void *function, void *stub,
+				uint64_t &original)
+{
+#if defined(__linux__) && defined(__x86_64__)
+	auto address = reinterpret_cast<uintptr_t>(function);
+	auto stub_address = reinterpret_cast<uintptr_t>(stub);
+	if ((address & (alignof(uint64_t) - 1)) != 0 ||
+	    stub_address > UINT32_MAX)
+		return false;
+
+	// mov $stub, %eax; jmp *%rax; nop. Installing the aligned eight-byte
+	// sequence atomically prevents concurrent callers from seeing a partial
+	// instruction stream.
+	uint8_t jump_bytes[sizeof(uint64_t)] = { 0xb8, 0, 0, 0,
+					       0,    0xff, 0xe0, 0x90 };
+	const uint32_t target = static_cast<uint32_t>(stub_address);
+	std::memcpy(jump_bytes + 1, &target, sizeof(target));
+	uint64_t replacement;
+	std::memcpy(&replacement, jump_bytes, sizeof(replacement));
+	std::memcpy(&original, function, sizeof(original));
+
+	const long page_size = sysconf(_SC_PAGESIZE);
+	if (page_size <= 0)
+		return false;
+	auto page = address & ~(static_cast<uintptr_t>(page_size) - 1);
+	if (mprotect(reinterpret_cast<void *>(page),
+		     static_cast<size_t>(page_size),
+		     PROT_READ | PROT_WRITE | PROT_EXEC) != 0)
+		return false;
+
+	std::atomic_ref<uint64_t> target_word(
+		*reinterpret_cast<uint64_t *>(function));
+	auto expected = original;
+	const bool installed = target_word.compare_exchange_strong(
+		expected, replacement, std::memory_order_seq_cst);
+	__builtin___clear_cache(reinterpret_cast<char *>(function),
+			      reinterpret_cast<char *>(function) +
+				      sizeof(replacement));
+	if (mprotect(reinterpret_cast<void *>(page),
+		     static_cast<size_t>(page_size), PROT_READ | PROT_EXEC) != 0)
+		SPDLOG_ERROR("Unable to restore executable page protections: {}",
+			     errno);
+	return installed;
+#else
+	return false;
+#endif
+}
+
+void remove_short_uprobe_patch(void *function, uint64_t original)
+{
+#if defined(__linux__) && defined(__x86_64__)
+	auto address = reinterpret_cast<uintptr_t>(function);
+	const long page_size = sysconf(_SC_PAGESIZE);
+	if (page_size <= 0)
+		return;
+	auto page = address & ~(static_cast<uintptr_t>(page_size) - 1);
+	if (mprotect(reinterpret_cast<void *>(page),
+		     static_cast<size_t>(page_size),
+		     PROT_READ | PROT_WRITE | PROT_EXEC) != 0)
+		return;
+	std::atomic_ref<uint64_t>(*reinterpret_cast<uint64_t *>(function))
+		.store(original, std::memory_order_seq_cst);
+	__builtin___clear_cache(reinterpret_cast<char *>(function),
+			      reinterpret_cast<char *>(function) +
+				      sizeof(original));
+	if (mprotect(reinterpret_cast<void *>(page),
+		     static_cast<size_t>(page_size), PROT_READ | PROT_EXEC) != 0)
+		SPDLOG_ERROR("Unable to restore executable page protections: {}",
+			     errno);
+#endif
+}
+
 } // namespace
 
 void frida_internal_attach_entry::ensure_listener(int attach_type)
 {
 	if (attach_type != ATTACH_UPROBE && attach_type != ATTACH_URETPROBE)
+		return;
+	if (attach_type == ATTACH_UPROBE && short_uprobe_stub != nullptr)
 		return;
 	auto **slot = attach_type == ATTACH_UPROBE ? &uprobe_listener :
 						     &uretprobe_listener;
@@ -131,16 +258,146 @@ void frida_internal_attach_entry::ensure_listener(int attach_type)
 	if (int err = gum_interceptor_attach(interceptor, function, *slot,
 					     nullptr);
 	    err < 0) {
+		if (attach_type == ATTACH_UPROBE &&
+		    is_empty_x86_64_function(function)) {
+			g_object_unref(*slot);
+			*slot = nullptr;
+			short_uprobe_stub = make_short_uprobe_stub(this);
+			if (short_uprobe_stub != nullptr &&
+			    install_short_uprobe_patch(function, short_uprobe_stub,
+					       short_uprobe_original)) {
+				gum_interceptor_end_transaction(interceptor);
+				SPDLOG_DEBUG(
+					"Replaced empty function 0x{:x} for uprobe",
+					(uintptr_t)function);
+				return;
+			}
+			if (short_uprobe_stub != nullptr) {
+				munmap(short_uprobe_stub,
+				       static_cast<size_t>(sysconf(_SC_PAGESIZE)));
+				short_uprobe_stub = nullptr;
+			}
+		}
 		auto message = build_frida_attach_failure_message(
 			"gum_interceptor_attach", function, attach_type, err);
-		g_object_unref(*slot);
-		*slot = nullptr;
+		if (*slot != nullptr) {
+			g_object_unref(*slot);
+			*slot = nullptr;
+		}
 		gum_interceptor_end_transaction(interceptor);
 		SPDLOG_ERROR("{}", message);
 		throw std::runtime_error(message);
 	}
 	gum_interceptor_end_transaction(interceptor);
 }
+
+#if defined(__linux__) && defined(__x86_64__)
+namespace
+{
+struct short_uprobe_x86_frame {
+	uint64_t r15, r14, r13, r12, r11, r10, r9, r8;
+	uint64_t di, si, bp, dx, cx, bx, ax;
+	uint64_t flags;
+	frida_internal_attach_entry *entry;
+	uint64_t return_address;
+};
+
+class gum_cpu_context_scope {
+	std::optional<void *> previous;
+
+    public:
+	explicit gum_cpu_context_scope(void *current)
+		: previous(current_thread_gum_cpu_context)
+	{
+		current_thread_gum_cpu_context = current;
+	}
+	~gum_cpu_context_scope()
+	{
+		current_thread_gum_cpu_context = previous;
+	}
+};
+}
+
+extern "C" void
+__bpftime_frida_attach_manager__run_short_uprobe(
+	short_uprobe_x86_frame *frame) noexcept
+{
+	try {
+		bpftime::pt_regs regs {};
+		regs.ip = reinterpret_cast<uint64_t>(
+			frame->entry->get_function_address());
+		regs.r15 = frame->r15;
+		regs.r14 = frame->r14;
+		regs.r13 = frame->r13;
+		regs.r12 = frame->r12;
+		regs.r11 = frame->r11;
+		regs.r10 = frame->r10;
+		regs.r9 = frame->r9;
+		regs.r8 = frame->r8;
+		regs.di = frame->di;
+		regs.si = frame->si;
+		regs.bp = frame->bp;
+		regs.sp = reinterpret_cast<uint64_t>(&frame->return_address);
+		regs.bx = frame->bx;
+		regs.dx = frame->dx;
+		regs.cx = frame->cx;
+		regs.ax = frame->ax;
+		regs.flags = frame->flags;
+		regs.cs = 0x33;
+		regs.ss = 0x2b;
+		GumCpuContext gum_context {};
+		convert_pt_regs_to_gum_cpu_context(regs, gum_context);
+		gum_cpu_context_scope context_scope(&gum_context);
+		frame->entry->iterate_uprobe_callbacks(regs);
+	} catch (const std::exception &ex) {
+		SPDLOG_ERROR("Short uprobe callback failed: {}", ex.what());
+	} catch (...) {
+		SPDLOG_ERROR("Short uprobe callback failed with unknown exception");
+	}
+}
+
+extern "C" __attribute__((naked)) void
+__bpftime_frida_attach_manager__short_uprobe_common()
+{
+	asm volatile("endbr64\n\t"
+		     "pushfq\n\t"
+		     "push %rax\n\t"
+		     "push %rbx\n\t"
+		     "push %rcx\n\t"
+		     "push %rdx\n\t"
+		     "push %rbp\n\t"
+		     "push %rsi\n\t"
+		     "push %rdi\n\t"
+		     "push %r8\n\t"
+		     "push %r9\n\t"
+		     "push %r10\n\t"
+		     "push %r11\n\t"
+		     "push %r12\n\t"
+		     "push %r13\n\t"
+		     "push %r14\n\t"
+		     "push %r15\n\t"
+		     "mov %rsp, %rdi\n\t"
+		     "call __bpftime_frida_attach_manager__run_short_uprobe\n\t"
+		     "pop %r15\n\t"
+		     "pop %r14\n\t"
+		     "pop %r13\n\t"
+		     "pop %r12\n\t"
+		     "pop %r11\n\t"
+		     "pop %r10\n\t"
+		     "pop %r9\n\t"
+		     "pop %r8\n\t"
+		     "pop %rdi\n\t"
+		     "pop %rsi\n\t"
+		     "pop %rbp\n\t"
+		     "pop %rdx\n\t"
+		     "pop %rcx\n\t"
+		     "pop %rbx\n\t"
+		     "pop %rax\n\t"
+		     "popfq\n\t"
+		     "add $8, %rsp\n\t"
+		     "ret\n\t");
+}
+#endif
 
 frida_internal_attach_entry::frida_internal_attach_entry(
 	void *function, int basic_attach_type, GumInterceptor *interceptor)
@@ -188,9 +445,15 @@ frida_internal_attach_entry::~frida_internal_attach_entry()
 			g_object_unref(listener);
 		}
 	}
-	if (!uprobe_listener && !uretprobe_listener) {
+	if (!uprobe_listener && !uretprobe_listener &&
+	    short_uprobe_stub == nullptr) {
 		gum_interceptor_revert(interceptor, function);
 		SPDLOG_DEBUG("Reverted function replace");
+	}
+	if (short_uprobe_stub != nullptr) {
+		remove_short_uprobe_patch(function, short_uprobe_original);
+		munmap(short_uprobe_stub,
+		       static_cast<size_t>(sysconf(_SC_PAGESIZE)));
 	}
 	gum_object_unref(interceptor);
 	SPDLOG_DEBUG("Destructor of frida_internal_attach_entry exiting..");
@@ -219,6 +482,10 @@ bool frida_internal_attach_entry::has_uprobe_or_uretprobe() const
 
 void frida_internal_attach_entry::run_filter_callback(const pt_regs &regs) const
 {
+	attach_callback_scope callback_scope;
+	if (!callback_scope.entered())
+		return;
+
 	for (auto v : user_attaches) {
 		if (v->get_type() == ATTACH_UPROBE_OVERRIDE) {
 			v->run_callback<ATTACH_UPROBE_OVERRIDE_INDEX>(regs);
@@ -235,6 +502,10 @@ void frida_internal_attach_entry::run_filter_callback(const pt_regs &regs) const
 void frida_internal_attach_entry::iterate_uprobe_callbacks(
 	const pt_regs &regs) const
 {
+	attach_callback_scope callback_scope;
+	if (!callback_scope.entered())
+		return;
+
 	for (auto v : user_attaches) {
 		if (v->get_type() == ATTACH_UPROBE) {
 			v->run_callback<ATTACH_UPROBE_INDEX>(regs);
@@ -245,6 +516,10 @@ void frida_internal_attach_entry::iterate_uprobe_callbacks(
 void frida_internal_attach_entry::iterate_uretprobe_callbacks(
 	const pt_regs &regs) const
 {
+	attach_callback_scope callback_scope;
+	if (!callback_scope.entered())
+		return;
+
 	for (auto v : user_attaches) {
 		if (v->get_type() == ATTACH_URETPROBE) {
 			v->run_callback<ATTACH_URETPROBE_INDEX>(regs);

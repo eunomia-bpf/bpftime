@@ -18,6 +18,8 @@ class frida_internal_attach_entry {
 	std::vector<frida_attach_entry *> user_attaches;
 	GumInvocationListener *uprobe_listener = nullptr;
 	GumInvocationListener *uretprobe_listener = nullptr;
+	void *short_uprobe_stub = nullptr;
+	uint64_t short_uprobe_original = 0;
 
 	friend class frida_attach_impl;
 
@@ -36,6 +38,7 @@ class frida_internal_attach_entry {
 	void run_filter_callback(const pt_regs &regs) const;
 	void iterate_uprobe_callbacks(const pt_regs &regs) const;
 	void iterate_uretprobe_callbacks(const pt_regs &regs) const;
+	void *get_function_address() const { return function; }
 	frida_internal_attach_entry(const frida_internal_attach_entry &) =
 		delete;
 	frida_internal_attach_entry &
