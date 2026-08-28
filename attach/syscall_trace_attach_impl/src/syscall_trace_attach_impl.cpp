@@ -7,6 +7,8 @@
 
 #ifdef __linux__
 #include <asm/unistd.h>  // For architecture-specific syscall numbers
+#include <sys/syscall.h>
+#include <unistd.h>
 #endif
 
 namespace bpftime
@@ -26,6 +28,77 @@ struct syscall_pt_regs {
 };
 #endif
 
+static bool is_process_creation_syscall(int64_t sys_nr)
+{
+	switch (sys_nr) {
+#ifdef __NR_clone
+	case __NR_clone:
+#endif
+#ifdef __NR_clone3
+	case __NR_clone3:
+#endif
+#ifdef __NR_fork
+	case __NR_fork:
+#endif
+#ifdef __NR_vfork
+	case __NR_vfork:
+#endif
+		return true;
+	default:
+		return false;
+	}
+}
+
+void syscall_trace_attach_impl::run_process_fork_callbacks(
+	int parent_pid, int child_pid) noexcept
+{
+	trace_event_raw_sched_process_fork ctx = {};
+	ctx.ent.pid = parent_pid;
+	ctx.parent_pid = parent_pid;
+	ctx.child_pid = child_pid;
+	for (auto prog : process_fork_callbacks) {
+		try {
+			auto ctx_copy = ctx;
+			uint64_t callback_ret = 0;
+			prog->cb(&ctx_copy, sizeof(ctx_copy), &callback_ret);
+		} catch (...) {
+		}
+	}
+}
+
+void syscall_trace_attach_impl::run_process_callbacks(
+	const std::set<syscall_trace_attach_entry *> &callbacks) noexcept
+{
+	trace_entry ctx = {};
+#ifdef __linux__
+	ctx.pid = static_cast<int>(::syscall(SYS_gettid));
+#else
+	ctx.pid = static_cast<int>(getpid());
+#endif
+	for (auto prog : callbacks) {
+		try {
+			auto ctx_copy = ctx;
+			uint64_t callback_ret = 0;
+			prog->cb(&ctx_copy, sizeof(ctx_copy), &callback_ret);
+		} catch (...) {
+		}
+	}
+}
+
+void syscall_trace_attach_impl::dispatch_process_exec()
+{
+	attach_callback_scope callback_scope;
+	if (callback_scope.entered())
+		run_process_callbacks(process_exec_callbacks);
+}
+
+void syscall_trace_attach_impl::dispatch_process_exit()
+{
+	attach_callback_scope callback_scope;
+	if (callback_scope.entered())
+		run_process_callbacks(process_exit_callbacks);
+}
+
 int64_t syscall_trace_attach_impl::dispatch_syscall(int64_t sys_nr,
 						    int64_t arg1, int64_t arg2,
 						    int64_t arg3, int64_t arg4,
@@ -43,7 +116,16 @@ int64_t syscall_trace_attach_impl::dispatch_syscall(int64_t sys_nr,
 			       !global_enter_callbacks.empty();
 	const bool run_exit = !sys_exit_callbacks[sys_nr].empty() ||
 			      !global_exit_callbacks.empty();
-	if (!run_enter && !run_exit) {
+	const bool run_process_fork =
+		!process_fork_callbacks.empty() &&
+		is_process_creation_syscall(sys_nr);
+#ifdef __linux__
+	const bool run_process_exit = !process_exit_callbacks.empty() &&
+		(sys_nr == __NR_exit_group || sys_nr == __NR_exit);
+#else
+	const bool run_process_exit = false;
+#endif
+	if (!run_enter && !run_exit && !run_process_fork && !run_process_exit) {
 		return orig_syscall(sys_nr, arg1, arg2, arg3, arg4, arg5, arg6,
 				    user_ip, user_sp, user_bp);
 	}
@@ -53,9 +135,12 @@ int64_t syscall_trace_attach_impl::dispatch_syscall(int64_t sys_nr,
 				    user_ip, user_sp, user_bp);
 // Exit syscall may cause bugs since it's not return to userspace
 #ifdef __linux__
-	if (sys_nr == __NR_exit_group || sys_nr == __NR_exit)
+	if (sys_nr == __NR_exit_group || sys_nr == __NR_exit) {
+		if (run_process_exit)
+			run_process_callbacks(process_exit_callbacks);
 		return orig_syscall(sys_nr, arg1, arg2, arg3, arg4, arg5, arg6,
 				    user_ip, user_sp, user_bp);
+	}
 #endif
 	SPDLOG_DEBUG("Syscall callback {} {} {} {} {} {} {}", sys_nr, arg1,
 		     arg2, arg3, arg4, arg5, arg6);
@@ -199,6 +284,14 @@ int64_t syscall_trace_attach_impl::dispatch_syscall(int64_t sys_nr,
 	SPDLOG_DEBUG("executing original syscall");
 	int64_t ret = orig_syscall(sys_nr, arg1, arg2, arg3, arg4, arg5, arg6,
 				   user_ip, user_sp, user_bp);
+	if (run_process_fork && ret > 0) {
+#ifdef __linux__
+		int parent_pid = static_cast<int>(::syscall(SYS_gettid));
+#else
+		int parent_pid = static_cast<int>(getpid());
+#endif
+		run_process_fork_callbacks(parent_pid, static_cast<int>(ret));
+	}
 	if (run_exit) {
 		curr_thread_override_return_callback =
 			override_return_set_callback([state = &override_state](
@@ -222,7 +315,13 @@ int syscall_trace_attach_impl::detach_by_id(int id)
 	SPDLOG_DEBUG("Detaching syscall trace attach entry {}", id);
 	if (auto itr = attach_entries.find(id); itr != attach_entries.end()) {
 		const auto &ent = itr->second;
-		if (ent->is_enter && ent->sys_nr == -1) {
+		if (ent->event == syscall_trace_event::sched_process_fork) {
+			process_fork_callbacks.erase(ent.get());
+		} else if (ent->event == syscall_trace_event::sched_process_exec) {
+			process_exec_callbacks.erase(ent.get());
+		} else if (ent->event == syscall_trace_event::sched_process_exit) {
+			process_exit_callbacks.erase(ent.get());
+		} else if (ent->is_enter && ent->sys_nr == -1) {
 			global_enter_callbacks.erase(ent.get());
 		} else if (!ent->is_enter && ent->sys_nr == -1) {
 			global_exit_callbacks.erase(ent.get());
@@ -257,11 +356,15 @@ int syscall_trace_attach_impl::create_attach_with_ebpf_callback(
 		auto &priv_data =
 			dynamic_cast<const syscall_trace_attach_private_data &>(
 				private_data);
-		if (priv_data.sys_nr >= (int)std::size(sys_enter_callbacks) ||
-		    priv_data.sys_nr < -1) {
+		if (priv_data.event == syscall_trace_event::syscall &&
+		    (priv_data.sys_nr >= (int)std::size(sys_enter_callbacks) ||
+		     priv_data.sys_nr < -1)) {
 			SPDLOG_ERROR("Invalid sys nr {}", priv_data.sys_nr);
 			return -EINVAL;
 		}
+		if (priv_data.event != syscall_trace_event::syscall &&
+		    attach_type != ATTACH_SYSCALL_TRACE)
+			return -ENOTSUP;
 		bool is_enter = attach_type == ATTACH_SYSCALL_KPROBE ||
 				(attach_type == ATTACH_SYSCALL_TRACE &&
 				 priv_data.is_enter);
@@ -271,11 +374,20 @@ int syscall_trace_attach_impl::create_attach_with_ebpf_callback(
 					.sys_nr = priv_data.sys_nr,
 					.is_enter = is_enter,
 					.attach_type = attach_type,
-					.kprobe_abi = priv_data.kprobe_abi });
+					.kprobe_abi = priv_data.kprobe_abi,
+					.event = priv_data.event });
 		auto raw_ptr = ent_ptr.get();
 		int id = allocate_id();
 		attach_entries[id] = std::move(ent_ptr);
-		if (is_enter) {
+		if (priv_data.event == syscall_trace_event::sched_process_fork) {
+			process_fork_callbacks.insert(raw_ptr);
+		} else if (priv_data.event ==
+			   syscall_trace_event::sched_process_exec) {
+			process_exec_callbacks.insert(raw_ptr);
+		} else if (priv_data.event ==
+			   syscall_trace_event::sched_process_exit) {
+			process_exit_callbacks.insert(raw_ptr);
+		} else if (is_enter) {
 			if (priv_data.sys_nr == -1)
 				global_enter_callbacks.insert(raw_ptr);
 			else

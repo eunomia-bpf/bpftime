@@ -37,6 +37,14 @@ struct trace_event_raw_sys_exit {
 	char __data[0];
 };
 
+struct trace_event_raw_sched_process_fork {
+	struct trace_entry ent;
+	char parent_comm[16];
+	int parent_pid;
+	char child_comm[16];
+	int child_pid;
+};
+
 // Attach type id of syscall trace
 constexpr size_t ATTACH_SYSCALL_TRACE = 2;
 constexpr size_t ATTACH_SYSCALL_KPROBE = 8;
@@ -49,6 +57,7 @@ struct syscall_trace_attach_entry {
 	bool is_enter;
 	int attach_type;
 	syscall_kprobe_abi kprobe_abi;
+	syscall_trace_event event;
 };
 // The global syscall trace instance. This one could be accessed by text segment
 // transformer
@@ -72,6 +81,8 @@ class syscall_trace_attach_impl final : public base_attach_impl {
 				 int64_t arg3, int64_t arg4, int64_t arg5,
 				 int64_t arg6, int64_t user_ip = 0,
 				 int64_t user_sp = 0, int64_t user_bp = 0);
+	void dispatch_process_exec();
+	void dispatch_process_exit();
 	// Set the function of calling original syscall
 	void set_original_syscall_function(syscall_hooker_func_t func)
 	{
@@ -101,8 +112,13 @@ class syscall_trace_attach_impl final : public base_attach_impl {
 		global_exit_callbacks;
 	std::set<syscall_trace_attach_entry *> sys_enter_callbacks[512],
 		sys_exit_callbacks[512];
+	std::set<syscall_trace_attach_entry *> process_fork_callbacks,
+		process_exec_callbacks, process_exit_callbacks;
 	std::unordered_map<int, std::unique_ptr<syscall_trace_attach_entry> >
 		attach_entries;
+	void run_process_fork_callbacks(int parent_pid, int child_pid) noexcept;
+	void run_process_callbacks(
+		const std::set<syscall_trace_attach_entry *> &callbacks) noexcept;
 };
 
 } // namespace attach
