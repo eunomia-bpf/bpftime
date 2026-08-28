@@ -42,6 +42,8 @@ TEST_CASE("Test current task helper exposes the thread pointer")
 			  .get_helper_ids();
 	REQUIRE(std::find(helper_ids.begin(), helper_ids.end(), 35) !=
 		helper_ids.end());
+	REQUIRE(std::find(helper_ids.begin(), helper_ids.end(), 127) !=
+		helper_ids.end());
 	REQUIRE(std::find(helper_ids.begin(), helper_ids.end(), 158) !=
 		helper_ids.end());
 #if defined(__linux__) && (defined(__x86_64__) || defined(__aarch64__))

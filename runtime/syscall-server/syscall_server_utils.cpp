@@ -17,12 +17,14 @@
 #include <exception>
 #include <fcntl.h>
 #include <filesystem>
+#include <fstream>
 #include <memory>
 #include <mutex>
 #include <signal.h>
 #include <spdlog/spdlog.h>
 #include <bpftime_shm.hpp>
 #include <string>
+#include <string_view>
 #include <system_error>
 #include <unistd.h>
 #ifdef ENABLE_BPFTIME_VERIFIER
@@ -300,11 +302,23 @@ std::optional<std::unique_ptr<mocked_file_provider>>
 create_mocked_file_based_on_full_path(const std::filesystem::path &path)
 {
 	auto path_text = path.string();
+	constexpr std::string_view debug_tracepoint_root =
+		"/sys/kernel/debug/tracing/events/";
+	constexpr std::string_view tracepoint_root =
+		"/sys/kernel/tracing/events/";
 	const bool is_tracepoint_id =
-		(path_text.starts_with("/sys/kernel/debug/tracing/events/") ||
-		 path_text.starts_with("/sys/kernel/tracing/events/")) &&
+		(path_text.starts_with(debug_tracepoint_root) ||
+		 path_text.starts_with(tracepoint_root)) &&
 		path_text.ends_with("/id");
 	if (is_tracepoint_id) {
+		if (path_text.starts_with(debug_tracepoint_root))
+			path_text.replace(0, debug_tracepoint_root.size(),
+					  tracepoint_root);
+		std::ifstream id_file(path_text);
+		uint32_t id;
+		if (id_file >> id)
+			return std::make_unique<mocked_file_provider>(
+				std::to_string(id) + "\n");
 		uint32_t hash = 2166136261U;
 		for (unsigned char ch : path_text) {
 			hash ^= ch;
