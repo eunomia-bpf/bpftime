@@ -541,6 +541,9 @@ extern "C" int bpftime_hooked_main(int argc, char **argv, char **envp)
 	return ret;
 }
 
+// LD_PRELOAD / __libc_start_main interception is a glibc/Linux (and some
+// Apple) pattern. On QNX phase-1 we rely on Frida inject only.
+#if !defined(__QNX__) && !defined(BPFTIME_TARGET_QNX)
 extern "C" int __libc_start_main(int (*main)(int, char **, char **), int argc,
 				 char **argv,
 				 int (*init)(int, char **, char **),
@@ -554,6 +557,7 @@ extern "C" int __libc_start_main(int (*main)(int, char **, char **), int argc,
 	return orig(bpftime_hooked_main, argc, argv, init, fini, rtld_fini,
 		    stack_end);
 }
+#endif
 static void sig_handler_sigusr1_detach(int sig)
 {
 	(void)sig;

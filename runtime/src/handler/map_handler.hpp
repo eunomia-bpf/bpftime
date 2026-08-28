@@ -25,7 +25,7 @@
 #include "bpf_map/gpu/nv_gpu_ringbuf_map.hpp"
 #endif
 
-#if __APPLE__
+#if defined(__APPLE__) || defined(__QNX__) || defined(BPFTIME_TARGET_QNX)
 #include "spinlock_wrapper.hpp"
 #endif
 namespace bpftime

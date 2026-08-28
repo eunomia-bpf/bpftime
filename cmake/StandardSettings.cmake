@@ -5,6 +5,13 @@
 option(BPFTIME_BUILD_EXECUTABLE "Build the project as an executable, rather than a library." OFF)
 
 #
+# Platform: QNX Neutrino (phase-1 userspace uprobe port)
+#
+option(BPFTIME_TARGET_QNX "Build bpftime for QNX Neutrino (userspace VM + Frida uprobe)" OFF)
+# Apply QNX defaults early so later options inherit forced values
+include(${CMAKE_CURRENT_LIST_DIR}/PlatformQNX.cmake)
+
+#
 # library options
 #
 option(BPFTIME_LLVM_JIT "Use LLVM as jit backend." ON)

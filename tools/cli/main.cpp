@@ -74,6 +74,13 @@ int execvpe(const char *file, char *const argv[], char *const envp[])
 	errno = ENOENT;
 	return -1;
 }
+#elif defined(__QNX__) || defined(BPFTIME_TARGET_QNX)
+extern char **environ;
+constexpr const char *AGENT_LIBRARY = "libbpftime-agent.so";
+// Phase-1 QNX: no syscall-server / text transformer
+constexpr const char *SYSCALL_SERVER_LIBRARY = "libbpftime-syscall-server.so";
+constexpr const char *AGENT_TRANSFORMER_LIBRARY =
+	"libbpftime-agent-transformer.so";
 #elif __linux__
 extern char **environ;
 constexpr const char *AGENT_LIBRARY = "libbpftime-agent.so";
@@ -992,6 +999,12 @@ int main(int argc, const char **argv)
 	}
 	std::filesystem::path install_path(program.get("install-location"));
 	if (program.is_subcommand_used("load")) {
+#if defined(__QNX__) || defined(BPFTIME_TARGET_QNX)
+		spdlog::error(
+			"bpftime load (syscall-server) is not supported on QNX phase-1; "
+			"use bpftimetool import + bpftime attach instead");
+		return 1;
+#else
 		auto so_path = resolve_library_path_or_exit(
 			install_path, SYSCALL_SERVER_LIBRARY,
 			std::filesystem::path("runtime") / "syscall-server" /
@@ -1001,7 +1014,14 @@ int main(int argc, const char **argv)
 			extract_path_and_args(load_command, true, true);
 		return run_command(executable_path.c_str(), extra_args,
 				   so_path.c_str(), nullptr, env_args);
+#endif
 	} else if (program.is_subcommand_used("start")) {
+#if defined(__QNX__) || defined(BPFTIME_TARGET_QNX)
+		spdlog::error(
+			"bpftime start (LD_PRELOAD) is not supported on QNX phase-1; "
+			"use bpftime attach <pid>");
+		return 1;
+#else
 		auto agent_path = resolve_library_path_or_exit(
 			install_path, AGENT_LIBRARY,
 			std::filesystem::path("runtime") / "agent" /
@@ -1026,6 +1046,7 @@ int main(int argc, const char **argv)
 					   agent_path.c_str(), nullptr,
 					   env_args);
 		}
+#endif
 	} else if (program.is_subcommand_used("attach")) {
 		auto agent_path = resolve_library_path_or_exit(
 			install_path, AGENT_LIBRARY,
@@ -1034,6 +1055,11 @@ int main(int argc, const char **argv)
 			"agent");
 		auto pid = attach_command.get<int>("PID");
 		if (attach_command.get<bool>("enable-syscall-trace")) {
+#if defined(__QNX__) || defined(BPFTIME_TARGET_QNX)
+			spdlog::error(
+				"Syscall trace attach is not available on QNX phase-1");
+			return 1;
+#else
 			auto transformer_path = resolve_library_path_or_exit(
 				install_path, AGENT_TRANSFORMER_LIBRARY,
 				std::filesystem::path("attach") /
@@ -1042,6 +1068,7 @@ int main(int argc, const char **argv)
 				"agent-transformer");
 			return inject_by_frida(pid, transformer_path.c_str(),
 					       agent_path.c_str());
+#endif
 		} else {
 			return inject_by_frida(pid, agent_path.c_str(), "");
 		}
