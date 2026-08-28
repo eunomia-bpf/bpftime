@@ -56,8 +56,10 @@ static uintptr_t low_trampoline_begin;
 static uintptr_t low_trampoline_end;
 static bool use_low_trampoline;
 static syscall_hooker_func_t call_hook = &call_orig_syscall;
-extern "C" thread_local uintptr_t bpftime_vfork_return_ip = 0;
-extern "C" thread_local unsigned bpftime_syscall_dispatch_active = 0;
+extern "C" {
+thread_local uintptr_t bpftime_vfork_return_ip = 0;
+thread_local unsigned bpftime_syscall_dispatch_active = 0;
+}
 
 #if defined(__x86_64__)
 [[maybe_unused]] void __asm_holder()
