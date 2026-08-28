@@ -479,10 +479,8 @@ uint64_t bpf_ringbuf_output(uint64_t rb, uint64_t data, uint64_t size,
 			    uint64_t flags, uint64_t)
 {
 	int fd = (int)rb;
-	if (flags != 0) {
-		SPDLOG_WARN(
-			"Currently only supports ringbuf_output with flags=0");
-	}
+	if (flags & ~(BPF_RB_NO_WAKEUP | BPF_RB_FORCE_WAKEUP))
+		return (uint64_t)-EINVAL;
 	auto buf = bpftime_ringbuf_reserve(fd, size);
 	if (!buf) {
 		SPDLOG_ERROR("Failed to reserve when executing ringbuf output");
