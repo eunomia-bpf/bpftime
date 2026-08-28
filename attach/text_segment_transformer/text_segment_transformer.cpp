@@ -451,9 +451,10 @@ void setup_syscall_tracer()
 			    low_trampoline_begin);
 	} else {
 		// Setup jumpings
+		auto *page_zero = static_cast<uint8_t *>(mmap_addr);
 		for (int i = 0; i < NR_syscalls; i++) {
 			// 0x90; nop
-			*((char *)(uintptr_t)(i)) = 0x90;
+			page_zero[i] = 0x90;
 		}
 		// Jump to the syscall handler function after the nop-s
 	/*
@@ -480,8 +481,7 @@ void setup_syscall_tracer()
 	}
 	codes.push_back(0xff);
 	codes.push_back(0xe0);
-	std::copy(codes.begin(), codes.end(),
-		  (uint8_t *)(uintptr_t)(0 + NR_syscalls));
+	std::copy(codes.begin(), codes.end(), page_zero + NR_syscalls);
 		// Set the page to execute-only. Keep normal behavior of
 		// dereferencing null-pointers
 		if (int err = mprotect(0, 0x1000, PROT_EXEC); err < 0) {
