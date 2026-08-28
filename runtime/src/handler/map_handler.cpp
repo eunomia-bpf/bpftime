@@ -216,6 +216,11 @@ const void *bpf_map_handler::map_lookup_elem(const void *key,
 			map_impl_ptr.get());
 		return do_lookup(impl);
 	}
+	case bpf_map_type::BPF_MAP_TYPE_HASH_OF_MAPS: {
+		auto impl = static_cast<hash_map_of_maps_impl *>(
+			map_impl_ptr.get());
+		return do_lookup(impl);
+	}
 #if defined(BPFTIME_ENABLE_CUDA_ATTACH)
 	case bpf_map_type::BPF_MAP_TYPE_GPU_HASH_MAP: {
 		auto impl = static_cast<nv_gpu_shared_hash_map_impl *>(
@@ -371,6 +376,15 @@ long bpf_map_handler::map_update_elem(const void *key, const void *value,
 			map_impl_ptr.get());
 		return do_update(impl);
 	}
+	case bpf_map_type::BPF_MAP_TYPE_HASH_OF_MAPS: {
+		if (!from_syscall) {
+			// Map in maps only support update from syscall
+			return -EINVAL;
+		}
+		auto impl = static_cast<hash_map_of_maps_impl *>(
+			map_impl_ptr.get());
+		return do_update(impl);
+	}
 	case bpf_map_type::BPF_MAP_TYPE_LRU_HASH: {
 		auto impl = static_cast<lru_var_hash_map_impl *>(
 			map_impl_ptr.get());
@@ -518,6 +532,11 @@ int bpf_map_handler::bpf_map_get_next_key(const void *key, void *next_key,
 #endif
 	case bpf_map_type::BPF_MAP_TYPE_ARRAY_OF_MAPS: {
 		auto impl = static_cast<array_map_of_maps_impl *>(
+			map_impl_ptr.get());
+		return do_get_next_key(impl);
+	}
+	case bpf_map_type::BPF_MAP_TYPE_HASH_OF_MAPS: {
+		auto impl = static_cast<hash_map_of_maps_impl *>(
 			map_impl_ptr.get());
 		return do_get_next_key(impl);
 	}
@@ -683,6 +702,15 @@ long bpf_map_handler::map_delete_elem(const void *key, bool from_syscall) const
 			return -EINVAL;
 		}
 		auto impl = static_cast<array_map_of_maps_impl *>(
+			map_impl_ptr.get());
+		return do_delete(impl);
+	}
+	case bpf_map_type::BPF_MAP_TYPE_HASH_OF_MAPS: {
+		if (!from_syscall) {
+			// Map in maps only support update from syscall
+			return -EINVAL;
+		}
+		auto impl = static_cast<hash_map_of_maps_impl *>(
 			map_impl_ptr.get());
 		return do_delete(impl);
 	}
@@ -935,6 +963,14 @@ int bpf_map_handler::map_init(managed_shared_memory &memory)
 		map_impl_ptr = memory.construct<array_map_of_maps_impl>(
 			boost::interprocess::anonymous_instance)(memory,
 								 max_entries);
+		init_refcnt();
+		return 0;
+	}
+	case bpf_map_type::BPF_MAP_TYPE_HASH_OF_MAPS: {
+		map_impl_ptr = memory.construct<hash_map_of_maps_impl>(
+			boost::interprocess::anonymous_instance)(
+			memory, key_size, max_entries,
+			static_cast<uint32_t>(flags));
 		init_refcnt();
 		return 0;
 	}
@@ -1217,6 +1253,9 @@ void bpf_map_handler::map_free(managed_shared_memory &memory) const
 #endif
 	case bpf_map_type::BPF_MAP_TYPE_ARRAY_OF_MAPS:
 		memory.destroy_ptr(static_cast<array_map_of_maps_impl *>(impl));
+		break;
+	case bpf_map_type::BPF_MAP_TYPE_HASH_OF_MAPS:
+		memory.destroy_ptr(static_cast<hash_map_of_maps_impl *>(impl));
 		break;
 	case bpf_map_type::BPF_MAP_TYPE_LRU_HASH:
 		memory.destroy_ptr(static_cast<lru_var_hash_map_impl *>(impl));
