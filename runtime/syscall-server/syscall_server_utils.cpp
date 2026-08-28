@@ -299,6 +299,20 @@ int determine_kprobe_retprobe_bit()
 std::optional<std::unique_ptr<mocked_file_provider>>
 create_mocked_file_based_on_full_path(const std::filesystem::path &path)
 {
+	auto path_text = path.string();
+	const bool is_tracepoint_id =
+		(path_text.starts_with("/sys/kernel/debug/tracing/events/") ||
+		 path_text.starts_with("/sys/kernel/tracing/events/")) &&
+		path_text.ends_with("/id");
+	if (is_tracepoint_id) {
+		uint32_t hash = 2166136261U;
+		for (unsigned char ch : path_text) {
+			hash ^= ch;
+			hash *= 16777619U;
+		}
+		return std::make_unique<mocked_file_provider>(
+			std::to_string(1024U + hash % 100000000U) + "\n");
+	}
 	if (path == UPROBE_TYPE_FILE_NAME) {
 		SPDLOG_DEBUG("{} is uprobe type file", path.c_str());
 		return std::make_unique<mocked_file_provider>(
