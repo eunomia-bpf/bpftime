@@ -222,6 +222,35 @@ uint64_t bpftime_get_current_pid_tgid(uint64_t, uint64_t, uint64_t, uint64_t,
 	return ((uint64_t)tgid << 32) | tid;
 }
 
+uint64_t bpftime_get_current_task(uint64_t, uint64_t, uint64_t, uint64_t,
+				  uint64_t)
+{
+#if defined(__linux__) && (defined(__x86_64__) || defined(__aarch64__))
+	alignas(64) static thread_local uint8_t task[4096] = {};
+	static const size_t tpbase_offset = [] {
+		const char *text =
+			getenv("BPFTIME_SYSTEM_ANALYSIS_TPBASE_OFFSET");
+		if (text == nullptr)
+			return SIZE_MAX;
+		char *end = nullptr;
+		errno = 0;
+		unsigned long value = strtoul(text, &end, 0);
+		return errno == 0 && end != text && *end == '\0' &&
+				       value <= sizeof(task) - sizeof(void *) ?
+			       (size_t)value :
+			       SIZE_MAX;
+	}();
+	if (tpbase_offset != SIZE_MAX) {
+		void *thread_pointer = __builtin_thread_pointer();
+		memcpy(task + tpbase_offset, &thread_pointer,
+		       sizeof(thread_pointer));
+	}
+	return (uint64_t)(uintptr_t)task;
+#else
+	return 0;
+#endif
+}
+
 uint64_t bpf_get_current_uid_gid(uint64_t, uint64_t, uint64_t, uint64_t,
 				 uint64_t)
 {
@@ -782,7 +811,7 @@ int64_t bpftime_get_stack(uint64_t ctx_raw, uint64_t buf, uint64_t size,
 			  uint64_t flags, uint64_t)
 {
 	if (!(flags & BPF_F_USER_STACK)) {
-		SPDLOG_ERROR(
+		SPDLOG_DEBUG(
 			"bpftime_get_stack only supports collect user stack!");
 		return -ENOTSUP;
 	}
@@ -1190,6 +1219,16 @@ bpftime_helper_group::get_kernel_utils_helper_group()
 			    .index = BPF_FUNC_get_current_uid_gid,
 			    .name = "bpf_get_current_uid_gid",
 			    .fn = (void *)bpf_get_current_uid_gid } },
+		  { BPF_FUNC_get_current_task,
+		    bpftime_helper_info{
+			    .index = BPF_FUNC_get_current_task,
+			    .name = "bpf_get_current_task",
+			    .fn = (void *)bpftime_get_current_task } },
+		  { BPF_FUNC_get_current_task_btf,
+		    bpftime_helper_info{
+			    .index = BPF_FUNC_get_current_task_btf,
+			    .name = "bpf_get_current_task_btf",
+			    .fn = (void *)bpftime_get_current_task } },
 		  { BPF_FUNC_get_current_comm,
 		    bpftime_helper_info{
 			    .index = BPF_FUNC_get_current_comm,
