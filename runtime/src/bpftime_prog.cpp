@@ -7,7 +7,9 @@
 #include "bpftime_config.hpp"
 #include "bpftime_helper_group.hpp"
 #include "bpftime_internal.h"
+#include "bpftime_shm_internal.hpp"
 #include "bpftime_vm_compat.hpp"
+#include "platform_utils.hpp"
 #include "ebpf-vm.h"
 #ifdef BPFTIME_ENABLE_CUDA_ATTACH
 #include "nvPTXCompiler.h"
@@ -37,6 +39,39 @@
 using namespace std;
 namespace bpftime
 {
+namespace
+{
+class bpf_cpu_execution_guard {
+    public:
+	bpf_cpu_execution_guard()
+	{
+		if (bpftime_get_current_bpf_cpu() >= 0)
+			return;
+		cpu = bpftime_get_native_cpu();
+		if (cpu < 0 || cpu >= BPFTIME_MAX_CPU_COUNT)
+			return;
+		shm_holder.global_shared_memory.lock_bpf_cpu(cpu);
+		bpftime_set_current_bpf_cpu(cpu);
+		owns_lock = true;
+	}
+
+	~bpf_cpu_execution_guard() { release(); }
+
+	void release()
+	{
+		if (!owns_lock)
+			return;
+		bpftime_set_current_bpf_cpu(-1);
+		shm_holder.global_shared_memory.unlock_bpf_cpu(cpu);
+		owns_lock = false;
+	}
+
+    private:
+	int cpu = -1;
+	bool owns_lock = false;
+};
+} // namespace
+
 #ifdef BPFTIME_ENABLE_CUDA_ATTACH
 std::optional<std::vector<char>> compile_ptx_to_elf(const std::string &ptx_code,
 						    const char *cpu_target)
@@ -239,6 +274,7 @@ int bpftime_prog::bpftime_prog_exec(void *memory, size_t memory_size,
 	int res = 0;
 	// set share memory read and write able
 	bpftime_protect_disable();
+	bpf_cpu_execution_guard cpu_guard;
 	SPDLOG_DEBUG(
 		"Calling bpftime_prog::bpftime_prog_exec, memory={:x}, memory_size={}, return_val={:x}, prog_name={}",
 		(uintptr_t)memory, memory_size, (uintptr_t)return_val,
@@ -256,6 +292,7 @@ int bpftime_prog::bpftime_prog_exec(void *memory, size_t memory_size,
 	}
 	*return_val = current_thread_tail_call_ret.value_or(val);
 	current_thread_tail_call_ret.reset();
+	cpu_guard.release();
 	// set share memory read only
 	bpftime_protect_enable();
 	return res;

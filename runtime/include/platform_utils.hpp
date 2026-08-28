@@ -27,5 +27,8 @@
     #error "Unsupported platform"
 #endif
 
-int my_sched_getcpu(); 
+int my_sched_getcpu();
+int bpftime_get_native_cpu();
+int bpftime_get_current_bpf_cpu();
+void bpftime_set_current_bpf_cpu(int cpu);
 #endif
