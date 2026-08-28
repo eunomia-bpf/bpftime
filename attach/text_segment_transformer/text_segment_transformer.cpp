@@ -45,7 +45,8 @@ While syscall args are passed using
 extern "C" void syscall_hooker_asm();
 extern "C" int64_t call_orig_syscall(int64_t sys_nr, int64_t arg1, int64_t arg2,
 				     int64_t arg3, int64_t arg4, int64_t arg5,
-				     int64_t arg6);
+				     int64_t arg6, int64_t user_ip,
+				     int64_t user_sp, int64_t user_bp);
 extern "C" void syscall_addr();
 
 static const int NR_syscalls = 512;
@@ -149,7 +150,7 @@ extern "C" int64_t syscall_hooker_cxx(int64_t sys_nr, int64_t arg1,
 				      int64_t arg2, int64_t arg3, int64_t arg4,
 				      int64_t arg5, int64_t arg6)
 {
-	return call_hook(sys_nr, arg1, arg2, arg3, arg4, arg5, arg6);
+	return call_hook(sys_nr, arg1, arg2, arg3, arg4, arg5, arg6, 0, 0, 0);
 }
 
 static inline void rewrite_segment(uint8_t *code, size_t len, int perm)

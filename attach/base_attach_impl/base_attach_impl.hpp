@@ -20,6 +20,27 @@ inline thread_local std::optional<override_return_set_callback>
 // Function address exposed while an attach callback is running.
 inline thread_local uintptr_t current_thread_attach_func_ip = 0;
 
+inline thread_local unsigned current_thread_attach_callback_depth = 0;
+
+class attach_callback_scope {
+    public:
+	attach_callback_scope()
+		: active(current_thread_attach_callback_depth == 0)
+	{
+		if (active)
+			current_thread_attach_callback_depth++;
+	}
+	~attach_callback_scope()
+	{
+		if (active)
+			current_thread_attach_callback_depth--;
+	}
+	bool entered() const { return active; }
+
+    private:
+	bool active;
+};
+
 // A wrapper function for an entry function of an ebpf program
 using ebpf_run_callback = std::function<int(void *memory, size_t memory_size,
 					    uint64_t *return_value)>;

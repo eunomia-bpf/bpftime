@@ -956,7 +956,8 @@ extern "C" void bpftime_agent_main(const gchar *data, gboolean *stay_resident)
 				orig_hooker);
 			auto *syscall_trace_impl_ptr = syscall_trace_impl.get();
 			ctx_holder.ctx.register_attach_impl(
-				{ ATTACH_SYSCALL_TRACE },
+				{ ATTACH_SYSCALL_TRACE, ATTACH_SYSCALL_KPROBE,
+				  ATTACH_SYSCALL_KRETPROBE },
 				std::move(syscall_trace_impl),
 				[](const std::string_view &sv, int &err) {
 					std::unique_ptr<attach_private_data>
@@ -1143,18 +1144,21 @@ extern "C" void bpftime_agent_main(const gchar *data, gboolean *stay_resident)
 #if __linux__ && BPFTIME_BUILD_WITH_LIBBPF
 extern "C" int64_t syscall_callback(int64_t sys_nr, int64_t arg1, int64_t arg2,
 				    int64_t arg3, int64_t arg4, int64_t arg5,
-				    int64_t arg6)
+				    int64_t arg6, int64_t user_ip,
+				    int64_t user_sp, int64_t user_bp)
 {
 	try {
 		auto impl = bpftime::attach::global_syscall_trace_attach_impl;
 		if (impl.has_value() && impl.value() != nullptr) {
 			return impl.value()->dispatch_syscall(
-				sys_nr, arg1, arg2, arg3, arg4, arg5, arg6);
+				sys_nr, arg1, arg2, arg3, arg4, arg5, arg6,
+				user_ip, user_sp, user_bp);
 		}
 	} catch (...) {
 	}
 	if (orig_hooker != nullptr)
-		return orig_hooker(sys_nr, arg1, arg2, arg3, arg4, arg5, arg6);
+		return orig_hooker(sys_nr, arg1, arg2, arg3, arg4, arg5, arg6,
+				   user_ip, user_sp, user_bp);
 	return -ENOSYS;
 }
 

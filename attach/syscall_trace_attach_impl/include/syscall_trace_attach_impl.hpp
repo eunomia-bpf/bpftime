@@ -1,6 +1,7 @@
 #ifndef _BPFTIME_SYSCALL_TRACE_ATTACH_IMPL_HPP
 #define _BPFTIME_SYSCALL_TRACE_ATTACH_IMPL_HPP
 #include <base_attach_impl.hpp>
+#include <syscall_trace_attach_private_data.hpp>
 #include <memory>
 #include <set>
 #include <unordered_map>
@@ -12,7 +13,8 @@ namespace attach
 using syscall_hooker_func_t = int64_t (*)(int64_t sys_nr, int64_t arg1,
 					  int64_t arg2, int64_t arg3,
 					  int64_t arg4, int64_t arg5,
-					  int64_t arg6);
+					  int64_t arg6, int64_t user_ip,
+					  int64_t user_sp, int64_t user_bp);
 
 struct trace_entry {
 	short unsigned int type;
@@ -37,12 +39,16 @@ struct trace_event_raw_sys_exit {
 
 // Attach type id of syscall trace
 constexpr size_t ATTACH_SYSCALL_TRACE = 2;
+constexpr size_t ATTACH_SYSCALL_KPROBE = 8;
+constexpr size_t ATTACH_SYSCALL_KRETPROBE = 9;
 
 // An attach entry of syscall trace
 struct syscall_trace_attach_entry {
 	ebpf_run_callback cb;
 	int sys_nr;
 	bool is_enter;
+	int attach_type;
+	syscall_kprobe_abi kprobe_abi;
 };
 // The global syscall trace instance. This one could be accessed by text segment
 // transformer
@@ -64,7 +70,8 @@ class syscall_trace_attach_impl final : public base_attach_impl {
 	// Dispatch a syscall from text transformer
 	int64_t dispatch_syscall(int64_t sys_nr, int64_t arg1, int64_t arg2,
 				 int64_t arg3, int64_t arg4, int64_t arg5,
-				 int64_t arg6);
+				 int64_t arg6, int64_t user_ip = 0,
+				 int64_t user_sp = 0, int64_t user_bp = 0);
 	// Set the function of calling original syscall
 	void set_original_syscall_function(syscall_hooker_func_t func)
 	{
