@@ -10,6 +10,7 @@
 #include <boost/interprocess/sync/scoped_lock.hpp>
 #include <boost/interprocess/sync/sharable_lock.hpp>
 #include <bpf_map/userspace/ringbuf_map.hpp>
+#include <cstring>
 #include <pthread.h>
 #include <spdlog/spdlog.h>
 #include <stdexcept>
@@ -286,7 +287,7 @@ void *ringbuf::reserve(size_t size, int self_fd)
 	header->len = size | BPF_RINGBUF_BUSY_BIT;
 	header->fd = self_fd;
 	smp_store_release_ul(producer_pos.get(), prod_pos + total_size);
-	auto ptr = data.get() + ((prod_pos + BPF_RINGBUF_HDR_SZ) & mask());
+	auto ptr = data.get() + (prod_pos & mask()) + BPF_RINGBUF_HDR_SZ;
 	SPDLOG_TRACE("ringbuf: reserved {} bytes at {}, fd {}", size,
 		     (void *)ptr, self_fd);
 	return ptr;
@@ -302,6 +303,9 @@ void ringbuf::submit(const void *sample, bool discard)
 	auto new_len = hdr->len & ~BPF_RINGBUF_BUSY_BIT;
 	if (discard)
 		new_len |= BPF_RINGBUF_DISCARD_BIT;
+	else if ((const uint8_t *)sample == data.get() + max_ent)
+		memcpy(data.get(), sample,
+		       new_len & ~BPF_RINGBUF_DISCARD_BIT);
 	__atomic_exchange_n(&hdr->len, new_len, __ATOMIC_ACQ_REL);
 }
 ringbuf::~ringbuf()
