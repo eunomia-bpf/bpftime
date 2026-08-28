@@ -40,6 +40,7 @@
 #include <chrono>
 #include <cstdlib>
 #include <exception>
+#include <filesystem>
 #include <iterator>
 #include <vector>
 #include "syscall_server_utils.hpp"
@@ -77,6 +78,27 @@ namespace fmt_lib = spdlog::fmt_lib;
 
 namespace {
 thread_local unsigned int mock_disable_depth = 0;
+
+std::string resolve_uprobe_map_file(const char *name)
+{
+	std::string path(name);
+	unsigned pid = 0;
+	unsigned long long start = 0, end = 0;
+	int consumed = 0;
+	if (sscanf(path.c_str(), "/proc/%u/map_files/%llx-%llx%n", &pid,
+		   &start, &end, &consumed) != 3 ||
+	    consumed != static_cast<int>(path.size()) || start >= end)
+		return path;
+
+	std::error_code error;
+	auto mapped_path = std::filesystem::read_symlink(path, error);
+	if (error || !mapped_path.is_absolute()) {
+		SPDLOG_WARN("Unable to resolve uprobe map file {}: {}", path,
+			    error.message());
+		return path;
+	}
+	return mapped_path.string();
+}
 
 void set_mock_fd_cloexec(int fd)
 {
@@ -1118,13 +1140,14 @@ int syscall_context::handle_perfevent(perf_event_attr *attr, pid_t pid, int cpu,
 			attr->config & (1 << determine_uprobe_retprobe_bit());
 		size_t ref_ctr_off =
 			attr->config >> PERF_UPROBE_REF_CTR_OFFSET_SHIFT;
-		const char *name = (const char *)(uintptr_t)attr->config1;
+		auto name = resolve_uprobe_map_file(
+			(const char *)(uintptr_t)attr->config1);
 		uint64_t offset = attr->config2;
 		SPDLOG_DEBUG(
 			"Creating uprobe name {} offset {} retprobe {} ref_ctr_off {} attr->config={:x}",
 			name, offset, retprobe, ref_ctr_off, attr->config);
 		int id = bpftime_uprobe_create(
-			-1 /* let the shm alloc fd for us */, pid, name, offset,
+			-1 /* let the shm alloc fd for us */, pid, name.c_str(), offset,
 			retprobe, ref_ctr_off);
 		// std::cout << "Created uprobe " << id << std::endl;
 		SPDLOG_DEBUG("Created uprobe {}", id);
