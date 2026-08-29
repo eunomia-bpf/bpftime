@@ -4,6 +4,7 @@
  * All rights reserved.
  */
 #include "bpftime_driver.hpp"
+#include "bpf_prog_insns.hpp"
 #include "bpftime_config.hpp"
 #include <linux/bpf.h>
 #include <bpf/bpf.h>
@@ -84,12 +85,15 @@ static int relocate_bpf_prog_insns(std::vector<ebpf_inst> &insns,
 	}
 	SPDLOG_DEBUG("relocate bpf prog insns for id {}, cnt {}", id,
 		      insn_data.code_len);
-	// resize the insns
-	insns.resize(insn_data.code_len);
-	const ebpf_inst *orignal_insns = (const ebpf_inst *)insn_data.code;
-	insns.assign(orignal_insns, orignal_insns + insn_data.code_len);
+	res = bpftime::detail::copy_captured_bpf_prog_insns(insns, insn_data);
+	if (res < 0) {
+		SPDLOG_ERROR(
+			"BPF program {} has {} instructions, exceeding capture capacity {}",
+			id, insn_data.code_len, BPF_COMPLEXITY_LIMIT_INSNS);
+		return res;
+	}
 	for (size_t i = 0; i < insn_data.code_len; i++) {
-		const struct ebpf_inst inst = orignal_insns[i];
+		const struct ebpf_inst inst = insns[i];
 		bool store = false;
 
 		switch (inst.code) {
