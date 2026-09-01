@@ -27,6 +27,7 @@ set(TEST_SOURCES
     test/map.cpp
     test/non_kernel_helper.cpp
     test/gpu_verifier_test.cpp
+    test/gpu_revision_safety_test.cpp
 )
 
 if(NOT TARGET Catch2)
@@ -56,6 +57,9 @@ if (${TEST_LCOV})
     target_link_libraries(bpftime_verifier_tests PRIVATE bpftime-verifier Catch2::Catch2WithMain gcov)
 else ()
     target_link_libraries(bpftime_verifier_tests PRIVATE bpftime-verifier Catch2::Catch2WithMain)
+endif()
+if(UNIX AND NOT APPLE)
+    target_link_options(bpftime_verifier_tests PRIVATE -Wl,--build-id=none)
 endif()
 target_include_directories(bpftime_verifier_tests PRIVATE
     ${BPFTIME_VERIFIER_INCLUDE}
