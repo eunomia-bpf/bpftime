@@ -832,12 +832,11 @@ int64_t bpftime_get_stack(uint64_t ctx_raw, uint64_t buf, uint64_t size,
 			 static_cast<size_t>(size / sizeof(uint64_t)));
 	auto size_to_copy = frames_to_copy * sizeof(uint64_t);
 	SPDLOG_DEBUG("Copied {} bytes of stack", size_to_copy);
-	if (size > 0) {
-		memset(buffer, 0, size);
-		if (size_to_copy > 0)
-			memcpy(buffer, result->data() + frames_to_skip,
-			       size_to_copy);
-	}
+	if (size_to_copy > 0)
+		memcpy(buffer, result->data() + frames_to_skip, size_to_copy);
+	if (size > size_to_copy)
+		memset(static_cast<char *>(buffer) + size_to_copy, 0,
+		       size - size_to_copy);
 	return static_cast<int64_t>(size_to_copy);
 }
 
