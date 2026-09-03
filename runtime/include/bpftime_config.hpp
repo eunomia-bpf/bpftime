@@ -16,6 +16,14 @@
 #ifndef DEFAULT_VM_NAME
 #define DEFAULT_VM_NAME "llvm"
 #endif
+#ifndef DEFAULT_USE_TRAP_UPROBE_BACKEND
+#if defined(__x86_64__) || defined(_M_X64) || defined(__aarch64__) || \
+	defined(_M_ARM64)
+#define DEFAULT_USE_TRAP_UPROBE_BACKEND false
+#else
+#define DEFAULT_USE_TRAP_UPROBE_BACKEND true
+#endif
+#endif
 
 #define LOG_PATH_MAX_LEN 1024
 #define VM_NAME_MAX_LEN 128
@@ -74,6 +82,13 @@ struct runtime_config {
 	// unwinding remains the default.
 	bool enable_frida_fuzzy_backtracer = false;
 
+	// Which uprobe backend the agent registers. false: frida-gum inline
+	// hooks (fast, needs a frida devkit for the architecture). true: the
+	// portable breakpoint + SIGTRAP backend. Defaults to trap on
+	// architectures frida does not cover; overridden by
+	// BPFTIME_UPROBE_BACKEND=frida|trap.
+	bool use_trap_uprobe_backend = DEFAULT_USE_TRAP_UPROBE_BACKEND;
+
 	// memory size will determine the maximum size of the shared memory
 	// available for the eBPF programs and maps
 	// The value is in MB
@@ -121,6 +136,12 @@ struct runtime_config {
 // Get the bpftime configuration from the environment variables
 // If the shared memory is not int, this should be called first
 runtime_config construct_runtime_config_from_env() noexcept;
+
+// Decide which uprobe backend an agent should register. The shared
+// runtime_config (written by the loader) supplies the default; the agent's
+// own BPFTIME_UPROBE_BACKEND environment variable, if set, wins so that a
+// single traced process can be switched without restarting the loader.
+bool resolve_use_trap_uprobe_backend(const runtime_config &config) noexcept;
 
 } // namespace bpftime
 

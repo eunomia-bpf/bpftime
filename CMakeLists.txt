@@ -210,6 +210,9 @@ if(${BPFTIME_BUILD_STATIC_LIB})
 
   bpftime_add_libs_component_command(${FRIDA_GUM_INSTALL_DIR}/libfrida-gum.a)
   bpftime_add_static_lib_component_command(bpftime_frida_uprobe_attach_impl)
+  if(TARGET bpftime_trap_uprobe_attach_impl)
+    bpftime_add_static_lib_component_command(bpftime_trap_uprobe_attach_impl)
+  endif()
 
   if(${BPFTIME_BUILD_WITH_LIBBPF})
     bpftime_add_libs_component_command(${CMAKE_CURRENT_BUILD_DIR}libbpf/libbpf/libbpf.a)

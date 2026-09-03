@@ -115,6 +115,20 @@ runtime_config bpftime::construct_runtime_config_from_env() noexcept
 		runtime_config.enable_frida_fuzzy_backtracer = true;
 	}
 
+	if (const char *backend = std::getenv("BPFTIME_UPROBE_BACKEND");
+	    backend != nullptr) {
+		std::string_view value(backend);
+		if (value == "trap") {
+			runtime_config.use_trap_uprobe_backend = true;
+		} else if (value == "frida") {
+			runtime_config.use_trap_uprobe_backend = false;
+		} else {
+			SPDLOG_WARN(
+				"Unknown BPFTIME_UPROBE_BACKEND value: {}. Expected 'frida' or 'trap', keeping the default",
+				value);
+		}
+	}
+
 	// Parse shared memory size with validation (1MB min, 10GB max)
 	if (auto shm_size = parse_numeric_env<int>("BPFTIME_SHM_MEMORY_MB", 1, 10240)) {
 		runtime_config.shm_memory_size = *shm_size;
@@ -173,4 +187,23 @@ runtime_config bpftime::construct_runtime_config_from_env() noexcept
 			static_cast<uint64_t>(*max_bytes);
 	}
 	return runtime_config;
+}
+
+bool bpftime::resolve_use_trap_uprobe_backend(const runtime_config &config) noexcept
+{
+	bool use_trap = config.use_trap_uprobe_backend;
+	if (const char *backend = std::getenv("BPFTIME_UPROBE_BACKEND");
+	    backend != nullptr) {
+		std::string_view value(backend);
+		if (value == "trap") {
+			use_trap = true;
+		} else if (value == "frida") {
+			use_trap = false;
+		} else {
+			SPDLOG_WARN(
+				"Unknown BPFTIME_UPROBE_BACKEND value: {}. Expected 'frida' or 'trap', keeping the default",
+				value);
+		}
+	}
+	return use_trap;
 }
