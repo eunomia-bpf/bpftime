@@ -790,6 +790,15 @@ int64_t bpftime_get_stack(uint64_t ctx_raw, uint64_t buf, uint64_t size,
 		SPDLOG_ERROR("bpftime_get_stack doesn't support buildid!");
 		return -ENOTSUP;
 	}
+	auto *buffer = reinterpret_cast<void *>(static_cast<uintptr_t>(buf));
+	if (size % sizeof(uint64_t) != 0) {
+		SPDLOG_ERROR(
+			"bpftime_get_stack buffer size must be a multiple of {} bytes",
+			sizeof(uint64_t));
+		if (size > 0)
+			memset(buffer, 0, size);
+		return -EINVAL;
+	}
 	const int ATTACH_UPROBE = 6;
 
 	auto &attach_ctx = get_global_attach_ctx();
@@ -812,19 +821,24 @@ int64_t bpftime_get_stack(uint64_t ctx_raw, uint64_t buf, uint64_t size,
 
 	auto frames_to_skip = flags & BPF_F_SKIP_FIELD_MASK;
 	SPDLOG_DEBUG("Skipping {} frames", frames_to_skip);
-	if (frames_to_skip >= result->size()) {
-		result->resize(0);
-	} else {
-		std::vector<uint64_t> new_data;
-		new_data.resize(result->size() - frames_to_skip);
-		std::copy(result->begin() + frames_to_skip, result->end(),
-			  new_data.begin());
-		*result = new_data;
+	if (frames_to_skip > result->size()) {
+		if (size > 0)
+			memset(buffer, 0, size);
+		return -EFAULT;
 	}
-	auto size_to_copy = std::min(result->size(), (uintptr_t)size);
+
+	auto frames_to_copy =
+		std::min(result->size() - frames_to_skip,
+			 static_cast<size_t>(size / sizeof(uint64_t)));
+	auto size_to_copy = frames_to_copy * sizeof(uint64_t);
 	SPDLOG_DEBUG("Copied {} bytes of stack", size_to_copy);
-	memcpy((void *)(uintptr_t)buf, result->data(), size_to_copy);
-	return 0;
+	if (size > 0) {
+		memset(buffer, 0, size);
+		if (size_to_copy > 0)
+			memcpy(buffer, result->data() + frames_to_skip,
+			       size_to_copy);
+	}
+	return static_cast<int64_t>(size_to_copy);
 }
 
 } // extern "C"
