@@ -174,9 +174,12 @@ TEST_CASE("GPU strict counter admission and rejection", "[gpu][verifier][strict-
 	// Only the rejected program reaches attach: a successful attach would
 	// bootstrap a CUDA context, which is deliberately not part of this test.
 	nv_attach_impl impl;
+	// The interception runtime starts enabled, even with no policy hooks.
+	// Rejection must leave that pre-existing state unchanged and create no hook.
+	const bool enabled_before = impl.is_enabled();
 	REQUIRE(impl.create_attach_with_ebpf_callback(
 			ebpf_run_callback{}, data, ATTACH_CUDA_RETPROBE) == GPU_VERIFIER_REJECTED);
-	REQUIRE_FALSE(impl.is_enabled());
+	REQUIRE(impl.is_enabled() == enabled_before);
 	REQUIRE(impl.detach_by_id(1) == -ENOENT);
 }
 #endif

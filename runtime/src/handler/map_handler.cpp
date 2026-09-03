@@ -997,6 +997,9 @@ int bpf_map_handler::map_init(managed_shared_memory &memory)
 			memory.construct<nv_gpu_per_thread_array_map_impl>(
 				boost::interprocess::anonymous_instance)(
 				memory, value_size, max_entries, thread_count);
+		// Syscall readback and exported map metadata must use the same count
+		// as the allocated device map, including the environment override.
+		attr.gpu_thread_count = thread_count;
 		init_refcnt();
 		shm_holder.global_shared_memory.set_enable_mock(true);
 		return 0;
