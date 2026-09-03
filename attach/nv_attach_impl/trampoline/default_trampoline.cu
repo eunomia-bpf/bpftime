@@ -2,6 +2,7 @@
 #include <atomic>
 #include <chrono>
 #include <csignal>
+#include <cstddef>
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
@@ -17,8 +18,8 @@
 
 /* clang++-17 -S ./default_trampoline.cu -Wall --cuda-gpu-arch=sm_60 -O2
  * -L/usr/local/cuda/lib64/ -lcudart*/
-// The old 1<<30 value makes the shared segment too large for Boost IPC.
-static constexpr int GPU_HELPER_MAX_BUF = 1 << 24;
+// Must match BPFTIME_GPU_HELPER_MAX_BUF in runtime/include/bpf_attach_ctx.hpp.
+static constexpr int GPU_HELPER_MAX_BUF = 1 << 20;
 
 enum class HelperOperation {
 	MAP_LOOKUP = 1,
@@ -82,6 +83,14 @@ struct CommSharedMem {
 	HelperCallResponse resp;
 	uint64_t time_sum[8];
 };
+static_assert(GPU_HELPER_MAX_BUF == 1 << 20,
+	      "GPU helper host/device ABI requires a 1 MiB staging buffer");
+static_assert(offsetof(CommSharedMem, req) == 24,
+	      "unexpected GPU helper request offset");
+static_assert(offsetof(CommSharedMem, resp) == 2097184,
+	      "unexpected GPU helper response offset");
+static_assert(sizeof(CommSharedMem) == 2097256,
+	      "unexpected GPU helper shared-memory size");
 
 const int BPF_MAP_TYPE_GPU_HASH_MAP = 1501; // non-per-thread, single-copy shared hashmap
 // IPC-based GPU maps (for x86 with CUDA IPC support)
@@ -352,7 +361,21 @@ _bpf_helper_ext_0014(uint64_t, uint64_t, uint64_t, uint64_t, uint64_t)
 struct ringbuf_header {
 	uint64_t head;
 	uint64_t tail;
-	int dirty;
+	uint64_t dirty;
+};
+static_assert(alignof(ringbuf_header) == alignof(uint64_t),
+	      "GPU ring-buffer header must retain 64-bit alignment");
+static_assert(offsetof(ringbuf_header, head) == 0 &&
+		      offsetof(ringbuf_header, tail) == 8 &&
+		      offsetof(ringbuf_header, dirty) == 16 &&
+		      sizeof(ringbuf_header) == 24,
+	      "unexpected GPU ring-buffer header layout");
+
+struct ringbuf_error_counters {
+	uint64_t oob_drops;
+	uint64_t full_drops;
+	uint64_t bad_size_drops;
+	uint64_t other_drops;
 };
 
 // perf event output
@@ -362,37 +385,66 @@ _bpf_helper_ext_0025(uint64_t ctx, uint64_t map, uint64_t flags, uint64_t data,
 {
 	const auto &map_info = ::map_info[map];
 	if (map_info.map_type == BPF_MAP_TYPE_GPU_RINGBUF_MAP) {
-		auto tid = getGlobalThreadId();
+		const auto record_stride =
+			(sizeof(uint64_t) + map_info.value_size +
+			 sizeof(uint64_t) - 1) &
+			~(sizeof(uint64_t) - 1);
+		const auto entry_size = sizeof(ringbuf_header) +
+			map_info.max_entries * record_stride;
+		auto *errors = (ringbuf_error_counters *)(uintptr_t)(
+			(char *)map_info.extra_buffer +
+			map_info.max_thread_count * entry_size);
+		const auto tid = getGlobalThreadId();
 		if (tid >= map_info.max_thread_count) {
-			// Avoid OOB writes if the map was sized for fewer
-			// threads than the current kernel launch.
+			atomicAdd_system(
+				(unsigned long long *)&errors->oob_drops, 1);
 			return 1;
+		}
+		if (data_size > map_info.value_size) {
+			atomicAdd_system(
+				(unsigned long long *)&errors->bad_size_drops, 1);
+			return 3;
+		}
+		if (data_size != 0 && data == 0) {
+			atomicAdd_system(
+				(unsigned long long *)&errors->other_drops, 1);
+			return 4;
 		}
 		// printf("Starting perf output, value size=%d, max entries =
 		// %d\n",
 		//        map_info.value_size, map_info.max_entries);
-		auto entry_size = sizeof(ringbuf_header) +
-				  map_info.max_entries * (sizeof(uint64_t) +
-							  map_info.value_size);
 		auto header =
 			(ringbuf_header *)(uintptr_t)(tid * entry_size +
 						      (char *)map_info
 							      .extra_buffer);
+		if (atomicCAS_system((unsigned long long *)&header->dirty, 0, 1) !=
+		    0) {
+			atomicAdd_system(
+				(unsigned long long *)&errors->other_drops, 1);
+			return 4;
+		}
+		asm volatile("membar.sys;" ::: "memory");
 		// printf("header->head=%lu, header->tail=%lu\n", header->head,
 		//        header->tail);
-		if (header->tail - header->head == map_info.max_entries) {
+		const uint64_t head =
+			*(volatile uint64_t *)(uintptr_t)&header->head;
+		asm volatile("membar.sys;" ::: "memory");
+		const uint64_t tail = header->tail;
+		if (tail - head >= map_info.max_entries) {
 			// Buffer is full
 			// printf("Buffer is full\n");
+			atomicAdd_system(
+				(unsigned long long *)&errors->full_drops, 1);
+			asm volatile("membar.sys;" ::: "memory");
+			atomicExch_system(
+				(unsigned long long *)&header->dirty, 0);
 			return 2;
 		}
-		header->dirty = 1;
-		auto tail_to_put =
-			__atomic_fetch_add(&header->tail, 1, __ATOMIC_SEQ_CST);
-		auto real_tail = tail_to_put % map_info.max_entries;
+		const auto real_tail = tail % map_info.max_entries;
 		// printf("real tail=%lu\n", real_tail);
 		auto buffer =
 			((char *)header) + sizeof(ringbuf_header) +
-			real_tail * (sizeof(uint64_t) + map_info.value_size);
+			real_tail * record_stride;
 		// printf("before wrtting size to %lx, of %lu\n",
 		//        (uintptr_t)buffer, data_size);
 		*(uint64_t *)(uintptr_t)buffer = data_size;
@@ -400,7 +452,10 @@ _bpf_helper_ext_0025(uint64_t ctx, uint64_t map, uint64_t flags, uint64_t data,
 		simple_memcpy(buffer + sizeof(uint64_t),
 			      (void *)(uintptr_t)data, data_size);
 		// printf("data copied\n");
-		header->dirty = 0;
+		asm volatile("membar.sys;" ::: "memory");
+		atomicExch_system((unsigned long long *)&header->tail, tail + 1);
+		asm volatile("membar.sys;" ::: "memory");
+		atomicExch_system((unsigned long long *)&header->dirty, 0);
 		// printf("Generated %d bytes of data\n", (int)data_size);
 		return 0;
 

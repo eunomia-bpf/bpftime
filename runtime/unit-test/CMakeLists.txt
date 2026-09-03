@@ -97,6 +97,15 @@ endif()
 target_include_directories(bpftime_runtime_tests PRIVATE ${BPFTIME_RUNTIME_INCLUDE} ${BPFTIME_OBJECT_INCLUDE_DIRS} ${Catch2_INCLUDE} ${Boost_INCLUDE} ${FRIDA_UPROBE_ATTACH_IMPL_INCLUDE})
 add_test(NAME bpftime_runtime_tests COMMAND bpftime_runtime_tests)
 
+if(${BPFTIME_ENABLE_CUDA_ATTACH})
+    add_executable(bpftime_gpu_ringbuf_tests cuda/test_gpu_ringbuf.cpp)
+    set_property(TARGET bpftime_gpu_ringbuf_tests PROPERTY CXX_STANDARD 20)
+    target_link_libraries(bpftime_gpu_ringbuf_tests PRIVATE runtime Catch2::Catch2WithMain)
+    target_include_directories(bpftime_gpu_ringbuf_tests PRIVATE
+        ${BPFTIME_RUNTIME_INCLUDE} ${Catch2_INCLUDE} ${Boost_INCLUDE})
+    add_test(NAME bpftime_gpu_ringbuf_tests COMMAND bpftime_gpu_ringbuf_tests)
+endif()
+
 # These are necessary ebpf program required by the test
 set(used_ebpf_programs
     uprobe

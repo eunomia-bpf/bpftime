@@ -193,6 +193,8 @@ class syscall_context {
 	int poll_gpu_ringbuf_map(int mapfd, void *ctx,
 
 				 void (*)(const void *, uint64_t, void *));
+	int get_gpu_ringbuf_stats(int mapfd,
+				  struct bpftime_gpu_ringbuf_stats *stats);
 #endif
 };
 

@@ -1148,4 +1148,10 @@ int syscall_context::poll_gpu_ringbuf_map(int mapfd, void *ctx,
 {
 	return bpftime_poll_gpu_ringbuf_map(mapfd, ctx, fn);
 }
+
+int syscall_context::get_gpu_ringbuf_stats(
+	int mapfd, struct bpftime_gpu_ringbuf_stats *stats)
+{
+	return bpftime_get_gpu_ringbuf_stats(mapfd, stats);
+}
 #endif

@@ -2,10 +2,17 @@ CLANG ?= clang++-17
 CUDA_LIBS ?= -L/usr/local/cuda/lib64/ -lcudart -pthread
 PTX_TARGET_ARCH ?= sm_61
 CLANG_FLAGS ?= -U__FLOAT128__ -U__SIZEOF_FLOAT128__
+PYTHON ?= python3
 
-.PHONY: all clean
+.PHONY: all clean test-ringbuf-protocol
 
-all: ../trampoline_ptx.h test
+all: ../trampoline_ptx.h test test-ringbuf-protocol
+
+test-ringbuf-protocol: default_trampoline.cu ../trampoline_ptx.h \
+                       test_ringbuf_protocol.py \
+                       ../../../runtime/include/bpf_attach_ctx.hpp
+	$(PYTHON) test_ringbuf_protocol.py default_trampoline.cu \
+		../trampoline_ptx.h ../../../runtime/include/bpf_attach_ctx.hpp
 
 ../trampoline_ptx.h: default_trampoline-cuda-nvptx64-nvidia-cuda-$(PTX_TARGET_ARCH).s
 	@echo "Generating trampoline_ptx.h..."

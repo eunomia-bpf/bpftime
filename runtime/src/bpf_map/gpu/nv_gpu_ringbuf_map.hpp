@@ -2,6 +2,7 @@
 #define _NV_GPU_RINGBUF_MAP_HPP
 
 #include "bpf_map/map_common_def.hpp"
+#include "bpftime_gpu_ringbuf.h"
 #include "cuda.h"
 #include <cstddef>
 #include <functional>
@@ -21,15 +22,28 @@ using pid_devptr_map =
 struct ringbuf_header {
 	uint64_t head;
 	uint64_t tail;
-	int dirty;
+	uint64_t dirty;
+};
+static_assert(alignof(ringbuf_header) == alignof(uint64_t),
+	      "GPU ring-buffer header must retain 64-bit alignment");
+static_assert(offsetof(ringbuf_header, head) == 0 &&
+		      offsetof(ringbuf_header, tail) == 8 &&
+		      offsetof(ringbuf_header, dirty) == 16 &&
+		      sizeof(ringbuf_header) == 24,
+	      "unexpected GPU ring-buffer header layout");
+
+struct ringbuf_error_counters {
+	uint64_t oob_drops;
+	uint64_t full_drops;
+	uint64_t bad_size_drops;
+	uint64_t other_drops;
 };
 
 class nv_gpu_ringbuf_map_impl {
 	/**
 	    Memory layout of each thread:
-	    |struct ringbuf_header|(uint64_t)size of data in page 0|page0 (in
-	   size of value size)|(uint64_t) size of data in page 1|page1 (in size
-	   of value size)|.........
+	    |struct ringbuf_header|(uint64_t)size of data in slot 0|slot0
+	   payload|alignment padding|(uint64_t)size of data in slot 1|.........
 	    */
 
 	// CUdeviceptr server_gpu_memory;
@@ -41,6 +55,7 @@ class nv_gpu_ringbuf_map_impl {
 
 	bytes_vec local_buffer;
 
+	uint64_t record_stride;
 	uint64_t entry_size;
 
     public:
@@ -61,6 +76,7 @@ class nv_gpu_ringbuf_map_impl {
 	// Only to be called at syscall server side
 	int
 	drain_data(const std::function<void(const void *, uint64_t size)> &fn);
+	int get_stats(bpftime_gpu_ringbuf_stats *stats) const;
 
 	CUdeviceptr get_gpu_mem_buffer()
 	{
@@ -73,6 +89,8 @@ class nv_gpu_ringbuf_map_impl {
 	virtual ~nv_gpu_ringbuf_map_impl();
 
 	CUdeviceptr try_initialize_for_agent_and_get_mapped_address();
+
+	friend struct nv_gpu_ringbuf_test_access;
 };
 } // namespace bpftime
 

@@ -700,10 +700,16 @@ int bpftime_poll_gpu_ringbuf_map(int mapfd, void *ctx,
 				 void (*fn)(const void *, uint64_t, void *))
 {
 	auto &shm = shm_holder.global_shared_memory;
-	shm.poll_gpu_ringbuf_map(mapfd, [=](const void *buf, uint64_t size) {
+	return shm.poll_gpu_ringbuf_map(mapfd, [=](const void *buf, uint64_t size) {
 		fn(buf, size, ctx);
 	});
-	return 0;
+}
+
+int bpftime_get_gpu_ringbuf_stats(int mapfd,
+				  struct bpftime_gpu_ringbuf_stats *stats)
+{
+	return shm_holder.global_shared_memory.get_gpu_ringbuf_stats(mapfd,
+								    stats);
 }
 #endif
 

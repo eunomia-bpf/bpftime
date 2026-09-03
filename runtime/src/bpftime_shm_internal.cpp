@@ -1153,6 +1153,25 @@ int bpftime_shm::poll_gpu_ringbuf_map(
 	auto &impl = *impl_opt;
 	return impl->drain_data(fn);
 }
+
+int bpftime_shm::get_gpu_ringbuf_stats(int mapfd,
+				       bpftime_gpu_ringbuf_stats *stats)
+{
+	if (!is_map_fd(mapfd)) {
+		SPDLOG_ERROR("Expected {} to be a mapfd", mapfd);
+		return -EINVAL;
+	}
+	auto &map_handler =
+		std::get<bpf_map_handler>(manager->get_handler(mapfd));
+	auto impl_opt = map_handler.try_get_nv_gpu_ringbuf_map_impl();
+	if (!impl_opt) {
+		SPDLOG_ERROR(
+			"Failed to get nv_gpu_ringbuf_map_impl for mapfd {}",
+			mapfd);
+		return -EINVAL;
+	}
+	return (*impl_opt)->get_stats(stats);
+}
 #endif
 int bpftime_shm::add_memfd_handler(const char *name, int flags)
 {

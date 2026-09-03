@@ -273,4 +273,11 @@ extern "C" int bpftime_syscall_server__poll_gpu_ringbuf_map(
 		return context->poll_gpu_ringbuf_map(mapfd, ctx, fn);
 	});
 }
+
+extern "C" int bpftime_syscall_server__get_gpu_ringbuf_stats(
+	int mapfd, struct bpftime_gpu_ringbuf_stats *stats)
+{
+	return handle_exceptions(
+		[&]() { return context->get_gpu_ringbuf_stats(mapfd, stats); });
+}
 #endif

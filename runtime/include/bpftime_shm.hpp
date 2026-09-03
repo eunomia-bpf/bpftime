@@ -2,6 +2,7 @@
 #define BPFTIME_SHM_CPP_H
 
 #include "bpftime_config.hpp"
+#include "bpftime_gpu_ringbuf.h"
 #include <boost/interprocess/interprocess_fwd.hpp>
 #include <cstddef>
 #include <boost/interprocess/containers/vector.hpp>
@@ -428,6 +429,8 @@ int bpftime_add_custom_perf_event(int type, const char *attach_argument);
 #ifdef BPFTIME_ENABLE_CUDA_ATTACH
 int bpftime_poll_gpu_ringbuf_map(int mapfd, void *ctx,
 				 void (*)(const void *, uint64_t, void *));
+int bpftime_get_gpu_ringbuf_stats(int mapfd,
+				  struct bpftime_gpu_ringbuf_stats *stats);
 #endif
 int bpftime_add_memfd_handler(const char *name, int flags);
 int bpftime_translate_shared_map_type_to_kernel_map_type(int ty);

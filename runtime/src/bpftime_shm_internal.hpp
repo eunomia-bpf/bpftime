@@ -283,6 +283,7 @@ public:
 	}
 	int poll_gpu_ringbuf_map(
 		int mapfd, const std::function<void(const void *, uint64_t)> &);
+	int get_gpu_ringbuf_stats(int mapfd, bpftime_gpu_ringbuf_stats *stats);
 #endif
 	~bpftime_shm();
 };

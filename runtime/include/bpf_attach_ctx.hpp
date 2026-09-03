@@ -10,6 +10,7 @@
 #include "handler/prog_handler.hpp"
 #include <array>
 #include <atomic>
+#include <cstddef>
 #include <cstdint>
 #include <functional>
 #include <initializer_list>
@@ -100,6 +101,14 @@ struct CommSharedMem {
 	HelperCallResponse resp;
 	uint64_t time_sum[8];
 };
+static_assert(GPU_HELPER_MAX_BUF == 1 << 20,
+	      "GPU helper host/device ABI requires a 1 MiB staging buffer");
+static_assert(offsetof(CommSharedMem, req) == 24,
+	      "unexpected GPU helper request offset");
+static_assert(offsetof(CommSharedMem, resp) == 2097184,
+	      "unexpected GPU helper response offset");
+static_assert(sizeof(CommSharedMem) == 2097256,
+	      "unexpected GPU helper shared-memory size");
 struct CUDAContext {
 	// Indicate whether cuda watcher thread should stop
 	std::shared_ptr<std::atomic<bool>> cuda_watcher_should_stop =

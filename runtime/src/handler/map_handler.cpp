@@ -1082,6 +1082,7 @@ int bpf_map_handler::map_init(managed_shared_memory &memory)
 				"Clamped GPU ringbuf thread count from {} to {} due to shared memory pressure; override via BPFTIME_MAP_GPU_THREAD_COUNT",
 				requested_thread_count, thread_count);
 		}
+		attr.gpu_thread_count = thread_count;
 		init_refcnt();
 		shm_holder.global_shared_memory.set_enable_mock(true);
 		return 0;
