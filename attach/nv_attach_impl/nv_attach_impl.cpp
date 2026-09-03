@@ -240,13 +240,28 @@ int nv_attach_impl::create_attach_with_ebpf_callback(
 				if (data.verifier_mode ==
 				    BPFTIME_VERIFIER_STRICT) {
 					SPDLOG_ERROR(
-						"GPU eBPF verification failed for {}: {}",
+						"GPU eBPF verification failed for {}: {} (mode=STRICT, hook_created=0)",
 						section_name, *error);
 					return GPU_VERIFIER_REJECTED;
 				}
 				SPDLOG_WARN(
 					"GPU eBPF verification failed for {}: {}; continuing",
 					section_name, *error);
+			} else if (data.verifier_mode == BPFTIME_VERIFIER_STRICT) {
+				SPDLOG_INFO(
+					"GPU eBPF verification accepted: mode=STRICT program={} attach={} instructions={}",
+					section_name, attach_point_name,
+					data.instructions.size());
+				for (size_t fd = 0; fd < data.map_basic_info.size(); ++fd) {
+					const auto &map = data.map_basic_info[fd];
+					if (map.enabled) {
+						SPDLOG_INFO(
+							"GPU eBPF verified map: program={} fd={} type={} key_size={} value_size={} max_entries={}",
+							section_name, fd, map.map_type,
+							map.key_size, map.value_size,
+							map.max_entries);
+					}
+				}
 			}
 		} else {
 			SPDLOG_INFO("Skipping GPU eBPF verification for {}",
