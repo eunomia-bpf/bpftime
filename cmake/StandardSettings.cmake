@@ -73,6 +73,13 @@ if(BPFTIME_ENABLE_ASAN)
     add_link_options(-fsanitize=address,undefined)
 endif()
 
+if(CMAKE_SYSTEM_PROCESSOR MATCHES "^riscv")
+    set(BPFTIME_TRAP_UPROBE_DEFAULT ON)
+else()
+    set(BPFTIME_TRAP_UPROBE_DEFAULT OFF)
+endif()
+option(BPFTIME_ENABLE_TRAP_UPROBE "Build and register the trap (breakpoint + SIGTRAP) uprobe backend. Defaults to ON on riscv64 only; other architectures keep using frida." ${BPFTIME_TRAP_UPROBE_DEFAULT})
+
 option(BPFTIME_ENABLE_MPK "Enable Memory Protection Keys for the share memory." OFF)
 if(BPFTIME_ENABLE_MPK)
     add_definitions(-DBPFTIME_ENABLE_MPK)

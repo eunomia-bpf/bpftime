@@ -22,7 +22,7 @@ extern "C" TRAP_TEST_TARGET uint64_t __trap_bt_caller(uint64_t a)
 	return r;
 }
 
-static bool within(uint64_t pc, const void *func, size_t span = 4096)
+static bool within(uint64_t pc, const void *func, size_t span = 256)
 {
 	return pc > (uintptr_t)func && pc < (uintptr_t)func + span;
 }
@@ -52,15 +52,20 @@ TEST_CASE("Trap backend: generate_stack reports the callers of the probe")
 						delete p;
 					}) >= 0);
 	REQUIRE(__trap_bt_caller(3) == 22);
-	REQUIRE(!entry_stack.empty());
-	REQUIRE(!exit_stack.empty());
-	// The first frame after the probed function is the return address
-	// inside __trap_bt_caller
-	REQUIRE(within(entry_stack[0], (const void *)&__trap_bt_caller));
-	bool found = false;
-	for (auto f : exit_stack)
-		found |= within(f, (const void *)&__trap_bt_caller);
-	REQUIRE(found);
+	REQUIRE(entry_stack.size() >= 2);
+	REQUIRE(exit_stack.size() >= 2);
+	CAPTURE((void *)&__trap_bt_leaf, (void *)&__trap_bt_caller,
+		(void *)entry_stack[0], (void *)entry_stack[1],
+		(void *)entry_stack[2], (void *)exit_stack[0],
+		(void *)exit_stack[1]);
+	// Frame 0 is the interrupted pc: the probed function at entry, the
+	// return address inside __trap_bt_caller at exit. Frame 1 is the
+	// return address of the next frame up.
+	REQUIRE(entry_stack[0] == (uintptr_t)&__trap_bt_leaf);
+	REQUIRE(within(entry_stack[1], (const void *)&__trap_bt_caller));
+	REQUIRE(within(exit_stack[0], (const void *)&__trap_bt_caller));
+	REQUIRE(exit_stack[0] == entry_stack[1]);
+	REQUIRE(exit_stack[1] == entry_stack[2]);
 	// Outside of a probe there is no stack to report
 	REQUIRE(man.call_attach_specific_function("generate_stack", nullptr) ==
 		nullptr);

@@ -13,7 +13,7 @@
 #include <cstdio>
 #include <cstring>
 #include <dlfcn.h>
-#include <execinfo.h>
+#include <unwind.h>
 #include <filesystem>
 #include <fstream>
 #include <mutex>
@@ -148,8 +148,10 @@ struct override_state {
 thread_local TRAP_TLS int tl_in_handler = 0;
 thread_local TRAP_TLS uret_stack *tl_uret = nullptr;
 thread_local TRAP_TLS const pt_regs *tl_current_regs = nullptr;
-// Address of the instruction the probe interrupted
+// Address of the instruction the probe interrupted and the stack pointer
+// at that point
 thread_local TRAP_TLS uintptr_t tl_current_pc = 0;
+thread_local TRAP_TLS uintptr_t tl_current_sp = 0;
 // 0: not in a probe, 1: function entry, 2: function return
 thread_local TRAP_TLS int tl_phase = 0;
 thread_local TRAP_TLS uint64_t tl_return_value = 0;
@@ -273,10 +275,6 @@ class trap_engine {
 trap_engine::trap_engine()
 {
 	pthread_key_create(&uret_stack_key, destroy_uret_stack);
-	// glibc's backtrace() lazily loads libgcc on first use; do it now so
-	// the signal handler never triggers a dlopen
-	void *warm[4];
-	backtrace(warm, 4);
 }
 
 trap_engine::~trap_engine()
@@ -746,6 +744,7 @@ void trap_engine::handle_hit(probe_site *site, ucontext_t *uc)
 		arch::fill_pt_regs(uc, site->addr, regs);
 		tl_current_regs = &regs;
 		tl_current_pc = site->addr;
+		tl_current_sp = arch::get_sp(uc);
 		tl_phase = 1;
 		bool overrided = false;
 		try {
@@ -832,6 +831,7 @@ void trap_engine::handle_return(ucontext_t *uc)
 	arch::fill_pt_regs(uc, frame.orig_ret, regs);
 	tl_current_regs = &regs;
 	tl_current_pc = frame.orig_ret;
+	tl_current_sp = arch::get_sp(uc);
 	tl_phase = 2;
 	tl_return_value = arch::get_return_value(uc);
 	try {
@@ -897,39 +897,51 @@ void trap_engine::on_sigtrap(int sig, siginfo_t *info, void *ctx)
 	errno = saved_errno;
 }
 
+struct unwind_state {
+	uintptr_t interrupted_sp;
+	uintptr_t interrupted_pc;
+	std::vector<uint64_t> *frames;
+	bool past_handler;
+};
+
+// _Unwind_Backtrace callback. Inside the callback _Unwind_GetCFA() yields
+// the stack pointer of the frame being visited (the CFA of its callee), so
+// frames of our handler and the signal trampoline report values below the
+// interrupted stack pointer, the interrupted function reports the address
+// of the signal context (also below it), and the interrupted function's
+// callers report values at or above it. Only the callers are collected;
+// the interrupted pc itself is reported as frame 0 by the caller of this.
+_Unwind_Reason_Code collect_frame(struct _Unwind_Context *ctx, void *arg)
+{
+	auto *st = (unwind_state *)arg;
+	uintptr_t cfa = (uintptr_t)_Unwind_GetCFA(ctx);
+	if (cfa < st->interrupted_sp)
+		return _URC_NO_REASON;
+	uintptr_t ip = (uintptr_t)_Unwind_GetIP(ctx);
+	if (!st->past_handler) {
+		st->past_handler = true;
+		if (ip == st->interrupted_pc || ip == st->interrupted_pc + 1)
+			return _URC_NO_REASON;
+	}
+	st->frames->push_back((uint64_t)ip);
+	return st->frames->size() >= MAX_BACKTRACE_FRAMES ? _URC_END_OF_STACK :
+							     _URC_NO_REASON;
+}
+
+// Stack of the interrupted thread as seen by the probe: frame 0 is the
+// interrupted pc (the probed function at entry, the return address in its
+// caller at exit), followed by the return addresses of the callers. This
+// mirrors what the kernel reports for bpf_get_stack on a uprobe.
 std::vector<uint64_t> *trap_engine::generate_stack()
 {
 	if (tl_current_regs == nullptr) {
 		SPDLOG_ERROR("There is no trap uprobe running");
 		return nullptr;
 	}
-	void *frames[MAX_BACKTRACE_FRAMES];
-	int n = backtrace(frames, MAX_BACKTRACE_FRAMES);
-	if (n <= 0)
-		return nullptr;
-	// Frames collected so far: this function, the callback chain, the
-	// signal handler, the kernel signal frame, then the interrupted
-	// function and its callers. Skip everything up to and including the
-	// interrupted pc.
-	uintptr_t interrupted = tl_current_pc;
 	auto result = new std::vector<uint64_t>;
-	int start = -1;
-	for (int i = 0; i < n; i++) {
-		uintptr_t f = (uintptr_t)frames[i];
-		// x86 reports the address after the int3; other
-		// architectures report the trap itself
-		if (f == interrupted || f == interrupted + 1) {
-			start = i;
-			break;
-		}
-	}
-	if (start < 0) {
-		// Could not identify the signal frame, return the raw callers
-		// minus our own frames
-		start = std::min(n - 1, 3);
-	}
-	for (int i = start + 1; i < n; i++)
-		result->push_back((uint64_t)(uintptr_t)frames[i]);
+	result->push_back(tl_current_pc);
+	unwind_state st{ tl_current_sp, tl_current_pc, result, false };
+	_Unwind_Backtrace(collect_frame, &st);
 	return result;
 }
 } // namespace

@@ -114,8 +114,9 @@ TEST_CASE("x86 decoder: control transfers")
 // Real functions whose first instruction needs relocation work. They are
 // written in file scope assembly so that no endbr64 is inserted in front of
 // the instruction under test.
+// Defined in the assembly block below (LTO would otherwise discard a
+// C++ definition that is only referenced from inline asm).
 extern "C" uint64_t g_trap_global;
-uint64_t g_trap_global = 0x1234;
 extern "C" uint64_t *__trap_riprel_first();
 extern "C" uint64_t __trap_jmp_first(uint64_t);
 extern "C" uint64_t __trap_call_first(uint64_t);
@@ -127,7 +128,14 @@ extern "C" TRAP_TEST_TARGET uint64_t __trap_call_helper(uint64_t a)
 	return a + 1000;
 }
 
-asm(".text\n"
+asm(".data\n"
+    ".balign 8\n"
+    ".globl g_trap_global\n"
+    ".type g_trap_global, @object\n"
+    "g_trap_global:\n"
+    "	.quad 0x1234\n"
+    ".size g_trap_global, 8\n"
+    ".text\n"
     ".globl __trap_riprel_first\n"
     ".type __trap_riprel_first, @function\n"
     "__trap_riprel_first:\n"
@@ -196,8 +204,9 @@ TEST_CASE("Trap backend: refuses instructions it cannot relocate")
 #elif defined(__riscv) && __riscv_xlen == 64
 // Functions whose first instruction is pc-relative or a jump, so the probe
 // must emulate it instead of executing it out of line.
+// Defined in the assembly block below (LTO would otherwise discard a
+// C++ definition that is only referenced from inline asm).
 extern "C" uint64_t g_trap_global;
-uint64_t g_trap_global = 0x1234;
 extern "C" uint64_t *__trap_rv_auipc_first();
 extern "C" uint64_t __trap_rv_jal_first(uint64_t);
 extern "C" uint64_t __trap_rv_beqz_first(uint64_t);
@@ -215,7 +224,14 @@ extern "C" TRAP_TEST_TARGET uint64_t __trap_call_helper(uint64_t a)
 	return a + 1000;
 }
 
-asm(".text\n"
+asm(".data\n"
+    ".balign 8\n"
+    ".globl g_trap_global\n"
+    ".type g_trap_global, @object\n"
+    "g_trap_global:\n"
+    "	.quad 0x1234\n"
+    ".size g_trap_global, 8\n"
+    ".text\n"
     ".globl __trap_rv_auipc_first\n"
     ".type __trap_rv_auipc_first, @function\n"
     "__trap_rv_auipc_first:\n"
@@ -357,8 +373,9 @@ TEST_CASE("Trap backend (riscv64): refuses existing breakpoints")
 		std::nullopt);
 }
 #elif defined(__aarch64__)
+// Defined in the assembly block below (LTO would otherwise discard a
+// C++ definition that is only referenced from inline asm).
 extern "C" uint64_t g_trap_global;
-uint64_t g_trap_global = 0x1234;
 extern "C" uint64_t *__trap_a64_adrp_first();
 extern "C" uint64_t __trap_a64_b_first(uint64_t);
 extern "C" uint64_t __trap_a64_cbz_first(uint64_t);
@@ -374,7 +391,14 @@ extern "C" TRAP_TEST_TARGET uint64_t __trap_call_helper(uint64_t a)
 	return a + 1000;
 }
 
-asm(".text\n"
+asm(".data\n"
+    ".balign 8\n"
+    ".globl g_trap_global\n"
+    ".type g_trap_global, %object\n"
+    "g_trap_global:\n"
+    "	.quad 0x1234\n"
+    ".size g_trap_global, 8\n"
+    ".text\n"
     ".globl __trap_a64_adrp_first\n"
     ".type __trap_a64_adrp_first, %function\n"
     "__trap_a64_adrp_first:\n"

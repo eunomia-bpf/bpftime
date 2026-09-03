@@ -2,9 +2,12 @@
 
 A portable implementation of `base_attach_impl` for uprobe, uretprobe,
 uprobe-override (filter) and ureplace attaches that does not depend on
-frida-gum. It is the backend used on architectures frida does not support
-(riscv64) and can be selected on x86_64 / aarch64 with
-`BPFTIME_UPROBE_BACKEND=trap`.
+frida-gum. It exists for architectures frida does not support: the CMake
+option `BPFTIME_ENABLE_TRAP_UPROBE` defaults to ON on riscv64 and OFF
+everywhere else, so x86_64 and aarch64 builds keep using frida unchanged.
+When the backend is compiled in, `BPFTIME_UPROBE_BACKEND=frida|trap`
+selects it at runtime (the agent's environment wins over the loader's
+shared config).
 
 ## How it works
 
