@@ -75,10 +75,13 @@ endif()
 
 if(CMAKE_SYSTEM_PROCESSOR MATCHES "^riscv")
     set(BPFTIME_TRAP_UPROBE_DEFAULT ON)
+    set(BPFTIME_FRIDA_DEFAULT OFF)
 else()
     set(BPFTIME_TRAP_UPROBE_DEFAULT OFF)
+    set(BPFTIME_FRIDA_DEFAULT ON)
 endif()
 option(BPFTIME_ENABLE_TRAP_UPROBE "Build and register the trap (breakpoint + SIGTRAP) uprobe backend. Defaults to ON on riscv64 only; other architectures keep using frida." ${BPFTIME_TRAP_UPROBE_DEFAULT})
+option(BPFTIME_ENABLE_FRIDA "Download and build the frida-gum based uprobe backend. Defaults to OFF on riscv64 (no devkit available)." ${BPFTIME_FRIDA_DEFAULT})
 
 option(BPFTIME_ENABLE_MPK "Enable Memory Protection Keys for the share memory." OFF)
 if(BPFTIME_ENABLE_MPK)

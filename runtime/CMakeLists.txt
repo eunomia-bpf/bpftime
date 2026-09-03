@@ -179,11 +179,14 @@ if(${BPFTIME_ENABLE_CUDA_ATTACH})
   target_link_libraries(${PROJECT_NAME} PUBLIC bpftime_vm_compat llvmbpf_vm bpftime_nv_attach_impl)
   target_include_directories(${PROJECT_NAME} PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/../vm/llvm-jit/include)
 endif()
-if(${BPFTIME_BUILD_WITH_LIBBPF})
-  add_dependencies(${PROJECT_NAME} bpftime_vm FridaGum spdlog::spdlog libbpf bpftime_base_attach_impl)
-else()
-  add_dependencies(${PROJECT_NAME} bpftime_vm FridaGum spdlog::spdlog bpftime_base_attach_impl)
+set(RUNTIME_DEPS bpftime_vm spdlog::spdlog bpftime_base_attach_impl)
+if(BPFTIME_ENABLE_FRIDA)
+  list(APPEND RUNTIME_DEPS FridaGum)
 endif()
+if(${BPFTIME_BUILD_WITH_LIBBPF})
+  list(APPEND RUNTIME_DEPS libbpf)
+endif()
+add_dependencies(${PROJECT_NAME} ${RUNTIME_DEPS})
 
 if(BPFTIME_ENABLE_IOURING_EXT)
   target_link_libraries(${PROJECT_NAME}
@@ -229,53 +232,28 @@ if(APPLE)
   set(EXTRA_LIBS ${COCOA_LIBRARY} ${FOUNDATION_LIBRARY} ${APPKIT_LIBRARY} ${COREF_LIBRARY} ${RESOLV_LIBRARY})
 endif()
 
+set(RUNTIME_LINK_LIBS
+  -lpthread -lm -ldl -lz
+  bpftime_base_attach_impl
+  ${EXTRA_LIBS}
+)
+set(RUNTIME_INCLUDE_DIRS
+  $<INSTALL_INTERFACE:runtime>
+  $<INSTALL_INTERFACE:runtime/src>
+  $<INSTALL_INTERFACE:include>
+  $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+  $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src>
+)
 if(${BPFTIME_BUILD_WITH_LIBBPF})
-  target_link_libraries(${PROJECT_NAME}
-    PUBLIC
-    ${LIBBPF_LIBRARIES}
-    ${FRIDA_GUM_INSTALL_DIR}/libfrida-gum.a
-    -lpthread
-    -lm
-    -ldl
-    -lz
-    -lelf
-    bpftime_base_attach_impl
-    ${EXTRA_LIBS}
-  )
-else()
-  target_link_libraries(${PROJECT_NAME}
-    PUBLIC
-    ${FRIDA_GUM_INSTALL_DIR}/libfrida-gum.a
-    -lpthread
-    -lm
-    -ldl
-    -lz
-    bpftime_base_attach_impl
-    ${EXTRA_LIBS}
-  )
+  list(APPEND RUNTIME_LINK_LIBS ${LIBBPF_LIBRARIES} -lelf)
+  list(APPEND RUNTIME_INCLUDE_DIRS ${LIBBPF_INCLUDE_DIRS}/uapi ${LIBBPF_INCLUDE_DIRS})
 endif()
-
-if(BPFTIME_BUILD_WITH_LIBBPF)
-  target_include_directories(${PROJECT_NAME} PUBLIC
-    ${LIBBPF_INCLUDE_DIRS}/uapi
-    ${LIBBPF_INCLUDE_DIRS}
-    ${FRIDA_GUM_INSTALL_DIR}
-    $<INSTALL_INTERFACE:runtime>
-    $<INSTALL_INTERFACE:runtime/src>
-    $<INSTALL_INTERFACE:include>
-    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
-    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src>
-  )
-else()
-  target_include_directories(${PROJECT_NAME} PUBLIC
-    ${FRIDA_GUM_INSTALL_DIR}
-    $<INSTALL_INTERFACE:runtime>
-    $<INSTALL_INTERFACE:runtime/src>
-    $<INSTALL_INTERFACE:include>
-    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
-    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src>
-  )
+if(BPFTIME_ENABLE_FRIDA)
+  list(APPEND RUNTIME_LINK_LIBS ${FRIDA_GUM_INSTALL_DIR}/libfrida-gum.a)
+  list(APPEND RUNTIME_INCLUDE_DIRS ${FRIDA_GUM_INSTALL_DIR})
 endif()
+target_link_libraries(${PROJECT_NAME} PUBLIC ${RUNTIME_LINK_LIBS})
+target_include_directories(${PROJECT_NAME} PUBLIC ${RUNTIME_INCLUDE_DIRS})
 
 message(DEBUG "Successfully added all dependencies and linked against them.")
 

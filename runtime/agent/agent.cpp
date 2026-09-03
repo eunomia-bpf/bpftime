@@ -1,8 +1,10 @@
 #include "attach_private_data.hpp"
 #include "bpf_attach_ctx.hpp"
 #include "bpftime_shm_internal.hpp"
+#if BPFTIME_HAVE_FRIDA_ATTACH
 #include "frida_attach_private_data.hpp"
 #include "frida_uprobe_attach_impl.hpp"
+#endif
 #if BPFTIME_HAVE_TRAP_UPROBE_ATTACH
 #include "trap_attach_private_data.hpp"
 #include "trap_uprobe_attach_impl.hpp"
@@ -28,7 +30,9 @@
 #include <string_view>
 #include <thread>
 #include <unistd.h>
+#if BPFTIME_HAVE_FRIDA_ATTACH
 #include <frida-gum.h>
+#endif
 #include <cstdint>
 #include <dlfcn.h>
 #include <link.h>
@@ -1008,6 +1012,8 @@ extern "C" void bpftime_agent_main(const gchar *data, gboolean *stay_resident)
 					});
 			} else
 #endif
+			{
+#if BPFTIME_HAVE_FRIDA_ATTACH
 			ctx_holder.ctx.register_attach_impl(
 				{ ATTACH_UPROBE, ATTACH_URETPROBE,
 				  ATTACH_UPROBE_OVERRIDE, ATTACH_UREPLACE },
@@ -1028,6 +1034,10 @@ extern "C" void bpftime_agent_main(const gchar *data, gboolean *stay_resident)
 					}
 					return priv_data;
 				});
+#else
+			SPDLOG_WARN("No uprobe attach backend available");
+#endif
+			}
 
 #ifdef BPFTIME_ENABLE_CUDA_ATTACH
 			// Register cuda attach impl

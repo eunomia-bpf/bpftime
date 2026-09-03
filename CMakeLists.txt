@@ -7,7 +7,10 @@ endif()
 set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -fno-omit-frame-pointer")
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fno-omit-frame-pointer")
 set(CMAKE_LINKER_FLAGS "${CMAKE_LINKER_FLAGS} -fno-omit-frame-pointer")
-set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -lncurses")
+# ncurses is only needed when LLVM JIT is enabled (LLVM pulls it in)
+if(NOT DEFINED BPFTIME_LLVM_JIT OR BPFTIME_LLVM_JIT)
+  set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -lncurses")
+endif()
 add_definitions(-DLLVM_DISABLE_ABI_BREAKING_CHECKS_ENFORCING=1)
 
 # set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -stdlib=libc++")
@@ -125,8 +128,10 @@ if(${BPFTIME_BUILD_WITH_LIBBPF})
   include(cmake/libbpf.cmake)
 endif()
 
-# install frida
-include(cmake/frida.cmake)
+# install frida (not available on riscv64)
+if(BPFTIME_ENABLE_FRIDA)
+  include(cmake/frida.cmake)
+endif()
 
 set(CMAKE_POSITION_INDEPENDENT_CODE YES)
 
@@ -208,8 +213,10 @@ if(${BPFTIME_BUILD_STATIC_LIB})
   endif()
 
 
-  bpftime_add_libs_component_command(${FRIDA_GUM_INSTALL_DIR}/libfrida-gum.a)
-  bpftime_add_static_lib_component_command(bpftime_frida_uprobe_attach_impl)
+  if(BPFTIME_ENABLE_FRIDA)
+    bpftime_add_libs_component_command(${FRIDA_GUM_INSTALL_DIR}/libfrida-gum.a)
+    bpftime_add_static_lib_component_command(bpftime_frida_uprobe_attach_impl)
+  endif()
   if(TARGET bpftime_trap_uprobe_attach_impl)
     bpftime_add_static_lib_component_command(bpftime_trap_uprobe_attach_impl)
   endif()
@@ -263,9 +270,9 @@ set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>DLL")
 
 set(DEST_DIR "$ENV{HOME}/.bpftime")
 
-if(${BPFTIME_BUILD_WITH_LIBBPF})
+if(${BPFTIME_BUILD_WITH_LIBBPF} AND BPFTIME_ENABLE_FRIDA)
   install(TARGETS bpftime-agent bpftime_text_segment_transformer bpftime-syscall-server CONFIGURATIONS Release Debug RelWithDebInfo DESTINATION ${DEST_DIR})
-else()
+elseif(TARGET bpftime-agent)
   install(TARGETS bpftime-agent bpftime-syscall-server CONFIGURATIONS Release Debug RelWithDebInfo DESTINATION ${DEST_DIR})
 endif()
 
