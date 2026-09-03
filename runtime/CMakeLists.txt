@@ -233,7 +233,7 @@ if(APPLE)
 endif()
 
 set(RUNTIME_LINK_LIBS
-  -lpthread -lm -ldl -lz
+  -lpthread -lm -ldl
   bpftime_base_attach_impl
   ${EXTRA_LIBS}
 )
@@ -245,8 +245,10 @@ set(RUNTIME_INCLUDE_DIRS
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src>
 )
 if(${BPFTIME_BUILD_WITH_LIBBPF})
-  list(APPEND RUNTIME_LINK_LIBS ${LIBBPF_LIBRARIES} -lelf)
+  list(APPEND RUNTIME_LINK_LIBS ${LIBBPF_LIBRARIES} -lelf -lz)
   list(APPEND RUNTIME_INCLUDE_DIRS ${LIBBPF_INCLUDE_DIRS}/uapi ${LIBBPF_INCLUDE_DIRS})
+else()
+  list(APPEND RUNTIME_LINK_LIBS -lz)
 endif()
 if(BPFTIME_ENABLE_FRIDA)
   list(APPEND RUNTIME_LINK_LIBS ${FRIDA_GUM_INSTALL_DIR}/libfrida-gum.a)
