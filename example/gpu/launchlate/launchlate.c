@@ -12,10 +12,10 @@
 #include <stdlib.h>
 #include <errno.h>
 #include <string.h>
-#include <dlfcn.h>
 #include <limits.h>
 #include <gelf.h>
 #include "./.output/launchlate.skel.h"
+#include "rm_ptimer_575.h"
 #include <inttypes.h>
 #define warn(...) fprintf(stderr, __VA_ARGS__)
 
@@ -63,8 +63,16 @@ struct clock_drift {
 	int bounded;
 };
 
+struct rm_calibration_run {
+	uint64_t requested;
+	uint64_t accepted;
+	uint64_t rejected;
+	uint64_t cleanup_complete;
+	struct rm_ptimer_575_sample best;
+};
+
 struct launch_sample {
-	uint64_t host_mono_ns;
+	uint64_t host_raw_ns;
 	uint64_t sequence;
 	uint64_t gpu_entry_ns;
 };
@@ -121,46 +129,6 @@ static int host_target_matches(uint64_t launch_ip, uint64_t func,
 	return func == expected;
 }
 
-typedef int ll_cu_result;
-typedef struct CUctx_st *ll_cu_context;
-typedef struct CUmod_st *ll_cu_module;
-typedef struct CUfunc_st *ll_cu_function;
-typedef unsigned long long ll_cu_device_ptr;
-typedef struct CUstream_st *ll_cu_stream;
-
-struct cuda_driver_api {
-	void *library;
-	ll_cu_result (*init)(unsigned int);
-	ll_cu_result (*ctx_get_current)(ll_cu_context *);
-	ll_cu_result (*module_load_data)(ll_cu_module *, const void *);
-	ll_cu_result (*module_get_function)(ll_cu_function *, ll_cu_module,
-					   const char *);
-	ll_cu_result (*mem_alloc)(ll_cu_device_ptr *, size_t);
-	ll_cu_result (*mem_free)(ll_cu_device_ptr);
-	ll_cu_result (*launch_kernel)(ll_cu_function, unsigned int, unsigned int,
-				      unsigned int, unsigned int, unsigned int,
-				      unsigned int, unsigned int, ll_cu_stream,
-				      void **, void **);
-	ll_cu_result (*ctx_synchronize)(void);
-	ll_cu_result (*memcpy_dtoh)(void *, ll_cu_device_ptr, size_t);
-	ll_cu_result (*module_unload)(ll_cu_module);
-};
-
-static const char calibration_ptx[] =
-	".version 7.0\n"
-	".target sm_60\n"
-	".address_size 64\n"
-	".visible .entry launchlate_clock_sample(\n"
-	"    .param .u64 output_ptr\n"
-	")\n"
-	"{\n"
-	"    .reg .b64 %rd<3>;\n"
-	"    ld.param.u64 %rd1, [output_ptr];\n"
-	"    mov.u64 %rd2, %globaltimer;\n"
-	"    st.global.u64 [%rd1], %rd2;\n"
-	"    ret;\n"
-	"}\n";
-
 static int libbpf_print_fn(enum libbpf_print_level level, const char *format,
 			   va_list args)
 {
@@ -172,19 +140,6 @@ static volatile sig_atomic_t exiting;
 static void sig_handler(int sig)
 {
 	exiting = true;
-}
-
-static int monotonic_ns(uint64_t *value)
-{
-	struct timespec now;
-
-	if (clock_gettime(CLOCK_MONOTONIC, &now) != 0)
-		return -errno;
-	if (now.tv_sec < 0 || (uint64_t)now.tv_sec > UINT64_MAX / 1000000000ULL)
-		return -ERANGE;
-	*value = (uint64_t)now.tv_sec * 1000000000ULL +
-		 (uint64_t)now.tv_nsec;
-	return 0;
 }
 
 static int signed_difference(uint64_t left, uint64_t right, int64_t *value)
@@ -351,10 +306,10 @@ static enum launch_sample_status classify_affine_sample(
 {
 	int64_t offset_low, offset_high, observed, latency_low, latency_high;
 
-	if (!sample || !sample->host_mono_ns || !sample->gpu_entry_ns ||
-	    signed_difference(sample->gpu_entry_ns, sample->host_mono_ns,
+	if (!sample || !sample->host_raw_ns || !sample->gpu_entry_ns ||
+	    signed_difference(sample->gpu_entry_ns, sample->host_raw_ns,
 			      &observed) ||
-	    affine_offset_interval(sample->host_mono_ns, start, end,
+	    affine_offset_interval(sample->host_raw_ns, start, end,
 				   &offset_low, &offset_high) ||
 	    subtract_i64(observed, offset_high, &latency_low) ||
 	    subtract_i64(observed, offset_low, &latency_high) ||
@@ -388,7 +343,7 @@ static int run_self_test(const char *elf_path, const char *kernel_symbol)
 	};
 	struct clock_drift drift;
 	struct launch_sample sample = {
-		.host_mono_ns = 1050000000ULL,
+		.host_raw_ns = 1050000000ULL,
 		.sequence = 1,
 		.gpu_entry_ns = 1050001250ULL,
 	};
@@ -399,7 +354,7 @@ static int run_self_test(const char *elf_path, const char *kernel_symbol)
 	const uint64_t mock_load_bias = 0x100000000ULL;
 	const char *test_path = elf_path ? elf_path : "/proc/self/exe";
 	const char *test_kernel = kernel_symbol ? kernel_symbol : "run_self_test";
-	const char *test_launch = elf_path ? CUDA_LAUNCH_SYMBOL : "dlopen";
+	const char *test_launch = elf_path ? CUDA_LAUNCH_SYMBOL : "printf";
 	int64_t low, high;
 	uint32_t bin;
 
@@ -434,7 +389,7 @@ static int run_self_test(const char *elf_path, const char *kernel_symbol)
 	    drift.offset_change_high_ns != 240 ||
 	    drift.elapsed_ns != 100000000ULL ||
 	    drift.rate_bound_ppb != 2400 || !drift.bounded ||
-	    affine_offset_interval(sample.host_mono_ns, &affine_start,
+	    affine_offset_interval(sample.host_raw_ns, &affine_start,
 				   &affine_end, &low, &high) ||
 	    low != 200 || high != 230 ||
 	    classify_affine_sample(&sample, &affine_start, &affine_end, &bin) !=
@@ -442,12 +397,12 @@ static int run_self_test(const char *elf_path, const char *kernel_symbol)
 	    bin != 2)
 		return 1;
 	/* A full interval crossing 1 us is retained as uncertainty. */
-	sample.gpu_entry_ns = sample.host_mono_ns + 1210;
+	sample.gpu_entry_ns = sample.host_raw_ns + 1210;
 	if (classify_affine_sample(&sample, &affine_start, &affine_end, &bin) !=
 	    LAUNCH_SAMPLE_UNCERTAIN)
 		return 1;
 	/* Causally impossible affine intervals remain true clock errors. */
-	sample.gpu_entry_ns = sample.host_mono_ns + 100;
+	sample.gpu_entry_ns = sample.host_raw_ns + 100;
 	if (classify_affine_sample(&sample, &affine_start, &affine_end, &bin) !=
 	    LAUNCH_SAMPLE_CLOCK_ERROR)
 		return 1;
@@ -481,153 +436,66 @@ static int run_self_test(const char *elf_path, const char *kernel_symbol)
 	if (host_target_matches(live_launch_ip, live_func, &target) != -ERANGE)
 		return 1;
 
+	if (rm_ptimer_575_self_test())
+		return 1;
 	printf("launchlate CPU self-test: PASS\n");
 	return 0;
 }
 
-static int load_cuda_driver(struct cuda_driver_api *api)
+static int calibrate_gpu_clock(struct clock_calibration *calibration,
+			       struct rm_calibration_run *run)
 {
-	void *symbol;
-	const char *error;
-
-	memset(api, 0, sizeof(*api));
-	api->library = dlopen("libcuda.so.1", RTLD_NOW | RTLD_LOCAL);
-	if (!api->library) {
-		warn("Clock calibration could not load libcuda.so.1: %s\n",
-		     dlerror());
-		return -ENOENT;
-	}
-
-#define LOAD_CUDA(member, name)                                                   \
-	do {                                                                         \
-		dlerror();                                                            \
-		symbol = dlsym(api->library, name);                                    \
-		error = dlerror();                                                     \
-		if (error || !symbol) {                                                \
-			warn("Clock calibration missing CUDA symbol %s: %s\n", name,   \
-			     error ? error : "unknown error");                         \
-			dlclose(api->library);                                          \
-			memset(api, 0, sizeof(*api));                                   \
-			return -ENOSYS;                                                 \
-		}                                                                    \
-		memcpy(&api->member, &symbol, sizeof(symbol));                         \
-	} while (0)
-
-	LOAD_CUDA(init, "cuInit");
-	LOAD_CUDA(ctx_get_current, "cuCtxGetCurrent");
-	LOAD_CUDA(module_load_data, "cuModuleLoadData");
-	LOAD_CUDA(module_get_function, "cuModuleGetFunction");
-	LOAD_CUDA(mem_alloc, "cuMemAlloc_v2");
-	LOAD_CUDA(mem_free, "cuMemFree_v2");
-	LOAD_CUDA(launch_kernel, "cuLaunchKernel");
-	LOAD_CUDA(ctx_synchronize, "cuCtxSynchronize");
-	LOAD_CUDA(memcpy_dtoh, "cuMemcpyDtoH_v2");
-	LOAD_CUDA(module_unload, "cuModuleUnload");
-#undef LOAD_CUDA
-	return 0;
-}
-
-static int cuda_call(ll_cu_result result, const char *operation)
-{
-	if (result == 0)
-		return 0;
-	warn("Clock calibration CUDA operation %s failed: %d\n", operation,
-	     result);
-	return -EIO;
-}
-
-static int sample_gpu_clock(struct cuda_driver_api *api,
-			    ll_cu_function function, ll_cu_device_ptr output,
-			    uint64_t *gpu_ns, uint64_t *host_before_ns,
-			    uint64_t *host_after_ns)
-{
-	void *arguments[] = {&output};
-	int err;
-
-	err = monotonic_ns(host_before_ns);
-	if (err)
-		return err;
-	err = cuda_call(api->launch_kernel(function, 1, 1, 1, 1, 1, 1, 0,
-					   NULL, arguments, NULL),
-			"cuLaunchKernel");
-	if (err)
-		return err;
-	err = cuda_call(api->ctx_synchronize(), "cuCtxSynchronize");
-	if (err)
-		return err;
-	err = monotonic_ns(host_after_ns);
-	if (err)
-		return err;
-	err = cuda_call(api->memcpy_dtoh(gpu_ns, output, sizeof(*gpu_ns)),
-			"cuMemcpyDtoH");
-	if (err)
-		return err;
-	return *gpu_ns ? 0 : -ERANGE;
-}
-
-static int calibrate_gpu_clock(struct clock_calibration *calibration)
-{
-	struct cuda_driver_api api;
-	ll_cu_context context = NULL;
-	ll_cu_module module = NULL;
-	ll_cu_function function = NULL;
-	ll_cu_device_ptr output = 0;
-	uint64_t gpu_ns, before_ns, after_ns;
-	int err, cleanup_err = 0;
+	struct rm_ptimer_575_client client;
+	struct rm_ptimer_575_sample sample;
+	int err = 0, cleanup_err;
 	unsigned int trial;
 
 	memset(calibration, 0, sizeof(*calibration));
-	err = load_cuda_driver(&api);
+	memset(run, 0, sizeof(*run));
+	run->requested = CALIBRATION_TRIALS;
+	rm_ptimer_575_client_init(&client);
+	err = rm_ptimer_575_open(&client);
 	if (err)
 		return err;
-	if ((err = cuda_call(api.init(0), "cuInit")) ||
-	    (err = cuda_call(api.ctx_get_current(&context), "cuCtxGetCurrent")))
-		goto cleanup;
-	/* GPU-backed BPF maps create the owner context during skeleton load. */
-	if (!context) {
-		warn("Clock calibration requires the BPF map owner CUDA context\n");
-		err = -ENODEV;
-		goto cleanup;
-	}
-	if ((err = cuda_call(api.module_load_data(&module, calibration_ptx),
-			     "cuModuleLoadData")) ||
-	    (err = cuda_call(api.module_get_function(
-				&function, module, "launchlate_clock_sample"),
-			     "cuModuleGetFunction")) ||
-	    (err = cuda_call(api.mem_alloc(&output, sizeof(gpu_ns)),
-			     "cuMemAlloc")))
-		goto cleanup;
-
 	for (trial = 0; trial < CALIBRATION_WARMUPS; trial++) {
-		err = sample_gpu_clock(&api, function, output, &gpu_ns,
-				       &before_ns, &after_ns);
+		err = rm_ptimer_575_sample(&client, &sample);
 		if (err)
 			goto cleanup;
 	}
 	for (trial = 0; trial < CALIBRATION_TRIALS; trial++) {
-		err = sample_gpu_clock(&api, function, output, &gpu_ns,
-				       &before_ns, &after_ns);
-		if (err || (err = consider_calibration_sample(
-				calibration, gpu_ns, before_ns, after_ns)))
+		err = rm_ptimer_575_sample(&client, &sample);
+		if (err) {
+			run->rejected++;
 			goto cleanup;
+		}
+		run->accepted++;
+		if (!calibration->valid ||
+		    sample.bracket_width_ns < run->best.bracket_width_ns) {
+			run->best = sample;
+			calibration->offset_low_ns = sample.offset_low_ns;
+			calibration->offset_high_ns = sample.offset_high_ns;
+			calibration->uncertainty_ns =
+				sample.bracket_width_ns / 2 +
+				sample.bracket_width_ns % 2;
+			calibration->host_anchor_ns = sample.cpu_before_raw_ns +
+				sample.selected_gap_ns / 2;
+			calibration->valid = 1;
+		}
 	}
 	if (!calibration_valid(calibration))
 		err = -ERANGE;
 
 cleanup:
-	if (output && (cleanup_err = cuda_call(api.mem_free(output), "cuMemFree")) &&
-	    !err)
+	cleanup_err = rm_ptimer_575_close(&client);
+	run->cleanup_complete = cleanup_err == 0;
+	if (cleanup_err && !err)
 		err = cleanup_err;
-	if (module &&
-	    (cleanup_err = cuda_call(api.module_unload(module), "cuModuleUnload")) &&
-	    !err)
-		err = cleanup_err;
-	dlclose(api.library);
 	return err;
 }
 
 static void print_calibration(const char *phase,
-			      const struct clock_calibration *calibration)
+			      const struct clock_calibration *calibration,
+			      const struct rm_calibration_run *run)
 {
 	printf("%s clock offset lower: %" PRId64 " ns\n", phase,
 	       calibration->offset_low_ns);
@@ -637,6 +505,30 @@ static void print_calibration(const char *phase,
 	       calibration->uncertainty_ns);
 	printf("%s clock host anchor: %" PRIu64 " ns\n", phase,
 	       calibration->host_anchor_ns);
+	printf("%s RM samples requested: %" PRIu64 "\n", phase,
+	       run->requested);
+	printf("%s RM samples accepted: %" PRIu64 "\n", phase, run->accepted);
+	printf("%s RM samples rejected: %" PRIu64 "\n", phase, run->rejected);
+	printf("%s RM outer before RAW: %" PRIu64 " ns\n", phase,
+	       run->best.outer_before_raw_ns);
+	printf("%s RM CPU before RAW: %" PRIu64 " ns\n", phase,
+	       run->best.cpu_before_raw_ns);
+	printf("%s RM GPU PTIMER: %" PRIu64 " ns\n", phase,
+	       run->best.gpu_ptimer_ns);
+	printf("%s RM CPU after RAW: %" PRIu64 " ns\n", phase,
+	       run->best.cpu_after_raw_ns);
+	printf("%s RM outer after RAW: %" PRIu64 " ns\n", phase,
+	       run->best.outer_after_raw_ns);
+	printf("%s RM outer width: %" PRIu64 " ns\n", phase,
+	       run->best.outer_width_ns);
+	printf("%s RM selected gap: %" PRIu64 " ns\n", phase,
+	       run->best.selected_gap_ns);
+	printf("%s RM bracket width: %" PRIu64 " ns\n", phase,
+	       run->best.bracket_width_ns);
+	printf("%s RM status: 0x%08" PRIx32 "\n", phase,
+	       run->best.rm_status);
+	printf("%s RM cleanup complete: %" PRIu64 "\n", phase,
+	       run->cleanup_complete);
 }
 
 static int detach_probes(struct launchlate_bpf *skel)
@@ -1072,6 +964,8 @@ int main(int argc, char **argv)
 	struct launchlate_bpf *skel;
 	struct clock_calibration start_calibration = {0};
 	struct clock_calibration end_calibration = {0};
+	struct rm_calibration_run start_rm = {0};
+	struct rm_calibration_run end_rm = {0};
 	struct clock_drift drift = {0};
 	struct host_target target = {0};
 	struct plt_entry launch_plt = {0};
@@ -1157,18 +1051,18 @@ int main(int argc, char **argv)
 	}
 
 	/*
-	 * Bracket a real %globaltimer read between two CLOCK_MONOTONIC reads.
-	 * This yields an offset interval and an explicit uncertainty bound; no
-	 * realtime/globaltimer epoch assumption or negative-delta clamp is used.
+	 * The versioned RM zipper returns the selected CLOCK_MONOTONIC_RAW
+	 * endpoints around a PTIMER/global-timer read.  The host callback uses the
+	 * same RAW clock; final classification converts it to a PTIMER interval.
 	 */
-	err = calibrate_gpu_clock(&start_calibration);
+	err = calibrate_gpu_clock(&start_calibration, &start_rm);
+	print_calibration("Start", &start_calibration, &start_rm);
 	if (err) {
-		fprintf(stderr, "Failed to calibrate GPU and host clocks: %s\n",
+		fprintf(stderr, "Failed to calibrate RM PTIMER and RAW clocks: %s\n",
 			strerror(-err));
 		goto cleanup;
 	}
-	printf("Clock calibration method: bracketed %%globaltimer endpoint intervals with affine CLOCK_MONOTONIC interpolation\n");
-	print_calibration("Start", &start_calibration);
+	printf("Clock calibration method: RM endpoints-v1 PTIMER intervals with affine CLOCK_MONOTONIC_RAW interpolation\n");
 	err = bpf_map_update_elem(
 		bpf_map__fd(skel->maps.clock_calibration), &key,
 		&start_calibration, BPF_ANY);
@@ -1219,14 +1113,14 @@ int main(int argc, char **argv)
 		err = stat_err;
 	}
 
-	stat_err = calibrate_gpu_clock(&end_calibration);
+	stat_err = calibrate_gpu_clock(&end_calibration, &end_rm);
+	print_calibration("End", &end_calibration, &end_rm);
 	if (stat_err) {
-		fprintf(stderr, "Failed to validate GPU and host clocks: %s\n",
+		fprintf(stderr, "Failed to validate RM PTIMER and RAW clocks: %s\n",
 			strerror(-stat_err));
 		if (!err)
 			err = stat_err;
 	} else {
-		print_calibration("End", &end_calibration);
 		stat_err = calibration_drift(&start_calibration, &end_calibration,
 					     &drift);
 		printf("Clock offset change lower: %" PRId64 " ns\n",

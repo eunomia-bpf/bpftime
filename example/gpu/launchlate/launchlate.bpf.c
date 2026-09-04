@@ -11,6 +11,8 @@ static const u64 (*bpf_get_globaltimer)(void) = (void *)502;
 static const u64 (*bpf_get_block_idx)(u64 *x, u64 *y, u64 *z) = (void *)503;
 static const u64 (*bpf_get_block_dim)(u64 *x, u64 *y, u64 *z) = (void *)504;
 static const u64 (*bpf_get_thread_idx)(u64 *x, u64 *y, u64 *z) = (void *)505;
+/* bpftime-private host helper; standard Linux helper 5 remains unchanged. */
+static const u64 (*bpftime_ktime_get_raw_ns)(void) = (void *)510;
 
 #define HIST_BINS 10
 #define LAUNCH_QUEUE_SIZE 4096
@@ -36,7 +38,7 @@ enum device_counter {
 };
 
 struct launch_sample {
-	u64 host_mono_ns;
+	u64 host_raw_ns;
 	u64 sequence;
 	u64 gpu_entry_ns;
 };
@@ -165,7 +167,7 @@ int BPF_KPROBE(uprobe_cuda_launch, const void *func)
 
 	u32 slot = seq & (LAUNCH_QUEUE_SIZE - 1);
 	struct launch_sample sample = {
-		.host_mono_ns = bpf_ktime_get_ns(),
+		.host_raw_ns = bpftime_ktime_get_raw_ns(),
 		.sequence = seq + 1,
 		.gpu_entry_ns = 0,
 	};
@@ -222,14 +224,14 @@ int cuda__probe()
 	}
 	u32 slot = seq & (LAUNCH_QUEUE_SIZE - 1);
 	struct launch_sample *sample = bpf_map_lookup_elem(&launch_times, &slot);
-	if (!sample || sample->sequence != seq + 1 || !sample->host_mono_ns) {
+	if (!sample || sample->sequence != seq + 1 || !sample->host_raw_ns) {
 		increment_device_counter(QUEUE_UNDERFLOWS);
 		return 0;
 	}
 	increment_device_counter(MATCHED_SAMPLES);
 	u64 gpu_ts = bpf_get_globaltimer();
 	if (!gpu_ts || gpu_ts > 0x7fffffffffffffffULL ||
-	    sample->host_mono_ns > 0x7fffffffffffffffULL) {
+	    sample->host_raw_ns > 0x7fffffffffffffffULL) {
 		increment_device_counter(CLOCK_ERRORS);
 		return 0;
 	}
@@ -248,12 +250,12 @@ int cuda__probe()
 	/*
 	 * This online path preserves the device-side work being measured.  The
 	 * calibration kernel establishes an interval for
-	 *   GPU globaltimer - CLOCK_MONOTONIC.
+	 *   GPU PTIMER/globaltimer - CLOCK_MONOTONIC_RAW.
 	 * A finite pair that cannot be placed using the initial interval is
 	 * uncertain, not a broken clock.  Userspace performs the authoritative
 	 * classification after the end anchor is available.
 	 */
-	s64 observed_ns = (s64)gpu_ts - (s64)sample->host_mono_ns;
+	s64 observed_ns = (s64)gpu_ts - (s64)sample->host_raw_ns;
 	s64 latency_low_ns = observed_ns - calibration->offset_high_ns;
 	s64 latency_high_ns = observed_ns - calibration->offset_low_ns;
 	if (latency_high_ns < 0) {
