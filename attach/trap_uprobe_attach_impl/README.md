@@ -11,8 +11,10 @@ shared config).
 ## How it works
 
 1. `attach` decodes the first instruction of the target function, saves it,
-   and overwrites it with `ebreak` / `c.ebreak`. The write is a single
-   aligned store, so other threads see either the old or the new instruction.
+   and overwrites it with `ebreak` / `c.ebreak`. When the instruction is
+   naturally aligned the write is a single atomic store. When a 4-byte
+   instruction sits at a 2-byte boundary, a three-phase protocol via
+   `c.ebreak` (0x9002) ensures every intermediate state is a valid trap.
 2. The breakpoint raises `SIGTRAP`. The handler looks the faulting pc up in
    an immutable, lock-free probe table, builds a kernel style `pt_regs`
    from the `ucontext_t`, and runs the attached callbacks or eBPF programs
