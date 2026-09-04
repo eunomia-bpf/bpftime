@@ -32,6 +32,11 @@
 #include <unistd.h>
 #if BPFTIME_HAVE_FRIDA_ATTACH
 #include <frida-gum.h>
+#else
+typedef char gchar;
+typedef int gboolean;
+#define TRUE 1
+#define FALSE 0
 #endif
 #include <cstdint>
 #include <dlfcn.h>
