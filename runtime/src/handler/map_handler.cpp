@@ -9,6 +9,7 @@
 #include "bpf_map/userspace/per_cpu_hash_map.hpp"
 #include "bpf_map/userspace/stack_trace_map.hpp"
 #include "bpftime_shm_internal.hpp"
+#include "handler/gpu_map_thread_count.hpp"
 #include <algorithm>
 #include <cstdlib>
 #include <string>
@@ -747,16 +748,11 @@ long bpf_map_handler::map_delete_elem(const void *key, bool from_syscall) const
 	return 0;
 }
 
-static uint64_t get_thread_count(const bpf_map_attr &attr)
+static std::optional<uint64_t> get_thread_count(const bpf_map_attr &attr)
 {
-	auto gpu_thread_count_env = std::getenv("BPFTIME_MAP_GPU_THREAD_COUNT");
-	uint64_t thread_count;
-	if (gpu_thread_count_env) {
-		thread_count = std::stoull(gpu_thread_count_env);
-	} else {
-		thread_count = attr.gpu_thread_count;
-	}
-	return thread_count;
+	return detail::resolve_gpu_map_thread_count(
+		std::getenv("BPFTIME_MAP_GPU_THREAD_COUNT"),
+		attr.gpu_thread_count);
 }
 
 int bpf_map_handler::map_init(managed_shared_memory &memory)
@@ -974,6 +970,13 @@ int bpf_map_handler::map_init(managed_shared_memory &memory)
 		return 0;
 	}
 	case bpf_map_type::BPF_MAP_TYPE_PERGPUTD_ARRAY_MAP: {
+		auto thread_count = get_thread_count(attr);
+		if (!thread_count) {
+			SPDLOG_ERROR(
+				"BPFTIME_MAP_GPU_THREAD_COUNT must be a decimal integer in [1, {}]",
+				detail::MAX_GPU_MAP_THREAD_COUNT);
+			return -EINVAL;
+		}
 		shm_holder.global_shared_memory.set_enable_mock(false);
 		if (!device) {
 			cuDeviceGet(&device, 0);
@@ -988,17 +991,15 @@ int bpf_map_handler::map_init(managed_shared_memory &memory)
 				"CUDA context for thread {} has been set to {:x}",
 				gettid(), (uintptr_t)context);
 		}
-		// Allow configuring thread count by environment variables
-		auto thread_count = get_thread_count(attr);
 		SPDLOG_INFO(
 			"Map {} (nv_gpu_per_thread_array_map_impl) has space for thread count {}",
-			name.c_str(), thread_count);
+			name.c_str(), *thread_count);
 		map_impl_ptr =
 			memory.construct<nv_gpu_per_thread_array_map_impl>(
 				boost::interprocess::anonymous_instance)(
-				memory, value_size, max_entries, thread_count);
+				memory, value_size, max_entries, *thread_count);
 		// Keep syscall readback metadata consistent with the allocated map.
-		attr.gpu_thread_count = thread_count;
+		attr.gpu_thread_count = *thread_count;
 		init_refcnt();
 		shm_holder.global_shared_memory.set_enable_mock(true);
 		return 0;
@@ -1042,6 +1043,13 @@ int bpf_map_handler::map_init(managed_shared_memory &memory)
 		return 0;
 	}
 	case bpf_map_type::BPF_MAP_TYPE_GPU_RINGBUF_MAP: {
+		auto resolved_thread_count = get_thread_count(attr);
+		if (!resolved_thread_count) {
+			SPDLOG_ERROR(
+				"BPFTIME_MAP_GPU_THREAD_COUNT must be a decimal integer in [1, {}]",
+				detail::MAX_GPU_MAP_THREAD_COUNT);
+			return -EINVAL;
+		}
 		shm_holder.global_shared_memory.set_enable_mock(false);
 		if (!device) {
 			cuDeviceGet(&device, 0);
@@ -1056,7 +1064,7 @@ int bpf_map_handler::map_init(managed_shared_memory &memory)
 				"CUDA context for thread {} has been set to {:x}",
 				gettid(), (uintptr_t)context);
 		}
-		auto thread_count = get_thread_count(attr);
+		auto thread_count = *resolved_thread_count;
 		SPDLOG_INFO(
 			"Map {} (nv_gpu_ringbuf_map_impl) has space for thread count {}",
 			name.c_str(), thread_count);

@@ -73,7 +73,14 @@ int handler_manager::set_handler(int fd, handler_variant &&handler,
 	if (std::holds_alternative<bpf_map_handler>(handlers[fd])) {
 		auto &map_handler = std::get<bpf_map_handler>(handlers[fd]);
 		if (!map_handler.has_map_impl()) {
-			map_handler.map_init(memory);
+			const int init_result = map_handler.map_init(memory);
+			if (init_result != 0) {
+				SPDLOG_ERROR(
+					"Unable to initialize map handler at fd {}: {}",
+					fd, init_result);
+				handlers[fd] = unused_handler{};
+				return init_result;
+			}
 		}
 	}
 	return fd;
