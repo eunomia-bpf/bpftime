@@ -1,3 +1,5 @@
+enable_testing()
+
 set(TEST_SOURCES
     nv_attach_impl_tests.cpp
     test_register_guard.cpp
@@ -36,5 +38,12 @@ endif()
 target_include_directories(bpftime_nv_attach_tests PRIVATE ${CMAKE_SOURCE_DIR}/runtime/ ${NV_ATTACH_IMPL_INCLUDE} ${CMAKE_SOURCE_DIR}/attach/nv_attach_impl/pass/ptxpass_core/include ${Catch2_INCLUDE} ${SPDLOG_INCLUDE})
 
 add_test(NAME bpftime_nv_attach_tests COMMAND bpftime_nv_attach_tests)
+
+find_package(Python3 COMPONENTS Interpreter REQUIRED)
+add_test(
+    NAME bpftime_nv_attach_source_invariants
+    COMMAND ${Python3_EXECUTABLE}
+            ${CMAKE_CURRENT_SOURCE_DIR}/test_late_attach_source_invariants.py
+)
 
 set_property(TARGET bpftime_nv_attach_tests PROPERTY CXX_STANDARD 20)

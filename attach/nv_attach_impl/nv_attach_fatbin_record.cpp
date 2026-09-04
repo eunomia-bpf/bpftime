@@ -4,6 +4,7 @@
 #include "nv_attach_utils.hpp"
 #include "spdlog/spdlog.h"
 #include "nv_attach_impl.hpp"
+#include <algorithm>
 #include <boost/asio/post.hpp>
 #include <boost/asio/thread_pool.hpp>
 #include <cstddef>
@@ -11,8 +12,11 @@
 #include <cstring>
 #include <cstdio>
 #include <dlfcn.h>
+#include <exception>
 #include <iterator>
+#include <memory>
 #include <stdexcept>
+#include <thread>
 #include <ptx_pass_config.h>
 #include "ptx_compiler/ptx_compiler.hpp"
 #include <utility>
@@ -114,90 +118,146 @@ std::map<std::string, std::vector<uint8_t>> fatbin_record::compile_ptxs(
 
 	std::map<std::string, std::vector<uint8_t>> compiled_ptx;
 	const auto &handler = impl.ptx_compiler;
-	boost::asio::thread_pool pool(std::thread::hardware_concurrency());
+	boost::asio::thread_pool pool(
+		std::max(1u, std::thread::hardware_concurrency()));
 	std::mutex map_lock;
+	std::mutex error_lock;
+	std::exception_ptr first_error;
 	for (const auto &[name, ptx_and_trampoline_flag] : patched_ptx) {
 		const auto &ptx = std::get<0>(ptx_and_trampoline_flag);
 
-			boost::asio::post(
-				pool,
-				[&handler, ptx, name, &compiled_ptx, &map_lock, this,
-				 sm_arch]() -> void {
+		boost::asio::post(
+			pool,
+			[&handler, ptx, name, &compiled_ptx, &map_lock,
+			 &error_lock, &first_error, this, sm_arch]() -> void {
+				try {
 					const auto ptx_fixed =
-						rewrite_ptx_target(ptx, sm_arch);
+						rewrite_ptx_target(ptx,
+								   sm_arch);
 					auto sha256_string =
-						sha256(ptx_fixed.data(), ptx_fixed.size());
-					if (auto itr =
-						    this->ptx_pool->find(sha256_string);
-					    itr != this->ptx_pool->end()) {
-						SPDLOG_INFO(
-						"PTX {} ({}) found in cache",
-						name, sha256_string);
-					std::lock_guard<std::mutex> _guard(
-						map_lock);
-					compiled_ptx[name] = itr->second;
-				} else {
-					SPDLOG_INFO(
-						"Start compiling {}, not found in cache",
-						name);
-					auto compiler = handler.create();
-					if (!compiler) {
-						throw std::runtime_error(
-							"Unable to create nv_attach_impl_ptx_compiler");
+						sha256(ptx_fixed.data(),
+						       ptx_fixed.size());
+					{
+						// ptx_pool and compiled_ptx are
+						// shared by every worker in
+						// this compilation batch. A
+						// lookup must be serialized
+						// with inserts as well as other
+						// writes.
+						std::lock_guard<std::mutex>
+							guard(map_lock);
+						if (auto itr = this->ptx_pool->find(
+							    sha256_string);
+						    itr !=
+						    this->ptx_pool->end()) {
+							SPDLOG_INFO(
+								"PTX {} ({}) found in cache",
+								name,
+								sha256_string);
+							compiled_ptx[name] =
+								itr->second;
+							return;
+						}
 					}
+					{
+						SPDLOG_INFO(
+							"Start compiling {}, not found in cache",
+							name);
+						auto compiler = std::unique_ptr<
+							nv_attach_impl_ptx_compiler,
+							decltype(handler.destroy)>(
+							handler.create(),
+							handler.destroy);
+						if (!compiler) {
+							throw std::runtime_error(
+								"Unable to create nv_attach_impl_ptx_compiler");
+						}
 						std::string gpu_name =
 							"--gpu-name=" + sm_arch;
-							const char *compile_options[] = {
-								gpu_name.c_str(), "--verbose",
-								"-O3"
-							};
+						const char *compile_options[] = {
+							gpu_name.c_str(),
+							"--verbose", "-O3"
+						};
 						if (auto err = handler.compile(
-							    compiler, ptx_fixed.c_str(),
+							    compiler.get(),
+							    ptx_fixed.c_str(),
 							    compile_options,
-							    std::size(compile_options));
+							    std::size(
+								    compile_options));
 						    err != 0) {
 							SPDLOG_ERROR(
 								"Unable to compile: {}, error = {}",
-							err,
-							handler.get_error_log(
-								compiler));
-						throw std::runtime_error(
-							"Unable to compile");
+								err,
+								handler.get_error_log(
+									compiler.get()));
+							throw std::runtime_error(
+								"Unable to compile");
+						}
+						SPDLOG_DEBUG(
+							"Info: {}",
+							handler.get_info_log(
+								compiler.get()));
+						uint8_t *data;
+						size_t size;
+						if (handler.get_compiled_program(
+							    compiler.get(),
+							    &data,
+							    &size) != 0) {
+							throw std::runtime_error(
+								"Unable to get compiled program");
+						}
+						std::vector<uint8_t>
+							compiled_program(
+								data,
+								data + size);
+						std::lock_guard<std::mutex>
+							guard(map_lock);
+						auto cached =
+							this->ptx_pool
+								->insert(std::make_pair(
+									sha256_string,
+									compiled_program))
+								.first;
+						compiled_ptx[name] =
+							cached->second;
+						SPDLOG_INFO(
+							"Compile of {} done",
+							name);
 					}
-					SPDLOG_DEBUG(
-						"Info: {}",
-						handler.get_info_log(compiler));
-					uint8_t *data;
-					size_t size;
-					handler.get_compiled_program(
-						compiler, &data, &size);
-					std::vector<uint8_t> compiled_program(
-						data, data + size);
-					handler.destroy(compiler);
-					std::lock_guard<std::mutex> _guard(
-						map_lock);
-					compiled_ptx[name] = compiled_program;
-					this->ptx_pool->insert(std::make_pair(
-						sha256_string,
-						compiled_program));
-					SPDLOG_INFO("Compile of {} done", name);
+				} catch (...) {
+					std::lock_guard<std::mutex> guard(
+						error_lock);
+					if (!first_error)
+						first_error =
+							std::current_exception();
 				}
 			});
 	}
 	pool.join();
+	if (first_error)
+		std::rethrow_exception(first_error);
 	return compiled_ptx;
 }
 void fatbin_record::try_loading_ptxs(class nv_attach_impl &impl)
 {
+	auto registration_guard = impl.lock_registration_state();
 	if (ptx_loaded)
 		return;
 	if (impl.shared_mem_ptr == 0) {
-		throw std::runtime_error(
-			"shared_mem_ptr is not initialized before loading PTX");
+		// CUDA fatbin/function registration can run before the agent
+		// has received the shared map pointer. Leave this record
+		// pending; late bootstrap will load it after the CUDA hook is
+		// fully attached.
+		SPDLOG_DEBUG(
+			"Deferring PTX load until shared_mem_ptr is initialized");
+		return;
 	}
 	SPDLOG_INFO("Loading & patching current fatbin..");
 
-	auto patched_ptx = *impl.hack_fatbin(original_ptx);
+	auto patched = impl.hack_fatbin(original_ptx);
+	if (!patched)
+		throw std::runtime_error("Unable to patch PTX");
+	auto patched_ptx = std::move(*patched);
 
 	auto compiled_ptx = compile_ptxs(impl, patched_ptx);
 

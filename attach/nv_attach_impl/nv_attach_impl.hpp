@@ -18,6 +18,7 @@
 #include <cuda.h>
 #include <optional>
 #include <set>
+#include <shared_mutex>
 #include <string>
 #include <unordered_map>
 #include <sys/ptrace.h>
@@ -66,8 +67,8 @@ enum class AttachedToFunction {
 	CudaMemcpyToSymbolAsync
 };
 struct CUDARuntimeFunctionHookerContext {
-	class nv_attach_impl *impl;
 	AttachedToFunction to_function;
+	uint64_t generation = 0;
 };
 
 struct nv_attach_entry {
@@ -116,8 +117,18 @@ struct pass_cfg_with_exec_path {
 };
 
 struct nv_attach_hook_state {
-	// Active impl instance used by global Frida replace hooks.
-	std::atomic<class nv_attach_impl *> active_impl{ nullptr };
+	// Global replacements outlive an nv_attach_impl. Readers hold this lock
+	// while borrowing active_impl; teardown takes it exclusively before the
+	// object or its listener can be destroyed.
+	mutable std::shared_mutex active_impl_mutex;
+	class nv_attach_impl *active_impl = nullptr;
+	uint64_t active_generation = 0;
+	uint64_t next_generation = 0;
+	// Frida may already have entered a listener while detach is quiescing
+	// it. Keep immutable function-data records alive for the process
+	// lifetime.
+	std::vector<std::unique_ptr<CUDARuntimeFunctionHookerContext>>
+		listener_contexts;
 	// Original function pointers captured by gum_interceptor_replace.
 	std::atomic<void *> orig_cuda_launch_kernel{ nullptr };
 	std::atomic<void *> orig_cuda_launch_kernel_ptsz{ nullptr };
@@ -136,8 +147,6 @@ struct nv_attach_hook_state {
 };
 
 nv_attach_hook_state &nv_attach_get_hook_state();
-void nv_attach_set_active_impl(class nv_attach_impl *impl);
-class nv_attach_impl *nv_attach_get_active_impl();
 
 // Attach implementation of syscall trace
 // It provides a callback to receive original syscall calls, and dispatch the
@@ -181,7 +190,7 @@ class nv_attach_impl final : public base_attach_impl {
 	// Notify nv_attach_impl that a patched kernel launch was enqueued on a
 	// stream. Used to coordinate detach with in-flight patched kernels so we
 	// don't tear down loader-owned CUDA IPC buffers prematurely.
-	void record_patched_launch(cudaStream_t stream);
+	bool record_patched_launch(cudaStream_t stream);
 	void record_original_cufunction_name(CUfunction function,
 					     const std::string &kernel_name);
 	std::optional<std::string>
@@ -197,10 +206,21 @@ class nv_attach_impl final : public base_attach_impl {
 		// Resolve host-side kernel stub to symbol name. Uses dladdr first, then a
 		// cached ELF symbol table fallback.
 		std::optional<std::string> resolve_host_function_symbol(void *addr);
+		// Registration callbacks, late bootstrap, launch/memcpy
+		// readers, and teardown share raw fatbin/module pointers. Keep
+		// their full critical sections serialized; recursive
+		// acquisition is required when a reader triggers bootstrap
+		// synchronously.
+		std::unique_lock<std::recursive_mutex>
+		lock_registration_state() const
+		{
+			return std::unique_lock<std::recursive_mutex>(
+				late_bootstrap_mutex);
+		}
 	// Whether nv_attach is currently enabled (can be disabled by detach).
 	bool is_enabled() const noexcept;
 	std::vector<std::unique_ptr<fatbin_record>> fatbin_records;
-	fatbin_record *current_fatbin = nullptr;
+	std::unordered_map<void *, fatbin_record *> fatbin_handle_to_record;
 	std::map<void *, fatbin_record *> symbol_address_to_fatbin;
 	uintptr_t shared_mem_ptr;
 	std::optional<std::vector<MapBasicInfo>> map_basic_info;
@@ -229,8 +249,9 @@ class nv_attach_impl final : public base_attach_impl {
 	void *original_cuda_memcpy_from_symbol_async = nullptr;
 
 	    private:
-		void record_patched_launch_event(CUstream stream);
-		void wait_for_patched_launch_events(std::chrono::milliseconds timeout);
+		bool record_patched_launch_event(CUstream stream);
+		bool wait_for_patched_launch_events(
+			std::chrono::milliseconds timeout);
 		void clear_patched_state_for_next_session();
 
 		void bootstrap_existing_fatbins();
@@ -239,37 +260,39 @@ class nv_attach_impl final : public base_attach_impl {
 		void prefill_patched_kernel_functions_from_loaded_fatbins();
 		std::vector<std::string> collect_all_kernels_to_patch() const;
 
-	void *frida_interceptor;
-	void *frida_listener;
-	std::vector<std::unique_ptr<CUDARuntimeFunctionHookerContext>>
-		hooker_contexts;
-	std::map<int, nv_attach_entry> hook_entries;
-	// discovered pass definitions
-	std::vector<std::unique_ptr<pass_cfg_with_exec_path>>
-		pass_configurations;
-	std::map<std::string, ptxpass::runtime_response::RuntimeResponse>
-		patch_cache;
-	mutable std::mutex cuda_symbol_map_mutex;
-	std::unordered_map<std::string, CUfunction> patched_kernel_by_name;
-	std::unordered_map<CUfunction, std::string> kernel_name_by_cufunction;
+		void *frida_interceptor = nullptr;
+		void *frida_listener = nullptr;
+		uint64_t hook_generation = 0;
+		std::map<int, nv_attach_entry> hook_entries;
+		// discovered pass definitions
+		std::vector<std::unique_ptr<pass_cfg_with_exec_path>>
+			pass_configurations;
+		std::map<std::string, ptxpass::runtime_response::RuntimeResponse>
+			patch_cache;
+		mutable std::mutex cuda_symbol_map_mutex;
+		std::unordered_map<std::string, CUfunction>
+			patched_kernel_by_name;
+		std::unordered_map<CUfunction, std::string>
+			kernel_name_by_cufunction;
 
-			std::atomic<bool> enabled{ true };
-			// Late bootstrap needs to be repeatable across trace sessions.
-			// Using a heap-allocated once_flag allows resetting it after detach.
-			std::unique_ptr<std::once_flag> late_bootstrap_once =
-				std::make_unique<std::once_flag>();
-			std::atomic<bool> late_bootstrap_started{ false };
-			std::atomic<bool> late_bootstrap_done{ false };
-			std::mutex late_bootstrap_mutex;
-			std::once_flag host_symbol_cache_once;
-			mutable std::mutex host_symbol_cache_mutex;
-	// Absolute address sorted list of host function symbols across loaded
-	// modules (best-effort).
-	struct host_symbol_range {
-		std::uintptr_t start = 0;
-		std::uintptr_t end = 0;
-		std::string name;
-	};
+		std::atomic<bool> enabled{ true };
+		// Late bootstrap needs to be repeatable across trace sessions.
+		// Using a heap-allocated once_flag allows resetting it after
+		// detach.
+		std::unique_ptr<std::once_flag> late_bootstrap_once =
+			std::make_unique<std::once_flag>();
+		std::atomic<bool> late_bootstrap_started{ false };
+		std::atomic<bool> late_bootstrap_done{ false };
+		mutable std::recursive_mutex late_bootstrap_mutex;
+		std::once_flag host_symbol_cache_once;
+		mutable std::mutex host_symbol_cache_mutex;
+		// Absolute address sorted list of host function symbols across
+		// loaded modules (best-effort).
+		struct host_symbol_range {
+			std::uintptr_t start = 0;
+			std::uintptr_t end = 0;
+			std::string name;
+		};
 	std::vector<host_symbol_range> host_symbol_ranges;
 
 		mutable std::mutex patched_global_cache_mutex;
@@ -278,6 +301,7 @@ class nv_attach_impl final : public base_attach_impl {
 
 		mutable std::mutex launch_event_mutex;
 		std::unordered_map<CUstream, CUevent> pending_launch_events_by_stream;
+		std::atomic<bool> launch_tracking_failed{ false };
 	};
 
 std::string add_semicolon_for_variable_lines(std::string input);

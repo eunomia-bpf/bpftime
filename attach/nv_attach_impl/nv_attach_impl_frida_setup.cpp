@@ -77,6 +77,12 @@ using cu_launch_kernel_fn_t = CUresult (*)(CUfunction, unsigned int,
 					   unsigned int, unsigned int, CUstream,
 					   void **, void **);
 
+static bool defer_ptx_extraction_enabled()
+{
+	const char *value = getenv("BPFTIME_CUDA_DEFER_PTX_EXTRACTION");
+	return value != nullptr && value[0] == '1';
+}
+
 static bool cuda_graph_stream_is_capturing(cudaStream_t stream)
 {
 	cudaStreamCaptureStatus status = cudaStreamCaptureStatusNone;
@@ -88,6 +94,12 @@ static bool cuda_graph_stream_is_capturing(cudaStream_t stream)
 	}
 	return status != cudaStreamCaptureStatusNone;
 }
+
+// __cudaRegisterFatBinary returns its opaque handle on leave. Keep only the
+// record for the current registration call in thread-local state, then publish
+// the durable handle-to-record association under the registration lock.
+static thread_local fatbin_record *registering_fatbin = nullptr;
+static thread_local uint64_t registering_fatbin_generation = 0;
 
 static cudaError_t
 cuda_launch_kernel_common(nv_attach_impl *impl, void *original_fn_ptr,
@@ -107,6 +119,10 @@ cuda_launch_kernel_common(nv_attach_impl *impl, void *original_fn_ptr,
 		return original(func, grid_dim, block_dim, args, shared_mem,
 				stream);
 	if (cuda_graph_stream_is_capturing(stream))
+		return original(func, grid_dim, block_dim, args, shared_mem,
+				stream);
+	auto registration_guard = impl->lock_registration_state();
+	if (!impl->is_enabled())
 		return original(func, grid_dim, block_dim, args, shared_mem,
 				stream);
 
@@ -249,52 +265,90 @@ static void example_listener_on_enter(GumInvocationListener *listener,
 				      GumInvocationContext *ic)
 {
 	auto gum_ctx = gum_interceptor_get_current_invocation();
+	auto &state = nv_attach_get_hook_state();
+	std::shared_lock<std::shared_mutex> lifecycle_guard(
+		state.active_impl_mutex);
+	auto *impl = state.active_impl;
+	if (impl == nullptr)
+		return;
 	auto context =
 		GUM_IC_GET_FUNC_DATA(ic, CUDARuntimeFunctionHookerContext *);
+	if (context == nullptr ||
+	    context->generation != state.active_generation)
+		return;
+	auto registration_guard = impl->lock_registration_state();
+	if (!impl->is_enabled())
+		return;
 	if (context->to_function == AttachedToFunction::RegisterFatbin) {
 		SPDLOG_DEBUG("Entering __cudaRegisterFatBinary..");
 
-		auto header = (__fatBinC_Wrapper_t *)
-			gum_invocation_context_get_nth_argument(gum_ctx, 0);
-		auto data = (const char *)header->data;
-		fat_elf_header_t *curr_header = (fat_elf_header_t *)data;
-		const char *tail = (const char *)curr_header;
-		while (true) {
-			// #define FATBIN_TEXT_MAGIC 0xBA55ED50
-			if (curr_header->magic == 0xBA55ED50) {
-				SPDLOG_DEBUG(
-					"Got CUBIN section header size = {}, size = {}",
-					static_cast<int>(
-						curr_header->header_size),
-					static_cast<int>(curr_header->size));
-				tail = ((const char *)curr_header) +
-				       curr_header->header_size +
-				       curr_header->size;
-				curr_header = (fat_elf_header_t *)tail;
-			} else {
-				break;
+		std::map<std::string, std::string> extracted_ptx;
+		if (defer_ptx_extraction_enabled()) {
+			// Late bootstrap scans the already-loaded CUDA module
+			// once. Do not run cuobjdump again for every CUDA
+			// fatbin registration.
+			SPDLOG_DEBUG(
+				"Deferring registered fatbin PTX extraction to late bootstrap");
+		} else {
+			auto header = (__fatBinC_Wrapper_t *)
+				gum_invocation_context_get_nth_argument(gum_ctx,
+									0);
+			auto data = (const char *)header->data;
+			fat_elf_header_t *curr_header =
+				(fat_elf_header_t *)data;
+			const char *tail = (const char *)curr_header;
+			while (true) {
+				// #define FATBIN_TEXT_MAGIC 0xBA55ED50
+				if (curr_header->magic == 0xBA55ED50) {
+					SPDLOG_DEBUG(
+						"Got CUBIN section header size = {}, size = {}",
+						static_cast<int>(
+							curr_header
+								->header_size),
+						static_cast<int>(
+							curr_header->size));
+					tail = ((const char *)curr_header) +
+					       curr_header->header_size +
+					       curr_header->size;
+					curr_header = (fat_elf_header_t *)tail;
+				} else {
+					break;
+				}
 			}
-		};
-		std::vector<uint8_t> data_vec((uint8_t *)data, (uint8_t *)tail);
-		SPDLOG_INFO("Finally size = {}", data_vec.size());
-		auto extracted_ptx =
-			context->impl->extract_ptxs(std::move(data_vec));
-		SPDLOG_INFO("Patching PTXs");
+			std::vector<uint8_t> data_vec((uint8_t *)data,
+						      (uint8_t *)tail);
+			SPDLOG_INFO("Finally size = {}", data_vec.size());
+			extracted_ptx = impl->extract_ptxs(std::move(data_vec));
+			SPDLOG_INFO("Patching PTXs");
+		}
 		auto fatbin_record = std::make_unique<struct fatbin_record>();
 		fatbin_record->original_ptx = extracted_ptx;
-		fatbin_record->module_pool = context->impl->module_pool;
-		fatbin_record->ptx_pool = context->impl->ptx_pool;
+		fatbin_record->module_pool = impl->module_pool;
+		fatbin_record->ptx_pool = impl->ptx_pool;
 
-		context->impl->current_fatbin = fatbin_record.get();
-		context->impl->fatbin_records.emplace_back(
-			std::move(fatbin_record));
+		registering_fatbin = fatbin_record.get();
+		registering_fatbin_generation = context->generation;
+		impl->fatbin_records.emplace_back(std::move(fatbin_record));
 
 	} else if (context->to_function ==
 		   AttachedToFunction::RegisterFunction) {
 		SPDLOG_DEBUG("Entering __cudaRegisterFunction..");
-		auto &impl = *context->impl;
-		auto current_fatbin = context->impl->current_fatbin;
-		current_fatbin->try_loading_ptxs(*context->impl);
+		auto fatbin_handle =
+			gum_invocation_context_get_nth_argument(gum_ctx, 0);
+		auto record_itr =
+			impl->fatbin_handle_to_record.find(fatbin_handle);
+		auto current_fatbin =
+			record_itr != impl->fatbin_handle_to_record.end() ?
+				record_itr->second :
+				nullptr;
+		if (current_fatbin == nullptr ||
+		    (defer_ptx_extraction_enabled() &&
+		     current_fatbin->original_ptx.empty())) {
+			SPDLOG_DEBUG(
+				"Deferring registered CUDA function lookup to late bootstrap");
+			return;
+		}
+		current_fatbin->try_loading_ptxs(*impl);
 
 		auto func_addr =
 			gum_invocation_context_get_nth_argument(gum_ctx, 1);
@@ -308,13 +362,13 @@ static void example_listener_on_enter(GumInvocationListener *listener,
 				"Unable to find_and_fill function info of symbol named {}, the PTX may not be compiled due to not modifying by nv_attach_impl",
 				symbol_name);
 		} else {
-			context->impl->symbol_address_to_fatbin[func_addr] =
+			impl->symbol_address_to_fatbin[func_addr] =
 				current_fatbin;
 			if (auto itr = current_fatbin->function_addr_to_symbol
 					       .find(func_addr);
 			    itr !=
 			    current_fatbin->function_addr_to_symbol.end())
-				impl.record_patched_kernel_function(
+				impl->record_patched_kernel_function(
 					std::string(symbol_name),
 					itr->second.func);
 			SPDLOG_DEBUG(
@@ -325,10 +379,22 @@ static void example_listener_on_enter(GumInvocationListener *listener,
 	} else if (context->to_function ==
 		   AttachedToFunction::RegisterVariable) {
 		SPDLOG_DEBUG("Entering __cudaRegisterVar");
-		auto current_fatbin = context->impl->current_fatbin;
-		current_fatbin->try_loading_ptxs(*context->impl);
 		auto fatbin_handle =
 			gum_invocation_context_get_nth_argument(gum_ctx, 0);
+		auto record_itr =
+			impl->fatbin_handle_to_record.find(fatbin_handle);
+		auto current_fatbin =
+			record_itr != impl->fatbin_handle_to_record.end() ?
+				record_itr->second :
+				nullptr;
+		if (current_fatbin == nullptr ||
+		    (defer_ptx_extraction_enabled() &&
+		     current_fatbin->original_ptx.empty())) {
+			SPDLOG_DEBUG(
+				"Deferring registered CUDA variable lookup to late bootstrap");
+			return;
+		}
+		current_fatbin->try_loading_ptxs(*impl);
 		auto var_addr =
 			gum_invocation_context_get_nth_argument(gum_ctx, 1);
 		auto symbol_name =
@@ -343,7 +409,7 @@ static void example_listener_on_enter(GumInvocationListener *listener,
 				"Unable to find_and_fill variable info of symbol names {}, the PTX may not be compiled due to not modifying by nv_attach_impl",
 				symbol_name);
 		} else {
-			context->impl->symbol_address_to_fatbin[var_addr] =
+			impl->symbol_address_to_fatbin[var_addr] =
 				current_fatbin;
 			SPDLOG_DEBUG("Registered variable name {} addr {:x}",
 				     symbol_name, (uintptr_t)var_addr);
@@ -352,9 +418,9 @@ static void example_listener_on_enter(GumInvocationListener *listener,
 	} else if (context->to_function ==
 		   AttachedToFunction::RegisterFatbinEnd) {
 		SPDLOG_DEBUG("Entering __cudaRegisterFatBinaryEnd..");
-		auto &current_fatbin = context->impl->current_fatbin;
-
-		current_fatbin = nullptr;
+		auto fatbin_handle =
+			gum_invocation_context_get_nth_argument(gum_ctx, 0);
+		impl->fatbin_handle_to_record.erase(fatbin_handle);
 	} else if (context->to_function == AttachedToFunction::CudaMalloc) {
 		SPDLOG_DEBUG("Entering cudaMalloc..");
 	} else if (context->to_function ==
@@ -383,8 +449,8 @@ static void example_listener_on_enter(GumInvocationListener *listener,
 				gum_invocation_context_get_nth_argument(gum_ctx,
 									5);
 		}
-		context->impl->mirror_cuda_memcpy_to_symbol(
-			symbol, src, count, offset, kind, stream, async);
+		impl->mirror_cuda_memcpy_to_symbol(symbol, src, count, offset,
+						   kind, stream, async);
 	}
 }
 
@@ -396,6 +462,34 @@ static void example_listener_on_leave(GumInvocationListener *listener,
 		GUM_IC_GET_FUNC_DATA(ic, CUDARuntimeFunctionHookerContext *);
 	if (context->to_function == AttachedToFunction::RegisterFatbin) {
 		SPDLOG_DEBUG("Leaving RegisterFatbin");
+		auto &state = nv_attach_get_hook_state();
+		std::shared_lock<std::shared_mutex> lifecycle_guard(
+			state.active_impl_mutex);
+		auto *impl = state.active_impl;
+		if (impl != nullptr &&
+		    registering_fatbin_generation == state.active_generation &&
+		    registering_fatbin != nullptr) {
+			auto registration_guard =
+				impl->lock_registration_state();
+			const bool record_is_live =
+				impl->is_enabled() &&
+				std::any_of(impl->fatbin_records.begin(),
+					    impl->fatbin_records.end(),
+					    [](const auto &record) {
+						    return record.get() ==
+							   registering_fatbin;
+					    });
+			if (record_is_live) {
+				auto handle =
+					gum_invocation_context_get_return_value(
+						gum_ctx);
+				if (handle != nullptr)
+					impl->fatbin_handle_to_record[handle] =
+						registering_fatbin;
+			}
+		}
+		registering_fatbin = nullptr;
+		registering_fatbin_generation = 0;
 	} else if (context->to_function ==
 		   AttachedToFunction::RegisterFunction) {
 		SPDLOG_DEBUG("Leaving RegisterFunction");
@@ -437,7 +531,9 @@ cuda_runtime_function__cudaLaunchKernel(const void *func, dim3 grid_dim,
 	if (state == nullptr) {
 		state = &nv_attach_get_hook_state();
 	}
-	auto *impl = state->active_impl.load(std::memory_order_acquire);
+	std::shared_lock<std::shared_mutex> lifecycle_guard(
+		state->active_impl_mutex);
+	auto *impl = state->active_impl;
 	if (impl != nullptr) {
 		SPDLOG_DEBUG("grid_dim: {}, {}, {}", grid_dim.x, grid_dim.y,
 			     grid_dim.z);
@@ -470,7 +566,7 @@ cuda_graph_maybe_get_kernel_name_from_cufunction(nv_attach_impl &impl,
 	return std::string(name);
 }
 
-static std::optional<std::string>
+[[maybe_unused]] static std::optional<std::string>
 cuda_graph_maybe_get_kernel_name_from_cukernel(CUkernel kernel)
 {
 	using cu_kernel_get_name_fn_t = CUresult (*)(const char **, CUkernel);
@@ -506,6 +602,11 @@ static CUresult cu_launch_kernel_common(
 		return original(func, grid_dim_x, grid_dim_y, grid_dim_z,
 				block_dim_x, block_dim_y, block_dim_z,
 				shared_mem_bytes, stream, kernel_params, extra);
+	auto registration_guard = impl->lock_registration_state();
+	if (!impl->is_enabled())
+		return original(func, grid_dim_x, grid_dim_y, grid_dim_z,
+				block_dim_x, block_dim_y, block_dim_z,
+				shared_mem_bytes, stream, kernel_params, extra);
 	if (!impl->is_late_bootstrap_done())
 		return original(func, grid_dim_x, grid_dim_y, grid_dim_z,
 				block_dim_x, block_dim_y, block_dim_z,
@@ -517,8 +618,20 @@ static CUresult cu_launch_kernel_common(
 		if (auto patched = impl->find_patched_kernel_function(*kernel_name);
 		    patched) {
 			func = *patched;
-			impl->record_patched_launch(
-				reinterpret_cast<cudaStream_t>(stream));
+			CUresult result =
+				original(func, grid_dim_x, grid_dim_y,
+					 grid_dim_z, block_dim_x, block_dim_y,
+					 block_dim_z, shared_mem_bytes, stream,
+					 kernel_params, extra);
+			if (result == CUDA_SUCCESS) {
+				// Enqueue the event after the kernel while
+				// still holding the registration lock so detach
+				// cannot unload its module in the
+				// lookup-to-event window.
+				impl->record_patched_launch(
+					reinterpret_cast<cudaStream_t>(stream));
+			}
+			return result;
 		}
 	}
 	return original(func, grid_dim_x, grid_dim_y, grid_dim_z, block_dim_x,
@@ -538,7 +651,9 @@ extern "C" CUresult cuda_driver_function__cuLaunchKernel(
 	if (state == nullptr) {
 		state = &nv_attach_get_hook_state();
 	}
-	auto *impl = state->active_impl.load(std::memory_order_acquire);
+	std::shared_lock<std::shared_mutex> lifecycle_guard(
+		state->active_impl_mutex);
+	auto *impl = state->active_impl;
 	void *original =
 		state->orig_cu_launch_kernel.load(std::memory_order_acquire);
 	return cu_launch_kernel_common(impl, original, func, gridDimX, gridDimY,
@@ -557,7 +672,9 @@ extern "C" cudaError_t cuda_runtime_function__cudaLaunchKernel_ptsz(
 	if (state == nullptr) {
 		state = &nv_attach_get_hook_state();
 	}
-	auto *impl = state->active_impl.load(std::memory_order_acquire);
+	std::shared_lock<std::shared_mutex> lifecycle_guard(
+		state->active_impl_mutex);
+	auto *impl = state->active_impl;
 	if (impl != nullptr) {
 		SPDLOG_DEBUG("grid_dim: {}, {}, {}", grid_dim.x, grid_dim.y,
 			     grid_dim.z);
@@ -570,7 +687,7 @@ extern "C" cudaError_t cuda_runtime_function__cudaLaunchKernel_ptsz(
 					 block_dim, args, shared_mem, stream);
 }
 
-static const CUDA_KERNEL_NODE_PARAMS_v1 *
+[[maybe_unused]] static const CUDA_KERNEL_NODE_PARAMS_v1 *
 cuda_graph_maybe_patch_kernel_node_params_v1(
 	nv_attach_impl &impl, const CUDA_KERNEL_NODE_PARAMS_v1 *params,
 	CUDA_KERNEL_NODE_PARAMS_v1 &patched_params)
@@ -592,7 +709,7 @@ cuda_graph_maybe_patch_kernel_node_params_v1(
 	return &patched_params;
 }
 
-static const CUDA_KERNEL_NODE_PARAMS_v2 *
+[[maybe_unused]] static const CUDA_KERNEL_NODE_PARAMS_v2 *
 cuda_graph_maybe_patch_kernel_node_params_v2(
 	nv_attach_impl &impl, const CUDA_KERNEL_NODE_PARAMS_v2 *params,
 	CUDA_KERNEL_NODE_PARAMS_v2 &patched_params)
@@ -633,20 +750,16 @@ extern "C" CUresult cuda_driver_function__cuGraphAddKernelNode_v1(
 	if (state == nullptr) {
 		state = &nv_attach_get_hook_state();
 	}
-	auto *impl = state->active_impl.load(std::memory_order_acquire);
 	auto original = reinterpret_cast<cu_graph_add_kernel_node_v1_fn_t>(
 		state->orig_cu_graph_add_kernel_node_v1.load(
 			std::memory_order_acquire));
 	if (!original)
 		return CUDA_ERROR_UNKNOWN;
-	if (impl == nullptr || !impl->is_enabled())
-		return original(phGraphNode, hGraph, dependencies,
-				numDependencies, nodeParams);
-	CUDA_KERNEL_NODE_PARAMS_v1 patched_params;
-	auto params_to_use = cuda_graph_maybe_patch_kernel_node_params_v1(
-		*impl, nodeParams, patched_params);
+	// A graph or graphExec can retain CUfunction after this call. Until
+	// graph launch/destroy lifetimes own the patched module, forwarding the
+	// original function is the only teardown-safe behavior.
 	return original(phGraphNode, hGraph, dependencies, numDependencies,
-			params_to_use);
+			nodeParams);
 }
 
 extern "C" CUresult cuda_driver_function__cuGraphAddKernelNode_v2(
@@ -660,20 +773,13 @@ extern "C" CUresult cuda_driver_function__cuGraphAddKernelNode_v2(
 	if (state == nullptr) {
 		state = &nv_attach_get_hook_state();
 	}
-	auto *impl = state->active_impl.load(std::memory_order_acquire);
 	auto original = reinterpret_cast<cu_graph_add_kernel_node_v2_fn_t>(
 		state->orig_cu_graph_add_kernel_node_v2.load(
 			std::memory_order_acquire));
 	if (!original)
 		return CUDA_ERROR_UNKNOWN;
-	if (impl == nullptr || !impl->is_enabled())
-		return original(phGraphNode, hGraph, dependencies,
-				numDependencies, nodeParams);
-	CUDA_KERNEL_NODE_PARAMS_v2 patched_params;
-	auto params_to_use = cuda_graph_maybe_patch_kernel_node_params_v2(
-		*impl, nodeParams, patched_params);
 	return original(phGraphNode, hGraph, dependencies, numDependencies,
-			params_to_use);
+			nodeParams);
 }
 
 extern "C" CUresult cuda_driver_function__cuGraphExecKernelNodeSetParams_v1(
@@ -686,19 +792,13 @@ extern "C" CUresult cuda_driver_function__cuGraphExecKernelNodeSetParams_v1(
 	if (state == nullptr) {
 		state = &nv_attach_get_hook_state();
 	}
-	auto *impl = state->active_impl.load(std::memory_order_acquire);
 	auto original =
 		reinterpret_cast<cu_graph_exec_kernel_node_set_params_v1_fn_t>(
 			state->orig_cu_graph_exec_kernel_node_set_params_v1.load(
 				std::memory_order_acquire));
 	if (!original)
 		return CUDA_ERROR_UNKNOWN;
-	if (impl == nullptr || !impl->is_enabled())
-		return original(hGraphExec, hNode, nodeParams);
-	CUDA_KERNEL_NODE_PARAMS_v1 patched_params;
-	auto params_to_use = cuda_graph_maybe_patch_kernel_node_params_v1(
-		*impl, nodeParams, patched_params);
-	return original(hGraphExec, hNode, params_to_use);
+	return original(hGraphExec, hNode, nodeParams);
 }
 
 extern "C" CUresult cuda_driver_function__cuGraphExecKernelNodeSetParams_v2(
@@ -711,19 +811,13 @@ extern "C" CUresult cuda_driver_function__cuGraphExecKernelNodeSetParams_v2(
 	if (state == nullptr) {
 		state = &nv_attach_get_hook_state();
 	}
-	auto *impl = state->active_impl.load(std::memory_order_acquire);
 	auto original =
 		reinterpret_cast<cu_graph_exec_kernel_node_set_params_v2_fn_t>(
 			state->orig_cu_graph_exec_kernel_node_set_params_v2.load(
 				std::memory_order_acquire));
 	if (!original)
 		return CUDA_ERROR_UNKNOWN;
-	if (impl == nullptr || !impl->is_enabled())
-		return original(hGraphExec, hNode, nodeParams);
-	CUDA_KERNEL_NODE_PARAMS_v2 patched_params;
-	auto params_to_use = cuda_graph_maybe_patch_kernel_node_params_v2(
-		*impl, nodeParams, patched_params);
-	return original(hGraphExec, hNode, params_to_use);
+	return original(hGraphExec, hNode, nodeParams);
 }
 
 extern "C" CUresult cuda_driver_function__cuGraphKernelNodeSetParams_v1(
@@ -735,19 +829,13 @@ extern "C" CUresult cuda_driver_function__cuGraphKernelNodeSetParams_v1(
 	if (state == nullptr) {
 		state = &nv_attach_get_hook_state();
 	}
-	auto *impl = state->active_impl.load(std::memory_order_acquire);
 	auto original =
 		reinterpret_cast<cu_graph_kernel_node_set_params_v1_fn_t>(
 			state->orig_cu_graph_kernel_node_set_params_v1.load(
 				std::memory_order_acquire));
 	if (!original)
 		return CUDA_ERROR_UNKNOWN;
-	if (impl == nullptr || !impl->is_enabled())
-		return original(hNode, nodeParams);
-	CUDA_KERNEL_NODE_PARAMS_v1 patched_params;
-	auto params_to_use = cuda_graph_maybe_patch_kernel_node_params_v1(
-		*impl, nodeParams, patched_params);
-	return original(hNode, params_to_use);
+	return original(hNode, nodeParams);
 }
 
 extern "C" CUresult cuda_driver_function__cuGraphKernelNodeSetParams_v2(
@@ -759,19 +847,13 @@ extern "C" CUresult cuda_driver_function__cuGraphKernelNodeSetParams_v2(
 	if (state == nullptr) {
 		state = &nv_attach_get_hook_state();
 	}
-	auto *impl = state->active_impl.load(std::memory_order_acquire);
 	auto original =
 		reinterpret_cast<cu_graph_kernel_node_set_params_v2_fn_t>(
 			state->orig_cu_graph_kernel_node_set_params_v2.load(
 				std::memory_order_acquire));
 	if (!original)
 		return CUDA_ERROR_UNKNOWN;
-	if (impl == nullptr || !impl->is_enabled())
-		return original(hNode, nodeParams);
-	CUDA_KERNEL_NODE_PARAMS_v2 patched_params;
-	auto params_to_use = cuda_graph_maybe_patch_kernel_node_params_v2(
-		*impl, nodeParams, patched_params);
-	return original(hNode, params_to_use);
+	return original(hNode, nodeParams);
 }
 
 static cudaError_t mirror_cuda_memcpy_from_symbol(
@@ -780,6 +862,18 @@ static cudaError_t mirror_cuda_memcpy_from_symbol(
 	cuda_memcpy_from_symbol_fn_t original_sync,
 	cuda_memcpy_from_symbol_async_fn_t original_async)
 {
+	auto registration_guard = impl->lock_registration_state();
+	if (!impl->is_enabled()) {
+		if (async) {
+			return original_async != nullptr ?
+				       original_async(dst, symbol, count,
+						      offset, kind, stream) :
+				       cudaErrorUnknown;
+		}
+		return original_sync != nullptr ?
+			       original_sync(dst, symbol, count, offset, kind) :
+			       cudaErrorUnknown;
+	}
 	auto record_itr = impl->symbol_address_to_fatbin.find((void *)symbol);
 	if (record_itr == impl->symbol_address_to_fatbin.end()) {
 		impl->bootstrap_existing_fatbins_once();
@@ -952,7 +1046,9 @@ extern "C" cudaError_t cuda_runtime_function__cudaMemcpyFromSymbol(
 	if (state == nullptr) {
 		state = &nv_attach_get_hook_state();
 	}
-	auto *impl = state->active_impl.load(std::memory_order_acquire);
+	std::shared_lock<std::shared_mutex> lifecycle_guard(
+		state->active_impl_mutex);
+	auto *impl = state->active_impl;
 	auto original_sync = reinterpret_cast<cuda_memcpy_from_symbol_fn_t>(
 		state->orig_cuda_memcpy_from_symbol.load(
 			std::memory_order_acquire));
@@ -983,7 +1079,9 @@ extern "C" cudaError_t cuda_runtime_function__cudaMemcpyFromSymbolAsync(
 	if (state == nullptr) {
 		state = &nv_attach_get_hook_state();
 	}
-	auto *impl = state->active_impl.load(std::memory_order_acquire);
+	std::shared_lock<std::shared_mutex> lifecycle_guard(
+		state->active_impl_mutex);
+	auto *impl = state->active_impl;
 	auto original_sync = reinterpret_cast<cuda_memcpy_from_symbol_fn_t>(
 		state->orig_cuda_memcpy_from_symbol.load(
 			std::memory_order_acquire));

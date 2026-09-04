@@ -11,6 +11,7 @@
 #include "nv_elf_introspect.hpp"
 // #include "spdlog/common.h"
 #include "spdlog/spdlog.h"
+#include <algorithm>
 #include <asm/unistd.h> // For architecture-specific syscall numbers
 #include <boost/asio/io_context.hpp>
 #include <boost/asio/post.hpp>
@@ -30,6 +31,7 @@
 #include <cuda.h>
 #include <cuda_runtime.h>
 #include <dlfcn.h>
+#include <exception>
 #include <filesystem>
 #include <iterator>
 #include <map>
@@ -90,17 +92,6 @@ nv_attach_hook_state &nv_attach_get_hook_state()
 	return *g_nv_attach_hook_state_holder.state;
 }
 
-void nv_attach_set_active_impl(nv_attach_impl *impl)
-{
-	auto &state = nv_attach_get_hook_state();
-	state.active_impl.store(impl, std::memory_order_release);
-}
-
-nv_attach_impl *nv_attach_get_active_impl()
-{
-	auto &state = nv_attach_get_hook_state();
-	return state.active_impl.load(std::memory_order_acquire);
-}
 } // namespace bpftime::attach
 
 static std::vector<std::filesystem::path> split_by_colon(const std::string &str)
@@ -130,22 +121,31 @@ extern GType cuda_runtime_function_hooker_get_type();
 
 int nv_attach_impl::detach_by_id(int id)
 {
+	auto registration_guard = lock_registration_state();
 	auto itr = hook_entries.find(id);
 	if (itr == hook_entries.end()) {
 		SPDLOG_WARN("nv_attach_impl: detach unknown id {}", id);
 		return -ENOENT;
 	}
-	hook_entries.erase(itr);
-	if (hook_entries.empty()) {
+	if (hook_entries.size() == 1) {
 		SPDLOG_INFO(
 			"nv_attach_impl: last entry detached; disabling CUDA launch replacement");
 		enabled.store(false, std::memory_order_release);
-		// Wait for in-flight patched kernels to complete before the
-		// loader exits and tears down CUDA IPC buffers.
-		wait_for_patched_launch_events(std::chrono::seconds(2));
+		// The registration lock excludes a launch from the
+		// patched-function lookup through its post-launch event
+		// enqueue. Do not erase the last entry or unload a module until
+		// every such event is quiescent.
+		if (!wait_for_patched_launch_events(std::chrono::seconds(2))) {
+			SPDLOG_ERROR(
+				"nv_attach_impl: detach left intact because a patched launch did not quiesce");
+			enabled.store(true, std::memory_order_release);
+			return -EBUSY;
+		}
+		hook_entries.erase(itr);
 		clear_patched_state_for_next_session();
 		reset_late_bootstrap_state_for_next_attach();
 	} else {
+		hook_entries.erase(itr);
 		SPDLOG_INFO("nv_attach_impl: detached id {}", id);
 	}
 	return 0;
@@ -160,6 +160,7 @@ int nv_attach_impl::create_attach_with_ebpf_callback(
 	ebpf_run_callback &&cb, const attach_private_data &private_data,
 	int attach_type)
 {
+	auto registration_guard = lock_registration_state();
 	auto data = dynamic_cast<const nv_attach_private_data &>(private_data);
 
 	// Safely access the variant
@@ -192,6 +193,12 @@ int nv_attach_impl::create_attach_with_ebpf_callback(
 		}
 	}
 	if (matched) {
+		if (data.comm_shared_mem == 0) {
+			SPDLOG_ERROR(
+				"comm_shared_mem is null when creating CUDA attach for {}",
+				func_name);
+			return -1;
+		}
 		enabled.store(true, std::memory_order_release);
 		auto id = this->allocate_id();
 		nv_attach_entry entry;
@@ -211,12 +218,6 @@ int nv_attach_impl::create_attach_with_ebpf_callback(
 			reset_late_bootstrap_state_for_next_attach();
 		}
 		this->map_basic_info = data.map_basic_info;
-		if (data.comm_shared_mem == 0) {
-			SPDLOG_ERROR(
-				"comm_shared_mem is null when creating CUDA attach for {}",
-				func_name);
-			return -1;
-		}
 		if (this->shared_mem_ptr != data.comm_shared_mem) {
 			this->shared_mem_ptr = data.comm_shared_mem;
 			SPDLOG_INFO("Cached shared_mem_ptr at {:x}",
@@ -293,277 +294,346 @@ nv_attach_impl::nv_attach_impl()
 		std::make_shared<std::map<std::string, std::vector<uint8_t>>>();
 
 	this->shared_mem_ptr = 0;
-	gum_init_embedded();
-	auto interceptor = gum_interceptor_obtain();
-	if (interceptor == nullptr) {
-		SPDLOG_ERROR("Failed to obtain Frida interceptor");
-		throw std::runtime_error(
-			"Failed to initialize Frida interceptor");
-	}
-	auto listener =
-		g_object_new(cuda_runtime_function_hooker_get_type(), nullptr);
-	if (listener == nullptr) {
-		SPDLOG_ERROR("Failed to create Frida listener");
-		throw std::runtime_error("Failed to initialize Frida listener");
-	}
-	this->frida_interceptor = interceptor;
-	this->frida_listener = listener;
-
-	auto &hook_state = nv_attach_get_hook_state();
-	hook_state.replacements_installed.store(false,
-						std::memory_order_release);
-
-	gum_interceptor_begin_transaction(interceptor);
-
-	auto register_hook = [&](AttachedToFunction func, void *addr) {
-		if (addr == nullptr) {
-			SPDLOG_WARN(
-				"Skipping hook registration for function {} - symbol not found",
-				(int)func);
-			return;
-		}
-		auto ctx = std::make_unique<CUDARuntimeFunctionHookerContext>();
-		ctx->to_function = func;
-		ctx->impl = this;
-		auto ctx_ptr = ctx.get();
-		this->hooker_contexts.push_back(std::move(ctx));
-		if (auto result = gum_interceptor_attach(
-			    interceptor, (gpointer)addr,
-			    (GumInvocationListener *)listener, ctx_ptr);
-		    result != GUM_ATTACH_OK) {
-			SPDLOG_ERROR(
-				"Unable to attach to CUDA functions: func={}, err={}",
-				(int)func, (int)result);
+	bool interceptor_transaction_open = false;
+	try {
+		gum_init_embedded();
+		auto interceptor = gum_interceptor_obtain();
+		if (interceptor == nullptr) {
+			SPDLOG_ERROR("Failed to obtain Frida interceptor");
 			throw std::runtime_error(
-				"Failed to attach to CUDA function");
+				"Failed to initialize Frida interceptor");
 		}
-	};
-	auto replace_hook_once = [&](const char *symbol_name,
-				     gpointer replacement,
-				     std::atomic<void *> &original_slot) {
-		void *addr = GSIZE_TO_POINTER(
-			gum_module_find_export_by_name(nullptr, symbol_name));
-		if (addr == nullptr) {
-			SPDLOG_DEBUG(
-				"Skipping replace hook for {} - symbol not found",
-				symbol_name);
-			return;
+		auto listener = g_object_new(
+			cuda_runtime_function_hooker_get_type(), nullptr);
+		if (listener == nullptr) {
+			SPDLOG_ERROR("Failed to create Frida listener");
+			throw std::runtime_error(
+				"Failed to initialize Frida listener");
 		}
-		if (original_slot.load(std::memory_order_acquire) != nullptr) {
-			return;
-		}
-		gpointer original_tmp = nullptr;
-		auto err = gum_interceptor_replace(interceptor, addr,
-						   replacement, &hook_state,
-						   (gpointer *)&original_tmp);
-		if (err == GUM_REPLACE_OK) {
-			original_slot.store(original_tmp,
-					    std::memory_order_release);
-			return;
-		}
-		SPDLOG_ERROR("Unable to replace {}: {}", symbol_name, (int)err);
-	};
+		this->frida_interceptor = interceptor;
+		this->frida_listener = listener;
 
-	{
-		void *register_fatbin_addr =
-			dlsym(RTLD_NEXT, "__cudaRegisterFatBinary");
-		register_hook(AttachedToFunction::RegisterFatbin,
-			      register_fatbin_addr);
-	}
-	{
-		void *register_function_addr =
-			GSIZE_TO_POINTER(gum_module_find_export_by_name(
-				nullptr, "__cudaRegisterFunction"));
-		register_hook(AttachedToFunction::RegisterFunction,
-			      register_function_addr);
-	}
-	{
-		void *register_variable_addr =
-			GSIZE_TO_POINTER(gum_module_find_export_by_name(
-				nullptr, "__cudaRegisterVar"));
-		register_hook(AttachedToFunction::RegisterVariable,
-			      register_variable_addr);
-	}
-	{
-		void *register_fatbin_end_addr =
-			GSIZE_TO_POINTER(gum_module_find_export_by_name(
-				nullptr, "__cudaRegisterFatBinaryEnd"));
-		register_hook(AttachedToFunction::RegisterFatbinEnd,
-			      register_fatbin_end_addr);
-	}
-
-	{
-		void *cuda_malloc_addr = GSIZE_TO_POINTER(
-			gum_module_find_export_by_name(nullptr, "cudaMalloc"));
-		register_hook(AttachedToFunction::CudaMalloc, cuda_malloc_addr);
-	}
-	{
-		void *cuda_malloc_managed_addr =
-			GSIZE_TO_POINTER(gum_module_find_export_by_name(
-				nullptr, "cudaMallocManaged"));
-		register_hook(AttachedToFunction::CudaMallocManaged,
-			      cuda_malloc_managed_addr);
-	}
-	{
-		void *cuda_memcpy_to_symbol_addr =
-			GSIZE_TO_POINTER(gum_module_find_export_by_name(
-				nullptr, "cudaMemcpyToSymbol"));
-		register_hook(AttachedToFunction::CudaMemcpyToSymbol,
-			      cuda_memcpy_to_symbol_addr);
-	}
-	{
-		void *cuda_memcpy_to_symbol_async_addr =
-			GSIZE_TO_POINTER(gum_module_find_export_by_name(
-				nullptr, "cudaMemcpyToSymbolAsync"));
-		register_hook(AttachedToFunction::CudaMemcpyToSymbolAsync,
-			      cuda_memcpy_to_symbol_async_addr);
-	}
-	replace_hook_once("cudaLaunchKernel",
-			  (gpointer)&cuda_runtime_function__cudaLaunchKernel,
-			  hook_state.orig_cuda_launch_kernel);
-	replace_hook_once(
-		"cudaLaunchKernel_ptsz",
-		(gpointer)&cuda_runtime_function__cudaLaunchKernel_ptsz,
-		hook_state.orig_cuda_launch_kernel_ptsz);
-	replace_hook_once("cuLaunchKernel",
-			  (gpointer)&cuda_driver_function__cuLaunchKernel,
-			  hook_state.orig_cu_launch_kernel);
-	replace_hook_once(
-		"cuGraphAddKernelNode",
-		(gpointer)&cuda_driver_function__cuGraphAddKernelNode_v1,
-		hook_state.orig_cu_graph_add_kernel_node_v1);
-	replace_hook_once(
-		"cuGraphAddKernelNode_v2",
-		(gpointer)&cuda_driver_function__cuGraphAddKernelNode_v2,
-		hook_state.orig_cu_graph_add_kernel_node_v2);
-	replace_hook_once(
-		"cuGraphExecKernelNodeSetParams",
-		(gpointer)&cuda_driver_function__cuGraphExecKernelNodeSetParams_v1,
-		hook_state.orig_cu_graph_exec_kernel_node_set_params_v1);
-	replace_hook_once(
-		"cuGraphExecKernelNodeSetParams_v2",
-		(gpointer)&cuda_driver_function__cuGraphExecKernelNodeSetParams_v2,
-		hook_state.orig_cu_graph_exec_kernel_node_set_params_v2);
-	replace_hook_once(
-		"cuGraphKernelNodeSetParams",
-		(gpointer)&cuda_driver_function__cuGraphKernelNodeSetParams_v1,
-		hook_state.orig_cu_graph_kernel_node_set_params_v1);
-	replace_hook_once(
-		"cuGraphKernelNodeSetParams_v2",
-		(gpointer)&cuda_driver_function__cuGraphKernelNodeSetParams_v2,
-		hook_state.orig_cu_graph_kernel_node_set_params_v2);
-	replace_hook_once(
-		"cudaMemcpyFromSymbol",
-		(gpointer)&cuda_runtime_function__cudaMemcpyFromSymbol,
-		hook_state.orig_cuda_memcpy_from_symbol);
-	replace_hook_once(
-		"cudaMemcpyFromSymbolAsync",
-		(gpointer)&cuda_runtime_function__cudaMemcpyFromSymbolAsync,
-		hook_state.orig_cuda_memcpy_from_symbol_async);
-	gum_interceptor_end_transaction(interceptor);
-
-	nv_attach_set_active_impl(this);
-	this->original_cuda_launch_kernel =
-		hook_state.orig_cuda_launch_kernel.load(
-			std::memory_order_acquire);
-	this->original_cuda_launch_kernel_ptsz =
-		hook_state.orig_cuda_launch_kernel_ptsz.load(
-			std::memory_order_acquire);
-	this->original_cu_launch_kernel =
-		hook_state.orig_cu_launch_kernel.load(
-			std::memory_order_acquire);
-	this->original_cu_graph_add_kernel_node_v1 =
-		hook_state.orig_cu_graph_add_kernel_node_v1.load(
-			std::memory_order_acquire);
-	this->original_cu_graph_add_kernel_node_v2 =
-		hook_state.orig_cu_graph_add_kernel_node_v2.load(
-			std::memory_order_acquire);
-	this->original_cu_graph_exec_kernel_node_set_params_v1 =
-		hook_state.orig_cu_graph_exec_kernel_node_set_params_v1.load(
-			std::memory_order_acquire);
-	this->original_cu_graph_exec_kernel_node_set_params_v2 =
-		hook_state.orig_cu_graph_exec_kernel_node_set_params_v2.load(
-			std::memory_order_acquire);
-	this->original_cu_graph_kernel_node_set_params_v1 =
-		hook_state.orig_cu_graph_kernel_node_set_params_v1.load(
-			std::memory_order_acquire);
-	this->original_cu_graph_kernel_node_set_params_v2 =
-		hook_state.orig_cu_graph_kernel_node_set_params_v2.load(
-			std::memory_order_acquire);
-	this->original_cuda_memcpy_from_symbol =
-		hook_state.orig_cuda_memcpy_from_symbol.load(
-			std::memory_order_acquire);
-	this->original_cuda_memcpy_from_symbol_async =
-		hook_state.orig_cuda_memcpy_from_symbol_async.load(
-			std::memory_order_acquire);
-
-	hook_state.replacements_installed.store(true,
-						std::memory_order_release);
-
-	static const char *ptx_pass_libraries = DEFAULT_PTX_PASS_EXECUTABLE;
-	std::vector<std::filesystem::path> pass_libraries;
-	{
-		const char *provided_libraries =
-			getenv("BPFTIME_PTXPASS_LIBRARIES");
-		if (provided_libraries && strlen(provided_libraries) > 0) {
-			ptx_pass_libraries = provided_libraries;
-			SPDLOG_INFO(
-				"Parsing user provided (by BPFTIME_PTXPASS_LIBRARIES) libraries: {}",
-				provided_libraries);
-		} else {
-			SPDLOG_INFO("Parsing bundled libraries: {}",
-				    ptx_pass_libraries);
+		auto &hook_state = nv_attach_get_hook_state();
+		{
+			std::unique_lock<std::shared_mutex> guard(
+				hook_state.active_impl_mutex);
+			if (hook_state.active_impl != nullptr) {
+				throw std::runtime_error(
+					"another nv_attach_impl is already active");
+			}
+			hook_generation = ++hook_state.next_generation;
 		}
-	}
-	auto paths = split_by_colon(ptx_pass_libraries);
-	for (const auto &path : paths) {
-		SPDLOG_INFO("Found path: {}, executing..", path.c_str());
-		void *handle = dlmopen(LM_ID_NEWLM, path.c_str(),
-				       RTLD_NOW | RTLD_LOCAL);
-		if (!handle) {
-			SPDLOG_ERROR(
-				"Unable to load dynamic library of pass {}: {}",
-				path.c_str(), dlerror());
-			continue;
-		}
-		auto print_config =
-			(print_config_fn)dlsym(handle, "print_config");
-		if (!print_config) {
-			SPDLOG_ERROR("Symbol print_config not found in {}",
-				     path.c_str());
-			continue;
-		}
-		auto process_input =
-			(process_input_fn)dlsym(handle, "process_input");
-		if (!process_input) {
-			SPDLOG_ERROR("Symbol process_input not found in {}",
-				     path.c_str());
-			continue;
-		}
-		ptxpass::pass_config::PassConfig config;
-		std::vector<char> buf(10 << 20);
-		print_config(buf.size(), buf.data());
+		hook_state.replacements_installed.store(
+			false, std::memory_order_release);
 
-		auto json = nlohmann::json::parse(buf.data());
-		ptxpass::pass_config::from_json(json, config);
-		SPDLOG_INFO("Retrived config of {}", path.c_str());
-		SPDLOG_DEBUG("Config {}", json.dump(4));
-		this->pass_configurations.emplace_back(
-			std::make_unique<pass_cfg_with_exec_path>(
-				path, config, print_config, process_input,
-				handle));
-	}
-	{
-		this->ptx_compiler = *load_nv_attach_impl_ptx_compiler(
-			DEFAULT_PTX_COMPILER_SHARED_LIB,
-			this->ptx_compiler_dl_handle);
+		gum_interceptor_begin_transaction(interceptor);
+		interceptor_transaction_open = true;
+
+		auto register_hook = [&](AttachedToFunction func, void *addr) {
+			if (addr == nullptr) {
+				SPDLOG_WARN(
+					"Skipping hook registration for function {} - symbol not found",
+					(int)func);
+				return;
+			}
+			auto ctx = std::make_unique<
+				CUDARuntimeFunctionHookerContext>();
+			ctx->to_function = func;
+			ctx->generation = hook_generation;
+			auto ctx_ptr = ctx.get();
+			{
+				std::unique_lock<std::shared_mutex> guard(
+					hook_state.active_impl_mutex);
+				hook_state.listener_contexts.push_back(
+					std::move(ctx));
+			}
+			if (auto result = gum_interceptor_attach(
+				    interceptor, (gpointer)addr,
+				    (GumInvocationListener *)listener, ctx_ptr);
+			    result != GUM_ATTACH_OK) {
+				SPDLOG_ERROR(
+					"Unable to attach to CUDA functions: func={}, err={}",
+					(int)func, (int)result);
+				throw std::runtime_error(
+					"Failed to attach to CUDA function");
+			}
+		};
+		auto replace_hook_once = [&](const char *symbol_name,
+					     gpointer replacement,
+					     std::atomic<void *> &original_slot) {
+			void *addr =
+				GSIZE_TO_POINTER(gum_module_find_export_by_name(
+					nullptr, symbol_name));
+			if (addr == nullptr) {
+				SPDLOG_DEBUG(
+					"Skipping replace hook for {} - symbol not found",
+					symbol_name);
+				return;
+			}
+			if (original_slot.load(std::memory_order_acquire) !=
+			    nullptr) {
+				return;
+			}
+			gpointer original_tmp = nullptr;
+			auto err = gum_interceptor_replace(
+				interceptor, addr, replacement, &hook_state,
+				(gpointer *)&original_tmp);
+			if (err == GUM_REPLACE_OK) {
+				original_slot.store(original_tmp,
+						    std::memory_order_release);
+				return;
+			}
+			SPDLOG_ERROR("Unable to replace {}: {}", symbol_name,
+				     (int)err);
+		};
+
+		{
+			void *register_fatbin_addr =
+				dlsym(RTLD_NEXT, "__cudaRegisterFatBinary");
+			register_hook(AttachedToFunction::RegisterFatbin,
+				      register_fatbin_addr);
+		}
+		{
+			void *register_function_addr =
+				GSIZE_TO_POINTER(gum_module_find_export_by_name(
+					nullptr, "__cudaRegisterFunction"));
+			register_hook(AttachedToFunction::RegisterFunction,
+				      register_function_addr);
+		}
+		{
+			void *register_variable_addr =
+				GSIZE_TO_POINTER(gum_module_find_export_by_name(
+					nullptr, "__cudaRegisterVar"));
+			register_hook(AttachedToFunction::RegisterVariable,
+				      register_variable_addr);
+		}
+		{
+			void *register_fatbin_end_addr =
+				GSIZE_TO_POINTER(gum_module_find_export_by_name(
+					nullptr, "__cudaRegisterFatBinaryEnd"));
+			register_hook(AttachedToFunction::RegisterFatbinEnd,
+				      register_fatbin_end_addr);
+		}
+
+		{
+			void *cuda_malloc_addr =
+				GSIZE_TO_POINTER(gum_module_find_export_by_name(
+					nullptr, "cudaMalloc"));
+			register_hook(AttachedToFunction::CudaMalloc,
+				      cuda_malloc_addr);
+		}
+		{
+			void *cuda_malloc_managed_addr =
+				GSIZE_TO_POINTER(gum_module_find_export_by_name(
+					nullptr, "cudaMallocManaged"));
+			register_hook(AttachedToFunction::CudaMallocManaged,
+				      cuda_malloc_managed_addr);
+		}
+		{
+			void *cuda_memcpy_to_symbol_addr =
+				GSIZE_TO_POINTER(gum_module_find_export_by_name(
+					nullptr, "cudaMemcpyToSymbol"));
+			register_hook(AttachedToFunction::CudaMemcpyToSymbol,
+				      cuda_memcpy_to_symbol_addr);
+		}
+		{
+			void *cuda_memcpy_to_symbol_async_addr =
+				GSIZE_TO_POINTER(gum_module_find_export_by_name(
+					nullptr, "cudaMemcpyToSymbolAsync"));
+			register_hook(
+				AttachedToFunction::CudaMemcpyToSymbolAsync,
+				cuda_memcpy_to_symbol_async_addr);
+		}
+		replace_hook_once(
+			"cudaLaunchKernel",
+			(gpointer)&cuda_runtime_function__cudaLaunchKernel,
+			hook_state.orig_cuda_launch_kernel);
+		replace_hook_once(
+			"cudaLaunchKernel_ptsz",
+			(gpointer)&cuda_runtime_function__cudaLaunchKernel_ptsz,
+			hook_state.orig_cuda_launch_kernel_ptsz);
+		replace_hook_once(
+			"cuLaunchKernel",
+			(gpointer)&cuda_driver_function__cuLaunchKernel,
+			hook_state.orig_cu_launch_kernel);
+		// CUDA graphs retain kernel-node CUfunctions beyond Add/Set. Do
+		// not substitute loader-owned functions until graph launch and
+		// destruction are tracked as part of the module lifetime
+		// protocol.
+		replace_hook_once(
+			"cudaMemcpyFromSymbol",
+			(gpointer)&cuda_runtime_function__cudaMemcpyFromSymbol,
+			hook_state.orig_cuda_memcpy_from_symbol);
+		replace_hook_once(
+			"cudaMemcpyFromSymbolAsync",
+			(gpointer)&cuda_runtime_function__cudaMemcpyFromSymbolAsync,
+			hook_state.orig_cuda_memcpy_from_symbol_async);
+		gum_interceptor_end_transaction(interceptor);
+		interceptor_transaction_open = false;
+
+		this->original_cuda_launch_kernel =
+			hook_state.orig_cuda_launch_kernel.load(
+				std::memory_order_acquire);
+		this->original_cuda_launch_kernel_ptsz =
+			hook_state.orig_cuda_launch_kernel_ptsz.load(
+				std::memory_order_acquire);
+		this->original_cu_launch_kernel =
+			hook_state.orig_cu_launch_kernel.load(
+				std::memory_order_acquire);
+		this->original_cu_graph_add_kernel_node_v1 =
+			hook_state.orig_cu_graph_add_kernel_node_v1.load(
+				std::memory_order_acquire);
+		this->original_cu_graph_add_kernel_node_v2 =
+			hook_state.orig_cu_graph_add_kernel_node_v2.load(
+				std::memory_order_acquire);
+		this->original_cu_graph_exec_kernel_node_set_params_v1 =
+			hook_state.orig_cu_graph_exec_kernel_node_set_params_v1
+				.load(std::memory_order_acquire);
+		this->original_cu_graph_exec_kernel_node_set_params_v2 =
+			hook_state.orig_cu_graph_exec_kernel_node_set_params_v2
+				.load(std::memory_order_acquire);
+		this->original_cu_graph_kernel_node_set_params_v1 =
+			hook_state.orig_cu_graph_kernel_node_set_params_v1.load(
+				std::memory_order_acquire);
+		this->original_cu_graph_kernel_node_set_params_v2 =
+			hook_state.orig_cu_graph_kernel_node_set_params_v2.load(
+				std::memory_order_acquire);
+		this->original_cuda_memcpy_from_symbol =
+			hook_state.orig_cuda_memcpy_from_symbol.load(
+				std::memory_order_acquire);
+		this->original_cuda_memcpy_from_symbol_async =
+			hook_state.orig_cuda_memcpy_from_symbol_async.load(
+				std::memory_order_acquire);
+
+		static const char *ptx_pass_libraries =
+			DEFAULT_PTX_PASS_EXECUTABLE;
+		std::vector<std::filesystem::path> pass_libraries;
+		{
+			const char *provided_libraries =
+				getenv("BPFTIME_PTXPASS_LIBRARIES");
+			if (provided_libraries &&
+			    strlen(provided_libraries) > 0) {
+				ptx_pass_libraries = provided_libraries;
+				SPDLOG_INFO(
+					"Parsing user provided (by BPFTIME_PTXPASS_LIBRARIES) libraries: {}",
+					provided_libraries);
+			} else {
+				SPDLOG_INFO("Parsing bundled libraries: {}",
+					    ptx_pass_libraries);
+			}
+		}
+		auto paths = split_by_colon(ptx_pass_libraries);
+		for (const auto &path : paths) {
+			SPDLOG_INFO("Found path: {}, executing..",
+				    path.c_str());
+			void *handle = dlmopen(LM_ID_NEWLM, path.c_str(),
+					       RTLD_NOW | RTLD_LOCAL);
+			if (!handle) {
+				SPDLOG_ERROR(
+					"Unable to load dynamic library of pass {}: {}",
+					path.c_str(), dlerror());
+				continue;
+			}
+			auto print_config =
+				(print_config_fn)dlsym(handle, "print_config");
+			if (!print_config) {
+				SPDLOG_ERROR(
+					"Symbol print_config not found in {}",
+					path.c_str());
+				dlclose(handle);
+				continue;
+			}
+			auto process_input = (process_input_fn)dlsym(
+				handle, "process_input");
+			if (!process_input) {
+				SPDLOG_ERROR(
+					"Symbol process_input not found in {}",
+					path.c_str());
+				dlclose(handle);
+				continue;
+			}
+			ptxpass::pass_config::PassConfig config;
+			std::vector<char> buf(10 << 20);
+			print_config(buf.size(), buf.data());
+
+			auto json = nlohmann::json::parse(buf.data());
+			ptxpass::pass_config::from_json(json, config);
+			SPDLOG_INFO("Retrived config of {}", path.c_str());
+			SPDLOG_DEBUG("Config {}", json.dump(4));
+			this->pass_configurations.emplace_back(
+				std::make_unique<pass_cfg_with_exec_path>(
+					path, config, print_config,
+					process_input, handle));
+		}
+		{
+			auto compiler = load_nv_attach_impl_ptx_compiler(
+				DEFAULT_PTX_COMPILER_SHARED_LIB,
+				this->ptx_compiler_dl_handle);
+			if (!compiler || compiler->create == nullptr ||
+			    compiler->destroy == nullptr ||
+			    compiler->compile == nullptr ||
+			    compiler->get_error_log == nullptr ||
+			    compiler->get_info_log == nullptr ||
+			    compiler->get_compiled_program == nullptr) {
+				throw std::runtime_error(
+					"failed to load nv_attach_impl PTX compiler");
+			}
+			this->ptx_compiler = *compiler;
+		}
+		{
+			std::unique_lock<std::shared_mutex> guard(
+				hook_state.active_impl_mutex);
+			if (hook_state.active_impl != nullptr) {
+				throw std::runtime_error(
+					"another nv_attach_impl became active during initialization");
+			}
+			hook_state.active_impl = this;
+			hook_state.active_generation = hook_generation;
+		}
+		hook_state.replacements_installed.store(
+			true, std::memory_order_release);
+	} catch (...) {
+		if (interceptor_transaction_open &&
+		    frida_interceptor != nullptr) {
+			gum_interceptor_end_transaction(
+				(GumInterceptor *)frida_interceptor);
+			interceptor_transaction_open = false;
+		}
+		if (frida_interceptor != nullptr && frida_listener != nullptr) {
+			auto interceptor = (GumInterceptor *)frida_interceptor;
+			gum_interceptor_begin_transaction(interceptor);
+			gum_interceptor_detach(
+				interceptor,
+				(GumInvocationListener *)frida_listener);
+			gum_interceptor_end_transaction(interceptor);
+		}
+		if (frida_listener != nullptr) {
+			g_object_unref(frida_listener);
+			frida_listener = nullptr;
+		}
+		if (ptx_compiler_dl_handle != nullptr) {
+			dlclose(ptx_compiler_dl_handle);
+			ptx_compiler_dl_handle = nullptr;
+		}
+		throw;
 	}
 }
 
 nv_attach_impl::~nv_attach_impl()
 {
-	if (nv_attach_get_active_impl() == this)
-		nv_attach_set_active_impl(nullptr);
+	auto &hook_state = nv_attach_get_hook_state();
+	std::unique_lock<std::shared_mutex> lifecycle_guard(
+		hook_state.active_impl_mutex);
+	if (hook_state.active_impl == this) {
+		enabled.store(false, std::memory_order_release);
+		hook_state.active_impl = nullptr;
+		hook_state.active_generation = 0;
+	}
+	auto registration_guard = lock_registration_state();
+	while (!wait_for_patched_launch_events(std::chrono::seconds(2))) {
+		SPDLOG_WARN(
+			"nv_attach_impl: destructor still waiting for patched launches before module teardown");
+	}
 
 	if (frida_interceptor != nullptr) {
 		auto interceptor = (GumInterceptor *)frida_interceptor;
@@ -584,6 +654,7 @@ nv_attach_impl::~nv_attach_impl()
 	}
 	if (ptx_compiler_dl_handle) {
 		dlclose(ptx_compiler_dl_handle);
+		ptx_compiler_dl_handle = nullptr;
 	}
 }
 
@@ -798,7 +869,10 @@ nv_attach_impl::extract_ptxs(std::vector<uint8_t> &&data_vec)
 		cmd += sh_quote(std::string(tmp_dir));
 		cmd += " && ";
 		cmd += sh_quote(cuobjdump);
-		cmd += " --extract-ptx all temp.fatbin";
+		// cuobjdump's extraction messages are diagnostics, not
+		// application output. Redirect only this child, never the
+		// injected process stdout.
+		cmd += " --extract-ptx all temp.fatbin 1>&2";
 
 		std::vector<std::string> arg_strs;
 		arg_strs.emplace_back("sh");
@@ -891,162 +965,196 @@ nv_attach_impl::hack_fatbin(std::map<std::string, std::string> all_ptx)
 	/**
 	Here we can patch the PTX.
 	*/
-	boost::asio::thread_pool pool(std::thread::hardware_concurrency());
+	boost::asio::thread_pool pool(
+		std::max(1u, std::thread::hardware_concurrency()));
 	std::map<std::string, std::tuple<std::string, bool>> ptx_out;
 	std::mutex map_mutex;
 	std::mutex cache_mutex;
+	std::mutex error_mutex;
+	std::exception_ptr first_error;
 	for (auto &[file_name, original_ptx] : all_ptx) {
-		boost::asio::post(pool, [this, original_ptx, file_name, &map_mutex, &ptx_out, &cache_mutex]() -> void {
-			auto current_ptx = original_ptx;
-			SPDLOG_INFO("Patching PTX: {}", file_name);
-			bool should_add_trampoline = false;
-			for (const auto &[_, hook_entry] : this->hook_entries) {
-				const auto &kernels = hook_entry.kernels;
-				for (const auto &kernel : kernels) {
-					std::vector<uint64_t> ebpf_inst_words;
-					ebpf_inst_words.assign(
-						(uint64_t *)(uintptr_t)hook_entry
-							.instuctions.data(),
-						(uint64_t *)(uintptr_t)hook_entry
-								.instuctions
-								.data() +
-							hook_entry.instuctions
-								.size()
+		boost::asio::post(pool, [this, original_ptx, file_name, &map_mutex, &ptx_out, &cache_mutex, &error_mutex, &first_error]() -> void {
+			try {
+				auto current_ptx = original_ptx;
+				SPDLOG_INFO("Patching PTX: {}", file_name);
+				bool should_add_trampoline = false;
+				for (const auto &[_, hook_entry] :
+				     this->hook_entries) {
+					const auto &kernels =
+						hook_entry.kernels;
+					for (const auto &kernel : kernels) {
+						std::vector<uint64_t>
+							ebpf_inst_words;
+						ebpf_inst_words.assign(
+							(uint64_t *)(uintptr_t)
+								hook_entry
+									.instuctions
+									.data(),
+							(uint64_t *)(uintptr_t)hook_entry
+									.instuctions
+									.data() +
+								hook_entry
+									.instuctions
+									.size()
 
-					);
-					ptxpass::runtime_request::RuntimeRequest
-						req;
-					auto &ri = req.input;
-					ri.full_ptx = current_ptx;
-					ri.to_patch_kernel = kernel;
-					ri.global_ebpf_map_info_symbol =
-						"map_info";
-					ri.ebpf_communication_data_symbol =
-						"constData";
+						);
+						ptxpass::runtime_request::
+							RuntimeRequest req;
+						auto &ri = req.input;
+						ri.full_ptx = current_ptx;
+						ri.to_patch_kernel = kernel;
+						ri.global_ebpf_map_info_symbol =
+							"map_info";
+						ri.ebpf_communication_data_symbol =
+							"constData";
 
-					req.set_ebpf_instructions(
-						ebpf_inst_words);
-					nlohmann::json in;
-					ptxpass::runtime_request::to_json(in,
-									  req);
-					auto input_json = in.dump();
-					SPDLOG_DEBUG("Input: {}", input_json);
-					auto sha256_string =
-						sha256(input_json.data(),
-						       input_json.size());
+						req.set_ebpf_instructions(
+							ebpf_inst_words);
+						nlohmann::json in;
+						ptxpass::runtime_request::to_json(
+							in, req);
+						auto input_json = in.dump();
+						SPDLOG_DEBUG("Input: {}",
+							     input_json);
+						auto sha256_string = sha256(
+							input_json.data(),
+							input_json.size());
 
-					ptxpass::runtime_response::RuntimeResponse
-						resp;
+						ptxpass::runtime_response::
+							RuntimeResponse resp;
 
-					cache_mutex.lock();
-					if (auto itr = this->patch_cache.find(
-						    sha256_string);
-					    itr != this->patch_cache.end()) {
-						SPDLOG_INFO(
-							"Patching request {} found in cache",
-							sha256_string);
-						resp = itr->second;
-						cache_mutex.unlock();
-					} else {
-						cache_mutex.unlock();
-						SPDLOG_INFO(
-							"Patching request {} not found in cache, patching..",
-							sha256_string);
-						bool parsed = false;
-						std::string last_parse_error;
-						constexpr size_t kMinBufBytes =
-							1U << 20; // 1 MiB
-						constexpr size_t kMaxBufBytes =
-							64U << 20; // 64 MiB
-						for (size_t buf_bytes =
-							     kMinBufBytes;
-						     buf_bytes <= kMaxBufBytes;
-						     buf_bytes <<= 1) {
-							try {
-								std::vector<char> buf(
-									buf_bytes);
-								buf.back() =
-									'\0';
-								const int len =
-									(buf_bytes >
-									 (size_t)std::numeric_limits<
-										 int>::
-										 max()) ?
-										std::numeric_limits<
-											int>::
-											max() :
-										(int)buf_bytes;
-								int err =
-									hook_entry
-										.config
-										->process_input(
-											input_json
-												.c_str(),
-											len,
-											buf.data());
-								if (err !=
-								    ptxpass::ExitCode::
-									    Success) {
-									SPDLOG_ERROR(
-										"Unable to run pass on kernel {}: {}",
-										kernel,
-										(int)err);
-									return;
+						cache_mutex.lock();
+						if (auto itr =
+							    this->patch_cache.find(
+								    sha256_string);
+						    itr !=
+						    this->patch_cache.end()) {
+							SPDLOG_INFO(
+								"Patching request {} found in cache",
+								sha256_string);
+							resp = itr->second;
+							cache_mutex.unlock();
+						} else {
+							cache_mutex.unlock();
+							SPDLOG_INFO(
+								"Patching request {} not found in cache, patching..",
+								sha256_string);
+							bool parsed = false;
+							std::string
+								last_parse_error;
+							constexpr size_t
+								kMinBufBytes =
+									1U
+									<< 20; // 1 MiB
+							constexpr size_t
+								kMaxBufBytes =
+									64U
+									<< 20; // 64 MiB
+							for (size_t buf_bytes =
+								     kMinBufBytes;
+							     buf_bytes <=
+							     kMaxBufBytes;
+							     buf_bytes <<= 1) {
+								try {
+									std::vector<
+										char>
+										buf(buf_bytes);
+									buf.back() =
+										'\0';
+									const int len =
+										(buf_bytes >
+										 (size_t)std::numeric_limits<
+											 int>::
+											 max()) ?
+											std::numeric_limits<
+												int>::
+												max() :
+											(int)buf_bytes;
+									int err =
+										hook_entry
+											.config
+											->process_input(
+												input_json
+													.c_str(),
+												len,
+												buf.data());
+									if (err !=
+									    ptxpass::ExitCode::
+										    Success) {
+										SPDLOG_ERROR(
+											"Unable to run pass on kernel {}: {}",
+											kernel,
+											(int)err);
+										throw std::runtime_error(
+											"PTX pass rejected input");
+									}
+
+									auto json = nlohmann::json::parse(
+										buf.data(),
+										nullptr,
+										/*allow_exceptions=*/
+										true,
+										/*ignore_comments=*/
+										true);
+									using namespace ptxpass::
+										runtime_response;
+									from_json(
+										json,
+										resp);
+									parsed =
+										true;
+									break;
+								} catch (
+									const std::exception
+										&e) {
+									last_parse_error =
+										e.what();
 								}
-
-								auto json = nlohmann::json::parse(
-									buf.data(),
-									nullptr,
-									/*allow_exceptions=*/
-									true,
-									/*ignore_comments=*/
-									true);
-								using namespace ptxpass::
-									runtime_response;
-								from_json(json,
-									  resp);
-								parsed = true;
-								break;
-							} catch (
-								const std::exception
-									&e) {
-								last_parse_error =
-									e.what();
 							}
+							if (!parsed) {
+								SPDLOG_ERROR(
+									"Unable to parse PTX pass output for kernel {} (max {} MiB), last error: {}",
+									kernel,
+									(kMaxBufBytes >>
+									 20),
+									last_parse_error);
+								throw std::runtime_error(
+									"Unable to parse PTX pass output");
+							}
+							std::lock_guard<
+								std::mutex>
+								_cache_guard(
+									cache_mutex);
+							patch_cache
+								[sha256_string] =
+									resp;
 						}
-						if (!parsed) {
-							SPDLOG_ERROR(
-								"Unable to parse PTX pass output for kernel {} (max {} MiB), last error: {}",
-								kernel,
-								(kMaxBufBytes >>
-								 20),
-								last_parse_error);
-							return;
-						}
-						std::lock_guard<std::mutex>
-							_cache_guard(
-								cache_mutex);
-						patch_cache[sha256_string] =
-							resp;
+						current_ptx = resp.output_ptx;
+						should_add_trampoline =
+							should_add_trampoline ||
+							resp.modified;
 					}
-					current_ptx = resp.output_ptx;
-					should_add_trampoline =
-						should_add_trampoline ||
-						resp.modified;
 				}
+				if (should_add_trampoline) {
+					current_ptx = ptxpass::
+						filter_out_version_headers_ptx(
+							wrap_ptx_with_trampoline(
+								current_ptx));
+				}
+				std::lock_guard<std::mutex> _guard(map_mutex);
+				ptx_out["patched." + file_name] =
+					std::make_tuple(current_ptx,
+							should_add_trampoline);
+			} catch (...) {
+				std::lock_guard<std::mutex> guard(error_mutex);
+				if (!first_error)
+					first_error = std::current_exception();
 			}
-			if (should_add_trampoline) {
-				current_ptx =
-					ptxpass::filter_out_version_headers_ptx(
-						wrap_ptx_with_trampoline(
-							current_ptx));
-			}
-			std::lock_guard<std::mutex> _guard(map_mutex);
-			ptx_out["patched." + file_name] = std::make_tuple(
-				current_ptx, should_add_trampoline);
 		});
 	}
 	pool.join();
+	if (first_error)
+		std::rethrow_exception(first_error);
 	if (spdlog::should_log(spdlog::level::debug)) {
 		char tmp_dir[] = "/tmp/bpftime-fatbin-work.XXXXXX";
 		if (mkdtemp(tmp_dir) == nullptr) {
@@ -1071,6 +1179,7 @@ namespace bpftime::attach
 
 int nv_attach_impl::find_attach_entry_by_program_name(const char *name) const
 {
+	auto registration_guard = lock_registration_state();
 	for (const auto &entry : this->hook_entries) {
 		if (entry.second.program_name == name)
 			return entry.first;
@@ -1102,6 +1211,7 @@ int nv_attach_impl::run_attach_entry_on_gpu(int attach_id, int run_count,
 					    int grid_dim_z, int block_dim_x,
 					    int block_dim_y, int block_dim_z)
 {
+	auto registration_guard = lock_registration_state();
 	if (this->shared_mem_ptr == 0) {
 		SPDLOG_ERROR(
 			"shared_mem_ptr is not initialized; cannot run attach {} on GPU",
@@ -1268,6 +1378,7 @@ void nv_attach_impl::mirror_cuda_memcpy_to_symbol(
 	const void *symbol, const void *src, size_t count, size_t offset,
 	cudaMemcpyKind kind, cudaStream_t stream, bool async)
 {
+	auto registration_guard = lock_registration_state();
 	if (!is_enabled())
 		return;
 	bootstrap_existing_fatbins_once();
@@ -1393,21 +1504,27 @@ void nv_attach_impl::mirror_cuda_memcpy_to_symbol(
 	}
 }
 
-void nv_attach_impl::record_patched_launch(cudaStream_t stream)
+bool nv_attach_impl::record_patched_launch(cudaStream_t stream)
 {
-	record_patched_launch_event(reinterpret_cast<CUstream>(stream));
+	return record_patched_launch_event(reinterpret_cast<CUstream>(stream));
 }
 
-void nv_attach_impl::record_patched_launch_event(CUstream stream)
+bool nv_attach_impl::record_patched_launch_event(CUstream stream)
 {
 	CUevent ev = nullptr;
 	if (cuEventCreate(&ev, CU_EVENT_DISABLE_TIMING) != CUDA_SUCCESS ||
 	    ev == nullptr) {
-		return;
+		if (cuStreamSynchronize(stream) == CUDA_SUCCESS)
+			return true;
+		launch_tracking_failed.store(true, std::memory_order_release);
+		return false;
 	}
 	if (cuEventRecord(ev, stream) != CUDA_SUCCESS) {
 		cuEventDestroy(ev);
-		return;
+		if (cuStreamSynchronize(stream) == CUDA_SUCCESS)
+			return true;
+		launch_tracking_failed.store(true, std::memory_order_release);
+		return false;
 	}
 	{
 		std::lock_guard<std::mutex> guard(launch_event_mutex);
@@ -1420,11 +1537,17 @@ void nv_attach_impl::record_patched_launch_event(CUstream stream)
 			pending_launch_events_by_stream.emplace(stream, ev);
 		}
 	}
+	return true;
 }
 
-void nv_attach_impl::wait_for_patched_launch_events(
+bool nv_attach_impl::wait_for_patched_launch_events(
 	std::chrono::milliseconds timeout)
 {
+	if (launch_tracking_failed.load(std::memory_order_acquire)) {
+		if (cuCtxSynchronize() != CUDA_SUCCESS)
+			return false;
+		launch_tracking_failed.store(false, std::memory_order_release);
+	}
 	// Best-effort ensure a context is current for driver event APIs.
 	{
 		CUcontext current = nullptr;
@@ -1441,70 +1564,41 @@ void nv_attach_impl::wait_for_patched_launch_events(
 	}
 	auto deadline = std::chrono::steady_clock::now() + timeout;
 	for (;;) {
-		std::vector<std::pair<CUstream, CUevent>> batch;
+		std::size_t pending = 0;
 		{
 			std::lock_guard<std::mutex> guard(launch_event_mutex);
-			batch.reserve(pending_launch_events_by_stream.size());
-			for (auto &kv : pending_launch_events_by_stream)
-				batch.emplace_back(kv.first, kv.second);
-			pending_launch_events_by_stream.clear();
-		}
-		if (batch.empty())
-			return;
-		std::vector<std::pair<CUstream, CUevent>> not_ready;
-		not_ready.reserve(batch.size());
-		for (auto &kv : batch) {
-			CUstream stream = kv.first;
-			CUevent ev = kv.second;
-			if (ev == nullptr)
-				continue;
-			CUresult st = cuEventQuery(ev);
-			if (st == CUDA_SUCCESS) {
-				cuEventDestroy(ev);
-			} else if (st == CUDA_ERROR_NOT_READY) {
-				not_ready.emplace_back(stream, ev);
-			} else {
-				cuEventDestroy(ev);
+			for (auto it = pending_launch_events_by_stream.begin();
+			     it != pending_launch_events_by_stream.end();) {
+				CUevent ev = it->second;
+				if (ev == nullptr) {
+					it = pending_launch_events_by_stream
+						     .erase(it);
+					continue;
+				}
+				CUresult st = cuEventQuery(ev);
+				if (st == CUDA_SUCCESS) {
+					cuEventDestroy(ev);
+					it = pending_launch_events_by_stream
+						     .erase(it);
+					continue;
+				}
+				if (st != CUDA_ERROR_NOT_READY) {
+					SPDLOG_ERROR(
+						"nv_attach_impl: unable to prove patched launch quiescence (event error={})",
+						(int)st);
+					return false;
+				}
+				++pending;
+				++it;
 			}
 		}
-		if (not_ready.empty())
-			return;
+		if (pending == 0)
+			return true;
 		if (std::chrono::steady_clock::now() >= deadline) {
-			std::lock_guard<std::mutex> guard(launch_event_mutex);
-			for (auto &kv : not_ready) {
-				// Keep the most recent event per stream.
-				auto it = pending_launch_events_by_stream.find(
-					kv.first);
-				if (it !=
-				    pending_launch_events_by_stream.end()) {
-					if (it->second)
-						cuEventDestroy(it->second);
-					it->second = kv.second;
-				} else {
-					pending_launch_events_by_stream.emplace(
-						kv.first, kv.second);
-				}
-			}
 			SPDLOG_WARN(
-				"nv_attach_impl: detach timeout waiting for {} patched kernel event(s)",
-				not_ready.size());
-			return;
-		}
-		{
-			std::lock_guard<std::mutex> guard(launch_event_mutex);
-			for (auto &kv : not_ready) {
-				auto it = pending_launch_events_by_stream.find(
-					kv.first);
-				if (it !=
-				    pending_launch_events_by_stream.end()) {
-					if (it->second)
-						cuEventDestroy(it->second);
-					it->second = kv.second;
-				} else {
-					pending_launch_events_by_stream.emplace(
-						kv.first, kv.second);
-				}
-			}
+				"nv_attach_impl: detach timeout waiting for {} patched kernel event(s); state retained",
+				pending);
+			return false;
 		}
 		std::this_thread::sleep_for(std::chrono::milliseconds(5));
 	}
@@ -1516,9 +1610,10 @@ void nv_attach_impl::clear_patched_state_for_next_session()
 	// shm/maps layout without stale GPU pointers.
 	std::vector<std::unique_ptr<fatbin_record>> old_records;
 	{
-		std::lock_guard<std::mutex> guard(late_bootstrap_mutex);
+		std::lock_guard<std::recursive_mutex> guard(
+			late_bootstrap_mutex);
 		old_records.swap(fatbin_records);
-		current_fatbin = nullptr;
+		fatbin_handle_to_record.clear();
 		symbol_address_to_fatbin.clear();
 		patch_cache.clear();
 		{
@@ -1799,10 +1894,74 @@ void nv_attach_impl::bootstrap_existing_fatbins()
 	auto modules = elf_introspect::list_loaded_modules();
 	std::size_t ingested = 0;
 
+	if (const char *targeted =
+		    getenv("BPFTIME_CUDA_TARGETED_LATE_BOOTSTRAP");
+	    targeted && targeted[0] == '1') {
+		const auto target_kernels = collect_all_kernels_to_patch();
+		decltype(modules) matching_modules;
+		for (const auto &mod : modules) {
+			auto symbols =
+				elf_introspect::read_function_symbols(mod);
+			bool matches = false;
+			for (const auto &symbol : symbols) {
+				std::string name = symbol.name;
+				constexpr const char *stub_prefix =
+					"__device_stub__";
+				if (name.rfind(stub_prefix, 0) == 0) {
+					name.erase(0, strlen(stub_prefix));
+					if (!name.empty() && name[0] != '_')
+						name.insert(name.begin(), '_');
+				}
+				if (std::binary_search(target_kernels.begin(),
+						       target_kernels.end(),
+						       name)) {
+					matches = true;
+					break;
+				}
+			}
+			if (matches)
+				matching_modules.push_back(mod);
+		}
+		if (!matching_modules.empty()) {
+			SPDLOG_INFO(
+				"nv_attach_impl: targeted late bootstrap selected {} of {} loaded module(s)",
+				matching_modules.size(), modules.size());
+			modules = std::move(matching_modules);
+		} else {
+			SPDLOG_WARN(
+				"nv_attach_impl: targeted late bootstrap found no module containing a requested kernel; falling back to all loaded modules");
+		}
+	}
+
+	// An external PTX directory is already a complete late-attach input. Do
+	// not feed that same directory through extract_ptxs() once per loaded
+	// fatbin: doing so recompiles and reloads identical modules repeatedly.
+	if (const char *dir = getenv("BPFTIME_CUDA_LATE_PTX_DIR");
+	    dir && dir[0] != '\0') {
+		std::error_code ec;
+		const std::filesystem::path path(dir);
+		if (std::filesystem::is_directory(path, ec)) {
+			auto extracted_ptx = extract_ptxs({});
+			if (!extracted_ptx.empty()) {
+				auto rec = std::make_unique<fatbin_record>();
+				rec->original_ptx = std::move(extracted_ptx);
+				rec->module_pool = module_pool;
+				rec->ptx_pool = ptx_pool;
+				rec->try_loading_ptxs(*this);
+				fatbin_records.emplace_back(std::move(rec));
+				SPDLOG_INFO(
+					"nv_attach_impl: late attach bootstrap ingested external PTX directory once");
+				prefill_patched_kernel_functions_from_loaded_fatbins();
+				return;
+			}
+		}
+	}
+
 	for (const auto &mod : modules) {
 		// CUDA binaries may expose fatbin bytes either directly in
 		// `.nv_fatbin` (raw fatbin header 0xBA55ED50...) or as a list
 		// of wrappers inside `.nvFatBinSegment` (magic 'FbC1').
+		bool ingested_direct_fatbin = false;
 		if (auto sec = elf_introspect::find_section_in_memory(
 			    mod, ".nv_fatbin");
 		    sec) {
@@ -1823,12 +1982,19 @@ void nv_attach_impl::bootstrap_existing_fatbins()
 					fatbin_records.emplace_back(
 						std::move(rec));
 					ingested++;
+					ingested_direct_fatbin = true;
 					SPDLOG_INFO(
 						"nv_attach_impl: ingested fatbin from .nv_fatbin in {}",
 						mod.path.c_str());
 				}
 			}
 		}
+		// `.nvFatBinSegment` is an alternate index into the same fatbin
+		// payload. Scanning its wrappers after a successful
+		// direct-section ingest extracts overlapping suffixes (N, N-1,
+		// ... PTX files).
+		if (ingested_direct_fatbin)
+			continue;
 
 		if (auto sec = elf_introspect::find_section_in_memory(
 			    mod, ".nvFatBinSegment");
@@ -1866,7 +2032,9 @@ void nv_attach_impl::bootstrap_existing_fatbins()
 	// If ELF scanning didn't find any fatbin section but the user provided
 	// an external PTX directory (dynamic attach), still allow patching to
 	// proceed based solely on those PTX files.
-	if (ingested == 0) {
+	const char *late_ptx_dir = getenv("BPFTIME_CUDA_LATE_PTX_DIR");
+	if (ingested == 0 && late_ptx_dir != nullptr &&
+	    late_ptx_dir[0] != '\0') {
 		auto extracted_ptx = extract_ptxs({});
 		if (!extracted_ptx.empty()) {
 			auto rec = std::make_unique<fatbin_record>();
@@ -1891,6 +2059,7 @@ void nv_attach_impl::bootstrap_existing_fatbins_once()
 {
 	if (!is_enabled())
 		return;
+	auto registration_guard = lock_registration_state();
 	if (shared_mem_ptr == 0)
 		return;
 	if (!map_basic_info.has_value() || map_basic_info->empty())
@@ -1898,7 +2067,6 @@ void nv_attach_impl::bootstrap_existing_fatbins_once()
 	if (hook_entries.empty())
 		return;
 
-	std::lock_guard<std::mutex> guard(late_bootstrap_mutex);
 	if (late_bootstrap_done.load(std::memory_order_acquire))
 		return;
 	if (!late_bootstrap_once) {
@@ -1926,7 +2094,7 @@ void nv_attach_impl::bootstrap_existing_fatbins_once()
 
 void nv_attach_impl::reset_late_bootstrap_state_for_next_attach()
 {
-	std::lock_guard<std::mutex> guard(late_bootstrap_mutex);
+	std::lock_guard<std::recursive_mutex> guard(late_bootstrap_mutex);
 	late_bootstrap_done.store(false, std::memory_order_release);
 	late_bootstrap_started.store(false, std::memory_order_release);
 	late_bootstrap_once = std::make_unique<std::once_flag>();
