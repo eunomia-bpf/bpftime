@@ -44,6 +44,7 @@ set(TEST_SOURCES
     attach_with_ebpf/test_shm_progs_attach.cpp
     attach_with_ebpf/test_ufunc_register.cpp
     attach_with_ebpf/test_attach_replace.cpp
+    attach_with_ebpf/test_rejected_attach_cleanup.cpp
 
     tailcall/test_user_to_kernel_tailcall.cpp
     tailcall/test_user_to_user_tailcall.cpp
@@ -54,6 +55,11 @@ if(${BPFTIME_ENABLE_CUDA_ATTACH})
 endif()
 option(TEST_LCOV "option for lcov" OFF)
 add_executable(bpftime_runtime_tests ${TEST_SOURCES})
+
+if(NOT ENABLE_EBPF_VERIFIER)
+    target_compile_definitions(bpftime_runtime_tests PRIVATE
+        BPFTIME_TEST_VERIFIER_DISABLED=1)
+endif()
 
 if(UNIX AND NOT APPLE)
     add_executable(bpftime-shm-allocation-test-helper

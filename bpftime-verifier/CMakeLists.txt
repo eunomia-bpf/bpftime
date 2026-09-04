@@ -1,4 +1,11 @@
-add_library(bpftime-verifier STATIC src/bpftime-verifier.cpp src/platform-impl.cpp)
+add_library(bpftime-verifier STATIC
+    src/bpftime-verifier.cpp
+    src/platform-impl.cpp
+    src/gpu/gpu_platform.cpp
+    src/gpu/gpu_verifier.cpp
+    src/gpu/simt_safety_check.cpp
+    src/gpu/uniformity_analysis.cpp
+)
 add_subdirectory(ebpf-verifier)
 
 set_property(TARGET bpftime-verifier PROPERTY CXX_STANDARD 20)
@@ -19,6 +26,8 @@ set(TEST_SOURCES
     test/simple.cpp
     test/map.cpp
     test/non_kernel_helper.cpp
+    test/gpu_verifier_test.cpp
+    test/gpu_revision_safety_test.cpp
 )
 
 if(NOT TARGET Catch2)
@@ -49,5 +58,11 @@ if (${TEST_LCOV})
 else ()
     target_link_libraries(bpftime_verifier_tests PRIVATE bpftime-verifier Catch2::Catch2WithMain)
 endif()
-target_include_directories(bpftime_verifier_tests PRIVATE ${BPFTIME_VERIFIER_INCLUDE})
+if(UNIX AND NOT APPLE)
+    target_link_options(bpftime_verifier_tests PRIVATE -Wl,--build-id=none)
+endif()
+target_include_directories(bpftime_verifier_tests PRIVATE
+    ${BPFTIME_VERIFIER_INCLUDE}
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/gpu
+)
 add_test(NAME bpftime_verifier_tests COMMAND bpftime_verifier_tests)

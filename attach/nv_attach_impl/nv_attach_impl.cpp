@@ -11,6 +11,9 @@
 #include "nv_elf_introspect.hpp"
 // #include "spdlog/common.h"
 #include "spdlog/spdlog.h"
+#ifdef ENABLE_BPFTIME_VERIFIER
+#include <gpu_verifier.hpp>
+#endif
 #include <algorithm>
 #include <asm/unistd.h> // For architecture-specific syscall numbers
 #include <boost/asio/io_context.hpp>
@@ -108,6 +111,35 @@ static std::vector<std::filesystem::path> split_by_colon(const std::string &str)
 	}
 	return result;
 }
+
+#ifdef ENABLE_BPFTIME_VERIFIER
+static std::map<int, bpftime::verifier::BpftimeMapDescriptor>
+build_gpu_verifier_map_descriptors(
+	const std::vector<bpftime::attach::MapBasicInfo> &maps)
+{
+	std::map<int, bpftime::verifier::BpftimeMapDescriptor> descriptors;
+	for (size_t fd = 0; fd < maps.size(); ++fd) {
+		const auto &map = maps[fd];
+		if (!map.enabled)
+			continue;
+		descriptors.emplace(
+			static_cast<int>(fd),
+			bpftime::verifier::BpftimeMapDescriptor{
+				.original_fd = static_cast<int>(fd),
+				.type = static_cast<uint32_t>(map.map_type),
+				.key_size =
+					static_cast<unsigned int>(map.key_size),
+				.value_size = static_cast<unsigned int>(
+					map.value_size),
+				.max_entries = static_cast<unsigned int>(
+					map.max_entries),
+				.inner_map_fd = static_cast<unsigned int>(-1),
+			});
+	}
+	return descriptors;
+}
+#endif
+
 #define CUDA_DRIVER_CHECK_NO_EXCEPTION(expr, message)                          \
 	do {                                                                   \
 		if (auto err = expr; err != CUDA_SUCCESS) {                    \
@@ -191,6 +223,50 @@ int nv_attach_impl::create_attach_with_ebpf_callback(
 		}
 	}
 	if (matched) {
+#ifdef ENABLE_BPFTIME_VERIFIER
+		const auto section_name = data.program_name.empty() ?
+						  attach_point_name :
+						  data.program_name;
+		if (data.verifier_mode != BPFTIME_NO_VERIFY) {
+			const auto error =
+				bpftime::verifier::gpu::verify_gpu_program(
+					data.instructions.data(),
+					data.instructions.size(), section_name,
+					build_gpu_verifier_map_descriptors(
+						data.map_basic_info));
+			if (error) {
+				if (data.verifier_mode ==
+				    BPFTIME_VERIFIER_STRICT) {
+					SPDLOG_ERROR(
+						"GPU eBPF verification failed for {}: {} (mode=STRICT, policy_entry_created=0)",
+						section_name, *error);
+					return GPU_VERIFIER_REJECTED;
+				}
+				SPDLOG_WARN(
+					"GPU eBPF verification failed for {}: {}; continuing",
+					section_name, *error);
+			} else if (data.verifier_mode == BPFTIME_VERIFIER_STRICT) {
+				SPDLOG_INFO(
+					"GPU eBPF verification accepted: mode=STRICT program={} attach={} instructions={}",
+					section_name, attach_point_name,
+					data.instructions.size());
+				for (size_t fd = 0;
+				     fd < data.map_basic_info.size(); ++fd) {
+					const auto &map = data.map_basic_info[fd];
+					if (map.enabled) {
+						SPDLOG_INFO(
+							"GPU eBPF verified map: program={} fd={} type={} key_size={} value_size={} max_entries={}",
+							section_name, fd, map.map_type,
+							map.key_size, map.value_size,
+							map.max_entries);
+					}
+				}
+			}
+		} else {
+			SPDLOG_INFO("Skipping GPU eBPF verification for {}",
+				    section_name);
+		}
+#endif
 		if (data.comm_shared_mem == 0) {
 			SPDLOG_ERROR(
 				"comm_shared_mem is null when creating CUDA attach for {}",

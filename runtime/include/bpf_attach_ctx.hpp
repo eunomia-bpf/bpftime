@@ -157,6 +157,22 @@ class base_attach_manager;
 class handler_manager;
 class bpftime_prog;
 
+namespace detail
+{
+struct rejected_attach_cleanup_result {
+	int error_to_return;
+	bool reset_state;
+};
+
+constexpr rejected_attach_cleanup_result
+decide_rejected_attach_cleanup(int rejection_error, int cleanup_error) noexcept
+{
+	if (cleanup_error < 0)
+		return { cleanup_error, false };
+	return { rejection_error, true };
+}
+} // namespace detail
+
 using syscall_hooker_func_t = int64_t (*)(int64_t sys_nr, int64_t arg1,
 					  int64_t arg2, int64_t arg3,
 					  int64_t arg4, int64_t arg5,
@@ -256,6 +272,7 @@ private:
 					const runtime_config &config);
 	int instantiate_bpf_link_handler_at(int id,
 					    const bpf_link_handler &handler,
+					    const runtime_config &config,
 					    bool handle_nv_attach_impl);
 	int instantiate_perf_event_handler_at(
 		int id, const bpf_perf_event_handler &perf_handler);

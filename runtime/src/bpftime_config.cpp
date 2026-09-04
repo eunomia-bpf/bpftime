@@ -133,6 +133,23 @@ runtime_config bpftime::construct_runtime_config_from_env() noexcept
 	const char *verifier_level = std::getenv("BPFTIME_VERIFIER_LEVEL");
 	if (verifier_level != nullptr) {
 		std::string_view level_sv(verifier_level);
+#ifndef ENABLE_BPFTIME_VERIFIER
+		if (level_sv == "STRICT") {
+			SPDLOG_CRITICAL(
+				"BPFTIME_VERIFIER_LEVEL={} requires userspace verifier support, "
+				"but this bpftime build was compiled with ENABLE_EBPF_VERIFIER=OFF. "
+				"Rebuild with ENABLE_EBPF_VERIFIER=ON or set "
+				"BPFTIME_VERIFIER_LEVEL=NO_VERIFY.",
+				verifier_level);
+			std::exit(EXIT_FAILURE);
+		}
+		if (level_sv == "WARNING") {
+			SPDLOG_WARN(
+				"BPFTIME_VERIFIER_LEVEL=WARNING was requested, but this bpftime "
+				"build was compiled with ENABLE_EBPF_VERIFIER=OFF; continuing "
+				"without userspace verification.");
+		}
+#endif
 		if (level_sv == "STRICT") {
 			runtime_config.verifier_mode = BPFTIME_VERIFIER_STRICT;
 			SPDLOG_INFO("Verifier mode: STRICT");

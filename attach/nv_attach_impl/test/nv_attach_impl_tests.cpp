@@ -1,5 +1,10 @@
 #include "catch2/catch_test_macros.hpp"
 #include "nv_attach_impl.hpp"
+#ifdef ENABLE_EBPF_VERIFIER
+#include "gpu_verifier.hpp"
+#include "nv_attach_private_data.hpp"
+#include <cerrno>
+#endif
 
 using namespace bpftime;
 using namespace attach;
@@ -83,3 +88,99 @@ TEST_CASE("Test string replace")
 	REQUIRE(replaced.find(".extern .func") == std::string::npos);
 	REQUIRE(replaced.find(".visible .func bpf_main") == std::string::npos);
 }
+
+#ifdef ENABLE_EBPF_VERIFIER
+TEST_CASE("GPU verifier mode controls attach rejection", "[gpu][verifier]")
+{
+	nv_attach_impl impl;
+	nv_attach_private_data data;
+	data.code_addr_or_func_name = "verifier_mode_test";
+	data.program_name = "cuda__verifier_mode_test";
+	int shared_mem_marker = 0;
+	data.comm_shared_mem = reinterpret_cast<uintptr_t>(&shared_mem_marker);
+
+	ebpf_inst unsupported_call{};
+	unsupported_call.opcode = EBPF_OP_CALL;
+	unsupported_call.imm = 7;
+	ebpf_inst exit{};
+	exit.opcode = EBPF_OP_EXIT;
+	data.instructions = { unsupported_call, exit };
+
+	const auto attach = [&](bpftime_verifier_mode mode) {
+		data.verifier_mode = mode;
+		return impl.create_attach_with_ebpf_callback(
+			ebpf_run_callback{}, data, ATTACH_CUDA_PROBE);
+	};
+
+	REQUIRE(attach(BPFTIME_VERIFIER_STRICT) == GPU_VERIFIER_REJECTED);
+	const int warning_id = attach(BPFTIME_VERIFIER_WARNING);
+	REQUIRE(warning_id == 1);
+	REQUIRE(impl.detach_by_id(warning_id) == 0);
+	const int no_verify_id = attach(BPFTIME_NO_VERIFY);
+	REQUIRE(no_verify_id == 2);
+	REQUIRE(impl.detach_by_id(no_verify_id) == 0);
+}
+
+TEST_CASE("GPU strict counter admission and rejection", "[gpu][verifier][strict-counter]")
+{
+	// A CPU fixture for the finite device-smoke counter, not its compiled ELF.
+	const auto insn = [](uint8_t opcode, uint8_t dst = 0, uint8_t src = 0,
+			     int16_t offset = 0, int32_t imm = 0) {
+		ebpf_inst value{};
+		value.opcode = opcode;
+		value.dst = dst;
+		value.src = src;
+		value.offset = offset;
+		value.imm = imm;
+		return value;
+	};
+	const std::vector<ebpf_inst> counter = {
+		insn(EBPF_OP_STW, 10, 0, -4, 0),
+		insn(EBPF_OP_MOV64_REG, 2, 10),
+		insn(EBPF_OP_ADD64_IMM, 2, 0, 0, -4),
+		insn(EBPF_OP_LDDW, 1, 1, 0, 1), {},
+		insn(EBPF_OP_CALL, 0, 0, 0, 1),
+		insn(EBPF_OP_JEQ_IMM, 0, 0, 3, 0),
+		insn(EBPF_OP_LDXDW, 1, 0),
+		insn(EBPF_OP_ADD64_IMM, 1, 0, 0, 1),
+		insn(EBPF_OP_STXDW, 0, 1),
+		insn(EBPF_OP_MOV64_IMM), insn(EBPF_OP_EXIT),
+	};
+	const std::map<int, verifier::BpftimeMapDescriptor> maps = {
+		{ 1, { .original_fd = 1, .type = 1502, .key_size = 4,
+		       .value_size = 8, .max_entries = 1,
+		       .inner_map_fd = static_cast<unsigned int>(-1) } }
+	};
+	REQUIRE_FALSE(verifier::gpu::verify_gpu_program(
+		counter.data(), counter.size(), "cuda__count_return", maps));
+
+	nv_attach_private_data data;
+	data.program_name = "cuda__count_return";
+	data.code_addr_or_func_name = "_Z9vectorAddPKfS0_Pfi";
+	data.verifier_mode = BPFTIME_VERIFIER_STRICT;
+	data.map_basic_info.resize(2);
+	data.map_basic_info[1] = { true, 4, 8, 1, 1502, nullptr, 4096 };
+	data.instructions = {
+		insn(EBPF_OP_CALL, 0, 0, 0, 511),
+		insn(EBPF_OP_JNE_IMM, 0, 0,
+		     static_cast<int16_t>(counter.size() - 2), 0),
+	};
+	data.instructions.insert(data.instructions.end(), counter.begin(), counter.end());
+	const auto error = verifier::gpu::verify_gpu_program(
+		data.instructions.data(), data.instructions.size(), data.program_name, maps);
+	REQUIRE(error.has_value());
+	REQUIRE(error->find("branch predicate is lane-varying") != std::string::npos);
+
+	// Only the rejected program reaches attach: a successful attach would
+	// bootstrap a CUDA context, which is deliberately not part of this test.
+	nv_attach_impl impl;
+	// The interception runtime starts enabled, even with no policy hooks.
+	// Rejection must leave that pre-existing state unchanged and create no
+	// policy entry; it makes no claim about the generic Frida hook lifecycle.
+	const bool enabled_before = impl.is_enabled();
+	REQUIRE(impl.create_attach_with_ebpf_callback(
+			ebpf_run_callback{}, data, ATTACH_CUDA_RETPROBE) == GPU_VERIFIER_REJECTED);
+	REQUIRE(impl.is_enabled() == enabled_before);
+	REQUIRE(impl.detach_by_id(1) == -ENOENT);
+}
+#endif

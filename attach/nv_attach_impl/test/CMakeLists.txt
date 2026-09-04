@@ -8,6 +8,11 @@ set(TEST_SOURCES
 )
 add_executable(bpftime_nv_attach_tests ${TEST_SOURCES})
 
+if(${ENABLE_EBPF_VERIFIER})
+    target_compile_definitions(bpftime_nv_attach_tests PRIVATE ENABLE_EBPF_VERIFIER)
+    target_link_libraries(bpftime_nv_attach_tests PRIVATE bpftime-verifier)
+endif()
+
 target_include_directories(bpftime_nv_attach_tests PUBLIC ${CMAKE_SOURCE_DIR}/third_party)
 
 option(TEST_LCOV "option for lcov" OFF)
