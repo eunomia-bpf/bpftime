@@ -224,3 +224,25 @@ TEST_CASE("GPU ring buffer rejects corrupt pending records", "[gpu-ringbuf]")
 	REQUIRE(stats.other_drops == 1);
 	REQUIRE(map.drain_data([](const void *, uint64_t) {}) == -EOVERFLOW);
 }
+
+TEST_CASE("GPU ring buffer reports unsupported map operations", "[gpu-ringbuf]")
+{
+	shared_memory_fixture fixture("unsupported");
+	nv_gpu_ringbuf_map_impl map(fixture.memory(), sizeof(uint64_t), 1, 1);
+
+	errno = 0;
+	REQUIRE(map.elem_lookup(nullptr) == nullptr);
+	REQUIRE(errno == ENOTSUP);
+
+	errno = 0;
+	REQUIRE(map.elem_update(nullptr, nullptr, 0) == -1);
+	REQUIRE(errno == ENOTSUP);
+
+	errno = 0;
+	REQUIRE(map.elem_delete(nullptr) == -1);
+	REQUIRE(errno == ENOTSUP);
+
+	errno = 0;
+	REQUIRE(map.map_get_next_key(nullptr, nullptr) == -1);
+	REQUIRE(errno == ENOTSUP);
+}

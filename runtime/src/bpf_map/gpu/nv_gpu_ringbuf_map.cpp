@@ -168,7 +168,7 @@ nv_gpu_ringbuf_map_impl::~nv_gpu_ringbuf_map_impl()
 void *nv_gpu_ringbuf_map_impl::elem_lookup(const void *key)
 {
 	SPDLOG_ERROR("Element lookup is not supported by gpu ringbuf map");
-	errno = -ENOTSUP;
+	errno = ENOTSUP;
 	return nullptr;
 }
 
@@ -176,20 +176,20 @@ long nv_gpu_ringbuf_map_impl::elem_update(const void *key, const void *value,
 					  uint64_t flags)
 {
 	SPDLOG_ERROR("Element update is not supported by gpu ringbuf map");
-	errno = -ENOTSUP;
+	errno = ENOTSUP;
 	return -1;
 }
 
 long nv_gpu_ringbuf_map_impl::elem_delete(const void *key)
 {
 	SPDLOG_ERROR("Element delete is not supported by gpu ringbuf map");
-	errno = -ENOTSUP;
+	errno = ENOTSUP;
 	return -1;
 }
 
 int nv_gpu_ringbuf_map_impl::map_get_next_key(const void *key, void *next_key)
 {
 	SPDLOG_ERROR("Get next key is not supported by gpu ringbuf map");
-	errno = -ENOTSUP;
+	errno = ENOTSUP;
 	return -1;
 }
