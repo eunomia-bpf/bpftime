@@ -48,8 +48,9 @@ TEST_CASE("read_all_from_stdin reads from standard input", "[ptxpass_core]")
 	SECTION("Empty input is handled")
 	{
 		std::istringstream empty_input("");
-		std::cin.rdbuf(empty_input.rdbuf());
+		auto *original_buffer = std::cin.rdbuf(empty_input.rdbuf());
 		std::string result = read_all_from_stdin();
+		std::cin.rdbuf(original_buffer);
 		REQUIRE(result.empty());
 	}
 }
@@ -293,7 +294,7 @@ TEST_CASE("compile_ebpf_to_ptx_from_words compiles eBPF to PTX",
 	REQUIRE(ptx.find("ret") != std::string::npos);
 }
 
-TEST_CASE("log_transform_stats emits stats through spdlog",
+TEST_CASE("log_transform_stats bypasses the application default logger",
 	  "[ptxpass_core]")
 {
 	std::ostringstream oss;
@@ -307,11 +308,8 @@ TEST_CASE("log_transform_stats emits stats through spdlog",
 	logger->flush();
 	spdlog::set_default_logger(old_logger);
 
-	std::string output = oss.str();
-	REQUIRE(output.find("test_pass") != std::string::npos);
-	REQUIRE(output.find("matched=5") != std::string::npos);
-	REQUIRE(output.find("in=1024") != std::string::npos);
-	REQUIRE(output.find("out=2048") != std::string::npos);
+	// The process-level plugin test separately checks the real stderr bytes.
+	REQUIRE(oss.str().empty());
 }
 
 TEST_CASE("PassConfig default includes and excludes work correctly",

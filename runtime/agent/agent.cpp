@@ -5,7 +5,7 @@
 #include "frida_uprobe_attach_impl.hpp"
 
 #include "spdlog/common.h"
-#include "bpftime_logger.hpp"
+#include "bootstrap_logger.hpp"
 #include <chrono>
 #include <csignal>
 #include <cstdio>
@@ -718,6 +718,7 @@ void **(*original___cudaRegisterFatBinary)(void *) = nullptr;
 extern "C" void **__cudaRegisterFatBinary(void *fatbin)
 {
 	try {
+		initialize_agent_bootstrap_logger();
 		auto orig = try_get_original_func("__cudaRegisterFatBinary",
 						 original___cudaRegisterFatBinary);
 		// We have to register llvmbpf manually, since this function
@@ -738,6 +739,7 @@ extern "C" void **__cudaRegisterFatBinary(void *fatbin)
 extern "C" void bpftime_agent_main(const gchar *data, gboolean *stay_resident)
 {
 	try {
+		initialize_agent_bootstrap_logger();
 #ifdef __linux__
 			// If an agent IPC server is already present in this process,
 			// refresh it instead of initializing a new copy.

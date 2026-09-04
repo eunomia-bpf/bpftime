@@ -1,5 +1,4 @@
 #include "ptxpass/core.hpp"
-#include "spdlog/spdlog.h"
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
@@ -230,7 +229,7 @@ std::string compile_ebpf_to_ptx_from_words(
 	    optional_ptx) {
 		original_ptx = *optional_ptx;
 	} else {
-		SPDLOG_ERROR("Unable to produce PTX from eBPF");
+		std::fprintf(stderr, "[ptxpass] Unable to produce PTX from eBPF\n");
 		throw std::runtime_error("Unable to produce PTX from eBPF");
 	}
 	std::string filtered_ptx;
@@ -318,7 +317,8 @@ std::pair<size_t, size_t> find_kernel_body(const std::string &ptx,
 void log_transform_stats(const char *pass_name, int matched, size_t bytes_in,
 			 size_t bytes_out)
 {
-	SPDLOG_INFO("[ptxpass] {}: matched={}, in={}, out={}", pass_name,
-		    matched, bytes_in, bytes_out);
+	// Pass plugins have their own logging registry; stdout belongs to the application.
+	std::fprintf(stderr, "[ptxpass] %s: matched=%d, in=%zu, out=%zu\n",
+		     pass_name, matched, bytes_in, bytes_out);
 }
 } // namespace ptxpass
