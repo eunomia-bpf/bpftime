@@ -850,11 +850,11 @@ jobs:
             local expect="$1"; shift
             local log="logs/${name}_server.log"
 
-            sudo rm -rf "${BPFTIME_SHARED_MEMORY_PATH:?}"/bpftime* 2>/dev/null || true
+            rm -rf "${BPFTIME_SHARED_MEMORY_PATH:?}"/bpftime* 2>/dev/null || true
             rm -f "$log"
 
             echo "--- CASE $name: starting bpftrace server ---"
-            sudo -E LD_PRELOAD=$SERVER_LIB bpftrace -e "$program" > "$log" 2>&1 &
+            env LD_PRELOAD="$SERVER_LIB" bpftrace -e "$program" > "$log" 2>&1 &
             local server_pid=$!
 
             local i
@@ -874,7 +874,7 @@ jobs:
                 echo "CASE $name: FAILURE - server did not initialize in 40s"
                 cat "$log"
                 FAILED_CASES="$FAILED_CASES $name"
-                sudo kill -9 "$server_pid" 2>/dev/null || true
+                kill -9 "$server_pid" 2>/dev/null || true
                 wait "$server_pid" 2>/dev/null || true
                 return 0
               fi
@@ -882,13 +882,13 @@ jobs:
             done
 
             echo "CASE $name: running victim ($victim)"
-            sudo -E $LD_PRELOAD_CMD $victim || echo "CASE $name: victim exited nonzero (continuing)"
+            $LD_PRELOAD_CMD $victim || echo "CASE $name: victim exited nonzero (continuing)"
             echo "CASE $name: draining events"
             sleep 4
 
             # Stop the server gracefully so bpftrace prints all aggregated
             # maps on exit, then check the log
-            sudo kill -INT "$server_pid" 2>/dev/null || true
+            kill -INT "$server_pid" 2>/dev/null || true
             for i in $(seq 1 15); do
               if ! ps -p $server_pid > /dev/null; then
                 echo "CASE $name: server exited $i second(s) after SIGINT"
@@ -898,7 +898,7 @@ jobs:
             done
             if ps -p $server_pid > /dev/null; then
               echo "CASE $name: server did not exit after SIGINT, killing it"
-              sudo kill -9 "$server_pid" 2>/dev/null || true
+              kill -9 "$server_pid" 2>/dev/null || true
             fi
             wait "$server_pid" 2>/dev/null || true
 
@@ -947,7 +947,7 @@ jobs:
             "timeout 8s dd if=/dev/zero of=/dev/null bs=1024" \
             "@[[:space:]]*:"
 
-          sudo rm -rf "${BPFTIME_SHARED_MEMORY_PATH:?}"/bpftime* 2>/dev/null || true
+          rm -rf "${BPFTIME_SHARED_MEMORY_PATH:?}"/bpftime* 2>/dev/null || true
 
           echo "=== One-liner test summary ==="
           if [ -n "$FAILED_CASES" ]; then
