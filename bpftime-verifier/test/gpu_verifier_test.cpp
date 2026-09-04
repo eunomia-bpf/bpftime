@@ -726,6 +726,14 @@ TEST_CASE("GPU verifier integrates SIMT phases with optional PREVAIL",
 		REQUIRE(*result == "empty instruction stream");
 	}
 
+	SECTION("null programs fail")
+	{
+		const auto result =
+			verify_gpu_program(nullptr, 1, "cuda__null");
+		REQUIRE(result);
+		REQUIRE(*result == "null instruction stream");
+	}
+
 	SECTION("impossible instruction counts return an error")
 	{
 		const ebpf_inst sentinel{};

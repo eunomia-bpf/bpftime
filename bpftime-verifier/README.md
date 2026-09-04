@@ -74,3 +74,20 @@ int main(){
 
 ## Important notes
 Things set by `set_available_helpers`, `set_non_kernel_helpers` and `set_map_descriptors` are thread-local, meaning that each thread has its own instance of things set by these functions. So you need to set the corresponding values in each thread you use.
+
+### GPU verifier phase timing
+
+Set `BPFTIME_GPU_VERIFIER_PHASE_TIMING=1` before process startup to emit one
+versioned JSON record to standard error for every `verify_gpu_program` call.
+The record reports wall and process-CPU nanoseconds for input copying, input
+validation, PREVAIL, uniformity analysis, SIMT checks, and the internal total.
+The `phase_mask` bits, from least to most significant, identify completed
+input-copy, validation, PREVAIL, uniformity, and SIMT phases. A rejected program
+therefore retains the durations completed before its rejection.
+
+The diagnostic is disabled for an unset variable and for every value other
+than exactly `1`. The setting is cached on first use and must not be changed
+inside a running process. Enabled timing adds clock reads and standard-error
+I/O, while the internal total excludes record formatting and emission. Process
+CPU time covers every thread in the process, so attribution runs should use an
+otherwise idle, serialized process.

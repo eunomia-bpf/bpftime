@@ -11,10 +11,17 @@
 
 #include <algorithm>
 #include <array>
+#include <cerrno>
+#include <chrono>
+#include <cstdio>
+#include <cstdlib>
+#include <cstdint>
 #include <cstring>
 #include <exception>
 #include <limits>
+#include <optional>
 #include <sstream>
+#include <time.h>
 #include <variant>
 
 namespace
@@ -32,6 +39,197 @@ ebpf_verifier_options_t gpu_verifier_options = {
 	.allow_division_by_zero = false,
 	.setup_constraints = false,
 	.dump_btf_types_json = false,
+};
+
+constexpr const char *GPU_VERIFIER_PHASE_TIMING_ENV =
+	"BPFTIME_GPU_VERIFIER_PHASE_TIMING";
+
+struct PhaseDuration {
+	std::optional<int64_t> wall_ns;
+	std::optional<int64_t> process_cpu_ns;
+};
+
+class ScopedErrnoPreserver
+{
+      public:
+	ScopedErrnoPreserver() noexcept : saved_errno_(errno) {}
+	~ScopedErrnoPreserver() noexcept
+	{
+		errno = saved_errno_;
+	}
+
+      private:
+	int saved_errno_;
+};
+
+bool verifier_phase_timing_enabled() noexcept
+{
+	static const bool enabled = []() noexcept {
+		ScopedErrnoPreserver preserve_errno;
+		const char *setting =
+			std::getenv(GPU_VERIFIER_PHASE_TIMING_ENV);
+		return setting != nullptr && std::strcmp(setting, "1") == 0;
+	}();
+	return enabled;
+}
+
+int64_t monotonic_wall_ns() noexcept
+{
+	ScopedErrnoPreserver preserve_errno;
+	return std::chrono::duration_cast<std::chrono::nanoseconds>(
+		       std::chrono::steady_clock::now().time_since_epoch())
+		.count();
+}
+
+std::optional<int64_t> process_cpu_ns() noexcept
+{
+	ScopedErrnoPreserver preserve_errno;
+	timespec value{};
+	if (clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &value) != 0) {
+		return std::nullopt;
+	}
+	return static_cast<int64_t>(value.tv_sec) * 1000000000LL +
+	       static_cast<int64_t>(value.tv_nsec);
+}
+
+class VerifierPhaseRecorder
+{
+      public:
+	VerifierPhaseRecorder(size_t instruction_count, size_t map_count) noexcept
+		: instruction_count_(instruction_count), map_count_(map_count)
+	{
+		enabled_ = verifier_phase_timing_enabled();
+		if (enabled_) {
+			total_wall_start_ns_ = monotonic_wall_ns();
+			total_cpu_start_ns_ = process_cpu_ns();
+		}
+	}
+
+	bool enabled() const noexcept
+	{
+		return enabled_;
+	}
+
+	void emit(bool accepted) const noexcept
+	{
+		if (!enabled_) {
+			return;
+		}
+		ScopedErrnoPreserver preserve_errno;
+
+		try {
+			const int64_t total_wall_ns =
+				monotonic_wall_ns() - total_wall_start_ns_;
+			const auto total_cpu_end_ns = process_cpu_ns();
+			const auto total_cpu_ns =
+				total_cpu_start_ns_ && total_cpu_end_ns ?
+					std::optional<int64_t>(*total_cpu_end_ns -
+							       *total_cpu_start_ns_) :
+					std::nullopt;
+
+			std::ostringstream output;
+			output << "BPFTIME_GPU_VERIFIER_PHASE_TIMING "
+			       << "{\"schema\":\"bpftime-gpu-verifier-phase-timing-v1\""
+			       << ",\"instruction_count\":" << instruction_count_
+			       << ",\"map_count\":" << map_count_
+			       << ",\"accepted\":"
+			       << (accepted ? "true" : "false")
+			       << ",\"phase_mask\":" << completed_phase_mask()
+			       << ",\"wall_ns\":{";
+			write_duration(output, input_copy.wall_ns, "input_copy");
+			write_duration(output, validation.wall_ns, "validation");
+			write_duration(output, prevail.wall_ns, "prevail");
+			write_duration(output, uniformity.wall_ns, "uniformity");
+			write_duration(output, simt.wall_ns, "simt");
+			write_duration(output, total_wall_ns, "total", false);
+			output << "},\"process_cpu_ns\":{";
+			write_duration(output, input_copy.process_cpu_ns,
+				       "input_copy");
+			write_duration(output, validation.process_cpu_ns,
+				       "validation");
+			write_duration(output, prevail.process_cpu_ns, "prevail");
+			write_duration(output, uniformity.process_cpu_ns,
+				       "uniformity");
+			write_duration(output, simt.process_cpu_ns, "simt");
+			write_duration(output, total_cpu_ns, "total", false);
+			output << "}}\n";
+			const std::string rendered = output.str();
+			(void)std::fwrite(rendered.data(), 1, rendered.size(), stderr);
+		} catch (...) {
+			// Diagnostics must never change a verifier decision.
+		}
+	}
+
+	PhaseDuration input_copy;
+	PhaseDuration validation;
+	PhaseDuration prevail;
+	PhaseDuration uniformity;
+	PhaseDuration simt;
+
+      private:
+	uint32_t completed_phase_mask() const noexcept
+	{
+		return (input_copy.wall_ns ? 1U : 0U) |
+		       (validation.wall_ns ? 2U : 0U) |
+		       (prevail.wall_ns ? 4U : 0U) |
+		       (uniformity.wall_ns ? 8U : 0U) |
+		       (simt.wall_ns ? 16U : 0U);
+	}
+
+	static void write_duration(std::ostringstream &output,
+				   const std::optional<int64_t> &value,
+				   const char *name, bool comma = true)
+	{
+		output << '\"' << name << "\":";
+		if (value) {
+			output << *value;
+		} else {
+			output << "null";
+		}
+		if (comma) {
+			output << ',';
+		}
+	}
+
+	bool enabled_ = false;
+	size_t instruction_count_ = 0;
+	size_t map_count_ = 0;
+	int64_t total_wall_start_ns_ = 0;
+	std::optional<int64_t> total_cpu_start_ns_;
+};
+
+class ScopedPhaseTimer
+{
+      public:
+	ScopedPhaseTimer(const VerifierPhaseRecorder &recorder,
+			 PhaseDuration &duration) noexcept
+		: duration_(recorder.enabled() ? &duration : nullptr)
+	{
+		if (duration_ != nullptr) {
+			wall_start_ns_ = monotonic_wall_ns();
+			cpu_start_ns_ = process_cpu_ns();
+		}
+	}
+
+	~ScopedPhaseTimer() noexcept
+	{
+		if (duration_ == nullptr) {
+			return;
+		}
+		duration_->wall_ns = monotonic_wall_ns() - wall_start_ns_;
+		const auto cpu_end_ns = process_cpu_ns();
+		if (cpu_start_ns_ && cpu_end_ns) {
+			duration_->process_cpu_ns = *cpu_end_ns - *cpu_start_ns_;
+		}
+	}
+
+	ScopedPhaseTimer(const ScopedPhaseTimer &) = delete;
+	ScopedPhaseTimer &operator=(const ScopedPhaseTimer &) = delete;
+
+      private:
+	PhaseDuration *duration_ = nullptr;
+	int64_t wall_start_ns_ = 0;
+	std::optional<int64_t> cpu_start_ns_;
 };
 
 bool is_call(const ebpf_inst &instruction)
@@ -267,61 +465,87 @@ namespace bpftime::verifier::gpu
 static std::optional<std::string> verify_gpu_instructions(
 	const ebpf_inst *instructions, size_t num_instructions,
 	const std::string &section_name,
-	const std::map<int, BpftimeMapDescriptor> &map_descriptors)
+	const std::map<int, BpftimeMapDescriptor> &map_descriptors,
+	VerifierPhaseRecorder &phase_recorder)
 {
-	if (num_instructions == 0) {
-		return "empty instruction stream";
-	}
-	if (instructions == nullptr) {
-		return "null instruction stream";
-	}
-
 	const auto &maps = map_descriptors;
-	for (const auto &[fd, map] : maps) {
-		(void)fd;
-		if (map.type >= 1500 && map.type < 1600 &&
-		    !bpftime::try_get_gpu_map_type(map.type).has_value()) {
-			return "unsupported GPU map type " +
-			       std::to_string(map.type);
+	{
+		ScopedPhaseTimer phase(phase_recorder,
+				       phase_recorder.validation);
+		if (num_instructions == 0) {
+			return "empty instruction stream";
+		}
+		if (instructions == nullptr) {
+			return "null instruction stream";
+		}
+
+		for (const auto &[fd, map] : maps) {
+			(void)fd;
+			if (map.type >= 1500 && map.type < 1600 &&
+			    !bpftime::try_get_gpu_map_type(map.type)
+				     .has_value()) {
+				return "unsupported GPU map type " +
+				       std::to_string(map.type);
+			}
 		}
 	}
-	if (auto error =
-		    run_prevail(instructions, num_instructions, section_name,
-				to_prevail_map_descriptors(maps))) {
-		return error;
+
+	std::optional<std::string> prevail_error;
+	{
+		ScopedPhaseTimer phase(phase_recorder, phase_recorder.prevail);
+		const auto prevail_maps = to_prevail_map_descriptors(maps);
+		prevail_error = run_prevail(instructions, num_instructions,
+					    section_name, prevail_maps);
 	}
-	const auto uniformity =
-		analyze_uniformity(instructions, num_instructions, maps);
+	if (prevail_error) {
+		return prevail_error;
+	}
+
+	UniformityAnalysisResult uniformity;
+	{
+		ScopedPhaseTimer phase(phase_recorder,
+				       phase_recorder.uniformity);
+		uniformity =
+			analyze_uniformity(instructions, num_instructions, maps);
+	}
 	if (!uniformity.success) {
 		return uniformity.error_message;
 	}
 
-	const auto simt = check_simt_safety(instructions, num_instructions,
-					    uniformity, maps);
-	if (!simt.passed) {
-		return simt.summary();
+	std::optional<std::string> simt_error;
+	{
+		ScopedPhaseTimer phase(phase_recorder, phase_recorder.simt);
+		const auto simt = check_simt_safety(instructions,
+					    num_instructions, uniformity, maps);
+		if (!simt.passed) {
+			simt_error = simt.summary();
+		}
+	}
+	if (simt_error) {
+		return simt_error;
 	}
 
 	return std::nullopt;
 }
 
-std::optional<std::string>
-verify_gpu_program(const void *raw_instructions, size_t num_instructions,
-		   const std::string &section_name,
-		   const std::map<int, BpftimeMapDescriptor> &map_descriptors)
+static std::optional<std::string> verify_gpu_program_impl(
+	const void *raw_instructions, size_t num_instructions,
+	const std::string &section_name,
+	const std::map<int, BpftimeMapDescriptor> &map_descriptors,
+	VerifierPhaseRecorder &phase_recorder)
 {
-	static_assert(sizeof(ebpf_inst) == sizeof(uint64_t));
-	try {
-		if (raw_instructions == nullptr) {
-			return verify_gpu_instructions(nullptr,
-						       num_instructions,
-						       section_name,
-						       map_descriptors);
-		}
-		std::vector<ebpf_inst> instructions;
-		if (num_instructions > instructions.max_size()) {
-			return "instruction count exceeds verifier capacity";
-		}
+	if (raw_instructions == nullptr) {
+		return verify_gpu_instructions(nullptr, num_instructions,
+					       section_name, map_descriptors,
+					       phase_recorder);
+	}
+	std::vector<ebpf_inst> instructions;
+	if (num_instructions > instructions.max_size()) {
+		return "instruction count exceeds verifier capacity";
+	}
+	{
+		ScopedPhaseTimer phase(phase_recorder,
+				       phase_recorder.input_copy);
 		instructions.resize(num_instructions);
 		const auto *bytes =
 			static_cast<const std::byte *>(raw_instructions);
@@ -330,14 +554,32 @@ verify_gpu_program(const void *raw_instructions, size_t num_instructions,
 				    bytes + i * sizeof(ebpf_inst),
 				    sizeof(ebpf_inst));
 		}
-		return verify_gpu_instructions(instructions.data(),
-					       instructions.size(),
-					       section_name, map_descriptors);
-	} catch (const std::exception &ex) {
-		return "GPU verifier exception: " + std::string(ex.what());
-	} catch (...) {
-		return "unknown GPU verifier exception";
 	}
+	return verify_gpu_instructions(instructions.data(), instructions.size(),
+				       section_name, map_descriptors,
+				       phase_recorder);
+}
+
+std::optional<std::string>
+verify_gpu_program(const void *raw_instructions, size_t num_instructions,
+		   const std::string &section_name,
+		   const std::map<int, BpftimeMapDescriptor> &map_descriptors)
+{
+	static_assert(sizeof(ebpf_inst) == sizeof(uint64_t));
+	VerifierPhaseRecorder phase_recorder(num_instructions,
+					     map_descriptors.size());
+	std::optional<std::string> result;
+	try {
+		result = verify_gpu_program_impl(raw_instructions,
+						 num_instructions, section_name,
+						 map_descriptors, phase_recorder);
+	} catch (const std::exception &ex) {
+		result = "GPU verifier exception: " + std::string(ex.what());
+	} catch (...) {
+		result = "unknown GPU verifier exception";
+	}
+	phase_recorder.emit(!result.has_value());
+	return result;
 }
 
 } // namespace bpftime::verifier::gpu

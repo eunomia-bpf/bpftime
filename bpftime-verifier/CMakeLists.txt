@@ -66,3 +66,13 @@ target_include_directories(bpftime_verifier_tests PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/src/gpu
 )
 add_test(NAME bpftime_verifier_tests COMMAND bpftime_verifier_tests)
+
+find_package(Python3 COMPONENTS Interpreter QUIET)
+if(Python3_Interpreter_FOUND)
+    add_test(
+        NAME gpu_verifier_phase_timing_test
+        COMMAND ${Python3_EXECUTABLE}
+            ${CMAKE_CURRENT_SOURCE_DIR}/test/test_gpu_verifier_phase_timing.py
+            $<TARGET_FILE:bpftime_verifier_tests>
+    )
+endif()
