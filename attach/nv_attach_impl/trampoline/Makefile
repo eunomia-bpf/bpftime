@@ -4,15 +4,20 @@ PTX_TARGET_ARCH ?= sm_61
 CLANG_FLAGS ?= -U__FLOAT128__ -U__SIZEOF_FLOAT128__
 PYTHON ?= python3
 
-.PHONY: all clean test-ringbuf-protocol
+.PHONY: all clean test-ringbuf-protocol test-map-rpc-protocol
 
-all: ../trampoline_ptx.h test test-ringbuf-protocol
+all: ../trampoline_ptx.h test test-ringbuf-protocol test-map-rpc-protocol
 
 test-ringbuf-protocol: default_trampoline.cu ../trampoline_ptx.h \
                        test_ringbuf_protocol.py \
                        ../../../runtime/include/bpf_attach_ctx.hpp
 	$(PYTHON) test_ringbuf_protocol.py default_trampoline.cu \
 		../trampoline_ptx.h ../../../runtime/include/bpf_attach_ctx.hpp
+
+test-map-rpc-protocol: default_trampoline.cu ../trampoline_ptx.h \
+                       test_map_rpc_protocol.py
+	$(PYTHON) test_map_rpc_protocol.py default_trampoline.cu \
+		../trampoline_ptx.h
 
 ../trampoline_ptx.h: default_trampoline-cuda-nvptx64-nvidia-cuda-$(PTX_TARGET_ARCH).s
 	@echo "Generating trampoline_ptx.h..."

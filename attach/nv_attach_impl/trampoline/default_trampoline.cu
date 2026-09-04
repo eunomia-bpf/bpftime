@@ -137,6 +137,37 @@ extern "C" __device__ void spin_unlock(int *lock)
 	// printf("lock released by %d\n", threadIdx.x + blockIdx.x *
 	// blockDim.x);
 }
+
+extern "C" __device__ inline void simple_memcpy(void *dst, void *src, int sz)
+{
+	for (int i = 0; i < sz; i++)
+		((char *)dst)[i] = ((char *)src)[i];
+}
+
+__device__ __noinline__ HelperCallResponse complete_helper_call_locked(
+	CommSharedMem *g_data, long map_id, int req_id)
+{
+	int val = 42;
+	g_data->request_id = req_id;
+	g_data->map_id = map_id;
+
+	asm volatile(".reg .pred p0;                   \n\t"
+		     "membar.sys;                      \n\t"
+		     "st.global.u32 [%1], 1;           \n\t"
+		     "spin_wait:                       \n\t"
+		     "membar.sys;                      \n\t"
+		     "ld.global.u32 %0, [%2];          \n\t"
+		     "setp.eq.u32 p0, %0, 0;           \n\t"
+		     "@p0 bra spin_wait;               \n\t"
+		     "st.global.u32 [%2], 0;           \n\t"
+		     "membar.sys;                      \n\t"
+		     :
+		     : "r"(val), "l"(&g_data->flag1), "l"(&g_data->flag2)
+		     : "memory");
+
+	return g_data->resp;
+}
+
 extern "C" __device__ HelperCallResponse make_helper_call(long map_id,
 							  int req_id)
 {
@@ -150,28 +181,8 @@ extern "C" __device__ HelperCallResponse make_helper_call(long map_id,
 
 		if (lane_is_active && lane_id == active_lane) {
 			spin_lock(&__bpftime_comm_lock);
-
-			int val = 42;
-			g_data->request_id = req_id;
-			g_data->map_id = map_id;
-
-			asm volatile(".reg .pred p0;                   \n\t"
-				     "membar.sys;                      \n\t"
-				     "st.global.u32 [%1], 1;           \n\t"
-				     "spin_wait:                       \n\t"
-				     "membar.sys;                      \n\t"
-				     "ld.global.u32 %0, [%2];          \n\t"
-				     "setp.eq.u32 p0, %0, 0;           \n\t"
-				     "@p0 bra spin_wait;               \n\t"
-				     "st.global.u32 [%2], 0;           \n\t"
-				     "membar.sys;                      \n\t"
-				     :
-				     : "r"(val), "l"(&g_data->flag1),
-				       "l"(&g_data->flag2)
-				     : "memory");
-
-			my_resp = g_data->resp;
-
+			my_resp = complete_helper_call_locked(g_data, map_id,
+							     req_id);
 			spin_unlock(&__bpftime_comm_lock);
 		}
 
@@ -180,10 +191,50 @@ extern "C" __device__ HelperCallResponse make_helper_call(long map_id,
 
 	return my_resp;
 }
-extern "C" __device__ inline void simple_memcpy(void *dst, void *src, int sz)
+
+extern "C" __device__ HelperCallResponse make_map_helper_call(
+	long map_id, int req_id, const void *key, int key_size,
+	const void *value, int value_size, uint64_t flags)
 {
-	for (int i = 0; i < sz; i++)
-		((char *)dst)[i] = ((char *)src)[i];
+	CommSharedMem *g_data = (CommSharedMem *)constData;
+	int lane_id = threadIdx.x & 31;
+	HelperCallResponse my_resp = {};
+
+	if (key_size < 0 || key_size > GPU_HELPER_MAX_BUF ||
+	    value_size < 0 || value_size > GPU_HELPER_MAX_BUF ||
+	    (req_id != (int)HelperOperation::MAP_LOOKUP &&
+	     req_id != (int)HelperOperation::MAP_UPDATE &&
+	     req_id != (int)HelperOperation::MAP_DELETE))
+		return my_resp;
+
+	for (int active_lane = 0; active_lane < 32; active_lane++) {
+		unsigned int active_mask = __activemask();
+		bool lane_is_active = (active_mask >> active_lane) & 1;
+
+		if (lane_is_active && lane_id == active_lane) {
+			spin_lock(&__bpftime_comm_lock);
+			if (req_id == (int)HelperOperation::MAP_LOOKUP) {
+				simple_memcpy(g_data->req.map_lookup.key,
+					      (void *)key, key_size);
+			} else if (req_id == (int)HelperOperation::MAP_UPDATE) {
+				simple_memcpy(g_data->req.map_update.key,
+					      (void *)key, key_size);
+				simple_memcpy(g_data->req.map_update.value,
+					      (void *)value, value_size);
+				g_data->req.map_update.flags = flags;
+			} else if (req_id == (int)HelperOperation::MAP_DELETE) {
+				simple_memcpy(g_data->req.map_delete.key,
+					      (void *)key, key_size);
+			}
+			my_resp = complete_helper_call_locked(g_data, map_id,
+							     req_id);
+			spin_unlock(&__bpftime_comm_lock);
+		}
+
+		__syncwarp(active_mask);
+	}
+
+	return my_resp;
 }
 
 __device__ uint64_t getGlobalThreadId()
@@ -210,9 +261,6 @@ __device__ void *array_map_offset(uint64_t idx, const MapBasicInfo &info,
 extern "C" __noinline__ __device__ uint64_t _bpf_helper_ext_0001(
 	uint64_t map, uint64_t key, uint64_t a, uint64_t b, uint64_t c)
 {
-	CommSharedMem *global_data = (CommSharedMem *)constData;
-	auto &req = global_data->req;
-	// CallRequest req;
 	const auto &map_info = ::map_info[map];
 	// IPC-based per-thread array map
 	if (map_info.map_type == BPF_MAP_TYPE_PERGPUTD_ARRAY_MAP) {
@@ -245,13 +293,11 @@ extern "C" __noinline__ __device__ uint64_t _bpf_helper_ext_0001(
 		asm("membar.sys;"); // Ensure CPU writes are visible to GPU
 		return (uint64_t)(uintptr_t)(base + (uint64_t)real_key * map_info.value_size);
 	}
-	// printf("helper1 map %ld keysize=%d valuesize=%d\n", map,
-	//        map_info.key_size, map_info.value_size);
-	simple_memcpy(&req.map_lookup.key, (void *)(uintptr_t)key,
-		      map_info.key_size);
-
 	HelperCallResponse resp =
-		make_helper_call((long)map, (int)HelperOperation::MAP_LOOKUP);
+		make_map_helper_call((long)map,
+				     (int)HelperOperation::MAP_LOOKUP,
+				     (void *)(uintptr_t)key, map_info.key_size,
+				     nullptr, 0, 0);
 
 	return (uintptr_t)resp.map_lookup.value;
 }
@@ -259,8 +305,6 @@ extern "C" __noinline__ __device__ uint64_t _bpf_helper_ext_0001(
 extern "C" __noinline__ __device__ uint64_t _bpf_helper_ext_0002(
 	uint64_t map, uint64_t key, uint64_t value, uint64_t flags, uint64_t a)
 {
-	CommSharedMem *global_data = (CommSharedMem *)constData;
-	auto &req = global_data->req;
 	const auto &map_info = ::map_info[map];
 	// IPC-based per-thread array map
 	if (map_info.map_type == BPF_MAP_TYPE_PERGPUTD_ARRAY_MAP) {
@@ -302,31 +346,24 @@ extern "C" __noinline__ __device__ uint64_t _bpf_helper_ext_0002(
 		asm("membar.sys;"); // Ensure GPU writes are visible to CPU
 		return 0;
 	}
-	// printf("helper2 map %ld keysize=%d
-	// valuesize=%d\n",map,map_info.key_size,map_info.value_size);
-	simple_memcpy(&req.map_update.key, (void *)(uintptr_t)key,
-		      map_info.key_size);
-	simple_memcpy(&req.map_update.value, (void *)(uintptr_t)value,
-		      map_info.value_size);
-	req.map_update.flags = (uintptr_t)flags;
-
 	HelperCallResponse resp =
-		make_helper_call((long)map, (int)HelperOperation::MAP_UPDATE);
+		make_map_helper_call((long)map,
+				     (int)HelperOperation::MAP_UPDATE,
+				     (void *)(uintptr_t)key, map_info.key_size,
+				     (void *)(uintptr_t)value,
+				     map_info.value_size, flags);
 	return resp.map_update.result;
 }
 
 extern "C" __noinline__ __device__ uint64_t _bpf_helper_ext_0003(
 	uint64_t map, uint64_t key, uint64_t a, uint64_t b, uint64_t c)
 {
-	CommSharedMem *global_data = (CommSharedMem *)constData;
-	auto &req = global_data->req;
 	const auto &map_info = ::map_info[map];
-	// printf("helper3 map %ld keysize=%d
-	// valuesize=%d\n",map,map_info.key_size,map_info.value_size);
-	simple_memcpy(&req.map_delete.key, (void *)(uintptr_t)key,
-		      map_info.key_size);
 	HelperCallResponse resp =
-		make_helper_call((long)map, (int)HelperOperation::MAP_DELETE);
+		make_map_helper_call((long)map,
+				     (int)HelperOperation::MAP_DELETE,
+				     (void *)(uintptr_t)key, map_info.key_size,
+				     nullptr, 0, 0);
 	return resp.map_delete.result;
 }
 
