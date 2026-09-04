@@ -722,12 +722,234 @@ jobs:
           token: ${{ secrets.CODECOV_TOKEN }}
           verbose: true
 
+  build-and-run-one-liners-test:
+    runs-on: ubuntu-22.04
+    container:
+      image: "manjusakalza/bpftime-base-image:ubuntu-2204"
+      options: "--privileged -v /sys/kernel/debug:/sys/kernel/debug:rw -v /sys/kernel/tracing:/sys/kernel/tracing:rw -v /dev/shm:/dev/shm:rw -v /tmp:/tmp:rw -v /run/shm:/run/shm:rw"
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          submodules: "recursive"
+
+      - name: System setup and kernel headers
+        run: |
+          apt-get update
+          apt-get install -y --no-install-recommends \
+            lcov tree strace gdb sudo libc6-dev bpftrace \
+            linux-headers-generic linux-tools-generic \
+            linux-headers-$(uname -r) \
+            libelf-dev procps gnupg gnupg-agent pinentry-curses dirmngr
+
+          echo "==== System Information ===="; uname -a && cat /etc/os-release
+          echo "==== Checking bpftrace ===="
+          which bpftrace || { echo "ERROR: bpftrace not found! This is required for tests."; exit 1; }
+          bpftrace --version || { echo "ERROR: bpftrace installation is broken!"; exit 1; }
+          echo "bpftrace successfully verified."
+
+          # Ensure shared memory directory exists with correct permissions
+          sudo mkdir -p $BPFTIME_SHARED_MEMORY_PATH
+          sudo chmod 1777 $BPFTIME_SHARED_MEMORY_PATH
+
+          # Data read by the openat one-liner victim
+          mkdir -p build
+          echo "TEST_DATA_LINE_1_ABC" > build/install_manifest.txt
+          echo "TEST_DATA_LINE_2_XYZ" >> build/install_manifest.txt
+
+      - name: Build bpftime
+        run: |
+          echo "Building bpftime with CMake"
+          cmake -Bbuild -DCMAKE_BUILD_TYPE:STRING=RelWithDebInfo \
+            -DBPFTIME_LLVM_JIT=1 \
+            -DBUILD_BPFTIME_DAEMON=OFF \
+            -DBUILD_AGENT=1 \
+            -DBPFTIME_ENABLE_CUDA_ATTACH=OFF \
+            -DCMAKE_CXX_FLAGS="-DDEFAULT_LOGGER_OUTPUT_PATH='\"console\"'"
+          cmake --build build --config RelWithDebInfo --target bpftime-agent bpftime-syscall-server bpftime_text_segment_transformer -j$(nproc)
+
+          echo "Checking built libraries:"
+          ls -la build/runtime/agent/
+          ls -la build/runtime/syscall-server/
+          ls -la build/attach/text_segment_transformer/ || echo "Text segment transformer directory not found"
+
+      - name: Find all necessary libraries
+        run: |
+          echo "=== Finding all necessary libraries ==="
+
+          find build -name "*.so" | sort
+
+          AGENT_LIB="build/runtime/agent/libbpftime-agent.so"
+          SERVER_LIB="build/runtime/syscall-server/libbpftime-syscall-server.so"
+          TRANSFORMER_LIB="build/attach/text_segment_transformer/libbpftime-agent-transformer.so"
+
+          if [ ! -f "$AGENT_LIB" ]; then
+            AGENT_LIB=$(find build -name "libbpftime-agent.so" | head -1)
+            if [ -z "$AGENT_LIB" ]; then
+              echo "ERROR: Agent library not found anywhere"
+              exit 1
+            fi
+          fi
+
+          if [ ! -f "$SERVER_LIB" ]; then
+            SERVER_LIB=$(find build -name "libbpftime-syscall-server.so" | head -1)
+            if [ -z "$SERVER_LIB" ]; then
+              echo "ERROR: Syscall server library not found anywhere"
+              exit 1
+            fi
+          fi
+
+          if [ ! -f "$TRANSFORMER_LIB" ]; then
+            echo "WARNING: Transformer library not found, will proceed without it"
+            TRANSFORMER_LIB=""
+          fi
+
+          echo "AGENT_LIB=$AGENT_LIB" >> $GITHUB_ENV
+          echo "SERVER_LIB=$SERVER_LIB" >> $GITHUB_ENV
+          echo "TRANSFORMER_LIB=$TRANSFORMER_LIB" >> $GITHUB_ENV
+
+      - name: Run the one-liners from example/tracing/bpftrace README
+        run: |
+          echo "=== Running bpftrace one-liner tests ==="
+
+          mkdir -p logs
+          export BPFTIME_USED=1
+          export SPDLOG_LEVEL=error
+
+          AGENT_LIB="${{ env.AGENT_LIB }}"
+          SERVER_LIB="${{ env.SERVER_LIB }}"
+          TRANSFORMER_LIB="${{ env.TRANSFORMER_LIB }}"
+
+          # Same LD_PRELOAD arrangement as the other jobs: the victim process
+          # gets the agent (and transformer), the bpftrace server gets the
+          # syscall-server library.
+          if [ -n "$TRANSFORMER_LIB" ]; then
+            LD_PRELOAD_CMD="env AGENT_SO=$AGENT_LIB LD_PRELOAD=$TRANSFORMER_LIB"
+          else
+            LD_PRELOAD_CMD="env LD_PRELOAD=$AGENT_LIB"
+          fi
+          echo "Victim preload command: $LD_PRELOAD_CMD"
+
+          FAILED_CASES=""
+
+          # run_case NAME PROGRAM VICTIM_CMD EXPECT_PATTERN
+          # Starts bpftrace under the syscall server, waits for attach, runs
+          # the victim under the agent, then checks the server log for the
+          # expected output. Success is decided only on positive markers, so
+          # runtime warnings on stderr of old bpftrace versions cannot flip
+          # the result.
+          run_case() {
+            local name="$1"; shift
+            local program="$1"; shift
+            local victim="$1"; shift
+            local expect="$1"; shift
+            local log="logs/${name}_server.log"
+
+            sudo rm -rf /dev/shm/bpftime* 2>/dev/null || true
+            rm -f "$log"
+
+            echo "--- CASE $name: starting bpftrace server ---"
+            sudo -E LD_PRELOAD=$SERVER_LIB bpftrace -e "$program" > "$log" 2>&1 &
+            local server_pid=$!
+
+            local i
+            for i in $(seq 1 40); do
+              if grep -q "Attaching" "$log"; then
+                echo "CASE $name: server initialized after $i second(s)"
+                break
+              fi
+              if ! ps -p $server_pid > /dev/null; then
+                echo "CASE $name: FAILURE - server died during init"
+                cat "$log"
+                FAILED_CASES="$FAILED_CASES $name"
+                return 1
+              fi
+              if [ $i -eq 40 ]; then
+                echo "CASE $name: FAILURE - server did not initialize in 40s"
+                cat "$log"
+                FAILED_CASES="$FAILED_CASES $name"
+                sudo pkill -9 bpftrace 2>/dev/null || true
+                return 1
+              fi
+              sleep 1
+            done
+
+            echo "CASE $name: running victim ($victim)"
+            sudo -E $LD_PRELOAD_CMD $victim || echo "CASE $name: victim exited nonzero (continuing)"
+            echo "CASE $name: draining events"
+            sleep 4
+
+            # Stop the server for this case before checking the log
+            sudo pkill -9 bpftrace 2>/dev/null || true
+            sleep 2
+
+            echo "Server log for $name:"
+            cat "$log"
+
+            if grep -qE "$expect" "$log"; then
+              echo "CASE $name: SUCCESS"
+            else
+              echo "CASE $name: FAILURE - missing pattern '$expect'"
+              FAILED_CASES="$FAILED_CASES $name"
+            fi
+          }
+
+          # 1. Files opened by process
+          run_case oneliner_openat \
+            'tracepoint:syscalls:sys_enter_openat { printf("ONELINER_OPENAT %s %s\n", comm, str(args->filename)); }' \
+            "cat build/install_manifest.txt" \
+            "ONELINER_OPENAT[[:space:]]+cat"
+
+          # 2. Syscall count by program
+          run_case oneliner_count_by_comm \
+            'tracepoint:raw_syscalls:sys_enter { @[comm] = count(); } interval:s:1 { print(@); }' \
+            "timeout 8s dd if=/dev/zero of=/dev/null bs=1024" \
+            "@\[dd\]"
+
+          # 3. Read bytes by process
+          run_case oneliner_read_sum \
+            'tracepoint:syscalls:sys_exit_read /args->ret/ { @[comm] = sum(args->ret); } interval:s:1 { print(@); }' \
+            "timeout 8s dd if=/dev/zero of=/dev/null bs=1024" \
+            "@\[dd\]"
+
+          # 4. Read size distribution by process
+          run_case oneliner_read_hist \
+            'tracepoint:syscalls:sys_exit_read { @[comm] = hist(args->ret); } interval:s:1 { print(@); }' \
+            "timeout 8s dd if=/dev/zero of=/dev/null bs=1024" \
+            "@\[dd\]"
+
+          # 5. Per-second syscall rates
+          run_case oneliner_rate \
+            'tracepoint:raw_syscalls:sys_enter { @ = count(); } interval:s:1 { print(@); clear(@); }' \
+            "timeout 8s dd if=/dev/zero of=/dev/null bs=1024" \
+            "@[[:space:]]*:"
+
+          sudo rm -rf /dev/shm/bpftime* 2>/dev/null || true
+
+          echo "=== One-liner test summary ==="
+          if [ -n "$FAILED_CASES" ]; then
+            echo "FAILED cases:$FAILED_CASES"
+            exit 1
+          fi
+          echo "All one-liner cases passed"
+
+      - name: Upload one-liner server logs
+        if: success() || failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: oneliner-server-logs-${{ runner.os }}
+          include-hidden-files: false
+          path: |
+            ./logs
+
   # New job to combine coverage reports
   combine-coverage:
     needs:
       [
         build-and-run-syscall-tracing-load-start-test,
         build-and-run-malloc-example-test,
+        build-and-run-one-liners-test,
       ]
     runs-on: ubuntu-22.04
     if: always()
