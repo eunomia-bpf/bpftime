@@ -993,18 +993,18 @@ extern "C" void bpftime_agent_main(const gchar *data, gboolean *stay_resident)
 				SPDLOG_INFO(
 					"Using the trap (breakpoint) uprobe backend");
 				ctx_holder.ctx.register_attach_impl(
-					{ ATTACH_UPROBE, ATTACH_URETPROBE,
-					  ATTACH_UPROBE_OVERRIDE,
-					  ATTACH_UREPLACE },
+					{ trap::ATTACH_UPROBE,
+					  trap::ATTACH_URETPROBE,
+					  trap::ATTACH_UPROBE_OVERRIDE,
+					  trap::ATTACH_UREPLACE },
 					std::make_unique<
-						attach::trap::trap_attach_impl>(),
+						trap::trap_attach_impl>(),
 					[](const std::string_view &sv,
 					   int &err) {
 						std::unique_ptr<
 							attach_private_data>
 							priv_data = std::make_unique<
-								attach::trap::
-									trap_attach_private_data>();
+								trap::trap_attach_private_data>();
 						if (int e =
 							    priv_data->initialize_from_string(
 								    sv);
