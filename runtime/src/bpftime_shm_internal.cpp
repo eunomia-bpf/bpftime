@@ -679,6 +679,7 @@ int bpftime_shm::open_fake_fd()
 		fd = dup(fd);
 	}
 	if (fd >= 0 && (std::size_t)fd >= manager->size()) {
+		SPDLOG_ERROR("open_fake_fd: fd {} exceeds handler pool size {}", fd, manager->size());
 		close(fd);
 		errno = ENOSPC;
 		return -1;
