@@ -83,6 +83,12 @@ The subprocess timing test separately exercised unset, `0`, and exact-`1`
 settings; it checked accepted, PREVAIL-rejected, SIMT-rejected, null, empty,
 oversized, and unsupported-map paths and their completion masks.
 
+A separate read-only result check independently recomputed the phase shares,
+ratios, gaps, and residuals from the two raw records and found no arithmetic or
+validity blocker for PREVAIL-level attribution. It also confirmed the scope as
+a one-sample-per-arm dependency preflight: the records cannot identify a
+PREVAIL subroutine or support a repeated paper-facing performance claim.
+
 A read-only implementation review found the default-off design feasible
 without changing the public API or verifier result. It required immutable
 process-start opt-in, per-call state, RAII closure on early returns, preserved
