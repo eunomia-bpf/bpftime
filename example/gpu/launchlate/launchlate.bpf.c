@@ -20,7 +20,9 @@ enum host_counter {
 	HOST_ENQUEUED = 1,
 	QUEUE_OVERFLOWS = 2,
 	QUEUE_UPDATE_ERRORS = 3,
-	HOST_COUNTERS = 4,
+	HOST_LAUNCH_CALLS = 4,
+	HOST_TARGET_ERRORS = 5,
+	HOST_COUNTERS = 6,
 };
 
 enum device_counter {
@@ -42,6 +44,12 @@ struct clock_calibration {
 	s64 offset_low_ns;
 	s64 offset_high_ns;
 	u64 uncertainty_ns;
+	u64 valid;
+};
+
+struct host_target {
+	u64 launch_vaddr;
+	u64 kernel_vaddr;
 	u64 valid;
 };
 
@@ -82,6 +90,13 @@ struct {
 	__type(value, struct clock_calibration);
 } clock_calibration SEC(".maps");
 
+struct {
+	__uint(type, BPF_MAP_TYPE_ARRAY);
+	__uint(max_entries, 1);
+	__type(key, u32);
+	__type(value, struct host_target);
+} host_target SEC(".maps");
+
 static __always_inline void increment_host_counter(u32 key)
 {
 	u64 *value = bpf_map_lookup_elem(&host_state, &key);
@@ -96,11 +111,44 @@ static __always_inline void increment_device_counter(u32 key)
 		__sync_fetch_and_add(value, 1);
 }
 
-// The userspace loader attaches this uprobe to the exact host launch stub for
-// the selected CUDA kernel, not to the generic cuLaunchKernel API.
+/*
+ * The userspace loader attaches this uprobe to cudaLaunchKernel's PLT entry in
+ * the target ELF.  Both addresses below are virtual addresses from that same
+ * ELF, so the live PLT address supplies the load bias.  Only an exact arg0
+ * match is allowed to enter the FIFO.
+ */
 SEC("uprobe")
-int BPF_KPROBE(uprobe_cuda_launch)
+int BPF_KPROBE(uprobe_cuda_launch, const void *func)
 {
+	u32 target_key = 0;
+	struct host_target *target;
+	u64 launch_ip, delta, expected;
+
+	increment_host_counter(HOST_LAUNCH_CALLS);
+	target = bpf_map_lookup_elem(&host_target, &target_key);
+	launch_ip = bpf_get_func_ip(ctx);
+	if (!target || !target->valid || !launch_ip) {
+		increment_host_counter(HOST_TARGET_ERRORS);
+		return 0;
+	}
+	if (target->kernel_vaddr >= target->launch_vaddr) {
+		delta = target->kernel_vaddr - target->launch_vaddr;
+		if (delta > ~launch_ip) {
+			increment_host_counter(HOST_TARGET_ERRORS);
+			return 0;
+		}
+		expected = launch_ip + delta;
+	} else {
+		delta = target->launch_vaddr - target->kernel_vaddr;
+		if (launch_ip < delta) {
+			increment_host_counter(HOST_TARGET_ERRORS);
+			return 0;
+		}
+		expected = launch_ip - delta;
+	}
+	if ((u64)func != expected)
+		return 0;
+
 	u32 host_key = HOST_LAUNCHES;
 	u64 *host_launches = bpf_map_lookup_elem(&host_state, &host_key);
 	if (!host_launches)

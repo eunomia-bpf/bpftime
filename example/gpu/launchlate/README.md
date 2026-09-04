@@ -50,11 +50,11 @@ Your application does GPU inference while streaming data over a 100Gb NIC that s
 
 ## Building the Example
 
-`launchlate` depends on `libelf` to read the target CUDA binary's ELF symbol
-table and auto-resolve the host-side `cudaLaunchKernel` wrapper symbol. In
-practice this means you need the `libelf` development package installed so both
-`launchlate` and the bundled `libbpf` build can find `libelf.h` and link with
-`-lelf`.
+`launchlate` depends on `libelf` to resolve both the selected kernel's exact
+host-function address and the target binary's `cudaLaunchKernel` PLT entry.
+In practice this means you need the `libelf` development package installed so
+both `launchlate` and the bundled `libbpf` build can find `libelf.h` and link
+with `-lelf`.
 
 For example, on Debian/Ubuntu:
 
@@ -74,6 +74,15 @@ cmake --build build -j$(nproc)
 make -C example/gpu/launchlate
 ```
 
+The CPU-only self-test checks clock-interval arithmetic, ELF symbol/PLT
+resolution, exact target matching, and fail-closed error cases. It can also
+validate a specific target without loading BPF or CUDA:
+
+```bash
+example/gpu/launchlate/launchlate --self-test
+example/gpu/launchlate/launchlate --self-test /path/to/cuda-target.so _ZyourKernel
+```
+
 ## Running the Example
 
 You need to start two processes:
@@ -85,9 +94,10 @@ BPFTIME_LOG_OUTPUT=console LD_PRELOAD=build/runtime/syscall-server/libbpftime-sy
 ```
 
 This process loads the eBPF program and waits for CUDA events. It reads the
-target binary's ELF symbol table and auto-resolves the defined
-`cudaLaunchKernel` wrapper symbol instead of relying on a hardcoded mangled
-name. If no argument is provided, it defaults to `./vec_add`.
+target binary's ELF symbol and relocation tables, attaches to that binary's
+real `cudaLaunchKernel` PLT path, and accepts a host event only when argument
+zero exactly equals the selected kernel's host-function address after applying
+the same ELF load bias. If no argument is provided, it defaults to `./vec_add`.
 
 ### 2. Run the CUDA Application (Client)
 
@@ -136,7 +146,7 @@ This shows:
 
 ## How It Works
 
-1. **CPU-side uprobe** on `cudaLaunchKernel()` captures when the kernel is launched and records a timestamp
+1. **CPU-side uprobe** on the target ELF's `cudaLaunchKernel()` PLT entry records a timestamp only for an exact selected-kernel pointer match
 2. **GPU-side kprobe** on the kernel function captures when execution actually starts on the GPU
 3. **Clock calibration** synchronizes CPU and GPU timers to enable accurate comparison
 4. **Latency calculation** computes the time difference and updates a histogram showing the distribution
@@ -151,6 +161,7 @@ This shows:
 ## Limitations
 
 - Requires kernel function symbol names (use `cuobjdump -symbols your_app | grep kernel_name`)
+- Host-side PLT resolution currently supports x86-64 ELF targets and fails closed on unsupported layouts
 - Clock drift may affect accuracy over long runs (recalibrate periodically if needed)
 - Only tracks one kernel function at a time (attach multiple probes for multiple kernels)
 

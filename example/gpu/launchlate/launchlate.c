@@ -20,8 +20,9 @@
 #define warn(...) fprintf(stderr, __VA_ARGS__)
 
 #define DEFAULT_UPROBE_SYMBOL_HINT "_Z9vectorAddPKfS0_Pf"
+#define CUDA_LAUNCH_SYMBOL "cudaLaunchKernel"
 #define HIST_BINS 10
-#define HOST_COUNTERS 4
+#define HOST_COUNTERS 6
 #define DEVICE_COUNTERS 6
 #define CALIBRATION_WARMUPS 4
 #define CALIBRATION_TRIALS 32
@@ -31,6 +32,8 @@ enum host_counter {
 	HOST_ENQUEUED = 1,
 	QUEUE_OVERFLOWS = 2,
 	QUEUE_UPDATE_ERRORS = 3,
+	HOST_LAUNCH_CALLS = 4,
+	HOST_TARGET_ERRORS = 5,
 };
 
 enum device_counter {
@@ -48,6 +51,52 @@ struct clock_calibration {
 	uint64_t uncertainty_ns;
 	uint64_t valid;
 };
+
+struct host_target {
+	uint64_t launch_vaddr;
+	uint64_t kernel_vaddr;
+	uint64_t valid;
+};
+
+struct plt_entry {
+	uint64_t file_offset;
+	uint64_t vaddr;
+};
+
+enum symbol_match_status {
+	SYMBOL_ABSENT = 0,
+	SYMBOL_UNDEFINED = 1,
+	SYMBOL_NOT_FUNCTION = 2,
+	SYMBOL_INVALID_VALUE = 3,
+	SYMBOL_AMBIGUOUS = 4,
+};
+
+static int find_defined_symbol_matching(const char *path, const char *needle,
+					enum symbol_match_status *status,
+					uint64_t *vaddr);
+static int find_x86_64_plt_entry(const char *path, const char *needle,
+				 struct plt_entry *entry);
+
+static int host_target_matches(uint64_t launch_ip, uint64_t func,
+			       const struct host_target *target)
+{
+	uint64_t delta, expected;
+
+	if (!target || !target->valid || !launch_ip)
+		return -EINVAL;
+	if (target->kernel_vaddr >= target->launch_vaddr) {
+		delta = target->kernel_vaddr - target->launch_vaddr;
+		if (delta > UINT64_MAX - launch_ip)
+			return -ERANGE;
+		expected = launch_ip + delta;
+	} else {
+		delta = target->launch_vaddr - target->kernel_vaddr;
+		if (launch_ip < delta)
+			return -ERANGE;
+		expected = launch_ip - delta;
+	}
+	return func == expected;
+}
 
 typedef int ll_cu_result;
 typedef struct CUctx_st *ll_cu_context;
@@ -199,10 +248,18 @@ static int latency_interval(uint64_t host_ns, uint64_t gpu_ns,
 	return *high < 0 ? -ERANGE : 0;
 }
 
-static int run_self_test(void)
+static int run_self_test(const char *elf_path, const char *kernel_symbol)
 {
 	struct clock_calibration calibration = {0};
 	struct clock_calibration later = {0};
+	struct host_target target = {0};
+	struct plt_entry launch_plt = {0};
+	enum symbol_match_status symbol_status;
+	uint64_t target_vaddr, live_launch_ip, live_func;
+	const uint64_t mock_load_bias = 0x100000000ULL;
+	const char *test_path = elf_path ? elf_path : "/proc/self/exe";
+	const char *test_kernel = kernel_symbol ? kernel_symbol : "run_self_test";
+	const char *test_launch = elf_path ? CUDA_LAUNCH_SYMBOL : "dlopen";
 	int64_t low, high;
 
 	if (consider_calibration_sample(&calibration, 1250, 1000, 1100) ||
@@ -233,6 +290,30 @@ static int run_self_test(void)
 	if (consider_calibration_sample(&calibration, 900, 1000, 1040) ||
 	    latency_interval(2000, 1975, &calibration, &low, &high) ||
 	    low != 75 || high != 115)
+		return 1;
+
+	/* Exercise the same-ELF PLT-to-local-symbol address proof without CUDA. */
+	if (find_defined_symbol_matching(test_path, test_kernel, &symbol_status,
+					 &target_vaddr) ||
+	    find_x86_64_plt_entry(test_path, test_launch, &launch_plt) ||
+	    !launch_plt.file_offset || !launch_plt.vaddr || !target_vaddr ||
+	    launch_plt.vaddr > UINT64_MAX - mock_load_bias ||
+	    target_vaddr > UINT64_MAX - mock_load_bias)
+		return 1;
+	target.launch_vaddr = launch_plt.vaddr;
+	target.kernel_vaddr = target_vaddr;
+	target.valid = 1;
+	live_launch_ip = mock_load_bias + launch_plt.vaddr;
+	live_func = mock_load_bias + target_vaddr;
+	if (host_target_matches(live_launch_ip, live_func, &target) != 1 ||
+	    host_target_matches(live_launch_ip, live_func + 1, &target) != 0)
+		return 1;
+	target.valid = 0;
+	if (host_target_matches(live_launch_ip, live_func, &target) >= 0)
+		return 1;
+	target.valid = 1;
+	target.kernel_vaddr = UINT64_MAX;
+	if (host_target_matches(live_launch_ip, live_func, &target) != -ERANGE)
 		return 1;
 
 	printf("launchlate CPU self-test: PASS\n");
@@ -453,26 +534,23 @@ static void close_elf(Elf *e, int fd_close)
 		close(fd_close);
 }
 
-enum symbol_match_status {
-	SYMBOL_ABSENT = 0,
-	SYMBOL_UNDEFINED = 1,
-	SYMBOL_NOT_FUNCTION = 2,
-};
-
-static char *find_defined_symbol_matching(const char *path, const char *needle,
-					  enum symbol_match_status *status)
+static int find_defined_symbol_matching(const char *path, const char *needle,
+					enum symbol_match_status *status,
+					uint64_t *vaddr)
 {
 	Elf *e = NULL;
 	Elf_Scn *scn = NULL;
 	Elf_Data *data = NULL;
 	GElf_Shdr shdr;
 	GElf_Sym sym;
+	bool found = false;
 	int fd = -1;
 
 	*status = SYMBOL_ABSENT;
+	*vaddr = 0;
 	e = open_elf(path, &fd);
 	if (!e)
-		return NULL;
+		return -EINVAL;
 
 	while ((scn = elf_nextscn(e, scn))) {
 		if (!gelf_getshdr(scn, &shdr))
@@ -501,16 +579,153 @@ static char *find_defined_symbol_matching(const char *path, const char *needle,
 					*status = SYMBOL_NOT_FUNCTION;
 					continue;
 				}
-
-				name = strdup(name);
-				close_elf(e, fd);
-				return (char *)name;
+				Elf_Scn *function_scn = elf_getscn(e, sym.st_shndx);
+				GElf_Shdr function_shdr;
+				if (!sym.st_value || !function_scn ||
+				    !gelf_getshdr(function_scn, &function_shdr) ||
+				    !(function_shdr.sh_flags & SHF_EXECINSTR) ||
+				    sym.st_value < function_shdr.sh_addr ||
+				    sym.st_value - function_shdr.sh_addr >=
+					    function_shdr.sh_size) {
+					*status = SYMBOL_INVALID_VALUE;
+					continue;
+				}
+				if (found && *vaddr != sym.st_value) {
+					*status = SYMBOL_AMBIGUOUS;
+					close_elf(e, fd);
+					return -EEXIST;
+				}
+				*vaddr = sym.st_value;
+				found = true;
 			}
 		}
 	}
 
 	close_elf(e, fd);
-	return NULL;
+	return found ? 0 : -ENOENT;
+}
+
+static int find_x86_64_plt_entry(const char *path, const char *needle,
+				 struct plt_entry *entry)
+{
+	Elf *e = NULL;
+	Elf_Scn *scn = NULL, *rel_scn = NULL;
+	Elf_Data *rel_data, *sym_data;
+	GElf_Ehdr ehdr;
+	GElf_Shdr shdr, rel_shdr = {0}, sym_shdr, plt_shdr = {0};
+	GElf_Rela rela;
+	GElf_Sym sym;
+	size_t shstrndx, matched_index = 0, relocation_count;
+	uint64_t entry_index, entry_offset;
+	bool have_plt_sec = false, matched = false;
+	int fd = -1, result = -ENOENT;
+
+	memset(entry, 0, sizeof(*entry));
+	e = open_elf(path, &fd);
+	if (!e)
+		return -EINVAL;
+	if (!gelf_getehdr(e, &ehdr) || elf_getshdrstrndx(e, &shstrndx) != 0 ||
+	    ehdr.e_machine != EM_X86_64) {
+		result = -ENOTSUP;
+		goto out;
+	}
+
+	while ((scn = elf_nextscn(e, scn))) {
+		const char *name;
+
+		if (!gelf_getshdr(scn, &shdr))
+			continue;
+		name = elf_strptr(e, shstrndx, shdr.sh_name);
+		if (!name)
+			continue;
+		if (strcmp(name, ".plt.sec") == 0) {
+			plt_shdr = shdr;
+			have_plt_sec = true;
+		} else if (strcmp(name, ".plt") == 0 && !have_plt_sec) {
+			plt_shdr = shdr;
+		} else if (strcmp(name, ".rela.plt") == 0) {
+			if (rel_scn) {
+				result = -EINVAL;
+				goto out;
+			}
+			rel_scn = scn;
+			rel_shdr = shdr;
+		}
+	}
+	if (!rel_scn || !plt_shdr.sh_size ||
+	    plt_shdr.sh_type != SHT_PROGBITS ||
+	    !(plt_shdr.sh_flags & SHF_EXECINSTR) || plt_shdr.sh_entsize != 16 ||
+	    rel_shdr.sh_type != SHT_RELA || !rel_shdr.sh_entsize) {
+		result = -EINVAL;
+		goto out;
+	}
+	{
+		Elf_Scn *sym_scn = elf_getscn(e, rel_shdr.sh_link);
+		if (!sym_scn || !gelf_getshdr(sym_scn, &sym_shdr) ||
+		    !sym_shdr.sh_entsize) {
+			result = -EINVAL;
+			goto out;
+		}
+		sym_data = elf_getdata(sym_scn, NULL);
+		if (!sym_data || sym_data->d_size != sym_shdr.sh_size ||
+		    elf_getdata(sym_scn, sym_data)) {
+			result = -EINVAL;
+			goto out;
+		}
+	}
+
+	rel_data = elf_getdata(rel_scn, NULL);
+	if (!rel_data || rel_data->d_size != rel_shdr.sh_size ||
+	    elf_getdata(rel_scn, rel_data)) {
+		result = -EINVAL;
+		goto out;
+	}
+	relocation_count = rel_data->d_size / rel_shdr.sh_entsize;
+	for (size_t i = 0; i < relocation_count; i++) {
+		const char *name;
+		if (!gelf_getrela(rel_data, i, &rela) ||
+		    !gelf_getsym(sym_data, GELF_R_SYM(rela.r_info), &sym))
+			continue;
+		name = elf_strptr(e, sym_shdr.sh_link, sym.st_name);
+		if (!name || strcmp(name, needle) != 0)
+			continue;
+		if (matched) {
+			result = -EEXIST;
+			goto out;
+		}
+		matched = true;
+		matched_index = i;
+	}
+	if (!matched)
+		goto out;
+
+	entry_index = matched_index;
+	if (!have_plt_sec) {
+		if (entry_index == UINT64_MAX) {
+			result = -ERANGE;
+			goto out;
+		}
+		entry_index++;
+	}
+	if (entry_index > UINT64_MAX / 16) {
+		result = -ERANGE;
+		goto out;
+	}
+	entry_offset = entry_index * 16;
+	if (entry_offset > plt_shdr.sh_size ||
+	    plt_shdr.sh_entsize > plt_shdr.sh_size - entry_offset ||
+	    entry_offset > UINT64_MAX - plt_shdr.sh_offset ||
+	    entry_offset > UINT64_MAX - plt_shdr.sh_addr) {
+		result = -ERANGE;
+		goto out;
+	}
+	entry->file_offset = plt_shdr.sh_offset + entry_offset;
+	entry->vaddr = plt_shdr.sh_addr + entry_offset;
+	result = 0;
+
+out:
+	close_elf(e, fd);
+	return result;
 }
 
 static int print_histogram(struct launchlate_bpf *obj)
@@ -605,6 +820,10 @@ static int print_histogram(struct launchlate_bpf *obj)
 	printf("Total samples: %" PRIu64 "\n", device_values[MATCHED_SAMPLES]);
 	printf("Host launches: %" PRIu64 "\n", host_values[HOST_LAUNCHES]);
 	printf("Host enqueued: %" PRIu64 "\n", host_values[HOST_ENQUEUED]);
+	printf("Host launch calls: %" PRIu64 "\n",
+	       host_values[HOST_LAUNCH_CALLS]);
+	printf("Host target errors: %" PRIu64 "\n",
+	       host_values[HOST_TARGET_ERRORS]);
 	printf("Device entries: %" PRIu64 "\n", device_values[DEVICE_ENTRIES]);
 	printf("Matched samples: %" PRIu64 "\n", device_values[MATCHED_SAMPLES]);
 	printf("Queue underflows: %" PRIu64 "\n",
@@ -618,6 +837,7 @@ static int print_histogram(struct launchlate_bpf *obj)
 	       device_values[UNCERTAIN_SAMPLES]);
 	printf("Clock errors: %" PRIu64 "\n", device_values[CLOCK_ERRORS]);
 	bool accounting_complete =
+		host_values[HOST_LAUNCH_CALLS] >= host_values[HOST_LAUNCHES] &&
 		host_values[HOST_LAUNCHES] == host_values[HOST_ENQUEUED] +
 			host_values[QUEUE_OVERFLOWS] +
 			host_values[QUEUE_UPDATE_ERRORS] &&
@@ -634,6 +854,7 @@ static int print_histogram(struct launchlate_bpf *obj)
 		host_values[HOST_LAUNCHES] == host_values[HOST_ENQUEUED] &&
 		host_values[HOST_ENQUEUED] == device_values[DEVICE_ENTRIES] &&
 		device_values[DEVICE_ENTRIES] == device_values[MATCHED_SAMPLES] &&
+		host_values[HOST_TARGET_ERRORS] == 0 &&
 		host_values[QUEUE_OVERFLOWS] == 0 &&
 		host_values[QUEUE_UPDATE_ERRORS] == 0 &&
 		device_values[QUEUE_UNDERFLOWS] == 0 &&
@@ -649,33 +870,60 @@ int main(int argc, char **argv)
 	struct launchlate_bpf *skel;
 	struct clock_calibration start_calibration = {0};
 	struct clock_calibration end_calibration = {0};
+	struct host_target target = {0};
+	struct plt_entry launch_plt = {0};
 	int64_t intersection_low = 0, intersection_high = 0;
 	int err, stat_err;
 	uint32_t key = 0;
 	const char *binary_path = "./vec_add";
 	const char *symbol_hint = DEFAULT_UPROBE_SYMBOL_HINT;
 	enum symbol_match_status symbol_status;
-	char *func_name = NULL;
 
-	if (argc == 2 && strcmp(argv[1], "--self-test") == 0)
-		return run_self_test();
+	if (argc > 1 && strcmp(argv[1], "--self-test") == 0) {
+		if (argc != 2 && argc != 4) {
+			fprintf(stderr,
+				"Usage: %s --self-test [target-elf target-symbol]\n",
+				argv[0]);
+			return 1;
+		}
+		return run_self_test(argc == 4 ? argv[2] : NULL,
+				     argc == 4 ? argv[3] : NULL);
+	}
 	if (argc > 1)
 		binary_path = argv[1];
 	if (argc > 2)
 		symbol_hint = argv[2];
 
-	func_name = find_defined_symbol_matching(binary_path, symbol_hint,
-					 &symbol_status);
-	if (!func_name) {
+	err = find_defined_symbol_matching(binary_path, symbol_hint, &symbol_status,
+					   &target.kernel_vaddr);
+	if (err) {
 		const char *reason = symbol_status == SYMBOL_UNDEFINED ?
 			"the exact symbol exists only as an undefined import" :
 			symbol_status == SYMBOL_NOT_FUNCTION ?
 			"the exact defined symbol is not an ELF function" :
+			symbol_status == SYMBOL_INVALID_VALUE ?
+			"the exact defined function has no usable virtual address" :
+			symbol_status == SYMBOL_AMBIGUOUS ?
+			"the exact name resolves to multiple function addresses" :
 			"the exact symbol is absent";
 		fprintf(stderr, "Cannot attach '%s' in %s: %s\n", symbol_hint,
 			binary_path, reason);
 		return 1;
 	}
+	err = find_x86_64_plt_entry(binary_path, CUDA_LAUNCH_SYMBOL,
+				    &launch_plt);
+	if (err || launch_plt.file_offset > SIZE_MAX) {
+		const char *reason = err == -ENOTSUP ?
+			"only x86-64 ELF PLT layouts are supported" :
+			err == -EEXIST ?
+			"multiple matching PLT relocations exist" :
+			"no unique valid PLT relocation exists";
+		fprintf(stderr, "Cannot attach '%s@plt' in %s: %s\n",
+			CUDA_LAUNCH_SYMBOL, binary_path, reason);
+		return 1;
+	}
+	target.launch_vaddr = launch_plt.vaddr;
+	target.valid = 1;
 
 	/* Set up libbpf errors and debug info callback */
 	libbpf_set_print(libbpf_print_fn);
@@ -688,7 +936,6 @@ int main(int argc, char **argv)
 	skel = launchlate_bpf__open();
 	if (!skel) {
 		fprintf(stderr, "Failed to open and load BPF skeleton\n");
-		free(func_name);
 		return 1;
 	}
 
@@ -696,6 +943,14 @@ int main(int argc, char **argv)
 	err = launchlate_bpf__load(skel);
 	if (err) {
 		fprintf(stderr, "Failed to load and verify BPF skeleton\n");
+		goto cleanup;
+	}
+	err = bpf_map_update_elem(bpf_map__fd(skel->maps.host_target), &key,
+				  &target, BPF_ANY);
+	if (err) {
+		err = -errno;
+		fprintf(stderr, "Failed to update host_target map: %s\n",
+			strerror(errno));
 		goto cleanup;
 	}
 
@@ -722,21 +977,21 @@ int main(int argc, char **argv)
 		goto cleanup;
 	}
 
-	printf("Attaching uprobe: binary_path='%s', func_name='%s' (auto-resolved from ELF)\n",
-	       binary_path, func_name);
+	printf("Attaching uprobe: binary_path='%s', target='%s', launch='%s@plt' (exact same-ELF address match)\n",
+	       binary_path, symbol_hint, CUDA_LAUNCH_SYMBOL);
 
-	/* Manually attach uprobe with configurable name */
+	/* Attach at the target ELF's launch PLT entry; arg0 is filtered in BPF. */
 	LIBBPF_OPTS(bpf_uprobe_opts, uprobe_opts,
-		.func_name = func_name,
 		.retprobe = false,
 	);
 
 	skel->links.uprobe_cuda_launch = bpf_program__attach_uprobe_opts(
-		skel->progs.uprobe_cuda_launch, -1, binary_path, 0, &uprobe_opts);
+		skel->progs.uprobe_cuda_launch, -1, binary_path,
+		(size_t)launch_plt.file_offset, &uprobe_opts);
 	if (!skel->links.uprobe_cuda_launch) {
 		err = -errno;
-		fprintf(stderr, "Failed to attach uprobe to '%s:%s': %s\n",
-			binary_path, func_name, strerror(errno));
+		fprintf(stderr, "Failed to attach uprobe to '%s:%s@plt': %s\n",
+			binary_path, CUDA_LAUNCH_SYMBOL, strerror(errno));
 		goto cleanup;
 	}
 
@@ -747,8 +1002,8 @@ int main(int argc, char **argv)
 		goto cleanup;
 	}
 
-	printf("\nMonitoring CUDA kernel launch latency (uprobe: %s:%s)... Hit Ctrl-C to end.\n",
-	       binary_path, func_name);
+	printf("\nMonitoring CUDA kernel launch latency (uprobe: %s:%s@plt, target: %s)... Hit Ctrl-C to end.\n",
+	       binary_path, CUDA_LAUNCH_SYMBOL, symbol_hint);
 
 	while (!exiting)
 		sleep(1);
@@ -791,7 +1046,6 @@ int main(int argc, char **argv)
 		err = stat_err;
 
 cleanup:
-	free(func_name);
 	/* Clean up */
 	launchlate_bpf__destroy(skel);
 
