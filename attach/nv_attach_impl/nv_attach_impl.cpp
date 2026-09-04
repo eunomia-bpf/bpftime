@@ -193,6 +193,15 @@ int nv_attach_impl::create_attach_with_ebpf_callback(
 	auto registration_guard = lock_registration_state();
 	auto data = dynamic_cast<const nv_attach_private_data &>(private_data);
 
+#ifndef ENABLE_BPFTIME_VERIFIER
+	if (data.verifier_mode == BPFTIME_VERIFIER_STRICT) {
+		SPDLOG_ERROR(
+			"GPU eBPF verifier unavailable for strict request: mode=STRICT program={} policy_entry_created=0",
+			data.program_name);
+		return GPU_VERIFIER_REJECTED;
+	}
+#endif
+
 	// Safely access the variant
 	if (!std::holds_alternative<std::string>(data.code_addr_or_func_name)) {
 		SPDLOG_ERROR(
@@ -228,12 +237,27 @@ int nv_attach_impl::create_attach_with_ebpf_callback(
 						  attach_point_name :
 						  data.program_name;
 		if (data.verifier_mode != BPFTIME_NO_VERIFY) {
+			const auto map_descriptors =
+				build_gpu_verifier_map_descriptors(
+					data.map_basic_info);
+			const auto verification_started =
+				std::chrono::steady_clock::now();
 			const auto error =
 				bpftime::verifier::gpu::verify_gpu_program(
 					data.instructions.data(),
 					data.instructions.size(), section_name,
-					build_gpu_verifier_map_descriptors(
-						data.map_basic_info));
+					map_descriptors);
+			const auto measured_verification_elapsed_ns =
+				std::chrono::duration_cast<std::chrono::nanoseconds>(
+					std::chrono::steady_clock::now() -
+					verification_started)
+					.count();
+			const auto verification_elapsed_ns =
+				std::max<int64_t>(
+					1, measured_verification_elapsed_ns);
+			SPDLOG_INFO(
+				"GPU eBPF verification timing: program={} verification_elapsed_ns={}",
+				section_name, verification_elapsed_ns);
 			if (error) {
 				if (data.verifier_mode ==
 				    BPFTIME_VERIFIER_STRICT) {

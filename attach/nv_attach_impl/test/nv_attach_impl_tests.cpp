@@ -1,9 +1,9 @@
 #include "catch2/catch_test_macros.hpp"
 #include "nv_attach_impl.hpp"
-#ifdef ENABLE_EBPF_VERIFIER
-#include "gpu_verifier.hpp"
 #include "nv_attach_private_data.hpp"
 #include <cerrno>
+#ifdef ENABLE_EBPF_VERIFIER
+#include "gpu_verifier.hpp"
 #endif
 
 using namespace bpftime;
@@ -89,6 +89,33 @@ TEST_CASE("Test string replace")
 	REQUIRE(replaced.find(".visible .func bpf_main") == std::string::npos);
 }
 
+#ifndef ENABLE_EBPF_VERIFIER
+TEST_CASE("GPU strict mode fails closed when verifier is unavailable",
+	  "[gpu][verifier]")
+{
+	nv_attach_impl impl;
+	nv_attach_private_data data;
+	data.verifier_mode = BPFTIME_VERIFIER_STRICT;
+	data.program_name = "cuda__strict_unavailable";
+	const bool enabled_before = impl.is_enabled();
+	REQUIRE(impl.create_attach_with_ebpf_callback(
+			ebpf_run_callback{}, data, ATTACH_CUDA_PROBE) ==
+		GPU_VERIFIER_REJECTED);
+	REQUIRE(impl.is_enabled() == enabled_before);
+	REQUIRE_FALSE(impl.is_late_bootstrap_done());
+	REQUIRE(impl.detach_by_id(1) == -ENOENT);
+
+	nv_attach_private_data compatible_data;
+	REQUIRE(impl.create_attach_with_ebpf_callback(
+			ebpf_run_callback{}, compatible_data,
+			ATTACH_CUDA_PROBE) == -1);
+	compatible_data.verifier_mode = BPFTIME_NO_VERIFY;
+	REQUIRE(impl.create_attach_with_ebpf_callback(
+			ebpf_run_callback{}, compatible_data,
+			ATTACH_CUDA_PROBE) == -1);
+}
+#endif
+
 #ifdef ENABLE_EBPF_VERIFIER
 TEST_CASE("GPU verifier mode controls attach rejection", "[gpu][verifier]")
 {
@@ -119,6 +146,12 @@ TEST_CASE("GPU verifier mode controls attach rejection", "[gpu][verifier]")
 	const int no_verify_id = attach(BPFTIME_NO_VERIFY);
 	REQUIRE(no_verify_id == 2);
 	REQUIRE(impl.detach_by_id(no_verify_id) == 0);
+	ebpf_inst set_return{};
+	set_return.opcode = EBPF_OP_MOV64_IMM;
+	data.instructions = { set_return, exit };
+	const int accepted_id = attach(BPFTIME_VERIFIER_STRICT);
+	REQUIRE(accepted_id == 3);
+	REQUIRE(impl.detach_by_id(accepted_id) == 0);
 }
 
 TEST_CASE("GPU strict counter admission and rejection", "[gpu][verifier][strict-counter]")

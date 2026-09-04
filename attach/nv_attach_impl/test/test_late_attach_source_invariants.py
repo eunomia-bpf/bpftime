@@ -24,6 +24,49 @@ def compact(source: str) -> str:
 
 
 class LateAttachSourceInvariants(unittest.TestCase):
+    def test_device_verifier_guard_and_timer_boundaries(self):
+        body = section(
+            IMPL,
+            "int nv_attach_impl::create_attach_with_ebpf_callback(",
+            'extern "C" {',
+        )
+        unavailable = body.index("GPU eBPF verifier unavailable")
+        for mutation in (
+            "for (const auto &pd : this->pass_configurations)",
+            "enabled.store(true",
+            "this->allocate_id()",
+            "start_late_bootstrap_async()",
+        ):
+            self.assertLess(unavailable, body.index(mutation))
+        self.assertIn("policy_entry_created=0", body[: body.index("#endif", unavailable)])
+
+        maps = body.index("const auto map_descriptors")
+        started = body.index("const auto verification_started")
+        verify = body.index("verify_gpu_program(")
+        stopped = body.index("measured_verification_elapsed_ns")
+        timing = body.index("GPU eBPF verification timing:")
+        outcome = body.index("if (error)")
+        self.assertLess(maps, started)
+        self.assertLess(started, verify)
+        self.assertLess(verify, stopped)
+        self.assertLess(stopped, timing)
+        self.assertLess(timing, outcome)
+        self.assertEqual(body.count("verify_gpu_program("), 1)
+        self.assertEqual(body.count("verification_elapsed_ns={}"), 1)
+        self.assertIn("std::chrono::steady_clock::now()", body[started:verify])
+        self.assertIn("std::chrono::steady_clock::now()", body[verify:stopped + 300])
+        self.assertIn("std::max<int64_t>", body[stopped:timing])
+
+        # Keep frozen admission messages stable; timing is a separate line.
+        self.assertIn(
+            "(mode=STRICT, policy_entry_created=0)", body[outcome:]
+        )
+        self.assertIn("verification failed for {}: {}; continuing", body[outcome:])
+        self.assertIn(
+            "verification accepted: mode=STRICT program={} attach={} instructions={}",
+            body[outcome:],
+        )
+
     def test_late_bootstrap_registers_only_requested_hook_targets(self):
         body = section(
             IMPL,
