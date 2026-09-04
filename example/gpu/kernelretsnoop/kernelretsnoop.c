@@ -150,17 +150,47 @@ struct cartesian_result {
 
 enum {
 	ORACLE_LAUNCHES = 220,
+	ORACLE_BLOCK_DIM_Y = 256,
+	ORACLE_HIGH_BLOCKS_X = 4,
+	ORACLE_MIDDLE_BLOCKS_X = 4,
+	ORACLE_LOW_BLOCKS_X = 80,
 	ORACLE_HIGH_COORDINATES = 1024,
 	ORACLE_MIDDLE_COORDINATES = 1024,
 	ORACLE_LOW_COORDINATES = 20480,
 	ORACLE_UNIQUE_COORDINATES = 22528,
 	ORACLE_TOTAL_EVENTS = 720896,
 };
+_Static_assert(ORACLE_HIGH_BLOCKS_X * ORACLE_BLOCK_DIM_Y ==
+		       ORACLE_HIGH_COORDINATES &&
+		       ORACLE_MIDDLE_BLOCKS_X * ORACLE_BLOCK_DIM_Y ==
+		       ORACLE_MIDDLE_COORDINATES &&
+		       ORACLE_LOW_BLOCKS_X * ORACLE_BLOCK_DIM_Y ==
+		       ORACLE_LOW_COORDINATES,
+	       "kernelretsnoop launch geometry is inconsistent");
 _Static_assert(ORACLE_HIGH_COORDINATES * 220 +
 		       ORACLE_MIDDLE_COORDINATES * 44 +
 		       ORACLE_LOW_COORDINATES * 22 ==
 		       ORACLE_TOTAL_EVENTS,
 	       "kernelretsnoop multiplicity oracle total is inconsistent");
+
+static uint64_t oracle_expected_multiplicity(
+	const struct coordinate *coordinate)
+{
+	const uint64_t middle_end =
+		ORACLE_HIGH_BLOCKS_X + ORACLE_MIDDLE_BLOCKS_X;
+	const uint64_t low_end = middle_end + ORACLE_LOW_BLOCKS_X;
+
+	/* rope_norm grows grid.x while block=(1, 256, 1). */
+	if (coordinate->y >= ORACLE_BLOCK_DIM_Y || coordinate->z != 0)
+		return 0;
+	if (coordinate->x < ORACLE_HIGH_BLOCKS_X)
+		return 220;
+	if (coordinate->x < middle_end)
+		return 44;
+	if (coordinate->x < low_end)
+		return 22;
+	return 0;
+}
 
 static struct cartesian_result validate_cartesian(struct state *state)
 {
@@ -218,14 +248,8 @@ static struct cartesian_result validate_cartesian(struct state *state)
 
 		struct coordinate coordinate;
 		event_coordinate(&state->events[i], &coordinate);
-		const uint64_t width = dimensions[0];
-		const uint64_t height = dimensions[1];
-		const uint64_t coordinate_id = coordinate.z * width * height +
-			coordinate.y * width + coordinate.x;
 		const uint64_t expected_multiplicity =
-			coordinate_id < 1024 ? 220 :
-			coordinate_id < 2048 ? 44 :
-			coordinate_id < ORACLE_UNIQUE_COORDINATES ? 22 : 0;
+			oracle_expected_multiplicity(&coordinate);
 		if (multiplicity != expected_multiplicity)
 			result.segment_mismatches++;
 		result.unique_coordinates++;
@@ -297,21 +321,28 @@ static int run_multiplicity_oracle_selftest(void)
 	state.events = calloc(ORACLE_TOTAL_EVENTS, sizeof(*state.events));
 	if (!state.events)
 		return 1;
-	for (uint64_t id = 0; id < ORACLE_UNIQUE_COORDINATES; id++) {
-		const uint64_t multiplicity = id < 1024 ? 220 :
-			id < 2048 ? 44 : 22;
-		for (uint64_t occurrence = 0; occurrence < multiplicity;
-		     occurrence++) {
-			struct data *event = &state.events[state.events_count];
-			const uint64_t block_dim = 32ULL << (occurrence % 3);
+	for (uint64_t x = 0;
+	     x < ORACLE_HIGH_BLOCKS_X + ORACLE_MIDDLE_BLOCKS_X +
+		 ORACLE_LOW_BLOCKS_X;
+	     x++) {
+		const uint64_t multiplicity =
+			x < ORACLE_HIGH_BLOCKS_X ? 220 :
+			x < ORACLE_HIGH_BLOCKS_X + ORACLE_MIDDLE_BLOCKS_X ?
+				44 : 22;
+		for (uint64_t y = 0; y < ORACLE_BLOCK_DIM_Y; y++) {
+			for (uint64_t occurrence = 0;
+			     occurrence < multiplicity; occurrence++) {
+				struct data *event =
+					&state.events[state.events_count];
 
-			event->block_x = id / block_dim;
-			event->thread_x = id % block_dim;
-			event->block_dim_x = block_dim;
-			event->block_dim_y = 1;
-			event->block_dim_z = 1;
-			event->timestamp = 1;
-			state.events_count++;
+				event->block_x = x;
+				event->thread_y = y;
+				event->block_dim_x = 1;
+				event->block_dim_y = ORACLE_BLOCK_DIM_Y;
+				event->block_dim_z = 1;
+				event->timestamp = 1;
+				state.events_count++;
+			}
 		}
 	}
 	const struct cartesian_result exact = validate_cartesian(&state);
@@ -324,11 +355,9 @@ static int run_multiplicity_oracle_selftest(void)
 	state.events_count++;
 	const size_t low_segment_offset =
 		ORACLE_HIGH_COORDINATES * 220 + ORACLE_MIDDLE_COORDINATES * 44;
-	for (size_t i = 0; i < 220; i++) {
-		const uint64_t block_dim = state.events[i].block_dim_x;
-		state.events[i].block_x = 2048 / block_dim;
-		state.events[i].thread_x = 2048 % block_dim;
-	}
+	for (size_t i = 0; i < 220; i++)
+		state.events[i].block_x =
+			ORACLE_HIGH_BLOCKS_X + ORACLE_MIDDLE_BLOCKS_X;
 	for (size_t i = 0; i < 22; i++) {
 		struct data *event = &state.events[low_segment_offset + i];
 		event->block_x = 0;

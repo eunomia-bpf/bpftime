@@ -182,6 +182,14 @@ Then use scripts to:
 - Identify thread index patterns with outliers
 - Correlate timestamps with thread coordinates for access pattern visualization
 
+For the Table 1 correctness workload, setting
+`BPFTIME_KERNELRETSNOOP_EXACT_ORACLE=1` additionally validates the known
+`rope_norm` launch geometry: a `(1, 256, 1)` block and `grid.x` extents of 4,
+8, and 88. The oracle checks the exact per-coordinate multiplicities, event
+total, and loss counters; it is intentionally specific to that workload. Run
+`kernelretsnoop --self-test-multiplicity-oracle` to test the oracle without a
+GPU.
+
 ## Troubleshooting
 
 **No output**: Ensure the eBPF program attached successfully. Check that the kernel name matches exactly (including C++ mangling).
