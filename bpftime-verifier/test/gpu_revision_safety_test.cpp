@@ -305,7 +305,7 @@ TEST_CASE("revision SIMT map side-effect pairs", "[gpu][revision-safety]")
 	}
 }
 
-TEST_CASE("revision SIMT atomic and helper pairs", "[gpu][revision-safety]")
+TEST_CASE("revision SIMT atomic pair", "[gpu][revision-safety]")
 {
 	SECTION("lane-varying atomic target is rejected")
 	{
@@ -351,8 +351,12 @@ TEST_CASE("revision SIMT atomic and helper pairs", "[gpu][revision-safety]")
 		};
 		require_accepted(verify(program, maps));
 	}
+}
 
-	SECTION("prohibited helper is rejected")
+TEST_CASE("revision SIMT global synchronization helper pair",
+	  "[gpu][revision-safety]")
+{
+	SECTION("global memory-barrier helper is rejected")
 	{
 		const std::array<ebpf_inst, 2> program = {
 			make_call(506),
@@ -361,7 +365,7 @@ TEST_CASE("revision SIMT atomic and helper pairs", "[gpu][revision-safety]")
 		require_rejected_with(verify(program), "Prohibited Helpers");
 	}
 
-	SECTION("allowed helper is accepted")
+	SECTION("warp-local helper is accepted")
 	{
 		const std::array<ebpf_inst, 2> program = {
 			make_call(510),
