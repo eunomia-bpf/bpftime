@@ -12,6 +12,10 @@
 
 namespace bpftime
 {
+// bpftime-private host helper.  Keep Linux helper 5 unchanged: launchlate
+// needs the RAW clock used by NVIDIA RM/PTIMER correlation.
+inline constexpr unsigned int BPFTIME_FUNC_ktime_get_raw_ns = 510;
+
 struct bpftime_helper_info {
 	unsigned int index;
 	std::string name;
@@ -55,6 +59,8 @@ class bpftime_helper_group {
 #ifdef ENABLE_BPFTIME_VERIFIER
 std::map<int32_t, bpftime::verifier::BpftimeHelperProrotype>
 get_ufunc_helper_protos();
+std::map<int32_t, bpftime::verifier::BpftimeHelperProrotype>
+get_kernel_utils_helper_protos();
 #endif
 } // namespace bpftime
 #endif

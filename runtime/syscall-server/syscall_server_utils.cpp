@@ -67,6 +67,10 @@ void start_up(syscall_context &ctx)
 				     .get_helper_ids()) {
 				helper_ids.push_back(x);
 			}
+			for (const auto &[id, prototype] :
+			     get_kernel_utils_helper_protos()) {
+				non_kernel_helpers[id] = prototype;
+			}
 		}
 		if (runtime_config.enable_shm_maps_helper_group) {
 			for (auto x :

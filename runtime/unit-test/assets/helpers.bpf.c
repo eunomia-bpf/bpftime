@@ -8,6 +8,8 @@
 #include "bpf/bpf_tracing.h"
 #include "bpf/bpf_helpers.h"
 
+static const __u64 (*bpftime_ktime_get_raw_ns)(void) = (void *)510;
+
 struct data {
 	int a;
 	int b;
@@ -18,6 +20,8 @@ int print_and_add1(struct data *d, int sz) {
 	bpf_printk("print_and_add1\n");
 	bpf_printk("print_and_add1: %d\n", sz);
 	if (!bpf_ktime_get_boot_ns())
+		return 0;
+	if (!bpftime_ktime_get_raw_ns())
 		return 0;
 	return 23;
 }

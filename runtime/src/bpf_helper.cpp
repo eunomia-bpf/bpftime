@@ -542,6 +542,21 @@ uint64_t bpftime_ktime_get_ns(uint64_t, uint64_t, uint64_t, uint64_t, uint64_t)
 	return ns.time_since_epoch().count();
 }
 
+uint64_t bpftime_ktime_get_raw_ns(uint64_t, uint64_t, uint64_t, uint64_t,
+				  uint64_t)
+{
+#ifdef CLOCK_MONOTONIC_RAW
+	timespec spec{};
+	if (clock_gettime(CLOCK_MONOTONIC_RAW, &spec) != 0 || spec.tv_sec < 0 ||
+	    spec.tv_nsec < 0 || spec.tv_nsec >= 1000000000L)
+		return 0;
+	return static_cast<uint64_t>(spec.tv_sec) * 1000000000ULL +
+	       static_cast<uint64_t>(spec.tv_nsec);
+#else
+	return 0;
+#endif
+}
+
 uint64_t bpftime_get_current_comm(uint64_t buf, uint64_t size, uint64_t,
 				  uint64_t, uint64_t)
 {
@@ -1407,6 +1422,12 @@ bpftime_helper_group::get_kernel_utils_helper_group()
 			    .name = "bpf_ktime_get_ns",
 			    .fn = (void *)bpftime_ktime_get_ns,
 		    } },
+		  { BPFTIME_FUNC_ktime_get_raw_ns,
+		    bpftime_helper_info{
+			    .index = BPFTIME_FUNC_ktime_get_raw_ns,
+			    .name = "bpftime_ktime_get_raw_ns",
+			    .fn = (void *)bpftime_ktime_get_raw_ns,
+		    } },
 		  { BPF_FUNC_ktime_get_boot_ns,
 		    bpftime_helper_info{
 			    .index = BPF_FUNC_ktime_get_boot_ns,
@@ -1582,6 +1603,22 @@ const bpftime_helper_group &bpftime_helper_group::get_shm_maps_helper_group()
 }
 
 #ifdef ENABLE_BPFTIME_VERIFIER
+std::map<int32_t, verifier::BpftimeHelperProrotype>
+get_kernel_utils_helper_protos()
+{
+	using namespace verifier;
+	return { { BPFTIME_FUNC_ktime_get_raw_ns,
+		   BpftimeHelperProrotype{
+			   .name = "bpftime_ktime_get_raw_ns",
+			   .return_type = EBPF_RETURN_TYPE_INTEGER,
+			   .argument_type = {
+				   EBPF_ARGUMENT_TYPE_DONTCARE,
+				   EBPF_ARGUMENT_TYPE_DONTCARE,
+				   EBPF_ARGUMENT_TYPE_DONTCARE,
+				   EBPF_ARGUMENT_TYPE_DONTCARE,
+				   EBPF_ARGUMENT_TYPE_DONTCARE } } } };
+}
+
 std::map<int32_t, verifier::BpftimeHelperProrotype> get_ufunc_helper_protos()
 {
 	using namespace verifier;
