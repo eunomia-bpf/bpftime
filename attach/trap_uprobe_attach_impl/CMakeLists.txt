@@ -30,6 +30,8 @@ if(BPFTIME_TRAP_ATTACH_BUILD_TESTS)
         test/test_trap_backtrace.cpp
         test/test_trap_recursion.cpp
         test/test_trap_insn_decode.cpp
+        test/test_trap_signal_safety.cpp
+        test/test_trap_concurrent_patch.cpp
     )
     add_executable(bpftime_trap_uprobe_attach_tests ${TRAP_TEST_SOURCES})
     add_dependencies(bpftime_trap_uprobe_attach_tests Catch2 bpftime_trap_uprobe_attach_impl spdlog::spdlog)

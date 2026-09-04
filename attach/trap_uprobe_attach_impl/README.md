@@ -40,13 +40,23 @@ shared config).
   Signals that do not originate from one of our breakpoints are forwarded
   unchanged. If the host installs its own handler later, the next attach
   puts ours back in front and forwards to the new one.
-- Nothing in the handler allocates on the first hit of a new thread: the
-  shadow stack is `mmap`ed and every thread local it touches uses the
-  initial-exec TLS model. Probing `malloc` itself is supported.
+- The handler path uses only async-signal-safe operations. The per-thread
+  uretprobe shadow stack is allocated with `mmap(MAP_ANONYMOUS)` (not
+  `malloc`) and every thread-local uses the initial-exec TLS model, so no
+  first-access allocation goes through the C library heap. For applications
+  that want to eliminate even the `mmap` from the first uretprobe hit,
+  `trap_attach_impl::prepare_thread()` can be called once from normal
+  (non-signal) context on each thread before probes fire.
+- No logging (spdlog / stdio) is performed from inside the signal handler.
+  Callback exceptions are caught and silently swallowed; the host is never
+  terminated by this code.
+- Patching a 4-byte instruction at a 2-byte boundary uses a three-phase
+  protocol: (1) write `c.ebreak` into the low half, (2) write the
+  intended high half, (3) write the intended low half, with icache flushes
+  between phases. Every intermediate state is a trapping compressed
+  instruction, so no hart can fetch a torn non-trapping word.
 - Re-entrancy: if a callback invokes a probed function, the nested hit runs
   the original instruction without callbacks instead of recursing.
-- Exceptions thrown by callbacks are caught and logged; the host is never
-  terminated by this code.
 
 ## Limitations
 

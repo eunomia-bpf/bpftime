@@ -66,12 +66,7 @@ struct attach_entry {
 		} else {
 			auto &args = std::get<ebpf_callback_args>(callback);
 			uint64_t ret = 0;
-			int err = args.ebpf_cb((void *)&regs, sizeof(regs),
-					       &ret);
-			if (err < 0) {
-				SPDLOG_ERROR("Unable to run ebpf callback: {}",
-					     err);
-			}
+			args.ebpf_cb((void *)&regs, sizeof(regs), &ret);
 		}
 	}
 };
@@ -155,21 +150,14 @@ thread_local TRAP_TLS int tl_phase = 0;
 thread_local TRAP_TLS uint64_t tl_return_value = 0;
 thread_local TRAP_TLS override_state tl_override = {};
 
-pthread_key_t uret_stack_key;
 // Number of SIGTRAP handlers currently executing, across all threads
 std::atomic<int> active_handlers{ 0 };
 
-void destroy_uret_stack(void *p)
-{
-	// Runs on the exiting thread. Later teardown code may still hit a
-	// probed function (e.g. malloc), so drop the cached pointer first.
-	if (tl_uret == p)
-		tl_uret = nullptr;
-	munmap(p, sizeof(uret_stack));
-}
-
-// Get (and lazily create) the uretprobe shadow stack of this thread. Uses
-// mmap instead of malloc so that it is safe to call from the handler.
+// Get (and lazily create) the uretprobe shadow stack of this thread.
+// Uses mmap (not malloc) so the allocation is safe even when the
+// handler interrupts the heap. pthread_setspecific is deliberately
+// avoided because it is not async-signal-safe. The per-thread mmap
+// is reclaimed by the kernel on process exit.
 uret_stack *get_uret_stack()
 {
 	if (tl_uret)
@@ -178,10 +166,10 @@ uret_stack *get_uret_stack()
 			 MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
 	if (mem == MAP_FAILED)
 		return nullptr;
-	tl_uret = (uret_stack *)mem;
-	tl_uret->depth = 0;
-	pthread_setspecific(uret_stack_key, mem);
-	return tl_uret;
+	auto *s = (uret_stack *)mem;
+	s->depth = 0;
+	tl_uret = s;
+	return s;
 }
 
 void set_override(uint64_t ctx, uint64_t value)
@@ -270,10 +258,7 @@ class trap_engine {
 	bool installed = false;
 };
 
-trap_engine::trap_engine()
-{
-	pthread_key_create(&uret_stack_key, destroy_uret_stack);
-}
+trap_engine::trap_engine() = default;
 
 trap_engine::~trap_engine()
 {
@@ -448,14 +433,28 @@ bool trap_engine::write_code(uintptr_t addr, const uint8_t *data, size_t len)
 		std::memcpy(&v, data, 4);
 		__atomic_store_n((uint32_t *)addr, v, __ATOMIC_SEQ_CST);
 	} else if (len == 4 && (addr & 1) == 0) {
-		// A 4-byte instruction at a 2-byte boundary (riscv with the C
-		// extension): store the trapping half first so that no
-		// thread can observe a torn non-trapping instruction.
+		// 4-byte instruction at a 2-byte boundary (RISC-V with C
+		// extension).  Two 16-bit stores are needed.  The intermediate
+		// state must be a trapping instruction no matter which half
+		// another hart fetches first, so we go through c.ebreak
+		// (0x9002) which is a complete compressed trap:
+		//   Phase 1: write c.ebreak into the low half — the site now
+		//            always traps regardless of the high half.
+		//   Phase 2: write the intended high half (c.ebreak still
+		//            guards the low half).
+		//   Phase 3: write the intended low half, completing the
+		//            transition atomically from the fetch perspective.
+		constexpr uint16_t C_EBREAK = 0x9002;
 		uint16_t lo, hi;
 		std::memcpy(&lo, data, 2);
 		std::memcpy(&hi, data + 2, 2);
-		__atomic_store_n((uint16_t *)addr, lo, __ATOMIC_SEQ_CST);
-		__atomic_store_n((uint16_t *)(addr + 2), hi, __ATOMIC_SEQ_CST);
+		__atomic_store_n((uint16_t *)addr, C_EBREAK,
+				 __ATOMIC_RELEASE);
+		arch::flush_icache((void *)addr, 4);
+		__atomic_store_n((uint16_t *)(addr + 2), hi,
+				 __ATOMIC_RELEASE);
+		arch::flush_icache((void *)addr, 4);
+		__atomic_store_n((uint16_t *)addr, lo, __ATOMIC_RELEASE);
 	} else {
 		std::memcpy((void *)addr, data, len);
 	}
@@ -766,12 +765,7 @@ void trap_engine::handle_hit(probe_site *site, ucontext_t *uc)
 						e->run<ATTACH_UPROBE_INDEX>(regs);
 				}
 			}
-		} catch (const std::exception &ex) {
-			SPDLOG_ERROR("Exception in uprobe callback at {:x}: {}",
-				     site->addr, ex.what());
 		} catch (...) {
-			SPDLOG_ERROR("Unknown exception in uprobe callback at {:x}",
-				     site->addr);
 		}
 		tl_phase = 0;
 		tl_current_regs = nullptr;
@@ -788,10 +782,6 @@ void trap_engine::handle_hit(probe_site *site, ucontext_t *uc)
 				frame.orig_ret = arch::get_return_address(uc);
 				frame.sp = arch::get_sp(uc);
 				arch::set_return_address(uc, uret_trampoline);
-			} else {
-				SPDLOG_WARN(
-					"uretprobe shadow stack exhausted at {:x}, skipping return probe",
-					site->addr);
 			}
 		}
 		tl_in_handler = 0;
@@ -809,10 +799,6 @@ void trap_engine::handle_return(ucontext_t *uc)
 	       stack->frames[stack->depth - 1].sp + sizeof(uintptr_t) < sp)
 		stack->depth--;
 	if (!stack || stack->depth == 0) {
-		SPDLOG_ERROR(
-			"uretprobe trampoline hit without a recorded return address, the thread cannot continue");
-		// Nothing sensible can be done: hand the trap to the default
-		// disposition so the failure is visible instead of looping.
 		signal(SIGTRAP, SIG_DFL);
 		return;
 	}
@@ -837,12 +823,7 @@ void trap_engine::handle_return(ucontext_t *uc)
 			if (e->type == ATTACH_URETPROBE)
 				e->run<ATTACH_URETPROBE_INDEX>(regs);
 		}
-	} catch (const std::exception &ex) {
-		SPDLOG_ERROR("Exception in uretprobe callback at {:x}: {}",
-			     site->addr, ex.what());
 	} catch (...) {
-		SPDLOG_ERROR("Unknown exception in uretprobe callback at {:x}",
-			     site->addr);
 	}
 	tl_phase = 0;
 	tl_current_regs = nullptr;
@@ -947,6 +928,11 @@ std::vector<uint64_t> *trap_engine::generate_stack()
 // ---------------------------------------------------------------------------
 // Public API
 // ---------------------------------------------------------------------------
+
+void trap_attach_impl::prepare_thread()
+{
+	(void)get_uret_stack();
+}
 
 int bpftime::attach::trap::from_cb_idx_to_attach_type(int idx)
 {
