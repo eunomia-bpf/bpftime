@@ -134,42 +134,34 @@ struct override_state {
 	uint64_t ctx;
 };
 
-// Thread local state touched from the signal handler. Initial-exec TLS is
-// used so that the first access from a new thread never allocates, which
-// matters when the probed function is malloc itself.
-#define TRAP_TLS __attribute__((tls_model("initial-exec")))
-thread_local TRAP_TLS int tl_in_handler = 0;
-thread_local TRAP_TLS uret_stack *tl_uret = nullptr;
-thread_local TRAP_TLS const pt_regs *tl_current_regs = nullptr;
-// Address of the instruction the probe interrupted and the stack pointer
-// at that point
-thread_local TRAP_TLS uintptr_t tl_current_pc = 0;
-thread_local TRAP_TLS uintptr_t tl_current_sp = 0;
-// 0: not in a probe, 1: function entry, 2: function return
-thread_local TRAP_TLS int tl_phase = 0;
-thread_local TRAP_TLS uint64_t tl_return_value = 0;
-thread_local TRAP_TLS override_state tl_override = {};
+// Thread-local state touched from the signal handler.
+//
+// No tls_model attribute: this code is statically linked into a shared
+// library (bpftime-agent) that is loaded via LD_PRELOAD or late dlopen
+// into an arbitrary host process. initial-exec TLS requires static-TLS
+// surplus which may already be exhausted; the default (global-dynamic)
+// works in all loading scenarios.
+//
+// The uret_stack is embedded directly in TLS (~3 KB) so that the first
+// uretprobe hit on any thread never calls mmap, malloc, or any other
+// non-async-signal-safe function. The TLS block is reclaimed by the
+// C runtime when the thread exits, so there is no VMA leak for
+// short-lived threads.
+thread_local int tl_in_handler = 0;
+thread_local uret_stack tl_uret = {};
+thread_local const pt_regs *tl_current_regs = nullptr;
+thread_local uintptr_t tl_current_pc = 0;
+thread_local uintptr_t tl_current_sp = 0;
+thread_local int tl_phase = 0;
+thread_local uint64_t tl_return_value = 0;
+thread_local override_state tl_override = {};
 
 // Number of SIGTRAP handlers currently executing, across all threads
 std::atomic<int> active_handlers{ 0 };
 
-// Get (and lazily create) the uretprobe shadow stack of this thread.
-// Uses mmap (not malloc) so the allocation is safe even when the
-// handler interrupts the heap. pthread_setspecific is deliberately
-// avoided because it is not async-signal-safe. The per-thread mmap
-// is reclaimed by the kernel on process exit.
 uret_stack *get_uret_stack()
 {
-	if (tl_uret)
-		return tl_uret;
-	void *mem = mmap(nullptr, sizeof(uret_stack), PROT_READ | PROT_WRITE,
-			 MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
-	if (mem == MAP_FAILED)
-		return nullptr;
-	auto *s = (uret_stack *)mem;
-	s->depth = 0;
-	tl_uret = s;
-	return s;
+	return &tl_uret;
 }
 
 void set_override(uint64_t ctx, uint64_t value)
@@ -776,7 +768,7 @@ void trap_engine::handle_hit(probe_site *site, ucontext_t *uc)
 		}
 		if (site->has_uretprobe) {
 			uret_stack *stack = get_uret_stack();
-			if (stack && stack->depth < URET_STACK_DEPTH) {
+			if (stack->depth < URET_STACK_DEPTH) {
 				auto &frame = stack->frames[stack->depth++];
 				frame.function = site->addr;
 				frame.orig_ret = arch::get_return_address(uc);
@@ -791,14 +783,14 @@ void trap_engine::handle_hit(probe_site *site, ucontext_t *uc)
 
 void trap_engine::handle_return(ucontext_t *uc)
 {
-	uret_stack *stack = tl_uret;
+	uret_stack *stack = &tl_uret;
 	uintptr_t sp = arch::get_sp(uc);
 	// Drop frames abandoned by longjmp/exceptions: their stack pointer is
 	// below the one we are returning with.
-	while (stack && stack->depth > 0 &&
+	while (stack->depth > 0 &&
 	       stack->frames[stack->depth - 1].sp + sizeof(uintptr_t) < sp)
 		stack->depth--;
-	if (!stack || stack->depth == 0) {
+	if (stack->depth == 0) {
 		signal(SIGTRAP, SIG_DFL);
 		return;
 	}
@@ -931,7 +923,8 @@ std::vector<uint64_t> *trap_engine::generate_stack()
 
 void trap_attach_impl::prepare_thread()
 {
-	(void)get_uret_stack();
+	// No-op: uret_stack is now embedded in TLS and always available.
+	// Kept for API compatibility.
 }
 
 int bpftime::attach::trap::from_cb_idx_to_attach_type(int idx)

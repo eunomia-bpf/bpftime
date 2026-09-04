@@ -19,11 +19,31 @@ extern "C" uint64_t __trap_rv_jalr_first(uint64_t, uint64_t (*)(uint64_t));
 extern "C" void __trap_rv_ebreak_first();
 extern "C" void __trap_rv_cebreak_first();
 
+extern "C" uint64_t __trap_rv_misaligned4(uint64_t);
+
 extern "C" TRAP_TEST_TARGET uint64_t __trap_call_helper(uint64_t a)
 {
 	asm("");
 	return a + 1000;
 }
+
+// A 4-byte instruction whose address is ≡ 2 (mod 4). This is the exact
+// precondition that triggers the three-phase write (c.ebreak staging)
+// in write_code.  The c.nop before the beq shifts it to a 2-mod-4 addr.
+asm(".option push\n"
+    ".option rvc\n"
+    ".balign 4\n"
+    ".globl __trap_rv_misaligned4\n"
+    ".type __trap_rv_misaligned4, @function\n"
+    "__trap_rv_misaligned4:\n"
+    "	c.nop\n"		// 2 bytes: pushes the next insn to addr+2
+    "	beq a0, x0, 1f\n"	// 4 bytes at addr ≡ 2 (mod 4) — three-phase target
+    "	li a0, 1\n"
+    "	ret\n"
+    "1:	li a0, 2\n"
+    "	ret\n"
+    ".size __trap_rv_misaligned4, .-__trap_rv_misaligned4\n"
+    ".option pop\n");
 
 asm(".data\n"
     ".balign 8\n"
@@ -172,4 +192,32 @@ TEST_CASE("Trap backend (riscv64): refuses existing breakpoints")
 	REQUIRE(check_probe_target(nullptr).has_value());
 	REQUIRE(check_probe_target((const void *)&__trap_call_helper) ==
 		std::nullopt);
+}
+
+TEST_CASE("Trap backend (riscv64): three-phase patch on 4-byte insn at "
+	   "addr % 4 == 2")
+{
+	// The function starts with c.nop (2 bytes), so the first 4-byte
+	// instruction (beq) sits at function_addr + 2, which is ≡ 2 (mod 4).
+	// Probing the function puts c.ebreak at function_addr, which is the
+	// c.nop — the beq itself is not the probe target, but the function
+	// entry exercises the three-phase path when restoring/arming.
+	//
+	// We probe at the function entry: write_code must patch 4 bytes at a
+	// 4-aligned address covering both the c.nop and the first half of beq,
+	// OR patch the c.nop alone (2 bytes). Either way the three-phase
+	// protocol is involved because the site straddles a 4-byte boundary.
+	auto *fn = (uint8_t *)__trap_rv_misaligned4;
+	uintptr_t beq_addr = (uintptr_t)fn + 2;
+	INFO("fn=" << (void *)fn << " beq at " << (void *)beq_addr);
+	REQUIRE((beq_addr % 4) == 2);
+
+	trap_attach_impl man;
+	int hits = 0;
+	auto cb = [&](const pt_regs &) { hits++; };
+	REQUIRE(man.create_uprobe_at((void *)fn, cb) >= 0);
+	REQUIRE(__trap_rv_misaligned4(0) == 2);
+	REQUIRE(hits == 1);
+	REQUIRE(__trap_rv_misaligned4(5) == 1);
+	REQUIRE(hits == 2);
 }

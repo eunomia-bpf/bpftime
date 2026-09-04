@@ -260,11 +260,8 @@ if(${BUILD_ATTACH_IMPL_EXAMPLE})
   add_subdirectory(example/attach_implementation)
 endif()
 
-# benchmark that requires bpftime libraries
-if(${BPFTIME_BUILD_WITH_LIBBPF})
-  # Currently benchmark is using libbpf
-  add_subdirectory(benchmark)
-endif()
+# benchmarks — libbpf-dependent ones are gated inside benchmark/CMakeLists.txt
+add_subdirectory(benchmark)
 
 set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>DLL")
 
