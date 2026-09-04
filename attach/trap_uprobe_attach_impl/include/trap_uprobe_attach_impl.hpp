@@ -71,11 +71,8 @@ class trap_attach_impl final : public base_attach_impl {
 	trap_attach_impl();
 	~trap_attach_impl() override;
 
-	// Pre-allocate per-thread state (uretprobe shadow stack) so that the
-	// SIGTRAP handler never needs to call mmap.  Call this once from each
-	// thread that will hit probes, before the first hit.  It is safe but
-	// unnecessary to call more than once.
-	static void prepare_thread();
+	// No-op kept for API compatibility: uret_stack is now in TLS.
+	static void prepare_thread() {}
 	trap_attach_impl(const trap_attach_impl &) = delete;
 	trap_attach_impl &operator=(const trap_attach_impl &) = delete;
 

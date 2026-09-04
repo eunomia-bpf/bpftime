@@ -74,14 +74,14 @@ rv_kind classify(const uint8_t *code)
 		uint32_t insn = load32(code);
 		if (insn == EBREAK)
 			return rv_kind::ebreak;
-		switch (insn & 0x7f) {
-		case 0x17:
+		switch (insn & 0x7f) { // opcode field (bits 6:0)
+		case 0x17: // AUIPC — pc-relative upper immediate
 			return rv_kind::auipc;
-		case 0x6f:
+		case 0x6f: // JAL — pc-relative jump and link
 			return rv_kind::jal;
-		case 0x67:
+		case 0x67: // JALR — register-indirect jump and link
 			return rv_kind::jalr;
-		case 0x63:
+		case 0x63: // Bxx — conditional branch (BEQ/BNE/BLT/BGE/BLTU/BGEU)
 			return rv_kind::branch;
 		default:
 			return rv_kind::other;
@@ -92,14 +92,14 @@ rv_kind classify(const uint8_t *code)
 		return rv_kind::ebreak;
 	unsigned op = insn & 3;
 	unsigned funct3 = insn >> 13;
-	if (op == 1) {
-		if (funct3 == 5)
+	if (op == 1) { // quadrant 1 compressed instructions
+		if (funct3 == 5) // C.J — compressed unconditional jump
 			return rv_kind::c_j;
-		if (funct3 == 6)
+		if (funct3 == 6) // C.BEQZ — branch if rs1' == 0
 			return rv_kind::c_beqz;
-		if (funct3 == 7)
+		if (funct3 == 7) // C.BNEZ — branch if rs1' != 0
 			return rv_kind::c_bnez;
-	} else if (op == 2 && funct3 == 4) {
+	} else if (op == 2 && funct3 == 4) { // quadrant 2, funct3=4: C.JR / C.JALR
 		unsigned rs2 = (insn >> 2) & 31;
 		unsigned rs1 = (insn >> 7) & 31;
 		if (rs2 == 0 && rs1 != 0)
@@ -205,9 +205,9 @@ bool prepare_out_of_line(const uint8_t *orig, const insn_info &info,
 		err = "out-of-line slot too small";
 		return false;
 	}
+	// Copy the original instruction, then append an ebreak so that the
+	// engine regains control after the relocated instruction executes.
 	std::memcpy(slot, orig, info.len);
-	// A 4-byte ebreak may sit at a 2-byte boundary: a compressed first
-	// instruction implies the C extension, which allows 16-bit alignment.
 	std::memcpy(slot + info.len, &EBREAK, 4);
 	*trap_offset = info.len;
 	return true;
@@ -218,7 +218,7 @@ void emulate(ucontext_t *uc, const uint8_t *orig, const insn_info &info,
 {
 	uintptr_t next = pc + info.len;
 	switch (classify(orig)) {
-	case rv_kind::auipc: {
+	case rv_kind::auipc: { // rd = pc + (imm << 12)
 		uint32_t insn = load32(orig);
 		unsigned rd = (insn >> 7) & 31;
 		int64_t imm = (int64_t)(int32_t)(insn & 0xfffff000u);
@@ -226,7 +226,7 @@ void emulate(ucontext_t *uc, const uint8_t *orig, const insn_info &info,
 		set_pc(uc, next);
 		break;
 	}
-	case rv_kind::jal: {
+	case rv_kind::jal: { // rd = pc+4; pc += sext(imm)
 		uint32_t insn = load32(orig);
 		unsigned rd = (insn >> 7) & 31;
 		uint64_t raw = (((insn >> 31) & 1) << 20) |
@@ -238,7 +238,7 @@ void emulate(ucontext_t *uc, const uint8_t *orig, const insn_info &info,
 		set_pc(uc, pc + imm);
 		break;
 	}
-	case rv_kind::jalr: {
+	case rv_kind::jalr: { // rd = pc+4; pc = (rs1 + sext(imm)) & ~1
 		uint32_t insn = load32(orig);
 		unsigned rd = (insn >> 7) & 31;
 		unsigned rs1 = (insn >> 15) & 31;
@@ -248,7 +248,7 @@ void emulate(ucontext_t *uc, const uint8_t *orig, const insn_info &info,
 		set_pc(uc, target);
 		break;
 	}
-	case rv_kind::branch: {
+	case rv_kind::branch: { // BEQ/BNE/BLT/BGE/BLTU/BGEU — pc-relative conditional branch
 		uint32_t insn = load32(orig);
 		unsigned funct3 = (insn >> 12) & 7;
 		uint64_t a = read_reg(uc, (insn >> 15) & 31);
@@ -260,24 +260,12 @@ void emulate(ucontext_t *uc, const uint8_t *orig, const insn_info &info,
 		int64_t imm = sext(raw, 13);
 		bool taken;
 		switch (funct3) {
-		case 0:
-			taken = a == b;
-			break;
-		case 1:
-			taken = a != b;
-			break;
-		case 4:
-			taken = (int64_t)a < (int64_t)b;
-			break;
-		case 5:
-			taken = (int64_t)a >= (int64_t)b;
-			break;
-		case 6:
-			taken = a < b;
-			break;
-		case 7:
-			taken = a >= b;
-			break;
+		case 0: taken = a == b; break;          // BEQ
+		case 1: taken = a != b; break;          // BNE
+		case 4: taken = (int64_t)a < (int64_t)b; break;  // BLT
+		case 5: taken = (int64_t)a >= (int64_t)b; break;  // BGE
+		case 6: taken = a < b; break;           // BLTU
+		case 7: taken = a >= b; break;          // BGEU
 		default:
 			taken = false;
 			break;
@@ -285,7 +273,7 @@ void emulate(ucontext_t *uc, const uint8_t *orig, const insn_info &info,
 		set_pc(uc, taken ? pc + imm : next);
 		break;
 	}
-	case rv_kind::c_j: {
+	case rv_kind::c_j: { // C.J — compressed unconditional jump (pc += sext(imm))
 		uint16_t insn = load16(orig);
 		uint64_t raw = (((insn >> 12) & 1) << 11) |
 			       (((insn >> 11) & 1) << 4) |
@@ -298,7 +286,7 @@ void emulate(ucontext_t *uc, const uint8_t *orig, const insn_info &info,
 		set_pc(uc, pc + sext(raw, 12));
 		break;
 	}
-	case rv_kind::c_beqz:
+	case rv_kind::c_beqz: // C.BEQZ/C.BNEZ — compressed conditional branch on rs1'
 	case rv_kind::c_bnez: {
 		uint16_t insn = load16(orig);
 		unsigned rs1 = 8 + ((insn >> 7) & 7);
@@ -314,7 +302,7 @@ void emulate(ucontext_t *uc, const uint8_t *orig, const insn_info &info,
 		set_pc(uc, taken ? pc + imm : next);
 		break;
 	}
-	case rv_kind::c_jr:
+	case rv_kind::c_jr: // C.JR/C.JALR — compressed register-indirect jump
 	case rv_kind::c_jalr: {
 		uint16_t insn = load16(orig);
 		unsigned rs1 = (insn >> 7) & 31;

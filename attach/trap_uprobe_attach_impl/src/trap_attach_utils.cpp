@@ -64,6 +64,9 @@ std::vector<loaded_module> enumerate_modules()
 {
 	std::vector<loaded_module> result;
 	auto exe = get_executable_path();
+	// Walk every loaded ELF object. dlpi_addr is the load bias (link-time
+	// vaddr subtracted from the runtime address); base is the runtime
+	// address corresponding to file offset 0, derived from PT_LOAD headers.
 	dl_iterate_phdr(
 		[](struct dl_phdr_info *info, size_t, void *data) -> int {
 			auto &out = *(std::vector<loaded_module> *)data;
@@ -76,6 +79,7 @@ std::vector<loaded_module> enumerate_modules()
 				const auto &ph = info->dlpi_phdr[i];
 				if (ph.p_type != PT_LOAD)
 					continue;
+				// bias + p_vaddr - p_offset = runtime addr of file offset 0
 				uintptr_t start = info->dlpi_addr + ph.p_vaddr -
 						  ph.p_offset;
 				if (!found || start < base) {
@@ -105,7 +109,9 @@ bool module_matches(const loaded_module &m, const std::string &wanted)
 	       basename_of(m.path) == wanted;
 }
 
-// Scan the symbol tables of the ELF file backing `m` for `name`.
+// Scan SHT_SYMTAB and SHT_DYNSYM of the ELF file backing `m` for a
+// function symbol called `name`.  Returns the runtime address
+// (load_bias + st_value) or nullptr.
 void *lookup_symbol_in_file(const loaded_module &m, const char *name)
 {
 	int fd = open(m.path.c_str(), O_RDONLY | O_CLOEXEC);
@@ -215,6 +221,8 @@ resolve_function_addr_by_module_offset(const std::string_view &module_name,
 	return (char *)base + func_offset;
 }
 
+// Resolve a /proc/PID/map_files/START-END path to the actual filesystem
+// path by matching the address range against /proc/self/maps entries.
 std::optional<std::string>
 resolve_mapped_module_path(const std::string_view &module_name)
 {

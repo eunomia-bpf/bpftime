@@ -23,10 +23,8 @@ if(BPFTIME_TRAP_ATTACH_BUILD_TESTS)
         test/test_trap_uprobe_uretprobe.cpp
         test/test_trap_override.cpp
         test/test_trap_unified_interface.cpp
-        test/test_trap_private_data.cpp
-        test/test_trap_function_resolve.cpp
+        test/test_trap_misc.cpp
         test/test_trap_multithread.cpp
-        test/test_trap_signal_chaining.cpp
         test/test_trap_backtrace.cpp
         test/test_trap_recursion.cpp
         test/test_trap_insn_decode.cpp

@@ -5,6 +5,7 @@
  */
 #include "trap_uprobe_attach_impl.hpp"
 #include "trap_attach_private_data.hpp"
+#include "trap_attach_utils.hpp"
 #include "trap_arch.hpp"
 #include <algorithm>
 #include <atomic>
@@ -14,8 +15,6 @@
 #include <cstring>
 #include <dlfcn.h>
 #include <unwind.h>
-#include <filesystem>
-#include <fstream>
 #include <mutex>
 #include <pthread.h>
 #include <sched.h>
@@ -231,7 +230,11 @@ class trap_engine {
 	uint8_t *alloc_slot(uintptr_t near, bool &writable);
 	bool finalize_slot(uint8_t *slot, bool writable, size_t len);
 	bool write_code(uintptr_t addr, const uint8_t *data, size_t len);
+	// RCU-style swap: atomically replace the site_table pointer so that
+	// in-flight signal handlers see either the old or the new table.
 	void publish(std::unique_ptr<site_table> table);
+	// Spin until every signal handler that may have loaded the old table
+	// has returned, so the caller can assume its callbacks are quiesced.
 	void wait_for_quiescence();
 	std::unique_ptr<site_table> copy_table_with(probe_site *replacement);
 
@@ -309,6 +312,9 @@ bool trap_engine::ensure_installed()
 	return true;
 }
 
+// Allocate a SLOT_SIZE-byte out-of-line execution slot near `near` (within
+// ±1 GB so that PC-relative references still reach).  Reuses existing
+// regions first, then tries mmap with RWX, then falls back to W^X.
 uint8_t *trap_engine::alloc_slot(uintptr_t near, bool &writable)
 {
 	const size_t page = (size_t)sysconf(_SC_PAGESIZE);
@@ -399,6 +405,11 @@ bool trap_engine::finalize_slot(uint8_t *slot, bool writable, size_t len)
 // Patch `len` bytes of code at `addr`. The store is done with a single
 // aligned write of the natural size so that other threads observe either
 // the old or the new instruction.
+// Atomically patch `len` bytes of executable code at `addr`.  For
+// naturally aligned 2- and 4-byte writes a single atomic store suffices;
+// a 4-byte write at a 2-byte boundary uses the three-phase c.ebreak
+// protocol so that a concurrent instruction fetch always sees either the
+// old instruction or a complete trap—never a torn mix of old and new.
 bool trap_engine::write_code(uintptr_t addr, const uint8_t *data, size_t len)
 {
 	const size_t page = (size_t)sysconf(_SC_PAGESIZE);
@@ -531,6 +542,12 @@ void trap_engine::wait_for_quiescence()
 		"trap uprobe: handlers still running after detach, callbacks may fire once more");
 }
 
+// Attach a probe at `function`.  Reuses an existing site when the address
+// is already probed, otherwise decodes the instruction, allocates an
+// out-of-line slot (if the instruction can be relocated), publishes the
+// new site table, and then writes the trap instruction.  The trap is
+// written *after* publishing so that a concurrent hit always finds its
+// site in the table.
 int trap_engine::attach(trap_attach_impl *owner, int id, uintptr_t function,
 			attach_entry_callback &&cb, int type)
 {
@@ -725,6 +742,10 @@ void trap_engine::resume(const probe_site *site, ucontext_t *uc)
 	}
 }
 
+// Handle a breakpoint hit at a probed address.
+// Override attaches short-circuit: the BPF program's return value replaces
+// the function call.  Normal uprobes fire all callbacks, then install a
+// uretprobe shadow-stack entry if any return probes are registered.
 void trap_engine::handle_hit(probe_site *site, ucontext_t *uc)
 {
 	if (tl_in_handler == 0 && site->armed && !site->entries.empty()) {
@@ -841,6 +862,11 @@ void trap_engine::chain_previous(int sig, siginfo_t *info, void *ctx)
 	previous_action.sa_handler(sig);
 }
 
+// SIGTRAP entry point.  Dispatch order:
+//   1. uretprobe trampoline  → handle return-probe callbacks
+//   2. out-of-line slot trap → resume after relocated instruction
+//   3. known probe address   → run uprobe/override callbacks
+//   4. none of the above     → forward to previous handler
 void trap_engine::on_sigtrap(int sig, siginfo_t *info, void *ctx)
 {
 	int saved_errno = errno;
@@ -854,7 +880,6 @@ void trap_engine::on_sigtrap(int sig, siginfo_t *info, void *ctx)
 			   engine.table.load(std::memory_order_acquire);
 		   cur != nullptr) {
 		if (probe_site *s = cur->find_by_slot_trap(pc); s) {
-			// Finished executing the relocated instruction
 			arch::set_pc(uc, s->addr + s->info.len);
 		} else if (probe_site *hit = cur->find_by_addr(pc); hit) {
 			engine.handle_hit(hit, uc);
@@ -920,12 +945,6 @@ std::vector<uint64_t> *trap_engine::generate_stack()
 // ---------------------------------------------------------------------------
 // Public API
 // ---------------------------------------------------------------------------
-
-void trap_attach_impl::prepare_thread()
-{
-	// No-op: uret_stack is now embedded in TLS and always available.
-	// Kept for API compatibility.
-}
 
 int bpftime::attach::trap::from_cb_idx_to_attach_type(int idx)
 {
@@ -1066,31 +1085,12 @@ int trap_attach_impl::create_attach_with_ebpf_callback(
 	SPDLOG_DEBUG(
 		"Attaching with ebpf callback, private data addr={:x}, module name={}",
 		sub->addr, sub->module_name);
-	if (!sub->module_name.empty()) {
-		bool ok = false;
-		std::ifstream ifs("/proc/self/maps");
-		std::string line;
-		while (std::getline(ifs, line)) {
-			char *module_path;
-			if (sscanf(line.c_str(), "%*s%*s%*s%*s%*s%ms",
-				   &module_path) != 1)
-				continue;
-			std::string curr_module(module_path);
-			free(module_path);
-			std::error_code ec;
-			if (std::filesystem::exists(curr_module, ec) &&
-			    std::filesystem::equivalent(sub->module_name,
-							curr_module, ec)) {
-				ok = true;
-				break;
-			}
-		}
-		if (!ok) {
-			SPDLOG_INFO(
-				"Unable to attach: module name {} doesn't exist in current process's memory maps",
-				sub->module_name);
-			return -EINVAL;
-		}
+	if (!sub->module_name.empty() &&
+	    get_module_base_addr(sub->module_name.c_str()) == nullptr) {
+		SPDLOG_INFO(
+			"Unable to attach: module {} is not loaded in this process",
+			sub->module_name);
+		return -EINVAL;
 	}
 	void *func = (void *)(uintptr_t)sub->addr;
 	if (attach_type == ATTACH_UPROBE || attach_type == ATTACH_URETPROBE ||
