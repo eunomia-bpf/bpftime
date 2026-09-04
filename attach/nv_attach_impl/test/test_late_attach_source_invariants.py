@@ -24,6 +24,18 @@ def compact(source: str) -> str:
 
 
 class LateAttachSourceInvariants(unittest.TestCase):
+    def test_late_bootstrap_registers_only_requested_hook_targets(self):
+        body = section(
+            IMPL,
+            "void nv_attach_impl::prefill_patched_kernel_functions_from_loaded_fatbins()",
+            "\nnamespace\n{",
+        )
+        self.assertIn("const auto kernels = collect_all_kernels_to_patch();", body)
+        self.assertIn("for (const auto &kernel : kernels)", body)
+        self.assertIn("record_patched_kernel_function(kernel", body)
+        self.assertNotIn("original_ptx", body)
+        self.assertNotIn("collect_ptx_entry_functions", IMPL)
+
     def test_driver_launch_records_completion_after_original_launch(self):
         body = section(
             FRIDA,

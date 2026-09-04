@@ -37,8 +37,6 @@
 #include <map>
 #include <memory>
 #include <mutex>
-#include <set>
-#include <regex>
 #include <sstream>
 #include <stdexcept>
 #include <string>
@@ -1662,23 +1660,6 @@ std::vector<std::string> nv_attach_impl::collect_all_kernels_to_patch() const
 	return kernels;
 }
 
-static std::vector<std::string>
-collect_ptx_entry_functions(const std::map<std::string, std::string> &all_ptx)
-{
-	static const std::regex kernel_entry(
-		R"((?:\.visible\s+)?\.entry\s+([A-Za-z_.$][A-Za-z0-9_.$]*)\s*\()");
-	std::set<std::string> entries;
-	for (const auto &[_, ptx] : all_ptx) {
-		for (std::sregex_iterator it(ptx.begin(), ptx.end(),
-					     kernel_entry),
-		     end;
-		     it != end; ++it) {
-			entries.insert((*it)[1].str());
-		}
-	}
-	return std::vector<std::string>(entries.begin(), entries.end());
-}
-
 void nv_attach_impl::build_host_symbol_cache_once()
 {
 	std::call_once(host_symbol_cache_once, [&]() {
@@ -1755,15 +1736,13 @@ void nv_attach_impl::prefill_patched_kernel_functions_from_loaded_fatbins()
 {
 	if (fatbin_records.empty())
 		return;
+	const auto kernels = collect_all_kernels_to_patch();
+	if (kernels.empty())
+		return;
 
 	for (const auto &rec_uptr : fatbin_records) {
 		auto *rec = rec_uptr.get();
 		if (rec == nullptr)
-			continue;
-		auto kernels = collect_ptx_entry_functions(rec->original_ptx);
-		if (kernels.empty())
-			kernels = collect_all_kernels_to_patch();
-		if (kernels.empty())
 			continue;
 		for (const auto &ptx : rec->ptxs) {
 			for (const auto &kernel : kernels) {
