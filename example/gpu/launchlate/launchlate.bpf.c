@@ -12,7 +12,7 @@ static const u64 (*bpf_get_block_idx)(u64 *x, u64 *y, u64 *z) = (void *)503;
 static const u64 (*bpf_get_block_dim)(u64 *x, u64 *y, u64 *z) = (void *)504;
 static const u64 (*bpf_get_thread_idx)(u64 *x, u64 *y, u64 *z) = (void *)505;
 /* bpftime-private host helper; standard Linux helper 5 remains unchanged. */
-static const u64 (*bpftime_ktime_get_raw_ns)(void) = (void *)510;
+static const u64 (*bpftime_ktime_get_raw_ns)(void) = (void *)256;
 
 #define HIST_BINS 10
 #define LAUNCH_QUEUE_SIZE 4096

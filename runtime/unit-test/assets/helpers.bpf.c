@@ -8,7 +8,7 @@
 #include "bpf/bpf_tracing.h"
 #include "bpf/bpf_helpers.h"
 
-static const __u64 (*bpftime_ktime_get_raw_ns)(void) = (void *)510;
+static const __u64 (*bpftime_ktime_get_raw_ns)(void) = (void *)256;
 
 struct data {
 	int a;

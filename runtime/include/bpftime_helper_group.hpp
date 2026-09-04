@@ -13,8 +13,10 @@
 namespace bpftime
 {
 // bpftime-private host helper.  Keep Linux helper 5 unchanged: launchlate
-// needs the RAW clock used by NVIDIA RM/PTIMER correlation.
-inline constexpr unsigned int BPFTIME_FUNC_ktime_get_raw_ns = 510;
+// needs the RAW clock used by NVIDIA RM/PTIMER correlation.  ID 256 is above
+// the Linux helper range implemented here (ending at 211) and below the
+// device-only GPU helper namespace (starting at 501).
+inline constexpr unsigned int BPFTIME_FUNC_ktime_get_raw_ns = 256;
 
 struct bpftime_helper_info {
 	unsigned int index;
