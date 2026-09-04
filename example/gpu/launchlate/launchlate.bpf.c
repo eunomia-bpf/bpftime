@@ -38,12 +38,14 @@ enum device_counter {
 struct launch_sample {
 	u64 host_mono_ns;
 	u64 sequence;
+	u64 gpu_entry_ns;
 };
 
 struct clock_calibration {
 	s64 offset_low_ns;
 	s64 offset_high_ns;
 	u64 uncertainty_ns;
+	u64 host_anchor_ns;
 	u64 valid;
 };
 
@@ -165,6 +167,7 @@ int BPF_KPROBE(uprobe_cuda_launch, const void *func)
 	struct launch_sample sample = {
 		.host_mono_ns = bpf_ktime_get_ns(),
 		.sequence = seq + 1,
+		.gpu_entry_ns = 0,
 	};
 	if (bpf_map_update_elem(&launch_times, &slot, &sample, BPF_ANY)) {
 		increment_host_counter(QUEUE_UPDATE_ERRORS);
@@ -224,6 +227,14 @@ int cuda__probe()
 		return 0;
 	}
 	increment_device_counter(MATCHED_SAMPLES);
+	u64 gpu_ts = bpf_get_globaltimer();
+	if (!gpu_ts || gpu_ts > 0x7fffffffffffffffULL ||
+	    sample->host_mono_ns > 0x7fffffffffffffffULL) {
+		increment_device_counter(CLOCK_ERRORS);
+		return 0;
+	}
+	/* Retain the exact pair for affine, end-anchored final classification. */
+	sample->gpu_entry_ns = gpu_ts;
 
 	u32 calibration_key = 0;
 	struct clock_calibration *calibration =
@@ -234,25 +245,19 @@ int cuda__probe()
 		return 0;
 	}
 
-	u64 gpu_ts = bpf_get_globaltimer();
-	if (gpu_ts > 0x7fffffffffffffffULL ||
-	    sample->host_mono_ns > 0x7fffffffffffffffULL) {
-		increment_device_counter(CLOCK_ERRORS);
-		return 0;
-	}
-
 	/*
-	 * The calibration kernel establishes an interval for
+	 * This online path preserves the device-side work being measured.  The
+	 * calibration kernel establishes an interval for
 	 *   GPU globaltimer - CLOCK_MONOTONIC.
-	 * Keep a sample out of the histogram unless its entire possible latency
-	 * interval falls in one bin.  This avoids silently clamping negative
-	 * deltas or pretending the midpoint is exact.
+	 * A finite pair that cannot be placed using the initial interval is
+	 * uncertain, not a broken clock.  Userspace performs the authoritative
+	 * classification after the end anchor is available.
 	 */
 	s64 observed_ns = (s64)gpu_ts - (s64)sample->host_mono_ns;
 	s64 latency_low_ns = observed_ns - calibration->offset_high_ns;
 	s64 latency_high_ns = observed_ns - calibration->offset_low_ns;
 	if (latency_high_ns < 0) {
-		increment_device_counter(CLOCK_ERRORS);
+		increment_device_counter(UNCERTAIN_SAMPLES);
 		return 0;
 	}
 	if (latency_low_ns < 0) {

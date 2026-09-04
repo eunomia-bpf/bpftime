@@ -25,8 +25,12 @@ The time between steps 1 and 5 is your launch latency. In ideal conditions, this
 
 1. **CPU-side uprobe** on `cudaLaunchKernel()` - captures when kernels are launched from host code
 2. **GPU-side kprobe** on the actual kernel function - captures when execution begins on device
-3. **Time correlation** - calculates the delta between launch and execution, with clock calibration
-4. **Histogram analysis** - categorizes latencies into bins from nanoseconds to seconds
+3. **Time correlation** - brackets `%globaltimer` against `CLOCK_MONOTONIC`
+   before and after observation and interpolates the offset interval at each
+   retained host timestamp
+4. **Histogram analysis** - categorizes a latency only when its complete
+   conservative interval fits one bin; boundary-straddling samples remain
+   explicitly uncertain
 
 The result is a real-time histogram showing the distribution of launch latencies, revealing patterns invisible to traditional profilers.
 
@@ -74,8 +78,9 @@ cmake --build build -j$(nproc)
 make -C example/gpu/launchlate
 ```
 
-The CPU-only self-test checks clock-interval arithmetic, ELF symbol/PLT
-resolution, exact target matching, and fail-closed error cases. It can also
+The CPU-only self-test checks affine clock-interval arithmetic (including
+large-drift and bin-boundary rejection), ELF symbol/PLT resolution, exact
+target matching, and fail-closed error cases. It can also
 validate a specific target without loading BPF or CUDA:
 
 ```bash
@@ -114,9 +119,8 @@ This runs the vector addition program with the bpftime agent, which connects to 
 When running successfully, you'll see:
 
 ```
-Clock calibration: REALTIME - MONOTONIC = 1625284901234 ns
-  MONOTONIC: 3842.123456789
-  REALTIME:  1625288743.357890890
+Clock calibration method: bracketed %globaltimer endpoint intervals with affine CLOCK_MONOTONIC interpolation
+Clock drift bounded: 1
 
 Monitoring CUDA kernel launch latency... Hit Ctrl-C to end.
 
@@ -148,8 +152,12 @@ This shows:
 
 1. **CPU-side uprobe** on the target ELF's `cudaLaunchKernel()` PLT entry records a timestamp only for an exact selected-kernel pointer match
 2. **GPU-side kprobe** on the kernel function captures when execution actually starts on the GPU
-3. **Clock calibration** synchronizes CPU and GPU timers to enable accurate comparison
-4. **Latency calculation** computes the time difference and updates a histogram showing the distribution
+3. **Clock calibration** obtains independently bracketed start/end offset
+   intervals with host anchors and rejects an observation whose endpoint drift
+   exceeds the declared 10,000 ppb sanity bound
+4. **Latency calculation** retains each exact timestamp pair, interpolates a
+   conservative offset interval after both anchors are known, and updates the
+   final histogram only when that full latency interval has one unambiguous bin
 5. **Real-time display** shows the histogram every few seconds, revealing launch latency patterns
 
 ## Code Structure
@@ -162,7 +170,10 @@ This shows:
 
 - Requires kernel function symbol names (use `cuobjdump -symbols your_app | grep kernel_name`)
 - Host-side PLT resolution currently supports x86-64 ELF targets and fails closed on unsupported layouts
-- Clock drift may affect accuracy over long runs (recalibrate periodically if needed)
+- The two-anchor model assumes affine relative clock drift during one
+  observation window. The tool reports the measured endpoint drift bound and
+  fails closed on excessive drift; samples that still cross zero or a bin
+  boundary are reported as uncertain rather than clamped or silently dropped.
 - Only tracks one kernel function at a time (attach multiple probes for multiple kernels)
 
 ## Customization

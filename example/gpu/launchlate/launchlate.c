@@ -22,10 +22,12 @@
 #define DEFAULT_UPROBE_SYMBOL_HINT "_Z9vectorAddPKfS0_Pf"
 #define CUDA_LAUNCH_SYMBOL "cudaLaunchKernel"
 #define HIST_BINS 10
+#define LAUNCH_QUEUE_SIZE 4096
 #define HOST_COUNTERS 6
 #define DEVICE_COUNTERS 6
 #define CALIBRATION_WARMUPS 4
 #define CALIBRATION_TRIALS 32
+#define CLOCK_DRIFT_LIMIT_PPB 10000ULL
 
 enum host_counter {
 	HOST_LAUNCHES = 0,
@@ -49,7 +51,28 @@ struct clock_calibration {
 	int64_t offset_low_ns;
 	int64_t offset_high_ns;
 	uint64_t uncertainty_ns;
+	uint64_t host_anchor_ns;
 	uint64_t valid;
+};
+
+struct clock_drift {
+	int64_t offset_change_low_ns;
+	int64_t offset_change_high_ns;
+	uint64_t elapsed_ns;
+	uint64_t rate_bound_ppb;
+	int bounded;
+};
+
+struct launch_sample {
+	uint64_t host_mono_ns;
+	uint64_t sequence;
+	uint64_t gpu_entry_ns;
+};
+
+enum launch_sample_status {
+	LAUNCH_SAMPLE_CLASSIFIED = 0,
+	LAUNCH_SAMPLE_UNCERTAIN = 1,
+	LAUNCH_SAMPLE_CLOCK_ERROR = 2,
 };
 
 struct host_target {
@@ -172,6 +195,33 @@ static int signed_difference(uint64_t left, uint64_t right, int64_t *value)
 	return 0;
 }
 
+static int subtract_i64(int64_t left, int64_t right, int64_t *value)
+{
+	if ((right > 0 && left < INT64_MIN + right) ||
+	    (right < 0 && left > INT64_MAX + right))
+		return -ERANGE;
+	*value = left - right;
+	return 0;
+}
+
+static uint64_t abs_i64(int64_t value)
+{
+	return value < 0 ? (uint64_t)(-(value + 1)) + 1 : (uint64_t)value;
+}
+
+static int calibration_valid(const struct clock_calibration *calibration)
+{
+	uint64_t width;
+
+	if (!calibration || calibration->valid != 1 ||
+	    !calibration->host_anchor_ns ||
+	    calibration->offset_low_ns > calibration->offset_high_ns)
+		return 0;
+	width = (uint64_t)calibration->offset_high_ns -
+		(uint64_t)calibration->offset_low_ns;
+	return calibration->uncertainty_ns == width / 2 + width % 2;
+}
+
 static int consider_calibration_sample(struct clock_calibration *best,
 				       uint64_t gpu_ns, uint64_t host_before_ns,
 				       uint64_t host_after_ns)
@@ -192,22 +242,38 @@ static int consider_calibration_sample(struct clock_calibration *best,
 		best->offset_low_ns = low;
 		best->offset_high_ns = high;
 		best->uncertainty_ns = width / 2 + width % 2;
+		best->host_anchor_ns = host_before_ns + width / 2;
 		best->valid = 1;
 	}
 	return 0;
 }
 
-static int calibration_intersection(const struct clock_calibration *first,
-				    const struct clock_calibration *second,
-				    int64_t *low, int64_t *high)
+static int calibration_drift(const struct clock_calibration *start,
+			     const struct clock_calibration *end,
+			     struct clock_drift *drift)
 {
-	if (!first->valid || !second->valid)
+	uint64_t largest_change;
+	uint64_t scaled;
+
+	memset(drift, 0, sizeof(*drift));
+	if (!calibration_valid(start) || !calibration_valid(end) ||
+	    end->host_anchor_ns <= start->host_anchor_ns ||
+	    subtract_i64(end->offset_low_ns, start->offset_high_ns,
+			 &drift->offset_change_low_ns) ||
+	    subtract_i64(end->offset_high_ns, start->offset_low_ns,
+			 &drift->offset_change_high_ns))
 		return -EINVAL;
-	*low = first->offset_low_ns > second->offset_low_ns ?
-		first->offset_low_ns : second->offset_low_ns;
-	*high = first->offset_high_ns < second->offset_high_ns ?
-		first->offset_high_ns : second->offset_high_ns;
-	return *low <= *high ? 0 : -ERANGE;
+	drift->elapsed_ns = end->host_anchor_ns - start->host_anchor_ns;
+	largest_change = abs_i64(drift->offset_change_low_ns);
+	if (abs_i64(drift->offset_change_high_ns) > largest_change)
+		largest_change = abs_i64(drift->offset_change_high_ns);
+	if (largest_change > UINT64_MAX / 1000000000ULL)
+		return -ERANGE;
+	scaled = largest_change * 1000000000ULL;
+	drift->rate_bound_ppb = scaled / drift->elapsed_ns +
+		(scaled % drift->elapsed_ns != 0);
+	drift->bounded = drift->rate_bound_ppb <= CLOCK_DRIFT_LIMIT_PPB;
+	return 0;
 }
 
 static uint32_t histogram_bin(uint64_t delta_ns)
@@ -233,25 +299,99 @@ static uint32_t histogram_bin(uint64_t delta_ns)
 	return 9;
 }
 
-static int latency_interval(uint64_t host_ns, uint64_t gpu_ns,
-			    const struct clock_calibration *calibration,
-			    int64_t *low, int64_t *high)
+static __int128 divide_floor(__int128 numerator, uint64_t denominator)
 {
-	int64_t observed;
+	__int128 quotient = numerator / denominator;
+	if (numerator % denominator < 0)
+		quotient--;
+	return quotient;
+}
 
-	if (!calibration->valid ||
-	    calibration->offset_low_ns > calibration->offset_high_ns ||
-	    signed_difference(gpu_ns, host_ns, &observed))
+static __int128 divide_ceil(__int128 numerator, uint64_t denominator)
+{
+	__int128 quotient = numerator / denominator;
+	if (numerator % denominator > 0)
+		quotient++;
+	return quotient;
+}
+
+static int affine_offset_interval(uint64_t host_ns,
+				  const struct clock_calibration *start,
+				  const struct clock_calibration *end,
+				  int64_t *low, int64_t *high)
+{
+	uint64_t elapsed, position;
+	__int128 low_value, high_value;
+
+	if (!calibration_valid(start) || !calibration_valid(end) ||
+	    end->host_anchor_ns <= start->host_anchor_ns ||
+	    host_ns < start->host_anchor_ns || host_ns > end->host_anchor_ns)
 		return -ERANGE;
-	*low = observed - calibration->offset_high_ns;
-	*high = observed - calibration->offset_low_ns;
-	return *high < 0 ? -ERANGE : 0;
+	elapsed = end->host_anchor_ns - start->host_anchor_ns;
+	position = host_ns - start->host_anchor_ns;
+	low_value = (__int128)start->offset_low_ns + divide_floor(
+		((__int128)end->offset_low_ns - start->offset_low_ns) * position,
+		elapsed);
+	high_value = (__int128)start->offset_high_ns + divide_ceil(
+		((__int128)end->offset_high_ns - start->offset_high_ns) * position,
+		elapsed);
+	if (low_value < INT64_MIN || low_value > INT64_MAX ||
+	    high_value < INT64_MIN || high_value > INT64_MAX ||
+	    low_value > high_value)
+		return -ERANGE;
+	*low = (int64_t)low_value;
+	*high = (int64_t)high_value;
+	return 0;
+}
+
+static enum launch_sample_status classify_affine_sample(
+	const struct launch_sample *sample,
+	const struct clock_calibration *start,
+	const struct clock_calibration *end, uint32_t *bin)
+{
+	int64_t offset_low, offset_high, observed, latency_low, latency_high;
+
+	if (!sample || !sample->host_mono_ns || !sample->gpu_entry_ns ||
+	    signed_difference(sample->gpu_entry_ns, sample->host_mono_ns,
+			      &observed) ||
+	    affine_offset_interval(sample->host_mono_ns, start, end,
+				   &offset_low, &offset_high) ||
+	    subtract_i64(observed, offset_high, &latency_low) ||
+	    subtract_i64(observed, offset_low, &latency_high) ||
+	    latency_high < 0)
+		return LAUNCH_SAMPLE_CLOCK_ERROR;
+	if (latency_low < 0 ||
+	    histogram_bin((uint64_t)latency_low) !=
+		    histogram_bin((uint64_t)latency_high))
+		return LAUNCH_SAMPLE_UNCERTAIN;
+	*bin = histogram_bin((uint64_t)latency_low);
+	return LAUNCH_SAMPLE_CLASSIFIED;
 }
 
 static int run_self_test(const char *elf_path, const char *kernel_symbol)
 {
 	struct clock_calibration calibration = {0};
 	struct clock_calibration later = {0};
+	struct clock_calibration affine_start = {
+		.offset_low_ns = 100,
+		.offset_high_ns = 120,
+		.uncertainty_ns = 10,
+		.host_anchor_ns = 1000000000ULL,
+		.valid = 1,
+	};
+	struct clock_calibration affine_end = {
+		.offset_low_ns = 300,
+		.offset_high_ns = 340,
+		.uncertainty_ns = 20,
+		.host_anchor_ns = 1100000000ULL,
+		.valid = 1,
+	};
+	struct clock_drift drift;
+	struct launch_sample sample = {
+		.host_mono_ns = 1050000000ULL,
+		.sequence = 1,
+		.gpu_entry_ns = 1050001250ULL,
+	};
 	struct host_target target = {0};
 	struct plt_entry launch_plt = {0};
 	enum symbol_match_status symbol_status;
@@ -261,11 +401,13 @@ static int run_self_test(const char *elf_path, const char *kernel_symbol)
 	const char *test_kernel = kernel_symbol ? kernel_symbol : "run_self_test";
 	const char *test_launch = elf_path ? CUDA_LAUNCH_SYMBOL : "dlopen";
 	int64_t low, high;
+	uint32_t bin;
 
 	if (consider_calibration_sample(&calibration, 1250, 1000, 1100) ||
 	    calibration.offset_low_ns != 150 ||
 	    calibration.offset_high_ns != 250 ||
-	    calibration.uncertainty_ns != 50)
+	    calibration.uncertainty_ns != 50 ||
+	    calibration.host_anchor_ns != 1050)
 		return 1;
 	/* A narrower bracket must replace the first candidate. */
 	if (consider_calibration_sample(&calibration, 2210, 2000, 2040) ||
@@ -277,19 +419,42 @@ static int run_self_test(const char *elf_path, const char *kernel_symbol)
 	    calibration.offset_low_ns != 170 ||
 	    calibration.offset_high_ns != 210)
 		return 1;
-	if (latency_interval(5000, 5400, &calibration, &low, &high) ||
-	    low != 190 || high != 230 ||
-	    histogram_bin((uint64_t)low) != histogram_bin((uint64_t)high))
-		return 1;
 	if (consider_calibration_sample(&later, 3200, 3000, 3040) ||
-	    calibration_intersection(&calibration, &later, &low, &high) ||
-	    low != 170 || high != 200)
+	    later.host_anchor_ns != 3020)
 		return 1;
 	/* Also exercise a negative GPU-minus-host offset. */
 	memset(&calibration, 0, sizeof(calibration));
 	if (consider_calibration_sample(&calibration, 900, 1000, 1040) ||
-	    latency_interval(2000, 1975, &calibration, &low, &high) ||
-	    low != 75 || high != 115)
+	    calibration.offset_low_ns != -140 ||
+	    calibration.offset_high_ns != -100)
+		return 1;
+
+	if (calibration_drift(&affine_start, &affine_end, &drift) ||
+	    drift.offset_change_low_ns != 180 ||
+	    drift.offset_change_high_ns != 240 ||
+	    drift.elapsed_ns != 100000000ULL ||
+	    drift.rate_bound_ppb != 2400 || !drift.bounded ||
+	    affine_offset_interval(sample.host_mono_ns, &affine_start,
+				   &affine_end, &low, &high) ||
+	    low != 200 || high != 230 ||
+	    classify_affine_sample(&sample, &affine_start, &affine_end, &bin) !=
+		    LAUNCH_SAMPLE_CLASSIFIED ||
+	    bin != 2)
+		return 1;
+	/* A full interval crossing 1 us is retained as uncertainty. */
+	sample.gpu_entry_ns = sample.host_mono_ns + 1210;
+	if (classify_affine_sample(&sample, &affine_start, &affine_end, &bin) !=
+	    LAUNCH_SAMPLE_UNCERTAIN)
+		return 1;
+	/* Causally impossible affine intervals remain true clock errors. */
+	sample.gpu_entry_ns = sample.host_mono_ns + 100;
+	if (classify_affine_sample(&sample, &affine_start, &affine_end, &bin) !=
+	    LAUNCH_SAMPLE_CLOCK_ERROR)
+		return 1;
+	affine_end.offset_low_ns = 2000100;
+	affine_end.offset_high_ns = 2000140;
+	if (calibration_drift(&affine_start, &affine_end, &drift) ||
+	    drift.bounded || drift.rate_bound_ppb <= CLOCK_DRIFT_LIMIT_PPB)
 		return 1;
 
 	/* Exercise the same-ELF PLT-to-local-symbol address proof without CUDA. */
@@ -446,7 +611,7 @@ static int calibrate_gpu_clock(struct clock_calibration *calibration)
 				calibration, gpu_ns, before_ns, after_ns)))
 			goto cleanup;
 	}
-	if (!calibration->valid)
+	if (!calibration_valid(calibration))
 		err = -ERANGE;
 
 cleanup:
@@ -470,6 +635,8 @@ static void print_calibration(const char *phase,
 	       calibration->offset_high_ns);
 	printf("%s clock uncertainty: %" PRIu64 " ns\n", phase,
 	       calibration->uncertainty_ns);
+	printf("%s clock host anchor: %" PRIu64 " ns\n", phase,
+	       calibration->host_anchor_ns);
 }
 
 static int detach_probes(struct launchlate_bpf *skel)
@@ -728,16 +895,25 @@ out:
 	return result;
 }
 
-static int print_histogram(struct launchlate_bpf *obj)
+static int print_histogram(struct launchlate_bpf *obj,
+			   const struct clock_calibration *start,
+			   const struct clock_calibration *end)
 {
 	time_t t;
 	struct tm *tm;
 	char ts[16];
 	uint32_t i;
-	uint64_t value;
+	uint64_t histogram[HIST_BINS] = {0};
+	uint64_t online_histogram_total = 0;
+	uint64_t classified = 0, uncertain = 0, clock_errors = 0;
+	uint64_t histogram_total = 0, value;
+	int histogram_fd = bpf_map__fd(obj->maps.time_histogram);
+	int launch_fd = bpf_map__fd(obj->maps.launch_times);
+	int host_fd = bpf_map__fd(obj->maps.host_state);
+	int device_fd = bpf_map__fd(obj->maps.device_state);
+	uint64_t host_values[HOST_COUNTERS] = {0};
+	uint64_t device_values[DEVICE_COUNTERS] = {0};
 	int err = 0;
-	int fd = bpf_map__fd(obj->maps.time_histogram);
-	uint64_t histogram_total = 0;
 
 	// Time range labels for each bin
 	const char *labels[] = {
@@ -753,55 +929,17 @@ static int print_histogram(struct launchlate_bpf *obj)
 		">10s"
 	};
 
-	time(&t);
-	tm = localtime(&t);
-	strftime(ts, sizeof(ts), "%H:%M:%S", tm);
-
-	printf("\n%-9s Launch Latency Distribution:\n", ts);
-	printf("%-15s : count    distribution\n", "latency");
-
-	// Read all histogram bins
+	/* Validate the online device-side path before replacing its stale model. */
 	for (i = 0; i < HIST_BINS; i++) {
-		err = bpf_map_lookup_elem(fd, &i, &value);
+		err = bpf_map_lookup_elem(histogram_fd, &i, &value);
 		if (err && errno != ENOENT) {
 			warn("bpf_map_lookup_elem failed: %s\n",
 			     strerror(errno));
 			return err;
 		}
-		if (!err && value > 0) {
-			histogram_total += value;
-		}
+		if (!err)
+			online_histogram_total += value;
 	}
-
-	// Print histogram
-	for (i = 0; i < HIST_BINS; i++) {
-		value = 0;
-		err = bpf_map_lookup_elem(fd, &i, &value);
-		if (err && errno != ENOENT) {
-			warn("bpf_map_lookup_elem failed: %s\n",
-			     strerror(errno));
-			return err;
-		}
-
-		if (value > 0) {
-			printf("%-15s : %-8" PRIu64 " |", labels[i], value);
-
-			// Print histogram bar
-			int bar_len = (value * 40) /
-				      (histogram_total > 0 ? histogram_total : 1);
-			if (bar_len == 0 && value > 0)
-				bar_len = 1;
-			for (int j = 0; j < bar_len; j++)
-				printf("*");
-			printf("\n");
-		}
-	}
-
-	printf("Histogram samples: %" PRIu64 "\n", histogram_total);
-	int host_fd = bpf_map__fd(obj->maps.host_state);
-	int device_fd = bpf_map__fd(obj->maps.device_state);
-	uint64_t host_values[HOST_COUNTERS] = {0};
-	uint64_t device_values[DEVICE_COUNTERS] = {0};
 	for (i = 0; i < HOST_COUNTERS; i++) {
 		uint32_t state_key = i;
 		if (bpf_map_lookup_elem(host_fd, &state_key, &host_values[i]) != 0) {
@@ -817,6 +955,60 @@ static int print_histogram(struct launchlate_bpf *obj)
 			return -1;
 		}
 	}
+
+	/*
+	 * The end anchor is unavailable inside the live GPU callback.  Reclassify
+	 * the retained exact pairs against the affine interpolation of both
+	 * bracketed offset intervals; never use an offset midpoint as exact.
+	 */
+	if (device_values[MATCHED_SAMPLES] > LAUNCH_QUEUE_SIZE) {
+		clock_errors = device_values[MATCHED_SAMPLES];
+	} else {
+		for (uint64_t sequence = 0;
+		     sequence < device_values[MATCHED_SAMPLES]; sequence++) {
+			uint32_t slot = (uint32_t)sequence;
+			uint32_t bin = 0;
+			struct launch_sample sample = {0};
+			enum launch_sample_status status;
+
+			if (bpf_map_lookup_elem(launch_fd, &slot, &sample) != 0 ||
+			    sample.sequence != sequence + 1) {
+				clock_errors++;
+				continue;
+			}
+			status = classify_affine_sample(&sample, start, end, &bin);
+			if (status == LAUNCH_SAMPLE_CLASSIFIED) {
+				histogram[bin]++;
+				classified++;
+			} else if (status == LAUNCH_SAMPLE_UNCERTAIN) {
+				uncertain++;
+			} else {
+				clock_errors++;
+			}
+		}
+	}
+	for (i = 0; i < HIST_BINS; i++)
+		histogram_total += histogram[i];
+
+	time(&t);
+	tm = localtime(&t);
+	strftime(ts, sizeof(ts), "%H:%M:%S", tm);
+	printf("\n%-9s Launch Latency Distribution:\n", ts);
+	printf("%-15s : count    distribution\n", "latency");
+	for (i = 0; i < HIST_BINS; i++) {
+		if (!histogram[i])
+			continue;
+		printf("%-15s : %-8" PRIu64 " |", labels[i], histogram[i]);
+		int bar_len = (histogram[i] * 40) /
+			      (histogram_total ? histogram_total : 1);
+		if (!bar_len)
+			bar_len = 1;
+		for (int j = 0; j < bar_len; j++)
+			printf("*");
+		printf("\n");
+	}
+
+	printf("Histogram samples: %" PRIu64 "\n", histogram_total);
 	printf("Total samples: %" PRIu64 "\n", device_values[MATCHED_SAMPLES]);
 	printf("Host launches: %" PRIu64 "\n", host_values[HOST_LAUNCHES]);
 	printf("Host enqueued: %" PRIu64 "\n", host_values[HOST_ENQUEUED]);
@@ -831,11 +1023,20 @@ static int print_histogram(struct launchlate_bpf *obj)
 	printf("Queue overflows: %" PRIu64 "\n", host_values[QUEUE_OVERFLOWS]);
 	printf("Queue update errors: %" PRIu64 "\n",
 	       host_values[QUEUE_UPDATE_ERRORS]);
-	printf("Classified samples: %" PRIu64 "\n",
+	printf("Online classified samples: %" PRIu64 "\n",
 	       device_values[CLASSIFIED_SAMPLES]);
-	printf("Uncertain samples: %" PRIu64 "\n",
+	printf("Online uncertain samples: %" PRIu64 "\n",
 	       device_values[UNCERTAIN_SAMPLES]);
-	printf("Clock errors: %" PRIu64 "\n", device_values[CLOCK_ERRORS]);
+	printf("Online clock errors: %" PRIu64 "\n", device_values[CLOCK_ERRORS]);
+	printf("Classified samples: %" PRIu64 "\n", classified);
+	printf("Uncertain samples: %" PRIu64 "\n", uncertain);
+	printf("Clock errors: %" PRIu64 "\n", clock_errors);
+	bool online_accounting_complete =
+		device_values[MATCHED_SAMPLES] ==
+			device_values[CLASSIFIED_SAMPLES] +
+			device_values[UNCERTAIN_SAMPLES] +
+			device_values[CLOCK_ERRORS] &&
+		device_values[CLASSIFIED_SAMPLES] == online_histogram_total;
 	bool accounting_complete =
 		host_values[HOST_LAUNCH_CALLS] >= host_values[HOST_LAUNCHES] &&
 		host_values[HOST_LAUNCHES] == host_values[HOST_ENQUEUED] +
@@ -845,10 +1046,8 @@ static int print_histogram(struct launchlate_bpf *obj)
 			device_values[MATCHED_SAMPLES] +
 			device_values[QUEUE_UNDERFLOWS] &&
 		device_values[MATCHED_SAMPLES] ==
-			device_values[CLASSIFIED_SAMPLES] +
-			device_values[UNCERTAIN_SAMPLES] +
-			device_values[CLOCK_ERRORS] &&
-		device_values[CLASSIFIED_SAMPLES] == histogram_total;
+			classified + uncertain + clock_errors &&
+		classified == histogram_total;
 	bool pairing_complete =
 		host_values[HOST_LAUNCHES] > 0 &&
 		host_values[HOST_LAUNCHES] == host_values[HOST_ENQUEUED] &&
@@ -858,11 +1057,14 @@ static int print_histogram(struct launchlate_bpf *obj)
 		host_values[QUEUE_OVERFLOWS] == 0 &&
 		host_values[QUEUE_UPDATE_ERRORS] == 0 &&
 		device_values[QUEUE_UNDERFLOWS] == 0 &&
-		device_values[CLOCK_ERRORS] == 0;
+		device_values[CLOCK_ERRORS] == 0 && clock_errors == 0;
+	printf("Online accounting complete: %d\n",
+	       online_accounting_complete ? 1 : 0);
 	printf("Accounting complete: %d\n", accounting_complete ? 1 : 0);
 	printf("Pairing complete: %d\n", pairing_complete ? 1 : 0);
 	fflush(stdout);
-	return accounting_complete && pairing_complete ? 0 : -EIO;
+	return online_accounting_complete && accounting_complete && pairing_complete ?
+		0 : -EIO;
 }
 
 int main(int argc, char **argv)
@@ -870,9 +1072,9 @@ int main(int argc, char **argv)
 	struct launchlate_bpf *skel;
 	struct clock_calibration start_calibration = {0};
 	struct clock_calibration end_calibration = {0};
+	struct clock_drift drift = {0};
 	struct host_target target = {0};
 	struct plt_entry launch_plt = {0};
-	int64_t intersection_low = 0, intersection_high = 0;
 	int err, stat_err;
 	uint32_t key = 0;
 	const char *binary_path = "./vec_add";
@@ -965,7 +1167,7 @@ int main(int argc, char **argv)
 			strerror(-err));
 		goto cleanup;
 	}
-	printf("Clock calibration method: bracketed %%globaltimer kernel against CLOCK_MONOTONIC\n");
+	printf("Clock calibration method: bracketed %%globaltimer endpoint intervals with affine CLOCK_MONOTONIC interpolation\n");
 	print_calibration("Start", &start_calibration);
 	err = bpf_map_update_elem(
 		bpf_map__fd(skel->maps.clock_calibration), &key,
@@ -1025,23 +1227,27 @@ int main(int argc, char **argv)
 			err = stat_err;
 	} else {
 		print_calibration("End", &end_calibration);
-		stat_err = calibration_intersection(
-			&start_calibration, &end_calibration,
-			&intersection_low, &intersection_high);
-		printf("Clock calibration endpoint overlap: %d\n",
-		       stat_err == 0 ? 1 : 0);
-		if (stat_err) {
-			fprintf(stderr,
-				"Start/end clock-offset intervals do not overlap\n");
-			err = stat_err;
-		} else {
-			printf("Clock offset intersection lower: %" PRId64 " ns\n",
-			       intersection_low);
-			printf("Clock offset intersection upper: %" PRId64 " ns\n",
-			       intersection_high);
+		stat_err = calibration_drift(&start_calibration, &end_calibration,
+					     &drift);
+		printf("Clock offset change lower: %" PRId64 " ns\n",
+		       drift.offset_change_low_ns);
+		printf("Clock offset change upper: %" PRId64 " ns\n",
+		       drift.offset_change_high_ns);
+		printf("Clock calibration elapsed: %" PRIu64 " ns\n",
+		       drift.elapsed_ns);
+		printf("Clock drift rate bound: %" PRIu64 " ppb\n",
+		       drift.rate_bound_ppb);
+		printf("Clock drift limit: %" PRIu64 " ppb\n",
+		       (uint64_t)CLOCK_DRIFT_LIMIT_PPB);
+		printf("Clock drift bounded: %d\n",
+		       stat_err == 0 && drift.bounded ? 1 : 0);
+		if (stat_err || !drift.bounded) {
+			fprintf(stderr, "Clock calibration drift exceeds its bound\n");
+			if (!err)
+				err = stat_err ? stat_err : -ERANGE;
 		}
 	}
-	stat_err = print_histogram(skel);
+	stat_err = print_histogram(skel, &start_calibration, &end_calibration);
 	if (!err && stat_err)
 		err = stat_err;
 
