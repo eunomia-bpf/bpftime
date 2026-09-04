@@ -34,7 +34,12 @@ static void sig_handler(int sig)
 struct data {
 	uint64_t block_x, block_y, block_z;
 	uint64_t thread_x, thread_y, thread_z;
+	uint64_t block_dim_x, block_dim_y, block_dim_z;
 	uint64_t timestamp;
+};
+
+struct coordinate {
+	uint64_t x, y, z;
 };
 
 struct state {
@@ -78,18 +83,50 @@ static void poll_callback(const void *data, uint64_t size, void *ctx)
 	state->events[state->events_count++] = *event;
 }
 
+static bool event_coordinate(const struct data *event,
+			     struct coordinate *coordinate)
+{
+	const uint64_t blocks[] = {
+		event->block_x, event->block_y, event->block_z,
+	};
+	const uint64_t threads[] = {
+		event->thread_x, event->thread_y, event->thread_z,
+	};
+	const uint64_t dimensions[] = {
+		event->block_dim_x, event->block_dim_y, event->block_dim_z,
+	};
+	uint64_t *values[] = {
+		&coordinate->x, &coordinate->y, &coordinate->z,
+	};
+
+	for (size_t axis = 0; axis < 3; axis++) {
+		if (dimensions[axis] == 0 || threads[axis] >= dimensions[axis] ||
+		    blocks[axis] >
+			(UINT64_MAX - threads[axis]) / dimensions[axis])
+			return false;
+		*values[axis] = blocks[axis] * dimensions[axis] + threads[axis];
+	}
+	return true;
+}
+
 static int compare_coordinates(const void *lhs_ptr, const void *rhs_ptr)
 {
 	const struct data *lhs = lhs_ptr;
 	const struct data *rhs = rhs_ptr;
+	struct coordinate lhs_coordinate = {};
+	struct coordinate rhs_coordinate = {};
+	const bool lhs_valid = event_coordinate(lhs, &lhs_coordinate);
+	const bool rhs_valid = event_coordinate(rhs, &rhs_coordinate);
 	const uint64_t lhs_values[] = {
-		lhs->block_x, lhs->block_y, lhs->block_z,
-		lhs->thread_x, lhs->thread_y, lhs->thread_z,
+		lhs_coordinate.x, lhs_coordinate.y, lhs_coordinate.z,
 	};
 	const uint64_t rhs_values[] = {
-		rhs->block_x, rhs->block_y, rhs->block_z,
-		rhs->thread_x, rhs->thread_y, rhs->thread_z,
+		rhs_coordinate.x, rhs_coordinate.y, rhs_coordinate.z,
 	};
+
+	/* validate_cartesian rejects invalid geometry before sorting. */
+	if (lhs_valid != rhs_valid)
+		return lhs_valid ? -1 : 1;
 	for (size_t i = 0; i < sizeof(lhs_values) / sizeof(lhs_values[0]); i++) {
 		if (lhs_values[i] < rhs_values[i])
 			return -1;
@@ -107,6 +144,7 @@ struct cartesian_result {
 	uint64_t multiplicity_22;
 	uint64_t other_multiplicity;
 	uint64_t segment_mismatches;
+	uint64_t invalid_launch_coordinates;
 	bool complete;
 };
 
@@ -130,21 +168,27 @@ static struct cartesian_result validate_cartesian(struct state *state)
 	if (state->events_count == 0 || state->collector_errors != 0)
 		return result;
 
-	uint64_t maxima[6] = {};
+	uint64_t maxima[3] = {};
 	for (size_t i = 0; i < state->events_count; i++) {
+		struct coordinate coordinate;
+
+		if (!event_coordinate(&state->events[i], &coordinate)) {
+			result.invalid_launch_coordinates++;
+			continue;
+		}
 		const uint64_t values[] = {
-			state->events[i].block_x, state->events[i].block_y,
-			state->events[i].block_z, state->events[i].thread_x,
-			state->events[i].thread_y, state->events[i].thread_z,
+			coordinate.x, coordinate.y, coordinate.z,
 		};
-		for (size_t axis = 0; axis < 6; axis++)
+		for (size_t axis = 0; axis < 3; axis++)
 			if (values[axis] > maxima[axis])
 				maxima[axis] = values[axis];
 	}
+	if (result.invalid_launch_coordinates != 0)
+		return result;
 
-	uint64_t dimensions[6];
+	uint64_t dimensions[3];
 	uint64_t expected_coordinates = 1;
-	for (size_t axis = 0; axis < 6; axis++) {
+	for (size_t axis = 0; axis < 3; axis++) {
 		if (maxima[axis] == UINT64_MAX ||
 		    expected_coordinates > UINT64_MAX / (maxima[axis] + 1))
 			return result;
@@ -172,16 +216,12 @@ static struct cartesian_result validate_cartesian(struct state *state)
 		else
 			result.other_multiplicity++;
 
-		const struct data *event = &state->events[i];
-		const uint64_t x = event->block_x * dimensions[3] +
-			event->thread_x;
-		const uint64_t y = event->block_y * dimensions[4] +
-			event->thread_y;
-		const uint64_t z = event->block_z * dimensions[5] +
-			event->thread_z;
-		const uint64_t width = dimensions[0] * dimensions[3];
-		const uint64_t height = dimensions[1] * dimensions[4];
-		const uint64_t coordinate_id = z * width * height + y * width + x;
+		struct coordinate coordinate;
+		event_coordinate(&state->events[i], &coordinate);
+		const uint64_t width = dimensions[0];
+		const uint64_t height = dimensions[1];
+		const uint64_t coordinate_id = coordinate.z * width * height +
+			coordinate.y * width + coordinate.x;
 		const uint64_t expected_multiplicity =
 			coordinate_id < 1024 ? 220 :
 			coordinate_id < 2048 ? 44 :
@@ -205,6 +245,7 @@ static bool multiplicity_oracle_matches(const struct cartesian_result *result,
 	       result->multiplicity_22 == ORACLE_LOW_COORDINATES &&
 	       result->other_multiplicity == 0 &&
 	       result->segment_mismatches == 0 &&
+	       result->invalid_launch_coordinates == 0 &&
 	       result->unique_coordinates == ORACLE_UNIQUE_COORDINATES &&
 	       total_events == ORACLE_TOTAL_EVENTS;
 }
@@ -228,6 +269,8 @@ static void print_coordinate_validation(const struct cartesian_result *result,
 	       result->other_multiplicity);
 	printf("Coordinate segment mismatches: %" PRIu64 "\n",
 	       result->segment_mismatches);
+	printf("Invalid launch coordinates: %" PRIu64 "\n",
+	       result->invalid_launch_coordinates);
 	printf("Unique coordinates: %" PRIu64 "\n",
 	       result->unique_coordinates);
 	printf("Multiplicity oracle enabled: %d\n", oracle_enabled);
@@ -259,8 +302,15 @@ static int run_multiplicity_oracle_selftest(void)
 			id < 2048 ? 44 : 22;
 		for (uint64_t occurrence = 0; occurrence < multiplicity;
 		     occurrence++) {
-			state.events[state.events_count].block_x = id;
-			state.events[state.events_count].timestamp = 1;
+			struct data *event = &state.events[state.events_count];
+			const uint64_t block_dim = 32ULL << (occurrence % 3);
+
+			event->block_x = id / block_dim;
+			event->thread_x = id % block_dim;
+			event->block_dim_x = block_dim;
+			event->block_dim_y = 1;
+			event->block_dim_z = 1;
+			event->timestamp = 1;
 			state.events_count++;
 		}
 	}
@@ -274,24 +324,37 @@ static int run_multiplicity_oracle_selftest(void)
 	state.events_count++;
 	const size_t low_segment_offset =
 		ORACLE_HIGH_COORDINATES * 220 + ORACLE_MIDDLE_COORDINATES * 44;
-	for (size_t i = 0; i < 220; i++)
-		state.events[i].block_x = 2048;
-	for (size_t i = 0; i < 22; i++)
-		state.events[low_segment_offset + i].block_x = 0;
+	for (size_t i = 0; i < 220; i++) {
+		const uint64_t block_dim = state.events[i].block_dim_x;
+		state.events[i].block_x = 2048 / block_dim;
+		state.events[i].thread_x = 2048 % block_dim;
+	}
+	for (size_t i = 0; i < 22; i++) {
+		struct data *event = &state.events[low_segment_offset + i];
+		event->block_x = 0;
+		event->thread_x = 0;
+	}
 	const struct cartesian_result swapped = validate_cartesian(&state);
 	const bool swapped_rejected = swapped.complete &&
 		swapped.multiplicity_220 == exact.multiplicity_220 &&
 		swapped.multiplicity_44 == exact.multiplicity_44 &&
 		swapped.multiplicity_22 == exact.multiplicity_22 &&
 		!multiplicity_oracle_matches(&swapped, state.events_count);
+	state.events[0].block_dim_x = 0;
+	const struct cartesian_result invalid = validate_cartesian(&state);
+	const bool invalid_rejected = invalid.invalid_launch_coordinates == 1 &&
+		!multiplicity_oracle_matches(&invalid, state.events_count);
 	print_coordinate_validation(&exact, ORACLE_TOTAL_EVENTS, 1,
 				    exact_passed);
 	printf("Multiplicity oracle missing-event rejected: %d\n",
 	       missing_rejected ? 1 : 0);
 	printf("Multiplicity oracle swapped-segment rejected: %d\n",
 	       swapped_rejected ? 1 : 0);
+	printf("Multiplicity oracle invalid-geometry rejected: %d\n",
+	       invalid_rejected ? 1 : 0);
 	free(state.events);
-	return exact_passed && missing_rejected && swapped_rejected ? 0 : 1;
+	return exact_passed && missing_rejected && swapped_rejected &&
+		invalid_rejected ? 0 : 1;
 }
 
 static uint64_t requested_thread_slots(void)
