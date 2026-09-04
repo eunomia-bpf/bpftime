@@ -838,7 +838,11 @@ jobs:
           # the victim under the agent, then checks the server log for the
           # expected output. Success is decided only on positive markers, so
           # runtime warnings on stderr of old bpftrace versions cannot flip
-          # the result.
+          # the result. Map-based programs are dumped by stopping bpftrace
+          # with SIGINT, which makes it print all aggregates before exiting;
+          # interval:s:1 probes cannot be used here because the userspace
+          # runtime does not support attaching BPF programs to the software
+          # perf events behind them.
           run_case() {
             local name="$1"; shift
             local program="$1"; shift
@@ -880,9 +884,21 @@ jobs:
             echo "CASE $name: draining events"
             sleep 4
 
-            # Stop the server for this case before checking the log
-            sudo pkill -9 bpftrace 2>/dev/null || true
-            sleep 2
+            # Stop the server gracefully so bpftrace prints all aggregated
+            # maps on exit, then check the log
+            sudo pkill -INT bpftrace 2>/dev/null || true
+            for i in $(seq 1 15); do
+              if ! ps -p $server_pid > /dev/null; then
+                echo "CASE $name: server exited $i second(s) after SIGINT"
+                break
+              fi
+              sleep 1
+            done
+            if ps -p $server_pid > /dev/null; then
+              echo "CASE $name: server did not exit after SIGINT, killing it"
+              sudo pkill -9 bpftrace 2>/dev/null || true
+              sleep 1
+            fi
 
             echo "Server log for $name:"
             cat "$log"
@@ -901,27 +917,31 @@ jobs:
             "cat build/install_manifest.txt" \
             "ONELINER_OPENAT[[:space:]]+cat"
 
-          # 2. Syscall count by program
+          # 2. Syscall count by program (dumped at exit; upstream prints it
+          #    every second via interval:s:1, which cannot attach in
+          #    userspace)
           run_case oneliner_count_by_comm \
-            'tracepoint:raw_syscalls:sys_enter { @[comm] = count(); } interval:s:1 { print(@); }' \
+            'tracepoint:raw_syscalls:sys_enter { @[comm] = count(); }' \
             "timeout 8s dd if=/dev/zero of=/dev/null bs=1024" \
             "@\[dd\]"
 
-          # 3. Read bytes by process
+          # 3. Read bytes by process (dumped at exit)
           run_case oneliner_read_sum \
-            'tracepoint:syscalls:sys_exit_read /args->ret/ { @[comm] = sum(args->ret); } interval:s:1 { print(@); }' \
+            'tracepoint:syscalls:sys_exit_read /args->ret/ { @[comm] = sum(args->ret); }' \
             "timeout 8s dd if=/dev/zero of=/dev/null bs=1024" \
             "@\[dd\]"
 
-          # 4. Read size distribution by process
+          # 4. Read size distribution by process (dumped at exit)
           run_case oneliner_read_hist \
-            'tracepoint:syscalls:sys_exit_read { @[comm] = hist(args->ret); } interval:s:1 { print(@); }' \
+            'tracepoint:syscalls:sys_exit_read { @[comm] = hist(args->ret); }' \
             "timeout 8s dd if=/dev/zero of=/dev/null bs=1024" \
             "@\[dd\]"
 
-          # 5. Per-second syscall rates
+          # 5. Syscall count (upstream clears and prints per-second rates;
+          #    interval:s:1 cannot attach in userspace, so the total is
+          #    checked at exit)
           run_case oneliner_rate \
-            'tracepoint:raw_syscalls:sys_enter { @ = count(); } interval:s:1 { print(@); clear(@); }' \
+            'tracepoint:raw_syscalls:sys_enter { @ = count(); }' \
             "timeout 8s dd if=/dev/zero of=/dev/null bs=1024" \
             "@[[:space:]]*:"
 
