@@ -126,6 +126,8 @@ add_library(
 set_property(TARGET ${PROJECT_NAME} PROPERTY CXX_STANDARD 20)
 if(${BPFTIME_LLVM_JIT})
   target_compile_definitions(${PROJECT_NAME} PUBLIC BPFTIME_LLVM_JIT=1)
+else()
+  target_compile_definitions(${PROJECT_NAME} PUBLIC DEFAULT_VM_NAME="ubpf")
 endif()
 if(${BPFTIME_UBPF_JIT})
   target_compile_definitions(${PROJECT_NAME} PUBLIC BPFTIME_UBPF_JIT=1)
