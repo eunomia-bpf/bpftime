@@ -3,10 +3,7 @@ add_library(
     src/trap_uprobe_attach_impl.cpp
     src/trap_attach_private_data.cpp
     src/trap_attach_utils.cpp
-    src/trap_arch_x86_64.cpp
-    src/trap_arch_aarch64.cpp
     src/trap_arch_riscv64.cpp
-    src/x86_insn_decode.cpp
 )
 add_dependencies(bpftime_trap_uprobe_attach_impl bpftime_base_attach_impl spdlog::spdlog)
 

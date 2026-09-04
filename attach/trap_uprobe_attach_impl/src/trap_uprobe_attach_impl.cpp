@@ -34,9 +34,7 @@ namespace
 constexpr size_t SLOT_SIZE = 32;
 constexpr size_t URET_STACK_DEPTH = 128;
 constexpr size_t MAX_BACKTRACE_FRAMES = 128;
-// How far an out-of-line slot may be from the probed code so that
-// rip-relative operands can still be fixed up (x86 only, but harmless
-// elsewhere).
+// How far an out-of-line slot may be from the probed code.
 constexpr intptr_t NEAR_DISTANCE = (intptr_t)1 << 30;
 
 // A user facing attach entry. Owned by the engine so that an in-flight

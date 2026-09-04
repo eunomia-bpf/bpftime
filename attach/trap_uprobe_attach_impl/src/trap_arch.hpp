@@ -24,9 +24,9 @@ namespace trap
 {
 namespace arch
 {
-// Longest instruction we ever copy out of line (x86 is 15 bytes).
-constexpr size_t MAX_INSN_LEN = 16;
-// Longest trap instruction (aarch64 brk / riscv ebreak are 4 bytes).
+// Longest instruction we ever copy out of line (riscv64: 4 bytes).
+constexpr size_t MAX_INSN_LEN = 4;
+// Longest trap instruction (riscv ebreak is 4 bytes).
 constexpr size_t MAX_TRAP_LEN = 4;
 
 enum class insn_kind {
@@ -42,11 +42,6 @@ struct insn_info {
 	// Length in bytes of the first instruction at the probe address.
 	uint8_t len = 0;
 	insn_kind kind = insn_kind::execute_out_of_line;
-	// x86 only: the instruction has a rip-relative memory operand whose
-	// 32-bit displacement starts at byte `disp_off` and must be adjusted
-	// when the instruction is relocated to the slot.
-	bool riprel = false;
-	uint8_t disp_off = 0;
 };
 
 // Human readable architecture name used in diagnostics.
@@ -61,8 +56,7 @@ std::optional<insn_info> decode(const uint8_t *code, std::string &err);
 // exceeds the original instruction length.
 size_t trap_bytes(size_t insn_len, uint8_t out[MAX_TRAP_LEN]);
 
-// Address of the trap instruction that caused the SIGTRAP (x86 reports the
-// address after the int3, this normalizes it).
+// Address of the trap instruction that caused the SIGTRAP.
 uintptr_t trap_pc(const ucontext_t *uc);
 void set_pc(ucontext_t *uc, uintptr_t pc);
 uintptr_t get_sp(const ucontext_t *uc);

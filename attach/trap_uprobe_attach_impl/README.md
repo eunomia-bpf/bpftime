@@ -1,10 +1,9 @@
 # Trap based uprobe attach backend
 
-A portable implementation of `base_attach_impl` for uprobe, uretprobe,
+A riscv64 implementation of `base_attach_impl` for uprobe, uretprobe,
 uprobe-override (filter) and ureplace attaches that does not depend on
-frida-gum. It exists for architectures frida does not support: the CMake
-option `BPFTIME_ENABLE_TRAP_UPROBE` defaults to ON on riscv64 and OFF
-everywhere else, so x86_64 and aarch64 builds keep using frida unchanged.
+frida-gum. The CMake option `BPFTIME_ENABLE_TRAP_UPROBE` defaults to ON
+on riscv64 (the only supported architecture for this backend).
 When the backend is compiled in, `BPFTIME_UPROBE_BACKEND=frida|trap`
 selects it at runtime (the agent's environment wins over the loader's
 shared config).
@@ -12,9 +11,8 @@ shared config).
 ## How it works
 
 1. `attach` decodes the first instruction of the target function, saves it,
-   and overwrites it with the architecture's breakpoint instruction
-   (`int3`, `brk #0`, `ebreak` / `c.ebreak`). The write is a single aligned
-   store, so other threads see either the old or the new instruction.
+   and overwrites it with `ebreak` / `c.ebreak`. The write is a single
+   aligned store, so other threads see either the old or the new instruction.
 2. The breakpoint raises `SIGTRAP`. The handler looks the faulting pc up in
    an immutable, lock-free probe table, builds a kernel style `pt_regs`
    from the `ucontext_t`, and runs the attached callbacks or eBPF programs
@@ -23,19 +21,15 @@ shared config).
    - executed out of line: it was copied into an executable slot followed
      by another breakpoint. The handler redirects the pc to the slot, the
      instruction runs, the second trap brings the thread back and the pc is
-     set to the instruction after the probe. On x86 a rip-relative
-     displacement is adjusted for the slot's address; slots are allocated
-     within ±1 GiB of the target for this reason.
+     set to the instruction after the probe.
    - emulated in software when it is pc-relative or a control transfer
-     (`jmp/call/jcc` on x86, `adr/adrp/b/bl/b.cond/cbz/tbz/ldr-literal/blr`
-     on aarch64, `auipc/jal/jalr/branches/c.j/c.jr/c.jalr/c.beqz/c.bnez` on
-     riscv64).
+     (`auipc/jal/jalr/branches/c.j/c.jr/c.jalr/c.beqz/c.bnez`).
    Because the instruction is never restored in place, no event is lost when
    many threads hit the probe at once.
-4. uretprobes replace the return address (`[rsp]`, `x30`, `ra`) with a
-   trampoline that consists of a breakpoint. The original return address is
-   kept on a per-thread shadow stack; when the trampoline traps, the return
-   callbacks run and the pc is set to the real return address.
+4. uretprobes replace the return address (`ra`) with a trampoline that
+   consists of a breakpoint. The original return address is kept on a
+   per-thread shadow stack; when the trampoline traps, the return callbacks
+   run and the pc is set to the real return address.
 5. Filter / replace attaches call `arch::do_return()` on the `ucontext_t`,
    which writes the return value register and returns to the caller without
    executing the function body.
@@ -60,11 +54,9 @@ shared config).
   (Release build): 5.5 µs per uprobe hit and 8.2 µs per uprobe+uretprobe
   pair on one thread; with 8 threads hitting the same probe the aggregate
   throughput barely grows because the kernel serializes signal delivery
-  within a process. Use the frida backend where it is available if probe
-  overhead matters.
-- The first instruction must be decodable and relocatable. Indirect calls
-  (`call r/m` on x86), `loop`/`jrcxz`, and functions that already start
-  with a breakpoint are rejected with `-ENOTSUP`.
+  within a process.
+- The first instruction must be decodable and relocatable. Functions that
+  already start with a breakpoint are rejected with `-ENOTSUP`.
 - A uretprobe replaces the return address, so unwinding through the probed
   function (C++ exceptions, `backtrace()` from inside it) sees the
   trampoline instead of the caller. This is the same limitation the frida
@@ -82,9 +74,8 @@ shared config).
 | `include/trap_attach_utils.hpp` | Symbol / module resolution without frida |
 | `src/trap_uprobe_attach_impl.cpp` | Engine: probe table, SIGTRAP handler, shadow stack |
 | `src/trap_arch.hpp` | Per-architecture interface |
-| `src/trap_arch_{x86_64,aarch64,riscv64}.cpp` | Decoding, emulation, ucontext access |
-| `src/x86_insn_decode.cpp` | Minimal x86-64 instruction length decoder |
+| `src/trap_arch_riscv64.cpp` | Decoding, emulation, ucontext access |
 | `test/` | Catch2 tests; `bpftime_trap_uprobe_attach_tests` |
 
-The tests run natively and under `qemu-user` for riscv64 and aarch64; see
+The tests run natively and under `qemu-user` for riscv64; see
 `cmake/riscv64-toolchain.cmake`.

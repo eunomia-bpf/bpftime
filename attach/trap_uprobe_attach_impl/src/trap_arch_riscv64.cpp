@@ -3,7 +3,6 @@
  * Copyright (c) 2022, eunomia-bpf org
  * All rights reserved.
  */
-#if defined(__riscv) && __riscv_xlen == 64
 #include "trap_arch.hpp"
 #include <cstring>
 #include <sys/ucontext.h>
@@ -336,4 +335,3 @@ void flush_icache(void *addr, size_t len)
 	__builtin___clear_cache((char *)addr, (char *)addr + len);
 }
 } // namespace bpftime::attach::trap::arch
-#endif
