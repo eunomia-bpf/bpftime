@@ -34,11 +34,15 @@ handler_manager::~handler_manager()
 
 const handler_variant &handler_manager::get_handler(int fd) const
 {
+	static const handler_variant oob_handler = unused_handler{};
+	if (fd < 0 || (std::size_t)fd >= handlers.size()) return oob_handler;
 	return handlers[fd];
 }
 
 const handler_variant &handler_manager::operator[](int idx) const
 {
+	static const handler_variant oob_handler = unused_handler{};
+	if (idx < 0 || (std::size_t)idx >= handlers.size()) return oob_handler;
 	return handlers[idx];
 }
 std::size_t handler_manager::size() const
@@ -59,6 +63,10 @@ int handler_manager::set_handler_at_empty_slot(handler_variant &&handler,
 int handler_manager::set_handler(int fd, handler_variant &&handler,
 				 managed_shared_memory &memory)
 {
+	if (fd < 0 || (std::size_t)fd >= handlers.size()) {
+		SPDLOG_ERROR("set_handler: fd {} out of range [0, {})", fd, handlers.size());
+		return -ENOSPC;
+	}
 	if (is_allocated(fd)) {
 		SPDLOG_ERROR("set_handler failed for fd {} aleady exists", fd);
 		return -EEXIST;
