@@ -589,7 +589,8 @@ jobs:
             build/tools/cli/bpftime \
             build/tools/bpftimetool/bpftimetool \
             build/attach/text_segment_transformer \
-            build/attach/nv_attach_impl; do
+            build/attach/nv_attach_impl \
+            build/attach/nv_attach_impl/bpftime_ptxpass_runner; do
             if [ ! -e "$p" ]; then
               echo "Missing from downloaded artifact: $p"
               missing=1
@@ -612,8 +613,13 @@ jobs:
             chmod +x build/tools/cli/bpftime || true
             ls -la build/tools/cli || true
           fi
+          if [ -f build/attach/nv_attach_impl/bpftime_ptxpass_runner ] && [ ! -x build/attach/nv_attach_impl/bpftime_ptxpass_runner ]; then
+            echo "bpftime_ptxpass_runner exists but is not executable; fixing permissions..."
+            chmod +x build/attach/nv_attach_impl/bpftime_ptxpass_runner
+          fi
           test -x build/tools/bpftimetool/bpftimetool
           test -x build/tools/cli/bpftime
+          test -x build/attach/nv_attach_impl/bpftime_ptxpass_runner
 
       - name: Build GPU example
         run: |
