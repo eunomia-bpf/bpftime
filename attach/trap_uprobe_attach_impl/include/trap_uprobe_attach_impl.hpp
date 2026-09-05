@@ -11,8 +11,7 @@
 // executed from an out-of-line slot or emulated, so probes never lose events
 // and never require a free register. The price is two signal deliveries per
 // hit, which makes this the portable but slower backend: it is the default
-// on architectures without frida support (such as riscv64) and can be
-// selected explicitly elsewhere with BPFTIME_UPROBE_BACKEND=trap.
+// on architectures without frida support (such as riscv64).
 #ifndef _BPFTIME_TRAP_UPROBE_ATTACH_IMPL_HPP
 #define _BPFTIME_TRAP_UPROBE_ATTACH_IMPL_HPP
 

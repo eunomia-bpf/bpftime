@@ -473,8 +473,10 @@ int trap_engine::build_site(uintptr_t addr, probe_site &site, std::string &err)
 {
 	site.addr = addr;
 	auto info = arch::decode((const uint8_t *)addr, err);
-	if (!info)
+	if (!info) {
+		SPDLOG_ERROR("Cannot probe {:x}: {}", addr, err);
 		return -ENOTSUP;
+	}
 	site.info = *info;
 	std::memcpy(site.orig, (const void *)addr, site.info.len);
 	site.trap_len = arch::trap_bytes(site.info.len, site.trap);
@@ -483,6 +485,7 @@ int trap_engine::build_site(uintptr_t addr, probe_site &site, std::string &err)
 		uint8_t *slot = alloc_slot(addr, writable);
 		if (!slot) {
 			err = "unable to allocate an out-of-line slot";
+			SPDLOG_ERROR("Cannot probe {:x}: {}", addr, err);
 			return -ENOMEM;
 		}
 		size_t trap_offset;
@@ -490,10 +493,13 @@ int trap_engine::build_site(uintptr_t addr, probe_site &site, std::string &err)
 		// mapped RWX, or it is a fresh RW page that finalize_slot
 		// turns into RX below.
 		if (!arch::prepare_out_of_line(site.orig, site.info, addr, slot,
-					       SLOT_SIZE, &trap_offset, err))
+					       SLOT_SIZE, &trap_offset, err)) {
+			SPDLOG_ERROR("Cannot probe {:x}: {}", addr, err);
 			return -ENOTSUP;
+		}
 		if (!finalize_slot(slot, writable, SLOT_SIZE)) {
 			err = "unable to make the out-of-line slot executable";
+			SPDLOG_ERROR("Cannot probe {:x}: {}", addr, err);
 			return -EIO;
 		}
 		site.slot = slot;
@@ -552,8 +558,10 @@ int trap_engine::attach(trap_attach_impl *owner, int id, uintptr_t function,
 			attach_entry_callback &&cb, int type)
 {
 	std::lock_guard<std::mutex> guard(mu);
-	if (!ensure_installed())
+	if (!ensure_installed()) {
+		SPDLOG_ERROR("Failed to install SIGTRAP handler");
 		return -EIO;
+	}
 	site_table *cur = table.load(std::memory_order_acquire);
 	probe_site *existing = cur ? cur->find_by_addr(function) : nullptr;
 	bool reuse = existing && existing->armed;
@@ -622,6 +630,7 @@ int trap_engine::attach(trap_attach_impl *owner, int id, uintptr_t function,
 	if (!reuse) {
 		// Arm after publishing so that a hit always finds its site
 		if (!write_code(function, site_ptr->trap, site_ptr->trap_len)) {
+			SPDLOG_ERROR("Failed to write trap instruction at {:x}", function);
 			site_ptr->armed = false;
 			return -EIO;
 		}
@@ -657,8 +666,10 @@ int trap_engine::detach(int id, trap_attach_impl *owner)
 {
 	std::lock_guard<std::mutex> guard(mu);
 	site_table *cur = table.load(std::memory_order_acquire);
-	if (!cur)
+	if (!cur) {
+		SPDLOG_WARN("detach id {}: no probe table", id);
 		return -ENOENT;
+	}
 	for (auto *s : cur->by_addr) {
 		for (auto *e : s->entries) {
 			if (e->id != id || e->owner != owner)
@@ -678,6 +689,7 @@ int trap_engine::detach(int id, trap_attach_impl *owner)
 			return 0;
 		}
 	}
+	SPDLOG_WARN("detach id {}: entry not found", id);
 	return -ENOENT;
 }
 
@@ -687,8 +699,11 @@ int trap_engine::detach_all_at(uintptr_t function, trap_attach_impl *owner,
 	std::lock_guard<std::mutex> guard(mu);
 	site_table *cur = table.load(std::memory_order_acquire);
 	probe_site *s = cur ? cur->find_by_addr(function) : nullptr;
-	if (!s || !s->armed)
+	if (!s || !s->armed) {
+		SPDLOG_WARN("detach_all_at {:x}: site not found or not armed",
+			    function);
 		return -ENOENT;
+	}
 	std::vector<attach_entry *> remove;
 	for (auto *e : s->entries) {
 		if (e->owner == owner) {
@@ -696,8 +711,11 @@ int trap_engine::detach_all_at(uintptr_t function, trap_attach_impl *owner,
 			removed_ids.push_back(e->id);
 		}
 	}
-	if (remove.empty())
+	if (remove.empty()) {
+		SPDLOG_WARN("detach_all_at {:x}: no entries owned by caller",
+			    function);
 		return -ENOENT;
+	}
 	auto site = std::make_unique<probe_site>(*s);
 	remove_entries_from_site(*site, remove);
 	if (site->entries.empty()) {
@@ -1153,10 +1171,14 @@ bpftime::attach::trap::bpftime_trap_get_func_arg(uint64_t, uint32_t n,
 						 uint64_t *value, uint64_t,
 						 uint64_t)
 {
-	if (tl_current_regs == nullptr)
+	if (tl_current_regs == nullptr) {
+		SPDLOG_DEBUG("get_func_arg: no active probe context");
 		return -EINVAL;
-	if (!arch::get_arg(*tl_current_regs, n, value))
+	}
+	if (!arch::get_arg(*tl_current_regs, n, value)) {
+		SPDLOG_DEBUG("get_func_arg: argument index {} out of range", n);
 		return -EINVAL;
+	}
 	return 0;
 }
 
@@ -1164,8 +1186,10 @@ extern "C" uint64_t
 bpftime::attach::trap::bpftime_trap_get_func_ret(uint64_t, uint64_t *value,
 						 uint64_t, uint64_t, uint64_t)
 {
-	if (tl_phase != 2)
+	if (tl_phase != 2) {
+		SPDLOG_DEBUG("get_func_ret: not in uretprobe phase");
 		return -EOPNOTSUPP;
+	}
 	*value = tl_return_value;
 	return 0;
 }
@@ -1176,7 +1200,9 @@ extern "C" uint64_t bpftime::attach::trap::bpftime_trap_get_retval(uint64_t,
 								    uint64_t,
 								    uint64_t)
 {
-	if (tl_phase != 2)
+	if (tl_phase != 2) {
+		SPDLOG_DEBUG("get_retval: not in uretprobe phase");
 		return -EOPNOTSUPP;
+	}
 	return tl_return_value;
 }
