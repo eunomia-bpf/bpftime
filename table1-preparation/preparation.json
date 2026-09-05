@@ -1,0 +1,293 @@
+{
+  "base_commit": "d6316fa",
+  "branch": "revision/table1-575",
+  "worktree": "/home/yunwei37/workspace/gpu/bpftime-table1-575",
+  "runtime_change": "three audited pr503 compatibility files plus map metadata assignment backported from ea9907d",
+  "llvm_jit_commit": "f66cafa",
+  "inventory": [
+    {
+      "path": "attach/nv_attach_impl/nv_attach_impl.cpp",
+      "bytes": 61459
+    },
+    {
+      "path": "attach/nv_attach_impl/nv_attach_impl_frida_setup.cpp",
+      "bytes": 35824
+    },
+    {
+      "path": "attach/nv_attach_impl/nv_attach_fatbin_record.cpp",
+      "bytes": 9403
+    },
+    {
+      "path": "runtime/src/handler/map_handler.cpp",
+      "bytes": 45367
+    },
+    {
+      "path": "example/gpu/kernelretsnoop/kernelretsnoop.bpf.c",
+      "bytes": 1218
+    },
+    {
+      "path": "example/gpu/kernelretsnoop/kernelretsnoop.c",
+      "bytes": 2537
+    },
+    {
+      "path": "example/gpu/launchlate/launchlate.bpf.c",
+      "bytes": 4545
+    },
+    {
+      "path": "example/gpu/launchlate/launchlate.c",
+      "bytes": 7500
+    },
+    {
+      "path": "example/gpu/threadhist/threadhist.c",
+      "bytes": 3248
+    },
+    {
+      "path": "vm/llvm-jit/src/llvm_jit_context.cpp",
+      "bytes": 26418
+    }
+  ],
+  "worktree_creation": {
+    "command": "git -C /home/yunwei37/workspace/gpu/bpftime worktree add -b revision/table1-575 /home/yunwei37/workspace/gpu/bpftime-table1-575 d6316fa",
+    "exit_code": 0,
+    "output": "Preparing worktree (new branch 'revision/table1-575')\nHEAD is now at d6316fa Merge origin/master into tracepipe PR\n"
+  },
+  "patch_applications": [
+    {
+      "operation": "apply_patch audited pr503 files and map metadata assignment",
+      "result": {}
+    },
+    {
+      "operation": "apply_patch five frozen observability example changes",
+      "result": {}
+    },
+    {
+      "operation": "apply_patch actual full-width sentinel readback in private threadhist source",
+      "result": {}
+    },
+    {
+      "operation": "apply_patch updated workload-only runner/test and regenerated five-example patch without content-index lines",
+      "result": {}
+    }
+  ],
+  "local_submodule_initialization": [
+    {
+      "path": "third_party/bpftool",
+      "operation": "local clone",
+      "chunk_id": "d4e884",
+      "wall_time_seconds": 0.000003244,
+      "exit_code": 0,
+      "original_token_count": 23,
+      "output": "Cloning into '/home/yunwei37/workspace/gpu/bpftime-table1-575/third_party/bpftool'...\ndone.\n"
+    },
+    {
+      "path": "third_party/bpftool",
+      "operation": "pinned checkout",
+      "commit": "53c1852920c8a8f8ccedb7a64e3d9852949792c7",
+      "chunk_id": "e17401",
+      "wall_time_seconds": 0.000003625,
+      "exit_code": 0,
+      "original_token_count": 18,
+      "output": "HEAD is now at 53c1852 sync: Pull latest bpftool changes from kernel\n"
+    },
+    {
+      "path": "third_party/spdlog",
+      "operation": "local clone",
+      "chunk_id": "0defd8",
+      "wall_time_seconds": 0.000003003,
+      "exit_code": 0,
+      "original_token_count": 23,
+      "output": "Cloning into '/home/yunwei37/workspace/gpu/bpftime-table1-575/third_party/spdlog'...\ndone.\n"
+    },
+    {
+      "path": "third_party/spdlog",
+      "operation": "pinned checkout",
+      "commit": "48bcf39a661a13be22666ac64db8a7f886f2637e",
+      "chunk_id": "1b2d1a",
+      "wall_time_seconds": 0.000002687,
+      "exit_code": 0,
+      "original_token_count": 10,
+      "output": "HEAD is now at 48bcf39a Version 1.15.2\n"
+    },
+    {
+      "path": "bpftime-verifier/ebpf-verifier",
+      "operation": "local clone",
+      "chunk_id": "e0eecb",
+      "wall_time_seconds": 0.000003432,
+      "exit_code": 0,
+      "original_token_count": 26,
+      "output": "Cloning into '/home/yunwei37/workspace/gpu/bpftime-table1-575/bpftime-verifier/ebpf-verifier'...\ndone.\n"
+    },
+    {
+      "path": "bpftime-verifier/ebpf-verifier",
+      "operation": "pinned checkout",
+      "commit": "fd85b8a6ac2c0cb5621d9c1f38368089d616b8b9",
+      "chunk_id": "3439b3",
+      "wall_time_seconds": 0.000003294,
+      "exit_code": 0,
+      "original_token_count": 17,
+      "output": "HEAD is now at fd85b8a6 Address linter / compiler warnings (#519)\n"
+    },
+    {
+      "path": "third_party/argparse",
+      "operation": "local clone",
+      "chunk_id": "08ef9d",
+      "wall_time_seconds": 0.000003749,
+      "exit_code": 0,
+      "original_token_count": 24,
+      "output": "Cloning into '/home/yunwei37/workspace/gpu/bpftime-table1-575/third_party/argparse'...\ndone.\n"
+    },
+    {
+      "path": "third_party/argparse",
+      "operation": "pinned checkout",
+      "commit": "69dabd88a8e6680b1a1a18397eb3e165e4019ce6",
+      "chunk_id": "72f49c",
+      "wall_time_seconds": 0.000003837,
+      "exit_code": 0,
+      "original_token_count": 20,
+      "output": "HEAD is now at 69dabd8 Merge pull request #310 from p-ranav/bugfix/307_choices\n"
+    },
+    {
+      "path": "third_party/Catch2",
+      "operation": "local clone",
+      "chunk_id": "210368",
+      "wall_time_seconds": 0.000003134,
+      "exit_code": 0,
+      "original_token_count": 23,
+      "output": "Cloning into '/home/yunwei37/workspace/gpu/bpftime-table1-575/third_party/Catch2'...\ndone.\n"
+    },
+    {
+      "path": "third_party/Catch2",
+      "operation": "pinned checkout",
+      "commit": "6e79e682b726f524310d55dec8ddac4e9c52fb5f",
+      "chunk_id": "11932c",
+      "wall_time_seconds": 0.000003406,
+      "exit_code": 0,
+      "original_token_count": 8,
+      "output": "HEAD is now at 6e79e682 v3.4.0\n"
+    },
+    {
+      "path": "third_party/ubpf",
+      "operation": "local clone",
+      "chunk_id": "9953c9",
+      "wall_time_seconds": 0.000002745,
+      "exit_code": 0,
+      "original_token_count": 23,
+      "output": "Cloning into '/home/yunwei37/workspace/gpu/bpftime-table1-575/third_party/ubpf'...\ndone.\n"
+    },
+    {
+      "path": "third_party/ubpf",
+      "operation": "pinned checkout",
+      "commit": "39872ad471c206051407d89ab8ed62d9ba0d7310",
+      "chunk_id": "6086f8",
+      "wall_time_seconds": 0.00000354,
+      "exit_code": 0,
+      "original_token_count": 26,
+      "output": "HEAD is now at 39872ad4 build(deps): bump external/bpf_conformance from `22b6df4` to `73b6ea3` (#422)\n"
+    },
+    {
+      "path": "vm/llvm-jit",
+      "operation": "local clone",
+      "chunk_id": "5427f8",
+      "wall_time_seconds": 0.000003031,
+      "exit_code": 0,
+      "original_token_count": 21,
+      "output": "Cloning into '/home/yunwei37/workspace/gpu/bpftime-table1-575/vm/llvm-jit'...\ndone.\n"
+    },
+    {
+      "path": "vm/llvm-jit",
+      "operation": "pinned checkout",
+      "commit": "f66cafa",
+      "chunk_id": "248cea",
+      "wall_time_seconds": 0.00000306,
+      "exit_code": 0,
+      "original_token_count": 18,
+      "output": "HEAD is now at f66cafa fix(jit): initialize LLVM once across threads\n"
+    },
+    {
+      "cmd": "taskset -c 17 git clone --shared --no-checkout /home/yunwei37/workspace/gpu/bpftime/third_party/bpftool/libbpf /home/yunwei37/workspace/gpu/bpftime-table1-575/third_party/bpftool/libbpf",
+      "chunk_id": "77d743",
+      "wall_time_seconds": 0.000002764,
+      "exit_code": 0,
+      "original_token_count": 25,
+      "output": "Cloning into '/home/yunwei37/workspace/gpu/bpftime-table1-575/third_party/bpftool/libbpf'...\ndone.\n"
+    },
+    {
+      "cmd": "taskset -c 17 git -C /home/yunwei37/workspace/gpu/bpftime-table1-575/third_party/bpftool/libbpf checkout --detach 3f077472ee7e703b733c2c9ae15ef3f4c13ee25b",
+      "chunk_id": "980952",
+      "wall_time_seconds": 0.000002486,
+      "exit_code": 0,
+      "original_token_count": 14,
+      "output": "HEAD is now at 3f07747 sync: sync stddef.h UAPI header\n"
+    }
+  ],
+  "exact_pr503_source_checks": [
+    {
+      "cmd": "cmp -s /home/yunwei37/workspace/gpu/bpftime/attach/nv_attach_impl/nv_attach_impl.cpp /home/yunwei37/workspace/gpu/bpftime-table1-575/attach/nv_attach_impl/nv_attach_impl.cpp",
+      "chunk_id": "108831",
+      "wall_time_seconds": 0.000002884,
+      "exit_code": 0,
+      "original_token_count": 0,
+      "output": ""
+    },
+    {
+      "cmd": "cmp -s /home/yunwei37/workspace/gpu/bpftime/attach/nv_attach_impl/nv_attach_impl_frida_setup.cpp /home/yunwei37/workspace/gpu/bpftime-table1-575/attach/nv_attach_impl/nv_attach_impl_frida_setup.cpp",
+      "chunk_id": "d15b61",
+      "wall_time_seconds": 0.000002177,
+      "exit_code": 0,
+      "original_token_count": 0,
+      "output": ""
+    },
+    {
+      "cmd": "cmp -s /home/yunwei37/workspace/gpu/bpftime/attach/nv_attach_impl/nv_attach_fatbin_record.cpp /home/yunwei37/workspace/gpu/bpftime-table1-575/attach/nv_attach_impl/nv_attach_fatbin_record.cpp",
+      "chunk_id": "490206",
+      "wall_time_seconds": 0.00000245,
+      "exit_code": 0,
+      "original_token_count": 0,
+      "output": ""
+    }
+  ],
+  "validation": [
+    {
+      "name": "runtime whitespace",
+      "cmd": "git -C /home/yunwei37/workspace/gpu/bpftime-table1-575 diff --check",
+      "chunk_id": "096ad1",
+      "wall_time_seconds": 0.000003574,
+      "exit_code": 0,
+      "original_token_count": 0,
+      "output": ""
+    },
+    {
+      "name": "tool patch reverse applicability",
+      "cmd": "git -C /home/yunwei37/workspace/gpu/bpftime-table1-575 apply --check --reverse /home/yunwei37/workspace/gpu/gpu_ext/workloads/llama.cpp/observability_overhead/revision-rq4/gpubpf-observability.patch",
+      "chunk_id": "a5d94a",
+      "wall_time_seconds": 0.000003575,
+      "exit_code": 0,
+      "original_token_count": 0,
+      "output": ""
+    },
+    {
+      "name": "CPU tests",
+      "cmd": "taskset -c 17 python3 -B -m unittest test_offline.py -v",
+      "chunk_id": "fd59d1",
+      "wall_time_seconds": 0.10031344,
+      "exit_code": 0,
+      "original_token_count": 857,
+      "output": "test_active_runner_has_no_content_fingerprint_logic (test_offline.OfflineTests.test_active_runner_has_no_content_fingerprint_logic) ... ok\ntest_admission_requires_exact_575_before_build (test_offline.OfflineTests.test_admission_requires_exact_575_before_build) ... ok\ntest_all_probe_paths_need_real_samples_and_complete_clock_counters (test_offline.OfflineTests.test_all_probe_paths_need_real_samples_and_complete_clock_counters) ... ok\ntest_ambient_injection_is_rejected_before_launch (test_offline.OfflineTests.test_ambient_injection_is_rejected_before_launch) ... ok\ntest_bench_preserves_prompt_and_positive_throughput_gate (test_offline.OfflineTests.test_bench_preserves_prompt_and_positive_throughput_gate) ... ok\ntest_clock_patch_matches_real_source_without_modifying_it (test_offline.OfflineTests.test_clock_patch_matches_real_source_without_modifying_it) ... ok\ntest_cpu_helper_closes_log_when_spawn_fails (test_offline.OfflineTests.test_cpu_helper_closes_log_when_spawn_fails) ... ok\ntest_cpu_helper_interrupt_leaves_no_real_child_group (test_offline.OfflineTests.test_cpu_helper_interrupt_leaves_no_real_child_group) ... ok\ntest_cpu_helper_preserves_results_errors_and_streamed_logs (test_offline.OfflineTests.test_cpu_helper_preserves_results_errors_and_streamed_logs) ... ok\ntest_cuda_survivor_preserves_loader_segment_and_fatal_error (test_offline.OfflineTests.test_cuda_survivor_preserves_loader_segment_and_fatal_error) ... ok\ntest_fatal_cleanup_stops_correctness_and_timing_campaigns (test_offline.OfflineTests.test_fatal_cleanup_stops_correctness_and_timing_campaigns) ... correctness config=baseline attempt=1\nblock=1 config=baseline attempt=1\nok\ntest_file_metadata_does_not_read_content (test_offline.OfflineTests.test_file_metadata_does_not_read_content) ... ok\ntest_injection_occurs_only_after_affinity_wrapper (test_offline.OfflineTests.test_injection_occurs_only_after_affinity_wrapper) ... ok\ntest_interrupted_cuda_client_is_stopped_before_return (test_offline.OfflineTests.test_interrupted_cuda_client_is_stopped_before_return) ... ok\ntest_legacy_execution_and_broad_cleanup_are_never_called (test_offline.OfflineTests.test_legacy_execution_and_broad_cleanup_are_never_called) ... ok\ntest_main_holds_existing_leases_and_releases_on_failure (test_offline.OfflineTests.test_main_holds_existing_leases_and_releases_on_failure) ... ok\ntest_main_restores_cpu_helper_and_lease_on_interrupt (test_offline.OfflineTests.test_main_restores_cpu_helper_and_lease_on_interrupt) ... ok\ntest_normal_client_stops_before_private_loader_and_segment (test_offline.OfflineTests.test_normal_client_stops_before_private_loader_and_segment) ... ok\ntest_normalization_removes_only_presentation_noise (test_offline.OfflineTests.test_normalization_removes_only_presentation_noise) ... ok\ntest_normalized_output_is_compared_exactly (test_offline.OfflineTests.test_normalized_output_is_compared_exactly) ... ok\ntest_private_probe_preserves_unowned_segments (test_offline.OfflineTests.test_private_probe_preserves_unowned_segments) ... ok\ntest_safety_records_failures_and_checks_owned_teardown (test_offline.OfflineTests.test_safety_records_failures_and_checks_owned_teardown) ... ok\ntest_threadhist_full_width_readback_including_zero_tail (test_offline.OfflineTests.test_threadhist_full_width_readback_including_zero_tail) ... ok\n\n----------------------------------------------------------------------\nRan 23 tests in 0.160s\n\nOK\n"
+    },
+    {
+      "name": "runtime patch reverse applicability",
+      "cmd": "git -C /home/yunwei37/workspace/gpu/bpftime-table1-575 apply --check --reverse /home/yunwei37/workspace/gpu/bpftime-table1-575/table1-preparation/runtime-575.patch",
+      "chunk_id": "7be5df",
+      "wall_time_seconds": 0.000002487,
+      "exit_code": 0,
+      "original_token_count": 0,
+      "output": ""
+    }
+  ],
+  "not_run_by_preparer": [
+    "build",
+    "GPU",
+    "commit",
+    "push"
+  ]
+}

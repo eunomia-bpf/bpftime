@@ -1,0 +1,238 @@
+diff --git a/attach/nv_attach_impl/nv_attach_fatbin_record.cpp b/attach/nv_attach_impl/nv_attach_fatbin_record.cpp
+--- a/attach/nv_attach_impl/nv_attach_fatbin_record.cpp
++++ b/attach/nv_attach_impl/nv_attach_fatbin_record.cpp
+@@ -192,8 +192,12 @@ void fatbin_record::try_loading_ptxs(class nv_attach_impl &impl)
+ 	if (ptx_loaded)
+ 		return;
+ 	if (impl.shared_mem_ptr == 0) {
+-		throw std::runtime_error(
+-			"shared_mem_ptr is not initialized before loading PTX");
++		// CUDA fatbin/function registration can run before the agent has
++		// received the shared map pointer. Leave this record pending; late
++		// bootstrap will load it after the CUDA hook is fully attached.
++		SPDLOG_DEBUG(
++			"Deferring PTX load until shared_mem_ptr is initialized");
++		return;
+ 	}
+ 	SPDLOG_INFO("Loading & patching current fatbin..");
+ 
+diff --git a/attach/nv_attach_impl/nv_attach_impl.cpp b/attach/nv_attach_impl/nv_attach_impl.cpp
+--- a/attach/nv_attach_impl/nv_attach_impl.cpp
++++ b/attach/nv_attach_impl/nv_attach_impl.cpp
+@@ -1799,10 +1799,72 @@ void nv_attach_impl::bootstrap_existing_fatbins()
+ 	auto modules = elf_introspect::list_loaded_modules();
+ 	std::size_t ingested = 0;
+ 
++	if (const char *targeted =
++		    getenv("BPFTIME_CUDA_TARGETED_LATE_BOOTSTRAP");
++	    targeted && targeted[0] == '1') {
++		const auto target_kernels = collect_all_kernels_to_patch();
++		decltype(modules) matching_modules;
++		for (const auto &mod : modules) {
++			auto symbols = elf_introspect::read_function_symbols(mod);
++			bool matches = false;
++			for (const auto &symbol : symbols) {
++				std::string name = symbol.name;
++				constexpr const char *stub_prefix =
++					"__device_stub__";
++				if (name.rfind(stub_prefix, 0) == 0) {
++					name.erase(0, strlen(stub_prefix));
++					if (!name.empty() && name[0] != '_')
++						name.insert(name.begin(), '_');
++				}
++				if (std::binary_search(target_kernels.begin(),
++						       target_kernels.end(), name)) {
++					matches = true;
++					break;
++				}
++			}
++			if (matches)
++				matching_modules.push_back(mod);
++		}
++		if (!matching_modules.empty()) {
++			SPDLOG_INFO(
++				"nv_attach_impl: targeted late bootstrap selected {} of {} loaded module(s)",
++				matching_modules.size(), modules.size());
++			modules = std::move(matching_modules);
++		} else {
++			SPDLOG_WARN(
++				"nv_attach_impl: targeted late bootstrap found no module containing a requested kernel; falling back to all loaded modules");
++		}
++	}
++
++	// An external PTX directory is already a complete late-attach input. Do
++	// not feed that same directory through extract_ptxs() once per loaded
++	// fatbin: doing so recompiles and reloads identical modules repeatedly.
++	if (const char *dir = getenv("BPFTIME_CUDA_LATE_PTX_DIR");
++	    dir && dir[0] != '\0') {
++		std::error_code ec;
++		const std::filesystem::path path(dir);
++		if (std::filesystem::is_directory(path, ec)) {
++			auto extracted_ptx = extract_ptxs({});
++			if (!extracted_ptx.empty()) {
++				auto rec = std::make_unique<fatbin_record>();
++				rec->original_ptx = std::move(extracted_ptx);
++				rec->module_pool = module_pool;
++				rec->ptx_pool = ptx_pool;
++				rec->try_loading_ptxs(*this);
++				fatbin_records.emplace_back(std::move(rec));
++				SPDLOG_INFO(
++					"nv_attach_impl: late attach bootstrap ingested external PTX directory once");
++				prefill_patched_kernel_functions_from_loaded_fatbins();
++				return;
++			}
++		}
++	}
++
+ 	for (const auto &mod : modules) {
+ 		// CUDA binaries may expose fatbin bytes either directly in
+ 		// `.nv_fatbin` (raw fatbin header 0xBA55ED50...) or as a list
+ 		// of wrappers inside `.nvFatBinSegment` (magic 'FbC1').
++		bool ingested_direct_fatbin = false;
+ 		if (auto sec = elf_introspect::find_section_in_memory(
+ 			    mod, ".nv_fatbin");
+ 		    sec) {
+@@ -1823,12 +1885,18 @@ void nv_attach_impl::bootstrap_existing_fatbins()
+ 					fatbin_records.emplace_back(
+ 						std::move(rec));
+ 					ingested++;
++					ingested_direct_fatbin = true;
+ 					SPDLOG_INFO(
+ 						"nv_attach_impl: ingested fatbin from .nv_fatbin in {}",
+ 						mod.path.c_str());
+ 				}
+ 			}
+ 		}
++		// `.nvFatBinSegment` is an alternate index into the same fatbin
++		// payload. Scanning its wrappers after a successful direct-section
++		// ingest extracts overlapping suffixes (N, N-1, ... PTX files).
++		if (ingested_direct_fatbin)
++			continue;
+ 
+ 		if (auto sec = elf_introspect::find_section_in_memory(
+ 			    mod, ".nvFatBinSegment");
+diff --git a/attach/nv_attach_impl/nv_attach_impl_frida_setup.cpp b/attach/nv_attach_impl/nv_attach_impl_frida_setup.cpp
+--- a/attach/nv_attach_impl/nv_attach_impl_frida_setup.cpp
++++ b/attach/nv_attach_impl/nv_attach_impl_frida_setup.cpp
+@@ -77,6 +77,12 @@ using cu_launch_kernel_fn_t = CUresult (*)(CUfunction, unsigned int,
+ 					   unsigned int, unsigned int, CUstream,
+ 					   void **, void **);
+ 
++static bool defer_ptx_extraction_enabled()
++{
++	const char *value = getenv("BPFTIME_CUDA_DEFER_PTX_EXTRACTION");
++	return value != nullptr && value[0] == '1';
++}
++
+ static bool cuda_graph_stream_is_capturing(cudaStream_t stream)
+ {
+ 	cudaStreamCaptureStatus status = cudaStreamCaptureStatusNone;
+@@ -254,32 +260,43 @@ static void example_listener_on_enter(GumInvocationListener *listener,
+ 	if (context->to_function == AttachedToFunction::RegisterFatbin) {
+ 		SPDLOG_DEBUG("Entering __cudaRegisterFatBinary..");
+ 
+-		auto header = (__fatBinC_Wrapper_t *)
+-			gum_invocation_context_get_nth_argument(gum_ctx, 0);
+-		auto data = (const char *)header->data;
+-		fat_elf_header_t *curr_header = (fat_elf_header_t *)data;
+-		const char *tail = (const char *)curr_header;
+-		while (true) {
+-			// #define FATBIN_TEXT_MAGIC 0xBA55ED50
+-			if (curr_header->magic == 0xBA55ED50) {
+-				SPDLOG_DEBUG(
+-					"Got CUBIN section header size = {}, size = {}",
+-					static_cast<int>(
+-						curr_header->header_size),
+-					static_cast<int>(curr_header->size));
+-				tail = ((const char *)curr_header) +
+-				       curr_header->header_size +
+-				       curr_header->size;
+-				curr_header = (fat_elf_header_t *)tail;
+-			} else {
+-				break;
++		std::map<std::string, std::string> extracted_ptx;
++		if (defer_ptx_extraction_enabled()) {
++			// Late bootstrap scans the already-loaded CUDA module once. Do
++			// not run cuobjdump again for every CUDA fatbin registration.
++			SPDLOG_DEBUG(
++				"Deferring registered fatbin PTX extraction to late bootstrap");
++		} else {
++			auto header = (__fatBinC_Wrapper_t *)
++				gum_invocation_context_get_nth_argument(gum_ctx, 0);
++			auto data = (const char *)header->data;
++			fat_elf_header_t *curr_header =
++				(fat_elf_header_t *)data;
++			const char *tail = (const char *)curr_header;
++			while (true) {
++				// #define FATBIN_TEXT_MAGIC 0xBA55ED50
++				if (curr_header->magic == 0xBA55ED50) {
++					SPDLOG_DEBUG(
++						"Got CUBIN section header size = {}, size = {}",
++						static_cast<int>(
++							curr_header->header_size),
++						static_cast<int>(
++							curr_header->size));
++					tail = ((const char *)curr_header) +
++					       curr_header->header_size +
++					       curr_header->size;
++					curr_header = (fat_elf_header_t *)tail;
++				} else {
++					break;
++				}
+ 			}
+-		};
+-		std::vector<uint8_t> data_vec((uint8_t *)data, (uint8_t *)tail);
+-		SPDLOG_INFO("Finally size = {}", data_vec.size());
+-		auto extracted_ptx =
+-			context->impl->extract_ptxs(std::move(data_vec));
+-		SPDLOG_INFO("Patching PTXs");
++			std::vector<uint8_t> data_vec((uint8_t *)data,
++						      (uint8_t *)tail);
++			SPDLOG_INFO("Finally size = {}", data_vec.size());
++			extracted_ptx = context->impl->extract_ptxs(
++				std::move(data_vec));
++			SPDLOG_INFO("Patching PTXs");
++		}
+ 		auto fatbin_record = std::make_unique<struct fatbin_record>();
+ 		fatbin_record->original_ptx = extracted_ptx;
+ 		fatbin_record->module_pool = context->impl->module_pool;
+@@ -294,6 +311,13 @@ static void example_listener_on_enter(GumInvocationListener *listener,
+ 		SPDLOG_DEBUG("Entering __cudaRegisterFunction..");
+ 		auto &impl = *context->impl;
+ 		auto current_fatbin = context->impl->current_fatbin;
++		if (current_fatbin == nullptr ||
++		    (defer_ptx_extraction_enabled() &&
++		     current_fatbin->original_ptx.empty())) {
++			SPDLOG_DEBUG(
++				"Deferring registered CUDA function lookup to late bootstrap");
++			return;
++		}
+ 		current_fatbin->try_loading_ptxs(*context->impl);
+ 
+ 		auto func_addr =
+@@ -326,6 +350,13 @@ static void example_listener_on_enter(GumInvocationListener *listener,
+ 		   AttachedToFunction::RegisterVariable) {
+ 		SPDLOG_DEBUG("Entering __cudaRegisterVar");
+ 		auto current_fatbin = context->impl->current_fatbin;
++		if (current_fatbin == nullptr ||
++		    (defer_ptx_extraction_enabled() &&
++		     current_fatbin->original_ptx.empty())) {
++			SPDLOG_DEBUG(
++				"Deferring registered CUDA variable lookup to late bootstrap");
++			return;
++		}
+ 		current_fatbin->try_loading_ptxs(*context->impl);
+ 		auto fatbin_handle =
+ 			gum_invocation_context_get_nth_argument(gum_ctx, 0);
+diff --git a/runtime/src/handler/map_handler.cpp b/runtime/src/handler/map_handler.cpp
+--- a/runtime/src/handler/map_handler.cpp
++++ b/runtime/src/handler/map_handler.cpp
+@@ -997,6 +997,8 @@ int bpf_map_handler::map_init(managed_shared_memory &memory)
+ 			memory.construct<nv_gpu_per_thread_array_map_impl>(
+ 				boost::interprocess::anonymous_instance)(
+ 				memory, value_size, max_entries, thread_count);
++		// Keep syscall readback metadata consistent with the allocated map.
++		attr.gpu_thread_count = thread_count;
+ 		init_refcnt();
+ 		shm_holder.global_shared_memory.set_enable_mock(true);
+ 		return 0;
