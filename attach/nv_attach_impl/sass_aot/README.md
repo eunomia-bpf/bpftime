@@ -159,6 +159,11 @@ build-spike/attach/nv_attach_impl/sass_aot/bpftime_sass_aot_interpose_timing \
 
 Requires a free GPU (do not run while another experiment owns the device).
 
+A recorded 5-run x 64-iteration experiment (2026-09-05) with medians
+computed from the per-run cold and steady summaries is in
+`results/sass-aot-interpose-575-01/results.md` (raw capture:
+`results/sass-aot-interpose-575-01/raw.log`).
+
 ## Exact scope record
 
 - **What this is**: a *companion/interposed SASS module*. The BPF-derived
