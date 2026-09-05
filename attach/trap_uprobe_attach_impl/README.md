@@ -4,9 +4,8 @@ A riscv64 implementation of `base_attach_impl` for uprobe, uretprobe,
 uprobe-override (filter) and ureplace attaches that does not depend on
 frida-gum. The CMake option `BPFTIME_ENABLE_TRAP_UPROBE` defaults to ON
 on riscv64 (the only supported architecture for this backend).
-When the backend is compiled in, `BPFTIME_UPROBE_BACKEND=frida|trap`
-selects it at runtime (the agent's environment wins over the loader's
-shared config).
+The backend is selected at compile time: when `BPFTIME_ENABLE_TRAP_UPROBE`
+is ON the agent uses the trap backend; otherwise it falls back to frida.
 
 ## How it works
 
@@ -63,10 +62,10 @@ shared config).
 ## Limitations
 
 - Two signal deliveries per hit. Measured on a 32-core riscv64 host
-  (Release build): 5.5 µs per uprobe hit and 8.2 µs per uprobe+uretprobe
-  pair on one thread; with 8 threads hitting the same probe the aggregate
-  throughput barely grows because the kernel serializes signal delivery
-  within a process.
+  (Release build): ~5.7 µs per uprobe hit and ~8.7 µs per
+  uprobe+uretprobe pair on one thread; with 8 threads hitting the same
+  probe the aggregate throughput barely grows because the kernel
+  serializes signal delivery within a process.
 - The first instruction must be decodable and relocatable. Functions that
   already start with a breakpoint are rejected with `-ENOTSUP`.
 - A uretprobe replaces the return address, so unwinding through the probed
@@ -76,6 +75,37 @@ shared config).
 - Probe sites, out-of-line slots and detached entries are kept alive for
   the lifetime of the process so that a signal handler racing with a
   detach can never touch freed memory.
+
+## Performance comparison
+
+Per-call latency (ns) across three uprobe backends.  Lower is better.
+
+### Environment
+
+| | x86\_64 (frida / kernel) | riscv64 (trap) |
+|---|---|---|
+| **CPU** | Xeon Platinum 8259CL 2.50 GHz, 24 cores | SG2042 (C920), 32 cores |
+| **Kernel** | 6.8.0 | 6.6 |
+| **Build** | Release, ubpf JIT | Release |
+
+### Results (ns/call, avg of 5 runs)
+
+| Probe type | Baseline | Kernel | Frida (userspace) | Trap (userspace) |
+|---|---:|---:|---:|---:|
+| **uprobe** | 4.9 | 4706 | 1346 | 5654 |
+| **uretprobe** | 4.4 | 5444 | 1339 | 8479 |
+| **uprobe + uretprobe** | 5.0 | 5782 | 2579 | 8655 |
+
+- All numbers measured 2026-09-05, 5 runs, single thread.
+  Frida/kernel: 100k iterations on x86\_64.  Trap: 200k iterations on
+  riscv64.
+- **Kernel uprobe** crosses into the kernel for every hit; the frida and
+  trap backends stay entirely in userspace.
+- Frida is ~3.5x faster than kernel uprobe on this workload.
+- The trap backend's uretprobe cost (~8.5 µs) dominates uprobe+uretprobe
+  because uretprobe itself requires two signal deliveries (entry
+  breakpoint + return trampoline breakpoint), same as a standalone
+  uprobe+uretprobe pair.
 
 ## Layout
 
