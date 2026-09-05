@@ -7,6 +7,7 @@ on:
     paths:
       - ".github/workflows/test-gpu-examples.yml"
       - "attach/**"
+      - "bpftime-verifier/**"
       - "benchmark/gpu/**"
       - "example/gpu/**"
       - "runtime/**"
@@ -21,6 +22,7 @@ on:
     paths:
       - ".github/workflows/test-gpu-examples.yml"
       - "attach/**"
+      - "bpftime-verifier/**"
       - "benchmark/gpu/**"
       - "example/gpu/**"
       - "runtime/**"
@@ -54,12 +56,12 @@ jobs:
           rm -rf third_party/bpftool/libbpf
           git submodule update --init --recursive third_party/bpftool
 
-      - name: Initialize ubpf submodules (bpf_conformance)
+      - name: Initialize nested submodules
         shell: bash
         run: |
           set -euo pipefail
           rm -rf third_party/ubpf/external/bpf_conformance
-          git submodule update --init --recursive third_party/ubpf
+          git submodule update --init --recursive third_party/ubpf bpftime-verifier/ebpf-verifier
 
       - name: Detect CUDA root and export env
         shell: bash
@@ -109,7 +111,7 @@ jobs:
           $SUDO apt-get install -y --no-install-recommends \
             build-essential ca-certificates curl git pkg-config xz-utils \
             cmake ninja-build \
-            libboost-all-dev libdw-dev libedit-dev libelf-dev libffi-dev libssl-dev libzstd-dev zlib1g-dev \
+            libboost-all-dev libdw-dev libedit-dev libelf-dev libffi-dev libssl-dev libyaml-cpp-dev libzstd-dev zlib1g-dev \
             libcurl4-openssl-dev
 
           # Ensure LLVM >= 15 for vm/llvm-jit (find_package(LLVM)).
@@ -201,6 +203,7 @@ jobs:
             -DCMAKE_BUILD_TYPE=Debug \
             -DBPFTIME_LLVM_JIT=YES \
             -DBPFTIME_ENABLE_CUDA_ATTACH=ON \
+            -DENABLE_EBPF_VERIFIER=YES \
             -DBPFTIME_CUDA_ROOT="${BPFTIME_CUDA_ROOT:-/usr/local/cuda}" \
             -DLLVM_DIR="${LLVM_DIR}" \
             -G Ninja
@@ -240,6 +243,7 @@ jobs:
             victim: ./vec_add
             expected_str: "total events:"
             name: kernel_trace
+            verifier_level: WARNING
             server_timeout: 15
             mode: two-process
           - path: gpu_shared_map
@@ -254,6 +258,7 @@ jobs:
             victim: ./vec_add
             expected_str: "SM Utilization Histogram"
             name: threadscheduling
+            verifier_level: WARNING
             server_timeout: 15
             mode: two-process
           - path: threadscheduling_dynamic_hook
@@ -261,6 +266,7 @@ jobs:
             victim: ./vec_add 4 64
             expected_str: "mapping probe started"
             name: threadscheduling_dynamic_hook
+            verifier_level: WARNING
             server_timeout: 20
             mode: dynamic-attach
           - path: cudagraph
@@ -268,6 +274,7 @@ jobs:
             victim: ./vec_add_graph
             expected_str: "calls:"
             name: cudagraph
+            verifier_level: WARNING
             server_timeout: 15
             mode: two-process
           - path: threadhist-gpu-kernel-shared-map
@@ -282,6 +289,7 @@ jobs:
             victim: ""
             expected_str: "GEMM C[0]="
             name: directly_run_on_gpu
+            verifier_level: WARNING
             server_timeout: 15
             mode: direct-run
           - path: kernelretsnoop
@@ -331,6 +339,7 @@ jobs:
             victim: ./vec_add
             expected_str: "(call_count)"
             name: host_map_test
+            verifier_level: WARNING
             server_timeout: 15
             mode: two-process
           - path: cutlass
@@ -338,6 +347,7 @@ jobs:
             victim: ./gemm/cutlass_gemm --shape 1024x1024x1024 --launches 4 --warmup 1 --verify
             expected_str: "CUTLASS launches:"
             name: cutlass
+            verifier_level: WARNING
             server_timeout: 15
             mode: two-process
             dispatch_only: true
@@ -646,6 +656,7 @@ jobs:
           BPFTIMETOOL="$BUILD_DIR/tools/bpftimetool/bpftimetool"
           export SPDLOG_LEVEL=info
           export BPFTIME_LOG_LEVEL=INFO
+          export BPFTIME_VERIFIER_LEVEL="${{ matrix.examples.verifier_level || 'STRICT' }}"
           export CUDA_LAUNCH_BLOCKING=0
           export CUDA_MODULE_LOADING=LAZY
           export BPFTIME_GLOBAL_SHM_NAME="bpftime_maps_shm_${EXAMPLE_NAME}"
