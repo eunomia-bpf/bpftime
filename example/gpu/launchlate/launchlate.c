@@ -28,6 +28,8 @@
 #define CALIBRATION_WARMUPS 4
 #define CALIBRATION_TRIALS 32
 #define CLOCK_DRIFT_LIMIT_PPB 10000ULL
+#define CLOCK_MAX_ANCHOR_BRACKET_NS 1500ULL
+#define CLOCK_MIN_CALIBRATION_SPAN_NS 1000000000ULL
 
 enum host_counter {
 	HOST_LAUNCHES = 0,
@@ -69,6 +71,23 @@ struct rm_calibration_run {
 	uint64_t rejected;
 	uint64_t cleanup_complete;
 	struct rm_ptimer_575_sample best;
+};
+
+struct clock_anchor_quality {
+	uint64_t requested;
+	uint64_t accepted;
+	uint64_t rejected;
+	uint64_t bracket_width_ns;
+	uint64_t cleanup_complete;
+};
+
+struct held_out_clock_validation {
+	int64_t predicted_low_ns;
+	int64_t predicted_high_ns;
+	int64_t overlap_low_ns;
+	int64_t overlap_high_ns;
+	uint64_t validation_span_ns;
+	uint64_t passed;
 };
 
 struct launch_sample {
@@ -299,6 +318,83 @@ static int affine_offset_interval(uint64_t host_ns,
 	return 0;
 }
 
+static struct clock_anchor_quality anchor_quality(
+	const struct rm_calibration_run *run)
+{
+	struct clock_anchor_quality quality = {0};
+
+	if (!run)
+		return quality;
+	quality.requested = run->requested;
+	quality.accepted = run->accepted;
+	quality.rejected = run->rejected;
+	quality.bracket_width_ns = run->best.bracket_width_ns;
+	quality.cleanup_complete = run->cleanup_complete;
+	return quality;
+}
+
+static int clock_anchor_quality_valid(
+	const struct clock_calibration *calibration,
+	const struct clock_anchor_quality *quality)
+{
+	uint64_t width;
+
+	if (!calibration_valid(calibration) || !quality)
+		return 0;
+	width = (uint64_t)calibration->offset_high_ns -
+		(uint64_t)calibration->offset_low_ns;
+	return quality->requested == CALIBRATION_TRIALS &&
+		quality->accepted == quality->requested &&
+		quality->rejected == 0 && quality->cleanup_complete == 1 &&
+		quality->bracket_width_ns > 0 &&
+		quality->bracket_width_ns <= CLOCK_MAX_ANCHOR_BRACKET_NS &&
+		width == quality->bracket_width_ns;
+}
+
+/*
+ * The validation-end anchor is held out from classification.  It admits the
+ * start-to-measurement-end model only if the start-to-validation-end affine
+ * prediction overlaps the independently measured middle interval.
+ */
+static int held_out_affine_clock_validation(
+	const struct clock_calibration *start,
+	const struct clock_calibration *measurement_end,
+	const struct clock_calibration *validation_end,
+	const struct clock_anchor_quality *start_quality,
+	const struct clock_anchor_quality *measurement_end_quality,
+	const struct clock_anchor_quality *validation_end_quality,
+	struct held_out_clock_validation *result)
+{
+	if (!result)
+		return -EINVAL;
+	memset(result, 0, sizeof(*result));
+	if (!clock_anchor_quality_valid(start, start_quality) ||
+	    !clock_anchor_quality_valid(measurement_end,
+					measurement_end_quality) ||
+	    !clock_anchor_quality_valid(validation_end,
+					validation_end_quality) ||
+	    start->host_anchor_ns >= measurement_end->host_anchor_ns ||
+	    measurement_end->host_anchor_ns >= validation_end->host_anchor_ns ||
+	    validation_end->host_anchor_ns - measurement_end->host_anchor_ns <
+		    CLOCK_MIN_CALIBRATION_SPAN_NS ||
+	    affine_offset_interval(measurement_end->host_anchor_ns, start,
+				   validation_end, &result->predicted_low_ns,
+				   &result->predicted_high_ns))
+		return -ERANGE;
+	result->validation_span_ns = validation_end->host_anchor_ns -
+		measurement_end->host_anchor_ns;
+	result->overlap_low_ns =
+		result->predicted_low_ns > measurement_end->offset_low_ns ?
+		result->predicted_low_ns : measurement_end->offset_low_ns;
+	result->overlap_high_ns =
+		result->predicted_high_ns < measurement_end->offset_high_ns ?
+		result->predicted_high_ns : measurement_end->offset_high_ns;
+	if (result->overlap_low_ns > result->overlap_high_ns)
+		return -ERANGE;
+	result->passed = 1;
+	return 0;
+}
+
 static enum launch_sample_status classify_affine_sample(
 	const struct launch_sample *sample,
 	const struct clock_calibration *start,
@@ -341,6 +437,40 @@ static int run_self_test(const char *elf_path, const char *kernel_symbol)
 		.host_anchor_ns = 1100000000ULL,
 		.valid = 1,
 	};
+	struct clock_calibration held_start = {
+		.offset_low_ns = 980,
+		.offset_high_ns = 1020,
+		.uncertainty_ns = 20,
+		.host_anchor_ns = 1000000000ULL,
+		.valid = 1,
+	};
+	struct clock_calibration held_measurement_end = {
+		.offset_low_ns = 9760,
+		.offset_high_ns = 9840,
+		.uncertainty_ns = 40,
+		.host_anchor_ns = 1400000000ULL,
+		.valid = 1,
+	};
+	struct clock_calibration held_validation_end = {
+		.offset_low_ns = 31780,
+		.offset_high_ns = 31820,
+		.uncertainty_ns = 20,
+		.host_anchor_ns = 2400000000ULL,
+		.valid = 1,
+	};
+	struct clock_anchor_quality narrow_quality = {
+		.requested = CALIBRATION_TRIALS,
+		.accepted = CALIBRATION_TRIALS,
+		.bracket_width_ns = 40,
+		.cleanup_complete = 1,
+	};
+	struct clock_anchor_quality middle_quality = {
+		.requested = CALIBRATION_TRIALS,
+		.accepted = CALIBRATION_TRIALS,
+		.bracket_width_ns = 80,
+		.cleanup_complete = 1,
+	};
+	struct held_out_clock_validation held_validation;
 	struct clock_drift drift;
 	struct launch_sample sample = {
 		.host_raw_ns = 1050000000ULL,
@@ -411,6 +541,119 @@ static int run_self_test(const char *elf_path, const char *kernel_symbol)
 	if (calibration_drift(&affine_start, &affine_end, &drift) ||
 	    drift.bounded || drift.rate_bound_ppb <= CLOCK_DRIFT_LIMIT_PPB)
 		return 1;
+
+	/* A 22 ppm affine clock passes the held-out gate; slope is diagnostic. */
+	if (calibration_drift(&held_start, &held_validation_end, &drift) ||
+	    drift.rate_bound_ppb != 22029 || drift.bounded ||
+	    held_out_affine_clock_validation(
+		    &held_start, &held_measurement_end, &held_validation_end,
+		    &narrow_quality, &middle_quality, &narrow_quality,
+		    &held_validation) ||
+	    held_validation.predicted_low_ns != 9780 ||
+	    held_validation.predicted_high_ns != 9820 ||
+	    held_validation.overlap_low_ns != 9780 ||
+	    held_validation.overlap_high_ns != 9820 ||
+	    held_validation.validation_span_ns != 1000000000ULL ||
+	    held_validation.passed != 1)
+		return 1;
+	sample.host_raw_ns = 1200000000ULL;
+	sample.gpu_entry_ns = 1200006000ULL;
+	if (classify_affine_sample(&sample, &held_start,
+				   &held_measurement_end, &bin) !=
+		    LAUNCH_SAMPLE_CLASSIFIED || bin != 1)
+		return 1;
+	{
+		struct clock_calibration malformed = held_measurement_end;
+		malformed.uncertainty_ns++;
+		if (!held_out_affine_clock_validation(
+			    &held_start, &malformed, &held_validation_end,
+			    &narrow_quality, &middle_quality, &narrow_quality,
+			    &held_validation))
+			return 1;
+	}
+	{
+		struct clock_calibration nonoverlap = held_measurement_end;
+		nonoverlap.offset_low_ns = 11000;
+		nonoverlap.offset_high_ns = 11080;
+		if (!held_out_affine_clock_validation(
+			    &held_start, &nonoverlap, &held_validation_end,
+			    &narrow_quality, &middle_quality, &narrow_quality,
+			    &held_validation))
+			return 1;
+	}
+	{
+		struct clock_calibration unordered = held_measurement_end;
+		unordered.host_anchor_ns = held_start.host_anchor_ns;
+		if (!held_out_affine_clock_validation(
+			    &held_start, &unordered, &held_validation_end,
+			    &narrow_quality, &middle_quality, &narrow_quality,
+			    &held_validation))
+			return 1;
+	}
+	{
+		struct clock_calibration unordered = held_validation_end;
+		unordered.host_anchor_ns = held_measurement_end.host_anchor_ns;
+		if (!held_out_affine_clock_validation(
+			    &held_start, &held_measurement_end, &unordered,
+			    &narrow_quality, &middle_quality, &narrow_quality,
+			    &held_validation))
+			return 1;
+	}
+	{
+		struct clock_calibration short_span = held_validation_end;
+		short_span.host_anchor_ns = 2399999999ULL;
+		if (!held_out_affine_clock_validation(
+			    &held_start, &held_measurement_end, &short_span,
+			    &narrow_quality, &middle_quality, &narrow_quality,
+			    &held_validation))
+			return 1;
+	}
+	{
+		struct clock_anchor_quality rejected = narrow_quality;
+		rejected.rejected = 1;
+		if (!held_out_affine_clock_validation(
+			    &held_start, &held_measurement_end,
+			    &held_validation_end, &rejected, &middle_quality,
+			    &narrow_quality, &held_validation))
+			return 1;
+	}
+	{
+		struct clock_anchor_quality incomplete = narrow_quality;
+		incomplete.accepted--;
+		if (!held_out_affine_clock_validation(
+			    &held_start, &held_measurement_end,
+			    &held_validation_end, &incomplete, &middle_quality,
+			    &narrow_quality, &held_validation))
+			return 1;
+	}
+	{
+		struct clock_calibration wide = held_measurement_end;
+		struct clock_anchor_quality wide_quality = middle_quality;
+		wide_quality.bracket_width_ns =
+			CLOCK_MAX_ANCHOR_BRACKET_NS + 1;
+		wide.offset_high_ns = wide.offset_low_ns +
+			(int64_t)wide_quality.bracket_width_ns;
+		wide.uncertainty_ns = wide_quality.bracket_width_ns / 2 +
+			wide_quality.bracket_width_ns % 2;
+		if (!held_out_affine_clock_validation(
+			    &held_start, &wide, &held_validation_end,
+			    &narrow_quality, &wide_quality, &narrow_quality,
+			    &held_validation))
+			return 1;
+	}
+	{
+		struct clock_anchor_quality dirty = narrow_quality;
+		dirty.cleanup_complete = 0;
+		if (!held_out_affine_clock_validation(
+			    &held_start, &held_measurement_end,
+			    &held_validation_end, &narrow_quality,
+			    &middle_quality, &dirty, &held_validation) ||
+		    !held_out_affine_clock_validation(
+			    &held_start, &held_measurement_end,
+			    &held_validation_end, &narrow_quality,
+			    &middle_quality, &narrow_quality, NULL))
+			return 1;
+	}
 
 	/* Exercise the same-ELF PLT-to-local-symbol address proof without CUDA. */
 	if (find_defined_symbol_matching(test_path, test_kernel, &symbol_status,
@@ -491,6 +734,39 @@ cleanup:
 	if (cleanup_err && !err)
 		err = cleanup_err;
 	return err;
+}
+
+static int wait_for_minimum_clock_span(
+	const struct clock_calibration *start_calibration)
+{
+	struct timespec now, delay;
+	uint64_t now_ns, deadline_ns, remaining;
+
+	if (!calibration_valid(start_calibration) ||
+	    start_calibration->host_anchor_ns >
+		    UINT64_MAX - CLOCK_MIN_CALIBRATION_SPAN_NS)
+		return -ERANGE;
+	deadline_ns = start_calibration->host_anchor_ns +
+		CLOCK_MIN_CALIBRATION_SPAN_NS;
+	for (;;) {
+		if (clock_gettime(CLOCK_MONOTONIC_RAW, &now) != 0)
+			return -errno;
+		if (now.tv_sec < 0 || now.tv_nsec < 0 ||
+		    now.tv_nsec >= 1000000000L ||
+		    (uint64_t)now.tv_sec > UINT64_MAX / 1000000000ULL)
+			return -ERANGE;
+		now_ns = (uint64_t)now.tv_sec * 1000000000ULL +
+			(uint64_t)now.tv_nsec;
+		if (now_ns >= deadline_ns)
+			return 0;
+		remaining = deadline_ns - now_ns;
+		delay.tv_sec = (time_t)(remaining / 1000000000ULL);
+		delay.tv_nsec = (long)(remaining % 1000000000ULL);
+		while (nanosleep(&delay, &delay) != 0) {
+			if (errno != EINTR)
+				return -errno;
+		}
+	}
 }
 
 static void print_calibration(const char *phase,
@@ -963,13 +1239,19 @@ int main(int argc, char **argv)
 {
 	struct launchlate_bpf *skel;
 	struct clock_calibration start_calibration = {0};
-	struct clock_calibration end_calibration = {0};
+	struct clock_calibration measurement_end_calibration = {0};
+	struct clock_calibration validation_end_calibration = {0};
 	struct rm_calibration_run start_rm = {0};
-	struct rm_calibration_run end_rm = {0};
+	struct rm_calibration_run measurement_end_rm = {0};
+	struct rm_calibration_run validation_end_rm = {0};
+	struct clock_anchor_quality start_quality = {0};
+	struct clock_anchor_quality measurement_end_quality = {0};
+	struct clock_anchor_quality validation_end_quality = {0};
+	struct held_out_clock_validation held_out = {0};
 	struct clock_drift drift = {0};
 	struct host_target target = {0};
 	struct plt_entry launch_plt = {0};
-	int err, stat_err;
+	int err, stat_err, span_err, validation_err;
 	uint32_t key = 0;
 	const char *binary_path = "./vec_add";
 	const char *symbol_hint = DEFAULT_UPROBE_SYMBOL_HINT;
@@ -1062,7 +1344,7 @@ int main(int argc, char **argv)
 			strerror(-err));
 		goto cleanup;
 	}
-	printf("Clock calibration method: RM endpoints-v1 PTIMER intervals with affine CLOCK_MONOTONIC_RAW interpolation\n");
+	printf("Clock calibration method: RM endpoints-v1 PTIMER intervals with three-anchor held-out affine validation\n");
 	err = bpf_map_update_elem(
 		bpf_map__fd(skel->maps.clock_calibration), &key,
 		&start_calibration, BPF_ANY);
@@ -1113,35 +1395,76 @@ int main(int argc, char **argv)
 		err = stat_err;
 	}
 
-	stat_err = calibrate_gpu_clock(&end_calibration, &end_rm);
-	print_calibration("End", &end_calibration, &end_rm);
+	stat_err = calibrate_gpu_clock(&measurement_end_calibration,
+				       &measurement_end_rm);
+	print_calibration("Measurement-end", &measurement_end_calibration,
+			  &measurement_end_rm);
 	if (stat_err) {
-		fprintf(stderr, "Failed to validate RM PTIMER and RAW clocks: %s\n",
+		fprintf(stderr, "Failed to capture measurement-end RM anchor: %s\n",
 			strerror(-stat_err));
 		if (!err)
 			err = stat_err;
-	} else {
-		stat_err = calibration_drift(&start_calibration, &end_calibration,
-					     &drift);
-		printf("Clock offset change lower: %" PRId64 " ns\n",
-		       drift.offset_change_low_ns);
-		printf("Clock offset change upper: %" PRId64 " ns\n",
-		       drift.offset_change_high_ns);
-		printf("Clock calibration elapsed: %" PRIu64 " ns\n",
-		       drift.elapsed_ns);
-		printf("Clock drift rate bound: %" PRIu64 " ppb\n",
-		       drift.rate_bound_ppb);
-		printf("Clock drift limit: %" PRIu64 " ppb\n",
-		       (uint64_t)CLOCK_DRIFT_LIMIT_PPB);
-		printf("Clock drift bounded: %d\n",
-		       stat_err == 0 && drift.bounded ? 1 : 0);
-		if (stat_err || !drift.bounded) {
-			fprintf(stderr, "Clock calibration drift exceeds its bound\n");
-			if (!err)
-				err = stat_err ? stat_err : -ERANGE;
-		}
 	}
-	stat_err = print_histogram(skel, &start_calibration, &end_calibration);
+	span_err = wait_for_minimum_clock_span(&measurement_end_calibration);
+	if (span_err) {
+		fprintf(stderr, "Failed to wait for validation clock span: %s\n",
+			strerror(-span_err));
+		if (!err)
+			err = span_err;
+	}
+	validation_err = calibrate_gpu_clock(&validation_end_calibration,
+					     &validation_end_rm);
+	print_calibration("Validation-end", &validation_end_calibration,
+			  &validation_end_rm);
+	if (validation_err) {
+		fprintf(stderr, "Failed to capture validation-end RM anchor: %s\n",
+			strerror(-validation_err));
+		if (!err)
+			err = validation_err;
+	}
+	stat_err = calibration_drift(&start_calibration,
+				     &validation_end_calibration, &drift);
+	printf("Clock offset change lower: %" PRId64 " ns\n",
+	       drift.offset_change_low_ns);
+	printf("Clock offset change upper: %" PRId64 " ns\n",
+	       drift.offset_change_high_ns);
+	printf("Clock calibration elapsed: %" PRIu64 " ns\n",
+	       drift.elapsed_ns);
+	printf("Clock drift rate bound: %" PRIu64 " ppb\n",
+	       drift.rate_bound_ppb);
+	printf("Clock drift limit: %" PRIu64 " ppb\n",
+	       (uint64_t)CLOCK_DRIFT_LIMIT_PPB);
+	printf("Clock drift bounded: %d\n",
+	       stat_err == 0 && drift.bounded ? 1 : 0);
+	printf("Clock slope diagnostic only: 1\n");
+	start_quality = anchor_quality(&start_rm);
+	measurement_end_quality = anchor_quality(&measurement_end_rm);
+	validation_end_quality = anchor_quality(&validation_end_rm);
+	validation_err = stat_err || span_err ? -ERANGE :
+		held_out_affine_clock_validation(
+			&start_calibration, &measurement_end_calibration,
+			&validation_end_calibration, &start_quality,
+			&measurement_end_quality, &validation_end_quality,
+			&held_out);
+	printf("Held-out predicted lower: %" PRId64 " ns\n",
+	       held_out.predicted_low_ns);
+	printf("Held-out predicted upper: %" PRId64 " ns\n",
+	       held_out.predicted_high_ns);
+	printf("Held-out overlap lower: %" PRId64 " ns\n",
+	       held_out.overlap_low_ns);
+	printf("Held-out overlap upper: %" PRId64 " ns\n",
+	       held_out.overlap_high_ns);
+	printf("Clock validation span: %" PRIu64 " ns\n",
+	       held_out.validation_span_ns);
+	printf("Held-out clock validation passed: %d\n",
+	       validation_err == 0 && held_out.passed ? 1 : 0);
+	if (validation_err) {
+		fprintf(stderr, "Held-out clock validation failed\n");
+		if (!err)
+			err = validation_err;
+	}
+	stat_err = print_histogram(skel, &start_calibration,
+				   &measurement_end_calibration);
 	if (!err && stat_err)
 		err = stat_err;
 
