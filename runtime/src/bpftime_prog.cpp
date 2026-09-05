@@ -202,16 +202,15 @@ int bpftime_prog::bpftime_prog_load(bool jit)
 		// }
 	} else {
 		if (jit) {
-			// run with jit mode
-			jitted = true;
 			ebpf_jit_fn jit_fn = ebpf_compile(vm, &errmsg);
 			if (jit_fn == NULL) {
-				SPDLOG_ERROR("Failed to compile: {}", errmsg);
-				return -1;
+				SPDLOG_WARN("JIT compilation failed ({}), falling back to interpreter", errmsg);
+				jitted = false;
+			} else {
+				jitted = true;
+				fn = jit_fn;
 			}
-			fn = jit_fn;
 		} else {
-			// ignore for vm
 			jitted = false;
 		}
 	}

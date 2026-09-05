@@ -1,8 +1,14 @@
 #include "attach_private_data.hpp"
 #include "bpf_attach_ctx.hpp"
 #include "bpftime_shm_internal.hpp"
+#if BPFTIME_HAVE_FRIDA_ATTACH
 #include "frida_attach_private_data.hpp"
 #include "frida_uprobe_attach_impl.hpp"
+#endif
+#if BPFTIME_HAVE_TRAP_UPROBE_ATTACH
+#include "trap_attach_private_data.hpp"
+#include "trap_uprobe_attach_impl.hpp"
+#endif
 
 #include "spdlog/common.h"
 #include "bpftime_config.hpp"
@@ -24,7 +30,14 @@
 #include <string_view>
 #include <thread>
 #include <unistd.h>
+#if BPFTIME_HAVE_FRIDA_ATTACH
 #include <frida-gum.h>
+#else
+typedef char gchar;
+typedef int gboolean;
+#define TRUE 1
+#define FALSE 0
+#endif
 #include <cstdint>
 #include <dlfcn.h>
 #include <link.h>
@@ -975,16 +988,17 @@ extern "C" void bpftime_agent_main(const gchar *data, gboolean *stay_resident)
 				});
 #endif
 			// Register uprobe attach impl
+#if BPFTIME_HAVE_TRAP_UPROBE_ATTACH
+			SPDLOG_INFO("Using the trap (breakpoint) uprobe backend");
 			ctx_holder.ctx.register_attach_impl(
-				{ ATTACH_UPROBE, ATTACH_URETPROBE,
-				  ATTACH_UPROBE_OVERRIDE, ATTACH_UREPLACE },
-				std::make_unique<attach::frida_attach_impl>(
-					runtime_config.enable_frida_fuzzy_backtracer),
+				{ trap::ATTACH_UPROBE,
+				  trap::ATTACH_URETPROBE,
+				  trap::ATTACH_UPROBE_OVERRIDE,
+				  trap::ATTACH_UREPLACE },
+				std::make_unique<trap::trap_attach_impl>(),
 				[](const std::string_view &sv, int &err) {
-					std::unique_ptr<attach_private_data>
-						priv_data =
-							std::make_unique<
-								frida_attach_private_data>();
+					auto priv_data = std::make_unique<
+						trap::trap_attach_private_data>();
 					if (int e =
 						    priv_data->initialize_from_string(
 							    sv);
@@ -995,6 +1009,29 @@ extern "C" void bpftime_agent_main(const gchar *data, gboolean *stay_resident)
 					}
 					return priv_data;
 				});
+#elif BPFTIME_HAVE_FRIDA_ATTACH
+			ctx_holder.ctx.register_attach_impl(
+				{ ATTACH_UPROBE, ATTACH_URETPROBE,
+				  ATTACH_UPROBE_OVERRIDE, ATTACH_UREPLACE },
+				std::make_unique<attach::frida_attach_impl>(
+					runtime_config.enable_frida_fuzzy_backtracer),
+				[](const std::string_view &sv, int &err)
+					-> std::unique_ptr<attach_private_data> {
+					auto priv_data = std::make_unique<
+						frida_attach_private_data>();
+					if (int e =
+						    priv_data->initialize_from_string(
+							    sv);
+					    e < 0) {
+						err = e;
+						return std::unique_ptr<
+							attach_private_data>();
+					}
+					return priv_data;
+				});
+#else
+			SPDLOG_WARN("No uprobe attach backend available");
+#endif
 
 #ifdef BPFTIME_ENABLE_CUDA_ATTACH
 			// Register cuda attach impl

@@ -1,0 +1,82 @@
+name: RISC-V 64 Cross Build and Test
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [master]
+    paths:
+      - ".github/workflows/test-riscv64.yml"
+      - "attach/base_attach_impl/**"
+      - "attach/trap_uprobe_attach_impl/**"
+      - "attach/CMakeLists.txt"
+      - "runtime/agent/**"
+      - "runtime/include/bpftime_config.hpp"
+      - "runtime/src/bpftime_config.cpp"
+      - "cmake/StandardSettings.cmake"
+      - "cmake/riscv64-toolchain.cmake"
+      - "CMakeLists.txt"
+  pull_request:
+    branches: [master]
+    paths:
+      - ".github/workflows/test-riscv64.yml"
+      - "attach/base_attach_impl/**"
+      - "attach/trap_uprobe_attach_impl/**"
+      - "attach/CMakeLists.txt"
+      - "runtime/agent/**"
+      - "runtime/include/bpftime_config.hpp"
+      - "runtime/src/bpftime_config.cpp"
+      - "cmake/StandardSettings.cmake"
+      - "cmake/riscv64-toolchain.cmake"
+      - "CMakeLists.txt"
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}-${{ github.event_name }}
+  cancel-in-progress: true
+
+jobs:
+  cross-build-and-test:
+    runs-on: ubuntu-24.04
+    strategy:
+      matrix:
+        build_type: [Debug, Release]
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install cross toolchain and qemu-user
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            gcc-riscv64-linux-gnu g++-riscv64-linux-gnu \
+            qemu-user qemu-user-binfmt \
+            libboost-dev cmake make pkg-config
+
+      - name: Configure for riscv64 (${{ matrix.build_type }})
+        run: |
+          cmake -B build \
+            -DCMAKE_TOOLCHAIN_FILE=cmake/riscv64-toolchain.cmake \
+            -DCMAKE_BUILD_TYPE=${{ matrix.build_type }} \
+            -DBUILD_BPFTIME_DAEMON=OFF \
+            -DBPFTIME_ENABLE_UNIT_TESTING=OFF \
+            -DENABLE_EBPF_VERIFIER=OFF \
+            -DBPFTIME_LLVM_JIT=OFF \
+            -DBPFTIME_BUILD_WITH_LIBBPF=OFF \
+            -DBoost_INCLUDE_DIR=/usr/include
+
+      - name: Verify cmake options
+        run: |
+          grep BPFTIME_ENABLE_FRIDA build/CMakeCache.txt
+          grep BPFTIME_ENABLE_TRAP_UPROBE build/CMakeCache.txt
+          # frida must be OFF, trap must be ON
+          grep -q 'BPFTIME_ENABLE_FRIDA:BOOL=OFF' build/CMakeCache.txt
+          grep -q 'BPFTIME_ENABLE_TRAP_UPROBE:BOOL=ON' build/CMakeCache.txt
+
+      - name: Build trap backend and tests
+        run: cmake --build build --target bpftime_trap_uprobe_attach_tests -j$(nproc)
+
+      - name: Run trap backend tests under qemu-user
+        run: |
+          qemu-riscv64 -L /usr/riscv64-linux-gnu \
+            build/attach/trap_uprobe_attach_impl/bpftime_trap_uprobe_attach_tests

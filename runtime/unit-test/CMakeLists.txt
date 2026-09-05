@@ -40,6 +40,7 @@ set(TEST_SOURCES
 
     attach_with_ebpf/test_attach_filter_with_ebpf.cpp
     attach_with_ebpf/test_attach_uprobe_with_ebpf.cpp
+    attach_with_ebpf/test_attach_uprobe_with_ebpf_trap.cpp
     attach_with_ebpf/test_helpers.cpp
     attach_with_ebpf/test_shm_progs_attach.cpp
     attach_with_ebpf/test_ufunc_register.cpp
@@ -88,6 +89,11 @@ endif()
 
 set_property(TARGET bpftime_runtime_tests PROPERTY CXX_STANDARD 20)
 add_dependencies(bpftime_runtime_tests runtime bpftime-object bpftime_frida_uprobe_attach_impl)
+if(TARGET bpftime_trap_uprobe_attach_impl)
+    target_link_libraries(bpftime_runtime_tests PRIVATE bpftime_trap_uprobe_attach_impl)
+    target_include_directories(bpftime_runtime_tests PRIVATE ${TRAP_UPROBE_ATTACH_IMPL_INCLUDE})
+    target_compile_definitions(bpftime_runtime_tests PRIVATE BPFTIME_HAVE_TRAP_UPROBE_ATTACH=1)
+endif()
 
 if(${BPFTIME_ENABLE_CUDA_ATTACH})
     include(../../cmake/cuda.cmake)
