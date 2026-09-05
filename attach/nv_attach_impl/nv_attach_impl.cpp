@@ -1035,12 +1035,10 @@ nv_attach_impl::hack_fatbin(std::map<std::string, std::string> all_ptx)
 						resp.modified;
 				}
 			}
-			if (should_add_trampoline) {
-				current_ptx =
-					ptxpass::filter_out_version_headers_ptx(
-						wrap_ptx_with_trampoline(
-							current_ptx));
-			}
+			if (!should_add_trampoline)
+				return;
+			current_ptx = ptxpass::filter_out_version_headers_ptx(
+				wrap_ptx_with_trampoline(current_ptx));
 			std::lock_guard<std::mutex> _guard(map_mutex);
 			ptx_out["patched." + file_name] = std::make_tuple(
 				current_ptx, should_add_trampoline);

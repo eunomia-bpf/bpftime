@@ -39,12 +39,12 @@ patch_retprobe(const std::string &ptx, const std::string &kernel,
 {
 	std::string fname = std::string("__retprobe_func__") + kernel;
 
-	auto func_ptx = ptxpass::compile_ebpf_to_ptx_from_words(
-		ebpf_words, "sm_61", fname, false, false);
 	auto body = ptxpass::find_kernel_body(ptx, kernel);
 	if (body.first == std::string::npos) {
 		return { ptx, false };
 	}
+	auto func_ptx = ptxpass::compile_ebpf_to_ptx_from_words(
+		ebpf_words, "sm_61", fname, false, false);
 	std::string out = ptx;
 	std::string section = out.substr(body.first, body.second - body.first);
 	// PTX kernels can terminate with either 'ret;' or 'exit;'. Some
