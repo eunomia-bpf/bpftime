@@ -1,5 +1,7 @@
 #ifndef _BPFTIME_FRIDA_ATTACH_UTILS_HPP
 #define _BPFTIME_FRIDA_ATTACH_UTILS_HPP
+#include <optional>
+#include <string>
 #include <string_view>
 #include <cstdint>
 namespace bpftime
@@ -11,6 +13,10 @@ namespace attach
 void *
 resolve_function_addr_by_module_offset(const std::string_view &module_name,
 				       uintptr_t func_offset);
+// Resolve /proc/<pid>/map_files/<start>-<end> to the underlying mapped path.
+// Other module names are returned unchanged.
+std::optional<std::string>
+resolve_mapped_module_path(const std::string_view &module_name);
 // Lookup a function address by its symbol name
 void *find_function_addr_by_name(const char *name);
 // Get the base address of a certain module
