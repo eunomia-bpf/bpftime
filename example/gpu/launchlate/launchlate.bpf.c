@@ -6,59 +6,15 @@
 #define BPF_MAP_TYPE_GPU_ARRAY_MAP 1503
 #define BPF_MAP_TYPE_GPU_ARRAY_HOST_MAP 1513
 
-static const void (*ebpf_puts)(const char *) = (void *)501;
 static const u64 (*bpf_get_globaltimer)(void) = (void *)502;
 static const u64 (*bpf_get_block_idx)(u64 *x, u64 *y, u64 *z) = (void *)503;
-static const u64 (*bpf_get_block_dim)(u64 *x, u64 *y, u64 *z) = (void *)504;
 static const u64 (*bpf_get_thread_idx)(u64 *x, u64 *y, u64 *z) = (void *)505;
-/* bpftime-private host helper; standard Linux helper 5 remains unchanged. */
-static const u64 (*bpftime_ktime_get_raw_ns)(void) = (void *)256;
 
 #define HIST_BINS 10
 #define LAUNCH_QUEUE_SIZE 4096
 
-enum host_counter {
-	HOST_LAUNCHES = 0,
-	HOST_ENQUEUED = 1,
-	QUEUE_OVERFLOWS = 2,
-	QUEUE_UPDATE_ERRORS = 3,
-	HOST_LAUNCH_CALLS = 4,
-	HOST_TARGET_ERRORS = 5,
-	HOST_COUNTERS = 6,
-};
-
-enum device_counter {
-	DEVICE_ENTRIES = 0,
-	MATCHED_SAMPLES = 1,
-	QUEUE_UNDERFLOWS = 2,
-	CLASSIFIED_SAMPLES = 3,
-	UNCERTAIN_SAMPLES = 4,
-	CLOCK_ERRORS = 5,
-	DEVICE_COUNTERS = 6,
-};
-
-struct launch_sample {
-	u64 host_raw_ns;
-	u64 sequence;
-	u64 gpu_entry_ns;
-};
-
-struct clock_calibration {
-	s64 offset_low_ns;
-	s64 offset_high_ns;
-	u64 uncertainty_ns;
-	u64 host_anchor_ns;
-	u64 valid;
-};
-
-struct host_target {
-	u64 launch_vaddr;
-	u64 kernel_vaddr;
-	u64 valid;
-};
-
-// Array map to store time distribution histogram
-// Each element represents count for a time range
+// Histogram of launch-to-entry latencies. Written on the device, read by the
+// host loader.
 struct {
 	__uint(type, BPF_MAP_TYPE_GPU_ARRAY_MAP);
 	__uint(max_entries, HIST_BINS);
@@ -66,116 +22,63 @@ struct {
 	__type(value, u64);
 } time_histogram SEC(".maps");
 
+// FIFO of host launch timestamps. The host uprobe enqueues a calibrated
+// timestamp; the device probe consumes it in launch order. Shared host<->GPU
+// buffer.
 struct {
 	__uint(type, BPF_MAP_TYPE_GPU_ARRAY_HOST_MAP);
 	__uint(max_entries, LAUNCH_QUEUE_SIZE);
 	__type(key, u32);
-	__type(value, struct launch_sample);
+	__type(value, u64);
 } launch_times SEC(".maps");
 
-struct {
-	__uint(type, BPF_MAP_TYPE_ARRAY);
-	__uint(max_entries, HOST_COUNTERS);
-	__type(key, u32);
-	__type(value, u64);
-} host_state SEC(".maps");
-
-struct {
-	__uint(type, BPF_MAP_TYPE_GPU_ARRAY_MAP);
-	__uint(max_entries, DEVICE_COUNTERS);
-	__type(key, u32);
-	__type(value, u64);
-} device_state SEC(".maps");
-
+// queue_state[0] = host write sequence, [1] = device read sequence,
+// [2] = underflows, [3] = overflows. Shared host<->GPU counter state.
 struct {
 	__uint(type, BPF_MAP_TYPE_GPU_ARRAY_HOST_MAP);
-	__uint(max_entries, 1);
+	__uint(max_entries, 4);
 	__type(key, u32);
-	__type(value, struct clock_calibration);
-} clock_calibration SEC(".maps");
+	__type(value, u64);
+} queue_state SEC(".maps");
 
+// clock_offset[0] = CLOCK_REALTIME - CLOCK_MONOTONIC, written by the loader and
+// read by the host uprobe to place host timestamps in the wall-clock domain.
 struct {
 	__uint(type, BPF_MAP_TYPE_ARRAY);
-	__uint(max_entries, 1);
+	__uint(max_entries, 32);
 	__type(key, u32);
-	__type(value, struct host_target);
-} host_target SEC(".maps");
+	__type(value, s64);
+} clock_offset SEC(".maps");
 
-static __always_inline void increment_host_counter(u32 key)
-{
-	u64 *value = bpf_map_lookup_elem(&host_state, &key);
-	if (value)
-		__sync_fetch_and_add(value, 1);
-}
-
-static __always_inline void increment_device_counter(u32 key)
-{
-	u64 *value = bpf_map_lookup_elem(&device_state, &key);
-	if (value)
-		__sync_fetch_and_add(value, 1);
-}
-
-/*
- * The userspace loader attaches this uprobe to cudaLaunchKernel's PLT entry in
- * the target ELF.  Both addresses below are virtual addresses from that same
- * ELF, so the live PLT address supplies the load bias.  Only an exact arg0
- * match is allowed to enter the FIFO.
- */
+// The userspace loader attaches this uprobe to the exact host launch stub for the
+// selected CUDA kernel, not to the generic cuLaunchKernel API.
 SEC("uprobe")
-int BPF_KPROBE(uprobe_cuda_launch, const void *func)
+int BPF_KPROBE(uprobe_cuda_launch)
 {
-	u32 target_key = 0;
-	struct host_target *target;
-	u64 launch_ip, delta, expected;
+	u64 ts_mono = bpf_ktime_get_ns();
+	u32 key = 0;
+	s64 *offset_ptr;
+	u64 ts_calibrated = ts_mono;
 
-	increment_host_counter(HOST_LAUNCH_CALLS);
-	target = bpf_map_lookup_elem(&host_target, &target_key);
-	launch_ip = bpf_get_func_ip(ctx);
-	if (!target || !target->valid || !launch_ip) {
-		increment_host_counter(HOST_TARGET_ERRORS);
+	offset_ptr = bpf_map_lookup_elem(&clock_offset, &key);
+	if (offset_ptr)
+		ts_calibrated = ts_mono + (u64)*offset_ptr;
+
+	u64 *write_seq = bpf_map_lookup_elem(&queue_state, &key);
+	if (!write_seq)
+		return 0;
+	u64 seq = __sync_fetch_and_add(write_seq, 1);
+	u32 read_key = 1;
+	u64 *read_seq = bpf_map_lookup_elem(&queue_state, &read_key);
+	if (read_seq && seq >= *read_seq + LAUNCH_QUEUE_SIZE) {
+		u32 overflow_key = 3;
+		u64 *overflow = bpf_map_lookup_elem(&queue_state, &overflow_key);
+		if (overflow)
+			__sync_fetch_and_add(overflow, 1);
 		return 0;
 	}
-	if (target->kernel_vaddr >= target->launch_vaddr) {
-		delta = target->kernel_vaddr - target->launch_vaddr;
-		if (delta > ~launch_ip) {
-			increment_host_counter(HOST_TARGET_ERRORS);
-			return 0;
-		}
-		expected = launch_ip + delta;
-	} else {
-		delta = target->launch_vaddr - target->kernel_vaddr;
-		if (launch_ip < delta) {
-			increment_host_counter(HOST_TARGET_ERRORS);
-			return 0;
-		}
-		expected = launch_ip - delta;
-	}
-	if ((u64)func != expected)
-		return 0;
-
-	u32 host_key = HOST_LAUNCHES;
-	u64 *host_launches = bpf_map_lookup_elem(&host_state, &host_key);
-	if (!host_launches)
-		return 0;
-
-	u64 seq = __sync_fetch_and_add(host_launches, 1);
-	/* This trace is deliberately bounded rather than silently overwriting. */
-	if (seq >= LAUNCH_QUEUE_SIZE) {
-		increment_host_counter(QUEUE_OVERFLOWS);
-		return 0;
-	}
-
 	u32 slot = seq & (LAUNCH_QUEUE_SIZE - 1);
-	struct launch_sample sample = {
-		.host_raw_ns = bpftime_ktime_get_raw_ns(),
-		.sequence = seq + 1,
-		.gpu_entry_ns = 0,
-	};
-	if (bpf_map_update_elem(&launch_times, &slot, &sample, BPF_ANY)) {
-		increment_host_counter(QUEUE_UPDATE_ERRORS);
-		return 0;
-	}
-	increment_host_counter(HOST_ENQUEUED);
+	bpf_map_update_elem(&launch_times, &slot, &ts_calibrated, BPF_ANY);
 
 	return 0;
 }
@@ -183,7 +86,8 @@ int BPF_KPROBE(uprobe_cuda_launch, const void *func)
 // Helper function to determine histogram bin based on time value
 static __always_inline u32 get_hist_bin(u64 delta_ns)
 {
-	// Bins: 0-100ns, 100-1000ns, 1-10us, 10-100us, 100us-1ms, 1-10ms, 10-100ms, 100ms-1s, >1s
+	// Bins: 0-100ns, 100-1000ns, 1-10us, 10-100us, 100us-1ms, 1-10ms,
+	// 10-100ms, 100ms-1s, >1s
 	if (delta_ns < 100)           return 0;  // 0-100ns
 	if (delta_ns < 1000)          return 1;  // 100ns-1us
 	if (delta_ns < 10000)         return 2;  // 1-10us
@@ -196,14 +100,13 @@ static __always_inline u32 get_hist_bin(u64 delta_ns)
 	return 9;  // >10s
 }
 
-// GPU-side probe: one sample per selected kernel launch. The build-time target
-// must name the same wrapper supplied to the userspace loader. FIFO pairing is
-// fail-closed and requires host-launch order to equal device-entry order.
-#ifndef LAUNCHLATE_TARGET_SYMBOL
+// GPU-side probe: one sample per selected kernel launch. The exact host-stub
+// timestamps are consumed FIFO, which prevents unrelated or later launches from
+// overwriting the timestamp for this kernel. Only thread (0,0,0) of block
+// (0,0,0) samples, so the shared read cursor and histogram use plain (non-atomic)
+// updates; the GPU verifier on this driver rejects XADD with a non-zero
+// immediate.
 SEC("kprobe/_Z9vectorAddPKfS0_Pf")
-#else
-SEC("kprobe/" LAUNCHLATE_TARGET_SYMBOL)
-#endif
 int cuda__probe()
 {
 	u64 block_x, block_y, block_z;
@@ -213,74 +116,26 @@ int cuda__probe()
 	if (block_x || block_y || block_z || thread_x || thread_y || thread_z)
 		return 0;
 
-	u32 device_key = DEVICE_ENTRIES;
-	u64 *device_entries = bpf_map_lookup_elem(&device_state, &device_key);
-	if (!device_entries)
+	u32 write_key = 0;
+	u32 read_key = 1;
+	u64 *write_seq = bpf_map_lookup_elem(&queue_state, &write_key);
+	u64 *read_seq = bpf_map_lookup_elem(&queue_state, &read_key);
+	if (!write_seq || !read_seq || *read_seq >= *write_seq)
 		return 0;
-	u64 seq = __sync_fetch_and_add(device_entries, 1);
-	if (seq >= LAUNCH_QUEUE_SIZE) {
-		increment_device_counter(QUEUE_UNDERFLOWS);
-		return 0;
-	}
+
+	u64 seq = *read_seq;
+	*read_seq = seq + 1;
+
 	u32 slot = seq & (LAUNCH_QUEUE_SIZE - 1);
-	struct launch_sample *sample = bpf_map_lookup_elem(&launch_times, &slot);
-	if (!sample || sample->sequence != seq + 1 || !sample->host_raw_ns) {
-		increment_device_counter(QUEUE_UNDERFLOWS);
+	u64 *launch_ts = bpf_map_lookup_elem(&launch_times, &slot);
+	if (!launch_ts || *launch_ts == 0)
 		return 0;
-	}
-	increment_device_counter(MATCHED_SAMPLES);
 	u64 gpu_ts = bpf_get_globaltimer();
-	if (!gpu_ts || gpu_ts > 0x7fffffffffffffffULL ||
-	    sample->host_raw_ns > 0x7fffffffffffffffULL) {
-		increment_device_counter(CLOCK_ERRORS);
-		return 0;
-	}
-	/* Retain the exact pair for affine, end-anchored final classification. */
-	sample->gpu_entry_ns = gpu_ts;
-
-	u32 calibration_key = 0;
-	struct clock_calibration *calibration =
-		bpf_map_lookup_elem(&clock_calibration, &calibration_key);
-	if (!calibration || !calibration->valid ||
-	    calibration->offset_low_ns > calibration->offset_high_ns) {
-		increment_device_counter(CLOCK_ERRORS);
-		return 0;
-	}
-
-	/*
-	 * This online path preserves the device-side work being measured.  The
-	 * calibration kernel establishes an interval for
-	 *   GPU PTIMER/globaltimer - CLOCK_MONOTONIC_RAW.
-	 * A finite pair that cannot be placed using the initial interval is
-	 * uncertain, not a broken clock.  Userspace performs the authoritative
-	 * classification after the end anchor is available.
-	 */
-	s64 observed_ns = (s64)gpu_ts - (s64)sample->host_raw_ns;
-	s64 latency_low_ns = observed_ns - calibration->offset_high_ns;
-	s64 latency_high_ns = observed_ns - calibration->offset_low_ns;
-	if (latency_high_ns < 0) {
-		increment_device_counter(UNCERTAIN_SAMPLES);
-		return 0;
-	}
-	if (latency_low_ns < 0) {
-		increment_device_counter(UNCERTAIN_SAMPLES);
-		return 0;
-	}
-
-	u32 low_bin = get_hist_bin((u64)latency_low_ns);
-	u32 high_bin = get_hist_bin((u64)latency_high_ns);
-	if (low_bin != high_bin) {
-		increment_device_counter(UNCERTAIN_SAMPLES);
-		return 0;
-	}
-	u32 bin = low_bin;
+	u64 delta_ns = gpu_ts > *launch_ts ? gpu_ts - *launch_ts : 0;
+	u32 bin = get_hist_bin(delta_ns);
 	u64 *count = bpf_map_lookup_elem(&time_histogram, &bin);
-	if (count) {
-		__sync_fetch_and_add(count, 1);
-		increment_device_counter(CLASSIFIED_SAMPLES);
-	} else {
-		increment_device_counter(CLOCK_ERRORS);
-	}
+	if (count)
+		*count = *count + 1;
 
 	return 0;
 }

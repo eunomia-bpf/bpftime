@@ -7,12 +7,12 @@ LIBBPF_OBJ := $(abspath $(OUTPUT)/libbpf.a)
 BPFTOOL_OUTPUT ?= $(abspath $(OUTPUT)/bpftool)
 BPFTOOL ?= $(BPFTOOL_OUTPUT)/bootstrap/bpftool
 ARCH ?= $(shell uname -m | sed 's/x86_64/x86/' \
-			 | sed 's/arm.*/arm/' \
-			 | sed 's/aarch64/arm64/' \
-			 | sed 's/ppc64le/powerpc/' \
-			 | sed 's/mips.*/mips/' \
-			 | sed 's/riscv64/riscv/' \
-			 | sed 's/loongarch64/loongarch/')
+		 | sed 's/arm.*/arm/' \
+		 | sed 's/aarch64/arm64/' \
+		 | sed 's/ppc64le/powerpc/' \
+		 | sed 's/mips.*/mips/' \
+		 | sed 's/riscv64/riscv/' \
+		 | sed 's/loongarch64/loongarch/')
 VMLINUX := ../../../third_party/vmlinux/$(ARCH)/vmlinux.h
 # Use our own libbpf API headers and Linux UAPI headers distributed with
 # libbpf to avoid dependency on system-wide headers, which could be missing or
@@ -22,7 +22,6 @@ CFLAGS := -g -Wall
 ALL_LDFLAGS := $(LDFLAGS) $(EXTRA_LDFLAGS)
 
 APPS = launchlate # minimal minimal_legacy uprobe kprobe fentry usdt sockfilter tc ksyscall
-RM_PTIMER_OBJ := $(OUTPUT)/rm_ptimer_575.o
 
 CARGO ?= $(shell which cargo)
 ifeq ($(strip $(CARGO)),)
@@ -107,7 +106,7 @@ $(LIBBLAZESYM_OBJ): $(LIBBLAZESYM_SRC)/target/release/libblazesym.a | $(OUTPUT)
 	$(Q)cp $(LIBBLAZESYM_SRC)/target/release/libblazesym.a $@
 
 $(LIBBLAZESYM_HEADER): $(LIBBLAZESYM_SRC)/target/release/libblazesym.a | $(OUTPUT)
-	$(call msg,LIB,$@)
+	$(call msg,LIB, $@)
 	$(Q)cp $(LIBBLAZESYM_SRC)/target/release/blazesym.h $@
 
 # Build BPF code
@@ -130,16 +129,12 @@ $(OUTPUT)/%.o: %.c $(wildcard %.h) | $(OUTPUT)
 	$(call msg,CC,$@)
 	$(Q)$(CC) $(CFLAGS) $(INCLUDES) -c $(filter %.c,$^) -o $@
 
-$(RM_PTIMER_OBJ): rm_ptimer_575.c rm_ptimer_575.h | $(OUTPUT)
-	$(call msg,CC,$@)
-	$(Q)$(CC) $(CFLAGS) -c $< -o $@
-
 $(patsubst %,$(OUTPUT)/%.o,$(BZS_APPS)): $(LIBBLAZESYM_HEADER)
 
 $(BZS_APPS): $(LIBBLAZESYM_OBJ)
 
 # Build application binary
-$(APPS): %: $(OUTPUT)/%.o $(RM_PTIMER_OBJ) $(LIBBPF_OBJ) | $(OUTPUT)
+$(APPS): %: $(OUTPUT)/%.o $(LIBBPF_OBJ) | $(OUTPUT)
 	$(call msg,BINARY,$@)
 	$(Q)$(CC) $(CFLAGS) $^ $(ALL_LDFLAGS) -lelf -lz -o $@
 
