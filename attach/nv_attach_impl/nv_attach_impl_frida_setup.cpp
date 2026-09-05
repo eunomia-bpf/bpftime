@@ -77,6 +77,16 @@ using cu_launch_kernel_fn_t = CUresult (*)(CUfunction, unsigned int,
 					   unsigned int, unsigned int, CUstream,
 					   void **, void **);
 
+struct cuda_memcpy_to_symbol_invocation {
+	const void *symbol;
+	const void *src;
+	size_t count;
+	size_t offset;
+	cudaMemcpyKind kind;
+	cudaStream_t stream;
+	bool async;
+};
+
 static bool cuda_graph_stream_is_capturing(cudaStream_t stream)
 {
 	cudaStreamCaptureStatus status = cudaStreamCaptureStatusNone;
@@ -106,9 +116,21 @@ cuda_launch_kernel_common(nv_attach_impl *impl, void *original_fn_ptr,
 	if (!impl->is_enabled())
 		return original(func, grid_dim, block_dim, args, shared_mem,
 				stream);
-	if (cuda_graph_stream_is_capturing(stream))
+	auto state_guard = impl->lock_patched_state();
+	const auto call_original = [&]() {
+		state_guard.unlock();
 		return original(func, grid_dim, block_dim, args, shared_mem,
 				stream);
+	};
+	if (!impl->is_enabled())
+		return call_original();
+	if (cuda_graph_stream_is_capturing(stream))
+		return call_original();
+	auto launch_patched = reinterpret_cast<cu_launch_kernel_fn_t>(
+		nv_attach_get_hook_state().orig_cu_launch_kernel.load(
+			std::memory_order_acquire));
+	if (!launch_patched)
+		return call_original();
 
 	// Ensure a CUDA context is current for this thread before calling
 	// driver APIs
@@ -164,12 +186,13 @@ cuda_launch_kernel_common(nv_attach_impl *impl, void *original_fn_ptr,
 
 	if (auto itr1 = impl->symbol_address_to_fatbin.find((void *)func);
 	    itr1 != impl->symbol_address_to_fatbin.end()) {
-		const auto &fatbin = *itr1->second;
-		const auto &handle =
-			fatbin.function_addr_to_symbol.at((void *)func);
+		auto &fatbin = *itr1->second;
+		auto handle = fatbin.find_function_info(*impl, (void *)func);
+		if (!handle)
+			return call_original();
 		SPDLOG_DEBUG("Launching kernel..");
-		if (auto err = cuLaunchKernel(
-			    handle.func, grid_dim.x, grid_dim.y, grid_dim.z,
+		if (auto err = launch_patched(
+			    *handle, grid_dim.x, grid_dim.y, grid_dim.z,
 			    block_dim.x, block_dim.y, block_dim.z, shared_mem,
 			    stream, args, nullptr);
 		    err != CUDA_SUCCESS) {
@@ -182,11 +205,10 @@ cuda_launch_kernel_common(nv_attach_impl *impl, void *original_fn_ptr,
 				     error_string ? error_string :
 						    "No description");
 			SPDLOG_ERROR("Error code: {}", (int)err);
-			log_cufunc_attrs(handle.func);
+			log_cufunc_attrs(*handle);
 			// Preserve target semantics: fall back to the original
 			// runtime launch path if patched launch fails.
-			return original(func, grid_dim, block_dim, args,
-					shared_mem, stream);
+			return call_original();
 		}
 		impl->record_patched_launch(stream);
 		return cudaSuccess;
@@ -195,8 +217,7 @@ cuda_launch_kernel_common(nv_attach_impl *impl, void *original_fn_ptr,
 	// Late attach: if bootstrap hasn't completed yet, fall back to the
 	// original launch path (bootstrap is kicked off during attach/refresh).
 	if (!impl->is_late_bootstrap_done())
-		return original(func, grid_dim, block_dim, args, shared_mem,
-				stream);
+		return call_original();
 
 	// Fallback path for late attach: resolve host stub symbol name to
 	// locate the patched CUfunction mapping.
@@ -207,7 +228,7 @@ cuda_launch_kernel_common(nv_attach_impl *impl, void *original_fn_ptr,
 			SPDLOG_DEBUG(
 				"Late attach launch: resolved {} -> patched CUfunction",
 				name->c_str());
-			if (auto err = cuLaunchKernel(*patched, grid_dim.x,
+			if (auto err = launch_patched(*patched, grid_dim.x,
 						      grid_dim.y, grid_dim.z,
 						      block_dim.x, block_dim.y,
 						      block_dim.z, shared_mem,
@@ -227,8 +248,7 @@ cuda_launch_kernel_common(nv_attach_impl *impl, void *original_fn_ptr,
 				// Preserve target semantics: fall back to
 				// original runtime launch path if patched
 				// launch fails.
-				return original(func, grid_dim, block_dim, args,
-						shared_mem, stream);
+				return call_original();
 			}
 			impl->record_patched_launch(stream);
 			return cudaSuccess;
@@ -242,7 +262,7 @@ cuda_launch_kernel_common(nv_attach_impl *impl, void *original_fn_ptr,
 			(uintptr_t)func);
 	}
 
-	return original(func, grid_dim, block_dim, args, shared_mem, stream);
+	return call_original();
 }
 
 static void example_listener_on_enter(GumInvocationListener *listener,
@@ -282,7 +302,6 @@ static void example_listener_on_enter(GumInvocationListener *listener,
 		SPDLOG_INFO("Patching PTXs");
 		auto fatbin_record = std::make_unique<struct fatbin_record>();
 		fatbin_record->original_ptx = extracted_ptx;
-		fatbin_record->module_pool = context->impl->module_pool;
 		fatbin_record->ptx_pool = context->impl->ptx_pool;
 
 		context->impl->current_fatbin = fatbin_record.get();
@@ -292,31 +311,22 @@ static void example_listener_on_enter(GumInvocationListener *listener,
 	} else if (context->to_function ==
 		   AttachedToFunction::RegisterFunction) {
 		SPDLOG_DEBUG("Entering __cudaRegisterFunction..");
-		auto &impl = *context->impl;
 		auto current_fatbin = context->impl->current_fatbin;
-		current_fatbin->try_loading_ptxs(*context->impl);
 
 		auto func_addr =
 			gum_invocation_context_get_nth_argument(gum_ctx, 1);
 		auto symbol_name =
 			(const char *)gum_invocation_context_get_nth_argument(
 				gum_ctx, 3);
-		if (auto ok = current_fatbin->find_and_fill_function_info(
-			    func_addr, symbol_name);
-		    !ok) {
+		if (func_addr == nullptr || symbol_name == nullptr) {
 			SPDLOG_WARN(
-				"Unable to find_and_fill function info of symbol named {}, the PTX may not be compiled due to not modifying by nv_attach_impl",
+				"Unable to register function info for symbol {}",
 				symbol_name);
 		} else {
+			current_fatbin->function_addr_to_symbol[func_addr] =
+				symbol_name;
 			context->impl->symbol_address_to_fatbin[func_addr] =
 				current_fatbin;
-			if (auto itr = current_fatbin->function_addr_to_symbol
-					       .find(func_addr);
-			    itr !=
-			    current_fatbin->function_addr_to_symbol.end())
-				impl.record_patched_kernel_function(
-					std::string(symbol_name),
-					itr->second.func);
 			SPDLOG_DEBUG(
 				"Registered kernel function name {} addr {:x}",
 				symbol_name, (uintptr_t)func_addr);
@@ -326,9 +336,6 @@ static void example_listener_on_enter(GumInvocationListener *listener,
 		   AttachedToFunction::RegisterVariable) {
 		SPDLOG_DEBUG("Entering __cudaRegisterVar");
 		auto current_fatbin = context->impl->current_fatbin;
-		current_fatbin->try_loading_ptxs(*context->impl);
-		auto fatbin_handle =
-			gum_invocation_context_get_nth_argument(gum_ctx, 0);
 		auto var_addr =
 			gum_invocation_context_get_nth_argument(gum_ctx, 1);
 		auto symbol_name =
@@ -336,13 +343,13 @@ static void example_listener_on_enter(GumInvocationListener *listener,
 				gum_ctx, 3);
 		SPDLOG_DEBUG("Registering variable named {}", symbol_name);
 
-		if (bool ok = current_fatbin->find_and_fill_variable_info(
-			    var_addr, symbol_name);
-		    !ok) {
+		if (var_addr == nullptr || symbol_name == nullptr) {
 			SPDLOG_WARN(
-				"Unable to find_and_fill variable info of symbol names {}, the PTX may not be compiled due to not modifying by nv_attach_impl",
+				"Unable to register variable info for symbol {}",
 				symbol_name);
 		} else {
+			current_fatbin->variable_addr_to_symbol[var_addr] =
+				symbol_name;
 			context->impl->symbol_address_to_fatbin[var_addr] =
 				current_fatbin;
 			SPDLOG_DEBUG("Registered variable name {} addr {:x}",
@@ -383,8 +390,11 @@ static void example_listener_on_enter(GumInvocationListener *listener,
 				gum_invocation_context_get_nth_argument(gum_ctx,
 									5);
 		}
-		context->impl->mirror_cuda_memcpy_to_symbol(
-			symbol, src, count, offset, kind, stream, async);
+		auto *invocation = GUM_IC_GET_INVOCATION_DATA(
+			gum_ctx, cuda_memcpy_to_symbol_invocation);
+		*invocation = {
+			symbol, src, count, offset, kind, stream, async
+		};
 	}
 }
 
@@ -405,6 +415,23 @@ static void example_listener_on_leave(GumInvocationListener *listener,
 	} else if (context->to_function ==
 		   AttachedToFunction::RegisterFatbinEnd) {
 		SPDLOG_DEBUG("Leaving __cudaRegisterFatBinaryEnd..");
+	} else if (context->to_function ==
+			   AttachedToFunction::CudaMemcpyToSymbol ||
+		   context->to_function ==
+			   AttachedToFunction::CudaMemcpyToSymbolAsync) {
+		auto result =
+			static_cast<cudaError_t>(reinterpret_cast<uintptr_t>(
+				gum_invocation_context_get_return_value(
+					gum_ctx)));
+		if (result == cudaSuccess) {
+			auto *invocation = GUM_IC_GET_INVOCATION_DATA(
+				gum_ctx, cuda_memcpy_to_symbol_invocation);
+			context->impl->mirror_cuda_memcpy_to_symbol(
+				invocation->symbol, invocation->src,
+				invocation->count, invocation->offset,
+				invocation->kind, invocation->stream,
+				invocation->async);
+		}
 	}
 }
 
@@ -506,24 +533,33 @@ static CUresult cu_launch_kernel_common(
 		return original(func, grid_dim_x, grid_dim_y, grid_dim_z,
 				block_dim_x, block_dim_y, block_dim_z,
 				shared_mem_bytes, stream, kernel_params, extra);
+	auto state_guard = impl->lock_patched_state();
+	if (!impl->is_enabled())
+		return original(func, grid_dim_x, grid_dim_y, grid_dim_z,
+				block_dim_x, block_dim_y, block_dim_z,
+				shared_mem_bytes, stream, kernel_params, extra);
 	if (!impl->is_late_bootstrap_done())
 		return original(func, grid_dim_x, grid_dim_y, grid_dim_z,
 				block_dim_x, block_dim_y, block_dim_z,
 				shared_mem_bytes, stream, kernel_params, extra);
 
+	bool patched_launch = false;
 	auto kernel_name = cuda_graph_maybe_get_kernel_name_from_cufunction(
 		*impl, func);
 	if (kernel_name) {
 		if (auto patched = impl->find_patched_kernel_function(*kernel_name);
 		    patched) {
 			func = *patched;
-			impl->record_patched_launch(
-				reinterpret_cast<cudaStream_t>(stream));
+			patched_launch = true;
 		}
 	}
-	return original(func, grid_dim_x, grid_dim_y, grid_dim_z, block_dim_x,
-			block_dim_y, block_dim_z, shared_mem_bytes, stream,
-			kernel_params, extra);
+	auto result = original(func, grid_dim_x, grid_dim_y, grid_dim_z,
+			       block_dim_x, block_dim_y, block_dim_z,
+			       shared_mem_bytes, stream, kernel_params, extra);
+	if (result == CUDA_SUCCESS && patched_launch)
+		impl->record_patched_launch(
+			reinterpret_cast<cudaStream_t>(stream));
+	return result;
 }
 
 extern "C" CUresult cuda_driver_function__cuLaunchKernel(
@@ -780,116 +816,42 @@ static cudaError_t mirror_cuda_memcpy_from_symbol(
 	cuda_memcpy_from_symbol_fn_t original_sync,
 	cuda_memcpy_from_symbol_async_fn_t original_async)
 {
-	auto record_itr = impl->symbol_address_to_fatbin.find((void *)symbol);
-	if (record_itr == impl->symbol_address_to_fatbin.end()) {
-		impl->bootstrap_existing_fatbins_once();
+	const auto call_original = [&]() {
+		if (async) {
+			if (!original_async)
+				return cudaErrorUnknown;
+			return original_async(dst, symbol, count, offset, kind,
+					      stream);
+		}
+		if (!original_sync)
+			return cudaErrorUnknown;
+		return original_sync(dst, symbol, count, offset, kind);
+	};
+	if (!impl->is_enabled())
+		return call_original();
+	auto state_guard = impl->lock_patched_state();
+	if (!impl->is_enabled())
+		return call_original();
 
-		// Late attach fallback: resolve host symbol name and read from
-		// a patched module global if present.
+	std::optional<variable_info> resolved_var;
+	auto record_itr = impl->symbol_address_to_fatbin.find((void *)symbol);
+	if (record_itr != impl->symbol_address_to_fatbin.end()) {
+		resolved_var = record_itr->second->find_variable_info(
+			*impl, (void *)symbol);
+	} else {
+		impl->bootstrap_existing_fatbins_once();
 		if (auto name =
 			    impl->resolve_host_function_symbol((void *)symbol);
 		    name) {
-			for (const auto &rec_uptr : impl->fatbin_records) {
-				auto *rec = rec_uptr.get();
-				if (rec == nullptr)
-					continue;
-				for (const auto &ptx : rec->ptxs) {
-					CUdeviceptr dptr;
-					size_t sz;
-					auto err = cuModuleGetGlobal(
-						&dptr, &sz, ptx->module_ptr,
-						name->c_str());
-					if (err != CUDA_SUCCESS)
-						continue;
-					if (offset >= sz) {
-						SPDLOG_WARN(
-							"mirror_cuda_memcpy_from_symbol: offset {} exceeds size {} for symbol {}",
-							offset, sz,
-							name->c_str());
-						return cudaErrorUnknown;
-					}
-					size_t writable = sz - offset;
-					size_t bytes_to_copy =
-						std::min(count, writable);
-					if (bytes_to_copy == 0)
-						return cudaErrorUnknown;
-					CUdeviceptr src = dptr + offset;
-					CUstream cu_stream =
-						reinterpret_cast<CUstream>(
-							stream);
-					CUresult status = CUDA_SUCCESS;
-
-					auto copy_device_ptr =
-						[](const void *ptr)
-						-> CUdeviceptr {
-						return static_cast<CUdeviceptr>(
-							reinterpret_cast<
-								uintptr_t>(
-								ptr));
-					};
-					switch (kind) {
-					case cudaMemcpyDeviceToHost:
-					case cudaMemcpyDefault:
-						status =
-							async ? cuMemcpyDtoHAsync(
-									dst,
-									src,
-									bytes_to_copy,
-									cu_stream) :
-								cuMemcpyDtoH(
-									dst,
-									src,
-									bytes_to_copy);
-						break;
-					case cudaMemcpyDeviceToDevice:
-						status =
-							async ? cuMemcpyDtoDAsync(
-									copy_device_ptr(
-										dst),
-									src,
-									bytes_to_copy,
-									cu_stream) :
-								cuMemcpyDtoD(
-									copy_device_ptr(
-										dst),
-									src,
-									bytes_to_copy);
-						break;
-					default:
-						return cudaErrorUnknown;
-					}
-					if (status != CUDA_SUCCESS)
-						return cudaErrorUnknown;
-					return cudaSuccess;
-				}
-			}
+			resolved_var = impl->find_patched_global(*name);
 		}
-
+	}
+	if (!resolved_var) {
 		SPDLOG_DEBUG(
 			"In mirror_cuda_memcpy_from_symbol: calling original cudaMemcpyFromSymbol");
-		if (async) {
-			if (!original_async) {
-				return cudaErrorUnknown;
-			}
-			return original_async(dst, symbol, count, offset, kind,
-					      stream);
-		} else {
-			if (!original_sync) {
-				return cudaErrorUnknown;
-			}
-			return original_sync(dst, symbol, count, offset, kind);
-		}
-		return cudaErrorUnknown;
+		return call_original();
 	}
-	auto &record = *record_itr->second;
-	auto var_itr = record.variable_addr_to_symbol.find((void *)symbol);
-	if (var_itr == record.variable_addr_to_symbol.end()) {
-		SPDLOG_DEBUG(
-			"mirror_cuda_memcpy_from_symbol: no variable info for symbol pointer {:x}",
-			(uintptr_t)symbol);
-		return cudaErrorUnknown;
-	}
-	auto &var_info = var_itr->second;
+	auto &var_info = *resolved_var;
 	if (offset >= var_info.size) {
 		SPDLOG_WARN(
 			"mirror_cuda_memcpy_from_symbol: offset {} exceeds size {} for symbol {}",
