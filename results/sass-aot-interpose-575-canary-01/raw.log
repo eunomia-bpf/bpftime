@@ -1,0 +1,22 @@
+app: /home/yunwei37/workspace/gpu/bpftime-sass-20260904/build-spike/attach/nv_attach_impl/sass_aot/bpftime_sass_aot_interposer_app
+cubin: /home/yunwei37/workspace/gpu/bpftime-sass-20260904/build-spike/attach/nv_attach_impl/sass_aot/companion_app_kernel.cubin
+bpf object: /home/yunwei37/workspace/gpu/bpftime-sass-20260904/build-spike/attach/nv_attach_impl/sass_aot/sass_aot_spike.bpf.o
+interposer: /home/yunwei37/workspace/gpu/bpftime-sass-20260904/build-spike/attach/nv_attach_impl/sass_aot/libbpftime_sass_aot_interposer.so
+artifact dir: results/sass-aot-interpose-575-canary-01/artifacts
+runs: 1 iterations: 8 device: 0
+=== run 1/1 uninstrumented rc=0 ===
+iter 0 launch_ns 13507 sync_ns 3990 total_ns 17497
+iter 1 launch_ns 2477 sync_ns 4082 total_ns 6559
+iter 2 launch_ns 1398 sync_ns 3867 total_ns 5265
+iter 3 launch_ns 1564 sync_ns 4017 total_ns 5581
+iter 4 launch_ns 1367 sync_ns 4064 total_ns 5431
+iter 5 launch_ns 1343 sync_ns 4207 total_ns 5550
+iter 6 launch_ns 1512 sync_ns 3913 total_ns 5425
+iter 7 launch_ns 1273 sync_ns 4046 total_ns 5319
+result 7
+--- uninstrumented run 1 total_ns_sum=56627 rc=0 ---
+=== run 1/1 interposed rc=143 ===
+[sass_aot_interposer] launch-boundary interposition for target 'companion_app_kernel'
+[sass_aot_interposer] verified BPF-derived SASS callback ready: results/sass-aot-interpose-575-canary-01/artifacts/sass_aot.cubin
+--- interposed run 1 total_ns_sum=0 rc=143 ---
+repeated uninstrumented-vs-interposed timing completed with failures

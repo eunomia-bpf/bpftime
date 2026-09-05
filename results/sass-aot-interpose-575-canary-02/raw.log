@@ -1,0 +1,46 @@
+app: /home/yunwei37/workspace/gpu/bpftime-sass-20260904/build-spike/attach/nv_attach_impl/sass_aot/bpftime_sass_aot_interposer_app
+cubin: /home/yunwei37/workspace/gpu/bpftime-sass-20260904/build-spike/attach/nv_attach_impl/sass_aot/companion_app_kernel.cubin
+bpf object: /home/yunwei37/workspace/gpu/bpftime-sass-20260904/build-spike/attach/nv_attach_impl/sass_aot/sass_aot_spike.bpf.o
+interposer: /home/yunwei37/workspace/gpu/bpftime-sass-20260904/build-spike/attach/nv_attach_impl/sass_aot/libbpftime_sass_aot_interposer.so
+artifact dir: results/sass-aot-interpose-575-canary-02/artifacts
+runs: 1 iterations: 8 device: 0
+=== run 1/1 uninstrumented rc=0 ===
+iter 0 launch_ns 11980 sync_ns 3984 total_ns 15964
+iter 1 launch_ns 2348 sync_ns 4138 total_ns 6486
+iter 2 launch_ns 1527 sync_ns 3897 total_ns 5424
+iter 3 launch_ns 1567 sync_ns 3909 total_ns 5476
+iter 4 launch_ns 1313 sync_ns 3937 total_ns 5250
+iter 5 launch_ns 1205 sync_ns 4075 total_ns 5280
+iter 6 launch_ns 1464 sync_ns 3861 total_ns 5325
+iter 7 launch_ns 1184 sync_ns 4030 total_ns 5214
+result 7
+--- uninstrumented run 1 cold launch_ns=11980 sync_ns=3984 total_ns=15964 steady launch_ns_sum=10608 sync_ns_sum=27847 total_ns_sum=38455 (7 iterations) rc=0 ---
+=== run 1/1 interposed rc=0 ===
+[sass_aot_interposer] launch-boundary interposition for target 'companion_app_kernel'
+[sass_aot_interposer] verified BPF-derived SASS callback ready: results/sass-aot-interpose-575-canary-02/artifacts/sass_aot.cubin
+[sass_aot_interposer] BPF-derived SASS callback executed (context value 42)
+iter 0 launch_ns 25477371 sync_ns 2820 total_ns 25480191
+[sass_aot_interposer] launch-boundary interposition for target 'companion_app_kernel'
+[sass_aot_interposer] BPF-derived SASS callback executed (context value 42)
+iter 1 launch_ns 46443 sync_ns 4076 total_ns 50519
+[sass_aot_interposer] launch-boundary interposition for target 'companion_app_kernel'
+[sass_aot_interposer] BPF-derived SASS callback executed (context value 42)
+iter 2 launch_ns 40002 sync_ns 3756 total_ns 43758
+[sass_aot_interposer] launch-boundary interposition for target 'companion_app_kernel'
+[sass_aot_interposer] BPF-derived SASS callback executed (context value 42)
+iter 3 launch_ns 31320 sync_ns 3750 total_ns 35070
+[sass_aot_interposer] launch-boundary interposition for target 'companion_app_kernel'
+[sass_aot_interposer] BPF-derived SASS callback executed (context value 42)
+iter 4 launch_ns 29377 sync_ns 3742 total_ns 33119
+[sass_aot_interposer] launch-boundary interposition for target 'companion_app_kernel'
+[sass_aot_interposer] BPF-derived SASS callback executed (context value 42)
+iter 5 launch_ns 28373 sync_ns 3934 total_ns 32307
+[sass_aot_interposer] launch-boundary interposition for target 'companion_app_kernel'
+[sass_aot_interposer] BPF-derived SASS callback executed (context value 42)
+iter 6 launch_ns 28595 sync_ns 3775 total_ns 32370
+[sass_aot_interposer] launch-boundary interposition for target 'companion_app_kernel'
+[sass_aot_interposer] BPF-derived SASS callback executed (context value 42)
+iter 7 launch_ns 28508 sync_ns 3741 total_ns 32249
+result 7
+--- interposed run 1 cold launch_ns=25477371 sync_ns=2820 total_ns=25480191 steady launch_ns_sum=232618 sync_ns_sum=26774 total_ns_sum=259392 (7 iterations) rc=0 ---
+repeated uninstrumented-vs-interposed timing complete

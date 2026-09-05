@@ -6,7 +6,9 @@ SASS (cubin) and executes it on a GPU. On 2026-09-05 this path was verified
 end-to-end on a live device. A second milestone adds a documented host-side
 module interposition boundary that runs the BPF-derived SASS inside a host
 application's own CUDA context, next to the application's own PTX-free SASS
-module.
+module. A third milestone adds first-party LD_PRELOAD launch-boundary
+interposition and a repeated uninstrumented-vs-interposed performance
+experiment.
 
 ## Pipeline
 
@@ -105,23 +107,79 @@ The standalone acceptance executable
 `verified SASS result: 42`, so the companion milestone did not regress the
 standalone path.
 
+## LD_PRELOAD launch-boundary interposer + performance experiment
+
+The companion boundary above is called by the host application itself. This
+milestone adds first-party launch-boundary interposition: a CUDA Driver API
+interposer shared library that the application never links against.
+
+- `bpftime_sass_aot_interposer`
+  (`libbpftime_sass_aot_interposer.so`) interposes
+  `cuModuleGetFunction` and `cuLaunchKernel` through `LD_PRELOAD`. It
+  records `CUfunction` symbol names at `cuModuleGetFunction` and, when a
+  launch matches `BPFTIME_SASS_AOT_TARGET`, executes the verified BPF-derived
+  SASS callback (strict GPU verifier -> ptxpass eBPF-to-PTX -> ptxas, once
+  per process) from inside `cuLaunchKernel` through the existing
+  `execute_sass_aot_in_context` boundary, before launching the original
+  application kernel. The application's own SASS is never modified.
+  Reentrancy-safe: no state lock is held across a CUDA call or the one-time
+  compilation, and a thread-local guard keeps the callback's own internal
+  `cuModuleGetFunction`/`cuLaunchKernel` calls out of the interposition
+  path. Environment: `BPFTIME_SASS_AOT_TARGET`,
+  `BPFTIME_SASS_AOT_BPF_OBJECT`, `BPFTIME_SASS_AOT_SECTION` (default
+  `cuda__/sass_aot`), `BPFTIME_SASS_AOT_OUT_DIR`; with no target the
+  interposer is a transparent pass-through.
+- `bpftime_sass_aot_interposer_app` is the PTX-free fixture application: it
+  loads its own SASS-only cubin (`companion_app_kernel.cubin`), launches
+  `companion_app_kernel` in a loop, and prints one numeric timing line per
+  iteration (`iter <i> launch_ns <n> sync_ns <n> total_ns <n>`); it exits
+  0 only when the kernel result is 7.
+
+### Performance experiment (uninstrumented vs interposed)
+
+`bpftime_sass_aot_interpose_timing [runs] [iterations] [device-ordinal]
+[artifact-directory]` runs the fixture application `runs` times without the
+interposer and `runs` times with it, capturing every output line (per-
+iteration timings plus all `[sass_aot_interposer]` log lines) and every
+return code. No gates, retries, filtering, or result rejection: all runs
+are reported as captured. Per-run summaries report the **cold** cost
+(iteration 0, which includes context/module setup and, for interposed runs,
+the one-time BPF-to-SASS compilation at the first launch) and the
+**steady** cost (iterations 1..N-1, sums of `launch_ns`, `sync_ns`, and
+`total_ns`).
+
+Record a full experiment by redirecting the CLI's stdout, for example:
+
+```sh
+mkdir -p results/sass-aot-interpose-575-01/artifacts
+build-spike/attach/nv_attach_impl/sass_aot/bpftime_sass_aot_interpose_timing \
+  3 8 0 results/sass-aot-interpose-575-01/artifacts \
+  > results/sass-aot-interpose-575-01/raw.log 2>&1
+```
+
+Requires a free GPU (do not run while another experiment owns the device).
+
 ## Exact scope record
 
 - **What this is**: a *companion/interposed SASS module*. The BPF-derived
   cubin is a second `CUmodule` in the application's active `CUcontext`,
-  invoked through one documented host-side boundary function. The
-  application's own binary, module, and SASS are untouched.
+  invoked either through the documented host-side boundary function
+  (companion executable) or through first-party launch-boundary
+  interposition (the `LD_PRELOAD` interposer above, exercised with the
+  first-party fixture application). The application's own binary, module,
+  and SASS are untouched.
 - **What this is not**: not arbitrary in-place SASS rewriting of an existing
   application, not a fatbin binary patch, not NVBit-style instruction
-  patching, and not a real driver-API interposition (LD_PRELOAD/fatbin
-  registrar) wired into a third-party process. The boundary is called by the
-  host application at a documented lifecycle point; wiring it into a real
-  module-load hook is the next step.
+  patching, and not a fatbin-registrar or third-party-process interposition.
+  The `LD_PRELOAD` interposer is first-party: it is built, configured, and
+  exercised with the first-party fixture application in this directory.
 - **Helper/map limitations**: the BPF entry sees only its explicit verified
   context (an 8-byte `uint64_t` in the spike). It has no eBPF helper calls,
   no maps, and no access to the application's device memory or modules.
-- **Performance status**: not measured. This is a functional integration
-  demonstration, not performance evidence.
+- **Performance status**: the launch-boundary interposition cost is measured
+  by the performance experiment above (cold vs steady, uninstrumented vs
+  interposed). That is an overhead measurement of the interposition path,
+  not a benchmark of the BPF program's own throughput.
 
 ## Build and test
 
@@ -132,6 +190,9 @@ Build targets (with `-DBPFTIME_ENABLE_SASS_AOT_SPIKE=1`, which requires
 - `bpftime_sass_aot_tests`
 - `bpftime_sass_aot_live`
 - `bpftime_sass_aot_companion_live`
+- `bpftime_sass_aot_interposer`
+- `bpftime_sass_aot_interposer_app`
+- `bpftime_sass_aot_interpose_timing`
 
 Outcomes:
 
@@ -157,9 +218,13 @@ Outcomes:
 - The companion executable adds a **companion/interposed SASS module** in the
   application's own context, invoked through the documented boundary function.
   It does **not** perform arbitrary in-place SASS rewriting of an existing
-  application, does not patch a fatbin binary, and is not a real
-  driver-API/fatbin interposition wired into a third-party process.
+  application, does not patch a fatbin binary, and is not wired into a
+  third-party process.
+- The `LD_PRELOAD` interposer is a first-party driver-API interposition
+  exercised with the first-party fixture application; it is not a fatbin
+  registrar and is not wired into third-party processes.
 - The BPF entry has no eBPF helpers and no maps; it sees only its explicit
   verified context (8 bytes in the spike).
-- It is **not a paper-level benchmark**; it is a functional end-to-end
-  acceptance demonstration. Performance has not been measured.
+- The performance experiment measures the launch-boundary interposition
+  overhead (cold vs steady, uninstrumented vs interposed); it is not a
+  paper-level benchmark of end-to-end application throughput.

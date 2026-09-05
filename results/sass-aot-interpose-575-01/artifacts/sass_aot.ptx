@@ -1,0 +1,22 @@
+.version 8.7
+.target sm_120
+.address_size 64
+
+
+	// .globl	sass_aot_probe
+
+.visible .entry sass_aot_probe(
+	.param .b64 sass_aot_probe_param_0,
+	.param .b64 sass_aot_probe_param_1
+)
+{
+	.reg .b64 	%rd<4>;
+
+	ld.param.u64 	%rd1, [sass_aot_probe_param_0];
+	mov.u64 	%rd2, 0;
+	st.u32 	[%rd1+4], %rd2;
+	mov.u64 	%rd3, 42;
+	st.u32 	[%rd1], %rd3;
+	ret;
+
+}

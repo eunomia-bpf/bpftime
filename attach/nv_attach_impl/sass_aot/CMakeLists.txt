@@ -101,3 +101,38 @@ target_include_directories(bpftime_sass_aot_companion_live PRIVATE
 target_link_libraries(bpftime_sass_aot_companion_live PRIVATE bpftime_sass_aot)
 add_dependencies(bpftime_sass_aot_companion_live
     sass_aot_spike_bpf_object sass_aot_companion_app_cubin)
+
+# Launch-boundary interposition (LD_PRELOAD, first-party):
+#  - bpftime_sass_aot_interposer: CUDA Driver API interposer shared library.
+#    Records CUfunction names at cuModuleGetFunction and, for the configured
+#    target, executes the verified BPF-derived SASS callback from
+#    cuLaunchKernel (existing execute_sass_aot_in_context boundary) before
+#    launching the original application kernel. The application never calls
+#    execute_sass_aot_in_context itself.
+#  - bpftime_sass_aot_interposer_app: PTX-free fixture application (its own
+#    SASS-only cubin, repeated launches, per-iteration numeric timings).
+#  - bpftime_sass_aot_interpose_timing: repeated uninstrumented-vs-interposed
+#    timing CLI preserving all numeric timings and return codes.
+add_library(bpftime_sass_aot_interposer SHARED interposer_sass_aot.cpp)
+set_property(TARGET bpftime_sass_aot_interposer PROPERTY CXX_STANDARD 20)
+target_link_libraries(bpftime_sass_aot_interposer PRIVATE bpftime_sass_aot dl)
+
+add_executable(bpftime_sass_aot_interposer_app interposer_app.cpp)
+set_property(TARGET bpftime_sass_aot_interposer_app PROPERTY CXX_STANDARD 20)
+target_include_directories(bpftime_sass_aot_interposer_app PRIVATE
+    ${CUDA_INCLUDE_PATH})
+target_link_directories(bpftime_sass_aot_interposer_app PUBLIC
+    ${CUDA_LIBRARY_PATH})
+target_link_libraries(bpftime_sass_aot_interposer_app PRIVATE cuda)
+add_dependencies(bpftime_sass_aot_interposer_app sass_aot_companion_app_cubin)
+
+file(GENERATE OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/sass_aot_interposer_config.hpp"
+    CONTENT "#pragma once\ninline constexpr const char *SASS_AOT_INTERPOSER_APP_BIN = \"${CMAKE_CURRENT_BINARY_DIR}/bpftime_sass_aot_interposer_app\";\ninline constexpr const char *SASS_AOT_INTERPOSER_LIB = \"${CMAKE_CURRENT_BINARY_DIR}/libbpftime_sass_aot_interposer.so\";\ninline constexpr const char *SASS_AOT_INTERPOSER_DEFAULT_ARTIFACT_DIR = \"${CMAKE_CURRENT_BINARY_DIR}/sass_aot_interposer_artifacts\";\n")
+
+add_executable(bpftime_sass_aot_interpose_timing interposer_timing_cli.cpp)
+set_property(TARGET bpftime_sass_aot_interpose_timing PROPERTY CXX_STANDARD 20)
+target_include_directories(bpftime_sass_aot_interpose_timing PRIVATE
+    "${CMAKE_CURRENT_BINARY_DIR}")
+add_dependencies(bpftime_sass_aot_interpose_timing
+    bpftime_sass_aot_interposer_app bpftime_sass_aot_interposer
+    sass_aot_spike_bpf_object sass_aot_companion_app_cubin)
