@@ -47,10 +47,33 @@ add_custom_command(
 )
 add_custom_target(sass_aot_spike_bpf_object DEPENDS ${SASS_AOT_BPF_OBJECT})
 
+# PTX-free host-application companion artifact: ptxas output is a SASS-only
+# cubin (no PTX section), mirroring a shipping application that embeds
+# precompiled SASS. Targets sm_120 to match the SassAotOptions::sm default.
+set(SASS_AOT_PTXAS_BIN ${BPFTIME_CUDA_ROOT}/bin/ptxas)
+if(NOT EXISTS ${SASS_AOT_PTXAS_BIN})
+    find_program(SASS_AOT_PTXAS_BIN NAMES ptxas)
+endif()
+if(NOT SASS_AOT_PTXAS_BIN)
+    message(FATAL_ERROR
+        "sass_aot companion: ptxas not found (set BPFTIME_CUDA_ROOT)")
+endif()
+set(SASS_AOT_COMPANION_APP_PTX ${CMAKE_CURRENT_SOURCE_DIR}/companion_app_kernel.ptx)
+set(SASS_AOT_COMPANION_APP_CUBIN ${CMAKE_CURRENT_BINARY_DIR}/companion_app_kernel.cubin)
+add_custom_command(
+    OUTPUT ${SASS_AOT_COMPANION_APP_CUBIN}
+    COMMAND ${SASS_AOT_PTXAS_BIN} -arch=sm_120
+        ${SASS_AOT_COMPANION_APP_PTX} -o ${SASS_AOT_COMPANION_APP_CUBIN}
+    DEPENDS ${SASS_AOT_COMPANION_APP_PTX}
+    COMMENT "Assembling PTX-free application companion cubin (ptxas -arch=sm_120)"
+    VERBATIM
+)
+add_custom_target(sass_aot_companion_app_cubin DEPENDS ${SASS_AOT_COMPANION_APP_CUBIN})
+
 add_executable(bpftime_sass_aot_tests test/test_sass_aot.cpp)
 set_property(TARGET bpftime_sass_aot_tests PROPERTY CXX_STANDARD 20)
 file(GENERATE OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/sass_aot_test_config.hpp"
-    CONTENT "#pragma once\ninline constexpr const char *SASS_AOT_SPIKE_BPF_OBJECT = \"${SASS_AOT_BPF_OBJECT}\";\n")
+    CONTENT "#pragma once\ninline constexpr const char *SASS_AOT_SPIKE_BPF_OBJECT = \"${SASS_AOT_BPF_OBJECT}\";\ninline constexpr const char *SASS_AOT_COMPANION_APP_CUBIN = \"${SASS_AOT_COMPANION_APP_CUBIN}\";\n")
 target_include_directories(bpftime_sass_aot_tests PRIVATE
     "${CMAKE_CURRENT_BINARY_DIR}")
 target_link_libraries(bpftime_sass_aot_tests PRIVATE bpftime_sass_aot)
@@ -66,3 +89,15 @@ target_include_directories(bpftime_sass_aot_live PRIVATE
     "${CMAKE_CURRENT_BINARY_DIR}")
 target_link_libraries(bpftime_sass_aot_live PRIVATE bpftime_sass_aot)
 add_dependencies(bpftime_sass_aot_live sass_aot_spike_bpf_object)
+
+# Deliberately not registered with CTest: explicit live-GPU acceptance
+# executable for the companion/interposition boundary. It preserves the
+# application's own PTX-free SASS module execution and invokes the
+# BPF-derived entry through the documented host-side boundary.
+add_executable(bpftime_sass_aot_companion_live companion_sass_aot_live.cpp)
+set_property(TARGET bpftime_sass_aot_companion_live PROPERTY CXX_STANDARD 20)
+target_include_directories(bpftime_sass_aot_companion_live PRIVATE
+    "${CMAKE_CURRENT_BINARY_DIR}")
+target_link_libraries(bpftime_sass_aot_companion_live PRIVATE bpftime_sass_aot)
+add_dependencies(bpftime_sass_aot_companion_live
+    sass_aot_spike_bpf_object sass_aot_companion_app_cubin)

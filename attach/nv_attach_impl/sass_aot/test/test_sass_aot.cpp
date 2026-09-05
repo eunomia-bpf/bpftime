@@ -230,6 +230,137 @@ void test_invalid_program_rejected_before_compilation()
 	std::filesystem::remove_all(opts.out_dir);
 }
 
+void test_companion_boundary_rejects_bad_inputs()
+{
+	std::vector<uint64_t> words;
+	std::string section;
+	const auto error = load_bpf_program_words(
+		SASS_AOT_SPIKE_BPF_OBJECT, kSpikeSection, words, section);
+	require(!error, error.value_or("failed to load BPF program"));
+
+	SassAotOptions opts;
+	opts.out_dir = unique_temp_dir("companion boundary");
+	opts.func_name = kFuncName;
+	const auto compiled = compile_ebpf_to_sass_aot(words, section, opts);
+	require(compiled.ok, compiled.error);
+
+	// Every rejection below happens before any CUDA call, so this test
+	// is CPU-only (no device required).
+	std::vector<uint8_t> context(compiled.context_size, 0);
+	const auto null_context =
+		execute_sass_aot_in_context(nullptr, compiled, context);
+	require(!null_context.ok &&
+			null_context.error.find("null CUDA context") !=
+				std::string::npos,
+		"boundary did not reject a null application context: " +
+			null_context.error);
+
+	// The size check runs before any CUDA call, so a dummy non-null
+	// context value is never dereferenced on this path.
+	const CUcontext dummy_context = reinterpret_cast<CUcontext>(0x1);
+	std::vector<uint8_t> wrong_size(compiled.context_size + 1, 0);
+	const auto wrong_size_execution =
+		execute_sass_aot_in_context(dummy_context, compiled,
+					     wrong_size);
+	require(!wrong_size_execution.ok &&
+			wrong_size_execution.error.find("context size") !=
+				std::string::npos,
+		"boundary did not reject a context outside the verified ABI");
+
+	// A verifier-rejected program is rejected before module load.
+	SassAotOptions rejected_opts;
+	rejected_opts.out_dir = unique_temp_dir("companion rejected");
+	rejected_opts.func_name = "companion_rejected";
+	const auto rejected = compile_ebpf_to_sass_aot(
+		make_lane_varying_branch_program(), "cuda__invalid",
+		rejected_opts);
+	require(!rejected.ok && rejected.verifier_rejected,
+		"invalid program was not rejected by the verifier");
+	const auto rejected_execution =
+		execute_sass_aot_in_context(nullptr, rejected, context);
+	require(!rejected_execution.ok &&
+			rejected_execution.error.find(
+				"invalid or incomplete AOT compilation") !=
+				std::string::npos,
+		"boundary did not fail closed on a rejected program");
+
+	std::filesystem::remove_all(opts.out_dir);
+	std::filesystem::remove_all(rejected_opts.out_dir);
+}
+
+void test_companion_app_cubin_is_ptx_free()
+{
+	const std::string cubin = SASS_AOT_COMPANION_APP_CUBIN;
+	require(std::filesystem::exists(cubin),
+		"application companion cubin is missing");
+
+	SassAotOptions opts;
+	const std::string sass = run_cuobjdump_sass(cubin, opts);
+	require(sass.find("code for sm_120") != std::string::npos,
+		"application cubin has no sm_120 SASS:\n" + sass);
+	require(sass.find("Function : companion_app_kernel") !=
+				std::string::npos,
+		"application cubin lacks its own kernel:\n" + sass);
+	require(sass.find("sass_aot_probe") == std::string::npos,
+		"application cubin contains the BPF-derived entry; the "
+		"application artifact must not be rewritten:\n" +
+			sass);
+
+	const std::string ptx = run_cuobjdump_ptx(cubin, opts);
+	require(ptx.find(".entry") == std::string::npos &&
+			ptx.find(".version") == std::string::npos,
+		"application companion cubin is not PTX-free:\n" + ptx);
+}
+
+void test_companion_rejects_invalid_bpf_before_module_load()
+{
+	const std::string suffix =
+		std::to_string(static_cast<long long>(::getpid()));
+	const std::string marker =
+		std::filesystem::temp_directory_path().string() +
+		"/bpftime_sass_aot_companion_ptxas_marker_" + suffix;
+	const std::string fake_ptxas =
+		std::filesystem::temp_directory_path().string() +
+		"/bpftime_sass_aot_companion_fake_ptxas_" + suffix;
+	std::filesystem::remove(marker);
+	{
+		std::ofstream script(fake_ptxas);
+		require(script.good(), "cannot create fake ptxas");
+		script << "#!/bin/sh\ntouch '" << marker << "'\n";
+	}
+	require(::chmod(fake_ptxas.c_str(), 0755) == 0,
+		"cannot make fake ptxas executable");
+
+	SassAotOptions opts;
+	opts.ptxas_path = fake_ptxas;
+	opts.out_dir = unique_temp_dir("companion rejected load");
+	opts.func_name = "should_never_reach_module_load";
+	const auto result = compile_ebpf_to_sass_aot(
+		make_lane_varying_branch_program(), "cuda__invalid", opts);
+	require(!result.ok, "invalid program unexpectedly compiled");
+	require(result.verifier_rejected,
+		"invalid program was not rejected by the verifier");
+	require(!std::filesystem::exists(std::filesystem::path(opts.out_dir) /
+					 "sass_aot.cubin"),
+		"invalid program wrote a cubin that could be loaded");
+	require(!std::filesystem::exists(marker),
+		"invalid program invoked ptxas");
+
+	// The companion boundary must fail closed on the rejected result
+	// without attempting a module load.
+	std::vector<uint8_t> context(sizeof(uint64_t), 0);
+	const auto executed =
+		execute_sass_aot_in_context(nullptr, result, context);
+	require(!executed.ok &&
+			executed.error.find("invalid or incomplete AOT "
+					    "compilation") != std::string::npos,
+		"companion boundary did not fail closed before module load");
+
+	std::filesystem::remove(fake_ptxas);
+	std::filesystem::remove(marker);
+	std::filesystem::remove_all(opts.out_dir);
+}
+
 } // namespace
 
 int main()
@@ -238,6 +369,9 @@ int main()
 		test_real_bpf_object_and_verifier();
 		test_accepted_program_to_sass();
 		test_invalid_program_rejected_before_compilation();
+		test_companion_boundary_rejects_bad_inputs();
+		test_companion_app_cubin_is_ptx_free();
+		test_companion_rejects_invalid_bpf_before_module_load();
 		std::cout << "eBPF-to-SASS AOT spike tests passed\n";
 		return 0;
 	} catch (const std::exception &error) {

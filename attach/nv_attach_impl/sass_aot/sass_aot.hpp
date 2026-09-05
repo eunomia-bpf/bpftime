@@ -1,5 +1,7 @@
 #pragma once
 
+#include <cuda.h>
+
 #include <cstddef>
 #include <cstdint>
 #include <optional>
@@ -74,6 +76,28 @@ SassAotExecutionResult
 execute_sass_aot(const SassAotResult &compiled, std::vector<uint8_t> &context,
 		 const SassAotExecutionOptions &opts = {});
 
+// Documented host-side module interposition boundary.
+//
+// `context` is the CUDA context owned by a host application whose own
+// (PTX-free, SASS) module(s) may already be loaded and whose own kernels may
+// already be in flight. The verified BPF-derived SASS cubin is loaded into
+// that same context as a *companion* module; its entry is launched on the
+// context's default stream with `context_data` as the verified context, the
+// context is synchronized, and `context_data` is read back.
+//
+// This is a companion/interposed module path, not a binary-rewriting path:
+// the application's own modules, cubin, and SASS are never modified, and the
+// BPF-derived code runs only through this boundary in a sibling module.
+// Because the boundary synchronizes the caller's context, any pending
+// application work also completes when it returns.
+//
+// Fail-closed: all inputs are validated before any CUDA call. A program the
+// strict verifier rejected (or any incomplete compilation result) is never
+// loaded.
+SassAotExecutionResult execute_sass_aot_in_context(
+    CUcontext context, const SassAotResult &compiled,
+    std::vector<uint8_t> &context_data);
+
 // `cuobjdump -sass <cubin>` output (stdout+stderr combined).
 std::string run_cuobjdump_sass(const std::string &cubin_path,
 			       const SassAotOptions &opts = {});
@@ -81,5 +105,11 @@ std::string run_cuobjdump_sass(const std::string &cubin_path,
 // `cuobjdump --dump-elf-symbols <cubin>` output (stdout+stderr combined).
 std::string run_cuobjdump_symbols(const std::string &cubin_path,
 				  const SassAotOptions &opts = {});
+
+// `cuobjdump -ptx <cubin>` output (stdout+stderr combined). For a ptxas-built
+// SASS-only cubin this is empty, which is how tests prove an application
+// artifact is PTX-free.
+std::string run_cuobjdump_ptx(const std::string &cubin_path,
+			      const SassAotOptions &opts = {});
 
 } // namespace bpftime::attach::sass_aot

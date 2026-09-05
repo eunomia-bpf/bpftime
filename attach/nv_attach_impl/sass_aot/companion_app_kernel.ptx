@@ -1,0 +1,18 @@
+// Companion host-application kernel.
+//
+// This stands in for an existing, shipping CUDA application that embeds
+// precompiled SASS only (no PTX in the artifact). The build assembles this
+// source with `ptxas -arch=sm_120` into a SASS-only cubin, which the
+// companion live executable loads as the application's own module. The
+// application kernel writes the value 7 to its device output buffer.
+.version 8.7
+.target sm_120
+.address_size 64
+.visible .entry companion_app_kernel(.param .u64 param_0)
+{
+    .reg .b64 %rd<3>;
+    ld.param.b64 %rd1, [param_0];
+    mov.u64 %rd2, 7;
+    st.global.b64 [%rd1], %rd2;
+    ret;
+}

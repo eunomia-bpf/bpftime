@@ -379,6 +379,86 @@ SassAotExecutionResult execute_sass_aot(const SassAotResult &compiled,
 	return result;
 }
 
+SassAotExecutionResult execute_sass_aot_in_context(
+    CUcontext context, const SassAotResult &compiled,
+    std::vector<uint8_t> &context_data)
+{
+	SassAotExecutionResult result;
+	if (!compiled.ok || compiled.cubin_path.empty() ||
+	    compiled.entry_name.empty() || compiled.context_size == 0) {
+		result.error = "invalid or incomplete AOT compilation result";
+		return result;
+	}
+	if (context == nullptr) {
+		result.error =
+			"null CUDA context at the companion interposition "
+			"boundary";
+		return result;
+	}
+	if (context_data.size() != compiled.context_size) {
+		result.error =
+			"context size does not match the verified AOT ABI";
+		return result;
+	}
+
+	CUmodule module = nullptr;
+	CUdeviceptr device_context = 0;
+
+	auto check = [&](CUresult status, const char *operation) {
+		if (status == CUDA_SUCCESS)
+			return true;
+		if (result.error.empty())
+			result.error = cuda_error(status, operation);
+		return false;
+	};
+
+	CUfunction entry = nullptr;
+	do {
+		if (!check(cuCtxSetCurrent(context), "cuCtxSetCurrent"))
+			break;
+		if (!check(cuModuleLoad(&module, compiled.cubin_path.c_str()),
+			   "cuModuleLoad"))
+			break;
+		if (!check(cuModuleGetFunction(&entry, module,
+					       compiled.entry_name.c_str()),
+			   "cuModuleGetFunction"))
+			break;
+		if (!check(cuMemAlloc(&device_context, context_data.size()),
+			   "cuMemAlloc"))
+			break;
+		if (!check(cuMemcpyHtoD(device_context, context_data.data(),
+					context_data.size()),
+			   "cuMemcpyHtoD"))
+			break;
+
+		uint64_t context_size = context_data.size();
+		void *arguments[] = { &device_context, &context_size };
+		if (!check(cuLaunchKernel(entry, 1, 1, 1, 1, 1, 1, 0, nullptr,
+					  arguments, nullptr),
+			   "cuLaunchKernel"))
+			break;
+		// Synchronizing the caller's context also completes any
+		// pending application kernels, so the boundary returns only
+		// when both the application work and the BPF-derived entry
+		// have finished.
+		if (!check(cuCtxSynchronize(), "cuCtxSynchronize"))
+			break;
+		if (!check(cuMemcpyDtoH(context_data.data(), device_context,
+					context_data.size()),
+			   "cuMemcpyDtoH"))
+			break;
+		result.ok = true;
+	} while (false);
+
+	if (device_context != 0 &&
+	    !check(cuMemFree(device_context), "cuMemFree"))
+		result.ok = false;
+	if (module != nullptr &&
+	    !check(cuModuleUnload(module), "cuModuleUnload"))
+		result.ok = false;
+	return result;
+}
+
 std::string run_cuobjdump_sass(const std::string &cubin_path,
 			       const SassAotOptions &opts)
 {
@@ -396,6 +476,16 @@ std::string run_cuobjdump_symbols(const std::string &cubin_path,
 		opts.cuobjdump_path.empty() ? "cuobjdump" : opts.cuobjdump_path;
 	const CommandResult result = run_captured_command(
 		{ cuobjdump, "--dump-elf-symbols", cubin_path });
+	return result.output;
+}
+
+std::string run_cuobjdump_ptx(const std::string &cubin_path,
+			      const SassAotOptions &opts)
+{
+	const std::string cuobjdump =
+		opts.cuobjdump_path.empty() ? "cuobjdump" : opts.cuobjdump_path;
+	const CommandResult result =
+		run_captured_command({ cuobjdump, "-ptx", cubin_path });
 	return result.output;
 }
 
