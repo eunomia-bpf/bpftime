@@ -128,6 +128,13 @@ void handler_manager::clear_id_at(int fd, managed_shared_memory &memory)
 				}
 			}
 		}
+	} else if (std::holds_alternative<bpf_link_handler>(handlers[fd])) {
+		auto target_fd =
+			std::get<bpf_link_handler>(handlers[fd]).attach_target_id;
+		handlers[fd] = unused_handler();
+		SPDLOG_DEBUG("Destroying link handler {}, cascading to perf event {}", fd, target_fd);
+		clear_id_at(target_fd, memory);
+		return;
 	}
 	handlers[fd] = unused_handler();
 }
