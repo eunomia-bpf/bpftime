@@ -23,6 +23,8 @@ option(BPFTIME_WARNINGS_AS_ERRORS "Treat compiler warnings as errors." OFF)
 
 option(BPFTIME_CUDA_ROOT "Root for CUDA installation" "")
 option(BPFTIME_ENABLE_CUDA_ATTACH "Whether to enable CUDA attach" OFF)
+option(BPFTIME_ENABLE_SASS_AOT_SPIKE
+       "Build the opt-in eBPF-to-SASS AOT spike" OFF)
 
 #
 # Unit testing

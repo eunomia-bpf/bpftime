@@ -28,6 +28,14 @@ project(
 include(cmake/CompilerWarnings.cmake)
 include(cmake/StandardSettings.cmake)
 
+if(BPFTIME_ENABLE_SASS_AOT_SPIKE AND NOT BPFTIME_ENABLE_CUDA_ATTACH)
+  message(FATAL_ERROR
+    "BPFTIME_ENABLE_SASS_AOT_SPIKE requires BPFTIME_ENABLE_CUDA_ATTACH=1")
+endif()
+if(BPFTIME_ENABLE_SASS_AOT_SPIKE)
+  enable_testing()
+endif()
+
 if(NOT CMAKE_BUILD_TYPE)
   set(CMAKE_BUILD_TYPE "Debug")
 endif()

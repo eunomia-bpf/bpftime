@@ -60,6 +60,15 @@ if(${ENABLE_EBPF_VERIFIER})
   target_compile_definitions(bpftime_nv_attach_impl PRIVATE ENABLE_BPFTIME_VERIFIER)
 endif()
 
+# eBPF-to-SASS AOT build spike (default OFF): real BPF object -> strict GPU
+# verifier -> ptxpass eBPF-to-PTX compiler -> ptxas sm_120 -> cubin/SASS.
+if(BPFTIME_ENABLE_SASS_AOT_SPIKE)
+  if(NOT ENABLE_EBPF_VERIFIER)
+    message(FATAL_ERROR "BPFTIME_ENABLE_SASS_AOT_SPIKE requires ENABLE_EBPF_VERIFIER=1")
+  endif()
+  add_subdirectory(sass_aot)
+endif()
+
 # nv_attach_impl includes internal llvmbpf headers that include LLVM headers
 # (e.g. vm/llvm-jit/src/llvm_jit_context.hpp). Make sure LLVM include dirs are
 # available to this target as well.
