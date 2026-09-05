@@ -8,6 +8,8 @@
 #include <sys/wait.h>
 #include <unistd.h>
 
+#include <cuda.h>
+
 #include <cstring>
 #include <filesystem>
 #include <fstream>
@@ -106,6 +108,18 @@ bool write_file(const std::string &path, const std::string &content)
 		return false;
 	ofs << content;
 	return ofs.good();
+}
+
+std::string cuda_error(CUresult error, const char *operation)
+{
+	const char *name = nullptr;
+	const char *description = nullptr;
+	(void)cuGetErrorName(error, &name);
+	(void)cuGetErrorString(error, &description);
+	return std::string(operation) +
+	       " failed: " + (name != nullptr ? name : "CUDA_ERROR_UNKNOWN") +
+	       " (" +
+	       (description != nullptr ? description : "no description") + ")";
 }
 
 // The generated eBPF function is emitted as a plain .func. Make it the
@@ -207,8 +221,10 @@ SassAotResult compile_ebpf_to_sass_aot(const std::vector<uint64_t> &words,
 
 	// Stage 1: strict GPU verifier. Rejected programs stop here;
 	// ptxas is never invoked.
-	const auto verifier_error = bpftime::verifier::gpu::verify_gpu_program(
-		words.data(), words.size(), section_name);
+	const auto verifier_error =
+		bpftime::verifier::gpu::verify_gpu_program_with_context(
+			words.data(), words.size(), section_name,
+			opts.context_size);
 	if (verifier_error) {
 		result.verifier_rejected = true;
 		result.error =
@@ -224,7 +240,7 @@ SassAotResult compile_ebpf_to_sass_aot(const std::vector<uint64_t> &words,
 			words, opts.ptx_target, opts.func_name,
 			/*add_register_guard_and_filter_version_headers=*/
 			false,
-			/*with_arguments=*/false);
+			/*with_arguments=*/true);
 	} catch (const std::exception &ex) {
 		result.error = std::string("eBPF-to-PTX compilation failed: ") +
 			       ex.what();
@@ -272,7 +288,94 @@ SassAotResult compile_ebpf_to_sass_aot(const std::vector<uint64_t> &words,
 		return result;
 	}
 	result.cubin_path = cubin_path.string();
+	result.entry_name = opts.func_name;
+	result.context_size = opts.context_size;
 	result.ok = true;
+	return result;
+}
+
+SassAotExecutionResult execute_sass_aot(const SassAotResult &compiled,
+					std::vector<uint8_t> &context,
+					const SassAotExecutionOptions &opts)
+{
+	SassAotExecutionResult result;
+	if (!compiled.ok || compiled.cubin_path.empty() ||
+	    compiled.entry_name.empty() || compiled.context_size == 0) {
+		result.error = "invalid or incomplete AOT compilation result";
+		return result;
+	}
+	if (context.size() != compiled.context_size) {
+		result.error =
+			"context size does not match the verified AOT ABI";
+		return result;
+	}
+	if (opts.device_ordinal < 0) {
+		result.error = "device ordinal must be non-negative";
+		return result;
+	}
+
+	CUcontext cuda_context = nullptr;
+	CUmodule module = nullptr;
+	CUdeviceptr device_context = 0;
+
+	auto check = [&](CUresult status, const char *operation) {
+		if (status == CUDA_SUCCESS)
+			return true;
+		if (result.error.empty())
+			result.error = cuda_error(status, operation);
+		return false;
+	};
+
+	CUdevice device{};
+	CUfunction entry = nullptr;
+	do {
+		if (!check(cuInit(0), "cuInit"))
+			break;
+		if (!check(cuDeviceGet(&device, opts.device_ordinal),
+			   "cuDeviceGet"))
+			break;
+		if (!check(cuCtxCreate(&cuda_context, 0, device),
+			   "cuCtxCreate"))
+			break;
+		if (!check(cuModuleLoad(&module, compiled.cubin_path.c_str()),
+			   "cuModuleLoad"))
+			break;
+		if (!check(cuModuleGetFunction(&entry, module,
+					       compiled.entry_name.c_str()),
+			   "cuModuleGetFunction"))
+			break;
+		if (!check(cuMemAlloc(&device_context, context.size()),
+			   "cuMemAlloc"))
+			break;
+		if (!check(cuMemcpyHtoD(device_context, context.data(),
+					context.size()),
+			   "cuMemcpyHtoD"))
+			break;
+
+		uint64_t context_size = context.size();
+		void *arguments[] = { &device_context, &context_size };
+		if (!check(cuLaunchKernel(entry, 1, 1, 1, 1, 1, 1, 0, nullptr,
+					  arguments, nullptr),
+			   "cuLaunchKernel"))
+			break;
+		if (!check(cuCtxSynchronize(), "cuCtxSynchronize"))
+			break;
+		if (!check(cuMemcpyDtoH(context.data(), device_context,
+					context.size()),
+			   "cuMemcpyDtoH"))
+			break;
+		result.ok = true;
+	} while (false);
+
+	if (device_context != 0 &&
+	    !check(cuMemFree(device_context), "cuMemFree"))
+		result.ok = false;
+	if (module != nullptr &&
+	    !check(cuModuleUnload(module), "cuModuleUnload"))
+		result.ok = false;
+	if (cuda_context != nullptr &&
+	    !check(cuCtxDestroy(cuda_context), "cuCtxDestroy"))
+		result.ok = false;
 	return result;
 }
 

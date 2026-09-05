@@ -6,8 +6,8 @@
 #endif
 
 SEC("cuda__/sass_aot")
-int cuda__sass_aot(struct pt_regs *ctx)
+int cuda__sass_aot(unsigned long long *result)
 {
-	(void)ctx;
-	return 42;
+	*result = 42;
+	return 0;
 }

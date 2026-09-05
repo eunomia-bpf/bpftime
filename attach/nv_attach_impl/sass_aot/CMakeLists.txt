@@ -12,9 +12,11 @@ set_property(TARGET bpftime_sass_aot PROPERTY CXX_STANDARD 20)
 
 target_include_directories(bpftime_sass_aot PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}
-    ${CMAKE_CURRENT_SOURCE_DIR}/../pass/ptxpass_core/include)
+    ${CMAKE_CURRENT_SOURCE_DIR}/../pass/ptxpass_core/include
+    ${CUDA_INCLUDE_PATH})
 
-target_link_libraries(bpftime_sass_aot PUBLIC ptxpass_core bpftime-verifier)
+target_link_directories(bpftime_sass_aot PUBLIC ${CUDA_LIBRARY_PATH})
+target_link_libraries(bpftime_sass_aot PUBLIC ptxpass_core bpftime-verifier cuda)
 
 # Real BPF object consumed by the spike test
 find_program(SASS_AOT_CLANG NAMES clang clang-18 clang-17 clang-15)
@@ -55,3 +57,12 @@ target_link_libraries(bpftime_sass_aot_tests PRIVATE bpftime_sass_aot)
 add_dependencies(bpftime_sass_aot_tests sass_aot_spike_bpf_object)
 
 add_test(NAME bpftime_sass_aot_tests COMMAND bpftime_sass_aot_tests)
+
+# Deliberately not registered with CTest: this is the explicit live-GPU
+# acceptance executable for the standalone AOT path.
+add_executable(bpftime_sass_aot_live live_sass_aot.cpp)
+set_property(TARGET bpftime_sass_aot_live PROPERTY CXX_STANDARD 20)
+target_include_directories(bpftime_sass_aot_live PRIVATE
+    "${CMAKE_CURRENT_BINARY_DIR}")
+target_link_libraries(bpftime_sass_aot_live PRIVATE bpftime_sass_aot)
+add_dependencies(bpftime_sass_aot_live sass_aot_spike_bpf_object)

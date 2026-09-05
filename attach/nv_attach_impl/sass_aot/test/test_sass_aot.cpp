@@ -98,11 +98,17 @@ void test_real_bpf_object_and_verifier()
 	require(section == kSpikeSection, "loaded the wrong BPF section");
 	require(!words.empty(), "loaded an empty BPF program");
 
-	const auto verified = bpftime::verifier::gpu::verify_gpu_program(
-		words.data(), words.size(), kSpikeSection);
+	const auto verified =
+		bpftime::verifier::gpu::verify_gpu_program_with_context(
+			words.data(), words.size(), kSpikeSection,
+			sizeof(uint64_t));
 	require(!verified,
 		verified.value_or(
 			"strict GPU verifier rejected the real fixture"));
+	require(bpftime::verifier::gpu::verify_gpu_program(
+			words.data(), words.size(), kSpikeSection)
+			.has_value(),
+		"context-writing fixture passed the no-context verifier");
 }
 
 void test_accepted_program_to_sass()
@@ -134,6 +140,15 @@ void test_accepted_program_to_sass()
 	require(ptx.find(".entry " + std::string(kFuncName)) !=
 			std::string::npos,
 		"compiled eBPF function was not promoted to an entry");
+	require(ptx.find(std::string(kFuncName) + "_param_0") !=
+				std::string::npos &&
+			ptx.find(std::string(kFuncName) + "_param_1") !=
+				std::string::npos,
+		"generated entry does not expose context pointer and size");
+	require(result.entry_name == kFuncName,
+		"compilation result lost the entry name");
+	require(result.context_size == sizeof(uint64_t),
+		"compilation result lost the verified context size");
 
 	const std::string sass = run_cuobjdump_sass(result.cubin_path, opts);
 	require(sass.find("code for sm_120") != std::string::npos,
@@ -148,6 +163,22 @@ void test_accepted_program_to_sass()
 	require(symbols.find(kFuncName) != std::string::npos,
 		"cuobjdump symbols did not contain the compiled function:\n" +
 			symbols);
+
+	std::vector<uint8_t> wrong_size(result.context_size + 1, 0);
+	const auto wrong_size_execution = execute_sass_aot(result, wrong_size);
+	require(!wrong_size_execution.ok &&
+			wrong_size_execution.error.find("context size") !=
+				std::string::npos,
+		"executor did not reject a context outside the verified ABI");
+	std::vector<uint8_t> context(result.context_size, 0);
+	SassAotExecutionOptions execution_opts;
+	execution_opts.device_ordinal = -1;
+	const auto invalid_device_execution =
+		execute_sass_aot(result, context, execution_opts);
+	require(!invalid_device_execution.ok &&
+			invalid_device_execution.error.find("device ordinal") !=
+				std::string::npos,
+		"executor did not reject an invalid device before CUDA init");
 
 	std::filesystem::remove_all(opts.out_dir);
 }

@@ -189,6 +189,23 @@ TEST_CASE("GPU verifier matches the no-context execution ABI", "[gpu][prevail]")
 	}
 }
 
+TEST_CASE("GPU verifier bounds an explicit AOT context", "[gpu][prevail]")
+{
+	const std::array<ebpf_inst, 4> program = {
+		make_mov64_imm(2, 42),
+		make_stxdw(1, 2),
+		make_mov64_imm(0, 0),
+		make_exit(),
+	};
+
+	REQUIRE_FALSE(verify_gpu_program_with_context(
+		program.data(), program.size(), "cuda__aot_context", 8));
+	REQUIRE(verify_gpu_program_with_context(program.data(), program.size(),
+						"cuda__aot_context", 7));
+	REQUIRE(verify_gpu_program(program.data(), program.size(),
+				   "cuda__no_context"));
+}
+
 TEST_CASE("Uniformity analysis classifies constants and GPU helpers",
 	  "[gpu][uniformity]")
 {

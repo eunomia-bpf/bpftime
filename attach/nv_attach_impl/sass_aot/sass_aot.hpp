@@ -26,6 +26,9 @@ struct SassAotOptions {
 	std::string out_dir;
 	std::string ptxas_path = "ptxas";
 	std::string cuobjdump_path = "cuobjdump";
+	// Size of the read/write context exposed to the eBPF program as R1.
+	// The strict verifier proves accesses against this exact bound.
+	size_t context_size = sizeof(uint64_t);
 };
 
 struct SassAotResult {
@@ -36,6 +39,17 @@ struct SassAotResult {
 	std::string error;
 	std::string ptx_path;
 	std::string cubin_path;
+	std::string entry_name;
+	size_t context_size = 0;
+};
+
+struct SassAotExecutionOptions {
+	int device_ordinal = 0;
+};
+
+struct SassAotExecutionResult {
+	bool ok = false;
+	std::string error;
 };
 
 // Extract the eBPF instruction words of the program whose section name is
@@ -51,6 +65,14 @@ std::optional<std::string> load_bpf_program_words(
 SassAotResult compile_ebpf_to_sass_aot(const std::vector<uint64_t> &words,
 				       const std::string &section_name,
 				       const SassAotOptions &opts = {});
+
+// Load a verified AOT cubin with the CUDA Driver API, launch its generated
+// eBPF entry once, synchronize, and copy the context back to the host. This is
+// a standalone execution path; it does not inject the entry into an existing
+// application's fatbin.
+SassAotExecutionResult
+execute_sass_aot(const SassAotResult &compiled, std::vector<uint8_t> &context,
+		 const SassAotExecutionOptions &opts = {});
 
 // `cuobjdump -sass <cubin>` output (stdout+stderr combined).
 std::string run_cuobjdump_sass(const std::string &cubin_path,

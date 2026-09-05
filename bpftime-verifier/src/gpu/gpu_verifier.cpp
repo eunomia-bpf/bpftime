@@ -402,9 +402,11 @@ std::vector<EbpfMapDescriptor> to_prevail_map_descriptors(
 	return descriptors;
 }
 
-raw_program make_raw_program(const ebpf_inst *instructions, size_t count,
-			     const std::string &section_name,
-			     const std::vector<EbpfMapDescriptor> &maps)
+raw_program
+make_raw_program(const ebpf_inst *instructions, size_t count,
+		 const std::string &section_name,
+		 const std::vector<EbpfMapDescriptor> &maps,
+		 const ebpf_context_descriptor_t *context_descriptor)
 {
 	raw_program program;
 	program.filename = "BPFTIME_GPU_VERIFIER";
@@ -416,13 +418,15 @@ raw_program make_raw_program(const ebpf_inst *instructions, size_t count,
 		.type = bpftime::gpu_platform_spec.get_program_type(
 			section_name, ""),
 	};
+	program.info.type.context_descriptor = context_descriptor;
 	return program;
 }
 
 std::optional<std::string>
 run_prevail(const ebpf_inst *instructions, size_t num_instructions,
 	    const std::string &section_name,
-	    const std::vector<EbpfMapDescriptor> &prevail_maps)
+	    const std::vector<EbpfMapDescriptor> &prevail_maps,
+	    const ebpf_context_descriptor_t *context_descriptor)
 {
 	ebpf_verifier_stats_t stats{};
 
@@ -431,7 +435,8 @@ run_prevail(const ebpf_inst *instructions, size_t num_instructions,
 			instructions, num_instructions);
 		auto program = make_raw_program(prevail_instructions.data(),
 						prevail_instructions.size(),
-						section_name, prevail_maps);
+						section_name, prevail_maps,
+						context_descriptor);
 
 		std::vector<std::vector<std::string>> notes;
 		auto unmarshal_result = unmarshal(program, notes);
@@ -466,7 +471,8 @@ static std::optional<std::string> verify_gpu_instructions(
 	const ebpf_inst *instructions, size_t num_instructions,
 	const std::string &section_name,
 	const std::map<int, BpftimeMapDescriptor> &map_descriptors,
-	VerifierPhaseRecorder &phase_recorder)
+	VerifierPhaseRecorder &phase_recorder,
+	const ebpf_context_descriptor_t *context_descriptor)
 {
 	const auto &maps = map_descriptors;
 	{
@@ -495,7 +501,8 @@ static std::optional<std::string> verify_gpu_instructions(
 		ScopedPhaseTimer phase(phase_recorder, phase_recorder.prevail);
 		const auto prevail_maps = to_prevail_map_descriptors(maps);
 		prevail_error = run_prevail(instructions, num_instructions,
-					    section_name, prevail_maps);
+					    section_name, prevail_maps,
+					    context_descriptor);
 	}
 	if (prevail_error) {
 		return prevail_error;
@@ -532,12 +539,14 @@ static std::optional<std::string> verify_gpu_program_impl(
 	const void *raw_instructions, size_t num_instructions,
 	const std::string &section_name,
 	const std::map<int, BpftimeMapDescriptor> &map_descriptors,
-	VerifierPhaseRecorder &phase_recorder)
+	VerifierPhaseRecorder &phase_recorder,
+	const ebpf_context_descriptor_t *context_descriptor)
 {
 	if (raw_instructions == nullptr) {
 		return verify_gpu_instructions(nullptr, num_instructions,
 					       section_name, map_descriptors,
-					       phase_recorder);
+					       phase_recorder,
+					       context_descriptor);
 	}
 	std::vector<ebpf_inst> instructions;
 	if (num_instructions > instructions.max_size()) {
@@ -557,7 +566,29 @@ static std::optional<std::string> verify_gpu_program_impl(
 	}
 	return verify_gpu_instructions(instructions.data(), instructions.size(),
 				       section_name, map_descriptors,
-				       phase_recorder);
+				       phase_recorder, context_descriptor);
+}
+
+static std::optional<std::string> verify_gpu_program_with_descriptor(
+	const void *raw_instructions, size_t num_instructions,
+	const std::string &section_name,
+	const std::map<int, BpftimeMapDescriptor> &map_descriptors,
+	const ebpf_context_descriptor_t *context_descriptor)
+{
+	VerifierPhaseRecorder phase_recorder(num_instructions,
+					     map_descriptors.size());
+	std::optional<std::string> result;
+	try {
+		result = verify_gpu_program_impl(
+			raw_instructions, num_instructions, section_name,
+			map_descriptors, phase_recorder, context_descriptor);
+	} catch (const std::exception &ex) {
+		result = "GPU verifier exception: " + std::string(ex.what());
+	} catch (...) {
+		result = "unknown GPU verifier exception";
+	}
+	phase_recorder.emit(!result.has_value());
+	return result;
 }
 
 std::optional<std::string>
@@ -566,20 +597,31 @@ verify_gpu_program(const void *raw_instructions, size_t num_instructions,
 		   const std::map<int, BpftimeMapDescriptor> &map_descriptors)
 {
 	static_assert(sizeof(ebpf_inst) == sizeof(uint64_t));
-	VerifierPhaseRecorder phase_recorder(num_instructions,
-					     map_descriptors.size());
-	std::optional<std::string> result;
-	try {
-		result = verify_gpu_program_impl(raw_instructions,
-						 num_instructions, section_name,
-						 map_descriptors, phase_recorder);
-	} catch (const std::exception &ex) {
-		result = "GPU verifier exception: " + std::string(ex.what());
-	} catch (...) {
-		result = "unknown GPU verifier exception";
+	const ebpf_context_descriptor_t no_context = { 0, -1, -1, -1 };
+	return verify_gpu_program_with_descriptor(raw_instructions,
+						  num_instructions,
+						  section_name, map_descriptors,
+						  &no_context);
+}
+
+std::optional<std::string> verify_gpu_program_with_context(
+	const void *raw_instructions, size_t num_instructions,
+	const std::string &section_name, size_t context_size,
+	const std::map<int, BpftimeMapDescriptor> &map_descriptors)
+{
+	static_assert(sizeof(ebpf_inst) == sizeof(uint64_t));
+	if (context_size == 0 ||
+	    context_size >
+		    static_cast<size_t>(std::numeric_limits<int>::max())) {
+		return "GPU context size must be between 1 and INT_MAX bytes";
 	}
-	phase_recorder.emit(!result.has_value());
-	return result;
+	const ebpf_context_descriptor_t context = {
+		static_cast<int>(context_size), -1, -1, -1
+	};
+	return verify_gpu_program_with_descriptor(raw_instructions,
+						  num_instructions,
+						  section_name, map_descriptors,
+						  &context);
 }
 
 } // namespace bpftime::verifier::gpu
