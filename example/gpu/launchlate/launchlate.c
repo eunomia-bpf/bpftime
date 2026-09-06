@@ -12,12 +12,33 @@
 #include <stdlib.h>
 #include <errno.h>
 #include <string.h>
+#include <limits.h>
 #include <gelf.h>
 #include "./.output/launchlate.skel.h"
 #include <inttypes.h>
 #define warn(...) fprintf(stderr, __VA_ARGS__)
 
 #define DEFAULT_UPROBE_SYMBOL_HINT "_Z9vectorAddPKfS0_Pf"
+#define CUDA_LAUNCH_SYMBOL "cudaLaunchKernel"
+
+enum symbol_match_status {
+	SYMBOL_ABSENT = 0,
+	SYMBOL_UNDEFINED = 1,
+	SYMBOL_NOT_FUNCTION = 2,
+	SYMBOL_INVALID_VALUE = 3,
+	SYMBOL_AMBIGUOUS = 4,
+};
+
+struct host_target {
+	uint64_t launch_vaddr;
+	uint64_t kernel_vaddr;
+	uint64_t valid;
+};
+
+struct plt_entry {
+	uint64_t file_offset;
+	uint64_t vaddr;
+};
 
 static int libbpf_print_fn(enum libbpf_print_level level, const char *format,
 			   va_list args)
@@ -74,18 +95,23 @@ static void close_elf(Elf *e, int fd_close)
 		close(fd_close);
 }
 
-static char *find_defined_symbol_matching(const char *path, const char *needle)
+static int find_defined_symbol_matching(const char *path, const char *needle,
+					enum symbol_match_status *status,
+					uint64_t *vaddr)
 {
 	Elf *e = NULL;
 	Elf_Scn *scn = NULL;
 	Elf_Data *data = NULL;
 	GElf_Shdr shdr;
 	GElf_Sym sym;
+	bool found = false;
 	int fd = -1;
 
+	*status = SYMBOL_ABSENT;
+	*vaddr = 0;
 	e = open_elf(path, &fd);
 	if (!e)
-		return NULL;
+		return -EINVAL;
 
 	while ((scn = elf_nextscn(e, scn))) {
 		if (!gelf_getshdr(scn, &shdr))
@@ -100,26 +126,167 @@ static char *find_defined_symbol_matching(const char *path, const char *needle)
 			for (i = 0; gelf_getsym(data, i, &sym); i++) {
 				const char *name;
 
-				if (sym.st_shndx == SHN_UNDEF)
-					continue;
-				if (GELF_ST_TYPE(sym.st_info) != STT_FUNC)
-					continue;
-
 				name = elf_strptr(e, shdr.sh_link, sym.st_name);
 				if (!name)
 					continue;
 				if (strcmp(name, needle) != 0)
 					continue;
-
-				name = strdup(name);
-				close_elf(e, fd);
-				return (char *)name;
+				if (sym.st_shndx == SHN_UNDEF) {
+					if (*status == SYMBOL_ABSENT)
+						*status = SYMBOL_UNDEFINED;
+					continue;
+				}
+				if (GELF_ST_TYPE(sym.st_info) != STT_FUNC) {
+					*status = SYMBOL_NOT_FUNCTION;
+					continue;
+				}
+				Elf_Scn *function_scn = elf_getscn(e, sym.st_shndx);
+				GElf_Shdr function_shdr;
+				if (!sym.st_value || !function_scn ||
+				    !gelf_getshdr(function_scn, &function_shdr) ||
+				    !(function_shdr.sh_flags & SHF_EXECINSTR) ||
+				    sym.st_value < function_shdr.sh_addr ||
+				    sym.st_value - function_shdr.sh_addr >=
+					    function_shdr.sh_size) {
+					*status = SYMBOL_INVALID_VALUE;
+					continue;
+				}
+				if (found && *vaddr != sym.st_value) {
+					*status = SYMBOL_AMBIGUOUS;
+					close_elf(e, fd);
+					return -EEXIST;
+				}
+				*vaddr = sym.st_value;
+				found = true;
 			}
 		}
 	}
 
 	close_elf(e, fd);
-	return NULL;
+	return found ? 0 : -ENOENT;
+}
+
+static int find_x86_64_plt_entry(const char *path, const char *needle,
+				 struct plt_entry *entry)
+{
+	Elf *e = NULL;
+	Elf_Scn *scn = NULL, *rel_scn = NULL;
+	Elf_Data *rel_data, *sym_data;
+	GElf_Ehdr ehdr;
+	GElf_Shdr shdr, rel_shdr = {0}, sym_shdr, plt_shdr = {0};
+	GElf_Rela rela;
+	GElf_Sym sym;
+	size_t shstrndx, matched_index = 0, relocation_count;
+	uint64_t entry_index, entry_offset;
+	bool have_plt_sec = false, matched = false;
+	int fd = -1, result = -ENOENT;
+
+	memset(entry, 0, sizeof(*entry));
+	e = open_elf(path, &fd);
+	if (!e)
+		return -EINVAL;
+	if (!gelf_getehdr(e, &ehdr) || elf_getshdrstrndx(e, &shstrndx) != 0 ||
+	    ehdr.e_machine != EM_X86_64) {
+		result = -ENOTSUP;
+		goto out;
+	}
+
+	while ((scn = elf_nextscn(e, scn))) {
+		const char *name;
+
+		if (!gelf_getshdr(scn, &shdr))
+			continue;
+		name = elf_strptr(e, shstrndx, shdr.sh_name);
+		if (!name)
+			continue;
+		if (strcmp(name, ".plt.sec") == 0) {
+			plt_shdr = shdr;
+			have_plt_sec = true;
+		} else if (strcmp(name, ".plt") == 0 && !have_plt_sec) {
+			plt_shdr = shdr;
+		} else if (strcmp(name, ".rela.plt") == 0) {
+			if (rel_scn) {
+				result = -EINVAL;
+				goto out;
+			}
+			rel_scn = scn;
+			rel_shdr = shdr;
+		}
+	}
+	if (!rel_scn || !plt_shdr.sh_size ||
+	    plt_shdr.sh_type != SHT_PROGBITS ||
+	    !(plt_shdr.sh_flags & SHF_EXECINSTR) || plt_shdr.sh_entsize != 16 ||
+	    rel_shdr.sh_type != SHT_RELA || !rel_shdr.sh_entsize) {
+		result = -EINVAL;
+		goto out;
+	}
+	{
+		Elf_Scn *sym_scn = elf_getscn(e, rel_shdr.sh_link);
+		if (!sym_scn || !gelf_getshdr(sym_scn, &sym_shdr) ||
+		    !sym_shdr.sh_entsize) {
+			result = -EINVAL;
+			goto out;
+		}
+		sym_data = elf_getdata(sym_scn, NULL);
+		if (!sym_data || sym_data->d_size != sym_shdr.sh_size ||
+		    elf_getdata(sym_scn, sym_data)) {
+			result = -EINVAL;
+			goto out;
+		}
+	}
+
+	rel_data = elf_getdata(rel_scn, NULL);
+	if (!rel_data || rel_data->d_size != rel_shdr.sh_size ||
+	    elf_getdata(rel_scn, rel_data)) {
+		result = -EINVAL;
+		goto out;
+	}
+	relocation_count = rel_data->d_size / rel_shdr.sh_entsize;
+	for (size_t i = 0; i < relocation_count; i++) {
+		const char *name;
+		if (!gelf_getrela(rel_data, i, &rela) ||
+		    !gelf_getsym(sym_data, GELF_R_SYM(rela.r_info), &sym))
+			continue;
+		name = elf_strptr(e, sym_shdr.sh_link, sym.st_name);
+		if (!name || strcmp(name, needle) != 0)
+			continue;
+		if (matched) {
+			result = -EEXIST;
+			goto out;
+		}
+		matched = true;
+		matched_index = i;
+	}
+	if (!matched)
+		goto out;
+
+	entry_index = matched_index;
+	if (!have_plt_sec) {
+		if (entry_index == UINT64_MAX) {
+			result = -ERANGE;
+			goto out;
+		}
+		entry_index++;
+	}
+	if (entry_index > UINT64_MAX / 16) {
+		result = -ERANGE;
+		goto out;
+	}
+	entry_offset = entry_index * 16;
+	if (entry_offset > plt_shdr.sh_size ||
+	    plt_shdr.sh_entsize > plt_shdr.sh_size - entry_offset ||
+	    entry_offset > UINT64_MAX - plt_shdr.sh_offset ||
+	    entry_offset > UINT64_MAX - plt_shdr.sh_addr) {
+		result = -ERANGE;
+		goto out;
+	}
+	entry->file_offset = plt_shdr.sh_offset + entry_offset;
+	entry->vaddr = plt_shdr.sh_addr + entry_offset;
+	result = 0;
+
+out:
+	close_elf(e, fd);
+	return result;
 }
 
 static int print_histogram(struct launchlate_bpf *obj)
@@ -211,26 +378,39 @@ static int print_histogram(struct launchlate_bpf *obj)
 int main(int argc, char **argv)
 {
 	struct launchlate_bpf *skel;
+	struct host_target target = {0};
+	struct plt_entry launch_plt = {0};
 	int err;
 	struct timespec ts_mono, ts_real;
 	int64_t offset_ns;
 	uint32_t key = 0;
 	const char *binary_path = "./vec_add";
 	const char *symbol_hint = DEFAULT_UPROBE_SYMBOL_HINT;
-	char *func_name = NULL;
+	enum symbol_match_status symbol_status;
 
 	if (argc > 1)
 		binary_path = argv[1];
 	if (argc > 2)
 		symbol_hint = argv[2];
 
-	func_name = find_defined_symbol_matching(binary_path, symbol_hint);
-	if (!func_name) {
+	err = find_defined_symbol_matching(binary_path, symbol_hint, &symbol_status,
+					   &target.kernel_vaddr);
+	if (err) {
 		fprintf(stderr,
 			"Failed to find a defined symbol exactly matching '%s' in %s\n",
 			symbol_hint, binary_path);
 		return 1;
 	}
+
+	err = find_x86_64_plt_entry(binary_path, CUDA_LAUNCH_SYMBOL,
+				    &launch_plt);
+	if (err || launch_plt.file_offset > SIZE_MAX) {
+		fprintf(stderr, "Failed to find the '%s' PLT entry in %s\n",
+			CUDA_LAUNCH_SYMBOL, binary_path);
+		return 1;
+	}
+	target.launch_vaddr = launch_plt.vaddr;
+	target.valid = 1;
 
 	/* Set up libbpf errors and debug info callback */
 	libbpf_set_print(libbpf_print_fn);
@@ -243,7 +423,6 @@ int main(int argc, char **argv)
 	skel = launchlate_bpf__open();
 	if (!skel) {
 		fprintf(stderr, "Failed to open and load BPF skeleton\n");
-		free(func_name);
 		return 1;
 	}
 
@@ -251,6 +430,16 @@ int main(int argc, char **argv)
 	err = launchlate_bpf__load(skel);
 	if (err) {
 		fprintf(stderr, "Failed to load and verify BPF skeleton\n");
+		goto cleanup;
+	}
+
+	/* Publish the launch PLT and target virtual addresses for the host filter */
+	err = bpf_map_update_elem(bpf_map__fd(skel->maps.host_target), &key,
+				  &target, BPF_ANY);
+	if (err) {
+		err = -errno;
+		fprintf(stderr, "Failed to update host_target map: %s\n",
+			strerror(errno));
 		goto cleanup;
 	}
 
@@ -279,21 +468,21 @@ int main(int argc, char **argv)
 		goto cleanup;
 	}
 
-	printf("Attaching uprobe: binary_path='%s', func_name='%s' (auto-resolved from ELF)\n",
-	       binary_path, func_name);
+	printf("Attaching uprobe: binary_path='%s', target='%s', launch='%s@plt'\n",
+	       binary_path, symbol_hint, CUDA_LAUNCH_SYMBOL);
 
-	/* Manually attach uprobe with configurable name */
+	/* Attach at the target ELF's launch PLT entry; arg0 is filtered in BPF. */
 	LIBBPF_OPTS(bpf_uprobe_opts, uprobe_opts,
-		.func_name = func_name,
 		.retprobe = false,
 	);
 
 	skel->links.uprobe_cuda_launch = bpf_program__attach_uprobe_opts(
-		skel->progs.uprobe_cuda_launch, -1, binary_path, 0, &uprobe_opts);
+		skel->progs.uprobe_cuda_launch, -1, binary_path,
+		(size_t)launch_plt.file_offset, &uprobe_opts);
 	if (!skel->links.uprobe_cuda_launch) {
 		err = -errno;
-		fprintf(stderr, "Failed to attach uprobe to '%s:%s': %s\n",
-			binary_path, func_name, strerror(errno));
+		fprintf(stderr, "Failed to attach uprobe to '%s:%s@plt': %s\n",
+			binary_path, CUDA_LAUNCH_SYMBOL, strerror(errno));
 		goto cleanup;
 	}
 
@@ -304,15 +493,14 @@ int main(int argc, char **argv)
 		goto cleanup;
 	}
 
-	printf("\nMonitoring CUDA kernel launch latency (uprobe: %s:%s)... Hit Ctrl-C to end.\n",
-	       binary_path, func_name);
+	printf("\nMonitoring CUDA kernel launch latency (uprobe: %s:%s@plt, target: %s)... Hit Ctrl-C to end.\n",
+	       binary_path, CUDA_LAUNCH_SYMBOL, symbol_hint);
 
 	while (!exiting)
 		sleep(1);
 	print_histogram(skel);
 
 cleanup:
-	free(func_name);
 	/* Clean up */
 	launchlate_bpf__destroy(skel);
 
