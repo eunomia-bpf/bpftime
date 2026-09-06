@@ -9,6 +9,7 @@
 #include <bpf/bpf.h>
 #include <unistd.h>
 #include <stdlib.h>
+#include <errno.h>
 #include "./.output/threadhist.skel.h"
 #include <inttypes.h>
 #define warn(...) fprintf(stderr, __VA_ARGS__)
@@ -39,14 +40,26 @@ static int print_stat(struct threadhist_bpf *obj, uint64_t thread_count)
 	tm = localtime(&t);
 	strftime(ts, sizeof(ts), "%H:%M:%S", tm);
 
-	printf("%-9s\n", ts);
+	printf("%-9s Final thread-exit histogram\n", ts);
 
 	key = 0;
 	static uint64_t value[1024 * 1024];
-	bpf_map_lookup_elem(fd, &key, &value);
-	for (uint64_t i = 0; i < thread_count; i++) {
-		printf("Thread %lu: %lu\n", i, value[i]);
+	err = bpf_map_lookup_elem(fd, &key, &value);
+	if (err) {
+		warn("bpf_map_lookup_elem failed: %d\n", errno);
+		return err;
 	}
+	uint64_t nonzero_threads = 0;
+	uint64_t total_exit_probes = 0;
+	for (uint64_t i = 0; i < thread_count; i++) {
+		if (value[i] == 0)
+			continue;
+		printf("Thread %lu: %lu\n", i, value[i]);
+		nonzero_threads++;
+		total_exit_probes += value[i];
+	}
+	printf("Nonzero threads: %lu\n", nonzero_threads);
+	printf("Total exit probes: %lu\n", total_exit_probes);
 
 	fflush(stdout);
 	return err;
@@ -82,10 +95,16 @@ int main(int argc, char **argv)
 		fprintf(stderr, "Failed to attach BPF skeleton\n");
 		goto cleanup;
 	}
-	while (!exiting) {
-		sleep(1);
-		print_stat(skel, 7);
+	const char *thread_count_env = getenv("BPFTIME_MAP_GPU_THREAD_COUNT");
+	uint64_t thread_count = thread_count_env ? strtoull(thread_count_env, NULL, 10) : 1024;
+	if (thread_count > 1024 * 1024) {
+		fprintf(stderr, "BPFTIME_MAP_GPU_THREAD_COUNT exceeds tool capacity\n");
+		err = -1;
+		goto cleanup;
 	}
+	while (!exiting)
+		sleep(1);
+	print_stat(skel, thread_count);
 cleanup:
 	/* Clean up */
 	threadhist_bpf__destroy(skel);

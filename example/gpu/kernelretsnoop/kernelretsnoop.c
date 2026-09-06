@@ -29,28 +29,22 @@ static void sig_handler(int sig)
 	exiting = true;
 }
 struct data {
-	uint64_t x, y, z;
+	uint64_t block_x, block_y, block_z;
+	uint64_t thread_x, thread_y, thread_z;
 	uint64_t timestamp;
 };
 
 struct state {
 	uint64_t count;
+	uint64_t nonzero_timestamps;
 };
 
 static void poll_callback(const void *data, uint64_t size, void *ctx)
 {
 	struct state *state = (struct state *)ctx;
 	const struct data *event = data;
-	printf("Thread (%lu, %lu, %lu) timestamp: %lu\n",
-	       event->x, event->y, event->z, event->timestamp);
 	state->count += 1;
-}
-
-static uint64_t get_timestamp()
-{
-	struct timespec ts;
-	clock_gettime(CLOCK_MONOTONIC_COARSE, &ts);
-	return ts.tv_sec * (uint64_t)1000000000 + ts.tv_nsec;
+	state->nonzero_timestamps += event->timestamp != 0;
 }
 
 int main(int argc, char **argv)
@@ -101,6 +95,7 @@ int main(int argc, char **argv)
 		}
 		if (state.count > 0) {
 			printf("Total events collected: %lu\n", state.count);
+			printf("Nonzero timestamps: %lu\n", state.nonzero_timestamps);
 		}
 	}
 cleanup:

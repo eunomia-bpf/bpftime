@@ -1799,10 +1799,72 @@ void nv_attach_impl::bootstrap_existing_fatbins()
 	auto modules = elf_introspect::list_loaded_modules();
 	std::size_t ingested = 0;
 
+	if (const char *targeted =
+		    getenv("BPFTIME_CUDA_TARGETED_LATE_BOOTSTRAP");
+	    targeted && targeted[0] == '1') {
+		const auto target_kernels = collect_all_kernels_to_patch();
+		decltype(modules) matching_modules;
+		for (const auto &mod : modules) {
+			auto symbols = elf_introspect::read_function_symbols(mod);
+			bool matches = false;
+			for (const auto &symbol : symbols) {
+				std::string name = symbol.name;
+				constexpr const char *stub_prefix =
+					"__device_stub__";
+				if (name.rfind(stub_prefix, 0) == 0) {
+					name.erase(0, strlen(stub_prefix));
+					if (!name.empty() && name[0] != '_')
+						name.insert(name.begin(), '_');
+				}
+				if (std::binary_search(target_kernels.begin(),
+						       target_kernels.end(), name)) {
+					matches = true;
+					break;
+				}
+			}
+			if (matches)
+				matching_modules.push_back(mod);
+		}
+		if (!matching_modules.empty()) {
+			SPDLOG_INFO(
+				"nv_attach_impl: targeted late bootstrap selected {} of {} loaded module(s)",
+				matching_modules.size(), modules.size());
+			modules = std::move(matching_modules);
+		} else {
+			SPDLOG_WARN(
+				"nv_attach_impl: targeted late bootstrap found no module containing a requested kernel; falling back to all loaded modules");
+		}
+	}
+
+	// An external PTX directory is already a complete late-attach input. Do
+	// not feed that same directory through extract_ptxs() once per loaded
+	// fatbin: doing so recompiles and reloads identical modules repeatedly.
+	if (const char *dir = getenv("BPFTIME_CUDA_LATE_PTX_DIR");
+	    dir && dir[0] != '\0') {
+		std::error_code ec;
+		const std::filesystem::path path(dir);
+		if (std::filesystem::is_directory(path, ec)) {
+			auto extracted_ptx = extract_ptxs({});
+			if (!extracted_ptx.empty()) {
+				auto rec = std::make_unique<fatbin_record>();
+				rec->original_ptx = std::move(extracted_ptx);
+				rec->module_pool = module_pool;
+				rec->ptx_pool = ptx_pool;
+				rec->try_loading_ptxs(*this);
+				fatbin_records.emplace_back(std::move(rec));
+				SPDLOG_INFO(
+					"nv_attach_impl: late attach bootstrap ingested external PTX directory once");
+				prefill_patched_kernel_functions_from_loaded_fatbins();
+				return;
+			}
+		}
+	}
+
 	for (const auto &mod : modules) {
 		// CUDA binaries may expose fatbin bytes either directly in
 		// `.nv_fatbin` (raw fatbin header 0xBA55ED50...) or as a list
 		// of wrappers inside `.nvFatBinSegment` (magic 'FbC1').
+		bool ingested_direct_fatbin = false;
 		if (auto sec = elf_introspect::find_section_in_memory(
 			    mod, ".nv_fatbin");
 		    sec) {
@@ -1823,12 +1885,18 @@ void nv_attach_impl::bootstrap_existing_fatbins()
 					fatbin_records.emplace_back(
 						std::move(rec));
 					ingested++;
+					ingested_direct_fatbin = true;
 					SPDLOG_INFO(
 						"nv_attach_impl: ingested fatbin from .nv_fatbin in {}",
 						mod.path.c_str());
 				}
 			}
 		}
+		// `.nvFatBinSegment` is an alternate index into the same fatbin
+		// payload. Scanning its wrappers after a successful direct-section
+		// ingest extracts overlapping suffixes (N, N-1, ... PTX files).
+		if (ingested_direct_fatbin)
+			continue;
 
 		if (auto sec = elf_introspect::find_section_in_memory(
 			    mod, ".nvFatBinSegment");

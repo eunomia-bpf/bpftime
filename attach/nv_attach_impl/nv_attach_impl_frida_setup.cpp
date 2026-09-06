@@ -77,6 +77,12 @@ using cu_launch_kernel_fn_t = CUresult (*)(CUfunction, unsigned int,
 					   unsigned int, unsigned int, CUstream,
 					   void **, void **);
 
+static bool defer_ptx_extraction_enabled()
+{
+	const char *value = getenv("BPFTIME_CUDA_DEFER_PTX_EXTRACTION");
+	return value != nullptr && value[0] == '1';
+}
+
 static bool cuda_graph_stream_is_capturing(cudaStream_t stream)
 {
 	cudaStreamCaptureStatus status = cudaStreamCaptureStatusNone;
@@ -254,32 +260,43 @@ static void example_listener_on_enter(GumInvocationListener *listener,
 	if (context->to_function == AttachedToFunction::RegisterFatbin) {
 		SPDLOG_DEBUG("Entering __cudaRegisterFatBinary..");
 
-		auto header = (__fatBinC_Wrapper_t *)
-			gum_invocation_context_get_nth_argument(gum_ctx, 0);
-		auto data = (const char *)header->data;
-		fat_elf_header_t *curr_header = (fat_elf_header_t *)data;
-		const char *tail = (const char *)curr_header;
-		while (true) {
-			// #define FATBIN_TEXT_MAGIC 0xBA55ED50
-			if (curr_header->magic == 0xBA55ED50) {
-				SPDLOG_DEBUG(
-					"Got CUBIN section header size = {}, size = {}",
-					static_cast<int>(
-						curr_header->header_size),
-					static_cast<int>(curr_header->size));
-				tail = ((const char *)curr_header) +
-				       curr_header->header_size +
-				       curr_header->size;
-				curr_header = (fat_elf_header_t *)tail;
-			} else {
-				break;
+		std::map<std::string, std::string> extracted_ptx;
+		if (defer_ptx_extraction_enabled()) {
+			// Late bootstrap scans the already-loaded CUDA module once. Do
+			// not run cuobjdump again for every CUDA fatbin registration.
+			SPDLOG_DEBUG(
+				"Deferring registered fatbin PTX extraction to late bootstrap");
+		} else {
+			auto header = (__fatBinC_Wrapper_t *)
+				gum_invocation_context_get_nth_argument(gum_ctx, 0);
+			auto data = (const char *)header->data;
+			fat_elf_header_t *curr_header =
+				(fat_elf_header_t *)data;
+			const char *tail = (const char *)curr_header;
+			while (true) {
+				// #define FATBIN_TEXT_MAGIC 0xBA55ED50
+				if (curr_header->magic == 0xBA55ED50) {
+					SPDLOG_DEBUG(
+						"Got CUBIN section header size = {}, size = {}",
+						static_cast<int>(
+							curr_header->header_size),
+						static_cast<int>(
+							curr_header->size));
+					tail = ((const char *)curr_header) +
+					       curr_header->header_size +
+					       curr_header->size;
+					curr_header = (fat_elf_header_t *)tail;
+				} else {
+					break;
+				}
 			}
-		};
-		std::vector<uint8_t> data_vec((uint8_t *)data, (uint8_t *)tail);
-		SPDLOG_INFO("Finally size = {}", data_vec.size());
-		auto extracted_ptx =
-			context->impl->extract_ptxs(std::move(data_vec));
-		SPDLOG_INFO("Patching PTXs");
+			std::vector<uint8_t> data_vec((uint8_t *)data,
+						      (uint8_t *)tail);
+			SPDLOG_INFO("Finally size = {}", data_vec.size());
+			extracted_ptx = context->impl->extract_ptxs(
+				std::move(data_vec));
+			SPDLOG_INFO("Patching PTXs");
+		}
 		auto fatbin_record = std::make_unique<struct fatbin_record>();
 		fatbin_record->original_ptx = extracted_ptx;
 		fatbin_record->module_pool = context->impl->module_pool;
@@ -294,6 +311,13 @@ static void example_listener_on_enter(GumInvocationListener *listener,
 		SPDLOG_DEBUG("Entering __cudaRegisterFunction..");
 		auto &impl = *context->impl;
 		auto current_fatbin = context->impl->current_fatbin;
+		if (current_fatbin == nullptr ||
+		    (defer_ptx_extraction_enabled() &&
+		     current_fatbin->original_ptx.empty())) {
+			SPDLOG_DEBUG(
+				"Deferring registered CUDA function lookup to late bootstrap");
+			return;
+		}
 		current_fatbin->try_loading_ptxs(*context->impl);
 
 		auto func_addr =
@@ -326,6 +350,13 @@ static void example_listener_on_enter(GumInvocationListener *listener,
 		   AttachedToFunction::RegisterVariable) {
 		SPDLOG_DEBUG("Entering __cudaRegisterVar");
 		auto current_fatbin = context->impl->current_fatbin;
+		if (current_fatbin == nullptr ||
+		    (defer_ptx_extraction_enabled() &&
+		     current_fatbin->original_ptx.empty())) {
+			SPDLOG_DEBUG(
+				"Deferring registered CUDA variable lookup to late bootstrap");
+			return;
+		}
 		current_fatbin->try_loading_ptxs(*context->impl);
 		auto fatbin_handle =
 			gum_invocation_context_get_nth_argument(gum_ctx, 0);
