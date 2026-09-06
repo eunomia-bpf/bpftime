@@ -248,7 +248,7 @@ inline void register_vm_factory(const std::string &vm_name,
 {
 	auto &vm_factory_map = detail::get_vm_factory_map();
 	if (vm_factory_map.count(vm_name)) {
-		SPDLOG_WARN(
+		SPDLOG_DEBUG(
 			"VM factory for name: {} already registered, overwriting",
 			vm_name);
 	}

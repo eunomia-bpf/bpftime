@@ -17,7 +17,7 @@
 #include <inttypes.h>
 #define warn(...) fprintf(stderr, __VA_ARGS__)
 
-#define DEFAULT_UPROBE_SYMBOL_HINT "cudaLaunchKernel"
+#define DEFAULT_UPROBE_SYMBOL_HINT "_Z9vectorAddPKfS0_Pf"
 
 static int libbpf_print_fn(enum libbpf_print_level level, const char *format,
 			   va_list args)
@@ -74,7 +74,7 @@ static void close_elf(Elf *e, int fd_close)
 		close(fd_close);
 }
 
-static char *find_defined_symbol_containing(const char *path, const char *needle)
+static char *find_defined_symbol_matching(const char *path, const char *needle)
 {
 	Elf *e = NULL;
 	Elf_Scn *scn = NULL;
@@ -108,7 +108,7 @@ static char *find_defined_symbol_containing(const char *path, const char *needle
 				name = elf_strptr(e, shdr.sh_link, sym.st_name);
 				if (!name)
 					continue;
-				if (!strstr(name, needle))
+				if (strcmp(name, needle) != 0)
 					continue;
 
 				name = strdup(name);
@@ -191,6 +191,19 @@ static int print_histogram(struct launchlate_bpf *obj)
 	}
 
 	printf("Total samples: %" PRIu64 "\n", total);
+	int queue_fd = bpf_map__fd(obj->maps.queue_state);
+	uint64_t queue_values[4] = {0};
+	for (i = 0; i < 4; i++) {
+		uint32_t queue_key = i;
+		if (bpf_map_lookup_elem(queue_fd, &queue_key, &queue_values[i]) != 0) {
+			warn("queue_state lookup failed: %s\n", strerror(errno));
+			return -1;
+		}
+	}
+	printf("Host launches: %" PRIu64 "\n", queue_values[0]);
+	printf("Device entries: %" PRIu64 "\n", queue_values[1]);
+	printf("Queue underflows: %" PRIu64 "\n", queue_values[2]);
+	printf("Queue overflows: %" PRIu64 "\n", queue_values[3]);
 	fflush(stdout);
 	return 0;
 }
@@ -203,17 +216,19 @@ int main(int argc, char **argv)
 	int64_t offset_ns;
 	uint32_t key = 0;
 	const char *binary_path = "./vec_add";
+	const char *symbol_hint = DEFAULT_UPROBE_SYMBOL_HINT;
 	char *func_name = NULL;
 
 	if (argc > 1)
 		binary_path = argv[1];
+	if (argc > 2)
+		symbol_hint = argv[2];
 
-	func_name = find_defined_symbol_containing(binary_path,
-						   DEFAULT_UPROBE_SYMBOL_HINT);
+	func_name = find_defined_symbol_matching(binary_path, symbol_hint);
 	if (!func_name) {
 		fprintf(stderr,
-			"Failed to find a defined symbol containing '%s' in %s\n",
-			DEFAULT_UPROBE_SYMBOL_HINT, binary_path);
+			"Failed to find a defined symbol exactly matching '%s' in %s\n",
+			symbol_hint, binary_path);
 		return 1;
 	}
 
@@ -292,10 +307,9 @@ int main(int argc, char **argv)
 	printf("\nMonitoring CUDA kernel launch latency (uprobe: %s:%s)... Hit Ctrl-C to end.\n",
 	       binary_path, func_name);
 
-	while (!exiting) {
-		sleep(2);  // Update every 2 seconds
-		print_histogram(skel);
-	}
+	while (!exiting)
+		sleep(1);
+	print_histogram(skel);
 
 cleanup:
 	free(func_name);
