@@ -50,11 +50,46 @@ struct {
 	__type(value, s64);
 } clock_offset SEC(".maps");
 
+struct host_target {
+	u64 launch_vaddr;
+	u64 kernel_vaddr;
+	u64 valid;
+};
+
+struct {
+	__uint(type, BPF_MAP_TYPE_ARRAY);
+	__uint(max_entries, 1);
+	__type(key, u32);
+	__type(value, struct host_target);
+} host_target SEC(".maps");
+
 // The userspace loader attaches this uprobe to the exact host launch stub for the
 // selected CUDA kernel, not to the generic cuLaunchKernel API.
 SEC("uprobe")
-int BPF_KPROBE(uprobe_cuda_launch)
+int BPF_KPROBE(uprobe_cuda_launch, const void *func)
 {
+	u32 target_key = 0;
+	struct host_target *target;
+	u64 launch_ip, delta, expected;
+
+	target = bpf_map_lookup_elem(&host_target, &target_key);
+	launch_ip = bpf_get_func_ip(ctx);
+	if (!target || !target->valid || !launch_ip)
+		return 0;
+	if (target->kernel_vaddr >= target->launch_vaddr) {
+		delta = target->kernel_vaddr - target->launch_vaddr;
+		if (delta > ~launch_ip)
+			return 0;
+		expected = launch_ip + delta;
+	} else {
+		delta = target->launch_vaddr - target->kernel_vaddr;
+		if (launch_ip < delta)
+			return 0;
+		expected = launch_ip - delta;
+	}
+	if ((u64)func != expected)
+		return 0;
+
 	u64 ts_mono = bpf_ktime_get_ns();
 	u32 key = 0;
 	s64 *offset_ptr;
