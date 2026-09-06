@@ -415,6 +415,11 @@ struct ringbuf_error_counters {
 	uint64_t other_drops;
 };
 
+// Bit 63 of bpf_perf_event_output flags: opt-in GPU-only per-active-warp
+// output. When set, only the first active lane of the calling warp runs the
+// ring-buffer reserve/copy path; all other active lanes return 0.
+static constexpr uint64_t BPF_PERF_EVENT_GPU_WARP_ONLY_OUTPUT = 1ull << 63;
+
 // perf event output
 extern "C" __noinline__ __device__ uint64_t
 _bpf_helper_ext_0025(uint64_t ctx, uint64_t map, uint64_t flags, uint64_t data,
@@ -422,6 +427,14 @@ _bpf_helper_ext_0025(uint64_t ctx, uint64_t map, uint64_t flags, uint64_t data,
 {
 	const auto &map_info = ::map_info[map];
 	if (map_info.map_type == BPF_MAP_TYPE_GPU_RINGBUF_MAP) {
+		if (flags & BPF_PERF_EVENT_GPU_WARP_ONLY_OUTPUT) {
+			const unsigned int active_mask = __activemask();
+			const int first_active_lane = __ffs(active_mask) - 1;
+			uint32_t lane_id;
+			asm volatile("mov.u32 %0, %%laneid;" : "=r"(lane_id));
+			if ((int)lane_id != first_active_lane)
+				return 0;
+		}
 		const auto record_stride =
 			(sizeof(uint64_t) + map_info.value_size +
 			 sizeof(uint64_t) - 1) &
