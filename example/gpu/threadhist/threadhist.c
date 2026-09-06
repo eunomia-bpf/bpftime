@@ -110,6 +110,9 @@ int main(int argc, char **argv)
 		sleep(1);
 		print_stat(skel, thread_count);
 	}
+	while (!exiting)
+		sleep(1);
+	print_stat(skel, thread_count);
 cleanup:
 	/* Clean up */
 	threadhist_bpf__destroy(skel);
