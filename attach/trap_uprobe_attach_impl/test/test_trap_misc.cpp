@@ -24,6 +24,28 @@ extern "C" TRAP_TEST_TARGET int __trap_private_data_target(int x)
 	return x + 1;
 }
 
+TEST_CASE("Trap backend: empty callbacks are rejected before interception")
+{
+	trap_attach_impl man;
+	REQUIRE(man.create_uprobe_at((void *)&__trap_private_data_target, {}) == -EINVAL);
+	REQUIRE(man.create_uretprobe_at((void *)&__trap_private_data_target, {}) == -EINVAL);
+	REQUIRE(man.create_uprobe_override_at((void *)&__trap_private_data_target, {}) == -EINVAL);
+	REQUIRE(__trap_private_data_target(41) == 42);
+}
+
+TEST_CASE("Trap backend: callback cannot enter the detach control path")
+{
+	trap_attach_impl man;
+	int callback_error = 0;
+	int id = -1;
+	id = man.create_uprobe_at((void *)&__trap_private_data_target,
+		[&](const pt_regs &) { callback_error = man.detach_by_id(id); });
+	REQUIRE(id >= 0);
+	REQUIRE(__trap_private_data_target(41) == 42);
+	REQUIRE(callback_error == -EOPNOTSUPP);
+	REQUIRE(man.detach_by_id(id) == 0);
+}
+
 static std::string self_exe()
 {
 	char buf[PATH_MAX] = {};

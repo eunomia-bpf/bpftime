@@ -65,13 +65,15 @@ TEST_CASE("Trap backend: attach/detach while the function is hot")
 {
 	std::atomic<bool> stop{ false };
 	std::atomic<uint64_t> calls{ 0 };
+	std::atomic<uint64_t> bad_returns{ 0 };
 	std::vector<std::thread> threads;
 	for (int t = 0; t < 4; t++) {
 		threads.emplace_back([&]() {
 			uint64_t i = 0;
 			while (!stop.load(std::memory_order_relaxed)) {
 				uint64_t r = __trap_mt_target(i, i + 1);
-				REQUIRE(r == (i ^ ((i + 1) << 1)));
+				if (r != (i ^ ((i + 1) << 1)))
+					bad_returns.fetch_add(1, std::memory_order_relaxed);
 				i++;
 				calls.fetch_add(1, std::memory_order_relaxed);
 			}
@@ -79,23 +81,40 @@ TEST_CASE("Trap backend: attach/detach while the function is hot")
 	}
 	trap_attach_impl man;
 	auto addr = (void *)&__trap_mt_target;
+	bool attach_ok = true, detach_ok = true, every_round_hit = true;
 	for (int round = 0; round < 50; round++) {
 		std::atomic<uint64_t> hits{ 0 };
 		int id = man.create_uprobe_at(addr, [&](const pt_regs &) {
 			hits.fetch_add(1, std::memory_order_relaxed);
 		});
-		REQUIRE(id >= 0);
+		if (id < 0) {
+			attach_ok = false;
+			break;
+		}
 		int rid = man.create_uretprobe_at(addr, [&](const pt_regs &) {
 			hits.fetch_add(1, std::memory_order_relaxed);
 		});
-		REQUIRE(rid >= 0);
-		std::this_thread::sleep_for(std::chrono::milliseconds(2));
-		REQUIRE(man.detach_by_id(id) == 0);
-		REQUIRE(man.detach_by_id(rid) == 0);
-		REQUIRE(hits.load() > 0);
+		if (rid < 0) {
+			attach_ok = false;
+			man.detach_by_id(id);
+			break;
+		}
+		const auto deadline = std::chrono::steady_clock::now() +
+			std::chrono::seconds(2);
+		while (hits.load() == 0 && std::chrono::steady_clock::now() < deadline)
+			std::this_thread::yield();
+		if (man.detach_by_id(id) != 0)
+			detach_ok = false;
+		if (man.detach_by_id(rid) != 0)
+			detach_ok = false;
+		every_round_hit = every_round_hit && hits.load() > 0;
 	}
 	stop = true;
 	for (auto &th : threads)
 		th.join();
+	REQUIRE(attach_ok);
+	REQUIRE(detach_ok);
+	REQUIRE(every_round_hit);
+	REQUIRE(bad_returns.load() == 0);
 	REQUIRE(calls.load() > 0);
 }

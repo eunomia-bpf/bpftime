@@ -12,14 +12,16 @@
 #include <cerrno>
 #include <csignal>
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <dlfcn.h>
-#include <unwind.h>
 #include <mutex>
 #include <pthread.h>
 #include <sched.h>
+#include <span>
 #include <spdlog/spdlog.h>
 #include <sys/mman.h>
+#include <sys/syscall.h>
 #include <typeinfo>
 #include <unistd.h>
 #include <vector>
@@ -32,7 +34,6 @@ namespace
 {
 constexpr size_t SLOT_SIZE = 32;
 constexpr size_t URET_STACK_DEPTH = 128;
-constexpr size_t MAX_BACKTRACE_FRAMES = 128;
 // How far an out-of-line slot may be from the probed code.
 constexpr intptr_t NEAR_DISTANCE = (intptr_t)1 << 30;
 
@@ -44,21 +45,22 @@ struct attach_entry {
 	uintptr_t function;
 	trap_attach_impl *owner;
 	attach_entry_callback callback;
+	std::atomic<bool> enabled{ true };
+	mutable std::atomic<unsigned> active_callbacks{ 0 };
 
 	template <int callback_index> void run(const pt_regs &regs) const
 	{
-		struct func_ip_scope {
-			uintptr_t previous;
-			~func_ip_scope()
-			{
-				current_thread_attach_func_ip = previous;
-			}
-		} scope{ current_thread_attach_func_ip };
-		if constexpr (callback_index == ATTACH_UPROBE_INDEX ||
-			      callback_index == ATTACH_URETPROBE_INDEX)
-			current_thread_attach_func_ip = function;
-		else
-			current_thread_attach_func_ip = 0;
+		struct callback_scope {
+			std::atomic<unsigned> &active;
+			~callback_scope() { active.fetch_sub(1); }
+		};
+		active_callbacks.fetch_add(1);
+		callback_scope scope{ active_callbacks };
+		if (!enabled.load())
+			return;
+		current_signal_callback->function_ip =
+			(callback_index == ATTACH_UPROBE_INDEX ||
+			 callback_index == ATTACH_URETPROBE_INDEX) ? function : 0;
 		if (std::holds_alternative<callback_variant>(callback)) {
 			std::get<callback_index>(
 				std::get<callback_variant>(callback))(regs);
@@ -72,6 +74,12 @@ struct attach_entry {
 
 // State of one probed address. Immutable once published; modifications
 // create a new probe_site that shares the slot and original bytes.
+struct page_protection {
+	uintptr_t addr;
+	size_t len;
+	int prot;
+};
+
 struct probe_site {
 	uintptr_t addr = 0;
 	arch::insn_info info;
@@ -83,6 +91,8 @@ struct probe_site {
 	uintptr_t slot_trap = 0;
 	// Whether the trap instruction is currently written at `addr`
 	bool armed = false;
+	bool protections_dirty = false;
+	std::vector<page_protection> protections;
 	std::vector<attach_entry *> entries;
 	bool has_override = false;
 	bool has_uprobe = false;
@@ -133,42 +143,66 @@ struct override_state {
 	uint64_t ctx;
 };
 
-// Thread-local state touched from the signal handler.
-//
-// No tls_model attribute: this code is statically linked into a shared
-// library (bpftime-agent) that is loaded via LD_PRELOAD or late dlopen
-// into an arbitrary host process. initial-exec TLS requires static-TLS
-// surplus which may already be exhausted; the default (global-dynamic)
-// works in all loading scenarios.
-//
-// The uret_stack is embedded directly in TLS (~3 KB) so that the first
-// uretprobe hit on any thread never calls mmap, malloc, or any other
-// non-async-signal-safe function. The TLS block is reclaimed by the
-// C runtime when the thread exits, so there is no VMA leak for
-// short-lived threads.
-thread_local int tl_in_handler = 0;
-thread_local uret_stack tl_uret = {};
-thread_local const pt_regs *tl_current_regs = nullptr;
-thread_local uintptr_t tl_current_pc = 0;
-thread_local uintptr_t tl_current_sp = 0;
-thread_local int tl_phase = 0;
-thread_local uint64_t tl_return_value = 0;
-thread_local override_state tl_override = {};
+// Only two small pointers (this one and current_signal_callback) require
+// static TLS. No dynamic initialization, TLS destructor, allocator or lock
+// runs on a thread's first hit, including threads predating dlopen.
+struct trap_tls {
+	std::atomic<bool> owned{ false };
+	int in_handler = 0;
+	uret_stack uret{};
+	const pt_regs *current_regs = nullptr;
+	uintptr_t current_pc = 0;
+	uintptr_t current_sp = 0;
+	int phase = 0;
+	uint64_t return_value = 0;
+	override_state override{};
+	signal_callback_context callback{};
+};
+constexpr size_t THREAD_SLOTS = 1024;
+constinit trap_tls thread_slots[THREAD_SLOTS];
+static_assert(std::atomic<bool>::is_always_lock_free);
+static_assert(std::atomic<int>::is_always_lock_free);
+static_assert(std::atomic<unsigned>::is_always_lock_free);
+static_assert(std::atomic<uint64_t>::is_always_lock_free);
+static_assert(std::atomic<void *>::is_always_lock_free);
+__attribute__((tls_model("initial-exec"))) thread_local trap_tls *tl_slot = nullptr;
+std::atomic<uint64_t> exhausted_slots{ 0 };
 
-// Number of SIGTRAP handlers currently executing, across all threads
-std::atomic<int> active_handlers{ 0 };
-
-uret_stack *get_uret_stack()
+trap_tls *claim_thread_slot()
 {
-	return &tl_uret;
+	if (tl_slot)
+		return tl_slot;
+	for (auto &slot : thread_slots) {
+		bool expected = false;
+		if (slot.owned.compare_exchange_strong(expected, true,
+			std::memory_order_acquire, std::memory_order_relaxed)) {
+			tl_slot = &slot;
+			return tl_slot;
+		}
+	}
+	exhausted_slots.fetch_add(1, std::memory_order_relaxed);
+	return nullptr;
+}
+
+void release_idle_slot()
+{
+	if (tl_slot && !tl_slot->in_handler && tl_slot->uret.depth == 0) {
+		auto *slot = tl_slot;
+		tl_slot = nullptr;
+		slot->owned.store(false, std::memory_order_release);
+	}
 }
 
 void set_override(uint64_t ctx, uint64_t value)
 {
-	tl_override.is_overrided = true;
-	tl_override.value = value;
-	tl_override.ctx = ctx;
+	if (tl_slot) {
+		tl_slot->override.is_overrided = true;
+		tl_slot->override.value = value;
+		tl_slot->override.ctx = ctx;
+	}
 }
+
+std::atomic<uint64_t> split_writes{ 0 };
 
 struct code_region {
 	uint8_t *base;
@@ -197,6 +231,46 @@ std::string describe_target(uintptr_t addr)
 	return rendered;
 }
 
+// Outcome of a code patch. Callers need to tell apart "nothing happened" from
+// "the bytes changed but the page could not be locked down again", because the
+// two require different recovery.
+enum class patch_result {
+	// Bytes written and the page is back to its original protection.
+	ok,
+	// The page could not be made writable; the site is untouched.
+	failed_before_write,
+	// The bytes were written but the original protection could not be
+	// restored, so the page may still be writable. The caller must put the
+	// site back into a defined state and report the failure.
+	failed_after_write,
+};
+
+// Read protections outside the handler. Unknown mappings must fail closed;
+// guessing RX can silently change the host's original permissions.
+std::optional<int> read_page_prot(uintptr_t addr)
+{
+	FILE *maps = fopen("/proc/self/maps", "re");
+	if (!maps)
+		return std::nullopt;
+	std::optional<int> result;
+	char *line = nullptr;
+	size_t cap = 0;
+	while (getline(&line, &cap, maps) > 0) {
+		unsigned long lo, hi;
+		char perms[8] = {};
+		if (sscanf(line, "%lx-%lx %4s", &lo, &hi, perms) != 3 ||
+		    addr < lo || addr >= hi)
+			continue;
+		result = (perms[0] == 'r' ? PROT_READ : 0) |
+			 (perms[1] == 'w' ? PROT_WRITE : 0) |
+			 (perms[2] == 'x' ? PROT_EXEC : 0);
+		break;
+	}
+	free(line);
+	fclose(maps);
+	return result;
+}
+
 // The process wide engine: owns the SIGTRAP handler, every probe site and
 // every attach entry ever created.
 class trap_engine {
@@ -209,11 +283,10 @@ class trap_engine {
 
 	int attach(trap_attach_impl *owner, int id, uintptr_t function,
 		   attach_entry_callback &&cb, int type);
-	int detach(int id, trap_attach_impl *owner);
+	int detach(int id, trap_attach_impl *owner, bool &detached);
 	int detach_all_at(uintptr_t function, trap_attach_impl *owner,
 			  std::vector<int> &removed_ids);
 	void detach_owner(trap_attach_impl *owner);
-	std::vector<uint64_t> *generate_stack();
 
     private:
 	trap_engine();
@@ -229,13 +302,16 @@ class trap_engine {
 	int build_site(uintptr_t addr, probe_site &site, std::string &err);
 	uint8_t *alloc_slot(uintptr_t near, bool &writable);
 	bool finalize_slot(uint8_t *slot, bool writable, size_t len);
-	bool write_code(uintptr_t addr, const uint8_t *data, size_t len);
+	patch_result write_code(const probe_site &site, const uint8_t *data);
+	// Store the patch without touching page protection. Only valid while
+	// the page is known to be writable; used to undo a half-applied patch.
+	void store_patch(uintptr_t addr, const uint8_t *data, size_t len);
 	// RCU-style swap: atomically replace the site_table pointer so that
 	// in-flight signal handlers see either the old or the new table.
 	void publish(std::unique_ptr<site_table> table);
-	// Spin until every signal handler that may have loaded the old table
-	// has returned, so the caller can assume its callbacks are quiesced.
-	void wait_for_quiescence();
+	// Disable removed entries and wait for their active callbacks before
+	// allowing the caller to destroy callback-owned state.
+	void wait_for_quiescence(std::span<attach_entry *const> removed);
 	std::unique_ptr<site_table> copy_table_with(probe_site *replacement);
 
 	std::mutex mu;
@@ -402,29 +478,15 @@ bool trap_engine::finalize_slot(uint8_t *slot, bool writable, size_t len)
 	return true;
 }
 
-// Patch `len` bytes of code at `addr`. The store is done with a single
-// aligned write of the natural size so that other threads observe either
-// the old or the new instruction.
-// Atomically patch `len` bytes of executable code at `addr`.  For
-// naturally aligned 2- and 4-byte writes a single atomic store suffices;
-// a 4-byte write at a 2-byte boundary uses the three-phase c.ebreak
-// protocol so that a concurrent instruction fetch always sees either the
-// old instruction or a complete trap—never a torn mix of old and new.
-bool trap_engine::write_code(uintptr_t addr, const uint8_t *data, size_t len)
+// Store `len` bytes of code at `addr` assuming the page is already writable.
+// The store is done with a single aligned write of the natural size so that
+// other threads observe either the old or the new instruction.  For naturally
+// aligned 2- and 4-byte writes a single atomic store suffices; a 4-byte write
+// at a 2-byte boundary uses the three-phase c.ebreak protocol so that a
+// concurrent instruction fetch always sees either the old instruction or a
+// complete trap—never a torn mix of old and new.
+void trap_engine::store_patch(uintptr_t addr, const uint8_t *data, size_t len)
 {
-	const size_t page = (size_t)sysconf(_SC_PAGESIZE);
-	uintptr_t start = addr & ~(uintptr_t)(page - 1);
-	uintptr_t end = (addr + len + page - 1) & ~(uintptr_t)(page - 1);
-	int restore_prot = PROT_READ | PROT_EXEC;
-	if (mprotect((void *)start, end - start,
-		     PROT_READ | PROT_WRITE | PROT_EXEC) != 0) {
-		if (mprotect((void *)start, end - start,
-			     PROT_READ | PROT_WRITE) != 0) {
-			SPDLOG_ERROR("Unable to make {:x} writable: {}", addr,
-				     strerror(errno));
-			return false;
-		}
-	}
 	if (len == 1) {
 		__atomic_store_n((uint8_t *)addr, data[0], __ATOMIC_SEQ_CST);
 	} else if (len == 2 && (addr & 1) == 0) {
@@ -448,6 +510,7 @@ bool trap_engine::write_code(uintptr_t addr, const uint8_t *data, size_t len)
 		//   Phase 3: write the intended low half, completing the
 		//            transition atomically from the fetch perspective.
 		constexpr uint16_t C_EBREAK = 0x9002;
+		split_writes.fetch_add(1, std::memory_order_relaxed);
 		uint16_t lo, hi;
 		std::memcpy(&lo, data, 2);
 		std::memcpy(&hi, data + 2, 2);
@@ -462,11 +525,37 @@ bool trap_engine::write_code(uintptr_t addr, const uint8_t *data, size_t len)
 		std::memcpy((void *)addr, data, len);
 	}
 	arch::flush_icache((void *)addr, len);
-	if (mprotect((void *)start, end - start, restore_prot) != 0) {
-		SPDLOG_WARN("Unable to restore protection of {:x}: {}", addr,
-			    strerror(errno));
+}
+
+// Never remove EXEC from live host code as a fallback for W^X rejection:
+// another thread can be executing any instruction on the same page.
+// Keep the originally captured permissions across failed operations so that
+// a retry cannot mistake a degraded RWX page for the host's intended state.
+patch_result trap_engine::write_code(const probe_site &site, const uint8_t *data)
+{
+	size_t writable = 0;
+	for (const auto &page : site.protections) {
+		if (mprotect((void *)page.addr, page.len,
+			     page.prot | PROT_WRITE) != 0) {
+			for (size_t i = 0; i < writable; ++i) {
+				const auto &prev = site.protections[i];
+				if (mprotect((void *)prev.addr, prev.len, prev.prot) != 0)
+					mprotect((void *)prev.addr, prev.len, prev.prot);
+			}
+			return patch_result::failed_before_write;
+		}
+		++writable;
 	}
-	return true;
+	store_patch(site.addr, data, site.trap_len);
+	bool restored = true;
+	for (const auto &page : site.protections) {
+		if (mprotect((void *)page.addr, page.len, page.prot) != 0) {
+			restored = false;
+			// Best effort retry, but propagate even a transient failure.
+			mprotect((void *)page.addr, page.len, page.prot);
+		}
+	}
+	return restored ? patch_result::ok : patch_result::failed_after_write;
 }
 
 int trap_engine::build_site(uintptr_t addr, probe_site &site, std::string &err)
@@ -480,6 +569,19 @@ int trap_engine::build_site(uintptr_t addr, probe_site &site, std::string &err)
 	site.info = *info;
 	std::memcpy(site.orig, (const void *)addr, site.info.len);
 	site.trap_len = arch::trap_bytes(site.info.len, site.trap);
+	const long page_size = sysconf(_SC_PAGESIZE);
+	if (page_size <= 0)
+		return -EIO;
+	const uintptr_t page_mask = (uintptr_t)page_size - 1;
+	for (uintptr_t page = addr & ~page_mask;
+	     page <= (addr + site.trap_len - 1) ; page += page_size) {
+		auto prot = read_page_prot(page);
+		if (!prot) {
+			err = "unable to determine original code page protections";
+			return -EIO;
+		}
+		site.protections.push_back({ page, (size_t)page_size, *prot });
+	}
 	if (site.info.kind == arch::insn_kind::execute_out_of_line) {
 		bool writable;
 		uint8_t *slot = alloc_slot(addr, writable);
@@ -532,20 +634,17 @@ void trap_engine::publish(std::unique_ptr<site_table> next)
 	tables.push_back(std::move(next));
 }
 
-// After a table has been published, handlers that loaded the previous table
-// may still be running callbacks of entries that were just removed. Wait
-// (bounded) until every such handler has finished so that a caller of
-// detach can assume its callbacks are no longer invoked.
-void trap_engine::wait_for_quiescence()
+// A handler can have loaded an old site before publication. Disable its entry
+// before waiting so that even a delayed reader cannot start another callback.
+// Sequential consistency pairs the increment/enable check in run() with this
+// disable/count check. Unrelated probes do not prevent this detach completing.
+void trap_engine::wait_for_quiescence(std::span<attach_entry *const> removed)
 {
-	const int self = tl_in_handler ? 1 : 0;
-	for (int spins = 0; spins < 100000; spins++) {
-		if (active_handlers.load(std::memory_order_acquire) <= self)
-			return;
-		sched_yield();
-	}
-	SPDLOG_WARN(
-		"trap uprobe: handlers still running after detach, callbacks may fire once more");
+	for (auto *entry : removed)
+		entry->enabled.store(false);
+	for (auto *entry : removed)
+		while (entry->active_callbacks.load() != 0)
+			sched_yield();
 }
 
 // Attach a probe at `function`.  Reuses an existing site when the address
@@ -564,6 +663,11 @@ int trap_engine::attach(trap_attach_impl *owner, int id, uintptr_t function,
 	}
 	site_table *cur = table.load(std::memory_order_acquire);
 	probe_site *existing = cur ? cur->find_by_addr(function) : nullptr;
+	if (existing && existing->protections_dirty) {
+		for (const auto &page : existing->protections)
+			if (mprotect((void *)page.addr, page.len, page.prot) != 0)
+				return -EIO;
+	}
 	bool reuse = existing && existing->armed;
 	if (reuse) {
 		if (existing->has_override) {
@@ -614,6 +718,7 @@ int trap_engine::attach(trap_attach_impl *owner, int id, uintptr_t function,
 	site->has_uprobe = site->has_uprobe || type == ATTACH_UPROBE;
 	site->has_uretprobe = site->has_uretprobe || type == ATTACH_URETPROBE;
 	site->armed = true;
+	site->protections_dirty = false;
 
 	probe_site *site_ptr = site.get();
 	if (new_slot) {
@@ -629,9 +734,24 @@ int trap_engine::attach(trap_attach_impl *owner, int id, uintptr_t function,
 	entries.push_back(std::move(entry));
 	if (!reuse) {
 		// Arm after publishing so that a hit always finds its site
-		if (!write_code(function, site_ptr->trap, site_ptr->trap_len)) {
-			SPDLOG_ERROR("Failed to write trap instruction at {:x}", function);
-			site_ptr->armed = false;
+		auto patched = write_code(*site_ptr, site_ptr->trap);
+		if (patched != patch_result::ok) {
+			// Reacquire write permission before undoing: restoration may
+			// have succeeded on a retry or on only one of two pages.
+			auto rollback = patch_result::ok;
+			if (patched == patch_result::failed_after_write)
+				rollback = write_code(*site_ptr, site_ptr->orig);
+			auto disabled = std::make_unique<probe_site>(*site_ptr);
+			disabled->entries.clear();
+			disabled->has_override = disabled->has_uprobe =
+				disabled->has_uretprobe = false;
+			// If rollback itself cannot write, retain a callback-free
+			// trap site so any hit still executes the original instruction.
+			disabled->armed = rollback == patch_result::failed_before_write;
+			disabled->protections_dirty = true;
+			publish(copy_table_with(disabled.get()));
+			sites.push_back(std::move(disabled));
+			wait_for_quiescence(site_ptr->entries);
 			return -EIO;
 		}
 		SPDLOG_DEBUG("Armed trap uprobe at {:x} ({} bytes, {})",
@@ -662,8 +782,9 @@ static void remove_entries_from_site(probe_site &site,
 	}
 }
 
-int trap_engine::detach(int id, trap_attach_impl *owner)
+int trap_engine::detach(int id, trap_attach_impl *owner, bool &detached)
 {
+	detached = false;
 	std::lock_guard<std::mutex> guard(mu);
 	site_table *cur = table.load(std::memory_order_acquire);
 	if (!cur) {
@@ -676,16 +797,37 @@ int trap_engine::detach(int id, trap_attach_impl *owner)
 				continue;
 			auto site = std::make_unique<probe_site>(*s);
 			remove_entries_from_site(*site, { e });
+			// The original instruction is always restored; only the
+			// page protection can be left degraded, which is
+			// reported after the detach has been completed so the
+			// probe table never keeps a stale entry.
+			auto patched = patch_result::ok;
 			if (site->entries.empty()) {
-				write_code(site->addr, site->orig,
-					   site->trap_len);
+				patched = write_code(*site, site->orig);
+				if (patched == patch_result::failed_before_write) {
+					// Preserve the entry for retry, including the original
+					// protections if a partial permission rollback failed.
+					auto retry = std::make_unique<probe_site>(*s);
+					retry->protections_dirty = true;
+					publish(copy_table_with(retry.get()));
+					sites.push_back(std::move(retry));
+					return -EIO;
+				}
 				site->armed = false;
+				site->protections_dirty = patched != patch_result::ok;
 				SPDLOG_DEBUG("Disarmed trap uprobe at {:x}",
 					     site->addr);
 			}
+			detached = true;
 			publish(copy_table_with(site.get()));
 			sites.push_back(std::move(site));
-			wait_for_quiescence();
+			wait_for_quiescence({ &e, 1 });
+			if (patched != patch_result::ok) {
+				SPDLOG_ERROR(
+					"Disarmed trap uprobe at {:x} but could not restore the page protection",
+					s->addr);
+				return -EIO;
+			}
 			return 0;
 		}
 	}
@@ -718,13 +860,21 @@ int trap_engine::detach_all_at(uintptr_t function, trap_attach_impl *owner,
 	}
 	auto site = std::make_unique<probe_site>(*s);
 	remove_entries_from_site(*site, remove);
+	auto patched = patch_result::ok;
 	if (site->entries.empty()) {
-		write_code(site->addr, site->orig, site->trap_len);
-		site->armed = false;
+		patched = write_code(*site, site->orig);
+		site->armed = patched == patch_result::failed_before_write;
+		site->protections_dirty = patched != patch_result::ok;
 	}
 	publish(copy_table_with(site.get()));
 	sites.push_back(std::move(site));
-	wait_for_quiescence();
+	wait_for_quiescence(remove);
+	if (patched != patch_result::ok) {
+		SPDLOG_ERROR(
+			"Disarmed trap uprobe at {:x} but could not restore the page protection",
+			function);
+		return -EIO;
+	}
 	return 0;
 }
 
@@ -766,21 +916,21 @@ void trap_engine::resume(const probe_site *site, ucontext_t *uc)
 // uretprobe shadow-stack entry if any return probes are registered.
 void trap_engine::handle_hit(probe_site *site, ucontext_t *uc)
 {
-	if (tl_in_handler == 0 && site->armed && !site->entries.empty()) {
-		tl_in_handler = 1;
+	if (claim_thread_slot() && tl_slot->in_handler == 0 && site->armed && !site->entries.empty()) {
+		tl_slot->in_handler = 1;
+		current_signal_callback = &tl_slot->callback;
+		tl_slot->callback.cookie.reset();
 		pt_regs regs;
 		arch::fill_pt_regs(uc, site->addr, regs);
-		tl_current_regs = &regs;
-		tl_current_pc = site->addr;
-		tl_current_sp = arch::get_sp(uc);
-		tl_phase = 1;
+		tl_slot->current_regs = &regs;
+		tl_slot->current_pc = site->addr;
+		tl_slot->current_sp = arch::get_sp(uc);
+		tl_slot->phase = 1;
 		bool overrided = false;
 		try {
 			if (site->has_override) {
-				tl_override = override_state{};
-				curr_thread_override_return_callback =
-					override_return_set_callback(
-						set_override);
+				tl_slot->override = override_state{};
+				tl_slot->callback.override_return = set_override;
 				for (auto *e : site->entries) {
 					if (e->type == ATTACH_UPROBE_OVERRIDE) {
 						e->run<ATTACH_UPROBE_OVERRIDE_INDEX>(
@@ -788,8 +938,8 @@ void trap_engine::handle_hit(probe_site *site, ucontext_t *uc)
 						break;
 					}
 				}
-				curr_thread_override_return_callback.reset();
-				overrided = tl_override.is_overrided;
+				tl_slot->callback.override_return = nullptr;
+				overrided = tl_slot->override.is_overrided;
 			} else {
 				for (auto *e : site->entries) {
 					if (e->type == ATTACH_UPROBE)
@@ -798,15 +948,17 @@ void trap_engine::handle_hit(probe_site *site, ucontext_t *uc)
 			}
 		} catch (...) {
 		}
-		tl_phase = 0;
-		tl_current_regs = nullptr;
+		current_signal_callback = nullptr;
+		tl_slot->callback.override_return = nullptr;
+		tl_slot->phase = 0;
+		tl_slot->current_regs = nullptr;
 		if (overrided) {
-			tl_in_handler = 0;
-			arch::do_return(uc, tl_override.value);
+			tl_slot->in_handler = 0;
+			arch::do_return(uc, tl_slot->override.value);
 			return;
 		}
 		if (site->has_uretprobe) {
-			uret_stack *stack = get_uret_stack();
+			uret_stack *stack = &tl_slot->uret;
 			if (stack->depth < URET_STACK_DEPTH) {
 				auto &frame = stack->frames[stack->depth++];
 				frame.function = site->addr;
@@ -815,14 +967,16 @@ void trap_engine::handle_hit(probe_site *site, ucontext_t *uc)
 				arch::set_return_address(uc, uret_trampoline);
 			}
 		}
-		tl_in_handler = 0;
+		tl_slot->in_handler = 0;
 	}
 	resume(site, uc);
 }
 
 void trap_engine::handle_return(ucontext_t *uc)
 {
-	uret_stack *stack = &tl_uret;
+	if (!tl_slot)
+		return;
+	uret_stack *stack = &tl_slot->uret;
 	uintptr_t sp = arch::get_sp(uc);
 	// Drop frames abandoned by longjmp/exceptions: their stack pointer is
 	// below the one we are returning with.
@@ -830,25 +984,26 @@ void trap_engine::handle_return(ucontext_t *uc)
 	       stack->frames[stack->depth - 1].sp + sizeof(uintptr_t) < sp)
 		stack->depth--;
 	if (stack->depth == 0) {
-		signal(SIGTRAP, SIG_DFL);
 		return;
 	}
 	uret_frame frame = stack->frames[--stack->depth];
 	arch::set_pc(uc, frame.orig_ret);
-	if (tl_in_handler != 0)
+	if (tl_slot->in_handler != 0)
 		return;
 	site_table *cur = table.load(std::memory_order_acquire);
 	probe_site *site = cur ? cur->find_by_addr(frame.function) : nullptr;
 	if (!site || !site->armed || !site->has_uretprobe)
 		return;
-	tl_in_handler = 1;
+	tl_slot->in_handler = 1;
+	current_signal_callback = &tl_slot->callback;
+	tl_slot->callback.cookie.reset();
 	pt_regs regs;
 	arch::fill_pt_regs(uc, frame.orig_ret, regs);
-	tl_current_regs = &regs;
-	tl_current_pc = frame.orig_ret;
-	tl_current_sp = arch::get_sp(uc);
-	tl_phase = 2;
-	tl_return_value = arch::get_return_value(uc);
+	tl_slot->current_regs = &regs;
+	tl_slot->current_pc = frame.orig_ret;
+	tl_slot->current_sp = arch::get_sp(uc);
+	tl_slot->phase = 2;
+	tl_slot->return_value = arch::get_return_value(uc);
 	try {
 		for (auto *e : site->entries) {
 			if (e->type == ATTACH_URETPROBE)
@@ -856,9 +1011,10 @@ void trap_engine::handle_return(ucontext_t *uc)
 		}
 	} catch (...) {
 	}
-	tl_phase = 0;
-	tl_current_regs = nullptr;
-	tl_in_handler = 0;
+	current_signal_callback = nullptr;
+	tl_slot->phase = 0;
+	tl_slot->current_regs = nullptr;
+	tl_slot->in_handler = 0;
 }
 
 void trap_engine::chain_previous(int sig, siginfo_t *info, void *ctx)
@@ -888,9 +1044,9 @@ void trap_engine::chain_previous(int sig, siginfo_t *info, void *ctx)
 void trap_engine::on_sigtrap(int sig, siginfo_t *info, void *ctx)
 {
 	int saved_errno = errno;
+	++signal_handler_depth;
 	auto *uc = (ucontext_t *)ctx;
 	trap_engine &engine = trap_engine::get();
-	active_handlers.fetch_add(1, std::memory_order_acq_rel);
 	uintptr_t pc = arch::trap_pc(uc);
 	if (pc == engine.uret_trampoline && pc != 0) {
 		engine.handle_return(uc);
@@ -907,57 +1063,11 @@ void trap_engine::on_sigtrap(int sig, siginfo_t *info, void *ctx)
 	} else {
 		engine.chain_previous(sig, info, ctx);
 	}
-	active_handlers.fetch_sub(1, std::memory_order_acq_rel);
+	release_idle_slot();
+	--signal_handler_depth;
 	errno = saved_errno;
 }
 
-struct unwind_state {
-	uintptr_t interrupted_sp;
-	uintptr_t interrupted_pc;
-	std::vector<uint64_t> *frames;
-	bool past_handler;
-};
-
-// _Unwind_Backtrace callback. Inside the callback _Unwind_GetCFA() yields
-// the stack pointer of the frame being visited (the CFA of its callee), so
-// frames of our handler and the signal trampoline report values below the
-// interrupted stack pointer, the interrupted function reports the address
-// of the signal context (also below it), and the interrupted function's
-// callers report values at or above it. Only the callers are collected;
-// the interrupted pc itself is reported as frame 0 by the caller of this.
-_Unwind_Reason_Code collect_frame(struct _Unwind_Context *ctx, void *arg)
-{
-	auto *st = (unwind_state *)arg;
-	uintptr_t cfa = (uintptr_t)_Unwind_GetCFA(ctx);
-	if (cfa < st->interrupted_sp)
-		return _URC_NO_REASON;
-	uintptr_t ip = (uintptr_t)_Unwind_GetIP(ctx);
-	if (!st->past_handler) {
-		st->past_handler = true;
-		if (ip == st->interrupted_pc || ip == st->interrupted_pc + 1)
-			return _URC_NO_REASON;
-	}
-	st->frames->push_back((uint64_t)ip);
-	return st->frames->size() >= MAX_BACKTRACE_FRAMES ? _URC_END_OF_STACK :
-							     _URC_NO_REASON;
-}
-
-// Stack of the interrupted thread as seen by the probe: frame 0 is the
-// interrupted pc (the probed function at entry, the return address in its
-// caller at exit), followed by the return addresses of the callers. This
-// mirrors what the kernel reports for bpf_get_stack on a uprobe.
-std::vector<uint64_t> *trap_engine::generate_stack()
-{
-	if (tl_current_regs == nullptr) {
-		SPDLOG_ERROR("There is no trap uprobe running");
-		return nullptr;
-	}
-	auto result = new std::vector<uint64_t>;
-	result->push_back(tl_current_pc);
-	unwind_state st{ tl_current_sp, tl_current_pc, result, false };
-	_Unwind_Backtrace(collect_frame, &st);
-	return result;
-}
 } // namespace
 
 // ---------------------------------------------------------------------------
@@ -979,6 +1089,16 @@ int bpftime::attach::trap::from_cb_idx_to_attach_type(int idx)
 	}
 }
 
+uint64_t bpftime::attach::trap::split_write_count()
+{
+	return split_writes.load(std::memory_order_relaxed);
+}
+
+uint64_t bpftime::attach::trap::thread_slot_exhaustion_count()
+{
+	return exhausted_slots.load(std::memory_order_relaxed);
+}
+
 std::optional<std::string>
 bpftime::attach::trap::check_probe_target(const void *func_addr)
 {
@@ -988,6 +1108,12 @@ bpftime::attach::trap::check_probe_target(const void *func_addr)
 	if (!arch::decode((const uint8_t *)func_addr, err))
 		return err;
 	return std::nullopt;
+}
+
+void trap_attach_impl::prepare_thread()
+{
+	(void)claim_thread_slot();
+	release_idle_slot();
 }
 
 trap_attach_impl::trap_attach_impl()
@@ -1006,6 +1132,14 @@ trap_attach_impl::~trap_attach_impl()
 
 int trap_attach_impl::attach_at(void *func_addr, attach_entry_callback &&cb)
 {
+	if (current_signal_callback)
+		return -EOPNOTSUPP;
+	const bool callable = std::holds_alternative<callback_variant>(cb) ?
+		std::visit([](const auto &fn) { return bool(fn); },
+			   std::get<callback_variant>(cb)) :
+		bool(std::get<ebpf_callback_args>(cb).ebpf_cb);
+	if (!callable)
+		return -EINVAL;
 	if (func_addr == nullptr) {
 		SPDLOG_ERROR("Unable to attach uprobes to address 0");
 		return -EINVAL;
@@ -1066,6 +1200,8 @@ void trap_attach_impl::iterate_attaches(attach_iterate_callback cb)
 
 int trap_attach_impl::detach_by_func_addr(const void *func)
 {
+	if (current_signal_callback)
+		return -EOPNOTSUPP;
 	std::vector<int> ids;
 	int res = trap_engine::get().detach_all_at((uintptr_t)func, this, ids);
 	for (int id : ids)
@@ -1075,13 +1211,17 @@ int trap_attach_impl::detach_by_func_addr(const void *func)
 
 int trap_attach_impl::detach_by_id(int id)
 {
+	if (current_signal_callback)
+		return -EOPNOTSUPP;
 	auto it = attaches.find(id);
 	if (it == attaches.end()) {
 		SPDLOG_ERROR("Unable to find attach id {}", id);
 		return -ENOENT;
 	}
-	int res = trap_engine::get().detach(id, this);
-	attaches.erase(it);
+	bool detached = false;
+	int res = trap_engine::get().detach(id, this, detached);
+	if (detached)
+		attaches.erase(it);
 	return res;
 }
 
@@ -1091,6 +1231,10 @@ int trap_attach_impl::create_attach_with_ebpf_callback(
 	ebpf_run_callback &&cb, const attach_private_data &private_data,
 	int attach_type)
 {
+	if (current_signal_callback)
+		return -EOPNOTSUPP;
+	if (!cb)
+		return -EINVAL;
 	SPDLOG_DEBUG("Attaching with private_data type {}",
 		     typeid(private_data).name());
 	const auto *sub =
@@ -1127,9 +1271,6 @@ int trap_attach_impl::create_attach_with_ebpf_callback(
 					int err = cb(memory, memory_size,
 						     return_value);
 					if (err < 0) {
-						SPDLOG_ERROR(
-							"Failed to run ebpf callback at trap attach impl for ureplace, err={}",
-							err);
 						return err;
 					}
 					bpftime_set_retval(*return_value);
@@ -1157,12 +1298,9 @@ void trap_attach_impl::register_custom_helpers(
 			  (void *)bpftime_trap_get_retval);
 }
 
-void *trap_attach_impl::call_attach_specific_function(const std::string &name,
-						      void *)
+void *trap_attach_impl::call_attach_specific_function(const std::string &, void *)
 {
-	if (name == "generate_stack")
-		return trap_engine::get().generate_stack();
-	SPDLOG_ERROR("Invalid trap attach impl feature: {}", name);
+	// Dynamic unwinding and heap-owned vectors are not signal-safe.
 	return nullptr;
 }
 
@@ -1171,12 +1309,10 @@ bpftime::attach::trap::bpftime_trap_get_func_arg(uint64_t, uint32_t n,
 						 uint64_t *value, uint64_t,
 						 uint64_t)
 {
-	if (tl_current_regs == nullptr) {
-		SPDLOG_DEBUG("get_func_arg: no active probe context");
+	if (!tl_slot || tl_slot->current_regs == nullptr) {
 		return -EINVAL;
 	}
-	if (!arch::get_arg(*tl_current_regs, n, value)) {
-		SPDLOG_DEBUG("get_func_arg: argument index {} out of range", n);
+	if (!arch::get_arg(*tl_slot->current_regs, n, value)) {
 		return -EINVAL;
 	}
 	return 0;
@@ -1186,11 +1322,10 @@ extern "C" uint64_t
 bpftime::attach::trap::bpftime_trap_get_func_ret(uint64_t, uint64_t *value,
 						 uint64_t, uint64_t, uint64_t)
 {
-	if (tl_phase != 2) {
-		SPDLOG_DEBUG("get_func_ret: not in uretprobe phase");
+	if (!tl_slot || tl_slot->phase != 2) {
 		return -EOPNOTSUPP;
 	}
-	*value = tl_return_value;
+	*value = tl_slot->return_value;
 	return 0;
 }
 
@@ -1200,9 +1335,8 @@ extern "C" uint64_t bpftime::attach::trap::bpftime_trap_get_retval(uint64_t,
 								    uint64_t,
 								    uint64_t)
 {
-	if (tl_phase != 2) {
-		SPDLOG_DEBUG("get_retval: not in uretprobe phase");
+	if (!tl_slot || tl_slot->phase != 2) {
 		return -EOPNOTSUPP;
 	}
-	return tl_return_value;
+	return tl_slot->return_value;
 }

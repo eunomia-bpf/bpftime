@@ -65,13 +65,21 @@ int from_cb_idx_to_attach_type(int idx);
 // the address is usable.
 std::optional<std::string> check_probe_target(const void *func_addr);
 
+// Number of times a probe had to be written with the three-phase c.ebreak
+// protocol, i.e. a 4-byte instruction at a 2-byte boundary. Tests use this to
+// assert that the path is really taken.
+uint64_t split_write_count();
+// Skipped probe hits when all preallocated thread slots were occupied.
+uint64_t thread_slot_exhaustion_count();
+
 class trap_attach_impl final : public base_attach_impl {
     public:
 	trap_attach_impl();
 	~trap_attach_impl() override;
 
-	// No-op kept for API compatibility: uret_stack is now in TLS.
-	static void prepare_thread() {}
+	// Optional priming from ordinary thread context. First-hit acquisition
+	// is also allocation-free for threads that predate injection.
+	static void prepare_thread();
 	trap_attach_impl(const trap_attach_impl &) = delete;
 	trap_attach_impl &operator=(const trap_attach_impl &) = delete;
 

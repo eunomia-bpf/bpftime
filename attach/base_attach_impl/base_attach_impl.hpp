@@ -3,6 +3,7 @@
 
 #include "spdlog/spdlog.h"
 #include <cstdint>
+#include <cerrno>
 #include <functional>
 #include <optional>
 #include "attach_private_data.hpp"
@@ -19,6 +20,23 @@ inline thread_local std::optional<override_return_set_callback>
 	curr_thread_override_return_callback;
 // Function address exposed while an attach callback is running.
 inline thread_local uintptr_t current_thread_attach_func_ip = 0;
+
+// A signal backend supplies already allocated callback state. Keep only a
+// trivially initialized pointer in static TLS: accessing this path must not
+// call __tls_get_addr or register a TLS destructor after late dlopen.
+struct signal_callback_context {
+	uintptr_t function_ip = 0;
+	std::optional<uint64_t> cookie;
+	void (*override_return)(uint64_t, uint64_t) = nullptr;
+};
+#if defined(__linux__)
+__attribute__((tls_model("initial-exec")))
+#endif
+inline thread_local signal_callback_context *current_signal_callback = nullptr;
+#if defined(__linux__)
+__attribute__((tls_model("initial-exec")))
+#endif
+inline thread_local unsigned signal_handler_depth = 0;
 
 // A wrapper function for an entry function of an ebpf program
 using ebpf_run_callback = std::function<int(void *memory, size_t memory_size,
@@ -79,6 +97,12 @@ extern "C" {
 inline uint64_t bpftime_set_retval(uint64_t value)
 {
 	using namespace bpftime::attach;
+	if (auto *ctx = current_signal_callback) {
+		if (!ctx->override_return)
+			return (uint64_t)-EINVAL;
+		ctx->override_return(0, value);
+		return 0;
+	}
 	if (curr_thread_override_return_callback.has_value()) {
 		curr_thread_override_return_callback.value()(0, value);
 	} else {
@@ -94,6 +118,12 @@ inline uint64_t bpftime_set_retval(uint64_t value)
 inline uint64_t bpftime_override_return(uint64_t ctx, uint64_t value)
 {
 	using namespace bpftime::attach;
+	if (auto *signal_ctx = current_signal_callback) {
+		if (!signal_ctx->override_return)
+			return (uint64_t)-EINVAL;
+		signal_ctx->override_return(ctx, value);
+		return 0;
+	}
 	if (curr_thread_override_return_callback.has_value()) {
 		spdlog::debug("Overriding return value for ctx {:x} with {}",
 			      ctx, value);

@@ -56,8 +56,7 @@ TEST_CASE("Trap backend: handler signal-safety under allocator stress")
 		});
 	}
 
-	// Run long enough that every thread's first uretprobe hit triggers
-	// lazy uret_stack allocation inside the handler.
+	// Exercise the first allocation-free state acquisition on each thread.
 	std::this_thread::sleep_for(std::chrono::milliseconds(500));
 	stop.store(true, std::memory_order_relaxed);
 
@@ -71,6 +70,7 @@ TEST_CASE("Trap backend: handler signal-safety under allocator stress")
 
 TEST_CASE("Trap backend: new threads get uret stacks without deadlock")
 {
+	const auto exhausted_before = thread_slot_exhaustion_count();
 	trap_attach_impl man;
 	std::atomic<int> hits{ 0 };
 	std::atomic<bool> stop{ false };
@@ -87,12 +87,13 @@ TEST_CASE("Trap backend: new threads get uret stacks without deadlock")
 			}) >= 0);
 
 	// Spawn waves of short-lived threads, each of which must lazily
-	// allocate its uret stack on the very first probe hit.
-	for (int wave = 0; wave < 4; wave++) {
+	// acquire its uret stack on the very first probe hit. More than 1024
+	// threads also prove that idle slots are returned to the bounded pool.
+	for (int wave = 0; wave < 160; wave++) {
 		std::vector<std::thread> batch;
 		for (int i = 0; i < 8; i++) {
 			batch.emplace_back([&] {
-				for (int j = 0; j < 50; j++) {
+				for (int j = 0; j < 2; j++) {
 					void *p = __trap_ss_alloc(32);
 					__trap_ss_free_wrap(p);
 				}
@@ -102,5 +103,6 @@ TEST_CASE("Trap backend: new threads get uret stacks without deadlock")
 			t.join();
 	}
 
-	REQUIRE(hits.load() > 0);
+	REQUIRE(hits.load() == 160 * 8 * 2 * 2);
+	REQUIRE(thread_slot_exhaustion_count() == exhausted_before);
 }
