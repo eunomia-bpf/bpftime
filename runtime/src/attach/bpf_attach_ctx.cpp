@@ -5,6 +5,9 @@
  */
 #include "attach_private_data.hpp"
 #include "base_attach_impl.hpp"
+#if BPFTIME_HAVE_TRAP_UPROBE_ATTACH
+#include "trap_uprobe_attach_impl.hpp"
+#endif
 #include "bpftime_shm.hpp"
 
 #include "handler/link_handler.hpp"
@@ -385,9 +388,18 @@ int bpf_attach_ctx::instantiate_bpf_link_handler_at(
 		}
 #endif
 		auto cookie = handler.attach_cookie;
+#if BPFTIME_HAVE_TRAP_UPROBE_ATTACH
+		if (dynamic_cast<attach::trap::trap_attach_impl *>(attach_impl)) {
+			if (int err = prog->prepare_for_signal_execution(); err < 0)
+				return err;
+		}
+#endif
 		attach_id = attach_impl->create_attach_with_ebpf_callback(
 			[=](void *mem, size_t mem_size, uint64_t *ret) -> int {
-				current_thread_bpf_cookie = cookie;
+				if (auto *ctx = attach::current_signal_callback)
+					ctx->cookie = cookie;
+				else
+					current_thread_bpf_cookie = cookie;
 				int err = prog->bpftime_prog_exec(
 					(void *)mem, mem_size, ret);
 				return err;

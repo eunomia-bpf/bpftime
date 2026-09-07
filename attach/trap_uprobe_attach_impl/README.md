@@ -41,16 +41,28 @@ is ON the agent uses the trap backend; otherwise it falls back to frida.
   Signals that do not originate from one of our breakpoints are forwarded
   unchanged. If the host installs its own handler later, the next attach
   puts ours back in front and forwards to the new one.
-- The handler path uses only async-signal-safe operations. The per-thread
-  uretprobe shadow stack is allocated with `mmap(MAP_ANONYMOUS)` (not
-  `malloc`) and every thread-local uses the initial-exec TLS model, so no
-  first-access allocation goes through the C library heap. For applications
-  that want to eliminate even the `mmap` from the first uretprobe hit,
-  `trap_attach_impl::prepare_thread()` can be called once from normal
-  (non-signal) context on each thread before probes fire.
-- No logging (spdlog / stdio) is performed from inside the signal handler.
-  Callback exceptions are caught and silently swallowed; the host is never
-  terminated by this code.
+- Handler state comes from a statically initialized pool of 1024 slots.
+  A thread's first hit claims a slot using lock-free atomics. Idle slots
+  are returned once no callback or pending return probe needs them. Only
+  small, trivially initialized fields use initial-exec TLS; no dynamic TLS
+  resolution, TLS destructor registration, allocation or locking is needed
+  on first access. `prepare_thread()` remains optional. Late loading requires
+  the loader to have enough static TLS space for these small fields; otherwise
+  `dlopen` fails before any breakpoint is installed.
+- Runtime-managed BPF links call `prepare_for_signal_execution()` before
+  installing a trap. Every helper number and concrete implementation must match the runtime
+  list of audited helpers; unaudited helpers return `-ENOTSUP` at admission.
+  Currently accepted built-ins are function IP, attach cookie, return override
+  and the trap argument/return helpers. Map operations, printing, tail calls,
+  dynamic stack collection, AOT objects, custom VMs and MPK execution are not
+  admitted. Accepted programs are eagerly JIT-compiled; an unavailable JIT
+  also rejects admission. Ordinary execution and other backends retain their
+  existing behavior.
+- Native callbacks and manually supplied opaque eBPF callbacks must themselves
+  obey the async-signal-safe contract: no allocation, locks, logging, throwing,
+  or attach/detach operations. The backend cannot inspect arbitrary C++ code.
+  Runtime BPF execution rejects an unprepared program even if called manually
+  from such a callback. `generate_stack` returns null on this backend.
 - Patching a 4-byte instruction at a 2-byte boundary uses a three-phase
   protocol: (1) write `c.ebreak` into the low half, (2) write the
   intended high half, (3) write the intended low half, with icache flushes
@@ -75,6 +87,15 @@ is ON the agent uses the trap backend; otherwise it falls back to frida.
 - Probe sites, out-of-line slots and detached entries are kept alive for
   the lifetime of the process so that a signal handler racing with a
   detach can never touch freed memory.
+- Slot or return-stack exhaustion skips only the affected probe operation and
+  resumes the original instruction. A thread exiting with pending return
+  probes can retain a pool slot; no per-thread VMA is created in the handler.
+- Code patching preserves each page's original permissions and never removes
+  EXEC as a fallback for a rejected writable mapping. Restoration failures
+  return `-EIO`, even if a retry succeeds. Failed arming rolls back through a
+  new permission acquisition; if rollback is denied, the retained trap site
+  has no callbacks and still resumes the original instruction. Persistent OS
+  refusal can leave permissions degraded and is never reported as success.
 
 ## Performance comparison
 
@@ -121,3 +142,13 @@ Per-call latency (ns) across three uprobe backends.  Lower is better.
 
 The tests run natively and under `qemu-user` for riscv64; see
 `cmake/riscv64-toolchain.cmake`.
+`bpftime_trap_late_host` loads `libbpftime_trap_late_module.so` after creating
+its worker threads. The module counts handler-reachable allocation, mutex and
+dynamic-TLS calls. CTest registers it as `bpftime_trap_late_injection`.
+
+With runtime unit testing and libbpf enabled, run `bpftime_runtime_tests` on
+native RISC-V to cover the complete runtime link admission path. The QEMU
+workflow runs the trap eBPF integration and direct program admission tests;
+the shared-memory link admission test also requires robust futex support
+(`set_robust_list`), which qemu-user does not implement. Do not disable
+Boost's robust mutexes to make that test pass under emulation.

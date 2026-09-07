@@ -164,6 +164,11 @@ target_link_libraries(${PROJECT_NAME}
   bpftime_base_attach_impl
 )
 
+if(TARGET bpftime_trap_uprobe_attach_impl)
+  target_link_libraries(${PROJECT_NAME} PUBLIC bpftime_trap_uprobe_attach_impl)
+  target_compile_definitions(${PROJECT_NAME} PUBLIC BPFTIME_HAVE_TRAP_UPROBE_ATTACH=1)
+endif()
+
 if(UNIX AND NOT APPLE)
   target_link_libraries(${PROJECT_NAME} PUBLIC ${CMAKE_DL_LIBS})
 endif()

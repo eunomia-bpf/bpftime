@@ -133,6 +133,7 @@ add_test(NAME bpftime_runtime_tests COMMAND bpftime_runtime_tests)
 # These are necessary ebpf program required by the test
 set(used_ebpf_programs
     uprobe
+    uprobe_trap
     replace
     filter
     helpers

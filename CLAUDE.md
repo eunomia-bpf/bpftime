@@ -162,5 +162,18 @@ must remain a guest of that process:
 
 ## Repository Documentation
 
+Trap callbacks execute inside SIGTRAP. Runtime-managed BPF links must reject
+programs whose concrete helper implementations have not been audited as
+async-signal-safe, and must finish JIT compilation before arming a probe.
+Other attach backends retain their existing helper support. Never replace a
+rejected helper with a silent no-op. Native/opaque callbacks are responsible
+for satisfying the same signal-safety contract themselves.
+
+RISC-V trap validation must include a real 4-byte instruction at an address
+congruent to 2 modulo 4, with assertions on both instruction width and the
+three-phase write counter. Test late dlopen after worker threads already exist,
+and permission failures during arm, disarm and rollback. QEMU results do not
+establish native concurrent patch/restore behavior.
+
 Do not create a root `docs/` directory or commit pull-request review artifacts.
 Keep repository maintenance and design constraints in this file.
