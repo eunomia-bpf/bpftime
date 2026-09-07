@@ -113,7 +113,11 @@ resolve_function_addr_by_module_offset(const std::string_view &module_name,
 {
 	auto exec_path = get_executable_path();
 	void *module_base_addr = nullptr;
-	if (std::filesystem::equivalent(module_name, exec_path)) {
+	std::error_code ec;
+	// An empty module name explicitly denotes the main executable. Missing
+	// paths should fall through to module lookup, not throw from equivalent.
+	if (module_name.empty() ||
+	    std::filesystem::equivalent(module_name, exec_path, ec)) {
 		module_base_addr = get_module_base_addr("");
 	} else {
 		module_base_addr =

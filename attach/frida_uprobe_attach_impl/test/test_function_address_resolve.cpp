@@ -32,6 +32,18 @@ TEST_CASE("Test external function resolve")
 	REQUIRE(addr == (void *)&malloc);
 }
 
+TEST_CASE("Module offset resolution handles empty and missing paths")
+{
+	frida_attach_impl man;
+	void *base = get_module_base_addr("");
+	REQUIRE(base != nullptr);
+	const auto offset = (uintptr_t)&__func_reolve_test - (uintptr_t)base;
+	REQUIRE(resolve_function_addr_by_module_offset("", offset) ==
+		(void *)&__func_reolve_test);
+	REQUIRE(resolve_function_addr_by_module_offset(
+		"/bpftime-nonexistent-module-for-resolution-test.so", 0) == nullptr);
+}
+
 #if defined(__linux__)
 TEST_CASE("Mapped module paths survive VMA splitting")
 {
