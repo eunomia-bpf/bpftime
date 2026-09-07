@@ -7,10 +7,12 @@
 #include <algorithm>
 #include <boost/asio/post.hpp>
 #include <boost/asio/thread_pool.hpp>
+#include <chrono>
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
 #include <cstdio>
+#include <cstdlib>
 #include <dlfcn.h>
 #include <exception>
 #include <iterator>
@@ -254,12 +256,48 @@ void fatbin_record::try_loading_ptxs(class nv_attach_impl &impl)
 	}
 	SPDLOG_INFO("Loading & patching current fatbin..");
 
+	const bool startup_timing_enabled = [] {
+		const char *value =
+			std::getenv("BPFTIME_CUDA_STARTUP_TIMING");
+		return value != nullptr && value[0] != '\0' &&
+		       std::strcmp(value, "0") != 0;
+	}();
+	auto emit_startup_stage =
+		[](const char *stage,
+		   const std::chrono::steady_clock::time_point &started,
+		   std::size_t module_count) {
+			const auto elapsed_ms =
+				std::chrono::duration<double, std::milli>(
+					std::chrono::steady_clock::now() -
+					started)
+					.count();
+			std::fprintf(stderr,
+				     "[bpftime-cuda-startup] stage=%s "
+				     "elapsed_ms=%.3f modules=%zu\n",
+				     stage, elapsed_ms, module_count);
+		};
+
+	std::chrono::steady_clock::time_point hack_fatbin_started;
+	if (startup_timing_enabled)
+		hack_fatbin_started = std::chrono::steady_clock::now();
 	auto patched = impl.hack_fatbin(original_ptx);
 	if (!patched)
 		throw std::runtime_error("Unable to patch PTX");
 	auto patched_ptx = std::move(*patched);
+	if (startup_timing_enabled)
+		emit_startup_stage("hack_fatbin", hack_fatbin_started,
+				   patched_ptx.size());
 
+	std::chrono::steady_clock::time_point compile_ptxs_started;
+	if (startup_timing_enabled)
+		compile_ptxs_started = std::chrono::steady_clock::now();
 	auto compiled_ptx = compile_ptxs(impl, patched_ptx);
+	if (startup_timing_enabled)
+		emit_startup_stage("compile_ptxs", compile_ptxs_started,
+				   compiled_ptx.size());
+	std::chrono::steady_clock::time_point module_load_started;
+	if (startup_timing_enabled)
+		module_load_started = std::chrono::steady_clock::now();
 
 	for (const auto &[name, ptx_and_trampoline_flag] : patched_ptx) {
 		const auto &ptx = std::get<0>(ptx_and_trampoline_flag);
@@ -336,6 +374,9 @@ void fatbin_record::try_loading_ptxs(class nv_attach_impl &impl)
 			SPDLOG_INFO("Loaded module: {}", name);
 		}
 	}
+	if (startup_timing_enabled)
+		emit_startup_stage("module_load", module_load_started,
+				   ptxs.size());
 	ptx_loaded = true;
 }
 
