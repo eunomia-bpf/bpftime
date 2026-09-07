@@ -37,7 +37,9 @@ asm(".option push\n"
     ".type __trap_rv_misaligned4, @function\n"
     "__trap_rv_misaligned4:\n"
     "	c.nop\n"		// 2 bytes: pushes the next insn to addr+2
+    ".option norvc\n"
     "	beq a0, x0, 1f\n"	// 4 bytes at addr ≡ 2 (mod 4) — three-phase target
+    ".option rvc\n"
     "	li a0, 1\n"
     "	ret\n"
     "1:	li a0, 2\n"
@@ -197,27 +199,24 @@ TEST_CASE("Trap backend (riscv64): refuses existing breakpoints")
 TEST_CASE("Trap backend (riscv64): three-phase patch on 4-byte insn at "
 	   "addr % 4 == 2")
 {
-	// The function starts with c.nop (2 bytes), so the first 4-byte
-	// instruction (beq) sits at function_addr + 2, which is ≡ 2 (mod 4).
-	// Probing the function puts c.ebreak at function_addr, which is the
-	// c.nop — the beq itself is not the probe target, but the function
-	// entry exercises the three-phase path when restoring/arming.
-	//
-	// We probe at the function entry: write_code must patch 4 bytes at a
-	// 4-aligned address covering both the c.nop and the first half of beq,
-	// OR patch the c.nop alone (2 bytes). Either way the three-phase
-	// protocol is involved because the site straddles a 4-byte boundary.
 	auto *fn = (uint8_t *)__trap_rv_misaligned4;
-	uintptr_t beq_addr = (uintptr_t)fn + 2;
-	INFO("fn=" << (void *)fn << " beq at " << (void *)beq_addr);
-	REQUIRE((beq_addr % 4) == 2);
+	auto *probe = fn + 2;
+	REQUIRE(((uintptr_t)probe % 4) == 2);
+	REQUIRE((probe[0] & 3) == 3);
+	const auto before = split_write_count();
 
 	trap_attach_impl man;
 	int hits = 0;
 	auto cb = [&](const pt_regs &) { hits++; };
-	REQUIRE(man.create_uprobe_at((void *)fn, cb) >= 0);
+	const int id = man.create_uprobe_at(probe, cb);
+	REQUIRE(id >= 0);
+	REQUIRE(split_write_count() == before + 1);
 	REQUIRE(__trap_rv_misaligned4(0) == 2);
 	REQUIRE(hits == 1);
 	REQUIRE(__trap_rv_misaligned4(5) == 1);
+	REQUIRE(hits == 2);
+	REQUIRE(man.detach_by_id(id) == 0);
+	REQUIRE(split_write_count() == before + 2);
+	REQUIRE(__trap_rv_misaligned4(0) == 2);
 	REQUIRE(hits == 2);
 }
