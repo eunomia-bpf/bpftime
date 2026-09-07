@@ -9,7 +9,7 @@ SET(CMAKE_CXX_COMPILER riscv64-linux-gnu-g++)
 SET(ARCH "riscv64")
 
 # where is the target environment
-SET(CMAKE_FIND_ROOT_PATH /usr/riscv64-linux-gnu)
+SET(CMAKE_FIND_ROOT_PATH ${CMAKE_SYSROOT} /usr/riscv64-linux-gnu)
 
 # search for programs in the build host directories
 SET(CMAKE_FIND_ROOT_PATH_MODE_PROGRAM NEVER)

@@ -3,11 +3,22 @@
 #
 set(LIBBPF_DIR ${CMAKE_CURRENT_LIST_DIR}/../third_party/libbpf/)
 include(ExternalProject)
+set(LIBBPF_CROSS_ARGS "")
+if(CMAKE_CROSSCOMPILING)
+  set(LIBBPF_TARGET_CC "${CMAKE_C_COMPILER}")
+  if(CMAKE_C_COMPILER_ARG1)
+    string(APPEND LIBBPF_TARGET_CC " ${CMAKE_C_COMPILER_ARG1}")
+  endif()
+  if(CMAKE_SYSROOT)
+    string(APPEND LIBBPF_TARGET_CC " --sysroot=${CMAKE_SYSROOT}")
+  endif()
+  list(APPEND LIBBPF_CROSS_ARGS "CC=${LIBBPF_TARGET_CC}" "AR=${CMAKE_AR}")
+endif()
 ExternalProject_Add(libbpf
   PREFIX libbpf
   SOURCE_DIR ${LIBBPF_DIR}/src
   CONFIGURE_COMMAND "mkdir" "-p" "${CMAKE_CURRENT_BINARY_DIR}/libbpf/libbpf"
-  BUILD_COMMAND "INCLUDEDIR=" "LIBDIR=" "UAPIDIR=" "OBJDIR=${CMAKE_CURRENT_BINARY_DIR}/libbpf/libbpf" "DESTDIR=${CMAKE_CURRENT_BINARY_DIR}/libbpf" "make" "CFLAGS=-g -O2 -std=gnu89 -fPIC -fvisibility=hidden -DSHARED -DCUSTOM_DEFINE=1" "-j" "install"
+  BUILD_COMMAND "INCLUDEDIR=" "LIBDIR=" "UAPIDIR=" "OBJDIR=${CMAKE_CURRENT_BINARY_DIR}/libbpf/libbpf" "DESTDIR=${CMAKE_CURRENT_BINARY_DIR}/libbpf" "make" ${LIBBPF_CROSS_ARGS} "CFLAGS=-g -O2 -std=gnu89 -fPIC -fvisibility=hidden -DSHARED -DCUSTOM_DEFINE=1" "-j" "install"
   BUILD_IN_SOURCE TRUE
   BUILD_ALWAYS TRUE
   INSTALL_COMMAND ""
@@ -97,20 +108,43 @@ endfunction()
 
 # Define a helper function
 function(add_ebpf_program_target target_name source_file output_file)
-  # opensnoop.bpf.o
-  execute_process(COMMAND bash -c "uname -m | sed 's/x86_64/x86/' \
-| sed 's/arm.*/arm/' \
-| sed 's/aarch64/arm64/' \
-| sed 's/ppc64le/powerpc/' \
-| sed 's/mips.*/mips/' \
-| sed 's/riscv64/riscv/' \
-| sed 's/loongarch64/loongarch/'"
-    OUTPUT_VARIABLE UNAME_ARCH
-  )
-  string(STRIP ${UNAME_ARCH} UNAME_ARCH_STRIPPED)
+  find_program(BPFTIME_BPF_CLANG NAMES clang clang-20 clang-18)
+  if(NOT BPFTIME_BPF_CLANG)
+    message(FATAL_ERROR "A host clang with the BPF target is required")
+  endif()
+  # The eBPF program must be built for the architecture it will *run* on, not
+  # the one doing the build: __TARGET_ARCH_* and vmlinux.h decide which
+  # register offsets PT_REGS_PARM*/PT_REGS_IP read out of pt_regs. Taking the
+  # build host here silently produces a program that reads the wrong registers
+  # in a cross build. CMAKE_SYSTEM_PROCESSOR is the target architecture when
+  # cross compiling and the host architecture otherwise, so native builds keep
+  # selecting exactly what `uname -m` used to select.
+  set(BPF_TARGET_ARCH "${CMAKE_SYSTEM_PROCESSOR}")
+  if(NOT BPF_TARGET_ARCH)
+    execute_process(COMMAND uname -m
+      OUTPUT_VARIABLE BPF_TARGET_ARCH OUTPUT_STRIP_TRAILING_WHITESPACE)
+  endif()
+  string(TOLOWER "${BPF_TARGET_ARCH}" BPF_TARGET_ARCH)
+  if(BPF_TARGET_ARCH MATCHES "^(x86_64|i.86|amd64)$")
+    set(UNAME_ARCH_STRIPPED "x86")
+  elseif(BPF_TARGET_ARCH MATCHES "^(aarch64|arm64)$")
+    set(UNAME_ARCH_STRIPPED "arm64")
+  elseif(BPF_TARGET_ARCH MATCHES "^arm")
+    set(UNAME_ARCH_STRIPPED "arm")
+  elseif(BPF_TARGET_ARCH MATCHES "^(ppc|powerpc)")
+    set(UNAME_ARCH_STRIPPED "powerpc")
+  elseif(BPF_TARGET_ARCH MATCHES "^mips")
+    set(UNAME_ARCH_STRIPPED "mips")
+  elseif(BPF_TARGET_ARCH MATCHES "^riscv")
+    set(UNAME_ARCH_STRIPPED "riscv")
+  elseif(BPF_TARGET_ARCH MATCHES "^loongarch")
+    set(UNAME_ARCH_STRIPPED "loongarch")
+  else()
+    set(UNAME_ARCH_STRIPPED "${BPF_TARGET_ARCH}")
+  endif()
   add_custom_command(
     OUTPUT ${output_file}
-    COMMAND clang -O2 -target bpf -c -g -D__TARGET_ARCH_${UNAME_ARCH_STRIPPED} -I${CMAKE_SOURCE_DIR}/third_party/vmlinux/${UNAME_ARCH_STRIPPED} -I${LIBBPF_INCLUDE_DIRS}/uapi -I${LIBBPF_INCLUDE_DIRS} ${source_file} -o ${output_file}
+    COMMAND ${BPFTIME_BPF_CLANG} -O2 -target bpf -c -g -D__TARGET_ARCH_${UNAME_ARCH_STRIPPED} -I${CMAKE_SOURCE_DIR}/third_party/vmlinux/${UNAME_ARCH_STRIPPED} -I${LIBBPF_INCLUDE_DIRS}/uapi -I${LIBBPF_INCLUDE_DIRS} ${source_file} -o ${output_file}
     DEPENDS ${source_file}
   )
   add_custom_target(${target_name}

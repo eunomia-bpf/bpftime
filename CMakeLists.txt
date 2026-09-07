@@ -31,6 +31,12 @@ project(
 include(cmake/CompilerWarnings.cmake)
 include(cmake/StandardSettings.cmake)
 
+if(BPFTIME_ENABLE_UNIT_TESTING OR
+   (BPFTIME_ENABLE_TRAP_UPROBE AND
+    (NOT DEFINED BPFTIME_TRAP_ATTACH_BUILD_TESTS OR BPFTIME_TRAP_ATTACH_BUILD_TESTS)))
+  enable_testing()
+endif()
+
 if(NOT CMAKE_BUILD_TYPE)
   set(CMAKE_BUILD_TYPE "Debug")
 endif()

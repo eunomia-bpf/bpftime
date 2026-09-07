@@ -38,18 +38,25 @@ set(TEST_SOURCES
     test_shm_allocation_failure.cpp
     test_software_perf_event.cpp
 
-    attach_with_ebpf/test_attach_filter_with_ebpf.cpp
-    attach_with_ebpf/test_attach_uprobe_with_ebpf.cpp
     attach_with_ebpf/test_attach_uprobe_with_ebpf_trap.cpp
     attach_with_ebpf/test_helpers.cpp
-    attach_with_ebpf/test_shm_progs_attach.cpp
     attach_with_ebpf/test_ufunc_register.cpp
-    attach_with_ebpf/test_attach_replace.cpp
 
     tailcall/test_user_to_kernel_tailcall.cpp
     tailcall/test_user_to_user_tailcall.cpp
 
 )
+# These tests instantiate attach::frida_attach_impl directly, so they only
+# build when the frida backend is available (it is off on riscv64).
+if(BPFTIME_ENABLE_FRIDA)
+    list(APPEND TEST_SOURCES
+        attach_with_ebpf/test_attach_filter_with_ebpf.cpp
+        attach_with_ebpf/test_attach_uprobe_with_ebpf.cpp
+        attach_with_ebpf/test_shm_progs_attach.cpp
+        attach_with_ebpf/test_attach_replace.cpp
+    )
+endif()
+
 if(${BPFTIME_ENABLE_CUDA_ATTACH})
     list(APPEND TEST_SOURCES cuda/test_cuda_compile.cpp)
 endif()
@@ -88,7 +95,17 @@ if(${TEST_LCOV})
 endif()
 
 set_property(TARGET bpftime_runtime_tests PROPERTY CXX_STANDARD 20)
-add_dependencies(bpftime_runtime_tests runtime bpftime-object bpftime_frida_uprobe_attach_impl)
+if(UNIX AND NOT APPLE AND BPFTIME_LLVM_JIT)
+    # ORC resolves its statically linked EH-frame registration wrappers via
+    # the process symbol table (also needed by existing x86 runtime tests).
+    target_link_options(bpftime_runtime_tests PRIVATE -Wl,--export-dynamic)
+endif()
+add_dependencies(bpftime_runtime_tests runtime bpftime-object)
+if(TARGET bpftime_frida_uprobe_attach_impl)
+    add_dependencies(bpftime_runtime_tests bpftime_frida_uprobe_attach_impl)
+    target_link_libraries(bpftime_runtime_tests PRIVATE bpftime_frida_uprobe_attach_impl)
+    target_include_directories(bpftime_runtime_tests PRIVATE ${FRIDA_UPROBE_ATTACH_IMPL_INCLUDE})
+endif()
 if(TARGET bpftime_trap_uprobe_attach_impl)
     target_link_libraries(bpftime_runtime_tests PRIVATE bpftime_trap_uprobe_attach_impl)
     target_include_directories(bpftime_runtime_tests PRIVATE ${TRAP_UPROBE_ATTACH_IMPL_INCLUDE})
@@ -105,12 +122,12 @@ endif()
 
 if(${TEST_LCOV})
     target_link_options(bpftime_runtime_tests PRIVATE -lgcov)
-    target_link_libraries(bpftime_runtime_tests PRIVATE runtime bpftime-object Catch2::Catch2WithMain bpftime_frida_uprobe_attach_impl gcov ${CUDA_LIBS})
+    target_link_libraries(bpftime_runtime_tests PRIVATE runtime bpftime-object Catch2::Catch2WithMain gcov ${CUDA_LIBS})
 else()
-    target_link_libraries(bpftime_runtime_tests PRIVATE runtime bpftime-object Catch2::Catch2WithMain bpftime_frida_uprobe_attach_impl ${CUDA_LIBS})
+    target_link_libraries(bpftime_runtime_tests PRIVATE runtime bpftime-object Catch2::Catch2WithMain ${CUDA_LIBS})
 endif()
 
-target_include_directories(bpftime_runtime_tests PRIVATE ${BPFTIME_RUNTIME_INCLUDE} ${BPFTIME_OBJECT_INCLUDE_DIRS} ${Catch2_INCLUDE} ${Boost_INCLUDE} ${FRIDA_UPROBE_ATTACH_IMPL_INCLUDE})
+target_include_directories(bpftime_runtime_tests PRIVATE ${BPFTIME_RUNTIME_INCLUDE} ${BPFTIME_OBJECT_INCLUDE_DIRS} ${Catch2_INCLUDE} ${Boost_INCLUDE})
 add_test(NAME bpftime_runtime_tests COMMAND bpftime_runtime_tests)
 
 # These are necessary ebpf program required by the test
