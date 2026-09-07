@@ -174,4 +174,3 @@ runtime_config bpftime::construct_runtime_config_from_env() noexcept
 	}
 	return runtime_config;
 }
-
