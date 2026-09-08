@@ -1148,9 +1148,11 @@ nv_attach_impl::hack_fatbin(std::map<std::string, std::string> all_ptx)
 							"map_info";
 						ri.ebpf_communication_data_symbol =
 							"constData";
-						ri.warp_auto_execution =
-							hook_entry
-								.warp_auto_execution;
+							ri.warp_auto_execution =
+								hook_entry
+									.warp_auto_execution;
+							ri.warp_hook_call_count =
+								ptxpass::warp_hook_call_count_env_enabled();
 
 						req.set_ebpf_instructions(
 							ebpf_inst_words);

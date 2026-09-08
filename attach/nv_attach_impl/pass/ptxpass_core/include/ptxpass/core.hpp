@@ -80,10 +80,17 @@ struct RuntimeInput {
 	// warp-policy eligibility analysis, so the flag is admission-backed
 	// rather than caller-provided trust.
 	bool warp_auto_execution = false;
+	// Opt-in diagnostic: the pass predicated-adds module global
+	// kWarpHookCallCountGlobal at each generated warp-leader call site so
+	// the runtime can read back the actual invocation count. The runtime
+	// sets it only together with warp_auto_execution; it never changes the
+	// BPF object or the warp-policy eligibility decision.
+	bool warp_hook_call_count = false;
 };
 NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(
 	RuntimeInput, full_ptx, to_patch_kernel, global_ebpf_map_info_symbol,
-	ebpf_communication_data_symbol, warp_auto_execution);
+	ebpf_communication_data_symbol, warp_auto_execution,
+	warp_hook_call_count);
 } // namespace runtime_input
 
 // JSON stdout payload
@@ -184,14 +191,41 @@ std::string warp_execution_register_decls();
 // Insert warp_execution_register_decls() at the start of the kernel body.
 // Returns false (without modifying ptx) if the kernel could not be located.
 bool insert_warp_execution_register_decls(std::string &ptx,
-					  const std::string &kernel);
+					      const std::string &kernel);
+
+// Opt-in actual-invocation counter for the automatic warp-execution
+// lowering. When the runtime enables it (environment
+// kWarpHookCallCountEnv, non-empty value other than "0") and the warp
+// leader lowering applies, each elected leader predicated-adds 1 to the
+// module global below at the generated call site. The runtime resolves the
+// global in the loaded module and reads the value back to the host.
+inline constexpr const char *kWarpHookCallCountGlobal =
+	"bpftime_warp_hook_call_count";
+inline constexpr const char *kWarpHookCallCountEnv =
+	"BPFTIME_GPU_WARP_HOOK_CALL_COUNT";
+
+// Environment predicate matching the auto-warp enablement convention:
+// non-empty value other than "0".
+inline bool warp_hook_call_count_env_enabled()
+{
+	const std::string value = get_env(kWarpHookCallCountEnv);
+	return !value.empty() && value != "0";
+}
+
+// Module-scope declaration of the counter global, emitted only when at
+// least one warp-leader call site carries the counter increment.
+std::string warp_hook_call_count_global_decl();
 
 // Election preamble plus a single leader-predicated `call func_name;` for one
 // ret/exit site. pred_text is the original site predicate with trailing
 // space, e.g. "@%p1 " (may be empty for unconditional sites). The original
 // control-flow line must still be emitted after the returned text.
+// When count_hook_calls is true, a predicated red-add on
+// kWarpHookCallCountGlobal is emitted under the same leader predicate,
+// immediately before the call.
 std::string emit_warp_leader_hook_prefix(const std::string &func_name,
-					 const std::string &pred_text);
+					 const std::string &pred_text,
+					 bool count_hook_calls = false);
 
 // Emit simple stats to stderr (pass name, matched count, in/out sizes)
 void log_transform_stats(const char *pass_name, int matched, size_t bytes_in,

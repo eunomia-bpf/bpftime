@@ -12,6 +12,9 @@ namespace attach
 {
 struct ptx_in_module {
 	CUmodule module_ptr;
+	// Device pointer of the opt-in warp hook call count global, or 0 when
+	// the loaded module does not carry it.
+	CUdeviceptr warp_hook_call_count_ptr = 0;
 	ptx_in_module(CUmodule module_ptr) : module_ptr(module_ptr)
 	{
 	}

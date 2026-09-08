@@ -46,7 +46,7 @@ static std::pair<std::string, bool>
 patch_entry(const std::string &ptx, const std::string &kernel,
 	    const std::vector<uint64_t> &ebpf_words,
 	    const std::string &stub_name, bool add_register_guard,
-	    bool warp_auto_execution)
+	    bool warp_auto_execution, bool warp_hook_call_count)
 {
 	if (ebpf_words.empty()) {
 		return { ptx, false };
@@ -58,6 +58,7 @@ patch_entry(const std::string &ptx, const std::string &kernel,
 
 	bool patched_stub_calls = false;
 	bool warp_decls_inserted = false;
+	bool counter_lowered = false;
 	{
 		// Warp lowering is scoped to the selected kernel body: the
 		// leader registers are only declared there, so stub calls in
@@ -128,8 +129,9 @@ patch_entry(const std::string &ptx, const std::string &kernel,
 						std::string prefix =
 							ptxpass::
 								emit_warp_leader_hook_prefix(
-									fname,
-									pm[3].str());
+								fname, pm[3].str(),
+								warp_hook_call_count);
+						counter_lowered = warp_hook_call_count;
 						// The helper emits the guarded
 						// call with a trailing ";\n";
 						// splice it off so the
@@ -163,11 +165,62 @@ patch_entry(const std::string &ptx, const std::string &kernel,
 						replace_begin = pos;
 					}
 					replace_len = call_end - replace_begin;
+				} else if (warp_hook_call_count) {
+					// Scalar (non-warp) call site: every thread that
+					// reaches the original call reaches the rewritten
+					// one, so insert one predicated counter add
+					// immediately before it, under the same site
+					// predicate.
+					const size_t line_start =
+						out.rfind('\n', pos);
+					const size_t stmt_begin =
+						line_start == std::string::npos ?
+							0 :
+							line_start + 1;
+					const std::string head =
+						out.substr(stmt_begin,
+						       pos - stmt_begin);
+					std::smatch pm;
+					static const std::regex headpat(
+						R"(^([ \t]*)((?:[\w$\.]+:[ \t]*)?)(@[^\s]+[ \t]*)?$)");
+					if (std::regex_match(head, pm,
+						     headpat)) {
+						const std::string pred =
+							pm[3].str();
+						replacement =
+							pm[1].str() + pm[2].str();
+						if (!pm[2].str().empty())
+							replacement += "\n";
+						replacement += pred +
+							"red.global.add.u64 [" +
+							ptxpass::
+								kWarpHookCallCountGlobal +
+							"], 1;\n";
+						replacement += pm[1].str() + pred +
+							pat.substr(0,
+							       pat.find(' ')) +
+							" " + fname;
+						replace_begin = stmt_begin;
+						replace_len =
+							pos + pat.size() -
+							stmt_begin;
+						counter_lowered = true;
+					} else {
+						// Unexpected tokens precede the call
+						// on this line; rewrite only the callee
+						// and skip the counter for this site.
+						replacement = pat.substr(
+							    0,
+							    pat.find(' ')) +
+							" " + fname;
+						replace_begin = pos;
+						replace_len = pat.size();
+					}
 				} else {
 					replacement = pat.substr(
-							      0,
-							      pat.find(' ')) +
-						      " " + fname;
+						      0,
+						      pat.find(' ')) +
+					      " " + fname;
 					replace_begin = pos;
 					replace_len = pat.size();
 				}
@@ -182,7 +235,11 @@ patch_entry(const std::string &ptx, const std::string &kernel,
 	}
 
 	if (patched_stub_calls) {
-		out = func_ptx + "\n" + out;
+		const std::string counter_decl = counter_lowered ?
+							ptxpass::
+							warp_hook_call_count_global_decl() :
+							std::string();
+		out = counter_decl + func_ptx + "\n" + out;
 		ptxpass::log_transform_stats("kprobe_entry_stub", 1,
 					     ptx.size(), out.size());
 		return { out, true };
@@ -210,13 +267,30 @@ patch_entry(const std::string &ptx, const std::string &kernel,
 		// Kernel-entry hook: every launched lane of the warp is still
 		// active and converged here, so the ballot elects the leader
 		// once per active warp.
-		out.insert(insertPos,
-			   "\n" + ptxpass::emit_warp_leader_hook_prefix(fname, "") +
-				   "\n");
+		out.insert(insertPos, "\n" +
+			   ptxpass::emit_warp_leader_hook_prefix(
+				   fname, "", warp_hook_call_count) +
+			   "\n");
+		counter_lowered = warp_hook_call_count;
 	} else {
-		out.insert(insertPos, std::string("\n    call ") + fname + ";\n");
+		// Kernel-entry scalar hook: every thread executes the call, so
+		// the counter increment is unconditional here.
+		const std::string entry_call =
+			std::string("    call ") + fname + ";\n";
+		out.insert(insertPos,
+			   std::string("\n") +
+			   (warp_hook_call_count ?
+			    std::string("    red.global.add.u64 [") +
+			    ptxpass::kWarpHookCallCountGlobal +
+			    "], 1;\n" :
+			    std::string()) +
+			   entry_call);
+		counter_lowered = warp_hook_call_count;
 	}
-	out = func_ptx + "\n" + out;
+	const std::string counter_decl = counter_lowered ?
+					ptxpass::warp_hook_call_count_global_decl() :
+					std::string();
+	out = counter_decl + func_ptx + "\n" + out;
 	ptxpass::log_transform_stats("kprobe_entry", 1, ptx.size(), out.size());
 	return { out, true };
 }
@@ -253,7 +327,8 @@ extern "C" int process_input(const char *input, int length, char *output)
 			runtime_request.input.to_patch_kernel,
 			runtime_request.get_uint64_ebpf_instructions(),
 			stub_name, add_register_guard,
-			runtime_request.input.warp_auto_execution);
+			runtime_request.input.warp_auto_execution,
+			runtime_request.input.warp_hook_call_count);
 		snprintf(
 			output, length, "%s",
 			emit_runtime_response_and_return(out, modified).c_str());

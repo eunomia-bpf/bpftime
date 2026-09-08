@@ -53,6 +53,21 @@ fatbin_record::~fatbin_record()
 }
 ptx_in_module::~ptx_in_module()
 {
+	if (this->warp_hook_call_count_ptr != 0) {
+		uint64_t count = 0;
+		if (auto err = cuMemcpyDtoH(&count,
+					     this->warp_hook_call_count_ptr,
+					     sizeof(count));
+		    err == CUDA_SUCCESS) {
+				SPDLOG_INFO(
+					"warp hook call count: {} (actual probe-call invocations across warmup and timed launches of this process; leader-predicated under auto-warp, thread-predicated otherwise)",
+				count);
+		} else {
+			SPDLOG_ERROR(
+				"Unable to read back warp hook call count: {}",
+				(int)err);
+		}
+	}
 	CUDA_DRIVER_CHECK_NO_EXCEPTION(cuModuleUnload(this->module_ptr),
 				       "Unable to unload module");
 }
@@ -371,6 +386,24 @@ void fatbin_record::try_loading_ptxs(class nv_attach_impl &impl)
 			auto ptr = std::make_shared<ptx_in_module>(module);
 			module_pool->insert(std::make_pair(sha256_string, ptr));
 			ptxs.push_back(ptr);
+			if (ptxpass::warp_hook_call_count_env_enabled()) {
+				CUdeviceptr count_ptr = 0;
+				size_t count_size = 0;
+				if (auto err = cuModuleGetGlobal(
+						&count_ptr, &count_size, module,
+						ptxpass::kWarpHookCallCountGlobal);
+				    err == CUDA_SUCCESS) {
+					ptr->warp_hook_call_count_ptr =
+						count_ptr;
+					SPDLOG_INFO(
+						"warp hook call count global present: device_ptr={:x} size={}",
+						(uintptr_t)count_ptr,
+						count_size);
+				} else {
+					SPDLOG_INFO(
+						"warp hook call count global absent: no probe call-site lowering in this module");
+				}
+			}
 			SPDLOG_INFO("Loaded module: {}", name);
 		}
 	}

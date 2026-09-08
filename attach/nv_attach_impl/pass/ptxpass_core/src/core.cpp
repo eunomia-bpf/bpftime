@@ -394,8 +394,15 @@ bool insert_warp_execution_register_decls(std::string &ptx,
 	return true;
 }
 
+std::string warp_hook_call_count_global_decl()
+{
+	return std::string(".global .u64 ") + kWarpHookCallCountGlobal +
+		";\n";
+}
+
 std::string emit_warp_leader_hook_prefix(const std::string &func_name,
-					 const std::string &pred_text)
+					 const std::string &pred_text,
+					 bool count_hook_calls)
 {
 	using namespace detail;
 	const std::string pred_reg = [&]() {
@@ -479,6 +486,18 @@ std::string emit_warp_leader_hook_prefix(const std::string &func_name,
 			out += pred_reg;
 			out += ";\n";
 		}
+	}
+	if (count_hook_calls) {
+		if (pred_reg.empty()) {
+			out += "\t@";
+			out += kWarpExecLeaderPred;
+		} else {
+			out += "\t@";
+			out += kWarpExecCallPred;
+		}
+		out += " red.global.add.u64 [";
+		out += kWarpHookCallCountGlobal;
+		out += "], 1;\n";
 	}
 	if (pred_reg.empty()) {
 		out += "\t@";
