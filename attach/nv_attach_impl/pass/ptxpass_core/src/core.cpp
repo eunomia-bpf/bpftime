@@ -417,22 +417,9 @@ std::string emit_warp_leader_hook_prefix(const std::string &func_name,
 	out += kWarpExecLaneReg;
 	out += ", %laneid;\n";
 	if (pred_reg.empty()) {
-		out += "\tsetp.eq.u32 ";
-		out += kWarpExecTruePred;
-		out += ", ";
-		out += kWarpExecLaneReg;
-		out += ", ";
-		out += kWarpExecLaneReg;
-		out += ";\n";
+		// ballot(true, active_mask) is the active mask itself.
 		out += "\tactivemask.b32 ";
-		out += kWarpExecMaskReg;
-		out += ";\n";
-		out += "\tvote.ballot.sync.b32 ";
 		out += kWarpExecBallotReg;
-		out += ", ";
-		out += kWarpExecTruePred;
-		out += ", ";
-		out += kWarpExecMaskReg;
 		out += ";\n";
 	} else {
 		out += "\tactivemask.b32 ";
