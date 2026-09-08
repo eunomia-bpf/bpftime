@@ -19,10 +19,16 @@ build_type="${BUILD_TYPE:-Release}"
 
 echo "commit=$(git rev-parse HEAD)"
 echo "kernel=$(uname -srvm)"
-lscpu
+if command -v lscpu >/dev/null 2>&1; then
+    lscpu
+elif [[ -r /proc/cpuinfo ]]; then
+    cat /proc/cpuinfo
+else
+    echo "CPU topology unavailable"
+fi
 echo "hardware provenance must be supplied separately by the operator"
 
-cmake -S . -B "$build_dir" \
+cmake -S . -B "$build_dir" -G "Unix Makefiles" \
     -DCMAKE_BUILD_TYPE="$build_type" \
     -DBUILD_BPFTIME_DAEMON=OFF \
     -DBPFTIME_ENABLE_UNIT_TESTING=ON \
