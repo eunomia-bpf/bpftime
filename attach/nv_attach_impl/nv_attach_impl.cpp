@@ -1657,6 +1657,30 @@ bool nv_attach_impl::record_patched_launch(cudaStream_t stream)
 
 bool nv_attach_impl::record_patched_launch_event(CUstream stream)
 {
+	if (ptxpass::warp_hook_call_count_env_enabled() && module_pool &&
+	    cuStreamSynchronize(stream) == CUDA_SUCCESS) {
+		// Diagnostic-only, count-env gated: the launched work is
+		// complete here, so read back the opt-in invocation counter
+		// from every loaded patched module that carries one.
+		for (const auto &entry : *module_pool) {
+			const auto &mod = entry.second;
+			if (mod == nullptr ||
+			    mod->warp_hook_call_count_ptr == 0)
+				continue;
+			uint64_t count = 0;
+			if (cuMemcpyDtoH(&count,
+					 mod->warp_hook_call_count_ptr,
+					 sizeof(count)) ==
+				    CUDA_SUCCESS) {
+				SPDLOG_INFO(
+					"warp hook call count: {} (cumulative actual probe-call invocations since module load; leader-predicated under auto-warp, thread-predicated otherwise)",
+					count);
+			} else {
+				SPDLOG_WARN(
+					"Unable to read back warp hook call count");
+			}
+		}
+	}
 	CUevent ev = nullptr;
 	if (cuEventCreate(&ev, CU_EVENT_DISABLE_TIMING) != CUDA_SUCCESS ||
 	    ev == nullptr) {
