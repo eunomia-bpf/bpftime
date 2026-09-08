@@ -4,10 +4,15 @@ set -euo pipefail
 case "$(uname -m)" in
     riscv64) ;;
     *)
-        echo "native riscv64 host required; refusing emulated evidence" >&2
+        echo "riscv64 host required; refusing qemu-user or cross-architecture evidence" >&2
         exit 2
         ;;
 esac
+
+if [[ -n "$(git status --porcelain --untracked-files=no --ignore-submodules=none)" ]]; then
+    echo "clean tracked worktree and submodules required for reproducible evidence" >&2
+    exit 3
+fi
 
 build_dir="${1:-build-native-riscv64-trap}"
 build_type="${BUILD_TYPE:-Release}"
@@ -15,6 +20,7 @@ build_type="${BUILD_TYPE:-Release}"
 echo "commit=$(git rev-parse HEAD)"
 echo "kernel=$(uname -srvm)"
 lscpu
+echo "hardware provenance must be supplied separately by the operator"
 
 cmake -S . -B "$build_dir" \
     -DCMAKE_BUILD_TYPE="$build_type" \

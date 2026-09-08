@@ -160,7 +160,9 @@ on a riscv64 host:
 ./.github/script/test-riscv64-native-trap.sh
 ```
 
-The harness records the exact commit, kernel, and CPU topology before running
-the 2-mod-4 three-phase patch stress case, allocator/TLS safety cases, and late
-injection test. It rejects non-riscv64 hosts so emulated results cannot be
-mistaken for native evidence.
+The harness requires a clean tracked worktree, then records the exact commit,
+kernel, and CPU topology before running the 2-mod-4 three-phase patch stress
+case, allocator/TLS safety cases, and late injection test. It rejects
+non-riscv64 and qemu-user execution. Because a full-system riscv64 virtual
+machine also reports `riscv64`, attach separate operator provenance when the
+result is intended to demonstrate physical-hardware execution.
