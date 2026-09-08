@@ -115,7 +115,9 @@ struct MapBasicInfo {
 	// Opt-in ring-output transport level for per-thread GPU rings.
 	// 0 = legacy byte-wise copy over the legacy handshake, 1 = aligned
 	// 8-byte payload copy over the legacy handshake, 2 = aligned copy
-	// plus encoded tail publication in the dirty word. Reservation and
+	// plus encoded tail publication in the dirty word, 3 = that
+	// publication with the record words transposed so the host
+	// reassembles each record into its bounded buffer. Reservation and
 	// publication remain per event in every mode.
 	uint64_t batch_output;
 };
@@ -486,6 +488,95 @@ _bpf_helper_ext_0025(uint64_t ctx, uint64_t map, uint64_t flags, uint64_t data,
 			atomicAdd_system(
 				(unsigned long long *)&errors->other_drops, 1);
 			return 4;
+		}
+		if (map_info.batch_output == 3) {
+			// Transposed record transport. The 24-byte headers
+			// are packed together and the record words are
+			// transposed so that, for a fixed slot and word, the
+			// thread-major stride is one 8-byte word: adjacent
+			// thread ids write adjacent 8-byte locations. This is
+			// a record-preserving layout change only, not a change
+			// to the per-event publication protocol: encoded dirty
+			// publication, head read, capacity check, and the
+			// return/drop colors are unchanged from the
+			// encoded-release mode. Word 0 carries the payload
+			// size; the host reassembles each record into its
+			// bounded buffer before delivery.
+			const uint64_t n = map_info.max_thread_count;
+			const uint64_t record_words =
+				(uint64_t)(record_stride / sizeof(uint64_t));
+			auto *header =
+				(ringbuf_header *)(uintptr_t)(tid *
+							      sizeof(ringbuf_header) +
+						      (char *)map_info
+							      .extra_buffer);
+			const uint64_t pre =
+				*(volatile uint64_t *)(uintptr_t)&header->dirty;
+			if ((pre & 1) != 0) {
+				atomicAdd_system(
+					(unsigned long long *)&errors->other_drops, 1);
+				return 4;
+			}
+			if (atomicCAS_system((unsigned long long *)&header->dirty,
+					     pre, pre | 1) != pre) {
+				atomicAdd_system(
+					(unsigned long long *)&errors->other_drops, 1);
+				return 4;
+			}
+			asm volatile("membar.sys;" ::: "memory");
+			const uint64_t head =
+				*(volatile uint64_t *)(uintptr_t)&header->head;
+			asm volatile("membar.sys;" ::: "memory");
+			const uint64_t tail = pre >> 1;
+			if (tail - head >= (uint64_t)map_info.max_entries) {
+				atomicAdd_system((unsigned long long *)&errors
+						 ->full_drops,
+						1);
+				asm volatile("membar.sys;" ::: "memory");
+				atomicExch_system((unsigned long long *)&header->dirty,
+						  pre);
+				return 2;
+			}
+			const uint64_t real_tail =
+				tail % (uint64_t)map_info.max_entries;
+			// Packed headers end at n * 24; the transposed word
+			// for slot s, word w, thread tid sits at
+			// payload_base + ((s * record_words + w) * n + tid) * 8.
+			char *payload_base =
+				(char *)map_info.extra_buffer +
+				n * sizeof(ringbuf_header);
+			const uint64_t word_stride = n * sizeof(uint64_t);
+			const uint64_t slot_base =
+				(real_tail * record_words) * word_stride +
+				tid * sizeof(uint64_t);
+			// word 0 = payload size
+			*(uint64_t *)(uintptr_t)(payload_base + slot_base) =
+				data_size;
+			// words 1..record_words-1 = payload, zero-padded
+			// tail; the source is read byte-wise so an
+			// unaligned payload and a trailing partial word are
+			// copied exactly.
+			const unsigned char *src =
+				(const unsigned char *)(uintptr_t)data;
+			for (uint64_t w = 1; w < record_words; w++) {
+				const uint64_t src_off = (w - 1) * 8;
+				uint64_t v = 0;
+				if (src_off < data_size) {
+					uint64_t valid = data_size - src_off;
+					if (valid > 8)
+						valid = 8;
+					for (uint64_t b = 0; b < valid; b++)
+						v |= (uint64_t)src[src_off + b] <<
+						       (8 * b);
+				}
+				*(uint64_t *)(uintptr_t)(payload_base + slot_base +
+							   w * word_stride) =
+					v;
+			}
+			asm volatile("membar.sys;" ::: "memory");
+			atomicExch_system((unsigned long long *)&header->dirty,
+					  (tail + 1) << 1);
+			return 0;
 		}
 		if (map_info.batch_output == 2) {
 		// Encoded-release protocol for this slot: a per-event

@@ -38,10 +38,12 @@ uint64_t align_u64(uint64_t value)
 // the host drain, so the protocol cannot change for a live map even
 // across attaching processes that see different environments. Level 1 =
 // aligned 8-byte payload copy over the legacy handshake, level 2 adds
-// encoded tail publication in the dirty word; both stay per-event
-// publication schemes, not warp-level record batching. This predicate
-// matches the auto-warp enablement convention used for the rest of the
-// CUDA attach path: non-empty variable value other than "0".
+// encoded tail publication in the dirty word, level 3 keeps that
+// publication and transposes the record words so the host reassembles
+// each record into local_buffer before delivery; all levels stay
+// per-event publication schemes, not warp-level record batching. This
+// predicate matches the auto-warp enablement convention used for the
+// rest of the CUDA attach path: non-empty variable value other than "0".
 uint64_t ringbuf_output_transport_level()
 {
 	const char *warp_env = std::getenv("BPFTIME_GPU_AUTO_WARP_EXECUTION");
@@ -50,6 +52,8 @@ uint64_t ringbuf_output_transport_level()
 		return 0;
 	const char *transport_env =
 		std::getenv("BPFTIME_GPU_RINGBUF_TRANSPORT");
+	if (transport_env && std::strcmp(transport_env, "3") == 0)
+		return 3;
 	return (transport_env && std::strcmp(transport_env, "2") == 0) ? 2 : 1;
 }
 } // namespace
@@ -77,6 +81,10 @@ nv_gpu_ringbuf_map_impl::nv_gpu_ringbuf_map_impl(
 	if (output_transport == 2) {
 		SPDLOG_INFO(
 			"GPU ring-buffer encoded tail publication enabled: value_size={}, max_entries={}, thread_count={}",
+			value_size, max_entries, thread_count);
+	} else if (output_transport == 3) {
+		SPDLOG_INFO(
+			"GPU ring-buffer transposed record transport enabled: value_size={}, max_entries={}, thread_count={}",
 			value_size, max_entries, thread_count);
 	}
 }
@@ -119,9 +127,20 @@ int nv_gpu_ringbuf_map_impl::drain_data(
 		return -EINVAL;
 	std::atomic_thread_fence(std::memory_order_acquire);
 	uint64_t drained = 0;
+	const bool transposed = output_transport == 3;
+	const uint64_t header_stride =
+		transposed ? sizeof(ringbuf_header) : entry_size;
+	uint64_t payload_base = 0;
+	uint64_t word_stride = 0;
+	uint64_t record_words = 0;
+	if (transposed) {
+		payload_base = thread_count * sizeof(ringbuf_header);
+		word_stride = thread_count * 8;
+		record_words = record_stride / 8;
+	}
 	for (uint64_t i = 0; i < thread_count; i++) {
-		auto header = (ringbuf_header *)(uintptr_t)(data_buffer.data() +
-							    i * entry_size);
+		auto header = (ringbuf_header *)(uintptr_t)(
+			data_buffer.data() + i * header_stride);
 		uint64_t tail;
 		uint64_t head;
 		if (output_transport >= 2) {
@@ -147,14 +166,43 @@ int nv_gpu_ringbuf_map_impl::drain_data(
 			return -EOVERFLOW;
 		while (head < tail) {
 			const auto real_head = head % max_entries;
-			auto buffer_start =
-				((char *)header) + sizeof(ringbuf_header) +
-				real_head * record_stride;
-			const uint64_t size =
-				*(uint64_t *)(uintptr_t)buffer_start;
-			if (size > value_size)
-				return -EMSGSIZE;
-			fn(buffer_start + sizeof(uint64_t), size);
+			const void *payload;
+			uint64_t size;
+			if (transposed) {
+				uint64_t offset =
+					payload_base +
+					(real_head * record_words) *
+						word_stride +
+					i * 8;
+				size =
+					*(uint64_t *)(uintptr_t)(
+						data_buffer.data() +
+						offset);
+				if (size > value_size)
+					return -EMSGSIZE;
+				uint64_t copied = 0;
+				while (copied < size) {
+					const uint64_t copy_len =
+						(size - copied < 8) ?
+						(size - copied) : 8;
+					offset += word_stride;
+					memcpy(local_buffer.data() + copied,
+					       data_buffer.data() + offset,
+					       copy_len);
+					copied += copy_len;
+				}
+				payload = local_buffer.data();
+			} else {
+				auto buffer_start =
+					((char *)header) +
+					sizeof(ringbuf_header) +
+					real_head * record_stride;
+				size = *(uint64_t *)(uintptr_t)buffer_start;
+				if (size > value_size)
+					return -EMSGSIZE;
+				payload = buffer_start + sizeof(uint64_t);
+			}
+			fn(payload, size);
 			head++;
 			__atomic_store_n(&header->head, head, __ATOMIC_RELEASE);
 			drained++;
@@ -173,9 +221,12 @@ int nv_gpu_ringbuf_map_impl::get_stats(bpftime_gpu_ringbuf_stats *stats) const
 	stats->value_size = value_size;
 	stats->entries_per_thread = max_entries;
 	stats->allocated_thread_slots = thread_count;
+	const uint64_t header_stride =
+		(output_transport == 3) ? sizeof(ringbuf_header) :
+					  entry_size;
 	for (uint64_t i = 0; i < thread_count; i++) {
 		const auto *header = (const ringbuf_header *)(uintptr_t)(
-			data_buffer.data() + i * entry_size);
+			data_buffer.data() + i * header_stride);
 		if (output_transport >= 2) {
 			// Encoded tail publication: mirror the drain's view
 			// of committed tail; odd word = in-progress producer.

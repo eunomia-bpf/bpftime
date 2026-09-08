@@ -62,7 +62,9 @@ class nv_gpu_ringbuf_map_impl {
 	// the aligned-copy selection on the device side), 2 = encoded tail
 	// publication: an unlocked dirty word carries the published tail
 	// shifted left by one (odd = an in-progress producer, skipped by the
-	// drain). The device map-info setup reads this stored level through
+	// drain), 3 = that publication with records transposed so the host
+	// reassembles each record into local_buffer before delivery. The
+	// device map-info setup reads this stored level through
 	// get_output_transport(); it does not select a separate protocol.
 	uint64_t output_transport;
 
