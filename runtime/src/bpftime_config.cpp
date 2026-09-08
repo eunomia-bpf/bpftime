@@ -111,8 +111,8 @@ runtime_config bpftime::construct_runtime_config_from_env() noexcept
 		runtime_config.allow_non_buildin_map_types = true;
 	}
 
-	// Parse shared memory size with validation (1MB min, 10GB max)
-	if (auto shm_size = parse_numeric_env<int>("BPFTIME_SHM_MEMORY_MB", 1, 10240)) {
+	// Explicit large GPU per-thread maps may exceed 10 GiB; defaults are unchanged.
+	if (auto shm_size = parse_numeric_env<int>("BPFTIME_SHM_MEMORY_MB", 1, 16384)) {
 		runtime_config.shm_memory_size = *shm_size;
 	}
 
