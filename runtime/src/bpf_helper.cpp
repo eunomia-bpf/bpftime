@@ -4,6 +4,9 @@
  * All rights reserved.
  */
 #include "bpf_attach_ctx.hpp"
+#if BPFTIME_HAVE_TRAP_UPROBE_ATTACH
+#include "trap_uprobe_attach_impl.hpp"
+#endif
 #include "handler/map_handler.hpp"
 #include "linux/bpf.h"
 #include <algorithm>
@@ -619,6 +622,8 @@ uint64_t bpftime_tail_call(uint64_t ctx, uint64_t prog_array, uint64_t index)
 uint64_t bpftime_get_attach_cookie(uint64_t ctx, uint64_t, uint64_t, uint64_t,
 				   uint64_t)
 {
+	if (auto *signal_ctx = bpftime::attach::current_signal_callback)
+		return signal_ctx->cookie.value_or(0);
 	uint64_t cookie;
 	if (bpftime_get_current_thread_cookie(&cookie)) {
 		SPDLOG_DEBUG("Get cookie: {}", cookie);
@@ -631,6 +636,8 @@ uint64_t bpftime_get_attach_cookie(uint64_t ctx, uint64_t, uint64_t, uint64_t,
 
 uint64_t bpftime_get_func_ip(uint64_t, uint64_t, uint64_t, uint64_t, uint64_t)
 {
+	if (auto *ctx = bpftime::attach::current_signal_callback)
+		return ctx->function_ip;
 	return bpftime::attach::current_thread_attach_func_ip;
 }
 
@@ -844,6 +851,23 @@ int64_t bpftime_get_stack(uint64_t ctx_raw, uint64_t buf, uint64_t size,
 
 namespace bpftime
 {
+
+bool helper_is_async_signal_safe(unsigned index, void *fn)
+{
+	if ((index == 173 && fn == (void *)bpftime_get_func_ip) ||
+	    (index == 174 && fn == (void *)bpftime_get_attach_cookie) ||
+	    (index == 58 && fn == (void *)bpftime_override_return) ||
+	    (index == 187 && fn == (void *)bpftime_set_retval))
+		return true;
+#if BPFTIME_HAVE_TRAP_UPROBE_ATTACH
+	using namespace attach::trap;
+	if ((index == 183 && fn == (void *)bpftime_trap_get_func_arg) ||
+	    (index == 184 && fn == (void *)bpftime_trap_get_func_ret) ||
+	    (index == 186 && fn == (void *)bpftime_trap_get_retval))
+		return true;
+#endif
+	return false;
+}
 
 // copied from kernel/include/uapi/linux/bpf.h
 enum bpf_func_id {

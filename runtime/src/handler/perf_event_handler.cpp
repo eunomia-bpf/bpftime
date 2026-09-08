@@ -60,8 +60,20 @@
 		asm volatile("ldar %0, %1" : "=r"(___p) : "Q"(*p) : "memory"); \
 		___p;                                                          \
 	})
+#elif defined(__riscv)
+#define smp_store_release_u64(p, v)                                            \
+	do {                                                                   \
+		asm volatile("fence rw,w" ::: "memory");                       \
+		WRITE_ONCE_U64(*p, v);                                         \
+	} while (0)
+#define smp_load_acquire_u64(p)                                                \
+	({                                                                     \
+		uint64_t ___p = READ_ONCE_U64(*p);                             \
+		asm volatile("fence r,rw" ::: "memory");                       \
+		___p;                                                          \
+	})
 #else
-#error Only supports x86_64 and aarch64
+#error Unsupported architecture
 #endif
 
 namespace bpftime

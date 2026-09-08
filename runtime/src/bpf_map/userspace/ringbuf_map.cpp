@@ -79,8 +79,26 @@ static inline int roundup_len(__u32 len)
 			     : "memory");                                      \
 		___p;                                                          \
 	})
+#elif defined(__riscv)
+#define smp_store_release_ul(p, v)                                             \
+	do {                                                                   \
+		asm volatile("fence rw,w" ::: "memory");                       \
+		WRITE_ONCE_UL(*p, v);                                          \
+	} while (0)
+#define smp_load_acquire_ul(p)                                                 \
+	({                                                                     \
+		unsigned long ___p = READ_ONCE_UL(*p);                         \
+		asm volatile("fence r,rw" ::: "memory");                       \
+		___p;                                                          \
+	})
+#define smp_load_acquire_i(p)                                                  \
+	({                                                                     \
+		int ___p = READ_ONCE_I(*p);                                    \
+		asm volatile("fence r,rw" ::: "memory");                       \
+		___p;                                                          \
+	})
 #else
-#error Only supports x86_64 and aarch64
+#error Unsupported architecture
 #endif
 
 namespace bpftime
