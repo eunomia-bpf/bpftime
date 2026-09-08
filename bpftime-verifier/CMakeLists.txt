@@ -29,6 +29,7 @@ set(TEST_SOURCES
     test/non_kernel_helper.cpp
     test/gpu_verifier_test.cpp
     test/gpu_revision_safety_test.cpp
+    test/warp_execution_eligibility_test.cpp
 )
 
 if(NOT TARGET Catch2)
