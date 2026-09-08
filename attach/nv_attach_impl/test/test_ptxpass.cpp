@@ -354,6 +354,266 @@ TEST_CASE("PassConfig default includes and excludes work correctly",
 	}
 }
 
+TEST_CASE("RuntimeInput warp_auto_execution round-trips through JSON",
+	  "[ptxpass_core]")
+{
+	SECTION("present true")
+	{
+		auto ri = pass_runtime_input_from_string(
+			R"({"full_ptx":"x","to_patch_kernel":"k",)"
+			R"("warp_auto_execution":true})");
+		REQUIRE(ri.warp_auto_execution);
+	}
+	SECTION("present false")
+	{
+		auto ri = pass_runtime_input_from_string(
+			R"({"full_ptx":"x","to_patch_kernel":"k",)"
+			R"("warp_auto_execution":false})");
+		REQUIRE_FALSE(ri.warp_auto_execution);
+	}
+	SECTION("absent defaults to false")
+	{
+		auto ri = pass_runtime_input_from_string(
+			R"({"full_ptx":"x","to_patch_kernel":"k"})");
+		REQUIRE_FALSE(ri.warp_auto_execution);
+	}
+	SECTION("serialization include warp_auto_execution")
+	{
+		runtime_input::RuntimeInput ri;
+		ri.warp_auto_execution = true;
+		nlohmann::json j;
+		nlohmann::to_json(j, ri);
+		REQUIRE(j.value("warp_auto_execution", false));
+	}
+}
+
+TEST_CASE("ptx_supports_warp_sync checks the PTX ISA version",
+	  "[ptxpass_core]")
+{
+	auto ptx_with_version = [](const std::string &version) {
+		return ".version " + version +
+		       "\n.target sm_60\n"
+		       ".visible .entry k() {\n    ret;\n}\n";
+	};
+	REQUIRE(ptx_supports_warp_sync(ptx_with_version("6.0")));
+	REQUIRE(ptx_supports_warp_sync(ptx_with_version("7.0")));
+	REQUIRE(ptx_supports_warp_sync(ptx_with_version("8.3")));
+	REQUIRE_FALSE(ptx_supports_warp_sync(ptx_with_version("5.0")));
+	REQUIRE_FALSE(ptx_supports_warp_sync(
+		".target sm_60\n.visible .entry k() {\n    ret;\n}\n"));
+}
+
+TEST_CASE("warp execution register declarations are inserted once per kernel",
+	  "[ptxpass_core]")
+{
+	const std::string ptx = ".version 7.0\n.target sm_60\n"
+				".visible .entry picked_kernel() {\n"
+				"    mov.u32 %r1, 0;\n"
+				"    ret;\n"
+				"}\n"
+				".visible .entry other_kernel() {\n"
+				"    ret;\n"
+				"}\n";
+	std::string out = ptx;
+	REQUIRE(ptxpass::insert_warp_execution_register_decls(out,
+							      "picked_kernel"));
+	// Registers land inside the selected kernel body only.
+	REQUIRE(out.find("%r_bpftime_warp0") != std::string::npos);
+	const size_t body_start =
+		out.find(".visible .entry picked_kernel()");
+	REQUIRE(body_start != std::string::npos);
+	const size_t body_end = out.find(".visible .entry other_kernel()");
+	REQUIRE(body_end != std::string::npos);
+	REQUIRE(out.find("%r_bpftime_warp0", body_start) < body_end);
+	REQUIRE(out.find("%r_bpftime_warp0", body_end) ==
+		std::string::npos);
+	// Idempotent: a second insertion must not duplicate declarations.
+	REQUIRE_FALSE(ptxpass::insert_warp_execution_register_decls(
+		out, "picked_kernel"));
+	REQUIRE(out.find("%r_bpftime_warp0", body_end) ==
+		std::string::npos);
+	const size_t first =
+		out.find(".reg .b32 %r_bpftime_warp0");
+	REQUIRE(first != std::string::npos);
+	REQUIRE(out.find(".reg .b32 %r_bpftime_warp0", first + 1) ==
+		std::string::npos);
+}
+
+TEST_CASE("emit_warp_leader_hook_prefix emits leader election preamble",
+	  "[ptxpass_core]")
+{
+	SECTION("unconditional site")
+	{
+		auto prefix =
+			emit_warp_leader_hook_prefix("__probe_func__k", "");
+		REQUIRE(prefix.find("mov.u32 %r_bpftime_warp0, %laneid;") !=
+			std::string::npos);
+		REQUIRE(prefix.find("activemask.b32 %r_bpftime_warp3;") !=
+			std::string::npos);
+		REQUIRE(prefix.find("vote.ballot.sync") == std::string::npos);
+		REQUIRE(prefix.find("setp.eq.u32 %p_bpftime_warp0, "
+				    "%r_bpftime_warp1, 0;") !=
+			std::string::npos);
+		REQUIRE(prefix.find("@%p_bpftime_warp0 "
+				    "call __probe_func__k;") !=
+			std::string::npos);
+		REQUIRE(prefix.compare(prefix.size() - 2, 2, ";\n") == 0);
+	}
+	SECTION("predicated site consumes the predicate")
+	{
+		auto prefix = emit_warp_leader_hook_prefix("__probe_func__k",
+							   "@%p1 ");
+		REQUIRE(prefix.find("vote.ballot.sync.b32 "
+				    "%r_bpftime_warp3, %p1, "
+				    "%r_bpftime_warp2;") !=
+			std::string::npos);
+		REQUIRE(prefix.find("and.pred %p_bpftime_warp2, "
+				    "%p_bpftime_warp0, %p1;") !=
+			std::string::npos);
+		REQUIRE(prefix.find("@%p_bpftime_warp2 "
+				    "call __probe_func__k;") !=
+			std::string::npos);
+	}
+	SECTION("negated site keeps the negation")
+	{
+		auto prefix = emit_warp_leader_hook_prefix("__probe_func__k",
+							   "@!%p2 ");
+		REQUIRE(prefix.find("vote.ballot.sync.b32 "
+				    "%r_bpftime_warp3, !%p2, "
+				    "%r_bpftime_warp2;") !=
+			std::string::npos);
+		REQUIRE(prefix.find("not.pred %p_bpftime_warp1, %p2;") !=
+			std::string::npos);
+		REQUIRE(prefix.find("@%p_bpftime_warp2 "
+				    "call __probe_func__k;") !=
+			std::string::npos);
+	}
+}
+
+// The kprobe_entry pass is built without its own main(); its sources are
+// compiled into this test binary so the transform can be exercised
+// end-to-end through the C ABI.
+extern "C" int process_input(const char *input, int length, char *output);
+
+static inline nlohmann::json
+run_kprobe_entry_pass(const std::string &ptx,
+		      const nlohmann::json &input_extra,
+		      bool include_warp_flag = true)
+{
+	nlohmann::json input = { { "full_ptx", ptx },
+				 { "to_patch_kernel", "test_kernel" } };
+	if (include_warp_flag)
+		input.update(input_extra);
+	nlohmann::json request = {
+		{ "input", input },
+		{ "ebpf_instructions",
+		  nlohmann::json::array(
+			  { { { "upper_32bit", 0 },
+			      { "lower_32bit", 0x95 } } }) }
+	};
+	auto serialized = request.dump();
+	std::vector<char> buf(10 << 20);
+	int rc = process_input(serialized.data(), (int)buf.size(),
+			       buf.data());
+	REQUIRE(rc == 0);
+	return nlohmann::json::parse(std::string(buf.data()));
+}
+
+static inline std::string count_substrings(const std::string &s,
+					   const std::string &needle)
+{
+	std::string::size_type pos = 0;
+	size_t count = 0;
+	while ((pos = s.find(needle, pos)) != std::string::npos) {
+		count++;
+		pos += needle.size();
+	}
+	return std::to_string(count);
+}
+
+TEST_CASE("kprobe_entry warp lowering rewrites stub call statements",
+	  "[ptxpass][kprobe_entry]")
+{
+	const std::string ptx = R"(.version 7.0
+.target sm_61
+.address_size 64
+
+.visible .entry test_kernel()
+{
+    .reg .pred %p1;
+    mov.u32 %r1, %tid.x;
+    call __bpftime_cuda__kernel_trace;
+    @%p1 call __bpftime_cuda__kernel_trace;
+    $L_1: @%p1 call __bpftime_cuda__kernel_trace;
+    ret;
+}
+
+.visible .entry other_kernel()
+{
+    call __bpftime_cuda__kernel_trace;
+    ret;
+}
+)";
+
+	auto response = run_kprobe_entry_pass(
+		ptx, nlohmann::json{ { "warp_auto_execution", true } });
+	REQUIRE(response.value("modified", false));
+	const std::string out =
+		response.value("output_ptx", std::string());
+
+	// Three stub sites in the selected kernel are lowered.
+	REQUIRE(count_substrings(out,
+				 "@%p_bpftime_warp0 call __probe_func__"
+				 "test_kernel;") == "1");
+	// Predicated sites consume the predicate into the ballot and guard
+	// the call with the combined predicate.
+	REQUIRE(count_substrings(out,
+				 "%r_bpftime_warp3, %p1, "
+				 "%r_bpftime_warp2;") == "2");
+	REQUIRE(count_substrings(out,
+				 "@%p_bpftime_warp2 call __probe_func__"
+				 "test_kernel;") == "2");
+	// The label is preserved exactly once.
+	REQUIRE(count_substrings(out, "$L_1:") == "1");
+	// Registers declared once, in the selected kernel only.
+	REQUIRE(count_substrings(out, ".reg .b32 %r_bpftime_warp0") == "1");
+	const size_t other = out.find(".entry other_kernel");
+	REQUIRE(other != std::string::npos);
+	REQUIRE(out.find("%r_bpftime_warp0", other) == std::string::npos);
+	// Other kernels keep their original stub calls.
+	REQUIRE(out.find("call __bpftime_cuda__kernel_trace;", other) !=
+		std::string::npos);
+	// The compiled hook body is included.
+	REQUIRE(out.find(".visible .func __probe_func__test_kernel()") !=
+		std::string::npos);
+}
+
+TEST_CASE("kprobe_entry warp lowering keeps disabled path identical",
+	  "[ptxpass][kprobe_entry]")
+{
+	const std::string ptx = R"(.version 7.0
+.target sm_61
+.address_size 64
+
+.visible .entry test_kernel()
+{
+    mov.u32 %r1, %tid.x;
+    call __bpftime_cuda__kernel_trace;
+    ret;
+}
+)";
+	auto response =
+		run_kprobe_entry_pass(ptx, nlohmann::json::object(), false);
+	REQUIRE(response.value("modified", false));
+	const std::string out =
+		response.value("output_ptx", std::string());
+	REQUIRE(out.find("call __probe_func__test_kernel;") !=
+		std::string::npos);
+	REQUIRE(out.find("%r_bpftime_warp0") == std::string::npos);
+	REQUIRE(out.find("activemask") == std::string::npos);
+	REQUIRE(out.find("vote.ballot.sync") == std::string::npos);
+}
+
 TEST_CASE("End-to-end JSON workflow with empty eBPF",
 	  "[ptxpass_core][integration]")
 {
