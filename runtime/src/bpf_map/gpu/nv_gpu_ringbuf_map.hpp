@@ -57,6 +57,14 @@ class nv_gpu_ringbuf_map_impl {
 
 	uint64_t record_stride;
 	uint64_t entry_size;
+	// Ring-output transport level, fixed once at construction from the
+	// runtime environment. 0/1 = legacy handshake (1 additionally marks
+	// the aligned-copy selection on the device side), 2 = encoded tail
+	// publication: an unlocked dirty word carries the published tail
+	// shifted left by one (odd = an in-progress producer, skipped by the
+	// drain). The device map-info setup reads this stored level through
+	// get_output_transport(); it does not select a separate protocol.
+	uint64_t output_transport;
 
     public:
 	const static bool should_lock = true;
@@ -85,6 +93,10 @@ class nv_gpu_ringbuf_map_impl {
 	uint64_t get_max_thread_count() const
 	{
 		return thread_count;
+	}
+	uint64_t get_output_transport() const
+	{
+		return output_transport;
 	}
 	virtual ~nv_gpu_ringbuf_map_impl();
 

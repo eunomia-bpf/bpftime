@@ -5,6 +5,7 @@
 #include <atomic>
 #include <cerrno>
 #include <climits>
+#include <cstdlib>
 #include <cstring>
 #include <limits>
 #include <stdexcept>
@@ -31,6 +32,26 @@ uint64_t align_u64(uint64_t value)
 	const uint64_t mask = alignof(uint64_t) - 1;
 	return checked_add(value, mask) & ~mask;
 }
+
+// Ring-output transport level, read once per map at construction. The
+// stored level is authoritative for both the device map-info upload and
+// the host drain, so the protocol cannot change for a live map even
+// across attaching processes that see different environments. Level 1 =
+// aligned 8-byte payload copy over the legacy handshake, level 2 adds
+// encoded tail publication in the dirty word; both stay per-event
+// publication schemes, not warp-level record batching. This predicate
+// matches the auto-warp enablement convention used for the rest of the
+// CUDA attach path: non-empty variable value other than "0".
+uint64_t ringbuf_output_transport_level()
+{
+	const char *warp_env = std::getenv("BPFTIME_GPU_AUTO_WARP_EXECUTION");
+	if (!warp_env || warp_env[0] == '\0' ||
+	    std::strcmp(warp_env, "0") == 0)
+		return 0;
+	const char *transport_env =
+		std::getenv("BPFTIME_GPU_RINGBUF_TRANSPORT");
+	return (transport_env && std::strcmp(transport_env, "2") == 0) ? 2 : 1;
+}
 } // namespace
 
 nv_gpu_ringbuf_map_impl::nv_gpu_ringbuf_map_impl(
@@ -39,7 +60,8 @@ nv_gpu_ringbuf_map_impl::nv_gpu_ringbuf_map_impl(
 	: data_buffer(memory.get_segment_manager()),
 	  agent_gpu_shared_mem(memory.get_segment_manager()),
 	  value_size(value_size), max_entries(max_entries),
-	  thread_count(thread_count), local_buffer(memory.get_segment_manager())
+	  thread_count(thread_count), local_buffer(memory.get_segment_manager()),
+	  output_transport(ringbuf_output_transport_level())
 {
 	record_stride = align_u64(checked_add(value_size, sizeof(uint64_t)));
 	entry_size = checked_add(sizeof(ringbuf_header),
@@ -52,6 +74,11 @@ nv_gpu_ringbuf_map_impl::nv_gpu_ringbuf_map_impl(
 		throw std::length_error("GPU ring buffer exceeds host size_t");
 	local_buffer.resize(entry_size);
 	data_buffer.resize(data_size);
+	if (output_transport == 2) {
+		SPDLOG_INFO(
+			"GPU ring-buffer encoded tail publication enabled: value_size={}, max_entries={}, thread_count={}",
+			value_size, max_entries, thread_count);
+	}
 }
 
 CUdeviceptr
@@ -95,12 +122,27 @@ int nv_gpu_ringbuf_map_impl::drain_data(
 	for (uint64_t i = 0; i < thread_count; i++) {
 		auto header = (ringbuf_header *)(uintptr_t)(data_buffer.data() +
 							    i * entry_size);
-		if (__atomic_load_n(&header->dirty, __ATOMIC_ACQUIRE))
-			continue;
-
-		uint64_t head = __atomic_load_n(&header->head, __ATOMIC_ACQUIRE);
-		const uint64_t tail =
-			__atomic_load_n(&header->tail, __ATOMIC_ACQUIRE);
+		uint64_t tail;
+		uint64_t head;
+		if (output_transport >= 2) {
+			// Encoded tail publication: an unlocked dirty word
+			// carries the published tail shifted left by one;
+			// odd marks an in-progress producer, whose slot the
+			// drain skips without touching head or tail.
+			const uint64_t dirty_word = __atomic_load_n(
+				&header->dirty, __ATOMIC_ACQUIRE);
+			if (dirty_word & 1)
+				continue;
+			head = __atomic_load_n(&header->head,
+					       __ATOMIC_ACQUIRE);
+			tail = dirty_word >> 1;
+		} else {
+			if (__atomic_load_n(&header->dirty, __ATOMIC_ACQUIRE))
+				continue;
+			head = __atomic_load_n(&header->head,
+					       __ATOMIC_ACQUIRE);
+			tail = __atomic_load_n(&header->tail, __ATOMIC_ACQUIRE);
+		}
 		if (tail < head || tail - head > max_entries)
 			return -EOVERFLOW;
 		while (head < tail) {
@@ -134,18 +176,38 @@ int nv_gpu_ringbuf_map_impl::get_stats(bpftime_gpu_ringbuf_stats *stats) const
 	for (uint64_t i = 0; i < thread_count; i++) {
 		const auto *header = (const ringbuf_header *)(uintptr_t)(
 			data_buffer.data() + i * entry_size);
-		const uint64_t head =
-			__atomic_load_n(&header->head, __ATOMIC_ACQUIRE);
-		const uint64_t tail =
-			__atomic_load_n(&header->tail, __ATOMIC_ACQUIRE);
-		stats->collected_records += head;
-		stats->committed_records += tail;
-		if (tail >= head)
-			stats->pending_records += tail - head;
-		else
-			stats->other_drops++;
-		stats->dirty_slots +=
-			__atomic_load_n(&header->dirty, __ATOMIC_ACQUIRE) != 0;
+		if (output_transport >= 2) {
+			// Encoded tail publication: mirror the drain's view
+			// of committed tail; odd word = in-progress producer.
+			const uint64_t dirty_word = __atomic_load_n(
+				&header->dirty, __ATOMIC_ACQUIRE);
+			if (dirty_word & 1) {
+				stats->dirty_slots += 1;
+			}
+			const uint64_t head = __atomic_load_n(
+				&header->head, __ATOMIC_ACQUIRE);
+			const uint64_t tail = dirty_word >> 1;
+			stats->collected_records += head;
+			stats->committed_records += tail;
+			if (tail >= head)
+				stats->pending_records += tail - head;
+			else
+				stats->other_drops++;
+		} else {
+			const uint64_t head = __atomic_load_n(
+				&header->head, __ATOMIC_ACQUIRE);
+			const uint64_t tail = __atomic_load_n(
+				&header->tail, __ATOMIC_ACQUIRE);
+			stats->collected_records += head;
+			stats->committed_records += tail;
+			if (tail >= head)
+				stats->pending_records += tail - head;
+			else
+				stats->other_drops++;
+			stats->dirty_slots +=
+				__atomic_load_n(&header->dirty,
+						__ATOMIC_ACQUIRE) != 0;
+		}
 	}
 
 	const auto *errors = (const ringbuf_error_counters *)(uintptr_t)(

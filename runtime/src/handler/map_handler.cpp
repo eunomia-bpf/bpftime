@@ -1327,6 +1327,24 @@ uint64_t bpf_map_handler::get_gpu_map_max_thread_count() const
 	SPDLOG_DEBUG("Not a GPU map!");
 	return 0;
 }
+
+uint64_t bpf_map_handler::get_gpu_ringbuf_output_transport() const
+{
+#if !defined(BPFTIME_ENABLE_CUDA_ATTACH) && !defined(BPFTIME_ENABLE_ROCM_ATTACH)
+	return 0;
+#endif
+
+#if defined(BPFTIME_ENABLE_CUDA_ATTACH)
+	if (this->type == bpf_map_type::BPF_MAP_TYPE_GPU_RINGBUF_MAP) {
+		return static_cast<nv_gpu_ringbuf_map_impl *>(
+			       map_impl_ptr.get())
+			->get_output_transport();
+	}
+#endif
+
+	return 0;
+}
+
 void *bpf_map_handler::get_gpu_map_extra_buffer() const
 {
 #if !defined(BPFTIME_ENABLE_CUDA_ATTACH) && !defined(BPFTIME_ENABLE_ROCM_ATTACH)

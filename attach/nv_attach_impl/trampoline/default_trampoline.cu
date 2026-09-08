@@ -112,8 +112,11 @@ struct MapBasicInfo {
 	int map_type;
 	void *extra_buffer;
 	uint64_t max_thread_count;
-	// Opt-in aligned-word payload copying for per-thread GPU rings.
-	// Reservation and publication remain per event in both modes.
+	// Opt-in ring-output transport level for per-thread GPU rings.
+	// 0 = legacy byte-wise copy over the legacy handshake, 1 = aligned
+	// 8-byte payload copy over the legacy handshake, 2 = aligned copy
+	// plus encoded tail publication in the dirty word. Reservation and
+	// publication remain per event in every mode.
 	uint64_t batch_output;
 };
 __device__ __forceinline__ uint64_t read_globaltimer()
@@ -484,7 +487,63 @@ _bpf_helper_ext_0025(uint64_t ctx, uint64_t map, uint64_t flags, uint64_t data,
 				(unsigned long long *)&errors->other_drops, 1);
 			return 4;
 		}
-		if (map_info.batch_output) {
+		if (map_info.batch_output == 2) {
+		// Encoded-release protocol for this slot: a per-event
+		// publication optimization, not warp-level batching of
+		// multiple records and not a measured hardware-traffic
+		// win. The unlocked dirty word carries the published tail
+		// shifted left by one (odd = locked); the
+		// protocol-level intent is one fewer system-scope RMW and
+		// one fewer fence per event than the legacy two-exchange
+		// publication, with the same publication strength, drop
+		// colors, return codes, record layout, and per-thread slot
+		// semantics. A crash while locked leaves the word odd, the
+		// slot skipped forever by the drain and later calls of the
+		// same thread dropped with the collision color, identical
+		// to a leftover legacy lock.
+			auto *header =
+				(ringbuf_header *)(uintptr_t)(tid * entry_size +
+							      (char *)map_info
+								      .extra_buffer);
+			const uint64_t pre =
+				*(volatile uint64_t *)(uintptr_t)&header->dirty;
+			if ((pre & 1) != 0) {
+				atomicAdd_system(
+					(unsigned long long *)&errors->other_drops, 1);
+				return 4;
+			}
+			if (atomicCAS_system((unsigned long long *)&header->dirty,
+					     pre, pre | 1) != pre) {
+				atomicAdd_system(
+					(unsigned long long *)&errors->other_drops, 1);
+				return 4;
+			}
+			asm volatile("membar.sys;" ::: "memory");
+			const uint64_t head =
+				*(volatile uint64_t *)(uintptr_t)&header->head;
+			asm volatile("membar.sys;" ::: "memory");
+			const uint64_t tail = pre >> 1;
+			if (tail - head >= (uint64_t)map_info.max_entries) {
+				atomicAdd_system((unsigned long long *)&errors
+							 ->full_drops,
+						 1);
+				asm volatile("membar.sys;" ::: "memory");
+				atomicExch_system((unsigned long long *)&header->dirty,
+						  pre);
+				return 2;
+			}
+			const auto real_tail = tail % (uint64_t)map_info.max_entries;
+			auto buffer = ((char *)header) + sizeof(ringbuf_header) +
+				      real_tail * record_stride;
+			*(uint64_t *)(uintptr_t)buffer = data_size;
+			coalesced_memcpy(buffer + sizeof(uint64_t),
+					 (void *)(uintptr_t)data, data_size);
+			asm volatile("membar.sys;" ::: "memory");
+			atomicExch_system((unsigned long long *)&header->dirty,
+					  (tail + 1) << 1);
+			return 0;
+		}
+		if (map_info.batch_output == 1) {
 			// Opt-in transport fast path. The per-thread
 			// CAS/publication/drop semantics are identical to the
 			// legacy path below: same slot, same dirty lock with

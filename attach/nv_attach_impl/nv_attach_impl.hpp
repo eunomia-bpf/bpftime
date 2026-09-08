@@ -51,9 +51,13 @@ struct MapBasicInfo {
 	int map_type;
 	void *extra_buffer;
 	uint64_t max_thread_count;
-	// Opt-in aligned-word copying for per-thread GPU ring buffers; mirrors
-	// the device-side MapBasicInfo in the trampoline byte for byte. Zero
-	// keeps the legacy per-event reserve/publish path.
+	// Opt-in ring-output transport level for per-thread GPU ring
+	// buffers; mirrors the device-side MapBasicInfo in the trampoline
+	// byte for byte. 0 keeps the legacy per-event reserve/publish path,
+	// 1 selects aligned 8-byte payload copying over the legacy
+	// handshake, and 2 additionally enables encoded tail publication in
+	// the dirty word on both the device and the host drain. The value is
+	// chosen once at map creation and copied into each device map-info.
 	uint64_t batch_output;
 };
 struct nv_hooker_func_t {
