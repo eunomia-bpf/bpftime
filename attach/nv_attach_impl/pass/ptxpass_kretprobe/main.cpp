@@ -35,7 +35,7 @@ static ptxpass::pass_config::PassConfig get_default_config()
 
 static std::pair<std::string, bool>
 patch_retprobe(const std::string &ptx, const std::string &kernel,
-	       const std::vector<uint64_t> &ebpf_words)
+		const std::vector<uint64_t> &ebpf_words, bool warp_auto_execution)
 {
 	std::string fname = std::string("__retprobe_func__") + kernel;
 
@@ -46,6 +46,32 @@ patch_retprobe(const std::string &ptx, const std::string &kernel,
 		return { ptx, false };
 	}
 	std::string out = ptx;
+	bool warp_lowered = false;
+	if (warp_auto_execution) {
+		if (!ptxpass::ptx_supports_warp_sync(ptx)) {
+			std::fprintf(stderr,
+				     "[ptxpass] kretprobe: PTX version lacks vote.ballot.sync; keeping per-thread hook call for %s\n",
+				     kernel.c_str());
+		} else if (!ptxpass::insert_warp_execution_register_decls(
+				   out, kernel)) {
+			std::fprintf(stderr,
+				     "[ptxpass] kretprobe: cannot insert warp-exec register declarations for %s; keeping per-thread hook call\n",
+				     kernel.c_str());
+		} else {
+			warp_lowered = true;
+		}
+	}
+	// Positions may have shifted after the declaration insertion.
+	if (warp_lowered)
+	{
+		body = ptxpass::find_kernel_body(out, kernel);
+		if (body.first == std::string::npos) {
+			std::fprintf(stderr,
+				     "[ptxpass] kretprobe: lost kernel body for %s after warp-exec insertion\n",
+				     kernel.c_str());
+			return { ptx, false };
+		}
+	}
 	std::string section = out.substr(body.first, body.second - body.first);
 	// PTX kernels can terminate with either 'ret;' or 'exit;'. Some
 	// variants are predicated, e.g. '@%p1 exit;'. Keep the predicate (if
@@ -55,9 +81,51 @@ patch_retprobe(const std::string &ptx, const std::string &kernel,
 	// epilogue.
 	static std::regex retpat(
 		R"((\s*)((?:[\w$\.]+:\s*)?)(@[^\s]+\s+)?((?:ret|exit);))");
-	section = std::regex_replace(section, retpat,
-				     std::string("$1$2$3call ") + fname +
-					     ";\n$1$3$4");
+	if (warp_lowered) {
+		// Automatic warp-execution lowering: elect the leader among the
+		// lanes executing this site, then let only the leader call the
+		// handler once. The original (possibly predicated) ret/exit
+		// line is preserved afterwards.
+		// std::regex_replace has no callback form. Walk each ret/exit
+		// site with sregex_iterator and splice the election preamble
+		// in ahead of the preserved (possibly predicated) control-flow
+		// line.
+		std::string replaced;
+		replaced.reserve(section.size() + 1024);
+		auto begin = std::sregex_iterator(section.begin(),
+						  section.end(), retpat);
+		auto end_it = std::sregex_iterator();
+		size_t last_end = 0;
+		for (auto it = begin; it != end_it; ++it) {
+			const auto &m = *it;
+			const size_t match_begin =
+				(size_t)(m.position() + m[1].length() +
+					 m[2].length());
+			replaced.append(section, last_end,
+					match_begin - last_end);
+			// The copied pre-text ($1 + $2, including a same-line
+			// label) stays verbatim; terminate that label line,
+			// then emit the election preamble and the preserved
+			// predicated control-flow line once.
+			if (!replaced.empty() && replaced.back() != '\n')
+				replaced.push_back('\n');
+			const std::string prefix =
+				ptxpass::emit_warp_leader_hook_prefix(
+					fname, m[3].str());
+			replaced.append(prefix);
+			replaced.append(m[1].str() + m[3].str() + m[4].str());
+			last_end = match_begin + (m[3].length() +
+						  m[4].length());
+		}
+		replaced.append(section, last_end, std::string::npos);
+		section = std::move(replaced);
+		ptxpass::log_transform_stats(
+			"kretprobe-warp", 1, ptx.size(), out.size());
+	} else {
+		section = std::regex_replace(
+			section, retpat,
+			std::string("$1$2$3call ") + fname + ";\n$1$3$4");
+	}
 	out.replace(body.first, body.second - body.first, section);
 	out = func_ptx + "\n" + out;
 	ptxpass::log_transform_stats("kretprobe", 1, ptx.size(), out.size());
@@ -86,7 +154,8 @@ extern "C" int process_input(const char *input, int length, char *output)
 		auto [out, modified] = patch_retprobe(
 			runtime_request.input.full_ptx,
 			runtime_request.input.to_patch_kernel,
-			runtime_request.get_uint64_ebpf_instructions());
+			runtime_request.get_uint64_ebpf_instructions(),
+			runtime_request.input.warp_auto_execution);
 		snprintf(
 			output, length, "%s",
 			emit_runtime_response_and_return(out, modified).c_str());

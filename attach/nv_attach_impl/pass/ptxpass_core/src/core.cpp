@@ -321,4 +321,184 @@ void log_transform_stats(const char *pass_name, int matched, size_t bytes_in,
 	std::fprintf(stderr, "[ptxpass] %s: matched=%d, in=%zu, out=%zu\n",
 		     pass_name, matched, bytes_in, bytes_out);
 }
+
+// ------- Automatic warp-execution lowering helpers -------
+namespace detail {
+constexpr const char *kWarpExecLaneReg = "%r_bpftime_warp0";
+constexpr const char *kWarpExecLowBitsReg = "%r_bpftime_warp1";
+constexpr const char *kWarpExecMaskReg = "%r_bpftime_warp2";
+constexpr const char *kWarpExecBallotReg = "%r_bpftime_warp3";
+constexpr const char *kWarpExecLeaderPred = "%p_bpftime_warp0";
+constexpr const char *kWarpExecTruePred = "%p_bpftime_warp1";
+constexpr const char *kWarpExecCallPred = "%p_bpftime_warp2";
+} // namespace detail
+
+bool ptx_supports_warp_sync(const std::string &ptx)
+{
+	std::optional<bool> supported;
+	for_each_line(ptx, [&](std::string_view line) {
+		if (supported.has_value())
+			return;
+		if (line.rfind(".version", 0) == 0) {
+			std::string v(line.substr(8));
+			try {
+				const double have = std::stod(v);
+				supported = have >= 6.0;
+			} catch (...) {
+				supported = false;
+			}
+		}
+	});
+	return supported.value_or(false);
+}
+
+std::string warp_execution_register_decls()
+{
+	std::string decls;
+	decls.reserve(192);
+	decls += "\t.reg .b32 ";
+	decls += detail::kWarpExecLaneReg;
+	decls += ", ";
+	decls += detail::kWarpExecLowBitsReg;
+	decls += ", ";
+	decls += detail::kWarpExecMaskReg;
+	decls += ", ";
+	decls += detail::kWarpExecBallotReg;
+	decls += ";\n";
+	decls += "\t.reg .pred ";
+	decls += detail::kWarpExecLeaderPred;
+	decls += ", ";
+	decls += detail::kWarpExecTruePred;
+	decls += ", ";
+	decls += detail::kWarpExecCallPred;
+	decls += ";\n";
+	return decls;
+}
+
+bool insert_warp_execution_register_decls(std::string &ptx,
+					  const std::string &kernel)
+{
+	const auto body = find_kernel_body(ptx, kernel);
+	if (body.first == std::string::npos)
+		return false;
+	const size_t brace = ptx.find('{', body.first);
+	if (brace == std::string::npos || brace >= body.second)
+		return false;
+	std::string decls = warp_execution_register_decls();
+	ptx.insert(brace + 1, "\n" + decls);
+	return true;
+}
+
+std::string emit_warp_leader_hook_prefix(const std::string &func_name,
+					 const std::string &pred_text)
+{
+	using namespace detail;
+	const std::string pred_reg = [&]() {
+		std::string name = pred_text;
+		if (!name.empty() && name.front() == '@')
+			name.erase(name.begin());
+		while (!name.empty() &&
+		       (name.back() == ' ' || name.back() == '\t'))
+			name.pop_back();
+		return name; // "" for unconditional sites, "!%pN" keeps the negation
+	}();
+
+	std::string out;
+	// Every lane that reaches this hook site executes the preamble; the
+	// ballot collects the hook predicate of exactly those lanes, so the
+	// elected leader is the lowest-numbered lane that is both active and
+	// predicate-true for this site.
+	out += "\tmov.u32 ";
+	out += kWarpExecLaneReg;
+	out += ", %laneid;\n";
+	if (pred_reg.empty()) {
+		out += "\tsetp.eq.u32 ";
+		out += kWarpExecTruePred;
+		out += ", ";
+		out += kWarpExecLaneReg;
+		out += ", ";
+		out += kWarpExecLaneReg;
+		out += ";\n";
+		out += "\tactivemask ";
+		out += kWarpExecMaskReg;
+		out += ";\n";
+		out += "\tvote.ballot.sync.b32 ";
+		out += kWarpExecBallotReg;
+		out += ", ";
+		out += kWarpExecTruePred;
+		out += ", ";
+		out += kWarpExecMaskReg;
+		out += ";\n";
+	} else {
+		out += "\tactivemask ";
+		out += kWarpExecMaskReg;
+		out += ";\n";
+		out += "\tvote.ballot.sync.b32 ";
+		out += kWarpExecBallotReg;
+		out += ", ";
+		out += pred_reg;
+		out += ", ";
+		out += kWarpExecMaskReg;
+		out += ";\n";
+	}
+	out += "\tshl.b32 ";
+	out += kWarpExecLowBitsReg;
+	out += ", 1, ";
+	out += kWarpExecLaneReg;
+	out += ";\n";
+	out += "\tsub.u32 ";
+	out += kWarpExecLowBitsReg;
+	out += ", ";
+	out += kWarpExecLowBitsReg;
+	out += ", 1;\n";
+	// No active ballot bit below this lane -> this lane is the leader.
+	out += "\tand.b32 ";
+	out += kWarpExecLowBitsReg;
+	out += ", ";
+	out += kWarpExecLowBitsReg;
+	out += ", ";
+	out += kWarpExecBallotReg;
+	out += ";\n";
+	out += "\tsetp.eq.u32 ";
+	out += kWarpExecLeaderPred;
+	out += ", ";
+	out += kWarpExecLowBitsReg;
+	out += ", 0;\n";
+	if (!pred_reg.empty()) {
+		if (pred_reg.front() == '!') {
+			out += "\tnot.pred ";
+			out += kWarpExecTruePred;
+			out += ", ";
+			out += pred_reg.substr(1);
+			out += ";\n";
+			out += "\tand.pred ";
+			out += kWarpExecCallPred;
+			out += ", ";
+			out += kWarpExecLeaderPred;
+			out += ", ";
+			out += kWarpExecTruePred;
+			out += ";\n";
+		} else {
+			out += "\tand.pred ";
+			out += kWarpExecCallPred;
+			out += ", ";
+			out += kWarpExecLeaderPred;
+			out += ", ";
+			out += pred_reg;
+			out += ";\n";
+		}
+	}
+	if (pred_reg.empty()) {
+		out += "\t@";
+		out += kWarpExecLeaderPred;
+	} else {
+		out += "\t@";
+		out += kWarpExecCallPred;
+	}
+	out.push_back(' ');
+	out += "call ";
+	out += func_name;
+	out += ";\n";
+	return out;
+}
 } // namespace ptxpass

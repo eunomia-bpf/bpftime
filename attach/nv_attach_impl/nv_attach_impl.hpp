@@ -83,6 +83,14 @@ struct nv_attach_entry {
 	// Extra serialized parameters (JSON string) reserved for future use
 	std::optional<std::string> extras;
 	struct pass_cfg_with_exec_path *config;
+	// Verifier-admitted automatic warp-execution lowering for this
+	// program. Only set when BPFTIME_GPU_AUTO_WARP_EXECUTION is enabled,
+	// the full GPU verification pipeline accepted the program, and the
+	// warp-policy eligibility analysis confirmed that once-per-active-warp
+	// leader execution preserves the program's observable semantics.
+	// Eligible hook sites lower per-thread handler calls to elected-leader
+	// calls; everything else keeps the ordinary per-thread path.
+	bool warp_auto_execution = false;
 };
 
 struct pass_cfg_with_exec_path {

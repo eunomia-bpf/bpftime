@@ -73,11 +73,17 @@ struct RuntimeInput {
 	std::string to_patch_kernel;
 	std::string global_ebpf_map_info_symbol = "map_info";
 	std::string ebpf_communication_data_symbol = "constData";
+	// Opt-in automatic warp-uniform execution. When true, the pass lowers
+	// hook-site handler invocations to verifier-admitted per-warp leader
+	// execution instead of one scalar call per active thread. The runtime
+	// only sets this after the program passed full verification and the
+	// warp-policy eligibility analysis, so the flag is admission-backed
+	// rather than caller-provided trust.
+	bool warp_auto_execution = false;
 };
-NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(RuntimeInput, full_ptx,
-						to_patch_kernel,
-						global_ebpf_map_info_symbol,
-						ebpf_communication_data_symbol);
+NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(
+	RuntimeInput, full_ptx, to_patch_kernel, global_ebpf_map_info_symbol,
+	ebpf_communication_data_symbol, warp_auto_execution);
 } // namespace runtime_input
 
 // JSON stdout payload
@@ -154,6 +160,38 @@ std::string filter_compiled_ptx_for_ebpf_program(std::string input);
 // {std::string::npos, std::string::npos}
 std::pair<size_t, size_t> find_kernel_body(const std::string &ptx,
 					   const std::string &kernel);
+
+// ------- Automatic warp-execution lowering helpers -------
+//
+// When RuntimeInput::warp_auto_execution is set, the hook-site handler
+// invocation is lowered to warp-leader execution: the appended preamble
+// elects the lowest-numbered lane that actually executes this hook site
+// (partial warps and predicated exits stay correct because every lane of the
+// site contributes its own hook predicate to a warp ballot), and only that
+// elected leader performs the handler call. This lowers the verifier-admitted
+// uniform policy contract; programs with per-lane observable side effects are
+// not admitted (see the runtime-side eligibility analysis).
+
+// True when the PTX module advertises a PTX ISA version that supports
+// vote.ballot.sync (>= 6.0).
+bool ptx_supports_warp_sync(const std::string &ptx);
+
+// Register declaration lines that must be inserted once at the top of the
+// patched kernel body so every hook site can use fresh bpftime-only symbol
+// names. Each emitted line ends with a newline.
+std::string warp_execution_register_decls();
+
+// Insert warp_execution_register_decls() at the start of the kernel body.
+// Returns false (without modifying ptx) if the kernel could not be located.
+bool insert_warp_execution_register_decls(std::string &ptx,
+					  const std::string &kernel);
+
+// Election preamble plus a single leader-predicated `call func_name;` for one
+// ret/exit site. pred_text is the original site predicate with trailing
+// space, e.g. "@%p1 " (may be empty for unconditional sites). The original
+// control-flow line must still be emitted after the returned text.
+std::string emit_warp_leader_hook_prefix(const std::string &func_name,
+					 const std::string &pred_text);
 
 // Emit simple stats to stderr (pass name, matched count, in/out sizes)
 void log_transform_stats(const char *pass_name, int matched, size_t bytes_in,

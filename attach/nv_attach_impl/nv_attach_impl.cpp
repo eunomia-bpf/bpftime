@@ -186,6 +186,23 @@ void nv_attach_impl::register_custom_helpers(
 {
 }
 
+namespace
+{
+// Opt-in automatic warp-execution lowering. Controlled by
+// BPFTIME_GPU_AUTO_WARP_EXECUTION so the per-thread hook path remains the
+// default (on/off switch for matched measurements).
+bool gpu_auto_warp_execution_env_enabled()
+{
+	static const bool enabled = [] {
+		const char *value = std::getenv(
+			"BPFTIME_GPU_AUTO_WARP_EXECUTION");
+		return value != nullptr && value[0] != '\0' &&
+		       std::strcmp(value, "0") != 0;
+	}();
+	return enabled;
+}
+} // namespace
+
 int nv_attach_impl::create_attach_with_ebpf_callback(
 	ebpf_run_callback &&cb, const attach_private_data &private_data,
 	int attach_type)
@@ -232,14 +249,14 @@ int nv_attach_impl::create_attach_with_ebpf_callback(
 		}
 	}
 	if (matched) {
+		bool warp_auto_execution = false;
 #ifdef ENABLE_BPFTIME_VERIFIER
 		const auto section_name = data.program_name.empty() ?
 						  attach_point_name :
 						  data.program_name;
+		const auto map_descriptors = build_gpu_verifier_map_descriptors(
+			data.map_basic_info);
 		if (data.verifier_mode != BPFTIME_NO_VERIFY) {
-			const auto map_descriptors =
-				build_gpu_verifier_map_descriptors(
-					data.map_basic_info);
 			const auto verification_started =
 				std::chrono::steady_clock::now();
 			const auto error =
@@ -290,6 +307,31 @@ int nv_attach_impl::create_attach_with_ebpf_callback(
 			SPDLOG_INFO("Skipping GPU eBPF verification for {}",
 				    section_name);
 		}
+		// Opt-in automatic warp-execution lowering: only affects the
+		// injected hook-site code shape for programs whose verified
+		// semantics are preserved by once-per-active-warp leader
+		// execution. Never an admission gate: unverified (warning or
+		// no-verify) and ineligible programs keep the ordinary
+		// per-thread hook path unchanged.
+		if (gpu_auto_warp_execution_env_enabled()) {
+			const auto eligibility_error =
+				bpftime::verifier::gpu::
+					evaluate_warp_execution_eligibility(
+						data.instructions.data(),
+						data.instructions.size(),
+						section_name,
+						map_descriptors);
+			if (eligibility_error) {
+				SPDLOG_INFO(
+					"GPU automatic warp execution not admitted for {}: {} (per-thread hook path preserved)",
+					section_name, *eligibility_error);
+			} else {
+				warp_auto_execution = true;
+				SPDLOG_INFO(
+					"GPU automatic warp execution admitted for {}: eligible hook sites lower per-thread calls to elected warp-leader execution",
+					section_name);
+			}
+		}
 #endif
 		if (data.comm_shared_mem == 0) {
 			SPDLOG_ERROR(
@@ -304,6 +346,7 @@ int nv_attach_impl::create_attach_with_ebpf_callback(
 		entry.kernels = data.func_names;
 		entry.program_name = data.program_name;
 		entry.config = matched;
+		entry.warp_auto_execution = warp_auto_execution;
 
 		hook_entries[id] = std::move(entry);
 		// Late bootstrap may have already patched/loaded modules for earlier
@@ -1105,6 +1148,9 @@ nv_attach_impl::hack_fatbin(std::map<std::string, std::string> all_ptx)
 							"map_info";
 						ri.ebpf_communication_data_symbol =
 							"constData";
+						ri.warp_auto_execution =
+							hook_entry
+								.warp_auto_execution;
 
 						req.set_ebpf_instructions(
 							ebpf_inst_words);

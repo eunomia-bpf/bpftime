@@ -5,6 +5,7 @@ add_library(bpftime-verifier STATIC
     src/gpu/gpu_verifier.cpp
     src/gpu/simt_safety_check.cpp
     src/gpu/uniformity_analysis.cpp
+    src/gpu/warp_execution_eligibility.cpp
 )
 add_subdirectory(ebpf-verifier)
 
