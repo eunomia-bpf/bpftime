@@ -381,6 +381,11 @@ bool insert_warp_execution_register_decls(std::string &ptx,
 	const auto body = find_kernel_body(ptx, kernel);
 	if (body.first == std::string::npos)
 		return false;
+	// Idempotent: if the selected kernel already declares the leader
+	// registers, leave the module untouched.
+	const size_t existing = ptx.find(detail::kWarpExecLaneReg, body.first);
+	if (existing != std::string::npos && existing < body.second)
+		return false;
 	const size_t brace = ptx.find('{', body.first);
 	if (brace == std::string::npos || brace >= body.second)
 		return false;
@@ -419,7 +424,7 @@ std::string emit_warp_leader_hook_prefix(const std::string &func_name,
 		out += ", ";
 		out += kWarpExecLaneReg;
 		out += ";\n";
-		out += "\tactivemask ";
+		out += "\tactivemask.b32 ";
 		out += kWarpExecMaskReg;
 		out += ";\n";
 		out += "\tvote.ballot.sync.b32 ";
@@ -430,7 +435,7 @@ std::string emit_warp_leader_hook_prefix(const std::string &func_name,
 		out += kWarpExecMaskReg;
 		out += ";\n";
 	} else {
-		out += "\tactivemask ";
+		out += "\tactivemask.b32 ";
 		out += kWarpExecMaskReg;
 		out += ";\n";
 		out += "\tvote.ballot.sync.b32 ";
