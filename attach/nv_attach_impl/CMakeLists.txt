@@ -44,6 +44,48 @@ add_dependencies(
     ptxpass_kprobe_memcapture
     nv_attach_impl_ptx_compiler
 )
+
+# Optional: regenerate the embedded trampoline PTX header
+# (attach/nv_attach_impl/trampoline_ptx.h) from trampoline/default_trampoline.cu
+# with the existing trampoline/Makefile generator BEFORE bpftime_nv_attach_impl
+# is compiled. The embedded header carries the device-side map ABI layout; a
+# stale embedded header once silently mismatched the 48-byte host MapBasicInfo.
+# Default OFF: ordinary supported builds keep using the checked-in header and
+# do not need the trampoline generator toolchain.
+option(BPFTIME_REGENERATE_TRAMPOLINE_PTX
+    "Regenerate trampoline_ptx.h via trampoline/Makefile before building bpftime_nv_attach_impl (requires a CUDA-capable clang)"
+    OFF)
+if(BPFTIME_REGENERATE_TRAMPOLINE_PTX)
+    find_program(BPFTIME_TRAMPOLINE_MAKE NAMES make gmake)
+    if(NOT BPFTIME_TRAMPOLINE_MAKE)
+        message(FATAL_ERROR
+            "BPFTIME_REGENERATE_TRAMPOLINE_PTX=ON needs GNU make (make/gmake); CMAKE_MAKE_PROGRAM is generator-specific (ninja under Ninja) and cannot run a Makefile")
+    endif()
+    set(BPFTIME_TRAMPOLINE_CLANG_FLAGS "" CACHE STRING
+        "Optional CLANG_FLAGS override passed to trampoline/Makefile; empty keeps the Makefile's portable defaults")
+    set(BPFTIME_TRAMPOLINE_CLANG_FLAGS_ARG)
+    if(BPFTIME_TRAMPOLINE_CLANG_FLAGS)
+        set(BPFTIME_TRAMPOLINE_CLANG_FLAGS_ARG
+            "CLANG_FLAGS=${BPFTIME_TRAMPOLINE_CLANG_FLAGS}")
+    endif()
+    add_custom_command(
+        OUTPUT ${CMAKE_CURRENT_SOURCE_DIR}/trampoline_ptx.h
+        # Bounded forced regeneration: CMake runs this command only when the
+        # OUTPUT header is stale vs DEPENDS (no unconditional rebuild), and
+        # GNU make -B forces the nested .cu -> .s -> header chain so a
+        # Makefile-only change cannot be skipped as up-to-date inside.
+        COMMAND ${BPFTIME_TRAMPOLINE_MAKE} -C ${CMAKE_CURRENT_SOURCE_DIR}/trampoline
+            -B ../trampoline_ptx.h
+            ${BPFTIME_TRAMPOLINE_CLANG_FLAGS_ARG}
+        DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/trampoline/default_trampoline.cu
+            ${CMAKE_CURRENT_SOURCE_DIR}/trampoline/Makefile
+        COMMENT "Regenerating embedded trampoline PTX (trampoline/Makefile)"
+        VERBATIM)
+    add_custom_target(regenerate_trampoline_ptx
+        DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/trampoline_ptx.h
+        SOURCES ${CMAKE_CURRENT_SOURCE_DIR}/trampoline/default_trampoline.cu)
+    add_dependencies(bpftime_nv_attach_impl regenerate_trampoline_ptx)
+endif()
 set(NV_ATTACH_IMPL_INCLUDE ${CMAKE_CURRENT_SOURCE_DIR} )
 find_cuda()
 
