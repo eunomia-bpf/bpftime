@@ -51,6 +51,10 @@ struct MapBasicInfo {
 	int map_type;
 	void *extra_buffer;
 	uint64_t max_thread_count;
+	// Opt-in aligned-word copying for per-thread GPU ring buffers; mirrors
+	// the device-side MapBasicInfo in the trampoline byte for byte. Zero
+	// keeps the legacy per-event reserve/publish path.
+	uint64_t batch_output;
 };
 struct nv_hooker_func_t {
 	void *func;

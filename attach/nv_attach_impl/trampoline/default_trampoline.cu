@@ -112,6 +112,9 @@ struct MapBasicInfo {
 	int map_type;
 	void *extra_buffer;
 	uint64_t max_thread_count;
+	// Opt-in aligned-word payload copying for per-thread GPU rings.
+	// Reservation and publication remain per event in both modes.
+	uint64_t batch_output;
 };
 __device__ __forceinline__ uint64_t read_globaltimer()
 {
@@ -142,6 +145,27 @@ extern "C" __device__ inline void simple_memcpy(void *dst, void *src, int sz)
 {
 	for (int i = 0; i < sz; i++)
 		((char *)dst)[i] = ((char *)src)[i];
+}
+
+// Copy aligned payloads in 8-byte words, retaining byte copies for
+// unaligned addresses and trailing bytes. This is not cross-lane
+// coalescing or a guarantee about hardware transaction counts.
+extern "C" __device__ __forceinline__ void
+coalesced_memcpy(void *dst, void *src, uint64_t sz)
+{
+	if (((uintptr_t)dst & 7u) == 0 && ((uintptr_t)src & 7u) == 0) {
+		auto *d = (uint64_t *)dst;
+		const auto *s = (const uint64_t *)src;
+		uint64_t i = 0;
+		for (; i + 8 <= sz; i += 8)
+			d[i >> 3] = s[i >> 3];
+		const char *cs = (const char *)src + i;
+		char *cd = (char *)dst + i;
+		for (; i < sz; i++)
+			*cd++ = *cs++;
+		return;
+	}
+	simple_memcpy(dst, src, (int)sz);
 }
 
 __device__ __noinline__ HelperCallResponse complete_helper_call_locked(
@@ -459,6 +483,57 @@ _bpf_helper_ext_0025(uint64_t ctx, uint64_t map, uint64_t flags, uint64_t data,
 			atomicAdd_system(
 				(unsigned long long *)&errors->other_drops, 1);
 			return 4;
+		}
+		if (map_info.batch_output) {
+			// Opt-in transport fast path. The per-thread
+			// CAS/publication/drop semantics are identical to the
+			// legacy path below: same slot, same dirty lock with
+			// the same collision drop, same full-slot drop rule,
+			// same head/tail protocol, same return codes and
+			// record layout. Only the payload copy uses aligned
+			// 8-byte words where possible; performance and hardware
+			// transaction counts require measurement.
+			auto *header =
+				(ringbuf_header *)(uintptr_t)(tid * entry_size +
+							      (char *)map_info
+								      .extra_buffer);
+			if (atomicCAS_system(
+				    (unsigned long long *)&header->dirty, 0,
+				    1) != 0) {
+				atomicAdd_system(
+					(unsigned long long *)&errors->other_drops,
+					1);
+				return 4;
+			}
+			asm volatile("membar.sys;" ::: "memory");
+			const uint64_t head =
+				*(volatile uint64_t *)(uintptr_t)&header->head;
+			asm volatile("membar.sys;" ::: "memory");
+			const uint64_t tail = header->tail;
+			if (tail - head >= (uint64_t)map_info.max_entries) {
+				atomicAdd_system(
+					(unsigned long long *)&errors->full_drops,
+					1);
+				asm volatile("membar.sys;" ::: "memory");
+				atomicExch_system(
+					(unsigned long long *)&header->dirty,
+					0);
+				return 2;
+			}
+			const auto real_tail =
+				tail % (uint64_t)map_info.max_entries;
+			auto buffer = ((char *)header) + sizeof(ringbuf_header) +
+				      real_tail * record_stride;
+			*(uint64_t *)(uintptr_t)buffer = data_size;
+			coalesced_memcpy(buffer + sizeof(uint64_t),
+					 (void *)(uintptr_t)data, data_size);
+			asm volatile("membar.sys;" ::: "memory");
+			atomicExch_system((unsigned long long *)&header->tail,
+					  tail + 1);
+			asm volatile("membar.sys;" ::: "memory");
+			atomicExch_system((unsigned long long *)&header->dirty,
+					  0);
+			return 0;
 		}
 		// printf("Starting perf output, value size=%d, max entries =
 		// %d\n",

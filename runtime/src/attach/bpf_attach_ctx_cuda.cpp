@@ -6,6 +6,7 @@
 #include <memory>
 #include <optional>
 #include <cstdlib>
+#include <cstring>
 #include <mutex>
 #include <system_error>
 #include <thread>
@@ -331,6 +332,7 @@ bpf_attach_ctx::create_map_basic_info(int filled_size)
 		entry.map_type = 0;
 		entry.extra_buffer = nullptr;
 		entry.max_thread_count = 0;
+		entry.batch_output = 0;
 	}
 	const auto &handler_manager =
 		*shm_holder.global_shared_memory.get_manager();
@@ -362,6 +364,20 @@ bpf_attach_ctx::create_map_basic_info(int filled_size)
 			local.extra_buffer = gpu_buffer;
 			local.max_thread_count =
 				map.get_gpu_map_max_thread_count();
+			// Opt-in aligned-word copy: same-object on/off is
+			// decided by the runtime environment, so the default
+			// (unset) path keeps the legacy per-event transport.
+			const char *auto_warp = std::getenv(
+				"BPFTIME_GPU_AUTO_WARP_EXECUTION");
+			if (map.type == bpftime::bpf_map_type::
+					BPF_MAP_TYPE_GPU_RINGBUF_MAP &&
+			    auto_warp && auto_warp[0] != '\0' &&
+			    std::strcmp(auto_warp, "0") != 0) {
+				local.batch_output = 1;
+				SPDLOG_INFO(
+					"GPU ring-buffer aligned-word output enabled: map_fd={} value_size={}",
+					i, map.get_value_size());
+			}
 		}
 	}
 
