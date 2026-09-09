@@ -1,0 +1,6 @@
+/.output
+/victim*
+/prefetch
+/prefetch_example
+/results.csv
+/prefetch_gemm
