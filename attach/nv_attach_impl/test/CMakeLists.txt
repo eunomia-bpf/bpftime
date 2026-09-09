@@ -26,12 +26,12 @@ if(${ENABLE_EBPF_VERIFIER} AND NOT TARGET Catch2)
     # if not enable verifier, we will use the catch2 from submodule
 endif()
 
-add_dependencies(bpftime_nv_attach_tests Catch2 bpftime_nv_attach_impl ptxpass_core spdlog::spdlog)
+add_dependencies(bpftime_nv_attach_tests Catch2 bpftime_nv_attach_impl ptxpass_core ptxpass_bb_tracepoint spdlog::spdlog)
 if(${TEST_LCOV})
     target_link_options(bpftime_nv_attach_tests PRIVATE -lgcov)
-    target_link_libraries(bpftime_nv_attach_tests PRIVATE Catch2::Catch2WithMain bpftime_nv_attach_impl ptxpass_core spdlog::spdlog gcov cuda)
+    target_link_libraries(bpftime_nv_attach_tests PRIVATE Catch2::Catch2WithMain bpftime_nv_attach_impl ptxpass_core ptxpass_bb_tracepoint spdlog::spdlog gcov cuda)
 else()
-    target_link_libraries(bpftime_nv_attach_tests PRIVATE Catch2::Catch2WithMain bpftime_nv_attach_impl ptxpass_core spdlog::spdlog cuda)
+    target_link_libraries(bpftime_nv_attach_tests PRIVATE Catch2::Catch2WithMain bpftime_nv_attach_impl ptxpass_core ptxpass_bb_tracepoint spdlog::spdlog cuda)
 endif()
 target_include_directories(bpftime_nv_attach_tests PRIVATE ${CMAKE_SOURCE_DIR}/runtime/ ${NV_ATTACH_IMPL_INCLUDE} ${CMAKE_SOURCE_DIR}/attach/nv_attach_impl/pass/ptxpass_core/include ${Catch2_INCLUDE} ${SPDLOG_INCLUDE})
 

@@ -73,7 +73,7 @@ jobs:
       - name: Build PTX pass targets
         run: |
           cmake --build build --config Debug --target \
-            ptxpass_kprobe_entry ptxpass_kretprobe ptxpass_kprobe_memcapture bpftime_nv_attach_tests -j$(nproc)
+            ptxpass_kprobe_entry ptxpass_kretprobe ptxpass_kprobe_memcapture ptxpass_bb_tracepoint bpftime_nv_attach_tests -j$(nproc)
 
       - name: Run PTX pass unit tests with Catch2
         shell: bash

@@ -5,6 +5,7 @@
 #include <atomic>
 #include <boost/interprocess/managed_shared_memory.hpp>
 #include <cerrno>
+#include <chrono>
 #include <cstring>
 #include <limits>
 #include <string>
@@ -93,10 +94,22 @@ TEST_CASE("Software perf event buffers shard concurrent producers by thread",
 	REQUIRE_FALSE(output_failed.load(std::memory_order_acquire));
 
 	REQUIRE(perf->has_data());
-	for (int i = 0; i < 64; i++) {
-		REQUIRE(perf->has_data());
+	// Shards of exited threads are only reclaimed once every
+	// `software_perf_event_reclaim_drain_interval` (64) drains, and a joined
+	// thread can still answer `tgkill` until the kernel reaps it, so retry a
+	// few reclamation rounds instead of relying on a single one.
+	bool shards_reclaimed = false;
+	for (int round = 0; round < 32 && !shards_reclaimed; round++) {
+		for (int i = 0; i < 64; i++) {
+			REQUIRE(perf->has_data());
+		}
+		shards_reclaimed = perf->producer_shards.empty();
+		if (!shards_reclaimed) {
+			std::this_thread::sleep_for(
+				std::chrono::milliseconds(10));
+		}
 	}
-	REQUIRE(perf->producer_shards.empty());
+	REQUIRE(shards_reclaimed);
 
 	auto *header = (perf_event_mmap_page *)raw_buffer;
 	auto *base = (uint8_t *)raw_buffer + getpagesize();
