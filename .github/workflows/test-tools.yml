@@ -54,7 +54,6 @@ jobs:
       - name: Build tool targets
         run: |
           cmake --build build --config RelWithDebInfo --target bpftime-cli-cpp bpftime-aot-cli bpftimetool -j$(nproc)
-    # TODO: add test for the tools
-    # - name: Run the test scripts
-    #   run: |
-    #     export PATH=$PATH:~/.bpftime
+      - name: Test AOT runner
+        run: |
+          python3 tools/aot/test_run.py build/tools/aot/bpftime-aot cc
