@@ -462,7 +462,8 @@ uint64_t bpf_perf_event_output(uint64_t ctx, uint64_t map, uint64_t flags,
 	cpu_set_t mask, orig;
 	CPU_ZERO(&mask);
 	CPU_SET(current_cpu, &mask);
-	sched_getaffinity(0, sizeof(orig), &orig);
+	if (sched_getaffinity(0, sizeof(orig), &orig) < 0)
+		return (uint64_t)-1;
 	// Bind to the current cpu
 	if (sched_setaffinity(0, sizeof(mask), &mask) < 0) {
 		SPDLOG_ERROR("Failed to set cpu affinity: {}", errno);
@@ -473,12 +474,12 @@ uint64_t bpf_perf_event_output(uint64_t ctx, uint64_t map, uint64_t flags,
 	// Check map type. userspace perf event array, or shared perf event
 	// array?
 	bpftime::bpf_map_type map_ty;
+	int ret = -1;
 	if (int err = bpftime_map_get_info(fd, nullptr, nullptr, &map_ty);
 	    err < 0) {
 		SPDLOG_ERROR("Unable to query map type of fd {}", fd);
-		return -1;
+		goto restore_affinity;
 	}
-	int ret;
 	if (map_ty == bpftime::bpf_map_type::BPF_MAP_TYPE_PERF_EVENT_ARRAY) {
 		const int32_t *val_ptr =
 			(int32_t *)(uintptr_t)bpftime::shm_holder
@@ -488,7 +489,7 @@ uint64_t bpf_perf_event_output(uint64_t ctx, uint64_t map, uint64_t flags,
 			SPDLOG_ERROR("Invalid map fd for perf event output: {}",
 				     fd);
 			errno = EINVAL;
-			return (uint64_t)(-1);
+			goto restore_affinity;
 		}
 		int32_t perf_handler_fd = *val_ptr;
 		ret = bpftime_perf_event_output(perf_handler_fd,
@@ -508,7 +509,12 @@ uint64_t bpf_perf_event_output(uint64_t ctx, uint64_t map, uint64_t flags,
 		ret = -1;
 	}
 
-	sched_setaffinity(0, sizeof(orig), &orig);
+restore_affinity:
+	// Cleanup must not overwrite an error from the output operation.
+	const int saved_errno = errno;
+	if (sched_setaffinity(0, sizeof(orig), &orig) < 0 && ret >= 0)
+		return (uint64_t)-1;
+	errno = saved_errno;
 	return (uint64_t)ret;
 }
 
