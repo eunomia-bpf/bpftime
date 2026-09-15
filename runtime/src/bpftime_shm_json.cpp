@@ -197,7 +197,7 @@ int bpftime::bpftime_import_shm_handler_from_json(bpftime_shm &shm, int fd,
 						  const char *json_string)
 {
 	json j = json::parse(json_string);
-	return import_shm_handler_from_json(shm, fd, j);
+	return import_shm_handler_from_json(shm, j, fd);
 }
 
 extern "C" int bpftime_import_shm_handler_from_json(int fd,

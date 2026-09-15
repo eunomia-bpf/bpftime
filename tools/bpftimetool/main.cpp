@@ -169,7 +169,7 @@ int main(int argc, char *argv[])
 
 	auto cmd = std::string(argv[1]);
 	if (cmd == "load") {
-		if (argc != 3) {
+		if (argc != 4) {
 			cerr << "Usage: " << argv[0] << " load <fd> <JSON>"
 			     << endl
 			     << "Load a JSON file containing eBPF objects into the global shared memory"
