@@ -214,18 +214,21 @@ static int run_ebpf_program(const std::filesystem::path &elf,
 		SPDLOG_INFO("Memory size: {}", size);
 	}
 
+	bpftime_initialize_global_shm(bpftime::shm_open_type::SHM_NO_CREATE);
+	bpftime_set_runtime_config(bpftime::construct_runtime_config_from_env());
 	const ebpf_inst insn[1] = {};
 	bpftime::bpftime_prog bpftime_prog(insn, 0, "bpf_main");
 	bpftime::bpftime_helper_group::get_kernel_utils_helper_group()
 		.add_helper_group_to_prog(&bpftime_prog);
 	bpftime::bpftime_helper_group::get_shm_maps_helper_group()
 		.add_helper_group_to_prog(&bpftime_prog);
-	bpftime_prog.load_aot_object(file_buf);
+	if (bpftime_prog.load_aot_object(file_buf) < 0)
+		return 1;
 	uint64_t retval;
-	int ret = bpftime_prog.bpftime_prog_exec(&mem, sizeof(mem), &retval);
+	int ret = bpftime_prog.bpftime_prog_exec(mem.data(), mem.size(), &retval);
 	if (ret < 0) {
 		SPDLOG_ERROR("Failed to exec the eBPF program: {}", ret);
-		return 0;
+		return 1;
 	}
 	SPDLOG_INFO("Output: {}", retval);
 	return 0;
