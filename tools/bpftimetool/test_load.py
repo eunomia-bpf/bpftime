@@ -55,11 +55,27 @@ def main():
                 assert "Usage:" in result.stdout, result.stdout
                 assert not shm_path.exists(), f"created {shm_path}"
 
+            # A malformed fd must be rejected instead of being silently
+            # converted to fd 0, which would clobber unrelated state.
+            for bad_fd in ("typo", "-1", "", "7x", "99999999999999999999"):
+                result = run(cli, env, "load", bad_fd, payload)
+                assert result.returncode == 1, (bad_fd, result.stdout)
+                assert not shm_path.exists(), f"created {shm_path}"
+
             result = run(cli, env, "load", "7", payload)
             assert result.returncode == 0, result.stdout
+
+            # An fd outside the handler table must fail, not report success.
+            # Operation failures return the raw negative result, as the other
+            # commands in this tool do, so only require a non-zero status.
+            result = run(cli, env, "load", "6144", payload)
+            assert result.returncode != 0, result.stdout
+
             result = run(cli, env, "export", str(exported))
             assert result.returncode == 0, result.stdout
-            handler = json.loads(exported.read_text())["7"]
+            state = json.loads(exported.read_text())
+            assert sorted(state) == ["7"], sorted(state)
+            handler = state["7"]
             assert handler["type"] == "bpf_map_handler", handler
             assert handler["name"] == "load_test_map", handler
         finally:
