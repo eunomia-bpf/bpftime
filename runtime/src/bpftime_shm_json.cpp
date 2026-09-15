@@ -16,6 +16,9 @@
 #include "bpftime_epoll.h"
 #endif
 #include <unistd.h>
+#include <algorithm>
+#include <utility>
+#include <vector>
 #include <variant>
 #include <fstream>
 #include <json.hpp>
@@ -238,8 +241,22 @@ int bpftime::bpftime_import_shm_from_json(bpftime_shm &shm,
 	json j;
 	file >> j;
 	file.close();
+	// A link handler refers to the program and perf event it attaches, and
+	// a program handler refers to its perf attach targets. Keys are ordered
+	// by fd, which does not follow those dependencies, so import every
+	// handler that others may refer to first and the links afterwards.
+	std::vector<std::pair<int, json>> handlers;
 	for (auto &[key, value] : j.items()) {
-		int fd = std::stoi(key);
+		handlers.emplace_back(std::stoi(key), value);
+	}
+	auto is_link = [](const json &value) {
+		return value.value("type", "") == "bpf_link_handler";
+	};
+	std::stable_sort(handlers.begin(), handlers.end(),
+			 [&](const auto &a, const auto &b) {
+				 return !is_link(a.second) && is_link(b.second);
+			 });
+	for (auto &[fd, value] : handlers) {
 		SPDLOG_INFO("import handler fd {} {}", fd, value.dump());
 		int res = import_shm_handler_from_json(shm, value, fd);
 		if (res < 0) {
