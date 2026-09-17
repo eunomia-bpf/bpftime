@@ -233,6 +233,19 @@ static const int bpftime_identity_atfork_status = pthread_atfork(
 uint64_t bpftime_get_current_pid_tgid(uint64_t, uint64_t, uint64_t, uint64_t,
 				      uint64_t)
 {
+	// If registering the fork handler failed, the cache is still the
+	// parent's after a fork, so read the identity directly. The probe
+	// access cache above falls back the same way.
+	if (bpftime_identity_atfork_status != 0) {
+#if __linux__
+		return ((uint64_t)getpid() << 32) |
+		       static_cast<uint32_t>(syscall(SYS_gettid));
+#elif __APPLE__
+		uint64_t tid = 0;
+		pthread_threadid_np(NULL, &tid);
+		return ((uint64_t)getpid() << 32) | tid;
+#endif
+	}
 #if __linux__
 	if (bpftime_cached_tid == -1) {
 		bpftime_cached_tid = static_cast<int>(syscall(SYS_gettid));
