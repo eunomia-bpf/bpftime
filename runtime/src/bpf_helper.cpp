@@ -205,24 +205,57 @@ uint64_t bpftime_ktime_get_boot_ns(uint64_t, uint64_t, uint64_t, uint64_t,
 	return spec.tv_sec * (uint64_t)1000000000 + spec.tv_nsec;
 }
 
+// bpf_get_current_pid_tgid caches the identity so it does not pay a syscall on
+// every call. The cache cannot be function-local: a forked child inherits the
+// parent's cached values, and would report the parent's pid and tid. These live
+// at file scope so the fork handler can refresh them in the child.
+static pid_t bpftime_cached_tgid = getpid();
+#if __linux__
+static thread_local int bpftime_cached_tid = -1;
+#elif __APPLE__
+static thread_local uint64_t bpftime_cached_tid = UINT64_MAX;
+#endif
+
+static void bpftime_refresh_cached_identity_in_child()
+{
+	bpftime_cached_tgid = getpid();
+	// tid is meaningless in the child; the next helper call refills it.
+#if __linux__
+	bpftime_cached_tid = -1;
+#elif __APPLE__
+	bpftime_cached_tid = UINT64_MAX;
+#endif
+}
+
+static const int bpftime_identity_atfork_status = pthread_atfork(
+	nullptr, nullptr, bpftime_refresh_cached_identity_in_child);
+
 uint64_t bpftime_get_current_pid_tgid(uint64_t, uint64_t, uint64_t, uint64_t,
 				      uint64_t)
 {
-	static int tgid = getpid();
+	// If registering the fork handler failed, the cache is still the
+	// parent's after a fork, so read the identity directly. The probe
+	// access cache above falls back the same way.
+	if (bpftime_identity_atfork_status != 0) {
 #if __linux__
-	static thread_local int tid = -1;
-	if (tid == -1) {
-		tid = static_cast<int>(syscall(SYS_gettid));
+		return ((uint64_t)getpid() << 32) |
+		       static_cast<uint32_t>(syscall(SYS_gettid));
+#elif __APPLE__
+		uint64_t tid = 0;
+		pthread_threadid_np(NULL, &tid);
+		return ((uint64_t)getpid() << 32) | tid;
+#endif
+	}
+#if __linux__
+	if (bpftime_cached_tid == -1) {
+		bpftime_cached_tid = static_cast<int>(syscall(SYS_gettid));
 	}
 #elif __APPLE__
-	static thread_local uint64_t tid = UINT64_MAX; // cannot use int because
-						       // pthread_threadid_np
-						       // expects only uint64_t
-	if (tid == UINT64_MAX) {
-		pthread_threadid_np(NULL, &tid);
+	if (bpftime_cached_tid == UINT64_MAX) {
+		pthread_threadid_np(NULL, &bpftime_cached_tid);
 	}
 #endif
-	return ((uint64_t)tgid << 32) | tid;
+	return ((uint64_t)bpftime_cached_tgid << 32) | bpftime_cached_tid;
 }
 
 uint64_t bpf_get_current_uid_gid(uint64_t, uint64_t, uint64_t, uint64_t,
