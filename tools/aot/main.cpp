@@ -231,7 +231,10 @@ static int run_ebpf_program(const std::filesystem::path &elf,
 		SPDLOG_ERROR("Failed to exec the eBPF program: {}", ret);
 		return 1;
 	}
-	SPDLOG_INFO("Output: {}", retval);
+	// The program's return value is this command's result, not a diagnostic:
+	// it stays on stdout like `bpftimetool`'s result lines, so `run` keeps a
+	// stable machine-readable contract when logs are redirected.
+	std::cout << "Output: " << retval << std::endl;
 	return 0;
 }
 
