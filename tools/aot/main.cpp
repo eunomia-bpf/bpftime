@@ -2,6 +2,7 @@
 #include "bpftime_helper_group.hpp"
 #include "bpftime_prog.hpp"
 #include "bpftime_shm.hpp"
+#include <bpftime_logger.hpp>
 #include "bpf_attach_ctx.hpp"
 #include "spdlog/spdlog.h"
 #include "spdlog/cfg/env.h"
@@ -236,6 +237,13 @@ static int run_ebpf_program(const std::filesystem::path &elf,
 
 int main(int argc, const char **argv)
 {
+	// Resolve the log destination before anything else logs: until this
+	// runs, SPDLOG_* goes to spdlog's default logger, which writes to
+	// stdout regardless of BPFTIME_LOG_OUTPUT.
+	const char *logger_target = getenv("BPFTIME_LOG_OUTPUT");
+	bpftime::bpftime_set_logger(logger_target == nullptr ?
+					    DEFAULT_LOGGER_OUTPUT_PATH :
+					    logger_target);
 	spdlog::cfg::load_env_levels();
 	libbpf_set_print(_libbpf_print);
 	argparse::ArgumentParser program(argv[0]);
