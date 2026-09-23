@@ -120,6 +120,8 @@ void bpf_attach_ctx::start_cuda_watcher_thread()
 
 		while (!flag->load()) {
 			if (ctx != nullptr && ctx->cuda_shared_mem->flag1 == 1) {
+				std::atomic_thread_fence(
+					std::memory_order_acquire);
 				ctx->cuda_shared_mem->flag1 = 0;
 				auto req_id = ctx->cuda_shared_mem->request_id;
 
