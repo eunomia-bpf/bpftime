@@ -2,6 +2,7 @@
 #define _NV_ATTACH_PRIVATE_DATA_HPP
 
 #include "attach_private_data.hpp"
+#include "bpftime_config.hpp"
 #include "nv_attach_impl.hpp"
 #include <variant>
 #include <ebpf_inst.h>
@@ -10,6 +11,8 @@ namespace bpftime
 {
 namespace attach
 {
+inline constexpr int GPU_VERIFIER_REJECTED = -4096;
+
 struct nv_attach_private_data final : public attach_private_data {
 	std::variant<uintptr_t, std::string> code_addr_or_func_name;
 	// Names of kernels to be patched when multi-stream is used
@@ -18,6 +21,7 @@ struct nv_attach_private_data final : public attach_private_data {
 	std::vector<MapBasicInfo> map_basic_info;
 	std::vector<ebpf_inst> instructions;
 	std::string program_name;
+	bpftime_verifier_mode verifier_mode = BPFTIME_VERIFIER_WARNING;
 	int initialize_from_string(const std::string_view &sv) override;
 	std::string to_string() const override;
 };
