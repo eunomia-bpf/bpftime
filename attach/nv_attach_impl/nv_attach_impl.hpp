@@ -178,6 +178,7 @@ class nv_attach_impl final : public base_attach_impl {
 					    CUfunction function);
 	std::optional<CUfunction>
 	find_patched_kernel_function(const std::string &kernel_name) const;
+	std::optional<CUfunction> find_single_patched_kernel_function() const;
 	// Notify nv_attach_impl that a patched kernel launch was enqueued on a
 	// stream. Used to coordinate detach with in-flight patched kernels so we
 	// don't tear down loader-owned CUDA IPC buffers prematurely.

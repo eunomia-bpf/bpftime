@@ -12,6 +12,8 @@
 
 using namespace ptxpass;
 
+extern "C" int process_input(const char *input, int length, char *output);
+
 static inline runtime_input::RuntimeInput
 pass_runtime_input_from_string(const std::string &str)
 {
@@ -411,4 +413,51 @@ TEST_CASE("compile_ebpf_to_ptx_from_words handles exit instruction",
 		pos += 7;
 	}
 	REQUIRE(target_count <= 1);
+}
+
+TEST_CASE("BB tracepoint pass patches requested basic block without debug dump",
+	  "[ptxpass_bb_tracepoint]")
+{
+	const std::string ptx = R"(.version 7.0
+.target sm_60
+.address_size 64
+
+.visible .entry test_kernel()
+{
+	.reg .pred %p<2>;
+	.reg .b32 %r<2>;
+	mov.u32 %r1, 0;
+	setp.eq.u32 %p1, %r1, 0;
+	@%p1 bra $L__BB0_1;
+	add.u32 %r1, %r1, 1;
+$L__BB0_1:
+	ret;
+}
+)";
+
+	nlohmann::json request = {
+		{ "input",
+		  {
+			  { "full_ptx", ptx },
+			  { "to_patch_kernel", "kprobe/test_kernel__BB1" },
+		  } },
+		{ "ebpf_instructions",
+		  { { { "upper_32bit", 0 }, { "lower_32bit", 0x95 } } } },
+	};
+	const std::string input = request.dump();
+	std::vector<char> output(1024 * 1024);
+
+	std::ostringstream stderr_capture;
+	auto *old_cerr = std::cerr.rdbuf(stderr_capture.rdbuf());
+	int rc = process_input(input.c_str(), output.size(), output.data());
+	std::cerr.rdbuf(old_cerr);
+
+	REQUIRE(rc == ExitCode::Success);
+	auto response = nlohmann::json::parse(output.data());
+	REQUIRE(response["modified"].get<bool>());
+	const auto output_ptx = response["output_ptx"].get<std::string>();
+	REQUIRE(output_ptx.find("call test_kernel__bb_kprobe_BB1;") !=
+		std::string::npos);
+	REQUIRE(stderr_capture.str().find("Basic block map") ==
+		std::string::npos);
 }
