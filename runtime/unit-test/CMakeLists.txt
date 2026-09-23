@@ -38,6 +38,7 @@ set(TEST_SOURCES
     test_config.cpp
     test_shm_allocation_failure.cpp
     test_software_perf_event.cpp
+    test_epoll.cpp
 
     attach_with_ebpf/test_attach_uprobe_with_ebpf_trap.cpp
     attach_with_ebpf/test_helpers.cpp
