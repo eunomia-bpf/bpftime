@@ -57,3 +57,6 @@ jobs:
       - name: Test AOT runner
         run: |
           python3 tools/aot/test_run.py build/tools/aot/bpftime-aot cc
+      - name: Test bpftimetool load
+        run: |
+          python3 tools/bpftimetool/test_load.py build/tools/bpftimetool/bpftimetool

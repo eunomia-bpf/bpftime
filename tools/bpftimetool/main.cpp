@@ -1,4 +1,5 @@
 #include <cerrno>
+#include <climits>
 #include <cstdlib>
 #include <iostream>
 #include <cstdio>
@@ -169,16 +170,26 @@ int main(int argc, char *argv[])
 
 	auto cmd = std::string(argv[1]);
 	if (cmd == "load") {
-		if (argc != 3) {
+		if (argc != 4) {
 			cerr << "Usage: " << argv[0] << " load <fd> <JSON>"
 			     << endl
 			     << "Load a JSON file containing eBPF objects into the global shared memory"
 			     << endl;
 			return 1;
 		}
+		errno = 0;
+		char *fd_end = nullptr;
+		long parsed_fd = strtol(argv[2], &fd_end, 10);
+		if (errno != 0 || fd_end == argv[2] || *fd_end != '\0' ||
+		    parsed_fd < 0 || parsed_fd > INT_MAX) {
+			cerr << "Error: invalid fd '" << argv[2] << "'" << endl
+			     << "Usage: " << argv[0] << " load <fd> <JSON>"
+			     << endl;
+			return 1;
+		}
 		bpftime_initialize_global_shm(
 			shm_open_type::SHM_CREATE_OR_OPEN);
-		int fd = atoi(argv[2]);
+		int fd = static_cast<int>(parsed_fd);
 		auto json_str = std::string(argv[3]);
 		return bpftime_import_shm_handler_from_json(fd,
 							    json_str.c_str());
@@ -282,7 +293,7 @@ int main(int argc, char *argv[])
 						run_type);
 	}
 #if defined(BPFTIME_ENABLE_CUDA_ATTACH)
-    else if (cmd == "run-on-cuda") {
+	else if (cmd == "run-on-cuda") {
         if (argc != 3 && argc != 4 && argc != 10) {
             cerr << "Usage: " << argv[0]
                  << " run-on-cuda [program name] [run count (optional, defaults to 1)]"
@@ -372,7 +383,7 @@ int main(int argc, char *argv[])
 			return 1;
 		}
 	}
-	#endif
+#endif
 	else {
 		cerr << "Invalid subcommand " << cmd << endl;
 		return 1;
