@@ -153,12 +153,6 @@ std::string get_gpu_sm_arch()
 	SPDLOG_INFO("Auto-detected GPU SM arch: {} (compute capability {}.{})",
 		    sm_arch, major, minor);
 
-	if (setenv("BPFTIME_SM_ARCH", sm_arch.c_str(), 1) != 0) {
-		SPDLOG_WARN(
-			"Failed to set BPFTIME_SM_ARCH environment variable to {}",
-			sm_arch);
-	}
-
 	return sm_arch;
 }
 
