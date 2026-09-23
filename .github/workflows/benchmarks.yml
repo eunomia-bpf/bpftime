@@ -59,7 +59,7 @@ jobs:
           wget https://apt.llvm.org/llvm.sh && chmod +x llvm.sh && sudo ./llvm.sh 17
           sudo apt update
           sudo apt install -y --no-install-recommends \
-            libelf1 libelf-dev zlib1g-dev make cmake git libboost-all-dev \
+            libelf1 libelf-dev zlib1g-dev libssl-dev make cmake git libboost-all-dev \
             binutils-dev libyaml-cpp-dev ca-certificates clang llvm pkg-config llvm-dev
 
       - name: install additional dependencies for experiments

@@ -382,7 +382,7 @@ jobs:
             lcov tree strace gdb sudo libc6-dev bpftrace \
             linux-headers-generic linux-tools-generic \
             linux-headers-$(uname -r) \
-            libelf-dev procps gnupg gnupg-agent pinentry-curses dirmngr
+            libelf-dev libssl-dev procps gnupg gnupg-agent pinentry-curses dirmngr
 
           # Setup GPG agent for Codecov
           mkdir -p ~/.gnupg
