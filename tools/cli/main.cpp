@@ -1,4 +1,5 @@
 #include "bpftime_shm.hpp"
+#include <bpftime_logger.hpp>
 #include <bpftime_shm_internal.hpp>
 #include <cerrno>
 #include <csignal>
@@ -875,6 +876,13 @@ static void signal_handler(int sig)
 
 int main(int argc, const char **argv)
 {
+	// Resolve the log destination before anything else logs: until this
+	// runs, SPDLOG_* goes to spdlog's default logger, which writes to
+	// stdout regardless of BPFTIME_LOG_OUTPUT.
+	const char *logger_target = getenv("BPFTIME_LOG_OUTPUT");
+	bpftime::bpftime_set_logger(logger_target == nullptr ?
+					    DEFAULT_LOGGER_OUTPUT_PATH :
+					    logger_target);
 	spdlog::cfg::load_env_levels();
 	const auto runtime_config = bpftime::construct_runtime_config_from_env();
 	(void)runtime_config;

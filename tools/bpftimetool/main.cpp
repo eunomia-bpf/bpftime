@@ -147,6 +147,13 @@ inline void check_run_type(const std::string &run_type)
 // Main program
 int main(int argc, char *argv[])
 {
+	// Resolve the log destination before anything else logs: until this
+	// runs, SPDLOG_* goes to spdlog's default logger, which writes to
+	// stdout regardless of BPFTIME_LOG_OUTPUT.
+	const char *logger_target = getenv("BPFTIME_LOG_OUTPUT");
+	bpftime::bpftime_set_logger(logger_target == nullptr ?
+					    DEFAULT_LOGGER_OUTPUT_PATH :
+					    logger_target);
 	if (argc == 1) {
 #if defined(BPFTIME_ENABLE_CUDA_ATTACH)
 		cerr << "Usage: " << argv[0]
