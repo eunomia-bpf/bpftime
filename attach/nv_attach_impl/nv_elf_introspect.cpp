@@ -146,7 +146,12 @@ read_function_symbols_impl(std::ifstream &ifs, std::uintptr_t base)
 				break;
 
 			const unsigned char type = ELF64_ST_TYPE(sym.st_info);
-			if (type != STT_FUNC)
+			// Collect both functions and data objects. CUDA
+			// __constant__ / __device__ globals (e.g. d_N) are
+			// STT_OBJECT, and mirror_cuda_memcpy_to_symbol needs
+			// their host-side address -> symbol mapping.
+			if (type != STT_FUNC && type != STT_OBJECT &&
+			    type != STT_NOTYPE)
 				continue;
 			if (sym.st_value == 0)
 				continue;
