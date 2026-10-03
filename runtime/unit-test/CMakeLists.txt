@@ -64,6 +64,12 @@ endif()
 option(TEST_LCOV "option for lcov" OFF)
 add_executable(bpftime_runtime_tests ${TEST_SOURCES})
 
+if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+    target_sources(bpftime_runtime_tests PRIVATE test_get_current_uid_gid.cpp)
+    target_link_options(bpftime_runtime_tests PRIVATE
+        -Wl,--wrap=getuid -Wl,--wrap=getgid)
+endif()
+
 if(ENABLE_PROBE_READ_CHECK)
     target_compile_definitions(bpftime_runtime_tests PRIVATE ENABLE_PROBE_READ_CHECK=1)
 endif()
