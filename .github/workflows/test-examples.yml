@@ -65,11 +65,11 @@ jobs:
       - name: Install lcov (Ubuntu)
         if: ${{matrix.container.name=='ubuntu'}}
         run: |
-          apt-get update -y && apt-get install -y lcov tree
+          apt-get update -y && apt-get install -y lcov tree libssl-dev
       - name: Install lcov (Fedora)
         if: ${{matrix.container.name =='fedora'}}
         run: |
-          dnf install -y lcov tree
+          dnf install -y lcov tree openssl-devel
       - name: Build and install runtime (with llvm-jit)
         if: ${{matrix.enable_jit}}
         run: |
@@ -383,6 +383,13 @@ jobs:
       - name: Show downloaded artifacts
         run: |
           ls ~/.bpftime
+      - name: Install OpenSSL development headers
+        run: |
+          if [ "${{matrix.container.name}}" = "ubuntu" ]; then
+            apt-get update -y && apt-get install -y libssl-dev
+          else
+            dnf install -y openssl-devel
+          fi
       - name: Build test assets
         run: |
           # No special global libbpf handling is needed anymore
