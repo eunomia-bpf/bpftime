@@ -2,7 +2,7 @@ FROM ubuntu:24.04
 WORKDIR /bpftime
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
-        libelf1 libelf-dev zlib1g-dev make cmake git libboost1.74-all-dev \
+        libelf1 libelf-dev libssl-dev zlib1g-dev make cmake git libboost1.74-all-dev \
         binutils-dev libyaml-cpp-dev gcc g++ ca-certificates \
         clang-16 llvm-16 llvm-16-dev
 

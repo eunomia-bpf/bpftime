@@ -261,8 +261,9 @@ uint64_t bpftime_get_current_pid_tgid(uint64_t, uint64_t, uint64_t, uint64_t,
 uint64_t bpf_get_current_uid_gid(uint64_t, uint64_t, uint64_t, uint64_t,
 				 uint64_t)
 {
-	static int gid = getgid();
-	return (((uint64_t)gid) << 32) | gid;
+	// Credentials can change after startup, so query them on every call.
+	return (static_cast<uint64_t>(getgid()) << 32) |
+	       static_cast<uint32_t>(getuid());
 }
 
 uint64_t bpftime_ktime_get_ns(uint64_t, uint64_t, uint64_t, uint64_t, uint64_t)
