@@ -8,6 +8,7 @@
 #include "bpftime_config.hpp"
 #include <linux/bpf.h>
 #include <bpf/bpf.h>
+#include <boost/scope_exit.hpp>
 #include "ebpf_inst.h"
 #include <spdlog/spdlog.h>
 #include "bpftime_shm.hpp"
@@ -167,6 +168,12 @@ int bpftime_driver::bpftime_progs_create_server(int kernel_id, int server_pid)
 			      kernel_id, errno);
 		return -1;
 	}
+	BOOST_SCOPE_EXIT_ALL(=)
+	{
+		const int saved_errno = errno;
+		close(fd);
+		errno = saved_errno;
+	};
 	SPDLOG_DEBUG("get prog fd {} for id {}", fd, kernel_id);
 	bpf_prog_info info = {};
 	uint32_t info_len = sizeof(info);
@@ -201,7 +208,6 @@ int bpftime_driver::bpftime_progs_create_server(int kernel_id, int server_pid)
 			      kernel_id);
 		return -1;
 	}
-	close(fd);
 	return kernel_id;
 }
 
@@ -212,6 +218,12 @@ int bpftime_driver::bpftime_maps_create_server(int kernel_id)
 		SPDLOG_ERROR("Failed to get map fd for id {}", kernel_id);
 		return -1;
 	}
+	BOOST_SCOPE_EXIT_ALL(=)
+	{
+		const int saved_errno = errno;
+		close(map_fd);
+		errno = saved_errno;
+	};
 	bpf_map_info info = {};
 	uint32_t info_len = sizeof(info);
 	int res = bpf_obj_get_info_by_fd(map_fd, &info, &info_len);
