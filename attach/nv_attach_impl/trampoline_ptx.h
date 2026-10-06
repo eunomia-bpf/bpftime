@@ -78,7 +78,6 @@ $L__BB0_1:                              // =>This Inner Loop Header: Depth=1
 	mov.u32 	%r14, 0;
 	mov.u64 	%rd13, 0;
 	mov.u64 	%rd8, __bpftime_comm_lock;
-	mov.u32 	%r12, 42;
 	bra.uni 	$L__BB2_1;
 $L__BB2_4:                              //   in Loop: Header=BB2_1 Depth=1
 	bar.warp.sync 	%r3;
@@ -103,15 +102,15 @@ $L__BB2_2:                              //   Parent Loop BB2_1 Depth=1
 	setp.eq.s32 	%p5, %r11, 1;
 	@%p5 bra 	$L__BB2_2;
 // %bb.3:                               //   in Loop: Header=BB2_1 Depth=1
-	st.u32 	[%rd1+12], %r5;
-	st.u64 	[%rd1+16], %rd6;
+	st.volatile.u32 	[%rd1+12], %r5;
+	st.volatile.u64 	[%rd1+16], %rd6;
 	// begin inline asm
 	.reg .pred p0;                   
 	membar.sys;                      
 	st.global.u32 [%rd1], 1;           
 	spin_wait:                       
 	membar.sys;                      
-	ld.global.u32 %r12, [%rd10];          
+	ld.volatile.global.u32 %r12, [%rd10];          
 	setp.eq.u32 p0, %r12, 0;           
 	@p0 bra spin_wait;               
 	st.global.u32 [%rd10], 0;           
@@ -485,7 +484,6 @@ $L__BB5_20:
 	add.s64 	%rd103, %rd102, 4;
 	mov.u64 	%rd101, __bpftime_comm_lock;
 	mov.u32 	%r61, 1;
-	mov.u32 	%r60, 42;
 	bra.uni 	$L__BB5_21;
 $L__BB5_24:                             //   in Loop: Header=BB5_21 Depth=1
 	bar.warp.sync 	%r8;
@@ -511,15 +509,15 @@ $L__BB5_22:                             //   Parent Loop BB5_21 Depth=1
 	setp.eq.s32 	%p17, %r59, 1;
 	@%p17 bra 	$L__BB5_22;
 // %bb.23:                              //   in Loop: Header=BB5_21 Depth=1
-	st.u32 	[%rd102+12], %r61;
-	st.u64 	[%rd102+16], %rd31;
+	st.volatile.u32 	[%rd102+12], %r61;
+	st.volatile.u64 	[%rd102+16], %rd31;
 	// begin inline asm
 	.reg .pred p0;                   
 	membar.sys;                      
 	st.global.u32 [%rd102], 1;           
 	spin_wait:                       
 	membar.sys;                      
-	ld.global.u32 %r60, [%rd103];          
+	ld.volatile.global.u32 %r60, [%rd103];          
 	setp.eq.u32 p0, %r60, 0;           
 	@p0 bra spin_wait;               
 	st.global.u32 [%rd103], 0;           
@@ -1021,7 +1019,6 @@ $L__BB6_54:
 	mov.u64 	%rd214, 0;
 	mov.u64 	%rd192, __bpftime_comm_lock;
 	mov.u32 	%r106, 2;
-	mov.u32 	%r105, 42;
 	bra.uni 	$L__BB6_55;
 $L__BB6_58:                             //   in Loop: Header=BB6_55 Depth=1
 	bar.warp.sync 	%r30;
@@ -1047,15 +1044,15 @@ $L__BB6_56:                             //   Parent Loop BB6_55 Depth=1
 	setp.eq.s32 	%p42, %r104, 1;
 	@%p42 bra 	$L__BB6_56;
 // %bb.57:                              //   in Loop: Header=BB6_55 Depth=1
-	st.u32 	[%rd193+12], %r106;
-	st.u64 	[%rd193+16], %rd92;
+	st.volatile.u32 	[%rd193+12], %r106;
+	st.volatile.u64 	[%rd193+16], %rd92;
 	// begin inline asm
 	.reg .pred p0;                   
 	membar.sys;                      
 	st.global.u32 [%rd193], 1;           
 	spin_wait:                       
 	membar.sys;                      
-	ld.global.u32 %r105, [%rd194];          
+	ld.volatile.global.u32 %r105, [%rd194];          
 	setp.eq.u32 p0, %r105, 0;           
 	@p0 bra spin_wait;               
 	st.global.u32 [%rd194], 0;           
@@ -1149,7 +1146,6 @@ $L__BB7_7:
 	add.s64 	%rd31, %rd30, 4;
 	mov.u64 	%rd29, __bpftime_comm_lock;
 	mov.u32 	%r21, 3;
-	mov.u32 	%r20, 42;
 	bra.uni 	$L__BB7_8;
 $L__BB7_11:                             //   in Loop: Header=BB7_8 Depth=1
 	bar.warp.sync 	%r8;
@@ -1175,15 +1171,15 @@ $L__BB7_9:                              //   Parent Loop BB7_8 Depth=1
 	setp.eq.s32 	%p10, %r19, 1;
 	@%p10 bra 	$L__BB7_9;
 // %bb.10:                              //   in Loop: Header=BB7_8 Depth=1
-	st.u32 	[%rd30+12], %r21;
-	st.u64 	[%rd30+16], %rd18;
+	st.volatile.u32 	[%rd30+12], %r21;
+	st.volatile.u64 	[%rd30+16], %rd18;
 	// begin inline asm
 	.reg .pred p0;                   
 	membar.sys;                      
 	st.global.u32 [%rd30], 1;           
 	spin_wait:                       
 	membar.sys;                      
-	ld.global.u32 %r20, [%rd31];          
+	ld.volatile.global.u32 %r20, [%rd31];          
 	setp.eq.u32 p0, %r20, 0;           
 	@p0 bra spin_wait;               
 	st.global.u32 [%rd31], 0;           
@@ -1246,7 +1242,6 @@ $L__BB8_3:
 	mov.u64 	%rd27, 0;
 	mov.u64 	%rd19, __bpftime_comm_lock;
 	mov.u32 	%r12, 6;
-	mov.u32 	%r11, 42;
 	bra.uni 	$L__BB8_4;
 $L__BB8_7:                              //   in Loop: Header=BB8_4 Depth=1
 	bar.warp.sync 	%r3;
@@ -1272,16 +1267,16 @@ $L__BB8_5:                              //   Parent Loop BB8_4 Depth=1
 	setp.eq.s32 	%p7, %r10, 1;
 	@%p7 bra 	$L__BB8_5;
 // %bb.6:                               //   in Loop: Header=BB8_4 Depth=1
-	st.u32 	[%rd1+12], %r12;
+	st.volatile.u32 	[%rd1+12], %r12;
 	mov.u64 	%rd22, 0;
-	st.u64 	[%rd1+16], %rd22;
+	st.volatile.u64 	[%rd1+16], %rd22;
 	// begin inline asm
 	.reg .pred p0;                   
 	membar.sys;                      
 	st.global.u32 [%rd1], 1;           
 	spin_wait:                       
 	membar.sys;                      
-	ld.global.u32 %r11, [%rd21];          
+	ld.volatile.global.u32 %r11, [%rd21];          
 	setp.eq.u32 p0, %r11, 0;           
 	@p0 bra spin_wait;               
 	st.global.u32 [%rd21], 0;           
@@ -1319,7 +1314,6 @@ $L__BB8_8:
 	mov.u64 	%rd6, 0;
 	mov.u64 	%rd7, __bpftime_comm_lock;
 	mov.u32 	%r12, 14;
-	mov.u32 	%r11, 42;
 	mov.u64 	%rd13, %rd6;
 	bra.uni 	$L__BB9_1;
 $L__BB9_4:                              //   in Loop: Header=BB9_1 Depth=1
@@ -1346,15 +1340,15 @@ $L__BB9_2:                              //   Parent Loop BB9_1 Depth=1
 	setp.eq.s32 	%p5, %r10, 1;
 	@%p5 bra 	$L__BB9_2;
 // %bb.3:                               //   in Loop: Header=BB9_1 Depth=1
-	st.u32 	[%rd8+12], %r12;
-	st.u64 	[%rd8+16], %rd6;
+	st.volatile.u32 	[%rd8+12], %r12;
+	st.volatile.u64 	[%rd8+16], %rd6;
 	// begin inline asm
 	.reg .pred p0;                   
 	membar.sys;                      
 	st.global.u32 [%rd8], 1;           
 	spin_wait:                       
 	membar.sys;                      
-	ld.global.u32 %r11, [%rd9];          
+	ld.volatile.global.u32 %r11, [%rd9];          
 	setp.eq.u32 p0, %r11, 0;           
 	@p0 bra spin_wait;               
 	st.global.u32 [%rd9], 0;           
@@ -1581,7 +1575,6 @@ $L__BB11_3:
 	mov.u32 	%r14, 0;
 	mov.u64 	%rd18, __bpftime_comm_lock;
 	mov.u32 	%r12, 501;
-	mov.u32 	%r11, 42;
 	bra.uni 	$L__BB11_4;
 $L__BB11_7:                             //   in Loop: Header=BB11_4 Depth=1
 	bar.warp.sync 	%r3;
@@ -1607,16 +1600,16 @@ $L__BB11_5:                             //   Parent Loop BB11_4 Depth=1
 	setp.eq.s32 	%p7, %r10, 1;
 	@%p7 bra 	$L__BB11_5;
 // %bb.6:                               //   in Loop: Header=BB11_4 Depth=1
-	st.u32 	[%rd19+12], %r12;
+	st.volatile.u32 	[%rd19+12], %r12;
 	mov.u64 	%rd21, 0;
-	st.u64 	[%rd19+16], %rd21;
+	st.volatile.u64 	[%rd19+16], %rd21;
 	// begin inline asm
 	.reg .pred p0;                   
 	membar.sys;                      
 	st.global.u32 [%rd19], 1;           
 	spin_wait:                       
 	membar.sys;                      
-	ld.global.u32 %r11, [%rd20];          
+	ld.volatile.global.u32 %r11, [%rd20];          
 	setp.eq.u32 p0, %r11, 0;           
 	@p0 bra spin_wait;               
 	st.global.u32 [%rd20], 0;           

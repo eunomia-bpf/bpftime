@@ -91,11 +91,11 @@ union HelperCallResponse {
 	} get_tid_pgid;
 };
 struct CommSharedMem {
-	int flag1;
-	int flag2;
+	volatile int flag1;
+	volatile int flag2;
 	int occupy_flag;
-	int request_id;
-	long map_id;
+	volatile int request_id;
+	volatile long map_id;
 	HelperCallRequest req;
 	HelperCallResponse resp;
 	uint64_t time_sum[8];
