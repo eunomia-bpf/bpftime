@@ -25,9 +25,9 @@ static ptxpass::pass_config::PassConfig get_default_config()
 	ptxpass::pass_config::PassConfig cfg;
 	cfg.name = "kprobe_entry";
 	cfg.description =
-		"Instrument PTX at kprobe entry points, excluding __memcapture";
+		"Instrument PTX at kprobe entry points, excluding __memcapture and BB tracepoints";
 	cfg.attach_points.includes = { "^kprobe/.*$" };
-	cfg.attach_points.excludes = { "^kprobe/__memcapture$" };
+	cfg.attach_points.excludes = { "^kprobe/__memcapture$", "^kprobe/.*__BB[0-9]+.*$" };
 	// Parameters:
 	// - insert_globaltimer: legacy flag to control timestamp injection
 	// - stub_name: CUDA device stub used as hook point; calls to this
