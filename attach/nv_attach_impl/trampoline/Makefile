@@ -10,7 +10,7 @@ all: ../trampoline_ptx.h test
 ../trampoline_ptx.h: default_trampoline-cuda-nvptx64-nvidia-cuda-$(PTX_TARGET_ARCH).s
 	@echo "Generating trampoline_ptx.h..."
 	@echo 'static const char TRAMPOLINE_PTX[] = R"(' > $@
-	@grep -B 10000 "// .globl	bpf_main" $< | grep -v "// .globl	bpf_main" >> $@
+	@grep -B 10000 "// .globl	bpf_main" $< | grep -v "// .globl	bpf_main" | sed 's/[[:blank:]]*$$//' >> $@
 	@echo ')";' >> $@
 	@echo "Generated $@"
 
@@ -23,4 +23,4 @@ test: default_trampoline.cu
 
 clean:
 	rm -f default_trampoline-cuda-nvptx64-nvidia-cuda-$(PTX_TARGET_ARCH).s
-	rm -f ../trampoline_ptx.h 
+	rm -f ../trampoline_ptx.h

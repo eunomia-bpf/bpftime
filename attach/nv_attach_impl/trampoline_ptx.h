@@ -106,17 +106,17 @@ $L__BB2_2:                              //   Parent Loop BB2_1 Depth=1
 	st.u32 	[%rd1+12], %r5;
 	st.u64 	[%rd1+16], %rd6;
 	// begin inline asm
-	.reg .pred p0;                   
-	membar.sys;                      
-	st.global.u32 [%rd1], 1;           
-	spin_wait:                       
-	membar.sys;                      
-	ld.global.u32 %r12, [%rd10];          
-	setp.eq.u32 p0, %r12, 0;           
-	@p0 bra spin_wait;               
-	st.global.u32 [%rd10], 0;           
-	membar.sys;                      
-	
+	.reg .pred p0;
+	membar.sys;
+	st.global.u32 [%rd1], 1;
+	spin_wait:
+	membar.sys;
+	ld.global.u32 %r12, [%rd10];
+	setp.eq.u32 p0, %r12, 0;
+	@p0 bra spin_wait;
+	st.global.u32 [%rd10], 0;
+	membar.sys;
+
 	// end inline asm
 	ld.u64 	%rd13, [%rd1+2097184];
 	atom.global.exch.b32 	%r13, [%rd8], 0;
@@ -223,10 +223,10 @@ $L__BB2_5:
 	.param .b64 param1;
 	st.param.b64 	[param1+0], %rd9;
 	.param .b32 retval0;
-	call.uni (retval0), 
-	vprintf, 
+	call.uni (retval0),
+	vprintf,
 	(
-	param0, 
+	param0,
 	param1
 	);
 	ld.param.b32 	%r18, [retval0+0];
@@ -348,10 +348,10 @@ $L__BB5_3:
 	.param .b64 param1;
 	st.param.b64 	[param1+0], %rd33;
 	.param .b32 retval0;
-	call.uni (retval0), 
-	vprintf, 
+	call.uni (retval0),
+	vprintf,
 	(
-	param0, 
+	param0,
 	param1
 	);
 	ld.param.b32 	%r48, [retval0+0];
@@ -406,10 +406,10 @@ $L__BB5_10:
 	.param .b64 param1;
 	st.param.b64 	[param1+0], %rd33;
 	.param .b32 retval0;
-	call.uni (retval0), 
-	vprintf, 
+	call.uni (retval0),
+	vprintf,
 	(
-	param0, 
+	param0,
 	param1
 	);
 	ld.param.b32 	%r29, [retval0+0];
@@ -514,17 +514,17 @@ $L__BB5_22:                             //   Parent Loop BB5_21 Depth=1
 	st.u32 	[%rd102+12], %r61;
 	st.u64 	[%rd102+16], %rd31;
 	// begin inline asm
-	.reg .pred p0;                   
-	membar.sys;                      
-	st.global.u32 [%rd102], 1;           
-	spin_wait:                       
-	membar.sys;                      
-	ld.global.u32 %r60, [%rd103];          
-	setp.eq.u32 p0, %r60, 0;           
-	@p0 bra spin_wait;               
-	st.global.u32 [%rd103], 0;           
-	membar.sys;                      
-	
+	.reg .pred p0;
+	membar.sys;
+	st.global.u32 [%rd102], 1;
+	spin_wait:
+	membar.sys;
+	ld.global.u32 %r60, [%rd103];
+	setp.eq.u32 p0, %r60, 0;
+	@p0 bra spin_wait;
+	st.global.u32 [%rd103], 0;
+	membar.sys;
+
 	// end inline asm
 	ld.u64 	%rd111, [%rd102+2097184];
 	atom.global.exch.b32 	%r62, [%rd101], 0;
@@ -622,8 +622,8 @@ $L__BB6_28:                             // =>This Inner Loop Header: Depth=1
 	@%p21 bra 	$L__BB6_28;
 $L__BB6_29:
 	// begin inline asm
-	membar.sys;                      
-	
+	membar.sys;
+
 	// end inline asm
 	mov.u64 	%rd217, 0;
 	bra.uni 	$L__BB6_60;
@@ -739,10 +739,10 @@ $L__BB6_3:
 	.param .b64 param1;
 	st.param.b64 	[param1+0], %rd96;
 	.param .b32 retval0;
-	call.uni (retval0), 
-	vprintf, 
+	call.uni (retval0),
+	vprintf,
 	(
-	param0, 
+	param0,
 	param1
 	);
 	ld.param.b32 	%r85, [retval0+0];
@@ -845,10 +845,10 @@ $L__BB6_30:
 	.param .b64 param1;
 	st.param.b64 	[param1+0], %rd96;
 	.param .b32 retval0;
-	call.uni (retval0), 
-	vprintf, 
+	call.uni (retval0),
+	vprintf,
 	(
-	param0, 
+	param0,
 	param1
 	);
 	ld.param.b32 	%r58, [retval0+0];
@@ -1050,17 +1050,17 @@ $L__BB6_56:                             //   Parent Loop BB6_55 Depth=1
 	st.u32 	[%rd193+12], %r106;
 	st.u64 	[%rd193+16], %rd92;
 	// begin inline asm
-	.reg .pred p0;                   
-	membar.sys;                      
-	st.global.u32 [%rd193], 1;           
-	spin_wait:                       
-	membar.sys;                      
-	ld.global.u32 %r105, [%rd194];          
-	setp.eq.u32 p0, %r105, 0;           
-	@p0 bra spin_wait;               
-	st.global.u32 [%rd194], 0;           
-	membar.sys;                      
-	
+	.reg .pred p0;
+	membar.sys;
+	st.global.u32 [%rd193], 1;
+	spin_wait:
+	membar.sys;
+	ld.global.u32 %r105, [%rd194];
+	setp.eq.u32 p0, %r105, 0;
+	@p0 bra spin_wait;
+	st.global.u32 [%rd194], 0;
+	membar.sys;
+
 	// end inline asm
 	ld.u64 	%rd214, [%rd193+2097184];
 	atom.global.exch.b32 	%r107, [%rd192], 0;
@@ -1178,17 +1178,17 @@ $L__BB7_9:                              //   Parent Loop BB7_8 Depth=1
 	st.u32 	[%rd30+12], %r21;
 	st.u64 	[%rd30+16], %rd18;
 	// begin inline asm
-	.reg .pred p0;                   
-	membar.sys;                      
-	st.global.u32 [%rd30], 1;           
-	spin_wait:                       
-	membar.sys;                      
-	ld.global.u32 %r20, [%rd31];          
-	setp.eq.u32 p0, %r20, 0;           
-	@p0 bra spin_wait;               
-	st.global.u32 [%rd31], 0;           
-	membar.sys;                      
-	
+	.reg .pred p0;
+	membar.sys;
+	st.global.u32 [%rd30], 1;
+	spin_wait:
+	membar.sys;
+	ld.global.u32 %r20, [%rd31];
+	setp.eq.u32 p0, %r20, 0;
+	@p0 bra spin_wait;
+	st.global.u32 [%rd31], 0;
+	membar.sys;
+
 	// end inline asm
 	ld.u64 	%rd39, [%rd30+2097184];
 	atom.global.exch.b32 	%r22, [%rd29], 0;
@@ -1276,17 +1276,17 @@ $L__BB8_5:                              //   Parent Loop BB8_4 Depth=1
 	mov.u64 	%rd22, 0;
 	st.u64 	[%rd1+16], %rd22;
 	// begin inline asm
-	.reg .pred p0;                   
-	membar.sys;                      
-	st.global.u32 [%rd1], 1;           
-	spin_wait:                       
-	membar.sys;                      
-	ld.global.u32 %r11, [%rd21];          
-	setp.eq.u32 p0, %r11, 0;           
-	@p0 bra spin_wait;               
-	st.global.u32 [%rd21], 0;           
-	membar.sys;                      
-	
+	.reg .pred p0;
+	membar.sys;
+	st.global.u32 [%rd1], 1;
+	spin_wait:
+	membar.sys;
+	ld.global.u32 %r11, [%rd21];
+	setp.eq.u32 p0, %r11, 0;
+	@p0 bra spin_wait;
+	st.global.u32 [%rd21], 0;
+	membar.sys;
+
 	// end inline asm
 	ld.u64 	%rd27, [%rd1+2097184];
 	atom.global.exch.b32 	%r13, [%rd19], 0;
@@ -1349,17 +1349,17 @@ $L__BB9_2:                              //   Parent Loop BB9_1 Depth=1
 	st.u32 	[%rd8+12], %r12;
 	st.u64 	[%rd8+16], %rd6;
 	// begin inline asm
-	.reg .pred p0;                   
-	membar.sys;                      
-	st.global.u32 [%rd8], 1;           
-	spin_wait:                       
-	membar.sys;                      
-	ld.global.u32 %r11, [%rd9];          
-	setp.eq.u32 p0, %r11, 0;           
-	@p0 bra spin_wait;               
-	st.global.u32 [%rd9], 0;           
-	membar.sys;                      
-	
+	.reg .pred p0;
+	membar.sys;
+	st.global.u32 [%rd8], 1;
+	spin_wait:
+	membar.sys;
+	ld.global.u32 %r11, [%rd9];
+	setp.eq.u32 p0, %r11, 0;
+	@p0 bra spin_wait;
+	st.global.u32 [%rd9], 0;
+	membar.sys;
+
 	// end inline asm
 	ld.u64 	%rd13, [%rd8+2097184];
 	atom.global.exch.b32 	%r13, [%rd7], 0;
@@ -1461,10 +1461,10 @@ $L__BB10_14:
 	.param .b64 param1;
 	st.param.b64 	[param1+0], %rd26;
 	.param .b32 retval0;
-	call.uni (retval0), 
-	vprintf, 
+	call.uni (retval0),
+	vprintf,
 	(
-	param0, 
+	param0,
 	param1
 	);
 	ld.param.b32 	%r10, [retval0+0];
@@ -1611,17 +1611,17 @@ $L__BB11_5:                             //   Parent Loop BB11_4 Depth=1
 	mov.u64 	%rd21, 0;
 	st.u64 	[%rd19+16], %rd21;
 	// begin inline asm
-	.reg .pred p0;                   
-	membar.sys;                      
-	st.global.u32 [%rd19], 1;           
-	spin_wait:                       
-	membar.sys;                      
-	ld.global.u32 %r11, [%rd20];          
-	setp.eq.u32 p0, %r11, 0;           
-	@p0 bra spin_wait;               
-	st.global.u32 [%rd20], 0;           
-	membar.sys;                      
-	
+	.reg .pred p0;
+	membar.sys;
+	st.global.u32 [%rd19], 1;
+	spin_wait:
+	membar.sys;
+	ld.global.u32 %r11, [%rd20];
+	setp.eq.u32 p0, %r11, 0;
+	@p0 bra spin_wait;
+	st.global.u32 [%rd20], 0;
+	membar.sys;
+
 	// end inline asm
 	ld.u64 	%rd27, [%rd19+2097184];
 	atom.global.exch.b32 	%r13, [%rd18], 0;
@@ -1754,8 +1754,8 @@ $L__BB11_8:
 
 // %bb.0:
 	// begin inline asm
-	membar.sys;                      
-	
+	membar.sys;
+
 	// end inline asm
 	mov.u64 	%rd1, 0;
 	st.param.b64 	[func_retval0+0], %rd1;
@@ -1775,8 +1775,8 @@ $L__BB11_8:
 
 // %bb.0:
 	// begin inline asm
-	exit;                      
-	
+	exit;
+
 	// end inline asm
 	mov.u64 	%rd1, 0;
 	st.param.b64 	[func_retval0+0], %rd1;
@@ -1873,6 +1873,27 @@ $L__BB11_8:
 	// end inline asm
 	cvt.u64.u32 	%rd1, %r1;
 	st.param.b64 	[func_retval0+0], %rd1;
+	ret;
+                                        // -- End function
+}
+	// .globl	_bpf_helper_ext_0512    // -- Begin function _bpf_helper_ext_0512
+.visible .func  (.param .b64 func_retval0) _bpf_helper_ext_0512(
+	.param .b64 _bpf_helper_ext_0512_param_0,
+	.param .b64 _bpf_helper_ext_0512_param_1,
+	.param .b64 _bpf_helper_ext_0512_param_2,
+	.param .b64 _bpf_helper_ext_0512_param_3,
+	.param .b64 _bpf_helper_ext_0512_param_4
+)                                       // @_bpf_helper_ext_0512
+{
+	.reg .b64 	%rd<3>;
+
+// %bb.0:
+	ld.param.u64 	%rd1, [_bpf_helper_ext_0512_param_0];
+	// begin inline asm
+	prefetch.global.L2 [%rd1];
+	// end inline asm
+	mov.u64 	%rd2, 0;
+	st.param.b64 	[func_retval0+0], %rd2;
 	ret;
                                         // -- End function
 }
