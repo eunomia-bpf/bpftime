@@ -16,6 +16,9 @@
 #include "bpftime_epoll.h"
 #endif
 #include <unistd.h>
+#include <algorithm>
+#include <utility>
+#include <vector>
 #include <variant>
 #include <fstream>
 #include <json.hpp>
@@ -119,28 +122,43 @@ static int import_shm_handler_from_json(bpftime_shm &shm, json value, int fd)
 			SPDLOG_ERROR("Failed to parse insns in json");
 			return -1;
 		}
-		shm.add_bpf_prog(fd, insns.data(), cnt, name.c_str(), type);
+		if (shm.add_bpf_prog(fd, insns.data(), cnt, name.c_str(),
+				     type) < 0) {
+			SPDLOG_ERROR("Failed to add bpf program at fd {}", fd);
+			return -1;
+		}
 		for (int perf_fd : value["attr"]["attach_fds"]) {
-			shm.add_bpf_prog_attach_target(perf_fd, fd, {});
+			if (shm.add_bpf_prog_attach_target(perf_fd, fd, {}) <
+			    0) {
+				SPDLOG_ERROR(
+					"Failed to attach perf fd {} to prog fd {}",
+					perf_fd, fd);
+				return -1;
+			}
 		}
 	} else if (handler_type == "bpf_map_handler") {
 		std::string name = value["name"];
 		bpf_map_attr attr = json_to_bpf_map_attr(value["attr"]);
-		shm.add_bpf_map(fd, name.c_str(), attr);
+		if (shm.add_bpf_map(fd, name.c_str(), attr) < 0) {
+			SPDLOG_ERROR("Failed to add bpf map at fd {}", fd);
+			return -1;
+		}
 	} else if (handler_type == "bpf_perf_event_handler") {
 		int type = value["attr"]["type"];
 		int pid = value["attr"]["pid"];
 		int tracepoint_id = 0;
-		if ((bpf_event_type)type == bpf_event_type::PERF_TYPE_TRACEPOINT)
-			tracepoint_id = value["attr"]["tracepoint_id"];		
+		if ((bpf_event_type)type ==
+		    bpf_event_type::PERF_TYPE_TRACEPOINT)
+			tracepoint_id = value["attr"]["tracepoint_id"];
+		int add_res = 0;
 		switch ((bpf_event_type)type) {
 		case bpf_event_type::BPF_TYPE_UPROBE: {
 			int ref_ctr_off = value["attr"]["ref_ctr_off"];
 			int offset = value["attr"]["offset"];
 			std::string _module_name =
 				value["attr"]["_module_name"];
-			shm.add_uprobe(fd, pid, _module_name.c_str(), offset,
-				       false, ref_ctr_off);
+			add_res = shm.add_uprobe(fd, pid, _module_name.c_str(),
+						 offset, false, ref_ctr_off);
 			break;
 		}
 		case bpf_event_type::BPF_TYPE_URETPROBE: {
@@ -148,35 +166,41 @@ static int import_shm_handler_from_json(bpftime_shm &shm, json value, int fd)
 			int offset = value["attr"]["offset"];
 			std::string _module_name =
 				value["attr"]["_module_name"];
-			shm.add_uprobe(fd, pid, _module_name.c_str(), offset,
-				       true, ref_ctr_off);
+			add_res = shm.add_uprobe(fd, pid, _module_name.c_str(),
+						 offset, true, ref_ctr_off);
 			break;
 		}
 		case bpf_event_type::PERF_TYPE_TRACEPOINT:
-			shm.add_tracepoint(fd, pid, tracepoint_id);
+			add_res = shm.add_tracepoint(fd, pid, tracepoint_id);
 			break;
 		case bpf_event_type::BPF_TYPE_UPROBE_OVERRIDE: {
 			int offset = value["attr"]["offset"];
 			std::string _module_name =
 				value["attr"]["_module_name"];
-			shm.add_uprobe_override(fd, pid, _module_name.c_str(),
-						offset, false);
+			add_res = shm.add_uprobe_override(
+				fd, pid, _module_name.c_str(), offset, false);
 			break;
 		}
 		case bpf_event_type::PERF_TYPE_SOFTWARE: {
 			int cpu = value["attr"]["cpu"];
 			int32_t sample_type = value["attr"]["sample_type"];
 			int64_t config = value["attr"]["config"];
-			shm.add_software_perf_event(fd, cpu, sample_type,
-						    config);
+			add_res = shm.add_software_perf_event(
+				fd, cpu, sample_type, config);
 			break;
 		}
 		default:
 			SPDLOG_ERROR("Unsupported perf event type {}", type);
 			return -1;
 		}
-		if (value["enabled"]) {
-			shm.perf_event_enable(fd);
+		if (add_res < 0) {
+			SPDLOG_ERROR("Failed to add perf event at fd {}", fd);
+			return -1;
+		}
+		if (value["enabled"] && shm.perf_event_enable(fd) < 0) {
+			SPDLOG_ERROR("Failed to enable perf event at fd {}",
+				     fd);
+			return -1;
 		}
 	} else if (handler_type == "bpf_link_handler") {
 		unsigned int prog_fd = value["attr"]["prog_fd"];
@@ -185,7 +209,10 @@ static int import_shm_handler_from_json(bpftime_shm &shm, json value, int fd)
 			.prog_fd = prog_fd,
 			.target_fd = target_fd,
 		};
-		shm.add_bpf_link(fd, &args);
+		if (shm.add_bpf_link(fd, &args) < 0) {
+			SPDLOG_ERROR("Failed to add bpf link at fd {}", fd);
+			return -1;
+		}
 	} else {
 		SPDLOG_ERROR("Unsupported handler type {}", handler_type);
 		return -1;
@@ -197,7 +224,7 @@ int bpftime::bpftime_import_shm_handler_from_json(bpftime_shm &shm, int fd,
 						  const char *json_string)
 {
 	json j = json::parse(json_string);
-	return import_shm_handler_from_json(shm, fd, j);
+	return import_shm_handler_from_json(shm, j, fd);
 }
 
 extern "C" int bpftime_import_shm_handler_from_json(int fd,
@@ -214,8 +241,22 @@ int bpftime::bpftime_import_shm_from_json(bpftime_shm &shm,
 	json j;
 	file >> j;
 	file.close();
+	// A link handler refers to the program and perf event it attaches, and
+	// a program handler refers to its perf attach targets. Keys are ordered
+	// by fd, which does not follow those dependencies, so import every
+	// handler that others may refer to first and the links afterwards.
+	std::vector<std::pair<int, json>> handlers;
 	for (auto &[key, value] : j.items()) {
-		int fd = std::stoi(key);
+		handlers.emplace_back(std::stoi(key), value);
+	}
+	auto is_link = [](const json &value) {
+		return value.value("type", "") == "bpf_link_handler";
+	};
+	std::stable_sort(handlers.begin(), handlers.end(),
+			 [&](const auto &a, const auto &b) {
+				 return !is_link(a.second) && is_link(b.second);
+			 });
+	for (auto &[fd, value] : handlers) {
 		SPDLOG_INFO("import handler fd {} {}", fd, value.dump());
 		int res = import_shm_handler_from_json(shm, value, fd);
 		if (res < 0) {
