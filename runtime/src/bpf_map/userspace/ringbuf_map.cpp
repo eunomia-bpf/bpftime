@@ -304,7 +304,9 @@ void *ringbuf::reserve(size_t size, int self_fd)
 	header->len = size | BPF_RINGBUF_BUSY_BIT;
 	header->fd = self_fd;
 	smp_store_release_ul(producer_pos.get(), prod_pos + total_size);
-	auto ptr = data.get() + ((prod_pos + BPF_RINGBUF_HDR_SZ) & mask());
+	// Mask only the header slot: the sample follows it, even into the
+	// second half of the 2 * max_ent allocation
+	auto ptr = data.get() + (prod_pos & mask()) + BPF_RINGBUF_HDR_SZ;
 	SPDLOG_TRACE("ringbuf: reserved {} bytes at {}, fd {}", size,
 		     (void *)ptr, self_fd);
 	return ptr;
