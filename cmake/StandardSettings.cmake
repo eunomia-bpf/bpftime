@@ -78,7 +78,7 @@ if(CMAKE_SYSTEM_PROCESSOR MATCHES "^riscv")
     set(BPFTIME_ENABLE_FRIDA OFF CACHE BOOL "Build the frida-gum based uprobe backend" FORCE)
 else()
     set(BPFTIME_ENABLE_TRAP_UPROBE OFF CACHE BOOL "Build the trap (breakpoint + SIGTRAP) uprobe backend" FORCE)
-    set(BPFTIME_ENABLE_FRIDA ON CACHE BOOL "Build the frida-gum based uprobe backend" FORCE)
+    option(BPFTIME_ENABLE_FRIDA "Build the frida-gum based uprobe backend" ON)
 endif()
 
 option(BPFTIME_ENABLE_MPK "Enable Memory Protection Keys for the share memory." OFF)
