@@ -35,6 +35,26 @@ concurrency:
 env:
   BPFTIME_VM_NAME: llvm
 jobs:
+  runtime-library:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install library example build dependencies
+        run: sudo apt-get update && sudo apt-get install -y ninja-build libboost-dev zlib1g-dev
+      - name: Initialize required submodules
+        run: |
+          git submodule update --init --depth 1 third_party/Catch2 third_party/spdlog third_party/argparse third_party/ubpf
+          git -C third_party/ubpf submodule update --init --depth 1 external/bpf_conformance
+      - name: Build direct runtime-library example
+        run: |
+          cmake -S . -B build-library -G Ninja -DCMAKE_BUILD_TYPE=Release \
+            -DBPFTIME_LLVM_JIT=OFF -DBPFTIME_UBPF_JIT=ON \
+            -DBPFTIME_ENABLE_FRIDA=OFF -DBPFTIME_BUILD_WITH_LIBBPF=OFF \
+            -DBUILD_BPFTIME_DAEMON=OFF -DBPFTIME_ENABLE_CUDA_ATTACH=OFF \
+            -DBPFTIME_BUILD_RUNTIME_LIBRARY_EXAMPLE=ON -DBPFTIME_ENABLE_UNIT_TESTING=ON
+          cmake --build build-library --target runtime_library -j2
+      - name: Test direct runtime-library lifecycle
+        run: ctest --test-dir build-library -R '^runtime_library_' --output-on-failure
   build-runtime:
     strategy:
       matrix:
