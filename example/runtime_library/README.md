@@ -98,10 +98,12 @@ active link. Triggers and teardown here are serialized, and the plain counter
 increment is not intended for concurrent callbacks. Treat the embedded program
 as trusted input; the reduced build disables the optional verifier.
 
-The tests exercise interpreter and uBPF JIT execution, zero events, repeated
-global initialization/cleanup, concurrent processes with independent counts,
-fd/SHM leak checks, cleanup after failed registry allocation, and preservation
-of an inherited SHM name. The driver
-launches the example executable; the example itself launches no subprocess.
+The tests exercise interpreter mode and request uBPF JIT compilation, zero
+events, repeated global initialization/cleanup, concurrent processes with
+independent counts, fd/SHM leak checks, cleanup after failed registry allocation,
+and preservation of an inherited SHM name. JIT compilation failure falls back to
+interpretation; the tests verify lifecycle results without asserting the internal
+JIT state. The driver launches the example executable; the example itself launches
+no subprocess.
 `ctest -R '^runtime_library_'` is deliberate: legacy runtime unit tests are
 excluded when libbpf is disabled.
