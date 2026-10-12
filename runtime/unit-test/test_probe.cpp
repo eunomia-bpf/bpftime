@@ -8,6 +8,14 @@
 #include <thread>
 #include <unistd.h>
 #include <signal.h>
+#include <atomic>
+#include <bpftime_helper_group.hpp>
+#include <linux/filter.h>
+#if defined(__linux__)
+#include <linux/seccomp.h>
+#include <sys/prctl.h>
+#include <sys/syscall.h>
+#endif
 
 static volatile sig_atomic_t forwarded_sigsegv = 0;
 
@@ -25,11 +33,449 @@ extern "C" {
 
 int64_t bpftime_probe_read(uint64_t dst, int64_t size, uint64_t ptr, uint64_t,
 			   uint64_t);
+int64_t bpftime_probe_read_user(uint64_t, int64_t, uint64_t, uint64_t,
+				uint64_t);
 int64_t bpftime_probe_write_user(uint64_t dst, uint64_t src, int64_t len,
 				 uint64_t, uint64_t);
 int64_t bpf_probe_read_str(uint64_t dst, uint64_t size, uint64_t src, uint64_t,
 			   uint64_t);
 }
+
+#if defined(BPFTIME_HAVE_FRIDA) && defined(__linux__) &&                       \
+	(defined(__x86_64__) || defined(__aarch64__))
+// Isolate process-wide signal disposition and once-only initialization from
+// the other probe tests. Only the parent executes Catch assertions.
+template <typename F> static int run_probe_read_child(F body)
+{
+	pid_t child = fork();
+	REQUIRE(child >= 0);
+	if (child == 0) {
+		struct rlimit no_core = { 0, 0 };
+		setrlimit(RLIMIT_CORE, &no_core);
+		alarm(20);
+		try {
+			_exit(body());
+		} catch (...) {
+			_exit(127);
+		}
+	}
+	int status = 0;
+	REQUIRE(waitpid(child, &status, 0) == child);
+	return status;
+}
+
+TEST_CASE("Probe read user recovers memory faults", "[probe-read-user]")
+{
+	int status = run_probe_read_child([] {
+		int source = 42, destination = 0;
+		if (bpftime_probe_read_user(0, 0, 0, 0, 0) != 0 ||
+		    bpftime_probe_read_user(0, -1, 0, 0, 0) != -EFAULT)
+			return 1;
+		long page_size = sysconf(_SC_PAGESIZE);
+		if (page_size <= 0)
+			return 2;
+		auto *pages = static_cast<char *>(
+			mmap(nullptr, page_size * 2, PROT_READ | PROT_WRITE,
+			     MAP_PRIVATE | MAP_ANONYMOUS, -1, 0));
+		if (pages == MAP_FAILED ||
+		    mprotect(pages + page_size, page_size, PROT_NONE) != 0)
+			return 3;
+		char buffer[16] = {};
+		sigset_t blocked;
+		sigemptyset(&blocked);
+		sigaddset(&blocked, SIGUSR1);
+		if (pthread_sigmask(SIG_BLOCK, &blocked, nullptr) != 0)
+			return 9;
+		for (int i = 0; i < 100; ++i) {
+			errno = EDOM;
+			if (bpftime_probe_read_user((uint64_t)&destination,
+						    sizeof(int), 0, 0,
+						    0) != -EFAULT ||
+			    errno != EDOM)
+				return 4;
+			if (bpftime_probe_read_user(0, sizeof(int),
+						    (uint64_t)&source, 0,
+						    0) != -EFAULT)
+				return 5;
+			if (bpftime_probe_read_user(
+				    (uint64_t)buffer, sizeof(buffer),
+				    (uint64_t)(pages + page_size - 8), 0,
+				    0) != -EFAULT)
+				return 6;
+			if (bpftime_probe_read_user(
+				    (uint64_t)&destination, sizeof(int),
+				    (uint64_t)&source, 0, 0) != 0 ||
+			    destination != source)
+				return 7;
+			sigset_t mask;
+			if (pthread_sigmask(SIG_SETMASK, nullptr, &mask) != 0 ||
+			    sigismember(&mask, SIGSEGV) != 0 ||
+			    sigismember(&mask, SIGUSR1) != 1)
+				return 8;
+		}
+		munmap(pages, page_size * 2);
+		return 0;
+	});
+	REQUIRE(WIFEXITED(status));
+	REQUIRE(WEXITSTATUS(status) == 0);
+	REQUIRE_FALSE(bpftime::helper_is_async_signal_safe(
+		112, (void *)bpftime_probe_read_user));
+}
+
+TEST_CASE("Successful probe copies make no syscalls after initialization",
+	  "[probe-read-user]")
+{
+	int status = run_probe_read_child([] {
+		int source = 42, destination = 0;
+		if (bpftime_probe_read_user((uint64_t)&destination,
+					    sizeof(destination),
+					    (uint64_t)&source, 0, 0) != 0)
+			return 1;
+		// Allow only process exit after warming up. Any syscall made by
+		// a subsequent copy kills the child, including hidden libc
+		// calls.
+		// The repository's linux/filter.h supplies eBPF macros rather
+		// than the classic BPF records consumed by seccomp.
+		struct filter_insn {
+			uint16_t code;
+			uint8_t jt, jf;
+			uint32_t k;
+		};
+		filter_insn filter[] = {
+			{ BPF_LD | BPF_W | BPF_ABS, 0, 0, 0 },
+			{ BPF_JMP | BPF_JEQ | BPF_K, 2, 0, SYS_exit },
+			{ BPF_JMP | BPF_JEQ | BPF_K, 1, 0, SYS_exit_group },
+			{ BPF_RET | BPF_K, 0, 0, SECCOMP_RET_KILL_PROCESS },
+			{ BPF_RET | BPF_K, 0, 0, SECCOMP_RET_ALLOW },
+		};
+		struct filter_program {
+			unsigned short len;
+			filter_insn *filter;
+		};
+		filter_program program = { (unsigned short)(sizeof(filter) /
+							    sizeof(filter[0])),
+					   filter };
+		if (prctl(PR_SET_NO_NEW_PRIVS, 1, 0, 0, 0) != 0 ||
+		    prctl(PR_SET_SECCOMP, SECCOMP_MODE_FILTER, &program) != 0)
+			return 2;
+		for (int i = 0; i < 1000; ++i) {
+			destination = 0;
+			if (bpftime_probe_read_user(
+				    (uint64_t)&destination, sizeof(destination),
+				    (uint64_t)&source, 0, 0) != 0 ||
+			    destination != source)
+				return 3;
+#ifndef ENABLE_PROBE_WRITE_CHECK
+			destination = 0;
+			if (bpftime_probe_write_user(
+				    (uint64_t)&destination, (uint64_t)&source,
+				    sizeof(source), 0, 0) != 0 ||
+			    destination != source)
+				return 4;
+#endif
+		}
+		return 0;
+	});
+	REQUIRE(WIFEXITED(status));
+	REQUIRE(WEXITSTATUS(status) == 0);
+}
+
+TEST_CASE("Probe read user isolates concurrent recovery", "[probe-read-user]")
+{
+	int status = run_probe_read_child([] {
+		std::atomic<bool> failed = false;
+		std::thread workers[8];
+		for (auto &worker : workers)
+			worker = std::thread([&] {
+				int src = 17, dst = 0;
+				for (int i = 0; i < 100; ++i) {
+					if (bpftime_probe_read_user(
+						    (uint64_t)&dst, sizeof(dst),
+						    0, 0, 0) != -EFAULT ||
+					    bpftime_probe_read_user(
+						    (uint64_t)&dst, sizeof(dst),
+						    (uint64_t)&src, 0,
+						    0) != 0 ||
+					    dst != src)
+						failed = true;
+					if (bpftime_probe_write_user(
+						    0, (uint64_t)&src,
+						    sizeof(src), 0,
+						    0) != -EFAULT ||
+					    bpftime_probe_write_user(
+						    (uint64_t)&dst,
+						    (uint64_t)&src, sizeof(src),
+						    0, 0) != 0 ||
+					    dst != src)
+						failed = true;
+				}
+			});
+		for (auto &worker : workers)
+			worker.join();
+		return failed ? 1 : 0;
+	});
+	REQUIRE(WIFEXITED(status));
+	REQUIRE(WEXITSTATUS(status) == 0);
+}
+
+TEST_CASE("Probe write user handles invalid memory",
+	  "[probe-read-user][probe-write-user]")
+{
+	int status = run_probe_read_child([] {
+		int source = 42, destination = 0;
+		if (bpftime_probe_read_user((uint64_t)&destination,
+					    sizeof(destination),
+					    (uint64_t)&source, 0, 0) != 0)
+			return 1;
+		struct sigaction before = {}, after = {};
+		if (sigaction(SIGSEGV, nullptr, &before) != 0)
+			return 2;
+		long page_size = sysconf(_SC_PAGESIZE);
+		if (page_size <= 0)
+			return 3;
+		auto *pages = static_cast<char *>(
+			mmap(nullptr, page_size * 2, PROT_READ | PROT_WRITE,
+			     MAP_PRIVATE | MAP_ANONYMOUS, -1, 0));
+		if (pages == MAP_FAILED ||
+		    mprotect(pages + page_size, page_size, PROT_NONE) != 0)
+			return 4;
+		char buffer[16] = {};
+		for (int i = 0; i < 100; ++i) {
+			errno = EDOM;
+			if (bpftime_probe_write_user(0, (uint64_t)&source,
+						     sizeof(source), 0,
+						     0) != -EFAULT)
+				return 5;
+#ifndef ENABLE_PROBE_WRITE_CHECK
+			if (errno != EDOM)
+				return 5;
+#endif
+			if (bpftime_probe_write_user((uint64_t)&destination, 0,
+						     sizeof(source), 0,
+						     0) != -EFAULT)
+				return 6;
+			if (bpftime_probe_write_user(
+				    (uint64_t)(pages + page_size - 8),
+				    (uint64_t)buffer, sizeof(buffer), 0,
+				    0) != -EFAULT)
+				return 7;
+			if (bpftime_probe_write_user(
+				    (uint64_t)&destination, (uint64_t)&source,
+				    sizeof(source), 0, 0) != 0 ||
+			    destination != source)
+				return 8;
+		}
+		munmap(pages, page_size * 2);
+		if (sigaction(SIGSEGV, nullptr, &after) != 0 ||
+		    after.sa_sigaction != before.sa_sigaction ||
+		    after.sa_flags != before.sa_flags)
+			return 9;
+		return bpftime_probe_write_user(0, 0, 0, 0, 0) == 0 &&
+				       bpftime_probe_write_user(0, 0, -1, 0,
+								0) == -EFAULT ?
+			       0 :
+			       10;
+	});
+	REQUIRE(WIFEXITED(status));
+	REQUIRE(WEXITSTATUS(status) == 0);
+	REQUIRE_FALSE(bpftime::helper_is_async_signal_safe(
+		36, (void *)bpftime_probe_write_user));
+}
+
+TEST_CASE("Probe access falls back with blocked SIGSEGV", "[probe-read-user]")
+{
+	int status = run_probe_read_child([] {
+		sigset_t blocked;
+		sigemptyset(&blocked);
+		sigaddset(&blocked, SIGSEGV);
+		if (pthread_sigmask(SIG_BLOCK, &blocked, nullptr) != 0)
+			return 1;
+		int source = 42, destination = 0;
+		if (bpftime_probe_read_user((uint64_t)&destination,
+					    sizeof(destination),
+					    (uint64_t)&source, 0, 0) != 0 ||
+		    destination != source)
+			return 2;
+		destination = 0;
+		if (bpftime_probe_write_user((uint64_t)&destination,
+					     (uint64_t)&source, sizeof(source),
+					     0, 0) != 0 ||
+		    destination != source)
+			return 3;
+#ifdef ENABLE_PROBE_READ_CHECK
+		if (bpftime_probe_read_user((uint64_t)&destination,
+					    sizeof(destination), 0, 0,
+					    0) != -EFAULT)
+			return 4;
+#endif
+#ifdef ENABLE_PROBE_WRITE_CHECK
+		if (bpftime_probe_write_user(0, (uint64_t)&destination,
+					     sizeof(destination), 0,
+					     0) != -EFAULT)
+			return 5;
+#endif
+		sigset_t current;
+		if (pthread_sigmask(SIG_SETMASK, nullptr, &current) != 0 ||
+		    sigismember(&current, SIGSEGV) != 1)
+			return 6;
+		return 0;
+	});
+	REQUIRE(WIFEXITED(status));
+	REQUIRE(WEXITSTATUS(status) == 0);
+}
+
+TEST_CASE("Probe access does not write host stdout or stderr",
+	  "[probe-read-user]")
+{
+	int output[2], errors[2];
+	REQUIRE(pipe(output) == 0);
+	REQUIRE(pipe(errors) == 0);
+	int status = run_probe_read_child([&] {
+		close(output[0]);
+		close(errors[0]);
+		if (dup2(output[1], STDOUT_FILENO) < 0 ||
+		    dup2(errors[1], STDERR_FILENO) < 0)
+			return 1;
+		close(output[1]);
+		close(errors[1]);
+		int source = 3, destination = 0;
+		if (bpftime_probe_read_user((uint64_t)&destination,
+					    sizeof(destination),
+					    (uint64_t)&source, 0, 0) != 0 ||
+		    bpftime_probe_read_user((uint64_t)&destination,
+					    sizeof(destination), 0, 0,
+					    0) != -EFAULT ||
+		    bpftime_probe_write_user((uint64_t)&destination,
+					     (uint64_t)&source, sizeof(source),
+					     0, 0) != 0 ||
+		    bpftime_probe_write_user(0, (uint64_t)&source,
+					     sizeof(source), 0, 0) != -EFAULT)
+			return 2;
+		return 0;
+	});
+	close(output[1]);
+	close(errors[1]);
+	char buffer[64];
+	auto output_size = read(output[0], buffer, sizeof(buffer));
+	auto error_size = read(errors[0], buffer, sizeof(buffer));
+	close(output[0]);
+	close(errors[0]);
+	REQUIRE(WIFEXITED(status));
+	REQUIRE(WEXITSTATUS(status) == 0);
+	REQUIRE(output_size == 0);
+	REQUIRE(error_size == 0);
+}
+
+TEST_CASE("Probe read user leaves unrelated SIGSEGV fatal", "[probe-read-user]")
+{
+	for (bool explicit_signal : { false, true }) {
+		int status = run_probe_read_child([=] {
+			int src = 1, dst = 0;
+			if (bpftime_probe_read_user((uint64_t)&dst, sizeof(dst),
+						    (uint64_t)&src, 0, 0) != 0)
+				return 2;
+			std::thread worker([=] {
+				if (explicit_signal)
+					raise(SIGSEGV);
+				else {
+					void *page = mmap(
+						nullptr, 4096, PROT_NONE,
+						MAP_PRIVATE | MAP_ANONYMOUS, -1,
+						0);
+					*static_cast<volatile char *>(page) = 1;
+				}
+			});
+			worker.join();
+			return 3;
+		});
+		REQUIRE(WIFSIGNALED(status));
+		REQUIRE(WTERMSIG(status) == SIGSEGV);
+	}
+}
+
+TEST_CASE("Probe access leaves replacement handler installed",
+	  "[probe-read-user]")
+{
+	int status = run_probe_read_child([] {
+		int src = 1, dst = 0;
+		if (bpftime_probe_read_user((uint64_t)&dst, sizeof(dst),
+					    (uint64_t)&src, 0, 0) != 0)
+			return 1;
+		struct sigaction action = {};
+		action.sa_handler = count_sigsegv;
+		sigemptyset(&action.sa_mask);
+		if (sigaction(SIGSEGV, &action, nullptr) != 0)
+			return 2;
+		dst = 0;
+		if (bpftime_probe_read_user((uint64_t)&dst, sizeof(dst),
+					    (uint64_t)&src, 0, 0) != 0 ||
+		    dst != src)
+			return 3;
+		dst = 0;
+		if (bpftime_probe_write_user((uint64_t)&dst, (uint64_t)&src,
+					     sizeof(src), 0, 0) != 0 ||
+		    dst != src)
+			return 4;
+		struct sigaction current = {};
+		if (sigaction(SIGSEGV, nullptr, &current) != 0 ||
+		    current.sa_handler != count_sigsegv)
+			return 6;
+		raise(SIGSEGV);
+		return forwarded_sigsegv == 1 ? 0 : 7;
+	});
+	REQUIRE(WIFEXITED(status));
+	REQUIRE(WEXITSTATUS(status) == 0);
+}
+
+TEST_CASE("BPF helper 112 invokes probe read user", "[probe-read-user]")
+{
+	for (bool jit : { false, true }) {
+		int status = run_probe_read_child([=] {
+			struct bpf_insn instructions[] = {
+				BPF_MOV64_REG(1, 10),
+				BPF_ALU64_IMM(BPF_ADD, 1, -8),
+				BPF_MOV64_IMM(2, 4),
+				BPF_MOV64_IMM(3, 0),
+				BPF_MOV64_IMM(4, 0),
+				BPF_MOV64_IMM(5, 0),
+				BPF_EMIT_CALL(112),
+				BPF_EXIT_INSN(),
+			};
+			bpftime::runtime_config config;
+#if BPFTIME_LLVM_JIT
+			config.set_vm_name("llvm");
+#else
+			config.set_vm_name("ubpf");
+#endif
+			bpftime::bpftime_prog prog(
+				(const ebpf_inst *)instructions,
+				sizeof(instructions) / sizeof(instructions[0]),
+				"probe_read_user", config);
+			if (bpftime::bpftime_helper_group::
+					    get_kernel_utils_helper_group()
+						    .add_helper_group_to_prog(
+							    &prog) != 0 ||
+			    prog.bpftime_prog_load(jit) != 0)
+				return 1;
+			uint64_t result = 0;
+			int context = 0;
+			if (prog.bpftime_prog_exec(&context, sizeof(context),
+						   &result) != 0)
+				return 2;
+			struct sigaction action = {};
+			if (sigaction(SIGSEGV, nullptr, &action) != 0 ||
+			    !(action.sa_flags & SA_SIGINFO))
+				return 3;
+			// Unlike the old process_vm_readv implementation, the
+			// new helper installs its handler. Recovery must also
+			// work below a JIT frame.
+			return (int64_t)result == -EFAULT ? 0 : 4;
+		});
+		REQUIRE(WIFEXITED(status));
+		REQUIRE(WEXITSTATUS(status) == 0);
+	}
+}
+#endif
 
 TEST_CASE("Test bpftime_probe_read") // test for bpftime_probe_read
 {

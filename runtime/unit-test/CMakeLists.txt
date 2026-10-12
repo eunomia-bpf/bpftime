@@ -138,6 +138,41 @@ endif()
 target_include_directories(bpftime_runtime_tests PRIVATE ${BPFTIME_RUNTIME_INCLUDE} ${BPFTIME_OBJECT_INCLUDE_DIRS} ${Catch2_INCLUDE} ${Boost_INCLUDE})
 add_test(NAME bpftime_runtime_tests COMMAND bpftime_runtime_tests)
 
+# Compile the actual helper implementation separately for each backend. Do
+# not inherit runtime's feature definitions: signal write must not silently
+# select process_vm_writev through ENABLE_PROBE_WRITE_CHECK.
+if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+    set(PROBE_BENCH_BACKENDS unprotected process_vm)
+    if(BPFTIME_ENABLE_FRIDA AND CMAKE_SYSTEM_PROCESSOR MATCHES "^(x86_64|aarch64)$")
+        list(APPEND PROBE_BENCH_BACKENDS signal)
+    endif()
+    foreach(backend IN LISTS PROBE_BENCH_BACKENDS)
+        set(bench_target bpftime_probe_access_bench_${backend})
+        add_executable(${bench_target}
+            test_probe_access_benchmark.cpp
+            ../src/bpf_helper_read_and_write.cpp)
+        set_target_properties(${bench_target} PROPERTIES
+            CXX_STANDARD 20 INTERPROCEDURAL_OPTIMIZATION FALSE)
+        target_include_directories(${bench_target} PRIVATE ../src)
+        target_compile_definitions(${bench_target} PRIVATE
+            PROBE_BENCH_BACKEND="${backend}" NDEBUG)
+        target_compile_options(${bench_target} PRIVATE
+            -O3 -fomit-frame-pointer -fno-sanitize=all)
+        target_link_libraries(${bench_target} PRIVATE
+            Catch2::Catch2WithMain pthread)
+        if(backend STREQUAL "process_vm")
+            target_compile_definitions(${bench_target} PRIVATE
+                ENABLE_PROBE_READ_CHECK=1 ENABLE_PROBE_WRITE_CHECK=1)
+        elseif(backend STREQUAL "signal")
+            add_dependencies(${bench_target} FridaGum)
+            target_compile_definitions(${bench_target} PRIVATE BPFTIME_HAVE_FRIDA=1)
+            target_include_directories(${bench_target} PRIVATE ${FRIDA_GUM_INSTALL_DIR})
+            target_link_libraries(${bench_target} PRIVATE
+                ${FRIDA_GUM_INSTALL_DIR}/libfrida-gum.a dl rt resolv m)
+        endif()
+    endforeach()
+endif()
+
 # These are necessary ebpf program required by the test
 set(used_ebpf_programs
     uprobe

@@ -68,6 +68,7 @@ set(sources
   src/bpftime_config.cpp
   src/ufunc.cpp
   src/bpf_helper.cpp
+  src/bpf_helper_read_and_write.cpp
   src/platform_utils.cpp
 
   src/bpf_map/userspace/array_map.cpp
@@ -260,6 +261,7 @@ endif()
 if(BPFTIME_ENABLE_FRIDA)
   list(APPEND RUNTIME_LINK_LIBS ${FRIDA_GUM_INSTALL_DIR}/libfrida-gum.a)
   list(APPEND RUNTIME_INCLUDE_DIRS ${FRIDA_GUM_INSTALL_DIR})
+  target_compile_definitions(runtime PUBLIC BPFTIME_HAVE_FRIDA=1)
 endif()
 target_link_libraries(${PROJECT_NAME} PUBLIC ${RUNTIME_LINK_LIBS})
 target_include_directories(${PROJECT_NAME} PUBLIC ${RUNTIME_INCLUDE_DIRS})
