@@ -191,23 +191,33 @@ int bpftime_prog::bpftime_prog_load(bool jit)
 	// ebpf callback" instead of a load-time error (see #704). Local calls
 	// (call) are handled by the VM itself and are not audited here,
 	// mirroring prepare_for_signal_execution().
-	for (size_t i = 0; i < insns.size(); ++i) {
-		const struct ebpf_inst &inst = insns[i];
-		if (inst.code == 0x18) {
-			// Second instruction of a LDDW is data, not code.
-			++i;
-			continue;
-		}
-		if (inst.code == 0x8d) // Indirect CALLX cannot be audited here.
-			break;
-		if (inst.code != 0x85 || inst.src_reg != 0)
-			continue;
-		if (registered_helper_ids.count(
-			    static_cast<unsigned>(inst.imm)) == 0) {
-			SPDLOG_ERROR(
-				"Program {} calls helper {} which is not registered in the VM. Register the helper (e.g. bpftime_helper_group::add_helper_group_to_prog) or check the bytecode before loading.",
-				name, inst.imm);
-			return -EINVAL;
+	//
+	// CUDA programs (cuda__*) are exempt: their helpers (e.g. 503 =
+	// bpf_get_block_idx) are resolved on the device side. They are never
+	// registered into this host VM; ptxpass generates device PTX from an
+	// isolated VM with its own helper table, and the runtime trampoline
+	// provides the actual implementations (e.g. _bpf_helper_ext_0503).
+	// This VM is only used here to produce that device code, so the
+	// host-side audit does not apply.
+	if (!is_cuda()) {
+		for (size_t i = 0; i < insns.size(); ++i) {
+			const struct ebpf_inst &inst = insns[i];
+			if (inst.code == 0x18) {
+				// Second instruction of a LDDW is data, not code.
+				++i;
+				continue;
+			}
+			if (inst.code == 0x8d) // Indirect CALLX cannot be audited here.
+				break;
+			if (inst.code != 0x85 || inst.src_reg != 0)
+				continue;
+			if (registered_helper_ids.count(
+				    static_cast<unsigned>(inst.imm)) == 0) {
+				SPDLOG_ERROR(
+					"Program {} calls helper {} which is not registered in the VM. Register the helper (e.g. bpftime_helper_group::add_helper_group_to_prog) or check the bytecode before loading.",
+					name, inst.imm);
+				return -EINVAL;
+			}
 		}
 	}
 	if (is_cuda()) {

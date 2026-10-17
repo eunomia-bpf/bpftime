@@ -81,4 +81,23 @@ TEST_CASE("Reject programs calling unregistered helpers at load time",
 			std::vector<uint32_t>{ 7 });
 		REQUIRE(prog.bpftime_prog_load(false) == 0);
 	}
+#ifdef BPFTIME_ENABLE_CUDA_ATTACH
+	SECTION("CUDA program calling device-side helper must still load") {
+		// GPU programs (cuda__*) get their helpers (e.g. 503 =
+		// bpf_get_block_idx) from the device trampoline, never from
+		// this VM; the host-side audit must not reject them.
+		bpftime::runtime_config config;
+		config.set_vm_name("llvm");
+		struct ebpf_inst call_503 = { .code = 0x85, .dst_reg = 0,
+					      .src_reg = 0, .off = 0,
+					      .imm = 503 };
+		std::vector<struct ebpf_inst> insns = { mov_r0, call_503,
+							exit_insn };
+		bpftime_prog prog(insns.data(), insns.size(),
+				  "t_cuda__unreg_helper", std::move(config));
+		REQUIRE(collect_helper_calls(insns) ==
+			std::vector<uint32_t>{ 503 });
+		REQUIRE(prog.bpftime_prog_load(false) == 0);
+	}
+#endif
 }
