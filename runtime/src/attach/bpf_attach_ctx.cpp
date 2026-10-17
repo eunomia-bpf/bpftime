@@ -301,14 +301,18 @@ int bpf_attach_ctx::instantiate_prog_handler_at(int id,
 	instantiated_progs[id] =
 		std::make_unique<bpftime_prog>(insns, cnt, name);
 	bpftime_prog *prog = instantiated_progs[id].get();
+	// Attach-impl-defined helpers (e.g. the CUDA/GPU helper group) must be
+	// registered into the prog before it is loaded:
+	// bpftime_prog_load now rejects programs calling helpers that the VM
+	// has not seen, so the load must see the full helper set.
+	for (const auto &item : helpers) {
+		prog->bpftime_prog_register_raw_helper(item.second);
+	}
 	if (int err = load_prog_and_helpers(prog, config); err < 0) {
 		SPDLOG_ERROR(
 			"Failed to load program helpers for prog handler {}: {}",
 			id, err);
 		return err;
-	}
-	for (const auto &item : helpers) {
-		prog->bpftime_prog_register_raw_helper(item.second);
 	}
 	instantiated_handlers.insert(id);
 	return 0;
