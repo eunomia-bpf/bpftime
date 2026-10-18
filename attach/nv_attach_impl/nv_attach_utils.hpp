@@ -1,6 +1,7 @@
 #ifndef _NV_ATTACH_UTILS_HPP
 #define _NV_ATTACH_UTILS_HPP
 
+#include <cstddef>
 #include <dlfcn.h>
 #include <string>
 namespace bpftime
@@ -32,9 +33,26 @@ static inline T try_get_original_func(const char *name, T &store)
  * @return std::string
  */
 std::string get_default_trampoline_ptx();
-std::string patch_helper_names_and_header(std::string ptx_to_wrap);
 std::string patch_main_from_func_to_entry(std::string);
 std::string wrap_ptx_with_trampoline(std::string input);
+std::string wrap_ptx_with_trampoline_for_sm(std::string input,
+					    const std::string &sm_arch);
+std::string sha256(const void *data, size_t length);
+
+/**
+ * @brief Rewrite PTX target and version for the given SM architecture.
+ * Automatically upgrades PTX version for newer architectures (sm_100+, sm_120+).
+ */
+std::string rewrite_ptx_target(std::string ptx, const std::string &sm_arch);
+
+/**
+ * @brief Get the SM architecture string for the current GPU.
+ * First checks BPFTIME_SM_ARCH environment variable, then auto-detects
+ * from the current CUDA device if not set.
+ *
+ * @return std::string SM architecture string (e.g., "sm_86", "sm_120")
+ */
+std::string get_gpu_sm_arch();
 
 } // namespace attach
 } // namespace bpftime

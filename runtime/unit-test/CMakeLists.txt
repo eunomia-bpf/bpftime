@@ -19,37 +19,107 @@ set(TEST_SOURCES
     maps/test_shm_hash_maps.cpp
     maps/test_external_map_ops.cpp
     maps/test_bpftime_hash_map.cpp
+    maps/test_fix_hash_map.cpp
+    maps/test_map_in_map_bounds.cpp
     maps/kernel_unit_tests.cpp
     maps/test_stack_trace_map.cpp
+    maps/test_queue_map.cpp
+    maps/test_stack_map.cpp
+    maps/test_bloom_filter_map.cpp
+    maps/test_lpm_trie_map.cpp
 
     maps/test_lru_var_hash_map.cpp
+    maps/test_lru_hash_map.cpp
 
     test_bpftime_shm_json.cpp
     test_probe.cpp
+    test_get_current_pid_tgid.cpp
+    test_get_stack.cpp
     test_config.cpp
+    test_shm_allocation_failure.cpp
+    test_software_perf_event.cpp
+    test_ringbuf_tail_wrap.cpp
+    test_epoll.cpp
 
-    attach_with_ebpf/test_attach_filter_with_ebpf.cpp
-    attach_with_ebpf/test_attach_uprobe_with_ebpf.cpp
+    attach_with_ebpf/test_attach_uprobe_with_ebpf_trap.cpp
     attach_with_ebpf/test_helpers.cpp
-    attach_with_ebpf/test_shm_progs_attach.cpp
     attach_with_ebpf/test_ufunc_register.cpp
-    attach_with_ebpf/test_attach_replace.cpp
 
     tailcall/test_user_to_kernel_tailcall.cpp
+    tailcall/test_user_to_user_tailcall.cpp
 
 )
+# These tests instantiate attach::frida_attach_impl directly, so they only
+# build when the frida backend is available (it is off on riscv64).
+if(BPFTIME_ENABLE_FRIDA)
+    list(APPEND TEST_SOURCES
+        attach_with_ebpf/test_attach_filter_with_ebpf.cpp
+        attach_with_ebpf/test_attach_uprobe_with_ebpf.cpp
+        attach_with_ebpf/test_shm_progs_attach.cpp
+        attach_with_ebpf/test_attach_replace.cpp
+    )
+endif()
+
 if(${BPFTIME_ENABLE_CUDA_ATTACH})
     list(APPEND TEST_SOURCES cuda/test_cuda_compile.cpp)
 endif()
 option(TEST_LCOV "option for lcov" OFF)
 add_executable(bpftime_runtime_tests ${TEST_SOURCES})
 
+if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+    target_sources(bpftime_runtime_tests PRIVATE test_get_current_uid_gid.cpp)
+    target_link_options(bpftime_runtime_tests PRIVATE
+        -Wl,--wrap=getuid -Wl,--wrap=getgid)
+endif()
+
+if(ENABLE_PROBE_READ_CHECK)
+    target_compile_definitions(bpftime_runtime_tests PRIVATE ENABLE_PROBE_READ_CHECK=1)
+endif()
+
+if(ENABLE_PROBE_WRITE_CHECK)
+    target_compile_definitions(bpftime_runtime_tests PRIVATE ENABLE_PROBE_WRITE_CHECK=1)
+endif()
+
+if(UNIX AND NOT APPLE)
+    add_executable(bpftime-shm-allocation-test-helper
+        assets/shm_allocation_test_helper.c)
+    add_executable(bpftime-runtime-options-test-helper
+        assets/runtime_options_test_helper.c)
+    set_property(TARGET bpftime-shm-allocation-test-helper PROPERTY C_STANDARD 99)
+    set_property(TARGET bpftime-runtime-options-test-helper PROPERTY C_STANDARD 99)
+    add_dependencies(bpftime_runtime_tests
+        bpftime-agent
+        bpftime-syscall-server
+        bpftime-runtime-options-test-helper
+        bpftime-shm-allocation-test-helper)
+    file(GENERATE
+        OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/shm_allocation_test_paths.hpp"
+        CONTENT "#define BPFTIME_SHM_ALLOCATION_TEST_HELPER \"$<TARGET_FILE:bpftime-shm-allocation-test-helper>\"\n#define BPFTIME_SYSCALL_SERVER_LIBRARY \"$<TARGET_FILE:bpftime-syscall-server>\"\n#define BPFTIME_AGENT_LIBRARY \"$<TARGET_FILE:bpftime-agent>\"\n")
+    target_include_directories(bpftime_runtime_tests PRIVATE
+        "${CMAKE_CURRENT_BINARY_DIR}")
+endif()
+
 if(${TEST_LCOV})
     target_compile_options(bpftime_runtime_tests PRIVATE -fprofile-arcs -ftest-coverage -fprofile-update=atomic)
 endif()
 
 set_property(TARGET bpftime_runtime_tests PROPERTY CXX_STANDARD 20)
-add_dependencies(bpftime_runtime_tests runtime bpftime-object bpftime_frida_uprobe_attach_impl)
+if(UNIX AND NOT APPLE AND BPFTIME_LLVM_JIT)
+    # ORC resolves its statically linked EH-frame registration wrappers via
+    # the process symbol table (also needed by existing x86 runtime tests).
+    target_link_options(bpftime_runtime_tests PRIVATE -Wl,--export-dynamic)
+endif()
+add_dependencies(bpftime_runtime_tests runtime bpftime-object)
+if(TARGET bpftime_frida_uprobe_attach_impl)
+    add_dependencies(bpftime_runtime_tests bpftime_frida_uprobe_attach_impl)
+    target_link_libraries(bpftime_runtime_tests PRIVATE bpftime_frida_uprobe_attach_impl)
+    target_include_directories(bpftime_runtime_tests PRIVATE ${FRIDA_UPROBE_ATTACH_IMPL_INCLUDE})
+endif()
+if(TARGET bpftime_trap_uprobe_attach_impl)
+    target_link_libraries(bpftime_runtime_tests PRIVATE bpftime_trap_uprobe_attach_impl)
+    target_include_directories(bpftime_runtime_tests PRIVATE ${TRAP_UPROBE_ATTACH_IMPL_INCLUDE})
+    target_compile_definitions(bpftime_runtime_tests PRIVATE BPFTIME_HAVE_TRAP_UPROBE_ATTACH=1)
+endif()
 
 if(${BPFTIME_ENABLE_CUDA_ATTACH})
     include(../../cmake/cuda.cmake)
@@ -61,17 +131,18 @@ endif()
 
 if(${TEST_LCOV})
     target_link_options(bpftime_runtime_tests PRIVATE -lgcov)
-    target_link_libraries(bpftime_runtime_tests PRIVATE runtime bpftime-object Catch2::Catch2WithMain bpftime_frida_uprobe_attach_impl gcov ${CUDA_LIBS})
+    target_link_libraries(bpftime_runtime_tests PRIVATE runtime bpftime-object Catch2::Catch2WithMain gcov ${CUDA_LIBS})
 else()
-    target_link_libraries(bpftime_runtime_tests PRIVATE runtime bpftime-object Catch2::Catch2WithMain bpftime_frida_uprobe_attach_impl ${CUDA_LIBS})
+    target_link_libraries(bpftime_runtime_tests PRIVATE runtime bpftime-object Catch2::Catch2WithMain ${CUDA_LIBS})
 endif()
 
-target_include_directories(bpftime_runtime_tests PRIVATE ${BPFTIME_RUNTIME_INCLUDE} ${BPFTIME_OBJECT_INCLUDE_DIRS} ${Catch2_INCLUDE} ${Boost_INCLUDE} ${FRIDA_UPROBE_ATTACH_IMPL_INCLUDE})
+target_include_directories(bpftime_runtime_tests PRIVATE ${BPFTIME_RUNTIME_INCLUDE} ${BPFTIME_OBJECT_INCLUDE_DIRS} ${Catch2_INCLUDE} ${Boost_INCLUDE})
 add_test(NAME bpftime_runtime_tests COMMAND bpftime_runtime_tests)
 
 # These are necessary ebpf program required by the test
 set(used_ebpf_programs
     uprobe
+    uprobe_trap
     replace
     filter
     helpers

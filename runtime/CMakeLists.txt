@@ -13,7 +13,7 @@ set(CMAKE_C_STANDARD_REQUIRED ON)
 #
 project(
   "runtime"
-  VERSION 0.1.0
+  VERSION 0.9.0
   LANGUAGES C CXX
 )
 
@@ -59,6 +59,7 @@ set(sources
   src/handler/perf_event_handler.cpp
   src/handler/prog_handler.cpp
   src/handler/epoll_handler.cpp
+  src/handler/memfd_handler.cpp
 
   src/bpftime_shm.cpp
   src/bpftime_shm_internal.cpp
@@ -80,11 +81,29 @@ set(sources
   src/bpf_map/userspace/stack_trace_map.cpp
   src/bpf_map/userspace/lru_var_hash_map.cpp
 
+  src/bpf_map/userspace/queue.cpp
+  src/bpf_map/userspace/stack.cpp
+  src/bpf_map/userspace/bloom_filter.cpp
+  src/bpf_map/userspace/lpm_trie_map.cpp
   extension/extension_helper.cpp
 )
 
-if(${BPFTIME_ENABLE_CUDA_ATTACH} OR ${BPFTIME_ENABLE_ROCM_ATTACH})
+if(BPFTIME_ENABLE_CUDA_ATTACH OR BPFTIME_ENABLE_ROCM_ATTACH)
   list(APPEND sources src/attach/bpf_attach_ctx_gpu.cpp)
+endif()
+
+if(${BPFTIME_ENABLE_CUDA_ATTACH})
+  list(APPEND sources src/attach/bpf_attach_ctx_cuda.cpp)
+  list(APPEND sources src/bpf_map/gpu/nv_gpu_gdrcopy.cpp)
+  # IPC-based GPU maps (for x86 with CUDA IPC support)
+  list(APPEND sources src/bpf_map/gpu/nv_gpu_per_thread_array_map.cpp)
+  list(APPEND sources src/bpf_map/gpu/nv_gpu_shared_array_map.cpp)
+  list(APPEND sources src/bpf_map/gpu/nv_gpu_ringbuf_map.cpp)
+  list(APPEND sources src/bpf_map/gpu_kernel_shared/array_map_kernel_gpu.cpp)
+  list(APPEND sources src/bpf_map/gpu/nv_gpu_shared_hash_map.cpp)
+  # HOST-based GPU maps (for Tegra/platforms without CUDA IPC)
+  list(APPEND sources src/bpf_map/gpu/nv_gpu_array_host_map.cpp)
+  list(APPEND sources src/bpf_map/gpu/nv_gpu_shared_array_host_map.cpp)
 endif()
 
 if(UNIX AND NOT APPLE AND BPFTIME_BUILD_WITH_LIBBPF)
@@ -102,11 +121,21 @@ set(headers
 message(INFO " Headers: ${headers}")
 message(INFO " Found the following sources: ${sources}")
 
+# Keep constructor-based self-registration; do not add centralized registry
+
 add_library(
   ${PROJECT_NAME}
   ${sources}
 )
 set_property(TARGET ${PROJECT_NAME} PROPERTY CXX_STANDARD 20)
+if(${BPFTIME_LLVM_JIT})
+  target_compile_definitions(${PROJECT_NAME} PUBLIC BPFTIME_LLVM_JIT=1)
+else()
+  target_compile_definitions(${PROJECT_NAME} PUBLIC DEFAULT_VM_NAME="ubpf")
+endif()
+if(${BPFTIME_UBPF_JIT})
+  target_compile_definitions(${PROJECT_NAME} PUBLIC BPFTIME_UBPF_JIT=1)
+endif()
 add_custom_command(
   OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/syscall_id_list.h
   COMMAND /bin/bash ${CMAKE_CURRENT_SOURCE_DIR}/generate_syscall_id_table.sh "${CMAKE_CURRENT_BINARY_DIR}/syscall_id_list.h"
@@ -137,8 +166,16 @@ target_link_libraries(${PROJECT_NAME}
   bpftime_vm
   spdlog::spdlog
   bpftime_base_attach_impl
-
 )
+
+if(TARGET bpftime_trap_uprobe_attach_impl)
+  target_link_libraries(${PROJECT_NAME} PUBLIC bpftime_trap_uprobe_attach_impl)
+  target_compile_definitions(${PROJECT_NAME} PUBLIC BPFTIME_HAVE_TRAP_UPROBE_ATTACH=1)
+endif()
+
+if(UNIX AND NOT APPLE)
+  target_link_libraries(${PROJECT_NAME} PUBLIC ${CMAKE_DL_LIBS})
+endif()
 
 
 if(${BPFTIME_ENABLE_CUDA_ATTACH})
@@ -153,8 +190,6 @@ if(${BPFTIME_ENABLE_CUDA_ATTACH})
   target_link_libraries(${PROJECT_NAME} PUBLIC bpftime_vm_compat llvmbpf_vm bpftime_nv_attach_impl)
   target_include_directories(${PROJECT_NAME} PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/../vm/llvm-jit/include)
 endif()
-
-
 if(${BPFTIME_ENABLE_ROCM_ATTACH})
   include(../cmake/rocm.cmake)
   find_rocm()
@@ -168,11 +203,14 @@ if(${BPFTIME_ENABLE_ROCM_ATTACH})
   target_include_directories(${PROJECT_NAME} PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/../vm/llvm-jit/include)
 endif()
 
-if(${BPFTIME_BUILD_WITH_LIBBPF})
-  add_dependencies(${PROJECT_NAME} bpftime_vm FridaGum spdlog::spdlog libbpf bpftime_base_attach_impl)
-else()
-  add_dependencies(${PROJECT_NAME} bpftime_vm FridaGum spdlog::spdlog bpftime_base_attach_impl)
+set(RUNTIME_DEPS bpftime_vm spdlog::spdlog bpftime_base_attach_impl)
+if(BPFTIME_ENABLE_FRIDA)
+  list(APPEND RUNTIME_DEPS FridaGum)
 endif()
+if(${BPFTIME_BUILD_WITH_LIBBPF})
+  list(APPEND RUNTIME_DEPS libbpf)
+endif()
+add_dependencies(${PROJECT_NAME} ${RUNTIME_DEPS})
 
 if(BPFTIME_ENABLE_IOURING_EXT)
   target_link_libraries(${PROJECT_NAME}
@@ -218,53 +256,30 @@ if(APPLE)
   set(EXTRA_LIBS ${COCOA_LIBRARY} ${FOUNDATION_LIBRARY} ${APPKIT_LIBRARY} ${COREF_LIBRARY} ${RESOLV_LIBRARY})
 endif()
 
+set(RUNTIME_LINK_LIBS
+  -lpthread -lm -ldl
+  bpftime_base_attach_impl
+  ${EXTRA_LIBS}
+)
+set(RUNTIME_INCLUDE_DIRS
+  $<INSTALL_INTERFACE:runtime>
+  $<INSTALL_INTERFACE:runtime/src>
+  $<INSTALL_INTERFACE:include>
+  $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+  $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src>
+)
 if(${BPFTIME_BUILD_WITH_LIBBPF})
-  target_link_libraries(${PROJECT_NAME}
-    PUBLIC
-    ${LIBBPF_LIBRARIES}
-    ${FRIDA_GUM_INSTALL_DIR}/libfrida-gum.a
-    -lpthread
-    -lm
-    -ldl
-    -lz
-    -lelf
-    bpftime_base_attach_impl
-    ${EXTRA_LIBS}
-  )
+  list(APPEND RUNTIME_LINK_LIBS ${LIBBPF_LIBRARIES} -lelf -lz)
+  list(APPEND RUNTIME_INCLUDE_DIRS ${LIBBPF_INCLUDE_DIRS}/uapi ${LIBBPF_INCLUDE_DIRS})
 else()
-  target_link_libraries(${PROJECT_NAME}
-    PUBLIC
-    ${FRIDA_GUM_INSTALL_DIR}/libfrida-gum.a
-    -lpthread
-    -lm
-    -ldl
-    -lz
-    bpftime_base_attach_impl
-    ${EXTRA_LIBS}
-  )
+  list(APPEND RUNTIME_LINK_LIBS -lz)
 endif()
-
-if(BPFTIME_BUILD_WITH_LIBBPF)
-  target_include_directories(${PROJECT_NAME} PUBLIC
-    ${LIBBPF_INCLUDE_DIRS}/uapi
-    ${LIBBPF_INCLUDE_DIRS}
-    ${FRIDA_GUM_INSTALL_DIR}
-    $<INSTALL_INTERFACE:runtime>
-    $<INSTALL_INTERFACE:runtime/src>
-    $<INSTALL_INTERFACE:include>
-    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
-    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src>
-  )
-else()
-  target_include_directories(${PROJECT_NAME} PUBLIC
-    ${FRIDA_GUM_INSTALL_DIR}
-    $<INSTALL_INTERFACE:runtime>
-    $<INSTALL_INTERFACE:runtime/src>
-    $<INSTALL_INTERFACE:include>
-    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
-    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src>
-  )
+if(BPFTIME_ENABLE_FRIDA)
+  list(APPEND RUNTIME_LINK_LIBS ${FRIDA_GUM_INSTALL_DIR}/libfrida-gum.a)
+  list(APPEND RUNTIME_INCLUDE_DIRS ${FRIDA_GUM_INSTALL_DIR})
 endif()
+target_link_libraries(${PROJECT_NAME} PUBLIC ${RUNTIME_LINK_LIBS})
+target_include_directories(${PROJECT_NAME} PUBLIC ${RUNTIME_INCLUDE_DIRS})
 
 message(DEBUG "Successfully added all dependencies and linked against them.")
 
@@ -291,4 +306,3 @@ if(${TEST_LCOV})
   target_compile_options(${PROJECT_NAME} PUBLIC -fprofile-arcs -ftest-coverage -fprofile-update=atomic)
   target_link_options(${PROJECT_NAME} PUBLIC -fprofile-arcs)
 endif()
-

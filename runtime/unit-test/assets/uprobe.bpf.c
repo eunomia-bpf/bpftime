@@ -11,15 +11,17 @@
 #endif
 
 SEC("uprobe")
-int BPF_UPROBE(my_function_uprobe, int parm1, char* str, char c) {
+__u64 BPF_UPROBE(my_function_uprobe, int parm1, char *str, char c)
+{
 	bpf_printk("BPF_UPROBE: %d %s %c\n", parm1, str, c);
-	return 0;
+	return bpf_get_func_ip(ctx);
 }
 
 SEC("uprobe")
-int BPF_URETPROBE(my_function_uretprobe) {
+__u64 BPF_URETPROBE(my_function_uretprobe)
+{
 	bpf_printk("BPF_URETPROBE\n");
-	return 0;
+	return bpf_get_func_ip(ctx);
 }
 
 SEC("uprobe")
@@ -35,4 +37,3 @@ int BPF_URETPROBE(strdup_uretprobe, char* str) {
 }
 
 char LICENSE[] SEC("license") = "Dual BSD/GPL";
-

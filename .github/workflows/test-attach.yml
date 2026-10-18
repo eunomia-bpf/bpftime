@@ -3,10 +3,28 @@ name: Build and Attach Tests Workflow
 on:
   workflow_dispatch:
   push:
-    branches: "*"
-  pull_request: 
-    branches: "master"
-    
+    branches: ["master"]
+    paths:
+      - ".github/workflows/test-attach.yml"
+      - "attach/**"
+      - "runtime/**"
+      - "vm/**"
+      - "cmake/**"
+      - "third_party/**"
+      - "CMakeLists.txt"
+      - ".gitmodules"
+  pull_request:
+    branches: ["master"]
+    paths:
+      - ".github/workflows/test-attach.yml"
+      - "attach/**"
+      - "runtime/**"
+      - "vm/**"
+      - "cmake/**"
+      - "third_party/**"
+      - "CMakeLists.txt"
+      - ".gitmodules"
+
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}-${{ github.event_name }}
   cancel-in-progress: true
@@ -25,7 +43,7 @@ jobs:
     steps:
       - uses: actions/checkout@v2
         with:
-          submodules: 'recursive'
+          submodules: "recursive"
       - name: Setup conda
         uses: conda-incubator/setup-miniconda@v3
         with:
@@ -42,10 +60,10 @@ jobs:
         if: "matrix.container == 'fedora-39'"
         run: |
           dnf install -y lcov
-    
+
       - name: Build for frida uprobe attach tests
         run: |
-          cmake -DCMAKE_BUILD_TYPE:STRING=Debug -DTEST_LCOV=ON -B build -Dabsl_DIR=~/miniconda3/lib/cmake/absl -DProtobuf_DIR=~/miniconda3/lib/cmake/protobuf -Dutf8_range_DIR=~/miniconda3/lib/cmake/utf8_range
+          cmake -DCMAKE_BUILD_TYPE:STRING=Debug -DTEST_LCOV=ON -DBUILD_BPFTIME_DAEMON=OFF -B build -Dabsl_DIR=~/miniconda3/lib/cmake/absl -DProtobuf_DIR=~/miniconda3/lib/cmake/protobuf -Dutf8_range_DIR=~/miniconda3/lib/cmake/utf8_range
           cmake --build build --config Debug --target bpftime_frida_uprobe_attach_tests -j$(nproc)
       - name: Run frida uprobe attach tests
         run: |
@@ -74,9 +92,9 @@ jobs:
 
       - name: Build syscall trace uprobe attach tests
         run: |
-          cmake -DTEST_LCOV=ON -B build -Dabsl_DIR=~/miniconda3/lib/cmake/absl -DProtobuf_DIR=~/miniconda3/lib/cmake/protobuf -Dutf8_range_DIR=~/miniconda3/lib/cmake/utf8_range
+          cmake -DTEST_LCOV=ON -DBUILD_BPFTIME_DAEMON=OFF -B build -Dabsl_DIR=~/miniconda3/lib/cmake/absl -DProtobuf_DIR=~/miniconda3/lib/cmake/protobuf -Dutf8_range_DIR=~/miniconda3/lib/cmake/utf8_range
           cmake --build build --config Debug --target bpftime_syscall_trace_attach_tests -j$(nproc)
-          
+
       - name: Run syscall trace uprobe attach tests
         run: |
           ./build/attach/syscall_trace_attach_impl/bpftime_syscall_trace_attach_tests
@@ -102,8 +120,8 @@ jobs:
       - uses: codecov/codecov-action@v4
         if: github.repository == 'eunomia-bpf/bpftime' && github.event_name == 'push' && github.ref == 'refs/heads/main'
         with:
-              fail_ci_if_error: true # optional (default = false)
-              files: ./coverage-syscall-trace.info, ./coverage-uprobe.info # optional
-              flags: attach tests (uprobe & syscall trace)
-              token: ${{ secrets.CODECOV_TOKEN }} # required
-              verbose: true # optional (default = false)
+          fail_ci_if_error: true # optional (default = false)
+          files: ./coverage-syscall-trace.info, ./coverage-uprobe.info # optional
+          flags: attach tests (uprobe & syscall trace)
+          token: ${{ secrets.CODECOV_TOKEN }} # required
+          verbose: true # optional (default = false)

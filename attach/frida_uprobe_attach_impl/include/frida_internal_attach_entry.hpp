@@ -16,7 +16,8 @@ class frida_internal_attach_entry {
 	void *function;
 	GumInterceptor *interceptor;
 	std::vector<frida_attach_entry *> user_attaches;
-	GumInvocationListener *frida_gum_invocation_listener = nullptr;
+	GumInvocationListener *uprobe_listener = nullptr;
+	GumInvocationListener *uretprobe_listener = nullptr;
 
 	friend class frida_attach_impl;
 
@@ -31,6 +32,7 @@ class frida_internal_attach_entry {
 
 	bool has_override() const;
 	bool has_uprobe_or_uretprobe() const;
+	void ensure_listener(int attach_type);
 	void run_filter_callback(const pt_regs &regs) const;
 	void iterate_uprobe_callbacks(const pt_regs &regs) const;
 	void iterate_uretprobe_callbacks(const pt_regs &regs) const;

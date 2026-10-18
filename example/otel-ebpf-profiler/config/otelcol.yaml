@@ -1,0 +1,17 @@
+receivers:
+  profiling:
+    reporter_interval: 3s
+    reporter_jitter: 0
+    probe_links:
+      - ${env:OTEL_MALLOC_PROBE}
+      - ${env:OTEL_FREE_PROBE}
+
+exporters:
+  debug:
+    verbosity: detailed
+
+service:
+  pipelines:
+    profiles:
+      receivers: [profiling]
+      exporters: [debug]

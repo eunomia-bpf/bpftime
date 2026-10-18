@@ -4,9 +4,13 @@ add_library(
     ./nginx_plugin_adaptor/nginx_plugin_adaptor.cpp
 )
 
-add_dependencies(attach_impl_example_nginx_plugin_adaptor bpftime_simple_attach_impl runtime spdlog::spdlog)
+add_dependencies(attach_impl_example_nginx_plugin_adaptor bpftime_simple_attach_impl runtime spdlog::spdlog bpftime_llvm_vm)
 
-target_link_libraries(attach_impl_example_nginx_plugin_adaptor PRIVATE bpftime_simple_attach_impl runtime spdlog::spdlog)
+target_link_libraries(attach_impl_example_nginx_plugin_adaptor PRIVATE bpftime_simple_attach_impl runtime spdlog::spdlog bpftime_llvm_vm)
+if(UNIX AND NOT APPLE)
+  # Ensure VM factory registration (llvm) constructors are kept
+  target_link_options(attach_impl_example_nginx_plugin_adaptor PUBLIC "-Wl,--whole-archive" "$<TARGET_FILE:bpftime_llvm_vm>" "-Wl,--no-whole-archive")
+endif()
 target_include_directories(attach_impl_example_nginx_plugin_adaptor PRIVATE ${BPFTIME_RUNTIME_INCLUDE} ${SPDLOG_INCLUDE} ${SIMPLE_ATTACH_IMPL_INCLUDE})
 
 # add controller target

@@ -6,6 +6,10 @@ namespace bpftime
 void convert_gum_cpu_context_to_pt_regs(const ::_GumX64CpuContext &context,
 					pt_regs &regs)
 {
+	// Gum only exposes the general-purpose register subset. Clear fields such
+	// as orig_ax, cs, flags, and ss instead of leaking uninitialized stack data
+	// into the BPF pt_regs context.
+	regs = {};
 	regs.ip = context.rip;
 	regs.r15 = context.r15;
 	regs.r14 = context.r14;

@@ -2,6 +2,7 @@
 #include "syscall_trace_attach_private_data.hpp"
 #include <catch2/catch_test_macros.hpp>
 #include <cstdint>
+#include <stdexcept>
 #include <syscall_trace_attach_impl.hpp>
 using namespace bpftime::attach;
 
@@ -9,6 +10,13 @@ extern "C" int64_t _bpftime_dummy_syscall(int64_t, int64_t, int64_t, int64_t,
 					  int64_t, int64_t, int64_t)
 {
 	return 0;
+}
+
+static int syscall_call_count;
+extern "C" int64_t _bpftime_counting_syscall(int64_t, int64_t, int64_t, int64_t,
+					     int64_t, int64_t, int64_t)
+{
+	return ++syscall_call_count;
 }
 
 TEST_CASE("Test syscall dispatch - global")
@@ -172,4 +180,31 @@ TEST_CASE("Test syscall dispatch - multiple")
 	invoke_cnt = 0;
 	attacher.dispatch_syscall(sys_name_to_nr.at("write"), 0, 0, 0, 0, 0, 0);
 	REQUIRE(invoke_cnt == 0);
+}
+
+TEST_CASE("A failing exit callback is contained")
+{
+	syscall_trace_attach_private_data data;
+	data.sys_nr = 11;
+	data.is_enter = false;
+	syscall_trace_attach_impl attacher;
+	attacher.set_original_syscall_function(_bpftime_counting_syscall);
+	REQUIRE(attacher.create_attach_with_ebpf_callback(
+			[&](const void *, size_t, uint64_t *) -> int {
+				throw std::runtime_error(
+					"test callback failure");
+			},
+			data, ATTACH_SYSCALL_TRACE) >= 0);
+	int later_callback_count = 0;
+	data.sys_nr = -1;
+	REQUIRE(attacher.create_attach_with_ebpf_callback(
+			[&](const void *, size_t, uint64_t *) -> int {
+				return ++later_callback_count;
+			},
+			data, ATTACH_SYSCALL_TRACE) >= 0);
+	syscall_call_count = 0;
+	REQUIRE(attacher.dispatch_syscall(11, 0, 0, 0, 0, 0, 0) == 1);
+	REQUIRE(syscall_call_count == 1);
+	REQUIRE(later_callback_count == 1);
+	REQUIRE(!curr_thread_override_return_callback.has_value());
 }

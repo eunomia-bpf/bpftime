@@ -1,0 +1,5 @@
+vec_add
+matrixMul
+simpleCUBLAS
+.cuda_probe.stderr
+

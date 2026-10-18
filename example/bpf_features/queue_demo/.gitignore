@@ -1,0 +1,13 @@
+# Build artifacts
+.output/
+*.o
+*.skel.h
+
+# Executables
+uprobe_queue
+uprobe_stack
+target
+
+# Temp files
+*.tmp
+*~

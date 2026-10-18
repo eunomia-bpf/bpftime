@@ -1,0 +1,12 @@
+# Build artifacts
+.output/
+*.o
+*.skel.h
+
+# Executables
+uprobe_bloom_filter
+target
+
+# Temp files
+*.tmp
+*~

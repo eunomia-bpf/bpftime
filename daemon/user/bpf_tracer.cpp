@@ -6,6 +6,7 @@
 #include "spdlog/common.h"
 #include <argp.h>
 #include <cstddef>
+#include <cstdarg>
 #include <filesystem>
 #include <fstream>
 #include <signal.h>
@@ -36,15 +37,53 @@ using namespace bpftime;
 static volatile sig_atomic_t exiting = 0;
 static bool verbose = false;
 
+static std::string format_variadic_message(const char *format, va_list args)
+{
+	va_list args_copy;
+	va_copy(args_copy, args);
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wformat-nonliteral"
+	const int size = vsnprintf(nullptr, 0, format, args_copy);
+#pragma GCC diagnostic pop
+	va_end(args_copy);
+	if (size <= 0)
+		return {};
+	std::string message(static_cast<size_t>(size) + 1, '\0');
+	va_copy(args_copy, args);
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wformat-nonliteral"
+	vsnprintf(message.data(), message.size(), format, args_copy);
+#pragma GCC diagnostic pop
+	va_end(args_copy);
+	message.resize(static_cast<size_t>(size));
+	while (!message.empty() &&
+	       (message.back() == '\n' || message.back() == '\r')) {
+		message.pop_back();
+	}
+	return message;
+}
+
 static int libbpf_print_fn(enum libbpf_print_level level, const char *format,
 			   va_list args)
 {
 	if (level == LIBBPF_DEBUG && !verbose)
 		return 0;
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wformat-nonliteral"
-	return vfprintf(stderr, format, args);
-#pragma GCC diagnostic pop
+	auto message = format_variadic_message(format, args);
+	switch (level) {
+	case LIBBPF_WARN:
+		SPDLOG_WARN("{}", message);
+		break;
+	case LIBBPF_INFO:
+		SPDLOG_INFO("{}", message);
+		break;
+	case LIBBPF_DEBUG:
+		SPDLOG_DEBUG("{}", message);
+		break;
+	default:
+		SPDLOG_ERROR("{}", message);
+		break;
+	}
+	return static_cast<int>(message.size());
 }
 
 static void sig_int(int signo)
@@ -138,8 +177,7 @@ int bpftime::start_daemon(struct daemon_config env)
 	libbpf_set_print(libbpf_print_fn);
 
 	if (signal(SIGINT, sig_int) == SIG_ERR) {
-		fprintf(stderr, "can't set signal handler: %s\n",
-			strerror(errno));
+		SPDLOG_ERROR("can't set signal handler: {}", strerror(errno));
 		err = 1;
 		return err;
 	}
@@ -147,7 +185,7 @@ int bpftime::start_daemon(struct daemon_config env)
 	obj = bpf_tracer_bpf__open();
 	if (!obj) {
 		err = -1;
-		fprintf(stderr, "failed to open BPF object\n");
+		SPDLOG_ERROR("failed to open BPF object");
 		return err;
 	}
 
@@ -207,7 +245,7 @@ int bpftime::start_daemon(struct daemon_config env)
 
 	err = bpf_tracer_bpf__load(obj);
 	if (err) {
-		fprintf(stderr, "failed to load BPF object: %d\n", err);
+		SPDLOG_ERROR("failed to load BPF object: {}", err);
 		goto cleanup;
 	}
 	if (env.whitelist_enabled()) {
@@ -228,7 +266,7 @@ int bpftime::start_daemon(struct daemon_config env)
 	}
 	err = bpf_tracer_bpf__attach(obj);
 	if (err) {
-		fprintf(stderr, "failed to attach BPF programs\n");
+		SPDLOG_ERROR("failed to attach BPF programs");
 		goto cleanup;
 	}
 
@@ -237,7 +275,7 @@ int bpftime::start_daemon(struct daemon_config env)
 			      &handler, NULL);
 	if (!rb) {
 		err = -1;
-		fprintf(stderr, "Failed to create ring buffer\n");
+		SPDLOG_ERROR("Failed to create ring buffer");
 		goto cleanup;
 	}
 

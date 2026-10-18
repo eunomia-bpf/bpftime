@@ -4,9 +4,11 @@
  * All rights reserved.
  */
 #include "bpftime_driver.hpp"
+#include "bpf_prog_insns.hpp"
 #include "bpftime_config.hpp"
 #include <linux/bpf.h>
 #include <bpf/bpf.h>
+#include <boost/scope_exit.hpp>
 #include "ebpf_inst.h"
 #include <spdlog/spdlog.h>
 #include "bpftime_shm.hpp"
@@ -84,12 +86,15 @@ static int relocate_bpf_prog_insns(std::vector<ebpf_inst> &insns,
 	}
 	SPDLOG_DEBUG("relocate bpf prog insns for id {}, cnt {}", id,
 		      insn_data.code_len);
-	// resize the insns
-	insns.resize(insn_data.code_len);
-	const ebpf_inst *orignal_insns = (const ebpf_inst *)insn_data.code;
-	insns.assign(orignal_insns, orignal_insns + insn_data.code_len);
+	res = bpftime::detail::copy_captured_bpf_prog_insns(insns, insn_data);
+	if (res < 0) {
+		SPDLOG_ERROR(
+			"BPF program {} has {} instructions, exceeding capture capacity {}",
+			id, insn_data.code_len, BPF_COMPLEXITY_LIMIT_INSNS);
+		return res;
+	}
 	for (size_t i = 0; i < insn_data.code_len; i++) {
-		const struct ebpf_inst inst = orignal_insns[i];
+		const struct ebpf_inst inst = insns[i];
 		bool store = false;
 
 		switch (inst.code) {
@@ -163,6 +168,12 @@ int bpftime_driver::bpftime_progs_create_server(int kernel_id, int server_pid)
 			      kernel_id, errno);
 		return -1;
 	}
+	BOOST_SCOPE_EXIT_ALL(=)
+	{
+		const int saved_errno = errno;
+		close(fd);
+		errno = saved_errno;
+	};
 	SPDLOG_DEBUG("get prog fd {} for id {}", fd, kernel_id);
 	bpf_prog_info info = {};
 	uint32_t info_len = sizeof(info);
@@ -197,7 +208,6 @@ int bpftime_driver::bpftime_progs_create_server(int kernel_id, int server_pid)
 			      kernel_id);
 		return -1;
 	}
-	close(fd);
 	return kernel_id;
 }
 
@@ -208,6 +218,12 @@ int bpftime_driver::bpftime_maps_create_server(int kernel_id)
 		SPDLOG_ERROR("Failed to get map fd for id {}", kernel_id);
 		return -1;
 	}
+	BOOST_SCOPE_EXIT_ALL(=)
+	{
+		const int saved_errno = errno;
+		close(map_fd);
+		errno = saved_errno;
+	};
 	bpf_map_info info = {};
 	uint32_t info_len = sizeof(info);
 	int res = bpf_obj_get_info_by_fd(map_fd, &info, &info_len);
@@ -244,9 +260,9 @@ int bpftime_driver::bpftime_maps_create_server(int kernel_id)
 	return kernel_id;
 }
 
-int bpftime_driver::bpftime_attach_perf_to_bpf_fd_server(int server_pid,
-							 int perf_fd,
-							 int bpf_prog_fd)
+int bpftime_driver::bpftime_attach_perf_to_bpf_fd_server(
+	int server_pid, int perf_fd, int bpf_prog_fd,
+	std::optional<uint64_t> cookie)
 {
 	int prog_id =
 		get_bpf_obj_id_from_pid_fd(object, server_pid, bpf_prog_fd);
@@ -256,12 +272,13 @@ int bpftime_driver::bpftime_attach_perf_to_bpf_fd_server(int server_pid,
 			bpf_prog_fd);
 		return -1;
 	}
-	return bpftime_attach_perf_to_bpf_server(server_pid, perf_fd, prog_id);
+	return bpftime_attach_perf_to_bpf_server(server_pid, perf_fd, prog_id,
+						 cookie);
 }
 
-int bpftime_driver::bpftime_attach_perf_to_bpf_server(int server_pid,
-						      int perf_fd,
-						      int kernel_bpf_id)
+int bpftime_driver::bpftime_attach_perf_to_bpf_server(
+	int server_pid, int perf_fd, int kernel_bpf_id,
+	std::optional<uint64_t> cookie)
 {
 	int perf_id = check_and_get_pid_fd(server_pid, perf_fd);
 	if (perf_id < 0) {
@@ -282,7 +299,9 @@ int bpftime_driver::bpftime_attach_perf_to_bpf_server(int server_pid,
 		}
 	}
 
-	int res = bpftime_attach_perf_to_bpf(perf_id, kernel_bpf_id);
+	int res = cookie ? bpftime_attach_perf_to_bpf_with_cookie(
+				   perf_id, kernel_bpf_id, *cookie) :
+			   bpftime_attach_perf_to_bpf(perf_id, kernel_bpf_id);
 	if (res < 0) {
 		SPDLOG_ERROR("Failed to attach perf to bpf");
 		return -1;
@@ -319,7 +338,7 @@ int bpftime_driver::bpftime_perf_event_enable_server(int server_pid, int fd)
 {
 	int fd_id = check_and_get_pid_fd(server_pid, fd);
 	if (fd_id < 0) {
-		spdlog::warn("Unrecorded uprobe fd: {} for pid {}", fd,
+		SPDLOG_WARN("Unrecorded uprobe fd: {} for pid {}", fd,
 			     server_pid);
 		return 0;
 	}
@@ -381,8 +400,8 @@ bpftime_driver::bpftime_driver(daemon_config cfg, struct bpf_tracer_bpf *obj)
 	config = cfg;
 	object = obj;
 	bpftime_initialize_global_shm(shm_open_type::SHM_REMOVE_AND_CREATE);
-	auto config = construct_agent_config_from_env();
-	bpftime_set_agent_config(std::move(config));
+	auto config = construct_runtime_config_from_env();
+	bpftime_set_runtime_config(std::move(config));
 }
 
 bpftime_driver::~bpftime_driver()

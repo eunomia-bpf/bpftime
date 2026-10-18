@@ -1,52 +1,174 @@
-name: Build and public docker image
+name: Build and push docker image
 
 on:
+  workflow_dispatch:
   push:
-    branches: "master"
-  pull_request: 
-    branches: "master"
+    branches: ["master"]
+    tags: ["v*"]
+    paths:
+      - ".github/workflows/docker.yml"
+      - "Dockerfile"
+      - "attach/**"
+      - "benchmark/**"
+      - "cmake/**"
+      - "daemon/**"
+      - "runtime/**"
+      - "tools/**"
+      - "vm/**"
+      - "third_party/**"
+      - "CMakeLists.txt"
+      - ".gitmodules"
+  pull_request:
+    branches: ["master"]
+    paths:
+      - ".github/workflows/docker.yml"
+      - "Dockerfile"
+      - "attach/**"
+      - "benchmark/**"
+      - "cmake/**"
+      - "daemon/**"
+      - "runtime/**"
+      - "tools/**"
+      - "vm/**"
+      - "third_party/**"
+      - "CMakeLists.txt"
+      - ".gitmodules"
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}-${{ github.event_name }}
   cancel-in-progress: true
+
+permissions:
+  contents: read
+
 jobs:
-  build-and-push-image:
+  build-image:
+    name: Build Docker image
     runs-on: ubuntu-latest
     # run only when code is compiling and tests are passing
     if: "!contains(github.event.head_commit.message, '[skip ci]') && !contains(github.event.head_commit.message, '[ci skip]')"
     # steps to perform in job
     steps:
       - name: Checkout code
-        uses: actions/checkout@v3
+        uses: actions/checkout@v6
         with:
-          submodules: 'recursive'
+          submodules: "recursive"
 
-      # setup Docker buld action
+      - name: build docker
+        run: docker build .
+
+  build-and-push-image:
+    name: Build and push Docker image
+    runs-on: ubuntu-latest
+    needs: build-image
+    if: "github.event_name != 'pull_request' && github.repository_owner == 'eunomia-bpf' && (github.event_name != 'workflow_dispatch' || github.ref == 'refs/heads/master')"
+    outputs:
+      release_tag: ${{ steps.release-version.outputs.tag }}
+      release_version: ${{ steps.release-version.outputs.version }}
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+        with:
+          submodules: "recursive"
+
+      - name: Resolve workflow-dispatch release version
+        id: release-version
+        if: "github.event_name == 'workflow_dispatch'"
+        run: |
+          git fetch --no-recurse-submodules --force origin '+refs/tags/*:refs/tags/*'
+
+          version=$(sed -n 's/^[[:space:]]*VERSION[[:space:]]\+\([0-9]\+\.[0-9]\+\.[0-9]\+\).*/\1/p' CMakeLists.txt | head -n1)
+          if [ -z "$version" ]; then
+            echo "Unable to resolve project version from CMakeLists.txt" >&2
+            exit 1
+          fi
+
+          major=${version%%.*}
+          rest=${version#*.}
+          minor=${rest%%.*}
+          patch=${rest##*.}
+          tag="v${major}.${minor}.${patch}"
+
+          while git rev-parse -q --verify "refs/tags/$tag" >/dev/null; do
+            patch=$((patch + 1))
+            tag="v${major}.${minor}.${patch}"
+          done
+
+          echo "version=${tag#v}" >> "$GITHUB_OUTPUT"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+
       - name: Set up Docker Buildx
-        id: buildx
-        uses: docker/setup-buildx-action@v2
+        uses: docker/setup-buildx-action@v4
 
       - name: Login to Github Packages
-        uses: docker/login-action@v2
+        uses: docker/login-action@v4
         with:
           registry: ghcr.io
           username: ${{ github.repository_owner }}
           password: ${{ secrets.GITHUB_TOKEN }}
-      - name: build docker
-        run: |
-          docker build .
+
+      - name: Docker metadata
+        id: meta
+        uses: docker/metadata-action@v6
+        with:
+          images: ghcr.io/${{ github.repository_owner }}/bpftime
+          tags: |
+            type=raw,value=latest,enable={{is_default_branch}}
+            type=ref,event=tag
+            type=semver,pattern={{version}}
+            type=raw,value=${{ steps.release-version.outputs.tag }},enable=${{ steps.release-version.outputs.tag != '' }}
+            type=raw,value=${{ steps.release-version.outputs.version }},enable=${{ steps.release-version.outputs.version != '' }}
+            type=sha,format=long
 
       - name: Build image and push to GitHub Container Registry
-        uses: docker/build-push-action@v2
-        if:   "github.repository_owner == 'eunomia-bpf' && !startsWith(github.ref, 'refs/pull/')"
+        id: docker_build
+        uses: docker/build-push-action@v7
         with:
           # relative path to the place where source code with Dockerfile is located
           context: ./
           file: Dockerfile
           platforms: linux/amd64
           # Note: tags has to be all lower-case
-          tags: |
-            ghcr.io/${{ github.repository_owner }}/bpftime:latest
+          tags: ${{ steps.meta.outputs.tags }}
           push: true
 
       - name: Image digest
         run: echo ${{ steps.docker_build.outputs.digest }}
+
+  publish-github-release:
+    name: Publish GitHub Release
+    runs-on: ubuntu-latest
+    needs: build-and-push-image
+    if: "github.repository_owner == 'eunomia-bpf' && ((github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')) || (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/master'))"
+    permissions:
+      contents: write
+    steps:
+      - name: Create GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG_NAME: ${{ needs.build-and-push-image.outputs.release_tag || github.ref_name }}
+        run: |
+          if [ -z "$TAG_NAME" ]; then
+            echo "Release tag was not resolved" >&2
+            exit 1
+          fi
+
+          if gh release view "$TAG_NAME" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "Release $TAG_NAME already exists"
+            exit 0
+          fi
+
+          release_args=(
+            --repo "$GITHUB_REPOSITORY" \
+            --generate-notes \
+            --latest
+          )
+          if [ "$GITHUB_EVENT_NAME" = "workflow_dispatch" ]; then
+            release_args+=(--target "$GITHUB_SHA")
+          else
+            release_args+=(--verify-tag)
+          fi
+
+          gh release create "$TAG_NAME" "${release_args[@]}"

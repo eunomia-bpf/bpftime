@@ -64,7 +64,7 @@ extern thread_local std::optional<void *> current_thread_gum_cpu_context;
 // The frida uprobe attach implementation
 class frida_attach_impl final : public base_attach_impl {
     public:
-	frida_attach_impl();
+	explicit frida_attach_impl(bool use_fuzzy_backtracer = false);
 	~frida_attach_impl();
 	// Create a uprobe attach entry at the specified address
 	int create_uprobe_at(void *func_addr, uprobe_callback &&cb);
@@ -101,6 +101,7 @@ class frida_attach_impl final : public base_attach_impl {
 	std::unordered_map<void *,
 			   std::unique_ptr<class frida_internal_attach_entry> >
 		internal_attaches;
+	bool use_fuzzy_backtracer;
 
 	friend class frida_internal_attach_entry;
 	int attach_at(void *func_addr, frida_attach_entry_callback &&cb);

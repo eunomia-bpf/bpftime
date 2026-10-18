@@ -82,13 +82,22 @@ struct uint32_hasher {
 
 static inline bool check_update_flags(uint64_t flags)
 {
-	if (flags != 0 /*BPF_ANY*/ && flags != 1 /*BPF_NOEXIST*/ &&
-	    flags != 2 /*BPF_EXIST*/) {
+	// Allow custom bpftime ops in the high 32 bits; validate only low 32
+	// bits
+	uint64_t base_flags = flags & 0xFFFFFFFFULL;
+	if (base_flags != 0 /*BPF_ANY*/ && base_flags != 1 /*BPF_NOEXIST*/ &&
+	    base_flags != 2 /*BPF_EXIST*/) {
 		errno = EINVAL;
 		return false;
 	}
 	return true;
 }
+struct int_hasher {
+	size_t operator()(int const &data) const
+	{
+		return data;
+	}
+};
 } // namespace bpftime
 
 #endif

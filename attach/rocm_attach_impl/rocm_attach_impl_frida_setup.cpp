@@ -5,8 +5,6 @@
 #include <cstdint>
 #include <frida-gum.h>
 #include "rocm_attach_impl.hpp"
-#include <clang/Driver/OffloadBundler.h>
-#include <llvm/ADT/StringRef.h>
 #include <vector>
 #include <fstream>
 using namespace bpftime;

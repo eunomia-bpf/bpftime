@@ -11,5 +11,12 @@ target_compile_definitions(attach_impl_example_controller PRIVATE EBPF_PROGRAM_P
 
 add_dependencies(attach_impl_example_controller runtime spdlog::spdlog bpftime-object attach_impl_example_ebpf_program)
 
-target_link_libraries(attach_impl_example_controller PRIVATE runtime spdlog::spdlog bpftime-object)
+add_dependencies(attach_impl_example_controller bpftime_llvm_vm)
+
+target_link_libraries(attach_impl_example_controller PRIVATE runtime spdlog::spdlog bpftime-object bpftime_llvm_vm)
+
+# Keep constructor-based VM factory registration (llvm) from being dropped by the linker
+if(UNIX AND NOT APPLE)
+  target_link_options(attach_impl_example_controller PUBLIC "-Wl,--whole-archive" "$<TARGET_FILE:bpftime_llvm_vm>" "-Wl,--no-whole-archive")
+endif()
 target_include_directories(attach_impl_example_controller PRIVATE ${BPFTIME_RUNTIME_INCLUDE} ${SPDLOG_INCLUDE} ${BPFTIME_OBJECT_INCLUDE_DIRS})

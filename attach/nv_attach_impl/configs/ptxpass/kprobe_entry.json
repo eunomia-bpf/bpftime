@@ -1,0 +1,15 @@
+{
+  "name": "kprobe_entry",
+  "description": "Instrument PTX at kprobe entry points, excluding __memcapture",
+  "attach_points": {
+    "includes": [ "^kprobe/.*$" ],
+    "excludes": [ "^kprobe/__memcapture$" ]
+  },
+  "attach_type": 8,
+  "parameters": {
+    "insert_globaltimer": true,
+    "stub_name": "__bpftime_cuda__kernel_trace"
+  },
+  "validation": {}
+}
+

@@ -10,6 +10,7 @@
 #include "frida_attach_utils.hpp"
 #include "frida_uprobe_attach_impl.hpp"
 #include "handler/handler_manager.hpp"
+#include "bpftime_config.hpp"
 #include "handler/link_handler.hpp"
 #include "spdlog/spdlog.h"
 #include <cstdlib>
@@ -173,7 +174,7 @@ static void handle_sub_process()
 			return priv_data;
 		});
 	register_ufunc_for_print_and_add(&ctx);
-	agent_config config;
+	runtime_config config;
 	config.enable_ufunc_helper_group = true;
 	REQUIRE(ctx.init_attach_ctx_from_handlers(manager, config) == 0);
 
@@ -194,7 +195,7 @@ static void handle_sub_process()
 
 __attribute__((optnone)) TEST_CASE("Test shm progs attach")
 {
-	bpftime::agent_config config;
+	bpftime::runtime_config config;
 	config.set_vm_name("llvm");
 	spdlog::set_level(spdlog::level::debug);
 	SPDLOG_INFO("parent process start");
@@ -202,8 +203,10 @@ __attribute__((optnone)) TEST_CASE("Test shm progs attach")
 
 	// The side that creates the mapping
 	managed_shared_memory segment(create_only, SHM_NAME, 1 << 20);
+	// Use default max_fd_count for tests
+	const size_t test_max_fd_count = DEFAULT_MAX_FD_COUNT;
 	auto manager =
-		segment.construct<handler_manager>(HANDLER_NAME)(segment);
+		segment.construct<handler_manager>(HANDLER_NAME)(segment, test_max_fd_count);
 	auto &manager_ref = *manager;
 
 	// open the object file

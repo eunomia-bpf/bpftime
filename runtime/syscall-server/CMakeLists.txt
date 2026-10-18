@@ -1,6 +1,6 @@
 project(
     "bpftime-syscall-polyfill"
-    VERSION 0.1.0
+    VERSION 0.9.0
     LANGUAGES C CXX
 )
 
@@ -9,6 +9,20 @@ add_library(bpftime-syscall-server SHARED
     syscall_server_main.cpp
     syscall_server_utils.cpp
 )
+
+# Force link VM compat libraries so constructor-based factory registration is retained
+# Ensure VM compat libraries are linked (once) via the runtime library instead of duplicating at server
+if(${BPFTIME_UBPF_JIT})
+  add_dependencies(bpftime-syscall-server bpftime_ubpf_vm)
+  target_link_options(bpftime-syscall-server PUBLIC "-Wl,--whole-archive" "$<TARGET_FILE:bpftime_ubpf_vm>" "-Wl,--no-whole-archive")
+  target_link_libraries(bpftime-syscall-server PUBLIC bpftime_ubpf_vm)
+endif()
+
+if(${BPFTIME_LLVM_JIT})
+  add_dependencies(bpftime-syscall-server bpftime_llvm_vm llvmbpf_vm)
+  target_link_libraries(bpftime-syscall-server PUBLIC bpftime_llvm_vm)
+  target_sources(bpftime-syscall-server PRIVATE $<TARGET_OBJECTS:bpftime_llvm_vm_obj>)
+endif()
 
 target_link_libraries(bpftime-syscall-server PUBLIC
     runtime
@@ -19,21 +33,17 @@ target_link_libraries(bpftime-syscall-server PUBLIC
 
 add_dependencies(bpftime-syscall-server spdlog::spdlog)
 
-if(${BPFTIME_BUILD_WITH_LIBBPF})
-
 target_include_directories(bpftime-syscall-server
     PUBLIC
     "../include"
     "../../vm"
-    "../../third_party/libbpf/include"
     "../../third_party/libbpf/include/uapi"
     ${SPDLOG_INCLUDE}
 )
-else()
-target_include_directories(bpftime-syscall-server
-    PUBLIC
-    "../../vm"
-    ${SPDLOG_INCLUDE}
+
+if(${BPFTIME_BUILD_WITH_LIBBPF})
+target_include_directories(bpftime-syscall-server PUBLIC
+    "../../third_party/libbpf/include"
 )
 endif()
 

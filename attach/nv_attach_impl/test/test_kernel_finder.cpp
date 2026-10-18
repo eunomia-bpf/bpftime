@@ -1281,13 +1281,8 @@ TEST_CASE("Test kernel finder")
 	impl.patch_with_probe_and_retprobe(
 		ORIGINAL_PTX,
 		bpftime::attach::nv_attach_entry{
-			.type =
-				bpftime::attach::nv_attach_function_probe{
-					.func = "kernel_2",
-					.is_retprobe = false,
-				},
 			.instuctions = std::vector<ebpf_inst>(),
-
+			.kernels = std::vector<std::string>{ "kernel_2" },
 		},
 		true);
 	std::string str = ORIGINAL_PTX;

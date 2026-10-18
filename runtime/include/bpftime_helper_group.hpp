@@ -18,6 +18,9 @@ struct bpftime_helper_info {
 	void *fn;
 };
 
+// Checks the concrete implementation as well as the BPF helper number.
+bool helper_is_async_signal_safe(unsigned index, void *fn);
+
 class bpftime_helper_group {
     public:
 	bpftime_helper_group() = default;

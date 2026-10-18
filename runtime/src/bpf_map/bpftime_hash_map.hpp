@@ -9,16 +9,9 @@ namespace bpftime
 
 using namespace boost::interprocess;
 
-// A fixed size hash map that is used in the eBPF runtime.
-// with open addressing and linear probing.
-class bpftime_hash_map {
-    private:
-	inline size_t get_elem_offset(size_t index) const
-	{
-		return index * (4 + _key_size + _value_size);
-	}
-
-	inline bool is_prime(size_t n) const
+class bpftime_hasher{
+private:
+	static inline bool is_prime(size_t n)
 	{
 		if (n <= 1)
 			return false;
@@ -35,12 +28,36 @@ class bpftime_hash_map {
 		return true;
 	}
 
-	inline size_t next_prime(size_t n) const
+public:
+	static inline size_t next_prime(size_t n)
 	{
 		while (!is_prime(n)) {
 			++n;
 		}
 		return n;
+	}
+
+	static size_t hash_func(const void *key, size_t key_size)
+	{
+		size_t hash = 0;
+		for (size_t i = 0; i < key_size; i++) {
+			hash = hash * 31 + ((uint8_t *)key)[i];
+		}
+		return hash;
+	}
+};
+
+// A fixed size hash map that is used in the eBPF runtime.
+// with open addressing and linear probing.
+class bpftime_hash_map {
+    private:
+	static constexpr uint32_t BUCKET_EMPTY = 0;
+	static constexpr uint32_t BUCKET_FILLED = 1;
+	static constexpr uint32_t BUCKET_DELETED = 2;
+
+	inline size_t get_elem_offset(size_t index) const
+	{
+		return index * (4 + _key_size + _value_size);
 	}
 
 	size_t _key_size;
@@ -63,7 +80,7 @@ class bpftime_hash_map {
 			 size_t key_size, size_t value_size)
 		: _key_size(key_size), _value_size(value_size),
 		  // Use nearest prime  number
-		  _num_buckets(next_prime(num_buckets)),
+		  _num_buckets(bpftime_hasher::next_prime(num_buckets)),
 		  // Use the original bucket count
 		  _max_element_count(num_buckets),
 		  // Initialize count to 0
@@ -73,31 +90,33 @@ class bpftime_hash_map {
 				   0);
 	}
 
-	size_t hash_func(const void *key)
+	inline uint32_t get_bucket_state(size_t index) const
 	{
-		size_t hash = 0;
-		for (size_t i = 0; i < _key_size; i++) {
-			hash = hash * 31 + ((uint8_t *)key)[i];
-		}
-		return hash;
+		return *(const uint32_t *)(uintptr_t)&data_buffer[get_elem_offset(
+			index)];
 	}
 
 	inline bool is_empty(size_t index) const
 	{
-		return *(uint32_t *)(uintptr_t)&data_buffer[get_elem_offset(
-			       index)] == 0;
+		return get_bucket_state(index) != BUCKET_FILLED;
 	}
 
 	inline void set_empty(size_t index)
 	{
 		*(uint32_t *)(uintptr_t)&data_buffer[get_elem_offset(index)] =
-			0;
+			BUCKET_EMPTY;
 	}
 
 	inline void set_filled(size_t index)
 	{
 		*(uint32_t *)(uintptr_t)&data_buffer[get_elem_offset(index)] =
-			1;
+			BUCKET_FILLED;
+	}
+
+	inline void set_deleted(size_t index)
+	{
+		*(uint32_t *)(uintptr_t)&data_buffer[get_elem_offset(index)] =
+			BUCKET_DELETED;
 	}
 
 	inline void *get_key(size_t index)
@@ -122,13 +141,15 @@ class bpftime_hash_map {
 
 	void *elem_lookup(const void *key)
 	{
-		size_t index = hash_func(key) % _num_buckets;
+		size_t index = bpftime_hasher::hash_func(key, _key_size) % _num_buckets;
 		size_t start_index = index;
 		do {
-			if (is_empty(index)) {
+			const auto state = get_bucket_state(index);
+			if (state == BUCKET_EMPTY) {
 				return nullptr;
 			}
-			if (std::memcmp(get_key(index), key, _key_size) == 0) {
+			if (state == BUCKET_FILLED &&
+			    std::memcmp(get_key(index), key, _key_size) == 0) {
 				return get_value(index);
 			}
 			index = (index + 1) % _num_buckets;
@@ -138,18 +159,22 @@ class bpftime_hash_map {
 
 	bool elem_update(const void *key, const void *value)
 	{
-		size_t index = hash_func(key) % _num_buckets;
+		size_t index = bpftime_hasher::hash_func(key, _key_size) % _num_buckets;
 		size_t start_index = index;
+		size_t first_deleted = _num_buckets;
 
 		// Iterate over the hash map using linear probing
 		do {
-			if (is_empty(index)) {
+			const auto state = get_bucket_state(index);
+			if (state == BUCKET_EMPTY) {
 				// If the current bucket is empty, insert the
 				// new element
 				if (_count >= _max_element_count) {
 					// Reject if the hash map is full
 					return false;
 				}
+				if (first_deleted != _num_buckets)
+					index = first_deleted;
 				// Insert the new element
 				std::memcpy(get_key(index), key, _key_size);
 				std::memcpy(get_value(index), value,
@@ -158,6 +183,9 @@ class bpftime_hash_map {
 				_count++; // Increase the count for the new
 					  // element
 				return true;
+			} else if (state == BUCKET_DELETED) {
+				if (first_deleted == _num_buckets)
+					first_deleted = index;
 			} else if (std::memcmp(get_key(index), key,
 					       _key_size) == 0) {
 				// If the current bucket has a matching key,
@@ -171,20 +199,31 @@ class bpftime_hash_map {
 			index = (index + 1) % _num_buckets;
 		} while (index != start_index);
 
+		if (first_deleted != _num_buckets &&
+		    _count < _max_element_count) {
+			std::memcpy(get_key(first_deleted), key, _key_size);
+			std::memcpy(get_value(first_deleted), value, _value_size);
+			set_filled(first_deleted);
+			_count++;
+			return true;
+		}
+
 		return false; // The hash map is full and no empty or matching
 			      // slot was found
 	}
 
 	bool elem_delete(const void *key)
 	{
-		size_t index = hash_func(key) % _num_buckets;
+		size_t index = bpftime_hasher::hash_func(key, _key_size) % _num_buckets;
 		size_t start_index = index;
 		do {
-			if (is_empty(index)) {
+			const auto state = get_bucket_state(index);
+			if (state == BUCKET_EMPTY) {
 				return false; // Key not found
 			}
-			if (std::memcmp(get_key(index), key, _key_size) == 0) {
-				set_empty(index);
+			if (state == BUCKET_FILLED &&
+			    std::memcmp(get_key(index), key, _key_size) == 0) {
+				set_deleted(index);
 				// Decrease count if deleting an element
 				_count--;
 				return true;

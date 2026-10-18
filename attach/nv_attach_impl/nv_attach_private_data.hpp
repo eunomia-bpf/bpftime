@@ -17,6 +17,7 @@ struct nv_attach_private_data final : public attach_private_data {
 	uintptr_t comm_shared_mem = 0;
 	std::vector<MapBasicInfo> map_basic_info;
 	std::vector<ebpf_inst> instructions;
+	std::string program_name;
 	int initialize_from_string(const std::string_view &sv) override;
 	std::string to_string() const override;
 };

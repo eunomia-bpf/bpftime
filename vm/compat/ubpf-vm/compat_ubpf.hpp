@@ -12,6 +12,9 @@ std::unique_ptr<bpftime::vm::compat::bpftime_vm_impl> create_ubpf_vm_instance();
 class bpftime_ubpf_vm : public compat::bpftime_vm_impl {
     public:
 	bpftime_ubpf_vm();
+	~bpftime_ubpf_vm() override;
+	bpftime_ubpf_vm(const bpftime_ubpf_vm &) = delete;
+	bpftime_ubpf_vm &operator=(const bpftime_ubpf_vm &) = delete;
 	std::string get_error_message();
 	bool toggle_bounds_check(bool enable);
 	void register_error_print_callback(int (*fn)(FILE *, const char *,

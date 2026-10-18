@@ -11,10 +11,12 @@
 #include <optional>
 #include <vector>
 #include <string>
+#include <map>
 namespace bpftime
 {
 
 extern thread_local std::optional<uint64_t> current_thread_bpf_cookie;
+extern thread_local std::optional<uint64_t> current_thread_tail_call_ret;
 #ifdef BPFTIME_ENABLE_CUDA_ATTACH
 std::optional<std::vector<char>> compile_ptx_to_elf(const std::string &ptx_code,
 						    const char *cpu_target);
@@ -28,13 +30,16 @@ class bpftime_prog {
 	}
 	bpftime_prog(const ebpf_inst *insn, size_t insn_cnt, const char *name);
 	bpftime_prog(const ebpf_inst *insn, size_t insn_cnt, const char *name,
-		     agent_config config);
+		     runtime_config config);
 	~bpftime_prog();
 
 	// load the programs to userspace vm or compile the jit program
 	// if program_name is NULL, will load the first program in the object
 	int bpftime_prog_load(bool jit);
 	int bpftime_prog_unload();
+	// Validate all external calls and compile before installing a signal probe.
+	// Returns -ENOTSUP for unaudited helpers or an unavailable eager JIT.
+	int prepare_for_signal_execution();
 
 	// exec in user space
 	int bpftime_prog_exec(void *memory, size_t memory_size,
@@ -53,7 +58,7 @@ class bpftime_prog {
 #ifdef BPFTIME_ENABLE_CUDA_ATTACH
 	bool is_cuda() const
 	{
-		return name.ends_with("__cuda");
+		return name.starts_with("cuda__");
 	}
 	const void *get_cuda_elf_binary() const
 	{
@@ -88,13 +93,17 @@ class bpftime_prog {
 	// vm at the first element
 	struct ebpf_vm *vm;
 
-	bool jitted;
+	bool jitted = false;
+	bool program_loaded = false;
+	bool signal_ready = false;
+	bool loaded_from_aot = false;
+	std::map<unsigned, bool> signal_safe_helpers;
 
 	// used in jit
-	ebpf_jit_fn fn;
+	ebpf_jit_fn fn = nullptr;
 	std::vector<struct ebpf_inst> insns;
 
-	char *errmsg;
+	char *errmsg = nullptr;
 
 	// ufunc ctx
 	struct bpftime_ufunc_ctx *ufunc_ctx;

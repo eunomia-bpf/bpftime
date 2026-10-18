@@ -30,7 +30,7 @@ int main(int argc, const char **argv)
 	bpftime_initialize_global_shm(shm_open_type::SHM_OPEN_ONLY);
 
 	bpf_attach_ctx ctx;
-	agent_config config;
+	runtime_config config;
 	config.enable_ufunc_helper_group = true;
 	res = ctx.init_attach_ctx_from_handlers(config);
 	if (res != 0) {
