@@ -35,6 +35,10 @@ class shm_lifecycle_lock {
     public:
 	explicit shm_lifecycle_lock(const char *shm_name) noexcept;
 	~shm_lifecycle_lock();
+	bool owns_lock() const
+	{
+		return lock_fd >= 0;
+	}
 
 	shm_lifecycle_lock(const shm_lifecycle_lock &) = delete;
 	shm_lifecycle_lock &operator=(const shm_lifecycle_lock &) = delete;
@@ -52,6 +56,11 @@ static constexpr std::uint64_t BPFTIME_EPOCH_SEQ_MISSING = UINT64_MAX - 1;
 // - even : stable; session_id = epoch_seq / 2
 struct bpftime_global_epoch_state {
 	std::uint64_t epoch_seq = 0;
+};
+
+struct shm_cleanup_state {
+	std::uint64_t generation;
+	std::uint32_t disabled = 0;
 };
 
 using syscall_pid_set_allocator = boost::interprocess::allocator<
@@ -92,7 +101,9 @@ class bpftime_shm {
 	struct bpftime::runtime_config *runtime_config = nullptr;
 
 	// Record which pids are injected by agent
-	alive_agent_pids *injected_pids;
+	alive_agent_pids *injected_pids = nullptr;
+	std::string segment_name;
+	shm_cleanup_state *cleanup_state = nullptr;
 
 	// Record which pids own or use the syscall-server side of this shm.
 	alive_syscall_server_pid_set *alive_syscall_server_pids = nullptr;
@@ -109,7 +120,6 @@ class bpftime_shm {
 	bool cuda_host_memory_registered = false;
 #endif
 
-
 #if BPFTIME_ENABLE_MPK
 	// mpk key for protect shm
 	bool is_mpk_init = false;
@@ -117,6 +127,13 @@ class bpftime_shm {
 #endif
 
     public:
+	// Call with the lifecycle lock held, only for server-created segments.
+	void enable_automatic_cleanup();
+	void disable_automatic_cleanup() noexcept;
+	// Call with the lifecycle lock held. Unknown state always preserves
+	// shm.
+	bool try_remove_unused_shm() noexcept;
+	void leave_and_try_cleanup(bool server) noexcept;
 	shm_open_type get_shm_open_type() const
 	{
 		return open_type;
@@ -142,34 +159,34 @@ class bpftime_shm {
 	// Using a set stored in the shared memory
 	void set_syscall_trace_setup(int pid, bool whether);
 
-		// Add a pid into alive agent set
-		bool add_pid_into_alive_agent_set(int pid);
-		// Remove a pid from alive agent set
-		bool remove_pid_from_alive_agent_set(int pid);
-		// Iterate over all pids from the alive agent set. Returns false when
-		// the snapshot could not be read safely.
-		bool iterate_all_pids_in_alive_agent_set(
-			std::function<void(int)> &&cb);
-		// Add a pid into alive syscall-server set
-		bool add_pid_into_alive_syscall_server_set(int pid);
-		// Remove a pid from alive syscall-server set
-		bool remove_pid_from_alive_syscall_server_set(int pid);
-		// Iterate over all pids from the alive syscall-server set. Returns
-		// false when the snapshot could not be read safely.
-		bool iterate_all_pids_in_alive_syscall_server_set(
-			std::function<void(int)> &&cb);
+	// Add a pid into alive agent set
+	bool add_pid_into_alive_agent_set(int pid);
+	// Remove a pid from alive agent set
+	bool remove_pid_from_alive_agent_set(int pid);
+	// Iterate over all pids from the alive agent set. Returns false when
+	// the snapshot could not be read safely.
+	bool iterate_all_pids_in_alive_agent_set(std::function<void(int)> &&cb);
+	// Add a pid into alive syscall-server set
+	bool add_pid_into_alive_syscall_server_set(int pid);
+	// Remove a pid from alive syscall-server set
+	bool remove_pid_from_alive_syscall_server_set(int pid);
+	// Iterate over all pids from the alive syscall-server set. Returns
+	// false when the snapshot could not be read safely.
+	bool iterate_all_pids_in_alive_syscall_server_set(
+		std::function<void(int)> &&cb);
 
-	// Server-side: clear all existing handlers (maps/progs/links/events) and
-	// reset per-session bookkeeping stored in shm. This is used to allow
-	// repeated "bpftime trace" sessions without recreating the shm object, so
-	// already-injected agents keep the same mapping.
+	// Server-side: clear all existing handlers (maps/progs/links/events)
+	// and reset per-session bookkeeping stored in shm. This is used to
+	// allow repeated "bpftime trace" sessions without recreating the shm
+	// object, so already-injected agents keep the same mapping.
 	void reset_server_state();
-	// Server-side: start a new session (epoch++) and clear handlers. Returns
-	// the new stable epoch_seq (even).
+	// Server-side: start a new session (epoch++) and clear handlers.
+	// Returns the new stable epoch_seq (even).
 	std::uint64_t begin_new_session();
 	// Agent/observer: best-effort read a stable epoch_seq (even).
 	// Returns 0 if the epoch object isn't available.
-	// Returns UINT64_MAX if the epoch couldn't be stabilized within max_tries.
+	// Returns UINT64_MAX if the epoch couldn't be stabilized within
+	// max_tries.
 	std::uint64_t read_stable_epoch_seq(int max_tries = 200) const;
 
 	const handler_variant &get_handler(int fd) const;
@@ -300,7 +317,8 @@ public:
 	// initialize the shared memory globally
 	bpftime_shm(bpftime::shm_open_type type);
 	// initialize the shared memory with a given name
-	bpftime_shm(const char *shm_name, shm_open_type type);
+	bpftime_shm(const char *shm_name, shm_open_type type,
+		    bool initialize_cuda = true);
 
 	const handler_manager *get_manager() const;
 
@@ -341,3 +359,4 @@ extern bpftime_shm_holder shm_holder;
 } // namespace bpftime
 
 #endif
+

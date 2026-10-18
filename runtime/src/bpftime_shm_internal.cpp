@@ -43,6 +43,7 @@ void stop_cuda_watcher_before_shm_unmap();
 #include <unistd.h>
 #include <variant>
 #include <sys/mman.h>
+#include <signal.h>
 
 static bool global_shm_initialized = false;
 
@@ -101,11 +102,11 @@ static __attribute__((destructor(65535))) void __destruct_shm()
 	// by an agent instance
 	if (bpftime::shm_holder.global_shared_memory.get_open_type() ==
 	    bpftime::shm_open_type::SHM_OPEN_ONLY) {
-		// Try our best to remove the current pid from alive agent's set
-		int self_pid = getpid();
-		// It doesn't matter if the current pid is not in the set
+#ifdef BPFTIME_ENABLE_CUDA_ATTACH
+		bpftime::stop_cuda_watcher_before_shm_unmap();
+#endif
 		bpftime::shm_holder.global_shared_memory
-			.remove_pid_from_alive_agent_set(self_pid);
+			.leave_and_try_cleanup(false);
 	}
 
 	bpftime_destroy_global_shm();
@@ -200,12 +201,16 @@ shm_lifecycle_lock::shm_lifecycle_lock(const char *shm_name) noexcept
 			return;
 		}
 		(void)fchmod(lock_fd, 0666);
-		while (flock(lock_fd, LOCK_EX) != 0) {
-			if (errno != EINTR) {
+		const auto deadline = std::chrono::steady_clock::now() +
+			std::chrono::milliseconds(250);
+		while (flock(lock_fd, LOCK_EX | LOCK_NB) != 0) {
+			if ((errno != EINTR && errno != EWOULDBLOCK) ||
+			    std::chrono::steady_clock::now() >= deadline) {
 				close(lock_fd);
 				lock_fd = -1;
 				return;
 			}
+			std::this_thread::sleep_for(std::chrono::milliseconds(1));
 		}
 	} catch (...) {
 		if (lock_fd >= 0) {
@@ -787,8 +792,9 @@ bool bpftime_shm::is_exist_fake_fd(int fd) const
 	return manager->is_allocated(fd);
 }
 
-bpftime_shm::bpftime_shm(const char *shm_name, shm_open_type type)
-	: open_type(type)
+bpftime_shm::bpftime_shm(const char *shm_name, shm_open_type type,
+		       [[maybe_unused]] bool initialize_cuda)
+	: open_type(type), segment_name(shm_name)
 {
 	// Get the config from env because the shared memory is not initialized
 	auto config = construct_runtime_config_from_env();
@@ -934,10 +940,14 @@ bpftime_shm::bpftime_shm(const char *shm_name, shm_open_type type)
 			"NOT creating global shm. This is only for testing purpose.");
 		return;
 	}
+	cleanup_state = segment.find<shm_cleanup_state>(
+		"bpftime_shm_cleanup_state_v1").first;
 #ifdef BPFTIME_ENABLE_CUDA_ATTACH
 	// Move CommSharedMem from the agent’s local memory to shared memory to
 	// improve performance.
-	if (open_type == shm_open_type::SHM_OPEN_ONLY) {
+	if (!initialize_cuda) {
+		// Lifecycle inspection must not initialize GPU resources.
+	} else if (open_type == shm_open_type::SHM_OPEN_ONLY) {
 		auto pair = segment.find<cuda::CommSharedMem>(
 			"cuda_comm_shared_mem");
 		for (int i = 0; pair.first == nullptr && i < 100; i++) {
@@ -1283,6 +1293,69 @@ bpftime::bpftime_shm::~bpftime_shm()
 #endif
 }
 
+void bpftime_shm::enable_automatic_cleanup()
+{
+	cleanup_state = segment.construct<shm_cleanup_state>(
+		"bpftime_shm_cleanup_state_v1")(shm_cleanup_state{
+		static_cast<std::uint64_t>(
+			std::chrono::steady_clock::now().time_since_epoch().count()) ^
+		static_cast<std::uint64_t>(getpid())});
+}
+
+void bpftime_shm::disable_automatic_cleanup() noexcept
+{
+	if (cleanup_state)
+		__atomic_store_n(&cleanup_state->disabled, 1, __ATOMIC_RELEASE);
+}
+
+bool bpftime_shm::try_remove_unused_shm() noexcept
+{
+	try {
+		if (!cleanup_state ||
+		    __atomic_load_n(&cleanup_state->disabled, __ATOMIC_ACQUIRE) ||
+		    !injected_pids || !alive_syscall_server_pids || !pid_set_lock)
+			return false;
+		pid_set_scoped_lock lock(pid_set_lock);
+		if (!lock.owns_lock())
+			return false;
+		for (const auto *pids : {injected_pids, alive_syscall_server_pids}) {
+			for (int pid : *pids) {
+				if (kill(pid, 0) == 0 || errno != ESRCH)
+					return false;
+			}
+		}
+		// An explicit unlink/recreate may have replaced the name meanwhile.
+		boost::interprocess::managed_shared_memory named_segment(
+			boost::interprocess::open_only, segment_name.c_str());
+		auto *named_state = named_segment.find<shm_cleanup_state>(
+			"bpftime_shm_cleanup_state_v1").first;
+		if (!named_state || named_state->generation != cleanup_state->generation ||
+		    __atomic_load_n(&cleanup_state->disabled, __ATOMIC_ACQUIRE))
+			return false;
+		return boost::interprocess::shared_memory_object::remove(
+			segment_name.c_str());
+	} catch (...) {
+		return false;
+	}
+}
+
+void bpftime_shm::leave_and_try_cleanup(bool server) noexcept
+{
+	shm_lifecycle_lock lock(segment_name.c_str());
+	if (!lock.owns_lock()) {
+		disable_automatic_cleanup();
+		return;
+	}
+	try {
+		bool removed = server ? remove_pid_from_alive_syscall_server_set(getpid())
+			: remove_pid_from_alive_agent_set(getpid());
+		if (removed)
+			try_remove_unused_shm();
+	} catch (...) {
+		disable_automatic_cleanup();
+	}
+}
+
 bool bpftime_shm::add_pid_into_alive_agent_set(int pid)
 {
 	if (injected_pids == nullptr) {
@@ -1291,9 +1364,13 @@ bool bpftime_shm::add_pid_into_alive_agent_set(int pid)
 	auto update = [&]() { injected_pids->insert(pid); };
 	pid_set_scoped_lock lock(pid_set_lock);
 	if (!lock.owns_lock()) {
+		disable_automatic_cleanup();
 		return false;
 	}
-	update();
+	try { update(); } catch (...) {
+		disable_automatic_cleanup();
+		throw;
+	}
 	return true;
 }
 bool bpftime_shm::remove_pid_from_alive_agent_set(int pid)
@@ -1337,9 +1414,13 @@ bool bpftime_shm::add_pid_into_alive_syscall_server_set(int pid)
 	auto update = [&]() { alive_syscall_server_pids->insert(pid); };
 	pid_set_scoped_lock lock(pid_set_lock);
 	if (!lock.owns_lock()) {
+		disable_automatic_cleanup();
 		return false;
 	}
-	update();
+	try { update(); } catch (...) {
+		disable_automatic_cleanup();
+		throw;
+	}
 	return true;
 }
 
