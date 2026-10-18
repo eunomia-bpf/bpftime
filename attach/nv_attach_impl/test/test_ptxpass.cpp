@@ -9,6 +9,12 @@
 #include <sstream>
 #include <string>
 #include <vector>
+#if defined(__linux__)
+#include <dlfcn.h>
+#include "ptxpass_test_paths.hpp"
+#include <sys/wait.h>
+#include <unistd.h>
+#endif
 
 using namespace ptxpass;
 
@@ -234,6 +240,54 @@ TEST_CASE("find_kernel_body locates kernel boundaries", "[ptxpass_core]")
 	REQUIRE(not_found_start == std::string::npos);
 	REQUIRE(not_found_end == std::string::npos);
 }
+
+#if defined(__linux__)
+static int run_missing_kernel_pass(const char *path)
+{
+	pid_t pid = fork();
+	if (pid != 0) {
+		int status = 0;
+		if (pid < 0 || waitpid(pid, &status, 0) != pid)
+			return -1;
+		return status;
+	}
+
+	void *handle = dlopen(path, RTLD_NOW | RTLD_LOCAL);
+	if (handle == nullptr)
+		_exit(2);
+	using process_input_fn = int (*)(const char *, int, char *);
+	auto process_input = reinterpret_cast<process_input_fn>(
+		dlsym(handle, "process_input"));
+	if (process_input == nullptr)
+		_exit(3);
+
+	ptxpass::runtime_request::RuntimeRequest request;
+	request.input.full_ptx = MINIMAL_PTX;
+	request.input.to_patch_kernel = "missing_kernel";
+	request.set_ebpf_instructions({ UINT64_MAX });
+	nlohmann::json input = request;
+	char output[4096] = {};
+	const int output_size = static_cast<int>(sizeof(output));
+	if (process_input(input.dump().c_str(), output_size, output) !=
+	    ptxpass::ExitCode::Success)
+		_exit(4);
+	auto response =
+		nlohmann::json::parse(output)
+			.get<ptxpass::runtime_response::RuntimeResponse>();
+	_exit(response.modified || response.output_ptx != MINIMAL_PTX);
+}
+
+TEST_CASE("PTX passes skip eBPF compilation for missing kernels", "[ptxpass]")
+{
+	for (const char *path :
+	     { BPFTIME_KPROBE_ENTRY_PASS, BPFTIME_KRETPROBE_PASS }) {
+		CAPTURE(path);
+		int status = run_missing_kernel_pass(path);
+		REQUIRE(WIFEXITED(status));
+		REQUIRE(WEXITSTATUS(status) == 0);
+	}
+}
+#endif
 
 TEST_CASE("AttachPointMatcher matches attach points", "[ptxpass_core]")
 {
