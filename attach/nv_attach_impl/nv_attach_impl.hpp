@@ -9,7 +9,6 @@
 #include <cstdint>
 #include <cuda_runtime.h>
 #include <cuda_runtime_api.h>
-#include <dlfcn.h>
 #include <filesystem>
 #include <map>
 #include <memory>
@@ -33,9 +32,6 @@ namespace bpftime
 {
 namespace attach
 {
-
-using print_config_fn = void (*)(int length, char *out);
-using process_input_fn = int (*)(const char *input, int length, char *output);
 
 std::string filter_compiled_ptx_for_ebpf_program(std::string input,
 						 std::string);
@@ -81,37 +77,17 @@ struct nv_attach_entry {
 						       // for pass
 	// Extra serialized parameters (JSON string) reserved for future use
 	std::optional<std::string> extras;
-	struct pass_cfg_with_exec_path *config;
+	const struct pass_cfg_with_exec_path *config;
 };
 
 struct pass_cfg_with_exec_path {
 	std::filesystem::path executable_path;
 	ptxpass::pass_config::PassConfig pass_config;
-	print_config_fn print_config;
-	process_input_fn process_input;
-
-	void *handle;
 
 	pass_cfg_with_exec_path(std::filesystem::path path,
-				ptxpass::pass_config::PassConfig config,
-				print_config_fn print_config,
-				process_input_fn process_input, void *handle)
-		: executable_path(path), pass_config(config),
-		  print_config(print_config), process_input(process_input),
-		  handle(handle)
+				ptxpass::pass_config::PassConfig config)
+		: executable_path(path), pass_config(config)
 	{
-	}
-
-	pass_cfg_with_exec_path(const pass_cfg_with_exec_path &) = delete;
-	pass_cfg_with_exec_path &
-	operator=(const pass_cfg_with_exec_path &) = delete;
-	pass_cfg_with_exec_path(pass_cfg_with_exec_path &&) = default;
-	pass_cfg_with_exec_path &
-	operator=(pass_cfg_with_exec_path &&) = default;
-
-	~pass_cfg_with_exec_path()
-	{
-		dlclose(handle);
 	}
 };
 
