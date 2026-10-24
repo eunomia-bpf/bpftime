@@ -205,7 +205,9 @@ helper_result run_waiting_helper_with_live_pid(const std::string &shm_name,
 			_exit(125);
 		}
 		close(output_pipe[1]);
-		if (setenv("HOME", "/proc/bpftime-unwritable-home", 1) != 0 ||
+		if (unsetenv("BPFTIME_LOG_OUTPUT") != 0 ||
+		    unsetenv("SPDLOG_LEVEL") != 0 ||
+		    setenv("HOME", "/proc/bpftime-unwritable-home", 1) != 0 ||
 		    setenv("BPFTIME_GLOBAL_SHM_NAME", shm_name.c_str(), 1) !=
 			    0 ||
 		    setenv("BPFTIME_SHM_MEMORY_MB", "4", 1) != 0 ||
@@ -474,6 +476,7 @@ TEST_CASE("Syscall server keeps shared memory while an agent pid is alive",
 		run_waiting_helper_with_live_pid(shm_name,
 						 live_pid_set::alive_agent);
 
+	INFO(result.output);
 	REQUIRE(WIFEXITED(result.status));
 	REQUIRE(WEXITSTATUS(result.status) == 0);
 	REQUIRE(result.output.empty());
@@ -492,6 +495,7 @@ TEST_CASE("Syscall server keeps shared memory while a peer server pid is alive",
 		run_waiting_helper_with_live_pid(shm_name,
 						 live_pid_set::syscall_server);
 
+	INFO(result.output);
 	REQUIRE(WIFEXITED(result.status));
 	REQUIRE(WEXITSTATUS(result.status) == 0);
 	REQUIRE(result.output.empty());

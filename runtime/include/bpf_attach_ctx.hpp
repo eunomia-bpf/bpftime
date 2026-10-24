@@ -32,7 +32,7 @@ typedef struct _GumInvocationListener GumInvocationListener;
 namespace bpftime
 {
 
-#ifdef BPFTIME_ENABLE_CUDA_ATTACH
+#if defined(BPFTIME_ENABLE_CUDA_ATTACH) || defined(BPFTIME_ENABLE_ROCM_ATTACH)
 namespace cuda
 {
 	// The old 1<<30 value makes the shared segment too large for Boost IPC.
@@ -100,6 +100,12 @@ struct CommSharedMem {
 	HelperCallResponse resp;
 	uint64_t time_sum[8];
 };
+} // namespace cuda
+#endif
+
+#ifdef BPFTIME_ENABLE_CUDA_ATTACH
+namespace cuda
+{
 struct CUDAContext {
 	// Indicate whether cuda watcher thread should stop
 	std::shared_ptr<std::atomic<bool>> cuda_watcher_should_stop =
@@ -141,6 +147,24 @@ inline uintptr_t get_cuda_shared_mem_device_pointer() noexcept
 }
 
 } // namespace cuda
+#endif
+
+#ifdef BPFTIME_ENABLE_ROCM_ATTACH
+namespace gpu
+{
+using cuda::CommSharedMem;
+using cuda::HelperOperation;
+struct GPUContext {
+	std::shared_ptr<std::atomic<bool>> cuda_watcher_should_stop =
+		std::make_shared<std::atomic<bool>>(false);
+	std::unique_ptr<CommSharedMem> shared_mem;
+	uintptr_t rocm_shared_mem_device_pointer = 0;
+
+	explicit GPUContext(std::unique_ptr<CommSharedMem> &&mem);
+	~GPUContext();
+};
+std::optional<std::unique_ptr<GPUContext>> create_gpu_context();
+} // namespace gpu
 #endif
 
 class base_attach_manager;
@@ -212,6 +236,12 @@ private:
 	std::unique_ptr<cuda::CUDAContext> cuda_ctx;
 	std::thread cuda_watcher_thread;
 #endif
+#ifdef BPFTIME_ENABLE_ROCM_ATTACH
+	void start_gpu_watcher_thread();
+	void stop_gpu_watcher_thread();
+	std::unique_ptr<gpu::GPUContext> gpu_ctx;
+	std::thread gpu_watcher_thread;
+#endif
 
 	constexpr static int CURRENT_ID_OFFSET = 65536;
 	volatile int current_id = CURRENT_ID_OFFSET;
@@ -252,7 +282,7 @@ private:
 	int instantiate_perf_event_handler_at(
 		int id, const bpf_perf_event_handler &perf_handler);
 
-#ifdef BPFTIME_ENABLE_CUDA_ATTACH
+#if defined(BPFTIME_ENABLE_CUDA_ATTACH) || defined(BPFTIME_ENABLE_ROCM_ATTACH)
 	std::vector<attach::MapBasicInfo>
 	create_map_basic_info(int filled_size);
 #endif

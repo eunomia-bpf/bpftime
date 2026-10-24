@@ -53,6 +53,10 @@ typedef int gboolean;
 #include "nv_attach_private_data.hpp"
 #include "nv_attach_impl.hpp"
 #endif
+#ifdef BPFTIME_ENABLE_ROCM_ATTACH
+#include "rocm_attach_impl.hpp"
+#include "rocm_attach_private_data.hpp"
+#endif
 
 #if __linux__ && BPFTIME_BUILD_WITH_LIBBPF
 #include "syscall_trace_attach_impl.hpp"
@@ -799,7 +803,7 @@ static void apply_injected_kv_overrides(const gchar *data)
 	}
 }
 
-#ifdef BPFTIME_ENABLE_CUDA_ATTACH
+#if defined(BPFTIME_ENABLE_CUDA_ATTACH) || defined(BPFTIME_ENABLE_ROCM_ATTACH)
 namespace bpftime::vm::compat
 {
 namespace llvm
@@ -807,6 +811,8 @@ namespace llvm
 void register_llvm_vm_factory();
 } // namespace llvm
 } // namespace bpftime::vm::compat
+#endif
+#ifdef BPFTIME_ENABLE_CUDA_ATTACH
 void **(*original___cudaRegisterFatBinary)(void *) = nullptr;
 
 extern "C" void **__cudaRegisterFatBinary(void *fatbin)
@@ -825,6 +831,26 @@ extern "C" void **__cudaRegisterFatBinary(void *fatbin)
 			return original___cudaRegisterFatBinary(fatbin);
 	}
 	return nullptr;
+}
+#endif
+#ifdef BPFTIME_ENABLE_ROCM_ATTACH
+void **(*original___hipRegisterFatBinary)(void *) = nullptr;
+extern "C" void **__hipRegisterFatBinary(void *fatbin)
+{
+	if (original___hipRegisterFatBinary == nullptr)
+		original___hipRegisterFatBinary =
+			reinterpret_cast<decltype(original___hipRegisterFatBinary)>(
+				dlsym(RTLD_NEXT, "__hipRegisterFatBinary"));
+	auto orig = original___hipRegisterFatBinary;
+	if (orig == nullptr)
+		return nullptr;
+	try {
+		bpftime::vm::compat::llvm::register_llvm_vm_factory();
+		gboolean flag = false;
+		bpftime_agent_main(nullptr, &flag);
+	} catch (...) {
+	}
+	return orig(fatbin);
 }
 #endif
 extern "C" void bpftime_agent_main(const gchar *data, gboolean *stay_resident)
@@ -1047,6 +1073,24 @@ extern "C" void bpftime_agent_main(const gchar *data, gboolean *stay_resident)
 					if (int e =
 						    priv_data->initialize_from_string(
 							    sv);
+					    e < 0) {
+						err = e;
+						return std::unique_ptr<
+							attach_private_data>();
+					}
+					return priv_data;
+				});
+#endif
+#ifdef BPFTIME_ENABLE_ROCM_ATTACH
+			ctx_holder.ctx.register_attach_impl(
+				{ ATTACH_ROCM_PROBE_AND_RETPROBE },
+				std::make_unique<attach::rocm_attach_impl>(),
+				[](const std::string_view &sv, int &err) {
+					std::unique_ptr<attach_private_data>
+						priv_data = std::make_unique<
+							rocm_attach_private_data>();
+					if (int e = priv_data->initialize_from_string(
+						    sv);
 					    e < 0) {
 						err = e;
 						return std::unique_ptr<

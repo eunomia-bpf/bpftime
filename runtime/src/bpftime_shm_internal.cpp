@@ -87,7 +87,9 @@ extern "C" void bpftime_remove_global_shm()
 	}
 }
 
-static __attribute__((destructor(65535))) void __destruct_shm()
+// Run after default-priority C++ destructors and their atexit callbacks, which
+// still need the mapping to remove live syscall-server and agent records.
+static __attribute__((destructor(101))) void __destruct_shm()
 {
 	// If the global shm was never successfully initialized (e.g. a process
 	// that links the runtime but never created/opened shm, or whose
@@ -332,6 +334,28 @@ int bpftime_shm::bpf_map_get_next_key(int fd, const void *key, void *next_key,
 		       -1;
 }
 
+#ifdef BPFTIME_ENABLE_ROCM_ATTACH
+int bpftime_shm::add_rocm_attach(std::optional<int> fd, const char *func_name,
+				 bool retprobe)
+{
+	int new_fd = fd.has_value() ? *fd : open_fake_fd();
+	SPDLOG_INFO(
+		"Set fd {} to rocm attach (custom attach), func_name={}, ret_probe={}",
+		new_fd, func_name, retprobe);
+
+	std::string attach_string = "rocm:";
+	if (retprobe)
+		attach_string += "exit:";
+	else
+		attach_string += "entry:";
+	attach_string += func_name;
+	return manager->set_handler(
+		new_fd,
+		bpftime::bpf_perf_event_handler(1018, attach_string.c_str(),
+						segment),
+		segment);
+}
+#endif
 int bpftime_shm::add_kprobe(std::optional<int> fd, const char *func_name,
 			    uint64_t addr, bool retprobe, size_t ref_ctr_off)
 {

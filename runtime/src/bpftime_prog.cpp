@@ -182,7 +182,7 @@ int bpftime_prog::bpftime_prog_load(bool jit)
 		SPDLOG_ERROR("Failed to load insn: {}", errmsg);
 		return res;
 	}
-	if (is_cuda()) {
+	if (is_cuda() || is_rocm()) {
 		// SPDLOG_INFO("Compiling CUDA program");
 
 		// this->bpftime_prog_register_raw_helper(bpftime_helper_info{
@@ -246,8 +246,8 @@ int bpftime_prog::bpftime_prog_exec(void *memory, size_t memory_size,
 		*return_val = fn(memory, memory_size);
 		return 0;
 	}
-	if (is_cuda()) {
-		throw std::runtime_error("Unable to execute CUDA program");
+	if (is_cuda() || is_rocm()) {
+		throw std::runtime_error("Unable to execute CUDA/ROCm program");
 	}
 	uint64_t val = 0;
 	int res = 0;
@@ -298,7 +298,7 @@ int bpftime_prog::prepare_for_signal_execution()
 	// The MPK access transition has not been audited for signal callbacks.
 	return -ENOTSUP;
 #endif
-	if (is_cuda() || loaded_from_aot)
+	if (is_cuda() || is_rocm() || loaded_from_aot)
 		return -ENOTSUP;
 	const char *backend = ebpf_get_vm_name(vm);
 	if (strcmp(backend, "llvm") != 0 && strcmp(backend, "ubpf") != 0)
