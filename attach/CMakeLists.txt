@@ -19,7 +19,7 @@ if(UNIX AND NOT APPLE)
   if(${BPFTIME_ENABLE_CUDA_ATTACH})
     add_subdirectory(nv_attach_impl)
   endif()
-  if(BPFTIME_ENABLE_ROCM_ATTACH)
+  if(BPFTIME_ENABLE_ROCM_ATTACH OR BPFTIME_BUILD_LUTHIER_EXAMPLES)
     add_subdirectory(rocm_attach_impl)
   endif()
   

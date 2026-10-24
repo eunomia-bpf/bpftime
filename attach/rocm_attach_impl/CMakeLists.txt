@@ -1,3 +1,12 @@
+if(BPFTIME_BUILD_LUTHIER_EXAMPLES)
+    add_subdirectory(luthier-examples)
+endif()
+
+# The Luthier verifier can be built before enabling the ROCm attach backend.
+if(NOT BPFTIME_ENABLE_ROCM_ATTACH)
+    return()
+endif()
+
 include(../../cmake/rocm.cmake)
 
 add_library(

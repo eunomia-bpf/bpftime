@@ -32,6 +32,7 @@ option(BPFTIME_ENABLE_CUDA_ATTACH "Whether to enable CUDA attach" OFF)
 
 option(BPFTIME_ROCM_ROOT "Root for ROCM installation" "")
 option(BPFTIME_ENABLE_ROCM_ATTACH "Whether to enable ROCM attach" OFF)
+option(BPFTIME_BUILD_LUTHIER_EXAMPLES "Build the ROCm Luthier verification executable" OFF)
 
 
 #
