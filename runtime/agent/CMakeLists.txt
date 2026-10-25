@@ -48,13 +48,15 @@ endif()
 
 
 if(${BPFTIME_ENABLE_ROCM_ATTACH})
-  add_dependencies(bpftime-agent bpftime_llvm_vm llvmbpf_vm bpftime_vm)
-  target_link_options(bpftime-agent PUBLIC "-Wl,--whole-archive" "$<TARGET_FILE:bpftime_rocm_attach_impl>" "$<TARGET_FILE:bpftime_llvm_vm>" "$<TARGET_FILE:bpftime_vm>" "$<TARGET_FILE:llvmbpf_vm>" "-Wl,--no-whole-archive")
+  # The LLVM compat object is already embedded above. Whole-archiving it
+  # again duplicates its definitions; ordinary dependencies retain the VM.
   target_link_libraries(bpftime-agent PUBLIC bpftime_rocm_attach_impl)
   target_include_directories(bpftime-agent PUBLIC ${ROCM_ATTACH_IMPL_INCLUDE})
-  list(APPEND EXTRA_LINK_LIBS bpftime_llvm_vm
-    bpftime_vm
-    llvmbpf_vm)
+  # Diagnose missing static Luthier/LLVM dependencies during the link, rather
+  # than deferring them until the agent is loaded into an application.
+  # Also hide linker-generated Luthier section boundaries from other DSOs.
+  target_link_options(bpftime-agent PRIVATE -Wl,-z,defs
+    -Wl,-z,start-stop-visibility=hidden)
 endif()
 
 # Include directories

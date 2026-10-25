@@ -275,7 +275,7 @@ helper_result run_waiting_helper_with_live_pid(const std::string &shm_name,
 	return { status, std::move(output) };
 }
 
-helper_result run_agent_preload_without_shm()
+helper_result run_agent_without_shm(bool load_with_dlopen = false)
 {
 	const std::string shm_name = "bpftime-agent-missing-shm-test-" +
 				     std::to_string(getpid());
@@ -297,11 +297,15 @@ helper_result run_agent_preload_without_shm()
 		    setenv("HOME", "/proc/bpftime-unwritable-home", 1) != 0 ||
 		    setenv("BPFTIME_GLOBAL_SHM_NAME", shm_name.c_str(), 1) !=
 			    0 ||
-		    setenv("LD_PRELOAD", BPFTIME_AGENT_LIBRARY, 1) != 0) {
+		    setenv("BPFTIME_TEST_AGENT_LIBRARY", BPFTIME_AGENT_LIBRARY,
+			   1) != 0 ||
+		    (load_with_dlopen ? unsetenv("LD_PRELOAD") :
+			setenv("LD_PRELOAD", BPFTIME_AGENT_LIBRARY, 1)) != 0) {
 			_exit(126);
 		}
 		execl(BPFTIME_SHM_ALLOCATION_TEST_HELPER,
-		      BPFTIME_SHM_ALLOCATION_TEST_HELPER, "check-sigusr1",
+		      BPFTIME_SHM_ALLOCATION_TEST_HELPER,
+		      load_with_dlopen ? "agent-dlopen" : "check-sigusr1",
 		      nullptr);
 		_exit(127);
 	}
@@ -424,7 +428,17 @@ TEST_CASE("Syscall server preserves the console logger level name",
 TEST_CASE("Agent preload keeps missing shared memory off host stdio",
 	  "[allocation][agent][logging]")
 {
-	auto result = run_agent_preload_without_shm();
+	auto result = run_agent_without_shm();
+	REQUIRE(WIFEXITED(result.status));
+	REQUIRE(WEXITSTATUS(result.status) == 100);
+	REQUIRE(result.output.empty());
+}
+
+TEST_CASE("Agent resolves dependencies with dlopen without host side effects",
+	  "[agent][link][logging]")
+{
+	auto result = run_agent_without_shm(true);
+	INFO(result.output);
 	REQUIRE(WIFEXITED(result.status));
 	REQUIRE(WEXITSTATUS(result.status) == 100);
 	REQUIRE(result.output.empty());

@@ -3,7 +3,6 @@
 #include <json.hpp>
 
 #include <algorithm>
-#include <array>
 #include <cerrno>
 #include <chrono>
 #include <csignal>
@@ -37,13 +36,26 @@ static void run_child(const fs::path &application, const fs::path &tool,
 		const auto name = value.substr(0, value.find('='));
 		if (name != "LD_PRELOAD" && name != "ROCP_TOOL_LIBRARIES" &&
 		    name != "LUTHIER_ARGS" &&
+		    name != "BPFTIME_LOG_OUTPUT" && name != "SPDLOG_LEVEL" &&
+		    name != "BPFTIME_GLOBAL_SHM_NAME" &&
 		    name != "BPFTIME_LUTHIER_REPORT" &&
 		    name != "BPFTIME_LUTHIER_MODE")
 			environment.push_back(std::move(value));
 	}
-	if (mode != "baseline")
+	if (mode == "agent-preload") {
+		environment.push_back("LD_PRELOAD=" + tool.string());
+		// Exercise failed initialization in a real HIP host, isolated from
+		// any live bpftime session. The workload must still run quietly.
+		environment.push_back(
+			"BPFTIME_GLOBAL_SHM_NAME=bpftime-luthier-probe-" +
+			std::to_string(getpid()) + "-" +
+			std::to_string(std::chrono::steady_clock::now()
+					       .time_since_epoch().count()));
+	} else if (mode != "baseline") {
 		environment.push_back("ROCP_TOOL_LIBRARIES=" + tool.string());
-	if (mode != "baseline" && mode != "unconfigured") {
+	}
+	if (mode != "baseline" && mode != "unconfigured" &&
+	    mode != "agent-preload") {
 		auto report_path = output / "probe.jsonl";
 		if (mode == "bad-report") {
 			// A regular file as a parent forces fopen to fail with
@@ -148,7 +160,7 @@ static json verify(const std::string &mode, const fs::path &output)
 	const auto report_path = output / "probe.jsonl";
 	size_t events = 0;
 	if (mode == "baseline" || mode == "unconfigured" ||
-	    mode == "bad-report") {
+	    mode == "bad-report" || mode == "agent-preload") {
 		require(!fs::exists(report_path),
 			"Inactive tool unexpectedly wrote a report");
 	} else {
@@ -216,19 +228,19 @@ static json verify(const std::string &mode, const fs::path &output)
 int main(int argc, char **argv)
 {
 	try {
-		const std::array modes{ "baseline",   "unconfigured",
-					"bad-report", "roundtrip",
-					"entry",      "entry-exit" };
+		std::vector<const char *> modes{ "baseline", "unconfigured",
+			"bad-report", "roundtrip", "entry", "entry-exit" };
 		std::string mode = "all";
 		fs::path application = BPFTIME_LUTHIER_APPLICATION;
 		fs::path tool = BPFTIME_LUTHIER_TOOL_LIBRARY;
+		fs::path agent = BPFTIME_LUTHIER_AGENT_LIBRARY;
 		fs::path output = BPFTIME_LUTHIER_RESULTS;
 		for (int i = 1; i < argc; i += 2) {
 			const std::string option(argv[i]);
 			if (option == "--help") {
 				std::cout
-					<< "Usage: bpftime_luthier_probe [--mode all|baseline|unconfigured|bad-report|roundtrip|entry|entry-exit]"
-					   " [--output-dir DIR] [--application HIP_EXECUTABLE] [--tool TOOL_DSO]\n";
+					<< "Usage: bpftime_luthier_probe [--mode all|baseline|unconfigured|bad-report|roundtrip|entry|entry-exit|agent-preload]"
+					   " [--output-dir DIR] [--application HIP_EXECUTABLE] [--tool TOOL_DSO] [--agent AGENT_DSO]\n";
 				return 0;
 			}
 			if (i + 1 == argc)
@@ -240,11 +252,22 @@ int main(int argc, char **argv)
 				application = argv[i + 1];
 			else if (option == "--tool")
 				tool = argv[i + 1];
+			else if (option == "--agent")
+				agent = argv[i + 1];
 			else if (option == "--output-dir")
 				output = argv[i + 1];
 			else
 				throw std::runtime_error("Unknown option: " +
 							 option);
+		}
+		if (!agent.empty()) {
+			if (!fs::is_regular_file(agent))
+				throw std::runtime_error("Missing agent: " +
+							 agent.string());
+			agent = fs::absolute(agent);
+			modes.push_back("agent-preload");
+		} else if (mode == "agent-preload") {
+			throw std::runtime_error("agent-preload requires --agent AGENT_DSO or BPFTIME_ENABLE_ROCM_ATTACH=ON");
 		}
 		if (mode != "all" &&
 		    std::find(modes.begin(), modes.end(), mode) == modes.end())
@@ -268,7 +291,9 @@ int main(int argc, char **argv)
 			fs::create_directories(directory);
 			fs::remove(directory / "probe.jsonl");
 			fs::remove(directory / "summary.json");
-			run_child(application, tool, current, directory);
+			run_child(application,
+				  std::string(current) == "agent-preload" ? agent : tool,
+				  current, directory);
 			const auto summary = verify(current, directory);
 			std::ofstream result(directory / "summary.json");
 			result.exceptions(std::ios::failbit | std::ios::badbit);

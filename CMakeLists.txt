@@ -31,6 +31,15 @@ project(
 include(cmake/CompilerWarnings.cmake)
 include(cmake/StandardSettings.cmake)
 
+if(BPFTIME_ENABLE_ROCM_ATTACH AND BPFTIME_ENABLE_CUDA_ATTACH)
+  message(FATAL_ERROR "BPFTIME_ENABLE_ROCM_ATTACH and BPFTIME_ENABLE_CUDA_ATTACH cannot both be enabled: ROCm attach requires Luthier's LLVM toolchain. Configure separate build directories for ROCm and CUDA")
+endif()
+
+# Select LLVM before vm/ discovers it. Luthier uses private LLVM APIs.
+if(BPFTIME_ENABLE_ROCM_ATTACH)
+  include(cmake/rocm_llvm.cmake)
+endif()
+
 if(BPFTIME_ENABLE_UNIT_TESTING OR
    (BPFTIME_ENABLE_TRAP_UPROBE AND
     (NOT DEFINED BPFTIME_TRAP_ATTACH_BUILD_TESTS OR BPFTIME_TRAP_ATTACH_BUILD_TESTS)))
