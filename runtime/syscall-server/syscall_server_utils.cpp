@@ -36,7 +36,6 @@ static std::once_flag g_startup_once;
 static std::exception_ptr g_startup_exception;
 static std::string g_syscall_server_shm_name;
 static pid_t g_syscall_server_shm_owner_pid = -1;
-static bool g_syscall_server_owns_shm = false;
 using namespace bpftime;
 // Why not use string_view? because parse_uint_from_file requires a c-string
 static const std::string UPROBE_TYPE_FILE_NAME =
@@ -47,11 +46,6 @@ static const std::string KPROBE_TYPE_FILE_NAME =
 	"/sys/bus/event_source/devices/kprobe/type";
 static const std::string KRETPROBE_BIT_FILE_NAME =
 	"/sys/bus/event_source/devices/kprobe/format/retprobe";
-
-static bool pid_is_alive(int pid)
-{
-	return kill(pid, 0) == 0 || errno == EPERM;
-}
 
 static void remove_syscall_server_global_shm() noexcept
 {
@@ -67,67 +61,15 @@ static void remove_syscall_server_global_shm() noexcept
 		}
 		return;
 	}
-	if (!g_syscall_server_owns_shm) {
-		try {
-			shm_holder.global_shared_memory
-				.remove_pid_from_alive_syscall_server_set(
-					getpid());
-		} catch (...) {
-		}
-		return;
-	}
-	shm_lifecycle_lock lifecycle_lock(g_syscall_server_shm_name.c_str());
-	try {
-		shm_holder.global_shared_memory
-			.remove_pid_from_alive_syscall_server_set(getpid());
-
-		bool has_alive_server = false;
-		bool server_snapshot_ok =
-			shm_holder.global_shared_memory
-				.iterate_all_pids_in_alive_syscall_server_set(
-					[&](int pid) {
-						if (has_alive_server) {
-							return;
-						}
-						if (pid_is_alive(pid)) {
-							has_alive_server = true;
-						}
-					});
-		if (!server_snapshot_ok) {
-			return;
-		}
-		if (has_alive_server) {
-			return;
-		}
-
-		bool has_alive_agent = false;
-		bool agent_snapshot_ok =
-			shm_holder.global_shared_memory
-				.iterate_all_pids_in_alive_agent_set([&](int pid) {
-					if (has_alive_agent) {
-						return;
-					}
-					if (pid_is_alive(pid)) {
-						has_alive_agent = true;
-					}
-				});
-		if (!agent_snapshot_ok) {
-			return;
-		}
-		if (has_alive_agent) {
-			return;
-		}
-		boost::interprocess::shared_memory_object::remove(
-			g_syscall_server_shm_name.c_str());
-	} catch (...) {
-	}
+	shm_holder.global_shared_memory.leave_and_try_cleanup(true);
 }
 
-static bool initialize_global_shm_with_ownership()
+static void initialize_server_global_shm()
 {
 	try {
 		bpftime_initialize_global_shm(shm_open_type::SHM_CREATE_ONLY);
-		return true;
+		shm_holder.global_shared_memory.enable_automatic_cleanup();
+		return;
 	} catch (const boost::interprocess::interprocess_exception &error) {
 		if (error.get_error_code() !=
 		    boost::interprocess::already_exists_error) {
@@ -140,8 +82,19 @@ static bool initialize_global_shm_with_ownership()
 			g_syscall_server_shm_name.c_str());
 		throw;
 	}
+	bool reclaimed;
+	{
+		bpftime_shm existing(g_syscall_server_shm_name.c_str(),
+				     shm_open_type::SHM_OPEN_ONLY, false);
+		reclaimed = existing.try_remove_unused_shm();
+	}
+	if (reclaimed) {
+		bpftime_initialize_global_shm(shm_open_type::SHM_CREATE_ONLY);
+		shm_holder.global_shared_memory.enable_automatic_cleanup();
+		return;
+	}
+	// Preserve externally created segments and their existing object setup.
 	bpftime_initialize_global_shm(shm_open_type::SHM_CREATE_OR_OPEN);
-	return false;
 }
 
 void start_up(syscall_context &ctx)
@@ -156,15 +109,18 @@ void start_up(syscall_context &ctx)
 			g_syscall_server_shm_owner_pid = getpid();
 			shm_lifecycle_lock lifecycle_lock(
 				g_syscall_server_shm_name.c_str());
-			g_syscall_server_owns_shm =
-				initialize_global_shm_with_ownership();
+			if (!lifecycle_lock.owns_lock())
+				throw std::runtime_error(
+					"Unable to lock shared memory lifecycle");
+			initialize_server_global_shm();
 			std::atexit(remove_syscall_server_global_shm);
 			if (!shm_holder.global_shared_memory
 				     .add_pid_into_alive_syscall_server_set(
 					     getpid())) {
 				SPDLOG_WARN(
 					"Unable to record alive syscall-server pid; disabling automatic shm removal");
-				g_syscall_server_owns_shm = false;
+				shm_holder.global_shared_memory
+					.disable_automatic_cleanup();
 			}
 #if defined(BPFTIME_ENABLE_CUDA_ATTACH)
 			ctx.initialize_cuda();
