@@ -12,6 +12,7 @@
 #include <vector>
 #include <string>
 #include <map>
+#include <set>
 namespace bpftime
 {
 
@@ -87,6 +88,10 @@ class bpftime_prog {
 	bool signal_ready = false;
 	bool loaded_from_aot = false;
 	std::map<unsigned, bool> signal_safe_helpers;
+	// Indices of all helpers registered into the VM (via
+	// bpftime_prog_register_raw_helper). Used to reject programs calling
+	// helpers that were never registered instead of failing at exec time.
+	std::set<unsigned> registered_helper_ids;
 
 	// used in jit
 	ebpf_jit_fn fn = nullptr;
