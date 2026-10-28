@@ -36,3 +36,6 @@ when not using llvm-jit
 ```shell
 g++ -o example main.cpp -I../../runtime/include -I../../vm/compat/include/ -I../../third_party/spdlog/include -I../../vm/vm-core/include -L~/.bpftime -lbpftime -lboost_system -lrt -lbpf
 ```
+
+For a complete direct map/program/load/attach/read/detach/release lifecycle,
+see [runtime_library](../runtime_library/README.md).
