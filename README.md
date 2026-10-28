@@ -185,3 +185,14 @@ eunomia-bpf community is sponsored by [PLCT Lab](https://plctlab.github.io/) fro
 
 Thanks for other sponsors and discussions help building this project: [Prof. Marios Kogias](https://marioskogias.github.io/) from Imperial College London, [Prof. Xiaozheng lai](https://www2.scut.edu.cn/cs/2017/0129/c22285a327654/page.htm) from SCUT, [Prof lijun chen](http://www.xiyou.edu.cn/info/2394/67845.htm) from XUPT,
 [Prof. Qi Li](https://sites.google.com/site/qili2012/) from THU [NISL Lab](https://netsec.ccert.edu.cn/en/), and Linux eBPF maintainers in the LPC 23 eBPF track.
+
+<p align="center">
+  <a href="https://www.vultr.com/">
+    <picture>
+      <source media="(prefers-color-scheme: dark)" srcset="images/vultr-white.png">
+      <img src="images/vultr-black.svg" alt="Vultr" width="200">
+    </picture>
+  </a>
+  <br>
+  Cloud Infrastructure powered by <a href="https://www.vultr.com/">Vultr</a>
+</p>
