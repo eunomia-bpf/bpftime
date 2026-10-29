@@ -1,14 +1,31 @@
 #include "catch2/catch_test_macros.hpp"
 #include "ptxpass/core.hpp"
+#ifdef BPFTIME_TEST_PTXPASS_RUNNER
+#include "ptxpass_runner_test_config.hpp"
+#endif
+#include <array>
+#include <fcntl.h>
+#include <filesystem>
 #include <memory>
 #include <fstream>
 #include <iostream>
+#include <optional>
 #include <spdlog/logger.h>
 #include <spdlog/sinks/ostream_sink.h>
 #include <spdlog/spdlog.h>
 #include <sstream>
 #include <string>
+#include <unistd.h>
 #include <vector>
+
+#ifdef BPFTIME_TEST_PTXPASS_RUNNER
+namespace bpftime::attach
+{
+std::optional<std::string> run_ptxpass_runner(const std::string &,
+					      const std::filesystem::path &,
+					      const std::string *, size_t);
+}
+#endif
 
 using namespace ptxpass;
 
@@ -412,3 +429,45 @@ TEST_CASE("compile_ebpf_to_ptx_from_words handles exit instruction",
 	}
 	REQUIRE(target_count <= 1);
 }
+
+#ifdef BPFTIME_TEST_PTXPASS_RUNNER
+TEST_CASE("PTX pass runner client handles closed standard descriptors",
+	  "[ptxpass_runner]")
+{
+	std::optional<std::string> config;
+	std::optional<std::string> process;
+	{
+		struct standard_fd_guard {
+			std::array<int, 4> saved{};
+			standard_fd_guard()
+			{
+				for (int fd = 0; fd < 4; fd++) {
+					saved[fd] =
+						fcntl(fd, F_DUPFD_CLOEXEC, 4);
+					close(fd);
+				}
+			}
+			~standard_fd_guard()
+			{
+				for (int fd = 0; fd < 4; fd++) {
+					if (saved[fd] >= 0) {
+						dup2(saved[fd], fd);
+						close(saved[fd]);
+					}
+				}
+			}
+		};
+		standard_fd_guard guard;
+
+		const std::filesystem::path pass = PTXPASS_RUNNER_TEST_PASS;
+		config = bpftime::attach::run_ptxpass_runner("--config", pass,
+							     nullptr, 1024);
+		const std::string input = "input";
+		process = bpftime::attach::run_ptxpass_runner("--process", pass,
+							      &input, 1024);
+	}
+
+	REQUIRE(config == R"({"mode":"config"})");
+	REQUIRE(process == R"({"input":"input"})");
+}
+#endif
