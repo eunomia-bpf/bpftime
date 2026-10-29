@@ -36,6 +36,10 @@
 #include <cuda.h>
 #include "nv_attach_private_data.hpp"
 #endif
+#ifdef BPFTIME_ENABLE_ROCM_ATTACH
+#include "rocm_attach_private_data.hpp"
+#endif
+
 extern "C" uint64_t bpftime_set_retval(uint64_t value);
 namespace bpftime
 {
@@ -169,6 +173,9 @@ bpf_attach_ctx::~bpf_attach_ctx()
 		stop_cuda_watcher_thread();
 	}
 #endif
+#ifdef BPFTIME_ENABLE_ROCM_ATTACH
+	stop_gpu_watcher_thread();
+#endif
 }
 
 // create a probe context
@@ -183,6 +190,12 @@ bpf_attach_ctx::bpf_attach_ctx()
 	} else {
 		SPDLOG_WARN(
 			"CUDA shared communication memory not available; CUDA attach will be disabled for this process");
+	}
+#endif
+#ifdef BPFTIME_ENABLE_ROCM_ATTACH
+	if (auto ctx = gpu::create_gpu_context(); ctx) {
+		gpu_ctx = std::move(*ctx);
+		start_gpu_watcher_thread();
 	}
 #endif
 }
@@ -336,6 +349,22 @@ int bpf_attach_ctx::instantiate_bpf_link_handler_at(
 		"Instantiating bpf link {}, bpftime_prog->prog_name() = {}", id,
 		prog->prog_name());
 	int attach_id;
+#ifdef BPFTIME_ENABLE_ROCM_ATTACH
+	if (prog->is_rocm()) {
+		if (!handle_nv_attach_impl)
+			return 0;
+		if (!gpu_ctx)
+			return -ENODEV;
+		auto &data = dynamic_cast<attach::rocm_attach_private_data &>(
+			*priv_data);
+		data.comm_shared_mem = gpu_ctx->rocm_shared_mem_device_pointer;
+		data.instructions = prog->get_insns();
+		data.map_basic_info = create_map_basic_info(1024);
+		attach_id = attach_impl->create_attach_with_ebpf_callback(
+			[](void *, size_t, uint64_t *) -> int { return 0; },
+			*priv_data, attach_type);
+	} else
+#endif
 #ifdef BPFTIME_ENABLE_CUDA_ATTACH
 	if (prog->is_cuda()) {
 		SPDLOG_INFO(

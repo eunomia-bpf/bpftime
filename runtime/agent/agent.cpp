@@ -53,6 +53,10 @@ typedef int gboolean;
 #include "nv_attach_private_data.hpp"
 #include "nv_attach_impl.hpp"
 #endif
+#ifdef BPFTIME_ENABLE_ROCM_ATTACH
+#include "rocm_attach_impl.hpp"
+#include "rocm_attach_private_data.hpp"
+#endif
 
 #if __linux__ && BPFTIME_BUILD_WITH_LIBBPF
 #include "syscall_trace_attach_impl.hpp"
@@ -1047,6 +1051,24 @@ extern "C" void bpftime_agent_main(const gchar *data, gboolean *stay_resident)
 					if (int e =
 						    priv_data->initialize_from_string(
 							    sv);
+					    e < 0) {
+						err = e;
+						return std::unique_ptr<
+							attach_private_data>();
+					}
+					return priv_data;
+				});
+#endif
+#ifdef BPFTIME_ENABLE_ROCM_ATTACH
+			ctx_holder.ctx.register_attach_impl(
+				{ ATTACH_ROCM_PROBE_AND_RETPROBE },
+				std::make_unique<attach::rocm_attach_impl>(),
+				[](const std::string_view &sv, int &err) {
+					std::unique_ptr<attach_private_data>
+						priv_data = std::make_unique<
+							rocm_attach_private_data>();
+					if (int e = priv_data->initialize_from_string(
+						    sv);
 					    e < 0) {
 						err = e;
 						return std::unique_ptr<
