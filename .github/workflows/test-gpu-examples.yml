@@ -204,7 +204,7 @@ jobs:
             -DBPFTIME_CUDA_ROOT="${BPFTIME_CUDA_ROOT:-/usr/local/cuda}" \
             -DLLVM_DIR="${LLVM_DIR}" \
             -G Ninja
-          cmake --build build --config Debug --target bpftime-agent bpftime-syscall-server bpftime-cli-cpp bpftimetool bpftime_text_segment_transformer nv_attach_impl_ptx_compiler ptxpass_kprobe_entry ptxpass_kretprobe ptxpass_kprobe_memcapture -j"$(nproc)"
+          cmake --build build --config Debug --target bpftime-agent bpftime-syscall-server bpftime-cli-cpp bpftimetool bpftime_text_segment_transformer nv_attach_impl_ptx_compiler ptxpass_kprobe_entry ptxpass_kretprobe ptxpass_kprobe_memcapture ptxpass_bb_tracepoint -j"$(nproc)"
 
       - name: Upload bpftime build artifact
         uses: actions/upload-artifact@v4
