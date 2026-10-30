@@ -182,44 +182,6 @@ int bpftime_prog::bpftime_prog_load(bool jit)
 		SPDLOG_ERROR("Failed to load insn: {}", errmsg);
 		return res;
 	}
-
-	// Reject programs that call helpers which were never registered into
-	// this VM. The LLVM JIT used to fail late and ambiguously: compilation
-	// returned "Ext func not found: _bpf_helper_ext_XXXX", the failure was
-	// demoted to a warning, jitted was set to false and the load still
-	// succeeded, so every invocation died at runtime with "Unable to run
-	// ebpf callback" instead of a load-time error (see #704). Local calls
-	// (call) are handled by the VM itself and are not audited here,
-	// mirroring prepare_for_signal_execution().
-	//
-	// CUDA programs (cuda__*) are exempt: their helpers (e.g. 503 =
-	// bpf_get_block_idx) are resolved on the device side. They are never
-	// registered into this host VM; ptxpass generates device PTX from an
-	// isolated VM with its own helper table, and the runtime trampoline
-	// provides the actual implementations (e.g. _bpf_helper_ext_0503).
-	// This VM is only used here to produce that device code, so the
-	// host-side audit does not apply.
-	if (!is_cuda()) {
-		for (size_t i = 0; i < insns.size(); ++i) {
-			const struct ebpf_inst &inst = insns[i];
-			if (inst.code == 0x18) {
-				// Second instruction of a LDDW is data, not code.
-				++i;
-				continue;
-			}
-			if (inst.code == 0x8d) // Indirect CALLX cannot be audited here.
-				break;
-			if (inst.code != 0x85 || inst.src_reg != 0)
-				continue;
-			if (registered_helper_ids.count(
-				    static_cast<unsigned>(inst.imm)) == 0) {
-				SPDLOG_ERROR(
-					"Program {} calls helper {} which is not registered in the VM. Register the helper (e.g. bpftime_helper_group::add_helper_group_to_prog) or check the bytecode before loading.",
-					name, inst.imm);
-				return -EINVAL;
-			}
-		}
-	}
 	if (is_cuda()) {
 		// SPDLOG_INFO("Compiling CUDA program");
 
@@ -320,7 +282,6 @@ int bpftime_prog::bpftime_prog_register_raw_helper(
 	if (result == 0) {
 		signal_ready = false;
 		signal_safe_helpers[info.index] = helper_is_async_signal_safe(info.index, info.fn);
-		registered_helper_ids.insert(info.index);
 	}
 	return result;
 }
