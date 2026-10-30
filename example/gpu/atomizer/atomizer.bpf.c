@@ -39,24 +39,34 @@ int cuda__probe()
 	u64 block_num = gx * gy * gz;
 	u64 block_id = z * gy * gx + y * gx + x;
 
-	int partition_num = 0;
+	u64 partition_num = 0;
 	int partition_index = 0;
 	
 	u64 *partition_num_ptr = bpf_map_lookup_elem(&partition_num_map, &key);
 	if (partition_num_ptr) {
 		partition_num = *partition_num_ptr;
-		bpf_printk("partition_num is %u for block %lu\n", partition_num, block_id);
+		// Strict SIMT verification checks all trace_printk payload slots.
+		bpf_printk("partition_num is %llu for block %lu\n", partition_num,
+			   block_id, (u64)0);
 	} else {
-		bpf_printk("partition_num_ptr is null for block %lu\n", block_id);
+		bpf_printk("partition_num_ptr is null for block %lu\n", block_id,
+			   (u64)0, (u64)0);
+		return 0;
+	}
+	if (partition_num == 0) {
+		bpf_printk("partition_num is zero for block %lu\n", block_id,
+			   (u64)0, (u64)0);
 		return 0;
 	}
 
 	u64 *partition_idx_ptr = bpf_map_lookup_elem(&partition_index_map, &key);
 	if (partition_idx_ptr) {
 		partition_index = *partition_idx_ptr;
-		bpf_printk("partition_index is %u for block %lu\n", partition_index, block_id);
+		bpf_printk("partition_index is %u for block %lu\n",
+			   partition_index, block_id, (u64)0);
 	} else {
-		bpf_printk("partition_idx_ptr is null for block %lu\n", block_id);
+		bpf_printk("partition_idx_ptr is null for block %lu\n", block_id,
+			   (u64)0, (u64)0);
 		return 0;
 	}
 
