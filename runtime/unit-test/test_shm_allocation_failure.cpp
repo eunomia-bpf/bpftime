@@ -425,6 +425,32 @@ TEST_CASE("Syscall server preserves the console logger level name",
 	REQUIRE(result.output.empty());
 }
 
+TEST_CASE("Syscall server exits safely with debug file logging",
+	  "[allocation][syscall_server][logging][cleanup]")
+{
+	const std::string log_path = "/tmp/bpftime-syscall-exit-" +
+				     std::to_string(getpid()) + ".log";
+	unlink(log_path.c_str());
+	std::string shm_name;
+	auto result = run_allocation_helper("startup-ok", "4", "128",
+					    log_path.c_str(), "debug", false,
+					    &shm_name);
+	std::ifstream log(log_path);
+	std::string contents{ std::istreambuf_iterator<char>(log), {} };
+	unlink(log_path.c_str());
+	const bool shm_was_left =
+		boost::interprocess::shared_memory_object::remove(
+			shm_name.c_str());
+
+	REQUIRE(WIFEXITED(result.status));
+	REQUIRE(WEXITSTATUS(result.status) == 0);
+	REQUIRE(result.output.empty());
+	REQUIRE(contents.find("[debug]") != std::string::npos);
+	REQUIRE(contents.find("bpftime-syscall-server started") !=
+		std::string::npos);
+	REQUIRE_FALSE(shm_was_left);
+}
+
 TEST_CASE("Agent preload keeps missing shared memory off host stdio",
 	  "[allocation][agent][logging]")
 {

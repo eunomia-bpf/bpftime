@@ -116,7 +116,8 @@ static int run_command(const char *path, const std::vector<std::string> &argv,
 	if (pid == 0) {
 		std::string ld_preload_str("LD_PRELOAD=");
 		std::string agent_so_str("AGENT_SO=");
-		ld_preload_str += ld_preload;
+		if (ld_preload)
+			ld_preload_str += ld_preload;
 
 		if (agent_so) {
 			agent_so_str += agent_so;
@@ -133,17 +134,17 @@ static int run_command(const char *path, const std::vector<std::string> &argv,
 		}
 		bool ld_preload_set = false, agent_so_set = false;
 		for (auto &s : env_arr) {
-			if (str_starts_with(s, "LD_PRELOAD=")) {
+			if (ld_preload && str_starts_with(s, "LD_PRELOAD=")) {
 				s = ld_preload_str.c_str();
 				ld_preload_set = true;
-			} else if (str_starts_with(s, "AGENT_SO=")) {
+			} else if (ld_preload && str_starts_with(s, "AGENT_SO=")) {
 				s = agent_so_str.c_str();
 				agent_so_set = true;
 			}
 		}
-		if (!ld_preload_set)
+		if (ld_preload && !ld_preload_set)
 			env_arr.push_back(ld_preload_str.c_str());
-		if (!agent_so_set)
+		if (ld_preload && !agent_so_set)
 			env_arr.push_back(agent_so_str.c_str());
 		for (const auto &env_arg : env_args) {
 			auto key_end = env_arg.find('=');
@@ -168,13 +169,19 @@ static int run_command(const char *path, const std::vector<std::string> &argv,
 		argv_arr.push_back(nullptr);
 		execvpe(path, (char *const *)argv_arr.data(),
 			(char *const *)env_arr.data());
+		const int exec_error = errno;
 		spdlog::error("execvpe failed for {}: {}", path,
-			      strerror(errno));
-		_exit(errno == ENOENT ? 127 : 126);
+			      strerror(exec_error));
+		_exit(exec_error == ENOENT ? 127 : 126);
 	} else {
 		subprocess_pid = pid;
 		int status;
-		if (int cid = waitpid(pid, &status, 0); cid > 0) {
+		pid_t cid;
+		do {
+			cid = waitpid(pid, &status, 0);
+		} while (cid < 0 && errno == EINTR);
+		subprocess_pid = 0;
+		if (cid > 0) {
 			if (WIFEXITED(status)) {
 				int exit_code = WEXITSTATUS(status);
 				if (exit_code != 0) {
@@ -935,6 +942,9 @@ int main(int argc, const char **argv)
 	start_command.add_argument("-s", "--enable-syscall-trace")
 		.help("Whether to enable syscall trace")
 		.flag();
+	start_command.add_argument("--rocm")
+		.help("Load bpftime-agent as a ROCprofiler SDK tool for ROCm kernel interception")
+		.flag();
 	start_command.add_argument("COMMAND")
 		.nargs(argparse::nargs_pattern::at_least_one)
 		.remaining()
@@ -1002,6 +1012,17 @@ int main(int argc, const char **argv)
 		return run_command(executable_path.c_str(), extra_args,
 				   so_path.c_str(), nullptr, env_args);
 	} else if (program.is_subcommand_used("start")) {
+		const bool rocm = start_command.get<bool>("rocm");
+		if (rocm && start_command.get<bool>("enable-syscall-trace")) {
+			std::cerr << "--rocm and --enable-syscall-trace cannot be combined\n";
+			return 1;
+		}
+#ifndef BPFTIME_ENABLE_ROCM_ATTACH
+		if (rocm) {
+			std::cerr << "--rocm requires a build with BPFTIME_ENABLE_ROCM_ATTACH=ON\n";
+			return 1;
+		}
+#endif
 		auto agent_path = resolve_library_path_or_exit(
 			install_path, AGENT_LIBRARY,
 			std::filesystem::path("runtime") / "agent" /
@@ -1009,6 +1030,32 @@ int main(int argc, const char **argv)
 			"agent");
 		auto [executable_path, extra_args, env_args] =
 			extract_path_and_args(start_command, false, false);
+		if (rocm) {
+			// ROCprofiler-register loads the SDK and its tools on the
+			// application's first ROCm call; no rocprofv3 subprocess is needed.
+			std::string libraries;
+			if (const char *existing = getenv("ROCP_TOOL_LIBRARIES"))
+				libraries = existing;
+			const auto agent = std::filesystem::absolute(agent_path).string();
+			if (agent.find(':') != std::string::npos) {
+				std::cerr << "ROCm agent path cannot contain ':'\n";
+				return 1;
+			}
+			bool present = false;
+			std::istringstream entries(libraries);
+			for (std::string entry; std::getline(entries, entry, ':');)
+				present = present || entry == agent;
+			if (!libraries.empty() && libraries.back() != ':')
+				libraries += ':';
+			if (!present)
+				libraries += agent + ':';
+			// Retain a trailing separator for SDK versions whose parser
+			// otherwise drops the last entry in a multi-tool list.
+			env_args.emplace_back("ROCP_TOOL_LIBRARIES=" + libraries);
+			env_args.emplace_back("BPFTIME_ROCM_ATTACH=1");
+			return run_command(executable_path.c_str(), extra_args,
+					   nullptr, nullptr, env_args);
+		}
 		if (start_command.get<bool>("enable-syscall-trace")) {
 			auto transformer_path = resolve_library_path_or_exit(
 				install_path, AGENT_TRANSFORMER_LIBRARY,

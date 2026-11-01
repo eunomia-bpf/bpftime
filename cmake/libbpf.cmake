@@ -81,17 +81,28 @@ add_custom_target(libbpf_with_headers)
 
 add_dependencies(libbpf_with_headers libbpf copy_headers)
 
-# # Setup bpftool
+# Setup bpftool. Keep generated files separate from the submodule and from
+# other CMake build trees.
 set(BPFTOOL_DIR ${CMAKE_CURRENT_LIST_DIR}/../third_party/bpftool)
 set(BPFTOOL_INSTALL_DIR ${CMAKE_CURRENT_BINARY_DIR}/bpftool)
+set(BPFTOOL_BUILD_DIR ${BPFTOOL_INSTALL_DIR}/build)
 ExternalProject_Add(bpftool
   PREFIX bpftool
   SOURCE_DIR ${BPFTOOL_DIR}/src
-  CONFIGURE_COMMAND "mkdir" "-p" "${BPFTOOL_INSTALL_DIR}"
-  BUILD_COMMAND "make" "EXTRA_CFLAGS=-g -O2 " "-j"
-  INSTALL_COMMAND "cp" "${BPFTOOL_DIR}/src/bpftool" "${BPFTOOL_INSTALL_DIR}/bpftool"
-  BUILD_IN_SOURCE TRUE
-  BUILD_BYPRODUCTS ${BPFTOOL_DIR}/src/bpftool
+  BINARY_DIR ${BPFTOOL_BUILD_DIR}
+  CONFIGURE_COMMAND ${CMAKE_COMMAND} -E make_directory "<BINARY_DIR>"
+  # libbpf uses `ar rcs`, which retains obsolete archive members after source
+  # files are renamed or removed. Recreate both archives from current objects.
+  BUILD_COMMAND ${CMAKE_COMMAND} -E remove -f
+    "<BINARY_DIR>/libbpf/libbpf.a"
+    "<BINARY_DIR>/bootstrap/libbpf/libbpf.a"
+  # Request the archives explicitly: bpftool's .SECONDARY rule otherwise
+  # allows make to skip missing archives when the executable already exists.
+  COMMAND "make" -C "<SOURCE_DIR>" "OUTPUT=<BINARY_DIR>/" "EXTRA_CFLAGS=-g -O2 " "-j"
+    "<BINARY_DIR>/libbpf/libbpf.a" "<BINARY_DIR>/bootstrap/libbpf/libbpf.a" all
+  INSTALL_COMMAND ${CMAKE_COMMAND} -E copy
+    "<BINARY_DIR>/bpftool" "${BPFTOOL_INSTALL_DIR}/bpftool"
+  BUILD_BYPRODUCTS ${BPFTOOL_BUILD_DIR}/bpftool
   INSTALL_BYPRODUCTS ${BPFTOOL_INSTALL_DIR}/bpftool
 )
 

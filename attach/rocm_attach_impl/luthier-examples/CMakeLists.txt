@@ -51,9 +51,16 @@ if(BPFTIME_ENABLE_ROCM_ATTACH)
   target_compile_definitions(bpftime_luthier_probe PRIVATE
     BPFTIME_LUTHIER_AGENT_LIBRARY="$<TARGET_FILE:bpftime-agent>")
   add_dependencies(bpftime_luthier_probe bpftime-agent)
+  if(BPFTIME_ENABLE_FRIDA)
+    target_compile_definitions(bpftime_luthier_probe PRIVATE
+      BPFTIME_LUTHIER_CLI="$<TARGET_FILE:bpftime-cli-cpp>")
+    add_dependencies(bpftime_luthier_probe bpftime-cli-cpp)
+  else()
+    target_compile_definitions(bpftime_luthier_probe PRIVATE BPFTIME_LUTHIER_CLI="")
+  endif()
 else()
   target_compile_definitions(bpftime_luthier_probe PRIVATE
-    BPFTIME_LUTHIER_AGENT_LIBRARY="")
+    BPFTIME_LUTHIER_AGENT_LIBRARY="" BPFTIME_LUTHIER_CLI="")
 endif()
 # Building the verifier always builds the independent HIP fixture and tool.
 # No GPU work or verification runs until the executable is invoked.

@@ -28,34 +28,47 @@ using json = nlohmann::json;
 // Spawn the separately compiled HIP fixture with the tool configured before
 // HIP loads, then wait for tool finalization before validating its reports.
 static void run_child(const fs::path &application, const fs::path &tool,
-		      const std::string &mode, const fs::path &output)
+		      const std::string &mode, const fs::path &output,
+		      const fs::path &cli)
 {
+	const bool agent_mode = mode.rfind("agent-", 0) == 0;
 	std::vector<std::string> environment;
 	for (char **entry = environ; *entry; ++entry) {
 		std::string value(*entry);
 		const auto name = value.substr(0, value.find('='));
 		if (name != "LD_PRELOAD" && name != "ROCP_TOOL_LIBRARIES" &&
-		    name != "LUTHIER_ARGS" &&
-		    name != "BPFTIME_LOG_OUTPUT" && name != "SPDLOG_LEVEL" &&
+		    name != "LUTHIER_ARGS" && name != "BPFTIME_LOG_OUTPUT" &&
+		    name != "SPDLOG_LEVEL" &&
 		    name != "BPFTIME_GLOBAL_SHM_NAME" &&
+		    name != "BPFTIME_ROCM_ATTACH" &&
 		    name != "BPFTIME_LUTHIER_REPORT" &&
 		    name != "BPFTIME_LUTHIER_MODE")
 			environment.push_back(std::move(value));
 	}
 	if (mode == "agent-preload") {
 		environment.push_back("LD_PRELOAD=" + tool.string());
-		// Exercise failed initialization in a real HIP host, isolated from
-		// any live bpftime session. The workload must still run quietly.
+	} else if (mode != "baseline" && mode != "agent-cli") {
+		environment.push_back("ROCP_TOOL_LIBRARIES=" + tool.string());
+	}
+	if (agent_mode) {
+		// Exercise failed initialization in a real HIP host, isolated
+		// from any live bpftime session. The workload must still run
+		// quietly.
 		environment.push_back(
 			"BPFTIME_GLOBAL_SHM_NAME=bpftime-luthier-probe-" +
 			std::to_string(getpid()) + "-" +
 			std::to_string(std::chrono::steady_clock::now()
-					       .time_since_epoch().count()));
-	} else if (mode != "baseline") {
-		environment.push_back("ROCP_TOOL_LIBRARIES=" + tool.string());
+					       .time_since_epoch()
+					       .count()));
+		if (mode != "agent-preload")
+			environment.push_back("BPFTIME_ROCM_ATTACH=1");
+		if (mode == "agent-rocm-log" || mode == "agent-cli") {
+			environment.push_back("BPFTIME_LOG_OUTPUT=" +
+					      (output / "agent.log").string());
+			environment.push_back("SPDLOG_LEVEL=debug");
+		}
 	}
-	if (mode != "baseline" && mode != "unconfigured" &&
-	    mode != "agent-preload") {
+	if (mode != "baseline" && mode != "unconfigured" && !agent_mode) {
 		auto report_path = output / "probe.jsonl";
 		if (mode == "bad-report") {
 			// A regular file as a parent forces fopen to fail with
@@ -78,8 +91,17 @@ static void run_child(const fs::path &application, const fs::path &tool,
 	for (auto &value : environment)
 		env.push_back(value.data());
 	env.push_back(nullptr);
-	auto executable = application.string();
-	char *args[] = { executable.data(), nullptr };
+	auto executable = (mode == "agent-cli" ? cli : application).string();
+	std::vector<std::string> arguments{ executable };
+	if (mode == "agent-cli") {
+		arguments.insert(arguments.end(),
+				 { "-i", tool.parent_path().string(), "start",
+				   "--rocm", application.string() });
+	}
+	std::vector<char *> args;
+	for (auto &arg : arguments)
+		args.push_back(arg.data());
+	args.push_back(nullptr);
 	auto check_spawn = [](int error) {
 		if (error)
 			throw std::system_error(error, std::generic_category(),
@@ -111,7 +133,7 @@ static void run_child(const fs::path &application, const fs::path &tool,
 		O_WRONLY | O_CREAT | O_TRUNC, 0600));
 	pid_t child;
 	check_spawn(posix_spawn(&child, executable.c_str(), &guard.value,
-				nullptr, args, env.data()));
+				nullptr, args.data(), env.data()));
 	const auto deadline =
 		std::chrono::steady_clock::now() + std::chrono::seconds(150);
 	int status = 0;
@@ -160,9 +182,28 @@ static json verify(const std::string &mode, const fs::path &output)
 	const auto report_path = output / "probe.jsonl";
 	size_t events = 0;
 	if (mode == "baseline" || mode == "unconfigured" ||
-	    mode == "bad-report" || mode == "agent-preload") {
+	    mode == "bad-report" || mode.rfind("agent-", 0) == 0) {
 		require(!fs::exists(report_path),
 			"Inactive tool unexpectedly wrote a report");
+		if (mode == "agent-rocm-log" || mode == "agent-cli") {
+			std::ifstream log(output / "agent.log");
+			unsigned initialized = 0, finalized = 0, dispatches = 0;
+			while (std::getline(log, line)) {
+				initialized +=
+					line.find(
+						"ROCm profiler initialized") !=
+					std::string::npos;
+				finalized +=
+					line.find("ROCm profiler finalized") !=
+					std::string::npos;
+				dispatches += line.find("ROCm dispatch:") !=
+					      std::string::npos;
+			}
+			require(initialized == 1 && finalized == 1 &&
+					dispatches >= 12,
+				"Missing agent profiler lifecycle/dispatch events");
+			events = initialized + finalized + dispatches;
+		}
 	} else {
 		std::ifstream report(report_path);
 		require(report.is_open(),
@@ -228,19 +269,21 @@ static json verify(const std::string &mode, const fs::path &output)
 int main(int argc, char **argv)
 {
 	try {
-		std::vector<const char *> modes{ "baseline", "unconfigured",
-			"bad-report", "roundtrip", "entry", "entry-exit" };
+		std::vector<const char *> modes{ "baseline",   "unconfigured",
+						 "bad-report", "roundtrip",
+						 "entry",      "entry-exit" };
 		std::string mode = "all";
 		fs::path application = BPFTIME_LUTHIER_APPLICATION;
 		fs::path tool = BPFTIME_LUTHIER_TOOL_LIBRARY;
 		fs::path agent = BPFTIME_LUTHIER_AGENT_LIBRARY;
+		fs::path cli = BPFTIME_LUTHIER_CLI;
 		fs::path output = BPFTIME_LUTHIER_RESULTS;
 		for (int i = 1; i < argc; i += 2) {
 			const std::string option(argv[i]);
 			if (option == "--help") {
 				std::cout
-					<< "Usage: bpftime_luthier_probe [--mode all|baseline|unconfigured|bad-report|roundtrip|entry|entry-exit|agent-preload]"
-					   " [--output-dir DIR] [--application HIP_EXECUTABLE] [--tool TOOL_DSO] [--agent AGENT_DSO]\n";
+					<< "Usage: bpftime_luthier_probe [--mode all|baseline|unconfigured|bad-report|roundtrip|entry|entry-exit|agent-preload|agent-rocm|agent-rocm-log|agent-cli]"
+					   " [--output-dir DIR] [--application HIP_EXECUTABLE] [--tool TOOL_DSO] [--agent AGENT_DSO] [--cli BPFTIME]\n";
 				return 0;
 			}
 			if (i + 1 == argc)
@@ -254,6 +297,8 @@ int main(int argc, char **argv)
 				tool = argv[i + 1];
 			else if (option == "--agent")
 				agent = argv[i + 1];
+			else if (option == "--cli")
+				cli = argv[i + 1];
 			else if (option == "--output-dir")
 				output = argv[i + 1];
 			else
@@ -266,8 +311,15 @@ int main(int argc, char **argv)
 							 agent.string());
 			agent = fs::absolute(agent);
 			modes.push_back("agent-preload");
-		} else if (mode == "agent-preload") {
-			throw std::runtime_error("agent-preload requires --agent AGENT_DSO or BPFTIME_ENABLE_ROCM_ATTACH=ON");
+			modes.push_back("agent-rocm");
+			modes.push_back("agent-rocm-log");
+			if (!cli.empty()) {
+				cli = fs::absolute(cli);
+				modes.push_back("agent-cli");
+			}
+		} else if (mode.rfind("agent-", 0) == 0) {
+			throw std::runtime_error(
+				"Agent modes require --agent AGENT_DSO or BPFTIME_ENABLE_ROCM_ATTACH=ON");
 		}
 		if (mode != "all" &&
 		    std::find(modes.begin(), modes.end(), mode) == modes.end())
@@ -291,9 +343,12 @@ int main(int argc, char **argv)
 			fs::create_directories(directory);
 			fs::remove(directory / "probe.jsonl");
 			fs::remove(directory / "summary.json");
+			fs::remove(directory / "agent.log");
 			run_child(application,
-				  std::string(current) == "agent-preload" ? agent : tool,
-				  current, directory);
+				  std::string(current).rfind("agent-", 0) == 0 ?
+					  agent :
+					  tool,
+				  current, directory, cli);
 			const auto summary = verify(current, directory);
 			std::ofstream result(directory / "summary.json");
 			result.exceptions(std::ios::failbit | std::ios::badbit);

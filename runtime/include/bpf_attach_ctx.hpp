@@ -149,23 +149,6 @@ inline uintptr_t get_cuda_shared_mem_device_pointer() noexcept
 } // namespace cuda
 #endif
 
-#ifdef BPFTIME_ENABLE_ROCM_ATTACH
-namespace gpu
-{
-using cuda::CommSharedMem;
-using cuda::HelperOperation;
-struct GPUContext {
-	std::shared_ptr<std::atomic<bool>> cuda_watcher_should_stop =
-		std::make_shared<std::atomic<bool>>(false);
-	std::unique_ptr<CommSharedMem> shared_mem;
-	uintptr_t rocm_shared_mem_device_pointer = 0;
-
-	explicit GPUContext(std::unique_ptr<CommSharedMem> &&mem);
-	~GPUContext();
-};
-std::optional<std::unique_ptr<GPUContext>> create_gpu_context();
-} // namespace gpu
-#endif
 
 class base_attach_manager;
 
@@ -235,12 +218,6 @@ private:
 	void stop_cuda_watcher_thread();
 	std::unique_ptr<cuda::CUDAContext> cuda_ctx;
 	std::thread cuda_watcher_thread;
-#endif
-#ifdef BPFTIME_ENABLE_ROCM_ATTACH
-	void start_gpu_watcher_thread();
-	void stop_gpu_watcher_thread();
-	std::unique_ptr<gpu::GPUContext> gpu_ctx;
-	std::thread gpu_watcher_thread;
 #endif
 
 	constexpr static int CURRENT_ID_OFFSET = 65536;

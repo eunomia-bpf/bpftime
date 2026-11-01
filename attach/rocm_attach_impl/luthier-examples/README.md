@@ -45,13 +45,19 @@ Run one mode with `--mode entry-exit`. Optional `--application`, `--tool`, and
 `--output-dir` arguments override the paths supplied by CMake. Reports and logs
 are written below `build/attach/rocm_attach_impl/luthier-examples/results/<mode>/`.
 
-With ROCm attach enabled, the verifier also builds the agent and runs
-`agent-preload`: the same HIP workload loads the agent with no active bpftime
-session and must preserve the expected result, exit normally, and produce no
-extra stdout/stderr output. Use `--mode agent-preload` to run only this check;
-`--agent AGENT_DSO` overrides the agent path or enables it in an examples-only
-build. This checks loading and failed initialization, not kernel instrumentation
-through the agent.
+With ROCm attach enabled, the verifier also builds the agent and runs:
+
+- `agent-preload`: ordinary preload with no active bpftime session.
+- `agent-rocm`: ROCprofiler loads the agent; failed shared-memory initialization
+  must leave the workload running quietly with its signal handler intact.
+- `agent-rocm-log`: explicitly enable file logging and verify one profiler
+  initialization/finalization and at least 12 intercepted kernel dispatches.
+- `agent-cli`: launch the same check through `bpftime start --rocm` (when the
+  CLI is built).
+
+`--agent AGENT_DSO` and `--cli BPFTIME` override the binaries. These modes check
+agent lifecycle and dispatch interception; the separate example tool performs
+the LLVM IR instrumentation checks.
 
 ## Dependencies
 
@@ -123,8 +129,27 @@ LLVM sources are downloaded at build time as described above, also when
 examples are disabled.
 
 `libbpftime-agent.so` retains the Luthier implementation and rejects unresolved
-symbols at link time. This stage establishes linkage only; the agent's
-`rocprofiler_configure` entry point and `bpftime start --rocm` are still pending.
+symbols at link time. Its `rocprofiler_configure` entry point registers HSA table
+callbacks during SDK configuration, initializes the common agent session in
+tool initialization, and detaches the session during finalization. The agent
+uses Luthier's packet and table interfaces with recoverable queue interception:
+a replacement queue is fully configured before the original is destroyed.
+This avoids the current Luthier `PacketMonitorTrait` fatal-error paths.
+
+```bash
+./build/rocm-agent/tools/cli/bpftime start --rocm ./hip_application
+# Equivalent direct launch:
+BPFTIME_ROCM_ATTACH=1 \
+ROCP_TOOL_LIBRARIES="$PWD/build/rocm-agent/runtime/agent/libbpftime-agent.so" \
+  ./hip_application
+```
+
+The opt-in environment variable prevents an ordinary preload from activating
+the profiler. Initialization does not call HIP/HSA or replace host signal
+handlers. Packets are forwarded exactly once, including after finalization.
+The old Frida HIP hooks and unused HIP communication allocation/watcher were
+removed. eBPF payload compilation and helper/map wiring remain separate work;
+unsupported ROCm attach requests are reported explicitly.
 With `BPFTIME_ENABLE_UNIT_TESTING=ON`, the runtime `[agent]` tests check preload
 failure behavior and `dlopen(RTLD_NOW)` without host termination, unexpected
 stdio output, or changes to the default SIGUSR1 handler.
@@ -135,7 +160,9 @@ For the complete linkage check:
 cmake -S . -B build/rocm-agent \
   -DBPFTIME_ENABLE_UNIT_TESTING=ON -DBPFTIME_BUILD_LUTHIER_EXAMPLES=ON
 cmake --build build/rocm-agent --target \
-  bpftime_runtime_tests llvm_jit_tests llvm_jit_dlopen_test bpftime_luthier_probe -j8
+  bpftime_runtime_tests llvm_jit_tests llvm_jit_dlopen_test bpftime_luthier_probe \
+  bpftime_rocm_profiler_tests -j8
+ctest --test-dir build/rocm-agent -R '^rocm_(profiler_lifecycle|cli_launch)$' --output-on-failure
 ctest --test-dir build/rocm-agent -R '^llvm_jit_(tests|dlopen_test)$' --output-on-failure
 ./build/rocm-agent/runtime/unit-test/bpftime_runtime_tests '[agent]'
 ./build/rocm-agent/attach/rocm_attach_impl/luthier-examples/bpftime_luthier_probe

@@ -3,6 +3,9 @@
 
 #include <algorithm>
 #include <cstdint>
+#include <csignal>
+#include <cstdlib>
+#include <cstring>
 #include <iostream>
 #include <stdexcept>
 #include <string>
@@ -43,11 +46,31 @@ struct device_buffer {
 	device_buffer &operator=(const device_buffer &) = delete;
 };
 
+static void host_signal_handler(int)
+{
+}
+
 int main()
 {
 	try {
+		struct sigaction action{};
+		action.sa_handler = host_signal_handler;
+		sigemptyset(&action.sa_mask);
+		if (sigaction(SIGUSR1, &action, nullptr) != 0)
+			throw std::runtime_error(
+				"Cannot install host signal handler");
 		int count = 0;
 		check(hipGetDeviceCount(&count), "hipGetDeviceCount");
+		struct sigaction current{};
+		if (sigaction(SIGUSR1, nullptr, &current) != 0 ||
+		    current.sa_handler != host_signal_handler)
+			throw std::runtime_error(
+				"Profiler replaced host signal handler");
+		if (std::getenv("BPFTIME_TEST_AGENT_READY") &&
+		    (!std::getenv("BPFTIME_USED") ||
+		     std::strcmp(std::getenv("BPFTIME_USED"), "1") != 0))
+			throw std::runtime_error(
+				"Agent session did not initialize");
 		if (count == 0)
 			throw std::runtime_error("No HIP device available");
 		check(hipSetDevice(0), "hipSetDevice");
