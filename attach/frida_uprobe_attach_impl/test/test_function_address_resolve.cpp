@@ -101,3 +101,22 @@ TEST_CASE("Module offset resolution rejects offsets outside the module extent")
 	REQUIRE(resolve_function_addr_by_module_offset("", extent - 1) !=
 		nullptr);
 }
+
+TEST_CASE("Resolution accepts a full module path from an attach spec")
+{
+	frida_attach_impl man;
+	// gum matches a full path for the base address but enumerates ranges only
+	// for the executable name, so a path must not be rejected as unmapped.
+	char exe_path[4096];
+	const ssize_t len = readlink("/proc/self/exe", exe_path, sizeof(exe_path) - 1);
+	REQUIRE(len > 0);
+	exe_path[len] = '\0';
+
+	void *base = get_module_base_addr(exe_path);
+	REQUIRE(base != nullptr);
+	const auto offset = (uintptr_t)&__func_reolve_test - (uintptr_t)base;
+	REQUIRE(resolve_function_addr_by_module_offset(exe_path, offset) ==
+		(void *)&__func_reolve_test);
+	REQUIRE(resolve_function_addr_by_module_offset(exe_path, UINTPTR_MAX) ==
+		nullptr);
+}
