@@ -87,6 +87,11 @@ TEST_CASE("Module offset resolution rejects offsets outside the module extent")
 	REQUIRE(valid < extent);
 	REQUIRE(resolve_function_addr_by_module_offset("", valid) ==
 		(void *)&__func_reolve_test);
+#if defined(__linux__)
+	// Both main-executable spellings must enumerate the same mappings.
+	REQUIRE(resolve_function_addr_by_module_offset("/proc/self/exe", valid) ==
+		(void *)&__func_reolve_test);
+#endif
 
 	// A wrapped offset used to be added unchecked, producing an address
 	// anywhere in the address space for gum to install a trampoline at.
