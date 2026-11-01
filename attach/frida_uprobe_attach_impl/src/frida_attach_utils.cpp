@@ -192,11 +192,23 @@ gboolean find_mapped_address(const GumRangeDetails *details, gpointer user_data)
 	return TRUE;
 }
 
+// gum's module lookup matches a full path for the base address but, for range
+// enumeration, only the executable name (the basename) is matched; a full path
+// yields zero ranges. Try the given name and then the basename so a path from
+// an attach spec still resolves.
 bool module_contains_address(std::string_view module_name, uintptr_t address)
 {
-	const std::string name(module_name);
 	AddressLookup lookup{address};
+	const std::string name(module_name);
 	gum_module_enumerate_ranges(name.c_str(), GUM_PAGE_READ,
+				    find_mapped_address, &lookup);
+	if (lookup.found)
+		return true;
+
+	const auto slash = name.find_last_of('/');
+	if (slash == std::string::npos || slash + 1 >= name.size())
+		return false;
+	gum_module_enumerate_ranges(name.c_str() + slash + 1, GUM_PAGE_READ,
 				    find_mapped_address, &lookup);
 	return lookup.found;
 }
