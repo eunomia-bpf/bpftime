@@ -74,3 +74,25 @@ TEST_CASE("Mapped module paths survive VMA splitting")
 	REQUIRE(*resolved == path);
 }
 #endif
+
+TEST_CASE("Module offset resolution rejects offsets outside the module extent")
+{
+	frida_attach_impl man;
+	void *base = get_module_base_addr("");
+	REQUIRE(base != nullptr);
+	const auto extent = module_mapped_extent("");
+	REQUIRE(extent > 0);
+
+	const auto valid = (uintptr_t)&__func_reolve_test - (uintptr_t)base;
+	REQUIRE(valid < extent);
+	REQUIRE(resolve_function_addr_by_module_offset("", valid) ==
+		(void *)&__func_reolve_test);
+
+	// A wrapped offset used to be added unchecked, producing an address
+	// anywhere in the address space for gum to install a trampoline at.
+	REQUIRE(resolve_function_addr_by_module_offset("", UINTPTR_MAX) ==
+		nullptr);
+	REQUIRE(resolve_function_addr_by_module_offset("", extent) == nullptr);
+	REQUIRE(resolve_function_addr_by_module_offset("", extent - 1) !=
+		nullptr);
+}

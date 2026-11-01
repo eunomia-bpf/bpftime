@@ -131,6 +131,18 @@ resolve_function_addr_by_module_offset(const std::string_view &module_name,
 		return nullptr;
 	}
 
+	// The offset comes from the attach spec as an unchecked integer, so a
+	// wrapped or out-of-range value would otherwise steer the resolved address
+	// anywhere in the address space and have gum install a trampoline there.
+	// Keep it inside the module's mapped extent before doing the addition.
+	const auto module_size = module_mapped_extent(module_name);
+	if (module_size != 0 && func_offset >= module_size) {
+		SPDLOG_ERROR(
+			"Module offset 0x{:x} is outside the mapped extent (0x{:x}) of {}",
+			func_offset, module_size, module_name);
+		return nullptr;
+	}
+
 	return ((char *)module_base_addr) + func_offset;
 }
 
@@ -148,6 +160,38 @@ void *get_module_base_addr(const char *module_name)
 {
 	gum_module_load(module_name, nullptr);
 	return (void *)gum_module_find_base_address(module_name);
+}
+
+namespace {
+struct ExtentAccumulator {
+	uintptr_t begin = UINTPTR_MAX;
+	uintptr_t end = 0;
+};
+
+gboolean accumulate_range(const GumRangeDetails *details, gpointer user_data)
+{
+	auto *acc = static_cast<ExtentAccumulator *>(user_data);
+	const auto base = (uintptr_t)details->range->base_address;
+	const auto range_end = base + (uintptr_t)details->range->size;
+	if (base < acc->begin)
+		acc->begin = base;
+	if (range_end > acc->end)
+		acc->end = range_end;
+	return TRUE;
+}
+} // namespace
+
+// Returns the size of the contiguous mapped extent starting at the module base,
+// or 0 when the ranges cannot be determined.
+uintptr_t module_mapped_extent(const std::string_view &module_name)
+{
+	const std::string name(module_name);
+	ExtentAccumulator acc;
+	gum_module_enumerate_ranges(name.c_str(), GUM_PAGE_READ,
+				    accumulate_range, &acc);
+	if (acc.end <= acc.begin)
+		return 0;
+	return acc.end - acc.begin;
 }
 void *find_module_export_by_name(const char *module_name,
 				 const char *symbol_name)
