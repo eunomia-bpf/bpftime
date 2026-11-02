@@ -60,21 +60,25 @@ def main():
                 assert "invalid repeat" in result.stdout, (value, result.stdout)
                 assert "Time taken:" not in result.stdout, result.stdout
 
-            for options in (("repeat",), ("type",),
-                            ("repeat", "2", "type")):
+            for options in (("repeat",), ("type",), ("--repeat",), ("--type",),
+                            ("repeat", "2", "type"), ("repeat", "type", "JIT"),
+                            ("--repeat", "--type", "JIT")):
                 result = run(cli, env, "run", "7", str(data), *options)
                 assert result.returncode == 1, (options, result.returncode, result.stdout)
                 assert "Usage:" in result.stdout, result.stdout
                 assert "Time taken:" not in result.stdout, result.stdout
 
-            # Keep the existing option grammar: repeat must precede type;
-            # duplicate repeat and unknown options remain errors.
-            for options in (("type", "JIT", "repeat", "3"),
-                            ("repeat", "2", "repeat", "3"), ("unknown", "3"),
-                            ("repeat", "3", "unknown", "JIT")):
+            # Duplicate options (including legacy/canonical aliases) and
+            # unknown arguments are rejected uniformly.
+            for options in (("repeat", "2", "repeat", "3"),
+                            ("repeat", "2", "--repeat", "3"),
+                            ("type", "JIT", "type", "JIT"),
+                            ("unknown", "3"), ("--unknown", "3"),
+                            ("repeat", "3", "unknown", "JIT"),
+                            ("type", "INVALID")):
                 result = run(cli, env, "run", "7", str(data), *options)
                 assert result.returncode == 1, (options, result.returncode, result.stdout)
-                assert "Invalid subcommand" in result.stdout, result.stdout
+                assert "Error:" in result.stdout, result.stdout
 
             for options, count in (((), 1), (("repeat", "1"), 1),
                                    (("repeat", "3"), 3),
@@ -82,13 +86,35 @@ def main():
                                    (("repeat", " 3"), 3),
                                    (("repeat", "003"), 3),
                                    (("type", "JIT"), 1),
-                                   (("type", "JIT", "type", "JIT"), 1),
+                                   (("type", "JIT", "repeat", "3"), 3),
+                                   (("--repeat", "3", "--type", "JIT"), 3),
+                                   (("--repeat=3", "type", "JIT"), 3),
+                                   (("type", "JIT", "--repeat=3"), 3),
                                    (("repeat", "3", "type", "JIT"), 3)):
                 result = run(cli, env, "run", "7", str(data), *options)
                 assert result.returncode == 0, (options, result.returncode, result.stdout)
                 assert f"Repeat N: {count} with run type JIT" in result.stdout, result.stdout
                 assert f"Return value: {count}\n" in result.stdout, result.stdout
                 assert "Time taken:" in result.stdout, result.stdout
+            for name in ("type", "repeat"):
+                named_data = Path(directory) / name
+                named_data.write_bytes(struct.pack("<I", 0))
+                for prefix in ((), ("--repeat=3",), ("--repeat", "3")):
+                    command = [cli, "run", *prefix, "7", name]
+                    result = subprocess.run(command, cwd=directory, env=env,
+                                            stdout=subprocess.PIPE,
+                                            stderr=subprocess.STDOUT, text=True, timeout=30)
+                    count = 3 if prefix else 1
+                    assert result.returncode == 0, result.stdout
+                    assert f"Return value: {count}\n" in result.stdout, result.stdout
+                result = subprocess.run([cli, "run", "7", "--repeat=3", name],
+                                        cwd=directory, env=env, stdout=subprocess.PIPE,
+                                        stderr=subprocess.STDOUT, text=True, timeout=30)
+                assert result.returncode == 0 and "Return value: 3\n" in result.stdout, result.stdout
+            result = run(cli, env, "run", "7", str(data), "repeat", "3", "type", "INTERPRET")
+            assert result.returncode == 0 and "Return value: 3\n" in result.stdout, result.stdout
+            result = run(cli, env, "run", "7", str(data), "type", "AOT")
+            assert result.returncode == 1 and "AOT instructions not found" in result.stdout, result.stdout
         finally:
             result = run(cli, env, "remove")
             assert result.returncode == 0, result.stdout

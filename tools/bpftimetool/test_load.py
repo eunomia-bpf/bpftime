@@ -78,6 +78,14 @@ def main():
             handler = state["7"]
             assert handler["type"] == "bpf_map_handler", handler
             assert handler["name"] == "load_test_map", handler
+            result = run(cli, env, "remove")
+            assert result.returncode == 0 and not shm_path.exists(), result.stdout
+            result = run(cli, env, "import", str(exported))
+            assert result.returncode == 0, result.stdout
+            restored = Path(directory) / "restored.json"
+            result = run(cli, env, "export", str(restored))
+            assert result.returncode == 0, result.stdout
+            assert json.loads(restored.read_text()) == state
         finally:
             run(cli, env, "remove")
     print("PASS: bpftimetool load argument handling")
