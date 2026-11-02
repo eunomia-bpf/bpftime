@@ -262,7 +262,7 @@ int main(int argc, char *argv[])
 		bpftime_remove_global_shm();
 		return 0;
 	} else if (cmd == "run") {
-		if (argc < 4 || argc > 8) {
+		if (argc != 4 && argc != 6 && argc != 8) {
 			cerr << "Usage: " << argv[0]
 			     << " run <id> <data_in_file> [repeat N] [type RUN_TYPE]"
 			     << endl
@@ -277,7 +277,18 @@ int main(int argc, char *argv[])
 		std::string run_type = "JIT";
 		if (argc > 5) {
 			if (strcmp(argv[4], "repeat") == 0) {
-				repeat_N = atoi(argv[5]);
+				errno = 0;
+				char *repeat_end = nullptr;
+				long parsed_repeat = strtol(argv[5], &repeat_end, 10);
+				if (errno != 0 || repeat_end == argv[5] ||
+				    *repeat_end != '\0' || parsed_repeat <= 0 ||
+				    parsed_repeat > INT_MAX) {
+					cerr << "Error: invalid repeat '" << argv[5]
+					     << "'; expected an integer from 1 to "
+					     << INT_MAX << endl;
+					return 1;
+				}
+				repeat_N = static_cast<int>(parsed_repeat);
 			} else if (strcmp(argv[4], "type") == 0) {
 				run_type = std::string(argv[5]);
 			} else {
