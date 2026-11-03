@@ -5,10 +5,12 @@ add_subdirectory(pass/ptxpass_core)
 add_subdirectory(pass/ptxpass_kprobe_entry)
 add_subdirectory(pass/ptxpass_kretprobe)
 add_subdirectory(pass/ptxpass_kprobe_memcapture)
+add_subdirectory(pass/ptxpass_bb_tracepoint)
 
 list(APPEND PTX_PASS_EXECUTABLE $<TARGET_FILE:ptxpass_kprobe_entry>)
 list(APPEND PTX_PASS_EXECUTABLE $<TARGET_FILE:ptxpass_kretprobe>)
 list(APPEND PTX_PASS_EXECUTABLE $<TARGET_FILE:ptxpass_kprobe_memcapture>)
+list(APPEND PTX_PASS_EXECUTABLE $<TARGET_FILE:ptxpass_bb_tracepoint>)
 
 message("PTX_PASS_EXECUTABLE=${PTX_PASS_EXECUTABLE}")
 
@@ -42,6 +44,7 @@ add_dependencies(
     ptxpass_kprobe_entry
     ptxpass_kretprobe
     ptxpass_kprobe_memcapture
+    ptxpass_bb_tracepoint
     nv_attach_impl_ptx_compiler
 )
 set(NV_ATTACH_IMPL_INCLUDE ${CMAKE_CURRENT_SOURCE_DIR} )
