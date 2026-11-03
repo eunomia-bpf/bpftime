@@ -46,7 +46,9 @@ concurrency:
 
 jobs:
   build-and-run:
-    runs-on: ubuntu-latest
+    # LLVM 17 apt packages are unavailable on Ubuntu 26.04 (resolute).
+    # Ubuntu 22.04 (jammy) provides llvm-toolchain-jammy-17.
+    runs-on: ubuntu-22.04
 
     steps:
       - uses: actions/checkout@v3
