@@ -74,3 +74,49 @@ TEST_CASE("Mapped module paths survive VMA splitting")
 	REQUIRE(*resolved == path);
 }
 #endif
+
+TEST_CASE("Module offset resolution rejects offsets outside the module extent")
+{
+	frida_attach_impl man;
+	void *base = get_module_base_addr("");
+	REQUIRE(base != nullptr);
+	const auto extent = module_mapped_extent("");
+	REQUIRE(extent > 0);
+
+	const auto valid = (uintptr_t)&__func_reolve_test - (uintptr_t)base;
+	REQUIRE(valid < extent);
+	REQUIRE(resolve_function_addr_by_module_offset("", valid) ==
+		(void *)&__func_reolve_test);
+#if defined(__linux__)
+	// Both main-executable spellings must enumerate the same mappings.
+	REQUIRE(resolve_function_addr_by_module_offset("/proc/self/exe", valid) ==
+		(void *)&__func_reolve_test);
+#endif
+
+	// A wrapped offset used to be added unchecked, producing an address
+	// anywhere in the address space for gum to install a trampoline at.
+	REQUIRE(resolve_function_addr_by_module_offset("", UINTPTR_MAX) ==
+		nullptr);
+	REQUIRE(resolve_function_addr_by_module_offset("", extent) == nullptr);
+	REQUIRE(resolve_function_addr_by_module_offset("", extent - 1) !=
+		nullptr);
+}
+
+TEST_CASE("Resolution accepts a full module path from an attach spec")
+{
+	frida_attach_impl man;
+	// gum matches a full path for the base address but enumerates ranges only
+	// for the executable name, so a path must not be rejected as unmapped.
+	char exe_path[4096];
+	const ssize_t len = readlink("/proc/self/exe", exe_path, sizeof(exe_path) - 1);
+	REQUIRE(len > 0);
+	exe_path[len] = '\0';
+
+	void *base = get_module_base_addr(exe_path);
+	REQUIRE(base != nullptr);
+	const auto offset = (uintptr_t)&__func_reolve_test - (uintptr_t)base;
+	REQUIRE(resolve_function_addr_by_module_offset(exe_path, offset) ==
+		(void *)&__func_reolve_test);
+	REQUIRE(resolve_function_addr_by_module_offset(exe_path, UINTPTR_MAX) ==
+		nullptr);
+}
