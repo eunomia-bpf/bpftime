@@ -4,6 +4,7 @@
  * All rights reserved.
  */
 #include "bpf_attach_ctx.hpp"
+#include "bpf_helper_read_and_write.hpp"
 #if BPFTIME_HAVE_TRAP_UPROBE_ATTACH
 #include "trap_uprobe_attach_impl.hpp"
 #endif
@@ -11,16 +12,12 @@
 #include "linux/bpf.h"
 #include <algorithm>
 #include <stdexcept>
-#include <system_error>
 #if __APPLE__
 #include <cstdint>
-#include <mach/mach.h>
-#include <mach/mach_vm.h>
 #include <pthread.h>
 #elif __linux__
 #include <pthread.h>
 #include <sys/syscall.h>
-#include <sys/uio.h>
 #endif
 #ifdef BPFTIME_BUILD_WITH_LIBBPF
 #include "bpf/bpf.h"
@@ -41,8 +38,6 @@
 #include <time.h>
 #include <unistd.h>
 #include <ctime>
-#include <filesystem>
-#include "bpftime.hpp"
 #include "bpftime_shm.hpp"
 #include "bpftime_internal.h"
 #include "extension/userspace_xdp.h"
@@ -50,7 +45,6 @@
 #include <vector>
 #include <bpftime_shm_internal.hpp>
 #include <chrono>
-#include <thread>
 
 #define PATH_MAX 4096
 
@@ -64,13 +58,6 @@ __attribute__((weak)) bpftime::bpf_attach_ctx &get_global_attach_ctx()
 		"Calling mocked get_global_attach_ctx, this is not expected");
 }
 extern "C" {
-
-#if __linux__ && \
-	(defined(ENABLE_PROBE_READ_CHECK) || defined(ENABLE_PROBE_WRITE_CHECK))
-static pid_t probe_access_pid = getpid();
-static const int probe_access_atfork_status = pthread_atfork(
-	nullptr, nullptr, [] { probe_access_pid = getpid(); });
-#endif
 
 uint64_t bpftime_override_return(uint64_t ctx, uint64_t value);
 uint64_t bpftime_set_retval(uint64_t retval);
@@ -92,88 +79,6 @@ uint64_t bpftime_trace_printk(uint64_t fmt, uint64_t fmt_size, ...)
 long bpftime_strncmp(const char *s1, uint64_t s1_sz, const char *s2)
 {
 	return strncmp(s1, s2, s1_sz);
-}
-
-#ifdef ENABLE_PROBE_READ_CHECK
-static bool probe_read_memory(void *dst, const void *src, size_t size)
-{
-	if (size == 0)
-		return true;
-#if __APPLE__
-	mach_vm_size_t copied = 0;
-	return mach_vm_read_overwrite(mach_task_self(), (mach_vm_address_t)src,
-				      (mach_vm_size_t)size,
-				      (mach_vm_address_t)dst,
-				      &copied) == KERN_SUCCESS &&
-	       copied == size;
-#elif __linux__
-	struct iovec local = { dst, size };
-	struct iovec remote = { const_cast<void *>(src), size };
-	return syscall(SYS_process_vm_readv,
-		       probe_access_atfork_status == 0 ? probe_access_pid : getpid(),
-		       &local, 1, &remote, 1, 0) == (ssize_t)size;
-#else
-#error "Probe memory checks are unsupported on this platform"
-#endif
-}
-#endif
-
-int64_t bpftime_probe_read(uint64_t dst, int64_t size, uint64_t ptr, uint64_t,
-			   uint64_t)
-{
-	if (unlikely(size < 0)) {
-		SPDLOG_ERROR("Invalid size: {}", size);
-		return -EFAULT;
-	}
-#ifdef ENABLE_PROBE_READ_CHECK
-	return probe_read_memory((void *)dst, (void *)ptr, (size_t)size) ?
-		       0 :
-		       -EFAULT;
-#else
-	memcpy((void *)dst, (void *)ptr, (size_t)size);
-	return 0;
-#endif
-}
-
-#if defined(ENABLE_PROBE_WRITE_CHECK) || defined(ENABLE_PROBE_READ_CHECK)
-static bool probe_write_memory(void *dst, const void *src, size_t size)
-{
-	if (size == 0)
-		return true;
-#if __APPLE__
-	mach_vm_size_t copied = 0;
-	return mach_vm_read_overwrite(mach_task_self(), (mach_vm_address_t)src,
-				      (mach_vm_size_t)size,
-				      (mach_vm_address_t)dst,
-				      &copied) == KERN_SUCCESS &&
-	       copied == size;
-#elif __linux__
-	struct iovec local = { const_cast<void *>(src), size };
-	struct iovec remote = { dst, size };
-	return syscall(SYS_process_vm_writev,
-		       probe_access_atfork_status == 0 ? probe_access_pid : getpid(),
-		       &local, 1, &remote, 1, 0) == (ssize_t)size;
-#else
-#error "Probe memory checks are unsupported on this platform"
-#endif
-}
-#endif
-
-int64_t bpftime_probe_write_user(uint64_t dst, uint64_t src, int64_t len,
-				 uint64_t, uint64_t)
-{
-	if (unlikely(len < 0)) {
-		SPDLOG_ERROR("Invalid len: {}", len);
-		return -EFAULT;
-	}
-#ifdef ENABLE_PROBE_WRITE_CHECK
-	return probe_write_memory((void *)dst, (void *)src, (size_t)len) ?
-		       0 :
-		       -EFAULT;
-#else
-	memcpy((void *)dst, (void *)src, (size_t)len);
-	return 0;
-#endif
 }
 
 uint64_t bpftime_get_prandom_u32()
@@ -234,8 +139,7 @@ uint64_t bpftime_get_current_pid_tgid(uint64_t, uint64_t, uint64_t, uint64_t,
 				      uint64_t)
 {
 	// If registering the fork handler failed, the cache is still the
-	// parent's after a fork, so read the identity directly. The probe
-	// access cache above falls back the same way.
+	// parent's after a fork, so read the identity directly.
 	if (bpftime_identity_atfork_status != 0) {
 #if __linux__
 		return ((uint64_t)getpid() << 32) |
@@ -338,83 +242,6 @@ uint64_t bpftime_map_peek_elem_helper(uint64_t map, uint64_t value, uint64_t,
 {
 	return (uint64_t)bpftime::shm_holder.global_shared_memory
 		.bpf_map_peek_elem((int)map, (void *)value, false);
-}
-
-#ifdef ENABLE_PROBE_READ_CHECK
-static size_t probe_page_remaining(const void *address)
-{
-	static const size_t page_size = []() {
-		long result = sysconf(_SC_PAGESIZE);
-		return result > 0 ? (size_t)result : (size_t)4096;
-	}();
-	return page_size - ((uintptr_t)address % page_size);
-}
-
-static void clear_probe_memory(void *dst, size_t size)
-{
-	static const char zeros[256] = {};
-	auto output = (char *)dst;
-	while (size > 0) {
-		size_t chunk_size = std::min(size, sizeof(zeros));
-		if (!probe_write_memory(output, zeros, chunk_size))
-			return;
-		output += chunk_size;
-		size -= chunk_size;
-	}
-}
-#endif
-
-int64_t bpf_probe_read_str(uint64_t buf, uint64_t bufsz, uint64_t ptr, uint64_t,
-			   uint64_t)
-{
-	if (bufsz == 0)
-		return 0;
-
-	auto dst = (char *)(uintptr_t)buf;
-	auto src = (const char *)(uintptr_t)ptr;
-#ifndef ENABLE_PROBE_READ_CHECK
-	for (size_t i = 0; i < (size_t)bufsz; i++) {
-		if (src[i] == '\0') {
-			dst[i] = '\0';
-			return (int64_t)i + 1;
-		}
-		if (i == (size_t)bufsz - 1) {
-			dst[i] = '\0';
-			return (int64_t)bufsz;
-		}
-		dst[i] = src[i];
-	}
-	return (int64_t)bufsz;
-#else
-	char scratch[256];
-	size_t copied = 0;
-	while (copied < (size_t)bufsz) {
-		size_t chunk_size =
-			std::min(sizeof(scratch), (size_t)bufsz - copied);
-		chunk_size = std::min(chunk_size,
-				      probe_page_remaining(src + copied));
-		if (!probe_read_memory(scratch, src + copied, chunk_size)) {
-			clear_probe_memory(dst, (size_t)bufsz);
-			return -EFAULT;
-		}
-
-		auto terminator = (char *)memchr(scratch, '\0', chunk_size);
-		bool complete = terminator != nullptr;
-		if (complete) {
-			chunk_size = (size_t)(terminator - scratch) + 1;
-		} else if (chunk_size == (size_t)bufsz - copied) {
-			scratch[chunk_size - 1] = '\0';
-			complete = true;
-		}
-
-		if (!probe_write_memory(dst + copied, scratch, chunk_size))
-			return -EFAULT;
-		copied += chunk_size;
-		if (complete)
-			return (int64_t)copied;
-	}
-	return (int64_t)copied;
-#endif
 }
 
 uint64_t bpf_ktime_get_coarse_ns(uint64_t, uint64_t, uint64_t, uint64_t,
@@ -598,10 +425,12 @@ uint64_t bpftime_tail_call(uint64_t ctx, uint64_t prog_array, uint64_t index)
 		}
 		std::optional<bpftime::bpftime_prog> fallback;
 		if (prog == nullptr) {
-			const auto &handler = std::get<bpftime::bpf_prog_handler>(
-				bpftime::shm_holder.global_shared_memory.get_handler(
-					to_call_fd));
-			fallback.emplace(handler.insns.data(), handler.insns.size(),
+			const auto &handler =
+				std::get<bpftime::bpf_prog_handler>(
+					bpftime::shm_holder.global_shared_memory
+						.get_handler(to_call_fd));
+			fallback.emplace(handler.insns.data(),
+					 handler.insns.size(),
 					 handler.name.c_str());
 			prog = &*fallback;
 			if (bpftime::load_prog_and_helpers(
@@ -1230,7 +1059,7 @@ bpftime_helper_group::get_kernel_utils_helper_group()
 		    bpftime_helper_info{
 			    .index = BPF_FUNC_probe_read_user,
 			    .name = "bpf_probe_read_user",
-			    .fn = (void *)bpftime_probe_read,
+			    .fn = (void *)bpftime_probe_read_user,
 		    } },
 		  { BPF_FUNC_ktime_get_ns,
 		    bpftime_helper_info{
