@@ -46,7 +46,10 @@ concurrency:
 
 jobs:
   build-and-run:
-    runs-on: ubuntu-latest
+    # apt.llvm.org publishes no llvm-toolchain-resolute-17 repository, so
+    # `llvm.sh 17` fails on ubuntu-latest (now 26.04) while installing deps.
+    # Pin to jammy, which still has the LLVM 17 packages.
+    runs-on: ubuntu-22.04
 
     steps:
       - uses: actions/checkout@v3
