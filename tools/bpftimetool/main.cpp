@@ -208,8 +208,8 @@ int main(int argc, char *argv[])
 	} else if (args.program.is_subcommand_used(args.run)) {
 		return bpftime_run_ebpf_program(
 			args.run.get<int>("id"), args.run.get<std::string>("data_file"),
-			args.run.is_used("--repeat") ? args.run.get<int>("--repeat") : 1,
-			args.run.is_used("--type") ? args.run.get<std::string>("--type") : "JIT");
+			args.run.present<int>("--repeat").value_or(1),
+			args.run.present<std::string>("--type").value_or("JIT"));
 	}
 #if defined(BPFTIME_ENABLE_CUDA_ATTACH)
 	else if (args.program.is_subcommand_used(args.cuda)) {

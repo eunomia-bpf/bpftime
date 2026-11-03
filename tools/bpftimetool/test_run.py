@@ -5,9 +5,10 @@ import json
 import os
 from pathlib import Path
 import struct
-import subprocess
 import sys
 import tempfile
+
+from test_load import run
 
 
 # Increment the input counter and return it. The final result verifies that
@@ -25,13 +26,6 @@ PROGRAM = {
         "type": 1, "cnt": 4, "insns": INSNS.hex(), "attach_fds": [],
     },
 }
-
-
-def run(cli, env, *args):
-    return subprocess.run(
-        [cli, *args], env=env, stdout=subprocess.PIPE,
-        stderr=subprocess.STDOUT, text=True, timeout=30,
-    )
 
 
 def main():
@@ -100,16 +94,11 @@ def main():
                 named_data = Path(directory) / name
                 named_data.write_bytes(struct.pack("<I", 0))
                 for prefix in ((), ("--repeat=3",), ("--repeat", "3")):
-                    command = [cli, "run", *prefix, "7", name]
-                    result = subprocess.run(command, cwd=directory, env=env,
-                                            stdout=subprocess.PIPE,
-                                            stderr=subprocess.STDOUT, text=True, timeout=30)
+                    result = run(cli, env, "run", *prefix, "7", name, cwd=directory)
                     count = 3 if prefix else 1
                     assert result.returncode == 0, result.stdout
                     assert f"Return value: {count}\n" in result.stdout, result.stdout
-                result = subprocess.run([cli, "run", "7", "--repeat=3", name],
-                                        cwd=directory, env=env, stdout=subprocess.PIPE,
-                                        stderr=subprocess.STDOUT, text=True, timeout=30)
+                result = run(cli, env, "run", "7", "--repeat=3", name, cwd=directory)
                 assert result.returncode == 0 and "Return value: 3\n" in result.stdout, result.stdout
             result = run(cli, env, "run", "7", str(data), "repeat", "3", "type", "INTERPRET")
             assert result.returncode == 0 and "Return value: 3\n" in result.stdout, result.stdout

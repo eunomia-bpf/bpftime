@@ -29,9 +29,9 @@ MAP = {
 }
 
 
-def run(cli, env, *args):
+def run(cli, env, *args, cwd=None):
     return subprocess.run(
-        [cli, *args], env=env, stdout=subprocess.PIPE,
+        [cli, *args], env=env, cwd=cwd, stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT, text=True, timeout=30,
     )
 
@@ -42,6 +42,7 @@ def main():
     cli = str(Path(sys.argv[1]).resolve())
     shm_name = f"bpftime_load_test_{os.getpid()}"
     shm_path = Path("/dev/shm") / shm_name
+    assert not shm_path.exists(), f"refusing to reuse {shm_path}"
     env = dict(os.environ, BPFTIME_GLOBAL_SHM_NAME=shm_name)
     payload = json.dumps(MAP)
 
@@ -67,9 +68,9 @@ def main():
 
             # An fd outside the handler table must fail, not report success.
             # Operation failures return the raw negative result, as the other
-            # commands in this tool do, so only require a non-zero status.
+            # commands in this tool do. Require normal failure, never a signal.
             result = run(cli, env, "load", "6144", payload)
-            assert result.returncode != 0, result.stdout
+            assert result.returncode > 0, (result.returncode, result.stdout)
 
             result = run(cli, env, "export", str(exported))
             assert result.returncode == 0, result.stdout
@@ -87,7 +88,8 @@ def main():
             assert result.returncode == 0, result.stdout
             assert json.loads(restored.read_text()) == state
         finally:
-            run(cli, env, "remove")
+            result = run(cli, env, "remove")
+            assert result.returncode == 0 and not shm_path.exists(), result.stdout
     print("PASS: bpftimetool load argument handling")
 
 

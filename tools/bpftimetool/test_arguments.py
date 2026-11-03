@@ -56,9 +56,7 @@ def main():
             result = run(cli, env, "export", str(exported))
             assert result.returncode == 0, result.stdout
             assert json.loads(exported.read_text())["0"]["name"] == MAP["name"]
-            result = subprocess.run([cli, "export", "./--help"], cwd=directory,
-                                    env=env, stdout=subprocess.PIPE,
-                                    stderr=subprocess.STDOUT, text=True, timeout=30)
+            result = run(cli, env, "export", "./--help", cwd=directory)
             assert result.returncode == 0, result.stdout
             assert json.loads((directory / "--help").read_text())["0"]["name"] == MAP["name"]
         finally:
