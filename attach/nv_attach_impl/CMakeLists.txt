@@ -47,13 +47,18 @@ add_dependencies(
 set(NV_ATTACH_IMPL_INCLUDE ${CMAKE_CURRENT_SOURCE_DIR} )
 find_cuda()
 
-target_include_directories(bpftime_nv_attach_impl PRIVATE ${SPDLOG_INCLUDE} ${CMAKE_CURRENT_BINARY_DIR} ${CMAKE_SOURCE_DIR}/third_party PUBLIC ${CMAKE_SOURCE_DIR}/runtime/ ${BASE_ATTACH_IMPL_INCLUDE} ${NV_ATTACH_IMPL_INCLUDE} ${CUDA_INCLUDE_PATH} ${FRIDA_GUM_INSTALL_DIR} ${CMAKE_CURRENT_SOURCE_DIR}/../../runtime ${CMAKE_CURRENT_SOURCE_DIR}/../../vm/llvm-jit/include ${CMAKE_CURRENT_SOURCE_DIR}/pass/ptxpass_core/include)
+target_include_directories(bpftime_nv_attach_impl PRIVATE ${SPDLOG_INCLUDE} ${CMAKE_CURRENT_BINARY_DIR} ${CMAKE_SOURCE_DIR}/third_party PUBLIC ${CMAKE_SOURCE_DIR}/runtime/ ${CMAKE_SOURCE_DIR}/runtime/include ${BASE_ATTACH_IMPL_INCLUDE} ${NV_ATTACH_IMPL_INCLUDE} ${CUDA_INCLUDE_PATH} ${FRIDA_GUM_INSTALL_DIR} ${CMAKE_CURRENT_SOURCE_DIR}/../../runtime ${CMAKE_CURRENT_SOURCE_DIR}/../../vm/llvm-jit/include ${CMAKE_CURRENT_SOURCE_DIR}/pass/ptxpass_core/include)
 
 target_link_directories(bpftime_nv_attach_impl PUBLIC ${CUDA_LIBRARY_PATH} )
 
 target_link_libraries(bpftime_nv_attach_impl PUBLIC bpftime_base_attach_impl spdlog::spdlog ${CUDA_LIBS} PRIVATE  ${FRIDA_GUM_INSTALL_DIR}/libfrida-gum.a PUBLIC llvmbpf_vm bpftime_vm_compat ptxpass_core)
 
 set_property(TARGET bpftime_nv_attach_impl PROPERTY CXX_STANDARD 20)
+
+if(${ENABLE_EBPF_VERIFIER})
+  target_link_libraries(bpftime_nv_attach_impl PRIVATE bpftime-verifier)
+  target_compile_definitions(bpftime_nv_attach_impl PRIVATE ENABLE_BPFTIME_VERIFIER)
+endif()
 
 # nv_attach_impl includes internal llvmbpf headers that include LLVM headers
 # (e.g. vm/llvm-jit/src/llvm_jit_context.hpp). Make sure LLVM include dirs are
