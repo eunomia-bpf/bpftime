@@ -73,7 +73,7 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
         test_get_current_uid_gid.cpp
         test_get_current_comm.cpp)
     target_link_options(bpftime_runtime_tests PRIVATE
-        -Wl,--wrap=getuid -Wl,--wrap=getgid
+-Wl,--wrap=getuid -Wl,--wrap=getgid -Wl,--wrap=close
         -Wl,--wrap=malloc -Wl,--wrap=calloc -Wl,--wrap=realloc)
 endif()
 

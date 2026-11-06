@@ -5,7 +5,7 @@ Command-line tool for inspecting and managing bpftime shared memory state.
 ## Overview
 
 `bpftimetool` provides utilities to:
-- **Export** shared memory state to JSON for inspection or backup
+- **Export** object definitions to JSON for inspection or reuse
 - **Import** eBPF objects from JSON into shared memory
 - **Run** eBPF programs with performance benchmarking
 - **Remove** shared memory segments system-wide
@@ -51,7 +51,7 @@ as one shell argument. This differs from `import`, which reads a JSON file.
 
 ### export - Dump Shared Memory to JSON
 
-Export all eBPF objects (programs, maps, links) from shared memory to a JSON file:
+Export the supported eBPF object-definition graph to a JSON file:
 
 ```bash
 bpftimetool export <filename>
@@ -67,14 +67,14 @@ $ bpftimetool export state.json
 ```
 
 The JSON file contains:
-- eBPF program bytecode and metadata
+- eBPF program bytecode, optional AOT bytes, and metadata
 - Map definitions and attributes
 - Perf event attachments
 - Handler file descriptors
 
 **Use cases:**
 - Debugging runtime state
-- Backup before modifications
+- Inspecting definitions before modifications
 - Analysis and reverse engineering
 - Sharing test cases
 
@@ -96,10 +96,72 @@ $ SPDLOG_LEVEL=Debug bpftimetool import minimal.json
 ```
 
 **Use cases:**
-- Restore previous state
+- Recreating object definitions in an empty segment
 - Load pre-configured environments
 - Testing and CI/CD pipelines
-- Cross-system deployment
+- Testing in a compatible environment
+
+### Import/export contract
+
+JSON stores object definitions and their references. It does **not** capture map
+entries, perf/ring-buffer contents, epoll registrations, memfd contents, or a live
+process checkpoint. Importing an array or hash map creates a new empty map. Map
+descriptor aliases are independent definitions; shared map identity is not
+preserved. Initialize map data separately before executing imported programs.
+
+Both operations require quiescent shared memory: stop concurrent users from
+creating, deleting, or changing handlers while importing or exporting. They do
+not provide a concurrent snapshot or transaction isolation from other processes.
+Keep process-local custom map callback registration unchanged during import.
+
+`import` and `load` use the same strict decoder. The entire input is validated,
+declared link and legacy attachment references are checked, and resources are
+prepared before handlers are published.
+Every requested descriptor must be free. An error leaves existing handlers and
+their data unchanged and publishes no partial graph. A failed CLI import may
+still create an empty shared-memory segment. Import does not reset the runtime
+configuration of an existing segment.
+
+`export` encodes the complete supported graph before writing a temporary regular
+file in the destination directory. It replaces the destination only after the
+write and close succeed. Failure leaves an existing file unchanged. New files
+have mode `0600`; replacement copies only the existing owner/group/other
+read, write, and execute mode bits (`0777`). Ownership, ACLs, and special mode
+bits are not copied. Symlinks, multiply linked files, the active segment being
+exported (including path aliases), and non-regular targets (including
+`/dev/full`, devices, and directories) are rejected. Replacement is atomic for
+readers but does not promise durability across a power failure.
+
+Export preserves map definitions, including kernel perf, GPU, and custom map
+attributes. Exporting metadata does not require allocating the corresponding
+resources and does not guarantee that this build can import those definitions.
+
+Transactional import support depends on the build. Built-in userspace maps are
+restored; libbpf-enabled builds also accept program arrays, stack-trace maps,
+and lazy kernel-user array/hash/per-CPU-array wrappers. Import recreates those
+wrappers without opening or validating their referenced kernel maps.
+CUDA-enabled builds also restore host-backed GPU arrays
+(`GPU_ARRAY_HOST_MAP` and `PERGPUTD_ARRAY_HOST_MAP`) without registering or
+mapping GPU memory. Per-thread host arrays require a positive thread count and
+a per-entry size that fits the runtime's 32-bit value-size interface.
+Callback-only custom map definitions can be restored when the destination's
+`allow_non_buildin_map_types` setting is enabled and the importing process has
+registered at least one data-operation callback, with no `alloc_map` or
+`map_free` callback. Import does not invoke those callbacks or acquire external
+resources. Callbacks are process-local and are not serialized; each process
+using the imported map must register its own operations.
+External maps with lifecycle callbacks, kernel perf transport, and other GPU map
+types remain rejected on import: their constructors and cleanup do not yet
+provide the required rollback guarantees. This is an import compatibility limitation
+compared with the older constructor-based path, not an absence of runtime support for those map types.
+Export retains legacy inspection metadata for epoll (its handler type only)
+and memfd (its name and flags). It does not save epoll registrations or memfd
+contents. As in the older importer, `import` and `load` reject these handler
+types; a file containing either is rejected in full, without publishing any
+handlers. Export success therefore does not guarantee that the file can be
+imported. Links support the legacy/custom attachment type `0` and perf-event
+attachment type `41`; unsupported link types are rejected rather than losing
+their type-specific fields.
 
 ### run - Execute and Benchmark Programs
 
@@ -182,7 +244,7 @@ bpftimetool export debug_state.json
 
 2. **Inspect JSON to find program IDs and understand state:**
 ```bash
-cat debug_state.json | jq '.handlers[] | select(.type=="bpf_prog_handler")'
+cat debug_state.json | jq 'to_entries[] | select(.value.type=="bpf_prog_handler")'
 ```
 
 3. **Test specific program:**
@@ -210,82 +272,104 @@ bpftime-aot compile  # Compile first
 bpftimetool run 4 input.bin repeat 10000 type AOT
 ```
 
-### Backup and Restore
+### Recreate Definitions in a Separate Segment
+
+First stop concurrent changes to the source segment, then export its definitions:
 
 ```bash
-# Backup before making changes
-bpftimetool export backup_$(date +%Y%m%d_%H%M%S).json
-
-# ... make changes ...
-
-# Restore if needed
-bpftimetool remove
-bpftimetool import backup_20250930_120000.json
+bpftimetool export definitions.json
+BPFTIME_GLOBAL_SHM_NAME=bpftime_test_definitions bpftimetool import definitions.json
 ```
 
-### Cross-System Testing
+Use a fresh, task-specific segment name. Import rejects descriptor collisions;
+it does not replace existing objects. Map contents must be initialized separately.
+Do not remove a live shared-memory segment to work around a collision.
 
-Export on development machine, import on test machine:
+### Move Definitions Between Compatible Environments
 
-```bash
-# On dev machine
-bpftimetool export production_config.json
-scp production_config.json test-server:~/
-
-# On test machine
-bpftimetool import production_config.json
-```
+Copying JSON does not make every object portable. Review module paths, PIDs,
+tracepoint IDs, kernel map/BTF IDs, program assumptions, and available custom
+attach implementations on the destination. AOT bytes are architecture/backend
+specific. The format preserves these values; it does not relocate them for a
+different machine or kernel.
 
 ## JSON Format
 
-The exported JSON contains an array of handlers with this structure:
+The top level is an object keyed by canonical nonnegative decimal descriptor
+strings, not a `handlers` array. This is a minimal program and perf-event link:
 
 ```json
 {
-  "handlers": [
-    {
-      "fd": 3,
-      "type": "bpf_map_handler",
-      "name": ".rodata.str1.1",
-      "attr": {
-        "map_type": 2,
-        "key_size": 4,
-        "value_size": 21,
-        "max_entries": 1,
-        "flags": 128
-      }
-    },
-    {
-      "fd": 4,
-      "type": "bpf_prog_handler",
-      "name": "do_uprobe_trace",
-      "attr": {
-        "type": 0,
-        "cnt": 16,
-        "insns": "<hex-encoded-bytecode>",
-        "attach_fds": [5]
-      }
-    },
-    {
-      "fd": 5,
-      "type": "bpf_perf_event_handler",
-      "attr": {
-        "type": 6,
-        "pid": -1,
-        "_module_name": "example/minimal/victim",
-        "offset": 4457
-      }
+  "10": {
+    "type": "bpf_link_handler",
+    "attr": {
+      "prog_fd": 20,
+      "target_fd": 30,
+      "attach_type": 41,
+      "flags": 0,
+      "attach_cookie": 123
     }
-  ]
+  },
+  "20": {
+    "type": "bpf_prog_handler",
+    "name": "return_zero",
+    "attr": {
+      "type": 1,
+      "cnt": 2,
+      "insns": "b7000000000000009500000000000000"
+    }
+  },
+  "30": {
+    "type": "bpf_perf_event_handler",
+    "enabled": false,
+    "attr": {
+      "type": 2,
+      "data_type": "tracepoint_perf_event_data",
+      "pid": -1,
+      "tracepoint_id": 1
+    }
+  }
 }
 ```
 
-### Handler Types
+The example only defines records; its tracepoint ID must be adapted before use.
+Descriptor order does not determine creation order. Duplicate JSON keys,
+noncanonical descriptor aliases such as `"01"`, numeric overflow, malformed hex,
+missing required fields, and dangling or incorrectly typed references are errors.
+Program `cnt` must match the number of encoded eight-byte instructions. Import
+does not verify bytecode safety or relocate/validate map references embedded in
+instructions; it preserves instruction bytes and explicit descriptor numbers.
 
-- **bpf_map_handler**: eBPF maps (hash, array, ringbuf, etc.)
-- **bpf_prog_handler**: eBPF programs with bytecode
-- **bpf_perf_event_handler**: Uprobe/kprobe/tracepoint attachments
-- **bpf_link_handler**: BPF links connecting programs to hooks
+### Handler Types and Compatibility
+
+- **bpf_map_handler**: Map name and complete attributes, including optional
+  `gpu_thread_count` (legacy default `1024`). Map entries are not serialized.
+- **bpf_prog_handler**: Program name, type, instruction count, and hex-encoded
+  instructions. Optional `attr.aot_insns` stores hex-encoded AOT bytes.
+- **bpf_perf_event_handler**: Uprobe/uretprobe, override/replace, kprobe/kretprobe,
+  tracepoint, software perf, and custom event definitions. Probe offsets and
+  reference-counter offsets retain their full width. `enabled: false` remains
+  false even for event constructors that normally start enabled. Custom payloads
+  use `attr.data_type: "custom_perf_event_data"` and `attr.attach_argument`;
+  the explicit tag permits custom numeric event types to overlap built-in IDs.
+  Missing tags retain legacy inference for built-in event types only.
+- **bpf_link_handler**: Program/target references, attachment type, flags, and
+  optional `attr.attach_cookie`. An absent/null cookie is distinct from an
+  explicitly supplied zero cookie.
+
+The descriptor-keyed format remains accepted subject to the import capability
+limits above. Legacy missing link
+`attach_type` and `flags` default to `0`; missing cookies remain absent. Legacy
+program `attach_fds` is converted to link records after reserving all explicit
+descriptors, without duplicating an explicit connection. Synthesized link
+IDs start at `3`, avoiding the standard handler slots; explicitly
+specified descriptor numbers remain unchanged. Synthesized IDs are not reserved
+OS descriptors. They can still collide with unrelated process-local descriptors,
+so this is not equivalent to the older fake-fd allocation path and does not
+resolve the runtime's general shared-ID/process-fd ownership problem.
+Missing `attach_fds` means no
+legacy attachments. Empty exports are `{}`; legacy `null` is accepted
+as an empty graph.
 
 ## Environment Variables
 
@@ -313,7 +397,7 @@ A: Ensure the JSON format matches the expected schema. Use `export` to see corre
 
 ## Performance Notes
 
-- **Export**: Fast, reads shared memory without copying large data
+- **Export**: Copies and encodes definitions before writing the output file
 - **Import**: Creates all objects in shared memory, may take time for large programs
 - **Run**: Performance depends on execution mode:
   - INTERPRET: ~100-500ns per iteration overhead
