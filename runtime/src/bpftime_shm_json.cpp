@@ -151,9 +151,20 @@ using definition = std::variant<map_definition, program_definition,
 				perf_definition, link_definition>;
 using import_plan = std::map<int, definition>;
 
+[[noreturn]] void invalid_custom_map(const bpf_map_attr &attr,
+                                    const std::string &name,
+                                    const std::string &reason)
+{
+	// Quote/escape names so a diagnostic remains unambiguous even when a
+	// definition contains quotes or line breaks.
+	invalid("custom map " + json(name).dump() + " (type " +
+		std::to_string(attr.type) + ") " + reason);
+}
+
 // Return whether staging needs a native implementation; callback-only maps
 // retain metadata without acquiring or owning external resources.
-bool validate_import_map(const bpf_map_attr &attr, bool allow_custom)
+bool validate_import_map(const bpf_map_attr &attr, bool allow_custom,
+                         const std::string &name)
 {
 	// Only implementations whose resources are wholly owned by the shared
 	// segment can be staged and rolled back. Lazy kernel map wrappers are
@@ -208,16 +219,26 @@ bool validate_import_map(const bpf_map_attr &attr, bool allow_custom)
 	case bpf_map_type::BPF_MAP_TYPE_GPU_KERNEL_SHARED_ARRAY_MAP:
 	case bpf_map_type::BPF_MAP_TYPE_GPU_RINGBUF_MAP:
 		invalid("map type cannot be restored transactionally by this build");
-	default:
-		if (allow_custom && attr.type >= 0 &&
-		    attr.type < static_cast<int>(bpf_map_type::BPF_MAP_TYPE_MAX)) {
-			const auto &ops = global_map_ops_table[attr.type];
-			if (!ops.alloc_map && !ops.map_free &&
-			    (ops.elem_lookup || ops.elem_update || ops.elem_delete ||
-			     ops.map_get_next_key))
-				return false; // Metadata only; never call external initialization.
-		}
-		invalid("custom map requires enabled callback-only operations");
+	default: {
+		if (attr.type < 0 ||
+		    attr.type >= static_cast<int>(bpf_map_type::BPF_MAP_TYPE_MAX))
+			invalid_custom_map(attr, name,
+				"is outside the callback registry type range [0, " +
+				std::to_string(static_cast<int>(bpf_map_type::BPF_MAP_TYPE_MAX)) + ")");
+		if (!allow_custom)
+			invalid_custom_map(attr, name,
+				"requires destination setting allow_non_buildin_map_types=true");
+		const auto &ops = global_map_ops_table[attr.type];
+		if (ops.alloc_map || ops.map_free)
+			invalid_custom_map(attr, name,
+				"requires both alloc_map and map_free to be null");
+		if (!ops.elem_lookup && !ops.elem_update && !ops.elem_delete &&
+		    !ops.map_get_next_key)
+			invalid_custom_map(attr, name,
+				"requires at least one registered data callback: "
+				"elem_lookup, elem_update, elem_delete, or map_get_next_key");
+		return false; // Metadata only; never call external initialization.
+	}
 	}
 	const auto type = static_cast<bpf_map_type>(attr.type);
 	if ((type == bpf_map_type::BPF_MAP_TYPE_KERNEL_USER_ARRAY ||
@@ -442,8 +463,9 @@ definition decode_handler(const json &value, bool allow_custom)
 		invalid("handler attr must be an object");
 	if (type == "bpf_map_handler") {
 		auto attr = decode_map(a);
-		return map_definition{ string_field(value, "name"), attr,
-				       validate_import_map(attr, allow_custom) };
+		auto name = string_field(value, "name");
+		const auto initialize = validate_import_map(attr, allow_custom, name);
+		return map_definition{ std::move(name), attr, initialize };
 	}
 	if (type == "bpf_prog_handler") {
 		program_definition p;
