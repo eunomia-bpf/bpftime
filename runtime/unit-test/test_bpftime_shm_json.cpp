@@ -3,6 +3,9 @@
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/catch_message.hpp>
 #include <json.hpp>
+#include <spdlog/spdlog.h>
+#include <spdlog/sinks/ostream_sink.h>
+#include <sstream>
 #include <linux/bpf.h>
 #include <boost/interprocess/shared_memory_object.hpp>
 #include <cerrno>
@@ -84,6 +87,24 @@ struct json_fixture {
 	}
 };
 unsigned json_fixture::next_id = 0;
+
+struct captured_json_log {
+	std::ostringstream output;
+	std::shared_ptr<spdlog::logger> previous = spdlog::default_logger();
+	captured_json_log()
+	{
+		auto sink = std::make_shared<spdlog::sinks::ostream_sink_mt>(output);
+		auto logger = std::make_shared<spdlog::logger>("json-test", sink);
+		logger->set_pattern("%v");
+		logger->set_level(spdlog::level::err);
+		spdlog::set_default_logger(std::move(logger));
+	}
+	~captured_json_log()
+	{
+		spdlog::drop("json-test");
+		spdlog::set_default_logger(std::move(previous));
+	}
+};
 
 struct map_ops_guard {
 	int type;
@@ -472,21 +493,66 @@ TEST_CASE("JSON callback-only maps never initialize or release external resource
 	}
 	SECTION("ineligible definitions are rejected before callbacks")
 	{
-		SECTION("custom types must be enabled") { allow_custom_maps(fixture.shm, false); }
-		SECTION("data callbacks must be registered") { ops = {}; }
-		SECTION("external initialization is not transactional") { ops.alloc_map = allocate; }
-		SECTION("external cleanup is not owned by import") { ops.map_free = release; }
-		SECTION("negative types do not index the callback table") { record["attr"]["map_type"] = -1; }
+		record["name"] = "diagnostic \"map\"\n";
+		std::string expected;
+		SECTION("custom types must be enabled") {
+			allow_custom_maps(fixture.shm, false);
+			expected = "requires destination setting allow_non_buildin_map_types=true";
+		}
+		SECTION("data callbacks must be registered") {
+			ops = {};
+			expected = "requires at least one registered data callback: "
+				   "elem_lookup, elem_update, elem_delete, or map_get_next_key";
+		}
+		SECTION("external initialization is not transactional") {
+			ops.alloc_map = allocate;
+			expected = "requires both alloc_map and map_free to be null";
+		}
+		SECTION("external cleanup is not owned by import") {
+			ops.map_free = release;
+			expected = "requires both alloc_map and map_free to be null";
+		}
+		SECTION("both lifecycle callbacks prevent transactional import") {
+			ops.alloc_map = allocate;
+			ops.map_free = release;
+			expected = "requires both alloc_map and map_free to be null";
+		}
+		SECTION("negative types do not index the callback table") {
+			record["attr"]["map_type"] = -1;
+			expected = "outside the callback registry type range";
+		}
 		SECTION("oversized types do not index the callback table") {
 			record["attr"]["map_type"] = static_cast<int>(bpftime::bpf_map_type::BPF_MAP_TYPE_MAX);
+			expected = "outside the callback registry type range";
 		}
 		REQUIRE(bpftime_register_map_ops(custom_type, &ops) == 0);
-		errno = 0;
-		CHECK(bpftime::bpftime_import_shm_handler_from_json(
-			      fixture.shm, 40, record.dump().c_str()) < 0);
-		CHECK(errno == EINVAL);
-		CHECK(fixture.snapshot() == original);
-		CHECK(lookup_calls == 0);
+		for (const bool from_file : { false, true }) {
+			CAPTURE(from_file);
+			if (from_file)
+				fixture.write(json{ { "40", record } }.dump());
+			const auto previous_logger = spdlog::default_logger();
+			{
+				captured_json_log log;
+				errno = 0;
+				const int result = from_file ?
+					bpftime_import_shm_from_json(fixture.shm, fixture.path.c_str()) :
+					bpftime::bpftime_import_shm_handler_from_json(
+						fixture.shm, 40, record.dump().c_str());
+				CHECK(result == -1);
+				CHECK(errno == EINVAL);
+				const auto message = log.output.str();
+				INFO(message);
+				CHECK(message.find("handler 40: custom map " + record["name"].dump() +
+						   " (type " + record["attr"]["map_type"].dump() + ") ") !=
+				      std::string::npos);
+				CHECK(message.find(expected) != std::string::npos);
+			}
+			CHECK(spdlog::default_logger() == previous_logger);
+			CHECK_FALSE(spdlog::get("json-test"));
+			CHECK_FALSE(fixture.shm.get_manager()->is_allocated(40));
+			CHECK(fixture.snapshot() == original);
+			CHECK(lookup_calls == 0);
+		}
 	}
 #ifndef BPFTIME_ENABLE_CUDA_ATTACH
 	SECTION("unavailable native maps cannot become callback-only maps")
