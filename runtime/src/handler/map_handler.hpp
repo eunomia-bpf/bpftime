@@ -30,6 +30,9 @@
 #endif
 namespace bpftime
 {
+// Process-local callbacks. Registration must be quiescent during JSON import.
+extern bpftime_map_ops global_map_ops_table[static_cast<int>(bpf_map_type::BPF_MAP_TYPE_MAX)];
+
 using char_allocator = boost::interprocess::allocator<
 	char, boost::interprocess::managed_shared_memory::segment_manager>;
 

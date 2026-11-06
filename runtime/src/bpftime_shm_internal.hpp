@@ -76,6 +76,8 @@ using alive_syscall_server_pid_set =
 
 // global bpftime share memory
 class bpftime_shm {
+	friend class shm_json_import;
+	std::string segment_name;
 	std::optional<std::function<void(bool)>> mock_setter;
 
 	bpftime::shm_open_type open_type;
@@ -303,6 +305,7 @@ public:
 	bpftime_shm(const char *shm_name, shm_open_type type);
 
 	const handler_manager *get_manager() const;
+	const std::string &get_segment_name() const { return segment_name; }
 
 	std::optional<void *>
 	get_software_perf_event_raw_buffer(int fd, size_t buffer_sz) const;

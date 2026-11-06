@@ -87,6 +87,43 @@ int handler_manager::set_handler(int fd, handler_variant &&handler,
 	return fd;
 }
 
+void handler_manager::discard_handler(int fd, managed_shared_memory &memory)
+{
+	if (fd < 0 || static_cast<size_t>(fd) >= handlers.size())
+		return;
+	if (auto *map = std::get_if<bpf_map_handler>(&handlers[fd]))
+		map->map_free(memory);
+	handlers[fd] = unused_handler{};
+}
+
+int handler_manager::install_prepared_handlers(
+	std::vector<std::pair<int, handler_variant>> &prepared,
+	managed_shared_memory &memory)
+{
+	for (const auto &[fd, handler] : prepared) {
+		if (fd < 0 || static_cast<size_t>(fd) >= handlers.size())
+			return -ENOSPC;
+		if (is_allocated(fd))
+			return -EEXIST;
+		if (std::holds_alternative<unused_handler>(handler))
+			return -EINVAL;
+	}
+	// No map initialization, dependency cleanup, or fd allocation occurs
+	// during publication. Rollback is restricted to our new slots.
+	size_t attempted = 0;
+	try {
+		for (auto &[fd, handler] : prepared) {
+			++attempted;
+			handlers[fd] = std::move(handler);
+		}
+	} catch (...) {
+		while (attempted)
+			discard_handler(prepared[--attempted].first, memory);
+		throw;
+	}
+	return 0;
+}
+
 bool handler_manager::is_allocated(int fd) const
 {
 	if (fd < 0 || (std::size_t)fd >= handlers.size()) {

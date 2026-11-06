@@ -788,7 +788,7 @@ bool bpftime_shm::is_exist_fake_fd(int fd) const
 }
 
 bpftime_shm::bpftime_shm(const char *shm_name, shm_open_type type)
-	: open_type(type)
+	: segment_name(shm_name), open_type(type)
 {
 	// Get the config from env because the shared memory is not initialized
 	auto config = construct_runtime_config_from_env();
