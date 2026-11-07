@@ -33,12 +33,27 @@ ExternalProject_Add(bpftime_luthier_fixtures
   DEPENDS bpftime_luthier_backend
   CMAKE_GENERATOR Ninja
   CMAKE_ARGS ${BPFTIME_LUTHIER_CMAKE_ARGS} "-DCMAKE_MAKE_PROGRAM=${BPFTIME_LUTHIER_NINJA}"
+    "-DCMAKE_EXPORT_COMPILE_COMMANDS=${CMAKE_EXPORT_COMPILE_COMMANDS}"
     "-Dluthier_DIR=${BPFTIME_LUTHIER_BUILD_DIR}/lib/cmake/luthier"
   BUILD_COMMAND "${CMAKE_COMMAND}" --build "${_examples}"
     --parallel "${BPFTIME_LUTHIER_JOBS}"
   BUILD_BYPRODUCTS "${_examples}/luthier_vector_add"
     "${_examples}/${CMAKE_SHARED_LIBRARY_PREFIX}bpftime_luthier_probe_tool${CMAKE_SHARED_LIBRARY_SUFFIX}"
   BUILD_ALWAYS TRUE)
+
+if(CMAKE_EXPORT_COMPILE_COMMANDS)
+  # ExternalProject sources are absent from the parent's compilation database.
+  # Publish their actual ROCm compiler flags for clangd, including after CMake
+  # regenerates the parent database without reconfiguring the fixtures.
+  ExternalProject_Add_Step(bpftime_luthier_fixtures compile_commands
+    COMMAND "${CMAKE_COMMAND}"
+      "-DPRIMARY=${CMAKE_BINARY_DIR}/compile_commands.json"
+      "-DSECONDARY=${_examples}/compile_commands.json"
+      -P "${CMAKE_SOURCE_DIR}/cmake/merge_compile_commands.cmake"
+    DEPENDEES configure DEPENDERS build
+    DEPENDS "${CMAKE_SOURCE_DIR}/cmake/merge_compile_commands.cmake"
+    ALWAYS TRUE)
+endif()
 
 add_executable(bpftime_luthier_probe probe_tool.cpp)
 target_compile_features(bpftime_luthier_probe PRIVATE cxx_std_17)

@@ -24,6 +24,13 @@ The program sources have separate roles:
 - `vector_add.hip`: an independent HIP workload with CPU result comparison;
   it contains no instrumentation IR, hooks, or Luthier dependencies.
 
+With `CMAKE_EXPORT_COMPILE_COMMANDS=ON`, building the verifier merges the HIP
+fixture and instrumentation tool's actual compile commands into the main
+`build/compile_commands.json`. Point clangd at that build directory and use
+clangd 24 for this LLVM toolchain. Rebuild `bpftime_luthier_probe` after CMake
+reconfiguration to refresh these entries, including ROCm and generated Luthier
+header paths.
+
 The verifier launches the workload in a child process with an isolated profiler
 environment, waits for tool finalization, and checks its output and reports.
 It uses bpftime's existing header-only JSON parser. The default run covers:
