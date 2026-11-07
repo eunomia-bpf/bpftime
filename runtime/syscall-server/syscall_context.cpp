@@ -847,6 +847,13 @@ int syscall_context::handle_perfevent(perf_event_attr *attr, pid_t pid, int cpu,
 			attr->config >> PERF_UPROBE_REF_CTR_OFFSET_SHIFT;
 		std::string name = (const char *)(uintptr_t)attr->config1;
 		uint64_t addr = attr->config2;
+#ifdef BPFTIME_ENABLE_ROCM_ATTACH
+		if (name.starts_with("rocm__")) {
+			auto new_name = name.substr(6);
+			return bpftime_rocm_attach_create(-1, new_name.c_str(),
+							  is_ret_probe);
+		}
+#endif
 		SPDLOG_DEBUG(
 			"Creating kprobe func_name={} addr={} retprobe={} ref_ctr_off={} attr->config={:x}",
 			name, addr, is_ret_probe, ref_ctr_off, attr->config);

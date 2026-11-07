@@ -218,6 +218,19 @@ static bool initialize_ctx() noexcept
 		tls_initializing = 1;
 		try {
 			new (&context.ctx) syscall_context;
+			// Register after the logger is constructed, so interposed
+			// libc calls bypass both logging and the context before its
+			// dependencies are destroyed. In particular, the late SHM
+			// destructor calls munmap after spdlog's registry is gone.
+			if (std::atexit([]() {
+				    __atomic_store_n(&ctx_initialized, 3,
+						     __ATOMIC_RELEASE);
+			    }) != 0) {
+				tls_initializing = 0;
+				__atomic_store_n(&ctx_initialized, 3,
+						 __ATOMIC_RELEASE);
+				return false;
+			}
 		} catch (...) {
 			tls_initializing = 0;
 			__atomic_store_n(&ctx_initialized, 3, __ATOMIC_RELEASE);

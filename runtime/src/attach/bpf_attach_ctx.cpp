@@ -36,6 +36,10 @@
 #include <cuda.h>
 #include "nv_attach_private_data.hpp"
 #endif
+#ifdef BPFTIME_ENABLE_ROCM_ATTACH
+#include "rocm_attach_private_data.hpp"
+#endif
+
 extern "C" uint64_t bpftime_set_retval(uint64_t value);
 namespace bpftime
 {
@@ -336,6 +340,18 @@ int bpf_attach_ctx::instantiate_bpf_link_handler_at(
 		"Instantiating bpf link {}, bpftime_prog->prog_name() = {}", id,
 		prog->prog_name());
 	int attach_id;
+#ifdef BPFTIME_ENABLE_ROCM_ATTACH
+	if (prog->is_rocm()) {
+		if (!handle_nv_attach_impl)
+			return 0;
+		auto &data = dynamic_cast<attach::rocm_attach_private_data &>(
+			*priv_data);
+		data.instructions = prog->get_insns();
+		attach_id = attach_impl->create_attach_with_ebpf_callback(
+			[](void *, size_t, uint64_t *) -> int { return 0; },
+			*priv_data, attach_type);
+	} else
+#endif
 #ifdef BPFTIME_ENABLE_CUDA_ATTACH
 	if (prog->is_cuda()) {
 		SPDLOG_INFO(

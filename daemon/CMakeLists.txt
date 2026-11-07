@@ -61,6 +61,14 @@ if(${BPFTIME_ENABLE_CUDA_ATTACH})
     target_link_libraries(libbpftime_daemon PRIVATE ${CUDA_LIBS})
 endif()
 
+if(${BPFTIME_ENABLE_ROCM_ATTACH})
+    include(../cmake/rocm.cmake)
+    find_rocm()
+    target_link_directories(libbpftime_daemon PUBLIC ${ROCM_LIBRARY_PATH})
+    target_link_libraries(libbpftime_daemon PRIVATE ${ROCM_LIBS})
+endif()
+
+
 set_property(TARGET libbpftime_daemon PROPERTY CXX_STANDARD 20)
 
 add_dependencies(bpftime_daemon libbpftime_daemon)

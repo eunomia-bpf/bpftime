@@ -24,6 +24,17 @@ option(BPFTIME_WARNINGS_AS_ERRORS "Treat compiler warnings as errors." OFF)
 option(BPFTIME_CUDA_ROOT "Root for CUDA installation" "")
 option(BPFTIME_ENABLE_CUDA_ATTACH "Whether to enable CUDA attach" OFF)
 
+
+#
+#
+# ROCm options
+#
+
+set(BPFTIME_ROCM_ROOT "" CACHE PATH "Root for ROCm installation")
+option(BPFTIME_ENABLE_ROCM_ATTACH "Whether to enable ROCM attach" OFF)
+option(BPFTIME_BUILD_LUTHIER_EXAMPLES "Build the ROCm Luthier verification executable" OFF)
+
+
 #
 # Unit testing
 #
