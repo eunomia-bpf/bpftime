@@ -1,5 +1,14 @@
 # A fake SDK lets the agent's real exported entry point be exercised without
 # a GPU, including runtime/queue failures that are unsafe to induce on hardware.
+add_executable(bpftime_rocm_ebpf_tests ebpf_test.cpp)
+target_compile_features(bpftime_rocm_ebpf_tests PRIVATE cxx_std_23)
+target_link_libraries(bpftime_rocm_ebpf_tests PRIVATE bpftime_rocm_attach_impl)
+target_include_directories(bpftime_rocm_ebpf_tests SYSTEM PRIVATE ${LLVM_INCLUDE_DIRS})
+if(NOT LLVM_ENABLE_RTTI)
+    target_compile_options(bpftime_rocm_ebpf_tests PRIVATE -fno-rtti)
+endif()
+add_test(NAME rocm_ebpf_compiler COMMAND bpftime_rocm_ebpf_tests)
+
 add_library(bpftime_rocm_test_sdk SHARED mock_sdk.cpp)
 set_target_properties(bpftime_rocm_test_sdk PROPERTIES OUTPUT_NAME rocprofiler-sdk
     LIBRARY_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/mock-sdk")

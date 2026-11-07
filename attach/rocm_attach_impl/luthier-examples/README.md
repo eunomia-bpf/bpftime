@@ -104,8 +104,10 @@ counter, with the same application checksum as baseline (`2349641562`).
 
 These are synchronous experiments. Exit means wave termination, not each lane's
 C++ `return`. Luthier inserts/inlines the LLVM IR payload; the example does not
-splice a separately linked HSACO function into the kernel. The IR stands in for
-a future eBPF compiler.
+splice a separately linked HSACO function into the kernel. This low-level test
+supplies IR directly. For real eBPF compilation, entry/return probes and device
+`bpf_test_println`, use the separate
+[ROCm eBPF example](../../../example/rocm-ebpf/README.md).
 
 The tool uses an explicitly configured report file and forwards recoverable
 failures before submission. Upstream Luthier still has fatal-error paths.
@@ -155,8 +157,9 @@ The opt-in environment variable prevents an ordinary preload from activating
 the profiler. Initialization does not call HIP/HSA or replace host signal
 handlers. Packets are forwarded exactly once, including after finalization.
 The old Frida HIP hooks and unused HIP communication allocation/watcher were
-removed. eBPF payload compilation and helper/map wiring remain separate work;
-unsupported ROCm attach requests are reported explicitly.
+removed. The agent now compiles supported eBPF payloads through llvmbpf and
+Luthier, including the device test helper. Maps and general helper wiring remain
+separate work; unsupported ROCm attach requests are reported explicitly.
 With `BPFTIME_ENABLE_UNIT_TESTING=ON`, the runtime `[agent]` tests check preload
 failure behavior and `dlopen(RTLD_NOW)` without host termination, unexpected
 stdio output, or changes to the default SIGUSR1 handler.

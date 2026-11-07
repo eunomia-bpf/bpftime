@@ -36,7 +36,27 @@ add_library(
     rocm_attach_impl.cpp
     rocm_attach_private_data.cpp
     rocm_profiler.cpp
+    rocm_instrumentation.cpp
+    rocm_ebpf_compiler.cpp
+    "${CMAKE_CURRENT_BINARY_DIR}/rocm_device_helpers.inc"
 )
+
+add_custom_command(OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/rocm_device_helpers.bc"
+    COMMAND "${BPFTIME_ROCM_ROOT}/lib/llvm/bin/clang++" -x hip
+      --cuda-device-only "--offload-arch=${BPFTIME_LUTHIER_ARCH}"
+      "--rocm-path=${BPFTIME_ROCM_ROOT}" "--hip-path=${BPFTIME_ROCM_ROOT}"
+      -O2 -emit-llvm -c "${CMAKE_CURRENT_SOURCE_DIR}/device_helpers.hip"
+      -o "${CMAKE_CURRENT_BINARY_DIR}/rocm_device_helpers.bc"
+    DEPENDS device_helpers.hip VERBATIM)
+add_custom_command(OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/rocm_device_helpers.inc"
+    COMMAND "${CMAKE_COMMAND}"
+      "-DINPUT=${CMAKE_CURRENT_BINARY_DIR}/rocm_device_helpers.bc"
+      "-DOUTPUT=${CMAKE_CURRENT_BINARY_DIR}/rocm_device_helpers.inc"
+      -P "${CMAKE_CURRENT_SOURCE_DIR}/embed_bitcode.cmake"
+    DEPENDS "${CMAKE_CURRENT_BINARY_DIR}/rocm_device_helpers.bc" embed_bitcode.cmake
+    VERBATIM)
+target_compile_definitions(bpftime_rocm_attach_impl PRIVATE
+    BPFTIME_ROCM_HELPER_ARCH="${BPFTIME_LUTHIER_ARCH}")
 
 add_dependencies(bpftime_rocm_attach_impl bpftime_base_attach_impl spdlog::spdlog llvmbpf_vm bpftime_vm_compat)
 set(ROCM_ATTACH_IMPL_INCLUDE ${CMAKE_CURRENT_SOURCE_DIR} )
@@ -61,7 +81,8 @@ set_property(TARGET bpftime_rocm_attach_impl PROPERTY CXX_STANDARD 23)
 # Only the Luthier-facing TU uses LLVM types; the attach implementation still
 # needs RTTI for bpftime's attach_private_data interface.
 if(NOT LLVM_ENABLE_RTTI)
-    set_source_files_properties(rocm_profiler.cpp PROPERTIES COMPILE_OPTIONS -fno-rtti)
+    set_source_files_properties(rocm_profiler.cpp rocm_instrumentation.cpp
+        rocm_ebpf_compiler.cpp PROPERTIES COMPILE_OPTIONS -fno-rtti)
 endif()
 
 target_link_options(bpftime_rocm_attach_impl PUBLIC "-Wl,--whole-archive" "$<TARGET_FILE:bpftime_rocm_attach_impl>" "-Wl,--no-whole-archive")

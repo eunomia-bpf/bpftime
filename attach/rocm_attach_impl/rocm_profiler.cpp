@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: MIT
 #include "rocm_profiler.hpp"
+#include "rocm_instrumentation.hpp"
+#include "rocm_probe.hpp"
 #include <luthier/HSA/AqlPacket.h>
 #include <luthier/HSA/ApiTable.h>
 #include <luthier/Rocprofiler/RocprofilerSdkLibrary.h>
@@ -17,6 +19,8 @@ namespace
 struct queue_api {
 	decltype(hsa_queue_create) *create = nullptr;
 	decltype(hsa_queue_destroy) *destroy = nullptr;
+	decltype(hsa_executable_destroy) *destroy_executable = nullptr;
+	decltype(hsa_shut_down) *shut_down = nullptr;
 	decltype(hsa_amd_queue_intercept_create) *intercept_create = nullptr;
 	decltype(hsa_amd_queue_intercept_register) *intercept_register =
 		nullptr;
@@ -27,7 +31,12 @@ struct queue_api {
 #endif
 };
 
+struct queue_context {
+	const hsa_queue_t *queue;
+};
+
 struct profiler_state {
+	std::vector<std::unique_ptr<queue_context>> queues;
 	std::mutex mutex;
 	std::unique_ptr<luthier::DynamicLibrary> sdk;
 	// API wrappers and registered queue callbacks can outlive tool
@@ -61,7 +70,8 @@ void diagnose(const char *message) noexcept
 void on_packets(const void *packets, uint64_t count, uint64_t, void *data,
 		hsa_amd_queue_intercept_packet_writer writer)
 {
-	auto &s = *static_cast<profiler_state *>(data);
+	auto &s = state();
+	const auto *queue = static_cast<queue_context *>(data)->queue;
 	try {
 		if (s.enabled.load(std::memory_order_acquire)) {
 			const auto *items =
@@ -90,7 +100,45 @@ void on_packets(const void *packets, uint64_t count, uint64_t, void *data,
 		diagnose(
 			"dispatch observation failed; forwarding original packets");
 	}
-	writer(packets, count);
+	if (s.enabled.load(std::memory_order_acquire) && has_rocm_probes())
+		instrument_rocm_packets(*queue, packets, count, writer);
+	else
+		writer(packets, count);
+}
+
+hsa_status_t monitor_queue(const queue_api &api, hsa_queue_t *queue) noexcept
+{
+	try {
+		auto context = std::make_unique<queue_context>();
+		context->queue = queue;
+		auto *data = context.get();
+		{
+			auto &s = state();
+			std::lock_guard lock(s.mutex);
+			s.queues.push_back(std::move(context));
+		}
+		return api.intercept_register(queue, on_packets, data);
+	} catch (...) {
+		return HSA_STATUS_ERROR_OUT_OF_RESOURCES;
+	}
+}
+
+hsa_status_t destroy_executable(hsa_executable_t exec)
+{
+	const auto *api = state().api.load(std::memory_order_acquire);
+	if (!api || !api->destroy_executable)
+		return HSA_STATUS_ERROR_NOT_INITIALIZED;
+	invalidate_rocm_executable(exec);
+	return api->destroy_executable(exec);
+}
+
+hsa_status_t shutdown_runtime()
+{
+	const auto *api = state().api.load(std::memory_order_acquire);
+	if (!api || !api->shut_down)
+		return HSA_STATUS_ERROR_NOT_INITIALIZED;
+	suspend_rocm_instrumentation();
+	return api->shut_down();
 }
 
 // Keep the original queue alive until its replacement is fully configured.
@@ -111,7 +159,7 @@ hsa_status_t create_queue(hsa_agent_t agent, uint32_t size,
 	if (status != HSA_STATUS_SUCCESS || !queue || !*queue ||
 	    !s.enabled.load(std::memory_order_acquire))
 		return status;
-	auto registered = api->intercept_register(*queue, on_packets, &s);
+	auto registered = monitor_queue(*api, *queue);
 	if (registered == HSA_STATUS_SUCCESS)
 		return status;
 	if (registered != HSA_STATUS_ERROR_INVALID_QUEUE) {
@@ -123,7 +171,7 @@ hsa_status_t create_queue(hsa_agent_t agent, uint32_t size,
 		api->intercept_create(agent, size, type, callback, data,
 				      private_size, group_size, &replacement);
 	if (result == HSA_STATUS_SUCCESS) {
-		result = api->intercept_register(replacement, on_packets, &s);
+		result = monitor_queue(*api, replacement);
 		if (result == HSA_STATUS_SUCCESS)
 			result = api->destroy(*queue);
 		if (result == HSA_STATUS_SUCCESS)
@@ -156,7 +204,7 @@ hsa_status_t create_queues(hsa_agent_t agent,
 		    d.engine_type != HSA_AMD_QUEUE_ENGINE_COMPUTE ||
 		    d.flags != 0)
 			continue;
-		auto result = api->intercept_register(d.queue, on_packets, &s);
+		auto result = monitor_queue(*api, d.queue);
 		if (result == HSA_STATUS_SUCCESS)
 			continue;
 		if (result != HSA_STATUS_ERROR_INVALID_QUEUE) {
@@ -172,8 +220,7 @@ hsa_status_t create_queues(hsa_agent_t agent,
 			d.engine.compute.private_segment_size, UINT32_MAX,
 			&replacement);
 		if (result == HSA_STATUS_SUCCESS) {
-			result = api->intercept_register(replacement,
-							 on_packets, &s);
+			result = monitor_queue(*api, replacement);
 			if (result == HSA_STATUS_SUCCESS)
 				result = api->set_priority(replacement,
 							   d.priority);
@@ -226,7 +273,8 @@ void register_tables(rocprofiler_intercept_table_t type, uint64_t, uint64_t,
 		auto &core = *root.core_;
 		auto &amd = *root.amd_ext_;
 		if (core.version.major_id != HSA_CORE_API_TABLE_MAJOR_VERSION ||
-		    amd.version.major_id != HSA_AMD_EXT_API_TABLE_MAJOR_VERSION ||
+		    amd.version.major_id !=
+			    HSA_AMD_EXT_API_TABLE_MAJOR_VERSION ||
 		    !apiTableHasEntry<&CoreApiTable::hsa_queue_create_fn>(
 			    core) ||
 		    !apiTableHasEntry<&CoreApiTable::hsa_queue_destroy_fn>(
@@ -246,14 +294,22 @@ void register_tables(rocprofiler_intercept_table_t type, uint64_t, uint64_t,
 		}
 		if (core.hsa_queue_create_fn == create_queue)
 			return;
+		capture_rocm_tables(root, *s.sdk);
 		auto api = std::make_unique<queue_api>();
 		api->create = core.hsa_queue_create_fn;
 		api->destroy = core.hsa_queue_destroy_fn;
+		if (apiTableHasEntry<&CoreApiTable::hsa_shut_down_fn>(core))
+			api->shut_down = core.hsa_shut_down_fn;
+		if (apiTableHasEntry<&CoreApiTable::hsa_executable_destroy_fn>(
+			    core))
+			api->destroy_executable =
+				core.hsa_executable_destroy_fn;
 		api->intercept_create = amd.hsa_amd_queue_intercept_create_fn;
 		api->intercept_register =
 			amd.hsa_amd_queue_intercept_register_fn;
 #ifdef HSA_AMD_QUEUE_CREATE_DESC_VERSION
-		if (apiTableHasEntry(amd, &AmdExtTable::hsa_amd_queue_create_fn) &&
+		if (apiTableHasEntry(amd,
+				     &AmdExtTable::hsa_amd_queue_create_fn) &&
 		    apiTableHasEntry<&AmdExtTable::hsa_amd_queue_set_priority_fn>(
 			    amd) &&
 		    apiTableHasEntry<&AmdExtTable::hsa_amd_queue_cu_set_mask_fn>(
@@ -270,6 +326,10 @@ void register_tables(rocprofiler_intercept_table_t type, uint64_t, uint64_t,
 		s.tables.push_back(std::move(api));
 		s.api.store(saved, std::memory_order_release);
 		core.hsa_queue_create_fn = create_queue;
+		if (saved->shut_down)
+			core.hsa_shut_down_fn = shutdown_runtime;
+		if (saved->destroy_executable)
+			core.hsa_executable_destroy_fn = destroy_executable;
 #ifdef HSA_AMD_QUEUE_CREATE_DESC_VERSION
 		if (saved->create_desc)
 			amd.hsa_amd_queue_create_fn = create_queues;
@@ -315,6 +375,7 @@ void finalize(void *data) noexcept
 	} catch (...) {
 		return;
 	}
+	shutdown_rocm_instrumentation();
 	if (s.finalize_agent)
 		s.finalize_agent();
 	try {
@@ -355,9 +416,9 @@ configure_rocm_profiler(uint32_t version, rocprofiler_client_id_t *client,
 		}
 		s.sdk = std::make_unique<luthier::DynamicLibrary>(
 			std::move(*library));
-		// A function-address template argument emits a direct SDK symbol
-		// reference in Clang's debug info. Resolve by name so Debug builds
-		// also depend on the SDK only at runtime.
+		// A function-address template argument emits a direct SDK
+		// symbol reference in Clang's debug info. Resolve by name so
+		// Debug builds also depend on the SDK only at runtime.
 		auto registration = reinterpret_cast<
 			decltype(&rocprofiler_at_intercept_table_registration)>(
 			s.sdk->getSymbol<void>(

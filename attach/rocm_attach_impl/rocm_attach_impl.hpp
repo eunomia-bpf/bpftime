@@ -2,13 +2,20 @@
 #define _BPFTIME_ROCM_ATTACH_IMPL_HPP
 
 #include "base_attach_impl.hpp"
+#include <set>
+#include <mutex>
 
 namespace bpftime::attach
 {
 constexpr int ATTACH_ROCM_PROBE_AND_RETPROBE = 1018;
 
 class rocm_attach_impl final : public base_attach_impl {
+    private:
+	std::mutex mutex;
+	std::set<int> ids;
+
     public:
+	~rocm_attach_impl() override;
 	int detach_by_id(int id) override;
 	int create_attach_with_ebpf_callback(
 		ebpf_run_callback &&cb, const attach_private_data &private_data,

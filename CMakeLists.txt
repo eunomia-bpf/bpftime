@@ -38,6 +38,11 @@ endif()
 # Select LLVM before vm/ discovers it. Luthier uses private LLVM APIs.
 if(BPFTIME_ENABLE_ROCM_ATTACH)
   include(cmake/rocm_llvm.cmake)
+  # Package ROCm libraries may live outside the loader's default search paths.
+  # Preserve the selected installation for the CLI and injected libraries;
+  # CMake otherwise strips their automatically generated build RPATH at install.
+  list(APPEND CMAKE_INSTALL_RPATH "${BPFTIME_ROCM_ROOT}/lib")
+  list(REMOVE_DUPLICATES CMAKE_INSTALL_RPATH)
 endif()
 
 if(BPFTIME_ENABLE_UNIT_TESTING OR
