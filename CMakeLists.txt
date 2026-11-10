@@ -185,6 +185,11 @@ add_subdirectory(attach)
 
 add_subdirectory(runtime)
 
+option(BPFTIME_BUILD_RUNTIME_LIBRARY_EXAMPLE "Build the direct runtime-library example" OFF)
+if(BPFTIME_BUILD_RUNTIME_LIBRARY_EXAMPLE)
+  add_subdirectory(example/runtime_library)
+endif()
+
 # option to use probe read/write checks
 if(ENABLE_PROBE_READ_CHECK)
   target_compile_definitions(runtime PRIVATE ENABLE_PROBE_READ_CHECK=1)
