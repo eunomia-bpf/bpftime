@@ -67,9 +67,12 @@ option(TEST_LCOV "option for lcov" OFF)
 add_executable(bpftime_runtime_tests ${TEST_SOURCES})
 
 if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
-    target_sources(bpftime_runtime_tests PRIVATE test_get_current_uid_gid.cpp)
+    target_sources(bpftime_runtime_tests PRIVATE
+        test_get_current_uid_gid.cpp
+        test_get_current_comm.cpp)
     target_link_options(bpftime_runtime_tests PRIVATE
-        -Wl,--wrap=getuid -Wl,--wrap=getgid)
+        -Wl,--wrap=getuid -Wl,--wrap=getgid
+        -Wl,--wrap=malloc -Wl,--wrap=calloc -Wl,--wrap=realloc)
 endif()
 
 if(ENABLE_PROBE_READ_CHECK)

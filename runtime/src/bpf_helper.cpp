@@ -276,23 +276,22 @@ uint64_t bpftime_ktime_get_ns(uint64_t, uint64_t, uint64_t, uint64_t, uint64_t)
 uint64_t bpftime_get_current_comm(uint64_t buf, uint64_t size, uint64_t,
 				  uint64_t, uint64_t)
 {
-	static std::string filename_buf;
-
-	if (unlikely(filename_buf.empty())) {
-		char strbuf[PATH_MAX];
-
-		auto len = readlink("/proc/self/exe", strbuf,
-				    std::size(strbuf) - 1);
-		if (len == -1)
-			return 1;
-		strbuf[len] = 0;
-		auto str = std::string_view(strbuf);
-		auto last_slash = str.find_last_of('/');
-
-		auto filename = std::string(str.substr(last_slash + 1));
-		filename_buf = filename;
+	// This helper can run from an allocation callback (for example an
+	// uprobe on malloc/mmap) while libc already holds an allocator lock.
+	// A lazily initialized std::string takes the heap on its first long
+	// value, which re-enters the allocator and can self-deadlock. Resolve
+	// the executable basename into a stack buffer on every call instead.
+	char strbuf[PATH_MAX];
+	auto len = readlink("/proc/self/exe", strbuf, std::size(strbuf) - 1);
+	if (len == -1)
+		return 1;
+	strbuf[len] = 0;
+	const char *filename = strbuf;
+	for (decltype(len) index = 0; index < len; ++index) {
+		if (strbuf[index] == '/')
+			filename = strbuf + index + 1;
 	}
-	strncpy((char *)(uintptr_t)buf, filename_buf.c_str(), (size_t)size);
+	strncpy((char *)(uintptr_t)buf, filename, (size_t)size);
 	return 0;
 }
 
