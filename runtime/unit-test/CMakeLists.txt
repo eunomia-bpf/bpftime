@@ -47,6 +47,7 @@ set(TEST_SOURCES
 
     tailcall/test_user_to_kernel_tailcall.cpp
     tailcall/test_user_to_user_tailcall.cpp
+    tailcall/test_prog_array_thread_local.cpp
 
 )
 # These tests instantiate attach::frida_attach_impl directly, so they only
