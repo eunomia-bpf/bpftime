@@ -67,12 +67,12 @@ TEST_CASE("prog array lookup keeps a per-thread result slot",
 	auto worker = [&](int key, int expected_fd) {
 		while (!start.load(std::memory_order_acquire))
 			std::this_thread::yield();
-		void *stable_pointer = nullptr;
+		const void *stable_pointer = nullptr;
 		for (int round = 0; round < 1000; ++round) {
-			void *result =
+			const void *result =
 				bpftime_map_lookup_elem(prog_array_fd, &key);
 			if (result == nullptr ||
-			    *static_cast<int32_t *>(result) != expected_fd) {
+			    *static_cast<const int32_t *>(result) != expected_fd) {
 				failed.store(true, std::memory_order_release);
 				return;
 			}
