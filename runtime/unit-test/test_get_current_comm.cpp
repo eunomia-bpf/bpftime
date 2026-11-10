@@ -8,15 +8,17 @@
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
+#include <cerrno>
 #include <cstring>
-#include <limits.h>
+#include <fstream>
 #include <string>
 #include <sys/stat.h>
 #include <sys/wait.h>
 #include <unistd.h>
 
-extern "C" uint64_t bpf_get_current_comm(uint64_t buf, uint64_t size,
-					 uint64_t, uint64_t, uint64_t);
+extern "C" uint64_t bpftime_get_current_comm(uint64_t buf,
+					     uint64_t size, uint64_t,
+					     uint64_t, uint64_t);
 
 namespace
 {
@@ -46,14 +48,14 @@ TEST_CASE("bpf_get_current_comm returns the executable basename",
 {
 	char comm[256];
 	std::memset(comm, 0x5a, sizeof(comm));
-	REQUIRE(bpf_get_current_comm(reinterpret_cast<uint64_t>(comm),
+	REQUIRE(bpftime_get_current_comm(reinterpret_cast<uint64_t>(comm),
 				     sizeof(comm), 0, 0, 0) == 0);
 	REQUIRE(std::strlen(comm) < sizeof(comm));
 	REQUIRE(std::string(comm) == current_exe_basename());
 
 	// Repeated calls stay consistent without any process-global cache.
 	char again[256];
-	REQUIRE(bpf_get_current_comm(reinterpret_cast<uint64_t>(again),
+	REQUIRE(bpftime_get_current_comm(reinterpret_cast<uint64_t>(again),
 				     sizeof(again), 0, 0, 0) == 0);
 	REQUIRE(std::string(again) == std::string(comm));
 }
@@ -64,17 +66,18 @@ TEST_CASE("bpf_get_current_comm honors the destination buffer size",
 	const auto expected = current_exe_basename();
 	char comm[8];
 	std::memset(comm, 0x5a, sizeof(comm));
-	REQUIRE(bpf_get_current_comm(reinterpret_cast<uint64_t>(comm),
+	REQUIRE(bpftime_get_current_comm(reinterpret_cast<uint64_t>(comm),
 				     sizeof(comm), 0, 0, 0) == 0);
 	REQUIRE(std::memcmp(comm, expected.data(), sizeof(comm)) == 0);
 }
 
 #if defined(__linux__)
 // The reentry check runs in a child process whose executable path uses the
-// long basename above. The --wrap=malloc/calloc/realloc link options route
-// every allocator entry through the counters below, so the assertion proves
-// that the helper performs no heap allocation while the tracking window is
-// open.
+// long basename above. /proc/self/exe resolves symlinks to the target, so a
+// hard link is used (with a real copy fallback across filesystems) instead
+// of a symlink. The --wrap=malloc/calloc/realloc link options route every
+// allocator entry through the counters below, so the assertion proves that
+// the helper performs no heap allocation while the tracking window is open.
 namespace
 {
 thread_local bool comm_alloc_tracking = false;
@@ -87,6 +90,9 @@ extern "C" {
 void *__real_malloc(size_t size) noexcept;
 void *__real_calloc(size_t nmemb, size_t size) noexcept;
 void *__real_realloc(void *ptr, size_t size) noexcept;
+// Declared by glibc in <unistd.h> only under feature-test macros; state it
+// directly so the child can hand the current environment to execve.
+extern char **environ;
 
 void *__wrap_malloc(size_t size) noexcept
 {
@@ -115,7 +121,7 @@ static int run_comm_reentry_self_check()
 	char comm[256];
 	comm_alloc_count = 0;
 	comm_alloc_tracking = true;
-	auto rc = bpf_get_current_comm(reinterpret_cast<uint64_t>(comm),
+	auto rc = bpftime_get_current_comm(reinterpret_cast<uint64_t>(comm),
 				       sizeof(comm), 0, 0, 0);
 	comm_alloc_tracking = false;
 	if (rc != 0)
@@ -144,7 +150,20 @@ TEST_CASE("bpf_get_current_comm makes no heap allocation on first call",
 	const std::string link_path =
 		std::string(dir) + "/" + long_executable_name;
 
-	REQUIRE(symlink(self, link_path.c_str()) == 0);
+	// A symlink would be resolved by /proc/self/exe back to this binary.
+	// Prefer a hard link; fall back to a byte copy on cross-device or
+	// link-restricted filesystems.
+	if (::link(self, link_path.c_str()) != 0) {
+		REQUIRE(errno == EXDEV || errno == EPERM);
+		std::ifstream in(self, std::ios::binary);
+		std::ofstream out(link_path, std::ios::binary | std::ios::trunc);
+		REQUIRE(in.is_open());
+		REQUIRE(out.is_open());
+		out << in.rdbuf();
+		out.close();
+		REQUIRE(static_cast<bool>(out));
+		REQUIRE(::chmod(link_path.c_str(), 0755) == 0);
+	}
 
 	pid_t pid = fork();
 	REQUIRE(pid >= 0);
