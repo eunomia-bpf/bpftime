@@ -1,0 +1,5 @@
+/cuda_api_trace
+/.output
+/vec_add_once
+/*server.log
+/*client.log
