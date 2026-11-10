@@ -143,15 +143,19 @@ constexpr size_t software_perf_event_reclaim_shard_threshold = 64;
 
 // Output can be called while libc holds a malloc arena lock. Keep this cache
 // trivial: a TLS container's destructor registration itself calls calloc.
-static_assert(std::is_trivially_destructible_v<software_perf_event_shard_cache_entry>);
-thread_local software_perf_event_shard_cache_entry software_perf_event_shard_cache[
-	max_software_perf_event_shard_cache_entries]
+static_assert(
+	std::is_trivially_destructible_v<
+		software_perf_event_shard_cache_entry>);
+thread_local software_perf_event_shard_cache_entry
+	software_perf_event_shard_cache[
+		max_software_perf_event_shard_cache_entries]
 #if defined(__linux__)
 	__attribute__((tls_model("initial-exec")))
 #endif
 	= {};
 
-void cache_software_perf_event_shard(software_perf_event_shard_cache_entry value)
+void cache_software_perf_event_shard(
+	software_perf_event_shard_cache_entry value)
 {
 	for (auto &entry : software_perf_event_shard_cache) {
 		if (entry.owner == nullptr || entry.owner == value.owner) {
