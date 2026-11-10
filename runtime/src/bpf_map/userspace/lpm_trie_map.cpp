@@ -6,6 +6,7 @@
 #include <bpf_map/userspace/lpm_trie_map.hpp>
 #include <boost/interprocess/detail/utilities.hpp>
 #include <spdlog/spdlog.h>
+#include <cerrno>
 #include <cstddef>
 #include <cstring>
 #include <stdexcept>
