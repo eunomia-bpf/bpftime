@@ -15,6 +15,7 @@
 #include <memory>
 #include <optional>
 #include <vector>
+#include <boost/core/demangle.hpp>
 #include "nv_attach_impl.hpp"
 #include <stdexcept>
 using namespace bpftime;
@@ -789,6 +790,11 @@ static cudaError_t mirror_cuda_memcpy_from_symbol(
 		if (auto name =
 			    impl->resolve_host_function_symbol((void *)symbol);
 		    name) {
+			// Host stubs are name-mangled; also probe the demangled name.
+			std::string demangled =
+				boost::core::demangle(name->c_str());
+			if (demangled.empty() || demangled == *name)
+				demangled.clear();
 			for (const auto &rec_uptr : impl->fatbin_records) {
 				auto *rec = rec_uptr.get();
 				if (rec == nullptr)
@@ -799,6 +805,12 @@ static cudaError_t mirror_cuda_memcpy_from_symbol(
 					auto err = cuModuleGetGlobal(
 						&dptr, &sz, ptx->module_ptr,
 						name->c_str());
+					if (err != CUDA_SUCCESS && !demangled.empty()) {
+						err = cuModuleGetGlobal(
+							&dptr, &sz,
+							ptx->module_ptr,
+							demangled.c_str());
+					}
 					if (err != CUDA_SUCCESS)
 						continue;
 					if (offset >= sz) {

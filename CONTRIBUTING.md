@@ -138,19 +138,3 @@ will ultimately approve the request.
 Often, multiple iterations or discussions will be needed to responding to feedback
 from reviewers. Try looking at [past pull requests](https://github.com/eunomia-bpf/bpftime/pulls?q=is%3Apr+is%3Aclosed)
 to see what the experience might be like.
-
-## Contributor License Agreement
-
-Before we can review and accept a pull request from you, you'll need to sign a
-Contributor License Agreement (CLA). The CLA ensures that the community is free
-to use your contributions. Signing the CLA is a manual process, and you need to
-do it for each pull request made. This is done by checking the boxes in the
-Pull Request Readiness Checklist of a Pull Request.
-
-### IMPORTANT
-
-***Checking the aforementioned boxes means that you agree to provide your change
-and/or code FREE TO USE and SUBJECT TO CHANGES for the entire community!***
-
-You don't need to sign a CLA until you're ready to create a pull request. When your
-pull request is created, it is reviewed by a team member.
