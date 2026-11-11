@@ -112,13 +112,17 @@ TEST_CASE("LPM trie keeps the vector path for values above the inline limit",
 	REQUIRE(result != nullptr);
 	REQUIRE(std::memcmp(result, value.data(), value_size) == 0);
 
-	// A larger value exercises vector growth beyond one element.
-	auto large_key = fixture.make_key(10, 0, 0, 3);
-	auto large_value = pattern(2048, 3);
-	REQUIRE(fixture.trie->elem_update(
+	// A map has one fixed value_size, so the 2048-byte case needs its own
+	// fixture. It also grows the thread-local fallback vector beyond the
+	// 257 bytes it already holds on this thread.
+	const size_t large_size = 2048;
+	lpm_fixture large_fixture(large_size);
+	auto large_key = large_fixture.make_key(10, 0, 0, 3);
+	auto large_value = pattern(large_size, 3);
+	REQUIRE(large_fixture.trie->elem_update(
 			reinterpret_cast<bpf_lpm_trie_key *>(large_key.data()),
 			large_value.data(), 0) == 0);
-	void *large_result = fixture.trie->elem_lookup(
+	void *large_result = large_fixture.trie->elem_lookup(
 		reinterpret_cast<bpf_lpm_trie_key *>(large_key.data()));
 	REQUIRE(large_result != nullptr);
 	REQUIRE(std::memcmp(large_result, large_value.data(),
