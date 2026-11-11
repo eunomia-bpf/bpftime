@@ -24,6 +24,12 @@ using json = nlohmann::json;
 
 namespace
 {
+// The broad runtime suite retains its original fixture capacity; the dedicated
+// target supplies a smaller bound together with max_fd_count=128 through CTest.
+#ifndef BPFTIME_JSON_MAP_TEST_SEGMENT_MB
+#define BPFTIME_JSON_MAP_TEST_SEGMENT_MB 20
+#endif
+
 struct temporary_directory {
 	std::string path;
 	temporary_directory()
@@ -51,7 +57,8 @@ struct owned_segment {
 	boost::interprocess::managed_shared_memory view;
 	explicit owned_segment(const std::string &directory)
 		: name(std::filesystem::path(directory).filename().string()),
-		  view(boost::interprocess::create_only, name.c_str(), 20U << 20)
+		  view(boost::interprocess::create_only, name.c_str(),
+		       BPFTIME_JSON_MAP_TEST_SEGMENT_MB * (1U << 20))
 	{
 	}
 	~owned_segment()
@@ -89,6 +96,17 @@ void add_map(bpftime_shm &shm, int fd)
 				 .value_size = 8, .max_ents = 1 }) == fd);
 }
 
+// Serialize from a different segment, then release it before constructing the
+// destination. This keeps cross-segment coverage with only one live segment.
+json array_record(uint64_t value = 0)
+{
+	json_fixture source;
+	add_map(source.shm, 8);
+	const uint32_t key = 0;
+	REQUIRE(source.shm.bpf_map_update_elem(8, &key, &value, 0, false) == 0);
+	return source.snapshot()["8"];
+}
+
 struct map_ops_guard {
 	int type;
 	bpftime_map_ops previous;
@@ -101,13 +119,9 @@ struct map_ops_guard {
 TEST_CASE("JSON map definitions round-trip and roll back without libbpf",
 	  "[json][json-map-compat][json-map-policy]")
 {
-	json_fixture source;
+	const auto record = array_record(42);
 	json_fixture restored;
-	add_map(source.shm, 8);
 	const uint32_t key = 0;
-	const uint64_t value = 42;
-	REQUIRE(source.shm.bpf_map_update_elem(8, &key, &value, 0, false) == 0);
-	const auto record = source.snapshot()["8"];
 
 	SECTION("single-handler load")
 	{
@@ -116,8 +130,9 @@ TEST_CASE("JSON map definitions round-trip and roll back without libbpf",
 	}
 	SECTION("whole-document import")
 	{
+		restored.write(json{ { "8", record } }.dump());
 		REQUIRE(bpftime_import_shm_from_json(
-				restored.shm, source.path.c_str()) == 0);
+				restored.shm, restored.path.c_str()) == 0);
 	}
 	CHECK(restored.snapshot()["8"] == record);
 	const auto *empty = static_cast<const uint64_t *>(
@@ -130,9 +145,9 @@ TEST_CASE("JSON map definitions round-trip and roll back without libbpf",
 	auto oversized = record;
 	oversized["attr"]["max_entries"] =
 		restored.segment.view.get_size() / 8 + 1;
-	source.write(json{ { "40", record }, { "41", oversized } }.dump());
+	restored.write(json{ { "40", record }, { "41", oversized } }.dump());
 	errno = 0;
-	CHECK(bpftime_import_shm_from_json(restored.shm, source.path.c_str()) == -1);
+	CHECK(bpftime_import_shm_from_json(restored.shm, restored.path.c_str()) == -1);
 	CHECK(errno == ENOMEM);
 	CHECK_FALSE(restored.shm.get_manager()->is_allocated(40));
 	CHECK_FALSE(restored.shm.get_manager()->is_allocated(41));
@@ -209,10 +224,9 @@ TEST_CASE("JSON host GPU arrays preserve host storage and metadata", "[json][jso
 		     bpftime::bpf_map_type::BPF_MAP_TYPE_GPU_ARRAY_HOST_MAP,
 		     bpftime::bpf_map_type::BPF_MAP_TYPE_PERGPUTD_ARRAY_HOST_MAP }) {
 		CAPTURE(static_cast<int>(type));
-		json_fixture source;
+		const auto ordinary = array_record();
 		json_fixture restored;
-		add_map(source.shm, 8);
-		auto record = source.snapshot()["8"];
+		auto record = ordinary;
 		record["attr"]["map_type"] = static_cast<int>(type);
 		record["attr"]["gpu_thread_count"] = 2;
 		REQUIRE(bpftime::bpftime_import_shm_handler_from_json(
@@ -235,11 +249,11 @@ TEST_CASE("JSON host GPU arrays preserve host storage and metadata", "[json][jso
 			boost::interprocess::open_only, restored.segment.name.c_str());
 		const auto free_before = memory.get_free_memory();
 		const auto original = restored.snapshot();
-		auto oversized = source.snapshot()["8"];
+		auto oversized = ordinary;
 		oversized["attr"]["max_entries"] = memory.get_size() / 8 + 1;
-		source.write(json{ { "1", record }, { "2", oversized } }.dump());
+		restored.write(json{ { "1", record }, { "2", oversized } }.dump());
 		errno = 0;
-		CHECK(bpftime_import_shm_from_json(restored.shm, source.path.c_str()) < 0);
+		CHECK(bpftime_import_shm_from_json(restored.shm, restored.path.c_str()) < 0);
 		CHECK(errno == ENOMEM);
 		CHECK(memory.get_free_memory() == free_before);
 		CHECK(restored.snapshot() == original);
@@ -248,10 +262,8 @@ TEST_CASE("JSON host GPU arrays preserve host storage and metadata", "[json][jso
 
 TEST_CASE("JSON host GPU arrays reject inconsistent dimensions", "[json][json-map-compat]")
 {
-	json_fixture source;
+	auto record = array_record();
 	json_fixture restored;
-	add_map(source.shm, 8);
-	auto record = source.snapshot()["8"];
 	record["attr"]["map_type"] =
 		static_cast<int>(bpftime::bpf_map_type::BPF_MAP_TYPE_PERGPUTD_ARRAY_HOST_MAP);
 	SECTION("thread count cannot silently default to one")
