@@ -144,6 +144,13 @@ endif()
 target_include_directories(bpftime_runtime_tests PRIVATE ${BPFTIME_RUNTIME_INCLUDE} ${BPFTIME_OBJECT_INCLUDE_DIRS} ${Catch2_INCLUDE} ${Boost_INCLUDE})
 add_test(NAME bpftime_runtime_tests COMMAND bpftime_runtime_tests)
 
+# Pure encoding regression: no runtime, BPF, shared memory or device linkage.
+add_executable(bpftime_hex_encoding_tests test_bpftime_hex_encoding.cpp)
+target_include_directories(bpftime_hex_encoding_tests PRIVATE ../src)
+set_property(TARGET bpftime_hex_encoding_tests PROPERTY CXX_STANDARD 20)
+add_test(NAME bpftime_hex_encoding_tests COMMAND bpftime_hex_encoding_tests)
+set_tests_properties(bpftime_hex_encoding_tests PROPERTIES TIMEOUT 10)
+
 # Keep allocator/linker interposition out of the general runtime executable.
 # --wrap and the explicit C++ symbols require a static runtime, an ELF linker
 # and the Itanium/libstdc++ ABI used by the Linux verifier CI job.

@@ -7,24 +7,12 @@
 #define BPFTIME_JSON_EXPORTER_HPP
 
 #include <string>
-#include <sstream>
 #include <stdio.h>
-#include <iomanip>
+#include "bpftime_hex_encoding.hpp"
 #include "bpftime_shm_internal.hpp"
 
 namespace bpftime
 {
-static inline std::string buffer_to_hex_string(const unsigned char *buffer,
-					    size_t bufferSize)
-{
-	std::stringstream ss;
-	ss << std::hex << std::setfill('0');
-	for (size_t i = 0; i < bufferSize; i++) {
-		ss << std::setw(2) << static_cast<int>(buffer[i]);
-	}
-	return ss.str();
-}
-
 static inline int hex_string_to_buffer(const std::string &hexString,
 				     unsigned char *buffer, size_t bufferSize)
 {
