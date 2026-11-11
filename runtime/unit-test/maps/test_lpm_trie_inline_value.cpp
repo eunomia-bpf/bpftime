@@ -20,6 +20,7 @@ namespace
 {
 // Must match the inline TLS buffer size in lpm_trie_map_impl::elem_lookup.
 constexpr size_t inline_value_capacity = 256;
+using bpftime::bpf_lpm_trie_key;
 
 struct lpm_fixture {
 	const std::string shm_name;
@@ -67,7 +68,8 @@ std::vector<uint8_t> pattern(size_t size, uint8_t seed)
 TEST_CASE("LPM trie returns small values through the inline TLS path",
 	  "[lpm_trie][inline_value]")
 {
-	for (size_t value_size : { 1U, 200U, inline_value_capacity }) {
+	for (size_t value_size :
+	     { size_t(1), size_t(200), inline_value_capacity }) {
 		lpm_fixture fixture(value_size);
 		auto key = fixture.make_key(10, 0, 0, 1);
 		auto value = pattern(value_size, 7);
