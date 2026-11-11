@@ -33,6 +33,7 @@ set(TEST_SOURCES
     maps/test_lru_hash_map.cpp
 
     test_bpftime_shm_json.cpp
+    test_bpftime_json_map_compat.cpp
     test_probe.cpp
     test_get_current_pid_tgid.cpp
     test_get_stack.cpp
