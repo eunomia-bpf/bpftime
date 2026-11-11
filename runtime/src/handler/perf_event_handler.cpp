@@ -137,7 +137,17 @@ struct software_perf_event_shard_cache_entry {
 	const software_perf_event_data *owner;
 };
 
-constexpr size_t max_software_perf_event_shard_cache_entries = 64;
+// Six entries keep the per-thread initial-exec footprint at 240 bytes. A
+// larger table exhausted the static TLS surplus when this runtime is
+// dlopen()ed after startup: the Nginx attach example failed with
+// "cannot allocate memory in static TLS block". The cache stays
+// allocation-free; exceeding the capacity reuses the bounded eviction path.
+constexpr size_t max_software_perf_event_shard_cache_entries = 6;
+static_assert(
+	sizeof(software_perf_event_shard_cache_entry) *
+			max_software_perf_event_shard_cache_entries <=
+		256,
+	"initial-exec shard cache must fit the late-dlopen static TLS budget");
 constexpr uint64_t software_perf_event_reclaim_drain_interval = 64;
 constexpr size_t software_perf_event_reclaim_shard_threshold = 64;
 

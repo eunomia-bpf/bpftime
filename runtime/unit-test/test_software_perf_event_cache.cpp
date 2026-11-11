@@ -25,9 +25,9 @@ struct cache_payload {
 };
 
 // Owns one shared-memory segment holding more distinct software perf events
-// than the per-thread shard cache can hold (the cache capacity is 64).
+// than the per-thread shard cache can hold (the cache capacity is 6).
 struct cache_fixture {
-	static constexpr size_t event_count = 70;
+	static constexpr size_t event_count = 8;
 	static constexpr size_t ring_size = 64 * 1024;
 
 	const std::string shm_name;
