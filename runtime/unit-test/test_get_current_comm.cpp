@@ -11,6 +11,7 @@
 #include <cerrno>
 #include <cstring>
 #include <fstream>
+#include <limits.h>
 #include <string>
 #include <sys/stat.h>
 #include <sys/wait.h>
@@ -154,7 +155,7 @@ TEST_CASE("bpf_get_current_comm makes no heap allocation on first call",
 	// Prefer a hard link; fall back to a byte copy on cross-device or
 	// link-restricted filesystems.
 	if (::link(self, link_path.c_str()) != 0) {
-		REQUIRE(errno == EXDEV || errno == EPERM);
+		REQUIRE((errno == EXDEV || errno == EPERM));
 		std::ifstream in(self, std::ios::binary);
 		std::ofstream out(link_path, std::ios::binary | std::ios::trunc);
 		REQUIRE(in.is_open());
