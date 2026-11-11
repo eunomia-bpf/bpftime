@@ -45,7 +45,7 @@ TEST_CASE("prog array lookup keeps a per-thread result slot",
 
 	REQUIRE(bpftime_maps_create(prog_array_fd, "prog_array_tls",
 				    bpf_map_attr{
-					    .type = (int)bpf_map_type::
+					    .type = (int)bpftime::bpf_map_type::
 						    BPF_MAP_TYPE_PROG_ARRAY,
 					    .key_size = 4,
 					    .value_size = 4,
