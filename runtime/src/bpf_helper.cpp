@@ -269,11 +269,17 @@ uint64_t bpftime_get_current_pid_tgid(uint64_t, uint64_t, uint64_t, uint64_t,
 				      "thread-self", local_tid);
 	}
 #elif __APPLE__
-	static int tgid = getpid();
-	static thread_local uint64_t tid = UINT64_MAX; // cannot use int because
-						       // pthread_threadid_np
-						       // expects only uint64_t
-	if (tid == UINT64_MAX) {
+	// Mirror the Linux branch: detect fork via getpid() change so the child
+	// does not keep reporting the parent's cached identity. The previous
+	// one-shot `static int tgid = getpid()` never refreshed after fork.
+	static thread_local int cached_local_tgid = -1;
+	static thread_local uint64_t tgid = 0;
+	static thread_local uint64_t tid = UINT64_MAX; // pthread_threadid_np uses uint64_t
+	int local_tgid = getpid();
+	if (cached_local_tgid != local_tgid) {
+		cached_local_tgid = local_tgid;
+		tgid = static_cast<uint64_t>(local_tgid);
+		// Mach thread id is not inherited across fork; force re-resolution.
 		pthread_threadid_np(NULL, &tid);
 	}
 #endif
