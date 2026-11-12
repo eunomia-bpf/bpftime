@@ -17,6 +17,7 @@ on:
       - "vm/**"
       - "cmake/**"
       - "third_party/**"
+      - "compat/**"
       - "CMakeLists.txt"
       - ".gitmodules"
   pull_request:
@@ -28,6 +29,7 @@ on:
       - "vm/**"
       - "cmake/**"
       - "third_party/**"
+      - "compat/**"
       - "CMakeLists.txt"
       - ".gitmodules"
 
