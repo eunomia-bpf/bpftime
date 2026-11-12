@@ -6,29 +6,77 @@ on:
     branches: ["master"]
     paths:
       - ".github/workflows/test-gpu-examples.yml"
-      - "attach/**"
+      # GPU/CUDA-specific sources and examples. Generic runtime/attach
+      # changes are covered by the non-GPU build and test workflows, so they
+      # do not spin up the scarce GPU runners.
+      - "attach/nv_attach_impl/**"
       - "benchmark/gpu/**"
       - "example/gpu/**"
-      - "runtime/**"
-      - "tools/**"
-      - "vm/**"
+      - "runtime/src/attach/bpf_attach_ctx_cuda.cpp"
+      - "runtime/src/bpf_map/gpu/**"
+      - "runtime/src/bpf_map/gpu_kernel_shared/**"
+      - "runtime/unit-test/cuda/**"
+      # Generic files that compile CUDA-specific branches under
+      # BPFTIME_ENABLE_CUDA_ATTACH=ON (the only build that defines it); a
+      # change to their CUDA-guarded code must still run the GPU build.
+      - "runtime/agent/agent.cpp"
+      - "runtime/include/bpf_attach_ctx.hpp"
+      - "runtime/include/bpftime_prog.hpp"
+      - "runtime/include/bpftime_shm.hpp"
+      - "runtime/src/attach/bpf_attach_ctx.cpp"
+      - "runtime/src/bpftime_prog.cpp"
+      - "runtime/src/bpftime_shm.cpp"
+      - "runtime/src/bpftime_shm_internal.cpp"
+      - "runtime/src/bpftime_shm_internal.hpp"
+      - "runtime/src/handler/map_handler.cpp"
+      - "runtime/src/handler/map_handler.hpp"
+      - "runtime/syscall-server/syscall_context.cpp"
+      - "runtime/syscall-server/syscall_context.hpp"
+      - "runtime/syscall-server/syscall_server_main.cpp"
+      - "runtime/syscall-server/syscall_server_utils.cpp"
+      - "tools/bpftimetool/main.cpp"
+      # Build system, toolchain and submodules can affect the GPU build.
+      - "**/CMakeLists.txt"
       - "cmake/**"
       - "third_party/**"
-      - "CMakeLists.txt"
       - ".gitmodules"
   pull_request:
     branches: ["master"]
     paths:
       - ".github/workflows/test-gpu-examples.yml"
-      - "attach/**"
+      # GPU/CUDA-specific sources and examples. Generic runtime/attach
+      # changes are covered by the non-GPU build and test workflows, so they
+      # do not spin up the scarce GPU runners.
+      - "attach/nv_attach_impl/**"
       - "benchmark/gpu/**"
       - "example/gpu/**"
-      - "runtime/**"
-      - "tools/**"
-      - "vm/**"
+      - "runtime/src/attach/bpf_attach_ctx_cuda.cpp"
+      - "runtime/src/bpf_map/gpu/**"
+      - "runtime/src/bpf_map/gpu_kernel_shared/**"
+      - "runtime/unit-test/cuda/**"
+      # Generic files that compile CUDA-specific branches under
+      # BPFTIME_ENABLE_CUDA_ATTACH=ON (the only build that defines it); a
+      # change to their CUDA-guarded code must still run the GPU build.
+      - "runtime/agent/agent.cpp"
+      - "runtime/include/bpf_attach_ctx.hpp"
+      - "runtime/include/bpftime_prog.hpp"
+      - "runtime/include/bpftime_shm.hpp"
+      - "runtime/src/attach/bpf_attach_ctx.cpp"
+      - "runtime/src/bpftime_prog.cpp"
+      - "runtime/src/bpftime_shm.cpp"
+      - "runtime/src/bpftime_shm_internal.cpp"
+      - "runtime/src/bpftime_shm_internal.hpp"
+      - "runtime/src/handler/map_handler.cpp"
+      - "runtime/src/handler/map_handler.hpp"
+      - "runtime/syscall-server/syscall_context.cpp"
+      - "runtime/syscall-server/syscall_context.hpp"
+      - "runtime/syscall-server/syscall_server_main.cpp"
+      - "runtime/syscall-server/syscall_server_utils.cpp"
+      - "tools/bpftimetool/main.cpp"
+      # Build system, toolchain and submodules can affect the GPU build.
+      - "**/CMakeLists.txt"
       - "cmake/**"
       - "third_party/**"
-      - "CMakeLists.txt"
       - ".gitmodules"
 
 concurrency:
