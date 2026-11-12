@@ -277,7 +277,7 @@ uint64_t bpftime_get_current_pid_tgid(uint64_t, uint64_t, uint64_t, uint64_t,
 		pthread_threadid_np(NULL, &tid);
 	}
 #endif
-	return ((uint64_t)bpftime_cached_tgid << 32) | bpftime_cached_tid;
+	return ((uint64_t)tgid << 32) | tid;
 }
 
 uint64_t bpftime_get_current_task(uint64_t, uint64_t, uint64_t, uint64_t,
