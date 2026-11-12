@@ -174,7 +174,13 @@ jobs:
 
   build-bpftime-gpu:
     needs: [detect-gpu-change]
-    if: needs.detect-gpu-change.outputs.gpu_affected == 'true'
+    # Runs unless the detector explicitly said "not affected". A failed or
+    # skipped detector leaves the output empty, and an `== 'true'` test would
+    # then skip this job silently: a skipped job is not a red check, so the
+    # pull request would look green with the GPU build never having run.
+    # !cancelled() is required because a failed `needs` job otherwise skips
+    # this one without evaluating the condition at all.
+    if: ${{ !cancelled() && needs.detect-gpu-change.outputs.gpu_affected != 'false' }}
     runs-on: [self-hosted, Linux, X64, gpu]
     steps:
       - uses: actions/checkout@v4
