@@ -199,6 +199,10 @@ if(ENABLE_PROBE_WRITE_CHECK)
   target_compile_definitions(runtime PRIVATE ENABLE_PROBE_WRITE_CHECK=1)
 endif()
 
+if(ENABLE_STACK_SNAPSHOT)
+  target_compile_definitions(runtime PRIVATE BPFTIME_PROBE_STACK_SNAPSHOT=1)
+endif()
+
 # add to single archive if option is enabled
 if(${BPFTIME_BUILD_STATIC_LIB})
   if(${BPFTIME_UBPF_JIT})
