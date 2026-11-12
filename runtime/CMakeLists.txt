@@ -278,6 +278,7 @@ endif()
 
 add_subdirectory(agent)
 add_subdirectory(syscall-server)
+add_subdirectory(embed)
 
 #
 # Unit testing setup
