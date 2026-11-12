@@ -4,9 +4,11 @@
  * All rights reserved.
  */
 #include "bpftime_driver.hpp"
+#include "bpf_prog_insns.hpp"
 #include "bpftime_config.hpp"
 #include <linux/bpf.h>
 #include <bpf/bpf.h>
+#include <boost/scope_exit.hpp>
 #include "ebpf_inst.h"
 #include <spdlog/spdlog.h>
 #include "bpftime_shm.hpp"
@@ -84,12 +86,15 @@ static int relocate_bpf_prog_insns(std::vector<ebpf_inst> &insns,
 	}
 	SPDLOG_DEBUG("relocate bpf prog insns for id {}, cnt {}", id,
 		      insn_data.code_len);
-	// resize the insns
-	insns.resize(insn_data.code_len);
-	const ebpf_inst *orignal_insns = (const ebpf_inst *)insn_data.code;
-	insns.assign(orignal_insns, orignal_insns + insn_data.code_len);
+	res = bpftime::detail::copy_captured_bpf_prog_insns(insns, insn_data);
+	if (res < 0) {
+		SPDLOG_ERROR(
+			"BPF program {} has {} instructions, exceeding capture capacity {}",
+			id, insn_data.code_len, BPF_COMPLEXITY_LIMIT_INSNS);
+		return res;
+	}
 	for (size_t i = 0; i < insn_data.code_len; i++) {
-		const struct ebpf_inst inst = orignal_insns[i];
+		const struct ebpf_inst inst = insns[i];
 		bool store = false;
 
 		switch (inst.code) {
@@ -163,6 +168,12 @@ int bpftime_driver::bpftime_progs_create_server(int kernel_id, int server_pid)
 			      kernel_id, errno);
 		return -1;
 	}
+	BOOST_SCOPE_EXIT_ALL(=)
+	{
+		const int saved_errno = errno;
+		close(fd);
+		errno = saved_errno;
+	};
 	SPDLOG_DEBUG("get prog fd {} for id {}", fd, kernel_id);
 	bpf_prog_info info = {};
 	uint32_t info_len = sizeof(info);
@@ -197,7 +208,6 @@ int bpftime_driver::bpftime_progs_create_server(int kernel_id, int server_pid)
 			      kernel_id);
 		return -1;
 	}
-	close(fd);
 	return kernel_id;
 }
 
@@ -208,6 +218,12 @@ int bpftime_driver::bpftime_maps_create_server(int kernel_id)
 		SPDLOG_ERROR("Failed to get map fd for id {}", kernel_id);
 		return -1;
 	}
+	BOOST_SCOPE_EXIT_ALL(=)
+	{
+		const int saved_errno = errno;
+		close(map_fd);
+		errno = saved_errno;
+	};
 	bpf_map_info info = {};
 	uint32_t info_len = sizeof(info);
 	int res = bpf_obj_get_info_by_fd(map_fd, &info, &info_len);

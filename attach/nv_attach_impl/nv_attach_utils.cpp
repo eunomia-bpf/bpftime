@@ -29,7 +29,7 @@ std::string rewrite_ptx_target(std::string ptx,
 
 	// Rewrite .version based on SM arch (sm_120+ needs 8.7, sm_100+ needs 8.5)
 	int sm_num = (sm_arch.size() > 3) ? std::atoi(sm_arch.c_str() + 3) : 0;
-	const char *ptx_ver = (sm_num >= 120) ? "8.7" : (sm_num >= 100) ? "8.5" : nullptr;
+	const char *ptx_ver = (sm_num >= 120) ? "8.7" : (sm_num >= 103) ? "8.8" : (sm_num >= 100) ? "8.5" : nullptr;
 	if (ptx_ver) {
 		auto vpos = ptx.find(".version");
 		if (vpos != std::string::npos) {

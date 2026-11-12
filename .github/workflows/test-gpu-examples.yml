@@ -4,34 +4,24 @@ on:
   workflow_dispatch:
   push:
     branches: ["master"]
-    paths:
+    paths: &gpu_paths
+      # Folder-level GPU/CUDA scopes plus build inputs. Generic CPU-only
+      # source changes do not reserve the scarce self-hosted GPU runners.
       - ".github/workflows/test-gpu-examples.yml"
-      - "attach/**"
+      - "attach/nv_attach_impl/**"
       - "bpftime-verifier/**"
       - "benchmark/gpu/**"
       - "example/gpu/**"
-      - "runtime/**"
-      - "tools/**"
-      - "vm/**"
+      - "runtime/src/bpf_map/gpu/**"
+      - "runtime/src/bpf_map/gpu_kernel_shared/**"
+      - "runtime/unit-test/cuda/**"
       - "cmake/**"
       - "third_party/**"
-      - "CMakeLists.txt"
+      - "**/CMakeLists.txt"
       - ".gitmodules"
   pull_request:
     branches: ["master"]
-    paths:
-      - ".github/workflows/test-gpu-examples.yml"
-      - "attach/**"
-      - "bpftime-verifier/**"
-      - "benchmark/gpu/**"
-      - "example/gpu/**"
-      - "runtime/**"
-      - "tools/**"
-      - "vm/**"
-      - "cmake/**"
-      - "third_party/**"
-      - "CMakeLists.txt"
-      - ".gitmodules"
+    paths: *gpu_paths
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}-${{ github.event_name }}
@@ -41,7 +31,44 @@ env:
   BPFTIME_VM_NAME: llvm
 
 jobs:
+  # Runs on a generic (non-GPU) runner and decides whether the GPU jobs are
+  # needed, so a non-GPU change never reserves a scarce GPU runner. Folder-level
+  # filters mirror the trigger paths above.
+  detect-gpu-change:
+    runs-on: ubuntu-latest
+    outputs:
+      gpu_affected: ${{ steps.manual.outputs.gpu_affected || steps.filter.outputs.gpu_affected }}
+    steps:
+      - name: Manual dispatch always runs
+        id: manual
+        if: github.event_name == 'workflow_dispatch'
+        run: echo "gpu_affected=true" >> "$GITHUB_OUTPUT"
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            gpu_affected:
+              - '.github/workflows/test-gpu-examples.yml'
+              - 'attach/nv_attach_impl/**'
+              - 'benchmark/gpu/**'
+              - 'example/gpu/**'
+              - 'runtime/src/bpf_map/gpu/**'
+              - 'runtime/src/bpf_map/gpu_kernel_shared/**'
+              - 'runtime/unit-test/cuda/**'
+              - 'cmake/**'
+              - 'third_party/**'
+              - '**/CMakeLists.txt'
+              - '.gitmodules'
+
   build-bpftime-gpu:
+    needs: [detect-gpu-change]
+    # Runs unless the detector explicitly said "not affected". A failed or
+    # skipped detector leaves the output empty, and an `== 'true'` test would
+    # then skip this job silently: a skipped job is not a red check, so the
+    # pull request would look green with the GPU build never having run.
+    # !cancelled() is required because a failed `needs` job otherwise skips
+    # this one without evaluating the condition at all.
+    if: ${{ !cancelled() && needs.detect-gpu-change.outputs.gpu_affected != 'false' }}
     runs-on: [self-hosted, Linux, X64, gpu]
     steps:
       - uses: actions/checkout@v4
@@ -390,12 +417,8 @@ jobs:
 
           if [ -d "$ART_ROOT/build" ]; then
             mv "$ART_ROOT/build" build
-            exit 0
-          fi
-
-          if [ -d "$ART_ROOT/bpftime-gpu-build/build" ]; then
+          elif [ -d "$ART_ROOT/bpftime-gpu-build/build" ]; then
             mv "$ART_ROOT/bpftime-gpu-build/build" build
-            exit 0
           fi
 
           # If upload-artifact chose 'build/' as the artifact root, downloaded files look like:
@@ -409,6 +432,15 @@ jobs:
               fi
             done
           fi
+
+          # Directory inputs can also be extracted without the leading attach/
+          # component. Put those directories back where the GPU tests expect them.
+          for d in text_segment_transformer nv_attach_impl; do
+            if [ -d "$ART_ROOT/$d" ]; then
+              mkdir -p "build/attach/$d"
+              cp -a "$ART_ROOT/$d/." "build/attach/$d/"
+            fi
+          done
 
           if [ -d build ]; then
             echo "Found build/ in workspace."

@@ -139,6 +139,7 @@ enum class shm_open_type {
 	SHM_OPEN_ONLY,
 	SHM_NO_CREATE,
 	SHM_CREATE_OR_OPEN,
+	SHM_CREATE_ONLY,
 };
 
 enum class bpf_prog_type {
