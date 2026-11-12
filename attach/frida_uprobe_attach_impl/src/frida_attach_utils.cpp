@@ -62,8 +62,6 @@ std::string unescape_proc_path(std::string path)
 	}
 	return result;
 }
-// Membership is checked against individual VMAs, not their outer bounds.
-bool module_contains_address(std::string_view module_name, uintptr_t address);
 } // namespace
 
 std::optional<std::string>
@@ -192,6 +190,8 @@ gboolean find_mapped_address(const GumRangeDetails *details, gpointer user_data)
 	return TRUE;
 }
 
+} // namespace
+
 // gum's module lookup matches a full path for the base address but, for range
 // enumeration, only the executable name (the basename) is matched; a full path
 // yields zero ranges. Try the given name and then the basename so a path from
@@ -212,7 +212,6 @@ bool module_contains_address(std::string_view module_name, uintptr_t address)
 				    find_mapped_address, &lookup);
 	return lookup.found;
 }
-} // namespace
 
 // Returns the span covering the module's mapped ranges (possibly with gaps),
 // or 0 when the ranges cannot be determined.

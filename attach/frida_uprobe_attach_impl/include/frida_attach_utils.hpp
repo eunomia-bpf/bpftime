@@ -24,6 +24,8 @@ void *get_module_base_addr(const char *module_name);
 // Size of the module's mapped extent, used to bound a spec-supplied offset.
 // Returns 0 when the ranges cannot be determined.
 uintptr_t module_mapped_extent(const std::string_view &module_name);
+// Whether @address falls inside one of the module's readable mappings.
+bool module_contains_address(std::string_view module_name, uintptr_t address);
 // Find the symbol address of an exported symbol of a certain module
 void *find_module_export_by_name(const char *module_name,
 				 const char *symbol_name);

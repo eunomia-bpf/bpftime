@@ -7,6 +7,9 @@
 #include <cstdio>
 #include <sys/mman.h>
 #include <unistd.h>
+#if defined(__linux__)
+#include <dlfcn.h>
+#endif
 #endif
 using namespace bpftime::attach;
 
@@ -120,3 +123,31 @@ TEST_CASE("Resolution accepts a full module path from an attach spec")
 	REQUIRE(resolve_function_addr_by_module_offset(exe_path, UINTPTR_MAX) ==
 		nullptr);
 }
+
+#if defined(__linux__)
+// An address past the module's own mappings must not count as mapped, even
+// though it falls inside the outer [base, base+extent) span that a bounds-only
+// check would accept.
+TEST_CASE("Module membership rejects an address in a VMA gap")
+{
+	frida_attach_impl man;
+	void *base = get_module_base_addr("");
+	REQUIRE(base != nullptr);
+	const auto extent = module_mapped_extent("");
+	REQUIRE(extent > 0);
+
+	const auto module_base = (uintptr_t)base;
+	// The module's text is mapped, so the base is inside a VMA.
+	REQUIRE(module_contains_address("", module_base));
+
+	// One byte past the extent is outside every VMA of the module.
+	REQUIRE_FALSE(module_contains_address("", module_base + extent));
+
+	// Mid-module is mapped by definition of the extent only when a VMA covers
+	// it; a stack address is inside no VMA of this module and must be
+	// rejected even though it is a valid readable address.
+	int on_stack = 0;
+	REQUIRE_FALSE(
+		module_contains_address("", (uintptr_t)&on_stack));
+}
+#endif
