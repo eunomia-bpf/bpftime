@@ -1,5 +1,7 @@
+#include "bpftime_helper_group.hpp"
 #include "catch2/catch_test_macros.hpp"
 #include "spdlog/spdlog.h"
+#include <algorithm>
 #include <cerrno>
 #include <cstring>
 #include <sys/mman.h>
@@ -29,6 +31,29 @@ int64_t bpftime_probe_write_user(uint64_t dst, uint64_t src, int64_t len,
 				 uint64_t, uint64_t);
 int64_t bpf_probe_read_str(uint64_t dst, uint64_t size, uint64_t src, uint64_t,
 			   uint64_t);
+uint64_t bpftime_get_current_task(uint64_t, uint64_t, uint64_t, uint64_t,
+				  uint64_t);
+}
+
+TEST_CASE("Test current task helper exposes the thread pointer")
+{
+	auto helper_ids = bpftime::bpftime_helper_group::
+			  get_kernel_utils_helper_group()
+			  .get_helper_ids();
+	REQUIRE(std::find(helper_ids.begin(), helper_ids.end(), 35) !=
+		helper_ids.end());
+	REQUIRE(std::find(helper_ids.begin(), helper_ids.end(), 158) !=
+		helper_ids.end());
+#if defined(__linux__) && (defined(__x86_64__) || defined(__aarch64__))
+	constexpr size_t tpbase_offset = 128;
+	REQUIRE(setenv("BPFTIME_SYSTEM_ANALYSIS_TPBASE_OFFSET", "128", 1) == 0);
+	auto *task = reinterpret_cast<const uint8_t *>(
+		bpftime_get_current_task(0, 0, 0, 0, 0));
+	void *observed = nullptr;
+	memcpy(&observed, task + tpbase_offset, sizeof(observed));
+	REQUIRE(observed == __builtin_thread_pointer());
+	REQUIRE(unsetenv("BPFTIME_SYSTEM_ANALYSIS_TPBASE_OFFSET") == 0);
+#endif
 }
 
 TEST_CASE("Test bpftime_probe_read") // test for bpftime_probe_read
