@@ -57,10 +57,13 @@ class bpf_cpu_execution_guard {
 			return;
 		}
 		if (cpu >= BPFTIME_MAX_CPU_COUNT) {
-			warn_throttled([cpu] {
+			// `cpu` is a member, so it cannot be captured by a lambda;
+			// copy it into a local first.
+			const int cpu_for_log = cpu;
+			warn_throttled([cpu_for_log] {
 				SPDLOG_WARN(
 					"logical cpu {} exceeds BPFTIME_MAX_CPU_COUNT={}; BPF runs without per-CPU serialization",
-					cpu, BPFTIME_MAX_CPU_COUNT);
+					cpu_for_log, BPFTIME_MAX_CPU_COUNT);
 			});
 			return;
 		}
