@@ -21,6 +21,23 @@ inline thread_local std::optional<override_return_set_callback>
 // Function address exposed while an attach callback is running.
 inline thread_local uintptr_t current_thread_attach_func_ip = 0;
 
+// A signal backend supplies already allocated callback state. Keep only a
+// trivially initialized pointer in static TLS: accessing this path must not
+// call __tls_get_addr or register a TLS destructor after late dlopen.
+struct signal_callback_context {
+	uintptr_t function_ip = 0;
+	std::optional<uint64_t> cookie;
+	void (*override_return)(uint64_t, uint64_t) = nullptr;
+};
+#if defined(__linux__)
+__attribute__((tls_model("initial-exec")))
+#endif
+inline thread_local signal_callback_context *current_signal_callback = nullptr;
+#if defined(__linux__)
+__attribute__((tls_model("initial-exec")))
+#endif
+inline thread_local unsigned signal_handler_depth = 0;
+
 inline thread_local unsigned current_thread_attach_callback_depth = 0;
 
 class attach_callback_scope {

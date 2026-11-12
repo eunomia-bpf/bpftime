@@ -96,6 +96,12 @@ syscall_tracepoint_table create_syscall_tracepoint_id_table()
 		}
 		add_synthetic("raw_syscalls/sys_enter", GLOBAL_SYS_ENTER_NAME);
 		add_synthetic("raw_syscalls/sys_exit", GLOBAL_SYS_EXIT_NAME);
+		add_synthetic("sched/sched_process_fork",
+			      SCHED_PROCESS_FORK_NAME);
+		add_synthetic("sched/sched_process_exec",
+			      SCHED_PROCESS_EXEC_NAME);
+		add_synthetic("sched/sched_process_exit",
+			      SCHED_PROCESS_EXIT_NAME);
 		return result;
 	}
 	const auto read_id = [&](std::filesystem::path tp_dir) -> int32_t {
@@ -125,6 +131,18 @@ syscall_tracepoint_table create_syscall_tracepoint_id_table()
 	result[read_id(std::filesystem::path(TRACEPOINT_ROOT)
 			       .append("raw_syscalls")
 			       .append("sys_exit"))] = GLOBAL_SYS_EXIT_NAME;
+	result[read_id(std::filesystem::path(TRACEPOINT_ROOT)
+			       .append("sched")
+			       .append(SCHED_PROCESS_FORK_NAME))] =
+		SCHED_PROCESS_FORK_NAME;
+	result[read_id(std::filesystem::path(TRACEPOINT_ROOT)
+			       .append("sched")
+			       .append(SCHED_PROCESS_EXEC_NAME))] =
+		SCHED_PROCESS_EXEC_NAME;
+	result[read_id(std::filesystem::path(TRACEPOINT_ROOT)
+			       .append("sched")
+			       .append(SCHED_PROCESS_EXIT_NAME))] =
+		SCHED_PROCESS_EXIT_NAME;
 
 	return result;
 }
