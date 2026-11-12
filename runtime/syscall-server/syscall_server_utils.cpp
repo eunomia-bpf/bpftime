@@ -17,12 +17,14 @@
 #include <exception>
 #include <fcntl.h>
 #include <filesystem>
+#include <fstream>
 #include <memory>
 #include <mutex>
 #include <signal.h>
 #include <spdlog/spdlog.h>
 #include <bpftime_shm.hpp>
 #include <string>
+#include <string_view>
 #include <system_error>
 #include <unistd.h>
 #ifdef ENABLE_BPFTIME_VERIFIER
@@ -299,6 +301,37 @@ int determine_kprobe_retprobe_bit()
 std::optional<std::unique_ptr<mocked_file_provider>>
 create_mocked_file_based_on_full_path(const std::filesystem::path &path)
 {
+	auto path_text = path.string();
+	constexpr std::string_view debug_tracepoint_root =
+		"/sys/kernel/debug/tracing/events/";
+	constexpr std::string_view tracepoint_root =
+		"/sys/kernel/tracing/events/";
+	const bool is_tracepoint_id =
+		(path_text.starts_with(debug_tracepoint_root) ||
+		 path_text.starts_with(tracepoint_root)) &&
+		path_text.ends_with("/id");
+	if (is_tracepoint_id) {
+		// When tracefs is accessible, the real id file carries a valid
+		// kernel tracepoint id. Do not mock it: a fabricated id would
+		// index the tracepoint table out of range in the traced
+		// process. Returning no provider lets the normal open path read
+		// the genuine id, matching the default behavior.
+		{
+			std::ifstream real_id_file(path_text);
+			uint32_t real_id = 0;
+			if (real_id_file >> real_id)
+				return {};
+		}
+		// Rootless mode cannot read tracefs. Synthesize a stable id from
+		// the event path so server and client derive the same value.
+		uint32_t hash = 2166136261U;
+		for (unsigned char ch : path_text) {
+			hash ^= ch;
+			hash *= 16777619U;
+		}
+		return std::make_unique<mocked_file_provider>(
+			std::to_string(1024U + hash % 100000000U) + "\n");
+	}
 	if (path == UPROBE_TYPE_FILE_NAME) {
 		SPDLOG_DEBUG("{} is uprobe type file", path.c_str());
 		return std::make_unique<mocked_file_provider>(
