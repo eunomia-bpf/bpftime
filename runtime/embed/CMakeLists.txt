@@ -32,3 +32,8 @@ if(BPFTIME_ENABLE_INPROC_EMBED)
   )
 endif()
 
+# The selftest compiles a BPF object via add_ebpf_program_target, which is only
+# available when libbpf support is enabled; skip it in libbpf-free builds.
+if(BPFTIME_BUILD_WITH_LIBBPF)
+  add_subdirectory(selftest)
+endif()
