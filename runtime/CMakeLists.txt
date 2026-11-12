@@ -241,6 +241,12 @@ if(APPLE)
   find_library(RESOLV_LIBRARY resolv)
   mark_as_advanced(COCOA_LIBRARY FOUNDATION_LIBRARY APPKIT_LIBRARY COREF_LIBRARY RESOLV_LIBRARY)
   set(EXTRA_LIBS ${COCOA_LIBRARY} ${FOUNDATION_LIBRARY} ${APPKIT_LIBRARY} ${COREF_LIBRARY} ${RESOLV_LIBRARY})
+  # Linux uapi constants (enum bpf_map_type, map/stack flags) have no native
+  # Darwin header. Provide them via the cross-platform compat shim; placed first
+  # so "linux/bpf.h" resolves here instead of failing on Apple. Linux builds do
+  # not add this path and keep using the genuine kernel header.
+  target_include_directories(${PROJECT_NAME} BEFORE PRIVATE
+			     ${CMAKE_SOURCE_DIR}/compat/darwin/include)
 endif()
 
 set(RUNTIME_LINK_LIBS
