@@ -4,6 +4,7 @@
 #include <iterator>
 #include <optional>
 #include <syscall_trace_attach_impl.hpp>
+#include "bpftime_pt_regs.hpp"
 
 #ifdef __linux__
 #include <asm/unistd.h>  // For architecture-specific syscall numbers
@@ -17,16 +18,8 @@ namespace attach
 {
 std::optional<syscall_trace_attach_impl *> global_syscall_trace_attach_impl;
 
-#if defined(__x86_64__)
-struct syscall_pt_regs {
-	uint64_t r15, r14, r13, r12, bp, bx, r11, r10, r9, r8, ax, cx, dx,
-		si, di, orig_ax, ip, cs, flags, sp, ss;
-};
-#elif defined(__aarch64__)
-struct syscall_pt_regs {
-	uint64_t regs[31], sp, pc, pstate;
-};
-#endif
+// pt_regs is provided by the shared base_attach_impl/bpftime_pt_regs.hpp
+// (x86_64/aarch64/riscv/arm), a single ABI layout source of truth.
 
 static bool is_process_creation_syscall(int64_t sys_nr)
 {
@@ -178,7 +171,7 @@ int64_t syscall_trace_attach_impl::dispatch_syscall(int64_t sys_nr,
 			} else if (prog->kprobe_abi !=
 				   syscall_kprobe_abi::syscall_wrapper) {
 #if defined(__x86_64__)
-				syscall_pt_regs ctx = {};
+				pt_regs ctx = {};
 				ctx.si = arg1;
 				ctx.dx = arg2;
 				ctx.cx = arg3;
@@ -190,7 +183,7 @@ int64_t syscall_trace_attach_impl::dispatch_syscall(int64_t sys_nr,
 				ctx.cs = 0x33;
 				ctx.ss = 0x2b;
 #elif defined(__aarch64__)
-				syscall_pt_regs ctx = {};
+				pt_regs ctx = {};
 				ctx.regs[1] = arg1;
 				ctx.regs[2] = arg2;
 				ctx.regs[3] = arg3;
@@ -207,14 +200,14 @@ int64_t syscall_trace_attach_impl::dispatch_syscall(int64_t sys_nr,
 #endif
 			} else {
 #if defined(__x86_64__)
-				syscall_pt_regs inner = {};
+				pt_regs inner = {};
 				inner.di = arg1;
 				inner.si = arg2;
 				inner.dx = arg3;
 				inner.r10 = arg4;
 				inner.r8 = arg5;
 				inner.r9 = arg6;
-				syscall_pt_regs outer = {};
+				pt_regs outer = {};
 				outer.di = reinterpret_cast<uintptr_t>(&inner);
 				outer.orig_ax = sys_nr;
 				outer.ax = sys_nr;
@@ -224,14 +217,14 @@ int64_t syscall_trace_attach_impl::dispatch_syscall(int64_t sys_nr,
 				outer.cs = 0x33;
 				outer.ss = 0x2b;
 #elif defined(__aarch64__)
-				syscall_pt_regs inner = {};
+				pt_regs inner = {};
 				inner.regs[0] = arg1;
 				inner.regs[1] = arg2;
 				inner.regs[2] = arg3;
 				inner.regs[3] = arg4;
 				inner.regs[4] = arg5;
 				inner.regs[5] = arg6;
-				syscall_pt_regs outer = {};
+				pt_regs outer = {};
 				outer.regs[0] = reinterpret_cast<uintptr_t>(&inner);
 				outer.regs[29] = user_bp;
 				outer.sp = user_sp;
@@ -255,7 +248,7 @@ int64_t syscall_trace_attach_impl::dispatch_syscall(int64_t sys_nr,
 				run_callback(prog, ctx);
 			} else {
 #if defined(__x86_64__) || defined(__aarch64__)
-				syscall_pt_regs ctx = {};
+				pt_regs ctx = {};
 #if defined(__x86_64__)
 				ctx.ax = ret;
 				ctx.orig_ax = sys_nr;
