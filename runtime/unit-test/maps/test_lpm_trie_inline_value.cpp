@@ -141,9 +141,15 @@ TEST_CASE("LPM trie inline buffers stay independent across threads",
 			value.data(), 0) == 0);
 
 	void *worker_pointer = nullptr;
+	bool worker_value_matches = false;
 	std::thread worker([&]() {
 		worker_pointer = fixture.trie->elem_lookup(
 			reinterpret_cast<bpf_lpm_trie_key *>(key.data()));
+		// Compare inside the thread: the returned buffer is this thread's
+		// TLS and is destroyed when the thread exits.
+		worker_value_matches =
+			worker_pointer != nullptr &&
+			std::memcmp(worker_pointer, value.data(), value_size) == 0;
 	});
 	void *main_pointer = fixture.trie->elem_lookup(
 		reinterpret_cast<bpf_lpm_trie_key *>(key.data()));
@@ -153,5 +159,5 @@ TEST_CASE("LPM trie inline buffers stay independent across threads",
 	REQUIRE(main_pointer != nullptr);
 	REQUIRE(worker_pointer != main_pointer);
 	REQUIRE(std::memcmp(main_pointer, value.data(), value_size) == 0);
-	REQUIRE(std::memcmp(worker_pointer, value.data(), value_size) == 0);
+	REQUIRE(worker_value_matches);
 }
