@@ -7,16 +7,16 @@ name: Build on macOS
 # unit tests require libbpf and therefore run only on the Linux workflows.
 
 on:
+  workflow_dispatch:
   push:
     branches: [master, "ci/**"]
     paths:
       - ".github/workflows/build-macos.yml"
       - "runtime/**"
-      - "attach/base_attach_impl/**"
+      - "attach/**"
       - "vm/**"
       - "cmake/**"
-      - "third_party/spdlog/**"
-      - "third_party/argparse/**"
+      - "third_party/**"
       - "CMakeLists.txt"
       - ".gitmodules"
   pull_request:
@@ -24,11 +24,10 @@ on:
     paths:
       - ".github/workflows/build-macos.yml"
       - "runtime/**"
-      - "attach/base_attach_impl/**"
+      - "attach/**"
       - "vm/**"
       - "cmake/**"
-      - "third_party/spdlog/**"
-      - "third_party/argparse/**"
+      - "third_party/**"
       - "CMakeLists.txt"
       - ".gitmodules"
 
@@ -38,16 +37,15 @@ concurrency:
 
 jobs:
   build:
-    runs-on: macos-14
+    runs-on: macos-15
     steps:
-      - name: Checkout repository (with submodules)
+      - name: Checkout repository (with nested submodules)
         uses: actions/checkout@v4
         with:
-          submodules: true
-          fetch-depth: 0
+          submodules: recursive
 
       - name: Install build dependencies
-        run: brew install cmake boost ncurses pkg-config openssl
+        run: brew install cmake boost
 
       - name: Configure (Darwin, no libbpf/frida/CUDA/verifier)
         run: |
@@ -61,11 +59,11 @@ jobs:
             -DBPFTIME_ENABLE_UNIT_TESTING=OFF \
             -DENABLE_EBPF_VERIFIER=OFF
 
-      - name: Build runtime
-        run: cmake --build build -j"$(sysctl -n hw.ncpu)"
+      # Build only the cross-platform runtime target. agent/syscall-server pull
+      # in Linux-only headers (asm/unistd.h, sys/epoll.h, GNU --whole-archive)
+      # and are out of scope for the Darwin compile gate.
+      - name: Build runtime target
+        run: cmake --build build --target runtime -j"$(sysctl -n hw.ncpu)"
 
-      - name: Confirm runtime library was produced
-        run: |
-          art=$(find build -name 'libbpftime.a' -o -name 'libbpftime.dylib' | head -1)
-          echo "runtime artifact: $art"
-          test -n "$art"
+      - name: Confirm runtime static library was produced
+        run: test -s build/runtime/libruntime.a
