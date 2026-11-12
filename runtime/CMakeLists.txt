@@ -294,6 +294,8 @@ add_subdirectory(syscall-server)
 if(BPFTIME_ENABLE_UNIT_TESTING AND BPFTIME_BUILD_WITH_LIBBPF)
   enable_testing()
   message(STATUS "Build unit tests for the runtime. Tests should always be found in the test folder\n")
+  # Lets unit tests observe internal caches that have no public surface.
+  target_compile_definitions(${PROJECT_NAME} PUBLIC BPFTIME_UNIT_TESTING=1)
   add_subdirectory(test)
   add_subdirectory(unit-test)
 endif()

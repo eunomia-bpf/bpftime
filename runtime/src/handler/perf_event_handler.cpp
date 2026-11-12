@@ -163,6 +163,11 @@ thread_local software_perf_event_shard_cache_entry
 	__attribute__((tls_model("initial-exec")))
 #endif
 	= {};
+thread_local size_t next_victim_slot
+#if defined(__linux__)
+	__attribute__((tls_model("initial-exec")))
+#endif
+	= 0;
 
 void cache_software_perf_event_shard(
 	software_perf_event_shard_cache_entry value)
@@ -173,12 +178,26 @@ void cache_software_perf_event_shard(
 			return;
 		}
 	}
-	// Preserve the existing bounded-cache policy when every slot is occupied.
-	for (auto &entry : software_perf_event_shard_cache)
-		entry.owner = nullptr;
-	software_perf_event_shard_cache[0] = value;
+	// Every slot holds a different owner. Replace one slot round-robin rather
+	// than clearing the table: with more live events than slots, clearing all
+	// of them evicts every entry on each miss and sends the whole rotation back
+	// to the shard lock.
+	software_perf_event_shard_cache[next_victim_slot++ %
+					 max_software_perf_event_shard_cache_entries] =
+		value;
 }
 } // namespace
+
+#if defined(BPFTIME_UNIT_TESTING)
+size_t cached_software_perf_event_shard_count()
+{
+	size_t cached = 0;
+	for (const auto &entry : software_perf_event_shard_cache)
+		if (entry.owner != nullptr)
+			++cached;
+	return cached;
+}
+#endif
 
 bpf_perf_event_handler::bpf_perf_event_handler(
 	int type, const char *attach_arg,

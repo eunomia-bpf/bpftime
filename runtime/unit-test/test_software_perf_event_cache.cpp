@@ -127,3 +127,27 @@ TEST_CASE("Software perf shard cache stays independent across threads",
 }
 
 #endif
+
+TEST_CASE("Software perf shard cache replaces one slot instead of clearing",
+	  "[perf_event][software_perf_event][cache]")
+{
+	cache_fixture fixture;
+	constexpr size_t slots = 6;
+	REQUIRE(cache_fixture::event_count > slots);
+
+	for (size_t i = 0; i < slots; ++i)
+		REQUIRE(fixture.output(fixture.events[i],
+				       static_cast<int>(i), 0) == 0);
+	REQUIRE(bpftime::cached_software_perf_event_shard_count() == slots);
+
+	// One extra event no longer empties the table.
+	REQUIRE(fixture.output(fixture.events[slots],
+			       static_cast<int>(slots), 0) == 0);
+	REQUIRE(bpftime::cached_software_perf_event_shard_count() == slots);
+
+	// Fill the rest; the table stays full rather than collapsing to one slot.
+	for (size_t i = slots + 1; i < cache_fixture::event_count; ++i)
+		REQUIRE(fixture.output(fixture.events[i],
+				       static_cast<int>(i), 0) == 0);
+	REQUIRE(bpftime::cached_software_perf_event_shard_count() == slots);
+}
