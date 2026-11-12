@@ -208,7 +208,11 @@ if(BPFTIME_ENABLE_FRIDA)
   list(APPEND RUNTIME_DEPS FridaGum)
 endif()
 if(${BPFTIME_BUILD_WITH_LIBBPF})
-  list(APPEND RUNTIME_DEPS libbpf)
+  # copy_headers materialises the libbpf uapi headers into ${LIBBPF_INCLUDE_DIRS},
+  # which the sources below include as "linux/perf_event.h". Depending only on
+  # `libbpf` (the download step) leaves the copies racing the compile, so a
+  # partially written header surfaces as "unterminated #ifndef".
+  list(APPEND RUNTIME_DEPS libbpf copy_headers)
 endif()
 add_dependencies(${PROJECT_NAME} ${RUNTIME_DEPS})
 
