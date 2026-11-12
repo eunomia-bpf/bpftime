@@ -38,3 +38,23 @@ TEST_CASE("Allow external maps from the environment")
 	REQUIRE(restore_result == 0);
 	REQUIRE(cfg.allow_non_buildin_map_types);
 }
+
+TEST_CASE("Select Frida's fuzzy backtracer from the environment")
+{
+	const char *old_value = getenv("BPFTIME_FRIDA_FUZZY_BACKTRACER");
+	const bool was_set = old_value != nullptr;
+	const std::string saved_value = was_set ? old_value : "";
+
+	REQUIRE(unsetenv("BPFTIME_FRIDA_FUZZY_BACKTRACER") == 0);
+	REQUIRE_FALSE(construct_runtime_config_from_env()
+			      .enable_frida_fuzzy_backtracer);
+	REQUIRE(setenv("BPFTIME_FRIDA_FUZZY_BACKTRACER", "1", 1) == 0);
+	REQUIRE(construct_runtime_config_from_env()
+			.enable_frida_fuzzy_backtracer);
+
+	const int restore_result =
+		was_set ? setenv("BPFTIME_FRIDA_FUZZY_BACKTRACER",
+				 saved_value.c_str(), 1) :
+			  unsetenv("BPFTIME_FRIDA_FUZZY_BACKTRACER");
+	REQUIRE(restore_result == 0);
+}

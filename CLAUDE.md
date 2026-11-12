@@ -144,7 +144,36 @@ The codebase is organized into distinct components that interact through well-de
 
 The architecture prioritizes performance (bypassing kernel), compatibility (same APIs as kernel eBPF), and extensibility (modular design for new features).
 
+## Injected Agent Host-Process Contract
+
+Code loaded into a third-party process through `LD_PRELOAD` or runtime injection
+must remain a guest of that process:
+
+- Do not call `exit`, `_exit`, `abort`, `terminate`, or otherwise end the host
+  because bpftime initialization, configuration, allocation, or execution fails.
+  Return or record the error and disable only the affected bpftime operation.
+- Do not write to, close, redirect, or flush the host's stdin, stdout, or stderr
+  unless the user explicitly selected that behavior. Route diagnostics and
+  `bpf_trace_printk` output through an explicitly configured bpftime sink.
+- Do not replace host signal behavior without restoring or correctly chaining
+  the previous handler.
+- Add regression coverage for failure paths and for the default absence of host
+  termination and stdio side effects.
+
 ## Repository Documentation
+
+Trap callbacks execute inside SIGTRAP. Runtime-managed BPF links must reject
+programs whose concrete helper implementations have not been audited as
+async-signal-safe, and must finish JIT compilation before arming a probe.
+Other attach backends retain their existing helper support. Never replace a
+rejected helper with a silent no-op. Native/opaque callbacks are responsible
+for satisfying the same signal-safety contract themselves.
+
+RISC-V trap validation must include a real 4-byte instruction at an address
+congruent to 2 modulo 4, with assertions on both instruction width and the
+three-phase write counter. Test late dlopen after worker threads already exist,
+and permission failures during arm, disarm and rollback. QEMU results do not
+establish native concurrent patch/restore behavior.
 
 Do not create a root `docs/` directory or commit pull-request review artifacts.
 Keep repository maintenance and design constraints in this file.

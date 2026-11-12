@@ -458,8 +458,6 @@ int bpftime_epoll_wait(int fd, struct epoll_event *out_evts, int max_evt,
 		auto now_time = high_resolution_clock::now();
 		auto elasped =
 			duration_cast<milliseconds>(now_time - start_time);
-		if (timeout == 0)
-			return 0;
 		if (timeout > 0 && elasped.count() > timeout) {
 			break;
 		}
@@ -500,10 +498,8 @@ int bpftime_epoll_wait(int fd, struct epoll_event *out_evts, int max_evt,
 				}
 			}
 		}
-		if (next_id > 0) {
-			// According to man epoll_wait(2), epoll_wait can't be
-			// interrupted once at least one event was received
-			std::this_thread::sleep_for(milliseconds(1));
+		if (next_id > 0 || timeout == 0) {
+			break;
 		} else {
 			// Nothing has been received, so allow the interruption
 			// of epoll_wait

@@ -207,6 +207,7 @@ class bpf_attach_ctx {
 			return {};
 		}
 	}
+	bpftime_prog *find_instantiated_prog(int handler_id) const;
 
 #ifdef BPFTIME_ENABLE_CUDA_ATTACH
 	std::optional<attach::nv_attach_impl *> find_nv_attach_impl() const;
@@ -283,6 +284,8 @@ class bpf_attach_ctx {
 	create_map_basic_info(int filled_size);
 #endif
 };
+
+int load_prog_and_helpers(bpftime_prog *prog, const runtime_config &config);
 
 } // namespace bpftime
 

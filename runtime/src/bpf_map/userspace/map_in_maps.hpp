@@ -21,10 +21,11 @@ class array_map_of_maps_impl : public array_map_impl {
 		: array_map_impl(memory, sizeof(int), max_entries)
 	{
 	}
-	// TODO: add verify the correctness of the key
 	void *elem_lookup(const void *key)
 	{
 		auto key_val = array_map_impl::elem_lookup(key);
+		if (key_val == nullptr)
+			return nullptr;
 		int map_id = *(int *)key_val;
 		return (void *)((u_int64_t)map_id);
 	}

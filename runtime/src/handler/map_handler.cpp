@@ -1005,7 +1005,11 @@ int bpf_map_handler::map_init(managed_shared_memory &memory)
 		shm_holder.global_shared_memory.set_enable_mock(false);
 		if (!device) {
 			cuDeviceGet(&device, 0);
+#if CUDA_VERSION >= 13000
+			cuCtxCreate(&context, nullptr, 0, device);
+#else
 			cuCtxCreate(&context, 0, device);
+#endif
 			SPDLOG_INFO(
 				"CUDA context for thread {} has been set to {:x}",
 				gettid(), (uintptr_t)context);
@@ -1024,7 +1028,11 @@ int bpf_map_handler::map_init(managed_shared_memory &memory)
 		shm_holder.global_shared_memory.set_enable_mock(false);
 		if (!device) {
 			cuDeviceGet(&device, 0);
+#if CUDA_VERSION >= 13000
+			cuCtxCreate(&context, nullptr, 0, device);
+#else
 			cuCtxCreate(&context, 0, device);
+#endif
 			SPDLOG_INFO(
 				"CUDA context for thread {} has been set to {:x}",
 				gettid(), (uintptr_t)context);
