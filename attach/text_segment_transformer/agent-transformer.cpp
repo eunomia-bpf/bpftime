@@ -24,8 +24,6 @@
 #include "text_segment_transformer.hpp"
 #include <string>
 #include <thread>
-#include <unordered_map>
-#include <unordered_set>
 
 #if defined(__linux__) && defined(__x86_64__)
 #ifndef SECCOMP_RET_USER_NOTIF
@@ -45,9 +43,6 @@ struct seccomp_notif_resp {
 };
 #define SECCOMP_IOCTL_NOTIF_RECV _IOWR('!', 0, struct seccomp_notif)
 #define SECCOMP_IOCTL_NOTIF_SEND _IOWR('!', 1, struct seccomp_notif_resp)
-#endif
-#ifndef SECCOMP_USER_NOTIF_FLAG_CONTINUE
-#define SECCOMP_USER_NOTIF_FLAG_CONTINUE (1UL << 0)
 #endif
 #endif
 
@@ -78,29 +73,13 @@ static __attribute__((constructor)) void initialize_syscall_tracer()
 }
 
 #if defined(__linux__) && defined(__x86_64__)
-// Userspace resource ledger for emulated syscalls. This transformer is a
-// separate .so linked only against spdlog/frida-gum (not bpftime-syscall-server),
-// so it cannot call syscall_context directly; the runtime seam is the
-// get_call_hook()/dispatch_raw_syscall function pointer. These tables mirror
-// syscall-server concepts and are candidates for future unification:
-//   program_map_fds ~ syscall_context::map_in_map_refs
-//   mock_read_fds   ~ mocked_files + handle_openat
-//   mock_mmaps      ~ mocked_mmap_values (server set does not track size yet)
-//   map/ringbuf/mock fds ~ fd classification inside handle_sysbpf.
+// Emulated syscall resource state (fd/mmap lifetime, map-in-map refs) lives
+// in bpftime-syscall-server; this transformer reaches it through the
+// get_call_hook() dispatcher, which falls back to the real syscall for
+// anything it does not emulate. No local fd/mmap ledger is kept here.
 static std::mutex dispatch_mutex;
-static std::mutex resource_mutex;
-static std::unordered_set<int> mock_fds;
-static std::unordered_set<int> map_fds;
-static std::unordered_set<int> program_map_fds;
-static std::unordered_set<int> mock_read_fds;
-static std::unordered_set<int> ringbuf_fds;
-static std::unordered_map<uintptr_t, size_t> mock_mmaps;
 static const char *kallsyms_path;
 static std::atomic<int> go_seccomp_listener{ -1 };
-// SECCOMP_USER_NOTIF_FLAG_CONTINUE was added after user notification itself.
-// Cache kernels that reject it so notified syscalls can be emulated by a
-// pre-filter worker instead of leaving the requesting thread blocked.
-static std::atomic<int> go_seccomp_continue_supported{ -1 };
 
 struct mapped_file_resolution {
 	std::string logical_path;
@@ -246,149 +225,6 @@ static bool is_tracefs_mount_path(const char *path)
 		strcmp(path, "/sys/kernel/debug/tracing") == 0);
 }
 
-static bool should_dispatch_go_syscall(const int64_t *args)
-{
-	if (args[0] == __NR_bpf || args[0] == __NR_perf_event_open)
-		return true;
-	if (is_mapped_file_syscall(args))
-		return true;
-	if (args[0] == __NR_openat && args[2] != 0) {
-		auto *path = reinterpret_cast<const char *>(args[2]);
-		return is_tracepoint_id_path(path) ||
-		       (kallsyms_path != nullptr &&
-			strcmp(path, "/proc/kallsyms") == 0);
-	}
-	if (args[0] == __NR_statfs && args[1] != 0)
-		return is_tracefs_mount_path(
-			reinterpret_cast<const char *>(args[1]));
-	std::lock_guard lock(resource_mutex);
-	if (args[0] == __NR_epoll_create1)
-		return !ringbuf_fds.empty();
-	if (args[0] == __NR_read)
-		return mock_read_fds.contains((int)args[1]);
-	if (args[0] == __NR_mmap)
-		return mock_fds.contains((int)args[5]);
-	if (args[0] == __NR_fcntl || args[0] == __NR_dup3)
-		return mock_fds.contains((int)args[1]);
-	if (args[0] == __NR_close || args[0] == __NR_ioctl)
-		return mock_fds.contains((int)args[1]);
-	if (args[0] == __NR_epoll_ctl || args[0] == __NR_epoll_wait ||
-	    args[0] == __NR_epoll_pwait)
-		return mock_fds.contains((int)args[1]);
-	if (args[0] == __NR_munmap)
-		return mock_mmaps.contains((uintptr_t)args[1]);
-	return false;
-}
-
-static bool bpf_command_returns_fd(int64_t cmd)
-{
-	// Stable values from Linux UAPI enum bpf_cmd. linux/bpf.h is not included
-	// here; the local instruction struct below uses a seccomp_ prefix because
-	// the UAPI/Frida headers already define the name bpf_insn.
-	constexpr int64_t map_create = 0;
-	constexpr int64_t prog_load = 5;
-	constexpr int64_t raw_tracepoint_open = 17;
-	constexpr int64_t btf_load = 18;
-	constexpr int64_t link_create = 28;
-	return cmd == map_create || cmd == prog_load || cmd == btf_load ||
-	       cmd == link_create || cmd == raw_tracepoint_open;
-}
-
-struct seccomp_bpf_insn {
-	uint8_t code;
-	uint8_t registers;
-	int16_t offset;
-	int32_t immediate;
-};
-
-struct seccomp_bpf_prog_load_attr {
-	uint32_t prog_type;
-	uint32_t insn_count;
-	uint64_t insns;
-};
-
-static void record_program_map_references(int64_t attr_address)
-{
-	const auto *attr = reinterpret_cast<const seccomp_bpf_prog_load_attr *>(
-		(uintptr_t)attr_address);
-	if (attr == nullptr || attr->insns == 0)
-		return;
-	const auto *insns = reinterpret_cast<const seccomp_bpf_insn *>(
-		(uintptr_t)attr->insns);
-	for (uint32_t i = 0; i < attr->insn_count; ++i) {
-		const auto &insn = insns[i];
-		const uint8_t source_register = insn.registers >> 4;
-		if (insn.code == 0x18 &&
-		    (source_register == 1 || source_register == 2) &&
-		    insn.immediate >= 0)
-			program_map_fds.insert(insn.immediate);
-	}
-}
-
-static void record_syscall_result(int64_t sysno, int64_t arg1,
-				     int64_t arg2, int64_t result)
-{
-	if (result < 0)
-		return;
-	std::lock_guard lock(resource_mutex);
-	if ((sysno == __NR_bpf && bpf_command_returns_fd(arg1)) ||
-	    sysno == __NR_perf_event_open || sysno == __NR_epoll_create1) {
-		mock_fds.insert((int)result);
-		if (sysno == __NR_bpf && arg1 == 0)
-			map_fds.insert((int)result);
-		else if (sysno == __NR_bpf && arg1 == 5)
-			record_program_map_references(arg2);
-		if (sysno == __NR_bpf && arg1 == 0 && arg2 != 0 &&
-		    *reinterpret_cast<const uint32_t *>(arg2) == 27) {
-			ringbuf_fds.insert((int)result);
-		}
-	} else if (sysno == __NR_openat) {
-		auto *path = reinterpret_cast<const char *>(arg2);
-		if (is_tracepoint_id_path(path)) {
-			mock_fds.insert((int)result);
-			mock_read_fds.insert((int)result);
-		}
-	} else if (sysno == __NR_mmap) {
-		mock_mmaps.emplace((uintptr_t)result, (size_t)arg2);
-	} else if ((sysno == __NR_fcntl &&
-		    (arg2 == F_DUPFD || arg2 == F_DUPFD_CLOEXEC)) ||
-		   sysno == __NR_dup3) {
-		if (mock_fds.contains((int)arg1))
-			mock_fds.insert((int)result);
-		if (map_fds.contains((int)arg1))
-			map_fds.insert((int)result);
-		if (mock_read_fds.contains((int)arg1))
-			mock_read_fds.insert((int)result);
-		if (ringbuf_fds.contains((int)arg1))
-			ringbuf_fds.insert((int)result);
-	} else if (sysno == __NR_munmap) {
-		mock_mmaps.erase((uintptr_t)arg1);
-	} else if (sysno == __NR_close) {
-		mock_read_fds.erase((int)arg1);
-		ringbuf_fds.erase((int)arg1);
-		map_fds.erase((int)arg1);
-		program_map_fds.erase((int)arg1);
-		mock_fds.erase((int)arg1);
-	}
-}
-
-static bool defer_mock_fd_close(int fd)
-{
-	std::lock_guard lock(resource_mutex);
-	if (!mock_fds.contains(fd))
-		return false;
-	if (map_fds.contains(fd) && !program_map_fds.contains(fd))
-		return false;
-	// Loaded BPF programs retain map references after the loader closes its
-	// descriptor. Keep bpftime's descriptor alive until this process exits so
-	// its shared-memory handler id cannot be reused for a different object.
-	mock_read_fds.erase(fd);
-	ringbuf_fds.erase(fd);
-	map_fds.erase(fd);
-	program_map_fds.erase(fd);
-	mock_fds.erase(fd);
-	return true;
-}
 
 static int64_t dispatch_seccomp_syscall(const int64_t *args)
 {
@@ -396,8 +232,7 @@ static int64_t dispatch_seccomp_syscall(const int64_t *args)
 	// syscall-server startup so userspace loaders fall back to ordinary FDs.
 	if (args[0] == __NR_bpf && args[1] == 36)
 		return -EINVAL;
-	if (args[0] == __NR_close && defer_mock_fd_close((int)args[1]))
-		return 0;
+	// Transformer-only handling the syscall server has no knowledge of.
 	if (args[0] == __NR_statfs && args[1] != 0 && args[2] != 0 &&
 	    is_tracefs_mount_path(
 		    reinterpret_cast<const char *>(args[1]))) {
@@ -420,27 +255,23 @@ static int64_t dispatch_seccomp_syscall(const int64_t *args)
 	}
 	if (auto mapped = dispatch_mapped_file_syscall(args); mapped)
 		return *mapped;
+	// Everything else (bpf/perf_event_open/mmap/epoll/fd lifecycle/...) goes
+	// to the syscall server, which owns the emulated resource state and
+	// falls back to the real syscall for anything it does not intercept.
+	errno = 0;
 	int64_t result;
-	if (should_dispatch_go_syscall(args)) {
-		errno = 0;
-		if (args[0] == __NR_epoll_wait ||
-		    args[0] == __NR_epoll_pwait) {
-			result = bpftime::get_call_hook()(
-				args[0], args[1], args[2], args[3], args[4],
-				args[5], args[6], 0, 0, 0);
-		} else {
-			std::lock_guard lock(dispatch_mutex);
-			result = bpftime::get_call_hook()(
-				args[0], args[1], args[2], args[3], args[4],
-				args[5], args[6], 0, 0, 0);
-		}
-		if (result == -1 && errno != 0)
-			result = -errno;
+	if (args[0] == __NR_epoll_wait || args[0] == __NR_epoll_pwait) {
+		result = bpftime::get_call_hook()(
+			args[0], args[1], args[2], args[3], args[4],
+			args[5], args[6], 0, 0, 0);
 	} else {
-		result = call_orig_syscall(args[0], args[1], args[2], args[3],
-					   args[4], args[5], args[6], 0, 0, 0);
+		std::lock_guard lock(dispatch_mutex);
+		result = bpftime::get_call_hook()(
+			args[0], args[1], args[2], args[3], args[4],
+			args[5], args[6], 0, 0, 0);
 	}
-	record_syscall_result(args[0], args[1], args[2], result);
+	if (result == -1 && errno != 0)
+		result = -errno;
 	return result;
 }
 
@@ -472,33 +303,6 @@ static void start_go_seccomp_workers()
 					(int64_t)request.data.args[5],
 				};
 				response.id = request.id;
-				if (!should_dispatch_go_syscall(args)) {
-					if (go_seccomp_continue_supported.load(
-						    std::memory_order_relaxed) != 0) {
-						response.flags =
-							SECCOMP_USER_NOTIF_FLAG_CONTINUE;
-						int send_result;
-						do {
-							send_result = ioctl(
-								listener,
-								SECCOMP_IOCTL_NOTIF_SEND,
-								&response);
-						} while (send_result < 0 &&
-							 errno == EINTR);
-						if (send_result == 0) {
-							go_seccomp_continue_supported.store(
-								1,
-								std::memory_order_relaxed);
-							continue;
-						}
-						if (errno != EINVAL)
-							continue;
-						go_seccomp_continue_supported.store(
-							0, std::memory_order_relaxed);
-						response = {};
-						response.id = request.id;
-					}
-				}
 				int64_t result = dispatch_seccomp_syscall(args);
 				if (result < 0 && result >= -4095)
 					response.error = (int32_t)result;
