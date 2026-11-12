@@ -7,6 +7,7 @@
  */
 #if defined(__linux__) && defined(__x86_64__)
 #include "seccomp_raw_syscall.hpp"
+#include "seccomp_tracer.hpp"
 #include "text_segment_transformer.hpp"
 #include <algorithm>
 #include <atomic>
@@ -326,6 +327,14 @@ static bool setup_go_seccomp_tracer()
 	go_seccomp_listener.store(listener, std::memory_order_release);
 	SPDLOG_INFO("Using rootless seccomp notification for Go syscalls");
 	return true;
+}
+
+
+bool install_seccomp_tracer()
+{
+	if (getenv("BPFTIME_GO_SECCOMP") == nullptr)
+		return false;
+	return setup_go_seccomp_tracer();
 }
 
 } // namespace seccomp
