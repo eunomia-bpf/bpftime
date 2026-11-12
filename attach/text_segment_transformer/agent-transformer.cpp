@@ -282,8 +282,9 @@ static bool should_dispatch_go_syscall(const int64_t *args)
 
 static bool bpf_command_returns_fd(int64_t cmd)
 {
-	// Stable values from Linux UAPI enum bpf_cmd. Including linux/bpf.h here
-	// would collide with Frida's bpf_insn enum.
+	// Stable values from Linux UAPI enum bpf_cmd. linux/bpf.h is not included
+	// here; the local instruction struct below uses a seccomp_ prefix because
+	// the UAPI/Frida headers already define the name bpf_insn.
 	constexpr int64_t map_create = 0;
 	constexpr int64_t prog_load = 5;
 	constexpr int64_t raw_tracepoint_open = 17;
@@ -293,14 +294,14 @@ static bool bpf_command_returns_fd(int64_t cmd)
 	       cmd == link_create || cmd == raw_tracepoint_open;
 }
 
-struct bpf_insn {
+struct seccomp_bpf_insn {
 	uint8_t code;
 	uint8_t registers;
 	int16_t offset;
 	int32_t immediate;
 };
 
-struct bpf_prog_load_attr {
+struct seccomp_bpf_prog_load_attr {
 	uint32_t prog_type;
 	uint32_t insn_count;
 	uint64_t insns;
@@ -308,11 +309,11 @@ struct bpf_prog_load_attr {
 
 static void record_program_map_references(int64_t attr_address)
 {
-	const auto *attr = reinterpret_cast<const bpf_prog_load_attr *>(
+	const auto *attr = reinterpret_cast<const seccomp_bpf_prog_load_attr *>(
 		(uintptr_t)attr_address);
 	if (attr == nullptr || attr->insns == 0)
 		return;
-	const auto *insns = reinterpret_cast<const bpf_insn *>(
+	const auto *insns = reinterpret_cast<const seccomp_bpf_insn *>(
 		(uintptr_t)attr->insns);
 	for (uint32_t i = 0; i < attr->insn_count; ++i) {
 		const auto &insn = insns[i];
