@@ -1,0 +1,71 @@
+name: Build on macOS
+
+# Rootless syscall tracing / seccomp / libbpf-backed features are Linux-only
+# and are guarded by __linux__. This workflow guards the cross-platform core
+# (runtime, maps, shm, helpers) against Darwin build regressions such as the
+# fork identity cache fixed in the pid/tgid helpers. It is a compile gate;
+# unit tests require libbpf and therefore run only on the Linux workflows.
+
+on:
+  push:
+    branches: [master, "ci/**"]
+    paths:
+      - ".github/workflows/build-macos.yml"
+      - "runtime/**"
+      - "attach/base_attach_impl/**"
+      - "vm/**"
+      - "cmake/**"
+      - "third_party/spdlog/**"
+      - "third_party/argparse/**"
+      - "CMakeLists.txt"
+      - ".gitmodules"
+  pull_request:
+    branches: [master]
+    paths:
+      - ".github/workflows/build-macos.yml"
+      - "runtime/**"
+      - "attach/base_attach_impl/**"
+      - "vm/**"
+      - "cmake/**"
+      - "third_party/spdlog/**"
+      - "third_party/argparse/**"
+      - "CMakeLists.txt"
+      - ".gitmodules"
+
+concurrency:
+  group: build-macos-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: macos-14
+    steps:
+      - name: Checkout repository (with submodules)
+        uses: actions/checkout@v4
+        with:
+          submodules: true
+          fetch-depth: 0
+
+      - name: Install build dependencies
+        run: brew install cmake boost ncurses pkg-config openssl
+
+      - name: Configure (Darwin, no libbpf/frida/CUDA/verifier)
+        run: |
+          cmake -S . -B build \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DBPFTIME_BUILD_WITH_LIBBPF=OFF \
+            -DBPFTIME_LLVM_JIT=OFF \
+            -DBUILD_BPFTIME_DAEMON=OFF \
+            -DBPFTIME_ENABLE_FRIDA=OFF \
+            -DBPFTIME_ENABLE_CUDA_ATTACH=OFF \
+            -DBPFTIME_ENABLE_UNIT_TESTING=OFF \
+            -DENABLE_EBPF_VERIFIER=OFF
+
+      - name: Build runtime
+        run: cmake --build build -j"$(sysctl -n hw.ncpu)"
+
+      - name: Confirm runtime library was produced
+        run: |
+          art=$(find build -name 'libbpftime.a' -o -name 'libbpftime.dylib' | head -1)
+          echo "runtime artifact: $art"
+          test -n "$art"
