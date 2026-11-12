@@ -87,7 +87,94 @@ env:
   BPFTIME_VM_NAME: llvm
 
 jobs:
+  # Runs on a generic (non-GPU) runner and decides whether the GPU jobs are
+  # needed. Uses only git, no third-party action, so a non-GPU change skips the
+  # scarce GPU runners entirely instead of merely skipping one job.
+  detect-gpu-change:
+    runs-on: ubuntu-latest
+    outputs:
+      gpu_affected: ${{ steps.filter.outputs.gpu_affected }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Detect GPU-affecting changes
+        id: filter
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Manual dispatch always runs the GPU jobs.
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "gpu_affected=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          base="${{ github.event.pull_request.base.sha }}"
+          if [ -z "$base" ]; then
+            # push event: compare against the previous commit.
+            base="${{ github.event.before }}"
+          fi
+          # A zero SHA means the first push to a new ref (no parent); fall
+          # back to running the GPU jobs rather than producing an empty diff.
+          if [ -z "$base" ] || [[ "$base" =~ ^0{40}$ ]] || ! git cat-file -e "$base^{commit}" 2>/dev/null; then
+            echo "No usable base commit ($base); running GPU jobs"
+            echo "gpu_affected=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo "Comparing against $base"
+          git diff --name-only "$base" HEAD > changed.txt
+          cat changed.txt
+          # Keep this list in sync with the on.paths GPU globs below.
+          patterns=(
+            "attach/nv_attach_impl/*"
+            "benchmark/gpu/*"
+            "example/gpu/*"
+            "runtime/src/attach/bpf_attach_ctx_cuda.cpp"
+            "runtime/src/bpf_map/gpu/*"
+            "runtime/src/bpf_map/gpu_kernel_shared/*"
+            "runtime/unit-test/cuda/*"
+            "runtime/agent/agent.cpp"
+            "runtime/include/bpf_attach_ctx.hpp"
+            "runtime/include/bpftime_prog.hpp"
+            "runtime/include/bpftime_shm.hpp"
+            "runtime/src/attach/bpf_attach_ctx.cpp"
+            "runtime/src/bpftime_prog.cpp"
+            "runtime/src/bpftime_shm.cpp"
+            "runtime/src/bpftime_shm_internal.cpp"
+            "runtime/src/bpftime_shm_internal.hpp"
+            "runtime/src/handler/map_handler.cpp"
+            "runtime/src/handler/map_handler.hpp"
+            "runtime/syscall-server/syscall_context.cpp"
+            "runtime/syscall-server/syscall_context.hpp"
+            "runtime/syscall-server/syscall_server_main.cpp"
+            "runtime/syscall-server/syscall_server_utils.cpp"
+            "tools/bpftimetool/main.cpp"
+            "CMakeLists.txt"
+            "*/CMakeLists.txt"
+            "cmake/*"
+            "third_party/*"
+            ".gitmodules"
+            ".github/workflows/test-gpu-examples.yml"
+          )
+          hit=0
+          while IFS= read -r f; do
+            for p in "${patterns[@]}"; do
+              # shellcheck disable=SC2053
+              if [[ "$f" == $p ]]; then
+                echo "GPU-affecting path matched: $f ($p)"
+                hit=1
+                break
+              fi
+            done
+          done < changed.txt
+          if [ "$hit" -eq 1 ]; then
+            echo "gpu_affected=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "gpu_affected=false" >> "$GITHUB_OUTPUT"
+          fi
+
   build-bpftime-gpu:
+    needs: [detect-gpu-change]
+    if: needs.detect-gpu-change.outputs.gpu_affected == 'true'
     runs-on: [self-hosted, Linux, X64, gpu]
     steps:
       - uses: actions/checkout@v4
