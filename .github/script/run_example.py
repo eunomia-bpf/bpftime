@@ -126,6 +126,14 @@ async def main():
         if bashreadline_patch:
             return
         await asyncio.wait_for(expected_str_signal.wait(), AGENT_TIMEOUT)
+        # A process that has already exited is reported by terminate_process()
+        # as "nothing to do", so its status has to be checked here. Without
+        # this the job printed "Test successfully" while the CLI had failed.
+        for name, proc in (("SERVER", server), ("AGENT", agent)):
+            if proc is not None and proc.returncode not in (None, 0):
+                raise SystemExit(
+                    f"{name} exited with {proc.returncode} before the expected output"
+                )
         print("Test successfully")
     finally:
         should_exit.set()
