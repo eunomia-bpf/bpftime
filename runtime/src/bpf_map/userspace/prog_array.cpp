@@ -97,13 +97,9 @@ constexpr int decode_userspace_prog_fd(int32_t value)
 }
 } // namespace
 
-// Lookup can run while libc holds an allocator lock. initial-exec TLS avoids
-// the lazy dynamic-TLS allocation on first access.
-static thread_local int32_t current_thread_lookup_val
-#if defined(__linux__)
-	__attribute__((tls_model("initial-exec")))
-#endif
-	= 0;
+// The runtime is compiled with -ftls-model=initial-exec, so this access never
+// reaches __tls_get_addr while libc holds an allocator lock.
+static thread_local int32_t current_thread_lookup_val = 0;
 
 prog_array_map_impl::prog_array_map_impl(
 	boost::interprocess::managed_shared_memory &memory, uint32_t key_size,
