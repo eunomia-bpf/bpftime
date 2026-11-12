@@ -58,6 +58,31 @@ TEST_CASE("Test resolving private data")
 		REQUIRE(data.is_enter == true);
 		REQUIRE(data.sys_nr == sys_name_to_nr.at("fork"));
 	}
+	SECTION("scheduler lifecycle events")
+	{
+		const std::pair<const char *, syscall_trace_event> cases[] = {
+			{ SCHED_PROCESS_FORK_NAME,
+			  syscall_trace_event::sched_process_fork },
+			{ SCHED_PROCESS_EXEC_NAME,
+			  syscall_trace_event::sched_process_exec },
+			{ SCHED_PROCESS_EXIT_NAME,
+			  syscall_trace_event::sched_process_exit },
+		};
+		for (const auto &[name, event] : cases) {
+			set = false;
+			for (const auto &[id, mapped_name] : tp_table) {
+				if (mapped_name != name)
+					continue;
+				REQUIRE(data.initialize_from_string(
+						std::to_string(id)) == 0);
+				set = true;
+				break;
+			}
+			REQUIRE(set);
+			REQUIRE(data.event == event);
+			REQUIRE(data.sys_nr == -1);
+		}
+	}
 	SECTION("kernel do_mmap name")
 	{
 		auto &sys_name_to_nr =
