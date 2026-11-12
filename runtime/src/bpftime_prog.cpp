@@ -22,6 +22,9 @@
 #include <iterator>
 #include <memory>
 #include <optional>
+#include <atomic>
+#include <chrono>
+#include <functional>
 #include <spdlog/spdlog.h>
 #include <stdexcept>
 #include "bpftime_vm_compat.hpp"
@@ -49,8 +52,18 @@ class bpf_cpu_execution_guard {
 		if (bpftime_get_current_bpf_cpu() >= 0)
 			return;
 		cpu = bpftime_get_native_cpu();
-		if (cpu < 0 || cpu >= BPFTIME_MAX_CPU_COUNT)
+		if (cpu < 0) {
+			warn_throttled([] { SPDLOG_WARN("sched_getcpu failed; BPF runs without per-CPU serialization"); });
 			return;
+		}
+		if (cpu >= BPFTIME_MAX_CPU_COUNT) {
+			warn_throttled([cpu] {
+				SPDLOG_WARN(
+					"logical cpu {} exceeds BPFTIME_MAX_CPU_COUNT={}; BPF runs without per-CPU serialization",
+					cpu, BPFTIME_MAX_CPU_COUNT);
+			});
+			return;
+		}
 		shm_holder.global_shared_memory.lock_bpf_cpu(cpu);
 		bpftime_set_current_bpf_cpu(cpu);
 		owns_lock = true;
@@ -68,9 +81,29 @@ class bpf_cpu_execution_guard {
 	}
 
     private:
+	// Rate-limit degradation warnings: a hot BPF path must not spam the log on
+	// every event when the environment is outside the supported CPU range.
+	// Shared 5s rate limiter; the emit callable runs SPDLOG_WARN only when admitted.
+	template <class F> static void warn_throttled(F &&emit)
+	{
+		static std::atomic<std::int64_t> last_log_ns{0};
+		constexpr std::int64_t MIN_INTERVAL_NS = 5'000'000'000LL;
+		std::int64_t now = std::chrono::duration_cast<std::chrono::nanoseconds>(
+				   std::chrono::steady_clock::now().time_since_epoch())
+				   .count();
+		std::int64_t prev = last_log_ns.load(std::memory_order_relaxed);
+		if (now - prev < MIN_INTERVAL_NS)
+			return;
+		if (!last_log_ns.compare_exchange_strong(prev, now,
+							      std::memory_order_relaxed))
+			return;
+		emit();
+	}
+
 	int cpu = -1;
 	bool owns_lock = false;
 };
+
 } // namespace
 
 #ifdef BPFTIME_ENABLE_CUDA_ATTACH
