@@ -1,0 +1,97 @@
+{
+  "benchmark_info": {
+    "timestamp": "2025-05-12 17:35:50",
+    "duration": 30,
+    "connections": 64,
+    "threads": 8,
+    "url_path": "/aaaa",
+    "iterations": 20
+  },
+  "average_results": {
+    "no_module": {
+      "rps": 4536.864,
+      "latency_avg": "16.54ms",
+      "iterations": 20
+    },
+    "baseline": {
+      "rps": 4559.8365,
+      "latency_avg": "16.39ms",
+      "iterations": 20
+    },
+    "wasm": {
+      "rps": 4007.9995,
+      "latency_avg": "18.11ms",
+      "iterations": 20
+    },
+    "lua": {
+      "rps": 3982.7644999999998,
+      "latency_avg": "17.94ms",
+      "iterations": 20
+    },
+    "bpftime": {
+      "rps": 4461.0015,
+      "latency_avg": "16.68ms",
+      "iterations": 20
+    },
+    "rlbox": {
+      "rps": 4148.583,
+      "latency_avg": "17.25ms",
+      "iterations": 20
+    },
+    "erim": {
+      "rps": 4024.1085,
+      "latency_avg": "18.80ms",
+      "iterations": 20
+    }
+  },
+  "standard_deviation": {
+    "no_module": {
+      "rps": 1027.2898878495275,
+      "latency_avg": "6.55ms"
+    },
+    "baseline": {
+      "rps": 1000.2183263261496,
+      "latency_avg": "5.54ms"
+    },
+    "wasm": {
+      "rps": 797.0581295150641,
+      "latency_avg": "3.74ms"
+    },
+    "lua": {
+      "rps": 644.5737422961251,
+      "latency_avg": "3.63ms"
+    },
+    "bpftime": {
+      "rps": 1031.0843833979377,
+      "latency_avg": "4.29ms"
+    },
+    "rlbox": {
+      "rps": 687.9935657066018,
+      "latency_avg": "4.79ms"
+    },
+    "erim": {
+      "rps": 784.0695585568454,
+      "latency_avg": "7.09ms"
+    }
+  },
+  "overheads": {
+    "baseline_vs_no_module": "-0.51%",
+    "wasm_vs_no_module": "11.66%",
+    "lua_vs_no_module": "12.21%",
+    "bpftime_vs_no_module": "1.67%",
+    "rlbox_vs_no_module": "8.56%",
+    "erim_vs_no_module": "11.30%",
+    "wasm_vs_baseline": "12.10%",
+    "lua_vs_baseline": "12.66%",
+    "bpftime_vs_baseline": "2.17%",
+    "rlbox_vs_baseline": "9.02%",
+    "erim_vs_baseline": "11.75%",
+    "bpftime_vs_wasm": "-11.30%",
+    "erim_vs_wasm": "-0.40%",
+    "bpftime_vs_lua": "-12.01%",
+    "erim_vs_lua": "-1.04%",
+    "bpftime_vs_rlbox": "-7.53%",
+    "erim_vs_rlbox": "3.00%",
+    "bpftime_vs_erim": "-10.86%"
+  }
+}

@@ -1,0 +1,4 @@
+numpy
+matplotlib
+fusepy
+pillow>=10.0.1 # not directly required, pinned to avoid a vulnerability

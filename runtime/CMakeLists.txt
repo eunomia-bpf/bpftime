@@ -268,6 +268,15 @@ endif()
 target_link_libraries(${PROJECT_NAME} PUBLIC ${RUNTIME_LINK_LIBS})
 target_include_directories(${PROJECT_NAME} PUBLIC ${RUNTIME_INCLUDE_DIRS})
 
+# Lookup and helper paths run while libc may hold the allocator lock, so a
+# general-dynamic TLS access that reaches __tls_get_addr can re-enter malloc and
+# hang. The agent already places its PT_TLS segment in static TLS (its
+# attach-time variables are initial-exec), so compiling the runtime the same
+# way only removes __tls_get_addr calls and adds no static TLS.
+if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND NOT MSVC)
+  target_compile_options(${PROJECT_NAME} PRIVATE -ftls-model=initial-exec)
+endif()
+
 message(DEBUG "Successfully added all dependencies and linked against them.")
 
 set(BPFTIME_RUNTIME_INCLUDE ${CMAKE_CURRENT_SOURCE_DIR}/include ${CMAKE_CURRENT_SOURCE_DIR}/src)

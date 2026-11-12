@@ -1,0 +1,13 @@
+# Build artifacts
+*.o
+
+# Executables
+main
+shm_example
+
+# Generated files
+example_shm.json
+
+# Temp files
+*.tmp
+*~

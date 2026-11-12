@@ -1,0 +1,124 @@
+{
+  "output_prefix": "benchmark/gpu/micro/micro_vec_add_kernel_gpu_shared",
+  "global_env": {},
+  "probe_env": {
+    "BPFTIME_LOG_OUTPUT": "console",
+    "LD_PRELOAD": "build/runtime/syscall-server/libbpftime-syscall-server.so",
+    "BPFTIME_SHM_MEMORY_MB": "1024",
+    "BPFTIME_RUN_WITH_KERNEL": "true",
+    "BPFTIME_BYPASS_KPROPBE": "true",
+    "BPFTIME_NOT_LOAD_PATTERN": "cuda.*"
+  },
+  "agent_env": {
+    "BPFTIME_LOG_OUTPUT": "console",
+    "LD_PRELOAD": "build/runtime/agent/libbpftime-agent.so"
+  },
+  "workload_presets": {
+    "tiny": "benchmark/gpu/workload/vec_add 32 10000 32 1",
+    "small": "benchmark/gpu/workload/vec_add 1000 10000 256 4",
+    "medium": "benchmark/gpu/workload/vec_add 10000 10000 256 40",
+    "large": "benchmark/gpu/workload/vec_add 100000 1000 512 196",
+    "xlarge": "benchmark/gpu/workload/vec_add 1000000 1000 512 1954",
+    "small_64x16": "benchmark/gpu/workload/vec_add 1000 10000 64 16",
+    "minimal": "benchmark/gpu/workload/vec_add 32 3 32 1"
+  },
+  "test_cases": [
+    {
+      "name": "Baseline (tiny)",
+      "probe_binary_cmd": "",
+      "workload": "tiny"
+    },
+    {
+      "name": "Baseline (small)",
+      "probe_binary_cmd": "",
+      "workload": "small"
+    },
+    {
+      "name": "Baseline (medium)",
+      "probe_binary_cmd": "",
+      "workload": "medium"
+    },
+    {
+      "name": "Baseline (large)",
+      "probe_binary_cmd": "",
+      "workload": "large"
+    },
+    {
+      "name": "Baseline (xlarge)",
+      "probe_binary_cmd": "",
+      "workload": "xlarge"
+    },
+    {
+      "name": "Kernel-GPU Array map update (tiny)",
+      "probe_binary_cmd": "benchmark/gpu/micro/cuda_probe_kernel_gpu kernel-gpu-array-update",
+      "workload": "tiny",
+      "baseline": "Baseline (tiny)"
+    },
+    {
+      "name": "Kernel-GPU Array map update (small_64x16)",
+      "probe_binary_cmd": "benchmark/gpu/micro/cuda_probe_kernel_gpu kernel-gpu-array-update",
+      "workload": "small_64x16",
+      "baseline": "Baseline (small)"
+    },
+    {
+      "name": "Kernel-GPU Array map update (small)",
+      "probe_binary_cmd": "benchmark/gpu/micro/cuda_probe_kernel_gpu kernel-gpu-array-update",
+      "workload": "small",
+      "baseline": "Baseline (small)"
+    },
+    {
+      "name": "Kernel-GPU Array map update (medium)",
+      "probe_binary_cmd": "benchmark/gpu/micro/cuda_probe_kernel_gpu kernel-gpu-array-update",
+      "workload": "medium",
+      "baseline": "Baseline (medium)"
+    },
+    {
+      "name": "Kernel-GPU Array map update (large)",
+      "probe_binary_cmd": "benchmark/gpu/micro/cuda_probe_kernel_gpu kernel-gpu-array-update",
+      "workload": "large",
+      "baseline": "Baseline (large)"
+    },
+    {
+      "name": "Kernel-GPU Array map update (xlarge)",
+      "probe_binary_cmd": "benchmark/gpu/micro/cuda_probe_kernel_gpu kernel-gpu-array-update",
+      "workload": "xlarge",
+      "baseline": "Baseline (xlarge)"
+    },
+    {
+      "name": "Kernel-GPU Array map lookup (tiny)",
+      "probe_binary_cmd": "benchmark/gpu/micro/cuda_probe_kernel_gpu kernel-gpu-array-lookup",
+      "workload": "tiny",
+      "baseline": "Baseline (tiny)"
+    },
+    {
+      "name": "Kernel-GPU Array map lookup (small_64x16)",
+      "probe_binary_cmd": "benchmark/gpu/micro/cuda_probe_kernel_gpu kernel-gpu-array-lookup",
+      "workload": "small_64x16",
+      "baseline": "Baseline (small)"
+    },
+    {
+      "name": "Kernel-GPU Array map lookup (small)",
+      "probe_binary_cmd": "benchmark/gpu/micro/cuda_probe_kernel_gpu kernel-gpu-array-lookup",
+      "workload": "small",
+      "baseline": "Baseline (small)"
+    },
+    {
+      "name": "Kernel-GPU Array map lookup (medium)",
+      "probe_binary_cmd": "benchmark/gpu/micro/cuda_probe_kernel_gpu kernel-gpu-array-lookup",
+      "workload": "medium",
+      "baseline": "Baseline (medium)"
+    },
+    {
+      "name": "Kernel-GPU Array map lookup (large)",
+      "probe_binary_cmd": "benchmark/gpu/micro/cuda_probe_kernel_gpu kernel-gpu-array-lookup",
+      "workload": "large",
+      "baseline": "Baseline (large)"
+    },
+    {
+      "name": "Kernel-GPU Array map lookup (xlarge)",
+      "probe_binary_cmd": "benchmark/gpu/micro/cuda_probe_kernel_gpu kernel-gpu-array-lookup",
+      "workload": "xlarge",
+      "baseline": "Baseline (xlarge)"
+    }
+  ]
+}

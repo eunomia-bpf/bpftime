@@ -1,0 +1,393 @@
+{
+  "output_prefix": "benchmark/gpu/micro/micro_gemm",
+  "global_env": {},
+  "probe_env": {
+    "BPFTIME_LOG_OUTPUT": "console",
+    "LD_PRELOAD": "build/runtime/syscall-server/libbpftime-syscall-server.so"
+  },
+  "agent_env": {
+    "BPFTIME_LOG_OUTPUT": "console",
+    "LD_PRELOAD": "build/runtime/agent/libbpftime-agent.so"
+  },
+  "workload_presets": {
+    "tiny": "benchmark/gpu/workload/matrixMul 32 100 32 1",
+    "small": "benchmark/gpu/workload/matrixMul 1000 100 256 4",
+    "medium": "benchmark/gpu/workload/matrixMul 10000 100 256 40",
+    "large": "benchmark/gpu/workload/matrixMul 10000 100 512 196",
+    "xlarge": "benchmark/gpu/workload/matrixMul 10000 100 512 1954",
+    "small_64x16": "benchmark/gpu/workload/matrixMul 1000 100 64 16",
+    "minimal": "benchmark/gpu/workload/matrixMul 32 3 32 1"
+  },
+  "test_cases": [
+    {
+      "name": "Baseline (minimal)",
+      "probe_binary_cmd": "",
+      "workload": "minimal"
+    },
+    {
+      "name": "eBPF Direct Run GEMM (minimal)",
+      "probe_binary_cmd": "benchmark/gpu/micro/run_direct_gemm.sh",
+      "workload": "minimal",
+      "baseline": "Baseline (minimal)",
+      "env": {
+        "BPFTIME_LOG_OUTPUT": "console"
+      }
+    },
+    
+    {
+      "name": "Baseline (tiny)",
+      "probe_binary_cmd": "",
+      "workload": "tiny"
+    },
+    {
+      "name": "Baseline (small)",
+      "probe_binary_cmd": "",
+      "workload": "small"
+    },
+    {
+      "name": "Baseline (medium)",
+      "probe_binary_cmd": "",
+      "workload": "medium"
+    },
+    {
+      "name": "Baseline (large)",
+      "probe_binary_cmd": "",
+      "workload": "large"
+    },
+    {
+      "name": "Baseline (xlarge)",
+      "probe_binary_cmd": "",
+      "workload": "xlarge"
+    },
+    {
+      "name": "Empty probe (tiny)",
+      "probe_binary_cmd": "benchmark/gpu/micro/cuda_probe empty",
+      "workload": "tiny",
+      "baseline": "Baseline (tiny)"
+    },
+    {
+      "name": "Empty probe (small)",
+      "probe_binary_cmd": "benchmark/gpu/micro/cuda_probe empty",
+      "workload": "small",
+      "baseline": "Baseline (small)"
+    },
+    {
+      "name": "Empty probe (medium)",
+      "probe_binary_cmd": "benchmark/gpu/micro/cuda_probe empty",
+      "workload": "medium",
+      "baseline": "Baseline (medium)"
+    },
+    {
+      "name": "Empty probe (large)",
+      "probe_binary_cmd": "benchmark/gpu/micro/cuda_probe empty",
+      "workload": "large",
+      "baseline": "Baseline (large)"
+    },
+    {
+      "name": "Empty probe (xlarge)",
+      "probe_binary_cmd": "benchmark/gpu/micro/cuda_probe empty",
+      "workload": "xlarge",
+      "baseline": "Baseline (xlarge)"
+    },
+    {
+      "name": "Entry probe (tiny)",
+      "probe_binary_cmd": "benchmark/gpu/micro/cuda_probe entry",
+      "workload": "tiny",
+      "baseline": "Baseline (tiny)"
+    },
+    {
+      "name": "Entry probe (small)",
+      "probe_binary_cmd": "benchmark/gpu/micro/cuda_probe entry",
+      "workload": "small",
+      "baseline": "Baseline (small)"
+    },
+    {
+      "name": "Entry probe (medium)",
+      "probe_binary_cmd": "benchmark/gpu/micro/cuda_probe entry",
+      "workload": "medium",
+      "baseline": "Baseline (medium)"
+    },
+    {
+      "name": "Entry probe (xlarge)",
+      "probe_binary_cmd": "benchmark/gpu/micro/cuda_probe entry",
+      "workload": "xlarge",
+      "baseline": "Baseline (xlarge)"
+    },
+    {
+      "name": "Exit probe (tiny)",
+      "probe_binary_cmd": "benchmark/gpu/micro/cuda_probe exit",
+      "workload": "tiny",
+      "baseline": "Baseline (tiny)"
+    },
+    {
+      "name": "Exit probe (small)",
+      "probe_binary_cmd": "benchmark/gpu/micro/cuda_probe exit",
+      "workload": "small",
+      "baseline": "Baseline (small)"
+    },
+    {
+      "name": "Exit probe (large)",
+      "probe_binary_cmd": "benchmark/gpu/micro/cuda_probe exit",
+      "workload": "large",
+      "baseline": "Baseline (large)"
+    },
+    {
+      "name": "Entry+Exit (tiny)",
+      "probe_binary_cmd": "benchmark/gpu/micro/cuda_probe both",
+      "workload": "tiny",
+      "baseline": "Baseline (tiny)"
+    },
+    {
+      "name": "Entry+Exit (small_64x16)",
+      "probe_binary_cmd": "benchmark/gpu/micro/cuda_probe both",
+      "workload": "small_64x16",
+      "baseline": "Baseline (small)"
+    },
+    {
+      "name": "Entry+Exit (small)",
+      "probe_binary_cmd": "benchmark/gpu/micro/cuda_probe both",
+      "workload": "small",
+      "baseline": "Baseline (small)"
+    },
+    {
+      "name": "Entry+Exit (medium)",
+      "probe_binary_cmd": "benchmark/gpu/micro/cuda_probe both",
+      "workload": "medium",
+      "baseline": "Baseline (medium)"
+    },
+    {
+      "name": "Entry+Exit (large)",
+      "probe_binary_cmd": "benchmark/gpu/micro/cuda_probe both",
+      "workload": "large",
+      "baseline": "Baseline (large)"
+    },
+    {
+      "name": "Entry+Exit (xlarge)",
+      "probe_binary_cmd": "benchmark/gpu/micro/cuda_probe both",
+      "workload": "xlarge",
+      "baseline": "Baseline (xlarge)"
+    },
+    {
+      "name": "GPU Ringbuf (tiny)",
+      "probe_binary_cmd": "benchmark/gpu/micro/cuda_probe ringbuf",
+      "workload": "tiny",
+      "baseline": "Baseline (tiny)"
+    },
+    {
+      "name": "GPU Ringbuf (small_64x16)",
+      "probe_binary_cmd": "benchmark/gpu/micro/cuda_probe ringbuf",
+      "workload": "small_64x16",
+      "baseline": "Baseline (small)"
+    },
+    {
+      "name": "GPU Ringbuf (small)",
+      "probe_binary_cmd": "benchmark/gpu/micro/cuda_probe ringbuf",
+      "workload": "small",
+      "baseline": "Baseline (small)"
+    },
+    {
+      "name": "GPU Ringbuf (medium)",
+      "probe_binary_cmd": "benchmark/gpu/micro/cuda_probe ringbuf",
+      "workload": "medium",
+      "baseline": "Baseline (medium)"
+    },
+    {
+      "name": "GPU Ringbuf (large)",
+      "probe_binary_cmd": "benchmark/gpu/micro/cuda_probe ringbuf",
+      "workload": "large",
+      "baseline": "Baseline (large)"
+    },
+    {
+      "name": "GPU Ringbuf (xlarge)",
+      "probe_binary_cmd": "benchmark/gpu/micro/cuda_probe ringbuf",
+      "workload": "xlarge",
+      "baseline": "Baseline (xlarge)"
+    },
+    {
+      "name": "Global timer (tiny)",
+      "probe_binary_cmd": "benchmark/gpu/micro/cuda_probe globaltimer",
+      "workload": "tiny",
+      "baseline": "Baseline (tiny)"
+    },
+    {
+      "name": "Global timer (small)",
+      "probe_binary_cmd": "benchmark/gpu/micro/cuda_probe globaltimer",
+      "workload": "small",
+      "baseline": "Baseline (small)"
+    },
+    {
+      "name": "Global timer (medium)",
+      "probe_binary_cmd": "benchmark/gpu/micro/cuda_probe globaltimer",
+      "workload": "medium",
+      "baseline": "Baseline (medium)"
+    },
+    {
+      "name": "Global timer (xlarge)",
+      "probe_binary_cmd": "benchmark/gpu/micro/cuda_probe globaltimer",
+      "workload": "xlarge",
+      "baseline": "Baseline (xlarge)"
+    },
+    {
+      "name": "Per-GPU-thread array (tiny)",
+      "probe_binary_cmd": "benchmark/gpu/micro/cuda_probe pergputd-array-lookup",
+      "workload": "tiny",
+      "baseline": "Baseline (tiny)"
+    },
+    {
+      "name": "Per-GPU-thread array (small_64x16)",
+      "probe_binary_cmd": "benchmark/gpu/micro/cuda_probe pergputd-array-lookup",
+      "workload": "small_64x16",
+      "baseline": "Baseline (small)"
+    },
+    {
+      "name": "Per-GPU-thread array (small)",
+      "probe_binary_cmd": "benchmark/gpu/micro/cuda_probe pergputd-array-lookup",
+      "workload": "small",
+      "baseline": "Baseline (small)"
+    },
+    {
+      "name": "Per-GPU-thread array (medium)",
+      "probe_binary_cmd": "benchmark/gpu/micro/cuda_probe pergputd-array-lookup",
+      "workload": "medium",
+      "baseline": "Baseline (medium)"
+    },
+    {
+      "name": "Per-GPU-thread array (large)",
+      "probe_binary_cmd": "benchmark/gpu/micro/cuda_probe pergputd-array-lookup",
+      "workload": "large",
+      "baseline": "Baseline (large)"
+    },
+    {
+      "name": "Per-GPU-thread array (xlarge)",
+      "probe_binary_cmd": "benchmark/gpu/micro/cuda_probe pergputd-array-lookup",
+      "workload": "xlarge",
+      "baseline": "Baseline (xlarge)"
+    },
+    {
+      "name": "Memtrace (tiny)",
+      "probe_binary_cmd": "benchmark/gpu/micro/cuda_probe memtrace",
+      "workload": "tiny",
+      "baseline": "Baseline (tiny)"
+    },
+    {
+      "name": "Memtrace (small)",
+      "probe_binary_cmd": "benchmark/gpu/micro/cuda_probe memtrace",
+      "workload": "small",
+      "baseline": "Baseline (small)"
+    },
+    {
+      "name": "Memtrace (medium)",
+      "probe_binary_cmd": "benchmark/gpu/micro/cuda_probe memtrace",
+      "workload": "medium",
+      "baseline": "Baseline (medium)"
+    },
+    {
+      "name": "Memtrace (large)",
+      "probe_binary_cmd": "benchmark/gpu/micro/cuda_probe memtrace",
+      "workload": "large",
+      "baseline": "Baseline (large)"
+    },
+    {
+      "name": "GPU Array map update (tiny)",
+      "probe_binary_cmd": "benchmark/gpu/micro/cuda_probe gpu-array-update",
+      "workload": "tiny",
+      "baseline": "Baseline (tiny)"
+    },
+    {
+      "name": "GPU Array map update (small_64x16)",
+      "probe_binary_cmd": "benchmark/gpu/micro/cuda_probe gpu-array-update",
+      "workload": "small_64x16",
+      "baseline": "Baseline (small)"
+    },
+    {
+      "name": "GPU Array map update (small)",
+      "probe_binary_cmd": "benchmark/gpu/micro/cuda_probe gpu-array-update",
+      "workload": "small",
+      "baseline": "Baseline (small)"
+    },
+    {
+      "name": "GPU Array map update (medium)",
+      "probe_binary_cmd": "benchmark/gpu/micro/cuda_probe gpu-array-update",
+      "workload": "medium",
+      "baseline": "Baseline (medium)"
+    },
+    {
+      "name": "GPU Array map update (large)",
+      "probe_binary_cmd": "benchmark/gpu/micro/cuda_probe gpu-array-update",
+      "workload": "large",
+      "baseline": "Baseline (large)"
+    },
+    {
+      "name": "GPU Array map update (xlarge)",
+      "probe_binary_cmd": "benchmark/gpu/micro/cuda_probe gpu-array-update",
+      "workload": "xlarge",
+      "baseline": "Baseline (xlarge)"
+    },
+    {
+      "name": "GPU Array map lookup (tiny)",
+      "probe_binary_cmd": "benchmark/gpu/micro/cuda_probe gpu-array-lookup",
+      "workload": "tiny",
+      "baseline": "Baseline (tiny)"
+    },
+    {
+      "name": "GPU Array map lookup (small_64x16)",
+      "probe_binary_cmd": "benchmark/gpu/micro/cuda_probe gpu-array-lookup",
+      "workload": "small_64x16",
+      "baseline": "Baseline (small)"
+    },
+    {
+      "name": "GPU Array map lookup (small)",
+      "probe_binary_cmd": "benchmark/gpu/micro/cuda_probe gpu-array-lookup",
+      "workload": "small",
+      "baseline": "Baseline (small)"
+    },
+    {
+      "name": "GPU Array map lookup (medium)",
+      "probe_binary_cmd": "benchmark/gpu/micro/cuda_probe gpu-array-lookup",
+      "workload": "medium",
+      "baseline": "Baseline (medium)"
+    },
+    {
+      "name": "GPU Array map lookup (large)",
+      "probe_binary_cmd": "benchmark/gpu/micro/cuda_probe gpu-array-lookup",
+      "workload": "large",
+      "baseline": "Baseline (large)"
+    },
+    {
+      "name": "GPU Array map lookup (xlarge)",
+      "probe_binary_cmd": "benchmark/gpu/micro/cuda_probe gpu-array-lookup",
+      "workload": "xlarge",
+      "baseline": "Baseline (xlarge)"
+    },
+    {
+      "name": "CPU Array map update (minimal)",
+      "probe_binary_cmd": "benchmark/gpu/micro/cuda_probe array-update",
+      "workload": "minimal",
+      "baseline": "Baseline (tiny)"
+    },
+    {
+      "name": "CPU Array map lookup (minimal)",
+      "probe_binary_cmd": "benchmark/gpu/micro/cuda_probe array-lookup",
+      "workload": "minimal",
+      "baseline": "Baseline (tiny)"
+    },
+    {
+      "name": "CPU Hash map update (minimal)",
+      "probe_binary_cmd": "benchmark/gpu/micro/cuda_probe hash-update",
+      "workload": "minimal",
+      "baseline": "Baseline (tiny)"
+    },
+    {
+      "name": "CPU Hash map lookup (minimal)",
+      "probe_binary_cmd": "benchmark/gpu/micro/cuda_probe hash-lookup",
+      "workload": "minimal",
+      "baseline": "Baseline (tiny)"
+    },
+    {
+      "name": "CPU Hash map delete (minimal)",
+      "probe_binary_cmd": "benchmark/gpu/micro/cuda_probe hash-delete",
+      "workload": "minimal",
+      "baseline": "Baseline (tiny)"
+    }
+  ]
+}
