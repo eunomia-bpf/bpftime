@@ -7,17 +7,54 @@
 using namespace bpftime::attach;
 
 extern "C" int64_t _bpftime_dummy_syscall(int64_t, int64_t, int64_t, int64_t,
-					  int64_t, int64_t, int64_t)
+					  int64_t, int64_t, int64_t, int64_t,
+					  int64_t, int64_t)
 {
 	return 0;
 }
 
 static int syscall_call_count;
 extern "C" int64_t _bpftime_counting_syscall(int64_t, int64_t, int64_t, int64_t,
-					     int64_t, int64_t, int64_t)
+					     int64_t, int64_t, int64_t, int64_t,
+					     int64_t, int64_t)
 {
 	return ++syscall_call_count;
 }
+
+#if defined(__x86_64__)
+struct test_pt_regs {
+	uint64_t r15, r14, r13, r12, bp, bx, r11, r10, r9, r8, ax, cx, dx,
+		si, di, orig_ax, ip, cs, flags, sp, ss;
+};
+
+TEST_CASE("do_mmap kprobe receives kernel function arguments")
+{
+	auto &syscalls = std::get<0>(get_global_syscall_id_table());
+	REQUIRE(syscalls.contains("mmap"));
+	syscall_trace_attach_impl attacher;
+	attacher.set_original_syscall_function(_bpftime_dummy_syscall);
+	syscall_trace_attach_private_data data;
+	REQUIRE(data.initialize_from_string("do_mmap") == 0);
+	test_pt_regs observed = {};
+	REQUIRE(attacher.create_attach_with_ebpf_callback(
+			[&](const void *p, size_t size, uint64_t *) -> int {
+				if (size == sizeof(observed))
+					observed = *static_cast<const test_pt_regs *>(p);
+				return 0;
+			},
+			data, ATTACH_SYSCALL_KPROBE) >= 0);
+	attacher.dispatch_syscall(syscalls.at("mmap"), 0x1000, 0x2000, 3,
+				  0x22, -1, 0, 0xabc, 0xdef, 0x123);
+	REQUIRE(observed.di == 0);
+	REQUIRE(observed.si == 0x1000);
+	REQUIRE(observed.dx == 0x2000);
+	REQUIRE(observed.cx == 3);
+	REQUIRE(observed.r8 == 0x22);
+	REQUIRE(observed.ip == 0xabc);
+	REQUIRE(observed.sp == 0xdef);
+	REQUIRE(observed.bp == 0x123);
+}
+#endif
 
 TEST_CASE("Test syscall dispatch - global")
 {

@@ -46,7 +46,8 @@ While syscall args are passed using
 extern "C" void syscall_hooker_asm();
 extern "C" int64_t call_orig_syscall(int64_t sys_nr, int64_t arg1, int64_t arg2,
 				     int64_t arg3, int64_t arg4, int64_t arg5,
-				     int64_t arg6);
+				     int64_t arg6, int64_t user_ip,
+				     int64_t user_sp, int64_t user_bp);
 extern "C" void syscall_addr();
 
 static const int NR_syscalls = 512;
@@ -55,8 +56,10 @@ static uintptr_t low_trampoline_begin;
 static uintptr_t low_trampoline_end;
 static bool use_low_trampoline;
 static syscall_hooker_func_t call_hook = &call_orig_syscall;
-extern "C" thread_local uintptr_t bpftime_vfork_return_ip = 0;
-extern "C" thread_local unsigned bpftime_syscall_dispatch_active = 0;
+extern "C" {
+thread_local uintptr_t bpftime_vfork_return_ip = 0;
+thread_local unsigned bpftime_syscall_dispatch_active = 0;
+}
 
 #if defined(__x86_64__)
 // `used` keeps this function in the object under -flto: LTO sees a body whose
