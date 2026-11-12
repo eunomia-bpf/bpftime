@@ -548,6 +548,7 @@ static long dispatch_syscall(long sysno, long arg1, long arg2, long arg3,
 					(struct epoll_event *)(uintptr_t)arg4);
 			},
 			call_original);
+#ifdef __NR_epoll_wait
 	} else if (sysno == __NR_epoll_wait) {
 		return handle_exceptions(
 			[&]() {
@@ -557,6 +558,7 @@ static long dispatch_syscall(long sysno, long arg1, long arg2, long arg3,
 					(int)arg3, (int)arg4);
 			},
 			call_original);
+#endif
 	} else if (sysno == __NR_epoll_pwait) {
 		// Go's x/sys/unix.EpollWait uses epoll_pwait with a null signal
 		// mask on Linux. Route that form through the same userspace epoll
