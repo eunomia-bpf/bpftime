@@ -54,6 +54,12 @@ struct bpftime_global_epoch_state {
 	std::uint64_t epoch_seq = 0;
 };
 
+static constexpr int BPFTIME_MAX_CPU_COUNT = 1024;
+
+struct bpftime_cpu_exec_locks {
+	boost::interprocess::interprocess_mutex locks[BPFTIME_MAX_CPU_COUNT];
+};
+
 using syscall_pid_set_allocator = boost::interprocess::allocator<
 	int, boost::interprocess::managed_shared_memory::segment_manager>;
 using syscall_pid_set =
@@ -101,6 +107,7 @@ class bpftime_shm {
 	boost::interprocess::interprocess_mutex *pid_set_lock = nullptr;
 
 	bpftime_global_epoch_state *epoch_state = nullptr;
+	bpftime_cpu_exec_locks *cpu_exec_locks = nullptr;
 
 	// local agent config can be used for test or local process
 	std::optional<struct runtime_config> local_runtime_config;
@@ -171,6 +178,8 @@ class bpftime_shm {
 	// Returns 0 if the epoch object isn't available.
 	// Returns UINT64_MAX if the epoch couldn't be stabilized within max_tries.
 	std::uint64_t read_stable_epoch_seq(int max_tries = 200) const;
+	void lock_bpf_cpu(int cpu);
+	void unlock_bpf_cpu(int cpu);
 
 	const handler_variant &get_handler(int fd) const;
 	bool is_epoll_fd(int fd) const;
