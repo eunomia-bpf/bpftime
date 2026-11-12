@@ -17,11 +17,27 @@ The attach system in bpftime provides a modular framework for attaching eBPF pro
 attach/
 ├── base_attach_impl/           # Base interface and common functionality
 ├── frida_uprobe_attach_impl/   # Function instrumentation using Frida
-├── syscall_trace_attach_impl/  # System call tracing
+├── syscall_trace_attach_impl/  # System call tracing (Frida trampoline events)
+├── seccomp_attach_impl/        # Seccomp user-notification syscall interception
 ├── nv_attach_impl/             # CUDA/GPU kernel instrumentation
 ├── simple_attach_impl/         # Simplified attach wrapper
-└── text_segment_transformer/   # Binary rewriting for syscall interception
+└── text_segment_transformer/   # Frida/libc binary rewriting only (no seccomp)
 ```
+
+The two syscall interception mechanisms are intentionally separate and
+mutually exclusive (selected at runtime):
+
+- **text_segment_transformer** rewrites libc/syscall instructions in the
+  process entry path (Frida). It must run before the agent and therefore stays
+  a standalone injected shared object. It contains no seccomp code.
+- **seccomp_attach_impl** installs a kernel seccomp user-notification filter
+  that also catches runtimes (e.g. Go) which issue raw syscall instructions
+  and bypass libc. It is a static module linked into the agent/transformer,
+  uses its own frida-independent raw syscall helper, and reaches the fake
+  kernel only through the `get_call_hook()` dispatcher seam.
+
+The syscall server (`runtime/syscall-server/`) owns its own separate seccomp
+hook for the no-agent case; it does not share this attach implementation.
 
 ## Base Interface
 
