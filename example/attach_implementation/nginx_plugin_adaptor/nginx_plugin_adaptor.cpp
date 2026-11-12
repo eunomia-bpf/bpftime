@@ -57,7 +57,7 @@ extern "C" int nginx_plugin_example_initialize()
 		*ctx_holder);
 
 	int res = ctx_holder->init_attach_ctx_from_handlers(
-		bpftime_get_agent_config());
+		bpftime_get_runtime_config());
 	if (res != 0) {
 		SPDLOG_ERROR("Failed to initialize attach context: {}", res);
 		return res;

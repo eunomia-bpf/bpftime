@@ -16,8 +16,8 @@ using namespace bpftime;
 CUdeviceptr
 nv_gpu_per_thread_array_map_impl::try_initialize_for_agent_and_get_mapped_address()
 {
-	if (shm_holder.global_shared_memory.get_open_type() !=
-	    shm_open_type::SHM_REMOVE_AND_CREATE) {
+	if (shm_holder.global_shared_memory.get_open_type() ==
+	    shm_open_type::SHM_OPEN_ONLY) {
 		int pid = getpid();
 		if (auto itr = agent_gpu_shared_mem.find(pid);
 		    itr == agent_gpu_shared_mem.end()) {

@@ -17,8 +17,6 @@
 
 bpftime is not `userspace eBPF VM`, it's a userspace runtime framework includes everything to run eBPF in userspace: `loader`, `verifier`, `helpers`, `maps`, `ufunc` and multiple `events` such as Observability, Network, Policy or Access Control. It has multiple VM backend options support. For eBPF VM only, please see [llvmbpf](https://github.com/eunomia-bpf/llvmbpf).
 
-> ⚠️ **Note**: `bpftime` is currently under active development and refactoring towards v2. It may contain bugs or unstable API. Please use it with caution. For more details, check our [roadmap](#roadmap). We'd love to hear your feedback and suggestions! Feel free to open an issue or [Contact us](#contact-and-citations).
-
 ## Why bpftime? What's the design Goal?
 
 - **Performance Gains**: Achieve better performance by `bypassing the kernel` (e.g., via `Userspace DBI` or `Network Drivers`), with more configurable, optimized and more arch supported JIT/AOT options like `LLVM`, while maintaining compatibility with Linux kernel eBPF.
@@ -61,7 +59,6 @@ In another shell, Run the target program with eBPF inside:
 
 ```console
 $ bpftime start ./example/malloc/victim
-Hello malloc!
 malloc called from pid 250215
 continue malloc...
 malloc called from pid 250215
@@ -188,3 +185,14 @@ eunomia-bpf community is sponsored by [PLCT Lab](https://plctlab.github.io/) fro
 
 Thanks for other sponsors and discussions help building this project: [Prof. Marios Kogias](https://marioskogias.github.io/) from Imperial College London, [Prof. Xiaozheng lai](https://www2.scut.edu.cn/cs/2017/0129/c22285a327654/page.htm) from SCUT, [Prof lijun chen](http://www.xiyou.edu.cn/info/2394/67845.htm) from XUPT,
 [Prof. Qi Li](https://sites.google.com/site/qili2012/) from THU [NISL Lab](https://netsec.ccert.edu.cn/en/), and Linux eBPF maintainers in the LPC 23 eBPF track.
+
+<p align="center">
+  <a href="https://www.vultr.com/">
+    <picture>
+      <source media="(prefers-color-scheme: dark)" srcset="images/vultr-white.png">
+      <img src="images/vultr-black.svg" alt="Vultr" width="200">
+    </picture>
+  </a>
+  <br>
+  Cloud Infrastructure powered by <a href="https://www.vultr.com/">Vultr</a>
+</p>

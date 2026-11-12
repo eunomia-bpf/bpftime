@@ -7,5 +7,8 @@ target_link_libraries(bpftime_llvm_vm PUBLIC bpftime_vm_compat spdlog::spdlog ll
 
 target_include_directories(bpftime_llvm_vm_obj PRIVATE ../../llvm-jit/include ${CMAKE_CURRENT_SOURCE_DIR} ${SPDLOG_INCLUDE} ../include)
 
-add_subdirectory(../../llvm-jit ${CMAKE_CURRENT_BINARY_DIR}/llvm-jit)
-
+if(BPFTIME_BUILD_WITH_LIBBPF)
+  add_subdirectory(../../llvm-jit ${CMAKE_CURRENT_BINARY_DIR}/llvm-jit)
+else()
+  add_subdirectory(../../llvm-jit ${CMAKE_CURRENT_BINARY_DIR}/llvm-jit EXCLUDE_FROM_ALL)
+endif()

@@ -16,7 +16,6 @@
 #ifndef DEFAULT_VM_NAME
 #define DEFAULT_VM_NAME "llvm"
 #endif
-
 #define LOG_PATH_MAX_LEN 1024
 #define VM_NAME_MAX_LEN 128
 
@@ -35,9 +34,22 @@ using boost_shm_string =
 	boost::interprocess::basic_string<char, std::char_traits<char>,
 					  char_allocator>;
 
+// Verification mode for bpftime userspace verifier
+// Controlled via BPFTIME_VERIFIER_LEVEL environment variable
+enum bpftime_verifier_mode {
+	// Userspace verifier failure is treated as a warning (default)
+	// Program loading continues even if verification fails
+	BPFTIME_VERIFIER_WARNING = 0,
+	// Userspace verifier failure is treated as an error
+	// Program loading is rejected if verification fails
+	BPFTIME_VERIFIER_STRICT = 1,
+	// No verification is performed
+	BPFTIME_NO_VERIFY = 2,
+};
+
 // Configuration for the bpftime runtime
 // Initialize the configuration from the environment variables
-struct agent_config {
+struct runtime_config {
 	bool debug = false;
 	// Enable JIT?
 	bool jit_enabled = true;
@@ -47,11 +59,19 @@ struct agent_config {
 	bool enable_ufunc_helper_group = false;
 	bool enable_shm_maps_helper_group = true;
 
+	// Userspace verifier mode (see bpftime_verifier_mode enum)
+	// Default is BPFTIME_VERIFIER_WARNING: verification failure is a warning
+	bpftime_verifier_mode verifier_mode = BPFTIME_VERIFIER_WARNING;
+
 	// allow non builtin map types
 	// if enabled, when a eBPF application tries to create a map with a
 	// self-defined or non-buildin supported map type, if will not be
 	// rejected
 	bool allow_non_buildin_map_types = false;
+
+	// Use Frida's fuzzy backtracer for user stack collection. Accurate
+	// unwinding remains the default.
+	bool enable_frida_fuzzy_backtracer = false;
 
 	// memory size will determine the maximum size of the shared memory
 	// available for the eBPF programs and maps
@@ -67,7 +87,7 @@ struct agent_config {
 	// It can be a file path or "console".
 	// If it is "console", the logger will output to stderr
 
-	// Here it is a variant, since this object (agent_config) will be used
+	// Here it is a variant, since this object (runtime_config) will be used
 	// for both local and shared memory
 	char logger_output_path[LOG_PATH_MAX_LEN] = DEFAULT_LOGGER_OUTPUT_PATH;
 	char vm_name[VM_NAME_MAX_LEN] = DEFAULT_VM_NAME;
@@ -99,7 +119,7 @@ struct agent_config {
 
 // Get the bpftime configuration from the environment variables
 // If the shared memory is not int, this should be called first
-agent_config construct_agent_config_from_env() noexcept;
+runtime_config construct_runtime_config_from_env() noexcept;
 
 } // namespace bpftime
 

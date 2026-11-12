@@ -1,4 +1,5 @@
 #include <bpf_map/userspace/stack.hpp>
+#include "linux/bpf.h"
 #include <spdlog/spdlog.h>
 #include <cerrno>
 #include <cstring>

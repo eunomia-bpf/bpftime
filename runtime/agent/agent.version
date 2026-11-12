@@ -1,4 +1,4 @@
 {
-    global: injected_with_frida; bpftime_hooked_main; __libc_start_main; bpftime_agent_main; syscall_callback; _bpftime__setup_syscall_trace_callback; __cudaRegisterFatBinary;
+    global: injected_with_frida; bpftime_hooked_main; __libc_start_main; bpftime_agent_main; bpftime_agent_control; syscall_callback; _bpftime__setup_syscall_trace_callback; __cudaRegisterFatBinary;
     local: *;
 };

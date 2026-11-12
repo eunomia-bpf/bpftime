@@ -275,7 +275,6 @@ class bpf_map_handler {
 #endif
     private:
 	int id = 0;
-	std::string get_container_name() const;
 	mutable pthread_spinlock_t map_lock;
 	// The underlying data structure of the map
 	mutable general_map_impl_ptr map_impl_ptr;

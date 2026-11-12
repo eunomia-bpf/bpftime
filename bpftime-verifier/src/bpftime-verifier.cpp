@@ -2,7 +2,6 @@
 #include "config.hpp"
 #include "helpers.hpp"
 #include <ebpf_base.h>
-#include <iostream>
 #include <linux/bpf.h>
 #include <linux/bpf_common.h>
 #include <linux/gpl/spec_type_descriptors.hpp>
@@ -14,7 +13,7 @@
 #include <bpftime-verifier.hpp>
 #include <crab_verifier.hpp>
 #include <asm_unmarshal.hpp>
-#include <sstream>
+#include <streambuf>
 #include <variant>
 #include <platform-impl.hpp>
 static ebpf_verifier_options_t verifier_options = {
@@ -34,6 +33,34 @@ namespace bpftime
 {
 namespace verifier
 {
+namespace {
+class string_capture_streambuf final : public std::streambuf {
+    public:
+	explicit string_capture_streambuf(std::string &output) :
+		output_(output)
+	{
+	}
+
+    protected:
+	std::streamsize xsputn(const char *s, std::streamsize count) override
+	{
+		output_.append(s, static_cast<size_t>(count));
+		return count;
+	}
+
+	int_type overflow(int_type ch) override
+	{
+		if (!traits_type::eq_int_type(ch, traits_type::eof())) {
+			output_.push_back(traits_type::to_char_type(ch));
+		}
+		return ch;
+	}
+
+    private:
+	std::string &output_;
+};
+} // namespace
+
 std::optional<std::string> verify_ebpf_program(const uint64_t *raw_inst,
 					       size_t num_inst,
 					       const std::string &section_name)
@@ -63,13 +90,15 @@ std::optional<std::string> verify_ebpf_program(const uint64_t *raw_inst,
 	ebpf_verifier_stats_t stats;
 	stats.max_instruction_count = stats.total_unreachable =
 		stats.total_warnings = 0;
-	std::ostringstream message;
-	auto result = ebpf_verify_program(message, inst_seq, prog.info,
+	std::string verifier_message;
+	string_capture_streambuf capture_buffer(verifier_message);
+	std::ostream message_stream(&capture_buffer);
+	auto result = ebpf_verify_program(message_stream, inst_seq, prog.info,
 					  &verifier_options, &stats);
 	if (result) {
 		return {};
 	} else {
-		return message.str();
+		return verifier_message;
 	}
 }
 

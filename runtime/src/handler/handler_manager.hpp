@@ -51,9 +51,12 @@ using boost::interprocess::vector;
 constexpr const char *DEFAULT_GLOBAL_SHM_NAME = "bpftime_maps_shm";
 constexpr const char *DEFAULT_GLOBAL_HANDLER_NAME = "bpftime_handler";
 constexpr const char *DEFAULT_SYSCALL_PID_SET_NAME = "bpftime_syscall_pid_set";
-constexpr const char *DEFAULT_AGENT_CONFIG_NAME = "bpftime_agent_config";
+constexpr const char *DEFAULT_AGENT_CONFIG_NAME = "bpftime_runtime_config";
 constexpr const char *DEFAULT_ALIVE_AGENT_PIDS_NAME =
 	"bpftime_alive_agent_pids";
+constexpr const char *DEFAULT_ALIVE_SYSCALL_SERVER_PIDS_NAME =
+	"bpftime_alive_syscall_server_pids";
+constexpr const char *DEFAULT_PID_SET_LOCK_NAME = "bpftime_pid_set_lock";
 inline const char *get_global_shm_name()
 {
 	const char *name = getenv("BPFTIME_GLOBAL_SHM_NAME");

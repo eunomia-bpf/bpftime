@@ -5,6 +5,7 @@
 
 #include "bpf_map/userspace/queue.hpp" // Adjust path as needed
 #include "../common_def.hpp"
+#include <linux/bpf.h>
 #include <boost/interprocess/managed_shared_memory.hpp>
 #include <boost/interprocess/containers/string.hpp>
 #include <vector>

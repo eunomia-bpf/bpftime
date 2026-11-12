@@ -4,8 +4,34 @@ on:
   workflow_dispatch:
   push:
     branches: ["master"]
+    paths:
+      - ".github/workflows/benchmarks.yml"
+      - "benchmark/**"
+      - "attach/**"
+      - "example/attach_implementation/**"
+      - "runtime/**"
+      - "tools/**"
+      - "vm/**"
+      - "cmake/**"
+      - "third_party/**"
+      - "CMakeLists.txt"
+      - "Makefile"
+      - ".gitmodules"
   pull_request:
     branches: ["master"]
+    paths:
+      - ".github/workflows/benchmarks.yml"
+      - "benchmark/**"
+      - "attach/**"
+      - "example/attach_implementation/**"
+      - "runtime/**"
+      - "tools/**"
+      - "vm/**"
+      - "cmake/**"
+      - "third_party/**"
+      - "CMakeLists.txt"
+      - "Makefile"
+      - ".gitmodules"
 
 # Sets permissions of the GITHUB_TOKEN to allow deployment to GitHub Pages
 permissions:
@@ -20,7 +46,9 @@ concurrency:
 
 jobs:
   build-and-run:
-    runs-on: ubuntu-latest
+    # LLVM 17 apt packages are unavailable on Ubuntu 26.04 (resolute).
+    # Ubuntu 22.04 (jammy) provides llvm-toolchain-jammy-17.
+    runs-on: ubuntu-22.04
 
     steps:
       - uses: actions/checkout@v3
@@ -33,7 +61,7 @@ jobs:
           wget https://apt.llvm.org/llvm.sh && chmod +x llvm.sh && sudo ./llvm.sh 17
           sudo apt update
           sudo apt install -y --no-install-recommends \
-            libelf1 libelf-dev zlib1g-dev make cmake git libboost-all-dev \
+            libelf1 libelf-dev zlib1g-dev libssl-dev make cmake git libboost-all-dev \
             binutils-dev libyaml-cpp-dev ca-certificates clang llvm pkg-config llvm-dev
 
       - name: install additional dependencies for experiments

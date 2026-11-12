@@ -57,9 +57,9 @@ TEST_CASE("Test basic operations of external hash map ops")
 	auto &manager_ref = *manager;
 
 	// update the ops to use the external map
-	bpftime::agent_config agent_config;
-	agent_config.allow_non_buildin_map_types = true;
-	bpftime_set_agent_config(std::move(agent_config));
+	bpftime::runtime_config runtime_config;
+	runtime_config.allow_non_buildin_map_types = true;
+	bpftime_set_runtime_config(std::move(runtime_config));
 
 	cpp_map.clear();
 

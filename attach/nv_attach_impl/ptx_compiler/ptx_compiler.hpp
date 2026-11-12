@@ -4,9 +4,8 @@
 #include <cstddef>
 #include <cstdint>
 #include <dlfcn.h>
-#include <iostream>
 #include <optional>
-#include <ostream>
+#include <spdlog/spdlog.h>
 struct nv_attach_impl_ptx_compiler;
 
 extern "C" {
@@ -40,8 +39,8 @@ load_nv_attach_impl_ptx_compiler(const char *path, void *&dl_handle)
 {
 	void *handle = dlopen(path, RTLD_NOW | RTLD_LOCAL);
 	if (!handle) {
-		std::cerr << "Unable to load dynamic library " << path << " = "
-			  << dlerror() << std::endl;
+		SPDLOG_ERROR("Unable to load dynamic library {} = {}", path,
+			     dlerror());
 		return {};
 	}
 	nv_attach_impl_ptx_compiler_handler result;

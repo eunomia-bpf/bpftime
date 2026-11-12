@@ -1,8 +1,12 @@
 
+#include "bpf_attach_ctx.hpp"
 #include "bpftime_helper_group.hpp"
+#include "bpftime_shm_internal.hpp"
 #include "catch2/catch_test_macros.hpp"
 #include <bpftime_prog.hpp>
+#include <chrono>
 #include <iterator>
+#include <thread>
 using namespace bpftime;
 
 /**
@@ -75,4 +79,20 @@ TEST_CASE("Test cuda compile")
 				     .name = "bpf_map_lookup",
 				     .fn = (void *)&placeholder_helper });
 	prog.bpftime_prog_load(true);
+}
+
+TEST_CASE("CUDA watcher stops before shared-memory teardown")
+{
+	bpftime_initialize_global_shm(shm_open_type::SHM_REMOVE_AND_CREATE);
+	bpf_attach_ctx ctx;
+	auto *comm = shm_holder.global_shared_memory.get_cuda_comm_shared_mem();
+	comm->request_id = -1;
+	comm->flag2 = 0;
+	comm->flag1 = 1;
+	for (int attempt = 0; attempt < 100 && comm->flag2 != 1; attempt++)
+		std::this_thread::sleep_for(std::chrono::milliseconds(1));
+	REQUIRE(comm->flag2 == 1);
+
+	bpftime_destroy_global_shm();
+	std::this_thread::sleep_for(std::chrono::milliseconds(5));
 }

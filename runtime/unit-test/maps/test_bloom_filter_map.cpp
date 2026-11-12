@@ -3,6 +3,7 @@
 
 #include "bpf_map/userspace/bloom_filter.hpp"
 #include "../common_def.hpp"
+#include <linux/bpf.h>
 #include <boost/interprocess/managed_shared_memory.hpp>
 #include <vector>
 #include <cstring>

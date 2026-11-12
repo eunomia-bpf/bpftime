@@ -458,8 +458,6 @@ int bpftime_epoll_wait(int fd, struct epoll_event *out_evts, int max_evt,
 		auto now_time = high_resolution_clock::now();
 		auto elasped =
 			duration_cast<milliseconds>(now_time - start_time);
-		if (timeout == 0)
-			return 0;
 		if (timeout > 0 && elasped.count() > timeout) {
 			break;
 		}
@@ -500,10 +498,8 @@ int bpftime_epoll_wait(int fd, struct epoll_event *out_evts, int max_evt,
 				}
 			}
 		}
-		if (next_id > 0) {
-			// According to man epoll_wait(2), epoll_wait can't be
-			// interrupted once at least one event was received
-			std::this_thread::sleep_for(milliseconds(1));
+		if (next_id > 0 || timeout == 0) {
+			break;
 		} else {
 			// Nothing has been received, so allow the interruption
 			// of epoll_wait
@@ -648,13 +644,13 @@ extern "C" uint64_t map_ptr_by_fd(uint32_t fd)
 		return INVALID_MAP_PTR;
 	}
 	// Use a convenient way to represent a pointer
-	return ((uint64_t)fd << 32) | 0xffffffff;
+	return fd;
 }
 
 extern "C" uint64_t map_val(uint64_t map_ptr)
 {
 	SPDLOG_DEBUG("Call map_val with map_ptr={:x}", map_ptr);
-	int fd = (int)(map_ptr >> 32);
+	int fd = (int)map_ptr;
 	if (!shm_holder.global_shared_memory.get_manager() ||
 	    !shm_holder.global_shared_memory.is_map_fd(fd)) {
 		SPDLOG_ERROR("Expected fd {} to be a map fd (map_val call)",
