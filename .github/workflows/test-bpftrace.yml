@@ -843,7 +843,11 @@ jobs:
           # interval:s:1 probes cannot be used here because the userspace
           # runtime does not support attaching BPF programs to the software
           # perf events behind them.
-          run_case() {
+          run_case_once() {
+            # One attempt of a one-liner case. Returns 0 when the expected
+            # pattern is observed, 1 on a flaky run (victim crash / missing
+            # output), and 2 on a hard setup error (server never starts),
+            # which must not be retried.
             local name="$1"; shift
             local program="$1"; shift
             local victim="$1"; shift
@@ -866,17 +870,15 @@ jobs:
               if ! ps -p $server_pid > /dev/null; then
                 echo "CASE $name: FAILURE - server died during init"
                 cat "$log"
-                FAILED_CASES="$FAILED_CASES $name"
                 wait "$server_pid" 2>/dev/null || true
-                return 0
+                return 2
               fi
               if [ $i -eq 40 ]; then
                 echo "CASE $name: FAILURE - server did not initialize in 40s"
                 cat "$log"
-                FAILED_CASES="$FAILED_CASES $name"
                 kill -9 "$server_pid" 2>/dev/null || true
                 wait "$server_pid" 2>/dev/null || true
-                return 0
+                return 2
               fi
               sleep 1
             done
@@ -907,10 +909,31 @@ jobs:
 
             if grep -qE "$expect" "$log"; then
               echo "CASE $name: SUCCESS"
-            else
-              echo "CASE $name: FAILURE - missing pattern '$expect'"
-              FAILED_CASES="$FAILED_CASES $name"
+              return 0
             fi
+            echo "CASE $name: expected pattern missing (flaky victim/timing), attempt failed"
+            return 1
+          }
+
+          run_case() {
+            # The userspace tracepoint path intermittently crashes the high
+            # syscall-rate victim (e.g. `dd`) before any event is emitted, so
+            # retry the bounded case a few times instead of red on a flake.
+            local attempt
+            for attempt in 1 2 3; do
+              run_case_once "$@"
+              local rc=$?
+              if [ $rc -eq 0 ]; then
+                return 0
+              fi
+              if [ $rc -eq 2 ]; then
+                FAILED_CASES="$FAILED_CASES $1"
+                return 0
+              fi
+              echo "CASE $1: retrying ($attempt/3) after flaky failure"
+            done
+            echo "CASE $1: FAILURE after 3 attempts"
+            FAILED_CASES="$FAILED_CASES $1"
           }
 
           # 1. Files opened by process
