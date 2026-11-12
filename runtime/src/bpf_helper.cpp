@@ -134,13 +134,14 @@ int64_t bpftime_probe_read(uint64_t dst, int64_t size, uint64_t ptr, uint64_t,
 		return -EFAULT;
 	}
 #if BPFTIME_HAVE_STACK_SNAPSHOT
-	switch (stack_snapshot::try_read(reinterpret_cast<void *>(dst), ptr,
-					 static_cast<size_t>(size))) {
-	case stack_snapshot::snapshot_read_result::ok:
+	switch (bpftime::stack_snapshot::try_read(
+		reinterpret_cast<void *>(dst), ptr,
+		static_cast<size_t>(size))) {
+	case bpftime::stack_snapshot::snapshot_read_result::ok:
 		return 0;
-	case stack_snapshot::snapshot_read_result::fault:
+	case bpftime::stack_snapshot::snapshot_read_result::fault:
 		return -EFAULT;
-	case stack_snapshot::snapshot_read_result::fallback:
+	case bpftime::stack_snapshot::snapshot_read_result::fallback:
 		break;
 	}
 #endif
