@@ -43,18 +43,20 @@ int main(int argc, const char **argv)
 		return 1;
 	}
 	bpftime_initialize_global_shm(shm_open_type::SHM_REMOVE_AND_CREATE);
-	auto cfg = agent_config(shm_holder.global_shared_memory.get_segment());
+	bpftime::runtime_config cfg;
 	cfg.set_vm_name("llvm");
-	shm_holder.global_shared_memory.set_agent_config(std::move(cfg));
+	shm_holder.global_shared_memory.set_runtime_config(std::move(cfg));
 	signal(SIGINT, sig_handler);
 	signal(SIGTERM, sig_handler);
+
+	SPDLOG_INFO("Allowed url prefix: {}", argv[1]);
 
 	SPDLOG_INFO("eBPF program at {}", ebpf_prog_path);
 	std::unique_ptr<bpftime_object, decltype(&bpftime_object_close)> obj(
 		bpftime_object_open(ebpf_prog_path), &bpftime_object_close);
 	auto prog = bpftime_object__next_program(obj.get(), nullptr);
-	if (prog == nullptr) {
-		SPDLOG_ERROR("Unable to find any eBPF program");
+	if (!prog) {
+		SPDLOG_ERROR("Failed to get program at {}", ebpf_prog_path);
 		return 1;
 	}
 	int rb_map_fd = bpftime_maps_create(

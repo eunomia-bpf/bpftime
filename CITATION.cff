@@ -11,53 +11,44 @@ authors:
   - given-names: Yusheng
     family-names: Zheng
     email: yunwei356@gmail.com
+    affiliation: UC Santa Cruz
   - given-names: Tong
     family-names: Yu
+    affiliation: eunomia-bpf Community
   - given-names: Yiwei
     family-names: Yang
+    affiliation: UC Santa Cruz
   - given-names: Yanpeng
     family-names: Hu
-  - given-names: XiaoZheng
+    affiliation: ShanghaiTech University
+  - given-names: Xiaozheng
     family-names: Lai
-  - given-names: Andrew
+    affiliation: South China University of Technology
+  - given-names: Dan
+    family-names: Williams
+    affiliation: Virginia Tech
+  - given-names: Andi
     family-names: Quinn
+    affiliation: UC Santa Cruz
 identifiers:
   - type: url
-    value: 'https://arxiv.org/abs/2311.07923'
+    value: 'https://www.usenix.org/conference/osdi25/presentation/zheng-yusheng'
     description: >-
-      bpftime: userspace eBPF Runtime for Uprobe, Syscall
-      and Kernel-User Interactions
+      Extending Applications Safely and Efficiently
 repository-code: 'https://github.com/eunomia-bpf/bpftime'
 url: 'https://eunomia.dev/bpftime/'
 abstract: >-
-  In kernel-centric operations, the uprobe component of eBPF
-  frequently encounters performance bottlenecks, largely
-  attributed to the overheads borne by context switches.
-  Transitioning eBPF operations to user space bypasses these
-  hindrances, thereby optimizing performance. This also
-  enhances configurability and obviates the necessity for
-  root access or privileges for kernel eBPF, subsequently
-  minimizing the kernel attack surface. This paper
-  introduces bpftime, a novel user-space eBPF runtime, which
-  leverages binary rewriting to implement uprobe and syscall
-  hook capabilities. Through bpftime, userspace uprobes
-  achieve a 10x speed enhancement compared to their kernel
-  counterparts without requiring dual context switches.
-  Additionally, this runtime facilitates the programmatic
-  hooking of syscalls within a process, both safely and
-  efficiently. Bpftime can be seamlessly attached to any
-  running process, limiting the need for either a restart or
-  manual recompilation. Our implementation also extends to
-  interprocess eBPF Maps within shared memory, catering to
-  summary aggregation or control plane communication
-  requirements. Compatibility with existing eBPF toolchains
-  such as clang and libbpf is maintained, not only
-  simplifying the development of user-space eBPF without
-  necessitating any modifications but also supporting CO-RE
-  through BTF. Through bpftime, we not only enhance uprobe
-  performance but also extend the versatility and
-  user-friendliness of eBPF runtime in user space, paving
-  the way for more efficient and secure kernel operations.
+  This paper introduces the Extension Interface Model (EIM) and
+  bpftime, a framework for safer and more efficient application
+  extension. EIM treats extension features as resources, allowing
+  managers to specify exact resource needs. bpftime uses eBPF-style
+  verification, hardware isolation, and dynamic binary rewriting
+  to achieve efficiency and compatibility with the existing eBPF
+  ecosystem. The system demonstrates the approach across 6 use
+  cases involving security, performance monitoring, and configuration
+  exploration. By operating in userspace, bpftime achieves significant
+  performance improvements while maintaining safety guarantees and
+  compatibility with existing eBPF toolchains.
 keywords:
   - userspace
   - plugin

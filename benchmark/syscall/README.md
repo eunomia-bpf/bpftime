@@ -1,40 +1,43 @@
-# opensnoop
+# syscall micro-benchmark
 
-Here is a example that demonstrates the usage of userspace syscall trace
-
-## Usage
-
-- Install binutils dev: `sudo apt install binutils-dev`
-- Configure & build the project `cmake -S . -B build -G Ninja && cmake --build build --target all --config Debug`.
-
-## build
+Run the script to see the results:
 
 ```sh
-make -C benchmark/syscall/
+sudo python benchmark/syscall/benchmark.py
 ```
 
-## run
+You can see the results in the `results.md` file and the json file. An example result can be found in [example_results.md](example_results.md).
 
-Start the eBPF program
+## userspace syscall
+
+### run
 
 ```sh
-sudo LD_PRELOAD=build/runtime/syscall-server/libbpftime-syscall-server.so  benchmark/syscall/syscall
+sudo ~/.bpftime/bpftime load benchmark/syscall/syscall
+# or
+sudo LD_PRELOAD=build/runtime/syscall-server/libbpftime-syscall-server.so benchmark/syscall/syscall
 ```
 
 in another shell, run the target program with eBPF inside:
 
 ```sh
 sudo ~/.bpftime/bpftime start -s benchmark/syscall/victim
+# or
+sudo AGENT_SO=build/runtime/agent/libbpftime-agent.so LD_PRELOAD=build/attach/text_segment_transformer/libbpftime-agent-transformer.so benchmark/syscall/victim
 ```
 
-## baseline
+## results (2023)
+
+Tested on `6.2.0-32-generic` kernel and `Intel(R) Core(TM) i7-11800H CPU @ 2.30GHz`.
+
+### baseline
 
 Average time usage 213.62178ns,  count 1000000
 
-## userspace syscall
+### userspace syscall
 
 Average time usage 446.19869ns,  count 1000000
 
-## kernel tracepoint
+### kernel tracepoint
 
 Average time usage 365.44980ns,  count 1000000

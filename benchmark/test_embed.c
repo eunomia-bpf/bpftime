@@ -147,7 +147,7 @@ struct ebpf_vm *create_vm_from_elf(const char *elf_file,
 		fprintf(stderr, "Failed to open elf file, errno=%d\n", errno);
 		return NULL;
 	}
-	struct bpf_program *prog = bpf_object__next_program(obj, NULL);
+	struct bpf_program *prog = bpf_object__find_program_by_name(obj, "__bench_uprobe");
 	if (!prog) {
 		fprintf(stderr, "No program found in %s\n", elf_file);
 		goto out;

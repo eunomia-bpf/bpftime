@@ -7,6 +7,7 @@
 #define _BPFTIME_FRIDA_ATTACH_MANAGER_HPP
 
 #include <functional>
+#include <optional>
 #include <variant>
 #include <frida_register_def.hpp>
 #include <memory>
@@ -59,10 +60,11 @@ struct ebpf_callback_args {
 using frida_attach_entry_callback =
 	std::variant<callback_variant, ebpf_callback_args>;
 
+extern thread_local std::optional<void *> current_thread_gum_cpu_context;
 // The frida uprobe attach implementation
 class frida_attach_impl final : public base_attach_impl {
     public:
-	frida_attach_impl();
+	explicit frida_attach_impl(bool use_fuzzy_backtracer = false);
 	~frida_attach_impl();
 	// Create a uprobe attach entry at the specified address
 	int create_uprobe_at(void *func_addr, uprobe_callback &&cb);
@@ -80,15 +82,17 @@ class frida_attach_impl final : public base_attach_impl {
 	int detach_by_func_addr(const void *func);
 
 	// Virtual functions
-	int detach_by_id(int id);
+	int detach_by_id(int id) override;
 	// Create an attach entry with ebpf callback
 	int create_attach_with_ebpf_callback(
 		ebpf_run_callback &&cb, const attach_private_data &private_data,
-		int attach_type);
+		int attach_type) override;
 	frida_attach_impl(const frida_attach_impl &) = delete;
 	frida_attach_impl &operator=(const frida_attach_impl &) = delete;
 	void register_custom_helpers(
-		ebpf_helper_register_callback register_callback);
+		ebpf_helper_register_callback register_callback) override;
+	void *call_attach_specific_function(const std::string& name,
+					    void *data) override;
 
     private:
 	void *interceptor;
@@ -97,6 +101,7 @@ class frida_attach_impl final : public base_attach_impl {
 	std::unordered_map<void *,
 			   std::unique_ptr<class frida_internal_attach_entry> >
 		internal_attaches;
+	bool use_fuzzy_backtracer;
 
 	friend class frida_internal_attach_entry;
 	int attach_at(void *func_addr, frida_attach_entry_callback &&cb);

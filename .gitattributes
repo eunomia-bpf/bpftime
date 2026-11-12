@@ -1,1 +1,5 @@
-* text eol=lf
+* text=auto eol=lf
+*.{cmd,[cC][mM][dD]} text eol=crlf
+*.{bat,[bB][aA][tT]} text eol=crlf
+benchmark/deepflow/go-server-http/main -text
+benchmark/deepflow/go-server/main -text

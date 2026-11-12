@@ -18,6 +18,9 @@ class bpftime_object;
 
 typedef bpftime_prog *bpftime_prog_ptr;
 
+#ifndef likely
+#define likely(x) __builtin_expect(!!(x), 1)
+#endif
 #ifndef unlikely
 #define unlikely(x) __builtin_expect(!!(x), 0)
 #endif

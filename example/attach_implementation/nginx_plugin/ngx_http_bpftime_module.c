@@ -65,8 +65,6 @@ static ngx_int_t ngx_http_bpftime_handler(ngx_http_request_t *r)
 {
 	ngx_http_bpftime_loc_conf_t *ulcf;
 
-	ngx_log_error(NGX_LOG_DEBUG, r->connection->log, 0,
-		      "http ua access handler");
 
 	ulcf = ngx_http_get_module_loc_conf(r, ngx_http_bpftime_module);
 	if (ulcf->enable) {
@@ -80,16 +78,9 @@ static ngx_int_t ngx_http_bpftime_handler(ngx_http_request_t *r)
 				break;
 			}
 		len = strlen(buf);
-		ngx_log_error(NGX_LOG_DEBUG, r->connection->log, 0,
-			      "Accessed uri: %s", buf);
-
 		int ret = nginx_plugin_example_run_filter(buf);
 
-		ngx_log_error(NGX_LOG_DEBUG, r->connection->log, 0,
-			      "Ebpf ret: %d", (int)ret);
 		if (ret == 0) {
-			ngx_log_error(NGX_LOG_DEBUG, r->connection->log, 0,
-				      "Rejected access by ebpf");
 			return NGX_HTTP_FORBIDDEN;
 		}
 	}
@@ -136,7 +127,7 @@ static ngx_int_t ngx_http_bpftime_init(ngx_conf_t *cf)
 
 	*h = ngx_http_bpftime_handler;
 	int err = nginx_plugin_example_initialize();
-	ngx_log_error(NGX_LOG_ERR, cf->log, 0, "Module init: %d", err);
+	ngx_log_error(NGX_LOG_ERR, cf->log, 0, "Module init (0 is success): %d", err);
 	return NGX_OK;
 }
 

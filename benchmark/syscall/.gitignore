@@ -11,3 +11,5 @@ opensnoop
 victim
 dump*
 syscall
+syscall_benchmark_results_*.json
+results.md
