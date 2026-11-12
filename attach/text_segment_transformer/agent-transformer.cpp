@@ -68,7 +68,7 @@ extern "C" int64_t call_orig_syscall(int64_t sys_nr, int64_t arg1,
 				      int64_t user_ip, int64_t user_sp,
 				      int64_t user_bp);
 
-static __attribute__((constructor)) void initialize_go_syscall_tracer()
+static __attribute__((constructor)) void initialize_syscall_tracer()
 {
 	if (getenv("BPFTIME_GO_SECCOMP") == nullptr)
 		return;
@@ -78,14 +78,23 @@ static __attribute__((constructor)) void initialize_go_syscall_tracer()
 }
 
 #if defined(__linux__) && defined(__x86_64__)
-static std::mutex go_dispatch_mutex;
-static std::mutex go_resource_mutex;
-static std::unordered_set<int> go_mock_fds;
-static std::unordered_set<int> go_map_fds;
-static std::unordered_set<int> go_program_map_fds;
-static std::unordered_set<int> go_mock_read_fds;
-static std::unordered_set<int> go_ringbuf_fds;
-static std::unordered_map<uintptr_t, size_t> go_mock_mmaps;
+// Userspace resource ledger for emulated syscalls. This transformer is a
+// separate .so linked only against spdlog/frida-gum (not bpftime-syscall-server),
+// so it cannot call syscall_context directly; the runtime seam is the
+// get_call_hook()/dispatch_raw_syscall function pointer. These tables mirror
+// syscall-server concepts and are candidates for future unification:
+//   program_map_fds ~ syscall_context::map_in_map_refs
+//   mock_read_fds   ~ mocked_files + handle_openat
+//   mock_mmaps      ~ mocked_mmap_values (server set does not track size yet)
+//   map/ringbuf/mock fds ~ fd classification inside handle_sysbpf.
+static std::mutex dispatch_mutex;
+static std::mutex resource_mutex;
+static std::unordered_set<int> mock_fds;
+static std::unordered_set<int> map_fds;
+static std::unordered_set<int> program_map_fds;
+static std::unordered_set<int> mock_read_fds;
+static std::unordered_set<int> ringbuf_fds;
+static std::unordered_map<uintptr_t, size_t> mock_mmaps;
 static const char *kallsyms_path;
 static std::atomic<int> go_seccomp_listener{ -1 };
 // SECCOMP_USER_NOTIF_FLAG_CONTINUE was added after user notification itself.
@@ -252,22 +261,22 @@ static bool should_dispatch_go_syscall(const int64_t *args)
 	if (args[0] == __NR_statfs && args[1] != 0)
 		return is_tracefs_mount_path(
 			reinterpret_cast<const char *>(args[1]));
-	std::lock_guard lock(go_resource_mutex);
+	std::lock_guard lock(resource_mutex);
 	if (args[0] == __NR_epoll_create1)
-		return !go_ringbuf_fds.empty();
+		return !ringbuf_fds.empty();
 	if (args[0] == __NR_read)
-		return go_mock_read_fds.contains((int)args[1]);
+		return mock_read_fds.contains((int)args[1]);
 	if (args[0] == __NR_mmap)
-		return go_mock_fds.contains((int)args[5]);
+		return mock_fds.contains((int)args[5]);
 	if (args[0] == __NR_fcntl || args[0] == __NR_dup3)
-		return go_mock_fds.contains((int)args[1]);
+		return mock_fds.contains((int)args[1]);
 	if (args[0] == __NR_close || args[0] == __NR_ioctl)
-		return go_mock_fds.contains((int)args[1]);
+		return mock_fds.contains((int)args[1]);
 	if (args[0] == __NR_epoll_ctl || args[0] == __NR_epoll_wait ||
 	    args[0] == __NR_epoll_pwait)
-		return go_mock_fds.contains((int)args[1]);
+		return mock_fds.contains((int)args[1]);
 	if (args[0] == __NR_munmap)
-		return go_mock_mmaps.contains((uintptr_t)args[1]);
+		return mock_mmaps.contains((uintptr_t)args[1]);
 	return false;
 }
 
@@ -284,26 +293,26 @@ static bool bpf_command_returns_fd(int64_t cmd)
 	       cmd == link_create || cmd == raw_tracepoint_open;
 }
 
-struct go_bpf_insn {
+struct bpf_insn {
 	uint8_t code;
 	uint8_t registers;
 	int16_t offset;
 	int32_t immediate;
 };
 
-struct go_bpf_prog_load_attr {
+struct bpf_prog_load_attr {
 	uint32_t prog_type;
 	uint32_t insn_count;
 	uint64_t insns;
 };
 
-static void record_go_program_map_references(int64_t attr_address)
+static void record_program_map_references(int64_t attr_address)
 {
-	const auto *attr = reinterpret_cast<const go_bpf_prog_load_attr *>(
+	const auto *attr = reinterpret_cast<const bpf_prog_load_attr *>(
 		(uintptr_t)attr_address);
 	if (attr == nullptr || attr->insns == 0)
 		return;
-	const auto *insns = reinterpret_cast<const go_bpf_insn *>(
+	const auto *insns = reinterpret_cast<const bpf_insn *>(
 		(uintptr_t)attr->insns);
 	for (uint32_t i = 0; i < attr->insn_count; ++i) {
 		const auto &insn = insns[i];
@@ -311,72 +320,72 @@ static void record_go_program_map_references(int64_t attr_address)
 		if (insn.code == 0x18 &&
 		    (source_register == 1 || source_register == 2) &&
 		    insn.immediate >= 0)
-			go_program_map_fds.insert(insn.immediate);
+			program_map_fds.insert(insn.immediate);
 	}
 }
 
-static void record_go_syscall_result(int64_t sysno, int64_t arg1,
+static void record_syscall_result(int64_t sysno, int64_t arg1,
 				     int64_t arg2, int64_t result)
 {
 	if (result < 0)
 		return;
-	std::lock_guard lock(go_resource_mutex);
+	std::lock_guard lock(resource_mutex);
 	if ((sysno == __NR_bpf && bpf_command_returns_fd(arg1)) ||
 	    sysno == __NR_perf_event_open || sysno == __NR_epoll_create1) {
-		go_mock_fds.insert((int)result);
+		mock_fds.insert((int)result);
 		if (sysno == __NR_bpf && arg1 == 0)
-			go_map_fds.insert((int)result);
+			map_fds.insert((int)result);
 		else if (sysno == __NR_bpf && arg1 == 5)
-			record_go_program_map_references(arg2);
+			record_program_map_references(arg2);
 		if (sysno == __NR_bpf && arg1 == 0 && arg2 != 0 &&
 		    *reinterpret_cast<const uint32_t *>(arg2) == 27) {
-			go_ringbuf_fds.insert((int)result);
+			ringbuf_fds.insert((int)result);
 		}
 	} else if (sysno == __NR_openat) {
 		auto *path = reinterpret_cast<const char *>(arg2);
 		if (is_tracepoint_id_path(path)) {
-			go_mock_fds.insert((int)result);
-			go_mock_read_fds.insert((int)result);
+			mock_fds.insert((int)result);
+			mock_read_fds.insert((int)result);
 		}
 	} else if (sysno == __NR_mmap) {
-		go_mock_mmaps.emplace((uintptr_t)result, (size_t)arg2);
+		mock_mmaps.emplace((uintptr_t)result, (size_t)arg2);
 	} else if ((sysno == __NR_fcntl &&
 		    (arg2 == F_DUPFD || arg2 == F_DUPFD_CLOEXEC)) ||
 		   sysno == __NR_dup3) {
-		if (go_mock_fds.contains((int)arg1))
-			go_mock_fds.insert((int)result);
-		if (go_map_fds.contains((int)arg1))
-			go_map_fds.insert((int)result);
-		if (go_mock_read_fds.contains((int)arg1))
-			go_mock_read_fds.insert((int)result);
-		if (go_ringbuf_fds.contains((int)arg1))
-			go_ringbuf_fds.insert((int)result);
+		if (mock_fds.contains((int)arg1))
+			mock_fds.insert((int)result);
+		if (map_fds.contains((int)arg1))
+			map_fds.insert((int)result);
+		if (mock_read_fds.contains((int)arg1))
+			mock_read_fds.insert((int)result);
+		if (ringbuf_fds.contains((int)arg1))
+			ringbuf_fds.insert((int)result);
 	} else if (sysno == __NR_munmap) {
-		go_mock_mmaps.erase((uintptr_t)arg1);
+		mock_mmaps.erase((uintptr_t)arg1);
 	} else if (sysno == __NR_close) {
-		go_mock_read_fds.erase((int)arg1);
-		go_ringbuf_fds.erase((int)arg1);
-		go_map_fds.erase((int)arg1);
-		go_program_map_fds.erase((int)arg1);
-		go_mock_fds.erase((int)arg1);
+		mock_read_fds.erase((int)arg1);
+		ringbuf_fds.erase((int)arg1);
+		map_fds.erase((int)arg1);
+		program_map_fds.erase((int)arg1);
+		mock_fds.erase((int)arg1);
 	}
 }
 
-static bool defer_go_mock_fd_close(int fd)
+static bool defer_mock_fd_close(int fd)
 {
-	std::lock_guard lock(go_resource_mutex);
-	if (!go_mock_fds.contains(fd))
+	std::lock_guard lock(resource_mutex);
+	if (!mock_fds.contains(fd))
 		return false;
-	if (go_map_fds.contains(fd) && !go_program_map_fds.contains(fd))
+	if (map_fds.contains(fd) && !program_map_fds.contains(fd))
 		return false;
 	// Loaded BPF programs retain map references after the loader closes its
 	// descriptor. Keep bpftime's descriptor alive until this process exits so
 	// its shared-memory handler id cannot be reused for a different object.
-	go_mock_read_fds.erase(fd);
-	go_ringbuf_fds.erase(fd);
-	go_map_fds.erase(fd);
-	go_program_map_fds.erase(fd);
-	go_mock_fds.erase(fd);
+	mock_read_fds.erase(fd);
+	ringbuf_fds.erase(fd);
+	map_fds.erase(fd);
+	program_map_fds.erase(fd);
+	mock_fds.erase(fd);
 	return true;
 }
 
@@ -386,7 +395,7 @@ static int64_t dispatch_seccomp_syscall(const int64_t *args)
 	// syscall-server startup so userspace loaders fall back to ordinary FDs.
 	if (args[0] == __NR_bpf && args[1] == 36)
 		return -EINVAL;
-	if (args[0] == __NR_close && defer_go_mock_fd_close((int)args[1]))
+	if (args[0] == __NR_close && defer_mock_fd_close((int)args[1]))
 		return 0;
 	if (args[0] == __NR_statfs && args[1] != 0 && args[2] != 0 &&
 	    is_tracefs_mount_path(
@@ -419,7 +428,7 @@ static int64_t dispatch_seccomp_syscall(const int64_t *args)
 				args[0], args[1], args[2], args[3], args[4],
 				args[5], args[6], 0, 0, 0);
 		} else {
-			std::lock_guard lock(go_dispatch_mutex);
+			std::lock_guard lock(dispatch_mutex);
 			result = bpftime::get_call_hook()(
 				args[0], args[1], args[2], args[3], args[4],
 				args[5], args[6], 0, 0, 0);
@@ -430,7 +439,7 @@ static int64_t dispatch_seccomp_syscall(const int64_t *args)
 		result = call_orig_syscall(args[0], args[1], args[2], args[3],
 					   args[4], args[5], args[6], 0, 0, 0);
 	}
-	record_go_syscall_result(args[0], args[1], args[2], result);
+	record_syscall_result(args[0], args[1], args[2], result);
 	return result;
 }
 
