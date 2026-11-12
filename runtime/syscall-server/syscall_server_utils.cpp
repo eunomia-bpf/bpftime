@@ -12,12 +12,13 @@
 #include "cuda.h"
 #endif
 #include "syscall_context.hpp"
+#include <cstdint>
 #include <cerrno>
 #include <cstdlib>
+#include <dlfcn.h>
 #include <exception>
 #include <fcntl.h>
 #include <filesystem>
-#include <fstream>
 #include <memory>
 #include <mutex>
 #include <signal.h>
@@ -40,6 +41,55 @@ static std::string g_syscall_server_shm_name;
 static pid_t g_syscall_server_shm_owner_pid = -1;
 static bool g_syscall_server_owns_shm = false;
 using namespace bpftime;
+namespace {
+// Probe a tracefs event id file through the next (non-interposed) libc
+// symbols. This translation unit belongs to the LD_PRELOADed syscall server,
+// whose open/openat/fopen handlers call create_mocked_file_based_on_full_path.
+// Opening the file with std::ifstream here re-enters those interposed handlers
+// and recurses until the stack is exhausted, so the real syscalls must be
+// resolved with RTLD_NEXT.
+bool read_real_tracepoint_id(const std::string &path_text, uint32_t &out_id)
+{
+	using openat_fn = int (*)(int, const char *, int, ...);
+	using read_fn = ssize_t (*)(int, void *, size_t);
+	using close_fn = int (*)(int);
+	static openat_fn next_openat =
+		(openat_fn)dlsym(RTLD_NEXT, "openat");
+	static read_fn next_read = (read_fn)dlsym(RTLD_NEXT, "read");
+	static close_fn next_close = (close_fn)dlsym(RTLD_NEXT, "close");
+	if (next_openat == nullptr || next_read == nullptr ||
+	    next_close == nullptr)
+		return false;
+	int fd = next_openat(AT_FDCWD, path_text.c_str(),
+			     O_RDONLY | O_CLOEXEC);
+	if (fd < 0)
+		return false;
+	char buffer[32];
+	size_t filled = 0;
+	while (filled < sizeof(buffer) - 1) {
+		ssize_t n = next_read(fd, buffer + filled,
+				      sizeof(buffer) - 1 - filled);
+		if (n > 0) {
+			filled += static_cast<size_t>(n);
+			continue;
+		}
+		if (n == 0)
+			break;
+		if (errno != EINTR)
+			break;
+	}
+	next_close(fd);
+	if (filled == 0)
+		return false;
+	buffer[filled] = '\0';
+	char *end = nullptr;
+	unsigned long id = strtoul(buffer, &end, 10);
+	if (end == buffer || id == 0 || id > UINT32_MAX)
+		return false;
+	out_id = static_cast<uint32_t>(id);
+	return true;
+}
+} // namespace
 // Why not use string_view? because parse_uint_from_file requires a c-string
 static const std::string UPROBE_TYPE_FILE_NAME =
 	"/sys/bus/event_source/devices/uprobe/type";
@@ -316,12 +366,9 @@ create_mocked_file_based_on_full_path(const std::filesystem::path &path)
 		// index the tracepoint table out of range in the traced
 		// process. Returning no provider lets the normal open path read
 		// the genuine id, matching the default behavior.
-		{
-			std::ifstream real_id_file(path_text);
-			uint32_t real_id = 0;
-			if (real_id_file >> real_id)
-				return {};
-		}
+		uint32_t real_id = 0;
+		if (read_real_tracepoint_id(path_text, real_id))
+			return {};
 		// Rootless mode cannot read tracefs. Synthesize a stable id from
 		// the event path so server and client derive the same value.
 		uint32_t hash = 2166136261U;
