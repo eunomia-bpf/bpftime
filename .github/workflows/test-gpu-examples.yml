@@ -4,80 +4,23 @@ on:
   workflow_dispatch:
   push:
     branches: ["master"]
-    paths:
+    paths: &gpu_paths
+      # Folder-level GPU/CUDA scopes plus build inputs. Generic CPU-only
+      # source changes do not reserve the scarce self-hosted GPU runners.
       - ".github/workflows/test-gpu-examples.yml"
-      # GPU/CUDA-specific sources and examples. Generic runtime/attach
-      # changes are covered by the non-GPU build and test workflows, so they
-      # do not spin up the scarce GPU runners.
       - "attach/nv_attach_impl/**"
       - "benchmark/gpu/**"
       - "example/gpu/**"
-      - "runtime/src/attach/bpf_attach_ctx_cuda.cpp"
       - "runtime/src/bpf_map/gpu/**"
       - "runtime/src/bpf_map/gpu_kernel_shared/**"
       - "runtime/unit-test/cuda/**"
-      # Generic files that compile CUDA-specific branches under
-      # BPFTIME_ENABLE_CUDA_ATTACH=ON (the only build that defines it); a
-      # change to their CUDA-guarded code must still run the GPU build.
-      - "runtime/agent/agent.cpp"
-      - "runtime/include/bpf_attach_ctx.hpp"
-      - "runtime/include/bpftime_prog.hpp"
-      - "runtime/include/bpftime_shm.hpp"
-      - "runtime/src/attach/bpf_attach_ctx.cpp"
-      - "runtime/src/bpftime_prog.cpp"
-      - "runtime/src/bpftime_shm.cpp"
-      - "runtime/src/bpftime_shm_internal.cpp"
-      - "runtime/src/bpftime_shm_internal.hpp"
-      - "runtime/src/handler/map_handler.cpp"
-      - "runtime/src/handler/map_handler.hpp"
-      - "runtime/syscall-server/syscall_context.cpp"
-      - "runtime/syscall-server/syscall_context.hpp"
-      - "runtime/syscall-server/syscall_server_main.cpp"
-      - "runtime/syscall-server/syscall_server_utils.cpp"
-      - "tools/bpftimetool/main.cpp"
-      # Build system, toolchain and submodules can affect the GPU build.
-      - "**/CMakeLists.txt"
       - "cmake/**"
       - "third_party/**"
+      - "**/CMakeLists.txt"
       - ".gitmodules"
   pull_request:
     branches: ["master"]
-    paths:
-      - ".github/workflows/test-gpu-examples.yml"
-      # GPU/CUDA-specific sources and examples. Generic runtime/attach
-      # changes are covered by the non-GPU build and test workflows, so they
-      # do not spin up the scarce GPU runners.
-      - "attach/nv_attach_impl/**"
-      - "benchmark/gpu/**"
-      - "example/gpu/**"
-      - "runtime/src/attach/bpf_attach_ctx_cuda.cpp"
-      - "runtime/src/bpf_map/gpu/**"
-      - "runtime/src/bpf_map/gpu_kernel_shared/**"
-      - "runtime/unit-test/cuda/**"
-      # Generic files that compile CUDA-specific branches under
-      # BPFTIME_ENABLE_CUDA_ATTACH=ON (the only build that defines it); a
-      # change to their CUDA-guarded code must still run the GPU build.
-      - "runtime/agent/agent.cpp"
-      - "runtime/include/bpf_attach_ctx.hpp"
-      - "runtime/include/bpftime_prog.hpp"
-      - "runtime/include/bpftime_shm.hpp"
-      - "runtime/src/attach/bpf_attach_ctx.cpp"
-      - "runtime/src/bpftime_prog.cpp"
-      - "runtime/src/bpftime_shm.cpp"
-      - "runtime/src/bpftime_shm_internal.cpp"
-      - "runtime/src/bpftime_shm_internal.hpp"
-      - "runtime/src/handler/map_handler.cpp"
-      - "runtime/src/handler/map_handler.hpp"
-      - "runtime/syscall-server/syscall_context.cpp"
-      - "runtime/syscall-server/syscall_context.hpp"
-      - "runtime/syscall-server/syscall_server_main.cpp"
-      - "runtime/syscall-server/syscall_server_utils.cpp"
-      - "tools/bpftimetool/main.cpp"
-      # Build system, toolchain and submodules can affect the GPU build.
-      - "**/CMakeLists.txt"
-      - "cmake/**"
-      - "third_party/**"
-      - ".gitmodules"
+    paths: *gpu_paths
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}-${{ github.event_name }}
@@ -88,89 +31,33 @@ env:
 
 jobs:
   # Runs on a generic (non-GPU) runner and decides whether the GPU jobs are
-  # needed. Uses only git, no third-party action, so a non-GPU change skips the
-  # scarce GPU runners entirely instead of merely skipping one job.
+  # needed, so a non-GPU change never reserves a scarce GPU runner. Folder-level
+  # filters mirror the trigger paths above.
   detect-gpu-change:
     runs-on: ubuntu-latest
     outputs:
-      gpu_affected: ${{ steps.filter.outputs.gpu_affected }}
+      gpu_affected: ${{ steps.manual.outputs.gpu_affected || steps.filter.outputs.gpu_affected }}
     steps:
-      - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-      - name: Detect GPU-affecting changes
+      - name: Manual dispatch always runs
+        id: manual
+        if: github.event_name == 'workflow_dispatch'
+        run: echo "gpu_affected=true" >> "$GITHUB_OUTPUT"
+      - uses: dorny/paths-filter@v3
         id: filter
-        shell: bash
-        run: |
-          set -euo pipefail
-          # Manual dispatch always runs the GPU jobs.
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            echo "gpu_affected=true" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-          base="${{ github.event.pull_request.base.sha }}"
-          if [ -z "$base" ]; then
-            # push event: compare against the previous commit.
-            base="${{ github.event.before }}"
-          fi
-          # A zero SHA means the first push to a new ref (no parent); fall
-          # back to running the GPU jobs rather than producing an empty diff.
-          if [ -z "$base" ] || [[ "$base" =~ ^0{40}$ ]] || ! git cat-file -e "$base^{commit}" 2>/dev/null; then
-            echo "No usable base commit ($base); running GPU jobs"
-            echo "gpu_affected=true" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-          echo "Comparing against $base"
-          git diff --name-only "$base" HEAD > changed.txt
-          cat changed.txt
-          # Keep this list in sync with the on.paths GPU globs below.
-          patterns=(
-            "attach/nv_attach_impl/*"
-            "benchmark/gpu/*"
-            "example/gpu/*"
-            "runtime/src/attach/bpf_attach_ctx_cuda.cpp"
-            "runtime/src/bpf_map/gpu/*"
-            "runtime/src/bpf_map/gpu_kernel_shared/*"
-            "runtime/unit-test/cuda/*"
-            "runtime/agent/agent.cpp"
-            "runtime/include/bpf_attach_ctx.hpp"
-            "runtime/include/bpftime_prog.hpp"
-            "runtime/include/bpftime_shm.hpp"
-            "runtime/src/attach/bpf_attach_ctx.cpp"
-            "runtime/src/bpftime_prog.cpp"
-            "runtime/src/bpftime_shm.cpp"
-            "runtime/src/bpftime_shm_internal.cpp"
-            "runtime/src/bpftime_shm_internal.hpp"
-            "runtime/src/handler/map_handler.cpp"
-            "runtime/src/handler/map_handler.hpp"
-            "runtime/syscall-server/syscall_context.cpp"
-            "runtime/syscall-server/syscall_context.hpp"
-            "runtime/syscall-server/syscall_server_main.cpp"
-            "runtime/syscall-server/syscall_server_utils.cpp"
-            "tools/bpftimetool/main.cpp"
-            "CMakeLists.txt"
-            "*/CMakeLists.txt"
-            "cmake/*"
-            "third_party/*"
-            ".gitmodules"
-            ".github/workflows/test-gpu-examples.yml"
-          )
-          hit=0
-          while IFS= read -r f; do
-            for p in "${patterns[@]}"; do
-              # shellcheck disable=SC2053
-              if [[ "$f" == $p ]]; then
-                echo "GPU-affecting path matched: $f ($p)"
-                hit=1
-                break
-              fi
-            done
-          done < changed.txt
-          if [ "$hit" -eq 1 ]; then
-            echo "gpu_affected=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "gpu_affected=false" >> "$GITHUB_OUTPUT"
-          fi
+        with:
+          filters: |
+            gpu_affected:
+              - '.github/workflows/test-gpu-examples.yml'
+              - 'attach/nv_attach_impl/**'
+              - 'benchmark/gpu/**'
+              - 'example/gpu/**'
+              - 'runtime/src/bpf_map/gpu/**'
+              - 'runtime/src/bpf_map/gpu_kernel_shared/**'
+              - 'runtime/unit-test/cuda/**'
+              - 'cmake/**'
+              - 'third_party/**'
+              - '**/CMakeLists.txt'
+              - '.gitmodules'
 
   build-bpftime-gpu:
     needs: [detect-gpu-change]
