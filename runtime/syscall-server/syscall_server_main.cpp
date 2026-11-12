@@ -465,19 +465,19 @@ extern "C" FILE *_IO_new_fopen(const char *pathname, const char *flags)
 		call_original, safe_ptr_str(pathname), safe_ptr_str(flags));
 }
 #if __linux__
-extern "C" long syscall(long sysno, ...)
+static long dispatch_syscall(long sysno, long arg1, long arg2, long arg3,
+			     long arg4, long arg5, long arg6)
 {
-	// glibc directly reads the arguments without considering
-	// the underlying argument number. So did us
-	va_list args;
-	va_start(args, sysno);
-	long arg1 = va_arg(args, long);
-	long arg2 = va_arg(args, long);
-	long arg3 = va_arg(args, long);
-	long arg4 = va_arg(args, long);
-	long arg5 = va_arg(args, long);
-	long arg6 = va_arg(args, long);
-	va_end(args);
+	if (sysno == __NR_openat) {
+		const auto *file = reinterpret_cast<const char *>(arg2);
+		const char *kallsyms_path = getenv("BPFTIME_KALLSYMS_PATH");
+		if (kallsyms_path != nullptr && file != nullptr &&
+		    strcmp(file, "/proc/kallsyms") == 0) {
+			return fallback_syscall(sysno, arg1,
+						(long)kallsyms_path, arg3,
+						arg4, arg5, arg6);
+		}
+	}
 	if (!initialize_ctx())
 		return fallback_syscall(sysno, arg1, arg2, arg3, arg4, arg5,
 					arg6);
@@ -507,9 +507,87 @@ extern "C" long syscall(long sysno, ...)
 					(unsigned long)arg5);
 			},
 			call_original);
+	} else if (sysno == __NR_close) {
+		return handle_exceptions(
+			[&]() { return context->handle_close((int)arg1); },
+			call_original);
+	} else if (sysno == __NR_openat) {
+		return handle_exceptions(
+			[&]() {
+				return context->handle_openat(
+					(int)arg1, (const char *)arg2, (int)arg3,
+					(unsigned short)arg4);
+			},
+			call_original);
+	} else if (sysno == __NR_read) {
+		return handle_exceptions(
+			[&]() {
+				return context->handle_read(
+					(int)arg1, (void *)arg2, (size_t)arg3);
+			},
+			call_original);
 	} else if (sysno == __NR_ioctl) {
 		safe_spdlog_debug("SYS_IOCTL {} {} {} {} {} {}", arg1, arg2,
 				  arg3, arg4, arg5, arg6);
+		return handle_exceptions(
+			[&]() {
+				return context->handle_ioctl(
+					(int)arg1, (unsigned long)arg2,
+					(unsigned long)arg3);
+			},
+			call_original);
+	} else if (sysno == __NR_epoll_create1) {
+		return handle_exceptions(
+			[&]() { return context->handle_epoll_create1((int)arg1); },
+			call_original);
+	} else if (sysno == __NR_epoll_ctl) {
+		return handle_exceptions(
+			[&]() {
+				return context->handle_epoll_ctl(
+					(int)arg1, (int)arg2, (int)arg3,
+					(struct epoll_event *)(uintptr_t)arg4);
+			},
+			call_original);
+	} else if (sysno == __NR_epoll_wait) {
+		return handle_exceptions(
+			[&]() {
+				return context->handle_epoll_wait(
+					(int)arg1,
+					(struct epoll_event *)(uintptr_t)arg2,
+					(int)arg3, (int)arg4);
+			},
+			call_original);
+	} else if (sysno == __NR_epoll_pwait) {
+		// Go's x/sys/unix.EpollWait uses epoll_pwait with a null signal
+		// mask on Linux. Route that form through the same userspace epoll
+		// implementation. Preserve the kernel semantics for callers which
+		// supply a temporary signal mask.
+		if (arg5 != 0)
+			return call_original();
+		return handle_exceptions(
+			[&]() {
+				return context->handle_epoll_wait(
+					(int)arg1,
+					(struct epoll_event *)(uintptr_t)arg2,
+					(int)arg3, (int)arg4);
+			},
+			call_original);
+	} else if (sysno == __NR_mmap) {
+		return handle_exceptions(
+			[&]() {
+				return (long)context->handle_mmap(
+					(void *)(uintptr_t)arg1, (size_t)arg2,
+					(int)arg3, (int)arg4, (int)arg5,
+					(off_t)arg6);
+			},
+			call_original);
+	} else if (sysno == __NR_munmap) {
+		return handle_exceptions(
+			[&]() {
+				return context->handle_munmap(
+					(void *)(uintptr_t)arg1, (size_t)arg2);
+			},
+			call_original);
 	} else if (sysno == __NR_dup3) {
 		safe_spdlog_debug("SYS_DUP3 oldfd={} newfd={} flags={}", arg1,
 				  arg2, arg3);
@@ -517,6 +595,14 @@ extern "C" long syscall(long sysno, ...)
 			[&]() {
 				return context->handle_dup3(
 					(int)arg1, (int)arg2, (int)arg3);
+			},
+			call_original);
+	} else if (sysno == __NR_fcntl) {
+		return handle_exceptions(
+			[&]() {
+				return context->handle_fcntl(
+					(int)arg1, (int)arg2,
+					(unsigned long)arg3);
 			},
 			call_original);
 	} else if (sysno == __NR_memfd_create) {
@@ -530,6 +616,32 @@ extern "C" long syscall(long sysno, ...)
 			call_original);
 	}
 	return call_original();
+}
+
+extern "C" long syscall(long sysno, ...)
+{
+	// glibc directly reads the arguments without considering
+	// the underlying argument number. So did us
+	va_list args;
+	va_start(args, sysno);
+	long arg1 = va_arg(args, long);
+	long arg2 = va_arg(args, long);
+	long arg3 = va_arg(args, long);
+	long arg4 = va_arg(args, long);
+	long arg5 = va_arg(args, long);
+	long arg6 = va_arg(args, long);
+	va_end(args);
+	return dispatch_syscall(sysno, arg1, arg2, arg3, arg4, arg5, arg6);
+}
+
+extern "C" int64_t bpftime_syscall_server__dispatch_raw_syscall(
+	int64_t sysno, int64_t arg1, int64_t arg2, int64_t arg3, int64_t arg4,
+	int64_t arg5, int64_t arg6, int64_t, int64_t, int64_t)
+{
+	errno = 0;
+	long result = dispatch_syscall(sysno, arg1, arg2, arg3, arg4, arg5,
+				       arg6);
+	return result == -1 && errno != 0 ? -errno : result;
 }
 #endif
 
