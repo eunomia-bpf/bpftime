@@ -38,6 +38,11 @@ jobs:
     outputs:
       gpu_affected: ${{ steps.manual.outputs.gpu_affected || steps.filter.outputs.gpu_affected }}
     steps:
+      # paths-filter uses the REST API on pull_request events but falls back to
+      # local git commands on push/other events, which require a checkout.
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - name: Manual dispatch always runs
         id: manual
         if: github.event_name == 'workflow_dispatch'
